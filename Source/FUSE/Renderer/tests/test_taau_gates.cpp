@@ -21,6 +21,7 @@
 #include <fuse/renderer/quality/image_metrics.hpp>
 #include <fuse/renderer/taa/taau.hpp>
 #include <fuse/renderer/upscale/reference_scene.hpp>
+#include <fuse/renderer/upscale/taau_scale.hpp>
 #include <fuse/renderer/upscale/upscale_inputs.hpp>
 
 #include <algorithm>
@@ -574,9 +575,24 @@ void reportPerformance() {
     scheduler.shutdown();
 }
 
+// CPU gate. Must run before any GPU or device skip. Does not allocate.
+// A failure returns non-zero before any later skip.
+void testTaauScaleOk() {
+    expectTrue(fuse::renderer::taau_scale_ok(0.5f), "taau_scale_ok(0.5) is true");
+    expectTrue(fuse::renderer::taau_scale_ok(1.f), "taau_scale_ok(1) is true");
+    expectTrue(!fuse::renderer::taau_scale_ok(0.4f), "taau_scale_ok(0.4) is false");
+    expectTrue(!fuse::renderer::taau_scale_ok(1.1f), "taau_scale_ok(1.1) is false");
+    expectTrue(!fuse::renderer::taau_scale_ok(std::nanf("")), "taau_scale_ok(non-finite) is false");
+}
+
 } // namespace
 
 int main() {
+    testTaauScaleOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d TAAU gate check(s) failed\n", g_failures);
+        return EXIT_FAILURE;
+    }
     fuse::core::initialize();
     kernel::load_scale_from_env();
     testInputContract();

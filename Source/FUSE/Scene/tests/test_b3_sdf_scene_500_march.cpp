@@ -20,6 +20,7 @@
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/scene/entity_cap.hpp>
 #include <fuse/scene/scene_manager.hpp>
 
 #include <algorithm>
@@ -160,9 +161,17 @@ Agreement agreement(const Image& a, const Image& b, f32 minDist) {
     return r;
 }
 
+void testEntityCapOk() {
+    expectTrue(fuse::scene::entity_cap_ok(1), "entity cap 1");
+    expectTrue(fuse::scene::entity_cap_ok(500), "entity cap 500");
+    expectTrue(!fuse::scene::entity_cap_ok(0), "entity cap 0 rejected");
+    expectTrue(!fuse::scene::entity_cap_ok(501), "entity cap 501 rejected");
+}
+
 } // namespace
 
 int main() {
+    testEntityCapOk();
     fuse::core::initialize();
 
     // --- ECS scene: 500 visible SDF entities in view, 40 outside it, 10 hidden ---

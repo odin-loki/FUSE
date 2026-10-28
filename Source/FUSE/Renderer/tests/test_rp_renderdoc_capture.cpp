@@ -9,6 +9,7 @@
 //   * With FUSE_RP_FAKE_RENDERDOC (a counting RENDERDOC_GetAPI double): API 1.6.0 negotiated,
 //     the frame hook captures exactly frames [N, N + count), titles the capture, passes the
 //     VkInstance dispatch pointer, trigger/multi-frame/discard/path template reach the API.
+#include <fuse/renderer/capture_slot.hpp>
 #include <fuse/renderer/vk/renderdoc_capture.hpp>
 
 #include <cstdint>
@@ -37,6 +38,20 @@ void expect(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+// CPU gate. Must run before any GPU or capture skip; a failure returns non-zero. Does not allocate.
+int testCaptureSlotOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::capture_slot_ok(0), "capture slot 0 is valid");
+    expect(fuse::renderer::capture_slot_ok(15), "capture slot 15 is valid");
+    expect(!fuse::renderer::capture_slot_ok(-1), "capture slot -1 is rejected");
+    expect(!fuse::renderer::capture_slot_ok(16), "capture slot 16 is rejected");
+    if (g_failures != before) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
+    return 0;
 }
 
 void setEnv(const char* name, const char* value) {
@@ -238,6 +253,9 @@ void testFakeRenderDoc() {
 } // namespace
 
 int main() {
+    if (const int captureSlotRc = testCaptureSlotOk()) {
+        return captureSlotRc;
+    }
     testUnavailable();
     testTriggers();
 #if defined(FUSE_RP_FAKE_RENDERDOC)

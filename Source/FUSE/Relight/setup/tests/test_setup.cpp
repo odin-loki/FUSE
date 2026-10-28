@@ -8,7 +8,9 @@
 #include <fuse/relight/scene/classify/classify_options.hpp>
 #include <fuse/relight/setup/profile.hpp>
 #include <fuse/relight/setup/profile_discovery.hpp>
+#include <fuse/relight/setup/project_path.hpp>
 #include <fuse/relight/setup/setup_assistant.hpp>
+#include <fuse/relight/setup/setup_version.hpp>
 
 #include <cstdio>
 #include <filesystem>
@@ -489,6 +491,35 @@ void testAssistantOtherRules() {
     CHECK(error.find("line 2") != std::string::npos);
 }
 
+// ---- project path ---------------------------------------------------------------------------------------------
+
+void testProjectPath() {
+    CHECK(project_path_status("assets/hero") == ProjectPathStatus::Ok);
+    CHECK(project_path_status("../secret") == ProjectPathStatus::RelativeEscape);
+    CHECK(project_path_status("") == ProjectPathStatus::Empty);
+    CHECK(project_path_status(" \t") == ProjectPathStatus::Empty);
+    CHECK(project_path_status("/assets/hero") == ProjectPathStatus::Ok);
+    CHECK(project_path_status("C:/assets/hero") == ProjectPathStatus::Ok);
+    CHECK(project_path_status("D:\\assets\\hero") == ProjectPathStatus::Ok);
+    CHECK(project_path_status("assets\\hero") == ProjectPathStatus::Ok);
+    CHECK(project_path_status("assets/../secret") == ProjectPathStatus::RelativeEscape);
+    CHECK(project_path_status("assets\\..\\secret") == ProjectPathStatus::RelativeEscape);
+    CHECK(project_path_status(std::string(240, 'a')) == ProjectPathStatus::Ok);
+    CHECK(project_path_status(std::string(241, 'a')) == ProjectPathStatus::TooLong);
+    CHECK(project_path_status(std::string(241, ' ')) == ProjectPathStatus::Empty);
+    CHECK(project_path_status(std::string(237, 'a') + "/..") == ProjectPathStatus::RelativeEscape);
+    CHECK(project_path_status(std::string(238, 'a') + "/..") == ProjectPathStatus::TooLong);
+}
+
+// ---- setup version --------------------------------------------------------------------------------------------
+
+void testSetupVersionOk() {
+    CHECK(setup_version_ok(1));
+    CHECK(setup_version_ok(8));
+    CHECK(!setup_version_ok(0));
+    CHECK(!setup_version_ok(9));
+}
+
 } // namespace
 
 int main() {
@@ -503,6 +534,7 @@ int main() {
         void (*fn)();
     };
     const Case cases[] = {
+        {"setup_version", testSetupVersionOk},
         {"profile_round_trip", testProfileRoundTrip},
         {"accept_suggestions", testAcceptSuggestions},
         {"rtx_conf_round_trip", testRtxConfRoundTrip},
@@ -511,6 +543,7 @@ int main() {
         {"discovery", testDiscovery},
         {"assistant_sky_ui_hud", testAssistantSkyUiHud},
         {"assistant_other_rules", testAssistantOtherRules},
+        {"project_path", testProjectPath},
     };
     for (const Case& c : cases) {
         g_test = c.name;

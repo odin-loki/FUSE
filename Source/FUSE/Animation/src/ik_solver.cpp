@@ -38,6 +38,10 @@ f32 vec3_distance(const vec3& a, const vec3& b) {
     return vec3_length(vec3_sub(a, b));
 }
 
+f32 vec3_dot(const vec3& a, const vec3& b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
 vec3 pick_fallback_bend_axis(const vec3& dir) {
     vec3 bendAxis = vec3_cross(dir, {0.f, 0.f, 1.f, 0.f});
     if (vec3_length(bendAxis) < 1e-6f) {
@@ -62,6 +66,48 @@ vec3 bone_translation_soa(const PoseSoA& pose, u32 bone_idx) {
 
 vec3 vec3_add_scaled(const vec3& a, const vec3& dir, f32 scale) {
     return {a.x + dir.x * scale, a.y + dir.y * scale, a.z + dir.z * scale, 0.f};
+}
+
+/// Clamp interior joint angles (degrees) after each FABRIK pass; segment lengths from joint `i` to `i+1` are preserved.
+void clamp_interior_joint_angles(std::vector<vec3>& points,
+                                 const std::vector<f32>& lengths,
+                                 f32 min_angle_deg,
+                                 f32 max_angle_deg) {
+    if (points.size() < 3 || (min_angle_deg <= 0.f && max_angle_deg >= 179.f)) {
+        return;
+    }
+
+    const f32 min_rad = min_angle_deg * (3.14159265f / 180.f);
+    const f32 max_rad = max_angle_deg * (3.14159265f / 180.f);
+    for (size_t i = 1; i + 1 < points.size(); ++i) {
+        const vec3 toward_parent = vec3_normalize(vec3_sub(points[i], points[i - 1]));
+        const vec3 toward_child = vec3_normalize(vec3_sub(points[i + 1], points[i]));
+        const f32 cos_angle = std::clamp(vec3_dot(toward_parent, toward_child), -1.f, 1.f);
+        const f32 angle = std::acos(cos_angle);
+        f32 target = angle;
+        if (angle < min_rad) {
+            target = min_rad;
+        } else if (angle > max_rad) {
+            target = max_rad;
+        } else {
+            continue;
+        }
+
+        vec3 axis = vec3_cross(toward_parent, toward_child);
+        if (vec3_length(axis) < 1e-6f) {
+            axis = pick_fallback_bend_axis(toward_parent);
+        } else {
+            axis = vec3_normalize(axis);
+        }
+        const vec3 perp = vec3_normalize(vec3_cross(axis, toward_parent));
+        const vec3 clamped_dir{
+            toward_parent.x * std::cos(target) + perp.x * std::sin(target),
+            toward_parent.y * std::cos(target) + perp.y * std::sin(target),
+            toward_parent.z * std::cos(target) + perp.z * std::sin(target),
+            0.f,
+        };
+        points[i + 1] = vec3_add_scaled(points[i], vec3_normalize(clamped_dir), lengths[i]);
+    }
 }
 
 bool is_in_subtree(const Skeleton& skel, u32 bone, u32 subtree_root) {
@@ -197,6 +243,8 @@ u32 fabrik_solve_positions(std::vector<vec3>& points,
                            u32 max_iterations,
                            f32 tolerance,
                            bool reshape_warm_start,
+                           f32 min_angle_deg,
+                           f32 max_angle_deg,
                            f32& out_error) {
     const size_t n = points.size();
     std::vector<f32> lengths(n - 1);
@@ -236,6 +284,7 @@ u32 fabrik_solve_positions(std::vector<vec3>& points,
                 const vec3 dir = vec3_normalize(vec3_sub(points[i + 1], points[i]));
                 points[i + 1] = vec3_add_scaled(points[i], dir, lengths[i]);
             }
+            clamp_interior_joint_angles(points, lengths, min_angle_deg, max_angle_deg);
             ++iterations;
         }
     }
@@ -512,7 +561,8 @@ bool FABRIKChain::solve(Pose& pose, const Skeleton& skel) {
     for (size_t i = 0; i < bone_indices.size(); ++i) {
         points[i] = bone_translation(pose, bone_indices[i]);
     }
-    last_iterations = fabrik_solve_positions(points, target, max_iterations, tolerance, reshape_warm_start, last_error);
+    last_iterations = fabrik_solve_positions(points, target, max_iterations, tolerance, reshape_warm_start, min_angle_deg,
+                                             max_angle_deg, last_error);
     apply_chain_positions(pose, skel, bone_indices, points);
     last_error = vec3_distance(bone_translation(pose, bone_indices.back()), target);
     return true;
@@ -538,7 +588,8 @@ bool FABRIKChain::solve(PoseSoA& pose, const Skeleton& skel) {
             return false;
         }
     }
-    last_iterations = fabrik_solve_positions(points, target, max_iterations, tolerance, reshape_warm_start, last_error);
+    last_iterations = fabrik_solve_positions(points, target, max_iterations, tolerance, reshape_warm_start, min_angle_deg,
+                                             max_angle_deg, last_error);
     apply_chain_positions(pose, skel, bone_indices, points);
     last_error = vec3_distance(bone_translation_soa(pose, bone_indices.back()), target);
     return true;

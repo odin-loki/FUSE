@@ -14,6 +14,7 @@
 //    readback checked. Zero validation warnings / errors throughout (sync validation on).
 //
 // Pure tier logic (render_tier.hpp) is also checked in the stub build, which then exits 77 (skip).
+#include <fuse/renderer/tier_index.hpp>
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/instance.hpp>
 #include <fuse/renderer/vk/render_tier.hpp>
@@ -45,6 +46,21 @@ using namespace fuse::renderer;
 
 constexpr int kSkip = 77;
 int g_failures = 0;
+
+/// CPU gate. No allocation. main calls this before any device skip.
+/// A failure returns non-zero before any later skip.
+int testTierIndexOk() {
+    const bool atZero = tier_index_ok(0);
+    const bool atThree = tier_index_ok(3);
+    const bool below = tier_index_ok(-1);
+    const bool above = tier_index_ok(4);
+    if (atZero && atThree && !below && !above) {
+        return 0;
+    }
+    std::fprintf(stderr, "FAIL: testTierIndexOk (0=%d, 3=%d, -1=%d, 4=%d)\n", static_cast<int>(atZero),
+                 static_cast<int>(atThree), static_cast<int>(below), static_cast<int>(above));
+    return 1;
+}
 
 void expectTrue(bool condition, const std::string& message) {
     if (!condition) {
@@ -830,6 +846,9 @@ int run(const char* layerDir) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int tierIndexRc = testTierIndexOk()) {
+        return tierIndexRc;
+    }
     checkTierLogic();
 #if defined(FUSE_VULKAN_BACKEND) && (defined(__linux__) || defined(_WIN32))
     if (g_failures != 0) {

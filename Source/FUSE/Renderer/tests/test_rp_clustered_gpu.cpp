@@ -36,6 +36,7 @@
 // Exit 77 = skip (stub build, no ICD / validation layer, capability missing, no kernel built).
 #include "test_rp_material_resolve_scene.hpp"
 
+#include <fuse/renderer/cluster_bin.hpp>
 #include <fuse/renderer/culling/instance_culler.hpp>
 #include <fuse/renderer/deferred/gbuffer.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
@@ -114,11 +115,28 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. No allocation. Must run before any GPU skip; a failure returns non-zero.
+int testClusterBinOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::cluster_bin_ok(1), "cluster_bin_ok(1) is true");
+    expect(fuse::renderer::cluster_bin_ok(64), "cluster_bin_ok(64) is true");
+    expect(!fuse::renderer::cluster_bin_ok(0), "cluster_bin_ok(0) is false");
+    expect(!fuse::renderer::cluster_bin_ok(65), "cluster_bin_ok(65) is false");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testClusterBinOk\n");
+        return 1;
+    }
+    return 0;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int binRc = testClusterBinOk()) {
+        return binRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1473,6 +1491,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int binRc = testClusterBinOk()) {
+        return binRc;
+    }
     std::string mode = "parity_4096";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {
@@ -1539,3 +1560,37 @@ int main(int argc, char** argv) {
 }
 
 #endif
+
+#include <fuse/renderer/lighting/cluster_index.hpp>
+
+namespace {
+
+/// Index (2, 3) on a 10-wide grid is 32. (10, 0) on that grid is not inside.
+/// Registered before main so the check runs before any GPU skip. A failure
+/// exits the process instead of returning the skip code.
+void test_cluster_tile_index() {
+    static_assert(fuse::renderer::cluster_tile_index(2u, 3u, 10u) == 32u);
+    static_assert(!fuse::renderer::cluster_tile_inside(10u, 0u, 10u, 9u));
+    const std::uint32_t index = fuse::renderer::cluster_tile_index(2u, 3u, 10u);
+    const bool tenZeroInside = fuse::renderer::cluster_tile_inside(10u, 0u, 10u, 9u);
+    const bool originInside = fuse::renderer::cluster_tile_inside(2u, 3u, 10u, 9u);
+    const bool zeroWideInside = fuse::renderer::cluster_tile_inside(0u, 0u, 0u, 9u);
+    const bool zeroTallInside = fuse::renderer::cluster_tile_inside(0u, 0u, 10u, 0u);
+    const std::uint32_t zeroTiles = fuse::renderer::cluster_tile_index(7u, 4u, 0u);
+    const std::uint32_t exactMax = fuse::renderer::cluster_tile_index(0u, 1u, 0xffffffffu);
+    const std::uint32_t overflow = fuse::renderer::cluster_tile_index(1u, 1u, 0xffffffffu);
+    if (index == 32u && !tenZeroInside && originInside && !zeroWideInside && !zeroTallInside && zeroTiles == 0u &&
+        exactMax == 0xffffffffu && overflow == 0xffffffffu) {
+        return;
+    }
+    std::fprintf(stderr, "FAIL: test_cluster_tile_index\n");
+    std::exit(1);
+}
+
+struct ClusterTileIndexTestRegistration {
+    ClusterTileIndexTestRegistration() { test_cluster_tile_index(); }
+};
+
+[[maybe_unused]] const ClusterTileIndexTestRegistration g_clusterTileIndexTestRegistration{};
+
+} // namespace

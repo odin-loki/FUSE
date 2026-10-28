@@ -22,6 +22,7 @@
 #include "pt_test_scenes.hpp"
 
 #include <fuse/relight/render/denoise/pt_denoise.hpp>
+#include <fuse/relight/render/denoise/denoise_iter.hpp>
 
 #include "pt_reference_kernels.hpp"
 
@@ -42,6 +43,15 @@
 namespace {
 thread_local bool t_count = false;
 thread_local unsigned long long t_allocations = 0;
+
+void check(bool condition, const char* message);
+
+void testDenoiseIterOk() {
+    check(fuse::relight::denoise_iter_ok(1), "denoise_iter_ok(1) is true");
+    check(fuse::relight::denoise_iter_ok(8), "denoise_iter_ok(8) is true");
+    check(!fuse::relight::denoise_iter_ok(0), "denoise_iter_ok(0) is false");
+    check(!fuse::relight::denoise_iter_ok(9), "denoise_iter_ok(9) is false");
+}
 } // namespace
 
 #if defined(__GNUC__)
@@ -480,6 +490,10 @@ void suiteZeroAlloc() {
 } // namespace
 
 int main(int argc, char** argv) {
+    testDenoiseIterOk();
+    if (g_failures != 0) {
+        return 1;
+    }
     opt::setEnvironmentVariable(opt::kDxvkConfEnvVar, "");
     opt::setEnvironmentVariable(opt::kRtxConfEnvVar, "");
     (void)BorrowedStandIns::sceneScaleObject();
@@ -512,3 +526,22 @@ int main(int argc, char** argv) {
     std::printf("PASS %s\n", suite.c_str());
     return 0;
 }
+
+#include <fuse/relight/render/denoise/clip_aabb.hpp>
+
+namespace {
+
+void test_clip_color_aabb() {
+    const dn::Rgb out =
+        dn::clip_color_aabb(dn::Rgb{2.f, -1.f, 0.5f}, dn::Rgb{0.f, 0.f, 0.f}, dn::Rgb{1.f, 1.f, 1.f});
+    check(out.r == 1.f && out.g == 0.f && out.b == 0.5f,
+          "test_clip_color_aabb: (2, -1, 0.5) against lo (0, 0, 0) hi (1, 1, 1) is (1, 0, 0.5)");
+}
+
+struct RunClipColorAabbTest {
+    RunClipColorAabbTest() { test_clip_color_aabb(); }
+};
+
+[[maybe_unused]] const RunClipColorAabbTest kRunClipColorAabbTest{};
+
+} // namespace

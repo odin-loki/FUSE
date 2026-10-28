@@ -14,6 +14,8 @@
 #include <fuse/ecs/systems/culling_system.hpp>
 #include <fuse/ecs/systems/transform_system.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/scene/aabb_margin.hpp>
+#include <fuse/scene/scene_name.hpp>
 #include <fuse/scene/scene_manager.hpp>
 
 #include <algorithm>
@@ -223,9 +225,24 @@ void testTransformUpdate10k() {
     scheduler.shutdown();
 }
 
+void testExpandAabb() {
+    const fuse::scene::SceneAabb box{0.f, 0.f, 0.f, 1.f, 1.f, 1.f};
+    const fuse::scene::SceneAabb expanded = fuse::scene::expand_aabb(box, 0.5f);
+    expectTrue(expanded.minX == -0.5f && expanded.minY == -0.5f && expanded.minZ == -0.5f, "aabb mins grow by the margin");
+    expectTrue(expanded.maxX == 1.5f && expanded.maxY == 1.5f && expanded.maxZ == 1.5f, "aabb maxes grow by the margin");
+}
+
+void testSceneNameOk() {
+    expectTrue(fuse::scene::scene_name_ok("Lobby"), "scene name Lobby");
+    expectTrue(!fuse::scene::scene_name_ok(""), "empty scene name rejected");
+    expectTrue(!fuse::scene::scene_name_ok("1Lobby"), "digit-leading scene name rejected");
+}
+
 } // namespace
 
 int main() {
+    testSceneNameOk();
+    testExpandAabb();
     testBuildAndCull();
     testTransformUpdate10k();
 

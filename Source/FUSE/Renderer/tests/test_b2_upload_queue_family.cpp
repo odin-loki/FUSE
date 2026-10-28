@@ -17,6 +17,7 @@
 // mode, an acquire with no matching release and an unsynchronized transfer -> graphics read.
 //
 // Exit 77 (skip) in the stub build, without an ICD, or without the validation layer.
+#include <fuse/renderer/upload_lane.hpp>
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/instance.hpp>
 #include <fuse/renderer/vk/upload_queue.hpp>
@@ -49,6 +50,23 @@ namespace {
 
 constexpr int kSkip = 77;
 
+int g_failures = 0;
+
+void expectTrue(bool condition, const char* message) {
+    if (!condition) {
+        std::fprintf(stderr, "FAIL: %s\n", message);
+        ++g_failures;
+    }
+}
+
+// No allocation. main calls this before any device skip.
+void testUploadLaneOk() {
+    expectTrue(fuse::renderer::upload_lane_ok(0), "upload_lane_ok(0) is true");
+    expectTrue(fuse::renderer::upload_lane_ok(7), "upload_lane_ok(7) is true");
+    expectTrue(!fuse::renderer::upload_lane_ok(-1), "upload_lane_ok(-1) is false");
+    expectTrue(!fuse::renderer::upload_lane_ok(8), "upload_lane_ok(8) is false");
+}
+
 #if defined(FUSE_VULKAN_BACKEND)
 
 using fuse::u32;
@@ -62,15 +80,6 @@ using fuse::renderer::UploadTicket;
 constexpr const char* kValidationLayer = "VK_LAYER_KHRONOS_validation";
 constexpr const char* kSplitLayer = "VK_LAYER_FUSE_split_transfer_family";
 constexpr u64 kTimeoutNs = 2000000000ull;
-
-int g_failures = 0;
-
-void expectTrue(bool condition, const char* message) {
-    if (!condition) {
-        std::fprintf(stderr, "FAIL: %s\n", message);
-        ++g_failures;
-    }
-}
 
 // --- validation message capture ---------------------------------------------------------------
 
@@ -791,6 +800,11 @@ int run(const char* layerDir, bool expectSplit) {
 } // namespace
 
 int main(int argc, char** argv) {
+    testUploadLaneOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b2_upload_queue_family: %d failure(s)\n", g_failures);
+        return 1;
+    }
 #if defined(FUSE_VULKAN_BACKEND)
     const char* layerDir = nullptr;
     bool expectSplit = false;

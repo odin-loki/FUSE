@@ -1,5 +1,7 @@
 // B6.4 / B6.13 gates — gizmo drag math, axis picking, snapping, screen-size scaling, undo wiring.
 #include <fuse/core/init.hpp>
+#include <fuse/editor/axis_lock.hpp>
+#include <fuse/editor/gizmo_size.hpp>
 #include <fuse/editor/editor_host.hpp>
 #include <fuse/editor/gizmo_system.hpp>
 #include <fuse/ecs/components/transform.hpp>
@@ -9,6 +11,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 namespace {
 
@@ -353,11 +356,28 @@ void testGizmoUndoThroughHost() {
                "malformed TRS text rejected");
 }
 
+void testGizmoSizeOk() {
+    expectTrue(fuse::editor::gizmo_size_ok(8), "gizmo 8 px");
+    expectTrue(fuse::editor::gizmo_size_ok(64), "gizmo 64 px");
+    expectTrue(!fuse::editor::gizmo_size_ok(7), "gizmo 7 px rejected");
+    expectTrue(!fuse::editor::gizmo_size_ok(65), "gizmo 65 px rejected");
+}
+
+void testAxisLock() {
+    const fuse::editor::AxisDelta delta = fuse::editor::lock_axis(fuse::editor::LockAxis::Y, 3.f);
+    expectTrue(delta.x == 0.f && delta.y == 3.f && delta.z == 0.f, "axis Y and delta 3 yields (0, 3, 0)");
+    const fuse::editor::AxisDelta bad = fuse::editor::lock_axis(fuse::editor::LockAxis::X,
+                                                                std::numeric_limits<float>::quiet_NaN());
+    expectTrue(bad.x == 0.f && bad.y == 0.f && bad.z == 0.f, "non-finite delta is zero");
+}
+
 } // namespace
 
 int main() {
+    testGizmoSizeOk();
     fuse::core::initialize();
 
+    testAxisLock();
     testTranslateWorldAndLocal();
     testRotateQuaternion();
     testScaleUniformAndPerAxis();

@@ -1,9 +1,38 @@
 // WP-0.8 core_logic test driver: `fuse_core_logic_tests [rg|vsm|residency|all]`.
 #include "cl_test_util.hpp"
+#include "logic_step.hpp"
 
 #include <cstring>
 
+namespace {
+
+// Steps 0..8 inclusive. No heap.
+int testLogicStepOk() {
+    if (!fuse::renderer::logic_step_ok(0)) {
+        std::fprintf(stderr, "FAIL: testLogicStepOk: logic_step_ok(0) should be true\n");
+        return 1;
+    }
+    if (!fuse::renderer::logic_step_ok(8)) {
+        std::fprintf(stderr, "FAIL: testLogicStepOk: logic_step_ok(8) should be true\n");
+        return 1;
+    }
+    if (fuse::renderer::logic_step_ok(-1)) {
+        std::fprintf(stderr, "FAIL: testLogicStepOk: logic_step_ok(-1) should be false\n");
+        return 1;
+    }
+    if (fuse::renderer::logic_step_ok(9)) {
+        std::fprintf(stderr, "FAIL: testLogicStepOk: logic_step_ok(9) should be false\n");
+        return 1;
+    }
+    return 0;
+}
+
+} // namespace
+
 int main(int argc, char** argv) {
+    if (const int logicStepRc = testLogicStepOk()) {
+        return logicStepRc;
+    }
     const char* which = argc > 1 ? argv[1] : "all";
     const bool all = std::strcmp(which, "all") == 0;
     bool ran = false;

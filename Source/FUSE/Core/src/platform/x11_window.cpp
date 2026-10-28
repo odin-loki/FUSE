@@ -5,6 +5,8 @@
 
 #if defined(FUSE_PLATFORM_WINDOW_X11)
 
+#include <fuse/platform/lifecycle.hpp>
+
 #include <X11/XKBlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
@@ -240,6 +242,21 @@ u32 keysymToVirtualKey(unsigned long keysym) {
 
 namespace {
 
+enum class X11Mapped { Unknown, Yes, No };
+
+// FocusIn/FocusOut do not carry map state. A FocusOut only backgrounds when the
+// window is actually unmapped (minimize / withdraw); alt-tab leaves it mapped.
+X11Mapped x11WindowMapped(::Window xid) {
+    if (g_display == nullptr || xid == 0) {
+        return X11Mapped::Unknown;
+    }
+    XWindowAttributes attributes{};
+    if (XGetWindowAttributes(g_display, xid, &attributes) == 0) {
+        return X11Mapped::Unknown;
+    }
+    return attributes.map_state == IsUnmapped ? X11Mapped::No : X11Mapped::Yes;
+}
+
 bool translate(const XEvent& xe, Event& out) {
     out = Event{};
     out.window = fromXid(xe.xany.window);
@@ -267,6 +284,11 @@ bool translate(const XEvent& xe, Event& out) {
             return false;
         }
         out.kind = xe.type == FocusIn ? EventKind::FocusGained : EventKind::FocusLost;
+        if (xe.type == FocusIn && x11WindowMapped(xe.xfocus.window) == X11Mapped::Yes) {
+            notifyAppVisibility(AppVisibility::Foreground);
+        } else if (xe.type == FocusOut && x11WindowMapped(xe.xfocus.window) == X11Mapped::No) {
+            notifyAppVisibility(AppVisibility::Background);
+        }
         return true;
     case KeyPress:
     case KeyRelease: {
@@ -319,6 +341,12 @@ bool translate(const XEvent& xe, Event& out) {
         out.kind = down ? EventKind::MouseButtonDown : EventKind::MouseButtonUp;
         return true;
     }
+    case MapNotify:
+        notifyAppVisibility(AppVisibility::Foreground);
+        return false;
+    case UnmapNotify:
+        notifyAppVisibility(AppVisibility::Background);
+        return false;
     default:
         return false;
     }

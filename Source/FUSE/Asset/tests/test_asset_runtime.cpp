@@ -14,10 +14,13 @@
 //             FMSH v2 mesh with every W0.2 section; loaded through AssetRegistry; decoded data equals
 //             the cook library's reader output (skips without Tools/FUSE/Cook)
 
+#include <fuse/asset/asset_ext.hpp>
 #include <fuse/asset/asset_id.hpp>
+#include <fuse/asset/asset_key.hpp>
 #include <fuse/asset/asset_registry.hpp>
 #include <fuse/asset/cooked_material.hpp>
 #include <fuse/asset/cooked_mesh.hpp>
+#include <fuse/asset/mesh_lod.hpp>
 #include <fuse/asset/cooked_texture.hpp>
 #include <fuse/asset/render_upload.hpp>
 #include <fuse/ecs/components/mesh.hpp>
@@ -934,6 +937,32 @@ int suite_cook(const char* cookTool) {
 #endif
 }
 
+int suite_lod() {
+    const MeshLod lods[] = {{0.01f}, {0.1f}, {1.f}};
+    constexpr f32 kFov = 1.5707963f;
+    expect(select_mesh_lod(lods, 10.f, 1080.f, kFov, 1.f) == 0u, "near camera keeps lod 0");
+    expect(select_mesh_lod(lods, 1000.f, 1080.f, kFov, 1.f) == 2u, "far camera uses the coarsest lod");
+    return 0;
+}
+
+int suite_key() {
+    expect(normalize_asset_key("Textures\\\\Hero") == "textures/hero", "asset key slashes and case");
+    expect(normalize_asset_key("").empty(), "empty asset key stays empty");
+    return 0;
+}
+
+int suite_ext() {
+    expect(asset_ext_ok("Hero.PNG"), "Hero.PNG is an allowed asset extension");
+    expect(asset_ext_ok("hero.obj"), ".obj is an allowed asset extension");
+    expect(asset_ext_ok("hero.wav"), ".wav is an allowed asset extension");
+    expect(asset_ext_ok("hero.fuse"), ".fuse is an allowed asset extension");
+    expect(asset_ext_ok("art\\Hero.OBJ"), "backslash path uses the filename extension");
+    expect(!asset_ext_ok("hero.txt"), "hero.txt is not an allowed asset extension");
+    expect(!asset_ext_ok("hero"), "path with no extension is rejected");
+    expect(!asset_ext_ok("art/hero"), "directory path with no extension is rejected");
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -953,6 +982,9 @@ int main(int argc, char** argv) {
     run("cancel", suite_cancel);
     run("mpsc", suite_mpsc);
     run("material", suite_material);
+    run("lod", suite_lod);
+    run("key", suite_key);
+    run("ext", suite_ext);
     if (suite == "cook" || suite == "all") {
         const int r = suite_cook(argc > 2 ? argv[2] : nullptr);
         if (r == 77 && suite == "cook") {

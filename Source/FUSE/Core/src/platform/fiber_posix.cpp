@@ -126,6 +126,14 @@ const char* fiberBackendName() {
     return "posix-ucontext";
 }
 
+bool fiberASanAnnotationsActive() {
+#if FUSE_FIBER_ASAN
+    return true;
+#else
+    return false;
+#endif
+}
+
 FiberContext* fiberAllocateContext() {
     return new FiberContext();
 }
@@ -213,6 +221,10 @@ bool cooperativeFibersAvailable() {
 
 const char* fiberBackendName() {
     return "stub";
+}
+
+bool fiberASanAnnotationsActive() {
+    return false;
 }
 
 FiberContext* fiberAllocateContext() {

@@ -19,6 +19,15 @@ foreach(_suite furnace lambert_sky direct mis rr psr alpha portal capture determ
     set_tests_properties(rl_pt_${_suite} PROPERTIES LABELS "gate;relight" TIMEOUT 900)
 endforeach()
 
+# Bounded CPU ReSTIR PT initial reservoir (test_restir_pt_cpu.cpp): rl_restir_pt_initial. Not wired into the frame
+# renderer (restir_pt.cpp is the CPU reservoir only).
+add_executable(fuse_relight_restir_pt_tests test_restir_pt_cpu.cpp)
+target_link_libraries(fuse_relight_restir_pt_tests PRIVATE fuse_relight_pathtrace fuse_relight_options)
+_rl_pt_cxx23(fuse_relight_restir_pt_tests)
+add_test(NAME rl_restir_pt_initial COMMAND fuse_relight_restir_pt_tests initial
+         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+set_tests_properties(rl_restir_pt_initial PROPERTIES LABELS "gate;relight" TIMEOUT 300)
+
 # RL-5.2 ReSTIR DI (test_restir_di_cpu.cpp): rl_restir_di_<suite> (gate;relight): presample, unbiased (mean within 3
 # sigma of the RL-5.1 reference), variance (below plain light-tree NEE and RIS-only), fast, determinism, zero_alloc,
 # options, layout (push blocks vs C++).

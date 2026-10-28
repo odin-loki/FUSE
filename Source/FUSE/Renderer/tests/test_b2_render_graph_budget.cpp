@@ -3,12 +3,15 @@
 // the median compile time. The 1 ms budget is enforced for optimised builds; Debug (-O0) reports
 // the numbers and only fails on a gross regression.
 #include <fuse/core/sanitizer.hpp>
+#include <fuse/renderer/graph/budget_fit.hpp>
+#include <fuse/renderer/graph/pass_budget.hpp>
 #include <fuse/renderer/render_command_list.hpp>
 #include <fuse/renderer/render_graph.hpp>
 
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
@@ -134,11 +137,32 @@ void testFullPassBudgetGraph() {
     }
 }
 
+void testPassBudgetOk() {
+    expectTrue(fuse::renderer::pass_budget_ok(1), "one render pass is within budget");
+    expectTrue(fuse::renderer::pass_budget_ok(64), "64 render passes is the budget cap");
+    expectTrue(!fuse::renderer::pass_budget_ok(0), "zero render passes is rejected");
+    expectTrue(!fuse::renderer::pass_budget_ok(65), "65 render passes exceeds the budget");
+}
+
+void testBudgetFits() {
+    expectTrue(fuse::renderer::graph::budget_fits(100, 50, 150), "used 100 incoming 50 budget 150 fits");
+    expectTrue(!fuse::renderer::graph::budget_fits(100, 51, 150), "used 100 incoming 51 budget 150 does not fit");
+    expectTrue(fuse::renderer::graph::budget_remain(100, 150) == 50, "remain(100, 150) == 50");
+    expectTrue(fuse::renderer::graph::budget_fits(0, 0, 0), "zero budget fits an empty reservation");
+    expectTrue(!fuse::renderer::graph::budget_fits(0, 1, 0), "zero budget rejects incoming bytes");
+    expectTrue(!fuse::renderer::graph::budget_fits(1, 0, 0), "zero budget rejects used bytes");
+    constexpr std::uint64_t kMax = ~std::uint64_t{0};
+    expectTrue(!fuse::renderer::graph::budget_fits(kMax, 1, kMax), "wrapping add does not fit");
+    expectTrue(fuse::renderer::graph::budget_remain(150, 100) == 0, "remain is 0 when used exceeds budget");
+}
+
 } // namespace
 
 int main() {
+    testPassBudgetOk();
     testHybridFrameGraphBudget();
     testFullPassBudgetGraph();
+    testBudgetFits();
 
     if (g_failures == 0) {
         std::printf("fuse_b2_render_graph_budget: all checks passed\n");

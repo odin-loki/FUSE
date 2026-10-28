@@ -9,6 +9,7 @@
 // the external image registry (generations, release on destroy, reuse), and the rtx.* options.
 #include <fuse/relight/capture/texture/canonical_mip0.hpp>
 #include <fuse/relight/capture/texture/external_image_registry.hpp>
+#include <fuse/relight/capture/texture/mip_count.hpp>
 #include <fuse/relight/capture/texture/texture_options.hpp>
 #include <fuse/relight/capture/texture/texture_tracker.hpp>
 #include <fuse/relight/options/options.hpp>
@@ -776,12 +777,20 @@ int replay(const char* path) {
     return 0;
 }
 
+void testMipCountOk() {
+    CHECK(mip_count_ok(1));
+    CHECK(mip_count_ok(16));
+    CHECK(!mip_count_ok(0));
+    CHECK(!mip_count_ok(17));
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     if (argc == 3 && std::strcmp(argv[1], "--replay") == 0) {
         return replay(argv[2]);
     }
+    testMipCountOk();
     testCanonicalRepack();
     testDefaultPoolFirstUpload();
     testManagedHashedAtFirstDraw();

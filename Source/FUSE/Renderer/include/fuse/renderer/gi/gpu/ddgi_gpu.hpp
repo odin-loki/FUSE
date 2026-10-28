@@ -49,6 +49,7 @@
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
 #include <fuse/renderer/resources.hpp>
 #include <fuse/renderer/rg/graph.hpp>
+#include <fuse/renderer/vk/upload_queue.hpp>
 #include <fuse/renderer/rt/acceleration_structures.hpp>
 #include <fuse/types.hpp>
 
@@ -152,6 +153,25 @@ struct DdgiWorkLayout {
     static DdgiWorkLayout compute(const DDGIDesc& volume, u32 probeCapacity);
 };
 
+/// FNV-1a 64. The cpu-import gate hashes the staged irradiance / distance bytes with this.
+inline u64 fnv1a64(const void* data, usize bytes) {
+    const auto* p = static_cast<const u8*>(data);
+    u64 h = 14695981039346656037ull;
+    for (usize i = 0; i < bytes; ++i) {
+        h ^= p[i];
+        h *= 1099511628211ull;
+    }
+    return h;
+}
+
+/// Optional host-side check for `DdgiGpu::importCpuVolumeAtlases`.
+/// `stagingMapped` is the ring pointer passed to `UploadQueue::init` (null skips the checksum).
+struct DdgiCpuImportCheck {
+    const void* stagingMapped = nullptr;
+    u64 irradianceChecksum = 0;
+    u64 distanceChecksum = 0;
+};
+
 struct DdgiGraphRefs {
     rg::BufferRef work; ///< the persistent atlases / rays buffer
     rg::BufferRef atmosphere; ///< optional (caller-set): WP-8.2 LUT buffer read by ddgi.trace (DdgiFrameDesc::atmosphereAddress)
@@ -191,6 +211,16 @@ public:
     bool setSdfScene(const compute::SdfObject* objects, u32 objectCount, const DdgiSurface* surfaces, u32 surfaceCount);
     /// The next frame re-initialises the atlases (ddgi.reset) before updating.
     void reset() { m_needsReset = true; }
+
+    /// Copy a CPU oracle volume into the probe-major `ddgi.work` sections (same layout as ddgi.reset).
+    /// Skips ddgi.reset on the next update. Returns false when the desc mismatches or upload fails.
+    ///
+    /// `check`, when set, checksums the irradiance and distance bytes in the host-visible staging ring
+    /// after `UploadQueue::stage` (the bytes the copy reads). A device readback is not recorded inside
+    /// that batch: its inter-copy barrier orders TRANSFER_WRITE only, and a transfer-queue readback there
+    /// has failed Lavapipe sync/destroy validation. Read the device image back on the graphics queue after
+    /// `UploadQueue::wait` (the batch already publishes TRANSFER_READ).
+    bool importCpuVolumeAtlases(const DdgiCpuVolume& volume, UploadQueue& upload, DdgiCpuImportCheck* check = nullptr);
 
     // --- frame ----------------------------------------------------------------------------------
     bool beginFrame(u64 frameSerial, const DdgiFrameDesc& frame);

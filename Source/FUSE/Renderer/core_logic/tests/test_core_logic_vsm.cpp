@@ -2,6 +2,7 @@
 // (random operation sequences) and invariant-checker negative tests.
 #include "cl_test_access.hpp"
 #include "cl_test_util.hpp"
+#include "cl_vsm_slot.hpp"
 
 #include <map>
 #include <memory>
@@ -389,9 +390,26 @@ void test_invariant_checker() {
     CL_CHECK(n == 1);
 }
 
+/// No allocation. Slots 0 and 31 are valid; -1 and 32 are not.
+int testClVsmSlotOk() {
+    const bool atZero = fuse::renderer::cl_vsm_slot_ok(0);
+    const bool atThirtyOne = fuse::renderer::cl_vsm_slot_ok(31);
+    const bool below = fuse::renderer::cl_vsm_slot_ok(-1);
+    const bool above = fuse::renderer::cl_vsm_slot_ok(32);
+    if (atZero && atThirtyOne && !below && !above) {
+        return 0;
+    }
+    std::fprintf(stderr, "FAIL: testClVsmSlotOk (0=%d, 31=%d, -1=%d, 32=%d)\n", static_cast<int>(atZero),
+                 static_cast<int>(atThirtyOne), static_cast<int>(below), static_cast<int>(above));
+    return 1;
+}
+
 } // namespace
 
 int run_vsm_tests() {
+    if (const int slotRc = testClVsmSlotOk()) {
+        return slotRc;
+    }
     test_basic();
     test_pool_exhaustion();
     test_default_config_smoke();

@@ -1,8 +1,11 @@
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/vfx/burst_count.hpp>
 #include <fuse/vfx/effect_instance.hpp>
+#include <fuse/vfx/life_fraction.hpp>
 #include <fuse/vfx/particle_emitter.hpp>
 #include <fuse/vfx/particle_gpu.hpp>
+#include <fuse/vfx/particle_life.hpp>
 #include <fuse/vfx/particle_soa_ops.hpp>
 #include <fuse/vfx/particle_system.hpp>
 #include <fuse/jobs/cuda_jobs.hpp>
@@ -12,6 +15,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 
 namespace {
 
@@ -2164,11 +2168,51 @@ void testParticleSystemEmitterHandles() {
     expectTrue(system.get_emitter(handle) == nullptr, "destroyed handle no longer resolves");
 }
 
+void testParticleLifeOk() {
+    expectTrue(fuse::vfx::particle_life_ok(0.f), "particle_life_ok(0) is true");
+    expectTrue(fuse::vfx::particle_life_ok(1.f), "particle_life_ok(1) is true");
+    expectTrue(fuse::vfx::particle_life_ok(30.f), "particle_life_ok(30) is true");
+    expectTrue(!fuse::vfx::particle_life_ok(-0.1f), "particle_life_ok(-0.1) is false");
+    expectTrue(!fuse::vfx::particle_life_ok(31.f), "particle_life_ok(31) is false");
+}
+
+void testLifeFraction() {
+    expectNear(fuse::vfx::life_fraction(0.25f, 1.f), 0.25f, 0.f, "age 0.25 lifetime 1 returns 0.25");
+    expectNear(fuse::vfx::life_fraction(2.f, 1.f), 1.f, 0.f, "age 2 lifetime 1 saturates to 1");
+    expectNear(fuse::vfx::life_fraction(0.f, 1.f), 0.f, 0.f, "age 0 returns 0");
+    expectNear(fuse::vfx::life_fraction(1.f, 2.f), 0.5f, 0.f, "age 1 lifetime 2 returns 0.5");
+    expectNear(fuse::vfx::life_fraction(-0.25f, 1.f), 0.f, 0.f, "negative age returns 0");
+    expectNear(fuse::vfx::life_fraction(0.5f, 0.f), 0.f, 0.f, "zero lifetime returns 0");
+    expectNear(fuse::vfx::life_fraction(0.5f, -1.f), 0.f, 0.f, "negative lifetime returns 0");
+
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    expectNear(fuse::vfx::life_fraction(nan, 1.f), 0.f, 0.f, "non-finite age returns 0");
+    expectNear(fuse::vfx::life_fraction(0.5f, nan), 0.f, 0.f, "non-finite lifetime returns 0");
+    expectNear(fuse::vfx::life_fraction(inf, 1.f), 0.f, 0.f, "infinite age returns 0");
+    expectNear(fuse::vfx::life_fraction(0.5f, -inf), 0.f, 0.f, "infinite lifetime returns 0");
+}
+
+void testBurstCountOk() {
+    expectTrue(fuse::vfx::burst_count_ok(1), "burst_count_ok(1) is true");
+    expectTrue(fuse::vfx::burst_count_ok(64), "burst_count_ok(64) is true");
+    expectTrue(!fuse::vfx::burst_count_ok(0), "burst_count_ok(0) is false");
+    expectTrue(!fuse::vfx::burst_count_ok(65), "burst_count_ok(65) is false");
+}
+
 } // namespace
 
 int main() {
+    testBurstCountOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d test(s) failed.\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
+    testParticleLifeOk();
+    testLifeFraction();
     testParticleEmitterBurstAndSimulate();
     testParticleEmitterBurstZero();
     testParticleEmitterUninitializedBurst();

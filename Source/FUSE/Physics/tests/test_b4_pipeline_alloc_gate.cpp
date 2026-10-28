@@ -15,8 +15,10 @@
 // Set FUSE_ALLOC_GATE_BACKTRACE=1 to print a backtrace (stderr) for every counted allocation.
 
 #include <fuse/core/init.hpp>
+#include <fuse/math/recoil_recovery.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/physics/physics_pipeline.hpp>
+#include <fuse/physics/pipeline_stage.hpp>
 #include <fuse/physics/solver/pbd_solver.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
 #include <fuse/world2d/world_2d.hpp>
@@ -28,6 +30,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
@@ -328,9 +331,25 @@ void testWorld2D() {
     report("World2D tick (physics) x1000", m, "steady-state physics-enabled World2D::tick performs zero heap allocations");
 }
 
+void testPipelineStageOk() {
+    expectTrue(fuse::physics::pipeline_stage_ok(0), "stage 0 is a valid pipeline stage");
+    expectTrue(fuse::physics::pipeline_stage_ok(7), "stage 7 is a valid pipeline stage");
+    expectTrue(!fuse::physics::pipeline_stage_ok(-1), "stage -1 is not a valid pipeline stage");
+    expectTrue(!fuse::physics::pipeline_stage_ok(8), "stage 8 is not a valid pipeline stage");
+}
+
+void testRecoilRecovery() {
+    const fuse::math::Vec2 stepped = fuse::math::recover_recoil({1.f, -2.f}, 4.f, 0.1f);
+    expectTrue(std::fabs(stepped.x - 0.6f) < 1e-5f && std::fabs(stepped.y + 1.6f) < 1e-5f,
+               "recoil recovers toward zero without flipping sign");
+    const fuse::math::Vec2 stopped = fuse::math::recover_recoil({0.2f, -0.2f}, 4.f, 1.f);
+    expectTrue(stopped.x == 0.f && stopped.y == 0.f, "recoil recovery stops at zero");
+}
+
 } // namespace
 
 int main() {
+    testPipelineStageOk();
 #if defined(FUSE_ALLOC_GATE_HAS_BACKTRACE)
     if (const char* env = std::getenv("FUSE_ALLOC_GATE_BACKTRACE"); env != nullptr && env[0] == '1') {
         void* warm[4];
@@ -339,6 +358,7 @@ int main() {
     }
 #endif
     fuse::core::initialize();
+    testRecoilRecovery();
     std::printf("physics alloc gate: %u job worker(s)\n", fuse::jobs::JobScheduler::instance().workerCount());
     testPipeline3D();
     testPipeline2D();

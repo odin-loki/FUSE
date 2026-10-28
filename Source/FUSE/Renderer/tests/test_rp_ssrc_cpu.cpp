@@ -23,6 +23,7 @@
 #include <fuse/renderer/ssfx_gpu/ssfx_gpu_reference.hpp>
 #include <fuse/renderer/ssrc/ssrc_gpu.hpp>
 #include <fuse/renderer/ssrc/ssrc_reference.hpp>
+#include <fuse/renderer/ssrc_tap.hpp>
 #include <fuse/ssfx/ssgi.hpp>
 #include <fuse/ssfx/ssgi_kernel.hpp>
 #include <fuse/ssfx/ssr_kernel.hpp>
@@ -64,6 +65,14 @@ void expect(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+// No allocation. main calls this first and returns on failure.
+void testSsrcTapOk() {
+    expect(fuse::renderer::ssrc_tap_ok(1), "ssrc_tap_ok(1)");
+    expect(fuse::renderer::ssrc_tap_ok(16), "ssrc_tap_ok(16)");
+    expect(!fuse::renderer::ssrc_tap_ok(0), "ssrc_tap_ok(0)");
+    expect(!fuse::renderer::ssrc_tap_ok(17), "ssrc_tap_ok(17)");
 }
 
 f64 seconds(std::chrono::steady_clock::time_point since) {
@@ -925,6 +934,11 @@ void testApi() {
 } // namespace
 
 int main(int argc, char** argv) {
+    testSsrcTapOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     if (all || suite == "layout") {

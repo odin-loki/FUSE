@@ -19,8 +19,10 @@
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/math/vec.hpp>
+#include <fuse/renderer/brdf_lobe.hpp>
 #include <fuse/renderer/lighting/ltc/ltc_kernel.hpp>
 #include <fuse/renderer/lighting/ltc/ltc_lut.hpp>
+#include <fuse/renderer/lighting/schlick.hpp>
 #include <fuse/renderer/material/brdf.hpp>
 
 #include <algorithm>
@@ -28,6 +30,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <random>
 #include <span>
 #include <string>
@@ -51,6 +54,14 @@ void expect(bool condition, const char* message) {
         ++g_failures;
         std::fprintf(stderr, "FAIL: %s\n", message);
     }
+}
+
+// CPU gate. Does not allocate. A failure returns before any later suite work.
+void testBrdfLobeOk() {
+    expect(brdf_lobe_ok(0), "brdf_lobe_ok(0) is true");
+    expect(brdf_lobe_ok(3), "brdf_lobe_ok(3) is true");
+    expect(!brdf_lobe_ok(-1), "brdf_lobe_ok(-1) is false");
+    expect(!brdf_lobe_ok(4), "brdf_lobe_ok(4) is false");
 }
 
 constexpr f64 kPi = 3.141592653589793;
@@ -439,12 +450,69 @@ void testReference() {
     expect(worstWrapper < 1e-5, "Brdf::evaluateMultiScatter == multi_scatter_cos / N.L");
 }
 
+// --- schlick -----------------------------------------------------------------------------------------
+void testSchlickFresnel() {
+    const Vec3 f0{0.04f, 0.5f, 0.9f};
+    const Vec3 atNormal = schlick_fresnel(f0, 1.f);
+    expect(atNormal.x == f0.x && atNormal.y == f0.y && atNormal.z == f0.z, "schlick nDotV 1 returns f0");
+    const Vec3 atGrazing = schlick_fresnel(f0, 0.f);
+    expect(atGrazing.x == 1.f && atGrazing.y == 1.f && atGrazing.z == 1.f,
+           "schlick nDotV 0 returns 1 for each finite f0 channel");
+
+    const Vec3 wide{1.0e20f, -4.f, 0.f};
+    const Vec3 wideGrazing = schlick_fresnel(wide, 0.f);
+    expect(wideGrazing.x == 1.f && wideGrazing.y == 1.f && wideGrazing.z == 1.f,
+           "schlick nDotV 0 returns 1 for every finite f0 channel");
+    const Vec3 wideNormal = schlick_fresnel(wide, 1.f);
+    expect(wideNormal.x == wide.x && wideNormal.y == wide.y && wideNormal.z == wide.z,
+           "schlick nDotV 1 returns a wide finite f0");
+
+    const Vec3 above = schlick_fresnel(f0, 2.f);
+    expect(above.x == f0.x && above.y == f0.y && above.z == f0.z, "schlick saturates nDotV above 1");
+    const Vec3 below = schlick_fresnel(f0, -0.25f);
+    expect(below.x == 1.f && below.y == 1.f && below.z == 1.f, "schlick saturates nDotV below 0");
+
+    const Vec3 half = schlick_fresnel(Vec3{0.5f, 0.5f, 0.5f}, 0.5f);
+    expect(half.x == 0.515625f && half.y == 0.515625f && half.z == 0.515625f, "schlick nDotV 0.5 weight is 0.5^5");
+
+    const f32 nan = std::nanf("");
+    const Vec3 nanAngle = schlick_fresnel(f0, nan);
+    expect(nanAngle.x == f0.x && nanAngle.y == f0.y && nanAngle.z == f0.z, "schlick non-finite nDotV returns finite f0");
+    const Vec3 negInf = schlick_fresnel(f0, -std::numeric_limits<f32>::infinity());
+    expect(negInf.x == f0.x && negInf.y == f0.y && negInf.z == f0.z, "schlick -inf nDotV returns finite f0");
+    const Vec3 nanF0 = schlick_fresnel(Vec3{nan, 0.5f, 0.9f}, 0.f);
+    expect(nanF0.x == 0.f && nanF0.y == 0.f && nanF0.z == 0.f, "schlick non-finite f0 returns zero");
+    const Vec3 infF0 = schlick_fresnel(Vec3{std::numeric_limits<f32>::infinity(), 0.f, 0.f}, 1.f);
+    expect(infF0.x == 0.f && infF0.y == 0.f && infF0.z == 0.f, "schlick infinite f0 returns zero");
+    const Vec3 both = schlick_fresnel(Vec3{nan, nan, nan}, nan);
+    expect(both.x == 0.f && both.y == 0.f && both.z == 0.f, "schlick non-finite f0 and nDotV returns zero");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testBrdfLobeOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL %s: %d failure(s)\n", argc > 1 ? argv[1] : "all", g_failures);
+        return EXIT_FAILURE;
+    }
     fuse::core::initialize();
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
+    // CPU Schlick check before any GPU bake fallback (a missing device must not skip a failed CPU gate).
+    if (all || suite == "schlick" || suite == "dfg") {
+        testSchlickFresnel();
+        if (g_failures != 0) {
+            fuse::core::shutdown();
+            std::fprintf(stderr, "FAIL %s: %d failure(s)\n", suite.c_str(), g_failures);
+            return EXIT_FAILURE;
+        }
+    }
+    if (suite == "schlick") {
+        fuse::core::shutdown();
+        std::printf("PASS %s\n", suite.c_str());
+        return EXIT_SUCCESS;
+    }
     if (all || suite == "dfg") {
         testDfg();
     }

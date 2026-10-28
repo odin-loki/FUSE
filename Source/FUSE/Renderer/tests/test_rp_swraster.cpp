@@ -41,6 +41,7 @@
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
+#include <fuse/renderer/sw_bin.hpp>
 #include <fuse/renderer/swraster/swraster.hpp>
 #include <fuse/renderer/swraster/swraster_reference.hpp>
 #include <fuse/renderer/visbuffer/vis_reference.hpp>
@@ -110,11 +111,24 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero. Does not allocate.
+int testSwBinOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::sw_bin_ok(1), "sw_bin_ok(1) is true");
+    expect(fuse::renderer::sw_bin_ok(64), "sw_bin_ok(64) is true");
+    expect(!fuse::renderer::sw_bin_ok(0), "sw_bin_ok(0) is false");
+    expect(!fuse::renderer::sw_bin_ok(65), "sw_bin_ok(65) is false");
+    return g_failures == before ? 0 : 1;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int swBinRc = testSwBinOk()) {
+        return swBinRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1329,6 +1343,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int swBinRc = testSwBinOk()) {
+        return swBinRc;
+    }
     std::string mode = "atomic_buffer";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {

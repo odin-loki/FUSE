@@ -22,9 +22,11 @@
 #include <fuse/alloc/pool_allocator.hpp>
 #include <fuse/assert.hpp>
 #include <fuse/core/init.hpp>
+#include <fuse/gameplay/hitstop.hpp>
 #include <fuse/jobs/job_counter.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/log/logger.hpp>
+#include <fuse/platform/clock_ms.hpp>
 #include <fuse/platform/crash_report.hpp>
 
 #include <atomic>
@@ -848,9 +850,41 @@ void testPublicApiOwnershipScan() {
 #endif
 }
 
+void testHitstop() {
+    fuse::gameplay::Hitstop hitstop{};
+    fuse::gameplay::trigger(hitstop, 0.f);
+    fuse::gameplay::trigger(hitstop, -1.f);
+    expectTrue(hitstop.remaining == 0.f, "hitstop: non-positive trigger does nothing");
+
+    fuse::gameplay::trigger(hitstop, 0.1f);
+    expectTrue(fuse::gameplay::scale_dt(hitstop, 0.05f) == 0.f, "hitstop: scale_dt returns 0 while remaining");
+    expectTrue(hitstop.remaining == 0.05f, "hitstop: 0.05s remains after scale_dt(0.05)");
+
+    expectTrue(fuse::gameplay::scale_dt(hitstop, 0.f) == 0.f && hitstop.remaining == 0.05f,
+               "hitstop: dt <= 0 returns 0 and does not change remaining");
+    expectTrue(fuse::gameplay::scale_dt(hitstop, -0.05f) == 0.f && hitstop.remaining == 0.05f,
+               "hitstop: negative dt returns 0 and does not change remaining");
+
+    fuse::gameplay::trigger(hitstop, 0.04f);
+    expectTrue(hitstop.remaining == 0.05f, "hitstop: shorter trigger keeps the longer remaining");
+
+    expectTrue(fuse::gameplay::scale_dt(hitstop, 0.05f) == 0.f && hitstop.remaining == 0.f,
+               "hitstop: remainder is consumed");
+    constexpr fuse::f32 dt = 0.25f;
+    expectTrue(fuse::gameplay::scale_dt(hitstop, dt) == dt && hitstop.remaining == 0.f,
+               "hitstop: scale_dt returns the full dt once remaining is 0");
+}
+
+void testClockMsOk() {
+    expectTrue(fuse::platform::clock_ms_ok(0), "clock_ms_ok(0) is true");
+    expectTrue(fuse::platform::clock_ms_ok(86400000ull), "clock_ms_ok(86400000) is true");
+    expectTrue(!fuse::platform::clock_ms_ok(86400001ull), "clock_ms_ok(86400001) is false");
+}
+
 } // namespace
 
 int main() {
+    testClockMsOk();
     std::error_code ec;
 #if defined(FUSE_B7_LINUX)
     const std::filesystem::path base = std::filesystem::temp_directory_path(ec);
@@ -889,6 +923,7 @@ int main() {
     testCleanShutdownReportsZero();
     testInitShutdownSoak();
     testPublicApiOwnershipScan();
+    testHitstop();
 
     if (!g_tempDir.empty() && std::getenv("FUSE_B7_KEEP_REPORTS") == nullptr) {
         std::filesystem::remove_all(g_tempDir, ec);

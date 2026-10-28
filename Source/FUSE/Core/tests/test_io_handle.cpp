@@ -1,11 +1,14 @@
 #include <fuse/core/temp_path.hpp>
 #include <fuse/handle_table.hpp>
+#include <fuse/math/falloff.hpp>
 #include <fuse/io/asset.hpp>
 #include <fuse/io/vfs.hpp>
 #include <fuse/jobs/job_counter.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/platform/io_index.hpp>
 
 #include <atomic>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -360,9 +363,32 @@ void testVfsStagedDrainPreservesCompletionOrder() {
     });
 }
 
+void testIoIndexOk() {
+    expectTrue(fuse::platform::io_index_ok(0, 1), "index 0 is valid in a one-slot table");
+    expectTrue(fuse::platform::io_index_ok(4095, 4096), "last index of max capacity is valid");
+    expectTrue(!fuse::platform::io_index_ok(-1, 8), "negative index is invalid");
+    expectTrue(!fuse::platform::io_index_ok(8, 8), "index equal to capacity is invalid");
+    expectTrue(!fuse::platform::io_index_ok(0, 0), "zero capacity is invalid");
+    expectTrue(!fuse::platform::io_index_ok(0, 4097), "capacity above 4096 is invalid");
+}
+
+void testDistanceFalloff() {
+    expectTrue(std::fabs(fuse::math::falloff_linear(0.f, 10.f) - 1.f) < 1e-5f, "linear falloff is 1 at the origin");
+    expectTrue(fuse::math::falloff_linear(10.f, 10.f) == 0.f, "linear falloff is 0 at the range");
+    expectTrue(std::fabs(fuse::math::falloff_smooth(0.f, 4.f) - 1.f) < 1e-5f, "smooth falloff is 1 at the origin");
+    expectTrue(std::fabs(fuse::math::falloff_smooth(2.f, 4.f) - 0.5f) < 1e-5f, "smooth falloff is 0.5 at mid range");
+    expectTrue(std::fabs(fuse::math::falloff_inverse_square(0.f, 2.f) - 1.f) < 1e-5f,
+               "inverse-square falloff is 1 at the origin");
+    expectTrue(std::fabs(fuse::math::falloff_inverse_square(2.f, 2.f) - 0.5f) < 1e-5f,
+               "inverse-square falloff is 0.5 at the range");
+    expectTrue(fuse::math::falloff_linear(1.f, 0.f) == 0.f, "non-positive range is 0");
+}
+
 } // namespace
 
 int main() {
+    testIoIndexOk();
+    testDistanceFalloff();
     testHandleTableDirectInsert();
     testHandleTableWorkerPublish();
     testHandleTablePendingNotLive();

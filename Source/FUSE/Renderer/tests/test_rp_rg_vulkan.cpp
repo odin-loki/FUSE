@@ -29,6 +29,7 @@
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
 #include <fuse/renderer/rg/sync_model.hpp>
+#include <fuse/renderer/rg_queue.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/instance.hpp>
@@ -58,11 +59,24 @@ int g_failures = 0;
     }
 }
 
+// CPU gate. Must run before any GPU skip; a failure returns non-zero. Does not allocate.
+int testRgQueueOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::rg_queue_ok(0), "rg_queue_ok(0) is true");
+    expect(fuse::renderer::rg_queue_ok(7), "rg_queue_ok(7) is true");
+    expect(!fuse::renderer::rg_queue_ok(-1), "rg_queue_ok(-1) is false");
+    expect(!fuse::renderer::rg_queue_ok(8), "rg_queue_ok(8) is false");
+    return g_failures == before ? 0 : 1;
+}
+
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int queueRc = testRgQueueOk()) {
+        return queueRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1400,6 +1414,9 @@ int runRtStage(Context& ctx) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int queueRc = testRgQueueOk()) {
+        return queueRc;
+    }
     std::string mode = "hazards";
     const char* layerDir = nullptr;
     for (int i = 1; i < argc; ++i) {

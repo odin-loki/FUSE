@@ -1,4 +1,6 @@
 #include <fuse/core/init.hpp>
+#include <fuse/editor/hierarchy_row.hpp>
+#include <fuse/editor/sibling_index.hpp>
 #include <fuse/editor/undo_stack.hpp>
 #include <fuse/editor/scene_hierarchy_panel.hpp>
 #include <fuse/object.hpp>
@@ -26,6 +28,16 @@ public:
         setHandle(fuse::Handle<fuse::Object>(index, 1u));
     }
 };
+
+void testHierarchyRowOk() {
+    expectTrue(fuse::editor::hierarchy_row_ok(0, 1), "hierarchy_row_ok(0, 1)");
+    expectTrue(fuse::editor::hierarchy_row_ok(2, 3), "hierarchy_row_ok(2, 3)");
+    expectTrue(!fuse::editor::hierarchy_row_ok(0, 0), "hierarchy_row_ok(0, 0)");
+    expectTrue(!fuse::editor::hierarchy_row_ok(-1, 4), "hierarchy_row_ok(-1, 4)");
+    expectTrue(!fuse::editor::hierarchy_row_ok(4, 4), "hierarchy_row_ok(4, 4)");
+    expectTrue(fuse::editor::hierarchy_row_ok(99999, 100000), "hierarchy_row_ok(99999, 100000)");
+    expectTrue(!fuse::editor::hierarchy_row_ok(0, 100001), "hierarchy_row_ok(0, 100001)");
+}
 
 void testHierarchyModelFlatten() {
     TestObject root("root", 1u);
@@ -100,14 +112,22 @@ void testHierarchyReparentThroughPanel() {
     expectTrue(child.parent() == &root, "panel reparent undone");
 }
 
+void testHierarchySiblingIndex() {
+    expectTrue(fuse::editor::sibling_index(1, 3) == 1, "index 1 of 3 is 1");
+    expectTrue(fuse::editor::sibling_index(3, 3) == -1, "index 3 of 3 is -1");
+    expectTrue(fuse::editor::sibling_wrap(0, -1, 3) == 2, "wrap(0, -1, 3) == 2");
+}
+
 } // namespace
 
 int main() {
+    testHierarchyRowOk();
     fuse::core::initialize();
     testHierarchyModelFlatten();
     testHierarchyModelFromScene();
     testHierarchySearchFilter();
     testHierarchyReparentThroughPanel();
+    testHierarchySiblingIndex();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

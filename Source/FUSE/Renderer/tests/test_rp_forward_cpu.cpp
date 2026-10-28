@@ -7,6 +7,7 @@
 #include <fuse/renderer/forward/forward_reference.hpp>
 #include <fuse/renderer/forward/forward_transparency.hpp>
 #include <fuse/renderer/forward/forward_types.hpp>
+#include <fuse/renderer/forward/msaa_count.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene_types.hpp>
 
 #include <algorithm>
@@ -73,6 +74,28 @@ void expect(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+// CPU gate. Runs before any GPU or device skip. The predicate and these checks allocate nothing.
+void testForwardMsaaOk() {
+    t_allocations = 0;
+    t_count = true;
+    const bool one = fuse::renderer::forward_msaa_ok(1);
+    const bool two = fuse::renderer::forward_msaa_ok(2);
+    const bool four = fuse::renderer::forward_msaa_ok(4);
+    const bool eight = fuse::renderer::forward_msaa_ok(8);
+    const bool zero = fuse::renderer::forward_msaa_ok(0);
+    const bool three = fuse::renderer::forward_msaa_ok(3);
+    const bool sixteen = fuse::renderer::forward_msaa_ok(16);
+    t_count = false;
+    expect(t_allocations == 0u, "forward_msaa_ok allocates nothing");
+    expect(one, "forward_msaa_ok(1) is true");
+    expect(two, "forward_msaa_ok(2) is true");
+    expect(four, "forward_msaa_ok(4) is true");
+    expect(eight, "forward_msaa_ok(8) is true");
+    expect(!zero, "forward_msaa_ok(0) is false");
+    expect(!three, "forward_msaa_ok(3) is false");
+    expect(!sixteen, "forward_msaa_ok(16) is false");
 }
 
 // --- camera (column-major, Vulkan clip space, forward depth) ---------------------------------------
@@ -528,6 +551,11 @@ void suiteApi() {
 } // namespace
 
 int main(int argc, char** argv) {
+    testForwardMsaaOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     if (all || suite == "layout") {

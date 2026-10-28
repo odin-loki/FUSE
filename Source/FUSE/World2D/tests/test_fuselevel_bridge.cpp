@@ -1,6 +1,8 @@
 #include <fuse/core/temp_path.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/project/world_converter.hpp>
+#include <fuse/world2d/bridge_token.hpp>
+#include <fuse/world2d/level_name.hpp>
 #include <fuse/world2d/world_2d.hpp>
 
 #include <cstdio>
@@ -75,9 +77,35 @@ new SceneToy() {
     expectTrue(world.activeWorld() == handle, "active world handle stored");
 }
 
+void testBridgeTokenOk() {
+    expectTrue(fuse::world2d::bridge_token_ok("Overworld"), "Overworld is a valid bridge token");
+    expectTrue(!fuse::world2d::bridge_token_ok(""), "empty bridge token is invalid");
+    expectTrue(!fuse::world2d::bridge_token_ok("1Overworld"), "leading digit is an invalid bridge token");
+    expectTrue(!fuse::world2d::bridge_token_ok("Over world"), "space is an invalid bridge token");
+}
+
+void testLevelNameOk() {
+    expectTrue(fuse::world2d::level_name_ok("town_01"), "town_01 is a valid level name");
+    expectTrue(!fuse::world2d::level_name_ok("1town"), "leading digit is an invalid level name");
+    expectTrue(!fuse::world2d::level_name_ok(""), "empty level name is invalid");
+    expectTrue(fuse::world2d::level_name_ok("A"), "single letter is a valid level name");
+    expectTrue(fuse::world2d::level_name_ok("a1234567890123456789012345678901"),
+               "32-character level name is valid");
+    expectTrue(!fuse::world2d::level_name_ok("a12345678901234567890123456789012"),
+               "33-character level name is invalid");
+    expectTrue(!fuse::world2d::level_name_ok("_town"), "leading underscore is invalid");
+    expectTrue(!fuse::world2d::level_name_ok("town-01"), "hyphen is invalid");
+}
+
 } // namespace
 
 int main() {
+    testBridgeTokenOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_world2d_fuselevel_bridge_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testLevelNameOk();
     fuse::core::initialize();
     testWorld2DLoadWorldProjectManifestBridge();
     testWorld2DLoadWorldBridge();

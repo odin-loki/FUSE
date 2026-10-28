@@ -10,8 +10,11 @@
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/registry.hpp>
+#include <fuse/net/bandwidth.hpp>
 #include <fuse/net/checksum.hpp>
 #include <fuse/net/interest_management.hpp>
+#include <fuse/net/jitter_delay.hpp>
+#include <fuse/net/packet_bytes.hpp>
 #include <fuse/net/rollback.hpp>
 #include <fuse/net/serializer.hpp>
 #include <fuse/net/snapshot_delta.hpp>
@@ -1426,9 +1429,55 @@ void run_relevance_gate() {
 
 } // namespace
 
+void testJitterDelay() {
+    expectTrue(fuse::net::jitter_delay(10, 5) == 15, "jitter_delay(10, 5) is 15");
+    expectTrue(fuse::net::jitter_delay(1000, 0) == 1000, "jitter_delay(1000, 0) is 1000");
+    expectTrue(fuse::net::jitter_delay(1001, 0) == -1, "jitter_delay(1001, 0) is -1");
+    expectTrue(fuse::net::jitter_delay(10, 201) == -1, "jitter_delay(10, 201) is -1");
+}
+
+void testPacketBytesOk() {
+    expectTrue(packet_bytes_ok(1), "packet_bytes_ok(1) is true");
+    expectTrue(packet_bytes_ok(1500), "packet_bytes_ok(1500) is true");
+    expectTrue(!packet_bytes_ok(0), "packet_bytes_ok(0) is false");
+    expectTrue(!packet_bytes_ok(1501), "packet_bytes_ok(1501) is false");
+}
+
+void testBandwidthKbps() {
+    expectTrue(bandwidth_kbps(2000u, 1.f) == 2.f, "bandwidth_kbps(2000, 1) == 2");
+    expectTrue(bandwidth_kbps(0u, 1.f) == 0.f, "bandwidth_kbps(0, 1) == 0");
+    expectTrue(bandwidth_kbps(1000u, 2.f) == 0.5f, "bandwidth_kbps(1000, 2) == 0.5");
+    expectTrue(bandwidth_kbps(2000u, 0.f) == 0.f, "zero seconds returns 0");
+    expectTrue(bandwidth_kbps(2000u, -0.f) == 0.f, "negative zero seconds returns 0");
+    expectTrue(bandwidth_kbps(2000u, -1.f) == 0.f, "negative seconds returns 0");
+    const float nonFinite = std::numeric_limits<float>::quiet_NaN();
+    const float infinite = std::numeric_limits<float>::infinity();
+    expectTrue(bandwidth_kbps(2000u, nonFinite) == 0.f, "NaN seconds returns 0");
+    expectTrue(bandwidth_kbps(2000u, infinite) == 0.f, "infinite seconds returns 0");
+    expectTrue(bandwidth_kbps(2000u, -infinite) == 0.f, "negative infinite seconds returns 0");
+}
+
 } // namespace fuse::net::tests
 
 int main() {
+    fuse::net::tests::testJitterDelay();
+    if (fuse::net::tests::g_failures != 0) {
+        std::fprintf(stderr, "fuse_b7_net_gates: %d failure(s)\n", fuse::net::tests::g_failures);
+        return EXIT_FAILURE;
+    }
+
+    fuse::net::tests::testPacketBytesOk();
+    if (fuse::net::tests::g_failures != 0) {
+        std::fprintf(stderr, "fuse_b7_net_gates: %d failure(s)\n", fuse::net::tests::g_failures);
+        return EXIT_FAILURE;
+    }
+
+    fuse::net::tests::testBandwidthKbps();
+    if (fuse::net::tests::g_failures != 0) {
+        std::fprintf(stderr, "fuse_b7_net_gates: %d failure(s)\n", fuse::net::tests::g_failures);
+        return EXIT_FAILURE;
+    }
+
     // Transport gates fork a client process — run them before core starts any worker threads.
     fuse::net::tests::run_transport_gates();
 

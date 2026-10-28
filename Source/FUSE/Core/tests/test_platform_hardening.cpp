@@ -1,11 +1,15 @@
 #include <fuse/core/init.hpp>
+#include <fuse/gameplay/shield.hpp>
 #include <fuse/platform/crash_report.hpp>
+#include <fuse/platform/harden_level.hpp>
 #include <fuse/platform/lifecycle.hpp>
+#include <fuse/platform/path_sep.hpp>
 #include <fuse/platform/power.hpp>
 #include <fuse/platform/profile.hpp>
 #include <fuse/platform/surface_loss.hpp>
 #include <fuse/platform/thread.hpp>
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -147,15 +151,108 @@ void testCoreInitInstallsCrashHandlers() {
     fuse::core::shutdown();
 }
 
+void testPerformanceCoreCountInRange() {
+    const fuse::u32 cores = fuse::platform::getCoreCount();
+    const fuse::u32 perf = fuse::platform::getPerformanceCoreCount();
+    expectTrue(cores >= 1u, "getCoreCount is at least 1");
+    if (perf < 1u || perf > cores) {
+        std::fprintf(stderr, "FAIL: getPerformanceCoreCount %u is outside 1..%u\n", perf, cores);
+        ++g_failures;
+    }
+}
+
+void testSetThreadPriorityDoesNotCrash() {
+    const fuse::platform::ThreadId self = fuse::platform::currentThreadId();
+    fuse::platform::setThreadPriority(0, -2);
+    fuse::platform::setThreadPriority(self, -1);
+    fuse::platform::setThreadPriority(self, 0);
+    fuse::platform::setThreadPriority(self, 1);
+    fuse::platform::setThreadPriority(self, 2);
+    fuse::platform::setThreadPriority(0, 99);
+    fuse::platform::setThreadPriority(self, -99);
+    fuse::platform::ThreadId other = self + 1u;
+    if (other == 0u) {
+        other = 1u;
+    }
+    fuse::platform::setThreadPriority(other, 2);
+    fuse::platform::setThreadPriority(self, 0);
+}
+
+void testShieldPoolBreaksAndRecharges() {
+    fuse::gameplay::ShieldPool pool;
+    pool.current = 5.f;
+    pool.max = 5.f;
+    pool.rechargePerSec = 10.f;
+    pool.rechargeDelay = 1.f;
+    pool.delayLeft = 0.f;
+    pool.broken = false;
+
+    expectTrue(fuse::gameplay::absorb(pool, 0.f) == 0.f && pool.current == 5.f,
+               "non-positive absorb does nothing");
+    expectTrue(fuse::gameplay::absorb(pool, -2.f) == 0.f && pool.current == 5.f,
+               "negative absorb does nothing");
+    expectTrue(fuse::gameplay::absorb(pool, std::nanf("")) == 0.f && pool.current == 5.f && !pool.broken,
+               "non-finite absorb does nothing");
+
+    const fuse::f32 first = fuse::gameplay::absorb(pool, 3.f);
+    expectTrue(first == 3.f && pool.current == 2.f && !pool.broken && pool.delayLeft == 0.f,
+               "shield of 5 absorbs 3 and leaves 2");
+
+    const fuse::f32 second = fuse::gameplay::absorb(pool, 10.f);
+    expectTrue(second == 2.f && pool.current == 0.f && pool.broken && pool.delayLeft == 1.f,
+               "overkill absorbs the remaining 2 and breaks the shield");
+    expectTrue(fuse::gameplay::absorb(pool, 4.f) == 0.f && pool.delayLeft == 1.f,
+               "a broken shield absorbs nothing");
+
+    fuse::gameplay::tick(pool, 0.f);
+    fuse::gameplay::tick(pool, -0.25f);
+    expectTrue(pool.broken && pool.delayLeft == 1.f && pool.current == 0.f,
+               "non-positive tick does nothing");
+
+    fuse::gameplay::tick(pool, 0.25f);
+    expectTrue(pool.broken && pool.current == 0.f && pool.delayLeft == 0.75f,
+               "broken shield does not recharge during the delay");
+
+    fuse::gameplay::tick(pool, 1.f);
+    expectTrue(!pool.broken && pool.delayLeft == 0.f && pool.current == 2.5f,
+               "delay expiry clears broken and recharges with the leftover time");
+
+    fuse::gameplay::tick(pool, 1.f);
+    expectTrue(!pool.broken && pool.current == pool.max, "recharge stops at max");
+}
+
+void testPathHasSep() {
+    expectTrue(fuse::platform::path_has_sep("a/b"), "forward slash is a separator");
+    expectTrue(fuse::platform::path_has_sep("a\\b"), "backslash is a separator");
+    expectTrue(!fuse::platform::path_has_sep("ab"), "text without a separator");
+    expectTrue(!fuse::platform::path_has_sep(""), "empty path has no separator");
+}
+
+void testHardenLevelOk() {
+    expectTrue(fuse::platform::harden_level_ok(0), "harden level 0 is in range");
+    expectTrue(fuse::platform::harden_level_ok(3), "harden level 3 is in range");
+    expectTrue(!fuse::platform::harden_level_ok(-1), "harden level -1 is out of range");
+    expectTrue(!fuse::platform::harden_level_ok(4), "harden level 4 is out of range");
+}
+
 } // namespace
 
 int main() {
+    testHardenLevelOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_core platform hardening tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testPathHasSep();
     testLifecycleHooksUpdatePowerState();
     testSurfaceLossStub();
     testCrashReportStub();
     testDesktopProfileLimits();
     testMobileProfileLimits();
     testCoreInitInstallsCrashHandlers();
+    testPerformanceCoreCountInRange();
+    testSetThreadPriorityDoesNotCrash();
+    testShieldPoolBreaksAndRecharges();
 
     if (g_failures == 0) {
         std::printf("fuse_core platform hardening tests: all checks passed\n");

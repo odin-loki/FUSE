@@ -6,13 +6,18 @@
 //  - distance constraint holds two bodies at rest_length +- 0.01 under external force
 //  - sleep detection deactivates resting bodies (zero velocity reads)
 #include <fuse/core/init.hpp>
+#include <fuse/physics/forces/drag.hpp>
+#include <fuse/physics/impulse_scale.hpp>
 #include <fuse/physics/physics_data.hpp>
+#include <fuse/physics/solver/iteration_cap.hpp>
 #include <fuse/physics/solver/pbd_solver.hpp>
+#include <fuse/physics/solver/solver_iter.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 namespace {
 
@@ -267,9 +272,50 @@ void testSleepDeactivatesRestingBodies() {
     expectTrue(solver.activeBodyCount() == 0u, "no active bodies once everything sleeps");
 }
 
+void testQuadraticDragForce() {
+    const DragParams params{1.5f, 0.5f};
+    const vec3 velocity{3.f, 0.f, 0.f};
+    const vec3 force = drag_force(velocity, params);
+    // F = -linear * v - quadratic * |v| * v = -(1.5*3 + 0.5*3*3) on X.
+    expectTrue(force.x < 0.f && force.y == 0.f && force.z == 0.f, "+X velocity produces a -X drag force");
+    expectTrue(std::fabs(force.x - (-9.f)) < 1e-5f, "drag magnitude matches linear*speed + quadratic*speed^2");
+
+    const vec3 stopped = drag_force({0.f, 0.f, 0.f}, params);
+    expectTrue(stopped.x == 0.f && stopped.y == 0.f && stopped.z == 0.f, "zero velocity produces zero drag");
+}
+
+void testImpulseScale() {
+    expectTrue(impulse_scale(2.f, 3.f) == 6.f, "impulse_scale(2, 3) is 6");
+    expectTrue(impulse_scale(0.f, 3.f) == 0.f, "impulse_scale(0, 3) is 0");
+    expectTrue(impulse_scale(std::numeric_limits<float>::quiet_NaN(), 1.f) == 0.f, "impulse_scale(NaN, 1) is 0");
+}
+
+void testSolverIterationsOk() {
+    expectTrue(solver_iterations_ok(8), "solver_iterations_ok(8) is true");
+    expectTrue(!solver_iterations_ok(0), "solver_iterations_ok(0) is false");
+    expectTrue(solver_iterations_ok(64), "solver_iterations_ok(64) is true");
+    expectTrue(!solver_iterations_ok(65), "solver_iterations_ok(65) is false");
+}
+
+void testSolverIterOk() {
+    expectTrue(solver_iter_ok(1), "solver_iter_ok(1) is true");
+    expectTrue(solver_iter_ok(64), "solver_iter_ok(64) is true");
+    expectTrue(!solver_iter_ok(0), "solver_iter_ok(0) is false");
+    expectTrue(!solver_iter_ok(65), "solver_iter_ok(65) is false");
+}
+
 } // namespace
 
 int main() {
+    testImpulseScale();
+    if (g_failures != 0) {
+        return EXIT_FAILURE;
+    }
+    testSolverIterOk();
+    if (g_failures != 0) {
+        return EXIT_FAILURE;
+    }
+    testSolverIterationsOk();
     fuse::core::initialize();
     testFreeFallTime();
     testRestitutionElasticBounce();
@@ -277,6 +323,7 @@ int main() {
     testFrictionStopsSlidingBox();
     testDistanceConstraintUnderForce();
     testSleepDeactivatesRestingBodies();
+    testQuadraticDragForce();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

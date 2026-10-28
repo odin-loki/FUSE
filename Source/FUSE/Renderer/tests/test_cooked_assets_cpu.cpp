@@ -28,6 +28,7 @@
 #include <fuse/ecs/registry.hpp>
 #include <fuse/io/vfs.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/renderer/cook/cooked_version.hpp>
 #include <fuse/renderer/cooked_assets/bcn_decode.hpp>
 #include <fuse/renderer/cooked_assets/cooked_asset_registry.hpp>
 #include <fuse/renderer/cooked_assets/cooked_mesh.hpp>
@@ -971,9 +972,34 @@ int suite_hybrid() {
 #endif
 }
 
+// CPU gate. No heap allocation. A failure returns before any later skip.
+void testCookedVersionOk() {
+    if (!cooked_version_ok(1)) {
+        ++g_failures;
+        std::printf("FAIL: cooked_version_ok(1)\n");
+    }
+    if (!cooked_version_ok(16)) {
+        ++g_failures;
+        std::printf("FAIL: cooked_version_ok(16)\n");
+    }
+    if (cooked_version_ok(0)) {
+        ++g_failures;
+        std::printf("FAIL: cooked_version_ok(0)\n");
+    }
+    if (cooked_version_ok(17)) {
+        ++g_failures;
+        std::printf("FAIL: cooked_version_ok(17)\n");
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testCookedVersionOk();
+    if (g_failures != 0) {
+        std::printf("fuse_cooked_assets_cpu: %d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     int rc = 0;
     auto run = [&](const char* name, int (*fn)()) {

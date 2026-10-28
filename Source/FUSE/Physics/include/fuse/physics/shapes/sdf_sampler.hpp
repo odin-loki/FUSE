@@ -2,14 +2,15 @@
 
 // Generic signed-distance sampler for SdfMesh collision shapes (UNI-B4-VOX-1). Contacts and casts only
 // ever call `distance` (body frame, negative inside) and `gradient`, so any field plugs in: the analytic
-// shapes below, a Scene SVO's interpolated distance samples (SvoSdfSampler), and later the A-SDF
-// `.fusesdf` bricks. Samplers are immutable once registered in the shape pool and are read concurrently.
+// shapes below, a Scene SVO's interpolated distance samples (SvoSdfSampler), and A-SDF `.fusesdf` bricks
+// (AsdfBrickSampler). Samplers are immutable once registered in the shape pool and are read concurrently.
 
 #include <fuse/physics/math.hpp>
 #include <fuse/types.hpp>
 
 #include <functional>
 #include <memory>
+#include <vector>
 
 namespace fuse::scene {
 class SVO;
@@ -95,6 +96,41 @@ private:
     vec3 m_min;
     vec3 m_max;
     f32 m_step;
+};
+
+/// Dense A-SDF brick (one `.fusesdf` distance brick). `nx * ny * nz` signed distances, row-major with x
+/// fastest (index `(z * ny + y) * nx + x`), sit on the lattice `origin + (i, j, k) * voxelSize`. The brick
+/// AABB is that lattice. `sample` trilinearly interpolates inside it. Outside, the result is the distance
+/// to the brick AABB plus the interpolated sample at the nearest point of the box, which stays finite.
+/// An empty grid (a zero axis, a non-positive voxel size, or fewer samples than the lattice) is a large
+/// positive distance. Surface bounds are the brick pushed out by a negative boundary sample, so anything
+/// outside them is at a positive distance.
+class AsdfBrickSampler final : public SdfSampler {
+public:
+    AsdfBrickSampler(vec3 origin, f32 voxelSize, u32 nx, u32 ny, u32 nz, std::vector<f32> samples);
+
+    [[nodiscard]] f32 distance(vec3 p) const override;
+    /// Trilinear lattice sample; outside the brick, distance to the brick AABB plus the edge sample.
+    [[nodiscard]] f32 sample(vec3 p) const;
+    [[nodiscard]] vec3 boundsMin() const override { return m_min; }
+    [[nodiscard]] vec3 boundsMax() const override { return m_max; }
+    [[nodiscard]] f32 gradientStep() const override { return m_step; }
+
+private:
+    [[nodiscard]] f32 at(u32 x, u32 y, u32 z) const;
+    [[nodiscard]] f32 interpolate(double gx, double gy, double gz) const;
+
+    vec3 m_origin{};
+    vec3 m_brickMin{};
+    vec3 m_brickMax{};
+    vec3 m_min{};
+    vec3 m_max{};
+    f32 m_voxel = 0.f;
+    f32 m_step = 1e-3f;
+    u32 m_nx = 0;
+    u32 m_ny = 0;
+    u32 m_nz = 0;
+    std::vector<f32> m_samples;
 };
 
 } // namespace fuse::physics

@@ -12,6 +12,7 @@
 //
 // Exit 77 = skip (stub build, no ICD, no validation layer).
 #include <fuse/profiler/profiler.hpp>
+#include <fuse/renderer/profiler_slot.hpp>
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
@@ -42,11 +43,24 @@ int g_failures = 0;
     }
 }
 
+// CPU gate. Must run before any GPU skip; a failure returns non-zero. Does not allocate.
+int testProfilerSlotOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::profiler_slot_ok(0), "slot 0 is accepted");
+    expect(fuse::renderer::profiler_slot_ok(31), "slot 31 is accepted");
+    expect(!fuse::renderer::profiler_slot_ok(-1), "slot -1 is rejected");
+    expect(!fuse::renderer::profiler_slot_ok(32), "slot 32 is rejected");
+    return g_failures == before ? 0 : 1;
+}
+
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int slotRc = testProfilerSlotOk()) {
+        return slotRc;
+    }
     // The stub backend still links the profiler: create() needs a device, so only the API surface.
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
@@ -298,6 +312,9 @@ int runManualZones(VulkanDevice& device) {
 } // namespace
 
 int main() {
+    if (const int slotRc = testProfilerSlotOk()) {
+        return slotRc;
+    }
 #if defined(FUSE_NO_PROFILER) && FUSE_NO_PROFILER
 [[maybe_unused]] constexpr bool kMacrosRecord = false;
 #else

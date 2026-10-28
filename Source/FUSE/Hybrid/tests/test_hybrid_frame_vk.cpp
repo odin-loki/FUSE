@@ -27,7 +27,9 @@
 #include <fuse/core/track_b.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/frame/frame_ctx.hpp>
+#include <fuse/hybrid/frame_index.hpp>
 #include <fuse/hybrid/hybrid_composer.hpp>
+#include <fuse/hybrid/hybrid_frame.hpp>
 #include <fuse/hybrid/sprite_layer.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
 #include <fuse/world2d/world_2d.hpp>
@@ -123,6 +125,22 @@ void expect(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+// No heap use. A failure returns before any GPU or device skip.
+void testHybridFrameOk() {
+    expect(hybrid::hybrid_frame_ok(0u), "hybrid_frame_ok(0) is true");
+    expect(hybrid::hybrid_frame_ok(1000000u), "hybrid_frame_ok(1000000) is true");
+    expect(!hybrid::hybrid_frame_ok(1000001u), "hybrid_frame_ok(1000001) is false");
+}
+
+void testHybridFrameIndex() {
+    expect(hybrid::hybrid_frame_index(5ull, 4u) == 1u, "hybrid_frame_index(5, 4) == 1");
+    expect(hybrid::hybrid_frame_index(4ull, 4u) == 0u, "hybrid_frame_index(4, 4) == 0");
+    expect(hybrid::hybrid_frame_index(3ull, 0u) == 0u, "hybrid_frame_index(3, 0) == 0");
+    // 2^32 modulo 3 is 1; only the low 32 bits (0) participate.
+    expect(hybrid::hybrid_frame_index(1ull << 32, 3u) == 0u, "modulo uses the low 32 bits of the frame");
+    expect(hybrid::hybrid_frame_index(0xffffffffull, 0xffffffffu) == 0u, "a frame equal to the ring wraps to 0");
 }
 
 // --- CPU mode (every build) -------------------------------------------------------------------------------------------
@@ -743,6 +761,16 @@ int runSwapchain() {
 } // namespace
 
 int main(int argc, char** argv) {
+    testHybridFrameOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
+    testHybridFrameIndex();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
     std::string mode = "cpu";
     for (int i = 1; i + 1 < argc; ++i) {
         if (std::strcmp(argv[i], "--mode") == 0) {

@@ -42,6 +42,8 @@
 // Exit 77 = skip (stub build, no ICD / validation layer, capability missing, no kernel built).
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
+#include <fuse/renderer/ssfx/history_confidence.hpp>
+#include <fuse/renderer/ssfx_tap.hpp>
 #include <fuse/renderer/ssfx_gpu/ssfx_gpu.hpp>
 #include <fuse/renderer/ssfx_gpu/ssfx_gpu_reference.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
@@ -111,11 +113,49 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. Must run before any GPU skip; a failure exits 1 instead of 77.
+int testSsfxTapOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::ssfx_tap_ok(4), "testSsfxTapOk: ssfx_tap_ok(4)");
+    expect(fuse::renderer::ssfx_tap_ok(16), "testSsfxTapOk: ssfx_tap_ok(16)");
+    expect(fuse::renderer::ssfx_tap_ok(32), "testSsfxTapOk: ssfx_tap_ok(32)");
+    expect(!fuse::renderer::ssfx_tap_ok(0), "testSsfxTapOk: ssfx_tap_ok(0) is false");
+    expect(!fuse::renderer::ssfx_tap_ok(6), "testSsfxTapOk: ssfx_tap_ok(6) is false");
+    expect(!fuse::renderer::ssfx_tap_ok(64), "testSsfxTapOk: ssfx_tap_ok(64) is false");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testSsfxTapOk\n");
+        return 1;
+    }
+    return 0;
+}
+
+/// CPU gate. Must run before any GPU skip; a failure exits 1 instead of 77.
+int test_history_confidence() {
+    const int before = g_failures;
+    expect(fuse::renderer::ssfx::history_confidence(0.f, 2.f) == 1.f,
+           "test_history_confidence: history_confidence(0, 2) == 1");
+    expect(fuse::renderer::ssfx::history_confidence(2.f, 2.f) == 0.f,
+           "test_history_confidence: history_confidence(2, 2) == 0");
+    expect(fuse::renderer::ssfx::history_confidence(1.f, 2.f) == 0.5f,
+           "test_history_confidence: history_confidence(1, 2) == 0.5");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: test_history_confidence\n");
+        return 1;
+    }
+    return 0;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int tapRc = testSsfxTapOk()) {
+        return tapRc;
+    }
+    if (const int historyRc = test_history_confidence()) {
+        return historyRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1176,6 +1216,12 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int tapRc = testSsfxTapOk()) {
+        return tapRc;
+    }
+    if (const int historyRc = test_history_confidence()) {
+        return historyRc;
+    }
     std::string mode = "passes";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {

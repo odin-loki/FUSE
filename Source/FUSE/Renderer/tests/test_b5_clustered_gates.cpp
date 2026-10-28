@@ -9,8 +9,10 @@
 //  3. Cull + shade < 3 ms at 1080p is GPU-only; the CPU cull time for 1000 lights is reported.
 
 #include <fuse/core/init.hpp>
+#include <fuse/renderer/cluster_count.hpp>
 #include <fuse/renderer/lighting/clustered.hpp>
 #include <fuse/renderer/lighting/clustered_shading.hpp>
+#include <fuse/renderer/postprocess/letterbox.hpp>
 #include <fuse/renderer/resource_manager.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
@@ -19,6 +21,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <cstdlib>
 #include <cstddef>
 #include <cstring>
@@ -952,9 +955,82 @@ void testCullTiming(GpuContext& gpu) {
     culler.destroy();
 }
 
+// ---------------------------------------------------------------------------------------------
+// Letterbox / pillarbox: fit a content aspect (width/height) inside the window.
+// A wider window pads left/right. A taller window pads top/bottom.
+
+void testLetterboxRectFit() {
+    // Square window is taller than 16:9 content: full width, bars on the top and bottom.
+    const LetterboxRect wideInSquare = letterbox_rect(1080u, 1080u, 16.f / 9.f);
+    expectTrue(wideInSquare.x == 0u && wideInSquare.width == 1080u && wideInSquare.y == 236u &&
+                   wideInSquare.height == 607u,
+               "16:9 image in a square window is letterboxed");
+    expectTrue(wideInSquare.y + wideInSquare.height <= 1080u &&
+                   1080u - (wideInSquare.y + wideInSquare.height) == wideInSquare.y + 1u,
+               "letterbox leftover splits with the extra pixel on the bottom");
+
+    // 16:9 window is wider than square content: full height, bars on the left and right.
+    const LetterboxRect squareInWide = letterbox_rect(1920u, 1080u, 1.f);
+    expectTrue(squareInWide.y == 0u && squareInWide.height == 1080u && squareInWide.x == 420u &&
+                   squareInWide.width == 1080u,
+               "square image in a 16:9 window is pillarboxed");
+    expectTrue(squareInWide.x + squareInWide.width <= 1920u &&
+                   1920u - (squareInWide.x + squareInWide.width) == squareInWide.x,
+               "pillarbox side bars match when the leftover is even");
+
+    const LetterboxRect matched = letterbox_rect(1920u, 1080u, 16.f / 9.f);
+    expectTrue(matched.x == 0u && matched.y == 0u && matched.width == 1920u && matched.height == 1080u,
+               "16:9 content in a 16:9 window fills the frame");
+
+    const LetterboxRect oddRight = letterbox_rect(101u, 100u, 1.f);
+    expectTrue(oddRight.x == 0u && oddRight.y == 0u && oddRight.width == 100u && oddRight.height == 100u &&
+                   101u - (oddRight.x + oddRight.width) == 1u,
+               "odd pillarbox leftover puts the extra pixel on the right");
+    const LetterboxRect oddBottom = letterbox_rect(100u, 101u, 1.f);
+    expectTrue(oddBottom.x == 0u && oddBottom.y == 0u && oddBottom.width == 100u && oddBottom.height == 100u &&
+                   101u - (oddBottom.y + oddBottom.height) == 1u,
+               "odd letterbox leftover puts the extra pixel on the bottom");
+
+    // 0.75 * 2 == 1.5 rounds to 2, then the 3px leftover splits 1 / 2.
+    const LetterboxRect halfUp = letterbox_rect(5u, 2u, 0.75f);
+    expectTrue(halfUp.x == 1u && halfUp.y == 0u && halfUp.width == 2u && halfUp.height == 2u,
+               "half pixel rounds to nearest and the extra bar pixel goes right");
+
+    const LetterboxRect thin = letterbox_rect(8u, 8u, 1.0e-20f);
+    expectTrue(thin.width == 1u && thin.height == 8u && thin.x == 3u && thin.y == 0u && thin.x + thin.width <= 8u,
+               "thin content is one pixel wide and stays inside the window");
+    const LetterboxRect flat = letterbox_rect(8u, 8u, 1.0e20f);
+    expectTrue(flat.width == 8u && flat.height == 1u && flat.x == 0u && flat.y == 3u &&
+                   8u - (flat.y + flat.height) == flat.y + 1u,
+               "flat content is one pixel tall and the extra pixel goes bottom");
+
+    auto isZero = [](const LetterboxRect& rect) {
+        return rect.x == 0u && rect.y == 0u && rect.width == 0u && rect.height == 0u;
+    };
+    expectTrue(isZero(letterbox_rect(0u, 1080u, 16.f / 9.f)) && isZero(letterbox_rect(1920u, 0u, 1.f)) &&
+                   isZero(letterbox_rect(1920u, 1080u, 0.f)) && isZero(letterbox_rect(1920u, 1080u, -2.f)) &&
+                   isZero(letterbox_rect(1920u, 1080u, std::numeric_limits<f32>::quiet_NaN())) &&
+                   isZero(letterbox_rect(1920u, 1080u, std::numeric_limits<f32>::infinity())),
+               "empty window or non-finite/non-positive aspect returns a zero rect");
+}
+
+/// CPU gate. No allocation. Must run before any GPU skip; a failure returns non-zero.
+void testClusterCountOk() {
+    expectTrue(fuse::renderer::cluster_count_ok(1), "cluster_count_ok(1) is true");
+    expectTrue(fuse::renderer::cluster_count_ok(4096), "cluster_count_ok(4096) is true");
+    expectTrue(!fuse::renderer::cluster_count_ok(0), "cluster_count_ok(0) is false");
+    expectTrue(!fuse::renderer::cluster_count_ok(4097), "cluster_count_ok(4097) is false");
+}
+
 } // namespace
 
 int main() {
+    testClusterCountOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testClusterCountOk\n");
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testClusterAabbsMatchReversedZUnprojection();
@@ -965,6 +1041,7 @@ int main() {
     testOverflowHandling(gpu);
     testDeferredShading1000Lights(gpu);
     testCullTiming(gpu);
+    testLetterboxRectFit();
     gpu.destroy();
 
     fuse::core::shutdown();

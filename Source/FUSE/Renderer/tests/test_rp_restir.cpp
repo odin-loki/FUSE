@@ -26,6 +26,7 @@
 // Exit 77 = skip (stub build, no ICD / validation layer, device below T2, no kernel built).
 #include "test_rp_restir_scene.hpp"
 #include <fuse/core/sanitizer.hpp>
+#include <fuse/renderer/restir_m.hpp>
 
 #if FUSE_TEST_GLOBAL_NEW_HOOKS
 namespace {
@@ -73,11 +74,25 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. No allocation. Both mains call this before any GPU skip.
+/// A failure returns non-zero immediately.
+[[nodiscard]] int testRestirMOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::restir_m_ok(1), "restir_m_ok(1) is true");
+    expect(fuse::renderer::restir_m_ok(32), "restir_m_ok(32) is true");
+    expect(!fuse::renderer::restir_m_ok(0), "restir_m_ok(0) is false");
+    expect(!fuse::renderer::restir_m_ok(33), "restir_m_ok(33) is false");
+    return g_failures == before ? 0 : 1;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int restirMRc = testRestirMOk()) {
+        return restirMRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1530,6 +1545,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int restirMRc = testRestirMOk()) {
+        return restirMRc;
+    }
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     std::string mode = "passes";
     std::string backend = "set";

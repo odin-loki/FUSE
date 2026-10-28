@@ -19,6 +19,7 @@
 //   leak       the thin-wall leak criterion on the CPU oracle (the Vulkan leak gate's room, both orientations):
 //              max dark-side luminance <= 2% of the mean lit side with the features on; the pre-package rules
 //              are shown to leak (sun outside)
+#include <fuse/renderer/ddgi/ddgi_rays.hpp>
 #include <fuse/renderer/gi/ddgi.hpp>
 #include <fuse/renderer/gi/ddgi_cpu.hpp>
 #include <fuse/renderer/gi/ddgi_probe_kernel.hpp>
@@ -763,12 +764,24 @@ void testApi() {
     std::printf("api: layout sections, no-device init refused (%s)\n", gpu.reason());
 }
 
-
-
+/// CPU gate. Must run before any GPU or device skip; a failure returns non-zero.
+void testDdgiRaysOk() {
+    expect(fuse::renderer::ddgi_rays_ok(1), "ddgi_rays_ok(1) is true");
+    expect(fuse::renderer::ddgi_rays_ok(16), "ddgi_rays_ok(16) is true");
+    expect(fuse::renderer::ddgi_rays_ok(256), "ddgi_rays_ok(256) is true");
+    expect(!fuse::renderer::ddgi_rays_ok(0), "ddgi_rays_ok(0) is false");
+    expect(!fuse::renderer::ddgi_rays_ok(3), "ddgi_rays_ok(3) is false");
+    expect(!fuse::renderer::ddgi_rays_ok(512), "ddgi_rays_ok(512) is false");
+}
 
 } // namespace
 
 int main(int argc, char** argv) {
+    testDdgiRaysOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     if (suite == "layout" || suite == "all") {
         testLayout();

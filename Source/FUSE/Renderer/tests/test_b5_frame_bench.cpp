@@ -28,7 +28,9 @@
 #include <fuse/compute_kernel/stats.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/core/sanitizer.hpp>
+#include <fuse/math/filmback.hpp>
 #include <fuse/math/mat.hpp>
+#include <fuse/renderer/frame/frame_ms.hpp>
 #include <fuse/renderer/gi/ddgi_cpu.hpp>
 #include <fuse/renderer/gi/ddgi_device.hpp>
 #include <fuse/renderer/gi/ddgi_probe_kernel.hpp>
@@ -40,6 +42,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <numbers>
 #include <string>
 #include <vector>
 
@@ -312,9 +315,21 @@ bool parseU32(const char* text, u32& out) {
     return true;
 }
 
+bool testFrameMsOk();
+bool testFilmbackSquareFov();
+
 } // namespace
 
 int main(int argc, char** argv) {
+    if (!testFrameMsOk()) {
+        std::fprintf(stderr, "FAIL: testFrameMsOk\n");
+        return EXIT_FAILURE;
+    }
+    if (!testFilmbackSquareFov()) {
+        std::fprintf(stderr, "FAIL: testFilmbackSquareFov\n");
+        return EXIT_FAILURE;
+    }
+
     BenchConfig cfg;
     bool requireCuda = false;
     bool enforce = false;
@@ -468,3 +483,40 @@ int main(int argc, char** argv) {
     std::printf("fuse_b5_frame_bench: %s\n", rc == EXIT_SUCCESS ? "done" : "FAILED");
     return rc;
 }
+
+namespace {
+
+bool testFrameMsOk() {
+    int failures = 0;
+    const auto expect = [&](bool condition, const char* message) {
+        if (!condition) {
+            std::fprintf(stderr, "FAIL: %s\n", message);
+            ++failures;
+        }
+    };
+
+    expect(rr::frame_ms_ok(16.6f), "frame_ms_ok(16.6f) is true");
+    expect(rr::frame_ms_ok(0), "frame_ms_ok(0) is true");
+    expect(rr::frame_ms_ok(100), "frame_ms_ok(100) is true");
+    expect(!rr::frame_ms_ok(-1), "frame_ms_ok(-1) is false");
+    expect(!rr::frame_ms_ok(101), "frame_ms_ok(101) is false");
+    return failures == 0;
+}
+
+bool testFilmbackSquareFov() {
+    int failures = 0;
+    const auto expect = [&](bool condition, const char* message) {
+        if (!condition) {
+            std::fprintf(stderr, "FAIL: %s\n", message);
+            ++failures;
+        }
+    };
+
+    // 90 degrees. A square frame has aspect 1, so the vertical fov matches the horizontal fov.
+    constexpr f32 kHalfPi = std::numbers::pi_v<f32> * 0.5f;
+    const f32 vertical = fuse::math::vertical_fov_from_horizontal(kHalfPi, 1920.f, 1920.f);
+    expect(std::fabs(vertical - kHalfPi) <= 1e-4f, "90 degree horizontal fov on a square frame stays 90 degrees");
+    return failures == 0;
+}
+
+} // namespace

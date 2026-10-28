@@ -6,18 +6,21 @@
 #include <fuse/audio/binaural_pan.hpp>
 #include <fuse/audio/conv_reverb_cpu.hpp>
 #include <fuse/audio/math.hpp>
+#include <fuse/audio/mix_rate.hpp>
 #include <fuse/audio/occlusion.hpp>
 #include <fuse/audio/reverb_zones.hpp>
 #include <fuse/audio/spatial_mixer.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/handle_map.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <vector>
 
 using fuse::u32;
@@ -2002,9 +2005,302 @@ void testThirtyTwoSourcesMixWithoutNaN() {
     }
 }
 
+void testPerSourceReverbSendMixEquation() {
+    using namespace fuse::audio;
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    expectNear(clamp_reverb_send(-0.5f), 0.f, 0.f, "negative reverb send clamps to zero");
+    expectNear(clamp_reverb_send(2.5f), 1.f, 0.f, "reverb send above one clamps to unity");
+    expectNear(clamp_reverb_send(nan), 0.f, 0.f, "NaN reverb send clamps to silence");
+    expectNear(clamp_reverb_send(std::numeric_limits<float>::infinity()), 0.f, 0.f,
+               "infinite reverb send clamps to silence");
+    expectTrue(is_silent_reverb_send(0.f), "zero send is silent");
+    expectTrue(is_silent_reverb_send(kReverbSendSilence), "epsilon send is silent");
+    expectTrue(!is_silent_reverb_send(kReverbSendSilence * 2.f), "send above epsilon reaches the bus");
+    expectTrue(is_silent_reverb_send(nan), "NaN send is silent");
+
+    expectNear(contribute_reverb_send(0.5f, 0.f), 0.f, 0.f, "silence contributes nothing to the wet bus");
+    expectNear(contribute_reverb_send(0.5f, -1.f), 0.f, 0.f, "negative send contributes nothing");
+    expectNear(contribute_reverb_send(0.5f, 3.f), 0.5f, 1e-6f, "send above one contributes the full dry sample");
+    expectNear(contribute_reverb_send(0.5f, 0.25f), 0.125f, 1e-6f, "partial send scales the dry sample");
+    expectNear(contribute_reverb_send(nan, 1.f), 0.f, 0.f, "non-finite dry sample contributes nothing");
+
+    // send = 1 → out = blend_dry_wet_sample(dry, wet, zone_wet)
+    expectNear(mix_listener_reverb_sample(1.f, 1.f, 0.2f, 0.5f),
+               blend_dry_wet_sample(1.f, 0.2f, 0.5f), 1e-6f,
+               "unity send uses the zone dry/wet crossfade");
+    // zone wet = 0 → unsent + sent = dry, wet is ignored
+    expectNear(mix_listener_reverb_sample(1.f, 0.25f, 99.f, 0.f), 1.f, 1e-6f,
+               "a dry zone keeps the full dry signal");
+    // send = 0, empty wet bus → dry
+    expectNear(mix_listener_reverb_sample(0.5f, 0.f, 0.f, 1.f), 0.5f, 1e-6f,
+               "a silent send with an empty wet bus stays dry");
+    // zone wet = 1, partial send: unsent dry remains, wet replaces only the sent part
+    expectNear(mix_listener_reverb_sample(0.5f, 0.25f, 0.1875f, 1.f), 0.4375f, 1e-6f,
+               "partial send keeps the unsent dry and takes the wet for the rest");
+}
+
+struct ConstantSendMix {
+    std::vector<float> mix;
+    std::vector<float> bus;
+    std::vector<float> sent;
+};
+
+ConstantSendMix render_constant_send(float source_send, float zone_wet, bool with_zone) {
+    constexpr u32 kFrames = 128;
+    fuse::audio::AudioEngine engine;
+    fuse::audio::AudioDesc desc;
+    desc.frames_per_buf = kFrames;
+    desc.cuda_reverb = false;
+    engine.init(desc);
+
+    std::vector<float> pcm(4096, 0.5f);
+    fuse::audio::AudioClip clip;
+    clip.load_from_pcm(pcm.data(), static_cast<u32>(pcm.size()), 1, 48000);
+    const auto handle = engine.register_clip(std::move(clip));
+
+    fuse::audio::AudioRegistry registry;
+    registry.set_listener(registry.create_entity());
+    fuse::audio::AudioSourceDesc source_desc;
+    source_desc.clip = handle;
+    source_desc.spatial = false;
+    source_desc.looping = true;
+    source_desc.reverb_send = source_send;
+    fuse::audio::AudioSource* source = registry.add_source(registry.create_entity(), source_desc);
+    source->playing = true;
+
+    if (with_zone) {
+        const float ir_samples[] = {0.5f, 0.25f};
+        fuse::audio::AudioClip ir_clip;
+        ir_clip.load_from_pcm(ir_samples, 2, 1, 48000);
+        const auto ir_handle = engine.register_clip(std::move(ir_clip));
+        fuse::audio::AudioEngine::ReverbZone zone;
+        zone.bounds = {{-10.f, -10.f, -10.f}, {10.f, 10.f, 10.f}};
+        zone.impulse_response = ir_handle;
+        zone.wet_dry = zone_wet;
+        zone.send_level = 1.f;
+        engine.add_reverb_zone(zone);
+    }
+
+    engine.update(registry, 1.f / 60.f);
+    ConstantSendMix out;
+    out.mix = engine.last_mix_buffer();
+    out.bus = engine.spatial_mixer().reverb_send_bus();
+    out.sent = engine.spatial_mixer().reverb_sent_dry();
+    return out;
+}
+
+float peak_abs(const std::vector<float>& buffer) {
+    float peak = 0.f;
+    for (float sample : buffer) {
+        peak = std::max(peak, std::fabs(sample));
+    }
+    return peak;
+}
+
+void testPerSourceReverbSendSkipsWet() {
+    const ConstantSendMix dry = render_constant_send(1.f, 0.f, false);
+    const ConstantSendMix silent = render_constant_send(0.f, 1.f, true);
+    const ConstantSendMix full = render_constant_send(1.f, 1.f, true);
+    const ConstantSendMix half = render_constant_send(0.5f, 1.f, true);
+    const ConstantSendMix zone_dry = render_constant_send(1.f, 0.f, true);
+    const ConstantSendMix clamped = render_constant_send(4.f, 1.f, true);
+    const ConstantSendMix negative = render_constant_send(-2.f, 1.f, true);
+
+    expectTrue(silent.bus.size() == 128, "reverb send bus has one sample per frame");
+    expectNear(peak_abs(silent.bus), 0.f, 0.f, "silent send leaves the reverb bus at zero");
+    expectNear(peak_abs(silent.sent), 0.f, 0.f, "silent send leaves the sent-dry signal at zero");
+    float dry_err = 0.f;
+    for (size_t i = 0; i < silent.mix.size() && i < dry.mix.size(); ++i) {
+        dry_err = std::max(dry_err, std::fabs(silent.mix[i] - dry.mix[i]));
+    }
+    expectNear(dry_err, 0.f, 1e-4f, "silent send inside a wet zone matches a mix with no zone");
+
+    // 2D constant 0.5 on both ears. Mono bus = 0.5. IR {0.5, 0.25} sums to 0.75.
+    expectNear(full.bus.back(), 0.5f, 1e-6f, "unity send bus is the mono downmix");
+    expectNear(full.sent.back(), 0.5f, 1e-6f, "unity send stores the full dry sample");
+    expectNear(full.mix.back(), 0.375f, 1e-4f, "unity send at full zone wet is the convolved bus");
+    expectNear(half.bus.back(), 0.25f, 1e-6f, "half send scales the bus");
+    expectNear(half.mix.back(), 0.4375f, 1e-4f, "half send keeps the unsent dry under a wet zone");
+    expectNear(zone_dry.bus.back(), full.bus.back(), 1e-6f, "zone wet mix leaves the send bus unchanged");
+    expectNear(zone_dry.mix.back(), 0.5f, 1e-5f, "a dry zone keeps the dry sample at unity send");
+    expectNear(clamped.bus.back(), full.bus.back(), 1e-6f, "send above one matches a unity send");
+    expectNear(negative.bus.back(), 0.f, 0.f, "negative send matches a silent bus");
+
+    fuse::audio::AudioEngine engine;
+    fuse::audio::AudioDesc desc;
+    desc.frames_per_buf = 128;
+    desc.cuda_reverb = false;
+    engine.init(desc);
+    fuse::audio::AudioRegistry registry;
+    registry.set_listener(registry.create_entity());
+    auto add_constant = [&](float pcm, float send) {
+        std::vector<float> samples(4096, pcm);
+        fuse::audio::AudioClip clip;
+        clip.load_from_pcm(samples.data(), static_cast<u32>(samples.size()), 1, 48000);
+        fuse::audio::AudioSourceDesc source_desc;
+        source_desc.clip = engine.register_clip(std::move(clip));
+        source_desc.spatial = false;
+        source_desc.looping = true;
+        source_desc.reverb_send = send;
+        fuse::audio::AudioSource* source = registry.add_source(registry.create_entity(), source_desc);
+        source->playing = true;
+    };
+    add_constant(0.25f, 0.f);
+    add_constant(0.5f, 1.f);
+    engine.update(registry, 1.f / 60.f);
+    expectNear(engine.spatial_mixer().reverb_send_bus().back(), 0.5f, 1e-6f,
+               "reverb bus equals the sending source's mono downmix");
+}
+
+void testOcclusionLowpassCutoffExtremes() {
+    using namespace fuse::audio;
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float blocked = occlusion_lpf_cutoff_hz(0.f);
+    const float mid = occlusion_lpf_cutoff_hz(0.5f);
+    const float high = occlusion_lpf_cutoff_hz(0.75f);
+    const float open = occlusion_lpf_cutoff_hz(1.f);
+    expectNear(blocked, kOcclusionLpfBlockedHz, 1e-3f, "fully blocked cutoff is 400 Hz");
+    expectNear(open, 24000.f, 1e-3f, "fully open cutoff is Nyquist at 48 kHz");
+    expectTrue(blocked < mid && mid < high && high < open, "cutoff rises as visibility rises");
+    expectNear(occlusion_lpf_cutoff_hz(1.f, -5.f), 24000.f, 1e-3f,
+               "a non-positive sample rate falls back to 48 kHz");
+    expectNear(occlusion_lpf_cutoff_hz(nan), kOcclusionLpfBlockedHz, 1e-3f,
+               "NaN visibility uses the blocked cutoff");
+    expectTrue(should_bypass_occlusion_lpf(1.f), "fully open lowpass bypasses");
+    expectTrue(!should_bypass_occlusion_lpf(0.f), "fully blocked lowpass stays in circuit");
+    expectTrue(!should_bypass_occlusion_lpf(nan), "NaN visibility stays in circuit");
+    expectTrue(occlusion_lpf_mix_coefficient(1.f) == 1.f, "fully open mix coefficient is exactly one");
+
+    const float blocked_a = occlusion_lpf_mix_coefficient(0.f);
+    expectTrue(std::isfinite(blocked_a) && blocked_a > 0.f && blocked_a < 0.2f,
+               "fully blocked coefficient is a finite muffler");
+    const float nyquist_a = occlusion_lpf_coefficient(24000.f, 48000.f);
+    expectTrue(std::isfinite(nyquist_a) && nyquist_a > 0.9f && nyquist_a < 1.f,
+               "Nyquist coefficient stays finite and below the bypass");
+    expectTrue(std::isfinite(occlusion_lpf_coefficient(1.0e20f, 48000.f)),
+               "a huge cutoff stays finite");
+    expectNear(occlusion_lpf_coefficient(0.f), 0.f, 0.f, "a zero cutoff holds the filter state");
+
+    const float low_fc = occlusion_lpf_cutoff_hz(0.f, 1.f);
+    const float low_a = occlusion_lpf_coefficient(low_fc, 1.f);
+    expectTrue(std::isfinite(low_fc) && std::isfinite(low_a) && low_a >= 0.f && low_a <= 1.f,
+               "a 1 Hz sample rate stays inside the coefficient range");
+    float state = 0.f;
+    expectTrue(std::isfinite(process_occlusion_lpf(1.f, state, low_a)),
+               "a 1 Hz sample-rate step stays finite");
+
+    state = 0.25f;
+    const float held = process_occlusion_lpf(1.f, state, 0.f);
+    expectTrue(held == 0.25f && state == 0.25f, "a zero coefficient holds the previous state");
+    const float tracked = process_occlusion_lpf(0.5f, state, 1.f);
+    expectTrue(tracked == 0.5f && state == 0.5f, "a unity coefficient copies the input");
+    state = 0.4f;
+    const float cleared = apply_occlusion_lpf(nan, state, 0.f);
+    expectTrue(cleared == 0.f && state == 0.f, "a NaN input clears the lowpass");
+
+    state = -1.f;
+    const float tiny = 1.0e-20f;
+    const float bypass = apply_occlusion_lpf(tiny, state, 1.f);
+    expectTrue(bypass == tiny && state == tiny, "fully open lowpass is a bit-exact bypass");
+
+    state = 1.f;
+    bool finite = true;
+    for (int i = 0; i < 20000; ++i) {
+        const float y = process_occlusion_lpf(0.f, state, blocked_a);
+        finite = finite && std::isfinite(y);
+    }
+    expectTrue(finite, "blocked lowpass decay stays finite");
+    expectTrue(state == 0.f, "blocked lowpass decay flushes denormals to zero");
+
+    state = 0.f;
+    float peak = 0.f;
+    finite = true;
+    for (int i = 0; i < 4000; ++i) {
+        const float y = apply_occlusion_lpf(1.f, state, 0.f);
+        finite = finite && std::isfinite(y);
+        peak = std::max(peak, y);
+    }
+    expectTrue(finite, "blocked step response stays finite");
+    expectTrue(peak <= 1.f + 1e-4f, "blocked lowpass stays at or below a unit step");
+    expectTrue(state > 0.95f, "blocked lowpass settles onto a unit step");
+}
+
+double buffer_rms(const std::vector<float>& buffer) {
+    double sum = 0.0;
+    for (float sample : buffer) {
+        sum += static_cast<double>(sample) * static_cast<double>(sample);
+    }
+    return buffer.empty() ? 0.0 : std::sqrt(sum / static_cast<double>(buffer.size()));
+}
+
+double render_tone_rms(double frequency_hz, float occlusion, bool spatial) {
+    fuse::audio::AudioEngine engine;
+    fuse::audio::AudioDesc desc;
+    desc.frames_per_buf = 2048;
+    desc.cuda_reverb = false;
+    engine.init(desc);
+
+    std::vector<float> pcm(48000);
+    for (u32 i = 0; i < pcm.size(); ++i) {
+        const double phase = 2.0 * 3.14159265358979323846 * frequency_hz
+                             * static_cast<double>(i) / 48000.0;
+        pcm[i] = static_cast<float>(std::sin(phase));
+    }
+    fuse::audio::AudioClip clip;
+    clip.load_from_pcm(pcm.data(), static_cast<u32>(pcm.size()), 1, 48000);
+    const auto handle = engine.register_clip(std::move(clip));
+
+    fuse::audio::AudioRegistry registry;
+    registry.set_listener(registry.create_entity());
+    const fuse::audio::EntityId source_entity = registry.create_entity();
+    registry.set_position(source_entity, fuse::audio::Vec3{0.f, 0.f, -1.f});
+    fuse::audio::AudioSourceDesc source_desc;
+    source_desc.clip = handle;
+    source_desc.spatial = spatial;
+    source_desc.looping = true;
+    source_desc.occlusion = occlusion;
+    fuse::audio::AudioSource* source = registry.add_source(source_entity, source_desc);
+    source->playing = true;
+
+    engine.update(registry, 1.f / 60.f);
+    engine.update(registry, 1.f / 60.f);
+    bool finite = true;
+    for (float sample : engine.last_mix_buffer()) {
+        finite = finite && std::isfinite(sample);
+    }
+    expectTrue(finite, "occlusion lowpass mix is finite");
+    return buffer_rms(engine.last_mix_buffer());
+}
+
+void testOcclusionLowpassDarkensBlockedSource() {
+    const double flat = render_tone_rms(8000.0, 1.f, false);
+    const double flat_blocked = render_tone_rms(8000.0, 0.f, false);
+    expectNear(static_cast<float>(flat_blocked), static_cast<float>(flat), 1e-4f,
+               "non-spatial sources skip the occlusion lowpass");
+
+    const double open_lo = render_tone_rms(100.0, 1.f, true);
+    const double open_hi = render_tone_rms(8000.0, 1.f, true);
+    const double blocked_lo = render_tone_rms(100.0, 0.f, true);
+    const double blocked_hi = render_tone_rms(8000.0, 0.f, true);
+    expectTrue(open_lo > 1e-3 && open_hi > open_lo * 0.9, "fully open highs stay level with lows");
+    const double lf_ratio = blocked_lo / open_lo;
+    const double hf_ratio = blocked_hi / open_hi;
+    expectTrue(std::isfinite(lf_ratio) && std::isfinite(hf_ratio), "occlusion level ratios are finite");
+    expectTrue(lf_ratio > 0.02, "blocked lows keep energy above the silence floor");
+    expectTrue(hf_ratio < lf_ratio * 0.35, "blocked lowpass muffles highs more than lows");
+}
+
+void testMixRateOk() {
+    expectTrue(fuse::audio::mix_rate_ok(48000), "48000 Hz is a supported mix rate");
+    expectTrue(fuse::audio::mix_rate_ok(44100), "44100 Hz is a supported mix rate");
+    expectTrue(!fuse::audio::mix_rate_ok(22050), "22050 Hz is not a supported mix rate");
+    expectTrue(!fuse::audio::mix_rate_ok(0), "0 Hz is not a supported mix rate");
+}
+
 } // namespace
 
 int main() {
+    testMixRateOk();
     fuse::core::initialize();
     testEngineInitializes();
     testMonoAndStereoWavLoad();
@@ -2076,6 +2372,10 @@ int main() {
     testReverbSendLevelDryMix();
     testReverbSendLevelWetMix();
     testReverbSendLevelScalesMixOutput();
+    testPerSourceReverbSendMixEquation();
+    testPerSourceReverbSendSkipsWet();
+    testOcclusionLowpassCutoffExtremes();
+    testOcclusionLowpassDarkensBlockedSource();
     testSpatialPanRespectsListenerOrientation();
     testPlayAtPositionsSource();
     testConvolutionReverbCpuMatchesReference();

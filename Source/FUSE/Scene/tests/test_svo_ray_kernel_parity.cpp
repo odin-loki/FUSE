@@ -23,6 +23,7 @@
 #include <fuse/core/sanitizer.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/scene/svo.hpp>
+#include <fuse/scene/svo_ray_budget.hpp>
 #include <fuse/scene/svo_ray_device.hpp>
 
 #include <algorithm>
@@ -655,9 +656,23 @@ void timeMillionRays() {
     }
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits the process.
+void testSvoRayBudgetOk() {
+    expectTrue(fuse::scene::svo_ray_budget_ok(16), "svo_ray_budget_ok(16) is true");
+    expectTrue(fuse::scene::svo_ray_budget_ok(1024), "svo_ray_budget_ok(1024) is true");
+    expectTrue(!fuse::scene::svo_ray_budget_ok(8), "svo_ray_budget_ok(8) is false");
+    expectTrue(!fuse::scene::svo_ray_budget_ok(24), "svo_ray_budget_ok(24) is false");
+    expectTrue(!fuse::scene::svo_ray_budget_ok(2048), "svo_ray_budget_ok(2048) is false");
+}
+
 } // namespace
 
 int main() {
+    testSvoRayBudgetOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testSvoRayBudgetOk\n");
+        return EXIT_FAILURE;
+    }
     fuse::core::initialize();
     testBackendParity();
     testPackedLayoutShapes();

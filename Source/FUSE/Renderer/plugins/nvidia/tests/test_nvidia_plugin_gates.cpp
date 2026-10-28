@@ -5,6 +5,8 @@
 #include "fuse_sl_mock_echo.h"
 #include "nv_streamline_mapping.hpp"
 
+#include <fuse/renderer/plugin_slot.hpp>
+#include <fuse/renderer/nvidia/feature_bits.hpp>
 #include <fuse/renderer/nvidia/nv_input_mapping.hpp>
 #include <fuse/renderer/nvidia/nv_plugin_loader.hpp>
 
@@ -636,9 +638,33 @@ void test_streamline_provider() {
     unset_env("FUSE_SL_MOCK_GPU");
 }
 
+/// No allocation. Called at the start of main; a failure returns non-zero immediately.
+int testPluginSlotOk() {
+    const bool atZero = fuse::renderer::plugin_slot_ok(0);
+    const bool atSeven = fuse::renderer::plugin_slot_ok(7);
+    const bool below = fuse::renderer::plugin_slot_ok(-1);
+    const bool above = fuse::renderer::plugin_slot_ok(8);
+    if (atZero && atSeven && !below && !above) {
+        return 0;
+    }
+    std::fprintf(stderr, "FAIL: testPluginSlotOk (0=%d, 7=%d, -1=%d, 8=%d)\n", static_cast<int>(atZero),
+                 static_cast<int>(atSeven), static_cast<int>(below), static_cast<int>(above));
+    return 1;
+}
+
+void test_feature_bits() {
+    const std::uint32_t have = nv::kFeaturePresent | nv::kFeatureTimeline;
+    check(nv::feature_bits_ready(have, nv::kFeaturePresent), "present bit is satisfied");
+    check(!nv::feature_bits_ready(have, nv::kFeatureMesh), "mesh bit is not satisfied");
+}
+
 } // namespace
 
 int main() {
+    if (const int pluginSlotRc = testPluginSlotOk()) {
+        return pluginSlotRc;
+    }
+    test_feature_bits();
     test_configuration();
     test_env_discovery();
     test_failure_paths();

@@ -3,6 +3,7 @@
 #include <fuse/project/cook_dependency_graph.hpp>
 #include <fuse/project/cook_job_graph.hpp>
 #include <fuse/project/cook_manifest.hpp>
+#include <fuse/project/dep_edge.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -227,11 +228,24 @@ void testCookJobGraphInvalidationBundle() {
                "empty job graph merged bundle guarded");
 }
 
+void testDepEdgeOk() {
+    expectTrue(fuse::project::dep_edge_ok("mesh", "material"), "mesh to material is a valid edge");
+    expectTrue(!fuse::project::dep_edge_ok("mesh", "mesh"), "mesh to mesh is not a valid edge");
+    expectTrue(!fuse::project::dep_edge_ok("", "material"), "empty from is not a valid edge");
+    expectTrue(!fuse::project::dep_edge_ok("material", ""), "empty to is not a valid edge");
+    expectTrue(!fuse::project::dep_edge_ok("   ", "material"), "spaces-only from is empty");
+    expectTrue(!fuse::project::dep_edge_ok("mesh", "   "), "spaces-only to is empty");
+    expectTrue(fuse::project::dep_edge_ok(" mesh", "mesh"), "leading space is not trimmed");
+    expectTrue(fuse::project::dep_edge_ok("mesh ", "material"), "trailing space is not trimmed");
+    expectTrue(!fuse::project::dep_edge_ok(" mesh", " mesh"), "untrimmed equal names are rejected");
+}
+
 } // namespace
 
 int main() {
     fuse::core::initialize();
 
+    testDepEdgeOk();
     testTopologicalOrderValidation();
     testDegreeAndIsolatedNodes();
     testInvalidationBundle();

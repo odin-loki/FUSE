@@ -13,6 +13,7 @@
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/renderer/gi/ddgi_cpu.hpp>
 #include <fuse/renderer/gi/ddgi_probe_kernel.hpp>
+#include <fuse/renderer/parity_lane.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -212,9 +213,23 @@ void testStatsAndFallback() {
     scheduler.shutdown();
 }
 
+/// CPU gate. No allocation. main calls this before any GPU skip.
+/// A failure returns non-zero before any later skip.
+void testParityLaneOk() {
+    expectTrue(fuse::renderer::parity_lane_ok(0), "parity_lane_ok(0) is true");
+    expectTrue(fuse::renderer::parity_lane_ok(15), "parity_lane_ok(15) is true");
+    expectTrue(!fuse::renderer::parity_lane_ok(-1), "parity_lane_ok(-1) is false");
+    expectTrue(!fuse::renderer::parity_lane_ok(16), "parity_lane_ok(16) is false");
+}
+
 } // namespace
 
 int main() {
+    testParityLaneOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d DDGI kernel parity check(s) failed\n", g_failures);
+        return EXIT_FAILURE;
+    }
     fuse::core::initialize();
     testBackendParity();
     testLoadScale();

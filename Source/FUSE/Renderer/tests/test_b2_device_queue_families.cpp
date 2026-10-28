@@ -18,6 +18,7 @@
 // message fails the test.
 //
 // Exit 77 (skip) in the stub build or without an ICD.
+#include <fuse/renderer/family_index.hpp>
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/instance.hpp>
 
@@ -45,6 +46,21 @@ namespace {
 #endif
 
 constexpr int kSkip = 77;
+
+/// CPU gate. No allocation. main calls this before any device skip.
+/// A failure returns non-zero before any later skip.
+int testFamilyIndexOk() {
+    const bool atZero = fuse::renderer::family_index_ok(0);
+    const bool atSeven = fuse::renderer::family_index_ok(7);
+    const bool below = fuse::renderer::family_index_ok(-1);
+    const bool above = fuse::renderer::family_index_ok(8);
+    if (atZero && atSeven && !below && !above) {
+        return 0;
+    }
+    std::fprintf(stderr, "FAIL: testFamilyIndexOk (0=%d, 7=%d, -1=%d, 8=%d)\n", static_cast<int>(atZero),
+                 static_cast<int>(atSeven), static_cast<int>(below), static_cast<int>(above));
+    return 1;
+}
 
 #if defined(FUSE_VULKAN_BACKEND)
 
@@ -453,6 +469,9 @@ int run(const char* layerDir, Mode mode) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int familyIndexRc = testFamilyIndexOk()) {
+        return familyIndexRc;
+    }
 #if defined(FUSE_VULKAN_BACKEND)
     const char* layerDir = nullptr;
     Mode mode = Mode::TransferCompute;

@@ -13,12 +13,15 @@
 #include <fuse/ecs/components/tags.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/physics/physics_manager.hpp>
+#include <fuse/physics/sleep_speed.hpp>
+#include <fuse/physics/solver/sleep_energy.hpp>
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <random>
 #include <vector>
 
@@ -379,10 +382,44 @@ void testTenThousandSleepingBodies() {
 #endif
 }
 
+void testSleepSpeedOk() {
+    std::printf("sleep speed: 0 %d, 0.05 %d, 1 %d, -0.01 %d, 1.5 %d\n",
+                fuse::physics::sleep_speed_ok(0) ? 1 : 0, fuse::physics::sleep_speed_ok(0.05f) ? 1 : 0,
+                fuse::physics::sleep_speed_ok(1) ? 1 : 0, fuse::physics::sleep_speed_ok(-0.01f) ? 1 : 0,
+                fuse::physics::sleep_speed_ok(1.5f) ? 1 : 0);
+    expectTrue(fuse::physics::sleep_speed_ok(0), "speed 0 is a valid sleep speed");
+    expectTrue(fuse::physics::sleep_speed_ok(0.05f), "speed 0.05 is a valid sleep speed");
+    expectTrue(fuse::physics::sleep_speed_ok(1), "speed 1 is a valid sleep speed");
+    expectTrue(!fuse::physics::sleep_speed_ok(-0.01f), "negative speed is not a valid sleep speed");
+    expectTrue(!fuse::physics::sleep_speed_ok(1.5f), "speed above 1 is not a valid sleep speed");
+}
+
+void testSleepEnergy() {
+    const bool resting = fuse::physics::should_sleep(0.01f, 0.01f, 0.05f, 0.05f);
+    const bool fastLinear = fuse::physics::should_sleep(1.f, 0.01f, 0.05f, 0.05f);
+    std::printf("sleep energy: resting %d, linear speed 1 %d\n", resting ? 1 : 0, fastLinear ? 1 : 0);
+    expectTrue(resting, "speeds 0.01 and 0.01 with thresholds 0.05 sleep");
+    expectTrue(!fastLinear, "linear speed 1 does not sleep");
+    expectTrue(!fuse::physics::should_sleep(0.01f, 1.f, 0.05f, 0.05f),
+               "angular speed above its threshold stays awake");
+    expectTrue(fuse::physics::should_sleep(0.05f, 0.05f, 0.05f, 0.05f), "speeds equal to their thresholds sleep");
+    expectTrue(fuse::physics::should_sleep(0.f, 0.f, -1.f, -0.2f), "negative thresholds are 0 and zero speed sleeps");
+    expectTrue(!fuse::physics::should_sleep(0.01f, 0.f, -0.05f, 0.05f),
+               "a negative linear threshold is 0, so a positive linear speed stays awake");
+    const f32 nan = std::numeric_limits<f32>::quiet_NaN();
+    const f32 inf = std::numeric_limits<f32>::infinity();
+    expectTrue(!fuse::physics::should_sleep(nan, 0.f, 0.05f, 0.05f), "a non-finite linear speed stays awake");
+    expectTrue(!fuse::physics::should_sleep(0.f, -inf, 0.05f, 0.05f), "a non-finite angular speed stays awake");
+    expectTrue(fuse::physics::should_sleep(0.f, 0.f, nan, inf), "non-finite thresholds are 0 and zero speed sleeps");
+    expectTrue(!fuse::physics::should_sleep(0.01f, 0.f, inf, 0.05f),
+               "a non-finite linear threshold is 0, so a positive linear speed stays awake");
+}
+
 } // namespace
 
 int main() {
     fuse::core::initialize();
+    testSleepSpeedOk();
     testTransformsTrackPhysics();
     testImpulseVelocityChange();
     testCollisionEvents();
@@ -390,6 +427,7 @@ int main() {
     testStackedBoxesRestOnFaces();
     testThousandBodiesBudget();
     testTenThousandSleepingBodies();
+    testSleepEnergy();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

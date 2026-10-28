@@ -1,7 +1,10 @@
 // WP-0.8: cluster-page residency LRU — unit tests, random-operation property test against an
 // independent shadow model, coarse-LOD liveness, and invariant-checker negative tests.
 #include "cl_test_access.hpp"
+#include "cl_page.hpp"
 #include "cl_test_util.hpp"
+
+#include <fuse/core_logic/page_budget.hpp>
 
 #include <memory>
 #include <vector>
@@ -388,9 +391,42 @@ void test_invariant_checker() {
     }
 }
 
+void test_page_budget() {
+    CL_CHECK(pages_needed(4097u, 4096u) == 2u);
+    CL_CHECK(pages_needed(0u, 4096u) == 0u);
+    CL_CHECK(pages_needed(100u, 0u) == 0u);
+    CL_CHECK(pages_fit(2u, 3u, 5u));
+    CL_CHECK(!pages_fit(2u, 4u, 5u));
+}
+
+// No allocation. Page counts 1 and 4096 are valid; 0 and 4097 are not.
+int testClPageOk() {
+    if (!fuse::renderer::cl_page_ok(1)) {
+        std::fprintf(stderr, "FAIL: testClPageOk: cl_page_ok(1) should be true\n");
+        return 1;
+    }
+    if (!fuse::renderer::cl_page_ok(4096)) {
+        std::fprintf(stderr, "FAIL: testClPageOk: cl_page_ok(4096) should be true\n");
+        return 1;
+    }
+    if (fuse::renderer::cl_page_ok(0)) {
+        std::fprintf(stderr, "FAIL: testClPageOk: cl_page_ok(0) should be false\n");
+        return 1;
+    }
+    if (fuse::renderer::cl_page_ok(4097)) {
+        std::fprintf(stderr, "FAIL: testClPageOk: cl_page_ok(4097) should be false\n");
+        return 1;
+    }
+    return 0;
+}
+
 } // namespace
 
 int run_residency_tests() {
+    if (const int clPageRc = testClPageOk()) {
+        return clPageRc;
+    }
+    test_page_budget();
     test_basic();
     test_budget_blocked_by_loading();
     test_request_capacity_and_priority_order();

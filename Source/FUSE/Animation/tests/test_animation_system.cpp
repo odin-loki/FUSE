@@ -8,7 +8,9 @@
 
 #include <fuse/animation/animation_system.hpp>
 #include <fuse/animation/blend_tree.hpp>
+#include <fuse/animation/blend_weight.hpp>
 #include <fuse/animation/clip.hpp>
+#include <fuse/animation/loop_phase.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 
@@ -286,9 +288,29 @@ void testParallelEqualsSerial() {
     expectTrue(parallel.system.stats().evaluated == kAnimators - 1u, "destroyed animator no longer evaluated");
 }
 
+void testBlendWeightOk() {
+    expectTrue(anim::blend_weight_ok(0), "blend_weight_ok(0) is true");
+    expectTrue(anim::blend_weight_ok(0.5f), "blend_weight_ok(0.5f) is true");
+    expectTrue(anim::blend_weight_ok(1), "blend_weight_ok(1) is true");
+    expectTrue(!anim::blend_weight_ok(-0.1f), "blend_weight_ok(-0.1f) is false");
+    expectTrue(!anim::blend_weight_ok(1.1f), "blend_weight_ok(1.1f) is false");
+}
+
+void testLoopPhase() {
+    expectTrue(anim::loop_phase(1.5f, 1.f) == 0.5f, "loop_phase(1.5, 1) is 0.5");
+    expectTrue(anim::loop_phase(-0.25f, 1.f) == 0.75f, "loop_phase(-0.25, 1) is 0.75");
+    expectTrue(anim::loop_phase(1.f, 0.f) == 0.f, "loop_phase(1, 0) is 0");
+}
+
 } // namespace
 
 int main() {
+    testLoopPhase();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse animation system gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testBlendWeightOk();
     fuse::jobs::JobScheduler::instance().shutdown();
     fuse::jobs::JobScheduler::instance().initialize(3);
     testParallelEqualsSerial();

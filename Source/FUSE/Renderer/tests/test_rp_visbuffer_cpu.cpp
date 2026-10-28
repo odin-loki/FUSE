@@ -24,6 +24,7 @@
 #include <fuse/renderer/culling/instance_cull_kernel.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene_meshlets.hpp>
+#include <fuse/renderer/vis/vis_tile.hpp>
 #include <fuse/renderer/visbuffer/vis_decode_kernel.hpp>
 #include <fuse/renderer/visbuffer/vis_format.hpp>
 #include <fuse/renderer/visbuffer/vis_reference.hpp>
@@ -467,9 +468,24 @@ int runApi() {
     return 0;
 }
 
+/// CPU gate. Must run before any GPU or device skip; a failure returns non-zero.
+void testVisTileOk() {
+    expect(vis_tile_ok(8), "vis_tile_ok(8) is true");
+    expect(vis_tile_ok(16), "vis_tile_ok(16) is true");
+    expect(vis_tile_ok(32), "vis_tile_ok(32) is true");
+    expect(!vis_tile_ok(4), "vis_tile_ok(4) is false");
+    expect(!vis_tile_ok(12), "vis_tile_ok(12) is false");
+    expect(!vis_tile_ok(64), "vis_tile_ok(64) is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testVisTileOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testVisTileOk\n");
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     int rc = 0;
     if (suite == "format" || suite == "all") {

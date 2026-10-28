@@ -26,6 +26,7 @@
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/relight/mods/import/mod_importer.hpp>
 #include <fuse/relight/mods/usd/remix_profile.hpp>
+#include <fuse/relight/particles/particle_count.hpp>
 #include <fuse/relight/particles/particle_kernels.hpp>
 #include <fuse/relight/particles/particle_mods.hpp>
 #include <fuse/relight/options/option_config.hpp>
@@ -1055,9 +1056,17 @@ void testOptions() {
     CHECK(m.activeSystemCount() == 3u);
 }
 
+void testRelightParticleCountOk() {
+    CHECK(fuse::relight::relight_particle_count_ok(0));
+    CHECK(fuse::relight::relight_particle_count_ok(100000));
+    CHECK(!fuse::relight::relight_particle_count_ok(-1));
+    CHECK(!fuse::relight::relight_particle_count_ok(100001));
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testRelightParticleCountOk();
     if (argc < 2) {
         std::fprintf(stderr, "usage: %s <suite> --fixtures <dir> [--update-golden]\n", argv[0]);
         return 2;

@@ -2,6 +2,8 @@
 // Compiled into fuse_hybrid_tests.
 
 #include <fuse/core/init.hpp>
+#include <fuse/hybrid/cull_edge.hpp>
+#include <fuse/hybrid/cull_rect.hpp>
 #include <fuse/hybrid/hybrid_composer.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
 #include <fuse/world2d/world_2d.hpp>
@@ -10,6 +12,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 namespace {
 
@@ -27,6 +30,23 @@ void expectEq(fuse::u32 actual, fuse::u32 expected, const char* message) {
         std::fprintf(stderr, "FAIL: %s (expected %u, got %u)\n", message, expected, actual);
         ++g_failures;
     }
+}
+
+void testRectsOverlap() {
+    expectTrue(fuse::hybrid::rects_overlap(0.f, 0.f, 2.f, 2.f, 1.f, 1.f, 2.f, 2.f),
+               "partially overlapping rects overlap");
+    expectTrue(!fuse::hybrid::rects_overlap(0.f, 0.f, 1.f, 1.f, 2.f, 0.f, 1.f, 1.f),
+               "rects separated by a gap do not overlap");
+    expectTrue(fuse::hybrid::rects_overlap(0.f, 0.f, 1.f, 1.f, 1.f, 0.f, 1.f, 1.f),
+               "touching edges count as overlap");
+    expectTrue(!fuse::hybrid::rects_overlap(0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 1.f, 1.f),
+               "non-positive width does not overlap");
+    expectTrue(!fuse::hybrid::rects_overlap(0.f, 0.f, 1.f, -1.f, 0.f, 0.f, 1.f, 1.f),
+               "negative height does not overlap");
+    expectTrue(!fuse::hybrid::rects_overlap(0.f, 0.f, std::numeric_limits<float>::quiet_NaN(), 1.f, 0.f, 0.f, 1.f, 1.f),
+               "non-finite width does not overlap");
+    expectTrue(!fuse::hybrid::rects_overlap(0.f, 0.f, 1.f, std::numeric_limits<float>::infinity(), 0.f, 0.f, 1.f, 1.f),
+               "non-finite height does not overlap");
 }
 
 fuse::frame::FrameCtx makeCtx(fuse::u32 frameIndex = 0u) {
@@ -161,9 +181,27 @@ void testHybridComposerSequentialTicksResetBarrier() {
     expectEq(composer.frameCount(), 3u, "composer frame counter advanced across ticks");
 }
 
+/// CPU gate. No allocation. A failure returns non-zero before any later test.
+int testCullEdgeOk() {
+    const bool atZero = fuse::hybrid::cull_edge_ok(0);
+    const bool atFifteen = fuse::hybrid::cull_edge_ok(15);
+    const bool below = fuse::hybrid::cull_edge_ok(-1);
+    const bool above = fuse::hybrid::cull_edge_ok(16);
+    if (atZero && atFifteen && !below && !above) {
+        return 0;
+    }
+    std::fprintf(stderr, "FAIL: testCullEdgeOk (0=%d, 15=%d, -1=%d, 16=%d)\n", static_cast<int>(atZero),
+                 static_cast<int>(atFifteen), static_cast<int>(below), static_cast<int>(above));
+    return 1;
+}
+
 } // namespace
 
 int runParallelCullEdgeTests() {
+    if (const int cullEdgeRc = testCullEdgeOk()) {
+        return cullEdgeRc;
+    }
+    testRectsOverlap();
     testWorld2DEmptySnapshotCull();
     testWorld2DSingleSpritePartialBatch();
     testWorld2DAllSpritesOutOfView();

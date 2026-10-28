@@ -23,7 +23,9 @@
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/physics/rotation.hpp>
 #include <fuse/physics/solver/distance_constraint.hpp>
+#include <fuse/physics/solver/joint_span.hpp>
 #include <fuse/physics/solver/pbd_solver.hpp>
+#include <fuse/physics/vehicle/raycast_suspension.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -953,9 +955,80 @@ void testRagdollChain() {
     expectTrue(peakEnergy - startEnergy < 0.01f * std::fabs(startEnergy) + 0.05f, "ragdoll chain never gains energy");
 }
 
+void testRaycastSuspension() {
+    SuspensionParams params;
+    params.restLength = 0.5f;
+    params.spring = 8.f;
+    params.damper = 0.f;
+    params.maxTravel = 0.5f;
+
+    const SuspensionForce miss = evaluate_suspension({0.f, 1.f, 0.f}, -1.f, 0.25f, 0.05f, params);
+    expectTrue(!miss.grounded, "no hit is ungrounded");
+    expectTrue(miss.compression == 0.f && miss.force.length() == 0.f, "no hit has zero force and compression");
+
+    // rest 0.5, hit 0.25 -> compression 0.25; spring 8 -> 2 N along normalized up.
+    const SuspensionForce push = evaluate_suspension({0.f, 2.f, 0.f}, 0.25f, 0.25f, 1.f / 60.f, params);
+    expectTrue(push.grounded && push.compression == 0.25f, "a compressed wheel reports restLength - hitDistance");
+    expectTrue(push.force.y > 0.f && push.force.cross(vec3{0.f, 1.f, 0.f}).length() == 0.f && push.force.y == 2.f,
+               "a compressed spring with zero damper pushes along up");
+
+    const SuspensionForce slack = evaluate_suspension({0.f, 1.f, 0.f}, 0.75f, 0.75f, 0.05f, params);
+    expectTrue(slack.grounded, "a hit longer than rest length is still a hit");
+    expectTrue(slack.compression == 0.f && slack.force.length() == 0.f,
+               "a longer hit than rest length has zero compression");
+
+    const SuspensionForce deadUp = evaluate_suspension({}, 0.25f, 0.25f, 0.05f, params);
+    const SuspensionForce nanUp = evaluate_suspension({std::nanf(""), 1.f, 0.f}, 0.25f, 0.25f, 0.05f, params);
+    expectTrue(!deadUp.grounded && deadUp.force.length() == 0.f && deadUp.compression == 0.f, "zero up is not grounded");
+    expectTrue(!nanUp.grounded && nanUp.compression == 0.f, "non-finite up is not grounded");
+
+    SuspensionParams limited = params;
+    limited.restLength = 1.f;
+    limited.maxTravel = 0.25f;
+    limited.spring = 4.f;
+    const SuspensionForce clamped = evaluate_suspension({0.f, 1.f, 0.f}, 0.25f, 0.25f, 0.05f, limited);
+    expectTrue(clamped.compression == 0.25f && clamped.force.y == 1.f, "compression clamps to maxTravel");
+
+    SuspensionParams damped = params;
+    damped.spring = 0.f;
+    damped.damper = 4.f;
+    // prev hit 0.125 -> prev compression 0.375; hit 0.25 -> compression 0.25; dt 0.125 -> +4 N.
+    const SuspensionForce rebound = evaluate_suspension({0.f, 1.f, 0.f}, 0.25f, 0.125f, 0.125f, damped);
+    const SuspensionForce skipped = evaluate_suspension({0.f, 1.f, 0.f}, 0.25f, 0.125f, 0.f, damped);
+    expectTrue(rebound.force.y == 4.f, "damper uses (prevCompression - compression) / dt along up");
+    expectTrue(skipped.force.length() == 0.f && skipped.compression == 0.25f, "dt <= 0 skips the damper");
+
+    SuspensionParams negative = params;
+    negative.spring = -8.f;
+    negative.damper = -4.f;
+    const SuspensionForce negated = evaluate_suspension({0.f, 1.f, 0.f}, 0.25f, 0.125f, 0.05f, negative);
+    expectTrue(negated.grounded && negated.compression == 0.25f && negated.force.length() == 0.f,
+               "negative spring and damper are treated as zero");
+
+    SuspensionParams invalid = params;
+    invalid.restLength = 0.f;
+    const SuspensionForce noRest = evaluate_suspension({0.f, 1.f, 0.f}, 0.25f, 0.25f, 0.05f, invalid);
+    invalid.restLength = 0.5f;
+    invalid.maxTravel = -0.1f;
+    const SuspensionForce noTravel = evaluate_suspension({0.f, 1.f, 0.f}, 0.25f, 0.25f, 0.05f, invalid);
+    expectTrue(!noRest.grounded && noRest.compression == 0.f && noRest.force.length() == 0.f,
+               "non-positive rest length yields zero");
+    expectTrue(!noTravel.grounded && noTravel.compression == 0.f, "non-positive max travel yields zero");
+
+    std::printf("raycast suspension: miss ungrounded, spring push %.3f N along up, slack compression %.3f\n",
+                push.force.length(), slack.compression);
+}
+
+void testJointSpanOk() {
+    expectTrue(joint_span_ok(-1.f, 1.f), "a span inside [-pi, pi] is accepted");
+    expectTrue(!joint_span_ok(1.f, -1.f), "a reversed joint span is rejected");
+    expectTrue(!joint_span_ok(-4.f, 0.f), "an angle past -pi is rejected");
+}
+
 } // namespace
 
 int main() {
+    testJointSpanOk();
     fuse::core::initialize();
     testPointMassPendulum();
     testRodPendulum(0.1f, true);
@@ -970,6 +1043,7 @@ int main() {
     testManagerBreakThreshold();
     testManagerOtherJointTypes();
     testRagdollChain();
+    testRaycastSuspension();
     fuse::core::shutdown();
     if (g_failures != 0) {
         std::fprintf(stderr, "%d failure(s)\n", g_failures);

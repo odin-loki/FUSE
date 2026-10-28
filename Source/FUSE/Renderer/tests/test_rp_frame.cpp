@@ -21,8 +21,8 @@
 //                         rays that leave the screen take the WP-8.2 sky), and the sky fallback alone (on vs off)
 //                         changes geometry pixels only; the SSFX image carries the sky
 //                         aerial perspective on vs off: only geometry pixels change
-//                         SSFX / VSM / DDGI / DDGI atmosphere sky on vs off: only geometry pixels change; SSFX off
-//                         == the lit image
+//                         SSFX / SSRC / SSRC+SSFX / VSM / DDGI / DDGI atmosphere sky on vs off: only geometry
+//                         pixels change; SSFX off == the lit image
 //                         clouds on vs off: only background pixels change (+ a repeated reset frame reproduces
 //                         its bits)
 //                         splats on vs off: only pixels a splat covers (splat T < 1) change
@@ -68,6 +68,8 @@
 #include <fuse/renderer/deferred/gbuffer.hpp>
 #include <fuse/renderer/frame/frame_composer.hpp>
 #include <fuse/renderer/frame/frame_runtime_presets.hpp>
+#include <fuse/renderer/rp_frame.hpp>
+#include <fuse/renderer/research/rc/rc_reference.hpp>
 #include <fuse/renderer/gi/ddgi_cpu.hpp>
 #include <fuse/renderer/gi/gpu/ddgi_gpu_reference.hpp>
 #include <fuse/renderer/lighting/ltc/ltc_lut.hpp>
@@ -139,11 +141,25 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. No allocation. Both entry points call this before any GPU skip.
+/// A failure returns non-zero before any later skip.
+[[nodiscard]] int testRpFrameOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::rp_frame_ok(0), "rp_frame_ok(0) is true");
+    expect(fuse::renderer::rp_frame_ok(1000000), "rp_frame_ok(1000000) is true");
+    expect(!fuse::renderer::rp_frame_ok(-1), "rp_frame_ok(-1) is false");
+    expect(!fuse::renderer::rp_frame_ok(1000001), "rp_frame_ok(1000001) is false");
+    return g_failures == before ? 0 : 1;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int frameRc = testRpFrameOk(); frameRc != 0) {
+        return frameRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -537,6 +553,7 @@ FrameKernelLanguage g_language = FrameKernelLanguage::Auto;
 
 FrameComposerDesc composerDesc(Context& ctx, Scene& s, FrameTier tier) {
     FrameComposerDesc d{};
+    fuse::renderer::frame::applyLavapipeComposerDefaults(d);
     d.language = g_language;
     d.device = ctx.device.get();
     d.allocator = ctx.allocator.get();
@@ -551,24 +568,6 @@ FrameComposerDesc composerDesc(Context& ctx, Scene& s, FrameTier tier) {
     d.instanceCapacity = 64;
     d.meshCapacity = 4;
     d.lightCapacity = 16;
-    d.vsmClipmap.levels = 12;
-    d.vsmClipmap.firstLevelExtent = 4.f;
-    d.vsmClipmap.markRadiusTexels = 2.5f;
-    d.vsmClipmap.texelsPerPixel = 2.f;
-    d.vsmPoolPagesX = 16;
-    d.vsmPoolPagesY = 16;
-    DDGIDesc& v = d.ddgiVolume;
-    v.grid_origin = {-6.f, 0.5f, -9.f};
-    v.probe_spacing = {3.f, 1.5f, 3.25f};
-    v.grid_dims = {5u, 3u, 5u};
-    v.rays_per_probe = 64;
-    v.probes_per_frame = 75;
-    v.irradiance_res = 6;
-    v.depth_res = 8;
-    v.hysteresis = 0.9f;
-    v.max_ray_distance = 20.f;
-    d.maxSplats = 64;
-    d.maxSplatEntries = 1u << 14;
     return d;
 }
 
@@ -877,6 +876,12 @@ bool finiteAndLit(const std::vector<u8>& img, f64& mean) {
 
 const char* tierName(FrameTier t) { return t == FrameTier::T2 ? "t2" : "t0"; }
 
+void clampFrameSettingsToComposer(const FrameComposer& composer, FrameSettings& fs) {
+    if ((composer.available() & kStageFrameGen) == 0u) {
+        fs.frameGen = false;
+    }
+}
+
 // --- rig: scene + composer ------------------------------------------------------------------------------
 struct Rig {
     Scene scene;
@@ -929,9 +934,10 @@ int initRig(Context& ctx, Rig& rig, FrameTier tier) {
     const u32 avail = rig.composer.available();
     std::printf("composer (%s kernel, tier %s): available 0x%05x (first missing: %s)\n", rig.composer.kernelLanguage(),
                 tierName(tier), avail, rig.composer.reason());
+    // Frame generation is optional (Lavapipe composer defaults disable it); do not require kStageFrameGen here.
     const u32 required = kStageScene | kStageVsm | kStageDdgi | kStageLighting | kStageSsfx | kStageAtmosphere | kStageSky |
                          kStageAerial | kStageFog | kStageClouds | kStageSplats | kStageResolve | kStageTaau | kStagePost |
-                         kStageForward | kStageFrameGen |
+                         kStageForward |
                          (tier == FrameTier::T2 ? (kStageTlas | kStageRtShadows | kStageDenoise | kStageFsr3 | kStageRestir |
                                                    kStageRtReflections | kStageRestirDenoise | kStageReflectionDenoise)
                                                 : 0u);
@@ -956,6 +962,14 @@ u32 plannedStages(FrameTier tier, const FrameSettings& fs) {
             p |= fs.rtReflectionAtmosphereSky ? kStageAtmosphere : 0u;
         }
     }
+    p |= fs.ssrc ? kStageSsrc : 0u;
+    p |= fs.rcFlatland ? kStageRcFlatland : 0u;
+    if (fs.ssrc && fs.ssrcSettings.ddgi) {
+        p |= kStageDdgi;
+        if (fs.ddgiAtmosphereSky) {
+            p |= kStageAtmosphere;
+        }
+    }
     p |= fs.ssfx ? kStageSsfx : 0u;
     p |= fs.sky ? (kStageSky | kStageAtmosphere) : 0u;
     p |= fs.aerialPerspective ? (kStageAerial | kStageAtmosphere) : 0u;
@@ -970,6 +984,76 @@ u32 plannedStages(FrameTier tier, const FrameSettings& fs) {
     return p;
 }
 
+int runRcFlatland(Context& ctx, FrameTier tier) {
+    Rig rig;
+    if (const int rc = initRig(ctx, rig, tier); rc != 0) {
+        return rc;
+    }
+    if ((rig.composer.available() & kStageRcFlatland) == 0u) {
+        std::printf("SKIP: rc flatland stage unavailable (%s)\n", rig.composer.reason());
+        return kSkip;
+    }
+    FrameSettings fs = baseSettings();
+    fs.ssfx = false;
+    fs.rcFlatland = true;
+    fs.rcSettings.probeSpacing0 = 2u;
+    fs.rcSettings.dirs0 = 4u;
+    for (u32 frame = 0; frame < 4u; ++frame) {
+        Frame out{};
+        const bool ok = runFrame(ctx, rig.scene, rig.composer, rig.graph, frameDesc(0, frame, frame == 0u), fs, frame == 3u,
+                                 &out);
+        expect(ok, "rc flatland frame executes");
+        expect((out.ran & kStageRcFlatland) != 0u, "rc flatland stage ran");
+        if (frame == 3u) {
+            research::rc::RcCpuGBuffer gbuffer;
+            research::rc::fillDiagnosticGBuffer(gbuffer, rig.composer.rcFlatlandSceneWidth(),
+                                                rig.composer.rcFlatlandSceneHeight(), frame);
+            research::rc::RcScene expected;
+            const f32* got = rig.composer.rcFlatlandScene();
+            expect(research::rc::packSceneFromGBuffer(gbuffer, expected) && got != nullptr, "rc scene packed from the gbuffer");
+            if (got != nullptr && !expected.texels.empty()) {
+                expect(std::memcmp(got, expected.texels.data(), expected.texels.size() * sizeof(f32)) == 0,
+                       "frame rc scene matches the CPU gbuffer pack");
+                const usize center = (static_cast<usize>(expected.height / 2u) * expected.width + expected.width / 2u) * 4u;
+                expect(expected.texels[center + 3u] == 1.f && expected.texels[3u] == 0.f,
+                       "packed disk is opaque and the corner is empty");
+            }
+        }
+    }
+    std::printf("rc_flatland %s: 4 frames, validation messages %u\n", tierName(tier), g_messages);
+    return g_failures > 0 ? 1 : 0;
+}
+
+int runSsrc(Context& ctx, FrameTier tier) {
+    Rig rig;
+    if (const int rc = initRig(ctx, rig, tier); rc != 0) {
+        return rc;
+    }
+    if ((rig.composer.available() & kStageSsrc) == 0u) {
+        std::printf("SKIP: ssrc stage unavailable (%s)\n", rig.composer.reason());
+        return kSkip;
+    }
+    FrameSettings fs = baseSettings();
+    fs.ssfx = false;
+    fs.ssrc = true;
+    fs.ssrcSettings.compose = true;
+    fs.ssrcSettings.ddgi = true;
+    for (u32 frame = 0; frame < 4u; ++frame) {
+        Frame out{};
+        const bool ok = runFrame(ctx, rig.scene, rig.composer, rig.graph, frameDesc(0, frame, frame == 0u), fs, frame == 3u,
+                                 &out);
+        expect(ok, "ssrc frame executes");
+        expect((out.ran & kStageSsrc) != 0u, "ssrc stage ran");
+        if (frame == 3u) {
+            f64 mean = 0.0;
+            expect(finiteAndLit(out.bytes[kRbLit], mean), "ssrc lit chain finite and not black");
+            std::printf("  ssrc frame %u: lit mean %.4f\n", frame, mean);
+        }
+    }
+    std::printf("ssrc %s: 4 frames, validation messages %u\n", tierName(tier), g_messages);
+    return 0;
+}
+
 // --- modes ------------------------------------------------------------------------------------------------
 int runFull(Context& ctx, FrameTier tier) {
     Rig rig;
@@ -978,6 +1062,8 @@ int runFull(Context& ctx, FrameTier tier) {
     }
     FrameSettings fs = baseSettings();
     fs.frameGen = true;
+    clampFrameSettingsToComposer(rig.composer, fs);
+    const bool expectFrameGen = fs.frameGen;
     for (u32 frame = 0; frame < 8u; ++frame) {
         fs.upscaler = (tier == FrameTier::T2 && frame >= 4u) ? FrameUpscaler::Fsr3 : FrameUpscaler::Taau;
         Frame out{};
@@ -1001,13 +1087,15 @@ int runFull(Context& ctx, FrameTier tier) {
             expect(finiteAndLit(out.bytes[kRbOutput], mean), "output finite and not black");
             f64 sceneMean = 0.0;
             expect(finiteAndLit(out.bytes[kRbSceneColor], sceneMean), "scene colour finite and not black");
-            f64 fgMean = 0.0;
-            expect(finiteAndLit(out.bytes[kRbFrameGen], fgMean), "interpolated frame finite and not black");
+            if (expectFrameGen) {
+                f64 fgMean = 0.0;
+                expect(finiteAndLit(out.bytes[kRbFrameGen], fgMean), "interpolated frame finite and not black");
+            }
             const u32 draws = rig.composer.forwardPass().drawCount();
             expect(draws == 1u, "forward: the glass box is drawn");
-            std::printf("  frame %u (%s): output mean %.4f, scene colour mean %.4f, interpolated mean %.4f, %u composer passes, "
+            std::printf("  frame %u (%s): output mean %.4f, scene colour mean %.4f, %u composer passes, "
                         "%u transparent draw(s), ssfx jitter (%.4f, %.4f)\n",
-                        frame, fs.upscaler == FrameUpscaler::Fsr3 ? "fsr3" : "taau", mean, sceneMean, fgMean,
+                        frame, fs.upscaler == FrameUpscaler::Fsr3 ? "fsr3" : "taau", mean, sceneMean,
                         rig.composer.stats().composerPasses, draws, sp[8], sp[9]);
         }
     }
@@ -1230,6 +1318,38 @@ int runToggles(Context& ctx, FrameTier tier) {
         report("SSFX on vs off", sx);
         expect(sx.backgroundChanged == 0u && sx.geometryChanged > 0u, "SSFX changes geometry pixels only");
     }
+    FrameSettings litOnly = plain;
+    litOnly.ssfx = false;
+    Frame litBase{};
+    run(litOnly, litBase);
+    if ((rig.composer.available() & kStageSsrc) != 0u) {
+        auto geometryOnlyLit = [&](const char* name, const FrameSettings& fs) {
+            Frame off{};
+            run(fs, off);
+            const Diff x = diffImages(litBase, off, kRbSceneColor);
+            report(name, x);
+            expect(x.backgroundChanged == 0u, "the toggle changes no background pixel");
+            expect(x.geometryChanged > 0u, "the toggle changes geometry pixels");
+        };
+        {
+            FrameSettings fs = litOnly;
+            fs.ssrc = true;
+            fs.ssrcSettings.compose = true;
+            fs.ssrcSettings.ddgi = true;
+            geometryOnlyLit("SSRC on vs off", fs);
+        }
+        {
+            FrameSettings both = plain;
+            both.ssrc = true;
+            both.ssrcSettings.compose = true;
+            both.ssrcSettings.ddgi = true;
+            Frame combo{};
+            run(both, combo);
+            const Diff sx = diffImages(p0, combo, kRbSceneColor);
+            report("SSRC + SSFX on vs SSFX alone", sx);
+            expect(sx.backgroundChanged == 0u && sx.geometryChanged > 0u, "SSRC + SSFX change geometry pixels only");
+        }
+    }
     auto geometryOnly = [&](const char* name, FrameSettings fs) {
         Frame off{};
         run(fs, off);
@@ -1343,6 +1463,7 @@ bool runSequence(Context& ctx, FrameTier tier, u32 frames, Frame& last, bool fra
     FrameSettings fs = baseSettings();
     fs.upscaler = tier == FrameTier::T2 ? FrameUpscaler::Fsr3 : FrameUpscaler::Taau;
     fs.frameGen = frameGen;
+    clampFrameSettingsToComposer(rig.composer, fs);
     bool ok = true;
     for (u32 frame = 0; frame < frames; ++frame) {
         ok = runFrame(ctx, rig.scene, rig.composer, rig.graph, frameDesc(0, frame, frame == 0u), fs, frame + 1u == frames, &last) && ok;
@@ -1357,7 +1478,7 @@ int runDeterminism(Context& ctx, FrameTier tier) {
     expect(okA && okB, "both runs execute");
     const bool output = sameBytes(a.bytes[kRbOutput], b.bytes[kRbOutput]);
     const bool scene = sameBytes(a.bytes[kRbSceneColor], b.bytes[kRbSceneColor]);
-    const bool fg = sameBytes(a.bytes[kRbFrameGen], b.bytes[kRbFrameGen]);
+    const bool fg = a.bytes[kRbFrameGen].empty() || sameBytes(a.bytes[kRbFrameGen], b.bytes[kRbFrameGen]);
     const bool fw = sameBytes(a.bytes[kRbForward], b.bytes[kRbForward]);
     const bool restirOk = tier != FrameTier::T2 || sameBytes(a.bytes[kRbRestir], b.bytes[kRbRestir]);
     const bool reflectOk = tier != FrameTier::T2 || sameBytes(a.bytes[kRbReflect], b.bytes[kRbReflect]);
@@ -1391,6 +1512,7 @@ int runZeroAlloc(Context& ctx, FrameTier tier, bool count) {
     FrameSettings fs = baseSettings();
     fs.upscaler = tier == FrameTier::T2 ? FrameUpscaler::Fsr3 : FrameUpscaler::Taau;
     fs.frameGen = true;
+    clampFrameSettingsToComposer(rig.composer, fs);
     constexpr u32 kWarmup = 8;
     const u32 total = count ? kWarmup + 64u : 12u;
     unsigned long long begin = 0, build = 0, callbacks = 0;
@@ -1635,6 +1757,9 @@ int runParity(Context& ctx, FrameTier tier) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int frameRc = testRpFrameOk(); frameRc != 0) {
+        return frameRc;
+    }
     std::string mode = "full";
     std::string tierArg = "t0";
     for (int i = 1; i + 1 < argc; i += 2) {
@@ -1668,6 +1793,10 @@ int main(int argc, char** argv) {
             rc = runGolden(ctx, tier);
         } else if (mode == "parity") {
             rc = runParity(ctx, tier);
+        } else if (mode == "ssrc") {
+            rc = runSsrc(ctx, tier);
+        } else if (mode == "rc_flatland") {
+            rc = runRcFlatland(ctx, tier);
         } else {
             std::fprintf(stderr, "unknown mode %s\n", mode.c_str());
             return 2;

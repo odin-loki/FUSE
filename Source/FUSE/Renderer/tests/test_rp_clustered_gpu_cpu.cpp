@@ -16,6 +16,7 @@
 //           CpuParallel bit for bit; cluster-list shading == all-lights shading (lights outside a
 //           cluster contribute exactly 0); sky / out-of-range pixels are (0, 0, 0, 0)
 //   api     no device: queryLightingCapabilities / init fail cleanly
+#include <fuse/renderer/bin_count.hpp>
 #include <fuse/renderer/lighting/gpu/clustered_gpu_kernel.hpp>
 #include <fuse/renderer/lighting/gpu/clustered_gpu_reference.hpp>
 #include <fuse/renderer/lighting/gpu/clustered_gpu_types.hpp>
@@ -625,9 +626,22 @@ void testApi() {
     expect(!refs.work.valid() && !refs.lists.valid() && !refs.output.valid(), "no refs from an invalid instance");
 }
 
+/// CPU gate. No allocation. Must run before any GPU skip; a failure returns non-zero.
+void testBinCountOk() {
+    expect(fuse::renderer::bin_count_ok(1), "bin_count_ok(1) is true");
+    expect(fuse::renderer::bin_count_ok(128), "bin_count_ok(128) is true");
+    expect(!fuse::renderer::bin_count_ok(0), "bin_count_ok(0) is false");
+    expect(!fuse::renderer::bin_count_ok(129), "bin_count_ok(129) is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testBinCountOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testBinCountOk\n");
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     if (all || suite == "layout") {

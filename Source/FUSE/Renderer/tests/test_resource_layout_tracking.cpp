@@ -8,6 +8,7 @@
 //    upload is queued behind that upload's serial and released once it retires.
 // Run under VK_LAYER_KHRONOS_validation (+ synchronization validation) for the zero-message gate.
 #include <fuse/renderer/resource_manager.hpp>
+#include <fuse/renderer/rhi/layout_state.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
 
@@ -268,9 +269,23 @@ void testDeferredDestroyDoesNotStall(Context& ctx) {
     resources.destroyBuffer(fresh);
 }
 
+// CPU gate. Runs before any GPU or device skip and does not allocate.
+void testLayoutStateOk() {
+    expectTrue(layout_state_ok(0), "layout state 0 is valid");
+    expectTrue(layout_state_ok(7), "layout state 7 is valid");
+    expectTrue(!layout_state_ok(-1), "layout state -1 is rejected");
+    expectTrue(!layout_state_ok(8), "layout state 8 is rejected");
+}
+
 } // namespace
 
 int main() {
+    testLayoutStateOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_resource_layout_tracking: %d failure(s)\n", g_failures);
+        return 1;
+    }
+
     Context ctx;
     if (!ctx.init()) {
         std::printf("SKIP: no Vulkan device — layout tracking / deferred destroy need an ICD (Lavapipe in CI)\n");

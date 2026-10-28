@@ -1,4 +1,6 @@
+#include <fuse/gameplay/damage_falloff.hpp>
 #include <fuse/profiler/profiler.hpp>
+#include <fuse/profiler/trace_name.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -152,12 +154,27 @@ void testGpuCudaMarkersExportChromeCompleteEvents() {
                "cuda marker uses cuda chrome category");
 }
 
+void testTraceNameOk() {
+    expectTrue(fuse::profiler::trace_name_ok("frame"), "a letter-led name is a valid trace name");
+    expectTrue(!fuse::profiler::trace_name_ok(""), "an empty trace name is rejected");
+    expectTrue(!fuse::profiler::trace_name_ok("1frame"), "a trace name must start with a letter");
+}
+
+void testDamageAtDistance() {
+    expectTrue(fuse::gameplay::damage_at_distance(10.f, 0.f, 10.f, fuse::gameplay::DamageFalloff::Linear) == 10.f,
+               "linear damage at distance 0 equals base 10");
+    expectTrue(fuse::gameplay::damage_at_distance(10.f, 10.f, 10.f, fuse::gameplay::DamageFalloff::Linear) == 0.f,
+               "linear damage at distance 10 equals 0");
+}
+
 } // namespace
 
 int main() {
+    testTraceNameOk();
     testEnabledP2GateChromeTrace();
     testDisabledProfilerStillExportsJsonObject();
     testGpuCudaMarkersExportChromeCompleteEvents();
+    testDamageAtDistance();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d chrome trace test(s) failed.\n", g_failures);

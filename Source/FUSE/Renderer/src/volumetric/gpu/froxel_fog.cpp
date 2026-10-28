@@ -439,6 +439,10 @@ bool FroxelFog::beginFrame(u64 frameSerial, const FroxelFogSettings& settings, c
     if (c.shadows != 0u) {
         c.flags |= kFogFlagShadows;
     }
+    c.ddgi = frame.ddgi;
+    if (c.ddgi != 0u) {
+        c.flags |= kFogFlagGi;
+    }
     c.inputDepth = m_inputHandles[0];
     c.inputLit = m_inputHandles[1];
     c.output = apply ? m_desc.bindless->shaderHandle(m_output.slot) : 0u;
@@ -516,6 +520,9 @@ void FroxelFog::addPasses(rg::Graph& graph, const FogGraphRefs& refs, const FogG
             if (inputs.scene != nullptr) {
                 gpu_scene::GpuScene::useAll(inject, *inputs.scene, rg::Access::StorageRead, rg::kStageCompute);
             }
+        }
+        if ((c.flags & kFogFlagGi) != 0u && inputs.ddgi.valid()) {
+            inject.use(inputs.ddgi, rg::Access::StorageRead, {}, rg::kStageCompute);
         }
     }
     if (PassRecord* r = nextRecord(kTemporal)) {

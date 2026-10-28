@@ -9,6 +9,7 @@
 #include <fuse/relight/scene/classify/classify_options.hpp>
 #include <fuse/relight/scene/classify/classify_tap.hpp>
 #include <fuse/relight/scene/classify/draw_classifier.hpp>
+#include <fuse/relight/scene/classify/rule_label.hpp>
 
 #include <fuse/relight/hash/texture_hash.hpp>
 #include <fuse/relight/options/option_config.hpp>
@@ -804,6 +805,13 @@ void test_tapTracker() {
     CHECK(applying.onDraw(call, s) == tap::DrawDecision::Ignore);
 }
 
+void testRuleLabelOk() {
+    g_test = "testRuleLabelOk";
+    CHECK(rule_label_ok("Opaque"));
+    CHECK(!rule_label_ok(""));
+    CHECK(!rule_label_ok("1Opaque"));
+}
+
 struct TestCase {
     const char* name;
     void (*fn)();
@@ -812,6 +820,7 @@ struct TestCase {
 } // namespace
 
 int main() {
+    testRuleLabelOk();
     // Hermetic: config files and environment overrides from the caller would change the options.
     options::setEnvironmentVariable(options::kDxvkConfEnvVar, "");
     options::setEnvironmentVariable(options::kRtxConfEnvVar, "");

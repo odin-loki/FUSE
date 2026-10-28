@@ -11,8 +11,10 @@
 //    save is refused while PIE runs
 //  - NewProject / OpenProject commands: manifest + default 2D / 3D worlds, 2D scenes keep their
 //    dimension across save / load
+#include <fuse/editor/backup_name.hpp>
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/scene_file_count.hpp>
 #include <fuse/editor/undo_stack.hpp>
 
 #include <fuse/core/temp_path.hpp>
@@ -538,9 +540,28 @@ void testProjectCommands(const fs::path& dir) {
                "project: 2D scene dimension survives save / load");
 }
 
+void testBackupName() {
+    expectTrue(editor::backup_name("Town.fuse") == "Town.fuse.bak",
+               "backup name: Town.fuse becomes Town.fuse.bak");
+    expectTrue(editor::backup_name("") == "", "backup name: empty path stays empty");
+}
+
+void testSceneFileCountOk() {
+    expectTrue(editor::scene_file_count_ok(1), "scene file count: 1 is allowed");
+    expectTrue(editor::scene_file_count_ok(64), "scene file count: 64 is allowed");
+    expectTrue(!editor::scene_file_count_ok(0), "scene file count: 0 is rejected");
+    expectTrue(!editor::scene_file_count_ok(65), "scene file count: 65 is rejected");
+}
+
 } // namespace
 
 int main() {
+    testSceneFileCountOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
+    testBackupName();
     const fs::path dir = fuse::test::makeUniqueTempDir("fuse_e15_scene_files");
     testManifestWriterRoundTrip(dir);
     testSerialiserV3(dir);
@@ -555,3 +576,24 @@ int main() {
     std::printf("fuse_editor_e15_scene_files: all checks passed\n");
     return 0;
 }
+
+#include <fuse/editor/scene_file.hpp>
+
+namespace {
+
+void testSceneFileKind() {
+    expectTrue(editor::scene_file_kind("world.fuse") == editor::SceneFileKind::Scene,
+               "scene file kind: world.fuse is Scene");
+    expectTrue(editor::scene_file_kind("Town.FLEVEL") == editor::SceneFileKind::Level,
+               "scene file kind: Town.FLEVEL is Level");
+    expectTrue(editor::scene_file_kind("notes.txt") == editor::SceneFileKind::Unknown,
+               "scene file kind: notes.txt is Unknown");
+}
+
+struct SceneFileKindTestInit {
+    SceneFileKindTestInit() { testSceneFileKind(); }
+};
+
+const SceneFileKindTestInit g_sceneFileKindTestInit{};
+
+} // namespace

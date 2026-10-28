@@ -70,8 +70,9 @@ add_library(fuse_frame STATIC
 set_source_files_properties(${_fuse_frame_shader_files} PROPERTIES HEADER_FILE_ONLY TRUE)
 target_link_libraries(fuse_frame PUBLIC
     fuse_gpu_scene fuse_culling fuse_visbuffer fuse_material_resolve fuse_temporal fuse_vsm fuse_vsm_raster fuse_rt
-    fuse_rt_effects fuse_denoise fuse_ddgi_gpu fuse_lighting_gpu fuse_ssfx_gpu fuse_atmosphere_gpu fuse_volumetric_gpu
-    fuse_clouds_gpu fuse_gsplat fuse_fsr3 fuse_post_gpu fuse_light_tree fuse_restir fuse_forward fuse_framegen fuse_denoiser)
+    fuse_rt_effects fuse_denoise fuse_ddgi_gpu fuse_lighting_gpu fuse_ssfx_gpu fuse_ssrc_gpu fuse_atmosphere_gpu fuse_volumetric_gpu
+    fuse_clouds_gpu fuse_gsplat fuse_fsr3 fuse_post_gpu fuse_light_tree fuse_restir fuse_forward fuse_framegen fuse_denoiser
+    fuse_rc_research)
 fuse_apply_cxx23(fuse_frame)
 
 # Kernel, embedded into the library (Slang primary, GLSL twin; -fp-mode precise / `precise`).
@@ -169,7 +170,7 @@ endif()
 
 set(_fuse_frame_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
 set(_fuse_frame_vk_tests "")
-foreach(_case "full;t0;auto" "full;t2;auto" "toggles;t0;auto" "toggles;t2;auto" "determinism;t0;auto"
+foreach(_case "ssrc;t0;auto" "rc_flatland;t0;auto" "full;t0;auto" "full;t2;auto" "toggles;t0;auto" "toggles;t2;auto" "determinism;t0;auto"
               "determinism;t2;auto" "zero_alloc;t0;auto" "zero_alloc;t2;auto" "golden;t0;auto" "golden;t2;auto"
               "parity;t0;slang" "parity;t2;slang" "parity;t0;glsl" "parity;t2;glsl" "full;t2;glsl")
     list(GET _case 0 _mode)

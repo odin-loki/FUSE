@@ -39,8 +39,10 @@
 #include <fuse/renderer/look/look_params.hpp>
 #include <fuse/renderer/look/look_post_chain.hpp>
 #include <fuse/renderer/look/lut3d.hpp>
+#include <fuse/renderer/post_gpu.hpp>
 #include <fuse/renderer/postprocess/gpu/post_gpu_reference.hpp>
 #include <fuse/renderer/postprocess/gpu/post_stack_gpu.hpp>
+#include <fuse/renderer/postprocess/lens_flare.hpp>
 #include <fuse/renderer/postprocess/post_stack.hpp>
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
@@ -107,11 +109,47 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. No allocation. Both entry points call this before any GPU skip.
+/// A failure returns non-zero before any later skip.
+[[nodiscard]] int testPostGpuOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::post_gpu_ok(0), "post_gpu_ok(0) is true");
+    expect(fuse::renderer::post_gpu_ok(7), "post_gpu_ok(7) is true");
+    expect(!fuse::renderer::post_gpu_ok(-1), "post_gpu_ok(-1) is false");
+    expect(!fuse::renderer::post_gpu_ok(8), "post_gpu_ok(8) is false");
+    return g_failures == before ? 0 : 1;
+}
+
+/// CPU gate. Both entry points call this before any GPU or Vulkan skip.
+/// A failure returns non-zero before any later test.
+/// `addLensFlarePassToGraph` inserts one color-attachment pass (not present, not compute),
+/// so compile keeps it in passCount and culls it.
+[[nodiscard]] int testLensFlarePass() {
+    const int before = g_failures;
+    fuse::renderer::RenderGraph graph;
+    fuse::renderer::RGTextureRef output{};
+    output.id = fuse::renderer::RenderGraph::kBackbufferTextureId;
+    fuse::renderer::addLensFlarePassToGraph(graph, output);
+    graph.compile();
+    const fuse::renderer::RenderGraphCompileInfo& info = graph.compileInfo();
+    expect(info.compiled, "addLensFlarePassToGraph compiles");
+    expect(info.passCount == 1u, "addLensFlarePassToGraph inserts one pass");
+    expect(info.culledPassCount == 1u, "lens flare color write is culled without a present consumer");
+    expect(info.executablePassCount == 0u, "culled lens flare pass is not executable");
+    return g_failures == before ? 0 : 1;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int lensFlareRc = testLensFlarePass(); lensFlareRc != 0) {
+        return lensFlareRc;
+    }
+    if (const int postGpuRc = testPostGpuOk(); postGpuRc != 0) {
+        return postGpuRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1449,6 +1487,12 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int lensFlareRc = testLensFlarePass(); lensFlareRc != 0) {
+        return lensFlareRc;
+    }
+    if (const int postGpuRc = testPostGpuOk(); postGpuRc != 0) {
+        return postGpuRc;
+    }
     std::string mode = "passes";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {

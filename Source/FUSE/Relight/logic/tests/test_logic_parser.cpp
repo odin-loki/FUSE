@@ -5,8 +5,10 @@
 #include "test_logic_common.hpp"
 
 #include <fuse/relight/logic/graph_usd_parser.hpp>
+#include <fuse/relight/logic/line_comment.hpp>
 #include <fuse/relight/logic/logic_log.hpp>
 #include <fuse/relight/logic/logic_runtime.hpp>
+#include <fuse/relight/logic/token_len.hpp>
 #include <fuse/relight/mods/usd/usd_stage.hpp>
 
 #include <algorithm>
@@ -354,9 +356,21 @@ void testRuntime() {
     }
 }
 
+void testLineComment() {
+    CHECK(strip_line_comment("set a 1 // note") == "set a 1");
+    CHECK(strip_line_comment("say \"// not a comment\"") == "say \"// not a comment\"");
+}
+
+void testLogicTokenOk() {
+    CHECK(logic_token_ok("If"));
+    CHECK(!logic_token_ok(""));
+    CHECK(!logic_token_ok("1If"));
+}
+
 } // namespace
 
 void testParser() {
+    testLogicTokenOk();
     registerAllComponents();
     testTokens();
     testSimpleGraph();
@@ -365,6 +379,7 @@ void testParser() {
     testValuesAndTypes();
     testPropertyNames();
     testRuntime();
+    testLineComment();
     takeLogMessages();
 }
 

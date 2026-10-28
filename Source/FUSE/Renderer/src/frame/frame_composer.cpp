@@ -1,6 +1,7 @@
 // Frame composer: see include/fuse/renderer/frame/frame_composer.hpp.
 #include <fuse/renderer/frame/frame_composer.hpp>
 
+#include <fuse/renderer/research/rc/rc_reference.hpp>
 #include <fuse/renderer/rt/rt_caps.hpp>
 #include <fuse/renderer/temporal/temporal_types.hpp>
 #include <fuse/renderer/upscale/upscale_inputs.hpp>
@@ -371,6 +372,21 @@ bool FrameComposer::init(const FrameComposerDesc& desc) {
         optional(m_ssfx.init(d), kStageSsfx, "ssfx");
     }
     {
+        ssrc::SsrcGpuDesc d{};
+        d.device = desc.device;
+        d.allocator = desc.allocator;
+        d.bindless = desc.bindless;
+        d.framesInFlight = desc.framesInFlight;
+        optional(m_ssrc.init(d), kStageSsrc, "ssrc");
+    }
+    {
+        research::rc::RcGpuDesc d{};
+        d.device = desc.device;
+        d.allocator = desc.allocator;
+        d.bindless = desc.bindless;
+        optional(m_rc.init(d), kStageRcFlatland, "rc flatland");
+    }
+    {
         atmosphere::AtmosphereGpuDesc d{};
         d.device = desc.device;
         d.allocator = desc.allocator;
@@ -526,6 +542,8 @@ void FrameComposer::destroy() {
     m_fog.destroy();
     m_atmosphere.destroy();
     m_ssfx.destroy();
+    m_ssrc.destroy();
+    m_rc.destroy();
     m_lighting.destroy();
     m_ddgi.destroy();
     m_svgf.destroy();
@@ -685,6 +703,24 @@ bool FrameComposer::createBuffer(OwnedBuffer& o, u64 bytes, const char* name) {
     return true;
 }
 
+void FrameComposer::fillRcSceneDiagnostic_(u32 frameIndex) {
+    if (m_rcScene.buffer.mapped == nullptr || m_rcSceneW == 0u || m_rcSceneH == 0u) {
+        return;
+    }
+    // CPU pack of a 64^2 G-buffer (depth, signed-oct normal, albedo). No new cascade shader:
+    // a previous full-frame GPU pack did not fit the glslang budget.
+    research::rc::RcCpuGBuffer gbuffer;
+    research::rc::fillDiagnosticGBuffer(gbuffer, m_rcSceneW, m_rcSceneH, frameIndex);
+    research::rc::RcScene scene;
+    if (!research::rc::packSceneFromGBuffer(gbuffer, scene)) {
+        return;
+    }
+    const usize bytes = scene.texels.size() * sizeof(f32);
+    if (bytes <= m_rcScene.buffer.desc.size) {
+        std::memcpy(m_rcScene.buffer.mapped, scene.texels.data(), bytes);
+    }
+}
+
 bool FrameComposer::createTargets() {
     const u32 w = m_desc.renderWidth;
     const u32 h = m_desc.renderHeight;
@@ -693,7 +729,15 @@ bool FrameComposer::createTargets() {
            createImage(m_restirImage, w, h, "frame.restir") && createImage(m_reflectImage, w, h, "frame.reflect") &&
            createImage(m_resolveImage, w, h, "frame.scene_color") &&
            createBuffer(m_background, n * 16u, "frame.background") && createBuffer(m_distance, n * 4u, "frame.distance") &&
-           createBuffer(m_visibility, n * 4u, "frame.visibility");
+           createBuffer(m_visibility, n * 4u, "frame.visibility") && [&]() {
+        BufferDesc rcDesc{};
+        rcDesc.size = static_cast<usize>(static_cast<u64>(m_rcSceneW) * m_rcSceneH * 16u);
+        rcDesc.usage = bufferUsage({BufferUsage::Storage, BufferUsage::ShaderDeviceAddress, BufferUsage::TransferDst});
+        rcDesc.memoryUsage = MemoryUsage::CpuToGpu;
+        rcDesc.name = "frame.rc_scene";
+        return m_desc.allocator->createBuffer(rcDesc, m_rcScene.buffer) && m_rcScene.buffer.deviceAddress != 0u &&
+               m_rcScene.buffer.mapped != nullptr;
+    }();
 }
 
 void FrameComposer::destroyTargets() {
@@ -706,7 +750,7 @@ void FrameComposer::destroyTargets() {
         }
         *o = OwnedImage{};
     }
-    for (OwnedBuffer* o : {&m_background, &m_distance, &m_visibility}) {
+    for (OwnedBuffer* o : {&m_background, &m_distance, &m_visibility, &m_rcScene}) {
         if (o->buffer.handle != nullptr) {
             m_desc.allocator->destroyBuffer(o->buffer);
         }
@@ -879,6 +923,18 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         if (settings.restirDenoise) {
             plan |= kStageRestirDenoise;
         }
+    }
+    if (settings.ssrc) {
+        plan |= kStageSsrc;
+        if (settings.ssrcSettings.ddgi) {
+            plan |= kStageDdgi;
+            if (settings.ddgiAtmosphereSky) {
+                plan |= kStageAtmosphere;
+            }
+        }
+    }
+    if (settings.rcFlatland) {
+        plan |= kStageRcFlatland;
     }
     if (settings.ssfx) {
         plan |= kStageSsfx;
@@ -1178,18 +1234,42 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         chain = &m_skyImage.image;
     }
     std::memset(m_ssfxProj, 0, sizeof(m_ssfxProj));
-    if ((plan & kStageSsfx) != 0u) {
-        ssfx_gpu::SsfxCameraDesc sc{};
-        std::memcpy(sc.view, m_view, sizeof(sc.view));
-        perspective(cam.fovY, aspect, cam.nearPlane, cam.farPlane, false, sc.proj);
+    ssfx_gpu::SsfxCameraDesc screenCam{};
+    const bool screenSpaceGi = (plan & (kStageSsfx | kStageSsrc)) != 0u;
+    if (screenSpaceGi) {
+        std::memcpy(screenCam.view, m_view, sizeof(screenCam.view));
+        perspective(cam.fovY, aspect, cam.nearPlane, cam.farPlane, false, screenCam.proj);
         // The G-buffer's jitter (temporal::jitter_view_proj: NDC - 2 j / extent) in the SSFX convention
         // (y not flipped: pixel rows grow downwards through cy = h / 2 (1 + proj[9])).
-        sc.proj[8] += 2.f * m_jitter[0] / static_cast<f32>(w);
-        sc.proj[9] -= 2.f * m_jitter[1] / static_cast<f32>(h);
-        std::memcpy(m_ssfxProj, sc.proj, sizeof(m_ssfxProj));
-        sc.nearPlane = cam.nearPlane;
-        sc.farPlane = cam.farPlane;
-        sc.reversedZ = false;
+        screenCam.proj[8] += 2.f * m_jitter[0] / static_cast<f32>(w);
+        screenCam.proj[9] -= 2.f * m_jitter[1] / static_cast<f32>(h);
+        std::memcpy(m_ssfxProj, screenCam.proj, sizeof(m_ssfxProj));
+        screenCam.nearPlane = cam.nearPlane;
+        screenCam.farPlane = cam.farPlane;
+        screenCam.reversedZ = false;
+    }
+    if ((plan & kStageSsrc) != 0u) {
+        ssrc::SsrcFrameImages si{};
+        si.normalAo = &m_resolve.gbufferImage(0);
+        si.albedo = &m_resolve.gbufferImage(1);
+        si.roughMetal = &m_resolve.gbufferImage(2);
+        si.depth = &depth;
+        si.lit = chain;
+        if ((plan & kStageDdgi) != 0u) {
+            si.ddgiVolume = m_ddgi.volumeAddress();
+        }
+        ssrc::SsrcSettings ss = settings.ssrcSettings;
+        ss.ddgi = (plan & kStageDdgi) != 0u;
+        if (!ss.compose) {
+            ss.compose = true;
+        }
+        if (ssfxSky) {
+            std::memcpy(ss.sky, settings.ddgiSkyRadiance, sizeof(ss.sky));
+        }
+        ok = m_ssrc.beginFrame(serial, ss, screenCam, settings.ambient, si) && ok;
+        chain = &m_ssrc.outputImage();
+    }
+    if ((plan & kStageSsfx) != 0u) {
         ssfx_gpu::SsfxFrameImages si{};
         si.normalAo = &m_resolve.gbufferImage(0);
         si.albedo = &m_resolve.gbufferImage(1);
@@ -1205,7 +1285,10 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         if ((plan & kStageRtReflections) != 0u) {
             ss.ssr = false; // the RT reflections replace SSR
         }
-        ok = m_ssfx.beginFrame(serial, ss, sc, settings.ambient, si) && ok;
+        if ((plan & kStageSsrc) != 0u) {
+            ss.ssgi = false; // near-field diffuse comes from SSRC
+        }
+        ok = m_ssfx.beginFrame(serial, ss, screenCam, settings.ambient, si) && ok;
         chain = &m_ssfx.outputImage();
     }
     const Texture* reflectIn = chain;
@@ -1224,6 +1307,7 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         fd.camera = cluster;
         fd.lighting = m_lighting.frameConstantsAddress();
         fd.shadows = (plan & kStageVsm) != 0u ? m_vsmShadows.shadowConstantsAddress() : 0u;
+        fd.ddgi = (plan & kStageDdgi) != 0u ? m_ddgi.volumeAddress() : 0u;
         fd.depth = &depth;
         fd.lit = chain;
         fd.resetHistory = desc.resetHistory;
@@ -1421,6 +1505,10 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     std::memcpy(m_prevDrawViewProj, m_drawViewProj, sizeof(m_drawViewProj));
     std::memcpy(m_prevView, m_view, sizeof(m_view));
     m_hasPrev = true;
+    if ((plan & kStageRcFlatland) != 0u) {
+        fillRcSceneDiagnostic_(desc.frameIndex);
+    }
+
     m_begun = ok;
     return ok;
 }
@@ -1637,6 +1725,35 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
         ran |= kStageSky;
     }
 
+    // --- WP-6.5 flatland RC (CPU G-buffer pack into the host scene buffer + rc.*) ---------------------------
+    if ((plan & kStageRcFlatland) != 0u && m_rcScene.buffer.deviceAddress != 0u) {
+        research::rc::RcSettings rs = m_settings.rcSettings;
+        if (m_rc.beginFrame(m_frame.serial, rs, m_rcSceneW, m_rcSceneH, m_rcScene.buffer.deviceAddress)) {
+            const research::rc::RcGraphRefs rcRefs = m_rc.importInto(graph);
+            const rg::BufferRef sceneRef = importBuffer(graph, m_rcScene, "frame.rc_scene_read");
+            m_rc.addPasses(graph, rcRefs, sceneRef);
+            ran |= kStageRcFlatland;
+        }
+    }
+
+    // --- SSRC (WP-6.5b, after sky, before SSFX) ---------------------------------------------------------------
+    if ((plan & kStageSsrc) != 0u) {
+        const ssrc::SsrcGraphRefs sx = m_ssrc.importInto(graph);
+        ssrc::SsrcGraphInputs si{};
+        si.normalAo = gbuffer.gbuffer[0];
+        si.albedo = gbuffer.gbuffer[1];
+        si.roughMetal = gbuffer.gbuffer[2];
+        si.depth = depth;
+        si.lit = chain;
+        if ((plan & kStageDdgi) != 0u) {
+            si.ddgi[0] = ddgiRefs.work;
+        }
+        m_ssrc.addPasses(graph, sx, si);
+        out.ssrc = sx.output;
+        chain = sx.output;
+        ran |= kStageSsrc;
+    }
+
     // --- SSFX -------------------------------------------------------------------------------------------------
     if ((plan & kStageSsfx) != 0u) {
         const ssfx_gpu::SsfxGraphRefs sx = m_ssfx.importInto(graph);
@@ -1714,6 +1831,9 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
         volumetric_gpu::FogGraphInputs fi{};
         fi.lights = lighting.lists;
         fi.scene = &sceneRefs;
+        if ((plan & kStageDdgi) != 0u) {
+            fi.ddgi = ddgiRefs.work;
+        }
         fi.depth = depth;
         fi.lit = chain;
         m_fog.addPasses(graph, fog, fi);
@@ -1934,6 +2054,12 @@ void FrameComposer::collectRetired(u64 completedSerial) {
     m_lighting.collectRetired(completedSerial);
     if ((m_available & kStageSsfx) != 0u) {
         m_ssfx.collectRetired(completedSerial);
+    }
+    if ((m_available & kStageSsrc) != 0u) {
+        m_ssrc.collectRetired(completedSerial);
+    }
+    if ((m_available & kStageRcFlatland) != 0u) {
+        m_rc.collectRetired(completedSerial);
     }
     if ((m_available & kStageAtmosphere) != 0u) {
         m_atmosphere.collectRetired(completedSerial);

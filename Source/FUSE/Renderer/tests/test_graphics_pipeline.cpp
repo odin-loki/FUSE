@@ -1,6 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/platform/gl_context.hpp>
 #include <fuse/renderer/draw_list.hpp>
+#include <fuse/renderer/rhi/pipeline_name.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 #include <fuse/renderer/shader/shader_io.hpp>
 #include <fuse/renderer/shader/shader_module.hpp>
@@ -849,9 +850,22 @@ void testCompositeGpuPathRegisterRasterDepth() {
 #endif
 }
 
+void testPipelineNameOk() {
+    expectTrue(fuse::renderer::pipeline_name_ok("Forward"), "Forward is a valid pipeline name");
+    expectTrue(!fuse::renderer::pipeline_name_ok(""), "empty pipeline name is rejected");
+    expectTrue(!fuse::renderer::pipeline_name_ok("1Forward"), "leading digit is an invalid pipeline name");
+    expectTrue(!fuse::renderer::pipeline_name_ok("Forward Pass"), "pipeline name with a space is rejected");
+}
+
 } // namespace
 
 int main() {
+    testPipelineNameOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_graphics_pipeline: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testGraphicsPipelineFromFixtures();

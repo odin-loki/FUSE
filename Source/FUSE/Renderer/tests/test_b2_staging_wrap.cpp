@@ -6,6 +6,7 @@
 // batch's fence signals. Every buffer stays alive and is verified only after all uploads, so a ring
 // slot overwritten before its copy retired would show. See test_b2_async_upload for the ticket API.
 #include <fuse/renderer/resource_manager.hpp>
+#include <fuse/renderer/staging_bytes.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
 
@@ -33,6 +34,20 @@ void fillPattern(std::vector<fuse::u32>& words, fuse::u32 chunk) {
     for (fuse::usize i = 0; i < words.size(); ++i) {
         words[i] = (chunk * 0x9E3779B1u) ^ static_cast<fuse::u32>(i * 2654435761u);
     }
+}
+
+/// CPU gate. Must run before any device skip; a failure returns non-zero.
+/// No heap allocation.
+int testStagingBytesOk() {
+    expectTrue(fuse::renderer::staging_bytes_ok(1), "staging_bytes_ok(1) is true");
+    expectTrue(fuse::renderer::staging_bytes_ok(1 << 20), "staging_bytes_ok(1<<20) is true");
+    expectTrue(!fuse::renderer::staging_bytes_ok(0), "staging_bytes_ok(0) is false");
+    expectTrue(!fuse::renderer::staging_bytes_ok((1 << 20) + 1), "staging_bytes_ok((1<<20)+1) is false");
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b2_staging_wrap: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    return 0;
 }
 
 void testStagingRingWrap256MB() {
@@ -109,6 +124,10 @@ void testStagingRingWrap256MB() {
 } // namespace
 
 int main() {
+    if (const int stagingRc = testStagingBytesOk()) {
+        return stagingRc;
+    }
+
     testStagingRingWrap256MB();
 
     if (g_failures == 0) {

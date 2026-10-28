@@ -64,6 +64,26 @@ public:
     bool force_load(GridCoord coord);
     void force_unload(GridCoord coord);
 
+    /// Copy `data` into the staging store's save payload, keyed by `data.coord` (caller thread).
+    /// Does not mark the cell dirty and does not write a file. Replaces any save payload for that
+    /// coordinate. The worker load handoff is separate, so finishing a load does not drop this payload.
+    void stage_cell(CellFileData data);
+
+    /// Save payload for `coord`, or nullptr when nothing has been staged.
+    /// Caller thread only. Invalidated by `init` / `destroy`.
+    [[nodiscard]] CellFileData* staged_cell(GridCoord coord);
+
+    /// Mark `coord` dirty so `save_dirty_cells` will try to write it.
+    /// The cell does not need a staged payload yet; a mark with no payload stays dirty across save.
+    void mark_cell_dirty(GridCoord coord);
+
+    /// Write each dirty cell that has a staged payload to `cell_root` (`cells/cell_<x>_<y>.fusecell`)
+    /// with `write_cell_file`, on the caller thread. Worker threads never write cell files.
+    /// The dirty bit is cleared only after that write returns true.
+    /// A dirty cell with no staged payload writes nothing and stays dirty. Those cells, and any cell
+    /// whose write fails, are included in the returned failure count.
+    [[nodiscard]] u32 save_dirty_cells(const std::string& cell_root);
+
     [[nodiscard]] bool cell_loaded(GridCoord coord) const;
     [[nodiscard]] CellResidencyState cell_residency(GridCoord coord) const;
     [[nodiscard]] u32 loaded_cell_count() const;
@@ -124,6 +144,7 @@ private:
     [[nodiscard]] bool use_async_jobs_() const;
     [[nodiscard]] StreamingWorkFn make_worker_stub_() const;
     void flush_async_queue_(u32 max_submits);
+    [[nodiscard]] CellStagingStore& ensure_staging_();
 
     WorldPartitionDesc m_desc{};
     CellLoadCallbacks m_callbacks{};

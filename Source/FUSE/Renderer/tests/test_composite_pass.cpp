@@ -1,6 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/platform/gl_context.hpp>
 #include <fuse/renderer/command_buffer.hpp>
+#include <fuse/renderer/composite/composite_layer.hpp>
 #include <fuse/renderer/composite_pass.hpp>
 #include <fuse/renderer/render_command_list.hpp>
 #include <fuse/renderer/render_graph.hpp>
@@ -29,6 +30,14 @@ void expectTrue(bool condition, const char* message) {
 
 std::string fixturePath(const char* name) {
     return std::string(FUSE_SHADER_FIXTURE_DIR) + "/" + name;
+}
+
+/// CPU gate. Must run before any GPU skip; a failure exits instead of continuing.
+void testCompositeLayerOk() {
+    expectTrue(fuse::renderer::composite_layer_ok(0), "composite_layer_ok(0) is true");
+    expectTrue(fuse::renderer::composite_layer_ok(7), "composite_layer_ok(7) is true");
+    expectTrue(!fuse::renderer::composite_layer_ok(-1), "composite_layer_ok(-1) is false");
+    expectTrue(!fuse::renderer::composite_layer_ok(8), "composite_layer_ok(8) is false");
 }
 
 void testCompositePassScaffoldReady() {
@@ -207,6 +216,12 @@ void testCompositeGpuPathRegisterRasterDepth() {
 } // namespace
 
 int main() {
+    testCompositeLayerOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testCompositeLayerOk\n");
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testCompositePassScaffoldReady();

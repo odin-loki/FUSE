@@ -2,6 +2,10 @@
 #include <fuse/core/init.hpp>
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/host_dirty.hpp>
+#include <fuse/editor/host_pane.hpp>
+#include <fuse/editor/host_scale.hpp>
+#include <fuse/editor/undo_depth_ok.hpp>
 #include <fuse/editor/viewport_present_gate.hpp>
 #include <fuse/editor/viewport_vulkan_surface.hpp>
 #include <fuse/editor/ai_tree_profile_picker.hpp>
@@ -75,6 +79,18 @@ void testHostMultipleTicks() {
 void testHostPieStartStopViaQueue() {
     fuse::editor::EditorHost host;
 
+    const fuse::f32 kSpawnY = 12.f;
+    const fuse::ecs::EntityID spawnEntity = host.editorScene().registry().create();
+    fuse::ecs::Transform spawnT{};
+    spawnT.position = {1.f, kSpawnY, -2.f, 1.f};
+    spawnT.local_to_world = fuse::ecs::mat4::identity();
+    spawnT.local_to_world.data[12] = 1.f;
+    spawnT.local_to_world.data[13] = kSpawnY;
+    spawnT.local_to_world.data[14] = -2.f;
+    host.editorScene().registry().add(spawnEntity, spawnT);
+    host.editorScene().registry().add(spawnEntity, fuse::ecs::SpawnMarker{});
+    const fuse::editor::ViewportCamera beforePlay = host.runtimeViewport().panel().camera();
+
     fuse::editor::EditorCommand start;
     start.kind = fuse::editor::CommandKind::StartPlay;
     host.postFromUi(std::move(start));
@@ -82,6 +98,8 @@ void testHostPieStartStopViaQueue() {
     host.gameTick();
     expectTrue(host.editorState().playing, "PIE start applied on game thread");
     expectTrue(host.playSession().isActive(), "play session active after start command");
+    const fuse::editor::ViewportCamera& atPlay = host.runtimeViewport().panel().camera();
+    expectTrue(atPlay.positionY == kSpawnY, "PIE start snaps viewport to spawn height");
 
     fuse::editor::EditorCommand stop;
     stop.kind = fuse::editor::CommandKind::StopPlay;
@@ -90,6 +108,10 @@ void testHostPieStartStopViaQueue() {
     host.gameTick();
     expectTrue(!host.editorState().playing, "PIE stop applied on game thread");
     expectTrue(!host.playSession().isActive(), "play session stopped");
+    const fuse::editor::ViewportCamera& afterStop = host.runtimeViewport().panel().camera();
+    expectTrue(afterStop.positionX == beforePlay.positionX && afterStop.positionY == beforePlay.positionY &&
+                   afterStop.positionZ == beforePlay.positionZ,
+               "PIE stop restores pre-play viewport camera");
 }
 
 void testHostPieTicksOnGameThread() {
@@ -819,9 +841,65 @@ void testCinematicsSeqImportPostsAsset() {
     expectTrue(importer.importCount() == 1u, "seq import counted");
 }
 
+void testHostDirtyMarkAndClear() {
+    fuse::editor::HostDirty dirty{};
+
+    fuse::editor::host_mark_dirty(dirty, true, false, false);
+    expectTrue(dirty.scene, "marking scene sets the scene flag");
+    expectTrue(fuse::editor::host_any_dirty(dirty), "marking scene is dirty");
+
+    fuse::editor::host_clear_dirty(dirty);
+    expectTrue(!fuse::editor::host_any_dirty(dirty), "marking scene then clear leaves nothing dirty");
+    expectTrue(!dirty.scene && !dirty.selection && !dirty.assets, "clear sets every flag false");
+
+    fuse::editor::host_mark_dirty(dirty, false, true, false);
+    expectTrue(fuse::editor::host_any_dirty(dirty), "marking selection alone is dirty");
+    expectTrue(dirty.selection, "marking selection alone sets selection");
+    expectTrue(!dirty.scene, "marking selection alone leaves scene false");
+    expectTrue(!dirty.assets, "marking selection alone leaves assets false");
+
+    fuse::editor::host_mark_dirty(dirty, true, false, false);
+    expectTrue(dirty.scene && dirty.selection && !dirty.assets,
+               "a later scene mark ORs and keeps selection");
+}
+
+void testHostPaneOk() {
+    expectTrue(fuse::editor::host_pane_ok(0), "host pane 0 is allowed");
+    expectTrue(fuse::editor::host_pane_ok(7), "host pane 7 is allowed");
+    expectTrue(!fuse::editor::host_pane_ok(-1), "host pane -1 is rejected");
+    expectTrue(!fuse::editor::host_pane_ok(8), "host pane 8 is rejected");
+}
+
+void testHostScaleOk() {
+    expectTrue(fuse::editor::host_scale_ok(1), "host scale 1 is allowed");
+    expectTrue(fuse::editor::host_scale_ok(1.25f), "host scale 1.25 is allowed");
+    expectTrue(fuse::editor::host_scale_ok(1.5f), "host scale 1.5 is allowed");
+    expectTrue(fuse::editor::host_scale_ok(2.f), "host scale 2 is allowed");
+    expectTrue(!fuse::editor::host_scale_ok(1.1f), "host scale 1.1 is rejected");
+    expectTrue(!fuse::editor::host_scale_ok(3), "host scale 3 is rejected");
+}
+
+void testUndoDepthOk() {
+    expectTrue(fuse::editor::undo_depth_ok(1), "undo depth 1 is allowed");
+    expectTrue(fuse::editor::undo_depth_ok(256), "undo depth 256 is allowed");
+    expectTrue(!fuse::editor::undo_depth_ok(0), "undo depth 0 is rejected");
+    expectTrue(!fuse::editor::undo_depth_ok(257), "undo depth 257 is rejected");
+}
+
 } // namespace
 
 int main() {
+    testUndoDepthOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_editor_host_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testHostPaneOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_editor_host_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testHostScaleOk();
     fuse::core::initialize();
     testHostDrainsOnGameTick();
     testHostMultipleTicks();
@@ -860,6 +938,7 @@ int main() {
     testCinematicsSeqScrubPreviewPostsSample();
     testCinematicsSeqPreviewPaneWire();
     testCinematicsSeqImportPostsAsset();
+    testHostDirtyMarkAndClear();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

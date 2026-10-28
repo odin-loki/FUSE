@@ -31,6 +31,7 @@
 #include <fuse/renderer/denoise/svgf_kernel.hpp>
 #include <fuse/renderer/denoise/svgf_reference.hpp>
 #include <fuse/renderer/denoise/svgf_synthetic.hpp>
+#include <fuse/renderer/denoise_sigma.hpp>
 #include <fuse/renderer/rg/graph.hpp>
 
 #include <algorithm>
@@ -39,6 +40,7 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -613,10 +615,23 @@ void testApi() {
     std::printf("api: without a device init fails (%s), no refs, no passes; constants clamp\n", caps.reason);
 }
 
+void testDenoiseSigmaOk() {
+    expect(denoise_sigma_ok(0.5f), "denoise_sigma_ok(0.5) is true");
+    expect(denoise_sigma_ok(8.f), "denoise_sigma_ok(8) is true");
+    expect(!denoise_sigma_ok(0.f), "denoise_sigma_ok(0) is false");
+    expect(!denoise_sigma_ok(-0.1f), "denoise_sigma_ok(-0.1) is false");
+    expect(!denoise_sigma_ok(8.1f), "denoise_sigma_ok(8.1) is false");
+    expect(!denoise_sigma_ok(std::numeric_limits<float>::quiet_NaN()), "denoise_sigma_ok(non-finite) is false");
+}
 
 } // namespace
 
 int main(int argc, char** argv) {
+    testDenoiseSigmaOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: %d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     bool ran = false;

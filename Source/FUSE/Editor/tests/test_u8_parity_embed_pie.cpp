@@ -1,5 +1,6 @@
 #include <fuse/core/init.hpp>
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/pie_fps.hpp>
 #include <fuse/project/loader.hpp>
 
 #include <cstdio>
@@ -70,6 +71,13 @@ void testParityEmbedProjectLoad(const ParityDemoCase& demo) {
                (std::string(demo.demoId) + " play session stopped").c_str());
 }
 
+void testPieFpsOk() {
+    expectTrue(fuse::editor::pie_fps_ok(30), "30 fps is a PIE rate");
+    expectTrue(fuse::editor::pie_fps_ok(60), "60 fps is a PIE rate");
+    expectTrue(!fuse::editor::pie_fps_ok(15), "15 fps is not a PIE rate");
+    expectTrue(!fuse::editor::pie_fps_ok(0), "0 fps is not a PIE rate");
+}
+
 void testAllParityDemosEmbedPie() {
     const std::vector<ParityDemoCase> demos = {
         {"demo_3d_empty", true},
@@ -89,6 +97,7 @@ void testAllParityDemosEmbedPie() {
 } // namespace
 
 int main() {
+    testPieFpsOk();
     fuse::core::initialize();
     testAllParityDemosEmbedPie();
     fuse::core::shutdown();
@@ -101,3 +110,34 @@ int main() {
     std::fprintf(stderr, "fuse_u8_parity_embed_pie_tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+#include <fuse/editor/embed_parity.hpp>
+
+namespace {
+
+void testEmbedParityCounter() {
+    const fuse::editor::EmbedParity matched{4, 4, 10, 10};
+    expectTrue(fuse::editor::embed_parity_ok(matched),
+               "4/4 entities and 10/10 components is ok");
+
+    const fuse::editor::EmbedParity entityMismatch{4, 3, 10, 10};
+    expectTrue(!fuse::editor::embed_parity_ok(entityMismatch), "4/3 entities is not ok");
+    expectTrue(fuse::editor::embed_parity_delta(entityMismatch) == 1, "4/3 entity delta is 1");
+
+    const fuse::editor::EmbedParity negativeEntities{-1, -1, 10, 10};
+    expectTrue(!fuse::editor::embed_parity_ok(negativeEntities),
+               "negative entity counts are not ok");
+
+    const fuse::editor::EmbedParity componentsBelow{4, 4, 3, 3};
+    expectTrue(!fuse::editor::embed_parity_ok(componentsBelow),
+               "component counts below entity counts are not ok");
+}
+
+// Startup registration so this check runs with the rest of the binary.
+struct EmbedParityCounterRegistration {
+    EmbedParityCounterRegistration() { testEmbedParityCounter(); }
+};
+
+[[maybe_unused]] const EmbedParityCounterRegistration g_embedParityCounterRegistration{};
+
+} // namespace

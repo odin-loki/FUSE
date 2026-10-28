@@ -1,8 +1,11 @@
+#include <fuse/ai/query_radius.hpp>
+#include <fuse/ai/same_team.hpp>
 #include <fuse/ai/spatial_query.hpp>
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <vector>
 
 namespace {
@@ -265,9 +268,190 @@ void testRadiusFilterPolicyIsValid() {
                "radius filter policy fails with zero radius");
 }
 
+void testNearestTieBreaksToLowestAgentIndex() {
+    fuse::ai::FactionQuery factions;
+    factions.selfTeam = 1;
+    factions.hostileMask = 1u << 2;
+
+    const std::vector<fuse::ai::AllyCandidate> hostiles = {
+        {0, 0.f, 0.f, 1, 0.f, 1u << 1},
+        {8, 0.f, 5.f, 2, 0.f, 1u << 2},
+        {3, 5.f, 0.f, 2, 0.f, 1u << 2},
+        {1, 40.f, 0.f, 2, 0.f, 1u << 2},
+    };
+
+    const fuse::ai::NearestAllyResult nearest =
+        fuse::ai::find_nearest_hostile(0, factions, 0.f, 0.f, 0.f, hostiles);
+    expectTrue(nearest.found, "nearest hostile found among equidistant enemies");
+    expectTrue(nearest.allyIndex == 3u, "nearest hostile tie-break prefers lowest agent index");
+    expectNear(nearest.distanceSq, 25.f, 1e-4f, "nearest hostile tie distance is five units");
+
+    const std::vector<fuse::ai::AllyCandidate> allies = {
+        {0, 0.f, 0.f, 1},
+        {8, 0.f, 5.f, 1},
+        {3, 5.f, 0.f, 1},
+        {1, 40.f, 0.f, 1},
+    };
+    const fuse::ai::NearestAllyResult visible =
+        fuse::ai::find_nearest_visible_ally(0, 1, 0.f, 0.f, 0.f, allies, {});
+    expectTrue(visible.found, "visible ally found among equidistant allies");
+    expectTrue(visible.allyIndex == 3u, "visible ally tie-break prefers lowest agent index");
+    expectNear(visible.distanceSq, 25.f, 1e-4f, "visible ally tie distance is five units");
+}
+
+void testHostileMaskFilter() {
+    fuse::ai::FactionQuery factions;
+    factions.selfTeam = 1;
+    factions.friendlyMask = (1u << 1) | (1u << 3);
+    factions.hostileMask = (1u << 2) | (1u << 4);
+
+    const std::vector<fuse::ai::AllyCandidate> agents = {
+        {0, 0.f, 0.f, 2, 0.f, 1u << 2},
+        {1, 1.f, 0.f, 1, 0.f, 1u << 2},
+        {2, 1.f, 0.f, 3, 0.f, 1u << 3},
+        {3, 1.f, 0.f, 4, 0.f, (1u << 2) | (1u << 3)},
+        {4, 3.f, 0.f, 2, 0.f, 1u << 2},
+        {5, 30.f, 0.f, 2, 0.f, 1u << 2},
+        {6, 1.f, 0.f, 5, 0.f, 1u << 5},
+        {7, 2.f, 0.f, 4, 0.f, 1u << 4},
+        {9, 1.5f, 0.f, 2, 0.f, 0},
+    };
+
+    const fuse::u32 count =
+        fuse::ai::count_hostiles_in_radius(0, factions, 0.f, 0.f, 0.f, 10.f, agents);
+    expectTrue(count == 2u, "hostile mask counts only in-radius hostiles");
+
+    const fuse::ai::NearestAllyResult nearest =
+        fuse::ai::find_nearest_hostile(0, factions, 0.f, 0.f, 0.f, agents);
+    expectTrue(nearest.found, "nearest hostile ignores friendlies, neutrals, and self");
+    expectTrue(nearest.allyIndex == 7u, "nearest hostile is the closest mask match");
+    expectNear(nearest.distanceSq, 4.f, 1e-4f, "nearest hostile distance excludes masked friendlies");
+
+    factions.hostileMask = 0;
+    expectTrue(fuse::ai::count_hostiles_in_radius(0, factions, 0.f, 0.f, 0.f, 10.f, agents) == 0u,
+               "empty hostile mask counts no one");
+    expectTrue(!fuse::ai::find_nearest_hostile(0, factions, 0.f, 0.f, 0.f, agents).found,
+               "empty hostile mask finds no one");
+}
+
+void testHostileDistanceIncludesZ() {
+    fuse::ai::FactionQuery factions;
+    factions.selfTeam = 1;
+    factions.hostileMask = 1u << 2;
+
+    const std::vector<fuse::ai::AllyCandidate> agents = {
+        {1, 2.f, 0.f, 2, 0.f, 1u << 2},
+        {2, 0.f, 0.f, 2, 3.f, 1u << 2},
+    };
+
+    expectNear(fuse::ai::distance_sq_3d(0.f, 0.f, 0.f, 0.f, 0.f, 3.f), 9.f, 1e-4f,
+               "distance_sq_3d includes height");
+
+    const fuse::ai::NearestAllyResult nearest =
+        fuse::ai::find_nearest_hostile(0, factions, 0.f, 0.f, 0.f, agents);
+    expectTrue(nearest.found, "3D hostile query finds an enemy");
+    expectTrue(nearest.allyIndex == 1u, "3D distance prefers the nearer hostile once z is included");
+    expectNear(nearest.distanceSq, 4.f, 1e-4f, "hostile distance squares the planar offset");
+
+    const fuse::u32 count =
+        fuse::ai::count_hostiles_in_radius(0, factions, 0.f, 0.f, 0.f, 2.f, agents);
+    expectTrue(count == 1u, "3D radius excludes a hostile that is near only on the XY plane");
+
+    const fuse::ai::NearestAllyResult fromHeight =
+        fuse::ai::find_nearest_hostile(0, factions, 0.f, 0.f, 3.f, agents);
+    expectTrue(fromHeight.allyIndex == 2u, "hostile query measures distance from the seeker z");
+    expectNear(fromHeight.distanceSq, 0.f, 1e-4f, "co-height hostile has zero 3D distance");
+    expectTrue(fuse::ai::count_hostiles_in_radius(0, factions, 0.f, 0.f, 3.f, 1.f, agents) == 1u,
+               "3D radius is measured from the seeker height");
+
+    const std::vector<fuse::ai::AllyCandidate> squad = {
+        {0, 0.f, 0.f, 1},
+        {1, 5.f, 0.f, 1},
+        {2, 1.f, 0.f, 1, 100.f},
+    };
+    const fuse::ai::NearestAllyResult xy = fuse::ai::find_nearest_ally(0, 1, 0.f, 0.f, squad);
+    expectTrue(xy.allyIndex == 2u, "find_nearest_ally ignores z and stays on the XY plane");
+    expectNear(xy.distanceSq, 1.f, 1e-4f, "XY nearest ally distance ignores height");
+}
+
+void testNearestVisibleAllySkipsBlockedNearer() {
+    const std::vector<fuse::ai::AllyCandidate> allies = {
+        {0, 0.f, 0.f, 1},
+        {1, 4.f, 0.f, 1},
+        {2, 4.f, 6.f, 1},
+        {3, 1.f, 0.f, 2},
+    };
+
+    fuse::ai::AabbBlocker wall;
+    wall.centerX = 2.f;
+    wall.centerY = 0.f;
+    wall.centerZ = 0.f;
+    wall.halfX = 0.5f;
+    wall.halfY = 0.5f;
+    wall.halfZ = 0.5f;
+
+    expectTrue(fuse::ai::segment_intersects_aabb(0.f, 0.f, 0.f, 4.f, 0.f, 0.f, wall),
+               "slab test hits an AABB on the segment");
+    expectTrue(!fuse::ai::segment_intersects_aabb(0.f, 0.f, 0.f, 4.f, 6.f, 0.f, wall),
+               "slab test misses an AABB off the segment");
+    expectTrue(!fuse::ai::segment_intersects_aabb(0.f, 0.f, 0.f, 1.f, 0.f, 0.f, wall),
+               "slab test misses an AABB past the segment end");
+    expectTrue(!fuse::ai::segment_intersects_aabb(0.f, 2.f, 0.f, 4.f, 2.f, 0.f, wall),
+               "slab test misses when a parallel segment is outside the AABB");
+    expectTrue(fuse::ai::segment_intersects_aabb(2.f, 0.f, 0.f, 2.2f, 0.f, 0.f, wall),
+               "slab test hits when the segment starts inside the AABB");
+
+    const std::vector<fuse::ai::AabbBlocker> blockers = {wall};
+    const fuse::ai::NearestAllyResult visible =
+        fuse::ai::find_nearest_visible_ally(0, 1, 0.f, 0.f, 0.f, allies, blockers);
+    expectTrue(visible.found, "visible ally found when a farther ally is unobstructed");
+    expectTrue(visible.allyIndex == 2u, "blocker hides the nearer ally so the farther visible one wins");
+    expectNear(visible.distanceSq, 52.f, 1e-4f, "visible ally distance is the unobstructed length");
+
+    const fuse::ai::NearestAllyResult clear =
+        fuse::ai::find_nearest_visible_ally(0, 1, 0.f, 0.f, 0.f, allies, {});
+    expectTrue(clear.found, "visible ally found with no blockers");
+    expectTrue(clear.allyIndex == 1u, "without a blocker the nearer same-team ally wins");
+    expectNear(clear.distanceSq, 16.f, 1e-4f, "clear line of sight keeps the nearer ally distance");
+
+    const std::vector<fuse::ai::AllyCandidate> onlyNear = {
+        {0, 0.f, 0.f, 1},
+        {1, 4.f, 0.f, 1},
+    };
+    const fuse::ai::NearestAllyResult hidden =
+        fuse::ai::find_nearest_visible_ally(0, 1, 0.f, 0.f, 0.f, onlyNear, blockers);
+    expectTrue(!hidden.found, "a fully blocked ally is not visible");
+
+    const fuse::ai::NearestAllyResult overWall =
+        fuse::ai::find_nearest_visible_ally(0, 1, 0.f, 0.f, 2.f, onlyNear, blockers);
+    expectTrue(overWall.found, "raised seeker can see over a ground blocker");
+    expectTrue(overWall.allyIndex == 1u, "line of sight uses the seeker z");
+}
+
+void testSameTeam() {
+    expectTrue(fuse::ai::same_team(0u, 0u), "team 0 matches team 0");
+    expectTrue(fuse::ai::same_team(2u, 2u), "same_team(2, 2) is true");
+    expectTrue(!fuse::ai::same_team(1u, 2u), "same_team(1, 2) is false");
+}
+
+void testQueryRadiusOk() {
+    expectTrue(fuse::ai::query_radius_ok(0.5f), "query_radius_ok(0.5) is true");
+    expectTrue(fuse::ai::query_radius_ok(128.f), "query_radius_ok(128) is true");
+    expectTrue(!fuse::ai::query_radius_ok(0.f), "query_radius_ok(0) is false");
+    expectTrue(!fuse::ai::query_radius_ok(-1.f), "query_radius_ok(-1) is false");
+    expectTrue(!fuse::ai::query_radius_ok(128.1f), "query_radius_ok(128.1) is false");
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    expectTrue(!fuse::ai::query_radius_ok(nan), "query_radius_ok(NaN) is false");
+}
+
 } // namespace
 
 int run_spatial_query_tests() {
+    testQueryRadiusOk();
+    if (g_failures != 0) {
+        return g_failures;
+    }
+    testSameTeam();
     testDistanceSq2d();
     testWithinRadius();
     testCountAlliesInRadiusMatchesFilter();
@@ -291,5 +475,9 @@ int run_spatial_query_tests() {
     testIsFiniteAllyRadius();
     testIsUnlimitedRadius();
     testRadiusFilterPolicyIsValid();
+    testNearestTieBreaksToLowestAgentIndex();
+    testHostileMaskFilter();
+    testHostileDistanceIncludesZ();
+    testNearestVisibleAllySkipsBlockedNearer();
     return g_failures;
 }

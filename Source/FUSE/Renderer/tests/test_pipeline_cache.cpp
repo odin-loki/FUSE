@@ -1,5 +1,6 @@
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/renderer/rhi/cache_entries.hpp>
 #include <fuse/renderer/shader/shader_io.hpp>
 #include <fuse/renderer/shader/shader_module.hpp>
 #include <fuse/renderer/shader/shader_reflection.hpp>
@@ -36,6 +37,15 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+// CPU gate. Must run before any GPU or device skip; a failure returns non-zero.
+// Does not allocate.
+void testCacheEntriesOk() {
+    expectTrue(fuse::renderer::cache_entries_ok(1), "cache_entries_ok(1) is true");
+    expectTrue(fuse::renderer::cache_entries_ok(1 << 20), "cache_entries_ok(1<<20) is true");
+    expectTrue(!fuse::renderer::cache_entries_ok(0), "cache_entries_ok(0) is false");
+    expectTrue(!fuse::renderer::cache_entries_ok((1 << 20) + 1), "cache_entries_ok((1<<20)+1) is false");
 }
 
 [[maybe_unused]] std::string fixturePath(const char* name) {
@@ -522,6 +532,12 @@ int runWarmStartMode(bool cold, const std::string& dirText) {
 } // namespace
 
 int main(int argc, char** argv) {
+    testCacheEntriesOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_pipeline_cache: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     std::string mode = "unit";
     std::string dir;
     for (int i = 1; i + 1 < argc; ++i) {

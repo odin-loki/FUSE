@@ -19,10 +19,13 @@
 
 #include <fuse/core/sanitizer.hpp>
 #include <fuse/core/init.hpp>
+#include <fuse/renderer/postprocess/unsharp.hpp>
+#include <fuse/renderer/rhi/reload_generation.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 #include <fuse/renderer/shader/shader_compiler.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -58,9 +61,28 @@ using fuse::u8;
     return rgba[i] == r && rgba[i + 1] == g && rgba[i + 2] == b;
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits the process.
+void testReloadGenerationOk() {
+    expectTrue(fuse::renderer::reload_generation_ok(0), "reload generation 0 is valid");
+    expectTrue(fuse::renderer::reload_generation_ok(1000000u), "reload generation 1000000 is valid");
+    expectTrue(!fuse::renderer::reload_generation_ok(1000001u), "reload generation 1000001 is rejected");
+}
+
+void testUnsharpMask() {
+    const fuse::math::Vec3 boosted = fuse::renderer::unsharp_mask({1.f, 1.f, 1.f}, {0.f, 0.f, 0.f}, 1.f);
+    expectTrue(std::fabs(boosted.x - 2.f) < 1e-5f, "unsharp mask adds the high-frequency residual");
+    const fuse::math::Vec3 plain = fuse::renderer::unsharp_mask({0.4f, 0.2f, 0.1f}, {0.f, 0.f, 0.f}, 0.f);
+    expectTrue(plain.x == 0.4f && plain.y == 0.2f && plain.z == 0.1f, "zero unsharp amount leaves the center");
+}
+
 } // namespace
 
 int main() {
+    testReloadGenerationOk();
+    testUnsharpMask();
+    if (b5rhi::failures() != 0) {
+        return b5rhi::finish("fuse_b5_rhi_hot_reload");
+    }
 #if !defined(FUSE_VULKAN_BACKEND)
     return b5rhi::skip("fuse_b5_rhi_hot_reload", "Vulkan backend disabled");
 #else

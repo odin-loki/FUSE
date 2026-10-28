@@ -1,5 +1,6 @@
 #include <fuse/core/init.hpp>
 #include <fuse/renderer/resource_manager.hpp>
+#include <fuse/renderer/rhi/destroy_gen.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
 #include <fuse/renderer/vk/gpu_alloc_stats.hpp>
@@ -74,6 +75,12 @@ void shutdownTestContext(TestContext& ctx) {
     ctx.bindless.destroy(*ctx.bootstrap->device());
     ctx.bootstrap.reset();
     ctx.active = false;
+}
+
+void testDestroyGenOk() {
+    expectTrue(fuse::renderer::destroy_gen_ok(0u), "destroy generation 0 is valid");
+    expectTrue(fuse::renderer::destroy_gen_ok(1000000u), "destroy generation 1000000 is valid");
+    expectTrue(!fuse::renderer::destroy_gen_ok(1000001u), "destroy generation 1000001 is rejected");
 }
 
 void testExplicitDestroyOrderReleasesBindlessSlots() {
@@ -242,6 +249,12 @@ void testGlobalGpuStatsHook() {
 } // namespace
 
 int main() {
+    testDestroyGenOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_rhi_resource_destroy_order: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testExplicitDestroyOrderReleasesBindlessSlots();

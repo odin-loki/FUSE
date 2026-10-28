@@ -1,4 +1,7 @@
+#include <fuse/core/smoke_frame.hpp>
 #include <fuse/platform/event_pump.hpp>
+#include <fuse/platform/input_replay.hpp>
+#include <fuse/platform/key_code.hpp>
 #include <fuse/platform/window.hpp>
 
 #include <cstdio>
@@ -28,6 +31,20 @@ void expectEqI32(fuse::i32 actual, fuse::i32 expected, const char* message) {
         std::fprintf(stderr, "FAIL: %s (expected %d, got %d)\n", message, expected, actual);
         ++g_failures;
     }
+}
+
+void testSmokeFrameOk() {
+    expectTrue(fuse::core::smoke_frame_ok(1), "smoke_frame_ok(1)");
+    expectTrue(fuse::core::smoke_frame_ok(120), "smoke_frame_ok(120)");
+    expectTrue(!fuse::core::smoke_frame_ok(0), "smoke_frame_ok(0)");
+    expectTrue(!fuse::core::smoke_frame_ok(121), "smoke_frame_ok(121)");
+}
+
+void testKeyCodeOk() {
+    expectTrue(fuse::platform::key_code_ok(1), "key_code_ok(1)");
+    expectTrue(fuse::platform::key_code_ok(511), "key_code_ok(511)");
+    expectTrue(!fuse::platform::key_code_ok(0), "key_code_ok(0)");
+    expectTrue(!fuse::platform::key_code_ok(512), "key_code_ok(512)");
 }
 
 void testKeyDownEnqueuesAndPolls() {
@@ -165,9 +182,81 @@ void testDrainEventsFifoIncludesInput() {
     expectEqU32(pump.pendingEventCount(), 0u, "drain empties queue including input");
 }
 
+void testInputReplayRecordOrderSeekAndReject() {
+    fuse::platform::InputReplay replay;
+
+    const fuse::platform::InputEvent first{10u, fuse::platform::Key::A, true};
+    const fuse::platform::InputEvent sameTime{10u, fuse::platform::Key::B, false};
+    const fuse::platform::InputEvent later{25u, fuse::platform::Key::W, true};
+    const fuse::platform::InputEvent earlier{9u, fuse::platform::Key::Escape, true};
+
+    expectTrue(replay.record(first), "first event recorded");
+    expectTrue(replay.record(sameTime), "equal timestamp recorded");
+    expectTrue(replay.record(later), "later timestamp recorded");
+    expectTrue(!replay.record(earlier), "decreasing timestamp rejected");
+    expectEqU32(replay.size(), 3u, "rejected event is not stored");
+
+    const auto atStart = replay.next();
+    expectTrue(atStart.has_value(), "cursor starts at first recorded event");
+    if (atStart.has_value()) {
+        expectEqU32(atStart->timeMs, 10u, "record order time 0");
+        expectTrue(atStart->key == fuse::platform::Key::A, "record order key A");
+        expectTrue(atStart->down, "record order key A down");
+    }
+
+    const auto second = replay.next();
+    expectTrue(second.has_value(), "second recorded event");
+    if (second.has_value()) {
+        expectEqU32(second->timeMs, 10u, "record order time 1");
+        expectTrue(second->key == fuse::platform::Key::B, "record order key B");
+        expectTrue(!second->down, "record order key B up");
+    }
+
+    const auto third = replay.next();
+    expectTrue(third.has_value(), "third recorded event");
+    if (third.has_value()) {
+        expectEqU32(third->timeMs, 25u, "record order time 2");
+        expectTrue(third->key == fuse::platform::Key::W, "record order key W");
+        expectTrue(third->down, "record order key W down");
+    }
+    expectTrue(!replay.next().has_value(), "next at end is empty");
+
+    replay.seek(11u);
+    const auto skipped = replay.next();
+    expectTrue(skipped.has_value(), "seek lands on a later event");
+    if (skipped.has_value()) {
+        expectEqU32(skipped->timeMs, 25u, "seek skips earlier events");
+        expectTrue(skipped->key == fuse::platform::Key::W, "seek skips to W");
+    }
+    expectTrue(!replay.next().has_value(), "no event after seek target");
+
+    replay.seek(10u);
+    const auto equalTime = replay.next();
+    expectTrue(equalTime.has_value(), "seek to an equal timestamp lands");
+    if (equalTime.has_value()) {
+        expectTrue(equalTime->key == fuse::platform::Key::A, "seek keeps the first event at that time");
+        expectEqU32(equalTime->timeMs, 10u, "seek equal time is not skipped");
+    }
+
+    replay.reset();
+    const auto resetEvent = replay.next();
+    expectTrue(resetEvent.has_value(), "reset returns to the start");
+    if (resetEvent.has_value()) {
+        expectTrue(resetEvent->key == fuse::platform::Key::A, "reset seeks to time 0");
+        expectEqU32(resetEvent->timeMs, 10u, "reset lands on the first recorded event");
+    }
+}
+
 } // namespace
 
 int main() {
+    testSmokeFrameOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_core p7 input smoke: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testKeyCodeOk();
     testKeyDownEnqueuesAndPolls();
     testKeyUpEnqueuesAndPolls();
     testMouseMoveEnqueuesAndPolls();
@@ -175,6 +264,7 @@ int main() {
     testMouseButtonUp();
     testInputDoesNotBreakResizeCoalesce();
     testDrainEventsFifoIncludesInput();
+    testInputReplayRecordOrderSeekAndReject();
 
     if (g_failures == 0) {
         std::printf("fuse_core p7 input smoke: all checks passed\n");

@@ -4,6 +4,36 @@
 
 namespace fuse::adventure {
 
+namespace {
+
+f32 clampUnit(f32 value) {
+    if (value < 0.f) {
+        return 0.f;
+    }
+    if (value > 1.f) {
+        return 1.f;
+    }
+    return value;
+}
+
+/// Linear falloff: full `stats.damage` at the muzzle, `damage * falloffMinScale` at `range`.
+f32 damageWithFalloff(const WeaponStats& stats, f32 distance) {
+    const f32 minScale = clampUnit(stats.falloffMinScale);
+    if (minScale >= 1.f || stats.range <= 0.001f) {
+        return stats.damage;
+    }
+
+    f32 t = 0.f;
+    if (distance >= stats.range) {
+        t = 1.f;
+    } else if (distance > 0.f) {
+        t = distance / stats.range;
+    }
+    return stats.damage * (1.f + (minScale - 1.f) * t);
+}
+
+} // namespace
+
 HitscanResult CombatHitscanStub::fireHitscan(const WeaponStats& stats,
                                              f32 originX,
                                              f32 originY,
@@ -40,7 +70,7 @@ HitscanResult CombatHitscanStub::fireHitscan(const WeaponStats& stats,
     }
 
     result.hit = true;
-    result.damage = stats.damage;
+    result.damage = damageWithFalloff(stats, distance);
     return result;
 }
 

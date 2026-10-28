@@ -1,4 +1,8 @@
+#include <fuse/log/level_rank.hpp>
+#include <fuse/log/log_slot.hpp>
 #include <fuse/log/logger.hpp>
+#include <fuse/log/rate_allow.hpp>
+#include <fuse/math/weighted_pick.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -193,9 +197,55 @@ void testLogMacros() {
     }
 }
 
+void testRateAllow() {
+    expectTrue(fuse::log::rate_allow(0, 0), "zero hits within a zero cap is allowed");
+    expectTrue(fuse::log::rate_allow(3, 3), "hits equal to the cap is allowed");
+    expectTrue(!fuse::log::rate_allow(-1, 3), "negative hits are not allowed");
+    expectTrue(!fuse::log::rate_allow(4, 3), "hits above the cap are not allowed");
+}
+
+void testLogSlotOk() {
+    expectTrue(fuse::log::log_slot_ok(0), "slot 0 is in range");
+    expectTrue(fuse::log::log_slot_ok(255), "slot 255 is in range");
+    expectTrue(!fuse::log::log_slot_ok(-1), "slot -1 is out of range");
+    expectTrue(!fuse::log::log_slot_ok(256), "slot 256 is out of range");
+}
+
+void testLogLevelRank() {
+    expectTrue(fuse::log::log_level_rank("Info") == 2, "Info ranks at 2");
+    expectTrue(fuse::log::log_level_rank("info") == -1, "level names are case-sensitive");
+    expectTrue(fuse::log::log_level_rank("Fatal") == 5, "Fatal ranks at 5");
+}
+
+void testWeightedPick() {
+    const fuse::f32 weights[] = {1.f, 3.f};
+    const auto at0 = fuse::math::weighted_index(weights, 2, 0.f);
+    const auto at02 = fuse::math::weighted_index(weights, 2, 0.2f);
+    const auto at05 = fuse::math::weighted_index(weights, 2, 0.5f);
+    const auto at1 = fuse::math::weighted_index(weights, 2, 1.f);
+    expectTrue(at0.has_value() && *at0 == 0, "u=0 picks the first weight");
+    expectTrue(at02.has_value() && *at02 == 0, "u=0.2 stays in the first weight");
+    expectTrue(at05.has_value() && *at05 == 1, "u=0.5 crosses into the second weight");
+    expectTrue(at1.has_value() && *at1 == 1, "u=1 lands on the last positive weight");
+}
+
 } // namespace
 
 int main() {
+    testRateAllow();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_core logger tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testLogSlotOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_core logger tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testLogLevelRank();
+    testWeightedPick();
     testSinkAndRingRecordInfoCore();
     testDisabledChannelDoesNotRecord();
     testMinLevelFiltersTrace();

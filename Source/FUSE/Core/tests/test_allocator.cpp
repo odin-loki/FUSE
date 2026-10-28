@@ -7,7 +7,9 @@
 #include <fuse/alloc/size_class_allocator.hpp>
 #include <fuse/alloc/stack_allocator.hpp>
 #include <fuse/assert.hpp>
+#include <fuse/core/alloc_align.hpp>
 #include <fuse/core/flat_u64_map.hpp>
+#include <fuse/memory/heap_size.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -27,6 +29,22 @@ void expectTrue(bool condition, const char* message) {
 
 void resetStatsHook() {
     fuse::alloc::clearGlobalStatsHook();
+}
+
+void testAllocAlignOk() {
+    expectTrue(fuse::core::alloc_align_ok(1), "1-byte alignment is valid");
+    expectTrue(fuse::core::alloc_align_ok(16), "16-byte alignment is valid");
+    expectTrue(fuse::core::alloc_align_ok(256), "256-byte alignment is valid");
+    expectTrue(!fuse::core::alloc_align_ok(0), "0-byte alignment is invalid");
+    expectTrue(!fuse::core::alloc_align_ok(3), "3-byte alignment is not a power of two");
+    expectTrue(!fuse::core::alloc_align_ok(512), "512-byte alignment is above the maximum");
+}
+
+void testHeapSizeOk() {
+    expectTrue(fuse::memory::heap_size_ok(4096u), "4096-byte heap is valid");
+    expectTrue(fuse::memory::heap_size_ok(268435456u), "268435456-byte heap is valid");
+    expectTrue(!fuse::memory::heap_size_ok(4095u), "4095-byte heap is below the minimum");
+    expectTrue(!fuse::memory::heap_size_ok(268435457u), "268435457-byte heap is above the maximum");
 }
 
 void testFrameAllocatorBumpReset() {
@@ -328,6 +346,13 @@ void testFlatU64Map() {
 } // namespace
 
 int main() {
+    testAllocAlignOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d test(s) failed\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testHeapSizeOk();
     testFrameAllocatorBumpReset();
     testFrameAllocatorAlignmentAndPeak();
     testFrameAllocatorPingPong();

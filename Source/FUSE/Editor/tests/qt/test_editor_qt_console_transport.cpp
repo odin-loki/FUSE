@@ -10,6 +10,8 @@
 #include "main_window.hpp"
 
 #include <fuse/core/init.hpp>
+#include <fuse/editor/console_line.hpp>
+#include <fuse/editor/transport_slot.hpp>
 #include <fuse/ecs/components/transform.hpp>
 
 #include <QAction>
@@ -205,9 +207,29 @@ int gateTransport(MainWindow& window) {
     return g_failures == 0 ? 0 : 1;
 }
 
+void testTransportSlotOk() {
+    expect(fuse::editor::transport_slot_ok(0), "slot 0 is a valid transport slot");
+    expect(fuse::editor::transport_slot_ok(7), "slot 7 is a valid transport slot");
+    expect(!fuse::editor::transport_slot_ok(-1), "slot -1 is rejected");
+    expect(!fuse::editor::transport_slot_ok(8), "slot 8 is rejected");
+}
+
+void testConsoleLine() {
+    expect(fuse::editor::truncate_console_line("hello", 32) == "hello", "a short console line is kept");
+    expect(fuse::editor::truncate_console_line("0123456789", 6) == "012...", "a long console line keeps an ellipsis");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testTransportSlotOk();
+    if (g_failures != 0) {
+        return 1;
+    }
+    testConsoleLine();
+    if (g_failures != 0) {
+        return 1;
+    }
     if (qgetenv("QT_QPA_PLATFORM").isEmpty()) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
     }

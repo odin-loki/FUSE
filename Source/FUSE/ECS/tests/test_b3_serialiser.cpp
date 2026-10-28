@@ -7,7 +7,10 @@
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/tags.hpp>
 #include <fuse/ecs/components/transform.hpp>
+#include <fuse/ecs/field_align.hpp>
 #include <fuse/ecs/registry_serialiser.hpp>
+#include <fuse/ecs/schema_version.hpp>
+#include <fuse/ecs/serial_bytes.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 
 #include <algorithm>
@@ -356,9 +359,46 @@ void testAsyncLoadCallsBackOnMainThread() {
     std::filesystem::remove(path);
 }
 
+void testSerialBytesOk() {
+    expectTrue(serial_bytes_ok(1), "serial_bytes_ok(1) is true");
+    expectTrue(serial_bytes_ok(1 << 20), "serial_bytes_ok(1<<20) is true");
+    expectTrue(!serial_bytes_ok(0), "serial_bytes_ok(0) is false");
+    expectTrue(!serial_bytes_ok((1 << 20) + 1), "serial_bytes_ok((1<<20)+1) is false");
+}
+
+void testSchemaVersionOk() {
+    expectTrue(schema_version_ok(1), "schema_version_ok(1) is true");
+    expectTrue(schema_version_ok(32), "schema_version_ok(32) is true");
+    expectTrue(!schema_version_ok(0), "schema_version_ok(0) is false");
+    expectTrue(!schema_version_ok(33), "schema_version_ok(33) is false");
+}
+
+void testAlignUpU32() {
+    expectTrue(align_up_u32(1u, 4u) == 4u, "1 aligns up to 4");
+    expectTrue(align_up_u32(4u, 4u) == 4u, "4 stays aligned to 4");
+    expectTrue(align_up_u32(5u, 8u) == 8u, "5 aligns up to 8");
+    expectTrue(align_up_u32(0u, 8u) == 0u, "0 stays 0");
+    expectTrue(align_up_u32(7u, 0u) == 7u, "zero alignment returns value");
+    expectTrue(align_up_u32(9u, 3u) == 9u, "non-power-of-two alignment returns value");
+    expectTrue(align_up_u32(9u, 4u) == 12u, "9 aligns up to 12");
+    expectTrue(align_up_u32(1u, 1u) == 1u, "alignment 1 is already aligned");
+    expectTrue(align_up_u32(0xFFFFFFFCu, 4u) == 0xFFFFFFFCu, "largest multiple of 4 stays");
+    expectTrue(align_up_u32(0xFFFFFFFDu, 4u) == 0xFFFFFFFCu, "wrap returns largest multiple of 4");
+    expectTrue(align_up_u32(0xFFFFFFFFu, 8u) == 0xFFFFFFF8u, "wrap returns largest multiple of 8");
+    expectTrue(align_up_u32(0x80000000u, 0x80000000u) == 0x80000000u, "2^31 stays aligned");
+    expectTrue(align_up_u32(0x80000001u, 0x80000000u) == 0x80000000u, "wrap returns largest multiple of 2^31");
+}
+
 } // namespace
 
 int main() {
+    testSerialBytesOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b3_serialiser: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testSchemaVersionOk();
+    testAlignUpU32();
     testRoundTrip10k();
     testRejectsCorruptFiles();
     testAsyncLoadCallsBackOnMainThread();

@@ -14,6 +14,7 @@
 #include "particle_scenarios.hpp"
 
 #include <fuse/relight/particles/particle_vulkan.hpp>
+#include <fuse/relight/particles/spark_count.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -77,11 +78,23 @@ int g_failures = 0;
         }                                                                                                              \
     } while (0)
 
+// CPU gate. Runs before any GPU skip; a failure returns non-zero. No heap allocation.
+int testSparkCountOk() {
+    CHECK(fuse::relight::spark_count_ok(0));
+    CHECK(fuse::relight::spark_count_ok(100000));
+    CHECK(!fuse::relight::spark_count_ok(-1));
+    CHECK(!fuse::relight::spark_count_ok(100001));
+    return g_failures == 0 ? 0 : 1;
+}
+
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int sparkRc = testSparkCountOk()) {
+        return sparkRc;
+    }
     std::printf("SKIP: no Vulkan backend in this build\n");
     return kSkip;
 }
@@ -398,6 +411,9 @@ int runZeroAlloc() {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int sparkRc = testSparkCountOk()) {
+        return sparkRc;
+    }
     std::string suite = argc > 1 ? argv[1] : "parity";
     std::uint32_t framesInFlight = 2;
     bool oneStep = false;

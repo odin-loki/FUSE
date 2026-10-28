@@ -3,6 +3,7 @@
 #include <fuse/platform/window.hpp>
 #include <fuse/platform/window_wsi.hpp>
 #include <fuse/renderer/vk/swapchain.hpp>
+#include <fuse/renderer/vk/swapchain_format.hpp>
 #include <fuse/renderer/vk/swapchain_util.hpp>
 
 #include <cstdio>
@@ -21,6 +22,14 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+// CPU gate. No allocation. A failure returns before any window or device skip.
+void testSwapchainFormatOk() {
+    expectTrue(fuse::renderer::swapchain_format_ok(0), "swapchain_format_ok(0) is true");
+    expectTrue(fuse::renderer::swapchain_format_ok(7), "swapchain_format_ok(7) is true");
+    expectTrue(!fuse::renderer::swapchain_format_ok(-1), "swapchain_format_ok(-1) is false");
+    expectTrue(!fuse::renderer::swapchain_format_ok(8), "swapchain_format_ok(8) is false");
 }
 
 void testProductionPresentMatchesTrackB() {
@@ -118,6 +127,12 @@ void testWin32NativeSwapchainSmoke() {
 } // namespace
 
 int main() {
+    testSwapchainFormatOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_win32_swapchain_wsi: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testProductionPresentMatchesTrackB();

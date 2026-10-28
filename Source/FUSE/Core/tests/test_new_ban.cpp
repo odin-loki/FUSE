@@ -1,4 +1,5 @@
 #include <fuse/alloc/new_ban.hpp>
+#include <fuse/gameplay/parry.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -99,12 +100,23 @@ void testCheckedMallocHooks() {
     fuse::alloc::clearBanHandler();
 }
 
+void testParryWindow() {
+    const fuse::gameplay::ParryWindow window{0.1f, 0.2f};
+    expectTrue(fuse::gameplay::try_parry(window, 0.05f) == fuse::gameplay::ParryResult::Miss,
+               "hit at 0.05 before the parry window is a miss");
+    expectTrue(fuse::gameplay::try_parry(window, 0.1f) == fuse::gameplay::ParryResult::Parry,
+               "hit at 0.1 on the window start is a parry");
+    expectTrue(fuse::gameplay::try_parry(window, 0.3f) == fuse::gameplay::ParryResult::Late,
+               "hit at 0.3 on the window end is late");
+}
+
 } // namespace
 
 int main() {
     testHeapGuardOffAllowsVector();
     testArmedGuardFiresBanHandler();
     testCheckedMallocHooks();
+    testParryWindow();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d test(s) failed\n", g_failures);

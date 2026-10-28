@@ -7,18 +7,44 @@
 namespace fuse::ai {
 
 /// One agent considered for ally spatial queries (read-only snapshot slice).
+/// `z` and `factionMask` follow `teamId` so existing `{index, x, y, teamId}` aggregates keep their team.
 struct AllyCandidate {
     u32 agentIndex = 0;
     float x = 0.f;
     float y = 0.f;
     u32 teamId = 0;
+    float z = 0.f;
+    /// Faction membership bits. Mask queries AND this with `FactionQuery` masks.
+    /// Same-team checks still compare `teamId`.
+    u32 factionMask = 0;
 };
 
-/// Result of a nearest-ally lookup — stub until navmesh / faction masks land.
+/// Result of a nearest ally, hostile, or visible-ally lookup.
+/// Same-team XY queries, faction-mask hostile queries (3D), and AABB line-of-sight
+/// are implemented. Navmesh pathing is still absent.
 struct NearestAllyResult {
     bool found = false;
     u32 allyIndex = 0;
     float distanceSq = 0.f;
+};
+
+/// Hostile/friendly mask query.
+/// `teamId == selfTeam` is friendly. `friendlyMask` / `hostileMask` test `factionMask`.
+/// A candidate that matches both masks is friendly, so it is not a hostile.
+struct FactionQuery {
+    u32 selfTeam = 0;
+    u32 friendlyMask = 0;
+    u32 hostileMask = 0;
+};
+
+/// Axis-aligned line-of-sight blocker: world center plus half extents on each axis.
+struct AabbBlocker {
+    float centerX = 0.f;
+    float centerY = 0.f;
+    float centerZ = 0.f;
+    float halfX = 0.f;
+    float halfY = 0.f;
+    float halfZ = 0.f;
 };
 
 /// Radius filter policy — mirrors B7.4 interest radii without unload hysteresis.
@@ -28,6 +54,15 @@ struct RadiusFilterPolicy {
 };
 
 [[nodiscard]] float distance_sq_2d(float ax, float ay, float bx, float by);
+[[nodiscard]] float distance_sq_3d(float ax, float ay, float az, float bx, float by, float bz);
+/// Slab test. True when the closed segment from `(x0,y0,z0)` to `(x1,y1,z1)` intersects `blocker`.
+[[nodiscard]] bool segment_intersects_aabb(float x0,
+                                           float y0,
+                                           float z0,
+                                           float x1,
+                                           float y1,
+                                           float z1,
+                                           const AabbBlocker& blocker);
 [[nodiscard]] bool within_radius(float distanceSq, float radius);
 [[nodiscard]] bool is_valid_ally_radius(float radius);
 /// True when `radius` is positive and finite — required for count/filter leaves.
@@ -64,8 +99,8 @@ struct RadiusFilterPolicy {
                                           const std::vector<AllyCandidate>& allies,
                                           std::vector<u32>& outIndices);
 
-/// Find the nearest same-team ally (excluding self). Ties break toward the lowest `agentIndex`.
-/// Returns `found=false` when none exist.
+/// Find the nearest same-team ally (excluding self) on the XY plane. `z` is ignored.
+/// Ties break toward the lowest `agentIndex`. Returns `found=false` when none exist.
 [[nodiscard]] NearestAllyResult find_nearest_ally(u32 selfIndex,
                                                   u32 teamId,
                                                   float x,
@@ -79,6 +114,34 @@ struct RadiusFilterPolicy {
                                                                 float y,
                                                                 float maxRadius,
                                                                 const std::vector<AllyCandidate>& allies);
+
+/// Nearest hostile by squared 3D distance (z included). Ties break toward the lowest `agentIndex`.
+/// Skips self, same-team agents, friendlies, and anyone whose bits miss `hostileMask`.
+[[nodiscard]] NearestAllyResult find_nearest_hostile(u32 selfIndex,
+                                                     const FactionQuery& factions,
+                                                     float x,
+                                                     float y,
+                                                     float z,
+                                                     const std::vector<AllyCandidate>& allies);
+
+/// Count hostiles within `radius` of (`x`, `y`, `z`) using 3D distance. Excludes self.
+[[nodiscard]] u32 count_hostiles_in_radius(u32 selfIndex,
+                                           const FactionQuery& factions,
+                                           float x,
+                                           float y,
+                                           float z,
+                                           float radius,
+                                           const std::vector<AllyCandidate>& allies);
+
+/// Nearest same-team ally by squared 3D distance whose segment from self misses every blocker.
+/// Ties break toward the lowest `agentIndex`.
+[[nodiscard]] NearestAllyResult find_nearest_visible_ally(u32 selfIndex,
+                                                          u32 teamId,
+                                                          float x,
+                                                          float y,
+                                                          float z,
+                                                          const std::vector<AllyCandidate>& allies,
+                                                          const std::vector<AabbBlocker>& blockers);
 
 /// Success when at least `policy.minCount` allies lie within `policy.radius`.
 [[nodiscard]] bool allies_in_radius_satisfied(u32 selfIndex,

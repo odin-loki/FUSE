@@ -18,6 +18,7 @@
 #include "pt_test_scenes.hpp"
 
 #include <fuse/relight/render/denoise/pt_denoise.hpp>
+#include <fuse/relight/render/denoise/variance_gate.hpp>
 #include <fuse/relight/render/pathtrace/pt_gpu.hpp>
 #include <fuse/relight/render/pathtrace/pt_reference.hpp>
 
@@ -90,11 +91,22 @@ int g_failures = 0;
     }
 }
 [[maybe_unused]] void check(bool condition, const std::string& message) { check(condition, message.c_str()); }
+
+void testVarianceGate() {
+    check(fuse::relight::render::denoise::variance_gate(0.f, 1.f) == 1.f, "zero variance is fully trusted");
+    check(fuse::relight::render::denoise::variance_gate(1.f, 1.f) == 0.f, "variance at sigma drops the weight");
+    check(fuse::relight::render::denoise::variance_gate(0.25f, 1.f) == 0.75f, "variance gate is linear");
+}
+
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    testVarianceGate();
+    if (g_failures != 0) {
+        return 1;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -672,6 +684,10 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    testVarianceGate();
+    if (g_failures != 0) {
+        return 1;
+    }
     std::string language = "all";
     Validation validation = Validation::Layer;
     for (int i = 1; i < argc; ++i) {

@@ -15,6 +15,8 @@
 #include <fuse/compute_kernel/stats.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/vfx/burst_count.hpp>
+#include <fuse/vfx/kernel_name.hpp>
 #include <fuse/vfx/particle_sim_kernel.hpp>
 #include <fuse/vfx/particle_soa_ops.hpp>
 #include <fuse/vfx/particle_system.hpp>
@@ -305,9 +307,38 @@ void testStatsFallbackAndSteadyState() {
     scheduler.shutdown();
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits the process.
+void testVfxKernelNameOk() {
+    expectTrue(vfx::vfx_kernel_name_ok("Integrate"), "vfx_kernel_name_ok(\"Integrate\")");
+    expectTrue(!vfx::vfx_kernel_name_ok(""), "vfx_kernel_name_ok(\"\")");
+    expectTrue(!vfx::vfx_kernel_name_ok("1Integrate"), "vfx_kernel_name_ok(\"1Integrate\")");
+    expectTrue(vfx::vfx_kernel_name_ok("a"), "single ASCII letter is a valid kernel name");
+    expectTrue(vfx::vfx_kernel_name_ok("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV"),
+               "48-character kernel name is valid");
+    expectTrue(!vfx::vfx_kernel_name_ok("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"),
+               "49-character kernel name is invalid");
+}
+
+void testBurstCountOk() {
+    expectTrue(vfx::burst_count_ok(1), "burst_count_ok(1) is true");
+    expectTrue(vfx::burst_count_ok(64), "burst_count_ok(64) is true");
+    expectTrue(!vfx::burst_count_ok(0), "burst_count_ok(0) is false");
+    expectTrue(!vfx::burst_count_ok(65), "burst_count_ok(65) is false");
+}
+
 } // namespace
 
 int main() {
+    testBurstCountOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testBurstCountOk\n");
+        return EXIT_FAILURE;
+    }
+    testVfxKernelNameOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testVfxKernelNameOk\n");
+        return EXIT_FAILURE;
+    }
     fuse::core::initialize();
     testBackendParity();
     testStatsFallbackAndSteadyState();

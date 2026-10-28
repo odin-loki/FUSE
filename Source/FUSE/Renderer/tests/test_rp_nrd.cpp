@@ -16,6 +16,7 @@
 //                0 operator new
 #include <fuse/renderer/denoise/denoiser.hpp>
 #include <fuse/renderer/nrd/nrd_denoiser.hpp>
+#include <fuse/renderer/nrd_history.hpp>
 #include <fuse/renderer/rg/graph.hpp>
 
 #include "fuse_nrd_mock_echo.h"
@@ -509,9 +510,22 @@ void test_zero_alloc() {
     CHECK(mk.get().create_calls == 1u && mk.get().dispatch_calls == 68u);
 }
 
+// No allocation. main returns this before any later GPU skip.
+int testNrdHistoryOk() {
+    const int before = g_failures;
+    CHECK(nrd_history_ok(1));
+    CHECK(nrd_history_ok(16));
+    CHECK(!nrd_history_ok(0));
+    CHECK(!nrd_history_ok(17));
+    return g_failures == before ? 0 : 1;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int historyRc = testNrdHistoryOk()) {
+        return historyRc;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     if (all || suite == "discovery") {

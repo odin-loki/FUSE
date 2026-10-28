@@ -3,6 +3,10 @@
 //  - no missed pairs for bodies straddling multiple cells (grid-aligned edge cases)
 //  - planes pair with every dynamic body, not just ones sharing the plane body's cell
 //  - AABB refine drops separated candidates but keeps every true overlap (spheres and boxes)
+#include <fuse/gameplay/inventory_grid.hpp>
+#include <fuse/gameplay/pickup_magnet.hpp>
+#include <fuse/physics/broadphase/cell_index.hpp>
+#include <fuse/physics/broadphase/grid_span.hpp>
 #include <fuse/physics/broadphase/pair_buffer.hpp>
 #include <fuse/physics/broadphase/spatial_hash.hpp>
 #include <fuse/physics/physics_data.hpp>
@@ -184,13 +188,69 @@ void testPlanePairsAwayFromPlaneOrigin() {
                "body far from the plane origin is paired with the plane");
 }
 
+void testGridSpanOk() {
+    expectTrue(fuse::physics::grid_span_ok(1), "grid_span_ok(1) is true");
+    expectTrue(fuse::physics::grid_span_ok(1024), "grid_span_ok(1024) is true");
+    expectTrue(!fuse::physics::grid_span_ok(0), "grid_span_ok(0) is false");
+    expectTrue(!fuse::physics::grid_span_ok(1025), "grid_span_ok(1025) is false");
+}
+
+void testBroadphaseCell() {
+    expectTrue(fuse::physics::broadphase_cell(3.2f, 1.f) == 3, "3.2 in cells of 1 lands in cell 3");
+    expectTrue(fuse::physics::broadphase_cell(-0.1f, 1.f) == -1, "a position just below 0 lands in cell -1");
+    expectTrue(fuse::physics::broadphase_cell(5.f, 0.f) == 0, "a zero cell size returns cell 0");
+}
+
+void testPickupMagnet() {
+    const fuse::math::Vec3 player{2.f, 3.f, 4.f};
+    // One unit to the player's +X, inside a radius of 2. Falloff is 4 * (1 - 1/2) = 2,
+    // so the pickup steps toward the player along -X.
+    const fuse::math::Vec3 inside =
+        fuse::gameplay::pickup_magnet_delta(player, {3.f, 3.f, 4.f}, 2.f, 4.f);
+    expectTrue(inside.x == -2.f && inside.y == 0.f && inside.z == 0.f,
+               "pickup 1 unit to +X moves toward the player in -X");
+
+    const fuse::math::Vec3 outside =
+        fuse::gameplay::pickup_magnet_delta(player, {5.f, 3.f, 4.f}, 2.f, 4.f);
+    expectTrue(outside.x == 0.f && outside.y == 0.f && outside.z == 0.f,
+               "pickup outside the radius does not move");
+}
+
+void testInventoryGridRemove() {
+    // remove clears a rectangle only when every cell is in range and occupied.
+    fuse::gameplay::InventoryGrid grid(4u, 2u);
+    const fuse::gameplay::ItemSize item{2u, 2u};
+    const auto placed = grid.try_place(item);
+    expectTrue(placed.has_value() && placed->x == 0u && placed->y == 0u && grid.occupied_count() == 4u,
+               "4x2 inventory: 2x2 places at (0,0) and occupies 4 cells");
+    if (!placed.has_value()) {
+        return;
+    }
+    expectTrue(grid.remove(*placed, item) && grid.occupied_count() == 0u,
+               "remove clears the occupied 2x2");
+    expectTrue(!grid.remove(*placed, item) && grid.occupied_count() == 0u,
+               "remove rejects a rectangle that is no longer occupied");
+}
+
 } // namespace
 
 int main() {
+    testInventoryGridRemove();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b4_broadphase_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testGridSpanOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b4_broadphase_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testBroadphaseCell();
     testTenThousandSpheres();
     testGridAlignedStraddlers();
     testBoxRefine();
     testPlanePairsAwayFromPlaneOrigin();
+    testPickupMagnet();
 
     if (g_failures == 0) {
         std::printf("fuse_b4_broadphase_gates: all checks passed\n");

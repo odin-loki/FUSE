@@ -6,6 +6,8 @@
 #include <fuse/renderer/volumetric/light_shafts.hpp>
 #include <fuse/renderer/volumetric/volumetric_fog.hpp>
 
+#include <vector>
+
 namespace fuse::renderer {
 namespace {
 
@@ -13,6 +15,8 @@ struct DeferredPassUserData {
     DeferredPassId id = DeferredPassId::DepthPrepass;
     ClusteredLightCuller* culler = nullptr;
     ClusterCameraDesc camera{};
+    const std::vector<DeferredGBufferDraw>* gbufferCpuDraws = nullptr;
+    u32* gbufferCpuDrawCount = nullptr;
 };
 
 DeferredPassUserData g_passUserData[RenderGraph::kMaxPassesPerFrame]{};
@@ -33,6 +37,14 @@ void executeDeferredPass(void* commandBuffer, void* userData) {
         return;
     }
 
+    if (pass->id == DeferredPassId::GBuffer && pass->gbufferCpuDrawCount != nullptr) {
+        // SceneData handoff. The raster pass is GPU-only and does not consume these records.
+        const u32 count = pass->gbufferCpuDraws == nullptr
+                              ? 0u
+                              : static_cast<u32>(pass->gbufferCpuDraws->size());
+        *pass->gbufferCpuDrawCount = count;
+    }
+
     recorder->beginPass(DeferredFramePipeline::passName(pass->id));
     recorder->endPass();
 }
@@ -50,7 +62,9 @@ void addDeferredPass(RenderGraph& graph,
                      const RGTextureAccess* accesses,
                      u32 accessCount,
                      ClusteredLightCuller* culler = nullptr,
-                     const ClusterCameraDesc* camera = nullptr) {
+                     const ClusterCameraDesc* camera = nullptr,
+                     const std::vector<DeferredGBufferDraw>* gbufferCpuDraws = nullptr,
+                     u32* gbufferCpuDrawCount = nullptr) {
     if (g_deferredPassCount >= RenderGraph::kMaxPassesPerFrame) {
         return;
     }
@@ -60,6 +74,8 @@ void addDeferredPass(RenderGraph& graph,
     userData.id = id;
     userData.culler = culler;
     userData.camera = camera != nullptr ? *camera : ClusterCameraDesc{};
+    userData.gbufferCpuDraws = gbufferCpuDraws;
+    userData.gbufferCpuDrawCount = gbufferCpuDrawCount;
 
     if (accesses != nullptr && accessCount > 0u) {
         const u32 base = passIndex * 8u;
@@ -144,8 +160,10 @@ const char* DeferredFramePipeline::passName(DeferredPassId id) {
 
 void DeferredFramePipeline::buildGraph(RenderGraph& graph,
                                        const GBuffer& gbuffer,
-                                       ClusteredLightCuller* culler) {
+                                       ClusteredLightCuller* culler,
+                                       const std::vector<DeferredGBufferDraw>* gbufferCpuDraws) {
     resetGraphStorage();
+    m_stats.gbufferCpuDrawCount = 0;
 
     RGTextureRef depthTexture{};
     RGTextureRef normalTexture{};
@@ -185,7 +203,15 @@ void DeferredFramePipeline::buildGraph(RenderGraph& graph,
         makeGBufferAccess(velocityTexture, RGResourceAccess::ColorAttachmentWrite),
         makeGBufferAccess(depthTexture, RGResourceAccess::DepthAttachmentWrite),
     };
-    addDeferredPass(graph, DeferredPassId::GBuffer, false, gbufferWrites, 5u);
+    addDeferredPass(graph,
+                    DeferredPassId::GBuffer,
+                    false,
+                    gbufferWrites,
+                    5u,
+                    nullptr,
+                    nullptr,
+                    gbufferCpuDraws,
+                    &m_stats.gbufferCpuDrawCount);
 
     const RGTextureRef shadowAtlas = graph.createTransient({});
     RGTextureAccess shadowWrite = makeGBufferAccess(shadowAtlas, RGResourceAccess::DepthAttachmentWrite);

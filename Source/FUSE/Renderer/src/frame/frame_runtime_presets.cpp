@@ -11,8 +11,8 @@ void applyLavapipeComposerDefaults(FrameComposerDesc& d) {
     d.vsmPoolPagesX = 16;
     d.vsmPoolPagesY = 16;
     DDGIDesc& v = d.ddgiVolume;
-    v.grid_origin = {-6.f, 0.25f, -8.f};
-    v.probe_spacing = {3.f, 1.5f, 3.f};
+    v.grid_origin = {-6.f, 0.5f, -9.f};
+    v.probe_spacing = {3.f, 1.5f, 3.25f};
     v.grid_dims = {5u, 3u, 5u};
     v.rays_per_probe = 64;
     v.probes_per_frame = 75;

@@ -1,10 +1,12 @@
 #include <fuse/core/init.hpp>
 #include <fuse/editor/command_stack.hpp>
+#include <fuse/editor/dock_slot.hpp>
 #include <fuse/editor/editor_scene.hpp>
 #include <fuse/editor/editor_state.hpp>
 #include <fuse/editor/material_editor_panel.hpp>
 #include <fuse/editor/material_property_binding.hpp>
 #include <fuse/editor/material_property_inspect.hpp>
+#include <fuse/editor/panel_title.hpp>
 #include <fuse/editor/property_inspector.hpp>
 #include <fuse/editor/sdf_sculpt_panel.hpp>
 #include <fuse/ecs/components/mesh.hpp>
@@ -21,6 +23,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 namespace {
 
@@ -980,6 +983,59 @@ void testMaterialEditorPanelMaterialSystemBridge() {
 }
 #endif
 
+void testMaterialEditorPanelLitSpherePreview() {
+    fuse::editor::EditorState state;
+    fuse::editor::MaterialEditorPanel panel;
+    panel.sync(state, 1u);
+    expectTrue(panel.selectMaterial(0u), "lit-sphere preview selects a material");
+
+    std::vector<fuse::u8> sentinel(4u, 0xABu);
+    expectTrue(!panel.renderPreview(0u, 4u, sentinel.data()), "zero width rejects the preview");
+    expectTrue(!panel.renderPreview(4u, 0u, sentinel.data()), "zero height rejects the preview");
+    expectTrue(sentinel[0] == 0xABu && sentinel[1] == 0xABu && sentinel[2] == 0xABu && sentinel[3] == 0xABu,
+               "zero size clears nothing");
+    expectTrue(panel.previewDirty(), "lit-sphere preview does not clear previewDirty");
+
+    constexpr fuse::u32 kSize = 32u;
+    const fuse::usize pixelCount = static_cast<fuse::usize>(kSize) * kSize;
+    std::vector<fuse::u8> image(pixelCount * 4u, 0u);
+    expectTrue(panel.renderPreview(kSize, kSize, image.data()), "lit sphere preview renders");
+    expectTrue(panel.previewDirty(), "successful preview leaves previewDirty set");
+
+    const fuse::usize centerIndex =
+        (static_cast<fuse::usize>(kSize / 2u) * kSize + (kSize / 2u)) * 4u;
+    const int centerLuma = static_cast<int>(image[centerIndex]) + static_cast<int>(image[centerIndex + 1u]) +
+                           static_cast<int>(image[centerIndex + 2u]);
+    const int cornerLuma = static_cast<int>(image[0]) + static_cast<int>(image[1]) + static_cast<int>(image[2]);
+    expectTrue(centerLuma > cornerLuma, "center pixel is brighter than a corner pixel");
+    expectTrue(image[centerIndex + 3u] == 255u, "sphere interior is opaque");
+    expectTrue(image[3] == 0u, "corner outside the sphere is transparent");
+
+    fuse::editor::CommandStack cmds;
+    expectTrue(panel.setBaseColor(1.f, 0.f, 0.f, cmds), "metallic red base colour");
+    expectTrue(panel.setMetallic(1.f, cmds), "metallic red");
+    expectTrue(panel.setRoughness(0.2f, cmds), "preview roughness");
+
+    std::vector<fuse::u8> metallicRed(pixelCount * 4u, 0u);
+    expectTrue(panel.renderPreview(kSize, kSize, metallicRed.data()), "metallic red preview renders");
+
+    expectTrue(panel.setBaseColor(0.f, 0.f, 0.f, cmds), "metallic black base colour");
+    std::vector<fuse::u8> metallicBlack(pixelCount * 4u, 0u);
+    expectTrue(panel.renderPreview(kSize, kSize, metallicBlack.data()), "metallic black preview renders");
+
+    fuse::usize specular = 0u;
+    int bestRed = -1;
+    for (fuse::usize i = 0u; i < pixelCount; ++i) {
+        const int redChannel = static_cast<int>(metallicRed[i * 4u]);
+        if (redChannel > bestRed) {
+            bestRed = redChannel;
+            specular = i;
+        }
+    }
+    expectTrue(metallicRed[specular * 4u] > metallicBlack[specular * 4u],
+               "metallic red is redder in the specular pixel than metallic black");
+}
+
 void testSdfSculptPanelStrokeSpacing() {
     fuse::editor::EditorScene scene;
     scene.init();
@@ -1017,9 +1073,33 @@ void testSdfSculptPanelStrokeSpacing() {
     scene.destroy();
 }
 
+void testDockSlotOk() {
+    expectTrue(fuse::editor::dock_slot_ok(0), "slot 0 is a valid dock slot");
+    expectTrue(fuse::editor::dock_slot_ok(15), "slot 15 is a valid dock slot");
+    expectTrue(!fuse::editor::dock_slot_ok(-1), "slot -1 is rejected");
+    expectTrue(!fuse::editor::dock_slot_ok(16), "slot 16 is rejected");
+}
+
+void testPanelTitleOk() {
+    expectTrue(fuse::editor::panel_title_ok("Scene"), "Scene is a valid panel title");
+    expectTrue(!fuse::editor::panel_title_ok(""), "empty title is rejected");
+    expectTrue(!fuse::editor::panel_title_ok("A/B"), "slash is rejected in a panel title");
+    expectTrue(fuse::editor::panel_title_ok("Panel 2"), "letters, digits, and spaces are valid");
+    expectTrue(fuse::editor::panel_title_ok("ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"),
+               "32-character title is valid");
+    expectTrue(!fuse::editor::panel_title_ok("ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567"),
+               "33-character title is rejected");
+}
+
 } // namespace
 
 int main() {
+    testDockSlotOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_editor_panels_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testPanelTitleOk();
     fuse::core::initialize();
     testPropertyInspectorListsComponents();
     testMaterialEditorPanelSelection();
@@ -1052,6 +1132,7 @@ int main() {
     testMaterialPropertyBindingDirtyIntrospection();
     testMaterialPropertyBindingGuardedRefresh();
     testMaterialEditorPanelGuardedRefresh();
+    testMaterialEditorPanelLitSpherePreview();
     testPropertyInspectorMeshMaterialId();
     testPropertyInspectorMeshMaterialEmptyCatalog();
     testPropertyInspectorMeshMaterialTryGet();

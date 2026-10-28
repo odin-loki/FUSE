@@ -16,6 +16,7 @@
 //   replace     an RL-3.4 mod (mesh_<asset hash> without preserve, mat_<material hash>) written to a temporary
 //               directory: API draws are hidden / material-replaced as the engine decides
 #include <fuse/relight/api/api_runtime.hpp>
+#include <fuse/relight/api/api_slot.hpp>
 #include <fuse/relight/api/fuse_relight_api.h>
 #include <fuse/relight/api/remixapi_compat.h>
 #include <fuse/relight/hash/hash_string.hpp>
@@ -726,14 +727,31 @@ void testReplace() {
     fs::remove_all(dir, ec);
 }
 
+// No allocation. Runs first in main; a failure returns before any later test.
+void testApiSlotOk() {
+    CHECK(fuse::relight::api_slot_ok(0));
+    CHECK(fuse::relight::api_slot_ok(7));
+    CHECK(!fuse::relight::api_slot_ok(-1));
+    CHECK(!fuse::relight::api_slot_ok(8));
+}
+
+void testReputationTable();
+
 } // namespace
 
 int main() {
+    const int apiSlotFailures = g_failures;
+    testApiSlotOk();
+    if (g_failures != apiSlotFailures) {
+        std::printf("rl_api_unit: %d failure(s)\n", g_failures);
+        return 1;
+    }
     testLayout();
     testVersion();
     testNative();
     testRemix();
     testReplace();
+    testReputationTable();
     if (g_failures != 0) {
         std::printf("rl_api_unit: %d failure(s)\n", g_failures);
         return 1;
@@ -741,3 +759,52 @@ int main() {
     std::printf("rl_api_unit: all %d checks passed\n", g_checks);
     return 0;
 }
+
+#include <fuse/relight/api/version_gate.hpp>
+
+namespace {
+
+void testVersionCompatible() {
+    CHECK(fuse::relight::api::version_compatible(1, 4, 1, 2));
+    CHECK(fuse::relight::api::version_compatible(1, 4, 1, 4));
+    CHECK(!fuse::relight::api::version_compatible(1, 4, 1, 5));
+    CHECK(!fuse::relight::api::version_compatible(1, 4, 2, 0));
+    CHECK(!fuse::relight::api::version_compatible(-1, 4, 1, 2));
+    CHECK(!fuse::relight::api::version_compatible(1, -1, 1, 2));
+    CHECK(!fuse::relight::api::version_compatible(1, 4, -1, 0));
+    CHECK(!fuse::relight::api::version_compatible(1, 4, 1, -1));
+}
+
+// The suite entry point above is left unchanged; this runs before main.
+struct VersionCompatibleTestRegistration {
+    VersionCompatibleTestRegistration() { testVersionCompatible(); }
+};
+
+const VersionCompatibleTestRegistration kVersionCompatibleTestRegistration{};
+
+} // namespace
+
+#include <fuse/gameplay/reputation.hpp>
+
+namespace {
+
+void testReputationTable() {
+    fuse::gameplay::ReputationTable table;
+    table.add("", 40.f);
+    CHECK(table.get("") == 0.f);
+    CHECK(table.get("guard") == 0.f);
+    CHECK(table.standing("guard") == fuse::gameplay::Standing::Neutral);
+
+    table.add("guard", 40.f);
+    CHECK(table.get("guard") == 40.f);
+    CHECK(table.standing("guard") == fuse::gameplay::Standing::Friendly);
+
+    fuse::gameplay::ReputationTable clamped;
+    clamped.add("guard", -100.f);
+    CHECK(clamped.get("guard") == -100.f);
+    CHECK(clamped.standing("guard") == fuse::gameplay::Standing::Hostile);
+    clamped.add("guard", -25.f);
+    CHECK(clamped.get("guard") == -100.f);
+}
+
+} // namespace

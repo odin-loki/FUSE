@@ -13,6 +13,7 @@ set(FUSE_TERRAIN_PUBLIC_HEADERS
     include/fuse/terrain/queries.hpp
     include/fuse/terrain/terrain.hpp
     include/fuse/terrain/terrain_caves.hpp
+    include/fuse/terrain/terrain_edit_delta.hpp
     include/fuse/terrain/terrain_noise.hpp
 )
 
@@ -24,6 +25,7 @@ set(FUSE_TERRAIN_SOURCES
     src/chunk_mesh.cpp
     src/queries.cpp
     src/terrain.cpp
+    src/terrain_edit_delta.cpp
     src/terrain_noise.cpp
 )
 

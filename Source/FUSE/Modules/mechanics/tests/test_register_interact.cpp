@@ -1,5 +1,6 @@
 #include <fuse/core/init.hpp>
 #include <fuse/mechanics/component.hpp>
+#include <fuse/mechanics/interact_id.hpp>
 #include <fuse/mechanics/interactable.hpp>
 #include <fuse/mechanics/registry.hpp>
 
@@ -15,6 +16,20 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testInteractIdOk() {
+    expectTrue(fuse::mechanics::interact_id_ok("door_open"), "door_open is a valid interact id");
+    expectTrue(!fuse::mechanics::interact_id_ok("Door"), "uppercase first letter is invalid");
+    expectTrue(!fuse::mechanics::interact_id_ok(""), "empty interact id is invalid");
+    expectTrue(fuse::mechanics::interact_id_ok("a"), "single lowercase letter is valid");
+    expectTrue(!fuse::mechanics::interact_id_ok("1door"), "leading digit is invalid");
+    expectTrue(!fuse::mechanics::interact_id_ok("_door"), "leading underscore is invalid");
+    expectTrue(!fuse::mechanics::interact_id_ok("doOr"), "uppercase letter is invalid");
+    expectTrue(fuse::mechanics::interact_id_ok("a1234567890123456789012345678901"),
+               "32-character interact id is valid");
+    expectTrue(!fuse::mechanics::interact_id_ok("a12345678901234567890123456789012"),
+               "33-character interact id is invalid");
 }
 
 void testComponentRegistersCachedInterface() {
@@ -82,6 +97,7 @@ void testRegistryResolvesComponentTree() {
 } // namespace
 
 int main() {
+    testInteractIdOk();
     fuse::core::initialize();
     testComponentRegistersCachedInterface();
     testRegistryInteractStub();

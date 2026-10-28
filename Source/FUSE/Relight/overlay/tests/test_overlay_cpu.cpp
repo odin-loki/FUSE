@@ -20,12 +20,15 @@
 //   menu_debug   the Debug tab selects relight.overlay.debugView; unavailable views are marked.
 //   layout       overlay_types.h OverlayPush == the push-constant block of shaders/overlay_compose.{comp,slang}.
 //   zero_alloc   steady-state hidden frames (window messages through the hook core + update): no operator new.
+//   safe_zone    UI safe-zone inset: fraction of each window edge, clamped, at least one pixel inside the window.
 #include <fuse/relight/overlay/dev_menu.hpp>
 #include <fuse/relight/overlay/font5x7.hpp>
 #include <fuse/relight/overlay/input.hpp>
 #include <fuse/relight/overlay/overlay_options.hpp>
+#include <fuse/relight/overlay/overlay_opacity.hpp>
 #include <fuse/relight/overlay/overlay_types.h>
 #include <fuse/relight/overlay/raster.hpp>
+#include <fuse/relight/overlay/safe_zone.hpp>
 #include <fuse/relight/overlay/script.hpp>
 #include <fuse/relight/overlay/ui.hpp>
 #include <fuse/relight/overlay/win32_hook.hpp>
@@ -42,6 +45,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <new>
 #include <sstream>
 #include <string>
@@ -650,9 +654,54 @@ void testZeroAlloc() {
     check(t_allocations == 0, "hidden after a shown frame: " + std::to_string(t_allocations) + " operator new call(s)");
 }
 
+void testSafeZone() {
+    const SafeZoneRect r = safe_zone_rect(100, 100, 0.1f);
+    check(r.x == 10 && r.y == 10 && r.width == 80 && r.height == 80,
+          "100x100 inset 0.1 is x=10 y=10 width=80 height=80");
+
+    const SafeZoneRect wide = safe_zone_rect(200, 100, 0.1f);
+    check(wide.x == 20 && wide.y == 10 && wide.width == 160 && wide.height == 80,
+          "each edge insets by the fraction of its own window size");
+
+    const SafeZoneRect full = safe_zone_rect(100, 50, -1.f);
+    check(full.x == 0 && full.y == 0 && full.width == 100 && full.height == 50, "negative inset clamps to 0");
+
+    const SafeZoneRect clamped = safe_zone_rect(100, 100, 0.9f);
+    check(clamped.x == 45 && clamped.y == 45 && clamped.width == 10 && clamped.height == 10,
+          "inset above 0.45 clamps to 0.45");
+
+    const SafeZoneRect tiny = safe_zone_rect(1, 1, 0.45f);
+    check(tiny.width >= 1 && tiny.height >= 1 && tiny.x + tiny.width <= 1 && tiny.y + tiny.height <= 1,
+          "a non-zero window keeps a one-pixel rect inside the window");
+
+    const SafeZoneRect zeroW = safe_zone_rect(0, 100, 0.1f);
+    const SafeZoneRect zeroH = safe_zone_rect(100, 0, 0.1f);
+    check(zeroW.x == 0 && zeroW.y == 0 && zeroW.width == 0 && zeroW.height == 0, "zero width window");
+    check(zeroH.x == 0 && zeroH.y == 0 && zeroH.width == 0 && zeroH.height == 0, "zero height window");
+
+    const float nonFinite[] = {std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity(),
+                               -std::numeric_limits<float>::infinity()};
+    for (const float bad : nonFinite) {
+        const SafeZoneRect z = safe_zone_rect(100, 100, bad);
+        check(z.x == 0 && z.y == 0 && z.width == 0 && z.height == 0, "non-finite inset is a zero rect");
+    }
+}
+
+void testOverlayOpacityOk() {
+    check(fuse::relight::overlay_opacity_ok(0), "opacity 0");
+    check(fuse::relight::overlay_opacity_ok(1), "opacity 1");
+    check(!fuse::relight::overlay_opacity_ok(-0.1f), "opacity -0.1");
+    check(!fuse::relight::overlay_opacity_ok(1.1f), "opacity 1.1");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testOverlayOpacityOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     registerOverlayOptions();
     (void)fuse::relight::scene::ClassifyOptions::uiTextures.getFullName();
@@ -665,7 +714,8 @@ int main(int argc, char** argv) {
                             {"raster", testRaster},       {"debug_map", testDebugMap},
                             {"hidden", testHidden},       {"menu_options", testMenuOptions},
                             {"menu_tags", testMenuTags},  {"menu_debug", testMenuDebug},
-                            {"layout", testLayout},       {"zero_alloc", testZeroAlloc}};
+                            {"layout", testLayout},       {"zero_alloc", testZeroAlloc},
+                            {"safe_zone", testSafeZone}};
     bool ran = false;
     for (const Suite& s : suites) {
         if (suite == "all" || suite == s.name) {

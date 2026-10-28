@@ -4,6 +4,8 @@
 // during tick() (game thread + job workers running the World2D/World3D cull chunks) are enforced to
 // be zero in steady state.
 #include <fuse/core/init.hpp>
+#include <fuse/hybrid/alloc_fit.hpp>
+#include <fuse/hybrid/hybrid_budget.hpp>
 #include <fuse/hybrid/hybrid_composer.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/platform/gl_context.hpp>
@@ -13,9 +15,11 @@
 #include <fuse/world3d/world_3d.hpp>
 
 #include <atomic>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <new>
 #include <string>
@@ -68,6 +72,25 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testHybridBudgetOk() {
+    expectTrue(fuse::hybrid::hybrid_budget_ok(1), "1 byte is inside the hybrid budget");
+    expectTrue(fuse::hybrid::hybrid_budget_ok(1 << 20), "1<<20 bytes is inside the hybrid budget");
+    expectTrue(!fuse::hybrid::hybrid_budget_ok(0), "0 bytes is outside the hybrid budget");
+    expectTrue(!fuse::hybrid::hybrid_budget_ok((1 << 20) + 1), "(1<<20)+1 bytes is outside the hybrid budget");
+}
+
+void testAllocFits() {
+    expectTrue(fuse::hybrid::alloc_fits(100ull, 50ull, 150ull), "100 + 50 fits a budget of 150");
+    expectTrue(!fuse::hybrid::alloc_fits(100ull, 51ull, 150ull), "100 + 51 exceeds a budget of 150");
+    expectTrue(fuse::hybrid::alloc_fits(0ull, 0ull, 0ull), "zero budget fits only when both sides are zero");
+    expectTrue(!fuse::hybrid::alloc_fits(0ull, 1ull, 0ull), "incoming bytes do not fit a zero budget");
+    expectTrue(!fuse::hybrid::alloc_fits(1ull, 0ull, 0ull), "used bytes do not fit a zero budget");
+    expectTrue(!fuse::hybrid::alloc_fits(1ull, 1ull, 0ull), "both sides non-zero do not fit a zero budget");
+    constexpr std::uint64_t kMax = std::numeric_limits<std::uint64_t>::max();
+    expectTrue(!fuse::hybrid::alloc_fits(kMax, 1ull, kMax), "used + incoming that would wrap does not fit");
+    expectTrue(fuse::hybrid::alloc_fits(kMax, 0ull, kMax), "no incoming fits when used equals the budget");
 }
 
 constexpr fuse::u32 kWarmupFrames = 8;
@@ -155,6 +178,16 @@ void testHybridFrameDoesNotAllocate() {
 } // namespace
 
 int main() {
+    testHybridBudgetOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b2_hybrid_alloc_budget: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testAllocFits();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b2_hybrid_alloc_budget: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
     fuse::core::initialize();
     testHybridFrameDoesNotAllocate();
     fuse::core::shutdown();

@@ -1,5 +1,6 @@
 #include <fuse/core/temp_path.hpp>
 #include <fuse/core/init.hpp>
+#include <fuse/project/asset_count.hpp>
 #include <fuse/project/asset_cooker.hpp>
 #include <fuse/project/asset_graph.hpp>
 #include <fuse/project/cook_cache.hpp>
@@ -15,9 +16,13 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <thread>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -1439,6 +1444,199 @@ void testCookCacheEmptyKeyPaths() {
     expectTrue(cooker.cache().stats().misses == 0u, "uncacheable cook does not record misses");
 }
 
+bool writeZeroStampAssets(const std::string& path,
+                          const std::vector<std::pair<std::string, std::string>>& assets) {
+    std::ofstream out(path, std::ios::binary);
+    if (!out) {
+        return false;
+    }
+    for (const std::pair<std::string, std::string>& asset : assets) {
+        out << "{\n";
+        out << "  \"outputPath\": \"" << asset.first << "\",\n";
+        out << "  \"sourcePath\": \"" << asset.second << "\",\n";
+        out << "  \"lastImportTime\": 0,\n";
+        out << "  \"dependencies\": []\n";
+        out << "}\n";
+    }
+    return static_cast<bool>(out);
+}
+
+fuse::u64 lastImportTimeIn(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    const std::string contents((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    const std::string needle = "\"lastImportTime\": ";
+    const std::size_t pos = contents.find(needle);
+    if (pos == std::string::npos) {
+        return static_cast<fuse::u64>(-1);
+    }
+    return static_cast<fuse::u64>(std::strtoull(contents.c_str() + pos + needle.size(), nullptr, 10));
+}
+
+bool dirtyHas(const fuse::project::AssetGraph& graph, const std::string& output_path) {
+    for (const std::string& pending : graph.dirty_assets()) {
+        if (pending == output_path) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// `cook_mesh` accepts a triangle OBJ when Assimp is linked and rejects a comment-only OBJ (or reports
+// ImporterUnavailable when Assimp is not linked). Reimport must follow that CookRecord, not a stub success.
+void expectReimportFollowsCookMesh(const std::filesystem::path& dir,
+                                   const std::string& source,
+                                   const std::string& output,
+                                   const char* label) {
+    fuse::project::AssetCooker oracle;
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = (dir / (std::string(label) + "_probe.fusemesh")).generic_string();
+    const fuse::project::CookRecord probed = oracle.cook_mesh(desc);
+
+    const std::string graph_path = (dir / (std::string(label) + "_graph.json")).generic_string();
+    expectTrue(writeZeroStampAssets(graph_path, {{output, source}}), "zero-stamp graph writes");
+
+    fuse::project::AssetGraph graph;
+    expectTrue(graph.load(graph_path), "zero-stamp graph loads");
+    graph.scan_for_changes();
+    expectTrue(graph.dirty_assets().size() == 1u, "source newer than last import is dirty");
+
+    fuse::project::AssetCooker cooker;
+    graph.reimport_dirty(dir.generic_string(), &cooker);
+
+    char message[192];
+    std::snprintf(message, sizeof(message), "%s reimport invoked cook_mesh (%s)", label,
+                  fuse::project::cookStatusName(probed.status));
+    expectTrue(cooker.cache().stats().misses >= 1u, message);
+
+    std::error_code ec;
+    const bool wrote = std::filesystem::exists(std::filesystem::path(output), ec) && !ec;
+    if (probed.ok) {
+        std::snprintf(message, sizeof(message), "%s cook_mesh Ok clears dirty and writes output", label);
+        expectTrue(probed.status == fuse::project::CookStatus::Ok, message);
+        expectTrue(graph.dirty_assets().empty(), message);
+        expectTrue(wrote, message);
+        if (wrote) {
+            const auto output_size = std::filesystem::file_size(std::filesystem::path(output), ec);
+            expectTrue(!ec && output_size > 0, message);
+        }
+        graph.scan_for_changes();
+        expectTrue(graph.dirty_assets().empty(), message);
+        expectTrue(graph.save(graph_path), message);
+        expectTrue(lastImportTimeIn(graph_path) != 0u, message);
+    } else {
+        std::snprintf(message, sizeof(message), "%s cook_mesh %s leaves the asset dirty", label,
+                      fuse::project::cookStatusName(probed.status));
+        expectTrue(probed.status != fuse::project::CookStatus::Ok, message);
+        expectTrue(dirtyHas(graph, output), message);
+        expectTrue(!wrote, message);
+        expectTrue(graph.save(graph_path), message);
+        expectTrue(lastImportTimeIn(graph_path) == 0u, message);
+        graph.scan_for_changes();
+        expectTrue(dirtyHas(graph, output), message);
+    }
+}
+
+void testAssetGraphReimportDirtyCooks() {
+    const std::filesystem::path dir = fuse::test::makeUniqueTempDir("fuse_reimport_dirty");
+    const std::string project_dir = dir.generic_string();
+
+    fuse::project::AssetCooker idle;
+    fuse::project::AssetGraph empty;
+    empty.reimport_dirty(project_dir, &idle);
+    expectTrue(empty.dirty_assets().empty() && empty.asset_count() == 0u, "empty dirty list is a no-op");
+    expectTrue(idle.cache().stats().misses == 0u && idle.cache().entry_count() == 0u,
+               "empty dirty list does not cook");
+
+    const std::string clean_source = (dir / "clean.obj").generic_string();
+    const std::string clean_output = (dir / "clean.fusemesh").generic_string();
+    writeTempFile(clean_source, "# clean\n");
+    fuse::project::AssetGraph clean;
+    clean.add_asset(clean_output, clean_source);
+    clean.scan_for_changes();
+    expectTrue(clean.dirty_assets().empty(), "unchanged source is not dirty");
+    fuse::project::AssetCooker clean_cooker;
+    optOutOfStrictImport(clean_cooker);
+    clean.reimport_dirty(project_dir, &clean_cooker);
+    std::error_code ec;
+    expectTrue(clean_cooker.cache().stats().misses == 0u, "clean graph does not cook");
+    expectTrue(!std::filesystem::exists(clean_output, ec), "clean graph writes no output");
+
+    const std::string weird_source = (dir / "notes.dat").generic_string();
+    const std::string weird_output = (dir / "notes.bin").generic_string();
+    writeTempFile(weird_source, "not an asset\n");
+    const std::string weird_graph = (dir / "weird_graph.json").generic_string();
+    expectTrue(writeZeroStampAssets(weird_graph, {{weird_output, weird_source}}), "unknown-kind graph writes");
+    fuse::project::AssetGraph weird;
+    expectTrue(weird.load(weird_graph), "unknown-kind graph loads");
+    weird.scan_for_changes();
+    expectTrue(weird.dirty_assets().size() == 1u, "unknown kind is dirty when the source is newer");
+    fuse::project::AssetCooker weird_cooker;
+    weird.reimport_dirty(project_dir, &weird_cooker);
+    expectTrue(weird_cooker.cache().stats().misses == 0u, "unknown kind is not cooked");
+    expectTrue(dirtyHas(weird, weird_output), "unknown kind stays dirty");
+    expectTrue(weird.save(weird_graph), "unknown-kind graph saves");
+    expectTrue(lastImportTimeIn(weird_graph) == 0u, "unknown kind does not stamp last_import_time");
+    expectTrue(!std::filesystem::exists(weird_output, ec), "unknown kind writes no output");
+
+    const std::string missing_source = (dir / "gone.obj").generic_string();
+    const std::string missing_output = (dir / "gone.fusemesh").generic_string();
+    const std::string missing_dep = (dir / "gone.mtl").generic_string();
+    writeTempFile(missing_dep, "mtllib\n");
+    fuse::project::AssetGraph missing;
+    missing.add_asset(missing_output, missing_source);
+    missing.add_dependency(missing_output, missing_dep);
+    missing.scan_for_changes();
+    expectTrue(missing.dirty_assets().size() == 1u, "missing source with a newer dependency is dirty");
+    fuse::project::AssetCooker missing_cooker;
+    missing.reimport_dirty(project_dir, &missing_cooker);
+    expectTrue(missing_cooker.cache().stats().misses == 0u, "missing source is not cooked");
+    expectTrue(dirtyHas(missing, missing_output), "missing source stays dirty");
+    const std::string missing_graph = (dir / "missing_graph.json").generic_string();
+    expectTrue(missing.save(missing_graph), "missing graph saves");
+    expectTrue(lastImportTimeIn(missing_graph) == 0u, "missing source does not stamp last_import_time");
+    expectTrue(!std::filesystem::exists(missing_output, ec), "missing source writes no output");
+
+    const char* kTriangle =
+        "v 0.0 0.0 0.0\n"
+        "v 1.0 0.0 0.0\n"
+        "v 0.0 1.0 0.0\n"
+        "f 1 2 3\n";
+    const std::string triangle_source = (dir / "tri.obj").generic_string();
+    const std::string triangle_output = (dir / "tri.fusemesh").generic_string();
+    writeTempFile(triangle_source, kTriangle);
+    expectReimportFollowsCookMesh(dir, triangle_source, triangle_output, "triangle");
+
+    const std::string comment_source = (dir / "comment.obj").generic_string();
+    const std::string comment_output = (dir / "comment.fusemesh").generic_string();
+    writeTempFile(comment_source, "# not a mesh\n");
+    expectReimportFollowsCookMesh(dir, comment_source, comment_output, "comment");
+
+    fuse::project::AssetCooker mixed_oracle;
+    fuse::project::MeshImportDesc mixed_desc;
+    mixed_desc.input_path = triangle_source;
+    mixed_desc.output_path = (dir / "mixed_probe.fusemesh").generic_string();
+    const fuse::project::CookRecord mixed_probe = mixed_oracle.cook_mesh(mixed_desc);
+
+    const std::string mixed_graph = (dir / "mixed_graph.json").generic_string();
+    expectTrue(writeZeroStampAssets(mixed_graph, {{triangle_output, triangle_source}, {weird_output, weird_source}}),
+               "mixed graph writes");
+    fuse::project::AssetGraph mixed;
+    expectTrue(mixed.load(mixed_graph) && mixed.asset_count() == 2u, "mixed graph loads both assets");
+    mixed.scan_for_changes();
+    expectTrue(mixed.dirty_assets().size() == 2u, "mixed graph marks both assets dirty");
+    std::filesystem::remove(triangle_output, ec);
+    mixed.reimport_dirty(project_dir);
+    expectTrue(dirtyHas(mixed, weird_output), "unknown sibling stays dirty");
+    if (mixed_probe.ok) {
+        expectTrue(!dirtyHas(mixed, triangle_output), "only the cooked mesh is cleared");
+        expectTrue(std::filesystem::exists(triangle_output, ec) && !ec, "mixed reimport writes the cooked mesh");
+    } else {
+        expectTrue(dirtyHas(mixed, triangle_output), "failed mesh stays dirty beside the unknown asset");
+        expectTrue(!std::filesystem::exists(triangle_output, ec), "failed mesh writes no output");
+    }
+}
+
 void testCookDirtyInvalidatesCache() {
     const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_dirty_mesh.obj"), "# dirty mesh\n");
 
@@ -1464,7 +1662,9 @@ void testCookDirtyInvalidatesCache() {
 
     const fuse::project::CookBatchResult reimport = cooker.cook_dirty(graph, fuse::test::tempPath("demo"));
     expectTrue(reimport.ok, "dirty reimport ok");
-    expectTrue(cooker.cache().entry_count() == 0u, "dirty reimport invalidates cache");
+    expectTrue(graph.dirty_assets().empty(), "successful dirty reimport clears dirty assets");
+    expectTrue(reimport.records.size() == 1u && reimport.records[0].ok, "dirty reimport record ok");
+    expectTrue(cooker.cache().entry_count() == 1u, "dirty reimport recooks into the cache");
     expectTrue(cooker.cache().stats().invalidations >= 1u, "dirty invalidation counted");
 }
 
@@ -2118,13 +2318,30 @@ void testCookManifestCacheHitsOnSecondRun() {
     expectTrue(cooker.cache().entry_count() == 1u, "single cache entry retained");
 }
 
+int testAssetCountOk() {
+    const int before = g_failures;
+    expectTrue(fuse::project::asset_count_ok(1), "asset_count_ok(1) is true");
+    expectTrue(fuse::project::asset_count_ok(4096), "asset_count_ok(4096) is true");
+    expectTrue(!fuse::project::asset_count_ok(0), "asset_count_ok(0) is false");
+    expectTrue(!fuse::project::asset_count_ok(4097), "asset_count_ok(4097) is false");
+    if (g_failures != before) {
+        return EXIT_FAILURE;
+    }
+    return 0;
+}
+
 } // namespace
 
 int main() {
+    if (const int assetCountRc = testAssetCountOk()) {
+        return assetCountRc;
+    }
+
     fuse::core::initialize();
 
     testParseCookManifest();
     testAssetGraphRoundTrip();
+    testAssetGraphReimportDirtyCooks();
     testAssetCookerStub();
     testCookEntryWritesOutputFile();
     testCookEntryWritesShaderStubOutput();

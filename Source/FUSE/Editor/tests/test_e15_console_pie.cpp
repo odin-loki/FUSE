@@ -9,9 +9,11 @@
 //    the PIE VM while playing, Stop restores the edit-time scene
 //  - script hot-reload during PIE: an edited module is reloaded into the live runtime and logged
 #include <fuse/editor/command_queue.hpp>
+#include <fuse/editor/console_history.hpp>
 #include <fuse/editor/console_panel.hpp>
 #include <fuse/editor/editor_console_commands.hpp>
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/pie_line.hpp>
 
 #include <fuse/config/cvar.hpp>
 #include <fuse/core/temp_path.hpp>
@@ -313,9 +315,29 @@ void testPieScripts(const fs::path& dir) {
     plain.run("stop");
 }
 
+void testPieLineOk() {
+    expectTrue(editor::pie_line_ok(1), "pie_line_ok(1)");
+    expectTrue(editor::pie_line_ok(256), "pie_line_ok(256)");
+    expectTrue(!editor::pie_line_ok(0), "pie_line_ok(0)");
+    expectTrue(!editor::pie_line_ok(257), "pie_line_ok(257)");
+}
+
+void testConsoleHistoryOk() {
+    expectTrue(editor::console_history_ok(1), "console_history_ok(1)");
+    expectTrue(editor::console_history_ok(256), "console_history_ok(256)");
+    expectTrue(!editor::console_history_ok(0), "console_history_ok(0)");
+    expectTrue(!editor::console_history_ok(257), "console_history_ok(257)");
+}
+
 } // namespace
 
 int main() {
+    testPieLineOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
+    testConsoleHistoryOk();
     const fs::path dir = fuse::test::makeUniqueTempDir("fuse_e15_console_pie");
     testRepl();
     testCommands(dir);
@@ -329,3 +351,64 @@ int main() {
     std::printf("fuse_editor_e15_console_pie: all checks passed\n");
     return 0;
 }
+
+#include <fuse/editor/console_token.hpp>
+
+namespace {
+
+void testTokenizeConsole() {
+    std::string tokens[4];
+    int count = -1;
+
+    fuse::editor::tokenize_console("spawn hero 3", tokens, 3, &count);
+    expectTrue(count == 3, "tokenize: \"spawn hero 3\" yields 3 tokens");
+    expectTrue(tokens[0] == "spawn" && tokens[1] == "hero" && tokens[2] == "3",
+               "tokenize: spawn, hero, 3");
+
+    count = -1;
+    fuse::editor::tokenize_console("echo \"hi there\"", tokens, 4, &count);
+    expectTrue(count == 2 && tokens[0] == "echo" && tokens[1] == "hi there",
+               "tokenize: echo \"hi there\" yields echo and hi there");
+
+    count = -1;
+    fuse::editor::tokenize_console("", tokens, 4, &count);
+    expectTrue(count == 0, "tokenize: empty line writes count 0");
+
+    count = 9;
+    fuse::editor::tokenize_console("spawn hero 3", nullptr, 4, &count);
+    expectTrue(count == 9, "tokenize: null out writes nothing");
+    tokens[0] = "keep";
+    fuse::editor::tokenize_console("spawn hero 3", tokens, 4, nullptr);
+    expectTrue(tokens[0] == "keep", "tokenize: null count writes nothing");
+    fuse::editor::tokenize_console("spawn hero 3", nullptr, 4, nullptr);
+
+    count = -1;
+    fuse::editor::tokenize_console("spawn hero 3", tokens, 1, &count);
+    expectTrue(count == 1 && tokens[0] == "spawn", "tokenize: extra tokens are dropped");
+
+    tokens[0] = "keep";
+    count = -1;
+    fuse::editor::tokenize_console("spawn hero 3", tokens, 0, &count);
+    expectTrue(count == 0 && tokens[0] == "keep", "tokenize: capacity 0 writes no tokens");
+
+    count = -1;
+    fuse::editor::tokenize_console("echo \"hi\\\"there\"", tokens, 4, &count);
+    expectTrue(count == 2 && tokens[0] == "echo" && tokens[1] == "hi\\there",
+               "tokenize: backslash is not an escape");
+
+    count = -1;
+    fuse::editor::tokenize_console("spawn\thero 3", tokens, 4, &count);
+    expectTrue(count == 2 && tokens[0] == "spawn\thero" && tokens[1] == "3",
+               "tokenize: only ASCII space splits");
+
+    count = -1;
+    fuse::editor::tokenize_console("echo \"\"", tokens, 4, &count);
+    expectTrue(count == 2 && tokens[0] == "echo" && tokens[1].empty(),
+               "tokenize: empty quotes group an empty token");
+}
+
+// main() is already defined above. Run before it so a failure lands in g_failures.
+[[maybe_unused]] const int g_runTestTokenizeConsole = (testTokenizeConsole(), 0);
+
+} // namespace
+

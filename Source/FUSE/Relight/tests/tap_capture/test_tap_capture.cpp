@@ -12,6 +12,7 @@
 // RL-1.8 capture (USDA + store + DDS) at device destruction or when its frame window closes, never into a
 // non-empty directory.
 #include <fuse/relight/scene/translate/translate_json.hpp>
+#include <fuse/relight/tap/capture_frame.hpp>
 #include <fuse/relight/tap/capture_tap.hpp>
 #include <fuse/relight/tap/device_tap.hpp>
 #include <fuse/relight/tap/null_tap.hpp>
@@ -542,9 +543,16 @@ void testCaptureExport() {
     fs::remove_all("rl_tap_capture_export_window", ec);
 }
 
+void testCaptureFrameOk() {
+    CHECK(capture_frame_ok(0));
+    CHECK(capture_frame_ok(10000u));
+    CHECK(!capture_frame_ok(10001u));
+}
+
 } // namespace
 
 int main() {
+    testCaptureFrameOk();
     testLiveEqualsSeparate(true);
     testLiveEqualsSeparate(false);
     testFactory();

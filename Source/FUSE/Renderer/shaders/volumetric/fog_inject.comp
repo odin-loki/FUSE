@@ -10,6 +10,7 @@
 #include "gpu_scene.glsl"
 #include "lc_common.glsl"
 #include "../shadow_vsm/vsm_shadow.glsl"
+#include "../ddgi/ddgi_sample.glsl"
 #include "fog_common.glsl"
 
 layout(local_size_x = 64) in;
@@ -101,6 +102,11 @@ bool fuse_fog_light_cluster(FuseLcFrame F, vec3 p, out uint cluster) {
 
 vec3 fuse_fog_in_scattering(FuseFogFrameRef R, vec3 p, vec3 v) {
     precise vec3 L = fuse_fog_vec3(R.f.ambient);
+    if ((R.f.flags & FUSE_FOG_FLAG_GI) != 0u) {
+        const vec3 n = vec3(0.0, 1.0, 0.0);
+        const vec3 view = vec3(-v.x, -v.y, -v.z);
+        L = L + fuse_ddgi_sample_irradiance_view(R.f.ddgi, p, n, view);
+    }
     if ((R.f.flags & FUSE_FOG_FLAG_LIGHTS) == 0u) {
         return L;
     }

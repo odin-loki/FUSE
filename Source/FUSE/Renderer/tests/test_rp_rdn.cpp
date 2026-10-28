@@ -17,8 +17,10 @@
 //   --language slang | glsl  the kernel (skip if not built)
 //
 // Exit 77 = skip (stub build, no ICD / validation layer, capability missing, kernel not built).
+#include <fuse/renderer/denoise/blend_weight.hpp>
 #include <fuse/renderer/denoise/radiance_denoiser.hpp>
 #include <fuse/renderer/denoise/rdn_synthetic.hpp>
+#include <fuse/renderer/rdn_pass.hpp>
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
@@ -81,11 +83,45 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. Must run before any GPU skip; a failure exits 1 instead of 77. Does not allocate.
+int testRdnPassOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::rdn_pass_ok(0), "testRdnPassOk: rdn_pass_ok(0) == true");
+    expect(fuse::renderer::rdn_pass_ok(4), "testRdnPassOk: rdn_pass_ok(4) == true");
+    expect(!fuse::renderer::rdn_pass_ok(-1), "testRdnPassOk: rdn_pass_ok(-1) == false");
+    expect(!fuse::renderer::rdn_pass_ok(5), "testRdnPassOk: rdn_pass_ok(5) == false");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testRdnPassOk\n");
+        return 1;
+    }
+    return 0;
+}
+
+/// CPU gate. Must run before any GPU skip; a failure exits 1 instead of 77.
+int test_clamp_blend_weight() {
+    const int before = g_failures;
+    expect(fuse::renderer::denoise::clamp_blend_weight(0.9f, 0.8f) == 0.8f,
+           "test_clamp_blend_weight: clamp_blend_weight(0.9, 0.8) == 0.8");
+    expect(fuse::renderer::denoise::blend_current(0.25f) == 0.75f,
+           "test_clamp_blend_weight: blend_current(0.25) == 0.75");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: test_clamp_blend_weight\n");
+        return 1;
+    }
+    return 0;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int passRc = testRdnPassOk()) {
+        return passRc;
+    }
+    if (const int blendRc = test_clamp_blend_weight()) {
+        return blendRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -696,6 +732,12 @@ int runZeroAlloc(Context& ctx, RdnKernelLanguage language, bool countAllocations
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int passRc = testRdnPassOk()) {
+        return passRc;
+    }
+    if (const int blendRc = test_clamp_blend_weight()) {
+        return blendRc;
+    }
     std::string mode = "passes";
     std::string backend = "set";
     std::string lang = "slang";

@@ -1,3 +1,4 @@
+#include <fuse/renderer/draw/draw_count.hpp>
 #include <fuse/renderer/draw_list.hpp>
 #include <fuse/renderer/resource_manager.hpp>
 
@@ -14,6 +15,15 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+/// CPU gate. Must run before any GPU or device skip; a failure returns non-zero.
+void testDrawCountOk() {
+    expectTrue(fuse::renderer::draw_count_ok(0), "draw_count_ok(0) is true");
+    expectTrue(fuse::renderer::draw_count_ok(1), "draw_count_ok(1) is true");
+    expectTrue(fuse::renderer::draw_count_ok(1 << 20), "draw_count_ok(1<<20) is true");
+    expectTrue(!fuse::renderer::draw_count_ok(-1), "draw_count_ok(-1) is false");
+    expectTrue(!fuse::renderer::draw_count_ok((1 << 20) + 1), "draw_count_ok((1<<20)+1) is false");
 }
 
 void testEmptyList() {
@@ -425,6 +435,12 @@ void testDrawIndirectDispatchIndirectAndPushConstants() {
 } // namespace
 
 int main() {
+    testDrawCountOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_draw_list: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     testEmptyList();
     testPushRejectsZeroIndexCount();
     testPushRejectsZeroInstanceCount();

@@ -5,12 +5,14 @@
 // (0.05, 0.15, 0.35), so every pixel is checked against the exact expected value.
 #include <fuse/core/init.hpp>
 #include <fuse/platform/gl_context.hpp>
+#include <fuse/renderer/composite_weight.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 #include <fuse/renderer/vk/composite_gpu_path.hpp>
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <vector>
 
 namespace {
@@ -102,6 +104,16 @@ bool blendOnce(float alpha) {
     return true;
 }
 
+void testCompositeWeightOk() {
+    expectTrue(fuse::renderer::composite_weight_ok(0.f), "composite_weight_ok(0) is true");
+    expectTrue(fuse::renderer::composite_weight_ok(0.5f), "composite_weight_ok(0.5) is true");
+    expectTrue(fuse::renderer::composite_weight_ok(1.f), "composite_weight_ok(1) is true");
+    expectTrue(!fuse::renderer::composite_weight_ok(-0.1f), "composite_weight_ok(-0.1) is false");
+    expectTrue(!fuse::renderer::composite_weight_ok(1.1f), "composite_weight_ok(1.1) is false");
+    expectTrue(!fuse::renderer::composite_weight_ok(std::numeric_limits<float>::quiet_NaN()),
+               "composite_weight_ok(non-finite) is false");
+}
+
 void testCompositeBlendAtAllAlpha() {
     const float alphas[] = {0.f, 0.25f, 0.5f, 0.75f, 1.f};
     for (const float alpha : alphas) {
@@ -115,6 +127,12 @@ void testCompositeBlendAtAllAlpha() {
 } // namespace
 
 int main() {
+    testCompositeWeightOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b2_composite_blend: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
     testCompositeBlendAtAllAlpha();
     fuse::core::shutdown();

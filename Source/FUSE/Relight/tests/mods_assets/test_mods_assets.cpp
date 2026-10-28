@@ -21,6 +21,7 @@
 #include <fuse/relight/mods/assets/asset_package.hpp>
 #include <fuse/relight/mods/assets/dds.hpp>
 #include <fuse/relight/mods/assets/gdeflate.hpp>
+#include <fuse/relight/mods/assets/mod_token.hpp>
 #include <fuse/relight/mods/assets/texture_decode.hpp>
 #include <fuse/relight/mods/assets/texture_format.hpp>
 
@@ -1040,9 +1041,17 @@ void testPackageRoundTrip() {
     CHECK(!w.addImage("y", wrongData, 0, 0, &err));
 }
 
+void testModTokenOk() {
+    CHECK(fuse::relight::mod_token_ok("Albedo"));
+    CHECK(!fuse::relight::mod_token_ok(""));
+    CHECK(!fuse::relight::mod_token_ok("1Albedo"));
+    CHECK(!fuse::relight::mod_token_ok("Al bedo"));
+}
+
 } // namespace
 
 int main() {
+    testModTokenOk();
     testFormats();
     testDecodePlain();
     testDecodeBlocks();
@@ -1060,3 +1069,26 @@ int main() {
     std::printf("rl_mods_assets_unit: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }
+
+#include <fuse/relight/mods/mod_id.hpp>
+
+namespace {
+
+void testModId() {
+    using fuse::relight::mods::mod_id_valid;
+    CHECK(mod_id_valid("hero_pack"));
+    CHECK(!mod_id_valid("Hero"));
+    CHECK(!mod_id_valid("1abc"));
+    CHECK(!mod_id_valid(""));
+    CHECK(!mod_id_valid("hero-pack"));
+    CHECK(!mod_id_valid("hero/pack"));
+    CHECK(mod_id_valid(std::string(32, 'a')));
+    CHECK(!mod_id_valid(std::string(33, 'a')));
+}
+
+struct ModIdTestRegistration {
+    ModIdTestRegistration() { testModId(); }
+};
+const ModIdTestRegistration g_modIdTestRegistration{};
+
+} // namespace

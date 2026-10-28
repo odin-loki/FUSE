@@ -628,11 +628,17 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
 
 } // namespace
 
+void EditorHost::stopPlaySession_() {
+    if (!m_playSession.isActive()) {
+        return;
+    }
+    m_runtimeViewport.exitPlayViewportCamera();
+    m_playSession.stop(m_editorScene, m_runtimeScene, m_state, m_physics);
+}
+
 void EditorHost::resetSceneForProjectOpen() {
     ensureInitialized_();
-    if (m_playSession.isActive()) {
-        m_playSession.stop(m_editorScene, m_runtimeScene, m_state, m_physics);
-    }
+    stopPlaySession_();
     // Undo commands hold registry references (and release reserved slots when destroyed): drop
     // the history before the registry it points into.
     m_undoStack.clear();
@@ -783,12 +789,11 @@ void EditorHost::applyCommand_(const EditorCommand& command) {
     case CommandKind::StartPlay:
         if (!m_playSession.isActive()) {
             m_playSession.start(m_editorScene, m_runtimeScene, m_state, m_physics);
+            m_runtimeViewport.enterPlayViewportCamera(m_editorScene.registry());
         }
         break;
     case CommandKind::StopPlay:
-        if (m_playSession.isActive()) {
-            m_playSession.stop(m_editorScene, m_runtimeScene, m_state, m_physics);
-        }
+        stopPlaySession_();
         break;
     case CommandKind::PausePlay:
         if (m_playSession.isPlaying()) {

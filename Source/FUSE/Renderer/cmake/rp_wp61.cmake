@@ -182,7 +182,7 @@ fuse_apply_cxx23(fuse_rp_ddgi_gpu)
 # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
 set(_fuse_wp61_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
 set(_fuse_wp61_vk_tests "")
-foreach(_mode parity_rq parity_sdf parity_rq_states parity_sdf_states converge leak tod shade zero_alloc)
+foreach(_mode parity_rq parity_sdf parity_rq_states parity_sdf_states converge leak tod shade zero_alloc cpu_import)
     set(_name "fuse_rp_ddgi_gpu_vk_${_mode}")
     if(FUSE_VULKAN_BACKEND)
         add_test(NAME ${_name} COMMAND "${_fuse_wp61_lock}" "$<TARGET_FILE:fuse_rp_ddgi_gpu>" --mode ${_mode})

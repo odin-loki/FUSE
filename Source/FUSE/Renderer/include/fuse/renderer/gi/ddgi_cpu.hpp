@@ -246,6 +246,7 @@ public:
     /// Per-probe relocation offset (xyz, world units) and state (w: ddgi_kernel::kProbeActive / kProbeInactive).
     /// All zero (active, not moved) unless DdgiCpuConfig::probe_relocation / probe_classification are on.
     const std::vector<fuse::math::Vec4>& probeData() const { return m_probe_data; }
+    const std::vector<u32>& updateCounts() const { return m_update_counts; }
     /// Grid position + relocation offset (the ray origin and the position sampling weighs).
     fuse::math::Vec3 probePosition(u32 probe_index) const;
     /// False when classification marked the probe inactive.
@@ -298,6 +299,19 @@ namespace ddgi_cpu {
 bool packIrradianceAtlasRgba16f(const DdgiCpuVolume& volume, std::vector<u16>& out);
 /// Pack the bordered distance-moment tiles (mean, mean^2) into the depth atlas layout as RG16F bits.
 bool packDistanceAtlasRg16f(const DdgiCpuVolume& volume, std::vector<u16>& out);
+/// Pack both legacy 2D atlas layouts (shared by `DDGI::uploadAtlases` and tests).
+bool packAtlasesHalf(const DdgiCpuVolume& volume,
+                     std::vector<u16>& irradiance_rgba16f,
+                     std::vector<u16>& distance_rg16f);
+
+/// Probe-major f32 sections matching `gi_gpu::DdgiWorkLayout` (irradiance / distance / counts / probe data).
+struct DdgiProbeMajorGpuBlob {
+    std::vector<f32> irradiance;
+    std::vector<f32> distance;
+    std::vector<u32> updateCounts;
+    std::vector<f32> probeData;
+};
+bool packProbeMajorGpuBlob(const DdgiCpuVolume& volume, DdgiProbeMajorGpuBlob& out);
 
 } // namespace ddgi_cpu
 

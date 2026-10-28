@@ -18,6 +18,7 @@
 #include <fuse/world2d/world_2d.hpp>
 #include <fuse/world3d/scene_object_3d.hpp>
 #include <fuse/world3d/scene_snapshot.hpp>
+#include <fuse/world3d/scale_ok.hpp>
 #include <fuse/world3d/world_3d.hpp>
 
 #include <cmath>
@@ -379,9 +380,18 @@ void testEulerSetterCompatibility() {
     expectNear(fromQuat.rollDeg(), -30.f, 1e-3f, "roll decomposed from the quaternion");
 }
 
+void testScaleOk() {
+    expectTrue(fuse::world3d::scale_ok(1.f), "scale 1");
+    expectTrue(fuse::world3d::scale_ok(100.f), "scale 100");
+    expectTrue(!fuse::world3d::scale_ok(0.f), "scale 0 rejected");
+    expectTrue(!fuse::world3d::scale_ok(-1.f), "scale -1 rejected");
+    expectTrue(!fuse::world3d::scale_ok(101.f), "scale 101 rejected");
+}
+
 } // namespace
 
 int main() {
+    testScaleOk();
     testRotatedScaledParentChain();
     testCacheInvalidation();
     testReparentKeepsWorldPose();
@@ -397,3 +407,25 @@ int main() {
     std::fprintf(stderr, "fuse scene transform gates: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+#include <fuse/world3d/transform_delta.hpp>
+
+namespace {
+
+// Runs before main and reports through g_failures.
+void testTransformDeltaDirty() {
+    const bool originClean = !fuse::world3d::transform_delta_dirty(0.f, 0.f, 0.f, 0.001f);
+    const bool offsetDirty = fuse::world3d::transform_delta_dirty(0.1f, 0.f, 0.f, 0.001f);
+    std::printf("[gate] transform delta dirty: origin clean=%d offset dirty=%d\n", originClean ? 1 : 0,
+                offsetDirty ? 1 : 0);
+    expectTrue(originClean, "(0,0,0) with epsilon 0.001 is not dirty");
+    expectTrue(offsetDirty, "(0.1, 0, 0) with epsilon 0.001 is dirty");
+}
+
+struct TransformDeltaDirtyRunner {
+    TransformDeltaDirtyRunner() { testTransformDeltaDirty(); }
+};
+
+const TransformDeltaDirtyRunner g_transformDeltaDirtyRunner{};
+
+} // namespace

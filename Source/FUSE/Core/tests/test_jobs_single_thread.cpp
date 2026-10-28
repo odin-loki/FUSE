@@ -1,22 +1,21 @@
 #include <fuse/config.hpp>
+#include <fuse/math/camera_shake.hpp>
 #include <fuse/jobs/job_counter.hpp>
+#include <fuse/jobs/job_queue.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/jobs/parallel_for.hpp>
+#include <fuse/jobs/single_worker.hpp>
 #include <fuse/jobs/worker_count.hpp>
+#include <fuse/jobs/worker_pin.hpp>
 #include <fuse/platform/fiber.hpp>
 #include <fuse/platform/power.hpp>
 
 #include <atomic>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <vector>
-
-#if !FUSE_JOBS_SINGLE_THREAD
-int main() {
-    std::fprintf(stderr, "FAIL: test_jobs_single_thread must be built with FUSE_JOBS_SINGLE_THREAD=ON\n");
-    return EXIT_FAILURE;
-}
-#else
 
 namespace {
 
@@ -28,6 +27,29 @@ void expectTrue(bool condition, const char* message) {
         ++g_failures;
     }
 }
+
+void testJobQueueOk() {
+    expectTrue(fuse::jobs::job_queue_ok(0), "job_queue_ok(0) is true");
+    expectTrue(fuse::jobs::job_queue_ok(1024), "job_queue_ok(1024) is true");
+    expectTrue(!fuse::jobs::job_queue_ok(-1), "job_queue_ok(-1) is false");
+    expectTrue(!fuse::jobs::job_queue_ok(1025), "job_queue_ok(1025) is false");
+}
+
+} // namespace
+
+#if !FUSE_JOBS_SINGLE_THREAD
+int main() {
+    testJobQueueOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_core job single-thread tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    std::fprintf(stderr, "FAIL: test_jobs_single_thread must be built with FUSE_JOBS_SINGLE_THREAD=ON\n");
+    return EXIT_FAILURE;
+}
+#else
+
+namespace {
 
 void expectEq(fuse::u32 actual, fuse::u32 expected, const char* message) {
     if (actual != expected) {
@@ -54,6 +76,19 @@ bool fuseCoreCompiledSingleThread() {
     desktop.mobileProfile = false;
     desktop.powerState = fuse::platform::PowerState::Normal;
     return fuse::jobs::computeWorkerCount(desktop) == 0u;
+}
+
+void testWorkerPinOk() {
+    expectTrue(fuse::jobs::worker_pin_ok(0), "worker_pin_ok(0) is true");
+    expectTrue(fuse::jobs::worker_pin_ok(63), "worker_pin_ok(63) is true");
+    expectTrue(!fuse::jobs::worker_pin_ok(-1), "worker_pin_ok(-1) is false");
+    expectTrue(!fuse::jobs::worker_pin_ok(64), "worker_pin_ok(64) is false");
+}
+
+void testSingleWorkerOk() {
+    expectTrue(fuse::jobs::single_worker_ok(1), "single_worker_ok(1) is true");
+    expectTrue(!fuse::jobs::single_worker_ok(0), "single_worker_ok(0) is false");
+    expectTrue(!fuse::jobs::single_worker_ok(2), "single_worker_ok(2) is false");
 }
 
 void testMacroEnabled() {
@@ -247,9 +282,107 @@ void testEmscriptenStubProfileWhenApplicable() {
 #endif
 }
 
+void testDeterministicCameraShake() {
+    const auto close = [](fuse::f32 actual, fuse::f32 expected) {
+        const fuse::f32 delta = actual - expected;
+        return delta <= 1e-5f && delta >= -1e-5f;
+    };
+
+    fuse::math::ShakeState state{};
+    fuse::math::add_trauma(state, 0.25f);
+    fuse::math::add_trauma(state, 0.25f);
+    expectTrue(close(state.trauma, 0.5f), "add_trauma accumulates");
+    fuse::math::add_trauma(state, 10.f);
+    expectTrue(state.trauma == 1.f, "add_trauma clamps to 1");
+    fuse::math::add_trauma(state, -5.f);
+    expectTrue(state.trauma == 0.f, "add_trauma clamps to 0");
+
+    state.trauma = 0.4f;
+    const fuse::f32 nan = std::numeric_limits<fuse::f32>::quiet_NaN();
+    const fuse::f32 inf = std::numeric_limits<fuse::f32>::infinity();
+    fuse::math::add_trauma(state, nan);
+    expectTrue(state.trauma == 0.4f, "non-finite trauma amount adds 0");
+    fuse::math::add_trauma(state, inf);
+    expectTrue(state.trauma == 0.4f, "infinite trauma amount adds 0");
+    fuse::math::add_trauma(state, -inf);
+    expectTrue(state.trauma == 0.4f, "negative infinite trauma amount adds 0");
+
+    state.trauma = 0.5f;
+    state.frame = 9u;
+    fuse::math::decay_trauma(state, 0.25f, 1.f);
+    expectTrue(state.trauma == 0.25f, "decay_trauma moves trauma toward 0");
+    expectTrue(state.frame == 9u, "decay_trauma leaves the frame unchanged");
+    fuse::math::decay_trauma(state, 0.f, 1.f);
+    expectTrue(state.trauma == 0.25f, "dt <= 0 leaves trauma unchanged");
+    fuse::math::decay_trauma(state, -1.f, 4.f);
+    expectTrue(state.trauma == 0.25f, "negative dt leaves trauma unchanged");
+
+    state.trauma = 1.25f;
+    fuse::math::decay_trauma(state, 0.f, 1.f);
+    expectTrue(state.trauma == 1.25f, "non-positive dt does not clamp");
+    fuse::math::decay_trauma(state, 0.1f, 1.f);
+    expectTrue(state.trauma == 1.f, "decay result clamps to 1");
+    state.trauma = 0.2f;
+    fuse::math::decay_trauma(state, 1.f, 1.f);
+    expectTrue(state.trauma == 0.f, "decay result clamps to 0");
+
+    state.trauma = 0.f;
+    state.frame = 4u;
+    const fuse::math::Vec3 zero = fuse::math::shake_offset(state);
+    expectTrue(zero.x == 0.f && zero.y == 0.f && zero.z == 0.f, "trauma 0 yields a zero offset");
+
+    // offset = trauma^2 * direction(frame), direction components in [-1, 1].
+    state.trauma = 1.f;
+    state.frame = 11u;
+    const fuse::math::Vec3 full = fuse::math::shake_offset(state);
+    const fuse::math::Vec3 fullAgain = fuse::math::shake_offset(state);
+    expectTrue(full.x == fullAgain.x && full.y == fullAgain.y && full.z == fullAgain.z,
+               "the same state returns the same offset");
+    expectTrue(full.length() > 0.f, "unit trauma produces a nonzero offset");
+    expectTrue(full.x >= -1.f && full.x <= 1.f && full.y >= -1.f && full.y <= 1.f && full.z >= -1.f &&
+                   full.z <= 1.f,
+               "unit trauma keeps each axis inside [-1, 1]");
+
+    state.trauma = 0.5f;
+    const fuse::math::Vec3 half = fuse::math::shake_offset(state);
+    expectTrue(close(half.x, full.x * 0.25f) && close(half.y, full.y * 0.25f) && close(half.z, full.z * 0.25f),
+               "offset magnitude scales with trauma^2");
+
+    fuse::math::ShakeState repeat{};
+    repeat.trauma = 0.5f;
+    repeat.frame = 11u;
+    const fuse::math::Vec3 repeatOffset = fuse::math::shake_offset(repeat);
+    expectTrue(repeatOffset.x == half.x && repeatOffset.y == half.y && repeatOffset.z == half.z,
+               "equal states return the same offset");
+
+    for (fuse::u32 frame = 0u; frame < 64u; ++frame) {
+        fuse::math::ShakeState current{};
+        current.trauma = 1.f;
+        current.frame = frame;
+        fuse::math::ShakeState next = current;
+        next.frame = frame + 1u;
+        const fuse::math::Vec3 a = fuse::math::shake_offset(current);
+        const fuse::math::Vec3 b = fuse::math::shake_offset(next);
+        expectTrue(a.x != b.x || a.y != b.y || a.z != b.z, "successive frames differ");
+    }
+}
+
 } // namespace
 
 int main() {
+    testJobQueueOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_core job single-thread tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testWorkerPinOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_core job single-thread tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testSingleWorkerOk();
     testMacroEnabled();
     testComputeWorkerCountAlwaysZero();
     testSchedulerIgnoresRequestedWorkers();
@@ -260,6 +393,7 @@ int main() {
     testNestedParallelForVisitCount();
     testNestedParallelForStressVisitCoverage();
     testEmscriptenStubProfileWhenApplicable();
+    testDeterministicCameraShake();
 
     if (g_failures == 0) {
         std::printf("fuse_core job single-thread tests: all checks passed\n");

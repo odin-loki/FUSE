@@ -28,6 +28,7 @@
 // Exit 77 = skip (stub build, no ICD / validation layer, device below T2, no kernel built).
 #include "test_rp_pathtrace_scene.hpp"
 #include <fuse/core/sanitizer.hpp>
+#include <fuse/renderer/pt_sample.hpp>
 
 #if FUSE_TEST_GLOBAL_NEW_HOOKS
 namespace {
@@ -75,11 +76,30 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. No allocation. Must run before any GPU skip; a failure returns non-zero.
+int testPtSampleOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::pt_sample_ok(1), "pt_sample_ok(1) is true");
+    expect(fuse::renderer::pt_sample_ok(16), "pt_sample_ok(16) is true");
+    expect(fuse::renderer::pt_sample_ok(64), "pt_sample_ok(64) is true");
+    expect(!fuse::renderer::pt_sample_ok(0), "pt_sample_ok(0) is false");
+    expect(!fuse::renderer::pt_sample_ok(3), "pt_sample_ok(3) is false");
+    expect(!fuse::renderer::pt_sample_ok(128), "pt_sample_ok(128) is false");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testPtSampleOk\n");
+        return 1;
+    }
+    return 0;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int sampleRc = testPtSampleOk()) {
+        return sampleRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1187,6 +1207,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int sampleRc = testPtSampleOk()) {
+        return sampleRc;
+    }
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     std::string mode = "converge";
     std::string backend = "set";

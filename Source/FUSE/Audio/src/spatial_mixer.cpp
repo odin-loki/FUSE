@@ -3,6 +3,7 @@
 #include <fuse/audio/attenuation.hpp>
 #include <fuse/audio/binaural_pan.hpp>
 #include <fuse/audio/occlusion.hpp>
+#include <fuse/audio/reverb_zones.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -164,11 +165,13 @@ void SpatialMixer::render_voice(const VoiceRequest& voice, const Vec3& listener_
     float target_left = voice.volume * output_gain;
     float target_right = target_left;
     float hf_gain = 1.f;
+    float lpf_coeff = 1.f;
     if (voice.spatial) {
         const float distance = voice.position.distance(listener_pos);
         const float distance_attenuation = compute_attenuation(distance, voice.attenuation);
-        const OcclusionAttenuation occlusion =
-            compute_source_occlusion_attenuation(listener_pos, voice.position, voice.occlusion);
+        const float visibility =
+            compute_source_visibility(listener_pos, voice.position, voice.occlusion);
+        const OcclusionAttenuation occlusion = evaluate_occlusion_attenuation(visibility);
         const Vec3 world_rel = voice.position - listener_pos;
         const Vec3 rel = has_listener ? to_listener_space(world_rel, basis) : world_rel;
         BinauralPanGains pan{};
@@ -179,7 +182,9 @@ void SpatialMixer::render_voice(const VoiceRequest& voice, const Vec3& listener_
         target_left = scalar * pan.left;
         target_right = scalar * pan.right;
         hf_gain = std::clamp(occlusion.hf_gain, 0.f, 1.f);
+        lpf_coeff = occlusion_lpf_mix_coefficient(visibility, static_cast<float>(m_sampleRate));
     }
+    const bool silent_send = is_silent_reverb_send(voice.reverb_send);
 
     VoiceState& state = m_voiceState[voice.key];
     if (!state.primed) {
@@ -252,7 +257,12 @@ void SpatialMixer::render_voice(const VoiceRequest& voice, const Vec3& listener_
         }
 
         if (voice.spatial) {
-            // High shelf: LF passes, content above the crossover is scaled by hf_gain.
+            // One-pole HF occlusion lowpass (open = bypass), then the fixed high-shelf.
+            if (lpf_coeff >= 1.f) {
+                state.occl_lpf = in_left;
+            } else {
+                in_left = process_occlusion_lpf(in_left, state.occl_lpf, lpf_coeff);
+            }
             state.lp_left += lp_coeff * (in_left - state.lp_left);
             if (hf_gain < 1.f) {
                 in_left = state.lp_left + hf_gain * (in_left - state.lp_left);
@@ -268,8 +278,18 @@ void SpatialMixer::render_voice(const VoiceRequest& voice, const Vec3& listener_
             gain_right = start_right + (target_right - start_right) * t;
         }
 
-        stereo_out[static_cast<usize>(frame) * 2] += in_left * gain_left;
-        stereo_out[static_cast<usize>(frame) * 2 + 1] += in_right * gain_right;
+        const float out_left = in_left * gain_left;
+        const float out_right = in_right * gain_right;
+        const usize index = static_cast<usize>(frame) * 2;
+        stereo_out[index] += out_left;
+        stereo_out[index + 1] += out_right;
+        // Silence leaves the listener reverb bus untouched. See mix_listener_reverb_sample.
+        if (!silent_send && index + 1 < m_reverbSentDry.size() && frame < m_reverbSend.size()) {
+            m_reverbSentDry[index] += contribute_reverb_send(out_left, voice.reverb_send);
+            m_reverbSentDry[index + 1] += contribute_reverb_send(out_right, voice.reverb_send);
+            m_reverbSend[frame] +=
+                contribute_reverb_send(0.5f * (out_left + out_right), voice.reverb_send);
+        }
     }
 
     state.gain_left = target_left;
@@ -280,6 +300,8 @@ void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>
                        std::vector<float>& stereo_out, u32 frames) {
     (void)dt; // Playback follows the sample clock; see advance().
     stereo_out.assign(static_cast<usize>(frames) * 2, 0.f);
+    m_reverbSend.assign(frames, 0.f);
+    m_reverbSentDry.assign(static_cast<usize>(frames) * 2, 0.f);
     m_lastMasterGain = 1.f;
     m_lastMixedVoices = 0;
     m_lastCulledVoices = 0;
@@ -329,6 +351,7 @@ void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>
         request.play_head = source->play_head;
         request.attenuation = make_attenuation_params(source->desc);
         request.occlusion = source->desc.occlusion;
+        request.reverb_send = source->desc.reverb_send;
         request.bus = source->desc.bus;
         estimate_audibility(request);
         requests.push_back(request);
@@ -347,6 +370,7 @@ void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>
         request.pitch = voice.pitch;
         request.spatial = voice.spatial;
         request.play_head = voice.play_head;
+        request.reverb_send = voice.reverb_send;
         request.bus = voice.bus;
         estimate_audibility(request);
         requests.push_back(request);

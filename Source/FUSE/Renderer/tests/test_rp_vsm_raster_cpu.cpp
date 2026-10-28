@@ -22,6 +22,7 @@
 #include "test_rp_vsm_raster_common.hpp"
 
 #include <fuse/compute_kernel/kernel.hpp>
+#include <fuse/renderer/shadow/vsm_raster.hpp>
 #include <fuse/renderer/shadow/vsm/vsm_clipmap.hpp>
 #include <fuse/renderer/shadow/vsm/vsm_kernel.hpp>
 #include <fuse/renderer/shadow/vsm_raster/vsm_raster_kernel.hpp>
@@ -906,9 +907,25 @@ int runApi() {
     return 0;
 }
 
+/// CPU gate. Must run before any GPU or device skip; a failure returns non-zero before any later skip.
+/// The predicate and these checks allocate nothing.
+void testVsmRasterOk() {
+    expect(fuse::renderer::vsm_raster_ok(128), "vsm_raster_ok(128) is true");
+    expect(fuse::renderer::vsm_raster_ok(256), "vsm_raster_ok(256) is true");
+    expect(fuse::renderer::vsm_raster_ok(1024), "vsm_raster_ok(1024) is true");
+    expect(!fuse::renderer::vsm_raster_ok(64), "vsm_raster_ok(64) is false");
+    expect(!fuse::renderer::vsm_raster_ok(192), "vsm_raster_ok(192) is false");
+    expect(!fuse::renderer::vsm_raster_ok(2048), "vsm_raster_ok(2048) is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testVsmRasterOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: %d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     if (all || suite == "layout") {

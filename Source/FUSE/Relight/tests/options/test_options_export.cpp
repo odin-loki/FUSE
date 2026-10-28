@@ -26,6 +26,7 @@
 #include "rl_options_test.hpp"
 
 #include <fuse/core/temp_path.hpp>
+#include <fuse/relight/options/export_key.hpp>
 #include <fuse/relight/options/options.hpp>
 
 #include <filesystem>
@@ -278,9 +279,19 @@ void testForEachChangeClassification() {
     cleanup(layerFile);
 }
 
+void testExportKeyOk() {
+    RL_CHECK(fuse::relight::export_key_ok("Quality"));
+    RL_CHECK(!fuse::relight::export_key_ok(""));
+    RL_CHECK(!fuse::relight::export_key_ok("1Quality"));
+    RL_CHECK(!fuse::relight::export_key_ok("Qu al"));
+    RL_CHECK(fuse::relight::export_key_ok("Q2345678901234567890123456789012"));
+    RL_CHECK(!fuse::relight::export_key_ok("Q23456789012345678901234567890123"));
+}
+
 } // namespace
 
 void runExportTests() {
+    testExportKeyOk();
     s_dir = fuse::test::makeUniqueTempDir("rl_options_export");
     static const TestCase kCases[] = {
         {"exportAddedOptionsNewFile", testExportAddedOptionsNewFile},

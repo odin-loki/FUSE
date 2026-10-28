@@ -344,7 +344,10 @@ public:
     /// Binding lookup by heap index without a generation handle; empty when unoccupied.
     BindlessBindingIndex bindingIndexForSlot(BindlessHeapKind kind, u32 index) const;
 
-    /// Sparse table growth stub — never shrinks; rejects above per-kind caps.
+    /// Grows the CPU slot table, clamping to the per-kind cap. Shrinks when every
+    /// slot at index >= newCapacity is on the free list; a shrink that would drop
+    /// a live slot fails and leaves the heap unchanged. newCapacity 0 succeeds
+    /// without resizing.
     bool resizeHeap(BindlessHeapKind kind, u32 newCapacity);
     u32 heapCapacity(BindlessHeapKind kind) const;
     u32 heapMaxCapacity(BindlessHeapKind kind) const { return maxCountFor(kind); }

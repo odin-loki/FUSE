@@ -158,6 +158,32 @@ ViewportRay ViewportPanel::screenRay(f32 px, f32 py) const {
     return ray;
 }
 
+void ViewportPanel::setFromSpawnView(const f32 spawnPosition[3]) {
+    m_camera.positionX = spawnPosition[0];
+    m_camera.positionY = spawnPosition[1];
+    m_camera.positionZ = spawnPosition[2];
+
+    const f32 targetX = spawnPosition[0];
+    const f32 targetY = 0.f;
+    const f32 targetZ = spawnPosition[2] - spawnPosition[1];
+    const f32 dx = targetX - m_camera.positionX;
+    const f32 dy = targetY - m_camera.positionY;
+    const f32 dz = targetZ - m_camera.positionZ;
+    const f32 len = std::sqrt(dx * dx + dy * dy + dz * dz);
+    if (!(len > 1e-6f)) {
+        m_camera.yaw = 0.f;
+        m_camera.pitch = 0.f;
+        return;
+    }
+    const f32 fx = dx / len;
+    const f32 fy = dy / len;
+    const f32 fz = dz / len;
+    m_camera.pitch =
+        std::clamp(std::asin(fy) / kDegToRad, -ViewportCamera::kMaxPitchDeg, ViewportCamera::kMaxPitchDeg);
+    m_camera.yaw = std::atan2(-fx, fz) / kDegToRad;
+    m_camera.yaw = wrapYaw(m_camera.yaw);
+}
+
 bool ViewportPanel::worldToScreen(const ecs::vec3& world, f32& px, f32& py) const {
     const ecs::vec3 eye = position();
     const ecs::vec3 d{world.x - eye.x, world.y - eye.y, world.z - eye.z, 0.f};

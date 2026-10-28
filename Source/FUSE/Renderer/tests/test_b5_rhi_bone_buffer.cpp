@@ -14,6 +14,8 @@
 
 #include <fuse/animation/animator.hpp>
 #include <fuse/core/init.hpp>
+#include <fuse/renderer/postprocess/bayer_dither.hpp>
+#include <fuse/renderer/rhi/bone_count.hpp>
 #include <fuse/renderer/resource_manager.hpp>
 #include <fuse/renderer/skinning/bone_buffer.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
@@ -78,9 +80,28 @@ anim::quat axisAngleZ(f32 radians) {
     return clip;
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits instead of continuing.
+void testBoneCountOk() {
+    expectTrue(bone_count_ok(1), "bone_count_ok(1) is true");
+    expectTrue(bone_count_ok(256), "bone_count_ok(256) is true");
+    expectTrue(!bone_count_ok(0), "bone_count_ok(0) is false");
+    expectTrue(!bone_count_ok(257), "bone_count_ok(257) is false");
+}
+
+void testBayerDither() {
+    expectTrue(std::fabs(bayer4(0u, 0u) - (0.5f / 16.f)) < 1e-6f, "bayer(0,0) is 0.5/16");
+    expectTrue(std::fabs(bayer4(0u, 3u) - (15.5f / 16.f)) < 1e-6f, "bayer(0,3) is 15.5/16");
+    expectTrue(!dither_pixel(0.f, 0u, 0u), "a zero pixel stays off against the Bayer threshold");
+}
+
 } // namespace
 
 int main() {
+    testBoneCountOk();
+    testBayerDither();
+    if (b5rhi::failures() != 0) {
+        return b5rhi::finish("fuse_b5_rhi_bone_buffer");
+    }
 #if !defined(FUSE_VULKAN_BACKEND)
     return b5rhi::skip("fuse_b5_rhi_bone_buffer", "Vulkan backend disabled");
 #else

@@ -16,6 +16,7 @@
 #include <fuse/audio/conv_reverb_cpu.hpp>
 #include <fuse/audio/occlusion.hpp>
 #include <fuse/audio/reverb_cuda.hpp>
+#include <fuse/audio/voice_count.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/core/sanitizer.hpp>
 
@@ -877,6 +878,16 @@ void gateOcclusionIsHighShelf() {
         const double im = -(1.0 - occ.hf_gain) * a * di / den;
         return std::sqrt(re * re + im * im);
     };
+    // Visibility 0 → fc = kOcclusionLpfBlockedHz. H(z) = b / (1 - (1 - b) z^-1).
+    auto lpf = [&](double f) {
+        const double fc = static_cast<double>(fa::kOcclusionLpfBlockedHz);
+        const double b = 1.0 - std::exp(-2.0 * kPi * fc / fs);
+        const double w = 2.0 * kPi * f / fs;
+        const double one_minus = 1.0 - b;
+        const double dr = 1.0 - one_minus * std::cos(w);
+        const double di = one_minus * std::sin(w);
+        return b / std::sqrt(dr * dr + di * di);
+    };
 
     for (double f : {lo, hi}) {
         Scene scene(frames);
@@ -886,11 +897,119 @@ void gateOcclusionIsHighShelf() {
         scene.engine.update(scene.registry, 1.f / 60.f); // settle filter + gain ramp
         scene.engine.update(scene.registry, 1.f / 60.f);
         const std::vector<double> l = channel(scene.engine.last_mix_buffer(), 0);
-        const double expected = std::sqrt(0.5) * occ.gain * shelf(f);
+        const double expected = std::sqrt(0.5) * occ.gain * shelf(f) * lpf(f);
         expectNear(tone_amplitude(l, f, fs), expected, expected * 0.01 + 1e-6,
-                   "occluded tone amplitude matches analytic high-shelf response");
+                   "occluded tone matches the high-shelf cascaded with the occlusion lowpass");
     }
-    expectTrue(shelf(hi) < shelf(lo) * 0.75, "occlusion attenuates highs more than lows");
+    expectTrue(shelf(hi) < shelf(lo) * 0.75, "occlusion shelf attenuates highs more than lows");
+    expectTrue(lpf(hi) < lpf(lo) * 0.25, "blocked lowpass muffles highs more than lows");
+}
+
+void gateOcclusionLowpassFollowsVisibility() {
+    const u32 frames = 9600;
+    const double fs = 48000.0;
+    auto amplitude = [&](double freq, float occlusion) {
+        Scene scene(frames);
+        const auto clip = register_pcm(scene.engine, sine(48000, freq, 48000), 1, 48000);
+        fa::AudioSource* src = scene.add(clip, {0.f, 0.f, -1.f});
+        src->desc.occlusion = occlusion;
+        scene.engine.update(scene.registry, 1.f / 60.f);
+        scene.engine.update(scene.registry, 1.f / 60.f);
+        const std::vector<float>& out = scene.engine.last_mix_buffer();
+        bool finite = true;
+        for (float sample : out) {
+            finite = finite && std::isfinite(sample);
+        }
+        expectTrue(finite, "occlusion lowpass output is finite");
+        return tone_amplitude(channel(out, 0), freq, fs);
+    };
+
+    const double open_lo = amplitude(100.0, 1.f);
+    const double open_hi = amplitude(8000.0, 1.f);
+    const double blocked_lo = amplitude(100.0, 0.f);
+    const double blocked_hi = amplitude(8000.0, 0.f);
+    const double centre = std::sqrt(0.5);
+    expectNear(open_lo, centre, centre * 0.01, "fully open lows bypass the occlusion lowpass");
+    expectNear(open_hi, centre, centre * 0.01, "fully open highs bypass the occlusion lowpass");
+    const double lf_ratio = blocked_lo / open_lo;
+    const double hf_ratio = blocked_hi / open_hi;
+    expectTrue(std::isfinite(lf_ratio) && std::isfinite(hf_ratio), "occlusion level ratios are finite");
+    expectTrue(lf_ratio > 0.02, "fully blocked lows keep the occlusion floor");
+    expectTrue(hf_ratio < lf_ratio * 0.35, "fully blocked lowpass muffles highs more than lows");
+}
+
+void gatePerSourceReverbSend() {
+    const u32 frames = 256;
+    const float ir_taps[] = {0.5f, 0.25f};
+    struct Probe {
+        std::vector<float> mix;
+        std::vector<float> bus;
+        std::vector<float> sent;
+    };
+    auto render = [&](float source_send, float zone_wet, bool zone) {
+        Scene scene(frames);
+        const auto clip = register_pcm(scene.engine, std::vector<float>(4096, 0.5f), 1, 48000);
+        fa::AudioSource* src = scene.add(clip, {}, 1.f, false);
+        src->desc.reverb_send = source_send;
+        if (zone) {
+            const auto ir_clip =
+                register_pcm(scene.engine, std::vector<float>(ir_taps, ir_taps + 2), 1, 48000);
+            fa::AudioEngine::ReverbZone reverb;
+            reverb.bounds = {{-10.f, -10.f, -10.f}, {10.f, 10.f, 10.f}};
+            reverb.impulse_response = ir_clip;
+            reverb.wet_dry = zone_wet;
+            reverb.send_level = 1.f;
+            scene.engine.add_reverb_zone(reverb);
+        }
+        scene.engine.update(scene.registry, 1.f / 60.f);
+        Probe probe;
+        probe.mix = scene.engine.last_mix_buffer();
+        probe.bus = scene.engine.spatial_mixer().reverb_send_bus();
+        probe.sent = scene.engine.spatial_mixer().reverb_sent_dry();
+        return probe;
+    };
+
+    const Probe dry = render(1.f, 0.f, false);
+    const Probe silent = render(0.f, 1.f, true);
+    const Probe full = render(1.f, 1.f, true);
+    const Probe half = render(0.5f, 1.f, true);
+    const Probe zone_dry = render(1.f, 0.f, true);
+
+    double bus_peak = 0.0;
+    double sent_peak = 0.0;
+    for (float sample : silent.bus) {
+        bus_peak = std::max(bus_peak, std::fabs(static_cast<double>(sample)));
+    }
+    for (float sample : silent.sent) {
+        sent_peak = std::max(sent_peak, std::fabs(static_cast<double>(sample)));
+    }
+    expectNear(bus_peak, 0.0, 0.0, "silent send leaves the reverb bus at zero");
+    expectNear(sent_peak, 0.0, 0.0, "silent send leaves the sent-dry signal at zero");
+    double dry_err = 0.0;
+    for (size_t i = 0; i < silent.mix.size() && i < dry.mix.size(); ++i) {
+        dry_err = std::max(dry_err, std::fabs(static_cast<double>(silent.mix[i] - dry.mix[i])));
+    }
+    expectNear(dry_err, 0.0, 1e-4, "silent send inside a wet zone matches a dry mix");
+
+    const size_t last = static_cast<size_t>(frames - 1) * 2;
+    expectNear(full.bus[frames - 1], 0.5, 1e-6, "unity send bus is the mono downmix");
+    expectNear(full.sent[last], 0.5, 1e-6, "unity send stores the full dry sample");
+    expectNear(full.mix[last], 0.375, 1e-4, "unity send at full zone wet is the convolved bus");
+    expectNear(half.bus[frames - 1], 0.25, 1e-6, "half send scales the bus");
+    expectNear(half.mix[last], 0.4375, 1e-4, "half send keeps the unsent dry under a wet zone");
+    expectNear(zone_dry.bus[frames - 1], full.bus[frames - 1], 1e-6,
+               "zone wet mix leaves the send bus unchanged");
+    expectNear(zone_dry.mix[last], 0.5, 1e-5, "a dry zone keeps the dry sample at unity send");
+
+    Scene scene(frames);
+    const auto quiet = register_pcm(scene.engine, std::vector<float>(4096, 0.25f), 1, 48000);
+    const auto loud = register_pcm(scene.engine, std::vector<float>(4096, 0.5f), 1, 48000);
+    fa::AudioSource* quiet_src = scene.add(quiet, {}, 1.f, false);
+    scene.add(loud, {}, 1.f, false);
+    quiet_src->desc.reverb_send = 0.f;
+    scene.engine.update(scene.registry, 1.f / 60.f);
+    expectNear(scene.engine.spatial_mixer().reverb_send_bus()[frames - 1], 0.5, 1e-6,
+               "reverb bus equals the sending source's mono downmix");
 }
 
 void gateGainRampAvoidsZipper() {
@@ -959,9 +1078,17 @@ int runPerfGate() {
     return EXIT_SUCCESS;
 }
 
+void testVoiceCountOk() {
+    expectTrue(fa::voice_count_ok(1), "one voice is allowed");
+    expectTrue(fa::voice_count_ok(256), "256 voices is the cap");
+    expectTrue(!fa::voice_count_ok(0), "zero voices is rejected");
+    expectTrue(!fa::voice_count_ok(257), "257 voices is rejected");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testVoiceCountOk();
     fuse::core::initialize();
     if (argc > 1 && std::strcmp(argv[1], "--perf") == 0) {
         const int rc = runPerfGate();
@@ -982,6 +1109,8 @@ int main(int argc, char** argv) {
     gatePitchChangesRateNotAmplitude();
     gateVoiceLimitKeepsLoudest();
     gateOcclusionIsHighShelf();
+    gateOcclusionLowpassFollowsVisibility();
+    gatePerSourceReverbSend();
     gateGainRampAvoidsZipper();
     fuse::core::shutdown();
 

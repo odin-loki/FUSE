@@ -36,6 +36,7 @@
 //                        provider -> the None provider, with the reasons.
 // Exit 77 = skip (stub build, no ICD / validation layer, capability missing, passes not built).
 #include <fuse/renderer/framegen/fg_gpu.hpp>
+#include <fuse/renderer/interp_frame.hpp>
 #include <fuse/renderer/present/latency/latency_provider.hpp>
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
@@ -101,11 +102,28 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero. Does not allocate.
+int testInterpFrameOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::interp_frame_ok(0), "interp_frame_ok(0) is true");
+    expect(fuse::renderer::interp_frame_ok(3), "interp_frame_ok(3) is true");
+    expect(!fuse::renderer::interp_frame_ok(-1), "interp_frame_ok(-1) is false");
+    expect(!fuse::renderer::interp_frame_ok(4), "interp_frame_ok(4) is false");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testInterpFrameOk\n");
+        return 1;
+    }
+    return 0;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int interpRc = testInterpFrameOk()) {
+        return interpRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1212,6 +1230,9 @@ int runLatencyProbe(Context& ctx) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int interpRc = testInterpFrameOk()) {
+        return interpRc;
+    }
     std::string mode = "midpoint";
     for (int i = 1; i + 1 < argc; i += 2) {
         if (std::strcmp(argv[i], "--mode") == 0) {

@@ -4,6 +4,7 @@
 #include <fuse/renderer/shadow/csm.hpp>
 #include <fuse/renderer/shadow/directional_shadow.hpp>
 #include <fuse/renderer/shadow/shadow_atlas.hpp>
+#include <fuse/renderer/shadow/shadow_map.hpp>
 #include <fuse/renderer/shadow/shadow_pass.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
@@ -1574,9 +1575,25 @@ void testShadowPassGraph() {
     bindless.destroy(*bootstrap->device());
 }
 
+/// CPU gate. Must run before any GPU or device skip; a failure returns non-zero.
+void testShadowMapOk() {
+    expectTrue(fuse::renderer::shadow_map_ok(256), "shadow_map_ok(256) is true");
+    expectTrue(fuse::renderer::shadow_map_ok(1024), "shadow_map_ok(1024) is true");
+    expectTrue(fuse::renderer::shadow_map_ok(4096), "shadow_map_ok(4096) is true");
+    expectTrue(!fuse::renderer::shadow_map_ok(128), "shadow_map_ok(128) is false");
+    expectTrue(!fuse::renderer::shadow_map_ok(384), "shadow_map_ok(384) is false");
+    expectTrue(!fuse::renderer::shadow_map_ok(8192), "shadow_map_ok(8192) is false");
+}
+
 } // namespace
 
 int main() {
+    testShadowMapOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testShadowMapOk\n");
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testCascadeLayout();

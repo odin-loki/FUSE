@@ -781,6 +781,13 @@ TOIResult conservativeAdvancementToi(const narrowphase::ShapeInstance& shapeA,
 
 namespace {
 
+/// Pooled shapes store an origin-centred bounding box in `CollisionShapeSoA::params`: `x`, `y` and `z`
+/// are the half extents on the body axes (the same layout as a box). A component that is not strictly
+/// positive becomes zero, so a fully collapsed bound is a point box and the box sweep stays finite.
+vec3 pooledBoundingHalfExtents(vec3 params) {
+    return {params.x > 0.f ? params.x : 0.f, params.y > 0.f ? params.y : 0.f, params.z > 0.f ? params.z : 0.f};
+}
+
 TOIResult dispatchCcdPair(const broadphase::CandidatePair& pair,
                           const RigidBodySoA& bodies,
                           const CollisionShapeSoA& shapes,
@@ -799,8 +806,21 @@ TOIResult dispatchCcdPair(const broadphase::CandidatePair& pair,
         return {};
     }
 
-    const CollisionShapeType typeA = shapeType(shapes, shapeA);
-    const CollisionShapeType typeB = shapeType(shapes, shapeB);
+    CollisionShapeType typeA = shapeType(shapes, shapeA);
+    CollisionShapeType typeB = shapeType(shapes, shapeB);
+    vec3 paramsA = shapes.params[shapeA];
+    vec3 paramsB = shapes.params[shapeB];
+    // Hulls, meshes, SDFs and voxels have no sweep of their own. Substitute the origin-centred
+    // bounding box in params and use the box paths. Plane-versus-box is already handled on either
+    // side by conservative advancement, so a plane does not need to be swapped to the other side.
+    if (isPooledShape(typeA)) {
+        typeA = CollisionShapeType::Box;
+        paramsA = pooledBoundingHalfExtents(paramsA);
+    }
+    if (isPooledShape(typeB)) {
+        typeB = CollisionShapeType::Box;
+        paramsB = pooledBoundingHalfExtents(paramsB);
+    }
     const vec3 posA = bodies.positions[pair.bodyA];
     const vec3 posB = bodies.positions[pair.bodyB];
     const vec3 velA = bodies.linearVelocities[pair.bodyA] * dt;
@@ -810,18 +830,19 @@ TOIResult dispatchCcdPair(const broadphase::CandidatePair& pair,
     // (and every pair without a closed form) take conservative advancement.
     const vec3 spinA = bodies.angularVelocities[pair.bodyA] * dt;
     const vec3 spinB = bodies.angularVelocities[pair.bodyB] * dt;
-    const auto needsSweep = [&](CollisionShapeType type, u32 shapeIndex, u32 body, vec3 spin) {
+    const auto needsSweep = [&](CollisionShapeType type, vec3 params, u32 body, vec3 spin) {
         if (type == CollisionShapeType::Sphere || type == CollisionShapeType::Plane) {
             return false;
         }
         return !isIdentity(bodies.orientations[body]) ||
-               spin.length() * coreReach(type, shapes.params[shapeIndex]) > kCcdRotationEpsilon;
+               spin.length() * coreReach(type, params) > kCcdRotationEpsilon;
     };
     // Closed forms: sphere-sphere, sphere-plane and sphere vs an axis-aligned, non-spinning box.
+    // A pooled stand-in is a box, so it shares the sphere-versus-AABB form when that applies.
     const bool sphereOrPlaneOnly = typeA != CollisionShapeType::Capsule && typeB != CollisionShapeType::Capsule;
     const bool analytic = (typeA == CollisionShapeType::Sphere || typeB == CollisionShapeType::Sphere) &&
-                          sphereOrPlaneOnly && !needsSweep(typeA, shapeA, pair.bodyA, spinA) &&
-                          !needsSweep(typeB, shapeB, pair.bodyB, spinB);
+                          sphereOrPlaneOnly && !needsSweep(typeA, paramsA, pair.bodyA, spinA) &&
+                          !needsSweep(typeB, paramsB, pair.bodyB, spinB);
     const auto sweepable = [](CollisionShapeType type) {
         return type == CollisionShapeType::Sphere || type == CollisionShapeType::Box ||
                type == CollisionShapeType::Capsule || type == CollisionShapeType::Plane;
@@ -831,9 +852,9 @@ TOIResult dispatchCcdPair(const broadphase::CandidatePair& pair,
         return {};
     }
     if (!analytic) {
-        const narrowphase::ShapeInstance a{typeA, shapes.params[shapeA], shapes.scalars[shapeA], posA,
+        const narrowphase::ShapeInstance a{typeA, paramsA, shapes.scalars[shapeA], posA,
                                            bodies.orientations[pair.bodyA]};
-        const narrowphase::ShapeInstance b{typeB, shapes.params[shapeB], shapes.scalars[shapeB], posB,
+        const narrowphase::ShapeInstance b{typeB, paramsB, shapes.scalars[shapeB], posB,
                                            bodies.orientations[pair.bodyB]};
         TOIResult result = conservativeAdvancementToi(a, velA, spinA, b, velB, spinB, kCcdTolerance);
         recordCcdIterations(result.iterations, true);
@@ -849,7 +870,7 @@ TOIResult dispatchCcdPair(const broadphase::CandidatePair& pair,
 
     if (typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::Sphere) {
         TOIResult result = sweptSphereSphere(
-            posA, velA, shapes.params[shapeA].x, posB, velB, shapes.params[shapeB].x);
+            posA, velA, paramsA.x, posB, velB, paramsB.x);
         if (!result.valid) {
             return {};
         }
@@ -860,7 +881,7 @@ TOIResult dispatchCcdPair(const broadphase::CandidatePair& pair,
 
     if (typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::Plane) {
         TOIResult result = sweptSpherePlane(
-            posA, velA - velB, shapes.params[shapeA].x, shapes.params[shapeB], shapes.scalars[shapeB]);
+            posA, velA - velB, paramsA.x, paramsB, shapes.scalars[shapeB]);
         if (!result.valid) {
             return {};
         }
@@ -871,7 +892,7 @@ TOIResult dispatchCcdPair(const broadphase::CandidatePair& pair,
 
     if (typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::Sphere) {
         TOIResult result = sweptSpherePlane(
-            posB, velB - velA, shapes.params[shapeB].x, shapes.params[shapeA], shapes.scalars[shapeA]);
+            posB, velB - velA, paramsB.x, paramsA, shapes.scalars[shapeA]);
         if (!result.valid) {
             return {};
         }
@@ -882,9 +903,9 @@ TOIResult dispatchCcdPair(const broadphase::CandidatePair& pair,
     }
 
     if (typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::Box) {
-        const aabb box = makeCenteredAabb(posB, shapes.params[shapeB]);
+        const aabb box = makeCenteredAabb(posB, paramsB);
         TOIResult result =
-            sweptSphereAabb(posA, velA - velB, shapes.params[shapeA].x, box);
+            sweptSphereAabb(posA, velA - velB, paramsA.x, box);
         if (!result.valid) {
             return {};
         }
@@ -894,9 +915,9 @@ TOIResult dispatchCcdPair(const broadphase::CandidatePair& pair,
     }
 
     if (typeA == CollisionShapeType::Box && typeB == CollisionShapeType::Sphere) {
-        const aabb box = makeCenteredAabb(posA, shapes.params[shapeA]);
+        const aabb box = makeCenteredAabb(posA, paramsA);
         TOIResult result =
-            sweptSphereAabb(posB, velB - velA, shapes.params[shapeB].x, box);
+            sweptSphereAabb(posB, velB - velA, paramsB.x, box);
         if (!result.valid) {
             return {};
         }

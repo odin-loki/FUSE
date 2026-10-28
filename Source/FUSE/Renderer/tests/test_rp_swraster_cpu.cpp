@@ -21,6 +21,7 @@
 #include "test_rp_visbuffer_meshes.hpp"
 
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
+#include <fuse/renderer/raster/sw_tile.hpp>
 #include <fuse/renderer/swraster/swraster.hpp>
 #include <fuse/renderer/swraster/swraster_kernel.hpp>
 #include <fuse/renderer/swraster/swraster_reference.hpp>
@@ -58,6 +59,17 @@ void expect(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+/// CPU gate. Must run before any GPU or device skip; a failure returns non-zero.
+/// Does not allocate.
+void testSwTileOk() {
+    expect(sw_tile_ok(8), "sw_tile_ok(8) is true");
+    expect(sw_tile_ok(32), "sw_tile_ok(32) is true");
+    expect(sw_tile_ok(64), "sw_tile_ok(64) is true");
+    expect(!sw_tile_ok(7), "sw_tile_ok(7) is false");
+    expect(!sw_tile_ok(24), "sw_tile_ok(24) is false");
+    expect(!sw_tile_ok(128), "sw_tile_ok(128) is false");
 }
 
 // --- math (column-major 4x4, Vulkan clip space, forward depth) --------------------------------------
@@ -647,6 +659,11 @@ int runApi() {
 } // namespace
 
 int main(int argc, char** argv) {
+    testSwTileOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: %d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     if (suite == "layout" || suite == "all") {
         runLayout();

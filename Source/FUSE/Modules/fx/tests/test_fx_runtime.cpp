@@ -1,6 +1,9 @@
 #include <fuse/core/init.hpp>
+#include <fuse/fx/emit_rate.hpp>
 #include <fuse/fx/effect_descriptor.hpp>
 #include <fuse/fx/effect_graph.hpp>
+#include <fuse/fx/effect_priority.hpp>
+#include <fuse/fx/fx_layer.hpp>
 #include <fuse/fx/afx_template_pack.hpp>
 #include <fuse/fx/fx_composer.hpp>
 #include <fuse/fx/missile_descriptor.hpp>
@@ -18,8 +21,10 @@
 #include <fuse/object.hpp>
 #include <fuse/types.hpp>
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 namespace {
 
@@ -30,6 +35,34 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+bool nearEqual(float a, float b) {
+    return std::fabs(a - b) <= 1e-4f;
+}
+
+bool vecFinite(const fuse::math::Vec3& value) {
+    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+}
+
+bool vecNear(const fuse::math::Vec3& value, float x, float y, float z) {
+    return nearEqual(value.x, x) && nearEqual(value.y, y) && nearEqual(value.z, z);
+}
+
+bool unitNormal(const fuse::math::Vec3& value) {
+    const float lenSq = value.x * value.x + value.y * value.y + value.z * value.z;
+    return vecFinite(value) && nearEqual(lenSq, 1.f);
+}
+
+fuse::fx::MissileDescriptor makeBolt(float speed, float lifetime) {
+    fuse::fx::MissileDescriptor desc;
+    desc.id = "bolt";
+    desc.muzzleVelocity = speed;
+    desc.isBallistic = false;
+    desc.gravityMod = 0.f;
+    desc.lifetime = lifetime;
+    desc.fadeDelay = 0.5f;
+    return desc;
 }
 
 void testRegisterDescriptors() {
@@ -293,6 +326,258 @@ void testMissilePipeline() {
     pipeline.tick(missile.lifetime);
     expectTrue(pipeline.activeCount() == 0u, "missile expires after lifetime");
     expectTrue(pipeline.completedCount() == 1u, "missile completion counted");
+}
+
+void testMissileImpactSphere() {
+    fuse::fx::MissileDescriptor bolt = makeBolt(8.f, 5.f);
+    bolt.isBallistic = true;
+    bolt.gravityMod = 20.f;
+
+    fuse::fx::MissilePipeline pipeline;
+    pipeline.fire(bolt, {0.f, 0.f, 0.f}, {0.f, 0.f, 1.f});
+
+    const fuse::fx::MissileCollider colliders[] = {
+        fuse::fx::MissileCollider::makeSphere({0.f, 0.f, 5.f}, 1.f),
+    };
+    pipeline.tick(1.f, colliders);
+
+    const fuse::fx::MissileInstance& shot = pipeline.instances()[0];
+    expectTrue(shot.impacted, "sphere stops the missile");
+    expectTrue(shot.finished, "sphere impact finishes the missile");
+    expectTrue(pipeline.activeCount() == 0u, "sphere impact clears the active count");
+    expectTrue(pipeline.completedCount() == 1u, "sphere impact counts as completion");
+    expectTrue(shot.impactColliderIndex == 0u, "sphere records collider 0");
+    expectTrue(vecNear(shot.position, 0.f, 0.f, 4.f), "sphere stops on the near surface");
+    expectTrue(vecNear(shot.impactPoint, 0.f, 0.f, 4.f), "sphere records the impact point");
+    expectTrue(vecNear(shot.impactNormal, 0.f, 0.f, -1.f), "sphere normal points back along the shot");
+    expectTrue(unitNormal(shot.impactNormal), "sphere normal is unit length");
+    expectTrue(vecFinite(shot.position) && vecFinite(shot.velocity), "sphere impact stays finite");
+    expectTrue(nearEqual(shot.velocity.z, 8.f), "ballistic gravity is not applied after a hit");
+    expectTrue(shot.elapsed < bolt.lifetime, "sphere impact stops before lifetime expiry");
+
+    pipeline.tick(1.f, colliders);
+    expectTrue(pipeline.completedCount() == 1u, "a stopped missile is not completed twice");
+    expectTrue(vecNear(pipeline.instances()[0].position, 0.f, 0.f, 4.f), "a stopped missile stays on the surface");
+}
+
+void testMissileImpactAabb() {
+    fuse::fx::MissilePipeline pipeline;
+    pipeline.fire(makeBolt(8.f, 5.f), {0.f, 0.f, 0.f}, {0.f, 0.f, 1.f});
+
+    const fuse::fx::MissileCollider colliders[] = {
+        fuse::fx::MissileCollider::makeAabb({-1.f, -1.f, 4.f}, {1.f, 1.f, 6.f}),
+    };
+    pipeline.tick(1.f, colliders);
+
+    const fuse::fx::MissileInstance& shot = pipeline.instances()[0];
+    expectTrue(shot.impacted, "aabb stops the missile");
+    expectTrue(shot.finished && pipeline.activeCount() == 0u, "aabb impact finishes the missile");
+    expectTrue(shot.impactColliderIndex == 0u, "aabb records collider 0");
+    expectTrue(vecNear(shot.impactPoint, 0.f, 0.f, 4.f), "aabb records the entry face");
+    expectTrue(vecNear(shot.position, 0.f, 0.f, 4.f), "aabb stops on the entry face");
+    expectTrue(vecNear(shot.impactNormal, 0.f, 0.f, -1.f), "aabb normal is the outward face normal");
+    expectTrue(unitNormal(shot.impactNormal), "aabb normal is unit length");
+    expectTrue(shot.position.z < 6.f, "aabb impact does not exit through the far face");
+}
+
+void testMissileImpactMissExpires() {
+    fuse::fx::ResidualEffectQueue residuals;
+    fuse::u32 spawns = 0;
+    residuals.setSpawnHook([&](const fuse::fx::ResidualEntry&) { ++spawns; });
+
+    const fuse::fx::MissileCollider colliders[] = {
+        fuse::fx::MissileCollider::makeSphere({0.f, 5.f, 2.f}, 1.f),
+    };
+
+    fuse::fx::MissilePipeline pipeline;
+    pipeline.fire(makeBolt(8.f, 0.5f), {0.f, 0.f, 0.f}, {0.f, 0.f, 1.f});
+    pipeline.tick(0.25f, colliders, &residuals);
+
+    expectTrue(pipeline.activeCount() == 1u, "a miss stays in flight");
+    expectTrue(!pipeline.instances()[0].impacted, "a side sphere is not a hit");
+    expectTrue(!pipeline.instances()[0].finished, "a miss does not finish early");
+    expectTrue(vecNear(pipeline.instances()[0].position, 0.f, 0.f, 2.f), "a miss integrates the full step");
+    expectTrue(vecFinite(pipeline.instances()[0].position), "a miss stays finite");
+    expectTrue(spawns == 0u && residuals.totalSpawned() == 0u, "a miss does not enqueue a residual");
+
+    pipeline.tick(0.25f, colliders, &residuals);
+    expectTrue(pipeline.activeCount() == 0u, "a miss expires at lifetime");
+    expectTrue(pipeline.completedCount() == 1u, "lifetime expiry counts as completion");
+    expectTrue(pipeline.instances()[0].finished && !pipeline.instances()[0].impacted, "expiry is not an impact");
+    expectTrue(vecNear(pipeline.instances()[0].position, 0.f, 0.f, 4.f), "a miss keeps flying until expiry");
+    expectTrue(spawns == 0u, "lifetime expiry does not enqueue a residual");
+
+    fuse::fx::MissileDescriptor ballistic = makeBolt(8.f, 5.f);
+    ballistic.isBallistic = true;
+    ballistic.gravityMod = 4.f;
+    fuse::fx::MissilePipeline falling;
+    falling.fire(ballistic, {0.f, 0.f, 0.f}, {0.f, 0.f, 1.f});
+    falling.tick(0.25f, colliders);
+    expectTrue(!falling.instances()[0].impacted, "ballistic miss is not an impact");
+    expectTrue(vecNear(falling.instances()[0].position, 0.f, 0.f, 2.f), "ballistic miss steps before gravity");
+    expectTrue(nearEqual(falling.instances()[0].velocity.z, 7.f), "ballistic miss applies gravity");
+}
+
+void testMissileImpactLowestIndexTie() {
+    fuse::fx::MissilePipeline tied;
+    tied.fire(makeBolt(8.f, 5.f), {0.f, 0.f, 0.f}, {0.f, 0.f, 1.f});
+    const fuse::fx::MissileCollider sameDistance[] = {
+        fuse::fx::MissileCollider::makeSphere({0.f, 0.f, 5.f}, 1.f),
+        fuse::fx::MissileCollider::makeSphere({0.f, 0.f, 5.f}, 1.f),
+    };
+    tied.tick(1.f, sameDistance);
+
+    expectTrue(tied.instances()[0].impacted, "tied spheres hit");
+    expectTrue(tied.instances()[0].impactColliderIndex == 0u, "exact t tie keeps the lowest collider index");
+    expectTrue(vecNear(tied.instances()[0].impactPoint, 0.f, 0.f, 4.f), "tied spheres record the shared point");
+    expectTrue(vecNear(tied.instances()[0].impactNormal, 0.f, 0.f, -1.f), "tied spheres record the shared normal");
+
+    fuse::fx::MissilePipeline ordered;
+    ordered.fire(makeBolt(8.f, 5.f), {0.f, 0.f, 0.f}, {0.f, 0.f, 1.f});
+    const fuse::fx::MissileCollider nearerLater[] = {
+        fuse::fx::MissileCollider::makeSphere({0.f, 0.f, 9.f}, 1.f),
+        fuse::fx::MissileCollider::makeSphere({0.f, 0.f, 5.f}, 1.f),
+    };
+    ordered.tick(1.f, nearerLater);
+
+    expectTrue(ordered.instances()[0].impacted, "the nearer sphere hits");
+    expectTrue(ordered.instances()[0].impactColliderIndex == 1u, "a smaller t beats a lower index");
+    expectTrue(vecNear(ordered.instances()[0].impactPoint, 0.f, 0.f, 4.f), "the nearer surface is the impact point");
+    expectTrue(unitNormal(ordered.instances()[0].impactNormal), "ordered hit normal stays finite");
+}
+
+void testMissileImpactGrazingAndZeroLength() {
+    fuse::fx::MissilePipeline tangent;
+    tangent.fire(makeBolt(8.f, 5.f), {0.f, 0.f, 0.f}, {0.f, 0.f, 1.f});
+    const fuse::fx::MissileCollider tangentSphere[] = {
+        fuse::fx::MissileCollider::makeSphere({0.f, 1.f, 5.f}, 1.f),
+    };
+    tangent.tick(1.f, tangentSphere);
+    const fuse::fx::MissileInstance& grazed = tangent.instances()[0];
+    expectTrue(grazed.impacted, "a tangent sphere is a hit");
+    expectTrue(vecNear(grazed.impactPoint, 0.f, 0.f, 5.f), "tangent contact is on the sphere");
+    expectTrue(vecNear(grazed.impactNormal, 0.f, -1.f, 0.f), "tangent normal is the outward radius");
+    expectTrue(unitNormal(grazed.impactNormal) && vecFinite(grazed.position), "tangent hit does not NaN");
+
+    fuse::fx::MissilePipeline nearMiss;
+    nearMiss.fire(makeBolt(8.f, 5.f), {0.f, 0.f, 0.f}, {0.f, 0.f, 1.f});
+    const fuse::fx::MissileCollider clearMiss[] = {
+        fuse::fx::MissileCollider::makeSphere({0.f, 1.25f, 5.f}, 1.f),
+    };
+    nearMiss.tick(1.f, clearMiss);
+    expectTrue(!nearMiss.instances()[0].impacted && nearMiss.activeCount() == 1u, "a clear near miss keeps flying");
+    expectTrue(vecNear(nearMiss.instances()[0].position, 0.f, 0.f, 8.f), "a near miss travels the full step");
+    expectTrue(vecFinite(nearMiss.instances()[0].position) && vecFinite(nearMiss.instances()[0].velocity),
+               "a near miss does not NaN");
+
+    fuse::fx::MissilePipeline edge;
+    edge.fire(makeBolt(8.f, 5.f), {0.f, 0.f, 0.f}, {0.f, 0.f, 1.f});
+    const fuse::fx::MissileCollider edgeBox[] = {
+        fuse::fx::MissileCollider::makeAabb({0.f, -1.f, 5.f}, {1.f, 1.f, 6.f}),
+    };
+    edge.tick(1.f, edgeBox);
+    expectTrue(edge.instances()[0].impacted, "riding an aabb face still hits the entry edge");
+    expectTrue(vecNear(edge.instances()[0].impactPoint, 0.f, 0.f, 5.f), "edge graze records the entry point");
+    expectTrue(vecNear(edge.instances()[0].impactNormal, 0.f, 0.f, -1.f), "edge graze keeps a face normal");
+    expectTrue(unitNormal(edge.instances()[0].impactNormal), "edge graze does not NaN");
+
+    fuse::fx::MissilePipeline parallel;
+    parallel.fire(makeBolt(8.f, 5.f), {0.f, 0.f, 0.f}, {1.f, 0.f, 0.f});
+    const fuse::fx::MissileCollider beside[] = {
+        fuse::fx::MissileCollider::makeAabb({1.f, 1.f, -1.f}, {3.f, 3.f, 1.f}),
+    };
+    parallel.tick(1.f, beside);
+    expectTrue(!parallel.instances()[0].impacted, "a parallel aabb miss is not a hit");
+    expectTrue(vecNear(parallel.instances()[0].position, 8.f, 0.f, 0.f), "a parallel miss travels the full step");
+    expectTrue(vecFinite(parallel.instances()[0].position), "a parallel miss does not NaN");
+
+    fuse::fx::MissilePipeline inverted;
+    inverted.fire(makeBolt(8.f, 5.f), {0.f, 0.f, 0.f}, {0.f, 0.f, 1.f});
+    const fuse::fx::MissileCollider emptyBox[] = {
+        fuse::fx::MissileCollider::makeAabb({1.f, 1.f, 1.f}, {0.f, 0.f, 0.f}),
+    };
+    inverted.tick(1.f, emptyBox);
+    expectTrue(!inverted.instances()[0].impacted, "an inverted aabb is not a hit");
+    expectTrue(vecNear(inverted.instances()[0].position, 0.f, 0.f, 8.f), "an inverted aabb does not stop the missile");
+    expectTrue(vecFinite(inverted.instances()[0].position), "an inverted aabb does not NaN");
+
+    const fuse::fx::MissileCollider insideSphere[] = {
+        fuse::fx::MissileCollider::makeSphere({0.f, 0.f, 0.f}, 1.f),
+    };
+    fuse::fx::MissilePipeline planted;
+    planted.fire(makeBolt(0.f, 5.f), {0.f, 0.f, 0.f}, {0.f, 0.f, 1.f});
+    planted.tick(0.f, insideSphere);
+    expectTrue(planted.activeCount() == 1u && !planted.instances()[0].impacted, "a zero dt does not sweep");
+    expectTrue(planted.instances()[0].elapsed == 0.f, "a zero dt does not age the missile");
+
+    planted.tick(0.25f, insideSphere);
+    expectTrue(planted.instances()[0].impacted && planted.instances()[0].finished, "a zero-length step inside a sphere hits");
+    expectTrue(planted.instances()[0].elapsed < 5.f, "containment stops before lifetime expiry");
+    expectTrue(vecNear(planted.instances()[0].impactPoint, 0.f, 0.f, 0.f), "containment records the start point");
+    expectTrue(vecNear(planted.instances()[0].impactNormal, 0.f, 1.f, 0.f), "a zero offset uses a finite fallback normal");
+    expectTrue(unitNormal(planted.instances()[0].impactNormal), "zero-length containment does not NaN");
+
+    fuse::fx::MissilePipeline outside;
+    outside.fire(makeBolt(0.f, 5.f), {0.f, 0.f, 0.f}, {0.f, 0.f, 1.f});
+    const fuse::fx::MissileCollider distant[] = {
+        fuse::fx::MissileCollider::makeSphere({3.f, 0.f, 0.f}, 1.f),
+    };
+    outside.tick(0.25f, distant);
+    expectTrue(!outside.instances()[0].impacted && outside.activeCount() == 1u, "a zero-length step outside misses");
+    expectTrue(vecNear(outside.instances()[0].position, 0.f, 0.f, 0.f), "a zero-length miss stays put");
+    expectTrue(vecFinite(outside.instances()[0].position) && vecFinite(outside.instances()[0].velocity),
+               "a zero-length miss does not NaN");
+
+    fuse::fx::MissilePipeline surface;
+    surface.fire(makeBolt(0.f, 5.f), {1.f, 0.f, 0.f}, {0.f, 0.f, 1.f});
+    const fuse::fx::MissileCollider shell[] = {
+        fuse::fx::MissileCollider::makeSphere({0.f, 0.f, 0.f}, 1.f),
+    };
+    surface.tick(0.25f, shell);
+    expectTrue(surface.instances()[0].impacted, "a zero-length step on the shell hits");
+    expectTrue(vecNear(surface.instances()[0].impactPoint, 1.f, 0.f, 0.f), "shell contact keeps the start point");
+    expectTrue(vecNear(surface.instances()[0].impactNormal, 1.f, 0.f, 0.f), "shell contact normal is the outward radius");
+    expectTrue(unitNormal(surface.instances()[0].impactNormal), "shell contact does not NaN");
+}
+
+void testMissileImpactEnqueuesResidual() {
+    fuse::fx::ResidualEffectQueue residuals;
+    fuse::u32 spawns = 0;
+    residuals.setSpawnHook([&](const fuse::fx::ResidualEntry& entry) {
+        ++spawns;
+        expectTrue(entry.kind == fuse::fx::ResidualKind::Zodiac, "impact residual is a zodiac");
+        expectTrue(entry.assetId == "bolt", "impact residual uses the missile id");
+        expectTrue(nearEqual(entry.duration, 0.5f) && nearEqual(entry.fadeDuration, 0.5f),
+                   "impact residual uses the missile fade");
+        expectTrue(nearEqual(entry.x, 0.f) && nearEqual(entry.y, 0.f) && nearEqual(entry.z, 4.f),
+                   "impact residual is spawned at the hit");
+    });
+
+    const fuse::fx::MissileCollider colliders[] = {
+        fuse::fx::MissileCollider::makeSphere({0.f, 0.f, 5.f}, 1.f),
+    };
+
+    fuse::fx::MissilePipeline pipeline;
+    pipeline.fire(makeBolt(8.f, 5.f), {0.f, 0.f, 0.f}, {0.f, 0.f, 1.f});
+    pipeline.fire(makeBolt(8.f, 5.f), {0.f, 5.f, 0.f}, {0.f, 0.f, 1.f});
+    pipeline.tick(1.f, colliders, &residuals);
+
+    expectTrue(spawns == 1u && residuals.totalSpawned() == 1u, "only the hitting missile enqueues");
+    expectTrue(residuals.activeCount() == 1u, "impact residual stays active");
+    expectTrue(pipeline.instances()[0].impacted && pipeline.instances()[0].impactColliderIndex == 0u,
+               "first missile records the sphere");
+    expectTrue(!pipeline.instances()[1].impacted && pipeline.activeCount() == 1u, "the parallel missile keeps flying");
+    expectTrue(vecNear(pipeline.instances()[1].position, 0.f, 5.f, 8.f), "the miss travels the full step");
+
+    pipeline.tick(1.f, colliders, &residuals);
+    expectTrue(spawns == 1u && pipeline.completedCount() == 1u, "a finished impact does not enqueue again");
+
+    fuse::fx::FxComposer composer;
+    composer.missiles().fire(makeBolt(8.f, 5.f), {0.f, 0.f, 0.f}, {0.f, 0.f, 1.f});
+    composer.missiles().tick(1.f, colliders, &composer.residuals());
+    expectTrue(composer.residuals().totalSpawned() == 1u, "composer residuals receive the missile impact");
+    expectTrue(composer.missiles().instances()[0].impacted, "composer missile records the impact");
+    expectTrue(nearEqual(composer.residuals().entries()[0].z, 4.f), "composer residual is placed on the hit");
 }
 
 void testRegisterDemoVerticalSlice() {
@@ -661,9 +946,49 @@ void testAfxMissionNestedSimObjectParse() {
     expectTrue(!body.simObjectNames.empty(), "nested simobject names registered");
 }
 
+void testEmitRateOk() {
+    expectTrue(fuse::fx::emit_rate_ok(0.5f), "rate 0.5 is an emit rate");
+    expectTrue(fuse::fx::emit_rate_ok(1000.f), "rate 1000 is an emit rate");
+    expectTrue(!fuse::fx::emit_rate_ok(0.f), "rate 0 is not an emit rate");
+    expectTrue(!fuse::fx::emit_rate_ok(1000.1f), "rate 1000.1 is not an emit rate");
+    expectTrue(!fuse::fx::emit_rate_ok(std::numeric_limits<float>::quiet_NaN()), "NaN is not an emit rate");
+}
+
+void testFxLayerOk() {
+    expectTrue(fuse::fx::fx_layer_ok(0), "layer 0 is an fx layer");
+    expectTrue(fuse::fx::fx_layer_ok(7), "layer 7 is an fx layer");
+    expectTrue(!fuse::fx::fx_layer_ok(-1), "layer -1 is not an fx layer");
+    expectTrue(!fuse::fx::fx_layer_ok(8), "layer 8 is not an fx layer");
+}
+
+void testEffectPriority() {
+    expectTrue(fuse::fx::effect_priority_rank(40) == 40, "effect_priority_rank(40) == 40");
+    expectTrue(fuse::fx::effect_priority_rank(-5) == 0, "effect_priority_rank(-5) == 0");
+    expectTrue(fuse::fx::effect_priority_rank(140) == 100, "effect_priority_rank(140) == 100");
+    expectTrue(fuse::fx::effect_priority_rank(0) == 0, "effect_priority_rank(0) == 0");
+    expectTrue(fuse::fx::effect_priority_rank(100) == 100, "effect_priority_rank(100) == 100");
+    expectTrue(fuse::fx::effect_outranks(40, 10), "higher rank outranks a lower rank");
+    expectTrue(!fuse::fx::effect_outranks(10, 40), "lower rank does not outrank a higher rank");
+    expectTrue(!fuse::fx::effect_outranks(40, 40), "equal rank does not outrank");
+    expectTrue(!fuse::fx::effect_outranks(-5, 0), "non-usable negative ties with zero");
+    expectTrue(fuse::fx::effect_outranks(140, 99), "clamped high rank outranks 99");
+    expectTrue(!fuse::fx::effect_outranks(140, 100), "values above 100 tie at the cap");
+}
+
 } // namespace
 
 int main() {
+    testEmitRateOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_fx_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testFxLayerOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_fx_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testEffectPriority();
     fuse::core::initialize();
     testRegisterDescriptors();
     testSocketAttachAndTimeline();
@@ -675,6 +1000,12 @@ int main() {
     testFireballPhaseProgression();
     testSocketConstraintRemap();
     testMissilePipeline();
+    testMissileImpactSphere();
+    testMissileImpactAabb();
+    testMissileImpactMissExpires();
+    testMissileImpactLowestIndexTie();
+    testMissileImpactGrazingAndZeroLength();
+    testMissileImpactEnqueuesResidual();
     testRegisterDemoVerticalSlice();
     testRegisterAfxTemplateSamplePack();
     testComposerParticlePoolTick();

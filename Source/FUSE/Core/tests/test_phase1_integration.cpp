@@ -1,4 +1,6 @@
+#include <fuse/core/phase1_name.hpp>
 #include <fuse/core/phase1_test_registry.hpp>
+#include <fuse/gameplay/health.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -13,6 +15,12 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testPhase1NameOk() {
+    expectTrue(fuse::core::phase1_name_ok("Foundation"), "phase 1 name Foundation");
+    expectTrue(!fuse::core::phase1_name_ok(""), "empty phase 1 name rejected");
+    expectTrue(!fuse::core::phase1_name_ok("1Foundation"), "digit-leading phase 1 name rejected");
 }
 
 void testChecklistAndModules() {
@@ -62,9 +70,23 @@ void testIntegrationSmoke() {
                "phase 1 integration smoke ties jobs + math + handles + vfs async + profiler");
 }
 
+void testHealthPool() {
+    fuse::gameplay::HealthPool pool;
+    pool.health = 10.f;
+    pool.maxHealth = 10.f;
+    pool.armor = 4.f;
+    const fuse::f32 first = fuse::gameplay::apply_damage(pool, 10.f);
+    expectTrue(first == 10.f && pool.armor == 0.f && pool.health == 6.f, "armor absorbs before health");
+    const fuse::f32 second = fuse::gameplay::apply_damage(pool, 100.f);
+    expectTrue(second == 6.f && pool.health == 0.f && fuse::gameplay::is_dead(pool),
+               "overkill reports only the health that remained");
+}
+
 } // namespace
 
 int main() {
+    testPhase1NameOk();
+    testHealthPool();
     testChecklistAndModules();
     testGateProvenRows();
     testIntegrationSmoke();

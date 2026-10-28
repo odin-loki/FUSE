@@ -1,4 +1,5 @@
 #include <fuse/adventure/combat_hitscan_stub.hpp>
+#include <fuse/adventure/friendly_fire.hpp>
 #include <fuse/adventure/conversation_interactable.hpp>
 #include <fuse/adventure/conversation_script_vm.hpp>
 #include <fuse/adventure/conversation_script_loader.hpp>
@@ -7,6 +8,7 @@
 #include <fuse/adventure/weapon_mount_animation.hpp>
 #include <fuse/adventure/interaction.hpp>
 #include <fuse/adventure/inventory.hpp>
+#include <fuse/adventure/line_count.hpp>
 #include <fuse/adventure/weapon_grant_pipeline.hpp>
 #include <fuse/adventure/weapon_pickup_interactable.hpp>
 #include <fuse/adventure/weapon_combat_loop.hpp>
@@ -29,9 +31,32 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
+void testLineCountOk() {
+    expectTrue(fuse::adventure::line_count_ok(1), "line_count_ok(1)");
+    expectTrue(fuse::adventure::line_count_ok(256), "line_count_ok(256)");
+    expectTrue(!fuse::adventure::line_count_ok(0), "line_count_ok(0)");
+    expectTrue(!fuse::adventure::line_count_ok(257), "line_count_ok(257)");
+}
+
+void testFriendlyHitAllowed() {
+    expectTrue(fuse::adventure::friendly_hit_allowed(1u, 2u, false),
+               "friendly_hit_allowed(1, 2, false)");
+    expectTrue(!fuse::adventure::friendly_hit_allowed(1u, 1u, false),
+               "friendly_hit_allowed(1, 1, false)");
+    expectTrue(fuse::adventure::friendly_hit_allowed(1u, 1u, true),
+               "friendly_hit_allowed(1, 1, true)");
+}
+
 } // namespace
 
 int main() {
+    testLineCountOk();
+    if (g_failures != 0) {
+        return EXIT_FAILURE;
+    }
+
+    testFriendlyHitAllowed();
+
     fuse::core::initialize();
 
     fuse::adventure::Inventory inventory;
@@ -310,6 +335,55 @@ int main() {
         hitscan.fireHitscan(hitscanStats, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 10.f, 0.f, 0.f);
     expectTrue(hit.hit, "hitscan stub hits in-range target");
     expectTrue(hit.damage == 25.f, "hitscan stub applies weapon damage");
+
+    fuse::adventure::WeaponStats falloffStats{};
+    falloffStats.damage = 40.f;
+    falloffStats.range = 80.f;
+    falloffStats.falloffMinScale = 0.f;
+    fuse::adventure::CombatHitscanStub falloffHitscan;
+    const fuse::adventure::HitscanResult nearFalloff =
+        falloffHitscan.fireHitscan(falloffStats, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 20.f, 0.f, 0.f);
+    const fuse::adventure::HitscanResult farFalloff =
+        falloffHitscan.fireHitscan(falloffStats, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 60.f, 0.f, 0.f);
+    expectTrue(nearFalloff.hit && nearFalloff.damage == 30.f, "hitscan falloff keeps higher damage up close");
+    expectTrue(farFalloff.hit && farFalloff.damage == 10.f, "hitscan falloff reduces damage at longer range");
+
+    fuse::adventure::WeaponStats flatStats{};
+    flatStats.damage = 40.f;
+    flatStats.range = 80.f;
+    const fuse::adventure::HitscanResult flatHit =
+        falloffHitscan.fireHitscan(flatStats, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 60.f, 0.f, 0.f);
+    expectTrue(flatHit.hit && flatHit.damage == 40.f, "hitscan default falloff scale deals full damage");
+
+    fuse::adventure::WeaponStats minScaleStats{};
+    minScaleStats.damage = 40.f;
+    minScaleStats.range = 80.f;
+    minScaleStats.falloffMinScale = 0.5f;
+    const fuse::adventure::HitscanResult edgeFalloff =
+        falloffHitscan.fireHitscan(minScaleStats, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 80.f, 0.f, 0.f);
+    expectTrue(edgeFalloff.hit && edgeFalloff.damage == 20.f, "hitscan falloff reaches min scale at max range");
+
+    const fuse::adventure::HitscanResult beyondFalloff =
+        falloffHitscan.fireHitscan(falloffStats, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 100.f, 0.f, 0.f);
+    expectTrue(!beyondFalloff.hit && beyondFalloff.damage == 0.f, "hitscan falloff does not damage beyond range");
+
+    fuse::adventure::Inventory falloffBag;
+    falloffBag.setMaxLimit(fuse::adventure::ItemId("energy_cell"), 30);
+    falloffBag.incInventory(fuse::adventure::ItemId("energy_cell"), 10);
+    falloffBag.setActiveWeapon(fuse::adventure::ItemId("plasma_rifle"));
+    fuse::adventure::WeaponRuntime falloffRuntime;
+    falloffRuntime.setAmmoType(fuse::adventure::ItemId("energy_cell"));
+    falloffRuntime.setStats(falloffStats);
+    fuse::mechanics::HealthComponent falloffHealth("falloff_dummy", 100);
+    fuse::adventure::WeaponCombatLoop falloffLoop;
+    falloffLoop.setActiveWeapon(&falloffRuntime);
+    falloffLoop.setTarget(&falloffHealth);
+    falloffLoop.setHitscanStub(&falloffHitscan);
+    falloffLoop.setTargetPosition(40.f, 0.f, 0.f);
+    expectTrue(falloffLoop.tryFire(falloffBag), "weapon combat loop fires with falloff");
+    expectTrue(falloffRuntime.lastDamageDealt() == 40.f, "weapon runtime keeps unscaled damage stat");
+    expectTrue(falloffLoop.lastAppliedDamage() == 20.f, "weapon combat loop applies hitscan falloff damage");
+    expectTrue(falloffHealth.currentHealth() == 80, "hitscan falloff reduces health by scaled damage");
 
     fuse::adventure::ConversationScriptVm stateVm;
     fuse::adventure::registerOutpostConversationScriptHooks(stateVm);

@@ -30,6 +30,7 @@
 // floor tied to the LUT's peak.
 //
 // Exit 77 = skip (stub build, no ICD / validation layer, capability missing, no kernel built).
+#include <fuse/renderer/sky_view.hpp>
 #include <fuse/renderer/atmosphere/atmosphere_brute_force.hpp>
 #include <fuse/renderer/atmosphere/atmosphere_gpu.hpp>
 #include <fuse/renderer/atmosphere/atmosphere_luts.hpp>
@@ -98,11 +99,24 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+// CPU gate. Runs before any GPU skip. These checks allocate nothing.
+[[nodiscard]] int testSkyViewOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::sky_view_ok(0), "sky_view_ok(0) is true");
+    expect(fuse::renderer::sky_view_ok(3), "sky_view_ok(3) is true");
+    expect(!fuse::renderer::sky_view_ok(-1), "sky_view_ok(-1) is false");
+    expect(!fuse::renderer::sky_view_ok(4), "sky_view_ok(4) is false");
+    return g_failures == before ? 0 : 1;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int skyViewRc = testSkyViewOk(); skyViewRc != 0) {
+        return skyViewRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1046,6 +1060,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int skyViewRc = testSkyViewOk(); skyViewRc != 0) {
+        return skyViewRc;
+    }
     std::string mode = "luts";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {

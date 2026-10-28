@@ -13,10 +13,11 @@ void RigidWorld2D::initJointVelocity(Joint2D& j, f32 dt) {
     Body2D& bB = m_bodies[j.bodyB];
     j.localCenterA = bA.localCenter;
     j.localCenterB = bB.localCenter;
-    j.mA = bA.invMass;
-    j.mB = bB.invMass;
-    j.iA = bA.invI;
-    j.iB = bB.invI;
+    // A sleeping body is an immovable anchor for the joint until something wakes it.
+    j.mA = bA.sleeping ? 0.f : bA.invMass;
+    j.mB = bB.sleeping ? 0.f : bB.invMass;
+    j.iA = bA.sleeping ? 0.f : bA.invI;
+    j.iB = bB.sleeping ? 0.f : bB.invI;
     const f32 mA = j.mA;
     const f32 mB = j.mB;
     const f32 iA = j.iA;

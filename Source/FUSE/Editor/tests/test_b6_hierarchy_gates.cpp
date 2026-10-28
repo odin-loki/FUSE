@@ -1,5 +1,8 @@
 // B6.5 / B6.13 gates — scene hierarchy model: structure, reparent commands, cycles, ordering, search.
 #include <fuse/core/init.hpp>
+#include <fuse/editor/drop_target.hpp>
+#include <fuse/editor/indent_px.hpp>
+#include <fuse/editor/selection_rect.hpp>
 #include <fuse/editor/hierarchy_model.hpp>
 #include <fuse/editor/scene_hierarchy_panel.hpp>
 #include <fuse/editor/undo_stack.hpp>
@@ -224,9 +227,30 @@ void testSearchCaseInsensitive() {
     expectTrue(panel.visibleNodeCount() == 0u, "non-matching query shows nothing");
 }
 
+void testIndentPxOk() {
+    expectTrue(fuse::editor::indent_px_ok(0), "zero indent is allowed");
+    expectTrue(fuse::editor::indent_px_ok(16), "sixteen pixel indent is allowed");
+    expectTrue(!fuse::editor::indent_px_ok(-1), "negative indent is rejected");
+    expectTrue(!fuse::editor::indent_px_ok(17), "indent past sixteen is rejected");
+}
+
+void testDropTarget() {
+    expectTrue(fuse::editor::drop_target_ok(1, 2, 4), "a drop onto another row is allowed");
+    expectTrue(!fuse::editor::drop_target_ok(1, 1, 4), "a drop onto itself is rejected");
+    expectTrue(!fuse::editor::drop_target_ok(5, 1, 4), "an index past the row count is rejected");
+}
+
+void testSelectionRect() {
+    const fuse::editor::SelRect rect = fuse::editor::normalize_selection_rect(10, 4, 2, 8);
+    expectTrue(rect.x == 2 && rect.y == 4 && rect.w == 8 && rect.h == 4, "a selection rect sorts its corners");
+}
+
 } // namespace
 
 int main() {
+    testIndentPxOk();
+    testDropTarget();
+    testSelectionRect();
     fuse::core::initialize();
 
     testTreeMatchesParentChild();

@@ -18,7 +18,9 @@
 | `WorldPartition` deepen | `world_partition.hpp/.cpp` | `ResidencySet` tracking, `apply_residency_on_*_complete` stubs, async `enqueue`/`flush_async_queue_` path, `StreamingBudgetCounters`, resident-cell + byte budget rejection, priority-aware eviction, budget-aware `process_queues_`, `drain_completed_requests()` |
 | Tests | `tests/test_world_partition.cpp` | Budget helper/clamp/counters, `budget_eviction_score` + `rank_unload_priority_stub`, eviction-candidate ordering/tie-break, empty-residency reject/stub ops, distance + LRU eviction, byte/cell cap eviction swap, queue enqueue/flush/flush-budget/kind-tie-break/FIFO/empty/mixed-kind completion ordering, residency completion stubs, residency set, batch/in-flight tracking, async enqueue/flush carryover |
 
-**Not in scope (follow-up PRs):** binary cell asset I/O, scene spawn on load, dirty-cell save, GPU residency.
+**Not in scope (follow-up PRs):** binary cell asset I/O, scene spawn on load, GPU residency.
+
+Dirty-cell save runs on the caller thread: `mark_cell_dirty` records a cell, and `save_dirty_cells` writes each staged `.fusecell` with `write_cell_file`, clearing the dirty bit only after a successful write; a dirty cell with no staged data is not written and stays dirty (included in the returned failure count).
 
 ---
 

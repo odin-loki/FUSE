@@ -12,6 +12,7 @@
 #include <fuse/compute_kernel/stats.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/renderer/cluster/cluster_tile.hpp>
 #include <fuse/renderer/lighting/clustered.hpp>
 #include <fuse/renderer/lighting/clustered_kernel.hpp>
 #include <fuse/renderer/lighting/clustered_shading.hpp>
@@ -291,9 +292,25 @@ void testStatsAndFallback() {
     scheduler.shutdown();
 }
 
+// CPU gate. No allocation. main calls this before any GPU skip.
+// A failure returns non-zero before any later skip.
+void testClusterTileOk() {
+    expectTrue(fuse::renderer::cluster_tile_ok(8), "cluster_tile_ok(8) is true");
+    expectTrue(fuse::renderer::cluster_tile_ok(16), "cluster_tile_ok(16) is true");
+    expectTrue(fuse::renderer::cluster_tile_ok(32), "cluster_tile_ok(32) is true");
+    expectTrue(!fuse::renderer::cluster_tile_ok(4), "cluster_tile_ok(4) is false");
+    expectTrue(!fuse::renderer::cluster_tile_ok(12), "cluster_tile_ok(12) is false");
+    expectTrue(!fuse::renderer::cluster_tile_ok(64), "cluster_tile_ok(64) is false");
+}
+
 } // namespace
 
 int main() {
+    testClusterTileOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d clustered kernel parity check(s) failed\n", g_failures);
+        return EXIT_FAILURE;
+    }
     fuse::core::initialize();
     testBackendParity();
     testListsMatchVectorApi();

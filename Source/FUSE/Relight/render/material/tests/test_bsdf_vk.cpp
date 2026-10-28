@@ -18,6 +18,8 @@
 // Exit 77 = skip (stub build, no ICD / validation layer, kernel not built).
 
 #include "bsdf_test_common.hpp"
+#include <fuse/relight/render/material/bsdf_lobe.hpp>
+#include <fuse/relight/render/material/smith_ggx.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -33,11 +35,49 @@
 
 namespace {
 constexpr int kSkip = 77;
+
+/// CPU gate. Must run before any GPU skip; a failure exits 1 instead of 77. No heap allocation.
+int testBsdfLobeOk() {
+    using fuse::relight::bsdf_lobe_ok;
+    if (!bsdf_lobe_ok(0)) {
+        std::fprintf(stderr, "FAIL: testBsdfLobeOk: lobe 0 is valid\n");
+        return 1;
+    }
+    if (!bsdf_lobe_ok(7)) {
+        std::fprintf(stderr, "FAIL: testBsdfLobeOk: lobe 7 is valid\n");
+        return 1;
+    }
+    if (bsdf_lobe_ok(-1)) {
+        std::fprintf(stderr, "FAIL: testBsdfLobeOk: lobe -1 is invalid\n");
+        return 1;
+    }
+    if (bsdf_lobe_ok(8)) {
+        std::fprintf(stderr, "FAIL: testBsdfLobeOk: lobe 8 is invalid\n");
+        return 1;
+    }
+    return 0;
+}
+
+/// CPU gate. Must run before any GPU skip; a failure exits 1 instead of 77.
+int test_smith_ggx_g() {
+    const float g = fuse::relight::render::material::smith_ggx_g(1.f, 1.f, 1.f);
+    if (!(std::fabs(g - 1.f) <= 1e-3f)) {
+        std::fprintf(stderr, "FAIL: test_smith_ggx_g: smith_ggx_g(1, 1, 1) = %g\n", static_cast<double>(g));
+        return 1;
+    }
+    return 0;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int lobeRc = testBsdfLobeOk()) {
+        return lobeRc;
+    }
+    if (const int smithRc = test_smith_ggx_g()) {
+        return smithRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -79,6 +119,12 @@ bool close(double gpu, double cpu) { return std::fabs(gpu - cpu) <= kTolRel * st
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int lobeRc = testBsdfLobeOk()) {
+        return lobeRc;
+    }
+    if (const int smithRc = test_smith_ggx_g()) {
+        return smithRc;
+    }
     std::string language = "slang";
     for (int i = 1; i + 1 < argc; ++i) {
         if (std::strcmp(argv[i], "--language") == 0) {

@@ -9,6 +9,7 @@
 // visibility samples, lights, skeleton joints, the per-mesh customLayerData hash components, categories, the
 // stage metadata. The composition must be clean (no errors, no warnings).
 #include <fuse/relight/mods/usd/remix_profile.hpp>
+#include <fuse/relight/mods/usd/roundtrip_frame.hpp>
 #include <fuse/relight/mods/usd/usd_stage.hpp>
 
 #include <fuse/relight/capture/export/capture_model.hpp>
@@ -422,6 +423,16 @@ void roundTrip(std::size_t frames) {
     CHECK(usd::canonicalDump(s) == usd::canonicalDump(usd::readStage("/capture_root/capture.usda", opt)));
 }
 
+/// No heap allocation. A failure returns non-zero before capture work.
+int testRoundtripFrameOk() {
+    const int before = g_failures;
+    CHECK(fuse::relight::roundtrip_frame_ok(1));
+    CHECK(fuse::relight::roundtrip_frame_ok(120));
+    CHECK(!fuse::relight::roundtrip_frame_ok(0));
+    CHECK(!fuse::relight::roundtrip_frame_ok(121));
+    return g_failures == before ? 0 : 1;
+}
+
 void categoryNames() {
     for (std::uint32_t i = 0; i < scene::kInstanceCategoryCount; ++i) {
         const auto cat = static_cast<scene::InstanceCategories>(i);
@@ -432,6 +443,9 @@ void categoryNames() {
 } // namespace
 
 int main() {
+    if (const int rc = testRoundtripFrameOk()) {
+        return rc;
+    }
     categoryNames();
     roundTrip(1);
     roundTrip(3);

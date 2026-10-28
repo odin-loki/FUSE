@@ -77,7 +77,7 @@ bool PhysicsWorld2D::bodyAlive(BodyId2D body) const { return m_rigid->bodyValid(
 u32 PhysicsWorld2D::rigidBodyCount() const { return m_rigid->aliveBodyCount(); }
 
 ShapeId2D PhysicsWorld2D::addCircleShape(BodyId2D body, f32 radius, vec2 localCenter, const ShapeDef2D& def) {
-    if (!(radius > 0.f)) {
+    if (!(radius >= 0.f) || !std::isfinite(radius)) {
         return kInvalidId2D;
     }
     p2d::Shape2D shape;
@@ -331,6 +331,9 @@ vec2 PhysicsWorld2D::bodyLinearVelocity(BodyId2D body) const {
 f32 PhysicsWorld2D::bodyAngularVelocity(BodyId2D body) const {
     return m_rigid->bodyValid(body) ? m_rigid->body(body).w : 0.f;
 }
+bool PhysicsWorld2D::bodySleeping(BodyId2D body) const {
+    return m_rigid->bodyValid(body) && m_rigid->body(body).sleeping;
+}
 f32 PhysicsWorld2D::bodyMass(BodyId2D body) const {
     return m_rigid->bodyValid(body) && m_rigid->body(body).type == BodyType2D::Dynamic ? m_rigid->body(body).mass : 0.f;
 }
@@ -351,11 +354,13 @@ void PhysicsWorld2D::setBodyTransform(BodyId2D body, vec2 position, f32 angle) {
 }
 void PhysicsWorld2D::setBodyLinearVelocity(BodyId2D body, vec2 velocity) {
     if (m_rigid->bodyValid(body) && m_rigid->body(body).type != BodyType2D::Static) {
+        m_rigid->wakeBody(body);
         m_rigid->body(body).v = velocity;
     }
 }
 void PhysicsWorld2D::setBodyAngularVelocity(BodyId2D body, f32 omega) {
     if (m_rigid->bodyValid(body) && m_rigid->body(body).type != BodyType2D::Static) {
+        m_rigid->wakeBody(body);
         m_rigid->body(body).w = omega;
     }
 }
@@ -384,12 +389,14 @@ void PhysicsWorld2D::applyLinearImpulse(BodyId2D body, vec2 impulse, vec2 worldP
     if (!m_rigid->bodyValid(body) || m_rigid->body(body).type != BodyType2D::Dynamic) {
         return;
     }
+    m_rigid->wakeBody(body);
     p2d::Body2D& b = m_rigid->body(body);
     b.v = b.v + impulse * b.invMass;
     b.w += b.invI * p2d::cross(worldPoint - b.c, impulse);
 }
 void PhysicsWorld2D::applyAngularImpulse(BodyId2D body, f32 impulse) {
     if (m_rigid->bodyValid(body) && m_rigid->body(body).type == BodyType2D::Dynamic) {
+        m_rigid->wakeBody(body);
         p2d::Body2D& b = m_rigid->body(body);
         b.w += b.invI * impulse;
     }

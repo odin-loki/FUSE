@@ -3,10 +3,12 @@
 #include <fuse/cinematics/actor_track.hpp>
 #include <fuse/cinematics/camera_track.hpp>
 #include <fuse/cinematics/motion_track.hpp>
+#include <fuse/cinematics/seq_import.hpp>
 #include <fuse/cinematics/sprite_track.hpp>
 
 #include <cctype>
 #include <sstream>
+#include <utility>
 
 namespace fuse::cinematics {
 
@@ -54,21 +56,69 @@ ActorTrack* findActorTrackById(TrackGroup& group, const std::string& actorId) {
     return nullptr;
 }
 
+std::string formatSeqImportError(const SeqImportError& error) {
+    return "line " + std::to_string(error.line) + ": " + error.message;
+}
+
+int firstEmbeddedNulLine(const std::string& text) {
+    int line = 1;
+    for (const char ch : text) {
+        if (ch == '\0') {
+            return line;
+        }
+        if (ch == '\n') {
+            ++line;
+        }
+    }
+    return 0;
+}
+
+/// A line that opens like JSON, XML, or another quoted document is not the `.seq` dialect.
+/// Tokens inside a real seq statement (for example an apostrophe in an id) stay on the seq path.
+bool isForeignSeqDialectLine(const std::string& line) {
+    const char head = line[0];
+    if (head == '{' || head == '}' || head == '[' || head == ']' || head == '<' || head == '>' || head == '"' ||
+        head == '\'') {
+        return true;
+    }
+    return line.find("\":") != std::string::npos;
+}
+
+SeqImportResult failImport(int line, SeqImportErrorKind kind, std::string message) {
+    SeqImportResult failed;
+    failed.errors.push_back(SeqImportError{line, kind, std::move(message)});
+    return failed;
+}
+
 } // namespace
 
-bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, std::string* errorOut) {
-    outTimeline = Timeline{};
+SeqImportResult import_seq(const std::string& text) {
+    if (trim(text).empty()) {
+        return failImport(1, SeqImportErrorKind::EmptyFile, "empty file");
+    }
+
+    if (const int nulLine = firstEmbeddedNulLine(text); nulLine != 0) {
+        return failImport(nulLine, SeqImportErrorKind::NotSeqDialect, "not the .seq dialect");
+    }
+
+    Timeline timeline;
     TimelineMs durationMs = 0;
     bool sawDuration = false;
 
     std::stringstream stream(text);
     std::string line;
+    int lineNumber = 0;
     TrackGroup* group = nullptr;
 
     while (std::getline(stream, line)) {
+        ++lineNumber;
         line = trim(line);
         if (line.empty() || line[0] == '#') {
             continue;
+        }
+
+        if (isForeignSeqDialectLine(line)) {
+            return failImport(lineNumber, SeqImportErrorKind::NotSeqDialect, "not the .seq dialect");
         }
 
         std::stringstream lineStream(line);
@@ -80,32 +130,23 @@ bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, st
         if (keyword.rfind("duration_ms", 0) == 0) {
             const std::size_t eq = keyword.find('=');
             if (eq == std::string::npos) {
-                if (errorOut) {
-                    *errorOut = "expected duration_ms=N";
-                }
-                return false;
+                return failImport(lineNumber, SeqImportErrorKind::InvalidSyntax, "expected duration_ms=N");
             }
             if (!parseTimelineMs(keyword.substr(eq + 1), durationMs)) {
-                if (errorOut) {
-                    *errorOut = "invalid duration_ms";
-                }
-                return false;
+                return failImport(lineNumber, SeqImportErrorKind::InvalidSyntax, "invalid duration_ms");
             }
             sawDuration = true;
             continue;
         }
 
         if (group == nullptr) {
-            group = &outTimeline.add_group("AssetDirector");
+            group = &timeline.add_group("AssetDirector");
         }
 
         if (keyword == "sprite") {
             std::string targetId;
             if (!(lineStream >> targetId)) {
-                if (errorOut) {
-                    *errorOut = "sprite missing target id";
-                }
-                return false;
+                return failImport(lineNumber, SeqImportErrorKind::InvalidSyntax, "sprite missing target id");
             }
 
             SpriteTrack& track = group->add_sprite_track(targetId);
@@ -120,20 +161,14 @@ bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, st
                     parts.push_back(part);
                 }
                 if (parts.size() != 4) {
-                    if (errorOut) {
-                        *errorOut = "sprite keyframe needs t,x,y,a";
-                    }
-                    return false;
+                    return failImport(lineNumber, SeqImportErrorKind::BadKeyframe, "sprite keyframe needs t,x,y,a");
                 }
 
                 SpriteKeyframe keyframe{};
                 TimelineMs timeMs = 0;
                 if (!parseTimelineMs(parts[0], timeMs) || !parseFloat(parts[1], keyframe.x) ||
                     !parseFloat(parts[2], keyframe.y) || !parseFloat(parts[3], keyframe.alpha)) {
-                    if (errorOut) {
-                        *errorOut = "invalid sprite keyframe";
-                    }
-                    return false;
+                    return failImport(lineNumber, SeqImportErrorKind::BadKeyframe, "invalid sprite keyframe");
                 }
                 keyframe.time_ms = timeMs;
                 track.add_keyframe(keyframe);
@@ -154,10 +189,8 @@ bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, st
                     parts.push_back(part);
                 }
                 if (parts.size() != 5) {
-                    if (errorOut) {
-                        *errorOut = "camera keyframe needs t,px,py,pz,fov";
-                    }
-                    return false;
+                    return failImport(lineNumber, SeqImportErrorKind::BadKeyframe,
+                                      "camera keyframe needs t,px,py,pz,fov");
                 }
 
                 CameraKeyframe keyframe{};
@@ -165,10 +198,7 @@ bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, st
                 if (!parseTimelineMs(parts[0], timeMs) || !parseFloat(parts[1], keyframe.position.x) ||
                     !parseFloat(parts[2], keyframe.position.y) || !parseFloat(parts[3], keyframe.position.z) ||
                     !parseFloat(parts[4], keyframe.field_of_view)) {
-                    if (errorOut) {
-                        *errorOut = "invalid camera keyframe";
-                    }
-                    return false;
+                    return failImport(lineNumber, SeqImportErrorKind::BadKeyframe, "invalid camera keyframe");
                 }
                 keyframe.time_ms = timeMs;
                 track.add_keyframe(keyframe);
@@ -182,10 +212,7 @@ bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, st
             std::string eventKind;
             std::string timeOrMount;
             if (!(lineStream >> actorId >> eventKind >> timeOrMount)) {
-                if (errorOut) {
-                    *errorOut = "actor event missing fields";
-                }
-                return false;
+                return failImport(lineNumber, SeqImportErrorKind::InvalidSyntax, "actor event missing fields");
             }
 
             ActorTrack* existingTrack = findActorTrackById(*group, actorId);
@@ -197,10 +224,8 @@ bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, st
             if (eventKind == "mount") {
                 std::string mountPoint;
                 if (!(lineStream >> mountPoint) || !parseTimelineMs(timeOrMount, event.time_ms)) {
-                    if (errorOut) {
-                        *errorOut = "actor mount needs time and mount_point";
-                    }
-                    return false;
+                    return failImport(lineNumber, SeqImportErrorKind::InvalidSyntax,
+                                      "actor mount needs time and mount_point");
                 }
                 event.kind = ActorEventKind::Mount;
                 event.mount_point = mountPoint;
@@ -222,17 +247,11 @@ bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, st
                 }
             } else if (eventKind == "unmount") {
                 if (!parseTimelineMs(timeOrMount, event.time_ms)) {
-                    if (errorOut) {
-                        *errorOut = "actor unmount needs time";
-                    }
-                    return false;
+                    return failImport(lineNumber, SeqImportErrorKind::InvalidSyntax, "actor unmount needs time");
                 }
                 event.kind = ActorEventKind::Unmount;
             } else {
-                if (errorOut) {
-                    *errorOut = "unknown actor event: " + eventKind;
-                }
-                return false;
+                return failImport(lineNumber, SeqImportErrorKind::InvalidSyntax, "unknown actor event: " + eventKind);
             }
 
             track.add_actor_event(event);
@@ -243,10 +262,7 @@ bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, st
         if (keyword == "motion") {
             std::string pathId;
             if (!(lineStream >> pathId)) {
-                if (errorOut) {
-                    *errorOut = "motion missing path id";
-                }
-                return false;
+                return failImport(lineNumber, SeqImportErrorKind::InvalidSyntax, "motion missing path id");
             }
 
             MotionTrack& track = group->add_motion_track(pathId);
@@ -261,20 +277,14 @@ bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, st
                     parts.push_back(part);
                 }
                 if (parts.size() != 4) {
-                    if (errorOut) {
-                        *errorOut = "motion waypoint needs t,x,y,z";
-                    }
-                    return false;
+                    return failImport(lineNumber, SeqImportErrorKind::BadKeyframe, "motion waypoint needs t,x,y,z");
                 }
 
                 MotionWaypoint waypoint{};
                 TimelineMs timeMs = 0;
                 if (!parseTimelineMs(parts[0], timeMs) || !parseFloat(parts[1], waypoint.position.x) ||
                     !parseFloat(parts[2], waypoint.position.y) || !parseFloat(parts[3], waypoint.position.z)) {
-                    if (errorOut) {
-                        *errorOut = "invalid motion waypoint";
-                    }
-                    return false;
+                    return failImport(lineNumber, SeqImportErrorKind::BadKeyframe, "invalid motion waypoint");
                 }
                 waypoint.time_ms = timeMs;
                 track.path().add_waypoint(waypoint);
@@ -283,20 +293,36 @@ bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, st
             continue;
         }
 
-        if (errorOut) {
-            *errorOut = "unknown timeline keyword: " + keyword;
-        }
-        return false;
+        return failImport(lineNumber, SeqImportErrorKind::UnknownTrack, "unknown track: " + keyword);
     }
 
     if (!sawDuration) {
-        if (errorOut) {
-            *errorOut = "timeline asset missing duration_ms";
+        return failImport(lineNumber > 0 ? lineNumber : 1, SeqImportErrorKind::InvalidSyntax,
+                          "timeline asset missing duration_ms");
+    }
+
+    timeline.playhead().set_duration_ms(durationMs);
+    SeqImportResult result;
+    result.ok = true;
+    result.timeline = std::move(timeline);
+    return result;
+}
+
+bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, std::string* errorOut) {
+    SeqImportResult imported = import_seq(text);
+    if (!imported.ok) {
+        outTimeline = Timeline{};
+        if (errorOut != nullptr) {
+            if (!imported.errors.empty()) {
+                *errorOut = formatSeqImportError(imported.errors.front());
+            } else {
+                *errorOut = "seq import failed";
+            }
         }
         return false;
     }
 
-    outTimeline.playhead().set_duration_ms(durationMs);
+    outTimeline = std::move(imported.timeline);
     return true;
 }
 

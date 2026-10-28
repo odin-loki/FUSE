@@ -1,4 +1,6 @@
 #include <fuse/net/checksum.hpp>
+#include <fuse/net/delta_mask.hpp>
+#include <fuse/net/entity_mask.hpp>
 #include <fuse/net/rollback.hpp>
 #include <fuse/net/snapshot_delta.hpp>
 
@@ -87,9 +89,28 @@ fuse::net::GameSnapshot make_two_entity_snapshot(u32 frame, fuse::ecs::vec3 pos0
     return snapshot;
 }
 
+void testEntityInMask64() {
+    expectTrue(fuse::net::entity_in_mask64(0), "entity index 0 is inside the 64-bit mask");
+    expectTrue(fuse::net::entity_in_mask64(63), "entity index 63 is inside the 64-bit mask");
+    expectTrue(!fuse::net::entity_in_mask64(64), "entity index 64 is outside the 64-bit mask");
+}
+
+void testDeltaMaskOk() {
+    expectTrue(fuse::net::delta_mask_ok(0), "delta_mask_ok(0) is true");
+    expectTrue(fuse::net::delta_mask_ok(63), "delta_mask_ok(63) is true");
+    expectTrue(!fuse::net::delta_mask_ok(-1), "delta_mask_ok(-1) is false");
+    expectTrue(!fuse::net::delta_mask_ok(64), "delta_mask_ok(64) is false");
+}
+
 } // namespace
 
 void run_snapshot_delta_tests() {
+    const int failuresBefore = g_failures;
+    testDeltaMaskOk();
+    if (g_failures != failuresBefore) {
+        return;
+    }
+    testEntityInMask64();
     fuse::net::GameSnapshot base = make_entity_snapshot(0, 1, 1, {0.f, 0.f, 0.f, 1.f}, {0.f, 0.f, 0.f, 0.f}, 1.f);
     fuse::net::GameSnapshot target =
         make_entity_snapshot(1, 1, 1, {5.f, 0.f, 0.f, 1.f}, {1.f, 0.f, 0.f, 0.f}, 1.f);

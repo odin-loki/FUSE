@@ -37,6 +37,7 @@
 #include <fuse/renderer/lighting/gpu/clustered_gpu_reference.hpp>
 #include <fuse/renderer/lighting/ltc/ltc_kernel.hpp>
 #include <fuse/renderer/lighting/ltc/ltc_lut.hpp>
+#include <fuse/renderer/ltc/ltc_sample.hpp>
 
 #include "test_rp_ltc_mc.hpp"
 
@@ -72,6 +73,16 @@ void expect(bool condition, const char* message) {
         ++g_failures;
         std::fprintf(stderr, "FAIL: %s\n", message);
     }
+}
+
+/// CPU gate. Must run before any GPU or device skip; a failure exits instead of continuing.
+void testLtcSampleOk() {
+    expect(fuse::renderer::ltc_sample_ok(4), "ltc_sample_ok(4) is true");
+    expect(fuse::renderer::ltc_sample_ok(16), "ltc_sample_ok(16) is true");
+    expect(fuse::renderer::ltc_sample_ok(64), "ltc_sample_ok(64) is true");
+    expect(!fuse::renderer::ltc_sample_ok(3), "ltc_sample_ok(3) is false");
+    expect(!fuse::renderer::ltc_sample_ok(6), "ltc_sample_ok(6) is false");
+    expect(!fuse::renderer::ltc_sample_ok(128), "ltc_sample_ok(128) is false");
 }
 
 /// Error budget of one area-light type (see the file comment for the metrics).
@@ -600,6 +611,12 @@ void testShade() {
 } // namespace
 
 int main(int argc, char** argv) {
+    testLtcSampleOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testLtcSampleOk\n");
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";

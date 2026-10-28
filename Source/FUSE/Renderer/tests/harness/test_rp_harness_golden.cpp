@@ -26,6 +26,7 @@
 #include "scene.hpp"
 
 #include <fuse/core/init.hpp>
+#include <fuse/renderer/golden_px.hpp>
 
 #include <cmath>
 #include <cstdio>
@@ -179,9 +180,33 @@ void checkQuadLayout(const FrameCapture& c) {
     expect(std::fabs(c.albedo[overlap].x - 0.9f) < 1.f / 255.f + 1e-4f, "stock path: overlap keeps the near albedo");
 }
 
+/// CPU gate. No heap allocation. A failure returns non-zero before any later skip.
+int testGoldenPxOk() {
+    if (!fuse::renderer::golden_px_ok(1)) {
+        std::fprintf(stderr, "FAIL: golden_px_ok(1)\n");
+        return EXIT_FAILURE;
+    }
+    if (!fuse::renderer::golden_px_ok(4096)) {
+        std::fprintf(stderr, "FAIL: golden_px_ok(4096)\n");
+        return EXIT_FAILURE;
+    }
+    if (fuse::renderer::golden_px_ok(0)) {
+        std::fprintf(stderr, "FAIL: golden_px_ok(0)\n");
+        return EXIT_FAILURE;
+    }
+    if (fuse::renderer::golden_px_ok(4097)) {
+        std::fprintf(stderr, "FAIL: golden_px_ok(4097)\n");
+        return EXIT_FAILURE;
+    }
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int goldenPxRc = testGoldenPxOk()) {
+        return goldenPxRc;
+    }
     Args args;
     if (!parseArgs(argc, argv, args)) {
         std::fprintf(stderr, "usage: %s --scene <name|all>[,...] [--roundtrip] [--tier-cap Tn] [--require-tier Tn]\n",

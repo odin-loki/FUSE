@@ -2,9 +2,11 @@
 #include <fuse/core/track_b.hpp>
 #include <fuse/platform/gl_context.hpp>
 #include <fuse/platform/window_wsi.hpp>
+#include <fuse/renderer/device/api_version.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
 #include <fuse/renderer/vk/device.hpp>
+#include <fuse/renderer/vk/instance_version.hpp>
 #include <fuse/renderer/vk/surface.hpp>
 #include <fuse/renderer/vk/swapchain_util.hpp>
 
@@ -280,10 +282,39 @@ void testRhiContextSubmitOnRenderThread() {
 #endif
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits the process.
+void testInstanceVersionOk() {
+    expectTrue(fuse::renderer::instance_version_ok(1, 0), "instance_version_ok(1, 0) is true");
+    expectTrue(fuse::renderer::instance_version_ok(1, 3), "instance_version_ok(1, 3) is true");
+    expectTrue(!fuse::renderer::instance_version_ok(1, 4), "instance_version_ok(1, 4) is false");
+    expectTrue(!fuse::renderer::instance_version_ok(2, 0), "instance_version_ok(2, 0) is false");
+}
+
+void testPackApiVersion() {
+    const auto packed = fuse::renderer::pack_api_version(1u, 3u, 5u);
+    expectTrue(packed == ((1u << 22) | (3u << 12) | 5u), "pack(1, 3, 5) uses Vulkan version bits");
+    expectTrue(fuse::renderer::api_version_major(packed) == 1u, "pack(1, 3, 5) unpacks major 1");
+    expectTrue(fuse::renderer::api_version_minor(packed) == 3u, "pack(1, 3, 5) unpacks minor 3");
+    expectTrue(fuse::renderer::api_version_patch(packed) == 5u, "pack(1, 3, 5) unpacks patch 5");
+}
+
 } // namespace
 
 int main() {
+    testInstanceVersionOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_vulkan_bootstrap: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
+
+    testPackApiVersion();
+    if (g_failures != 0) {
+        fuse::core::shutdown();
+        std::fprintf(stderr, "fuse_vulkan_bootstrap: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
 
     testB21CreateSmoke();
     testBootstrapHeadless();

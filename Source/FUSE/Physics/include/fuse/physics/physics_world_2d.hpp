@@ -21,10 +21,12 @@ class PhysicsWorld2D;
 // rotating bodies (mass, inertia, torque, angular velocity), circle / convex polygon / edge / chain
 // shapes (SAT + reference-face clipping manifolds with feature ids), persistent contacts solved with
 // sequential impulses and warm starting, Baumgarte-free non-linear position correction, contact and
-// sensor begin/end events, ray casts and AABB / point queries (BVH over the shape AABBs), and revolute /
-// distance / prismatic joints. Stepping is deterministic: every loop runs in a fixed order (shapes by
-// id, contacts by (shapeA, shapeB) key, joints by id) and nothing iterates a hash container, so the same
-// command sequence produces bit-identical state on the same build.
+// sensor begin/end events, ray casts and AABB / point queries (BVH over the shape AABBs), revolute /
+// distance / prismatic joints, optional sleeping, and circle CCD against static edges and polygons.
+// Stepping is deterministic: every loop runs in a fixed order (shapes by id, contacts by (shapeA, shapeB)
+// key, joints by id) and nothing iterates a hash container, so the same command sequence produces
+// bit-identical state on the same build. Sleep defaults off. Circle CCD leaves a circle that moves by
+// at most its own radius on the discrete path.
 //
 // Chains are one-sided like Box2D v2.4 chains: an edge collides only on the right-hand side of its
 // direction (normal = (e.y, -e.x)), so a counter-clockwise loop faces outward and a ground strip must be
@@ -176,6 +178,12 @@ struct SolverSettings2D {
     u32 velocityIterations = 8u;
     u32 positionIterations = 3u;
     bool warmStarting = true;
+    /// Off by default so short steps never freeze a body. When set, a dynamic body whose linear and
+    /// angular speeds stay under the thresholds for sleepTimeRequired seconds is put to sleep.
+    bool enableSleep = false;
+    f32 sleepLinearThreshold = 0.01f;
+    f32 sleepAngularThreshold = 0.01f;
+    f32 sleepTimeRequired = 0.5f;
 };
 
 struct RigidStepStats2D {
@@ -274,6 +282,14 @@ public:
     vec2 bodyWorldCenter(BodyId2D body) const;
     vec2 bodyLinearVelocity(BodyId2D body) const;
     f32 bodyAngularVelocity(BodyId2D body) const;
+    /// True after a dynamic body has been put to sleep. Sleeping bodies are not integrated and their
+    /// contacts are omitted from the solver. Setting the linear or angular velocity, or applying a
+    /// linear or angular impulse, wakes the body. A non-sensor contact with a dynamic body that is
+    /// awake and faster than the sleep thresholds wakes it as well, and that wake lasts through the
+    /// rest of the step. A neighbour that is only settling (awake, but already under the thresholds)
+    /// does not, so a resting pile can fall asleep together.
+    /// Static and kinematic bodies are never reported sleeping.
+    bool bodySleeping(BodyId2D body) const;
     f32 bodyMass(BodyId2D body) const;
     /// Rotational inertia about the centre of mass.
     f32 bodyInertia(BodyId2D body) const;

@@ -34,7 +34,7 @@ target_compile_definitions(fuse_world2d PRIVATE FUSE_WORLD2D_HAS_STB_IMAGE=1)
 # built with FUSE_BUILD_PROJECT (fuse_scene links fuse_project). Without it World2D still builds and
 # ticks; loadWorldFromFuselevel() returns ok=false and the wire-binding fields are compiled out.
 if(FUSE_BUILD_PROJECT)
-    target_sources(fuse_world2d PRIVATE src/fuselevel_bridge.cpp)
+    target_sources(fuse_world2d PRIVATE src/fuselevel_bridge.cpp src/world_2d_level.cpp)
     target_link_libraries(fuse_world2d PUBLIC fuse_scene)
     target_compile_definitions(fuse_world2d PUBLIC FUSE_WORLD2D_HAS_FUSELEVEL=1)
 else()

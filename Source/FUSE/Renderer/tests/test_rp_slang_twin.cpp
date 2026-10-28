@@ -18,6 +18,7 @@
 #include <fuse/renderer/shader/shader_io.hpp>
 #include <fuse/renderer/shader/shader_module.hpp>
 #include <fuse/renderer/shader/shader_reflection.hpp>
+#include <fuse/renderer/slang_stage.hpp>
 #include <fuse/renderer/vk/compute_pipeline.hpp>
 #include <fuse/renderer/vk/pipeline_layout.hpp>
 
@@ -55,11 +56,24 @@ int g_failures = 0;
     return EXIT_FAILURE;
 }
 
+// CPU gate. Must run before any GPU or shader skip; a failure returns non-zero. Does not allocate.
+int testSlangStageOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::slang_stage_ok(0), "slang stage 0 is accepted");
+    expect(fuse::renderer::slang_stage_ok(5), "slang stage 5 is accepted");
+    expect(!fuse::renderer::slang_stage_ok(-1), "slang stage -1 is rejected");
+    expect(!fuse::renderer::slang_stage_ok(6), "slang stage 6 is rejected");
+    return g_failures == before ? 0 : 1;
+}
+
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int slangStageRc = testSlangStageOk()) {
+        return slangStageRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkipCode;
 }
@@ -534,6 +548,9 @@ int modeHotReload() {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int slangStageRc = testSlangStageOk()) {
+        return slangStageRc;
+    }
     std::string mode = "twin";
     for (int i = 1; i + 1 < argc; ++i) {
         if (std::strcmp(argv[i], "--mode") == 0) {

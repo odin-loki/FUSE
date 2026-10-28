@@ -1,5 +1,6 @@
 #include <fuse/core/init.hpp>
 #include <fuse/mechanics/bt_dbvt_bridge.hpp>
+#include <fuse/mechanics/leaf_margin.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -15,9 +16,17 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
+void testLeafMarginOk() {
+    expectTrue(fuse::mechanics::leaf_margin_ok(0.05f), "leaf_margin_ok(0.05) is true");
+    expectTrue(!fuse::mechanics::leaf_margin_ok(-0.01f), "leaf_margin_ok(-0.01) is false");
+    expectTrue(fuse::mechanics::leaf_margin_ok(2.f), "leaf_margin_ok(2) is true");
+    expectTrue(!fuse::mechanics::leaf_margin_ok(2.1f), "leaf_margin_ok(2.1) is false");
+}
+
 } // namespace
 
 int main() {
+    testLeafMarginOk();
     fuse::core::initialize();
 
     fuse::mechanics::BtDbvtBridge dbvt;

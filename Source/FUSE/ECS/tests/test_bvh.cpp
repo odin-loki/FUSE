@@ -1,8 +1,11 @@
+#include <fuse/ecs/aabb_volume.hpp>
+#include <fuse/ecs/bvh_leaf.hpp>
 #include <fuse/ecs/math/mat.hpp>
 #include <fuse/spatial/bvh.hpp>
 
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <random>
 #include <vector>
 
@@ -81,9 +84,30 @@ void testRefitPreservesHierarchy() {
     expectTrue(bvh.node_count() == nodes_before, "refit preserves hierarchy");
 }
 
+void testBvhLeafOk() {
+    expectTrue(fuse::ecs::bvh_leaf_ok(1), "bvh_leaf_ok(1) is true");
+    expectTrue(fuse::ecs::bvh_leaf_ok(8), "bvh_leaf_ok(8) is true");
+    expectTrue(!fuse::ecs::bvh_leaf_ok(0), "bvh_leaf_ok(0) is false");
+    expectTrue(!fuse::ecs::bvh_leaf_ok(9), "bvh_leaf_ok(9) is false");
+}
+
+void testAabbVolume() {
+    expectTrue(fuse::ecs::aabb_volume(0.f, 0.f, 0.f, 1.f, 1.f, 1.f) == 1.f, "unit box volume is 1");
+    expectTrue(fuse::ecs::aabb_volume(1.f, 0.f, 0.f, 0.f, 1.f, 1.f) == 1.f,
+               "swapped x axis still has volume 1");
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    expectTrue(fuse::ecs::aabb_volume(nan, 0.f, 0.f, 1.f, 1.f, 1.f) == 0.f,
+               "NaN component yields volume 0");
+    expectTrue(fuse::ecs::aabb_volume(0.f, 0.f, 0.f, inf, 1.f, 1.f) == 0.f,
+               "infinite component yields volume 0");
+}
+
 } // namespace
 
 int main() {
+    testBvhLeafOk();
+    testAabbVolume();
     testRayCastHitsClosest();
     testFrustumQueryMatchesBruteForce();
     testRefitPreservesHierarchy();

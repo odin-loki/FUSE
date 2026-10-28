@@ -1,3 +1,6 @@
+#include <fuse/ecs/comp_align.hpp>
+#include <fuse/ecs/component_bytes.hpp>
+#include <fuse/ecs/component_name.hpp>
 #include <fuse/ecs/components/camera.hpp>
 #include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/mesh.hpp>
@@ -20,6 +23,35 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testCompAlignOk() {
+    expectTrue(fuse::ecs::comp_align_ok(1), "alignment 1 is valid");
+    expectTrue(fuse::ecs::comp_align_ok(8), "alignment 8 is valid");
+    expectTrue(fuse::ecs::comp_align_ok(64), "alignment 64 is valid");
+    expectTrue(!fuse::ecs::comp_align_ok(0), "alignment 0 is invalid");
+    expectTrue(!fuse::ecs::comp_align_ok(3), "alignment 3 is invalid");
+    expectTrue(!fuse::ecs::comp_align_ok(128), "alignment 128 is invalid");
+}
+
+void testComponentBytesOk() {
+    expectTrue(fuse::ecs::component_bytes_ok(1), "one byte is a valid component size");
+    expectTrue(fuse::ecs::component_bytes_ok(4096), "4096 bytes is a valid component size");
+    expectTrue(!fuse::ecs::component_bytes_ok(0), "zero bytes is invalid");
+    expectTrue(!fuse::ecs::component_bytes_ok(4097), "4097 bytes is invalid");
+}
+
+void testComponentNameOk() {
+    expectTrue(fuse::ecs::component_name_ok("Transform"), "Transform is a valid component name");
+    expectTrue(!fuse::ecs::component_name_ok("transform"), "lowercase first letter is invalid");
+    expectTrue(fuse::ecs::component_name_ok("T"), "single uppercase letter is valid");
+    expectTrue(!fuse::ecs::component_name_ok(""), "empty name is invalid");
+    expectTrue(!fuse::ecs::component_name_ok("T_pose"), "underscore is invalid");
+    expectTrue(fuse::ecs::component_name_ok("Mesh2"), "digits are valid after the first letter");
+    expectTrue(fuse::ecs::component_name_ok("A1234567890123456789012345678901"),
+               "32-character name is valid");
+    expectTrue(!fuse::ecs::component_name_ok("A12345678901234567890123456789012"),
+               "33-character name is invalid");
 }
 
 void testComponentNames() {
@@ -76,6 +108,14 @@ void testLightsAndTagsInRegistry() {
 } // namespace
 
 int main() {
+    testCompAlignOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_ecs_components_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testComponentBytesOk();
+    testComponentNameOk();
     testComponentNames();
     testTransformDefaults();
     testPhysicsAndCameraDefaults();

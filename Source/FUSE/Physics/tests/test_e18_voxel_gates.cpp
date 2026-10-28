@@ -5,19 +5,27 @@
 //    a carved hole (the shape refreshes on carve and the resting body is woken)
 //  - a box rests on an SDF shape (analytic rounded box through the SdfSampler interface) and a sphere on the
 //    Scene SVO's distance field (SvoSdfSampler)
+//  - an A-SDF brick (AsdfBrickSampler) trilinearly interpolates its lattice and, outside the brick, returns
+//    the distance to the brick AABB plus the edge sample
 //  - PhysicsManager::rayCast / shapeCast hit voxel and SDF bodies; two runs are bit-identical
 #include "e18_test_common.hpp"
 
 #include <fuse/core/init.hpp>
+#include <fuse/physics/destruction/voxel_damage.hpp>
+#include <fuse/physics/destruction/voxel_res.hpp>
 #include <fuse/physics/queries/shape_queries.hpp>
+#include <fuse/physics/shapes/sdf_sampler.hpp>
 #include <fuse/physics/shapes/shape_pool.hpp>
 #include <fuse/physics/spatial/svo.hpp>
 #include <fuse/scene/svo.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <utility>
+#include <vector>
 
 using namespace e18;
 
@@ -274,13 +282,174 @@ void testBodiesOnSdf() {
                "sphere casts against an SDF stop at the surface");
 }
 
+void testAsdfBrickSampler() {
+    const auto near = [](f32 got, f32 expect, const char* message) {
+        if (!std::isfinite(got) || !(std::fabs(got - expect) <= 1e-4f)) {
+            std::printf("  %s: got %.7g expected %.7g\n", message, static_cast<double>(got), static_cast<double>(expect));
+        }
+        expectTrue(std::isfinite(got) && std::fabs(got - expect) <= 1e-4f, message);
+    };
+
+    // Field = lattice x on the unit brick [0, 1]^3. Samples are 0 on x = 0 and 1 on x = 1.
+    const AsdfBrickSampler linear({}, 1.f, 2u, 2u, 2u, {0.f, 1.f, 0.f, 1.f, 0.f, 1.f, 0.f, 1.f});
+    const f32 centre = linear.sample({0.5f, 0.25f, 0.75f});
+    const f32 outsideCorner = linear.sample({4.f, 5.f, -1.f});
+    const f32 outsideCornerExpect = 1.f + std::sqrt(26.f);
+    const AsdfBrickSampler empty({}, 1.f, 0u, 4u, 4u, {});
+    std::printf("A-SDF brick: linear centre %.4f (expected 0.500), outside corner %.4f (expected %.4f), empty %.3e\n",
+                static_cast<double>(centre), static_cast<double>(outsideCorner), static_cast<double>(outsideCornerExpect),
+                static_cast<double>(empty.sample({1.f, 2.f, 3.f})));
+
+    near(centre, 0.5f, "trilinear sample of a linear brick");
+    near(linear.sample({1.f, 0.f, 1.f}), 1.f, "lattice corners return the stored sample");
+    near(linear.sample({1.f, 0.5f, 0.5f}), 1.f, "a face centre is the interpolated edge sample");
+    near(linear.sample({3.f, 0.25f, 0.75f}), 3.f, "outside a face is the AABB distance plus the edge sample");
+    near(outsideCorner, outsideCornerExpect, "outside a corner is the AABB distance plus the corner sample");
+    expectTrue(linear.distance({4.f, 5.f, -1.f}) == outsideCorner, "distance() is the brick sample");
+    expectTrue(linear.boundsMin().x == 0.f && linear.boundsMin().y == 0.f && linear.boundsMin().z == 0.f &&
+                   linear.boundsMax().x == 1.f && linear.boundsMax().y == 1.f && linear.boundsMax().z == 1.f,
+               "non-negative boundary samples keep the surface bounds on the brick AABB");
+    expectTrue(linear.gradientStep() == 0.25f, "gradient step is a quarter voxel");
+    const vec3 g = linear.gradient({0.5f, 0.5f, 0.5f});
+    near(g.x, 0.5f, "unnormalised gradient matches the linear field");
+    near(g.y, 0.f, "linear field has no y gradient");
+    near(g.z, 0.f, "linear field has no z gradient");
+    const vec3 far{-4.f, -5.f, 2.f};
+    const vec3 gFar = linear.gradient(far);
+    const vec3 away = far - vec3{0.f, 0.f, 1.f};
+    expectTrue(std::isfinite(gFar.x) && std::isfinite(gFar.y) && std::isfinite(gFar.z) && gFar.dot(away) > 0.f,
+               "gradient outside the brick is finite and points away from it");
+
+    const SdfSampler& base = linear;
+    expectTrue(base.distance({0.5f, 0.5f, 0.5f}) == linear.sample({0.5f, 0.5f, 0.5f}) && base.boundsMax().x == 1.f,
+               "AsdfBrickSampler plugs into SdfSampler");
+    const std::shared_ptr<const SdfSampler> held =
+        std::make_shared<AsdfBrickSampler>(vec3{}, 1.f, 2u, 2u, 2u, std::vector<f32>{0.f, 1.f, 0.f, 1.f, 0.f, 1.f, 0.f, 1.f});
+    near(held->distance({0.5f, 0.2f, 0.7f}), 0.5f, "a pooled brick samples through SdfSampler::distance");
+
+    // One non-zero corner: the cell centre is the mean of the eight weights, 8 * 0.125 = 1.
+    const AsdfBrickSampler corner({}, 1.f, 2u, 2u, 2u, {0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 8.f});
+    near(corner.sample({0.5f, 0.5f, 0.5f}), 1.f, "trilinear weight of the far corner");
+    near(corner.sample({1.f, 0.5f, 0.5f}), 2.f, "bilinear edge sample on the far face");
+    near(corner.sample({2.f, 0.5f, 0.5f}), 3.f, "outside the far face adds the distance to that edge sample");
+
+    // Values are the x-fastest index, so a swapped axis reads a different sample.
+    std::vector<f32> row(12u);
+    for (u32 i = 0; i < 12u; ++i) {
+        row[i] = static_cast<f32>(i);
+    }
+    const AsdfBrickSampler layout({}, 1.f, 3u, 2u, 2u, std::move(row));
+    near(layout.sample({1.f, 0.f, 0.f}), 1.f, "samples are row-major with x fastest");
+    near(layout.sample({0.f, 1.f, 0.f}), 3.f, "y is the middle sample axis");
+    near(layout.sample({0.f, 0.f, 1.f}), 6.f, "z is the slowest sample axis");
+    near(layout.sample({2.f, 1.f, 1.f}), 11.f, "the last lattice sample is index nx*ny*nz - 1");
+
+    std::vector<f32> extra{0.f, 1.f, 0.f, 1.f, 0.f, 1.f, 0.f, 1.f, 1000.f};
+    const AsdfBrickSampler extraBrick({}, 1.f, 2u, 2u, 2u, std::move(extra));
+    near(extraBrick.sample({0.5f, 0.5f, 0.5f}), 0.5f, "samples past nx*ny*nz are ignored");
+
+    // Negative corner sample: the solid extends past the brick, and the bounds follow it.
+    std::vector<f32> neg(8u, 0.f);
+    neg[0] = -2.f;
+    const AsdfBrickSampler dipped({}, 1.f, 2u, 2u, 2u, std::move(neg));
+    near(dipped.sample({0.f, 0.f, 0.f}), -2.f, "a negative corner sample is inside");
+    near(dipped.sample({-1.f, 0.f, 0.f}), -1.f, "outside the brick can still be inside the solid");
+    near(dipped.sample({-2.25f, 0.f, 0.f}), 0.25f, "past the expanded bounds the distance is positive");
+    expectTrue(dipped.boundsMin().x == -2.f && dipped.boundsMin().y == -2.f && dipped.boundsMax().x == 3.f &&
+                   dipped.boundsMax().z == 3.f,
+               "surface bounds grow by a negative boundary sample");
+
+    // Deep interior sample must not leak into the outside edge value.
+    std::vector<f32> shell(27u, 0.f);
+    shell[(1u * 3u + 1u) * 3u + 1u] = -10.f;
+    const AsdfBrickSampler interior({}, 1.f, 3u, 3u, 3u, std::move(shell));
+    near(interior.sample({1.f, 1.f, 1.f}), -10.f, "an interior sample is stored x-fastest");
+    near(interior.sample({-1.f, 1.f, 1.f}), 1.f, "outside uses the edge sample, not the interior");
+    expectTrue(interior.boundsMin().x == 0.f && interior.boundsMax().x == 2.f,
+               "a negative interior sample does not expand the brick");
+
+    // ny = nz = 1: trilinear must not read a missing neighbour, including on the last sample.
+    const AsdfBrickSampler line({}, 1.f, 3u, 1u, 1u, {0.f, 10.f, 30.f});
+    near(line.sample({0.5f, 0.f, 0.f}), 5.f, "linear interpolation along a single span");
+    near(line.sample({1.5f, 0.f, 0.f}), 20.f, "linear interpolation on the last span");
+    near(line.sample({2.f, 0.f, 0.f}), 30.f, "the last sample of a degenerate brick");
+    near(line.sample({1.5f, 7.f, -3.f}), 20.f + std::sqrt(58.f), "a flat axis still has a brick AABB");
+    expectTrue(line.boundsMax().x == 2.f && line.boundsMax().y == 0.f && line.boundsMin().z == 0.f,
+               "a one-sample axis has zero brick extent");
+
+    const AsdfBrickSampler point({2.f, 3.f, 4.f}, 0.5f, 1u, 1u, 1u, {-1.5f});
+    near(point.sample({2.f, 3.f, 4.f}), -1.5f, "a single sample is the distance at its origin");
+    near(point.sample({2.f, 3.f, 6.f}), 0.5f, "outside a point brick adds the distance to that sample");
+    near(point.sample({2.f, 3.f, 5.5f}), 0.f, "the expanded bounds meet the zero crossing");
+    expectTrue(point.boundsMin().x == 0.5f && point.boundsMin().y == 1.5f && point.boundsMin().z == 2.5f &&
+                   point.boundsMax().x == 3.5f && point.boundsMax().y == 4.5f && point.boundsMax().z == 5.5f,
+               "bounds enclose a negative point sample");
+    expectTrue(point.gradientStep() == 0.125f, "gradient step scales with the voxel size");
+
+    const AsdfBrickSampler shifted({10.f, 20.f, 30.f}, 2.f, 2u, 2u, 2u, {0.f, 1.f, 0.f, 1.f, 0.f, 1.f, 0.f, 1.f});
+    near(shifted.sample({11.f, 20.f, 31.f}), 0.5f, "origin and voxel size place the lattice");
+    near(shifted.sample({12.f, 22.f, 32.f}), 1.f, "the far corner honours origin and voxel size");
+
+    const AsdfBrickSampler shortGrid({}, 1.f, 2u, 2u, 2u, std::vector<f32>(7u, 1.f));
+    const AsdfBrickSampler zeroVoxel({}, 0.f, 2u, 2u, 2u, std::vector<f32>(8u, 1.f));
+    const AsdfBrickSampler negVoxel({}, -2.f, 2u, 2u, 2u, std::vector<f32>(8u, 1.f));
+    const AsdfBrickSampler nanVoxel({}, std::numeric_limits<f32>::quiet_NaN(), 1u, 1u, 1u, {4.f});
+    const f32 emptyDistance = empty.sample({1.f, 2.f, 3.f});
+    expectTrue(std::isfinite(emptyDistance) && emptyDistance > 1e20f, "an empty grid is a large positive distance");
+    expectTrue(empty.sample({-40.f, 8.f, 0.f}) == emptyDistance && shortGrid.sample(vec3{}) == emptyDistance &&
+                   zeroVoxel.sample({3.f, 3.f, 3.f}) == emptyDistance && negVoxel.distance(vec3{}) == emptyDistance &&
+                   nanVoxel.sample({1.f, 1.f, 1.f}) == emptyDistance,
+               "zero axes, a short buffer, and a non-positive voxel size are empty");
+    expectTrue(empty.boundsMin().x == 0.f && empty.boundsMax().z == 0.f && zeroVoxel.gradientStep() == 1e-3f,
+               "an empty grid collapses its bounds and keeps a finite gradient step");
+    const f32 nanQuery = linear.sample({std::numeric_limits<f32>::quiet_NaN(), 0.f, 0.f});
+    expectTrue(std::isfinite(nanQuery) && nanQuery == emptyDistance, "a non-finite query does not produce NaN");
+}
+
+void testVoxelResOk() {
+    expectTrue(voxel_res_ok(8), "resolution 8 is a valid voxel grid");
+    expectTrue(voxel_res_ok(64), "resolution 64 is a valid voxel grid");
+    expectTrue(voxel_res_ok(128), "resolution 128 is the voxel grid cap");
+    expectTrue(!voxel_res_ok(7), "resolution 7 is below the voxel grid floor");
+    expectTrue(!voxel_res_ok(24), "resolution 24 is not a power of two");
+    expectTrue(!voxel_res_ok(256), "resolution 256 exceeds the voxel grid cap");
+}
+
+void testVoxelDamage() {
+    VoxelDamage voxel{10.f, 10.f};
+    const bool first = apply(voxel, 4.f);
+    const f32 afterFirst = voxel.health;
+    const bool second = apply(voxel, 4.f);
+    const f32 afterSecond = voxel.health;
+    const bool aliveAfterTwo = !broken(voxel);
+    const bool third = apply(voxel, 4.f);
+    const bool fourth = apply(voxel, 4.f);
+    std::printf("voxel damage: health 10, hits of 4 -> %.1f then %.1f (%s), third breaks %s, further apply %s\n",
+                static_cast<double>(afterFirst), static_cast<double>(afterSecond), aliveAfterTwo ? "alive" : "broken",
+                third ? "yes" : "no", fourth ? "true" : "false");
+    expectTrue(!first && afterFirst == 6.f, "the first hit of 4 on health 10 stays alive");
+    expectTrue(!second && afterSecond == 2.f && aliveAfterTwo, "the second hit of 4 stays alive");
+    expectTrue(third && voxel.health == 0.f && broken(voxel) && voxel.threshold == 10.f,
+               "the third hit of 4 breaks the voxel");
+    expectTrue(!fourth && voxel.health == 0.f && broken(voxel), "a further apply on a broken voxel returns false");
+
+    VoxelDamage ignored{10.f, 10.f};
+    const f32 nan = std::numeric_limits<f32>::quiet_NaN();
+    expectTrue(!apply(ignored, 0.f) && !apply(ignored, -4.f) && !apply(ignored, nan) &&
+                   !apply(ignored, std::numeric_limits<f32>::infinity()) && ignored.health == 10.f && !broken(ignored),
+               "non-positive and non-finite damage does not accumulate");
+}
+
 } // namespace
 
 int main() {
+    testVoxelResOk();
     fuse::core::initialize();
+    testAsdfBrickSampler();
     testVoxelVolumeOnSvo();
     testSphereOnVoxelFloor();
     testBodiesOnSdf();
+    testVoxelDamage();
     fuse::core::shutdown();
     return finish("fuse_e18_voxel_gates");
 }

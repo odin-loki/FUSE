@@ -12,10 +12,15 @@
 //              the unflipped SSFX projection puts every view point on the same pixel as the jittered
 //              visibility-buffer projection, temporal::jitter_view_proj).
 //   api        a FrameComposer without a device / with an invalid description fails init with a reason and
-//              records nothing; default FrameSettings (every stage on except splats, ReSTIR and frame
-//              generation); stage bits are disjoint.
+//              records nothing; default FrameSettings (every stage on except splats, ReSTIR, frame
+//              generation and flatland RC); stage bits are disjoint.
+//   reference  also packs an RcScene from a CPU G-buffer (depth, signed-oct normal, albedo): emission is
+//              albedo * saturate(N·L) with the octahedral decode, a closer depth wins, misses stay empty.
+#include <fuse/renderer/deferred/gbuffer.hpp>
 #include <fuse/renderer/frame/frame_composer.hpp>
 #include <fuse/renderer/frame/frame_types.hpp>
+#include <fuse/renderer/frame/renderer_frame.hpp>
+#include <fuse/renderer/research/rc/rc_reference.hpp>
 #include <fuse/renderer/rg/graph.hpp>
 #include <fuse/renderer/ssfx_gpu/ssfx_gpu_reference.hpp>
 #include <fuse/renderer/temporal/temporal_types.hpp>
@@ -37,6 +42,7 @@ using fuse::f32;
 using fuse::f64;
 using fuse::u32;
 using fuse::u64;
+using fuse::usize;
 
 int g_failures = 0;
 
@@ -45,6 +51,13 @@ void expect(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+// CPU gate. No heap use. A failure returns before any later suite work.
+void testRendererFrameOk() {
+    expect(fuse::renderer::renderer_frame_ok(0u), "frame 0 is in range");
+    expect(fuse::renderer::renderer_frame_ok(1000000u), "frame 1000000 is in range");
+    expect(!fuse::renderer::renderer_frame_ok(1000001u), "frame 1000001 is out of range");
 }
 
 // --- layout ----------------------------------------------------------------------------------------
@@ -179,6 +192,91 @@ void mul4(const f64 a[16], const f64 b[16], f64 out[16]) {
             out[c * 4u + r] = s;
         }
     }
+}
+
+void testRcGBufferPack() {
+    using fuse::renderer::GBufferEncoding;
+    using fuse::renderer::research::rc::RcCpuGBuffer;
+    using fuse::renderer::research::rc::RcScene;
+    namespace rc = fuse::renderer::research::rc;
+
+    RcCpuGBuffer broken;
+    broken.resize(4u, 4u);
+    broken.albedo.pop_back();
+    RcScene rejected;
+    expect(!rc::packSceneFromGBuffer(broken, rejected), "pack rejects a gbuffer whose channels disagree");
+
+    RcCpuGBuffer gb;
+    gb.resize(16u, 16u);
+    const fuse::math::Vec3 normal = fuse::math::Vec3{0.2f, -0.55f, 0.7f}.normalized();
+    const fuse::math::Vec3 albedo{0.8f, 0.25f, 0.1f};
+    expect(gb.write(8u, 8u, 0.6f, normal.x, normal.y, normal.z, albedo.x, albedo.y, albedo.z), "write a hit");
+    expect(gb.write(8u, 8u, 0.9f, 0.f, 1.f, 0.f, 1.f, 0.f, 0.f), "a farther hit does not replace it");
+    expect(gb.write(8u, 8u, 0.2f, 0.f, 0.f, 1.f, 0.f, 1.f, 0.f), "a closer hit replaces it");
+    expect(gb.depth[8u * 16u + 8u] == 0.2f, "the closer depth is kept");
+    const fuse::math::Vec2 oct{gb.octNormal[(8u * 16u + 8u) * 2u], gb.octNormal[(8u * 16u + 8u) * 2u + 1u]};
+    const fuse::math::Vec3 decoded = GBufferEncoding::decodeOctSigned(oct);
+    expect(GBufferEncoding::angularErrorRadians(decoded, fuse::math::Vec3{0.f, 0.f, 1.f}) < 1e-5f,
+           "the stored oct decodes to the closer normal");
+
+    // Restore the tilted normal so the shade is not N·L == 1.
+    expect(gb.write(4u, 5u, 0.5f, normal.x, normal.y, normal.z, albedo.x, albedo.y, albedo.z), "write the shaded texel");
+    expect(gb.write(4u, 5u, 0.f, 1.f, 0.f, 0.f, 1.f, 1.f, 1.f), "a miss does not clear a hit");
+    RcScene scene;
+    expect(rc::packSceneFromGBuffer(gb, scene), "pack the gbuffer");
+    const fuse::math::Vec3 light =
+        fuse::math::Vec3{rc::kRcPackLight[0], rc::kRcPackLight[1], rc::kRcPackLight[2]}.normalized();
+    const fuse::math::Vec2 stored{gb.octNormal[(5u * 16u + 4u) * 2u], gb.octNormal[(5u * 16u + 4u) * 2u + 1u]};
+    const fuse::math::Vec3 n = GBufferEncoding::decodeOctSigned(stored);
+    const f32 shade = std::max(0.f, n.dot(light));
+    const usize texel = (5u * 16u + 4u) * 4u;
+    expect(std::fabs(shade - 1.f) > 1e-3f, "the octahedral normal is not the light");
+    expect(scene.texels[texel + 3u] == 1.f && std::fabs(scene.texels[texel] - albedo.x * shade) < 1e-5f &&
+               std::fabs(scene.texels[texel + 1u] - albedo.y * shade) < 1e-5f &&
+               std::fabs(scene.texels[texel + 2u] - albedo.z * shade) < 1e-5f,
+           "hit emission is albedo times saturate(N·L)");
+    expect(scene.texels[3u] == 0.f, "a miss texel stays empty");
+    expect(GBufferEncoding::angularErrorRadians(n, normal) < 1e-4f, "signed oct round-trips the authored normal");
+
+    RcCpuGBuffer diag;
+    rc::fillDiagnosticGBuffer(diag, 32u, 32u, 0u);
+    RcCpuGBuffer diagNext;
+    rc::fillDiagnosticGBuffer(diagNext, 32u, 32u, 7u);
+    RcScene packed;
+    RcScene packedNext;
+    expect(rc::packSceneFromGBuffer(diag, packed) && rc::packSceneFromGBuffer(diagNext, packedNext),
+           "diagnostic gbuffers pack");
+    const u32 cx = 16u;
+    const u32 cy = 16u;
+    const usize center = (static_cast<usize>(cy) * 32u + cx) * 4u;
+    expect(packed.texels[center + 3u] == 1.f && packed.texels[3u] == 0.f, "diagnostic disk is opaque and the corner is empty");
+    expect(packed.texels[center + 1u] != packedNext.texels[center + 1u], "frame index changes the disk albedo");
+    bool foundFar = false;
+    const f32 radius2 = rc::kRcDiagRadius2 * 32.f;
+    const f32 c2x = rc::kRcDiagDisk2[0] * 32.f;
+    const f32 c2y = rc::kRcDiagDisk2[1] * 32.f;
+    for (u32 y = 0; y < 32u && !foundFar; ++y) {
+        for (u32 x = 0; x < 32u; ++x) {
+            const f32 dx = static_cast<f32>(x) + 0.5f - c2x;
+            const f32 dy = static_cast<f32>(y) + 0.5f - c2y;
+            if (dx * dx + dy * dy > radius2 * radius2) {
+                continue;
+            }
+            const usize i = static_cast<usize>(y) * 32u + x;
+            const fuse::math::Vec3 authored =
+                fuse::math::Vec3{rc::kRcDiagNormal2[0], rc::kRcDiagNormal2[1], rc::kRcDiagNormal2[2]}.normalized();
+            const fuse::math::Vec3 got = GBufferEncoding::decodeOctSigned({diag.octNormal[i * 2u], diag.octNormal[i * 2u + 1u]});
+            if (GBufferEncoding::angularErrorRadians(got, authored) > 1e-4f) {
+                continue;
+            }
+            const f32 farShade = std::max(0.f, got.dot(light));
+            const usize o = i * 4u;
+            foundFar = packed.texels[o + 3u] == 1.f && std::fabs(packed.texels[o] - rc::kRcDiagAlbedo2[0] * farShade) < 1e-5f &&
+                       std::fabs(packed.texels[o + 2u] - rc::kRcDiagAlbedo2[2] * farShade) < 1e-5f;
+        }
+    }
+    expect(foundFar, "the farther disk is packed from its octahedral normal");
+    std::printf("reference: rc gbuffer pack, shade %.4f\n", static_cast<double>(shade));
 }
 
 void testReference() {
@@ -360,6 +458,7 @@ void testReference() {
         std::printf("reference: SSFX jitter convention, worst pixel mismatch %.3g\n", worstPx);
         expect(camOk && worstPx < 1e-3, "the jittered SSFX projection matches the jittered G-buffer pixels");
     }
+    testRcGBufferPack();
 }
 
 // --- api -------------------------------------------------------------------------------------------
@@ -379,8 +478,8 @@ void testApi() {
     composer.collectRetired(~0ull);
     expect(fs.vsm && fs.ddgi && fs.ddgiAtmosphereSky && fs.rtShadows && fs.denoise && fs.ssfx && fs.sky && fs.aerialPerspective &&
                fs.fog && fs.clouds && !fs.splats && fs.post && fs.upscaler == FrameUpscaler::Taau && fs.rtReflections &&
-               fs.forward && !fs.restir && !fs.frameGen,
-           "default FrameSettings: every stage on except splats, ReSTIR and frame generation, TAAU");
+               fs.forward && !fs.restir && !fs.frameGen && !fs.rcFlatland,
+           "default FrameSettings: every stage on except splats, ReSTIR, frame generation and flatland RC, TAAU");
     FrameComposer probe;
     expect(!probe.setRestirLights(nullptr, nullptr, 0u) && probe.restirDiOffset() == 0u && probe.reflectionOffset() == 0u,
            "ReSTIR / reflection inspection without a device");
@@ -388,7 +487,7 @@ void testApi() {
                           kStageLighting, kStageSsfx, kStageAtmosphere, kStageSky, kStageFog, kStageClouds,
                           kStageSplats, kStageResolve, kStageTaau, kStageFsr3, kStagePost, kStageAerial,
                           kStageRestir, kStageRtReflections, kStageForward, kStageFrameGen, kStageRestirDenoise,
-                          kStageReflectionDenoise};
+                          kStageReflectionDenoise, kStageSsrc, kStageUi, kStageRcFlatland};
     u32 all = 0;
     bool disjoint = true;
     for (const u32 s : stages) {
@@ -420,6 +519,11 @@ void testApi() {
 } // namespace
 
 int main(int argc, char** argv) {
+    testRendererFrameOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     if (all || suite == "layout") {

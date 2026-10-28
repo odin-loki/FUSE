@@ -1,3 +1,5 @@
+#include <fuse/net/payload_size.hpp>
+#include <fuse/net/ser_bytes.hpp>
 #include <fuse/net/serializer.hpp>
 
 #include "test_helpers.hpp"
@@ -6,7 +8,28 @@
 
 namespace fuse::net::tests {
 
+void testSerBytesOk() {
+    expectTrue(fuse::net::ser_bytes_ok(1), "ser_bytes_ok(1) is true");
+    expectTrue(fuse::net::ser_bytes_ok(1500), "ser_bytes_ok(1500) is true");
+    expectTrue(!fuse::net::ser_bytes_ok(0), "ser_bytes_ok(0) is false");
+    expectTrue(!fuse::net::ser_bytes_ok(1501), "ser_bytes_ok(1501) is false");
+}
+
+void testPayloadSize() {
+    expectTrue(fuse::net::payload_size(8u, 100u) == 108u, "payload_size(8, 100) == 108");
+    expectTrue(fuse::net::payload_size(1u, 0xFFFFFFFFu) == 0xFFFFFFFFu,
+               "payload_size(1, UINT32_MAX) saturates");
+}
+
 void run_serializer_tests() {
+    const int failuresBefore = g_failures;
+    testSerBytesOk();
+    if (g_failures != failuresBefore) {
+        return;
+    }
+
+    testPayloadSize();
+
     fuse::net::NetSerializer writer;
     writer.write_u8(7);
     writer.write_u16(0xABCD);

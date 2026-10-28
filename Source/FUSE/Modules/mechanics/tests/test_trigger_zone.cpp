@@ -1,8 +1,11 @@
 #include <fuse/core/init.hpp>
+#include <fuse/mechanics/trigger_latch.hpp>
 #include <fuse/mechanics/trigger_zone.hpp>
+#include <fuse/mechanics/zone_radius.hpp>
 
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 namespace {
 
@@ -56,9 +59,32 @@ void testTriggerPeriodicTick() {
     expectTrue(zone.tickCount() == 1u, "trigger tick count increments");
 }
 
+void testTriggerLatch() {
+    fuse::mechanics::TriggerLatch latch;
+    expectTrue(fuse::mechanics::trigger_enter(latch, true), "the first enter fires");
+    expectTrue(!fuse::mechanics::trigger_enter(latch, false), "leaving does not fire");
+    expectTrue(!fuse::mechanics::trigger_enter(latch, true), "a second enter stays latched");
+}
+
+void testZoneRadiusOk() {
+    expectTrue(fuse::mechanics::zone_radius_ok(1.f), "zone radius 1 is accepted");
+    expectTrue(fuse::mechanics::zone_radius_ok(1000.f), "zone radius 1000 is accepted");
+    expectTrue(!fuse::mechanics::zone_radius_ok(0.f), "zone radius 0 is rejected");
+    expectTrue(!fuse::mechanics::zone_radius_ok(-1.f), "zone radius -1 is rejected");
+    expectTrue(!fuse::mechanics::zone_radius_ok(1001.f), "zone radius 1001 is rejected");
+    expectTrue(!fuse::mechanics::zone_radius_ok(std::numeric_limits<float>::quiet_NaN()),
+               "non-finite zone radius is rejected");
+}
+
 } // namespace
 
 int main() {
+    testZoneRadiusOk();
+    if (g_failures != 0) {
+        return EXIT_FAILURE;
+    }
+
+    testTriggerLatch();
     fuse::core::initialize();
 
     testTriggerEnterLeave();

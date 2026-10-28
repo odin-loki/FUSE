@@ -10,6 +10,7 @@
 //         batches fill the in-flight FIFO and must wait for the oldest instead of growing it.
 // Injected layers (fuse_vulkan_validation_gate sets VK_INSTANCE_LAYERS) allocate through this
 // process-wide operator new on every vk* call, so the gpu count is reported, not enforced, then.
+#include <fuse/renderer/upload/row_pitch.hpp>
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/instance.hpp>
 #include <fuse/renderer/vk/upload_queue.hpp>
@@ -71,6 +72,12 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testAlignRowPitch() {
+    expectTrue(fuse::renderer::align_row_pitch(100u, 256u) == 256u, "row pitch rounds up to 256");
+    expectTrue(fuse::renderer::align_row_pitch(256u, 256u) == 256u, "aligned row pitch stays put");
+    expectTrue(fuse::renderer::upload_bytes(256u, 4u) == 1024u, "upload byte count is pitch times height");
 }
 
 constexpr u32 kWarmupFlushes = 2u * UploadQueue::kMaxBatches;
@@ -281,6 +288,7 @@ void testGpuSteadyStateFlushesDoNotAllocate() {
 } // namespace
 
 int main() {
+    testAlignRowPitch();
     testHostSteadyStateFlushesDoNotAllocate();
 #if defined(FUSE_VULKAN_BACKEND)
     testGpuSteadyStateFlushesDoNotAllocate();

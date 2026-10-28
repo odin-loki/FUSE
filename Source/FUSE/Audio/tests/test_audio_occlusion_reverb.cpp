@@ -1,11 +1,14 @@
 #include <fuse/audio/occlusion.hpp>
+#include <fuse/audio/occlusion_mix.hpp>
 #include <fuse/audio/reverb_zones.hpp>
 #include <fuse/audio/spatial_mixer.hpp>
+#include <fuse/audio/wet_mix.hpp>
 #include <fuse/core/init.hpp>
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 namespace {
 
@@ -23,6 +26,29 @@ void expectNear(float value, float expected, float epsilon, const char* message)
         std::fprintf(stderr, "FAIL: %s (got %f, expected %f)\n", message, value, expected);
         ++g_failures;
     }
+}
+
+void testWetMixOk() {
+    expectTrue(fuse::audio::wet_mix_ok(0.f), "wet mix 0 is in range");
+    expectTrue(fuse::audio::wet_mix_ok(0.5f), "wet mix 0.5 is in range");
+    expectTrue(fuse::audio::wet_mix_ok(1.f), "wet mix 1 is in range");
+    expectTrue(!fuse::audio::wet_mix_ok(-0.1f), "wet mix -0.1 is out of range");
+    expectTrue(!fuse::audio::wet_mix_ok(1.1f), "wet mix 1.1 is out of range");
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    expectTrue(!fuse::audio::wet_mix_ok(nan), "non-finite wet mix is rejected");
+}
+
+void testOcclusionMix() {
+    expectTrue(fuse::audio::occlusion_mix(1.f) == 0.f, "occlusion_mix(1) == 0");
+    expectTrue(fuse::audio::occlusion_mix(0.f) == 1.f, "occlusion_mix(0) == 1");
+    expectTrue(fuse::audio::occlusion_mix(0.25f) == 0.75f, "occlusion_mix(0.25) == 0.75");
+    expectNear(fuse::audio::occlusion_mix(1.5f), 0.f, 0.f, "visibility above one clamps to zero mix");
+    expectNear(fuse::audio::occlusion_mix(-0.5f), 1.f, 0.f, "negative visibility clamps to full mix");
+
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    expectTrue(fuse::audio::occlusion_mix(nan) == 0.f, "non-finite visibility returns 0");
+    expectTrue(fuse::audio::occlusion_mix(-std::numeric_limits<float>::infinity()) == 0.f,
+               "negative infinity returns 0");
 }
 
 void testOcclusionBlockerEvalSkip() {
@@ -198,7 +224,19 @@ void testSpatialMixerOcclusionBlockerGuard() {
 } // namespace
 
 int main() {
+    testWetMixOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d test(s) failed.\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
+
+    testOcclusionMix();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d test(s) failed.\n", g_failures);
+        return EXIT_FAILURE;
+    }
 
     testOcclusionBlockerEvalSkip();
     testOcclusionCombinedGain();

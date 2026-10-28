@@ -24,6 +24,7 @@
 #include <fuse/renderer/atmosphere/sky_lut.hpp>
 #include <fuse/renderer/atmosphere/sky_scatter.hpp>
 #include <fuse/renderer/atmosphere/transmittance_lut.hpp>
+#include <fuse/renderer/atmosphere_steps.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -671,9 +672,24 @@ void testApi() {
     expect(std::fabs(mine.z / legacy.z - 1.f) < 0.08f, "same atmosphere as the B5 CPU sky (within its 8% gate)");
 }
 
+// CPU gate. Runs before any GPU skip. These checks allocate nothing.
+void testAtmosphereStepsOk() {
+    expect(fuse::renderer::atmosphere_steps_ok(4), "atmosphere_steps_ok(4) is true");
+    expect(fuse::renderer::atmosphere_steps_ok(16), "atmosphere_steps_ok(16) is true");
+    expect(fuse::renderer::atmosphere_steps_ok(64), "atmosphere_steps_ok(64) is true");
+    expect(!fuse::renderer::atmosphere_steps_ok(0), "atmosphere_steps_ok(0) is false");
+    expect(!fuse::renderer::atmosphere_steps_ok(6), "atmosphere_steps_ok(6) is false");
+    expect(!fuse::renderer::atmosphere_steps_ok(128), "atmosphere_steps_ok(128) is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testAtmosphereStepsOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     if (all || suite == "layout") {

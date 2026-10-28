@@ -12,9 +12,13 @@
 //     an embedding host would) is left alone: api == AlreadySet, awareness == the preset one.
 // Real multi-monitor / mixed-scale behaviour (WM_DPICHANGED on a monitor move) stays manual.
 #include <fuse/core/init.hpp>
+#include <fuse/gameplay/stamina.hpp>
 #include <fuse/platform/dpi.hpp>
+#include <fuse/platform/dpi_bucket.hpp>
+#include <fuse/platform/dpi_scale.hpp>
 #include <fuse/platform/window.hpp>
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -232,9 +236,49 @@ void checkOther() {
 
 #endif
 
+void testStaminaPool() {
+    fuse::gameplay::StaminaPool pool{};
+    pool.current = 10.f;
+    pool.max = 10.f;
+    pool.regenPerSec = 5.f;
+    pool.regenDelay = 1.f;
+
+    expectTrue(fuse::gameplay::spend(pool, 5.f), "spend(5) on 10 succeeds");
+    expectTrue(pool.current == 5.f, "spend(5) on 10 leaves 5");
+
+    fuse::gameplay::tick(pool, 0.5f);
+    expectTrue(pool.current == 5.f, "blocks regen during the delay");
+    expectTrue(pool.delayLeft == 0.5f, "regen delay counts down without restoring stamina");
+
+    fuse::gameplay::tick(pool, 0.5f);
+    expectTrue(pool.delayLeft == 0.f && pool.current == 5.f, "the tick that ends the delay does not regen");
+
+    fuse::gameplay::tick(pool, 1.f);
+    expectTrue(pool.current == 10.f, "after the delay a tick restores stamina");
+}
+
+void testDpiBucketOk() {
+    expectTrue(fuse::platform::dpi_bucket_ok(0), "dpi_bucket_ok(0) is true");
+    expectTrue(fuse::platform::dpi_bucket_ok(4), "dpi_bucket_ok(4) is true");
+    expectTrue(!fuse::platform::dpi_bucket_ok(-1), "dpi_bucket_ok(-1) is false");
+    expectTrue(!fuse::platform::dpi_bucket_ok(5), "dpi_bucket_ok(5) is false");
+}
+
+void testSnapDpiScale() {
+    constexpr float kTolerance = 1e-4f;
+    expectTrue(std::fabs(fuse::platform::snap_dpi_scale(1.5f) - 1.5f) <= kTolerance, "snap_dpi_scale(1.5) == 1.5");
+    expectTrue(std::fabs(fuse::platform::snap_dpi_scale(8.f) - 4.f) <= kTolerance, "snap_dpi_scale(8) == 4");
+    expectTrue(std::fabs(fuse::platform::snap_dpi_scale(0.f) - 1.f) <= kTolerance, "snap_dpi_scale(0) == 1");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testDpiBucketOk();
+    if (g_failures != 0) {
+        return 1;
+    }
+    testSnapDpiScale();
 #if defined(_WIN32)
     if (argc >= 2 && std::strcmp(argv[1], "--dpi-preset-child") == 0) {
         return runPresetChild();
@@ -245,6 +289,7 @@ int main(int argc, char** argv) {
     (void)argv;
     checkOther();
 #endif
+    testStaminaPool();
     std::printf("fuse_core_b7_dpi_awareness: %d/%d checks passed\n", g_checks - g_failures, g_checks);
     return g_failures == 0 ? 0 : 1;
 }

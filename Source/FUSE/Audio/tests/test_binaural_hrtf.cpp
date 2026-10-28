@@ -1,3 +1,4 @@
+#include <fuse/audio/azimuth.hpp>
 #include <fuse/audio/binaural_pan.hpp>
 #include <fuse/core/init.hpp>
 
@@ -1172,10 +1173,21 @@ void testHrtfBinauralRejectReasonName() {
                "MalformedIr composite reject reason name");
 }
 
+void testAzimuthOk() {
+    expectTrue(fuse::audio::azimuth_ok(0.f), "azimuth 0 is in range");
+    expectTrue(fuse::audio::azimuth_ok(-90.f), "azimuth -90 is in range");
+    expectTrue(fuse::audio::azimuth_ok(180.f), "azimuth 180 is in range");
+    expectTrue(fuse::audio::azimuth_ok(-180.f), "azimuth -180 is in range");
+    expectTrue(!fuse::audio::azimuth_ok(181.f), "azimuth 181 is out of range");
+    expectTrue(!fuse::audio::azimuth_ok(-181.f), "azimuth -181 is out of range");
+    expectTrue(!fuse::audio::azimuth_ok(std::nanf("")), "non-finite azimuth is rejected");
+}
+
 } // namespace
 
 int main() {
     fuse::core::initialize();
+    testAzimuthOk();
     testHrtfPanPathResolution();
     testShouldUseHrtfIrAlias();
     testItdAndElevationHelpers();
@@ -1230,3 +1242,25 @@ int main() {
     std::fprintf(stderr, "test_binaural_hrtf: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+#include <fuse/audio/interaural_delay.hpp>
+
+namespace {
+
+void testInterauralDelaySeconds() {
+    expectNear(fuse::audio::interaural_delay_seconds(0.f, 0.2f, 340.f), 0.f, 1e-6f,
+               "azimuth 0 returns zero interaural delay");
+
+    const float delay =
+        fuse::audio::interaural_delay_seconds(1.5707963267948966f, 0.2f, 340.f);
+    expectTrue(delay > 0.f, "pi/2 azimuth interaural delay is positive");
+    expectNear(delay, 0.000294f, 1e-6f, "pi/2 azimuth delay is near 0.000294 seconds");
+}
+
+struct InterauralDelaySecondsTestRegistration {
+    InterauralDelaySecondsTestRegistration() { testInterauralDelaySeconds(); }
+};
+
+InterauralDelaySecondsTestRegistration g_interauralDelaySecondsTestRegistration;
+
+} // namespace

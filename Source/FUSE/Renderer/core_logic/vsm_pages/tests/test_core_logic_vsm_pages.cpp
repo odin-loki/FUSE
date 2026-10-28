@@ -12,6 +12,7 @@
 //   big     the 16-level 128^2-page 16k configuration with 4096 physical pages (smoke + invariants)
 //   errors  argument validation and every check_invariants() negative path (ClTestAccess)
 #include "fuse/core_logic/vsm_pages.hpp"
+#include "../../../include/fuse/renderer/vsm_level.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -539,9 +540,26 @@ void testErrors() {
     }
 }
 
+/// No allocation. Levels 0 and 7 are valid; -1 and 8 are not.
+int testVsmLevelOk() {
+    const bool atZero = fuse::renderer::vsm_level_ok(0);
+    const bool atSeven = fuse::renderer::vsm_level_ok(7);
+    const bool below = fuse::renderer::vsm_level_ok(-1);
+    const bool above = fuse::renderer::vsm_level_ok(8);
+    if (atZero && atSeven && !below && !above) {
+        return 0;
+    }
+    std::fprintf(stderr, "FAIL: testVsmLevelOk (0=%d, 7=%d, -1=%d, 8=%d)\n", static_cast<int>(atZero),
+                 static_cast<int>(atSeven), static_cast<int>(below), static_cast<int>(above));
+    return 1;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int levelRc = testVsmLevelOk()) {
+        return levelRc;
+    }
     const char* which = argc > 1 ? argv[1] : "all";
     const bool all = std::strcmp(which, "all") == 0;
     bool ran = false;

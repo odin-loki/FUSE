@@ -1290,17 +1290,38 @@ bool BindlessDescriptors::resizeHeap(BindlessHeapKind kind, u32 newCapacity) {
         break;
     }
 
-    if (newCapacity <= slots.size()) {
+    if (newCapacity >= slots.size()) {
+        const u32 oldSize = static_cast<u32>(slots.size());
+        slots.resize(newCapacity);
+        if (freeList != nullptr) {
+            for (u32 index = newCapacity; index > oldSize; --index) {
+                freeList->push_back(index - 1u);
+            }
+        }
         return true;
     }
 
+    // A dropped slot must be an unoccupied free-list entry. Otherwise the heap stays put.
+    if (freeList == nullptr) {
+        return false;
+    }
     const u32 oldSize = static_cast<u32>(slots.size());
-    slots.resize(newCapacity);
-    if (freeList != nullptr) {
-        for (u32 index = newCapacity; index > oldSize; --index) {
-            freeList->push_back(index - 1u);
+    std::vector<u8> tailOnFreeList(static_cast<usize>(oldSize - newCapacity), 0);
+    for (const u32 index : *freeList) {
+        if (index >= newCapacity && index < oldSize) {
+            tailOnFreeList[static_cast<usize>(index - newCapacity)] = 1;
         }
     }
+    for (u32 index = newCapacity; index < oldSize; ++index) {
+        if (slots[index].occupied || tailOnFreeList[static_cast<usize>(index - newCapacity)] == 0) {
+            return false;
+        }
+    }
+
+    freeList->erase(std::remove_if(freeList->begin(), freeList->end(),
+                                    [newCapacity](u32 index) { return index >= newCapacity; }),
+                    freeList->end());
+    slots.resize(newCapacity);
     return true;
 }
 

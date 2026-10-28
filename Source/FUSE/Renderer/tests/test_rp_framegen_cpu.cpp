@@ -18,6 +18,7 @@
 //   composite  CPU twins of the FUSE passes: fg_device_depth == fsr3::fsr3_device_depth bit for bit; UI composite rules.
 #include <fuse/renderer/framegen/fg_gpu.hpp>
 #include <fuse/renderer/framegen/fg_types.hpp>
+#include <fuse/renderer/framegen/framegen_factor.hpp>
 #include <fuse/renderer/upscale_backends/fsr3/fsr3_types.hpp>
 
 #include <cmath>
@@ -491,9 +492,22 @@ int runOfSearch() {
     return 0;
 }
 
+/// CPU gate. Must run before any GPU or device skip; a failure returns before later skips.
+void testFramegenFactorOk() {
+    expect(fuse::renderer::framegen_factor_ok(1), "framegen_factor_ok(1)");
+    expect(fuse::renderer::framegen_factor_ok(2), "framegen_factor_ok(2)");
+    expect(!fuse::renderer::framegen_factor_ok(0), "framegen_factor_ok(0) is false");
+    expect(!fuse::renderer::framegen_factor_ok(3), "framegen_factor_ok(3) is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testFramegenFactorOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL testFramegenFactorOk: %d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "layout";
     int rc = 0;
     if (suite == "layout") {

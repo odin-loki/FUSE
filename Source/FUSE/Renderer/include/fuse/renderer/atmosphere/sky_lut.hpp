@@ -8,7 +8,8 @@
 
 namespace fuse::renderer {
 
-/// Precomputed sun/sky lookup table dimensions (stub — no GPU upload yet).
+/// Precomputed sun/sky lookup table dimensions.
+/// Upload image from `SkyLut::packRgba16f`: width = view bins, height = sun bins, tightly packed RGBA16F.
 struct SkyLutDesc {
     u32 sun_elevation_bins = 32;
     u32 view_elevation_bins = 32;
@@ -32,6 +33,11 @@ public:
     math::Vec3 sample(f32 sun_elevation_rad, f32 view_elevation_rad) const;
     /// Bilinear sample between the four surrounding bins (clamped to the table range).
     math::Vec3 sampleBilinear(f32 sun_elevation_rad, f32 view_elevation_rad) const;
+
+    /// Upload bytes: tightly packed RGBA16F, little-endian IEEE binary16, 8 bytes per texel, no row padding.
+    /// Width is the view-elevation bin count (x), height is the sun-elevation bin count (y). RGB is the bin
+    /// colour, A is 1. Empty when the table is not ready. Does not create a GPU image.
+    std::vector<u8> packRgba16f() const;
 
 private:
     SkyLutDesc m_desc{};

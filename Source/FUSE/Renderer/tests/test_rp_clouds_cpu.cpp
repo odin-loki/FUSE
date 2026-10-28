@@ -17,6 +17,7 @@
 //   composite  no atmosphere: background x T + L; scene depth in front keeps the background; with the WP-8.2
 //              CPU LUTs and no clouds the composite is exactly the sky; aerial perspective dims the clouds
 //   api        settings validation, record resolve (flags, Bayer offset, previous camera), stub behaviour
+#include <fuse/renderer/clouds/cloud_coverage.hpp>
 #include <fuse/renderer/clouds/cloud_reference.hpp>
 #include <fuse/renderer/clouds/volumetric_clouds.hpp>
 
@@ -25,6 +26,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -904,10 +906,25 @@ void testApi() {
     expect(!clouds.valid(), "not valid");
 }
 
+/// CPU gate. Must run before any GPU or device skip; a failure returns before later work.
+void testCloudCoverageOk() {
+    expect(fuse::renderer::cloud_coverage_ok(0.f), "cloud_coverage_ok(0)");
+    expect(fuse::renderer::cloud_coverage_ok(1.f), "cloud_coverage_ok(1)");
+    expect(fuse::renderer::cloud_coverage_ok(0.5f), "cloud_coverage_ok(0.5)");
+    expect(!fuse::renderer::cloud_coverage_ok(-0.1f), "cloud_coverage_ok(-0.1) is false");
+    expect(!fuse::renderer::cloud_coverage_ok(1.1f), "cloud_coverage_ok(1.1) is false");
+    expect(!fuse::renderer::cloud_coverage_ok(std::numeric_limits<float>::quiet_NaN()),
+           "cloud_coverage_ok(non-finite) is false");
+}
 
 } // namespace
 
 int main(int argc, char** argv) {
+    testCloudCoverageOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     if (all || suite == "layout") {

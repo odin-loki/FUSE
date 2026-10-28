@@ -22,6 +22,7 @@
 #include "test_rp_restir_scene.hpp"
 
 #include <fuse/renderer/restir/restir.hpp>
+#include <fuse/renderer/restir/restir_candidates.hpp>
 #include <fuse/renderer/restir/restir_gpu.hpp>
 #include <fuse/renderer/restir/restir_kernel.hpp>
 #include <fuse/renderer/restir/restir_reference.hpp>
@@ -795,9 +796,22 @@ void testZeroAlloc() {
     expect(cpu.stats().shadowRays > 0u && cpu.stats().giRays > 0u, "rays traced");
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits the process.
+void testRestirCandidatesOk() {
+    expect(fuse::renderer::restir_candidates_ok(1), "restir_candidates_ok(1) is true");
+    expect(fuse::renderer::restir_candidates_ok(32), "restir_candidates_ok(32) is true");
+    expect(!fuse::renderer::restir_candidates_ok(0), "restir_candidates_ok(0) is false");
+    expect(!fuse::renderer::restir_candidates_ok(33), "restir_candidates_ok(33) is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testRestirCandidatesOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testRestirCandidatesOk\n");
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     if (all || suite == "layout") {

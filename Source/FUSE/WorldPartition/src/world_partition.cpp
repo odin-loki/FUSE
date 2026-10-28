@@ -11,11 +11,14 @@
 #include <limits>
 #include <mutex>
 #include <string>
+#include <unordered_set>
+#include <vector>
 
 namespace fuse::world_partition {
 
 /// Decoded cell files handed from worker threads to the game thread. Shared with in-flight jobs so
-/// a job never touches the partition itself.
+/// a job never touches the partition itself. Workers only `put` load handoffs; dirty-cell writes
+/// run on the caller thread via `save_dirty`.
 struct CellStagingStore {
     struct Staged {
         CellFileData data;
@@ -23,7 +26,12 @@ struct CellStagingStore {
     };
 
     std::mutex mutex;
+    /// Transient load handoff. `take` removes an entry; workers never write files.
     std::unordered_map<u64, Staged> cells;
+    /// Caller-thread images for dirty save. Load `put`/`take` do not replace or drop these.
+    std::unordered_map<u64, CellFileData> payloads;
+    /// Dirty keys. A key with no payload stays dirty: save writes nothing for it and does not clear it.
+    std::unordered_set<u64> dirty;
 
     void put(GridCoord coord, CellFileData&& data, u64 bytes) {
         std::lock_guard<std::mutex> lock(mutex);
@@ -44,9 +52,31 @@ struct CellStagingStore {
         return true;
     }
 
+    void stage(CellFileData data) {
+        std::lock_guard<std::mutex> lock(mutex);
+        const u64 key = grid_coord_key(data.coord);
+        payloads[key] = std::move(data);
+    }
+
+    CellFileData* find_payload(GridCoord coord) {
+        std::lock_guard<std::mutex> lock(mutex);
+        const auto it = payloads.find(grid_coord_key(coord));
+        return it == payloads.end() ? nullptr : &it->second;
+    }
+
+    void mark_dirty(GridCoord coord) {
+        std::lock_guard<std::mutex> lock(mutex);
+        dirty.insert(grid_coord_key(coord));
+    }
+
+    /// Caller thread. Returns how many dirty cells were left dirty.
+    u32 save_dirty(const std::string& cell_root);
+
     void clear() {
         std::lock_guard<std::mutex> lock(mutex);
         cells.clear();
+        payloads.clear();
+        dirty.clear();
     }
 };
 
@@ -56,7 +86,35 @@ std::string cell_file_path(const std::string& root, GridCoord coord) {
     return root + "/" + cell_asset_relative_path(coord);
 }
 
+GridCoord coord_from_key(u64 key) {
+    return {static_cast<s32>(static_cast<u32>(key)), static_cast<s32>(static_cast<u32>(key >> 32u))};
+}
+
 } // namespace
+
+u32 CellStagingStore::save_dirty(const std::string& cell_root) {
+    std::lock_guard<std::mutex> lock(mutex);
+    std::vector<u64> written;
+    written.reserve(dirty.size());
+    u32 failed = 0;
+    for (const u64 key : dirty) {
+        const auto it = payloads.find(key);
+        if (it == payloads.end()) {
+            ++failed;
+            continue;
+        }
+        // Path follows the marked coordinate. Bytes are the staged payload as stored.
+        if (!write_cell_file(cell_file_path(cell_root, coord_from_key(key)), it->second)) {
+            ++failed;
+            continue;
+        }
+        written.push_back(key);
+    }
+    for (const u64 key : written) {
+        dirty.erase(key);
+    }
+    return failed;
+}
 
 void WorldPartition::init(const WorldPartitionDesc& desc) {
     destroy();
@@ -447,8 +505,9 @@ StreamingWorkFn WorldPartition::make_worker_stub_() const {
     if (m_desc.cell_root.empty() || !m_staging) {
         return [](GridCoord /*coord*/, StreamingRequestKind /*kind*/) { return true; };
     }
-    // Worker threads read + decode the cell file into the shared staging store; they never touch
-    // the partition, the registry or the cell map (those are game-thread only).
+    // Worker threads read + decode the cell file into the load handoff. They never write cell files,
+    // never mark a cell dirty, and never touch the partition, the registry, or the cell map.
+    // Dirty-cell saves run on the caller thread (`save_dirty_cells`).
     return [root = m_desc.cell_root, staging = m_staging](GridCoord coord, StreamingRequestKind kind) {
         if (kind != StreamingRequestKind::Load) {
             return true;
@@ -471,6 +530,28 @@ StreamingWorkFn WorldPartition::make_worker_stub_() const {
 
 bool WorldPartition::take_staged_(GridCoord coord, CellFileData& out, u64& bytes) {
     return m_staging && m_staging->take(coord, out, bytes);
+}
+
+CellStagingStore& WorldPartition::ensure_staging_() {
+    if (!m_staging) {
+        m_staging = std::make_shared<CellStagingStore>();
+    }
+    return *m_staging;
+}
+
+void WorldPartition::stage_cell(CellFileData data) { ensure_staging_().stage(std::move(data)); }
+
+CellFileData* WorldPartition::staged_cell(GridCoord coord) {
+    return m_staging ? m_staging->find_payload(coord) : nullptr;
+}
+
+void WorldPartition::mark_cell_dirty(GridCoord coord) { ensure_staging_().mark_dirty(coord); }
+
+u32 WorldPartition::save_dirty_cells(const std::string& cell_root) {
+    if (!m_staging) {
+        return 0u;
+    }
+    return m_staging->save_dirty(cell_root);
 }
 
 void WorldPartition::flush_async_queue_(u32 max_submits) {

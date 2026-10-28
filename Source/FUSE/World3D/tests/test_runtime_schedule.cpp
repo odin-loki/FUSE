@@ -17,7 +17,10 @@
 #include <fuse/frame/frame_ctx.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/vfx/vfx_ecs_system.hpp>
+#include <fuse/world3d/hitch_frames.hpp>
 #include <fuse/world3d/runtime_schedule.hpp>
+#include <fuse/world3d/schedule_budget.hpp>
+#include <fuse/world3d/schedule_slot.hpp>
 #include <fuse/world3d/world_3d.hpp>
 
 #include "../../Core/tests/fuse_test_msvc_debug_stl.hpp"
@@ -35,6 +38,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <new>
 #include <string_view>
@@ -409,9 +413,60 @@ void testScriptBindingCompiles() {
 }
 #endif
 
+void testScheduleBudget() {
+    expectTrue(w3::ticks_for_seconds(60.f, 0.5f) == 30u, "60 Hz for 0.5 s is 30 ticks");
+    expectTrue(w3::seconds_for_ticks(30u, 60.f) == 0.5f, "seconds_for_ticks(30, 60) is 0.5");
+    expectTrue(w3::ticks_for_seconds(1.f, 0.5f) == 1u, "half a tick rounds away from zero");
+    expectTrue(w3::ticks_for_seconds(1.f, 2.5f) == 3u, "2.5 ticks round away from zero to 3");
+    expectTrue(w3::ticks_for_seconds(60.f, -0.5f) == 0u, "negative seconds yield 0 ticks");
+    expectTrue(w3::ticks_for_seconds(0.f, 0.5f) == 0u, "ticksPerSecond of 0 yields 0 ticks");
+    expectTrue(w3::ticks_for_seconds(-60.f, 0.5f) == 0u, "negative ticksPerSecond yields 0 ticks");
+    expectTrue(w3::seconds_for_ticks(30u, 0.f) == 0.f, "ticksPerSecond of 0 yields 0 seconds");
+    expectTrue(w3::seconds_for_ticks(30u, -60.f) == 0.f, "negative ticksPerSecond yields 0 seconds");
+    const float inf = std::numeric_limits<float>::infinity();
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    expectTrue(w3::ticks_for_seconds(inf, 0.5f) == 0u, "non-finite ticksPerSecond yields 0 ticks");
+    expectTrue(w3::ticks_for_seconds(60.f, nan) == 0u, "non-finite seconds yield 0 ticks");
+    expectTrue(w3::seconds_for_ticks(30u, nan) == 0.f, "non-finite ticksPerSecond yields 0 seconds");
+    expectTrue(w3::seconds_for_ticks(30u, inf) == 0.f, "infinite ticksPerSecond yields 0 seconds");
+    expectTrue(w3::ticks_for_seconds(1.e20f, 1.e20f) == 0xffffffffu, "tick count saturates at UINT32_MAX");
+}
+
+void testScheduleSlotOk() {
+    expectTrue(w3::schedule_slot_ok(0), "schedule slot 0 is ok");
+    expectTrue(w3::schedule_slot_ok(15), "schedule slot 15 is ok");
+    expectTrue(!w3::schedule_slot_ok(-1), "schedule slot -1 is not ok");
+    expectTrue(!w3::schedule_slot_ok(16), "schedule slot 16 is not ok");
+}
+
+void testHitchFrames() {
+    expectTrue(w3::hitch_frames(0.05f, 0.016f) == 3u, "hitch_frames(0.05, 0.016) is 3");
+    expectTrue(w3::hitch_frames(0.01f, 0.016f) == 0u, "hitch_frames(0.01, 0.016) is 0");
+    expectTrue(w3::hitch_frames(0.f, 0.016f) == 0u, "frameSeconds of 0 yields 0");
+    expectTrue(w3::hitch_frames(-0.05f, 0.016f) == 0u, "negative frameSeconds yields 0");
+    expectTrue(w3::hitch_frames(0.05f, 0.f) == 0u, "budget of 0 yields 0");
+    expectTrue(w3::hitch_frames(0.05f, -0.016f) == 0u, "negative budget yields 0");
+    const float inf = std::numeric_limits<float>::infinity();
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    expectTrue(w3::hitch_frames(0.05f, nan) == 0u, "non-finite budget yields 0");
+    expectTrue(w3::hitch_frames(0.05f, inf) == 0u, "infinite budget yields 0");
+    expectTrue(w3::hitch_frames(0.05f, -inf) == 0u, "negative infinite budget yields 0");
+    expectTrue(w3::hitch_frames(nan, 0.016f) == 0u, "non-positive frameSeconds yields 0");
+    expectTrue(w3::hitch_frames(inf, 0.016f) == 0xffffffffu, "infinite frameSeconds saturates at UINT32_MAX");
+    expectTrue(w3::hitch_frames(0.032f, 0.016f) == 2u, "two exact budgets is 2");
+    expectTrue(w3::hitch_frames(0.016f, 0.016f) == 1u, "one exact budget is 1");
+    expectTrue(w3::hitch_frames(1.e20f, 1.e-20f) == 0xffffffffu, "hitch frame count saturates at UINT32_MAX");
+}
+
 } // namespace
 
 int main() {
+    testScheduleSlotOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse runtime schedule gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testHitchFrames();
     fuse::jobs::JobScheduler::instance().shutdown();
     fuse::jobs::JobScheduler::instance().initialize(3);
     testOrderAndSystems();
@@ -419,6 +474,7 @@ int main() {
 #if defined(FUSE_TEST_HAS_SCRIPT) && FUSE_TEST_HAS_SCRIPT
     testScriptBindingCompiles();
 #endif
+    testScheduleBudget();
     fuse::jobs::JobScheduler::instance().shutdown();
 
     if (g_failures == 0) {

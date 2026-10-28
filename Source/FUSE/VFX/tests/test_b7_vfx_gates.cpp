@@ -11,9 +11,12 @@
 #include <fuse/core/sanitizer.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/vfx/burst_count.hpp>
+#include <fuse/vfx/emit_count.hpp>
 #include <fuse/vfx/particle_emitter.hpp>
 #include <fuse/vfx/particle_soa_ops.hpp>
 #include <fuse/vfx/particle_system.hpp>
+#include <fuse/vfx/vfx_count.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -21,6 +24,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 namespace {
@@ -548,9 +552,55 @@ void testCpuBudget() {
     });
 }
 
+// ---------------------------------------------------------------------------------------------
+// Gate: emit_count floors rate * dt and clamps to maxEmit.
+// ---------------------------------------------------------------------------------------------
+void testEmitCount() {
+    expectTrue(fuse::vfx::emit_count(10.f, 0.25f, 8u) == 2u, "emit_count(10, 0.25, 8) == 2");
+    expectTrue(fuse::vfx::emit_count(100.f, 1.f, 8u) == 8u, "emit_count(100, 1, 8) == 8");
+    expectTrue(fuse::vfx::emit_count(10.f, 0.f, 8u) == 0u, "emit_count(10, 0, 8) == 0");
+    expectTrue(fuse::vfx::emit_count(0.f, 1.f, 8u) == 0u, "non-positive rate emits 0");
+    expectTrue(fuse::vfx::emit_count(-4.f, 0.5f, 8u) == 0u, "negative rate emits 0");
+    expectTrue(fuse::vfx::emit_count(10.f, -0.25f, 8u) == 0u, "non-positive dt emits 0");
+    const float inf = std::numeric_limits<float>::infinity();
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    expectTrue(fuse::vfx::emit_count(inf, 0.25f, 8u) == 0u, "non-finite rate emits 0");
+    expectTrue(fuse::vfx::emit_count(10.f, nan, 8u) == 0u, "non-finite dt emits 0");
+    expectTrue(fuse::vfx::emit_count(1.9f, 1.f, 8u) == 1u, "floor drops the fractional particle");
+    expectTrue(fuse::vfx::emit_count(4.f, 1.f, 0u) == 0u, "maxEmit 0 clamps a positive floor to 0");
+    std::printf("emit_count: floor(rate * dt) clamped to maxEmit\n");
+}
+
+// Gate: vfx_count_ok accepts counts 0..4096 inclusive.
+void testVfxCountOk() {
+    expectTrue(fuse::vfx::vfx_count_ok(0), "vfx_count_ok(0) is true");
+    expectTrue(fuse::vfx::vfx_count_ok(4096), "vfx_count_ok(4096) is true");
+    expectTrue(!fuse::vfx::vfx_count_ok(-1), "vfx_count_ok(-1) is false");
+    expectTrue(!fuse::vfx::vfx_count_ok(4097), "vfx_count_ok(4097) is false");
+}
+
+// Gate: burst_count_ok accepts counts 1..64 inclusive.
+void testBurstCountOk() {
+    expectTrue(fuse::vfx::burst_count_ok(1), "burst_count_ok(1) is true");
+    expectTrue(fuse::vfx::burst_count_ok(64), "burst_count_ok(64) is true");
+    expectTrue(!fuse::vfx::burst_count_ok(0), "burst_count_ok(0) is false");
+    expectTrue(!fuse::vfx::burst_count_ok(65), "burst_count_ok(65) is false");
+}
+
 } // namespace
 
 int main() {
+    testBurstCountOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b7_vfx_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testVfxCountOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b7_vfx_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testEmitCount();
     fuse::core::initialize();
     testEmitRateCountOverFiveSeconds();
     testLifetimeSteadyState();

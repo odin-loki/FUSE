@@ -54,6 +54,7 @@
 #include <fuse/renderer/culling/instance_culler.hpp>
 #include <fuse/renderer/deferred/gbuffer.hpp>
 #include <fuse/renderer/forward/forward_reference.hpp>
+#include <fuse/renderer/forward/light_cap.hpp>
 #include <fuse/renderer/forward/forward_transparency.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
 #include <fuse/renderer/lighting/clustered.hpp>
@@ -129,11 +130,23 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+void testForwardLightCapOk() {
+    expect(fuse::renderer::forward_light_cap_ok(0), "zero forward lights is allowed");
+    expect(fuse::renderer::forward_light_cap_ok(8), "eight forward lights is allowed");
+    expect(fuse::renderer::forward_light_cap_ok(32), "32 forward lights is the cap");
+    expect(!fuse::renderer::forward_light_cap_ok(-1), "a negative light count is rejected");
+    expect(!fuse::renderer::forward_light_cap_ok(33), "33 forward lights exceeds the cap");
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    testForwardLightCapOk();
+    if (g_failures != 0) {
+        return 1;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1748,6 +1761,10 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    testForwardLightCapOk();
+    if (g_failures != 0) {
+        return 1;
+    }
     std::string mode = "twin";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {

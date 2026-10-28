@@ -1,6 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/platform/gl_context.hpp>
 #include <fuse/renderer/renderer_bootstrap.hpp>
+#include <fuse/renderer/rhi/queue_family.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
 #include <fuse/renderer/vk/fence_wait.hpp>
 #include <fuse/renderer/vk/queue_submit.hpp>
@@ -190,9 +191,23 @@ void testShouldUseSwapchainSemaphoresHelper() {
                "UINT32_MAX acquire never uses WSI semaphores");
 }
 
+// CPU gate. No allocation. main calls this before any GPU or device skip.
+void testQueueFamilyOk() {
+    expectTrue(fuse::renderer::queue_family_ok(0), "queue_family_ok(0) is true");
+    expectTrue(fuse::renderer::queue_family_ok(3), "queue_family_ok(3) is true");
+    expectTrue(!fuse::renderer::queue_family_ok(-1), "queue_family_ok(-1) is false");
+    expectTrue(!fuse::renderer::queue_family_ok(4), "queue_family_ok(4) is false");
+}
+
 } // namespace
 
 int main() {
+    testQueueFamilyOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_rhi_queue_submit: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testShouldUseSwapchainSemaphoresHelper();

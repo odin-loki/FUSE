@@ -11,6 +11,7 @@
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/transform.hpp>
+#include <fuse/ecs/spawn_query.hpp>
 #include <fuse/log/logger.hpp>
 #include <fuse/platform/window_wsi.hpp>
 #include <fuse/jobs/worker_count.hpp>
@@ -1223,6 +1224,26 @@ void RuntimeViewportHook::tick(EditorHost& host, f32 dt) {
 
     tickHeadlessPresentStub_();
     ++m_runtimeTickCount;
+}
+
+void RuntimeViewportHook::enterPlayViewportCamera(fuse::ecs::Registry& registry) {
+    f32 spawn[3] = {};
+    if (!fuse::ecs::findFirstActiveSpawnWorldPosition(registry, spawn)) {
+        return;
+    }
+    if (!m_playViewportCameraSaved) {
+        m_playViewportCameraSnapshot = m_panel.camera();
+        m_playViewportCameraSaved = true;
+    }
+    m_panel.setFromSpawnView(spawn);
+}
+
+void RuntimeViewportHook::exitPlayViewportCamera() {
+    if (!m_playViewportCameraSaved) {
+        return;
+    }
+    m_panel.camera() = m_playViewportCameraSnapshot;
+    m_playViewportCameraSaved = false;
 }
 
 } // namespace fuse::editor

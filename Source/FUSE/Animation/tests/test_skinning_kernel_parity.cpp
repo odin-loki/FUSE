@@ -6,6 +6,8 @@
 //     result; skinning_backend() / skinning_cuda_kernel_available() report that; invalid input is
 //     rejected on every backend; steady-state calls reuse the output storage.
 
+#include <fuse/animation/loop_phase.hpp>
+#include <fuse/animation/skin_influence.hpp>
 #include <fuse/animation/skinning.hpp>
 #include <fuse/animation/skinning_kernel.hpp>
 #include <fuse/compute_kernel/parity.hpp>
@@ -93,6 +95,20 @@ anim::SkinningOutput skin(kernel::Backend backend, const anim::SkinningInput& in
     anim::SkinningOutput out;
     expectTrue(anim::skin_vertices_on(backend, input, out), "skin_vertices_on succeeds");
     return out;
+}
+
+void testLoopPhase() {
+    expectTrue(anim::loop_phase(1.5f, 1.f) == 0.5f, "loop_phase(1.5, 1) is 0.5");
+    expectTrue(anim::loop_phase(-0.25f, 1.f) == 0.75f, "loop_phase(-0.25, 1) is 0.75");
+    expectTrue(anim::loop_phase(1.f, 0.f) == 0.f, "loop_phase(1, 0) is 0");
+}
+
+/// CPU gate. Must run before any GPU skip; a failure exits the process.
+void testSkinInfluenceOk() {
+    expectTrue(anim::skin_influence_ok(1), "skin_influence_ok(1) is true");
+    expectTrue(anim::skin_influence_ok(4), "skin_influence_ok(4) is true");
+    expectTrue(!anim::skin_influence_ok(0), "skin_influence_ok(0) is false");
+    expectTrue(!anim::skin_influence_ok(5), "skin_influence_ok(5) is false");
 }
 
 void testBackendParity() {
@@ -207,6 +223,18 @@ void testStatsFallbackAndValidation() {
 } // namespace
 
 int main() {
+    testLoopPhase();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testLoopPhase\n");
+        return EXIT_FAILURE;
+    }
+
+    testSkinInfluenceOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testSkinInfluenceOk\n");
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
     testBackendParity();
     testStatsFallbackAndValidation();

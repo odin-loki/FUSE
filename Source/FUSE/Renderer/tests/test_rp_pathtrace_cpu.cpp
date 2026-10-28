@@ -23,6 +23,7 @@
 //   zero_alloc      steady-state reference pixels, frame constants and emitter lookups make no heap allocation
 #include "test_rp_pathtrace_scene.hpp"
 
+#include <fuse/renderer/path/path_depth.hpp>
 #include <fuse/renderer/pathtrace/pt_gpu.hpp>
 
 #include <algorithm>
@@ -86,6 +87,14 @@ void expect(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+// No heap traffic. main calls this before any device skip and returns on failure.
+void testPathDepthOk() {
+    expect(path_depth_ok(1), "path_depth_ok(1)");
+    expect(path_depth_ok(16), "path_depth_ok(16)");
+    expect(!path_depth_ok(0), "path_depth_ok(0)");
+    expect(!path_depth_ok(17), "path_depth_ok(17)");
 }
 
 #if defined(NDEBUG)
@@ -843,6 +852,11 @@ void testZeroAlloc() {
 } // namespace
 
 int main(int argc, char** argv) {
+    testPathDepthOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";

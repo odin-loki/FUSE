@@ -1,3 +1,5 @@
+#include <fuse/mechanics/bridge_cell.hpp>
+#include <fuse/mechanics/layer_overlap.hpp>
 #include <fuse/mechanics/physics_broadphase_bridge.hpp>
 #include <fuse/mechanics/switch_component.hpp>
 #include <fuse/core/init.hpp>
@@ -16,9 +18,30 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
+void testBridgeCellOk() {
+    expectTrue(fuse::mechanics::bridge_cell_ok(1), "bridge_cell_ok(1) is true");
+    expectTrue(fuse::mechanics::bridge_cell_ok(256), "bridge_cell_ok(256) is true");
+    expectTrue(!fuse::mechanics::bridge_cell_ok(0), "bridge_cell_ok(0) is false");
+    expectTrue(!fuse::mechanics::bridge_cell_ok(257), "bridge_cell_ok(257) is false");
+}
+
+void testLayersOverlap() {
+    expectTrue(fuse::mechanics::layers_overlap(0b0101u, 0b0001u),
+               "layers_overlap(0b0101, 0b0001)");
+    expectTrue(!fuse::mechanics::layers_overlap(0b0100u, 0b0011u),
+               "layers_overlap(0b0100, 0b0011) is false");
+    expectTrue(!fuse::mechanics::layers_overlap(0u, 1u), "layers_overlap(0, 1) is false");
+}
+
 } // namespace
 
 int main() {
+    testBridgeCellOk();
+    if (g_failures != 0) {
+        return EXIT_FAILURE;
+    }
+
+    testLayersOverlap();
     fuse::core::initialize();
 
     fuse::mechanics::SwitchComponent leverSwitch("lever_switch", false, "armed", "safe");

@@ -9,6 +9,8 @@
 //   - SSR: analytic mirror reflection traced against the true scene geometry.
 // GPU timing rows (HBAO < 1 ms, SSR < 1.5 ms, TAA < 0.5 ms) are hardware-only and not measured here.
 
+#include <fuse/renderer/postprocess/halton_jitter.hpp>
+#include <fuse/renderer/postprocess/taa_jitter.hpp>
 #include <fuse/renderer/ssfx/hbao.hpp>
 #include <fuse/renderer/ssfx/ssfx_view.hpp>
 #include <fuse/renderer/ssfx/ssr.hpp>
@@ -19,6 +21,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <vector>
 
 namespace {
@@ -894,13 +897,37 @@ void testSsrReflectiveFloor() {
     expectTrue(maskedSum == 0.f, "SSR skips pixels outside the reflective mask");
 }
 
+void testHalton2Jitter() {
+    expectTrue(halton(1u, 2u) == 0.5f, "halton(1, 2) == 0.5");
+    expectTrue(halton(2u, 2u) == 0.25f, "halton(2, 2) == 0.25");
+    const Vec2 sample = halton2(1u);
+    expectTrue(sample.x == 0.5f && sample.y == (1.f / 3.f), "halton2(1) is (0.5, 1/3)");
+}
+
+/// CPU gate. Must run before any GPU skip; a failure exits instead of continuing.
+void testTaaJitterOk() {
+    expectTrue(taa_jitter_ok(-1.f), "taa_jitter_ok(-1) is true");
+    expectTrue(taa_jitter_ok(0.f), "taa_jitter_ok(0) is true");
+    expectTrue(taa_jitter_ok(1.f), "taa_jitter_ok(1) is true");
+    expectTrue(!taa_jitter_ok(-1.1f), "taa_jitter_ok(-1.1) is false");
+    expectTrue(!taa_jitter_ok(1.1f), "taa_jitter_ok(1.1) is false");
+    expectTrue(!taa_jitter_ok(std::numeric_limits<f32>::infinity()), "taa_jitter_ok(non-finite) is false");
+}
+
 } // namespace
 
 int main() {
+    testTaaJitterOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testTaaJitterOk\n");
+        return 1;
+    }
+
     testTaaEliminatesEdgeAliasing();
     testTaaRejectsFastMovingHistory();
     testHbaoConcaveCorner();
     testSsrReflectiveFloor();
+    testHalton2Jitter();
     std::printf("[B5 gate] hardware-only rows (not measured on CPU CI): HBAO < 1 ms, SSR < 1.5 ms, TAA < 0.5 ms "
                 "(1080p GPU timings)\n");
     if (g_failures != 0) {

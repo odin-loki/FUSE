@@ -82,6 +82,15 @@ public:
     void refreshPanel();
     /// Guarded panel refresh — no-op when refresh not needed (B6.7 deepen).
     bool tryRefreshPanel();
+
+    /// CPU preview of a front-facing lit sphere into tightly packed RGBA8
+    /// (`width * height * 4` bytes). Lambert diffuse plus Blinn specular: roughness 0 is a tight
+    /// lobe, roughness 1 is wide. Metals use the base colour as specular; dielectrics use 0.04.
+    /// Light direction is (0.3, 0.8, 0.4), normalized. Outside the sphere is (0,0,0,0); inside
+    /// alpha is 255. Non-finite roughness clamps to [0, 1]. Width or height 0 clears nothing and
+    /// returns false. Does not clear `previewDirty`.
+    [[nodiscard]] bool renderPreview(u32 width, u32 height, u8* rgba8) const;
+
     void clearPreviewDirty() { m_previewDirty = false; }
     void clearEditDirty() { m_editDirty = false; }
 

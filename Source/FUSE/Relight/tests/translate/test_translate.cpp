@@ -16,6 +16,7 @@
 // Options are set through RL-0.6 layers built from rtx.conf text, as a game's rtx.conf would set them.
 #include <fuse/relight/scene/translate/translate_json.hpp>
 #include <fuse/relight/scene/translate/translate_options.hpp>
+#include <fuse/relight/scene/translate/translate_step.hpp>
 #include <fuse/relight/scene/translate/translate_tap.hpp>
 #include <fuse/relight/tap/recording_tap.hpp>
 
@@ -1277,6 +1278,17 @@ void test_inverse() {
     CHECK(isIdentityExact(almost));
 }
 
+/// Steps 0..16 inclusive. No heap allocation.
+int testTranslateStepOk() {
+    g_test = "testTranslateStepOk";
+    const int before = g_failures;
+    CHECK(translate_step_ok(0));
+    CHECK(translate_step_ok(16));
+    CHECK(!translate_step_ok(-1));
+    CHECK(!translate_step_ok(17));
+    return g_failures == before ? 0 : 1;
+}
+
 struct TestCase {
     const char* name;
     void (*fn)();
@@ -1298,6 +1310,9 @@ int run(const char* group, const TestCase* tests, std::size_t count) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int stepRc = testTranslateStepOk()) {
+        return stepRc;
+    }
     // Hermetic: config files and environment overrides from the caller would change the options.
     options::setEnvironmentVariable(options::kDxvkConfEnvVar, "");
     options::setEnvironmentVariable(options::kRtxConfEnvVar, "");

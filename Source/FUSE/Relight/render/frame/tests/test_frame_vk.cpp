@@ -19,6 +19,8 @@
 // Exit: 0 pass, 1 fail, 77 skip (no Vulkan device, or --validation required but no layer).
 #include <fuse/relight/render/frame/bindless_images.hpp>
 #include <fuse/relight/render/frame/bindless_renderer_heap.hpp>
+#include <fuse/relight/render/frame/frame_budget.hpp>
+#include <fuse/relight/render/frame/frame_dt.hpp>
 #include <fuse/relight/render/frame/frame_orchestrator.hpp>
 #include <fuse/relight/render/frame/renderer_context.hpp>
 #include <fuse/relight/render/frame/scene_adapter.hpp>
@@ -770,7 +772,48 @@ int validationControl(VkPhysicalDevice pd, VkDevice device) {
     return produced;
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits 1 instead of 77. No heap allocation.
+int testFrameBudgetOk() {
+    if (!fuse::relight::frame_budget_ok(1)) {
+        std::printf("FAIL: testFrameBudgetOk: frame_budget_ok(1)\n");
+        return 1;
+    }
+    if (!fuse::relight::frame_budget_ok(8)) {
+        std::printf("FAIL: testFrameBudgetOk: frame_budget_ok(8)\n");
+        return 1;
+    }
+    if (fuse::relight::frame_budget_ok(0)) {
+        std::printf("FAIL: testFrameBudgetOk: frame_budget_ok(0)\n");
+        return 1;
+    }
+    if (fuse::relight::frame_budget_ok(9)) {
+        std::printf("FAIL: testFrameBudgetOk: frame_budget_ok(9)\n");
+        return 1;
+    }
+    return 0;
+}
+
+/// CPU gate. Must run before any GPU skip; a failure exits 1 instead of 77.
+int test_clamp_frame_dt() {
+    const int before = g_failures;
+    check(rf::clamp_frame_dt(0.5f, 0.001f, 0.1f) == 0.1f,
+          "test_clamp_frame_dt: clamp_frame_dt(0.5, 0.001, 0.1) == 0.1");
+    check(rf::clamp_frame_dt(0.f, 0.001f, 0.1f) == 0.001f,
+          "test_clamp_frame_dt: clamp_frame_dt(0, 0.001, 0.1) == 0.001");
+    if (g_failures != before) {
+        std::printf("FAIL: test_clamp_frame_dt\n");
+        return 1;
+    }
+    return 0;
+}
+
 int main(int argc, char** argv) {
+    if (const int frameBudgetRc = testFrameBudgetOk()) {
+        return frameBudgetRc;
+    }
+    if (const int frameDtRc = test_clamp_frame_dt()) {
+        return frameDtRc;
+    }
     bool validation = true;
     bool external = false; // the layer is injected by the (host) loader: no enumeration, negative control instead
     for (int i = 1; i < argc; ++i) {

@@ -1,6 +1,7 @@
 #include <fuse/audio/reverb_zones.hpp>
 
 #include <algorithm>
+#include <cmath>
 
 namespace fuse::audio {
 
@@ -154,6 +155,37 @@ float blend_reverb_sample(float dry, float wet, const Vec3& listener, const Reve
     }
     const ReverbZoneBlend blend = blend_reverb_zones(listener, zones, zone_count);
     return blend_dry_wet_sample(dry, wet, compute_effective_wet_mix(blend));
+}
+
+float clamp_reverb_send(float send) {
+    if (!std::isfinite(send)) {
+        return 0.f;
+    }
+    return std::clamp(send, 0.f, 1.f);
+}
+
+bool is_silent_reverb_send(float send) {
+    return clamp_reverb_send(send) <= kReverbSendSilence;
+}
+
+float contribute_reverb_send(float dry_sample, float source_send) {
+    if (is_silent_reverb_send(source_send) || !std::isfinite(dry_sample)) {
+        return 0.f;
+    }
+    return clamp_reverb_send(source_send) * dry_sample;
+}
+
+float mix_listener_reverb_sample(float dry, float sent, float wet, float zone_wet) {
+    if (!std::isfinite(dry)) {
+        dry = 0.f;
+    }
+    if (!std::isfinite(sent)) {
+        sent = 0.f;
+    }
+    if (!std::isfinite(wet)) {
+        wet = 0.f;
+    }
+    return (dry - sent) + blend_dry_wet_sample(sent, wet, zone_wet);
 }
 
 } // namespace fuse::audio

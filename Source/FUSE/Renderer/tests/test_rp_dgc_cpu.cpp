@@ -12,6 +12,7 @@
 //   capability  dgc_evaluate_capability reports each unmet requirement with its reason.
 //   commands    CPU command-count model: DGC records 2 commands, the fallback 2 x buckets.
 //   api         DgcPipelineSelector without a device fails with a reason (NoDevice / NoVulkanBackend).
+#include <fuse/renderer/dgc/dgc_draw.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene_types.hpp>
 #include <fuse/renderer/vk/dgc/dgc_pipeline_selector.hpp>
 #include <fuse/renderer/vk/dgc/dgc_reference.hpp>
@@ -388,9 +389,22 @@ int runApi() {
     expect(!bad.init(desc), "bucketCount 0 rejected");
     return g_failures == 0 ? 0 : 1;
 }
+
+/// CPU gate. Must run before any GPU skip; a failure exits the process.
+void testDgcDrawOk() {
+    expect(fuse::renderer::dgc_draw_ok(1), "dgc_draw_ok(1) is true");
+    expect(fuse::renderer::dgc_draw_ok(4096), "dgc_draw_ok(4096) is true");
+    expect(!fuse::renderer::dgc_draw_ok(0), "dgc_draw_ok(0) is false");
+    expect(!fuse::renderer::dgc_draw_ok(4097), "dgc_draw_ok(4097) is false");
+}
 } // namespace
 
 int main(int argc, char** argv) {
+    testDgcDrawOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     int rc = 0;
     if (suite == "layout" || suite == "all") {

@@ -49,6 +49,7 @@
 #include <fuse/renderer/rt/rt_caps.hpp>
 #include <fuse/renderer/rt/rt_probe.hpp>
 #include <fuse/renderer/rt/rt_reference.hpp>
+#include <fuse/renderer/rt_ray.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/device.hpp>
@@ -114,11 +115,25 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. No allocation. Both entry points call this before any GPU skip.
+/// A failure returns non-zero before any later skip.
+[[nodiscard]] int testRtRayOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::rt_ray_ok(1), "rt_ray_ok(1) is true");
+    expect(fuse::renderer::rt_ray_ok(1024), "rt_ray_ok(1024) is true");
+    expect(!fuse::renderer::rt_ray_ok(0), "rt_ray_ok(0) is false");
+    expect(!fuse::renderer::rt_ray_ok(1025), "rt_ray_ok(1025) is false");
+    return g_failures == before ? 0 : 1;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int rayRc = testRtRayOk(); rayRc != 0) {
+        return rayRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1150,6 +1165,9 @@ int runCapsGate() {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int rayRc = testRtRayOk(); rayRc != 0) {
+        return rayRc;
+    }
     std::string mode = "parity";
     for (int i = 1; i + 1 < argc; i += 2) {
         if (std::strcmp(argv[i], "--mode") == 0) {

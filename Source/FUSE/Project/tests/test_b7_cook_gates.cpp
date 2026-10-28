@@ -15,6 +15,9 @@
 #include <fuse/project/asset_cooker.hpp>
 #include <fuse/project/cook_cache.hpp>
 #include <fuse/project/cook_manifest.hpp>
+#include <fuse/project/cook_output.hpp>
+#include <fuse/project/cook_step.hpp>
+#include <fuse/project/cook_worker.hpp>
 #include <fuse/project/import_pipeline.hpp>
 
 #if defined(FUSE_HAS_STB_IMAGE)
@@ -1146,9 +1149,56 @@ void testStrictImportValidation() {
                    "strict cook ignores the cached lenient placeholder and rejects the source");
     }
 }
+
+void testCookStepOk() {
+    expectTrue(fuse::project::cook_step_ok(0), "cook step 0 is valid");
+    expectTrue(fuse::project::cook_step_ok(8), "cook step 8 is valid");
+    expectTrue(!fuse::project::cook_step_ok(-1), "cook step -1 is rejected");
+    expectTrue(!fuse::project::cook_step_ok(9), "cook step 9 is rejected");
+}
+
+void testCookWorkerOk() {
+    expectTrue(fuse::project::cook_worker_ok(1), "1 cook worker is valid");
+    expectTrue(fuse::project::cook_worker_ok(16), "16 cook workers are valid");
+    expectTrue(!fuse::project::cook_worker_ok(0), "0 cook workers is rejected");
+    expectTrue(!fuse::project::cook_worker_ok(17), "17 cook workers is rejected");
+}
+
+void testCookOutputOk() {
+    expectTrue(fuse::project::cook_output_ok("cooked/hero.bin"), "cooked/hero.bin is a valid cook output");
+    expectTrue(!fuse::project::cook_output_ok("cooked/../secret.bin"), "parent segment is rejected");
+    expectTrue(!fuse::project::cook_output_ok(""), "empty cook output is rejected");
+    expectTrue(fuse::project::cook_output_ok("cooked\\hero.bin"), "backslash separators are accepted");
+    expectTrue(!fuse::project::cook_output_ok("cooked\\..\\secret.bin"), "backslash parent segment is rejected");
+    expectTrue(!fuse::project::cook_output_ok("cooked/..\\secret.bin"), "mixed-separator parent segment is rejected");
+    expectTrue(!fuse::project::cook_output_ok(".."), "bare parent segment is rejected");
+    expectTrue(fuse::project::cook_output_ok("cooked/..hidden.bin"), "dotdot prefix is not a parent segment");
+    const std::string maxPath(240, 'a');
+    expectTrue(fuse::project::cook_output_ok(maxPath), "240-character cook output is valid");
+    const std::string tooLong(241, 'a');
+    expectTrue(!fuse::project::cook_output_ok(tooLong), "cook output longer than 240 is rejected");
+}
 } // namespace
 
 int main() {
+    testCookStepOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b7_cook_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testCookWorkerOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b7_cook_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testCookOutputOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b7_cook_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
     g_root = fs::temp_directory_path() / ("fuse_b7_cook_gates_" + std::to_string(static_cast<long long>(FUSE_GETPID())));
     std::error_code ec;

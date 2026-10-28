@@ -1,5 +1,6 @@
 #include <fuse/core/init.hpp>
 #include <fuse/math/vec.hpp>
+#include <fuse/renderer/ddgi/ddgi_probe.hpp>
 #include <fuse/renderer/deferred/frame_pipeline.hpp>
 #include <fuse/renderer/gi/ddgi.hpp>
 #include <fuse/renderer/gi/ddgi_kernels.hpp>
@@ -30,6 +31,16 @@ void expectNear(float value, float expected, float epsilon, const char* message)
         std::fprintf(stderr, "FAIL: %s (got %f, expected %f)\n", message, value, expected);
         ++g_failures;
     }
+}
+
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero. Does not allocate.
+void testDdgiProbeOk() {
+    expectTrue(fuse::renderer::ddgi_probe_ok(8), "ddgi_probe_ok(8) is true");
+    expectTrue(fuse::renderer::ddgi_probe_ok(32), "ddgi_probe_ok(32) is true");
+    expectTrue(fuse::renderer::ddgi_probe_ok(64), "ddgi_probe_ok(64) is true");
+    expectTrue(!fuse::renderer::ddgi_probe_ok(4), "ddgi_probe_ok(4) is false");
+    expectTrue(!fuse::renderer::ddgi_probe_ok(12), "ddgi_probe_ok(12) is false");
+    expectTrue(!fuse::renderer::ddgi_probe_ok(128), "ddgi_probe_ok(128) is false");
 }
 
 void testDdgiDescDefaults() {
@@ -1919,6 +1930,12 @@ void testDdgiInfo() {
 } // namespace
 
 int main() {
+    testDdgiProbeOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_ddgi: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testDdgiDescDefaults();

@@ -1,10 +1,14 @@
 #include <fuse/core/init.hpp>
+#include <fuse/world2d/frame_rate.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
+#include <fuse/world2d/sprite_frame.hpp>
+#include <fuse/world2d/tile_coord.hpp>
 #include <fuse/world2d/world_2d.hpp>
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 namespace {
 
@@ -83,9 +87,51 @@ void testWorld2DHierarchySnapshotSoA() {
     expectNear(world.readSnapshot().sprites()[1].x, 7.f, 1e-4f, "draw cmd mirrors SoA world x");
 }
 
+void testTileCoord() {
+    expectTrue(fuse::world2d::tile_coord(1, 2, 4) == 9, "(1, 2, 4) is 9");
+    expectTrue(fuse::world2d::tile_coord(0, 0, 1) == 0, "(0, 0, 1) is 0");
+    expectTrue(fuse::world2d::tile_coord(1, 0, 0) == -1, "(1, 0, 0) is -1");
+    expectTrue(fuse::world2d::tile_coord(4, 0, 4) == -1, "(4, 0, 4) is -1");
+}
+
+void testWorld2dFpsOk() {
+    expectTrue(fuse::world2d::world2d_fps_ok(30), "30 fps is supported");
+    expectTrue(fuse::world2d::world2d_fps_ok(60), "60 fps is supported");
+    expectTrue(!fuse::world2d::world2d_fps_ok(24), "24 fps is not supported");
+    expectTrue(!fuse::world2d::world2d_fps_ok(0), "0 fps is not supported");
+}
+
+void testSpriteFrameIndex() {
+    expectTrue(fuse::world2d::sprite_frame_index(0.f, 8.f, 4) == 0, "t=0 fps=8 count=4 is frame 0");
+    expectTrue(fuse::world2d::sprite_frame_index(0.25f, 8.f, 4) == 2, "t=0.25 fps=8 count=4 is frame 2");
+    expectTrue(fuse::world2d::sprite_frame_index(0.5f, 8.f, 4) == 0, "t=0.5 fps=8 count=4 wraps to frame 0");
+
+    expectTrue(fuse::world2d::sprite_frame_index(1.f, 8.f, 0) == 0, "frameCount 0 returns 0");
+    expectTrue(fuse::world2d::sprite_frame_index(1.f, 8.f, -3) == 0, "negative frameCount returns 0");
+    expectTrue(fuse::world2d::sprite_frame_index(0.25f, 0.f, 4) == 0, "fps 0 returns 0");
+    expectTrue(fuse::world2d::sprite_frame_index(0.25f, -8.f, 4) == 0, "negative fps returns 0");
+
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    expectTrue(fuse::world2d::sprite_frame_index(nan, 8.f, 4) == 0, "non-finite time returns 0");
+    expectTrue(fuse::world2d::sprite_frame_index(0.25f, nan, 4) == 0, "non-finite fps returns 0");
+    expectTrue(fuse::world2d::sprite_frame_index(inf, 8.f, 4) == 0, "infinite time returns 0");
+    expectTrue(fuse::world2d::sprite_frame_index(0.25f, inf, 4) == 0, "infinite fps returns 0");
+
+    expectTrue(fuse::world2d::sprite_frame_index(-0.125f, 8.f, 4) == 3, "negative time wraps to a non-negative index");
+    expectTrue(fuse::world2d::sprite_frame_index(-0.5f, 8.f, 4) == 0, "negative time on a period boundary wraps to 0");
+}
+
 } // namespace
 
 int main() {
+    testTileCoord();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_world2d_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testWorld2dFpsOk();
+    testSpriteFrameIndex();
     fuse::core::initialize();
     testWorld2DTickBuildsSnapshot();
     testAnimatedSpriteAtlasFrameAdvances();

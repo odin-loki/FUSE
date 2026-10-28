@@ -1006,3 +1006,30 @@ void testComponents() {
 }
 
 } // namespace rl_logic_test
+
+#include <fuse/relight/logic/component_gate.hpp>
+
+namespace rl_logic_test {
+
+void testComponentGate() {
+    CHECK(fuse::relight::logic::component_runs(true, true, 0));
+    CHECK(!fuse::relight::logic::component_runs(true, true, 2));
+    CHECK(fuse::relight::logic::component_delay_left(2) == 1);
+    CHECK(fuse::relight::logic::component_runs(true, true, -3));
+    CHECK(!fuse::relight::logic::component_runs(false, true, 0));
+    CHECK(!fuse::relight::logic::component_runs(true, false, 0));
+    CHECK(fuse::relight::logic::component_delay_left(0) == 0);
+    CHECK(fuse::relight::logic::component_delay_left(-2) == 0);
+}
+
+namespace {
+
+// testComponents() is the existing entry. This runs the gate checks in the same binary.
+[[maybe_unused]] const bool g_componentGateRan = [] {
+    testComponentGate();
+    return true;
+}();
+
+} // namespace
+
+} // namespace rl_logic_test

@@ -4,6 +4,7 @@
 // copy, and ring space is reused only after the batch that read it has signalled. The test keeps
 // many batches in flight while the ring wraps several times, then waits every ticket with a
 // bounded timeout and verifies all data by readback.
+#include <fuse/renderer/async_bytes.hpp>
 #include <fuse/renderer/resource_manager.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
@@ -23,6 +24,20 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+/// CPU gate. Must run before any device skip; a failure returns non-zero.
+/// No heap allocation.
+int testAsyncBytesOk() {
+    expectTrue(fuse::renderer::async_bytes_ok(1), "async_bytes_ok(1) is true");
+    expectTrue(fuse::renderer::async_bytes_ok(1 << 20), "async_bytes_ok(1<<20) is true");
+    expectTrue(!fuse::renderer::async_bytes_ok(0), "async_bytes_ok(0) is false");
+    expectTrue(!fuse::renderer::async_bytes_ok((1 << 20) + 1), "async_bytes_ok((1<<20)+1) is false");
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b2_async_upload: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    return 0;
 }
 
 using fuse::u32;
@@ -305,6 +320,10 @@ void testAsyncTextureUploads() {
 } // namespace
 
 int main() {
+    if (const int asyncRc = testAsyncBytesOk()) {
+        return asyncRc;
+    }
+
     testManyUploadsInFlightAcrossWraps();
     testWrapPaddingOrderingAndPartialUploads();
     testAsyncTextureUploads();

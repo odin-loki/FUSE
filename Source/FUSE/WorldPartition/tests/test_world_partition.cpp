@@ -1,7 +1,10 @@
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/world_partition/cell_key.hpp>
 #include <fuse/world_partition/grid_cell.hpp>
+#include <fuse/world_partition/partition_cell.hpp>
 #include <fuse/world_partition/residency_set.hpp>
+#include <fuse/world_partition/stream_ring.hpp>
 #include <fuse/world_partition/streaming_budget.hpp>
 #include <fuse/world_partition/streaming_request_queue.hpp>
 #include <fuse/world_partition/streaming_volume.hpp>
@@ -12,6 +15,11 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <string>
+#include <system_error>
 #include <thread>
 
 namespace {
@@ -2003,9 +2011,220 @@ void testWorldPartitionAsyncResidency() {
     });
 }
 
+fuse::world_partition::CellEntityRecord makeCellRecord(fuse::u64 id, fuse::f32 x, fuse::f32 y, fuse::f32 z) {
+    fuse::world_partition::CellEntityRecord record{};
+    record.stable_id = id;
+    record.position[0] = x;
+    record.position[1] = y;
+    record.position[2] = z;
+    return record;
+}
+
+bool cellFilesMatch(const fuse::world_partition::CellFileData& a, const fuse::world_partition::CellFileData& b) {
+    if (a.coord != b.coord || a.entities.size() != b.entities.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < a.entities.size(); ++i) {
+        if (std::memcmp(&a.entities[i], &b.entities[i], sizeof(fuse::world_partition::CellEntityRecord)) != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// Write, read, mutate one staged position, save. A clean staged cell is not rewritten.
+/// A dirty cell with no staged payload is not written and stays dirty (failure count).
+void testDirtyCellSave() {
+    namespace wp = fuse::world_partition;
+    namespace fs = std::filesystem;
+    struct TempRoot {
+        fs::path path;
+        ~TempRoot() {
+            std::error_code ec;
+            fs::remove_all(path, ec);
+        }
+    } temp;
+    const auto stamp = static_cast<unsigned long long>(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    temp.path = fs::temp_directory_path() / ("fuse_wp_dirty_" + std::to_string(stamp));
+    std::error_code ec;
+    fs::create_directories(temp.path, ec);
+    expectTrue(!ec, "temp cell root created");
+    const std::string root = temp.path.string();
+
+    const wp::GridCoord dirty_coord{3, -2};
+    const wp::GridCoord clean_coord{4, 5};
+    const wp::GridCoord missing_coord{8, 9};
+    const auto path_for = [&](wp::GridCoord coord) { return root + "/" + wp::cell_asset_relative_path(coord); };
+    const std::string dirty_path = path_for(dirty_coord);
+    const std::string clean_path = path_for(clean_coord);
+    const std::string missing_path = path_for(missing_coord);
+
+    wp::CellFileData dirty_data{};
+    dirty_data.coord = dirty_coord;
+    dirty_data.entities.push_back(makeCellRecord(10u, 1.5f, 2.5f, 3.5f));
+    dirty_data.entities.push_back(makeCellRecord(11u, 4.5f, 5.5f, 6.5f));
+    wp::CellFileData clean_data{};
+    clean_data.coord = clean_coord;
+    clean_data.entities.push_back(makeCellRecord(20u, 8.5f, 9.5f, 10.5f));
+
+    expectTrue(wp::write_cell_file(dirty_path, dirty_data), "write dirty cell");
+    expectTrue(wp::write_cell_file(clean_path, clean_data), "write clean cell");
+
+    wp::CellFileData loaded{};
+    expectTrue(wp::read_cell_file(dirty_path, loaded) == wp::CellFileStatus::Ok, "read dirty cell");
+
+    wp::WorldPartition partition;
+    wp::WorldPartitionDesc desc{};
+    desc.async_loading = false;
+    desc.cell_root = root;
+    partition.init(desc);
+    partition.stage_cell(loaded);
+    partition.stage_cell(clean_data);
+
+    wp::CellFileData* staged = partition.staged_cell(dirty_coord);
+    expectTrue(staged != nullptr && staged->entities.size() == 2u, "staged dirty cell");
+    expectTrue(partition.staged_cell(missing_coord) == nullptr, "missing coord has no staged data");
+    if (staged == nullptr || staged->entities.size() < 2u) {
+        return;
+    }
+
+    staged->entities[0].position[0] = 42.5f;
+    staged->entities[0].position[1] = -3.25f;
+    staged->entities[0].position[2] = 7.f;
+    const wp::CellFileData mutated = *staged;
+
+    // Load reads the on-disk cell on this thread and must not drop or rewrite the save payload.
+    expectTrue(partition.force_load(dirty_coord), "caller-thread load leaves save payload in place");
+    staged = partition.staged_cell(dirty_coord);
+    expectTrue(staged != nullptr && staged->entities[0].position[0] == 42.5f,
+               "load does not clobber staged edits");
+    if (staged == nullptr) {
+        return;
+    }
+
+    partition.mark_cell_dirty(dirty_coord);
+    partition.mark_cell_dirty(dirty_coord);
+    partition.mark_cell_dirty(missing_coord);
+
+    const auto stale = fs::file_time_type::clock::now() - std::chrono::hours(48);
+    fs::last_write_time(fs::path(dirty_path), stale, ec);
+    expectTrue(!ec, "backdate dirty cell mtime");
+    fs::last_write_time(fs::path(clean_path), stale, ec);
+    expectTrue(!ec, "backdate clean cell mtime");
+    const auto dirty_mtime = fs::last_write_time(fs::path(dirty_path), ec);
+    const auto clean_mtime = fs::last_write_time(fs::path(clean_path), ec);
+    expectTrue(!ec, "snapshot cell mtimes");
+
+    const std::string blocker = root + "/not_a_dir";
+    {
+        std::ofstream out(blocker, std::ios::binary);
+        expectTrue(static_cast<bool>(out), "blocker file created");
+    }
+    expectEq(partition.save_dirty_cells(blocker), 2u, "failed write and missing payload stay dirty");
+
+    const auto dirty_mtime_after_fail = fs::last_write_time(fs::path(dirty_path), ec);
+    const auto clean_mtime_after_fail = fs::last_write_time(fs::path(clean_path), ec);
+    expectTrue(!ec && dirty_mtime_after_fail == dirty_mtime && clean_mtime_after_fail == clean_mtime,
+               "failed save does not rewrite cell files");
+
+    wp::CellFileData still_original{};
+    expectTrue(wp::read_cell_file(dirty_path, still_original) == wp::CellFileStatus::Ok, "read after failed save");
+    expectTrue(cellFilesMatch(still_original, loaded), "failed save leaves the original cell");
+
+    expectEq(partition.save_dirty_cells(root), 1u, "missing payload stays dirty; staged cell saves");
+
+    const auto clean_mtime_after = fs::last_write_time(fs::path(clean_path), ec);
+    expectTrue(!ec && clean_mtime_after == clean_mtime, "clean cell is not rewritten");
+    const auto dirty_mtime_after = fs::last_write_time(fs::path(dirty_path), ec);
+    expectTrue(!ec && dirty_mtime_after != dirty_mtime, "dirty cell mtime moves when it is written");
+
+    wp::CellFileData roundtrip{};
+    expectTrue(wp::read_cell_file(dirty_path, roundtrip) == wp::CellFileStatus::Ok, "read saved cell");
+    expectTrue(cellFilesMatch(roundtrip, mutated), "saved position matches staged cell");
+    expectTrue(roundtrip.entities[0].position[0] == 42.5f && roundtrip.entities[0].position[1] == -3.25f &&
+                   roundtrip.entities[0].position[2] == 7.f,
+               "mutated position round-trips");
+
+    wp::CellFileData clean_roundtrip{};
+    expectTrue(wp::read_cell_file(clean_path, clean_roundtrip) == wp::CellFileStatus::Ok, "read clean cell");
+    expectTrue(cellFilesMatch(clean_roundtrip, clean_data), "clean cell contents unchanged");
+    expectTrue(!fs::exists(fs::path(missing_path), ec) && !ec, "unstaged dirty cell writes nothing");
+
+    fs::last_write_time(fs::path(dirty_path), stale, ec);
+    const auto cleared_mtime = fs::last_write_time(fs::path(dirty_path), ec);
+    expectTrue(!ec, "backdate cleared cell");
+    expectEq(partition.save_dirty_cells(root), 1u, "cleared cell stays clean; missing payload stays dirty");
+    const auto cleared_mtime_after = fs::last_write_time(fs::path(dirty_path), ec);
+    const auto clean_mtime_final = fs::last_write_time(fs::path(clean_path), ec);
+    expectTrue(!ec && cleared_mtime_after == cleared_mtime, "cleared cell is not rewritten");
+    expectTrue(clean_mtime_final == clean_mtime, "clean cell mtime stays unchanged");
+}
+
+void testCellKey() {
+    const auto origin = fuse::world_partition::cell_key(0, 0);
+    const auto xz = fuse::world_partition::cell_key(1, 2);
+    const auto zx = fuse::world_partition::cell_key(2, 1);
+    const auto neg_x = fuse::world_partition::cell_key(-1, 0);
+    expectTrue(origin == 0, "cell_key(0, 0) is zero");
+    expectTrue(xz != zx, "cell_key(1, 2) differs from cell_key(2, 1)");
+    expectTrue((neg_x >> 32) == 0xFFFFFFFFu, "cell_key(-1, 0) high 32 bits are all ones");
+    expectTrue((neg_x & 0xFFFFFFFFu) == 0u, "cell_key(-1, 0) low 32 bits are zero");
+    expectTrue((xz >> 32) == 1u && (xz & 0xFFFFFFFFu) == 2u, "x is the high half and z is the low half");
+}
+
+/// Rings 0..8 inclusive. No heap allocation. Failure returns before initialize.
+int testStreamRingOk() {
+    if (!fuse::world_partition::stream_ring_ok(0)) {
+        std::fprintf(stderr, "FAIL: testStreamRingOk: stream_ring_ok(0) should be true\n");
+        return 1;
+    }
+    if (!fuse::world_partition::stream_ring_ok(8)) {
+        std::fprintf(stderr, "FAIL: testStreamRingOk: stream_ring_ok(8) should be true\n");
+        return 1;
+    }
+    if (fuse::world_partition::stream_ring_ok(-1)) {
+        std::fprintf(stderr, "FAIL: testStreamRingOk: stream_ring_ok(-1) should be false\n");
+        return 1;
+    }
+    if (fuse::world_partition::stream_ring_ok(9)) {
+        std::fprintf(stderr, "FAIL: testStreamRingOk: stream_ring_ok(9) should be false\n");
+        return 1;
+    }
+    return 0;
+}
+
+/// Cells 0..1023 inclusive. No heap allocation. Failure returns before initialize.
+int testPartitionCellOk() {
+    if (!fuse::world_partition::partition_cell_ok(0)) {
+        std::fprintf(stderr, "FAIL: testPartitionCellOk: partition_cell_ok(0) should be true\n");
+        return 1;
+    }
+    if (!fuse::world_partition::partition_cell_ok(1023)) {
+        std::fprintf(stderr, "FAIL: testPartitionCellOk: partition_cell_ok(1023) should be true\n");
+        return 1;
+    }
+    if (fuse::world_partition::partition_cell_ok(-1)) {
+        std::fprintf(stderr, "FAIL: testPartitionCellOk: partition_cell_ok(-1) should be false\n");
+        return 1;
+    }
+    if (fuse::world_partition::partition_cell_ok(1024)) {
+        std::fprintf(stderr, "FAIL: testPartitionCellOk: partition_cell_ok(1024) should be false\n");
+        return 1;
+    }
+    return 0;
+}
+
 } // namespace
 
 int main() {
+    if (const int ringRc = testStreamRingOk()) {
+        return ringRc;
+    }
+    if (const int cellRc = testPartitionCellOk()) {
+        return cellRc;
+    }
+    testCellKey();
     fuse::core::initialize();
     testGridCoordHelpers();
     testResidencyStateHelpers();
@@ -2088,6 +2307,7 @@ int main() {
     testWorldPartitionResidencySetTracking();
     testWorldPartitionAsyncEnqueueFlushCarryover();
     testWorldPartitionAsyncResidency();
+    testDirtyCellSave();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

@@ -12,10 +12,14 @@
 #include "b5_rhi_test_common.hpp"
 
 #include <fuse/core/init.hpp>
+#include <fuse/renderer/postprocess/depth_linear.hpp>
+#include <fuse/renderer/rhi/memory_type.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
 
+#include <cmath>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 #if defined(FUSE_VULKAN_BACKEND)
@@ -185,9 +189,38 @@ bool texelsMatch(const Texture& texture) {
 }
 #endif
 
+void testMemoryTypeOk() {
+    expectTrue(memory_type_ok(0), "memory type 0 is valid");
+    expectTrue(memory_type_ok(31), "memory type 31 is valid");
+    expectTrue(!memory_type_ok(-1), "memory type -1 is rejected");
+    expectTrue(!memory_type_ok(32), "memory type 32 is rejected");
+}
+
+void testLinearizeReverseZ() {
+    expectTrue(linearize_reverse_z(1.f, 0.1f, 100.f) == 0.1f, "reverse-Z depth 1 is the near plane");
+    expectTrue(linearize_reverse_z(0.f, 0.1f, 100.f) == 100.f, "reverse-Z depth 0 is the far plane");
+    const fuse::f32 mid = linearize_reverse_z(0.5f, 0.1f, 100.f);
+    expectTrue(std::fabs(mid - 0.1998002f) < 1e-5f, "reverse-Z depth 0.5 is the reciprocal-space lerp");
+    expectTrue(linearize_reverse_z(2.f, 0.1f, 100.f) == 0.1f, "depth above 1 clamps to the near plane");
+    expectTrue(linearize_reverse_z(-1.f, 0.1f, 100.f) == 100.f, "depth below 0 clamps to the far plane");
+    expectTrue(linearize_reverse_z(1.f, 0.f, 100.f) == 0.f, "non-positive near returns 0");
+    expectTrue(linearize_reverse_z(0.f, 10.f, 10.f) == 0.f, "far not beyond near returns 0");
+    const fuse::f32 nan = std::numeric_limits<fuse::f32>::quiet_NaN();
+    const fuse::f32 inf = std::numeric_limits<fuse::f32>::infinity();
+    expectTrue(linearize_reverse_z(nan, 0.1f, 100.f) == 100.f, "non-finite depth clamps before linearization");
+    expectTrue(linearize_reverse_z(inf, 0.1f, 100.f) == 0.1f, "infinite depth clamps to the near plane");
+    expectTrue(linearize_reverse_z(1.f, nan, 100.f) == 0.f, "non-finite near returns 0");
+    expectTrue(linearize_reverse_z(0.f, 0.1f, inf) == 0.f, "non-finite far returns 0");
+}
+
 } // namespace
 
 int main() {
+    testMemoryTypeOk();
+    testLinearizeReverseZ();
+    if (b5rhi::failures() != 0) {
+        return b5rhi::finish("fuse_b5_rhi_memory_types");
+    }
 #if !defined(FUSE_VULKAN_BACKEND)
     return b5rhi::skip("fuse_b5_rhi_memory_types", "Vulkan backend disabled");
 #else

@@ -40,9 +40,9 @@ These prove “one program” while Track A/B land:
 | U1 | Umbrella CMake | Landed |
 | U2 | One-process smoke + quarantine libs | Landed |
 | U3 | Shared services, jobs/fibers | In progress |
-| U4 | Dimension APIs + hybrid frame | Scaffolding (`demo_hybrid_hud`) |
+| U4 | Dimension APIs + hybrid frame | World2D/3D `findSpawnPoint` + `enterPlayMode`; SSRC/DDGI/fog + optional flatland RC (`rcFlatland`) in `FrameComposer`; `DdgiGpu::importCpuVolumeAtlases` for CPU-volume staging |
 | U5 | Feature modules | Vertical slices landed |
-| U6 | Qt editor shell | Minimal desktop shell |
+| U6 | Qt editor shell | PIE snaps viewport to `SpawnMarker` (parity with standalone play) |
 | U7 | `project.json` + importers | Minimal loader + CLI dry-run |
 | U8 | Parity demo corpus | Seven headless demos |
 

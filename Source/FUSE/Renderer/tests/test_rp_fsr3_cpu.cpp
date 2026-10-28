@@ -19,6 +19,8 @@
 //   convert   CPU twin of fsr3.convert: reverse-Z device depth -> the SDK's inverted transform returns the linear
 //             depth (rel 2e-6), sky -> far plane, monotonic
 #include <fuse/renderer/temporal/temporal_types.hpp>
+#include <fuse/renderer/upscale/fsr_quality.hpp>
+#include <fuse/renderer/upscale/reactive_mask.hpp>
 #include <fuse/renderer/upscale/upscale_inputs.hpp>
 #include <fuse/renderer/upscale/upscaler.hpp>
 #include <fuse/renderer/upscale_backends/fsr3/fsr3_gpu.hpp>
@@ -526,9 +528,27 @@ int runConvert() {
     return 0;
 }
 
+void testFsrQualityOk() {
+    expect(fuse::renderer::fsr_quality_ok(0), "fsr_quality_ok(0) is true");
+    expect(fuse::renderer::fsr_quality_ok(3), "fsr_quality_ok(3) is true");
+    expect(!fuse::renderer::fsr_quality_ok(-1), "fsr_quality_ok(-1) is false");
+    expect(!fuse::renderer::fsr_quality_ok(4), "fsr_quality_ok(4) is false");
+}
+
+void testReactiveMask() {
+    expect(fuse::renderer::reactive_mask_value(0.2f, 0.2f, 0.1f) == 0.f, "steady luma is not reactive");
+    expect(fuse::renderer::reactive_mask_value(0.f, 0.5f, 0.1f) == 1.f, "a large luma jump saturates the mask");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testFsrQualityOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: %d failure(s)\n", g_failures);
+        return 1;
+    }
+    testReactiveMask();
     const std::string suite = argc > 1 ? argv[1] : "layout";
     int rc = 0;
     if (suite == "layout") {

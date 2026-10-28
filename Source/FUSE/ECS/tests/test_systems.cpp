@@ -1,6 +1,8 @@
 #include <fuse/ecs/components/camera.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/transform.hpp>
+#include <fuse/ecs/phase_index.hpp>
+#include <fuse/ecs/phase_name.hpp>
 #include <fuse/ecs/system_scheduler.hpp>
 #include <fuse/ecs/systems/camera_system.hpp>
 #include <fuse/ecs/systems/culling_system.hpp>
@@ -11,6 +13,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace {
 
@@ -21,6 +24,21 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testPhaseIndexOk() {
+    expectTrue(fuse::ecs::phase_index_ok(0), "phase_index_ok(0)");
+    expectTrue(fuse::ecs::phase_index_ok(2), "phase_index_ok(2)");
+    expectTrue(!fuse::ecs::phase_index_ok(-1), "phase_index_ok(-1)");
+    expectTrue(!fuse::ecs::phase_index_ok(3), "phase_index_ok(3)");
+}
+
+void testPhaseName() {
+    expectTrue(std::strcmp(fuse::ecs::phase_name(0), "Input") == 0, "phase 0 is Input");
+    expectTrue(std::strcmp(fuse::ecs::phase_name(1), "Simulate") == 0, "phase 1 is Simulate");
+    expectTrue(std::strcmp(fuse::ecs::phase_name(2), "Present") == 0, "phase 2 is Present");
+    expectTrue(std::strcmp(fuse::ecs::phase_name(-1), "Unknown") == 0, "negative phase is Unknown");
+    expectTrue(std::strcmp(fuse::ecs::phase_name(3), "Unknown") == 0, "other phase is Unknown");
 }
 
 void testTransformHierarchy() {
@@ -108,6 +126,8 @@ void testScenePipeline() {
 } // namespace
 
 int main() {
+    testPhaseIndexOk();
+    testPhaseName();
     testTransformHierarchy();
     testScenePipeline();
 

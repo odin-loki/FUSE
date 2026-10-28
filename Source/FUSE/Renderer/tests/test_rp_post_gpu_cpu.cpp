@@ -24,6 +24,9 @@
 #include <fuse/renderer/look/look_params.hpp>
 #include <fuse/renderer/look/look_post_chain.hpp>
 #include <fuse/renderer/look/lut3d.hpp>
+#include <fuse/renderer/post/post_index.hpp>
+#include <fuse/renderer/postprocess/error_metric.hpp>
+#include <fuse/renderer/postprocess/exposure_clamp.hpp>
 #include <fuse/renderer/postprocess/gpu/post_gpu_reference.hpp>
 #include <fuse/renderer/postprocess/gpu/post_gpu_types.hpp>
 #include <fuse/renderer/postprocess/gpu/post_stack_gpu.hpp>
@@ -36,6 +39,7 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -511,9 +515,46 @@ void testApi() {
     std::printf("api: capabilities without a device: %s\n", caps.reason);
 }
 
+void testErrorMetric() {
+    const float error = fuse::renderer::max_channel_error(1.f, 0.f, 0.f, 1.f, 0.25f, 0.f);
+    expect(error == 0.25f, "max channel error is the largest component delta");
+    expect(fuse::renderer::within_error(0.25f, 0.25f), "error equal to the tolerance passes");
+    expect(!fuse::renderer::within_error(0.25f, 0.1f), "error above the tolerance fails");
+}
+
+/// CPU gate. Must run before any GPU skip; a failure exits the process.
+void testPostIndexOk() {
+    expect(fuse::renderer::post_index_ok(0), "post_index_ok(0) is true");
+    expect(fuse::renderer::post_index_ok(7), "post_index_ok(7) is true");
+    expect(!fuse::renderer::post_index_ok(-1), "post_index_ok(-1) is false");
+    expect(!fuse::renderer::post_index_ok(8), "post_index_ok(8) is false");
+}
+
+void testExposureClamp() {
+    expect(fuse::renderer::clamp_exposure(4.f, 0.1f, 2.f) == 2.f, "clamp_exposure(4, 0.1, 2) == 2");
+    expect(fuse::renderer::clamp_exposure(0.f, 0.1f, 2.f) == 0.1f, "clamp_exposure(0, 0.1, 2) == 0.1");
+    expect(fuse::renderer::clamp_exposure(4.f, 2.f, 0.1f) == 2.f, "clamp_exposure orders inverted bounds");
+    expect(fuse::renderer::clamp_exposure(0.f, 2.f, 0.1f) == 0.1f, "non-positive exposure uses the ordered min");
+    const float nonFinite = std::numeric_limits<float>::quiet_NaN();
+    expect(fuse::renderer::clamp_exposure(nonFinite, 0.1f, 2.f) == 0.1f, "non-finite exposure returns the finite min");
+    expect(fuse::renderer::clamp_exposure(nonFinite, nonFinite, 2.f) == 1.f,
+           "non-finite exposure returns 1 when min is non-finite");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testPostIndexOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testPostIndexOk\n");
+        return 1;
+    }
+    testExposureClamp();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: %d failure(s)\n", g_failures);
+        return 1;
+    }
+    testErrorMetric();
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     if (all || suite == "layout") {

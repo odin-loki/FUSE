@@ -1,12 +1,51 @@
 #include <fuse/net/input_history.hpp>
+#include <fuse/net/prediction_error.hpp>
 #include <fuse/net/reconcile.hpp>
+#include <fuse/net/reconcile_err.hpp>
 #include <fuse/net/rollback_buffer.hpp>
 
 #include "test_helpers.hpp"
 
+#include <limits>
+
 namespace fuse::net::tests {
 
+void testPredictionError() {
+    expectTrue(fuse::net::prediction_error(3.f, 1.f) == 2.f, "prediction_error is the absolute difference");
+    expectTrue(fuse::net::prediction_error(1.f, 3.f) == 2.f, "prediction_error ignores operand order");
+    expectTrue(fuse::net::prediction_error(std::numeric_limits<float>::quiet_NaN(), 1.f) == 0.f,
+               "non-finite predicted returns 0");
+    expectTrue(fuse::net::prediction_error(1.f, std::numeric_limits<float>::infinity()) == 0.f,
+               "non-finite authoritative returns 0");
+
+    expectTrue(fuse::net::needs_correction(0.2f, 0.1f), "needs_correction when error exceeds threshold");
+    expectTrue(!fuse::net::needs_correction(0.05f, 0.1f), "needs_correction is false below threshold");
+    expectTrue(!fuse::net::needs_correction(0.1f, 0.1f), "needs_correction is false when error equals threshold");
+    expectTrue(!fuse::net::needs_correction(std::numeric_limits<float>::quiet_NaN(), 0.1f),
+               "non-finite error returns false");
+    expectTrue(fuse::net::needs_correction(0.2f, -1.f), "negative threshold counts as 0");
+    expectTrue(!fuse::net::needs_correction(0.f, -1.f), "zero error stays within a clamped threshold");
+}
+
+void testReconcileErrOk() {
+    expectTrue(fuse::net::reconcile_err_ok(0.f), "reconcile_err_ok(0) is true");
+    expectTrue(fuse::net::reconcile_err_ok(1.5f), "reconcile_err_ok(1.5) is true");
+    expectTrue(fuse::net::reconcile_err_ok(10.f), "reconcile_err_ok(10) is true");
+    expectTrue(!fuse::net::reconcile_err_ok(-0.1f), "reconcile_err_ok(-0.1) is false");
+    expectTrue(!fuse::net::reconcile_err_ok(10.1f), "reconcile_err_ok(10.1) is false");
+    expectTrue(!fuse::net::reconcile_err_ok(std::numeric_limits<float>::quiet_NaN()),
+               "reconcile_err_ok(NaN) is false");
+}
+
 void run_reconcile_tests() {
+    const int before = g_failures;
+    testReconcileErrOk();
+    if (g_failures != before) {
+        return;
+    }
+
+    testPredictionError();
+
     fuse::net::InputHistoryBuffer history;
     history.init(32);
 

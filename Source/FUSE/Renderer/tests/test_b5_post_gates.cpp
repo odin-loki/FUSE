@@ -18,9 +18,12 @@
 
 #include <fuse/core/init.hpp>
 #include <fuse/math/vec.hpp>
+#include <fuse/renderer/post_quality.hpp>
 #include <fuse/renderer/postprocess/bloom.hpp>
+#include <fuse/renderer/postprocess/color_vision.hpp>
 #include <fuse/renderer/postprocess/color_grade.hpp>
 #include <fuse/renderer/postprocess/dof.hpp>
+#include <fuse/renderer/postprocess/luminance.hpp>
 #include <fuse/renderer/postprocess/motion_blur.hpp>
 #include <fuse/renderer/postprocess/post_stack.hpp>
 #include <fuse/renderer/postprocess/tonemap.hpp>
@@ -29,6 +32,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <random>
 #include <string>
 #include <vector>
@@ -913,11 +917,58 @@ void testPostChainOrder() {
     stack.destroy();
 }
 
+void testRelativeLuminance() {
+    expectNear(relative_luminance(1.f, 0.f, 0.f), 0.2126, 1e-4, "relative luminance of pure red is 0.2126");
+    expectTrue(relative_luminance(0.f, 0.f, 0.f) == 0.f, "relative luminance of black is 0");
+    expectNear(relative_luminance(0.f, 1.f, 0.f), 0.7152, 1e-4, "relative luminance of pure green is 0.7152");
+    expectNear(relative_luminance(0.f, 0.f, 1.f), 0.0722, 1e-4, "relative luminance of pure blue is 0.0722");
+    const f32 nan = std::numeric_limits<f32>::quiet_NaN();
+    const f32 inf = std::numeric_limits<f32>::infinity();
+    expectNear(relative_luminance(nan, 0.f, 0.f), 0.0, 1e-4, "non-finite red counts as 0");
+    expectNear(relative_luminance(0.f, inf, 0.f), 0.0, 1e-4, "non-finite green counts as 0");
+    expectNear(relative_luminance(0.f, 0.f, -inf), 0.0, 1e-4, "non-finite blue counts as 0");
+    expectNear(relative_luminance(-1.f, -0.5f, -4.f), 0.0, 1e-4, "negative channels count as 0");
+    expectNear(relative_luminance(-1.f, 1.f, nan), 0.7152, 1e-4, "only the finite non-negative channel contributes");
+}
+
+/// CPU gate. Must run before any GPU skip; a failure exits instead of continuing.
+void testPostQualityOk() {
+    expectTrue(post_quality_ok(0), "post_quality_ok(0) is true");
+    expectTrue(post_quality_ok(3), "post_quality_ok(3) is true");
+    expectTrue(!post_quality_ok(-1), "post_quality_ok(-1) is false");
+    expectTrue(!post_quality_ok(4), "post_quality_ok(4) is false");
+}
+
+void testColorVision() {
+    const Vec3 grey = simulate_color_vision({0.2f, 0.4f, 0.6f}, ColorVision::Typical);
+    expectNear(grey.x, 0.2, 1e-5, "typical vision leaves red unchanged");
+    expectNear(grey.y, 0.4, 1e-5, "typical vision leaves green unchanged");
+    expectNear(grey.z, 0.6, 1e-5, "typical vision leaves blue unchanged");
+    const Vec3 red = simulate_color_vision({1.f, 0.f, 0.f}, ColorVision::Protanopia);
+    expectTrue(red.x < 0.5f, "protanopia reduces pure red");
+    const Vec3 bad = simulate_color_vision({std::numeric_limits<f32>::quiet_NaN(), 0.f, 0.f}, ColorVision::Typical);
+    expectNear(bad.x, 0.0, 0.0, "non-finite color vision input is zero");
+    expectNear(bad.y, 0.0, 0.0, "non-finite color vision green is zero");
+}
+
 } // namespace
 
 int main() {
+    testPostQualityOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b5_post_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testRelativeLuminance();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b5_post_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
+    testColorVision();
     testBloomSoftKnee();
     testBloomBelowThresholdIsExactlyZero();
     testBloomSinglePixel();

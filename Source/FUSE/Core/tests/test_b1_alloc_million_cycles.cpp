@@ -14,6 +14,7 @@
 //   - final stats: allocCount == freeCount == 1M, usedBytes == 0, zero failed allocations where
 //     failure is not part of the allocator's contract.
 
+#include <fuse/core/cycle_count.hpp>
 #include <fuse/alloc/allocator.hpp>
 #include <fuse/alloc/frame_allocator.hpp>
 #include <fuse/alloc/freelist_allocator.hpp>
@@ -459,9 +460,22 @@ void runFrame() {
     finalChecks(name, t, s, false);
 }
 
+void testCycleCountOk() {
+    expectTrue(fuse::core::cycle_count_ok(1), "cycle_count", "cycle_count_ok(1) is true");
+    expectTrue(fuse::core::cycle_count_ok(1000000), "cycle_count", "cycle_count_ok(1000000) is true");
+    expectTrue(!fuse::core::cycle_count_ok(0), "cycle_count", "cycle_count_ok(0) is false");
+    expectTrue(!fuse::core::cycle_count_ok(1000001), "cycle_count", "cycle_count_ok(1000001) is false");
+}
+
 } // namespace
 
 int main() {
+    testCycleCountOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_core_b1_alloc_million_cycles: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     LeakDetector::clear();
     const auto before = LeakDetector::snapshot();
 

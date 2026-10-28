@@ -36,6 +36,8 @@
 #include <vector>
 
 #if defined(FUSE_PLATFORM_WINDOW_X11)
+// POSIX sleep for map/resize polls. Windows CI compiles this file but not the X11 body.
+#include <unistd.h>
 // Xlib last: it defines macros (None, KeyPress, FocusIn, ...) that collide with FUSE names.
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
@@ -543,10 +545,20 @@ int runGates(const char* selfExe) {
         return EXIT_FAILURE;
     }
 
+    EventPump pump;
     XWindowAttributes attrs{};
-    XSync(dpy, False);
+    bool viewable = false;
+    for (int attempt = 0; attempt < 200; ++attempt) {
+        XSync(dpy, False);
+        if (XGetWindowAttributes(dpy, xid, &attrs) != 0 && attrs.map_state == IsViewable) {
+            viewable = true;
+            break;
+        }
+        pump.processOsEvents();
+        usleep(5000);
+    }
     expectTrue(XGetWindowAttributes(dpy, xid, &attrs) != 0, "X server knows the window");
-    expectTrue(attrs.map_state == IsViewable, "window is mapped (IsViewable)");
+    expectTrue(viewable, "window is mapped (IsViewable)");
     expectTrue(attrs.width == 640 && attrs.height == 360, "window geometry is 640x360");
 
     // --- title read-back -------------------------------------------------------------------
@@ -559,7 +571,6 @@ int runGates(const char* selfExe) {
     expectTrue(fetchName(dpy, xid) == renamed, "setTitle updates WM_NAME");
     expectTrue(std::strcmp(window.description().title, renamed) == 0, "Window stores the new title");
 
-    EventPump pump;
     (void)pumpNative(dpy, pump); // drain map/expose/initial configure
 
     // --- keys ----------------------------------------------------------------------------
@@ -627,6 +638,14 @@ int runGates(const char* selfExe) {
     expectTrue(window.width() == 800u && window.height() == 600u, "Window extent tracks ConfigureNotify");
 
     XResizeWindow(dpy, xid, 500, 400);
+    for (int attempt = 0; attempt < 200; ++attempt) {
+        pump.processOsEvents();
+        XSync(dpy, False);
+        if (XGetWindowAttributes(dpy, xid, &attrs) != 0 && attrs.width == 500 && attrs.height == 400) {
+            break;
+        }
+        usleep(5000);
+    }
     events = pumpNative(dpy, pump);
     resized = findType(events, PlatformEventType::WindowResized);
     expectTrue(countType(events, PlatformEventType::WindowResized, &window) == 1u && resized != nullptr &&
@@ -634,10 +653,17 @@ int runGates(const char* selfExe) {
                "server-side XResizeWindow -> exactly one WindowResized 500x400");
 
     window.resize(1024, 768, &pump);
+    for (int attempt = 0; attempt < 200; ++attempt) {
+        pump.processOsEvents();
+        XSync(dpy, False);
+        if (XGetWindowAttributes(dpy, xid, &attrs) != 0 && attrs.width == 1024 && attrs.height == 768) {
+            break;
+        }
+        usleep(5000);
+    }
     events = pumpNative(dpy, pump);
     expectTrue(countType(events, PlatformEventType::WindowResized, &window) == 1u,
                "Window::resize dispatches exactly one WindowResized (echo is deduplicated)");
-    XSync(dpy, False);
     XGetWindowAttributes(dpy, xid, &attrs);
     expectTrue(attrs.width == 1024 && attrs.height == 768, "Window::resize resizes the real X window");
 

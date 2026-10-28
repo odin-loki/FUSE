@@ -12,6 +12,9 @@
 #include <fuse/core/temp_path.hpp>
 #include <fuse/io/vfs.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/gameplay/loot_table.hpp>
+#include <fuse/platform/io_lane_index.hpp>
+#include <fuse/platform/lane_count.hpp>
 #include <fuse/platform/lifecycle.hpp>
 #include <fuse/platform/power.hpp>
 
@@ -657,9 +660,45 @@ void testTwoIoThreads() {
     expectTrue(vfs.laneStats().ioThreadCount == 2u, "lane runs two dedicated I/O threads");
 }
 
+void testLootTable() {
+    fuse::gameplay::LootTable table;
+    table.add("a", 1.f);
+    table.add("b", 3.f);
+    expectTrue(table.roll(0.f) == "a", "loot table roll(0) is a");
+    expectTrue(table.roll(1.f) == "b", "loot table roll(1) is b");
+
+    fuse::gameplay::LootTable none;
+    none.add("", 4.f);
+    none.add("gone", 0.f);
+    none.add("nope", -2.f);
+    expectTrue(none.roll(0.f).empty(), "empty id and non-positive weights are not selected");
+    expectTrue(none.roll(1.f).empty(), "non-positive loot weights stay unselectable at u=1");
+    expectTrue(fuse::gameplay::LootTable{}.roll(0.5f).empty(), "empty loot table rolls nothing");
+}
+
+void testLaneCountOk() {
+    expectTrue(fuse::platform::lane_count_ok(1), "lane count 1 is in range");
+    expectTrue(fuse::platform::lane_count_ok(8), "lane count 8 is in range");
+    expectTrue(!fuse::platform::lane_count_ok(0), "lane count 0 is out of range");
+    expectTrue(!fuse::platform::lane_count_ok(9), "lane count 9 is out of range");
+}
+
+void testIoLaneOk() {
+    expectTrue(fuse::platform::io_lane_ok(0), "lane 0 is in range");
+    expectTrue(fuse::platform::io_lane_ok(7), "lane 7 is in range");
+    expectTrue(!fuse::platform::io_lane_ok(-1), "lane -1 is out of range");
+    expectTrue(!fuse::platform::io_lane_ok(8), "lane 8 is out of range");
+}
+
 } // namespace
 
 int main() {
+    testLaneCountOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_core io lane tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testIoLaneOk();
     testPriorityOrdering();
     testCancelBeforeRead();
     testCancelDuringReadAndDecode();
@@ -670,6 +709,7 @@ int main() {
     testZeroAllocationSteadyState();
     testReadFileSync();
     testTwoIoThreads();
+    testLootTable();
 
     std::error_code ec;
     std::filesystem::remove_all(laneDir(), ec);

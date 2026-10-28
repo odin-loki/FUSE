@@ -61,6 +61,7 @@ set(_fuse_wp81_scene_inc "${_fuse_wp81_root}/include/fuse/renderer/gpu_scene")
 set(_fuse_wp81_lc_shd "${_fuse_wp81_root}/shaders/lighting")
 set(_fuse_wp81_vsm_shd "${_fuse_wp81_root}/shaders/shadow_vsm")
 set(_fuse_wp81_vsm_inc "${_fuse_wp81_root}/include/fuse/renderer/shadow/vsm")
+set(_fuse_wp81_ddgi_inc "${_fuse_wp81_root}/shaders/ddgi")
 
 file(GLOB _fuse_wp81_shader_files CONFIGURE_DEPENDS "${_fuse_wp81_shd}/*")
 add_library(fuse_volumetric_gpu STATIC
@@ -90,7 +91,8 @@ set(_fuse_wp81_embed_args "")
 set(_fuse_wp81_embed_deps "")
 file(GLOB _fuse_wp81_glsl_includes "${_fuse_wp81_shd}/*.glsl" "${_fuse_wp81_lc_shd}/lc_common.glsl"
      "${_fuse_wp81_vsm_shd}/vsm_shadow.glsl" "${_fuse_wp81_vsm_inc}/vsm_common.glsl" "${_fuse_wp81_common_inc}/bindless.glsl"
-     "${_fuse_wp81_scene_inc}/gpu_scene.glsl")
+     "${_fuse_wp81_scene_inc}/gpu_scene.glsl" "${_fuse_wp81_ddgi_inc}/ddgi_sample.glsl"
+     "${_fuse_wp81_ddgi_inc}/ddgi_common.glsl")
 
 foreach(_row IN LISTS _fuse_wp81_kernels)
     string(REPLACE "|" ";" _entry "${_row}")
@@ -103,7 +105,7 @@ foreach(_row IN LISTS _fuse_wp81_kernels)
             SOURCES "${_fuse_wp81_shd}/${_slang}"
             STAGE compute
             SUFFIX ".fog_${_suffix}"
-            INCLUDE_DIRS "${_fuse_wp81_scene_inc}" "${_fuse_wp81_lc_shd}" "${_fuse_wp81_shd}"
+            INCLUDE_DIRS "${_fuse_wp81_scene_inc}" "${_fuse_wp81_lc_shd}" "${_fuse_wp81_shd}" "${_fuse_wp81_ddgi_inc}"
             # 39001: the bindless arrays alias one binding on purpose.
             FLAGS -warnings-disable 39001 -fp-mode precise
             OUTPUT_DIR "${_fuse_wp81_spv}"
@@ -117,7 +119,7 @@ foreach(_row IN LISTS _fuse_wp81_kernels)
         set(_out "${_fuse_wp81_spv}/fog_${_suffix}.glsl.spv")
         set(_cmds COMMAND "${FUSE_GLSLANG_VALIDATOR}" --target-env vulkan1.3 "-I${_fuse_wp81_common_inc}"
                           "-I${_fuse_wp81_scene_inc}" "-I${_fuse_wp81_lc_shd}" "-I${_fuse_wp81_shd}"
-                          "${_fuse_wp81_shd}/${_glsl}" -o "${_out}")
+                          "-I${_fuse_wp81_ddgi_inc}" "${_fuse_wp81_shd}/${_glsl}" -o "${_out}")
         if(FUSE_SPIRV_VAL)
             list(APPEND _cmds COMMAND "${FUSE_SPIRV_VAL}" --target-env vulkan1.3 "${_out}")
         endif()

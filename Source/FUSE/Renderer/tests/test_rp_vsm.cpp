@@ -47,6 +47,7 @@
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/instance.hpp>
 #include <fuse/renderer/vk/upload_queue.hpp>
+#include <fuse/renderer/vsm_slot.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -107,11 +108,25 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. No allocation. Both mains call this before any GPU skip.
+/// A failure returns non-zero before any later skip.
+[[nodiscard]] int testVsmSlotOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::vsm_slot_ok(0), "vsm_slot_ok(0) is true");
+    expect(fuse::renderer::vsm_slot_ok(15), "vsm_slot_ok(15) is true");
+    expect(!fuse::renderer::vsm_slot_ok(-1), "vsm_slot_ok(-1) is false");
+    expect(!fuse::renderer::vsm_slot_ok(16), "vsm_slot_ok(16) is false");
+    return g_failures == before ? 0 : 1;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int vsmSlotRc = testVsmSlotOk(); vsmSlotRc != 0) {
+        return vsmSlotRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1247,6 +1262,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int vsmSlotRc = testVsmSlotOk(); vsmSlotRc != 0) {
+        return vsmSlotRc;
+    }
     std::string mode = "parity";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {

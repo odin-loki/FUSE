@@ -1,5 +1,7 @@
 #include <fuse/core/init.hpp>
+#include <fuse/physics/forces/hinge_limit.hpp>
 #include <fuse/physics/physics_data.hpp>
+#include <fuse/physics/world/world_cell.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
 #include <fuse/world2d/world_2d.hpp>
 #include <fuse/world3d/scene_object_3d.hpp>
@@ -17,6 +19,15 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testWorldCellOk() {
+    expectTrue(fuse::physics::world_cell_ok(16), "16 m cell is a valid world cell");
+    expectTrue(fuse::physics::world_cell_ok(256), "256 m cell is a valid world cell");
+    expectTrue(fuse::physics::world_cell_ok(1024), "1024 m cell is a valid world cell");
+    expectTrue(!fuse::physics::world_cell_ok(8), "8 m cell is below the world cell floor");
+    expectTrue(!fuse::physics::world_cell_ok(24), "24 m cell is not a power of two");
+    expectTrue(!fuse::physics::world_cell_ok(2048), "2048 m cell exceeds the world cell cap");
 }
 
 void testWorld2DComposesPhysics() {
@@ -95,13 +106,28 @@ void testWorld3DComposesPhysicsWithoutBox2D() {
     expectTrue(world.physics().contactCount() >= 1u, "World3D physics detects ground contact");
 }
 
+void testHingeLimitError() {
+    const fuse::physics::HingeLimit limit{-0.5f, 0.5f};
+
+    const fuse::physics::HingeError inside = fuse::physics::hinge_limit_error(0.f, limit);
+    expectTrue(!inside.active && inside.correction == 0.f, "angle 0 inside hinge limit is inactive");
+
+    const fuse::physics::HingeError above = fuse::physics::hinge_limit_error(1.f, limit);
+    expectTrue(above.active && above.correction == -0.5f, "angle 1 yields hinge correction -0.5");
+
+    const fuse::physics::HingeError below = fuse::physics::hinge_limit_error(-1.f, limit);
+    expectTrue(below.active && below.correction == 0.5f, "angle -1 yields hinge correction 0.5");
+}
+
 } // namespace
 
 int main() {
     fuse::core::initialize();
+    testWorldCellOk();
     testWorld2DComposesPhysics();
     testWorld2DCollisionLayerFiltering();
     testWorld3DComposesPhysicsWithoutBox2D();
+    testHingeLimitError();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

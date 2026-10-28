@@ -10,6 +10,7 @@
 #include <fuse/renderer/deferred/gbuffer.hpp>
 #include <fuse/renderer/material/brdf.hpp>
 #include <fuse/renderer/material/material.hpp>
+#include <fuse/renderer/material/material_id.hpp>
 #include <fuse/renderer/material/material_system.hpp>
 #include <fuse/renderer/material/procedural_materials.hpp>
 #include <fuse/renderer/resource_manager.hpp>
@@ -980,9 +981,23 @@ void testMaterialSsbo1000AndEmissive() {
     bindless.destroy(*bootstrap->device());
 }
 
+// CPU gate. Runs before any GPU or device skip and does not allocate.
+void testMaterialIdOk() {
+    expectTrue(material_id_ok(0), "material_id_ok(0) is true");
+    expectTrue(material_id_ok(65535), "material_id_ok(65535) is true");
+    expectTrue(!material_id_ok(-1), "material_id_ok(-1) is false");
+    expectTrue(!material_id_ok(65536), "material_id_ok(65536) is false");
+}
+
 } // namespace
 
 int main() {
+    testMaterialIdOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b5_gbuffer_materials_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     std::printf("[B5 gate] G-buffer octahedral normals\n");

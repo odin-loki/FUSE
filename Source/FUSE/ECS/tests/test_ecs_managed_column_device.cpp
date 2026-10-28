@@ -20,6 +20,8 @@
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/transform.hpp>
+#include <fuse/ecs/device_column.hpp>
+#include <fuse/ecs/device_stride.hpp>
 #include <fuse/ecs/registry.hpp>
 
 #if defined(FUSE_HAS_CUDA)
@@ -48,7 +50,6 @@ using fuse::usize;
 namespace ecs = fuse::ecs;
 namespace gate = fuse::ecs_gate;
 
-#if defined(FUSE_HAS_CUDA)
 int g_failures = 0;
 
 void expectTrue(bool condition, const char* message) {
@@ -58,6 +59,37 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits 1 instead of 77.
+int testDeviceStrideOk() {
+    const int before = g_failures;
+    expectTrue(ecs::device_stride_ok(4), "device_stride_ok(4) is true");
+    expectTrue(ecs::device_stride_ok(16), "device_stride_ok(16) is true");
+    expectTrue(ecs::device_stride_ok(256), "device_stride_ok(256) is true");
+    expectTrue(!ecs::device_stride_ok(2), "device_stride_ok(2) is false");
+    expectTrue(!ecs::device_stride_ok(6), "device_stride_ok(6) is false");
+    expectTrue(!ecs::device_stride_ok(512), "device_stride_ok(512) is false");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testDeviceStrideOk\n");
+        return EXIT_FAILURE;
+    }
+    return 0;
+}
+
+/// CPU gate. Must run before any GPU skip; a failure exits 1 instead of 77.
+int testDeviceColumnOk() {
+    const int before = g_failures;
+    expectTrue(ecs::device_column_ok(1u), "device_column_ok(1) is true");
+    expectTrue(ecs::device_column_ok(65536u), "device_column_ok(65536) is true");
+    expectTrue(!ecs::device_column_ok(0u), "device_column_ok(0) is false");
+    expectTrue(!ecs::device_column_ok(65537u), "device_column_ok(65537) is false");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testDeviceColumnOk\n");
+        return EXIT_FAILURE;
+    }
+    return 0;
+}
+
+#if defined(FUSE_HAS_CUDA)
 struct DeviceTally {
     unsigned long long rows;
     unsigned long long matches;
@@ -114,6 +146,12 @@ cudaError_t readAllChunks(ecs::Registry& registry, u32* entityIndex, DeviceTally
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int strideRc = testDeviceStrideOk()) {
+        return strideRc;
+    }
+    if (const int columnRc = testDeviceColumnOk()) {
+        return columnRc;
+    }
     const bool corrupt = argc > 1 && std::strcmp(argv[1], "--corrupt") == 0;
     const bool probe = argc > 1 && std::strcmp(argv[1], "--probe") == 0;
 #if !defined(FUSE_HAS_CUDA)

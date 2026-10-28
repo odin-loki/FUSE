@@ -1,8 +1,11 @@
 #include <fuse/animation/animator.hpp>
 #include <fuse/animation/blend_tree.hpp>
 #include <fuse/animation/clip.hpp>
+#include <fuse/animation/clip_time.hpp>
 #include <fuse/animation/ik_solver.hpp>
+#include <fuse/animation/loop_phase.hpp>
 #include <fuse/animation/retarget.hpp>
+#include <fuse/animation/sample_rate.hpp>
 #include <fuse/animation/skinning.hpp>
 #include <fuse/jobs/cuda_jobs.hpp>
 #include <fuse/animation/skeleton.hpp>
@@ -11,6 +14,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <memory>
 
 namespace {
@@ -28,6 +32,37 @@ void expectNear(fuse::f32 actual, fuse::f32 expected, fuse::f32 epsilon, const c
     if (std::fabs(actual - expected) > epsilon) {
         std::fprintf(stderr, "FAIL: %s (expected %.4f, got %.4f)\n", message, expected, actual);
         ++g_failures;
+    }
+}
+
+void expectQuatEqual(const fuse::animation::quat& actual,
+                     const fuse::animation::quat& expected,
+                     const char* message) {
+    if (actual.x != expected.x || actual.y != expected.y || actual.z != expected.z || actual.w != expected.w) {
+        std::fprintf(stderr, "FAIL: %s (expected %.6f %.6f %.6f %.6f, got %.6f %.6f %.6f %.6f)\n", message,
+                     expected.x, expected.y, expected.z, expected.w, actual.x, actual.y, actual.z, actual.w);
+        ++g_failures;
+    }
+}
+
+void expectQuatNear(const fuse::animation::quat& actual, fuse::f32 x, fuse::f32 y, fuse::f32 z, fuse::f32 w,
+                    fuse::f32 epsilon, const char* message) {
+    if (std::fabs(actual.x - x) > epsilon || std::fabs(actual.y - y) > epsilon || std::fabs(actual.z - z) > epsilon ||
+        std::fabs(actual.w - w) > epsilon) {
+        std::fprintf(stderr, "FAIL: %s (expected %.4f %.4f %.4f %.4f, got %.4f %.4f %.4f %.4f)\n", message, x, y, z,
+                     w, actual.x, actual.y, actual.z, actual.w);
+        ++g_failures;
+    }
+}
+
+void expectMat4Equal(const fuse::animation::mat4& actual, const fuse::animation::mat4& expected, const char* message) {
+    for (fuse::u32 index = 0; index < 16u; ++index) {
+        if (actual.data[index] != expected.data[index]) {
+            std::fprintf(stderr, "FAIL: %s (element %u expected %.6f, got %.6f)\n", message, index,
+                         expected.data[index], actual.data[index]);
+            ++g_failures;
+            return;
+        }
     }
 }
 
@@ -100,6 +135,12 @@ fuse::animation::Skeleton makeRetargetTargetSkeleton() {
     skel.bones.push_back(prop);
     skel.bone_count = 3;
     return skel;
+}
+
+fuse::animation::quat quatFromAxisAngle(fuse::f32 x, fuse::f32 y, fuse::f32 z, fuse::f32 radians) {
+    const fuse::f32 half = radians * 0.5f;
+    const fuse::f32 sine = std::sin(half);
+    return {x * sine, y * sine, z * sine, std::cos(half)};
 }
 
 fuse::animation::AnimationClip makePositionClip(fuse::u32 boneIndex, fuse::f32 localY) {
@@ -376,6 +417,39 @@ void testFabrikConverges() {
     const fuse::f32 dz = end.z - chain.target.z;
     const fuse::f32 error = std::sqrt(dx * dx + dy * dy + dz * dz);
     expectTrue(error < 0.25f, "FABRIK moves end effector toward target");
+}
+
+void testFabrikJointAngleLimits() {
+    const fuse::animation::Skeleton skel = makeThreeBoneSkeleton();
+    fuse::animation::Pose unlimited = fuse::animation::Pose::make_bind_pose(skel);
+    fuse::animation::Pose limited = unlimited;
+
+    fuse::animation::FABRIKChain chain;
+    chain.bone_indices = {0, 1, 2};
+    chain.target = {-1.5f, 0.5f, 0.f, 0.f};
+    chain.max_iterations = 12;
+    chain.reshape_warm_start = false;
+    chain.max_angle_deg = 179.f;
+
+    fuse::animation::FABRIKChain tight = chain;
+    tight.max_angle_deg = 35.f;
+
+    expectTrue(chain.solve(unlimited, skel), "FABRIK unlimited solve");
+    expectTrue(tight.solve(limited, skel), "FABRIK limited solve");
+
+    const auto end_error = [](const fuse::animation::Pose& pose, const fuse::animation::vec3& target) {
+        const fuse::animation::vec3 end = {pose.bone_world_transforms[2].data[12],
+                                           pose.bone_world_transforms[2].data[13],
+                                           pose.bone_world_transforms[2].data[14], 0.f};
+        const fuse::f32 dx = end.x - target.x;
+        const fuse::f32 dy = end.y - target.y;
+        const fuse::f32 dz = end.z - target.z;
+        return std::sqrt(dx * dx + dy * dy + dz * dz);
+    };
+
+    const fuse::f32 unlimitedError = end_error(unlimited, chain.target);
+    const fuse::f32 limitedError = end_error(limited, chain.target);
+    expectTrue(limitedError > unlimitedError + 0.05f, "joint angle cap prevents tight fold toward target");
 }
 
 void testSkinningCpuPath() {
@@ -961,6 +1035,209 @@ void testRetargetTranslationScale() {
     fuse::animation::PoseSoA targetPose = fuse::animation::PoseSoA::from_bind_pose(skel);
     map.apply_pose_soa(sourcePose, skel, targetPose);
     expectNear(targetPose.local_positions[1].y, 4.f, 1e-4f, "retarget translation scale halves mapped translation");
+}
+
+void testRetargetIdentityRotationOffset() {
+    const fuse::animation::Skeleton source = makeTwoBoneSkeleton();
+    const fuse::animation::Skeleton target = makeRetargetTargetSkeleton();
+    const fuse::animation::quat identity = {0.f, 0.f, 0.f, 1.f};
+
+    const fuse::animation::RetargetMap byName = fuse::animation::RetargetMap::build_by_name(source, target);
+    expectTrue(byName.mapped_bone_count() == 2u, "retarget by-name still pairs shared bones");
+    expectQuatEqual(byName.bone_map[0].rotation_offset, identity, "build_by_name stores an identity rotation offset");
+    expectQuatEqual(byName.bone_map[1].rotation_offset, identity, "build_by_name stores identity offsets on every pair");
+
+    fuse::animation::RetargetMap map = fuse::animation::RetargetMap::build_identity(source);
+    expectQuatEqual(map.bone_map[0].rotation_offset, identity, "build_identity stores an identity rotation offset");
+    expectQuatEqual(map.bone_map[1].rotation_offset, identity, "build_identity stores identity offsets on every bone");
+
+    fuse::animation::RetargetMap manual{};
+    manual.source_bone_count = source.bone_count;
+    manual.target_bone_count = source.bone_count;
+    expectTrue(manual.add_bone_mapping(0, 0), "add_bone_mapping default offset is accepted");
+    expectQuatEqual(manual.bone_map[0].rotation_offset, identity,
+                    "add_bone_mapping defaults the rotation offset to identity");
+
+    fuse::animation::PoseSoA sourcePose = fuse::animation::PoseSoA::from_bind_pose(source);
+    sourcePose.local_rotations[0] = quatFromAxisAngle(0.f, 1.f, 0.f, 1.2f);
+    sourcePose.local_rotations[1] = {0.f, 0.2f, 0.f, 0.8f};
+    sourcePose.local_positions[1] = {1.f, 6.f, -2.f, 0.f};
+    sourcePose.local_scales[0] = {2.f, 3.f, 4.f, 0.f};
+    sourcePose.compute_world_transforms(source);
+
+    fuse::animation::PoseSoA targetPose{};
+    map.apply_pose_soa(sourcePose, source, targetPose);
+    expectQuatEqual(targetPose.local_rotations[0], sourcePose.local_rotations[0],
+                    "identity offset copies the source local rotation");
+    expectQuatEqual(targetPose.local_rotations[1], sourcePose.local_rotations[1],
+                    "identity offset preserves a non-unit source rotation exactly");
+    expectNear(targetPose.local_positions[1].x, 1.f, 1e-4f, "identity offset copies local translation x");
+    expectNear(targetPose.local_positions[1].y, 6.f, 1e-4f, "identity offset copies local translation y");
+    expectNear(targetPose.local_positions[1].z, -2.f, 1e-4f, "identity offset copies local translation z");
+    expectNear(targetPose.local_scales[0].x, 2.f, 1e-4f, "identity offset copies local scale");
+    expectMat4Equal(targetPose.bone_world_transforms[0], sourcePose.bone_world_transforms[0],
+                    "identity offset preserves the root world transform");
+    expectMat4Equal(targetPose.bone_world_transforms[1], sourcePose.bone_world_transforms[1],
+                    "identity offset preserves the child world transform");
+
+    map.bone_map[0].rotation_offset = {0.f, 0.f, 0.f, 2.f};
+    map.bone_map[1].rotation_offset = {0.f, 0.f, 0.f, -2.f};
+    map.apply_pose_soa(sourcePose, source, targetPose);
+    expectQuatEqual(targetPose.local_rotations[0], sourcePose.local_rotations[0],
+                    "a scalar multiple of identity normalizes to identity and copies the source rotation");
+    expectQuatEqual(targetPose.local_rotations[1], sourcePose.local_rotations[1],
+                    "a negative scalar offset normalizes to identity and copies the source rotation");
+
+    fuse::animation::Pose sourceAoS = fuse::animation::Pose::make_bind_pose(source);
+    sourceAoS.bone_world_transforms[0] = fuse::animation::mat4_from_trs(
+        {1.5f, -2.f, 0.25f, 0.f}, quatFromAxisAngle(0.f, 1.f, 0.f, 0.7f), {2.f, 0.5f, 3.f, 0.f});
+    sourceAoS.bone_world_transforms[1].data[13] = 6.f;
+    map.bone_map[0].rotation_offset = identity;
+    map.bone_map[1].rotation_offset = identity;
+    fuse::animation::Pose targetAoS{};
+    map.apply_pose(sourceAoS, source, targetAoS);
+    expectMat4Equal(targetAoS.bone_world_transforms[0], sourceAoS.bone_world_transforms[0],
+                    "identity offset copies the source world matrix exactly");
+    expectMat4Equal(targetAoS.bone_world_transforms[1], sourceAoS.bone_world_transforms[1],
+                    "identity offset copies every mapped world matrix exactly");
+
+    map.bone_map[0].rotation_offset = {0.f, 0.f, 0.f, 2.f};
+    map.apply_pose(sourceAoS, source, targetAoS);
+    expectMat4Equal(targetAoS.bone_world_transforms[0], sourceAoS.bone_world_transforms[0],
+                    "a normalized identity offset leaves the copied world matrix unchanged");
+}
+
+void testRetargetRotationOffset() {
+    const fuse::animation::Skeleton source = makeTwoBoneSkeleton();
+    const fuse::animation::Skeleton target = makeRetargetTargetSkeleton();
+    const fuse::f32 quarterTurn = 3.14159265f * 0.5f;
+    const fuse::animation::quat sourceRot = quatFromAxisAngle(1.f, 0.f, 0.f, quarterTurn);
+    const fuse::animation::quat offset = quatFromAxisAngle(0.f, 1.f, 0.f, quarterTurn);
+    const fuse::animation::quat bindRotation = {0.f, 0.f, 0.f, 1.f};
+
+    fuse::animation::RetargetMap map{};
+    map.source_bone_count = source.bone_count;
+    map.target_bone_count = target.bone_count;
+    expectTrue(map.add_bone_mapping(0, 0), "retarget rotation offset map accepts the root");
+    expectTrue(map.add_bone_mapping(1, 1, 1.f, offset), "retarget rotation offset map accepts a 90-degree offset");
+    expectQuatEqual(map.bone_map[1].rotation_offset, offset,
+                    "add_bone_mapping stores the rotation offset before normalization");
+
+    fuse::animation::PoseSoA sourcePose = fuse::animation::PoseSoA::from_bind_pose(source);
+    sourcePose.local_rotations[1] = sourceRot;
+    sourcePose.local_positions[1] = {0.f, 5.f, 0.f, 0.f};
+    sourcePose.local_scales[1] = {2.f, 3.f, 4.f, 0.f};
+    sourcePose.compute_world_transforms(source);
+
+    fuse::animation::PoseSoA targetPose{};
+    map.apply_pose_soa(sourcePose, target, targetPose);
+    expectQuatEqual(targetPose.local_rotations[0], sourcePose.local_rotations[0],
+                    "an identity offset keeps the copied root rotation");
+    // Parent-local product is offset * source. 90° about Y, applied after 90° about X, is
+    // (0.5, 0.5, -0.5, 0.5). The opposite order, source * offset, is (0.5, 0.5, +0.5, 0.5).
+    expectQuatNear(targetPose.local_rotations[1], 0.5f, 0.5f, -0.5f, 0.5f, 1e-4f,
+                   "90-degree offset composes as offset * source on the mapped bone");
+    expectTrue(std::fabs(targetPose.local_rotations[1].z - sourceRot.z) > 0.2f,
+               "90-degree offset changes the mapped bone rotation");
+    expectNear(targetPose.local_positions[1].y, 5.f, 1e-4f, "rotation offset leaves mapped translation unchanged");
+    expectNear(targetPose.local_scales[1].y, 3.f, 1e-4f, "rotation offset still copies local scale");
+    expectQuatEqual(targetPose.local_rotations[2], bindRotation,
+                    "90-degree offset leaves the unmapped bone rotation at bind");
+    expectNear(targetPose.local_positions[2].x, 2.f, 1e-4f,
+               "90-degree offset leaves the unmapped bone translation at bind");
+    expectNear(targetPose.bone_world_transforms[2].data[12], 2.f, 1e-4f,
+               "90-degree offset leaves the unmapped bone world translation at bind");
+
+    map.bone_map[1].rotation_offset = {offset.x * 3.f, offset.y * 3.f, offset.z * 3.f, offset.w * 3.f};
+    map.apply_pose_soa(sourcePose, target, targetPose);
+    expectQuatNear(targetPose.local_rotations[1], 0.5f, 0.5f, -0.5f, 0.5f, 1e-4f,
+                   "a non-unit rotation offset is normalized before it is applied");
+
+    fuse::animation::Pose sourceAoS = fuse::animation::Pose::make_bind_pose(source);
+    sourceAoS.bone_world_transforms[1] =
+        fuse::animation::mat4_from_trs({0.f, 5.f, 0.f, 0.f}, sourceRot, {1.f, 1.f, 1.f, 0.f});
+    map.bone_map[1].rotation_offset = offset;
+    fuse::animation::Pose targetAoS{};
+    map.apply_pose(sourceAoS, target, targetAoS);
+    expectMat4Equal(targetAoS.bone_world_transforms[0], sourceAoS.bone_world_transforms[0],
+                    "identity offset leaves the unmapped-offset root world matrix unchanged");
+    expectNear(targetAoS.bone_world_transforms[1].data[13], 5.f, 1e-4f,
+               "apply_pose rotation offset keeps the copied translation");
+    expectNear(targetAoS.bone_world_transforms[1].data[0], 0.f, 1e-4f,
+               "apply_pose 90-degree offset changes the mapped bone basis");
+    expectNear(targetAoS.bone_world_transforms[1].data[2], -1.f, 1e-4f,
+               "apply_pose composes the offset in the parent frame");
+    expectNear(targetAoS.bone_world_transforms[1].data[4], 1.f, 1e-4f,
+               "apply_pose 90-degree offset writes the composed rotation");
+    const fuse::animation::Pose targetBind = fuse::animation::Pose::make_bind_pose(target);
+    expectMat4Equal(targetAoS.bone_world_transforms[2], targetBind.bone_world_transforms[2],
+                    "apply_pose 90-degree offset leaves the unmapped bone at bind");
+}
+
+void testRetargetRotationOffsetTranslationScale() {
+    const fuse::animation::Skeleton source = makeTwoBoneSkeleton();
+    const fuse::animation::Skeleton target = makeRetargetTargetSkeleton();
+    const fuse::f32 quarterTurn = 3.14159265f * 0.5f;
+    const fuse::animation::quat sourceRot = quatFromAxisAngle(1.f, 0.f, 0.f, quarterTurn);
+    const fuse::animation::quat offset = quatFromAxisAngle(0.f, 1.f, 0.f, quarterTurn);
+
+    fuse::animation::RetargetMap map{};
+    map.source_bone_count = source.bone_count;
+    map.target_bone_count = target.bone_count;
+    expectTrue(map.add_bone_mapping(0, 0), "translation-scale retarget maps the root");
+    expectTrue(map.add_bone_mapping(1, 1, 0.5f, offset),
+               "translation-scale retarget maps the child with scale and a 90-degree offset");
+
+    fuse::animation::PoseSoA sourcePose = fuse::animation::PoseSoA::from_bind_pose(source);
+    sourcePose.local_positions[0] = {3.f, 1.f, 0.f, 0.f};
+    sourcePose.local_positions[1] = {4.f, 8.f, -2.f, 0.f};
+    sourcePose.local_rotations[1] = sourceRot;
+    sourcePose.compute_world_transforms(source);
+
+    fuse::animation::PoseSoA targetPose{};
+    map.apply_pose_soa(sourcePose, target, targetPose);
+    expectNear(targetPose.local_positions[0].x, 3.f, 1e-4f, "unscaled mapped bone keeps its translation");
+    expectNear(targetPose.local_positions[0].y, 1.f, 1e-4f, "unscaled mapped bone keeps its translation y");
+    expectNear(targetPose.local_positions[1].x, 2.f, 1e-4f, "translation scale still scales the mapped x axis");
+    expectNear(targetPose.local_positions[1].y, 4.f, 1e-4f, "translation scale still scales the mapped y axis");
+    expectNear(targetPose.local_positions[1].z, -1.f, 1e-4f, "translation scale still scales the mapped z axis");
+    expectQuatNear(targetPose.local_rotations[1], 0.5f, 0.5f, -0.5f, 0.5f, 1e-4f,
+                   "translation scale still applies alongside the rotation offset");
+    expectNear(targetPose.local_positions[2].x, 2.f, 1e-4f, "translation scale leaves the unmapped bone at bind");
+    expectQuatEqual(targetPose.local_rotations[2], {0.f, 0.f, 0.f, 1.f},
+                    "translation scale leaves the unmapped bone rotation at bind");
+}
+
+void testRetargetRejectsNonFiniteRotationOffset() {
+    const fuse::f32 nan = std::numeric_limits<fuse::f32>::quiet_NaN();
+    const fuse::f32 inf = std::numeric_limits<fuse::f32>::infinity();
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+
+    fuse::animation::RetargetMap map{};
+    map.source_bone_count = skel.bone_count;
+    map.target_bone_count = skel.bone_count;
+    expectTrue(!map.add_bone_mapping(0, 0, 1.f, {nan, 0.f, 0.f, 1.f}),
+               "add_bone_mapping rejects a NaN rotation offset");
+    expectTrue(map.mapped_bone_count() == 0u, "a rejected rotation offset is not stored");
+    expectTrue(!map.add_bone_mapping(0, 0, 1.f, {0.f, inf, 0.f, 1.f}),
+               "add_bone_mapping rejects an infinite rotation offset");
+    expectTrue(!map.add_bone_mapping(0, 0, 1.f, {0.f, 0.f, 0.f, -inf}),
+               "add_bone_mapping rejects a non-finite scalar rotation offset");
+    expectTrue(map.add_bone_mapping(0, 0), "a finite identity offset is accepted after a rejection");
+    expectTrue(map.add_bone_mapping(1, 1), "a second finite offset is accepted");
+    expectTrue(map.is_valid(), "finite rotation offsets leave the retarget map valid");
+
+    map.bone_map[1].rotation_offset.w = nan;
+    expectTrue(!map.is_valid(), "a non-finite rotation offset makes the retarget map invalid");
+
+    fuse::animation::PoseSoA sourcePose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    fuse::animation::PoseSoA targetPose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    map.apply_pose_soa(sourcePose, skel, targetPose);
+    expectTrue(targetPose.bone_count == 0u, "apply_pose_soa clears output when a rotation offset is non-finite");
+
+    fuse::animation::Pose targetAoS = fuse::animation::Pose::make_bind_pose(skel);
+    map.apply_pose(sourcePose.to_pose(), skel, targetAoS);
+    expectTrue(targetAoS.bone_count == 0u, "apply_pose clears output when a rotation offset is non-finite");
 }
 
 void testTwoBoneMaxReachHelper() {
@@ -2261,10 +2538,45 @@ void testAnimatorTick() {
     expectTrue(animator.current_pose.bone_count == 2u, "animator stores pose");
 }
 
+void testLoopPhase() {
+    constexpr fuse::f32 kEps = 1e-5f;
+    expectNear(fuse::animation::loop_phase(1.5f, 1.f), 0.5f, kEps, "loop_phase(1.5, 1) is 0.5");
+    expectNear(fuse::animation::loop_phase(-0.25f, 1.f), 0.75f, kEps, "loop_phase(-0.25, 1) is 0.75");
+    expectNear(fuse::animation::loop_phase(1.f, 0.f), 0.f, kEps, "loop_phase(1, 0) is 0");
+}
+
+void testSampleRateOk() {
+    expectTrue(fuse::animation::sample_rate_ok(30), "30 Hz is a clip sample rate");
+    expectTrue(fuse::animation::sample_rate_ok(60), "60 Hz is a clip sample rate");
+    expectTrue(!fuse::animation::sample_rate_ok(24), "24 Hz is not a clip sample rate");
+    expectTrue(!fuse::animation::sample_rate_ok(0), "0 Hz is not a clip sample rate");
+}
+
+void testWrapClipTime() {
+    constexpr fuse::f32 kEps = 1e-5f;
+    expectNear(fuse::animation::wrap_clip_time(2.5f, 1.f), 0.5f, kEps, "wrap 2.5s of a 1s clip");
+    expectNear(fuse::animation::wrap_clip_time(-0.25f, 1.f), 0.75f, kEps, "negative time wraps upward");
+    expectNear(fuse::animation::wrap_clip_time(0.f, 1.f), 0.f, kEps, "zero time stays at the start");
+    expectNear(fuse::animation::wrap_clip_time(1.f, 1.f), 0.f, kEps, "time at duration wraps to zero");
+    expectNear(fuse::animation::wrap_clip_time(0.5f, 0.f), 0.f, kEps, "zero duration returns zero");
+    expectNear(fuse::animation::wrap_clip_time(0.5f, -2.f), 0.f, kEps, "negative duration returns zero");
+    expectNear(fuse::animation::wrap_clip_time(std::numeric_limits<fuse::f32>::infinity(), 1.f), 0.f, kEps,
+               "non-finite time returns zero");
+    expectNear(fuse::animation::wrap_clip_time(0.5f, std::numeric_limits<fuse::f32>::quiet_NaN()), 0.f, kEps,
+               "non-finite duration returns zero");
+}
+
 } // namespace
 
 int main() {
+    testLoopPhase();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_animation_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testSampleRateOk();
     fuse::core::initialize();
+    testWrapClipTime();
     testSkeletonHierarchy();
     testPoseSoAHierarchy();
     testClipSampling();
@@ -2299,6 +2611,10 @@ int main() {
     testRetargetIdentity();
     testRetargetFindTargetBone();
     testRetargetTranslationScale();
+    testRetargetIdentityRotationOffset();
+    testRetargetRotationOffset();
+    testRetargetRotationOffsetTranslationScale();
+    testRetargetRejectsNonFiniteRotationOffset();
     testTwoBoneMaxReachHelper();
     testNormalizeIkPoleVector();
     testTwoBoneIKSolveHelpers();
@@ -2366,6 +2682,7 @@ int main() {
     testStateMachineInvalidTransitionIgnored();
     testStateMachineNoInterruptDuringCrossfade();
     testFabrikConverges();
+    testFabrikJointAngleLimits();
     testSkinningCpuPath();
     testAnimatorTick();
     fuse::core::shutdown();

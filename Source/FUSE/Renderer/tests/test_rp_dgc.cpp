@@ -28,6 +28,7 @@
 //
 // Exit 77 = skip (stub build, no ICD / validation layer, no kernel built, backend unsupported).
 #include <fuse/renderer/culling/instance_culler.hpp>
+#include <fuse/renderer/dgc_batch.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
@@ -98,11 +99,22 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+void testDgcBatchOk() {
+    expect(fuse::renderer::dgc_batch_ok(1), "dgc_batch_ok(1) is true");
+    expect(fuse::renderer::dgc_batch_ok(256), "dgc_batch_ok(256) is true");
+    expect(!fuse::renderer::dgc_batch_ok(0), "dgc_batch_ok(0) is false");
+    expect(!fuse::renderer::dgc_batch_ok(257), "dgc_batch_ok(257) is false");
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    testDgcBatchOk();
+    if (g_failures != 0) {
+        return 1;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1405,6 +1417,10 @@ int runZeroAlloc(Context& ctx, bool dgcChain) {
 } // namespace
 
 int main(int argc, char** argv) {
+    testDgcBatchOk();
+    if (g_failures != 0) {
+        return 1;
+    }
     std::string mode = "parity";
     std::string backend = "set";
     bool forceValidate = false;

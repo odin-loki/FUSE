@@ -19,6 +19,7 @@
 // validation layer installed any validation warning or error fails the test.
 //
 // Exit 77 (skip) in the stub build, off Linux, or without the Lavapipe ICD.
+#include <fuse/renderer/device_index.hpp>
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/instance.hpp>
 
@@ -43,6 +44,21 @@
 namespace {
 
 constexpr int kSkip = 77;
+
+/// CPU gate. No allocation. main calls this before any device skip.
+/// A failure returns non-zero before any later skip.
+int testDeviceIndexOk() {
+    const bool atZero = fuse::renderer::device_index_ok(0);
+    const bool atFifteen = fuse::renderer::device_index_ok(15);
+    const bool below = fuse::renderer::device_index_ok(-1);
+    const bool above = fuse::renderer::device_index_ok(16);
+    if (atZero && atFifteen && !below && !above) {
+        return 0;
+    }
+    std::fprintf(stderr, "FAIL: testDeviceIndexOk (0=%d, 15=%d, -1=%d, 16=%d)\n", static_cast<int>(atZero),
+                 static_cast<int>(atFifteen), static_cast<int>(below), static_cast<int>(above));
+    return 1;
+}
 
 #if defined(FUSE_VULKAN_BACKEND) && defined(__linux__)
 
@@ -497,6 +513,9 @@ int run(const char* layerDir) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int deviceIndexRc = testDeviceIndexOk()) {
+        return deviceIndexRc;
+    }
 #if defined(FUSE_VULKAN_BACKEND) && defined(__linux__)
     const char* layerDir = nullptr;
     for (int i = 1; i < argc; ++i) {
@@ -512,3 +531,35 @@ int main(int argc, char** argv) {
     return kSkip;
 #endif
 }
+
+#include <fuse/renderer/device/device_score.hpp>
+
+namespace {
+
+/// Presentable discrete (1 GiB) outranks presentable integrated (8 GiB).
+/// A non-presentable discrete GPU scores 0.
+/// Registered before main so the check still runs when the Vulkan gate skips.
+void test_score_device_discrete_outranks_integrated() {
+    constexpr std::uint64_t kGiB = 1024ull * 1024ull * 1024ull;
+    const int discrete1GiB = fuse::renderer::score_device(fuse::renderer::DeviceClass::Discrete, 1ull * kGiB, true);
+    const int integrated8GiB =
+        fuse::renderer::score_device(fuse::renderer::DeviceClass::Integrated, 8ull * kGiB, true);
+    const int notPresentable =
+        fuse::renderer::score_device(fuse::renderer::DeviceClass::Discrete, 8ull * kGiB, false);
+    if (discrete1GiB > integrated8GiB && notPresentable == 0) {
+        return;
+    }
+    std::fprintf(stderr,
+                 "FAIL: test_score_device_discrete_outranks_integrated "
+                 "(discrete 1GiB=%d, integrated 8GiB=%d, non-presentable discrete=%d)\n",
+                 discrete1GiB, integrated8GiB, notPresentable);
+    std::exit(1);
+}
+
+struct ScoreDeviceTestRegistration {
+    ScoreDeviceTestRegistration() { test_score_device_discrete_outranks_integrated(); }
+};
+
+const ScoreDeviceTestRegistration g_scoreDeviceTestRegistration{};
+
+} // namespace

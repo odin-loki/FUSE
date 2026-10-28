@@ -1,7 +1,11 @@
 #include <fuse/config.hpp>
 #include <fuse/jobs/worker_count.hpp>
+#include <fuse/math/bezier.hpp>
+#include <fuse/math/vec.hpp>
 #include <fuse/platform/power.hpp>
+#include <fuse/platform/worker_count.hpp>
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 
@@ -21,6 +25,13 @@ void expectEq(fuse::u32 actual, fuse::u32 expected, const char* message) {
         std::fprintf(stderr, "FAIL: %s (expected %u, got %u)\n", message, expected, actual);
         ++g_failures;
     }
+}
+
+void testWorkerCountOk() {
+    expectTrue(fuse::platform::worker_count_ok(1), "one worker");
+    expectTrue(fuse::platform::worker_count_ok(64), "64 workers");
+    expectTrue(!fuse::platform::worker_count_ok(0), "zero workers rejected");
+    expectTrue(!fuse::platform::worker_count_ok(65), "65 workers rejected");
 }
 
 void testDesktopProfile() {
@@ -77,6 +88,18 @@ void testHardCap() {
     expectEq(fuse::jobs::computeWorkerCount(params), 4u, "project hard cap should clamp workers");
 }
 
+void testCubicBezier() {
+    const fuse::math::Vec3 p0{0.f, 0.f, 0.f};
+    const fuse::math::Vec3 p1{2.f / 3.f, 0.f, 0.f};
+    const fuse::math::Vec3 p2{4.f / 3.f, 0.f, 0.f};
+    const fuse::math::Vec3 p3{2.f, 0.f, 0.f};
+    const fuse::math::Vec3 mid = fuse::math::cubic_bezier(p0, p1, p2, p3, 0.5f);
+    expectTrue(std::fabs(mid.x - 1.f) < 1e-4f && std::fabs(mid.y) < 1e-4f && std::fabs(mid.z) < 1e-4f,
+               "cubic bezier midpoint of a colinear segment is the halfway point");
+    const fuse::math::Vec3 start = fuse::math::cubic_bezier(p0, p1, p2, p3, 0.f);
+    expectTrue(start.x == 0.f && start.y == 0.f && start.z == 0.f, "cubic bezier t=0 is p0");
+}
+
 } // namespace
 
 #if FUSE_JOBS_SINGLE_THREAD
@@ -93,6 +116,8 @@ void testSingleThreadMacroForcesZero() {
 #endif
 
 int main() {
+    testWorkerCountOk();
+    testCubicBezier();
 #if FUSE_JOBS_SINGLE_THREAD
     testSingleThreadMacroForcesZero();
 #else

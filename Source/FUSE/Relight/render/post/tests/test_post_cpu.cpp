@@ -19,8 +19,11 @@
 #include <fuse/relight/options/option_manager.hpp>
 #include <fuse/relight/render/pathtrace/pt_gpu.hpp>
 #include <fuse/relight/render/post/composite.hpp>
+#include <fuse/relight/render/post/contrast.hpp>
+#include <fuse/relight/render/post/lift_gamma_gain.hpp>
 #include <fuse/relight/render/post/local_tonemap.hpp>
 #include <fuse/relight/render/post/post_config.hpp>
+#include <fuse/relight/render/post/post_pass.hpp>
 #include <fuse/relight/render/post/post_pipeline.hpp>
 
 #include "pt_reference_kernels.hpp"
@@ -500,9 +503,57 @@ void suiteZeroAlloc() {
     }
 }
 
+void suiteLiftGammaGain() {
+    const math::Vec3 value(0.5f, 0.5f, 0.5f);
+    const math::Vec3 identity = post::applyLiftGammaGain(value, {});
+    check(identity.x == 0.5f && identity.y == 0.5f && identity.z == 0.5f,
+          "lift_gamma_gain identity leaves 0.5 unchanged");
+    post::LiftGammaGain zeroGain;
+    zeroGain.lift = math::Vec3(0.f, 0.f, 0.f);
+    zeroGain.gamma = math::Vec3(1.f, 1.f, 1.f);
+    zeroGain.gain = math::Vec3(0.f, 0.f, 0.f);
+    const math::Vec3 zero = post::applyLiftGammaGain(value, zeroGain);
+    check(zero.x == 0.f && zero.y == 0.f && zero.z == 0.f, "lift_gamma_gain gain 0 and lift 0 yields 0");
+}
+
+void suiteContrast() {
+    check(post::apply_contrast(0.5f, 2.f) == 0.5f, "contrast mid grey stays 0.5");
+    check(post::apply_contrast(1.f, 1.f) == 1.f, "contrast 1 leaves 1 unchanged");
+    check(post::apply_contrast(1.f, 0.f) == 0.5f, "contrast 0 pulls 1 to mid grey");
+    check(post::apply_contrast(1.f, 2.f) == 1.5f, "contrast 2 is not clamped to 1");
+    check(post::apply_contrast(1.f, 4.f) == 1.5f, "contrast above 2 clamps to 2");
+    check(post::apply_contrast(1.f, -1.f) == 0.5f, "contrast below 0 clamps to 0");
+    check(post::apply_contrast(std::nanf(""), 2.f) == 0.f, "non-finite value yields 0");
+    check(post::apply_contrast(1.f, std::nanf("")) == 1.f, "non-finite contrast uses 1");
+}
+
+/// Pass index in [0, 8]. No heap allocation.
+int testPostPassOk() {
+    if (!fuse::relight::post_pass_ok(0)) {
+        std::fprintf(stderr, "FAIL: testPostPassOk: post_pass_ok(0) should be true\n");
+        return 1;
+    }
+    if (!fuse::relight::post_pass_ok(8)) {
+        std::fprintf(stderr, "FAIL: testPostPassOk: post_pass_ok(8) should be true\n");
+        return 1;
+    }
+    if (fuse::relight::post_pass_ok(-1)) {
+        std::fprintf(stderr, "FAIL: testPostPassOk: post_pass_ok(-1) should be false\n");
+        return 1;
+    }
+    if (fuse::relight::post_pass_ok(9)) {
+        std::fprintf(stderr, "FAIL: testPostPassOk: post_pass_ok(9) should be false\n");
+        return 1;
+    }
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int postPassRc = testPostPassOk()) {
+        return postPassRc;
+    }
     opt::setEnvironmentVariable(opt::kDxvkConfEnvVar, "");
     opt::setEnvironmentVariable(opt::kRtxConfEnvVar, "");
     (void)BorrowedStandIns::sceneScaleObject();
@@ -516,7 +567,8 @@ int main(int argc, char** argv) {
     const Suite suites[] = {{"composite", suiteComposite},     {"mip_bias", suiteMipBias},
                             {"options", suiteOptions},         {"upscaler_switch", suiteUpscalerSwitch},
                             {"nan_guard", suiteNanGuard},      {"ltm", suiteLtm},
-                            {"determinism", suiteDeterminism}, {"zero_alloc", suiteZeroAlloc}};
+                            {"determinism", suiteDeterminism}, {"zero_alloc", suiteZeroAlloc},
+                            {"lift_gamma_gain", suiteLiftGammaGain}, {"contrast", suiteContrast}};
     bool ran = false;
     for (const Suite& s : suites) {
         if (suite == "all" || suite == s.name) {

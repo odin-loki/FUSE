@@ -5,6 +5,7 @@
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/project/world_converter.hpp>
+#include <fuse/scene/bind_slot.hpp>
 #include <fuse/scene/serialiser.hpp>
 #include <fuse/scene/wire_runtime_bind.hpp>
 
@@ -29,6 +30,13 @@ std::string writeTempFile(const std::string& path, const std::string& contents) 
     std::ofstream out(path, std::ios::binary);
     out << contents;
     return path;
+}
+
+void testBindSlotOk() {
+    expectTrue(fuse::scene::bind_slot_ok(0), "bind slot 0");
+    expectTrue(fuse::scene::bind_slot_ok(15), "bind slot 15");
+    expectTrue(!fuse::scene::bind_slot_ok(-1), "bind slot -1 rejected");
+    expectTrue(!fuse::scene::bind_slot_ok(16), "bind slot 16 rejected");
 }
 
 void testLegacyTableFromConvertedMission() {
@@ -145,6 +153,7 @@ void testApplyWireBindingsToEcs() {
 } // namespace
 
 int main() {
+    testBindSlotOk();
     fuse::core::initialize();
     testLegacyTableFromConvertedMission();
     testApplyDatablockSpawnBinding();

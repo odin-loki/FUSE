@@ -9,8 +9,10 @@
 //     "screen_space_gi" (one per bounce) stats; Cuda / Auto / VulkanCompute without a device fall back to
 //     CpuParallel with the same surfaces; invalid params are rejected on every backend.
 
+#include <fuse/compute/dispatch_groups.hpp>
 #include <fuse/compute/screen_space_effects.hpp>
 #include <fuse/compute/screen_space_kernels.hpp>
+#include <fuse/compute/ss_kernel.hpp>
 #include <fuse/compute_kernel/parity.hpp>
 #include <fuse/compute_kernel/stats.hpp>
 #include <fuse/core/init.hpp>
@@ -427,9 +429,41 @@ void testStatsAndFallback() {
     scheduler.shutdown();
 }
 
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero and does not continue.
+/// Does not allocate.
+void testDispatchGroups() {
+    expectTrue(compute::dispatch_groups(10, 4) == 3, "dispatch_groups(10, 4) is 3");
+    expectTrue(compute::dispatch_groups(0, 4) == 0, "dispatch_groups(0, 4) is 0");
+    expectTrue(compute::dispatch_groups(10, 3) == 0, "dispatch_groups(10, 3) is 0");
+    expectTrue(compute::dispatch_groups(10, 0) == 0, "dispatch_groups(10, 0) is 0");
+}
+
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero and does not continue.
+/// Does not allocate.
+void testSsKernelOk() {
+    expectTrue(compute::ss_kernel_ok(4), "ss_kernel_ok(4) is true");
+    expectTrue(compute::ss_kernel_ok(16), "ss_kernel_ok(16) is true");
+    expectTrue(compute::ss_kernel_ok(32), "ss_kernel_ok(32) is true");
+    expectTrue(!compute::ss_kernel_ok(2), "ss_kernel_ok(2) is false");
+    expectTrue(!compute::ss_kernel_ok(6), "ss_kernel_ok(6) is false");
+    expectTrue(!compute::ss_kernel_ok(64), "ss_kernel_ok(64) is false");
+}
+
 } // namespace
 
 int main() {
+    testDispatchGroups();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d screen-space kernel parity check(s) failed\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testSsKernelOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d screen-space kernel parity check(s) failed\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
     testBackendParity();
     testStatsAndFallback();

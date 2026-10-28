@@ -6,6 +6,8 @@
 
 #include <fuse/core/temp_path.hpp>
 #include <fuse/relight/options/options.hpp>
+#include <fuse/relight/options/options_range.hpp>
+#include <fuse/relight/options/system_slot.hpp>
 
 #include <filesystem>
 #include <fstream>
@@ -407,9 +409,32 @@ void testEnvironmentOverrideEdgeCases() {
     std::filesystem::remove_all(dir, ec);
 }
 
+void testOptionRangeClamp() {
+    RL_CHECK(clamp_option(1.5f, 0.f, 1.f) == 1.f);
+    RL_CHECK(clamp_option(-2.f, 0.f, 1.f) == 0.f);
+    RL_CHECK(clamp_option(0.5f, 1.f, 0.f) == 0.5f);
+    RL_CHECK(option_enabled(1));
+    RL_CHECK(!option_enabled(0));
+}
+
+// Slots 0 through 15 inclusive are valid. No allocation.
+bool testSystemSlotOk() {
+    const int before = totals().failures;
+    totals().currentTest = "testSystemSlotOk";
+    RL_CHECK(system_slot_ok(0));
+    RL_CHECK(system_slot_ok(15));
+    RL_CHECK(!system_slot_ok(-1));
+    RL_CHECK(!system_slot_ok(16));
+    totals().currentTest = "";
+    return totals().failures == before;
+}
+
 } // namespace
 
 void runSystemTests() {
+    if (!testSystemSlotOk()) {
+        return;
+    }
     OptionSystem::shutdown();
     static const TestCase kCases[] = {
         {"layerStackFromFiles", testLayerStackFromFiles},
@@ -419,6 +444,7 @@ void runSystemTests() {
         {"saveRulesAndIdempotence", testSaveRulesAndIdempotence},
         {"userConfSave", testUserConfSave},
         {"environmentOverrideEdgeCases", testEnvironmentOverrideEdgeCases},
+        {"optionRangeClamp", testOptionRangeClamp},
     };
     runSuite("system", kCases);
 }

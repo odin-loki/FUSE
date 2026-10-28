@@ -1,9 +1,12 @@
 #pragma once
 
 #include <fuse/renderer/deferred/gbuffer.hpp>
+#include <fuse/renderer/deferred/gbuffer_cpu_draw.hpp>
 #include <fuse/renderer/lighting/clustered.hpp>
 #include <fuse/renderer/render_graph.hpp>
 #include <fuse/types.hpp>
+
+#include <vector>
 
 namespace fuse::renderer {
 
@@ -43,6 +46,8 @@ struct DeferredFramePipelineStats {
     u32 vulkanPassCount = 0;
     u32 cudaPassCount = 0;
     u32 barrierCount = 0;
+    /// Records the G-buffer pass read from the CPU draw list on its last execution.
+    u32 gbufferCpuDrawCount = 0;
 };
 
 /// B5.1 deferred pass schedule — populates a RenderGraph with the Phase 5 frame pipeline.
@@ -51,7 +56,10 @@ public:
     explicit DeferredFramePipeline(const DeferredFramePipelineDesc& desc = {});
 
     void resetGraphStorage();
-    void buildGraph(RenderGraph& graph, const GBuffer& gbuffer, ClusteredLightCuller* culler = nullptr);
+    void buildGraph(RenderGraph& graph,
+                    const GBuffer& gbuffer,
+                    ClusteredLightCuller* culler = nullptr,
+                    const std::vector<DeferredGBufferDraw>* gbufferCpuDraws = nullptr);
 
     static const char* passName(DeferredPassId id);
     static u32 passCount() { return static_cast<u32>(DeferredPassId::Count); }

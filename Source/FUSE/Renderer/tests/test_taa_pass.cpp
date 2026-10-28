@@ -1,4 +1,6 @@
 #include <fuse/core/init.hpp>
+#include <fuse/renderer/postprocess/taa_sample.hpp>
+#include <fuse/renderer/postprocess/taa_sample_count.hpp>
 #include <fuse/renderer/render_graph.hpp>
 #include <fuse/renderer/resource_manager.hpp>
 #include <fuse/renderer/taa/taa_history.hpp>
@@ -29,6 +31,33 @@ void expectNear(float value, float expected, float epsilon, const char* message)
         std::fprintf(stderr, "FAIL: %s (got %f, expected %f)\n", message, value, expected);
         ++g_failures;
     }
+}
+
+/// CPU gate. Must run before any GPU skip; a failure exits the process.
+void testTaaSampleCountOk() {
+    expectTrue(fuse::renderer::taa_sample_count_ok(1), "taa_sample_count_ok(1)");
+    expectTrue(fuse::renderer::taa_sample_count_ok(4), "taa_sample_count_ok(4)");
+    expectTrue(fuse::renderer::taa_sample_count_ok(16), "taa_sample_count_ok(16)");
+    expectTrue(!fuse::renderer::taa_sample_count_ok(0), "taa_sample_count_ok(0) rejected");
+    expectTrue(!fuse::renderer::taa_sample_count_ok(3), "taa_sample_count_ok(3) rejected");
+    expectTrue(!fuse::renderer::taa_sample_count_ok(32), "taa_sample_count_ok(32) rejected");
+}
+
+/// CPU gate. Must run before any GPU skip; a failure exits the process.
+void testTaaSampleOk() {
+    expectTrue(fuse::renderer::taa_sample_ok(0, 4), "taa_sample_ok(0, 4)");
+    expectTrue(fuse::renderer::taa_sample_ok(3, 4), "taa_sample_ok(3, 4)");
+    expectTrue(!fuse::renderer::taa_sample_ok(4, 4), "taa_sample_ok(4, 4) rejected");
+    expectTrue(!fuse::renderer::taa_sample_ok(0, 3), "taa_sample_ok(0, 3) rejected");
+    expectTrue(fuse::renderer::taa_sample_ok(0, 2), "taa_sample_ok(0, 2)");
+    expectTrue(fuse::renderer::taa_sample_ok(1, 2), "taa_sample_ok(1, 2)");
+    expectTrue(!fuse::renderer::taa_sample_ok(2, 2), "taa_sample_ok(2, 2) rejected");
+    expectTrue(fuse::renderer::taa_sample_ok(0, 8), "taa_sample_ok(0, 8)");
+    expectTrue(fuse::renderer::taa_sample_ok(7, 8), "taa_sample_ok(7, 8)");
+    expectTrue(!fuse::renderer::taa_sample_ok(8, 8), "taa_sample_ok(8, 8) rejected");
+    expectTrue(!fuse::renderer::taa_sample_ok(-1, 4), "negative taa sample index rejected");
+    expectTrue(!fuse::renderer::taa_sample_ok(0, 1), "taa sample count 1 rejected");
+    expectTrue(!fuse::renderer::taa_sample_ok(0, 16), "taa sample count 16 rejected");
 }
 
 void testHaltonJitterSequence() {
@@ -2462,6 +2491,18 @@ void testTaaPassShouldSkipGuardWrappers() {
 } // namespace
 
 int main() {
+    testTaaSampleCountOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testTaaSampleCountOk\n");
+        return EXIT_FAILURE;
+    }
+
+    testTaaSampleOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testTaaSampleOk\n");
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testHaltonJitterSequence();

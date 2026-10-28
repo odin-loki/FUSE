@@ -25,6 +25,7 @@
 // Exit 77 = skip (stub build, no ICD / validation layer, no shader built, backend unsupported).
 #include <fuse/renderer/geometry/meshlet_builder.hpp>
 #include <fuse/renderer/geometry/meshlet_format.hpp>
+#include <fuse/renderer/gpu_scene.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene_meshlets.hpp>
 #include <fuse/renderer/rg/executor.hpp>
@@ -96,11 +97,25 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. No allocation. Both entry points call this before any GPU skip.
+/// A failure returns non-zero before any later skip.
+[[nodiscard]] int testGpuSceneOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::gpu_scene_ok(0), "gpu_scene_ok(0) is true");
+    expect(fuse::renderer::gpu_scene_ok(3), "gpu_scene_ok(3) is true");
+    expect(!fuse::renderer::gpu_scene_ok(-1), "gpu_scene_ok(-1) is false");
+    expect(!fuse::renderer::gpu_scene_ok(4), "gpu_scene_ok(4) is false");
+    return g_failures == before ? 0 : 1;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int gpuSceneRc = testGpuSceneOk(); gpuSceneRc != 0) {
+        return gpuSceneRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1021,6 +1036,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int gpuSceneRc = testGpuSceneOk(); gpuSceneRc != 0) {
+        return gpuSceneRc;
+    }
     std::string mode = "readback";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {

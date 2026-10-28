@@ -1,5 +1,6 @@
 // B6.2 / B6.6 / B6.13 gates — command system, undo/redo and inspector edit round-trips.
 #include <fuse/core/init.hpp>
+#include <fuse/editor/command_depth.hpp>
 #include <fuse/editor/command_stack.hpp>
 #include <fuse/editor/editor_host.hpp>
 #include <fuse/editor/property_inspector.hpp>
@@ -630,9 +631,17 @@ void testEveryCommandUndoable() {
     registry.destroy();
 }
 
+void testCommandDepthOk() {
+    expectTrue(fuse::editor::command_depth_ok(1), "a command depth of 1 is allowed");
+    expectTrue(fuse::editor::command_depth_ok(512), "a command depth of 512 is the cap");
+    expectTrue(!fuse::editor::command_depth_ok(0), "a command depth of 0 is rejected");
+    expectTrue(!fuse::editor::command_depth_ok(513), "a command depth of 513 is rejected");
+}
+
 } // namespace
 
 int main() {
+    testCommandDepthOk();
     fuse::core::initialize();
 
     testTransformCommandExactRestore();
@@ -656,3 +665,22 @@ int main() {
     std::fprintf(stderr, "fuse_editor_b6_command_gates: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+#include <fuse/editor/undo_depth.hpp>
+
+namespace {
+
+void testUndoStackDepth() {
+    expectTrue(fuse::editor::undo_can_push(99, 100), "depth 99 with limit 100 can push");
+    expectTrue(!fuse::editor::undo_can_push(100, 100), "depth 100 with limit 100 cannot push");
+    expectTrue(fuse::editor::undo_drop_count(105, 100) == 5, "drop count for depth 105 limit 100 is 5");
+}
+
+// Appended gate: runs before main so the existing failure count still reports it.
+struct UndoStackDepthTestHook {
+    UndoStackDepthTestHook() { testUndoStackDepth(); }
+};
+
+[[maybe_unused]] const UndoStackDepthTestHook g_undoStackDepthTestHook{};
+
+} // namespace

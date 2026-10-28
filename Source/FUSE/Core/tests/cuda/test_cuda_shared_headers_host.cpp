@@ -8,6 +8,8 @@
 #include "gria_alpha_gate.hpp"
 #include "shared_layout_asserts.hpp"
 
+#include <fuse/core/cuda_symbol.hpp>
+
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -83,9 +85,37 @@ int checkAlphaContract(const std::vector<AlphaInput>& inputs, const std::vector<
     return failures;
 }
 
+/// Host predicate. No allocation. A failure returns before any device skip.
+int testCudaSymbolOk() {
+    int failures = 0;
+    if (!fuse::core::cuda_symbol_ok("Kernel")) {
+        std::fprintf(stderr, "FAIL [cuda_symbol_ok] Kernel\n");
+        ++failures;
+    }
+    if (fuse::core::cuda_symbol_ok("")) {
+        std::fprintf(stderr, "FAIL [cuda_symbol_ok] empty\n");
+        ++failures;
+    }
+    if (fuse::core::cuda_symbol_ok("1Kernel")) {
+        std::fprintf(stderr, "FAIL [cuda_symbol_ok] 1Kernel\n");
+        ++failures;
+    }
+    if (fuse::core::cuda_symbol_ok("Cuda Kernel")) {
+        std::fprintf(stderr, "FAIL [cuda_symbol_ok] Cuda Kernel\n");
+        ++failures;
+    }
+    return failures;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    const int symbolFailures = testCudaSymbolOk();
+    if (symbolFailures != 0) {
+        std::fprintf(stderr, "fuse_cuda_shared_headers: %d failure(s)\n", symbolFailures);
+        return 1;
+    }
+
     const bool requireDevice = argc > 1 && std::strcmp(argv[1], "--require-device") == 0;
     GateSample samples[kGateSampleCount];
     for (fuse::u32 i = 0; i < kGateSampleCount; ++i) {

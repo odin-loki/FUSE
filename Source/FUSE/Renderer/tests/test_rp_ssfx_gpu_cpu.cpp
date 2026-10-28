@@ -20,6 +20,7 @@
 #include <fuse/compute_kernel/launch.hpp>
 #include <fuse/compute_kernel/stats.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/renderer/ssfx/ssfx_quality.hpp>
 #include <fuse/renderer/ssfx_gpu/ssfx_gpu.hpp>
 #include <fuse/renderer/ssfx_gpu/ssfx_gpu_reference.hpp>
 #include <fuse/ssfx/gtao_kernel.hpp>
@@ -728,9 +729,22 @@ void testApi() {
     expect(!gpu.beginFrame(1, s, ssfx_test::cameraDesc(room.camera), ambient, none), "beginFrame before init fails");
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits the process.
+void testSsfxQualityOk() {
+    expect(fuse::renderer::ssfx_quality_ok(0), "ssfx_quality_ok(0) is true");
+    expect(fuse::renderer::ssfx_quality_ok(2), "ssfx_quality_ok(2) is true");
+    expect(!fuse::renderer::ssfx_quality_ok(-1), "ssfx_quality_ok(-1) is false");
+    expect(!fuse::renderer::ssfx_quality_ok(3), "ssfx_quality_ok(3) is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testSsfxQualityOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testSsfxQualityOk\n");
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     if (all || suite == "layout") {

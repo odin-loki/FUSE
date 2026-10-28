@@ -19,6 +19,7 @@
 // i686 tree: the x86 build of vendored DXVK, with the x64 tree's host).
 
 #include <fuse/relight/bridge/host/d3d9_executor.hpp>
+#include <fuse/relight/bridge/host/d3d9_slot.hpp>
 #include <fuse/relight/bridge/host/link.hpp>
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -40,6 +41,23 @@ using namespace fuse::relight::bridge;
 namespace cmd = schema::cmd;
 
 namespace {
+
+int g_failures = 0;
+
+void expect(bool condition, const char* message) {
+    if (!condition) {
+        std::fprintf(stderr, "FAIL: %s\n", message);
+        ++g_failures;
+    }
+}
+
+/// CPU gate. Must run before any device setup; a failure exits instead of continuing.
+void testD3d9SlotOk() {
+    expect(fuse::relight::d3d9_slot_ok(0), "d3d9_slot_ok(0) is true");
+    expect(fuse::relight::d3d9_slot_ok(3), "d3d9_slot_ok(3) is true");
+    expect(!fuse::relight::d3d9_slot_ok(-1), "d3d9_slot_ok(-1) is false");
+    expect(!fuse::relight::d3d9_slot_ok(4), "d3d9_slot_ok(4) is false");
+}
 
 constexpr uint32_t kWidth = 128, kHeight = 96;
 constexpr uint32_t kD3D = 1, kDevice = 2, kBackBuffer = 3, kReadback = 4, kVB = 5;
@@ -114,6 +132,11 @@ uint32_t triColour(int f) { return 0xFF000000u | (uint32_t(250 - f * 3) << 16) |
 
 int main(int argc, char** argv) {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
+    testD3d9SlotOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testD3d9SlotOk\n");
+        return 1;
+    }
     const std::string scenario = argc > 1 ? argv[1] : "none";
     const std::string dir = host::thisModuleDirectory();
     const std::string d3d9 = dir + "d3d9.dll";  // this architecture's vendored DXVK: the passthrough

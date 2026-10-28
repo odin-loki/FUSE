@@ -1,5 +1,8 @@
 #include <fuse/core/init.hpp>
+#include <fuse/hybrid/compose_layer.hpp>
+#include <fuse/hybrid/composer_layer.hpp>
 #include <fuse/hybrid/hybrid_composer.hpp>
+#include <fuse/hybrid/layer_bit.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
 #include <fuse/world2d/world_2d.hpp>
 #include <fuse/world3d/world_3d.hpp>
@@ -77,9 +80,44 @@ void testDimensionDisableFlags() {
     expectTrue(center == 0, "3D clear skipped when dimension disabled");
 }
 
+void testComposeLayerOk() {
+    expectTrue(fuse::hybrid::compose_layer_ok(0), "layer 0 is a compose layer");
+    expectTrue(fuse::hybrid::compose_layer_ok(7), "layer 7 is a compose layer");
+    expectTrue(!fuse::hybrid::compose_layer_ok(-1), "layer -1 is not a compose layer");
+    expectTrue(!fuse::hybrid::compose_layer_ok(8), "layer 8 is not a compose layer");
+}
+
+void testComposerLayerOk() {
+    expectTrue(fuse::hybrid::composer_layer_ok(0), "layer 0 is a composer layer");
+    expectTrue(fuse::hybrid::composer_layer_ok(7), "layer 7 is a composer layer");
+    expectTrue(!fuse::hybrid::composer_layer_ok(-1), "layer -1 is not a composer layer");
+    expectTrue(!fuse::hybrid::composer_layer_ok(8), "layer 8 is not a composer layer");
+}
+
+void testLayerBitVisible() {
+    expectTrue(fuse::hybrid::layer_bit_visible(0b0101u, 0b0100u), "set power-of-two bit is visible");
+    expectTrue(!fuse::hybrid::layer_bit_visible(0b0101u, 0b0010u), "unset power-of-two bit is hidden");
+    expectTrue(!fuse::hybrid::layer_bit_visible(0b0101u, 0b0110u), "multi-bit mask is not a layer bit");
+    expectTrue(!fuse::hybrid::layer_bit_visible(0b0101u, 0u), "zero is not a layer bit");
+}
+
 } // namespace
 
 int main() {
+    testComposeLayerOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_hybrid_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testComposerLayerOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_hybrid_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testLayerBitVisible();
+
     fuse::core::initialize();
 
     testHybridFrameProducesPixels();

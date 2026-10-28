@@ -2,6 +2,7 @@
 
 #include <fuse/renderer/deferred/frame_pipeline.hpp>
 #include <fuse/renderer/deferred/gbuffer.hpp>
+#include <fuse/renderer/deferred/gbuffer_cpu_draw.hpp>
 #include <fuse/renderer/lighting/clustered.hpp>
 #include <fuse/renderer/material/material_system.hpp>
 #include <fuse/renderer/render_graph.hpp>
@@ -11,6 +12,8 @@
 #include <fuse/types.hpp>
 
 #include <memory>
+#include <span>
+#include <vector>
 
 namespace fuse::renderer {
 
@@ -48,6 +51,15 @@ public:
     ClusteredLightCuller& lightCuller() { return m_lightCuller; }
     const ClusteredLightCuller& lightCuller() const { return m_lightCuller; }
 
+    /// Appends `draws` to the CPU list the G-buffer pass reads, then stable-sorts by materialId,
+    /// then entity index, then entity generation. An empty span clears the list. Clear at the
+    /// start of a frame before submitting that frame's draws.
+    void appendGBufferDrawList(std::span<const DeferredGBufferDraw> draws);
+    u32 gbufferDrawCount() const { return static_cast<u32>(m_gbufferDraws.size()); }
+    std::span<const DeferredGBufferDraw> gbufferDraws() const {
+        return {m_gbufferDraws.data(), m_gbufferDraws.size()};
+    }
+
     bool buildFrameGraph(RenderGraph& graph, u32 backbufferIndex);
     RenderGraphExecuteInfo executeFrame(VulkanDevice& device,
                                         FrameManager& frames,
@@ -64,6 +76,7 @@ private:
     MaterialSystem m_materials{};
     DeferredFramePipeline m_pipeline;
     ClusteredLightCuller m_lightCuller{};
+    std::vector<DeferredGBufferDraw> m_gbufferDraws;
 };
 
 } // namespace fuse::renderer

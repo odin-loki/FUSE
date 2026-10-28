@@ -27,6 +27,8 @@
 #include "pt_test_scenes.hpp"
 
 #include <fuse/relight/render/pathtrace/pt_capture_scene.hpp>
+#include <fuse/relight/render/pathtrace/spp.hpp>
+#include <fuse/relight/render/pathtrace/throughput_cutoff.hpp>
 
 #include <fuse/relight/options/option.hpp>
 #include <fuse/relight/options/option_config.hpp>
@@ -42,6 +44,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <new>
 #include <string>
 #include <vector>
@@ -970,9 +973,66 @@ void suiteZeroAlloc() {
     check(g_updateAllocations == 0u, "zero_alloc: no heap allocation in steady-state scene updates");
 }
 
+/// CPU gate. Sample counts must be powers of two in [1, 64]. No heap allocation.
+int testSppOk() {
+    if (!fuse::relight::spp_ok(1)) {
+        std::fprintf(stderr, "FAIL: testSppOk: spp_ok(1) should be true\n");
+        return 1;
+    }
+    if (!fuse::relight::spp_ok(16)) {
+        std::fprintf(stderr, "FAIL: testSppOk: spp_ok(16) should be true\n");
+        return 1;
+    }
+    if (!fuse::relight::spp_ok(64)) {
+        std::fprintf(stderr, "FAIL: testSppOk: spp_ok(64) should be true\n");
+        return 1;
+    }
+    if (fuse::relight::spp_ok(0)) {
+        std::fprintf(stderr, "FAIL: testSppOk: spp_ok(0) should be false\n");
+        return 1;
+    }
+    if (fuse::relight::spp_ok(3)) {
+        std::fprintf(stderr, "FAIL: testSppOk: spp_ok(3) should be false\n");
+        return 1;
+    }
+    if (fuse::relight::spp_ok(128)) {
+        std::fprintf(stderr, "FAIL: testSppOk: spp_ok(128) should be false\n");
+        return 1;
+    }
+    return 0;
+}
+
+/// CPU gate. Must run before any GPU skip; a failure exits 1 instead of skipping.
+int test_path_throughput_cutoff() {
+    if (!pt::path_continues(0.2f, 0.1f)) {
+        std::fprintf(stderr, "FAIL: test_path_throughput_cutoff: throughput 0.2 cutoff 0.1 should continue\n");
+        return 1;
+    }
+    if (pt::path_continues(0.05f, 0.1f)) {
+        std::fprintf(stderr, "FAIL: test_path_throughput_cutoff: throughput 0.05 cutoff 0.1 should stop\n");
+        return 1;
+    }
+    if (pt::path_continues(std::numeric_limits<float>::quiet_NaN(), 0.1f) ||
+        pt::path_continues(std::numeric_limits<float>::infinity(), 0.1f)) {
+        std::fprintf(stderr, "FAIL: test_path_throughput_cutoff: non-finite throughput should stop\n");
+        return 1;
+    }
+    if (!pt::path_continues(0.2f, 0.f) || !pt::path_continues(0.2f, -1.f) || pt::path_continues(0.f, 0.f)) {
+        std::fprintf(stderr, "FAIL: test_path_throughput_cutoff: cutoff <= 0 continues only for throughput > 0\n");
+        return 1;
+    }
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int sppRc = testSppOk()) {
+        return sppRc;
+    }
+    if (const int cutoffRc = test_path_throughput_cutoff()) {
+        return cutoffRc;
+    }
     opt::setEnvironmentVariable(opt::kDxvkConfEnvVar, "");
     opt::setEnvironmentVariable(opt::kRtxConfEnvVar, "");
     (void)BorrowedStandIns::sceneScaleObject();

@@ -680,6 +680,10 @@ DdgiInfo ddgi_info();
 /// DDGI probe volume — allocates atlas textures via ResourceManager and runs the
 /// CPU reference probe trace/blend (`DdgiCpuVolume`) each update. Without an attached
 /// scene the probes trace an empty scene lit by a uniform ambient sky.
+/// B5 legacy bridge: CPU oracle (`DdgiCpuVolume`) + 2D half-float atlases via `ResourceManager`.
+/// Production deferred shading uses `gi_gpu::DdgiGpu` (probe-major work buffer). `importCpuVolume`
+/// feeds these RGBA16F / RG16F atlases from `ddgi_cpu::packAtlasesHalf` of that same oracle
+/// (no second packing layout). The shade does not sample these textures.
 class DDGI {
 public:
     DDGI();
@@ -713,12 +717,21 @@ public:
 
     /// Copy the CPU volume's bordered tiles into the atlas textures (RGBA16F irradiance E/pi,
     /// RG16F distance moments) through `ResourceManager::uploadTexture` and submit the batch.
-    /// Asynchronous: `outTicket` completes when both copies have landed.
+    /// Also uploads probe-offset xyz. Asynchronous: `outTicket` completes when the copies have landed.
     bool uploadAtlases(UploadTicket* outTicket = nullptr);
+
+    /// Ingest `volume` into this legacy volume. `volume`'s grid and tile resolutions must match.
+    /// Packs with `ddgi_cpu::packAtlasesHalf` (the same layout `uploadAtlases` writes) into the
+    /// RGBA16F / RG16F textures and writes probe-offset xyz from `probeData`. On success, `cpuVolume()`
+    /// and the cache summaries match `volume`.
+    bool importCpuVolume(const DdgiCpuVolume& volume, UploadTicket* outTicket = nullptr);
 
 private:
     void releaseResources();
     bool allocateResources(ResourceManager& resources);
+    bool submitPackedAtlases(const std::vector<u16>& irradianceRgba16f, const std::vector<u16>& distanceRg16f,
+                             const std::vector<fuse::math::Vec3>& probeOffsets, UploadTicket* outTicket);
+    void mirrorCpuCache();
 
     DDGIDesc m_desc{};
     ProbeData m_data{};

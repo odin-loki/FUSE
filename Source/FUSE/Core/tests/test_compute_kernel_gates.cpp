@@ -13,10 +13,13 @@
 
 #include "compute_kernel_test_kernels.hpp"
 
+#include "../../Compute/include/fuse/compute/workgroup_size.hpp"
 #include <fuse/compute_kernel/launch.hpp>
 #include <fuse/compute_kernel/load_scale.hpp>
 #include <fuse/compute_kernel/parity.hpp>
 #include <fuse/compute_kernel/stats.hpp>
+#include <fuse/core/kernel_group.hpp>
+#include <fuse/gameplay/inventory_grid.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/profiler/profiler.hpp>
 
@@ -446,9 +449,55 @@ void testLoadScale() {
     expectTrue(kernel::load_scale() == kernel::LoadScale{}, "ScopedLoadScale restores");
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits instead of continuing.
+void testKernelGroupOk() {
+    expectTrue(fuse::core::kernel_group_ok(32), "kernel_group_ok(32) is true");
+    expectTrue(fuse::core::kernel_group_ok(64), "kernel_group_ok(64) is true");
+    expectTrue(fuse::core::kernel_group_ok(256), "kernel_group_ok(256) is true");
+    expectTrue(!fuse::core::kernel_group_ok(16), "kernel_group_ok(16) is false");
+    expectTrue(!fuse::core::kernel_group_ok(48), "kernel_group_ok(48) is false");
+    expectTrue(!fuse::core::kernel_group_ok(512), "kernel_group_ok(512) is false");
+}
+
+/// CPU gate. Must run before any GPU skip; a failure exits instead of continuing.
+void testWorkgroupSizeOk() {
+    expectTrue(fuse::compute::workgroup_size_ok(32u), "workgroup_size_ok(32) is true");
+    expectTrue(fuse::compute::workgroup_size_ok(256u), "workgroup_size_ok(256) is true");
+    expectTrue(!fuse::compute::workgroup_size_ok(16u), "workgroup_size_ok(16) is false");
+    expectTrue(!fuse::compute::workgroup_size_ok(48u), "workgroup_size_ok(48) is false");
+    expectTrue(!fuse::compute::workgroup_size_ok(512u), "workgroup_size_ok(512) is false");
+}
+
+void testInventoryGrid() {
+    fuse::gameplay::InventoryGrid grid(4u, 2u);
+    const fuse::gameplay::ItemSize item{2u, 2u};
+
+    const auto first = grid.try_place(item);
+    expectTrue(first.has_value() && first->x == 0u && first->y == 0u && grid.occupied_count() == 4u,
+               "4x2 inventory: first 2x2 places at (0,0)");
+
+    const auto second = grid.try_place(item);
+    expectTrue(second.has_value() && second->x == 2u && second->y == 0u && grid.occupied_count() == 8u,
+               "4x2 inventory: second 2x2 places at (2,0)");
+
+    const auto third = grid.try_place(item);
+    expectTrue(!third.has_value() && grid.occupied_count() == 8u,
+               "4x2 inventory: third 2x2 fails and leaves the grid unchanged");
+}
+
 } // namespace
 
 int main() {
+    testKernelGroupOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testKernelGroupOk\n");
+        return EXIT_FAILURE;
+    }
+    testWorkgroupSizeOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testWorkgroupSizeOk\n");
+        return EXIT_FAILURE;
+    }
     std::printf("Compute kernel gates (single-source CPU backends)\n");
     testParity();
     testReferenceOrder();
@@ -458,6 +507,7 @@ int main() {
     }
     testProfilingAndStats();
     testLoadScale();
+    testInventoryGrid();
     fuse::jobs::JobScheduler::instance().shutdown();
 
     if (g_failures != 0) {

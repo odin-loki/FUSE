@@ -1,13 +1,17 @@
 #include <fuse/config.hpp>
+#include <fuse/jobs/batch_count.hpp>
 #include <fuse/jobs/job_counter.hpp>
+#include <fuse/jobs/job_lane.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/jobs/parallel_for.hpp>
 #include <fuse/jobs/work_steal.hpp>
 #include <fuse/jobs/worker_count.hpp>
 #include <fuse/jobs/worker_context.hpp>
+#include <fuse/math/recoil.hpp>
 #include <fuse/platform/fiber.hpp>
 
 #include <atomic>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <thread>
@@ -625,9 +629,47 @@ void testSetWorkerCountResizesPool() {
 #endif
 }
 
+void testJobLaneOk() {
+    expectTrue(fuse::jobs::job_lane_ok(0), "job_lane_ok(0) is true");
+    expectTrue(fuse::jobs::job_lane_ok(31), "job_lane_ok(31) is true");
+    expectTrue(!fuse::jobs::job_lane_ok(-1), "job_lane_ok(-1) is false");
+    expectTrue(!fuse::jobs::job_lane_ok(32), "job_lane_ok(32) is false");
+}
+
+void testJobBatchCount() {
+    expectEq(fuse::jobs::job_batch_count(10u, 4u), 3u, "ceil(10/4) is 3");
+    expectEq(fuse::jobs::job_batch_count(8u, 4u), 2u, "ceil(8/4) is 2");
+    expectEq(fuse::jobs::job_batch_count(1u, 0u), 0u, "batch 0 returns 0");
+    expectEq(fuse::jobs::job_batch_count(0u, 4u), 0u, "count 0 returns 0");
+    expectEq(fuse::jobs::job_batch_count(0u, 0u), 0u, "count 0 and batch 0 return 0");
+    expectEq(fuse::jobs::job_batch_count(UINT32_MAX, 1u), UINT32_MAX, "ceil saturates at UINT32_MAX");
+    expectEq(fuse::jobs::job_batch_count(UINT32_MAX, 2u), 0x80000000u, "ceil(UINT32_MAX/2) does not wrap");
+}
+
+void testRecoilOffset() {
+    fuse::math::RecoilPattern pattern{};
+    pattern.pitchPerShot = 0.35f;
+    pattern.yawPerShot = 0.12f;
+    pattern.yawAlternate = 0.f;
+    pattern.shots = 4u;
+
+    const fuse::math::Vec2 shot0 = fuse::math::recoil_offset(pattern, 0u);
+    expectTrue(shot0.x == 0.f && shot0.y == 0.f, "shot 0 with yawAlternate 0 is zero");
+
+    const fuse::math::Vec2 shot1 = fuse::math::recoil_offset(pattern, 1u);
+    expectTrue(shot1.y == pattern.pitchPerShot, "shot 1 pitch equals pitchPerShot");
+}
+
 } // namespace
 
 int main() {
+    testJobLaneOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_core job tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testJobBatchCount();
     testCounterWait();
     testCooperativeWorkerWait();
     testWorkStealVictimPickRotatesFromThief();
@@ -653,6 +695,7 @@ int main() {
     testCompileTimeSingleThreadMacro();
 #endif
     testSetWorkerCountResizesPool();
+    testRecoilOffset();
 
     if (g_failures == 0) {
         std::printf("fuse_core job tests: all checks passed\n");

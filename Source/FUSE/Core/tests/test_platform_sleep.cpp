@@ -3,10 +3,13 @@
 // nanosleep), so a 500 us sleep returned after ~0.2 us. Overshoot is reported, not gated: it depends
 // on the scheduler and machine load.
 
+#include <fuse/gameplay/cooldown.hpp>
 #include <fuse/platform/sleep.hpp>
+#include <fuse/platform/sleep_slice.hpp>
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 
 namespace {
@@ -55,14 +58,43 @@ void checkNonPositiveReturnsImmediately() {
     }
 }
 
+void testCooldown() {
+    fuse::gameplay::Cooldown cooldown;
+    if (fuse::gameplay::try_trigger(cooldown)) {
+        std::fprintf(stderr, "FAIL: a zero-duration cooldown must not trigger\n");
+        ++g_failures;
+    }
+    fuse::gameplay::start(cooldown, 1.f);
+    fuse::gameplay::tick(cooldown, 0.4f);
+    if (std::fabs(cooldown.remaining - 0.6f) > 1e-5f) {
+        std::fprintf(stderr, "FAIL: cooldown remaining after 0.4s (got %f)\n", cooldown.remaining);
+        ++g_failures;
+    }
+    fuse::gameplay::tick(cooldown, 2.f);
+    if (!fuse::gameplay::ready(cooldown)) {
+        std::fprintf(stderr, "FAIL: cooldown should be ready after the remaining time elapses\n");
+        ++g_failures;
+    }
+}
+
+void testSleepSliceOk() {
+    if (!fuse::platform::sleep_slice_ok(0) || !fuse::platform::sleep_slice_ok(16) ||
+        fuse::platform::sleep_slice_ok(-1) || fuse::platform::sleep_slice_ok(17)) {
+        std::fprintf(stderr, "FAIL: sleep_slice_ok\n");
+        ++g_failures;
+    }
+}
+
 } // namespace
 
 int main() {
+    testSleepSliceOk();
     constexpr int kSamples = 200;
     checkNeverEarly(std::chrono::microseconds(50), kSamples);
     checkNeverEarly(std::chrono::microseconds(500), kSamples);
     checkNeverEarly(std::chrono::milliseconds(2), kSamples);
     checkNonPositiveReturnsImmediately();
+    testCooldown();
     if (g_failures != 0) {
         std::fprintf(stderr, "fuse_core_platform_sleep_tests: %d failure(s)\n", g_failures);
         return 1;

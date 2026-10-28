@@ -22,6 +22,7 @@
 
 #include <fuse/core/init.hpp>
 #include <fuse/renderer/upscale/upscale_passes.hpp>
+#include <fuse/renderer/upscale_ref.hpp>
 
 #include "upscale_test_images.hpp"
 
@@ -29,6 +30,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -37,6 +39,33 @@
 #define FUSE_UPSCALE_HAVE_VK_HEADERS 1
 #endif
 #endif
+
+namespace {
+
+/// CPU gate. No allocation. Both mains call this before any GPU skip.
+/// A failure returns non-zero before any later skip.
+[[nodiscard]] int testUpscaleRefOk() {
+    int failures = 0;
+    const auto expectTrue = [&failures](bool condition, const char* message) {
+        if (!condition) {
+            std::fprintf(stderr, "FAIL: %s\n", message);
+            ++failures;
+        }
+    };
+    expectTrue(fuse::renderer::upscale_ref_ok(1.5f), "upscale_ref_ok(1.5) is true");
+    expectTrue(fuse::renderer::upscale_ref_ok(4.f), "upscale_ref_ok(4) is true");
+    expectTrue(!fuse::renderer::upscale_ref_ok(1.f), "upscale_ref_ok(1) is false");
+    expectTrue(!fuse::renderer::upscale_ref_ok(0.5f), "upscale_ref_ok(0.5) is false");
+    expectTrue(!fuse::renderer::upscale_ref_ok(4.1f), "upscale_ref_ok(4.1) is false");
+    expectTrue(!fuse::renderer::upscale_ref_ok(std::numeric_limits<float>::quiet_NaN()), "upscale_ref_ok(NaN) is false");
+    if (failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", failures);
+        return 1;
+    }
+    return 0;
+}
+
+} // namespace
 
 #if defined(FUSE_UPSCALE_HAVE_VK_HEADERS) && defined(FUSE_UPSCALE_SHADERS_BUILT)
 #define VK_NO_PROTOTYPES 1
@@ -947,6 +976,9 @@ void write_report(const VulkanCompute& vk, const std::vector<Comparison>& all) {
 } // namespace
 
 int main() {
+    if (const int upscaleRefRc = testUpscaleRefOk(); upscaleRefRc != 0) {
+        return upscaleRefRc;
+    }
     fuse::core::initialize();
     VulkanCompute vk;
     std::string why;
@@ -1000,6 +1032,9 @@ int main() {
 #else // no Vulkan headers / shaders
 
 int main() {
+    if (const int upscaleRefRc = testUpscaleRefOk(); upscaleRefRc != 0) {
+        return upscaleRefRc;
+    }
     std::printf("SKIP: Vulkan headers, NIS_Config.h or the upscaler SPIR-V were not available at build time\n");
     return 77;
 }

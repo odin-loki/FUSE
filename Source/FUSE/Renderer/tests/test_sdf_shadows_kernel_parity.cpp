@@ -11,6 +11,7 @@
 #include <fuse/compute_kernel/stats.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/renderer/sdf_march.hpp>
 #include <fuse/renderer/shadow/sdf_shadow_kernel.hpp>
 #include <fuse/renderer/shadow/sdf_shadows.hpp>
 
@@ -194,9 +195,25 @@ void testStatsAndFallback() {
     scheduler.shutdown();
 }
 
+/// CPU gate. Must run before any GPU or CUDA skip; a failure returns non-zero and does not continue.
+/// Does not allocate.
+void testSdfMarchOk() {
+    expectTrue(sdf_march_ok(16), "sdf_march_ok(16) is true");
+    expectTrue(sdf_march_ok(64), "sdf_march_ok(64) is true");
+    expectTrue(sdf_march_ok(128), "sdf_march_ok(128) is true");
+    expectTrue(!sdf_march_ok(0), "sdf_march_ok(0) is false");
+    expectTrue(!sdf_march_ok(24), "sdf_march_ok(24) is false");
+    expectTrue(!sdf_march_ok(256), "sdf_march_ok(256) is false");
+}
+
 } // namespace
 
 int main() {
+    testSdfMarchOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d sdf_shadows kernel parity check(s) failed\n", g_failures);
+        return EXIT_FAILURE;
+    }
     fuse::core::initialize();
     testBackendParity();
     testStatsAndFallback();

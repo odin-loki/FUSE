@@ -41,6 +41,7 @@ enum FogFlag : u32 {
     kFogFlagLights = 1u << 2,     ///< `lighting` is set: the directional list + the cluster lists
     kFogFlagShadows = 1u << 3,    ///< `shadows` is set: each light x its VSM visibility (WP-3.2)
     kFogFlagReversedZ = 1u << 4,  ///< RT4 is infinite-far reversed Z (else forward z / w in [0, 1])
+    kFogFlagGi = 1u << 5,         ///< `ddgi` is set: fog.inject adds WP-6.1 irradiance at each sample
 };
 
 /// FogVolume::shape
@@ -72,7 +73,7 @@ struct FogFrameConstants {
     u64 historyCur = 0;  ///< f32x4[froxelCount]: this frame's fog.temporal output
     u64 integrated = 0;  ///< f32x4[froxelCount]: fog.integrate output
     u64 dump = 0;        ///< f32x4[width * height]: fog.apply result before RGBA16F rounding (optional)
-    u64 reserved0 = 0;
+    u64 ddgi = 0;        ///< WP-6.1: BDA of DdgiVolumeView (0 = no DDGI in-scatter)
     // --- grid, extent, handles -------------------------------------------------------------------------
     u32 gridX = 0;
     u32 gridY = 0;

@@ -2,8 +2,11 @@
 // fold order, roughness and conservative bounds, checked with the CPU reference evaluator.
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/transform.hpp>
+#include <fuse/ecs/csg_node.hpp>
 #include <fuse/ecs/registry.hpp>
+#include <fuse/ecs/sdf_boolean.hpp>
 #include <fuse/ecs/sdf_csg.hpp>
+#include <fuse/ecs/sdf_smooth.hpp>
 
 #include <cmath>
 #include <cstdio>
@@ -197,9 +200,37 @@ void testRoughnessAndBounds() {
     expectTrue(conservative, "bounding radius encloses every primitive (incl. roughness)");
 }
 
+void testCsgNodeOk() {
+    expectTrue(csg_node_ok(1), "node count of 1 is valid");
+    expectTrue(csg_node_ok(64), "node count of 64 is valid");
+    expectTrue(!csg_node_ok(0), "node count of 0 is invalid");
+    expectTrue(!csg_node_ok(65), "node count of 65 is invalid");
+}
+
+void testSdfSmoothOk() {
+    expectTrue(sdf_smooth_ok(0), "smooth k of 0 is valid");
+    expectTrue(sdf_smooth_ok(0.25f), "smooth k of 0.25 is valid");
+    expectTrue(sdf_smooth_ok(1), "smooth k of 1 is valid");
+    expectTrue(!sdf_smooth_ok(-0.1f), "smooth k below 0 is invalid");
+    expectTrue(!sdf_smooth_ok(1.5f), "smooth k above 1 is invalid");
+}
+
+void testBooleanCombine() {
+    expectTrue(csg_combine(SdfBoolean::Union, 1.f, -2.f) == -2.f, "union keeps the nearer surface");
+    expectTrue(csg_combine(SdfBoolean::Intersect, 1.f, -2.f) == 1.f, "intersect keeps the farther surface");
+    expectTrue(csg_combine(SdfBoolean::Subtract, 1.f, 0.5f) == 1.f, "subtract cuts with the negated operand");
+}
+
 } // namespace
 
 int main() {
+    testCsgNodeOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_ecs_sdf_csg: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testSdfSmoothOk();
+    testBooleanCombine();
     testPrimitiveDistances();
     testCsgOps();
     testSmoothUnionContinuity();

@@ -10,7 +10,9 @@
 #include <fuse/core/sanitizer.hpp>
 #include <fuse/jobs/job_counter.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/log/channel_name.hpp>
 #include <fuse/log/logger.hpp>
+#include <fuse/gameplay/experience.hpp>
 #include <fuse/profiler/profiler.hpp>
 
 #if defined(_MSC_VER) && defined(_M_X64)
@@ -738,14 +740,38 @@ void testChromeTraceJsonValid() {
     fuse::profiler::reset();
 }
 
+void testExperienceCurve() {
+    fuse::gameplay::ExperienceCurve curve;
+    curve.base = 100.f;
+    curve.growth = 2.f;
+    curve.maxLevel = 10u;
+    expectTrue(fuse::gameplay::xp_to_advance(curve, 1u) == 100.f, "xp to leave level 1 is the curve base");
+    expectTrue(fuse::gameplay::xp_to_advance(curve, 2u) == 200.f, "xp to leave level 2 is base * growth");
+    expectTrue(fuse::gameplay::level_for_total_xp(curve, 0.f) == 1u, "zero total xp stays at level 1");
+    expectTrue(fuse::gameplay::level_for_total_xp(curve, 100.f) == 2u, "100 total xp reaches level 2");
+    expectTrue(fuse::gameplay::level_for_total_xp(curve, 300.f) == 3u, "300 total xp reaches level 3");
+}
+
+void testLogChannelOk() {
+    expectTrue(fuse::log::log_channel_ok("Core"), "Core is a log channel");
+    expectTrue(fuse::log::log_channel_ok("Renderer"), "Renderer is a log channel");
+    expectTrue(fuse::log::log_channel_ok("Physics"), "Physics is a log channel");
+    expectTrue(fuse::log::log_channel_ok("Audio"), "Audio is a log channel");
+    expectTrue(fuse::log::log_channel_ok("Net"), "Net is a log channel");
+    expectTrue(!fuse::log::log_channel_ok("core"), "channel names are case-sensitive");
+    expectTrue(!fuse::log::log_channel_ok("Script"), "Script is not a log channel");
+}
+
 } // namespace
 
 int main() {
+    testLogChannelOk();
     testLoggerConcurrentWorkers();
     testLogEntryTimestampFileLine();
     testAssertFiresInDebugNoopInRelease();
     testProfilerScopeOverhead();
     testChromeTraceJsonValid();
+    testExperienceCurve();
 
     if (g_failures == 0) {
         std::printf("fuse_core_b1_logging_gates: all checks passed\n");

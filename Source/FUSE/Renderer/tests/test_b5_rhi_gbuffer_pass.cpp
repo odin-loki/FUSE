@@ -14,7 +14,9 @@
 
 #include <fuse/core/init.hpp>
 #include <fuse/renderer/deferred/gbuffer.hpp>
+#include <fuse/renderer/deferred/gbuffer_pass.hpp>
 #include <fuse/renderer/deferred/gbuffer_raster_pass.hpp>
+#include <fuse/renderer/postprocess/color_temperature.hpp>
 #include <fuse/renderer/resource_manager.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
@@ -22,6 +24,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -178,9 +181,51 @@ struct RenderDocCapture {
 };
 #endif
 
+void testGbufferPassOk() {
+    expectTrue(gbuffer_pass_ok(0), "gbuffer pass index 0 is valid");
+    expectTrue(gbuffer_pass_ok(3), "gbuffer pass index 3 is valid");
+    expectTrue(!gbuffer_pass_ok(-1), "gbuffer pass index -1 is invalid");
+    expectTrue(!gbuffer_pass_ok(4), "gbuffer pass index 4 is invalid");
+}
+
+void testColorTemperatureRgb() {
+    const Vec3 daylight = color_temperature_rgb(6500.f);
+    const bool maxIsOne = (daylight.x == 1.f || daylight.y == 1.f || daylight.z == 1.f) && daylight.x <= 1.f &&
+                          daylight.y <= 1.f && daylight.z <= 1.f;
+    expectTrue(maxIsOne, "6500 K max channel is 1");
+    expectTrue(std::fabs(daylight.x - daylight.y) <= 0.15f && std::fabs(daylight.y - daylight.z) <= 0.15f &&
+                   std::fabs(daylight.x - daylight.z) <= 0.15f,
+               "6500 K channels stay within 0.15 of each other");
+
+    const Vec3 warm = color_temperature_rgb(2000.f);
+    const Vec3 cool = color_temperature_rgb(10000.f);
+    expectTrue(warm.x > cool.x, "2000 K red is greater than 10000 K red");
+
+    const Vec3 nanColor = color_temperature_rgb(std::numeric_limits<f32>::quiet_NaN());
+    expectTrue(nanColor.x == 1.f && nanColor.y == 1.f && nanColor.z == 1.f, "non-finite kelvin is white");
+    const Vec3 infColor = color_temperature_rgb(-std::numeric_limits<f32>::infinity());
+    expectTrue(infColor.x == 1.f && infColor.y == 1.f && infColor.z == 1.f, "infinite kelvin is white");
+
+    const Vec3 floor = color_temperature_rgb(1000.f);
+    const Vec3 below = color_temperature_rgb(-500.f);
+    expectTrue(below.x == floor.x && below.y == floor.y && below.z == floor.z, "kelvin below 1000 matches 1000 K");
+    const Vec3 ceiling = color_temperature_rgb(40000.f);
+    const Vec3 above = color_temperature_rgb(90000.f);
+    expectTrue(above.x == ceiling.x && above.y == ceiling.y && above.z == ceiling.z,
+               "kelvin above 40000 matches 40000 K");
+}
+
 } // namespace
 
 int main() {
+    testGbufferPassOk();
+    if (b5rhi::failures() != 0) {
+        return b5rhi::finish("fuse_b5_rhi_gbuffer_pass");
+    }
+    testColorTemperatureRgb();
+    if (b5rhi::failures() != 0) {
+        return b5rhi::finish("fuse_b5_rhi_gbuffer_pass");
+    }
 #if !defined(FUSE_VULKAN_BACKEND)
     return b5rhi::skip("fuse_b5_rhi_gbuffer_pass", "Vulkan backend disabled");
 #elif !defined(FUSE_B5_RHI_SHADERS_BUILT)

@@ -24,6 +24,8 @@
 
 #include <fuse/relight/render/pathtrace/omm/omm.hpp>
 #include <fuse/relight/render/pathtrace/pt_gpu.hpp>
+#include <fuse/relight/render/volumetrics/phase.hpp>
+#include <fuse/relight/render/volumetrics/vol_slice.hpp>
 #include <fuse/relight/render/volumetrics/volumetrics.hpp>
 #include <fuse/relight/render/volumetrics/volumetrics_gpu.hpp>
 
@@ -43,6 +45,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <new>
 #include <string>
@@ -94,11 +97,28 @@ int g_failures = 0;
     }
 }
 [[maybe_unused]] void check(bool condition, const std::string& message) { check(condition, message.c_str()); }
+
+bool testVolSliceOk() {
+    const int before = g_failures;
+    check(fuse::relight::vol_slice_ok(1), "vol_slice_ok(1)");
+    check(fuse::relight::vol_slice_ok(64), "vol_slice_ok(64)");
+    check(!fuse::relight::vol_slice_ok(0), "vol_slice_ok(0)");
+    check(!fuse::relight::vol_slice_ok(65), "vol_slice_ok(65)");
+    return g_failures == before;
+}
+
+bool henyeyGreensteinCase();
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (!testVolSliceOk()) {
+        return 1;
+    }
+    if (!henyeyGreensteinCase()) {
+        return 1;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -702,6 +722,12 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (!testVolSliceOk()) {
+        return 1;
+    }
+    if (!henyeyGreensteinCase()) {
+        return 1;
+    }
     std::string language = "all";
     Validation validation = Validation::Layer;
     for (int i = 1; i < argc; ++i) {
@@ -765,3 +791,45 @@ int main(int argc, char** argv) {
 }
 
 #endif
+
+namespace {
+
+bool henyeyGreensteinCase() {
+    namespace vol = fuse::relight::render::volumetrics;
+    constexpr float kPi = 3.14159265358979323846f;
+    const float isotropic = 1.f / (4.f * kPi);
+    const int before = g_failures;
+    for (int i = 0; i <= 16; ++i) {
+        const float cosTheta = -1.f + 2.f * (float(i) / 16.f);
+        const float phase = vol::henyey_greenstein(cosTheta, 0.f);
+        char message[160];
+        std::snprintf(message, sizeof(message),
+                      "henyey_greenstein: g=0 cos=%g is %g, expected 1/(4*pi)=%g within 1e-4", cosTheta, phase,
+                      isotropic);
+        check(std::fabs(phase - isotropic) <= 1e-4f, message);
+    }
+    const float forward = vol::henyey_greenstein(1.f, 0.5f);
+    const float backward = vol::henyey_greenstein(-1.f, 0.5f);
+    check(forward > backward, "henyey_greenstein: g=0.5 cosTheta=1 is greater than cosTheta=-1");
+    const float nonFinite[] = {std::nanf(""), std::numeric_limits<float>::infinity(),
+                               -std::numeric_limits<float>::infinity()};
+    for (float bad : nonFinite) {
+        check(vol::henyey_greenstein(bad, 0.f) == 0.f, "henyey_greenstein: non-finite cosTheta is 0");
+        check(vol::henyey_greenstein(0.f, bad) == 0.f, "henyey_greenstein: non-finite g is 0");
+    }
+    check(vol::henyey_greenstein(1.f, 1.f) == vol::henyey_greenstein(1.f, 0.99f),
+          "henyey_greenstein: g above 0.99 clamps");
+    check(vol::henyey_greenstein(1.f, -2.f) == vol::henyey_greenstein(1.f, -0.99f),
+          "henyey_greenstein: g below -0.99 clamps");
+    check(vol::henyey_greenstein(2.f, 0.5f) == vol::henyey_greenstein(1.f, 0.5f),
+          "henyey_greenstein: cosTheta above 1 clamps");
+    check(vol::henyey_greenstein(-2.f, 0.5f) == vol::henyey_greenstein(-1.f, 0.5f),
+          "henyey_greenstein: cosTheta below -1 clamps");
+    if (g_failures == before) {
+        std::printf("henyey_greenstein: g=0 -> %g, g=0.5 forward %g > back %g\n", isotropic, forward, backward);
+        return true;
+    }
+    return false;
+}
+
+} // namespace

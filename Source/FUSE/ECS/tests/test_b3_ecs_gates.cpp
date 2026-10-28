@@ -11,6 +11,8 @@
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/core/sanitizer.hpp>
+#include <fuse/ecs/archetype_cap.hpp>
+#include <fuse/ecs/generation_alive.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 
@@ -413,9 +415,30 @@ void testSingleThreadIterationThroughput() {
 #endif
 }
 
+void testGenerationAlive() {
+    expectTrue(fuse::ecs::generation_alive(1u), "generation_alive(1) is true");
+    expectTrue(!fuse::ecs::generation_alive(0u), "generation_alive(0) is false");
+    expectTrue(fuse::ecs::generation_alive(2u), "nonzero generation is alive");
+    expectTrue(fuse::ecs::generation_alive(0xffffffffu), "max generation is alive");
+}
+
+void testArchetypeCapOk() {
+    expectTrue(fuse::ecs::archetype_cap_ok(1), "archetype_cap_ok(1) is true");
+    expectTrue(fuse::ecs::archetype_cap_ok(4096), "archetype_cap_ok(4096) is true");
+    expectTrue(!fuse::ecs::archetype_cap_ok(0), "archetype_cap_ok(0) is false");
+    expectTrue(!fuse::ecs::archetype_cap_ok(4097), "archetype_cap_ok(4097) is false");
+}
+
 } // namespace
 
 int main() {
+    testArchetypeCapOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b3_ecs_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testGenerationAlive();
     testMillionEntitiesAndStaleHandles();
     testArchetypeGroupingAndMigration();
     testEachVisitsExactlyTheMatchingEntities();

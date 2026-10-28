@@ -495,6 +495,32 @@ void GameCapturer::captureLights(const std::vector<scene::LightRecord>& lights) 
         }
         intensity = i;
     };
+    // Rect / disk / cylinder share the sphere time rule. LightRecord has no width or height.
+    auto captureArea = [&](const scene::LightRecord& light, std::map<Hash64, CaptureAreaLight>& table) {
+        auto [it, isNew] = table.try_emplace(light.hash);
+        CaptureAreaLight& a = it->second;
+        Vec3f shapingDir{0.f, 0.f, -1.f};
+        if (isNew) {
+            a.hash = light.hash;
+            a.type = light.type;
+            colorAndIntensity(light.radiance, a.color, a.intensity);
+            a.radius = light.radius;
+            a.firstTime = m_currentTime;
+            if (light.shaping.enabled) {
+                a.shapingEnabled = true;
+                a.coneAngleDegrees = static_cast<float>(std::acos(double(light.shaping.cosConeAngle)) * kRadiansToDegrees);
+                a.coneSoftness = light.shaping.coneSoftness;
+                a.focusExponent = light.shaping.focusExponent;
+            }
+        }
+        a.position = {light.position[0], light.position[1], light.position[2]};
+        a.direction = {light.direction[0], light.direction[1], light.direction[2]};
+        if (a.shapingEnabled) {
+            shapingDir = {light.shaping.direction[0], light.shaping.direction[1], light.shaping.direction[2]};
+        }
+        a.xforms.push_back({m_currentTime, rotationBetween({0.f, 0.f, -1.f}, shapingDir, a.position)});
+        a.finalTime = m_currentTime;
+    };
     for (const scene::LightRecord& l : lights) {
         if (l.hash == 0) {
             continue;
@@ -512,8 +538,20 @@ void GameCapturer::captureLights(const std::vector<scene::LightRecord>& lights) 
             d.finalTime = m_currentTime;
             continue;
         }
+        if (l.type == hash::LightType::Rect) {
+            captureArea(l, m_cap.rectLights);
+            continue;
+        }
+        if (l.type == hash::LightType::Disk) {
+            captureArea(l, m_cap.diskLights);
+            continue;
+        }
+        if (l.type == hash::LightType::Cylinder) {
+            captureArea(l, m_cap.cylinderLights);
+            continue;
+        }
         if (l.type != hash::LightType::Sphere) {
-            continue; // Rect / Disk / Cylinder: not implemented upstream either
+            continue;
         }
         auto [it, isNew] = m_cap.sphereLights.try_emplace(l.hash);
         CaptureSphereLight& s = it->second;

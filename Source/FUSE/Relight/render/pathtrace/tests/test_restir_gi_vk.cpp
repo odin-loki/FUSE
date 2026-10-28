@@ -19,6 +19,7 @@
 // --external-validation with a negative control); any message fails. Exit 77 = skip.
 #include "pt_test_scenes.hpp"
 
+#include <fuse/relight/render/pathtrace/gi_spatial.hpp>
 #include <fuse/relight/render/pathtrace/pt_gpu.hpp>
 #include <fuse/relight/render/pathtrace/pt_reference.hpp>
 #include <fuse/relight/render/pathtrace/restir_gi.hpp>
@@ -93,11 +94,24 @@ int g_failures = 0;
     }
 }
 [[maybe_unused]] void check(bool condition, const std::string& message) { check(condition, message.c_str()); }
+
+/// CPU gate. No heap allocation. Must run before any GPU skip; a failure returns non-zero.
+int testGiSpatialOk() {
+    const int before = g_failures;
+    check(fuse::relight::gi_spatial_ok(1), "gi_spatial_ok(1)");
+    check(fuse::relight::gi_spatial_ok(16), "gi_spatial_ok(16)");
+    check(!fuse::relight::gi_spatial_ok(0), "gi_spatial_ok(0)");
+    check(!fuse::relight::gi_spatial_ok(17), "gi_spatial_ok(17)");
+    return g_failures == before ? 0 : 1;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int giSpatialRc = testGiSpatialOk()) {
+        return giSpatialRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -782,6 +796,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int giSpatialRc = testGiSpatialOk()) {
+        return giSpatialRc;
+    }
     std::string language = "all";
     Validation validation = Validation::Layer;
     for (int i = 1; i < argc; ++i) {

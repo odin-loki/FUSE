@@ -6,6 +6,7 @@
 #include "rl_options_test.hpp"
 
 #include <fuse/core/temp_path.hpp>
+#include <fuse/relight/options/config_layer.hpp>
 #include <fuse/relight/options/options.hpp>
 
 #include <clocale>
@@ -516,9 +517,24 @@ void testSerializeRules() {
     RL_CHECK_STR(twice, once);
 }
 
+// Layers 0 through 7 inclusive. No allocation.
+bool testConfigLayerOk() {
+    const int before = totals().failures;
+    totals().currentTest = "testConfigLayerOk";
+    RL_CHECK(config_layer_ok(0));
+    RL_CHECK(config_layer_ok(7));
+    RL_CHECK(!config_layer_ok(-1));
+    RL_CHECK(!config_layer_ok(8));
+    totals().currentTest = "";
+    return totals().failures == before;
+}
+
 } // namespace
 
 void runConfigTests() {
+    if (!testConfigLayerOk()) {
+        return;
+    }
     static const TestCase kCases[] = {
         {"boolParsing", testBoolParsing},
         {"intParsing", testIntParsing},

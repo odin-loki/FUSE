@@ -1,3 +1,4 @@
+#include <fuse/renderer/shader/shader_ext.hpp>
 #include <fuse/renderer/shader/shader_watch.hpp>
 #include <fuse/types.hpp>
 
@@ -46,6 +47,22 @@ std::filesystem::path uniqueTempPath() {
            ("fuse_shader_watch_" + std::to_string(pid) + "_" + std::to_string(stamp) + ".glsl");
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits instead of continuing.
+void testShaderExtOk() {
+    expectTrue(fuse::renderer::shader_ext_ok("lighting.slang"), "lighting.slang is a shader");
+    expectTrue(fuse::renderer::shader_ext_ok("A.HLSL"), "A.HLSL is a shader");
+    expectTrue(fuse::renderer::shader_ext_ok("lit.glsl"), "lit.glsl is a shader");
+    expectTrue(fuse::renderer::shader_ext_ok("lit.GLSL"), "lit.GLSL is a shader");
+    expectTrue(fuse::renderer::shader_ext_ok("shaders\\lighting.hlsl"),
+               "backslash path uses the filename extension");
+    expectTrue(!fuse::renderer::shader_ext_ok("note.txt"), "note.txt is not a shader");
+    expectTrue(!fuse::renderer::shader_ext_ok("lighting"), "path with no extension is not a shader");
+    expectTrue(!fuse::renderer::shader_ext_ok("shaders/lighting"),
+               "directory path with no extension is not a shader");
+    expectTrue(!fuse::renderer::shader_ext_ok("notes.slang.txt"),
+               ".slang that is not the extension is not a shader");
+}
+
 void testNullPathRejected() {
     fuse::renderer::ShaderFileWatch watch;
     expectTrue(!watch.watch(nullptr), "watch rejects null path");
@@ -92,6 +109,12 @@ void testMissingFileDoesNotFailPoll() {
 } // namespace
 
 int main() {
+    testShaderExtOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_shader_watch: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     testNullPathRejected();
     testPollDetectsRewrite();
     testMissingFileDoesNotFailPoll();

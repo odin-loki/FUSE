@@ -15,6 +15,7 @@
 #include <fuse/assert.hpp>
 #include <fuse/jobs/job_counter.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/memory/alignment_ok.hpp>
 
 #include <atomic>
 #include <cstdint>
@@ -559,9 +560,18 @@ void testHotPathZeroHeapAllocations() {
     expectTrue(pool.availableBlocks() == 64u, "hot path returns every pool block");
 }
 
+void testAlignmentOk() {
+    expectTrue(fuse::memory::alignment_ok(1u), "alignment 1 is valid");
+    expectTrue(fuse::memory::alignment_ok(256u), "alignment 256 is valid");
+    expectTrue(!fuse::memory::alignment_ok(0u), "alignment 0 is not valid");
+    expectTrue(!fuse::memory::alignment_ok(3u), "alignment 3 is not a power of two");
+    expectTrue(!fuse::memory::alignment_ok(8192u), "alignment 8192 is above the maximum");
+}
+
 } // namespace
 
 int main() {
+    testAlignmentOk();
     testPoolStress();
     testFreeListStress();
     testRingStress();

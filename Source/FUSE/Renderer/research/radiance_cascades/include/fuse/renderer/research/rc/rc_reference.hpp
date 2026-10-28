@@ -52,6 +52,55 @@ struct RcScene {
     bool opaque(u32 x, u32 y) const { return texels[(static_cast<usize>(y) * width + x) * 4u + 3u] > 0.5f; }
 };
 
+/// Small CPU G-buffer the flatland frame packs into an `RcScene`.
+/// Depth <= 0 is a miss (empty texel). A hit stores a signed-octahedral world normal
+/// (`GBufferEncoding::encodeOctSigned`) and a linear albedo. No second scene layout: `packSceneFromGBuffer`
+/// writes the existing f32x4 (emission, opacity) records.
+struct RcCpuGBuffer {
+    u32 width = 0;
+    u32 height = 0;
+    std::vector<f32> depth;     ///< 1 per texel
+    std::vector<f32> octNormal; ///< 2 per texel, signed octahedral
+    std::vector<f32> albedo;    ///< 3 per texel
+
+    void resize(u32 w, u32 h);
+    void clear();
+    /// Hit when `depth` > 0. A closer (smaller) depth replaces a farther hit. Out of range returns false.
+    /// The normal is normalised and stored as a signed octahedral encoding.
+    bool write(u32 x, u32 y, f32 depth, f32 nx, f32 ny, f32 nz, f32 ar, f32 ag, f32 ab);
+};
+
+/// Direction `packSceneFromGBuffer` shades with (normalised internally). It is not parallel to the
+/// diagnostic normals, so the octahedral normal changes the emission.
+inline constexpr f32 kRcPackLight[3] = {0.35f, 0.75f, 0.45f};
+
+/// Diagnostic G-buffer the flatland frame stage rasterises (fractions of the buffer extent).
+inline constexpr f32 kRcDiagCenter[2] = {0.5f, 0.5f};
+inline constexpr f32 kRcDiagRadius = 0.22f; ///< fraction of width
+inline constexpr f32 kRcDiagDepth = 0.4f;
+inline constexpr f32 kRcDiagNormal[3] = {0.2f, 0.45f, 0.85f};
+inline constexpr f32 kRcDiagAlbedoR = 0.9f;
+inline constexpr f32 kRcDiagAlbedoB = 0.2f;
+inline constexpr f32 kRcDiagDisk2[2] = {0.78f, 0.22f};
+inline constexpr f32 kRcDiagRadius2 = 0.07f; ///< fraction of width
+inline constexpr f32 kRcDiagDepth2 = 0.75f;
+inline constexpr f32 kRcDiagNormal2[3] = {0.15f, -0.2f, -0.9f};
+inline constexpr f32 kRcDiagAlbedo2[3] = {0.15f, 0.55f, 0.9f};
+
+inline f32 rcDiagAlbedoG(u32 frameIndex) {
+    const f32 t = static_cast<f32>(frameIndex % 60u) / 60.f;
+    return 0.55f + 0.35f * t;
+}
+
+/// Texels whose centre lies within `radius` of (cx, cy). Closer depth wins.
+void rasterizeDisk(RcCpuGBuffer& gb, f32 cx, f32 cy, f32 radius, f32 depth, f32 nx, f32 ny, f32 nz, f32 ar, f32 ag,
+                   f32 ab);
+/// The flatland frame's diagnostic: a near disk (albedo shifts with `frameIndex`) and a farther disk.
+void fillDiagnosticGBuffer(RcCpuGBuffer& gb, u32 width, u32 height, u32 frameIndex);
+/// Miss (depth <= 0) stays empty. A hit is opaque with emission = albedo * saturate(dot(decodedOct, light)).
+/// False when the channel counts do not match `width * height`.
+bool packSceneFromGBuffer(const RcCpuGBuffer& gb, RcScene& scene);
+
 struct RcSettings {
     u32 probeSpacing0 = 1u;  ///< s_0 in texels (power of two)
     u32 dirs0 = 4u;          ///< N_0

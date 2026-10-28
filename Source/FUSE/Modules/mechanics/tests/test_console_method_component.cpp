@@ -1,8 +1,10 @@
 #include <fuse/mechanics/console_method_component.hpp>
+#include <fuse/mechanics/method_name.hpp>
 #include <fuse/core/init.hpp>
 
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 
 namespace {
 
@@ -15,9 +17,23 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
+void testMethodNameOk() {
+    expectTrue(fuse::mechanics::method_name_ok("setHealth"), "setHealth is a valid method name");
+    expectTrue(!fuse::mechanics::method_name_ok("1set"), "leading digit is an invalid method name");
+    expectTrue(!fuse::mechanics::method_name_ok(""), "empty method name is invalid");
+    expectTrue(fuse::mechanics::method_name_ok("_setHealth"), "leading underscore is a valid method name");
+    expectTrue(fuse::mechanics::method_name_ok("A"), "single letter is a valid method name");
+    const std::string maxName(48, 'a');
+    expectTrue(fuse::mechanics::method_name_ok(maxName), "48-character method name is valid");
+    const std::string tooLong(49, 'a');
+    expectTrue(!fuse::mechanics::method_name_ok(tooLong), "method name longer than 48 is invalid");
+    expectTrue(!fuse::mechanics::method_name_ok("set-health"), "hyphen is an invalid method name");
+}
+
 } // namespace
 
 int main() {
+    testMethodNameOk();
     fuse::core::initialize();
 
     fuse::mechanics::ConsoleMethodComponent console("test_console");

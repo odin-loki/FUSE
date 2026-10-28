@@ -3,6 +3,7 @@
 //  - ray cast matches brute-force voxel traversal for 10k random rays
 //  - carve produces correct surface voxel transitions (re-query the carved region)
 //  - SDF query is smooth at leaf boundaries (no discontinuities)
+#include <fuse/scene/leaf_extent.hpp>
 #include <fuse/scene/svo.hpp>
 
 #include <algorithm>
@@ -248,9 +249,18 @@ void testSdfContinuityAcrossLeaves() {
     expectTrue(worstJump < 0.02f, "SDF has no discontinuities at leaf boundaries");
 }
 
+void testLeafExtentOk() {
+    expectTrue(fuse::scene::leaf_extent_ok(0.01f), "leaf extent 0.01");
+    expectTrue(fuse::scene::leaf_extent_ok(1.f), "leaf extent 1");
+    expectTrue(fuse::scene::leaf_extent_ok(8.f), "leaf extent 8");
+    expectTrue(!fuse::scene::leaf_extent_ok(0.f), "leaf extent 0 rejected");
+    expectTrue(!fuse::scene::leaf_extent_ok(9.f), "leaf extent 9 rejected");
+}
+
 } // namespace
 
 int main() {
+    testLeafExtentOk();
     testMillionVoxelRoundTrip();
     testRayCastMatchesBruteForce();
     testCarveTransitions();

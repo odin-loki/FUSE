@@ -1,5 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/mechanics/toggle_component.hpp>
+#include <fuse/mechanics/toggle_edge.hpp>
+#include <fuse/mechanics/toggle_id.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -13,6 +15,22 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testToggleIdOk() {
+    expectTrue(fuse::mechanics::toggle_id_ok(0), "toggle_id_ok(0) is true");
+    expectTrue(fuse::mechanics::toggle_id_ok(255), "toggle_id_ok(255) is true");
+    expectTrue(!fuse::mechanics::toggle_id_ok(-1), "toggle_id_ok(-1) is false");
+    expectTrue(!fuse::mechanics::toggle_id_ok(256), "toggle_id_ok(256) is false");
+}
+
+void testToggleOnPress() {
+    expectTrue(fuse::mechanics::toggle_on_press(false, true, false),
+               "toggle_on_press(false, true, false) flips off to on");
+    expectTrue(fuse::mechanics::toggle_on_press(true, true, true),
+               "toggle_on_press(true, true, true) holds while pressed");
+    expectTrue(fuse::mechanics::toggle_on_press(true, false, true),
+               "toggle_on_press(true, false, true) holds on release");
 }
 
 void testToggleComponent() {
@@ -31,6 +49,13 @@ void testToggleComponent() {
 } // namespace
 
 int main() {
+    testToggleIdOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_mechanics_toggle_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testToggleOnPress();
     fuse::core::initialize();
     testToggleComponent();
     fuse::core::shutdown();

@@ -8,8 +8,10 @@
 //  - narrowphase for 1k contact pairs < 3 ms (CPU reference; the RTX 3090 figure is a hardware row)
 #include <fuse/core/sanitizer.hpp>
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
+#include <fuse/physics/narrowphase/manifold_points.hpp>
 #include <fuse/physics/narrowphase/gjk.hpp>
 #include <fuse/physics/physics_data.hpp>
+#include <fuse/physics/solver/contact_warmstart.hpp>
 
 #include <algorithm>
 #include <array>
@@ -374,15 +376,47 @@ void testNarrowphaseThousandPairs() {
 #endif
 }
 
+void testManifoldPointsOk() {
+    expectTrue(fuse::physics::manifold_points_ok(1), "one contact point is a valid manifold");
+    expectTrue(fuse::physics::manifold_points_ok(4), "four contact points is the manifold cap");
+    expectTrue(!fuse::physics::manifold_points_ok(0), "an empty manifold is rejected");
+    expectTrue(!fuse::physics::manifold_points_ok(5), "five contact points exceeds the manifold cap");
+}
+
+void testContactWarmStartCacheKey() {
+    const u32 feature = 0x2fffffu;
+    const fuse::u64 forward = contact_key(7u, 3u, feature);
+    const fuse::u64 swapped = contact_key(3u, 7u, feature);
+    expectTrue(forward == swapped, "swapped body ids produce the same contact warm-start key");
+    const fuse::u64 packed = (fuse::u64(3u) << 42) ^ (fuse::u64(7u) << 21) ^ fuse::u64(feature & 0x1fffffu);
+    expectTrue(forward == packed, "contact key packs the lower body id, higher body id, and feature");
+    expectTrue(contact_key(3u, 7u, feature) == contact_key(7u, 3u, feature | ~0x1fffffu),
+               "contact key masks the feature to 21 bits");
+
+    const WarmStart entries[] = {
+        WarmStart{packed, 1.25f, -0.5f},
+        WarmStart{packed, 9.f, 0.25f},
+    };
+    const WarmStart* hit = find_warm_start(entries, 2, swapped);
+    expectTrue(hit == &entries[0] && hit->normalImpulse == 1.25f && hit->tangentImpulse == -0.5f,
+               "warm-start lookup returns the first entry with the key");
+    expectTrue(find_warm_start(entries, 2, packed ^ fuse::u64{1}) == nullptr,
+               "warm-start lookup misses an unknown key");
+    expectTrue(find_warm_start(nullptr, 2, packed) == nullptr, "a null warm-start table misses");
+    expectTrue(find_warm_start(entries, 0, packed) == nullptr, "an empty warm-start table misses");
+}
+
 } // namespace
 
 int main() {
+    testManifoldPointsOk();
     testSphereSphereAnalytic();
     testSpherePlaneAllAngles();
     testCapsuleCapsule();
     testGjkEpaAgainstSat();
     testSdfNormalsSmooth();
     testNarrowphaseThousandPairs();
+    testContactWarmStartCacheKey();
 
     if (g_failures == 0) {
         std::printf("fuse_b4_narrowphase_gates: all checks passed\n");

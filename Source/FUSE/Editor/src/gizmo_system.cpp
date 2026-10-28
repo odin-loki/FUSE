@@ -1799,6 +1799,165 @@ f32 gizmoWorldScale(const math::Vec3& cameraPosition, const math::Vec3& gizmoPos
     return screenSizePx * worldPerPixel;
 }
 
+namespace {
+
+constexpr f32 kRasterClipWEpsilon = 1e-5f;
+
+struct RasterScreenPoint {
+    f32 x = 0.f;
+    f32 y = 0.f;
+};
+
+bool projectTranslateGizmoPoint(const math::Mat4& viewProjection, const math::Vec3& world,
+                                u32 viewportWidth, u32 viewportHeight, RasterScreenPoint& out) {
+    const f32 clipX = viewProjection.data[0] * world.x + viewProjection.data[4] * world.y +
+                      viewProjection.data[8] * world.z + viewProjection.data[12];
+    const f32 clipY = viewProjection.data[1] * world.x + viewProjection.data[5] * world.y +
+                      viewProjection.data[9] * world.z + viewProjection.data[13];
+    const f32 clipW = viewProjection.data[3] * world.x + viewProjection.data[7] * world.y +
+                      viewProjection.data[11] * world.z + viewProjection.data[15];
+    if (!(clipW > kRasterClipWEpsilon) || !std::isfinite(clipX) || !std::isfinite(clipY) ||
+        !std::isfinite(clipW)) {
+        return false;
+    }
+
+    const f32 invW = 1.f / clipW;
+    const f32 ndcX = clipX * invW;
+    const f32 ndcY = clipY * invW;
+    if (!std::isfinite(ndcX) || !std::isfinite(ndcY)) {
+        return false;
+    }
+
+    out.x = (ndcX + 1.f) * 0.5f * static_cast<f32>(viewportWidth);
+    out.y = (1.f - ndcY) * 0.5f * static_cast<f32>(viewportHeight);
+    return std::isfinite(out.x) && std::isfinite(out.y);
+}
+
+/// Liang-Barsky clip against the inclusive pixel rectangle [0, maxX] x [0, maxY].
+bool clipTranslateGizmoSegment(f32& x0, f32& y0, f32& x1, f32& y1, f32 maxX, f32 maxY) {
+    const f32 dx = x1 - x0;
+    const f32 dy = y1 - y0;
+    const f32 p[4] = {-dx, dx, -dy, dy};
+    const f32 q[4] = {x0, maxX - x0, y0, maxY - y0};
+    f32 u0 = 0.f;
+    f32 u1 = 1.f;
+    for (int edge = 0; edge < 4; ++edge) {
+        if (std::fabs(p[edge]) <= kEpsilon) {
+            if (q[edge] < 0.f) {
+                return false;
+            }
+            continue;
+        }
+        const f32 t = q[edge] / p[edge];
+        if (p[edge] < 0.f) {
+            if (t > u1) {
+                return false;
+            }
+            if (t > u0) {
+                u0 = t;
+            }
+        } else if (t < u1) {
+            if (t < u0) {
+                return false;
+            }
+            u1 = t;
+        }
+    }
+
+    const f32 clippedX0 = x0 + u0 * dx;
+    const f32 clippedY0 = y0 + u0 * dy;
+    x1 = x0 + u1 * dx;
+    y1 = y0 + u1 * dy;
+    x0 = clippedX0;
+    y0 = clippedY0;
+    return true;
+}
+
+void writeTranslateGizmoPixel(u8* rgba8, u32 viewportWidth, u32 viewportHeight, int x, int y, u8 red,
+                              u8 green, u8 blue) {
+    if (x < 0 || y < 0 || static_cast<u32>(x) >= viewportWidth ||
+        static_cast<u32>(y) >= viewportHeight) {
+        return;
+    }
+    u8* pixel = rgba8 + (static_cast<usize>(y) * viewportWidth + static_cast<u32>(x)) * 4u;
+    pixel[0] = red;
+    pixel[1] = green;
+    pixel[2] = blue;
+    pixel[3] = 255;
+}
+
+void drawTranslateGizmoSegment(u8* rgba8, u32 viewportWidth, u32 viewportHeight, f32 x0, f32 y0,
+                               f32 x1, f32 y1, u8 red, u8 green, u8 blue) {
+    if (viewportWidth == 0 || viewportHeight == 0) {
+        return;
+    }
+    const f32 maxX = static_cast<f32>(viewportWidth) - 1.f;
+    const f32 maxY = static_cast<f32>(viewportHeight) - 1.f;
+    if (!clipTranslateGizmoSegment(x0, y0, x1, y1, maxX, maxY)) {
+        return;
+    }
+
+    int ix0 = static_cast<int>(std::lround(x0));
+    int iy0 = static_cast<int>(std::lround(y0));
+    const int ix1 = static_cast<int>(std::lround(x1));
+    const int iy1 = static_cast<int>(std::lround(y1));
+    const int dx = std::abs(ix1 - ix0);
+    const int dy = -std::abs(iy1 - iy0);
+    const int stepX = ix0 < ix1 ? 1 : -1;
+    const int stepY = iy0 < iy1 ? 1 : -1;
+    int err = dx + dy;
+    for (;;) {
+        writeTranslateGizmoPixel(rgba8, viewportWidth, viewportHeight, ix0, iy0, red, green, blue);
+        if (ix0 == ix1 && iy0 == iy1) {
+            break;
+        }
+        const int err2 = err * 2;
+        if (err2 >= dy) {
+            err += dy;
+            ix0 += stepX;
+        }
+        if (err2 <= dx) {
+            err += dx;
+            iy0 += stepY;
+        }
+    }
+}
+
+} // namespace
+
+void rasterizeTranslateGizmo(const math::Mat4& viewProjection, const math::Vec3& worldOrigin,
+                             u32 viewportWidth, u32 viewportHeight, u8* rgba8) {
+    if (rgba8 == nullptr || viewportWidth == 0 || viewportHeight == 0) {
+        return;
+    }
+
+    RasterScreenPoint origin{};
+    if (!projectTranslateGizmoPoint(viewProjection, worldOrigin, viewportWidth, viewportHeight,
+                                    origin)) {
+        return;
+    }
+
+    const math::Vec3 tips[3] = {
+        {worldOrigin.x + GizmoSystem::kAxisLength, worldOrigin.y, worldOrigin.z},
+        {worldOrigin.x, worldOrigin.y + GizmoSystem::kAxisLength, worldOrigin.z},
+        {worldOrigin.x, worldOrigin.y, worldOrigin.z + GizmoSystem::kAxisLength},
+    };
+    const u8 colors[3][3] = {
+        {255, 0, 0},
+        {0, 255, 0},
+        {0, 0, 255},
+    };
+    for (int axis = 0; axis < 3; ++axis) {
+        RasterScreenPoint tip{};
+        if (!projectTranslateGizmoPoint(viewProjection, tips[axis], viewportWidth, viewportHeight,
+                                        tip)) {
+            continue;
+        }
+        drawTranslateGizmoSegment(rgba8, viewportWidth, viewportHeight, origin.x, origin.y, tip.x,
+                                  tip.y, colors[axis][0], colors[axis][1], colors[axis][2]);
+    }
+}
+
 std::string formatGizmoTransform(const GizmoTransform& transform) {
     const f32 values[] = {transform.posX,   transform.posY,   transform.posZ, transform.rotX,
                           transform.rotY,   transform.rotZ,   transform.rotW, transform.scaleX,

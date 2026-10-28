@@ -20,6 +20,8 @@
 #include <fuse/audio/audio_codec.hpp>
 #include <fuse/audio/audio_container.hpp>
 #include <fuse/audio/audio_engine.hpp>
+#include <fuse/audio/channel_layout.hpp>
+#include <fuse/audio/output_channels.hpp>
 #include <fuse/audio/spsc_ring.hpp>
 #include <fuse/core/sanitizer.hpp>
 
@@ -873,9 +875,24 @@ int runOpenALNull() {
 }
 #endif
 
+void testOutputChannelOk() {
+    expectTrue(fa::output_channel_ok(2), "output_channel_ok(2)");
+    expectTrue(fa::output_channel_ok(6), "output_channel_ok(6)");
+    expectTrue(!fa::output_channel_ok(0), "output_channel_ok(0) is false");
+    expectTrue(!fa::output_channel_ok(4), "output_channel_ok(4) is false");
+}
+
+void gateOutputChannelLayout() {
+    expectTrue(fa::channel_count(fa::ChannelLayout::Stereo) == 2, "stereo output layout is 2 channels");
+    expectTrue(!fa::layout_has_lfe(fa::ChannelLayout::Stereo), "stereo output layout has no LFE");
+    expectTrue(fa::channel_count(fa::ChannelLayout::Surround51) == 6, "surround 5.1 output layout is 6 channels");
+    expectTrue(fa::layout_has_lfe(fa::ChannelLayout::Surround51), "surround 5.1 output layout has LFE");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testOutputChannelOk();
     int rc = 0;
     if (argc > 2 && std::strcmp(argv[1], "--wave") == 0) {
 #if defined(FUSE_AUDIO_OPENAL)
@@ -900,6 +917,7 @@ int main(int argc, char** argv) {
         gateContainers();
         gateStreaming30s();
         gateStreamingLoopAndSeek();
+        gateOutputChannelLayout();
     }
     if (rc != 0 || g_failures != 0) {
         std::printf("fuse_audio_output: %d of %d checks failed\n", g_failures, g_checks);

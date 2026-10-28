@@ -23,6 +23,7 @@
 // Usage: fuse_relight_restir_gi_tests <suite>|all. Exit 0 pass, 1 fail.
 #include "pt_test_scenes.hpp"
 
+#include <fuse/relight/render/pathtrace/reservoir_count.hpp>
 #include <fuse/relight/render/pathtrace/restir_di.hpp>
 #include <fuse/relight/render/pathtrace/restir_gi.hpp>
 
@@ -561,9 +562,21 @@ void suiteOptions() {
           "options: defaults");
 }
 
+/// Runs before option setup. No heap allocation. Failure exits 1.
+int testReservoirCountOk() {
+    check(fuse::relight::reservoir_count_ok(1), "reservoir_count_ok(1)");
+    check(fuse::relight::reservoir_count_ok(64), "reservoir_count_ok(64)");
+    check(!fuse::relight::reservoir_count_ok(0), "reservoir_count_ok(0)");
+    check(!fuse::relight::reservoir_count_ok(65), "reservoir_count_ok(65)");
+    return g_failures == 0 ? 0 : 1;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int reservoirRc = testReservoirCountOk()) {
+        return reservoirRc;
+    }
     opt::setEnvironmentVariable(opt::kDxvkConfEnvVar, "");
     opt::setEnvironmentVariable(opt::kRtxConfEnvVar, "");
     (void)BorrowedStandIns::sceneScaleObject();

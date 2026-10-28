@@ -1,5 +1,6 @@
 #include <fuse/core/init.hpp>
 #include <fuse/platform/gl_context.hpp>
+#include <fuse/renderer/phase2_pass.hpp>
 #include <fuse/renderer/renderer_bootstrap.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 #include <fuse/types.hpp>
@@ -18,6 +19,20 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero. Does not allocate.
+int testPhase2PassOk() {
+    const int before = g_failures;
+    expectTrue(fuse::renderer::phase2_pass_ok(0), "phase2_pass_ok(0) is true");
+    expectTrue(fuse::renderer::phase2_pass_ok(8), "phase2_pass_ok(8) is true");
+    expectTrue(!fuse::renderer::phase2_pass_ok(-1), "phase2_pass_ok(-1) is false");
+    expectTrue(!fuse::renderer::phase2_pass_ok(9), "phase2_pass_ok(9) is false");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testPhase2PassOk\n");
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
 }
 
 void testPhase2HeadlessIntegration() {
@@ -106,6 +121,10 @@ void testPhase2HeadlessIntegration() {
 } // namespace
 
 int main() {
+    if (const int phase2Rc = testPhase2PassOk()) {
+        return phase2Rc;
+    }
+
     testPhase2HeadlessIntegration();
 
     if (g_failures == 0) {

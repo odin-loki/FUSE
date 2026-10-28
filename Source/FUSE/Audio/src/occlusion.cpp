@@ -227,4 +227,93 @@ OcclusionAttenuation evaluate_occlusion_from_blockers(const Vec3& listener, cons
     return evaluate_occlusion_attenuation(visibility, params);
 }
 
+namespace {
+
+constexpr float kPi = 3.14159265358979323846f;
+
+float sanitize_lpf_sample_rate(float sample_rate) {
+    if (!std::isfinite(sample_rate) || sample_rate <= 0.f) {
+        return static_cast<float>(kOcclusionLpfSampleRate);
+    }
+    return sample_rate;
+}
+
+} // namespace
+
+float occlusion_lpf_cutoff_hz(float visibility, float sample_rate) {
+    const float fs = sanitize_lpf_sample_rate(sample_rate);
+    const float nyquist = 0.5f * fs;
+    const float blocked = std::min(kOcclusionLpfBlockedHz, nyquist);
+    if (!std::isfinite(visibility)) {
+        return blocked;
+    }
+    if (is_fully_visible_occlusion(visibility)) {
+        return nyquist;
+    }
+    const float v = clamp_occlusion_visibility(visibility);
+    if (!(blocked > 0.f) || !(nyquist > blocked)) {
+        return blocked;
+    }
+    const float fc = blocked * std::pow(nyquist / blocked, v);
+    if (!std::isfinite(fc)) {
+        return blocked;
+    }
+    return std::clamp(fc, blocked, nyquist);
+}
+
+float occlusion_lpf_coefficient(float cutoff_hz, float sample_rate) {
+    const float fs = sanitize_lpf_sample_rate(sample_rate);
+    if (!std::isfinite(cutoff_hz) || cutoff_hz <= 0.f) {
+        return 0.f;
+    }
+    const float nyquist = 0.5f * fs;
+    const float fc = std::min(cutoff_hz, nyquist);
+    const float a = 1.f - std::exp(-2.f * kPi * fc / fs);
+    if (!std::isfinite(a) || a <= 0.f) {
+        return 0.f;
+    }
+    return a > 1.f ? 1.f : a;
+}
+
+bool should_bypass_occlusion_lpf(float visibility) {
+    return is_fully_visible_occlusion(visibility);
+}
+
+float occlusion_lpf_mix_coefficient(float visibility, float sample_rate) {
+    if (should_bypass_occlusion_lpf(visibility)) {
+        return 1.f;
+    }
+    const float a = occlusion_lpf_coefficient(occlusion_lpf_cutoff_hz(visibility, sample_rate),
+                                              sample_rate);
+    return a >= 1.f ? 1.f : a;
+}
+
+float process_occlusion_lpf(float input, float& state, float coefficient) {
+    if (!std::isfinite(input) || !std::isfinite(state)) {
+        state = 0.f;
+        return 0.f;
+    }
+    const float a = std::isfinite(coefficient) ? std::clamp(coefficient, 0.f, 1.f) : 0.f;
+    const float y = state + a * (input - state);
+    if (!std::isfinite(y) || std::fabs(y) < kOcclusionLpfDenormalFloor) {
+        state = 0.f;
+        return 0.f;
+    }
+    state = y;
+    return y;
+}
+
+float apply_occlusion_lpf(float input, float& state, float visibility, float sample_rate) {
+    if (!std::isfinite(input)) {
+        state = 0.f;
+        return 0.f;
+    }
+    const float a = occlusion_lpf_mix_coefficient(visibility, sample_rate);
+    if (a >= 1.f) {
+        state = input;
+        return input;
+    }
+    return process_occlusion_lpf(input, state, a);
+}
+
 } // namespace fuse::audio

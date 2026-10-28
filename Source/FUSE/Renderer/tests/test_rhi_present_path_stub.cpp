@@ -1,4 +1,5 @@
 #include <fuse/core/init.hpp>
+#include <fuse/renderer/present_mode.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
 #include <fuse/renderer/vk/fence_wait.hpp>
 #include <fuse/renderer/vk/frame.hpp>
@@ -830,9 +831,23 @@ void testLastPendingFenceCountOnWait() {
              "lastPendingFenceCount mirrors ring before wait");
 }
 
+// CPU gate. Runs before any device skip and does not allocate.
+void testPresentModeOk() {
+    expectTrue(fuse::renderer::present_mode_ok(0), "present_mode_ok(0) is true");
+    expectTrue(fuse::renderer::present_mode_ok(3), "present_mode_ok(3) is true");
+    expectTrue(!fuse::renderer::present_mode_ok(-1), "present_mode_ok(-1) is false");
+    expectTrue(!fuse::renderer::present_mode_ok(4), "present_mode_ok(4) is false");
+}
+
 } // namespace
 
 int main() {
+    testPresentModeOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_rhi_present_path_stub: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testHeadlessPresentStateMachine();

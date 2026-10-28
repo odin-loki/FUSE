@@ -1,7 +1,10 @@
+#include <fuse/ecs/chunk_count.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/tags.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/detail/iteration_parity.hpp>
+#include <fuse/ecs/grain_size.hpp>
+#include <fuse/ecs/parallel_batch.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/ecs/systems/transform_system.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
@@ -605,6 +608,18 @@ void testEachParallelEmptyRegistry() {
     expectEq(visitCount.load(std::memory_order_relaxed), 0u, "empty registry produces zero parallel visits");
 }
 
+void testChunkCount() {
+    expectEq(fuse::ecs::chunk_count(0u, 4u), 0u, "chunk_count count 0 is 0");
+    expectEq(fuse::ecs::chunk_count(10u, 0u), 0u, "chunk_count chunkSize 0 is 0");
+    expectEq(fuse::ecs::chunk_count(0u, 0u), 0u, "chunk_count both zero is 0");
+    expectEq(fuse::ecs::chunk_count(10u, 4u), 3u, "chunk_count(10, 4) == 3");
+    expectEq(fuse::ecs::chunk_count(8u, 4u), 2u, "chunk_count(8, 4) == 2");
+    expectEq(fuse::ecs::chunk_count(1u, 4u), 1u, "chunk_count(1, 4) == 1");
+    expectEq(fuse::ecs::chunk_count(0xffffffffu, 1u), 0xffffffffu, "chunk_count saturates at UINT32_MAX");
+    expectEq(fuse::ecs::chunk_count(0xffffffffu, 2u), 0x80000000u, "chunk_count ceil of UINT32_MAX by 2");
+    expectEq(fuse::ecs::chunk_count(0xffffffffu, 0xffffffffu), 1u, "chunk_count full span is one chunk");
+}
+
 void testEachQueryParallelWithWithoutSmoke() {
     fuse::ecs::Registry reg;
     reg.init(64);
@@ -641,9 +656,31 @@ void testEachQueryParallelWithWithoutSmoke() {
     expectEq(parallelCount.load(std::memory_order_relaxed), 1u, "parallel With/Without smoke visits one entity");
 }
 
+void testParallelBatchOk() {
+    expectTrue(fuse::ecs::parallel_batch_ok(1), "parallel_batch_ok(1)");
+    expectTrue(fuse::ecs::parallel_batch_ok(256), "parallel_batch_ok(256)");
+    expectTrue(!fuse::ecs::parallel_batch_ok(0), "parallel_batch_ok(0)");
+    expectTrue(!fuse::ecs::parallel_batch_ok(257), "parallel_batch_ok(257)");
+}
+
+void testGrainSizeOk() {
+    expectTrue(fuse::ecs::grain_size_ok(1), "grain_size_ok(1)");
+    expectTrue(fuse::ecs::grain_size_ok(64), "grain_size_ok(64)");
+    expectTrue(fuse::ecs::grain_size_ok(4096), "grain_size_ok(4096)");
+    expectTrue(!fuse::ecs::grain_size_ok(0), "grain_size_ok(0)");
+    expectTrue(!fuse::ecs::grain_size_ok(4097), "grain_size_ok(4097)");
+}
+
 } // namespace
 
 int main() {
+    testParallelBatchOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_ecs_each_parallel_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testGrainSizeOk();
+    testChunkCount();
     testEachParallelVisitsSameEntities();
     testEachParallelStressVisitCoverage();
     testEachParallelMutationParity();

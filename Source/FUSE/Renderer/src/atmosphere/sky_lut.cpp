@@ -1,5 +1,6 @@
 #include <fuse/renderer/atmosphere/sky_lut.hpp>
 #include <fuse/renderer/atmosphere/sky_scatter.hpp>
+#include <fuse/renderer/deferred/gbuffer.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -87,6 +88,31 @@ math::Vec3 SkyLut::sampleBilinear(f32 sun_elevation_rad, f32 view_elevation_rad)
     const math::Vec3 low = a + (b - a) * tv;
     const math::Vec3 high = c + (d - c) * tv;
     return low + (high - low) * ts;
+}
+
+std::vector<u8> SkyLut::packRgba16f() const {
+    const u32 width = m_desc.view_elevation_bins;
+    const u32 height = m_desc.sun_elevation_bins;
+    const usize texels = static_cast<usize>(width) * static_cast<usize>(height);
+    if (!m_ready || width == 0u || height == 0u || m_entries.size() != texels) {
+        return {};
+    }
+
+    std::vector<u8> bytes(texels * 8u);
+    const u16 alpha = GBufferQuantize::floatToHalf(1.f);
+    for (u32 sun_bin = 0; sun_bin < height; ++sun_bin) {
+        for (u32 view_bin = 0; view_bin < width; ++view_bin) {
+            const math::Vec3 colour = m_entries[lutIndex(sun_bin, view_bin, width)];
+            const u16 channels[4] = {GBufferQuantize::floatToHalf(colour.x), GBufferQuantize::floatToHalf(colour.y),
+                                     GBufferQuantize::floatToHalf(colour.z), alpha};
+            u8* dst = bytes.data() + (static_cast<usize>(sun_bin) * width + view_bin) * 8u;
+            for (u32 channel = 0; channel < 4u; ++channel) {
+                dst[channel * 2u] = static_cast<u8>(channels[channel] & 0xFFu);
+                dst[channel * 2u + 1u] = static_cast<u8>(channels[channel] >> 8);
+            }
+        }
+    }
+    return bytes;
 }
 
 } // namespace fuse::renderer

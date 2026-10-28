@@ -4,6 +4,7 @@
 // limits, exhausts the heap to the device-derived cap (and the shorter UBO array), holds many live
 // textures, then churns create/destroy, checking slot recycling, live counts and that every GPU
 // descriptor write stays inside the set (run under fuse_vulkan_validation_gate for the Vulkan side).
+#include <fuse/renderer/churn_slot.hpp>
 #include <fuse/renderer/resource_manager.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
@@ -38,6 +39,20 @@ fuse::renderer::TextureDesc tinyTexture() {
 
 fuse::u32 bindlessBindingOf(const fuse::renderer::BindlessDescriptors& bindless, fuse::u32 index) {
     return bindless.bindingIndexForSlot(fuse::renderer::BindlessHeapKind::Texture, index).binding;
+}
+
+/// CPU gate. Must run before any device skip; a failure returns non-zero.
+/// No heap allocation.
+int testChurnSlotOk() {
+    expectTrue(fuse::renderer::churn_slot_ok(0), "churn_slot_ok(0) is true");
+    expectTrue(fuse::renderer::churn_slot_ok(1023), "churn_slot_ok(1023) is true");
+    expectTrue(!fuse::renderer::churn_slot_ok(-1), "churn_slot_ok(-1) is false");
+    expectTrue(!fuse::renderer::churn_slot_ok(1024), "churn_slot_ok(1024) is false");
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b2_bindless_churn: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    return 0;
 }
 
 /// Sizing policy on synthetic device limits (no GPU needed).
@@ -281,6 +296,10 @@ void testBindlessChurn() {
 } // namespace
 
 int main() {
+    if (const int churnRc = testChurnSlotOk()) {
+        return churnRc;
+    }
+
     testArraySizingPolicy();
     testBindlessChurn();
 

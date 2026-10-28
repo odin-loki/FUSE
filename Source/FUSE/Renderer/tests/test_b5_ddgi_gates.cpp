@@ -7,6 +7,7 @@
 #include <fuse/renderer/gi/ddgi.hpp>
 #include <fuse/renderer/gi/ddgi_cpu.hpp>
 #include <fuse/renderer/material/material.hpp>
+#include <fuse/renderer/probe_spacing.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -921,9 +922,25 @@ void testTimingUpdateCycle() {
     expectTrue(ms[ms.size() / 2u] > 0.0, "timing measured");
 }
 
+/// CPU gate. No allocation. Must run before any GPU skip; a failure returns non-zero.
+void testProbeSpacingOk() {
+    expectTrue(probe_spacing_ok(0.5f), "probe_spacing_ok(0.5) is true");
+    expectTrue(probe_spacing_ok(64.f), "probe_spacing_ok(64) is true");
+    expectTrue(!probe_spacing_ok(0.f), "probe_spacing_ok(0) is false");
+    expectTrue(!probe_spacing_ok(-1.f), "probe_spacing_ok(-1) is false");
+    expectTrue(!probe_spacing_ok(64.1f), "probe_spacing_ok(64.1) is false");
+    expectTrue(!probe_spacing_ok(std::numeric_limits<float>::quiet_NaN()), "probe_spacing_ok(non-finite) is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testProbeSpacingOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b5_ddgi_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     const bool timing = argc > 1 && std::strcmp(argv[1], "--timing") == 0;
     if (timing) {
         testTimingUpdateCycle();

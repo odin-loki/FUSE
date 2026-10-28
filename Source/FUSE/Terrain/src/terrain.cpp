@@ -20,6 +20,7 @@ void Terrain::init(const TerrainDesc& desc) {
     m_meshes.assign(m_chunk_grid.chunk_count(), ChunkMesh{});
     m_height_dirty.assign(m_chunk_grid.chunk_count(), 0u);
     m_mesh_builds = 0;
+    bind_edit_desc_();
     m_initialized = true;
 }
 
@@ -29,6 +30,7 @@ void Terrain::destroy() {
     m_caves.destroy();
     m_meshes.clear();
     m_height_dirty.clear();
+    m_edits = {};
     m_initialized = false;
 }
 
@@ -45,10 +47,15 @@ void Terrain::generate(u64 seed) {
     generate_terrain_heights(seed, make_terrain_noise_params(m_desc), resolution, m_desc.max_height,
                              heights.data());
     std::fill(m_height_dirty.begin(), m_height_dirty.end(), static_cast<u8>(1u));
+    // Height deltas are relative to this surface. Cave carves are independent and stay recorded.
+    m_edits.heights.clear();
+    m_edits.seed = seed;
+    m_edits.flags = kTerrainEditGeneratedFlag;
 }
 
 void Terrain::deform(vec3 world_pos, f32 radius, f32 amount) {
-    if (!m_initialized || radius <= 0.f) {
+    if (!m_initialized || !(radius > 0.f) || !std::isfinite(radius) || !std::isfinite(amount) ||
+        !std::isfinite(world_pos.x) || !std::isfinite(world_pos.z)) {
         return;
     }
 
@@ -79,8 +86,7 @@ void Terrain::deform(vec3 world_pos, f32 radius, f32 amount) {
             }
 
             const f32 falloff = 1.f - (dist / radius);
-            const f32 current = m_heightfield.get_height_texel(ux, uz);
-            m_heightfield.set_height(ux, uz, current + amount * falloff);
+            add_height_edit_(ux, uz, amount * falloff);
         }
     }
 
@@ -163,10 +169,14 @@ vec3 Terrain::get_normal(f32 world_x, f32 world_z) const {
 }
 
 void Terrain::carve_cave(vec3 center, f32 radius) {
-    if (!m_initialized || !m_caves.is_initialized()) {
+    if (!m_initialized || !(radius > 0.f) || !std::isfinite(radius) || !std::isfinite(center.x) ||
+        !std::isfinite(center.y) || !std::isfinite(center.z)) {
         return;
     }
-    m_caves.carve_sphere(center, radius);
+    m_edits.caves.push_back(TerrainCaveEdit{center, radius});
+    if (m_caves.is_initialized()) {
+        m_caves.carve_sphere(center, radius);
+    }
 }
 
 bool Terrain::is_solid(vec3 world_pos) const {
@@ -235,6 +245,121 @@ void Terrain::update_lod(vec3 camera_pos, f32 dt) {
 
 void Terrain::get_visible_chunks(std::vector<const TerrainChunk*>& out) const {
     m_chunk_grid.collect_visible_chunks(out);
+}
+
+void Terrain::bind_edit_desc_() {
+    m_edits = {};
+    m_edits.resolution = m_desc.resolution;
+    m_edits.world_size = m_desc.world_size;
+    m_edits.max_height = m_desc.max_height;
+    m_edits.svo_depth = m_desc.svo_depth;
+}
+
+void Terrain::add_height_edit_(u32 x, u32 z, f32 delta) {
+    if (x >= m_desc.resolution || z >= m_desc.resolution || !std::isfinite(delta) || delta == 0.f) {
+        return;
+    }
+
+    m_heightfield.set_height(x, z, m_heightfield.get_height_texel(x, z) + delta);
+
+    const auto less = [](const TerrainHeightEdit& a, const TerrainHeightEdit& b) {
+        if (a.z != b.z) {
+            return a.z < b.z;
+        }
+        return a.x < b.x;
+    };
+    TerrainHeightEdit probe{};
+    probe.x = x;
+    probe.z = z;
+    const auto it = std::lower_bound(m_edits.heights.begin(), m_edits.heights.end(), probe, less);
+    if (it != m_edits.heights.end() && it->x == x && it->z == z) {
+        it->delta += delta;
+        if (std::fabs(it->delta) <= kTerrainHeightEditEpsilon) {
+            m_edits.heights.erase(it);
+        }
+        return;
+    }
+    if (std::fabs(delta) <= kTerrainHeightEditEpsilon) {
+        return;
+    }
+    TerrainHeightEdit created{};
+    created.x = x;
+    created.z = z;
+    created.delta = delta;
+    m_edits.heights.insert(it, created);
+}
+
+void Terrain::clear_cave_volume_() {
+    m_edits.caves.clear();
+    m_caves.destroy();
+    if (m_desc.has_svo_caves) {
+        m_caves.init(m_desc);
+    }
+}
+
+void Terrain::apply_edit_delta_(TerrainEditDelta delta) {
+    if ((delta.flags & kTerrainEditGeneratedFlag) != 0u) {
+        generate(delta.seed);
+    } else {
+        m_heightfield.fill(0.f);
+        m_edits.heights.clear();
+        m_edits.seed = 0;
+        m_edits.flags = 0;
+        std::fill(m_height_dirty.begin(), m_height_dirty.end(), static_cast<u8>(1u));
+    }
+
+    clear_cave_volume_();
+    for (const TerrainHeightEdit& edit : delta.heights) {
+        add_height_edit_(edit.x, edit.z, edit.delta);
+    }
+    for (const TerrainCaveEdit& cave : delta.caves) {
+        carve_cave(cave.center, cave.radius);
+    }
+}
+
+std::vector<u8> Terrain::save_edits() const {
+    if (!m_initialized) {
+        return {};
+    }
+    TerrainEditDelta delta = m_edits;
+    delta.resolution = m_desc.resolution;
+    delta.world_size = m_desc.world_size;
+    delta.max_height = m_desc.max_height;
+    delta.svo_depth = m_desc.svo_depth;
+    return serialize_terrain_edit_delta(delta);
+}
+
+bool Terrain::load_edits(const u8* data, usize size) {
+    if (!m_initialized || data == nullptr || size == 0u) {
+        return false;
+    }
+    const u32 resolution = m_heightfield.resolution();
+    if (m_heightfield.heights().size() != static_cast<usize>(resolution) * resolution) {
+        return false;
+    }
+
+    TerrainEditDelta decoded{};
+    if (!deserialize_terrain_edit_delta(data, size, decoded) || decoded.resolution != m_desc.resolution ||
+        decoded.world_size != m_desc.world_size || decoded.max_height != m_desc.max_height ||
+        decoded.svo_depth != m_desc.svo_depth) {
+        return false;
+    }
+
+    apply_edit_delta_(std::move(decoded));
+    return true;
+}
+
+u32 Terrain::height_edit_count() const { return static_cast<u32>(m_edits.heights.size()); }
+
+u32 Terrain::cave_edit_count() const { return static_cast<u32>(m_edits.caves.size()); }
+
+bool Terrain::cave_edit(u32 index, vec3& center, f32& radius) const {
+    if (static_cast<usize>(index) >= m_edits.caves.size()) {
+        return false;
+    }
+    center = m_edits.caves[index].center;
+    radius = m_edits.caves[index].radius;
+    return true;
 }
 
 } // namespace fuse::terrain

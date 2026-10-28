@@ -1,7 +1,10 @@
 #include <fuse/core/init.hpp>
 #include <fuse/editor/editor_scene.hpp>
 #include <fuse/editor/editor_state.hpp>
+#include <fuse/editor/pause_flag.hpp>
+#include <fuse/editor/play_phase.hpp>
 #include <fuse/editor/play_session.hpp>
+#include <fuse/editor/session_hz.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/scene/scene.hpp>
 
@@ -1030,9 +1033,57 @@ void testPlaySessionStartStopCycle() {
     editorScene.destroy();
 }
 
+void testPlayPhaseCanEnter() {
+    using fuse::editor::PlayPhase;
+    using fuse::editor::play_phase_can_enter;
+
+    expectTrue(play_phase_can_enter(PlayPhase::Edit, PlayPhase::Playing),
+               "Edit can enter Playing");
+    expectTrue(!play_phase_can_enter(PlayPhase::Edit, PlayPhase::Paused),
+               "Edit cannot enter Paused");
+    expectTrue(play_phase_can_enter(PlayPhase::Paused, PlayPhase::Edit),
+               "Paused can enter Edit");
+
+    expectTrue(play_phase_can_enter(PlayPhase::Playing, PlayPhase::Paused),
+               "Playing can enter Paused");
+    expectTrue(play_phase_can_enter(PlayPhase::Playing, PlayPhase::Edit),
+               "Playing can enter Edit");
+    expectTrue(play_phase_can_enter(PlayPhase::Paused, PlayPhase::Playing),
+               "Paused can enter Playing");
+
+    expectTrue(!play_phase_can_enter(PlayPhase::Edit, PlayPhase::Edit),
+               "same phase Edit is rejected");
+    expectTrue(!play_phase_can_enter(PlayPhase::Playing, PlayPhase::Playing),
+               "same phase Playing is rejected");
+    expectTrue(!play_phase_can_enter(PlayPhase::Paused, PlayPhase::Paused),
+               "same phase Paused is rejected");
+}
+
+void testPauseBlocksTick() {
+    using fuse::editor::pause_blocks_tick;
+
+    expectTrue(pause_blocks_tick(true), "pause blocks tick when paused");
+    expectTrue(!pause_blocks_tick(false), "pause does not block tick when unpaused");
+}
+
+void testSessionHzOk() {
+    expectTrue(fuse::editor::session_hz_ok(30), "30 Hz is a session rate");
+    expectTrue(fuse::editor::session_hz_ok(60), "60 Hz is a session rate");
+    expectTrue(!fuse::editor::session_hz_ok(0), "0 Hz is not a session rate");
+    expectTrue(!fuse::editor::session_hz_ok(24), "24 Hz is not a session rate");
+    expectTrue(!fuse::editor::session_hz_ok(120), "120 Hz is not a session rate");
+}
+
 } // namespace
 
 int main() {
+    testSessionHzOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_editor_play_session_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testPauseBlocksTick();
     fuse::core::initialize();
     testPlaySessionStartStopAndDirtyRestore();
     testPlaySessionPauseSkipsTick();
@@ -1058,6 +1109,7 @@ int main() {
     testPlaySessionDirtySnapshotEntityLookupAndDrainGuards();
     testPlaySessionStartStopCycle();
     testPlaySessionFullTransformSnapshotRoundtrip();
+    testPlayPhaseCanEnter();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

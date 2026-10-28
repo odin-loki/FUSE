@@ -6,6 +6,7 @@
 #include <fuse/config/cvar.hpp>
 #include <fuse/config/engine_cvars.hpp>
 #include <fuse/config/json.hpp>
+#include <fuse/core/cvar_name.hpp>
 #include <fuse/core/temp_path.hpp>
 
 #include <atomic>
@@ -37,6 +38,13 @@ void expectResult(CVarResult actual, CVarResult expected, const char* message) {
         std::fprintf(stderr, "FAIL: %s (expected '%s', got '%s')\n", message, to_string(expected), to_string(actual));
         ++g_failures;
     }
+}
+
+void testCvarNameOk() {
+    expect(fuse::core::cvar_name_ok("r_exposure"), "r_exposure is a valid cvar name");
+    expect(!fuse::core::cvar_name_ok(""), "empty cvar name is invalid");
+    expect(!fuse::core::cvar_name_ok("1exposure"), "leading digit is an invalid cvar name");
+    expect(!fuse::core::cvar_name_ok("r exposure"), "space is an invalid cvar name");
 }
 
 void testRegistrationAndTypes() {
@@ -469,6 +477,11 @@ void testJson() {
 } // namespace
 
 int main() {
+    testCvarNameOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_core_cvar: %d failure(s)\n", g_failures);
+        return 1;
+    }
     testRegistrationAndTypes();
     testParseAndTypeErrors();
     testPrecedence();

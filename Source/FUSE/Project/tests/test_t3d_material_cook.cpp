@@ -18,6 +18,8 @@
 #include <fuse/ecs/components/spawn_marker.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/registry.hpp>
+#include <fuse/project/material_cook.hpp>
+#include <fuse/project/material_token.hpp>
 #include <fuse/project/t3d_material_parse.hpp>
 #include <fuse/project/world_converter.hpp>
 #include <fuse/scene/serialiser.hpp>
@@ -344,9 +346,43 @@ new Scene(ArchLevel) {
     expectTrue(countComponent<fuse::ecs::Collider>(registry) == 0u, "no collider invented for TSStatic");
 }
 
+void testMaterialCookOk() {
+    const auto expect = [](bool condition, const char* message) {
+        if (!condition) {
+            std::fprintf(stderr, "FAIL: %s\n", message);
+            ++g_failures;
+        }
+    };
+    expect(fuse::project::material_cook_ok("Stone"), "Stone is a valid material cook name");
+    expect(!fuse::project::material_cook_ok(""), "empty material cook name is invalid");
+    expect(!fuse::project::material_cook_ok("1Stone"), "leading digit is invalid");
+    expect(!fuse::project::material_cook_ok("Red Stone"), "space in material cook name is invalid");
+}
+
+void testMaterialTokenOk() {
+    expectTrue(fuse::project::material_token_ok("metal/hero"), "metal/hero is a valid material token");
+    expectTrue(!fuse::project::material_token_ok("1metal"), "leading digit is invalid");
+    expectTrue(!fuse::project::material_token_ok(""), "empty token is invalid");
+    expectTrue(!fuse::project::material_token_ok("metal/../hero"), "token containing .. is invalid");
+    expectTrue(fuse::project::material_token_ok("a"), "single letter is valid");
+    const std::string maxToken(40, 'a');
+    expectTrue(fuse::project::material_token_ok(maxToken), "40-character token is valid");
+    const std::string tooLong(41, 'a');
+    expectTrue(!fuse::project::material_token_ok(tooLong), "token longer than 40 is invalid");
+    expectTrue(fuse::project::material_token_ok("Metal_2/hero"), "letters, digits, underscore, and slash are valid");
+    expectTrue(!fuse::project::material_token_ok("_metal"), "leading underscore is invalid");
+    expectTrue(!fuse::project::material_token_ok("/metal"), "leading slash is invalid");
+}
+
 } // namespace
 
 int main() {
+    testMaterialCookOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_t3d_material_mission_gates: %d failure(s)\n", g_failures);
+        return 1;
+    }
+    testMaterialTokenOk();
     fuse::core::initialize();
     testTemplatesMaterialsTscript();
     testMaterialAssetTaml();

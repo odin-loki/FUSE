@@ -1,4 +1,7 @@
 #include <fuse/frame/frame_barrier.hpp>
+#include <fuse/jobs/barrier_count.hpp>
+#include <fuse/jobs/barrier_generation.hpp>
+#include <fuse/math/spring_arm.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -113,9 +116,52 @@ void testSequentialFramesAdvanceIndex() {
     }
 }
 
+void testCriticallyDampedSpring() {
+    const auto expectNear = [](fuse::f32 value, fuse::f32 expected, fuse::f32 epsilon, const char* message) {
+        const fuse::f32 delta = value - expected;
+        if (!(delta <= epsilon && delta >= -epsilon)) {
+            std::fprintf(stderr, "FAIL: %s (expected %g, got %g)\n", message, static_cast<double>(expected),
+                         static_cast<double>(value));
+            ++g_failures;
+        }
+    };
+
+    constexpr fuse::f32 kTarget = 5.f;
+    const fuse::math::Spring1D held{kTarget, 0.f};
+    const fuse::math::Spring1D heldStep = fuse::math::step_spring(held, kTarget, 8.f, 2.f);
+    expectTrue(heldStep.value == kTarget, "spring held at the target keeps its value");
+    expectTrue(heldStep.velocity == 0.f, "spring held at the target keeps zero velocity");
+
+    const fuse::math::Spring1D displaced{-2.f, 0.f};
+    const fuse::math::Spring1D settled = fuse::math::step_spring(displaced, kTarget, 8.f, 2.f);
+    expectNear(settled.value, kTarget, 1e-3f, "displaced critically damped spring is within 1e-3 of the target");
+    expectNear(settled.velocity, 0.f, 1e-3f, "displaced critically damped spring velocity is near zero");
+}
+
+void testBarrierCountOk() {
+    expectTrue(fuse::jobs::barrier_count_ok(1), "barrier_count_ok(1) is true");
+    expectTrue(fuse::jobs::barrier_count_ok(64), "barrier_count_ok(64) is true");
+    expectTrue(!fuse::jobs::barrier_count_ok(0), "barrier_count_ok(0) is false");
+    expectTrue(!fuse::jobs::barrier_count_ok(65), "barrier_count_ok(65) is false");
+}
+
+void testBarrierGenerationOk() {
+    expectTrue(fuse::jobs::barrier_generation_ok(1ull), "barrier_generation_ok(1) is true");
+    expectTrue(fuse::jobs::barrier_generation_ok(1024ull), "barrier_generation_ok(1024) is true");
+    expectTrue(!fuse::jobs::barrier_generation_ok(0ull), "barrier_generation_ok(0) is false");
+    expectTrue(!fuse::jobs::barrier_generation_ok(1025ull), "barrier_generation_ok(1025) is false");
+}
+
 } // namespace
 
 int main() {
+    testBarrierCountOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_core frame barrier tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testBarrierGenerationOk();
     testBeginTickResetsState();
     testSignalMarksComplete();
     testWaitForTickCompleteIsNoOpInV1();
@@ -125,6 +171,7 @@ int main() {
     testWaitDoesNotAdvanceFrameIndex();
     testBeginTickAfterWaitResetsPreviousFrame();
     testSequentialFramesAdvanceIndex();
+    testCriticallyDampedSpring();
 
     if (g_failures == 0) {
         std::printf("fuse_core frame barrier tests: all checks passed\n");

@@ -97,6 +97,23 @@ void collidePolygons(const Shape2D& a, const Xf& xfA, const Shape2D& b, const Xf
 void collideEdgeAndCircle(const Shape2D& a, const Xf& xfA, const Shape2D& b, const Xf& xfB, Manifold& out);
 void collideEdgeAndPolygon(const Shape2D& a, const Xf& xfA, const Shape2D& b, const Xf& xfB, Manifold& out);
 
+struct CircleSweepHit2D {
+    bool hit = false;
+    /// Fraction along the centre segment, in (0, 1].
+    f32 toi = 1.f;
+    /// Unit normal pointing from the static shape toward the circle centre, world space.
+    vec2 normal{0.f, 1.f};
+    /// World point on the static surface (the core edge or polygon, not the expanded skin).
+    vec2 point{0.f, 0.f};
+    /// Signed gap at c1 against the skin-expanded shape. Positive is outside; negative is penetration.
+    f32 endSeparation = 0.f;
+};
+
+/// Earliest entry of a circle centre moving from c0 to c1 against an edge or polygon expanded by
+/// `circleRadius` plus the shape skin. A miss leaves `out.hit` false. The centre must start strictly
+/// outside. A zero radius, a zero displacement, and a non-finite input do not produce NaNs.
+bool sweepCircle(const Shape2D& shape, const Xf& xf, f32 circleRadius, vec2 c0, vec2 c1, CircleSweepHit2D& out);
+
 /// Exact world AABB of the shape (includes the skin radius).
 Aabb2D computeAabb(const Shape2D& shape, const Xf& xf);
 /// Ray p1 -> p2 (world) against the shape; fraction in [0, maxFraction].

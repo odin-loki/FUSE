@@ -1,4 +1,6 @@
 #include <fuse/core/init.hpp>
+#include <fuse/mechanics/action_cost.hpp>
+#include <fuse/mechanics/action_name.hpp>
 #include <fuse/mechanics/action_stub.hpp>
 #include <fuse/mechanics/interact_action.hpp>
 #include <fuse/mechanics/interactable.hpp>
@@ -6,6 +8,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 namespace {
 
@@ -16,6 +19,31 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testActionCostOk() {
+    expectTrue(fuse::mechanics::action_cost_ok(0.f), "cost 0 is valid");
+    expectTrue(fuse::mechanics::action_cost_ok(100.f), "cost 100 is valid");
+    expectTrue(!fuse::mechanics::action_cost_ok(-0.1f), "cost -0.1 is invalid");
+    expectTrue(!fuse::mechanics::action_cost_ok(100.1f), "cost 100.1 is invalid");
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    expectTrue(!fuse::mechanics::action_cost_ok(nan), "NaN cost is invalid");
+}
+
+void testActionNameOk() {
+    expectTrue(fuse::mechanics::action_name_ok("open_door"), "open_door is a valid action name");
+    expectTrue(!fuse::mechanics::action_name_ok("Open"), "uppercase first letter is invalid");
+    expectTrue(!fuse::mechanics::action_name_ok(""), "empty name is invalid");
+    expectTrue(fuse::mechanics::action_name_ok("a"), "single lowercase letter is valid");
+    expectTrue(fuse::mechanics::action_name_ok("door2"), "digits are valid after the first letter");
+    expectTrue(fuse::mechanics::action_name_ok("a1234567890123456789012345678901"),
+               "32-character name is valid");
+    expectTrue(!fuse::mechanics::action_name_ok("a12345678901234567890123456789012"),
+               "33-character name is invalid");
+    expectTrue(!fuse::mechanics::action_name_ok("1door"), "leading digit is invalid");
+    expectTrue(!fuse::mechanics::action_name_ok("_door"), "leading underscore is invalid");
+    expectTrue(!fuse::mechanics::action_name_ok("open-door"), "hyphen is invalid");
+    expectTrue(!fuse::mechanics::action_name_ok("openDoor"), "uppercase letter is invalid");
 }
 
 void testActionKindVerbRoundTrip() {
@@ -107,6 +135,13 @@ void testInteractableAcceptsExamineVerb() {
 } // namespace
 
 int main() {
+    testActionCostOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_mechanics action stub tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testActionNameOk();
     fuse::core::initialize();
     testActionKindVerbRoundTrip();
     testInteractActionContextConversion();

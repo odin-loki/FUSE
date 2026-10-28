@@ -5,6 +5,7 @@
 #include "fuse_nv_mock_echo.h"
 
 #include <fuse/math/mat.hpp>
+#include <fuse/renderer/nv_ext.hpp>
 #include <fuse/renderer/nvidia/nv_backends.hpp>
 
 #include <cmath>
@@ -310,6 +311,21 @@ void test_frame_generation_and_look() {
     check(!nv::plan_dlss5_look_placement(broken).ok, "invalid look graph -> no placement");
 }
 
+/// CPU gate. No allocation. main calls this before any device skip.
+/// A failure returns non-zero before any later skip.
+int testNvExtOk() {
+    const bool atZero = fuse::renderer::nv_ext_ok(0);
+    const bool atFifteen = fuse::renderer::nv_ext_ok(15);
+    const bool below = fuse::renderer::nv_ext_ok(-1);
+    const bool above = fuse::renderer::nv_ext_ok(16);
+    if (atZero && atFifteen && !below && !above) {
+        return 0;
+    }
+    std::fprintf(stderr, "FAIL: testNvExtOk (0=%d, 15=%d, -1=%d, 16=%d)\n", static_cast<int>(atZero),
+                 static_cast<int>(atFifteen), static_cast<int>(below), static_cast<int>(above));
+    return 1;
+}
+
 void test_probe_default_off() {
     const nv::LoadResult r = nv::probe_and_register_nvidia_backends({});
     if (!nv::NvPluginLoader::enabled_at_build()) {
@@ -321,6 +337,9 @@ void test_probe_default_off() {
 } // namespace
 
 int main() {
+    if (const int nvExtRc = testNvExtOk()) {
+        return nvExtRc;
+    }
     test_registration_follows_detection();
     test_upscaler_through_registry();
     test_camera_mapping();

@@ -1,5 +1,6 @@
 #include <fuse/core/init.hpp>
 #include <fuse/renderer/resource_manager.hpp>
+#include <fuse/renderer/rhi/bindless_index.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
 #include <fuse/types.hpp>
@@ -22,6 +23,12 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testBindlessIndexOk() {
+    expectTrue(fuse::renderer::bindless_index_ok(0u), "index 0 is below 1<<20");
+    expectTrue(fuse::renderer::bindless_index_ok((1u << 20) - 1u), "index (1<<20)-1 is below 1<<20");
+    expectTrue(!fuse::renderer::bindless_index_ok(1u << 20), "index 1<<20 is not below 1<<20");
 }
 
 std::unique_ptr<fuse::renderer::VulkanBootstrap> makeBootstrap() {
@@ -129,11 +136,51 @@ void testSparseResizeStub() {
     expectTrue(bindless.heapCapacity(fuse::renderer::BindlessHeapKind::Texture) == 0u, "initial heap empty");
     expectTrue(bindless.resizeHeap(fuse::renderer::BindlessHeapKind::Texture, 128u), "resize grows table");
     expectTrue(bindless.heapCapacity(fuse::renderer::BindlessHeapKind::Texture) == 128u, "capacity recorded");
-    expectTrue(bindless.resizeHeap(fuse::renderer::BindlessHeapKind::Texture, 64u), "shrink is no-op stub");
-    expectTrue(bindless.heapCapacity(fuse::renderer::BindlessHeapKind::Texture) == 128u, "capacity unchanged on shrink");
+    expectTrue(bindless.resizeHeap(fuse::renderer::BindlessHeapKind::Texture, 64u),
+               "shrink succeeds when every tail slot is free");
+    expectTrue(bindless.heapCapacity(fuse::renderer::BindlessHeapKind::Texture) == 64u,
+               "capacity matches free-tail shrink");
+    expectTrue(bindless.heapFreeCount(fuse::renderer::BindlessHeapKind::Texture) == 64u,
+               "shrink erases free-list indices at and above the new capacity");
 
-    const fuse::renderer::BindlessSlotHandle handle = bindless.allocateTextureSlot(false);
-    expectTrue(handle.index == 0u, "alloc after resize still sequential from zero");
+    const fuse::renderer::BindlessSlotHandle slot0 = bindless.allocateTextureSlot(false);
+    expectTrue(slot0.index == 0u, "fill slot 0");
+    expectTrue(bindless.validateSlot(slot0), "slot 0 live");
+    expectTrue(bindless.resizeHeap(fuse::renderer::BindlessHeapKind::Texture, 0u),
+               "resize to zero stays a no-op success");
+    expectTrue(bindless.heapCapacity(fuse::renderer::BindlessHeapKind::Texture) == 64u &&
+                   bindless.validateSlot(slot0),
+               "zero resize does not drop slot 0");
+
+    // Index 0 stays. The next live slot sits in the range a shrink to its index would drop.
+    const fuse::renderer::BindlessSlotHandle blocking = bindless.allocateTextureSlot(false);
+    expectTrue(blocking.index == 1u, "slot above 0 is live");
+    const u32 capacityBefore = bindless.heapCapacity(fuse::renderer::BindlessHeapKind::Texture);
+    const u32 freeBefore = bindless.heapFreeCount(fuse::renderer::BindlessHeapKind::Texture);
+    const u32 liveBefore = bindless.heapLiveCount(fuse::renderer::BindlessHeapKind::Texture);
+    expectTrue(!bindless.resizeHeap(fuse::renderer::BindlessHeapKind::Texture, blocking.index),
+               "shrink below a live slot fails");
+    expectTrue(bindless.heapCapacity(fuse::renderer::BindlessHeapKind::Texture) == capacityBefore &&
+                   bindless.heapFreeCount(fuse::renderer::BindlessHeapKind::Texture) == freeBefore &&
+                   bindless.heapLiveCount(fuse::renderer::BindlessHeapKind::Texture) == liveBefore,
+               "failed shrink leaves the heap unchanged");
+    expectTrue(bindless.validateSlot(slot0) && bindless.validateSlot(blocking),
+               "rejected shrink keeps live slots valid");
+
+    bindless.freeTextureSlot(blocking);
+    expectTrue(bindless.resizeHeap(fuse::renderer::BindlessHeapKind::Texture, blocking.index),
+               "shrink succeeds after the blocking slot is freed");
+    expectTrue(bindless.heapCapacity(fuse::renderer::BindlessHeapKind::Texture) == blocking.index,
+               "capacity matches");
+    expectTrue(bindless.validateSlot(slot0), "slot 0 stays valid after shrink");
+    expectTrue(bindless.slotGeneration(fuse::renderer::BindlessHeapKind::Texture, slot0.index) == slot0.generation,
+               "slot 0 generation unchanged");
+    expectTrue(!bindless.validateSlot(blocking), "dropped tail handle is not live");
+    expectTrue(bindless.slotIndexOutOfRange(fuse::renderer::BindlessHeapKind::Texture, blocking.index),
+               "shrunk tail index is out of range");
+    expectTrue(bindless.heapFreeCount(fuse::renderer::BindlessHeapKind::Texture) == 0u &&
+                   bindless.heapLiveCount(fuse::renderer::BindlessHeapKind::Texture) == 1u,
+               "freed tail index erased from the free list");
 
     bindless.destroy(*bootstrap->device());
 }
@@ -936,6 +983,12 @@ void testBackendSelectionDefaults() {
 } // namespace
 
 int main() {
+    testBindlessIndexOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_bindless_descriptors: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testAllocFreeReuse();

@@ -1,4 +1,5 @@
 #include <fuse/renderer/gi/ddgi.hpp>
+#include <fuse/compute_kernel/load_scale.hpp>
 #include <fuse/renderer/gi/ddgi_cpu.hpp>
 #include <fuse/renderer/gi/ddgi_kernels.hpp>
 #include <fuse/renderer/gi/ddgi_probe_kernel.hpp>
@@ -14,6 +15,23 @@ constexpr IrradianceCacheEntry kDefaultCacheEntry{};
 
 fuse::math::Vec3 defaultAmbientIrradiance() {
     return {0.05f, 0.05f, 0.06f};
+}
+
+bool sameAtlasLayout(const DDGIDesc& a, const DDGIDesc& b) {
+    return a.grid_dims.x == b.grid_dims.x && a.grid_dims.y == b.grid_dims.y && a.grid_dims.z == b.grid_dims.z &&
+           a.irradiance_res == b.irradiance_res && a.depth_res == b.depth_res;
+}
+
+bool packProbeOffsets(const DdgiCpuVolume& volume, std::vector<fuse::math::Vec3>& out) {
+    const std::vector<fuse::math::Vec4>& data = volume.probeData();
+    if (!volume.isReady() || data.size() != volume.probeCount()) {
+        return false;
+    }
+    out.resize(volume.probeCount());
+    for (u32 i = 0; i < volume.probeCount(); ++i) {
+        out[i] = {data[i].x, data[i].y, data[i].z};
+    }
+    return true;
 }
 
 } // namespace
@@ -1959,9 +1977,11 @@ bool DDGI::update(u32 frame_index, void* cuda_stream) {
     const u32 probe_count = static_cast<u32>(m_cache.size());
     u32 scheduled_indices[256]{};
     u32 scheduled_count = 0u;
+    const u32 budget =
+        fuse::kernel::scaled_count(m_desc.probes_per_frame, fuse::kernel::load_scale().probes);
     ddgi_util::scheduleProbeUpdates(frame_index,
                                     probe_count,
-                                    m_desc.probes_per_frame,
+                                    budget,
                                     scheduled_indices,
                                     static_cast<u32>(sizeof(scheduled_indices) / sizeof(scheduled_indices[0])),
                                     &scheduled_count);
@@ -2014,6 +2034,50 @@ DDGISampleResult DDGI::sampleIrradiance(const DDGISampleRequest& request) const 
     return result;
 }
 
+bool DDGI::submitPackedAtlases(const std::vector<u16>& irradianceRgba16f, const std::vector<u16>& distanceRg16f,
+                              const std::vector<fuse::math::Vec3>& probeOffsets, UploadTicket* outTicket) {
+    if (outTicket != nullptr) {
+        *outTicket = UploadTicket{};
+    }
+    if (!m_ready || m_resources == nullptr) {
+        return false;
+    }
+    const usize expectIrr = static_cast<usize>(ddgi_util::irradianceAtlasWidth(m_desc)) *
+                            ddgi_util::irradianceAtlasHeight(m_desc) * 4u;
+    const usize expectDist =
+        static_cast<usize>(ddgi_util::depthAtlasWidth(m_desc)) * ddgi_util::depthAtlasHeight(m_desc) * 2u;
+    if (irradianceRgba16f.size() != expectIrr || distanceRg16f.size() != expectDist ||
+        probeOffsets.size() != m_volume.probe_count || probeOffsets.empty()) {
+        return false;
+    }
+    const UploadTicket offsets = m_resources->uploadBuffer(m_volume.probe_offsets, probeOffsets.data(),
+                                                           probeOffsets.size() * sizeof(fuse::math::Vec3));
+    const UploadTicket irradiance = m_resources->uploadTexture(m_volume.irradiance_atlas, irradianceRgba16f.data());
+    const UploadTicket distance = m_resources->uploadTexture(m_volume.depth_atlas, distanceRg16f.data());
+    if (!offsets.isValid() || !irradiance.isValid() || !distance.isValid()) {
+        return false;
+    }
+    // Atlases and offsets share the open batch; submit it so later graphics work sees them.
+    const UploadTicket submitted = m_resources->flushUploads();
+    if (outTicket != nullptr) {
+        *outTicket = submitted.serial >= distance.serial ? submitted : distance;
+    }
+    return true;
+}
+
+void DDGI::mirrorCpuCache() {
+    if (m_cpu == nullptr) {
+        return;
+    }
+    for (u32 i = 0; i < m_cache.size() && i < m_cpu->probeCount(); ++i) {
+        IrradianceCacheEntry& entry = m_cache[i];
+        entry.irradiance = m_cpu->probeMeanTexel(i);
+        const fuse::math::Vec2 moments = m_cpu->probeMeanDistance(i);
+        entry.mean_depth = moments.x;
+        entry.depth_variance = std::max(0.f, moments.y - moments.x * moments.x);
+    }
+}
+
 bool DDGI::uploadAtlases(UploadTicket* outTicket) {
     if (outTicket != nullptr) {
         *outTicket = UploadTicket{};
@@ -2021,20 +2085,37 @@ bool DDGI::uploadAtlases(UploadTicket* outTicket) {
     if (!m_ready || m_resources == nullptr || m_cpu == nullptr) {
         return false;
     }
-    if (!ddgi_cpu::packIrradianceAtlasRgba16f(*m_cpu, m_irradiance_staging) ||
-        !ddgi_cpu::packDistanceAtlasRg16f(*m_cpu, m_distance_staging)) {
+    if (!ddgi_cpu::packAtlasesHalf(*m_cpu, m_irradiance_staging, m_distance_staging)) {
         return false;
     }
-    const UploadTicket irradiance = m_resources->uploadTexture(m_volume.irradiance_atlas, m_irradiance_staging.data());
-    const UploadTicket distance = m_resources->uploadTexture(m_volume.depth_atlas, m_distance_staging.data());
-    if (!irradiance.isValid() || !distance.isValid()) {
+    std::vector<fuse::math::Vec3> offsets;
+    if (!packProbeOffsets(*m_cpu, offsets)) {
         return false;
     }
-    // Both copies share the open batch; submit it so later graphics work sees the texels.
-    const UploadTicket submitted = m_resources->flushUploads();
+    return submitPackedAtlases(m_irradiance_staging, m_distance_staging, offsets, outTicket);
+}
+
+bool DDGI::importCpuVolume(const DdgiCpuVolume& volume, UploadTicket* outTicket) {
     if (outTicket != nullptr) {
-        *outTicket = submitted.serial >= distance.serial ? submitted : distance;
+        *outTicket = UploadTicket{};
     }
+    if (!m_ready || m_resources == nullptr || m_cpu == nullptr || !volume.isReady()) {
+        return false;
+    }
+    if (!sameAtlasLayout(volume.desc(), m_desc) || volume.probeCount() != m_volume.probe_count) {
+        return false;
+    }
+    std::vector<u16> irradiance;
+    std::vector<u16> distance;
+    std::vector<fuse::math::Vec3> offsets;
+    if (!ddgi_cpu::packAtlasesHalf(volume, irradiance, distance) || !packProbeOffsets(volume, offsets)) {
+        return false;
+    }
+    if (!submitPackedAtlases(irradiance, distance, offsets, outTicket)) {
+        return false;
+    }
+    *m_cpu = volume;
+    mirrorCpuCache();
     return true;
 }
 
@@ -2070,8 +2151,11 @@ bool DDGI::allocateResources(ResourceManager& resources) {
 
     BufferDesc offsetDesc{};
     offsetDesc.size = static_cast<usize>(count) * sizeof(fuse::math::Vec3);
+    // TransferSrc: the import gate copies offsets back on the graphics queue. ResourceManager::readBuffer's
+    // one-shot copy does not barrier the upload, so that path is not the verification.
     offsetDesc.usage = static_cast<BufferUsage>(static_cast<u32>(BufferUsage::Storage) |
-                                                static_cast<u32>(BufferUsage::TransferDst));
+                                                static_cast<u32>(BufferUsage::TransferDst) |
+                                                static_cast<u32>(BufferUsage::TransferSrc));
     offsetDesc.cudaInterop = true;
     offsetDesc.name = "ddgi_probe_offsets";
     m_volume.probe_offsets = resources.createBuffer(offsetDesc);

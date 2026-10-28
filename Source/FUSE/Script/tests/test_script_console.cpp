@@ -1,5 +1,7 @@
 #include <fuse/core/temp_path.hpp>
 #include <fuse/core/init.hpp>
+#include <fuse/script/console_cmd.hpp>
+#include <fuse/script/console_filter.hpp>
 #include <fuse/script/script_console.hpp>
 #include <fuse/script/script_console_command_registry.hpp>
 #include <fuse/script/script_console_history.hpp>
@@ -854,9 +856,22 @@ void testCustomCommandDispatch() {
                "unregistered command is unknown");
 }
 
+void testConsoleShowsLevelFilter() {
+    expectTrue(fuse::script::console_shows(2, 2), "message 2 with minimum 2 shows");
+    expectTrue(!fuse::script::console_shows(1, 2), "message 1 with minimum 2 does not show");
+}
+
+void testConsoleCmdOk() {
+    expectTrue(fuse::script::console_cmd_ok("reload"), "console command reload");
+    expectTrue(!fuse::script::console_cmd_ok(""), "empty console command rejected");
+    expectTrue(!fuse::script::console_cmd_ok("1reload"), "digit-leading console command rejected");
+    expectTrue(!fuse::script::console_cmd_ok("re load"), "spaced console command rejected");
+}
+
 } // namespace
 
 void run_script_console_tests() {
+    testConsoleCmdOk();
     testBuiltInCommandDispatch();
     testCommandRegistryDirect();
     testHistoryBufferRingWrapDirect();
@@ -887,4 +902,5 @@ void run_script_console_tests() {
     testHostDispatchLoadAndRun();
     testCustomCommandShadowsBuiltIn();
     testCustomCommandDispatch();
+    testConsoleShowsLevelFilter();
 }

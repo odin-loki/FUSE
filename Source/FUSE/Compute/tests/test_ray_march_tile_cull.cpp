@@ -15,6 +15,8 @@
 //     benchmark at 1920x1080: 100 objects / 128 steps (full and tiled) and 500 objects (full and tiled).
 //     Targets (< 3 ms, < 16.7 ms) are printed; asserted only with FUSE_DEVICE_BUDGETS=1.
 
+#include <fuse/compute/cull_tile.hpp>
+#include <fuse/compute/dispatch_groups.hpp>
 #include <fuse/compute/ray_march.hpp>
 #include <fuse/compute/ray_march_kernel.hpp>
 #include <fuse/compute_kernel/parity.hpp>
@@ -419,9 +421,41 @@ void benchmarkDevice() {
     scheduler.shutdown();
 }
 
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero and does not continue.
+/// Does not allocate.
+void testDispatchGroups() {
+    expectTrue(compute::dispatch_groups(10, 4) == 3, "dispatch_groups(10, 4) is 3");
+    expectTrue(compute::dispatch_groups(0, 4) == 0, "dispatch_groups(0, 4) is 0");
+    expectTrue(compute::dispatch_groups(10, 3) == 0, "dispatch_groups(10, 3) is 0");
+    expectTrue(compute::dispatch_groups(10, 0) == 0, "dispatch_groups(10, 0) is 0");
+}
+
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero and does not continue.
+/// Does not allocate.
+void testCullTileOk() {
+    expectTrue(compute::cull_tile_ok(8), "cull_tile_ok(8) is true");
+    expectTrue(compute::cull_tile_ok(16), "cull_tile_ok(16) is true");
+    expectTrue(compute::cull_tile_ok(64), "cull_tile_ok(64) is true");
+    expectTrue(!compute::cull_tile_ok(0), "cull_tile_ok(0) is false");
+    expectTrue(!compute::cull_tile_ok(12), "cull_tile_ok(12) is false");
+    expectTrue(!compute::cull_tile_ok(128), "cull_tile_ok(128) is false");
+}
+
 } // namespace
 
 int main() {
+    testDispatchGroups();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d tiled ray march check(s) failed\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testCullTileOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d tiled ray march check(s) failed\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
     testBackendParityAndAccuracy();
     testOverflowFallback();
@@ -435,3 +469,33 @@ int main() {
     std::printf("Tiled ray march gates passed\n");
     return EXIT_SUCCESS;
 }
+
+#include <fuse/compute/tile_reject.hpp>
+
+#include <limits>
+
+namespace {
+
+/// Closed-interval tile reject. Endpoint contact is inside; swapped bounds are ordered first.
+void testTileOutside() {
+    expectTrue(compute::tile_outside(0.f, 1.f, 2.f, 3.f), "tile 0..1 is outside range 2..3");
+    expectTrue(!compute::tile_outside(0.f, 2.f, 2.f, 3.f), "tile 0..2 is not outside range 2..3");
+    expectTrue(compute::tile_outside(4.f, 5.f, 2.f, 3.f), "tile 4..5 is outside range 2..3");
+    expectTrue(!compute::tile_outside(3.f, 4.f, 2.f, 3.f), "tile 3..4 is not outside range 2..3");
+    expectTrue(compute::tile_outside(1.f, 0.f, 3.f, 2.f), "swapped tile 1..0 is outside swapped range 3..2");
+    expectTrue(!compute::tile_outside(1.f, 0.f, 0.f, 0.5f), "swapped tile 1..0 overlaps range 0..0.5");
+    expectTrue(!compute::tile_outside(2.25f, 2.5f, 3.f, 2.f), "swapped range 3..2 contains tile 2.25..2.5");
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    expectTrue(compute::tile_outside(nan, 1.f, 2.f, 3.f), "non-finite tile bound rejects");
+    expectTrue(compute::tile_outside(0.f, 1.f, 2.f, std::numeric_limits<float>::infinity()),
+               "non-finite range bound rejects");
+}
+
+// Runs before main so a reject failure is included in g_failures.
+struct RegisterTestTileOutside {
+    RegisterTestTileOutside() { testTileOutside(); }
+};
+
+const RegisterTestTileOutside registerTestTileOutside{};
+
+} // namespace

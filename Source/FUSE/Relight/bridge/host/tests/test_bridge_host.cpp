@@ -22,6 +22,7 @@
 #include "model_backend.hpp"
 
 #include <fuse/relight/bridge/host/host_loop.hpp>
+#include <fuse/relight/bridge/host/host_slot.hpp>
 #include <fuse/relight/bridge/host/journal.hpp>
 #include <fuse/relight/bridge/host/link.hpp>
 #include <fuse/relight/bridge/host/protocol.hpp>
@@ -420,6 +421,13 @@ void testHostLoopInProcess() {
     CHECK(hostStats.responses >= 40);  // 20 digests + 20 Presents (kWantReply)
 }
 
+void testHostSlotOk() {
+    CHECK(fuse::relight::host_slot_ok(0));
+    CHECK(fuse::relight::host_slot_ok(7));
+    CHECK(!fuse::relight::host_slot_ok(-1));
+    CHECK(!fuse::relight::host_slot_ok(8));
+}
+
 int runUnit() {
     testProtocol();
     testJournalReplay();
@@ -591,6 +599,7 @@ int runModelHost(int argc, char** argv) {
 }  // namespace
 
 int main(int argc, char** argv) {
+    testHostSlotOk();
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     g_self = ipc::selfExecutablePath();
     const std::string mode = argc > 1 ? argv[1] : "unit";

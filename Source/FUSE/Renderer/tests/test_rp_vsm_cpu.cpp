@@ -22,6 +22,7 @@
 #include <bit>
 #include <fuse/compute_kernel/launch.hpp>
 #include <fuse/compute_kernel/stats.hpp>
+#include <fuse/renderer/shadow/vsm_page.hpp>
 #include <fuse/renderer/shadow/vsm/virtual_shadow_map.hpp>
 #include <fuse/renderer/shadow/vsm/vsm_clipmap.hpp>
 #include <fuse/renderer/shadow/vsm/vsm_kernel.hpp>
@@ -868,9 +869,24 @@ void testApi() {
     vsm.destroy();
 }
 
+/// CPU gate. Must run before any GPU or device skip; a failure returns before later work.
+void testVsmPageOk() {
+    expect(fuse::renderer::vsm_page_ok(64), "vsm_page_ok(64) is true");
+    expect(fuse::renderer::vsm_page_ok(128), "vsm_page_ok(128) is true");
+    expect(fuse::renderer::vsm_page_ok(512), "vsm_page_ok(512) is true");
+    expect(!fuse::renderer::vsm_page_ok(32), "vsm_page_ok(32) is false");
+    expect(!fuse::renderer::vsm_page_ok(96), "vsm_page_ok(96) is false");
+    expect(!fuse::renderer::vsm_page_ok(1024), "vsm_page_ok(1024) is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testVsmPageOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testVsmPageOk\n");
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     struct Suite {
         const char* name;

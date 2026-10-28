@@ -30,6 +30,7 @@
 #include <fuse/compute_kernel/launch.hpp>
 #include <fuse/core_logic/cluster_page_residency.hpp>
 #include <fuse/renderer/geometry_streaming/cluster_streamer.hpp>
+#include <fuse/renderer/streaming/stream_lod.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -795,9 +796,34 @@ void testZeroAlloc() {
     expect(r.missing == 0u, "zero_alloc run: no frame missing geometry");
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits the process.
+void testStreamLodOk() {
+    if (!fuse::renderer::stream_lod_ok(0)) {
+        std::fprintf(stderr, "FAIL: stream_lod_ok(0) is true\n");
+        ++g_failures;
+    }
+    if (!fuse::renderer::stream_lod_ok(6)) {
+        std::fprintf(stderr, "FAIL: stream_lod_ok(6) is true\n");
+        ++g_failures;
+    }
+    if (fuse::renderer::stream_lod_ok(-1)) {
+        std::fprintf(stderr, "FAIL: stream_lod_ok(-1) is false\n");
+        ++g_failures;
+    }
+    if (fuse::renderer::stream_lod_ok(7)) {
+        std::fprintf(stderr, "FAIL: stream_lod_ok(7) is false\n");
+        ++g_failures;
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testStreamLodOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testStreamLodOk\n");
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     bool ran = false;

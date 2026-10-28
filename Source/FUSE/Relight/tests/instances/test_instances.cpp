@@ -18,6 +18,7 @@
 //   foliage        thin-opaque / SSS instance counts: retain on bind, change, release on GC, option gating.
 //   pointInstancer expansion, culling radius, deterministic fade, disabled culling, SceneModel batches.
 #include <fuse/relight/scene/instances/instance_options.hpp>
+#include <fuse/relight/scene/instances/instance_count.hpp>
 #include <fuse/relight/scene/instances/scene_input.hpp>
 #include <fuse/relight/scene/instances/scene_model.hpp>
 
@@ -795,6 +796,17 @@ void test_pointInstancer() {
     CHECK(scene.pointInstances()[5].prevObjectToWorld == translationM(500, 0, 10));
 }
 
+// Counts 1 through 1000000 inclusive. No allocation.
+int testInstanceCountOk() {
+    const int before = g_failures;
+    g_test = "testInstanceCountOk";
+    CHECK(fuse::relight::instance_count_ok(1));
+    CHECK(fuse::relight::instance_count_ok(1000000));
+    CHECK(!fuse::relight::instance_count_ok(0));
+    CHECK(!fuse::relight::instance_count_ok(1000001));
+    return g_failures == before ? 0 : 1;
+}
+
 struct TestCase {
     const char* name;
     void (*fn)();
@@ -803,6 +815,9 @@ struct TestCase {
 } // namespace
 
 int main() {
+    if (const int instanceCountRc = testInstanceCountOk()) {
+        return instanceCountRc;
+    }
     options::setEnvironmentVariable(options::kDxvkConfEnvVar, "");
     options::setEnvironmentVariable(options::kRtxConfEnvVar, "");
     options::setEnvironmentVariable("RTX_ANTI_CULLING_OBJECTS", "");

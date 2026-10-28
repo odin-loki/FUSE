@@ -21,6 +21,7 @@
 //            rays still end early on walls at 64^2); wall times printed only
 //
 // Metrics are printed in the form report.md quotes. Exit 0 = pass.
+#include <fuse/renderer/cascade_rays.hpp>
 #include <fuse/renderer/research/rc/rc_reference.hpp>
 #include <fuse/renderer/research/rc/rc_types.hpp>
 
@@ -499,9 +500,28 @@ void testCost() {
     }
 }
 
+/// CPU gate. Must run before any later suite work; a failure returns non-zero.
+/// No heap allocation.
+int testCascadeRaysOk() {
+    expect(fuse::renderer::cascade_rays_ok(4), "cascade_rays_ok(4) is true");
+    expect(fuse::renderer::cascade_rays_ok(16), "cascade_rays_ok(16) is true");
+    expect(fuse::renderer::cascade_rays_ok(64), "cascade_rays_ok(64) is true");
+    expect(!fuse::renderer::cascade_rays_ok(0), "cascade_rays_ok(0) is false");
+    expect(!fuse::renderer::cascade_rays_ok(6), "cascade_rays_ok(6) is false");
+    expect(!fuse::renderer::cascade_rays_ok(128), "cascade_rays_ok(128) is false");
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: %d failure(s)\n", g_failures);
+        return 1;
+    }
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int raysRc = testCascadeRaysOk()) {
+        return raysRc;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     bool ran = false;

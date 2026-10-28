@@ -1,0 +1,23 @@
+---
+description: Finish one wave of sub-agents before launching the next
+alwaysApply: true
+---
+
+# Sub-agent waves
+
+Launch one wave, then wait. Do not start the next wave until every sub-agent in the current wave has finished.
+
+- A wave is the set of sub-agents started together. After that launch, stop. Do not call Task again for more agents in the same turn or in later turns until those agents report completion.
+- A launch that returns "Too many local subagents" did not start. Do not resume that id. Do not fill the gap with another wave. Those tasks belong in a later wave, after the current one is done.
+- End the turn after starting a wave so completion notices can arrive. Do not poll or sleep-wait on the agents.
+- When the wave finishes, review its edits, then start the next disjoint wave.
+
+```text
+# Bad: wave 2 starts while wave 1 is still running
+Task(wave1-a); Task(wave1-b); Task(wave2-a)
+
+# Good: wave 2 waits for both completions
+Task(wave1-a); Task(wave1-b)
+# ...both agents finish...
+Task(wave2-a)
+```

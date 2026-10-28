@@ -7,6 +7,7 @@
 // device-state defaults and state-block masks, the import-table hook and the Win32 input hooks
 // while the renderer UI is active, window subclassing (forwarding, swallowing, the game
 // re-subclassing below the bridge), DirectInput vtable hooks on a real Wine dinput8 device.
+#include <fuse/relight/bridge/client/client_name.hpp>
 #include <fuse/relight/bridge/client/format_layout.hpp>
 #include <fuse/relight/bridge/client/input_translate.hpp>
 #include <fuse/relight/bridge/client/protocol.hpp>
@@ -40,6 +41,14 @@ int g_failures = 0;
             std::printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);                    \
         }                                                                                  \
     } while (0)
+
+void testClientNameOk() {
+    CHECK(fuse::relight::client_name_ok("Host"));
+    CHECK(!fuse::relight::client_name_ok(""));
+    CHECK(!fuse::relight::client_name_ok("1Host"));
+    CHECK(fuse::relight::client_name_ok("H2345678901234567890123456789012"));
+    CHECK(!fuse::relight::client_name_ok("H23456789012345678901234567890123"));
+}
 
 void testFormatLayout() {
     using client::formatLayout;
@@ -411,6 +420,7 @@ void testWindowAndHooks() {
 }  // namespace
 
 int main() {
+    testClientNameOk();
     testFormatLayout();
     testInputTranslator();
     testSchemaShapes();

@@ -52,6 +52,7 @@
 #include <fuse/renderer/deferred/gbuffer.hpp>
 #include <fuse/renderer/geometry/vertex_codec_kernel.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
+#include <fuse/renderer/mat_resolve.hpp>
 #include <fuse/renderer/material_resolve/material_resolve.hpp>
 #include <fuse/renderer/material_resolve/resolve_reference.hpp>
 #include <fuse/renderer/rg/executor.hpp>
@@ -122,11 +123,24 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+// CPU gate. Must run before any GPU skip; a failure returns non-zero. Does not allocate.
+int testMatResolveOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::mat_resolve_ok(0), "mat_resolve_ok(0) is true");
+    expect(fuse::renderer::mat_resolve_ok(4), "mat_resolve_ok(4) is true");
+    expect(!fuse::renderer::mat_resolve_ok(-1), "mat_resolve_ok(-1) is false");
+    expect(!fuse::renderer::mat_resolve_ok(5), "mat_resolve_ok(5) is false");
+    return g_failures == before ? 0 : 1;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int matResolveRc = testMatResolveOk()) {
+        return matResolveRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1656,6 +1670,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int matResolveRc = testMatResolveOk()) {
+        return matResolveRc;
+    }
     std::string mode = "parity";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {

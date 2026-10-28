@@ -8,16 +8,20 @@
 #include <fuse/project/t2d_module_bridge.hpp>
 #include <fuse/project/t3d_asset_vfs.hpp>
 #include <fuse/types.hpp>
+#include <fuse/project/converter_scale.hpp>
 #include <fuse/project/t3d_datablock_resolve.hpp>
+#include <fuse/project/unit_scale.hpp>
 #include <fuse/project/world_converter.hpp>
 #include <fuse/scene/serialiser.hpp>
 #include <fuse/scene/wire_stub.hpp>
 #include <fuse/world2d/world_2d.hpp>
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -650,9 +654,34 @@ void testT2DModuleRuntimeBridge() {
     expectTrue(bridged.spriteCount >= 1u, "t2d runtime bridge populated sprites");
 }
 
+void testConverterScaleOk() {
+    expectTrue(fuse::project::converter_scale_ok(1.f), "converter scale 1 is accepted");
+    expectTrue(fuse::project::converter_scale_ok(100.f), "converter scale 100 is accepted");
+    expectTrue(!fuse::project::converter_scale_ok(0.f), "converter scale 0 is rejected");
+    expectTrue(!fuse::project::converter_scale_ok(-1.f), "converter scale -1 is rejected");
+    expectTrue(!fuse::project::converter_scale_ok(101.f), "converter scale 101 is rejected");
+    expectTrue(!fuse::project::converter_scale_ok(std::numeric_limits<float>::infinity()),
+               "non-finite converter scale is rejected");
+}
+
+void testUnitScale() {
+    expectTrue(fuse::project::unit_scale(0.01f) == 0.01f, "unit_scale(0.01) keeps meters per unit");
+    expectTrue(fuse::project::unit_scale(0.f) == 1.f, "unit_scale(0) returns 1");
+    expectTrue(fuse::project::unit_scale(-2.f) == 1.f, "unit_scale(-2) returns 1");
+    expectTrue(fuse::project::unit_scale(std::numeric_limits<float>::infinity()) == 1.f,
+               "non-finite unit scale returns 1");
+    expectTrue(fuse::project::unit_scale(std::numeric_limits<float>::quiet_NaN()) == 1.f,
+               "NaN unit scale returns 1");
+}
+
 } // namespace
 
 int main() {
+    testConverterScaleOk();
+    if (g_failures != 0) {
+        return EXIT_FAILURE;
+    }
+    testUnitScale();
     fuse::core::initialize();
     testConvertT3DMissionHierarchy();
     testConvertT3DMissionToFuselevel();

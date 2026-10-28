@@ -19,12 +19,94 @@ bool is_ally_(u32 selfIndex, u32 teamId, const AllyCandidate& candidate) {
     return candidate.agentIndex != selfIndex && candidate.teamId == teamId;
 }
 
+bool is_hostile_(u32 selfIndex, const FactionQuery& query, const AllyCandidate& candidate) {
+    if (candidate.agentIndex == selfIndex || candidate.teamId == query.selfTeam) {
+        return false;
+    }
+    if ((candidate.factionMask & query.friendlyMask) != 0u) {
+        return false;
+    }
+    return (candidate.factionMask & query.hostileMask) != 0u;
+}
+
+bool segment_blocked_(float x,
+                      float y,
+                      float z,
+                      const AllyCandidate& candidate,
+                      const std::vector<AabbBlocker>& blockers) {
+    for (const AabbBlocker& blocker : blockers) {
+        if (segment_intersects_aabb(x, y, z, candidate.x, candidate.y, candidate.z, blocker)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 float distance_sq_2d(float ax, float ay, float bx, float by) {
     const float dx = ax - bx;
     const float dy = ay - by;
     return dx * dx + dy * dy;
+}
+
+float distance_sq_3d(float ax, float ay, float az, float bx, float by, float bz) {
+    const float dx = ax - bx;
+    const float dy = ay - by;
+    const float dz = az - bz;
+    return dx * dx + dy * dy + dz * dz;
+}
+
+bool segment_intersects_aabb(float x0,
+                             float y0,
+                             float z0,
+                             float x1,
+                             float y1,
+                             float z1,
+                             const AabbBlocker& blocker) {
+    const float origin[3] = {x0, y0, z0};
+    const float direction[3] = {x1 - x0, y1 - y0, z1 - z0};
+    const float boxMin[3] = {
+        blocker.centerX - blocker.halfX,
+        blocker.centerY - blocker.halfY,
+        blocker.centerZ - blocker.halfZ,
+    };
+    const float boxMax[3] = {
+        blocker.centerX + blocker.halfX,
+        blocker.centerY + blocker.halfY,
+        blocker.centerZ + blocker.halfZ,
+    };
+
+    float tMin = 0.f;
+    float tMax = 1.f;
+
+    for (int axis = 0; axis < 3; ++axis) {
+        const float delta = direction[axis];
+        if (delta == 0.f) {
+            if (origin[axis] < boxMin[axis] || origin[axis] > boxMax[axis]) {
+                return false;
+            }
+            continue;
+        }
+
+        const float inv = 1.f / delta;
+        float tEnter = (boxMin[axis] - origin[axis]) * inv;
+        float tExit = (boxMax[axis] - origin[axis]) * inv;
+        if (tEnter > tExit) {
+            std::swap(tEnter, tExit);
+        }
+        if (tEnter > tMin) {
+            tMin = tEnter;
+        }
+        if (tExit < tMax) {
+            tMax = tExit;
+        }
+        if (tMin > tMax) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 bool within_radius(float distanceSq, float radius) {
@@ -166,6 +248,86 @@ NearestAllyResult find_nearest_ally_within_radius(u32 selfIndex,
         return {};
     }
     return nearest;
+}
+
+NearestAllyResult find_nearest_hostile(u32 selfIndex,
+                                       const FactionQuery& factions,
+                                       float x,
+                                       float y,
+                                       float z,
+                                       const std::vector<AllyCandidate>& allies) {
+    NearestAllyResult result;
+    float bestSq = 0.f;
+
+    for (const AllyCandidate& candidate : allies) {
+        if (!is_hostile_(selfIndex, factions, candidate)) {
+            continue;
+        }
+
+        const float distSq = distance_sq_3d(x, y, z, candidate.x, candidate.y, candidate.z);
+        if (!result.found || distSq < bestSq ||
+            (distSq == bestSq && candidate.agentIndex < result.allyIndex)) {
+            result.found = true;
+            result.allyIndex = candidate.agentIndex;
+            result.distanceSq = distSq;
+            bestSq = distSq;
+        }
+    }
+
+    return result;
+}
+
+u32 count_hostiles_in_radius(u32 selfIndex,
+                             const FactionQuery& factions,
+                             float x,
+                             float y,
+                             float z,
+                             float radius,
+                             const std::vector<AllyCandidate>& allies) {
+    u32 count = 0;
+
+    for (const AllyCandidate& candidate : allies) {
+        if (!is_hostile_(selfIndex, factions, candidate)) {
+            continue;
+        }
+        const float distSq = distance_sq_3d(x, y, z, candidate.x, candidate.y, candidate.z);
+        if (within_radius(distSq, radius)) {
+            ++count;
+        }
+    }
+
+    return count;
+}
+
+NearestAllyResult find_nearest_visible_ally(u32 selfIndex,
+                                            u32 teamId,
+                                            float x,
+                                            float y,
+                                            float z,
+                                            const std::vector<AllyCandidate>& allies,
+                                            const std::vector<AabbBlocker>& blockers) {
+    NearestAllyResult result;
+    float bestSq = 0.f;
+
+    for (const AllyCandidate& candidate : allies) {
+        if (!is_ally_(selfIndex, teamId, candidate)) {
+            continue;
+        }
+        if (segment_blocked_(x, y, z, candidate, blockers)) {
+            continue;
+        }
+
+        const float distSq = distance_sq_3d(x, y, z, candidate.x, candidate.y, candidate.z);
+        if (!result.found || distSq < bestSq ||
+            (distSq == bestSq && candidate.agentIndex < result.allyIndex)) {
+            result.found = true;
+            result.allyIndex = candidate.agentIndex;
+            result.distanceSq = distSq;
+            bestSq = distSq;
+        }
+    }
+
+    return result;
 }
 
 bool allies_in_radius_satisfied(u32 selfIndex,

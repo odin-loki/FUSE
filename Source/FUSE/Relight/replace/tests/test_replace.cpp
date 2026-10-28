@@ -29,6 +29,7 @@
 #include <fuse/relight/options/option_manager.hpp>
 #include <fuse/relight/replace/file_watcher.hpp>
 #include <fuse/relight/replace/mod_stack.hpp>
+#include <fuse/relight/replace/replace_id.hpp>
 #include <fuse/relight/replace/replace_json.hpp>
 #include <fuse/relight/replace/replace_live.hpp>
 #include <fuse/relight/replace/replace_options.hpp>
@@ -1053,9 +1054,19 @@ int stage(const fs::path& fixture, const fs::path& out) {
     return 0;
 }
 
+void testReplaceIdOk() {
+    CHECK(replace_id_ok("Sky"));
+    CHECK(!replace_id_ok(""));
+    CHECK(!replace_id_ok("1Sky"));
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testReplaceIdOk();
+    if (g_failures != 0) {
+        return 1;
+    }
     if (argc == 4 && std::string(argv[1]) == "--stage") {
         return stage(argv[2], argv[3]);
     }
@@ -1090,3 +1101,26 @@ int main(int argc, char** argv) {
     std::printf("rl_replace_unit: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }
+
+#include <fuse/relight/replace/material_swap.hpp>
+
+namespace {
+
+void testMaterialSwap() {
+    const MaterialSwapRule metalToHero[] = {{"metal", "hero"}};
+    CHECK(apply_material_swap("metal", metalToHero, 1) == "hero");
+    CHECK(apply_material_swap("stone", metalToHero, 1) == "stone");
+
+    const MaterialSwapRule ordered[] = {{"", "no"}, {"metal", "hero"}, {"metal", "later"}};
+    CHECK(apply_material_swap("metal", ordered, 3) == "hero");
+    CHECK(apply_material_swap(nullptr, ordered, 3).empty());
+    CHECK(apply_material_swap("", ordered, 3).empty());
+}
+
+struct MaterialSwapTestLaunch {
+    MaterialSwapTestLaunch() { testMaterialSwap(); }
+};
+
+[[maybe_unused]] const MaterialSwapTestLaunch g_materialSwapTestLaunch;
+
+} // namespace

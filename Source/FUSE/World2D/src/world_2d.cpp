@@ -19,7 +19,58 @@ FuselevelLoadResult populateWorld2DFromFuselevel(World2D&, const std::string& fu
     log::warn("World2D: cannot load '%s' — fuselevel loading requires FUSE_BUILD_PROJECT", fuselevelPath.c_str());
     return result;
 }
+
+bool World2D::findSpawnPoint(f32 outPosition[3]) {
+    (void)outPosition;
+    return false;
+}
 #endif
+
+bool World2D::applySpawnViewCamera() {
+    f32 spawn[3] = {0.f, 0.f, 0.f};
+    if (!findSpawnPoint(spawn)) {
+        return false;
+    }
+
+    RenderView2D view{};
+    view.center[0] = spawn[0];
+    view.center[1] = spawn[1];
+    view.valid = true;
+    setView(view);
+    return true;
+}
+
+bool World2D::enterPlayMode() {
+    if (m_playModeActive) {
+        return true;
+    }
+
+    m_playSnapshot.view = m_view;
+    m_playSnapshot.viewValid = m_view.valid;
+    m_playSnapshot.physicsEnabled = m_physicsEnabled;
+
+    if (!applySpawnViewCamera()) {
+        return false;
+    }
+
+    setPhysicsEnabled(true);
+    m_playModeActive = true;
+    return true;
+}
+
+bool World2D::exitPlayMode() {
+    if (!m_playModeActive) {
+        return true;
+    }
+
+    m_view = m_playSnapshot.view;
+    if (!m_playSnapshot.viewValid) {
+        m_view.valid = false;
+    }
+    setPhysicsEnabled(m_playSnapshot.physicsEnabled);
+    m_playModeActive = false;
+    return true;
+}
 
 World2D::World2D() : m_root(std::make_unique<SceneObject2D>("World2DRoot")) {
     m_physics.init();
@@ -27,9 +78,39 @@ World2D::World2D() : m_root(std::make_unique<SceneObject2D>("World2DRoot")) {
 
 World2D::~World2D() {
     clearLoadedSprites_();
+    destroyLevelRegistry_();
+}
+
+ecs::Registry& World2D::ownRegistry_() {
+    if (!m_registryReady) {
+        m_registry.init(kRegistryCapacity);
+        m_registryReady = true;
+    }
+    return m_registry;
+}
+
+ecs::Registry& World2D::registry() {
+    return ownRegistry_();
+}
+
+void World2D::destroyLevelRegistry_() {
+    if (m_registryReady) {
+        m_registry.destroy();
+        m_registryReady = false;
+    }
+}
+
+void World2D::adoptLevelRegistry_(ecs::Registry&& registry) {
+    destroyLevelRegistry_();
+    m_registry = std::move(registry);
+    m_registryReady = true;
 }
 
 void World2D::clearLoadedSprites_() {
+    m_playModeActive = false;
+    m_playSnapshot = {};
+    m_view = {};
+    destroyLevelRegistry_();
     for (const Handle<Object> handle : m_sprites) {
         if (SceneObject2D* sprite = m_handles.resolve(handle)) {
             if (m_root && sprite->parent() == m_root.get()) {
@@ -53,6 +134,7 @@ void World2D::clearLoadedSprites_() {
     m_snapshot.clear();
     m_transformSoA.clear();
     m_cullVisible.clear();
+    m_spriteMapSamples.clear();
 }
 
 FuselevelLoadResult World2D::loadWorldFromFuselevel(const std::string& fuselevelPath) {
@@ -242,6 +324,50 @@ void World2D::syncSceneFromPhysics() {
     }
 }
 
+bool World2D::cachedSpriteImageMapColor_(const std::string& imageMap, u32 frameIndex, u32 frameCount, u8& r,
+                                         u8& g, u8& b) {
+    if (imageMap.empty() || frameCount == 0u) {
+        return false;
+    }
+
+    for (const SpriteMapSample& existing : m_spriteMapSamples) {
+        if (existing.frameCount == frameCount && existing.imageMap == imageMap) {
+            const u32 frame = frameIndex % frameCount;
+            const usize base = static_cast<usize>(frame) * 3u;
+            r = existing.rgb[base];
+            g = existing.rgb[base + 1u];
+            b = existing.rgb[base + 2u];
+            return true;
+        }
+    }
+
+    // First sight of this sheet: sample every column now so a later atlas frame does not allocate.
+    SpriteMapSample created;
+    created.imageMap = imageMap;
+    created.frameCount = frameCount;
+    created.rgb.resize(static_cast<usize>(frameCount) * 3u);
+    for (u32 frame = 0; frame < frameCount; ++frame) {
+        u8 sr = 0;
+        u8 sg = 0;
+        u8 sb = 0;
+        if (!sampleSpriteImageMapFrame(m_spriteMapRoots, imageMap, frame, frameCount, sr, sg, sb)) {
+            return false;
+        }
+        const usize base = static_cast<usize>(frame) * 3u;
+        created.rgb[base] = sr;
+        created.rgb[base + 1u] = sg;
+        created.rgb[base + 2u] = sb;
+    }
+
+    const u32 frame = frameIndex % frameCount;
+    const usize base = static_cast<usize>(frame) * 3u;
+    r = created.rgb[base];
+    g = created.rgb[base + 1u];
+    b = created.rgb[base + 2u];
+    m_spriteMapSamples.push_back(std::move(created));
+    return true;
+}
+
 void World2D::buildSnapshot(frame::FrameCtx& ctx) {
     if (!m_root) {
         m_snapshot.clear();
@@ -264,8 +390,8 @@ void World2D::buildSnapshot(frame::FrameCtx& ctx) {
             u8 sr = cmd.atlasR;
             u8 sg = cmd.atlasG;
             u8 sb = cmd.atlasB;
-            if (sampleSpriteImageMapFrame(m_spriteMapRoots, sprite->spriteImageMap(), cmd.atlasFrame,
-                                          cmd.atlasFrameCount, sr, sg, sb)) {
+            if (cachedSpriteImageMapColor_(sprite->spriteImageMap(), cmd.atlasFrame, cmd.atlasFrameCount, sr, sg,
+                                           sb)) {
                 cmd.atlasR = sr;
                 cmd.atlasG = sg;
                 cmd.atlasB = sb;

@@ -1,6 +1,8 @@
 // MT regression: workers read immutable snapshots — no SceneObject* in parallel_for bodies.
 // This file is compiled into fuse_hybrid_tests (see CMakeLists.txt).
 
+#include <fuse/hybrid/mt_worker.hpp>
+#include <fuse/hybrid/worker_clamp.hpp>
 #include <fuse/jobs/parallel_for.hpp>
 #include <fuse/world2d/scene_snapshot.hpp>
 
@@ -101,9 +103,42 @@ void testPartialFinalBatch() {
     expectTrue(visibleCount.load() == 6u, "partial final batch counts visible sprites");
 }
 
+void testClampWorkerCount() {
+    expectTrue(fuse::hybrid::clamp_worker_count(0u, 8u) == 1u, "zero requested workers clamp to one");
+    expectTrue(fuse::hybrid::clamp_worker_count(3u, 8u) == 3u, "in-range worker count is unchanged");
+    expectTrue(fuse::hybrid::clamp_worker_count(100u, 8u) == 8u, "worker count clamps to hardware");
+    expectTrue(fuse::hybrid::clamp_worker_count(4u, 0u) == 1u, "zero hardware clamps to one");
+    expectTrue(fuse::hybrid::clamp_worker_count(100u, 128u) == 64u, "worker count clamps to 64");
+}
+
+/// No heap allocation. A failure returns non-zero before any other test.
+int testMtWorkerOk() {
+    if (!fuse::hybrid::mt_worker_ok(1)) {
+        std::fprintf(stderr, "FAIL: mt_worker_ok(1)\n");
+        return 1;
+    }
+    if (!fuse::hybrid::mt_worker_ok(32)) {
+        std::fprintf(stderr, "FAIL: mt_worker_ok(32)\n");
+        return 1;
+    }
+    if (fuse::hybrid::mt_worker_ok(0)) {
+        std::fprintf(stderr, "FAIL: mt_worker_ok(0)\n");
+        return 1;
+    }
+    if (fuse::hybrid::mt_worker_ok(33)) {
+        std::fprintf(stderr, "FAIL: mt_worker_ok(33)\n");
+        return 1;
+    }
+    return 0;
+}
+
 } // namespace
 
 int runFramePipelineMtTests() {
+    if (const int mtWorkerRc = testMtWorkerOk()) {
+        return mtWorkerRc;
+    }
+    testClampWorkerCount();
     testSnapshotCullUsesHandlesOnly();
     testEmptySnapshotParallelForIsNoOp();
     testSingleElementBatchLargerThanCount();

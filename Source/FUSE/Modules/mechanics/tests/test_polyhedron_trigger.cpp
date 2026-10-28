@@ -1,4 +1,5 @@
 #include <fuse/mechanics/polyhedron_trigger.hpp>
+#include <fuse/mechanics/poly_count.hpp>
 #include <fuse/core/init.hpp>
 
 #include <cstdio>
@@ -15,9 +16,17 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
+void testPolyVertexOk() {
+    expectTrue(fuse::mechanics::poly_vertex_ok(3), "poly_vertex_ok(3) is true");
+    expectTrue(!fuse::mechanics::poly_vertex_ok(2), "poly_vertex_ok(2) is false");
+    expectTrue(fuse::mechanics::poly_vertex_ok(64), "poly_vertex_ok(64) is true");
+    expectTrue(!fuse::mechanics::poly_vertex_ok(65), "poly_vertex_ok(65) is false");
+}
+
 } // namespace
 
 int main() {
+    testPolyVertexOk();
     fuse::core::initialize();
 
     const fuse::mechanics::ConvexPolyhedron cube =

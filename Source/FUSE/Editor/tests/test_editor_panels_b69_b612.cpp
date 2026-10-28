@@ -1,6 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/editor/asset_browser.hpp>
 #include <fuse/editor/console_panel.hpp>
+#include <fuse/editor/panel_page.hpp>
 #include <fuse/editor/play_mode_controller.hpp>
 #include <fuse/editor/profiler_panel.hpp>
 #include <fuse/scene/scene.hpp>
@@ -161,9 +162,22 @@ void testPlayModeControllerSnapshotRestore() {
     expectTrue(scene.camera().positionX == 1.f, "play mode restores camera position");
 }
 
+void testPanelPageOk() {
+    expectTrue(fuse::editor::panel_page_ok(0), "page 0 is a panel page");
+    expectTrue(fuse::editor::panel_page_ok(8), "page 8 is a panel page");
+    expectTrue(!fuse::editor::panel_page_ok(-1), "page -1 is rejected");
+    expectTrue(!fuse::editor::panel_page_ok(9), "page 9 is rejected");
+}
+
 } // namespace
 
 int main() {
+    testPanelPageOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_editor_panels_b69_b612_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
     testAssetBrowserScansProjectRoot();
     testProfilerPanelRingBuffer();
@@ -179,3 +193,21 @@ int main() {
     std::fprintf(stderr, "fuse_editor_panels_b69_b612_tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+#include <fuse/editor/panel_tab.hpp>
+
+namespace {
+
+void testPanelTabIndex() {
+    expectTrue(fuse::editor::panel_tab_index(1, 3) == 1, "Index 1 of 3 is 1");
+    expectTrue(fuse::editor::panel_tab_next(2, 3) == 0, "Next after 2 of 3 is 0");
+    expectTrue(fuse::editor::panel_tab_index(4, 3) == -1, "Index 4 of 3 is -1");
+}
+
+struct PanelTabIndexTestLaunch {
+    PanelTabIndexTestLaunch() { testPanelTabIndex(); }
+};
+
+PanelTabIndexTestLaunch g_panelTabIndexTestLaunch;
+
+} // namespace

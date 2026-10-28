@@ -22,6 +22,7 @@
 #include <fuse/compute_kernel/stats.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/renderer/dag_depth.hpp>
 #include <fuse/renderer/geometry/dag/cluster_dag.hpp>
 #include <fuse/renderer/geometry/dag/fmlt_chunks.hpp>
 #include <fuse/renderer/geometry/meshlet_builder.hpp>
@@ -1116,9 +1117,38 @@ void suite_determinism() {
     scheduler.shutdown();
 }
 
+/// CPU gate. No heap. main calls this before any GPU or device skip.
+void testDagDepthOk() {
+    ++g_checks;
+    if (!fuse::renderer::dag_depth_ok(1)) {
+        std::fprintf(stderr, "FAIL: dag_depth_ok(1)\n");
+        ++g_failures;
+    }
+    ++g_checks;
+    if (!fuse::renderer::dag_depth_ok(32)) {
+        std::fprintf(stderr, "FAIL: dag_depth_ok(32)\n");
+        ++g_failures;
+    }
+    ++g_checks;
+    if (fuse::renderer::dag_depth_ok(0)) {
+        std::fprintf(stderr, "FAIL: dag_depth_ok(0)\n");
+        ++g_failures;
+    }
+    ++g_checks;
+    if (fuse::renderer::dag_depth_ok(33)) {
+        std::fprintf(stderr, "FAIL: dag_depth_ok(33)\n");
+        ++g_failures;
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testDagDepthOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testDagDepthOk\n");
+        return EXIT_FAILURE;
+    }
     fuse::core::initialize();
     const std::string suite = argc > 1 ? argv[1] : "all";
     if (suite == "build" || suite == "all") {

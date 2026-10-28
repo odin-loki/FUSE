@@ -1,9 +1,15 @@
+#include <fuse/math/angle_lerp.hpp>
+#include <fuse/math/easing.hpp>
+#include <fuse/math/hex_color.hpp>
 #include <fuse/math/math.hpp>
+#include <fuse/math/remap_span.hpp>
+#include <fuse/math/smooth_t.hpp>
 #include <fuse/types.hpp>
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 namespace {
 
@@ -1437,9 +1443,155 @@ void testSimdMat4Associativity() {
     expectMat4Near(simdAssoc, scalarAssoc, 1e-4f, "simd Mat4 multiply associativity matches scalar");
 }
 
+void testScalarEasing() {
+    expectNear(fuse::math::ease_in_cubic(0.f), 0.f, 0.f, "ease_in_cubic(0)");
+    expectNear(fuse::math::ease_in_cubic(1.f), 1.f, 0.f, "ease_in_cubic(1)");
+    expectNear(fuse::math::ease_in_cubic(0.5f), 0.125f, 0.f, "ease_in_cubic(0.5)");
+    expectNear(fuse::math::ease_in_out_cubic(0.5f), 0.5f, 0.f, "ease_in_out_cubic(0.5)");
+    expectNear(fuse::math::smoothstep(0.5f), 0.5f, 0.f, "smoothstep(0.5)");
+
+    const f32 nan = std::numeric_limits<f32>::quiet_NaN();
+    const f32 inf = std::numeric_limits<f32>::infinity();
+    expectTrue(fuse::math::ease_in_cubic(nan) == 0.f, "ease_in_cubic NaN returns 0");
+    expectTrue(fuse::math::ease_in_cubic(inf) == 0.f, "ease_in_cubic +inf returns 0");
+    expectTrue(fuse::math::ease_in_cubic(-inf) == 0.f, "ease_in_cubic -inf returns 0");
+    expectTrue(fuse::math::ease_out_cubic(nan) == 0.f, "ease_out_cubic non-finite returns 0");
+    expectTrue(fuse::math::ease_in_out_cubic(inf) == 0.f, "ease_in_out_cubic non-finite returns 0");
+    expectTrue(fuse::math::smoothstep(-inf) == 0.f, "smoothstep non-finite returns 0");
+    expectTrue(fuse::math::smootherstep(nan) == 0.f, "smootherstep non-finite returns 0");
+    expectTrue(fuse::math::ease_out_back(inf) == 0.f, "ease_out_back non-finite returns 0");
+    expectNear(fuse::math::ease_out_back(0.5f, -3.f), fuse::math::ease_out_back(0.5f, 0.f), 0.f,
+               "ease_out_back negative overshoot clamps to 0");
+}
+
+void testParseHexRgb() {
+    float r = 0.f;
+    float g = 0.f;
+    float b = 0.f;
+
+    expectTrue(fuse::math::parse_hex_rgb("#ff8000", r, g, b), "#ff8000 parses");
+    expectNear(r, 1.f, 0.f, "#ff8000 red");
+    expectNear(g, 128.f / 255.f, 0.f, "#ff8000 green");
+    expectNear(b, 0.f, 0.f, "#ff8000 blue");
+
+    expectTrue(fuse::math::parse_hex_rgb("ff8000", r, g, b), "ff8000 parses");
+    expectNear(r, 1.f, 0.f, "ff8000 red");
+    expectNear(g, 128.f / 255.f, 0.f, "ff8000 green");
+    expectNear(b, 0.f, 0.f, "ff8000 blue");
+
+    expectTrue(fuse::math::parse_hex_rgb("#FF8000", r, g, b), "#FF8000 parses");
+    expectNear(r, 1.f, 0.f, "#FF8000 red");
+    expectNear(g, 128.f / 255.f, 0.f, "#FF8000 green");
+    expectNear(b, 0.f, 0.f, "#FF8000 blue");
+
+    r = 0.25f;
+    g = 0.5f;
+    b = 0.75f;
+    expectTrue(!fuse::math::parse_hex_rgb("", r, g, b), "empty hex fails");
+    expectNear(r, 0.f, 0.f, "empty hex zeros r");
+    expectNear(g, 0.f, 0.f, "empty hex zeros g");
+    expectNear(b, 0.f, 0.f, "empty hex zeros b");
+
+    r = 1.f;
+    g = 1.f;
+    b = 1.f;
+    expectTrue(!fuse::math::parse_hex_rgb("#fff", r, g, b), "short hex fails");
+    expectNear(r, 0.f, 0.f, "short hex zeros r");
+    expectNear(g, 0.f, 0.f, "short hex zeros g");
+    expectNear(b, 0.f, 0.f, "short hex zeros b");
+
+    r = 1.f;
+    g = 1.f;
+    b = 1.f;
+    expectTrue(!fuse::math::parse_hex_rgb("ff8000ff", r, g, b), "alpha hex fails");
+    expectNear(r, 0.f, 0.f, "alpha hex zeros r");
+    expectNear(g, 0.f, 0.f, "alpha hex zeros g");
+    expectNear(b, 0.f, 0.f, "alpha hex zeros b");
+
+    r = 1.f;
+    g = 1.f;
+    b = 1.f;
+    expectTrue(!fuse::math::parse_hex_rgb("#ff8000aa", r, g, b), "hashed alpha hex fails");
+    expectNear(r, 0.f, 0.f, "hashed alpha hex zeros r");
+    expectNear(g, 0.f, 0.f, "hashed alpha hex zeros g");
+    expectNear(b, 0.f, 0.f, "hashed alpha hex zeros b");
+
+    r = 1.f;
+    g = 1.f;
+    b = 1.f;
+    expectTrue(!fuse::math::parse_hex_rgb("#ff80gg", r, g, b), "non-hex fails");
+    expectNear(r, 0.f, 0.f, "non-hex zeros r");
+    expectNear(g, 0.f, 0.f, "non-hex zeros g");
+    expectNear(b, 0.f, 0.f, "non-hex zeros b");
+
+    r = 1.f;
+    g = 1.f;
+    b = 1.f;
+    expectTrue(!fuse::math::parse_hex_rgb("zz8000", r, g, b), "non-hex without hash fails");
+    expectNear(r, 0.f, 0.f, "non-hex without hash zeros r");
+    expectNear(g, 0.f, 0.f, "non-hex without hash zeros g");
+    expectNear(b, 0.f, 0.f, "non-hex without hash zeros b");
+}
+
+void testLerpAngleDeg() {
+    constexpr f32 kEps = 1e-3f;
+    expectNear(fuse::math::lerp_angle_deg(350.f, 10.f, 0.5f), 0.f, kEps, "lerp_angle_deg(350, 10, 0.5)");
+    expectNear(fuse::math::lerp_angle_deg(0.f, 90.f, 0.f), 0.f, kEps, "lerp_angle_deg(0, 90, 0)");
+    expectNear(fuse::math::lerp_angle_deg(0.f, 90.f, 1.f), 90.f, kEps, "lerp_angle_deg(0, 90, 1)");
+    expectNear(fuse::math::lerp_angle_deg(0.f, 90.f, 0.5f), 45.f, kEps, "lerp_angle_deg midpoint");
+    expectNear(fuse::math::lerp_angle_deg(0.f, 90.f, -1.f), 0.f, kEps, "lerp_angle_deg clamps t below 0");
+    expectNear(fuse::math::lerp_angle_deg(0.f, 90.f, 2.f), 90.f, kEps, "lerp_angle_deg clamps t above 1");
+    expectNear(fuse::math::lerp_angle_deg(10.f, 350.f, 0.5f), 0.f, kEps, "lerp_angle_deg opposite short arc");
+    expectNear(fuse::math::lerp_angle_deg(0.f, 180.f, 1.f), 180.f, kEps, "lerp_angle_deg +180 stays");
+    expectNear(fuse::math::lerp_angle_deg(0.f, -180.f, 1.f), 180.f, kEps, "lerp_angle_deg -180 wraps to +180");
+    expectNear(fuse::math::lerp_angle_deg(-90.f, 90.f, 0.f), 270.f, kEps, "lerp_angle_deg wraps result into [0, 360)");
+
+    const f32 nan = std::numeric_limits<f32>::quiet_NaN();
+    const f32 inf = std::numeric_limits<f32>::infinity();
+    expectTrue(fuse::math::lerp_angle_deg(nan, 10.f, 0.5f) == 0.f, "lerp_angle_deg NaN from returns 0");
+    expectTrue(fuse::math::lerp_angle_deg(0.f, nan, 0.5f) == 0.f, "lerp_angle_deg NaN to returns 0");
+    expectTrue(fuse::math::lerp_angle_deg(0.f, 10.f, nan) == 0.f, "lerp_angle_deg NaN t returns 0");
+    expectTrue(fuse::math::lerp_angle_deg(inf, 0.f, 0.5f) == 0.f, "lerp_angle_deg +inf returns 0");
+    expectTrue(fuse::math::lerp_angle_deg(0.f, -inf, 0.f) == 0.f, "lerp_angle_deg -inf returns 0");
+}
+
+void testRemapSpan() {
+    expectNear(fuse::math::remap_span(0.5f, 0.f, 1.f, 10.f, 20.f), 15.f, 0.f,
+               "remap_span(0.5, 0, 1, 10, 20) is 15");
+    expectNear(fuse::math::remap_span(0.f, 0.f, 0.f, 3.f, 9.f), 3.f, 0.f,
+               "remap_span(0, 0, 0, 3, 9) is 3");
+    const f32 nan = std::numeric_limits<f32>::quiet_NaN();
+    expectTrue(fuse::math::remap_span(nan, 0.f, 1.f, 4.f, 8.f) == 4.f,
+               "remap_span NaN value with outs 4 and 8 returns 4");
+}
+
+void testSmoothTOk() {
+    expectTrue(fuse::math::smooth_t_ok(0.f), "smooth_t_ok(0)");
+    expectTrue(fuse::math::smooth_t_ok(0.5f), "smooth_t_ok(0.5)");
+    expectTrue(fuse::math::smooth_t_ok(1.f), "smooth_t_ok(1)");
+    expectTrue(!fuse::math::smooth_t_ok(-0.1f), "smooth_t_ok(-0.1) is false");
+    expectTrue(!fuse::math::smooth_t_ok(1.1f), "smooth_t_ok(1.1) is false");
+    const f32 nonFinite = std::numeric_limits<f32>::quiet_NaN();
+    expectTrue(!fuse::math::smooth_t_ok(nonFinite), "smooth_t_ok non-finite is false");
+}
+
 } // namespace
 
 int main() {
+    testRemapSpan();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d math test(s) failed.\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testSmoothTOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d math test(s) failed.\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testLerpAngleDeg();
+    testParseHexRgb();
     testVecBasics();
     testMat4MultiplyIdentity();
     testMat4MultiplyEdgeCases();
@@ -1509,6 +1661,7 @@ int main() {
     testPlaneClassify();
     testPlaneClipParallelSegment();
     testPlaneClip();
+    testScalarEasing();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d math test(s) failed.\n", g_failures);

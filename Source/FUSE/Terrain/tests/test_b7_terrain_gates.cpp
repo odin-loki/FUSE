@@ -9,6 +9,7 @@
 #include <fuse/platform/sleep.hpp>
 #include <fuse/terrain/chunk_grid.hpp>
 #include <fuse/terrain/chunk_mesh.hpp>
+#include <fuse/terrain/chunk_meters.hpp>
 #include <fuse/terrain/heightfield.hpp>
 #include <fuse/terrain/queries.hpp>
 #include <fuse/terrain/terrain.hpp>
@@ -840,9 +841,18 @@ void testUpdateFrameBudget() {
     terrain.destroy();
 }
 
+void testChunkMetersOk() {
+    expectTrue(chunk_meters_ok(16), "16 m is a valid chunk size");
+    expectTrue(chunk_meters_ok(256), "256 m is a valid chunk size");
+    expectTrue(!chunk_meters_ok(8), "8 m is below the chunk size range");
+    expectTrue(!chunk_meters_ok(24), "24 m is not a power of two");
+    expectTrue(!chunk_meters_ok(512), "512 m is above the chunk size range");
+}
+
 } // namespace
 
 int main() {
+    testChunkMetersOk();
     fuse::core::initialize();
     std::printf("fuse_b7_terrain_gates\n");
     testGenerate4096WithoutArtifacts();

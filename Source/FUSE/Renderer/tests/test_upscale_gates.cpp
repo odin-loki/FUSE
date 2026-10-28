@@ -22,6 +22,7 @@
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/renderer/quality/image_metrics.hpp>
 #include <fuse/renderer/upscale/upscale_passes.hpp>
+#include <fuse/renderer/upscale/upscale_ratio.hpp>
 #include <fuse/renderer/upscale/upscaler.hpp>
 
 #include "upscale_test_images.hpp"
@@ -702,9 +703,32 @@ void writeReport(const std::vector<QualityRow>& rows) {
 #endif
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits instead of continuing.
+void testUpscaleRatioOk() {
+    expectTrue(fuse::renderer::upscale_ratio_ok(1), "upscale_ratio_ok(1)");
+    expectTrue(fuse::renderer::upscale_ratio_ok(1.5f), "upscale_ratio_ok(1.5f)");
+    expectTrue(fuse::renderer::upscale_ratio_ok(2), "upscale_ratio_ok(2)");
+    expectTrue(fuse::renderer::upscale_ratio_ok(3), "upscale_ratio_ok(3)");
+    expectTrue(!fuse::renderer::upscale_ratio_ok(4), "upscale_ratio_ok(4) is false");
+    expectTrue(!fuse::renderer::upscale_ratio_ok(1.2f), "upscale_ratio_ok(1.2f) is false");
+    expectTrue(fuse::renderer::upscale_ratio_ok(1.f + 5e-4f), "upscale_ratio_ok within 1e-3 of 1");
+    expectTrue(fuse::renderer::upscale_ratio_ok(1.5f - 5e-4f), "upscale_ratio_ok within 1e-3 of 1.5");
+    expectTrue(fuse::renderer::upscale_ratio_ok(2.f + 5e-4f), "upscale_ratio_ok within 1e-3 of 2");
+    expectTrue(fuse::renderer::upscale_ratio_ok(3.f - 5e-4f), "upscale_ratio_ok within 1e-3 of 3");
+    expectTrue(!fuse::renderer::upscale_ratio_ok(1.f + 2e-3f), "upscale_ratio_ok(1 + 2e-3) is false");
+    expectTrue(!fuse::renderer::upscale_ratio_ok(INFINITY), "upscale_ratio_ok(inf) is false");
+    expectTrue(!fuse::renderer::upscale_ratio_ok(std::nanf("")), "upscale_ratio_ok(nan) is false");
+}
+
 } // namespace
 
 int main() {
+    testUpscaleRatioOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testUpscaleRatioOk\n");
+        return 1;
+    }
+
     fuse::core::initialize();
     testQualityModes();
     testRegistry();
@@ -725,3 +749,32 @@ int main() {
     std::printf("fuse_upscale_gates: all checks passed\n");
     return 0;
 }
+
+#include <fuse/renderer/upscale/ratio_snap.hpp>
+
+namespace {
+
+void testUpscaleRatioSnap() {
+    // 0.67 is closer to 0.6 than 0.5 or 0.75. Compare against the stored 0.67f preset, not 2/3.
+    expectNear(up::snap_upscale_ratio(0.6f), 0.67f, 1e-3, "snap(0.6) == 0.67");
+    expectNear(up::snap_upscale_ratio(1.2f), 1.0, 0.0, "snap(1.2) == 1");
+    expectTrue(up::render_extent(1000, 0.5f) == 500, "render_extent(1000, 0.5) == 500");
+    expectNear(up::snap_upscale_ratio(0.f), 1.0, 0.0, "snap(0) == 1");
+    expectNear(up::snap_upscale_ratio(-1.f), 1.0, 0.0, "snap(negative) == 1");
+    expectNear(up::snap_upscale_ratio(INFINITY), 1.0, 0.0, "snap(inf) == 1");
+    expectNear(up::snap_upscale_ratio(std::nanf("")), 1.0, 0.0, "snap(nan) == 1");
+    expectNear(up::snap_upscale_ratio(0.2f), 0.5, 0.0, "snap below 0.5 clamps to 0.5");
+    // 0.875 is equidistant from 0.75 and 1; the higher preset wins.
+    expectNear(up::snap_upscale_ratio((0.75f + 1.f) * 0.5f), 1.0, 0.0, "tie picks the higher ratio");
+    expectTrue(up::render_extent(0, 0.5f) == 1, "render_extent(0) == 1");
+    expectTrue(up::render_extent(-3, 1.f) == 1, "render_extent(negative display) == 1");
+}
+
+struct UpscaleRatioSnapTestRegistration {
+    UpscaleRatioSnapTestRegistration() { testUpscaleRatioSnap(); }
+};
+
+// Runs before main(); failures accumulate in g_failures, which main() already reports.
+[[maybe_unused]] const UpscaleRatioSnapTestRegistration g_upscale_ratio_snap_test{};
+
+} // namespace

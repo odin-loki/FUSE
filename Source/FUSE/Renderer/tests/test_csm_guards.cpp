@@ -1,5 +1,7 @@
 #include <fuse/core/init.hpp>
+#include <fuse/renderer/shadow/cascade_count.hpp>
 #include <fuse/renderer/shadow/csm.hpp>
+#include <fuse/renderer/shadow/shadow_texel.hpp>
 
 #include <cmath>
 #include <cstdio>
@@ -196,9 +198,29 @@ void testWouldSkipCascadeShadowBuild() {
                "DegenerateCascadeRange skip reason label");
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits the process.
+void testCascadeCountOk() {
+    expectTrue(fuse::renderer::cascade_count_ok(1), "cascade_count_ok(1) is true");
+    expectTrue(fuse::renderer::cascade_count_ok(4), "cascade_count_ok(4) is true");
+    expectTrue(!fuse::renderer::cascade_count_ok(0), "cascade_count_ok(0) is false");
+    expectTrue(!fuse::renderer::cascade_count_ok(5), "cascade_count_ok(5) is false");
+}
+
+void testShadowTexelSnap() {
+    expectNear(fuse::renderer::snap_shadow_texel(-3.f, 8.f, 4), -3.f, 1e-4f, "texel center stays on the center");
+    expectNear(fuse::renderer::snap_shadow_texel(-1.9f, 8.f, 4), -1.f, 1e-4f, "a sample snaps to the next texel center");
+}
+
 } // namespace
 
 int main() {
+    testCascadeCountOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testCascadeCountOk\n");
+        return EXIT_FAILURE;
+    }
+
+    testShadowTexelSnap();
     fuse::core::initialize();
 
     testSanitizeStagePredicates();

@@ -10,9 +10,20 @@
 //      pairs end theirs;
 //   4. narrowphase manifolds, feature-id matching for warm starting, touching / sensor transitions ->
 //      begin / end events;
-//   5. integrate velocities (gravity, forces, damping), sequential impulses for joints and contacts with
-//      warm starting, integrate positions, non-linear position correction for contacts and joints;
-//   6. deliver events to the listener.
+//   5. if sleep is enabled, wake sleeping dynamics that touch a dynamic body faster than the sleep
+//      thresholds; integrate velocities (sleeping dynamics skipped); sequential impulses for joints and
+//      contacts (a contact is skipped when either body is sleeping; a sleeping body is immovable to
+//      joints) with warm starting; integrate positions (sleeping dynamics skipped); non-linear position
+//      correction;
+//   6. circle CCD, bodies in id order then shapes in id order. A dynamic circle that moves farther than
+//      its own radius is swept against static edges and polygons. A hit whose end pose is separated or
+//      deeper than kCcdDeepPenetration, or that the discrete contact list does not already call
+//      touching, clamps the body to that fraction (lowest fraction, then lowest shape id), writes the
+//      contact and cancels the approaching velocity. Slower circles, and shallow overlaps the discrete
+//      step already owns, keep the discrete pose. Zero dt and zero radius do not produce NaNs;
+//   7. sync transforms, then the sleep update (dynamics only; statics are never put to sleep). A body
+//      woken by a contact this step stays awake through that update;
+//   8. deliver events to the listener.
 // Buffers keep their capacity across steps, so a steady-state step does not allocate.
 
 #include "collide_2d.hpp"
@@ -43,6 +54,11 @@ struct Body2D {
     f32 linearDamping = 0.f;
     f32 angularDamping = 0.f;
     f32 gravityScale = 1.f;
+    /// Set only for a dynamic body, and only when SolverSettings2D::enableSleep is on.
+    bool sleeping = false;
+    /// Contact wake: updateSleep must not put this body back to sleep in the same step.
+    bool wakeGuard = false;
+    f32 sleepTime = 0.f;
     u64 userData = 0u;
     u32 firstShape = kInvalidId2D;
     u32 lastShape = kInvalidId2D;
@@ -170,6 +186,8 @@ public:
     void resetMassData(BodyId2D body);
     void setTransform(BodyId2D body, vec2 position, f32 angle);
     void setType(BodyId2D body, BodyType2D type);
+    /// Clears the sleep flag and timer on a dynamic body. Static and kinematic bodies are unchanged.
+    void wakeBody(BodyId2D body);
 
     // Shapes.
     ShapeId2D addShape(BodyId2D body, const Shape2D& shape, const ShapeDef2D& def, bool reuseFreeSlot = true);
@@ -224,6 +242,12 @@ private:
     ContactEvent2D makeEvent(const Contact2D& contact) const;
 
     void solve(f32 dt);
+    void prepareSleep();
+    void wakeSleepingContacts();
+    void updateSleep(f32 dt);
+    void solveCircleCcd();
+    void applyCircleCcd(BodyId2D body, u32 circleShape, u32 staticShape, f32 toi, vec2 normal, vec2 point);
+    bool touchingPair(u32 shapeA, u32 shapeB) const;
     void initContactConstraints(f32 dtRatio);
     void warmStartContacts();
     void solveContactVelocities();
@@ -264,6 +288,19 @@ private:
     RigidStepStats2D m_stats{};
     f32 m_prevDt = 0.f;
     f32 m_dtRatio = 1.f;
+
+    // Circle CCD poses from the start of position integration. Capacity sticks across steps.
+    std::vector<vec2> m_ccdStartC;
+    std::vector<f32> m_ccdStartA;
+    struct CircleCcdBest {
+        f32 toi = 2.f;
+        u32 circle = kInvalidId2D;
+        u32 other = kInvalidId2D;
+        vec2 normal{0.f, 1.f};
+        vec2 point{0.f, 0.f};
+        bool hit = false;
+    };
+    std::vector<CircleCcdBest> m_ccdBest;
 
     mutable bool m_bvhDirty = true;
     mutable std::vector<BvhNode2D> m_bvhNodes;

@@ -2,6 +2,7 @@
 #include <fuse/renderer/atmosphere/sky_pass.hpp>
 #include <fuse/renderer/command_buffer.hpp>
 #include <fuse/renderer/deferred/deferred_renderer.hpp>
+#include <fuse/renderer/deferred/deferred_step.hpp>
 #include <fuse/renderer/deferred/frame_pipeline.hpp>
 #include <fuse/renderer/gi/ddgi.hpp>
 #include <fuse/renderer/material/material.hpp>
@@ -27,6 +28,14 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+/// CPU gate. Runs before any GPU or device skip and does not allocate.
+void testDeferredStepOk() {
+    expectTrue(fuse::renderer::deferred_step_ok(0), "deferred_step_ok(0) is true");
+    expectTrue(fuse::renderer::deferred_step_ok(8), "deferred_step_ok(8) is true");
+    expectTrue(!fuse::renderer::deferred_step_ok(-1), "deferred_step_ok(-1) is false");
+    expectTrue(!fuse::renderer::deferred_step_ok(9), "deferred_step_ok(9) is false");
 }
 
 bool recorderContainsPass(const fuse::renderer::CommandBufferRecorder& recorder, const char* passName) {
@@ -212,6 +221,12 @@ void testPhase5DeferredPipelineIntegration() {
 } // namespace
 
 int main() {
+    testDeferredStepOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_phase5_deferred_integration: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     testPhase5DeferredPipelineIntegration();
 
     if (g_failures == 0) {

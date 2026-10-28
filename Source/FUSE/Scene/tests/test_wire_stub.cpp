@@ -1,3 +1,4 @@
+#include <fuse/scene/wire_name.hpp>
 #include <fuse/scene/wire_stub.hpp>
 
 #include <cstdio>
@@ -27,9 +28,17 @@ void testWireStubParse() {
     expectTrue(wire.value == "SpawnSphereMarker", "wire value parsed");
 }
 
+void testWireNameOk() {
+    expectTrue(fuse::scene::wire_name_ok("Diffuse"), "wire name Diffuse");
+    expectTrue(!fuse::scene::wire_name_ok(""), "empty wire name rejected");
+    expectTrue(!fuse::scene::wire_name_ok("1Diffuse"), "digit-leading wire name rejected");
+    expectTrue(!fuse::scene::wire_name_ok("Diff use"), "spaced wire name rejected");
+}
+
 } // namespace
 
 int main() {
+    testWireNameOk();
     testWireStubParse();
 
     if (g_failures == 0) {
