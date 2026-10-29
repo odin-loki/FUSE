@@ -85,6 +85,11 @@ endif()
 
 add_subdirectory(Relight)  # FUSE Relight (docs/plans/FUSE_REMIX_PORT_PLAN.md); FUSE_BUILD_RELIGHT inside, default ON for MinGW
 
+option(FUSE_BUILD_UI "Build FUSE UI (docs/plans/FUSE_UI_PLAN.md): fuse_text, fuse_ui_core, fuse_ui_widgets and the UI gates" ON)
+if(FUSE_BUILD_UI)
+    add_subdirectory(UI)
+endif()
+
 if(TARGET fuse_script AND TARGET fuse_compat_ts)
     target_link_libraries(fuse_script PRIVATE fuse_compat_ts fuse_compat_ts_t3d fuse_compat_ts_t2d)
     target_compile_definitions(fuse_script PRIVATE FUSE_HAS_COMPAT_TS=1)
