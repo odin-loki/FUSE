@@ -2697,7 +2697,7 @@ int gateMultiViewport() {
         std::lock_guard<std::mutex> lock(window.sceneMutex());
         moved = window.host().editorScene().registry().get<ecs::Transform>(cube)->position;
     }
-    expect(std::fabs(moved.x - pos.x - 2.f) < 0.1f && std::fabs(moved.y - pos.y) < 1e-4f && std::fabs(moved.z - pos.z) < 0.05f /* sub-pixel ortho rounding */,
+    expect(std::fabs(moved.x - pos.x - 2.f) < 0.1f && std::fabs(moved.y - pos.y) < 1e-4f && std::fabs(moved.z - pos.z) < 1e-4f,
            fmt("Top drag moves +2 X (%.2f,%.2f,%.2f)", moved.x - pos.x, moved.y - pos.y, moved.z - pos.z));
     expect(window.host().undoStack().undoCount() == undo0 + 1, "drag is one undo step");
     window.undoLatest();

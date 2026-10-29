@@ -280,6 +280,7 @@ void OrthoViewWidget::mousePressEvent(QMouseEvent* e) {
     const QPointF pos = e->position();
     m_last = pos;
     m_pressPos = pos;
+    m_dragSnapped = pos;
     if (e->button() == Qt::MiddleButton || e->button() == Qt::RightButton) {
         m_drag = Drag::Pan;
         return;
@@ -333,7 +334,13 @@ void OrthoViewWidget::mouseMoveEvent(QMouseEvent* e) {
             m_host.undoStack().beginMacro("Move entity (" + axisName().toStdString() + " view)");
             m_macroOpen = true;
         }
-        dragSelection(m_last, pos);
+        // Snap the drag to whole view pixels measured from the press point, so sub-pixel input
+        // noise never leaks into the in-plane axis the user isn't moving along, and steps never accumulate drift.
+        // Round half toward zero: a half-pixel wobble (fractional-DPR input) is noise, not a move.
+        const auto snapPx = [](double d) { return d > 0.0 ? std::ceil(d - 0.5) : std::floor(d + 0.5); };
+        const QPointF snapped = m_pressPos + QPointF(snapPx(pos.x() - m_pressPos.x()), snapPx(pos.y() - m_pressPos.y()));
+        if (snapped != m_dragSnapped) dragSelection(m_dragSnapped, snapped);
+        m_dragSnapped = snapped;
     }
     m_last = pos;
 }

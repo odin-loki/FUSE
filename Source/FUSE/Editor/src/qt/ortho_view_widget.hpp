@@ -85,6 +85,7 @@ private:
     // interaction
     enum class Drag { None, Pan, Move } m_drag = Drag::None;
     QPointF m_last;
+    QPointF m_dragSnapped;
     QPointF m_pressPos;
     ecs::EntityID m_dragEntity = ecs::EntityID::null();
     ecs::vec3 m_dragStartPos{};
