@@ -78,5 +78,21 @@ These build with core rather than the module flags:
 | `fuse_physics` | Physics facade |
 | `fuse_net` | Session / net stubs |
 | `fuse_animation` | Animation system |
+| `fuse_asset` | Runtime asset core: cooked readers (FMSH, `.fusetex`, `.fusemat`), `AssetRegistry` (AssetId ↔ VFS path ↔ handle, refcount, async load/unload), job decode, render-upload queue. Links `fuse_core` only; `Tools/FUSE/Cook` links it for reading |
+| `fuse_navigation` | Uniform 4-connected grid navmesh with deterministic A* — see below |
+| `fuse_compute` | Single-source compute kernels: CPU backends everywhere, CUDA trampolines when the toolkit is found — [compute-kernels.md](compute-kernels.md) |
+| `fuse_ssfx` | Screen-space effect references (HBAO, SSR, SSGI) as single-source kernels, shared by `fuse_rhi` and `fuse_compute`; depends on `fuse_core` only |
+| `fuse_compat_ts*`, `fuse_compat_sim_object` | Quarantined dialect script VMs and the SimObject id ↔ `EntityID` table. Never linked into `fuse_core`, `fuse_runtime_smoke`, `fuse_editor_api`, or Qt targets; `FUSE_BUILD_COMPAT_TS` (forced OFF in shipping) |
 
 Engine-level VFX is distinct from `fuse_fx`: particles vs. authored spell/effect graphs.
+
+## `fuse_navigation`
+
+`fuse::navigation::GridNavmesh` (`Source/FUSE/Navigation/include/fuse/navigation/grid_navmesh.hpp`) is a uniform 4-connected grid.
+
+- `build(width, height, cell_size, is_blocked)` takes a predicate `(x, y) -> bool`; an overload takes a list of blocked `Cell`s (out-of-grid entries ignored). Zero dimensions, a non-finite or non-positive `cell_size`, or a cell count that does not fit a 32-bit index fail and clear the mesh.
+- `find_path(start, goal)` is A* with unit step cost and a Manhattan heuristic. Ties break toward smaller x, then smaller y, and a parent is replaced only on a strictly smaller g, so the waypoint list is deterministic.
+- Waypoints are cell centres in world xy, start through goal. Out-of-grid endpoints, a blocked goal, a blocked start (unless it equals the goal), or no route return an empty path.
+- `build` allocates the grid and search scratch; a query allocates only its result (plus the transient open set). Queries share scratch, so do not call `find_path` concurrently on one mesh.
+
+Helpers: `path_length` (polyline length, non-finite segments ignored), `path_cost_ok` (finite, `[0, 10000]`), `nav_cell_ok` (cell size in metres, finite, `[0.1, 4]`). Tests: `fuse_navigation_tests`.
