@@ -22,6 +22,7 @@ struct PackageOptions {
     QString runtimePath; ///< optional player executable copied into bin/
     bool cookAssets = true;
     bool clean = true;   ///< remove an existing package folder first
+    bool bundleLibraries = true; ///< Linux: copy the runtime's non-system shared libraries into lib/
 };
 
 struct PackageResult {
@@ -30,6 +31,7 @@ struct PackageResult {
     int copiedFiles = 0;
     int cookedAssets = 0;
     int failedCooks = 0;
+    int bundledLibraries = 0;
     QString error;
 };
 

@@ -107,23 +107,35 @@ PackageResult packageProject(const PackageOptions& opts, const std::function<voi
         if (tool.isEmpty()) {
             say(QStringLiteral("fuse_cook not found; skipping cook (set FUSE_COOK)"));
         } else {
-            for (const QString& rel : sources) {
-                AssetCookJob job;
-                if (!makeAssetCookJob(dataDir, rel, tool, job)) continue;
-                QProcess p;
-                p.setProcessChannelMode(QProcess::MergedChannels);
-                p.start(job.program, job.arguments);
-                const bool ok = p.waitForFinished(120000) && p.exitStatus() == QProcess::NormalExit && p.exitCode() == 0 &&
-                                QFileInfo::exists(QDir(dataDir).filePath(job.output));
-                if (ok) {
+            // Project-wide cook (scans the staged copy, or honours its cook_manifest.json).
+            QProcess p;
+            p.setProcessChannelMode(QProcess::MergedChannels);
+            p.start(tool, {QStringLiteral("--project"), dataDir});
+            const bool finished = p.waitForFinished(600000);
+            const QStringList lines = QString::fromLocal8Bit(p.readAll()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+            const QString prefix = QDir(dataDir).absolutePath() + QLatin1Char('/');
+            for (QString line : lines) {
+                line = line.trimmed();
+                if (!line.startsWith(QLatin1Char('['))) continue;
+                line.replace(prefix, QString());
+                const int arrow = line.indexOf(QStringLiteral(" -> "));
+                const int paren = line.indexOf(QStringLiteral(" ("), arrow);
+                if (arrow < 0 || paren < 0) continue;
+                const QString out = line.mid(arrow + 4, paren - arrow - 4);
+                if (line.contains(QStringLiteral("(ok)"))) {
                     ++r.cookedAssets;
-                    cooked.append(job.output);
-                    say(QStringLiteral("Cooked %1 -> %2").arg(job.source, job.output));
+                    cooked.append(out);
+                    say(QStringLiteral("Cooked %1").arg(line.left(paren)));
                 } else {
                     ++r.failedCooks;
-                    say(QStringLiteral("Cook FAILED %1: %2").arg(job.source, QString::fromLocal8Bit(p.readAll()).trimmed().right(300)));
+                    say(QStringLiteral("Cook FAILED %1").arg(line));
                 }
             }
+            if (!finished || p.exitStatus() != QProcess::NormalExit || (p.exitCode() != 0 && r.failedCooks == 0)) {
+                ++r.failedCooks;
+                say(QStringLiteral("fuse_cook --project failed (exit %1)").arg(p.exitCode()));
+            }
+            QDir(QDir(dataDir).filePath(QStringLiteral(".fuse"))).removeRecursively(); // cook cache is not shipped
         }
     }
 
@@ -144,9 +156,29 @@ PackageResult packageProject(const PackageOptions& opts, const std::function<voi
             return r;
         }
         QFile::setPermissions(dst, QFile::permissions(dst) | QFile::ExeOwner | QFile::ExeGroup | QFile::ExeOther);
+#if defined(__linux__)
+        if (opts.bundleLibraries) {
+            QProcess ldd;
+            ldd.start(QStringLiteral("ldd"), {rt.absoluteFilePath()});
+            if (ldd.waitForFinished(30000)) {
+                const QStringList lines = QString::fromLocal8Bit(ldd.readAllStandardOutput()).split(QLatin1Char('\n'));
+                for (const QString& line : lines) {
+                    const int arrow = line.indexOf(QStringLiteral("=> /"));
+                    if (arrow < 0) continue;
+                    const QString lib = line.mid(arrow + 3).section(QLatin1Char(' '), 0, 0);
+                    if (lib.startsWith(QLatin1String("/lib")) || lib.startsWith(QLatin1String("/usr/lib"))) continue;
+                    pkg.mkpath(QStringLiteral("lib"));
+                    const QString dstLib = pkg.filePath(QStringLiteral("lib/") + QFileInfo(lib).fileName());
+                    QFile::remove(dstLib);
+                    if (QFile::copy(QFileInfo(lib).canonicalFilePath(), dstLib)) ++r.bundledLibraries;
+                }
+            }
+            if (r.bundledLibraries > 0) say(QStringLiteral("Bundled %1 shared librar(ies) into lib/").arg(r.bundledLibraries));
+        }
+#endif
         QFile sh(pkg.filePath(QStringLiteral("run.sh")));
         if (sh.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            sh.write(QStringLiteral("#!/bin/sh\ncd \"$(dirname \"$0\")\" && exec ./bin/%1 --present project \"$@\"\n").arg(runtimeName).toUtf8());
+            sh.write(QStringLiteral("#!/bin/sh\ncd \"$(dirname \"$0\")\" || exit 1\nexport LD_LIBRARY_PATH=\"$PWD/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\"\nexec ./bin/%1 --present project \"$@\"\n").arg(runtimeName).toUtf8());
             sh.close();
             sh.setPermissions(sh.permissions() | QFile::ExeOwner | QFile::ExeGroup | QFile::ExeOther);
         }
@@ -167,6 +199,7 @@ PackageResult packageProject(const PackageOptions& opts, const std::function<voi
     m.insert(QStringLiteral("files"), r.copiedFiles);
     m.insert(QStringLiteral("cooked"), cooked);
     m.insert(QStringLiteral("failedCooks"), r.failedCooks);
+    m.insert(QStringLiteral("bundledLibraries"), r.bundledLibraries);
     m.insert(QStringLiteral("runtime"), runtimeName.isEmpty() ? QString() : QStringLiteral("bin/") + runtimeName);
     QFile mf(pkg.filePath(QStringLiteral("package.json")));
     if (!mf.open(QIODevice::WriteOnly | QIODevice::Truncate)) {

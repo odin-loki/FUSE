@@ -35,6 +35,7 @@
 #include "main_window.hpp"
 #include "project_hub_widget.hpp"
 #include "build_package_dialog.hpp"
+#include <QProcessEnvironment>
 #include <QCoreApplication>
 #include <QJsonObject>
 #include <QJsonDocument>
@@ -1734,6 +1735,39 @@ int gateBuildPackage() {
     } else {
         std::printf("SKIP package cook: fuse_cook not found\n");
     }
+#if defined(FUSE_TEST_DEMO_RUNTIME)
+    // End to end: package the real demo_3d_empty sample with its player, then run the packaged player
+    // (headless, only the bundled lib/ on LD_LIBRARY_PATH) from the package folder.
+    {
+        fuse::editor::qt::PackageOptions e;
+        e.projectRoot = QStringLiteral(FUSE_TEST_SOURCE_DIR "/Samples/unification/demo_3d_empty");
+        e.outputDir = tmp.path() + QStringLiteral("/e2e");
+        e.runtimePath = QStringLiteral(FUSE_TEST_DEMO_RUNTIME);
+        e.cookAssets = haveCook;
+        const auto er = fuse::editor::qt::packageProject(e);
+        expect(er.ok, "demo_3d_empty packages");
+        const QString exe = QDir(er.packageDir).filePath(QStringLiteral("bin/demo_3d_empty"));
+        expect(QFileInfo(exe).isExecutable() && QFileInfo::exists(QDir(er.packageDir).filePath(QStringLiteral("project/worlds/example.fuselevel"))),
+               "packaged player and world exist");
+#if defined(__linux__)
+        expect(er.bundledLibraries > 0 && QFileInfo::exists(QDir(er.packageDir).filePath(QStringLiteral("lib/libvulkan.so.1"))),
+               "player's non-system libraries are bundled");
+#endif
+        QProcess run;
+        run.setWorkingDirectory(er.packageDir);
+        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        env.insert(QStringLiteral("LD_LIBRARY_PATH"), QDir(er.packageDir).filePath(QStringLiteral("lib")));
+        run.setProcessEnvironment(env);
+        run.setProcessChannelMode(QProcess::MergedChannels);
+        run.start(exe, {QStringLiteral("project")});
+        const bool done = run.waitForFinished(300000);
+        const QByteArray out = run.readAll();
+        expect(done && run.exitCode() == 0 && out.contains("demo_3d_empty: PASS"), "packaged player runs the packaged project");
+        if (!(done && run.exitCode() == 0)) std::printf("%s\n", out.right(2000).constData());
+    }
+#else
+    std::printf("SKIP package e2e: demo_3d_empty not built (FUSE_BUILD_PARITY_DEMOS=OFF)\n");
+#endif
     {
         fuse::editor::qt::BuildPackageDialog d(root);
         const auto opts = d.options();

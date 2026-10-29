@@ -173,3 +173,9 @@ endif()
 if(TARGET fuse_cook)
     add_dependencies(fuse_editor_qt_gates fuse_cook)
 endif()
+
+# build_package gate: end-to-end package + run of a real player (demo_3d_empty) when the parity demos are built.
+if(_fuse_qt_gate_available AND FUSE_BUILD_PARITY_DEMOS AND FUSE_BUILD_PROJECT)
+    target_compile_definitions(fuse_editor_qt_gates PRIVATE FUSE_TEST_DEMO_RUNTIME="$<TARGET_FILE:demo_3d_empty>")
+    add_dependencies(fuse_editor_qt_gates demo_3d_empty)
+endif()
