@@ -845,6 +845,86 @@ bool EditorController::projectPoint(f32 x, f32 y, f32 z, f32& px, f32& py) const
     return m_viewport.worldToScreen(w, px, py);
 }
 
+void EditorController::setViewMode(EditorViewMode mode) {
+    setEditorViewMode(mode);
+    ++m_gizmoVersion;
+}
+void EditorController::setShowMeshBounds(bool on) {
+    m_showMeshBounds = on;
+    ++m_gizmoVersion;
+}
+
+std::vector<EditorController::ViewportSegment> EditorController::viewportSegments(MeshEdgesFn edges, void* user, usize budget) {
+    std::vector<ViewportSegment> out;
+    const bool wire = editorViewModeWire(editorViewMode());
+    if (!wire && !m_showMeshBounds) return out;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    ecs::Registry& registry = m_host.editorScene().registry();
+    ecs::TransformSystem::update(registry);
+    const EditorState& state = m_host.editorState();
+    const auto selected = [&](ecs::EntityID id) {
+        return std::find(state.selectedEntities.begin(), state.selectedEntities.end(), id) != state.selectedEntities.end();
+    };
+    const auto push = [&](const ecs::Transform& t, const f32 a[3], const f32 b[3], u8 role) {
+        const auto& m = t.local_to_world.data;
+        const auto xf = [&](const f32* q) {
+            ecs::vec3 v{};
+            v.x = m[0] * q[0] + m[4] * q[1] + m[8] * q[2] + m[12];
+            v.y = m[1] * q[0] + m[5] * q[1] + m[9] * q[2] + m[13];
+            v.z = m[2] * q[0] + m[6] * q[1] + m[10] * q[2] + m[14];
+            return v;
+        };
+        ViewportSegment s;
+        s.role = role;
+        if (m_viewport.worldToScreen(xf(a), s.x0, s.y0) && m_viewport.worldToScreen(xf(b), s.x1, s.y1)) out.push_back(s);
+    };
+    if (wire && edges != nullptr) {
+        // real triangle edges (MeshRegistry keeps the decoded edges), scaled for SDF proxies like the Qt overlay
+        const auto meshWire = [&](ecs::EntityID id, const ecs::Transform& t, u32 engineId, const f32 scale[3]) {
+            const std::vector<f32>* e = edges(user, engineId);
+            if (e == nullptr) return;
+            const u8 role = selected(id) ? 4 : 3;
+            for (usize k = 0; k + 6u <= e->size() && budget > 0; k += 6u, --budget) {
+                const f32 a[3] = {(*e)[k] * scale[0], (*e)[k + 1] * scale[1], (*e)[k + 2] * scale[2]};
+                const f32 b[3] = {(*e)[k + 3] * scale[0], (*e)[k + 4] * scale[1], (*e)[k + 5] * scale[2]};
+                push(t, a, b, role);
+            }
+        };
+        static constexpr f32 kOne[3] = {1.f, 1.f, 1.f};
+        registry.each<ecs::Transform, ecs::Mesh>([&](ecs::EntityID id, ecs::Transform& t, ecs::Mesh& mesh) {
+            if (mesh.visible && mesh.vertex_buffer.isValid()) meshWire(id, t, mesh.vertex_buffer.index(), kOne);
+        });
+        // SDF objects render through proxy meshes (GpuSceneEcsExtractorDesc defaults: 0 = cube, 1 = sphere)
+        registry.each<ecs::Transform, ecs::SDFObject>([&](ecs::EntityID id, ecs::Transform& t, ecs::SDFObject& sdf) {
+            if (!sdf.visible || sdf.op == ecs::SDFCsgOp::Subtract) return;
+            const bool box = sdf.type == ecs::SDFPrimitive::Box;
+            const f32 r = sdf.params.x > 0.f ? sdf.params.x : 1.f;
+            const f32 sc[3] = {box ? sdf.params.x : r, box ? sdf.params.y : r, box ? sdf.params.z : r};
+            meshWire(id, t, box ? 0u : 1u, sc);
+        });
+    }
+    if (m_showMeshBounds) {
+        registry.each<ecs::Transform, ecs::Mesh>([&](ecs::EntityID id, ecs::Transform& t, ecs::Mesh& mesh) {
+            const f32 lo[3] = {mesh.aabb_min.x, mesh.aabb_min.y, mesh.aabb_min.z};
+            const f32 hi[3] = {mesh.aabb_max.x, mesh.aabb_max.y, mesh.aabb_max.z};
+            if (!(hi[0] > lo[0] || hi[1] > lo[1] || hi[2] > lo[2])) return;
+            const u8 role = selected(id) ? 1 : 0;
+            for (int a = 0; a < 3; ++a) {
+                const int u = (a + 1) % 3, v = (a + 2) % 3;
+                for (int s = 0; s < 4; ++s) {
+                    f32 p0[3], p1[3];
+                    p0[a] = lo[a];
+                    p1[a] = hi[a];
+                    p0[u] = p1[u] = (s & 1) ? hi[u] : lo[u];
+                    p0[v] = p1[v] = (s & 2) ? hi[v] : lo[v];
+                    push(t, p0, p1, role);
+                }
+            }
+        });
+    }
+    return out;
+}
+
 std::vector<EditorController::ViewportMarker> EditorController::viewportMarkers() {
     std::vector<ViewportMarker> out;
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -935,6 +1015,11 @@ bool EditorController::trigger(ActionId id) {
     case ActionId::PlayResume: return transport(CommandKind::ResumePlay);
     case ActionId::PlayStep: return transport(CommandKind::StepPlay);
     case ActionId::PlayStop: return transport(CommandKind::StopPlay);
+    case ActionId::ViewModeLit: setViewMode(EditorViewMode::Lit); return true;
+    case ActionId::ViewModeUnlit: setViewMode(EditorViewMode::Unlit); return true;
+    case ActionId::ViewModeWireframe: setViewMode(EditorViewMode::Wireframe); return true;
+    case ActionId::ViewModeLitWireframe: setViewMode(EditorViewMode::LitWireframe); return true;
+    case ActionId::ViewShowMeshBounds: setShowMeshBounds(!m_showMeshBounds); return true;
     default: return false; // shell-owned (Quit, New Project wizard, Reset Layout) without a hook
     }
 }

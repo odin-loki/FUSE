@@ -15,7 +15,7 @@ enum class ActionId : u16 {
     EntityCreateEmpty, EntityCreateCube, EntityCreateSdfSphere, EntityCreateSdfBox, EntityCreatePointLight,
     EntityCreateDirectionalLight, EntityCreateCamera, EntityDuplicate, EntityDelete,
     PlayPlay, PlayPause, PlayResume, PlayStep, PlayStop,
-    ViewResetLayout,
+    ViewResetLayout, ViewModeLit, ViewModeUnlit, ViewModeWireframe, ViewModeLitWireframe, ViewShowMeshBounds,
     Count
 };
 

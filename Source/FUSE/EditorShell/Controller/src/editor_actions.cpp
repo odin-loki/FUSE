@@ -30,6 +30,11 @@ constexpr std::array<ActionDesc, static_cast<usize>(ActionId::Count)> kActions{{
     {A::PlayStep, "play.step", "Play", "Step", "F10", "fuseActionStep", false, true},
     {A::PlayStop, "play.stop", "Play", "Stop", "Shift+F5", "fuseActionStop", false, true},
     {A::ViewResetLayout, "view.reset_layout", "View", "Reset Layout", "", "fuseActionResetLayout", true, false},
+    {A::ViewModeLit, "view.mode_lit", "View", "View Mode: Lit", "Alt+1", "fuseActionViewLit", true, false},
+    {A::ViewModeUnlit, "view.mode_unlit", "View", "View Mode: Unlit", "Alt+2", "fuseActionViewUnlit", false, false},
+    {A::ViewModeWireframe, "view.mode_wireframe", "View", "View Mode: Wireframe", "Alt+3", "fuseActionViewWireframe", false, false},
+    {A::ViewModeLitWireframe, "view.mode_lit_wireframe", "View", "View Mode: Lit Wireframe", "Alt+4", "fuseActionViewLitWireframe", false, false},
+    {A::ViewShowMeshBounds, "view.show_mesh_bounds", "View", "Show Mesh Bounds", "", "fuseActionShowMeshBounds", true, false},
 }};
 constexpr std::array<const char*, 5> kMenus{{"File", "Edit", "Entity", "Play", "View"}};
 

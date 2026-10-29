@@ -1,6 +1,7 @@
 #include "fuse/editor/scene_viewport_host.hpp"
 
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/runtime_viewport.hpp>
 #include <fuse/editor/viewport_panel.hpp>
 
 #if defined(FUSE_HAS_VULKAN_RHI)
@@ -185,6 +186,10 @@ bool SceneViewportHost::render(EditorHost& host, const ViewportPanel& view, u32 
     ctx.frameIndex = u32(m->frames + 1);
     m->time += dt;
     ctx.time = m->time;
+    // View > View Mode (Qt parity: runtime_viewport ensureMaterialTextureLoader): Unlit and Wireframe draw unlit
+    const EditorViewMode mode = editorViewMode();
+    gpu.setUnlit(mode == EditorViewMode::Unlit || mode == EditorViewMode::Wireframe);
+    gpu.setFallbackSun(editorPreviewSun());
     gpu.beginOverlay();
     if (!gpu.renderWorld3D(m->world, ctx) || !gpu.submitHeadless()) {
         m->reason = std::string("frame: ") + gpu.reason();
@@ -214,6 +219,24 @@ SceneViewportFrame SceneViewportHost::frame() const {
 }
 
 u64 SceneViewportHost::framesRendered() const { return m->frames; }
+
+const std::vector<f32>* SceneViewportHost::meshWireframe(u32 engineMeshId) const {
+#if defined(FUSE_HAS_VULKAN_RHI)
+    if (!valid()) return nullptr;
+    return m->gpu->sceneRenderer().meshes().wireframeEdges(engineMeshId);
+#else
+    (void)engineMeshId;
+    return nullptr;
+#endif
+}
+u64 SceneViewportHost::meshVersion() const {
+#if defined(FUSE_HAS_VULKAN_RHI)
+    if (!valid()) return 0;
+    return m->gpu->sceneRenderer().meshes().remapVersion() + 1u;
+#else
+    return 0;
+#endif
+}
 
 bool SceneViewportHost::readback(std::vector<u32>& out, u32& width, u32& height) {
 #if defined(FUSE_HAS_VULKAN_RHI)

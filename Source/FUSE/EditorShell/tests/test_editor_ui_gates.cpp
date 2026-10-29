@@ -1158,6 +1158,95 @@ void gateLivePresent(Rig& r) {
 #endif
 }
 
+
+// View > View Mode (Lit / Unlit / Wireframe / Lit Wireframe, Alt+1..4) and Show Mesh Bounds: Qt parity.
+std::size_t overlayLines(Rig& r, fuse::u32 hex) {
+    std::size_t n = 0;
+    const fuse::ui::Color want = fuse::ui::Color::rgb(hex);
+    for (const auto& l : w::viewportOverlay(r.ui(), r.ui().find("viewport")).lines)
+        if (std::fabs(l.color.r - want.r) < 0.01f && std::fabs(l.color.g - want.g) < 0.01f && std::fabs(l.color.b - want.b) < 0.01f) ++n;
+    return n;
+}
+std::string menuText(Rig& r, const char* menu) { return std::string(r.ui().text(r.shell.menuNode(menu))); }
+
+void gateViewModes(Rig& r) {
+    CHECK(r.c.viewMode() == EditorViewMode::Lit && !r.c.showMeshBounds());
+    CHECK(menuText(r, "View").find("[x] View Mode: Lit   (Alt+1)") != std::string::npos);
+    CHECK(menuText(r, "View").find("[ ] Show Mesh Bounds") != std::string::npos);
+    auto host = SceneViewportHost::create({.validation = true});
+    const bool gpu = host->valid();
+    if (!gpu) std::printf("view_modes: no scene renderer (%s): overlay checks only\n", host->reason().c_str());
+    const GateScene scene = buildScene(r);
+    CHECK(r.c.trigger(ActionId::EntityCreateCube)); // a Mesh entity (bounds)
+    r.frames();
+    if (gpu) r.shell.setSceneViewport(host.get());
+    r.frames(3);
+    auto grab = [&](std::vector<u32>& px, u32& w, u32& h) {
+        const fuse::u64 f0 = host->framesRendered();
+        for (int i = 0; i < 50 && host->framesRendered() <= f0; ++i) r.frames();
+        return host->readback(px, w, h);
+    };
+    std::vector<u32> lit, unlit;
+    u32 w0 = 0, h0 = 0, w1 = 0, h1 = 0;
+    if (gpu) { r.c.viewportWheel(0.5f); CHECK(grab(lit, w0, h0)); }
+    r.ui().setFocus(r.ui().find("viewport")); // window shortcuts route through the focused widget
+    // Alt+2: Unlit (menu radio moves; the engine frame changes on the lit surfaces)
+    r.ui().keyDown(Key::Num2, fuse::ui::kModAlt);
+    r.frames();
+    r.ui().keyUp(Key::Num2, fuse::ui::kModAlt);
+    CHECK(r.c.viewMode() == EditorViewMode::Unlit);
+    CHECK(menuText(r, "View").find("[x] View Mode: Unlit") != std::string::npos);
+    CHECK(menuText(r, "View").find("[ ] View Mode: Lit ") != std::string::npos);
+    if (gpu) {
+        CHECK(grab(unlit, w1, h1));
+        std::size_t changed = 0;
+        if (w0 == w1 && h0 == h1)
+            for (std::size_t i = 0; i < lit.size(); ++i)
+                for (int sh = 0; sh < 24; sh += 8)
+                    if (std::abs(int((lit[i] >> sh) & 255) - int((unlit[i] >> sh) & 255)) > 6) { ++changed; break; }
+        std::printf("view_modes: unlit changed %.1f%% of the frame\n", lit.empty() ? 0.0 : 100.0 * double(changed) / double(lit.size()));
+        CHECK(changed > lit.size() / 100);
+    }
+    CHECK(overlayLines(r, 0xE6E6F0) == 0); // no wire in unlit
+    // Alt+3: Wireframe -> the real triangle edges of the SDF proxies + mesh are drawn over the frame
+    r.ui().keyDown(Key::Num3, fuse::ui::kModAlt);
+    r.frames(2);
+    r.ui().keyUp(Key::Num3, fuse::ui::kModAlt);
+    CHECK(r.c.viewMode() == EditorViewMode::Wireframe && editorViewModeWire(r.c.viewMode()));
+    const std::size_t wire = overlayLines(r, 0xE6E6F0), wireSel = overlayLines(r, 0xFFC850);
+    std::printf("view_modes: wireframe %zu edges (+%zu selected)\n", wire, wireSel);
+    if (gpu) CHECK(wire + wireSel >= 24);
+    // Show Mesh Bounds (menu): 12 AABB edges of the selected cube mesh in the Qt selected-bounds colour
+    const auto idx = r.shell.menuItemIndex("View", ActionId::ViewShowMeshBounds);
+    CHECK(idx >= 0);
+    r.ui().emit(r.shell.menuNode("View"), fuse::ui::SignalKind::Submitted, {.value = float(idx)});
+    r.frames();
+    CHECK(r.c.showMeshBounds());
+    CHECK(menuText(r, "View").find("[x] Show Mesh Bounds") != std::string::npos);
+    const std::size_t bounds = overlayLines(r, 0x78FF8C) + overlayLines(r, 0x5AC86E);
+    std::printf("view_modes: mesh bounds %zu edges\n", bounds);
+    CHECK(bounds == 12);
+    // Alt+4 Lit Wireframe keeps the wire; Alt+1 Lit drops it (bounds stay)
+    r.ui().keyDown(Key::Num4, fuse::ui::kModAlt);
+    r.frames(2);
+    r.ui().keyUp(Key::Num4, fuse::ui::kModAlt);
+    CHECK(r.c.viewMode() == EditorViewMode::LitWireframe);
+    if (gpu) CHECK(overlayLines(r, 0xE6E6F0) + overlayLines(r, 0xFFC850) == wire + wireSel);
+    CHECK(r.c.trigger(ActionId::ViewModeLit));
+    r.frames();
+    CHECK(overlayLines(r, 0xE6E6F0) + overlayLines(r, 0xFFC850) == 0 && overlayLines(r, 0x78FF8C) + overlayLines(r, 0x5AC86E) == 12);
+    (void)scene;
+    // screenshot: Lit Wireframe + bounds
+    CHECK(r.c.trigger(ActionId::ViewModeLitWireframe));
+    for (int i = 0; i < 3; ++i) r.frames();
+    if (gpu) CHECK(validationErrors() == 0);
+    std::vector<u32> keep;
+    if (gpu) { u32 kw = 0, kh = 0; CHECK(grab(keep, kw, kh)); }
+    r.win.rasterize({});
+    if (!g_out.empty()) { CHECK(r.win.writePng(g_out)); g_shotWritten = true; }
+    r.shell.setSceneViewport(nullptr); // the host dies with this gate
+}
+
 int main(int argc, char** argv) {
     std::string gate, out;
     for (int i = 1; i < argc; ++i) {
@@ -1169,7 +1258,7 @@ int main(int argc, char** argv) {
     Rig r(scale);
     const std::map<std::string, std::function<void(Rig&)>> gates{
         {"startup", gateStartup},        {"layout", gateLayout},           {"theme", gateTheme},
-        {"fuse_api", gateFuseApi},       {"wasd", gateWasd},               {"context_menu", gateContextMenu}, {"context_menu_dpr1_5", gateContextMenuDpr15}, {"icon", gateIcon}, {"live_present", gateLivePresent},
+        {"fuse_api", gateFuseApi},       {"wasd", gateWasd},               {"context_menu", gateContextMenu}, {"context_menu_dpr1_5", gateContextMenuDpr15}, {"icon", gateIcon}, {"view_modes", gateViewModes}, {"live_present", gateLivePresent},
         {"ui_frame", gateUiFrame},       {"idle_frames", gateIdle},        {"e15_console", gateConsole},
         {"e15_transport", gateTransport}, {"e20_inspector", gateInspector}, {"e20_reparent", gateReparent},
         {"e20_file_menu", gateFileMenu}, {"e20_wizard", gateWizard}, {"project_open", gateProjectOpen},  {"project_hub", gateProjectHub}, {"asset_browser", gateAssetBrowser},

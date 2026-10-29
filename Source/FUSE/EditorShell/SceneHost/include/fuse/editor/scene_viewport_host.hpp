@@ -68,6 +68,11 @@ public:
     bool readback(std::vector<u32>& out, u32& width, u32& height);
     /// Blocks until the device is idle.
     void waitIdle();
+    /// Decoded triangle edges of an engine mesh id (x0 y0 z0 x1 y1 z1 per edge; wireframe view modes); null when
+    /// the renderer has no such mesh.
+    const std::vector<f32>* meshWireframe(u32 engineMeshId) const;
+    /// Bumps whenever the renderer's meshes are replaced (wireframe caches key on it).
+    u64 meshVersion() const;
 
 private:
     SceneViewportHost();

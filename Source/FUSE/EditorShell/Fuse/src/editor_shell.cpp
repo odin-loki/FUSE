@@ -367,6 +367,7 @@ void EditorShellWindow::syncMenus_() {
     const EditorViewState& v = m_c.viewState();
     std::string key = v.undoLabel + '\x1f' + v.redoLabel;
     for (const std::string& r : v.recentFiles) key += '\x1f' + r;
+    key += '\x1f' + std::to_string(int(m_c.viewMode())) + (m_c.showMeshBounds() ? "b" : "");
     if (key == m_menuKey) return;
     m_menuKey = key;
     const auto menus = editorMenus();
@@ -385,6 +386,10 @@ void EditorShellWindow::syncMenus_() {
             std::string label = a.label;
             if (a.id == ActionId::EditUndo && !v.undoLabel.empty()) label += " " + v.undoLabel;
             if (a.id == ActionId::EditRedo && !v.redoLabel.empty()) label += " " + v.redoLabel;
+            // checkable View actions (Qt: exclusive view-mode group + Show Mesh Bounds toggle)
+            if (a.id >= ActionId::ViewModeLit && a.id <= ActionId::ViewModeLitWireframe)
+                label = (int(m_c.viewMode()) == int(a.id) - int(ActionId::ViewModeLit) ? "[x] " : "[ ] ") + label;
+            if (a.id == ActionId::ViewShowMeshBounds) label = (m_c.showMeshBounds() ? "[x] " : "[ ] ") + label;
             if (*a.shortcut) label += "   (" + std::string(a.shortcut) + ")";
             add(label, i32(a.id));
             if (a.id == ActionId::FileOpenScene && !v.recentFiles.empty()) {
@@ -757,6 +762,7 @@ void EditorShellWindow::renderViewport_() {
     if (m_c.projectPoint(1.f, 1.f, 1.f, ux, uy)) key += "|" + std::to_string(int(ux * 4.f)) + "," + std::to_string(int(uy * 4.f));
     for (const auto& m : markers)
         key += "|" + std::to_string(m.entity.index) + ":" + std::to_string(int(m.x)) + "," + std::to_string(int(m.y)) + (m.selected ? "s" : "");
+    key += "|vm" + std::to_string(int(m_c.viewMode())); // Unlit / Wireframe re-render the engine frame
     if (m_scene) {
         // scene edits / material edits / playback also change the 3D frame
         const u64 version = m_c.viewStateVersion() * 1000003ull + m_models->revision() +
@@ -885,9 +891,28 @@ void EditorShellWindow::updateOverlay_() {
         for (const GizmoHandle2D& h : g.handles)
             key += "|" + std::to_string(int(h.x0)) + "," + std::to_string(int(h.y0)) + "," + std::to_string(int(h.x1)) + "," +
                    std::to_string(int(h.y1)) + (h.visible ? "v" : "");
+    // View Mode wireframe / Show Mesh Bounds (Qt viewport overlay roles and colours)
+    const std::vector<EditorController::ViewportSegment> segs = m_c.viewportSegments(
+        [](void* user, u32 id) -> const std::vector<f32>* {
+            auto* host = static_cast<SceneViewportHost*>(user);
+            return host ? host->meshWireframe(id) : nullptr;
+        },
+        m_scene);
+    if (!segs.empty()) {
+        u64 h = 1469598103934665603ull;
+        for (const auto& s : segs)
+            for (f32 v : {s.x0, s.y0, s.x1, s.y1}) h = (h ^ u64(std::int64_t(v * 4.f))) * 1099511628211ull;
+        key += "|seg" + std::to_string(segs.size()) + ":" + std::to_string(h);
+    }
+    key += "|vm" + std::to_string(int(m_c.viewMode())) + (m_c.showMeshBounds() ? "b" : "");
     if (key == m_overlayKey) return;
     m_overlayKey = key;
     w::ViewportOverlay o;
+    for (const auto& s : segs) {
+        Color c = s.role == 4 ? Color::rgb(0xFFC850, 220.f / 255.f) : s.role == 3 ? Color::rgb(0xE6E6F0, 120.f / 255.f)
+                : s.role == 1 ? Color::rgb(0x78FF8C, 230.f / 255.f) : Color::rgb(0x5AC86E, 150.f / 255.f);
+        o.lines.push_back({{s.x0, s.y0}, {s.x1, s.y1}, c, s.role >= 3 ? 1.f : 1.4f});
+    }
     if (g.visible) {
         static const Color kAxis[3] = {Color::rgb(0xE5484D), Color::rgb(0x46C46A), Color::rgb(0x3E8EF7)};
         const Color hot = Color::rgb(0xF5D547);
@@ -930,6 +955,15 @@ void EditorShellWindow::updateOverlay_() {
 bool EditorShellWindow::shortcut(Key key, u8 mods) {
     const bool ctrl = (mods & fuse::ui::kModCtrl) != 0, shift = (mods & fuse::ui::kModShift) != 0;
     std::optional<ActionId> id;
+    if ((mods & fuse::ui::kModAlt) != 0 && !ctrl) {
+        switch (key) {
+        case Key::Num1: id = ActionId::ViewModeLit; break;
+        case Key::Num2: id = ActionId::ViewModeUnlit; break;
+        case Key::Num3: id = ActionId::ViewModeWireframe; break;
+        case Key::Num4: id = ActionId::ViewModeLitWireframe; break;
+        default: break;
+        }
+    }
     if (ctrl) {
         switch (key) {
         case Key::N: id = ActionId::FileNewScene; break;
@@ -990,6 +1024,7 @@ bool EditorShellWindow::sync() {
         syncHierarchy_();
         syncInspector_();
     }
+    syncMenus_(); // keyed: also picks up the View Mode / Show Mesh Bounds checks
     if (console) syncConsole_();
     m_pages->sync(m_lastSyncMs, m_frameTick);
     renderViewport_();

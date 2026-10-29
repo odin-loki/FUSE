@@ -11,6 +11,7 @@
 #include <fuse/editor/editor_actions.hpp>
 #include <fuse/editor/entity_context_menu.hpp>
 #include <fuse/editor/property_inspector.hpp>
+#include <fuse/editor/runtime_viewport.hpp>
 #include <fuse/editor/transform_gizmo.hpp>
 #include <fuse/editor/viewport_panel.hpp>
 #include <fuse/project/manifest.hpp>
@@ -219,6 +220,21 @@ public:
     };
     /// Lays the gizmo out for the primary selection through the current camera (draw it over the viewport).
     GizmoView viewportGizmo();
+    // ---- view modes (Qt View > View Mode, Show Mesh Bounds) -------------------------------------------------
+    // The mode is the editor-wide setting the Qt viewport reads (setEditorViewMode): Unlit / Wireframe render
+    // surfaces unlit, Wireframe / Lit Wireframe overlay the real triangle edges of every mesh and SDF proxy.
+    void setViewMode(EditorViewMode mode);
+    [[nodiscard]] EditorViewMode viewMode() const { return editorViewMode(); }
+    void setShowMeshBounds(bool on);
+    [[nodiscard]] bool showMeshBounds() const { return m_showMeshBounds; }
+    struct ViewportSegment {
+        f32 x0 = 0.f, y0 = 0.f, x1 = 0.f, y1 = 0.f; ///< viewport pixels
+        u8 role = 0; ///< 0 mesh bounds, 1 selected bounds, 3 wire edge, 4 selected wire edge (Qt colour roles)
+    };
+    /// Triangle edges of an engine mesh id (x0 y0 z0 x1 y1 z1 per edge, object space); null when unknown.
+    using MeshEdgesFn = const std::vector<f32>* (*)(void* user, u32 engineMeshId);
+    /// Projected wireframe (wire view modes) and mesh-bounds (Show Mesh Bounds) segments, at most `budget` edges.
+    std::vector<ViewportSegment> viewportSegments(MeshEdgesFn edges, void* user, usize budget = 400000);
     [[nodiscard]] bool gizmoDragging() const { return m_gizmo.dragging(); }
     /// Bumped by tool / drag changes so shells know to redraw the overlay.
     [[nodiscard]] u64 gizmoVersion() const { return m_gizmoVersion; }
@@ -288,6 +304,7 @@ private:
     std::vector<GizmoGroupStart> m_gizmoGroup;
     bool m_gizmoMacroOpen = false;
     u64 m_gizmoVersion = 0;
+    bool m_showMeshBounds = false;
     bool refreshGizmo_(); // m_mutex held
     bool gizmoPress_(f32 px, f32 py);
     void gizmoMove_(f32 px, f32 py);
