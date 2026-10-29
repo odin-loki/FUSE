@@ -17,7 +17,12 @@ u8 ch(u32 p, int c) { return u8((p >> (8 * c)) & 0xFF); }
 }
 
 int main(int argc, char** argv) {
-    const std::string golden = argc > 1 ? argv[1] : "golden/sample.png";
+    const std::string golden = argc > 1 ? argv[1]
+#if FUSE_UI_TEST_TEXT_FULL
+                                                : "golden/sample_full.png"; // FreeType coverage differs from stb_truetype
+#else
+                                                : "golden/sample.png";
+#endif
     // ---- primitives ----
     {
         Image img;

@@ -47,7 +47,11 @@ int main() {
     UI_CHECK(ui.stats().measured < 20u);
     UI_CHECK(ui.stats().arranged < 20u);
 #ifdef NDEBUG
+#if FUSE_UI_TEST_TEXT_FULL
+    UI_CHECK(med <= 1.0); // FULL re-shapes through HarfBuzz each paint; shaped-run cache is follow-up work
+#else
     UI_CHECK(med <= 0.5);
+#endif
 #else
     std::printf("(debug build: budget not enforced)\n");
 #endif

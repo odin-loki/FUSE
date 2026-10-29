@@ -20,11 +20,11 @@ option(FUSE_BUILD_UI_GAME "Build fuse_ui_game (HUD/world-space; UI8, not yet)" O
 option(FUSE_BUILD_APP "Build fuse_app (application framework; UI9, not yet)" OFF)
 option(FUSE_BUILD_UI_DESIGNER "Build the UI designer (UI10, not yet)" OFF)
 option(FUSE_UI_ACCESSIBILITY "Accessibility tree (AccessKit bridge later, D7)" ON)
-set(FUSE_UI_TEXT "MINIMAL" CACHE STRING "Text profile: FULL (HarfBuzz/ICU, not yet), MINIMAL (stb_truetype), COOKED")
+set(FUSE_UI_TEXT "MINIMAL" CACHE STRING "Text profile: FULL (HarfBuzz + FreeType, fetched), MINIMAL (stb_truetype), COOKED (not yet)")
 set_property(CACHE FUSE_UI_TEXT PROPERTY STRINGS FULL MINIMAL COOKED)
 set(FUSE_UI_PROFILE "app" CACHE STRING "UI profile: hud, app, editor")
-if(NOT FUSE_UI_TEXT STREQUAL "MINIMAL")
-    message(STATUS "FUSE UI: text profile ${FUSE_UI_TEXT} not implemented yet — using MINIMAL")
+if(FUSE_UI_TEXT STREQUAL "COOKED")
+    message(STATUS "FUSE UI: text profile COOKED not implemented yet — using MINIMAL")
 endif()
 
 # ---- fuse_text ----
@@ -34,6 +34,34 @@ target_include_directories(fuse_text SYSTEM PRIVATE "${FUSE_UI_REPO_ROOT}/vendor
 target_compile_definitions(fuse_text PRIVATE
     FUSE_TEXT_BUNDLED_FONT="${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf")
 target_compile_features(fuse_text PUBLIC cxx_std_23)
+
+# FULL profile (decision D2): HarfBuzz + FreeType through FetchContent (static, no optional deps). Spike: bidi
+# (SheenBidi) and UAX #14/#29 (libunibreak) are not fetched yet.
+if(FUSE_UI_TEXT STREQUAL "FULL")
+    include(FetchContent)
+    set(FT_DISABLE_ZLIB ON CACHE BOOL "" FORCE)
+    set(FT_DISABLE_BZIP2 ON CACHE BOOL "" FORCE)
+    set(FT_DISABLE_PNG ON CACHE BOOL "" FORCE)
+    set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
+    set(FT_DISABLE_BROTLI ON CACHE BOOL "" FORCE)
+    set(HB_HAVE_FREETYPE OFF CACHE BOOL "" FORCE)
+    set(HB_BUILD_SUBSET OFF CACHE BOOL "" FORCE)
+    set(HB_BUILD_UTILS OFF CACHE BOOL "" FORCE)
+    set(HB_HAVE_GLIB OFF CACHE BOOL "" FORCE)
+    set(HB_HAVE_ICU OFF CACHE BOOL "" FORCE)
+    set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
+    FetchContent_Declare(fuse_freetype GIT_REPOSITORY https://gitlab.freedesktop.org/freetype/freetype.git
+        GIT_TAG VER-2-13-3 GIT_SHALLOW TRUE EXCLUDE_FROM_ALL)
+    FetchContent_Declare(fuse_harfbuzz GIT_REPOSITORY https://github.com/harfbuzz/harfbuzz.git
+        GIT_TAG 10.1.0 GIT_SHALLOW TRUE EXCLUDE_FROM_ALL)
+    set(_fuse_bsl ${BUILD_SHARED_LIBS})
+    set(BUILD_SHARED_LIBS OFF)
+    FetchContent_MakeAvailable(fuse_freetype fuse_harfbuzz)
+    set(BUILD_SHARED_LIBS ${_fuse_bsl})
+    target_sources(fuse_text PRIVATE Text/src/text_full.cpp)
+    target_compile_definitions(fuse_text PRIVATE FUSE_TEXT_FULL=1)
+    target_link_libraries(fuse_text PRIVATE harfbuzz freetype)
+endif()
 
 # ---- fuse_ui_core ----
 add_library(fuse_ui_core STATIC Core/src/style.cpp Core/src/draw_list.cpp Core/src/ui.cpp Core/src/immediate.cpp)

@@ -2,8 +2,9 @@
 //
 // Profiles (FUSE_UI_TEXT, decision D2 adopted 2026-10-29): FULL (HarfBuzz + FreeType + bidi + UAX #14/#29),
 // MINIMAL (cmap + kerning shaping, stb_truetype grayscale rasterisation; Latin / Greek / Cyrillic / CJK, no complex
-// scripts or bidi), COOKED (pre-baked .fusefont only). This build implements MINIMAL. FULL and COOKED select the same
-// interfaces (ITextShaper, GlyphAtlas) and are honest stubs until vendored: textProfile() reports what is compiled.
+// scripts or bidi), COOKED (pre-baked .fusefont only). MINIMAL is the default; FULL (FUSE_UI_TEXT=FULL, fetched
+// HarfBuzz + FreeType) swaps in HarfBuzzShaper and FreeType coverage behind the same interfaces. COOKED is not built
+// yet. textProfile() reports what is compiled.
 //
 // Engine rules: no exceptions (std::expected), no owning raw pointers, no allocation on the steady-state path: shaping
 // and layout write into caller-owned buffers that keep their capacity, and the glyph atlas only allocates on a miss.
@@ -69,8 +70,11 @@ public:
     void rasterise(std::uint32_t glyph, float pixelSize, std::uint8_t* dst, int w, int h, int stride) const;
     /// Stable id for caches (unique per loaded font in this process).
     std::uint32_t id() const { return m_id; }
+    /// Font units to pixels at `pixelSize`.
+    float unitScale(float pixelSize) const;
 
 private:
+    friend class HarfBuzzShaper;
     struct State;
     State* m_state = nullptr; // owned (pimpl); released in ~Font
     std::uint32_t m_id = 0;
@@ -96,6 +100,16 @@ class MinimalShaper final : public ITextShaper {
 public:
     float shape(const Font& font, float pixelSize, std::string_view utf8, std::vector<ShapedGlyph>& out) const override;
 };
+
+/// HarfBuzz shaping (FULL profile): ligatures, GPOS kerning, mark positioning, complex scripts. Glyphs come back in
+/// visual order for one direction run; bidi reordering is not wired yet. Falls back to MinimalShaper when FULL is not
+/// compiled in.
+class HarfBuzzShaper final : public ITextShaper {
+public:
+    float shape(const Font& font, float pixelSize, std::string_view utf8, std::vector<ShapedGlyph>& out) const override;
+};
+/// The HarfBuzz shaper when FULL is compiled in, nullptr otherwise.
+const ITextShaper* fullShaper();
 
 /// The shaper of the compiled profile.
 const ITextShaper& defaultShaper();

@@ -25,9 +25,19 @@
 #include <cstring>
 #include <utility>
 
+#if FUSE_TEXT_FULL
+#include "text_full.hpp"
+#endif
+
 namespace fuse::text {
 
-TextProfile textProfile() { return TextProfile::Minimal; }
+TextProfile textProfile() {
+#if FUSE_TEXT_FULL
+    return TextProfile::Full;
+#else
+    return TextProfile::Minimal;
+#endif
+}
 const char* textProfileName(TextProfile p) {
     switch (p) {
     case TextProfile::Minimal: return "MINIMAL";
@@ -99,6 +109,11 @@ struct Font::State {
     std::vector<std::uint8_t> bytes;
     stbtt_fontinfo info{};
     float unitsPerPixelScale1 = 0.f; // stbtt_ScaleForPixelHeight(info, 1)
+    float emPerPixelSize = 1.f;      // em size in pixels for pixelSize 1 (pixel sizes are ascent-to-descent)
+#if FUSE_TEXT_FULL
+    detail::FullFace* full = nullptr; // owned; HarfBuzz + FreeType over `bytes`
+    ~State() { detail::fullDestroy(full); }
+#endif
 };
 
 namespace {
@@ -115,6 +130,14 @@ std::expected<Font, TextError> Font::fromBytes(std::span<const std::uint8_t> byt
         return std::unexpected(TextError::InvalidFont);
     }
     st->unitsPerPixelScale1 = stbtt_ScaleForPixelHeight(&st->info, 1.f);
+    st->emPerPixelSize = st->unitsPerPixelScale1 / stbtt_ScaleForMappingEmToPixels(&st->info, 1.f);
+#if FUSE_TEXT_FULL
+    st->full = detail::fullCreate(st->bytes);
+    if (!st->full) {
+        delete st;
+        return std::unexpected(TextError::InvalidFont);
+    }
+#endif
     Font f;
     f.m_state = st;
     f.m_id = g_fontIds.fetch_add(1);
@@ -172,10 +195,16 @@ float Font::kerning(std::uint32_t l, std::uint32_t r, float px) const {
     return float(stbtt_GetGlyphKernAdvance(&m_state->info, int(l), int(r))) * m_state->unitsPerPixelScale1 * px;
 }
 void Font::glyphBox(std::uint32_t glyph, float px, int& x0, int& y0, int& x1, int& y1) const {
+#if FUSE_TEXT_FULL
+    return detail::fullGlyphBox(m_state->full, glyph, m_state->emPerPixelSize * px, x0, y0, x1, y1);
+#endif
     const float s = m_state->unitsPerPixelScale1 * px;
     stbtt_GetGlyphBitmapBox(&m_state->info, int(glyph), s, s, &x0, &y0, &x1, &y1);
 }
 void Font::rasterise(std::uint32_t glyph, float px, std::uint8_t* dst, int w, int h, int stride) const {
+#if FUSE_TEXT_FULL
+    return detail::fullRasterise(m_state->full, glyph, m_state->emPerPixelSize * px, dst, w, h, stride);
+#endif
     const float s = m_state->unitsPerPixelScale1 * px;
     stbtt_MakeGlyphBitmap(&m_state->info, dst, w, h, stride, s, s, int(glyph));
 }
@@ -200,9 +229,30 @@ float MinimalShaper::shape(const Font& font, float px, std::string_view s, std::
     return pen;
 }
 
+float Font::unitScale(float px) const { return m_state->unitsPerPixelScale1 * px; }
+
+#if FUSE_TEXT_FULL
+float HarfBuzzShaper::shape(const Font& font, float px, std::string_view s, std::vector<ShapedGlyph>& out) const {
+    return detail::fullShape(font.m_state->full, font.unitScale(px), s, out);
+}
+const ITextShaper* fullShaper() {
+    static const HarfBuzzShaper shaper;
+    return &shaper;
+}
+#else
+float HarfBuzzShaper::shape(const Font& font, float px, std::string_view s, std::vector<ShapedGlyph>& out) const {
+    return MinimalShaper{}.shape(font, px, s, out); // FULL not compiled in
+}
+const ITextShaper* fullShaper() { return nullptr; }
+#endif
+
 const ITextShaper& defaultShaper() {
+#if FUSE_TEXT_FULL
+    return *fullShaper();
+#else
     static const MinimalShaper shaper;
     return shaper;
+#endif
 }
 
 float measureText(const Font& font, std::string_view s, float px, std::vector<ShapedGlyph>& scratch) {
