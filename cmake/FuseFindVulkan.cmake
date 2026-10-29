@@ -26,12 +26,29 @@ if(NOT TARGET Vulkan::Headers)
     set_target_properties(Vulkan::Headers PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${_fuse_vk_inc}")
 endif()
 
-set(_fuse_vk_loader "")
-if(DEFINED ENV{WINDIR} AND EXISTS "$ENV{WINDIR}/System32/vulkan-1.dll")
-    set(_fuse_vk_loader "$ENV{WINDIR}/System32/vulkan-1.dll")
-elseif(EXISTS "C:/Windows/System32/vulkan-1.dll")
-    set(_fuse_vk_loader "C:/Windows/System32/vulkan-1.dll")
+# Candidates: an explicit FUSE_VULKAN_LOADER_DLL, then %WINDIR%\System32 (either case: a Wine prefix on a
+# case-sensitive filesystem spells it "system32"), then, when cross-compiling, Wine's builtin PE loader.
+set(FUSE_VULKAN_LOADER_DLL "" CACHE FILEPATH "vulkan-1.dll to link MinGW builds against (empty: search)")
+set(_fuse_vk_cands "${FUSE_VULKAN_LOADER_DLL}")
+foreach(_win IN ITEMS "$ENV{WINDIR}" "C:/Windows")
+    if(NOT _win STREQUAL "")
+        list(APPEND _fuse_vk_cands "${_win}/System32/vulkan-1.dll" "${_win}/system32/vulkan-1.dll")
+    endif()
+endforeach()
+if(CMAKE_CROSSCOMPILING)
+    list(APPEND _fuse_vk_cands
+        "/usr/lib/x86_64-linux-gnu/wine/x86_64-windows/vulkan-1.dll"
+        "/usr/lib/wine/x86_64-windows/vulkan-1.dll"
+        "/usr/local/lib/wine/x86_64-windows/vulkan-1.dll"
+        "/opt/wine-stable/lib64/wine/x86_64-windows/vulkan-1.dll")
 endif()
+set(_fuse_vk_loader "")
+foreach(_c IN LISTS _fuse_vk_cands)
+    if(NOT _c STREQUAL "" AND EXISTS "${_c}")
+        set(_fuse_vk_loader "${_c}")
+        break()
+    endif()
+endforeach()
 if(_fuse_vk_loader STREQUAL "")
     return()
 endif()
