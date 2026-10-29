@@ -26,6 +26,8 @@
 #include <fuse/ecs/components/collider.hpp>
 #include <fuse/ecs/components/script.hpp>
 #include <fuse/editor/runtime_viewport.hpp>
+#include <fuse/ecs/spawn_query.hpp>
+#include <fuse/editor/command_queue.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/systems/transform_system.hpp>
 #include <QSpinBox>
@@ -2488,6 +2490,94 @@ void pumpFor(int ms) {
     while (t.elapsed() < ms) QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
 }
 
+int gatePlayCamera() {
+    // End to end: open a real project, spawn a cube, Play keeps it in view; Play from Spawn Point
+    // moves to the spawn at eye height; Stop restores the editor camera.
+    namespace ecs = fuse::ecs;
+    const std::filesystem::path samples = std::filesystem::path(FUSE_TEST_SOURCE_DIR) / "Samples" / "unification";
+    std::error_code ec;
+    const std::filesystem::path root = fuse::test::makeUniqueTempDir("fuse_qt_play_camera");
+    std::filesystem::create_directories(root / "demo_3d_empty", ec);
+    std::filesystem::copy(samples / "demo_3d_empty", root / "demo_3d_empty",
+                          std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, ec);
+    MainWindow window(QString::fromStdString(root.string()), quietOptions());
+    expect(showAndExpose(window), "editor exposed");
+    expect(openProjectThroughHub(window, QStringLiteral("demo_3d_empty")), "demo_3d_empty opened");
+    expect(window.selectForScreenshot(QStringLiteral("cube")), "cube spawned + selected");
+    pumpFor(200);
+    auto& host = window.host();
+    const auto cam = [&]() {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        return host.runtimeViewport().panel().camera();
+    };
+    const auto cubeOnScreen = [&]() {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        const ecs::EntityID cube = host.editorState().primarySelection;
+        const ecs::Transform* t = host.editorScene().registry().get<ecs::Transform>(cube);
+        const auto& panel = host.runtimeViewport().panel();
+        float x = 0.f, y = 0.f;
+        return t != nullptr && panel.worldToScreen(t->position, x, y) && x >= 0.f && y >= 0.f &&
+               x <= static_cast<float>(panel.width()) && y <= static_cast<float>(panel.height());
+    };
+    const auto waitPlaying = [&](bool want) {
+        for (int i = 0; i < 100 && host.editorState().playing != want; ++i) {
+            {
+                std::lock_guard<std::mutex> lock(window.sceneMutex());
+                host.gameTick();
+            }
+            window.updateTransportActions();
+            pumpFor(10);
+        }
+        return host.editorState().playing == want;
+    };
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        host.gameTick();
+    }
+    window.updateTransportActions();
+    const auto before = cam();
+    expect(cubeOnScreen(), "cube is in the editor view before Play");
+    window.transportAction(fuse::editor::CommandKind::StartPlay)->trigger();
+    expect(waitPlaying(true), "Play enters PIE");
+    pumpFor(200);
+    const auto playing = cam();
+    expect(playing.positionX == before.positionX && playing.positionY == before.positionY &&
+               playing.positionZ == before.positionZ && playing.yaw == before.yaw && playing.pitch == before.pitch,
+           "PIE keeps the editor camera by default");
+    expect(cubeOnScreen(), "spawned cube stays in view while playing");
+    window.transportAction(fuse::editor::CommandKind::StopPlay)->trigger();
+    expect(waitPlaying(false), "Stop leaves PIE");
+
+    QAction* fromSpawn = window.findChild<QAction*>(QStringLiteral("fuseActionPlayFromSpawn"));
+    expect(fromSpawn != nullptr, "Play > Play from Spawn Point exists");
+    float spawn[3] = {};
+    bool hasSpawn = false;
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        hasSpawn = ecs::findFirstActiveSpawnWorldPosition(host.editorScene().registry(), spawn);
+    }
+    if (fromSpawn != nullptr && hasSpawn) {
+        fromSpawn->setChecked(true);
+        window.transportAction(fuse::editor::CommandKind::StartPlay)->trigger();
+        expect(waitPlaying(true), "Play (from spawn) enters PIE");
+        pumpFor(100);
+        const auto atSpawn = cam();
+        expect(std::fabs(atSpawn.positionY - (spawn[1] + 1.7f)) < 1e-3f && std::fabs(atSpawn.positionX - spawn[0]) < 1e-3f,
+               fmt("camera at spawn eye height (%.2f vs %.2f)", atSpawn.positionY, spawn[1] + 1.7f));
+        window.transportAction(fuse::editor::CommandKind::StopPlay)->trigger();
+        expect(waitPlaying(false), "Stop leaves PIE (from spawn)");
+        pumpFor(100);
+        const auto restored = cam();
+        expect(restored.positionX == before.positionX && restored.positionY == before.positionY &&
+                   restored.positionZ == before.positionZ,
+               "Stop restores the editor camera");
+        fromSpawn->setChecked(false);
+    } else {
+        std::printf("note: project has no active spawn; spawn path skipped\n");
+    }
+    return g_failures == 0 ? 0 : 1;
+}
+
 int gateMultiViewport() {
     namespace ecs = fuse::ecs;
     using fuse::editor::qt::OrthoViewWidget;
@@ -2784,6 +2874,8 @@ int main(int argc, char** argv) {
             code = gatePreferences();
         } else if (gate == "asset_browser") {
             code = gateAssetBrowser();
+        } else if (gate == "play_camera") {
+            code = gatePlayCamera();
         } else if (gate == "multi_viewport") {
             code = gateMultiViewport();
         } else if (gate == "terrain") {
