@@ -446,7 +446,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** U2 deepen-only on zip/PNG smoke (no new probe batches); U3 script host ECS component + Lua entity bindings; U6 editor polish (prefab links/overrides, cooking imported models, GPU bring-up outside the scene lock; play-in-editor polish, prefabs, asset import, project settings, timelines, curves, sequencer link and texture/procedural materials landed — live Qt present landed: `fuse_editor_qt_live_present`, see [U6-EDITOR.md](./U6-EDITOR.md)); U7 real ispc_texcomp + libvorbisenc on CI images; Track B post–WP-06p (driver-wired timeline stress on NVIDIA CI, full software placeholder removal).
+**Next:** U2 deepen-only on zip/PNG smoke (no new probe batches); U3 script host ECS component + Lua entity bindings; U6 editor polish (packaged-build smoke run of a real player, gizmos for rotate/scale on multi-select; linked prefabs with overrides, cook on import, GPU bring-up outside the scene lock, multi-select, cut/copy/paste, scene search, light/camera icons, build/package dialog, play-in-editor polish, prefabs, asset import, project settings, timelines, curves, sequencer link and texture/procedural materials landed — live Qt present landed: `fuse_editor_qt_live_present`, see [U6-EDITOR.md](./U6-EDITOR.md)); U7 real ispc_texcomp + libvorbisenc on CI images; Track B post–WP-06p (driver-wired timeline stress on NVIDIA CI, full software placeholder removal).
 
 **U6/U7 wave 13 landed:** `fuse_cook` cook-cache persist + skip re-cook progress; `ispc_texcomp` honest stub hook; vorbis WAV sniff deepen; Qt WSI instance/extension probe headless-safe.
 
