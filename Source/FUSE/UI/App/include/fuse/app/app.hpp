@@ -123,6 +123,9 @@ public:
     /// Headless presenter target: the last CPU-rasterised frame.
     const fuse::ui::Image& image() const { return m_image; }
     bool writePng(const std::string& path) const;
+    /// Registers an app-owned image with the CPU rasteriser (viewportWidget / image index). The image must outlive the
+    /// window; call ui().invalidate(node) after changing its pixels.
+    u32 addImage(const fuse::ui::Image* img) { return m_raster.addImage(img); }
     /// CPU-rasterises `damage` (whole window when empty / resized) into image(): the headless presenter, also used by
     /// native presenters that upload the CPU raster.
     const fuse::ui::Image& rasterize(fuse::ui::Rect damage) {

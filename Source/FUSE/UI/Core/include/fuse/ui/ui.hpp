@@ -31,7 +31,9 @@ class UiContext;
 /// UI key set (maps 1:1 onto fuse::platform key set v2 names; see platform/events_v2.hpp).
 enum class Key : u16 {
     None, Tab, Enter, Escape, Space, Backspace, Delete, Left, Right, Up, Down, Home, End, PageUp, PageDown,
-    A, C, V, X, Y, Z, F2, Other
+    A, C, V, X, Y, Z, F2,
+    W, S, D, Q, E, N, O, F5, F10, ///< appended for the editor shell (fly camera, File / Play shortcuts)
+    Other
 };
 enum Mods : u8 { kModShift = 1, kModCtrl = 2, kModAlt = 4, kModSuper = 8 };
 enum class MouseButton : u8 { Left, Right, Middle };

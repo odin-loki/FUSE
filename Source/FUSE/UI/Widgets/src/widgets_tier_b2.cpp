@@ -139,7 +139,8 @@ NodeHandle nthChild(const UiContext& ui, NodeHandle n, u32 i) {
 }
 bool anyShown(const UiContext& ui, NodeHandle region) {
     for (NodeHandle c = ui.firstChild(region); ui.alive(c); c = ui.nextSibling(c))
-        if (ui.computed(c).visible && !ui.hasClass(c, "dock-closed")) return true;
+        // dock widgets: the closed class is authoritative (computed visibility is stale right after dockTo re-shows one)
+        if (ui.hasClass(c, "dock") ? !ui.hasClass(c, "dock-closed") : ui.computed(c).visible) return true;
     return false;
 }
 void showNode(UiContext& ui, NodeHandle n, bool on) { ui.setCss(n, "display", on ? "flex" : "none"); }

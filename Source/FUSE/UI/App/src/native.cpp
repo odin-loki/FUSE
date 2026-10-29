@@ -54,6 +54,13 @@ u8 asciiKey(Key& k, u32 c) {
     case 'x': case 'X': k = Key::X; return 1;
     case 'y': case 'Y': k = Key::Y; return 1;
     case 'z': case 'Z': k = Key::Z; return 1;
+    case 'w': case 'W': k = Key::W; return 1;
+    case 's': case 'S': k = Key::S; return 1;
+    case 'd': case 'D': k = Key::D; return 1;
+    case 'q': case 'Q': k = Key::Q; return 1;
+    case 'e': case 'E': k = Key::E; return 1;
+    case 'n': case 'N': k = Key::N; return 1;
+    case 'o': case 'O': k = Key::O; return 1;
     case ' ': k = Key::Space; return 1;
     default: return 0;
     }
@@ -153,6 +160,8 @@ Key mapKey(KeySym s, bool& ascii) {
     case 0xff55: return Key::PageUp;
     case 0xff56: return Key::PageDown;
     case 0xffbf: return Key::F2;
+    case 0xffc2: return Key::F5;
+    case 0xffc7: return Key::F10;
     default: break;
     }
     Key k = Key::Other;
@@ -292,6 +301,8 @@ Key mapVk(WPARAM vk, bool& ascii) {
     case VK_PRIOR: return Key::PageUp;
     case VK_NEXT: return Key::PageDown;
     case VK_F2: return Key::F2;
+    case VK_F5: return Key::F5;
+    case VK_F10: return Key::F10;
     default: break;
     }
     Key k = Key::Other;

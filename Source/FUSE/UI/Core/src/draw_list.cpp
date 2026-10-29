@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "fuse/ui/draw_list.hpp"
 
 #include <cmath>
@@ -107,10 +108,14 @@ struct Px {
 
 inline void blend(u32& dst, Px s) {
     if (s.a <= 0.f && s.r <= 0.f && s.g <= 0.f && s.b <= 0.f) return;
+    auto q = [](f32 v) { return u32(std::clamp(v, 0.f, 1.f) * 255.f + 0.5f); }; // == lround for v in [0, 1]
+    if (s.a >= 1.f) { // opaque: the destination does not contribute
+        dst = q(s.r) | (q(s.g) << 8) | (q(s.b) << 16) | (q(s.a) << 24);
+        return;
+    }
     const f32 inv = 1.f - s.a;
     const f32 dr = f32(dst & 0xFF) / 255.f, dg = f32((dst >> 8) & 0xFF) / 255.f, db = f32((dst >> 16) & 0xFF) / 255.f,
               da = f32(dst >> 24) / 255.f;
-    auto q = [](f32 v) { return u32(std::lround(std::clamp(v, 0.f, 1.f) * 255.f)); };
     dst = q(s.r + dr * inv) | (q(s.g + dg * inv) << 8) | (q(s.b + db * inv) << 16) | (q(s.a + da * inv) << 24);
 }
 
@@ -175,9 +180,27 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
         const int x1 = int(std::ceil(area.right())), y1 = int(std::ceil(area.bottom()));
         const Rect clipOuter = clip.r; // the rounded clip uses the top clip rect's own shape
         const std::array<f32, 4> clipRad{clip.radius, clip.radius, clip.radius, clip.radius};
+        // fast path: the interior of an opaque, ungraded rect (pixel centres at least max radius + border + 0.5 inside
+        // every edge have full coverage) is a plain store of the packed fill (same bytes blend() would produce)
+        int ix0 = 0, ix1 = 0, iy0 = 0, iy1 = 0;
+        u32 solid = 0;
+        if (c.op == DrawOp::Rect && !c.gradient && c.fill.a >= 1.f && clip.radius <= 0.f) {
+            const f32 m = std::max({c.radius[0], c.radius[1], c.radius[2], c.radius[3], 0.f}) +
+                          (c.borderWidth > 0.f && c.border.a > 0.f ? c.borderWidth : 0.f) + 0.5f;
+            ix0 = int(std::ceil(c.rect.x + m - 0.5f)), ix1 = int(std::floor(c.rect.right() - m - 0.5f)) + 1;
+            iy0 = int(std::ceil(c.rect.y + m - 0.5f)), iy1 = int(std::floor(c.rect.bottom() - m - 0.5f)) + 1;
+            u32 probe = 0;
+            blend(probe, premul(c.fill, 1.f));
+            solid = probe;
+        }
         for (int y = y0; y < y1; ++y) {
             u32* row = target.pixels.data() + std::size_t(y) * std::size_t(target.width);
+            const bool solidRow = y >= iy0 && y < iy1;
             for (int x = x0; x < x1; ++x) {
+                if (solidRow && x >= ix0 && x < ix1) {
+                    row[x] = solid;
+                    continue;
+                }
                 const f32 px = f32(x) + 0.5f, py = f32(y) + 0.5f;
                 f32 clipCov = 1.f;
                 if (clip.radius > 0.f) clipCov = std::clamp(0.5f - sdRoundRect(px, py, clipOuter, clipRad), 0.f, 1.f);
@@ -227,6 +250,7 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
                     const int sy = std::clamp(int((py - c.rect.y) / c.rect.h * f32(img.height)), 0, img.height - 1);
                     const u32 s = img.at(sx, sy);
                     const f32 k = clipCov * (c.fill.a > 0.f ? c.fill.a : 1.f);
+                    if (k >= 1.f && (s >> 24) == 255u) { row[x] = s; break; } // opaque texel: blend() would store it
                     blend(row[x], {f32(s & 0xFF) / 255.f * k, f32((s >> 8) & 0xFF) / 255.f * k,
                                    f32((s >> 16) & 0xFF) / 255.f * k, f32(s >> 24) / 255.f * k});
                     break;
