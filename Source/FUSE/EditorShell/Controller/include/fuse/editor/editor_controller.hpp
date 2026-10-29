@@ -13,6 +13,7 @@
 #include <fuse/editor/property_inspector.hpp>
 #include <fuse/editor/transform_gizmo.hpp>
 #include <fuse/editor/viewport_panel.hpp>
+#include <fuse/project/manifest.hpp>
 #include <fuse/types.hpp>
 
 #include <array>
@@ -146,8 +147,12 @@ public:
     bool fileSaveAs();
     bool requestClose(); ///< unsaved-changes prompt; true when the shell may close
     bool newProject(const std::string& directory, const std::string& name, u32 dimensionFlags);
+    /// New Project wizard: also writes the module toggles to project.json and reopens it (Qt createProject).
+    bool newProject(const std::string& directory, const std::string& name, u32 dimensionFlags,
+                    const project::ModuleSettings& modules);
     bool openProject(const std::string& directory);
     [[nodiscard]] const std::string& lastError() const { return m_lastError; }
+    [[nodiscard]] ShellServices& services() { return m_services; } ///< shell dialogs (pickers, warnings)
 
     // ---- edit -------------------------------------------------------------------------------------------------
     void undo(); ///< one history across UndoStack and CommandStack, in edit order

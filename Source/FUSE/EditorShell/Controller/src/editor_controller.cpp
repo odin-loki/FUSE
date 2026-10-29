@@ -1,4 +1,5 @@
 #include <fuse/editor/editor_controller.hpp>
+#include <fuse/project/loader.hpp>
 
 #include <fuse/ecs/components/camera.hpp>
 #include <fuse/ecs/components/light.hpp>
@@ -440,17 +441,34 @@ bool EditorController::fileSaveAs() {
 bool EditorController::requestClose() { return maybeSave_(); }
 
 bool EditorController::newProject(const std::string& directory, const std::string& name, u32 dimensionFlags) {
+    return newProject(directory, name, dimensionFlags, project::ModuleSettings{});
+}
+
+bool EditorController::newProject(const std::string& directory, const std::string& name, u32 dimensionFlags,
+                                  const project::ModuleSettings& modules) {
     if (!maybeSave_()) return false;
     bool ok = false;
     std::string scene;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         ok = m_host.newProject(directory, name, dimensionFlags);
+        if (ok) {
+            project::ProjectManifest manifest = m_host.projectManifest();
+            const project::ModuleSettings& old = manifest.modules;
+            if (old.ai != modules.ai || old.cinematics != modules.cinematics || old.fx != modules.fx ||
+                old.mechanics != modules.mechanics || old.adventure != modules.adventure) {
+                // same as the Qt shell: write the toggles through the manifest writer, reopen so the host matches
+                manifest.modules = modules;
+                const std::string root = manifest.projectRoot;
+                ok = project::saveToDirectory(manifest, root).ok && m_host.openProject(root);
+            }
+        }
         syncUndoJournal_();
         m_lastError = ok ? std::string() : m_host.lastFileResult().error;
         scene = m_host.currentScenePath();
     }
     if (ok && !scene.empty()) addRecent_(scene);
+    if (ok) m_viewport.setProjectLabel(name);
     refresh();
     return ok;
 }

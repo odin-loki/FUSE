@@ -83,6 +83,12 @@ bool EditorPanels::hubNew(const std::string& directory, const std::string& name)
     ++m_revision;
     return ok;
 }
+bool EditorPanels::hubNew(const std::string& directory, const std::string& name, u32 dimensionFlags,
+                          const project::ModuleSettings& modules) {
+    const bool ok = m_c.newProject(directory, name, dimensionFlags, modules);
+    ++m_revision;
+    return ok;
+}
 
 // ---- Asset Browser (AssetBrowserWidget) -----------------------------------------------------------------------------
 
