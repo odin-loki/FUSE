@@ -160,4 +160,98 @@ void setTableColumnWidth(UiContext& ui, NodeHandle table, u32 col, f32 px);
 /// List view over column 0 of a model (shares the table machinery, no header).
 NodeHandle modelListView(UiContext& ui, NodeHandle parent, const ItemModel* model, std::string_view id = {});
 
+/// Dock layout persistence (plan §5 "saved layouts"): a small text blob with the side region sizes and, per dock
+/// widget with an id, its side, order in the region and open state. Restoring moves / opens / closes the named docks
+/// and resizes the regions; docks the blob does not name keep their place, names with no dock are ignored. A malformed
+/// blob changes nothing and returns false.
+std::string dockSaveLayout(const UiContext& ui, NodeHandle area);
+bool dockRestoreLayout(UiContext& ui, NodeHandle area, std::string_view layout);
+
+// ---- Tier C: delegates, proxies, grid view (plan §5) ------------------------------------------------------------------
+/// Cell delegate: custom painting for one table column (the view still owns selection, scrolling and the row stripe).
+struct CellDelegate {
+    const void* user = nullptr;
+    void (*paint)(const void* user, const PaintContext& pc, DrawList& dl, Rect cell, u32 row, u32 col,
+                  std::string_view text, bool selected) = nullptr;
+};
+/// Sets (or with nullptr clears) the delegate for `col`. The delegate must outlive the view.
+void setTableDelegate(UiContext& ui, NodeHandle table, u32 col, const CellDelegate* delegate);
+
+/// Sort / filter proxy over a source model (not owned). Identity (no row map, no memory) until a filter or sort is
+/// set; filtering is a case-insensitive substring match on one column. Call invalidate() after the source changes.
+class SortFilterProxy {
+public:
+    explicit SortFilterProxy(const ItemModel* source);
+    SortFilterProxy(const SortFilterProxy&) = delete;
+    SortFilterProxy& operator=(const SortFilterProxy&) = delete;
+    void setFilter(u32 col, std::string_view needle); ///< empty needle = no filter
+    void sortBy(i32 col, bool ascending);              ///< col < 0 = source order
+    void invalidate();
+    u32 rows() const;
+    u32 sourceRow(u32 row) const { return m_identity ? row : m_map[row]; }
+    const ItemModel& model() const { return m_model; }
+
+private:
+    const ItemModel* m_src;
+    ItemModel m_model;
+    std::vector<u32> m_map;
+    std::string m_needle;
+    u32 m_filterCol = 0;
+    i32 m_sortCol = -1;
+    bool m_asc = true, m_identity = true;
+};
+
+/// Virtualised icon / tile grid over column 0 of a model: tiles of tileW x tileH flow left to right, rows scroll.
+/// value() = selected item (-1 none); arrows move in 2D, Enter -> Submitted. Only visible tiles are read.
+NodeHandle gridView(UiContext& ui, NodeHandle parent, const ItemModel* model, f32 tileW = 96.f, f32 tileH = 72.f,
+                    std::string_view id = {});
+u32 gridColumns(const UiContext& ui, NodeHandle grid);
+u32 gridFirstVisibleRow(const UiContext& ui, NodeHandle grid);
+
+// ---- Tier D: rich and pro widgets (plan §5) ----------------------------------------------------------------------------
+/// Property grid (reflection-driven inspector): name / editor rows built from descriptors. Group rows fold the rows
+/// after them (until the next group). Any editor change emits Submitted {value = row index, text = name} on the grid.
+enum class PropKind : u8 { Group, Bool, Number, Text, Enum, Color };
+struct PropertyDesc {
+    std::string_view name;
+    PropKind kind = PropKind::Text;
+    f32 lo = 0.f, hi = 100.f, step = 1.f; ///< Number
+    std::string_view options{};           ///< Enum: '\n'-separated
+};
+NodeHandle propertyGrid(UiContext& ui, NodeHandle parent, std::string_view id = {});
+/// Adds a row; `value` is "true"/"false", a number, text, an enum index or "#RRGGBB[AA]". Returns the editor node.
+NodeHandle propertyRow(UiContext& ui, NodeHandle grid, const PropertyDesc& desc, std::string_view value = {});
+/// Current value of row `index` in the same text form propertyRow takes.
+std::string propertyValue(const UiContext& ui, NodeHandle grid, u32 index);
+u32 propertyCount(const UiContext& ui, NodeHandle grid);
+void setPropertyGroupOpen(UiContext& ui, NodeHandle grid, u32 groupIndex, bool open);
+
+/// HSV colour picker: saturation / value square + hue bar + alpha bar. text() = "#RRGGBBAA"; drags and arrow keys
+/// emit ValueChanged {value = hue} and TextChanged {text}.
+NodeHandle colorPicker(UiContext& ui, NodeHandle parent, Color initial, std::string_view id = {});
+Color colorPickerColor(const UiContext& ui, NodeHandle picker);
+void setColorPickerColor(UiContext& ui, NodeHandle picker, Color c);
+
+/// Month calendar: value() = days since 1970-01-01. Arrows move by a day / week, PageUp / PageDown by a month, the
+/// header arrows page months, clicking a day selects it (ValueChanged), Enter -> Submitted.
+NodeHandle calendar(UiContext& ui, NodeHandle parent, int year, int month, int day, std::string_view id = {});
+void calendarDate(const UiContext& ui, NodeHandle cal, int& year, int& month, int& day);
+i32 daysFromCivil(int y, int m, int d);
+void civilFromDays(i32 z, int& y, int& m, int& d);
+
+/// Chart: line, bar, area or scatter series over a shared x index, auto-scaled y axis with grid lines. Hovering
+/// sets value() to the nearest x index (-1 outside).
+enum class ChartKind : u8 { Line, Bar, Area, Scatter };
+NodeHandle chart(UiContext& ui, NodeHandle parent, ChartKind kind, std::string_view id = {});
+void chartSetSeries(UiContext& ui, NodeHandle chart, u32 index, std::string_view name, std::span<const f32> values, Color color);
+u32 chartSeriesCount(const UiContext& ui, NodeHandle chart);
+
+/// Markdown view: headings (#, ##, ###), paragraphs, '-' / '*' bullets, numbered items, ``` code blocks and '>' quotes
+/// become styled label children (classes md-h1..md-h3, md-p, md-li, md-code, md-quote). Inline ** and ` are stripped.
+NodeHandle markdownView(UiContext& ui, NodeHandle parent, std::string_view markdown, std::string_view id = {});
+void setMarkdown(UiContext& ui, NodeHandle view, std::string_view markdown);
+
+/// Registers the Tier C / D classes (gridview, colorpicker, calendar, chart); install() calls it.
+void registerTierCD(UiContext& ui);
+
 } // namespace fuse::ui::widgets

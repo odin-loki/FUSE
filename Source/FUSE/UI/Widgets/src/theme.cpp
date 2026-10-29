@@ -62,6 +62,24 @@ tooltip {
 .row { flex-direction: row; gap: 8px; align-items: center; }
 .title { font-size: 20px; color: #ffffff; }
 .dim { color: var(--text-dim); }
+gridview, calendar, chart, colorpicker {
+  background: #15161a; color: var(--text); border: 1px var(--border); border-radius: 5px; padding: 4px;
+  background-end: var(--accent);
+}
+gridview:focus, calendar:focus, chart:focus, colorpicker:focus { border-color: var(--accent); }
+.propgrid { gap: 2px; padding: 4px; background: #15161a; border: 1px var(--border); border-radius: 5px; }
+.proprow { flex-direction: row; gap: 8px; align-items: center; padding: 1px 4px; }
+.propname { color: var(--text-dim); width: 110px; }
+.propgroup { color: #ffffff; background: var(--surface); border-radius: 3px; padding: 3px 6px; }
+.propgroup:hover { background: var(--surface-hi); }
+.md { gap: 6px; padding: 6px; }
+.md-h1 { font-size: 22px; color: #ffffff; }
+.md-h2 { font-size: 18px; color: #ffffff; }
+.md-h3 { font-size: 15px; color: var(--accent-hi); }
+.md-p { color: var(--text); }
+.md-li { color: var(--text); padding: 0px 0px 0px 14px; }
+.md-code { background: #101114; color: #b8e0a0; padding: 6px 8px; border-radius: 4px; font-size: 13px; }
+.md-quote { color: var(--text-dim); background: #23242b; padding: 4px 10px; border-radius: 3px; }
 )css";
 }
 

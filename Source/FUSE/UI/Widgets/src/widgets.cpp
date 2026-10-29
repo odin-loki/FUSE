@@ -506,6 +506,7 @@ void registerTierA(UiContext& ui) {
 void install(UiContext& ui) {
     registerTierA(ui);
     registerTierB(ui);
+    registerTierCD(ui);
     (void)ui.addStyleSheet(defaultThemeCss());
 }
 
@@ -515,6 +516,7 @@ u32 installClasses(UiContext& ui, std::span<const std::string_view> classes, boo
         static UiContext scratch({.viewport = {1.f, 1.f}, .font = nullptr, .reserveNodes = 4, .atlasSize = 64});
         registerTierA(scratch);
         registerTierB(scratch);
+        registerTierCD(scratch);
         return scratch.registry();
     }();
     u32 unknown = 0;

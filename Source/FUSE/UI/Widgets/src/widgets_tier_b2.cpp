@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <cstdio>
+#include <string>
+#include <vector>
 #include <memory>
 #include <numeric>
 
@@ -170,6 +173,7 @@ struct TableState {
     bool dragScroll = false;
     f32 grab = 0.f;
     std::string scratch;
+    const CellDelegate* delegate[kMaxCols]{};
 };
 // Process-wide pool (the UI is single-threaded); a slot is reused once its node is gone.
 std::vector<std::unique_ptr<TableState>>& pool() { static std::vector<std::unique_ptr<TableState>> p; return p; }
@@ -274,9 +278,13 @@ struct TableView {
             else if (row & 1u) dl.rect({c.x, y, c.w, rh}, pc.tint(Color::rgb(0xFFFFFF, 0.035f)));
             f32 x = c.x;
             for (u32 k = 0; k < nc; ++k) {
+                if (s->colW[k] <= 0.f) continue;
                 const std::string_view d = s->model->data(s->model->user, row, k, s->scratch);
                 dl.pushClip({x, y, s->colW[k] - 2.f, rh});
-                ui.paintString(dl, d, {x + 6.f, y, s->colW[k] - 12.f, rh}, k ? dim : text, fs, TextAlignment::Start, pc.node.index);
+                if (const CellDelegate* dg = s->delegate[k]; dg && dg->paint)
+                    dg->paint(dg->user, pc, dl, {x + 6.f, y, s->colW[k] - 12.f, rh}, row, k, d, i32(row) == sel);
+                else
+                    ui.paintString(dl, d, {x + 6.f, y, s->colW[k] - 12.f, rh}, k ? dim : text, fs, TextAlignment::Start, pc.node.index);
                 dl.popClip();
                 x += s->colW[k];
             }
@@ -543,6 +551,98 @@ f32 tableColumnWidth(const UiContext& ui, NodeHandle table, u32 col) {
 }
 void setTableColumnWidth(UiContext& ui, NodeHandle table, u32 col, f32 px) {
     if (TableState* s = stateOf(ui, table); s && col < kMaxCols) { s->colW[col] = std::max(24.f, px); ui.invalidate(table); }
+}
+void setTableDelegate(UiContext& ui, NodeHandle table, u32 col, const CellDelegate* delegate) {
+    if (TableState* s = stateOf(ui, table); s && col < kMaxCols) { s->delegate[col] = delegate; ui.invalidate(table); }
+}
+
+// ---- dock layout save / restore ---------------------------------------------------------------------------------------
+namespace {
+constexpr std::string_view kSideName[] = {"left", "right", "bottom", "center"};
+NodeHandle sidePane(const UiContext& ui, NodeHandle area, DockSide side) { return dockRegion(ui, area, side); }
+f32 paneSize(const UiContext& ui, NodeHandle pane) {
+    const Length b = ui.computed(pane).basis;
+    return b.unit == Unit::Px ? b.value : 0.f;
+}
+} // namespace
+
+std::string dockSaveLayout(const UiContext& ui, NodeHandle area) {
+    std::string out = "fusedock 1\n";
+    char b[160];
+    for (DockSide s : {DockSide::Left, DockSide::Right, DockSide::Bottom}) {
+        std::snprintf(b, sizeof b, "size %s %.0f\n", kSideName[u32(s)].data(), double(paneSize(ui, sidePane(ui, area, s))));
+        out += b;
+    }
+    for (DockSide s : {DockSide::Left, DockSide::Right, DockSide::Bottom, DockSide::Center}) {
+        u32 order = 0;
+        for (NodeHandle d = ui.firstChild(dockRegion(ui, area, s)); ui.alive(d); d = ui.nextSibling(d)) {
+            if (!ui.hasClass(d, "dock")) continue;
+            const std::string_view id = ui.idOf(d);
+            if (id.empty() || id.find_first_of(" \n") != std::string_view::npos) { ++order; continue; }
+            out += "dock " + std::string(id) + " " + std::string(kSideName[u32(s)]) + " " + std::to_string(order++) + " " +
+                   (ui.hasClass(d, "dock-closed") ? "closed" : "open") + "\n";
+        }
+    }
+    return out;
+}
+
+bool dockRestoreLayout(UiContext& ui, NodeHandle area, std::string_view text) {
+    if (!ui.alive(area) || !ui.hasClass(area, "dockarea")) return false;
+    struct Entry { NodeHandle dock; DockSide side; u32 order; bool open; };
+    std::vector<Entry> docks;
+    f32 sizes[3] = {-1.f, -1.f, -1.f};
+    auto side = [](std::string_view w, DockSide& out) {
+        for (u32 i = 0; i < 4; ++i) if (w == kSideName[i]) { out = DockSide(i); return true; }
+        return false;
+    };
+    std::size_t at = 0;
+    bool header = false;
+    while (at < text.size()) {
+        std::size_t nl = text.find('\n', at);
+        if (nl == std::string_view::npos) nl = text.size();
+        const std::string_view line = text.substr(at, nl - at);
+        at = nl + 1;
+        if (line.empty()) continue;
+        std::vector<std::string_view> w;
+        for (std::size_t p = 0; p <= line.size();) {
+            std::size_t q = line.find(' ', p);
+            if (q == std::string_view::npos) q = line.size();
+            if (q > p) w.push_back(line.substr(p, q - p));
+            p = q + 1;
+        }
+        if (!header) {
+            if (w.size() != 2 || w[0] != "fusedock" || w[1] != "1") return false;
+            header = true;
+            continue;
+        }
+        DockSide sd;
+        if (w[0] == "size" && w.size() == 3 && side(w[1], sd) && sd != DockSide::Center) {
+            double v;
+            if (!parseNum(w[2], v) || !(v >= 0.0 && v <= 16384.0)) return false;
+            sizes[u32(sd)] = f32(v);
+        } else if (w[0] == "dock" && w.size() == 5 && side(w[2], sd) && (w[4] == "open" || w[4] == "closed")) {
+            double o;
+            if (!parseNum(w[3], o) || !(o >= 0.0 && o < 1e6)) return false;
+            const NodeHandle d = ui.find(w[1]);
+            if (!ui.alive(d) || !ui.hasClass(d, "dock") || areaOf(ui, d) != area) continue; // unknown: ignored
+            docks.push_back({d, sd, u32(o), w[4] == "open"});
+        } else {
+            return false;
+        }
+    }
+    if (!header) return false;
+    std::stable_sort(docks.begin(), docks.end(), [](const Entry& a, const Entry& b) {
+        return a.side != b.side ? u32(a.side) < u32(b.side) : a.order < b.order;
+    });
+    for (const Entry& e : docks) { // appended in order: each region ends up in saved order (unnamed docks first)
+        ui.moveTo(e.dock, dockRegion(ui, area, e.side));
+        if (e.open) dockTo(ui, e.dock, e.side);
+        else dockClose(ui, e.dock);
+    }
+    for (u32 i = 0; i < 3; ++i)
+        if (sizes[i] >= 0.f) setBasis(ui, sidePane(ui, area, DockSide(i)), sizes[i]);
+    refreshDock(ui, area);
+    return true;
 }
 
 } // namespace fuse::ui::widgets
