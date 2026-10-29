@@ -20,6 +20,7 @@
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
+#include <QFileInfo>
 #include <QPixmap>
 #include <QImage>
 #include <QPushButton>
@@ -1372,6 +1373,25 @@ MaterialEditorWidget::MaterialEditorWidget(EditorHost& host, std::mutex& sceneMu
     }
     layout->addRow(tr("Roughness"), m_roughness);
     layout->addRow(tr("Metallic"), m_metallic);
+    m_shader = new QComboBox(this);
+    m_shader->setObjectName(QStringLiteral("fuseMaterialShader"));
+    m_shader->addItems({tr("Standard (PBR)"), tr("Wood (procedural)"), tr("Metal (procedural)"),
+                        tr("Concrete (procedural)")});
+    layout->addRow(tr("Shader"), m_shader);
+    auto* texRow = new QHBoxLayout();
+    m_texture = new QPushButton(tr("None"), this);
+    m_texture->setObjectName(QStringLiteral("fuseMaterialTexture"));
+    m_textureClear = new QPushButton(tr("Clear"), this);
+    m_textureClear->setObjectName(QStringLiteral("fuseMaterialTextureClear"));
+    texRow->addWidget(m_texture, 1);
+    texRow->addWidget(m_textureClear);
+    layout->addRow(tr("Base texture"), texRow);
+    m_uvScale = new QDoubleSpinBox(this);
+    m_uvScale->setObjectName(QStringLiteral("fuseMaterialUvScale"));
+    m_uvScale->setRange(0.01, 100.0);
+    m_uvScale->setSingleStep(0.25);
+    m_uvScale->setDecimals(2);
+    layout->addRow(tr("UV scale (per m)"), m_uvScale);
     m_assign = new QPushButton(tr("Assign to selection"), this);
     m_assign->setObjectName(QStringLiteral("fuseMaterialAssign"));
     layout->addRow(m_assign);
@@ -1396,6 +1416,24 @@ MaterialEditorWidget::MaterialEditorWidget(EditorHost& host, std::mutex& sceneMu
             setMetallic(v);
         }
     });
+    connect(m_shader, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int i) {
+        if (!m_updating && i >= 0) {
+            setShader(static_cast<u32>(i));
+        }
+    });
+    connect(m_uvScale, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double v) {
+        if (!m_updating) {
+            setUvScale(v);
+        }
+    });
+    connect(m_texture, &QPushButton::clicked, this, [this]() {
+        const QString path = QFileDialog::getOpenFileName(this, tr("Base colour texture"), QString(),
+                                                          tr("Images (*.png *.jpg *.jpeg *.tga *.bmp)"));
+        if (!path.isEmpty()) {
+            setTexture(path);
+        }
+    });
+    connect(m_textureClear, &QPushButton::clicked, this, [this]() { setTexture(QString()); });
     connect(m_color, &QPushButton::clicked, this, [this]() {
         float r = 1.f, g = 1.f, b = 1.f;
         m_panel.baseColorSrgb(r, g, b);
@@ -1438,6 +1476,12 @@ void MaterialEditorWidget::showCurrent_() {
     m_list->setCurrentIndex(static_cast<int>(m_current));
     m_roughness->setValue(state.roughness);
     m_metallic->setValue(state.metallic);
+    m_shader->setCurrentIndex(state.procedural ? static_cast<int>(std::min<u32>(state.proceduralFnId, 3u)) : 0);
+    m_uvScale->setValue(state.uvScale);
+    const QString tex = QString::fromStdString(state.baseColorTexture);
+    m_texture->setText(tex.isEmpty() ? tr("None") : QFileInfo(tex).fileName());
+    m_texture->setToolTip(tex);
+    m_textureClear->setEnabled(!tex.isEmpty());
     m_updating = false;
     float r = 1.f, g = 1.f, b = 1.f;
     m_panel.baseColorSrgb(r, g, b);
@@ -1532,6 +1576,34 @@ bool MaterialEditorWidget::setMetallic(double v) {
     MaterialEditState s = m_host.materials().entry(m_current).state;
     s.metallic = static_cast<f32>(std::clamp(v, 0.0, 1.0));
     return applyState_(s, "metallic");
+}
+
+bool MaterialEditorWidget::setShader(u32 proceduralFnId) {
+    if (!m_host.materials().valid(m_current) || proceduralFnId > 3u) {
+        return false;
+    }
+    MaterialEditState s = m_host.materials().entry(m_current).state;
+    s.procedural = proceduralFnId != 0u;
+    s.proceduralFnId = proceduralFnId;
+    return applyState_(s, "shader");
+}
+
+bool MaterialEditorWidget::setTexture(const QString& path) {
+    if (!m_host.materials().valid(m_current)) {
+        return false;
+    }
+    MaterialEditState s = m_host.materials().entry(m_current).state;
+    s.baseColorTexture = path.toStdString();
+    return applyState_(s, path.isEmpty() ? "texture cleared" : "texture");
+}
+
+bool MaterialEditorWidget::setUvScale(double v) {
+    if (!m_host.materials().valid(m_current)) {
+        return false;
+    }
+    MaterialEditState s = m_host.materials().entry(m_current).state;
+    s.uvScale = static_cast<f32>(std::clamp(v, 0.01, 100.0));
+    return applyState_(s, "UV scale");
 }
 
 bool MaterialEditorWidget::setBaseColor(const QColor& srgb) {

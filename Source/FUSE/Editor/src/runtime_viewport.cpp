@@ -19,6 +19,7 @@
 #include <fuse/jobs/worker_count.hpp>
 #include <fuse/io/vfs.hpp>
 #include <fuse/hybrid/project_flags.hpp>
+#include <fuse/cook/texture_cook.hpp>
 #include <fuse/project/loader.hpp>
 #include <fuse/project/manifest.hpp>
 #include <fuse/project/world_converter.hpp>
@@ -40,6 +41,7 @@
 #include <fuse/frame/frame_ctx.hpp>
 #include <fuse/hybrid/mesh_sdf_preview_stub.hpp>
 #include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
+#include <fuse/hybrid/hybrid_scene_renderer.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 #include <fuse/renderer/render_command_list.hpp>
 #include <fuse/renderer/vk/present_path.hpp>
@@ -99,6 +101,7 @@ struct RuntimeViewportHeadlessGpuStub {
     u32 submittedFrames = 0;
     bool externalSwapchainWired = false;
     bool worldsAttached = false;
+    const fuse::hybrid::HybridSceneRenderer* textureLoaderOn = nullptr; ///< GPU scene that has the texture loader
 };
 
 RuntimeViewportHeadlessGpuStub* asHeadlessGpuStub(void* stub) {
@@ -140,6 +143,47 @@ void recordViewportPresentDiagnostics(RuntimeEmbedSession& session,
     if (status.presentSkippedNoWsiCount > session.presentSkippedNoWsiCount) {
         session.presentSkippedNoWsiCount = status.presentSkippedNoWsiCount;
     }
+}
+#endif
+
+bool loadMaterialTextureRgba8(const std::string& path, const std::string& projectRoot, u32& width, u32& height,
+                              std::vector<u32>& texels) {
+    std::string resolved = path;
+    if (!projectRoot.empty() && !path.empty() && path.front() != '/' && !std::ifstream(path)) {
+        resolved = projectRoot + "/" + path;
+    }
+    fuse::cook::TextureSource src;
+    if (!fuse::cook::load_texture_source(resolved, src, nullptr, nullptr, false) || src.width == 0u ||
+        src.height == 0u || src.rgba8.size() < static_cast<usize>(src.width) * src.height * 4u) {
+        return false;
+    }
+    width = src.width;
+    height = src.height;
+    texels.resize(static_cast<usize>(width) * height);
+    for (usize i = 0; i < texels.size(); ++i) {
+        const u8* p = &src.rgba8[i * 4u];
+        texels[i] = u32{p[0]} | (u32{p[1]} << 8) | (u32{p[2]} << 16) | (u32{p[3]} << 24);
+    }
+    return true;
+}
+
+#if defined(FUSE_VULKAN_BACKEND)
+/// Material Editor textures: image files (PNG / TGA / BMP / JPEG), relative paths against the project root. The GPU
+/// scene starts lazily (first frame), so this runs before every frame until it found one.
+void ensureMaterialTextureLoader(RuntimeViewportHeadlessGpuStub* gpu, const RuntimeEmbedSession& session) {
+    if (gpu == nullptr || gpu->hybrid == nullptr) {
+        return;
+    }
+    fuse::hybrid::HybridSceneRenderer* scene = gpu->hybrid->composer().gpuScene();
+    if (scene == nullptr || scene == gpu->textureLoaderOn) {
+        return;
+    }
+    // The session outlives the hybrid (both belong to the hook); the root is read when a texture first loads.
+    const RuntimeEmbedSession* live = &session;
+    scene->setTextureLoader([live](const std::string& path, u32& w, u32& h, std::vector<u32>& texels) {
+        return loadMaterialTextureRgba8(path, live->projectRoot, w, h, texels);
+    });
+    gpu->textureLoaderOn = scene;
 }
 
 void attachEmbedWorldsToHybrid(RuntimeViewportHeadlessGpuStub* gpu, RuntimeEmbedSession& session,
@@ -929,6 +973,7 @@ void RuntimeViewportHook::tickHeadlessPresentStub_() {
 
         fuse::frame::FrameCtx frameCtx{};
         frameCtx.frameIndex = m_runtimeTickCount;
+        ensureMaterialTextureLoader(gpu, m_embedSession);
         const u32 composerFramesBefore = gpu->hybrid->composer().frameCount();
         gpu->hybrid->runFrame(frameCtx);
         if (gpu->hybrid->composer().frameCount() > composerFramesBefore) {
@@ -1141,6 +1186,7 @@ void RuntimeViewportHook::tickWindowPresent_() {
 
     fuse::frame::FrameCtx frameCtx{};
     frameCtx.frameIndex = m_runtimeTickCount;
+    ensureMaterialTextureLoader(gpu, m_embedSession);
     const u32 composerFramesBefore = gpu->hybrid->composer().frameCount();
     gpu->hybrid->runFrame(frameCtx);
     if (gpu->hybrid->composer().frameCount() > composerFramesBefore) {

@@ -30,10 +30,16 @@
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/world3d/render_scene.hpp>
 
+#include <functional>
+#include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace fuse::renderer {
+namespace cooked_assets {
+class CookedAssetRegistry;
+}
 class GpuAllocator;
 class VulkanDevice;
 namespace rg {
@@ -159,6 +165,20 @@ public:
     renderer::GpuAllocator* allocator() { return m_allocator.get(); }
     renderer::VulkanDevice* device() { return m_device; }
 
+    // --- texture / procedural materials ------------------------------------------------------------------------
+    /// Decodes RenderMaterial3D::baseColorTexture into RGBA8 words (r | g << 8 | b << 16 | a << 24, x fastest).
+    /// Without a loader (or when it fails) textured materials render with their flat colour.
+    using TextureLoader = std::function<bool(const std::string& path, u32& width, u32& height, std::vector<u32>& texels)>;
+    /// Setting a loader re-syncs the material table (textures that failed before are retried).
+    void setTextureLoader(TextureLoader loader);
+    /// The layered-material registry textured / procedural RenderMaterial3D rows resolve through (null on a CPU
+    /// build or before initialize). It is also attached to the composer's CookedAssetBindings by the owner.
+    renderer::cooked_assets::CookedAssetRegistry* cookedAssets() { return m_cooked.get(); }
+    /// GpuScene rows of World3D materials currently drawn through the layered table (textured / procedural).
+    u32 layeredMaterialCount() const { return m_layeredMaterials; }
+    /// Textures the loader decoded and uploaded (cache size).
+    u32 loadedTextureCount() const { return static_cast<u32>(m_textureIds.size()); }
+
 private:
     static bool submitThunk(const renderer::SceneFrameSubmit& submit, void* user);
     static void recordCopy(const rg::PassContext& context, void* user);
@@ -205,6 +225,11 @@ private:
 
     ecs::Registry* m_emptyRegistry = nullptr;
     std::unique_ptr<ecs::Registry> m_emptyRegistryStorage;
+    std::unique_ptr<renderer::cooked_assets::CookedAssetRegistry> m_cooked;
+    TextureLoader m_textureLoader;
+    std::map<std::string, bool> m_textureIds;  ///< texture path -> uploaded (false: the loader failed)
+    std::map<std::string, u32> m_layeredRows;  ///< layered material key -> registry GpuScene row
+    u32 m_layeredMaterials = 0;
     u64 m_materialVersion = ~0ull;
     const world3d::World3D* m_materialWorld = nullptr;
     u64 m_framesSubmitted = 0;

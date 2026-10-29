@@ -510,6 +510,92 @@ int runGolden() {
     return 0;
 }
 
+/// Texture / shader material path: the cube's material samples a decoded RGBA8 checker (green / blue, through the
+/// HybridSceneRenderer texture loader and its layered-material registry), the floor runs the procedural concrete
+/// shader. The cube centre must show the texture (green or blue dominant), not the flat red-ish base colour.
+int runMaterial() {
+    if (const int rc = configureValidation(false); rc != 0) {
+        return rc;
+    }
+    fuse::core::initialize();
+    Scene scene;
+    buildScene(scene);
+    world3d::RenderMaterial3D floor{};
+    floor.baseColor[0] = floor.baseColor[1] = floor.baseColor[2] = 0.7f;
+    floor.shader = 3u; // concrete
+    world3d::RenderMaterial3D cube{};
+    cube.baseColor[0] = cube.baseColor[1] = cube.baseColor[2] = 1.f;
+    cube.roughness = 0.6f;
+    cube.baseColorTexture = "test://checker";
+    cube.uvScale = 1.f;
+    scene.world3D.setMaterial(0u, floor);
+    scene.world3D.setMaterial(1u, cube);
+    hybrid::HybridRendererBootstrapDesc desc = bootstrapDesc(false);
+    auto runtime = hybrid::HybridRendererBootstrap::create(desc);
+    fuse::frame::FrameCtx ctx{};
+    ctx.dt = 1.f / 60.f;
+    ctx.frameIndex = 1;
+    u32 loads = 0;
+    attach(*runtime, scene);
+    runtime->runFrame(ctx);
+    if (const int rc = requireGpu(*runtime); rc != 0) {
+        runtime->shutdown();
+        fuse::core::shutdown();
+        return rc;
+    }
+    if (runtime->gpuScene() != nullptr) {
+        // Installed after the first frame (the GPU scene starts lazily): the loader re-syncs the material table.
+        runtime->gpuScene()->setTextureLoader([&loads](const std::string& path, u32& w, u32& h, std::vector<u32>& t) {
+            ++loads;
+            if (path != "test://checker") {
+                return false;
+            }
+            w = h = 64u;
+            t.resize(64u * 64u);
+            for (u32 y = 0; y < 64u; ++y) {
+                for (u32 x = 0; x < 64u; ++x) {
+                    const bool a = ((x / 8u) + (y / 8u)) % 2u == 0u;
+                    t[y * 64u + x] = a ? 0xFF20E020u : 0xFFE02020u; // green / blue (r | g << 8 | b << 16)
+                }
+            }
+            return true;
+        });
+    }
+    for (u32 f = 1; f < 5u; ++f) {
+        ctx.frameIndex = f + 1u;
+        ctx.time = static_cast<f32>(f) * ctx.dt;
+        runtime->runFrame(ctx);
+    }
+    hybrid::HybridSceneRenderer& gpu = *runtime->gpuScene();
+    expect(gpu.waitIdle(), "GPU idle");
+    expect(gpu.cookedAssets() != nullptr, "layered-material registry created");
+    expect(loads == 1u && gpu.loadedTextureCount() == 1u, "texture decoded once through the loader");
+    std::printf("material: loads %u, textures %u, layered rows %u\n", loads, gpu.loadedTextureCount(),
+                gpu.layeredMaterialCount());
+    expect(gpu.layeredMaterialCount() == 2u, "textured cube + procedural floor drawn through the layered table");
+    const u8* px = gpu.readbackPixels();
+    u32 cx = 0, cy = 0;
+    if (px == nullptr || !project(scene.world3D.camera(), kCubeCenter, kWidth, kHeight, cx, cy)) {
+        expect(false, "headless readback of the cube");
+    } else {
+        u32 tex = 0, n = 0;
+        for (int dy = -6; dy <= 6; dy += 2) {
+            for (int dx = -6; dx <= 6; dx += 2) {
+                const u8* p = px + (static_cast<usize>(static_cast<int>(cy) + dy) * kWidth + (static_cast<int>(cx) + dx)) * 4u;
+                ++n;
+                tex += (p[1] > p[0] + 10 || p[2] > p[0] + 10) ? 1u : 0u;
+            }
+        }
+        const u8* p = px + (static_cast<usize>(cy) * kWidth + cx) * 4u;
+        std::printf("material: cube centre (%u, %u) = %u %u %u, %u / %u texel-coloured samples\n", cx, cy, p[0], p[1],
+                    p[2], tex, n);
+        expect(tex * 2u > n, "cube shows the green / blue checker texture");
+    }
+    runtime->shutdown();
+    fuse::core::shutdown();
+    return 0;
+}
+
 f32 halfToFloat(u16 h) { return fuse::renderer::GBufferQuantize::halfToFloat(h); }
 
 struct SpriteReadback {
@@ -784,6 +870,8 @@ int main(int argc, char** argv) {
 #if defined(FUSE_HAS_VULKAN_RHI) && defined(FUSE_VULKAN_BACKEND)
         if (mode == "golden") {
             rc = runGolden();
+        } else if (mode == "material") {
+            rc = runMaterial();
         } else if (mode == "sprite") {
             rc = runSprite();
         } else if (mode == "zero_alloc") {

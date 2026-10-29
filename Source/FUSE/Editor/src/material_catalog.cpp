@@ -26,6 +26,10 @@ world3d::RenderMaterial3D MaterialCatalog::toRenderMaterial(const MaterialEditSt
     m.baseColor[2] = state.baseColorB;
     m.metallic = state.metallic;
     m.roughness = state.roughness;
+    m.baseColorTexture = state.baseColorTexture;
+    m.shader = state.procedural ? state.proceduralFnId : 0u;
+    m.uvScale = state.uvScale > 0.f ? state.uvScale : 1.f;
+    m.triplanar = true;
     return m;
 }
 
@@ -87,12 +91,13 @@ bool MaterialCatalog::save(const std::string& path, std::string* error) const {
         if (error) *error = "cannot write " + path;
         return false;
     }
-    out << "FUSEEDMAT 1\n" << m_entries.size() << '\n' << std::setprecision(9);
+    out << "FUSEEDMAT 2\n" << m_entries.size() << '\n' << std::setprecision(9);
     for (const MaterialCatalogEntry& e : m_entries) {
         const MaterialEditState& s = e.state;
         out << std::quoted(e.name) << ' ' << s.baseColorR << ' ' << s.baseColorG << ' ' << s.baseColorB << ' '
             << s.roughness << ' ' << s.metallic << ' ' << unsigned(s.shadingModel) << ' ' << (s.procedural ? 1 : 0)
-            << ' ' << s.proceduralFnId << ' ' << s.proceduralSeed << '\n';
+            << ' ' << s.proceduralFnId << ' ' << s.proceduralSeed << ' ' << std::quoted(s.baseColorTexture) << ' '
+            << s.uvScale << '\n';
     }
     return static_cast<bool>(out);
 }
@@ -106,8 +111,8 @@ bool MaterialCatalog::load(const std::string& path, std::string* error) {
     std::string magic;
     int version = 0;
     std::size_t n = 0;
-    if (!(in >> magic >> version >> n) || magic != "FUSEEDMAT" || version != 1 || n == 0 || n > 65536) {
-        if (error) *error = "not a FUSEEDMAT 1 file";
+    if (!(in >> magic >> version >> n) || magic != "FUSEEDMAT" || version < 1 || version > 2 || n == 0 || n > 65536) {
+        if (error) *error = "not a FUSEEDMAT 1/2 file";
         return false;
     }
     std::vector<MaterialCatalogEntry> entries(n);
@@ -117,6 +122,10 @@ bool MaterialCatalog::load(const std::string& path, std::string* error) {
         int procedural = 0;
         if (!(in >> std::quoted(e.name) >> s.baseColorR >> s.baseColorG >> s.baseColorB >> s.roughness >>
               s.metallic >> shading >> procedural >> s.proceduralFnId >> s.proceduralSeed)) {
+            if (error) *error = "truncated material entry";
+            return false;
+        }
+        if (version >= 2 && !(in >> std::quoted(s.baseColorTexture) >> s.uvScale)) {
             if (error) *error = "truncated material entry";
             return false;
         }

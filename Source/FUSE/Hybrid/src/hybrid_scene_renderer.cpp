@@ -14,7 +14,14 @@
 #include <fuse/renderer/vk/present_path.hpp>
 #include <fuse/world3d/world_3d.hpp>
 
+#if defined(FUSE_HYBRID_HAS_COOKED_REGISTRY)
+#include <fuse/renderer/cooked_assets/cooked_asset_registry.hpp>
+#include <fuse/renderer/gpu_scene/gpu_scene.hpp>
+#include <fuse/renderer/material_layers/fusemat.hpp>
+#endif
+
 #include <cmath>
+#include <cstdio>
 #include <string>
 
 #if defined(FUSE_VULKAN_BACKEND)
@@ -173,6 +180,22 @@ bool HybridSceneRenderer::initialize(renderer::VulkanDevice& device, const Hybri
         m.roughness = p.roughness;
         (void)m_scene->setMaterial(paletteRow++, m);
     }
+#if defined(FUSE_HYBRID_HAS_COOKED_REGISTRY)
+    // Textured / procedural World3D materials: the upper half of the material rows belongs to a layered-material
+    // registry (bindless textures + the material-layer table the resolve pass samples).
+    if (desc.materialCapacity >= 4u) {
+        renderer::cooked_assets::CookedAssetRegistryDesc cd{};
+        cd.device = &device;
+        cd.allocator = m_allocator.get();
+        cd.bindless = m_bindless.get();
+        cd.firstMaterialRow = desc.materialCapacity / 2u;
+        cd.materialCapacity = desc.materialCapacity - cd.firstMaterialRow;
+        m_cooked = std::make_unique<renderer::cooked_assets::CookedAssetRegistry>();
+        if (!m_cooked->init(*m_scene, cd)) {
+            m_cooked.reset();
+        }
+    }
+#endif
     m_scene->setFrameSettings(desc.runtimeDefaults ? runtimeFrameSettings() : desc.settings);
     (void)m_scene->setUiSource(fr::FrameUiSource{&HybridSceneRenderer::recordUi, this});
 
@@ -251,6 +274,15 @@ void HybridSceneRenderer::shutdown() {
         if (m_scene->valid()) {
             (void)m_scene->upload().waitAll();
         }
+#if defined(FUSE_HYBRID_HAS_COOKED_REGISTRY)
+        if (m_cooked != nullptr) {
+            m_cooked->destroy();
+        }
+#endif
+        m_cooked.reset();
+        m_textureIds.clear();
+        m_layeredRows.clear();
+        m_layeredMaterials = 0;
         m_scene.reset();
     }
     m_sprites.destroy();
@@ -333,13 +365,90 @@ rg::TextureRef HybridSceneRenderer::recordUi(rg::Graph& graph, const fr::FrameUi
     return self.m_sprites.addPass(graph, self.m_overlay.data(), count, context.width, context.height);
 }
 
+void HybridSceneRenderer::setTextureLoader(TextureLoader loader) {
+    m_textureLoader = std::move(loader);
+    for (auto it = m_textureIds.begin(); it != m_textureIds.end();) {
+        it = it->second ? std::next(it) : m_textureIds.erase(it);
+    }
+    m_materialVersion = ~0ull;
+}
+
 void HybridSceneRenderer::syncMaterials(const world3d::World3D& world) {
     if (&world == m_materialWorld && world.materialVersion() == m_materialVersion) {
         return;
     }
     const std::vector<world3d::RenderMaterial3D>& materials = world.materials();
-    for (u32 i = 0; i < materials.size() && i < m_desc.materialCapacity; ++i) {
-        (void)m_scene->setMaterial(i, toMaterial(materials[i]));
+    u32 limit = m_desc.materialCapacity;
+    m_layeredMaterials = 0;
+#if defined(FUSE_HYBRID_HAS_COOKED_REGISTRY)
+    namespace ca = renderer::cooked_assets;
+    namespace ml = renderer::material_layers;
+    if (m_cooked != nullptr) {
+        limit = m_desc.materialCapacity / 2u; // the rest is the registry's
+    }
+#endif
+    for (u32 i = 0; i < materials.size() && i < limit; ++i) {
+        const world3d::RenderMaterial3D& src = materials[i];
+#if defined(FUSE_HYBRID_HAS_COOKED_REGISTRY)
+        if (m_cooked != nullptr && src.layered()) {
+            std::string texId;
+            if (!src.baseColorTexture.empty()) {
+                auto it = m_textureIds.find(src.baseColorTexture);
+                if (it == m_textureIds.end()) {
+                    u32 w = 0;
+                    u32 h = 0;
+                    std::vector<u32> texels;
+                    bool ok = m_textureLoader && m_textureLoader(src.baseColorTexture, w, h, texels) && w > 0u &&
+                              h > 0u && texels.size() >= static_cast<usize>(w) * h;
+                    ok = ok && m_cooked->addRgba8Texture(src.baseColorTexture, w, h, true, texels) != ml::kMlNoTexture;
+                    it = m_textureIds.emplace(src.baseColorTexture, ok).first;
+                }
+                if (it->second) {
+                    texId = src.baseColorTexture;
+                }
+            }
+            if (!texId.empty() || src.shader != 0u) {
+                char key[512];
+                std::snprintf(key, sizeof(key), "%s|%u|%g|%d|%g|%g|%g|%g|%g", texId.c_str(), src.shader,
+                              static_cast<double>(src.uvScale), src.triplanar ? 1 : 0,
+                              static_cast<double>(src.baseColor[0]), static_cast<double>(src.baseColor[1]),
+                              static_cast<double>(src.baseColor[2]), static_cast<double>(src.roughness),
+                              static_cast<double>(src.metallic));
+                u32 row = ca::CookedAssetRegistry::kInvalid;
+                auto rit = m_layeredRows.find(key);
+                if (rit != m_layeredRows.end()) {
+                    row = rit->second;
+                } else {
+                    ml::FuseMat fm{};
+                    fm.name = key;
+                    for (u32 c = 0; c < 3u; ++c) {
+                        fm.albedo[c] = src.baseColor[c];
+                    }
+                    fm.roughness = src.roughness;
+                    fm.metallic = src.metallic;
+                    fm.textures.albedo = texId;
+                    fm.uvScale = src.uvScale > 0.f ? src.uvScale : 1.f;
+                    fm.triplanar = src.triplanar;
+                    fm.proceduralFunction = src.shader;
+                    row = m_cooked->addMaterial(fm);
+                    if (row != ca::CookedAssetRegistry::kInvalid) {
+                        m_layeredRows.emplace(key, row);
+                    }
+                }
+                const u32 table = row != ca::CookedAssetRegistry::kInvalid ? m_cooked->materialTableIndex(row)
+                                                                            : ca::CookedAssetRegistry::kInvalid;
+                if (table != ca::CookedAssetRegistry::kInvalid) {
+                    // Row i keeps the world's colour / emissive, and resolves its surface through the layered table.
+                    renderer::gpu_scene::GpuMaterial packed = toMaterial(src).pack();
+                    renderer::gpu_scene::set_gpu_material_layered(packed, table);
+                    (void)m_scene->scene().setMaterial(i, packed);
+                    ++m_layeredMaterials;
+                    continue;
+                }
+            }
+        }
+#endif
+        (void)m_scene->setMaterial(i, toMaterial(src));
     }
     m_materialWorld = &world;
     m_materialVersion = world.materialVersion();
@@ -382,7 +491,17 @@ bool HybridSceneRenderer::renderRegistry(ecs::Registry& registry, const fr::Fram
     // The executor ring is 2 deep: submitting frame serial - 1 waited for frame serial - 3.
     if (serial > 3u) {
         m_scene->collectRetired(serial - 3u);
+#if defined(FUSE_HYBRID_HAS_COOKED_REGISTRY)
+        if (m_cooked != nullptr) {
+            (void)m_cooked->collectRetired(serial - 3u);
+        }
+#endif
     }
+#if defined(FUSE_HYBRID_HAS_COOKED_REGISTRY)
+    if (m_cooked != nullptr) {
+        (void)m_cooked->commit();
+    }
+#endif
     m_graph.reset();
     sr::SceneFrameDesc sfd{};
     sfd.serial = serial;
@@ -505,6 +624,11 @@ bool HybridSceneRenderer::waitIdle() {
     if (m_scene != nullptr && m_scene->valid()) {
         (void)m_scene->upload().waitAll();
         m_scene->collectRetired(m_scene->frameSerial());
+#if defined(FUSE_HYBRID_HAS_COOKED_REGISTRY)
+        if (m_cooked != nullptr) {
+            (void)m_cooked->collectRetired(m_scene->frameSerial());
+        }
+#endif
     }
     return ok;
 }

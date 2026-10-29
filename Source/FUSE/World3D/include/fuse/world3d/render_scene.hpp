@@ -1,4 +1,6 @@
 #pragma once
+
+#include <string>
 // E03 (RE-FI-1 / RE-RUNTIME-3D-RENDER / UNI-U4-1): what World3D hands its GPU renderer. World3D stays renderer-agnostic
 // (it links no RHI): the Hybrid layer implements IWorld3DRenderer with the E02 SceneRenderer, and World3D::render calls
 // it with the world's ECS registry (Transform + Mesh + lights) and camera. Without a renderer attached (no Vulkan
@@ -42,6 +44,14 @@ struct RenderMaterial3D {
     f32 roughness = 0.5f;
     f32 emissive[3] = {0.f, 0.f, 0.f};
     f32 emissiveIntensity = 0.f;
+    /// Base colour texture (an image file path or a cook id; empty = none). The GPU renderer decodes it through its
+    /// texture loader (HybridSceneRenderer::setTextureLoader) and samples it tinted by baseColor.
+    std::string baseColorTexture;
+    /// Procedural surface shader (material_layers::ProceduralMaterialId: 0 none, 1 wood, 2 metal, 3 concrete).
+    u32 shader = 0;
+    f32 uvScale = 1.f;
+    bool triplanar = true; ///< world-space triplanar mapping (builtin meshes) instead of mesh UVs
+    [[nodiscard]] bool layered() const { return !baseColorTexture.empty() || shader != 0u; }
 };
 
 /// GPU renderer of a World3D (implemented by fuse::hybrid::HybridSceneRenderer). renderWorld3D runs on the render

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include <fuse/editor/command_stack.hpp>
 #include <fuse/editor/editor_state.hpp>
 #include <fuse/editor/material_property_binding.hpp>
@@ -25,6 +27,9 @@ struct MaterialEditState {
     bool procedural = false;
     u32 proceduralFnId = 0;
     u32 proceduralSeed = 0;
+    /// Base colour texture: an image path (absolute, or relative to the project root); empty = none.
+    std::string baseColorTexture;
+    f32 uvScale = 1.f; ///< texture / procedural repeats per metre (world-space triplanar mapping)
 };
 
 /// Headless material editor panel stub (B6.7).

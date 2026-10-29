@@ -53,6 +53,11 @@ struct WindowPresentStats {
 
 /// Bridges the Qt viewport surface to the in-process runtime scene (U6).
 /// UI thread posts dimensions; game thread ticks the embedded viewport hook.
+/// Decodes a Material Editor texture (PNG / TGA / BMP / JPEG; relative paths resolve against `projectRoot`) into
+/// RGBA8 words r | g << 8 | b << 16 | a << 24 (the HybridSceneRenderer texture loader). False when it cannot be read.
+bool loadMaterialTextureRgba8(const std::string& path, const std::string& projectRoot, u32& width, u32& height,
+                              std::vector<u32>& texels);
+
 class RuntimeViewportHook {
 public:
     RuntimeViewportHook() = default;

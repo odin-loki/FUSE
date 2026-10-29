@@ -118,12 +118,38 @@ void testMaterials() {
     AssignMaterialCommand::materialOf(reg, e, id);
     expect(id == 0u, "material: undo assignment");
 
+    // Texture / shader material path: the catalog carries a base colour texture, a procedural shader and a UV scale
+    // into World3D's RenderMaterial3D (the hybrid draws such rows through its layered-material registry).
+    MaterialEditState textured = catalog.entry(5).state;
+    textured.baseColorTexture = "textures/checker one.png";
+    textured.procedural = true;
+    textured.proceduralFnId = 1u;
+    textured.uvScale = 2.5f;
+    catalog.setState(5u, textured);
+    const world3d::RenderMaterial3D rm = MaterialCatalog::toRenderMaterial(catalog.entry(5).state);
+    expect(rm.baseColorTexture == "textures/checker one.png" && rm.shader == 1u && std::fabs(rm.uvScale - 2.5f) < 1e-6f &&
+               rm.layered(),
+           "material: texture + shader reach RenderMaterial3D");
+    expect(!MaterialCatalog::toRenderMaterial(catalog.entry(0).state).layered(), "material: plain material not layered");
+
     const auto path = std::filesystem::temp_directory_path() / "fuse_gui2_models.materials";
     expect(catalog.save(path.string()), "material: save sidecar");
     MaterialCatalog loaded;
     expect(loaded.load(path.string()) && loaded.count() == 6u && loaded.entry(5).name == "Mine \"quoted\"" &&
                std::fabs(loaded.entry(5).state.metallic - 0.5f) < 1e-6f,
            "material: round-trip");
+    expect(loaded.entry(5).state.baseColorTexture == "textures/checker one.png" && loaded.entry(5).state.procedural &&
+               loaded.entry(5).state.proceduralFnId == 1u && std::fabs(loaded.entry(5).state.uvScale - 2.5f) < 1e-6f,
+           "material: texture / shader / uv scale round-trip (FUSEEDMAT 2)");
+    {
+        // v1 sidecars (no texture columns) still load.
+        std::ofstream v1(path, std::ios::trunc);
+        v1 << "FUSEEDMAT 1\n1\n\"Old\" 0.5 0.5 0.5 0.4 0 0 0 0 0\n";
+    }
+    MaterialCatalog old;
+    expect(old.load(path.string()) && old.count() == 1u && old.entry(0).state.baseColorTexture.empty() &&
+               std::fabs(old.entry(0).state.uvScale - 1.f) < 1e-6f,
+           "material: FUSEEDMAT 1 loads");
     std::filesystem::remove(path);
     expect(!loaded.load((path.string() + ".missing")) && loaded.count() == 6u, "material: missing file leaves catalog");
 }

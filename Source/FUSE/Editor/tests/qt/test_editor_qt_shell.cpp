@@ -586,12 +586,22 @@ int gateMaterial(MainWindow& window) {
     const std::string scene = (dir.path() + QStringLiteral("/mat_scene.fusescene")).toStdString();
     mat->selectMaterial(3);
     mat->setRoughness(0.42);
+    // Texture / shader fields: the shader combo and texture path reach the catalog (and RenderMaterial3D).
+    expect(mat->setShader(2u) && mat->shaderCombo()->currentIndex() == 2, "material: shader combo -> Metal");
+    expect(mat->setTexture(QStringLiteral("textures/brick.png")) && mat->setUvScale(3.0), "material: set texture");
+    {
+        const fuse::world3d::RenderMaterial3D rm = fuse::editor::MaterialCatalog::toRenderMaterial(catalog.entry(3).state);
+        expect(rm.shader == 2u && rm.baseColorTexture == "textures/brick.png" && std::fabs(rm.uvScale - 3.f) < 1e-5f,
+               "material: shader + texture reach RenderMaterial3D");
+    }
     expect(window.host().saveSceneAs(scene), "material: save scene");
     expect(QFileInfo::exists(QString::fromStdString(fuse::editor::MaterialCatalog::sidecarPath(scene))),
            "material: sidecar written");
     expect(window.host().openScene(scene), "material: reopen scene");
     tick(window);
     expect(std::fabs(catalog.entry(3).state.roughness - 0.42f) < 1e-5f, "material: catalog round-trips");
+    expect(catalog.entry(3).state.baseColorTexture == "textures/brick.png" && catalog.entry(3).state.proceduralFnId == 2u,
+           "material: texture + shader round-trip");
     return 0;
 }
 

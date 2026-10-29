@@ -332,6 +332,12 @@ public:
     bool setRoughness(double v);
     bool setMetallic(double v);
     bool setBaseColor(const QColor& srgb);
+    /// Procedural surface shader (0 none, 1 wood, 2 metal, 3 concrete: renderer::ProceduralMaterialId).
+    bool setShader(u32 proceduralFnId);
+    /// Base colour texture image path ("" clears it).
+    bool setTexture(const QString& path);
+    bool setUvScale(double v);
+    QComboBox* shaderCombo() const { return m_shader; }
     /// Append a new material (copy of the current one) and select it.
     u32 newMaterial();
     /// Assign the current material to the selected entity (Mesh / SDFObject).
@@ -357,6 +363,10 @@ private:
     QPushButton* m_assign = nullptr;
     QDoubleSpinBox* m_roughness = nullptr;
     QDoubleSpinBox* m_metallic = nullptr;
+    QComboBox* m_shader = nullptr;
+    QPushButton* m_texture = nullptr;
+    QPushButton* m_textureClear = nullptr;
+    QDoubleSpinBox* m_uvScale = nullptr;
     u32 m_current = 0;
     u32 m_shownRevision = UINT32_MAX;
     ecs::EntityID m_lastSelection = ecs::EntityID::null();

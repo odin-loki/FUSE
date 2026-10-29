@@ -104,7 +104,7 @@ set_tests_properties(fuse_hybrid_sprite_layer_cpu PROPERTIES LABELS "gate;hybrid
 if(FUSE_BUILD_VULKAN)
     set(_fuse_hybrid_lock "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
     set(_fuse_hybrid_frame_tests "")
-    foreach(_mode golden sprite zero_alloc)
+    foreach(_mode golden sprite zero_alloc material)
         if(FUSE_VULKAN_BACKEND)
             add_test(NAME fuse_hybrid_frame_vk_${_mode}
                      COMMAND "${_fuse_hybrid_lock}" "$<TARGET_FILE:fuse_hybrid_frame_vk>" --mode ${_mode})
