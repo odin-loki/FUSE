@@ -89,6 +89,12 @@ if(FUSE_BUILD_UI)
     add_subdirectory(UI)
 endif()
 
+# UI9 (docs/plans/FUSE_EDITOR_QT_FIRST_PLAN.md): the Qt-free EditorController and, with FUSE_EDITOR_SHELL=fuse, the
+# FUSE UI editor shell beside the Qt one (Source/FUSE/EditorShell).
+if(FUSE_BUILD_EDITOR_API OR FUSE_BUILD_EDITOR)
+    add_subdirectory(EditorShell)
+endif()
+
 add_subdirectory(Relight)  # FUSE Relight (docs/plans/FUSE_REMIX_PORT_PLAN.md); FUSE_BUILD_RELIGHT inside, default ON for MinGW
 
 
