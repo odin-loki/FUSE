@@ -544,6 +544,32 @@ void MainWindow::buildMenus() {
     connect(colliders, &QAction::toggled, this, [this](bool on) {
         if (m_viewport != nullptr) m_viewport->setAllCollidersVisible(on);
     });
+    QAction* bounds = view->addAction(tr("Show Mesh &Bounds"));
+    bounds->setObjectName(QStringLiteral("fuseActionShowMeshBounds"));
+    bounds->setCheckable(true);
+    connect(bounds, &QAction::toggled, this, [this](bool on) {
+        if (m_viewport != nullptr) m_viewport->setMeshBoundsVisible(on);
+    });
+    QMenu* modes = view->addMenu(tr("View &Mode"));
+    modes->setObjectName(QStringLiteral("fuseViewModeMenu"));
+    auto* modeGroup = new QActionGroup(modes);
+    const struct { const char* name; const char* text; EditorViewMode mode; QKeySequence key; } kModes[] = {
+        {"fuseActionViewLit", "&Lit", EditorViewMode::Lit, QKeySequence(Qt::ALT | Qt::Key_1)},
+        {"fuseActionViewUnlit", "&Unlit", EditorViewMode::Unlit, QKeySequence(Qt::ALT | Qt::Key_2)},
+    };
+    for (const auto& m : kModes) {
+        QAction* a = modes->addAction(tr(m.text));
+        a->setObjectName(QString::fromLatin1(m.name));
+        a->setCheckable(true);
+        a->setShortcut(m.key);
+        a->setChecked(editorViewMode() == m.mode);
+        modeGroup->addAction(a);
+        const EditorViewMode mode = m.mode;
+        connect(a, &QAction::triggered, this, [this, mode]() {
+            setEditorViewMode(mode);
+            if (m_viewport != nullptr) m_viewport->update();
+        });
+    }
     QAction* frame = view->addAction(tr("&Frame Selected"));
     frame->setObjectName(QStringLiteral("fuseActionFrameSelected"));
     frame->setShortcut(QKeySequence(Qt::Key_F));

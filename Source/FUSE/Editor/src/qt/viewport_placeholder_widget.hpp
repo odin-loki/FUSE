@@ -144,6 +144,9 @@ public:
     /// Collider wireframes (sphere / box / capsule): selected entities always, every collider when `all`.
     void setAllCollidersVisible(bool all) { m_showAllColliders = all; syncOverlay(true); update(); }
     [[nodiscard]] bool allCollidersVisible() const { return m_showAllColliders; }
+    /// Mesh bounding boxes (local AABB through the world transform), drawn with the collider overlay.
+    void setMeshBoundsVisible(bool on) { m_showMeshBounds = on; syncOverlay(true); update(); }
+    [[nodiscard]] bool meshBoundsVisible() const { return m_showMeshBounds; }
     /// Projected collider segments of the last paint / overlay refresh.
     [[nodiscard]] int colliderLineCount() const { return static_cast<int>(m_colliderLines.size()); }
     /// Moves the camera (keeping yaw / pitch) so every selected entity fits the view. False when nothing is selected.
@@ -202,6 +205,7 @@ private:
     std::vector<SceneIcon> m_sceneIcons;
     bool m_showSceneIcons = true;
     bool m_showAllColliders = false;
+    bool m_showMeshBounds = false;
     bool m_inOverlayPaint = false; ///< syncOverlay already collected the collider lines
     std::vector<QLineF> m_colliderLines;
     std::vector<bool> m_colliderSelected;

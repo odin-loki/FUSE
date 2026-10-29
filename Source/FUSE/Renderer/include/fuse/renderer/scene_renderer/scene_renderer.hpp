@@ -102,6 +102,8 @@ struct SceneFrameDesc {
     f32 fallbackToSun[3] = {0.35f, 0.8f, 0.3f};
     f32 fallbackSunColor[3] = {1.f, 0.96f, 0.9f};
     f32 fallbackSunIntensity = 2.5f;
+    /// Editor "Unlit" view mode (gpu_scene::GpuScene::setUnlitPreview).
+    bool unlit = false;
 };
 
 struct SceneFrameStats {

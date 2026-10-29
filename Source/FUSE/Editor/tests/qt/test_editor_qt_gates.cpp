@@ -24,6 +24,8 @@
 //                   context menu, 0 validation messages, clean teardown
 
 #include <fuse/ecs/components/collider.hpp>
+#include <fuse/editor/runtime_viewport.hpp>
+#include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/systems/transform_system.hpp>
 #include <QSpinBox>
 #include <QCheckBox>
@@ -2036,6 +2038,36 @@ int gateEditTools() {
         std::lock_guard<std::mutex> lock(window.sceneMutex());
         expect(window.host().editorScene().registry().get<ecs::Transform>(g1)->parent == ecs::EntityID::null(), "undo ungroups");
     }
+
+    // View > Show Mesh Bounds and View Mode (Lit / Unlit).
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        ecs::Registry& reg = window.host().editorScene().registry();
+        const ecs::EntityID e = reg.create();
+        ecs::Transform t{};
+        t.position = {0.f, 0.f, 0.f, 1.f};
+        reg.add(e, t);
+        ecs::Mesh mesh{};
+        mesh.aabb_min = {-1.f, -1.f, -1.f, 0.f};
+        mesh.aabb_max = {1.f, 1.f, 1.f, 0.f};
+        reg.add(e, mesh);
+        fuse::ecs::TransformSystem::update(reg);
+        window.host().editorState().selectedEntities.clear();
+        window.host().editorState().primarySelection = ecs::EntityID::null();
+    }
+    action("fuseActionShowColliders")->setChecked(false);
+    const int beforeBounds = window.viewport()->colliderLineCount();
+    action("fuseActionShowMeshBounds")->setChecked(true);
+    QCoreApplication::processEvents();
+    expect(window.viewport()->meshBoundsVisible() && window.viewport()->colliderLineCount() >= beforeBounds + 12,
+           fmt("Show Mesh Bounds draws box edges (%d -> %d lines)", beforeBounds, window.viewport()->colliderLineCount()));
+    action("fuseActionShowMeshBounds")->setChecked(false);
+    expect(action("fuseActionViewLit") != nullptr && action("fuseActionViewUnlit") != nullptr, "View Mode actions exist");
+    action("fuseActionViewUnlit")->trigger();
+    expect(fuse::editor::editorViewMode() == fuse::editor::EditorViewMode::Unlit && action("fuseActionViewUnlit")->isChecked(),
+           "View > Unlit switches the view mode");
+    action("fuseActionViewLit")->trigger();
+    expect(fuse::editor::editorViewMode() == fuse::editor::EditorViewMode::Lit, "View > Lit restores lighting");
     return 0;
 }
 

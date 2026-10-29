@@ -717,8 +717,38 @@ bool GpuScene::setMaterial(u32 index, const GpuMaterial& material) {
         return false;
     }
     m_materials.ensureCount(index + 1u);
-    m_materials.write(index, material);
+    if (m_materialSources.size() <= index) {
+        m_materialSources.resize(index + 1u);
+    }
+    m_materialSources[index] = material;
+    m_materials.write(index, m_unlitPreview ? unlitMaterial_(material) : material);
     return true;
+}
+
+GpuMaterial GpuScene::unlitMaterial_(const GpuMaterial& m) {
+    if (gpu_material_layered(m)) {
+        return m;
+    }
+    GpuMaterial u = m;
+    u.roughnessEmissive = {1.f, m.baseColor.x, m.baseColor.y, m.baseColor.z};
+    u.emissiveIntensity = 1.f;
+    u.emissiveTexIdx = m.baseColorTexIdx;
+    u.baseColor = {0.f, 0.f, 0.f, m.baseColor.w};
+    u.baseColorTexIdx = UINT32_MAX;
+    u.metallicTexIdx = UINT32_MAX;
+    u.roughnessTexIdx = UINT32_MAX;
+    return u;
+}
+
+void GpuScene::setUnlitPreview(bool on) {
+    if (on == m_unlitPreview) {
+        return;
+    }
+    m_unlitPreview = on;
+    const u32 n = std::min<u32>(m_materials.count(), static_cast<u32>(m_materialSources.size()));
+    for (u32 i = 0; i < n; ++i) {
+        m_materials.write(i, on ? unlitMaterial_(m_materialSources[i]) : m_materialSources[i]);
+    }
 }
 
 LightHandle GpuScene::addLight(const GpuLight& light) {

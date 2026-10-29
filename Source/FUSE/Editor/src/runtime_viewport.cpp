@@ -184,6 +184,13 @@ std::atomic<int> g_previewSun{-1}; ///< -1: not set yet (FUSE_EDITOR_NO_PREVIEW_
 
 void setEditorPreviewSun(bool on) { g_previewSun.store(on ? 1 : 0); }
 
+namespace {
+std::atomic<int> g_viewMode{0};
+} // namespace
+
+void setEditorViewMode(EditorViewMode mode) { g_viewMode.store(static_cast<int>(mode)); }
+EditorViewMode editorViewMode() { return static_cast<EditorViewMode>(g_viewMode.load()); }
+
 bool editorPreviewSun() {
     const int v = g_previewSun.load();
     if (v >= 0) return v != 0;
@@ -200,6 +207,7 @@ void ensureMaterialTextureLoader(RuntimeViewportHeadlessGpuStub* gpu, const Runt
     fuse::hybrid::HybridSceneRenderer* scene = gpu->hybrid->composer().gpuScene();
     if (scene != nullptr) {
         scene->setFallbackSun(editorPreviewSun());
+        scene->setUnlit(editorViewMode() == EditorViewMode::Unlit);
     }
     if (scene == nullptr || scene == gpu->textureLoaderOn) {
         return;

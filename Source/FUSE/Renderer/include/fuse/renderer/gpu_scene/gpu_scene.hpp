@@ -263,6 +263,12 @@ public:
     bool setMaterial(u32 index, const GpuMaterial& material);
     bool setMaterial(u32 index, const Material& material) { return setMaterial(index, material.pack()); }
     u32 materialCount() const { return m_materials.count(); }
+    /// Editor "Unlit" view: every non-layered row is uploaded as an emissive surface showing its base colour /
+    /// base-colour texture (albedo zeroed, so lights add nothing). The rows given to setMaterial are kept and
+    /// restored when turned off.
+    void setUnlitPreview(bool on);
+    bool unlitPreview() const { return m_unlitPreview; }
+    const GpuMaterial& materialRow(u32 index) const { return m_materials[index]; }
 
     // --- lights ---------------------------------------------------------------------------------
     LightHandle addLight(const GpuLight& light);
@@ -359,6 +365,9 @@ private:
     MirrorTable<GpuTransform> m_prevTransforms;
     MirrorTable<GpuMesh> m_meshes;
     MirrorTable<GpuMaterial> m_materials;
+    static GpuMaterial unlitMaterial_(const GpuMaterial& m);
+    std::vector<GpuMaterial> m_materialSources; ///< rows as given to setMaterial (unlit preview restores these)
+    bool m_unlitPreview = false;
     MirrorTable<GpuLight> m_lights;
     SlotAllocator m_instanceSlots;
     SlotAllocator m_lightSlots;

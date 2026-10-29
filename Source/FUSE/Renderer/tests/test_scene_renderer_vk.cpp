@@ -1013,10 +1013,11 @@ int runFallbackSun(Context& ctx, SceneTier tier) {
     if (const int rc = initRig(ctx, rig, tier); rc != 0) {
         return rc;
     }
-    auto frame = [&](bool fallback, u32 f) {
+    auto frame = [&](bool fallback, u32 f, bool unlitView = false) {
         rig.graph.reset();
         SceneFrameDesc sfd{};
         sfd.fallbackSun = fallback;
+        sfd.unlit = unlitView;
         const FrameGraphOutputs outs = rig.renderer.renderScene(rig.ecs.registry, cameraAt(0, true), rig.graph, sfd);
         expect(outs.output.valid(), "fallback_sun: frame recorded");
         Readback rb;
@@ -1060,7 +1061,20 @@ int runFallbackSun(Context& ctx, SceneTier tier) {
     expect(own == slot || rig.renderer.scene().light(slot).type != static_cast<u32>(gpu_scene::GpuLightType::Directional) ||
                rig.renderer.scene().light(slot).entityIndex == rig.ecs.sun.index,
            "fallback_sun: the fallback light is removed");
-    std::printf("fallback_sun: mean unlit %.2f, fallback lit %.2f\n", unlit, lit);
+    // Unlit view mode: no lights at all, yet surfaces show their base colour (emissive override); off restores rows.
+    rig.ecs.registry.remove<ecs::DirectionalLight>(rig.ecs.sun);
+    const gpu_scene::GpuMaterial before = rig.renderer.scene().materialCount() > 0u ? rig.renderer.scene().materialRow(0) : gpu_scene::GpuMaterial{};
+    double view = 0.0;
+    for (u32 f = 0; f < 3u; ++f) view = frame(false, 4 + f, true);
+    expect(rig.renderer.scene().unlitPreview(), "unlit: GpuScene unlit preview on");
+    char b[160];
+    std::snprintf(b, sizeof b, "unlit: the unlit view shows surfaces without lights (%.2f vs %.2f)", view, unlit);
+    expect(view > unlit + 2.0, b);
+    (void)frame(false, 7, false);
+    expect(!rig.renderer.scene().unlitPreview() && (rig.renderer.scene().materialCount() == 0u ||
+                                                    std::memcmp(&before, &rig.renderer.scene().materialRow(0), sizeof before) == 0),
+           "unlit: off restores the material rows");
+    std::printf("fallback_sun: mean unlit %.2f, fallback lit %.2f, unlit view %.2f\n", unlit, lit, view);
     return 0;
 }
 

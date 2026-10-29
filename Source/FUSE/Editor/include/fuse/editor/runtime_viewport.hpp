@@ -26,6 +26,10 @@ namespace fuse::editor {
 /// unless FUSE_EDITOR_NO_PREVIEW_SUN is set; Preferences toggles it at runtime.
 void setEditorPreviewSun(bool on);
 [[nodiscard]] bool editorPreviewSun();
+/// Viewport view mode: Lit (default) or Unlit (surfaces show their base colour, no lighting).
+enum class EditorViewMode : int { Lit = 0, Unlit = 1 };
+void setEditorViewMode(EditorViewMode mode);
+[[nodiscard]] EditorViewMode editorViewMode();
 
 class EditorHost;
 

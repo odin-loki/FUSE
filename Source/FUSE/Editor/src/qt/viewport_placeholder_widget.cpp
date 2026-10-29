@@ -6,6 +6,7 @@
 #include <fuse/ecs/components/camera.hpp>
 #include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/collider.hpp>
+#include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/systems/transform_system.hpp>
 #include <fuse/editor/command_queue.hpp>
 
@@ -1097,6 +1098,30 @@ void ViewportPlaceholderWidget::collectColliderLines_() {
                 break;
             }
         });
+        if (m_showMeshBounds) {
+            registry.each<ecs::Transform, ecs::Mesh>([&](ecs::EntityID id, ecs::Transform& t, ecs::Mesh& mesh) {
+                const bool selected = std::find(sel.begin(), sel.end(), id) != sel.end();
+                const auto& m = t.local_to_world.data;
+                const auto xf = [&](f32 x, f32 y, f32 z) {
+                    return ecs::vec3{m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13],
+                                     m[2] * x + m[6] * y + m[10] * z + m[14], 1.f};
+                };
+                const f32 lo[3] = {mesh.aabb_min.x, mesh.aabb_min.y, mesh.aabb_min.z};
+                const f32 hi[3] = {mesh.aabb_max.x, mesh.aabb_max.y, mesh.aabb_max.z};
+                if (!(hi[0] > lo[0] || hi[1] > lo[1] || hi[2] > lo[2])) return;
+                for (int a = 0; a < 3; ++a) {
+                    const int u = (a + 1) % 3, v = (a + 2) % 3;
+                    for (int s = 0; s < 4; ++s) {
+                        f32 p0[3], p1[3];
+                        p0[a] = lo[a];
+                        p1[a] = hi[a];
+                        p0[u] = p1[u] = (s & 1) ? hi[u] : lo[u];
+                        p0[v] = p1[v] = (s & 2) ? hi[v] : lo[v];
+                        segs.push_back({xf(p0[0], p0[1], p0[2]), xf(p1[0], p1[1], p1[2]), selected});
+                    }
+                }
+            });
+        }
     }
     const qreal inv = 1.0 / devicePixelRatioF();
     for (const Seg& s : segs) {

@@ -183,6 +183,9 @@ public:
     /// Preview sun when the scene has no DirectionalLight (sr::SceneFrameDesc::fallbackSun). Off by default.
     void setFallbackSun(bool on) { m_fallbackSun = on; }
     [[nodiscard]] bool fallbackSun() const { return m_fallbackSun; }
+    /// Unlit view mode (sr::SceneFrameDesc::unlit).
+    void setUnlit(bool on) { m_unlit = on; }
+    [[nodiscard]] bool unlit() const { return m_unlit; }
     /// The layered-material registry textured / procedural RenderMaterial3D rows resolve through (null on a CPU
     /// build or before initialize). It is also attached to the composer's CookedAssetBindings by the owner.
     renderer::cooked_assets::CookedAssetRegistry* cookedAssets() { return m_cooked.get(); }
@@ -193,6 +196,7 @@ public:
 
 private:
     bool m_fallbackSun = false;
+    bool m_unlit = false;
     static bool submitThunk(const renderer::SceneFrameSubmit& submit, void* user);
     static void recordCopy(const rg::PassContext& context, void* user);
     static rg::TextureRef recordUi(rg::Graph& graph, const renderer::frame::FrameUiContext& context, void* user);

@@ -298,6 +298,7 @@ frame::FrameGraphOutputs SceneRenderer::renderScene(ecs::Registry& registry, con
     fd.camera = camera;
     fd.resetHistory = frameDesc.resetHistory || m_frames == 0u;
     fd.deltaSeconds = frameDesc.deltaSeconds;
+    m_scene.setUnlitPreview(frameDesc.unlit);
     bool sunFound = false;
     registry.each<ecs::Transform, ecs::DirectionalLight>([&](ecs::EntityID id, ecs::Transform&, ecs::DirectionalLight&) {
         if (sunFound) {
