@@ -1305,6 +1305,106 @@ void gatePreferences(Rig& r) {
 }
 
 
+// Terrain panel (Qt TerrainPanel parity): create a heightfield terrain, see it in the GPU viewport, sculpt a stroke
+// with one undo step, clear + undo.
+void gateTerrain(Rig& r) {
+    CHECK(r.shell.showPanel("dock.terrain"));
+    r.frames();
+    CHECK(r.rect("dock.terrain").h > 50);
+    auto status = [&] { return std::string(r.ui().text(r.ui().find("terrain.status"))); };
+    CHECK(status() == "0 terrain(s); active terrain sculpts 0 / 256");
+    auto host = SceneViewportHost::create({.validation = true});
+    const bool gpu = host->valid();
+    if (!gpu) std::printf("terrain: no scene renderer (%s): model checks only\n", host->reason().c_str());
+    if (gpu) r.shell.setSceneViewport(host.get());
+    auto grab = [&](std::vector<u32>& px) {
+        u32 w = 0, h = 0;
+        const fuse::u64 f0 = host->framesRendered();
+        for (int i = 0; i < 50 && host->framesRendered() <= f0; ++i) r.frames();
+        return host->readback(px, w, h);
+    };
+    auto diffPct = [](const std::vector<u32>& a, const std::vector<u32>& b) {
+        if (a.size() != b.size() || a.empty()) return 0.0;
+        std::size_t n = 0;
+        for (std::size_t i = 0; i < a.size(); ++i)
+            for (int sh = 0; sh < 24; sh += 8)
+                if (std::abs(int((a[i] >> sh) & 255) - int((b[i] >> sh) & 255)) > 6) { ++n; break; }
+        return 100.0 * double(n) / double(a.size());
+    };
+    std::vector<u32> empty, made, sculpted;
+    if (gpu) { r.frames(3); CHECK(grab(empty)); }
+    r.ui().setValue(r.ui().find("terrain.cells"), 48.f, true);
+    r.ui().setValue(r.ui().find("terrain.size"), 24.f, true);
+    r.ui().setValue(r.ui().find("terrain.height"), 1.5f, true);
+    r.frames();
+    const TerrainView s = r.shell.panels().terrain();
+    CHECK(s.cells == 48 && std::fabs(s.size - 24.f) < 1e-4f);
+    r.clickId("terrain.create");
+    r.frames();
+    CHECK(status() == "1 terrain(s); active terrain sculpts 0 / 256");
+    CHECK(r.v().primary.valid());
+    {
+        bool labelled = false;
+        for (const HierarchyRowView& row : r.v().hierarchy) labelled |= row.entity == r.v().primary && row.label.find("Terrain") == 0;
+        CHECK(labelled);
+    }
+    double noise = 0.0;
+    if (gpu) {
+        CHECK(grab(made));
+        std::vector<u32> again;
+        CHECK(grab(again));
+        noise = diffPct(made, again);
+        std::printf("terrain: idle frame-to-frame noise %.2f%%\n", noise);
+        const double pct = diffPct(empty, made);
+        std::printf("terrain: create changed %.1f%% of the engine frame\n", pct);
+        CHECK(pct > 5.0);
+    }
+    // sculpt: drag across the terrain centre (Raise, radius 3)
+    r.ui().setValue(r.ui().find("terrain.radius"), 3.f, true);
+    r.ui().setValue(r.ui().find("terrain.strength"), 3.f, true);
+    r.ui().setChecked(r.ui().find("terrain.sculpt"), true);
+    r.ui().emit(r.ui().find("terrain.sculpt"), fuse::ui::SignalKind::Toggled, {.flag = true});
+    r.frames();
+    CHECK(r.shell.panels().terrain().sculpt);
+    using PE = ViewportPointerEvent;
+    float ax = 0.f, ay = 0.f, bx = 0.f, by = 0.f;
+    CHECK(r.c.projectPoint(-4.f, 0.f, 0.f, ax, ay) && r.c.projectPoint(4.f, 0.f, 0.f, bx, by));
+    auto undoCount = [&] { u32 n = 0; r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) { n = h.undoStack().undoCount(); }); return n; };
+    const u32 undo0 = undoCount();
+    CHECK(r.shell.panels().terrainPointer({PE::Kind::Down, PE::Button::Left, ax, ay}));
+    for (int i = 1; i <= 8; ++i)
+        r.shell.panels().terrainPointer({PE::Kind::Move, PE::Button::Left, ax + (bx - ax) * float(i) / 8.f, ay + (by - ay) * float(i) / 8.f});
+    CHECK(r.shell.panels().terrainPointer({PE::Kind::Up, PE::Button::Left, bx, by}));
+    r.frames();
+    const u32 stamps = r.shell.panels().terrain().stamps;
+    std::printf("terrain: stroke -> %u stamps, %s\n", stamps, status().c_str());
+    CHECK(stamps >= 4 && stamps <= 8);
+    CHECK(undoCount() == undo0 + 1); // one undo step per stroke
+    if (gpu) {
+        CHECK(grab(sculpted));
+        const double pct = diffPct(made, sculpted);
+        std::printf("terrain: stroke changed %.1f%% of the engine frame\n", pct);
+        CHECK(pct > noise + 0.5);
+    }
+    // a click off every terrain is not consumed (falls through to pick / gizmo)
+    CHECK(!r.shell.panels().terrainPointer({PE::Kind::Down, PE::Button::Left, 2.f, 2.f}));
+    CHECK(r.c.trigger(ActionId::EditUndo));
+    r.frames();
+    CHECK(r.shell.panels().terrain().stamps == 0);
+    CHECK(r.c.trigger(ActionId::EditRedo));
+    r.frames();
+    CHECK(r.shell.panels().terrain().stamps == stamps);
+    r.clickId("terrain.clear");
+    CHECK(r.shell.panels().terrain().stamps == 0);
+    CHECK(r.c.trigger(ActionId::EditUndo));
+    r.frames(3);
+    CHECK(r.shell.panels().terrain().stamps == stamps);
+    if (gpu) { std::vector<u32> keep; CHECK(grab(keep)); CHECK(validationErrors() == 0); }
+    r.win.rasterize({});
+    if (!g_out.empty()) { CHECK(r.win.writePng(g_out)); g_shotWritten = true; }
+    r.shell.setSceneViewport(nullptr); // the host dies with this gate
+}
+
 // Navigation panel (Qt NavmeshPanel parity): bake from colliders, test path around the obstacle, viewport overlay.
 void gateNavigation(Rig& r) {
     CHECK(r.shell.showPanel("dock.navigation"));
@@ -1362,7 +1462,7 @@ int main(int argc, char** argv) {
     Rig r(scale);
     const std::map<std::string, std::function<void(Rig&)>> gates{
         {"startup", gateStartup},        {"layout", gateLayout},           {"theme", gateTheme},
-        {"fuse_api", gateFuseApi},       {"wasd", gateWasd},               {"context_menu", gateContextMenu}, {"context_menu_dpr1_5", gateContextMenuDpr15}, {"icon", gateIcon}, {"view_modes", gateViewModes}, {"preferences", gatePreferences}, {"navigation", gateNavigation}, {"live_present", gateLivePresent},
+        {"fuse_api", gateFuseApi},       {"wasd", gateWasd},               {"context_menu", gateContextMenu}, {"context_menu_dpr1_5", gateContextMenuDpr15}, {"icon", gateIcon}, {"view_modes", gateViewModes}, {"preferences", gatePreferences}, {"navigation", gateNavigation}, {"terrain", gateTerrain}, {"live_present", gateLivePresent},
         {"ui_frame", gateUiFrame},       {"idle_frames", gateIdle},        {"e15_console", gateConsole},
         {"e15_transport", gateTransport}, {"e20_inspector", gateInspector}, {"e20_reparent", gateReparent},
         {"e20_file_menu", gateFileMenu}, {"e20_wizard", gateWizard}, {"project_open", gateProjectOpen},  {"project_hub", gateProjectHub}, {"asset_browser", gateAssetBrowser},

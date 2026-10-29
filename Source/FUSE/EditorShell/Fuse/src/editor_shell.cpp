@@ -36,6 +36,7 @@ constexpr ShellPanel kPanels[] = {
     {"dock.material_editor", "Material Editor", DockSide::Right, true},
     {"dock.sdf_sculpt", "SDF Sculpt", DockSide::Right, true},
     {"dock.navigation", "Navigation", DockSide::Right, true},
+    {"dock.terrain", "Terrain", DockSide::Right, true},
     {"dock.console", "Console", DockSide::Bottom, true},
     {"dock.profiler", "Profiler", DockSide::Bottom, true},
     {"dock.sequencer", "Sequencer", DockSide::Bottom, true},
@@ -674,7 +675,7 @@ void EditorShellWindow::viewportInput_() {
     // SDF Sculpt mode: left-button strokes go to the brush (one "Sculpt stroke" undo step per drag)
     if (in.type == EventType::PointerDown || in.type == EventType::PointerMove || in.type == EventType::PointerUp) {
         const PE::Kind kind = in.type == EventType::PointerDown ? PE::Kind::Down : in.type == EventType::PointerMove ? PE::Kind::Move : PE::Kind::Up;
-        if (m_models->sculptPointer({kind, button(), in.pos.x, in.pos.y})) {
+        if (m_models->terrainPointer({kind, button(), in.pos.x, in.pos.y}) || m_models->sculptPointer({kind, button(), in.pos.x, in.pos.y})) {
             if (in.type == EventType::PointerDown) m_ui.setFocus(m_viewport, fuse::ui::FocusReason::Pointer);
             sync();
             return;

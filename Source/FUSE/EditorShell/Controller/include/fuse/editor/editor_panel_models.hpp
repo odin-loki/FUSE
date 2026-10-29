@@ -66,6 +66,19 @@ struct NavigationView {
     std::string status = "Not baked";
 };
 
+/// Terrain panel (Qt TerrainPanel): new Terrain settings, the stamp brush and the viewport sculpt toggle.
+struct TerrainView {
+    u32 cells = 64;
+    f32 size = 64.f, height = 6.f;
+    u32 seed = 1;
+    u32 mode = 0;          ///< ecs::TerrainStamp Raise / Lower / Flatten
+    f32 radius = 6.f, strength = 2.f;
+    bool sculpt = false;   ///< left-drag in the viewport stamps the active terrain
+    u32 terrains = 0;
+    u32 stamps = 0;        ///< of the active terrain
+    std::string status;
+};
+
 struct ProfilerView {
     ProfilerPanel::FrameStats stats{};
     ProfilerPanel::FrameProfileData latest{};
@@ -172,6 +185,21 @@ public:
     void timelineSetPlaying(bool on);
     bool timelineAdvance(f32 dt);         ///< while playing: moves the playhead (loops); true when it moved
 
+    // ---- Terrain ----
+    [[nodiscard]] TerrainView terrain();
+    void setTerrainSettings(u32 cells, f32 size, f32 height, u32 seed);
+    void setTerrainBrush(u32 mode, f32 radius, f32 strength);
+    void setTerrainSculpt(bool on);
+    /// New Terrain entity at the origin from the settings (one undo step); selects it.
+    EntityRef terrainCreate();
+    /// One stamp at local (x, z) of the active terrain (one undo step); false without a terrain / full budget.
+    bool terrainStampLocal(f32 x, f32 z);
+    /// Removes every stamp of the active terrain (one undo step).
+    bool terrainClear();
+    /// Left button in the viewport while terrain sculpting: Down picks a terrain (world ray vs heightfield) and
+    /// stamps, Move stamps every half radius, Up commits the stroke as one undo step. True when consumed.
+    bool terrainPointer(const ViewportPointerEvent& e);
+
     // ---- Navigation ----
     [[nodiscard]] NavigationView navigation() const { return m_nav; }
     void setNavCellSize(f32 size) { m_nav.cellSize = size; ++m_revision; }
@@ -196,6 +224,11 @@ private:
     EditorController& m_c;
     u64 m_revision = 1;
     NavigationView m_nav;
+    TerrainView m_terrain;
+    std::shared_ptr<void> m_strokeBefore; ///< ecs::Terrain at stroke start
+    ecs::EntityID m_strokeEntity{};
+    f32 m_strokeLast[2] = {0.f, 0.f};
+    bool terrainPick_(f32 x, f32 y, bool onlyStroke, ecs::EntityID& out, f32 local[3]);
     std::shared_ptr<void> m_navMesh; ///< navigation::GridNavmesh (kept out of this header)
     std::vector<u8> m_navBlocked;
     std::vector<f32> m_navPath; ///< world xz pairs

@@ -2,6 +2,10 @@
 
 #include <fuse/editor/editor_host.hpp>
 #include <fuse/editor/runtime_viewport.hpp>
+#include <fuse/editor/terrain_builder.hpp>
+#include <fuse/renderer/geometry/meshlet_builder.hpp>
+
+#include <unordered_map>
 #include <fuse/editor/viewport_panel.hpp>
 
 #if defined(FUSE_HAS_VULKAN_RHI)
@@ -29,6 +33,7 @@ struct SceneViewportHost::Impl {
     std::unique_ptr<hybrid::HybridSceneRenderer> gpu;
     world3d::World3D world;
     u32 materialRevision = ~0u;
+    std::unordered_map<u32, u64> terrainHashes; ///< engine mesh id -> uploaded Terrain hash
     f32 time = 0.f;
 #endif
 };
@@ -162,6 +167,34 @@ bool SceneViewportHost::render(EditorHost& host, const ViewportPanel& view, u32 
     // editor registry rendered directly, the viewport fly camera, the material catalog as World3D's table
     ecs::Registry& registry = host.editorScene().registry();
     ecs::TransformSystem::update(registry);
+    // Terrain panel entities (Qt RuntimeViewportHook::syncTerrainMeshes): (re)build the heightfield mesh into this
+    // renderer's registry under the reserved terrain engine id whenever the component changes
+    registry.each<ecs::Terrain, ecs::Mesh>([&](ecs::EntityID id, ecs::Terrain& terrain, ecs::Mesh& mesh) {
+        const u32 engineId = terrainEngineMeshId(id);
+        const u64 hash = terrainHash(terrain);
+        auto it = m->terrainHashes.find(engineId);
+        if (it != m->terrainHashes.end() && it->second == hash && mesh.vertex_buffer.isValid()) return;
+        TerrainGeometry geo;
+        if (!buildTerrainGeometry(terrain, geo)) return;
+        renderer::geometry::MeshletSource src{};
+        src.positions = geo.positions.data();
+        src.normals = geo.normals.data();
+        src.uvs = geo.uvs.data();
+        src.vertex_count = u32(geo.positions.size() / 3u);
+        src.indices = geo.indices.data();
+        src.index_count = u32(geo.indices.size());
+        renderer::geometry::MeshletBuildOptions options{};
+        options.backend = kernel::Backend::CpuReference;
+        renderer::geometry::MeshletMesh meshlets;
+        if (!renderer::geometry::build_meshlets(src, options, meshlets, nullptr)) return;
+        if (m->device) m->device->waitIdle(); // the previous geometry may still be in flight
+        if (!gpu.sceneRenderer().meshes().registerMesh(engineId, std::move(meshlets))) return;
+        mesh.vertex_buffer = ecs::MeshVertexBufferHandle(engineId, 1u);
+        mesh.material_id = terrain.material_id;
+        mesh.aabb_min = ecs::vec3{geo.lo[0], geo.lo[1], geo.lo[2], 0.f};
+        mesh.aabb_max = ecs::vec3{geo.hi[0], geo.hi[1], geo.hi[2], 0.f};
+        m->terrainHashes[engineId] = hash;
+    });
     m->world.setRenderRegistry(&registry);
     const ViewportCamera& cam = view.camera();
     const ecs::vec3 fwd = view.forward();

@@ -28,6 +28,10 @@ private:
     void buildTimeline_(NodeHandle page);
     void buildNavigation_(NodeHandle page);
     void syncNavigation_();
+    void buildTerrain_(NodeHandle page);
+    void syncTerrain_();
+    NodeHandle m_trCells{}, m_trSize{}, m_trHeight{}, m_trSeed{}, m_trMode{}, m_trRadius{}, m_trStrength{}, m_trSculpt{}, m_trStatus{};
+    std::string m_trKey;
     void syncHub_();
     void syncAssets_();
     void syncMaterial_();

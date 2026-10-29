@@ -8,6 +8,8 @@
 #include <fuse/editor/cinematics_seq_import.hpp>
 #include <fuse/editor/editor_host.hpp>
 #include <fuse/editor/material_catalog.hpp>
+#include <fuse/editor/terrain_builder.hpp>
+#include <fuse/editor/undo_stack.hpp>
 #include <fuse/editor/viewport_scene_view.hpp>
 
 #include <algorithm>
@@ -597,6 +599,250 @@ std::vector<f32> EditorPanels::navSegments() const {
         }
     for (usize i = 0; i + 3 < m_navPath.size(); i += 2) seg(m_navPath[i], m_navPath[i + 1], m_navPath[i + 2], m_navPath[i + 3], 0.1f);
     return segs;
+}
+
+// ---- Terrain (Qt TerrainPanel) --------------------------------------------------------------------------------------
+namespace {
+class TerrainEditCommand final : public UndoCommand {
+public:
+    TerrainEditCommand(ecs::Registry& r, ecs::EntityID e, const ecs::Terrain& before, const ecs::Terrain& after, std::string what)
+        : m_registry(r), m_entity(e), m_before(std::make_unique<ecs::Terrain>(before)), m_after(std::make_unique<ecs::Terrain>(after)),
+          m_what(std::move(what)) {}
+    void execute() override { apply(*m_after); }
+    void undo() override { apply(*m_before); }
+    std::string description() const override { return m_what; }
+
+private:
+    void apply(const ecs::Terrain& t) {
+        if (ecs::Terrain* cur = m_registry.get<ecs::Terrain>(m_entity)) *cur = t;
+    }
+    ecs::Registry& m_registry;
+    ecs::EntityID m_entity;
+    std::unique_ptr<ecs::Terrain> m_before, m_after; // ~6 KiB each (256 stamps)
+    std::string m_what;
+};
+
+/// Inverse of an affine column-major 4x4; false when singular (Qt terrain_panel invertAffine).
+bool invertAffine(const f32* m, f32* out) {
+    const f32 a = m[0], b = m[4], c = m[8], d = m[1], e = m[5], f = m[9], g = m[2], h = m[6], i = m[10];
+    const f32 A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g;
+    const f32 det = a * A + b * B + c * C;
+    if (std::fabs(det) < 1e-12f) return false;
+    const f32 s = 1.f / det;
+    const f32 inv[9] = {A * s, -(b * i - c * h) * s, (b * f - c * e) * s, B * s, (a * i - c * g) * s, -(a * f - c * d) * s,
+                        C * s, -(a * h - b * g) * s, (a * e - b * d) * s};
+    std::fill(out, out + 16, 0.f);
+    for (int r = 0; r < 3; ++r)
+        for (int k = 0; k < 3; ++k) out[r + 4 * k] = inv[r * 3 + k];
+    for (int r = 0; r < 3; ++r) out[r + 12] = -(out[r] * m[12] + out[r + 4] * m[13] + out[r + 8] * m[14]);
+    out[15] = 1.f;
+    return true;
+}
+
+ecs::EntityID activeTerrainOf(EditorHost& host) {
+    ecs::Registry& registry = host.editorScene().registry();
+    const ecs::EntityID sel = host.editorState().primarySelection;
+    if (sel.valid() && registry.get<ecs::Terrain>(sel) != nullptr) return sel;
+    ecs::EntityID first;
+    registry.each<ecs::Terrain>([&](ecs::EntityID id, ecs::Terrain&) {
+        if (!first.valid()) first = id;
+    });
+    return first;
+}
+} // namespace
+
+TerrainView EditorPanels::terrain() {
+    TerrainView v = m_terrain;
+    withScene([&](EditorHost& host, const ViewportPanel&) {
+        ecs::Registry& registry = host.editorScene().registry();
+        registry.each<ecs::Terrain>([&](ecs::EntityID, ecs::Terrain&) { ++v.terrains; });
+        const ecs::EntityID e = activeTerrainOf(host);
+        if (const ecs::Terrain* t = e.valid() ? registry.get<ecs::Terrain>(e) : nullptr) v.stamps = t->stamp_count;
+    });
+    v.status = std::to_string(v.terrains) + " terrain(s); active terrain sculpts " + std::to_string(v.stamps) + " / " +
+               std::to_string(ecs::Terrain::kMaxStamps);
+    return v;
+}
+void EditorPanels::setTerrainSettings(u32 cells, f32 size, f32 height, u32 seed) {
+    m_terrain.cells = std::clamp(cells, 2u, 256u);
+    m_terrain.size = std::max(1.f, size);
+    m_terrain.height = std::max(0.f, height);
+    m_terrain.seed = seed;
+    ++m_revision;
+}
+void EditorPanels::setTerrainBrush(u32 mode, f32 radius, f32 strength) {
+    m_terrain.mode = std::min(mode, 2u);
+    m_terrain.radius = std::max(0.1f, radius);
+    m_terrain.strength = strength;
+    ++m_revision;
+}
+void EditorPanels::setTerrainSculpt(bool on) {
+    if (!on && m_strokeEntity.valid()) terrainPointer({ViewportPointerEvent::Kind::Up, ViewportPointerEvent::Button::Left, 0.f, 0.f});
+    m_terrain.sculpt = on;
+    if (on && m_sculptMode) setSculptMode(false); // one viewport brush at a time
+    ++m_revision;
+}
+
+EntityRef EditorPanels::terrainCreate() {
+    ecs::EntityID created;
+    withScene([&](EditorHost& host, const ViewportPanel&) {
+        ecs::Registry& registry = host.editorScene().registry();
+        EntityComponentSet set{};
+        std::get<std::optional<ecs::Transform>>(set) = ecs::Transform{};
+        auto terrain = std::make_unique<ecs::Terrain>();
+        terrain->cells = m_terrain.cells;
+        terrain->size = m_terrain.size;
+        terrain->height = m_terrain.height;
+        terrain->seed = m_terrain.seed;
+        std::get<std::optional<ecs::Terrain>>(set) = *terrain;
+        std::get<std::optional<ecs::Mesh>>(set) = ecs::Mesh{};
+        auto cmd = std::make_unique<CreateEntityCommand>(registry, std::move(set), "Create terrain");
+        CreateEntityCommand* raw = cmd.get();
+        host.undoStack().execute(std::move(cmd));
+        created = raw->createdEntity();
+        if (created.valid()) {
+            ecs::TransformSystem::update(registry);
+            host.editorState().selectedEntities = {created};
+            host.editorState().primarySelection = created;
+        }
+    });
+    ++m_revision;
+    m_c.refresh();
+    return EntityRef{created.index, created.generation};
+}
+
+static ecs::TerrainStamp brushStampOf(const TerrainView& v, f32 x, f32 z) {
+    ecs::TerrainStamp s{};
+    s.x = x;
+    s.z = z;
+    s.radius = v.radius;
+    s.amount = v.strength;
+    s.mode = v.mode;
+    return s;
+}
+
+bool EditorPanels::terrainStampLocal(f32 x, f32 z) {
+    bool ok = false;
+    withScene([&](EditorHost& host, const ViewportPanel&) {
+        ecs::Registry& registry = host.editorScene().registry();
+        const ecs::EntityID e = activeTerrainOf(host);
+        ecs::Terrain* t = e.valid() ? registry.get<ecs::Terrain>(e) : nullptr;
+        if (t == nullptr) return;
+        auto after = std::make_unique<ecs::Terrain>(*t);
+        if (!addTerrainStamp(*after, brushStampOf(m_terrain, x, z))) return;
+        host.undoStack().execute(std::make_unique<TerrainEditCommand>(registry, e, *t, *after, "Sculpt terrain"));
+        ok = true;
+    });
+    ++m_revision;
+    m_c.refresh();
+    return ok;
+}
+
+bool EditorPanels::terrainClear() {
+    bool ok = false;
+    withScene([&](EditorHost& host, const ViewportPanel&) {
+        ecs::Registry& registry = host.editorScene().registry();
+        const ecs::EntityID e = activeTerrainOf(host);
+        ecs::Terrain* t = e.valid() ? registry.get<ecs::Terrain>(e) : nullptr;
+        if (t == nullptr || t->stamp_count == 0) return;
+        auto after = std::make_unique<ecs::Terrain>(*t);
+        after->stamp_count = 0;
+        for (ecs::TerrainStamp& s : after->stamps) s = ecs::TerrainStamp{};
+        host.undoStack().execute(std::make_unique<TerrainEditCommand>(registry, e, *t, *after, "Clear terrain sculpts"));
+        ok = true;
+    });
+    ++m_revision;
+    m_c.refresh();
+    return ok;
+}
+
+bool EditorPanels::terrainPick_(f32 x, f32 y, bool onlyStroke, ecs::EntityID& best, f32 bestLocal[3]) {
+    // caller holds the scene mutex
+    const ViewportRay ray = m_c.m_viewport.screenRay(x, y);
+    const f32 origin[3] = {ray.origin.x, ray.origin.y, ray.origin.z}, dir[3] = {ray.direction.x, ray.direction.y, ray.direction.z};
+    ecs::Registry& registry = m_c.m_host.editorScene().registry();
+    ecs::TransformSystem::update(registry);
+    f32 bestT = 1e30f;
+    best = {};
+    registry.each<ecs::Transform, ecs::Terrain>([&](ecs::EntityID id, ecs::Transform& tr, ecs::Terrain& terrain) {
+        if (onlyStroke && id != m_strokeEntity) return;
+        f32 inv[16];
+        const f32* mm = tr.local_to_world.data.data();
+        if (!invertAffine(mm, inv)) return;
+        const f32 o[3] = {inv[0] * origin[0] + inv[4] * origin[1] + inv[8] * origin[2] + inv[12],
+                          inv[1] * origin[0] + inv[5] * origin[1] + inv[9] * origin[2] + inv[13],
+                          inv[2] * origin[0] + inv[6] * origin[1] + inv[10] * origin[2] + inv[14]};
+        const f32 d[3] = {inv[0] * dir[0] + inv[4] * dir[1] + inv[8] * dir[2], inv[1] * dir[0] + inv[5] * dir[1] + inv[9] * dir[2],
+                          inv[2] * dir[0] + inv[6] * dir[1] + inv[10] * dir[2]};
+        terrain::Heightfield field;
+        buildTerrainHeightfield(terrain, field);
+        f32 hit[3];
+        if (!raycastTerrain(field, terrain, o, d, hit)) return;
+        const f32 tl = std::fabs(d[0]) > std::fabs(d[2]) ? (hit[0] - o[0]) / d[0]
+                                                         : (std::fabs(d[2]) > 1e-8f ? (hit[2] - o[2]) / d[2] : (hit[1] - o[1]) / d[1]);
+        if (tl < bestT) {
+            bestT = tl;
+            best = id;
+            std::copy(hit, hit + 3, bestLocal);
+        }
+    });
+    return best.valid();
+}
+
+bool EditorPanels::terrainPointer(const ViewportPointerEvent& e) {
+    using K = ViewportPointerEvent::Kind;
+    if (!m_terrain.sculpt || e.button != ViewportPointerEvent::Button::Left) return false;
+    if (e.kind == K::Move && !m_strokeEntity.valid()) return false; // hover
+    bool consumed = true;
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        ecs::Registry& registry = m_c.m_host.editorScene().registry();
+        f32 local[3] = {0.f, 0.f, 0.f};
+        ecs::EntityID hit;
+        if (e.kind == K::Down) {
+            if (!terrainPick_(e.x, e.y, false, hit, local)) {
+                consumed = false; // missed every terrain: a normal click (pick / gizmo)
+            } else if (ecs::Terrain* t = registry.get<ecs::Terrain>(hit)) {
+                m_strokeBefore = std::make_shared<ecs::Terrain>(*t);
+                m_strokeEntity = hit;
+                addTerrainStamp(*t, brushStampOf(m_terrain, local[0], local[2]));
+                m_strokeLast[0] = local[0];
+                m_strokeLast[1] = local[2];
+            }
+        } else if (e.kind == K::Move) {
+            ecs::Terrain* t = registry.get<ecs::Terrain>(m_strokeEntity);
+            if (t != nullptr && terrainPick_(e.x, e.y, true, hit, local)) {
+                const f32 spacing = std::max(0.25f, m_terrain.radius * 0.5f);
+                const f32 dx = local[0] - m_strokeLast[0], dz = local[2] - m_strokeLast[1];
+                const f32 len = std::sqrt(dx * dx + dz * dz);
+                if (len >= spacing) {
+                    const int n = int(len / spacing);
+                    for (int i = 1; i <= n; ++i) {
+                        const f32 k = f32(i) * spacing / len;
+                        if (!addTerrainStamp(*t, brushStampOf(m_terrain, m_strokeLast[0] + dx * k, m_strokeLast[1] + dz * k))) break;
+                    }
+                    const f32 k = f32(n) * spacing / len;
+                    m_strokeLast[0] += dx * k;
+                    m_strokeLast[1] += dz * k;
+                }
+            }
+        } else if (m_strokeEntity.valid()) {
+            const ecs::EntityID id = m_strokeEntity;
+            m_strokeEntity = {};
+            if (ecs::Terrain* t = registry.get<ecs::Terrain>(id); t != nullptr && m_strokeBefore) {
+                auto after = std::make_unique<ecs::Terrain>(*t);
+                m_c.m_host.undoStack().execute(std::make_unique<TerrainEditCommand>(
+                    registry, id, *static_cast<const ecs::Terrain*>(m_strokeBefore.get()), *after, "Sculpt terrain stroke"));
+            }
+            m_strokeBefore.reset();
+        } else {
+            consumed = false;
+        }
+    }
+    if (!consumed) return false;
+    ++m_revision;
+    m_c.refresh();
+    return true;
 }
 
 } // namespace fuse::editor

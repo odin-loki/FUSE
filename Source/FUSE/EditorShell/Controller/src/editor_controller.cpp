@@ -41,6 +41,7 @@ u8 entityKind(const ecs::Registry& registry, ecs::EntityID id) {
 std::string entityLabel(const ecs::Registry& registry, ecs::EntityID id) {
     const char* kind = "Entity";
     if (registry.has<ecs::SDFObject>(id)) kind = "SDF Object";
+    else if (registry.has<ecs::Terrain>(id)) kind = "Terrain";
     else if (registry.has<ecs::Mesh>(id)) kind = "Mesh";
     else if (registry.has<ecs::PointLight>(id)) kind = "Point Light";
     else if (registry.has<ecs::DirectionalLight>(id)) kind = "Directional Light";

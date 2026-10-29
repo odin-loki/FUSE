@@ -55,6 +55,7 @@ bool ShellPanelPages::build(std::string_view id, NodeHandle page) {
     else if (id == "sequencer") buildSequencer_(page);
     else if (id == "timeline") buildTimeline_(page);
     else if (id == "navigation") buildNavigation_(page);
+    else if (id == "terrain") buildTerrain_(page);
     else return false;
     return true;
 }
@@ -75,6 +76,7 @@ void ShellPanelPages::sync(f32 uiMs, bool frame) {
     if (all) { syncHub_(); syncAssets_(); syncMaterial_(); syncSculpt_(); }
     syncProfiler_();
     syncNavigation_();
+    syncTerrain_();
     syncSequencer_();
     syncTimeline_();
     if (!all) { syncMaterial_(); syncSculpt_(); syncAssets_(); syncHub_(); }
@@ -297,6 +299,53 @@ void ShellPanelPages::syncNavigation_() {
     m_navKey = std::move(key);
     m_ui.setText(m_navStatus, v.status);
     m_ui.setChecked(m_navShow, v.show);
+}
+
+// ---- Terrain (Qt TerrainPanel) --------------------------------------------------------------------------------------
+void ShellPanelPages::buildTerrain_(NodeHandle page) {
+    const TerrainView v = m_m.terrain();
+    w::label(m_ui, page, "New terrain");
+    auto settings = [this](UiContext& u) {
+        m_m.setTerrainSettings(u32(u.value(m_trCells)), u.value(m_trSize), u.value(m_trHeight), u32(u.value(m_trSeed)));
+    };
+    NodeHandle f = field_(page, "Cells");
+    m_trCells = w::spinBox(m_ui, f, 2.f, 256.f, f32(v.cells), 1.f, "terrain.cells");
+    f = field_(page, "Size (m)");
+    m_trSize = w::spinBox(m_ui, f, 1.f, 4096.f, v.size, 1.f, "terrain.size");
+    f = field_(page, "Height (m)");
+    m_trHeight = w::spinBox(m_ui, f, 0.f, 512.f, v.height, 0.5f, "terrain.height");
+    f = field_(page, "Seed");
+    m_trSeed = w::spinBox(m_ui, f, 0.f, 99999.f, f32(v.seed), 1.f, "terrain.seed");
+    for (NodeHandle n : {m_trCells, m_trSize, m_trHeight, m_trSeed})
+        m_ui.connect(n, SignalKind::ValueChanged, [settings](UiContext& u, NodeHandle, const SignalArgs&) { settings(u); });
+    const NodeHandle create = w::button(m_ui, page, "Create Terrain", "terrain.create");
+    m_ui.connect(create, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { m_m.terrainCreate(); m_shell.sync(); });
+    w::label(m_ui, page, "Sculpt brush");
+    auto brush = [this](UiContext& u) { m_m.setTerrainBrush(u32(u.value(m_trMode)), u.value(m_trRadius), u.value(m_trStrength)); };
+    f = field_(page, "Mode");
+    m_trMode = w::comboBox(m_ui, f, "Raise\nLower\nFlatten", 0, "terrain.mode");
+    f = field_(page, "Radius (m)");
+    m_trRadius = w::spinBox(m_ui, f, 0.1f, 512.f, v.radius, 0.5f, "terrain.radius");
+    f = field_(page, "Strength");
+    m_trStrength = w::spinBox(m_ui, f, -64.f, 64.f, v.strength, 0.25f, "terrain.strength");
+    for (NodeHandle n : {m_trMode, m_trRadius, m_trStrength})
+        m_ui.connect(n, SignalKind::ValueChanged, [brush](UiContext& u, NodeHandle, const SignalArgs&) { brush(u); });
+    m_trSculpt = w::checkBox(m_ui, page, "Sculpt in viewport", v.sculpt, "terrain.sculpt");
+    w::setTooltip(m_ui, m_trSculpt, "Left-drag on a terrain in the viewport stamps the brush (one undo step per stroke)");
+    m_ui.connect(m_trSculpt, SignalKind::Toggled, [this](UiContext&, NodeHandle, const SignalArgs& a) { m_m.setTerrainSculpt(a.flag); m_shell.sync(); });
+    const NodeHandle clear = w::button(m_ui, page, "Clear Sculpts", "terrain.clear");
+    m_ui.connect(clear, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { m_m.terrainClear(); m_shell.sync(); });
+    m_trStatus = w::label(m_ui, page, v.status, "terrain.status");
+    m_ui.addClass(m_trStatus, "ed-dim");
+}
+void ShellPanelPages::syncTerrain_() {
+    if (!m_trStatus) return;
+    const TerrainView v = m_m.terrain();
+    std::string key = v.status + (v.sculpt ? "1" : "0");
+    if (key == m_trKey) return;
+    m_trKey = std::move(key);
+    m_ui.setText(m_trStatus, v.status);
+    m_ui.setChecked(m_trSculpt, v.sculpt);
 }
 
 void ShellPanelPages::buildSculpt_(NodeHandle page) {
