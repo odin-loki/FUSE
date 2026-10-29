@@ -603,6 +603,20 @@ NodeHandle popupMenuAt(UiContext& ui, NodeHandle owner, std::string_view items, 
     if (ui.alive(firstItem)) ui.setFocus(firstItem, FocusReason::Keyboard);
     return scope;
 }
+NodeHandle popupPanel(UiContext& ui, NodeHandle owner, Vec2 at) {
+    registerTierB(ui);
+    const NodeHandle scope = make(ui, "popup", overlayLayer(ui));
+    if (!ui.alive(scope)) return {};
+    ui.setUserData(scope, pack(owner));
+    for (Prop p : {Prop::Left, Prop::Top, Prop::Right, Prop::Bottom}) setPx(ui, scope, p, 0.f);
+    const NodeHandle card = panel(ui, scope);
+    ui.addClass(card, "card");
+    ui.addClass(card, "clamp");
+    setPx(ui, card, Prop::Left, at.x);
+    setPx(ui, card, Prop::Top, at.y);
+    ui.setModal(scope);
+    return card;
+}
 } // namespace detail
 
 NodeHandle popupMenu(UiContext& ui, NodeHandle owner, std::string_view items, Vec2 at, std::string_view id) {

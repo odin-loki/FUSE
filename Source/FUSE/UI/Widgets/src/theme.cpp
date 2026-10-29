@@ -80,6 +80,19 @@ gridview:focus, calendar:focus, chart:focus, colorpicker:focus { border-color: v
 .md-li { color: var(--text); padding: 0px 0px 0px 14px; }
 .md-code { background: #101114; color: #b8e0a0; padding: 6px 8px; border-radius: 4px; font-size: 13px; }
 .md-quote { color: var(--text-dim); background: #23242b; padding: 4px 10px; border-radius: 3px; }
+nodegraph, curveeditor, timeline, viewport, codeedit, video {
+    background: #17171c; color: var(--text); border: 1px var(--border); border-radius: 4px; padding: 1px;
+    background-end: var(--accent);
+}
+nodegraph:focus, curveeditor:focus, timeline:focus, viewport:focus, codeedit:focus, video:focus { border-color: var(--accent); }
+codeedit { font-size: 13px; }
+datetimeedit { background: #1e1f25; color: var(--text); background-end: var(--accent); border: 1px var(--border); border-radius: 4px; padding: 3px 6px; }
+datetimeedit:focus { border-color: var(--accent); }
+.fontlist { height: 110px; }
+.fontpreview { padding: 6px 4px; }
+.filelist { height: 220px; width: 420px; }
+.grow { flex-grow: 1; }
+.buttons { justify-content: end; }
 )css";
 }
 

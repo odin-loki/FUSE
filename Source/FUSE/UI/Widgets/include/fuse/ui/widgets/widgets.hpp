@@ -254,4 +254,124 @@ void setMarkdown(UiContext& ui, NodeHandle view, std::string_view markdown);
 /// Registers the Tier C / D classes (gridview, colorpicker, calendar, chart); install() calls it.
 void registerTierCD(UiContext& ui);
 
+// ---- Tier D (2): pro widgets (plan §5) ---------------------------------------------------------------------------------
+/// Font picker: family list + size spin box + live preview line. Families default to the bundled faces when empty
+/// ('\n'-separated otherwise). Any change emits Submitted {text = family, value = size} on the picker.
+NodeHandle fontPicker(UiContext& ui, NodeHandle parent, std::string_view families = {}, f32 size = 14.f, std::string_view id = {});
+std::string fontPickerFamily(const UiContext& ui, NodeHandle picker);
+f32 fontPickerSize(const UiContext& ui, NodeHandle picker);
+
+/// File dialog (modal, built on dialog()): path field, "Up" button, directory listing (folders first, then files
+/// matching `filter`, e.g. "*.fuseui;*.png", empty = all), file-name field, OK / Cancel. Activating a folder enters
+/// it; OK (or Enter / double activation on a file) emits Submitted {text = chosen path} on the dialog and closes it;
+/// Cancel emits Submitted {text = ""}. `save` mode accepts names that do not exist yet.
+NodeHandle fileDialog(UiContext& ui, std::string_view title, std::string_view directory, std::string_view filter = {},
+                      bool save = false, std::string_view id = {});
+bool fileDialogNavigate(UiContext& ui, NodeHandle dlg, std::string_view directory);
+std::string fileDialogDirectory(const UiContext& ui, NodeHandle dlg);
+u32 fileDialogEntryCount(const UiContext& ui, NodeHandle dlg);
+std::string fileDialogEntry(const UiContext& ui, NodeHandle dlg, u32 index); ///< names; folders end in '/'
+/// Activates entry `index` (folder: enter; file: accept). Returns the accepted path or "".
+std::string fileDialogActivate(UiContext& ui, NodeHandle dlg, u32 index);
+
+/// Node graph editor: nodes with typed input / output pins, bezier links, drag nodes, drag from an output pin to an
+/// input pin to link (types must match unless either is 0 = any; an input takes one link; cycles are refused),
+/// right-drag or middle-drag pans, wheel zooms, Delete removes the selected node. value() = selected node (-1).
+/// Link changes emit ValueChanged {value = link count}.
+struct GraphPin { std::string_view name; u32 type = 0; };
+NodeHandle nodeGraph(UiContext& ui, NodeHandle parent, std::string_view id = {});
+u32 nodeGraphAddNode(UiContext& ui, NodeHandle graph, std::string_view title, Vec2 pos, std::span<const GraphPin> inputs,
+                     std::span<const GraphPin> outputs);
+bool nodeGraphConnect(UiContext& ui, NodeHandle graph, u32 fromNode, u32 outPin, u32 toNode, u32 inPin);
+bool nodeGraphDisconnect(UiContext& ui, NodeHandle graph, u32 toNode, u32 inPin);
+bool nodeGraphRemoveNode(UiContext& ui, NodeHandle graph, u32 node);
+u32 nodeGraphNodeCount(const UiContext& ui, NodeHandle graph);
+u32 nodeGraphLinkCount(const UiContext& ui, NodeHandle graph);
+Vec2 nodeGraphNodePos(const UiContext& ui, NodeHandle graph, u32 node);
+/// Screen position of a pin's dot (tests, tutorials). `output` picks the side.
+Vec2 nodeGraphPinPos(const UiContext& ui, NodeHandle graph, u32 node, u32 pin, bool output);
+/// Topological order of live nodes (empty when the graph has a cycle, which connect never allows).
+std::vector<u32> nodeGraphTopoOrder(const UiContext& ui, NodeHandle graph);
+
+/// Curve editor: one float curve of keys (t, v) with linear / smooth (Catmull-Rom style, monotone in t) / step
+/// interpolation. Click empty space adds a key, drag moves keys (t kept between neighbours), Delete removes the
+/// selected key. Changes emit ValueChanged {value = key count}.
+enum class CurveInterp : u8 { Linear, Smooth, Step };
+NodeHandle curveEditor(UiContext& ui, NodeHandle parent, f32 tMin = 0.f, f32 tMax = 1.f, f32 vMin = 0.f, f32 vMax = 1.f,
+                       std::string_view id = {});
+u32 curveAddKey(UiContext& ui, NodeHandle curve, f32 t, f32 v, CurveInterp interp = CurveInterp::Smooth);
+u32 curveKeyCount(const UiContext& ui, NodeHandle curve);
+Vec2 curveKey(const UiContext& ui, NodeHandle curve, u32 index); ///< (t, v)
+f32 curveEvaluate(const UiContext& ui, NodeHandle curve, f32 t);
+
+/// Timeline: named tracks with clips [start, end), a time ruler and a playhead. Dragging the ruler scrubs
+/// (ValueChanged {value = time}); dragging a clip moves it (snapped to `snap` seconds when > 0); wheel zooms.
+/// value() = playhead time in seconds.
+NodeHandle timeline(UiContext& ui, NodeHandle parent, f32 duration, std::string_view id = {});
+u32 timelineAddTrack(UiContext& ui, NodeHandle tl, std::string_view name);
+u32 timelineAddClip(UiContext& ui, NodeHandle tl, u32 track, f32 start, f32 end, std::string_view label, Color color);
+void timelineSetSnap(UiContext& ui, NodeHandle tl, f32 seconds);
+Vec2 timelineClip(const UiContext& ui, NodeHandle tl, u32 track, u32 clip); ///< (start, end)
+/// Clips under time `t` on every track (sequencer queries).
+u32 timelineActiveClips(const UiContext& ui, NodeHandle tl, f32 t);
+
+/// Viewport widget: shows an externally rendered image (a rasteriser / GPU image index, e.g. the engine's scene
+/// colour target - zero copy) letterboxed to its aspect ratio, and forwards input in image pixel coordinates.
+/// Each forwarded input emits SignalKind::Event {value = EventType}; read it with viewportLastInput().
+struct ViewportInput { EventType type = EventType::PointerMove; Vec2 pos; MouseButton button = MouseButton::Left; Vec2 wheel; Key key = Key::None; };
+NodeHandle viewportWidget(UiContext& ui, NodeHandle parent, u32 imageIndex, u32 imageW, u32 imageH, std::string_view id = {});
+void viewportSetImage(UiContext& ui, NodeHandle vp, u32 imageIndex, u32 imageW, u32 imageH);
+Rect viewportImageRect(const UiContext& ui, NodeHandle vp); ///< letterboxed rect in context coordinates
+const ViewportInput& viewportLastInput(const UiContext& ui, NodeHandle vp);
+u32 viewportInputCount(const UiContext& ui, NodeHandle vp);
+
+/// Code editor: multi-line text with a line-number gutter, syntax colouring (Lua / C-like keywords, strings,
+/// numbers, comments), caret + selection with Shift, Tab inserts spaces, auto-indent on Enter, undo (Ctrl+Z),
+/// copy / cut / paste, vertical scrolling. text() = the document. Edits emit TextChanged.
+enum class CodeLanguage : u8 { Plain, Lua, Cpp, Css };
+NodeHandle codeEdit(UiContext& ui, NodeHandle parent, std::string_view text = {}, CodeLanguage lang = CodeLanguage::Lua,
+                    std::string_view id = {});
+void codeEditSetText(UiContext& ui, NodeHandle ed, std::string_view text);
+std::string codeEditText(const UiContext& ui, NodeHandle ed);
+u32 codeEditLineCount(const UiContext& ui, NodeHandle ed);
+void codeEditCaret(const UiContext& ui, NodeHandle ed, u32& line, u32& column);
+void codeEditSetCaret(UiContext& ui, NodeHandle ed, u32 line, u32 column);
+/// Token class of the character at (line, column): 0 text, 1 keyword, 2 string, 3 number, 4 comment.
+u8 codeEditTokenAt(const UiContext& ui, NodeHandle ed, u32 line, u32 column);
+
+/// Date-time edit: "YYYY-MM-DD HH:MM" in fields; Left / Right pick a field, Up / Down step it (with carry and
+/// month-length clamping), digits type into it, the button (or Space) opens a calendar popup. value() = days since
+/// 1970-01-01 (exact in f32); dateTimeEditMinutes() = minutes since 1970-01-01 00:00 (civil time, no zone). Changes
+/// emit ValueChanged.
+NodeHandle dateTimeEdit(UiContext& ui, NodeHandle parent, int year, int month, int day, int hour = 0, int minute = 0,
+                        std::string_view id = {});
+void dateTimeEditValue(const UiContext& ui, NodeHandle ed, int& year, int& month, int& day, int& hour, int& minute);
+void setDateTimeEditValue(UiContext& ui, NodeHandle ed, int year, int month, int day, int hour, int minute);
+i64 dateTimeEditMinutes(const UiContext& ui, NodeHandle ed);
+u32 dateTimeEditField(const UiContext& ui, NodeHandle ed); ///< 0 year .. 4 minute
+
+/// Video widget (stub decoder): plays a VideoSource (function table) - the real Theora + fuse_audio source lands with
+/// UI10's media work; `testPatternSource()` is a built-in moving pattern. Space toggles play, the scrubber seeks.
+/// value() = current frame. Frames are pulled from `frame()` into an image the rasteriser shows.
+struct VideoSource {
+    void* user = nullptr;
+    u32 width = 0, height = 0, frames = 0;
+    f32 fps = 30.f;
+    /// Fills `rgba` (width * height premultiplied RGBA8, R in the low byte) with frame `index`.
+    void (*frame)(void* user, u32 index, u32* rgba) = nullptr;
+};
+const VideoSource& testPatternSource();
+NodeHandle videoWidget(UiContext& ui, NodeHandle parent, const VideoSource* source, std::string_view id = {});
+/// The rasteriser image index the widget paints (register it with CpuRasterizer::addImage via videoImage()).
+const Image* videoImage(const UiContext& ui, NodeHandle video);
+void videoSetImageIndex(UiContext& ui, NodeHandle video, u32 index);
+void videoPlay(UiContext& ui, NodeHandle video, bool play);
+bool videoPlaying(const UiContext& ui, NodeHandle video);
+void videoSeek(UiContext& ui, NodeHandle video, u32 frame);
+u32 videoFrame(const UiContext& ui, NodeHandle video);
+u32 videoDecodedFrames(const UiContext& ui, NodeHandle video);
+
+/// Registers the Tier D (2) classes; install() calls it.
+void registerTierD2(UiContext& ui);
+
 } // namespace fuse::ui::widgets

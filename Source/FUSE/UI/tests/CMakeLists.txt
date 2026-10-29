@@ -119,6 +119,13 @@ foreach(g dock_layout_roundtrip modelview_1m_rows tier_c tier_d)
     set_tests_properties(fuse_ui_${g} PROPERTIES LABELS "fuse_ui;gate")
 endforeach()
 
+# UI6 Tier D (2): one binary, one ctest gate per widget (fuse_ui_widget_<name>)
+fuse_ui_test(fuse_ui_tier_d2 test_tier_d2.cpp)
+foreach(g font_picker file_dialog node_graph curve_timeline viewport code_edit datetime_edit video)
+    add_test(NAME fuse_ui_widget_${g} COMMAND fuse_ui_tier_d2 --gate=${g})
+    set_tests_properties(fuse_ui_widget_${g} PROPERTIES LABELS "fuse_ui;gate")
+endforeach()
+
 # UI5 gates: fuse_app on-demand loop (virtual clock, headless presenter)
 if(TARGET fuse_app)
     foreach(g idle_zero_frames multiwindow hello_startup settings)
