@@ -2,6 +2,8 @@
 #include "editor_theme.hpp"
 #include "main_window.hpp"
 
+#include <QGuiApplication>
+#include <QScreen>
 #include <fuse/core/init.hpp>
 
 #include <QApplication>
@@ -78,7 +80,16 @@ int main(int argc, char* argv[]) {
         const QString shotPath = parser.value(screenshotOption);
         QTimer::singleShot(parser.value(screenshotDelayOption).toInt(), &window, [&window, shotPath]() {
             window.refreshPanels();
-            const bool saved = window.grab().save(shotPath, "PNG");
+            // Screen pixels first: QWidget::grab() re-renders widgets and cannot see the native Vulkan
+            // viewport (it would show the placeholder background under the overlay).
+            QPixmap shot;
+            if (QScreen* screen = window.screen(); screen != nullptr && QGuiApplication::platformName() != "offscreen") {
+                shot = screen->grabWindow(window.winId());
+            }
+            if (shot.isNull()) {
+                shot = window.grab();
+            }
+            const bool saved = shot.save(shotPath, "PNG");
             QCoreApplication::exit(saved ? 0 : 1);
         });
     }
