@@ -1445,8 +1445,9 @@ void MainWindow::redoLatest() {
 namespace fuse::editor::qt {
 
 bool MainWindow::selectForScreenshot(const QString& spec) {
-    if (spec.compare("new", Qt::CaseInsensitive) == 0) {
-        QAction* create = findChild<QAction*>("fuseActionCreateSdfSphere");
+    const bool cube = spec.compare("cube", Qt::CaseInsensitive) == 0;
+    if (cube || spec.compare("new", Qt::CaseInsensitive) == 0) {
+        QAction* create = findChild<QAction*>(cube ? "fuseActionCreateCube" : "fuseActionCreateSdfSphere");
         if (create == nullptr) {
             return false;
         }

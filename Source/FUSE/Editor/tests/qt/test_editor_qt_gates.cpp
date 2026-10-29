@@ -1026,7 +1026,7 @@ int gateContextMenu() {
     clickAt("bottom-left", QPoint(2, vp->height() - 3));
     // Let the viewport reach the window's right / bottom edges (close the right + bottom docks).
     for (const char* name : {MainWindow::kInspectorDock, MainWindow::kMaterialEditorDock, MainWindow::kSdfSculptDock,
-                             MainWindow::kNavigationDock, MainWindow::kConsoleDock, MainWindow::kProfilerDock,
+                             MainWindow::kNavigationDock, MainWindow::kTerrainDock, MainWindow::kConsoleDock, MainWindow::kProfilerDock,
                              MainWindow::kSequencerDock}) {
         window.dock(name)->close();
     }

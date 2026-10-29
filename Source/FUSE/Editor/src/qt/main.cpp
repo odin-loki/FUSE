@@ -48,7 +48,7 @@ int main(int argc, char* argv[]) {
     parser.addOption(softwareViewportOption);
     QCommandLineOption selectOption(
         QStringList() << "select",
-        "Select an entity after the project opens: 'new' (SDF sphere in front of the camera) or an entity index.",
+        "Select an entity after the project opens: 'new' (SDF sphere in front of the camera), 'cube' (Create Cube) or an entity index.",
         "spec");
     parser.addOption(selectOption);
     parser.process(app);

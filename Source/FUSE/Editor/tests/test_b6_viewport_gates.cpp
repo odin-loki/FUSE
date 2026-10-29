@@ -14,6 +14,7 @@
 #include <fuse/editor/viewport_min.hpp>
 #include <fuse/editor/viewport_panel.hpp>
 #include <fuse/editor/viewport_scene_view.hpp>
+#include <fuse/ecs/components/terrain.hpp>
 #include <fuse/ecs/component_types.hpp>
 #include <fuse/ecs/components/camera.hpp>
 #include <fuse/ecs/components/collider.hpp>
@@ -545,6 +546,7 @@ void testInspectorAllComponents() {
     addDefault<fuse::ecs::AmbientLight>(reg, everything);
     addDefault<fuse::ecs::SkyAtmosphere>(reg, everything);
     addDefault<fuse::ecs::EnvironmentFog>(reg, everything);
+    addDefault<fuse::ecs::Terrain>(reg, everything);
     addDefault<ModuleComponent>(reg, everything);
 
     fuse::editor::EditorState state;
