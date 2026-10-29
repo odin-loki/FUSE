@@ -15,17 +15,24 @@
 //              edits and New / Assign are undoable; the catalog saves / reloads beside the scene
 //   sculpt     SDF Sculpt dock: brush controls, Sculpt-in-viewport drags add primitives (one drag =
 //              one undo step) and Paint assigns the brush material
+//   overlay    gizmo overlay used over the embedded Vulkan window: native child shaped to the handles,
+//              mouse input on it drives the same handle drag; --select picks an entity
+//   timeline   Timeline dock: key the selection, scrub / play interpolates the transform, drag-retime
+//              and delete keys (each one undo step)
 //   layout     dock layout + geometry save / restore through QSettings (temp settings path)
 //   profiler   frame-time graph, min / avg / max summary, Pause and Clear
 //   project    openProject() on a sample loads its world into the hierarchy; the window grabs to a
 //              non-empty image (the --screenshot path)
 #include "editor_panels.hpp"
 #include "main_window.hpp"
+#include "timeline_widget.hpp"
 #include "viewport_placeholder_widget.hpp"
 
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/editor/material_catalog.hpp>
 #include <QComboBox>
+#include <QElapsedTimer>
+#include <QMouseEvent>
 #include <QPushButton>
 
 #include <fuse/core/init.hpp>
@@ -89,7 +96,7 @@ int gateDocks(MainWindow& window) {
     const char* names[] = {MainWindow::kHierarchyDock,      MainWindow::kInspectorDock,  MainWindow::kConsoleDock,
                            MainWindow::kProjectHubDock,     MainWindow::kAssetBrowserDock,
                            MainWindow::kMaterialEditorDock, MainWindow::kSdfSculptDock, MainWindow::kProfilerDock,
-                           MainWindow::kSequencerDock};
+                           MainWindow::kSequencerDock,      MainWindow::kTimelineDock};
     int present = 0;
     for (const char* name : names) {
         QDockWidget* d = window.dock(name);
@@ -99,7 +106,7 @@ int gateDocks(MainWindow& window) {
             std::printf("     missing dock %s\n", name);
         }
     }
-    expect(present == 9, "docks: all 9 panel docks present with content");
+    expect(present == 10, "docks: all 10 panel docks present with content");
     expect(window.viewport() != nullptr && window.centralWidget() != nullptr, "docks: viewport is the central widget");
     expect(window.hierarchy() && window.inspector() && window.console() && window.profiler() && window.projectHub(),
            "docks: panel accessors bound");
@@ -286,6 +293,103 @@ ecs::Transform selectedTransform(MainWindow& window) {
     const ecs::EntityID e = window.host().editorState().primarySelection;
     const ecs::Transform* t = window.host().editorScene().registry().get<ecs::Transform>(e);
     return t != nullptr ? *t : ecs::Transform{};
+}
+
+int gateOverlay(MainWindow& window) {
+    auto* vp = window.viewport();
+    findAction(window, "fuseActionToolTranslate")->trigger();
+    expect(window.selectForScreenshot("new"), "overlay: --select new spawns + selects a sphere in front");
+    vp->setOverlayForced(true);
+    QCoreApplication::processEvents();
+    expect(vp->overlayActive() && vp->overlayWidget() != nullptr, "overlay: native overlay shown for the gizmo");
+    QWidget* ov = vp->overlayWidget();
+    expect(ov != nullptr && ov->testAttribute(Qt::WA_NativeWindow), "overlay: overlay is a native child window");
+    const auto& h = vp->gizmo().handles()[0];
+    const qreal inv = 1.0 / vp->devicePixelRatioF();
+    const QPoint mid(static_cast<int>((h.x0 + h.x1) * 0.5 * inv), static_cast<int>((h.y0 + h.y1) * 0.5 * inv));
+    expect(ov != nullptr && !ov->mask().isEmpty() && ov->mask().contains(mid), "overlay: mask covers the X handle");
+    expect(ov != nullptr && !ov->mask().contains(QPoint(2, 2)), "overlay: mask leaves the rest of the viewport clear");
+    const QImage& img = vp->overlayImage();
+    expect(!img.isNull() && qAlpha(img.pixel(static_cast<int>(mid.x() * vp->devicePixelRatioF()),
+                                              static_cast<int>(mid.y() * vp->devicePixelRatioF()))) > 0,
+           "overlay: handle pixels drawn");
+
+    // A drag delivered to the overlay window moves the entity (same path as the viewport).
+    const ecs::Transform t0 = selectedTransform(window);
+    const std::size_t undo0 = window.host().undoStack().undoCount();
+    const QPointF dir = QPointF(h.x1 - h.x0, h.y1 - h.y0) / std::hypot(h.x1 - h.x0, h.y1 - h.y0);
+    auto send = [&](QEvent::Type type, const QPointF& p, Qt::MouseButton b, Qt::MouseButtons bs) {
+        QMouseEvent ev(type, p, ov->mapToGlobal(p), b, bs, Qt::NoModifier);
+        QCoreApplication::sendEvent(ov, &ev);
+    };
+    send(QEvent::MouseButtonPress, mid, Qt::LeftButton, Qt::LeftButton);
+    send(QEvent::MouseMove, QPointF(mid) + dir * 20.0, Qt::NoButton, Qt::LeftButton);
+    send(QEvent::MouseMove, QPointF(mid) + dir * 40.0, Qt::NoButton, Qt::LeftButton);
+    send(QEvent::MouseButtonRelease, QPointF(mid) + dir * 40.0, Qt::LeftButton, Qt::NoButton);
+    const ecs::Transform t1 = selectedTransform(window);
+    expect(t1.position.x > t0.position.x + 1e-3f, "overlay: drag on the overlay moves the entity along X");
+    expect(window.host().undoStack().undoCount() == undo0 + 1, "overlay: overlay drag is one undo step");
+    vp->setTransformTool(fuse::editor::TransformTool::Select);
+    vp->syncOverlay(true);
+    expect(!vp->overlayActive(), "overlay: hidden when nothing is drawn (Select tool)");
+    vp->setOverlayForced(false);
+    findAction(window, "fuseActionToolTranslate")->trigger();
+    return 0;
+}
+
+int gateTimeline(MainWindow& window) {
+    fuse::editor::qt::TimelineWidget* tw = window.timeline();
+    expect(tw != nullptr && window.dock(MainWindow::kTimelineDock) != nullptr, "timeline: Timeline dock present");
+    if (tw == nullptr) {
+        return 0;
+    }
+    findAction(window, "fuseActionCreateSdfSphere")->trigger();
+    tick(window);
+    tw->scrubTo(0);
+    expect(tw->keySelection(), "timeline: key the selection at 0 ms");
+    const std::size_t undo0 = window.host().undoStack().undoCount();
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        auto& reg = window.host().editorScene().registry();
+        ecs::Transform* t = reg.get<ecs::Transform>(window.host().editorState().primarySelection);
+        t->position.x = 0.f;
+    }
+    tw->scrubTo(2000);
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        auto& reg = window.host().editorScene().registry();
+        ecs::Transform* t = reg.get<ecs::Transform>(window.host().editorState().primarySelection);
+        t->position.x = 8.f;
+    }
+    expect(tw->keySelection(), "timeline: key again at 2000 ms");
+    expect(window.host().undoStack().undoCount() == undo0 + 1, "timeline: a key is one undo step");
+    expect(tw->model().keyCount() == 18u, "timeline: 9 channel lanes x 2 keys");
+    tw->scrubTo(500);
+    expect(std::fabs(selectedTransform(window).position.x - 2.f) < 1e-3f, "timeline: scrub interpolates position.x");
+    const int lane = tw->model().findTrack(window.host().editorState().primarySelection.index, "position.x");
+    expect(tw->selectKey(lane, 1), "timeline: select the 2000 ms key");
+    expect(tw->moveSelectedKey(4000) && tw->model().tracks()[static_cast<size_t>(lane)].keyframes()[1].time_ms == 4000,
+           "timeline: retime the key to 4000 ms");
+    tw->scrubTo(1000);
+    expect(std::fabs(selectedTransform(window).position.x - 2.f) < 1e-3f, "timeline: retimed curve (x=2 at 1 s)");
+    window.undoLatest();
+    expect(tw->model().tracks()[static_cast<size_t>(lane)].keyframes()[1].time_ms == 2000, "timeline: undo the retime");
+    tw->selectKey(lane, 0);
+    expect(tw->deleteSelectedKey() && tw->model().keyCount() == 17u, "timeline: delete a key");
+    window.undoLatest();
+    expect(tw->model().keyCount() == 18u, "timeline: undo the delete");
+    tw->scrubTo(0);
+    tw->setPlaying(true);
+    QElapsedTimer clock;
+    clock.start();
+    while (tw->playing() && clock.elapsed() < 20000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    }
+    expect(!tw->playing() && tw->model().playheadMs() == tw->model().durationMs(), "timeline: Play runs to the end");
+    expect(std::fabs(selectedTransform(window).position.x - 8.f) < 1e-3f, "timeline: end of play lands on the last key");
+    const QPixmap shot = tw->grab();
+    expect(!shot.isNull(), "timeline: dock grabs");
+    return 0;
 }
 
 int gateGizmo(MainWindow& window) {
@@ -592,6 +696,12 @@ int main(int argc, char** argv) {
         }
         if (gate == "sculpt" || gate == "all") {
             gateSculpt(window);
+        }
+        if (gate == "overlay" || gate == "all") {
+            gateOverlay(window);
+        }
+        if (gate == "timeline" || gate == "all") {
+            gateTimeline(window);
         }
         if (gate == "layout" || gate == "all") {
             gateLayout(window);
