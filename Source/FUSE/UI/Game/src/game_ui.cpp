@@ -1,5 +1,6 @@
 // FUSE UI7 game UI (plan §4.15). See game_ui.hpp.
 #include "fuse/ui/game/game_ui.hpp"
+#include "fuse/ui/game/game_extras.hpp"
 
 #include "fuse/ui/widgets/widgets.hpp"
 
@@ -286,6 +287,7 @@ void install(UiContext& ui) {
     r.registerWidget<Prompt>();
     r.registerWidget<FloatText>();
     (void)ui.addStyleSheet(kHudCss);
+    installExtras(ui);
 }
 
 NodeHandle hudBar(UiContext& ui, NodeHandle parent, f32 v, std::string_view id) {
