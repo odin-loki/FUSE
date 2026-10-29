@@ -9,6 +9,8 @@
 #include <fuse/ecs/transform_dirty.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
@@ -698,7 +700,35 @@ void testTransformDirty() {
 
 } // namespace
 
+void testInverseAffineTrueInverse() {
+    using namespace fuse::ecs;
+    // Non-uniform scale + rotation about a skewed axis + translation.
+    const f32 half = 0.6f;
+    const f32 sn = std::sin(half), cs = std::cos(half);
+    const f32 ax = 0.267f, ay = 0.534f, az = 0.802f; // ~unit
+    const quat q{ax * sn, ay * sn, az * sn, cs};
+    const mat4 m = from_trs(vec3{3.f, -2.f, 7.5f}, q, vec3{2.f, 0.5f, 3.f});
+    const mat4 inv = inverse_affine(m);
+    const mat4 p = multiply(m, inv);
+    const mat4 p2 = multiply(inv, m);
+    f32 worst = 0.f;
+    for (int i = 0; i < 16; ++i) {
+        const f32 id = (i % 5 == 0) ? 1.f : 0.f;
+        worst = std::max(worst, std::max(std::fabs(p.data[i] - id), std::fabs(p2.data[i] - id)));
+    }
+    expectTrue(worst < 1e-4f, "inverse_affine: M * inv(M) == I with rotation + non-uniform scale + translation");
+    const vec3 pt{1.f, 2.f, 3.f};
+    const vec3 back = transform_point(inv, transform_point(m, pt));
+    expectTrue(std::fabs(back.x - 1.f) < 1e-4f && std::fabs(back.y - 2.f) < 1e-4f && std::fabs(back.z - 3.f) < 1e-4f,
+               "inverse_affine: world_to_local undoes local_to_world for a point");
+    const mat4 sing = inverse_affine(from_trs(vec3{1.f, 0.f, 0.f}, quat{}, vec3{0.f, 1.f, 1.f}));
+    bool finite = true;
+    for (f32 v : sing.data) finite = finite && std::isfinite(v);
+    expectTrue(finite, "inverse_affine: singular (zero-scale) input stays finite");
+}
+
 int main() {
+    testInverseAffineTrueInverse();
     testDirtyCountOk();
     if (g_failures != 0) {
         std::fprintf(stderr, "fuse_ecs_transform_system_tests: %d failure(s)\n", g_failures);

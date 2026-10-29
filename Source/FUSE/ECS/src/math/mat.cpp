@@ -57,35 +57,36 @@ mat4 multiply(const mat4& a, const mat4& b) {
 }
 
 mat4 inverse_affine(const mat4& matrix) {
-    const f32 r00 = matrix.data[0];
-    const f32 r01 = matrix.data[4];
-    const f32 r02 = matrix.data[8];
-    const f32 tx = matrix.data[12];
-    const f32 r10 = matrix.data[1];
-    const f32 r11 = matrix.data[5];
-    const f32 r12 = matrix.data[9];
-    const f32 ty = matrix.data[13];
-    const f32 r20 = matrix.data[2];
-    const f32 r21 = matrix.data[6];
-    const f32 r22 = matrix.data[10];
-    const f32 tz = matrix.data[14];
-
+    // Column-major: element (row r, col c) is data[c * 4 + r]; translation in data[12..14].
+    // General affine inverse: inv(L) by cofactors (handles rotation, scale and shear), then -inv(L) * t.
+    const f32* m = matrix.data.data();
+    const f32 a = m[0], b = m[4], c = m[8];
+    const f32 d = m[1], e = m[5], f = m[9];
+    const f32 g = m[2], h = m[6], i = m[10];
+    const f32 A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g;
+    const f32 det = a * A + b * B + c * C;
     mat4 result{};
-    result.data[0] = r00;
-    result.data[1] = r10;
-    result.data[2] = r20;
-
-    result.data[4] = r01;
-    result.data[5] = r11;
-    result.data[6] = r21;
-
-    result.data[8] = r02;
-    result.data[9] = r12;
-    result.data[10] = r22;
-
-    result.data[12] = -(r00 * tx + r01 * ty + r02 * tz);
-    result.data[13] = -(r10 * tx + r11 * ty + r12 * tz);
-    result.data[14] = -(r20 * tx + r21 * ty + r22 * tz);
+    if (det == 0.f || !(det == det)) {
+        // Singular (e.g. zero scale): fall back to identity linear part so callers never see NaN.
+        result.data[0] = result.data[5] = result.data[10] = 1.f;
+        result.data[12] = -m[12];
+        result.data[13] = -m[13];
+        result.data[14] = -m[14];
+        result.data[15] = 1.f;
+        return result;
+    }
+    const f32 inv = 1.f / det;
+    // inv(L) = adj(L) / det; adj = transpose of cofactor matrix.
+    const f32 i00 = A * inv, i01 = -(b * i - c * h) * inv, i02 = (b * f - c * e) * inv;
+    const f32 i10 = B * inv, i11 = (a * i - c * g) * inv, i12 = -(a * f - c * d) * inv;
+    const f32 i20 = C * inv, i21 = -(a * h - b * g) * inv, i22 = (a * e - b * d) * inv;
+    result.data[0] = i00; result.data[4] = i01; result.data[8] = i02;
+    result.data[1] = i10; result.data[5] = i11; result.data[9] = i12;
+    result.data[2] = i20; result.data[6] = i21; result.data[10] = i22;
+    const f32 tx = m[12], ty = m[13], tz = m[14];
+    result.data[12] = -(i00 * tx + i01 * ty + i02 * tz);
+    result.data[13] = -(i10 * tx + i11 * ty + i12 * tz);
+    result.data[14] = -(i20 * tx + i21 * ty + i22 * tz);
     result.data[15] = 1.f;
     return result;
 }
