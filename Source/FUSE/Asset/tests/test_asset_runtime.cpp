@@ -938,7 +938,12 @@ int suite_cook(const char* cookTool) {
 }
 
 int suite_lod() {
-    const MeshLod lods[] = {{0.01f}, {0.1f}, {1.f}};
+    const auto lod = [](f32 error) {
+        MeshLod l;
+        l.error = error;
+        return l;
+    };
+    const MeshLod lods[] = {lod(0.01f), lod(0.1f), lod(1.f)};
     constexpr f32 kFov = 1.5707963f;
     expect(select_mesh_lod(lods, 10.f, 1080.f, kFov, 1.f) == 0u, "near camera keeps lod 0");
     expect(select_mesh_lod(lods, 1000.f, 1080.f, kFov, 1.f) == 2u, "far camera uses the coarsest lod");

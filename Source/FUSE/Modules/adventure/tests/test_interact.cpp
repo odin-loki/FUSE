@@ -92,8 +92,8 @@ void testPuzzleGateUnlock() {
 }
 
 void testPromptScore() {
-    constexpr float kTolerance = 1e-4f;
-    const auto near = [kTolerance](float actual, float expected) {
+    static constexpr float kTolerance = 1e-4f;
+    const auto near = [](float actual, float expected) {
         return std::fabs(actual - expected) <= kTolerance;
     };
 
