@@ -1,7 +1,7 @@
 # FUSE UI — GUI and Application Framework Plan
 
 Author: Odin Loch
-Status: Draft for decision (nothing in this plan is in tree yet)
+Status: In progress. The first UI2 slice (`fuse_ui_core`, headless) is in tree; see [`../ui/README.md`](../ui/README.md). D1–D4, D6 and D7 are still open.
 Scope: A GUI framework inside FUSE that covers what Qt gives application developers, and more, while staying a game-engine subsystem: same loop, same job spine, same renderer, same ownership rules. One toolkit for game HUDs and menus, world-space UI, tools, the editor, and standalone applications on Windows, Linux, macOS, Android and iOS.
 
 Related: [`FUSE_MASTER_PLAN.md`](FUSE_MASTER_PLAN.md) §A3 (Qt editor policy, "runtime_ui/" slot), [`FUSE_RENDERER_PLAN.md`](FUSE_RENDERER_PLAN.md) §5.3 (UI frame budget), [`../unification/U4-HYBRID-FRAME.md`](../unification/U4-HYBRID-FRAME.md) (hybrid UI layer), [`../editor.md`](../editor.md).

@@ -66,6 +66,12 @@ endif()
 
 add_subdirectory(Hybrid)
 
+# FUSE UI (docs/plans/FUSE_UI_PLAN.md): GUI / application framework. UI2 slice = fuse_ui_core (headless).
+option(FUSE_BUILD_UI "Build FUSE UI (fuse_ui_core: retained + immediate UI core, CPU rasteriser)" ON)
+if(FUSE_BUILD_UI)
+    add_subdirectory(UI)
+endif()
+
 if(FUSE_BUILD_PROJECT)
     add_subdirectory(${CMAKE_SOURCE_DIR}/Tools/FUSE/Cook ${CMAKE_BINARY_DIR}/Tools/FUSE/Cook)
     add_subdirectory(Project)
