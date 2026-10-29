@@ -9,6 +9,7 @@
 #endif
 
 #include <algorithm>
+#include <unordered_set>
 #include <utility>
 
 namespace fuse::renderer::scene_renderer {
@@ -23,6 +24,32 @@ void setError(std::string* error, const char* what) {
 }
 
 /// Union of the meshlet AABBs (decoded positions).
+/// Unique triangle edges (mesh vertex index pairs), decoded to object-space segments.
+void meshEdges(const geometry::MeshletMesh& mesh, std::vector<f32>& out) {
+    out.clear();
+    std::unordered_set<u64> seen;
+    const auto pos = [&](u32 v, u32 a) {
+        return mesh.quant.offset[a] + static_cast<f32>(mesh.positions[static_cast<usize>(v) * 4u + a]) * mesh.quant.step[a];
+    };
+    for (const geometry::MeshletRecord& m : mesh.meshlets) {
+        for (u32 t = 0; t < m.triangle_count; ++t) {
+            const u32 packed = mesh.meshlet_triangles[m.triangle_offset + t];
+            const u32 local[3] = {packed & 0xFFu, (packed >> 8) & 0xFFu, (packed >> 16) & 0xFFu};
+            u32 g[3];
+            for (u32 k = 0; k < 3u; ++k) g[k] = mesh.meshlet_vertices[m.vertex_offset + local[k]];
+            for (u32 k = 0; k < 3u; ++k) {
+                const u32 a = std::min(g[k], g[(k + 1) % 3u]), b = std::max(g[k], g[(k + 1) % 3u]);
+                if (a == b || !seen.insert((static_cast<u64>(a) << 32) | b).second) continue;
+                if (seen.size() > MeshRegistry::kMaxWireframeEdges) {
+                    out.clear();
+                    return;
+                }
+                out.insert(out.end(), {pos(a, 0), pos(a, 1), pos(a, 2), pos(b, 0), pos(b, 1), pos(b, 2)});
+            }
+        }
+    }
+}
+
 bool meshBounds(const geometry::MeshletMesh& mesh, f32 lo[3], f32 hi[3]) {
     bool any = false;
     for (const geometry::MeshletRecord& m : mesh.meshlets) {
@@ -46,6 +73,14 @@ bool MeshRegistry::registerMesh(u32 engineId, geometry::MeshletMesh mesh) {
     }
     Bounds& b = m_bounds[engineId];
     b.valid = meshBounds(mesh, b.lo, b.hi);
+    if (m_wireframes.size() <= engineId) {
+        m_wireframes.resize(static_cast<usize>(engineId) + 1u);
+    }
+    if (m_retainWireframe) {
+        meshEdges(mesh, m_wireframes[engineId]);
+    } else {
+        m_wireframes[engineId].clear();
+    }
     m_pending.push_back(Pending{engineId, std::move(mesh)});
     ++m_stats.registered;
     return true;
@@ -168,6 +203,7 @@ void MeshRegistry::clear() {
     m_pending.clear();
     m_remap.clear();
     m_bounds.clear();
+    m_wireframes.clear();
     m_assets.clear();
     m_nextAssetId = kFirstAssetEngineId;
     ++m_remapVersion;

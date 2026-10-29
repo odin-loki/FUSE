@@ -72,6 +72,14 @@ public:
     bool localBounds(u32 engineId, f32 outMin[3], f32 outMax[3]) const;
 
     const MeshRegistryStats& stats() const { return m_stats; }
+    /// Editor wireframe: unique triangle edges of each registered mesh, object space, 6 floats per edge
+    /// (decoded exactly as the GPU rasterises). Kept on registration while enabled (default on; at most
+    /// kMaxWireframeEdges per mesh, larger meshes keep none). Null when not kept.
+    static constexpr usize kMaxWireframeEdges = 1u << 20;
+    void setRetainWireframe(bool on) { m_retainWireframe = on; }
+    const std::vector<f32>* wireframeEdges(u32 engineId) const {
+        return engineId < m_wireframes.size() && !m_wireframes[engineId].empty() ? &m_wireframes[engineId] : nullptr;
+    }
     void clear();
 
 private:
@@ -88,6 +96,8 @@ private:
     std::vector<Pending> m_pending;
     std::vector<u32> m_remap;
     std::vector<Bounds> m_bounds;
+    std::vector<std::vector<f32>> m_wireframes;
+    bool m_retainWireframe = true;
     std::unordered_map<u64, u32> m_assets;
     u32 m_nextAssetId = kFirstAssetEngineId;
     u64 m_remapVersion = 0;

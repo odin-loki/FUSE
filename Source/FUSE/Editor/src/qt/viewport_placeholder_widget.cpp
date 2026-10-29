@@ -7,6 +7,7 @@
 #include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/collider.hpp>
 #include <fuse/ecs/components/mesh.hpp>
+#include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/systems/transform_system.hpp>
 #include <fuse/editor/command_queue.hpp>
 
@@ -1102,6 +1103,45 @@ void ViewportPlaceholderWidget::collectColliderLines_() {
             segs.push_back({ecs::vec3{m_navSegs[k], m_navSegs[k + 1], m_navSegs[k + 2], 1.f},
                             ecs::vec3{m_navSegs[k + 3], m_navSegs[k + 4], m_navSegs[k + 5], 1.f}, u8{2}});
         }
+        if (!editorViewModeWire(editorViewMode())) {
+            m_wireCache.clear();
+        } else {
+            // Real triangle edges, cached per engine mesh id (meshes are immutable once registered).
+            usize budget = kMaxWireSegments;
+            const auto wire = [&](ecs::EntityID id, const ecs::Transform& t, u32 engineId, const f32 scale[3]) {
+                if (budget == 0) return;
+                auto it = m_wireCache.find(engineId);
+                if (it == m_wireCache.end() || it->second.empty()) {
+                    std::vector<f32> edges;
+                    m_host.runtimeViewport().copyMeshWireframe(engineId, edges);
+                    if (edges.empty()) return;
+                    it = m_wireCache.insert_or_assign(engineId, std::move(edges)).first;
+                }
+                const bool selected = std::find(sel.begin(), sel.end(), id) != sel.end();
+                const auto& m = t.local_to_world.data;
+                const auto xf = [&](const f32* q) {
+                    const f32 p[3] = {q[0] * scale[0], q[1] * scale[1], q[2] * scale[2]};
+                    return ecs::vec3{m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13],
+                                     m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14], 1.f};
+                };
+                const std::vector<f32>& e = it->second;
+                for (usize k = 0; k + 6u <= e.size() && budget > 0; k += 6u, --budget) {
+                    segs.push_back({xf(&e[k]), xf(&e[k + 3]), u8(selected ? 4 : 3)});
+                }
+            };
+            static constexpr f32 kOne[3] = {1.f, 1.f, 1.f};
+            registry.each<ecs::Transform, ecs::Mesh>([&](ecs::EntityID id, ecs::Transform& t, ecs::Mesh& mesh) {
+                if (mesh.visible && mesh.vertex_buffer.isValid()) wire(id, t, mesh.vertex_buffer.index(), kOne);
+            });
+            // SDF objects render through proxy meshes (GpuSceneEcsExtractorDesc defaults: 0 = cube, 1 = sphere).
+            registry.each<ecs::Transform, ecs::SDFObject>([&](ecs::EntityID id, ecs::Transform& t, ecs::SDFObject& sdf) {
+                if (!sdf.visible || sdf.op == ecs::SDFCsgOp::Subtract) return;
+                const bool box = sdf.type == ecs::SDFPrimitive::Box;
+                const f32 r = sdf.params.x > 0.f ? sdf.params.x : 1.f;
+                const f32 sc[3] = {box ? sdf.params.x : r, box ? sdf.params.y : r, box ? sdf.params.z : r};
+                wire(id, t, box ? 0u : 1u, sc);
+            });
+        }
         if (m_showMeshBounds) {
             registry.each<ecs::Transform, ecs::Mesh>([&](ecs::EntityID id, ecs::Transform& t, ecs::Mesh& mesh) {
                 const bool selected = std::find(sel.begin(), sel.end(), id) != sel.end();
@@ -1142,6 +1182,11 @@ void ViewportPlaceholderWidget::paintColliders_(QPainter& painter) {
     painter.setRenderHint(QPainter::Antialiasing, true);
     for (usize i = 0; i < m_colliderLines.size(); ++i) {
         const u8 kind = m_colliderSelected[i];
+        if (kind >= 3) {
+            painter.setPen(QPen(kind == 4 ? QColor(255, 200, 80, 220) : QColor(230, 230, 240, 120), 1.0));
+            painter.drawLine(m_colliderLines[i]);
+            continue;
+        }
         painter.setPen(QPen(kind == 2 ? QColor(70, 200, 255, 170) : kind == 1 ? QColor(120, 255, 140, 230) : QColor(90, 200, 110, 150), 1.4));
         painter.drawLine(m_colliderLines[i]);
     }

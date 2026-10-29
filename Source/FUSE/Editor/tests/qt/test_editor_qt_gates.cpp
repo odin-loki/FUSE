@@ -2069,6 +2069,17 @@ int gateEditTools() {
     action("fuseActionViewUnlit")->trigger();
     expect(fuse::editor::editorViewMode() == fuse::editor::EditorViewMode::Unlit && action("fuseActionViewUnlit")->isChecked(),
            "View > Unlit switches the view mode");
+    expect(action("fuseActionViewWireframe") != nullptr && action("fuseActionViewLitWireframe") != nullptr,
+           "Wireframe view modes exist");
+    action("fuseActionViewWireframe")->trigger();
+    QCoreApplication::processEvents();
+    expect(fuse::editor::editorViewMode() == fuse::editor::EditorViewMode::Wireframe &&
+               fuse::editor::editorViewModeWire(fuse::editor::editorViewMode()),
+           "View > Wireframe switches the view mode");
+    // Offscreen there is no GPU scene, so no edges are expected; the GPU path is covered by fuse_scene_renderer_cpu.
+    std::printf("wireframe overlay segments: %zu\n", static_cast<size_t>(window.viewport()->wireframeSegmentCount()));
+    action("fuseActionViewLitWireframe")->trigger();
+    expect(fuse::editor::editorViewMode() == fuse::editor::EditorViewMode::LitWireframe, "View > Lit Wireframe");
     action("fuseActionViewLit")->trigger();
     expect(fuse::editor::editorViewMode() == fuse::editor::EditorViewMode::Lit, "View > Lit restores lighting");
 

@@ -185,7 +185,13 @@ std::atomic<int> g_previewSun{-1}; ///< -1: not set yet (FUSE_EDITOR_NO_PREVIEW_
 void setEditorPreviewSun(bool on) { g_previewSun.store(on ? 1 : 0); }
 
 namespace {
-std::atomic<int> g_viewMode{0};
+/// FUSE_EDITOR_VIEW_MODE=0..3 picks the startup view mode (screenshots / CI).
+int initialViewMode() {
+    const char* v = std::getenv("FUSE_EDITOR_VIEW_MODE");
+    const int m = (v != nullptr) ? std::atoi(v) : 0;
+    return (m >= 0 && m <= 3) ? m : 0;
+}
+std::atomic<int> g_viewMode{initialViewMode()};
 } // namespace
 
 void setEditorViewMode(EditorViewMode mode) { g_viewMode.store(static_cast<int>(mode)); }
@@ -207,7 +213,7 @@ void ensureMaterialTextureLoader(RuntimeViewportHeadlessGpuStub* gpu, const Runt
     fuse::hybrid::HybridSceneRenderer* scene = gpu->hybrid->composer().gpuScene();
     if (scene != nullptr) {
         scene->setFallbackSun(editorPreviewSun());
-        scene->setUnlit(editorViewMode() == EditorViewMode::Unlit);
+        scene->setUnlit(editorViewMode() == EditorViewMode::Unlit || editorViewMode() == EditorViewMode::Wireframe);
     }
     if (scene == nullptr || scene == gpu->textureLoaderOn) {
         return;
@@ -1444,4 +1450,23 @@ void RuntimeViewportHook::adoptWindowPresentPrewarm(std::shared_ptr<void> tokenP
 #endif
 }
 
+} // namespace fuse::editor
+
+namespace fuse::editor {
+bool RuntimeViewportHook::copyMeshWireframe(u32 engineId, std::vector<f32>& out) const {
+    out.clear();
+#if defined(FUSE_VULKAN_BACKEND)
+    const RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub);
+    if (gpu == nullptr || gpu->hybrid == nullptr) return false;
+    fuse::hybrid::HybridSceneRenderer* scene = gpu->hybrid->composer().gpuScene();
+    if (scene == nullptr) return false;
+    const std::vector<f32>* edges = scene->sceneRenderer().meshes().wireframeEdges(engineId);
+    if (edges == nullptr) return false;
+    out = *edges;
+    return true;
+#else
+    (void)engineId;
+    return false;
+#endif
+}
 } // namespace fuse::editor

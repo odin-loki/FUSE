@@ -27,7 +27,12 @@ namespace fuse::editor {
 void setEditorPreviewSun(bool on);
 [[nodiscard]] bool editorPreviewSun();
 /// Viewport view mode: Lit (default) or Unlit (surfaces show their base colour, no lighting).
-enum class EditorViewMode : int { Lit = 0, Unlit = 1 };
+/// Wireframe draws every mesh's triangle edges (MeshRegistry::wireframeEdges) over unlit surfaces; LitWireframe over
+/// the lit image.
+enum class EditorViewMode : int { Lit = 0, Unlit = 1, Wireframe = 2, LitWireframe = 3 };
+[[nodiscard]] inline bool editorViewModeWire(EditorViewMode m) {
+    return m == EditorViewMode::Wireframe || m == EditorViewMode::LitWireframe;
+}
 void setEditorViewMode(EditorViewMode mode);
 [[nodiscard]] EditorViewMode editorViewMode();
 
@@ -71,6 +76,9 @@ class RuntimeViewportHook {
 public:
     RuntimeViewportHook() = default;
     ~RuntimeViewportHook();
+    /// Object-space triangle edges of mesh `engineId` (6 floats per edge) from the GPU scene's MeshRegistry;
+    /// false when the GPU scene is not up or the mesh kept none. Call under the scene mutex.
+    bool copyMeshWireframe(u32 engineId, std::vector<f32>& out) const;
 
     void requestResize(u32 width, u32 height);
     void setProjectLabel(std::string label);

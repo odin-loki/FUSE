@@ -577,6 +577,8 @@ void MainWindow::buildMenus() {
     const struct { const char* name; const char* text; EditorViewMode mode; QKeySequence key; } kModes[] = {
         {"fuseActionViewLit", "&Lit", EditorViewMode::Lit, QKeySequence(Qt::ALT | Qt::Key_1)},
         {"fuseActionViewUnlit", "&Unlit", EditorViewMode::Unlit, QKeySequence(Qt::ALT | Qt::Key_2)},
+        {"fuseActionViewWireframe", "&Wireframe", EditorViewMode::Wireframe, QKeySequence(Qt::ALT | Qt::Key_3)},
+        {"fuseActionViewLitWireframe", "Lit W&ireframe", EditorViewMode::LitWireframe, QKeySequence(Qt::ALT | Qt::Key_4)},
     };
     for (const auto& m : kModes) {
         QAction* a = modes->addAction(tr(m.text));
@@ -588,7 +590,10 @@ void MainWindow::buildMenus() {
         const EditorViewMode mode = m.mode;
         connect(a, &QAction::triggered, this, [this, mode]() {
             setEditorViewMode(mode);
-            if (m_viewport != nullptr) m_viewport->update();
+            if (m_viewport != nullptr) {
+                m_viewport->syncOverlay(true);
+                m_viewport->update();
+            }
         });
     }
     QAction* frame = view->addAction(tr("&Frame Selected"));

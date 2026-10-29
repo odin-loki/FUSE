@@ -11,6 +11,8 @@
 #include <QImage>
 #include <QMenu>
 #include <QPointer>
+#include <algorithm>
+#include <unordered_map>
 #include <QTimer>
 #include <QWidget>
 
@@ -150,6 +152,10 @@ public:
     [[nodiscard]] int navOverlaySegmentCount() const { return static_cast<int>(m_navSegs.size() / 6u); }
     void setMeshBoundsVisible(bool on) { m_showMeshBounds = on; syncOverlay(true); update(); }
     [[nodiscard]] bool meshBoundsVisible() const { return m_showMeshBounds; }
+    /// Wireframe segments in the last overlay pass (tests).
+    [[nodiscard]] usize wireframeSegmentCount() const {
+        return static_cast<usize>(std::count_if(m_colliderSelected.begin(), m_colliderSelected.end(), [](u8 k) { return k >= 3; }));
+    }
     /// Projected collider segments of the last paint / overlay refresh.
     [[nodiscard]] int colliderLineCount() const { return static_cast<int>(m_colliderLines.size()); }
     /// Moves the camera (keeping yaw / pitch) so every selected entity fits the view. False when nothing is selected.
@@ -209,6 +215,9 @@ private:
     bool m_showSceneIcons = true;
     bool m_showAllColliders = false;
     bool m_showMeshBounds = false;
+    /// View Mode > Wireframe: engine mesh id -> object-space edges (copied once from the MeshRegistry).
+    std::unordered_map<u32, std::vector<f32>> m_wireCache;
+    static constexpr usize kMaxWireSegments = 400000;
     bool m_inOverlayPaint = false; ///< syncOverlay already collected the collider lines
     std::vector<QLineF> m_colliderLines;
     std::vector<u8> m_colliderSelected; ///< 0 collider / bounds, 1 selected, 2 navmesh overlay

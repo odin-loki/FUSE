@@ -1,3 +1,4 @@
+#include <cmath>
 // E02 SceneRenderer CPU gates (CPU-only GpuScene; also run in the stub tree):
 //   registry       engine ids / asset ids -> GpuScene mesh rows (procedural, .fusemeshlet bytes, .fusemeshlet file),
 //                  holes map to kInvalidMesh, flush with nothing queued is a no-op, re-registering repoints the remap,
@@ -140,6 +141,21 @@ int runRegistry() {
            "plane analytic bounds");
     expect(reg.localBounds(7, lo, hi) && lo[0] < -0.45f && hi[0] > 0.45f && hi[0] < 0.55f, "sphere bounds from meshlet boxes");
     expect(!reg.localBounds(1, lo, hi), "no bounds for a hole");
+    // Editor wireframe: unique triangle edges kept per mesh, decoded to object space.
+    {
+        const std::vector<f32>* cubeEdges = reg.wireframeEdges(0);
+        const std::vector<f32>* planeEdges = reg.wireframeEdges(3);
+        expect(cubeEdges != nullptr && cubeEdges->size() % 6u == 0u && cubeEdges->size() / 6u >= 18u &&
+                   cubeEdges->size() / 6u <= 30u,
+               "cube wireframe: 18..30 unique edges");
+        bool inside = cubeEdges != nullptr;
+        for (fuse::usize i = 0; inside && i < cubeEdges->size(); ++i) inside = std::fabs((*cubeEdges)[i]) <= 1.01f && std::fabs(std::fabs((*cubeEdges)[i]) - 1.f) < 0.01f;
+        expect(inside, "cube edge endpoints on the +-1 corners");
+        expect(planeEdges != nullptr && planeEdges->size() / 6u == 56u, "4x4 plane: 56 unique edges");
+        expect(reg.wireframeEdges(1) == nullptr, "no edges for a hole");
+        std::printf("wireframe: cube %zu edges, plane %zu edges\n", cubeEdges ? cubeEdges->size() / 6u : 0u,
+                    planeEdges ? planeEdges->size() / 6u : 0u);
+    }
 
     // Re-register id 0 (a sphere now): new row, remap repointed.
     expect(reg.registerMesh(0, sphereMesh()), "re-register id 0");
