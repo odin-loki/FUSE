@@ -34,6 +34,11 @@
 #include "editor_theme.hpp"
 #include "main_window.hpp"
 #include "project_hub_widget.hpp"
+#include "build_package_dialog.hpp"
+#include <QCoreApplication>
+#include <QJsonObject>
+#include <QJsonDocument>
+#include <QJsonArray>
 #include "project_settings_dialog.hpp"
 #include <fuse/ecs/components/light.hpp>
 
@@ -1678,6 +1683,66 @@ int gateProjectSettings() {
     return 0;
 }
 
+/// build_package: packageProject stages project files (skipping caches), cooks a model, copies a runtime
+/// and writes launchers + package.json; the dialog exposes the options.
+int gateBuildPackage() {
+    QTemporaryDir tmp;
+    const QString root = tmp.path() + QStringLiteral("/proj");
+    QDir().mkpath(root + QStringLiteral("/assets/models"));
+    QDir().mkpath(root + QStringLiteral("/.fuse"));
+    QFile::copy(QStringLiteral(FUSE_TEST_SOURCE_DIR "/Samples/unification/demo_3d_empty/project.json"),
+                root + QStringLiteral("/project.json"));
+    {
+        QFile f(root + QStringLiteral("/assets/models/tri.obj"));
+        f.open(QIODevice::WriteOnly);
+        f.write("v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nf 1//1 2//1 3//1\n");
+        QFile c(root + QStringLiteral("/.fuse/cook_cache.json"));
+        c.open(QIODevice::WriteOnly);
+        c.write("{}");
+    }
+    fuse::editor::qt::PackageOptions bad;
+    bad.projectRoot = root;
+    bad.outputDir = root + QStringLiteral("/out");
+    expect(!fuse::editor::qt::packageProject(bad).ok, "output inside the project is rejected");
+
+    fuse::editor::qt::PackageOptions o;
+    o.projectRoot = root;
+    o.outputDir = tmp.path() + QStringLiteral("/out");
+    o.runtimePath = QCoreApplication::applicationFilePath(); // any executable stands in for the player
+    const bool haveCook = !fuse::editor::qt::findCookTool().isEmpty();
+    o.cookAssets = haveCook;
+    int lines = 0;
+    const auto r = fuse::editor::qt::packageProject(o, [&](const QString&) { ++lines; });
+    expect(r.ok, "package succeeds");
+    const QDir pkg(r.packageDir);
+    expect(pkg.dirName() == QStringLiteral("demo_3d_empty"), "package folder is named after the project");
+    expect(QFileInfo::exists(pkg.filePath(QStringLiteral("project/project.json"))) &&
+               QFileInfo::exists(pkg.filePath(QStringLiteral("project/assets/models/tri.obj"))),
+           "project files are copied");
+    expect(!QFileInfo::exists(pkg.filePath(QStringLiteral("project/.fuse/cook_cache.json"))), "caches are skipped");
+    expect(QFileInfo(pkg.filePath(QStringLiteral("run.sh"))).isExecutable() && QFileInfo::exists(pkg.filePath(QStringLiteral("run.bat"))) &&
+               QFileInfo::exists(pkg.filePath(QStringLiteral("bin/") + QFileInfo(o.runtimePath).fileName())),
+           "runtime and launchers are written");
+    QFile mf(pkg.filePath(QStringLiteral("package.json")));
+    expect(mf.open(QIODevice::ReadOnly), "package.json written");
+    const QJsonObject m = QJsonDocument::fromJson(mf.readAll()).object();
+    expect(m.value(QStringLiteral("files")).toInt() == 2 && lines > 0, "manifest counts files and log lines are emitted");
+    if (haveCook) {
+        expect(r.cookedAssets == 1 && QFileInfo(pkg.filePath(QStringLiteral("project/assets/cooked/models/tri.fusemesh"))).size() > 0 &&
+                   m.value(QStringLiteral("cooked")).toArray().size() == 1,
+               "model is cooked into the package");
+    } else {
+        std::printf("SKIP package cook: fuse_cook not found\n");
+    }
+    {
+        fuse::editor::qt::BuildPackageDialog d(root);
+        const auto opts = d.options();
+        expect(opts.projectRoot == root && !opts.outputDir.isEmpty() && opts.cookAssets && opts.runtimePath.isEmpty(),
+               "dialog defaults: cook on, no runtime");
+    }
+    return 0;
+}
+
 /// edit_tools: multi-select (Select All / Ctrl-click toggle), copy / cut / paste, scene search
 /// terms, and light / camera icons in the viewport (clicking one selects it).
 int gateEditTools() {
@@ -2046,6 +2111,8 @@ int main(int argc, char** argv) {
             code = gatePresentAdopt();
         } else if (gate == "live_present") {
             code = gateLivePresent();
+        } else if (gate == "build_package") {
+            code = gateBuildPackage();
         } else if (gate == "edit_tools") {
             code = gateEditTools();
         } else if (gate == "project_settings") {

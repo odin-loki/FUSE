@@ -2,6 +2,7 @@
 #include <QCoreApplication>
 #include <QThread>
 #include <QElapsedTimer>
+#include "build_package_dialog.hpp"
 #include "project_settings_dialog.hpp"
 
 #include "editor_panels.hpp"
@@ -273,6 +274,16 @@ void MainWindow::buildMenus() {
             });
     QAction* settings = addFileAction(tr("Project Se&ttings..."), "fuseActionProjectSettings", QKeySequence());
     connect(settings, &QAction::triggered, this, [this]() { showProjectSettings(); });
+    QAction* package = addFileAction(tr("&Build / Package..."), "fuseActionBuildPackage", QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_B));
+    connect(package, &QAction::triggered, this, [this]() {
+        if (m_projectRoot.isEmpty()) {
+            QMessageBox::information(this, tr("Build / Package"), tr("Open a project first."));
+            return;
+        }
+        if (!maybeSaveChanges()) return;
+        BuildPackageDialog dlg(m_projectRoot, this);
+        dlg.exec();
+    });
     QAction* import = addFileAction(tr("&Import Asset..."), "fuseActionImportAsset", QKeySequence(Qt::CTRL | Qt::Key_I));
     connect(import, &QAction::triggered, this, [this]() {
         if (m_projectRoot.isEmpty()) {
