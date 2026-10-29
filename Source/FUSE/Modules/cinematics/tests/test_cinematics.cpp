@@ -1824,6 +1824,63 @@ void testShotDurationOk() {
 
 } // namespace
 
+void testPropertyTrackCurves() {
+    using namespace fuse::cinematics;
+    PropertyTrack track;
+    // 0 -> 10 -> 0 over 2 s.
+    track.add_keyframe({0, 0.f});
+    track.add_keyframe({1000, 10.f});
+    track.add_keyframe({2000, 0.f});
+    expectNear(track.sample_at(500), 5.f, 1e-4f, "curves: legacy keys stay linear");
+
+    for (auto& k : track.keyframes()) {
+        k.interp = KeyInterp::Constant;
+    }
+    expectNear(track.sample_at(999), 0.f, 1e-4f, "curves: constant holds the previous key");
+    expectNear(track.sample_at(1000), 10.f, 1e-4f, "curves: constant steps at the key");
+
+    for (auto& k : track.keyframes()) {
+        k.interp = KeyInterp::Cubic;
+        k.tangent_mode = TangentMode::Auto;
+    }
+    track.update_tangents();
+    float in = 0.f;
+    float out = 0.f;
+    track.effective_tangents(1, in, out);
+    expectNear(out, 0.f, 1e-5f, "curves: auto tangent is flat at a local maximum");
+    track.effective_tangents(0, in, out);
+    expectNear(out, 10.f, 1e-4f, "curves: auto end tangent = slope to the neighbour (units/s)");
+    float peak = -1e9f;
+    for (TimelineMs t = 0; t <= 2000; t += 10) {
+        peak = std::fmax(peak, track.sample_at(t));
+    }
+    expectNear(peak, 10.f, 1e-3f, "curves: auto cubic never overshoots the peak key");
+    expectNear(track.sample_at(1000), 10.f, 1e-4f, "curves: cubic passes through keys");
+    // Hermite with out slope 10/s at 0 and in slope 0 at 1 s: h10*1*10 + h01*10 at u=0.5 = 1.25 + 5.
+    expectNear(track.sample_at(500), 6.25f, 1e-3f, "curves: cubic Hermite midpoint");
+
+    // Flat (ease in/out): symmetric S curve.
+    for (auto& k : track.keyframes()) {
+        k.tangent_mode = TangentMode::Flat;
+    }
+    expectNear(track.sample_at(500), 5.f, 1e-3f, "curves: flat tangents give a symmetric ease");
+    expectTrue(track.sample_at(100) < 1.f, "curves: flat tangents ease in");
+
+    // User / broken tangents.
+    track.keyframes()[0].tangent_mode = TangentMode::User;
+    track.keyframes()[0].out_tangent = 40.f;
+    track.update_tangents();
+    expectNear(track.keyframes()[0].out_tangent, 40.f, 1e-6f, "curves: update_tangents keeps user slopes");
+    expectTrue(track.sample_at(500) > 5.f, "curves: a steep user out tangent lifts the segment");
+
+    KeyInterp ki{};
+    TangentMode tm{};
+    expectTrue(parse_key_interp(key_interp_name(KeyInterp::Cubic), ki) && ki == KeyInterp::Cubic &&
+                   parse_tangent_mode(tangent_mode_name(TangentMode::User), tm) && tm == TangentMode::User &&
+                   !parse_key_interp("bogus", ki),
+               "curves: interp / tangent names round-trip");
+}
+
 int main() {
     testCueTimeOk();
     if (g_failures != 0) {
@@ -1836,6 +1893,7 @@ int main() {
     testTimelineLoopRewinds();
     testPauseStopsAdvance();
     testTrackSpanAndInterpolation();
+    testPropertyTrackCurves();
     testReverseInterpolation();
     testNextEventIndex();
     testEventTriggerDetection();
