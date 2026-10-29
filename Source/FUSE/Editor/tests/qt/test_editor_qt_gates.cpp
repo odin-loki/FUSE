@@ -107,6 +107,7 @@
 #include <QSplitter>
 #include <QStatusBar>
 #include <QTabBar>
+#include <QMouseEvent>
 #include <QTest>
 #include <QTreeWidget>
 #include <QVBoxLayout>
@@ -1992,6 +1993,33 @@ int gateEditTools() {
         }
         (void)vp->grab();
         expect(vp->colliderLineCount() == 12, fmt("selected box collider draws 12 edges (%d)", vp->colliderLineCount()));
+        // Collider drag handles: 6 face handles; dragging +X one local unit outward grows half extent X by 1; undo restores.
+        expect(vp->colliderHandleCount() == 6, fmt("box collider shows 6 drag handles (%d)", vp->colliderHandleCount()));
+        if (vp->colliderHandleCount() == 6) {
+            const QPointF from = vp->colliderHandlePos(0);
+            const QPointF axis = vp->colliderHandleAxis(0);
+            const QPointF to = from + axis;
+            QTest::mousePress(vp, Qt::LeftButton, Qt::NoModifier, from.toPoint());
+            QMouseEvent mv(QEvent::MouseMove, to, vp->mapToGlobal(to), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(vp, &mv);
+            QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, to.toPoint());
+            f32 grown = 0.f;
+            {
+                std::lock_guard<std::mutex> lock(window.sceneMutex());
+                grown = window.host().editorScene().registry().get<ecs::Collider>(boxE)->params.x;
+            }
+            // Integer press/release rounding: allow ~one pixel of error.
+            const f32 tol = 1.5f / std::max(1.f, static_cast<f32>(std::hypot(axis.x(), axis.y())));
+            expect(std::fabs(grown - 1.5f) <= tol + 0.02f, fmt("dragging the +X handle grows the box (0.5 -> %.3f)", grown));
+            f32 undone = 0.f;
+            {
+                std::lock_guard<std::mutex> lock(window.sceneMutex());
+                window.host().undoStack().undo();
+                undone = window.host().editorScene().registry().get<ecs::Collider>(boxE)->params.x;
+            }
+            expect(std::fabs(undone - 0.5f) < 1e-4f, fmt("undo restores the collider size (%.3f)", undone));
+            (void)vp->grab();
+        }
         {
             std::lock_guard<std::mutex> lock(window.sceneMutex());
             window.host().editorState().selectedEntities.clear();

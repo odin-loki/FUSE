@@ -36,6 +36,8 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -382,6 +384,17 @@ void ViewportPlaceholderWidget::mousePressEvent(QMouseEvent* event) {
             event->accept();
             return;
         }
+        if (const int hnd = colliderHandleAt_(event->position()); hnd >= 0 && m_colliderHandleEntity.valid()) {
+            std::lock_guard<std::mutex> lock(m_sceneMutex);
+            if (const ecs::Collider* c = m_host.editorScene().registry().get<ecs::Collider>(m_colliderHandleEntity)) {
+                m_colliderBefore = *c;
+                m_colliderParamsStart = c->params;
+                m_colliderDragStart = event->position();
+                m_colliderDrag = hnd;
+                event->accept();
+                return;
+            }
+        }
         if (gizmoPress(event->position())) {
             event->accept();
             return;
@@ -418,6 +431,11 @@ void ViewportPlaceholderWidget::mouseMoveEvent(QMouseEvent* event) {
         event->accept();
         return;
     }
+    if (m_colliderDrag >= 0) {
+        colliderDragMove_(event->position());
+        event->accept();
+        return;
+    }
     if (m_gizmo.dragging()) {
         gizmoMove(event->position());
         event->accept();
@@ -442,6 +460,11 @@ void ViewportPlaceholderWidget::mouseReleaseEvent(QMouseEvent* event) {
         event->accept();
         return;
     }
+    if (event->button() == Qt::LeftButton && m_colliderDrag >= 0) {
+        colliderDragRelease_();
+        event->accept();
+        return;
+    }
     if (event->button() == Qt::LeftButton && m_gizmo.dragging()) {
         gizmoRelease();
         event->accept();
@@ -457,6 +480,75 @@ void ViewportPlaceholderWidget::mouseReleaseEvent(QMouseEvent* event) {
         return;
     }
     QWidget::mouseReleaseEvent(event);
+}
+
+namespace {
+/// One undo step for a collider handle drag (Collider has no dedicated command; this keeps the API unchanged).
+class ColliderEditCommand final : public UndoCommand {
+public:
+    ColliderEditCommand(ecs::Registry& r, ecs::EntityID e, const ecs::Collider& before, const ecs::Collider& after)
+        : m_registry(r), m_entity(e), m_before(before), m_after(after) {}
+    void execute() override { apply(m_after); }
+    void undo() override { apply(m_before); }
+    std::string description() const override { return "Resize collider"; }
+
+private:
+    void apply(const ecs::Collider& c) {
+        if (ecs::Collider* cur = m_registry.get<ecs::Collider>(m_entity)) *cur = c;
+    }
+    ecs::Registry& m_registry;
+    ecs::EntityID m_entity;
+    ecs::Collider m_before, m_after;
+};
+} // namespace
+
+int ViewportPlaceholderWidget::colliderHandleAt_(const QPointF& pos) const {
+    int best = -1;
+    qreal bestD = 8.0 * 8.0;
+    for (usize i = 0; i < m_colliderHandles.size(); ++i) {
+        const QPointF d = m_colliderHandles[i].pos - pos;
+        const qreal dd = d.x() * d.x() + d.y() * d.y();
+        if (dd <= bestD) {
+            bestD = dd;
+            best = static_cast<int>(i);
+        }
+    }
+    return best;
+}
+
+void ViewportPlaceholderWidget::colliderDragMove_(const QPointF& pos) {
+    if (m_colliderDrag < 0) return;
+    const ColliderHandle& h = m_colliderHandles[static_cast<usize>(m_colliderDrag)];
+    const qreal len2 = h.axisPx.x() * h.axisPx.x() + h.axisPx.y() * h.axisPx.y();
+    if (len2 < 1e-6) return;
+    const QPointF d = pos - m_colliderDragStart;
+    const f32 units = static_cast<f32>((d.x() * h.axisPx.x() + d.y() * h.axisPx.y()) / len2);
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        ecs::Collider* c = m_host.editorScene().registry().get<ecs::Collider>(m_colliderHandleEntity);
+        if (c == nullptr) return;
+        f32* p[3] = {&c->params.x, &c->params.y, &c->params.z};
+        const f32 start[3] = {m_colliderParamsStart.x, m_colliderParamsStart.y, m_colliderParamsStart.z};
+        *p[h.param] = std::max(0.01f, start[h.param] + h.sign * units);
+    }
+    syncOverlay(true);
+    update();
+}
+
+void ViewportPlaceholderWidget::colliderDragRelease_() {
+    if (m_colliderDrag < 0) return;
+    m_colliderDrag = -1;
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        ecs::Registry& registry = m_host.editorScene().registry();
+        const ecs::Collider* c = registry.get<ecs::Collider>(m_colliderHandleEntity);
+        if (c != nullptr && std::memcmp(&c->params, &m_colliderBefore.params, sizeof(c->params)) != 0) {
+            m_host.undoStack().execute(std::make_unique<ColliderEditCommand>(registry, m_colliderHandleEntity, m_colliderBefore, *c));
+        }
+    }
+    emit selectionChanged(); // refresh the Inspector's Collider fields
+    syncOverlay(true);
+    update();
 }
 
 bool ViewportPlaceholderWidget::frameSelection() {
@@ -1016,6 +1108,55 @@ void ViewportPlaceholderWidget::paintSceneIcons_(QPainter& painter) {
 void ViewportPlaceholderWidget::collectColliderLines_() {
     m_colliderLines.clear();
     m_colliderSelected.clear();
+    if (m_colliderDrag < 0) {
+        m_colliderHandles.clear();
+        m_colliderHandleEntity = ecs::EntityID::null();
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        ecs::Registry& registry = m_host.editorScene().registry();
+        const ecs::EntityID id = m_host.editorState().primarySelection;
+        const ecs::Transform* t = id.valid() ? registry.get<ecs::Transform>(id) : nullptr;
+        const ecs::Collider* c = id.valid() ? registry.get<ecs::Collider>(id) : nullptr;
+        if (t != nullptr && c != nullptr) {
+            const auto& m = t->local_to_world.data;
+            const qreal inv = 1.0 / devicePixelRatioF();
+            const auto add = [&](int axis, f32 dist, int param, f32 sign) {
+                f32 p[3] = {0.f, 0.f, 0.f};
+                p[axis] = dist;
+                f32 q[3] = {p[0], p[1], p[2]};
+                q[axis] += (dist >= 0.f ? 1.f : -1.f);
+                const auto w = [&](const f32* v) {
+                    return ecs::vec3{m[0] * v[0] + m[4] * v[1] + m[8] * v[2] + m[12], m[1] * v[0] + m[5] * v[1] + m[9] * v[2] + m[13],
+                                     m[2] * v[0] + m[6] * v[1] + m[10] * v[2] + m[14], 1.f};
+                };
+                f32 ax = 0.f, ay = 0.f, bx = 0.f, by = 0.f;
+                if (!m_panel.worldToScreen(w(p), ax, ay) || !m_panel.worldToScreen(w(q), bx, by)) return;
+                // axisPx: pixels per local unit moving outward; param changes by `sign` per outward unit.
+                m_colliderHandles.push_back({QPointF(ax * inv, ay * inv), QPointF((bx - ax) * inv, (by - ay) * inv), param, sign});
+            };
+            switch (c->shape) {
+            case ecs::Collider::Sphere:
+                for (int a = 0; a < 3; ++a) add(a, c->params.x, 0, 1.f);
+                break;
+            case ecs::Collider::Box: {
+                const f32 h[3] = {c->params.x, c->params.y, c->params.z};
+                for (int a = 0; a < 3; ++a) {
+                    add(a, h[a], a, 1.f);
+                    add(a, -h[a], a, 1.f);
+                }
+                break;
+            }
+            case ecs::Collider::Capsule:
+                add(0, c->params.x, 0, 1.f);
+                add(2, c->params.x, 0, 1.f);
+                add(1, c->params.y + c->params.x, 1, 1.f);
+                add(1, -(c->params.y + c->params.x), 1, 1.f);
+                break;
+            default:
+                break;
+            }
+            if (!m_colliderHandles.empty()) m_colliderHandleEntity = id;
+        }
+    }
     struct Seg {
         ecs::vec3 a, b;
         u8 selected;
@@ -1177,6 +1318,17 @@ void ViewportPlaceholderWidget::collectColliderLines_() {
 }
 
 void ViewportPlaceholderWidget::paintColliders_(QPainter& painter) {
+    if (!m_colliderHandles.empty()) {
+        painter.save();
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        for (usize i = 0; i < m_colliderHandles.size(); ++i) {
+            const bool active = static_cast<int>(i) == m_colliderDrag;
+            painter.setPen(QPen(QColor(20, 40, 20), 1.0));
+            painter.setBrush(active ? QColor(255, 230, 90) : QColor(120, 255, 140));
+            painter.drawRect(QRectF(m_colliderHandles[i].pos - QPointF(4.5, 4.5), QSizeF(9.0, 9.0)));
+        }
+        painter.restore();
+    }
     if (m_colliderLines.empty()) return;
     painter.save();
     painter.setRenderHint(QPainter::Antialiasing, true);

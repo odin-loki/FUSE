@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/ecs/components/collider.hpp>
 #include <fuse/editor/entity_context_menu.hpp>
 #include <fuse/editor/sdf_sculpt_panel.hpp>
 #include <fuse/editor/transform_gizmo.hpp>
@@ -158,6 +159,10 @@ public:
     }
     /// Projected collider segments of the last paint / overlay refresh.
     [[nodiscard]] int colliderLineCount() const { return static_cast<int>(m_colliderLines.size()); }
+    /// Collider drag handles of the primary selection (tests): count and logical position / axis.
+    [[nodiscard]] int colliderHandleCount() const { return static_cast<int>(m_colliderHandles.size()); }
+    [[nodiscard]] QPointF colliderHandlePos(int i) const { return m_colliderHandles.at(static_cast<usize>(i)).pos; }
+    [[nodiscard]] QPointF colliderHandleAxis(int i) const { return m_colliderHandles.at(static_cast<usize>(i)).axisPx; }
     /// Moves the camera (keeping yaw / pitch) so every selected entity fits the view. False when nothing is selected.
     bool frameSelection();
 private:
@@ -222,6 +227,23 @@ private:
     std::vector<QLineF> m_colliderLines;
     std::vector<u8> m_colliderSelected; ///< 0 collider / bounds, 1 selected, 2 navmesh overlay
     std::vector<f32> m_navSegs;         ///< world-space segments (6 floats each) from setNavOverlay
+    /// Collider drag handles (primary selection's Collider): face handles for Box half extents, radius
+    /// for Sphere, radius / half height for Capsule. Dragging edits Collider.params with one undo step.
+    struct ColliderHandle {
+        QPointF pos;      ///< widget (logical) pixels
+        QPointF axisPx;   ///< logical pixels per local unit along the handle axis (signed)
+        int param = 0;    ///< Collider.params component (0 x, 1 y, 2 z)
+        f32 sign = 1.f;   ///< param delta per local unit along the axis
+    };
+    std::vector<ColliderHandle> m_colliderHandles;
+    ecs::EntityID m_colliderHandleEntity = ecs::EntityID::null();
+    int m_colliderDrag = -1; ///< index into m_colliderHandles while dragging
+    QPointF m_colliderDragStart;
+    ecs::vec3 m_colliderParamsStart{};
+    ecs::Collider m_colliderBefore{};
+    int colliderHandleAt_(const QPointF& pos) const;
+    void colliderDragMove_(const QPointF& pos);
+    void colliderDragRelease_();
     void collectColliderLines_();
     void paintColliders_(QPainter& painter);
     int m_gizmoHover = -1;
