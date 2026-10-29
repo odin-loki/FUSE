@@ -76,9 +76,9 @@ void testHealthPool() {
     pool.maxHealth = 10.f;
     pool.armor = 4.f;
     const fuse::f32 first = fuse::gameplay::apply_damage(pool, 10.f);
-    expectTrue(first == 10.f && pool.armor == 0.f && pool.health == 6.f, "armor absorbs before health");
+    expectTrue(first == 10.f && pool.armor == 0.f && pool.health == 4.f, "armor absorbs before health");
     const fuse::f32 second = fuse::gameplay::apply_damage(pool, 100.f);
-    expectTrue(second == 6.f && pool.health == 0.f && fuse::gameplay::is_dead(pool),
+    expectTrue(second == 4.f && pool.health == 0.f && fuse::gameplay::is_dead(pool),
                "overkill reports only the health that remained");
 }
 

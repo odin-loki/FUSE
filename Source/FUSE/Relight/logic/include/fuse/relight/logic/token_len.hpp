@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <string_view>
 
-namespace rl_logic_test {
+namespace fuse::relight::logic {
 
 /// True when \p token has length 1..64 and its first character is an ASCII letter.
 [[nodiscard]] inline bool logic_token_ok(std::string_view token) {
@@ -17,4 +17,4 @@ namespace rl_logic_test {
     return upper || lower;
 }
 
-} // namespace rl_logic_test
+} // namespace fuse::relight::logic

@@ -18,6 +18,7 @@ namespace rl_logic_test {
 namespace {
 
 namespace usd = fuse::relight::mods::usd;
+using fuse::relight::logic::logic_token_ok;
 
 constexpr const char* kRoot = "/RootNode/meshes/mesh_0123456789ABCDEF";
 
