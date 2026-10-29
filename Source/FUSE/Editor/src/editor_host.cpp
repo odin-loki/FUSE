@@ -414,6 +414,10 @@ bool EditorHost::applyHostCommand_(const EditorCommand& command) {
         std::string what = command.propertyName;
         if (command.propertyName == "revert") {
             ok = revertPrefabOverrides(m_state.primarySelection);
+        } else if (command.propertyName == "apply") {
+            ok = applyPrefabOverrides(m_state.primarySelection);
+        } else if (command.propertyName == "variant") {
+            ok = savePrefabVariant(m_state.primarySelection, command.propertyValue);
         } else if (command.propertyName == "unlink") {
             ok = unlinkPrefabInstance(m_state.primarySelection);
             if (ok) postConsoleOutput(fuse::log::Level::Info, "prefab instance unlinked");
@@ -672,6 +676,8 @@ bool EditorHost::savePrefab(ecs::EntityID entity, const std::string& path) {
         }
     }
     const usize updated = reloadPrefabInstances(path);
+    const usize variants = updatePrefabVariants(path);
+    if (variants > 0) postConsoleOutput(fuse::log::Level::Info, std::to_string(variants) + " prefab variant(s) of " + path + " updated");
     return fileOk_(CommandKind::SavePrefab, path,
                    "saved prefab " + path + " (" + std::to_string(order.size()) + " entities" +
                        (updated > 0 ? ", " + std::to_string(updated) + " linked instance(s) updated)" : ")"));

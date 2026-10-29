@@ -62,10 +62,10 @@ void registerEditorConsoleCommands(ConsolePanel& console, EditorHost& host) {
         return true;
     });
 
-    for (const char* op : {"revert", "unlink", "reload"}) {
+    for (const char* op : {"revert", "unlink", "reload", "apply", "variant"}) {
         console.registerCommand(std::string("prefab.") + op, [hostPtr, op](const std::vector<std::string>& args, ConsolePanel& panel) {
             if (args.size() > 1u) {
-                const std::string text = std::string("prefab.") + op + (std::string(op) == "reload" ? " [path.prefab]" : "") +
+                const std::string text = std::string("prefab.") + op + (std::string(op) == "reload" ? " [path.prefab]" : std::string(op) == "variant" ? " <variant.prefab>" : "") +
                                          "  (acts on the selected linked instance)";
                 return usage(panel, text.c_str());
             }

@@ -184,6 +184,21 @@ public:
     usize reloadPrefabInstances(const std::string& path);
     bool revertPrefabOverrides(ecs::EntityID entity);
     bool unlinkPrefabInstance(ecs::EntityID entity);
+    /// Write this instance's overrides back into its prefab (root placement kept out of the
+    /// prefab), then update the other linked instances and any variants of that prefab.
+    bool applyPrefabOverrides(ecs::EntityID entity);
+    /// Prefab variants: save the linked instance `entity` belongs to as `variantPath`, a prefab
+    /// derived from the instance's current prefab. `<variant>.variant` records the base path and
+    /// `<variant>.variantbase` the base values it was derived from; the variant's overrides are the
+    /// components that differ from those. Re-saving the base (save / apply) pushes the new base
+    /// values into each variant found in the base prefab's folder tree, keeping the variant's own
+    /// overrides, then into the variant's linked instances (chains of variants follow).
+    /// The instance is relinked to the variant.
+    bool savePrefabVariant(ecs::EntityID entity, const std::string& variantPath);
+    /// Base prefab of a variant (empty when `path` is not a variant).
+    [[nodiscard]] static std::string prefabVariantBase(const std::string& path);
+    /// Push `basePath`'s current values into its variants; returns variants rewritten.
+    usize updatePrefabVariants(const std::string& basePath, int depth = 0);
     static std::string prefabLinksSidecarPath(const std::string& scenePath) { return scenePath + ".prefablinks"; }
     bool saveSceneAs(const std::string& path);
 

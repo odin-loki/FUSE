@@ -527,6 +527,24 @@ void MainWindow::buildMenus() {
         QAction* revertPrefab = m_entityMenu->addAction(tr("Revert Prefab Overrides"));
         revertPrefab->setObjectName(QStringLiteral("fuseActionRevertPrefab"));
         connect(revertPrefab, &QAction::triggered, this, [this]() { m_host.postFromUi(makePrefabLinkCommand("revert")); });
+        QAction* applyPrefab = m_entityMenu->addAction(tr("&Apply Overrides to Prefab"));
+        applyPrefab->setObjectName(QStringLiteral("fuseActionApplyPrefab"));
+        connect(applyPrefab, &QAction::triggered, this, [this]() { m_host.postFromUi(makePrefabLinkCommand("apply")); });
+        QAction* variantPrefab = m_entityMenu->addAction(tr("Save as Prefab &Variant..."));
+        variantPrefab->setObjectName(QStringLiteral("fuseActionPrefabVariant"));
+        connect(variantPrefab, &QAction::triggered, this, [this]() {
+            QString dir = m_projectRoot.isEmpty() ? QString() : m_projectRoot + QStringLiteral("/assets/prefabs");
+            {
+                std::lock_guard<std::mutex> lock(m_sceneMutex);
+                if (const auto link = m_host.prefabLinkOf(m_host.editorState().primarySelection)) {
+                    dir = QFileInfo(QString::fromStdString(link->path)).absolutePath();
+                }
+            }
+            QString path = QFileDialog::getSaveFileName(this, tr("Save Prefab Variant"), dir, tr("Prefabs (*.prefab)"));
+            if (path.isEmpty()) return;
+            if (!path.endsWith(QStringLiteral(".prefab"))) path += QStringLiteral(".prefab");
+            m_host.postFromUi(makePrefabLinkCommand("variant", path.toStdString()));
+        });
         QAction* reloadPrefab = m_entityMenu->addAction(tr("Update Prefab Instances"));
         reloadPrefab->setObjectName(QStringLiteral("fuseActionReloadPrefab"));
         connect(reloadPrefab, &QAction::triggered, this, [this]() { m_host.postFromUi(makePrefabLinkCommand("reload")); });
@@ -917,7 +935,7 @@ void MainWindow::updateTransportActions() {
     // PIE polish: scene file and entity-authoring commands act on the edit scene, so they are
     // disabled while Play runs (the play registry is a copy); the viewport dock shows the state.
     for (const char* name : {kActionSave, kActionSaveAs, "fuseActionSavePrefab", "fuseActionInstantiatePrefab", "fuseActionRevertPrefab",
-                             "fuseActionReloadPrefab", "fuseActionUnlinkPrefab"}) {
+                             "fuseActionReloadPrefab", "fuseActionUnlinkPrefab", "fuseActionApplyPrefab", "fuseActionPrefabVariant"}) {
         if (QAction* a = findChild<QAction*>(QString::fromLatin1(name))) {
             a->setEnabled(!playing);
         }
@@ -1110,7 +1128,15 @@ void MainWindow::refreshStatusBar() {
         const ecs::EntityID selected = m_host.editorState().primarySelection;
         if (const auto link = m_host.prefabLinkOf(selected)) {
             const QString name = QFileInfo(QString::fromStdString(link->path)).fileName();
-            prefabInfo = tr(" | Prefab: %1 (%2 override(s))").arg(name).arg(link->overrideCount);
+            const std::string base = EditorHost::prefabVariantBase(link->path);
+            const QString variantOf = base.empty() ? QString()
+                                                   : tr(", variant of %1").arg(QFileInfo(QString::fromStdString(base)).fileName());
+            QStringList names;
+            for (const std::string& n : m_host.prefabOverridesOf(selected)) names << QString::fromStdString(n);
+            prefabInfo = tr(" | Prefab: %1%2 (%3 override(s)%4)")
+                             .arg(name, variantOf)
+                             .arg(link->overrideCount)
+                             .arg(names.isEmpty() ? QString() : QStringLiteral(": ") + names.join(QStringLiteral(", ")));
         }
     }
     if (applied != m_lastAppliedCommands) {

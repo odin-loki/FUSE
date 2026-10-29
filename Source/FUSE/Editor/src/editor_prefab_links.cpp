@@ -2,6 +2,8 @@
 #include <fuse/editor/editor_host.hpp>
 
 #include <cstring>
+#include <filesystem>
+#include <unordered_map>
 #include <fstream>
 #include <sstream>
 #include <type_traits>
@@ -205,6 +207,187 @@ bool EditorHost::unlinkPrefabInstance(ecs::EntityID entity) {
     m_prefabLinks.erase(m_prefabLinks.begin() + static_cast<std::ptrdiff_t>(index));
     m_state.sceneModified = true;
     return true;
+}
+
+namespace {
+
+struct PrefabImage {
+    std::vector<ecs::EntityID> ids; ///< file-registry ids, Transform iteration order
+    std::vector<EntityComponentSet> sets;
+};
+
+bool loadPrefabImage(const std::string& path, PrefabImage& out, std::string& error) {
+    scene::Scene loadedScene;
+    ecs::Registry in;
+    in.init(4096);
+    const scene::SerialiseResult r = scene::SceneSerialiser::loadWithRegistry(path, loadedScene, in);
+    if (r.status != scene::SerialiseStatus::Ok) {
+        error = r.error;
+        return false;
+    }
+    in.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform&) {
+        out.ids.push_back(id);
+        out.sets.push_back(captureEntityComponents(in, id));
+    });
+    return true;
+}
+
+bool writePrefabImage(const std::string& path, const PrefabImage& image, scene::SceneDimension dim, std::string& error) {
+    ecs::Registry out;
+    out.init(4096);
+    const auto key = [](ecs::EntityID e) { return (static_cast<u64>(e.generation) << 32) | e.index; };
+    std::unordered_map<u64, ecs::EntityID> remap;
+    std::vector<ecs::EntityID> created;
+    for (ecs::EntityID id : image.ids) {
+        created.push_back(out.create());
+        remap.emplace(key(id), created.back());
+    }
+    for (usize i = 0; i < image.sets.size(); ++i) {
+        EntityComponentSet c = image.sets[i];
+        if (auto& t = std::get<std::optional<ecs::Transform>>(c); t) {
+            const auto it = t->parent.valid() ? remap.find(key(t->parent)) : remap.end();
+            t->parent = it == remap.end() ? ecs::EntityID::null() : it->second;
+            t->dirty = true;
+        }
+        restoreEntityComponents(out, created[i], c);
+    }
+    scene::Scene empty;
+    const scene::SerialiseResult r = scene::SceneSerialiser::saveWithRegistry(empty, out, path, dim);
+    if (r.status != scene::SerialiseStatus::Ok) {
+        error = r.error;
+        return false;
+    }
+    return true;
+}
+
+std::string readVariantBase(const std::string& variantPath) {
+    std::ifstream in(variantPath + ".variant");
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.rfind("base ", 0) == 0) return line.substr(5);
+    }
+    return {};
+}
+
+} // namespace
+
+std::string EditorHost::prefabVariantBase(const std::string& path) { return readVariantBase(path); }
+
+bool EditorHost::applyPrefabOverrides(ecs::EntityID entity) {
+    usize index = 0;
+    if (m_state.playing || findPrefabLink_(entity, &index) == nullptr) return false;
+    const PrefabLink link = m_prefabLinks[index];
+    ecs::Registry& reg = m_editorScene.registry();
+    const ecs::EntityID root = link.entities.front();
+    ecs::Transform* t = reg.get<ecs::Transform>(root);
+    if (t == nullptr) return false;
+    // The prefab keeps its own root placement; the instance keeps its placement.
+    const ecs::Transform placed = *t;
+    if (const auto& b = std::get<std::optional<ecs::Transform>>(link.baseline.front()); b) {
+        t->position = b->position;
+        t->rotation = b->rotation;
+        t->scale = b->scale;
+    }
+    const bool ok = savePrefab(root, link.path);
+    if (ecs::Transform* t2 = reg.get<ecs::Transform>(root)) {
+        t2->position = placed.position;
+        t2->rotation = placed.rotation;
+        t2->scale = placed.scale;
+        t2->dirty = true;
+    }
+    if (ok) postConsoleOutput(fuse::log::Level::Info, "applied overrides to " + link.path);
+    return ok;
+}
+
+bool EditorHost::savePrefabVariant(ecs::EntityID entity, const std::string& variantPath) {
+    usize index = 0;
+    if (variantPath.empty() || findPrefabLink_(entity, &index) == nullptr) {
+        return fileFail_(CommandKind::SavePrefab, variantPath, "save prefab variant: select a linked prefab instance");
+    }
+    const std::string basePath = m_prefabLinks[index].path;
+    if (basePath == variantPath) {
+        return fileFail_(CommandKind::SavePrefab, variantPath, "save prefab variant: pick a new path");
+    }
+    std::error_code ec;
+    std::filesystem::copy_file(basePath, variantPath + ".variantbase", std::filesystem::copy_options::overwrite_existing, ec);
+    if (ec) return fileFail_(CommandKind::SavePrefab, variantPath, "save prefab variant: " + ec.message());
+    {
+        std::ofstream side(variantPath + ".variant", std::ios::trunc);
+        side << "fuse-prefabvariant 1\nbase " << basePath << "\n";
+    }
+    // Write the variant from the instance (root placement as in the base), then relink to it.
+    m_prefabLinks[index].path = variantPath;
+    const ecs::EntityID root = m_prefabLinks[index].entities.front();
+    const bool ok = applyPrefabOverrides(root);
+    if (ok) {
+        std::vector<EntityComponentSet> fresh;
+        std::string error;
+        PrefabLink& l = m_prefabLinks[index];
+        if (loadPrefabSet_(variantPath, fresh, error) && fresh.size() == l.entities.size()) {
+            for (usize i = 0; i < fresh.size(); ++i) {
+                if (auto& ft = std::get<std::optional<ecs::Transform>>(fresh[i]); ft) {
+                    if (const ecs::Transform* ct = m_editorScene.registry().get<ecs::Transform>(l.entities[i])) ft->parent = ct->parent;
+                }
+            }
+            l.baseline = std::move(fresh);
+        }
+        postConsoleOutput(fuse::log::Level::Info, "saved prefab variant " + variantPath + " (base " + basePath + ")");
+    } else {
+        m_prefabLinks[index].path = basePath;
+    }
+    return ok;
+}
+
+usize EditorHost::updatePrefabVariants(const std::string& basePath, int depth) {
+    if (depth > 8) return 0;
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path dir = fs::path(basePath).parent_path();
+    if (dir.empty() || !fs::is_directory(dir, ec)) return 0;
+    usize rewritten = 0;
+    for (fs::recursive_directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end; it != end;
+         it.increment(ec)) {
+        if (ec) break;
+        const std::string sidecar = it->path().string();
+        if (sidecar.size() < 8 || sidecar.compare(sidecar.size() - 8, 8, ".variant") != 0) continue;
+        const std::string variant = sidecar.substr(0, sidecar.size() - 8);
+        const std::string base = readVariantBase(variant);
+        if (base.empty() || !fs::equivalent(base, basePath, ec)) continue;
+        PrefabImage v, snap, b;
+        std::string error;
+        if (!loadPrefabImage(variant, v, error) || !loadPrefabImage(variant + ".variantbase", snap, error) ||
+            !loadPrefabImage(basePath, b, error)) {
+            postConsoleOutput(fuse::log::Level::Warn, "prefab variant " + variant + ": " + error);
+            continue;
+        }
+        const usize n = std::min({v.sets.size(), snap.sets.size(), b.sets.size()});
+        for (usize i = 0; i < n; ++i) {
+            forEachSlot(v.sets[i], snap.sets[i], b.sets[i], [&](usize, const char*, auto& c, const auto& s, const auto& in) {
+                if constexpr (std::is_same_v<std::decay_t<decltype(c)>, std::optional<ecs::Transform>>) {
+                    if (c && s && in) {
+                        if (std::memcmp(&c->position, &s->position, sizeof(c->position)) == 0 &&
+                            std::memcmp(&c->rotation, &s->rotation, sizeof(c->rotation)) == 0 &&
+                            std::memcmp(&c->scale, &s->scale, sizeof(c->scale)) == 0) {
+                            c->position = in->position;
+                            c->rotation = in->rotation;
+                            c->scale = in->scale;
+                        }
+                        return;
+                    }
+                }
+                if (sameOpt(c, s)) c = in; // not overridden by the variant: follow the base
+            });
+        }
+        if (!writePrefabImage(variant, v, m_sceneDimension, error)) {
+            postConsoleOutput(fuse::log::Level::Warn, "prefab variant " + variant + " write failed: " + error);
+            continue;
+        }
+        fs::copy_file(basePath, variant + ".variantbase", fs::copy_options::overwrite_existing, ec);
+        ++rewritten;
+        reloadPrefabInstances(variant);
+        rewritten += updatePrefabVariants(variant, depth + 1);
+    }
+    return rewritten;
 }
 
 // Sidecar: "link <path>" then one "e <index> <generation>" line per instance entity (prefab order).

@@ -556,6 +556,63 @@ void testLinkedPrefab(const fs::path& dir) {
     expectTrue(host.unlinkPrefabInstance(a) && host.prefabLinks().size() == 1u, "linked prefab: unlink");
 }
 
+void testPrefabVariants(const fs::path& dir) {
+    const std::string basePath = (dir / "base.prefab").string();
+    const std::string variantPath = (dir / "base_red.prefab").string();
+    editor::EditorHost host;
+    host.gameTick();
+    ecs::Registry& registry = host.editorScene().registry();
+    const ecs::EntityID root = makeEntity(registry, {1.f, 2.f, 3.f});
+    const ecs::EntityID child = makeEntity(registry, {0.f, 1.f, 0.f});
+    registry.get<ecs::Transform>(child)->parent = root;
+    expectTrue(host.savePrefab(root, basePath), "variant: base saves");
+    auto childOf = [&](ecs::EntityID parent) {
+        ecs::EntityID found = ecs::EntityID::null();
+        registry.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform& t) { if (t.parent == parent) found = id; });
+        return found;
+    };
+    // Apply overrides: instance edit goes into the prefab, placement stays out of it.
+    const ecs::EntityID a = host.instantiatePrefab(basePath);
+    const ecs::EntityID b = host.instantiatePrefab(basePath);
+    registry.get<ecs::Transform>(a)->position.x = 50.f;
+    registry.get<ecs::Transform>(childOf(a))->scale.x = 2.f;
+    expectTrue(host.prefabOverridesOf(childOf(a)).size() == 1u, "apply: child scale is an override");
+    expectTrue(host.applyPrefabOverrides(childOf(a)), "apply: overrides applied");
+    expectTrue(host.prefabOverridesOf(childOf(a)).empty(), "apply: instance has no overrides afterwards");
+    expectTrue(registry.get<ecs::Transform>(childOf(b))->scale.x == 2.f, "apply: other instance picks up the change");
+    expectTrue(registry.get<ecs::Transform>(a)->position.x == 50.f && registry.get<ecs::Transform>(b)->position.x == 1.f,
+               "apply: root placement neither baked nor propagated");
+    // Variant: b gets a child offset and is saved as a variant.
+    registry.get<ecs::Transform>(childOf(b))->position.y = 7.f;
+    expectTrue(host.savePrefabVariant(b, variantPath), "variant: saves");
+    expectTrue(editor::EditorHost::prefabVariantBase(variantPath) == basePath, "variant: records its base");
+    expectTrue(host.prefabLinkOf(b)->path == variantPath && host.prefabOverridesOf(childOf(b)).empty(),
+               "variant: instance relinked to the variant, no overrides");
+    const ecs::EntityID v2 = host.instantiatePrefab(variantPath);
+    expectTrue(registry.get<ecs::Transform>(childOf(v2))->position.y == 7.f, "variant: new instance has the variant value");
+    // Base change: a non-overridden value flows into the variant and its instances; the variant override stays.
+    registry.get<ecs::Transform>(childOf(a))->scale.y = 3.f;
+    registry.get<ecs::Transform>(childOf(a))->position.y = 4.f;
+    expectTrue(host.applyPrefabOverrides(childOf(a)), "variant: base re-applied");
+    // Transform is one component: the variant overrides the child Transform, so the whole
+    // Transform stays the variant's. Root (not overridden) follows the base.
+    const ecs::Transform* vt = registry.get<ecs::Transform>(childOf(v2));
+    expectTrue(vt->position.y == 7.f, "variant: variant override kept after base change");
+    // The source's root (not overridden by the variant) changes: the variant file follows the base.
+    registry.get<ecs::Transform>(root)->scale.z = 4.f;
+    expectTrue(host.savePrefab(root, basePath), "variant: base re-saved from source");
+    editor::EditorHost probe;
+    probe.gameTick();
+    const ecs::EntityID p = probe.instantiatePrefab(variantPath);
+    ecs::EntityID pc = ecs::EntityID::null();
+    probe.editorScene().registry().each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform& t) { if (t.parent == p) pc = id; });
+    expectTrue(p.valid() && probe.editorScene().registry().get<ecs::Transform>(p)->scale.z == 4.f,
+               "variant: non-overridden base value flows into the variant file");
+    expectTrue(pc.valid() && probe.editorScene().registry().get<ecs::Transform>(pc)->position.y == 7.f,
+               "variant: variant override survives the base change on disk");
+    expectTrue(host.prefabVariantBase(basePath).empty(), "variant: base is not a variant");
+}
+
 void testClipboard() {
     editor::EditorHost host;
     host.gameTick();
@@ -665,6 +722,7 @@ int main() {
     testPropertyDirty();
     testPrefab(dir);
     testLinkedPrefab(dir);
+    testPrefabVariants(dir);
     testClipboard();
     testEntityNames();
     testGroupAndNamedPaste();
