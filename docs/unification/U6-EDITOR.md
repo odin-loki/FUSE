@@ -191,7 +191,7 @@ Still open:
 - A real material dock. `material.*` commands are not applied by `EditorHost`, and the material catalog is never populated.
 - Timelines.
 
-The engine-native GUI framework that will eventually replace Qt (UI9) is tracked in [`../plans/FUSE_UI_PLAN.md`](../plans/FUSE_UI_PLAN.md). Its first slice, the headless `fuse_ui_core`, is described in [`../ui/README.md`](../ui/README.md).
+The engine-native GUI framework that will eventually replace Qt (UI9) is tracked in [`../plans/FUSE_UI_PLAN.md`](../plans/FUSE_UI_PLAN.md). What is in tree so far is described in [`../ui/README.md`](../ui/README.md).
 
 ---
 

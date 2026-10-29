@@ -467,7 +467,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 - `fuse_editor --project/--software-viewport/--screenshot`.
 - Offscreen gates in `fuse_editor_qt_shell_gate`, plus `fuse_editor_gui_models`.
 
-**FUSE UI (UI2 slice) landed:** `fuse_ui_core`, the engine-native retained and immediate GUI core with a CPU rasteriser. It has 10 `fuse_ui_*` gates. See [`../ui/README.md`](../ui/README.md) and [`../plans/FUSE_UI_PLAN.md`](../plans/FUSE_UI_PLAN.md).
+**FUSE UI:** the engine-native GUI framework (`fuse_ui_core`, `fuse_text`, widgets) is tracked separately. See [`../ui/README.md`](../ui/README.md) and [`../plans/FUSE_UI_PLAN.md`](../plans/FUSE_UI_PLAN.md).
 
 ---
 
