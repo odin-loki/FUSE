@@ -112,6 +112,9 @@ target_include_directories(fuse_relight_tinyusdz PRIVATE "${_rl_tusd}/external")
 # Upstream's CMake defaults for a library build without the optional modules we do not vendor (Tydra, MaterialX,
 # JSON, image / audio loaders, zstd, C API).
 target_compile_definitions(fuse_relight_tinyusdz PRIVATE TINYUSDZ_PRODUCTION_BUILD)
+# TinyUSDZ calls nonstd::make_unexpected, which nonstd-lite omits when it aliases std::expected (C++23
+# toolchains that ship <expected>, e.g. MinGW GCC 14). Pin its own implementation everywhere.
+target_compile_definitions(fuse_relight_tinyusdz PUBLIC nsel_CONFIG_SELECT_EXPECTED=1)
 if(MSVC)
     target_compile_options(fuse_relight_tinyusdz PRIVATE /bigobj)
 elseif(MINGW)
