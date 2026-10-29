@@ -44,7 +44,8 @@ public:
     /// for the Select tool or when the entity is behind the camera.
     bool layout(const ViewportPanel& panel, const ecs::Transform& transform);
     void clearLayout() { m_visible = false; }
-    /// Parent frame of the entity being edited (its parent's local_to_world / world_to_local).
+    /// Parent frame of the entity being edited (its parent's local_to_world / world_to_local;
+    /// world_to_local must be the true affine inverse — ecs::inverse_affine handles scale since GUI-5).
     /// TRS stays parent-relative: handles are drawn in world space and drags are mapped back.
     void setParentFrame(const ecs::mat4& parentToWorld, const ecs::mat4& worldToParent) {
         m_hasParent = true;

@@ -26,23 +26,6 @@ ecs::vec3 normalized(const ecs::vec3& v) {
     return l > 1e-8f ? ecs::vec3{v.x / l, v.y / l, v.z / l, 0.f} : v;
 }
 
-// Solve P_linear * out = v (3x3 from the parent matrix's columns; independent of world_to_local).
-ecs::vec3 inverseLinear(const ecs::mat4& p, const ecs::vec3& v) {
-    const ecs::vec3 a = linear(p, ecs::vec3{1.f, 0.f, 0.f, 0.f});
-    const ecs::vec3 b = linear(p, ecs::vec3{0.f, 1.f, 0.f, 0.f});
-    const ecs::vec3 c = linear(p, ecs::vec3{0.f, 0.f, 1.f, 0.f});
-    auto cross = [](const ecs::vec3& x, const ecs::vec3& y) {
-        return ecs::vec3{x.y * y.z - x.z * y.y, x.z * y.x - x.x * y.z, x.x * y.y - x.y * y.x, 0.f};
-    };
-    auto dot = [](const ecs::vec3& x, const ecs::vec3& y) { return x.x * y.x + x.y * y.y + x.z * y.z; };
-    const f32 det = dot(a, cross(b, c));
-    if (std::fabs(det) < 1e-12f) {
-        return v;
-    }
-    // Cramer's rule.
-    return ecs::vec3{dot(v, cross(b, c)) / det, dot(a, cross(v, c)) / det, dot(a, cross(b, v)) / det, 0.f};
-}
-
 f32 snapTo(f32 v, f32 step) { return step > 0.f ? std::round(v / step) * step : v; }
 
 f32 segmentDistance(f32 px, f32 py, const GizmoHandle2D& h) {
@@ -180,7 +163,7 @@ TransformCommand::State TransformGizmo::dragTo(f32 px, f32 py) const {
         const f32 d = snap ? snapTo(alongWorld, m_settings.translateStep) : alongWorld;
         // m_axes are world directions; a child's position lives in its parent's frame.
         const ecs::vec3 worldDelta{m_axes[m_dragAxis].x * d, m_axes[m_dragAxis].y * d, m_axes[m_dragAxis].z * d, 0.f};
-        const ecs::vec3 delta = m_hasParent ? inverseLinear(m_parentToWorld, worldDelta) : worldDelta;
+        const ecs::vec3 delta = m_hasParent ? linear(m_worldToParent, worldDelta) : worldDelta;
         const ecs::vec3 moved = add(m_start.position, delta);
         out.position = ecs::vec3{moved.x, moved.y, moved.z, m_start.position.w};
         break;
@@ -196,7 +179,7 @@ TransformCommand::State TransformGizmo::dragTo(f32 px, f32 py) const {
                              0.f};
         // Global: spin about the world axis, expressed in the parent frame for children.
         const ecs::vec3 spin = (m_settings.space == TransformSpace::World && m_hasParent)
-                                   ? normalized(inverseLinear(m_parentToWorld, unit))
+                                   ? normalized(linear(m_worldToParent, unit))
                                    : unit;
         const ecs::quat r = axisAngle(spin, deg * kPi / 180.f);
         out.rotation = m_settings.space == TransformSpace::Local ? multiply(m_start.rotation, r)
