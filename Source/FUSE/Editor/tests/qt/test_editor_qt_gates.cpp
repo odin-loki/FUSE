@@ -24,6 +24,7 @@
 //                   context menu, 0 validation messages, clean teardown
 
 #include <fuse/ecs/components/collider.hpp>
+#include <fuse/ecs/components/script.hpp>
 #include <fuse/editor/runtime_viewport.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/systems/transform_system.hpp>
@@ -2068,6 +2069,33 @@ int gateEditTools() {
            "View > Unlit switches the view mode");
     action("fuseActionViewLit")->trigger();
     expect(fuse::editor::editorViewMode() == fuse::editor::EditorViewMode::Lit, "View > Lit restores lighting");
+
+    // Entity > Open Script resolves the selection's .lua.
+    {
+        QTemporaryDir dir;
+        const QString lua = dir.filePath(QStringLiteral("spin.lua"));
+        QFile f(lua);
+        expect(f.open(QIODevice::WriteOnly) && f.write("function on_update(self, dt) end\n") > 0, "temp script written");
+        f.close();
+        {
+            std::lock_guard<std::mutex> lock(window.sceneMutex());
+            ecs::Registry& reg = window.host().editorScene().registry();
+            const ecs::EntityID e = reg.create();
+            ecs::Script sc{};
+            sc.set_path(lua.toStdString());
+            reg.add(e, sc);
+            window.host().editorState().selectedEntities = {e};
+            window.host().editorState().primarySelection = e;
+        }
+        expect(action("fuseActionOpenScript") != nullptr, "Entity > Open Script exists");
+        expect(QFileInfo(window.selectedScriptPath()) == QFileInfo(lua), "Open Script resolves the selected .lua");
+        {
+            std::lock_guard<std::mutex> lock(window.sceneMutex());
+            window.host().editorState().selectedEntities.clear();
+            window.host().editorState().primarySelection = ecs::EntityID::null();
+        }
+        expect(window.selectedScriptPath().isEmpty(), "no selection -> no script");
+    }
     return 0;
 }
 

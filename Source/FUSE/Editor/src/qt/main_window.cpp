@@ -23,6 +23,9 @@
 
 #include <QAction>
 #include <QActionGroup>
+#include <fuse/ecs/components/script.hpp>
+#include <QUrl>
+#include <QDesktopServices>
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDir>
@@ -529,6 +532,21 @@ void MainWindow::buildMenus() {
         refreshPanels();
         if (m_viewport != nullptr) m_viewport->update();
     });
+    m_entityMenu->addSeparator();
+    QAction* openScript = m_entityMenu->addAction(tr("Open &Script"));
+    openScript->setObjectName(QStringLiteral("fuseActionOpenScript"));
+    openScript->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_E));
+    openScript->setToolTip(tr("Open the selected entity's Lua script in the system editor; saving it hot-reloads in Play"));
+    connect(openScript, &QAction::triggered, this, [this]() {
+        const QString path = selectedScriptPath();
+        if (path.isEmpty()) {
+            statusBar()->showMessage(tr("The selection has no Script component with a .lua file"), 3000);
+            return;
+        }
+        if (m_fileDialogHook == nullptr) QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+        statusBar()->showMessage(tr("Opened %1 (changes hot-reload while playing)").arg(path), 4000);
+    });
+    connect(m_entityMenu, &QMenu::aboutToShow, this, [this, openScript]() { openScript->setEnabled(!selectedScriptPath().isEmpty()); });
     connect(m_entityMenu, &QMenu::aboutToShow, this, [this, duplicate, remove]() {
         std::lock_guard<std::mutex> lock(m_sceneMutex);
         const bool selected = m_host.editorState().primarySelection != ecs::EntityID::null();
@@ -1244,6 +1262,23 @@ void MainWindow::rebuildRecentMenu() {
         });
     }
     m_recentMenu->setEnabled(!m_recentFiles.isEmpty());
+}
+
+QString MainWindow::selectedScriptPath() {
+    std::string path;
+    std::string root;
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        const ecs::EntityID id = m_host.editorState().primarySelection;
+        if (id == ecs::EntityID::null()) return {};
+        const ecs::Script* script = m_host.editorScene().registry().get<ecs::Script>(id);
+        if (script == nullptr || script->path().empty()) return {};
+        path = std::string(script->path());
+        root = m_host.playSession().scriptRoot();
+    }
+    QFileInfo info(QString::fromStdString(path));
+    if (info.isRelative() && !root.empty()) info = QFileInfo(QDir(QString::fromStdString(root)), QString::fromStdString(path));
+    return info.exists() && info.isFile() ? info.absoluteFilePath() : QString();
 }
 
 PreferencesDialog* MainWindow::openPreferences(bool modal) {

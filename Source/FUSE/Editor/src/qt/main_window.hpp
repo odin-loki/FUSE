@@ -177,6 +177,8 @@ public:
     [[nodiscard]] QStringList recentProjects() const { return m_recentProjects; }
     /// Edit > Preferences. Modal unless `modal` is false (tests); the non-modal dialog is returned.
     PreferencesDialog* openPreferences(bool modal = true);
+    /// Absolute path of the primary selection's Script .lua (empty when none / missing on disk).
+    [[nodiscard]] QString selectedScriptPath();
     void setDirtyPromptHook(DirtyPromptHook hook) { m_dirtyPromptHook = std::move(hook); }
     void setFileDialogHook(FileDialogHook hook) { m_fileDialogHook = std::move(hook); }
     [[nodiscard]] int dirtyPromptCount() const { return m_dirtyPromptCount; }
