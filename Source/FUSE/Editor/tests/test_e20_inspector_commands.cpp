@@ -476,6 +476,39 @@ void testInspectorRowOk() {
 
 } // namespace
 
+// ---- prefabs: save a subtree, instantiate it (one undo step) ---------------------------------------
+void testPrefab(const fs::path& dir) {
+    const std::string path = (dir / "pair.prefab").string();
+    editor::EditorHost host;
+    host.gameTick();
+    ecs::Registry& registry = host.editorScene().registry();
+    const ecs::EntityID root = makeEntity(registry, {1.f, 2.f, 3.f});
+    const ecs::EntityID child = makeEntity(registry, {0.f, 1.f, 0.f});
+    registry.get<ecs::Transform>(child)->parent = root;
+    expectTrue(!host.savePrefab(ecs::EntityID::null(), path), "prefab: saving without a selection fails");
+    expectTrue(host.savePrefab(root, path), "prefab: subtree saves");
+    std::size_t before = 0;
+    registry.each<ecs::Transform>([&](ecs::EntityID, ecs::Transform&) { ++before; });
+    const ecs::EntityID copy = host.instantiatePrefab(path);
+    expectTrue(copy.valid() && copy != root, "prefab: instantiate returns a new root");
+    std::size_t after = 0;
+    bool childLinked = false;
+    registry.each<ecs::Transform>([&](ecs::EntityID, ecs::Transform& t) {
+        ++after;
+        childLinked = childLinked || t.parent == copy;
+    });
+    const ecs::Transform* ct = registry.get<ecs::Transform>(copy);
+    expectTrue(after == before + 2u, "prefab: two entities instantiated");
+    expectTrue(childLinked, "prefab: child re-parented to the new root");
+    expectTrue(ct != nullptr && ct->position.y == 2.f && !ct->parent.valid(), "prefab: root transform kept, no parent");
+    expectTrue(host.editorState().primarySelection == copy, "prefab: new root selected");
+    host.undoStack().undo();
+    std::size_t undone = 0;
+    registry.each<ecs::Transform>([&](ecs::EntityID, ecs::Transform&) { ++undone; });
+    expectTrue(undone == before, "prefab: one undo removes the whole instance");
+    expectTrue(!host.instantiatePrefab((dir / "missing.prefab").string()).valid(), "prefab: missing file fails");
+}
+
 int main() {
     testInspectorRowOk();
     if (g_failures != 0) {
@@ -489,6 +522,7 @@ int main() {
     testReparentKeepsWorldPose();
     testAudioSourceSaveLoad(dir);
     testPropertyDirty();
+    testPrefab(dir);
     std::error_code ec;
     fs::remove_all(dir, ec);
     std::printf("e20 inspector commands: %s (%d failure(s))\n", g_failures == 0 ? "PASS" : "FAIL", g_failures);

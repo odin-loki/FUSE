@@ -37,6 +37,9 @@ enum class CommandKind {
     // MP-B6-QT-INSPECTOR / UNI-U6-INSP-1: undoable component add / remove on `target` (UndoStack).
     AddComponent,    ///< propertyName = ecs component name (see component_schema.hpp)
     RemoveComponent, ///< propertyName = ecs component name (Transform cannot be removed)
+    // Prefabs (`.prefab` = v3 .fuselevel image of an entity subtree), see EditorHost::savePrefab.
+    SavePrefab,        ///< target selection (primary), propertyValue = .prefab path
+    InstantiatePrefab, ///< propertyValue = .prefab path
 };
 
 /// UI-thread command envelope — applied on the game thread via CommandQueue::drain().
@@ -71,6 +74,8 @@ EditorCommand makeSaveSceneCommand();
 EditorCommand makeSaveSceneAsCommand(std::string path);
 EditorCommand makeTransportCommand(CommandKind kind); ///< StartPlay / StopPlay / PausePlay / ResumePlay / StepPlay
 EditorCommand makeConsoleExecCommand(std::string line);
+EditorCommand makeSavePrefabCommand(std::string path);
+EditorCommand makeInstantiatePrefabCommand(std::string path);
 /// MP-B6-QT-INSPECTOR: property / component / hierarchy edits posted by the Qt inspector and
 /// hierarchy (`target` / `parent` are ECS entity ids as Handle<Object>(index, generation)).
 EditorCommand makeSetPropertyCommand(Handle<Object> target, std::string propertyName, std::string value);

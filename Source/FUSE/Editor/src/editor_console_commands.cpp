@@ -47,6 +47,21 @@ void registerEditorConsoleCommands(ConsolePanel& console, EditorHost& host) {
         return true;
     });
 
+    console.registerCommand("prefab.save", [hostPtr](const std::vector<std::string>& args, ConsolePanel& panel) {
+        if (args.size() != 1u) {
+            return usage(panel, "prefab.save <path.prefab>  (saves the selected entity + children)");
+        }
+        hostPtr->postFromUi(makeSavePrefabCommand(args[0]));
+        return true;
+    });
+    console.registerCommand("prefab.spawn", [hostPtr](const std::vector<std::string>& args, ConsolePanel& panel) {
+        if (args.size() != 1u) {
+            return usage(panel, "prefab.spawn <path.prefab>");
+        }
+        hostPtr->postFromUi(makeInstantiatePrefabCommand(args[0]));
+        return true;
+    });
+
     console.registerCommand("new", [hostPtr](const std::vector<std::string>& args, ConsolePanel& panel) {
         bool scene2D = false;
         usize nameArg = 0;

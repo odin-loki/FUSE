@@ -898,6 +898,8 @@ void EditorHost::applyCommand_(const EditorCommand& command) {
     case CommandKind::SaveSceneAs:
     case CommandKind::StepPlay:
     case CommandKind::ConsoleExec:
+    case CommandKind::SavePrefab:
+    case CommandKind::InstantiatePrefab:
         applyHostCommand_(command);
         break;
     }

@@ -153,6 +153,12 @@ public:
     /// `.fuselevel` v1 / v2 / v3; v1/v2 entities become Transform-only ECS entities.
     bool openScene(const std::string& path);
     bool saveScene();
+    /// Prefabs (game thread): write `entity` and its Transform descendants to `path` (a v3
+    /// `.fuselevel` image, parents relinked inside the file, root parent cleared).
+    bool savePrefab(ecs::EntityID entity, const std::string& path);
+    /// Instantiate a `.prefab` into the edit scene as one undo step; selects the new root.
+    /// Returns the new root (null on failure).
+    ecs::EntityID instantiatePrefab(const std::string& path);
     bool saveSceneAs(const std::string& path);
 
     [[nodiscard]] const EditorFileResult& lastFileResult() const { return m_lastFileResult; }

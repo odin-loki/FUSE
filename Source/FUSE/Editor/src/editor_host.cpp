@@ -1,3 +1,4 @@
+#include <unordered_map>
 #include <fuse/editor/editor_host.hpp>
 
 #include <fuse/editor/console_panel.hpp>
@@ -393,6 +394,12 @@ bool EditorHost::applyHostCommand_(const EditorCommand& command) {
     case CommandKind::SaveSceneAs:
         saveSceneAs(command.propertyValue);
         return true;
+    case CommandKind::SavePrefab:
+        savePrefab(m_state.primarySelection, command.propertyValue);
+        return true;
+    case CommandKind::InstantiatePrefab:
+        instantiatePrefab(command.propertyValue);
+        return true;
     case CommandKind::StepPlay:
         if (!m_playSession.stepPaused(kStepDt, m_editorScene, m_physics)) {
             postConsoleOutput(fuse::log::Level::Warn, "step: Play is not paused");
@@ -580,6 +587,114 @@ bool EditorHost::executeConsoleLine(const std::string& rawLine) {
         postConsoleOutput(out.level, std::move(out.text));
     }
     return ok;
+}
+
+} // namespace fuse::editor
+
+namespace fuse::editor {
+
+namespace {
+constexpr usize kPrefabMaxEntities = 4096;
+}
+
+bool EditorHost::savePrefab(ecs::EntityID entity, const std::string& path) {
+    ecs::Registry& src = m_editorScene.registry();
+    if (path.empty() || !entity.valid() || !src.alive(entity) || src.get<ecs::Transform>(entity) == nullptr) {
+        return fileFail_(CommandKind::SavePrefab, path, "save prefab: select an entity with a Transform");
+    }
+    // Subtree in parent-first order.
+    std::vector<ecs::EntityID> order{entity};
+    for (usize i = 0; i < order.size() && order.size() < kPrefabMaxEntities; ++i) {
+        const ecs::EntityID parent = order[i];
+        src.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform& t) {
+            if (t.parent == parent) {
+                order.push_back(id);
+            }
+        });
+    }
+    ecs::Registry out;
+    out.init(kPrefabMaxEntities);
+    std::unordered_map<u64, ecs::EntityID> remap;
+    const auto key = [](ecs::EntityID e) { return (static_cast<u64>(e.generation) << 32) | e.index; };
+    for (ecs::EntityID id : order) {
+        EntityComponentSet c = captureEntityComponents(src, id);
+        auto& t = std::get<std::optional<ecs::Transform>>(c);
+        if (t) {
+            const auto it = remap.find(key(t->parent));
+            t->parent = (id == entity || it == remap.end()) ? ecs::EntityID::null() : it->second;
+            t->dirty = true;
+        }
+        const ecs::EntityID created = out.create();
+        restoreEntityComponents(out, created, c);
+        remap.emplace(key(id), created);
+    }
+    scene::Scene empty;
+    const scene::SerialiseResult r = scene::SceneSerialiser::saveWithRegistry(empty, out, path, m_sceneDimension);
+    if (r.status != scene::SerialiseStatus::Ok) {
+        return fileFail_(CommandKind::SavePrefab, path, "save prefab " + path + " failed: " + r.error);
+    }
+    return fileOk_(CommandKind::SavePrefab, path,
+                   "saved prefab " + path + " (" + std::to_string(order.size()) + " entities)");
+}
+
+ecs::EntityID EditorHost::instantiatePrefab(const std::string& path) {
+    if (m_state.playing) {
+        fileFail_(CommandKind::InstantiatePrefab, path, "instantiate prefab: stop Play first");
+        return ecs::EntityID::null();
+    }
+    scene::Scene loadedScene;
+    ecs::Registry in;
+    in.init(kPrefabMaxEntities);
+    const scene::SerialiseResult r = scene::SceneSerialiser::loadWithRegistry(path, loadedScene, in);
+    if (r.status != scene::SerialiseStatus::Ok) {
+        fileFail_(CommandKind::InstantiatePrefab, path, "instantiate prefab " + path + " failed: " + r.error);
+        return ecs::EntityID::null();
+    }
+    std::vector<ecs::EntityID> pending;
+    in.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform&) { pending.push_back(id); });
+    ecs::Registry& dst = m_editorScene.registry();
+    std::unordered_map<u64, ecs::EntityID> remap;
+    const auto key = [](ecs::EntityID e) { return (static_cast<u64>(e.generation) << 32) | e.index; };
+    ecs::EntityID root = ecs::EntityID::null();
+    m_undoStack.beginMacro("Instantiate prefab");
+    // Parents first: repeatedly create entities whose parent is null or already created.
+    for (bool progress = true; progress && !pending.empty();) {
+        progress = false;
+        for (auto it = pending.begin(); it != pending.end();) {
+            EntityComponentSet c = captureEntityComponents(in, *it);
+            auto& t = std::get<std::optional<ecs::Transform>>(c);
+            const bool isRoot = !t || !t->parent.valid();
+            const auto parentIt = isRoot ? remap.end() : remap.find(key(t->parent));
+            if (!isRoot && parentIt == remap.end()) {
+                ++it;
+                continue;
+            }
+            if (t) {
+                t->parent = isRoot ? ecs::EntityID::null() : parentIt->second;
+                t->dirty = true;
+            }
+            auto command = std::make_unique<CreateEntityCommand>(dst, std::move(c), "Instantiate prefab entity");
+            CreateEntityCommand* created = command.get();
+            m_undoStack.execute(std::move(command));
+            remap.emplace(key(*it), created->createdEntity());
+            if (isRoot && !root.valid()) {
+                root = created->createdEntity();
+            }
+            it = pending.erase(it);
+            progress = true;
+        }
+    }
+    m_undoStack.endMacro();
+    if (!root.valid()) {
+        fileFail_(CommandKind::InstantiatePrefab, path, "instantiate prefab " + path + ": no entities");
+        return root;
+    }
+    m_state.primarySelection = root;
+    m_state.selectedEntities = {root};
+    m_state.sceneModified = true;
+    fileOk_(CommandKind::InstantiatePrefab, path,
+            "instantiated prefab " + path + " (" + std::to_string(remap.size()) + " entities)");
+    return root;
 }
 
 } // namespace fuse::editor

@@ -47,6 +47,20 @@ EditorCommand makeSaveSceneCommand() {
     return command;
 }
 
+EditorCommand makeSavePrefabCommand(std::string path) {
+    EditorCommand command;
+    command.kind = CommandKind::SavePrefab;
+    command.propertyValue = std::move(path);
+    return command;
+}
+
+EditorCommand makeInstantiatePrefabCommand(std::string path) {
+    EditorCommand command;
+    command.kind = CommandKind::InstantiatePrefab;
+    command.propertyValue = std::move(path);
+    return command;
+}
+
 EditorCommand makeSaveSceneAsCommand(std::string path) {
     EditorCommand command;
     command.kind = CommandKind::SaveSceneAs;

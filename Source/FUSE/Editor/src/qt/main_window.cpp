@@ -83,6 +83,11 @@ MainWindow::MainWindow(const QString& samplesRoot, const Options& options, QWidg
     statusBar()->addPermanentWidget(m_statusLabel, 1);
 
     connect(m_assetBrowser, &AssetBrowserWidget::sceneOpenRequested, this, [this](const QString& path) {
+        if (path.endsWith(QStringLiteral(".prefab"), Qt::CaseInsensitive)) {
+            // Double-clicking a prefab drops an instance into the open scene.
+            m_host.postFromUi(makeInstantiatePrefabCommand(path.toStdString()));
+            return;
+        }
         if (maybeSaveChanges()) {
             openScene(path);
         }
@@ -343,6 +348,28 @@ void MainWindow::buildMenus() {
                     ContextMenuAction::CreateDirectionalLight, {});
     addEntityAction(tr("Create C&amera"), "fuseActionCreateCamera", ContextMenuAction::CreateCamera, {});
     m_entityMenu->addSeparator();
+    {
+        QAction* savePrefab = m_entityMenu->addAction(tr("Save Selection as &Prefab..."));
+        savePrefab->setObjectName(QStringLiteral("fuseActionSavePrefab"));
+        connect(savePrefab, &QAction::triggered, this, [this]() {
+            const QString dir = m_projectRoot.isEmpty() ? QString() : m_projectRoot + QStringLiteral("/assets/prefabs");
+            if (!dir.isEmpty()) QDir().mkpath(dir);
+            const QString path = QFileDialog::getSaveFileName(this, tr("Save Prefab"), dir, tr("Prefabs (*.prefab)"));
+            if (!path.isEmpty()) {
+                m_host.postFromUi(makeSavePrefabCommand(path.endsWith(QStringLiteral(".prefab")) ? path.toStdString()
+                                                                                               : (path + QStringLiteral(".prefab")).toStdString()));
+            }
+        });
+        QAction* spawnPrefab = m_entityMenu->addAction(tr("&Instantiate Prefab..."));
+        spawnPrefab->setObjectName(QStringLiteral("fuseActionInstantiatePrefab"));
+        connect(spawnPrefab, &QAction::triggered, this, [this]() {
+            const QString path = QFileDialog::getOpenFileName(this, tr("Instantiate Prefab"), m_projectRoot, tr("Prefabs (*.prefab)"));
+            if (!path.isEmpty()) {
+                m_host.postFromUi(makeInstantiatePrefabCommand(path.toStdString()));
+            }
+        });
+        m_entityMenu->addSeparator();
+    }
     QAction* duplicate = addEntityAction(tr("D&uplicate"), "fuseActionDuplicate", ContextMenuAction::Duplicate,
                                          QKeySequence(Qt::CTRL | Qt::Key_D));
     QAction* remove = addEntityAction(tr("De&lete"), "fuseActionDelete", ContextMenuAction::Delete,
