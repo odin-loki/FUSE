@@ -46,6 +46,7 @@ endforeach()
 # --- Lavapipe gates ----------------------------------------------------------------------------------------------
 #   --mode golden      SceneRenderer image == FrameComposer image of the same scene built directly (bit for bit)
 #   --mode zero_alloc  30 steady-state frames: 0 operator-new calls in renderScene + graph build + pass callbacks
+#   --mode fallback_sun  SceneFrameDesc::fallbackSun lights a scene without a DirectionalLight, then yields to one
 #   --mode blit        present blit into a headless RGBA8 target == CPU conversion of the output (+ FG hand-off)
 #   --mode ui          UI stage: frame.ui_composite == frame_ui_composite_texel (<= 1 half ulp), HUD-less untouched
 add_executable(fuse_scene_renderer_vk ${_fuse_sr_tests_dir}/test_scene_renderer_vk.cpp)
@@ -54,7 +55,7 @@ fuse_apply_cxx23(fuse_scene_renderer_vk)
 
 set(_fuse_sr_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
 set(_fuse_sr_vk_tests "")
-foreach(_case "golden;t0" "golden;t2" "zero_alloc;t0" "blit;t0" "ui;t0")
+foreach(_case "golden;t0" "golden;t2" "zero_alloc;t0" "blit;t0" "ui;t0" "fallback_sun;t0")
     list(GET _case 0 _mode)
     list(GET _case 1 _tier)
     set(_name "fuse_scene_renderer_vk_${_mode}_${_tier}")

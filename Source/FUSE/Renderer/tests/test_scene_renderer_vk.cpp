@@ -1000,6 +1000,70 @@ u8 toUnorm8(u16 h) {
     return static_cast<u8>(std::lround(v * 255.f));
 }
 
+std::string fmt_mean(double lit, double unlit) {
+    char b[160];
+    std::snprintf(b, sizeof b, "fallback_sun: the fallback sun brightens the frame (%.2f vs %.2f)", lit, unlit);
+    return b;
+}
+
+/// SceneFrameDesc::fallbackSun: with no DirectionalLight the frame is unlit (no sun slot) unless the renderer adds its own
+/// sun; the fallback is brighter, and it is removed again once the registry has a DirectionalLight.
+int runFallbackSun(Context& ctx, SceneTier tier) {
+    SceneRig rig;
+    if (const int rc = initRig(ctx, rig, tier); rc != 0) {
+        return rc;
+    }
+    auto frame = [&](bool fallback, u32 f) {
+        rig.graph.reset();
+        SceneFrameDesc sfd{};
+        sfd.fallbackSun = fallback;
+        const FrameGraphOutputs outs = rig.renderer.renderScene(rig.ecs.registry, cameraAt(0, true), rig.graph, sfd);
+        expect(outs.output.valid(), "fallback_sun: frame recorded");
+        Readback rb;
+        rb.begin(ctx, rig.graph);
+        const u64 o = rb.add(rig.graph, outs.sceneColor, kRenderW, kRenderH, 8u);
+        rb.end(rig.graph);
+        expect(ctx.executor->execute(rig.graph).ok, "fallback_sun: frame executes");
+        finishFrame(ctx, rig.renderer, rig.renderer.frameSerial());
+        const std::vector<u8> px = bytesAt(ctx, o, static_cast<u64>(kRenderW) * kRenderH * 8u);
+        double sum = 0.0;
+        for (u64 p = 0; p < static_cast<u64>(kRenderW) * kRenderH; ++p) {
+            for (u32 c = 0; c < 3u; ++c) {
+                u16 h = 0;
+                std::memcpy(&h, px.data() + p * 8u + c * 2u, 2u);
+                sum += toUnorm8(h);
+            }
+        }
+        (void)f;
+        return sum / (static_cast<double>(kRenderW) * kRenderH * 3.0);
+    };
+    (void)frame(true, 0);
+    expect(rig.renderer.lastFrame().sunSlot == 1u, "fallback_sun: a DirectionalLight wins over the fallback");
+    rig.ecs.registry.remove<ecs::DirectionalLight>(rig.ecs.sun);
+    double unlit = 0.0;
+    for (u32 f = 0; f < 3u; ++f) unlit = frame(false, f);
+    expect(rig.renderer.lastFrame().sunSlot == 0xFFFFFFFFu, "fallback_sun: off -> no sun slot");
+    double lit = 0.0;
+    for (u32 f = 0; f < 3u; ++f) lit = frame(true, f);
+    const u32 slot = rig.renderer.lastFrame().sunSlot;
+    expect(slot != 0xFFFFFFFFu && rig.renderer.scene().light(slot).type == static_cast<u32>(gpu_scene::GpuLightType::Directional),
+           "fallback_sun: on -> a renderer-owned directional sun");
+    expect(lit > unlit + 2.0, fmt_mean(lit, unlit).c_str());
+    ecs::DirectionalLight d{};
+    d.color = {1.f, 1.f, 1.f, 0.f};
+    d.intensity = 2.f;
+    rig.ecs.registry.add<ecs::DirectionalLight>(rig.ecs.sun, d);
+    (void)frame(true, 3);
+    const u32 own = rig.renderer.lastFrame().sunSlot;
+    expect(own != 0xFFFFFFFFu && rig.renderer.scene().light(own).entityIndex == rig.ecs.sun.index,
+           "fallback_sun: a new DirectionalLight replaces the fallback");
+    expect(own == slot || rig.renderer.scene().light(slot).type != static_cast<u32>(gpu_scene::GpuLightType::Directional) ||
+               rig.renderer.scene().light(slot).entityIndex == rig.ecs.sun.index,
+           "fallback_sun: the fallback light is removed");
+    std::printf("fallback_sun: mean unlit %.2f, fallback lit %.2f\n", unlit, lit);
+    return 0;
+}
+
 int runBlit(Context& ctx, SceneTier tier) {
     SceneRig rig;
     if (const int rc = initRig(ctx, rig, tier); rc != 0) {
@@ -1369,6 +1433,8 @@ int main(int argc, char** argv) {
             rc = runGolden(ctx, tier);
         } else if (mode == "zero_alloc") {
             rc = runZeroAlloc(ctx, tier, false);
+        } else if (mode == "fallback_sun") {
+            rc = runFallbackSun(ctx, tier);
         } else if (mode == "blit") {
             rc = runBlit(ctx, tier);
         } else if (mode == "ui") {
