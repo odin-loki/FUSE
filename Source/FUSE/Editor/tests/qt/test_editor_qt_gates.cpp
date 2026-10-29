@@ -43,6 +43,10 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include "project_settings_dialog.hpp"
+#include "preferences_dialog.hpp"
+#include <QLabel>
+#include <QSettings>
+#include <QTableWidget>
 #include <fuse/ecs/components/light.hpp>
 
 #include <thread>
@@ -2035,6 +2039,54 @@ int gateEditTools() {
     return 0;
 }
 
+/// preferences: Edit > Preferences opens, lists editable actions, detects shortcut conflicts,
+/// applies + persists an override, and re-applies it on a fresh window. Cleans its QSettings.
+int gatePreferences() {
+    using fuse::editor::qt::PreferencesDialog;
+    using fuse::editor::qt::applyShortcutOverrides;
+    using fuse::editor::qt::defaultShortcut;
+    QSettings store(QStringLiteral("FUSE"), QStringLiteral("FUSE Editor"));
+    const QVariant savedSpeed = store.value(QStringLiteral("prefs/cameraSpeed"));
+    const QString key = QStringLiteral("shortcuts/fuseActionFrameSelected");
+    {
+        MainWindow window(samplesRoot(), quietOptions());
+        expect(showAndExpose(window), "editor exposed");
+        auto* prefsAction = window.findChild<QAction*>(QStringLiteral("fuseActionPreferences"));
+        expect(prefsAction != nullptr && prefsAction->shortcut() == QKeySequence(Qt::CTRL | Qt::Key_Comma),
+               "Edit > Preferences (Ctrl+,) exists");
+        PreferencesDialog* dialog = window.openPreferences(false);
+        expect(dialog != nullptr && dialog->isVisible(), "Preferences dialog opens");
+        expect(dialog->shortcutTable()->rowCount() >= 10, fmt("shortcut table lists actions (%d)", dialog->shortcutTable()->rowCount()));
+        expect(dialog->conflicts().isEmpty(), "no conflicts by default");
+        expect(dialog->setShortcutFor(QStringLiteral("fuseActionFrameSelected"), QKeySequence(Qt::CTRL | Qt::Key_Z)),
+               "Frame Selected row editable");
+        expect(!dialog->conflicts().isEmpty(), "Ctrl+Z clash with Undo is reported");
+        expect(!dialog->apply(), "apply refused while conflicting");
+        dialog->setShortcutFor(QStringLiteral("fuseActionFrameSelected"), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_F));
+        expect(dialog->conflicts().isEmpty(), "conflict cleared");
+        expect(dialog->apply(), "apply succeeds");
+        auto* frame = window.findChild<QAction*>(QStringLiteral("fuseActionFrameSelected"));
+        expect(frame != nullptr && frame->shortcut() == QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_F), "override applied live");
+        expect(defaultShortcut(frame) == QKeySequence(Qt::Key_F), "default remembered");
+        dialog->close();
+    }
+    store.sync();
+    expect(store.value(key).toString() == QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_F).toString(), "override persisted");
+    {
+        QWidget root;
+        auto* a = new QAction(QStringLiteral("Frame"), &root);
+        a->setObjectName(QStringLiteral("fuseActionFrameSelected"));
+        a->setShortcut(QKeySequence(Qt::Key_F));
+        root.addAction(a);
+        applyShortcutOverrides(&root);
+        expect(a->shortcut() == QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_F), "override re-applied at startup");
+    }
+    store.remove(key);
+    if (savedSpeed.isValid()) store.setValue(QStringLiteral("prefs/cameraSpeed"), savedSpeed);
+    store.sync();
+    return 0;
+}
+
 int gateLivePresent() {
 #if defined(FUSE_VULKAN_BACKEND)
     if (QGuiApplication::platformName() != QLatin1String("xcb")) {
@@ -2327,6 +2379,8 @@ int main(int argc, char** argv) {
             code = gateLivePresent();
         } else if (gate == "build_package") {
             code = gateBuildPackage();
+        } else if (gate == "preferences") {
+            code = gatePreferences();
         } else if (gate == "edit_tools") {
             code = gateEditTools();
         } else if (gate == "project_settings") {
