@@ -1272,6 +1272,71 @@ int runFuseUi(Context& ctx, SceneTier tier) {
     ui.destroy();
     return 0;
 }
+
+// UI7 HUD-less invariant: the UI never reaches temporal history. Two identical rigs render the same jittered camera
+// path through TAAU; one composites a dense FUSE UI each frame, the other has no UI stage. Every frame's HUD-less image
+// (and so the upscaler history the next frame reads) must be bit-identical between them, while the UI rig's output
+// differs where the UI is drawn. A UI pixel leaking into history would show up from the second frame on.
+int runHudlessInvariant(Context& ctx, SceneTier tier) {
+    constexpr u32 kFrames = 6u;
+    std::vector<std::vector<u8>> ref(kFrames);
+    u32 diffOut = 0, badHud = 0;
+    for (int pass = 0; pass < 2; ++pass) {
+        SceneRig rig;
+        if (const int rc = initRig(ctx, rig, tier); rc != 0) {
+            return rc;
+        }
+        if ((rig.renderer.composer().available() & kStageUi) == 0u) {
+            std::printf("SKIP: UI composite kernel not built\n");
+            return kSkip;
+        }
+        fuse::ui::render::UiFrameSource ui;
+        fuse::ui::DrawList list;
+        if (pass == 1) {
+            if (!ui.init(ctx.device.get())) {
+                std::printf("SKIP: ui.draw_list kernel not available\n");
+                return kSkip;
+            }
+            expect(rig.renderer.setUiSource(ui.source()), "setUiSource(UiFrameSource)");
+            ui.setDrawList(&list);
+        }
+        for (u32 f = 0; f < kFrames; ++f) {
+            list.clear();
+            for (u32 i = 0; i < 6u; ++i) {
+                list.rect({float(2 + i * 9 + f), float(3 + i * 5), 14.f, 10.f},
+                          fuse::ui::Color{1.f, 0.2f * float(i), 0.f, i % 2 ? 0.6f : 1.f});
+            }
+            rig.graph.reset();
+            const FrameGraphOutputs outs = rig.renderer.renderScene(rig.ecs.registry, cameraAt(f, true), rig.graph);
+            const u32 w = rig.renderer.composer().outputWidth();
+            const u32 h = rig.renderer.composer().outputHeight();
+            Readback rb;
+            rb.begin(ctx, rig.graph);
+            const u64 oHud = rb.add(rig.graph, outs.hudless, w, h, 8u);
+            const u64 oOut = rb.add(rig.graph, outs.output, w, h, 8u);
+            rb.end(rig.graph);
+            expect(ctx.executor->execute(rig.graph).ok, "frame executes");
+            finishFrame(ctx, rig.renderer, rig.renderer.frameSerial());
+            const u64 n = static_cast<u64>(w) * h * 8u;
+            std::vector<u8> hud = bytesAt(ctx, oHud, n);
+            if (pass == 0) {
+                ref[f] = std::move(hud);
+            } else {
+                badHud += hud == ref[f] ? 0u : 1u;
+                diffOut += bytesAt(ctx, oOut, n) != ref[f] ? 1u : 0u;
+            }
+        }
+        if (pass == 1) {
+            rig.renderer.setUiSource({});
+            ui.destroy();
+        }
+    }
+    std::printf("hudless_invariant: %u / %u frames with a HUD-less mismatch, UI visible in %u frames\n", badHud,
+                kFrames, diffOut);
+    expect(badHud == 0u, "HUD-less image / temporal history identical with and without the UI stage");
+    expect(diffOut == kFrames, "the UI is visible in every composited output");
+    return 0;
+}
 #endif
 
 } // namespace
@@ -1311,6 +1376,8 @@ int main(int argc, char** argv) {
 #if FUSE_SR_TEST_HAS_FUSE_UI
         } else if (mode == "fuse_ui") {
             rc = runFuseUi(ctx, tier);
+        } else if (mode == "hudless_invariant") {
+            rc = runHudlessInvariant(ctx, tier);
 #endif
         } else {
             std::fprintf(stderr, "unknown mode %s\n", mode.c_str());

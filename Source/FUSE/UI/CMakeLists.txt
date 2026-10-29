@@ -193,7 +193,15 @@ if(FUSE_BUILD_UI_VK)
                         add_test(NAME fuse_scene_renderer_vk_fuse_ui_t0
                                  COMMAND fuse_scene_renderer_vk --mode fuse_ui --tier t0)
                     endif()
-                    set_tests_properties(fuse_scene_renderer_vk_fuse_ui_t0 PROPERTIES
+                    # UI7 HUD-less invariant: the UI stage never changes the HUD-less image / TAAU history.
+                    if(EXISTS "${_sr_lock}" OR FUSE_VULKAN_BACKEND)
+                        add_test(NAME fuse_ui_hudless_history_invariant COMMAND "${_sr_lock}"
+                                 "$<TARGET_FILE:fuse_scene_renderer_vk>" --mode hudless_invariant --tier t0)
+                    else()
+                        add_test(NAME fuse_ui_hudless_history_invariant
+                                 COMMAND fuse_scene_renderer_vk --mode hudless_invariant --tier t0)
+                    endif()
+                    set_tests_properties(fuse_scene_renderer_vk_fuse_ui_t0 fuse_ui_hudless_history_invariant PROPERTIES
                         ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json" RUN_SERIAL TRUE
                         SKIP_RETURN_CODE 77 TIMEOUT 1800 LABELS "gate;vulkan;renderer;scene_renderer;ui")
                 endif()
