@@ -10,6 +10,8 @@
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/project/loader.hpp>
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/ecs/components/mesh.hpp>
+#include <fuse/ecs/components/transform.hpp>
 #include <fuse/editor/scene_viewport_host.hpp>
 #if defined(FUSE_EDITOR_UI_HAS_NATIVE)
 #include "fuse/app/native.hpp"
@@ -431,8 +433,62 @@ void gateMultiViewport(Rig& r) {
     r.frames();
     CHECK(std::abs((cu - sv.centerU) - 40.f / sv.scale) < 1e-3f);
     // frame selection
-    CHECK(r.shell.panels().orthoFrame(sv, true));
+    CHECK(r.shell.panels().orthoFrame(sv, EditorPanels::OrthoFrame::Selection));
     r.frames(3);
+    // F / Home with an ortho view focused frame that view, not the perspective camera
+    {
+        OrthoView& tv = r.shell.orthoView(0);
+        const fuse::ui::Rect tr = r.ui().contentRect(r.shell.orthoNode(0));
+        r.ui().wheel({tr.x + 30.f, tr.y + 30.f}, {0.f, -3.f}); // zoom out, off-centre
+        r.frames();
+        const float zs = tr.w > 0 ? tv.scale : 0.f, zu = tv.centerU;
+        float cx = 0, cy = 0, cx2 = 0, cy2 = 0;
+        CHECK(r.c.projectPoint(0.f, 0.f, 0.f, cx, cy));
+        r.ui().setFocus(r.shell.orthoNode(0));
+        r.ui().keyDown(Key::F);
+        r.frames();
+        CHECK(tv.scale > zs * 1.5f && std::abs(tv.centerU - zu) > 1e-3f);
+        r.c.projectPoint(0.f, 0.f, 0.f, cx2, cy2);
+        CHECK(std::abs(cx - cx2) < 0.5f && std::abs(cy - cy2) < 0.5f); // perspective camera untouched
+        std::printf("multi_viewport: F in Top %.1f -> %.1f px/unit\n", zs, tv.scale);
+        const float fs = tv.scale;
+        r.ui().keyDown(Key::Home);
+        r.frames();
+        CHECK(tv.scale <= fs);
+        // auto-frame (Qt d79d00434) skips a 512-unit ground box; Home (frameAll) still fits it
+        EntityRef ground;
+        r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) {
+            auto& reg = h.editorScene().registry();
+            const fuse::ecs::EntityID g = reg.create();
+            fuse::ecs::Transform t{};
+            t.scale = fuse::ecs::vec3{256.f, 1.f, 256.f, 0.f};
+            reg.add(g, t);
+            fuse::ecs::Mesh m{};
+            m.aabb_min = fuse::ecs::vec3{-1.f, 0.f, -1.f, 0.f};
+            m.aabb_max = fuse::ecs::vec3{1.f, 0.f, 1.f, 0.f};
+            reg.add(g, m);
+            h.editorState().selectedEntities.clear();
+            h.editorState().primarySelection = fuse::ecs::EntityID::null();
+            ground = EntityRef{g.index, g.generation};
+        });
+        CHECK(r.shell.panels().orthoFrame(tv, EditorPanels::OrthoFrame::Auto) && tv.scale > 2.f);
+        const float autoPpu = tv.scale;
+        CHECK(r.shell.panels().orthoFrame(tv, EditorPanels::OrthoFrame::All) && tv.scale < 2.f);
+        std::printf("multi_viewport: auto %.2f px/unit, all %.2f px/unit\n", autoPpu, tv.scale);
+        r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) {
+            h.editorScene().registry().destroy_entity(fuse::ecs::EntityID{ground.index, ground.generation});
+        });
+        r.c.selectOnly(a);
+        r.shell.panels().orthoFrame(tv, EditorPanels::OrthoFrame::Auto);
+        r.frames(2);
+    }
+    {   // the perspective image follows its (quad-size) cell: no letterbox
+        const fuse::ui::Rect vr = r.ui().contentRect(r.shell.viewportNode());
+        const fuse::ui::Rect ir = w::viewportImageRect(r.ui(), r.shell.viewportNode());
+        std::printf("multi_viewport: perspective %.0fx%.0f image %dx%d drawn %.0fx%.0f\n", vr.w, vr.h, r.shell.viewportImage().width,
+                    r.shell.viewportImage().height, ir.w, ir.h);
+        CHECK(std::abs(ir.w - vr.w) < 2.f && std::abs(ir.h - vr.h) < 2.f);
+    }
     shot(r);
     // Ctrl+Alt+2: perspective + Top; Ctrl+Alt+1: single
     CHECK(r.shell.shortcut(Key::Num2, kModCtrl | kModAlt));

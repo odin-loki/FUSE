@@ -1105,20 +1105,23 @@ EntityRef EditorPanels::orthoPick(const OrthoView& v, f32 px, f32 py) const {
     return best;
 }
 
-bool EditorPanels::orthoFrame(OrthoView& v, bool selectionOnly) const {
+bool EditorPanels::orthoFrame(OrthoView& v, OrthoFrame mode) const {
     const auto items = orthoItems(v);
-    const bool selOnly = selectionOnly && std::any_of(items.begin(), items.end(), [](const OrthoItem& i) { return i.selected; });
+    const bool selOnly = mode != OrthoFrame::All && std::any_of(items.begin(), items.end(), [](const OrthoItem& i) { return i.selected; });
+    const auto huge = [&](const OrthoItem& i) { return std::max(i.x1 - i.x0, i.y1 - i.y0) / v.scale > kOrthoHugeUnits; };
+    const bool skip = mode == OrthoFrame::Auto && !selOnly && std::any_of(items.begin(), items.end(), [&](const OrthoItem& i) { return !huge(i); });
     f32 x0 = 1e30f, y0 = 1e30f, x1 = -1e30f, y1 = -1e30f;
     bool any = false;
     for (const OrthoItem& it : items) {
         if (selOnly && !it.selected) continue;
+        if (skip && huge(it)) continue;
         const bool b = it.box();
         x0 = std::min(x0, b ? it.x0 : it.cx - 4); y0 = std::min(y0, b ? it.y0 : it.cy - 4);
         x1 = std::max(x1, b ? it.x1 : it.cx + 4); y1 = std::max(y1, b ? it.y1 : it.cy + 4);
         any = true;
     }
     if (!any) return false;
-    const f32 minUnits = selectionOnly ? 2.f : 8.f;
+    const f32 minUnits = mode == OrthoFrame::Selection ? 2.f : 8.f;
     v.framed = true;
     v.centerU += ((x0 + x1) * 0.5f - v.w * 0.5f) / v.scale;
     v.centerV -= ((y0 + y1) * 0.5f - v.h * 0.5f) / v.scale;

@@ -215,8 +215,12 @@ public:
     // ---- Multi-viewport (orthographic views) ----
     [[nodiscard]] std::vector<OrthoItem> orthoItems(const OrthoView& v) const; ///< selected items last
     [[nodiscard]] EntityRef orthoPick(const OrthoView& v, f32 px, f32 py) const;
-    /// Fit the selection (or everything); false when the scene is empty.
-    bool orthoFrame(OrthoView& v, bool selectionOnly) const;
+    /// Ortho framing (Qt OrthoViewWidget): Selection = F (the selection, else everything; min 2 units), All = Home
+    /// (everything, min 8), Auto = startup / layout change (Qt d79d00434 frameAuto: the selection, else everything
+    /// except boxes over kOrthoHugeUnits such as ground planes unless they are all there is). False when empty.
+    enum class OrthoFrame : u8 { Selection, All, Auto };
+    static constexpr f32 kOrthoHugeUnits = 100.f;
+    bool orthoFrame(OrthoView& v, OrthoFrame mode) const;
     /// Pointer in an ortho view: left click selects (additive toggles) and drags the selection in the view plane
     /// (one undo step per drag), middle / right drag pans. True when the scene or selection changed.
     bool orthoPointer(OrthoView& v, const ViewportPointerEvent& e, bool additive);

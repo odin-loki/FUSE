@@ -1183,6 +1183,11 @@ void EditorShellWindow::loadBindings_() {
 }
 
 bool EditorShellWindow::shortcut(Key key, u8 mods) {
+    for (int i = 0; i < 3; ++i)
+        if (m_ui.focused() == m_ortho[i] && m_ui.focused().valid() && orthoKey_(i, key, mods)) {
+            sync();
+            return true;
+        }
     const std::string combo = shortcutText(key, mods);
     if (combo.empty()) return false;
     std::optional<ActionId> id;
@@ -1287,7 +1292,7 @@ void EditorShellWindow::syncOrtho_() {
         v.w = std::floor(r.w);
         v.h = std::floor(r.h);
         // until the user pans / zooms / frames, keep the whole scene fitted as the layout settles (Qt resizeEvent)
-        if (resized && !v.framed && v.w > 50 && v.h > 50) { m_models->orthoFrame(v, false); v.framed = false; }
+        if (resized && !v.framed && v.w > 50 && v.h > 50) { m_models->orthoFrame(v, EditorPanels::OrthoFrame::Auto); v.framed = false; }
         auto items = m_models->orthoItems(v);
         char head[96];
         std::snprintf(head, sizeof head, "%.0fx%.0f|%.4f|%.4f|%.4f|%d", v.w, v.h, v.centerU, v.centerV, v.scale,
@@ -1357,6 +1362,14 @@ void EditorShellWindow::syncOrtho_() {
     }
 }
 
+bool EditorShellWindow::orthoKey_(int i, Key key, u8 mods) {
+    // F frames the selection, Home everything, in the focused ortho view (not the perspective camera)
+    if (mods != 0 || (key != Key::F && key != Key::Home)) return false;
+    m_orthoView[i].framed = true;
+    m_models->orthoFrame(m_orthoView[i], key == Key::F ? EditorPanels::OrthoFrame::Selection : EditorPanels::OrthoFrame::All);
+    return true;
+}
+
 void EditorShellWindow::orthoInput_(int i) {
     const w::ViewportInput& in = w::viewportLastInput(m_ui, m_ortho[i]);
     OrthoView& v = m_orthoView[i];
@@ -1380,8 +1393,7 @@ void EditorShellWindow::orthoInput_(int i) {
         v.zoomAt(in.pos.x, in.pos.y, in.wheel.y > 0.f);
         break;
     case EventType::KeyDown:
-        if (in.key != Key::F) return;
-        m_models->orthoFrame(v, true);
+        if (!orthoKey_(i, in.key, m_ui.modifiers())) return;
         break;
     default: return;
     }

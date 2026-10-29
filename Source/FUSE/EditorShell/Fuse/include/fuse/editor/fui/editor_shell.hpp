@@ -205,6 +205,7 @@ private:
     void syncPlayState_();
     void syncOrtho_();
     void orthoInput_(int i);
+    bool orthoKey_(int i, fuse::ui::Key key, u8 mods);
     NodeHandle m_vpTopRow{}, m_vpBottomRow{}, m_ortho[3]{}, m_orthoCell[3]{};
     OrthoView m_orthoView[3];
     u32 m_orthoDrawn[3]{};
