@@ -40,6 +40,7 @@ enum class CommandKind {
     // Prefabs (`.prefab` = v3 .fuselevel image of an entity subtree), see EditorHost::savePrefab.
     SavePrefab,        ///< target selection (primary), propertyValue = .prefab path
     InstantiatePrefab, ///< propertyValue = .prefab path
+    PrefabLinkOp,      ///< propertyName = revert | unlink (selected instance) | reload (propertyValue = path)
 };
 
 /// UI-thread command envelope — applied on the game thread via CommandQueue::drain().
@@ -76,6 +77,7 @@ EditorCommand makeTransportCommand(CommandKind kind); ///< StartPlay / StopPlay 
 EditorCommand makeConsoleExecCommand(std::string line);
 EditorCommand makeSavePrefabCommand(std::string path);
 EditorCommand makeInstantiatePrefabCommand(std::string path);
+EditorCommand makePrefabLinkCommand(std::string op, std::string path = {});
 /// MP-B6-QT-INSPECTOR: property / component / hierarchy edits posted by the Qt inspector and
 /// hierarchy (`target` / `parent` are ECS entity ids as Handle<Object>(index, generation)).
 EditorCommand makeSetPropertyCommand(Handle<Object> target, std::string propertyName, std::string value);

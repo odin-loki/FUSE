@@ -368,6 +368,15 @@ void MainWindow::buildMenus() {
                 m_host.postFromUi(makeInstantiatePrefabCommand(path.toStdString()));
             }
         });
+        QAction* revertPrefab = m_entityMenu->addAction(tr("Revert Prefab Overrides"));
+        revertPrefab->setObjectName(QStringLiteral("fuseActionRevertPrefab"));
+        connect(revertPrefab, &QAction::triggered, this, [this]() { m_host.postFromUi(makePrefabLinkCommand("revert")); });
+        QAction* reloadPrefab = m_entityMenu->addAction(tr("Update Prefab Instances"));
+        reloadPrefab->setObjectName(QStringLiteral("fuseActionReloadPrefab"));
+        connect(reloadPrefab, &QAction::triggered, this, [this]() { m_host.postFromUi(makePrefabLinkCommand("reload")); });
+        QAction* unlinkPrefab = m_entityMenu->addAction(tr("Unlink Prefab Instance"));
+        unlinkPrefab->setObjectName(QStringLiteral("fuseActionUnlinkPrefab"));
+        connect(unlinkPrefab, &QAction::triggered, this, [this]() { m_host.postFromUi(makePrefabLinkCommand("unlink")); });
         m_entityMenu->addSeparator();
     }
     QAction* duplicate = addEntityAction(tr("D&uplicate"), "fuseActionDuplicate", ContextMenuAction::Duplicate,
@@ -544,7 +553,8 @@ void MainWindow::updateTransportActions() {
     m_actStop->setEnabled(playing);
     // PIE polish: scene file and entity-authoring commands act on the edit scene, so they are
     // disabled while Play runs (the play registry is a copy); the viewport dock shows the state.
-    for (const char* name : {kActionSave, kActionSaveAs, "fuseActionSavePrefab", "fuseActionInstantiatePrefab"}) {
+    for (const char* name : {kActionSave, kActionSaveAs, "fuseActionSavePrefab", "fuseActionInstantiatePrefab", "fuseActionRevertPrefab",
+                             "fuseActionReloadPrefab", "fuseActionUnlinkPrefab"}) {
         if (QAction* a = findChild<QAction*>(QString::fromLatin1(name))) {
             a->setEnabled(!playing);
         }
@@ -721,10 +731,16 @@ void MainWindow::refreshStatusBar() {
     updateTransportActions();
     updateEditActions();
     u32 applied = 0;
+    QString prefabInfo;
     {
         std::lock_guard<std::mutex> lock(m_sceneMutex);
         syncUndoJournal_();
         applied = m_host.commandQueue().appliedCount();
+        const ecs::EntityID selected = m_host.editorState().primarySelection;
+        if (const auto link = m_host.prefabLinkOf(selected)) {
+            const QString name = QFileInfo(QString::fromStdString(link->path)).fileName();
+            prefabInfo = tr(" | Prefab: %1 (%2 override(s))").arg(name).arg(link->overrideCount);
+        }
     }
     if (applied != m_lastAppliedCommands) {
         // The game tick applied posted commands (inspector edits, add / remove, reparent).
@@ -743,13 +759,14 @@ void MainWindow::refreshStatusBar() {
     }
     m_profiler->refresh();
     m_statusLabel->setText(
-        tr("Game ticks: %1 | Pending: %2 | Applied: %3 | PIE: %4")
+        tr("Game ticks: %1 | Pending: %2 | Applied: %3 | PIE: %4%5")
             .arg(m_host.gameTickCount())
             .arg(m_host.commandQueue().pendingCount())
             .arg(m_host.commandQueue().appliedCount())
             .arg(!m_host.editorState().playing ? tr("off")
                  : m_host.editorState().paused ? tr("paused")
-                                               : tr("playing")));
+                                               : tr("playing"))
+            .arg(prefabInfo));
     updateTransportActions();
 }
 

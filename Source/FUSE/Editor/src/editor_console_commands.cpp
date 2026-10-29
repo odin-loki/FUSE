@@ -62,6 +62,17 @@ void registerEditorConsoleCommands(ConsolePanel& console, EditorHost& host) {
         return true;
     });
 
+    for (const char* op : {"revert", "unlink", "reload"}) {
+        console.registerCommand(std::string("prefab.") + op, [hostPtr, op](const std::vector<std::string>& args, ConsolePanel& panel) {
+            if (args.size() > 1u) {
+                const std::string text = std::string("prefab.") + op + (std::string(op) == "reload" ? " [path.prefab]" : "") +
+                                         "  (acts on the selected linked instance)";
+                return usage(panel, text.c_str());
+            }
+            hostPtr->postFromUi(makePrefabLinkCommand(op, args.empty() ? std::string{} : args[0]));
+            return true;
+        });
+    }
     console.registerCommand("new", [hostPtr](const std::vector<std::string>& args, ConsolePanel& panel) {
         bool scene2D = false;
         usize nameArg = 0;

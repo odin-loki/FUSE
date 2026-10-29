@@ -900,6 +900,7 @@ void EditorHost::applyCommand_(const EditorCommand& command) {
     case CommandKind::ConsoleExec:
     case CommandKind::SavePrefab:
     case CommandKind::InstantiatePrefab:
+    case CommandKind::PrefabLinkOp:
         applyHostCommand_(command);
         break;
     }

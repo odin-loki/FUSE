@@ -6,6 +6,7 @@ set(FUSE_EDITOR_API_SOURCES
     src/command_stack.cpp
     src/console_panel.cpp
     src/editor_host.cpp
+    src/editor_prefab_links.cpp
     src/editor_command_apply.cpp
     src/editor_console_commands.cpp
     src/editor_scripting.cpp

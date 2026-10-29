@@ -128,6 +128,7 @@ void EditorHost::markSceneClean_() {
 }
 
 void EditorHost::resetForSceneSwitch_() {
+    m_prefabLinks.clear();
     // Stops PIE, drops undo / command history and selection, empties registry + runtime scene.
     resetSceneForProjectOpen();
 }
@@ -168,6 +169,7 @@ bool EditorHost::newScene(scene::SceneDimension dimension, std::string name) {
     m_currentScenePath.clear();
     m_materials.resetToDefaults();
     m_timeline.clear();
+    m_prefabLinks.clear();
     markSceneClean_();
     return fileOk_(CommandKind::NewScene, {},
                    std::string("new ") + dimensionLabel(dimension) + " scene '" + m_runtimeScene.name() + "'");
@@ -197,6 +199,7 @@ bool EditorHost::openScene(const std::string& path) {
     m_materials.resetToDefaults();
     m_materials.load(MaterialCatalog::sidecarPath(path)); // optional sidecar; defaults otherwise
     m_timeline.load(EditorTimeline::sidecarPath(path));   // optional; empty timeline otherwise
+    loadPrefabLinks_(path);                                // optional; no links otherwise
     m_runtimeViewport.onSceneFileOpened(m_editorScene.registry());
     markSceneClean_();
     ++m_sceneLoadCount;
@@ -234,6 +237,7 @@ bool EditorHost::saveSceneAs(const std::string& path) {
             return fileFail_(CommandKind::SaveSceneAs, path, "save scene: timeline: " + timelineError);
         }
     }
+    savePrefabLinks_(path);
     m_currentScenePath = path;
     markSceneClean_();
     ++m_sceneSaveCount;
@@ -400,6 +404,26 @@ bool EditorHost::applyHostCommand_(const EditorCommand& command) {
     case CommandKind::InstantiatePrefab:
         instantiatePrefab(command.propertyValue);
         return true;
+    case CommandKind::PrefabLinkOp: {
+        bool ok = false;
+        std::string what = command.propertyName;
+        if (command.propertyName == "revert") {
+            ok = revertPrefabOverrides(m_state.primarySelection);
+        } else if (command.propertyName == "unlink") {
+            ok = unlinkPrefabInstance(m_state.primarySelection);
+            if (ok) postConsoleOutput(fuse::log::Level::Info, "prefab instance unlinked");
+        } else if (command.propertyName == "reload") {
+            std::string path = command.propertyValue;
+            if (path.empty()) {
+                if (const auto link = prefabLinkOf(m_state.primarySelection)) path = link->path;
+            }
+            const usize n = path.empty() ? 0 : reloadPrefabInstances(path);
+            ok = !path.empty();
+            if (ok) postConsoleOutput(fuse::log::Level::Info, "prefab " + path + ": " + std::to_string(n) + " instance(s) updated");
+        }
+        if (!ok) postConsoleOutput(fuse::log::Level::Warn, "prefab " + what + ": select a linked prefab instance");
+        return true;
+    }
     case CommandKind::StepPlay:
         if (!m_playSession.stepPaused(kStepDt, m_editorScene, m_physics)) {
             postConsoleOutput(fuse::log::Level::Warn, "step: Play is not paused");
@@ -633,8 +657,19 @@ bool EditorHost::savePrefab(ecs::EntityID entity, const std::string& path) {
     if (r.status != scene::SerialiseStatus::Ok) {
         return fileFail_(CommandKind::SavePrefab, path, "save prefab " + path + " failed: " + r.error);
     }
+    // The saved instance (if linked to this prefab) now matches it exactly: re-baseline it, then
+    // push the new prefab values into every other linked instance (overrides kept).
+    usize linkIndex = 0;
+    if (const PrefabLink* own = findPrefabLink_(entity, &linkIndex); own != nullptr && own->path == path) {
+        PrefabLink& l = m_prefabLinks[linkIndex];
+        for (usize i = 0; i < l.entities.size(); ++i) {
+            if (src.alive(l.entities[i])) l.baseline[i] = captureEntityComponents(src, l.entities[i]);
+        }
+    }
+    const usize updated = reloadPrefabInstances(path);
     return fileOk_(CommandKind::SavePrefab, path,
-                   "saved prefab " + path + " (" + std::to_string(order.size()) + " entities)");
+                   "saved prefab " + path + " (" + std::to_string(order.size()) + " entities" +
+                       (updated > 0 ? ", " + std::to_string(updated) + " linked instance(s) updated)" : ")"));
 }
 
 ecs::EntityID EditorHost::instantiatePrefab(const std::string& path) {
@@ -652,6 +687,7 @@ ecs::EntityID EditorHost::instantiatePrefab(const std::string& path) {
     }
     std::vector<ecs::EntityID> pending;
     in.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform&) { pending.push_back(id); });
+    const std::vector<ecs::EntityID> prefabOrder = pending;
     ecs::Registry& dst = m_editorScene.registry();
     std::unordered_map<u64, ecs::EntityID> remap;
     const auto key = [](ecs::EntityID e) { return (static_cast<u64>(e.generation) << 32) | e.index; };
@@ -689,6 +725,15 @@ ecs::EntityID EditorHost::instantiatePrefab(const std::string& path) {
         fileFail_(CommandKind::InstantiatePrefab, path, "instantiate prefab " + path + ": no entities");
         return root;
     }
+    PrefabLink link;
+    link.path = path;
+    for (ecs::EntityID src : prefabOrder) {
+        const auto it = remap.find(key(src));
+        if (it == remap.end()) continue;
+        link.entities.push_back(it->second);
+        link.baseline.push_back(captureEntityComponents(dst, it->second));
+    }
+    m_prefabLinks.push_back(std::move(link));
     m_state.primarySelection = root;
     m_state.selectedEntities = {root};
     m_state.sceneModified = true;

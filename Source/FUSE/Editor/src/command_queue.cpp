@@ -61,6 +61,14 @@ EditorCommand makeInstantiatePrefabCommand(std::string path) {
     return command;
 }
 
+EditorCommand makePrefabLinkCommand(std::string op, std::string path) {
+    EditorCommand command;
+    command.kind = CommandKind::PrefabLinkOp;
+    command.propertyName = std::move(op);
+    command.propertyValue = std::move(path);
+    return command;
+}
+
 EditorCommand makeSaveSceneAsCommand(std::string path) {
     EditorCommand command;
     command.kind = CommandKind::SaveSceneAs;

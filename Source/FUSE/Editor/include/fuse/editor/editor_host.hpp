@@ -23,6 +23,7 @@
 #include <fuse/types.hpp>
 
 #include <memory>
+#include <optional>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -159,6 +160,27 @@ public:
     /// Instantiate a `.prefab` into the edit scene as one undo step; selects the new root.
     /// Returns the new root (null on failure).
     ecs::EntityID instantiatePrefab(const std::string& path);
+
+    /// Linked prefabs: an instance remembers its source `.prefab` and the component values it was
+    /// spawned with (the baseline). A component whose value differs from the baseline is an
+    /// override. Re-saving the prefab (or `reloadPrefabInstances`) pushes the new prefab values into
+    /// every linked instance but keeps overrides; the root Transform (placement) is always kept.
+    /// Links persist in a `<scene>.prefablinks` sidecar.
+    struct PrefabLinkInfo {
+        std::string path;
+        ecs::EntityID root = ecs::EntityID::null();
+        usize entityCount = 0;
+        usize overrideCount = 0; ///< overridden components across the instance (root placement excluded)
+    };
+    [[nodiscard]] std::vector<PrefabLinkInfo> prefabLinks() const;
+    /// Link of the instance `entity` belongs to (any entity of the instance), or null.
+    [[nodiscard]] std::optional<PrefabLinkInfo> prefabLinkOf(ecs::EntityID entity) const;
+    /// Overridden component names on one instance entity (empty when not linked / no overrides).
+    [[nodiscard]] std::vector<std::string> prefabOverridesOf(ecs::EntityID entity) const;
+    usize reloadPrefabInstances(const std::string& path);
+    bool revertPrefabOverrides(ecs::EntityID entity);
+    bool unlinkPrefabInstance(ecs::EntityID entity);
+    static std::string prefabLinksSidecarPath(const std::string& scenePath) { return scenePath + ".prefablinks"; }
     bool saveSceneAs(const std::string& path);
 
     [[nodiscard]] const EditorFileResult& lastFileResult() const { return m_lastFileResult; }
@@ -211,6 +233,16 @@ private:
     UndoStack m_undoStack;
     MaterialCatalog m_materials;
     EditorTimeline m_timeline;
+    struct PrefabLink {
+        std::string path;
+        std::vector<ecs::EntityID> entities;     ///< instance entities, prefab order (root first)
+        std::vector<EntityComponentSet> baseline; ///< prefab values they were last synced to
+    };
+    std::vector<PrefabLink> m_prefabLinks;
+    const PrefabLink* findPrefabLink_(ecs::EntityID entity, usize* indexOut = nullptr) const;
+    bool loadPrefabSet_(const std::string& path, std::vector<EntityComponentSet>& out, std::string& error) const;
+    void savePrefabLinks_(const std::string& scenePath) const;
+    void loadPrefabLinks_(const std::string& scenePath);
     EditorState m_state;
     scene::Scene m_runtimeScene;
     PlaySession m_playSession;

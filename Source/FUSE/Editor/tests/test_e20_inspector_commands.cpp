@@ -509,6 +509,52 @@ void testPrefab(const fs::path& dir) {
     expectTrue(!host.instantiatePrefab((dir / "missing.prefab").string()).valid(), "prefab: missing file fails");
 }
 
+void testLinkedPrefab(const fs::path& dir) {
+    const std::string path = (dir / "linked.prefab").string();
+    editor::EditorHost host;
+    host.gameTick();
+    ecs::Registry& registry = host.editorScene().registry();
+    const ecs::EntityID root = makeEntity(registry, {1.f, 2.f, 3.f});
+    const ecs::EntityID child = makeEntity(registry, {0.f, 1.f, 0.f});
+    registry.get<ecs::Transform>(child)->parent = root;
+    expectTrue(host.savePrefab(root, path), "linked prefab: saves");
+    const ecs::EntityID a = host.instantiatePrefab(path);
+    const ecs::EntityID b = host.instantiatePrefab(path);
+    expectTrue(host.prefabLinks().size() == 2u, "linked prefab: two linked instances");
+    auto childOf = [&](ecs::EntityID parent) {
+        ecs::EntityID found = ecs::EntityID::null();
+        registry.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform& t) { if (t.parent == parent) found = id; });
+        return found;
+    };
+    const ecs::EntityID aChild = childOf(a);
+    const ecs::EntityID bChild = childOf(b);
+    expectTrue(host.prefabLinkOf(bChild).has_value() && host.prefabLinkOf(bChild)->root == b, "linked prefab: child maps to its instance");
+    expectTrue(host.prefabOverridesOf(bChild).empty(), "linked prefab: fresh instance has no overrides");
+    registry.get<ecs::Transform>(b)->position.x = 40.f; // root placement: never an override
+    registry.get<ecs::Transform>(bChild)->position.y = 9.f;
+    const auto overrides = host.prefabOverridesOf(bChild);
+    expectTrue(overrides.size() == 1u && overrides[0] == "Transform", "linked prefab: edited child Transform is an override");
+    expectTrue(host.prefabOverridesOf(b).empty(), "linked prefab: root placement is not an override");
+    registry.get<ecs::Transform>(child)->position.z = 5.f; // edit the source and re-save
+    expectTrue(host.savePrefab(root, path), "linked prefab: re-save");
+    const ecs::Transform* at = registry.get<ecs::Transform>(aChild);
+    const ecs::Transform* bt = registry.get<ecs::Transform>(bChild);
+    expectTrue(at != nullptr && at->position.z == 5.f && at->parent == a, "linked prefab: re-save propagates to instance");
+    expectTrue(bt != nullptr && bt->position.y == 9.f && bt->position.z == 0.f, "linked prefab: override kept on propagate");
+    expectTrue(registry.get<ecs::Transform>(b)->position.x == 40.f, "linked prefab: root placement kept on propagate");
+    expectTrue(host.revertPrefabOverrides(bChild), "linked prefab: revert");
+    bt = registry.get<ecs::Transform>(bChild);
+    expectTrue(bt->position.y == 1.f && bt->position.z == 5.f && bt->parent == b, "linked prefab: revert takes prefab values");
+    const std::string scenePath = (dir / "linked.fuselevel").string();
+    expectTrue(host.saveSceneAs(scenePath), "linked prefab: scene saves");
+    expectTrue(fs::exists(editor::EditorHost::prefabLinksSidecarPath(scenePath)), "linked prefab: sidecar written");
+    editor::EditorHost reopened;
+    reopened.gameTick();
+    expectTrue(reopened.openScene(scenePath), "linked prefab: scene reopens");
+    expectTrue(reopened.prefabLinks().size() == 2u, "linked prefab: links survive save/reopen");
+    expectTrue(host.unlinkPrefabInstance(a) && host.prefabLinks().size() == 1u, "linked prefab: unlink");
+}
+
 int main() {
     testInspectorRowOk();
     if (g_failures != 0) {
@@ -523,6 +569,7 @@ int main() {
     testAudioSourceSaveLoad(dir);
     testPropertyDirty();
     testPrefab(dir);
+    testLinkedPrefab(dir);
     std::error_code ec;
     fs::remove_all(dir, ec);
     std::printf("e20 inspector commands: %s (%d failure(s))\n", g_failures == 0 ? "PASS" : "FAIL", g_failures);
