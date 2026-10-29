@@ -9,12 +9,15 @@
 //   play       toolbar Play / Stop toggle PIE and the transport enable state
 //   assets     asset browser folder navigation (Up / double-click) and scene double-click opens it
 //   entity     Entity menu create / duplicate / delete (undoable through the UndoStack)
+//   gizmo      transform toolbar (Select / Move / Rotate / Scale, Local, Snap) and viewport handle
+//              drags: one drag = one undo step, snap rounds, rotate / scale edit the transform
 //   layout     dock layout + geometry save / restore through QSettings (temp settings path)
 //   profiler   frame-time graph, min / avg / max summary, Pause and Clear
 //   project    openProject() on a sample loads its world into the hierarchy; the window grabs to a
 //              non-empty image (the --screenshot path)
 #include "editor_panels.hpp"
 #include "main_window.hpp"
+#include "viewport_placeholder_widget.hpp"
 
 #include <fuse/core/init.hpp>
 #include <fuse/ecs/components/transform.hpp>
@@ -249,6 +252,121 @@ int gateEntity(MainWindow& window) {
     return 0;
 }
 
+// Drag `axis` of the current gizmo from its handle midpoint by `dx` / `dy` logical pixels.
+bool dragHandle(MainWindow& window, int axis, double dx, double dy) {
+    auto* vp = window.viewport();
+    if (!vp->refreshGizmo()) {
+        return false;
+    }
+    const auto& h = vp->gizmo().handles()[axis];
+    const qreal inv = 1.0 / vp->devicePixelRatioF();
+    const QPointF start((h.x0 + h.x1) * 0.5 * inv, (h.y0 + h.y1) * 0.5 * inv);
+    if (!vp->gizmoPress(start)) {
+        return false;
+    }
+    for (int i = 1; i <= 4; ++i) {
+        vp->gizmoMove(start + QPointF(dx * i / 4.0, dy * i / 4.0));
+    }
+    vp->gizmoRelease();
+    return true;
+}
+
+ecs::Transform selectedTransform(MainWindow& window) {
+    std::lock_guard<std::mutex> lock(window.sceneMutex());
+    const ecs::EntityID e = window.host().editorState().primarySelection;
+    const ecs::Transform* t = window.host().editorScene().registry().get<ecs::Transform>(e);
+    return t != nullptr ? *t : ecs::Transform{};
+}
+
+int gateGizmo(MainWindow& window) {
+    using fuse::editor::TransformTool;
+    using fuse::editor::TransformSpace;
+    QToolBar* bar = window.transformToolBar();
+    expect(bar != nullptr && bar->actions().size() >= 6, "gizmo: Transform toolbar with tools, Local and Snap");
+    QAction* select = findAction(window, "fuseActionToolSelect");
+    QAction* move = findAction(window, "fuseActionToolTranslate");
+    QAction* rotate = findAction(window, "fuseActionToolRotate");
+    QAction* scale = findAction(window, "fuseActionToolScale");
+    QAction* snap = findAction(window, "fuseActionSnap");
+    QAction* local = findAction(window, "fuseActionSpaceLocal");
+    if (!select || !move || !rotate || !scale || !snap || !local) {
+        expect(false, "gizmo: tool actions present");
+        return 1;
+    }
+    expect(move->isChecked(), "gizmo: Move is the default tool");
+    auto* vp = window.viewport();
+    // Put a fresh entity 6 units in front of the camera.
+    findAction(window, "fuseActionCreateSdfSphere")->trigger();
+    tick(window);
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        const ecs::EntityID e = window.host().editorState().primarySelection;
+        ecs::Transform* t = window.host().editorScene().registry().get<ecs::Transform>(e);
+        const ecs::vec3 p = vp->panel().position(), f = vp->panel().forward();
+        if (t != nullptr) {
+            t->position = ecs::vec3{p.x + f.x * 6.f, p.y + f.y * 6.f, p.z + f.z * 6.f, 1.f};
+            t->rotation = ecs::quat{};
+            t->scale = ecs::vec3{1.f, 1.f, 1.f, 0.f};
+        }
+    }
+    expect(vp->refreshGizmo(), "gizmo: handles laid out for the selection");
+    const ecs::Transform t0 = selectedTransform(window);
+    const auto& hx = vp->gizmo().handles()[0];
+    const double sx = hx.x1 - hx.x0, sy = hx.y1 - hx.y0, sl = std::hypot(sx, sy);
+    const auto undo0 = window.host().undoStack().undoCount();
+    expect(dragHandle(window, 0, sx / sl * 45.0, sy / sl * 45.0), "gizmo: drag the X handle");
+    tick(window);
+    const ecs::Transform t1 = selectedTransform(window);
+    expect(t1.position.x > t0.position.x + 0.05f && std::fabs(t1.position.y - t0.position.y) < 1e-4f &&
+               std::fabs(t1.position.z - t0.position.z) < 1e-4f,
+           "gizmo: X drag moves only along world X");
+    expect(window.host().undoStack().undoCount() == undo0 + 1, "gizmo: one drag is one undo step");
+    window.updateEditActions();
+    findAction(window, MainWindow::kActionUndo)->trigger();
+    tick(window);
+    expect(std::fabs(selectedTransform(window).position.x - t0.position.x) < 1e-4f, "gizmo: undo restores the position");
+
+    snap->setChecked(true);
+    expect(vp->gizmo().settings().snap, "gizmo: Snap toggles snapping");
+    dragHandle(window, 0, sx / sl * 37.0, sy / sl * 37.0);
+    tick(window);
+    const float snapped = selectedTransform(window).position.x - t0.position.x;
+    expect(std::fabs(snapped / 0.5f - std::round(snapped / 0.5f)) < 1e-3f && std::fabs(snapped) > 0.f,
+           "gizmo: snapped move lands on 0.5 steps");
+    snap->setChecked(false);
+
+    rotate->trigger();
+    expect(vp->gizmo().settings().tool == TransformTool::Rotate, "gizmo: Rotate tool selected");
+    const auto& hy = vp->gizmo().handles()[1];
+    const double ry = std::hypot(hy.x1 - hy.x0, hy.y1 - hy.y0);
+    // Move perpendicular to the projected Y handle.
+    expect(dragHandle(window, 1, -(hy.y1 - hy.y0) / ry * 40.0, (hy.x1 - hy.x0) / ry * 40.0), "gizmo: drag the Y ring");
+    tick(window);
+    const ecs::quat q = selectedTransform(window).rotation;
+    expect(std::fabs(q.y) > 0.05f && std::fabs(q.x) < 1e-4f && std::fabs(q.z) < 1e-4f, "gizmo: rotate spins about Y");
+
+    local->setChecked(true);
+    expect(vp->gizmo().settings().space == TransformSpace::Local, "gizmo: Local switches the axis space");
+    local->setChecked(false);
+
+    scale->trigger();
+    vp->refreshGizmo();
+    const auto& hz = vp->gizmo().handles()[2];
+    const double zl = std::hypot(hz.x1 - hz.x0, hz.y1 - hz.y0);
+    expect(dragHandle(window, 2, (hz.x1 - hz.x0) / zl * 30.0, (hz.y1 - hz.y0) / zl * 30.0), "gizmo: drag the Z box");
+    tick(window);
+    const ecs::Transform ts = selectedTransform(window);
+    expect(ts.scale.z > 1.05f && std::fabs(ts.scale.x - 1.f) < 1e-4f, "gizmo: scale grows only Z");
+
+    QImage shot = vp->grab().toImage();
+    expect(!shot.isNull(), "gizmo: viewport grabs with handles drawn");
+
+    select->trigger();
+    expect(!vp->refreshGizmo(), "gizmo: Select tool hides the handles");
+    move->trigger();
+    return 0;
+}
+
 int gateLayout(MainWindow& window) {
     QTemporaryDir dir;
     QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, dir.path());
@@ -328,6 +446,9 @@ int main(int argc, char** argv) {
         }
         if (gate == "entity" || gate == "all") {
             gateEntity(window);
+        }
+        if (gate == "gizmo" || gate == "all") {
+            gateGizmo(window);
         }
         if (gate == "layout" || gate == "all") {
             gateLayout(window);

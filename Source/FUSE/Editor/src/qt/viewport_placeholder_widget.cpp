@@ -11,6 +11,7 @@
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPolygonF>
 #include <QPalette>
 #include <QResizeEvent>
 #include <QGuiApplication>
@@ -326,6 +327,10 @@ void ViewportPlaceholderWidget::mousePressEvent(QMouseEvent* event) {
         return;
     }
     if (event->button() == Qt::LeftButton) {
+        if (gizmoPress(event->position())) {
+            event->accept();
+            return;
+        }
         syncPanelSize();
         const qreal dpr = devicePixelRatioF();
         {
@@ -334,6 +339,7 @@ void ViewportPlaceholderWidget::mousePressEvent(QMouseEvent* event) {
                                       static_cast<f32>(event->position().y() * dpr), m_host.editorState());
         }
         emit selectionChanged();
+        refreshGizmo();
         update();
         event->accept();
         return;
@@ -353,10 +359,20 @@ void ViewportPlaceholderWidget::mouseMoveEvent(QMouseEvent* event) {
         event->accept();
         return;
     }
+    if (m_gizmo.dragging()) {
+        gizmoMove(event->position());
+        event->accept();
+        return;
+    }
     QWidget::mouseMoveEvent(event);
 }
 
 void ViewportPlaceholderWidget::mouseReleaseEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton && m_gizmo.dragging()) {
+        gizmoRelease();
+        event->accept();
+        return;
+    }
     if (event->button() == Qt::RightButton && m_lookHeld) {
         m_lookHeld = false;
         const bool click = !m_rmbDragged && !m_flyKeyUsedDuringLook;
@@ -579,6 +595,7 @@ void ViewportPlaceholderWidget::paintEvent(QPaintEvent* /*event*/) {
             .arg(cam.pitch, 0, 'f', 1)
             .arg(hook.runtimeTickCount())
             .arg(hook.isEmbedded() ? tr("yes") : tr("no")));
+    paintGizmo_(painter);
 
     const fuse::cinematics::SeqScrubPreview& seqPreview = m_host.cinematicsSeqScrubPreview();
     const QRect overlayRect = rect().adjusted(16, rect().height() - 72, -16, -16);
@@ -601,6 +618,155 @@ void ViewportPlaceholderWidget::paintEvent(QPaintEvent* /*event*/) {
         painter.drawText(overlayRect.adjusted(8, 8, -8, -8), Qt::AlignLeft | Qt::AlignVCenter,
                          tr("Seq overlay stub — scrub .seq via CinematicsSeqImport"));
     }
+}
+
+} // namespace fuse::editor::qt
+
+namespace fuse::editor::qt {
+
+// ---- GUI-2 transform gizmo ---------------------------------------------------------------------
+
+void ViewportPlaceholderWidget::setTransformTool(TransformTool tool) {
+    if (m_gizmo.dragging()) {
+        gizmoRelease();
+    }
+    m_gizmo.settings().tool = tool;
+    refreshGizmo();
+    update();
+    emit transformToolChanged();
+}
+
+void ViewportPlaceholderWidget::setTransformSpace(TransformSpace space) {
+    m_gizmo.settings().space = space;
+    refreshGizmo();
+    update();
+    emit transformToolChanged();
+}
+
+void ViewportPlaceholderWidget::setTransformSnap(bool snap) {
+    m_gizmo.settings().snap = snap;
+    emit transformToolChanged();
+}
+
+bool ViewportPlaceholderWidget::refreshGizmo() {
+    syncPanelSize();
+    std::lock_guard<std::mutex> lock(m_sceneMutex);
+    const ecs::EntityID entity = m_host.editorState().primarySelection;
+    ecs::Registry& registry = m_host.editorScene().registry();
+    if (entity == ecs::EntityID::null() || !registry.alive(entity) || registry.get<ecs::Transform>(entity) == nullptr) {
+        m_gizmo.clearLayout();
+        m_gizmoEntity = ecs::EntityID::null();
+        return false;
+    }
+    m_gizmoEntity = entity;
+    return m_gizmo.layout(m_panel, *registry.get<ecs::Transform>(entity));
+}
+
+bool ViewportPlaceholderWidget::gizmoPress(const QPointF& pos) {
+    if (m_gizmo.settings().tool == TransformTool::Select || !refreshGizmo()) {
+        return false;
+    }
+    const qreal dpr = devicePixelRatioF();
+    const f32 px = static_cast<f32>(pos.x() * dpr), py = static_cast<f32>(pos.y() * dpr);
+    const int axis = m_gizmo.hitTest(px, py);
+    if (axis < 0) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(m_sceneMutex);
+    ecs::Registry& registry = m_host.editorScene().registry();
+    const ecs::Transform* transform = registry.get<ecs::Transform>(m_gizmoEntity);
+    if (transform == nullptr || !m_gizmo.beginDrag(axis, px, py, *transform)) {
+        return false;
+    }
+    static const char* kNames[] = {"Move", "Rotate", "Scale"};
+    const int tool = static_cast<int>(m_gizmo.settings().tool) - 1;
+    m_host.undoStack().beginMacro(std::string(kNames[std::clamp(tool, 0, 2)]) + " entity");
+    m_gizmoMacroOpen = true;
+    return true;
+}
+
+void ViewportPlaceholderWidget::gizmoMove(const QPointF& pos) {
+    if (!m_gizmo.dragging()) {
+        return;
+    }
+    const qreal dpr = devicePixelRatioF();
+    const TransformCommand::State after =
+        m_gizmo.dragTo(static_cast<f32>(pos.x() * dpr), static_cast<f32>(pos.y() * dpr));
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        ecs::Registry& registry = m_host.editorScene().registry();
+        const ecs::Transform* transform = registry.get<ecs::Transform>(m_gizmoEntity);
+        if (transform == nullptr) {
+            return;
+        }
+        const TransformCommand::State before = TransformCommand::capture(*transform);
+        m_host.undoStack().execute(std::make_unique<TransformCommand>(registry, m_gizmoEntity, before, after));
+    }
+    emit sceneEdited();
+    update();
+}
+
+void ViewportPlaceholderWidget::gizmoRelease() {
+    m_gizmo.endDrag();
+    if (m_gizmoMacroOpen) {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        m_host.undoStack().endMacro();
+        m_gizmoMacroOpen = false;
+    }
+    refreshGizmo();
+    emit sceneEdited();
+    update();
+}
+
+void ViewportPlaceholderWidget::paintGizmo_(QPainter& painter) {
+    if (!m_gizmo.dragging()) {
+        refreshGizmo();
+    }
+    if (!m_gizmo.visible()) {
+        return;
+    }
+    static const QColor kAxis[3] = {QColor(235, 80, 80), QColor(110, 210, 90), QColor(80, 140, 245)};
+    const qreal inv = 1.0 / devicePixelRatioF();
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    for (int a = 0; a < 3; ++a) {
+        const GizmoHandle2D& h = m_gizmo.handles()[a];
+        if (!h.visible) {
+            continue;
+        }
+        const bool hot = m_gizmo.dragAxis() == a;
+        const QPointF p0(h.x0 * inv, h.y0 * inv), p1(h.x1 * inv, h.y1 * inv);
+        QColor c = hot ? QColor(255, 220, 60) : kAxis[a];
+        painter.setPen(QPen(c, hot ? 4.0 : 3.0));
+        painter.drawLine(p0, p1);
+        painter.setBrush(c);
+        switch (m_gizmo.settings().tool) {
+        case TransformTool::Translate: {
+            const QPointF d = p1 - p0;
+            const qreal len = std::hypot(d.x(), d.y());
+            if (len > 1.0) {
+                const QPointF u = d / len, n(-u.y(), u.x());
+                const QPointF tip = p1 + u * 10.0;
+                painter.drawPolygon(QPolygonF({tip, p1 + n * 5.0, p1 - n * 5.0}));
+            }
+            break;
+        }
+        case TransformTool::Rotate:
+            painter.setBrush(Qt::NoBrush);
+            painter.drawEllipse(p1, 7.0, 7.0);
+            break;
+        case TransformTool::Scale:
+            painter.drawRect(QRectF(p1.x() - 5.0, p1.y() - 5.0, 10.0, 10.0));
+            break;
+        case TransformTool::Select:
+            break;
+        }
+    }
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(240, 240, 240));
+    const GizmoHandle2D& o = m_gizmo.handles()[0];
+    painter.drawEllipse(QPointF(o.x0 * inv, o.y0 * inv), 4.0, 4.0);
+    painter.restore();
 }
 
 } // namespace fuse::editor::qt

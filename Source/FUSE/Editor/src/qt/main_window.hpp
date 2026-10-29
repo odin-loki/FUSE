@@ -133,6 +133,7 @@ public:
     /// Each action posts the matching command (StartPlay, PausePlay, ResumePlay, StepPlay, StopPlay)
     /// to the host's CommandQueue; the game tick drives PlaySession / PlayModeController.
     [[nodiscard]] QToolBar* transportToolBar() const { return m_transportBar; }
+    [[nodiscard]] QToolBar* transformToolBar() const { return m_transformBar; }
     /// File / Edit toolbar (New, Open, Save, Undo, Redo) left of the transport bar.
     [[nodiscard]] QToolBar* mainToolBar() const { return m_mainBar; }
     /// Enable Undo / Redo from the host stacks; tooltips name the next undo / redo step.
@@ -222,6 +223,8 @@ private:
     QString m_samplesRoot;
     QLabel* m_statusLabel = nullptr;
     QToolBar* m_transportBar = nullptr;
+    QToolBar* m_transformBar = nullptr;
+    void buildTransformToolBar();
     QToolBar* m_mainBar = nullptr;
     QAction* m_actUndo = nullptr;
     QMenu* m_entityMenu = nullptr;

@@ -12,6 +12,7 @@
 #include <fuse/project/loader.hpp>
 
 #include <QAction>
+#include <QActionGroup>
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDir>
@@ -69,6 +70,7 @@ MainWindow::MainWindow(const QString& samplesRoot, const Options& options, QWidg
     buildDocks();
     buildTransport();
     buildMenus();
+    buildTransformToolBar();
     resetToDefaultLayout();
 
     m_statusLabel = new QLabel(this);
@@ -323,6 +325,51 @@ void MainWindow::buildMenus() {
     play->addAction(m_actResume);
     play->addAction(m_actStep);
     play->addAction(m_actStop);
+}
+
+void MainWindow::buildTransformToolBar() {
+    // GUI-2: viewport transform tools. Plain W/E/R would collide with WASD fly, so tools use Ctrl+1..4.
+    m_transformBar = new QToolBar(tr("Transform"), this);
+    m_transformBar->setObjectName(QStringLiteral("fuseTransformToolBar"));
+    m_transformBar->setMovable(false);
+    m_transformBar->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    insertToolBar(m_transportBar, m_transformBar);
+    auto* group = new QActionGroup(this);
+    group->setExclusive(true);
+    const auto addTool = [this, group](const QString& text, const char* objectName, TransformTool tool, int key,
+                                       const QString& tip) {
+        auto* action = new QAction(text, this);
+        action->setObjectName(QString::fromLatin1(objectName));
+        action->setCheckable(true);
+        action->setShortcut(QKeySequence(Qt::CTRL | key));
+        action->setToolTip(tip + QStringLiteral(" (%1)").arg(action->shortcut().toString(QKeySequence::NativeText)));
+        action->setActionGroup(group);
+        connect(action, &QAction::triggered, this, [this, tool]() { m_viewport->setTransformTool(tool); });
+        m_transformBar->addAction(action);
+        return action;
+    };
+    addTool(tr("Select"), "fuseActionToolSelect", TransformTool::Select, Qt::Key_1, tr("Select / pick only"));
+    QAction* translate =
+        addTool(tr("Move"), "fuseActionToolTranslate", TransformTool::Translate, Qt::Key_2, tr("Translate along an axis"));
+    addTool(tr("Rotate"), "fuseActionToolRotate", TransformTool::Rotate, Qt::Key_3, tr("Rotate about an axis"));
+    addTool(tr("Scale"), "fuseActionToolScale", TransformTool::Scale, Qt::Key_4, tr("Scale along a local axis"));
+    translate->setChecked(true);
+    m_viewport->setTransformTool(TransformTool::Translate);
+    m_transformBar->addSeparator();
+    auto* local = new QAction(tr("Local"), this);
+    local->setObjectName(QStringLiteral("fuseActionSpaceLocal"));
+    local->setCheckable(true);
+    local->setToolTip(tr("Use the entity's local axes (off = world axes)"));
+    connect(local, &QAction::toggled, this, [this](bool on) {
+        m_viewport->setTransformSpace(on ? TransformSpace::Local : TransformSpace::World);
+    });
+    m_transformBar->addAction(local);
+    auto* snap = new QAction(tr("Snap"), this);
+    snap->setObjectName(QStringLiteral("fuseActionSnap"));
+    snap->setCheckable(true);
+    snap->setToolTip(tr("Snap: 0.5 units / 15° / 0.1× scale"));
+    connect(snap, &QAction::toggled, this, [this](bool on) { m_viewport->setTransformSnap(on); });
+    m_transformBar->addAction(snap);
 }
 
 void MainWindow::buildTransport() {

@@ -2,6 +2,7 @@
 
 #include <fuse/editor/editor_host.hpp>
 #include <fuse/editor/entity_context_menu.hpp>
+#include <fuse/editor/transform_gizmo.hpp>
 #include <fuse/editor/viewport_panel.hpp>
 #include <fuse/editor/viewport_scene_view.hpp>
 
@@ -15,6 +16,7 @@
 #include <mutex>
 
 class QVulkanInstance;
+class QPainter;
 
 namespace fuse::editor::qt {
 
@@ -46,6 +48,19 @@ public:
     const ViewportPanel& panel() const { return m_panel; }
     ViewportSceneView& sceneView() { return m_sceneView; }
     EntityContextMenu& contextMenuModel() { return m_contextMenu; }
+
+    /// GUI-2 transform gizmo (tool / space / snap live in its settings).
+    TransformGizmo& gizmo() { return m_gizmo; }
+    const TransformGizmo& gizmo() const { return m_gizmo; }
+    void setTransformTool(TransformTool tool);
+    void setTransformSpace(TransformSpace space);
+    void setTransformSnap(bool snap);
+    /// Re-project handles for the primary selection; false when nothing is drawn.
+    bool refreshGizmo();
+    /// Drag helpers in logical widget pixels (also used by tests): press on a handle, move, release.
+    bool gizmoPress(const QPointF& pos);
+    void gizmoMove(const QPointF& pos);
+    void gizmoRelease();
     const EntityContextMenu& contextMenuModel() const { return m_contextMenu; }
 
     /// One viewport frame: sample held keys + accumulated mouse travel into the camera.
@@ -84,11 +99,13 @@ public:
 signals:
     /// ECS scene changed from the viewport (context menu create / delete, pick selection).
     void sceneEdited();
+    void transformToolChanged();
     void selectionChanged();
     /// Emitted at the end of every `advanceFrame` with the (clamped) frame delta in seconds.
     void frameAdvanced(float dt);
 
 protected:
+    void paintGizmo_(QPainter& painter);
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void showEvent(QShowEvent* event) override;
@@ -125,6 +142,10 @@ private:
     ViewportPanel m_panel;
     ViewportSceneView m_sceneView;
     EntityContextMenu m_contextMenu;
+    TransformGizmo m_gizmo;
+    ecs::EntityID m_gizmoEntity = ecs::EntityID::null();
+    bool m_gizmoMacroOpen = false;
+    int m_gizmoHover = -1;
     QPointer<QMenu> m_activeMenu;
     QString m_projectName;
     HeldKeys m_keys;

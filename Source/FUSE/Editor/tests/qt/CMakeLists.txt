@@ -128,7 +128,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/e20_qt_tests.cmake)
 
 # GUI-1: desktop shell gates — docks, File / Edit toolbar, toolbar undo of an inspector edit,
 # Play / Stop, opening a sample project (offscreen QPA).
-set(_fuse_shell_qt_gates docks toolbar undo play assets entity layout profiler project)
+set(_fuse_shell_qt_gates docks toolbar undo play assets entity gizmo layout profiler project)
 if(_fuse_qt_gate_available)
     add_executable(fuse_editor_qt_shell_gate test_editor_qt_shell.cpp)
     target_link_libraries(fuse_editor_qt_shell_gate PRIVATE fuse_editor_qt fuse_core Qt6::Test)
