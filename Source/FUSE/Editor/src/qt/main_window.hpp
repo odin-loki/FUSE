@@ -149,6 +149,10 @@ public:
     /// File > Project Settings / Import Asset (no-ops without a project). Return false on failure.
     bool showProjectSettings();
     bool importAssets(const QStringList& files);
+    /// Cook-on-import progress (fuse_cook runs started by importAssets).
+    int pendingCooks() const { return m_pendingCooks; }
+    int cookedAssets() const { return m_cookedAssets; }
+    int failedCooks() const { return m_failedCooks; }
     [[nodiscard]] const QString& projectRoot() const { return m_projectRoot; }
     /// Select an entity for `--select`: "new" spawns an SDF sphere 6 units in front of the camera,
     /// a number selects the entity with that index. Returns false when nothing was selected.
@@ -217,6 +221,9 @@ private:
     void refreshStatusBar();
     void onFocusChanged(QWidget* old, QWidget* now);
 
+    int m_pendingCooks = 0;
+    int m_cookedAssets = 0;
+    int m_failedCooks = 0;
     EditorHost m_host;
     FeaturePaneBridge m_featureBridge{m_host};
     std::mutex m_sceneMutex;

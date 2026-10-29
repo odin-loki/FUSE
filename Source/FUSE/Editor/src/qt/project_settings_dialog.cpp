@@ -1,5 +1,9 @@
 #include "project_settings_dialog.hpp"
 
+#include <QStandardPaths>
+
+#include <QCoreApplication>
+
 #include <QCheckBox>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -142,6 +146,54 @@ QStringList importAssetsIntoProject(const QString& projectRoot, const QStringLis
         }
     }
     return written;
+}
+
+QString findCookTool() {
+    const QString env = qEnvironmentVariable("FUSE_COOK");
+    if (!env.isEmpty() && QFileInfo(env).isExecutable()) return env;
+#if defined(_WIN32)
+    const QString exe = QStringLiteral("fuse_cook.exe");
+#else
+    const QString exe = QStringLiteral("fuse_cook");
+#endif
+    const QDir app(QCoreApplication::applicationDirPath());
+    for (const QString& rel : {exe, QStringLiteral("../../../Tools/FUSE/") + exe, QStringLiteral("../../../../Tools/FUSE/") + exe,
+                               QStringLiteral("../../../../../Tools/FUSE/") + exe,
+                               QStringLiteral("../Tools/FUSE/") + exe}) {
+        const QFileInfo f(app.filePath(rel));
+        if (f.isFile() && f.isExecutable()) return f.canonicalFilePath();
+    }
+    return QStandardPaths::findExecutable(exe);
+}
+
+bool makeAssetCookJob(const QString& projectRoot, const QString& relPath, const QString& cookTool, AssetCookJob& job) {
+    if (cookTool.isEmpty()) return false;
+    const QFileInfo in(relPath);
+    const QString kind = assetKind(in.suffix());
+    QString mode;
+    QString ext;
+    if (kind == QLatin1String("models")) {
+        mode = QStringLiteral("--mesh");
+        ext = QStringLiteral("fusemesh");
+    } else if (kind == QLatin1String("textures") && in.suffix().toLower() != QLatin1String("dds") &&
+               in.suffix().toLower() != QLatin1String("exr") && in.suffix().toLower() != QLatin1String("bmp")) {
+        mode = QStringLiteral("--texture");
+        ext = QStringLiteral("fusetex");
+    } else if (kind == QLatin1String("audio") && in.suffix().toLower() != QLatin1String("mp3")) {
+        mode = QStringLiteral("--audio");
+        ext = QStringLiteral("fuseaudio");
+    } else {
+        return false;
+    }
+    const QDir root(projectRoot);
+    const QString outRel = QStringLiteral("assets/cooked/%1/%2.%3").arg(kind, in.completeBaseName(), ext);
+    root.mkpath(QFileInfo(outRel).path());
+    job.program = cookTool;
+    job.arguments = {mode, QStringLiteral("--input"), root.filePath(relPath), QStringLiteral("--output"), root.filePath(outRel)};
+    if (kind == QLatin1String("textures") && in.suffix().toLower() == QLatin1String("hdr")) job.arguments << QStringLiteral("--hdr");
+    job.source = relPath;
+    job.output = outRel;
+    return true;
 }
 
 } // namespace fuse::editor::qt

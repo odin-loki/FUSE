@@ -166,3 +166,8 @@ if(_fuse_qt_gate_available)
         fuse_editor_qt_e20_gate
         fuse_editor_qt_shell_gate)
 endif()
+
+# project_settings gate cooks an imported OBJ through fuse_cook (skips when it is not built).
+if(TARGET fuse_cook)
+    add_dependencies(fuse_editor_qt_gates fuse_cook)
+endif()

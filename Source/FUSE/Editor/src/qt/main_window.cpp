@@ -25,6 +25,7 @@
 #include <QDockWidget>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QProcess>
 #include <QSettings>
 #include <QKeySequence>
 #include <QLabel>
@@ -1229,6 +1230,32 @@ bool MainWindow::importAssets(const QStringList& files) {
         for (const QString& w : written) m_console->panel().addLog(fuse::log::Level::Info, tr("Imported %1").arg(w).toUtf8().constData());
         if (!error.isEmpty()) m_console->panel().addLog(fuse::log::Level::Warn, tr("Import: %1").arg(error).toUtf8().constData());
         m_console->rerender();
+    }
+    // Cook on import (async: the UI stays live; the asset browser rescans as each cook lands).
+    const QString cookTool = findCookTool();
+    for (const QString& w : written) {
+        AssetCookJob job;
+        if (!makeAssetCookJob(m_projectRoot, w, cookTool, job)) continue;
+        auto* process = new QProcess(this);
+        process->setProcessChannelMode(QProcess::MergedChannels);
+        ++m_pendingCooks;
+        connect(process, &QProcess::finished, this, [this, process, job](int code, QProcess::ExitStatus status) {
+            --m_pendingCooks;
+            const bool ok = status == QProcess::NormalExit && code == 0;
+            if (m_console != nullptr) {
+                const QString msg = ok ? tr("Cooked %1 -> %2").arg(job.source, job.output)
+                                       : tr("Cook failed for %1: %2").arg(job.source, QString::fromUtf8(process->readAll()).trimmed());
+                m_console->panel().addLog(ok ? fuse::log::Level::Info : fuse::log::Level::Warn, msg.toUtf8().constData());
+                m_console->rerender();
+            }
+            ok ? ++m_cookedAssets : ++m_failedCooks;
+            m_assetBrowser->rescan();
+            process->deleteLater();
+        });
+        process->start(job.program, job.arguments);
+    }
+    if (cookTool.isEmpty() && m_console != nullptr && !written.isEmpty()) {
+        m_console->panel().addLog(fuse::log::Level::Warn, "Import: fuse_cook not found (set FUSE_COOK); assets copied uncooked");
     }
     m_assetBrowser->rescan();
     return !written.isEmpty() && error.isEmpty();

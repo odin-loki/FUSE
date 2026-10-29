@@ -44,4 +44,17 @@ private:
 /// misc by extension). Existing names get a `_N` suffix. Returns the project-relative paths written.
 QStringList importAssetsIntoProject(const QString& projectRoot, const QStringList& sources, QString* error = nullptr);
 
+/// Cook-on-import: one `fuse_cook` run for an imported project asset (models -> .fusemesh,
+/// textures -> .fusetex, audio -> .fuseaudio under `assets/cooked/<kind>/`).
+struct AssetCookJob {
+    QString program;
+    QStringList arguments;
+    QString source; ///< project-relative source
+    QString output; ///< project-relative cooked output
+};
+/// `FUSE_COOK` env, next to the editor binary, the build tree's Tools/FUSE, then PATH; empty if none.
+QString findCookTool();
+/// False when `relPath` has no cooker (scripts, scenes, misc) or no tool was found.
+bool makeAssetCookJob(const QString& projectRoot, const QString& relPath, const QString& cookTool, AssetCookJob& job);
+
 } // namespace fuse::editor::qt

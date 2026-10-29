@@ -26,6 +26,7 @@
 #include <QSpinBox>
 #include <QCheckBox>
 #include <QLineEdit>
+#include <QProcess>
 #include <QTemporaryDir>
 #include <QFileInfo>
 #include <QFile>
@@ -1648,6 +1649,31 @@ int gateProjectSettings() {
     expect(a == QStringList({QStringLiteral("assets/textures/wood.png"), QStringLiteral("assets/textures/wood_1.png")}),
            "import copies into assets/textures with unique names");
     expect(QFileInfo::exists(root + QStringLiteral("/assets/textures/wood_1.png")), "imported file exists");
+
+    // Cook on import: an OBJ becomes assets/cooked/models/<name>.fusemesh via fuse_cook.
+    const QString cook = fuse::editor::qt::findCookTool();
+    if (cook.isEmpty()) {
+        std::printf("SKIP cook-on-import: fuse_cook not built / not found\n");
+        return 0;
+    }
+    const QString obj = root + QStringLiteral("/tri.obj");
+    {
+        QFile f(obj);
+        f.open(QIODevice::WriteOnly);
+        f.write("v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nf 1//1 2//1 3//1\n");
+    }
+    const QStringList m = fuse::editor::qt::importAssetsIntoProject(root, {obj});
+    fuse::editor::qt::AssetCookJob job;
+    expect(m.size() == 1 && fuse::editor::qt::makeAssetCookJob(root, m[0], cook, job) &&
+               job.output == QStringLiteral("assets/cooked/models/tri.fusemesh"),
+           "model import plans a .fusemesh cook");
+    QProcess p;
+    p.start(job.program, job.arguments);
+    expect(p.waitForFinished(60000) && p.exitCode() == 0 && QFileInfo(root + QLatin1Char('/') + job.output).size() > 0,
+           "fuse_cook writes the cooked mesh");
+    fuse::editor::qt::AssetCookJob none;
+    expect(!fuse::editor::qt::makeAssetCookJob(root, QStringLiteral("assets/scripts/a.lua"), cook, none),
+           "scripts are not cooked");
     return 0;
 }
 
