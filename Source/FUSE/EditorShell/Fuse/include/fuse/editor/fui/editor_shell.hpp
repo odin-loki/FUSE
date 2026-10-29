@@ -141,6 +141,8 @@ private:
     bool renderSceneViewport_(int wpx, int hpx, bool changed);
     void updateOverlay_(); // transform gizmo over the viewport (CPU or zero-copy image)
     NodeHandle m_gizmoTools[4]{};
+    NodeHandle m_gizmoSpace{}, m_gizmoSnap{};
+    bool m_spaceShown = false;
     std::string m_overlayKey;
     u32 m_toolShown = ~0u;
     u64 m_seenVersion = ~0ull;

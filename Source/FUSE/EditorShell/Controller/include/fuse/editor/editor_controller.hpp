@@ -203,7 +203,9 @@ public:
     void setTransformTool(TransformTool tool);
     [[nodiscard]] TransformTool transformTool() const { return m_gizmo.settings().tool; }
     void setTransformSpace(TransformSpace space) { m_gizmo.settings().space = space; ++m_gizmoVersion; }
-    void setTransformSnap(bool on) { m_gizmo.settings().snap = on; }
+    void setTransformSnap(bool on) { m_gizmo.settings().snap = on; ++m_gizmoVersion; }
+    [[nodiscard]] TransformSpace transformSpace() const { return m_gizmo.settings().space; }
+    [[nodiscard]] bool transformSnap() const { return m_gizmo.settings().snap; }
     struct GizmoView {
         bool visible = false;
         TransformTool tool = TransformTool::Translate;

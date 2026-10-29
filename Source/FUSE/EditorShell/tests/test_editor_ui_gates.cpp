@@ -622,7 +622,7 @@ void gizmoDrag(Rig& r, const GateScene& g) {
     const EditorController::GizmoView gv = r.c.viewportGizmo();
     CHECK(gv.visible && gv.handles[0].visible);
     const fuse::ui::NodeHandle vp = r.ui().find("viewport");
-    CHECK(w::viewportOverlay(r.ui(), vp).lines.size() == 3u);
+    CHECK(w::viewportOverlay(r.ui(), vp).lines.size() == 33u); // 3 axes + 10-stroke arrow heads
     auto cubeX = [&] {
         float x = 0.f;
         r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) {
@@ -639,7 +639,7 @@ void gizmoDrag(Rig& r, const GateScene& g) {
         r.c.viewportPointer({PE::Kind::Move, PE::Button::Left, hx.x1 + dx * 0.25f * float(i), hx.y1 + dy * 0.25f * float(i)});
         r.frames();
     }
-    CHECK(w::viewportOverlay(r.ui(), vp).lines.size() == 3u); // hot axis drawn while dragging
+    CHECK(w::viewportOverlay(r.ui(), vp).lines.size() == 33u); // hot axis drawn while dragging
     r.c.viewportPointer({PE::Kind::Up, PE::Button::Left, hx.x1 + dx, hx.y1 + dy});
     r.frames();
     CHECK(!r.c.gizmoDragging());
@@ -660,8 +660,36 @@ void gizmoDrag(Rig& r, const GateScene& g) {
     r.c.setTransformTool(TransformTool::Select);
     r.frames();
     CHECK(w::viewportOverlay(r.ui(), vp).lines.empty());
-    r.c.setTransformTool(TransformTool::Translate);
+    // keys 1-4 pick the tool (viewport focused); ring / box handle shapes
+    r.ui().setFocus(vp);
+    r.ui().keyDown(Key::Num3);
+    r.ui().keyUp(Key::Num3);
     r.frames();
+    CHECK(r.c.transformTool() == TransformTool::Rotate);
+    CHECK(w::viewportOverlay(r.ui(), vp).lines.size() == 3u + 3u * 20u); // axes + 20-segment rings
+    r.ui().keyDown(Key::Num4);
+    r.ui().keyUp(Key::Num4);
+    r.frames();
+    CHECK(r.c.transformTool() == TransformTool::Scale);
+    CHECK(w::viewportOverlay(r.ui(), vp).lines.size() == 6u); // axes + boxes
+    // space / snap buttons
+    r.clickId("viewport.space");
+    r.frames();
+    CHECK(r.c.transformSpace() == TransformSpace::Local);
+    CHECK(r.ui().text(r.ui().find("viewport.space")) == "Local");
+    r.clickId("viewport.snap");
+    r.frames();
+    CHECK(r.c.transformSnap());
+    CHECK(r.ui().hasClass(r.ui().find("viewport.snap"), "active"));
+    r.clickId("viewport.snap");
+    r.clickId("viewport.space");
+    r.frames();
+    CHECK(!r.c.transformSnap() && r.c.transformSpace() == TransformSpace::World);
+    r.ui().setFocus(vp); // the buttons took focus
+    r.ui().keyDown(Key::Num2);
+    r.ui().keyUp(Key::Num2);
+    r.frames();
+    CHECK(r.c.transformTool() == TransformTool::Translate);
 }
 
 void gateViewportGizmo(Rig& r) {

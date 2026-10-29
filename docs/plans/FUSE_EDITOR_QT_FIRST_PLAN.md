@@ -289,6 +289,8 @@ Fallback if the whole-shell switch stalls: host individual FUSE UI panels inside
   - It draws the gizmo with `w::viewportSetOverlay`, a vector overlay in the UI draw list. The overlay composes over the zero-copy image as well as the CPU image.
   - Gate `viewport_gizmo` (software viewport) covers pick, drag, overlay, undo/redo and the Select tool hiding the gizmo. `gpu_viewport` runs the same drag in the zero-copy viewport, and each edit renders a new engine frame.
   - The gate scene now has an SDF box (left) and an SDF sphere (right) apart from each other, a sun angled down at intensity 3, and a fill point light.
-  - A `Create Cube` Mesh entity still has no vertex buffers, so neither shell draws it.
-  - Not yet ported: the Qt tool keys 1-4, the space and snap toggles in the UI (the controller API has them), and rotate-ring and scale-box handle shapes (they are drawn as line + marker).
+  - Keys 1-4 pick Select / Move / Rotate / Scale when the viewport has focus (new UI keys `Num1`-`Num4`; the native X11 and Win32 backends now also send key events for printable keys, so viewport WASD works in the real window). The bar has a World/Local space toggle and a Snap toggle.
+  - Handle shapes match the Qt viewport: arrow heads (Move), 7 px rings (Rotate) and 10 px boxes (Scale). `viewport_gizmo` checks keys, buttons and the shape stroke counts.
+  - `Create Cube` (shared `EntityContextMenu`, also used by the Qt shell) now references the renderer's builtin unit cube (`BuiltinMesh::Cube`, the same handle `World3D::spawnMesh` uses) with scale 0.5, so the cube is drawn. `fuse_editor_panel_models` checks the mesh handle.
+  - The inspector enum rows (for example the SDF type) select the current value; before, every enum showed its first option.
 - **EditorPanels unit tests**: `fuse_editor_panel_models` covers the hub, assets, materials, sculpt, profiler, timeline and sequencer models plus `withScene`, with no UI.

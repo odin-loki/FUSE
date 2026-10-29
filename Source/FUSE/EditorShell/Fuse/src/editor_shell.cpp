@@ -298,6 +298,19 @@ void EditorShellWindow::build_() {
             sync();
         });
     }
+    // gizmo space (World / Local toggle) and snap (Qt toolbar parity)
+    m_gizmoSpace = w::button(m_ui, vpBar, "World", "viewport.space");
+    m_ui.addClass(m_gizmoSpace, "ed-vptool");
+    m_ui.connect(m_gizmoSpace, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+        m_c.setTransformSpace(m_c.transformSpace() == TransformSpace::World ? TransformSpace::Local : TransformSpace::World);
+        sync();
+    });
+    m_gizmoSnap = w::button(m_ui, vpBar, "Snap", "viewport.snap");
+    m_ui.addClass(m_gizmoSnap, "ed-vptool");
+    m_ui.connect(m_gizmoSnap, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+        m_c.setTransformSnap(!m_c.transformSnap());
+        sync();
+    });
     m_viewportInfo = w::label(m_ui, vpBar, "Perspective", "viewport.info");
     m_ui.addClass(m_viewportInfo, "ed-vpinfo");
     m_ui.setCss(m_viewportInfo, "flex-grow", "1");
@@ -555,6 +568,9 @@ void EditorShellWindow::syncInspector_() {
                 d.kind = w::PropKind::Enum;
                 for (const std::string& e : f.enumNames) options += (options.empty() ? "" : "\n") + e;
                 d.options = options;
+                // the inspector formats enums by name ("Box"); the combo takes the index
+                for (std::size_t i = 0; i < f.enumNames.size(); ++i)
+                    if (f.enumNames[i] == f.value) value = std::to_string(i);
                 break;
             case PropertyFieldType::Color: d.kind = w::PropKind::Color; value = schemaToHex(f.value); break;
             default:
@@ -686,6 +702,14 @@ void EditorShellWindow::viewportInput_() {
         case Key::D: k = ViewportKey::D; break;
         case Key::Q: k = ViewportKey::Q; break;
         case Key::E: k = ViewportKey::E; break;
+        case Key::Num1: case Key::Num2: case Key::Num3: case Key::Num4:
+            // Qt keys 1-4: Select / Translate / Rotate / Scale (not while flying)
+            if (down && !m_c.viewportFlying() && !(m_ui.modifiers() & fuse::ui::kModCtrl)) {
+                static constexpr TransformTool kKeyTools[] = {TransformTool::Select, TransformTool::Translate,
+                                                              TransformTool::Rotate, TransformTool::Scale};
+                m_c.setTransformTool(kKeyTools[u32(in.key) - u32(Key::Num1)]);
+            }
+            break;
         default: break;
         }
         if (k && !(m_ui.modifiers() & fuse::ui::kModCtrl)) {
@@ -828,6 +852,13 @@ void EditorShellWindow::updateOverlay_() {
         else m_ui.removeClass(m_gizmoTools[i], "active");
         }
     }
+    const bool local = m_c.transformSpace() == TransformSpace::Local, snap = m_c.transformSnap();
+    if (local != m_spaceShown) {
+        m_spaceShown = local;
+        m_ui.setText(m_gizmoSpace, local ? "Local" : "World");
+    }
+    if (snap) m_ui.addClass(m_gizmoSnap, "active");
+    else m_ui.removeClass(m_gizmoSnap, "active");
     std::string key = std::to_string(tool) + "|" + std::to_string(g.dragAxis);
     if (g.visible)
         for (const GizmoHandle2D& h : g.handles)
@@ -843,11 +874,30 @@ void EditorShellWindow::updateOverlay_() {
             const GizmoHandle2D& h = g.handles[std::size_t(a)];
             if (!h.visible) continue;
             const Color c = g.dragAxis == a ? hot : kAxis[a];
-            o.lines.push_back({{h.x0, h.y0}, {h.x1, h.y1}, c, 3.f});
+            o.lines.push_back({{h.x0, h.y0}, {h.x1, h.y1}, c, g.dragAxis == a ? 4.f : 3.f});
+            // handle shapes mirror the Qt viewport: arrow head / ring (r 7) / box (10 px)
+            const f32 dx = h.x1 - h.x0, dy = h.y1 - h.y0, len = std::sqrt(dx * dx + dy * dy);
+            const f32 ux = len > 1.f ? dx / len : 1.f, uy = len > 1.f ? dy / len : 0.f;
             switch (g.tool) {
-            case TransformTool::Scale: o.dots.push_back({{h.x1, h.y1}, 5.f, c, Color::rgb(0x101010), 1.f}); break;
-            case TransformTool::Rotate: o.dots.push_back({{h.x1, h.y1}, 6.f, Color{0, 0, 0, 0}, c, 2.f}); break;
-            default: o.dots.push_back({{h.x1, h.y1}, 4.f, c}); break;
+            case TransformTool::Translate:
+                // filled triangle: stacked cross strokes narrowing to the tip
+                for (int s = 0; s < 10; ++s) {
+                    const f32 t = f32(s), half = 5.f * (1.f - t / 10.f);
+                    const f32 cx = h.x1 + ux * t, cy = h.y1 + uy * t;
+                    o.lines.push_back({{cx - uy * half, cy + ux * half}, {cx + uy * half, cy - ux * half}, c, 1.5f});
+                }
+                break;
+            case TransformTool::Rotate: {
+                constexpr int kSeg = 20;
+                for (int s = 0; s < kSeg; ++s) {
+                    const f32 a0 = 6.2831853f * f32(s) / kSeg, a1 = 6.2831853f * f32(s + 1) / kSeg;
+                    o.lines.push_back({{h.x1 + 7.f * std::cos(a0), h.y1 + 7.f * std::sin(a0)},
+                                       {h.x1 + 7.f * std::cos(a1), h.y1 + 7.f * std::sin(a1)}, c, 2.f});
+                }
+                break;
+            }
+            case TransformTool::Scale: o.lines.push_back({{h.x1 - 5.f, h.y1}, {h.x1 + 5.f, h.y1}, c, 10.f}); break;
+            default: break;
             }
         }
         o.dots.push_back({{g.handles[0].x0, g.handles[0].y0}, 4.f, Color::rgb(0xF0F0F0), Color::rgb(0x101010), 1.f});
