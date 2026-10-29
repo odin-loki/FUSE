@@ -228,15 +228,25 @@ void ContactManifold::pruneToMaxPoints(u32 maxPoints) {
         return;
     }
 
-    u32 keep[kMaxContactPointsPerManifold]{};
-    for (u32 i = 0u; i < pointCount; ++i) {
-        keep[i] = i;
+    // Never index past the fixed point storage, even if pointCount was corrupted.
+    const u32 count = pointCount < kMaxContactPointsPerManifold ? pointCount : kMaxContactPointsPerManifold;
+    if (maxPoints > count) {
+        maxPoints = count;
     }
 
-    std::sort(
-        keep,
-        keep + pointCount,
-        [this](u32 lhs, u32 rhs) { return points[lhs].penetration > points[rhs].penetration; });
+    // Deepest first. At most kMaxContactPointsPerManifold entries, so a stable insertion sort
+    // (equal depths keep their original order, as std::sort's small-range path did) is enough and
+    // keeps GCC 14's -Warray-bounds from tracing introsort paths past the 4-slot array.
+    u32 keep[kMaxContactPointsPerManifold]{};
+    for (u32 i = 0u; i < count; ++i) {
+        const u32 index = i;
+        u32 j = i;
+        while (j > 0u && points[keep[j - 1u]].penetration < points[index].penetration) {
+            keep[j] = keep[j - 1u];
+            --j;
+        }
+        keep[j] = index;
+    }
 
     ContactPoint trimmed[kMaxContactPointsPerManifold]{};
     for (u32 i = 0u; i < maxPoints; ++i) {
