@@ -37,6 +37,7 @@ public:
     [[nodiscard]] bool valid(u32 id) const { return id < m_entries.size(); }
     [[nodiscard]] const MaterialCatalogEntry& entry(u32 id) const { return m_entries.at(id); }
     void setState(u32 id, const MaterialEditState& state);
+    void setName(u32 id, std::string name);
     u32 add(MaterialCatalogEntry entry);
     void removeLast();
     /// Bumped on every change (panels poll it).
@@ -75,6 +76,29 @@ private:
     MaterialEditState m_after;
     std::string m_description;
 };
+
+/// Undoable material rename.
+class RenameMaterialCommand final : public UndoCommand {
+public:
+    RenameMaterialCommand(MaterialCatalog& catalog, u32 id, std::string before, std::string after)
+        : m_catalog(catalog), m_id(id), m_before(std::move(before)), m_after(std::move(after)) {}
+    void execute() override { m_catalog.setName(m_id, m_after); }
+    void undo() override { m_catalog.setName(m_id, m_before); }
+    std::string description() const override { return "Rename material '" + m_after + "'"; }
+
+private:
+    MaterialCatalog& m_catalog;
+    u32 m_id;
+    std::string m_before;
+    std::string m_after;
+};
+
+/// Built-in PBR starting points for the Material Editor's preset picker (linear base colour).
+struct MaterialPreset {
+    const char* name;
+    MaterialEditState state;
+};
+const std::vector<MaterialPreset>& materialPresets();
 
 /// Undoable "New material" (appends; undo removes it again).
 class AddMaterialCommand final : public UndoCommand {

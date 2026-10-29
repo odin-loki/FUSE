@@ -72,6 +72,50 @@ void MaterialCatalog::setState(u32 id, const MaterialEditState& state) {
     }
 }
 
+void MaterialCatalog::setName(u32 id, std::string name) {
+    if (valid(id)) {
+        m_entries[id].name = std::move(name);
+        m_revision = nextCatalogRevision();
+    }
+}
+
+const std::vector<MaterialPreset>& materialPresets() {
+    static const std::vector<MaterialPreset> presets = [] {
+        const auto pbr = [](f32 r, f32 g, f32 b, f32 metal, f32 rough) {
+            MaterialEditState s;
+            s.baseColorR = r;
+            s.baseColorG = g;
+            s.baseColorB = b;
+            s.metallic = metal;
+            s.roughness = rough;
+            return s;
+        };
+        const auto proc = [](u32 fn, f32 rough, f32 metal) {
+            MaterialEditState s;
+            s.procedural = true;
+            s.proceduralFnId = fn;
+            s.roughness = rough;
+            s.metallic = metal;
+            return s;
+        };
+        return std::vector<MaterialPreset>{
+            {"Gold", pbr(1.000f, 0.766f, 0.336f, 1.f, 0.30f)},
+            {"Silver", pbr(0.972f, 0.960f, 0.915f, 1.f, 0.20f)},
+            {"Copper", pbr(0.955f, 0.638f, 0.538f, 1.f, 0.35f)},
+            {"Chrome", pbr(0.550f, 0.556f, 0.554f, 1.f, 0.05f)},
+            {"Brushed steel", pbr(0.560f, 0.570f, 0.580f, 1.f, 0.55f)},
+            {"White plastic", pbr(0.800f, 0.800f, 0.800f, 0.f, 0.40f)},
+            {"Red plastic", pbr(0.700f, 0.040f, 0.030f, 0.f, 0.35f)},
+            {"Rubber", pbr(0.020f, 0.020f, 0.020f, 0.f, 0.90f)},
+            {"Clay", pbr(0.450f, 0.250f, 0.150f, 0.f, 0.85f)},
+            {"Wood (procedural)", proc(1u, 0.7f, 0.f)},
+            {"Metal (procedural)", proc(2u, 0.4f, 1.f)},
+            {"Concrete (procedural)", proc(3u, 0.9f, 0.f)},
+        };
+    }();
+    return presets;
+}
+
 u32 MaterialCatalog::add(MaterialCatalogEntry entry) {
     m_entries.push_back(std::move(entry));
     m_revision = nextCatalogRevision();

@@ -659,6 +659,43 @@ int gateMaterial(MainWindow& window) {
     expect(catalog.count() == n0 && mat->materialList()->count() == static_cast<int>(n0),
            "material: undo removes the new material");
 
+    // Usability: rename, presets, usage + select users.
+    mat->selectMaterial(2);
+    tick(window);
+    const std::string oldName = catalog.entry(2).name;
+    expect(mat->renameMaterial(QStringLiteral("  Hero Gold ")) && catalog.entry(2).name == "Hero Gold",
+           "material: rename (trimmed)");
+    expect(mat->materialList()->itemText(2).endsWith(QStringLiteral("Hero Gold")), "material: list shows the new name");
+    expect(!mat->renameMaterial(QStringLiteral("   ")), "material: empty name rejected");
+    findAction(window, MainWindow::kActionUndo)->trigger();
+    tick(window);
+    expect(catalog.entry(2).name == oldName, "material: undo reverts the rename");
+    const auto& presets = fuse::editor::materialPresets();
+    int rubber = -1;
+    for (std::size_t i = 0; i < presets.size(); ++i) if (std::string(presets[i].name) == "Rubber") rubber = static_cast<int>(i);
+    expect(rubber >= 0 && mat->applyPreset(rubber), "material: apply Rubber preset");
+    expect(std::fabs(catalog.entry(2).state.roughness - 0.9f) < 1e-5f && catalog.entry(2).state.metallic == 0.f,
+           "material: preset sets roughness / metallic");
+    findAction(window, MainWindow::kActionUndo)->trigger();
+    tick(window);
+    expect(catalog.entry(2).state.roughness != 0.9f, "material: undo reverts the preset");
+    findAction(window, "fuseActionCreateSdfSphere")->trigger();
+    tick(window);
+    const ecs::EntityID e2 = window.host().editorState().primarySelection;
+    mat->selectMaterial(2);
+    expect(mat->assignToSelection(), "material: assign to a second sphere");
+    tick(window);
+    expect(mat->usageCount() == 2, "material: usage counts both spheres");
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        window.host().editorState().selectedEntities.clear();
+        window.host().editorState().primarySelection = ecs::EntityID::null();
+    }
+    expect(mat->selectUsers() == 2, "material: Select users");
+    const auto& sel = window.host().editorState().selectedEntities;
+    expect(sel.size() == 2u && std::find(sel.begin(), sel.end(), e) != sel.end() && std::find(sel.begin(), sel.end(), e2) != sel.end(),
+           "material: both users selected");
+
     QTemporaryDir dir;
     const std::string scene = (dir.path() + QStringLiteral("/mat_scene.fusescene")).toStdString();
     mat->selectMaterial(3);

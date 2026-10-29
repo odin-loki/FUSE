@@ -383,6 +383,14 @@ public:
     bool assignToSelection();
     [[nodiscard]] QImage previewImage() const;
     QComboBox* materialList() const { return m_list; }
+    /// Rename the current material (undoable); empty names are rejected.
+    bool renameMaterial(const QString& name);
+    /// Replace the current material's shading with a built-in preset (undoable; keeps texture / UV scale).
+    bool applyPreset(int index);
+    /// Entities whose Mesh / SDFObject uses the current material.
+    [[nodiscard]] int usageCount() const;
+    /// Select every entity using the current material; returns how many.
+    int selectUsers();
 
 signals:
     void sceneEdited();
@@ -406,6 +414,10 @@ private:
     QPushButton* m_texture = nullptr;
     QPushButton* m_textureClear = nullptr;
     QDoubleSpinBox* m_uvScale = nullptr;
+    QLineEdit* m_name = nullptr;
+    QComboBox* m_preset = nullptr;
+    QLabel* m_usage = nullptr;
+    QPushButton* m_selectUsers = nullptr;
     u32 m_current = 0;
     u32 m_shownRevision = UINT32_MAX;
     ecs::EntityID m_lastSelection = ecs::EntityID::null();

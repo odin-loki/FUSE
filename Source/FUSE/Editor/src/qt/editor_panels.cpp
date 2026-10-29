@@ -1659,6 +1659,16 @@ MaterialEditorWidget::MaterialEditorWidget(EditorHost& host, std::mutex& sceneMu
     top->addWidget(m_list, 1);
     top->addWidget(add);
     layout->addRow(tr("Material"), top);
+    m_name = new QLineEdit(this);
+    m_name->setObjectName(QStringLiteral("fuseMaterialName"));
+    m_name->setPlaceholderText(tr("Material name"));
+    layout->addRow(tr("Name"), m_name);
+    m_preset = new QComboBox(this);
+    m_preset->setObjectName(QStringLiteral("fuseMaterialPreset"));
+    m_preset->addItem(tr("Apply preset..."));
+    for (const MaterialPreset& p : materialPresets()) m_preset->addItem(QString::fromLatin1(p.name));
+    m_preset->setToolTip(tr("Replace colour / metallic / roughness / shader with a preset (undoable)"));
+    layout->addRow(tr("Preset"), m_preset);
     m_preview = new QLabel(this);
     m_preview->setFixedSize(96, 96);
     m_preview->setAlignment(Qt::AlignCenter);
@@ -1697,10 +1707,27 @@ MaterialEditorWidget::MaterialEditorWidget(EditorHost& host, std::mutex& sceneMu
     m_assign = new QPushButton(tr("Assign to selection"), this);
     m_assign->setObjectName(QStringLiteral("fuseMaterialAssign"));
     layout->addRow(m_assign);
+    auto* usageRow = new QHBoxLayout();
+    m_usage = new QLabel(this);
+    m_usage->setObjectName(QStringLiteral("fuseMaterialUsage"));
+    m_selectUsers = new QPushButton(tr("Select users"), this);
+    m_selectUsers->setObjectName(QStringLiteral("fuseMaterialSelectUsers"));
+    m_selectUsers->setToolTip(tr("Select every entity whose mesh / SDF object uses this material"));
+    usageRow->addWidget(m_usage, 1);
+    usageRow->addWidget(m_selectUsers);
+    layout->addRow(usageRow);
     m_summary = new QLabel(this);
     m_summary->setWordWrap(true);
     layout->addRow(m_summary);
 
+    connect(m_name, &QLineEdit::editingFinished, this, [this]() {
+        if (!m_updating) renameMaterial(m_name->text());
+    });
+    connect(m_preset, QOverload<int>::of(&QComboBox::activated), this, [this](int i) {
+        if (i > 0) applyPreset(i - 1);
+        m_preset->setCurrentIndex(0);
+    });
+    connect(m_selectUsers, &QPushButton::clicked, this, [this]() { selectUsers(); });
     connect(m_list, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int i) {
         if (!m_updating && i >= 0) {
             selectMaterial(static_cast<u32>(i));
@@ -1784,6 +1811,7 @@ void MaterialEditorWidget::showCurrent_() {
     m_texture->setText(tex.isEmpty() ? tr("None") : QFileInfo(tex).fileName());
     m_texture->setToolTip(tex);
     m_textureClear->setEnabled(!tex.isEmpty());
+    if (!m_name->hasFocus()) m_name->setText(name);
     m_updating = false;
     float r = 1.f, g = 1.f, b = 1.f;
     m_panel.baseColorSrgb(r, g, b);
@@ -1831,6 +1859,9 @@ void MaterialEditorWidget::refresh() {
         showCurrent_();
     }
     m_assign->setEnabled(m_lastSelection != ecs::EntityID::null());
+    const int users = usageCount();
+    m_usage->setText(users == 1 ? tr("Used by 1 entity") : tr("Used by %1 entities").arg(users));
+    m_selectUsers->setEnabled(users > 0);
     m_summary->setText(hasMaterial
                            ? tr("Selection uses material %1").arg(entityMaterial)
                            : (m_lastSelection != ecs::EntityID::null() ? tr("Selection has no Mesh / SDF object")
@@ -1938,6 +1969,61 @@ u32 MaterialEditorWidget::newMaterial() {
     refresh();
     emit sceneEdited();
     return m_current;
+}
+
+bool MaterialEditorWidget::renameMaterial(const QString& name) {
+    const std::string after = name.trimmed().toStdString();
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        MaterialCatalog& catalog = m_host.materials();
+        if (after.empty() || !catalog.valid(m_current) || catalog.entry(m_current).name == after) return false;
+        m_host.undoStack().execute(std::make_unique<RenameMaterialCommand>(catalog, m_current, catalog.entry(m_current).name, after));
+    }
+    refresh();
+    emit sceneEdited();
+    return true;
+}
+
+bool MaterialEditorWidget::applyPreset(int index) {
+    const auto& presets = materialPresets();
+    if (index < 0 || index >= static_cast<int>(presets.size()) || !m_host.materials().valid(m_current)) return false;
+    const MaterialEditState cur = m_host.materials().entry(m_current).state;
+    MaterialEditState s = presets[static_cast<usize>(index)].state;
+    s.baseColorTexture = cur.baseColorTexture;
+    s.uvScale = cur.uvScale;
+    s.shadingModel = cur.shadingModel;
+    return applyState_(s, "preset");
+}
+
+int MaterialEditorWidget::usageCount() const {
+    std::lock_guard<std::mutex> lock(m_sceneMutex);
+    ecs::Registry& reg = m_host.editorScene().registry();
+    int n = 0;
+    reg.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform&) {
+        u32 mat = 0;
+        if (AssignMaterialCommand::materialOf(reg, id, mat) && mat == m_current) ++n;
+    });
+    return n;
+}
+
+int MaterialEditorWidget::selectUsers() {
+    int n = 0;
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        ecs::Registry& reg = m_host.editorScene().registry();
+        EditorState& st = m_host.editorState();
+        std::vector<ecs::EntityID> users;
+        reg.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform&) {
+            u32 mat = 0;
+            if (AssignMaterialCommand::materialOf(reg, id, mat) && mat == m_current) users.push_back(id);
+        });
+        n = static_cast<int>(users.size());
+        if (n == 0) return 0;
+        st.selectedEntities = users;
+        st.primarySelection = users.front();
+    }
+    emit sceneEdited();
+    return n;
 }
 
 bool MaterialEditorWidget::assignToSelection() {
