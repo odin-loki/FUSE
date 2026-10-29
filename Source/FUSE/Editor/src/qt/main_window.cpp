@@ -1462,6 +1462,9 @@ bool MainWindow::selectForScreenshot(const QString& spec) {
         if (m_viewport != nullptr) {
             m_viewport->panel().camera().pitch = -30.f; // look down onto the terrain
             (void)m_viewport->frameSelection();
+            // Show the sculpt brush outline at the viewport centre (as if hovering).
+            panel->setSculptInViewport(true);
+            m_viewport->updateTerrainBrush(QPointF(m_viewport->width() * 0.5, m_viewport->height() * 0.6));
         }
         return true;
     }

@@ -167,6 +167,14 @@ public:
         m_terrainSculpt = std::move(handler);
     }
     [[nodiscard]] bool terrainSculptActive() const { return static_cast<bool>(m_terrainSculpt); }
+    /// Terrain brush outline: given the view ray, fills world-space points of the brush ring on the terrain
+    /// (empty = no terrain under the cursor). Hover / stroke positions draw the ring; empty = off.
+    using TerrainBrushProbe = std::function<bool(const float* origin, const float* dir, std::vector<ecs::vec3>& ring)>;
+    void setTerrainBrushProbe(TerrainBrushProbe probe);
+    /// Projected brush ring points of the last hover (tests).
+    [[nodiscard]] int terrainBrushRingSize() const { return static_cast<int>(m_terrainRing.size()); }
+    /// Updates the ring for a cursor position (logical pixels); used by hover and tests.
+    void updateTerrainBrush(QPointF pos);
     [[nodiscard]] int colliderHandleCount() const { return static_cast<int>(m_colliderHandles.size()); }
     [[nodiscard]] QPointF colliderHandlePos(int i) const { return m_colliderHandles.at(static_cast<usize>(i)).pos; }
     [[nodiscard]] QPointF colliderHandleAxis(int i) const { return m_colliderHandles.at(static_cast<usize>(i)).axisPx; }
@@ -247,6 +255,8 @@ private:
     ecs::EntityID m_colliderHandleEntity = ecs::EntityID::null();
     std::function<bool(int, const float*, const float*)> m_terrainSculpt;
     bool m_terrainStroke = false;
+    TerrainBrushProbe m_terrainProbe;
+    std::vector<ecs::vec3> m_terrainRing;
     bool terrainSculptEvent_(int phase, QPointF pos);
     int m_colliderDrag = -1; ///< index into m_colliderHandles while dragging
     QPointF m_colliderDragStart;

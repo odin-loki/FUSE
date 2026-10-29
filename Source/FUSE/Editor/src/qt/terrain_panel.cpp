@@ -259,6 +259,32 @@ bool TerrainPanel::sculptRayPhase(int phase, const float origin[3], const float 
     return true;
 }
 
+bool TerrainPanel::brushRing(const float origin[3], const float dir[3], std::vector<ecs::vec3>& ring) {
+    ring.clear();
+    ecs::EntityID e;
+    float local[3];
+    if (!pickTerrain(origin, dir, m_strokeEntity.valid() ? &m_strokeEntity : nullptr, e, local)) return false;
+    std::lock_guard<std::mutex> lock(m_sceneMutex);
+    ecs::Registry& registry = m_host.editorScene().registry();
+    const ecs::Terrain* t = registry.get<ecs::Terrain>(e);
+    const ecs::Transform* tr = registry.get<ecs::Transform>(e);
+    if (t == nullptr || tr == nullptr) return false;
+    terrain::Heightfield field;
+    buildTerrainHeightfield(*t, field);
+    const f32 r = static_cast<f32>(m_radius->value());
+    const auto& m = tr->local_to_world.data;
+    constexpr int kSeg = 48;
+    ring.reserve(kSeg);
+    for (int i = 0; i < kSeg; ++i) {
+        const f32 a = static_cast<f32>(i) * 6.2831853f / static_cast<f32>(kSeg);
+        const f32 x = local[0] + r * std::cos(a), z = local[2] + r * std::sin(a);
+        const f32 y = terrainHeightAt(field, *t, x, z) + 0.05f;
+        ring.push_back({m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13],
+                        m[2] * x + m[6] * y + m[10] * z + m[14], 1.f});
+    }
+    return true;
+}
+
 ecs::TerrainStamp TerrainPanel::brushStamp(float x, float z) const {
     ecs::TerrainStamp s{};
     s.x = x;
@@ -365,8 +391,10 @@ void TerrainPanel::setSculptInViewport(bool on) {
     if (m_viewport == nullptr) return;
     if (on) {
         m_viewport->setTerrainSculptHandler([this](int phase, const float* o, const float* d) { return sculptRayPhase(phase, o, d); });
+        m_viewport->setTerrainBrushProbe([this](const float* o, const float* d, std::vector<ecs::vec3>& ring) { return brushRing(o, d, ring); });
     } else {
         m_viewport->setTerrainSculptHandler({});
+        m_viewport->setTerrainBrushProbe({});
     }
 }
 

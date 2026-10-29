@@ -6,10 +6,12 @@
 
 #include <fuse/ecs/components/terrain.hpp>
 #include <fuse/ecs/entity.hpp>
+#include <fuse/ecs/math/vec.hpp>
 
 #include <QWidget>
 
 #include <mutex>
+#include <vector>
 
 class QCheckBox;
 class QComboBox;
@@ -44,6 +46,8 @@ public:
     [[nodiscard]] bool stroking() const { return m_strokeEntity.valid(); }
     /// Viewport stroke: phase 0 = press (true if a terrain was hit), 1 = move, 2 = release.
     bool sculptRayPhase(int phase, const float origin[3], const float dir[3]);
+    /// Brush outline for the viewport: world-space ring (48 points) of the brush draped on the terrain under the ray.
+    bool brushRing(const float origin[3], const float dir[3], std::vector<ecs::vec3>& ring);
     /// Remove every stamp of the selected terrain (one undo step).
     bool clearSculpts();
 

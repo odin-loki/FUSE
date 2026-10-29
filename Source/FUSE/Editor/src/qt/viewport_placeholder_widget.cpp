@@ -438,9 +438,11 @@ void ViewportPlaceholderWidget::mouseMoveEvent(QMouseEvent* event) {
     }
     if (m_terrainStroke) {
         terrainSculptEvent_(1, event->position());
+        updateTerrainBrush(event->position());
         event->accept();
         return;
     }
+    if (m_terrainProbe) updateTerrainBrush(event->position());
     if (m_colliderDrag >= 0) {
         colliderDragMove_(event->position());
         event->accept();
@@ -496,6 +498,32 @@ void ViewportPlaceholderWidget::mouseReleaseEvent(QMouseEvent* event) {
         return;
     }
     QWidget::mouseReleaseEvent(event);
+}
+
+void ViewportPlaceholderWidget::setTerrainBrushProbe(TerrainBrushProbe probe) {
+    m_terrainProbe = std::move(probe);
+    m_terrainRing.clear();
+    if (m_terrainProbe) setMouseTracking(true);
+    else if (!m_sculptMode) setMouseTracking(false);
+    update();
+    if (m_overlay != nullptr) m_overlay->update();
+}
+
+void ViewportPlaceholderWidget::updateTerrainBrush(QPointF pos) {
+    const usize before = m_terrainRing.size();
+    m_terrainRing.clear();
+    if (m_terrainProbe) {
+        syncPanelSize();
+        const qreal dpr = devicePixelRatioF();
+        const ViewportRay ray = m_panel.screenRay(static_cast<f32>(pos.x() * dpr), static_cast<f32>(pos.y() * dpr));
+        const float o[3] = {ray.origin.x, ray.origin.y, ray.origin.z};
+        const float d[3] = {ray.direction.x, ray.direction.y, ray.direction.z};
+        if (!m_terrainProbe(o, d, m_terrainRing)) m_terrainRing.clear();
+    }
+    if (before != 0 || !m_terrainRing.empty()) {
+        update();
+        if (m_overlay != nullptr) m_overlay->update();
+    }
 }
 
 bool ViewportPlaceholderWidget::terrainSculptEvent_(int phase, QPointF pos) {
@@ -1391,6 +1419,25 @@ void ViewportPlaceholderWidget::paintColliders_(QPainter& painter) {
 void ViewportPlaceholderWidget::paintGizmo_(QPainter& painter) {
     if (!m_inOverlayPaint) collectColliderLines_();
     paintColliders_(painter);
+    if (m_terrainProbe && m_terrainRing.size() >= 3) {
+        // Terrain brush outline draped on the surface.
+        const qreal inv = 1.0 / devicePixelRatioF();
+        QPolygonF poly;
+        for (const ecs::vec3& p : m_terrainRing) {
+            f32 x = 0.f, y = 0.f;
+            if (m_panel.worldToScreen(p, x, y)) poly << QPointF(x * inv, y * inv);
+        }
+        if (poly.size() >= 3) {
+            painter.save();
+            painter.setRenderHint(QPainter::Antialiasing, true);
+            painter.setBrush(Qt::NoBrush);
+            painter.setPen(QPen(QColor(20, 20, 20, 160), 3.0));
+            painter.drawPolygon(poly);
+            painter.setPen(QPen(m_terrainStroke ? QColor(255, 120, 60) : QColor(120, 220, 255), 1.6));
+            painter.drawPolygon(poly);
+            painter.restore();
+        }
+    }
     paintSceneIcons_(painter);
     if (!m_gizmo.dragging()) {
         refreshGizmo();

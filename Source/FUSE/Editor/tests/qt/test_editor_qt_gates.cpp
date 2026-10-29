@@ -2511,6 +2511,18 @@ int gateTerrain() {
         std::lock_guard<std::mutex> lock(window.sceneMutex());
         expect(host.editorScene().registry().get<ecs::Mesh>(t) != nullptr, "terrain gets a Mesh for the renderer");
     }
+    // Brush outline: hovering the terrain with "Sculpt in viewport" on drapes a ring on the surface.
+    {
+        auto* vp = window.viewport();
+        vp->panel().camera().pitch = -30.f;
+        (void)vp->frameSelection();
+        panel->setSculptInViewport(true);
+        vp->updateTerrainBrush(QPointF(vp->width() * 0.5, vp->height() * 0.5));
+        expect(vp->terrainBrushRingSize() == 48, fmt("brush ring drawn under the cursor (%d points)", vp->terrainBrushRingSize()));
+        vp->updateTerrainBrush(QPointF(vp->width() * 0.5, 2.0));
+        expect(vp->terrainBrushRingSize() == 0, "no ring when the cursor is over the sky");
+        panel->setSculptInViewport(false);
+    }
     return g_failures == 0 ? 0 : 1;
 }
 
