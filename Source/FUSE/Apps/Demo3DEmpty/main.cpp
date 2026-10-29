@@ -134,12 +134,18 @@ int main(int argc, char** argv) {
                               world3D.gpuFramesRendered() == static_cast<fuse::u32>(frameTarget),
                           "frames rendered by the SceneRenderer from World3D");
         fuse::demo::check(gpu.lastFrame().instances == level.meshes, "every level mesh is a GPU instance");
+        // Headless frames keep a host-visible copy; presented (swapchain) frames do not, so pixel checks
+        // only run without --present.
         fuse::u8 rgb[3] = {0, 0, 0};
+        if (gpu.readbackFrames() != 0u) {
         fuse::demo::check(fuse::hybrid::readbackPixel(gpu, gpu.width() / 2u, gpu.height() / 2u, rgb) && rgb[0] > 40u &&
                               rgb[1] > 40u && rgb[2] > 40u,
                           "lit converted ground plane at the frame centre (GPU readback)");
         fuse::demo::check(fuse::hybrid::readbackPixel(gpu, 2u, 2u, rgb) && (rgb[0] | rgb[1] | rgb[2]) != 0u,
                           "sky / scene present at the frame corner (GPU readback)");
+        } else {
+            fuse::log::info("demo_3d_empty: presented frames (no headless readback)");
+        }
         const fuse::renderer::VulkanValidationCounters validation = fuse::renderer::vulkanValidationCounters();
         fuse::log::info("demo_3d_empty: validation errors=%u warnings=%u", validation.errors, validation.warnings);
         fuse::demo::check(validation.errors == 0u && validation.warnings == 0u,
