@@ -111,6 +111,7 @@ publish
 [Bb]in
 # [Oo]bj
 sql
+!Source/FUSE/UI/Sql/include/fuse/ui/sql/
 TestResults
 *.Cache
 ClientBin
