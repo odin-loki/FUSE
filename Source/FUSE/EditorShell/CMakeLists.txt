@@ -40,8 +40,18 @@ if(NOT FUSE_EDITOR_SHELL STREQUAL "fuse" OR NOT TARGET fuse_app)
     return()
 endif()
 
-add_library(fuse_editor_fuse STATIC Fuse/src/editor_shell.cpp Fuse/src/editor_shell_panels.cpp)
-target_include_directories(fuse_editor_fuse PUBLIC Fuse/include)
+# window icon rasters (Source/FUSE/Branding) embedded as byte arrays; regenerated when a PNG changes
+set(_fuse_branding "${CMAKE_CURRENT_SOURCE_DIR}/../Branding")
+set(_fuse_icons_hpp "${CMAKE_CURRENT_BINARY_DIR}/generated/fuse_icons_embedded.hpp")
+add_custom_command(OUTPUT "${_fuse_icons_hpp}"
+    COMMAND ${CMAKE_COMMAND} -DBRANDING=${_fuse_branding} -DOUT=${_fuse_icons_hpp} -P "${CMAKE_CURRENT_SOURCE_DIR}/Fuse/cmake/embed_icons.cmake"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Fuse/cmake/embed_icons.cmake" "${_fuse_branding}/fuse_16.png" "${_fuse_branding}/fuse_32.png"
+            "${_fuse_branding}/fuse_48.png" "${_fuse_branding}/fuse_256.png"
+    COMMENT "Embedding FUSE icon rasters")
+add_library(fuse_editor_fuse STATIC Fuse/src/editor_shell.cpp Fuse/src/editor_shell_panels.cpp Fuse/src/app_icon.cpp "${_fuse_icons_hpp}")
+target_include_directories(fuse_editor_fuse PUBLIC Fuse/include PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+get_filename_component(_fuse_repo_root "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
+target_include_directories(fuse_editor_fuse SYSTEM PRIVATE "${_fuse_repo_root}/vendor/stb")
 target_link_libraries(fuse_editor_fuse PUBLIC fuse_editor_controller fuse_editor_scene_host fuse_app)
 fuse_apply_cxx23(fuse_editor_fuse)
 
@@ -49,18 +59,24 @@ if(TARGET fuse_app_native)
     add_executable(fuse_editor_fuse_app Fuse/app/main.cpp)
     set_target_properties(fuse_editor_fuse_app PROPERTIES OUTPUT_NAME fuse_editor_fuse)
     target_link_libraries(fuse_editor_fuse_app PRIVATE fuse_editor_fuse fuse_app_native)
+    if(WIN32)
+        target_sources(fuse_editor_fuse_app PRIVATE "${_fuse_branding}/fuse_editor.rc") # executable icon (fuse.ico)
+    endif()
     fuse_apply_cxx23(fuse_editor_fuse_app)
 endif()
 
 # Twin gates: same names as the Qt editor gates (fuse_editor_qt_*), one executable, --gate=<name>; each writes a PNG.
 add_executable(fuse_editor_ui_gates tests/test_editor_ui_gates.cpp)
+if(WIN32)
+    target_sources(fuse_editor_ui_gates PRIVATE "${_fuse_branding}/fuse_editor.rc") # icon gate: executable icon resource
+endif()
 target_link_libraries(fuse_editor_ui_gates PRIVATE fuse_editor_fuse)
 if(TARGET fuse_app_native)
     target_link_libraries(fuse_editor_ui_gates PRIVATE fuse_app_native)
     target_compile_definitions(fuse_editor_ui_gates PRIVATE FUSE_EDITOR_UI_HAS_NATIVE=1)
 endif()
 fuse_apply_cxx23(fuse_editor_ui_gates)
-set(FUSE_EDITOR_UI_GATES startup layout theme font_1 font_1_25 font_1_5 font_2 fuse_api wasd context_menu context_menu_dpr1_5 ui_frame
+set(FUSE_EDITOR_UI_GATES startup layout theme font_1 font_1_25 font_1_5 font_2 fuse_api wasd context_menu context_menu_dpr1_5 icon live_present ui_frame
     idle_frames e15_console e15_transport e20_inspector e20_reparent e20_file_menu e20_wizard project_open
     project_hub asset_browser material_editor sdf_sculpt profiler sequencer timeline viewport_gizmo scene_viewport gpu_viewport)
 set(FUSE_EDITOR_UI_SHOTS "${CMAKE_BINARY_DIR}/editor_ui_shots")
@@ -70,4 +86,4 @@ foreach(gate ${FUSE_EDITOR_UI_GATES})
     set_tests_properties(fuse_editor_ui_${gate} PROPERTIES LABELS "fuse_ui;fuse_editor_ui")
 endforeach()
 # GPU gates: 77 = skipped (no Vulkan device / no display)
-set_tests_properties(fuse_editor_ui_scene_viewport fuse_editor_ui_gpu_viewport PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(fuse_editor_ui_scene_viewport fuse_editor_ui_gpu_viewport fuse_editor_ui_live_present PROPERTIES SKIP_RETURN_CODE 77)

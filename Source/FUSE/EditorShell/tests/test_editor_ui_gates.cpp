@@ -16,6 +16,7 @@
 #include <fuse/renderer/vk/instance.hpp>
 #endif
 #include <fuse/editor/editor_theme_tokens.hpp>
+#include "fuse/editor/fui/app_icon.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -25,6 +26,12 @@
 #include <functional>
 #include <map>
 #include <thread>
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 #include <algorithm>
 
 using namespace fuse::editor;
@@ -991,6 +998,166 @@ void gateGpuViewport(Rig& r) {
 #endif
 }
 
+// ---- icon: window + executable icon (Qt twin: fuse_editor_qt_icon, Editor/src/qt/app_icon.cpp) -----------------------
+void gateIcon(Rig& r) {
+    const std::vector<fuse::ui::Image> icons = fui::applicationIcon();
+    CHECK(icons.size() == fui::kAppIconSizes.size());
+    // atlas of every size side by side (the gate's screenshot)
+    fuse::ui::Image atlas;
+    atlas.resize(16 + 32 + 48 + 256 + 5 * 8, 256 + 16, 0xFF202020u);
+    int ax = 8;
+    for (std::size_t i = 0; i < icons.size() && i < fui::kAppIconSizes.size(); ++i) {
+        const fuse::ui::Image& img = icons[i];
+        CHECK(img.width == fui::kAppIconSizes[i] && img.height == fui::kAppIconSizes[i]);
+        std::size_t opaque = 0;
+        std::vector<u32> distinct;
+        for (u32 p : img.pixels) {
+            opaque += (p >> 24) > 128;
+            if (distinct.size() < 64 && std::find(distinct.begin(), distinct.end(), p) == distinct.end()) distinct.push_back(p);
+        }
+        std::printf("icon: %dx%d, %zu%% opaque, %zu+ colours\n", img.width, img.height, opaque * 100 / std::max<std::size_t>(1, img.pixels.size()),
+                    distinct.size());
+        CHECK(opaque * 4 >= img.pixels.size()); // a real raster, not an empty placeholder
+        CHECK(distinct.size() >= 2);
+        for (int y = 0; y < img.height; ++y)
+            for (int x = 0; x < img.width; ++x) {
+                const u32 p = img.pixels[std::size_t(y) * std::size_t(img.width) + std::size_t(x)];
+                if ((p >> 24) > 0) atlas.pixels[std::size_t(y + 8) * std::size_t(atlas.width) + std::size_t(ax + x)] = p | 0xFF000000u;
+            }
+        ax += img.width + 8;
+    }
+#if defined(_WIN32)
+    // executable icon: Branding/fuse_editor.rc (fuse.ico) linked into the exe, like the Qt fuse_editor.exe
+    HICON exeIcon = static_cast<HICON>(LoadImageW(GetModuleHandleW(nullptr), L"IDI_ICON1", IMAGE_ICON, 32, 32, 0));
+    std::printf("icon: executable icon resource IDI_ICON1 %s\n", exeIcon ? "present" : "MISSING");
+    CHECK(exeIcon != nullptr);
+    if (exeIcon) DestroyIcon(exeIcon);
+#endif
+#if defined(FUSE_EDITOR_UI_HAS_NATIVE)
+    {
+        fuse::app::NativeOptions o;
+        o.vulkan = false; // the icon needs only the OS window
+        fuse::app::NativePlatform native(r.app, o);
+        if (native.available()) {
+            native.show(r.win);
+            CHECK(native.setIcon(r.win, icons));
+            r.frames(2);
+            const std::vector<int> got = native.iconSizes(r.win);
+            std::string list;
+            for (int v : got) list += (list.empty() ? "" : ",") + std::to_string(v);
+            std::printf("icon: OS window icon sizes [%s]\n", list.c_str());
+            CHECK(!got.empty());
+            for (int v : got) CHECK(std::find(fui::kAppIconSizes.begin(), fui::kAppIconSizes.end(), v) != fui::kAppIconSizes.end());
+#if !defined(_WIN32)
+            CHECK(got.size() == fui::kAppIconSizes.size()); // _NET_WM_ICON carries every raster
+#endif
+        } else {
+            std::printf("icon: no display, OS window icon not checked (%s)\n", std::string(native.lastError()).c_str());
+        }
+    }
+#endif
+    if (!g_out.empty()) {
+        CHECK(fuse::app::writePng(atlas, g_out));
+        g_shotWritten = true;
+    }
+}
+
+// ---- live_present: the live editor presents the viewport, resizes, forwards input, tears down cleanly ----------------
+void gateLivePresent(Rig& r) {
+#if defined(FUSE_EDITOR_UI_HAS_NATIVE)
+    auto host = SceneViewportHost::create({.validation = true, .readback = true});
+    if (!host->valid()) skip("scene renderer host: " + host->reason());
+    fuse::app::NativeOptions o;
+    o.adoptDevice = {host->instanceHandle(), host->physicalDeviceHandle(), host->deviceHandle(), host->queueHandle(),
+                     host->queueFamily()};
+    o.drawMode = fuse::app::VkDrawMode::GpuDraw;
+    o.vsync = false;
+    fuse::ui::Image shot;
+    {
+        fuse::app::NativePlatform native(r.app, o);
+        if (!native.available()) skip("no display");
+        if (native.show(r.win) != fuse::app::PresenterKind::Vulkan) skip(std::string("no Vulkan presenter: ") + std::string(native.lastError()));
+        CHECK(native.setIcon(r.win, fui::applicationIcon()));
+        r.shell.setSceneViewport(host.get(), [&](const SceneViewportFrame& f) { native.setExternalTexture(r.win, 0, {f.image, f.view, f.layout}); });
+        const auto settle = [&](int n) {
+            for (int i = 0; i < n; ++i) {
+                r.frames();
+                std::this_thread::sleep_for(std::chrono::milliseconds(15));
+            }
+        };
+        const auto presentNow = [&] {
+            r.win.requestRedraw();
+            const auto before = r.win.framesPresented();
+            for (int i = 0; i < 200 && r.win.framesPresented() <= before; ++i) settle(1);
+            return r.win.framesPresented() > before;
+        };
+        settle(8);
+        // 1. presents: the window shows the engine frame inside the viewport
+        CHECK(presentNow());
+        fuse::ui::Image cap;
+        CHECK(native.capture(r.win, cap));
+        fuse::ui::Rect ir = w::viewportImageRect(r.ui(), r.ui().find("viewport"));
+        const size_t colours0 = cap.width > 0 ? colourCount(cap, int(ir.x), int(ir.y), int(ir.w), int(ir.h)) : 0;
+        std::printf("live_present: %dx%d window, viewport %.0fx%.0f, %zu colours, %llu scene frames\n", cap.width, cap.height,
+                    ir.w, ir.h, colours0, (unsigned long long)host->framesRendered());
+        CHECK(colours0 >= 8);
+        // 2. resize: the UI relayouts, the viewport and the engine frame follow, presenting continues
+        const fuse::ui::Rect irBefore = ir;
+        const fuse::u64 rendered0 = host->framesRendered();
+        // an OS-level resize (XResizeWindow / SetWindowPos), delivered back like a user drag of the window edge
+        CHECK(native.resizeWindow(r.win, 1280, 720));
+        for (int i = 0; i < 200 && r.ui().viewport().w != 1280.f; ++i) settle(1);
+        settle(10);
+        CHECK(presentNow());
+        ir = w::viewportImageRect(r.ui(), r.ui().find("viewport"));
+        CHECK(r.ui().viewport().w == 1280.f && r.ui().viewport().h == 720.f);
+        CHECK(ir.w < irBefore.w && ir.h < irBefore.h);
+        CHECK(host->framesRendered() > rendered0);
+        CHECK(native.capture(r.win, cap));
+        std::printf("live_present: resized to 1280x720: viewport %.0fx%.0f, capture %dx%d\n", ir.w, ir.h, cap.width, cap.height);
+        CHECK(cap.width > 0 && colourCount(cap, int(ir.x), int(ir.y), int(std::min<float>(ir.w, float(cap.width) - ir.x)),
+                                           int(std::min<float>(ir.h, float(cap.height) - ir.y))) >= 8);
+        // 3. forwarded input: RMB-fly + W through the window's input path moves the engine camera and renders anew
+        const auto p0 = r.c.viewport().position();
+        const fuse::u64 rendered1 = host->framesRendered();
+        Vec2 at{ir.x + ir.w * 0.5f, ir.y + ir.h * 0.5f};
+        r.win.pointerMove(at);
+        r.ui().pointerDown(at, fuse::ui::MouseButton::Right);
+        for (int i = 0; i < 3; ++i) { at.x += 4.f; r.win.pointerMove(at); }
+        r.ui().keyDown(Key::W);
+        settle(10);
+        r.ui().keyUp(Key::W);
+        r.ui().pointerUp(at, fuse::ui::MouseButton::Right);
+        settle(2);
+        const auto p1 = r.c.viewport().position();
+        const float moved = std::sqrt((p1.x - p0.x) * (p1.x - p0.x) + (p1.y - p0.y) * (p1.y - p0.y) + (p1.z - p0.z) * (p1.z - p0.z));
+        std::printf("live_present: forwarded input moved the camera %.3f, %llu new scene frames\n", moved,
+                    (unsigned long long)(host->framesRendered() - rendered1));
+        CHECK(moved > 0.05f);
+        CHECK(host->framesRendered() > rendered1);
+        CHECK(!r.c.contextMenuOpen());
+        CHECK(presentNow());
+        CHECK(native.capture(r.win, shot));
+        CHECK(validationErrors() == 0);
+        // 4. teardown: unbind the scene, then the presenter goes before the device it adopted
+        r.shell.setSceneViewport(nullptr);
+    }
+    CHECK(r.win.framesPresented() > 0);
+    host.reset();
+    r.frames(2); // the shell keeps running headless after the native window is gone
+    CHECK(r.win.image().width == 1280);
+    CHECK(validationErrors() == 0);
+    std::printf("live_present: clean teardown\n");
+    if (!g_out.empty() && shot.width > 0) {
+        CHECK(fuse::app::writePng(shot, g_out));
+        g_shotWritten = true;
+    }
+#else
+    (void)r;
+    skip("built without fuse_app_native");
+#endif
+}
+
 int main(int argc, char** argv) {
     std::string gate, out;
     for (int i = 1; i < argc; ++i) {
@@ -1002,7 +1169,7 @@ int main(int argc, char** argv) {
     Rig r(scale);
     const std::map<std::string, std::function<void(Rig&)>> gates{
         {"startup", gateStartup},        {"layout", gateLayout},           {"theme", gateTheme},
-        {"fuse_api", gateFuseApi},       {"wasd", gateWasd},               {"context_menu", gateContextMenu}, {"context_menu_dpr1_5", gateContextMenuDpr15},
+        {"fuse_api", gateFuseApi},       {"wasd", gateWasd},               {"context_menu", gateContextMenu}, {"context_menu_dpr1_5", gateContextMenuDpr15}, {"icon", gateIcon}, {"live_present", gateLivePresent},
         {"ui_frame", gateUiFrame},       {"idle_frames", gateIdle},        {"e15_console", gateConsole},
         {"e15_transport", gateTransport}, {"e20_inspector", gateInspector}, {"e20_reparent", gateReparent},
         {"e20_file_menu", gateFileMenu}, {"e20_wizard", gateWizard}, {"project_open", gateProjectOpen},  {"project_hub", gateProjectHub}, {"asset_browser", gateAssetBrowser},
