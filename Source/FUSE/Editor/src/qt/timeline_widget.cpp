@@ -1,4 +1,6 @@
 #include "timeline_widget.hpp"
+#include <limits>
+#include <QWheelEvent>
 
 #include <QComboBox>
 #include <QDoubleSpinBox>
@@ -71,6 +73,35 @@ TimelineWidget::TimelineWidget(EditorHost& host, std::mutex& sceneMutex, QWidget
     bar->addWidget(m_inTangent);
     bar->addWidget(new QLabel(tr("Out")));
     bar->addWidget(m_outTangent);
+    m_loopButton = new QPushButton(tr("Loop"));
+    m_loopButton->setObjectName(QStringLiteral("fuseTimelineLoop"));
+    m_loopButton->setCheckable(true);
+    m_loopButton->setToolTip(tr("Loop playback (L)"));
+    m_snapCombo = new QComboBox();
+    m_snapCombo->setObjectName(QStringLiteral("fuseTimelineSnap"));
+    m_snapCombo->setToolTip(tr("Snap scrubbing and key drags to frames"));
+    m_snapCombo->addItem(tr("Snap: off"), 0);
+    for (int fps : {24, 30, 60}) m_snapCombo->addItem(tr("Snap: %1 fps").arg(fps), fps);
+    auto* prevKey = new QPushButton(QStringLiteral("|◆"));
+    prevKey->setObjectName(QStringLiteral("fuseTimelinePrevKey"));
+    prevKey->setToolTip(tr("Previous key ([)"));
+    auto* nextKey = new QPushButton(QStringLiteral("◆|"));
+    nextKey->setObjectName(QStringLiteral("fuseTimelineNextKey"));
+    nextKey->setToolTip(tr("Next key (])"));
+    auto* fit = new QPushButton(tr("Fit"));
+    fit->setObjectName(QStringLiteral("fuseTimelineFit"));
+    fit->setToolTip(tr("Zoom to fit the clip (F). Ctrl+wheel zooms, Shift+wheel pans."));
+    for (QPushButton* b : {prevKey, nextKey, fit}) b->setMaximumWidth(44);
+    bar->insertWidget(1, prevKey);
+    bar->insertWidget(2, nextKey);
+    bar->insertWidget(3, m_loopButton);
+    bar->addWidget(m_snapCombo);
+    bar->addWidget(fit);
+    connect(prevKey, &QPushButton::clicked, this, [this]() { jumpToKey(-1); });
+    connect(nextKey, &QPushButton::clicked, this, [this]() { jumpToKey(1); });
+    connect(fit, &QPushButton::clicked, this, [this]() { zoomToFit(); });
+    connect(m_snapCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
+            [this](int) { m_snapFps = m_snapCombo->currentData().toInt(); });
     bar->addStretch(1);
     bar->addWidget(m_status);
     root->addLayout(bar);
@@ -208,8 +239,12 @@ void TimelineWidget::onPlayTick_() {
     EditorTimeline& tl = m_host.timeline();
     int next = tl.playheadMs() + static_cast<int>(dt);
     if (next >= tl.durationMs()) {
-        next = tl.durationMs();
-        setPlaying(false);
+        if (looping() && tl.durationMs() > 0) {
+            next %= tl.durationMs();
+        } else {
+            next = tl.durationMs();
+            setPlaying(false);
+        }
     }
     scrubTo(next);
 }
@@ -382,15 +417,110 @@ TimelineCanvas::TimelineCanvas(TimelineWidget& owner) : QWidget(&owner), m_owner
     setMouseTracking(false);
 }
 
+int TimelineWidget::viewSpanMs() const {
+    const int dur = std::max(1, m_host.timeline().durationMs());
+    return m_viewSpan <= 0 ? dur : std::min(m_viewSpan, dur);
+}
+
+int TimelineWidget::viewStartMs() const {
+    const int dur = std::max(1, m_host.timeline().durationMs());
+    return std::clamp(m_viewStart, 0, std::max(0, dur - viewSpanMs()));
+}
+
+void TimelineWidget::zoomBy(double factor, int anchorMs) {
+    if (factor <= 0.0) return;
+    const int dur = std::max(1, m_host.timeline().durationMs());
+    const int span = viewSpanMs(), start = viewStartMs();
+    const int newSpan = std::clamp(static_cast<int>(std::lround(span / factor)), std::min(50, dur), dur);
+    const double rel = span > 0 ? static_cast<double>(anchorMs - start) / span : 0.0;
+    m_viewSpan = newSpan >= dur ? 0 : newSpan;
+    m_viewStart = static_cast<int>(std::lround(anchorMs - rel * newSpan));
+    m_viewStart = viewStartMs();
+    m_canvas->update();
+}
+
+void TimelineWidget::panBy(int ms) {
+    m_viewStart = viewStartMs() + ms;
+    m_viewStart = viewStartMs();
+    m_canvas->update();
+}
+
+void TimelineWidget::zoomToFit() {
+    m_viewStart = 0;
+    m_viewSpan = 0;
+    m_canvas->update();
+}
+
+void TimelineWidget::setLooping(bool on) { m_loopButton->setChecked(on); }
+
+bool TimelineWidget::looping() const { return m_loopButton->isChecked(); }
+
+void TimelineWidget::setSnapFps(int fps) {
+    const int idx = m_snapCombo->findData(fps);
+    m_snapCombo->setCurrentIndex(idx >= 0 ? idx : 0);
+    m_snapFps = m_snapCombo->currentData().toInt();
+}
+
+int TimelineWidget::snapMs(int ms) const {
+    const int dur = m_host.timeline().durationMs();
+    int out;
+    if (m_snapFps > 0) {
+        const double frame = 1000.0 / m_snapFps;
+        out = static_cast<int>(std::lround(std::round(ms / frame) * frame));
+    } else {
+        out = static_cast<int>(std::lround(ms / 10.0) * 10);
+    }
+    return std::clamp(out, 0, dur);
+}
+
+bool TimelineWidget::jumpToKey(int direction) {
+    const int now = m_host.timeline().playheadMs();
+    int best = direction < 0 ? -1 : std::numeric_limits<int>::max();
+    for (const auto& t : m_host.timeline().tracks()) {
+        for (const auto& k : t.keyframes()) {
+            const int ms = static_cast<int>(k.time_ms);
+            if (direction < 0 && ms < now) best = std::max(best, ms);
+            if (direction > 0 && ms > now) best = std::min(best, ms);
+        }
+    }
+    if (best < 0 || best == std::numeric_limits<int>::max()) return false;
+    scrubTo(best);
+    // Keep the playhead visible when zoomed in.
+    if (best < viewStartMs() || best > viewStartMs() + viewSpanMs()) {
+        m_viewStart = best - viewSpanMs() / 2;
+        m_viewStart = viewStartMs();
+        m_canvas->update();
+    }
+    return true;
+}
+
 int TimelineCanvas::msToX(int ms) const {
     const int span = std::max(1, width() - kHeaderWidth - 12);
-    return kHeaderWidth + static_cast<int>(std::lround(static_cast<double>(ms) * span / m_owner.m_host.timeline().durationMs()));
+    return kHeaderWidth + static_cast<int>(std::lround(static_cast<double>(ms - m_owner.viewStartMs()) * span / m_owner.viewSpanMs()));
 }
 
 int TimelineCanvas::xToMs(int x) const {
     const int span = std::max(1, width() - kHeaderWidth - 12);
-    const double ms = static_cast<double>(x - kHeaderWidth) * m_owner.m_host.timeline().durationMs() / span;
-    return std::clamp(static_cast<int>(std::lround(ms / 10.0) * 10), 0, m_owner.m_host.timeline().durationMs());
+    const double ms = m_owner.viewStartMs() + static_cast<double>(x - kHeaderWidth) * m_owner.viewSpanMs() / span;
+    return m_owner.snapMs(static_cast<int>(std::lround(ms)));
+}
+
+void TimelineCanvas::wheelEvent(QWheelEvent* e) {
+    const int delta = e->angleDelta().y() != 0 ? e->angleDelta().y() : e->angleDelta().x();
+    if (delta == 0) {
+        QWidget::wheelEvent(e);
+        return;
+    }
+    if (e->modifiers() & Qt::ControlModifier) {
+        const int anchor = std::clamp(xToMs(static_cast<int>(e->position().x())), 0, m_owner.m_host.timeline().durationMs());
+        m_owner.zoomBy(delta > 0 ? 1.25 : 0.8, anchor);
+        e->accept();
+    } else if ((e->modifiers() & Qt::ShiftModifier) || e->angleDelta().x() != 0) {
+        m_owner.panBy(-delta * m_owner.viewSpanMs() / 1200);
+        e->accept();
+    } else {
+        QWidget::wheelEvent(e); // vertical scroll of the lanes
+    }
 }
 
 int TimelineCanvas::curveTop() const {
@@ -410,11 +540,17 @@ void TimelineCanvas::paintEvent(QPaintEvent*) {
     p.fillRect(QRect(0, 0, width(), kRulerHeight), QColor(40, 44, 54));
     p.setPen(QColor(150, 160, 175));
     const int dur = tl.durationMs();
-    const int step = dur <= 2000 ? 250 : dur <= 10000 ? 1000 : 5000;
-    for (int ms = 0; ms <= dur; ms += step) {
+    const int v0 = m_owner.viewStartMs(), vspan = m_owner.viewSpanMs();
+    int step = 10;
+    for (int s : {10, 20, 50, 100, 250, 500, 1000, 2000, 5000, 10000, 30000, 60000}) {
+        step = s;
+        if (vspan / s <= 12) break;
+    }
+    for (int ms = (v0 / step) * step; ms <= std::min(dur, v0 + vspan); ms += step) {
+        if (ms < v0) continue;
         const int x = msToX(ms);
         p.drawLine(x, kRulerHeight - 6, x, kRulerHeight);
-        p.drawText(x + 2, kRulerHeight - 8, QString::number(ms / 1000.0, 'f', ms % 1000 ? 2 : 0) + "s");
+        p.drawText(x + 2, kRulerHeight - 8, QString::number(ms / 1000.0, 'f', ms % 1000 ? (ms % 100 ? 2 : 1) : 0) + "s");
     }
     // Lanes.
     for (size_t i = 0; i < tl.tracks().size(); ++i) {
@@ -424,6 +560,8 @@ void TimelineCanvas::paintEvent(QPaintEvent*) {
         p.setPen(QColor(190, 198, 210));
         p.drawText(QRect(6, y, kHeaderWidth - 10, kLaneHeight), Qt::AlignVCenter | Qt::AlignLeft,
                    QStringLiteral("#%1  %2").arg(t.target_object_id().c_str(), t.property_path().c_str()));
+        p.save();
+        p.setClipRect(QRect(kHeaderWidth - 7, y, width() - kHeaderWidth + 7, kLaneHeight));
         for (size_t k = 0; k < t.keyframes().size(); ++k) {
             const QPoint c = keyPos(static_cast<int>(i), static_cast<int>(k));
             const bool sel = m_owner.m_selTrack == static_cast<int>(i) && m_owner.m_selKey == static_cast<int>(k);
@@ -441,6 +579,7 @@ void TimelineCanvas::paintEvent(QPaintEvent*) {
                 break;
             }
         }
+        p.restore();
     }
     if (tl.tracks().empty()) {
         p.setPen(QColor(140, 150, 165));
@@ -461,7 +600,7 @@ void TimelineCanvas::paintEvent(QPaintEvent*) {
         std::vector<float> values(static_cast<size_t>(samples) + 1);
         for (int i = 0; i <= samples; ++i) {
             values[static_cast<size_t>(i)] = t.sample_at(static_cast<cinematics::TimelineMs>(
-                static_cast<long long>(i) * dur / samples));
+                v0 + static_cast<long long>(i) * vspan / samples));
             lo = std::min(lo, values[static_cast<size_t>(i)]);
             hi = std::max(hi, values[static_cast<size_t>(i)]);
         }
@@ -472,9 +611,11 @@ void TimelineCanvas::paintEvent(QPaintEvent*) {
         auto toY = [&](float v) { return strip.bottom() - 4 - (v - lo) / (hi - lo) * (strip.height() - 8); };
         QPainterPath path;
         for (int i = 0; i <= samples; ++i) {
-            const QPointF pt(msToX(static_cast<int>(static_cast<long long>(i) * dur / samples)), toY(values[static_cast<size_t>(i)]));
+            const QPointF pt(msToX(static_cast<int>(v0 + static_cast<long long>(i) * vspan / samples)), toY(values[static_cast<size_t>(i)]));
             i == 0 ? path.moveTo(pt) : path.lineTo(pt);
         }
+        p.save();
+        p.setClipRect(QRect(kHeaderWidth - 7, strip.top(), width() - kHeaderWidth + 7, strip.height()));
         p.setRenderHint(QPainter::Antialiasing, true);
         p.setBrush(Qt::NoBrush);
         p.setPen(QPen(QColor(120, 220, 140), 1.6));
@@ -485,7 +626,7 @@ void TimelineCanvas::paintEvent(QPaintEvent*) {
             float out = 0.f;
             t.effective_tangents(static_cast<size_t>(m_owner.m_selKey), in, out);
             const QPointF c(msToX(k.time_ms), toY(k.value));
-            const double pxPerMs = static_cast<double>(std::max(1, strip.width())) / std::max(1, dur);
+            const double pxPerMs = static_cast<double>(std::max(1, strip.width())) / std::max(1, vspan);
             const double pxPerUnit = (strip.height() - 8) / static_cast<double>(hi - lo);
             auto handle = [&](float slope, double sign) {
                 // 30 px long handle in screen space along the slope.
@@ -505,6 +646,7 @@ void TimelineCanvas::paintEvent(QPaintEvent*) {
             p.drawEllipse(c, 4, 4);
         }
         p.setRenderHint(QPainter::Antialiasing, false);
+        p.restore();
     }
     // Playhead.
     const int px = msToX(tl.playheadMs());
@@ -556,6 +698,18 @@ void TimelineCanvas::keyPressEvent(QKeyEvent* e) {
         m_owner.keySelection();
     } else if (e->key() == Qt::Key_Space) {
         m_owner.setPlaying(!m_owner.playing());
+    } else if (e->key() == Qt::Key_BracketLeft) {
+        m_owner.jumpToKey(-1);
+    } else if (e->key() == Qt::Key_BracketRight) {
+        m_owner.jumpToKey(1);
+    } else if (e->key() == Qt::Key_Home) {
+        m_owner.scrubTo(0);
+    } else if (e->key() == Qt::Key_End) {
+        m_owner.scrubTo(m_owner.m_host.timeline().durationMs());
+    } else if (e->key() == Qt::Key_L) {
+        m_owner.setLooping(!m_owner.looping());
+    } else if (e->key() == Qt::Key_F) {
+        m_owner.zoomToFit();
     } else {
         QWidget::keyPressEvent(e);
     }

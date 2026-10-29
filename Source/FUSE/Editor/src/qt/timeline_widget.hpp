@@ -49,6 +49,24 @@ public:
     [[nodiscard]] TimelineCanvas* canvas() const { return m_canvas; }
     [[nodiscard]] EditorTimeline& model() { return m_host.timeline(); }
 
+    // ---- view / navigation (GUI-7) ----
+    /// Visible time range of the lanes; span 0 = whole clip ("zoom to fit").
+    [[nodiscard]] int viewStartMs() const;
+    [[nodiscard]] int viewSpanMs() const;
+    /// Zoom by `factor` (>1 zooms in) keeping `anchorMs` under the same pixel; clamps to [50 ms, duration].
+    void zoomBy(double factor, int anchorMs);
+    void panBy(int ms);
+    void zoomToFit();
+    /// Loop playback (wraps at the end instead of stopping).
+    void setLooping(bool on);
+    [[nodiscard]] bool looping() const;
+    /// Snap scrubbing / key drags to whole frames at `fps` (0 = 10 ms steps).
+    void setSnapFps(int fps);
+    [[nodiscard]] int snapFps() const { return m_snapFps; }
+    [[nodiscard]] int snapMs(int ms) const;
+    /// Move the playhead to the previous / next key time on any lane (false when there is none).
+    bool jumpToKey(int direction);
+
 signals:
     void sceneEdited();
     /// Playhead moved (scrub, play tick, time field): drives a linked Sequencer.
@@ -76,6 +94,11 @@ private:
     QComboBox* m_interpCombo = nullptr;
     QDoubleSpinBox* m_inTangent = nullptr;
     QDoubleSpinBox* m_outTangent = nullptr;
+    QPushButton* m_loopButton = nullptr;
+    QComboBox* m_snapCombo = nullptr;
+    int m_viewStart = 0;
+    int m_viewSpan = 0;
+    int m_snapFps = 0;
     QTimer m_playTimer;
     QElapsedTimer m_playClock;
     int m_selTrack = -1;
@@ -108,6 +131,7 @@ protected:
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
+    void wheelEvent(QWheelEvent* event) override;
     [[nodiscard]] QSize sizeHint() const override { return {600, 160}; }
 
 private:

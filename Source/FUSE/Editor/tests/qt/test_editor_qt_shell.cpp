@@ -410,6 +410,45 @@ int gateTimeline(MainWindow& window) {
     window.undoLatest();
     expect(tw->model().tracks()[static_cast<size_t>(lane)].keyframes()[0].interp == fuse::cinematics::KeyInterp::Linear,
            "timeline: undo restores linear");
+    // GUI-7 navigation: key jumps, zoom/pan, snap, loop.
+    tw->scrubTo(500);
+    expect(tw->jumpToKey(1) && tw->model().playheadMs() == 2000, "timeline: ] jumps to the next key");
+    expect(tw->jumpToKey(-1) && tw->model().playheadMs() == 0, "timeline: [ jumps to the previous key");
+    expect(!tw->jumpToKey(-1), "timeline: no key before the first");
+    const int dur = tw->model().durationMs();
+    expect(tw->viewStartMs() == 0 && tw->viewSpanMs() == dur, "timeline: view fits the clip");
+    tw->zoomBy(4.0, 1000);
+    expect(tw->viewSpanMs() == dur / 4 && tw->viewStartMs() <= 1000 && tw->viewStartMs() + tw->viewSpanMs() >= 1000,
+           "timeline: zoom keeps the anchor visible");
+    const int x1000 = tw->canvas()->msToX(1000);
+    tw->panBy(100);
+    expect(tw->canvas()->msToX(1000) < x1000, "timeline: pan shifts the lanes");
+    tw->zoomBy(1e6, 1000);
+    expect(tw->viewSpanMs() >= 50, "timeline: zoom clamps at 50 ms");
+    tw->zoomToFit();
+    expect(tw->viewSpanMs() == dur, "timeline: Fit restores the whole clip");
+    tw->setSnapFps(30);
+    expect(tw->snapMs(1010) == 1000 && tw->snapMs(1020) == 1033, "timeline: 30 fps snap");
+    tw->setSnapFps(0);
+    expect(tw->snapMs(1014) == 1010, "timeline: default 10 ms snap");
+    tw->setLooping(true);
+    tw->scrubTo(dur - 100);
+    tw->setPlaying(true);
+    {
+        QElapsedTimer lc;
+        lc.start();
+        int maxSeen = 0;
+        bool wrapped = false;
+        while (lc.elapsed() < 2000 && !wrapped) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+            const int ph = tw->model().playheadMs();
+            wrapped = ph < maxSeen;
+            maxSeen = std::max(maxSeen, ph);
+        }
+        expect(wrapped && tw->playing(), "timeline: loop wraps and keeps playing");
+    }
+    tw->setPlaying(false);
+    tw->setLooping(false);
     tw->scrubTo(0);
     tw->setPlaying(true);
     QElapsedTimer clock;
