@@ -31,6 +31,13 @@ add_library(fuse_relight_overlay_core STATIC
     src/win32_hook.cpp)
 target_include_directories(fuse_relight_overlay_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(fuse_relight_overlay_core PUBLIC fuse_relight_options)
+# The menu runs on FUSE UI's immediate front-end (real glyphs) when FUSE UI is built; otherwise the 5x7 overlay::Ui.
+option(FUSE_RELIGHT_OVERLAY_FUSE_UI "Relight developer menu on FUSE UI (fuse_ui_core + fuse_text)" ON)
+if(FUSE_RELIGHT_OVERLAY_FUSE_UI AND TARGET fuse_ui_core AND TARGET fuse_text)
+    target_sources(fuse_relight_overlay_core PRIVATE src/fuse_menu_ui.cpp)
+    target_link_libraries(fuse_relight_overlay_core PUBLIC fuse_ui_core fuse_text)
+    target_compile_definitions(fuse_relight_overlay_core PUBLIC FUSE_RELIGHT_OVERLAY_FUSE_UI=1)
+endif()
 if(WIN32)
     target_link_libraries(fuse_relight_overlay_core PRIVATE user32)
 endif()

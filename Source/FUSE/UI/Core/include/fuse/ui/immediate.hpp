@@ -47,6 +47,15 @@ struct Theme {
     float radius = 3.f;
 };
 
+/// One text draw of the last pass, kept with its string so a client can show it with another renderer or inspect it
+/// (Relight's overlay keeps semantic text commands). Its glyphs are draws()[firstCmd, firstCmd + cmdCount).
+struct TextRun {
+    std::int32_t x = 0, y = 0, clipW = 0;
+    Color color;
+    std::uint32_t textBegin = 0, textLength = 0;
+    std::uint32_t firstCmd = 0, cmdCount = 0;
+};
+
 class ImmediateUi {
 public:
     explicit ImmediateUi(Metrics m = Metrics::overlay());
@@ -76,6 +85,9 @@ public:
     bool mouseInPanel() const { return m_panel.contains(m_mouseX, m_mouseY); }
 
     const DrawList& draws() const { return m_draws; }
+    const std::vector<TextRun>& textRuns() const { return m_runs; }
+    std::string_view text(const TextRun& r) const { return {m_runText.data() + r.textBegin, r.textLength}; }
+    std::int32_t scale() const { return m_scale; }
     bool widgetRect(std::string_view id, IRect& out) const;
     const IRect& panel() const { return m_panel; }
     std::uint32_t focused() const { return m_focus; }
@@ -106,6 +118,8 @@ private:
     DrawList m_draws;
     std::vector<Widget> m_widgets, m_lastWidgets;
     std::vector<fuse::text::ShapedGlyph> m_shape;
+    std::vector<TextRun> m_runs;
+    std::vector<char> m_runText;
 };
 
 } // namespace fuse::ui::immediate

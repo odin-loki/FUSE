@@ -33,6 +33,8 @@ void ImmediateUi::begin(const IRect& panel, std::int32_t scale, const InputEvent
     m_cursorY = m_panel.y + m_pad;
     m_lineY = m_cursorY;
     m_sameLine = m_lineOpen = m_keyConsumed = false;
+    m_runs.clear();
+    m_runText.clear();
     m_event = event ? *event : InputEvent{};
     switch (m_event.type) {
     case EventType::MouseMove:
@@ -107,6 +109,23 @@ void ImmediateUi::fill(const IRect& r, Color c) {
 }
 
 void ImmediateUi::glyphs(std::int32_t x, std::int32_t y, std::string_view s, Color c, std::int32_t clipW) {
+    TextRun run;
+    run.x = x;
+    run.y = y;
+    run.clipW = clipW;
+    run.color = c;
+    run.textBegin = std::uint32_t(m_runText.size());
+    run.textLength = std::uint32_t(s.size());
+    run.firstCmd = std::uint32_t(m_draws.size());
+    m_runText.insert(m_runText.end(), s.begin(), s.end());
+    struct Close {
+        ImmediateUi& ui;
+        TextRun& r;
+        ~Close() {
+            r.cmdCount = std::uint32_t(ui.m_draws.size()) - r.firstCmd;
+            ui.m_runs.push_back(r);
+        }
+    } close{*this, run};
     if (!m_font || !m_atlas || s.empty() || clipW <= 0) return;
     const f32 px = m_px * f32(m_scale);
     fuse::text::defaultShaper().shape(*m_font, px, s, m_shape);

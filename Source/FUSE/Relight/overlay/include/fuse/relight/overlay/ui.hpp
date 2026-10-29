@@ -71,12 +71,16 @@ inline constexpr std::int32_t kVkBack = 0x08, kVkReturn = 0x0D, kVkEscape = 0x1B
                               kVkHome = 0x24, kVkUp = 0x26, kVkDown = 0x28;
 
 struct DrawCmd {
-    enum class Kind : std::uint8_t { Fill, Text };
+    /// Glyph: an 8-bit coverage quad from DrawList::glyphAtlas() (real fonts, FUSE UI menus); Text with `shaped` set is
+    /// semantic only (its string, for tests and tools): the Glyph commands that follow draw it.
+    enum class Kind : std::uint8_t { Fill, Text, Glyph };
     Kind kind = Kind::Fill;
-    std::int32_t x = 0, y = 0, w = 0, h = 0; ///< Fill: the rectangle; Text: origin (w = clip width in pixels)
+    std::int32_t x = 0, y = 0, w = 0, h = 0; ///< Fill / Glyph: the rectangle; Text: origin (w = clip width in pixels)
     Color color = 0;
     std::uint32_t textBegin = 0, textLength = 0; ///< Text: range in DrawList::text()
     std::int32_t scale = 1;
+    std::uint16_t u = 0, v = 0; ///< Glyph: top-left texel in the atlas (w x h texels, 1:1)
+    bool shaped = false;        ///< Text: drawn by following Glyph commands, not by the 5x7 font
 };
 
 class DrawList {
@@ -88,6 +92,16 @@ public:
     void fill(const Rect& r, Color color);
     /// Text clipped to `clipWidth` pixels (whole characters).
     void text(std::int32_t x, std::int32_t y, std::string_view s, Color color, std::int32_t scale, std::int32_t clipWidth);
+    /// Same clipping as text(), but marked shaped (glyphs drawn separately); returns false when nothing fits.
+    bool shapedText(std::int32_t x, std::int32_t y, std::string_view s, Color color, std::int32_t scale, std::int32_t clipWidth);
+    void glyph(std::int32_t x, std::int32_t y, std::int32_t w, std::int32_t h, std::uint16_t u, std::uint16_t v, Color color);
+    /// Coverage atlas (size x size, 8-bit) for Glyph commands; non-owning, kept across clear().
+    void setGlyphAtlas(const std::uint8_t* pixels, std::int32_t size) {
+        m_atlas = pixels;
+        m_atlasSize = size;
+    }
+    const std::uint8_t* glyphAtlas() const { return m_atlas; }
+    std::int32_t glyphAtlasSize() const { return m_atlasSize; }
     const std::vector<DrawCmd>& cmds() const { return m_cmds; }
     std::string_view text(const DrawCmd& c) const { return {m_text.data() + c.textBegin, c.textLength}; }
     void reserve(std::size_t cmds, std::size_t chars) {
@@ -98,6 +112,8 @@ public:
 private:
     std::vector<DrawCmd> m_cmds;
     std::vector<char> m_text;
+    const std::uint8_t* m_atlas = nullptr;
+    std::int32_t m_atlasSize = 0;
 };
 
 /// FNV-1a 32 of an id string (0 is never returned).

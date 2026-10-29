@@ -40,6 +40,34 @@ void rasterize(const DrawList& draws, const Rect& panel, std::vector<Color>& lay
             fillRect(layer, panel, c.x, c.y, c.x + c.w, c.y + c.h, c.color);
             continue;
         }
+        if (c.kind == DrawCmd::Kind::Glyph) {
+            const std::uint8_t* atlas = draws.glyphAtlas();
+            const std::int32_t as = draws.glyphAtlasSize();
+            if (!atlas || c.u + c.w > as || c.v + c.h > as) {
+                continue;
+            }
+            const std::int32_t x0 = std::max(c.x, panel.x), y0 = std::max(c.y, panel.y);
+            const std::int32_t x1 = std::min(c.x + c.w, panel.x + panel.w), y1 = std::min(c.y + c.h, panel.y + panel.h);
+            for (std::int32_t y = y0; y < y1; ++y) {
+                const std::uint8_t* cov = atlas + static_cast<std::size_t>(c.v + (y - c.y)) * static_cast<std::size_t>(as) + c.u;
+                Color* row = layer.data() + static_cast<std::size_t>(y - panel.y) * static_cast<std::size_t>(panel.w);
+                for (std::int32_t x = x0; x < x1; ++x) {
+                    const std::uint32_t a = cov[x - c.x];
+                    if (a == 0) {
+                        continue;
+                    }
+                    Color src = 0; // premultiplied colour scaled by coverage
+                    for (std::uint32_t shift = 0; shift < 32; shift += 8) {
+                        src |= ((((c.color >> shift) & 0xffu) * a + 127u) / 255u) << shift;
+                    }
+                    row[x - panel.x] = blendOver(row[x - panel.x], src);
+                }
+            }
+            continue;
+        }
+        if (c.shaped) {
+            continue;
+        }
         const std::string_view s = draws.text(c);
         const std::int32_t sc = c.scale;
         const std::int32_t clipRight = c.x + c.w;

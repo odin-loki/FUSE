@@ -83,12 +83,14 @@ if(FUSE_BUILD_EDITOR_API OR FUSE_BUILD_EDITOR)
     add_subdirectory(Editor)
 endif()
 
-add_subdirectory(Relight)  # FUSE Relight (docs/plans/FUSE_REMIX_PORT_PLAN.md); FUSE_BUILD_RELIGHT inside, default ON for MinGW
-
+# FUSE UI before Relight: the Relight developer menu runs on fuse_ui_core when it exists.
 option(FUSE_BUILD_UI "Build FUSE UI (docs/plans/FUSE_UI_PLAN.md): fuse_text, fuse_ui_core, fuse_ui_widgets and the UI gates" ON)
 if(FUSE_BUILD_UI)
     add_subdirectory(UI)
 endif()
+
+add_subdirectory(Relight)  # FUSE Relight (docs/plans/FUSE_REMIX_PORT_PLAN.md); FUSE_BUILD_RELIGHT inside, default ON for MinGW
+
 
 if(TARGET fuse_script AND TARGET fuse_compat_ts)
     target_link_libraries(fuse_script PRIVATE fuse_compat_ts fuse_compat_ts_t3d fuse_compat_ts_t2d)

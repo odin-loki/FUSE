@@ -23,6 +23,34 @@ void DrawList::fill(const Rect& r, Color color) {
     m_cmds.push_back(c);
 }
 
+void DrawList::glyph(std::int32_t x, std::int32_t y, std::int32_t w, std::int32_t h, std::uint16_t u, std::uint16_t v,
+                     Color color) {
+    if (w <= 0 || h <= 0 || (color >> 24) == 0) {
+        return;
+    }
+    DrawCmd c;
+    c.kind = DrawCmd::Kind::Glyph;
+    c.x = x;
+    c.y = y;
+    c.w = w;
+    c.h = h;
+    c.u = u;
+    c.v = v;
+    c.color = color;
+    m_cmds.push_back(c);
+}
+
+bool DrawList::shapedText(std::int32_t x, std::int32_t y, std::string_view s, Color color, std::int32_t scale,
+                          std::int32_t clipWidth) {
+    const std::size_t before = m_cmds.size();
+    text(x, y, s, color, scale, clipWidth);
+    if (m_cmds.size() == before) {
+        return false;
+    }
+    m_cmds.back().shaped = true;
+    return true;
+}
+
 void DrawList::text(std::int32_t x, std::int32_t y, std::string_view s, Color color, std::int32_t scale,
                     std::int32_t clipWidth) {
     const std::int32_t advance = kCellWidth * scale;

@@ -26,6 +26,9 @@
 #include <fuse/relight/overlay/overlay_options.hpp>
 #include <fuse/relight/overlay/script.hpp>
 #include <fuse/relight/overlay/ui.hpp>
+#if defined(FUSE_RELIGHT_OVERLAY_FUSE_UI)
+#include <fuse/relight/overlay/fuse_menu_ui.hpp>
+#endif
 #include <fuse/relight/overlay/win32_hook.hpp>
 
 #include <array>
@@ -38,6 +41,13 @@ class OptionBase;
 }
 
 namespace fuse::relight::overlay {
+
+/// The menu's immediate-mode UI: FUSE UI (real glyphs) when fuse_ui_core is in the build, else the 5x7 overlay::Ui.
+#if defined(FUSE_RELIGHT_OVERLAY_FUSE_UI)
+using MenuUi = FuseMenuUi;
+#else
+using MenuUi = Ui;
+#endif
 
 /// Same values as render::frame::DebugBuffer (0 = off).
 enum class DebugView : std::int32_t { Off = 0, Albedo, Normal, Depth, Motion, DiffuseDemod, SpecularDemod, Count };
@@ -110,7 +120,7 @@ public:
     /// One pass (event may be null: the final, drawn pass).
     void pass(const InputEvent* event, const MenuFrame& frame);
 
-    const Ui& ui() const { return m_ui; }
+    const MenuUi& ui() const { return m_ui; }
     Tab tab() const { return m_tab; }
     void setTab(Tab tab) { m_tab = tab; }
 
@@ -143,7 +153,7 @@ private:
     void captureTab(const MenuFrame& f);
     void refreshOptionList();
 
-    Ui m_ui;
+    MenuUi m_ui;
     Rect m_panel;
     std::int32_t m_scale = 1;
     Tab m_tab = Tab::Stats;
