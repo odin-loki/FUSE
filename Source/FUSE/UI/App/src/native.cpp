@@ -1,6 +1,7 @@
 // fuse_app native windows: X11 (libX11 loaded at runtime, so neither X11 headers nor libX11 are needed to build) and
 // Win32, plus the presenter selection (Vulkan swapchain -> GDI on Win32 -> headless). See native.hpp.
 #include "native_internal.hpp"
+#include "fuse/ui/widgets/widgets.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -165,6 +166,8 @@ struct Lib {
     int (*DisplayWidth)(Display*, int) = nullptr;
     int (*DisplayHeight)(Display*, int) = nullptr;
     int (*SendEvent)(Display*, Window, int, long, Event*) = nullptr;
+    int (*GrabPointer)(Display*, Window, int, unsigned, int, int, Window, XID, unsigned long) = nullptr;
+    int (*UngrabPointer)(Display*, unsigned long) = nullptr;
 
     bool load() {
         so = dlopen("libX11.so.6", RTLD_NOW | RTLD_LOCAL);
@@ -186,6 +189,7 @@ struct Lib {
         get(DefaultVisual, "XDefaultVisual"); get(DefaultDepth, "XDefaultDepth"); get(MoveResizeWindow, "XMoveResizeWindow");
         get(TranslateCoordinates, "XTranslateCoordinates"); get(ChangeWindowAttributes, "XChangeWindowAttributes");
         get(DisplayWidth, "XDisplayWidth"); get(DisplayHeight, "XDisplayHeight"); get(SendEvent, "XSendEvent");
+        get(GrabPointer, "XGrabPointer"); get(UngrabPointer, "XUngrabPointer");
         return all;
     }
 };
@@ -318,6 +322,16 @@ struct NativePlatform::Impl {
     bool captureOs(const Rec& r, Image& out);
     // OS-window popups
     void syncPopups(Rec& r);
+    /// An outside click (grabbed pointer outside every window of the app, or the app deactivated): close every popup.
+    static void closeAllPopups(Rec& r) {
+        UiContext& ui = r.win->ui();
+        std::vector<NodeHandle> nodes;
+        for (const auto& ps : ui.popupSurfaces()) nodes.push_back(ps.node);
+        for (NodeHandle n : nodes)
+            if (ui.alive(n)) fuse::ui::widgets::closePopup(ui, n);
+        r.win->requestRedraw();
+    }
+    void grabPointer(Rec& r, bool on);
     bool screenInfo(const Rec& r, int& ox, int& oy, Rect& work) const; ///< client origin + work area (screen px)
     bool createPopupOs(Rec& r, Rec::Popup& p);
     void movePopupOs(Rec::Popup& p);
@@ -346,10 +360,12 @@ void NativePlatform::Impl::syncPopups(Rec& r) {
         ui.setOsPopups(true, {(work.x - f32(ox)) / s, (work.y - f32(oy)) / s, work.w / s, work.h / s});
     }
     const auto& surf = ui.popupSurfaces();
+    const bool had = !r.popups.empty();
     while (r.popups.size() > surf.size()) {
         destroyPopupOs(r.popups.back());
         r.popups.pop_back();
     }
+    if (had && r.popups.empty()) grabPointer(r, false);
     const f32 s = 1.f;
     for (std::size_t i = 0; i < surf.size(); ++i) {
         if (i == r.popups.size()) r.popups.emplace_back();
@@ -362,6 +378,7 @@ void NativePlatform::Impl::syncPopups(Rec& r) {
         p.screen = scr;
         if (!p.handle) {
             if (!createPopupOs(r, p)) { r.popups.pop_back(); return; }
+            if (i == 0) grabPointer(r, true); // Qt::Popup: clicks anywhere else on screen close the menu
         } else if (moved) {
             movePopupOs(p);
         }
@@ -489,6 +506,9 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     UiContext& ui = w.ui();
     switch (msg) {
     case WM_CLOSE: w.requestClose(); return 0;
+    case WM_ACTIVATEAPP: // another application took the pointer / focus: popups close (Qt::Popup)
+        if (!wp && !r->popups.empty()) NativePlatform::Impl::closeAllPopups(*r);
+        break;
     case WM_PAINT: {
         PAINTSTRUCT ps;
         BeginPaint(hwnd, &ps);
@@ -571,8 +591,15 @@ LRESULT CALLBACK popupProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
     case WM_ERASEBKGND: return 1;
     case WM_MOUSEMOVE: ui.pointerMove(pos); r->win->requestRedraw(); return 0;
-    case WM_LBUTTONDOWN: ui.pointerDown(pos, MouseButton::Left); r->win->requestRedraw(); return 0;
-    case WM_RBUTTONDOWN: ui.pointerDown(pos, MouseButton::Right); r->win->requestRedraw(); return 0;
+    case WM_LBUTTONDOWN: case WM_RBUTTONDOWN: case WM_MBUTTONDOWN:
+        if (lp2.x < 0.f || lp2.y < 0.f || lp2.x >= p.screen.w || lp2.y >= p.screen.h) { // captured click elsewhere
+            NativePlatform::Impl::closeAllPopups(*r);
+            return 0;
+        }
+        if (msg == WM_LBUTTONDOWN) ui.pointerDown(pos, MouseButton::Left);
+        else ui.pointerDown(pos, MouseButton::Right);
+        r->win->requestRedraw();
+        return 0;
     case WM_LBUTTONUP: case WM_RBUTTONUP: ui.pointerUp(pos); r->win->requestRedraw(); return 0;
     default: break;
     }
@@ -592,6 +619,7 @@ bool NativePlatform::Impl::screenInfo(const Rec& r, int& ox, int& oy, Rect& work
     work = {f32(mi.rcWork.left), f32(mi.rcWork.top), f32(mi.rcWork.right - mi.rcWork.left), f32(mi.rcWork.bottom - mi.rcWork.top)};
     return true;
 }
+void NativePlatform::Impl::grabPointer(Rec&, bool) {} // Win32: WM_ACTIVATEAPP closes popups instead of a grab
 bool NativePlatform::Impl::createPopupOs(Rec& r, Rec::Popup& p) {
     HWND hwnd = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST, kPopupClass, L"", WS_POPUP, int(p.screen.x),
                                 int(p.screen.y), int(p.screen.w), int(p.screen.h), reinterpret_cast<HWND>(r.handle), nullptr, hinst, nullptr);
@@ -785,7 +813,11 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
             const Vec2 pos{p.rect.x + f32(ev.input.x) / s, p.rect.y + f32(ev.input.y) / s};
             if (ev.type == x11::Expose) m.blitPopupOs(p);
             else if (ev.type == x11::MotionNotify) { ui.setModifiers(x11::mods(ev.input.state)); ui.pointerMove(pos); }
-            else if (ev.type == x11::ButtonPress) {
+            else if (ev.type == x11::ButtonPress && (ev.input.x < 0 || ev.input.y < 0 || f32(ev.input.x) >= p.screen.w ||
+                                                     f32(ev.input.y) >= p.screen.h)) {
+                closeAllPopups(*pr); // grabbed click outside every window of the app
+                continue;
+            } else if (ev.type == x11::ButtonPress) {
                 ui.setModifiers(x11::mods(ev.input.state));
                 if (ev.input.detail == 4 || ev.input.detail == 5) ui.wheel(pos, {0.f, ev.input.detail == 4 ? 1.f : -1.f});
                 else ui.pointerDown(pos, ev.input.detail == 3 ? MouseButton::Right : MouseButton::Left);
@@ -873,6 +905,14 @@ bool NativePlatform::Impl::createPopupOs(Rec& r, Rec::Popup& p) {
     x.MapWindow(dpy, w);
     p.handle = w;
     return true;
+}
+void NativePlatform::Impl::grabPointer(Rec& r, bool on) {
+    if (!on) { x.UngrabPointer(dpy, 0); x.Flush(dpy); return; }
+    if (r.popups.empty() || !r.popups[0].handle) return;
+    x.Sync(dpy, 0); // the override-redirect window must be viewable before it can grab
+    // owner_events: the app's own windows (main + popups) keep their events; everything else reports to the popup
+    x.GrabPointer(dpy, x11::Window(r.popups[0].handle), 1, (1u << 2) | (1u << 3) | (1u << 6), 1, 1, 0, 0, 0);
+    x.Flush(dpy);
 }
 void NativePlatform::Impl::movePopupOs(Rec::Popup& p) {
     x.MoveResizeWindow(dpy, x11::Window(p.handle), int(p.screen.x), int(p.screen.y), unsigned(p.screen.w), unsigned(p.screen.h));

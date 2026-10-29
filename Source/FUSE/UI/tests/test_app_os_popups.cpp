@@ -3,6 +3,7 @@
 //   * the menu is left out of the main window's draw list and shown in exactly one popup window
 //   * that window lies partly outside the main window (below it) and stays inside the screen
 //   * its pixels (read back from the window system) equal the CPU raster of the popup's own draw list
+//   * a click outside every app window closes the popup (pointer grab / deactivation)
 //   * a real click posted to the popup window (XSendEvent / PostMessage) on an item that lies outside the main
 //     window picks that item through the normal event pump, and the popup window goes away
 // Exit 77 without a display. --out=<dir> writes os_popup.png (main window + popup composited at screen positions).
@@ -108,6 +109,18 @@ int main(int argc, char** argv) {
     std::printf("  picked %.0f \"%s\"; popup windows now %zu\n", picked, pickedText.c_str(), native.popupCount(win));
     CHECK(picked == 10.f && pickedText == "Item 11");
     CHECK(native.popupCount(win) == 0 && ui.popupSurfaces().empty());
+
+    // Qt::Popup: a click anywhere outside the app's windows (X11: delivered to the grabbing popup with coordinates
+    // outside it; Win32: captured / app deactivated) closes the popup without picking anything
+    picked = -1.f;
+    w::popupMenu(ui, btn, items, {40.f, 60.f});
+    win.requestRedraw();
+    for (int i = 0; i < 40; ++i) a.step(0.005f);
+    CHECK(native.popupCount(win) == 1);
+    CHECK(native.postClick(native.popupWindow(win, 0), {-30.f, 400.f}));
+    for (int i = 0; i < 200 && native.popupCount(win) != 0; ++i) a.step(0.01f);
+    std::printf("  outside click: popup windows now %zu, picked %.0f\n", native.popupCount(win), picked);
+    CHECK(native.popupCount(win) == 0 && picked < 0.f);
 
     win.requestClose();
     a.step(0.f);
