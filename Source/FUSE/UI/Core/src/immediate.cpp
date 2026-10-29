@@ -134,6 +134,7 @@ void ImmediateUi::glyphs(std::int32_t x, std::int32_t y, std::string_view s, Col
     const f32 base = std::round(f32(y) - f32(m_scale) + (boxH - (fm.ascent - fm.descent)) * 0.5f + fm.ascent);
     for (const auto& g : m_shape) {
         if (g.x + g.advance > f32(clipW) + 0.5f) break;
+        if (g.glyph == fuse::text::kInvisibleGlyph) continue;
         const auto ag = m_atlas->get(*m_font, g.glyph, px);
         if (!ag.valid || ag.w == 0) continue;
         DrawCmd d;

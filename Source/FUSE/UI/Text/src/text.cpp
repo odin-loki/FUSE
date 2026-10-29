@@ -332,6 +332,7 @@ void layoutText(const Font& font, const ITextShaper& shaper, std::string_view s,
         if (c == ' ') lastBreak = i + 1;
     }
     if (lineStart < n || out.lines.empty() || (n > 0 && s[g[n - 1].cluster] == '\n')) emit(lineStart, n, n);
+    for (auto& gl : g) if (s[gl.cluster] == '\n' || s[gl.cluster] == '\r') gl.glyph = kInvisibleGlyph;
     }
     const std::uint32_t n = std::uint32_t(g.size());
     bool anyRtl = false;

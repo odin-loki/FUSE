@@ -341,6 +341,7 @@ void fullLayout(FullFace* f, float unitScale, std::string_view s, float maxWidth
         lineW += g[k].advance;
     }
     if (start < gn || lines.empty() || (gn > 0 && s[g[gn - 1].cluster] == '\n')) emit(start, gn);
+    for (std::uint32_t k = 0; k < gn; ++k) if (s[g[k].cluster] == '\n' || s[g[k].cluster] == '\r') g[k].glyph = kInvisibleGlyph;
 }
 
 namespace {

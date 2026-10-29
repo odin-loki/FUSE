@@ -602,6 +602,7 @@ void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, 
     for (const auto& ln : tl.lines) {
         for (u32 k = ln.firstGlyph; k < ln.firstGlyph + ln.glyphCount; ++k) {
             const auto& g = tl.glyphs[k];
+            if (g.glyph == fuse::text::kInvisibleGlyph) continue;
             const auto ag = m_atlas.get(*m_font, g.glyph, px);
             if (!ag.valid || ag.w == 0) continue;
             DrawCmd c;

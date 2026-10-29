@@ -95,6 +95,11 @@ int main() {
     d.maxWidth = one * 2.f + 0.5f;
     layoutText(f, *fullShaper(), "\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E", d, L);
     UI_CHECK(L.lines.size() == 2 && L.lines[1].byteBegin == 6);
+    // Hard line breaks split lines but are never drawn (no tofu glyph at line ends).
+    d.maxWidth = 0.f;
+    layoutText(f, *fullShaper(), "ab\ncd\n", d, L);
+    UI_CHECK(L.lines.size() == 3);
+    for (const auto& g : L.glyphs) UI_CHECK((g.cluster == 2 || g.cluster == 5) == (g.glyph == kInvisibleGlyph));
     // Words wrap at spaces; trailing spaces do not count.
     d.maxWidth = measureText(f, "hello world", 16.f, a) + 1.f;
     layoutText(f, *fullShaper(), "hello world again", d, L);

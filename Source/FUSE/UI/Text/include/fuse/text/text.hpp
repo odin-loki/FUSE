@@ -88,6 +88,9 @@ private:
 };
 
 // ---- Shaping -------------------------------------------------------------------------------------------------------
+/// Glyph id given to line-break characters after layout: they break the line but are never drawn.
+inline constexpr std::uint32_t kInvisibleGlyph = 0xFFFFFFFFu;
+
 struct ShapedGlyph {
     std::uint32_t glyph = 0;
     std::uint32_t cluster = 0; ///< byte offset of the source code point
