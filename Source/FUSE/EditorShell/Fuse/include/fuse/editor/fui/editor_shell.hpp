@@ -115,6 +115,11 @@ public:
     [[nodiscard]] u32 playTicks() const { return m_playTicks; }
     /// True while Maximize Viewport on Play has the docks hidden.
     [[nodiscard]] bool viewportMaximized() const { return m_maximized; }
+    /// Multi-viewport (Qt GUI-8): orthographic Top / Front / Side views (0..2) beside the perspective viewport,
+    /// shown by View > Viewport Layout (Ctrl+Alt+1..3). Node ids "viewport.ortho.top|front|side".
+    [[nodiscard]] NodeHandle orthoNode(int i) const { return m_ortho[i]; }
+    [[nodiscard]] OrthoView& orthoView(int i) { return m_orthoView[i]; }
+    [[nodiscard]] u32 orthoDrawn(int i) const { return m_orthoDrawn[i]; }
     /// Menu line -> action / recent index mapping, for gates that drive the menus by item index.
     [[nodiscard]] i32 menuItemIndex(std::string_view menu, ActionId id) const;
     [[nodiscard]] NodeHandle menuNode(std::string_view menu) const;
@@ -198,6 +203,15 @@ private:
     f32 m_lastSyncMs = 0.f;
     bool m_frameTick = false;
     void syncPlayState_();
+    void syncOrtho_();
+    void orthoInput_(int i);
+    NodeHandle m_vpTopRow{}, m_vpBottomRow{}, m_ortho[3]{}, m_orthoCell[3]{};
+    OrthoView m_orthoView[3];
+    u32 m_orthoDrawn[3]{};
+    std::string m_orthoKey[3];
+    fuse::ui::Image m_orthoBg;
+    u32 m_orthoBgIndex = 0;
+    int m_layoutShown = -1;
     int m_playState = 0;
     bool m_maximized = false;
     f64 m_playAccumMs = 0.0;

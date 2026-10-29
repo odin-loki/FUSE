@@ -1,6 +1,7 @@
 #include <fuse/editor/editor_panel_models.hpp>
 
 #include <fuse/ecs/components/collider.hpp>
+#include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/systems/transform_system.hpp>
 #include <fuse/navigation/grid_navmesh.hpp>
@@ -1020,6 +1021,190 @@ bool EditorPanels::terrainPointer(const ViewportPointerEvent& e) {
     ++m_revision;
     m_c.refresh();
     return true;
+}
+
+// =====================================================================================================================
+// Multi-viewport: orthographic views (port of the Qt OrthoViewWidget)
+
+// Top: looking down -Y, u = X, v = -Z. Front: looking down -Z, u = X, v = Y. Side: from +X, u = -Z, v = Y.
+void OrthoView::uv(f32 x, f32 y, f32 z, f32& u, f32& v) const {
+    switch (axis) {
+    case Axis::Top: u = x; v = -z; break;
+    case Axis::Front: u = x; v = y; break;
+    case Axis::Side: u = -z; v = y; break;
+    }
+}
+void OrthoView::project(f32 x, f32 y, f32 z, f32& px, f32& py) const {
+    f32 u = 0, v = 0;
+    uv(x, y, z, u, v);
+    px = w * 0.5f + (u - centerU) * scale;
+    py = h * 0.5f - (v - centerV) * scale;
+}
+void OrthoView::setScale(f32 s) { scale = std::clamp(s, 0.5f, 2000.f); }
+void OrthoView::pan(f32 dx, f32 dy) {
+    framed = true;
+    centerU -= dx / scale;
+    centerV += dy / scale;
+}
+void OrthoView::zoomAt(f32 px, f32 py, bool in) {
+    framed = true;
+    const f32 u = centerU + (px - w * 0.5f) / scale, v = centerV - (py - h * 0.5f) / scale;
+    setScale(scale * (in ? 1.2f : 1.f / 1.2f));
+    // keep (u, v) under the cursor
+    centerU = u - (px - w * 0.5f) / scale;
+    centerV = v + (py - h * 0.5f) / scale;
+}
+
+std::vector<OrthoItem> EditorPanels::orthoItems(const OrthoView& v) const {
+    std::vector<OrthoItem> items;
+    std::lock_guard<std::mutex> lock(m_c.m_mutex);
+    ecs::Registry& registry = m_c.m_host.editorScene().registry();
+    ecs::TransformSystem::update(registry);
+    const auto& sel = m_c.m_host.editorState().selectedEntities;
+    const ecs::EntityID primary = m_c.m_host.editorState().primarySelection;
+    registry.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform& t) {
+        OrthoItem it;
+        it.entity = EntityRef{id.index, id.generation};
+        it.selected = id == primary || std::find(sel.begin(), sel.end(), id) != sel.end();
+        const auto& m = t.local_to_world.data;
+        v.project(m[12], m[13], m[14], it.cx, it.cy);
+        const ecs::Mesh* mesh = registry.get<ecs::Mesh>(id);
+        if (mesh && mesh->aabb_max.x >= mesh->aabb_min.x && mesh->aabb_max.y >= mesh->aabb_min.y && mesh->aabb_max.z >= mesh->aabb_min.z) {
+            f32 x0 = 1e30f, y0 = 1e30f, x1 = -1e30f, y1 = -1e30f;
+            for (int c = 0; c < 8; ++c) {
+                const f32 lx = (c & 1) ? mesh->aabb_max.x : mesh->aabb_min.x;
+                const f32 ly = (c & 2) ? mesh->aabb_max.y : mesh->aabb_min.y;
+                const f32 lz = (c & 4) ? mesh->aabb_max.z : mesh->aabb_min.z;
+                f32 px = 0, py = 0;
+                v.project(m[0] * lx + m[4] * ly + m[8] * lz + m[12], m[1] * lx + m[5] * ly + m[9] * lz + m[13],
+                          m[2] * lx + m[6] * ly + m[10] * lz + m[14], px, py);
+                x0 = std::min(x0, px); y0 = std::min(y0, py); x1 = std::max(x1, px); y1 = std::max(y1, py);
+            }
+            it.x0 = x0; it.y0 = y0; it.x1 = x1; it.y1 = y1;
+        }
+        items.push_back(it);
+    });
+    std::stable_partition(items.begin(), items.end(), [](const OrthoItem& i) { return !i.selected; });
+    return items;
+}
+
+EntityRef EditorPanels::orthoPick(const OrthoView& v, f32 px, f32 py) const {
+    EntityRef best;
+    f32 bestScore = 1e30f;
+    for (const OrthoItem& it : orthoItems(v)) {
+        f32 score;
+        if (it.x1 - it.x0 > 1.f && it.y1 - it.y0 > 1.f && px >= it.x0 - 3 && px <= it.x1 + 3 && py >= it.y0 - 3 && py <= it.y1 + 3) {
+            score = (it.x1 - it.x0) * (it.y1 - it.y0); // smallest box under the cursor wins
+        } else {
+            const f32 d = std::hypot(it.cx - px, it.cy - py);
+            if (d > 8.f) continue;
+            score = d; // markers beat boxes
+        }
+        if (score < bestScore) { bestScore = score; best = it.entity; }
+    }
+    return best;
+}
+
+bool EditorPanels::orthoFrame(OrthoView& v, bool selectionOnly) const {
+    const auto items = orthoItems(v);
+    const bool selOnly = selectionOnly && std::any_of(items.begin(), items.end(), [](const OrthoItem& i) { return i.selected; });
+    f32 x0 = 1e30f, y0 = 1e30f, x1 = -1e30f, y1 = -1e30f;
+    bool any = false;
+    for (const OrthoItem& it : items) {
+        if (selOnly && !it.selected) continue;
+        const bool b = it.box();
+        x0 = std::min(x0, b ? it.x0 : it.cx - 4); y0 = std::min(y0, b ? it.y0 : it.cy - 4);
+        x1 = std::max(x1, b ? it.x1 : it.cx + 4); y1 = std::max(y1, b ? it.y1 : it.cy + 4);
+        any = true;
+    }
+    if (!any) return false;
+    const f32 minUnits = selectionOnly ? 2.f : 8.f;
+    v.framed = true;
+    v.centerU += ((x0 + x1) * 0.5f - v.w * 0.5f) / v.scale;
+    v.centerV -= ((y0 + y1) * 0.5f - v.h * 0.5f) / v.scale;
+    const f32 wu = std::max((x1 - x0) / v.scale, minUnits), hu = std::max((y1 - y0) / v.scale, minUnits);
+    v.setScale(std::min(v.w / (wu * 1.6f), v.h / (hu * 1.6f)));
+    return true;
+}
+
+bool EditorPanels::orthoDrag(const OrthoView& v, f32 fx, f32 fy, f32 tx, f32 ty) {
+    std::lock_guard<std::mutex> lock(m_c.m_mutex);
+    ecs::Registry& registry = m_c.m_host.editorScene().registry();
+    const ecs::EntityID id = m_c.m_host.editorState().primarySelection;
+    const ecs::Transform* t = id.valid() && registry.alive(id) ? registry.get<ecs::Transform>(id) : nullptr;
+    if (t == nullptr || m_c.m_host.editorState().playing) return false;
+    const TransformCommand::State before = TransformCommand::capture(*t);
+    TransformCommand::State after = before;
+    // view delta -> world delta (u/v back to the axis' world components)
+    const f32 du = (tx - fx) / v.scale, dv = -(ty - fy) / v.scale;
+    switch (v.axis) {
+    case OrthoView::Axis::Top: after.position.x += du; after.position.z -= dv; break;
+    case OrthoView::Axis::Front: after.position.x += du; after.position.y += dv; break;
+    case OrthoView::Axis::Side: after.position.z -= du; after.position.y += dv; break;
+    }
+    m_c.m_host.undoStack().execute(std::make_unique<TransformCommand>(registry, id, before, after));
+    m_c.m_host.editorState().sceneModified = true;
+    return true;
+}
+
+bool EditorPanels::orthoPointer(OrthoView& v, const ViewportPointerEvent& e, bool additive) {
+    using K = ViewportPointerEvent::Kind;
+    using B = ViewportPointerEvent::Button;
+    bool changed = false;
+    if (e.kind == K::Down) {
+        v.lastX = v.pressX = e.x;
+        v.lastY = v.pressY = e.y;
+        if (e.button != B::Left) { v.drag = OrthoView::Drag::Pan; return false; }
+        const EntityRef hit = orthoPick(v, e.x, e.y);
+        std::vector<EntityRef> sel = m_c.viewState().selection;
+        EntityRef primary = m_c.viewState().primary;
+        const auto found = std::find(sel.begin(), sel.end(), hit);
+        const bool alreadySel = hit.valid() && found != sel.end();
+        if (!additive) {
+            if (!alreadySel) sel.clear();
+            if (hit.valid() && !alreadySel) sel.push_back(hit);
+            primary = hit;
+        } else if (hit.valid()) {
+            if (found != sel.end()) {
+                sel.erase(found);
+                if (primary == hit) primary = sel.empty() ? EntityRef{} : sel.back();
+            } else {
+                sel.push_back(hit);
+                primary = hit;
+            }
+        }
+        m_c.select(sel, primary);
+        if (hit.valid() && !additive) v.drag = OrthoView::Drag::Move;
+        return true;
+    }
+    if (e.kind == K::Move) {
+        if (v.drag == OrthoView::Drag::Pan) {
+            v.pan(e.x - v.lastX, e.y - v.lastY);
+        } else if (v.drag == OrthoView::Drag::Move) {
+            if (!v.macroOpen) {
+                if (std::hypot(e.x - v.pressX, e.y - v.pressY) < 3.f) return false;
+                std::lock_guard<std::mutex> lock(m_c.m_mutex);
+                m_c.m_host.undoStack().beginMacro(std::string("Move entity (") + v.name() + " view)");
+                v.macroOpen = true;
+            }
+            changed = orthoDrag(v, v.lastX, v.lastY, e.x, e.y);
+        }
+        v.lastX = e.x;
+        v.lastY = e.y;
+        return changed;
+    }
+    // Up
+    if (v.macroOpen) {
+        {
+            std::lock_guard<std::mutex> lock(m_c.m_mutex);
+            m_c.m_host.undoStack().endMacro();
+        }
+        v.macroOpen = false;
+        m_c.refresh();
+        changed = true;
+    }
+    v.drag = OrthoView::Drag::None;
+    return changed;
 }
 
 } // namespace fuse::editor

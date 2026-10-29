@@ -42,6 +42,9 @@ constexpr std::array<ActionDesc, static_cast<usize>(ActionId::Count)> kActions{{
     {A::ViewShowMeshBounds, "view.show_mesh_bounds", "View", "Show Mesh Bounds", "", "fuseActionShowMeshBounds", true, false},
     {A::ViewShowColliders, "view.show_colliders", "View", "Show All Colliders", "", "fuseActionShowColliders", false, false},
     {A::ViewFrameSelected, "view.frame_selected", "View", "Frame Selected", "F", "fuseActionFrameSelected", false, false},
+    {A::ViewLayoutSingle, "view.layout_single", "View", "Viewport Layout: Single", "Ctrl+Alt+1", "fuseActionViewportSingle", true, false},
+    {A::ViewLayoutTwo, "view.layout_two", "View", "Viewport Layout: Two (Perspective + Top)", "Ctrl+Alt+2", "fuseActionViewportTwo", false, false},
+    {A::ViewLayoutQuad, "view.layout_quad", "View", "Viewport Layout: Quad (Perspective, Top, Front, Side)", "Ctrl+Alt+3", "fuseActionViewportQuad", false, false},
 }};
 constexpr std::array<const char*, 5> kMenus{{"File", "Edit", "Entity", "Play", "View"}};
 

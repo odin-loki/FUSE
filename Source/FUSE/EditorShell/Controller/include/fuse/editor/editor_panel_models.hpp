@@ -114,6 +114,33 @@ struct SequencerView {
     std::string preview; ///< "t=..ms sprite=(x,y) mount=.. bone=.. yaw=.. pitch=.. roll=.."
 };
 
+/// Multi-viewport (Qt OrthoViewWidget port): one orthographic Top / Front / Side schematic view. Pure state;
+/// EditorPanels does the scene work. View pixels: (0,0) top-left, size w x h.
+struct OrthoView {
+    enum class Axis : u8 { Top, Front, Side } axis = Axis::Top;
+    f32 centerU = 0.f, centerV = 0.f, scale = 40.f; ///< pixels per world unit
+    f32 w = 1.f, h = 1.f;
+    bool framed = false; ///< false until the user pans / zooms / frames: the view keeps the scene fitted
+    // drag state
+    enum class Drag : u8 { None, Pan, Move } drag = Drag::None;
+    f32 lastX = 0.f, lastY = 0.f, pressX = 0.f, pressY = 0.f;
+    bool macroOpen = false;
+    [[nodiscard]] const char* name() const { return axis == Axis::Top ? "Top" : axis == Axis::Front ? "Front" : "Side"; }
+    [[nodiscard]] const char* axes() const { return axis == Axis::Top ? "X / Z" : axis == Axis::Front ? "X / Y" : "-Z / Y"; }
+    void uv(f32 x, f32 y, f32 z, f32& u, f32& v) const;
+    void project(f32 x, f32 y, f32 z, f32& px, f32& py) const;
+    void setScale(f32 s);
+    void pan(f32 dx, f32 dy);
+    void zoomAt(f32 px, f32 py, bool in);
+};
+struct OrthoItem {
+    EntityRef entity;
+    f32 x0 = 0, y0 = 0, x1 = 0, y1 = 0; ///< view-pixel box; x1 <= x0 = marker
+    f32 cx = 0, cy = 0;
+    bool selected = false;
+    [[nodiscard]] bool box() const { return x1 - x0 > 0.5f || y1 - y0 > 0.5f; }
+};
+
 class EditorPanels {
 public:
     explicit EditorPanels(EditorController& controller);
@@ -184,6 +211,17 @@ public:
     /// Left button in the viewport while sculpting: Down opens a "Sculpt stroke" undo macro and stamps, Move stamps,
     /// Up closes it. True when the event was consumed (sculpt mode on and a left-button event).
     bool sculptPointer(const ViewportPointerEvent& e);
+
+    // ---- Multi-viewport (orthographic views) ----
+    [[nodiscard]] std::vector<OrthoItem> orthoItems(const OrthoView& v) const; ///< selected items last
+    [[nodiscard]] EntityRef orthoPick(const OrthoView& v, f32 px, f32 py) const;
+    /// Fit the selection (or everything); false when the scene is empty.
+    bool orthoFrame(OrthoView& v, bool selectionOnly) const;
+    /// Pointer in an ortho view: left click selects (additive toggles) and drags the selection in the view plane
+    /// (one undo step per drag), middle / right drag pans. True when the scene or selection changed.
+    bool orthoPointer(OrthoView& v, const ViewportPointerEvent& e, bool additive);
+    /// Moves the primary selection by a view-space drag (one undo step unless a drag macro is open).
+    bool orthoDrag(const OrthoView& v, f32 fx, f32 fy, f32 tx, f32 ty);
 
     // ---- Profiler ----
     /// One sample per shell frame: the game tick time comes from the controller, `uiMs` is the shell's own frame.

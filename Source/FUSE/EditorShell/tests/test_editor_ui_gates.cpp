@@ -351,6 +351,100 @@ void gatePlayFrame(Rig& r) {
     std::printf("play_frame: %s\n", badge.c_str());
 }
 
+// Multi-viewport (Qt GUI-8 / ccb99a9c0): View > Viewport Layout on Ctrl+Alt+1..3, Top / Front / Side ortho views.
+void gateMultiViewport(Rig& r) {
+    using fuse::ui::kModAlt;
+    using fuse::ui::kModCtrl;
+    for (int i = 0; i < 3; ++i) CHECK(r.ui().rect(r.shell.orthoNode(i)).w < 1.f);
+    CHECK(r.shell.menuItemIndex("View", ActionId::ViewLayoutQuad) >= 0);
+    r.frames();
+    const float vpW0 = r.ui().rect(r.shell.viewportNode()).w;
+    r.c.runEntityAction(ContextMenuAction::CreateSdfSphere);
+    r.frames();
+    const EntityRef a = r.v().primary;
+    // Ctrl+Alt+3: quad (Alt+3 stays View Mode: Wireframe)
+    CHECK(r.shell.shortcut(Key::Num3, kModCtrl | kModAlt));
+    r.frames(3);
+    CHECK(r.shell.panels().orthoDrag(r.shell.orthoView(0), 0.f, 0.f, -3.f * r.shell.orthoView(0).scale, 0.f)); // a to x = -3
+    r.c.runEntityAction(ContextMenuAction::CreateSdfBox);
+    r.frames(3);
+    const EntityRef b = r.v().primary;
+    CHECK(a.valid() && b.valid() && !(a == b));
+    CHECK(r.c.viewportLayout() == 2);
+    for (int i = 0; i < 3; ++i) CHECK(r.ui().rect(r.shell.orthoNode(i)).w > 100.f && r.ui().rect(r.shell.orthoNode(i)).h > 80.f);
+    CHECK(r.ui().rect(r.shell.viewportNode()).w < vpW0 * 0.7f);
+    CHECK(r.shell.orthoDrawn(0) >= 2 && r.shell.orthoDrawn(1) >= 2 && r.shell.orthoDrawn(2) >= 2);
+    auto itemOf = [&](int view, EntityRef e) {
+        for (const OrthoItem& it : r.shell.panels().orthoItems(r.shell.orthoView(view)))
+            if (it.entity == e) return it;
+        return OrthoItem{};
+    };
+    // drag b 60 px right in the Top view: one undo step, X moves (Front view sees it too)
+    const fuse::ui::Rect top = r.ui().contentRect(r.shell.orthoNode(0));
+    const OrthoItem b0 = itemOf(0, b), f0 = itemOf(1, b);
+    fuse::ui::Vec2 at{top.x + b0.cx, top.y + b0.cy};
+    r.ui().pointerMove(at);
+    r.ui().pointerDown(at, fuse::ui::MouseButton::Left);
+    for (int i = 0; i < 6; ++i) { at.x += 10.f; r.ui().pointerMove(at); }
+    r.ui().pointerUp(at, fuse::ui::MouseButton::Left);
+    r.frames(2);
+    CHECK(r.v().primary == b);
+    const OrthoItem b1 = itemOf(0, b), f1 = itemOf(1, b);
+    CHECK(std::abs((b1.cx - b0.cx) - 60.f) < 2.f && std::abs(b1.cy - b0.cy) < 1.f);
+    const float frontScale = r.shell.orthoView(1).scale / r.shell.orthoView(0).scale;
+    CHECK(std::abs((f1.cx - f0.cx) - 60.f * frontScale) < 2.f);
+    CHECK(r.v().canUndo);
+    std::printf("multi_viewport: undo = %s\n", r.v().undoLabel.c_str());
+    CHECK(r.c.trigger(ActionId::EditUndo));
+    r.frames(2);
+    CHECK(std::abs(itemOf(0, b).cx - b0.cx) < 1.f);
+    // click a in the Front view selects it; Ctrl+click adds b
+    const fuse::ui::Rect front = r.ui().contentRect(r.shell.orthoNode(1));
+    const OrthoItem fa = itemOf(1, a);
+    fuse::ui::Vec2 pa{front.x + fa.cx, front.y + fa.cy};
+    r.ui().pointerMove(pa);
+    r.ui().pointerDown(pa, fuse::ui::MouseButton::Left);
+    r.ui().pointerUp(pa, fuse::ui::MouseButton::Left);
+    r.frames(2);
+    if (!(r.v().primary == a)) {
+        for (const OrthoItem& it : r.shell.panels().orthoItems(r.shell.orthoView(1)))
+            std::printf("item %u box %.0f,%.0f-%.0f,%.0f c %.0f,%.0f sel %d\n", it.entity.index, it.x0, it.y0, it.x1, it.y1, it.cx, it.cy, it.selected);
+        std::printf("a=%u b=%u primary=%u at %.0f,%.0f front %.0f,%.0f\n", a.index, b.index, r.v().primary.index, fa.cx, fa.cy, front.x, front.y);
+    }
+    CHECK(r.v().primary == a && r.v().selection.size() == 1);
+    // wheel zooms at the cursor (the point under it stays), middle drag pans
+    OrthoView& sv = r.shell.orthoView(2);
+    const fuse::ui::Rect side = r.ui().contentRect(r.shell.orthoNode(2));
+    const float s0 = sv.scale;
+    const fuse::ui::Vec2 pc{side.x + side.w * 0.3f, side.y + side.h * 0.4f};
+    const float u0 = sv.centerU + (pc.x - side.x - sv.w * 0.5f) / sv.scale;
+    r.ui().pointerMove(pc);
+    r.ui().wheel(pc, {0.f, 1.f});
+    r.frames();
+    CHECK(sv.scale > s0 * 1.1f);
+    CHECK(std::abs(sv.centerU + (pc.x - side.x - sv.w * 0.5f) / sv.scale - u0) < 1e-3f);
+    const float cu = sv.centerU;
+    fuse::ui::Vec2 pm = pc;
+    r.ui().pointerDown(pm, fuse::ui::MouseButton::Middle);
+    for (int i = 0; i < 4; ++i) { pm.x += 10.f; r.ui().pointerMove(pm); }
+    r.ui().pointerUp(pm, fuse::ui::MouseButton::Middle);
+    r.frames();
+    CHECK(std::abs((cu - sv.centerU) - 40.f / sv.scale) < 1e-3f);
+    // frame selection
+    CHECK(r.shell.panels().orthoFrame(sv, true));
+    r.frames(3);
+    shot(r);
+    // Ctrl+Alt+2: perspective + Top; Ctrl+Alt+1: single
+    CHECK(r.shell.shortcut(Key::Num2, kModCtrl | kModAlt));
+    r.frames(3);
+    CHECK(r.c.viewportLayout() == 1 && r.ui().rect(r.shell.orthoNode(0)).w > 100.f && r.ui().rect(r.shell.orthoNode(1)).w < 1.f);
+    CHECK(r.shell.shortcut(Key::Num1, kModCtrl | kModAlt));
+    r.frames(3);
+    CHECK(r.c.viewportLayout() == 0 && r.ui().rect(r.shell.orthoNode(0)).w < 1.f);
+    CHECK(std::abs(r.ui().rect(r.shell.viewportNode()).w - vpW0) < 1.f);
+    CHECK(r.shell.shortcutConflicts().empty());
+}
+
 void gateInspector(Rig& r) {
     r.c.runEntityAction(ContextMenuAction::CreateSdfSphere);
     r.frames(2);
@@ -1469,12 +1563,12 @@ void gatePreferences(Rig& r) {
     const std::string all(r.ui().text(r.ui().find("prefs.shortcuts")));
     CHECK(all.find("Undo  [Edit]   Ctrl+Z") != std::string::npos && all.find("View Mode: Wireframe  [View]   Alt+3") != std::string::npos);
     CHECK(r.ui().text(r.ui().find("prefs.conflicts")) == "No shortcut conflicts.");
-    // filter (Qt filterRows): "alt+" keeps only the four view modes
+    // filter (Qt filterRows): "alt+" keeps the four view modes (Alt+1..4) and the three layouts (Ctrl+Alt+1..3)
     r.ui().setText(r.ui().find("prefs.filter"), "alt+");
     r.ui().emit(r.ui().find("prefs.filter"), fuse::ui::SignalKind::TextChanged, {});
     r.frames();
     const std::string filtered(r.ui().text(r.ui().find("prefs.shortcuts")));
-    CHECK(std::count(filtered.begin(), filtered.end(), '\n') == 3 && filtered.find("Lit Wireframe") != std::string::npos);
+    CHECK(std::count(filtered.begin(), filtered.end(), '\n') == 6 && filtered.find("Viewport Layout: Quad") != std::string::npos && filtered.find("Lit Wireframe") != std::string::npos);
     // Cancel discards edits
     r.ui().setChecked(r.ui().find("prefs.preview_sun"), false);
     r.clickId("prefs.cancel");
@@ -1961,7 +2055,7 @@ int main(int argc, char** argv) {
         {"startup", gateStartup},        {"layout", gateLayout},           {"theme", gateTheme},
         {"fuse_api", gateFuseApi},       {"wasd", gateWasd},               {"context_menu", gateContextMenu}, {"context_menu_dpr1_5", gateContextMenuDpr15}, {"icon", gateIcon}, {"view_modes", gateViewModes}, {"preferences", gatePreferences}, {"navigation", gateNavigation}, {"terrain", gateTerrain}, {"shortcut_rebind", gateShortcutRebind}, {"recent_projects", gateRecentProjects}, {"entity_group", gateEntityGroup}, {"colliders", gateColliders}, {"open_script", gateOpenScript}, {"live_present", gateLivePresent},
         {"ui_frame", gateUiFrame},       {"idle_frames", gateIdle},        {"e15_console", gateConsole},
-        {"e15_transport", gateTransport}, {"play_frame", gatePlayFrame}, {"e20_inspector", gateInspector}, {"e20_reparent", gateReparent},
+        {"e15_transport", gateTransport}, {"play_frame", gatePlayFrame}, {"multi_viewport", gateMultiViewport}, {"e20_inspector", gateInspector}, {"e20_reparent", gateReparent},
         {"e20_file_menu", gateFileMenu}, {"e20_wizard", gateWizard}, {"project_open", gateProjectOpen},  {"project_hub", gateProjectHub}, {"asset_browser", gateAssetBrowser}, {"asset_browser_polish", gateAssetBrowserPolish},
         {"material_editor", gateMaterialEditor}, {"sdf_sculpt", gateSdfSculpt}, {"profiler", gateProfiler},
         {"sequencer", gateSequencer}, {"timeline", gateTimeline}, {"timeline_nav", gateTimelineNav},

@@ -17,7 +17,7 @@ enum class ActionId : u16 {
     EntityOpenScript,
     PlayPlay, PlayPause, PlayResume, PlayStep, PlayStop, PlayMaximizeOnPlay,
     ViewResetLayout, ViewModeLit, ViewModeUnlit, ViewModeWireframe, ViewModeLitWireframe, ViewShowMeshBounds,
-    ViewShowColliders, ViewFrameSelected,
+    ViewShowColliders, ViewFrameSelected, ViewLayoutSingle, ViewLayoutTwo, ViewLayoutQuad,
     Count
 };
 

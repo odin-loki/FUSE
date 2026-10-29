@@ -337,11 +337,51 @@ void EditorShellWindow::build_() {
     m_viewportInfo = w::label(m_ui, vpBar, "Perspective", "viewport.info");
     m_ui.addClass(m_viewportInfo, "ed-vpinfo");
     m_ui.setCss(m_viewportInfo, "flex-grow", "1");
-    m_viewport = w::viewportWidget(m_ui, centre, m_imageIndex, u32(m_image.width), u32(m_image.height), "viewport");
-    m_ui.setCss(m_viewport, "flex-grow", "1");
-    // the image follows the widget size: keep the widget from sizing to the image (feedback on shrink)
-    m_ui.setCss(m_viewport, "height", "0px");
-    m_ui.setCss(m_viewport, "min-width", "0px");
+    // multi-viewport grid: [perspective | Top] over [Front | Side]; the ortho views start hidden (single layout)
+    const NodeHandle grid = w::panel(m_ui, centre, "viewport.grid");
+    m_ui.setCss(grid, "flex-grow", "1");
+    m_ui.setCss(grid, "height", "0px");
+    m_ui.setCss(grid, "gap", "2px");
+    m_ui.setCss(grid, "padding", "0px");
+    for (NodeHandle* row : {&m_vpTopRow, &m_vpBottomRow}) {
+        *row = w::panel(m_ui, grid, row == &m_vpTopRow ? "viewport.row.top" : "viewport.row.bottom");
+        m_ui.addClass(*row, "row");
+        m_ui.setCss(*row, "flex-grow", "1");
+        m_ui.setCss(*row, "height", "0px");
+        m_ui.setCss(*row, "gap", "2px");
+        m_ui.setCss(*row, "padding", "0px");
+        m_ui.setCss(*row, "align-items", "stretch");
+    }
+    // each view sits in a column cell: the cell takes the row share, the view fills it (height 0 + grow, so the
+    // widget never sizes to its image: feedback on shrink)
+    auto cell = [&](NodeHandle row, const char* id) {
+        const NodeHandle c = w::panel(m_ui, row, id);
+        m_ui.setCss(c, "flex-grow", "1");
+        m_ui.setCss(c, "width", "0px");
+        m_ui.setCss(c, "padding", "0px");
+        return c;
+    };
+    auto fill = [&](NodeHandle vp) {
+        m_ui.setCss(vp, "flex-grow", "1");
+        m_ui.setCss(vp, "height", "0px");
+        m_ui.setCss(vp, "min-width", "0px");
+    };
+    m_viewport = w::viewportWidget(m_ui, cell(m_vpTopRow, "viewport.cell"), m_imageIndex, u32(m_image.width), u32(m_image.height), "viewport");
+    fill(m_viewport);
+    m_orthoBg.resize(1, 1, fuse::ui::packPremultiplied(fuse::ui::Color::rgb(0x1E2128)));
+    m_orthoBgIndex = m_win.addImage(&m_orthoBg);
+    static constexpr const char* kOrthoCells[3] = {"viewport.cell.top", "viewport.cell.front", "viewport.cell.side"};
+    static constexpr const char* kOrthoIds[3] = {"viewport.ortho.top", "viewport.ortho.front", "viewport.ortho.side"};
+    for (int i = 0; i < 3; ++i) {
+        m_orthoView[i].axis = OrthoView::Axis(i);
+        m_orthoCell[i] = cell(i == 0 ? m_vpTopRow : m_vpBottomRow, kOrthoCells[i]);
+        m_ortho[i] = w::viewportWidget(m_ui, m_orthoCell[i], m_orthoBgIndex, 1, 1, kOrthoIds[i]);
+        fill(m_ortho[i]);
+        m_ui.setCss(m_orthoCell[i], "display", "none");
+        m_ui.setFocusable(m_ortho[i], true);
+        m_ui.connect(m_ortho[i], SignalKind::Event, [this, i](UiContext&, NodeHandle, const SignalArgs&) { orthoInput_(i); });
+    }
+    m_ui.setCss(m_vpBottomRow, "display", "none");
     m_ui.setCss(w::dockRegion(m_ui, m_dockArea, DockSide::Center), "width", "0px");
     m_ui.setCss(w::dockRegion(m_ui, m_dockArea, DockSide::Center), "flex-grow", "1");
     m_ui.setFocusable(m_viewport, true);
@@ -389,7 +429,7 @@ void EditorShellWindow::syncMenus_() {
     const EditorViewState& v = m_c.viewState();
     std::string key = v.undoLabel + '\x1f' + v.redoLabel;
     for (const std::string& r : v.recentFiles) key += '\x1f' + r;
-    key += '\x1f' + std::to_string(int(m_c.viewMode())) + (m_c.showMeshBounds() ? "b" : "") + (m_c.showAllColliders() ? "c" : "") + (m_c.maximizeOnPlay() ? "m" : "");
+    key += '\x1f' + std::to_string(int(m_c.viewMode())) + (m_c.showMeshBounds() ? "b" : "") + (m_c.showAllColliders() ? "c" : "") + (m_c.maximizeOnPlay() ? "m" : "") + std::to_string(m_c.viewportLayout());
     for (const std::string& r : v.recentProjects) key += "\x1fp" + r;
     for (const std::string& b : m_bindings) key += '\x1e' + b;
     if (key == m_menuKey) return;
@@ -416,6 +456,8 @@ void EditorShellWindow::syncMenus_() {
             if (a.id == ActionId::ViewShowMeshBounds) label = (m_c.showMeshBounds() ? "[x] " : "[ ] ") + label;
             if (a.id == ActionId::ViewShowColliders) label = (m_c.showAllColliders() ? "[x] " : "[ ] ") + label;
             if (a.id == ActionId::PlayMaximizeOnPlay) label = (m_c.maximizeOnPlay() ? "[x] " : "[ ] ") + label;
+            if (a.id >= ActionId::ViewLayoutSingle && a.id <= ActionId::ViewLayoutQuad)
+                label = (m_c.viewportLayout() == int(a.id) - int(ActionId::ViewLayoutSingle) ? "[x] " : "[ ] ") + label;
             if (!binding(a.id).empty()) label += "   (" + binding(a.id) + ")";
             add(label, i32(a.id));
             if (a.id == ActionId::FileOpenProject && !v.recentProjects.empty()) {
@@ -1219,8 +1261,132 @@ bool EditorShellWindow::sync() {
     m_pages->sync(m_lastSyncMs, m_frameTick);
     renderViewport_();
     updateOverlay_();
+    syncOrtho_();
     m_lastSyncMs = f32(std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - t0).count());
     return changed || console;
+}
+
+// ---- Multi-viewport (Qt OrthoViewWidget / setViewportLayout) -----------------------------------------------------
+void EditorShellWindow::syncOrtho_() {
+    const int layout = m_c.viewportLayout();
+    if (layout != m_layoutShown) {
+        m_layoutShown = layout;
+        m_ui.setCss(m_orthoCell[0], "display", layout >= 1 ? "flex" : "none");
+        m_ui.setCss(m_orthoCell[1], "display", layout == 2 ? "flex" : "none");
+        m_ui.setCss(m_orthoCell[2], "display", layout == 2 ? "flex" : "none");
+        m_ui.setCss(m_vpBottomRow, "display", layout == 2 ? "flex" : "none");
+        for (std::string& k : m_orthoKey) k.clear();
+    }
+    for (int i = 0; i < 3; ++i) {
+        const bool shown = i == 0 ? layout >= 1 : layout == 2;
+        if (!shown) continue;
+        OrthoView& v = m_orthoView[i];
+        const fuse::ui::Rect r = m_ui.contentRect(m_ortho[i]);
+        if (r.w < 2.f || r.h < 2.f) continue;
+        const bool resized = v.w != std::floor(r.w) || v.h != std::floor(r.h);
+        v.w = std::floor(r.w);
+        v.h = std::floor(r.h);
+        // until the user pans / zooms / frames, keep the whole scene fitted as the layout settles (Qt resizeEvent)
+        if (resized && !v.framed && v.w > 50 && v.h > 50) { m_models->orthoFrame(v, false); v.framed = false; }
+        auto items = m_models->orthoItems(v);
+        char head[96];
+        std::snprintf(head, sizeof head, "%.0fx%.0f|%.4f|%.4f|%.4f|%d", v.w, v.h, v.centerU, v.centerV, v.scale,
+                      int(m_ui.focused() == m_ortho[i]));
+        std::string key = head;
+        for (const OrthoItem& it : items) {
+            char b[96];
+            std::snprintf(b, sizeof b, "|%u.%u:%.1f,%.1f,%.1f,%.1f,%.1f,%.1f%c", it.entity.index, it.entity.generation, it.x0, it.y0,
+                          it.x1, it.y1, it.cx, it.cy, it.selected ? 's' : '-');
+            key += b;
+        }
+        if (key == m_orthoKey[i]) continue;
+        m_orthoKey[i] = std::move(key);
+        w::viewportSetImage(m_ui, m_ortho[i], m_orthoBgIndex, u32(v.w), u32(v.h));
+        w::ViewportOverlay o;
+        using C = fuse::ui::Color;
+        // grid: minor every 10^k units (>= 12 px apart), major every 10 minor
+        f32 step = 0.01f;
+        while (step * v.scale < 12.f) step *= 10.f;
+        auto grid = [&](f32 s, C c) {
+            const f32 u0 = v.centerU - v.w * 0.5f / v.scale, u1 = v.centerU + v.w * 0.5f / v.scale;
+            const f32 v0 = v.centerV - v.h * 0.5f / v.scale, v1 = v.centerV + v.h * 0.5f / v.scale;
+            for (f32 u = std::floor(u0 / s) * s; u <= u1; u += s) {
+                const f32 x = v.w * 0.5f + (u - v.centerU) * v.scale;
+                o.lines.push_back({{x, 0}, {x, v.h}, c, 1.f});
+            }
+            for (f32 q = std::floor(v0 / s) * s; q <= v1; q += s) {
+                const f32 y = v.h * 0.5f - (q - v.centerV) * v.scale;
+                o.lines.push_back({{0, y}, {v.w, y}, c, 1.f});
+            }
+        };
+        grid(step, C::rgb(0x282C34));
+        grid(step * 10.f, C::rgb(0x373C46));
+        f32 ox = 0, oy = 0;
+        v.project(0, 0, 0, ox, oy);
+        const C red = C::rgb(0xDC4646), green = C::rgb(0x50C85A), blue = C::rgb(0x466EE6);
+        o.lines.push_back({{0, oy}, {v.w, oy}, v.axis == OrthoView::Axis::Side ? blue : red, 1.5f});
+        o.lines.push_back({{ox, 0}, {ox, v.h}, v.axis == OrthoView::Axis::Top ? blue : green, 1.5f});
+        u32 drawn = 0;
+        for (const OrthoItem& it : items) {
+            const C c = it.selected ? C::rgb(0xFFA528) : C::rgb(0x96AFCD);
+            const f32 lw = it.selected ? 2.f : 1.2f;
+            if (it.box()) {
+                f32 x0 = it.x0, y0 = it.y0, x1 = it.x1, y1 = it.y1;
+                if (x1 - x0 < 2) { x0 -= 1; x1 += 1; }
+                if (y1 - y0 < 2) { y0 -= 1; y1 += 1; }
+                o.lines.push_back({{x0, y0}, {x1, y0}, c, lw});
+                o.lines.push_back({{x1, y0}, {x1, y1}, c, lw});
+                o.lines.push_back({{x1, y1}, {x0, y1}, c, lw});
+                o.lines.push_back({{x0, y1}, {x0, y0}, c, lw});
+            } else {
+                o.lines.push_back({{it.cx - 5, it.cy}, {it.cx + 5, it.cy}, c, lw});
+                o.lines.push_back({{it.cx, it.cy - 5}, {it.cx, it.cy + 5}, c, lw});
+                o.dots.push_back({{it.cx, it.cy}, 3.f, C{}, c, lw});
+            }
+            ++drawn;
+        }
+        m_orthoDrawn[i] = drawn;
+        o.badge = std::string(v.name()) + "  (" + v.axes() + ")";
+        o.badgeColor = C::rgb(0x262A32, 0.85f);
+        o.badgeText = C::rgb(0xC8CDD7);
+        if (m_ui.focused() == m_ortho[i]) {
+            o.frame = C::rgb(0x5A96E6);
+            o.frameWidth = 1.f;
+        }
+        w::viewportSetOverlay(m_ui, m_ortho[i], std::move(o));
+    }
+}
+
+void EditorShellWindow::orthoInput_(int i) {
+    const w::ViewportInput& in = w::viewportLastInput(m_ui, m_ortho[i]);
+    OrthoView& v = m_orthoView[i];
+    using PE = ViewportPointerEvent;
+    bool changed = false;
+    switch (in.type) {
+    case EventType::PointerDown:
+    case EventType::PointerMove:
+    case EventType::PointerUp: {
+        const PE::Kind kind = in.type == EventType::PointerDown ? PE::Kind::Down : in.type == EventType::PointerMove ? PE::Kind::Move : PE::Kind::Up;
+        const PE::Button b = in.button == fuse::ui::MouseButton::Right ? PE::Button::Right
+                             : in.button == fuse::ui::MouseButton::Middle ? PE::Button::Middle : PE::Button::Left;
+        if (kind == PE::Kind::Down) m_ui.setFocus(m_ortho[i], fuse::ui::FocusReason::Pointer);
+        if (kind == PE::Kind::Move && v.drag == OrthoView::Drag::None) return;
+        const bool additive = (m_ui.modifiers() & (fuse::ui::kModCtrl | fuse::ui::kModShift)) != 0;
+        changed = m_models->orthoPointer(v, {kind, b, in.pos.x, in.pos.y}, additive);
+        break;
+    }
+    case EventType::Wheel:
+        if (in.wheel.y == 0.f) return;
+        v.zoomAt(in.pos.x, in.pos.y, in.wheel.y > 0.f);
+        break;
+    case EventType::KeyDown:
+        if (in.key != Key::F) return;
+        m_models->orthoFrame(v, true);
+        break;
+    default: return;
+    }
+    (void)changed;
+    sync();
 }
 
 // ---- New Project wizard (Qt NewProjectWizard parity) ---------------------------------------------------------------
