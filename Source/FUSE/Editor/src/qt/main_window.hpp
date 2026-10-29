@@ -146,6 +146,10 @@ public:
     void updateEditActions();
     /// Open a project directory (project.json) — same path as the Project hub's Open button.
     void openProject(const QString& projectDirectory);
+    /// File > Project Settings / Import Asset (no-ops without a project). Return false on failure.
+    bool showProjectSettings();
+    bool importAssets(const QStringList& files);
+    [[nodiscard]] const QString& projectRoot() const { return m_projectRoot; }
     /// Select an entity for `--select`: "new" spawns an SDF sphere 6 units in front of the camera,
     /// a number selects the entity with that index. Returns false when nothing was selected.
     bool selectForScreenshot(const QString& spec);
@@ -248,6 +252,7 @@ private:
     QTimer m_statusTimer;
     bool m_projectWorldShown = false;
     QString m_projectLabel;
+    QString m_projectRoot;
     QMenu* m_recentMenu = nullptr;
     QStringList m_recentFiles;
     DirtyPromptHook m_dirtyPromptHook;

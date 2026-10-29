@@ -23,10 +23,17 @@
 //                   the placeholder), resize recreates the swapchain, forwarded input drives the camera /
 //                   context menu, 0 validation messages, clean teardown
 
+#include <QSpinBox>
+#include <QCheckBox>
+#include <QLineEdit>
+#include <QTemporaryDir>
+#include <QFileInfo>
+#include <QFile>
 #include "editor_panels.hpp"
 #include "editor_theme.hpp"
 #include "main_window.hpp"
 #include "project_hub_widget.hpp"
+#include "project_settings_dialog.hpp"
 
 #include <thread>
 #include <fuse/editor/qt_gate_name.hpp>
@@ -1602,6 +1609,40 @@ bool waitPresented(MainWindow& window, quint64 minPresented, int timeoutMs) {
 }
 #endif
 
+/// project_settings: the Project Settings dialog round-trips project.json; Import Asset copies files
+/// into assets/<kind>/ with unique names.
+int gateProjectSettings() {
+    QTemporaryDir tmp;
+    const QString root = tmp.path();
+    QFile::copy(QStringLiteral(FUSE_TEST_SOURCE_DIR "/Samples/unification/demo_3d_empty/project.json"),
+                root + QStringLiteral("/project.json"));
+    {
+        fuse::editor::qt::ProjectSettingsDialog d(root);
+        expect(d.loaded(), "dialog loads project.json");
+        expect(d.nameEdit->text() == QStringLiteral("demo_3d_empty"), "dialog shows the project name");
+        d.nameEdit->setText(QStringLiteral("renamed"));
+        d.enable2D->setChecked(true);
+        d.modAi->setChecked(true);
+        d.workerCap->setValue(3);
+        expect(d.save(), "dialog saves project.json");
+    }
+    {
+        fuse::editor::qt::ProjectSettingsDialog d(root);
+        expect(d.loaded() && d.nameEdit->text() == QStringLiteral("renamed") && d.enable2D->isChecked() &&
+                   d.modAi->isChecked() && d.workerCap->value() == 3 && d.enable3D->isChecked(),
+               "saved settings reload");
+        d.nameEdit->clear();
+        expect(!d.save(), "empty name is rejected");
+    }
+    const QString png = root + QStringLiteral("/wood.png");
+    QImage(4, 4, QImage::Format_RGBA8888).save(png);
+    const QStringList a = fuse::editor::qt::importAssetsIntoProject(root, {png, png});
+    expect(a == QStringList({QStringLiteral("assets/textures/wood.png"), QStringLiteral("assets/textures/wood_1.png")}),
+           "import copies into assets/textures with unique names");
+    expect(QFileInfo::exists(root + QStringLiteral("/assets/textures/wood_1.png")), "imported file exists");
+    return 0;
+}
+
 int gateLivePresent() {
 #if defined(FUSE_VULKAN_BACKEND)
     if (QGuiApplication::platformName() != QLatin1String("xcb")) {
@@ -1892,6 +1933,8 @@ int main(int argc, char** argv) {
             code = gatePresentAdopt();
         } else if (gate == "live_present") {
             code = gateLivePresent();
+        } else if (gate == "project_settings") {
+            code = gateProjectSettings();
         } else if (gate == "idle_frames") {
             code = gateIdleFrames();
         } else {

@@ -1,4 +1,5 @@
 #include "main_window.hpp"
+#include "project_settings_dialog.hpp"
 
 #include "editor_panels.hpp"
 #include "project_hub_widget.hpp"
@@ -261,6 +262,20 @@ void MainWindow::buildMenus() {
                     openProject(dir);
                 }
             });
+    QAction* settings = addFileAction(tr("Project Se&ttings..."), "fuseActionProjectSettings", QKeySequence());
+    connect(settings, &QAction::triggered, this, [this]() { showProjectSettings(); });
+    QAction* import = addFileAction(tr("&Import Asset..."), "fuseActionImportAsset", QKeySequence(Qt::CTRL | Qt::Key_I));
+    connect(import, &QAction::triggered, this, [this]() {
+        if (m_projectRoot.isEmpty()) {
+            QMessageBox::information(this, tr("Import Asset"), tr("Open a project first."));
+            return;
+        }
+        const QStringList files = QFileDialog::getOpenFileNames(this, tr("Import Asset"), QString(),
+            tr("Assets (*.png *.jpg *.jpeg *.tga *.hdr *.exr *.ktx2 *.gltf *.glb *.obj *.wav *.ogg *.lua *.fuselevel *.prefab);;All files (*)"));
+        if (!files.isEmpty()) {
+            importAssets(files);
+        }
+    });
     file->addSeparator();
     QAction* quit = addFileAction(tr("&Quit"), kActionQuit, QKeySequence::Quit);
     connect(quit, &QAction::triggered, this, &QWidget::close);
@@ -562,6 +577,7 @@ void MainWindow::onProjectOpenRequested(const QString& projectDirectory) {
     const QString root = info.absoluteFilePath();
     m_viewport->setProjectLabel(info.fileName());
     m_assetBrowser->setProjectRoot(root);
+    m_projectRoot = root;
     m_projectLabel = info.fileName();
     updateWindowTitle();
 
@@ -850,6 +866,7 @@ bool MainWindow::createProject(const QString& directory, const QString& name, u3
         m_projectLabel = label;
         m_viewport->setProjectLabel(label);
         m_assetBrowser->setProjectRoot(QString::fromStdString(root));
+        m_projectRoot = QString::fromStdString(root);
         m_projectHub->addProjectDirectory(QString::fromStdString(root));
         if (!m_host.currentScenePath().empty()) {
             addRecentFile(QString::fromStdString(m_host.currentScenePath()));
@@ -1073,6 +1090,53 @@ bool MainWindow::selectForScreenshot(const QString& spec) {
     m_viewport->refreshGizmo();
     m_viewport->update();
     return true;
+}
+
+} // namespace fuse::editor::qt
+
+namespace fuse::editor::qt {
+
+bool MainWindow::showProjectSettings() {
+    if (m_projectRoot.isEmpty()) {
+        QMessageBox::information(this, tr("Project Settings"), tr("Open a project first."));
+        return false;
+    }
+    ProjectSettingsDialog dialog(m_projectRoot, this);
+    if (!dialog.loaded()) {
+        QMessageBox::warning(this, tr("Project Settings"), tr("Cannot read project.json in %1").arg(m_projectRoot));
+        return false;
+    }
+    if (dialog.exec() != QDialog::Accepted) {
+        return false;
+    }
+    QString error;
+    if (!dialog.save(&error)) {
+        QMessageBox::warning(this, tr("Project Settings"), error);
+        return false;
+    }
+    if (m_console != nullptr) {
+        m_console->panel().addLog(fuse::log::Level::Info, tr("Project settings saved; reopening %1").arg(m_projectRoot).toUtf8().constData());
+        m_console->rerender();
+    }
+    if (maybeSaveChanges()) {
+        openProject(m_projectRoot);
+    }
+    return true;
+}
+
+bool MainWindow::importAssets(const QStringList& files) {
+    if (m_projectRoot.isEmpty()) {
+        return false;
+    }
+    QString error;
+    const QStringList written = importAssetsIntoProject(m_projectRoot, files, &error);
+    if (m_console != nullptr) {
+        for (const QString& w : written) m_console->panel().addLog(fuse::log::Level::Info, tr("Imported %1").arg(w).toUtf8().constData());
+        if (!error.isEmpty()) m_console->panel().addLog(fuse::log::Level::Warn, tr("Import: %1").arg(error).toUtf8().constData());
+        m_console->rerender();
+    }
+    m_assetBrowser->rescan();
+    return !written.isEmpty() && error.isEmpty();
 }
 
 } // namespace fuse::editor::qt
