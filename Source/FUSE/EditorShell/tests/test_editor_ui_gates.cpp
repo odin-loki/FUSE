@@ -791,12 +791,34 @@ void gateGpuViewport(Rig& r) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
             CHECK(host->readback(after, aw, ah));
-            std::size_t changed = 0;
-            if (bw == aw && bh == ah)
-                for (std::size_t i = 0; i < before.size(); ++i)
-                    if (before[i] != after[i]) ++changed;
-            std::printf("gpu_viewport: Create Cube changed %zu / %zu engine pixels\n", changed, after.size());
-            CHECK(changed > after.size() / 200);
+            // the cube's projected bounds (unit cube at the origin), in engine-frame pixels
+            float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+            for (int k = 0; k < 8; ++k) {
+                float px = 0.f, py = 0.f;
+                if (!r.c.projectPoint(k & 1 ? 0.5f : -0.5f, k & 2 ? 0.5f : -0.5f, k & 4 ? 0.5f : -0.5f, px, py)) continue;
+                x0 = std::min(x0, px), y0 = std::min(y0, py), x1 = std::max(x1, px), y1 = std::max(y1, py);
+            }
+            CHECK(x1 > x0 && y1 > y0);
+            // significant change (> 6 in a channel; ignores frame-to-frame noise), inside vs outside the bounds
+            std::size_t inN = 0, inChanged = 0, outN = 0, outChanged = 0;
+            if (bw == aw && bh == ah && x1 > x0)
+                for (u32 y = 0; y < ah; ++y)
+                    for (u32 x = 0; x < aw; ++x) {
+                        const u32 a = before[std::size_t(y) * aw + x], b = after[std::size_t(y) * aw + x];
+                        bool diff = false;
+                        for (int sh = 0; sh < 24; sh += 8)
+                            if (std::abs(int((a >> sh) & 255) - int((b >> sh) & 255)) > 6) diff = true;
+                        // inset by 2 px so edge pixels count on neither side
+                        const bool in = float(x) > x0 + 2.f && float(x) < x1 - 2.f && float(y) > y0 + 2.f && float(y) < y1 - 2.f;
+                        const bool out = float(x) < x0 - 2.f || float(x) > x1 + 2.f || float(y) < y0 - 2.f || float(y) > y1 + 2.f;
+                        if (in) ++inN, inChanged += diff;
+                        else if (out) ++outN, outChanged += diff;
+                    }
+            const double inFrac = inN ? double(inChanged) / double(inN) : 0.0, outFrac = outN ? double(outChanged) / double(outN) : 1.0;
+            std::printf("gpu_viewport: Create Cube frame %ux%u bounds (%.0f,%.0f)-(%.0f,%.0f): %.1f%% changed inside, %.2f%% outside\n",
+                        aw, ah, double(x0), double(y0), double(x1), double(y1), inFrac * 100.0, outFrac * 100.0);
+            CHECK(inN > 400 && inFrac > 0.5);  // the cube covers most of its projected box
+            CHECK(outFrac < 0.05);             // and little else moved (shadow / contact only)
         }
         const fuse::ui::Image& img = r.shell.viewportImage();
         CHECK(img.externalSlot == 0);
