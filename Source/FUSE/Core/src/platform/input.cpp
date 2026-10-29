@@ -2,6 +2,8 @@
 
 #include <fuse/platform/event_pump.hpp>
 
+#include <cstring>
+
 namespace fuse::platform {
 
 namespace {
@@ -136,6 +138,10 @@ void InputState::beginFrame() {
     }
     m_mouseDeltaX = 0;
     m_mouseDeltaY = 0;
+    m_wheelX = 0;
+    m_wheelY = 0;
+    m_textLength = 0;
+    m_text[0] = '\0';
 }
 
 void InputState::apply(const PlatformEvent& event) {
@@ -172,6 +178,21 @@ void InputState::apply(const PlatformEvent& event) {
         m_mouseX = event.mouseX;
         m_mouseY = event.mouseY;
         m_haveMousePosition = true;
+        break;
+    }
+    case PlatformEventType::MouseWheel:
+        m_wheelX += event.wheelX;
+        m_wheelY += event.wheelY;
+        m_mouseX = event.mouseX;
+        m_mouseY = event.mouseY;
+        m_haveMousePosition = true;
+        break;
+    case PlatformEventType::TextInput: {
+        const std::string_view chunk(event.text, ::strnlen(event.text, sizeof(event.text)));
+        const usize n = utf8Prefix(chunk, kMaxFrameText - m_textLength);
+        std::memcpy(m_text + m_textLength, chunk.data(), n);
+        m_textLength += static_cast<u32>(n);
+        m_text[m_textLength] = '\0';
         break;
     }
     case PlatformEventType::InputCaptureChanged:

@@ -124,6 +124,7 @@ set(FUSE_CORE_SOURCES
     src/platform/crash_handler.cpp
     src/platform/dpi.cpp
     src/platform/platform_window.cpp
+    src/platform/text_services.cpp
     src/platform/input.cpp
     src/platform/gamepad.cpp
     src/platform/action_map.cpp
@@ -245,9 +246,9 @@ endif()
 fuse_apply_cxx23(fuse_core)
 target_link_libraries(fuse_core PUBLIC Threads::Threads)
 if(WIN32)
-    # user32: windows/input/DPI; gdi32: GetDeviceCaps DPI fallback. dbghelp/shcore are loaded at
+    # user32: windows/input/DPI; gdi32: GetDeviceCaps DPI fallback; imm32: IME pre-edit / candidate placement. dbghelp/shcore are loaded at
     # run time (crash_handler.cpp, dpi.cpp) so a missing DLL never blocks startup.
-    target_link_libraries(fuse_core PUBLIC user32 gdi32)
+    target_link_libraries(fuse_core PUBLIC user32 gdi32 imm32)
 endif()
 if(MSVC)
     # Pull crt_reporting_msvc.cpp (a static initializer only) into every program linking fuse_core.

@@ -299,6 +299,22 @@ bool translate(const XEvent& xe, Event& out) {
             return false;
         }
         out.kind = xe.type == KeyPress ? EventKind::KeyDown : EventKind::KeyUp;
+        if (xe.type == KeyPress) {
+            // Committed text without an input method: XLookupString yields Latin-1 for the keysym under the active
+            // modifiers (shift, AltGr); control characters stay key events. XIM pre-edit is not wired yet.
+            char latin1[8] = {};
+            KeySym typed = 0;
+            const int n = XLookupString(&keyEvent, latin1, sizeof(latin1), &typed, nullptr);
+            const unsigned char c = n == 1 ? static_cast<unsigned char>(latin1[0]) : 0u;
+            if (c >= 0x20u && c != 0x7Fu) {
+                if (c < 0x80u) {
+                    out.text[0] = static_cast<char>(c);
+                } else {
+                    out.text[0] = static_cast<char>(0xC0u | (c >> 6));
+                    out.text[1] = static_cast<char>(0x80u | (c & 0x3Fu));
+                }
+            }
+        }
         return true;
     }
     case MotionNotify:
@@ -323,11 +339,18 @@ bool translate(const XEvent& xe, Event& out) {
             break;
         case Button4:
         case Button5:
+        case 6:
+        case 7:
             if (!down) {
                 return false;
             }
             out.kind = EventKind::MouseWheel;
-            out.y = xe.xbutton.button == Button4 ? 120 : -120;
+            switch (xe.xbutton.button) {
+            case Button4: out.wheelY = 120; break;
+            case Button5: out.wheelY = -120; break;
+            case 6: out.wheelX = -120; break;
+            default: out.wheelX = 120; break;
+            }
             return true;
         case 8:
             out.button = 4u;

@@ -4,7 +4,8 @@
 //   keys    punctuation, numpad, left/right modifiers, F13–F24, lock / system and media keys. KeyV2 starts with the
 //           v1 `Key` values in the same order, so `fromLegacy` is a cast and `toLegacy` folds the new keys back
 //           (LeftCtrl → Ctrl, Numpad5 → Num5, NumpadEnter → Enter; keys with no v1 equivalent → Key::COUNT).
-//   events  text input (UTF-8, inline), a real wheel event (v1 encoded wheel as MouseMove with Y = delta), scancode,
+//   events  text input (UTF-8, inline), IME composition, a real wheel event (v1 now has MouseWheel; the old
+//           MouseMove + keyCode 0xFFFF encoding is still decoded for recorded streams), scancode,
 //           repeat flag and modifier mask on keys, touch, DPI change, move, minimise / restore, theme change.
 // `fromLegacy(PlatformEvent)` / `toLegacy(EventV2)` convert between the two so EventPump and InputState stay v1 until
 // the native backends emit v2 directly.
@@ -141,6 +142,7 @@ enum class EventV2Type : u8 {
     // v2
     TextInput, Wheel, TouchDown, TouchMove, TouchUp, DpiChanged, WindowMoved, WindowMinimized, WindowRestored,
     ThemeChanged,
+    TextComposition, ///< IME pre-edit changed: `text` = its first bytes; full string from EventPump::composition()
 };
 
 struct EventV2 {
@@ -167,11 +169,17 @@ struct EventV2 {
     }
 };
 
-/// v1 → v2. When `wheelInMouseMove` is set, a v1 MouseMove with keyCode == 0xFFFF (the legacy wheel tag used by the
-/// Win32 backend) becomes a Wheel event with wheelY = mouseY / 120.
+/// v1 → v2. v1 MouseWheel / TextInput / TextComposition map to Wheel / TextInput / TextComposition. When
+/// `wheelInMouseMove` is set, a v1 MouseMove with keyCode == 0xFFFF (the retired wheel tag, still found in recorded
+/// streams) becomes a Wheel event with wheelY = mouseY / 120.
 inline EventV2 fromLegacy(const PlatformEvent& e, bool wheelInMouseMove = true) {
     EventV2 v;
-    v.type = EventV2Type(u8(e.type));
+    switch (e.type) {
+    case PlatformEventType::MouseWheel: v.type = EventV2Type::Wheel; break;
+    case PlatformEventType::TextInput: v.type = EventV2Type::TextInput; break;
+    case PlatformEventType::TextComposition: v.type = EventV2Type::TextComposition; break;
+    default: v.type = EventV2Type(u8(e.type)); break;
+    }
     v.window = e.window;
     v.width = e.width;
     v.height = e.height;
@@ -180,6 +188,13 @@ inline EventV2 fromLegacy(const PlatformEvent& e, bool wheelInMouseMove = true) 
     v.y = float(e.mouseY);
     v.mouseButton = e.mouseButton;
     v.inputCaptured = e.inputCaptured;
+    if (e.type == PlatformEventType::MouseWheel) {
+        v.wheelX = float(e.wheelX) / 120.f;
+        v.wheelY = float(e.wheelY) / 120.f;
+    }
+    if (e.type == PlatformEventType::TextInput || e.type == PlatformEventType::TextComposition) {
+        v.setText({e.text, ::strnlen(e.text, sizeof(e.text))});
+    }
     if (e.type == PlatformEventType::KeyDown || e.type == PlatformEventType::KeyUp) {
         const KeyV2 k = keyV2FromVirtualKey(e.keyCode);
         v.key = k != KeyV2::COUNT ? k : fromLegacy(keyFromPlatformCode(e.keyCode));
@@ -192,16 +207,28 @@ inline EventV2 fromLegacy(const PlatformEvent& e, bool wheelInMouseMove = true) 
     return v;
 }
 
-/// v2 → v1 for consumers that still take PlatformEvent; nullopt for v2-only events (text, touch, ...).
+/// v2 → v1 for consumers that still take PlatformEvent; nullopt for v2-only events (touch, DPI, ...).
 inline std::optional<PlatformEvent> toLegacy(const EventV2& v) {
     if (u8(v.type) > u8(EventV2Type::InputCaptureChanged)) {
-        if (v.type != EventV2Type::Wheel) return std::nullopt;
         PlatformEvent e;
-        e.type = PlatformEventType::MouseMove;
         e.window = v.window;
-        e.keyCode = 0xFFFFu;
-        e.mouseY = i32(v.wheelY * 120.f);
-        return e;
+        switch (v.type) {
+        case EventV2Type::Wheel:
+            e.type = PlatformEventType::MouseWheel;
+            e.mouseX = i32(v.x);
+            e.mouseY = i32(v.y);
+            e.wheelX = i32(v.wheelX * 120.f);
+            e.wheelY = i32(v.wheelY * 120.f);
+            return e;
+        case EventV2Type::TextInput:
+        case EventV2Type::TextComposition: {
+            e.type = v.type == EventV2Type::TextInput ? PlatformEventType::TextInput : PlatformEventType::TextComposition;
+            const std::string_view t = v.textView();
+            std::memcpy(e.text, t.data(), utf8Prefix(t, sizeof(e.text) - 1u));
+            return e;
+        }
+        default: return std::nullopt;
+        }
     }
     PlatformEvent e;
     e.type = PlatformEventType(u8(v.type));

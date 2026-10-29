@@ -584,12 +584,17 @@ int runGates(const char* selfExe) {
     const PlatformEvent* keyDown = findType(events, PlatformEventType::KeyDown);
     expectTrue(keyDown != nullptr && keyDown->keyCode == static_cast<fuse::u32>('A'),
                "KeyPress XK_a maps to keyCode 'A'");
-    expectTrue(events.size() >= 2u && events[1].keyCode == 0x1Bu, "KeyPress XK_Escape maps to 0x1B");
+    // KeyDown 'A', TextInput "a" (UI1), KeyDown Escape (no text: control character).
+    expectTrue(events.size() == 3u && events[1].type == PlatformEventType::TextInput &&
+                   std::strcmp(events[1].text, "a") == 0,
+               "KeyPress XK_a also commits TextInput \"a\"");
+    expectTrue(events.size() == 3u && events[2].keyCode == 0x1Bu, "KeyPress XK_Escape maps to 0x1B, no text");
     for (const PlatformEvent& e : events) {
         input.apply(e);
     }
     expectTrue(input.keyPressed(fuse::platform::Key::A), "InputState reports key_pressed(A)");
     expectTrue(input.keyPressed(fuse::platform::Key::Escape), "InputState reports key_pressed(Escape)");
+    expectTrue(input.textInput() == "a", "InputState collects the frame's text");
 
     sendKey(dpy, xid, XK_a, false);
     events = pumpNative(dpy, pump);
@@ -614,8 +619,9 @@ int runGates(const char* selfExe) {
                    "ButtonPress(Button3) -> MouseButtonDown right @ (10,20)");
         expectTrue(events[2].type == PlatformEventType::MouseButtonUp && events[2].mouseButton == 2u,
                    "ButtonRelease(Button3) -> MouseButtonUp right");
-        expectTrue(events[3].type == PlatformEventType::MouseMove && events[3].mouseY == 120,
-                   "Button4 -> wheel delta +120 (Win32 WM_MOUSEWHEEL mapping)");
+        expectTrue(events[3].type == PlatformEventType::MouseWheel && events[3].wheelY == 120 &&
+                       events[3].wheelX == 0 && events[3].mouseX == 10 && events[3].mouseY == 20,
+                   "Button4 -> MouseWheel +120 at the pointer (WHEEL_DELTA units)");
     }
 
     // --- focus ---------------------------------------------------------------------------

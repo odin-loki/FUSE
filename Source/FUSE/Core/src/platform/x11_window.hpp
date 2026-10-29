@@ -56,8 +56,11 @@ struct Event {
     u32 height = 0;
     u32 keyCode = 0;  // Win32-style virtual key (see input.cpp `keyFromPlatformCode`)
     i32 x = 0;
-    i32 y = 0;        // wheel delta (+/-120) for MouseWheel
+    i32 y = 0;
+    i32 wheelX = 0;   // MouseWheel: +/-120 per notch (Button6/7 horizontal, Button4/5 vertical)
+    i32 wheelY = 0;
     u8 button = 0;    // 1=left 2=right 3=middle 4=X1 5=X2
+    char text[8] = {}; // KeyDown: UTF-8 of the typed character (XLookupString, Latin-1 keysyms), empty for none
 };
 
 /// True when the server speaks XInput2 (>= 2.0) so XI_RawMotion can be selected. Probed once;

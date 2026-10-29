@@ -104,11 +104,11 @@ MouseButton mouseButtonFromName(std::string_view name);
 /// `keyPressed` is true only until the next `beginFrame()` after a `KeyDown`.
 class InputState {
 public:
-    /// Clears pressed-this-frame, released-this-frame (keys and mouse buttons), and mouse delta.
+    /// Clears pressed-this-frame, released-this-frame (keys and mouse buttons), mouse delta, wheel and text.
     /// Held keys and absolute mouse position stay.
     void beginFrame();
 
-    /// Apply one `KeyDown`/`KeyUp`, `MouseMove`, `RawMouseDelta`, or `MouseButtonDown`/`Up`.
+    /// Apply one `KeyDown`/`KeyUp`, `MouseMove`, `MouseWheel`, `TextInput`, `RawMouseDelta`, or `MouseButtonDown`/`Up`.
     /// `RawMouseDelta` accumulates `mouseDeltaX/Y` and does not overwrite absolute `mouseX/Y`.
     /// Once a raw delta has been seen, `MouseMove` only updates the absolute position: the OS
     /// cursor path is acceleration-scaled, so mixing it in would corrupt the raw delta.
@@ -142,6 +142,13 @@ public:
     i32 mouseDeltaX() const { return m_mouseDeltaX; }
     i32 mouseDeltaY() const { return m_mouseDeltaY; }
 
+    /// Wheel movement since the last `beginFrame()` in 1/120 notch units (y > 0 = away from the user). `MouseWheel`
+    /// events also update the absolute pointer position but never produce a mouse delta.
+    i32 wheelX() const { return m_wheelX; }
+    i32 wheelY() const { return m_wheelY; }
+    /// UTF-8 text committed since the last `beginFrame()` (`TextInput` events; at most 63 bytes kept per frame).
+    std::string_view textInput() const { return {m_text, m_textLength}; }
+
     /// True from the first `RawMouseDelta` until capture is released: deltas then come from raw
     /// input only.
     bool rawMouseActive() const { return m_rawMouseActive; }
@@ -162,6 +169,11 @@ private:
     i32 m_mouseDeltaY = 0;
     bool m_haveMousePosition = false;
     bool m_rawMouseActive = false;
+    i32 m_wheelX = 0;
+    i32 m_wheelY = 0;
+    static constexpr u32 kMaxFrameText = 63;
+    char m_text[kMaxFrameText + 1]{};
+    u32 m_textLength = 0;
 };
 
 } // namespace fuse::platform

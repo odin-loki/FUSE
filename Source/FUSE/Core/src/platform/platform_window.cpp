@@ -3,6 +3,8 @@
 #include <fuse/platform/window.hpp>
 #include <fuse/platform/window_wsi.hpp>
 
+#include <cstring>
+#include <string_view>
 #include <utility>
 
 #if defined(FUSE_PLATFORM_WINDOW_GLFW)
@@ -22,6 +24,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <imm.h>
 #include "platform_window_visibility.hpp"
 #endif
 
@@ -104,6 +107,33 @@ const char* sanitizeTitle(const char* title) {
     return (title != nullptr && title[0] != '\0') ? title : "FUSE";
 }
 
+/// Encodes `cp` as UTF-8 into `out` (4 bytes); returns the length (0 for surrogates / out of range).
+[[maybe_unused]] usize encodeUtf8(u32 cp, char* out) {
+    if (cp < 0x80u) {
+        out[0] = static_cast<char>(cp);
+        return 1;
+    }
+    if (cp < 0x800u) {
+        out[0] = static_cast<char>(0xC0u | (cp >> 6));
+        out[1] = static_cast<char>(0x80u | (cp & 0x3Fu));
+        return 2;
+    }
+    if ((cp >= 0xD800u && cp < 0xE000u) || cp > 0x10FFFFu) {
+        return 0;
+    }
+    if (cp < 0x10000u) {
+        out[0] = static_cast<char>(0xE0u | (cp >> 12));
+        out[1] = static_cast<char>(0x80u | ((cp >> 6) & 0x3Fu));
+        out[2] = static_cast<char>(0x80u | (cp & 0x3Fu));
+        return 3;
+    }
+    out[0] = static_cast<char>(0xF0u | (cp >> 18));
+    out[1] = static_cast<char>(0x80u | ((cp >> 12) & 0x3Fu));
+    out[2] = static_cast<char>(0x80u | ((cp >> 6) & 0x3Fu));
+    out[3] = static_cast<char>(0x80u | (cp & 0x3Fu));
+    return 4;
+}
+
 bool isWindowScopedEventType(PlatformEventType type) {
     return type == PlatformEventType::WindowCloseRequested ||
            type == PlatformEventType::WindowResized ||
@@ -121,7 +151,77 @@ constexpr wchar_t kOwnedWindowClassName[] = L"FUSE_PlatformWindow";
 // Per-monitor-v2 DPI awareness (dpi.hpp) makes Windows send WM_DPICHANGED instead of stretching
 // the window when it moves to a monitor with a different scale; apply the suggested rectangle so
 // the window keeps its physical size. The resulting WM_SIZE reaches the pump as WindowResized.
+// IME pre-edit of owned windows (WM_IME_* are sent to the window procedure, not queued): stashed here and turned
+// into a TextComposition by the pump after DispatchMessage. Results arrive as WM_CHAR (DefWindowProc → WM_IME_CHAR).
+struct PendingComposition {
+    bool dirty = false;
+    wchar_t text[EventPump::kMaxComposition + 1] = {};
+    int length = 0; ///< UTF-16 units
+    int cursor = 0; ///< UTF-16 units
+};
+thread_local PendingComposition t_composition;
+
+void readComposition(HWND hwnd) {
+    PendingComposition& c = t_composition;
+    c.length = 0;
+    c.cursor = 0;
+    if (HIMC imc = ImmGetContext(hwnd)) {
+        const LONG bytes = ImmGetCompositionStringW(imc, GCS_COMPSTR, c.text, sizeof(c.text) - sizeof(wchar_t));
+        c.length = bytes > 0 ? static_cast<int>(bytes / sizeof(wchar_t)) : 0;
+        const LONG cursor = ImmGetCompositionStringW(imc, GCS_CURSORPOS, nullptr, 0);
+        c.cursor = cursor < 0 ? c.length : (cursor > c.length ? c.length : static_cast<int>(cursor));
+        ImmReleaseContext(hwnd, imc);
+    }
+    c.dirty = true;
+}
+
+void flushComposition(EventPump& pump, Window* window) {
+    PendingComposition& c = t_composition;
+    if (!c.dirty) {
+        return;
+    }
+    c.dirty = false;
+    char utf8[EventPump::kMaxComposition + 1];
+    usize n = 0;
+    i32 cursorBytes = 0;
+    for (int i = 0; i < c.length; ++i) {
+        if (i == c.cursor) {
+            cursorBytes = static_cast<i32>(n);
+        }
+        u32 cp = static_cast<u16>(c.text[i]);
+        if (cp >= 0xD800u && cp < 0xDC00u && i + 1 < c.length) {
+            const u32 lo = static_cast<u16>(c.text[i + 1]);
+            if (lo >= 0xDC00u && lo < 0xE000u) {
+                cp = 0x10000u + ((cp - 0xD800u) << 10) + (lo - 0xDC00u);
+                ++i;
+            }
+        }
+        char enc[4];
+        const usize len = encodeUtf8(cp, enc);
+        if (n + len > EventPump::kMaxComposition) {
+            break;
+        }
+        std::memcpy(utf8 + n, enc, len);
+        n += len;
+    }
+    if (c.cursor >= c.length) {
+        cursorBytes = static_cast<i32>(n);
+    }
+    pump.pushComposition(std::string_view(utf8, n), cursorBytes, window);
+}
+
 LRESULT CALLBACK ownedWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    if (message == WM_IME_STARTCOMPOSITION || message == WM_IME_ENDCOMPOSITION) {
+        t_composition.length = t_composition.cursor = 0;
+        t_composition.dirty = true;
+    } else if (message == WM_IME_COMPOSITION) {
+        if ((lParam & GCS_COMPSTR) != 0) {
+            readComposition(hwnd);
+        } else if ((lParam & GCS_RESULTSTR) != 0) {
+            t_composition.length = t_composition.cursor = 0;
+            t_composition.dirty = true;
+        }
+    }
     if (message == WM_DPICHANGED && lParam != 0) {
         const RECT* suggested = reinterpret_cast<const RECT*>(lParam);
         SetWindowPos(hwnd, nullptr, suggested->left, suggested->top, suggested->right - suggested->left,
@@ -444,13 +544,47 @@ void enqueueMappedOsMessage(EventPump& pump, Window* window, const MSG& msg) {
         if (dropKeyMouse) {
             break;
         }
-        PlatformEvent event{};
-        event.type = PlatformEventType::MouseMove;
-        event.window = window;
-        event.mouseX = osMessageAxisX(msg.lParam);
-        event.mouseY = static_cast<i32>(GET_WHEEL_DELTA_WPARAM(msg.wParam));
-        event.keyCode = 0xFFFFu; // wheel tag (platform/events_v2.hpp decodes it into EventV2Type::Wheel)
-        pump.pushSyntheticEvent(event);
+        // lParam is in screen coordinates for wheel messages.
+        POINT p{osMessageAxisX(msg.lParam), osMessageAxisY(msg.lParam)};
+        ScreenToClient(msg.hwnd, &p);
+        const i32 delta = static_cast<i32>(GET_WHEEL_DELTA_WPARAM(msg.wParam));
+        pump.pushMouseWheel(p.x, p.y, 0, delta, window);
+        break;
+    }
+    case WM_MOUSEHWHEEL: {
+        if (dropKeyMouse) {
+            break;
+        }
+        POINT p{osMessageAxisX(msg.lParam), osMessageAxisY(msg.lParam)};
+        ScreenToClient(msg.hwnd, &p);
+        const i32 delta = static_cast<i32>(GET_WHEEL_DELTA_WPARAM(msg.wParam));
+        pump.pushMouseWheel(p.x, p.y, delta, 0, window);
+        break;
+    }
+    case WM_CHAR: {
+        // Committed text (TranslateMessage output, IME results via WM_IME_CHAR). UTF-16: pair surrogates across
+        // messages; control characters (Backspace, Enter, Tab, Ctrl+letter) stay key events.
+        if (dropKeyMouse) {
+            break;
+        }
+        static thread_local u32 highSurrogate = 0;
+        u32 cp = static_cast<u32>(msg.wParam) & 0xFFFFu;
+        if (cp >= 0xD800u && cp < 0xDC00u) {
+            highSurrogate = cp;
+            break;
+        }
+        if (cp >= 0xDC00u && cp < 0xE000u) {
+            if (highSurrogate == 0u) {
+                break;
+            }
+            cp = 0x10000u + ((highSurrogate - 0xD800u) << 10) + (cp - 0xDC00u);
+        }
+        highSurrogate = 0;
+        if (cp < 0x20u || cp == 0x7Fu) {
+            break;
+        }
+        char utf8[4];
+        pump.pushTextInput(std::string_view(utf8, encodeUtf8(cp, utf8)), window);
         break;
     }
     case WM_INPUT: {
@@ -1147,19 +1281,22 @@ void EventPump::processOsEvents() {
                                                                 : PlatformEventType::KeyUp;
                 event.keyCode = xe.keyCode;
                 pushSyntheticEvent(event);
+                if (xe.text[0] != '\0') {
+                    pushTextInput(xe.text, window);
+                }
             }
             break;
         case x11::EventKind::MouseMove:
-        case x11::EventKind::MouseWheel:
-            // Wheel mirrors the Win32 WM_MOUSEWHEEL mapping (MouseMove, Y = wheel delta).
             if (!dropKeyMouse) {
                 event.type = PlatformEventType::MouseMove;
                 event.mouseX = xe.x;
                 event.mouseY = xe.y;
-                if (xe.kind == x11::EventKind::MouseWheel) {
-                    event.keyCode = 0xFFFFu; // wheel tag (platform/events_v2.hpp)
-                }
                 pushSyntheticEvent(event);
+            }
+            break;
+        case x11::EventKind::MouseWheel:
+            if (!dropKeyMouse) {
+                pushMouseWheel(xe.x, xe.y, xe.wheelX, xe.wheelY, window);
             }
             break;
         case x11::EventKind::MouseButtonDown:
@@ -1203,6 +1340,7 @@ void EventPump::processOsEvents() {
             if (dispatchMappedOsMessage(msg)) {
                 DispatchMessageW(&msg);
             }
+            flushComposition(*this, window);
         }
     }
 
@@ -1429,6 +1567,45 @@ bool EventPump::quitRequested() const {
 void EventPump::resetQuit() {
     m_quitRequested = false;
     clearSyntheticEvents();
+}
+
+void EventPump::pushMouseWheel(i32 x, i32 y, i32 wheelX, i32 wheelY, Window* window) {
+    PlatformEvent event{};
+    event.type = PlatformEventType::MouseWheel;
+    event.window = window;
+    event.mouseX = x;
+    event.mouseY = y;
+    event.wheelX = wheelX;
+    event.wheelY = wheelY;
+    pushSyntheticEvent(event);
+}
+
+void EventPump::pushTextInput(std::string_view utf8, Window* window) {
+    while (!utf8.empty()) {
+        usize n = utf8Prefix(utf8, sizeof(PlatformEvent::text) - 1u);
+        if (n == 0u) {
+            n = 1u; // malformed lead run longer than the chunk: pass bytes through rather than spin
+        }
+        PlatformEvent event{};
+        event.type = PlatformEventType::TextInput;
+        event.window = window;
+        std::memcpy(event.text, utf8.data(), n);
+        pushSyntheticEvent(event);
+        utf8.remove_prefix(n);
+    }
+}
+
+void EventPump::pushComposition(std::string_view utf8, i32 cursor, Window* window) {
+    const usize n = utf8Prefix(utf8, kMaxComposition);
+    std::memcpy(m_composition, utf8.data(), n);
+    m_composition[n] = '\0';
+    m_compositionLength = static_cast<u32>(n);
+    m_compositionCursor = cursor < 0 ? 0 : (cursor > static_cast<i32>(n) ? static_cast<i32>(n) : cursor);
+    PlatformEvent event{};
+    event.type = PlatformEventType::TextComposition;
+    event.window = window;
+    std::memcpy(event.text, m_composition, utf8Prefix({m_composition, n}, sizeof(event.text) - 1u));
+    pushSyntheticEvent(event);
 }
 
 void EventPump::clearSyntheticEvents() {

@@ -2,6 +2,7 @@
 
 #include <fuse/types.hpp>
 
+#include <string_view>
 #include <vector>
 
 namespace fuse::platform {
@@ -25,6 +26,15 @@ enum class PlatformEventType : u8 {
     /// input (WM_INPUT / XI_RawMotion) only flows while captured, so `InputState` uses this to
     /// switch its delta source back to `MouseMove` on release.
     InputCaptureChanged,
+    /// Mouse wheel (UI1; replaces the old `MouseMove` + `keyCode = 0xFFFF` encoding). `mouseX/Y` = pointer client
+    /// position, `wheelX/Y` = delta in 1/120 notch units (WHEEL_DELTA; y > 0 = away from the user).
+    MouseWheel,
+    /// Committed text (UI1): `text` holds UTF-8, NUL-terminated, at most 15 bytes and whole code points (longer IME
+    /// commits arrive as several events). Distinct from KeyDown: layouts, dead keys and IMEs produce it.
+    TextInput,
+    /// IME pre-edit changed (UI1). The full pre-edit string and caret are `EventPump::composition()` /
+    /// `compositionCursor()`; `text` carries its first bytes. An empty composition ends pre-edit.
+    TextComposition,
 };
 
 struct PlatformEvent {
@@ -37,6 +47,9 @@ struct PlatformEvent {
     i32 mouseY = 0;  // client Y, or signed raw delta when type is RawMouseDelta
     u8 mouseButton = 0;  // 1=left 2=right 3=middle
     bool inputCaptured = false;  // InputCaptureChanged: true = Captured, false = Released
+    i32 wheelX = 0;  // MouseWheel: 1/120 notches
+    i32 wheelY = 0;
+    char text[16] = {};  // TextInput / TextComposition: UTF-8, NUL-terminated
 };
 
 /// Snapshot of the most recent in-place resize coalesce (diagnostic only).
@@ -218,6 +231,17 @@ public:
     void pushKeyUp(u32 keyCode);
     void pushMouseMove(i32 x, i32 y);
     void pushMouseButton(u8 button, bool down, i32 x, i32 y);
+    /// MouseWheel at (x, y) with deltas in 1/120 notch units.
+    void pushMouseWheel(i32 x, i32 y, i32 wheelX, i32 wheelY, Window* window = nullptr);
+    /// TextInput: splits `utf8` at code-point boundaries into <= 15-byte events.
+    void pushTextInput(std::string_view utf8, Window* window = nullptr);
+    /// TextComposition: stores the pre-edit (truncated at a code point to kMaxComposition bytes) and enqueues the
+    /// notification. `cursor` is a byte offset into it (clamped); empty text ends the composition.
+    void pushComposition(std::string_view utf8, i32 cursor, Window* window = nullptr);
+    /// Latest IME pre-edit (UTF-8) and caret byte offset; empty when no composition is active.
+    std::string_view composition() const { return {m_composition, m_compositionLength}; }
+    i32 compositionCursor() const { return m_compositionCursor; }
+    static constexpr u32 kMaxComposition = 255;
 
     void requestQuit();
     bool quitRequested() const;
@@ -239,6 +263,17 @@ private:
     ResizeCoalesceRecord m_lastCoalescedResize{};
     static constexpr u32 kMaxSyntheticEvents = 32;
     PlatformEvent m_syntheticEvents[kMaxSyntheticEvents]{};
+    char m_composition[kMaxComposition + 1] = {};
+    u32 m_compositionLength = 0;
+    i32 m_compositionCursor = 0;
 };
+
+/// Length of the longest prefix of `utf8` that is at most `maxBytes` and ends on a code-point boundary.
+constexpr usize utf8Prefix(std::string_view utf8, usize maxBytes) {
+    if (utf8.size() <= maxBytes) return utf8.size();
+    usize n = maxBytes;
+    while (n > 0 && (static_cast<unsigned char>(utf8[n]) & 0xC0u) == 0x80u) --n;
+    return n;
+}
 
 } // namespace fuse::platform

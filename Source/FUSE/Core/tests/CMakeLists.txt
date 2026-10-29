@@ -237,6 +237,11 @@ target_link_libraries(fuse_core_input_state_tests PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_core_input_state_tests)
 add_test(NAME fuse_core_input_state_tests COMMAND fuse_core_input_state_tests)
 
+# UI1 platform text services: MouseWheel / TextInput / TextComposition events, InputState wheel + text, clipboard.
+add_executable(fuse_core_ui1_text_input test_ui1_text_input.cpp)
+target_link_libraries(fuse_core_ui1_text_input PRIVATE fuse_core)
+add_test(NAME fuse_core_ui1_text_input COMMAND fuse_core_ui1_text_input)
+
 add_executable(fuse_core_phase1_integration
     test_phase1_integration.cpp
 )
