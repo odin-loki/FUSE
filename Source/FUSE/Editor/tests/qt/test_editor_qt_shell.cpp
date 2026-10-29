@@ -8,6 +8,7 @@
 //              reapply it
 //   play       toolbar Play / Stop toggle PIE and the transport enable state
 //   assets     asset browser folder navigation (Up / double-click) and scene double-click opens it
+//   entity     Entity menu create / duplicate / delete (undoable through the UndoStack)
 //   profiler   frame-time graph, min / avg / max summary, Pause and Clear
 //   project    openProject() on a sample loads its world into the hierarchy; the window grabs to a
 //              non-empty image (the --screenshot path)
@@ -26,6 +27,7 @@
 #include <QImage>
 #include <QLabel>
 #include <QListWidget>
+#include <QMenu>
 #include <QMessageBox>
 #include <QToolButton>
 #include <QPixmap>
@@ -209,6 +211,41 @@ int gateAssets(MainWindow& window) {
     return 0;
 }
 
+int gateEntity(MainWindow& window) {
+    using fuse::editor::ContextMenuAction;
+    QMenu* menu = window.entityMenu();
+    expect(menu != nullptr && menu->actions().size() >= 9, "entity: Entity menu with create / duplicate / delete");
+    tick(window);
+    const int rows0 = window.hierarchy()->entityRowCount();
+    QAction* create = findAction(window, "fuseActionCreateSdfSphere");
+    expect(create != nullptr, "entity: Create SDF Sphere action");
+    if (create == nullptr) {
+        return 1;
+    }
+    create->trigger();
+    tick(window);
+    const ecs::EntityID created = window.host().editorState().primarySelection;
+    expect(window.hierarchy()->entityRowCount() == rows0 + 1 && created != ecs::EntityID::null(),
+           "entity: create adds a selected entity");
+    expect(window.runEntityAction(ContextMenuAction::Duplicate), "entity: duplicate the selection");
+    tick(window);
+    expect(window.hierarchy()->entityRowCount() == rows0 + 2, "entity: duplicate adds a row");
+    findAction(window, "fuseActionDelete")->trigger();
+    tick(window);
+    expect(window.hierarchy()->entityRowCount() == rows0 + 1, "entity: delete removes the selection");
+    window.updateEditActions();
+    findAction(window, MainWindow::kActionUndo)->trigger();
+    tick(window);
+    expect(window.hierarchy()->entityRowCount() == rows0 + 2, "entity: undo restores the deleted entity");
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        window.host().editorState().primarySelection = ecs::EntityID::null();
+        window.host().editorState().selectedEntities.clear();
+    }
+    expect(!window.runEntityAction(ContextMenuAction::Delete), "entity: delete without a selection is a no-op");
+    return 0;
+}
+
 int gateProfiler(MainWindow& window) {
     fuse::editor::qt::ProfilerWidget* prof = window.profiler();
     prof->panel().clearHistory();
@@ -266,6 +303,9 @@ int main(int argc, char** argv) {
         }
         if (gate == "assets" || gate == "all") {
             gateAssets(window);
+        }
+        if (gate == "entity" || gate == "all") {
+            gateEntity(window);
         }
         if (gate == "profiler" || gate == "all") {
             gateProfiler(window);

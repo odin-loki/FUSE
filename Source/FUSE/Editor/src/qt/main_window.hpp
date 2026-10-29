@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/entity_context_menu.hpp>
 #include <fuse/editor/feature_pane_bridge.hpp>
 
 #include "game_loop_thread.hpp"
@@ -160,6 +161,12 @@ public:
     void updateWindowTitle();
     [[nodiscard]] QString sceneDisplayName() const;
 
+    // ---- GUI-1 Entity menu: create / duplicate / delete through EntityContextMenu (UndoStack) ----
+    /// Run an entity action on the current selection (create spawns at the origin, selected).
+    /// Returns true when the scene changed.
+    bool runEntityAction(ContextMenuAction action);
+    [[nodiscard]] QMenu* entityMenu() const { return m_entityMenu; }
+
     // ---- Edit menu: one undo history over the host's UndoStack (structural edits) and
     // CommandStack (inspector property edits), in the order the edits happened.
     void undoLatest();
@@ -207,6 +214,8 @@ private:
     QToolBar* m_transportBar = nullptr;
     QToolBar* m_mainBar = nullptr;
     QAction* m_actUndo = nullptr;
+    QMenu* m_entityMenu = nullptr;
+    EntityContextMenu m_entityActions;
     QAction* m_actRedo = nullptr;
     QAction* m_actPlay = nullptr;
     QAction* m_actPause = nullptr;

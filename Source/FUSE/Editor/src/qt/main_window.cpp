@@ -253,6 +253,39 @@ void MainWindow::buildMenus() {
     m_mainBar->addAction(m_actRedo);
     updateEditActions();
 
+    m_entityMenu = menuBar()->addMenu(tr("E&ntity"));
+    m_entityMenu->setObjectName(QStringLiteral("fuseEntityMenu"));
+    const auto addEntityAction = [this](const QString& text, const char* objectName, ContextMenuAction id,
+                                        QKeySequence shortcut) {
+        QAction* action = m_entityMenu->addAction(text);
+        action->setObjectName(QString::fromLatin1(objectName));
+        if (!shortcut.isEmpty()) {
+            action->setShortcut(shortcut);
+        }
+        connect(action, &QAction::triggered, this, [this, id]() { runEntityAction(id); });
+        return action;
+    };
+    addEntityAction(tr("Create &Empty"), "fuseActionCreateEmpty", ContextMenuAction::CreateEmpty,
+                    QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N));
+    addEntityAction(tr("Create &Cube"), "fuseActionCreateCube", ContextMenuAction::CreateCube, {});
+    addEntityAction(tr("Create SDF &Sphere"), "fuseActionCreateSdfSphere", ContextMenuAction::CreateSdfSphere, {});
+    addEntityAction(tr("Create SDF &Box"), "fuseActionCreateSdfBox", ContextMenuAction::CreateSdfBox, {});
+    addEntityAction(tr("Create &Point Light"), "fuseActionCreatePointLight", ContextMenuAction::CreatePointLight, {});
+    addEntityAction(tr("Create &Directional Light"), "fuseActionCreateDirLight",
+                    ContextMenuAction::CreateDirectionalLight, {});
+    addEntityAction(tr("Create C&amera"), "fuseActionCreateCamera", ContextMenuAction::CreateCamera, {});
+    m_entityMenu->addSeparator();
+    QAction* duplicate = addEntityAction(tr("D&uplicate"), "fuseActionDuplicate", ContextMenuAction::Duplicate,
+                                         QKeySequence(Qt::CTRL | Qt::Key_D));
+    QAction* remove = addEntityAction(tr("De&lete"), "fuseActionDelete", ContextMenuAction::Delete,
+                                      QKeySequence::Delete);
+    connect(m_entityMenu, &QMenu::aboutToShow, this, [this, duplicate, remove]() {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        const bool selected = m_host.editorState().primarySelection != ecs::EntityID::null();
+        duplicate->setEnabled(selected);
+        remove->setEnabled(selected);
+    });
+
     QMenu* view = menuBar()->addMenu(tr("&View"));
     for (QDockWidget* dock : m_docks) {
         view->addAction(dock->toggleViewAction());
@@ -324,6 +357,28 @@ void MainWindow::updateEditActions() {
     }
     m_actUndo->setEnabled(canUndo);
     m_actRedo->setEnabled(canRedo);
+}
+
+bool MainWindow::runEntityAction(ContextMenuAction action) {
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        EditorState& state = m_host.editorState();
+        const bool needsSelection = action == ContextMenuAction::Duplicate || action == ContextMenuAction::Delete;
+        if (needsSelection && state.primarySelection == ecs::EntityID::null()) {
+            return false;
+        }
+        m_entityActions.openAt(state.primarySelection, ecs::vec3{0.f, 0.f, 0.f}, state);
+        changed = m_entityActions.activate(action, m_host.editorScene(), state, m_host.undoStack());
+        m_entityActions.close();
+    }
+    if (changed) {
+        refreshPanels();
+        updateEditActions();
+        updateWindowTitle();
+        m_viewport->update();
+    }
+    return changed;
 }
 
 void MainWindow::openProject(const QString& projectDirectory) {
