@@ -456,6 +456,19 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 **U6/U7 wave 17 landed:** `CookedAssetBindings` + `MeshSdfPreviewCatalog` wired into hybrid composer/editor embed; mission-level `ShaderData` extract + shader VFS async from mission extract; `bindCookedAssetsToHybrid_` after VFS drain; `fuse_hybrid_cooked_bindings` + glslang cook hook test (`FUSESHADER_GLSLANG` when validator present).
 
+**U6 GUI-1 landed (2026-10-29):**
+
+- Main toolbar and Open Project.
+- Undo / Redo enabled state.
+- Undoable Entity menu (create, duplicate, delete).
+- Asset browser navigation and scene open.
+- Profiler graph and stats.
+- Persisted dock layout.
+- `fuse_editor --project/--software-viewport/--screenshot`.
+- Offscreen gates in `fuse_editor_qt_shell_gate`, plus `fuse_editor_gui_models`.
+
+**FUSE UI (UI2 slice) landed:** `fuse_ui_core`, the engine-native retained and immediate GUI core with a CPU rasteriser. It has 10 `fuse_ui_*` gates. See [`../ui/README.md`](../ui/README.md) and [`../plans/FUSE_UI_PLAN.md`](../plans/FUSE_UI_PLAN.md).
+
 ---
 
 ## 7. Risk cross-reference

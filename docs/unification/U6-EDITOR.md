@@ -172,6 +172,27 @@ Optional CMake preset: **`fuse-editor-qt`** (Release editor + Vulkan, mirrors CI
 | `MeshSdfPreviewCatalog` mesh/SDF preview stubs in embed tick | — |
 | `loadCookedFuseshaderSpirv` offline path in `fuse_rhi` shader compiler (headless-safe) | — |
 
+### GUI-1 — editor GUI pass (2026-10-29)
+
+| Landed | Gate |
+|---|---|
+| Main toolbar (New / Open / Save / Undo / Redo) ahead of the transport bar (Play / Pause / Stop); File > Open Project (Ctrl+Shift+O); Undo / Redo enabled state follows the unified history | `fuse_editor_qt_shell_toolbar`, `_undo`, `_project` |
+| Entity menu: Create Empty (Ctrl+Shift+N) / Cube / SDF Sphere / SDF Box / Point Light / Directional Light / Camera, Duplicate (Ctrl+D), Delete (Del), all undoable | `fuse_editor_qt_shell_entity` |
+| Asset browser: Up / Refresh, path label, filter, type icons, double-click enters folders and opens `.fuselevel` scenes (save prompt first) | `fuse_editor_gui_models`, `fuse_editor_qt_shell_assets` |
+| Profiler: frame-time graph with a budget line, min / avg / max / fps / over-budget summary, Pause and Clear, fed by the measured game-tick time | `fuse_editor_gui_models`, `fuse_editor_qt_shell_profiler` |
+| Window geometry and dock layout saved to QSettings on close and restored on start (`fuse_editor` only; tests keep the default layout) | `fuse_editor_qt_shell_layout` |
+| `fuse_editor --project <dir>`, `--software-viewport`, `--screenshot <png> [--screenshot-delay ms]` | `fuse_editor_qt_shell_docks`, `_play` |
+
+All Qt shell gates run offscreen (`QT_QPA_PLATFORM=offscreen`) in `fuse_editor_qt_shell_gate` (part of `fuse_editor_qt_gates_all`).
+
+Still open:
+
+- A gizmo toolbar and in-viewport transform handles. The headless `GizmoSystem` exists, but neither `EditorHost` nor the Qt shell owns one yet.
+- A real material dock. `material.*` commands are not applied by `EditorHost`, and the material catalog is never populated.
+- Timelines.
+
+The engine-native GUI framework that will eventually replace Qt (UI9) is tracked in [`../plans/FUSE_UI_PLAN.md`](../plans/FUSE_UI_PLAN.md). Its first slice, the headless `fuse_ui_core`, is described in [`../ui/README.md`](../ui/README.md).
+
 ---
 
 ## 9. Related docs
