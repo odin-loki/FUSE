@@ -172,9 +172,14 @@ void EntityContextMenu::openInViewport(EditorScene& scene, ViewportSceneView& vi
     const ViewportRay ray = viewport.screenRay(px, py);
     const ViewportPickResult pick = view.pickRay(scene, ray, viewport.camera().farPlane);
     ecs::vec3 spawn{};
-    if (pick.hit) {
+    const f32 hx = pick.point.x - ray.origin.x;
+    const f32 hy = pick.point.y - ray.origin.y;
+    const f32 hz = pick.point.z - ray.origin.z;
+    if (pick.hit && hx * hx + hy * hy + hz * hz >= kSpawnDistance * kSpawnDistance) {
         spawn = pick.point;
     } else {
+        // Nothing hit, or the hit is closer than the spawn distance: spawning on a near surface walks
+        // repeated creations toward the camera until they sit on the eye.
         spawn = {ray.origin.x + ray.direction.x * kSpawnDistance, ray.origin.y + ray.direction.y * kSpawnDistance,
                  ray.origin.z + ray.direction.z * kSpawnDistance, 1.f};
     }

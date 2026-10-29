@@ -1651,6 +1651,15 @@ int gateLivePresent() {
         // Scene commands are posted from the UI; the game thread drains them — do not gameTick() here
         // (HybridComposer::render must stay on the game/render thread).
         populateScene(window, 16);
+        {
+            // The edited scene renders on the GPU path: put geometry under the sampled centre pixel.
+            QMenu* menu = viewport->openContextMenuAt(viewport->rect().center());
+            if (QAction* a = findAction(menu, QStringLiteral("Create Cube"))) {
+                a->trigger();
+            }
+            menu->close();
+            QCoreApplication::processEvents();
+        }
         expect(QTest::qWaitFor(
                    [&]() {
                        QCoreApplication::processEvents();
