@@ -1311,6 +1311,14 @@ void EventPump::processOsEvents() {
                 pushSyntheticEvent(event);
             }
             break;
+        case x11::EventKind::Text:
+            if (!dropKeyMouse) {
+                pushTextInput(xe.text, window);
+            }
+            break;
+        case x11::EventKind::Composition:
+            pushComposition(std::string_view(xe.text), xe.caret, window);
+            break;
         case x11::EventKind::RawMouseDelta:
         case x11::EventKind::Ignored:
             break;

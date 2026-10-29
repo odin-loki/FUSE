@@ -2,6 +2,8 @@
 #include <fuse/platform/text_services.hpp>
 #include <fuse/platform/window.hpp>
 
+#include <vector>
+
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -11,6 +13,9 @@
 #endif
 #include <windows.h>
 #include <imm.h>
+#endif
+#if defined(FUSE_PLATFORM_WINDOW_X11)
+#include "x11_window.hpp"
 #endif
 
 namespace fuse::platform {
@@ -73,10 +78,23 @@ bool clipboardText(std::string& out) {
 #else
 bool setClipboardText(std::string_view utf8) {
     localClipboard().assign(utf8);
+#if defined(FUSE_PLATFORM_WINDOW_X11)
+    if (x11::ensureDisplay()) {
+        return x11::setClipboard(utf8.data(), utf8.size()); // CLIPBOARD selection owner
+    }
+#endif
     return true;
 }
 
 bool clipboardText(std::string& out) {
+#if defined(FUSE_PLATFORM_WINDOW_X11)
+    if (x11::ensureDisplay()) {
+        thread_local std::vector<char> bytes;
+        const bool ok = x11::clipboard(bytes);
+        out.assign(bytes.data(), bytes.size());
+        return ok;
+    }
+#endif
     out = localClipboard();
     return !out.empty();
 }
@@ -88,6 +106,8 @@ void beginTextInput(Window& window) {
     if (HWND hwnd = static_cast<HWND>(window.nativeHandle().value)) {
         ImmAssociateContextEx(hwnd, nullptr, IACE_DEFAULT);
     }
+#elif defined(FUSE_PLATFORM_WINDOW_X11)
+    x11::setTextInputFocus(window.nativeHandle().value, true);
 #endif
 }
 
@@ -99,6 +119,8 @@ void endTextInput(Window& window) {
     if (HWND hwnd = static_cast<HWND>(window.nativeHandle().value)) {
         ImmAssociateContextEx(hwnd, nullptr, 0); // detach: no IME while no text field is focused
     }
+#elif defined(FUSE_PLATFORM_WINDOW_X11)
+    x11::setTextInputFocus(window.nativeHandle().value, false);
 #endif
 }
 
@@ -124,6 +146,8 @@ void setTextInputArea(Window& window, i32 x, i32 y, i32 width, i32 height) {
         ImmSetCandidateWindow(imc, &cand);
         ImmReleaseContext(hwnd, imc);
     }
+#elif defined(FUSE_PLATFORM_WINDOW_X11)
+    x11::setTextInputSpot(window.nativeHandle().value, x, y + height);
 #else
     (void)window;
 #endif

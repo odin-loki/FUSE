@@ -3,9 +3,10 @@
 // candidate and composition windows). Committed text and pre-edit arrive through EventPump as TextInput /
 // TextComposition events.
 //
-// Backends: Win32 = CF_UNICODETEXT clipboard + IMM32. Elsewhere (X11, headless, GLFW) the clipboard is process-local
-// (copy / paste inside the app works; the X11 CLIPBOARD selection protocol is not wired yet) and the session calls are
-// recorded but have no OS effect.
+// Backends: Win32 = CF_UNICODETEXT clipboard + IMM32. X11 = CLIPBOARD selection (UTF8_STRING / STRING / TARGETS,
+// served from EventPump::pollEvent; INCR transfers unsupported) + XIM input contexts per window (pre-edit callbacks
+// when the IM offers them; needs setlocale(LC_CTYPE, "") and XMODIFIERS for a server IM, else the built-in compose
+// IM). Headless / GLFW: process-local clipboard, session calls recorded only.
 
 #include <fuse/types.hpp>
 

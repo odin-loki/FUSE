@@ -469,6 +469,19 @@ target_link_libraries(fuse_core_rename_window_title PRIVATE fuse_core)
 add_test(NAME fuse_lint_a_window_title COMMAND fuse_core_rename_window_title)
 set_tests_properties(fuse_lint_a_window_title PROPERTIES LABELS "gate;lint")
 
+# UI1: X11 XIM (built-in compose IM, pre-edit callback logic) + CLIPBOARD selection (owner and requestor) on Xvfb.
+add_executable(fuse_core_ui1_x11_text_services test_ui1_x11_text_services.cpp)
+target_link_libraries(fuse_core_ui1_x11_text_services PRIVATE fuse_core)
+if(FUSE_PLATFORM_WINDOW_X11_ACTIVE)
+    target_include_directories(fuse_core_ui1_x11_text_services PRIVATE ${X11_INCLUDE_DIR})
+    target_link_libraries(fuse_core_ui1_x11_text_services PRIVATE ${X11_LIBRARIES})
+    add_test(NAME fuse_core_ui1_x11_text_services
+        COMMAND "${FUSE_DISPLAY_TEST_WRAPPER}" "$<TARGET_FILE:fuse_core_ui1_x11_text_services>")
+else()
+    add_test(NAME fuse_core_ui1_x11_text_services COMMAND fuse_core_ui1_x11_text_services)
+endif()
+set_tests_properties(fuse_core_ui1_x11_text_services PROPERTIES LABELS "gate" SKIP_RETURN_CODE 77 TIMEOUT 60)
+
 # B1.8: native X11 window gate — window opens mapped, title read back via XFetchName/_NET_WM_NAME,
 # XSendEvent key/mouse/focus/resize/close events dispatched through EventPump; XInput2 raw mouse
 # delta equals XTest-injected device deltas while the cursor is accelerated (B1.8 raw mouse row).
