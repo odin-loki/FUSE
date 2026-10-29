@@ -33,6 +33,7 @@ set(FUSE_EDITOR_API_SOURCES
     src/undo_stack.cpp
     src/transform_gizmo.cpp
     src/material_catalog.cpp
+    src/editor_timeline.cpp
     src/viewport_panel.cpp
     src/viewport_scene_view.cpp
     src/viewport_framebuffer.cpp
@@ -170,6 +171,8 @@ if(FUSE_BUILD_EDITOR)
                 src/qt/viewport_vulkan_window.hpp
                 src/qt/seq_preview_pane_widget.cpp
                 src/qt/seq_preview_pane_widget.hpp
+                src/qt/timeline_widget.cpp
+                src/qt/timeline_widget.hpp
                 src/qt/game_loop_thread.cpp
                 src/qt/game_loop_thread.hpp
                 src/qt/app_icon.cpp

@@ -166,6 +166,7 @@ bool EditorHost::newScene(scene::SceneDimension dimension, std::string name) {
     m_sceneDimension = dimension;
     m_currentScenePath.clear();
     m_materials.resetToDefaults();
+    m_timeline.clear();
     markSceneClean_();
     return fileOk_(CommandKind::NewScene, {},
                    std::string("new ") + dimensionLabel(dimension) + " scene '" + m_runtimeScene.name() + "'");
@@ -194,6 +195,7 @@ bool EditorHost::openScene(const std::string& path) {
     m_currentScenePath = path;
     m_materials.resetToDefaults();
     m_materials.load(MaterialCatalog::sidecarPath(path)); // optional sidecar; defaults otherwise
+    m_timeline.load(EditorTimeline::sidecarPath(path));   // optional; empty timeline otherwise
     m_runtimeViewport.onSceneFileOpened(m_editorScene.registry());
     markSceneClean_();
     ++m_sceneLoadCount;
@@ -224,6 +226,12 @@ bool EditorHost::saveSceneAs(const std::string& path) {
     std::string materialError;
     if (!m_materials.save(MaterialCatalog::sidecarPath(path), &materialError)) {
         return fileFail_(CommandKind::SaveSceneAs, path, "save scene: materials: " + materialError);
+    }
+    if (m_timeline.keyCount() > 0u) {
+        std::string timelineError;
+        if (!m_timeline.save(EditorTimeline::sidecarPath(path), &timelineError)) {
+            return fileFail_(CommandKind::SaveSceneAs, path, "save scene: timeline: " + timelineError);
+        }
     }
     m_currentScenePath = path;
     markSceneClean_();

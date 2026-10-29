@@ -4,6 +4,7 @@
 #include <fuse/ai/uaisk_tree_reload.hpp>
 #include <fuse/cinematics/timeline_host_stub.hpp>
 #include <fuse/cinematics/timeline_loader.hpp>
+#include <fuse/editor/editor_timeline.hpp>
 #include <fuse/editor/material_catalog.hpp>
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/command_stack.hpp>
@@ -63,6 +64,9 @@ public:
     /// GUI-3 per-scene material catalog (Material Editor dock); saved as `<scene>.materials`.
     MaterialCatalog& materials() { return m_materials; }
     const MaterialCatalog& materials() const { return m_materials; }
+    /// GUI-5 keyframe timeline of the open scene (`<scene>.timeline` sidecar).
+    EditorTimeline& timeline() { return m_timeline; }
+    const EditorTimeline& timeline() const { return m_timeline; }
     UndoStack& undoStack() { return m_undoStack; }
     const UndoStack& undoStack() const { return m_undoStack; }
 
@@ -200,6 +204,7 @@ private:
     EditorScene m_editorScene;
     UndoStack m_undoStack;
     MaterialCatalog m_materials;
+    EditorTimeline m_timeline;
     EditorState m_state;
     scene::Scene m_runtimeScene;
     PlaySession m_playSession;
