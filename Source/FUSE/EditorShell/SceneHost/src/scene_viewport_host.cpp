@@ -147,6 +147,9 @@ bool SceneViewportHost::render(EditorHost& host, const ViewportPanel& view, u32 
     if (!valid() || width == 0 || height == 0) return false;
     hybrid::HybridSceneRenderer& gpu = *m->gpu;
     if (width != gpu.width() || height != gpu.height()) {
+        // zero-copy: the UI presenter on this device may still sample the old target in a submitted UI pass; the
+        // renderer's own waitIdle covers only its executor, so drain the whole device before the target is replaced
+        if (m->device) m->device->waitIdle();
         if (!gpu.resize(width, height)) {
             m->reason = std::string("resize: ") + gpu.reason();
             return false;
