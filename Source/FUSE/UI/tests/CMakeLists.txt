@@ -55,3 +55,10 @@ endif()
 add_executable(fuse_ui_sample sample_main.cpp)
 target_link_libraries(fuse_ui_sample PRIVATE fuse_ui_widgets)
 target_include_directories(fuse_ui_sample PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
+
+# UI4 gate: GPU draw-list backend vs the CPU reference (lavapipe / any Vulkan device; 77 = skipped, no device).
+if(TARGET fuse_ui_vk)
+    fuse_ui_test(fuse_ui_vk_parity test_vk_parity.cpp)
+    target_link_libraries(fuse_ui_vk_parity PRIVATE fuse_ui_vk ${FUSE_UI_VK_LINK})
+    set_tests_properties(fuse_ui_vk_parity PROPERTIES SKIP_RETURN_CODE 77 LABELS "ui;gpu")
+endif()
