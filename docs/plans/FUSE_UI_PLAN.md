@@ -1,7 +1,7 @@
 # FUSE UI — GUI and Application Framework Plan
 
 Author: Odin Loch
-Status: Draft for decision (nothing in this plan is in tree yet)
+Status: In progress — D1–D7 recorded (§11); UI0 skeleton, UI2 headless core (all nine gates green), UI1 key/event v2 (back-compat subset), UI3 MINIMAL text and UI6 Tier A widgets landed 2026-10-29. Code: `Source/FUSE/UI/`; usage: [`../ui/README.md`](../ui/README.md).
 Scope: A GUI framework inside FUSE that covers what Qt gives application developers, and more, while staying a game-engine subsystem: same loop, same job spine, same renderer, same ownership rules. One toolkit for game HUDs and menus, world-space UI, tools, the editor, and standalone applications on Windows, Linux, macOS, Android and iOS.
 
 Related: [`FUSE_MASTER_PLAN.md`](FUSE_MASTER_PLAN.md) §A3 (Qt editor policy, "runtime_ui/" slot), [`FUSE_RENDERER_PLAN.md`](FUSE_RENDERER_PLAN.md) §5.3 (UI frame budget), [`../unification/U4-HYBRID-FRAME.md`](../unification/U4-HYBRID-FRAME.md) (hybrid UI layer), [`../editor.md`](../editor.md).
@@ -472,6 +472,18 @@ All must pass the licence check in `THIRD_PARTY.md` before vendoring. Keeping ev
 
 ## 9. Phases
 
+### Status (2026-10-29)
+
+| Phase | State | Notes |
+|---|---|---|
+| UI0 | **Partly done** | D1–D7 recorded (§11). Skeleton `Source/FUSE/UI/{Text,Core,Widgets,tests}` with the options from §7 (`FUSE_BUILD_UI`, `FUSE_BUILD_UI_WIDGETS`, `FUSE_BUILD_UI_TESTS`, `FUSE_UI_TEXT`, `FUSE_UI_ACCESSIBILITY`, …); `docs/ui/README.md`. Spikes (HarfBuzz sizes, mobile surfaces, SDF-quad pipeline) and §6 baselines not done. |
+| UI1 | **Started** | `fuse/platform/events_v2.hpp`: KeyV2 (v1 keys first, then punctuation, numpad, L/R modifiers, F13–F24, locks, media), EventV2 (text input, wheel, touch, DPI, move, minimise/restore, theme), lossless v1↔v2 mapping. The v1 wheel is now tagged (`keyCode = 0xFFFF` on the `MouseMove`) by the Win32 and X11 backends so v2 can tell it from a move. `fuse/ui/platform_bridge.hpp` feeds EventV2 into a UiContext. Not done: real text-input/IME, clipboard, multiwindow, mobile backends (all UI1 platform gates). |
+| UI2 | **Gates green** | `fuse_ui_core`: handle-based retained tree, CSS-subset cascade with `:root` tokens, Box/Grid/Stack/Anchor/Absolute/Flow layout with measure cache + layout boundaries, draw list + CPU reference rasteriser, capture/target/bubble events, focus/tab/spatial nav/modal, signals, timers, animations, `post()` command queue, accessibility tree dump, and an immediate-mode front-end (`immediate.hpp`). Gates: `fuse_ui_layout_conformance`, `fuse_ui_style_cascade`, `fuse_ui_event_routing`, `fuse_ui_focus_order`, `fuse_ui_cpu_raster_golden`, `fuse_ui_zero_alloc_steady`, `fuse_ui_bench_10k` (median ≈0.28 ms, budget 0.5 ms), `fuse_ui_single_thread_parity`, `fuse_ui_a11y_tree_dump`. Not yet: JSON document loading (D4 structure half), Lua bindings (D6). |
+| UI3 | **MINIMAL only** | `fuse_text` behind `ITextShaper`: stb_truetype, bundled Open Sans, UTF-8, kerning, wrap/ellipsis, glyph atlas, `TextEditBuffer` (undo/redo). `FULL` (HarfBuzz/FreeType/bidi) and `COOKED` deferred — no heavy dependencies yet. |
+| UI6 | **Tier A** | `fuse_ui_widgets`: button, toolbutton, link, checkbox, radio, switch, slider, scrollbar, dial, progressbar, spinbox, combobox (cycling; popup list is Tier B), lineedit, image, separator, label; default dark theme. Test: `fuse_ui_widget_interaction`. |
+| Relight port | **Equivalence proven** | `fuse::ui::immediate::ImmediateUi` mirrors Relight `overlay::Ui`'s API and layout math; `fuse_ui_relight_equivalence` runs both under one event script and compares rects, focus, clicks and field values. Switching `dev_menu.cpp` over is the next step (needs a glyph path in the overlay rasteriser). |
+| UI4, UI5, UI7–UI11 | Not started | |
+
 Sizes are relative (S < M < L < XL). XL phases are split into sub-milestones when they start. A phase closes only when its gates are green, including ASan / UBSan on touched paths.
 
 ### UI0 — Decisions, spikes, baselines (S)
@@ -610,13 +622,13 @@ UI1, UI2 and UI3 run in parallel. UI6 Tier A starts on the CPU rasteriser before
 
 | # | Decision | Options | Recommendation |
 |---|---|---|---|
-| D1 | Platform backend for windows, input, IME, clipboard and dialogs | (a) Native per OS: extend Win32 / X11, write Wayland, Cocoa, UIKit, Android. (b) SDL3 everywhere. (c) Keep native Win32 / X11; use SDL3 for macOS, iOS, Android and Wayland; replace with native only where SDL3 falls short | **(c)**. Fastest route to all five platforms with IME, touch, pen, file dialogs and mobile lifecycle; keeps the proven native raw-input game path; SDL3 is zlib-licensed |
-| D2 | Text stack | (a) HarfBuzz + FreeType + bidi + segmentation. (b) Minimal shaping only. (c) In-house shaper | **(a) as `FULL`**, with `MINIMAL` and `COOKED` profiles for small games. Correct Arabic / Indic / Thai is table stakes for an application framework |
-| D3 | Programming model | Retained only / immediate only / both on one core | **Both on one core** (Section 4.4) |
-| D4 | Declarative authoring format | (a) JSON for structure + CSS subset for style. (b) A QML-like DSL | **(a) first.** Reuses the existing JSON parser and tooling; the designer writes it; the cooker binarises it. Revisit a DSL only if hand-authoring becomes the bottleneck |
+| D1 | Platform backend for windows, input, IME, clipboard and dialogs | (a) Native per OS: extend Win32 / X11, write Wayland, Cocoa, UIKit, Android. (b) SDL3 everywhere. (c) Keep native Win32 / X11; use SDL3 for macOS, iOS, Android and Wayland; replace with native only where SDL3 falls short | **(c)**. Fastest route to all five platforms with IME, touch, pen, file dialogs and mobile lifecycle; keeps the proven native raw-input game path; SDL3 is zlib-licensed *Adopted per recommendation on 2026-10-29, revisitable by Odin.* |
+| D2 | Text stack | (a) HarfBuzz + FreeType + bidi + segmentation. (b) Minimal shaping only. (c) In-house shaper | **(a) as `FULL`**, with `MINIMAL` and `COOKED` profiles for small games. Correct Arabic / Indic / Thai is table stakes for an application framework *Adopted per recommendation on 2026-10-29, revisitable by Odin.* |
+| D3 | Programming model | Retained only / immediate only / both on one core | **Both on one core** (Section 4.4) *Adopted per recommendation on 2026-10-29, revisitable by Odin.* |
+| D4 | Declarative authoring format | (a) JSON for structure + CSS subset for style. (b) A QML-like DSL | **(a) first.** Reuses the existing JSON parser and tooling; the designer writes it; the cooker binarises it. Revisit a DSL only if hand-authoring becomes the bottleneck *Adopted per recommendation on 2026-10-29, revisitable by Odin.* |
 | D5 | Move the editor off Qt | This reverses master plan §A3 ("Qt replaces GUI") | **Decided (2026-10-29): Qt first.** The editor stays on Qt while the engine and FUSE UI are built, then moves at UI9 behind `FUSE_EDITOR_SHELL` with gate-for-gate parity — [`FUSE_EDITOR_QT_FIRST_PLAN.md`](FUSE_EDITOR_QT_FIRST_PLAN.md) |
-| D6 | UI logic language | Lua / another VM / C++ only | **Lua** (already the engine VM) plus binding bytecode for simple expressions |
-| D7 | Accessibility | (a) AccessKit (all five platforms; adds a Rust toolchain to builds that enable it). (b) Hand-written native adapters. (c) Defer | **Accessibility tree in UI2 regardless; adapters via (a) as an optional module**, off for `hud` builds, so most builds need no Rust |
+| D6 | UI logic language | Lua / another VM / C++ only | **Lua** (already the engine VM) plus binding bytecode for simple expressions *Adopted per recommendation on 2026-10-29, revisitable by Odin.* |
+| D7 | Accessibility | (a) AccessKit (all five platforms; adds a Rust toolchain to builds that enable it). (b) Hand-written native adapters. (c) Defer | **Accessibility tree in UI2 regardless; adapters via (a) as an optional module**, off for `hud` builds, so most builds need no Rust *Adopted per recommendation on 2026-10-29, revisitable by Odin.* |
 
 ---
 
