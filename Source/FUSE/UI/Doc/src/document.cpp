@@ -19,7 +19,8 @@ u32 Model::find(std::string_view name) const {
 u32 Model::slot(std::string_view name) {
     const u32 f = find(name);
     if (f != 0xFFFFFFFFu) return f;
-    m_vars.push_back({std::string(name)});
+    m_vars.emplace_back();
+    m_vars.back().name = std::string(name);
     return u32(m_vars.size() - 1);
 }
 void Model::setNumber(u32 s, double v) {

@@ -171,7 +171,8 @@ struct Parser {
 } // namespace
 
 std::expected<JsonValue, JsonError> parseJson(std::string_view text) {
-    Parser p{text};
+    Parser p;
+    p.s = text;
     JsonValue v;
     if (!p.value(v, 0)) return std::unexpected(p.err);
     p.ws();

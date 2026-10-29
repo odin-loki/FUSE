@@ -15,7 +15,6 @@ NodeHandle make(UiContext& ui, std::string_view cls, NodeHandle parent, std::str
     auto h = ui.create(cls, parent, id);
     return h ? *h : NodeHandle{};
 }
-bool isClass(const UiContext& ui, NodeHandle n, std::string_view cls) { return ui.alive(n) && ui.classOf(n) == ui.registry().find(cls); }
 NodeHandle prevSibling(const UiContext& ui, NodeHandle n) {
     NodeHandle prev;
     for (NodeHandle c = ui.firstChild(ui.parent(n)); ui.alive(c) && c != n; c = ui.nextSibling(c)) prev = c;
@@ -305,7 +304,9 @@ struct TableView {
             if (barGeom(ui, ec.node, *s, tr, th) && tr.contains(e.pos)) {
                 s->dragScroll = true;
                 s->grab = th.contains(e.pos) ? e.pos.y - th.y : th.h * 0.5f;
-                return onEvent(ec, Event{.type = EventType::PointerMove, .pos = e.pos});
+                Event mv = e;
+                mv.type = EventType::PointerMove;
+                return onEvent(ec, mv);
             }
             if (e.pos.y < c.y + hh) {
                 f32 x = c.x;

@@ -49,14 +49,16 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
         b[i].descriptorCount = 1;
         b[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     }
-    VkDescriptorSetLayoutCreateInfo sli{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    VkDescriptorSetLayoutCreateInfo sli{};
+    sli.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     sli.bindingCount = 5;
     sli.pBindings = b;
     VkDescriptorSetLayout setLayout{};
     if (vkCreateDescriptorSetLayout(device, &sli, nullptr, &setLayout) != VK_SUCCESS) return destroy(), false;
     m_setLayout = setLayout;
     const VkPushConstantRange range{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(GpuPush)};
-    VkPipelineLayoutCreateInfo pli{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    VkPipelineLayoutCreateInfo pli{};
+    pli.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pli.setLayoutCount = 1;
     pli.pSetLayouts = &setLayout;
     pli.pushConstantRangeCount = 1;
@@ -64,12 +66,14 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
     VkPipelineLayout layout{};
     if (vkCreatePipelineLayout(device, &pli, nullptr, &layout) != VK_SUCCESS) return destroy(), false;
     m_layout = layout;
-    VkShaderModuleCreateInfo mi{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    VkShaderModuleCreateInfo mi{};
+    mi.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     mi.codeSize = sizeof(kUiDrawListSpv);
     mi.pCode = kUiDrawListSpv;
     VkShaderModule module{};
     if (vkCreateShaderModule(device, &mi, nullptr, &module) != VK_SUCCESS) return destroy(), false;
-    VkComputePipelineCreateInfo ci{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+    VkComputePipelineCreateInfo ci{};
+    ci.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
     ci.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     ci.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
     ci.stage.module = module;
@@ -83,7 +87,8 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
 
     const u32 n = m_desc.framesInFlight;
     const VkDescriptorPoolSize sizes[2] = {{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, n}, {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4 * n}};
-    VkDescriptorPoolCreateInfo dpi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+    VkDescriptorPoolCreateInfo dpi{};
+    dpi.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     dpi.maxSets = n;
     dpi.poolSizeCount = 2;
     dpi.pPoolSizes = sizes;
@@ -95,7 +100,8 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
     vkGetPhysicalDeviceMemoryProperties(phys, &mem);
     for (u32 s = 0; s < n; ++s) {
         Slot& slot = m_slots[s];
-        VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+        VkBufferCreateInfo bi{};
+        bi.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bi.size = m_offsets[4];
         bi.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
         VkBuffer buf{};
@@ -108,7 +114,8 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
         for (u32 t = 0; t < mem.memoryTypeCount && type == ~0u; ++t)
             if ((req.memoryTypeBits & (1u << t)) && (mem.memoryTypes[t].propertyFlags & want) == want) type = t;
         if (type == ~0u) return destroy(), false;
-        VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+        VkMemoryAllocateInfo ai{};
+        ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         ai.allocationSize = req.size;
         ai.memoryTypeIndex = type;
         VkDeviceMemory dm{};
@@ -118,7 +125,8 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
         void* p = nullptr;
         if (vkMapMemory(device, dm, 0, VK_WHOLE_SIZE, 0, &p) != VK_SUCCESS) return destroy(), false;
         slot.mapped = static_cast<u8*>(p);
-        VkDescriptorSetAllocateInfo dai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        VkDescriptorSetAllocateInfo dai{};
+        dai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         dai.descriptorPool = pool;
         dai.descriptorSetCount = 1;
         dai.pSetLayouts = &setLayout;
@@ -186,7 +194,8 @@ void UiVkRenderer::record(void* commandBuffer, void* targetView, u32 slotIndex) 
     VkDescriptorImageInfo ii{};
     ii.imageView = static_cast<VkImageView>(targetView);
     ii.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-    VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    VkWriteDescriptorSet w{};
+    w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     w.dstSet = static_cast<VkDescriptorSet>(s.set);
     w.dstBinding = 0;
     w.descriptorCount = 1;
