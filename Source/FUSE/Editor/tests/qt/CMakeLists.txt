@@ -66,6 +66,10 @@ foreach(_entry IN LISTS _fuse_qt_gate_tests)
         list(APPEND _env "QT_SCALE_FACTOR=${_scale}")
     elseif(_name STREQUAL "context_menu_dpr1_5")
         list(APPEND _env "QT_SCALE_FACTOR=1.5")
+    elseif(_name STREQUAL "startup")
+        # Startup timing must not share a busy desktop / CI display (:2 under parallel ctest was
+        # 9.6 s vs 0.3 s alone): always run on a private Xvfb (wrapper falls back to $DISPLAY / 77).
+        list(APPEND _env "FUSE_FORCE_XVFB=1")
     endif()
     set(_labels "gate;qt")
     if(_name STREQUAL "live_present")
