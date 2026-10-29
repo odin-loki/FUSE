@@ -1879,6 +1879,67 @@ int gateEditTools() {
         std::lock_guard<std::mutex> lock(window.sceneMutex());
         expect(window.host().editorState().primarySelection == light, "clicking a light icon selects the light");
     }
+
+    // Frame Selected: a far-away entity ends up centred in front of the camera.
+    ecs::EntityID far;
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        ecs::Registry& reg = window.host().editorScene().registry();
+        far = reg.create();
+        ecs::Transform t{};
+        t.position = {140.f, 25.f, -90.f, 1.f};
+        reg.add(far, t);
+        window.host().editorState().selectedEntities = {far};
+        window.host().editorState().primarySelection = far;
+    }
+    expect(action("fuseActionFrameSelected") != nullptr, "View > Frame Selected exists");
+    action("fuseActionFrameSelected")->trigger();
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        const qreal dpr = vp->devicePixelRatioF();
+        f32 sx = -1.f, sy = -1.f;
+        const bool onScreen = vp->panel().worldToScreen({140.f, 25.f, -90.f, 1.f}, sx, sy);
+        const f32 cx = static_cast<f32>(vp->width() * dpr) * 0.5f, cy = static_cast<f32>(vp->height() * dpr) * 0.5f;
+        expect(onScreen && std::abs(sx - cx) < 4.f && std::abs(sy - cy) < 4.f,
+               fmt("Frame Selected centres the selection (%.1f,%.1f vs %.1f,%.1f)", sx, sy, cx, cy));
+        const auto& cam = vp->panel().camera();
+        const f32 d = std::hypot(cam.positionX - 140.f, cam.positionY - 25.f, cam.positionZ + 90.f);
+        expect(d > 0.5f && d < 20.f, fmt("Frame Selected moves the camera close (%.2f m)", d));
+        window.host().editorState().selectedEntities.clear();
+        window.host().editorState().primarySelection = ecs::EntityID::null();
+    }
+    action("fuseActionFrameSelected")->trigger();  // nothing selected: no crash, camera unchanged
+
+    // Group Selection (Ctrl+G).
+    expect(action("fuseActionGroup") != nullptr, "Entity > Group Selection exists");
+    ecs::EntityID g1, g2;
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        ecs::Registry& reg = window.host().editorScene().registry();
+        g1 = reg.create();
+        g2 = reg.create();
+        ecs::Transform t{};
+        t.position = {1.f, 0.f, 0.f, 1.f};
+        reg.add(g1, t);
+        t.position = {3.f, 0.f, 0.f, 1.f};
+        reg.add(g2, t);
+        window.host().editorState().selectedEntities = {g1, g2};
+        window.host().editorState().primarySelection = g2;
+    }
+    action("fuseActionGroup")->trigger();
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        ecs::Registry& reg = window.host().editorScene().registry();
+        const ecs::EntityID group = window.host().editorState().primarySelection;
+        const ecs::Transform* t1 = reg.get<ecs::Transform>(g1);
+        expect(group != g2 && t1 != nullptr && t1->parent == group, "Group Selection parents the selection");
+        expect(window.host().entityNames().get(group) == "Group", "the group is named");
+    }
+    window.undoLatest();
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        expect(window.host().editorScene().registry().get<ecs::Transform>(g1)->parent == ecs::EntityID::null(), "undo ungroups");
+    }
     return 0;
 }
 
