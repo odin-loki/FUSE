@@ -1,5 +1,7 @@
 #include <fuse/editor/transform_gizmo.hpp>
 
+#include <fuse/ecs/math/mat.hpp>
+
 #include <algorithm>
 #include <cmath>
 
@@ -10,6 +12,35 @@ constexpr f32 kPi = 3.14159265358979f;
 
 ecs::vec3 add(const ecs::vec3& a, const ecs::vec3& b, f32 s = 1.f) {
     return ecs::vec3{a.x + b.x * s, a.y + b.y * s, a.z + b.z * s, a.w};
+}
+
+// Direction through the matrix (uses the ECS convention via transform_point).
+ecs::vec3 linear(const ecs::mat4& m, const ecs::vec3& v) {
+    const ecs::vec3 a = ecs::transform_point(m, ecs::vec3{v.x, v.y, v.z, 1.f});
+    const ecs::vec3 o = ecs::transform_point(m, ecs::vec3{0.f, 0.f, 0.f, 1.f});
+    return ecs::vec3{a.x - o.x, a.y - o.y, a.z - o.z, 0.f};
+}
+
+ecs::vec3 normalized(const ecs::vec3& v) {
+    const f32 l = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+    return l > 1e-8f ? ecs::vec3{v.x / l, v.y / l, v.z / l, 0.f} : v;
+}
+
+// Solve P_linear * out = v (3x3 from the parent matrix's columns; independent of world_to_local).
+ecs::vec3 inverseLinear(const ecs::mat4& p, const ecs::vec3& v) {
+    const ecs::vec3 a = linear(p, ecs::vec3{1.f, 0.f, 0.f, 0.f});
+    const ecs::vec3 b = linear(p, ecs::vec3{0.f, 1.f, 0.f, 0.f});
+    const ecs::vec3 c = linear(p, ecs::vec3{0.f, 0.f, 1.f, 0.f});
+    auto cross = [](const ecs::vec3& x, const ecs::vec3& y) {
+        return ecs::vec3{x.y * y.z - x.z * y.y, x.z * y.x - x.x * y.z, x.x * y.y - x.y * y.x, 0.f};
+    };
+    auto dot = [](const ecs::vec3& x, const ecs::vec3& y) { return x.x * y.x + x.y * y.y + x.z * y.z; };
+    const f32 det = dot(a, cross(b, c));
+    if (std::fabs(det) < 1e-12f) {
+        return v;
+    }
+    // Cramer's rule.
+    return ecs::vec3{dot(v, cross(b, c)) / det, dot(a, cross(v, c)) / det, dot(a, cross(b, v)) / det, 0.f};
 }
 
 f32 snapTo(f32 v, f32 step) { return step > 0.f ? std::round(v / step) * step : v; }
@@ -52,10 +83,23 @@ ecs::vec3 TransformGizmo::gizmoOrigin(const ecs::Transform& transform) {
     return ecs::vec3{m[12], m[13], m[14], 1.f};
 }
 
+ecs::vec3 TransformGizmo::worldOrigin(const ecs::Transform& transform) const {
+    if (!m_hasParent) {
+        return gizmoOrigin(transform);
+    }
+    const ecs::vec3 w = ecs::transform_point(m_parentToWorld,
+                                             ecs::vec3{transform.position.x, transform.position.y, transform.position.z, 1.f});
+    return ecs::vec3{w.x, w.y, w.z, 1.f};
+}
+
 ecs::vec3 TransformGizmo::axisDirection(int axis, const ecs::quat& rotation) const {
     ecs::vec3 unit{axis == 0 ? 1.f : 0.f, axis == 1 ? 1.f : 0.f, axis == 2 ? 1.f : 0.f, 0.f};
     const bool local = m_settings.space == TransformSpace::Local || m_settings.tool == TransformTool::Scale;
-    return local ? rotate(rotation, unit) : unit;
+    if (!local) {
+        return unit;
+    }
+    const ecs::vec3 inParent = rotate(rotation, unit);
+    return m_hasParent ? normalized(linear(m_parentToWorld, inParent)) : inParent;
 }
 
 bool TransformGizmo::layout(const ViewportPanel& panel, const ecs::Transform& transform) {
@@ -63,7 +107,7 @@ bool TransformGizmo::layout(const ViewportPanel& panel, const ecs::Transform& tr
     if (m_settings.tool == TransformTool::Select) {
         return false;
     }
-    const ecs::vec3 origin = gizmoOrigin(transform);
+    const ecs::vec3 origin = worldOrigin(transform);
     f32 ox = 0.f, oy = 0.f, rx = 0.f, ry = 0.f;
     if (!panel.worldToScreen(origin, ox, oy) || !panel.worldToScreen(add(origin, panel.right()), rx, ry)) {
         return false;
@@ -134,7 +178,10 @@ TransformCommand::State TransformGizmo::dragTo(f32 px, f32 py) const {
     switch (m_settings.tool) {
     case TransformTool::Translate: {
         const f32 d = snap ? snapTo(alongWorld, m_settings.translateStep) : alongWorld;
-        const ecs::vec3 moved = add(m_start.position, m_axes[m_dragAxis], d);
+        // m_axes are world directions; a child's position lives in its parent's frame.
+        const ecs::vec3 worldDelta{m_axes[m_dragAxis].x * d, m_axes[m_dragAxis].y * d, m_axes[m_dragAxis].z * d, 0.f};
+        const ecs::vec3 delta = m_hasParent ? inverseLinear(m_parentToWorld, worldDelta) : worldDelta;
+        const ecs::vec3 moved = add(m_start.position, delta);
         out.position = ecs::vec3{moved.x, moved.y, moved.z, m_start.position.w};
         break;
     }
@@ -147,7 +194,11 @@ TransformCommand::State TransformGizmo::dragTo(f32 px, f32 py) const {
         }
         const ecs::vec3 unit{m_dragAxis == 0 ? 1.f : 0.f, m_dragAxis == 1 ? 1.f : 0.f, m_dragAxis == 2 ? 1.f : 0.f,
                              0.f};
-        const ecs::quat r = axisAngle(unit, deg * kPi / 180.f);
+        // Global: spin about the world axis, expressed in the parent frame for children.
+        const ecs::vec3 spin = (m_settings.space == TransformSpace::World && m_hasParent)
+                                   ? normalized(inverseLinear(m_parentToWorld, unit))
+                                   : unit;
+        const ecs::quat r = axisAngle(spin, deg * kPi / 180.f);
         out.rotation = m_settings.space == TransformSpace::Local ? multiply(m_start.rotation, r)
                                                                  : multiply(r, m_start.rotation);
         break;

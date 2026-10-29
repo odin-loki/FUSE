@@ -44,6 +44,17 @@ public:
     /// for the Select tool or when the entity is behind the camera.
     bool layout(const ViewportPanel& panel, const ecs::Transform& transform);
     void clearLayout() { m_visible = false; }
+    /// Parent frame of the entity being edited (its parent's local_to_world / world_to_local).
+    /// TRS stays parent-relative: handles are drawn in world space and drags are mapped back.
+    void setParentFrame(const ecs::mat4& parentToWorld, const ecs::mat4& worldToParent) {
+        m_hasParent = true;
+        m_parentToWorld = parentToWorld;
+        m_worldToParent = worldToParent;
+    }
+    void clearParentFrame() { m_hasParent = false; }
+    [[nodiscard]] bool hasParentFrame() const { return m_hasParent; }
+    /// World-space origin of the handles for `transform` (honours the parent frame).
+    [[nodiscard]] ecs::vec3 worldOrigin(const ecs::Transform& transform) const;
     [[nodiscard]] bool visible() const { return m_visible; }
     [[nodiscard]] const std::array<GizmoHandle2D, 3>& handles() const { return m_handles; }
 
@@ -77,6 +88,9 @@ private:
     int m_dragAxis = -1;
     f32 m_dragX = 0.f, m_dragY = 0.f;
     TransformCommand::State m_start{};
+    bool m_hasParent = false;
+    ecs::mat4 m_parentToWorld = ecs::mat4::identity();
+    ecs::mat4 m_worldToParent = ecs::mat4::identity();
 };
 
 } // namespace fuse::editor
