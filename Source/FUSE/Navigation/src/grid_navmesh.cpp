@@ -231,4 +231,65 @@ std::vector<fuse::math::Vec2> GridNavmesh::find_path(Cell start, Cell goal) cons
     return path;
 }
 
+bool GridNavmesh::step_field(Cell start, std::vector<u32>& out) const {
+    if (!built_ || !contains(start)) {
+        out.clear();
+        return false;
+    }
+    const u32 start_index = static_cast<u32>(start.y) * width_ + static_cast<u32>(start.x);
+    if (blocked_[start_index] != 0) {
+        out.clear();
+        return false;
+    }
+
+    out.assign(blocked_.size(), kUnreachable);
+    out[start_index] = 0;
+
+    // Each cell is enqueued at most once, so the parent scratch (one slot per cell) is the queue.
+    std::vector<u32>& queue = parent_;
+    usize head = 0;
+    usize tail = 0;
+    queue[tail++] = start_index;
+    while (head < tail) {
+        const u32 index = queue[head++];
+        const s32 x = static_cast<s32>(index % width_);
+        const s32 y = static_cast<s32>(index / width_);
+        const u32 next_steps = out[index] + 1u;
+        for (const auto& delta : kNeighbor) {
+            const s32 nx = x + delta[0];
+            const s32 ny = y + delta[1];
+            if (nx < 0 || ny < 0 || static_cast<u32>(nx) >= width_ || static_cast<u32>(ny) >= height_) {
+                continue;
+            }
+            const u32 nindex = static_cast<u32>(ny) * width_ + static_cast<u32>(nx);
+            if (blocked_[nindex] != 0 || out[nindex] != kUnreachable) {
+                continue;
+            }
+            out[nindex] = next_steps;
+            queue[tail++] = nindex;
+        }
+    }
+    return true;
+}
+
+u32 GridNavmesh::steps_to(const std::vector<u32>& field, Cell cell) const {
+    if (!built_ || !contains(cell) || field.size() != blocked_.size()) {
+        return kUnreachable;
+    }
+    return field[static_cast<usize>(cell.y) * width_ + static_cast<u32>(cell.x)];
+}
+
+bool GridNavmesh::cell_at(f32 x, f32 y, Cell& out) const {
+    if (!built_ || !std::isfinite(x) || !std::isfinite(y)) {
+        return false;
+    }
+    const f64 fx = std::floor(static_cast<f64>(x) / static_cast<f64>(cell_size_));
+    const f64 fy = std::floor(static_cast<f64>(y) / static_cast<f64>(cell_size_));
+    if (fx < 0.0 || fy < 0.0 || fx >= static_cast<f64>(width_) || fy >= static_cast<f64>(height_)) {
+        return false;
+    }
+    out = Cell{static_cast<s32>(fx), static_cast<s32>(fy)};
+    return true;
+}
+
 } // namespace fuse::navigation

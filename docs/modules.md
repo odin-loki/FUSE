@@ -93,6 +93,8 @@ Engine-level VFX is distinct from `fuse_fx`: particles vs. authored spell/effect
 - `build(width, height, cell_size, is_blocked)` takes a predicate `(x, y) -> bool`; an overload takes a list of blocked `Cell`s (out-of-grid entries ignored). Zero dimensions, a non-finite or non-positive `cell_size`, or a cell count that does not fit a 32-bit index fail and clear the mesh.
 - `find_path(start, goal)` is A* with unit step cost and a Manhattan heuristic. Ties break toward smaller x, then smaller y, and a parent is replaced only on a strictly smaller g, so the waypoint list is deterministic.
 - Waypoints are cell centres in world xy, start through goal. Out-of-grid endpoints, a blocked goal, a blocked start (unless it equals the goal), or no route return an empty path.
-- `build` allocates the grid and search scratch; a query allocates only its result (plus the transient open set). Queries share scratch, so do not call `find_path` concurrently on one mesh.
+- `step_field(start, out)` floods breadth-first from `start` and writes the step count to every cell (`kUnreachable` for blocked or walled-off cells); `steps_to(field, cell)` reads it. Steps equal the `find_path` waypoint count minus one, so walking distance is `steps * cell_size()`. A blocked or off-grid start fails and clears `out`.
+- `cell_at(x, y, out)` maps a world point to its cell (false when off-grid, non-finite, or unbuilt); `built()`, `width()`, `height()`, `cell_size()` expose the grid.
+- `build` allocates the grid and search scratch; a query allocates only its result (plus the transient open set; `step_field` reuses the search scratch as its queue). Queries share scratch, so do not call `find_path` or `step_field` concurrently on one mesh.
 
 Helpers: `path_length` (polyline length, non-finite segments ignored), `path_cost_ok` (finite, `[0, 10000]`), `nav_cell_ok` (cell size in metres, finite, `[0.1, 4]`). Tests: `fuse_navigation_tests`.

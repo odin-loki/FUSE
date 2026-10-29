@@ -52,6 +52,31 @@ public:
 
     [[nodiscard]] std::vector<fuse::math::Vec2> find_path(Cell start, Cell goal) const;
 
+    /// Step count stored in a `step_field` entry for a cell that cannot be reached.
+    static constexpr u32 kUnreachable = 0xffffffffu;
+
+    /// Breadth-first step counts from `start` to every cell (4-connected, one step per move).
+    /// `out` is resized to width * height and indexed `y * width + x`. Blocked and unreachable
+    /// cells hold `kUnreachable`; `start` holds 0. A step count is the waypoint count of
+    /// `find_path(start, cell)` minus one, so the path length is `steps * cell_size()`.
+    /// Fails and clears `out` when the mesh is not built, `start` is outside the grid, or
+    /// `start` is blocked. One flood fill answers reachability for any number of goals.
+    /// Uses the shared search scratch, so it is not concurrent with `find_path` either.
+    bool step_field(Cell start, std::vector<u32>& out) const;
+
+    /// Steps to `cell` in a field built by `step_field` on this mesh; `kUnreachable` when the
+    /// cell is outside the grid or `field` does not match the grid size.
+    [[nodiscard]] u32 steps_to(const std::vector<u32>& field, Cell cell) const;
+
+    /// Cell containing world point (`x`, `y`). False when the mesh is not built, a coordinate
+    /// is not finite, or the point lies outside the grid.
+    [[nodiscard]] bool cell_at(f32 x, f32 y, Cell& out) const;
+
+    [[nodiscard]] bool built() const { return built_; }
+    [[nodiscard]] u32 width() const { return width_; }
+    [[nodiscard]] u32 height() const { return height_; }
+    [[nodiscard]] f32 cell_size() const { return cell_size_; }
+
 private:
     static bool arguments_ok(u32 width, u32 height, f32 cell_size);
     bool adopt(u32 width, u32 height, f32 cell_size, std::vector<u8> blocked);

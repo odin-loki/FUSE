@@ -241,6 +241,65 @@ void testPathLength() {
     expect_true(std::fabs(fuse::navigation::path_length(broken) - 5.f) <= 1e-4f, "non-finite segment adds 0");
 }
 
+void test_step_field_matches_find_path() {
+    // 5x4 grid with a wall at x == 2 except a gap at y == 3, plus an enclosed cell at (4, 0).
+    fuse::navigation::GridNavmesh mesh;
+    const std::vector<fuse::navigation::Cell> blocked = {{2, 0}, {2, 1}, {2, 2}, {3, 0}, {4, 1}};
+    expect_true(mesh.build(5, 4, 0.5f, blocked), "step field mesh builds");
+    expect_true(mesh.built() && mesh.width() == 5 && mesh.height() == 4 && mesh.cell_size() == 0.5f,
+                "accessors report the built grid");
+
+    std::vector<fuse::u32> field;
+    expect_true(mesh.step_field({0, 0}, field), "step field from open start");
+    expect_true(field.size() == 20u, "field covers every cell");
+    expect_true(mesh.steps_to(field, {0, 0}) == 0u, "start is 0 steps");
+    expect_true(mesh.steps_to(field, {2, 0}) == fuse::navigation::GridNavmesh::kUnreachable, "blocked cell unreachable");
+    expect_true(mesh.steps_to(field, {4, 0}) == fuse::navigation::GridNavmesh::kUnreachable, "enclosed cell unreachable");
+    expect_true(mesh.steps_to(field, {-1, 0}) == fuse::navigation::GridNavmesh::kUnreachable, "outside cell unreachable");
+
+    for (fuse::s32 y = 0; y < 4; ++y) {
+        for (fuse::s32 x = 0; x < 5; ++x) {
+            const fuse::u32 steps = mesh.steps_to(field, {x, y});
+            const std::vector<fuse::math::Vec2> path = mesh.find_path({0, 0}, {x, y});
+            if (steps == fuse::navigation::GridNavmesh::kUnreachable) {
+                expect_true(path.empty(), "unreachable in field means no A* path");
+                continue;
+            }
+            expect_true(path.size() == static_cast<size_t>(steps) + 1u, "steps + 1 == A* waypoint count");
+            const float length = fuse::navigation::path_length(path);
+            expect_true(std::fabs(length - static_cast<float>(steps) * mesh.cell_size()) <= 1e-4f,
+                        "steps * cell_size == A* path length");
+        }
+    }
+    expect_true(mesh.steps_to(field, {3, 1}) == 8u, "detour through the gap: (0,0)->(1,3)->(3,1) is 8 steps");
+
+    expect_true(!mesh.step_field({2, 1}, field) && field.empty(), "blocked start fails and clears");
+    field.assign(3, 0u);
+    expect_true(!mesh.step_field({5, 0}, field) && field.empty(), "outside start fails and clears");
+    expect_true(mesh.steps_to(field, {0, 0}) == fuse::navigation::GridNavmesh::kUnreachable,
+                "mismatched field size is unreachable");
+
+    fuse::navigation::GridNavmesh empty;
+    expect_true(!empty.step_field({0, 0}, field), "unbuilt mesh has no step field");
+}
+
+void test_cell_at() {
+    fuse::navigation::GridNavmesh mesh;
+    expect_true(mesh.build(4, 3, 2.f, [](fuse::u32, fuse::u32) { return false; }), "cell_at mesh builds");
+    fuse::navigation::Cell cell;
+    expect_true(mesh.cell_at(0.f, 0.f, cell) && cell == fuse::navigation::Cell{0, 0}, "origin is cell (0,0)");
+    expect_true(mesh.cell_at(3.99f, 5.5f, cell) && cell == fuse::navigation::Cell{1, 2}, "interior point");
+    expect_true(mesh.cell_at(4.f, 2.f, cell) && cell == fuse::navigation::Cell{2, 1}, "cell edges belong to the upper cell");
+    expect_true(!mesh.cell_at(8.f, 0.f, cell), "x == width * cell_size is outside");
+    expect_true(!mesh.cell_at(-0.01f, 1.f, cell), "negative x is outside");
+    expect_true(!mesh.cell_at(1.f, std::numeric_limits<float>::quiet_NaN(), cell), "NaN is rejected");
+    expect_true(!mesh.cell_at(std::numeric_limits<float>::infinity(), 1.f, cell), "inf is rejected");
+    expect_true(!mesh.cell_at(1e30f, 1.f, cell), "huge coordinate is outside");
+
+    fuse::navigation::GridNavmesh empty;
+    expect_true(!empty.cell_at(0.f, 0.f, cell), "unbuilt mesh has no cells");
+}
+
 } // namespace
 
 int main() {
@@ -255,6 +314,8 @@ int main() {
     test_start_equals_goal();
     test_tie_break_smaller_x_then_y();
     test_out_of_range_and_diagonal();
+    test_step_field_matches_find_path();
+    test_cell_at();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d failure(s)\n", g_failures);
