@@ -44,10 +44,18 @@ int main() {
     UI_CHECK_EQ(ui.value(sp), 145.f);
     ui.setValue(sp, 1000.f);
     UI_CHECK_EQ(ui.value(sp), 240.f);
-    // combobox cycles
+    // combobox: click opens the Tier B popup list (current item focused), Down + Enter picks, focus returns
     const NodeHandle cb = ui.find("backend");
     drv.click("backend");
+    UI_CHECK(ui.alive(ui.firstChild(widgets::overlayLayer(ui))));
+    UI_CHECK(ui.text(ui.focused()) == "Vulkan");
+    drv.key(Key::Down);
+    UI_CHECK(ui.text(ui.focused()) == "CPU raster");
+    drv.key(Key::Enter);
     UI_CHECK(widgets::comboText(ui, cb) == "CPU raster");
+    ui.update();
+    UI_CHECK(!ui.alive(ui.firstChild(widgets::overlayLayer(ui))));
+    UI_CHECK(ui.focused() == cb);
     ui.setFocus(cb, FocusReason::Keyboard);
     drv.key(Key::Down);
     UI_CHECK(widgets::comboText(ui, cb) == "Null");

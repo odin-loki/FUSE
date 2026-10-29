@@ -38,6 +38,27 @@ separator { border-color: var(--border); }
   background: var(--surface); border-radius: 10px; padding: 14px; gap: 10px;
   box-shadow: 0px 4px 14px rgba(0, 0, 0, 0.45);
 }
+menu {
+  background: var(--surface); border: 1px var(--border); border-radius: 6px; padding: 4px; gap: 0px;
+  box-shadow: 0px 6px 18px rgba(0, 0, 0, 0.5);
+}
+menuitem { padding: 4px 12px; border-radius: 4px; color: var(--text); }
+menuitem:focus, menuitem:hover { background: var(--surface-hi); }
+menubar { background: var(--surface); padding: 2px 4px; gap: 2px; }
+menubutton { padding: 4px 10px; border-radius: 4px; color: var(--text); }
+menubutton:hover, menubutton:focus-visible { background: var(--surface-hi); }
+listview, treeview {
+  background: #15161a; color: var(--text); border: 1px var(--border); border-radius: 5px; padding: 3px;
+  background-end: var(--accent);
+}
+listview:focus, treeview:focus, tabbar:focus-visible { border-color: var(--accent); }
+tabbar { color: var(--text); background-end: var(--accent); }
+popup.modal { background: rgba(0, 0, 0, 0.35); }
+.dialog { min-width: 260px; }
+tooltip {
+  background: #0f1013; color: var(--text); border: 1px var(--border); border-radius: 4px; padding: 3px 7px;
+  font-size: 12px;
+}
 .row { flex-direction: row; gap: 8px; align-items: center; }
 .title { font-size: 20px; color: #ffffff; }
 .dim { color: var(--text-dim); }

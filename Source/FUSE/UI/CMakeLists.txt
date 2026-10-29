@@ -72,7 +72,7 @@ if(FUSE_UI_ACCESSIBILITY)
 endif()
 
 if(FUSE_BUILD_UI_WIDGETS)
-    add_library(fuse_ui_widgets STATIC Widgets/src/widgets.cpp Widgets/src/theme.cpp)
+    add_library(fuse_ui_widgets STATIC Widgets/src/widgets.cpp Widgets/src/widgets_tier_b.cpp Widgets/src/theme.cpp)
     target_include_directories(fuse_ui_widgets PUBLIC Widgets/include)
     target_link_libraries(fuse_ui_widgets PUBLIC fuse_ui_core)
 endif()

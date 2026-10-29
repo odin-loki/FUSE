@@ -1,4 +1,5 @@
 #include "fuse/ui/widgets/widgets.hpp"
+#include "widgets_internal.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -332,7 +333,11 @@ struct ComboBox {
         if (!count) return false;
         const u32 cur = u32(ui.value(ec.node));
         auto pick = [&](u32 v) { ui.setValue(ec.node, f32(v), true); ui.emit(ec.node, SignalKind::TextChanged, {.text = item(ui.text(ec.node), v)}); };
-        if (e.type == EventType::Click) { pick((cur + 1) % count); return true; }
+        if (e.type == EventType::Click) {
+            if (detail::openComboPopup(ui, ec.node)) return true; // Tier B popup list
+            pick((cur + 1) % count);
+            return true;
+        }
         if (e.type == EventType::KeyDown && e.key == Key::Down) { pick(std::min(cur + 1, count - 1)); return true; }
         if (e.type == EventType::KeyDown && e.key == Key::Up) { pick(cur ? cur - 1 : 0); return true; }
         if (e.type == EventType::Wheel) { pick(e.wheel.y < 0.f ? std::min(cur + 1, count - 1) : (cur ? cur - 1 : 0)); return true; }
@@ -500,6 +505,7 @@ void registerTierA(UiContext& ui) {
 
 void install(UiContext& ui) {
     registerTierA(ui);
+    registerTierB(ui);
     (void)ui.addStyleSheet(defaultThemeCss());
 }
 

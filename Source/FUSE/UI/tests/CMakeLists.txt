@@ -72,3 +72,4 @@ if(TARGET fuse_ui_vk)
 endif()
 
 fuse_ui_test(fuse_ui_text_full test_text_full.cpp)
+fuse_ui_test(fuse_ui_tier_b test_tier_b.cpp)
