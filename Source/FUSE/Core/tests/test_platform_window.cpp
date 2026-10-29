@@ -7,6 +7,7 @@
 #include <fuse/platform/window_title.hpp>
 
 #include <cstdio>
+#include <cstring>
 #include <cstdlib>
 #include <string>
 #include <vector>
@@ -442,6 +443,13 @@ void testEventPumpWin32MessageOnlyHwndMapsKeyDown() {
     expectTrue(event.type == fuse::platform::PlatformEventType::KeyDown, "mapped KeyDown type");
     expectEq(event.keyCode, static_cast<fuse::u32>('A'), "mapped KeyDown virtual key");
     expectTrue(event.window == &window, "mapped KeyDown bound to pumped window");
+    // UI1: TranslateMessage turns the posted WM_KEYDOWN into WM_CHAR, which arrives as one TextInput.
+    {
+        fuse::platform::PlatformEvent text;
+        expectTrue(pump.pollEvent(text) && text.type == fuse::platform::PlatformEventType::TextInput &&
+                       std::strcmp(text.text, "a") == 0,
+                   "mapped KeyDown followed by its WM_CHAR TextInput");
+    }
     expectTrue(!pump.hasPendingEvents(), "mapped KeyDown consumed");
 
     window.setNativeHandleForPump(nullptr);
@@ -506,6 +514,13 @@ void testEventPumpWin32RequireCaptureDropsReleasedInput() {
     expectTrue(event.type == fuse::platform::PlatformEventType::KeyDown, "captured OS KeyDown type");
     expectEq(event.keyCode, static_cast<fuse::u32>('B'), "captured OS KeyDown virtual key");
     expectTrue(event.window == &window, "captured OS KeyDown bound to window");
+    // UI1: TranslateMessage turns the posted WM_KEYDOWN into WM_CHAR, which arrives as one TextInput.
+    {
+        fuse::platform::PlatformEvent text;
+        expectTrue(pump.pollEvent(text) && text.type == fuse::platform::PlatformEventType::TextInput &&
+                       std::strcmp(text.text, "b") == 0,
+                   "captured OS KeyDown followed by its WM_CHAR TextInput");
+    }
     expectTrue(!pump.hasPendingEvents(), "captured OS KeyDown consumed");
 
     window.setNativeHandleForPump(nullptr);
@@ -586,6 +601,11 @@ void testEventPumpWin32AppVisibilityMessages() {
     expectTrue(pump.pollEvent(event), "key still queued after visibility message");
     expectTrue(event.type == fuse::platform::PlatformEventType::KeyDown, "key type preserved");
     expectEq(event.keyCode, static_cast<fuse::u32>('A'), "WM_KEYDOWN keyCode preserved");
+    {
+        fuse::platform::PlatformEvent text; // UI1: the WM_CHAR from TranslateMessage
+        expectTrue(pump.pollEvent(text) && text.type == fuse::platform::PlatformEventType::TextInput,
+                   "key after visibility message followed by its TextInput");
+    }
     expectTrue(!pump.hasPendingEvents(), "visibility message did not enqueue an input event");
 
     expectTrue(PostMessageW(hwnd, WM_ACTIVATEAPP, TRUE, 0) != FALSE, "PostMessageW WM_ACTIVATEAPP TRUE");

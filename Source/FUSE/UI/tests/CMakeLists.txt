@@ -47,6 +47,10 @@ target_include_directories(fuse_ui_platform_keys_v2 PRIVATE ${FUSE_CORE_DIR}/inc
 fuse_ui_test(fuse_ui_text_input test_text_input.cpp ${FUSE_CORE_DIR}/src/platform/input.cpp
              ${FUSE_CORE_DIR}/src/platform/text_services.cpp)
 target_include_directories(fuse_ui_text_input PRIVATE ${FUSE_CORE_DIR}/include)
+if(WIN32) # text_services.cpp uses IMM32 (ImmAssociateContextEx etc.)
+    target_link_libraries(fuse_ui_platform_keys_v2 PRIVATE imm32)
+    target_link_libraries(fuse_ui_text_input PRIVATE imm32)
+endif()
 
 # .fuseui documents and Lua bindings.
 if(TARGET fuse_ui_doc)

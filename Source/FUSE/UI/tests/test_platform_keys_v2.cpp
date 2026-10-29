@@ -12,6 +12,10 @@ using fuse::u32;
 
 // input.cpp (the v1 key tables) is compiled in without the rest of fuse_core; InputState::update's pump is unused here.
 bool fuse::platform::EventPump::pollEvent(PlatformEvent&) { return false; }
+#if defined(_WIN32)
+// Win32 text_services.cpp reads the HWND; these tests link only the input sources, not the window backend.
+fuse::platform::NativeWindowHandle fuse::platform::Window::nativeHandle() const { return {}; }
+#endif
 
 int main() {
     // every v1 key round-trips unchanged

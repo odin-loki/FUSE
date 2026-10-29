@@ -8,6 +8,16 @@
 #include <fuse/platform/window.hpp>
 
 #include <cstdio>
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <imm.h>
+#endif
 #include <cstring>
 #include <string>
 #include <vector>
@@ -120,6 +130,107 @@ int main() {
         endTextInput(window);
         expect(!textInputActive(window), "session ended");
     }
+
+#if defined(_WIN32)
+    // ---- Win32 owned window: WM_CHAR surrogate pairs, WM_MOUSEWHEEL, IMM32 pre-edit, CF_UNICODETEXT ----
+    {
+        WindowDesc desc{};
+        desc.title = "FUSE UI1 Win32 text";
+        desc.width = 320;
+        desc.height = 200;
+        desc.createNative = true;
+        Window window(desc);
+        const HWND hwnd = static_cast<HWND>(window.nativeHandle().value);
+        expect(hwnd != nullptr, "Win32 owned window created");
+        if (hwnd != nullptr) {
+            EventPump pump;
+            pump.processOsEvents();
+            std::vector<PlatformEvent> drop;
+            pump.drainEvents(drop);
+
+            PostMessageW(hwnd, WM_CHAR, 0xD83D, 1);
+            PostMessageW(hwnd, WM_CHAR, 0xDE00, 1);
+            PostMessageW(hwnd, WM_CHAR, 0x00E9, 1);
+            pump.processOsEvents();
+            std::vector<PlatformEvent> events;
+            pump.drainEvents(events);
+            std::string text;
+            for (const PlatformEvent& e : events) {
+                if (e.type == PlatformEventType::TextInput) text += e.text;
+            }
+            expect(text == "\xF0\x9F\x98\x80\xC3\xA9", "WM_CHAR surrogate pair + BMP char -> UTF-8 TextInput");
+
+            POINT origin{0, 0};
+            ClientToScreen(hwnd, &origin);
+            PostMessageW(hwnd, WM_MOUSEWHEEL, MAKEWPARAM(0, static_cast<WORD>(-120)),
+                         MAKELPARAM(origin.x + 30, origin.y + 40));
+            pump.processOsEvents();
+            events.clear();
+            pump.drainEvents(events);
+            bool wheel = false;
+            for (const PlatformEvent& e : events) {
+                wheel = wheel || (e.type == PlatformEventType::MouseWheel && e.wheelY == -120 && e.mouseX == 30 &&
+                                  e.mouseY == 40);
+            }
+            expect(wheel, "WM_MOUSEWHEEL -> MouseWheel (-120, client coordinates)");
+
+            beginTextInput(window);
+            bool imeTested = false;
+            if (HIMC imc = ImmGetContext(hwnd)) {
+                const wchar_t comp[] = L"\u304B\u306A";
+                if (ImmSetCompositionStringW(imc, SCS_SETSTR, const_cast<wchar_t*>(comp), sizeof(comp) - sizeof(wchar_t),
+                                             nullptr, 0) != FALSE) {
+                    imeTested = true;
+                    SendMessageW(hwnd, WM_IME_COMPOSITION, 0, GCS_COMPSTR | GCS_CURSORPOS);
+                    PostMessageW(hwnd, WM_NULL, 0, 0);
+                    pump.processOsEvents();
+                    events.clear();
+                    pump.drainEvents(events);
+                    bool sawComposition = false;
+                    for (const PlatformEvent& e : events) sawComposition = sawComposition || e.type == PlatformEventType::TextComposition;
+                    std::printf("    IMM pre-edit: '%.*s' caret %d\n", int(pump.composition().size()), pump.composition().data(),
+                                pump.compositionCursor());
+                    expect(sawComposition && pump.composition() == "\xE3\x81\x8B\xE3\x81\xAA",
+                           "IMM32 composition string -> TextComposition (UTF-8)");
+                    ImmNotifyIME(imc, NI_COMPOSITIONSTR, CPS_CANCEL, 0);
+                    SendMessageW(hwnd, WM_IME_ENDCOMPOSITION, 0, 0);
+                    PostMessageW(hwnd, WM_NULL, 0, 0);
+                    pump.processOsEvents();
+                    pump.drainEvents(events);
+                    expect(pump.composition().empty(), "WM_IME_ENDCOMPOSITION ends pre-edit");
+                }
+                ImmReleaseContext(hwnd, imc);
+            }
+            if (!imeTested) std::printf("    note: no IMM context / ImmSetCompositionStringW refused; IME section skipped\n");
+            setTextInputArea(window, 12, 24, 2, 16);
+            endTextInput(window);
+
+            // Clipboard through the raw Win32 API: what FUSE writes is CF_UNICODETEXT for other apps.
+            expect(setClipboardText("Gr\xC3\xBC\xC3\x9F \xF0\x9F\x98\x80"), "clipboard set (Win32)");
+            bool raw = false;
+            if (OpenClipboard(nullptr)) {
+                if (HANDLE h = GetClipboardData(CF_UNICODETEXT)) {
+                    const auto* w = static_cast<const wchar_t*>(GlobalLock(h));
+                    raw = w != nullptr && std::wcscmp(w, L"Gr\u00FC\u00DF \U0001F600") == 0;
+                    GlobalUnlock(h);
+                }
+                CloseClipboard();
+            }
+            expect(raw, "CF_UNICODETEXT holds the UTF-16 text");
+            if (OpenClipboard(nullptr)) {
+                EmptyClipboard();
+                const wchar_t other[] = L"from another app \u2192";
+                HGLOBAL mem = GlobalAlloc(GMEM_MOVEABLE, sizeof(other));
+                std::memcpy(GlobalLock(mem), other, sizeof(other));
+                GlobalUnlock(mem);
+                SetClipboardData(CF_UNICODETEXT, mem);
+                CloseClipboard();
+            }
+            std::string got;
+            expect(clipboardText(got) && got == "from another app \xE2\x86\x92", "clipboardText reads CF_UNICODETEXT");
+        }
+    }
+#endif
 
     if (g_failures == 0) std::printf("fuse_core_ui1_text_input: OK\n");
     return g_failures == 0 ? 0 : 1;
