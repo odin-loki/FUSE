@@ -324,6 +324,12 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_SIZE:
         if (LOWORD(lp) && HIWORD(lp)) w.resize(LOWORD(lp), HIWORD(lp));
         return 0;
+    case WM_MOUSEMOVE: case WM_LBUTTONDOWN: case WM_RBUTTONDOWN: case WM_MBUTTONDOWN: case WM_LBUTTONUP: case WM_RBUTTONUP: case WM_MBUTTONUP:
+        ui.setModifiers(u8(((wp & MK_SHIFT) ? kModShift : 0) | ((wp & MK_CONTROL) ? kModCtrl : 0) | ((GetKeyState(VK_MENU) < 0) ? kModAlt : 0)));
+        break;
+    default: break;
+    }
+    switch (msg) {
     case WM_MOUSEMOVE: ui.pointerMove(lparamPos(lp)); return 0;
     case WM_LBUTTONDOWN: SetCapture(hwnd); ui.pointerDown(lparamPos(lp), MouseButton::Left); return 0;
     case WM_RBUTTONDOWN: ui.pointerDown(lparamPos(lp), MouseButton::Right); return 0;
@@ -517,13 +523,15 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
                 w.resize(u32(ev.configure.width), u32(ev.configure.height));
             break;
         }
-        case x11::MotionNotify: ui.pointerMove(pos); break;
+        case x11::MotionNotify: ui.setModifiers(x11::mods(in.state)); ui.pointerMove(pos); break;
         case x11::ButtonPress:
+            ui.setModifiers(x11::mods(in.state));
             if (in.detail == 4 || in.detail == 5) ui.wheel(pos, {0.f, in.detail == 4 ? 1.f : -1.f});
             else if (in.detail == 6 || in.detail == 7) ui.wheel(pos, {in.detail == 6 ? -1.f : 1.f, 0.f});
             else ui.pointerDown(pos, in.detail == 3 ? MouseButton::Right : in.detail == 2 ? MouseButton::Middle : MouseButton::Left);
             break;
         case x11::ButtonRelease:
+            ui.setModifiers(x11::mods(in.state));
             if (in.detail <= 3) ui.pointerUp(pos);
             break;
         case x11::KeyPress:

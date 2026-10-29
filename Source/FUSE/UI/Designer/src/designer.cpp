@@ -240,6 +240,10 @@ u32 DesignDocument::findId(std::string_view id) const {
 bool DesignDocument::isContainer(std::string_view cls) { return cls == "panel" || cls == "scrollarea" || cls == "card"; }
 
 void DesignDocument::checkpoint() {
+    if (m_batch > 0) {
+        if (m_batchSaved) { ++m_rev; return; }
+        m_batchSaved = true;
+    }
     m_undo.push_back(save());
     if (m_undo.size() > 200) m_undo.erase(m_undo.begin());
     m_redo.clear();
@@ -262,31 +266,125 @@ u32 DesignDocument::ensureIds() {
     return added;
 }
 
-u32 DesignDocument::insert(u32 parent, std::string_view cls) {
-    DesignNode* p = nodeMut(parent);
-    if (!p) return kNone;
-    checkpoint();
+DesignNode DesignDocument::makeNode(std::string_view cls, const DesignDocument& doc) {
     DesignNode n;
     n.props.type = JsonValue::Type::Object;
     n.props.object.emplace_back("class", str(cls));
     std::string base(cls);
     for (int k = 1;; ++k)
-        if (findId(base + std::to_string(k)) == kNone) { n.props.object.emplace_back("id", str(base + std::to_string(k))); break; }
+        if (doc.findId(base + std::to_string(k)) == kNone) { n.props.object.emplace_back("id", str(base + std::to_string(k))); break; }
     if (cls == "button" || cls == "checkbox" || cls == "label" || cls == "switch" || cls == "radiobutton") n.props.object.emplace_back("text", str(cls == "label" ? "Label" : (cls == "button" ? "Button" : "Option")));
     if (cls == "slider" || cls == "progressbar" || cls == "spinbox") { n.props.object.emplace_back("min", num(0)); n.props.object.emplace_back("max", num(100)); n.props.object.emplace_back("value", num(50)); }
     if (cls == "combobox") { JsonValue items; items.type = JsonValue::Type::Array; items.array = {str("One"), str("Two"), str("Three")}; n.props.object.emplace_back("items", items); }
-    const std::string id(n.id());
-    if (isContainer(p->cls())) {
-        p->children.push_back(std::move(n));
-    } else {
-        // after the selected leaf, in its parent
-        const u32 pp = parentOf(parent);
-        DesignNode* gp = nodeMut(pp);
-        if (!gp) { p->children.push_back(std::move(n)); return findId(id); }
-        auto it = std::find_if(gp->children.begin(), gp->children.end(), [&](const DesignNode& c) { return &c == p; });
-        gp->children.insert(it == gp->children.end() ? gp->children.end() : it + 1, std::move(n));
+    if (cls == "panel") { JsonValue st; st.type = JsonValue::Type::Object; st.object.emplace_back("padding", str("6px")); st.object.emplace_back("min-height", str("24px")); n.props.object.emplace_back("style", st); }
+    return n;
+}
+
+u32 DesignDocument::indexOf(const DesignNode* p) const {
+    u32 hit = kNone, idx = 0;
+    walk(m_root, idx, kNone, 0, [&](const DesignNode& n, u32 me, u32, u32) { if (&n == p) { hit = me; return true; } return false; });
+    return hit;
+}
+
+u32 DesignDocument::childSlot(u32 index) const {
+    const DesignNode* p = node(parentOf(index));
+    const DesignNode* n = node(index);
+    if (!p || !n) return 0;
+    for (u32 i = 0; i < p->children.size(); ++i)
+        if (&p->children[i] == n) return i;
+    return 0;
+}
+u32 DesignDocument::childCount(u32 index) const {
+    const DesignNode* n = node(index);
+    return n ? u32(n->children.size()) : 0u;
+}
+bool DesignDocument::isAncestor(u32 a, u32 index) const {
+    for (u32 p = parentOf(index); p != kNone; p = parentOf(p))
+        if (p == a) return true;
+    return false;
+}
+
+u32 DesignDocument::insert(u32 parent, std::string_view cls) {
+    DesignNode* p = nodeMut(parent);
+    if (!p) return kNone;
+    if (isContainer(p->cls())) return insertAt(parent, ~0u, cls);
+    const u32 pp = parentOf(parent);
+    if (pp == kNone) return kNone;
+    return insertAt(pp, childSlot(parent) + 1, cls); // after the selected leaf
+}
+
+u32 DesignDocument::insertAt(u32 parent, u32 position, std::string_view cls) {
+    DesignNode* p = nodeMut(parent);
+    if (!p || !isContainer(p->cls())) return kNone;
+    DesignNode n = makeNode(cls, *this);
+    checkpoint();
+    p = nodeMut(parent);
+    const std::size_t at = std::min<std::size_t>(position, p->children.size());
+    p->children.insert(p->children.begin() + std::ptrdiff_t(at), std::move(n));
+    return indexOf(&p->children[at]);
+}
+
+u32 DesignDocument::reparent(u32 index, u32 newParent, u32 position) {
+    const u32 oldParent = parentOf(index);
+    const DesignNode* np0 = node(newParent);
+    if (oldParent == kNone || !np0 || !isContainer(np0->cls()) || newParent == index || isAncestor(index, newParent)) return kNone;
+    const u32 slot = childSlot(index);
+    if (oldParent == newParent && (position == slot || position == slot + 1)) return index; // no-op drop
+    // child-slot paths from the root survive the erase (pointers and preorder indices do not)
+    auto pathOf = [this](u32 i) {
+        std::vector<u32> path;
+        for (; parentOf(i) != kNone; i = parentOf(i)) path.insert(path.begin(), childSlot(i));
+        return path;
+    };
+    const std::vector<u32> movedPath = pathOf(index);
+    std::vector<u32> target = pathOf(newParent);
+    checkpoint();
+    DesignNode* op = nodeMut(oldParent);
+    DesignNode moving = std::move(op->children[slot]);
+    op->children.erase(op->children.begin() + std::ptrdiff_t(slot));
+    const std::size_t d = movedPath.size() - 1; // depth of the moved node's slot
+    if (target.size() > d && std::equal(movedPath.begin(), movedPath.begin() + std::ptrdiff_t(d), target.begin()) && target[d] > slot)
+        --target[d]; // the new parent was a later sibling (or inside one) of the moved node
+    if (oldParent == newParent && position > slot) --position;
+    DesignNode* np = &m_root;
+    for (u32 k : target) np = &np->children[k];
+    const std::size_t at = std::min<std::size_t>(position, np->children.size());
+    np->children.insert(np->children.begin() + std::ptrdiff_t(at), std::move(moving));
+    return indexOf(&np->children[at]);
+}
+
+u32 DesignDocument::removeMany(std::vector<u32> idx) {
+    std::sort(idx.begin(), idx.end());
+    idx.erase(std::unique(idx.begin(), idx.end()), idx.end());
+    std::vector<u32> keep;
+    for (u32 i : idx) {
+        if (i == 0 || i >= count()) continue;
+        bool under = false;
+        for (u32 k : keep) under |= isAncestor(k, i);
+        if (!under) keep.push_back(i);
     }
-    return findId(id);
+    if (keep.empty()) return 0;
+    checkpoint();
+    // descending preorder: removing a later node never shifts an earlier one
+    for (auto it = keep.rbegin(); it != keep.rend(); ++it) {
+        DesignNode* parent = nodeMut(parentOf(*it));
+        const u32 slot = childSlot(*it);
+        parent->children.erase(parent->children.begin() + std::ptrdiff_t(slot));
+    }
+    return u32(keep.size());
+}
+
+std::string DesignDocument::styleSheet() const {
+    const JsonValue* st = member(m_header, "style");
+    return st && st->isString() ? st->string : std::string{};
+}
+bool DesignDocument::setStyleSheet(std::string_view css) {
+    if (css == styleSheet()) return false;
+    checkpoint();
+    m_header.type = JsonValue::Type::Object;
+    if (css.empty()) eraseMember(m_header, "style");
+    else setMember(m_header, "style", str(css));
+    return true;
 }
 
 bool DesignDocument::remove(u32 index) {
@@ -395,7 +493,7 @@ struct CanvasW {
         if (ec.phase != Phase::Capture && ec.phase != Phase::Target) return false;
         switch (e.type) {
         case EventType::PointerDown:
-            if (Designer* d = designerOf(ec.ui, ec.node)) d->canvasPick(ec.target);
+            if (Designer* d = designerOf(ec.ui, ec.node)) d->canvasPick(ec.target, e.mods);
             return true;
         case EventType::PointerUp: case EventType::Click: case EventType::Wheel: case EventType::KeyDown: case EventType::Text:
             return ec.target != ec.node;
@@ -404,11 +502,25 @@ struct CanvasW {
     }
 };
 
+// The designer's root: sees every pointer event first (capture) to run palette -> canvas and canvas -> canvas drags.
+struct RootW {
+    static constexpr std::string_view kName = "designerroot";
+    static constexpr A11yRole kRole = A11yRole::Group;
+    static bool onEvent(EventContext& ec, const Event& e) {
+        if (ec.phase != Phase::Capture) return false;
+        Designer* d = designerOf(ec.ui, ec.node);
+        return d && d->rootEvent(e, ec.target);
+    }
+};
+
 struct PropRow { const char* name; const char* key; };
 const PropRow kRows[] = {
     {"Node", nullptr}, {"id", "id"}, {"text", "text"}, {"classes", "classes"}, {"min", "min"}, {"max", "max"}, {"value", "value"},
     {"Layout", nullptr}, {"width", "style.width"}, {"height", "style.height"}, {"padding", "style.padding"}, {"gap", "style.gap"},
     {"flex-grow", "style.flex-grow"}, {"flex-direction", "style.flex-direction"},
+    {"Style", nullptr}, {"margin", "style.margin"}, {"background", "style.background"}, {"color", "style.color"},
+    {"border", "style.border"}, {"radius", "style.border-radius"}, {"font-size", "style.font-size"},
+    {"align-items", "style.align-items"}, {"justify-content", "style.justify-content"},
 };
 const PropRow* rowNamed(std::string_view n) {
     for (const PropRow& r : kRows)
@@ -446,6 +558,7 @@ std::string_view Designer::paletteClasses() {
 Designer::Designer(UiContext& ui, NodeHandle parent) : m_ui(ui) {
     w::install(ui);
     if (ui.registry().find("designcanvas") == 0xFFFFFFFFu) ui.registry().registerWidget<CanvasW>();
+    if (ui.registry().find("designerroot") == 0xFFFFFFFFu) ui.registry().registerWidget<RootW>();
     ui.addStyleSheet(R"(
         .designer { gap: 0px; padding: 0px; flex-grow: 1; }
         .designer-bar { gap: 4px; padding: 6px; background: var(--surface); border: 1px var(--border); }
@@ -454,10 +567,12 @@ Designer::Designer(UiContext& ui, NodeHandle parent) : m_ui(ui) {
         .designer-title { color: var(--text-dim); }
         .designcanvas { flex-grow: 1; padding: 16px; background: #15171c; border: 1px var(--border); }
         .dsel { border: 2px #4aa3ff; }
+        .designer-style { height: 190px; }
         .designer-status { padding: 4px 8px; color: var(--text-dim); }
     )");
     if (!ui.alive(parent)) parent = ui.root();
-    m_root = w::panel(ui, parent, "designer");
+    m_root = ui.create("designerroot", parent, "designer").value_or(NodeHandle{});
+    ui.setUserData(m_root, static_cast<u64>(reinterpret_cast<std::uintptr_t>(this)));
     ui.addClass(m_root, "designer");
     m_toolbar = w::panel(ui, m_root, "designer.toolbar");
     ui.addClass(m_toolbar, "row");
@@ -468,7 +583,7 @@ Designer::Designer(UiContext& ui, NodeHandle parent) : m_ui(ui) {
         const NodeHandle h = w::toolButton(ui, m_toolbar, b.text, b.id);
         const std::string_view id = b.id; // string literal: static storage
         ui.connect(h, SignalKind::Clicked, [this, id](UiContext&, NodeHandle, const SignalArgs&) {
-            if (id == "designer.new") { m_doc.reset(); m_sel = 0; rebuild(); setStatus("New document"); }
+            if (id == "designer.new") { m_doc.reset(); m_sel = 0; m_multi.clear(); rebuild(); setStatus("New document"); }
             else if (id == "designer.undo") undo();
             else if (id == "designer.redo") redo();
             else if (id == "designer.delete") deleteSelected();
@@ -502,7 +617,17 @@ Designer::Designer(UiContext& ui, NodeHandle parent) : m_ui(ui) {
     const NodeHandle right = w::panel(ui, body, "designer.right");
     ui.addClass(right, "designer-props");
     ui.addClass(w::label(ui, right, "Properties"), "designer-title");
-    m_props = w::propertyGrid(ui, right, "designer.props");
+    const NodeHandle propsHost = w::panel(ui, right, "designer.propshost");
+    ui.setCss(propsHost, "padding", "0px");
+    m_props = w::propertyGrid(ui, propsHost, "designer.props");
+    const NodeHandle styleHead = w::panel(ui, right, "designer.stylehead");
+    ui.addClass(styleHead, "row");
+    ui.addClass(w::label(ui, styleHead, "Style sheet"), "designer-title");
+    ui.setCss(w::panel(ui, styleHead), "flex-grow", "1");
+    const NodeHandle apply = w::toolButton(ui, styleHead, "Apply", "designer.applystyle");
+    m_styleEdit = w::codeEdit(ui, right, "", w::CodeLanguage::Css, "designer.style");
+    ui.addClass(m_styleEdit, "designer-style");
+    ui.connect(apply, SignalKind::Clicked, [this](UiContext& u, NodeHandle, const SignalArgs&) { setStyleSheet(w::codeEditText(u, m_styleEdit)); });
     m_statusLabel = w::label(ui, m_root, "", "designer.status");
     ui.addClass(m_statusLabel, "designer-status");
     m_doc.reset();
@@ -528,6 +653,7 @@ bool Designer::open(std::string_view json, std::string* error) {
     }
     m_doc.ensureIds();
     m_sel = 0;
+    m_multi.clear();
     rebuild();
     setStatus("Opened (" + std::to_string(m_doc.count()) + " nodes)");
     return true;
@@ -569,8 +695,18 @@ void Designer::rebuild() {
         if (m_ui.alive(h)) m_map.emplace_back(h, i);
     }
     if (m_sel >= m_doc.count()) m_sel = 0;
+    std::erase_if(m_multi, [this](u32 i) { return i >= m_doc.count() || i == m_sel; });
+    m_lit.clear(); // the old canvas nodes are gone
+    if (m_ui.alive(m_styleEdit)) {
+        const std::string css = m_doc.styleSheet();
+        if (w::codeEditText(m_ui, m_styleEdit) != css) w::codeEditSetText(m_ui, m_styleEdit, css);
+    }
     refreshOutline();
+    const std::vector<u32> keep = m_multi;
     select(m_sel);
+    m_multi = keep;
+    applyHighlight();
+    refreshProperties();
 }
 
 void Designer::refreshOutline() {
@@ -592,15 +728,184 @@ NodeHandle Designer::canvasNode(u32 index) const {
     return {};
 }
 
-void Designer::select(u32 index) {
+void Designer::select(u32 index, bool additive) {
     if (index >= m_doc.count()) return;
-    if (const NodeHandle old = canvasNode(m_sel); m_ui.alive(old)) m_ui.removeClass(old, "dsel");
-    m_sel = index;
-    if (const NodeHandle h = canvasNode(m_sel); m_ui.alive(h)) m_ui.addClass(h, "dsel");
+    if (additive) {
+        if (index == m_sel) {
+            if (m_multi.empty()) return; // the last one stays
+            m_sel = m_multi.back();
+            m_multi.pop_back();
+        } else if (auto it = std::find(m_multi.begin(), m_multi.end(), index); it != m_multi.end()) {
+            m_multi.erase(it);
+        } else {
+            m_multi.push_back(m_sel);
+            m_sel = index;
+        }
+    } else {
+        m_multi.clear();
+        m_sel = index;
+    }
+    applyHighlight();
     m_syncing = true;
     m_ui.setValue(m_outline, f32(m_sel));
     m_syncing = false;
     refreshProperties();
+}
+
+std::vector<u32> Designer::selection() const {
+    std::vector<u32> v = m_multi;
+    v.push_back(m_sel);
+    std::sort(v.begin(), v.end());
+    v.erase(std::unique(v.begin(), v.end()), v.end());
+    return v;
+}
+
+void Designer::applyHighlight() {
+    for (NodeHandle h : m_lit)
+        if (m_ui.alive(h)) m_ui.removeClass(h, "dsel");
+    m_lit.clear();
+    for (u32 i : selection())
+        if (const NodeHandle h = canvasNode(i); m_ui.alive(h)) { m_ui.addClass(h, "dsel"); m_lit.push_back(h); }
+}
+
+u32 Designer::designIndexAt(NodeHandle h) const {
+    for (; m_ui.alive(h) && h != m_canvas; h = m_ui.parent(h))
+        for (const auto& [n, i] : m_map)
+            if (n == h) return i;
+    return DesignDocument::kNone;
+}
+
+bool Designer::dropTarget(Vec2 p, u32& parent, u32& slot) const {
+    const Rect cr = m_ui.rect(m_canvas);
+    if (p.x < cr.x || p.y < cr.y || p.x >= cr.x + cr.w || p.y >= cr.y + cr.h) return false;
+    u32 hit = designIndexAt(m_ui.hitTest(p));
+    if (hit == DesignDocument::kNone) hit = 0; // empty canvas: the root
+    auto isRow = [this](u32 i) {
+        const std::string dir = m_doc.prop(i, "style.flex-direction");
+        if (dir == "row") return true;
+        const std::string cls = " " + m_doc.prop(i, "classes") + " ";
+        return cls.find(" row ") != std::string::npos;
+    };
+    auto past = [&](u32 child, bool row) {
+        const Rect r = m_ui.rect(canvasNode(child));
+        return row ? p.x > r.x + r.w * 0.5f : p.y > r.y + r.h * 0.5f;
+    };
+    if (DesignDocument::isContainer(m_doc.node(hit)->cls())) {
+        parent = hit;
+        const bool row = isRow(hit);
+        slot = 0;
+        const u32 n = m_doc.childCount(hit);
+        // children follow the container in preorder; walk them by slot
+        for (u32 i = hit + 1, k = 0; i < m_doc.count() && k < n; ++i) {
+            if (m_doc.parentOf(i) != hit) continue;
+            if (m_ui.alive(canvasNode(i)) && past(i, row)) slot = k + 1;
+            ++k;
+        }
+        return true;
+    }
+    parent = m_doc.parentOf(hit);
+    if (parent == DesignDocument::kNone) return false;
+    slot = m_doc.childSlot(hit) + (m_ui.alive(canvasNode(hit)) && past(hit, isRow(parent)) ? 1u : 0u);
+    return true;
+}
+
+u32 Designer::addWidgetAt(std::string_view cls, Vec2 p) {
+    u32 parent = 0, slot = 0;
+    if (!dropTarget(p, parent, slot)) return DesignDocument::kNone;
+    const u32 i = m_doc.insertAt(parent, slot, cls);
+    if (i == DesignDocument::kNone) return i;
+    m_sel = i;
+    m_multi.clear();
+    rebuild();
+    setStatus("Placed " + std::string(cls) + " in #" + std::string(m_doc.node(m_doc.parentOf(i))->id()));
+    return i;
+}
+
+u32 Designer::moveSelectionTo(Vec2 p) {
+    u32 parent = 0, slot = 0;
+    if (!dropTarget(p, parent, slot)) return DesignDocument::kNone;
+    // move each selected node (outermost only), keeping document order; ids carry the selection across
+    std::vector<std::string> ids;
+    for (u32 i : selection()) {
+        bool under = false;
+        for (u32 k : selection()) under |= k != i && m_doc.isAncestor(k, i);
+        if (!under && i != 0 && i != parent && !m_doc.isAncestor(i, parent)) ids.emplace_back(m_doc.node(i)->id());
+    }
+    if (ids.empty()) return DesignDocument::kNone;
+    const std::string primary(m_doc.node(m_sel)->id());
+    const std::string parentId(m_doc.node(parent)->id());
+    m_doc.beginBatch();
+    u32 moved = 0;
+    for (const std::string& id : ids) {
+        const u32 i = m_doc.findId(id), pa = m_doc.findId(parentId);
+        if (i == DesignDocument::kNone || pa == DesignDocument::kNone) continue;
+        const bool sameBefore = m_doc.parentOf(i) == pa && m_doc.childSlot(i) < slot;
+        if (m_doc.reparent(i, pa, slot) != DesignDocument::kNone) {
+            ++moved;
+            if (!sameBefore) ++slot; // keep the moved group in order
+        }
+    }
+    m_doc.endBatch();
+    std::vector<u32> sel;
+    for (const std::string& id : ids) if (const u32 i = m_doc.findId(id); i != DesignDocument::kNone) sel.push_back(i);
+    m_sel = m_doc.findId(primary);
+    if (m_sel == DesignDocument::kNone) m_sel = 0;
+    m_multi.clear();
+    for (u32 i : sel) if (i != m_sel) m_multi.push_back(i);
+    rebuild();
+    setStatus("Moved " + std::to_string(moved) + " into #" + parentId);
+    return m_sel;
+}
+
+bool Designer::setStyleSheet(std::string_view css) {
+    if (!m_doc.setStyleSheet(css)) return false;
+    rebuild();
+    setStatus("Style sheet applied");
+    return true;
+}
+
+bool Designer::rootEvent(const Event& e, NodeHandle target) {
+    auto inside = [this](NodeHandle h, NodeHandle under) {
+        for (; m_ui.alive(h); h = m_ui.parent(h)) if (h == under) return true;
+        return false;
+    };
+    switch (e.type) {
+    case EventType::PointerDown: {
+        m_drag = {};
+        if (e.button != MouseButton::Left) return false;
+        const bool pal = inside(target, m_palette);
+        const bool can = inside(target, m_canvas) && designIndexAt(target) != DesignDocument::kNone && designIndexAt(target) != 0;
+        if (pal || can) m_drag = {.pressed = true, .active = false, .fromPalette = pal, .start = e.pos};
+        return false;
+    }
+    case EventType::PointerMove:
+        if (m_drag.pressed && !m_drag.active) {
+            const f32 dx = e.pos.x - m_drag.start.x, dy = e.pos.y - m_drag.start.y;
+            if (dx * dx + dy * dy > 36.f) m_drag.active = true;
+        }
+        if (m_drag.active) {
+            u32 parent = 0, slot = 0;
+            if (dropTarget(e.pos, parent, slot))
+                setStatus("Drop into #" + std::string(m_doc.node(parent)->id()) + " at " + std::to_string(slot));
+            else
+                setStatus("Drag over the canvas to place");
+            return !m_drag.fromPalette; // a canvas drag never reaches the live widgets
+        }
+        return false;
+    case EventType::PointerUp: {
+        const Drag d = m_drag;
+        m_drag = {};
+        if (!d.active) return false;
+        if (d.fromPalette) {
+            const i32 row = i32(m_ui.value(m_palette));
+            if (row >= 0) addWidgetAt(w::listItem(m_ui, m_palette, u32(row)), e.pos);
+            return false; // the list still sees its release
+        }
+        moveSelectionTo(e.pos);
+        return true;
+    }
+    default: return false;
+    }
 }
 
 void Designer::refreshProperties() {
@@ -611,10 +916,11 @@ void Designer::refreshProperties() {
     m_propNames.clear();
     const DesignNode* d = m_doc.node(m_sel);
     if (!d) return;
-    const std::string title = std::string(d->cls());
+    std::string title = std::string(d->cls());
+    if (!m_multi.empty()) title += " (+" + std::to_string(m_multi.size()) + " selected)";
     for (const PropRow& r : kRows) {
         if (!r.key) {
-            w::propertyRow(m_ui, m_props, {.name = r.name[0] == 'N' ? std::string_view(title) : std::string_view(r.name), .kind = w::PropKind::Group});
+            w::propertyRow(m_ui, m_props, {.name = std::string_view(r.name) == "Node" ? std::string_view(title) : std::string_view(r.name), .kind = w::PropKind::Group});
             m_propNames.emplace_back();
             continue;
         }
@@ -627,14 +933,20 @@ void Designer::refreshProperties() {
     });
 }
 
-void Designer::canvasPick(NodeHandle target) {
-    for (NodeHandle h = target; m_ui.alive(h) && h != m_canvas; h = m_ui.parent(h))
-        for (const auto& [n, i] : m_map)
-            if (n == h) {
-                select(i);
-                setStatus("Selected " + std::string(m_doc.node(i)->cls()) + " #" + std::string(m_doc.node(i)->id()));
-                return;
-            }
+void Designer::canvasPick(NodeHandle target, u8 mods) {
+    const u32 i = designIndexAt(target);
+    if (i == DesignDocument::kNone) return;
+    const bool add = (mods & (kModCtrl | kModShift)) != 0;
+    // a press on an already selected node keeps the multi-selection so it can be dragged as a group
+    if (!add && (i == m_sel || std::find(m_multi.begin(), m_multi.end(), i) != m_multi.end()) && !m_multi.empty()) {
+        if (i != m_sel) { m_multi.erase(std::find(m_multi.begin(), m_multi.end(), i)); m_multi.push_back(m_sel); m_sel = i; }
+        applyHighlight();
+        refreshProperties();
+        return;
+    }
+    select(i, add);
+    const std::size_t n = selection().size();
+    setStatus(n > 1 ? std::to_string(n) + " selected" : "Selected " + std::string(m_doc.node(i)->cls()) + " #" + std::string(m_doc.node(i)->id()));
 }
 
 u32 Designer::addWidget(std::string_view cls) {
@@ -649,23 +961,40 @@ u32 Designer::addWidget(std::string_view cls) {
 bool Designer::setProperty(std::string_view name, std::string_view value) {
     const PropRow* r = rowNamed(name);
     if (!r) return false;
-    if (m_doc.prop(m_sel, r->key) == value) return true;
-    const std::string id(m_doc.node(m_sel)->id());
-    if (!m_doc.setProp(m_sel, r->key, parseValue(r->key, value))) return false;
+    const bool isId = std::string_view(r->key) == "id";
+    std::vector<u32> targets = isId ? std::vector<u32>{m_sel} : selection(); // ids stay unique: primary only
+    std::vector<std::string> ids;
+    for (u32 i : targets) ids.emplace_back(m_doc.node(i)->id());
+    const std::string primary(m_doc.node(m_sel)->id());
+    m_doc.beginBatch();
+    bool changed = false;
+    for (const std::string& id : ids) {
+        const u32 i = m_doc.findId(id);
+        if (i == DesignDocument::kNone || m_doc.prop(i, r->key) == value) continue;
+        changed |= m_doc.setProp(i, r->key, parseValue(r->key, value));
+    }
+    m_doc.endBatch();
+    if (!changed) return true;
     // keep the selection by id across the rebuild (an id edit renames it)
-    const u32 again = m_doc.findId(std::string_view(r->key) == "id" ? value : std::string_view(id));
+    const u32 again = m_doc.findId(isId ? value : std::string_view(primary));
     if (again != DesignDocument::kNone) m_sel = again;
+    m_multi.clear();
+    for (const std::string& id : ids)
+        if (const u32 i = m_doc.findId(id); i != DesignDocument::kNone && i != m_sel) m_multi.push_back(i);
     rebuild();
-    setStatus("Set " + std::string(name));
+    setStatus("Set " + std::string(name) + (ids.size() > 1 ? " on " + std::to_string(ids.size()) + " nodes" : std::string{}));
     return true;
 }
 
 void Designer::deleteSelected() {
-    const u32 p = m_doc.parentOf(m_sel);
-    if (p == DesignDocument::kNone || !m_doc.remove(m_sel)) { setStatus("The root cannot be deleted"); return; }
-    m_sel = p;
+    const std::vector<u32> sel = selection();
+    const u32 p = m_doc.parentOf(sel.front());
+    const u32 n = m_doc.removeMany(sel);
+    if (n == 0) { setStatus("The root cannot be deleted"); return; }
+    m_sel = p == DesignDocument::kNone ? 0 : p;
+    m_multi.clear();
     rebuild();
-    setStatus("Deleted");
+    setStatus("Deleted " + std::to_string(n));
 }
 
 void Designer::moveSelected(int delta) {
@@ -676,10 +1005,10 @@ void Designer::moveSelected(int delta) {
 }
 
 void Designer::undo() {
-    if (m_doc.undo()) { rebuild(); setStatus("Undo"); }
+    if (m_doc.undo()) { m_multi.clear(); rebuild(); setStatus("Undo"); }
 }
 void Designer::redo() {
-    if (m_doc.redo()) { rebuild(); setStatus("Redo"); }
+    if (m_doc.redo()) { m_multi.clear(); rebuild(); setStatus("Redo"); }
 }
 
 } // namespace fuse::ui::designer

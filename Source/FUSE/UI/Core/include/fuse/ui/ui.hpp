@@ -269,6 +269,9 @@ public:
     bool pointerDown(Vec2 p, MouseButton b = MouseButton::Left);
     bool pointerUp(Vec2 p, MouseButton b = MouseButton::Left);
     bool wheel(Vec2 p, Vec2 notches);
+    /// Modifier state (kMod*) stamped on pointer events; platform layers update it on every modifier change.
+    void setModifiers(u8 mods) { m_mods = mods; }
+    u8 modifiers() const { return m_mods; }
     bool keyDown(Key k, u8 mods = 0);
     bool keyUp(Key k, u8 mods = 0);
     bool textInput(std::string_view utf8);
@@ -396,6 +399,7 @@ private:
     ClipboardHooks m_clipboard;
     std::string m_localClipboard;
     Vec2 m_pointer{-1.f, -1.f};
+    u8 m_mods = 0;
     struct ScrollDrag { NodeHandle node; u8 axis = 0; f32 grab = 0.f; } m_scrollDrag;
     std::vector<u32> m_path;
     std::vector<u32> m_scratchOrder;

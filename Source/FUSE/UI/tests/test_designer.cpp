@@ -88,6 +88,40 @@ int main(int argc, char** argv) {
     UI_CHECK_EQ(d.save(), s1);
     for (int i = 0; i < undos; ++i) UI_CHECK(d.redo());
     UI_CHECK(d.findId("mute") == dz::DesignDocument::kNone && d.prop(d.findId("label1"), "text") == "Hello");
+    // reparent / insertAt / removeMany / style sheet
+    {
+        dz::DesignDocument m;
+        UI_CHECK(m.load(R"({"fuseui":1,"root":{"class":"panel","id":"r","children":[
+            {"class":"panel","id":"a","children":[{"class":"label","id":"a1"},{"class":"label","id":"a2"}]},
+            {"class":"panel","id":"b"},{"class":"button","id":"c"}]}})"));
+        const std::string base = m.save();
+        UI_CHECK(m.reparent(m.findId("c"), m.findId("a"), 1) != dz::DesignDocument::kNone);
+        UI_CHECK(m.parentOf(m.findId("c")) == m.findId("a") && m.childSlot(m.findId("c")) == 1u);
+        // into a later sibling's subtree (the target's path shifts after the erase)
+        UI_CHECK(m.reparent(m.findId("a"), m.findId("b"), 0) != dz::DesignDocument::kNone);
+        UI_CHECK(m.parentOf(m.findId("a")) == m.findId("b") && m.childCount(m.findId("a")) == 3u);
+        UI_CHECK(m.reparent(m.findId("b"), m.findId("a1"), 0) == dz::DesignDocument::kNone); // leaf
+        UI_CHECK(m.reparent(m.findId("b"), m.findId("a"), 0) == dz::DesignDocument::kNone);  // own subtree
+        UI_CHECK(m.reparent(0, m.findId("b"), 0) == dz::DesignDocument::kNone);              // root
+        // same parent, later slot
+        UI_CHECK(m.reparent(m.findId("a1"), m.findId("a"), 3) != dz::DesignDocument::kNone);
+        UI_CHECK(m.childSlot(m.findId("a1")) == 2u);
+        const u32 ins = m.insertAt(m.findId("b"), 0, "slider");
+        UI_CHECK(ins != dz::DesignDocument::kNone && m.childSlot(ins) == 0u && m.parentOf(ins) == m.findId("b"));
+        UI_CHECK(m.insertAt(m.findId("a2"), 0, "label") == dz::DesignDocument::kNone);
+        UI_CHECK_EQ(m.removeMany({m.findId("a"), m.findId("a2"), m.findId("slider1"), 0}), 2u); // a2 under a; root skipped
+        UI_CHECK(m.findId("a2") == dz::DesignDocument::kNone && m.findId("slider1") == dz::DesignDocument::kNone);
+        UI_CHECK(m.setStyleSheet(".x { gap: 2px; }") && m.styleSheet() == ".x { gap: 2px; }");
+        UI_CHECK(!m.setStyleSheet(".x { gap: 2px; }"));
+        m.beginBatch();
+        m.setProp(m.findId("b"), "text", [] { doc::JsonValue v; v.type = doc::JsonValue::Type::String; v.string = "t"; return v; }());
+        m.setProp(m.findId("r"), "text", [] { doc::JsonValue v; v.type = doc::JsonValue::Type::String; v.string = "t"; return v; }());
+        m.endBatch();
+        int steps = 0;
+        while (m.undo()) ++steps;
+        UI_CHECK_EQ(steps, 7); // 3 reparents + insert + removeMany + style + one batch
+        UI_CHECK_EQ(m.save(), base);
+    }
     UI_CHECK(!d.load("{ \"root\": [1, 2] }", &err) && !err.empty());
     UI_CHECK(!d.load("{ \"fuseui\": 1, ", &err) && err.find("line") == 0);
 
@@ -146,10 +180,86 @@ int main(int argc, char** argv) {
     UI_CHECK(d3.load(saved));
     UI_CHECK_EQ(d3.save(), saved);
     UI_CHECK(saved.find("\"text\": \"Apply\"") != std::string::npos);
-    // select the edited button for the screenshot
+    // ---- drag-to-place: drag the "save" button above the "hp" label
+    {
+        step(ui);
+        const NodeHandle sb = de.canvasNode(de.document().findId("save"));
+        const NodeHandle hp = de.canvasNode(de.document().findId("hp"));
+        const Rect hr = ui.rect(hp);
+        const Vec2 from = ctr(ui.rect(sb)), to{hr.x + 4.f, hr.y + 1.f};
+        int clicks = 0;
+        ui.connect(sb, SignalKind::Clicked, [&clicks](UiContext&, NodeHandle, const SignalArgs&) { ++clicks; });
+        ui.pointerMove(from); ui.pointerDown(from);
+        for (int k = 1; k <= 6; ++k) { ui.pointerMove({from.x + (to.x - from.x) * k / 6.f, from.y + (to.y - from.y) * k / 6.f}); step(ui); }
+        UI_CHECK(de.dragging());
+        ui.pointerUp(to); step(ui);
+        UI_CHECK_EQ(clicks, 0);
+        const u32 s2 = de.document().findId("save");
+        UI_CHECK(de.document().parentOf(s2) == 0u && de.document().childSlot(s2) == 0u);
+        UI_CHECK_EQ(de.selected(), s2);
+        de.undo();
+        UI_CHECK(de.document().childSlot(de.document().findId("save")) > 0u);
+        de.redo();
+    }
+    // ---- palette drag: drag "checkbox" from the palette onto the canvas below the last child
+    {
+        const NodeHandle pal = de.palette();
+        const Rect pr = ui.rect(pal);
+        const Vec2 from{pr.x + 30.f, pr.y + 4.f + 16.f * 3.5f}; // 4th row ("checkbox"), rows ~16px
+        ui.pointerMove(from); ui.pointerDown(from); ui.pointerUp(from); step(ui); // select the row first
+        const std::string picked(w::listItem(ui, pal, u32(ui.value(pal))));
+        const Rect rr = ui.rect(de.canvasNode(0));
+        const Vec2 to{rr.x + rr.w * 0.5f, rr.y + rr.h - 3.f};
+        ui.pointerDown(from);
+        for (int k = 1; k <= 6; ++k) { ui.pointerMove({from.x + (to.x - from.x) * k / 6.f, from.y + (to.y - from.y) * k / 6.f}); step(ui); }
+        ui.pointerUp(to); step(ui);
+        const u32 added = de.selected();
+        UI_CHECK(std::string(de.document().node(added)->cls()) == picked);
+        UI_CHECK(de.document().parentOf(added) == 0u && de.document().childSlot(added) + 1u == de.document().childCount(0));
+        UI_CHECK(ui.alive(de.canvasNode(added)));
+    }
+    // ---- multi-select: Ctrl+click two widgets, one property edit applies to both, one undo reverts both
+    {
+        const u32 vol = de.document().findId("vol"), hp = de.document().findId("hp");
+        click(ui, ctr(ui.rect(de.canvasNode(vol))));
+        const Vec2 p = ctr(ui.rect(de.canvasNode(hp)));
+        ui.pointerMove(p);
+        ui.setModifiers(kModCtrl);
+        ui.pointerDown(p); ui.pointerUp(p); step(ui);
+        ui.setModifiers(0);
+        UI_CHECK_EQ(de.selection().size(), std::size_t(2));
+        UI_CHECK(ui.hasClass(de.canvasNode(vol), "dsel") && ui.hasClass(de.canvasNode(hp), "dsel"));
+        UI_CHECK(de.setProperty("margin", "4px"));
+        UI_CHECK(de.document().prop(de.document().findId("vol"), "style.margin") == "4px");
+        UI_CHECK(de.document().prop(de.document().findId("hp"), "style.margin") == "4px");
+        UI_CHECK_EQ(de.selection().size(), std::size_t(2));
+        de.undo();
+        UI_CHECK(de.document().prop(de.document().findId("vol"), "style.margin").empty());
+        UI_CHECK(de.document().prop(de.document().findId("hp"), "style.margin").empty());
+        de.redo();
+        // shift-click toggles one off again
+        de.select(de.document().findId("vol"));
+        de.select(de.document().findId("hp"), true);
+        de.select(de.document().findId("hp"), true);
+        UI_CHECK_EQ(de.selection().size(), std::size_t(1));
+    }
+    // ---- style sheet editing
+    {
+        const std::string css = de.document().styleSheet() + " .hp { color: #66ddff; font-size: 18px; }";
+        w::codeEditSetText(ui, de.styleEditor(), css);
+        ui.find("designer.applystyle");
+        click(ui, ctr(ui.rect(ui.find("designer.applystyle"))));
+        UI_CHECK_EQ(de.document().styleSheet(), css);
+        UI_CHECK(de.text().find("#66ddff") != std::string::npos);
+        UI_CHECK(ui.rect(de.canvasNode(de.document().findId("hp"))).h >= 18.f);
+    }
+    // select the edited button for the screenshot (plus the label, multi-select)
     de.select(de.document().findId("save"));
+    de.select(de.document().findId("hp"), true);
     step(ui);
 
+    // the side columns fill the body height
+    UI_CHECK(ui.rect(ui.find("designer.outline")).y + ui.rect(ui.find("designer.outline")).h > ui.rect(ui.find("designer.body")).y + ui.rect(ui.find("designer.body")).h - 12.f);
     if (!out.empty()) {
         ui.update();
         Image img;

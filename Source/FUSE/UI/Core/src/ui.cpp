@@ -1176,7 +1176,7 @@ bool UiContext::pointerMove(Vec2 p) {
     NodeHandle h = hitTest(p);
     if (node(m_modal) && h.valid() && !inScope(h.index, m_modal.index)) h = {};
     setHover(h.valid() ? h.index : kNone);
-    Event e; e.type = EventType::PointerMove; e.pos = p;
+    Event e; e.type = EventType::PointerMove; e.pos = p; e.mods = m_mods;
     if (node(m_pressed)) return dispatch(m_pressed.index, e) || true;
     if (h.valid() && h != m_root) { dispatch(h.index, e); return true; }
     return node(m_modal) != nullptr;
@@ -1214,7 +1214,7 @@ bool UiContext::pointerDown(Vec2 p, MouseButton b) {
         while (f != kNone && !focusableNode(f)) f = m_nodes[f].parent;
         setFocus(handleOf(f), FocusReason::Pointer);
     }
-    Event e; e.type = EventType::PointerDown; e.pos = p; e.button = b;
+    Event e; e.type = EventType::PointerDown; e.pos = p; e.button = b; e.mods = m_mods;
     dispatch(target, e);
     return true;
 }
@@ -1230,7 +1230,7 @@ bool UiContext::pointerUp(Vec2 p, MouseButton b) {
     if (!node(pr) || b != MouseButton::Left) {
         const NodeHandle h = hitTest(p);
         if (h.valid() && h != m_root) {
-            Event e; e.type = EventType::PointerUp; e.pos = p; e.button = b;
+            Event e; e.type = EventType::PointerUp; e.pos = p; e.button = b; e.mods = m_mods;
             dispatch(h.index, e);
             return true;
         }
@@ -1238,14 +1238,14 @@ bool UiContext::pointerUp(Vec2 p, MouseButton b) {
     }
     m_pressed = {};
     setState(pr, kStatePressed, false);
-    Event e; e.type = EventType::PointerUp; e.pos = p; e.button = b;
+    Event e; e.type = EventType::PointerUp; e.pos = p; e.button = b; e.mods = m_mods;
     dispatch(pr.index, e);
     const NodeHandle h = hitTest(p);
     bool inside = false;
     for (u32 a = h.valid() ? h.index : kNone; a != kNone; a = m_nodes[a].parent)
         if (a == pr.index) { inside = true; break; }
     if (inside && node(pr) && !(m_nodes[pr.index].state & kStateDisabled)) {
-        Event c; c.type = EventType::Click; c.pos = p; c.button = b;
+        Event c; c.type = EventType::Click; c.pos = p; c.button = b; c.mods = m_mods;
         if (!dispatch(pr.index, c) && node(pr)) emit(pr, SignalKind::Clicked, {});
     }
     return true;
