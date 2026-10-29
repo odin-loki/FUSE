@@ -490,6 +490,107 @@ float ml_height_blend(float hBase, float hLayer, float m, float contrast) {
     return ml_saturate((hLayer - hBase + 2.0 * (2.0 * m - 1.0)) * contrast * 0.5 + 0.5);
 }
 
+// --- Procedural surface functions (FuseMat "procedural.function"; GLSL twin of renderer::ProceduralMaterials:
+// 1 wood, 2 brushed metal, 3 concrete). World-space, seed 0. -------------------------------------------------------
+uint ml_proc_hash(int3 c, uint seed) {
+    uint h = seed ^ 0x27D4EB2Fu;
+    for (int i = 0; i < 3; ++i) {
+        h ^= uint(c[i]) + 0x9E3779B9u + (h << 6) + (h >> 2);
+        h ^= h >> 16;
+        h *= 0x7FEB352Du;
+        h ^= h >> 15;
+        h *= 0x846CA68Bu;
+        h ^= h >> 16;
+    }
+    return h;
+}
+float ml_proc_grad(uint h, float3 p) {
+    switch (h % 12u) {
+    case 0u: return p.x + p.y;
+    case 1u: return -p.x + p.y;
+    case 2u: return p.x - p.y;
+    case 3u: return -p.x - p.y;
+    case 4u: return p.x + p.z;
+    case 5u: return -p.x + p.z;
+    case 6u: return p.x - p.z;
+    case 7u: return -p.x - p.z;
+    case 8u: return p.y + p.z;
+    case 9u: return -p.y + p.z;
+    case 10u: return p.y - p.z;
+    default: return -p.y - p.z;
+    }
+}
+float ml_proc_fade(float t) { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
+float ml_proc_perlin(float3 p, uint seed) {
+    const float3 fl = floor(p);
+    const int3 i = int3(fl);
+    const float3 x = p - fl;
+    const float n000 = ml_proc_grad(ml_proc_hash(i, seed), x);
+    const float n100 = ml_proc_grad(ml_proc_hash(i + int3(1, 0, 0), seed), x - float3(1, 0, 0));
+    const float n010 = ml_proc_grad(ml_proc_hash(i + int3(0, 1, 0), seed), x - float3(0, 1, 0));
+    const float n110 = ml_proc_grad(ml_proc_hash(i + int3(1, 1, 0), seed), x - float3(1, 1, 0));
+    const float n001 = ml_proc_grad(ml_proc_hash(i + int3(0, 0, 1), seed), x - float3(0, 0, 1));
+    const float n101 = ml_proc_grad(ml_proc_hash(i + int3(1, 0, 1), seed), x - float3(1, 0, 1));
+    const float n011 = ml_proc_grad(ml_proc_hash(i + int3(0, 1, 1), seed), x - float3(0, 1, 1));
+    const float n111 = ml_proc_grad(ml_proc_hash(i + int3(1, 1, 1), seed), x - float3(1, 1, 1));
+    const float u = ml_proc_fade(x.x);
+    const float v = ml_proc_fade(x.y);
+    const float w = ml_proc_fade(x.z);
+    return lerp(lerp(lerp(n000, n100, u), lerp(n010, n110, u), v), lerp(lerp(n001, n101, u), lerp(n011, n111, u), v), w);
+}
+float ml_proc_fbm(float3 p, uint octaves, uint seed) {
+    float sum = 0.0;
+    float amplitude = 0.5;
+    float norm = 0.0;
+    for (uint i = 0u; i < octaves; ++i) {
+        sum += amplitude * ml_proc_perlin(p, seed + i * 0x632BE5ABu);
+        norm += amplitude;
+        amplitude *= 0.5;
+        p *= 2.0;
+    }
+    return norm > 0.0 ? sum / norm : 0.0;
+}
+float3 ml_proc_seed_offset(uint seed) {
+    const uint h0 = ml_proc_hash(int3(int(seed), 17, 31), 0x9E3779B9u);
+    const uint h1 = ml_proc_hash(int3(int(seed), 53, 7), 0x85EBCA6Bu);
+    const uint h2 = ml_proc_hash(int3(int(seed), 3, 97), 0xC2B2AE35u);
+    return float3(float(h0 & 0xFFFFu), float(h1 & 0xFFFFu), float(h2 & 0xFFFFu)) * (128.0 / 65535.0) - 64.0;
+}
+// Returns false for an unknown id (the material keeps its constants / textures).
+bool ml_procedural(uint id, float3 worldPos, inout float3 albedo, inout float roughness, inout float metallic) {
+    const uint seed = 0u;
+    const float3 p = worldPos + ml_proc_seed_offset(seed);
+    if (id == 1u) {
+        const float warp = ml_proc_perlin(p * 0.3, seed) * 1.5;
+        const float radius = sqrt(p.x * p.x + p.z * p.z) + warp;
+        const float ring = sin(radius * 6.2831853 * 4.0) * 0.5 + 0.5;
+        const float grain = ml_proc_fbm(float3(p.x * 10.0, p.y * 1.5, p.z * 10.0), 4u, seed ^ 0xA511E9B3u);
+        albedo = clamp(float3(0.6 + ring * 0.3, 0.35 + ring * 0.15, 0.1 + ring * 0.05) * (1.0 + grain * 0.15), 0.0, 1.0);
+        roughness = clamp(0.6 + grain * 0.1, 0.05, 1.0);
+        metallic = 0.0;
+        return true;
+    }
+    if (id == 2u) {
+        const float streak = ml_proc_fbm(float3(p.x * 2.0, p.y * 60.0, p.z * 60.0), 3u, seed);
+        const float smudge = ml_proc_fbm(p * 1.5, 3u, seed ^ 0x5BD1E995u);
+        albedo = clamp(float3(0.91, 0.92, 0.92) * (1.0 + streak * 0.06 + smudge * 0.04), 0.0, 1.0);
+        roughness = clamp(0.25 + streak * 0.08 + smudge * 0.1, 0.05, 1.0);
+        metallic = 1.0;
+        return true;
+    }
+    if (id == 3u) {
+        const float base = ml_proc_fbm(p * 4.0, 5u, seed);
+        const float stain = ml_proc_fbm(p * 0.5, 3u, seed ^ 0x1B873593u);
+        const float pores = smoothstep(0.25, 0.45, ml_proc_perlin(p * 40.0, seed ^ 0xCC9E2D51u));
+        const float grey = 0.5 + base * 0.1 + stain * 0.08;
+        albedo = clamp(lerp(float3(grey, grey * 0.98, grey * 0.95), float3(0.2, 0.2, 0.19), pores * 0.6), 0.0, 1.0);
+        roughness = clamp(0.88 + base * 0.06 + pores * 0.05, 0.05, 1.0);
+        metallic = 0.0;
+        return true;
+    }
+    return false;
+}
+
 MlResult ml_evaluate_grad(MlView v, MlSurface s, MlGrad g) {
     MlFrame f;
     f.duvdx = g.duvdx;
@@ -536,6 +637,10 @@ MlResult ml_evaluate_grad(MlView v, MlSurface s, MlGrad g) {
     float roughness = m.roughness * base.roughness;
     float metallic = m.metallic;
     float ao = base.ao;
+    if (m.procedural != 0u) {
+        // Procedural surface (GLSL twin: ml_common.glsl): replaces the constant / texture base.
+        ml_procedural(m.procedural, f.P, albedo, roughness, metallic);
+    }
     float3 N = base.normal;
     if ((m.flags & ML_FLAG_MACRO) != 0u) {
         const float n = ml_value_noise(f.P * m.macroScale, 0x2545f491u);

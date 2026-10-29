@@ -204,7 +204,11 @@ void attachEmbedWorldsToHybrid(RuntimeViewportHeadlessGpuStub* gpu, RuntimeEmbed
 
     fuse::hybrid::DimensionFlags flags = fuse::project::toDimensionFlags(manifest.dimensions);
     if (!session.worldLoaded) {
-        flags.enable3D = true; // no project: the editor scene is a 3D scene
+        // No project: the editor scene is a pure 3D scene. The composer's UI flag would draw its white placeholder
+        // UI marker quad (top centre) over the viewport, and there is no 2D world to show.
+        flags.enable3D = true;
+        flags.enable2D = false;
+        flags.enableUI = false;
     }
     gpu->hybrid->composer().setProjectFlags(flags);
     gpu->embedWorld3D.setClearColor(0.08f, 0.12f, 0.18f);

@@ -513,16 +513,50 @@ int runGolden() {
 /// Texture / shader material path: the cube's material samples a decoded RGBA8 checker (green / blue, through the
 /// HybridSceneRenderer texture loader and its layered-material registry), the floor runs the procedural concrete
 /// shader. The cube centre must show the texture (green or blue dominant), not the flat red-ish base colour.
+struct FloorPatch {
+    f32 mean[3] = {0.f, 0.f, 0.f};
+    f32 variance = 0.f; ///< luminance variance over the patch (procedural detail)
+};
+
+int runMaterialOnce(u32 floorShader, FloorPatch* floorOut);
+
+/// Wood (1), metal (2) and concrete (3) on the floor: each run must draw both layered rows and the textured cube;
+/// the three floors must differ from each other (distinct procedural functions ran).
 int runMaterial() {
     if (const int rc = configureValidation(false); rc != 0) {
         return rc;
     }
     fuse::core::initialize();
+    FloorPatch patches[3];
+    for (u32 i = 0; i < 3u; ++i) {
+        if (const int rc = runMaterialOnce(i + 1u, &patches[i]); rc != 0) {
+            fuse::core::shutdown();
+            return rc;
+        }
+        std::printf("material: floor shader %u mean %.1f %.1f %.1f, luma variance %.2f\n", i + 1u, patches[i].mean[0],
+                    patches[i].mean[1], patches[i].mean[2], patches[i].variance);
+    }
+    for (u32 a = 0; a < 3u; ++a) {
+        for (u32 b = a + 1u; b < 3u; ++b) {
+            f32 d = 0.f;
+            for (u32 c = 0; c < 3u; ++c) {
+                d += std::fabs(patches[a].mean[c] - patches[b].mean[c]);
+            }
+            d += std::fabs(patches[a].variance - patches[b].variance) * 0.1f;
+            std::printf("material: floor %u vs %u differ by %.2f\n", a + 1u, b + 1u, d);
+            expect(d > 3.f, "procedural floors (wood / metal / concrete) render differently");
+        }
+    }
+    fuse::core::shutdown();
+    return 0;
+}
+
+int runMaterialOnce(u32 floorShader, FloorPatch* floorOut) {
     Scene scene;
     buildScene(scene);
     world3d::RenderMaterial3D floor{};
     floor.baseColor[0] = floor.baseColor[1] = floor.baseColor[2] = 0.7f;
-    floor.shader = 3u; // concrete
+    floor.shader = floorShader;
     world3d::RenderMaterial3D cube{};
     cube.baseColor[0] = cube.baseColor[1] = cube.baseColor[2] = 1.f;
     cube.roughness = 0.6f;
@@ -540,7 +574,6 @@ int runMaterial() {
     runtime->runFrame(ctx);
     if (const int rc = requireGpu(*runtime); rc != 0) {
         runtime->shutdown();
-        fuse::core::shutdown();
         return rc;
     }
     if (runtime->gpuScene() != nullptr) {
@@ -590,9 +623,51 @@ int runMaterial() {
         std::printf("material: cube centre (%u, %u) = %u %u %u, %u / %u texel-coloured samples\n", cx, cy, p[0], p[1],
                     p[2], tex, n);
         expect(tex * 2u > n, "cube shows the green / blue checker texture");
+        if (const char* dump = std::getenv("FUSE_MATERIAL_DUMP")) {
+            const std::string path = std::string(dump) + "_" + std::to_string(floorShader) + ".ppm";
+            if (FILE* fp = std::fopen(path.c_str(), "wb")) {
+                std::fprintf(fp, "P6\n%u %u\n255\n", kWidth, kHeight);
+                for (usize i = 0; i < static_cast<usize>(kWidth) * kHeight; ++i) {
+                    std::fwrite(px + i * 4u, 1, 3, fp);
+                }
+                std::fclose(fp);
+            }
+        }
+        // Floor patch in front of the cube.
+        const f32 floorPoint[3] = {-1.2f, 0.f, -0.8f};
+        u32 fx = 0, fy = 0;
+        if (floorOut != nullptr && project(scene.world3D.camera(), floorPoint, kWidth, kHeight, fx, fy)) {
+            f32 sum[3] = {0.f, 0.f, 0.f};
+            f32 l2 = 0.f, l1 = 0.f;
+            u32 m = 0;
+            for (int dy = -8; dy <= 8; ++dy) {
+                for (int dx = -8; dx <= 8; ++dx) {
+                    const int x = static_cast<int>(fx) + dx, y = static_cast<int>(fy) + dy;
+                    if (x < 0 || y < 0 || x >= static_cast<int>(kWidth) || y >= static_cast<int>(kHeight)) {
+                        continue;
+                    }
+                    const u8* q = px + (static_cast<usize>(y) * kWidth + static_cast<usize>(x)) * 4u;
+                    const f32 l = 0.2126f * q[0] + 0.7152f * q[1] + 0.0722f * q[2];
+                    for (u32 c = 0; c < 3u; ++c) {
+                        sum[c] += q[c];
+                    }
+                    l1 += l;
+                    l2 += l * l;
+                    ++m;
+                }
+            }
+            if (m > 0u) {
+                for (u32 c = 0; c < 3u; ++c) {
+                    floorOut->mean[c] = sum[c] / static_cast<f32>(m);
+                }
+                const f32 mean = l1 / static_cast<f32>(m);
+                floorOut->variance = l2 / static_cast<f32>(m) - mean * mean;
+            }
+        } else {
+            expect(false, "floor patch projects into the frame");
+        }
     }
     runtime->shutdown();
-    fuse::core::shutdown();
     return 0;
 }
 
