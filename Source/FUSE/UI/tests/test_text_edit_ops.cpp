@@ -46,6 +46,12 @@ int main() {
         {U"#\uFE0F\u20E3", 1, "keycap"},
         {U"\u0600a", 1, "Prepend (GB9b)"},
         {U"\u0915\u093F", 1, "Devanagari spacing mark (GB9a)"},
+        {U"\u0915\u094D\u0937\u093F", 1, "Devanagari conjunct ksha + i (GB9c)"},
+        {U"\u0928\u092E\u0938\u094D\u0924\u0947", 3, "namaste: na | ma | ste"},
+        {U"\u0915\u094D\u200D\u0937", 1, "virama + ZWJ still links (GB9c)"},
+        {U"\u0915\u093F\u0937", 2, "no linker: no conjunct"},
+        {U"a\u094D\u0915", 2, "linker after a non-consonant does not link"},
+        {U"\u0995\u09CD\u09B7", 1, "Bengali conjunct"},
         {U"\u0E01\u0E33", 1, "Thai SARA AM (SpacingMark)"},
         {U"\U0001F3F4\U000E0067\U000E0062\U000E0073\U000E0063\U000E0074\U000E007F", 1, "tag sequence flag"},
     };

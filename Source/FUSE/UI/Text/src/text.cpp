@@ -206,9 +206,22 @@ struct ClusterState {
     std::uint32_t riRun = 0;        // regional indicators since the last non-RI
     bool pictSeq = false; // ExtPict Extend* seen (GB11 left side)
     bool pictZwj = false; // ... followed by ZWJ
+    std::uint8_t incb = 0; // GB9c: 1 after InCB=Consonant [Extend Linker]*, 2 once a Linker was seen
+};
+// Indic_Conjunct_Break (Unicode 15.1, DerivedCoreProperties): Linkers are the viramas of Devanagari, Bengali,
+// Gujarati, Oriya, Telugu and Malayalam; Consonants are those scripts' consonant letters.
+bool incbLinker(char32_t c) {
+    return c == 0x094D || c == 0x09CD || c == 0x0ACD || c == 0x0B4D || c == 0x0C4D || c == 0x0D4D;
+}
+constexpr CpRange kIncbConsonant[] = {
+    {0x0915, 0x0939}, {0x0958, 0x095F}, {0x0978, 0x097F}, {0x0995, 0x09A8}, {0x09AA, 0x09B0}, {0x09B2, 0x09B2},
+    {0x09B6, 0x09B9}, {0x09DC, 0x09DD}, {0x09DF, 0x09DF}, {0x09F0, 0x09F1}, {0x0A95, 0x0AA8}, {0x0AAA, 0x0AB0},
+    {0x0AB2, 0x0AB3}, {0x0AB5, 0x0AB9}, {0x0AF9, 0x0AF9}, {0x0B15, 0x0B28}, {0x0B2A, 0x0B30}, {0x0B32, 0x0B33},
+    {0x0B35, 0x0B39}, {0x0B5C, 0x0B5D}, {0x0B5F, 0x0B5F}, {0x0B71, 0x0B71}, {0x0C15, 0x0C28}, {0x0C2A, 0x0C39},
+    {0x0C58, 0x0C5A}, {0x0D15, 0x0D3A},
 };
 // true when there is a boundary before `cur` given the state after the previous code point
-bool breakBefore(const ClusterState& st, GB cur) {
+bool breakBefore(const ClusterState& st, GB cur, char32_t cp) {
     if (st.first) return true;                                         // GB1
     const GB p = st.prev;
     if (p == GB::CR && cur == GB::LF) return false;                     // GB3
@@ -220,11 +233,15 @@ bool breakBefore(const ClusterState& st, GB cur) {
     if (cur == GB::Extend || cur == GB::ZWJ) return false;             // GB9
     if (cur == GB::SpacingMark) return false;                          // GB9a
     if (p == GB::Prepend) return false;                                // GB9b
+    if (st.incb == 2 && inRanges(kIncbConsonant, cp)) return false;     // GB9c
     if (p == GB::ZWJ && cur == GB::ExtPict && st.pictZwj) return false; // GB11
     if (p == GB::RegionalIndicator && cur == GB::RegionalIndicator && (st.riRun % 2) == 1) return false; // GB12/13
     return true;                                                       // GB999
 }
-void advance(ClusterState& st, GB cur) {
+void advance(ClusterState& st, GB cur, char32_t cp) {
+    if (inRanges(kIncbConsonant, cp)) st.incb = 1;
+    else if (st.incb && incbLinker(cp)) st.incb = 2;
+    else if (!(st.incb && (cur == GB::Extend || cur == GB::ZWJ))) st.incb = 0;
     st.riRun = cur == GB::RegionalIndicator ? st.riRun + 1 : 0;
     if (cur == GB::ExtPict) { st.pictSeq = true; st.pictZwj = false; }
     else if (cur == GB::Extend && st.pictSeq) {}
@@ -268,9 +285,10 @@ std::size_t nextBoundary(std::string_view s, std::size_t i) {
     std::size_t at = lineStart(s, i);
     while (at < s.size()) {
         std::size_t nx = at;
-        const GB g = graphemeBreakProperty(decodeUtf8(s, nx));
-        if (at > i && breakBefore(st, g)) return at;
-        advance(st, g);
+        const char32_t cp = decodeUtf8(s, nx);
+        const GB g = graphemeBreakProperty(cp);
+        if (at > i && breakBefore(st, g, cp)) return at;
+        advance(st, g, cp);
         at = nx;
     }
     return s.size();
@@ -285,9 +303,10 @@ std::size_t prevBoundary(std::string_view s, std::size_t i) {
     std::size_t at = lineStart(s, i - 1), last = at;
     while (at < i) {
         std::size_t nx = at;
-        const GB g = graphemeBreakProperty(decodeUtf8(s, nx));
-        if (breakBefore(st, g)) last = at;
-        advance(st, g);
+        const char32_t cp = decodeUtf8(s, nx);
+        const GB g = graphemeBreakProperty(cp);
+        if (breakBefore(st, g, cp)) last = at;
+        advance(st, g, cp);
         at = nx;
     }
     return last;
@@ -297,9 +316,10 @@ std::size_t graphemeCount(std::string_view s) {
     std::size_t n = 0;
     ClusterState st;
     for (std::size_t at = 0; at < s.size();) {
-        const GB g = graphemeBreakProperty(decodeUtf8(s, at));
-        if (breakBefore(st, g)) ++n;
-        advance(st, g);
+        const char32_t cp = decodeUtf8(s, at);
+        const GB g = graphemeBreakProperty(cp);
+        if (breakBefore(st, g, cp)) ++n;
+        advance(st, g, cp);
     }
     return n;
 }
