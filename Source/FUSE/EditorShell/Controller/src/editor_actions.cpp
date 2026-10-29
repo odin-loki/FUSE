@@ -33,6 +33,7 @@ constexpr std::array<ActionDesc, static_cast<usize>(ActionId::Count)> kActions{{
     {A::PlayResume, "play.resume", "Play", "Resume", "F7", "fuseActionResume", false, true},
     {A::PlayStep, "play.step", "Play", "Step", "F10", "fuseActionStep", false, true},
     {A::PlayStop, "play.stop", "Play", "Stop", "Shift+F5", "fuseActionStop", false, true},
+    {A::PlayMaximizeOnPlay, "play.maximize_on_play", "Play", "Maximize Viewport on Play", "", "fuseActionMaximizeOnPlay", true, false},
     {A::ViewResetLayout, "view.reset_layout", "View", "Reset Layout", "", "fuseActionResetLayout", true, false},
     {A::ViewModeLit, "view.mode_lit", "View", "View Mode: Lit", "Alt+1", "fuseActionViewLit", true, false},
     {A::ViewModeUnlit, "view.mode_unlit", "View", "View Mode: Unlit", "Alt+2", "fuseActionViewUnlit", false, false},

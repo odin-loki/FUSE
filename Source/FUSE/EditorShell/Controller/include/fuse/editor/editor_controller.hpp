@@ -270,6 +270,9 @@ public:
     /// View > Show All Colliders: collider wireframes of every entity (selected entities always show theirs).
     void setShowAllColliders(bool on);
     [[nodiscard]] bool showAllColliders() const { return m_showAllColliders; }
+    /// Play > Maximize Viewport on Play (Qt): the shell hides the docks while playing; Stop restores them.
+    void setMaximizeOnPlay(bool on) { m_maximizeOnPlay = on; }
+    [[nodiscard]] bool maximizeOnPlay() const { return m_maximizeOnPlay; }
     /// View > Frame Selected (Qt frameSelection): moves the camera back along its forward to fit the selection.
     bool frameSelection();
     /// Collider drag handles of the primary selection (Qt viewport): Box faces (half extents), Sphere radius,
@@ -354,6 +357,7 @@ private:
     u64 m_gizmoVersion = 0;
     bool m_showMeshBounds = false;
     bool m_showAllColliders = false;
+    bool m_maximizeOnPlay = false;
     std::vector<std::string> m_recentProjects;
     std::string m_message;
     std::vector<ColliderHandleView> m_colliderHandleCache; ///< laid out at drag start

@@ -627,6 +627,21 @@ struct ViewportW {
         c.node = pc.node.index;
         dl.push(c);
         const ViewportOverlay& o = s->overlay;
+        if (o.frameWidth > 0.f) {
+            const Rect f = pc.content;
+            const f32 t = o.frameWidth;
+            const Color fc = pc.tint(o.frame);
+            dl.rect({f.x, f.y, f.w, t}, fc);
+            dl.rect({f.x, f.bottom() - t, f.w, t}, fc);
+            dl.rect({f.x, f.y, t, f.h}, fc);
+            dl.rect({f.right() - t, f.y, t, f.h}, fc);
+        }
+        if (!o.badge.empty()) {
+            const f32 fs = pc.style.fontSize, bw = pc.ui.measureString(o.badge, fs) + 16.f, bh = fs + 8.f;
+            const Rect b{pc.content.x + (pc.content.w - bw) * 0.5f, pc.content.y + 4.f + o.frameWidth, bw, bh};
+            dl.rect(b, pc.tint(o.badgeColor), 3.f);
+            pc.ui.paintString(dl, o.badge, b, pc.tint(o.badgeText), fs, TextAlignment::Center, pc.node.index);
+        }
         if (o.lines.empty() && o.dots.empty()) return;
         const Rect r = c.rect;
         const f32 sx = r.w / f32(s->w), sy = r.h / f32(s->h);

@@ -313,6 +313,44 @@ void gateTransport(Rig& r) {
     CHECK(r.v().transport == TransportState::Stopped);
 }
 
+std::string g_out;         // --out path (gates that write their own shot set g_shotWritten)
+bool g_shotWritten = false;
+void shot(Rig& r) {
+    if (!g_out.empty()) { r.win.rasterize({}); CHECK(r.win.writePng(g_out)); g_shotWritten = true; }
+}
+
+// Play-mode polish (Qt 2aff743ce): viewport frame + PLAYING / PAUSED badge, session clock, ticks, Maximize on Play.
+void gatePlayFrame(Rig& r) {
+    CHECK(r.shell.playBannerState() == 0 && w::viewportOverlay(r.ui(), r.shell.viewportNode()).frameWidth == 0.f);
+    CHECK(r.shell.menuItemIndex("Play", ActionId::PlayMaximizeOnPlay) >= 0);
+    CHECK(r.c.trigger(ActionId::PlayMaximizeOnPlay) && r.c.maximizeOnPlay());
+    r.frames();
+    const float vpW0 = r.ui().rect(r.shell.viewportNode()).w;
+    CHECK(r.c.trigger(ActionId::PlayPlay));
+    const auto t0 = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds(600)) { r.c.tick(1); r.frames(); }
+    const auto& o = w::viewportOverlay(r.ui(), r.shell.viewportNode());
+    CHECK(r.shell.playBannerState() == 1 && o.frameWidth > 0.f && o.badge.rfind("PLAYING", 0) == 0);
+    CHECK(r.shell.playElapsedMs() >= 400.0 && r.shell.playTicks() > 0);
+    CHECK(r.shell.viewportMaximized() && r.ui().rect(r.shell.viewportNode()).w > vpW0 + 100.f);
+    r.frames(2);
+    shot(r);
+    CHECK(r.c.trigger(ActionId::PlayPause));
+    r.frames(2);
+    CHECK(r.shell.playBannerState() == 2 && w::viewportOverlay(r.ui(), r.shell.viewportNode()).badge.rfind("PAUSED", 0) == 0);
+    const double frozen = r.shell.playElapsedMs();
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    r.frames();
+    CHECK(r.shell.playElapsedMs() == frozen);
+    const std::string badge = r.shell.playBadge();
+    CHECK(r.c.trigger(ActionId::PlayStop));
+    r.frames(2);
+    CHECK(r.shell.playBannerState() == 0 && !r.shell.viewportMaximized());
+    CHECK(w::viewportOverlay(r.ui(), r.shell.viewportNode()).frameWidth == 0.f);
+    CHECK(std::abs(r.ui().rect(r.shell.viewportNode()).w - vpW0) < 1.f);
+    std::printf("play_frame: %s\n", badge.c_str());
+}
+
 void gateInspector(Rig& r) {
     r.c.runEntityAction(ContextMenuAction::CreateSdfSphere);
     r.frames(2);
@@ -542,7 +580,6 @@ void gateAssetBrowser(Rig& r) {
     std::printf("asset_browser: %s\n", std::string(r.ui().text(r.ui().find("assets.info"))).c_str());
 }
 
-namespace { void shot(Rig& r); }
 
 // Asset browser polish (Qt 399b8de7b: grid, type filter, breadcrumb, status, context menu, rename / new folder).
 void gateAssetBrowserPolish(Rig& r) {
@@ -843,8 +880,6 @@ void gateSequencer(Rig& r) {
 }
 
 // ---- live 3D viewport (zero-copy) -------------------------------------------------------------------------------------
-std::string g_out;         // --out path (gates that write their own shot set g_shotWritten)
-bool g_shotWritten = false;
 
 [[noreturn]] void skip(const std::string& why) {
     std::printf("SKIP: %s\n", why.c_str());
@@ -1499,9 +1534,6 @@ std::size_t rowsLabelled(Rig& r, std::string_view label) {
     for (const auto& row : r.v().hierarchy) n += row.label == label;
     return n;
 }
-void shot(Rig& r) {
-    if (!g_out.empty()) { r.win.rasterize({}); CHECK(r.win.writePng(g_out)); g_shotWritten = true; }
-}
 } // namespace
 
 // Preferences shortcut rebinding (Qt PreferencesDialog: QKeySequenceEdit, conflicts, Reset, persisted per action).
@@ -1929,7 +1961,7 @@ int main(int argc, char** argv) {
         {"startup", gateStartup},        {"layout", gateLayout},           {"theme", gateTheme},
         {"fuse_api", gateFuseApi},       {"wasd", gateWasd},               {"context_menu", gateContextMenu}, {"context_menu_dpr1_5", gateContextMenuDpr15}, {"icon", gateIcon}, {"view_modes", gateViewModes}, {"preferences", gatePreferences}, {"navigation", gateNavigation}, {"terrain", gateTerrain}, {"shortcut_rebind", gateShortcutRebind}, {"recent_projects", gateRecentProjects}, {"entity_group", gateEntityGroup}, {"colliders", gateColliders}, {"open_script", gateOpenScript}, {"live_present", gateLivePresent},
         {"ui_frame", gateUiFrame},       {"idle_frames", gateIdle},        {"e15_console", gateConsole},
-        {"e15_transport", gateTransport}, {"e20_inspector", gateInspector}, {"e20_reparent", gateReparent},
+        {"e15_transport", gateTransport}, {"play_frame", gatePlayFrame}, {"e20_inspector", gateInspector}, {"e20_reparent", gateReparent},
         {"e20_file_menu", gateFileMenu}, {"e20_wizard", gateWizard}, {"project_open", gateProjectOpen},  {"project_hub", gateProjectHub}, {"asset_browser", gateAssetBrowser}, {"asset_browser_polish", gateAssetBrowserPolish},
         {"material_editor", gateMaterialEditor}, {"sdf_sculpt", gateSdfSculpt}, {"profiler", gateProfiler},
         {"sequencer", gateSequencer}, {"timeline", gateTimeline}, {"timeline_nav", gateTimelineNav},

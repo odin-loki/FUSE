@@ -1446,6 +1446,7 @@ bool EditorController::trigger(ActionId id) {
     case ActionId::EntityUngroup: return ungroupSelection();
     case ActionId::EntityOpenScript: return openScript();
     case ActionId::ViewShowColliders: setShowAllColliders(!m_showAllColliders); return true;
+    case ActionId::PlayMaximizeOnPlay: setMaximizeOnPlay(!m_maximizeOnPlay); return true;
     case ActionId::ViewFrameSelected: return frameSelection();
     case ActionId::EntityDelete: return runEntityAction(ContextMenuAction::Delete);
     case ActionId::PlayPlay: return transport(CommandKind::StartPlay);

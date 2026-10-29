@@ -335,6 +335,12 @@ struct ViewportOverlay {
     struct Dot { Vec2 center; f32 radius = 4.f; Color color; Color border{}; f32 borderWidth = 0.f; };
     std::vector<Line> lines;
     std::vector<Dot> dots;
+    /// Frame around the whole viewport (frameWidth > 0) and a centred top badge (badge non-empty), widget space:
+    /// the Qt play-mode frame (green PLAYING / amber PAUSED).
+    Color frame{};
+    f32 frameWidth = 0.f;
+    std::string badge;
+    Color badgeColor{}, badgeText{};
 };
 void viewportSetOverlay(UiContext& ui, NodeHandle vp, ViewportOverlay overlay);
 const ViewportOverlay& viewportOverlay(const UiContext& ui, NodeHandle vp);

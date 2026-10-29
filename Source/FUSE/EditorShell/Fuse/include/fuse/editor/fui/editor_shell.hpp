@@ -14,6 +14,7 @@
 
 #include "fuse/app/app.hpp"
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -106,6 +107,14 @@ public:
     [[nodiscard]] SceneViewportHost* sceneViewport() const { return m_scene; }
     [[nodiscard]] u32 sceneFrames() const { return m_sceneFrames; }
     [[nodiscard]] u32 syncCount() const { return m_syncs; }
+    /// Play-mode frame (Qt playBannerState): 0 none, 1 PLAYING (green), 2 PAUSED (amber); badge text, session clock
+    /// (runs only while unpaused) and game ticks since Play.
+    [[nodiscard]] int playBannerState() const { return m_playState; }
+    [[nodiscard]] std::string playBadge() const;
+    [[nodiscard]] f64 playElapsedMs() const;
+    [[nodiscard]] u32 playTicks() const { return m_playTicks; }
+    /// True while Maximize Viewport on Play has the docks hidden.
+    [[nodiscard]] bool viewportMaximized() const { return m_maximized; }
     /// Menu line -> action / recent index mapping, for gates that drive the menus by item index.
     [[nodiscard]] i32 menuItemIndex(std::string_view menu, ActionId id) const;
     [[nodiscard]] NodeHandle menuNode(std::string_view menu) const;
@@ -188,6 +197,12 @@ private:
     bool m_keysHeld = false;
     f32 m_lastSyncMs = 0.f;
     bool m_frameTick = false;
+    void syncPlayState_();
+    int m_playState = 0;
+    bool m_maximized = false;
+    f64 m_playAccumMs = 0.0;
+    u32 m_playTicks = 0, m_playLastTick = 0;
+    std::chrono::steady_clock::time_point m_playClock{};
     std::unique_ptr<EditorPanels> m_models;
     std::unique_ptr<class ShellPanelPages> m_pages;
 };

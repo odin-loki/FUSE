@@ -389,7 +389,7 @@ void EditorShellWindow::syncMenus_() {
     const EditorViewState& v = m_c.viewState();
     std::string key = v.undoLabel + '\x1f' + v.redoLabel;
     for (const std::string& r : v.recentFiles) key += '\x1f' + r;
-    key += '\x1f' + std::to_string(int(m_c.viewMode())) + (m_c.showMeshBounds() ? "b" : "") + (m_c.showAllColliders() ? "c" : "");
+    key += '\x1f' + std::to_string(int(m_c.viewMode())) + (m_c.showMeshBounds() ? "b" : "") + (m_c.showAllColliders() ? "c" : "") + (m_c.maximizeOnPlay() ? "m" : "");
     for (const std::string& r : v.recentProjects) key += "\x1fp" + r;
     for (const std::string& b : m_bindings) key += '\x1e' + b;
     if (key == m_menuKey) return;
@@ -415,6 +415,7 @@ void EditorShellWindow::syncMenus_() {
                 label = (int(m_c.viewMode()) == int(a.id) - int(ActionId::ViewModeLit) ? "[x] " : "[ ] ") + label;
             if (a.id == ActionId::ViewShowMeshBounds) label = (m_c.showMeshBounds() ? "[x] " : "[ ] ") + label;
             if (a.id == ActionId::ViewShowColliders) label = (m_c.showAllColliders() ? "[x] " : "[ ] ") + label;
+            if (a.id == ActionId::PlayMaximizeOnPlay) label = (m_c.maximizeOnPlay() ? "[x] " : "[ ] ") + label;
             if (!binding(a.id).empty()) label += "   (" + binding(a.id) + ")";
             add(label, i32(a.id));
             if (a.id == ActionId::FileOpenProject && !v.recentProjects.empty()) {
@@ -957,6 +958,8 @@ void EditorShellWindow::updateOverlay_() {
             key += "|nav" + std::to_string(nav.size()) + ":" + std::to_string(h);
         }
     }
+    syncPlayState_();
+    if (m_playState != 0) key += "|play" + playBadge();
     if (key == m_overlayKey) return;
     m_overlayKey = key;
     w::ViewportOverlay o;
@@ -1010,7 +1013,56 @@ void EditorShellWindow::updateOverlay_() {
             o.dots.push_back({{handles[i].x, handles[i].y}, 4.5f, active ? Color::rgb(0xFFE65A) : Color::rgb(0x78FF8C), Color::rgb(0x142814), 1.f});
         }
     }
+    // play-mode frame + badge (Qt setPlayBanner): green PLAYING / amber PAUSED, session clock and ticks
+    if (m_playState != 0) {
+        const Color c = m_playState == 2 ? Color::rgb(0xE6AA28) : Color::rgb(0x3CC864);
+        o.frame = c;
+        o.frameWidth = 4.f;
+        o.badge = playBadge();
+        o.badgeColor = c;
+        o.badgeText = Color::rgb(0x0F0F0F);
+    }
     w::viewportSetOverlay(m_ui, m_viewport, std::move(o));
+}
+
+void EditorShellWindow::syncPlayState_() {
+    const EditorViewState& v = m_c.viewState();
+    const int state = v.transport == TransportState::Playing ? 1 : v.transport == TransportState::Paused ? 2 : 0;
+    const auto now = std::chrono::steady_clock::now();
+    if (state != m_playState) {
+        if (m_playState == 1) m_playAccumMs += std::chrono::duration<f64, std::milli>(now - m_playClock).count();
+        if (state != 0 && m_playState == 0) {
+            m_playAccumMs = 0.0;
+            m_playTicks = 0;
+            m_playLastTick = v.gameTicks;
+            if (m_c.maximizeOnPlay()) {
+                m_maximized = true;
+                for (const DockSide side : kSides) m_ui.setCss(w::dockRegion(m_ui, m_dockArea, side), "display", "none");
+            }
+        }
+        if (state == 1) m_playClock = now;
+        if (state == 0 && m_maximized) {
+            m_maximized = false;
+            for (const DockSide side : kSides) m_ui.setCss(w::dockRegion(m_ui, m_dockArea, side), "display", "flex");
+        }
+        m_playState = state;
+    }
+    if (state != 0) {
+        if (v.gameTicks > m_playLastTick) m_playTicks += v.gameTicks - m_playLastTick; // Step counts too
+        m_playLastTick = v.gameTicks;
+    }
+}
+
+f64 EditorShellWindow::playElapsedMs() const {
+    return m_playAccumMs +
+           (m_playState == 1 ? std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - m_playClock).count() : 0.0);
+}
+
+std::string EditorShellWindow::playBadge() const {
+    if (m_playState == 0) return {};
+    char b[96];
+    std::snprintf(b, sizeof b, "%s  %.1f s  -  %u ticks", m_playState == 2 ? "PAUSED" : "PLAYING", playElapsedMs() / 1000.0, m_playTicks);
+    return b;
 }
 
 // ---- shortcuts ------------------------------------------------------------------------------------------------------
