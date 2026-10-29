@@ -87,6 +87,8 @@ u8 asciiKey(Key& k, u32 c) {
     case '7': k = Key::Num7; return 1;
     case '8': k = Key::Num8; return 1;
     case '9': k = Key::Num9; return 1;
+    case '[': k = Key::BracketLeft; return 1;
+    case ']': k = Key::BracketRight; return 1;
     default: return 0;
     }
 }
@@ -354,10 +356,12 @@ Key mapVk(WPARAM vk, bool& ascii) {
     case VK_F9: return Key::F9;
     case VK_F11: return Key::F11;
     case VK_F12: return Key::F12;
+    case VK_OEM_4: return Key::BracketLeft;
+    case VK_OEM_6: return Key::BracketRight;
     default: break;
     }
     Key k = Key::Other;
-    ascii = vk < 0x80 && asciiKey(k, u32(vk));
+    ascii = vk < 0x80 && vk != 0x5B && vk != 0x5D && asciiKey(k, u32(vk)); // 0x5B / 0x5D are VK_LWIN / VK_APPS, not [ ]
     return k;
 }
 u8 winMods() {

@@ -131,51 +131,163 @@ void ShellPanelPages::syncHub_() {
     m_ui.setValue(m_hubList, f32(cur));
 }
 
-// ---- Asset Browser --------------------------------------------------------------------------------------------------
+// ---- Asset Browser (Qt AssetBrowserWidget: grid / list, type filter, breadcrumb, status, context menu) -----------
 void ShellPanelPages::buildAssets_(NodeHandle page) {
     const NodeHandle r = row_(page);
     const NodeHandle up = w::button(m_ui, r, "Up", "assets.up");
     m_ui.connect(up, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { m_m.assetsUp(); m_shell.sync(); });
     const NodeHandle rescan = w::button(m_ui, r, "Rescan", "assets.rescan");
     m_ui.connect(rescan, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { m_m.assetsRescan(); m_shell.sync(); });
-    m_assetFilter = w::lineEdit(m_ui, r, "", "assets.filter");
+    const NodeHandle r2 = row_(page); // filter + type on their own row (the dock is narrow)
+    m_assetFilter = w::lineEdit(m_ui, r2, "", "assets.filter");
     m_ui.setCss(m_assetFilter, "flex-grow", "1");
     w::setTooltip(m_ui, m_assetFilter, "Filter assets by name");
     m_ui.connect(m_assetFilter, SignalKind::TextChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) {
         m_m.assetsSetFilter(a.text);
         m_shell.sync();
     });
+    std::string types;
+    for (const std::string& l : EditorPanels::assetTypeFilterLabels()) types += (types.empty() ? "" : "\n") + l;
+    m_assetType = w::comboBox(m_ui, r2, types, 0, "assets.type");
+    w::setTooltip(m_ui, m_assetType, "Show only one asset type (folders stay visible)");
+    m_ui.connect(m_assetType, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+        m_m.assetsSetTypeFilter(u32(a.value));
+        m_shell.sync();
+    });
+    m_assetGridToggle = w::checkBox(m_ui, r, "Grid", false, "assets.grid");
+    w::setTooltip(m_ui, m_assetGridToggle, "Toggle grid / list view");
+    m_ui.connect(m_assetGridToggle, SignalKind::Toggled, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+        m_m.assetsSetGrid(a.flag);
+        m_shell.sync();
+    });
+    m_assetCrumbs = row_(page);
+    m_ui.setCss(m_assetCrumbs, "gap", "2px");
     m_assetPath = w::label(m_ui, page, "", "assets.path");
     m_ui.addClass(m_assetPath, "ed-dim");
     m_assetList = w::listView(m_ui, page, "", -1, "assets.list");
     m_ui.setCss(m_assetList, "flex-grow", "1");
-    auto activate = [this](UiContext& u, NodeHandle, const SignalArgs&) {
-        const i32 i = i32(u.value(m_assetList));
-        if (i >= 0 && u32(i) < m_assetPaths.size()) m_m.assetsActivate(m_assetPaths[u32(i)]);
+    m_assetModel.user = this;
+    m_assetModel.rows = [](const void* u) { return u32(static_cast<const ShellPanelPages*>(u)->m_assetNames.size()); };
+    m_assetModel.data = [](const void* u, u32 row, u32, std::string&) -> std::string_view {
+        const auto* p = static_cast<const ShellPanelPages*>(u);
+        return row < p->m_assetNames.size() ? std::string_view(p->m_assetNames[row]) : std::string_view();
+    };
+    m_assetGrid = w::gridView(m_ui, page, &m_assetModel, 104.f, 56.f, "assets.grid_view");
+    m_ui.setCss(m_assetGrid, "flex-grow", "1");
+    m_ui.setCss(m_assetGrid, "display", "none");
+    auto activate = [this](UiContext&, NodeHandle, const SignalArgs&) {
+        const i32 i = selectedAsset_();
+        if (i >= 0) m_m.assetsActivate(m_assetPaths[u32(i)]);
         m_shell.sync();
     };
-    m_ui.connect(m_assetList, SignalKind::Submitted, activate);
+    auto select = [this](UiContext&, NodeHandle n, const SignalArgs& a) {
+        const i32 i = i32(a.value);
+        if (i >= 0 && u32(i) < m_assetPaths.size()) m_m.assetsSelect(m_assetPaths[u32(i)]);
+        const NodeHandle other = n == m_assetList ? m_assetGrid : m_assetList;
+        m_ui.setValue(other, a.value);
+        if (i >= 0 && u32(i) < m_assetTips.size()) w::setTooltip(m_ui, n, m_assetTips[u32(i)]);
+        m_shell.sync();
+    };
+    for (const NodeHandle v : {m_assetList, m_assetGrid}) {
+        m_ui.connect(v, SignalKind::Submitted, activate);
+        m_ui.connect(v, SignalKind::ValueChanged, select);
+    }
     const NodeHandle open = w::button(m_ui, r, "Open", "assets.open");
     m_ui.connect(open, SignalKind::Clicked, activate);
+    // inline name prompt (Qt QInputDialog) for Rename... / New Folder...
+    m_assetNameRow = w::panel(m_ui, page, "assets.name_row");
+    m_ui.addClass(m_assetNameRow, "row");
+    m_ui.setCss(m_assetNameRow, "gap", "6px");
+    m_assetName = w::lineEdit(m_ui, m_assetNameRow, "", "assets.name");
+    m_ui.setCss(m_assetName, "flex-grow", "1");
+    auto commit = [this](UiContext& u, NodeHandle, const SignalArgs&) {
+        const std::string name(u.text(m_assetName));
+        const bool ok = m_assetRenaming.empty() ? m_m.assetsCreateFolder(name) : m_m.assetsRename(m_assetRenaming, name);
+        if (ok) m_ui.setCss(m_assetNameRow, "display", "none");
+        m_assetKey.clear();
+        m_shell.sync();
+        if (!ok) m_ui.setText(m_assetInfo, (m_assetRenaming.empty() ? "Could not create \"" : "Could not rename to \"") + name + "\"");
+    };
+    m_ui.connect(m_assetName, SignalKind::Submitted, commit);
+    m_ui.connect(w::button(m_ui, m_assetNameRow, "OK", "assets.name_ok"), SignalKind::Clicked, commit);
+    m_ui.connect(w::button(m_ui, m_assetNameRow, "Cancel", "assets.name_cancel"), SignalKind::Clicked,
+                 [this](UiContext&, NodeHandle, const SignalArgs&) { m_ui.setCss(m_assetNameRow, "display", "none"); });
+    m_ui.setCss(m_assetNameRow, "display", "none");
     m_assetInfo = w::label(m_ui, page, "", "assets.info");
+}
+i32 ShellPanelPages::selectedAsset_() const {
+    const NodeHandle v = m_m.assets().grid ? m_assetGrid : m_assetList;
+    const i32 i = i32(m_ui.value(v));
+    return i >= 0 && u32(i) < m_assetPaths.size() ? i : -1;
+}
+bool ShellPanelPages::within_(NodeHandle n, NodeHandle ancestor) const {
+    for (; m_ui.alive(n); n = m_ui.parent(n))
+        if (n == ancestor) return true;
+    return false;
+}
+void ShellPanelPages::assetsMenuAction(u32 action) {
+    const i32 i = selectedAsset_();
+    const std::string rel = i >= 0 ? m_assetPaths[u32(i)] : std::string();
+    switch (action) {
+    case 0: if (i >= 0) m_m.assetsActivate(rel); break;
+    case 1: if (i >= 0) m_ui.setClipboardText(m_m.assetsAbsolutePath(rel)); break;
+    case 2: if (i >= 0) m_ui.setClipboardText(rel); break;
+    case 3:
+    case 4:
+        if (action == 3 && i < 0) break;
+        m_assetRenaming = action == 3 ? rel : std::string();
+        m_ui.setText(m_assetName, action == 3 ? m_assetNames[u32(i)] : std::string("New Folder"));
+        m_ui.setCss(m_assetNameRow, "display", "flex");
+        m_ui.setFocus(m_assetName, fuse::ui::FocusReason::Programmatic);
+        break;
+    case 5: m_m.assetsRescan(); break;
+    default: break;
+    }
+    m_shell.sync();
 }
 void ShellPanelPages::syncAssets_() {
     if (!m_assetList) return;
     const AssetBrowserView v = m_m.assets();
     std::string lines;
     m_assetPaths.clear();
+    m_assetNames.clear();
+    m_assetTips.clear();
+    i32 sel = -1;
     for (const auto& e : v.entries) {
+        if (e.path == v.selected) sel = i32(m_assetPaths.size());
         lines += (lines.empty() ? "" : "\n") + std::string(e.folder ? "[dir]  " : "") + e.name + (e.folder ? "" : "   (" + e.type + ")");
         m_assetPaths.push_back(e.path);
+        m_assetNames.push_back((e.folder ? "[dir] " : "") + e.name);
+        m_assetTips.push_back(e.tooltip);
     }
-    std::string key = v.root + "|" + v.directory + "|" + lines;
+    std::string key = v.root + "|" + v.directory + "|" + lines + "|" + std::to_string(v.grid) + "|" + std::to_string(v.typeFilter) +
+                      "|" + v.status;
     if (key == m_assetKey) return;
     m_assetKey = std::move(key);
     m_ui.setText(m_assetPath, v.root + (v.directory.empty() ? "" : "/" + v.directory));
     m_ui.setText(m_assetList, lines);
-    char b[64];
-    std::snprintf(b, sizeof b, "%zu item(s)", v.entries.size());
-    m_ui.setText(m_assetInfo, b);
+    m_ui.setValue(m_assetList, f32(sel));
+    m_ui.setValue(m_assetGrid, f32(sel));
+    m_ui.markAllDirty();
+    m_ui.setCss(m_assetList, "display", v.grid ? "none" : "flex");
+    m_ui.setCss(m_assetGrid, "display", v.grid ? "flex" : "none");
+    m_ui.setChecked(m_assetGridToggle, v.grid);
+    m_ui.setValue(m_assetType, f32(v.typeFilter));
+    if (m_ui.text(m_assetFilter) != v.filter) m_ui.setText(m_assetFilter, v.filter);
+    // breadcrumb: Project > a > b (each jumps there)
+    while (m_ui.alive(m_ui.firstChild(m_assetCrumbs))) m_ui.destroy(m_ui.firstChild(m_assetCrumbs));
+    for (std::size_t k = 0; k < v.crumbs.size(); ++k) {
+        if (k > 0) w::label(m_ui, m_assetCrumbs, ">");
+        const NodeHandle b = w::button(m_ui, m_assetCrumbs, v.crumbs[k], "assets.crumb." + std::to_string(k));
+        m_ui.connect(b, SignalKind::Clicked, [this, k](UiContext&, NodeHandle, const SignalArgs&) {
+            const AssetBrowserView cur = m_m.assets();
+            std::string rel;
+            for (std::size_t j = 1; j <= k && j < cur.crumbs.size(); ++j) rel += (rel.empty() ? "" : "/") + cur.crumbs[j];
+            m_m.assetsNavigateTo(rel);
+            m_shell.sync();
+        });
+    }
+    m_ui.setText(m_assetInfo, v.status);
 }
 
 // ---- Material Editor ------------------------------------------------------------------------------------------------
@@ -473,6 +585,32 @@ void ShellPanelPages::buildTimeline_(NodeHandle page) {
     m_tlLength = w::spinBox(m_ui, r, 100.f, 600000.f, 5000.f, 100.f, "timeline.length");
     m_ui.connect(m_tlLength, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) { m_m.timelineSetDuration(i32(a.value)); m_shell.sync(); });
     m_tlStatus = w::label(m_ui, r, "", "timeline.status");
+    // navigation row (Qt TimelineCanvas): previous / next key, loop, snap, zoom
+    const NodeHandle nav = row_(page);
+    auto btn = [&](const char* text, const char* id, const char* tip, auto fn) {
+        const NodeHandle b = w::button(m_ui, nav, text, id);
+        w::setTooltip(m_ui, b, tip);
+        m_ui.connect(b, SignalKind::Clicked, [this, fn](UiContext&, NodeHandle, const SignalArgs&) { fn(); m_shell.sync(); });
+    };
+    btn("|<", "timeline.prev_key", "Previous key ([)", [this] { m_m.timelineJumpToKey(-1); });
+    btn(">|", "timeline.next_key", "Next key (])", [this] { m_m.timelineJumpToKey(+1); });
+    m_tlLoop = w::checkBox(m_ui, nav, "Loop", true, "timeline.loop");
+    w::setTooltip(m_ui, m_tlLoop, "Loop playback (L)");
+    m_ui.connect(m_tlLoop, SignalKind::Toggled, [this](UiContext&, NodeHandle, const SignalArgs& a) { m_m.timelineSetLooping(a.flag); m_shell.sync(); });
+    w::label(m_ui, nav, "Snap");
+    m_tlSnap = w::comboBox(m_ui, nav, "Off\n24 fps\n30 fps\n60 fps", 2, "timeline.snap");
+    m_ui.connect(m_tlSnap, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+        static constexpr u32 kFps[4] = {0, 24, 30, 60};
+        m_m.timelineSetSnapFps(kFps[std::min(3u, u32(a.value))]);
+        m_shell.sync();
+    });
+    btn("Zoom In", "timeline.zoom_in", "Zoom in (Ctrl+wheel)", [this] {
+        m_m.timelineZoomBy(2.f, m_m.timeline().playheadMs);
+    });
+    btn("Zoom Out", "timeline.zoom_out", "Zoom out (Ctrl+wheel)", [this] {
+        m_m.timelineZoomBy(0.5f, m_m.timeline().playheadMs);
+    });
+    btn("Fit", "timeline.fit", "Zoom to fit (F)", [this] { m_m.timelineZoomToFit(); });
     m_tlBox = w::panel(m_ui, page);
     m_ui.setCss(m_tlBox, "flex-grow", "1");
 }
@@ -502,12 +640,53 @@ void ShellPanelPages::syncTimeline_() {
             }
         }
         m_ui.connect(m_tlWidget, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) {
-            m_m.timelineSetPlayhead(i32(a.value * 1000.f + .5f));
+            m_m.timelineSetPlayhead(m_m.timelineSnapMs(i32(a.value * 1000.f + .5f)));
+            m_shell.sync();
+        });
+        m_ui.connect(m_tlWidget, SignalKind::Event, [this](UiContext&, NodeHandle, const SignalArgs&) {
+            const auto view = w::timelineView(m_ui, m_tlWidget); // Ctrl / Shift + wheel
+            m_m.timelineSetView(i32(view.x * 1000.f + .5f), i32(view.y * 1000.f + .5f));
             m_shell.sync();
         });
     }
+    {
+        const u32 fps = m_m.timelineSnapFps();
+        w::timelineSetSnap(m_ui, m_tlWidget, fps ? 1.f / f32(fps) : 0.01f);
+        m_ui.setValue(m_tlSnap, f32(fps == 24 ? 1 : fps == 30 ? 2 : fps == 60 ? 3 : 0));
+        m_ui.setChecked(m_tlLoop, m_m.timelineLooping());
+        w::timelineSetView(m_ui, m_tlWidget, f32(m_m.timelineViewStartMs()) / 1000.f, f32(m_m.timelineViewSpanMs()) / 1000.f);
+    }
     m_ui.setValue(m_tlWidget, f32(v.playheadMs) / 1000.f);
     m_ui.invalidate(m_tlWidget);
+}
+
+bool ShellPanelPages::event(const fuse::ui::Event& e, NodeHandle target) {
+    using fuse::ui::EventType;
+    using fuse::ui::Key;
+    // asset list / grid: right click selects nothing new but opens the context menu
+    if (e.type == EventType::PointerUp && e.button == fuse::ui::MouseButton::Right && m_assetList &&
+        (within_(target, m_assetList) || within_(target, m_assetGrid))) {
+        if (m_ui.alive(m_ui.find("assets.context"))) return true;
+        const NodeHandle menu = w::popupMenu(m_ui, m_assetInfo, kAssetMenu, e.pos, "assets.context");
+        m_ui.connect(menu, SignalKind::Submitted, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+            const u32 line = u32(a.value); // the separator is line 4
+            assetsMenuAction(line < 4 ? line : line - 1);
+        });
+        return true;
+    }
+    if (e.type != EventType::KeyDown || !m_tlWidget || !within_(target, m_tlBox)) return false;
+    const i32 dur = m_m.timeline().durationMs;
+    switch (e.key) {
+    case Key::BracketLeft: m_m.timelineJumpToKey(-1); break;
+    case Key::BracketRight: m_m.timelineJumpToKey(+1); break;
+    case Key::Home: m_m.timelineSetPlayhead(0); break;
+    case Key::End: m_m.timelineSetPlayhead(dur); break;
+    case Key::L: m_m.timelineSetLooping(!m_m.timelineLooping()); break;
+    case Key::F: m_m.timelineZoomToFit(); break;
+    default: return false;
+    }
+    m_shell.sync();
+    return true;
 }
 
 } // namespace fuse::editor::fui

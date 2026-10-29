@@ -542,6 +542,175 @@ void gateAssetBrowser(Rig& r) {
     std::printf("asset_browser: %s\n", std::string(r.ui().text(r.ui().find("assets.info"))).c_str());
 }
 
+namespace { void shot(Rig& r); }
+
+// Asset browser polish (Qt 399b8de7b: grid, type filter, breadcrumb, status, context menu, rename / new folder).
+void gateAssetBrowserPolish(Rig& r) {
+    CHECK(r.shell.showPanel("dock.asset_browser"));
+    const auto root = scratchDir("assets_polish");
+    std::filesystem::create_directories(root / "meshes" / "props");
+    std::filesystem::create_directories(root / "textures");
+    for (const char* f : {"meshes/props/crate.fusemesh", "meshes/rock.obj", "textures/wood.png", "level.scene", "notes.txt"})
+        std::fclose(std::fopen((root / f).string().c_str(), "w"));
+    auto& p = r.shell.panels();
+    p.setProjectsRoot(root.string());
+    r.frames(2);
+    auto alive = [&](const char* id) { return r.ui().alive(r.ui().find(id)); };
+    CHECK(alive("assets.crumb.0") && !alive("assets.crumb.1"));
+    CHECK(p.assetsNavigateTo("meshes/props"));
+    r.frames();
+    CHECK(alive("assets.crumb.2") && r.ui().text(r.ui().find("assets.crumb.2")) == "props");
+    AssetBrowserView v = p.assets();
+    CHECK(v.entries.size() == 1 && v.entries[0].type == "Mesh"); // .fusemesh is a Mesh
+    r.clickId("assets.crumb.0");
+    CHECK(p.assets().directory.empty() && !alive("assets.crumb.1"));
+    // type filter: Texture keeps folders, drops the scene / text
+    r.ui().setValue(r.ui().find("assets.type"), 2.f, true);
+    r.frames();
+    v = p.assets();
+    CHECK(v.typeFilter == 2 && v.folders == 2 && v.entries.size() == 2);
+    r.ui().setValue(r.ui().find("assets.type"), 0.f, true);
+    r.frames();
+    v = p.assets();
+    CHECK(v.entries.size() == 4 && v.status.find("4 items (2 folders)") == 0);
+    // grid toggle
+    r.clickId("assets.grid");
+    r.frames();
+    CHECK(p.assets().grid && r.rect("assets.grid_view").w > 0.f && r.rect("assets.list").w == 0.f);
+    // context menu -> New Folder...
+    const Rect g = r.rect("assets.grid_view");
+    auto menu = [&](float line) {
+        r.ui().pointerDown({g.x + g.w - 8.f, g.bottom() - 8.f}, fuse::ui::MouseButton::Right);
+        r.ui().pointerUp({g.x + g.w - 8.f, g.bottom() - 8.f}, fuse::ui::MouseButton::Right);
+        r.frames();
+        const NodeHandle m = r.ui().find("assets.context");
+        CHECK(r.ui().alive(m));
+        if (line >= 0.f) { r.ui().emit(m, fuse::ui::SignalKind::Submitted, {.value = line}); w::closePopup(r.ui(), m); r.frames(); }
+    };
+    menu(5.f); // New Folder... (line 4 is the separator)
+    CHECK(r.rect("assets.name_row").w > 0.f && r.ui().text(r.ui().find("assets.name")) == "New Folder");
+    setField(r, "assets.name", "audio");
+    r.clickId("assets.name_ok");
+    CHECK(std::filesystem::is_directory(root / "audio"));
+    menu(5.f);
+    setField(r, "assets.name", "audio");
+    r.clickId("assets.name_ok");
+    CHECK(std::string(r.ui().text(r.ui().find("assets.info"))).find("Could not create") == 0); // existing name
+    setField(r, "assets.name", "../escape");
+    r.clickId("assets.name_ok");
+    CHECK(!std::filesystem::exists(root / ".." / "escape"));
+    r.clickId("assets.name_cancel");
+    // Rename... level.scene -> main.scene
+    CHECK(p.assetsSelect("level.scene"));
+    r.frames();
+    CHECK(p.assets().status.find("level.scene (Scene)") != std::string::npos);
+    menu(3.f);
+    CHECK(r.ui().text(r.ui().find("assets.name")) == "level.scene");
+    setField(r, "assets.name", "main.scene");
+    r.clickId("assets.name_ok");
+    CHECK(std::filesystem::exists(root / "main.scene") && !std::filesystem::exists(root / "level.scene"));
+    menu(2.f); // Copy Relative Path
+    std::string clip;
+    CHECK(r.ui().clipboardText(clip) && clip == "main.scene");
+    menu(1.f); // Copy Path
+    CHECK(r.ui().clipboardText(clip) && clip.size() > 10 && clip.find("main.scene") != std::string::npos);
+    CHECK(p.assets().entries.size() == 5);
+    menu(-1.f); // leave the menu open for the shot
+    shot(r);
+    std::printf("asset_browser_polish: %s\n", p.assets().status.c_str());
+}
+
+// Timeline navigation (Qt f3bc702bf: zoom / pan / fit, loop, snap, previous / next key, adaptive ruler).
+void gateTimelineNav(Rig& r) {
+    CHECK(r.shell.showPanel("dock.timeline"));
+    r.c.runEntityAction(ContextMenuAction::CreateSdfSphere);
+    r.frames(2);
+    auto& p = r.shell.panels();
+    for (int ms : {0, 2000, 4000}) {
+        r.ui().setValue(r.ui().find("timeline.time"), float(ms), true);
+        r.frames();
+        r.clickId("timeline.key");
+    }
+    const i32 dur = p.timeline().durationMs;
+    p.timelineSetPlayhead(500);
+    r.clickId("timeline.next_key");
+    CHECK(p.timeline().playheadMs == 2000);
+    p.timelineSetPlayhead(500);
+    r.clickId("timeline.prev_key");
+    CHECK(p.timeline().playheadMs == 0);
+    CHECK(!p.timelineJumpToKey(-1));
+    // zoom 4x about 0, pan, fit
+    p.timelineZoomBy(4.f, 0);
+    r.frames();
+    CHECK(p.timelineViewSpanMs() == dur / 4 && p.timelineViewStartMs() == 0);
+    CHECK(std::abs(w::timelineView(r.ui(), r.ui().find("timeline.track")).y - float(dur) / 4000.f) < 1e-3f);
+    p.timelinePanBy(500);
+    CHECK(p.timelineViewStartMs() == 500);
+    // next key off-screen recentres the view
+    p.timelineSetPlayhead(2000);
+    CHECK(p.timelineJumpToKey(+1) && p.timeline().playheadMs == 4000);
+    CHECK(p.timelineViewStartMs() <= 4000 && p.timelineViewStartMs() + p.timelineViewSpanMs() >= 4000);
+    r.clickId("timeline.fit");
+    CHECK(p.timelineViewSpanMs() == dur && p.timelineViewStartMs() == 0);
+    // Ctrl+wheel zooms, Shift+wheel pans
+    r.frames();
+    const Rect tl = r.rect("timeline.track");
+    r.ui().setModifiers(fuse::ui::kModCtrl);
+    r.ui().pointerMove({tl.x + tl.w * 0.3f, tl.bottom() - 10.f});
+    r.frames();
+    r.ui().wheel({tl.x + tl.w * 0.3f, tl.bottom() - 10.f}, {0.f, 1.f});
+    r.frames();
+    const i32 zoomed = p.timelineViewSpanMs();
+    CHECK(zoomed < dur && std::abs(zoomed - i32(dur * 0.8f)) <= 2);
+    r.ui().setModifiers(fuse::ui::kModShift);
+    const i32 s0 = p.timelineViewStartMs();
+    r.ui().wheel({tl.x + tl.w * 0.3f, tl.bottom() - 10.f}, {0.f, -1.f});
+    r.frames();
+    CHECK(p.timelineViewStartMs() > s0);
+    r.ui().setModifiers(0);
+    // snap
+    CHECK(p.timelineSnapFps() == 30 && p.timelineSnapMs(1010) == 1000 && p.timelineSnapMs(1020) == 1033);
+    r.ui().setValue(r.ui().find("timeline.snap"), 0.f, true);
+    r.frames();
+    CHECK(p.timelineSnapFps() == 0 && p.timelineSnapMs(1014) == 1010);
+    r.ui().setValue(r.ui().find("timeline.snap"), 2.f, true);
+    // keys on the focused track: F fit, L loop, [ ] keys, Home / End
+    r.ui().setFocus(r.ui().find("timeline.track"));
+    r.ui().keyDown(Key::F);
+    CHECK(p.timelineViewSpanMs() == dur);
+    p.timelineSetPlayhead(1000);
+    r.ui().keyDown(Key::BracketRight);
+    CHECK(p.timeline().playheadMs == 2000);
+    r.ui().keyDown(Key::BracketLeft);
+    CHECK(p.timeline().playheadMs == 0);
+    r.ui().keyDown(Key::End);
+    CHECK(p.timeline().playheadMs == dur);
+    r.ui().keyDown(Key::Home);
+    CHECK(p.timeline().playheadMs == 0);
+    CHECK(p.timelineLooping());
+    r.ui().keyDown(Key::L);
+    r.frames();
+    CHECK(!p.timelineLooping() && !r.ui().checked(r.ui().find("timeline.loop")));
+    // not looping: playback stops at the end
+    p.timelineSetPlayhead(dur - 10);
+    p.timelineSetPlaying(true);
+    p.timelineAdvance(0.05f);
+    CHECK(p.timeline().playheadMs == dur && !p.timeline().playing);
+    // looping wraps and keeps playing
+    r.clickId("timeline.loop");
+    CHECK(p.timelineLooping());
+    p.timelineSetPlayhead(dur - 10);
+    p.timelineSetPlaying(true);
+    p.timelineAdvance(0.05f);
+    CHECK(p.timeline().playing && p.timeline().playheadMs == 40);
+    p.timelineSetPlaying(false);
+    p.timelineSetPlayhead(2000);
+    p.timelineZoomBy(2.f, 2000);
+    r.frames(2);
+    shot(r);
+    std::printf("timeline_nav: view %d+%d ms of %d, %s\n", p.timelineViewStartMs(), p.timelineViewSpanMs(), dur, p.timeline().status.c_str());
+}
+
 void gateMaterialEditor(Rig& r) {
     CHECK(r.shell.showPanel("dock.material_editor"));
     r.c.runEntityAction(ContextMenuAction::CreateSdfSphere);
@@ -1367,6 +1536,7 @@ void gateShortcutRebind(Rig& r) {
     CHECK(r.ui().text(r.ui().find("prefs.shortcut_edit")) == "Ctrl+Shift+K");
     r.clickId("prefs.assign");
     CHECK(std::string(r.ui().text(r.ui().find("prefs.shortcuts"))).find("Group Selection  [Entity]   Ctrl+Shift+K") == 0);
+    CHECK(r.ui().text(r.ui().find("prefs.shortcut_edit")) == "Ctrl+Shift+K"); // the field keeps the assigned binding
     CHECK(r.ui().text(r.ui().find("prefs.conflicts")) == "No shortcut conflicts.");
     shot(r);
     r.clickId("prefs.ok");
@@ -1760,9 +1930,9 @@ int main(int argc, char** argv) {
         {"fuse_api", gateFuseApi},       {"wasd", gateWasd},               {"context_menu", gateContextMenu}, {"context_menu_dpr1_5", gateContextMenuDpr15}, {"icon", gateIcon}, {"view_modes", gateViewModes}, {"preferences", gatePreferences}, {"navigation", gateNavigation}, {"terrain", gateTerrain}, {"shortcut_rebind", gateShortcutRebind}, {"recent_projects", gateRecentProjects}, {"entity_group", gateEntityGroup}, {"colliders", gateColliders}, {"open_script", gateOpenScript}, {"live_present", gateLivePresent},
         {"ui_frame", gateUiFrame},       {"idle_frames", gateIdle},        {"e15_console", gateConsole},
         {"e15_transport", gateTransport}, {"e20_inspector", gateInspector}, {"e20_reparent", gateReparent},
-        {"e20_file_menu", gateFileMenu}, {"e20_wizard", gateWizard}, {"project_open", gateProjectOpen},  {"project_hub", gateProjectHub}, {"asset_browser", gateAssetBrowser},
+        {"e20_file_menu", gateFileMenu}, {"e20_wizard", gateWizard}, {"project_open", gateProjectOpen},  {"project_hub", gateProjectHub}, {"asset_browser", gateAssetBrowser}, {"asset_browser_polish", gateAssetBrowserPolish},
         {"material_editor", gateMaterialEditor}, {"sdf_sculpt", gateSdfSculpt}, {"profiler", gateProfiler},
-        {"sequencer", gateSequencer}, {"timeline", gateTimeline},
+        {"sequencer", gateSequencer}, {"timeline", gateTimeline}, {"timeline_nav", gateTimelineNav},
         {"scene_viewport", gateSceneViewport}, {"viewport_gizmo", gateViewportGizmo}, {"gpu_viewport", gateGpuViewport},
     };
     g_out = out;

@@ -4,6 +4,7 @@
 #include "fuse/editor/fui/editor_shell.hpp"
 
 #include <fuse/editor/editor_panel_models.hpp>
+#include <fuse/ui/widgets/widgets.hpp>
 
 #include <chrono>
 
@@ -17,6 +18,12 @@ public:
     /// Pulls the models into the widgets (cheap when nothing changed). `uiMs` is the shell's last sync time; `frame`
     /// marks the per-frame call (profiler sample + timeline playback happen there only).
     void sync(f32 uiMs, bool frame);
+    /// Capture-phase events from the shell root: asset context menu (right click), timeline keys ([ ] Home End L F).
+    bool event(const fuse::ui::Event& e, NodeHandle target);
+    /// Asset context menu actions (Qt AssetBrowserWidget): 0 Open, 1 Copy Path, 2 Copy Relative Path, 3 Rename...,
+    /// 4 New Folder..., 5 Refresh. Rename / New Folder open the inline name row (assets.name / assets.name_ok).
+    void assetsMenuAction(u32 action);
+    static constexpr const char* kAssetMenu = "Open\nCopy Path\nCopy Relative Path\nRename...\n-\nNew Folder...\nRefresh";
 
 private:
     void buildHub_(NodeHandle page);
@@ -53,7 +60,12 @@ private:
     std::string m_hubKey;
 
     NodeHandle m_assetFilter, m_assetPath, m_assetList, m_assetInfo;
-    std::vector<std::string> m_assetPaths;
+    NodeHandle m_assetGrid{}, m_assetGridToggle{}, m_assetType{}, m_assetCrumbs{}, m_assetNameRow{}, m_assetName{};
+    std::vector<std::string> m_assetPaths, m_assetNames, m_assetTips;
+    fuse::ui::widgets::ItemModel m_assetModel{};
+    std::string m_assetRenaming; ///< path being renamed ("" = New Folder) while the name row is open
+    i32 selectedAsset_() const;
+    bool within_(NodeHandle n, NodeHandle ancestor) const;
     std::string m_assetKey;
 
     NodeHandle m_matList, m_matPreview, m_matColor, m_matRough, m_matMetal, m_matShader, m_matTexture, m_matUv, m_matAssign, m_matSummary;
@@ -74,6 +86,7 @@ private:
     std::string m_navKey;
 
     NodeHandle m_tlBox, m_tlWidget, m_tlPlay, m_tlTime, m_tlLength, m_tlStatus;
+    NodeHandle m_tlLoop{}, m_tlSnap{};
     std::string m_tlKey;
 };
 

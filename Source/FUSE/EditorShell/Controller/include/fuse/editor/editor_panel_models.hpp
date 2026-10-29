@@ -26,10 +26,16 @@ struct ProjectHubView {
 struct AssetEntryView {
     std::string name, path, type; ///< path is relative to the root (AssetBrowser convention)
     bool folder = false;
+    std::string tooltip;          ///< "name\nsize · modified" (Qt AssetBrowserWidget)
 };
 struct AssetBrowserView {
     std::string root, directory, filter, selected;
+    u32 typeFilter = 0;           ///< 0 All types, 1.. AssetType Mesh..Unknown (folders always listed)
+    bool grid = false;            ///< grid (tiles) vs list
+    std::vector<std::string> crumbs; ///< "Project", then one per directory level
     std::vector<AssetEntryView> entries;
+    u32 folders = 0;
+    std::string status;           ///< "N items (F folders) · name (type)"
 };
 
 struct MaterialView {
@@ -136,6 +142,16 @@ public:
     bool assetsActivate(const std::string& path); ///< folder: enter; scene: open (prompts through ShellServices)
     bool assetsUp();
     void assetsRescan();
+    void assetsSetTypeFilter(u32 index);  ///< 0 All types, 1.. Mesh, Texture, Material, Scene, Audio, Script, Unknown
+    void assetsSetGrid(bool on);
+    bool assetsNavigateTo(const std::string& relDir); ///< breadcrumb jump ("" = root); clears the search filter
+    bool assetsSelect(const std::string& path);
+    /// New folder in the current directory; refuses empty / "." / ".." / separators / existing names.
+    bool assetsCreateFolder(const std::string& name);
+    /// Renames an entry of the current listing in place (same rules as assetsCreateFolder).
+    bool assetsRename(const std::string& path, const std::string& newName);
+    [[nodiscard]] std::string assetsAbsolutePath(const std::string& path) const;
+    [[nodiscard]] static const std::vector<std::string>& assetTypeFilterLabels();
 
     // ---- Material Editor ----
     [[nodiscard]] MaterialView materials();
@@ -183,7 +199,21 @@ public:
     void timelineSetPlayhead(i32 ms);     ///< applies the tracks to the scene (and scrubs a linked sequencer)
     void timelineSetDuration(i32 ms);
     void timelineSetPlaying(bool on);
-    bool timelineAdvance(f32 dt);         ///< while playing: moves the playhead (loops); true when it moved
+    bool timelineAdvance(f32 dt);         ///< while playing: moves the playhead (wraps when looping, else stops at the end)
+    // view / navigation (Qt TimelineCanvas)
+    [[nodiscard]] i32 timelineViewStartMs() const { return m_tlViewStart; }
+    [[nodiscard]] i32 timelineViewSpanMs() const;  ///< the whole duration when fitted
+    void timelineZoomBy(f32 factor, i32 anchorMs); ///< span / factor, clamped to [min(50, dur), dur], anchor stays put
+    void timelinePanBy(i32 deltaMs);
+    void timelineZoomToFit();
+    void timelineSetView(i32 startMs, i32 spanMs); ///< from the widget (Ctrl / Shift + wheel)
+    void timelineSetLooping(bool on) { m_tlLoop = on; ++m_revision; }
+    [[nodiscard]] bool timelineLooping() const { return m_tlLoop; }
+    void timelineSetSnapFps(u32 fps) { m_tlSnapFps = fps; ++m_revision; } ///< 0 = 10 ms steps
+    [[nodiscard]] u32 timelineSnapFps() const { return m_tlSnapFps; }
+    [[nodiscard]] i32 timelineSnapMs(i32 ms) const; ///< nearest frame (or 10 ms), clamped to [0, duration]
+    /// Previous (-1) / next (+1) key across lanes from the playhead; recentres the view when the key is outside it.
+    bool timelineJumpToKey(int dir);
 
     // ---- Terrain ----
     [[nodiscard]] TerrainView terrain();
@@ -241,6 +271,11 @@ private:
     bool m_sculptMode = false, m_sculptDragging = false;
     std::unique_ptr<ProfilerPanel> m_profiler;
     bool m_timelinePlaying = false;
+    bool m_tlLoop = true;
+    u32 m_tlSnapFps = 30;
+    i32 m_tlViewStart = 0, m_tlViewSpan = 0; ///< span 0 = fit
+    u32 m_assetTypeFilter = 0;
+    bool m_assetsGrid = false;
     f32 m_timelineAccum = 0.f;
     std::unique_ptr<class CinematicsSeqImport> m_seqImport;
     SequencerView m_seq;

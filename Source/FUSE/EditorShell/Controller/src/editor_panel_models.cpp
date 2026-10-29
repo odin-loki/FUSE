@@ -13,7 +13,9 @@
 #include <fuse/editor/viewport_scene_view.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <ctime>
 #include <cstdio>
 #include <filesystem>
 
@@ -113,11 +115,108 @@ AssetBrowserView EditorPanels::assets() {
     v.root = m_assets->projectRoot();
     v.directory = m_assets->currentDirectory();
     v.filter = m_assets->searchFilter();
-    if (const AssetBrowser::AssetEntry* s = m_assets->selectedEntry()) v.selected = s->path;
-    for (const AssetBrowser::AssetEntry& e : m_assets->entries())
-        v.entries.push_back({e.name, e.path, AssetBrowser::assetTypeLabel(e.type), e.type == AssetBrowser::AssetType::Folder});
+    v.typeFilter = m_assetTypeFilter;
+    v.grid = m_assetsGrid;
+    v.crumbs.push_back("Project");
+    {
+        std::string part;
+        for (const char ch : v.directory + "/") {
+            if (ch == '/' || ch == '\\') { if (!part.empty()) v.crumbs.push_back(part); part.clear(); }
+            else part += ch;
+        }
+    }
+    const AssetBrowser::AssetEntry* sel = m_assets->selectedEntry();
+    if (sel) v.selected = sel->path;
+    for (const AssetBrowser::AssetEntry& e : m_assets->entries()) {
+        const bool folder = e.type == AssetBrowser::AssetType::Folder;
+        if (!folder && m_assetTypeFilter != 0u && u32(e.type) != m_assetTypeFilter) continue;
+        AssetEntryView ev{e.name, e.path, AssetBrowser::assetTypeLabel(e.type), folder, e.name};
+        std::error_code ec;
+        const fs::path abs = fs::u8path(m_assets->absolutePath(e.path));
+        if (!folder) {
+            const auto sz = fs::file_size(abs, ec);
+            if (!ec) ev.tooltip += sz < 1024 ? "\n" + std::to_string(sz) + " B" : fmt("\n%.1f KB", double(sz) / 1024.0);
+        }
+        const auto wt = fs::last_write_time(abs, ec);
+        if (!ec) {
+            const auto sys = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                wt - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
+            const std::time_t t = std::chrono::system_clock::to_time_t(sys);
+            char buf[32];
+            if (std::strftime(buf, sizeof buf, "%Y-%m-%d %H:%M", std::localtime(&t)))
+                ev.tooltip += std::string(folder ? "\n" : " · ") + "modified " + buf;
+        }
+        v.folders += folder;
+        v.entries.push_back(std::move(ev));
+    }
+    v.status = std::to_string(v.entries.size()) + " items (" + std::to_string(v.folders) + " folders)";
+    if (sel) v.status += std::string(" · ") + sel->name + " (" + AssetBrowser::assetTypeLabel(sel->type) + ")";
     return v;
 }
+
+const std::vector<std::string>& EditorPanels::assetTypeFilterLabels() {
+    static const std::vector<std::string> labels = [] {
+        std::vector<std::string> l{"All types"};
+        for (u32 t = u32(AssetBrowser::AssetType::Mesh); t <= u32(AssetBrowser::AssetType::Unknown); ++t)
+            l.push_back(AssetBrowser::assetTypeLabel(AssetBrowser::AssetType(t)));
+        return l;
+    }();
+    return labels;
+}
+
+void EditorPanels::assetsSetTypeFilter(u32 index) {
+    m_assetTypeFilter = std::min<u32>(index, u32(AssetBrowser::AssetType::Unknown));
+    ++m_revision;
+}
+void EditorPanels::assetsSetGrid(bool on) { m_assetsGrid = on; ++m_revision; }
+
+bool EditorPanels::assetsNavigateTo(const std::string& relDir) {
+    std::error_code ec;
+    if (!fs::is_directory(fs::u8path(m_assets->absolutePath(relDir)), ec)) return false;
+    m_assets->setSearchFilter("");
+    m_assets->setCurrentDirectory(relDir.c_str());
+    m_assets->refresh();
+    ++m_revision;
+    return true;
+}
+
+bool EditorPanels::assetsSelect(const std::string& path) {
+    ++m_revision;
+    return m_assets->selectEntry(path.c_str());
+}
+
+namespace {
+bool validAssetName(const std::string& n) {
+    return !n.empty() && n != "." && n != ".." && n.find_first_of("/\\") == std::string::npos;
+}
+} // namespace
+
+bool EditorPanels::assetsCreateFolder(const std::string& name) {
+    if (!validAssetName(name) || m_assets->projectRoot().empty()) return false;
+    const fs::path dir = fs::u8path(m_assets->absolutePath(m_assets->currentDirectory())) / fs::u8path(name);
+    std::error_code ec;
+    if (fs::exists(dir, ec) || !fs::create_directory(dir, ec) || ec) return false;
+    m_assets->refresh();
+    ++m_revision;
+    return true;
+}
+
+bool EditorPanels::assetsRename(const std::string& path, const std::string& newName) {
+    if (!validAssetName(newName)) return false;
+    const fs::path from = fs::u8path(m_assets->absolutePath(path));
+    const fs::path to = from.parent_path() / fs::u8path(newName);
+    std::error_code ec;
+    if (!fs::exists(from, ec) || fs::exists(to, ec)) return false;
+    fs::rename(from, to, ec);
+    if (ec) return false;
+    m_assets->refresh();
+    const std::string dir = m_assets->currentDirectory();
+    m_assets->selectEntry((dir.empty() ? newName : dir + "/" + newName).c_str());
+    ++m_revision;
+    return true;
+}
+
+std::string EditorPanels::assetsAbsolutePath(const std::string& path) const { return m_assets->absolutePath(path); }
 
 void EditorPanels::assetsSetFilter(std::string_view filter) {
     m_assets->setSearchFilter(std::string(filter).c_str());
@@ -126,6 +225,10 @@ void EditorPanels::assetsSetFilter(std::string_view filter) {
 
 bool EditorPanels::assetsActivate(const std::string& path) {
     const AssetBrowser::ActivateResult r = m_assets->activate(path.c_str());
+    if (r == AssetBrowser::ActivateResult::EnteredFolder && !m_assets->searchFilter().empty()) {
+        m_assets->setSearchFilter(""); // Qt: entering a folder clears the filter
+        m_assets->refresh();
+    }
     ++m_revision;
     if (r == AssetBrowser::ActivateResult::OpenScene) return m_c.fileOpenPath(m_assets->absolutePath(path));
     return r != AssetBrowser::ActivateResult::None;
@@ -466,8 +569,82 @@ bool EditorPanels::timelineAdvance(f32 dt) {
         next = m_c.m_host.timeline().playheadMs() + step;
         dur = m_c.m_host.timeline().durationMs();
     }
-    if (next > dur) next = 0; // loop
+    if (next > dur) {
+        if (m_tlLoop) next = dur > 0 ? next % dur : 0;
+        else { next = dur; m_timelinePlaying = false; }
+    }
     timelineSetPlayhead(next);
+    return true;
+}
+
+i32 EditorPanels::timelineViewSpanMs() const {
+    std::lock_guard<std::mutex> lock(m_c.m_mutex);
+    const i32 dur = std::max(1, m_c.m_host.timeline().durationMs());
+    return m_tlViewSpan > 0 ? std::min(m_tlViewSpan, dur) : dur;
+}
+
+void EditorPanels::timelineSetView(i32 startMs, i32 spanMs) {
+    i32 dur = 1;
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        dur = std::max(1, m_c.m_host.timeline().durationMs());
+    }
+    spanMs = std::clamp(spanMs, std::min(50, dur), dur);
+    m_tlViewSpan = spanMs >= dur ? 0 : spanMs;
+    m_tlViewStart = m_tlViewSpan == 0 ? 0 : std::clamp(startMs, 0, dur - spanMs);
+    ++m_revision;
+}
+
+void EditorPanels::timelineZoomBy(f32 factor, i32 anchorMs) {
+    if (factor <= 0.f) return;
+    const i32 span = timelineViewSpanMs(), start = m_tlViewStart;
+    i32 dur = 1;
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        dur = std::max(1, m_c.m_host.timeline().durationMs());
+    }
+    const i32 ns = std::clamp(i32(std::lround(f32(span) / factor)), std::min(50, dur), dur);
+    const f32 rel = f32(anchorMs - start) / f32(std::max(1, span));
+    timelineSetView(anchorMs - i32(std::lround(rel * f32(ns))), ns);
+    m_tlViewSpan = ns >= dur ? 0 : ns; // keep an explicit span even when the start clamps
+}
+
+void EditorPanels::timelinePanBy(i32 deltaMs) { timelineSetView(m_tlViewStart + deltaMs, timelineViewSpanMs()); }
+void EditorPanels::timelineZoomToFit() { m_tlViewSpan = 0; m_tlViewStart = 0; ++m_revision; }
+
+i32 EditorPanels::timelineSnapMs(i32 ms) const {
+    i32 dur = 1;
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        dur = m_c.m_host.timeline().durationMs();
+    }
+    i32 out = ms;
+    if (m_tlSnapFps > 0) {
+        const double frame = 1000.0 / double(m_tlSnapFps);
+        out = i32(std::lround(std::round(double(ms) / frame) * frame));
+    } else {
+        out = i32(std::lround(double(ms) / 10.0)) * 10;
+    }
+    return std::clamp(out, 0, std::max(0, dur));
+}
+
+bool EditorPanels::timelineJumpToKey(int dir) {
+    i32 ph = 0, best = 0;
+    bool found = false;
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        const EditorTimeline& tl = m_c.m_host.timeline();
+        ph = tl.playheadMs();
+        for (const cinematics::PropertyTrack& t : tl.tracks())
+            for (const cinematics::PropertyKeyframe& k : t.keyframes()) {
+                const i32 km = k.time_ms;
+                if (dir > 0 ? km > ph && (!found || km < best) : km < ph && (!found || km > best)) { best = km; found = true; }
+            }
+    }
+    if (!found) return false;
+    timelineSetPlayhead(best);
+    const i32 span = timelineViewSpanMs();
+    if (m_tlViewSpan > 0 && (best < m_tlViewStart || best > m_tlViewStart + span)) timelineSetView(best - span / 2, span);
     return true;
 }
 

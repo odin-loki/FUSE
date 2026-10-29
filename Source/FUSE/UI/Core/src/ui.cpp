@@ -1255,7 +1255,7 @@ bool UiContext::wheel(Vec2 p, Vec2 notches) {
     const NodeHandle h = hitTest(p);
     if (!h.valid()) return false;
     if (node(m_modal) && !inScope(h.index, m_modal.index)) return true;
-    Event e; e.type = EventType::Wheel; e.pos = p; e.wheel = notches;
+    Event e; e.type = EventType::Wheel; e.pos = p; e.wheel = notches; e.mods = m_mods;
     if (dispatch(h.index, e)) return true;
     for (u32 a = h.index; a != kNone; a = m_nodes[a].parent) {
         const Node& n = m_nodes[a];

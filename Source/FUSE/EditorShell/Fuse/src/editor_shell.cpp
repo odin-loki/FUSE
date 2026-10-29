@@ -1111,6 +1111,7 @@ bool EditorShellWindow::shortcut(Key key, u8 mods) {
 }
 
 bool EditorShellWindow::rootEvent(const Event& e, NodeHandle target) {
+    if (m_pages && m_pages->event(e, target)) return true;
     if (e.type != EventType::KeyDown) return false;
     // Preferences shortcut field records the pressed combination (QKeySequenceEdit)
     if (preferencesOpen() && target == m_ui.find("prefs.shortcut_edit") && e.mods != 0) {
@@ -1421,6 +1422,9 @@ void EditorShellWindow::prefsRefresh_() {
     const i32 sel = i32(m_ui.value(list));
     m_ui.setText(list, prefsRows_(m_ui.text(m_ui.find("prefs.filter"))));
     if (sel >= 0) m_ui.setValue(list, f32(sel));
+    // the field shows the selected action's (pending) binding, also right after Assign / Reset
+    if (sel >= 0 && std::size_t(sel) < m_prefsRows.size())
+        m_ui.setText(m_ui.find("prefs.shortcut_edit"), m_prefsBindings[std::size_t(m_prefsRows[std::size_t(sel)])]);
     const std::vector<std::string> conflicts = preferencesConflicts();
     std::string c = conflicts.empty() ? "No shortcut conflicts." : "Conflicts: ";
     for (std::size_t i = 0; i < conflicts.size(); ++i) c += (i ? "; " : "") + conflicts[i];

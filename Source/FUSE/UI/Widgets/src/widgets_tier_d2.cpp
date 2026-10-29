@@ -446,6 +446,7 @@ struct Track { std::string name; std::vector<Clip> clips; };
 struct TimelineState {
     std::vector<Track> tracks;
     f32 duration = 10.f, pxPerSec = 60.f, scrollSec = 0.f, snap = 0.f;
+    f32 viewStart = 0.f, viewSpan = 0.f; ///< explicit view (timelineSetView); span 0 = free pxPerSec / scrollSec
     u8 drag = 0; // 1 scrub, 2 clip
     u32 dTrack = 0, dClip = 0;
     f32 grabSec = 0.f;
@@ -461,6 +462,17 @@ struct TimelineW {
         const TimelineState* s = tlPool().get(ui, n);
         return {480.f, kTlRuler + f32(s ? s->tracks.size() : 0) * kTlRow + 4.f};
     }
+    /// An explicit view range fixes the scale to the lane width.
+    static void applyView(Rect c, TimelineState& s) {
+        if (s.viewSpan <= 0.f) return;
+        s.pxPerSec = std::max(1.f, c.w - kTlHead) / s.viewSpan;
+        s.scrollSec = s.viewStart;
+    }
+    static void setView(TimelineState& s, f32 start, f32 span) {
+        span = std::clamp(span, std::min(0.05f, s.duration), s.duration);
+        s.viewSpan = span;
+        s.viewStart = std::clamp(start, 0.f, std::max(0.f, s.duration - span));
+    }
     static f32 xOf(Rect c, const TimelineState& s, f32 t) { return c.x + kTlHead + (t - s.scrollSec) * s.pxPerSec; }
     static f32 tOf(Rect c, const TimelineState& s, f32 x) { return (x - c.x - kTlHead) / s.pxPerSec + s.scrollSec; }
     static void paint(const PaintContext& pc, DrawList& dl) {
@@ -468,6 +480,7 @@ struct TimelineW {
         TimelineState* s = tlPool().get(ui, pc.node);
         if (!s) return;
         const Rect c = pc.content;
+        applyView(c, *s);
         const Color text = pc.tint(pc.style.color), dim = pc.tint(Color::rgb(0x8A8A96));
         const f32 fs = pc.style.fontSize * 0.8f;
         dl.pushClip(c);
@@ -475,8 +488,12 @@ struct TimelineW {
         dl.rect({c.x, c.y, c.w, kTlRuler}, pc.tint(Color::rgb(0x22222A)));
         const Rect lane{c.x + kTlHead, c.y, c.w - kTlHead, c.h};
         dl.pushClip(lane);
-        const f32 major = s->pxPerSec >= 40.f ? 1.f : s->pxPerSec >= 12.f ? 5.f : 10.f;
-        for (f32 t = std::floor(s->scrollSec / major) * major; t <= s->duration; t += major) {
+        // adaptive ruler (Qt TimelineCanvas): the smallest step that keeps <= 12 labels in view
+        const f32 visible = std::max(1.f, c.w - kTlHead) / s->pxPerSec;
+        f32 major = 60.f;
+        for (const f32 st : {0.01f, 0.02f, 0.05f, 0.1f, 0.25f, 0.5f, 1.f, 2.f, 5.f, 10.f, 30.f, 60.f})
+            if (visible / st <= 12.f) { major = st; break; }
+        for (f32 t = std::floor(s->scrollSec / major + 1e-4f) * major; t <= s->duration + 1e-4f; t += major) {
             const f32 x = xOf(c, *s, t);
             if (x > c.right()) break;
             dl.line({x, c.y + kTlRuler - 8.f}, {x, c.bottom()}, pc.tint(Color::rgb(0x2A2A33)), 1.f);
@@ -516,6 +533,7 @@ struct TimelineW {
         TimelineState* s = tlPool().get(ui, ec.node);
         if (!s) return false;
         const Rect c = ui.contentRect(ec.node);
+        applyView(c, *s);
         switch (e.type) {
         case EventType::PointerDown: {
             if (e.pos.x < c.x + kTlHead) return true;
@@ -547,6 +565,23 @@ struct TimelineW {
         case EventType::PointerUp: s->drag = 0; return true;
         case EventType::Wheel: {
             const f32 anchor = tOf(c, *s, e.pos.x);
+            if (s->viewSpan > 0.f) {
+                // Qt: Ctrl+wheel zooms about the pointer, Shift+wheel (or horizontal) pans; Event {value = 1} tells
+                // the owner the view changed (timelineView)
+                const f32 d = e.wheel.y != 0.f ? e.wheel.y : e.wheel.x;
+                if (d == 0.f) return false;
+                if (e.mods & kModCtrl) {
+                    const f32 rel = (anchor - s->viewStart) / s->viewSpan, span = s->viewSpan / (d > 0 ? 1.25f : 0.8f);
+                    setView(*s, anchor - rel * std::clamp(span, std::min(0.05f, s->duration), s->duration), span);
+                } else if ((e.mods & kModShift) || e.wheel.x != 0.f) {
+                    setView(*s, s->viewStart - d * s->viewSpan / 10.f, s->viewSpan);
+                } else {
+                    return false;
+                }
+                ui.invalidate(ec.node);
+                ui.emit(ec.node, SignalKind::Event, {.value = 1.f});
+                return true;
+            }
             s->pxPerSec = std::clamp(s->pxPerSec * (e.wheel.y > 0 ? 1.2f : 1.f / 1.2f), 4.f, 600.f);
             s->scrollSec = std::max(0.f, anchor - (e.pos.x - c.x - kTlHead) / s->pxPerSec);
             ui.invalidate(ec.node);
@@ -1494,6 +1529,17 @@ u32 timelineAddClip(UiContext& ui, NodeHandle tl, u32 track, f32 start, f32 end,
     s->tracks[track].clips.push_back({start, std::max(start, end), std::string(label), color});
     ui.invalidate(tl);
     return u32(s->tracks[track].clips.size() - 1);
+}
+void timelineSetView(UiContext& ui, NodeHandle tl, f32 startSec, f32 spanSec) {
+    TimelineState* s = tlPool().get(ui, tl);
+    if (!s) return;
+    if (spanSec <= 0.f) s->viewSpan = 0.f;
+    else TimelineW::setView(*s, startSec, spanSec);
+    ui.invalidate(tl);
+}
+Vec2 timelineView(const UiContext& ui, NodeHandle tl) {
+    const TimelineState* s = tlPool().get(ui, tl);
+    return s ? Vec2{s->viewStart, s->viewSpan} : Vec2{};
 }
 void timelineSetSnap(UiContext& ui, NodeHandle tl, f32 sec) { if (TimelineState* s = tlPool().get(ui, tl)) s->snap = std::max(0.f, sec); }
 Vec2 timelineClip(const UiContext& ui, NodeHandle tl, u32 track, u32 clip) {

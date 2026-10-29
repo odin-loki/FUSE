@@ -36,6 +36,7 @@ enum class Key : u16 {
     Num1, Num2, Num3, Num4, ///< editor transform tools (Select / Move / Rotate / Scale)
     B, F, G, H, I, J, K, L, M, P, R, T, U, Num0, Num5, Num6, Num7, Num8, Num9, ///< rebindable editor shortcuts
     F1, F3, F4, F6, F7, F8, F9, F11, F12,
+    BracketLeft, BracketRight, ///< timeline previous / next key
     Other
 };
 enum Mods : u8 { kModShift = 1, kModCtrl = 2, kModAlt = 4, kModSuper = 8 };

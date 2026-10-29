@@ -311,6 +311,10 @@ NodeHandle timeline(UiContext& ui, NodeHandle parent, f32 duration, std::string_
 u32 timelineAddTrack(UiContext& ui, NodeHandle tl, std::string_view name);
 u32 timelineAddClip(UiContext& ui, NodeHandle tl, u32 track, f32 start, f32 end, std::string_view label, Color color);
 void timelineSetSnap(UiContext& ui, NodeHandle tl, f32 seconds);
+/// Visible range [start, start + span) seconds, scaled to the lane width (span 0 = free zoom: wheel / pxPerSec).
+/// With a range set, Ctrl+wheel zooms about the pointer and Shift+wheel pans, then emit Event {value = 1}.
+void timelineSetView(UiContext& ui, NodeHandle tl, f32 startSec, f32 spanSec);
+Vec2 timelineView(const UiContext& ui, NodeHandle tl); ///< (start, span) seconds
 Vec2 timelineClip(const UiContext& ui, NodeHandle tl, u32 track, u32 clip); ///< (start, end)
 /// Clips under time `t` on every track (sequencer queries).
 u32 timelineActiveClips(const UiContext& ui, NodeHandle tl, f32 t);
