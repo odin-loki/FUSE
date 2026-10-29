@@ -355,6 +355,7 @@ private:
     u32 m_live = 0;
     NodeHandle m_root;
     Size m_viewport;
+    u32 m_layerClass = 0xFFFFFFFFu;
     DrawList m_draw;
     Rect m_damage;
     FrameStats m_stats;

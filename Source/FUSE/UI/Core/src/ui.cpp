@@ -91,6 +91,14 @@ void registerCoreClasses(WidgetRegistry& r) {
     label.name = "label";
     label.role = A11yRole::Text;
     r.add(label);
+    // Overlay layer (Tier B popups, menus, dialogs, tooltips): laid out over the whole viewport with Anchor layout,
+    // ignored by its parent's measure and flow, transparent to the pointer itself. Keep it the root's last child.
+    WidgetClass layer;
+    layer.name = "layer";
+    layer.role = A11yRole::None;
+    layer.defaults.layout = LayoutKind::Anchor;
+    layer.defaults.pointerEvents = false;
+    r.add(layer);
 }
 
 // ---- Style subject -------------------------------------------------------------------------------------------------
@@ -125,6 +133,7 @@ UiContext::UiContext(const UiContextDesc& d) : m_font(d.font), m_atlas(d.atlasSi
     for (u32 i = 0; i < kQueueSize; ++i) m_queue[i].seq.store(i, std::memory_order_relaxed);
     registerCoreClasses(m_registry);
     m_root = create(m_registry.find("root"), {}, "root");
+    m_layerClass = m_registry.find("layer");
 }
 
 UiContext::~UiContext() = default;
@@ -662,7 +671,7 @@ Size UiContext::measure(u32 i, Size avail) {
             case LayoutKind::Box:
                 for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
                     const ComputedStyle& cs = m_styles.style(m_nodes[k].style);
-                    if (!cs.visible) continue;
+                    if (!cs.visible || m_nodes[k].cls == m_layerClass) continue;
                     const Size m = measure(k, {in.w - cs.margin.h(), in.h - cs.margin.v()});
                     const f32 mw = m.w + cs.margin.h(), mh = m.h + cs.margin.v();
                     if (row) { c.w += mw; c.h = std::max(c.h, mh); }
@@ -679,7 +688,7 @@ Size UiContext::measure(u32 i, Size avail) {
                 const f32 cw = std::isfinite(in.w) ? (in.w - s.gap * f32(cols - 1)) / f32(cols) : kInf;
                 for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
                     const ComputedStyle& cs = m_styles.style(m_nodes[k].style);
-                    if (!cs.visible) continue;
+                    if (!cs.visible || m_nodes[k].cls == m_layerClass) continue;
                     const Size m = measure(k, {cw, kInf});
                     colW[col] = std::max(colW[col], m.w + cs.margin.h());
                     rowH = std::max(rowH, m.h + cs.margin.v());
@@ -698,7 +707,7 @@ Size UiContext::measure(u32 i, Size avail) {
                 f32 x = 0.f, y = 0.f, lineH = 0.f;
                 for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
                     const ComputedStyle& cs = m_styles.style(m_nodes[k].style);
-                    if (!cs.visible) continue;
+                    if (!cs.visible || m_nodes[k].cls == m_layerClass) continue;
                     const Size m = measure(k, {in.w, kInf});
                     const f32 mw = m.w + cs.margin.h(), mh = m.h + cs.margin.v();
                     if (x > 0.f && x + mw > in.w) { y += lineH + s.gap; x = 0.f; lineH = 0.f; }
@@ -712,7 +721,7 @@ Size UiContext::measure(u32 i, Size avail) {
             default: // Stack, Anchor, Absolute: union of children
                 for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
                     const ComputedStyle& cs = m_styles.style(m_nodes[k].style);
-                    if (!cs.visible) continue;
+                    if (!cs.visible || m_nodes[k].cls == m_layerClass) continue;
                     const Size m = measure(k, in);
                     const f32 ox = s.layout == LayoutKind::Stack ? 0.f : cs.left.resolve(in.w, 0.f);
                     const f32 oy = s.layout == LayoutKind::Stack ? 0.f : cs.top.resolve(in.h, 0.f);
@@ -768,6 +777,10 @@ void UiContext::arrangeChildren(u32 i) {
         arrange(k, r);
     };
     auto hidden = [&](u32 k) {
+        if (m_nodes[k].cls == m_layerClass) { // overlay layer: covers the viewport, outside the flow
+            arrange(k, {0.f, 0.f, m_viewport.w, m_viewport.h});
+            return true;
+        }
         if (m_styles.style(m_nodes[k].style).visible) return false;
         arrange(k, {c.x, c.y, 0.f, 0.f});
         return true;
@@ -781,7 +794,7 @@ void UiContext::arrangeChildren(u32 i) {
         // pass 1: basis sizes (kept in the node's prevRect.w scratch? no: recompute; measure is cached)
         for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
             const ComputedStyle& cs = m_styles.style(m_nodes[k].style);
-            if (!cs.visible) continue;
+            if (!cs.visible || m_nodes[k].cls == m_layerClass) continue;
             const Size m = measure(k, {c.w - cs.margin.h(), c.h - cs.margin.v()});
             const f32 basis = fixedLen(cs.basis, mainAvail) ? cs.basis.resolve(mainAvail, 0.f) : (row ? m.w : m.h);
             used += basis + (row ? cs.margin.h() : cs.margin.v());
@@ -807,7 +820,8 @@ void UiContext::arrangeChildren(u32 i) {
             const Size m = measure(k, {c.w - cs.margin.h(), c.h - cs.margin.v()});
             f32 main = fixedLen(cs.basis, mainAvail) ? cs.basis.resolve(mainAvail, 0.f) : (row ? m.w : m.h);
             if (free > 0.f && growSum > 0.f) main += free * cs.grow / growSum;
-            else if (free < 0.f && shrinkSum > 0.f) main += free * cs.shrink * main / shrinkSum;
+            // a scroll container never shrinks its children: the overflow is what it scrolls
+            else if (free < 0.f && shrinkSum > 0.f && s.overflow != Overflow::Scroll) main += free * cs.shrink * main / shrinkSum;
             main = row ? clampSize(main, cs.minWidth, cs.maxWidth, mainAvail)
                        : clampSize(main, cs.minHeight, cs.maxHeight, mainAvail);
             const f32 mBefore = row ? cs.margin.l : cs.margin.t, mAfter = row ? cs.margin.r : cs.margin.b;
