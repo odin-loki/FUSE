@@ -23,6 +23,8 @@
 //                   the placeholder), resize recreates the swapchain, forwarded input drives the camera /
 //                   context menu, 0 validation messages, clean teardown
 
+#include <fuse/ecs/components/collider.hpp>
+#include <fuse/ecs/systems/transform_system.hpp>
 #include <QSpinBox>
 #include <QCheckBox>
 #include <QLineEdit>
@@ -1958,6 +1960,47 @@ int gateEditTools() {
         window.undoLatest();
         expect(countEntities() == before, "one undo removes the duplicated subtree");
     }
+
+    // Collider wireframes: a box collider in front of the camera (12 edges) shows when selected / Show All.
+    {
+        ecs::EntityID boxE;
+        {
+            std::lock_guard<std::mutex> lock(window.sceneMutex());
+            const qreal dpr = vp->devicePixelRatioF();
+            const auto ray = vp->panel().screenRay(static_cast<f32>(vp->width() * dpr * 0.5), static_cast<f32>(vp->height() * dpr * 0.5));
+            ecs::Registry& reg = window.host().editorScene().registry();
+            boxE = reg.create();
+            ecs::Transform t{};
+            t.position = {ray.origin.x + ray.direction.x * 8.f, ray.origin.y + ray.direction.y * 8.f, ray.origin.z + ray.direction.z * 8.f, 1.f};
+            reg.add(boxE, t);
+            ecs::Collider c{};
+            c.shape = ecs::Collider::Box;
+            c.params = {0.5f, 0.5f, 0.5f, 0.f};
+            reg.add(boxE, c);
+            ecs::TransformSystem::update(reg);
+            window.host().editorState().selectedEntities = {boxE};
+            window.host().editorState().primarySelection = boxE;
+        }
+        (void)vp->grab();
+        expect(vp->colliderLineCount() == 12, fmt("selected box collider draws 12 edges (%d)", vp->colliderLineCount()));
+        {
+            std::lock_guard<std::mutex> lock(window.sceneMutex());
+            window.host().editorState().selectedEntities.clear();
+            window.host().editorState().primarySelection = ecs::EntityID::null();
+        }
+        (void)vp->grab();
+        expect(vp->colliderLineCount() == 0, "unselected colliders are hidden by default");
+        action("fuseActionShowColliders")->setChecked(true);
+        (void)vp->grab();
+        expect(vp->colliderLineCount() >= 12, fmt("Show All Colliders draws every collider (%d)", vp->colliderLineCount()));
+        action("fuseActionShowColliders")->setChecked(false);
+    }
+
+    // Recent projects: opening a project lists it first in File > Recent Projects.
+    window.openProject(samplesRoot() + QStringLiteral("/demo_3d_empty"));
+    expect(!window.recentProjects().isEmpty() && window.recentProjects().front().endsWith(QStringLiteral("demo_3d_empty")),
+           "opening a project adds it to Recent Projects");
+    expect(window.recentProjectsMenu() != nullptr && window.recentProjectsMenu()->isEnabled(), "Recent Projects menu enabled");
 
     // Group Selection (Ctrl+G).
     expect(action("fuseActionGroup") != nullptr, "Entity > Group Selection exists");

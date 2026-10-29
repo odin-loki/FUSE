@@ -172,6 +172,8 @@ public:
     [[nodiscard]] QAction* fileAction(const char* objectName) const;
     [[nodiscard]] QMenu* recentFilesMenu() const { return m_recentMenu; }
     [[nodiscard]] QStringList recentFiles() const { return m_recentFiles; }
+    [[nodiscard]] QMenu* recentProjectsMenu() const { return m_recentProjectsMenu; }
+    [[nodiscard]] QStringList recentProjects() const { return m_recentProjects; }
     void setDirtyPromptHook(DirtyPromptHook hook) { m_dirtyPromptHook = std::move(hook); }
     void setFileDialogHook(FileDialogHook hook) { m_fileDialogHook = std::move(hook); }
     [[nodiscard]] int dirtyPromptCount() const { return m_dirtyPromptCount; }
@@ -210,6 +212,8 @@ private:
     void syncUndoJournal_();
     void addRecentFile(const QString& path);
     void rebuildRecentMenu();
+    void addRecentProject(const QString& root);
+    void rebuildRecentProjectsMenu();
     QString askFilePath(bool saving);
     void onFileNew();
     void onFileOpen();
@@ -268,6 +272,8 @@ private:
     QString m_projectRoot;
     QMenu* m_recentMenu = nullptr;
     QStringList m_recentFiles;
+    QMenu* m_recentProjectsMenu = nullptr;
+    QStringList m_recentProjects;
     DirtyPromptHook m_dirtyPromptHook;
     FileDialogHook m_fileDialogHook;
     int m_dirtyPromptCount = 0;

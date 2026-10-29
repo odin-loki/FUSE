@@ -5,6 +5,7 @@
 #include <fuse/cinematics/timeline_loader.hpp>
 #include <fuse/ecs/components/camera.hpp>
 #include <fuse/ecs/components/light.hpp>
+#include <fuse/ecs/components/collider.hpp>
 #include <fuse/ecs/systems/transform_system.hpp>
 #include <fuse/editor/command_queue.hpp>
 
@@ -1010,7 +1011,116 @@ void ViewportPlaceholderWidget::paintSceneIcons_(QPainter& painter) {
     painter.restore();
 }
 
+void ViewportPlaceholderWidget::collectColliderLines_() {
+    m_colliderLines.clear();
+    m_colliderSelected.clear();
+    struct Seg {
+        ecs::vec3 a, b;
+        bool selected;
+    };
+    std::vector<Seg> segs;
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        ecs::Registry& registry = m_host.editorScene().registry();
+        const auto& sel = m_host.editorState().selectedEntities;
+        registry.each<ecs::Transform, ecs::Collider>([&](ecs::EntityID id, ecs::Transform& t, ecs::Collider& c) {
+            const bool selected = std::find(sel.begin(), sel.end(), id) != sel.end();
+            if (!selected && !m_showAllColliders) return;
+            const auto& m = t.local_to_world.data;
+            const auto xf = [&](f32 x, f32 y, f32 z) {
+                return ecs::vec3{m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13],
+                                 m[2] * x + m[6] * y + m[10] * z + m[14], 1.f};
+            };
+            const auto line = [&](f32 ax, f32 ay, f32 az, f32 bx, f32 by, f32 bz) {
+                segs.push_back({xf(ax, ay, az), xf(bx, by, bz), selected});
+            };
+            constexpr int kSeg = 24;
+            constexpr f32 kTau = 6.2831853f;
+            // Circle of radius r around axis (0 = X, 1 = Y, 2 = Z) at offset `o` along that axis; `half`
+            // draws only the half with a positive (sign) component along `up` (capsule caps).
+            const auto circle = [&](int axis, f32 r, f32 o, int up = -1, f32 sign = 1.f) {
+                for (int i = 0; i < kSeg; ++i) {
+                    const f32 a0 = kTau * i / kSeg, a1 = kTau * (i + 1) / kSeg;
+                    f32 p0[3], p1[3];
+                    const int u = (axis + 1) % 3, v = (axis + 2) % 3;
+                    p0[axis] = o;
+                    p1[axis] = o;
+                    p0[u] = r * std::cos(a0);
+                    p0[v] = r * std::sin(a0);
+                    p1[u] = r * std::cos(a1);
+                    p1[v] = r * std::sin(a1);
+                    if (up >= 0 && (p0[up] * sign < -1e-4f || p1[up] * sign < -1e-4f)) continue;
+                    if (up >= 0) {
+                        p0[up] += sign * o;
+                        p1[up] += sign * o;
+                    }
+                    line(p0[0], p0[1], p0[2], p1[0], p1[1], p1[2]);
+                }
+            };
+            switch (c.shape) {
+            case ecs::Collider::Sphere: {
+                const f32 r = c.params.x;
+                for (int a = 0; a < 3; ++a) circle(a, r, 0.f);
+                break;
+            }
+            case ecs::Collider::Box: {
+                const f32 h[3] = {c.params.x, c.params.y, c.params.z};
+                for (int a = 0; a < 3; ++a) {
+                    const int u = (a + 1) % 3, v = (a + 2) % 3;
+                    for (int s = 0; s < 4; ++s) {
+                        f32 p0[3], p1[3];
+                        p0[a] = -h[a];
+                        p1[a] = h[a];
+                        p0[u] = p1[u] = (s & 1) ? h[u] : -h[u];
+                        p0[v] = p1[v] = (s & 2) ? h[v] : -h[v];
+                        line(p0[0], p0[1], p0[2], p1[0], p1[1], p1[2]);
+                    }
+                }
+                break;
+            }
+            case ecs::Collider::Capsule: {
+                const f32 r = c.params.x, hh = c.params.y;
+                circle(1, r, hh);
+                circle(1, r, -hh);
+                for (int s = 0; s < 4; ++s) {
+                    const f32 x = (s == 0) ? r : (s == 1) ? -r : 0.f, z = (s == 2) ? r : (s == 3) ? -r : 0.f;
+                    line(x, -hh, z, x, hh, z);
+                }
+                // Cap arcs: circles around X and Z at the origin, keeping the +Y / -Y halves, shifted by +/- hh.
+                circle(0, r, 0.f, 1, 1.f);
+                circle(2, r, 0.f, 1, 1.f);
+                circle(0, r, 0.f, 1, -1.f);
+                circle(2, r, 0.f, 1, -1.f);
+                break;
+            }
+            default:
+                break;
+            }
+        });
+    }
+    const qreal inv = 1.0 / devicePixelRatioF();
+    for (const Seg& s : segs) {
+        f32 ax = 0.f, ay = 0.f, bx = 0.f, by = 0.f;
+        if (!m_panel.worldToScreen(s.a, ax, ay) || !m_panel.worldToScreen(s.b, bx, by)) continue;
+        m_colliderLines.emplace_back(ax * inv, ay * inv, bx * inv, by * inv);
+        m_colliderSelected.push_back(s.selected);
+    }
+}
+
+void ViewportPlaceholderWidget::paintColliders_(QPainter& painter) {
+    if (m_colliderLines.empty()) return;
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    for (usize i = 0; i < m_colliderLines.size(); ++i) {
+        painter.setPen(QPen(m_colliderSelected[i] ? QColor(120, 255, 140, 230) : QColor(90, 200, 110, 150), 1.4));
+        painter.drawLine(m_colliderLines[i]);
+    }
+    painter.restore();
+}
+
 void ViewportPlaceholderWidget::paintGizmo_(QPainter& painter) {
+    if (!m_inOverlayPaint) collectColliderLines_();
+    paintColliders_(painter);
     paintSceneIcons_(painter);
     if (!m_gizmo.dragging()) {
         refreshGizmo();
@@ -1226,6 +1336,9 @@ void ViewportPlaceholderWidget::syncOverlay(bool force) {
         QDataStream ds(&sig, QIODevice::WriteOnly);
         ds << width() << height() << m_sculptMode << static_cast<int>(m_gizmo.settings().tool)
            << m_gizmo.visible() << m_gizmo.dragAxis();
+        collectColliderLines_();
+        ds << static_cast<quint32>(m_colliderLines.size());
+        for (const QLineF& l : m_colliderLines) ds << l;
         if (m_sculptMode) {
             ds << m_hoverValid << m_hoverPos << (m_sculptPanel ? m_sculptPanel->brush().radius : 0.f)
                << m_panel.camera().positionX << m_panel.camera().positionY << m_panel.camera().positionZ
@@ -1247,7 +1360,9 @@ void ViewportPlaceholderWidget::syncOverlay(bool force) {
     img.fill(Qt::transparent);
     {
         QPainter p(&img);
+        m_inOverlayPaint = true;
         paintInteractionOverlay(p);
+        m_inOverlayPaint = false;
     }
     m_overlayImage = img;
     if (m_overlay == nullptr) {

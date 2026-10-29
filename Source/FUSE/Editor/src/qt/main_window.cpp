@@ -28,6 +28,7 @@
 #include <QFileInfo>
 #include <QProcess>
 #include <QSettings>
+#include <QTimer>
 #include <QKeySequence>
 #include <QLabel>
 #include <QMenu>
@@ -58,6 +59,12 @@ MainWindow::MainWindow(const QString& samplesRoot, const Options& options, QWidg
                             .toStringList();
         while (m_recentFiles.size() > kMaxRecentFiles) {
             m_recentFiles.removeLast();
+        }
+        m_recentProjects = QSettings(QStringLiteral("FUSE"), QStringLiteral("FUSE Editor"))
+                               .value(QStringLiteral("editor/recentProjects"))
+                               .toStringList();
+        while (m_recentProjects.size() > kMaxRecentFiles) {
+            m_recentProjects.removeLast();
         }
     }
     // Default 1280x800 logical, clamped to the screen's available area (at high DPI scale factors
@@ -265,6 +272,9 @@ void MainWindow::buildMenus() {
     m_recentMenu = file->addMenu(tr("Open &Recent"));
     m_recentMenu->setObjectName(QStringLiteral("fuseRecentFilesMenu"));
     rebuildRecentMenu();
+    m_recentProjectsMenu = file->addMenu(tr("Recent &Projects"));
+    m_recentProjectsMenu->setObjectName(QStringLiteral("fuseRecentProjectsMenu"));
+    rebuildRecentProjectsMenu();
     file->addSeparator();
     connect(addFileAction(tr("&Save"), kActionSave, QKeySequence::Save), &QAction::triggered, this,
             &MainWindow::onFileSave);
@@ -507,6 +517,13 @@ void MainWindow::buildMenus() {
     });
 
     QMenu* view = menuBar()->addMenu(tr("&View"));
+    QAction* colliders = view->addAction(tr("Show All &Colliders"));
+    colliders->setObjectName(QStringLiteral("fuseActionShowColliders"));
+    colliders->setCheckable(true);
+    colliders->setToolTip(tr("Selected entities always show their collider wireframe"));
+    connect(colliders, &QAction::toggled, this, [this](bool on) {
+        if (m_viewport != nullptr) m_viewport->setAllCollidersVisible(on);
+    });
     QAction* frame = view->addAction(tr("&Frame Selected"));
     frame->setObjectName(QStringLiteral("fuseActionFrameSelected"));
     frame->setShortcut(QKeySequence(Qt::Key_F));
@@ -784,6 +801,7 @@ void MainWindow::onProjectOpenRequested(const QString& projectDirectory) {
     m_projectRoot = root;
     m_projectLabel = info.fileName();
     updateWindowTitle();
+    addRecentProject(root);
 
     // `project.root` switches the scene and makes the next game tick load the project's default
     // world (EditorHost -> RuntimeViewportHook::ensureWorldLoaded_); `project` sets the label.
@@ -1180,6 +1198,54 @@ void MainWindow::rebuildRecentMenu() {
         });
     }
     m_recentMenu->setEnabled(!m_recentFiles.isEmpty());
+}
+
+void MainWindow::addRecentProject(const QString& root) {
+    if (root.isEmpty()) {
+        return;
+    }
+    const QString absolute = QFileInfo(root).absoluteFilePath();
+    m_recentProjects.removeAll(absolute);
+    m_recentProjects.prepend(absolute);
+    while (m_recentProjects.size() > kMaxRecentFiles) {
+        m_recentProjects.removeLast();
+    }
+    if (m_options.persistRecentFiles) {
+        QSettings(QStringLiteral("FUSE"), QStringLiteral("FUSE Editor"))
+            .setValue(QStringLiteral("editor/recentProjects"), m_recentProjects);
+    }
+    rebuildRecentProjectsMenu();
+}
+
+void MainWindow::rebuildRecentProjectsMenu() {
+    if (m_recentProjectsMenu == nullptr) {
+        return;
+    }
+    m_recentProjectsMenu->clear();
+    int index = 1;
+    for (const QString& root : m_recentProjects) {
+        QAction* action = m_recentProjectsMenu->addAction(
+            QStringLiteral("&%1 %2  (%3)").arg(index++).arg(QFileInfo(root).fileName(), QDir::toNativeSeparators(root)));
+        action->setData(root);
+        const bool exists = QFileInfo(root + QStringLiteral("/project.json")).isFile();
+        action->setEnabled(exists);
+        connect(action, &QAction::triggered, this, [this, root]() {
+            if (maybeSaveChanges()) onProjectOpenRequested(root);
+        });
+    }
+    if (!m_recentProjects.isEmpty()) {
+        m_recentProjectsMenu->addSeparator();
+        QAction* clear = m_recentProjectsMenu->addAction(tr("Clear List"));
+        clear->setObjectName(QStringLiteral("fuseActionClearRecentProjects"));
+        connect(clear, &QAction::triggered, this, [this]() {
+            m_recentProjects.clear();
+            if (m_options.persistRecentFiles) {
+                QSettings(QStringLiteral("FUSE"), QStringLiteral("FUSE Editor")).remove(QStringLiteral("editor/recentProjects"));
+            }
+            QTimer::singleShot(0, this, [this]() { rebuildRecentProjectsMenu(); });
+        });
+    }
+    m_recentProjectsMenu->setEnabled(!m_recentProjects.isEmpty());
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
