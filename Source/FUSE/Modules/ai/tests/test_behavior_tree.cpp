@@ -2389,6 +2389,7 @@ void testUtilityScore() {
 
 int run_spatial_query_tests();
 int run_parallel_policy_tests();
+int run_hostile_leaf_tests();
 
 int main() {
     testUtilityScore();
@@ -2498,6 +2499,7 @@ int main() {
     testSequenceStatusCombine();
     g_failures += run_spatial_query_tests();
     g_failures += run_parallel_policy_tests();
+    g_failures += run_hostile_leaf_tests();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

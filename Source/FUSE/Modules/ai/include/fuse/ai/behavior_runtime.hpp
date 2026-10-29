@@ -32,6 +32,14 @@ struct AgentBinding {
     u32 teamId = 0;
     /// Selects registered tree profile (default 0).
     u32 treeProfileId = 0;
+    /// Height for 3D faction queries. The entity position provider only updates x / y.
+    float z = 0.f;
+    /// Faction bits other agents test against their `hostileMask` / `friendlyMask`.
+    u32 factionMask = 0;
+    /// Factions this agent treats as friendly (wins over hostile) and as hostile. Hostile leaves
+    /// build `FactionQuery{teamId, friendlyMask, hostileMask}`; same-team agents are never hostile.
+    u32 friendlyMask = 0;
+    u32 hostileMask = 0;
 };
 
 /// Game-thread facade: build snapshots, jobify BT eval, commit blackboard writes.

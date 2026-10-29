@@ -45,6 +45,8 @@
 | `gb.action.move_toward` | Leaf | GuideBot stub; sets flag when far |
 | `bb.condition.allies_in_radius` | Leaf | Success when `minCount` same-team allies within `threshold` radius |
 | `bb.action.nearest_ally` | Leaf | Write flag when nearest ally found within optional max radius |
+| `bb.condition.hostiles_in_radius` | Leaf | Success when `minCount` hostiles within `threshold` (3D, `FactionQuery` from the agent) |
+| `bb.action.nearest_hostile` | Leaf | Write flag (and optional scalar = hostile `agentIndex`) for the nearest hostile within optional max radius |
 
 ---
 
@@ -68,7 +70,9 @@ Beyond same-team XY queries: `FactionQuery` hostile lookups (`find_nearest_hosti
 
 **Navmesh reachability** (`fuse/ai/nav_query.hpp`, links `fuse_navigation`): `find_nearest_reachable_ally` ranks same-team allies by walking distance on a `GridNavmesh` (steps x cell size; optional max walk, 0 = unlimited; tie -> lowest `agentIndex`), and `count_reachable_allies` counts allies within a walk. One `step_field` flood fill per query into caller scratch; allies in blocked, sealed, or off-grid cells are skipped. Tests: `fuse_ai_nav_query`.
 
-**Deferred:** BT leaves for hostile and reachability queries (no navmesh on `BehaviorEvalContext` yet), 3D navmesh.
+**Hostile leaves:** `AgentBinding` carries `z`, `factionMask`, `friendlyMask`, `hostileMask`; `BehaviorRuntime` copies `z` / masks into `AgentSnapshot` and `z` / `factionMask` into each `AllyCandidate`. `bb.condition.hostiles_in_radius` (`threshold` -> finite positive radius, `loopCount` -> `minCount`, default 1) and `bb.action.nearest_hostile` (`threshold` -> optional max radius, 0 = unlimited, NaN fails; `flag` on success; optional `scalar` -> hostile `agentIndex`) build `FactionQuery{teamId, friendlyMask, hostileMask}` from the ticking agent and use 3D distance. Same-team and friendly-masked agents are never hostile. Both fail on a null or empty ally context. Tests: `test_hostile_leaves.cpp` in `fuse_ai_tests`.
+
+**Deferred:** BT leaves for reachability queries (no navmesh on `BehaviorEvalContext` yet, and `GridNavmesh` search scratch is per mesh, so parallel per-agent eval would need per-call scratch), 3D navmesh.
 
 ---
 

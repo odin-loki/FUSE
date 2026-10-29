@@ -165,6 +165,23 @@ BehaviorNode makeActionNearestAlly(const NodeLoadSpec& spec) {
     return node;
 }
 
+BehaviorNode makeConditionHostilesInRadius(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::ConditionHostilesInRadius;
+    node.threshold = spec.threshold;
+    node.loopCount = spec.loopCount;
+    return node;
+}
+
+BehaviorNode makeActionNearestHostile(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::ActionNearestHostile;
+    node.threshold = spec.threshold;
+    node.flagIndex = spec.flagIndex;
+    node.scalarSlot = spec.scalarSlot;
+    return node;
+}
+
 BehaviorNode makeConditionAnyAllyInRadius(const NodeLoadSpec& spec) {
     BehaviorNode node;
     node.kind = NodeKind::ConditionAnyAllyInRadius;
@@ -327,6 +344,10 @@ void NodeRegistry::registerBuiltins() {
     registerFactory("bb.action.nearest_ally", makeActionNearestAlly);
     registerFactory("bb.action.nearest_ally_distance", makeActionNearestAllyDistance);
     registerFactory("bb.action.allies_count", makeActionAlliesCount);
+
+    // FUSE faction leaves — 3D hostile lookups through FactionQuery (agent team + masks)
+    registerFactory("bb.condition.hostiles_in_radius", makeConditionHostilesInRadius);
+    registerFactory("bb.action.nearest_hostile", makeActionNearestHostile);
 
     // FUSE guard leaves — empty blackboard / ally-context preconditions
     registerFactory("bb.guard.blackboard_bound", makeGuardBlackboardBound);

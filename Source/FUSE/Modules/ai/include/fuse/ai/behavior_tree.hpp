@@ -63,6 +63,8 @@ enum class NodeKind {
     GuardBlackboardAgentValid,
     GuardAllyContext,
     GuardValidAllyRadius,
+    ConditionHostilesInRadius,
+    ActionNearestHostile,
 };
 
 /// Optional per-tick eval state for leaves that span frames (wait) or read runtime tick count.

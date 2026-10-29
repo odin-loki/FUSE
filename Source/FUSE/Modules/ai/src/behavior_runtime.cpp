@@ -135,6 +135,9 @@ void BehaviorRuntime::buildSnapshots() {
         snap.targetY = binding.targetY;
         snap.moveSpeed = binding.moveSpeed;
         snap.teamId = binding.teamId;
+        snap.z = binding.z;
+        snap.friendlyMask = binding.friendlyMask;
+        snap.hostileMask = binding.hostileMask;
         m_snapshots.push_back(snap);
     }
 
@@ -153,6 +156,8 @@ void BehaviorRuntime::buildAllyCandidates() {
         candidate.x = binding.x;
         candidate.y = binding.y;
         candidate.teamId = binding.teamId;
+        candidate.z = binding.z;
+        candidate.factionMask = binding.factionMask;
         m_allies.push_back(candidate);
     }
 }

@@ -3,12 +3,22 @@
 #include <fuse/ai/spatial_query.hpp>
 
 #include <algorithm>
+#include <cmath>
 
 namespace fuse::ai {
 
 namespace {
 
 constexpr u32 kParallelChildCount = 2;
+
+/// Hostile leaves look up enemies with the agent's own team and faction masks.
+FactionQuery agent_faction_query(const AgentSnapshot& agent) {
+    FactionQuery query;
+    query.selfTeam = agent.teamId;
+    query.friendlyMask = agent.friendlyMask;
+    query.hostileMask = agent.hostileMask;
+    return query;
+}
 
 BehaviorTickResult mergeParallelSideEffects(const BehaviorTickResult& current,
                                             const BehaviorTickResult& child) {
@@ -551,6 +561,54 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
         BehaviorTickResult result;
         result.status = is_valid_ally_radius(node.threshold) ? BehaviorStatus::Success
                                                            : BehaviorStatus::Failure;
+        return result;
+    }
+    case NodeKind::ConditionHostilesInRadius: {
+        BehaviorTickResult result;
+        result.status = BehaviorStatus::Failure;
+        if (!ally_context_available(ctx.allies) || !is_finite_ally_radius(node.threshold)) {
+            return result;
+        }
+        const u32 minCount = node.loopCount > 0 ? node.loopCount : 1u;
+        const u32 count = count_hostiles_in_radius(agentIndex,
+                                                   agent_faction_query(agent),
+                                                   agent.x,
+                                                   agent.y,
+                                                   agent.z,
+                                                   node.threshold,
+                                                   *ctx.allies);
+        if (count >= minCount) {
+            result.status = BehaviorStatus::Success;
+        }
+        return result;
+    }
+    case NodeKind::ActionNearestHostile: {
+        BehaviorTickResult result;
+        result.status = BehaviorStatus::Failure;
+        if (!ally_context_available(ctx.allies) || std::isnan(node.threshold)) {
+            return result;
+        }
+        const NearestAllyResult nearest = find_nearest_hostile(agentIndex,
+                                                               agent_faction_query(agent),
+                                                               agent.x,
+                                                               agent.y,
+                                                               agent.z,
+                                                               *ctx.allies);
+        if (!nearest.found ||
+            (!is_unlimited_radius(node.threshold) && !within_radius(nearest.distanceSq, node.threshold))) {
+            return result;
+        }
+        result.status = BehaviorStatus::Success;
+        if (node.flagIndex < Blackboard::kMaxFlags) {
+            result.wroteFlag = true;
+            result.flagIndex = node.flagIndex;
+            result.flagValue = true;
+        }
+        if (node.scalarSlot < Blackboard::kMaxScalars) {
+            result.wroteScalar = true;
+            result.scalarIndex = node.scalarSlot;
+            result.scalarValue = static_cast<float>(nearest.allyIndex);
+        }
         return result;
     }
     }

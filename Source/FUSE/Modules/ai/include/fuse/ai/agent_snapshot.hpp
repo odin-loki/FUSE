@@ -15,6 +15,11 @@ struct AgentSnapshot {
     float targetY = 0.f;
     float moveSpeed = 1.f;
     u32 teamId = 0;
+    /// Height for 3D faction queries (hostile leaves); XY leaves ignore it.
+    float z = 0.f;
+    /// `FactionQuery` masks this agent applies when looking for hostiles (see `AgentBinding`).
+    u32 friendlyMask = 0;
+    u32 hostileMask = 0;
 
     float distanceToTarget() const;
 
