@@ -15,6 +15,22 @@ void GameLoopThread::run() {
     // only submit on the registered render thread). MainWindow hands the role back to the UI
     // thread after joining this one.
     fuse::platform::registerRenderThread();
+    if (m_host != nullptr) {
+        // Build the viewport renderer (Vulkan instance / device / pipelines: seconds on Lavapipe)
+        // without holding the scene mutex, so the UI is never blocked behind it.
+        std::shared_ptr<void> token;
+        {
+            std::unique_lock<std::mutex> lock;
+            if (m_sceneMutex != nullptr) lock = std::unique_lock<std::mutex>(*m_sceneMutex);
+            token = m_host->runtimeViewport().beginWindowPresentPrewarm();
+        }
+        if (token != nullptr) {
+            RuntimeViewportHook::buildWindowPresentPrewarm(token.get());
+            std::unique_lock<std::mutex> lock;
+            if (m_sceneMutex != nullptr) lock = std::unique_lock<std::mutex>(*m_sceneMutex);
+            m_host->runtimeViewport().adoptWindowPresentPrewarm(std::move(token));
+        }
+    }
     QTimer timer;
     timer.setTimerType(Qt::PreciseTimer);
     timer.setInterval(16);

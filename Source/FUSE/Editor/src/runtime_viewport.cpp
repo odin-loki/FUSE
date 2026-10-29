@@ -91,6 +91,13 @@ EulerDeg quatToEulerDeg(const ecs::quat& q) {
 } // namespace
 
 #if defined(FUSE_VULKAN_BACKEND)
+struct WindowPrewarmToken {
+    WindowPresentRequest request;
+    u32 width = 640;
+    u32 height = 480;
+    std::unique_ptr<fuse::hybrid::HybridRendererBootstrap> hybrid;
+};
+
 struct RuntimeViewportHeadlessGpuStub {
     std::unique_ptr<fuse::renderer::RhiContext> context;
     std::unique_ptr<fuse::hybrid::HybridRendererBootstrap> hybrid;
@@ -101,6 +108,9 @@ struct RuntimeViewportHeadlessGpuStub {
     u32 submittedFrames = 0;
     bool externalSwapchainWired = false;
     bool worldsAttached = false;
+    /// The instance keeps `const char*` into the request's extension names: keep them alive.
+    std::shared_ptr<WindowPrewarmToken> instanceRequest;
+    bool windowBringUpDone = false; ///< tickWindowPresent_ step 1 finished (instance published)
     const fuse::hybrid::HybridSceneRenderer* textureLoaderOn = nullptr; ///< GPU scene that has the texture loader
 };
 
@@ -1098,23 +1108,18 @@ void RuntimeViewportHook::tickWindowPresent_() {
         gpu = asHeadlessGpuStub(m_headlessGpuStub);
     }
 
-    // 1. One renderer for the viewport, on an instance the UI can build its window surface on.
-    if (gpu->hybrid == nullptr) {
-        std::vector<const char*> extensions;
-        extensions.reserve(m_windowPresentRequest.instanceExtensions.size());
-        for (const std::string& name : m_windowPresentRequest.instanceExtensions) {
-            extensions.push_back(name.c_str());
+    // 1. One renderer for the viewport, on an instance the UI can build its window surface on
+    //    (built off the scene lock by the game thread's prewarm when available).
+    if (!gpu->windowBringUpDone) {
+        if (gpu->hybrid == nullptr) {
+            auto token = std::make_shared<WindowPrewarmToken>();
+            token->request = m_windowPresentRequest;
+            token->width = m_panel.width() > 0 ? m_panel.width() : 640u;
+            token->height = m_panel.height() > 0 ? m_panel.height() : 480u;
+            buildWindowPresentPrewarm(token.get());
+            gpu->hybrid = std::move(token->hybrid);
+            gpu->instanceRequest = std::move(token);
         }
-        fuse::hybrid::HybridRendererBootstrapDesc bootstrapDesc{};
-        bootstrapDesc.presentable.backend = fuse::hybrid::PresentableBackend::Headless;
-        bootstrapDesc.presentable.swapchainWidth = m_panel.width() > 0 ? m_panel.width() : 640u;
-        bootstrapDesc.presentable.swapchainHeight = m_panel.height() > 0 ? m_panel.height() : 480u;
-        bootstrapDesc.renderer.rhi.bootstrap.instance.enableValidation = m_windowPresentRequest.enableValidation;
-        bootstrapDesc.renderer.rhi.bootstrap.instance.extraExtensions = extensions.data();
-        bootstrapDesc.renderer.rhi.bootstrap.instance.extraExtensionCount = static_cast<u32>(extensions.size());
-        bootstrapDesc.renderer.rhi.bootstrap.createSwapchain = true;
-        bootstrapDesc.scene.sdfProxyMeshes = true; // editor: sculpted SDFs visible in the raster viewport
-        gpu->hybrid = fuse::hybrid::HybridRendererBootstrap::create(bootstrapDesc);
 
         fuse::renderer::RhiContext* rhi =
             gpu->hybrid != nullptr && gpu->hybrid->isReady() ? gpu->hybrid->rendererBootstrap().rhiContext() : nullptr;
@@ -1140,6 +1145,7 @@ void RuntimeViewportHook::tickWindowPresent_() {
         }
         m_windowPresentInstance.store(instance->nativeHandle(), std::memory_order_release);
         m_windowPresentState.store(WindowPresentState::InstanceReady, std::memory_order_release);
+        gpu->windowBringUpDone = true;
     }
 
     fuse::renderer::RhiContext* rhi = gpu->hybrid->rendererBootstrap().rhiContext();
@@ -1338,6 +1344,80 @@ void RuntimeViewportHook::exitPlayViewportCamera() {
     }
     m_panel.camera() = m_playViewportCameraSnapshot;
     m_playViewportCameraSaved = false;
+}
+
+} // namespace fuse::editor
+
+namespace fuse::editor {
+
+std::shared_ptr<void> RuntimeViewportHook::beginWindowPresentPrewarm() {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!windowPresentActive_() || m_windowPresentRequest.instanceExtensions.empty()) {
+        return nullptr;
+    }
+    const RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub);
+    if (gpu != nullptr && gpu->hybrid != nullptr) {
+        return nullptr;
+    }
+    auto token = std::make_shared<WindowPrewarmToken>();
+    token->request = m_windowPresentRequest;
+    token->width = m_panel.width() > 0 ? m_panel.width() : 640u;
+    token->height = m_panel.height() > 0 ? m_panel.height() : 480u;
+    return token;
+#else
+    return nullptr;
+#endif
+}
+
+void RuntimeViewportHook::buildWindowPresentPrewarm(void* tokenPtr) {
+#if defined(FUSE_VULKAN_BACKEND)
+    auto* token = static_cast<WindowPrewarmToken*>(tokenPtr);
+    if (token == nullptr || token->hybrid != nullptr) {
+        return;
+    }
+    std::vector<const char*> extensions;
+    extensions.reserve(token->request.instanceExtensions.size());
+    for (const std::string& name : token->request.instanceExtensions) {
+        extensions.push_back(name.c_str());
+    }
+    fuse::hybrid::HybridRendererBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.presentable.backend = fuse::hybrid::PresentableBackend::Headless;
+    bootstrapDesc.presentable.swapchainWidth = token->width;
+    bootstrapDesc.presentable.swapchainHeight = token->height;
+    bootstrapDesc.renderer.rhi.bootstrap.instance.enableValidation = token->request.enableValidation;
+    bootstrapDesc.renderer.rhi.bootstrap.instance.extraExtensions = extensions.data();
+    bootstrapDesc.renderer.rhi.bootstrap.instance.extraExtensionCount = static_cast<u32>(extensions.size());
+    bootstrapDesc.renderer.rhi.bootstrap.createSwapchain = true;
+    bootstrapDesc.scene.sdfProxyMeshes = true; // editor: sculpted SDFs visible in the raster viewport
+    token->hybrid = fuse::hybrid::HybridRendererBootstrap::create(bootstrapDesc);
+#else
+    (void)tokenPtr;
+#endif
+}
+
+void RuntimeViewportHook::adoptWindowPresentPrewarm(std::shared_ptr<void> tokenPtr) {
+#if defined(FUSE_VULKAN_BACKEND)
+    auto* token = static_cast<WindowPrewarmToken*>(tokenPtr.get());
+    if (token == nullptr || token->hybrid == nullptr || !windowPresentActive_()) {
+        return;
+    }
+    // The UI may have (re)issued the request while we built: only adopt a matching instance.
+    if (token->request.instanceExtensions != m_windowPresentRequest.instanceExtensions ||
+        token->request.enableValidation != m_windowPresentRequest.enableValidation) {
+        return;
+    }
+    RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub);
+    if (gpu == nullptr) {
+        m_headlessGpuStub = new RuntimeViewportHeadlessGpuStub();
+        gpu = asHeadlessGpuStub(m_headlessGpuStub);
+    }
+    if (gpu->hybrid == nullptr) {
+        gpu->hybrid = std::move(token->hybrid); // tickWindowPresent_ step 1 finishes the bring-up
+        gpu->instanceRequest = std::static_pointer_cast<WindowPrewarmToken>(std::move(tokenPtr));
+    }
+#else
+    (void)tokenPtr;
+#endif
 }
 
 } // namespace fuse::editor

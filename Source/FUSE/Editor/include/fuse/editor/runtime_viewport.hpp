@@ -82,6 +82,17 @@ public:
 
     /// UI thread, before the game thread ticks: render the viewport for a window-system surface.
     void requestWindowSystemPresent(const WindowPresentRequest& request);
+
+    /// Off-lock GPU bring-up (game thread). The first window-present tick builds the Vulkan
+    /// instance / device / renderer, which takes seconds on Lavapipe; doing that under the scene
+    /// mutex stalls every UI path that touches the scene. Protocol:
+    ///   token = beginWindowPresentPrewarm();      // scene lock held: snapshot the request
+    ///   buildWindowPresentPrewarm(token.get());   // no lock: create the renderer
+    ///   adoptWindowPresentPrewarm(std::move(token)); // scene lock held: hand it to the hook
+    /// `begin` returns null when nothing needs building. tick() finishes the bring-up as before.
+    std::shared_ptr<void> beginWindowPresentPrewarm();
+    static void buildWindowPresentPrewarm(void* token);
+    void adoptWindowPresentPrewarm(std::shared_ptr<void> token);
     [[nodiscard]] WindowPresentState windowPresentState() const {
         return m_windowPresentState.load(std::memory_order_acquire);
     }
