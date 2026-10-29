@@ -9,6 +9,7 @@
 //   play       toolbar Play / Stop toggle PIE and the transport enable state
 //   assets     asset browser folder navigation (Up / double-click) and scene double-click opens it
 //   entity     Entity menu create / duplicate / delete (undoable through the UndoStack)
+//   layout     dock layout + geometry save / restore through QSettings (temp settings path)
 //   profiler   frame-time graph, min / avg / max summary, Pause and Clear
 //   project    openProject() on a sample loads its world into the hierarchy; the window grabs to a
 //              non-empty image (the --screenshot path)
@@ -28,6 +29,8 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QMenu>
+#include <QSettings>
+#include <QTemporaryDir>
 #include <QMessageBox>
 #include <QToolButton>
 #include <QPixmap>
@@ -246,6 +249,25 @@ int gateEntity(MainWindow& window) {
     return 0;
 }
 
+int gateLayout(MainWindow& window) {
+    QTemporaryDir dir;
+    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, dir.path());
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, dir.path());
+    QDockWidget* profiler = window.dock(MainWindow::kProfilerDock);
+    QDockWidget* sculpt = window.dock(MainWindow::kSdfSculptDock);
+    profiler->hide();
+    sculpt->setFloating(true);
+    window.saveSettingsLayout();
+    window.resetToDefaultLayout();
+    QCoreApplication::processEvents();
+    expect(profiler->isVisible() && !sculpt->isFloating(), "layout: reset restores the default docks");
+    expect(window.restoreSettingsLayout(), "layout: saved layout restores");
+    QCoreApplication::processEvents();
+    expect(!profiler->isVisible() && sculpt->isFloating(), "layout: hidden / floating docks come back as saved");
+    window.resetToDefaultLayout();
+    return 0;
+}
+
 int gateProfiler(MainWindow& window) {
     fuse::editor::qt::ProfilerWidget* prof = window.profiler();
     prof->panel().clearHistory();
@@ -306,6 +328,9 @@ int main(int argc, char** argv) {
         }
         if (gate == "entity" || gate == "all") {
             gateEntity(window);
+        }
+        if (gate == "layout" || gate == "all") {
+            gateLayout(window);
         }
         if (gate == "profiler" || gate == "all") {
             gateProfiler(window);

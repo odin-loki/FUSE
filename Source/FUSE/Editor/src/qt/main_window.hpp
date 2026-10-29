@@ -55,7 +55,17 @@ public:
         bool vulkanValidation = false;
         /// Keep File > Recent Files in QSettings (tests turn it off to stay hermetic).
         bool persistRecentFiles = true;
+        /// Restore the window geometry + dock layout from QSettings on start and save it on close
+        /// (the fuse_editor executable turns this on; tests keep the default layout).
+        bool persistLayout = false;
     };
+    /// QSettings keys for `Options::persistLayout`.
+    static constexpr const char* kSettingsGeometry = "editor/geometry";
+    static constexpr const char* kSettingsLayout = "editor/layout";
+    /// Save geometry + dock layout to QSettings now (closeEvent calls this when persisting).
+    void saveSettingsLayout() const;
+    /// Restore geometry + dock layout from QSettings. False when nothing was saved / it failed.
+    bool restoreSettingsLayout();
 
     /// File menu action names (QAction::objectName), for `fileAction`.
     static constexpr const char* kActionNewScene = "fuseActionNewScene";
