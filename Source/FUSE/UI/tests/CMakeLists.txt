@@ -109,3 +109,23 @@ if(TARGET fuse_app)
         set_tests_properties(fuse_app_hello_sample fuse_app_notes_sample PROPERTIES LABELS fuse_ui)
     endif()
 endif()
+
+# ---- UI7 game UI gates ----
+if(TARGET fuse_ui_game)
+    foreach(pair "hud_golden=fuse_ui_game_hud_golden" "gamepad_nav=fuse_ui_gamepad_nav"
+                 "world_panel_raycast=fuse_ui_world_panel_raycast" "input_arbitration=fuse_ui_input_arbitration"
+                 "pause_time_domain=fuse_ui_pause_time_domain")
+        string(REPLACE "=" ";" kv ${pair})
+        list(GET kv 0 g)
+        list(GET kv 1 t)
+        fuse_ui_test(${t} test_game.cpp)
+        target_link_libraries(${t} PRIVATE fuse_ui_game)
+        target_compile_definitions(${t} PRIVATE FUSE_UI_GAME_GATE="${g}")
+        set_tests_properties(${t} PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    endforeach()
+    if(TARGET hud_demo)
+        add_test(NAME fuse_ui_game_hud_demo COMMAND hud_demo --screenshot=${CMAKE_CURRENT_BINARY_DIR}/hud_demo.png)
+        add_test(NAME fuse_ui_game_world_panel_demo COMMAND world_panel_demo --screenshot=${CMAKE_CURRENT_BINARY_DIR}/world_panel_demo.png)
+        set_tests_properties(fuse_ui_game_hud_demo fuse_ui_game_world_panel_demo PROPERTIES LABELS fuse_ui)
+    endif()
+endif()

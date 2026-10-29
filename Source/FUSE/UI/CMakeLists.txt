@@ -16,7 +16,7 @@ get_filename_component(FUSE_UI_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." 
 
 option(FUSE_BUILD_UI_WIDGETS "Build fuse_ui_widgets (Tier A widgets)" ON)
 option(FUSE_BUILD_UI_TESTS "Build FUSE UI gate tests" ON)
-option(FUSE_BUILD_UI_GAME "Build fuse_ui_game (HUD/world-space; UI8, not yet)" OFF)
+option(FUSE_BUILD_UI_GAME "Build fuse_ui_game (UI7: HUD, world-space UI, gamepad navigation)" ON)
 option(FUSE_BUILD_APP "Build fuse_app (application framework; UI9, not yet)" OFF)
 option(FUSE_BUILD_UI_DESIGNER "Build the UI designer (UI10, not yet)" OFF)
 option(FUSE_UI_ACCESSIBILITY "Accessibility tree (AccessKit bridge later, D7)" ON)
@@ -208,6 +208,19 @@ endif()
 option(FUSE_BUILD_UI_APP "Build fuse_app (Application / AppWindow, on-demand loop) and its samples" ON)
 if(FUSE_BUILD_UI_APP AND TARGET fuse_ui_doc)
     add_subdirectory(App)
+endif()
+
+# ---- fuse_ui_game: game UI (UI7) — HUD widgets, world markers / panels, gamepad nav, input arbitration ----
+if(FUSE_BUILD_UI_GAME AND FUSE_BUILD_UI_WIDGETS)
+    add_library(fuse_ui_game STATIC Game/src/game_ui.cpp)
+    target_include_directories(fuse_ui_game PUBLIC Game/include)
+    target_link_libraries(fuse_ui_game PUBLIC fuse_ui_widgets)
+    if(TARGET fuse_app)
+        foreach(s hud_demo world_panel_demo)
+            add_executable(${s} Game/samples/${s}.cpp)
+            target_link_libraries(${s} PRIVATE fuse_ui_game fuse_app)
+        endforeach()
+    endif()
 endif()
 
 if(FUSE_BUILD_UI_TESTS AND FUSE_BUILD_UI_WIDGETS)
