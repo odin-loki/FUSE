@@ -628,6 +628,20 @@ void testGroupAndNamedPaste() {
     expectTrue(!registry.alive(g) && registry.get<ecs::Transform>(a)->parent == ecs::EntityID::null() &&
                    registry.get<ecs::Transform>(a)->position.x == 2.f,
                "group: one undo restores the original hierarchy");
+    host.undoStack().redo();
+    const ecs::EntityID regrouped = registry.get<ecs::Transform>(a)->parent;
+    expectTrue(regrouped.valid() && registry.get<ecs::Transform>(b)->parent == regrouped, "group: redo regroups");
+    state.selectedEntities = {regrouped};
+    state.primarySelection = regrouped;
+    expectTrue(editor::ungroupSelection(registry, host.undoStack(), state) == 2u, "ungroup: moves both children");
+    expectTrue(!registry.alive(regrouped) && registry.get<ecs::Transform>(a)->parent == ecs::EntityID::null() &&
+                   registry.get<ecs::Transform>(a)->position.x == 2.f && registry.get<ecs::Transform>(b)->position.y == 2.f,
+               "ungroup: deletes the empty group, keeps world positions");
+    expectTrue(state.selectedEntities.size() == 2u, "ungroup: selects the former children");
+    host.undoStack().undo();
+    expectTrue(registry.get<ecs::Transform>(a)->parent.valid() && registry.get<ecs::Transform>(a)->position.x == -1.f,
+               "ungroup: one undo restores the group");
+    host.undoStack().undo();
     editor::EntityClipboard clip;
     clip.copy(registry, {a}, &host.entityNames());
     const auto pasted = clip.paste(registry, host.undoStack(), state, &host.entityNames());

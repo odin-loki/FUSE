@@ -41,4 +41,10 @@ private:
 ecs::EntityID groupSelection(ecs::Registry& registry, UndoStack& undo, EditorState& state, EntityNames* names = nullptr,
                              const std::string& name = "Group");
 
+/// Ungroup: one undo step that moves the children of every selected entity up to that entity's parent,
+/// keeping their world pose (exact for uniform scale), then deletes each ungrouped entity when it is an
+/// empty group (only a Transform). The former children become the selection. Returns how many children
+/// moved (0: nothing to ungroup).
+std::size_t ungroupSelection(ecs::Registry& registry, UndoStack& undo, EditorState& state);
+
 } // namespace fuse::editor

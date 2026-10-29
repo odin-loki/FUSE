@@ -1,4 +1,6 @@
 #include <fuse/editor/entity_clipboard.hpp>
+#include <tuple>
+#include <fuse/editor/transform_gizmo.hpp>
 
 #include <algorithm>
 
@@ -184,6 +186,61 @@ ecs::EntityID groupSelection(ecs::Registry& registry, UndoStack& undo, EditorSta
         state.sceneModified = true;
     }
     return group;
+}
+
+std::size_t ungroupSelection(ecs::Registry& registry, UndoStack& undo, EditorState& state) {
+    std::vector<ecs::EntityID> selection = state.selectedEntities;
+    if (selection.empty() && state.primarySelection.valid()) selection.push_back(state.primarySelection);
+    struct Job {
+        ecs::EntityID group;
+        std::vector<ecs::EntityID> children;
+    };
+    std::vector<Job> jobs;
+    for (ecs::EntityID id : selection) {
+        if (!registry.alive(id) || registry.get<ecs::Transform>(id) == nullptr) continue;
+        Job job{id, {}};
+        registry.each<ecs::Transform>([&](ecs::EntityID child, ecs::Transform& t) {
+            if (t.parent == id) job.children.push_back(child);
+        });
+        if (!job.children.empty()) jobs.push_back(std::move(job));
+    }
+    if (jobs.empty()) return 0;
+    std::size_t moved = 0;
+    std::vector<ecs::EntityID> newSelection;
+    undo.beginMacro("Ungroup");
+    for (const Job& job : jobs) {
+        const ecs::Transform* gt = registry.get<ecs::Transform>(job.group);
+        if (gt == nullptr) continue;
+        const TransformCommand::State g = TransformCommand::capture(*gt);
+        const ecs::EntityID up = gt->parent;
+        for (ecs::EntityID child : job.children) {
+            const ecs::Transform* ct = registry.get<ecs::Transform>(child);
+            if (ct == nullptr) continue;
+            const TransformCommand::State before = TransformCommand::capture(*ct);
+            TransformCommand::State after = before;
+            const ecs::vec3 scaled{before.position.x * g.scale.x, before.position.y * g.scale.y, before.position.z * g.scale.z, 0.f};
+            const ecs::vec3 r = TransformGizmo::rotate(g.rotation, scaled);
+            after.position = {g.position.x + r.x, g.position.y + r.y, g.position.z + r.z, before.position.w};
+            after.rotation = TransformGizmo::multiply(g.rotation, before.rotation);
+            after.scale = {before.scale.x * g.scale.x, before.scale.y * g.scale.y, before.scale.z * g.scale.z, before.scale.w};
+            undo.execute(std::make_unique<ReparentEntityCommand>(registry, child, up, job.group));
+            undo.execute(std::make_unique<TransformCommand>(registry, child, before, after));
+            newSelection.push_back(child);
+            ++moved;
+        }
+        const EntityComponentSet comps = captureEntityComponents(registry, job.group);
+        bool onlyTransform = true;
+        std::apply([&](const auto& first, const auto&... rest) {
+            (void)first;
+            ((onlyTransform = onlyTransform && !rest.has_value()), ...);
+        }, comps);
+        if (onlyTransform) undo.execute(std::make_unique<DeleteEntityCommand>(registry, job.group));
+    }
+    undo.endMacro();
+    state.selectedEntities = newSelection;
+    state.primarySelection = newSelection.empty() ? ecs::EntityID::null() : newSelection.back();
+    state.sceneModified = true;
+    return moved;
 }
 
 } // namespace fuse::editor

@@ -471,6 +471,23 @@ void MainWindow::buildMenus() {
         refreshPanels();
         if (m_viewport != nullptr) m_viewport->update();
     });
+    QAction* ungroup = m_entityMenu->addAction(tr("U&ngroup"));
+    ungroup->setObjectName(QStringLiteral("fuseActionUngroup"));
+    ungroup->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_G));
+    connect(ungroup, &QAction::triggered, this, [this]() {
+        if (m_host.editorState().playing) return;
+        std::size_t moved = 0;
+        {
+            std::lock_guard<std::mutex> lock(m_sceneMutex);
+            moved = ungroupSelection(m_host.editorScene().registry(), m_host.undoStack(), m_host.editorState());
+        }
+        if (moved == 0) {
+            statusBar()->showMessage(tr("Ungroup: the selection has no children"), 4000);
+            return;
+        }
+        refreshPanels();
+        if (m_viewport != nullptr) m_viewport->update();
+    });
     connect(m_entityMenu, &QMenu::aboutToShow, this, [this, duplicate, remove]() {
         std::lock_guard<std::mutex> lock(m_sceneMutex);
         const bool selected = m_host.editorState().primarySelection != ecs::EntityID::null();
