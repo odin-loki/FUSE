@@ -53,6 +53,52 @@ ecs::quat TransformGizmo::multiply(const ecs::quat& a, const ecs::quat& b) {
                      a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w, a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z};
 }
 
+TransformCommand::State TransformGizmo::applyGroupDelta(TransformTool tool, const TransformCommand::State& primaryStart,
+                                                        const TransformCommand::State& primaryNow,
+                                                        const TransformCommand::State& otherStart, bool sameFrame) {
+    TransformCommand::State out = otherStart;
+    const ecs::vec3& pivot = primaryStart.position;
+    const ecs::vec3 offset{otherStart.position.x - pivot.x, otherStart.position.y - pivot.y, otherStart.position.z - pivot.z, 0.f};
+    auto setPos = [&](const ecs::vec3& off) {
+        out.position = ecs::vec3{pivot.x + off.x, pivot.y + off.y, pivot.z + off.z, otherStart.position.w};
+    };
+    switch (tool) {
+    case TransformTool::Translate:
+        out.position.x += primaryNow.position.x - primaryStart.position.x;
+        out.position.y += primaryNow.position.y - primaryStart.position.y;
+        out.position.z += primaryNow.position.z - primaryStart.position.z;
+        break;
+    case TransformTool::Rotate: {
+        const ecs::quat& s = primaryStart.rotation;
+        const ecs::quat inv{-s.x, -s.y, -s.z, s.w};
+        const ecs::quat delta = multiply(primaryNow.rotation, inv);
+        out.rotation = multiply(delta, otherStart.rotation);
+        const f32 len = std::sqrt(out.rotation.x * out.rotation.x + out.rotation.y * out.rotation.y +
+                                  out.rotation.z * out.rotation.z + out.rotation.w * out.rotation.w);
+        if (len > 0.f) out.rotation = ecs::quat{out.rotation.x / len, out.rotation.y / len, out.rotation.z / len, out.rotation.w / len};
+        if (sameFrame) setPos(rotate(delta, offset));
+        break;
+    }
+    case TransformTool::Scale: {
+        auto ratio = [](f32 now, f32 start) { return std::fabs(start) > 1e-6f ? now / start : 1.f; };
+        const f32 f[3] = {ratio(primaryNow.scale.x, primaryStart.scale.x), ratio(primaryNow.scale.y, primaryStart.scale.y),
+                          ratio(primaryNow.scale.z, primaryStart.scale.z)};
+        out.scale.x *= f[0];
+        out.scale.y *= f[1];
+        out.scale.z *= f[2];
+        if (sameFrame) {
+            const ecs::quat& r = primaryStart.rotation;
+            const ecs::vec3 local = rotate(ecs::quat{-r.x, -r.y, -r.z, r.w}, offset);
+            setPos(rotate(r, ecs::vec3{local.x * f[0], local.y * f[1], local.z * f[2], 0.f}));
+        }
+        break;
+    }
+    case TransformTool::Select:
+        break;
+    }
+    return out;
+}
+
 ecs::quat TransformGizmo::axisAngle(const ecs::vec3& axis, f32 radians) {
     const f32 s = std::sin(radians * 0.5f);
     return ecs::quat{axis.x * s, axis.y * s, axis.z * s, std::cos(radians * 0.5f)};

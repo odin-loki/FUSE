@@ -235,8 +235,8 @@ BuildPackageDialog::BuildPackageDialog(const QString& projectRoot, QWidget* pare
     m_runtime->setEditable(true);
     m_runtime->addItem(tr("(none - data only)"), QString());
     const QDir appDir(QCoreApplication::applicationDirPath());
-    const QStringList guesses = {QStringLiteral("../../Apps/Demo3DEmpty/demo_3d_empty"), QStringLiteral("../../Apps/Demo2DSprites/demo_2d_sprites"),
-                                 QStringLiteral("../../Apps/HybridHud/demo_hybrid_hud"), QStringLiteral("demo_3d_empty"),
+    const QStringList guesses = {QStringLiteral("../Apps/Demo3DEmpty/demo_3d_empty"), QStringLiteral("../Apps/Demo2DSprites/demo_2d_sprites"),
+                                 QStringLiteral("../Apps/HybridHud/demo_hybrid_hud"), QStringLiteral("demo_3d_empty"),
                                  QStringLiteral("demo_2d_sprites")};
     for (const QString& g : guesses) {
         const QFileInfo fi(appDir.filePath(g));

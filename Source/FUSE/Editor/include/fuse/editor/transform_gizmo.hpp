@@ -79,6 +79,15 @@ public:
     static ecs::quat multiply(const ecs::quat& a, const ecs::quat& b);
     static ecs::quat axisAngle(const ecs::vec3& axis, f32 radians);
 
+    /// Multi-select: carries the primary's drag (`primaryStart` -> `primaryNow`) over to another selected root.
+    /// With `sameFrame` (both share the primary's parent) the root orbits / spreads about the primary's pivot:
+    /// translate adds the delta, rotate applies the delta rotation to position and orientation, scale scales the
+    /// offset along the primary's local axes and multiplies the root's scale. Without a shared frame only the
+    /// delta translation (Translate) or the per-entity rotation / scale factor is applied in place.
+    static TransformCommand::State applyGroupDelta(TransformTool tool, const TransformCommand::State& primaryStart,
+                                                   const TransformCommand::State& primaryNow,
+                                                   const TransformCommand::State& otherStart, bool sameFrame);
+
 private:
     TransformGizmoSettings m_settings{};
     std::array<GizmoHandle2D, 3> m_handles{};

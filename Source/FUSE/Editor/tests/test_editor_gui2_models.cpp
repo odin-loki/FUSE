@@ -92,6 +92,34 @@ void testGizmo() {
     expect(std::fabs(r.z + 1.f) < 1e-5f, "gizmo: quaternion rotate +X by 90° about Y -> -Z");
 }
 
+void testGroupDelta() {
+    using fuse::editor::TransformGizmo;
+    using fuse::editor::TransformTool;
+    using State = fuse::editor::TransformCommand::State;
+    State p0{};
+    p0.position = {0.f, 0.f, 0.f, 1.f};
+    p0.rotation = {0.f, 0.f, 0.f, 1.f};
+    State o0 = p0;
+    o0.position = {2.f, 0.f, 0.f, 1.f};
+    State p1 = p0;
+    p1.position = {1.f, 2.f, 0.f, 1.f};
+    State o1 = TransformGizmo::applyGroupDelta(TransformTool::Translate, p0, p1, o0, true);
+    expect(std::fabs(o1.position.x - 3.f) < 1e-5f && std::fabs(o1.position.y - 2.f) < 1e-5f, "group: translate adds delta");
+    p1 = p0;
+    p1.rotation = TransformGizmo::axisAngle({0.f, 1.f, 0.f, 0.f}, 3.14159265f * 0.5f);
+    o1 = TransformGizmo::applyGroupDelta(TransformTool::Rotate, p0, p1, o0, true);
+    expect(std::fabs(o1.position.x) < 1e-4f && std::fabs(o1.position.z + 2.f) < 1e-4f && std::fabs(o1.rotation.y - p1.rotation.y) < 1e-5f,
+           "group: rotate orbits the pivot and turns the root");
+    State o2 = TransformGizmo::applyGroupDelta(TransformTool::Rotate, p0, p1, o0, false);
+    expect(std::fabs(o2.position.x - 2.f) < 1e-5f && std::fabs(o2.rotation.y - p1.rotation.y) < 1e-5f,
+           "group: other frame rotates in place");
+    p1 = p0;
+    p1.scale = {2.f, 1.f, 1.f, 0.f};
+    o1 = TransformGizmo::applyGroupDelta(TransformTool::Scale, p0, p1, o0, true);
+    expect(std::fabs(o1.position.x - 4.f) < 1e-5f && std::fabs(o1.scale.x - 2.f) < 1e-5f && std::fabs(o1.scale.y - 1.f) < 1e-5f,
+           "group: scale spreads the offset and scales the root");
+}
+
 void testMaterials() {
     MaterialCatalog catalog;
     expect(catalog.count() == 5u && catalog.entry(0).name == "Default", "material: default palette");
@@ -306,6 +334,7 @@ int main() {
     testMaterialsToRenderer();
     testTimeline();
     testGizmo();
+    testGroupDelta();
     testMaterials();
     std::printf("gui2 models: %s (%d failure(s))\n", g_failures == 0 ? "PASS" : "FAIL", g_failures);
     return g_failures == 0 ? 0 : 1;

@@ -761,6 +761,25 @@ bool ViewportPlaceholderWidget::gizmoPress(const QPointF& pos) {
     if (transform == nullptr || !m_gizmo.beginDrag(axis, px, py, *transform)) {
         return false;
     }
+    m_groupStart.clear();
+    {
+        const std::vector<ecs::EntityID>& selection = m_host.editorState().selectedEntities;
+        auto selectedAncestor = [&](ecs::EntityID id) {
+            for (int guard = 0; guard < 64; ++guard) {
+                const ecs::Transform* t = registry.get<ecs::Transform>(id);
+                if (t == nullptr || !t->parent.valid()) return false;
+                id = t->parent;
+                if (std::find(selection.begin(), selection.end(), id) != selection.end()) return true;
+            }
+            return false;
+        };
+        for (ecs::EntityID other : selection) {
+            if (other == m_gizmoEntity || !registry.alive(other) || selectedAncestor(other)) continue;
+            const ecs::Transform* ot = registry.get<ecs::Transform>(other);
+            if (ot == nullptr) continue;
+            m_groupStart.push_back({other, TransformCommand::capture(*ot), ot->parent == transform->parent});
+        }
+    }
     static const char* kNames[] = {"Move", "Rotate", "Scale"};
     const int tool = static_cast<int>(m_gizmo.settings().tool) - 1;
     m_host.undoStack().beginMacro(std::string(kNames[std::clamp(tool, 0, 2)]) + " entity");
@@ -784,32 +803,15 @@ void ViewportPlaceholderWidget::gizmoMove(const QPointF& pos) {
         }
         const TransformCommand::State before = TransformCommand::capture(*transform);
         m_host.undoStack().execute(std::make_unique<TransformCommand>(registry, m_gizmoEntity, before, after));
-        // Multi-select: the move delta applies to every other selected root (children follow
-        // their parents; rotate / scale stay per-entity on the primary).
-        if (m_gizmo.settings().tool == TransformTool::Translate) {
-            const f32 dx = after.position.x - before.position.x, dy = after.position.y - before.position.y,
-                      dz = after.position.z - before.position.z;
-            const std::vector<ecs::EntityID> selection = m_host.editorState().selectedEntities;
-            auto selectedAncestor = [&](ecs::EntityID id) {
-                for (int guard = 0; guard < 64; ++guard) {
-                    const ecs::Transform* t = registry.get<ecs::Transform>(id);
-                    if (t == nullptr || !t->parent.valid()) return false;
-                    id = t->parent;
-                    if (std::find(selection.begin(), selection.end(), id) != selection.end()) return true;
-                }
-                return false;
-            };
-            for (ecs::EntityID other : selection) {
-                if (other == m_gizmoEntity || !registry.alive(other) || selectedAncestor(other)) continue;
-                const ecs::Transform* ot = registry.get<ecs::Transform>(other);
-                if (ot == nullptr) continue;
-                const TransformCommand::State ob = TransformCommand::capture(*ot);
-                TransformCommand::State oa = ob;
-                oa.position.x += dx;
-                oa.position.y += dy;
-                oa.position.z += dz;
-                m_host.undoStack().execute(std::make_unique<TransformCommand>(registry, other, ob, oa));
-            }
+        // Multi-select: the drag carries over to every other selected root (children follow their parents).
+        const TransformCommand::State& start = m_gizmo.dragStart();
+        for (const GroupStart& g : m_groupStart) {
+            const ecs::Transform* ot = registry.get<ecs::Transform>(g.id);
+            if (ot == nullptr) continue;
+            const TransformCommand::State ob = TransformCommand::capture(*ot);
+            const TransformCommand::State oa =
+                TransformGizmo::applyGroupDelta(m_gizmo.settings().tool, start, after, g.state, g.sameFrame);
+            m_host.undoStack().execute(std::make_unique<TransformCommand>(registry, g.id, ob, oa));
         }
     }
     emit sceneEdited();
@@ -818,6 +820,7 @@ void ViewportPlaceholderWidget::gizmoMove(const QPointF& pos) {
 
 void ViewportPlaceholderWidget::gizmoRelease() {
     m_gizmo.endDrag();
+    m_groupStart.clear();
     if (m_gizmoMacroOpen) {
         std::lock_guard<std::mutex> lock(m_sceneMutex);
         m_host.undoStack().endMacro();

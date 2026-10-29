@@ -181,6 +181,13 @@ private:
     TransformGizmo m_gizmo;
     ecs::EntityID m_gizmoEntity = ecs::EntityID::null();
     bool m_gizmoMacroOpen = false;
+    /// Multi-select drag: start states of the other selected roots (and whether they share the primary's parent).
+    struct GroupStart {
+        ecs::EntityID id;
+        TransformCommand::State state;
+        bool sameFrame = false;
+    };
+    std::vector<GroupStart> m_groupStart;
     struct SceneIcon {
         ecs::EntityID id;
         QPointF pos; ///< widget (logical) pixels
