@@ -2,6 +2,10 @@
 // virtualised list view, tree view, tab widget, scroll area. Optional argv[1]: write a PNG of the demo screen.
 #include "test_util.hpp"
 
+#if defined(__GNUC__)
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#pragma GCC diagnostic ignored "-Wunused-function"
+#endif
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 

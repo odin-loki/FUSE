@@ -2,10 +2,22 @@
 // storage image, upload / readback. Returns false (skip) when no device is available.
 #pragma once
 
+#if defined(__GNUC__)
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers" // partial designated Vk*CreateInfo initialisers
+#endif
+
 #include "fuse/ui/draw_list.hpp"
 
 #include <vulkan/vulkan.h>
+#if defined(FUSE_HAS_VULKAN_RHI)
+// In-tree with fuse_rhi every vk* name is a volk pointer: register raw instances / devices so volk loads them.
+#include <fuse/renderer/vk/loader.hpp>
+#define FUSE_UI_TEST_VOLK(x) x
+#else
+#define FUSE_UI_TEST_VOLK(x)
+#endif
 
+#include <cstdio>
 #include <cstring>
 #include <vector>
 
@@ -43,6 +55,7 @@ struct VkHeadless {
         VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
         ici.pApplicationInfo = &ai;
         if (vkCreateInstance(&ici, nullptr, &instance) != VK_SUCCESS) return false;
+        FUSE_UI_TEST_VOLK(fuse::renderer::vkloader::registerInstance(instance));
         u32 n = 0;
         vkEnumeratePhysicalDevices(instance, &n, nullptr);
         if (!n) return false;
@@ -64,7 +77,7 @@ struct VkHeadless {
         if (!phys) return false;
         VkPhysicalDeviceProperties props;
         vkGetPhysicalDeviceProperties(phys, &props);
-        std::strncpy(deviceName, props.deviceName, sizeof deviceName - 1);
+        std::snprintf(deviceName, sizeof deviceName, "%s", props.deviceName);
         const float prio = 1.f;
         VkDeviceQueueCreateInfo qci{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
         qci.queueFamilyIndex = family;
@@ -74,6 +87,7 @@ struct VkHeadless {
         dci.queueCreateInfoCount = 1;
         dci.pQueueCreateInfos = &qci;
         if (vkCreateDevice(phys, &dci, nullptr, &device) != VK_SUCCESS) return false;
+        FUSE_UI_TEST_VOLK(fuse::renderer::vkloader::registerDevice(device, instance));
         vkGetDeviceQueue(device, family, 0, &queue);
         VkCommandPoolCreateInfo pci{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
         pci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -177,9 +191,13 @@ struct VkHeadless {
             if (image) vkDestroyImage(device, image, nullptr);
             if (imageMem) vkFreeMemory(device, imageMem, nullptr);
             if (pool) vkDestroyCommandPool(device, pool, nullptr);
+            FUSE_UI_TEST_VOLK(fuse::renderer::vkloader::unregisterDevice(device));
             vkDestroyDevice(device, nullptr);
         }
-        if (instance) vkDestroyInstance(instance, nullptr);
+        if (instance) {
+            FUSE_UI_TEST_VOLK(fuse::renderer::vkloader::unregisterInstance(instance));
+            vkDestroyInstance(instance, nullptr);
+        }
     }
 };
 
