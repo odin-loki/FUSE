@@ -113,6 +113,19 @@ int main() {
     CHECK(c.runEntityAction(ContextMenuAction::CreateCube));
     c.tick();
     c.refresh();
+    // Create Cube is renderable: the builtin cube mesh (handle 0 / gen 1) at 0.5 scale = a 1-unit cube
+    {
+        const EntityRef cube = c.viewState().primary;
+        bool meshOk = false;
+        p.withScene([&](EditorHost& h, const ViewportPanel&) {
+            const fuse::ecs::EntityID e{cube.index, cube.generation};
+            const auto* m = h.editorScene().registry().get<fuse::ecs::Mesh>(e);
+            const auto* t = h.editorScene().registry().get<fuse::ecs::Transform>(e);
+            meshOk = m && t && m->vertex_buffer.generation() == 1u && m->vertex_buffer.index() == 0u &&
+                     std::fabs(t->scale.x - 0.5f) < 1e-6f && m->aabb_max.x == 1.f;
+        });
+        CHECK(meshOk);
+    }
     CHECK(p.materialSelect(mat));
     CHECK(p.materials().hasSelection);
     CHECK(p.materialAssignToSelection());

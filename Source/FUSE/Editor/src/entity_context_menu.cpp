@@ -61,10 +61,14 @@ EntityComponentSet EntityContextMenu::componentsFor(ContextMenuAction action, co
 
     switch (action) {
     case ContextMenuAction::CreateCube: {
+        // The renderer's builtin unit cube (world3d::BuiltinMesh::Cube = 0, extent -1..1; registered by
+        // HybridSceneRenderer like World3D::spawnMesh), scaled by 0.5 so the cube stays 1 unit wide.
         ecs::Mesh mesh{};
-        mesh.aabb_min = {-0.5f, -0.5f, -0.5f, 0.f};
-        mesh.aabb_max = {0.5f, 0.5f, 0.5f, 0.f};
+        mesh.vertex_buffer = ecs::MeshVertexBufferHandle(0u, 1u);
+        mesh.aabb_min = {-1.f, -1.f, -1.f, 0.f};
+        mesh.aabb_max = {1.f, 1.f, 1.f, 0.f};
         std::get<std::optional<ecs::Mesh>>(components) = mesh;
+        if (auto& t = std::get<std::optional<ecs::Transform>>(components)) t->scale = {0.5f, 0.5f, 0.5f, 0.f};
         break;
     }
     case ContextMenuAction::CreateSdfSphere:
