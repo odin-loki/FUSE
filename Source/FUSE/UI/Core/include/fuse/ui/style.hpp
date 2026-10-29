@@ -79,6 +79,7 @@ struct ComputedStyle {
     TextAlignment textAlign = TextAlignment::Start;
     f32 opacity = 1.f;
     f32 shadowBlur = 0.f, shadowX = 0.f, shadowY = 0.f;
+    f32 backdropBlur = 0.f; ///< backdrop-filter: blur(<len>) / backdrop-blur: <len> (frosted glass under the background)
     bool pointerEvents = true;
     friend bool operator==(const ComputedStyle&, const ComputedStyle&) = default;
 };
@@ -90,7 +91,7 @@ enum class Prop : u8 {
     AlignItems, AlignSelf, Justify, Wrap, Overflow, GridColumns, GridColumn, GridColumnSpan, GridRow, GridRowSpan,
     Left, Top, Right, Bottom, CenterX, CenterY, Background, Background2, Gradient, BorderColor, BorderWidth,
     RadiusTL, RadiusTR, RadiusBR, RadiusBL, Color, FontSize, TextAlign, Opacity, ShadowColor, ShadowBlur, ShadowX,
-    ShadowY, PointerEvents, Count
+    ShadowY, PointerEvents, BackdropBlur, Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
 

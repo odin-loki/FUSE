@@ -48,6 +48,16 @@ void DrawList::translate(Vec2 d) {
     }
 }
 
+void DrawList::backdrop(const Rect& r, f32 blur, const std::array<f32, 4>& radii, Color tint) {
+    DrawCmd c;
+    c.op = DrawOp::Backdrop;
+    c.rect = r;
+    c.blur = blur;
+    c.radius = radii;
+    c.fill = tint;
+    m_cmds.push_back(c);
+}
+
 void DrawList::line(Vec2 a, Vec2 b, Color col, f32 width) {
     DrawCmd c;
     c.op = DrawOp::Line;
@@ -152,6 +162,68 @@ struct Clip {
 
 } // namespace
 
+namespace {
+// Backdrop blur, the reference: three box passes per axis (~Gaussian, sigma ~ blur / 2) over the pixels under the
+// rounded rect, sampled from a margin of `blur` around it (clamped to the target), then mixed in by coverage.
+void backdropBlur(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& target) {
+    const Rect area = c.rect.intersect(clipR).intersect({0.f, 0.f, f32(target.width), f32(target.height)});
+    if (area.empty()) return;
+    const int r = std::max(1, int(std::lround(c.blur / 3.f)));
+    const int x0 = int(std::floor(area.x)), y0 = int(std::floor(area.y));
+    const int x1 = int(std::ceil(area.right())), y1 = int(std::ceil(area.bottom()));
+    const int m = 3 * r;
+    const int sx0 = std::max(0, x0 - m), sy0 = std::max(0, y0 - m);
+    const int sx1 = std::min(target.width, x1 + m), sy1 = std::min(target.height, y1 + m);
+    const int w = sx1 - sx0, h = sy1 - sy0;
+    std::vector<f32> buf(std::size_t(w) * std::size_t(h) * 4), tmp(buf.size());
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            const u32 p = target.pixels[std::size_t(sy0 + y) * std::size_t(target.width) + std::size_t(sx0 + x)];
+            for (int k = 0; k < 4; ++k) buf[(std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4 + std::size_t(k)] = f32((p >> (8 * k)) & 0xFFu);
+        }
+    auto pass = [&](bool vertical) {
+        const int n = vertical ? h : w, lines = vertical ? w : h;
+        const f32 inv = 1.f / f32(2 * r + 1);
+        for (int l = 0; l < lines; ++l)
+            for (int k = 0; k < 4; ++k) {
+                auto at = [&](int i) -> f32& {
+                    i = std::clamp(i, 0, n - 1);
+                    const std::size_t px = vertical ? std::size_t(i) * std::size_t(w) + std::size_t(l) : std::size_t(l) * std::size_t(w) + std::size_t(i);
+                    return buf[px * 4 + std::size_t(k)];
+                };
+                f32 acc = 0.f;
+                for (int i = -r; i <= r; ++i) acc += at(i);
+                for (int i = 0; i < n; ++i) {
+                    const std::size_t px = vertical ? std::size_t(i) * std::size_t(w) + std::size_t(l) : std::size_t(l) * std::size_t(w) + std::size_t(i);
+                    tmp[px * 4 + std::size_t(k)] = acc * inv;
+                    acc += at(i + r + 1) - at(i - r);
+                }
+            }
+        buf.swap(tmp);
+    };
+    for (int it = 0; it < 3; ++it) { pass(false); pass(true); }
+    const std::array<f32, 4> clipRad{clipRadius, clipRadius, clipRadius, clipRadius};
+    const Px tint = premul(c.fill, 1.f);
+    for (int y = y0; y < y1; ++y)
+        for (int x = x0; x < x1; ++x) {
+            const f32 px = f32(x) + 0.5f, py = f32(y) + 0.5f;
+            f32 cov = std::clamp(0.5f - sdRoundRect(px, py, c.rect, c.radius), 0.f, 1.f);
+            if (clipRadius > 0.f) cov *= std::clamp(0.5f - sdRoundRect(px, py, clipR, clipRad), 0.f, 1.f);
+            if (cov <= 0.f) continue;
+            u32& d = target.pixels[std::size_t(y) * std::size_t(target.width) + std::size_t(x)];
+            const f32* b = &buf[(std::size_t(y - sy0) * std::size_t(w) + std::size_t(x - sx0)) * 4];
+            u32 o = 0;
+            for (int k = 0; k < 4; ++k) {
+                const f32 dv = f32((d >> (8 * k)) & 0xFFu);
+                o |= u32(std::clamp(std::lround(dv + (b[k] - dv) * cov), 0l, 255l)) << (8 * k);
+            }
+            d = o;
+            if (c.fill.a > 0.f) blend(d, premul(c.fill, cov));
+        }
+    (void)tint;
+}
+} // namespace
+
 void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) const {
     if (target.width <= 0 || target.height <= 0) return;
     Rect full{0.f, 0.f, f32(target.width), f32(target.height)};
@@ -173,6 +245,7 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
         case DrawOp::PopClip:
             if (depth > 0) --depth;
             continue;
+        case DrawOp::Backdrop: backdropBlur(c, clip.r, clip.radius, target); continue;
         default: break;
         }
         Rect bounds = c.rect;

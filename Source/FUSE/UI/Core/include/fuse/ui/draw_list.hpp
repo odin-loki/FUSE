@@ -20,6 +20,7 @@ enum class DrawOp : u8 {
     Line,     ///< `rect` = (x0, y0, x1, y1), width `borderWidth`
     PushClip, ///< intersect the clip with `rect` (rounded clips: radius[0])
     PopClip,
+    Backdrop, ///< frosted glass: blurs what is already drawn under the rounded `rect` (radius `blur`), then `fill` over it
 };
 
 struct DrawCmd {
@@ -45,6 +46,8 @@ public:
     void gradientRect(const Rect& r, Color from, Color to, bool vertical, const std::array<f32, 4>& radii = {});
     void shadow(const Rect& r, Color c, f32 blur, f32 radius);
     void line(Vec2 a, Vec2 b, Color c, f32 width);
+    /// Backdrop blur (CSS backdrop-filter: blur()): everything drawn before this command under `r` is blurred.
+    void backdrop(const Rect& r, f32 blur, const std::array<f32, 4>& radii, Color tint = {});
     void pushClip(const Rect& r, f32 radius = 0.f);
     void popClip();
     const std::vector<DrawCmd>& cmds() const { return m_cmds; }

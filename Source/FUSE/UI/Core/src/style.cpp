@@ -66,6 +66,7 @@ constexpr PropInfo kProps[] = {
     {Prop::ShadowX, "shadow-x", T::Length, false, true, false},
     {Prop::ShadowY, "shadow-y", T::Length, false, true, false},
     {Prop::PointerEvents, "pointer-events", T::Bool, false, false, false},
+    {Prop::BackdropBlur, "backdrop-blur", T::Length, false, true, false},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -294,6 +295,7 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::Opacity: s.opacity = std::clamp(v.num, 0.f, 1.f); break;
     case Prop::ShadowColor: s.shadowColor = v.color; break;
     case Prop::ShadowBlur: s.shadowBlur = v.len.value; break;
+    case Prop::BackdropBlur: s.backdropBlur = v.len.value; break;
     case Prop::ShadowX: s.shadowX = v.len.value; break;
     case Prop::ShadowY: s.shadowY = v.len.value; break;
     case Prop::PointerEvents: s.pointerEvents = v.b; break;

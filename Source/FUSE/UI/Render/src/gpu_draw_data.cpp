@@ -76,6 +76,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             if (depth > 0) --depth;
             continue;
         }
+        if (c.op == DrawOp::Backdrop) continue; // single-pass tile kernel: no blur pass yet (panel drawn unblurred)
         const Clip& clip = stack[depth];
         Rect bounds = c.rect;
         if (c.op == DrawOp::Shadow)

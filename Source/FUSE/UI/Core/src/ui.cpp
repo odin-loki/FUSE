@@ -554,7 +554,7 @@ void UiContext::styleRec(u32 i, bool parentChanged) {
             // compare layout-relevant fields only
             la.background = lb.background; la.background2 = lb.background2; la.borderColor = lb.borderColor;
             la.color = lb.color; la.shadowColor = lb.shadowColor; la.opacity = lb.opacity; la.radius = lb.radius;
-            la.gradient = lb.gradient; la.shadowBlur = lb.shadowBlur; la.shadowX = lb.shadowX; la.shadowY = lb.shadowY;
+            la.gradient = lb.gradient; la.shadowBlur = lb.shadowBlur; la.shadowX = lb.shadowX; la.shadowY = lb.shadowY; la.backdropBlur = lb.backdropBlur;
             la.pointerEvents = lb.pointerEvents; la.borderWidth = lb.borderWidth; la.textAlign = lb.textAlign;
             if (fontChanged) {
                 m_cold[i]->layoutWidth = -1.f;
@@ -965,6 +965,7 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     const f32 rad = s.radius[0];
     if (s.shadowColor.a > 0.f && (s.shadowBlur > 0.f || s.shadowX != 0.f || s.shadowY != 0.f))
         dl.shadow({n.rect.x + s.shadowX, n.rect.y + s.shadowY, n.rect.w, n.rect.h}, tint(s.shadowColor), s.shadowBlur, rad);
+    if (s.backdropBlur > 0.f) dl.backdrop(n.rect, s.backdropBlur, s.radius);
     if (s.gradient != GradientDir::None) {
         dl.gradientRect(n.rect, tint(s.background), tint(s.background2), s.gradient == GradientDir::Vertical, s.radius);
         if (s.borderWidth > 0.f && s.borderColor.a > 0.f) dl.roundedRect(n.rect, {}, s.radius, tint(s.borderColor), s.borderWidth);
