@@ -39,7 +39,7 @@ These prove “one program” while Track A/B land:
 |------|---------|--------|
 | U1 | Umbrella CMake | Landed |
 | U2 | One-process smoke + quarantine libs | Landed |
-| U3 | Shared services, jobs/fibers | Landed (POSIX fiber waits; Windows/Emscripten fiber backends deferred — [wp03-fiber-remaining](unification/wp03-fiber-remaining.md)) |
+| U3 | Shared services, jobs/fibers | Landed (cooperative fiber waits on POSIX ucontext and Win32 fibers; Android/iOS use the condition-variable fallback, Emscripten the single-thread stub — [wp03-fiber-remaining](unification/wp03-fiber-remaining.md)) |
 | U4 | Dimension APIs + hybrid frame | World2D/3D `findSpawnPoint` + `enterPlayMode`; SSRC/DDGI/fog + optional flatland RC (`rcFlatland`) in `FrameComposer`; `DdgiGpu::importCpuVolumeAtlases` for CPU-volume staging |
 | U5 | Feature modules | Vertical slices landed |
 | U6 | Qt editor shell | In progress (wave 10: real-surface present counters, project VFS mount); PIE snaps viewport to `SpawnMarker` (parity with standalone play) |
