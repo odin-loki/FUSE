@@ -99,26 +99,34 @@ int posix_memalign(void** out, std::size_t alignment, std::size_t size) noexcept
 }
 #else
 #if FUSE_TEST_GLOBAL_NEW_HOOKS
-void* operator new(std::size_t size) {
+// GCC may inline the replacement operators into callers and then report a false
+// -Wmismatched-new-delete at -O2; replacement functions must not be inline anyway.
+#if defined(__GNUC__)
+#define FUSE_TEST_REPLACEMENT_NOINLINE __attribute__((noinline))
+#else
+#define FUSE_TEST_REPLACEMENT_NOINLINE
+#endif
+
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new(std::size_t size) {
     noteAllocation();
     if (void* p = std::malloc(size == 0u ? 1u : size)) {
         return p;
     }
     throw std::bad_alloc{};
 }
-void* operator new[](std::size_t size) {
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new[](std::size_t size) {
     return operator new(size);
 }
-void operator delete(void* p) noexcept {
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* p) noexcept {
     std::free(p);
 }
-void operator delete[](void* p) noexcept {
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* p) noexcept {
     std::free(p);
 }
-void operator delete(void* p, std::size_t) noexcept {
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* p, std::size_t) noexcept {
     std::free(p);
 }
-void operator delete[](void* p, std::size_t) noexcept {
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* p, std::size_t) noexcept {
     std::free(p);
 }
 #endif // FUSE_TEST_GLOBAL_NEW_HOOKS

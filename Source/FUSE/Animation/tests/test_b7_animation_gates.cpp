@@ -35,7 +35,15 @@ namespace {
 std::atomic<long long> g_liveAllocations{0};
 } // namespace
 
-void* operator new(std::size_t size) {
+// GCC may inline the replacement operators into callers and then report a false
+// -Wmismatched-new-delete at -O2; replacement functions must not be inline anyway.
+#if defined(__GNUC__)
+#define FUSE_TEST_REPLACEMENT_NOINLINE __attribute__((noinline))
+#else
+#define FUSE_TEST_REPLACEMENT_NOINLINE
+#endif
+
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new(std::size_t size) {
     void* p = std::malloc(size == 0 ? 1 : size);
     if (p == nullptr) {
         throw std::bad_alloc();
@@ -44,14 +52,14 @@ void* operator new(std::size_t size) {
     return p;
 }
 
-void operator delete(void* p) noexcept {
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* p) noexcept {
     if (p != nullptr) {
         g_liveAllocations.fetch_sub(1, std::memory_order_relaxed);
         std::free(p);
     }
 }
 
-void operator delete(void* p, std::size_t) noexcept {
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* p, std::size_t) noexcept {
     operator delete(p);
 }
 

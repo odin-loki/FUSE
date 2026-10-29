@@ -54,7 +54,15 @@ namespace {
 std::atomic<std::uint64_t> g_heapAllocations{0};
 } // namespace
 
-void* operator new(std::size_t size) {
+// GCC may inline the replacement operators into callers and then report a false
+// -Wmismatched-new-delete at -O2; replacement functions must not be inline anyway.
+#if defined(__GNUC__)
+#define FUSE_TEST_REPLACEMENT_NOINLINE __attribute__((noinline))
+#else
+#define FUSE_TEST_REPLACEMENT_NOINLINE
+#endif
+
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new(std::size_t size) {
     g_heapAllocations.fetch_add(1u, std::memory_order_relaxed);
     if (void* p = std::malloc(size == 0 ? 1 : size)) {
         return p;
@@ -62,11 +70,11 @@ void* operator new(std::size_t size) {
     throw std::bad_alloc();
 }
 
-void* operator new[](std::size_t size) {
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new[](std::size_t size) {
     return ::operator new(size);
 }
 
-void* operator new(std::size_t size, std::align_val_t alignment) {
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new(std::size_t size, std::align_val_t alignment) {
     g_heapAllocations.fetch_add(1u, std::memory_order_relaxed);
     const std::size_t align = static_cast<std::size_t>(alignment);
     const std::size_t rounded = ((size == 0 ? 1 : size) + align - 1u) / align * align;
@@ -76,18 +84,18 @@ void* operator new(std::size_t size, std::align_val_t alignment) {
     throw std::bad_alloc();
 }
 
-void* operator new[](std::size_t size, std::align_val_t alignment) {
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new[](std::size_t size, std::align_val_t alignment) {
     return ::operator new(size, alignment);
 }
 
-void operator delete(void* ptr) noexcept { std::free(ptr); }
-void operator delete[](void* ptr) noexcept { std::free(ptr); }
-void operator delete(void* ptr, std::size_t) noexcept { std::free(ptr); }
-void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }
-void operator delete(void* ptr, std::align_val_t) noexcept { fuseTestAlignedFree(ptr); }
-void operator delete[](void* ptr, std::align_val_t) noexcept { fuseTestAlignedFree(ptr); }
-void operator delete(void* ptr, std::size_t, std::align_val_t) noexcept { fuseTestAlignedFree(ptr); }
-void operator delete[](void* ptr, std::size_t, std::align_val_t) noexcept { fuseTestAlignedFree(ptr); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* ptr) noexcept { std::free(ptr); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* ptr) noexcept { std::free(ptr); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* ptr, std::size_t) noexcept { std::free(ptr); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* ptr, std::align_val_t) noexcept { fuseTestAlignedFree(ptr); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* ptr, std::align_val_t) noexcept { fuseTestAlignedFree(ptr); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* ptr, std::size_t, std::align_val_t) noexcept { fuseTestAlignedFree(ptr); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* ptr, std::size_t, std::align_val_t) noexcept { fuseTestAlignedFree(ptr); }
 
 namespace {
 
