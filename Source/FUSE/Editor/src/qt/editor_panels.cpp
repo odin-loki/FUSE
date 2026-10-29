@@ -147,6 +147,7 @@ HierarchyWidget::HierarchyWidget(EditorHost& host, std::mutex& sceneMutex, QWidg
     layout->setContentsMargins(4, 4, 4, 4);
     m_search = new QLineEdit(this);
     m_search->setPlaceholderText(tr("Search…"));
+    m_search->setToolTip(tr("Scene search: name, component (light, collider, camera...) or #id; terms combine (Ctrl+F)"));
     m_search->setClearButtonEnabled(true);
     layout->addWidget(m_search);
     m_tree = new HierarchyTreeWidget(this);
@@ -160,6 +161,28 @@ HierarchyWidget::HierarchyWidget(EditorHost& host, std::mutex& sceneMutex, QWidg
     connect(m_tree, &QTreeWidget::itemSelectionChanged, this, &HierarchyWidget::onItemSelectionChanged);
     connect(m_tree, &QTreeWidget::customContextMenuRequested, this, &HierarchyWidget::onContextMenuRequested);
     connect(m_tree, &HierarchyTreeWidget::rowsDropped, this, &HierarchyWidget::onRowsDropped);
+}
+
+void HierarchyWidget::focusSearch() {
+    m_search->setFocus(Qt::ShortcutFocusReason);
+    m_search->selectAll();
+}
+
+bool HierarchyWidget::matchesSearch(const QString& label, const QStringList& components, u32 index, const QString& query) {
+    const QStringList terms = query.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    for (const QString& term : terms) {
+        if (term.startsWith(QLatin1Char('#'))) {
+            bool ok = false;
+            const uint n = term.mid(1).toUInt(&ok);
+            if (!ok || n != index) return false;
+            continue;
+        }
+        if (label.contains(term, Qt::CaseInsensitive)) continue;
+        bool hit = false;
+        for (const QString& c : components) hit = hit || c.contains(term, Qt::CaseInsensitive);
+        if (!hit) return false;
+    }
+    return true;
 }
 
 QTreeWidgetItem* HierarchyWidget::itemFor(ecs::EntityID id) const {
@@ -247,6 +270,7 @@ void HierarchyWidget::refresh() {
         ecs::EntityID id;
         ecs::EntityID parent;
         QString label;
+        QStringList components;
     };
     std::vector<Row> rows;
     std::vector<ecs::EntityID> selected;
@@ -254,7 +278,12 @@ void HierarchyWidget::refresh() {
         std::lock_guard<std::mutex> lock(m_sceneMutex);
         ecs::Registry& registry = m_host.editorScene().registry();
         registry.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform& t) {
-            rows.push_back({id, t.parent, entityLabel(registry, id)});
+            QStringList comps;
+            const EntityComponentSet set = captureEntityComponents(registry, id);
+            std::apply([&](const auto&... c) {
+                ((c.has_value() ? (void)comps.append(QString::fromLatin1(std::decay_t<decltype(*c)>::component_name)) : (void)0), ...);
+            }, set);
+            rows.push_back({id, t.parent, entityLabel(registry, id), comps});
         });
         selected = m_host.editorState().selectedEntities;
     }
@@ -269,7 +298,7 @@ void HierarchyWidget::refresh() {
     };
     // Flat when filtering (matches are shown without their non-matching ancestors).
     for (const Row& row : rows) {
-        if (!filter.isEmpty() && !row.label.contains(filter, Qt::CaseInsensitive)) {
+        if (!filter.isEmpty() && !matchesSearch(row.label, row.components, row.id.index, filter)) {
             continue;
         }
         auto* item = new QTreeWidgetItem(QStringList{row.label});

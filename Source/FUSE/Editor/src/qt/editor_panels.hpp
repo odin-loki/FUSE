@@ -77,6 +77,12 @@ public:
 
     void refresh();
     [[nodiscard]] QTreeWidget* tree() const { return m_tree; }
+    /// Scene search: whitespace-separated terms, all must match the row label, one of the
+    /// entity's component names (e.g. `collider`, `spotlight`) or `#<index>`.
+    [[nodiscard]] QLineEdit* searchEdit() const { return m_search; }
+    void focusSearch();
+    [[nodiscard]] static bool matchesSearch(const QString& label, const QStringList& components, u32 index,
+                                            const QString& query);
     [[nodiscard]] int entityRowCount() const;
     [[nodiscard]] static QString entityLabel(const ecs::Registry& registry, ecs::EntityID id);
     [[nodiscard]] EntityContextMenu& contextMenuModel() { return m_contextMenu; }

@@ -39,6 +39,7 @@ set(FUSE_EDITOR_API_SOURCES
     src/viewport_scene_view.cpp
     src/viewport_framebuffer.cpp
     src/entity_context_menu.cpp
+    src/entity_clipboard.cpp
     src/material_library_io.cpp
     src/profiler_flame_graph.cpp
     src/component_schema.cpp

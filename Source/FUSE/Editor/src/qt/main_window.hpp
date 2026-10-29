@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/entity_clipboard.hpp>
 #include <fuse/editor/entity_context_menu.hpp>
 #include <fuse/editor/feature_pane_bridge.hpp>
 
@@ -151,6 +152,7 @@ public:
     bool importAssets(const QStringList& files);
     /// Cook-on-import progress (fuse_cook runs started by importAssets).
     int pendingCooks() const { return m_pendingCooks; }
+    [[nodiscard]] const EntityClipboard& clipboard() const { return m_clipboard; }
     int cookedAssets() const { return m_cookedAssets; }
     int failedCooks() const { return m_failedCooks; }
     [[nodiscard]] const QString& projectRoot() const { return m_projectRoot; }
@@ -221,6 +223,10 @@ private:
     void refreshStatusBar();
     void onFocusChanged(QWidget* old, QWidget* now);
 
+    EntityClipboard m_clipboard;
+    QAction* m_actCut = nullptr;
+    QAction* m_actCopy = nullptr;
+    QAction* m_actPaste = nullptr;
     int m_pendingCooks = 0;
     int m_cookedAssets = 0;
     int m_failedCooks = 0;

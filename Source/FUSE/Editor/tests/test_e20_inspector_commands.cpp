@@ -13,6 +13,7 @@
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/component_schema.hpp>
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/entity_clipboard.hpp>
 #include <fuse/editor/inspector_row.hpp>
 #include <fuse/editor/property_dirty.hpp>
 #include <fuse/editor/property_inspector.hpp>
@@ -555,6 +556,34 @@ void testLinkedPrefab(const fs::path& dir) {
     expectTrue(host.unlinkPrefabInstance(a) && host.prefabLinks().size() == 1u, "linked prefab: unlink");
 }
 
+void testClipboard() {
+    editor::EditorHost host;
+    host.gameTick();
+    ecs::Registry& registry = host.editorScene().registry();
+    const ecs::EntityID root = makeEntity(registry, {1.f, 0.f, 0.f});
+    const ecs::EntityID child = makeEntity(registry, {0.f, 2.f, 0.f});
+    const ecs::EntityID other = makeEntity(registry, {5.f, 0.f, 0.f});
+    registry.get<ecs::Transform>(child)->parent = root;
+    auto count = [&]() { std::size_t n = 0; registry.each<ecs::Transform>([&](ecs::EntityID, ecs::Transform&) { ++n; }); return n; };
+    const std::size_t base = count();
+    editor::EntityClipboard clip;
+    expectTrue(clip.copy(registry, {root, child, other}) == 3u, "clipboard: copies roots + descendants once");
+    editor::EditorState& state = host.editorState();
+    const auto roots = clip.paste(registry, host.undoStack(), state);
+    expectTrue(roots.size() == 2u && count() == base + 3u, "clipboard: paste creates the subtree copies");
+    bool childUnderCopy = false;
+    registry.each<ecs::Transform>([&](ecs::EntityID, ecs::Transform& t) { childUnderCopy = childUnderCopy || t.parent == roots[0]; });
+    expectTrue(childUnderCopy, "clipboard: pasted child re-parented to the pasted root");
+    expectTrue(state.selectedEntities == roots, "clipboard: pasted roots selected (multi-select)");
+    host.undoStack().undo();
+    expectTrue(count() == base, "clipboard: one undo removes the paste");
+    state.selectedEntities = {root};
+    state.primarySelection = root;
+    expectTrue(clip.cut(registry, host.undoStack(), state) == 2u && count() == base - 2u, "clipboard: cut removes the subtree");
+    clip.paste(registry, host.undoStack(), state);
+    expectTrue(count() == base, "clipboard: paste after cut restores it");
+}
+
 int main() {
     testInspectorRowOk();
     if (g_failures != 0) {
@@ -570,6 +599,7 @@ int main() {
     testPropertyDirty();
     testPrefab(dir);
     testLinkedPrefab(dir);
+    testClipboard();
     std::error_code ec;
     fs::remove_all(dir, ec);
     std::printf("e20 inspector commands: %s (%d failure(s))\n", g_failures == 0 ? "PASS" : "FAIL", g_failures);

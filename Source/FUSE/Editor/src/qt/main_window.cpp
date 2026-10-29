@@ -306,6 +306,65 @@ void MainWindow::buildMenus() {
     });
     m_actUndo = undo;
     m_actRedo = redo;
+    edit->addSeparator();
+    // Clipboard + multi-select (entity subtrees; one undo step each).
+    auto addEditAction = [&](const QString& text, const char* name, const QKeySequence& key, auto fn) {
+        QAction* a = edit->addAction(text);
+        a->setObjectName(QString::fromLatin1(name));
+        a->setShortcut(key);
+        a->setShortcutContext(Qt::WindowShortcut);
+        connect(a, &QAction::triggered, this, fn);
+        return a;
+    };
+    auto afterEdit = [this]() {
+        refreshPanels();
+        if (m_viewport != nullptr) m_viewport->update();
+    };
+    m_actCut = addEditAction(tr("Cu&t"), "fuseActionCut", QKeySequence::Cut, [this, afterEdit]() {
+        if (m_host.editorState().playing) return;
+        {
+            std::lock_guard<std::mutex> lock(m_sceneMutex);
+            m_clipboard.cut(m_host.editorScene().registry(), m_host.undoStack(), m_host.editorState());
+        }
+        afterEdit();
+    });
+    m_actCopy = addEditAction(tr("&Copy"), "fuseActionCopy", QKeySequence::Copy, [this]() {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        std::vector<ecs::EntityID> sel = m_host.editorState().selectedEntities;
+        if (sel.empty() && m_host.editorState().primarySelection.valid()) sel.push_back(m_host.editorState().primarySelection);
+        m_clipboard.copy(m_host.editorScene().registry(), sel);
+    });
+    m_actPaste = addEditAction(tr("&Paste"), "fuseActionPaste", QKeySequence::Paste, [this, afterEdit]() {
+        if (m_host.editorState().playing) return;
+        {
+            std::lock_guard<std::mutex> lock(m_sceneMutex);
+            m_clipboard.paste(m_host.editorScene().registry(), m_host.undoStack(), m_host.editorState());
+        }
+        afterEdit();
+    });
+    edit->addSeparator();
+    addEditAction(tr("Select &All"), "fuseActionSelectAll", QKeySequence::SelectAll, [this, afterEdit]() {
+        {
+            std::lock_guard<std::mutex> lock(m_sceneMutex);
+            EditorState& state = m_host.editorState();
+            state.selectedEntities.clear();
+            m_host.editorScene().registry().each<ecs::Transform>(
+                [&](ecs::EntityID id, ecs::Transform&) { state.selectedEntities.push_back(id); });
+            state.primarySelection = state.selectedEntities.empty() ? ecs::EntityID::null() : state.selectedEntities.front();
+        }
+        afterEdit();
+    });
+    addEditAction(tr("&Deselect All"), "fuseActionDeselectAll", QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_A), [this, afterEdit]() {
+        {
+            std::lock_guard<std::mutex> lock(m_sceneMutex);
+            m_host.editorState().selectedEntities.clear();
+            m_host.editorState().primarySelection = ecs::EntityID::null();
+        }
+        afterEdit();
+    });
+    addEditAction(tr("&Find in Scene..."), "fuseActionFind", QKeySequence::Find, [this]() {
+        if (m_hierarchy != nullptr) m_hierarchy->focusSearch();
+    });
     connect(edit, &QMenu::aboutToShow, this, &MainWindow::updateEditActions);
 
     // File / Edit toolbar, left of the transport bar.
@@ -512,6 +571,11 @@ void MainWindow::updateEditActions() {
     }
     m_actUndo->setEnabled(canUndo);
     m_actRedo->setEnabled(canRedo);
+    if (m_actPaste != nullptr) {
+        const bool playing = m_host.editorState().playing;
+        m_actPaste->setEnabled(!m_clipboard.empty() && !playing);
+        m_actCut->setEnabled(!playing);
+    }
 }
 
 bool MainWindow::runEntityAction(ContextMenuAction action) {
