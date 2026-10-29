@@ -449,6 +449,7 @@ void enqueueMappedOsMessage(EventPump& pump, Window* window, const MSG& msg) {
         event.window = window;
         event.mouseX = osMessageAxisX(msg.lParam);
         event.mouseY = static_cast<i32>(GET_WHEEL_DELTA_WPARAM(msg.wParam));
+        event.keyCode = 0xFFFFu; // wheel tag (platform/events_v2.hpp decodes it into EventV2Type::Wheel)
         pump.pushSyntheticEvent(event);
         break;
     }
@@ -1155,6 +1156,9 @@ void EventPump::processOsEvents() {
                 event.type = PlatformEventType::MouseMove;
                 event.mouseX = xe.x;
                 event.mouseY = xe.y;
+                if (xe.kind == x11::EventKind::MouseWheel) {
+                    event.keyCode = 0xFFFFu; // wheel tag (platform/events_v2.hpp)
+                }
                 pushSyntheticEvent(event);
             }
             break;
