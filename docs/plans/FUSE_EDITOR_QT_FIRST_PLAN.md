@@ -273,8 +273,13 @@ Fallback if the whole-shell switch stalls: host individual FUSE UI panels inside
 - **Qt-free controller**: `Source/FUSE/EditorShell/Controller` (`fuse_editor_controller`, links only `fuse_editor_api`): `EditorController`, the stable action table (`editor_actions`), and theme tokens. The tests (`fuse_editor_controller_api`) run on scripted services. The Qt shell should adopt this library rather than keep its own copy. Qt is untouched.
 - **FUSE shell**: configure with `-DFUSE_EDITOR_SHELL=fuse` (the default stays `qt`). It builds `fuse_editor_fuse` (the app; supports `--font-scale` and `--screenshot`) and `fuse_editor_ui_gates`.
   - Chrome: menus and a toolbar built from the action table, three docks with tabs, the viewport, and a status bar.
-  - Ported panels: Hierarchy (filter, multi-select, reparent), Inspector (property grid, add/remove component), Console.
-  - Not yet ported (placeholder pages): Project Hub, Asset Browser, Material Editor, SDF Sculpt, Profiler, Sequencer, Timeline.
-- **Twin gates** (`ctest -L fuse_editor_ui`): startup, layout, theme, font_1/1_25/1_5/2, fuse_api, wasd, context_menu, ui_frame, idle_frames, e15_console, e15_transport, e20_inspector, e20_reparent, e20_file_menu. All pass on Linux and under Wine (MinGW).
+  - All ten panels are ported: Hierarchy (filter, multi-select, reparent), Inspector (property grid, add/remove component), Console, Project Hub (project list, open, new), Asset Browser (filter, folders, up, open scene), Material Editor (preview sphere, new, roughness, metallic, shader, UV scale, base colour, texture, assign to selection), SDF Sculpt (sculpt-in-viewport mode, op, shape, material, radius, strength, spacing, blend, mirror X; one undo step per stroke), Profiler (CPU history chart against the frame budget, pause, clear; samples only while its tab is shown, so an idle editor stays idle), Sequencer (scrub, link to the timeline, preview sample), and Timeline (key selection, delete key, playhead, length, play, timeline widget).
+  - The seven new panels sit on `EditorPanels` (`Controller/include/fuse/editor/editor_panel_models.hpp`). It is Qt-free and edits through the host undo stack. The Qt widgets can move onto it later; the Qt shell is unchanged.
+- **Twin gates** (`ctest -L fuse_editor_ui`): startup, layout, theme, font_1/1_25/1_5/2, fuse_api, wasd, context_menu, ui_frame, idle_frames, e15_console, e15_transport, e20_inspector, e20_reparent, e20_file_menu, project_hub, asset_browser, material_editor, sdf_sculpt, profiler, sequencer, timeline (24 in all). All pass on Linux and under Wine (MinGW).
   - ui_frame: hover frame 1.5 ms on Linux and 2.8 ms under Wine, against a 16.7 ms limit. The CPU rasterizer's opaque fast paths cut the full 1600x900 raster from 201 ms to 10 ms.
-- Known gap: the right dock is about 200 px wide after a layout reset, not the 320 px requested.
+- Layout reset sets the dock splitter flex-basis (left 260 px, right 320 px, bottom 200 px); the layout gate checks the widths.
+- Viewport: the shell still draws a CPU image into `viewportWidget`. A zero-copy engine viewport is not feasible yet, for three reasons:
+  - The `ui_vk` kernel copies images into a storage buffer (`maxImageWords`); it has no external sampled-image binding.
+  - The shell presents through the CPU rasterizer.
+  - The scene renderer only exists inside the Qt Vulkan window.
+  - The next steps are an external-texture slot in `ui_vk` and a headless scene renderer that writes into it.
