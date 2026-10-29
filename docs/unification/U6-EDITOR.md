@@ -203,10 +203,16 @@ GUI-4 (Oct 2026):
 - **`--select new|<index>`** selects an entity before `--screenshot` (`new` spawns an SDF sphere in front of the camera).
 - **Timing gates under load** scale by `FUSE_TIMING_SCALE` or 1.5 x (loadavg / threads)^2 once the box is oversubscribed. The spike gate is skipped under load.
 
+- **Curves and sequencer.** Timeline keys carry tangents (curve editing), and sequencer clips bind to editor timelines.
+- **Textured / shader materials.** Catalog materials carry a base-colour texture, a shader (Default / Wood / Metal / Concrete), a UV scale and triplanar mapping (sidecar `FUSEEDMAT 2`). `HybridSceneRenderer` cooks them into layered-material rows; the procedural shaders are evaluated on the GPU in `ml_common.{glsl,slang}` (CPU twin `procedural_materials.cpp`). `fuse_hybrid_frame_vk --mode material` checks on Lavapipe that the three floors differ.
+- **No-project viewport** disables the 2D/UI layers, so the composer's placeholder UI quad (the stray white square) is no longer drawn.
+- ECS `inverse_affine` now handles scale.
+
 Still open:
 
-- Curve editing / tangents in the timeline (keys are linear); sequencer clips are not yet bound to editor timelines.
-- Catalog materials map onto `World3D` only; there is no `renderer::MaterialSystem` texture/shader binding yet.
+- Play-in-editor polish, prefab / asset import, a project settings dialog.
+- `fsr3` / `framegen` reflection-layout gates fail with glslangValidator 16.6 `-Os` (unused cbuffer members are stripped); this is a toolchain issue, not an editor one.
+- The MinGW `fuse_ui_*` targets are owned by the FUSE-ui work stream.
 
 The engine-native GUI framework that will eventually replace Qt (UI9) is tracked in [`../plans/FUSE_UI_PLAN.md`](../plans/FUSE_UI_PLAN.md). What is in tree so far is described in [`../ui/README.md`](../ui/README.md).
 
