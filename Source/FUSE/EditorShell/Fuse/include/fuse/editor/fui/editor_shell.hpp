@@ -9,9 +9,11 @@
 // stack, so each side is one dock holding a tab widget) around a software-rendered viewport / status bar.
 #include <fuse/editor/editor_controller.hpp>
 #include <fuse/editor/editor_panel_models.hpp>
+#include <fuse/editor/scene_viewport_host.hpp>
 
 #include "fuse/app/app.hpp"
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -67,6 +69,15 @@ public:
     [[nodiscard]] NodeHandle viewportNode() const { return m_viewport; }
     [[nodiscard]] const fuse::ui::Image& viewportImage() const { return m_image; }
     [[nodiscard]] u32 viewportRenders() const { return m_renders; }
+
+    /// Live 3D viewport: the scene renderer host draws the edited scene each time the view changes (camera, size,
+    /// scene / material edits; every frame while playing). With `present` set (a GPU-drawn window on the host's
+    /// device) the viewport image becomes fuse_ui_vk external slot 0 and `present` is handed every new frame to bind
+    /// it (NativePlatform::setExternalTexture): zero-copy. Without it the frame is read back into the viewport image
+    /// (CPU raster / headless / screenshots). Null host: the software grid + markers viewport.
+    void setSceneViewport(SceneViewportHost* host, std::function<void(const SceneViewportFrame&)> present = {});
+    [[nodiscard]] SceneViewportHost* sceneViewport() const { return m_scene; }
+    [[nodiscard]] u32 sceneFrames() const { return m_sceneFrames; }
     [[nodiscard]] u32 syncCount() const { return m_syncs; }
     /// Menu line -> action / recent index mapping, for gates that drive the menus by item index.
     [[nodiscard]] i32 menuItemIndex(std::string_view menu, ActionId id) const;
@@ -123,6 +134,11 @@ private:
     fuse::ui::Image m_image;
     u32 m_imageIndex = 0;
     u32 m_renders = 0, m_syncs = 0;
+    SceneViewportHost* m_scene = nullptr;
+    std::function<void(const SceneViewportFrame&)> m_scenePresent;
+    u32 m_sceneFrames = 0;
+    u64 m_sceneVersion = ~0ull;
+    bool renderSceneViewport_(int wpx, int hpx, bool changed);
     u64 m_seenVersion = ~0ull;
     std::string m_menuKey, m_viewportKey;
     bool m_keysHeld = false;

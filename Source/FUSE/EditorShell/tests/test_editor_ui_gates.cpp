@@ -5,6 +5,13 @@
 #include "scripted_services.hpp"
 
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/scene_viewport_host.hpp>
+#if defined(FUSE_EDITOR_UI_HAS_NATIVE)
+#include "fuse/app/native.hpp"
+#endif
+#if defined(FUSE_HAS_VULKAN_RHI)
+#include <fuse/renderer/vk/instance.hpp>
+#endif
 #include <fuse/editor/editor_theme_tokens.hpp>
 
 #include <chrono>
@@ -544,6 +551,168 @@ void gateSequencer(Rig& r) {
     std::printf("sequencer: %s\n", std::string(r.ui().text(r.ui().find("sequencer.preview"))).c_str());
 }
 
+// ---- live 3D viewport (zero-copy) -------------------------------------------------------------------------------------
+std::string g_out;         // --out path (gates that write their own shot set g_shotWritten)
+bool g_shotWritten = false;
+
+[[noreturn]] void skip(const std::string& why) {
+    std::printf("SKIP: %s\n", why.c_str());
+    std::exit(77);
+}
+
+u32 validationErrors() {
+#if defined(FUSE_HAS_VULKAN_RHI)
+    const fuse::renderer::VulkanValidationCounters v = fuse::renderer::vulkanValidationCounters();
+    if (v.errors) std::fprintf(stderr, "validation: %u error(s), last: %s\n", v.errors, v.lastError.c_str());
+    return v.errors;
+#else
+    return 0;
+#endif
+}
+
+void buildScene(Rig& r) {
+    for (ActionId id : {ActionId::EntityCreateCube, ActionId::EntityCreateSdfSphere, ActionId::EntityCreateDirectionalLight})
+        CHECK(r.c.trigger(id));
+    r.frames(2);
+}
+
+/// Distinct colours in the centre half of an image (a flat fill has 1-2; a lit 3D frame many).
+size_t colourCount(const fuse::ui::Image& img, int x0, int y0, int w, int h) {
+    std::map<u32, int> seen;
+    for (int y = y0 + h / 4; y < y0 + h * 3 / 4; y += 2)
+        for (int x = x0 + w / 4; x < x0 + w * 3 / 4; x += 2) seen[img.at(x, y) & 0xF8F8F8u]++;
+    return seen.size();
+}
+
+void gateSceneViewport(Rig& r) {
+    // CPU-copy path (headless shells, screenshots): SceneViewportHost renders the scene, the frame is read back into
+    // the viewport image and the CPU rasteriser shows it.
+    auto host = SceneViewportHost::create({.validation = true});
+    if (!host->valid()) skip("scene renderer host: " + host->reason());
+    std::printf("scene host device: %s\n", host->deviceName().c_str());
+    buildScene(r);
+    r.shell.setSceneViewport(host.get());
+    r.frames(2);
+    CHECK(r.shell.sceneFrames() >= 1 && host->framesRendered() >= 1);
+    const fuse::ui::Image& img = r.shell.viewportImage();
+    const Rect vp = r.rect("viewport");
+    CHECK(img.width >= int(vp.w) - 2 && img.height >= int(vp.h) - 2);
+    CHECK(img.externalSlot == -1);
+    const size_t colours = colourCount(img, 0, 0, img.width, img.height);
+    std::printf("scene_viewport: %dx%d frame, %zu colours, %u frames\n", img.width, img.height, colours, r.shell.sceneFrames());
+    CHECK(colours >= 8);
+    CHECK(r.ui().text(r.ui().find("viewport.info")).find("GPU (readback)") != std::string_view::npos);
+    // the window raster shows the frame
+    r.win.rasterize({});
+    const fuse::ui::Image& shot = r.win.image();
+    const fuse::ui::Rect ir = w::viewportImageRect(r.ui(), r.ui().find("viewport"));
+    CHECK(colourCount(shot, int(ir.x), int(ir.y), int(ir.w), int(ir.h)) >= 8);
+    // idle: no new frame without a change; a camera move renders one
+    const fuse::u64 n = host->framesRendered();
+    r.frames(3);
+    CHECK(host->framesRendered() == n);
+    r.c.viewportWheel(2.f);
+    r.frames();
+    CHECK(host->framesRendered() == n + 1);
+    // scene edits re-render too
+    CHECK(r.c.trigger(ActionId::EntityCreateCube));
+    r.frames(2);
+    CHECK(host->framesRendered() >= n + 2);
+    CHECK(validationErrors() == 0);
+    r.shell.setSceneViewport(nullptr); // the host dies with this gate
+}
+
+void gateGpuViewport(Rig& r) {
+    // Zero-copy: the shell window is presented by fuse_app's Vulkan presenter ON the scene host's device; the viewport
+    // Image is external slot 0, so the UI kernel samples the engine frame directly (no readback, no upload).
+#if defined(FUSE_EDITOR_UI_HAS_NATIVE)
+    auto host = SceneViewportHost::create({.validation = true});
+    if (!host->valid()) skip("scene renderer host: " + host->reason());
+    fuse::app::NativeOptions o;
+    o.adoptDevice = {host->instanceHandle(), host->physicalDeviceHandle(), host->deviceHandle(), host->queueHandle(),
+                     host->queueFamily()};
+    o.drawMode = fuse::app::VkDrawMode::GpuDraw;
+    o.vsync = false;
+    {
+        fuse::app::NativePlatform native(r.app, o);
+        if (!native.available()) skip("no display");
+        const fuse::app::PresenterKind kind = native.show(r.win);
+        if (kind != fuse::app::PresenterKind::Vulkan) skip(std::string("no Vulkan presenter: ") + std::string(native.lastError()));
+        CHECK(native.gpuDraws(r.win));
+        CHECK(native.gpuName() == host->deviceName());
+        std::printf("gpu_viewport: presenter + scene renderer on one device: %s\n", host->deviceName().c_str());
+        buildScene(r);
+        u32 binds = 0;
+        r.shell.setSceneViewport(host.get(), [&](const SceneViewportFrame& f) {
+            ++binds;
+            CHECK(f.image && f.view && f.layout != 0);
+            CHECK(native.setExternalTexture(r.win, 0, {f.image, f.view, f.layout}));
+        });
+        for (int i = 0; i < 6; ++i) {
+            r.frames();
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        }
+        CHECK(binds >= 1 && r.shell.sceneFrames() >= 1);
+        const fuse::ui::Image& img = r.shell.viewportImage();
+        CHECK(img.externalSlot == 0);
+        // zero-copy: the CPU pixels were never written (still the ChildBg fill), yet the window shows the 3D frame
+        CHECK(near8(img.at(img.width / 2, img.height / 2), "ChildBg"));
+        CHECK(r.ui().text(r.ui().find("viewport.info")).find("GPU (zero-copy)") != std::string_view::npos);
+        // let Map / Expose settle, then wait for a fresh present of the current frame
+        for (int i = 0; i < 10; ++i) r.app.step(0.005f);
+        r.win.requestRedraw();
+        const auto presented = r.win.framesPresented();
+        for (int i = 0; i < 200 && r.win.framesPresented() <= presented; ++i) {
+            r.frames();
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        CHECK(r.win.framesPresented() > presented);
+        fuse::ui::Image cap;
+        CHECK(native.capture(r.win, cap));
+        const fuse::ui::Rect ir = w::viewportImageRect(r.ui(), r.ui().find("viewport"));
+        size_t colours = 0;
+        if (cap.width > 0) colours = colourCount(cap, int(ir.x), int(ir.y), int(ir.w), int(ir.h));
+        // the window's viewport pixels are the engine frame: compare with the host's own readback copy
+        std::vector<u32> ref;
+        u32 rw = 0, rh = 0;
+        CHECK(host->readback(ref, rw, rh));
+        int matched = 0, total = 0;
+        if (cap.width > 0 && rw > 0) {
+            for (int k = 1; k < 8; ++k)
+                for (int j = 1; j < 8; ++j) {
+                    const int fx = int(rw) * k / 8, fy = int(rh) * j / 8;
+                    const int wx = int(ir.x + (fx + 0.5f) * ir.w / float(rw)), wy = int(ir.y + (fy + 0.5f) * ir.h / float(rh));
+                    if (wx >= cap.width || wy >= cap.height) continue;
+                    const u32 a = cap.at(wx, wy), b = ref[std::size_t(fy) * rw + std::size_t(fx)];
+                    bool ok = true;
+                    for (int s = 0; s < 24; s += 8)
+                        if (std::abs(int((a >> s) & 255) - int((b >> s) & 255)) > 6) ok = false;
+                    matched += ok;
+                    ++total;
+                }
+        }
+        std::printf("gpu_viewport: capture %dx%d, viewport %.0fx%.0f, %zu colours, %d/%d samples match the engine frame, "
+                    "%u binds\n", cap.width, cap.height, ir.w, ir.h, colours, matched, total, binds);
+        CHECK(colours >= 8);
+        CHECK(total > 0 && matched >= total * 9 / 10);
+        // camera move: a new engine frame, re-bound, shown
+        const fuse::u64 n = host->framesRendered();
+        r.c.viewportWheel(2.f);
+        r.frames(2);
+        CHECK(host->framesRendered() > n);
+        CHECK(validationErrors() == 0);
+        if (!g_out.empty() && cap.width > 0) {
+            CHECK(fuse::app::writePng(cap, g_out));
+            g_shotWritten = true;
+        }
+        r.shell.setSceneViewport(nullptr);
+    } // presenter destroyed before the device it adopted
+#else
+    (void)r;
+    skip("built without fuse_app_native");
+#endif
+}
+
 int main(int argc, char** argv) {
     std::string gate, out;
     for (int i = 1; i < argc; ++i) {
@@ -561,11 +730,13 @@ int main(int argc, char** argv) {
         {"e20_file_menu", gateFileMenu},  {"project_hub", gateProjectHub}, {"asset_browser", gateAssetBrowser},
         {"material_editor", gateMaterialEditor}, {"sdf_sculpt", gateSdfSculpt}, {"profiler", gateProfiler},
         {"sequencer", gateSequencer}, {"timeline", gateTimeline},
+        {"scene_viewport", gateSceneViewport}, {"gpu_viewport", gateGpuViewport},
     };
+    g_out = out;
     if (fonts.count(gate)) gateFont(r, scale);
     else if (gates.count(gate)) gates.at(gate)(r);
     else { std::fprintf(stderr, "unknown gate '%s'\n", gate.c_str()); return 2; }
-    if (!out.empty()) {
+    if (!out.empty() && !g_shotWritten) {
         if (gate != "e20_file_menu" && gate != "context_menu") r.frames();
         r.win.rasterize({});
         if (!r.win.writePng(out)) { std::fprintf(stderr, "cannot write %s\n", out.c_str()); ++g_fail; }

@@ -693,6 +693,16 @@ void EditorShellWindow::renderViewport_() {
     if (m_c.projectPoint(1.f, 1.f, 1.f, ux, uy)) key += "|" + std::to_string(int(ux * 4.f)) + "," + std::to_string(int(uy * 4.f));
     for (const auto& m : markers)
         key += "|" + std::to_string(m.entity.index) + ":" + std::to_string(int(m.x)) + "," + std::to_string(int(m.y)) + (m.selected ? "s" : "");
+    if (m_scene) {
+        // scene edits / material edits / playback also change the 3D frame
+        const u64 version = m_c.viewStateVersion() * 1000003ull + m_models->revision() +
+                            (m_c.viewState().transport == TransportState::Playing ? m_syncs : 0u);
+        const bool changed = key != m_viewportKey || version != m_sceneVersion;
+        m_sceneVersion = version;
+        m_viewportKey = key;
+        if (renderSceneViewport_(wpx, hpx, changed)) return;
+        m_viewportKey.clear(); // host failed: software viewport below
+    }
     if (key == m_viewportKey) return;
     m_viewportKey = key;
     if (wpx != m_image.width || hpx != m_image.height) {
@@ -746,6 +756,46 @@ void EditorShellWindow::renderViewport_() {
     std::snprintf(info, sizeof info, "Perspective   camera (%.1f, %.1f, %.1f)   %zu visible%s", double(p.x), double(p.y), double(p.z),
                   markers.size(), m_c.viewportFlying() ? "   [flying: WASD QE, Shift fast]" : "");
     m_ui.setText(m_viewportInfo, info);
+}
+
+void EditorShellWindow::setSceneViewport(SceneViewportHost* host, std::function<void(const SceneViewportFrame&)> present) {
+    m_scene = host && host->valid() ? host : nullptr;
+    m_scenePresent = m_scene ? std::move(present) : std::function<void(const SceneViewportFrame&)>{};
+    m_image.externalSlot = m_scenePresent ? 0 : -1;
+    if (m_scenePresent) // zero-copy: the CPU pixels are never written again (CPU raster shows the panel colour)
+        std::fill(m_image.pixels.begin(), m_image.pixels.end(), fuse::ui::packPremultiplied(tokenColor("ChildBg")));
+    m_viewportKey.clear();
+    m_sceneVersion = ~0ull;
+    renderViewport_();
+}
+
+bool EditorShellWindow::renderSceneViewport_(int wpx, int hpx, bool changed) {
+    if (!changed) return true;
+    if (wpx != m_image.width || hpx != m_image.height) {
+        m_image.resize(wpx, hpx, fuse::ui::packPremultiplied(tokenColor("ChildBg")));
+        w::viewportSetImage(m_ui, m_viewport, m_imageIndex, u32(wpx), u32(hpx));
+        m_c.viewportResize(u32(wpx), u32(hpx));
+    }
+    bool ok = false;
+    m_models->withScene([&](EditorHost& host, const ViewportPanel& view) { ok = m_scene->render(host, view, u32(wpx), u32(hpx)); });
+    if (!ok) return false;
+    ++m_sceneFrames;
+    if (m_scenePresent) {
+        m_scenePresent(m_scene->frame()); // zero-copy: the kernel samples the engine frame
+    } else {
+        u32 rw = 0, rh = 0;
+        if (m_scene->readback(m_image.pixels, rw, rh) && (int(rw) != m_image.width || int(rh) != m_image.height))
+            m_image.resize(wpx, hpx);
+    }
+    ++m_renders;
+    m_ui.invalidate(m_viewport);
+    const ecs::vec3 p = m_c.viewport().position();
+    char info[200];
+    std::snprintf(info, sizeof info, "Perspective   camera (%.1f, %.1f, %.1f)   %s scene frame %u%s", double(p.x), double(p.y),
+                  double(p.z), m_scenePresent ? "GPU (zero-copy)" : "GPU (readback)", m_sceneFrames,
+                  m_c.viewportFlying() ? "   [flying: WASD QE, Shift fast]" : "");
+    m_ui.setText(m_viewportInfo, info);
+    return true;
 }
 
 // ---- shortcuts ------------------------------------------------------------------------------------------------------
