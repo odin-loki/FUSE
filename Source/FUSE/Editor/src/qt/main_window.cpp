@@ -1,5 +1,6 @@
 #include "main_window.hpp"
 #include "preferences_dialog.hpp"
+#include "navmesh_panel.hpp"
 
 #include <fuse/editor/runtime_viewport.hpp>
 #include <QCoreApplication>
@@ -248,6 +249,8 @@ void MainWindow::buildDocks() {
     addPanelDock(kProfilerDock, tr("Profiler"), m_profiler);
     addPanelDock(kSequencerDock, tr("Sequencer"), m_sequencer);
     addPanelDock(kTimelineDock, tr("Timeline"), m_timeline);
+    m_navigation = new NavmeshPanel(m_host, m_sceneMutex, m_viewport, this);
+    addPanelDock(kNavigationDock, tr("Navigation"), m_navigation);
     // Sequencer <-> Timeline: one playhead while "Link to Timeline" is on.
     m_sequencer->setRangeMs(m_host.timeline().durationMs());
     connect(m_timeline, &TimelineWidget::playheadChanged, m_sequencer, [this](int ms) {
@@ -818,6 +821,7 @@ void MainWindow::resetToDefaultLayout() {
     QDockWidget* profilerDock = dock(kProfilerDock);
     QDockWidget* sequencerDock = dock(kSequencerDock);
     QDockWidget* timelineDock = dock(kTimelineDock);
+    QDockWidget* navigationDock = dock(kNavigationDock);
 
     // Bottom spans the full width; left / right columns sit beside the viewport above it.
     setCorner(Qt::BottomLeftCorner, Qt::BottomDockWidgetArea);
@@ -831,6 +835,7 @@ void MainWindow::resetToDefaultLayout() {
     addDockWidget(Qt::RightDockWidgetArea, inspectorDock);
     tabifyDockWidget(inspectorDock, materialDock);
     tabifyDockWidget(inspectorDock, sdfDock);
+    tabifyDockWidget(inspectorDock, navigationDock);
 
     addDockWidget(Qt::BottomDockWidgetArea, consoleDock);
     tabifyDockWidget(consoleDock, profilerDock);

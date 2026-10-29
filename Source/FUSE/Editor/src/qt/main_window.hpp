@@ -27,6 +27,7 @@ class QToolBar;
 
 namespace fuse::editor::qt {
 class PreferencesDialog;
+class NavmeshPanel;
 
 class AssetBrowserWidget;
 class TimelineWidget;
@@ -100,6 +101,7 @@ public:
     static constexpr const char* kProfilerDock = "dock.profiler";
     static constexpr const char* kSequencerDock = "dock.sequencer";
     static constexpr const char* kTimelineDock = "dock.timeline";
+    static constexpr const char* kNavigationDock = "dock.navigation";
 
     explicit MainWindow(const QString& samplesRoot, QWidget* parent = nullptr);
     MainWindow(const QString& samplesRoot, const Options& options, QWidget* parent = nullptr);
@@ -141,6 +143,7 @@ public:
     [[nodiscard]] MaterialEditorWidget* materialEditor() const { return m_materialEditor; }
     [[nodiscard]] SdfSculptWidget* sdfSculpt() const { return m_sdfSculpt; }
     [[nodiscard]] TimelineWidget* timeline() const { return m_timeline; }
+    [[nodiscard]] NavmeshPanel* navigation() const { return m_navigation; }
     [[nodiscard]] SeqPreviewPaneWidget* sequencer() const { return m_sequencer; }
     /// File / Edit toolbar (New, Open, Save, Undo, Redo) left of the transport bar.
     [[nodiscard]] QToolBar* mainToolBar() const { return m_mainBar; }
@@ -255,6 +258,7 @@ private:
     ProfilerWidget* m_profiler = nullptr;
     SeqPreviewPaneWidget* m_sequencer = nullptr;
     TimelineWidget* m_timeline = nullptr;
+    NavmeshPanel* m_navigation = nullptr;
     std::vector<QDockWidget*> m_docks;
     QString m_samplesRoot;
     QLabel* m_statusLabel = nullptr;

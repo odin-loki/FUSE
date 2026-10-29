@@ -235,6 +235,22 @@ The engine-native GUI framework that will eventually replace Qt (UI9) is tracked
 
 ---
 
+### GUI-5 — editor tools batch (2026-10-30)
+
+| Feature | Where | Notes / gate |
+|---|---|---|
+| Preferences dialog | Edit > Preferences... (Ctrl+,) — `src/qt/preferences_dialog.*` | General tab: preview sun (live), camera speed, look sensitivity, restore layout. Keyboard Shortcuts tab: every `fuseAction*` action, filter, conflict detection (Apply refused while conflicting), reset. Stored in QSettings `prefs/*` and `shortcuts/<objectName>`, applied at startup. Gate `preferences`. |
+| View Mode: Lit / Unlit | View > View Mode (Alt+1 / Alt+2) | `SceneFrameDesc::unlit` -> `GpuScene::setUnlitPreview`: non-layered material rows are uploaded as emissive base colour (albedo zeroed), originals restored when off. Layered materials are unchanged. Renderer test `fuse_scene_renderer_vk_fallback_sun_t0` (unlit view brighter with no lights; rows restored). |
+| Show Mesh Bounds | View > Show Mesh Bounds | Mesh local AABBs through the world transform, drawn with the collider overlay. |
+| Collider wireframes / editing | View > Show All Colliders; Inspector "Collider" section | Shape, params, friction, layer/mask, trigger, CCD are editable in the Inspector (component schema); the wireframe follows edits. |
+| Lua scripts in PIE | Entity > Open Script (Ctrl+E) | Opens the selection's Script `.lua` (relative to the project root) in the system editor. Saving while playing hot-reloads it (`EditorHost::pollHotReload_`, every 15 game ticks; errors keep the old code and print to the Console; covered by `test_e15_console_pie`). |
+| Navigation panel | Navigation dock (tabbed with the Inspector) — `src/qt/navmesh_panel.*` | Bakes a `fuse::navigation::GridNavmesh` on XZ from non-trigger colliders above ground, draws blocked cells / grid / test path in cyan, A* "Test Path". |
+| Recent projects, Group / Ungroup, Frame Selected, preview sun | File / Entity / View menus | See GUI-4 notes above. |
+
+Gates: `fuse_editor_qt_gates edit_tools` (bounds, view mode, Open Script, navigation) and `preferences`.
+
+Remaining: a true triangle wireframe view (needs a line / polygon-mode raster pipeline in the renderer), collider handles dragged in the viewport, and a terrain sculpt panel (`fuse_terrain` has no ECS component or renderer path yet).
+
 ## 9. Related docs
 
 - [editor.md](../editor.md) — embedded Vulkan viewport + `fuse_editor_qt_live_present`

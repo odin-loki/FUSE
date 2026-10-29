@@ -145,6 +145,9 @@ public:
     void setAllCollidersVisible(bool all) { m_showAllColliders = all; syncOverlay(true); update(); }
     [[nodiscard]] bool allCollidersVisible() const { return m_showAllColliders; }
     /// Mesh bounding boxes (local AABB through the world transform), drawn with the collider overlay.
+    /// Navigation overlay: world-space segments (ax ay az bx by bz per segment), drawn cyan. Empty clears it.
+    void setNavOverlay(std::vector<f32> segments) { m_navSegs = std::move(segments); syncOverlay(true); update(); }
+    [[nodiscard]] int navOverlaySegmentCount() const { return static_cast<int>(m_navSegs.size() / 6u); }
     void setMeshBoundsVisible(bool on) { m_showMeshBounds = on; syncOverlay(true); update(); }
     [[nodiscard]] bool meshBoundsVisible() const { return m_showMeshBounds; }
     /// Projected collider segments of the last paint / overlay refresh.
@@ -208,7 +211,8 @@ private:
     bool m_showMeshBounds = false;
     bool m_inOverlayPaint = false; ///< syncOverlay already collected the collider lines
     std::vector<QLineF> m_colliderLines;
-    std::vector<bool> m_colliderSelected;
+    std::vector<u8> m_colliderSelected; ///< 0 collider / bounds, 1 selected, 2 navmesh overlay
+    std::vector<f32> m_navSegs;         ///< world-space segments (6 floats each) from setNavOverlay
     void collectColliderLines_();
     void paintColliders_(QPainter& painter);
     int m_gizmoHover = -1;

@@ -47,6 +47,7 @@
 #include <QJsonArray>
 #include "project_settings_dialog.hpp"
 #include "preferences_dialog.hpp"
+#include "navmesh_panel.hpp"
 #include <QLabel>
 #include <QSettings>
 #include <QTableWidget>
@@ -310,7 +311,7 @@ int gateStartup(double appInitMs) {
                 "total %.1f ms (%zu docks)\n",
                 appInitMs, constructMs, totalMs, appInitMs + totalMs, window->docks().size());
     expect(exposed, "main window exposed");
-    expect(window->docks().size() == 10u, "all 10 panels (hierarchy, projects, assets, inspector, material, sdf, "
+    expect(window->docks().size() == 11u, "all 11 panels (hierarchy, projects, assets, inspector, material, sdf, navigation, "
                                          "console, profiler, sequencer, timeline) created as docks");
     expect(allPlaced, "every dock has its panel widget and a dock area");
     expect(window->centralWidget() == window->viewport(), "viewport is the central widget");
@@ -1022,7 +1023,8 @@ int gateContextMenu() {
     clickAt("bottom-left", QPoint(2, vp->height() - 3));
     // Let the viewport reach the window's right / bottom edges (close the right + bottom docks).
     for (const char* name : {MainWindow::kInspectorDock, MainWindow::kMaterialEditorDock, MainWindow::kSdfSculptDock,
-                             MainWindow::kConsoleDock, MainWindow::kProfilerDock, MainWindow::kSequencerDock}) {
+                             MainWindow::kNavigationDock, MainWindow::kConsoleDock, MainWindow::kProfilerDock,
+                             MainWindow::kSequencerDock}) {
         window.dock(name)->close();
     }
     window.statusBar()->hide();
@@ -2096,6 +2098,38 @@ int gateEditTools() {
         }
         expect(window.selectedScriptPath().isEmpty(), "no selection -> no script");
     }
+
+    // Navigation panel: a box collider wall blocks cells; a path detours around it.
+    {
+        fuse::editor::qt::NavmeshPanel* nav = window.navigation();
+        expect(nav != nullptr && window.dock(MainWindow::kNavigationDock) != nullptr, "Navigation dock exists");
+        nav->setCellSize(0.5);
+        nav->setHalfExtent(20);
+        expect(nav->bake(), "navmesh bakes");
+        const int baseBlocked = nav->blockedCount();
+        {
+            std::lock_guard<std::mutex> lock(window.sceneMutex());
+            ecs::Registry& reg = window.host().editorScene().registry();
+            const ecs::EntityID wall = reg.create();
+            ecs::Transform t{};
+            t.position = {0.f, 1.f, 0.f, 1.f};
+            reg.add(wall, t);
+            ecs::Collider c{};
+            c.shape = ecs::Collider::Box;
+            c.params = {0.25f, 1.f, 4.f, 0.f};
+            reg.add(wall, c);
+            fuse::ecs::TransformSystem::update(reg);
+        }
+        const bool rebaked = nav->bake();
+        const int wallBlocked = nav->blockedCount();
+        expect(rebaked && wallBlocked > baseBlocked, fmt("a wall collider blocks cells (%d -> %d)", baseBlocked, wallBlocked));
+        const int straight = 21; // -5..5 at 0.5 m cells
+        const int pts = nav->testPath(-5.f, 0.f, 5.f, 0.f);
+        expect(pts > straight, fmt("path detours around the wall (%d waypoints)", pts));
+        expect(window.viewport()->navOverlaySegmentCount() > 4, "navmesh overlay drawn");
+        nav->setOverlayVisible(false);
+        expect(window.viewport()->navOverlaySegmentCount() == 0, "overlay hidden");
+    }
     return 0;
 }
 
@@ -2148,6 +2182,9 @@ int gatePreferences() {
 }
 
 int gateLivePresent() {
+    // This gate checks the present plumbing with corner-pixel probes; the preview sun's sky gradient shifts with the
+    // viewport aspect, so render it without the sun (the preview sun has its own renderer test).
+    fuse::editor::setEditorPreviewSun(false);
 #if defined(FUSE_VULKAN_BACKEND)
     if (QGuiApplication::platformName() != QLatin1String("xcb")) {
         std::printf("SKIP: embedded Vulkan viewport needs the xcb platform (have %s)\n",

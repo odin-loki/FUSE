@@ -1017,7 +1017,7 @@ void ViewportPlaceholderWidget::collectColliderLines_() {
     m_colliderSelected.clear();
     struct Seg {
         ecs::vec3 a, b;
-        bool selected;
+        u8 selected;
     };
     std::vector<Seg> segs;
     {
@@ -1098,6 +1098,10 @@ void ViewportPlaceholderWidget::collectColliderLines_() {
                 break;
             }
         });
+        for (usize k = 0; k + 6u <= m_navSegs.size(); k += 6u) {
+            segs.push_back({ecs::vec3{m_navSegs[k], m_navSegs[k + 1], m_navSegs[k + 2], 1.f},
+                            ecs::vec3{m_navSegs[k + 3], m_navSegs[k + 4], m_navSegs[k + 5], 1.f}, u8{2}});
+        }
         if (m_showMeshBounds) {
             registry.each<ecs::Transform, ecs::Mesh>([&](ecs::EntityID id, ecs::Transform& t, ecs::Mesh& mesh) {
                 const bool selected = std::find(sel.begin(), sel.end(), id) != sel.end();
@@ -1137,7 +1141,8 @@ void ViewportPlaceholderWidget::paintColliders_(QPainter& painter) {
     painter.save();
     painter.setRenderHint(QPainter::Antialiasing, true);
     for (usize i = 0; i < m_colliderLines.size(); ++i) {
-        painter.setPen(QPen(m_colliderSelected[i] ? QColor(120, 255, 140, 230) : QColor(90, 200, 110, 150), 1.4));
+        const u8 kind = m_colliderSelected[i];
+        painter.setPen(QPen(kind == 2 ? QColor(70, 200, 255, 170) : kind == 1 ? QColor(120, 255, 140, 230) : QColor(90, 200, 110, 150), 1.4));
         painter.drawLine(m_colliderLines[i]);
     }
     painter.restore();
