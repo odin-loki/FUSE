@@ -258,6 +258,42 @@ void testImportPipelineDryRun() {
     expectTrue(dryRun.ok, "pipeline dry-run ok");
 }
 
+void testScanProjectCookManifest() {
+    namespace fs = std::filesystem;
+    const fs::path root = fuse::test::tempPath("scan_project");
+    fs::remove_all(root);
+    fs::create_directories(root / "assets/models/sub");
+    fs::create_directories(root / "assets/cooked/models");
+    fs::create_directories(root / ".fuse");
+    fs::create_directories(root / "art");
+    auto touch = [](const fs::path& p) { std::ofstream(p) << "x"; };
+    touch(root / "project.json");
+    touch(root / "assets/models/rock.obj");
+    touch(root / "assets/models/sub/rock.OBJ");
+    touch(root / "assets/cooked/models/rock.obj");
+    touch(root / ".fuse/skip.png");
+    touch(root / "art/wood.png");
+    touch(root / "art/hit.wav");
+    touch(root / "art/ai.lua");
+    touch(root / "art/readme.txt");
+    fuse::project::CookManifest m = fuse::project::scanProjectCookManifest(root.string());
+    expectTrue(m.assets.size() == 5u, "scan finds 5 cookable sources (cooked/dot dirs skipped)");
+    bool collision = false;
+    bool texture = false;
+    for (const auto& e : m.assets) {
+        if (e.source_path == "assets/models/sub/rock.OBJ") collision = e.output_path == "assets/cooked/models/rock_1.fusemesh";
+        if (e.source_path == "art/wood.png") texture = e.kind == fuse::project::CookAssetKind::Texture &&
+                                                      e.output_path == "assets/cooked/textures/wood.fusetex";
+    }
+    expectTrue(collision, "colliding stems get a _N suffix");
+    expectTrue(texture, "png maps to assets/cooked/textures/*.fusetex");
+    std::ofstream(root / "cook_manifest.json")
+        << R"({"schemaVersion":1,"assets":[{"kind":"mesh","sourcePath":"a.obj","outputPath":"b.fusemesh"}]})";
+    m = fuse::project::scanProjectCookManifest(root.string());
+    expectTrue(m.assets.size() == 1u, "cook_manifest.json overrides the scan");
+    fs::remove_all(root);
+}
+
 void testCookJobGraphEmpty() {
     fuse::project::CookJobGraph graph;
     expectTrue(graph.empty(), "default graph is empty");
@@ -2347,6 +2383,7 @@ int main() {
     testCookEntryWritesShaderStubOutput();
     testAssetCookerTextureAudioHookStubs();
     testAssetCookerBc7Texture();
+    testScanProjectCookManifest();
     testCookJobGraphEmpty();
     testCookDependencyGraphEmptyGuards();
     testCookDependencyGraphEmptyHelperGuards();

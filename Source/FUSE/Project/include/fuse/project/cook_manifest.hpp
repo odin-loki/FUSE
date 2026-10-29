@@ -87,6 +87,11 @@ struct CookManifestLoadResult {
 CookManifestLoadResult loadCookManifestFromFile(const std::string& path);
 CookManifestLoadResult parseCookManifest(const std::string& json, const std::string& project_root);
 CookManifest makeDefaultCookManifest(const std::string& project_root);
+/// Project-wide cook plan: `<root>/cook_manifest.json` when present, otherwise every mesh / texture / audio /
+/// script source under the project (dot-dirs, `build/`, `cooked/` and `assets/cooked/` skipped) mapped to
+/// `assets/cooked/<models|textures|audio|scripts>/<stem>.<fusemesh|fusetex|fuseaudio|fusescript>` (the editor's
+/// cook-on-import layout). Sorted by source path; colliding outputs get a `_N` suffix.
+CookManifest scanProjectCookManifest(const std::string& project_root);
 
 const char* cookAssetKindName(CookAssetKind kind);
 /// Inverse of cookAssetKindName ("mesh", "texture", "audio", "shader", "script"); false when unknown.

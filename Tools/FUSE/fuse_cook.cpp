@@ -22,7 +22,8 @@ void printUsage() {
     std::fprintf(stderr,
                  "fuse_cook — FUSE offline asset cook dry-run (B7.9)\n"
                  "Usage:\n"
-                 "  fuse_cook --project <dir> [--dry-run]     Plan default cook manifest for project\n"
+                 "  fuse_cook --project <dir> [--dry-run]     Cook every mesh/texture/audio/script source in the project\n"
+                 "                                            (or <dir>/cook_manifest.json) into assets/cooked/\n"
                  "  fuse_cook --manifest <cook.json> [--dry-run]  Load cook_manifest.json and plan/cook\n"
                  "  fuse_cook --mesh --input <path> --output <path>   Mesh cook (.fusemesh FMSH; see mesh options)\n"
                  "  fuse_cook --texture --input <path> --output <path> Texture cook (.png/.tga/.jpg/.hdr/.ktx2 in;\n"
@@ -454,14 +455,13 @@ int main(int argc, char** argv) {
                         loadResult.manifest.name.c_str(),
                         projectDir.c_str());
 
-        fuse::project::CookManifest manifest = fuse::project::makeDefaultCookManifest(projectDir);
-        if (!loadResult.manifest.defaultWorld3D.empty()) {
-            fuse::project::CookManifestEntry levelEntry;
-            levelEntry.kind = fuse::project::CookAssetKind::Mesh;
-            levelEntry.source_path = loadResult.manifest.defaultWorld3D;
-            levelEntry.output_path = "cooked/" + loadResult.manifest.defaultWorld3D + ".fusecook";
-            manifest.assets.push_back(levelEntry);
+        fuse::project::CookManifest manifest = fuse::project::scanProjectCookManifest(projectDir);
+        if (manifest.assets.empty()) {
+            std::printf("fuse_cook: nothing to cook in %s\n", projectDir.c_str());
+            fuse::core::shutdown();
+            return EXIT_SUCCESS;
         }
+        resolveManifestPaths(manifest);
 
         fuse::project::ImportPipeline pipeline;
         pipeline.set_project_root(projectDir);

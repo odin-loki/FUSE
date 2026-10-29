@@ -3,7 +3,10 @@
 #include <fuse/project/cook_content_hash.hpp>
 #include <fuse/project/json_reader.hpp>
 
+#include <algorithm>
 #include <cctype>
+#include <filesystem>
+#include <set>
 #include <fstream>
 #include <sstream>
 
@@ -236,6 +239,69 @@ CookManifest makeDefaultCookManifest(const std::string& project_root) {
     textureEntry.output_path = "cooked/albedo.fusetex";
     manifest.assets.push_back(textureEntry);
 
+    return manifest;
+}
+
+namespace {
+bool scanKind(std::string ext, CookAssetKind& kind, const char*& dir, const char*& outExt) {
+    for (char& ch : ext) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    static const char* meshes[] = {".obj", ".gltf", ".glb", ".fbx", ".dae", ".ply", ".stl", ".3ds"};
+    static const char* textures[] = {".png", ".jpg", ".jpeg", ".tga", ".hdr", ".psd", ".gif"};
+    static const char* audio[] = {".wav", ".ogg", ".flac"};
+    for (const char* e : meshes) if (ext == e) { kind = CookAssetKind::Mesh; dir = "models"; outExt = ".fusemesh"; return true; }
+    for (const char* e : textures) if (ext == e) { kind = CookAssetKind::Texture; dir = "textures"; outExt = ".fusetex"; return true; }
+    for (const char* e : audio) if (ext == e) { kind = CookAssetKind::Audio; dir = "audio"; outExt = ".fuseaudio"; return true; }
+    if (ext == ".lua") { kind = CookAssetKind::Script; dir = "scripts"; outExt = ".fusescript"; return true; }
+    return false;
+}
+} // namespace
+
+CookManifest scanProjectCookManifest(const std::string& project_root) {
+    namespace fs = std::filesystem;
+    const fs::path root(project_root);
+    std::error_code ec;
+    if (fs::is_regular_file(root / "cook_manifest.json", ec)) {
+        std::ifstream in(root / "cook_manifest.json", std::ios::binary);
+        std::stringstream ss;
+        ss << in.rdbuf();
+        CookManifestLoadResult loaded = parseCookManifest(ss.str(), project_root);
+        if (loaded.status == CookManifestLoadStatus::Ok) return loaded.manifest;
+    }
+    CookManifest manifest;
+    manifest.schema_version = 1;
+    manifest.project_root = project_root;
+    std::vector<std::string> sources;
+    for (fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, ec), end; it != end;
+         it.increment(ec)) {
+        if (ec) break;
+        const std::string rel = fs::relative(it->path(), root, ec).generic_string();
+        const std::string name = it->path().filename().string();
+        if (it->is_directory(ec)) {
+            if (name.empty() || name[0] == '.' || name == "build" || rel == "cooked" || rel == "assets/cooked") {
+                it.disable_recursion_pending();
+            }
+            continue;
+        }
+        if (!it->is_regular_file(ec) || name[0] == '.') continue;
+        sources.push_back(rel);
+    }
+    std::sort(sources.begin(), sources.end());
+    std::set<std::string> outputs;
+    for (const std::string& rel : sources) {
+        CookManifestEntry e;
+        const char* dir = nullptr;
+        const char* outExt = nullptr;
+        const fs::path p(rel);
+        if (!scanKind(p.extension().string(), e.kind, dir, outExt)) continue;
+        std::string out = std::string("assets/cooked/") + dir + "/" + p.stem().string() + outExt;
+        for (int n = 1; outputs.count(out) != 0; ++n) {
+            out = std::string("assets/cooked/") + dir + "/" + p.stem().string() + "_" + std::to_string(n) + outExt;
+        }
+        outputs.insert(out);
+        e.source_path = rel;
+        e.output_path = out;
+        manifest.assets.push_back(std::move(e));
+    }
     return manifest;
 }
 
