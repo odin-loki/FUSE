@@ -250,6 +250,19 @@ public:
     void setProjectRoot(const QString& root);
     AssetBrowser& model() { return m_model; }
     [[nodiscard]] QListWidget* list() const { return m_list; }
+    [[nodiscard]] QLabel* pathLabel() const { return m_path; }
+    [[nodiscard]] QToolButton* upButton() const { return m_up; }
+    /// Activate (double-click) the row whose entry path is `relativePath`: folders open, scenes
+    /// emit `sceneOpenRequested`, other assets are selected. Returns the model's result.
+    AssetBrowser::ActivateResult activatePath(const QString& relativePath);
+    /// Go to the parent folder (the Up button).
+    bool navigateUp();
+    /// Rescan the current folder (the Refresh button).
+    void rescan();
+
+signals:
+    /// A scene asset was activated; `absolutePath` is the file to open.
+    void sceneOpenRequested(const QString& absolutePath);
 
 private:
     void rebuild();
@@ -257,9 +270,30 @@ private:
     AssetBrowser m_model;
     QLineEdit* m_filter = nullptr;
     QListWidget* m_list = nullptr;
+    QLabel* m_path = nullptr;
+    QToolButton* m_up = nullptr;
+    QToolButton* m_refresh = nullptr;
 };
 
-/// B6.10 Profiler dock — `ProfilerPanel` ring buffer, fed with the editor's own frame timings.
+/// GUI-1 frame-time graph: CPU ms per retained frame as bars, with the target-fps budget line.
+class FrameTimeGraph final : public QWidget {
+    Q_OBJECT
+
+public:
+    explicit FrameTimeGraph(const ProfilerPanel& panel, QWidget* parent = nullptr);
+    [[nodiscard]] QSize sizeHint() const override { return {320, 120}; }
+    [[nodiscard]] QSize minimumSizeHint() const override { return {120, 60}; }
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+
+private:
+    const ProfilerPanel& m_panel;
+    std::vector<f32> m_scratch;
+};
+
+/// B6.10 Profiler dock — `ProfilerPanel` ring buffer, fed with the editor's game-tick timings;
+/// GUI-1 adds the frame-time graph, min / avg / max stats, Pause and Clear.
 class ProfilerWidget final : public QWidget {
     Q_OBJECT
 
@@ -268,10 +302,17 @@ public:
     ProfilerPanel& panel() { return m_panel; }
     void pushFrame(const ProfilerPanel::FrameProfileData& data);
     void refresh();
+    [[nodiscard]] FrameTimeGraph* graph() const { return m_graph; }
+    [[nodiscard]] QCheckBox* pauseCheck() const { return m_pause; }
+    [[nodiscard]] QToolButton* clearButton() const { return m_clear; }
+    [[nodiscard]] QLabel* summary() const { return m_summary; }
 
 private:
     ProfilerPanel m_panel;
     QLabel* m_summary = nullptr;
+    FrameTimeGraph* m_graph = nullptr;
+    QCheckBox* m_pause = nullptr;
+    QToolButton* m_clear = nullptr;
 };
 
 /// B6.7 Material Editor dock — `MaterialEditorPanel` selection + PBR scalars.

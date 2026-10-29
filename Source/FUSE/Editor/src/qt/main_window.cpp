@@ -74,6 +74,11 @@ MainWindow::MainWindow(const QString& samplesRoot, const Options& options, QWidg
     m_statusLabel = new QLabel(this);
     statusBar()->addPermanentWidget(m_statusLabel, 1);
 
+    connect(m_assetBrowser, &AssetBrowserWidget::sceneOpenRequested, this, [this](const QString& path) {
+        if (maybeSaveChanges()) {
+            openScene(path);
+        }
+    });
     connect(m_viewport, &ViewportPlaceholderWidget::sceneEdited, this, &MainWindow::refreshPanels);
     connect(m_viewport, &ViewportPlaceholderWidget::selectionChanged, this, &MainWindow::refreshPanels);
     connect(m_hierarchy, &HierarchyWidget::sceneEdited, this, &MainWindow::refreshPanels);
@@ -498,6 +503,13 @@ void MainWindow::refreshStatusBar() {
         m_inspector->refresh(); // cheap when nothing changed; picks up gizmo / PIE edits
     }
     updateWindowTitle();
+    if (m_gameThread.isRunning() && m_host.gameTickCount() != m_lastProfiledTick) {
+        // One profiler sample per status refresh: the game thread's last tick wall time.
+        m_lastProfiledTick = m_host.gameTickCount();
+        ProfilerPanel::FrameProfileData frame{};
+        frame.cpuMs = m_gameThread.lastTickMs();
+        m_profiler->pushFrame(frame);
+    }
     m_profiler->refresh();
     m_statusLabel->setText(
         tr("Game ticks: %1 | Pending: %2 | Applied: %3 | PIE: %4")

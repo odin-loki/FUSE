@@ -2,6 +2,7 @@
 
 #include <fuse/platform/thread.hpp>
 
+#include <QElapsedTimer>
 #include <QTimer>
 
 namespace fuse::editor::qt {
@@ -21,12 +22,15 @@ void GameLoopThread::run() {
         if (m_host == nullptr) {
             return;
         }
+        QElapsedTimer tickTimer;
+        tickTimer.start();
         if (m_sceneMutex != nullptr) {
             std::lock_guard<std::mutex> lock(*m_sceneMutex);
             m_host->gameTick();
         } else {
             m_host->gameTick();
         }
+        m_lastTickMs.store(static_cast<float>(tickTimer.nsecsElapsed()) * 1e-6f, std::memory_order_relaxed);
     });
     timer.start();
     exec();

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include <fuse/editor/editor_host.hpp>
 
 #include <QThread>
@@ -16,12 +18,16 @@ class GameLoopThread final : public QThread {
 public:
     explicit GameLoopThread(EditorHost* host, std::mutex* sceneMutex = nullptr, QObject* parent = nullptr);
 
+    /// Wall time of the last EditorHost::gameTick (ms, includes the scene-mutex wait).
+    [[nodiscard]] float lastTickMs() const { return m_lastTickMs.load(std::memory_order_relaxed); }
+
 protected:
     void run() override;
 
 private:
     EditorHost* m_host = nullptr;
     std::mutex* m_sceneMutex = nullptr;
+    std::atomic<float> m_lastTickMs{0.f};
 };
 
 } // namespace fuse::editor::qt

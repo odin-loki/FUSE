@@ -7,6 +7,8 @@
 //   undo       an inspector edit lands through the command system and toolbar Undo / Redo revert /
 //              reapply it
 //   play       toolbar Play / Stop toggle PIE and the transport enable state
+//   assets     asset browser folder navigation (Up / double-click) and scene double-click opens it
+//   profiler   frame-time graph, min / avg / max summary, Pause and Clear
 //   project    openProject() on a sample loads its world into the hierarchy; the window grabs to a
 //              non-empty image (the --screenshot path)
 #include "editor_panels.hpp"
@@ -20,7 +22,12 @@
 #include <QDir>
 #include <QDockWidget>
 #include <QDoubleSpinBox>
+#include <QCheckBox>
 #include <QImage>
+#include <QLabel>
+#include <QListWidget>
+#include <QMessageBox>
+#include <QToolButton>
 #include <QPixmap>
 #include <QToolBar>
 #include <QTreeWidget>
@@ -175,6 +182,57 @@ int gateProject(MainWindow& window) {
     return 0;
 }
 
+int gateAssets(MainWindow& window) {
+    auto* assets = window.findChild<fuse::editor::qt::AssetBrowserWidget*>();
+    expect(assets != nullptr, "assets: asset browser widget");
+    if (assets == nullptr) {
+        return 1;
+    }
+    const QString project = QDir(QStringLiteral(FUSE_TEST_SOURCE_DIR)).absoluteFilePath(
+        QStringLiteral("Samples/unification/demo_3d_empty"));
+    assets->setProjectRoot(project);
+    expect(!assets->upButton()->isEnabled() && assets->list()->count() >= 2, "assets: project root listed, Up disabled");
+    using R = fuse::editor::AssetBrowser::ActivateResult;
+    expect(assets->activatePath(QStringLiteral("worlds")) == R::EnteredFolder && assets->upButton()->isEnabled() &&
+               assets->pathLabel()->text() == QStringLiteral("/worlds"),
+           "assets: double-click a folder enters it");
+    QString requested;
+    QObject::connect(assets, &fuse::editor::qt::AssetBrowserWidget::sceneOpenRequested,
+                     [&](const QString& path) { requested = path; });
+    window.setDirtyPromptHook([](const QString&) { return QMessageBox::Discard; });
+    expect(assets->activatePath(QStringLiteral("worlds/example.fuselevel")) == R::OpenScene &&
+               requested.endsWith(QStringLiteral("worlds/example.fuselevel")),
+           "assets: double-click a scene requests open");
+    tick(window, 2);
+    expect(window.sceneDisplayName().contains(QStringLiteral("example")), "assets: the scene opens in the editor");
+    expect(assets->navigateUp() && !assets->upButton()->isEnabled(), "assets: Up returns to the root");
+    return 0;
+}
+
+int gateProfiler(MainWindow& window) {
+    fuse::editor::qt::ProfilerWidget* prof = window.profiler();
+    prof->panel().clearHistory();
+    for (int i = 0; i < 40; ++i) {
+        fuse::editor::ProfilerPanel::FrameProfileData f{};
+        f.cpuMs = (i % 10 == 0) ? 25.f : 8.f;
+        prof->pushFrame(f);
+    }
+    prof->refresh();
+    expect(prof->graph() != nullptr && prof->summary()->text().contains(QStringLiteral("max 25.00")),
+           "profiler: summary shows min / avg / max");
+    expect(prof->panel().cpuStats().overBudget == 4u, "profiler: over-budget frames counted");
+    const QImage img = prof->graph()->grab().toImage();
+    expect(!img.isNull(), "profiler: graph paints");
+    prof->pauseCheck()->setChecked(true);
+    fuse::editor::ProfilerPanel::FrameProfileData f{};
+    prof->pushFrame(f);
+    expect(prof->panel().frameCount() == 40u, "profiler: Pause stops capture");
+    prof->pauseCheck()->setChecked(false);
+    prof->clearButton()->click();
+    expect(prof->panel().frameCount() == 0u, "profiler: Clear empties the history");
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -205,6 +263,12 @@ int main(int argc, char** argv) {
         }
         if (gate == "play" || gate == "all") {
             gatePlay(window);
+        }
+        if (gate == "assets" || gate == "all") {
+            gateAssets(window);
+        }
+        if (gate == "profiler" || gate == "all") {
+            gateProfiler(window);
         }
         if (gate == "project" || gate == "all") {
             gateProject(window);

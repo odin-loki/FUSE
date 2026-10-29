@@ -12,6 +12,9 @@
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/transform.hpp>
 
+#include <QPainter>
+#include <QIcon>
+#include <QStyle>
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
@@ -1141,18 +1144,68 @@ void ConsoleWidget::onSubmit() {
 
 // ---- AssetBrowserWidget ---------------------------------------------------------------------------
 
+namespace {
+
+QIcon assetIcon(const QStyle* style, AssetBrowser::AssetType type) {
+    switch (type) {
+    case AssetBrowser::AssetType::Folder:
+        return style->standardIcon(QStyle::SP_DirIcon);
+    case AssetBrowser::AssetType::Scene:
+        return style->standardIcon(QStyle::SP_DesktopIcon);
+    case AssetBrowser::AssetType::Script:
+        return style->standardIcon(QStyle::SP_FileDialogDetailedView);
+    case AssetBrowser::AssetType::Audio:
+        return style->standardIcon(QStyle::SP_MediaVolume);
+    case AssetBrowser::AssetType::Texture:
+        return style->standardIcon(QStyle::SP_FileDialogContentsView);
+    case AssetBrowser::AssetType::Mesh:
+    case AssetBrowser::AssetType::Material:
+        return style->standardIcon(QStyle::SP_FileDialogInfoView);
+    default:
+        return style->standardIcon(QStyle::SP_FileIcon);
+    }
+}
+
+} // namespace
+
 AssetBrowserWidget::AssetBrowserWidget(QWidget* parent) : QWidget(parent) {
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(4, 4, 4, 4);
+    auto* nav = new QHBoxLayout();
+    m_up = new QToolButton(this);
+    m_up->setObjectName(QStringLiteral("fuseAssetUp"));
+    m_up->setIcon(style()->standardIcon(QStyle::SP_FileDialogToParent));
+    m_up->setToolTip(tr("Parent folder"));
+    nav->addWidget(m_up);
+    m_path = new QLabel(this);
+    m_path->setObjectName(QStringLiteral("fuseAssetPath"));
+    m_path->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    nav->addWidget(m_path, 1);
+    m_refresh = new QToolButton(this);
+    m_refresh->setObjectName(QStringLiteral("fuseAssetRefresh"));
+    m_refresh->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
+    m_refresh->setToolTip(tr("Rescan folder"));
+    nav->addWidget(m_refresh);
+    layout->addLayout(nav);
     m_filter = new QLineEdit(this);
     m_filter->setPlaceholderText(tr("Filter assets…"));
+    m_filter->setClearButtonEnabled(true);
     layout->addWidget(m_filter);
     m_list = new QListWidget(this);
+    m_list->setObjectName(QStringLiteral("fuseAssetList"));
     layout->addWidget(m_list, 1);
     connect(m_filter, &QLineEdit::textChanged, this, [this](const QString& text) {
         m_model.setSearchFilter(text.toUtf8().constData());
         rebuild();
     });
+    connect(m_up, &QToolButton::clicked, this, &AssetBrowserWidget::navigateUp);
+    connect(m_refresh, &QToolButton::clicked, this, &AssetBrowserWidget::rescan);
+    connect(m_list, &QListWidget::itemActivated, this, [this](QListWidgetItem* item) {
+        if (item != nullptr) {
+            activatePath(item->data(Qt::UserRole).toString());
+        }
+    });
+    rebuild();
 }
 
 void AssetBrowserWidget::setProjectRoot(const QString& root) {
@@ -1161,22 +1214,106 @@ void AssetBrowserWidget::setProjectRoot(const QString& root) {
     rebuild();
 }
 
+AssetBrowser::ActivateResult AssetBrowserWidget::activatePath(const QString& relativePath) {
+    const std::string path = relativePath.toStdString();
+    const AssetBrowser::ActivateResult result = m_model.activate(path.c_str());
+    if (result == AssetBrowser::ActivateResult::EnteredFolder) {
+        const QSignalBlocker block(m_filter);
+        m_filter->clear();
+        rebuild();
+    } else if (result == AssetBrowser::ActivateResult::OpenScene) {
+        emit sceneOpenRequested(QString::fromStdString(m_model.absolutePath(path)));
+    }
+    return result;
+}
+
+bool AssetBrowserWidget::navigateUp() {
+    const bool moved = m_model.navigateUp();
+    if (moved) {
+        rebuild();
+    }
+    return moved;
+}
+
+void AssetBrowserWidget::rescan() {
+    m_model.refresh();
+    rebuild();
+}
+
 void AssetBrowserWidget::rebuild() {
     m_list->clear();
     for (const AssetBrowser::AssetEntry& entry : m_model.entries()) { // already filtered by the model
-        m_list->addItem(QStringLiteral("%1  (%2)").arg(QString::fromStdString(entry.name),
-                                                      QString::fromLatin1(AssetBrowser::assetTypeLabel(entry.type))));
+        auto* item = new QListWidgetItem(assetIcon(style(), entry.type), QString::fromStdString(entry.name), m_list);
+        item->setData(Qt::UserRole, QString::fromStdString(entry.path));
+        item->setToolTip(QStringLiteral("%1 — %2").arg(QString::fromLatin1(AssetBrowser::assetTypeLabel(entry.type)),
+                                                     QString::fromStdString(entry.path)));
     }
+    const bool hasRoot = !m_model.projectRoot().empty();
+    const QString dir = QString::fromStdString(m_model.currentDirectory());
+    m_path->setText(hasRoot ? QStringLiteral("/%1").arg(dir) : tr("(no project open)"));
+    m_up->setEnabled(hasRoot && !dir.isEmpty());
+    m_refresh->setEnabled(hasRoot);
 }
 
 // ---- ProfilerWidget -------------------------------------------------------------------------------
 
+FrameTimeGraph::FrameTimeGraph(const ProfilerPanel& panel, QWidget* parent) : QWidget(parent), m_panel(panel) {
+    setObjectName(QStringLiteral("fuseFrameTimeGraph"));
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+}
+
+void FrameTimeGraph::paintEvent(QPaintEvent* /*event*/) {
+    QPainter p(this);
+    const QRect r = rect().adjusted(1, 1, -1, -1);
+    p.fillRect(r, palette().color(QPalette::Base));
+    p.setPen(palette().color(QPalette::Mid));
+    p.drawRect(r);
+    m_panel.copyCpuHistory(m_scratch);
+    const f32 budget = m_panel.targetFps() > 0.f ? 1000.f / m_panel.targetFps() : 16.67f;
+    f32 peak = budget * 1.5f;
+    for (f32 ms : m_scratch) {
+        peak = std::max(peak, ms);
+    }
+    const auto yOf = [&](f32 ms) { return r.bottom() - static_cast<int>(std::lround((ms / peak) * (r.height() - 2))); };
+    const int n = static_cast<int>(ProfilerPanel::kHistoryFrames);
+    const double barW = static_cast<double>(r.width()) / n;
+    const int first = n - static_cast<int>(m_scratch.size());
+    for (int i = 0; i < static_cast<int>(m_scratch.size()); ++i) {
+        const f32 ms = m_scratch[static_cast<std::size_t>(i)];
+        const QColor color = ms > budget ? QColor(220, 90, 70) : QColor(90, 170, 110);
+        const int x0 = r.left() + static_cast<int>((first + i) * barW);
+        const int x1 = r.left() + static_cast<int>((first + i + 1) * barW);
+        p.fillRect(QRect(QPoint(x0, yOf(ms)), QPoint(std::max(x0, x1 - 1), r.bottom())), color);
+    }
+    p.setPen(QPen(QColor(230, 200, 80), 1, Qt::DashLine));
+    const int yb = yOf(budget);
+    p.drawLine(r.left(), yb, r.right(), yb);
+    p.setPen(palette().color(QPalette::Text));
+    p.drawText(r.adjusted(4, 2, -4, -2), Qt::AlignTop | Qt::AlignRight,
+               tr("%1 ms budget · peak %2 ms").arg(budget, 0, 'f', 1).arg(peak, 0, 'f', 1));
+}
+
 ProfilerWidget::ProfilerWidget(QWidget* parent) : QWidget(parent) {
     auto* layout = new QVBoxLayout(this);
+    auto* bar = new QHBoxLayout();
     m_summary = new QLabel(this);
     m_summary->setObjectName(QStringLiteral("fuseProfilerSummary"));
-    layout->addWidget(m_summary);
-    layout->addStretch(1);
+    bar->addWidget(m_summary, 1);
+    m_pause = new QCheckBox(tr("Pause"), this);
+    m_pause->setObjectName(QStringLiteral("fuseProfilerPause"));
+    bar->addWidget(m_pause);
+    m_clear = new QToolButton(this);
+    m_clear->setObjectName(QStringLiteral("fuseProfilerClear"));
+    m_clear->setText(tr("Clear"));
+    bar->addWidget(m_clear);
+    layout->addLayout(bar);
+    m_graph = new FrameTimeGraph(m_panel, this);
+    layout->addWidget(m_graph, 1);
+    connect(m_pause, &QCheckBox::toggled, this, [this](bool paused) { m_panel.setPaused(paused); });
+    connect(m_clear, &QToolButton::clicked, this, [this]() {
+        m_panel.clearHistory();
+        refresh();
+    });
     refresh();
 }
 
@@ -1185,12 +1322,20 @@ void ProfilerWidget::pushFrame(const ProfilerPanel::FrameProfileData& data) {
 }
 
 void ProfilerWidget::refresh() {
+    const ProfilerPanel::FrameStats s = m_panel.cpuStats();
     const ProfilerPanel::FrameProfileData& f = m_panel.latestFrame();
-    m_summary->setText(tr("Frames: %1\nCPU: %2 ms\nEditor UI: %3 ms\nTarget: %4 fps")
+    m_summary->setText(tr("Frames: %1   CPU: %2 ms   min %3 / avg %4 / max %5 ms   ~%6 fps   over budget: %7   Editor UI: %8 ms   Target: %9 fps")
                            .arg(m_panel.frameCount())
                            .arg(f.cpuMs, 0, 'f', 3)
+                           .arg(s.minMs, 0, 'f', 2)
+                           .arg(s.avgMs, 0, 'f', 2)
+                           .arg(s.maxMs, 0, 'f', 2)
+                           .arg(s.avgFps, 0, 'f', 0)
+                           .arg(s.overBudget)
                            .arg(f.postprocessMs, 0, 'f', 3)
                            .arg(m_panel.targetFps(), 0, 'f', 0));
+    m_summary->setWordWrap(true);
+    m_graph->update();
 }
 
 // ---- MaterialEditorWidget -------------------------------------------------------------------------

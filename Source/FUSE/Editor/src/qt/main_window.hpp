@@ -222,6 +222,7 @@ private:
     FileDialogHook m_fileDialogHook;
     int m_dirtyPromptCount = 0;
     u32 m_lastAppliedCommands = 0;
+    u32 m_lastProfiledTick = 0;
     std::vector<UndoSource> m_undoJournal;
     std::vector<UndoSource> m_redoJournal;
     u32 m_seenSceneUndo = 0;
