@@ -100,6 +100,12 @@ add_executable(fuse_editor_gui_models_tests
 target_link_libraries(fuse_editor_gui_models_tests PRIVATE fuse_editor_api fuse_core)
 add_test(NAME fuse_editor_gui_models COMMAND fuse_editor_gui_models_tests)
 
+add_executable(fuse_editor_gui2_models_tests
+    test_editor_gui2_models.cpp
+)
+target_link_libraries(fuse_editor_gui2_models_tests PRIVATE fuse_editor_api fuse_core)
+add_test(NAME fuse_editor_gui2_models COMMAND fuse_editor_gui2_models_tests)
+
 add_executable(fuse_editor_phase6_integration_tests
     test_editor_phase6_integration.cpp
 )
