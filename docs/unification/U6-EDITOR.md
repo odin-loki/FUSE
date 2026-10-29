@@ -267,3 +267,8 @@ Remaining: a true triangle wireframe view (needs a line / polygon-mode raster pi
 - [architecture-parallel.md](./architecture-parallel.md) — editor threading
 - [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md) — `project.json` consumed by hub
 - [unified-layout.md](./unified-layout.md) — `Source/FUSE/Editor/` layout
+
+## GUI-7: asset browser polish + timeline usability
+
+- Asset Browser: list/grid toggle (`fuseAssetGridToggle`), type filter (`fuseAssetTypeFilter`), clickable breadcrumb (`fuseAssetBreadcrumb`), status line (`fuseAssetStatus`), size/date tooltips, context menu (Open, Copy Path, Copy Relative Path, Rename…, New Folder…, Refresh). `.fusemesh` classified as Mesh. Gate: `asset_browser`.
+- Timeline: Ctrl+wheel zoom (anchored at cursor, 50 ms minimum), Shift+wheel pan, Fit (F); adaptive ruler; Loop (`fuseTimelineLoop`, L); frame snap 24/30/60 fps (`fuseTimelineSnap`; default 10 ms); previous/next key (`[` / `]`, buttons), Home/End. The toolbar no longer forces the window's minimum width. Covered in `shell_timeline`.
