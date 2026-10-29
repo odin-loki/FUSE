@@ -9,6 +9,7 @@
 #include <fuse/editor/profiler_panel.hpp>
 #include <fuse/editor/sdf_sculpt_panel.hpp>
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -90,6 +91,10 @@ public:
 
     /// Bumped by every edit made through this object (and by profiler samples); shells re-read views when it changes.
     [[nodiscard]] u64 revision() const { return m_revision; }
+
+    /// Runs `fn` with the host and the viewport camera under the scene lock: scene renderer hosts (SceneViewportHost)
+    /// read the edited scene this way while the game thread may be ticking.
+    void withScene(const std::function<void(EditorHost&, const ViewportPanel&)>& fn);
 
     // ---- Project Hub ----
     void setProjectsRoot(std::string directory);

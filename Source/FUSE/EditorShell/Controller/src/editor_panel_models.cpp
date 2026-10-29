@@ -39,6 +39,11 @@ EditorPanels::EditorPanels(EditorController& controller)
 
 EditorPanels::~EditorPanels() = default;
 
+void EditorPanels::withScene(const std::function<void(EditorHost&, const ViewportPanel&)>& fn) {
+    std::lock_guard<std::mutex> lock(m_c.m_mutex);
+    fn(m_c.m_host, m_c.m_viewport);
+}
+
 // ---- Project Hub (ProjectHubWidget) ---------------------------------------------------------------------------------
 
 void EditorPanels::setProjectsRoot(std::string directory) {

@@ -158,6 +158,15 @@ public:
     /// Null when headlessReadback is off or nothing was rendered headless yet.
     const u8* readbackPixels() const;
     u32 readbackFrames() const { return m_readbackFrames; }
+    /// The headless RGBA8 target (sampled usage) and its current VkImageLayout, as left by the last submitted frame:
+    /// a consumer on the same device and queue (the FUSE editor shell's UI kernel) samples it without a copy. A
+    /// consumer that changes the layout must restore it before the next frame is submitted.
+    struct HeadlessTarget {
+        void* image = nullptr; ///< VkImage
+        void* view = nullptr;  ///< VkImageView
+        u32 layout = 0;        ///< VkImageLayout
+    };
+    HeadlessTarget headlessTarget() const { return {m_headless.image, m_headless.view, m_headlessLayout}; }
 
     const HybridSceneFrameStats& lastFrame() const { return m_stats; }
     u64 framesSubmitted() const { return m_framesSubmitted; }
