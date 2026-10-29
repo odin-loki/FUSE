@@ -2488,6 +2488,24 @@ int gateTerrain() {
     expect(h1 > h0 + 0.5f, fmt("raise lifts the centre (%.2f -> %.2f)", h0, h1));
     window.undoLatest();
     expect(std::fabs(heightAt(0, 0) - h0) < 1e-4f, "undo restores the height");
+    // Drag stroke: many stamps, one undo step.
+    {
+        const auto undoBefore = host.undoStack().undoCount();
+        const float a0 = heightAt(-10, 0), b0 = heightAt(10, 0);
+        expect(panel->beginStroke(t, -10, 0), "stroke begins on the terrain");
+        for (int i = 1; i <= 20; ++i) panel->strokeTo(-10.f + static_cast<float>(i), 0.f);
+        expect(panel->endStroke(), "stroke commits");
+        expect(host.undoStack().undoCount() == undoBefore + 1, "a whole stroke is one undo step");
+        unsigned stamps = 0;
+        {
+            std::lock_guard<std::mutex> lock(window.sceneMutex());
+            stamps = host.editorScene().registry().get<ecs::Terrain>(t)->stamp_count;
+        }
+        expect(stamps >= 5, fmt("stroke stamps along the path (%u stamps)", stamps));
+        expect(heightAt(-10, 0) > a0 + 0.5f && heightAt(10, 0) > b0 + 0.5f, "both stroke ends raised");
+        window.undoLatest();
+        expect(std::fabs(heightAt(10, 0) - b0) < 1e-4f, "undo removes the whole stroke");
+    }
     for (int i = 0; i < 20; ++i) { host.gameTick(); QCoreApplication::processEvents(); }
     {
         std::lock_guard<std::mutex> lock(window.sceneMutex());

@@ -1445,6 +1445,26 @@ void MainWindow::redoLatest() {
 namespace fuse::editor::qt {
 
 bool MainWindow::selectForScreenshot(const QString& spec) {
+    if (spec.compare("terrain", Qt::CaseInsensitive) == 0) {
+        // --spawn terrain: a Terrain at the origin with a raise stroke and a lowered pit, selected.
+        TerrainPanel* panel = terrain();
+        if (panel == nullptr) return false;
+        const ecs::EntityID e = panel->createTerrain();
+        if (!e.valid()) return false;
+        panel->setMode(ecs::TerrainStamp::Raise);
+        panel->setBrush(7.0, 4.0);
+        panel->beginStroke(e, -14.f, -6.f);
+        for (int i = 1; i <= 14; ++i) panel->strokeTo(-14.f + 2.f * static_cast<float>(i), -6.f + 0.6f * static_cast<float>(i));
+        panel->endStroke();
+        panel->setMode(ecs::TerrainStamp::Lower);
+        panel->setBrush(6.0, 3.0);
+        panel->sculptLocal(e, 10.f, 10.f);
+        if (m_viewport != nullptr) {
+            m_viewport->panel().camera().pitch = -30.f; // look down onto the terrain
+            (void)m_viewport->frameSelection();
+        }
+        return true;
+    }
     const bool cube = spec.compare("cube", Qt::CaseInsensitive) == 0;
     if (cube || spec.compare("new", Qt::CaseInsensitive) == 0) {
         QAction* create = findChild<QAction*>(cube ? "fuseActionCreateCube" : "fuseActionCreateSdfSphere");

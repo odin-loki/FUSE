@@ -384,16 +384,10 @@ void ViewportPlaceholderWidget::mousePressEvent(QMouseEvent* event) {
             event->accept();
             return;
         }
-        if (m_terrainSculpt) {
-            syncPanelSize();
-            const qreal dpr = devicePixelRatioF();
-            const ViewportRay ray = m_panel.screenRay(static_cast<f32>(event->position().x() * dpr), static_cast<f32>(event->position().y() * dpr));
-            const float o[3] = {ray.origin.x, ray.origin.y, ray.origin.z};
-            const float d[3] = {ray.direction.x, ray.direction.y, ray.direction.z};
-            if (m_terrainSculpt(o, d)) {
-                event->accept();
-                return;
-            }
+        if (m_terrainSculpt && terrainSculptEvent_(0, event->position())) {
+            m_terrainStroke = true;
+            event->accept();
+            return;
         }
         if (const int hnd = colliderHandleAt_(event->position()); hnd >= 0 && m_colliderHandleEntity.valid()) {
             std::lock_guard<std::mutex> lock(m_sceneMutex);
@@ -442,6 +436,11 @@ void ViewportPlaceholderWidget::mouseMoveEvent(QMouseEvent* event) {
         event->accept();
         return;
     }
+    if (m_terrainStroke) {
+        terrainSculptEvent_(1, event->position());
+        event->accept();
+        return;
+    }
     if (m_colliderDrag >= 0) {
         colliderDragMove_(event->position());
         event->accept();
@@ -466,6 +465,12 @@ void ViewportPlaceholderWidget::mouseMoveEvent(QMouseEvent* event) {
 }
 
 void ViewportPlaceholderWidget::mouseReleaseEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton && m_terrainStroke) {
+        m_terrainStroke = false;
+        terrainSculptEvent_(2, event->position());
+        event->accept();
+        return;
+    }
     if (event->button() == Qt::LeftButton && m_sculptDragging) {
         sculptRelease();
         event->accept();
@@ -491,6 +496,16 @@ void ViewportPlaceholderWidget::mouseReleaseEvent(QMouseEvent* event) {
         return;
     }
     QWidget::mouseReleaseEvent(event);
+}
+
+bool ViewportPlaceholderWidget::terrainSculptEvent_(int phase, QPointF pos) {
+    if (!m_terrainSculpt) return false;
+    syncPanelSize();
+    const qreal dpr = devicePixelRatioF();
+    const ViewportRay ray = m_panel.screenRay(static_cast<f32>(pos.x() * dpr), static_cast<f32>(pos.y() * dpr));
+    const float o[3] = {ray.origin.x, ray.origin.y, ray.origin.z};
+    const float d[3] = {ray.direction.x, ray.direction.y, ray.direction.z};
+    return m_terrainSculpt(phase, o, d);
 }
 
 namespace {
@@ -575,9 +590,22 @@ bool ViewportPlaceholderWidget::frameSelection() {
             const ecs::Transform* t = registry.alive(id) ? registry.get<ecs::Transform>(id) : nullptr;
             if (t == nullptr) continue;
             const auto& m = t->local_to_world.data;
-            points.push_back({m[12], m[13], m[14], 1.f});
             const f32 sx = std::hypot(m[0], m[1], m[2]), sy = std::hypot(m[4], m[5], m[6]), sz = std::hypot(m[8], m[9], m[10]);
-            extent = std::max(extent, std::max({sx, sy, sz}));
+            const ecs::Mesh* mesh = registry.get<ecs::Mesh>(id);
+            if (mesh != nullptr && mesh->aabb_max.x >= mesh->aabb_min.x && mesh->aabb_max.y >= mesh->aabb_min.y &&
+                mesh->aabb_max.z >= mesh->aabb_min.z) {
+                // Fit the mesh bounds (terrain, imported meshes) rather than the unit transform scale.
+                const f32 lc[3] = {(mesh->aabb_min.x + mesh->aabb_max.x) * 0.5f, (mesh->aabb_min.y + mesh->aabb_max.y) * 0.5f,
+                                   (mesh->aabb_min.z + mesh->aabb_max.z) * 0.5f};
+                points.push_back({m[0] * lc[0] + m[4] * lc[1] + m[8] * lc[2] + m[12], m[1] * lc[0] + m[5] * lc[1] + m[9] * lc[2] + m[13],
+                                  m[2] * lc[0] + m[6] * lc[1] + m[10] * lc[2] + m[14], 1.f});
+                const f32 hx = (mesh->aabb_max.x - mesh->aabb_min.x) * 0.5f * sx, hy = (mesh->aabb_max.y - mesh->aabb_min.y) * 0.5f * sy,
+                          hz = (mesh->aabb_max.z - mesh->aabb_min.z) * 0.5f * sz;
+                extent = std::max(extent, std::sqrt(hx * hx + hy * hy + hz * hz));
+            } else {
+                points.push_back({m[12], m[13], m[14], 1.f});
+                extent = std::max(extent, std::max({sx, sy, sz}));
+            }
         }
     }
     if (points.empty()) return false;

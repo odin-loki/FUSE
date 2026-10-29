@@ -51,6 +51,11 @@ int main(int argc, char* argv[]) {
         "Select an entity after the project opens: 'new' (SDF sphere in front of the camera), 'cube' (Create Cube) or an entity index.",
         "spec");
     parser.addOption(selectOption);
+    QCommandLineOption spawnOption(QStringList() << "spawn",
+                                   "Spawn content after the project opens: 'terrain' (sculpted Terrain at the origin), "
+                                   "'cube' or 'sphere'; the new entity is selected.",
+                                   "kind");
+    parser.addOption(spawnOption);
     parser.process(app);
 
     QString samplesRoot = parser.value(samplesOption);
@@ -68,8 +73,9 @@ int main(int argc, char* argv[]) {
     if (parser.isSet(projectOption)) {
         window.openProject(QFileInfo(parser.value(projectOption)).absoluteFilePath());
     }
-    if (parser.isSet(selectOption)) {
-        const QString spec = parser.value(selectOption);
+    if (parser.isSet(selectOption) || parser.isSet(spawnOption)) {
+        QString spec = parser.isSet(spawnOption) ? parser.value(spawnOption) : parser.value(selectOption);
+        if (spec.compare("sphere", Qt::CaseInsensitive) == 0) spec = QStringLiteral("new");
         QTimer::singleShot(parser.value(screenshotDelayOption).toInt() / 2, &window, [&window, spec]() {
             if (!window.selectForScreenshot(spec)) {
                 qWarning("--select %s: nothing selected", qPrintable(spec));

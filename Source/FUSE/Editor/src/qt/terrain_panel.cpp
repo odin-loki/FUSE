@@ -209,15 +209,14 @@ bool TerrainPanel::sculptLocal(ecs::EntityID e, float x, float z) {
     return ok;
 }
 
-bool TerrainPanel::sculptRay(const float origin[3], const float dir[3]) {
-    ecs::EntityID best;
+bool TerrainPanel::pickTerrain(const float origin[3], const float dir[3], ecs::EntityID* only, ecs::EntityID& best, float bestLocal[3]) {
     f32 bestT = 1e30f;
-    f32 bestLocal[3] = {0.f, 0.f, 0.f};
     {
         std::lock_guard<std::mutex> lock(m_sceneMutex);
         ecs::Registry& registry = m_host.editorScene().registry();
         ecs::TransformSystem::update(registry);
         registry.each<ecs::Transform, ecs::Terrain>([&](ecs::EntityID id, ecs::Transform& tr, ecs::Terrain& terrain) {
+            if (only != nullptr && id != *only) return;
             f32 inv[16];
             const f32* m = tr.local_to_world.data.data();
             if (!invertAffine(m, inv)) return;
@@ -239,8 +238,99 @@ bool TerrainPanel::sculptRay(const float origin[3], const float dir[3]) {
             }
         });
     }
-    if (!best.valid()) return false;
-    return sculptLocal(best, bestLocal[0], bestLocal[2]);
+    return best.valid();
+}
+
+bool TerrainPanel::sculptRay(const float origin[3], const float dir[3]) {
+    ecs::EntityID best;
+    float local[3];
+    if (!pickTerrain(origin, dir, nullptr, best, local)) return false;
+    return sculptLocal(best, local[0], local[2]);
+}
+
+bool TerrainPanel::sculptRayPhase(int phase, const float origin[3], const float dir[3]) {
+    if (phase == 2) return endStroke();
+    ecs::EntityID e;
+    float local[3];
+    ecs::EntityID only = m_strokeEntity;
+    if (!pickTerrain(origin, dir, phase == 1 && only.valid() ? &only : nullptr, e, local)) return false;
+    if (phase == 0) return beginStroke(e, local[0], local[2]);
+    strokeTo(local[0], local[2]);
+    return true;
+}
+
+ecs::TerrainStamp TerrainPanel::brushStamp(float x, float z) const {
+    ecs::TerrainStamp s{};
+    s.x = x;
+    s.z = z;
+    s.radius = static_cast<f32>(m_radius->value());
+    s.amount = static_cast<f32>(m_strength->value());
+    s.mode = static_cast<u32>(std::clamp(m_mode->currentIndex(), 0, 2));
+    return s;
+}
+
+bool TerrainPanel::beginStroke(ecs::EntityID e, float x, float z) {
+    if (m_strokeEntity.valid()) endStroke();
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        ecs::Terrain* t = m_host.editorScene().registry().get<ecs::Terrain>(e);
+        if (t == nullptr) return false;
+        m_strokeBefore = *t;
+        m_strokeEntity = e;
+        addTerrainStamp(*t, brushStamp(x, z));
+        m_host.runtimeViewport().syncTerrainMeshes(m_host.editorScene().registry());
+    }
+    m_strokeLast[0] = x;
+    m_strokeLast[1] = z;
+    refreshStatus();
+    if (m_viewport != nullptr) m_viewport->update();
+    return true;
+}
+
+void TerrainPanel::strokeTo(float x, float z) {
+    if (!m_strokeEntity.valid()) return;
+    const f32 spacing = std::max(0.25f, static_cast<f32>(m_radius->value()) * 0.5f);
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        ecs::Terrain* t = m_host.editorScene().registry().get<ecs::Terrain>(m_strokeEntity);
+        if (t == nullptr) return;
+        const f32 dx = x - m_strokeLast[0], dz = z - m_strokeLast[1];
+        const f32 len = std::sqrt(dx * dx + dz * dz);
+        if (len < spacing) return;
+        const int n = static_cast<int>(len / spacing);
+        bool any = false;
+        for (int i = 1; i <= n; ++i) {
+            const f32 k = static_cast<f32>(i) * spacing / len;
+            if (!addTerrainStamp(*t, brushStamp(m_strokeLast[0] + dx * k, m_strokeLast[1] + dz * k))) break;
+            any = true;
+        }
+        const f32 k = static_cast<f32>(n) * spacing / len;
+        m_strokeLast[0] += dx * k;
+        m_strokeLast[1] += dz * k;
+        if (any) m_host.runtimeViewport().syncTerrainMeshes(m_host.editorScene().registry());
+    }
+    refreshStatus();
+    if (m_viewport != nullptr) m_viewport->update();
+}
+
+bool TerrainPanel::endStroke() {
+    if (!m_strokeEntity.valid()) return false;
+    const ecs::EntityID e = m_strokeEntity;
+    m_strokeEntity = {};
+    bool ok = false;
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        if (ecs::Terrain* t = m_host.editorScene().registry().get<ecs::Terrain>(e)) {
+            const ecs::Terrain after = *t;
+            ok = commitEdit(e, m_strokeBefore, after, "Sculpt terrain stroke");
+        }
+    }
+    refreshStatus();
+    if (m_viewport != nullptr) {
+        m_viewport->syncOverlay(true);
+        m_viewport->update();
+    }
+    return ok;
 }
 
 bool TerrainPanel::clearSculpts() {
@@ -274,7 +364,7 @@ void TerrainPanel::setSculptInViewport(bool on) {
     if (m_sculpt->isChecked() != on) m_sculpt->setChecked(on); // re-enters through toggled
     if (m_viewport == nullptr) return;
     if (on) {
-        m_viewport->setTerrainSculptHandler([this](const float* o, const float* d) { return sculptRay(o, d); });
+        m_viewport->setTerrainSculptHandler([this](int phase, const float* o, const float* d) { return sculptRayPhase(phase, o, d); });
     } else {
         m_viewport->setTerrainSculptHandler({});
     }

@@ -36,6 +36,14 @@ public:
     bool sculptLocal(ecs::EntityID terrain, float x, float z);
     /// Viewport click: world ray vs every Terrain; stamps the nearest hit. True when one was hit.
     bool sculptRay(const float origin[3], const float dir[3]);
+    /// Drag stroke (local space of `terrain`): stamps every ~half brush radius along the path; the whole stroke
+    /// is one undo step committed by endStroke(). Returns false if `terrain` has no Terrain.
+    bool beginStroke(ecs::EntityID terrain, float x, float z);
+    void strokeTo(float x, float z);
+    bool endStroke();
+    [[nodiscard]] bool stroking() const { return m_strokeEntity.valid(); }
+    /// Viewport stroke: phase 0 = press (true if a terrain was hit), 1 = move, 2 = release.
+    bool sculptRayPhase(int phase, const float origin[3], const float dir[3]);
     /// Remove every stamp of the selected terrain (one undo step).
     bool clearSculpts();
 
@@ -48,6 +56,8 @@ public:
     [[nodiscard]] QLabel* statusLabel() const { return m_status; }
 
 private:
+    bool pickTerrain(const float origin[3], const float dir[3], ecs::EntityID* only, ecs::EntityID& out, float local[3]);
+    ecs::TerrainStamp brushStamp(float x, float z) const;
     void refreshStatus();
     bool commitEdit(ecs::EntityID e, const ecs::Terrain& before, const ecs::Terrain& after, const char* what);
 
@@ -63,6 +73,9 @@ private:
     QDoubleSpinBox* m_strength = nullptr;
     QCheckBox* m_sculpt = nullptr;
     QLabel* m_status = nullptr;
+    ecs::EntityID m_strokeEntity;
+    ecs::Terrain m_strokeBefore{};
+    float m_strokeLast[2] = {0.f, 0.f};
 };
 
 } // namespace fuse::editor::qt

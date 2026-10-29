@@ -163,7 +163,7 @@ public:
     /// Collider drag handles of the primary selection (tests): count and logical position / axis.
     /// Terrain panel "Sculpt in viewport": a left click casts the view ray (world origin, unit direction) to
     /// this handler first; empty = off.
-    void setTerrainSculptHandler(std::function<bool(const float* origin, const float* dir)> handler) {
+    void setTerrainSculptHandler(std::function<bool(int phase, const float* origin, const float* dir)> handler) {
         m_terrainSculpt = std::move(handler);
     }
     [[nodiscard]] bool terrainSculptActive() const { return static_cast<bool>(m_terrainSculpt); }
@@ -245,7 +245,9 @@ private:
     };
     std::vector<ColliderHandle> m_colliderHandles;
     ecs::EntityID m_colliderHandleEntity = ecs::EntityID::null();
-    std::function<bool(const float*, const float*)> m_terrainSculpt;
+    std::function<bool(int, const float*, const float*)> m_terrainSculpt;
+    bool m_terrainStroke = false;
+    bool terrainSculptEvent_(int phase, QPointF pos);
     int m_colliderDrag = -1; ///< index into m_colliderHandles while dragging
     QPointF m_colliderDragStart;
     ecs::vec3 m_colliderParamsStart{};

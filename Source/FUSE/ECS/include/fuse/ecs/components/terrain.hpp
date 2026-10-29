@@ -20,7 +20,7 @@ struct TerrainStamp {
 /// the editor builds the mesh (fuse::terrain::build_chunk_mesh) and registers it with the renderer.
 struct Terrain {
     static constexpr const char* component_name = "Terrain";
-    static constexpr u32 kMaxStamps = 64;
+    static constexpr u32 kMaxStamps = 256;
 
     u32 cells = 64;      ///< quads per edge (2..256)
     f32 size = 64.f;     ///< world metres per edge
