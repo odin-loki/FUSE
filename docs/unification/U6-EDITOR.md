@@ -223,6 +223,7 @@ GUI-4 (Oct 2026):
 - **Multi-select gizmos.** Move, Rotate and Scale act on every selected root (`TransformGizmo::applyGroupDelta`): rotate orbits the primary's pivot, scale spreads offsets along the primary's local axes. Roots under a different parent are rotated / scaled in place.
 - **Entity names.** Names live in an `EntityNames` sidecar (`<scene>.names`, `fuse-names 1`) since the ECS has no Name component. Rename from the Inspector Name field or the Hierarchy (F2 / context menu); every rename is one undo step, and the hierarchy search matches names. Cut / Copy / Paste keep names.
 - **Group Selection** (Entity menu, Ctrl+G) parents the selected roots, which must share a parent, under a new empty "Group" at their centroid, keeping world positions; one undo step. **Frame Selected** (View menu, F) moves the camera along its view direction so the selection fits. Tests: `fuse_editor_e20_inspector_commands`, gate `fuse_editor_qt_edit_tools`.
+- **Preview sun.** Scenes without a `DirectionalLight` (e.g. `demo_3d_empty`, whose mission has only a ground plane) rendered unlit: the dark ground in the screenshots. `SceneFrameDesc::fallbackSun` (via `HybridSceneRenderer::setFallbackSun`) now adds a renderer-owned directional light when the registry has none and removes it once the scene has its own sun. The editor viewport turns it on; `FUSE_EDITOR_NO_PREVIEW_SUN=1` turns it off. Nothing is written into the scene.
 
 Still open:
 

@@ -193,6 +193,8 @@ void ensureMaterialTextureLoader(RuntimeViewportHeadlessGpuStub* gpu, const Runt
     scene->setTextureLoader([live](const std::string& path, u32& w, u32& h, std::vector<u32>& texels) {
         return loadMaterialTextureRgba8(path, live->projectRoot, w, h, texels);
     });
+    // Preview lighting: scenes without a DirectionalLight (e.g. demo_3d_empty) would otherwise render unlit.
+    scene->setFallbackSun(std::getenv("FUSE_EDITOR_NO_PREVIEW_SUN") == nullptr);
     gpu->textureLoaderOn = scene;
 }
 

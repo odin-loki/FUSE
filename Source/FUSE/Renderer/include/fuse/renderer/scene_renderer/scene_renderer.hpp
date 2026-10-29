@@ -96,6 +96,12 @@ struct SceneFrameDesc {
     /// Sun illuminance for the sky / DDGI / clouds (the scene light keeps colour x intensity). Negative x: the
     /// directional light's colour x intensity.
     f32 sunIlluminance[3] = {-1.f, 0.f, 0.f};
+    /// Preview lighting: when the registry has no DirectionalLight, light the frame with this renderer-owned sun
+    /// (a GpuScene light with no entity). Editors turn it on so an unlit scene is not black.
+    bool fallbackSun = false;
+    f32 fallbackToSun[3] = {0.35f, 0.8f, 0.3f};
+    f32 fallbackSunColor[3] = {1.f, 0.96f, 0.9f};
+    f32 fallbackSunIntensity = 2.5f;
 };
 
 struct SceneFrameStats {
@@ -185,6 +191,7 @@ private:
 
     gpu_scene::GpuScene m_scene;
     gpu_scene::GpuSceneEcsExtractor m_extractor;
+    gpu_scene::LightHandle m_fallbackSun{}; ///< SceneFrameDesc::fallbackSun light (invalid when unused)
     gpu_scene::GpuSceneMaterialFeed m_feed;
     MeshRegistry m_meshes;
     frame::FrameComposer m_composer;

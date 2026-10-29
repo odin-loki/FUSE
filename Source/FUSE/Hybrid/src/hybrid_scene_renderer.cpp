@@ -506,6 +506,7 @@ bool HybridSceneRenderer::renderRegistry(ecs::Registry& registry, const fr::Fram
     sr::SceneFrameDesc sfd{};
     sfd.serial = serial;
     sfd.deltaSeconds = ctx.dt > 0.f ? ctx.dt : 1.f / 60.f;
+    sfd.fallbackSun = m_fallbackSun;
     m_outputs = m_scene->renderScene(registry, camera, m_graph, sfd);
     m_recorded = m_outputs.output.valid();
     m_stats = HybridSceneFrameStats{};

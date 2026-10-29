@@ -315,6 +315,37 @@ frame::FrameGraphOutputs SceneRenderer::renderScene(ecs::Registry& registry, con
         }
         sunFound = true;
     });
+    if (!sunFound && frameDesc.fallbackSun) {
+        gpu_scene::GpuLight l{};
+        l.type = static_cast<u32>(gpu_scene::GpuLightType::Directional);
+        const f32* t = frameDesc.fallbackToSun;
+        const f32 len = std::sqrt(t[0] * t[0] + t[1] * t[1] + t[2] * t[2]);
+        for (u32 a = 0; a < 3u; ++a) {
+            l.direction[a] = len > 0.f ? -t[a] / len : (a == 1u ? -1.f : 0.f);
+            l.color[a] = frameDesc.fallbackSunColor[a];
+        }
+        l.intensity = frameDesc.fallbackSunIntensity;
+        if (m_fallbackSun.valid() && m_scene.lightAlive(m_fallbackSun)) {
+            const gpu_scene::GpuLight& cur = m_scene.light(m_fallbackSun.slot);
+            if (std::memcmp(&cur, &l, sizeof(l)) != 0) {
+                (void)m_scene.setLight(m_fallbackSun, l);
+            }
+        } else {
+            m_fallbackSun = m_scene.addLight(l);
+        }
+        if (m_fallbackSun.valid()) {
+            fd.sun.slot = m_fallbackSun.slot;
+            for (u32 a = 0; a < 3u; ++a) {
+                fd.sun.toSun[a] = -l.direction[a];
+                fd.sun.illuminance[a] = frameDesc.sunIlluminance[0] >= 0.f ? frameDesc.sunIlluminance[a] : l.color[a] * l.intensity;
+            }
+        }
+    } else if (m_fallbackSun.valid()) {
+        if (m_scene.lightAlive(m_fallbackSun)) {
+            (void)m_scene.removeLight(m_fallbackSun);
+        }
+        m_fallbackSun = gpu_scene::LightHandle{};
+    }
     m_stats.sunSlot = fd.sun.slot;
 
     m_stats.commit = m_scene.commit();
