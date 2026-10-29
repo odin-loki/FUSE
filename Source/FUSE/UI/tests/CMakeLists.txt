@@ -131,6 +131,9 @@ if(FUSE_UI_HAVE_SQL)
     target_link_libraries(fuse_ui_sql_model PRIVATE fuse_ui_sql)
 endif()
 
+# UI10 platform feel: kinetic scroll physics, haptics hook
+fuse_ui_test(fuse_ui_platform_feel test_platform_feel.cpp)
+
 # UI6 Tier D (2): one binary, one ctest gate per widget (fuse_ui_widget_<name>)
 fuse_ui_test(fuse_ui_tier_d2 test_tier_d2.cpp)
 foreach(g font_picker file_dialog node_graph curve_timeline viewport code_edit datetime_edit video)
