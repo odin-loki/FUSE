@@ -187,6 +187,8 @@ void MainWindow::buildDocks() {
         updateEditActions();
     });
     addPanelDock(kSdfSculptDock, tr("SDF Sculpt"), m_sdfSculpt);
+    m_viewport->setSculptPanel(&m_sdfSculpt->panel());
+    connect(m_sdfSculpt, &SdfSculptWidget::sculptModeToggled, m_viewport, &ViewportPlaceholderWidget::setSculptMode);
     addPanelDock(kConsoleDock, tr("Console"), m_console);
     addPanelDock(kProfilerDock, tr("Profiler"), m_profiler);
     addPanelDock(kSequencerDock, tr("Sequencer"), m_sequencer);

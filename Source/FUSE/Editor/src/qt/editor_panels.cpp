@@ -1588,26 +1588,69 @@ bool MaterialEditorWidget::assignToSelection() {
 SdfSculptWidget::SdfSculptWidget(EditorHost& host, std::mutex& sceneMutex, QWidget* parent)
     : QWidget(parent), m_host(host), m_sceneMutex(sceneMutex) {
     auto* layout = new QFormLayout(this);
+    m_sculpt = new QPushButton(tr("Sculpt in viewport"), this);
+    m_sculpt->setObjectName(QStringLiteral("fuseSculptMode"));
+    m_sculpt->setCheckable(true);
+    m_sculpt->setToolTip(tr("Left-drag in the viewport applies the brush (one drag = one undo step)"));
+    layout->addRow(m_sculpt);
     m_op = new QComboBox(this);
+    m_op->setObjectName(QStringLiteral("fuseSculptOp"));
     m_op->addItems({tr("Add"), tr("Subtract"), tr("Smooth"), tr("Roughen"), tr("Paint")});
-    m_radius = new QDoubleSpinBox(this);
-    m_radius->setRange(0.01, 100.0);
-    m_radius->setValue(m_panel.brush().radius);
-    m_alpha = new QDoubleSpinBox(this);
-    m_alpha->setRange(0.0, 1.0);
-    m_alpha->setDecimals(3);
-    m_alpha->setValue(m_panel.brush().blendAlpha);
+    m_shape = new QComboBox(this);
+    m_shape->setObjectName(QStringLiteral("fuseSculptShape"));
+    m_shape->addItems({tr("Sphere"), tr("Box"), tr("Capsule"), tr("Torus"), tr("Cylinder")});
+    m_material = new QComboBox(this);
+    m_material->setObjectName(QStringLiteral("fuseSculptMaterial"));
+    const auto spin = [this](double lo, double hi, double value, int decimals, double step) {
+        auto* box = new QDoubleSpinBox(this);
+        box->setRange(lo, hi);
+        box->setDecimals(decimals);
+        box->setSingleStep(step);
+        box->setValue(value);
+        return box;
+    };
+    m_radius = spin(0.01, 100.0, m_panel.brush().radius, 2, 0.1);
+    m_strength = spin(0.0, 10.0, m_panel.brush().strength, 2, 0.1);
+    m_spacing = spin(0.0, 10.0, m_panel.strokeSpacing(), 2, 0.05);
+    m_alpha = spin(0.0, 1.0, m_panel.brush().blendAlpha, 3, 0.05);
+    m_symmetry = new QCheckBox(tr("Mirror across X = 0"), this);
+    m_symmetry->setObjectName(QStringLiteral("fuseSculptSymmetry"));
     m_summary = new QLabel(this);
+    m_summary->setWordWrap(true);
     layout->addRow(tr("Brush"), m_op);
+    layout->addRow(tr("Shape"), m_shape);
+    layout->addRow(tr("Material"), m_material);
     layout->addRow(tr("Radius"), m_radius);
+    layout->addRow(tr("Strength"), m_strength);
+    layout->addRow(tr("Spacing"), m_spacing);
     layout->addRow(tr("GRIA α"), m_alpha);
+    layout->addRow(m_symmetry);
     layout->addRow(m_summary);
+    m_radius->setObjectName(QStringLiteral("fuseSculptRadius"));
+    m_strength->setObjectName(QStringLiteral("fuseSculptStrength"));
+    connect(m_sculpt, &QPushButton::toggled, this, [this](bool on) {
+        m_panel.endStroke();
+        refresh();
+        emit sculptModeToggled(on);
+    });
     connect(m_op, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             [this](int i) { m_panel.setBrushOperation(static_cast<SdfSculptPanel::BrushOp>(i)); });
+    connect(m_shape, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [this](int i) { m_panel.setBrushShape(static_cast<ecs::SDFPrimitive>(i)); });
+    connect(m_material, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int i) {
+        if (i >= 0) {
+            m_panel.setMaterialId(static_cast<u32>(i));
+        }
+    });
     connect(m_radius, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
             [this](double v) { m_panel.setBrushRadius(static_cast<f32>(v)); });
+    connect(m_strength, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
+            [this](double v) { m_panel.setBrushStrength(static_cast<f32>(v)); });
+    connect(m_spacing, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
+            [this](double v) { m_panel.setStrokeSpacing(static_cast<f32>(v)); });
     connect(m_alpha, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
             [this](double v) { m_panel.setBlendAlpha(static_cast<f32>(v)); });
+    connect(m_symmetry, &QCheckBox::toggled, this, [this](bool on) { m_panel.setSymmetryX(on); });
     refresh();
 }
 
@@ -1615,10 +1658,24 @@ void SdfSculptWidget::refresh() {
     {
         std::lock_guard<std::mutex> lock(m_sceneMutex);
         m_panel.sync(m_host.editorState(), m_host.editorScene());
+        const MaterialCatalog& catalog = m_host.materials();
+        if (catalog.revision() != m_materialRevision) {
+            m_materialRevision = catalog.revision();
+            const QSignalBlocker block(m_material);
+            const int keep = std::min<int>(static_cast<int>(m_panel.brush().materialId),
+                                           static_cast<int>(catalog.count()) - 1);
+            m_material->clear();
+            for (u32 i = 0; i < catalog.count(); ++i) {
+                m_material->addItem(QStringLiteral("%1: %2").arg(i).arg(QString::fromStdString(catalog.entry(i).name)));
+            }
+            m_material->setCurrentIndex(std::max(keep, 0));
+            m_panel.setMaterialId(static_cast<u32>(std::max(keep, 0)));
+        }
     }
-    m_summary->setText(tr("Strokes: %1 | Sculpt %2")
+    m_summary->setText(tr("Strokes: %1 | %2")
                            .arg(m_panel.strokeCount())
-                           .arg(m_panel.sculptActive() ? tr("active") : tr("idle")));
+                           .arg(m_sculpt->isChecked() ? tr("sculpting — left-drag in the viewport")
+                                                      : tr("idle")));
 }
 
 } // namespace fuse::editor::qt

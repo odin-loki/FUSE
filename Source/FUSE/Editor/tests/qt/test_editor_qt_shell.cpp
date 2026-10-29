@@ -13,6 +13,8 @@
 //              drags: one drag = one undo step, snap rounds, rotate / scale edit the transform
 //   material   Material Editor dock: catalog list, follow-selection, roughness / metallic / colour
 //              edits and New / Assign are undoable; the catalog saves / reloads beside the scene
+//   sculpt     SDF Sculpt dock: brush controls, Sculpt-in-viewport drags add primitives (one drag =
+//              one undo step) and Paint assigns the brush material
 //   layout     dock layout + geometry save / restore through QSettings (temp settings path)
 //   profiler   frame-time graph, min / avg / max summary, Pause and Clear
 //   project    openProject() on a sample loads its world into the hierarchy; the window grabs to a
@@ -24,6 +26,7 @@
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/editor/material_catalog.hpp>
 #include <QComboBox>
+#include <QPushButton>
 
 #include <fuse/core/init.hpp>
 #include <fuse/ecs/components/transform.hpp>
@@ -438,6 +441,69 @@ int gateMaterial(MainWindow& window) {
     return 0;
 }
 
+int gateSculpt(MainWindow& window) {
+    using fuse::u32;
+    auto* sculpt = window.sdfSculpt();
+    auto* vp = window.viewport();
+    expect(sculpt != nullptr && sculpt->sculptButton() != nullptr, "sculpt: SDF Sculpt dock with a sculpt toggle");
+    if (sculpt == nullptr) {
+        return 1;
+    }
+    expect(sculpt->materialCombo()->count() == static_cast<int>(window.host().materials().count()),
+           "sculpt: brush material list mirrors the catalog");
+    findAction(window, "fuseActionCreateSdfSphere")->trigger();
+    tick(window);
+    const ecs::EntityID target = window.host().editorState().primarySelection;
+    QPointF centre;
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        ecs::Transform* t = window.host().editorScene().registry().get<ecs::Transform>(target);
+        const ecs::vec3 p = vp->panel().position(), f = vp->panel().forward();
+        t->position = ecs::vec3{p.x + f.x * 6.f, p.y + f.y * 6.f, p.z + f.z * 6.f, 1.f};
+        t->dirty = true;
+        float px = 0.f, py = 0.f;
+        vp->panel().worldToScreen(t->position, px, py);
+        centre = QPointF(px / vp->devicePixelRatioF(), py / vp->devicePixelRatioF());
+    }
+    tick(window);
+    sculpt->sculptButton()->setChecked(true);
+    expect(vp->sculptMode(), "sculpt: toggle enables viewport sculpt mode");
+    const auto count0 = window.host().editorScene().registry().count();
+    const auto undo0 = window.host().undoStack().undoCount();
+    sculpt->panel().setStrokeSpacing(0.f);
+    vp->sculptPress(centre);
+    for (int i = 1; i <= 3; ++i) {
+        vp->sculptMove(centre + QPointF(6.0 * i, 0.0));
+    }
+    vp->sculptRelease();
+    tick(window);
+    const auto count1 = window.host().editorScene().registry().count();
+    expect(count1 >= count0 + 2u, "sculpt: an Add drag spawns brush primitives");
+    expect(window.host().undoStack().undoCount() == undo0 + 1u, "sculpt: one drag is one undo step");
+    window.updateEditActions();
+    findAction(window, MainWindow::kActionUndo)->trigger();
+    tick(window);
+    expect(window.host().editorScene().registry().count() == count0, "sculpt: undo removes the whole stroke");
+
+    sculpt->findChild<QComboBox*>(QStringLiteral("fuseSculptOp"))->setCurrentIndex(4); // Paint
+    sculpt->materialCombo()->setCurrentIndex(2);
+    vp->sculptPress(centre);
+    vp->sculptRelease();
+    tick(window);
+    u32 id = 0;
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        fuse::editor::AssignMaterialCommand::materialOf(window.host().editorScene().registry(), target, id);
+    }
+    expect(id == 2u, "sculpt: Paint assigns the brush material");
+    QImage shot = vp->grab().toImage();
+    expect(!shot.isNull(), "sculpt: viewport grabs with the brush cursor");
+    sculpt->sculptButton()->setChecked(false);
+    expect(!vp->sculptMode(), "sculpt: toggle off returns to select / gizmo");
+    sculpt->findChild<QComboBox*>(QStringLiteral("fuseSculptOp"))->setCurrentIndex(0);
+    return 0;
+}
+
 int gateLayout(MainWindow& window) {
     QTemporaryDir dir;
     QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, dir.path());
@@ -523,6 +589,9 @@ int main(int argc, char** argv) {
         }
         if (gate == "material" || gate == "all") {
             gateMaterial(window);
+        }
+        if (gate == "sculpt" || gate == "all") {
+            gateSculpt(window);
         }
         if (gate == "layout" || gate == "all") {
             gateLayout(window);

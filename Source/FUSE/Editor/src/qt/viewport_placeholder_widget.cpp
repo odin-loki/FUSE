@@ -327,6 +327,11 @@ void ViewportPlaceholderWidget::mousePressEvent(QMouseEvent* event) {
         return;
     }
     if (event->button() == Qt::LeftButton) {
+        if (m_sculptMode) {
+            sculptPress(event->position());
+            event->accept();
+            return;
+        }
         if (gizmoPress(event->position())) {
             event->accept();
             return;
@@ -364,10 +369,25 @@ void ViewportPlaceholderWidget::mouseMoveEvent(QMouseEvent* event) {
         event->accept();
         return;
     }
+    if (m_sculptMode) {
+        m_hoverPos = event->position();
+        m_hoverValid = true;
+        if (m_sculptDragging) {
+            sculptMove(event->position());
+        }
+        update();
+        event->accept();
+        return;
+    }
     QWidget::mouseMoveEvent(event);
 }
 
 void ViewportPlaceholderWidget::mouseReleaseEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton && m_sculptDragging) {
+        sculptRelease();
+        event->accept();
+        return;
+    }
     if (event->button() == Qt::LeftButton && m_gizmo.dragging()) {
         gizmoRelease();
         event->accept();
@@ -595,7 +615,11 @@ void ViewportPlaceholderWidget::paintEvent(QPaintEvent* /*event*/) {
             .arg(cam.pitch, 0, 'f', 1)
             .arg(hook.runtimeTickCount())
             .arg(hook.isEmbedded() ? tr("yes") : tr("no")));
-    paintGizmo_(painter);
+    if (m_sculptMode) {
+        paintBrush_(painter);
+    } else {
+        paintGizmo_(painter);
+    }
 
     const fuse::cinematics::SeqScrubPreview& seqPreview = m_host.cinematicsSeqScrubPreview();
     const QRect overlayRect = rect().adjusted(16, rect().height() - 72, -16, -16);
@@ -766,6 +790,124 @@ void ViewportPlaceholderWidget::paintGizmo_(QPainter& painter) {
     painter.setBrush(QColor(240, 240, 240));
     const GizmoHandle2D& o = m_gizmo.handles()[0];
     painter.drawEllipse(QPointF(o.x0 * inv, o.y0 * inv), 4.0, 4.0);
+    painter.restore();
+}
+
+// ---- GUI-4 sculpt mode ---------------------------------------------------------------------------
+
+void ViewportPlaceholderWidget::setSculptMode(bool on) {
+    if (!on && m_sculptDragging) {
+        sculptRelease();
+    }
+    m_sculptMode = on && m_sculptPanel != nullptr;
+    setMouseTracking(m_sculptMode);
+    m_hoverValid = false;
+    setCursor(m_sculptMode ? Qt::CrossCursor : Qt::ArrowCursor);
+    update();
+}
+
+bool ViewportPlaceholderWidget::sculptHit_(const QPointF& pos, ecs::vec3& point, ecs::vec3& normal) {
+    syncPanelSize();
+    const qreal dpr = devicePixelRatioF();
+    const ViewportRay ray = m_panel.screenRay(static_cast<f32>(pos.x() * dpr), static_cast<f32>(pos.y() * dpr));
+    normal = ecs::vec3{-ray.direction.x, -ray.direction.y, -ray.direction.z, 0.f};
+    const ViewportPickResult hit = m_sceneView.pickRay(m_host.editorScene(), ray);
+    if (hit.hit) {
+        point = hit.point;
+        return true;
+    }
+    // Miss: build on the ground plane.
+    if (std::fabs(ray.direction.y) < 1e-5f) {
+        return false;
+    }
+    const f32 t = -ray.origin.y / ray.direction.y;
+    if (t <= 0.f) {
+        return false;
+    }
+    point = ecs::vec3{ray.origin.x + ray.direction.x * t, 0.f, ray.origin.z + ray.direction.z * t, 1.f};
+    normal = ecs::vec3{0.f, 1.f, 0.f, 0.f};
+    return true;
+}
+
+bool ViewportPlaceholderWidget::sculptAt_(const QPointF& pos) {
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        ecs::vec3 point{}, normal{};
+        if (!sculptHit_(pos, point, normal)) {
+            return false;
+        }
+        changed = m_sculptPanel->applyBrushStroke(point, normal, m_host.editorScene(), m_host.undoStack());
+    }
+    if (changed) {
+        emit sceneEdited();
+        update();
+    }
+    return changed;
+}
+
+bool ViewportPlaceholderWidget::sculptPress(const QPointF& pos) {
+    if (!m_sculptMode || m_sculptPanel == nullptr) {
+        return false;
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        m_host.undoStack().beginMacro("Sculpt stroke");
+    }
+    m_sculptDragging = true;
+    m_sculptPanel->endStroke(); // first sample of a drag always lands
+    return sculptAt_(pos);
+}
+
+void ViewportPlaceholderWidget::sculptMove(const QPointF& pos) {
+    if (m_sculptDragging) {
+        sculptAt_(pos);
+    }
+}
+
+void ViewportPlaceholderWidget::sculptRelease() {
+    if (!m_sculptDragging) {
+        return;
+    }
+    m_sculptDragging = false;
+    if (m_sculptPanel != nullptr) {
+        m_sculptPanel->endStroke();
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        m_host.undoStack().endMacro();
+    }
+    emit sceneEdited();
+    update();
+}
+
+void ViewportPlaceholderWidget::paintBrush_(QPainter& painter) {
+    if (!m_hoverValid || m_sculptPanel == nullptr) {
+        return;
+    }
+    ecs::vec3 point{}, normal{};
+    f32 cx = 0.f, cy = 0.f, ex = 0.f, ey = 0.f;
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        if (!sculptHit_(m_hoverPos, point, normal)) {
+            return;
+        }
+    }
+    const ecs::vec3 r = m_panel.right();
+    const f32 rad = m_sculptPanel->brush().radius;
+    const ecs::vec3 edge{point.x + r.x * rad, point.y + r.y * rad, point.z + r.z * rad, 1.f};
+    if (!m_panel.worldToScreen(point, cx, cy) || !m_panel.worldToScreen(edge, ex, ey)) {
+        return;
+    }
+    const qreal inv = 1.0 / devicePixelRatioF();
+    const qreal radius = std::hypot(ex - cx, ey - cy) * inv;
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    const bool carve = m_sculptPanel->brush().op == SdfSculptPanel::BrushOp::Subtract;
+    painter.setPen(QPen(carve ? QColor(240, 110, 90) : QColor(120, 200, 255), 2.0));
+    painter.setBrush(Qt::NoBrush);
+    painter.drawEllipse(QPointF(cx * inv, cy * inv), radius, radius);
+    painter.drawEllipse(QPointF(cx * inv, cy * inv), 2.0, 2.0);
     painter.restore();
 }
 

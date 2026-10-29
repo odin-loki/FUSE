@@ -2,6 +2,7 @@
 
 #include <fuse/editor/editor_host.hpp>
 #include <fuse/editor/entity_context_menu.hpp>
+#include <fuse/editor/sdf_sculpt_panel.hpp>
 #include <fuse/editor/transform_gizmo.hpp>
 #include <fuse/editor/viewport_panel.hpp>
 #include <fuse/editor/viewport_scene_view.hpp>
@@ -61,6 +62,15 @@ public:
     bool gizmoPress(const QPointF& pos);
     void gizmoMove(const QPointF& pos);
     void gizmoRelease();
+
+    /// GUI-4 sculpt mode: left-drag applies `panel`'s brush at the surface under the cursor (or
+    /// the y = 0 ground plane on a miss); one drag is one UndoStack step.
+    void setSculptPanel(SdfSculptPanel* panel) { m_sculptPanel = panel; }
+    void setSculptMode(bool on);
+    [[nodiscard]] bool sculptMode() const { return m_sculptMode; }
+    bool sculptPress(const QPointF& pos);
+    void sculptMove(const QPointF& pos);
+    void sculptRelease();
     const EntityContextMenu& contextMenuModel() const { return m_contextMenu; }
 
     /// One viewport frame: sample held keys + accumulated mouse travel into the camera.
@@ -146,6 +156,14 @@ private:
     ecs::EntityID m_gizmoEntity = ecs::EntityID::null();
     bool m_gizmoMacroOpen = false;
     int m_gizmoHover = -1;
+    SdfSculptPanel* m_sculptPanel = nullptr;
+    bool m_sculptMode = false;
+    bool m_sculptDragging = false;
+    QPointF m_hoverPos;
+    bool m_hoverValid = false;
+    bool sculptHit_(const QPointF& pos, ecs::vec3& point, ecs::vec3& normal);
+    bool sculptAt_(const QPointF& pos);
+    void paintBrush_(QPainter& painter);
     QPointer<QMenu> m_activeMenu;
     QString m_projectName;
     HeldKeys m_keys;

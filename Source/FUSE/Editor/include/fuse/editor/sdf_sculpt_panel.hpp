@@ -37,6 +37,7 @@ public:
     void setBrushShape(ecs::SDFPrimitive shape) { m_brush.shape = shape; }
     void setMaterialId(u32 materialId) { m_brush.materialId = materialId; }
     void setSymmetryX(bool enabled) { m_brush.symmetryX = enabled; }
+    void setBrushStrength(f32 strength) { m_brush.strength = strength > 0.f ? strength : 0.f; }
     /// Minimum world distance between emitted stroke samples within one drag.
     void setStrokeSpacing(f32 spacing) { m_strokeSpacing = spacing > 0.f ? spacing : 0.f; }
     [[nodiscard]] f32 strokeSpacing() const { return m_strokeSpacing; }

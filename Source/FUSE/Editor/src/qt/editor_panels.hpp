@@ -371,15 +371,28 @@ public:
     SdfSculptWidget(EditorHost& host, std::mutex& sceneMutex, QWidget* parent = nullptr);
     void refresh();
     SdfSculptPanel& panel() { return m_panel; }
+    /// GUI-4: "Sculpt in viewport" toggle (left drag in the viewport applies the brush).
+    QPushButton* sculptButton() const { return m_sculpt; }
+    QComboBox* materialCombo() const { return m_material; }
+
+signals:
+    void sculptModeToggled(bool on);
 
 private:
     EditorHost& m_host;
     std::mutex& m_sceneMutex;
     SdfSculptPanel m_panel;
     QComboBox* m_op = nullptr;
+    QComboBox* m_shape = nullptr;
+    QComboBox* m_material = nullptr;
     QDoubleSpinBox* m_radius = nullptr;
+    QDoubleSpinBox* m_strength = nullptr;
+    QDoubleSpinBox* m_spacing = nullptr;
     QDoubleSpinBox* m_alpha = nullptr;
+    QCheckBox* m_symmetry = nullptr;
+    QPushButton* m_sculpt = nullptr;
     QLabel* m_summary = nullptr;
+    u32 m_materialRevision = UINT32_MAX;
 };
 
 } // namespace fuse::editor::qt

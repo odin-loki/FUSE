@@ -135,6 +135,7 @@ public:
     [[nodiscard]] QToolBar* transportToolBar() const { return m_transportBar; }
     [[nodiscard]] QToolBar* transformToolBar() const { return m_transformBar; }
     [[nodiscard]] MaterialEditorWidget* materialEditor() const { return m_materialEditor; }
+    [[nodiscard]] SdfSculptWidget* sdfSculpt() const { return m_sdfSculpt; }
     /// File / Edit toolbar (New, Open, Save, Undo, Redo) left of the transport bar.
     [[nodiscard]] QToolBar* mainToolBar() const { return m_mainBar; }
     /// Enable Undo / Redo from the host stacks; tooltips name the next undo / redo step.
