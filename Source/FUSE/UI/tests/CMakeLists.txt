@@ -177,6 +177,16 @@ if(TARGET fuse_app)
         endif()
         set_tests_properties(fuse_app_native_window PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300
             ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json" LABELS "fuse_ui;gate;vulkan")
+        add_executable(fuse_app_os_popups test_app_os_popups.cpp)
+        target_link_libraries(fuse_app_os_popups PRIVATE fuse_app_native)
+        if(FUSE_UI_XVFB_RUN AND NOT WIN32)
+            add_test(NAME fuse_app_os_popups COMMAND ${FUSE_UI_XVFB_RUN} -a -s "-screen 0 1280x800x24"
+                     $<TARGET_FILE:fuse_app_os_popups> --out=${CMAKE_CURRENT_BINARY_DIR})
+        else()
+            add_test(NAME fuse_app_os_popups COMMAND fuse_app_os_popups --out=${CMAKE_CURRENT_BINARY_DIR})
+        endif()
+        set_tests_properties(fuse_app_os_popups PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300
+            ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json" LABELS "fuse_ui;gate;vulkan")
     endif()
     if(TARGET hello_app)
         add_test(NAME fuse_app_hello_sample COMMAND hello_app --screenshot=${CMAKE_CURRENT_BINARY_DIR}/hello_app.png)

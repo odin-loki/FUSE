@@ -40,6 +40,14 @@ void DrawList::shadow(const Rect& r, Color col, f32 blur, f32 radius) {
     m_cmds.push_back(c);
 }
 
+void DrawList::translate(Vec2 d) {
+    for (DrawCmd& c : m_cmds) {
+        c.rect.x += d.x;
+        c.rect.y += d.y;
+        if (c.op == DrawOp::Line) { c.rect.w += d.x; c.rect.h += d.y; }
+    }
+}
+
 void DrawList::line(Vec2 a, Vec2 b, Color col, f32 width) {
     DrawCmd c;
     c.op = DrawOp::Line;

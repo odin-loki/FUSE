@@ -56,6 +56,9 @@ struct NativeOptions {
     bool vulkan = true;            ///< false: never create a Vulkan presenter
     VkDrawMode drawMode = VkDrawMode::Auto;
     bool vsync = true;             ///< FIFO (true) or MAILBOX / IMMEDIATE when available
+    /// Popup menus / combo lists / submenus as their own borderless OS windows (Qt-style; may extend past the main
+    /// window, clamp to the screen). X11: override-redirect windows; Win32: WS_POPUP + WS_EX_NOACTIVATE owned windows.
+    bool osPopups = false;
 };
 
 class NativePlatform {
@@ -93,6 +96,18 @@ public:
     /// Read back from the OS: the icon sizes (widths) the window carries now (X11 every _NET_WM_ICON entry; Win32 the
     /// big + small WM_GETICON icons). Empty when unset / not shown.
     std::vector<int> iconSizes(const AppWindow& w) const;
+
+    /// OS-window popups (NativeOptions::osPopups): how many popup windows `w` shows now, each one's native handle,
+    /// its screen rect (physical px) and a read-back of its pixels.
+    std::size_t popupCount(const AppWindow& w) const;
+    unsigned long long popupWindow(const AppWindow& w, std::size_t i) const;
+    fuse::ui::Rect popupScreenRect(const AppWindow& w, std::size_t i) const;
+    bool capturePopup(const AppWindow& w, std::size_t i, fuse::ui::Image& out);
+    /// The window's top-left on screen (client area).
+    fuse::ui::Vec2 screenOrigin(const AppWindow& w) const;
+    /// Posts a real left click to a native window (XSendEvent / PostMessage) at window-local `at`; it is then
+    /// delivered by the normal event pump (tests drive popup windows this way).
+    bool postClick(unsigned long long nativeWin, fuse::ui::Vec2 at);
 
     struct Impl;
 

@@ -160,7 +160,7 @@ struct MenuItem { // text = "label" or "label\n<sub items, one tab less>" (a sub
             if (l.empty() || l[0] != '\t') w = std::max(w, ui.measureString(l, ui.computed(n).fontSize) + 66.f);
             return true;
         });
-        const f32 x = panel.right() - 2.f + w > ui.viewport().w ? std::max(0.f, panel.x + 2.f - w) : panel.right() - 2.f;
+        const f32 x = panel.right() - 2.f + w > ui.popupArea().x + ui.popupArea().w ? std::max(ui.popupArea().x, panel.x + 2.f - w) : panel.right() - 2.f;
         detail::popupMenuAt(ui, n, sub, {x, r.y - 4.f}, u32(ui.value(n)) + 1u);
     }
     static bool onEvent(EventContext& ec, const Event& e) {
@@ -570,12 +570,12 @@ NodeHandle popupMenuAt(UiContext& ui, NodeHandle owner, std::string_view items, 
     const NodeHandle menu = make(ui, "menu", scope);
     // the popup layer clamps the measured panel into the viewport ("clamp" class); open upward when it would not fit
     ui.addClass(menu, "clamp");
-    const Size vp = ui.viewport();
+    const Rect area = ui.popupArea(); // the screen with OS-window popups, the viewport otherwise
     u32 rows = 0;
     eachLine(items, [&](u32, std::string_view t) { rows += t.empty() || t[0] != '\t'; return true; });
     const f32 estH = f32(rows) * 26.f + 8.f;
     setPx(ui, menu, Prop::Left, at.x);
-    setPx(ui, menu, Prop::Top, at.y + estH > vp.h && at.y - estH >= 0.f ? at.y - estH : at.y);
+    setPx(ui, menu, Prop::Top, at.y + estH > area.y + area.h && at.y - estH >= area.y ? at.y - estH : at.y);
     NodeHandle firstItem, item;
     std::string sub; // creation-time only
     auto flush = [&] {

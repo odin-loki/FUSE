@@ -154,6 +154,17 @@ struct Lib {
                              unsigned char**) = nullptr;
     int (*Free)(void*) = nullptr;
     int (*ResizeWindow)(Display*, Window, unsigned, unsigned) = nullptr;
+    Image* (*CreateImage)(Display*, void*, unsigned, int, int, char*, unsigned, unsigned, int, int) = nullptr;
+    int (*PutImage)(Display*, XID, void*, Image*, int, int, int, int, unsigned, unsigned) = nullptr;
+    void* (*DefaultGC)(Display*, int) = nullptr;
+    void* (*DefaultVisual)(Display*, int) = nullptr;
+    int (*DefaultDepth)(Display*, int) = nullptr;
+    int (*MoveResizeWindow)(Display*, Window, int, int, unsigned, unsigned) = nullptr;
+    int (*TranslateCoordinates)(Display*, Window, Window, int, int, int*, int*, Window*) = nullptr;
+    int (*ChangeWindowAttributes)(Display*, Window, unsigned long, void*) = nullptr;
+    int (*DisplayWidth)(Display*, int) = nullptr;
+    int (*DisplayHeight)(Display*, int) = nullptr;
+    int (*SendEvent)(Display*, Window, int, long, Event*) = nullptr;
 
     bool load() {
         so = dlopen("libX11.so.6", RTLD_NOW | RTLD_LOCAL);
@@ -171,9 +182,25 @@ struct Lib {
         get(NextEvent, "XNextEvent"); get(ConnectionNumber, "XConnectionNumber"); get(Flush, "XFlush"); get(Sync, "XSync");
         get(LookupString, "XLookupString"); get(GetImage, "XGetImage"); get(SetErrorHandler, "XSetErrorHandler");
         get(ChangeProperty, "XChangeProperty"); get(GetWindowProperty, "XGetWindowProperty"); get(Free, "XFree"); get(ResizeWindow, "XResizeWindow");
+        get(CreateImage, "XCreateImage"); get(PutImage, "XPutImage"); get(DefaultGC, "XDefaultGC");
+        get(DefaultVisual, "XDefaultVisual"); get(DefaultDepth, "XDefaultDepth"); get(MoveResizeWindow, "XMoveResizeWindow");
+        get(TranslateCoordinates, "XTranslateCoordinates"); get(ChangeWindowAttributes, "XChangeWindowAttributes");
+        get(DisplayWidth, "XDisplayWidth"); get(DisplayHeight, "XDisplayHeight"); get(SendEvent, "XSendEvent");
         return all;
     }
 };
+// XSetWindowAttributes (LP64 Xlib ABI)
+struct SetWindowAttributes {
+    unsigned long background_pixmap, background_pixel, border_pixmap, border_pixel;
+    int bit_gravity, win_gravity, backing_store;
+    unsigned long backing_planes, backing_pixel;
+    int save_under;
+    long event_mask, do_not_propagate_mask;
+    int override_redirect;
+    unsigned long colormap, cursor;
+};
+constexpr unsigned long kCWOverrideRedirect = 1ul << 9, kCWSaveUnder = 1ul << 10;
+constexpr long kPopupMask = (1 << 2) | (1 << 3) | (1 << 6) | (1 << 15); // buttons, motion, exposure
 int ignoreErrors(Display*, void*) { return 0; } // a capture of an unmapped window must not abort the process
 
 Key mapKey(KeySym s, bool& ascii) {
@@ -227,6 +254,15 @@ struct NativePlatform::Impl {
         unsigned long long handle = 0; ///< X11 Window / HWND
         bool mapped = false;
         bool focused = false;
+        struct Popup {
+            unsigned long long handle = 0;
+            Rect screen;   ///< physical screen rect
+            Rect rect;     ///< context rect (input offset)
+            u64 revision = ~0ull;
+            Image img;
+            std::vector<u32> staged; ///< OS pixel order
+        };
+        std::vector<Popup> popups;
 #if defined(_WIN32)
         std::vector<u32> bgra; ///< GDI fallback staging
         wchar_t highSurrogate = 0;
@@ -280,12 +316,83 @@ struct NativePlatform::Impl {
     void destroyOsWindow(Rec& r);
     bool createOsWindow(Rec& r);
     bool captureOs(const Rec& r, Image& out);
+    // OS-window popups
+    void syncPopups(Rec& r);
+    bool screenInfo(const Rec& r, int& ox, int& oy, Rect& work) const; ///< client origin + work area (screen px)
+    bool createPopupOs(Rec& r, Rec::Popup& p);
+    void movePopupOs(Rec::Popup& p);
+    void destroyPopupOs(Rec::Popup& p);
+    void blitPopupOs(Rec::Popup& p);
+    bool capturePopupOs(const Rec::Popup& p, Image& out);
+    bool postClickOs(unsigned long long h, Vec2 at);
+#if !defined(_WIN32)
+    bool captureX(unsigned long win, unsigned w, unsigned h, Image& out);
+#endif
+    Rec* findPopup(unsigned long long h, std::size_t& idx) {
+        for (Rec* r : recs)
+            for (std::size_t i = 0; i < r->popups.size(); ++i)
+                if (r->popups[i].handle == h) { idx = i; return r; }
+        return nullptr;
+    }
 };
+
+void NativePlatform::Impl::syncPopups(Rec& r) {
+    if (!opts.osPopups || !r.handle) return;
+    UiContext& ui = r.win->ui();
+    int ox = 0, oy = 0;
+    Rect work;
+    if (screenInfo(r, ox, oy, work)) {
+        const f32 s = 1.f; // context px = physical / scale
+        ui.setOsPopups(true, {(work.x - f32(ox)) / s, (work.y - f32(oy)) / s, work.w / s, work.h / s});
+    }
+    const auto& surf = ui.popupSurfaces();
+    while (r.popups.size() > surf.size()) {
+        destroyPopupOs(r.popups.back());
+        r.popups.pop_back();
+    }
+    const f32 s = 1.f;
+    for (std::size_t i = 0; i < surf.size(); ++i) {
+        if (i == r.popups.size()) r.popups.emplace_back();
+        Rec::Popup& p = r.popups[i];
+        const auto& ps = surf[i];
+        const Rect scr{std::round(f32(ox) + ps.rect.x * s), std::round(f32(oy) + ps.rect.y * s), std::max(1.f, std::ceil(ps.rect.w * s)),
+                       std::max(1.f, std::ceil(ps.rect.h * s))};
+        const bool moved = scr.x != p.screen.x || scr.y != p.screen.y || scr.w != p.screen.w || scr.h != p.screen.h;
+        p.rect = ps.rect;
+        p.screen = scr;
+        if (!p.handle) {
+            if (!createPopupOs(r, p)) { r.popups.pop_back(); return; }
+        } else if (moved) {
+            movePopupOs(p);
+        }
+        if (moved || p.revision != ps.revision) {
+            p.revision = ps.revision;
+            u32 clear = 0xFF000000u; // the panel's own fill shows in the corners its radius leaves
+            for (const DrawCmd& c : ps.draw.cmds())
+                if (c.op != DrawOp::Shadow && c.fill.a > 0.9f) { clear = packPremultiplied(c.fill) | 0xFF000000u; break; }
+            p.img.resize(int(scr.w), int(scr.h), clear);
+            CpuRasterizer rz = r.win->rasterizer(); // the window's images + the current glyph atlas
+            rz.setGlyphAtlas(ui.atlas().pixels(), ui.atlas().size());
+            if (s == 1.f) {
+                rz.render(ps.draw, p.img);
+            } else {
+                DrawList scaled = ps.draw;
+                for (DrawCmd& c : scaled.cmds()) { c.rect.x *= s; c.rect.y *= s; c.rect.w *= s; c.rect.h *= s; }
+                rz.render(scaled, p.img);
+            }
+            blitPopupOs(p);
+        }
+    }
+}
 
 bool NativePlatform::Impl::present(void* user, AppWindow& w, Rect damage) {
     Rec& r = *static_cast<Rec*>(user);
     switch (r.kind) {
-    case PresenterKind::Vulkan: return detail::vkWinPresent(r.vk, w, damage);
+    case PresenterKind::Vulkan: {
+        const bool ok = detail::vkWinPresent(r.vk, w, damage);
+        r.impl->syncPopups(r);
+        return ok;
+    }
 #if defined(_WIN32)
     case PresenterKind::Software: {
         const Image& img = w.rasterize(damage);
@@ -306,10 +413,11 @@ bool NativePlatform::Impl::present(void* user, AppWindow& w, Rect damage) {
         SetDIBitsToDevice(dc, 0, 0, DWORD(img.width), DWORD(img.height), 0, 0, 0, UINT(img.height), r.bgra.data(), &bi,
                           DIB_RGB_COLORS);
         ReleaseDC(hwnd, dc);
+        r.impl->syncPopups(r);
         return true;
     }
 #endif
-    default: w.rasterize(damage); return true;
+    default: w.rasterize(damage); r.impl->syncPopups(r); return true;
     }
 }
 
@@ -318,6 +426,9 @@ void NativePlatform::Impl::destroy(void* user) {
     Impl& m = *r->impl;
     detail::vkWinDestroy(r->vk);
     r->vk = nullptr;
+    for (Rec::Popup& p : r->popups) m.destroyPopupOs(p);
+    r->popups.clear();
+    if (r->win) r->win->ui().setOsPopups(false);
     m.destroyOsWindow(*r);
     std::erase(m.recs, r);
     delete r;
@@ -438,7 +549,94 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
 }
+constexpr const wchar_t* kPopupClass = L"FuseAppPopup";
+LRESULT CALLBACK popupProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    auto* r = reinterpret_cast<NativePlatform::Impl::Rec*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+    if (msg == WM_MOUSEACTIVATE) return MA_NOACTIVATE; // the main window keeps keyboard focus (Qt popup behaviour)
+    if (!r || !r->win) return DefWindowProcW(hwnd, msg, wp, lp);
+    std::size_t idx = 0;
+    if (!r->impl->findPopup(reinterpret_cast<unsigned long long>(hwnd), idx)) return DefWindowProcW(hwnd, msg, wp, lp);
+    NativePlatform::Impl::Rec::Popup& p = r->popups[idx];
+    UiContext& ui = r->win->ui();
+    const f32 s = 1.f;
+    const Vec2 lp2 = lparamPos(lp);
+    const Vec2 pos{p.rect.x + lp2.x / s, p.rect.y + lp2.y / s};
+    switch (msg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        BeginPaint(hwnd, &ps);
+        EndPaint(hwnd, &ps);
+        r->impl->blitPopupOs(p);
+        return 0;
+    }
+    case WM_ERASEBKGND: return 1;
+    case WM_MOUSEMOVE: ui.pointerMove(pos); r->win->requestRedraw(); return 0;
+    case WM_LBUTTONDOWN: ui.pointerDown(pos, MouseButton::Left); r->win->requestRedraw(); return 0;
+    case WM_RBUTTONDOWN: ui.pointerDown(pos, MouseButton::Right); r->win->requestRedraw(); return 0;
+    case WM_LBUTTONUP: case WM_RBUTTONUP: ui.pointerUp(pos); r->win->requestRedraw(); return 0;
+    default: break;
+    }
+    return DefWindowProcW(hwnd, msg, wp, lp);
+}
 } // namespace
+
+bool NativePlatform::Impl::screenInfo(const Rec& r, int& ox, int& oy, Rect& work) const {
+    HWND hwnd = reinterpret_cast<HWND>(r.handle);
+    POINT o{0, 0};
+    if (!ClientToScreen(hwnd, &o)) return false;
+    MONITORINFO mi{};
+    mi.cbSize = sizeof mi;
+    if (!GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mi)) return false;
+    ox = o.x;
+    oy = o.y;
+    work = {f32(mi.rcWork.left), f32(mi.rcWork.top), f32(mi.rcWork.right - mi.rcWork.left), f32(mi.rcWork.bottom - mi.rcWork.top)};
+    return true;
+}
+bool NativePlatform::Impl::createPopupOs(Rec& r, Rec::Popup& p) {
+    HWND hwnd = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST, kPopupClass, L"", WS_POPUP, int(p.screen.x),
+                                int(p.screen.y), int(p.screen.w), int(p.screen.h), reinterpret_cast<HWND>(r.handle), nullptr, hinst, nullptr);
+    if (!hwnd) return false;
+    p.handle = reinterpret_cast<unsigned long long>(hwnd);
+    SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&r));
+    ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+    return true;
+}
+void NativePlatform::Impl::movePopupOs(Rec::Popup& p) {
+    SetWindowPos(reinterpret_cast<HWND>(p.handle), nullptr, int(p.screen.x), int(p.screen.y), int(p.screen.w), int(p.screen.h),
+                 SWP_NOACTIVATE | SWP_NOZORDER);
+}
+void NativePlatform::Impl::destroyPopupOs(Rec::Popup& p) {
+    if (!p.handle) return;
+    HWND hwnd = reinterpret_cast<HWND>(p.handle);
+    SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+    DestroyWindow(hwnd);
+    p.handle = 0;
+}
+void NativePlatform::Impl::blitPopupOs(Rec::Popup& p) {
+    if (!p.handle || p.img.pixels.empty()) return;
+    p.staged.resize(p.img.pixels.size());
+    for (std::size_t i = 0; i < p.img.pixels.size(); ++i) {
+        const u32 q = p.img.pixels[i];
+        p.staged[i] = (q & 0xFF00FF00u) | ((q & 0xFFu) << 16) | ((q >> 16) & 0xFFu);
+    }
+    BITMAPINFO bi{};
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = p.img.width;
+    bi.bmiHeader.biHeight = -p.img.height;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+    HWND hwnd = reinterpret_cast<HWND>(p.handle);
+    HDC dc = GetDC(hwnd);
+    SetDIBitsToDevice(dc, 0, 0, DWORD(p.img.width), DWORD(p.img.height), 0, 0, 0, UINT(p.img.height), p.staged.data(), &bi, DIB_RGB_COLORS);
+    ReleaseDC(hwnd, dc);
+}
+bool NativePlatform::Impl::postClickOs(unsigned long long h, Vec2 at) {
+    HWND hwnd = reinterpret_cast<HWND>(h);
+    const LPARAM lp = MAKELPARAM(int(at.x), int(at.y));
+    return PostMessageW(hwnd, WM_MOUSEMOVE, 0, lp) && PostMessageW(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lp) &&
+           PostMessageW(hwnd, WM_LBUTTONUP, 0, lp);
+}
 
 bool NativePlatform::Impl::createOsWindow(Rec& r) {
     const Size sz = r.win->size();
@@ -480,11 +678,7 @@ bool NativePlatform::Impl::pump(void* user, Application&, f32 wait) {
     }
     return true;
 }
-bool NativePlatform::Impl::captureOs(const Rec& r, Image& out) {
-    // GDI cannot read a Vulkan-presented client area (DWM flip model on Windows; a separate X drawable under Wine), so
-    // a Vulkan window reports the frame it presented; the GDI fallback is read from the window DC.
-    if (r.vk) return detail::vkWinReadback(r.vk, out);
-    HWND hwnd = reinterpret_cast<HWND>(r.handle);
+static bool captureHwnd(HWND hwnd, Image& out) {
     RECT rc;
     GetClientRect(hwnd, &rc);
     const int w = rc.right - rc.left, h = rc.bottom - rc.top;
@@ -517,6 +711,15 @@ bool NativePlatform::Impl::captureOs(const Rec& r, Image& out) {
     ReleaseDC(hwnd, wdc);
     return okBlt;
 }
+bool NativePlatform::Impl::captureOs(const Rec& r, Image& out) {
+    // GDI cannot read a Vulkan-presented client area (DWM flip model on Windows; a separate X drawable under Wine), so
+    // a Vulkan window reports the frame it presented; the GDI fallback is read from the window DC.
+    if (r.vk) return detail::vkWinReadback(r.vk, out);
+    return captureHwnd(reinterpret_cast<HWND>(r.handle), out);
+}
+bool NativePlatform::Impl::capturePopupOs(const Rec::Popup& p, Image& out) {
+    return p.handle && captureHwnd(reinterpret_cast<HWND>(p.handle), out);
+}
 
 NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std::make_unique<Impl>(app, o)) {
     m->hinst = GetModuleHandleW(nullptr);
@@ -528,6 +731,11 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
     wc.hCursor = LoadCursorW(nullptr, reinterpret_cast<LPCWSTR>(IDC_ARROW));
     wc.lpszClassName = kClass;
     RegisterClassExW(&wc); // fails harmlessly when a second NativePlatform registers again
+    WNDCLASSEXW pc = wc;
+    pc.style = CS_SAVEBITS | CS_DROPSHADOW;
+    pc.lpfnWndProc = &popupProc;
+    pc.lpszClassName = kPopupClass;
+    RegisterClassExW(&pc);
     app.setEventSource({m.get(), &Impl::pump});
 }
 bool NativePlatform::available() const { return true; }
@@ -569,6 +777,22 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
     while (x.Pending(m.dpy)) {
         x11::Event ev{};
         x.NextEvent(m.dpy, &ev);
+        std::size_t pi = 0;
+        if (Rec* pr = m.findPopup(ev.any.window, pi)) { // a popup window: input in context coordinates of its owner
+            Rec::Popup& p = pr->popups[pi];
+            UiContext& ui = pr->win->ui();
+            const f32 s = 1.f;
+            const Vec2 pos{p.rect.x + f32(ev.input.x) / s, p.rect.y + f32(ev.input.y) / s};
+            if (ev.type == x11::Expose) m.blitPopupOs(p);
+            else if (ev.type == x11::MotionNotify) { ui.setModifiers(x11::mods(ev.input.state)); ui.pointerMove(pos); }
+            else if (ev.type == x11::ButtonPress) {
+                ui.setModifiers(x11::mods(ev.input.state));
+                if (ev.input.detail == 4 || ev.input.detail == 5) ui.wheel(pos, {0.f, ev.input.detail == 4 ? 1.f : -1.f});
+                else ui.pointerDown(pos, ev.input.detail == 3 ? MouseButton::Right : MouseButton::Left);
+            } else if (ev.type == x11::ButtonRelease && ev.input.detail <= 3) ui.pointerUp(pos);
+            pr->win->requestRedraw();
+            continue;
+        }
         Rec* r = m.find(ev.any.window);
         if (ev.type == x11::ConfigureNotify) r = m.find(ev.configure.window);
         if (!r || !r->win) continue;
@@ -626,12 +850,85 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
     }
     return true;
 }
+bool NativePlatform::Impl::screenInfo(const Rec& r, int& ox, int& oy, Rect& work) const {
+    const int scr = x.DefaultScreen(dpy);
+    x11::Window child = 0;
+    if (!x.TranslateCoordinates(dpy, x11::Window(r.handle), x.RootWindow(dpy, scr), 0, 0, &ox, &oy, &child)) return false;
+    work = {0.f, 0.f, f32(x.DisplayWidth(dpy, scr)), f32(x.DisplayHeight(dpy, scr))};
+    return true;
+}
+bool NativePlatform::Impl::createPopupOs(Rec& r, Rec::Popup& p) {
+    (void)r;
+    const int scr = x.DefaultScreen(dpy);
+    const x11::Window w = x.CreateSimpleWindow(dpy, x.RootWindow(dpy, scr), int(p.screen.x), int(p.screen.y), unsigned(p.screen.w),
+                                               unsigned(p.screen.h), 0, 0, 0);
+    if (!w) return false;
+    x11::SetWindowAttributes a{};
+    a.override_redirect = 1; // no WM frame / focus: a menu window (Qt::Popup)
+    a.save_under = 1;
+    x.ChangeWindowAttributes(dpy, w, x11::kCWOverrideRedirect | x11::kCWSaveUnder, &a);
+    const x11::Atom type = x.InternAtom(dpy, "_NET_WM_WINDOW_TYPE", 0), menu = x.InternAtom(dpy, "_NET_WM_WINDOW_TYPE_POPUP_MENU", 0);
+    x.ChangeProperty(dpy, w, type, 4 /*XA_ATOM*/, 32, 0, reinterpret_cast<const unsigned char*>(&menu), 1);
+    x.SelectInput(dpy, w, x11::kPopupMask);
+    x.MapWindow(dpy, w);
+    p.handle = w;
+    return true;
+}
+void NativePlatform::Impl::movePopupOs(Rec::Popup& p) {
+    x.MoveResizeWindow(dpy, x11::Window(p.handle), int(p.screen.x), int(p.screen.y), unsigned(p.screen.w), unsigned(p.screen.h));
+}
+void NativePlatform::Impl::destroyPopupOs(Rec::Popup& p) {
+    if (!p.handle || !dpy) return;
+    x.DestroyWindow(dpy, x11::Window(p.handle));
+    x.Flush(dpy);
+    p.handle = 0;
+}
+void NativePlatform::Impl::blitPopupOs(Rec::Popup& p) {
+    if (!p.handle || p.img.pixels.empty()) return;
+    const int scr = x.DefaultScreen(dpy);
+    if (x.DefaultDepth(dpy, scr) < 24) return;
+    p.staged.resize(p.img.pixels.size());
+    for (std::size_t i = 0; i < p.img.pixels.size(); ++i) { // 0xAABBGGRR -> TrueColor 0x00RRGGBB
+        const u32 q = p.img.pixels[i];
+        p.staged[i] = ((q & 0xFFu) << 16) | (q & 0xFF00u) | ((q >> 16) & 0xFFu);
+    }
+    x11::Image* img = x.CreateImage(dpy, x.DefaultVisual(dpy, scr), unsigned(x.DefaultDepth(dpy, scr)), 2 /*ZPixmap*/, 0,
+                                    reinterpret_cast<char*>(p.staged.data()), unsigned(p.img.width), unsigned(p.img.height), 32, 0);
+    if (!img) return;
+    x.PutImage(dpy, x11::Window(p.handle), x.DefaultGC(dpy, scr), img, 0, 0, 0, 0, unsigned(p.img.width), unsigned(p.img.height));
+    img->data = nullptr; // ours (XDestroyImage would free it)
+    img->f.destroy(img);
+    x.Flush(dpy);
+}
+bool NativePlatform::Impl::postClickOs(unsigned long long h, Vec2 at) {
+    for (int type : {int(x11::ButtonPress), int(x11::ButtonRelease)}) {
+        x11::Event ev{};
+        ev.input.type = type;
+        ev.input.display = dpy;
+        ev.input.window = x11::Window(h);
+        ev.input.root = x.RootWindow(dpy, x.DefaultScreen(dpy));
+        ev.input.x = int(at.x);
+        ev.input.y = int(at.y);
+        ev.input.detail = 1;
+        ev.input.same_screen = 1;
+        if (!x.SendEvent(dpy, x11::Window(h), 0, 0, &ev)) return false;
+    }
+    x.Flush(dpy);
+    return true;
+}
 bool NativePlatform::Impl::captureOs(const Rec& r, Image& out) {
-    x.Sync(dpy, 0);
     const Size sz = r.win->size();
-    x11::Image* img = x.GetImage(dpy, x11::Window(r.handle), 0, 0, unsigned(sz.w), unsigned(sz.h), ~0ul, 2 /*ZPixmap*/);
+    if (captureX(x11::Window(r.handle), unsigned(sz.w), unsigned(sz.h), out)) return true;
     // window not fully on screen (GetImage: BadMatch) or not mapped: a Vulkan window reports the frame it presented
-    if (!img) return r.vk && detail::vkWinReadback(r.vk, out);
+    return r.vk && detail::vkWinReadback(r.vk, out);
+}
+bool NativePlatform::Impl::capturePopupOs(const Rec::Popup& p, Image& out) {
+    return p.handle && captureX(x11::Window(p.handle), unsigned(p.screen.w), unsigned(p.screen.h), out);
+}
+bool NativePlatform::Impl::captureX(unsigned long win, unsigned w, unsigned h, Image& out) {
+    x.Sync(dpy, 0);
+    x11::Image* img = x.GetImage(dpy, win, 0, 0, w, h, ~0ul, 2 /*ZPixmap*/);
+    if (!img) return false;
     bool good = img->bits_per_pixel == 32;
     if (good) {
         out.resize(img->width, img->height);
@@ -712,6 +1009,7 @@ PresenterKind NativePlatform::show(AppWindow& w) {
 #else
     r->kind = r->vk ? PresenterKind::Vulkan : PresenterKind::Headless;
 #endif
+    if (m->opts.osPopups) w.ui().setOsPopups(true); // screen bounds arrive with the first present
     w.setPresenter({r, &Impl::present, &Impl::destroy});
     return r->kind;
 }
@@ -734,6 +1032,30 @@ bool NativePlatform::capture(const AppWindow& w, Image& out) {
     const Impl::Rec* r = m->find(w);
     return r && r->handle && m->captureOs(*r, out);
 }
+std::size_t NativePlatform::popupCount(const AppWindow& w) const {
+    const Impl::Rec* r = m->find(w);
+    return r ? r->popups.size() : 0;
+}
+unsigned long long NativePlatform::popupWindow(const AppWindow& w, std::size_t i) const {
+    const Impl::Rec* r = m->find(w);
+    return r && i < r->popups.size() ? r->popups[i].handle : 0;
+}
+Rect NativePlatform::popupScreenRect(const AppWindow& w, std::size_t i) const {
+    const Impl::Rec* r = m->find(w);
+    return r && i < r->popups.size() ? r->popups[i].screen : Rect{};
+}
+bool NativePlatform::capturePopup(const AppWindow& w, std::size_t i, Image& out) {
+    const Impl::Rec* r = m->find(w);
+    return r && i < r->popups.size() && m->capturePopupOs(r->popups[i], out);
+}
+Vec2 NativePlatform::screenOrigin(const AppWindow& w) const {
+    const Impl::Rec* r = m->find(w);
+    int ox = 0, oy = 0;
+    Rect work;
+    if (!r || !r->handle || !m->screenInfo(*r, ox, oy, work)) return {};
+    return {f32(ox), f32(oy)};
+}
+bool NativePlatform::postClick(unsigned long long nativeWin, Vec2 at) { return nativeWin && m->postClickOs(nativeWin, at); }
 unsigned long long NativePlatform::nativeWindow(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);
     return r ? r->handle : 0;

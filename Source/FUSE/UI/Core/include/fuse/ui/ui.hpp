@@ -263,6 +263,23 @@ public:
     /// otherwise, +inf when idle (an on-demand loop sleeps this long or until input).
     f32 nextWakeSeconds() const;
     const DrawList& drawList() const { return m_draw; }
+    /// OS-window popups (Qt: a QMenu / combo list is its own top-level window). When on, overlay popup panels (the
+    /// "clamp" nodes popupMenuAt / combo boxes / submenus create) are left out of drawList(); each is painted into its
+    /// own list in popup-local coordinates (popupSurfaces()) for the host to show in a borderless OS window at
+    /// window origin + rect, so a popup may extend past the window. They then clamp to `screen` (the work area in
+    /// context coordinates; empty = the viewport) instead of the viewport. Pointer input for a popup window is fed
+    /// back in context coordinates (local + rect origin).
+    struct PopupSurface {
+        NodeHandle node;
+        Rect rect;      ///< context coordinates (may lie outside the viewport)
+        DrawList draw;  ///< origin = rect top-left
+        u64 revision = 0; ///< bumps whenever `draw` or `rect` changes
+    };
+    void setOsPopups(bool on, Rect screen = {});
+    bool osPopups() const { return m_osPopups; }
+    /// Where popups may be placed: the screen bounds with OS popups, the viewport otherwise.
+    Rect popupArea() const;
+    const std::vector<PopupSurface>& popupSurfaces() const { return m_popupSurfaces; }
     Rect damage() const { return m_damage; }
     const FrameStats& stats() const { return m_stats; }
     u64 frameIndex() const { return m_frame; }
@@ -391,6 +408,11 @@ private:
     u32 m_layerClass = 0xFFFFFFFFu;
     DrawList m_draw;
     Rect m_damage;
+    bool m_osPopups = false;
+    Rect m_popupScreen;
+    std::vector<u32> m_popupPending;
+    std::vector<PopupSurface> m_popupSurfaces;
+    u64 m_popupRevision = 0;
     FrameStats m_stats;
     u64 m_frame = 0;
     bool m_anyStyleDirty = true, m_anyLayoutDirty = true, m_anyPaintDirty = true;

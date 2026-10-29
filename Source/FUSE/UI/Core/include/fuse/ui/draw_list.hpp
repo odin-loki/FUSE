@@ -52,6 +52,8 @@ public:
     std::size_t size() const { return m_cmds.size(); }
     /// FNV-64 over the commands (golden / parity hashes).
     u64 hash() const;
+    /// Moves every command by `d` (Line end points included): re-bases a subtree's list to a popup window's origin.
+    void translate(Vec2 d);
 
 private:
     std::vector<DrawCmd> m_cmds;

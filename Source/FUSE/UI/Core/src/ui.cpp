@@ -914,8 +914,9 @@ void UiContext::arrangeChildren(u32 i) {
                 else if (!hasT && hasB) py = c.h - b - h;
             }
             if (s.layout == LayoutKind::Anchor && hasClass({k, m_nodes[k].gen}, "clamp")) { // keep popups on screen
-                px = std::max(0.f, std::min(px, c.w - w - cs.margin.h()));
-                py = std::max(0.f, std::min(py, c.h - h - cs.margin.v()));
+                const Rect a = popupArea();
+                px = std::max(a.x - c.x, std::min(px, a.x + a.w - c.x - w - cs.margin.h()));
+                py = std::max(a.y - c.y, std::min(py, a.y + a.h - c.y - h - cs.margin.v()));
             }
             place(k, {std::round(c.x + px + cs.margin.l), std::round(c.y + py + cs.margin.t), w, h});
         }
@@ -990,6 +991,10 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
             if (m_nodes[k].dirty & kDirtyPaint) { m_damage = m_damage.unite(m_nodes[k].rect.intersect(n.rect)); m_nodes[k].dirty &= u8(~kDirtyPaint); }
             continue;
         }
+        if (m_osPopups && &dl == &m_draw && hasClass({k, m_nodes[k].gen}, "clamp")) { // own OS window
+            m_popupPending.push_back(k);
+            continue;
+        }
         paintRec(k, opacity, dl);
     }
     if (clip) dl.popClip();
@@ -1022,10 +1027,45 @@ void UiContext::paintPass() {
     m_stats.repainted = false;
     if (!m_anyPaintDirty) return;
     m_draw.clear();
+    m_popupPending.clear();
     paintRec(m_root.index, 1.f, m_draw);
+    std::vector<PopupSurface> next;
+    for (u32 k : m_popupPending) {
+        PopupSurface ps;
+        ps.node = {k, m_nodes[k].gen};
+        ps.rect = m_nodes[k].rect;
+        const Rect saved = m_damage;
+        paintRec(k, 1.f, ps.draw);
+        m_damage = saved; // a popup window repaints itself; the main window is not damaged by it
+        std::erase_if(ps.draw.cmds(), [&](const DrawCmd& c) { return c.op == DrawOp::Shadow && c.node == k; }); // OS shadow
+        if (ps.draw.size() == 0 || ps.rect.empty()) continue;
+        ps.draw.translate({-ps.rect.x, -ps.rect.y});
+        ps.revision = ++m_popupRevision;
+        for (const PopupSurface& old : m_popupSurfaces)
+            if (old.node == ps.node && old.rect.x == ps.rect.x && old.rect.y == ps.rect.y && old.rect.w == ps.rect.w &&
+                old.rect.h == ps.rect.h && old.draw.hash() == ps.draw.hash())
+                ps.revision = old.revision;
+        next.push_back(std::move(ps));
+    }
+    if (next.size() != m_popupSurfaces.size()) m_damage = m_damage.unite({0.f, 0.f, m_viewport.w, m_viewport.h});
+    m_popupSurfaces = std::move(next);
     m_anyPaintDirty = false;
     m_stats.repainted = true;
     m_stats.drawCmds = u32(m_draw.size());
+}
+
+void UiContext::setOsPopups(bool on, Rect screen) {
+    if (on == m_osPopups && screen.x == m_popupScreen.x && screen.y == m_popupScreen.y && screen.w == m_popupScreen.w &&
+        screen.h == m_popupScreen.h)
+        return;
+    m_osPopups = on;
+    m_popupScreen = screen;
+    if (!on) m_popupSurfaces.clear();
+    markAllDirty();
+}
+Rect UiContext::popupArea() const {
+    if (m_osPopups && !m_popupScreen.empty()) return m_popupScreen;
+    return {0.f, 0.f, m_viewport.w, m_viewport.h};
 }
 
 // ---- Frame ---------------------------------------------------------------------------------------------------------
