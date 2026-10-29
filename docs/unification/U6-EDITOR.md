@@ -185,10 +185,20 @@ Optional CMake preset: **`fuse-editor-qt`** (Release editor + Vulkan, mirrors CI
 
 All Qt shell gates run offscreen (`QT_QPA_PLATFORM=offscreen`) in `fuse_editor_qt_shell_gate` (part of `fuse_editor_qt_gates_all`).
 
+### GUI-2 … GUI-4 — gizmo, materials, sculpting (2026-10-29)
+
+| Landed | Gate |
+|---|---|
+| **Transform toolbar** (Select / Move / Rotate / Scale on Ctrl+1..4, Local, Snap). The Qt-free `TransformGizmo` (`transform_gizmo.hpp`) projects X/Y/Z handles at the primary selection, hit-tests them and turns a drag into a `TransformCommand`. Each drag is wrapped in an `UndoStack` macro, so one drag is one undo step. Snapping uses 0.5 units, 15° and 0.1× scale. Plain W/E/R are not bound because they collide with WASD fly. | `fuse_editor_qt_shell_gizmo` |
+| **Material Editor dock.** `EditorHost` owns a per-scene `MaterialCatalog` (`material_catalog.hpp`) with a default palette. It is saved and loaded beside the scene as `<scene>.materials` (`FUSEEDMAT 1`). The dock lists the catalog and follows the selected entity's material. It edits base colour (sRGB picker, stored linear), roughness and metallic with a live preview sphere, and supports New and Assign to selection. Every edit is an `UndoStack` command. | `fuse_editor_qt_shell_material` |
+| **SDF Sculpt dock** with a *Sculpt in viewport* toggle. A left-drag applies `SdfSculptPanel::applyBrushStroke` at the picked surface, or at the y = 0 ground plane on a miss. One drag is one undo step, and a brush circle follows the cursor. The dock sets brush op, shape, material (from the catalog), radius, strength, spacing, GRIA α and X symmetry. | `fuse_editor_qt_shell_sculpt` |
+| `fuse_editor_qt_startup` always runs on a private Xvfb (`FUSE_FORCE_XVFB=1`). On the shared display, startup timing was flaky. | `fuse_editor_qt_startup` |
+
 Still open:
 
-- A gizmo toolbar and in-viewport transform handles. The headless `GizmoSystem` exists, but neither `EditorHost` nor the Qt shell owns one yet.
-- A real material dock. `material.*` commands are not applied by `EditorHost`, and the material catalog is never populated.
+- Gizmo handles and the sculpt brush circle are drawn by the software viewport only. The embedded Vulkan viewport is a native child window, so it still receives the drags (mouse events are forwarded) but does not draw the overlay.
+- Gizmo edits of parented entities apply the delta in local space.
+- The renderer does not consume the material catalog yet. A bridge into `renderer::MaterialSystem` by id is still to do.
 - Timelines.
 
 The engine-native GUI framework that will eventually replace Qt (UI9) is tracked in [`../plans/FUSE_UI_PLAN.md`](../plans/FUSE_UI_PLAN.md). What is in tree so far is described in [`../ui/README.md`](../ui/README.md).

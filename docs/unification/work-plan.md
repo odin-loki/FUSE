@@ -467,6 +467,15 @@ WP-00 → WP-01 → WP-02 ──────────────────
 - `fuse_editor --project/--software-viewport/--screenshot`.
 - Offscreen gates in `fuse_editor_qt_shell_gate`, plus `fuse_editor_gui_models`.
 
+**U6 GUI-2…4 landed (2026-10-29):**
+
+- Transform toolbar and viewport gizmo handles (undoable drags, snap, local/world).
+- Material Editor dock on a per-scene `MaterialCatalog` (`<scene>.materials`).
+- SDF Sculpt dock with viewport sculpting.
+- Gates: `fuse_editor_qt_shell_gizmo`, `_material`, `_sculpt`.
+- `demo_hybrid_hud` now links with parity demos OFF.
+- `fuse_editor_qt_startup` runs on a private Xvfb.
+
 **FUSE UI:** the engine-native GUI framework (`fuse_ui_core`, `fuse_text`, widgets) is tracked separately. See [`../ui/README.md`](../ui/README.md) and [`../plans/FUSE_UI_PLAN.md`](../plans/FUSE_UI_PLAN.md).
 
 ---

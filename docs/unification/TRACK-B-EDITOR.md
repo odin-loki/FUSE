@@ -29,7 +29,7 @@
 | `PlaySession` / `PlayWorldSnapshot` | `play_session.hpp` | B6.12 deepen — PIE start/stop, tick accumulator, world snapshot capture/restore, coalesced dirty restore; B6.12 deepen follow-up — `consumeFixedSteps`, snapshot helpers, stable entity ordering |
 | `EditorHost` | `editor_host.hpp` | `CommandQueue` (UI→game) + `UndoStack` (B6.2) |
 
-**Not in scope (here):** live material preview RT, GPU SDF carve, screen-space gizmo rendering. The Qt docks, embedded Vulkan viewport, picking, asset browser chrome, profiler plots and console have since landed in the U6 Qt shell. See [U6-EDITOR.md](./U6-EDITOR.md) §8 GUI-1.
+**Not in scope (here):** live material preview RT, GPU SDF carve. Screen-space gizmo handles, the material catalog dock and viewport sculpting have since landed in the Qt shell (U6 §8 GUI-2…4). The Qt docks, embedded Vulkan viewport, picking, asset browser chrome, profiler plots and console have since landed in the U6 Qt shell. See [U6-EDITOR.md](./U6-EDITOR.md) §8 GUI-1 to GUI-4.
 
 ---
 
