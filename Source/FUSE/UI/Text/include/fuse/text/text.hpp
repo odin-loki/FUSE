@@ -33,9 +33,19 @@ const char* textErrorName(TextError e);
 char32_t decodeUtf8(std::string_view s, std::size_t& i);
 /// Appends the UTF-8 encoding of `cp` to `out`.
 void appendUtf8(std::string& out, char32_t cp);
-/// Byte offset of the previous / next code point boundary (grapheme approximation for the MINIMAL profile).
+/// Byte offset of the previous / next code point boundary.
+std::size_t prevCodepoint(std::string_view s, std::size_t i);
+std::size_t nextCodepoint(std::string_view s, std::size_t i);
+/// UAX #29 extended grapheme cluster property (compact built-in tables: combining marks, Indic spacing marks,
+/// Hangul syllable types, regional indicators, emoji modifiers / ZWJ sequences, variation selectors, tags).
+enum class GraphemeBreak : std::uint8_t { Other, CR, LF, Control, Extend, ZWJ, RegionalIndicator, Prepend, SpacingMark, L, V, T, LV, LVT, ExtPict };
+GraphemeBreak graphemeBreakProperty(char32_t cp);
+/// Byte offset of the previous / next extended grapheme cluster boundary (UAX #29 rules GB3-GB13): caret moves,
+/// Backspace and Delete never split "e + U+0301", a flag, a skin-toned or ZWJ emoji, CR LF or a Hangul syllable.
 std::size_t prevBoundary(std::string_view s, std::size_t i);
 std::size_t nextBoundary(std::string_view s, std::size_t i);
+/// Number of extended grapheme clusters in `s` (user-perceived characters).
+std::size_t graphemeCount(std::string_view s);
 
 // ---- Font ----------------------------------------------------------------------------------------------------------
 struct FontMetrics {

@@ -24,6 +24,7 @@ fuse_ui_test(fuse_ui_bench_10k test_bench_10k.cpp)
 fuse_ui_test(fuse_ui_single_thread_parity test_single_thread_parity.cpp)
 fuse_ui_test(fuse_ui_a11y_tree_dump test_a11y_tree_dump.cpp)
 fuse_ui_test(fuse_ui_text_basics test_text_basics.cpp)
+fuse_ui_test(fuse_text_edit_ops test_text_edit_ops.cpp)
 fuse_ui_test(fuse_ui_widget_interaction test_widget_interaction.cpp)
 
 find_package(Threads REQUIRED)
