@@ -267,3 +267,14 @@ Fallback if the whole-shell switch stalls: host individual FUSE UI panels inside
 2. Q1: `EditorController` + `ShellServices` with the mutex inside; route the 29 mutex sites through it.
 3. Q2 and Q6 (small, high value): one undo history and the action table.
 4. From here on, every new Qt panel follows R1–R9.
+
+## 11. Status: UI9 started (FUSE shell beside Qt)
+
+- **Qt-free controller**: `Source/FUSE/EditorShell/Controller` (`fuse_editor_controller`, links only `fuse_editor_api`): `EditorController`, the stable action table (`editor_actions`), and theme tokens. The tests (`fuse_editor_controller_api`) run on scripted services. The Qt shell should adopt this library rather than keep its own copy. Qt is untouched.
+- **FUSE shell**: configure with `-DFUSE_EDITOR_SHELL=fuse` (the default stays `qt`). It builds `fuse_editor_fuse` (the app; supports `--font-scale` and `--screenshot`) and `fuse_editor_ui_gates`.
+  - Chrome: menus and a toolbar built from the action table, three docks with tabs, the viewport, and a status bar.
+  - Ported panels: Hierarchy (filter, multi-select, reparent), Inspector (property grid, add/remove component), Console.
+  - Not yet ported (placeholder pages): Project Hub, Asset Browser, Material Editor, SDF Sculpt, Profiler, Sequencer, Timeline.
+- **Twin gates** (`ctest -L fuse_editor_ui`): startup, layout, theme, font_1/1_25/1_5/2, fuse_api, wasd, context_menu, ui_frame, idle_frames, e15_console, e15_transport, e20_inspector, e20_reparent, e20_file_menu. All pass on Linux and under Wine (MinGW).
+  - ui_frame: hover frame 1.5 ms on Linux and 2.8 ms under Wine, against a 16.7 ms limit. The CPU rasterizer's opaque fast paths cut the full 1600x900 raster from 201 ms to 10 ms.
+- Known gap: the right dock is about 200 px wide after a layout reset, not the 320 px requested.
