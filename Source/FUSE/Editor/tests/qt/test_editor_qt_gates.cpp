@@ -1646,7 +1646,7 @@ int gateLivePresent() {
                    !fuse::core::trackBUnlocked(),
                "editor-scoped present unlock on; global FUSE_TRACK_B_UNLOCK untouched");
 
-        expect(waitPresented(window, 10, 20000), "first 10 viewport frames presented");
+        expect(waitPresented(window, 10, static_cast<int>(20000 * timingScale())), "first 10 viewport frames presented");
         // Same as idle/ui gates: empty-scene fog/sky can read like the QWidget placeholder on screen grabs.
         // Scene commands are posted from the UI; the game thread drains them — do not gameTick() here
         // (HybridComposer::render must stay on the game/render thread).
@@ -1665,10 +1665,19 @@ int gateLivePresent() {
                        QCoreApplication::processEvents();
                        return presentStats(window).presentedImages >= 30;
                    },
-                   30000),
+                   static_cast<int>(30000 * timingScale())),
                "viewport frames presented after scene populate");
         const fuse::editor::WindowPresentStats s0 = presentStats(window);
+        // Under load (Lavapipe shares the CPU) a fixed 600 ms window can see no new present: wait for
+        // progress, bounded by the load-scaled budget.
         QTest::qWait(600);
+        QTest::qWaitFor(
+            [&]() {
+                QCoreApplication::processEvents();
+                const fuse::editor::WindowPresentStats t = presentStats(window);
+                return t.presentedImages > s0.presentedImages + 1 && t.acquiredImages > s0.acquiredImages + 1;
+            },
+            static_cast<int>(10000 * timingScale()));
         const fuse::editor::WindowPresentStats s1 = presentStats(window);
         std::printf("present: %llu frames, %llu acquired, %llu presented (+%llu / +%llu in 600 ms), swapchain %ux%u\n",
                     static_cast<unsigned long long>(s1.frames), static_cast<unsigned long long>(s1.acquiredImages),
