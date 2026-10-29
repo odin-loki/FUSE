@@ -45,6 +45,9 @@ struct RuntimeEmbedSession {
     u32 hybridComposerFrames = 0;
     u32 ecsWorld3DObjectCount = 0;
     u32 ecsWorld3DSyncTicks = 0;
+    /// GUI-3: catalog pushes into the embedded World3D materials (one per catalog revision).
+    u32 catalogMaterialSyncs = 0;
+    u32 catalogMaterialCount = 0;
     u32 materialTextureCooks = 0;
     u32 vfsAssetPathsRemapped = 0;
     u32 shaderVfsResolved = 0;

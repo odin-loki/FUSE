@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <fuse/editor/runtime_viewport.hpp>
 
 #include <fuse/core/track_b.hpp>
@@ -561,6 +562,23 @@ void RuntimeViewportHook::bindCookedAssetsToHybrid_() {
 #endif
 }
 
+#if defined(FUSE_VULKAN_BACKEND)
+namespace {
+template <typename Hint>
+void applyCatalogColor(const MaterialCatalog& materials, u32 id, Hint& hint) {
+    if (!materials.valid(id)) {
+        return;
+    }
+    const MaterialEditState& m = materials.entry(id).state;
+    auto to8 = [](f32 v) { return static_cast<u8>(std::clamp(v, 0.f, 1.f) * 255.f + 0.5f); };
+    hint.hasColor = true;
+    hint.r = to8(m.baseColorR);
+    hint.g = to8(m.baseColorG);
+    hint.b = to8(m.baseColorB);
+}
+} // namespace
+#endif
+
 void RuntimeViewportHook::syncMeshSdfPreviewFromEcs_(EditorHost& host) {
 #if defined(FUSE_VULKAN_BACKEND)
     RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub);
@@ -592,6 +610,7 @@ void RuntimeViewportHook::syncMeshSdfPreviewFromEcs_(EditorHost& host) {
                     hint.cookedMeshResolved = true;
                 }
                 hint.visible = true;
+                applyCatalogColor(host.materials(), mesh.material_id, hint);
                 catalog.addMesh(hint);
                 return;
             }
@@ -631,6 +650,7 @@ void RuntimeViewportHook::syncMeshSdfPreviewFromEcs_(EditorHost& host) {
                     break;
                 }
                 hint.visible = true;
+                applyCatalogColor(host.materials(), sdf.material_id, hint);
                 catalog.addSdf(hint);
             }
         });
@@ -738,6 +758,12 @@ void RuntimeViewportHook::syncEcsToEmbedWorld3D_(EditorHost& host) {
         view.farPlane = (std::min)(cam.farPlane > view.nearPlane ? cam.farPlane : 1000.f, 2000.f);
         view.valid = true;
         gpu->embedWorld3D.setCamera(view);
+    }
+    // GUI-3: the Material Editor catalog is the World3D material table (row id == Mesh::material_id).
+    if (host.materials().revision() != m_materialRevisionSeen) {
+        m_materialRevisionSeen = host.materials().revision();
+        m_embedSession.catalogMaterialCount = host.materials().applyTo(gpu->embedWorld3D);
+        ++m_embedSession.catalogMaterialSyncs;
     }
 
     // Reused scratch: idle editor ticks must not allocate (fuse_editor_b6_idle_frame_gates).

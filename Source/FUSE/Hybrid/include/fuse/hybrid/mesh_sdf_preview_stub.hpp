@@ -24,6 +24,9 @@ struct MeshPreviewHint {
     u32 materialId = 0;
     bool visible = true;
     bool cookedMeshResolved = false;
+    /// Editor material colour (GUI-3 catalog); overrides the id-hashed stub tint when set.
+    bool hasColor = false;
+    u8 r = 0, g = 0, b = 0;
 };
 
 struct SdfPreviewHint {
@@ -36,6 +39,8 @@ struct SdfPreviewHint {
     float param2 = 0.f;
     u32 materialId = 0;
     bool visible = true;
+    bool hasColor = false;
+    u8 r = 0, g = 0, b = 0;
 };
 
 /// Headless-safe mesh/SDF preview catalog — software placeholder draws colored stubs.

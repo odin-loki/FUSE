@@ -1,4 +1,7 @@
 #include <fuse/editor/material_catalog.hpp>
+#include <fuse/world3d/world_3d.hpp>
+
+#include <atomic>
 
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
@@ -9,6 +12,30 @@
 #include <sstream>
 
 namespace fuse::editor {
+
+u32 nextCatalogRevision() {
+    // Process-wide so a fresh catalog (new / opened scene) never repeats a revision a consumer saw.
+    static std::atomic<u32> counter{0};
+    return ++counter;
+}
+
+world3d::RenderMaterial3D MaterialCatalog::toRenderMaterial(const MaterialEditState& state) {
+    world3d::RenderMaterial3D m{};
+    m.baseColor[0] = state.baseColorR;
+    m.baseColor[1] = state.baseColorG;
+    m.baseColor[2] = state.baseColorB;
+    m.metallic = state.metallic;
+    m.roughness = state.roughness;
+    return m;
+}
+
+u32 MaterialCatalog::applyTo(world3d::World3D& world) const {
+    for (u32 id = 0; id < count(); ++id) {
+        world.setMaterial(id, toRenderMaterial(m_entries[id].state));
+    }
+    return count();
+}
+
 namespace {
 
 MaterialEditState make(f32 r, f32 g, f32 b, f32 rough, f32 metal) {
@@ -31,26 +58,26 @@ void MaterialCatalog::resetToDefaults() {
         {"Chrome", make(0.55f, 0.56f, 0.56f, 0.05f, 1.f)},
         {"Rubber", make(0.05f, 0.05f, 0.05f, 0.9f, 0.f)},
     };
-    ++m_revision;
+    m_revision = nextCatalogRevision();
 }
 
 void MaterialCatalog::setState(u32 id, const MaterialEditState& state) {
     if (valid(id)) {
         m_entries[id].state = state;
-        ++m_revision;
+        m_revision = nextCatalogRevision();
     }
 }
 
 u32 MaterialCatalog::add(MaterialCatalogEntry entry) {
     m_entries.push_back(std::move(entry));
-    ++m_revision;
+    m_revision = nextCatalogRevision();
     return count() - 1u;
 }
 
 void MaterialCatalog::removeLast() {
     if (m_entries.size() > 1u) {
         m_entries.pop_back();
-        ++m_revision;
+        m_revision = nextCatalogRevision();
     }
 }
 
@@ -97,7 +124,7 @@ bool MaterialCatalog::load(const std::string& path, std::string* error) {
         s.procedural = procedural != 0;
     }
     m_entries = std::move(entries);
-    ++m_revision;
+    m_revision = nextCatalogRevision();
     return true;
 }
 

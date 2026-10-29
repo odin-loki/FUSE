@@ -160,6 +160,7 @@ private:
     /// which can be after the world load on the same tick.
     fuse::project::ProjectManifest m_loadedManifest{};
 #endif
+    u32 m_materialRevisionSeen = 0;
 };
 
 } // namespace fuse::editor

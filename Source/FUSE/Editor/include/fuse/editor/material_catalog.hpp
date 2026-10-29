@@ -3,11 +3,19 @@
 #include <fuse/ecs/registry.hpp>
 #include <fuse/editor/material_editor_panel.hpp>
 #include <fuse/editor/undo_stack.hpp>
+#include <fuse/world3d/render_scene.hpp>
 
 #include <string>
 #include <vector>
 
+namespace fuse::world3d {
+class World3D;
+}
+
 namespace fuse::editor {
+
+/// Next process-wide catalog revision (unique across catalog instances).
+u32 nextCatalogRevision();
 
 /// One editor-authored material: a display name plus the authoring fields the Material Editor edits.
 struct MaterialCatalogEntry {
@@ -34,6 +42,11 @@ public:
     /// Bumped on every change (panels poll it).
     [[nodiscard]] u32 revision() const { return m_revision; }
 
+    /// Renderer material for a catalog entry (base colour, metallic, roughness).
+    static world3d::RenderMaterial3D toRenderMaterial(const MaterialEditState& state);
+    /// Push every entry into `world` as material row id (== ecs::Mesh::material_id). Returns count.
+    u32 applyTo(world3d::World3D& world) const;
+
     bool save(const std::string& path, std::string* error = nullptr) const;
     /// Replaces the catalog; false (unchanged) on a missing or malformed file.
     bool load(const std::string& path, std::string* error = nullptr);
@@ -41,7 +54,7 @@ public:
 
 private:
     std::vector<MaterialCatalogEntry> m_entries;
-    u32 m_revision = 0;
+    u32 m_revision = nextCatalogRevision();
 };
 
 /// Undoable edit of one catalog material; consecutive edits of the same id merge (slider drags).
