@@ -44,6 +44,10 @@ constexpr Key toUiKey(fuse::platform::KeyV2 k) {
     case K2::O: return Key::O;
     case K2::F5: return Key::F5;
     case K2::F10: return Key::F10;
+    case K2::Num1: return Key::Num1;
+    case K2::Num2: return Key::Num2;
+    case K2::Num3: return Key::Num3;
+    case K2::Num4: return Key::Num4;
     case K2::COUNT: return Key::None;
     default: return Key::Other;
     }

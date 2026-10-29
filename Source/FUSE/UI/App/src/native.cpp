@@ -64,6 +64,10 @@ u8 asciiKey(Key& k, u32 c) {
     case 'n': case 'N': k = Key::N; return 1;
     case 'o': case 'O': k = Key::O; return 1;
     case ' ': k = Key::Space; return 1;
+    case '1': k = Key::Num1; return 1;
+    case '2': k = Key::Num2; return 1;
+    case '3': k = Key::Num3; return 1;
+    case '4': k = Key::Num4; return 1;
     default: return 0;
     }
 }
@@ -365,7 +369,7 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         bool ascii = false;
         const Key k = mapVk(wp, ascii);
         const u8 md = winMods();
-        if (k != Key::Other && (!ascii || (md & (kModCtrl | kModAlt)) || k == Key::Space)) {
+        if (k != Key::Other) { // printable keys too: viewport WASD / 1-4; text arrives separately
             if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) ui.keyDown(k, md);
             else ui.keyUp(k, md);
         }
@@ -558,7 +562,7 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
             bool ascii = false;
             const Key k = x11::mapKey(sym, ascii);
             const u8 md = x11::mods(in.state);
-            if (k != Key::Other && (!ascii || (md & (kModCtrl | kModAlt)) || k == Key::Space)) {
+            if (k != Key::Other) { // printable keys too: viewport WASD / 1-4; text arrives separately
                 if (ev.type == x11::KeyPress) ui.keyDown(k, md);
                 else ui.keyUp(k, md);
             }
