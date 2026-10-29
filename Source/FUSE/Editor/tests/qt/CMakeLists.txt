@@ -20,6 +20,7 @@ set(_fuse_qt_gate_tests
     idle_frames
     project_settings
     edit_tools
+    terrain
     preferences
     build_package
 )

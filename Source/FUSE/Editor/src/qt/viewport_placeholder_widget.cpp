@@ -384,6 +384,17 @@ void ViewportPlaceholderWidget::mousePressEvent(QMouseEvent* event) {
             event->accept();
             return;
         }
+        if (m_terrainSculpt) {
+            syncPanelSize();
+            const qreal dpr = devicePixelRatioF();
+            const ViewportRay ray = m_panel.screenRay(static_cast<f32>(event->position().x() * dpr), static_cast<f32>(event->position().y() * dpr));
+            const float o[3] = {ray.origin.x, ray.origin.y, ray.origin.z};
+            const float d[3] = {ray.direction.x, ray.direction.y, ray.direction.z};
+            if (m_terrainSculpt(o, d)) {
+                event->accept();
+                return;
+            }
+        }
         if (const int hnd = colliderHandleAt_(event->position()); hnd >= 0 && m_colliderHandleEntity.valid()) {
             std::lock_guard<std::mutex> lock(m_sceneMutex);
             if (const ecs::Collider* c = m_host.editorScene().registry().get<ecs::Collider>(m_colliderHandleEntity)) {
@@ -1247,6 +1258,10 @@ void ViewportPlaceholderWidget::collectColliderLines_() {
         if (!editorViewModeWire(editorViewMode())) {
             m_wireCache.clear();
         } else {
+            if (const u64 ver = m_host.runtimeViewport().meshRegistryVersion(); ver != m_wireCacheVersion) {
+                m_wireCache.clear(); // a mesh was replaced (e.g. terrain rebuilt)
+                m_wireCacheVersion = ver;
+            }
             // Real triangle edges, cached per engine mesh id (meshes are immutable once registered).
             usize budget = kMaxWireSegments;
             const auto wire = [&](ecs::EntityID id, const ecs::Transform& t, u32 engineId, const f32 scale[3]) {

@@ -13,6 +13,7 @@
 #include <QMenu>
 #include <QPointer>
 #include <algorithm>
+#include <functional>
 #include <unordered_map>
 #include <QTimer>
 #include <QWidget>
@@ -160,6 +161,12 @@ public:
     /// Projected collider segments of the last paint / overlay refresh.
     [[nodiscard]] int colliderLineCount() const { return static_cast<int>(m_colliderLines.size()); }
     /// Collider drag handles of the primary selection (tests): count and logical position / axis.
+    /// Terrain panel "Sculpt in viewport": a left click casts the view ray (world origin, unit direction) to
+    /// this handler first; empty = off.
+    void setTerrainSculptHandler(std::function<bool(const float* origin, const float* dir)> handler) {
+        m_terrainSculpt = std::move(handler);
+    }
+    [[nodiscard]] bool terrainSculptActive() const { return static_cast<bool>(m_terrainSculpt); }
     [[nodiscard]] int colliderHandleCount() const { return static_cast<int>(m_colliderHandles.size()); }
     [[nodiscard]] QPointF colliderHandlePos(int i) const { return m_colliderHandles.at(static_cast<usize>(i)).pos; }
     [[nodiscard]] QPointF colliderHandleAxis(int i) const { return m_colliderHandles.at(static_cast<usize>(i)).axisPx; }
@@ -223,6 +230,7 @@ private:
     /// View Mode > Wireframe: engine mesh id -> object-space edges (copied once from the MeshRegistry).
     std::unordered_map<u32, std::vector<f32>> m_wireCache;
     static constexpr usize kMaxWireSegments = 400000;
+    u64 m_wireCacheVersion = 0;
     bool m_inOverlayPaint = false; ///< syncOverlay already collected the collider lines
     std::vector<QLineF> m_colliderLines;
     std::vector<u8> m_colliderSelected; ///< 0 collider / bounds, 1 selected, 2 navmesh overlay
@@ -237,6 +245,7 @@ private:
     };
     std::vector<ColliderHandle> m_colliderHandles;
     ecs::EntityID m_colliderHandleEntity = ecs::EntityID::null();
+    std::function<bool(const float*, const float*)> m_terrainSculpt;
     int m_colliderDrag = -1; ///< index into m_colliderHandles while dragging
     QPointF m_colliderDragStart;
     ecs::vec3 m_colliderParamsStart{};

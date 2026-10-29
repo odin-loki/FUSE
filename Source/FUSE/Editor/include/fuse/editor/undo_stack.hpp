@@ -8,6 +8,7 @@
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/spawn_marker.hpp>
 #include <fuse/ecs/components/tags.hpp>
+#include <fuse/ecs/components/terrain.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/entity.hpp>
 #include <fuse/ecs/registry.hpp>
@@ -277,7 +278,7 @@ using EntityComponentSet =
                std::optional<ecs::SpotLight>, std::optional<ecs::SpawnMarker>,
                std::optional<ecs::Collider>, std::optional<ecs::TagStatic>,
                std::optional<ecs::TagPlayer>, std::optional<ecs::TagKinematic>,
-               std::optional<ecs::TagDestroy>>;
+               std::optional<ecs::TagDestroy>, std::optional<ecs::Terrain>>;
 
 EntityComponentSet captureEntityComponents(const ecs::Registry& registry, ecs::EntityID entity);
 void restoreEntityComponents(ecs::Registry& registry, ecs::EntityID entity,

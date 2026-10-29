@@ -13,6 +13,7 @@
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/spawn_marker.hpp>
 #include <fuse/ecs/components/tags.hpp>
+#include <fuse/ecs/components/terrain.hpp>
 #include <fuse/ecs/components/transform.hpp>
 
 #if defined(FUSE_WORLD3D_HAS_AUDIO)
@@ -512,6 +513,24 @@ const std::vector<PropertyFieldDesc>& spawnFields() {
     return fields;
 }
 
+const std::vector<PropertyFieldDesc>& terrainFields() {
+    using ecs::Terrain;
+    static const std::vector<PropertyFieldDesc> fields = {
+        typedField("Cells", "Terrain.cells", FT::UInt, readU32<Terrain, &Terrain::cells>, writeU32<Terrain, &Terrain::cells>,
+                   2.0, 256.0, 1.0),
+        floatField("Size (m)", "Terrain.size", 0.1, 1.0e5, 1.0, readF32<Terrain, &Terrain::size>, writeF32<Terrain, &Terrain::size>),
+        floatField("Height (m)", "Terrain.height", 0.0, 1.0e4, 0.25, readF32<Terrain, &Terrain::height>,
+                   writeF32<Terrain, &Terrain::height>),
+        typedField("Seed", "Terrain.seed", FT::UInt, readU32<Terrain, &Terrain::seed>, writeU32<Terrain, &Terrain::seed>, 0.0,
+                   4294967295.0, 1.0),
+        typedField("Octaves", "Terrain.octaves", FT::UInt, readU32<Terrain, &Terrain::octaves>,
+                   writeU32<Terrain, &Terrain::octaves>, 1.0, 6.0, 1.0),
+        typedField("Material", "Terrain.material_id", FT::UInt, readU32<Terrain, &Terrain::material_id>,
+                   writeU32<Terrain, &Terrain::material_id>, 0.0, 4294967295.0, 1.0),
+    };
+    return fields;
+}
+
 const std::vector<PropertyFieldDesc>& scriptFields() {
     static const std::vector<PropertyFieldDesc> fields = [] {
         std::vector<PropertyFieldDesc> list = {
@@ -673,6 +692,7 @@ const std::vector<ComponentKindDesc>& kinds() {
 #endif
         list.push_back(kind<Script>("Script", &scriptFields()));
         list.push_back(kind<SpawnMarker>("Spawn Marker", &spawnFields()));
+        list.push_back(kind<ecs::Terrain>("Terrain", &terrainFields()));
         list.push_back(kind<ecs::TagStatic>("Static (tag)", nullptr));
         list.push_back(kind<ecs::TagKinematic>("Kinematic (tag)", nullptr));
         list.push_back(kind<ecs::TagPlayer>("Player (tag)", nullptr));

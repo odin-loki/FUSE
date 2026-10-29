@@ -14,6 +14,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace fuse::ecs {
@@ -79,6 +80,13 @@ public:
     /// Object-space triangle edges of mesh `engineId` (6 floats per edge) from the GPU scene's MeshRegistry;
     /// false when the GPU scene is not up or the mesh kept none. Call under the scene mutex.
     bool copyMeshWireframe(u32 engineId, std::vector<f32>& out) const;
+    /// Bumps whenever the GPU scene's meshes are replaced (wireframe caches key on it); 0 without a GPU scene.
+    [[nodiscard]] u64 meshRegistryVersion() const;
+    /// GUI-6: Terrain meshes (re)built and handed to the renderer so far (tests / stats).
+    [[nodiscard]] u32 terrainMeshBuilds() const { return m_terrainBuilds; }
+    /// Rebuild the Mesh of every Terrain entity whose component changed (also runs from tick()); call under the
+    /// scene mutex.
+    void syncTerrainMeshes(ecs::Registry& registry);
 
     void requestResize(u32 width, u32 height);
     void setProjectLabel(std::string label);
@@ -185,6 +193,14 @@ private:
     /// Per-tick entity walk scratch (capacity reused so idle ticks stay allocation-free).
     std::vector<ecs::EntityID> m_entityOrderScratch;
     bool m_playViewportCameraSaved = false;
+    /// Terrain entity (index | generation << 32) -> terrainHash of the component last built, and whether it
+    /// reached the GPU scene (rebuilt once the scene comes up).
+    struct TerrainBuilt {
+        u64 hash = 0;
+        bool onGpu = false;
+    };
+    std::unordered_map<u64, TerrainBuilt> m_terrainBuilt;
+    u32 m_terrainBuilds = 0;
     ViewportCamera m_playViewportCameraSnapshot{};
 
 #if defined(FUSE_VULKAN_BACKEND)

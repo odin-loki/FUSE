@@ -1,3 +1,6 @@
+#include <fuse/editor/terrain_builder.hpp>
+#include <fuse/ecs/components/terrain.hpp>
+#include <fuse/ecs/components/mesh.hpp>
 #include <atomic>
 #include <cstdlib>
 #include <fuse/editor/runtime_viewport.hpp>
@@ -43,6 +46,7 @@
 #include <fuse/hybrid/mesh_sdf_preview_stub.hpp>
 #include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
 #include <fuse/hybrid/hybrid_scene_renderer.hpp>
+#include <fuse/renderer/geometry/meshlet_builder.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 #include <fuse/renderer/render_command_list.hpp>
 #include <fuse/renderer/vk/present_path.hpp>
@@ -1277,6 +1281,7 @@ void RuntimeViewportHook::tick(EditorHost& host, f32 dt) {
     mirrorEditorEntities_(host);
     syncEcsToEmbedWorld3D_(host);
     syncMeshSdfPreviewFromEcs_(host);
+    syncTerrainMeshes(host.editorScene().registry());
 
     if (!m_lastProjectLabel.empty()) {
         if (host.runtimeScene().name() != m_lastProjectLabel) {
@@ -1468,5 +1473,78 @@ bool RuntimeViewportHook::copyMeshWireframe(u32 engineId, std::vector<f32>& out)
     (void)engineId;
     return false;
 #endif
+}
+} // namespace fuse::editor
+
+namespace fuse::editor {
+u64 RuntimeViewportHook::meshRegistryVersion() const {
+#if defined(FUSE_VULKAN_BACKEND)
+    const RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub);
+    if (gpu == nullptr || gpu->hybrid == nullptr) return 0;
+    fuse::hybrid::HybridSceneRenderer* scene = gpu->hybrid->composer().gpuScene();
+    return scene != nullptr ? scene->sceneRenderer().meshes().remapVersion() + 1u : 0u;
+#else
+    return 0;
+#endif
+}
+
+void RuntimeViewportHook::syncTerrainMeshes(ecs::Registry& registry) {
+#if defined(FUSE_VULKAN_BACKEND)
+    fuse::hybrid::HybridSceneRenderer* scene = nullptr;
+    if (RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub); gpu != nullptr && gpu->hybrid != nullptr) {
+        scene = gpu->hybrid->composer().gpuScene();
+    }
+#else
+    void* scene = nullptr;
+#endif
+    std::vector<ecs::EntityID> missingMesh;
+    registry.each<ecs::Terrain>([&](ecs::EntityID id, ecs::Terrain& terrain) {
+        const u64 key = static_cast<u64>(id.index) | (static_cast<u64>(id.generation) << 32);
+        const u64 hash = terrainHash(terrain);
+        TerrainBuilt& built = m_terrainBuilt[key];
+        const u32 engineId = terrainEngineMeshId(id);
+        ecs::Mesh* mesh = registry.get<ecs::Mesh>(id);
+        const bool meshOk = mesh != nullptr && mesh->vertex_buffer.isValid() && mesh->vertex_buffer.index() == engineId;
+        if (built.hash == hash && meshOk && (built.onGpu || scene == nullptr)) return;
+        TerrainGeometry geo;
+        if (!buildTerrainGeometry(terrain, geo)) return;
+        if (mesh == nullptr) {
+            missingMesh.push_back(id);
+        } else {
+            mesh->vertex_buffer = ecs::MeshVertexBufferHandle(engineId, 1u);
+            mesh->material_id = terrain.material_id;
+            mesh->aabb_min = ecs::vec3{geo.lo[0], geo.lo[1], geo.lo[2], 0.f};
+            mesh->aabb_max = ecs::vec3{geo.hi[0], geo.hi[1], geo.hi[2], 0.f};
+        }
+        built.hash = hash;
+        built.onGpu = false;
+#if defined(FUSE_VULKAN_BACKEND)
+        if (scene != nullptr) {
+            fuse::renderer::geometry::MeshletSource src{};
+            src.positions = geo.positions.data();
+            src.normals = geo.normals.data();
+            src.uvs = geo.uvs.data();
+            src.vertex_count = static_cast<u32>(geo.positions.size() / 3u);
+            src.indices = geo.indices.data();
+            src.index_count = static_cast<u32>(geo.indices.size());
+            fuse::renderer::geometry::MeshletBuildOptions options{};
+            options.backend = fuse::kernel::Backend::CpuReference;
+            fuse::renderer::geometry::MeshletMesh meshlets;
+            if (fuse::renderer::geometry::build_meshlets(src, options, meshlets, nullptr) &&
+                scene->sceneRenderer().meshes().registerMesh(engineId, std::move(meshlets))) {
+                built.onGpu = true;
+            }
+        }
+#endif
+        ++m_terrainBuilds;
+    });
+    // Adding components inside each<> would invalidate the iteration; attach missing Mesh rows afterwards
+    // (the next sync fills them in).
+    for (ecs::EntityID id : missingMesh) {
+        ecs::Mesh mesh{};
+        registry.add(id, mesh);
+        m_terrainBuilt.erase(static_cast<u64>(id.index) | (static_cast<u64>(id.generation) << 32));
+    }
+    if (!missingMesh.empty()) syncTerrainMeshes(registry);
 }
 } // namespace fuse::editor

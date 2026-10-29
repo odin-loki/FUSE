@@ -16,6 +16,7 @@ set(FUSE_EDITOR_API_SOURCES
     src/cinematics_seq_import.cpp
     src/viewport_seq_preview_stub.cpp
     src/runtime_viewport.cpp
+    src/terrain_builder.cpp
     src/runtime_embed_session.cpp
     src/viewport_swapchain_wiring.cpp
     src/viewport_swapchain_recreate.cpp
@@ -48,6 +49,7 @@ set(FUSE_EDITOR_API_SOURCES
 
 set(FUSE_EDITOR_API_HEADERS
     include/fuse/editor/asset_browser.hpp
+    include/fuse/editor/terrain_builder.hpp
     include/fuse/editor/command_queue.hpp
     include/fuse/editor/command_stack.hpp
     include/fuse/editor/console_panel.hpp
@@ -102,6 +104,8 @@ target_include_directories(fuse_editor_api
 target_link_libraries(fuse_editor_api PUBLIC fuse_core fuse_ecs fuse_physics fuse_scene fuse_project fuse_world_converter)
 # GAP-GAME-LOOP-ECS: PlaySession runs the World3D runtime schedule in PIE.
 target_link_libraries(fuse_editor_api PUBLIC fuse_world3d)
+# GUI-6: Terrain component -> heightfield / chunk mesh (terrain_builder.cpp).
+target_link_libraries(fuse_editor_api PUBLIC fuse_terrain)
 if(FUSE_BUILD_MODULES)
     target_link_libraries(fuse_editor_api PUBLIC fuse_ai fuse_cinematics)
 endif()
@@ -168,6 +172,8 @@ if(FUSE_BUILD_EDITOR)
                 src/qt/build_package_dialog.hpp
                 src/qt/navmesh_panel.hpp
                 src/qt/navmesh_panel.cpp
+                src/qt/terrain_panel.hpp
+                src/qt/terrain_panel.cpp
                 src/qt/preferences_dialog.cpp
                 src/qt/preferences_dialog.hpp
                 src/qt/project_hub_widget.hpp

@@ -48,6 +48,8 @@
 #include "project_settings_dialog.hpp"
 #include "preferences_dialog.hpp"
 #include "navmesh_panel.hpp"
+#include "terrain_panel.hpp"
+#include <fuse/editor/terrain_builder.hpp>
 #include <QLabel>
 #include <QSettings>
 #include <QTableWidget>
@@ -312,7 +314,7 @@ int gateStartup(double appInitMs) {
                 "total %.1f ms (%zu docks)\n",
                 appInitMs, constructMs, totalMs, appInitMs + totalMs, window->docks().size());
     expect(exposed, "main window exposed");
-    expect(window->docks().size() == 11u, "all 11 panels (hierarchy, projects, assets, inspector, material, sdf, navigation, "
+    expect(window->docks().size() == 12u, "all 12 panels (hierarchy, projects, assets, inspector, material, sdf, navigation, terrain, "
                                          "console, profiler, sequencer, timeline) created as docks");
     expect(allPlaced, "every dock has its panel widget and a dock area");
     expect(window->centralWidget() == window->viewport(), "viewport is the central widget");
@@ -2459,6 +2461,41 @@ void testUiScale() {
 
 } // namespace
 
+int gateTerrain() {
+    namespace ecs = fuse::ecs;
+    MainWindow window(samplesRoot(), quietOptions());
+    expect(showAndExpose(window), "editor exposed");
+    auto* panel = window.terrain();
+    expect(panel != nullptr, "terrain panel exists");
+    auto& host = window.host();
+    const auto undo0 = host.undoStack().undoCount();
+    const ecs::EntityID t = panel->createTerrain();
+    expect(t != ecs::EntityID{}, "create terrain");
+    expect(host.undoStack().undoCount() == undo0 + 1, "create is one undo step");
+    auto heightAt = [&](float x, float z) {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        const auto* c = host.editorScene().registry().get<ecs::Terrain>(t);
+        if (!c) return -1e9f;
+        fuse::terrain::Heightfield hf;
+        fuse::editor::buildTerrainHeightfield(*c, hf);
+        return static_cast<float>(fuse::editor::terrainHeightAt(hf, *c, x, z));
+    };
+    const float h0 = heightAt(0, 0);
+    panel->setMode(ecs::TerrainStamp::Raise);
+    panel->setBrush(8.0, 3.0);
+    expect(panel->sculptLocal(t, 0, 0), "sculpt stamp applied");
+    const float h1 = heightAt(0, 0);
+    expect(h1 > h0 + 0.5f, fmt("raise lifts the centre (%.2f -> %.2f)", h0, h1));
+    window.undoLatest();
+    expect(std::fabs(heightAt(0, 0) - h0) < 1e-4f, "undo restores the height");
+    for (int i = 0; i < 20; ++i) { host.gameTick(); QCoreApplication::processEvents(); }
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        expect(host.editorScene().registry().get<ecs::Mesh>(t) != nullptr, "terrain gets a Mesh for the renderer");
+    }
+    return g_failures == 0 ? 0 : 1;
+}
+
 int main(int argc, char** argv) {
     testQtGateNameOk();
     if (g_failures != 0) {
@@ -2517,6 +2554,8 @@ int main(int argc, char** argv) {
             code = gateBuildPackage();
         } else if (gate == "preferences") {
             code = gatePreferences();
+        } else if (gate == "terrain") {
+            code = gateTerrain();
         } else if (gate == "edit_tools") {
             code = gateEditTools();
         } else if (gate == "project_settings") {

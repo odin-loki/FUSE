@@ -10,6 +10,7 @@
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/spawn_marker.hpp>
 #include <fuse/ecs/components/tags.hpp>
+#include <fuse/ecs/components/terrain.hpp>
 #include <fuse/ecs/components/transform.hpp>
 
 #include <cstring>
@@ -88,6 +89,8 @@ void register_builtin_components() {
     ComponentTypes::register_type<AmbientLight>();
     ComponentTypes::register_type<SkyAtmosphere>();
     ComponentTypes::register_type<EnvironmentFog>();
+    // GUI-6: editor heightfield terrain.
+    ComponentTypes::register_type<Terrain>();
 }
 
 } // namespace fuse::ecs

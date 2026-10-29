@@ -373,7 +373,7 @@ void testUndoDeleteKeepsEarlierHistory() {
         registry, fuse::editor::EntityComponentSet{fuse::ecs::Transform{}, std::nullopt, std::nullopt,
                                                    std::nullopt, std::nullopt, std::nullopt, std::nullopt,
                                                    std::nullopt, std::nullopt, std::nullopt, std::nullopt,
-                                                   std::nullopt, std::nullopt, std::nullopt});
+                                                   std::nullopt, std::nullopt, std::nullopt, std::nullopt});
     fuse::editor::CreateEntityCommand* createCommand = create.get();
     stack.execute(std::move(create));
     const fuse::ecs::EntityID created = createCommand->createdEntity();
