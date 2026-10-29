@@ -1,4 +1,6 @@
-if(FUSE_BUILD_PARITY_DEMOS AND FUSE_BUILD_PROJECT)
+# fuse_demo_wiring is shared by the parity demos and demo_hybrid_hud: build it for either, so
+# FUSE_BUILD_HYBRID_DEMO=ON with FUSE_BUILD_PARITY_DEMOS=OFF still links.
+if(FUSE_BUILD_PROJECT AND (FUSE_BUILD_PARITY_DEMOS OR FUSE_BUILD_HYBRID_DEMO))
     add_subdirectory(Common)
 endif()
 
@@ -7,7 +9,11 @@ if(FUSE_BUILD_SMOKE)
 endif()
 
 if(FUSE_BUILD_HYBRID_DEMO)
-    add_subdirectory(HybridHud)
+    if(TARGET fuse_demo_wiring)
+        add_subdirectory(HybridHud)
+    else()
+        message(STATUS "demo_hybrid_hud skipped: needs FUSE_BUILD_PROJECT (fuse_demo_wiring)")
+    endif()
 endif()
 
 if(FUSE_BUILD_PARITY_DEMOS AND FUSE_BUILD_PROJECT)
