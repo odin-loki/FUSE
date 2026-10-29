@@ -509,6 +509,25 @@ void install(UiContext& ui) {
     (void)ui.addStyleSheet(defaultThemeCss());
 }
 
+u32 installClasses(UiContext& ui, std::span<const std::string_view> classes, bool theme) {
+    // every library class, registered once into a scratch context and copied from there by name
+    static const WidgetRegistry& all = [] () -> const WidgetRegistry& {
+        static UiContext scratch({.viewport = {1.f, 1.f}, .font = nullptr, .reserveNodes = 4, .atlasSize = 64});
+        registerTierA(scratch);
+        registerTierB(scratch);
+        return scratch.registry();
+    }();
+    u32 unknown = 0;
+    for (std::string_view name : classes) {
+        if (ui.registry().find(name) != 0xFFFFFFFFu) continue;
+        const u32 id = all.find(name);
+        if (id == 0xFFFFFFFFu) { ++unknown; continue; }
+        ui.registry().add(all.get(id));
+    }
+    if (theme) (void)ui.addStyleSheet(defaultThemeCss());
+    return unknown;
+}
+
 NodeHandle panel(UiContext& ui, NodeHandle p, std::string_view id) { return make(ui, "panel", p, id); }
 NodeHandle label(UiContext& ui, NodeHandle p, std::string_view t, std::string_view id) {
     const NodeHandle n = make(ui, "label", p, id);

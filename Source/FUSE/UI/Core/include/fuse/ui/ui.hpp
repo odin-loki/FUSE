@@ -175,6 +175,7 @@ public:
     const WidgetRegistry& registry() const { return m_registry; }
     StyleEngine& styles() { return m_styles; }
     std::expected<void, UiError> addStyleSheet(std::string_view css, std::vector<StyleDiagnostic>* diags = nullptr);
+    void addStyleSheet(StyleSheet sheet); ///< an already parsed (or cooked) sheet
     void clearStyleSheets();
 
     // tree

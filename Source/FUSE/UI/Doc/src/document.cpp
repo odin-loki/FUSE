@@ -2,6 +2,7 @@
 
 #include "fuse/ui/widgets/widgets.hpp"
 
+#include <atomic>
 #include <charconv>
 #include <cmath>
 #include <cstdio>
@@ -171,7 +172,13 @@ struct ExprParser {
 };
 } // namespace
 
+namespace {
+std::atomic<u64> g_exprCompiles{0};
+}
+u64 Expr::compileCount() { return g_exprCompiles.load(); }
+
 std::expected<Expr, std::string> Expr::compile(std::string_view src, Model& model) {
+    ++g_exprCompiles;
     Expr e;
     ExprParser p{src, 0, model, e.m_code, e.m_deps, {}};
     if (!p.orExpr()) return std::unexpected(p.err);
@@ -361,7 +368,10 @@ std::expected<void, DocError> Document::build(const JsonValue& doc) {
     if (!doc.isObject()) return std::unexpected(DocError{"", "document must be an object"});
     if (const JsonValue* ver = doc.get("fuseui"); !ver || !ver->isNumber() || ver->number != 1.0)
         return std::unexpected(DocError{"", "missing or unsupported \"fuseui\" version (expected 1)"});
-    if (const JsonValue* st = doc.get("style")) {
+    if (m_cookedStyle) {
+        m_ui.addStyleSheet(std::move(*m_cookedStyle));
+        m_cookedStyle.reset();
+    } else if (const JsonValue* st = doc.get("style")) {
         if (!st->isString()) return std::unexpected(DocError{"style", "style must be a string"});
         std::vector<StyleDiagnostic> diags;
         if (!m_ui.addStyleSheet(st->string, &diags))
@@ -391,8 +401,9 @@ std::expected<NodeHandle, DocError> Document::buildNode(const JsonValue& n, Node
     const std::string_view id = idv && idv->isString() ? std::string_view(idv->string) : std::string_view{};
     if (m_ui.registry().find(className) == 0xFFFFFFFFu)
         return std::unexpected(DocError{path, "unknown class '" + std::string(className) + "'"});
-    const NodeHandle node = makeNode(m_ui, className, parent, id);
-    if (!node) return std::unexpected(DocError{path, "could not create '" + std::string(className) + "'"});
+    auto made = makeOrReuse(className, parent, id);
+    if (!made) return std::unexpected(DocError{path, made.error().message});
+    const NodeHandle node = *made;
     if (!m_root) m_root = node; // so a failure part-way destroys what was built
 
     for (const auto& [key, v] : n.object) {
@@ -400,7 +411,10 @@ std::expected<NodeHandle, DocError> Document::buildNode(const JsonValue& n, Node
         if (key == "classes") {
             if (!v.isArray()) return std::unexpected(DocError{path, "classes must be an array"});
             for (const JsonValue& c : v.array)
-                if (c.isString()) m_ui.addClass(node, c.string);
+                if (c.isString()) {
+                    m_ui.addClass(node, c.string);
+                    m_nodeClasses.emplace_back(node, c.string);
+                }
         } else if (key == "style") {
             if (!v.isObject()) return std::unexpected(DocError{path, "style must be an object of CSS properties"});
             for (const auto& [prop, val] : v.object) {
@@ -494,7 +508,13 @@ std::expected<void, DocError> Document::bindProp(NodeHandle node, std::string_vi
         return {};
     }
     if (!m_model) return std::unexpected(DocError{path, "binding '" + v.string + "' needs a Model"});
-    auto t = Template::compile(v.string, *m_model);
+    std::expected<Template, std::string> t = std::unexpected(std::string("binding missing from the cooked document"));
+    if (!m_cooked.empty()) {
+        for (const auto& [src, tm] : m_cooked)
+            if (src == v.string) { t = tm; break; }
+    } else {
+        t = Template::compile(v.string, *m_model);
+    }
     if (!t) return std::unexpected(DocError{path, t.error()});
     if (target != Target::Text && !t->onlyExpr())
         return std::unexpected(DocError{path, std::string(prop) + " binding must be a single {expr}"});
@@ -554,10 +574,34 @@ u32 Document::refresh() {
     return applied;
 }
 
+std::expected<NodeHandle, DocError> Document::makeOrReuse(std::string_view cls, NodeHandle parent, std::string_view id) {
+    if (!id.empty()) {
+        for (NodeHandle& h : m_reuse) {
+            if (!h || !m_ui.alive(h) || m_ui.idOf(h) != id) continue;
+            if (m_ui.registry().get(m_ui.classOf(h)).name != cls) break; // class changed: rebuild
+            const NodeHandle n = h;
+            h = {};
+            m_ui.moveTo(n, parent);
+            // reset what the old document set; the new one re-applies its properties
+            m_ui.clearInline(n);
+            for (auto it = m_nodeClasses.begin(); it != m_nodeClasses.end();) {
+                if (it->first == n) { m_ui.removeClass(n, it->second); it = m_nodeClasses.erase(it); }
+                else ++it;
+            }
+            m_ui.setDisabled(n, false);
+            ++m_reused;
+            return n;
+        }
+    }
+    const NodeHandle node = makeNode(m_ui, cls, parent, id);
+    if (!node) return std::unexpected(DocError{{}, "could not create '" + std::string(cls) + "'"});
+    return node;
+}
+
 std::expected<void, DocError> Document::reload(std::string_view json) {
     auto parsed = parseJson(json);
     if (!parsed) return std::unexpected(DocError{{}, parsed.error().message, parsed.error().line, parsed.error().column});
-    // Save per-id state.
+    // Save per-id state (restored on unbound rebuilt / reused nodes after the new properties are applied).
     struct Saved {
         std::string id, text;
         f32 value;
@@ -565,6 +609,8 @@ std::expected<void, DocError> Document::reload(std::string_view json) {
     };
     std::vector<Saved> saved;
     std::string focusId;
+    m_reuse.clear();
+    m_reused = 0;
     if (m_root && m_ui.alive(m_root)) {
         std::vector<NodeHandle> stack{m_root};
         while (!stack.empty()) {
@@ -573,6 +619,7 @@ std::expected<void, DocError> Document::reload(std::string_view json) {
             if (const auto id = m_ui.idOf(h); !id.empty()) {
                 saved.push_back({std::string(id), std::string(m_ui.text(h)), m_ui.value(h), m_ui.checked(h)});
                 if (m_ui.focused() == h) focusId = id;
+                m_reuse.push_back(h);
             }
             for (NodeHandle c = m_ui.firstChild(h); c; c = m_ui.nextSibling(c)) stack.push_back(c);
         }
@@ -581,21 +628,43 @@ std::expected<void, DocError> Document::reload(std::string_view json) {
     m_connections.clear();
     m_bindings.clear();
     m_actions.clear();
-    if (m_root && m_ui.alive(m_root)) m_ui.destroy(m_root);
+    // Park the id nodes under a hidden holder, drop the rest of the old tree.
+    NodeHandle holder;
+    if (!m_reuse.empty()) {
+        holder = makeNode(m_ui, "panel", m_parent, {});
+        m_ui.setCss(holder, "display", "none");
+        for (NodeHandle h : m_reuse) m_ui.moveTo(h, holder);
+        for (NodeHandle h : m_reuse) // anonymous children of kept nodes are rebuilt
+            for (NodeHandle c = m_ui.firstChild(h); c;) {
+                const NodeHandle next = m_ui.nextSibling(c);
+                m_ui.destroy(c);
+                c = next;
+            }
+    }
+    bool rootKept = false;
+    for (NodeHandle h : m_reuse) rootKept |= h == m_root;
+    if (!rootKept && m_root && m_ui.alive(m_root)) m_ui.destroy(m_root);
     m_root = {};
-    if (auto r = build(*parsed); !r) return r;
+    auto r = build(*parsed);
+    if (holder) m_ui.destroy(holder); // ids that left the document
+    m_reuse.clear();
+    for (auto it = m_nodeClasses.begin(); it != m_nodeClasses.end();)
+        it = m_ui.alive(it->first) ? it + 1 : m_nodeClasses.erase(it);
+    if (!r) return r;
     for (const Saved& s : saved) {
         const NodeHandle h = m_ui.find(s.id);
         if (!h) continue;
         bool bound = false;
         for (const Binding& b : m_bindings) bound |= b.node == h;
         if (bound) continue; // the model owns bound state
-        setNodeText(m_ui, h, s.text);
+        // user-edited text survives; display text (labels, buttons) takes the new markup
+        const std::string_view cls = m_ui.registry().get(m_ui.classOf(h)).name;
+        if (cls == "lineedit" || cls == "textedit") setNodeText(m_ui, h, s.text);
         m_ui.setValue(h, s.value);
         m_ui.setChecked(h, s.checked);
     }
     if (!focusId.empty())
-        if (const NodeHandle h = m_ui.find(focusId)) m_ui.setFocus(h);
+        if (const NodeHandle h = m_ui.find(focusId); h && m_ui.focused() != h) m_ui.setFocus(h);
     return {};
 }
 

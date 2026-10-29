@@ -1569,6 +1569,10 @@ std::expected<void, UiError> UiContext::addStyleSheet(std::string_view css, std:
     m_anyStyleDirty = true;
     return {};
 }
+void UiContext::addStyleSheet(StyleSheet sheet) {
+    m_styles.addSheet(std::move(sheet));
+    m_anyStyleDirty = true;
+}
 void UiContext::clearStyleSheets() {
     m_styles.clearSheets();
     m_anyStyleDirty = true;

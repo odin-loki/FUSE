@@ -191,6 +191,14 @@ public:
     const std::vector<StyleRule>& rules() const { return m_rules; }
     /// Theme tokens (from :root).
     bool token(u32 nameHash, std::string_view& out) const;
+    const std::vector<std::pair<u32, std::string>>& tokens() const { return m_tokens; }
+    /// Rebuilds a parsed sheet from its parts (cooked `.fusestyle` loading; see fuse/ui/doc/cook.hpp).
+    static StyleSheet fromParts(std::vector<StyleRule> rules, std::vector<std::pair<u32, std::string>> tokens) {
+        StyleSheet s;
+        s.m_rules = std::move(rules);
+        s.m_tokens = std::move(tokens);
+        return s;
+    }
 
 private:
     friend class StyleEngine;

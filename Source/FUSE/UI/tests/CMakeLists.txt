@@ -54,6 +54,40 @@ endif()
 
 # .fuseui documents and Lua bindings.
 if(TARGET fuse_ui_doc)
+    # ---- UI8 gates: cookers, binding bytecode, hot reload identity, inspector, cooked registration, fuzz ----
+    set(FUSE_UI8_COOKED_DIR ${CMAKE_CURRENT_BINARY_DIR}/cooked)
+    set(FUSE_UI8_REG_CPP ${FUSE_UI8_COOKED_DIR}/cooked_registration.cpp)
+    set(FUSE_UI8_CAN_COOK ON)
+    if(CMAKE_CROSSCOMPILING AND NOT CMAKE_CROSSCOMPILING_EMULATOR)
+        set(FUSE_UI8_CAN_COOK OFF)
+    endif()
+    if(FUSE_UI8_CAN_COOK)
+        add_custom_command(
+            OUTPUT ${FUSE_UI8_REG_CPP} ${FUSE_UI8_COOKED_DIR}/settings.fuseuic ${FUSE_UI8_COOKED_DIR}/theme.fusestylec
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${FUSE_UI8_COOKED_DIR}
+            COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:fuse_ui_cook> --out=${FUSE_UI8_COOKED_DIR}
+                    --registration=${FUSE_UI8_REG_CPP} ${CMAKE_CURRENT_SOURCE_DIR}/data/settings.fuseui
+                    ${CMAKE_CURRENT_SOURCE_DIR}/data/theme.fusestyle
+            DEPENDS fuse_ui_cook ${CMAKE_CURRENT_SOURCE_DIR}/data/settings.fuseui ${CMAKE_CURRENT_SOURCE_DIR}/data/theme.fusestyle
+            COMMENT "fuse_ui_cook: cooking test documents + registration list"
+            VERBATIM)
+    endif()
+    foreach(g markup_roundtrip binding_bytecode style_cooked hot_reload_identity inspector cooked_registration markup_fuzz)
+        if(g STREQUAL "cooked_registration" AND NOT FUSE_UI8_CAN_COOK)
+            continue()
+        endif()
+        set(t fuse_ui_${g})
+        if(g STREQUAL "cooked_registration")
+            fuse_ui_test(${t} test_ui8.cpp ${FUSE_UI8_REG_CPP})
+            target_compile_definitions(${t} PRIVATE FUSE_UI8_HAVE_COOKED_REGISTRATION=1 FUSE_UI_COOKED_DIR="${FUSE_UI8_COOKED_DIR}")
+        else()
+            fuse_ui_test(${t} test_ui8.cpp)
+        endif()
+        target_link_libraries(${t} PRIVATE fuse_ui_doc)
+        target_compile_definitions(${t} PRIVATE FUSE_UI8_GATE="${g}" FUSE_UI_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data")
+        set_tests_properties(${t} PROPERTIES LABELS "fuse_ui;gate")
+    endforeach()
+
     fuse_ui_test(fuse_ui_doc_load test_doc.cpp)
     target_link_libraries(fuse_ui_doc_load PRIVATE fuse_ui_doc)
     target_compile_definitions(fuse_ui_doc_load PRIVATE FUSE_UI_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data")

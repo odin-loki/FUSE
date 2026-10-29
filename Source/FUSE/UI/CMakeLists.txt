@@ -88,7 +88,7 @@ if(FUSE_UI_ACCESSIBILITY)
 endif()
 
 if(FUSE_BUILD_UI_WIDGETS)
-    add_library(fuse_ui_widgets STATIC Widgets/src/widgets.cpp Widgets/src/widgets_tier_b.cpp Widgets/src/widgets_tier_b2.cpp Widgets/src/theme.cpp)
+    add_library(fuse_ui_widgets STATIC Widgets/src/widgets.cpp Widgets/src/widgets_tier_b.cpp Widgets/src/widgets_tier_b2.cpp Widgets/src/theme.cpp Widgets/src/inspector.cpp)
     target_include_directories(fuse_ui_widgets PUBLIC Widgets/include)
     target_link_libraries(fuse_ui_widgets PUBLIC fuse_ui_core)
 endif()
@@ -96,9 +96,12 @@ endif()
 # ---- fuse_ui_doc: .fuseui JSON documents, binding model and expression bytecode ----
 option(FUSE_BUILD_UI_DOC "Build fuse_ui_doc (.fuseui documents + bindings)" ON)
 if(FUSE_BUILD_UI_DOC AND FUSE_BUILD_UI_WIDGETS)
-    add_library(fuse_ui_doc STATIC Doc/src/json.cpp Doc/src/document.cpp)
+    add_library(fuse_ui_doc STATIC Doc/src/json.cpp Doc/src/document.cpp Doc/src/cook.cpp)
     target_include_directories(fuse_ui_doc PUBLIC Doc/include)
     target_link_libraries(fuse_ui_doc PUBLIC fuse_ui_widgets)
+    # UI8 cooker: .fuseui / .fusestyle -> cooked blobs + generated widget-registration list
+    add_executable(fuse_ui_cook Doc/tools/fuse_ui_cook.cpp)
+    target_link_libraries(fuse_ui_cook PRIVATE fuse_ui_doc)
 endif()
 
 # ---- fuse_ui_script: Lua bindings (vendored Lua 5.2, the fuse_script backend) ----

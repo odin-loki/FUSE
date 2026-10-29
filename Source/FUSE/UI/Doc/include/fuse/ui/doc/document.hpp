@@ -25,11 +25,15 @@
 
 #include <expected>
 #include <memory>
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace fuse::ui::doc {
+
+struct CookAccess; // cook.cpp: (de)serialises compiled templates / expressions
 
 /// Named values (numbers or strings) that bindings read and two-way bindings write.
 class Model {
@@ -70,6 +74,8 @@ public:
     /// When the expression is a single variable: its slot (string-valued variables render as text), else ~0u.
     u32 singleVar() const { return m_single; }
     const std::vector<u32>& deps() const { return m_deps; }
+    /// Number of Expr::compile calls so far in the process (cooked loading must not compile).
+    static u64 compileCount();
 
     enum class Op : u8 { Num, Var, Add, Sub, Mul, Div, Mod, Neg, Not, Lt, Le, Gt, Ge, Eq, Ne, And, Or };
     struct Ins {
@@ -79,6 +85,7 @@ public:
     };
 
 private:
+    friend struct CookAccess;
     std::vector<Ins> m_code;
     std::vector<u32> m_deps;
     u32 m_single = ~0u;
@@ -98,6 +105,7 @@ public:
     const Expr* onlyExpr() const { return m_parts.size() == 1 && !m_parts[0].lit ? &m_parts[0].expr : nullptr; }
 
 private:
+    friend struct CookAccess;
     struct Part {
         bool lit = true;
         std::string text;
@@ -123,6 +131,10 @@ public:
     /// then fail to compile) and must outlive the document.
     static std::expected<std::unique_ptr<Document>, DocError> load(UiContext& ui, std::string_view json,
                                                                    Model* model = nullptr, NodeHandle parent = {});
+    /// Builds from a cooked document (cookDocument() in fuse/ui/doc/cook.hpp): no JSON text, CSS or expression
+    /// parsing; binding bytecode is loaded and its variables resolved against `model`. The blob is validated.
+    static std::expected<std::unique_ptr<Document>, DocError> loadCooked(UiContext& ui, std::span<const u8> cooked,
+                                                                         Model* model = nullptr, NodeHandle parent = {});
     ~Document(); ///< destroys the tree it built
     Document(const Document&) = delete;
     Document& operator=(const Document&) = delete;
@@ -131,8 +143,13 @@ public:
     void onAction(ActionFn fn) { m_action = std::move(fn); }
     /// Re-evaluates bindings whose model variables changed since the last refresh. Returns how many were applied.
     u32 refresh();
-    /// Hot reload: rebuilds from new text; nodes with an id keep focus, text, value and checked state.
+    /// Hot reload: rebuilds from new text. Nodes with an id whose class did not change are kept (same NodeHandle,
+    /// so outside connections, focus, scroll, animations and edit state survive) and moved to their new place;
+    /// their unbound value / checked state and edited text (line / text edits) are kept too. Other nodes are
+    /// rebuilt; nodes no longer in the document are destroyed. On a JSON syntax error the old tree stays as it was.
     std::expected<void, DocError> reload(std::string_view json);
+    /// Nodes reused by the last reload (identity kept).
+    u32 reusedCount() const { return m_reused; }
     u32 bindingCount() const { return u32(m_bindings.size()); }
 
 private:
@@ -150,8 +167,15 @@ private:
         Template tmpl;
         std::vector<u32> deps;
     };
+    friend struct CookAccess;
+    std::expected<NodeHandle, DocError> makeOrReuse(std::string_view cls, NodeHandle parent, std::string_view id);
     UiContext& m_ui;
     Model* m_model;
+    std::vector<std::pair<std::string, Template>> m_cooked; ///< cooked load: binding source -> compiled template
+    std::optional<StyleSheet> m_cookedStyle;
+    std::vector<NodeHandle> m_reuse; ///< reload: kept id nodes waiting for their new place
+    std::vector<std::pair<NodeHandle, std::string>> m_nodeClasses; ///< classes the document added (reset on reuse)
+    u32 m_reused = 0;
     NodeHandle m_parent, m_root;
     std::vector<Binding> m_bindings;
     std::vector<std::string> m_actions;

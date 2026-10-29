@@ -6,6 +6,8 @@
 // `background2` = accent / indicator fill (when no gradient is set), `border-color` = outline.
 #pragma once
 
+#include <span>
+
 #include <string>
 #include <vector>
 
@@ -23,6 +25,9 @@ std::string_view defaultThemeCss();
 void registerTierB(UiContext& ui);
 /// registerTierA + registerTierB + default theme. (With Tier B registered, combo boxes open a popup list on click.)
 void install(UiContext& ui);
+/// Registers only the named widget classes (a cooked registration list, see fuse/ui/doc/cook.hpp) plus the default
+/// theme. Names the context already has (core panel / label) are skipped. Returns how many names are unknown.
+u32 installClasses(UiContext& ui, std::span<const std::string_view> classes, bool theme = true);
 
 NodeHandle label(UiContext& ui, NodeHandle parent, std::string_view text, std::string_view id = {});
 NodeHandle button(UiContext& ui, NodeHandle parent, std::string_view text, std::string_view id = {});
