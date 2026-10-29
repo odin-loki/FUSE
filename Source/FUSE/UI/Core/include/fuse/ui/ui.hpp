@@ -40,7 +40,8 @@ enum class FocusReason : u8 { Pointer, Keyboard, Programmatic };
 
 enum class EventType : u8 {
     PointerMove, PointerDown, PointerUp, PointerEnter, PointerLeave, Click, Wheel, KeyDown, KeyUp, Text, FocusIn,
-    FocusOut
+    FocusOut,
+    Composition, ///< IME pre-edit changed: `text` = pre-edit (empty ends it), `caret` = byte offset in it
 };
 enum class Phase : u8 { Capture, Target, Bubble };
 
@@ -53,6 +54,15 @@ struct Event {
     Vec2 wheel;            ///< wheel notches (y > 0 = up)
     std::string_view text; ///< Text: UTF-8 (valid during dispatch only)
     FocusReason focusReason = FocusReason::Programmatic;
+    i32 caret = 0;         ///< Composition: caret byte offset into `text`
+};
+
+/// Clipboard backend of a context (UI1). Default: a context-local buffer; apps install the platform clipboard
+/// (fuse::platform::setClipboardText / clipboardText, see platform_bridge.hpp).
+struct ClipboardHooks {
+    bool (*set)(void* user, std::string_view utf8) = nullptr;
+    bool (*get)(void* user, std::string& out) = nullptr;
+    void* user = nullptr;
 };
 
 // ---- Signals -------------------------------------------------------------------------------------------------------
@@ -243,6 +253,21 @@ public:
     bool keyDown(Key k, u8 mods = 0);
     bool keyUp(Key k, u8 mods = 0);
     bool textInput(std::string_view utf8);
+    /// IME pre-edit for the focused node (empty `utf8` ends it); `caret` is a byte offset into it. The pre-edit is
+    /// dropped when focus moves.
+    bool textComposition(std::string_view utf8, i32 caret);
+    std::string_view composition() const { return m_composition; }
+    i32 compositionCaret() const { return m_compositionCaret; }
+    /// Text-input session: true while the focused node edits text (a widget reported a caret this frame via
+    /// setTextCaret). The platform glue opens the IME / virtual keyboard and places the candidate window at
+    /// textCaret().
+    bool wantsTextInput() const { return node(m_focus) && m_caretNode == m_focus; }
+    Rect textCaret() const { return m_caret; }
+    void setTextCaret(NodeHandle n, Rect caret) { m_caretNode = n; m_caret = caret; }
+    // clipboard
+    void setClipboard(const ClipboardHooks& hooks) { m_clipboard = hooks; }
+    bool setClipboardText(std::string_view utf8);
+    bool clipboardText(std::string& out) const;
     NodeHandle hitTest(Vec2 p) const;
     NodeHandle hovered() const { return m_hover; }
     Vec2 pointer() const { return m_pointer; } ///< last pointer position
@@ -339,6 +364,12 @@ private:
     NodeHandle m_hover, m_pressed, m_focus, m_modal;
     bool m_focusVisible = false;
     bool m_spatialNav = false;
+    std::string m_composition;
+    i32 m_compositionCaret = 0;
+    NodeHandle m_caretNode;
+    Rect m_caret;
+    ClipboardHooks m_clipboard;
+    std::string m_localClipboard;
     Vec2 m_pointer{-1.f, -1.f};
     std::vector<u32> m_path;
     std::vector<u32> m_scratchOrder;

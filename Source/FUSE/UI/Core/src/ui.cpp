@@ -1224,6 +1224,26 @@ bool UiContext::textInput(std::string_view utf8) {
     return dispatch(m_focus.index, e);
 }
 
+bool UiContext::textComposition(std::string_view utf8, i32 caret) {
+    if (!node(m_focus)) return false;
+    m_composition.assign(utf8);
+    m_compositionCaret = std::clamp(caret, 0, i32(m_composition.size()));
+    Event e; e.type = EventType::Composition; e.text = m_composition; e.caret = m_compositionCaret;
+    return dispatch(m_focus.index, e);
+}
+
+bool UiContext::setClipboardText(std::string_view utf8) {
+    if (m_clipboard.set) return m_clipboard.set(m_clipboard.user, utf8);
+    m_localClipboard.assign(utf8);
+    return true;
+}
+
+bool UiContext::clipboardText(std::string& out) const {
+    if (m_clipboard.get) return m_clipboard.get(m_clipboard.user, out);
+    out = m_localClipboard;
+    return !out.empty();
+}
+
 // ---- Focus ---------------------------------------------------------------------------------------------------------
 bool UiContext::focusableNode(u32 i) const {
     if (i >= m_nodes.size() || !m_nodes[i].alive) return false;
@@ -1326,6 +1346,9 @@ void UiContext::setFocus(NodeHandle h, FocusReason why) {
     const NodeHandle old = m_focus;
     m_focus = h;
     m_focusVisible = vis;
+    m_composition.clear(); // pre-edit belongs to the old field; the IME is reset by the platform glue
+    m_compositionCaret = 0;
+    m_caretNode = {};
     if (node(old)) {
         setState(old, kStateFocus | kStateFocusVisible, false);
         Event e; e.type = EventType::FocusOut; e.focusReason = why;

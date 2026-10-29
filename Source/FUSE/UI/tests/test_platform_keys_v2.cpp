@@ -38,7 +38,7 @@ int main() {
         const u32 vk = virtualKeyFromKeyV2(KeyV2(i));
         if (vk && KeyV2(i) != KeyV2::NumpadEnter && KeyV2(i) != KeyV2::Super && keyV2FromVirtualKey(vk) != KeyV2(i)) { std::fprintf(stderr, "vk %x: %s -> %s\n", vk, std::string(keyV2Name(KeyV2(i))).c_str(), std::string(keyV2Name(keyV2FromVirtualKey(vk))).c_str()); UI_CHECK(false); }
     }
-    // legacy wheel tag
+    // retired legacy wheel tag (recorded streams) still decodes; v2 → v1 now yields a real MouseWheel
     PlatformEvent w;
     w.type = PlatformEventType::MouseMove;
     w.keyCode = 0xFFFFu;
@@ -47,11 +47,15 @@ int main() {
     UI_CHECK(v.type == EventV2Type::Wheel);
     UI_CHECK(v.wheelY == -2.f);
     const auto back = toLegacy(v);
-    UI_CHECK(back && back->type == PlatformEventType::MouseMove && back->keyCode == 0xFFFFu && back->mouseY == -240);
+    UI_CHECK(back && back->type == PlatformEventType::MouseWheel && back->wheelY == -240);
     EventV2 t;
     t.type = EventV2Type::TextInput;
     t.setText("\xC3\xA9");
-    UI_CHECK(!toLegacy(t));
+    const auto tl = toLegacy(t);
+    UI_CHECK(tl && tl->type == PlatformEventType::TextInput && std::string_view(tl->text) == "\xC3\xA9");
+    EventV2 touch;
+    touch.type = EventV2Type::TouchDown;
+    UI_CHECK(!toLegacy(touch));
     UI_CHECK(t.textView() == "\xC3\xA9");
     // v1 key event → v2 → v1 keeps the code
     PlatformEvent k;

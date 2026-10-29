@@ -37,8 +37,13 @@ endif()
 
 # UI1 key / event v2: header-only, plus the v1 key tables from Core.
 set(FUSE_CORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../Core)
-fuse_ui_test(fuse_ui_platform_keys_v2 test_platform_keys_v2.cpp ${FUSE_CORE_DIR}/src/platform/input.cpp)
+fuse_ui_test(fuse_ui_platform_keys_v2 test_platform_keys_v2.cpp ${FUSE_CORE_DIR}/src/platform/input.cpp
+             ${FUSE_CORE_DIR}/src/platform/text_services.cpp)
 target_include_directories(fuse_ui_platform_keys_v2 PRIVATE ${FUSE_CORE_DIR}/include)
+# UI1 UI side: IME pre-edit, text-input session, clipboard, wheel / text through the bridge.
+fuse_ui_test(fuse_ui_text_input test_text_input.cpp ${FUSE_CORE_DIR}/src/platform/input.cpp
+             ${FUSE_CORE_DIR}/src/platform/text_services.cpp)
+target_include_directories(fuse_ui_text_input PRIVATE ${FUSE_CORE_DIR}/include)
 
 # .fuseui documents and Lua bindings.
 if(TARGET fuse_ui_doc)

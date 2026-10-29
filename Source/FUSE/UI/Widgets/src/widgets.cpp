@@ -351,19 +351,35 @@ struct LineEdit {
         UiContext& ui = pc.ui;
         const Rect c = pc.content;
         auto& eb = ui.editBuffer(pc.node);
-        const std::string& t = eb.text();
+        const std::string_view t = eb.text();
         const f32 px = pc.style.fontSize;
         const bool focused = pc.states & kStateFocus;
-        const f32 cx = ui.measureString(std::string_view(t).substr(0, eb.cursor()), px);
-        const f32 scrollX = std::max(0.f, cx - c.w + 2.f);
+        // IME pre-edit (UI1) is shown inline at the cursor, underlined, with its own caret; it is not in the buffer.
+        const std::string_view pre = focused ? ui.composition() : std::string_view{};
+        const f32 cx = ui.measureString(t.substr(0, eb.cursor()), px);
+        const f32 preW = pre.empty() ? 0.f : ui.measureString(pre, px);
+        const f32 caretX = cx + (pre.empty() ? 0.f : ui.measureString(pre.substr(0, std::size_t(ui.compositionCaret())), px));
+        const f32 scrollX = std::max(0.f, caretX - c.w + 2.f);
         dl.pushClip(c);
-        if (focused && eb.hasSelection()) {
+        if (focused && eb.hasSelection() && pre.empty()) {
             const std::size_t a = std::min(eb.cursor(), eb.anchor()), b = std::max(eb.cursor(), eb.anchor());
-            const f32 x0 = ui.measureString(std::string_view(t).substr(0, a), px), x1 = ui.measureString(std::string_view(t).substr(0, b), px);
+            const f32 x0 = ui.measureString(t.substr(0, a), px), x1 = ui.measureString(t.substr(0, b), px);
             dl.rect({c.x + x0 - scrollX, c.y, x1 - x0, c.h}, accent(pc).withAlpha(0.45f * pc.opacity));
         }
-        labelAt(pc, dl, t, {c.x - scrollX, c.y, c.w + scrollX + 1000.f, c.h}, TextAlignment::Start);
-        if (focused) dl.rect({std::round(c.x + cx - scrollX), c.y + 2.f, 1.5f, c.h - 4.f}, textCol(pc));
+        if (pre.empty()) {
+            labelAt(pc, dl, t, {c.x - scrollX, c.y, c.w + scrollX + 1000.f, c.h}, TextAlignment::Start);
+        } else {
+            const f32 x = c.x - scrollX;
+            labelAt(pc, dl, t.substr(0, eb.cursor()), {x, c.y, cx + 1000.f, c.h}, TextAlignment::Start);
+            labelAt(pc, dl, pre, {x + cx, c.y, preW + 1000.f, c.h}, TextAlignment::Start);
+            labelAt(pc, dl, t.substr(eb.cursor()), {x + cx + preW, c.y, c.w + 1000.f, c.h}, TextAlignment::Start);
+            dl.rect({std::round(x + cx), std::round(c.y + c.h - 3.f), preW, 1.f}, textCol(pc));
+        }
+        if (focused) {
+            const Rect caret{std::round(c.x + caretX - scrollX), c.y + 2.f, 1.5f, c.h - 4.f};
+            dl.rect(caret, textCol(pc));
+            ui.setTextCaret(pc.node, caret);
+        }
         dl.popClip();
     }
     static void changed(UiContext& ui, NodeHandle n) {
@@ -376,6 +392,7 @@ struct LineEdit {
         UiContext& ui = ec.ui;
         auto& eb = ui.editBuffer(ec.node);
         if (e.type == EventType::Text) { eb.insert(e.text); changed(ui, ec.node); return true; }
+        if (e.type == EventType::Composition) { ui.setValue(ec.node, ui.value(ec.node) + 1.f); return true; } // repaint
         if (e.type == EventType::PointerDown) {
             const Rect c = ui.contentRect(ec.node);
             const std::string& t = eb.text();
@@ -401,6 +418,23 @@ struct LineEdit {
         case Key::Backspace: eb.backspace(); edit = true; break;
         case Key::Delete: eb.del(); edit = true; break;
         case Key::A: if (!ctrl) return false; eb.selectAll(); break;
+        case Key::C:
+        case Key::X:
+            if (!ctrl) return false;
+            if (!eb.hasSelection()) return true;
+            ui.setClipboardText(eb.selection());
+            if (e.key == Key::X) { eb.insert({}); edit = true; }
+            break;
+        case Key::V: {
+            if (!ctrl) return false;
+            std::string paste;
+            if (!ui.clipboardText(paste)) return true;
+            // single line: newlines become spaces
+            for (char& ch : paste) if (ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
+            eb.insert(paste);
+            edit = true;
+            break;
+        }
         case Key::Z: if (!ctrl) return false; edit = sh ? eb.redo() : eb.undo(); break;
         case Key::Y: if (!ctrl) return false; edit = eb.redo(); break;
         case Key::Enter: ui.emit(ec.node, SignalKind::Submitted, {.text = eb.text()}); return true;
