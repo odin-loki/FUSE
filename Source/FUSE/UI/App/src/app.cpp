@@ -254,6 +254,10 @@ bool AppWindow::presentHeadless(void*, AppWindow& w, Rect damage) {
     w.m_raster.render(w.m_ui.drawList(), w.m_image, {f32(x0), f32(y0), f32(x1 - x0), f32(y1 - y0)});
     return true;
 }
+bool writePng(const Image& img, const std::string& path) {
+    if (img.width <= 0) return false;
+    return stbi_write_png(path.c_str(), img.width, img.height, 4, img.pixels.data(), img.width * 4) != 0;
+}
 bool AppWindow::writePng(const std::string& path) const {
     if (m_image.width <= 0) return false;
     return stbi_write_png(path.c_str(), m_image.width, m_image.height, 4, m_image.pixels.data(), m_image.width * 4) != 0;
@@ -307,6 +311,7 @@ AppWindow& Application::createWindow(const WindowDesc& d) {
     m_windows.push_back(std::make_unique<AppWindow>(*this, d, m_nextId++));
     return *m_windows.back();
 }
+void Application::setEventSource(const EventSource& s) { m_events = s.pump ? s : EventSource{nullptr, &sleepPump}; }
 double Application::now() const { return m_clock.now(m_clock.user); }
 f32 Application::nextWake() const {
     f32 t = std::numeric_limits<f32>::infinity();

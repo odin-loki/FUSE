@@ -123,6 +123,12 @@ public:
     /// Headless presenter target: the last CPU-rasterised frame.
     const fuse::ui::Image& image() const { return m_image; }
     bool writePng(const std::string& path) const;
+    /// CPU-rasterises `damage` (whole window when empty / resized) into image(): the headless presenter, also used by
+    /// native presenters that upload the CPU raster.
+    const fuse::ui::Image& rasterize(fuse::ui::Rect damage) {
+        presentHeadless(nullptr, *this, damage);
+        return m_image;
+    }
 
     // input (backends call these; they forward to the UiContext and wake the loop)
     void pointerMove(fuse::ui::Vec2 p) { m_ui.pointerMove(p); }
@@ -191,7 +197,8 @@ public:
     const std::string& name() const { return m_name; }
     bool primary() const { return m_primary; } ///< false when singleInstance and another instance runs
 
-    void setEventSource(const EventSource& s) { m_events = s; }
+    /// Replaces the event pump (an empty source restores the default sleep pump).
+    void setEventSource(const EventSource& s);
     void setClock(const Clock& c) { m_clock = c; }
     /// One loop iteration: pump events (waiting at most until the next UI deadline, capped by `maxWait`), then
     /// update / present every window that needs it and drop closed windows. False once the app should exit.
@@ -221,6 +228,9 @@ private:
     int m_exit = 0;
     bool m_quit = false, m_primary = true;
 };
+
+/// Writes an RGBA8 image as PNG.
+bool writePng(const fuse::ui::Image& image, const std::string& path);
 
 /// The bundled font every window uses by default (loaded once).
 const fuse::text::Font& defaultFont();

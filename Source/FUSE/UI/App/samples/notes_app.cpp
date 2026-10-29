@@ -2,6 +2,7 @@
 // (notes persist in the app's settings.ini), autosave timer.
 //   notes_app [--settings=path] [--screenshot=out.png]
 #include "fuse/app/app.hpp"
+#include "fuse/app/native.hpp"
 
 #include <string>
 #include <vector>
@@ -133,6 +134,24 @@ int main(int argc, char** argv) {
         std::printf("notes_app: %llu frames, %zu notes, wrote %.*s\n", static_cast<unsigned long long>(win.framesPresented()),
                     titles.size(), int(shot.size()), shot.data());
         return 0;
+    }
+    // a real OS window (X11 / Win32) with the Vulkan swapchain presenter; headless when there is no display
+    fuse::app::NativePlatform native(app);
+    const fuse::app::PresenterKind kind = native.show(win);
+    static const char* const kKinds[] = {"headless", "vulkan", "gdi"};
+    std::fprintf(stderr, "notes_app: presenter %s%s%.*s%s\n", kKinds[int(kind)], native.gpuName().empty() ? "" : " on ",
+                 int(native.gpuName().size()), native.gpuName().data(), native.gpuDraws(win) ? " (GPU draw list)" : "");
+    if (const std::string_view shot = app.args().get("window-shot"); !shot.empty()) {
+        // smoke run: present a few frames into the OS window, read the window back, write it, exit
+        for (int i = 0; i < 200 && win.framesPresented() < 3; ++i) {
+            win.requestRedraw();
+            app.step(0.02f);
+        }
+        fuse::app::AppWindow& shown = win;
+        fuse::ui::Image img;
+        if (!native.capture(shown, img)) return app.fail("cannot read the OS window back");
+        const bool wrote = fuse::app::writePng(img, std::string(shot));
+        return wrote ? 0 : app.fail("cannot write window shot");
     }
     const int code = app.run();
     if (S.dirty) S.save();
