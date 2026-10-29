@@ -208,9 +208,15 @@ GUI-4 (Oct 2026):
 - **No-project viewport** disables the 2D/UI layers, so the composer's placeholder UI quad (the stray white square) is no longer drawn.
 - ECS `inverse_affine` now handles scale.
 
+- **Project Settings** (File > Project Settings...) edits `project.json` (name, default 3D/2D worlds, dimensions, modules, worker cap), validates it and reopens the project. **Import Asset** (File > Import Asset..., Ctrl+I) copies files into `assets/<textures|models|audio|scenes|scripts|misc>/` with unique names and rescans the Asset Browser. Gate: `fuse_editor_qt_project_settings`.
+- **Prefabs.** Entity > Save Selection as Prefab... writes the selected entity and its Transform descendants to a `.prefab` (a v3 `.fuselevel` image, parents relinked, root unparented). Entity > Instantiate Prefab..., a double-click on a `.prefab` in the Asset Browser, or `prefab.spawn <path>` (`prefab.save <path>` in the console) instantiates it as one undo step and selects the new root. Test: `fuse_editor_e20_inspector_commands`.
+- **Play-in-editor polish.** F5 plays (resumes when paused), F6 pauses, Shift+F5 stops, F10 steps. The title shows `[Playing]` / `[Paused]` and the status bar turns green / amber. Save, Save As, prefab actions and the Entity menu are disabled during Play (they act on the edit scene).
+- **Validation.** With `VK_LAYER_PATH` pointing at a Khronos validation layer and `VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation`, the hybrid, cooked-asset and editor present gates (`fuse_hybrid_*`, `fuse_cooked_assets_vk_*`, `fuse_editor_qt_live_present`, `fuse_editor_qt_present_adopt`, `fuse_editor_b6_viewport_resize_vk_gates`) report 0 validation messages on Lavapipe.
+
 Still open:
 
-- Play-in-editor polish, prefab / asset import, a project settings dialog.
+- Prefab instances are copies (no link back to the source `.prefab` / overrides); model import copies files but does not cook them yet.
+- The first Lavapipe GPU bring-up tick holds the scene mutex for several seconds; UI refreshes skip while it runs, but the game tick should do GPU bring-up outside the scene lock.
 - `fsr3` / `framegen` reflection-layout gates fail with glslangValidator 16.6 `-Os` (unused cbuffer members are stripped); this is a toolchain issue, not an editor one.
 - The MinGW `fuse_ui_*` targets are owned by the FUSE-ui work stream.
 
