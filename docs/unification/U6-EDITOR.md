@@ -255,7 +255,7 @@ Remaining: a true triangle wireframe view (needs a line / polygon-mode raster pi
 
 - **Wireframe / Lit Wireframe** view modes (View menu, Alt+3 / Alt+4, `FUSE_EDITOR_VIEW_MODE=2|3`). `MeshRegistry` keeps the decoded unique triangle edges per mesh; the viewport overlay draws Mesh and SDF-proxy edges (selection in orange, capped at 400k segments). This is a CPU overlay, not a GPU line pipeline (that would touch WP-1.4-owned renderer CMake).
 - **Collider drag handles**: box (6 faces), sphere (3 radius), capsule (radius X/Z, half-height ±Y). One undo step per drag. Gate: `edit_tools`.
-- **Terrain**: `ecs::Terrain` (procedural heightfield + up to 64 Raise/Lower/Flatten stamps, regenerated deterministically), `terrain_builder` (heightfield, chunk mesh, raycast), runtime viewport builds/registers the mesh and assigns `Mesh`, and a **Terrain** dock (create, brush, click-to-sculpt in viewport, clear; each edit one undo step). Limits: 64 stamps, click-only sculpting (no drag strokes). Gate: `terrain`.
+- **Terrain**: `ecs::Terrain` (procedural heightfield + up to 256 Raise/Lower/Flatten stamps, regenerated deterministically), `terrain_builder` (heightfield, chunk mesh, raycast), runtime viewport builds/registers the mesh and assigns `Mesh`, and a **Terrain** dock (create, brush, click or drag-stroke sculpting in the viewport, clear; each click or whole stroke is one undo step). `--spawn terrain` creates a sculpted terrain for screenshots. Limit: 256 stamps per terrain. Gate: `terrain`.
 
 ## 9. Related docs
 
