@@ -83,6 +83,14 @@ elseif(EXISTS "${FUSE_VENDOR_DIR}/assimp/CMakeLists.txt")
     # assimp-vc143-mt.pdb through mspdbsrv, which fails under sccache with C1041/C1090 even with
     # /FS. We never install assimp, so drop its PDB install; the Debug /Zi is overridden below.
     set(ASSIMP_INSTALL_PDB OFF CACHE BOOL "" FORCE)
+    # assimp defaults to a system zlib; toolchains without zlib dev files (e.g. a bare conda gcc on Linux) fail
+    # configure with "ASSIMP_BUILD_ZLIB=OFF but unable to find zlib". Fall back to assimp's bundled zlib there.
+    if(NOT DEFINED CACHE{ASSIMP_BUILD_ZLIB})
+        find_package(ZLIB QUIET)
+        if(NOT ZLIB_FOUND)
+            set(ASSIMP_BUILD_ZLIB ON CACHE BOOL "Build assimp's bundled zlib (no system zlib found)")
+        endif()
+    endif()
     add_subdirectory("${FUSE_VENDOR_DIR}/assimp" "${CMAKE_BINARY_DIR}/fuse_vendored_assimp" EXCLUDE_FROM_ALL)
     if(TARGET assimp AND CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
         # Object-embedded debug info (/Z7) like the rest of the tree (see the fuse-msvc presets):
