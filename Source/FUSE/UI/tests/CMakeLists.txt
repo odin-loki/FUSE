@@ -77,3 +77,4 @@ endif()
 
 fuse_ui_test(fuse_ui_text_full test_text_full.cpp)
 fuse_ui_test(fuse_ui_tier_b test_tier_b.cpp)
+fuse_ui_test(fuse_ui_tier_b2 test_tier_b2.cpp)

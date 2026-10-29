@@ -127,33 +127,69 @@ struct Menu {
         return true;
     }
 };
-struct MenuItem {
+struct MenuItem { // text = "label" or "label\n<sub items, one tab less>" (a submenu); value = line index in the root list
     static constexpr std::string_view kName = "menuitem";
     static constexpr A11yRole kRole = A11yRole::ListItem;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
+    static std::string_view label(std::string_view t) { return t.substr(0, t.find('\n')); }
+    static bool hasSub(std::string_view t) { return t.find('\n') != std::string_view::npos; }
     static Size measure(UiContext& ui, NodeHandle n, Size) {
-        return {std::ceil(ui.measureString(ui.text(n), ui.computed(n).fontSize)), rowHeight(ui, n) - 6.f};
+        const std::string_view t = ui.text(n);
+        return {std::ceil(ui.measureString(label(t), ui.computed(n).fontSize)) + (hasSub(t) ? 18.f : 0.f), rowHeight(ui, n) - 6.f};
     }
     static void paint(const PaintContext& pc, DrawList& dl) {
+        const std::string_view t = pc.ui.text(pc.node);
         if (pc.ui.checked(pc.node)) dl.rect({pc.rect.x + 2.f, pc.rect.y + 3.f, 3.f, pc.rect.h - 6.f}, accent(pc));
-        labelAt(pc, dl, pc.ui.text(pc.node), pc.content);
+        labelAt(pc, dl, label(t), pc.content);
+        if (hasSub(t)) { // chevron
+            const Rect c = pc.content;
+            const f32 x = c.right() - 8.f, y = c.y + c.h * 0.5f;
+            dl.line({x, y - 4.f}, {x + 4.f, y}, textCol(pc), 1.5f);
+            dl.line({x + 4.f, y}, {x, y + 4.f}, textCol(pc), 1.5f);
+        }
+    }
+    static void openSub(UiContext& ui, NodeHandle n) {
+        const std::string_view t = ui.text(n);
+        const Rect r = ui.rect(n);
+        const NodeHandle sc = scopeOf(ui, n);
+        const Rect panel = ui.alive(sc) ? ui.rect(ui.firstChild(sc)) : r;
+        const std::string_view sub = t.substr(t.find('\n') + 1);
+        f32 w = 0.f; // estimated panel width: open to the left when the right side has no room
+        eachLine(sub, [&](u32, std::string_view l) {
+            if (l.empty() || l[0] != '\t') w = std::max(w, ui.measureString(l, ui.computed(n).fontSize) + 66.f);
+            return true;
+        });
+        const f32 x = panel.right() - 2.f + w > ui.viewport().w ? std::max(0.f, panel.x + 2.f - w) : panel.right() - 2.f;
+        detail::popupMenuAt(ui, n, sub, {x, r.y - 4.f}, u32(ui.value(n)) + 1u);
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (e.type == EventType::PointerEnter) { ec.ui.setFocus(ec.node, FocusReason::Pointer); return false; }
-        if (e.type != EventType::Click || ec.phase != Phase::Target) return false;
         UiContext& ui = ec.ui;
         const NodeHandle scope = scopeOf(ui, ec.node);
-        const NodeHandle owner = ui.alive(scope) ? unpack(ui.userData(scope)) : NodeHandle{};
+        NodeHandle owner = ui.alive(scope) ? unpack(ui.userData(scope)) : NodeHandle{};
+        if (e.type == EventType::KeyDown && ec.phase == Phase::Target) {
+            if (e.key == Key::Right && hasSub(ui.text(ec.node))) { openSub(ui, ec.node); return true; }
+            if (e.key == Key::Left && isClass(ui, owner, "menuitem")) { closePopup(ui, ec.node); return true; }
+            return false;
+        }
+        if (e.type != EventType::Click || ec.phase != Phase::Target) return false;
+        if (hasSub(ui.text(ec.node))) { openSub(ui, ec.node); return true; }
         const u32 idx = u32(ui.value(ec.node));
         const std::string_view text = ui.text(ec.node);
         if (ui.alive(owner) && isClass(ui, owner, "combobox")) {
             ui.setValue(owner, f32(idx), true);
             ui.emit(owner, SignalKind::TextChanged, {.text = text});
         }
-        if (ui.alive(scope)) ui.emit(scope, SignalKind::Submitted, {.value = f32(idx), .text = text});
+        // a submenu pick closes the whole cascade and reports to the root owner
+        NodeHandle sc = scope;
+        while (ui.alive(sc)) {
+            ui.emit(sc, SignalKind::Submitted, {.value = f32(idx), .text = text});
+            owner = unpack(ui.userData(sc));
+            closePopup(ui, sc);
+            sc = isClass(ui, owner, "menuitem") ? scopeOf(ui, owner) : NodeHandle{};
+        }
         if (ui.alive(owner)) ui.emit(owner, SignalKind::Submitted, {.value = f32(idx), .text = text});
-        closePopup(ui, ec.node);
         return true;
     }
 };
@@ -495,6 +531,7 @@ void registerTierB(UiContext& ui) {
     r.registerWidget<ListView>();
     r.registerWidget<TreeView>();
     r.registerWidget<TabBar>();
+    detail::registerTierB2(ui);
 }
 
 namespace detail {
@@ -523,31 +560,53 @@ NodeHandle overlayLayer(UiContext& ui) {
     return l;
 }
 
-NodeHandle popupMenu(UiContext& ui, NodeHandle owner, std::string_view items, Vec2 at, std::string_view id) {
+namespace detail {
+NodeHandle popupMenuAt(UiContext& ui, NodeHandle owner, std::string_view items, Vec2 at, u32 base, std::string_view id) {
     registerTierB(ui);
     const NodeHandle scope = make(ui, "popup", overlayLayer(ui), id);
     if (!ui.alive(scope)) return {};
     ui.setUserData(scope, pack(owner));
     for (Prop p : {Prop::Left, Prop::Top, Prop::Right, Prop::Bottom}) setPx(ui, scope, p, 0.f);
     const NodeHandle menu = make(ui, "menu", scope);
-    // keep the panel on screen (estimate: rows of item height; corrected next frame by the clamp below)
+    // the popup layer clamps the measured panel into the viewport ("clamp" class); open upward when it would not fit
+    ui.addClass(menu, "clamp");
     const Size vp = ui.viewport();
-    const u32 n = count(items);
-    const f32 estH = f32(n) * 26.f + 8.f;
-    setPx(ui, menu, Prop::Left, std::clamp(at.x, 0.f, std::max(0.f, vp.w - 120.f)));
-    setPx(ui, menu, Prop::Top, at.y + estH > vp.h ? std::max(0.f, at.y - estH) : at.y);
-    NodeHandle firstItem;
+    u32 rows = 0;
+    eachLine(items, [&](u32, std::string_view t) { rows += t.empty() || t[0] != '\t'; return true; });
+    const f32 estH = f32(rows) * 26.f + 8.f;
+    setPx(ui, menu, Prop::Left, at.x);
+    setPx(ui, menu, Prop::Top, at.y + estH > vp.h && at.y - estH >= 0.f ? at.y - estH : at.y);
+    NodeHandle firstItem, item;
+    std::string sub; // creation-time only
+    auto flush = [&] {
+        if (ui.alive(item) && !sub.empty()) { sub.insert(0, "\n"); sub.insert(0, ui.text(item)); ui.setText(item, sub); }
+        sub.clear();
+    };
     eachLine(items, [&](u32 i, std::string_view t) {
+        if (!t.empty() && t[0] == '\t') { // child of the previous item
+            if (!sub.empty()) sub += '\n';
+            sub += t.substr(1);
+            return true;
+        }
+        flush();
+        item = {};
         if (t == "-") { separator(ui, menu); return true; }
-        const NodeHandle it = make(ui, "menuitem", menu);
-        ui.setText(it, t);
-        ui.setValue(it, f32(i));
-        if (!firstItem.valid()) firstItem = it;
+        item = make(ui, "menuitem", menu);
+        ui.setText(item, t);
+        ui.setRange(item, 0.f, 1e9f, 0.f);
+        ui.setValue(item, f32(base + i));
+        if (!firstItem.valid()) firstItem = item;
         return true;
     });
+    flush();
     ui.setModal(scope);
     if (ui.alive(firstItem)) ui.setFocus(firstItem, FocusReason::Keyboard);
     return scope;
+}
+} // namespace detail
+
+NodeHandle popupMenu(UiContext& ui, NodeHandle owner, std::string_view items, Vec2 at, std::string_view id) {
+    return detail::popupMenuAt(ui, owner, items, at, 0u, id);
 }
 
 void closePopup(UiContext& ui, NodeHandle n) {
@@ -561,6 +620,8 @@ void closePopup(UiContext& ui, NodeHandle n) {
         ui.setCss(scope, "display", "none");
         ui.post(&destroyCmd, scope);
     }
+    // closing a submenu hands input back to the parent menu
+    if (const NodeHandle parentScope = scopeOf(ui, owner); ui.alive(parentScope) && popupOpen(ui, parentScope)) ui.setModal(parentScope);
     if (ui.alive(owner)) ui.setFocus(owner, FocusReason::Programmatic);
     else ui.setFocus({}, FocusReason::Programmatic);
 }

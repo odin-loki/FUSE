@@ -907,6 +907,10 @@ void UiContext::arrangeChildren(u32 i) {
                 if (cs.centerY) py = (c.h - h) * 0.5f + t - b;
                 else if (!hasT && hasB) py = c.h - b - h;
             }
+            if (s.layout == LayoutKind::Anchor && hasClass({k, m_nodes[k].gen}, "clamp")) { // keep popups on screen
+                px = std::max(0.f, std::min(px, c.w - w - cs.margin.h()));
+                py = std::max(0.f, std::min(py, c.h - h - cs.margin.v()));
+            }
             place(k, {std::round(c.x + px + cs.margin.l), std::round(c.y + py + cs.margin.t), w, h});
         }
         break;
@@ -983,6 +987,29 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
         paintRec(k, opacity, dl);
     }
     if (clip) dl.popClip();
+    if (s.overflow == Overflow::Scroll)
+        for (u8 ax = 0; ax < 2; ++ax) {
+            Rect tr, th;
+            if (!scrollBarGeom(i, ax, tr, th)) continue;
+            const bool hot = m_scrollDrag.node.index == i && m_scrollDrag.axis == ax;
+            dl.rect(tr, tint(Color::rgb(0x000000, 0.12f)), kScrollBarSize * 0.5f);
+            dl.rect(th, tint(Color::rgb(hot ? 0xB4B4C0 : 0x8A8A96, 0.85f)), kScrollBarSize * 0.5f);
+        }
+}
+
+bool UiContext::scrollBarGeom(u32 i, u8 axis, Rect& track, Rect& thumb) const {
+    const Node& n = m_nodes[i];
+    const Rect c = contentRect({i, n.gen});
+    const f32 view = axis ? c.h : c.w, ext = axis ? n.extent.h : n.extent.w;
+    if (ext <= view + 0.5f || view <= 0.f) return false;
+    const f32 b = kScrollBarSize;
+    track = axis ? Rect{n.rect.x + n.rect.w - b - 1.f, n.rect.y + 1.f, b, n.rect.h - 2.f}
+                 : Rect{n.rect.x + 1.f, n.rect.y + n.rect.h - b - 1.f, n.rect.w - 2.f - b, b};
+    const f32 len = axis ? track.h : track.w;
+    const f32 tl = std::max(16.f, len * view / ext);
+    const f32 at = (len - tl) * std::clamp((axis ? n.scroll.y : n.scroll.x) / (ext - view), 0.f, 1.f);
+    thumb = axis ? Rect{track.x, track.y + at, b, tl} : Rect{track.x + at, track.y, tl, b};
+    return true;
 }
 
 void UiContext::paintPass() {
@@ -1123,6 +1150,18 @@ bool UiContext::visibleChain(u32 i) const {
 
 bool UiContext::pointerMove(Vec2 p) {
     m_pointer = p;
+    if (const Node* sn = node(m_scrollDrag.node)) {
+        Rect tr, th;
+        const u32 si = m_scrollDrag.node.index;
+        if (scrollBarGeom(si, m_scrollDrag.axis, tr, th)) {
+            const u8 ax = m_scrollDrag.axis;
+            const Rect c = contentRect(m_scrollDrag.node);
+            const f32 len = ax ? tr.h - th.h : tr.w - th.w, ext = ax ? sn->extent.h - c.h : sn->extent.w - c.w;
+            const f32 f = std::clamp(((ax ? p.y - tr.y : p.x - tr.x) - m_scrollDrag.grab) / std::max(1.f, len), 0.f, 1.f);
+            scrollTo(m_scrollDrag.node, ax ? Vec2{sn->scroll.x, f * ext} : Vec2{f * ext, sn->scroll.y});
+        }
+        return true;
+    }
     NodeHandle h = hitTest(p);
     if (node(m_modal) && h.valid() && !inScope(h.index, m_modal.index)) h = {};
     setHover(h.valid() ? h.index : kNone);
@@ -1136,6 +1175,19 @@ bool UiContext::pointerDown(Vec2 p, MouseButton b) {
     m_pointer = p;
     const NodeHandle h = hitTest(p);
     if (node(m_modal) && (!h.valid() || !inScope(h.index, m_modal.index))) return true; // blocked by modal
+    if (b == MouseButton::Left)
+        for (u32 a = h.valid() ? h.index : kNone; a != kNone; a = m_nodes[a].parent) {
+            if (m_styles.style(m_nodes[a].style).overflow != Overflow::Scroll) continue;
+            for (u8 ax = 2; ax-- > 0;) {
+                Rect tr, th;
+                if (!scrollBarGeom(a, ax, tr, th) || !tr.contains(p)) continue;
+                const f32 pp = ax ? p.y : p.x, t0 = ax ? th.y : th.x, tl = ax ? th.h : th.w;
+                m_scrollDrag = {{a, m_nodes[a].gen}, ax, (pp >= t0 && pp < t0 + tl) ? pp - t0 : tl * 0.5f};
+                pointerMove(p); // jump-to / no-op for a thumb grab
+                markPaint(a);
+                return true;
+            }
+        }
     if (!h.valid() || h == m_root) {
         if (b == MouseButton::Left) setFocus({}, FocusReason::Pointer);
         return false;
@@ -1158,6 +1210,11 @@ bool UiContext::pointerDown(Vec2 p, MouseButton b) {
 
 bool UiContext::pointerUp(Vec2 p, MouseButton b) {
     m_pointer = p;
+    if (m_scrollDrag.node.valid() && b == MouseButton::Left) {
+        if (node(m_scrollDrag.node)) markPaint(m_scrollDrag.node.index);
+        m_scrollDrag = {};
+        return true;
+    }
     const NodeHandle pr = m_pressed;
     if (!node(pr) || b != MouseButton::Left) {
         const NodeHandle h = hitTest(p);

@@ -233,6 +233,8 @@ public:
     Vec2 scroll(NodeHandle n) const;
     Size scrollExtent(NodeHandle n) const;
     void scrollTo(NodeHandle n, Vec2 offset);
+    static constexpr f32 kScrollBarSize = 8.f; ///< overlay scrollbar thickness (drawn and draggable on scroll containers)
+    bool scrollDragging() const { return m_scrollDrag.node.valid(); }
 
     // frame
     void setViewport(Size s);
@@ -244,6 +246,8 @@ public:
     const FrameStats& stats() const { return m_stats; }
     u64 frameIndex() const { return m_frame; }
     void markAllDirty();
+    /// Repaints `n` next update (widgets whose paint reads external state, e.g. item models).
+    void invalidate(NodeHandle n) { if (node(n)) markPaint(n.index); }
 
     // input (returns true when the UI consumed it — game input arbitration)
     bool pointerMove(Vec2 p);
@@ -332,6 +336,8 @@ private:
     void arrangeChildren(u32 i);
     void paintPass();
     void paintRec(u32 i, f32 opacity, DrawList& dl);
+    /// Overlay scrollbar geometry of a scroll container along an axis (0 = x, 1 = y); false when it does not overflow.
+    bool scrollBarGeom(u32 i, u8 axis, Rect& track, Rect& thumb) const;
     NodeHandle hitRec(u32 i, Vec2 p) const;
     bool dispatch(u32 target, const Event& e);
     void setHover(u32 i);
@@ -372,6 +378,7 @@ private:
     ClipboardHooks m_clipboard;
     std::string m_localClipboard;
     Vec2 m_pointer{-1.f, -1.f};
+    struct ScrollDrag { NodeHandle node; u8 axis = 0; f32 grab = 0.f; } m_scrollDrag;
     std::vector<u32> m_path;
     std::vector<u32> m_scratchOrder;
     std::vector<std::pair<u32, i32>> m_scratchTab;

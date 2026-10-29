@@ -6,6 +6,9 @@
 // `background2` = accent / indicator fill (when no gradient is set), `border-color` = outline.
 #pragma once
 
+#include <string>
+#include <vector>
+
 #include "fuse/ui/ui.hpp"
 
 #include <string_view>
@@ -97,5 +100,59 @@ NodeHandle tabWidgetBar(const UiContext& ui, NodeHandle tabs);
 
 /// Scroll area: a column panel with overflow: scroll (wheel scrolls; role ScrollArea).
 NodeHandle scrollArea(UiContext& ui, NodeHandle parent, std::string_view id = {});
+
+// ---- Tier B: splitters, docks, item models -----------------------------------------------------------------------
+/// Splitter: panes separated by draggable handles (Row = side by side, Column = stacked). A pane with size > 0 keeps
+/// that many px (dragging resizes it); size 0 panes share the rest. Dragging emits ValueChanged {px} on the splitter.
+NodeHandle splitter(UiContext& ui, NodeHandle parent, bool stacked = false, std::string_view id = {});
+NodeHandle splitterPane(UiContext& ui, NodeHandle split, f32 size = 0.f, std::string_view id = {});
+
+/// Dock area: left / right / bottom regions around a centre, each resizable by splitter handles and hidden while
+/// empty. Dock widgets are titled panels with a close button; several in one region stack.
+enum class DockSide : u8 { Left, Right, Bottom, Center };
+NodeHandle dockArea(UiContext& ui, NodeHandle parent, std::string_view id = {});
+NodeHandle dockRegion(const UiContext& ui, NodeHandle area, DockSide side);
+NodeHandle dockWidget(UiContext& ui, NodeHandle area, std::string_view title, DockSide side, std::string_view id = {});
+NodeHandle dockBody(const UiContext& ui, NodeHandle dock);
+void dockTo(UiContext& ui, NodeHandle dock, DockSide side);
+void dockClose(UiContext& ui, NodeHandle dock); ///< hides (dockTo re-shows); emits Toggled {flag = false}
+
+/// Item model: a function table over caller data (no inheritance). `data` may return a view into `scratch`.
+struct ItemModel {
+    const void* user = nullptr;
+    u32 columns = 1;
+    u32 (*rows)(const void* user) = nullptr;
+    std::string_view (*data)(const void* user, u32 row, u32 col, std::string& scratch) = nullptr;
+    std::string_view (*header)(const void* user, u32 col) = nullptr; ///< optional
+};
+/// A ready-made row/column string model (owns its cells). sortBy reorders rows (stable, numeric when both parse).
+class StringTableModel {
+public:
+    explicit StringTableModel(std::string_view headersTabSeparated);
+    StringTableModel(const StringTableModel&) = delete; ///< the model table points at this object
+    StringTableModel& operator=(const StringTableModel&) = delete;
+    void addRow(std::string_view cellsTabSeparated);
+    void clear() { m_cells.clear(); m_rows = 0; }
+    void sortBy(u32 col, bool ascending);
+    u32 rows() const { return m_rows; }
+    std::string_view cell(u32 row, u32 col) const { return m_cells[std::size_t(row) * m_cols + col]; }
+    const ItemModel& model() const { return m_model; }
+
+private:
+    std::vector<std::string> m_headers, m_cells;
+    u32 m_cols = 1, m_rows = 0;
+    ItemModel m_model;
+};
+/// Virtualised table view over a model (not owned; must outlive the view): header row (click sorts: Toggled
+/// {value = column, flag = ascending}; drag a header edge to resize), single row selection (value() = row, -1 none;
+/// ValueChanged; Enter -> Submitted), wheel / keys / scrollbar drag scroll. Only visible rows are read and painted.
+NodeHandle tableView(UiContext& ui, NodeHandle parent, const ItemModel* model, std::string_view id = {});
+/// Call after the model's rows change (re-clamps the scroll, repaints).
+void tableModelChanged(UiContext& ui, NodeHandle table);
+u32 tableFirstVisible(const UiContext& ui, NodeHandle table);
+f32 tableColumnWidth(const UiContext& ui, NodeHandle table, u32 col);
+void setTableColumnWidth(UiContext& ui, NodeHandle table, u32 col, f32 px);
+/// List view over column 0 of a model (shares the table machinery, no header).
+NodeHandle modelListView(UiContext& ui, NodeHandle parent, const ItemModel* model, std::string_view id = {});
 
 } // namespace fuse::ui::widgets
