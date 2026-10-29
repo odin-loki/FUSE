@@ -19,7 +19,7 @@ FUSE itself is AGPL-3.0 (see [`LICENSE.md`](LICENSE.md)).
 
 | Component | Licence | Version pin | Usage | FUSE location | Licence file(s) | Notice obligations |
 |---|---|---|---|---|---|---|
-| stb (`stb_image`, `stb_image_write`, `stb_image_resize2`) | MIT / public domain (Sean Barrett) | Informal header tags in each `.h` | headers-only | `vendor/stb` | Licence text at top of each header under `vendor/stb/` | Keep the notice in source distributions that include the headers; stb is compiled into FUSE objects where `STB_*_IMPLEMENTATION` is defined. |
+| stb (`stb_image`, `stb_image_write`, `stb_image_resize2`, `stb_truetype` v1.26 — FUSE UI MINIMAL text) | MIT / public domain (Sean Barrett) | Informal header tags in each `.h` | headers-only | `vendor/stb` | Licence text at top of each header under `vendor/stb/` | Keep the notice in source distributions that include the headers; stb is compiled into FUSE objects where `STB_*_IMPLEMENTATION` is defined. |
 | ENet | MIT (Lee Salzman) | 1.3.7 *(CMake comment in `Source/FUSE/Net`)* | vendored | `vendor/enet` | [`vendor/enet/LICENSE.txt`](vendor/enet/LICENSE.txt) | Keep the copyright and permission notice. Shipped in CPack under `share/doc/fuse/vendor/enet/`. |
 | Lua | MIT (PUC-Rio) | 5.2.3 | vendored | `vendor/lua` | [`vendor/lua/LICENSE.txt`](vendor/lua/LICENSE.txt) | Keep the copyright and permission notice. Shipped in CPack under `share/doc/fuse/vendor/lua/`. |
 | Bullet Physics | zlib (Erwin Coumans et al.) | 3.25 (`vendor/bullet/VERSION`) | vendored | `vendor/bullet` | [`vendor/bullet/LICENSE.txt`](vendor/bullet/LICENSE.txt) | zlib clause 2: mark altered sources. `Extras/` and `examples/ThirdPartyLibs/` use other licences if ever enabled. |
