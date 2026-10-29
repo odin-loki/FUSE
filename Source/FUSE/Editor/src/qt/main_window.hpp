@@ -141,6 +141,12 @@ public:
     /// Each action posts the matching command (StartPlay, PausePlay, ResumePlay, StepPlay, StopPlay)
     /// to the host's CommandQueue; the game tick drives PlaySession / PlayModeController.
     [[nodiscard]] QToolBar* transportToolBar() const { return m_transportBar; }
+    /// Play-mode polish: wall time (ms) and game ticks spent unpaused in the current / last play session.
+    [[nodiscard]] qint64 playElapsedMs() const;
+    [[nodiscard]] quint64 playTicks() const { return m_playTicks; }
+    /// Play > Maximize Viewport on Play: hides the docks while playing and restores the layout on Stop.
+    void setMaximizeOnPlay(bool on);
+    [[nodiscard]] bool maximizeOnPlay() const;
     [[nodiscard]] QToolBar* transformToolBar() const { return m_transformBar; }
     [[nodiscard]] MaterialEditorWidget* materialEditor() const { return m_materialEditor; }
     [[nodiscard]] SdfSculptWidget* sdfSculpt() const { return m_sdfSculpt; }
@@ -279,6 +285,15 @@ private:
     QAction* m_actResume = nullptr;
     QAction* m_actStep = nullptr;
     QAction* m_actStop = nullptr;
+    QAction* m_actMaximizeOnPlay = nullptr;
+    bool m_wasPlaying = false;
+    bool m_wasPaused = false;
+    QByteArray m_prePlayState;
+    QElapsedTimer m_playClock;
+    qint64 m_playAccumMs = 0;
+    quint64 m_playTicks = 0;
+    quint64 m_playLastTick = 0;
+    void onPlayStateChanged_(bool playing, bool paused);
     QTimer m_statusTimer;
     bool m_projectWorldShown = false;
     QString m_projectLabel;

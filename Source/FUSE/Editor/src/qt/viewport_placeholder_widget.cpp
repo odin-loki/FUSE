@@ -1416,6 +1416,36 @@ void ViewportPlaceholderWidget::paintColliders_(QPainter& painter) {
     painter.restore();
 }
 
+void ViewportPlaceholderWidget::setPlayBanner(int state, const QString& label) {
+    if (state == m_playBanner && label == m_playLabel) return;
+    m_playBanner = state;
+    m_playLabel = label;
+    update();
+    syncOverlay(false);
+}
+
+void ViewportPlaceholderWidget::paintPlayBanner_(QPainter& painter) {
+    if (m_playBanner == 0) return;
+    const QColor c = m_playBanner == 2 ? QColor(230, 170, 40) : QColor(60, 200, 100);
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, false);
+    painter.setBrush(Qt::NoBrush);
+    painter.setPen(QPen(c, 4));
+    painter.drawRect(QRectF(rect()).adjusted(2, 2, -2, -2));
+    if (!m_playLabel.isEmpty()) {
+        QFont f = painter.font();
+        f.setBold(true);
+        painter.setFont(f);
+        const QFontMetrics fm(f);
+        const int w = fm.horizontalAdvance(m_playLabel) + 16;
+        const QRect badge((width() - w) / 2, 4, w, fm.height() + 6);
+        painter.fillRect(badge, c);
+        painter.setPen(QColor(15, 15, 15));
+        painter.drawText(badge, Qt::AlignCenter, m_playLabel);
+    }
+    painter.restore();
+}
+
 void ViewportPlaceholderWidget::paintGizmo_(QPainter& painter) {
     if (!m_inOverlayPaint) collectColliderLines_();
     paintColliders_(painter);
@@ -1622,6 +1652,7 @@ void ViewportPlaceholderWidget::paintInteractionOverlay(QPainter& painter) {
     } else {
         paintGizmo_(painter);
     }
+    paintPlayBanner_(painter);
 }
 
 bool ViewportPlaceholderWidget::overlayActive() const { return m_overlay != nullptr && m_overlay->isVisible(); }
@@ -1652,7 +1683,7 @@ void ViewportPlaceholderWidget::syncOverlay(bool force) {
     {
         QDataStream ds(&sig, QIODevice::WriteOnly);
         ds << width() << height() << m_sculptMode << static_cast<int>(m_gizmo.settings().tool)
-           << m_gizmo.visible() << m_gizmo.dragAxis();
+           << m_gizmo.visible() << m_gizmo.dragAxis() << m_playBanner << m_playLabel;
         collectColliderLines_();
         ds << static_cast<quint32>(m_colliderLines.size());
         for (const QLineF& l : m_colliderLines) ds << l;

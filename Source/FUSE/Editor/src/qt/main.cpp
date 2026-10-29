@@ -63,6 +63,8 @@ int main(int argc, char* argv[]) {
                                       "'asset_browser', 'terrain' or a full object name such as 'dock.timeline'.",
                                       "name");
     parser.addOption(showDockOption);
+    QCommandLineOption playOption(QStringList() << "play", "Enter Play (PIE) after startup (screenshots of play mode).");
+    parser.addOption(playOption);
     parser.process(app);
 
     QString samplesRoot = parser.value(samplesOption);
@@ -115,6 +117,11 @@ int main(int argc, char* argv[]) {
                     }
                 }
             }
+        });
+    }
+    if (parser.isSet(playOption)) {
+        QTimer::singleShot(parser.value(screenshotDelayOption).toInt() * 3 / 4, &window, [&window]() {
+            if (QAction* a = window.transportAction(fuse::editor::CommandKind::StartPlay)) a->trigger();
         });
     }
     if (parser.isSet(screenshotOption)) {

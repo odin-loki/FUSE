@@ -620,6 +620,47 @@ void MainWindow::buildMenus() {
     play->addAction(m_actResume);
     play->addAction(m_actStep);
     play->addAction(m_actStop);
+    play->addSeparator();
+    m_actMaximizeOnPlay = play->addAction(tr("&Maximize Viewport on Play"));
+    m_actMaximizeOnPlay->setObjectName(QStringLiteral("fuseActionMaximizeOnPlay"));
+    m_actMaximizeOnPlay->setCheckable(true);
+    m_actMaximizeOnPlay->setToolTip(tr("Hide the docks while playing; Stop restores the layout"));
+}
+
+void MainWindow::setMaximizeOnPlay(bool on) {
+    if (m_actMaximizeOnPlay != nullptr) m_actMaximizeOnPlay->setChecked(on);
+}
+
+bool MainWindow::maximizeOnPlay() const { return m_actMaximizeOnPlay != nullptr && m_actMaximizeOnPlay->isChecked(); }
+
+qint64 MainWindow::playElapsedMs() const {
+    return m_playAccumMs + (m_wasPlaying && !m_wasPaused && m_playClock.isValid() ? m_playClock.elapsed() : 0);
+}
+
+void MainWindow::onPlayStateChanged_(bool playing, bool paused) {
+    const bool startedPlay = playing && !m_wasPlaying;
+    const bool stoppedPlay = !playing && m_wasPlaying;
+    if (startedPlay) {
+        m_playAccumMs = 0;
+        m_playTicks = 0;
+        m_playLastTick = m_host.gameTickCount();
+        if (maximizeOnPlay()) {
+            m_prePlayState = saveState();
+            for (QDockWidget* d : m_docks) d->hide();
+        }
+    }
+    // Clock runs only while unpaused.
+    if (m_wasPlaying && !m_wasPaused && m_playClock.isValid()) {
+        m_playAccumMs += m_playClock.elapsed();
+        m_playClock.invalidate();
+    }
+    if (playing && !paused) m_playClock.start();
+    if (stoppedPlay && !m_prePlayState.isEmpty()) {
+        restoreState(m_prePlayState);
+        m_prePlayState.clear();
+    }
+    m_wasPlaying = playing;
+    m_wasPaused = paused;
 }
 
 void MainWindow::buildTransformToolBar() {
@@ -779,6 +820,18 @@ void MainWindow::updateTransportActions() {
     const EditorState& state = m_host.editorState();
     const bool playing = state.playing;
     const bool paused = state.playing && state.paused;
+    if (playing != m_wasPlaying || paused != m_wasPaused) onPlayStateChanged_(playing, paused);
+    if (playing) {
+        const quint64 tick = m_host.gameTickCount();
+        if (!paused || tick != m_playLastTick) m_playTicks += tick - std::min(tick, m_playLastTick); // Step counts too
+        m_playLastTick = tick;
+        const qint64 ms = playElapsedMs();
+        m_viewport->setPlayBanner(paused ? 2 : 1,
+                                  (paused ? tr("PAUSED") : tr("PLAYING")) +
+                                      QStringLiteral("  %1 s  ·  %2 ticks").arg(ms / 1000.0, 0, 'f', 1).arg(m_playTicks));
+    } else {
+        m_viewport->setPlayBanner(0, QString());
+    }
     m_actPlay->setEnabled(!playing);
     m_actPause->setEnabled(playing && !paused);
     m_actResume->setEnabled(paused);

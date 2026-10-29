@@ -180,7 +180,14 @@ public:
     [[nodiscard]] QPointF colliderHandleAxis(int i) const { return m_colliderHandles.at(static_cast<usize>(i)).axisPx; }
     /// Moves the camera (keeping yaw / pitch) so every selected entity fits the view. False when nothing is selected.
     bool frameSelection();
+    /// Play-mode frame: 0 = edit (none), 1 = playing (green), 2 = paused (amber); `label` is drawn as a badge.
+    void setPlayBanner(int state, const QString& label);
+    [[nodiscard]] int playBannerState() const { return m_playBanner; }
+    [[nodiscard]] QString playBannerLabel() const { return m_playLabel; }
 private:
+    int m_playBanner = 0;
+    QString m_playLabel;
+    void paintPlayBanner_(QPainter& painter);
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void showEvent(QShowEvent* event) override;

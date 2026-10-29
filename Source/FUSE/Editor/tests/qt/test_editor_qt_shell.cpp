@@ -187,6 +187,35 @@ int gatePlay(MainWindow& window) {
     stop->trigger();
     tick(window, 2);
     expect(!window.host().editorState().playing && play->isEnabled() && !stop->isEnabled(), "play: Stop leaves PIE");
+    expect(window.viewport()->playBannerState() == 0, "play: no viewport play frame when stopped");
+    // Play-mode polish: viewport frame + badge, session clock, pause freezes the clock, maximize-on-play.
+    window.setMaximizeOnPlay(true);
+    auto visibleDocks = [&]() {
+        int n = 0;
+        for (QDockWidget* d : window.findChildren<QDockWidget*>()) n += d->isVisible() ? 1 : 0;
+        return n;
+    };
+    const int docksBefore = visibleDocks();
+    play->trigger();
+    QElapsedTimer pc;
+    pc.start();
+    while (pc.elapsed() < 600) tick(window);
+    expect(window.viewport()->playBannerState() == 1 && window.viewport()->playBannerLabel().startsWith(QStringLiteral("PLAYING")),
+           "play: viewport shows the green PLAYING frame");
+    expect(window.playElapsedMs() >= 400 && window.playTicks() > 0, "play: session clock and tick count advance");
+    expect(docksBefore > 0 && visibleDocks() == 0, "play: Maximize on Play hides the docks");
+    window.transportAction(CommandKind::PausePlay)->trigger();
+    tick(window, 3);
+    expect(window.viewport()->playBannerState() == 2, "play: paused frame is amber");
+    const qint64 frozen = window.playElapsedMs();
+    pc.restart();
+    while (pc.elapsed() < 300) tick(window);
+    expect(window.playElapsedMs() == frozen, "play: pause freezes the clock");
+    stop->trigger();
+    tick(window, 3);
+    expect(visibleDocks() == docksBefore, "play: Stop restores the dock layout");
+    expect(window.viewport()->playBannerState() == 0, "play: Stop clears the play frame");
+    window.setMaximizeOnPlay(false);
     return 0;
 }
 
