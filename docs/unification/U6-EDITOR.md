@@ -281,3 +281,4 @@ Remaining: a true triangle wireframe view (needs a line / polygon-mode raster pi
 - Play from the current view: PIE keeps the editor camera by default (spawned objects stay in frame); Play > Play from Spawn Point (`fuseActionPlayFromSpawn`) restores the jump to the first spawn point, lifted 1.7 m to eye height. `RuntimeViewportHook::setPlayFromSpawn`.
 - Level mesh bounds: the editor scene is rebuilt from the level's scene table, which drops the FECS block, so the hook reads the level's FECS once and copies each Mesh AABB onto the matching editor entity (`importLevelMeshBounds_`). `fillMissingMeshBounds` fills any remaining zero AABB from the registered GPU mesh, or from a Box/Sphere/Capsule/Plane collider. The ortho views now draw the ground as a box.
 
+- Level placement: editor entities created from the level now take the scene table's position/rotation/scale (they were identity), so the GroundPlane shows its real 256 half-extent in the ortho views.

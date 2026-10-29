@@ -1657,6 +1657,15 @@ u32 RuntimeViewportHook::importLevelMeshBounds_(ecs::Registry& editorRegistry, c
     for (usize i = 0; i < entities.size() && k < created.size(); ++i) {
         if (fuse::scene::isWireStubEntityName(entities[i].name)) continue;
         const ecs::EntityID editorId = created[k++];
+        // applyWireBindingsFromScene creates identity Transforms; restore the level's placement
+        // (e.g. a GroundPlane's kGroundPlaneHalfExtent X/Z scale) so the views match the runtime.
+        if (ecs::Transform* t = editorRegistry.get<ecs::Transform>(editorId)) {
+            const auto& st = entities[i].transform;
+            t->position = ecs::vec3{st.positionX, st.positionY, st.positionZ, 1.f};
+            t->rotation = ecs::quat{st.rotationX, st.rotationY, st.rotationZ, st.rotationW};
+            t->scale = ecs::vec3{st.scaleX, st.scaleY, st.scaleZ, 0.f};
+            t->dirty = true;
+        }
         if (i >= fileScene.entities().size() || fileScene.entities()[i].name != entities[i].name) continue;
         const auto it = fileMeshByIndex.find(static_cast<u32>(i));
         ecs::Mesh* mesh = editorRegistry.get<ecs::Mesh>(editorId);
