@@ -652,7 +652,7 @@ void MainWindow::buildMenus() {
         a->setObjectName(QString::fromLatin1(layoutNames[i]));
         a->setCheckable(true);
         a->setChecked(i == 0);
-        a->setShortcut(QKeySequence(Qt::ALT | static_cast<Qt::Key>(Qt::Key_1 + i)));
+        a->setShortcut(QKeySequence(Qt::CTRL | Qt::ALT | static_cast<Qt::Key>(Qt::Key_1 + i))); // Alt+1..4 = view modes
         m_viewportLayoutGroup->addAction(a);
         connect(a, &QAction::triggered, this, [this, i]() { setViewportLayout(i); });
     }

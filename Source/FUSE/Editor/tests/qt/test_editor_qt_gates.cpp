@@ -2193,7 +2193,17 @@ int gatePreferences() {
         PreferencesDialog* dialog = window.openPreferences(false);
         expect(dialog != nullptr && dialog->isVisible(), "Preferences dialog opens");
         expect(dialog->shortcutTable()->rowCount() >= 10, fmt("shortcut table lists actions (%d)", dialog->shortcutTable()->rowCount()));
-        expect(dialog->conflicts().isEmpty(), "no conflicts by default");
+        expect(dialog->conflicts().isEmpty(), "no conflicts by default: " + dialog->conflicts().join("; ").toStdString());
+        {
+            // Default bindings must not clash (Alt+1..4 = view modes, Ctrl+Alt+1..3 = viewport layouts).
+            auto* layoutQuad = window.findChild<QAction*>(QStringLiteral("fuseActionViewportQuad"));
+            expect(layoutQuad != nullptr && dialog->setShortcutFor(QStringLiteral("fuseActionViewportQuad"), QKeySequence(Qt::ALT | Qt::Key_3)),
+                   "viewport layout row editable");
+            expect(!dialog->conflicts().isEmpty() && dialog->conflicts().join(" ").contains(QStringLiteral("Wireframe")),
+                   "Alt+3 on Quad clashes with the Wireframe view mode");
+            dialog->setShortcutFor(QStringLiteral("fuseActionViewportQuad"), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_3));
+            expect(dialog->conflicts().isEmpty(), "Ctrl+Alt+3 default is free");
+        }
         expect(dialog->setShortcutFor(QStringLiteral("fuseActionFrameSelected"), QKeySequence(Qt::CTRL | Qt::Key_Z)),
                "Frame Selected row editable");
         expect(!dialog->conflicts().isEmpty(), "Ctrl+Z clash with Undo is reported");

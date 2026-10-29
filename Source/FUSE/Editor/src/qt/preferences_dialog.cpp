@@ -203,11 +203,34 @@ bool PreferencesDialog::setShortcutFor(const QString& objectName, const QKeySequ
     return false;
 }
 
+namespace {
+QString plainTextFor(const QList<QAction*>& actions, const QString& objectName) {
+    for (QAction* a : actions) {
+        if (a->objectName() == objectName) return plainText(a);
+    }
+    return QStringLiteral("\x01"); // never matches
+}
+} // namespace
+
 QStringList PreferencesDialog::conflicts() const {
     QHash<QString, QStringList> byKey;
     for (int r = 0; r < m_actions.size(); ++r) {
         const QKeySequence k = static_cast<QKeySequenceEdit*>(m_table->cellWidget(r, 1))->keySequence();
         if (!k.isEmpty()) byKey[k.toString(QKeySequence::PortableText)].push_back(m_table->item(r, 0)->text());
+        // Secondary (non-editable) shortcuts of the action clash too, e.g. Play's F5.
+        const QList<QKeySequence> all = m_actions[r]->shortcuts();
+        for (int i = 1; i < all.size(); ++i) {
+            if (!all[i].isEmpty()) byKey[all[i].toString(QKeySequence::PortableText)].push_back(m_table->item(r, 0)->text());
+        }
+    }
+    // Play / Resume share F5 by design (never enabled together).
+    for (auto it = byKey.begin(); it != byKey.end(); ++it) {
+        QStringList& v = it.value();
+        v.removeDuplicates();
+        if (v.size() == 2 && v.contains(plainTextFor(m_actions, QStringLiteral("fuseActionPlay"))) &&
+            v.contains(plainTextFor(m_actions, QStringLiteral("fuseActionResume")))) {
+            v.clear();
+        }
     }
     QStringList out;
     for (auto it = byKey.cbegin(); it != byKey.cend(); ++it) {
