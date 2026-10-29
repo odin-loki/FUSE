@@ -59,6 +59,7 @@
 #include <fuse/editor/terrain_builder.hpp>
 #include <QLabel>
 #include <QSettings>
+#include <QComboBox>
 #include <QTableWidget>
 #include <fuse/ecs/components/light.hpp>
 
@@ -1799,11 +1800,71 @@ int gateBuildPackage() {
 #else
     std::printf("SKIP package e2e: demo_3d_empty not built (FUSE_BUILD_PARITY_DEMOS=OFF)\n");
 #endif
+    // Shipping configuration + exclude patterns + archive.
     {
+        auto put = [&](const QString& rel, const QByteArray& data) {
+            QDir().mkpath(QFileInfo(root + QLatin1Char('/') + rel).path());
+            QFile f(root + QLatin1Char('/') + rel);
+            f.open(QIODevice::WriteOnly);
+            f.write(data);
+        };
+        put(QStringLiteral("worlds/a.fuselevel.prefablinks"), "fuse-prefablinks 1\n");
+        put(QStringLiteral("assets/prefabs/x.prefab.variant"), "base y\n");
+        put(QStringLiteral("art/source.psd"), "psd");
+        put(QStringLiteral("docs/notes.txt"), "n");
+        fuse::editor::qt::PackageOptions s;
+        s.projectRoot = root;
+        s.outputDir = tmp.path() + QStringLiteral("/ship");
+        s.cookAssets = false;
+        s.configuration = QStringLiteral("Shipping");
+        s.excludePatterns = {QStringLiteral("*.psd"), QStringLiteral("docs/*")};
+        s.archive = true;
+        const auto sr = fuse::editor::qt::packageProject(s);
+        expect(sr.ok, fmt("shipping package succeeds (%s)", sr.error.toStdString().c_str()));
+        const QDir sp(sr.packageDir);
+        expect(QFileInfo::exists(sp.filePath(QStringLiteral("project/assets/models/tri.obj"))), "shipping keeps content");
+        expect(!QFileInfo::exists(sp.filePath(QStringLiteral("project/worlds/a.fuselevel.prefablinks"))) &&
+                   !QFileInfo::exists(sp.filePath(QStringLiteral("project/assets/prefabs/x.prefab.variant"))),
+               "shipping drops editor sidecars");
+        expect(!QFileInfo::exists(sp.filePath(QStringLiteral("project/art/source.psd"))) &&
+                   !QFileInfo::exists(sp.filePath(QStringLiteral("project/docs/notes.txt"))),
+               "exclude patterns drop matching files");
+        expect(sr.excludedFiles == 4 && sr.totalBytes > 0, fmt("excluded count + size (%d)", sr.excludedFiles));
+        expect(!sr.archivePath.isEmpty() && QFileInfo(sr.archivePath).size() > 0, "tar.gz archive written");
+        QFile smf(sp.filePath(QStringLiteral("package.json")));
+        smf.open(QIODevice::ReadOnly);
+        const QJsonObject sm = QJsonDocument::fromJson(smf.readAll()).object();
+        expect(sm.value(QStringLiteral("configuration")).toString() == QStringLiteral("Shipping") &&
+                   sm.value(QStringLiteral("excluded")).toInt() == 4,
+               "manifest records configuration + excluded");
+        fuse::editor::qt::PackageOptions dev = s;
+        dev.configuration = QStringLiteral("Development");
+        dev.excludePatterns.clear();
+        dev.archive = false;
+        dev.outputDir = tmp.path() + QStringLiteral("/dev");
+        const auto dr = fuse::editor::qt::packageProject(dev);
+        expect(dr.ok && dr.excludedFiles == 0 &&
+                   QFileInfo::exists(QDir(dr.packageDir).filePath(QStringLiteral("project/worlds/a.fuselevel.prefablinks"))),
+               "development keeps sidecars");
+    }
+    {
+        QCoreApplication::setOrganizationName(QStringLiteral("fuse-test-") + QString::number(QCoreApplication::applicationPid()));
         fuse::editor::qt::BuildPackageDialog d(root);
         const auto opts = d.options();
         expect(opts.projectRoot == root && !opts.outputDir.isEmpty() && opts.cookAssets && opts.runtimePath.isEmpty(),
                "dialog defaults: cook on, no runtime");
+        expect(opts.configuration == QStringLiteral("Development") && opts.excludePatterns.contains(QStringLiteral("*.psd")) && !opts.archive,
+               "dialog defaults: Development, default excludes, no archive");
+        auto* openFolder = d.findChild<QPushButton*>(QStringLiteral("fusePackageOpenFolder"));
+        expect(openFolder != nullptr && !openFolder->isEnabled(), "Open Folder disabled before a build");
+        d.findChild<QComboBox*>(QStringLiteral("fusePackageConfig"))->setCurrentText(QStringLiteral("Shipping"));
+        d.findChild<QLineEdit*>(QStringLiteral("fusePackageOutput"))->setText(tmp.path() + QStringLiteral("/dlg"));
+        expect(d.runPackage() && openFolder->isEnabled(), "dialog build succeeds; Open Folder enabled");
+        fuse::editor::qt::BuildPackageDialog again(root);
+        expect(again.options().configuration == QStringLiteral("Shipping") &&
+                   again.options().outputDir == tmp.path() + QStringLiteral("/dlg"),
+               "dialog remembers settings per project");
+        QSettings().clear();
     }
     return 0;
 }

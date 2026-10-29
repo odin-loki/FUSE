@@ -23,6 +23,12 @@ struct PackageOptions {
     bool cookAssets = true;
     bool clean = true;   ///< remove an existing package folder first
     bool bundleLibraries = true; ///< Linux: copy the runtime's non-system shared libraries into lib/
+    /// "Development" ships everything; "Shipping" also drops editor-only sidecars
+    /// (*.prefablinks, *.variant, *.variantbase, *.materials.bak, editor layout files).
+    QString configuration = QStringLiteral("Development");
+    /// Extra excludes: wildcard patterns on the project-relative path or file name (e.g. "*.psd", "docs/*").
+    QStringList excludePatterns;
+    bool archive = false; ///< also write <outputDir>/<name>.tar.gz
 };
 
 struct PackageResult {
@@ -32,6 +38,9 @@ struct PackageResult {
     int cookedAssets = 0;
     int failedCooks = 0;
     int bundledLibraries = 0;
+    int excludedFiles = 0;
+    qint64 totalBytes = 0; ///< bytes copied into project/
+    QString archivePath;   ///< set when the archive was written
     QString error;
 };
 
@@ -45,6 +54,8 @@ public:
     [[nodiscard]] const PackageResult& lastResult() const { return m_result; }
     /// Runs the package step (blocking the dialog, log lines appear live).
     bool runPackage();
+    /// Defaults to excluded patterns that rarely belong in a build.
+    static QStringList defaultExcludes();
 
 private:
     QString m_projectRoot;
@@ -52,6 +63,10 @@ private:
     QComboBox* m_runtime = nullptr;
     QCheckBox* m_cook = nullptr;
     QCheckBox* m_clean = nullptr;
+    QComboBox* m_config = nullptr;
+    QLineEdit* m_excludes = nullptr;
+    QCheckBox* m_archive = nullptr;
+    QPushButton* m_openFolder = nullptr;
     QPlainTextEdit* m_log = nullptr;
     QPushButton* m_build = nullptr;
     PackageResult m_result;
