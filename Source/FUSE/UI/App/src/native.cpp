@@ -128,6 +128,11 @@ struct Lib {
     int (*LookupString)(InputEv*, char*, int, KeySym*, void*) = nullptr;
     Image* (*GetImage)(Display*, XID, int, int, unsigned, unsigned, unsigned long, int) = nullptr;
     void* (*SetErrorHandler)(int (*)(Display*, void*)) = nullptr;
+    int (*ChangeProperty)(Display*, Window, Atom, Atom, int, int, const unsigned char*, int) = nullptr;
+    int (*GetWindowProperty)(Display*, Window, Atom, long, long, int, Atom, Atom*, int*, unsigned long*, unsigned long*,
+                             unsigned char**) = nullptr;
+    int (*Free)(void*) = nullptr;
+    int (*ResizeWindow)(Display*, Window, unsigned, unsigned) = nullptr;
 
     bool load() {
         so = dlopen("libX11.so.6", RTLD_NOW | RTLD_LOCAL);
@@ -144,6 +149,7 @@ struct Lib {
         get(InternAtom, "XInternAtom"); get(SetWMProtocols, "XSetWMProtocols"); get(Pending, "XPending");
         get(NextEvent, "XNextEvent"); get(ConnectionNumber, "XConnectionNumber"); get(Flush, "XFlush"); get(Sync, "XSync");
         get(LookupString, "XLookupString"); get(GetImage, "XGetImage"); get(SetErrorHandler, "XSetErrorHandler");
+        get(ChangeProperty, "XChangeProperty"); get(GetWindowProperty, "XGetWindowProperty"); get(Free, "XFree"); get(ResizeWindow, "XResizeWindow");
         return all;
     }
 };
@@ -691,5 +697,138 @@ unsigned long long NativePlatform::nativeWindow(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);
     return r ? r->handle : 0;
 }
+
+namespace {
+// fuse::ui::Image pixels are 0xAABBGGRR (R in the low byte); OS icons want 0xAARRGGBB
+u32 toArgb(u32 p) { return (p & 0xFF00FF00u) | ((p & 0xFFu) << 16) | ((p >> 16) & 0xFFu); }
+} // namespace
+
+#if defined(_WIN32)
+namespace {
+HICON makeIcon(const Image& img) {
+    BITMAPV5HEADER bi{};
+    bi.bV5Size = sizeof(bi);
+    bi.bV5Width = img.width;
+    bi.bV5Height = -img.height;
+    bi.bV5Planes = 1;
+    bi.bV5BitCount = 32;
+    bi.bV5Compression = BI_BITFIELDS;
+    bi.bV5RedMask = 0x00FF0000u;
+    bi.bV5GreenMask = 0x0000FF00u;
+    bi.bV5BlueMask = 0x000000FFu;
+    bi.bV5AlphaMask = 0xFF000000u;
+    void* bits = nullptr;
+    HDC dc = GetDC(nullptr);
+    HBITMAP color = CreateDIBSection(dc, reinterpret_cast<BITMAPINFO*>(&bi), DIB_RGB_COLORS, &bits, nullptr, 0);
+    ReleaseDC(nullptr, dc);
+    if (!color || !bits) return nullptr;
+    u32* dst = static_cast<u32*>(bits);
+    for (std::size_t i = 0; i < img.pixels.size(); ++i) dst[i] = toArgb(img.pixels[i]);
+    HBITMAP mask = CreateBitmap(img.width, img.height, 1, 1, nullptr);
+    ICONINFO ii{TRUE, 0, 0, mask, color};
+    HICON icon = CreateIconIndirect(&ii);
+    DeleteObject(color);
+    DeleteObject(mask);
+    return icon;
+}
+const Image* closest(std::span<const Image> sizes, int want) {
+    const Image* best = nullptr;
+    for (const Image& i : sizes)
+        if (i.width > 0 && (!best || std::abs(i.width - want) < std::abs(best->width - want))) best = &i;
+    return best;
+}
+int iconWidth(HICON icon) {
+    ICONINFO ii{};
+    if (!icon || !GetIconInfo(icon, &ii)) return 0;
+    BITMAP bm{};
+    GetObjectW(ii.hbmColor ? ii.hbmColor : ii.hbmMask, sizeof(bm), &bm);
+    if (ii.hbmColor) DeleteObject(ii.hbmColor);
+    if (ii.hbmMask) DeleteObject(ii.hbmMask);
+    return bm.bmWidth;
+}
+} // namespace
+
+bool NativePlatform::setIcon(const AppWindow& w, std::span<const Image> sizes) {
+    const Impl::Rec* r = m->find(w);
+    if (!r || !r->handle) return false;
+    HWND hwnd = reinterpret_cast<HWND>(r->handle);
+    bool ok = false;
+    for (const auto [which, metric] : {std::pair{ICON_BIG, SM_CXICON}, std::pair{ICON_SMALL, SM_CXSMICON}}) {
+        const Image* img = closest(sizes, GetSystemMetrics(metric));
+        if (!img) continue;
+        if (HICON icon = makeIcon(*img)) {
+            if (HICON old = reinterpret_cast<HICON>(SendMessageW(hwnd, WM_SETICON, WPARAM(which), LPARAM(icon)))) DestroyIcon(old);
+            ok = true;
+        }
+    }
+    return ok;
+}
+bool NativePlatform::resizeWindow(const AppWindow& w, unsigned width, unsigned height) {
+    const Impl::Rec* r = m->find(w);
+    if (!r || !r->handle) return false;
+    RECT rc{0, 0, LONG(width), LONG(height)};
+    AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
+    return SetWindowPos(reinterpret_cast<HWND>(r->handle), nullptr, 0, 0, rc.right - rc.left, rc.bottom - rc.top,
+                        SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE) != 0;
+}
+std::vector<int> NativePlatform::iconSizes(const AppWindow& w) const {
+    std::vector<int> out;
+    const Impl::Rec* r = m->find(w);
+    if (!r || !r->handle) return out;
+    HWND hwnd = reinterpret_cast<HWND>(r->handle);
+    for (WPARAM which : {WPARAM(ICON_BIG), WPARAM(ICON_SMALL)})
+        if (const int wpx = iconWidth(reinterpret_cast<HICON>(SendMessageW(hwnd, WM_GETICON, which, 0)))) out.push_back(wpx);
+    return out;
+}
+#else
+bool NativePlatform::setIcon(const AppWindow& w, std::span<const Image> sizes) {
+    const Impl::Rec* r = m->find(w);
+    if (!r || !r->handle || !m->dpy) return false;
+    std::vector<unsigned long> data; // format-32 X properties are arrays of C long
+    for (const Image& img : sizes) {
+        if (img.width <= 0 || img.height <= 0 || img.pixels.size() != std::size_t(img.width) * std::size_t(img.height)) continue;
+        data.push_back(static_cast<unsigned long>(img.width));
+        data.push_back(static_cast<unsigned long>(img.height));
+        for (u32 p : img.pixels) data.push_back(toArgb(p));
+    }
+    if (data.empty()) return false;
+    const x11::Atom netIcon = m->x.InternAtom(m->dpy, "_NET_WM_ICON", 0);
+    const x11::Atom cardinal = 6; // XA_CARDINAL
+    m->x.ChangeProperty(m->dpy, x11::Window(r->handle), netIcon, cardinal, 32, 0 /*PropModeReplace*/,
+                        reinterpret_cast<const unsigned char*>(data.data()), int(data.size()));
+    m->x.Flush(m->dpy);
+    return true;
+}
+bool NativePlatform::resizeWindow(const AppWindow& w, unsigned width, unsigned height) {
+    const Impl::Rec* r = m->find(w);
+    if (!r || !r->handle || !m->dpy) return false;
+    m->x.ResizeWindow(m->dpy, x11::Window(r->handle), width, height);
+    m->x.Flush(m->dpy);
+    return true;
+}
+std::vector<int> NativePlatform::iconSizes(const AppWindow& w) const {
+    std::vector<int> out;
+    const Impl::Rec* r = m->find(w);
+    if (!r || !r->handle || !m->dpy) return out;
+    const x11::Atom netIcon = m->x.InternAtom(m->dpy, "_NET_WM_ICON", 0);
+    x11::Atom type = 0;
+    int format = 0;
+    unsigned long n = 0, after = 0;
+    unsigned char* prop = nullptr;
+    m->x.Sync(m->dpy, 0);
+    if (m->x.GetWindowProperty(m->dpy, x11::Window(r->handle), netIcon, 0, 1L << 22, 0, 6, &type, &format, &n, &after, &prop) != 0 ||
+        !prop)
+        return out;
+    const unsigned long* v = reinterpret_cast<const unsigned long*>(prop);
+    for (unsigned long i = 0; i + 2 <= n;) {
+        const unsigned long iw = v[i], ih = v[i + 1];
+        if (!iw || !ih || i + 2 + iw * ih > n) break;
+        out.push_back(int(iw));
+        i += 2 + iw * ih;
+    }
+    m->x.Free(prop);
+    return out;
+}
+#endif
 
 } // namespace fuse::app

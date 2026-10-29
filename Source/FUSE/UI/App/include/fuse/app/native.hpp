@@ -15,6 +15,8 @@
 #include "fuse/app/app.hpp"
 
 #include <memory>
+#include <span>
+#include <vector>
 #include <string>
 #include <string_view>
 
@@ -82,6 +84,15 @@ public:
     /// window is not GPU drawn (the CPU pixels of the Image are shown instead).
     bool setExternalTexture(const AppWindow& w, unsigned slot, const ExternalTexture& tex);
     unsigned long long nativeWindow(const AppWindow& w) const;
+    /// Sets the OS window icon from square RGBA rasters (e.g. 16 / 32 / 48 / 256). X11: _NET_WM_ICON with every size;
+    /// Win32: WM_SETICON big (SM_CXICON) and small (SM_CXSMICON), the closest raster each. False when not shown.
+    bool setIcon(const AppWindow& w, std::span<const fuse::ui::Image> sizes);
+    /// Asks the OS to resize the window's client area (logical px); the resize then arrives like a user resize
+    /// (ConfigureNotify / WM_SIZE -> AppWindow::resize). False when not shown.
+    bool resizeWindow(const AppWindow& w, unsigned width, unsigned height);
+    /// Read back from the OS: the icon sizes (widths) the window carries now (X11 every _NET_WM_ICON entry; Win32 the
+    /// big + small WM_GETICON icons). Empty when unset / not shown.
+    std::vector<int> iconSizes(const AppWindow& w) const;
 
     struct Impl;
 
