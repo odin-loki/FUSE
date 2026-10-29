@@ -126,6 +126,31 @@ endforeach()
 # E20 (MP-B6-QT-INSPECTOR, UNI-U6-INSP-1, UNI-U6-FILE-1, MP-B6-QT-SCENE-FILES).
 include(${CMAKE_CURRENT_SOURCE_DIR}/e20_qt_tests.cmake)
 
+# GUI-1: desktop shell gates — docks, File / Edit toolbar, toolbar undo of an inspector edit,
+# Play / Stop, opening a sample project (offscreen QPA).
+set(_fuse_shell_qt_gates docks toolbar undo play project)
+if(_fuse_qt_gate_available)
+    add_executable(fuse_editor_qt_shell_gate test_editor_qt_shell.cpp)
+    target_link_libraries(fuse_editor_qt_shell_gate PRIVATE fuse_editor_qt fuse_core Qt6::Test)
+    target_compile_definitions(fuse_editor_qt_shell_gate PRIVATE FUSE_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    fuse_apply_cxx23(fuse_editor_qt_shell_gate)
+    foreach(_shell_gate IN LISTS _fuse_shell_qt_gates)
+        add_test(NAME fuse_editor_qt_shell_${_shell_gate} COMMAND fuse_editor_qt_shell_gate ${_shell_gate})
+    endforeach()
+else()
+    foreach(_shell_gate IN LISTS _fuse_shell_qt_gates)
+        add_test(NAME fuse_editor_qt_shell_${_shell_gate} COMMAND fuse_editor_qt_gates shell_${_shell_gate})
+    endforeach()
+endif()
+foreach(_shell_gate IN LISTS _fuse_shell_qt_gates)
+    set_tests_properties(fuse_editor_qt_shell_${_shell_gate} PROPERTIES
+        LABELS "gate;qt;gui"
+        SKIP_RETURN_CODE 77
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        TIMEOUT 180
+    )
+endforeach()
+
 # CI / local: one build target for every Qt gate executable (icon, E15, E20, xvfb suite).
 if(_fuse_qt_gate_available)
     add_custom_target(fuse_editor_qt_gates_all)
@@ -133,5 +158,6 @@ if(_fuse_qt_gate_available)
         fuse_editor_qt_gates
         fuse_editor_qt_icon_gate
         fuse_editor_qt_console_transport_gate
-        fuse_editor_qt_e20_gate)
+        fuse_editor_qt_e20_gate
+        fuse_editor_qt_shell_gate)
 endif()
