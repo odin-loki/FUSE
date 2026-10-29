@@ -5,6 +5,7 @@
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/transform.hpp>
+#include <fuse/ecs/systems/transform_system.hpp>
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/editor_console_commands.hpp>
 #include <fuse/editor/editor_host.hpp>
@@ -660,6 +661,12 @@ void EditorController::viewportPointer(const ViewportPointerEvent& e) {
         m_lastY = e.y;
         return;
     }
+    if (e.button == B::Left && e.kind == K::Down && gizmoPress_(e.x, e.y)) return;
+    if (m_gizmo.dragging()) {
+        if (e.kind == K::Move) gizmoMove_(e.x, e.y);
+        else if (e.kind == K::Up && e.button == B::Left) gizmoRelease_();
+        return;
+    }
     if (e.button == B::Left && e.kind == K::Up) {
         {
             std::lock_guard<std::mutex> lock(m_mutex);
@@ -667,6 +674,114 @@ void EditorController::viewportPointer(const ViewportPointerEvent& e) {
         }
         refresh();
     }
+}
+
+// ---- transform gizmo ----
+void EditorController::setTransformTool(TransformTool tool) {
+    if (m_gizmo.dragging()) gizmoRelease_();
+    m_gizmo.settings().tool = tool;
+    ++m_gizmoVersion;
+}
+
+bool EditorController::refreshGizmo_() {
+    const ecs::EntityID entity = m_host.editorState().primarySelection;
+    ecs::Registry& registry = m_host.editorScene().registry();
+    if (entity == ecs::EntityID::null() || !registry.alive(entity) || registry.get<ecs::Transform>(entity) == nullptr) {
+        m_gizmo.clearLayout();
+        m_gizmoEntity = ecs::EntityID::null();
+        return false;
+    }
+    m_gizmoEntity = entity;
+    const ecs::Transform& transform = *registry.get<ecs::Transform>(entity);
+    const ecs::Transform* parent = (transform.parent != ecs::EntityID::null() && registry.alive(transform.parent))
+                                       ? registry.get<ecs::Transform>(transform.parent)
+                                       : nullptr;
+    if (parent) {
+        ecs::TransformSystem::update(registry); // parent matrices may be a tick stale after an edit
+        m_gizmo.setParentFrame(parent->local_to_world, parent->world_to_local);
+    } else {
+        m_gizmo.clearParentFrame();
+    }
+    return m_gizmo.layout(m_viewport, transform);
+}
+
+EditorController::GizmoView EditorController::viewportGizmo() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    GizmoView v;
+    v.tool = m_gizmo.settings().tool;
+    if (v.tool == TransformTool::Select) return v;
+    if (!m_gizmo.dragging() && !refreshGizmo_()) return v;
+    v.visible = m_gizmo.visible();
+    v.handles = m_gizmo.handles();
+    v.dragAxis = m_gizmo.dragAxis();
+    return v;
+}
+
+bool EditorController::gizmoPress_(f32 px, f32 py) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_gizmo.settings().tool == TransformTool::Select || !refreshGizmo_()) return false;
+    const int axis = m_gizmo.hitTest(px, py);
+    if (axis < 0) return false;
+    ecs::Registry& registry = m_host.editorScene().registry();
+    const ecs::Transform* transform = registry.get<ecs::Transform>(m_gizmoEntity);
+    if (!transform || !m_gizmo.beginDrag(axis, px, py, *transform)) return false;
+    m_gizmoGroup.clear();
+    const std::vector<ecs::EntityID>& selection = m_host.editorState().selectedEntities;
+    auto selectedAncestor = [&](ecs::EntityID id) {
+        for (int guard = 0; guard < 64; ++guard) {
+            const ecs::Transform* t = registry.get<ecs::Transform>(id);
+            if (!t || !t->parent.valid()) return false;
+            id = t->parent;
+            if (std::find(selection.begin(), selection.end(), id) != selection.end()) return true;
+        }
+        return false;
+    };
+    for (ecs::EntityID other : selection) {
+        if (other == m_gizmoEntity || !registry.alive(other) || selectedAncestor(other)) continue;
+        if (const ecs::Transform* ot = registry.get<ecs::Transform>(other))
+            m_gizmoGroup.push_back({other, TransformCommand::capture(*ot), ot->parent == transform->parent});
+    }
+    static const char* kNames[] = {"Move", "Rotate", "Scale"};
+    const int tool = int(m_gizmo.settings().tool) - 1;
+    m_host.undoStack().beginMacro(std::string(kNames[std::clamp(tool, 0, 2)]) + " entity");
+    m_gizmoMacroOpen = true;
+    ++m_gizmoVersion;
+    return true;
+}
+
+void EditorController::gizmoMove_(f32 px, f32 py) {
+    const TransformCommand::State after = m_gizmo.dragTo(px, py);
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        ecs::Registry& registry = m_host.editorScene().registry();
+        const ecs::Transform* transform = registry.get<ecs::Transform>(m_gizmoEntity);
+        if (!transform) return;
+        const TransformCommand::State before = TransformCommand::capture(*transform);
+        m_host.undoStack().execute(std::make_unique<TransformCommand>(registry, m_gizmoEntity, before, after));
+        const TransformCommand::State& start = m_gizmo.dragStart();
+        for (const GizmoGroupStart& g : m_gizmoGroup) {
+            const ecs::Transform* ot = registry.get<ecs::Transform>(g.id);
+            if (!ot) continue;
+            const TransformCommand::State ob = TransformCommand::capture(*ot);
+            const TransformCommand::State oa =
+                TransformGizmo::applyGroupDelta(m_gizmo.settings().tool, start, after, g.state, g.sameFrame);
+            m_host.undoStack().execute(std::make_unique<TransformCommand>(registry, g.id, ob, oa));
+        }
+    }
+    ++m_gizmoVersion;
+    refresh();
+}
+
+void EditorController::gizmoRelease_() {
+    m_gizmo.endDrag();
+    m_gizmoGroup.clear();
+    if (m_gizmoMacroOpen) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_host.undoStack().endMacro();
+        m_gizmoMacroOpen = false;
+    }
+    ++m_gizmoVersion;
+    refresh();
 }
 
 void EditorController::viewportWheel(f32 steps) {

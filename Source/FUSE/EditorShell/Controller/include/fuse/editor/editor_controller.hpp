@@ -11,9 +11,11 @@
 #include <fuse/editor/editor_actions.hpp>
 #include <fuse/editor/entity_context_menu.hpp>
 #include <fuse/editor/property_inspector.hpp>
+#include <fuse/editor/transform_gizmo.hpp>
 #include <fuse/editor/viewport_panel.hpp>
 #include <fuse/types.hpp>
 
+#include <array>
 #include <atomic>
 #include <memory>
 #include <mutex>
@@ -195,6 +197,24 @@ public:
     };
     /// Entities projected through the viewport camera (for the shell's software viewport).
     std::vector<ViewportMarker> viewportMarkers();
+    // ---- transform gizmo (Qt parity: viewport_placeholder_widget) -------------------------------------------
+    // Left press on a handle of the primary selection's gizmo starts a drag (one undo macro per drag, multi-select
+    // follows); a left click elsewhere picks. Tools: Select (no gizmo), Translate, Rotate, Scale (Qt keys 1-4).
+    void setTransformTool(TransformTool tool);
+    [[nodiscard]] TransformTool transformTool() const { return m_gizmo.settings().tool; }
+    void setTransformSpace(TransformSpace space) { m_gizmo.settings().space = space; ++m_gizmoVersion; }
+    void setTransformSnap(bool on) { m_gizmo.settings().snap = on; }
+    struct GizmoView {
+        bool visible = false;
+        TransformTool tool = TransformTool::Translate;
+        std::array<GizmoHandle2D, 3> handles{}; ///< viewport pixels, axis 0 X / 1 Y / 2 Z
+        int dragAxis = -1;                      ///< axis being dragged
+    };
+    /// Lays the gizmo out for the primary selection through the current camera (draw it over the viewport).
+    GizmoView viewportGizmo();
+    [[nodiscard]] bool gizmoDragging() const { return m_gizmo.dragging(); }
+    /// Bumped by tool / drag changes so shells know to redraw the overlay.
+    [[nodiscard]] u64 gizmoVersion() const { return m_gizmoVersion; }
     /// Projects a world point through the viewport camera; false when it is behind the camera.
     [[nodiscard]] bool projectPoint(f32 x, f32 y, f32 z, f32& px, f32& py) const;
 
@@ -250,6 +270,21 @@ private:
     f32 m_downX = 0.f, m_downY = 0.f;
     f32 m_lastX = 0.f, m_lastY = 0.f;
     bool m_keys[7]{};
+
+    struct GizmoGroupStart {
+        ecs::EntityID id;
+        TransformCommand::State state;
+        bool sameFrame = false;
+    };
+    TransformGizmo m_gizmo;
+    ecs::EntityID m_gizmoEntity = ecs::EntityID::null();
+    std::vector<GizmoGroupStart> m_gizmoGroup;
+    bool m_gizmoMacroOpen = false;
+    u64 m_gizmoVersion = 0;
+    bool refreshGizmo_(); // m_mutex held
+    bool gizmoPress_(f32 px, f32 py);
+    void gizmoMove_(f32 px, f32 py);
+    void gizmoRelease_();
 
     ShellActionHook m_shellHook = nullptr;
     void* m_shellUser = nullptr;
