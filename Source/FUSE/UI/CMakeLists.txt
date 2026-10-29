@@ -18,7 +18,7 @@ option(FUSE_BUILD_UI_WIDGETS "Build fuse_ui_widgets (Tier A widgets)" ON)
 option(FUSE_BUILD_UI_TESTS "Build FUSE UI gate tests" ON)
 option(FUSE_BUILD_UI_GAME "Build fuse_ui_game (UI7: HUD, world-space UI, gamepad navigation)" ON)
 option(FUSE_BUILD_APP "Build fuse_app (application framework; UI9, not yet)" OFF)
-option(FUSE_BUILD_UI_DESIGNER "Build the UI designer (UI10, not yet)" OFF)
+option(FUSE_BUILD_UI_DESIGNER "Build fuse_ui_designer (UI8 prototype: library, gate and app)" ON)
 option(FUSE_UI_ACCESSIBILITY "Accessibility tree (AccessKit bridge later, D7)" ON)
 set(FUSE_UI_TEXT "MINIMAL" CACHE STRING "Text profile: FULL (HarfBuzz + FreeType, fetched), MINIMAL (stb_truetype), COOKED (not yet)")
 set_property(CACHE FUSE_UI_TEXT PROPERTY STRINGS FULL MINIMAL COOKED)
@@ -141,6 +141,13 @@ if(FUSE_BUILD_UI_DOC AND FUSE_BUILD_UI_WIDGETS)
 endif()
 
 # ---- fuse_ui_script: Lua bindings (vendored Lua 5.2, the fuse_script backend) ----
+# fuse_ui_designer (UI8 prototype): DesignDocument model + Designer UI over fuse_ui_doc
+if(FUSE_BUILD_UI_DESIGNER AND FUSE_BUILD_UI_WIDGETS AND FUSE_BUILD_UI_DOC)
+    add_library(fuse_ui_designer_lib STATIC Designer/src/designer.cpp)
+    target_include_directories(fuse_ui_designer_lib PUBLIC Designer/include)
+    target_link_libraries(fuse_ui_designer_lib PUBLIC fuse_ui_doc)
+endif()
+
 option(FUSE_BUILD_UI_SCRIPT "Build fuse_ui_script (Lua bindings)" ON)
 if(FUSE_BUILD_UI_SCRIPT AND TARGET fuse_ui_doc)
     if(NOT TARGET fuse_lua AND EXISTS "${FUSE_UI_REPO_ROOT}/vendor/lua/CMakeLists.txt")
@@ -255,6 +262,10 @@ endif()
 option(FUSE_BUILD_UI_APP "Build fuse_app (Application / AppWindow, on-demand loop) and its samples" ON)
 if(FUSE_BUILD_UI_APP AND TARGET fuse_ui_doc)
     add_subdirectory(App)
+endif()
+if(TARGET fuse_ui_designer_lib AND TARGET fuse_app_native)
+    add_executable(fuse_ui_designer Designer/app/designer_main.cpp)
+    target_link_libraries(fuse_ui_designer PRIVATE fuse_ui_designer_lib fuse_app_native)
 endif()
 
 # ---- fuse_ui_game: game UI (UI7) — HUD widgets, world markers / panels, gamepad nav, input arbitration ----

@@ -131,6 +131,12 @@ if(FUSE_UI_HAVE_SQL)
     target_link_libraries(fuse_ui_sql_model PRIVATE fuse_ui_sql)
 endif()
 
+# UI8 designer prototype
+if(TARGET fuse_ui_designer_lib)
+    fuse_ui_test(fuse_ui_designer_roundtrip test_designer.cpp)
+    target_link_libraries(fuse_ui_designer_roundtrip PRIVATE fuse_ui_designer_lib)
+endif()
+
 # UI10 platform feel: kinetic scroll physics, haptics hook
 fuse_ui_test(fuse_ui_platform_feel test_platform_feel.cpp)
 
