@@ -119,6 +119,12 @@ foreach(g dock_layout_roundtrip modelview_1m_rows tier_c tier_d)
     set_tests_properties(fuse_ui_${g} PROPERTIES LABELS "fuse_ui;gate")
 endforeach()
 
+# fuse_ui_a11y: platform accessibility bridge (+ AccessKit when FUSE_UI_ACCESSKIT_DIR is set)
+if(TARGET fuse_ui_a11y)
+    fuse_ui_test(fuse_ui_a11y_bridge test_a11y_bridge.cpp)
+    target_link_libraries(fuse_ui_a11y_bridge PRIVATE fuse_ui_a11y)
+endif()
+
 # fuse_ui_sql: SqliteModel over vendor/sqlite
 if(FUSE_UI_HAVE_SQL)
     fuse_ui_test(fuse_ui_sql_model test_sql_model.cpp)

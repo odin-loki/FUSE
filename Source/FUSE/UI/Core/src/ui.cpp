@@ -1628,4 +1628,32 @@ void UiContext::dumpA11y(std::string& out) const {
     rec(rec, m_root.index, 0);
 }
 
+void UiContext::snapshotA11y(std::vector<A11ySnapshotNode>& out) const {
+    out.clear();
+    auto rec = [&](auto&& self, u32 i, u32 parent) -> void {
+        const Node& n = m_nodes[i];
+        if (!m_styles.style(n.style).visible) return;
+        u32 p = parent;
+        if (n.role != A11yRole::None || i == m_root.index) {
+            A11ySnapshotNode s;
+            s.node = {i, n.gen};
+            s.parent = parent;
+            s.role = n.role == A11yRole::None ? A11yRole::Window : n.role;
+            s.name = m_cold[i]->a11yName.empty() ? m_cold[i]->text : m_cold[i]->a11yName;
+            s.bounds = n.rect;
+            s.focusable = (n.flags & kFlagFocusable) != 0;
+            s.focused = m_focus.index == i && m_focus.generation == n.gen;
+            s.checked = (n.state & kStateChecked) != 0;
+            s.disabled = (n.state & kStateDisabled) != 0;
+            s.value = n.value;
+            s.lo = n.lo;
+            s.hi = n.hi;
+            p = u32(out.size());
+            out.push_back(std::move(s));
+        }
+        for (u32 k = n.first; k != kNone; k = m_nodes[k].next) self(self, k, p);
+    };
+    rec(rec, m_root.index, ~0u);
+}
+
 } // namespace fuse::ui

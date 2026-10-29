@@ -111,6 +111,25 @@ if(FUSE_BUILD_UI_SQL AND FUSE_BUILD_UI_WIDGETS AND EXISTS "${FUSE_UI_REPO_ROOT}/
     set(FUSE_UI_HAVE_SQL ON)
 endif()
 
+# fuse_ui_a11y: accessibility bridge (snapshot / diff / actions); AccessKit backend when FUSE_UI_ACCESSKIT_DIR
+# points at an accesskit-c build (include/accesskit.h + lib/libaccesskit.a; needs a Rust toolchain to produce).
+if(FUSE_UI_ACCESSIBILITY)
+    set(FUSE_UI_ACCESSKIT_DIR "" CACHE PATH "accesskit-c prefix (include/, lib/) for the AccessKit a11y backend; empty = none")
+    add_library(fuse_ui_a11y STATIC A11y/src/a11y.cpp A11y/src/a11y_accesskit.cpp)
+    target_include_directories(fuse_ui_a11y PUBLIC A11y/include)
+    target_link_libraries(fuse_ui_a11y PUBLIC fuse_ui_core)
+    find_library(FUSE_UI_ACCESSKIT_LIB NAMES accesskit PATHS "${FUSE_UI_ACCESSKIT_DIR}/lib" NO_DEFAULT_PATH)
+    if(FUSE_UI_ACCESSKIT_DIR AND FUSE_UI_ACCESSKIT_LIB AND EXISTS "${FUSE_UI_ACCESSKIT_DIR}/include/accesskit.h")
+        target_include_directories(fuse_ui_a11y PRIVATE "${FUSE_UI_ACCESSKIT_DIR}/include")
+        target_compile_definitions(fuse_ui_a11y PUBLIC FUSE_UI_HAVE_ACCESSKIT=1)
+        find_package(Threads REQUIRED)
+        target_link_libraries(fuse_ui_a11y PRIVATE "${FUSE_UI_ACCESSKIT_LIB}" Threads::Threads ${CMAKE_DL_LIBS} m)
+        message(STATUS "FUSE UI: AccessKit backend from ${FUSE_UI_ACCESSKIT_DIR}")
+    else()
+        target_compile_definitions(fuse_ui_a11y PUBLIC FUSE_UI_HAVE_ACCESSKIT=0)
+    endif()
+endif()
+
 option(FUSE_BUILD_UI_DOC "Build fuse_ui_doc (.fuseui documents + bindings)" ON)
 if(FUSE_BUILD_UI_DOC AND FUSE_BUILD_UI_WIDGETS)
     add_library(fuse_ui_doc STATIC Doc/src/json.cpp Doc/src/document.cpp Doc/src/cook.cpp)

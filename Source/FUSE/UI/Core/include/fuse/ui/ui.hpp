@@ -82,6 +82,17 @@ enum class A11yRole : u8 {
     List, ListItem, Image, Separator, Link, ComboBox, SpinBox, Dial, ScrollBar, Tab
 };
 const char* a11yRoleName(A11yRole r);
+/// One accessible node in a flattened snapshot (UiContext::snapshotA11y). Nodes with role None are skipped and
+/// their children re-parented, as in dumpA11y. `parent` indexes the snapshot vector (~0u for the top node).
+struct A11ySnapshotNode {
+    NodeHandle node;
+    u32 parent = ~0u;
+    A11yRole role = A11yRole::None;
+    std::string name; ///< a11y name, else the node text
+    Rect bounds;      ///< window coordinates (logical px)
+    bool focusable = false, focused = false, checked = false, disabled = false;
+    f32 value = 0.f, lo = 0.f, hi = 0.f;
+};
 
 // ---- Widget classes ------------------------------------------------------------------------------------------------
 struct PaintContext {
@@ -309,6 +320,9 @@ public:
     // dumps (tests, inspector)
     void dumpLayout(std::string& out) const;
     void dumpA11y(std::string& out) const;
+    /// Flattened accessible tree of the visible nodes, root first, parents before children (for platform
+    /// accessibility adapters: fuse_ui_a11y / AccessKit). Clears `out` first.
+    void snapshotA11y(std::vector<A11ySnapshotNode>& out) const;
 
     // text
     const fuse::text::Font* font() const { return m_font; }
