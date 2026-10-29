@@ -779,6 +779,25 @@ void gateGpuViewport(Rig& r) {
         const u32 framesBeforeDrag = r.shell.sceneFrames();
         gizmoDrag(r, scene); // pick + drag in the GPU viewport: every edit renders a new engine frame
         CHECK(r.shell.sceneFrames() > framesBeforeDrag);
+        {
+            // Create Cube renders (builtin cube mesh): the engine frame changes where the cube appears
+            std::vector<u32> before, after;
+            u32 bw = 0, bh = 0, aw = 0, ah = 0;
+            CHECK(host->readback(before, bw, bh));
+            const u32 f0 = r.shell.sceneFrames();
+            CHECK(r.c.trigger(ActionId::EntityCreateCube));
+            for (int i = 0; i < 100 && r.shell.sceneFrames() <= f0; ++i) {
+                r.frames();
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            CHECK(host->readback(after, aw, ah));
+            std::size_t changed = 0;
+            if (bw == aw && bh == ah)
+                for (std::size_t i = 0; i < before.size(); ++i)
+                    if (before[i] != after[i]) ++changed;
+            std::printf("gpu_viewport: Create Cube changed %zu / %zu engine pixels\n", changed, after.size());
+            CHECK(changed > after.size() / 200);
+        }
         const fuse::ui::Image& img = r.shell.viewportImage();
         CHECK(img.externalSlot == 0);
         // zero-copy: the CPU pixels were never written (still the ChildBg fill), yet the window shows the 3D frame

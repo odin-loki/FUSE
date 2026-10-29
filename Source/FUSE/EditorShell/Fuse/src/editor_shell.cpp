@@ -568,9 +568,11 @@ void EditorShellWindow::syncInspector_() {
                 d.kind = w::PropKind::Enum;
                 for (const std::string& e : f.enumNames) options += (options.empty() ? "" : "\n") + e;
                 d.options = options;
-                // the inspector formats enums by name ("Box"); the combo takes the index
+                // the combo takes the index: schema enums read as "<index>" or "<index>;<extra>" (SDF type is
+                // "1;0.5,0.5,0.5"), some as a name; writes take the bare index
+                if (const std::size_t semi = value.find(';'); semi != std::string::npos) value.resize(semi);
                 for (std::size_t i = 0; i < f.enumNames.size(); ++i)
-                    if (f.enumNames[i] == f.value) value = std::to_string(i);
+                    if (f.enumNames[i] == value) value = std::to_string(i);
                 break;
             case PropertyFieldType::Color: d.kind = w::PropKind::Color; value = schemaToHex(f.value); break;
             default:

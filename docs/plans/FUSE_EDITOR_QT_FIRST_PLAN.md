@@ -292,5 +292,5 @@ Fallback if the whole-shell switch stalls: host individual FUSE UI panels inside
   - Keys 1-4 pick Select / Move / Rotate / Scale when the viewport has focus (new UI keys `Num1`-`Num4`; the native X11 and Win32 backends now also send key events for printable keys, so viewport WASD works in the real window). The bar has a World/Local space toggle and a Snap toggle.
   - Handle shapes match the Qt viewport: arrow heads (Move), 7 px rings (Rotate) and 10 px boxes (Scale). `viewport_gizmo` checks keys, buttons and the shape stroke counts.
   - `Create Cube` (shared `EntityContextMenu`, also used by the Qt shell) now references the renderer's builtin unit cube (`BuiltinMesh::Cube`, the same handle `World3D::spawnMesh` uses) with scale 0.5, so the cube is drawn. `fuse_editor_panel_models` checks the mesh handle.
-  - The inspector enum rows (for example the SDF type) select the current value; before, every enum showed its first option.
+  - The inspector enum rows (for example the SDF type, read as `"<index>;<params>"`) select the current value; before, every enum showed its first option. `gpu_viewport` creates a cube and checks the engine frame changes.
 - **EditorPanels unit tests**: `fuse_editor_panel_models` covers the hub, assets, materials, sculpt, profiler, timeline and sequencer models plus `withScene`, with no UI.
