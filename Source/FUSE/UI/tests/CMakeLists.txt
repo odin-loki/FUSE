@@ -40,6 +40,18 @@ set(FUSE_CORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../Core)
 fuse_ui_test(fuse_ui_platform_keys_v2 test_platform_keys_v2.cpp ${FUSE_CORE_DIR}/src/platform/input.cpp)
 target_include_directories(fuse_ui_platform_keys_v2 PRIVATE ${FUSE_CORE_DIR}/include)
 
+# .fuseui documents and Lua bindings.
+if(TARGET fuse_ui_doc)
+    fuse_ui_test(fuse_ui_doc_load test_doc.cpp)
+    target_link_libraries(fuse_ui_doc_load PRIVATE fuse_ui_doc)
+    target_compile_definitions(fuse_ui_doc_load PRIVATE FUSE_UI_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data")
+endif()
+if(TARGET fuse_ui_script)
+    fuse_ui_test(fuse_ui_lua_bindings test_lua.cpp)
+    target_link_libraries(fuse_ui_lua_bindings PRIVATE fuse_ui_script)
+    target_compile_definitions(fuse_ui_lua_bindings PRIVATE FUSE_UI_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data")
+endif()
+
 add_executable(fuse_ui_sample sample_main.cpp)
 target_link_libraries(fuse_ui_sample PRIVATE fuse_ui_widgets)
 target_include_directories(fuse_ui_sample PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})

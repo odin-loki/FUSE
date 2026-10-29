@@ -49,6 +49,27 @@ if(FUSE_BUILD_UI_WIDGETS)
     target_link_libraries(fuse_ui_widgets PUBLIC fuse_ui_core)
 endif()
 
+# ---- fuse_ui_doc: .fuseui JSON documents, binding model and expression bytecode ----
+option(FUSE_BUILD_UI_DOC "Build fuse_ui_doc (.fuseui documents + bindings)" ON)
+if(FUSE_BUILD_UI_DOC AND FUSE_BUILD_UI_WIDGETS)
+    add_library(fuse_ui_doc STATIC Doc/src/json.cpp Doc/src/document.cpp)
+    target_include_directories(fuse_ui_doc PUBLIC Doc/include)
+    target_link_libraries(fuse_ui_doc PUBLIC fuse_ui_widgets)
+endif()
+
+# ---- fuse_ui_script: Lua bindings (vendored Lua 5.2, the fuse_script backend) ----
+option(FUSE_BUILD_UI_SCRIPT "Build fuse_ui_script (Lua bindings)" ON)
+if(FUSE_BUILD_UI_SCRIPT AND TARGET fuse_ui_doc)
+    if(NOT TARGET fuse_lua AND EXISTS "${FUSE_UI_REPO_ROOT}/vendor/lua/CMakeLists.txt")
+        add_subdirectory("${FUSE_UI_REPO_ROOT}/vendor/lua" "${CMAKE_CURRENT_BINARY_DIR}/vendor_lua")
+    endif()
+    if(TARGET fuse_lua)
+        add_library(fuse_ui_script STATIC Script/src/lua_ui.cpp)
+        target_include_directories(fuse_ui_script PUBLIC Script/include)
+        target_link_libraries(fuse_ui_script PUBLIC fuse_ui_doc fuse_lua)
+    endif()
+endif()
+
 if(FUSE_BUILD_UI_TESTS AND FUSE_BUILD_UI_WIDGETS)
     add_subdirectory(tests)
 endif()
