@@ -165,6 +165,7 @@ bool EditorHost::newScene(scene::SceneDimension dimension, std::string name) {
     }
     m_sceneDimension = dimension;
     m_currentScenePath.clear();
+    m_materials.resetToDefaults();
     markSceneClean_();
     return fileOk_(CommandKind::NewScene, {},
                    std::string("new ") + dimensionLabel(dimension) + " scene '" + m_runtimeScene.name() + "'");
@@ -191,6 +192,8 @@ bool EditorHost::openScene(const std::string& path) {
     m_editorScene.registry() = std::move(loadedRegistry);
     m_sceneDimension = info.dimension;
     m_currentScenePath = path;
+    m_materials.resetToDefaults();
+    m_materials.load(MaterialCatalog::sidecarPath(path)); // optional sidecar; defaults otherwise
     m_runtimeViewport.onSceneFileOpened(m_editorScene.registry());
     markSceneClean_();
     ++m_sceneLoadCount;
@@ -217,6 +220,10 @@ bool EditorHost::saveSceneAs(const std::string& path) {
         scene::SceneSerialiser::saveWithRegistry(m_runtimeScene, m_editorScene.registry(), path, m_sceneDimension);
     if (saved.status != scene::SerialiseStatus::Ok) {
         return fileFail_(CommandKind::SaveSceneAs, path, "save scene " + path + " failed: " + saved.error);
+    }
+    std::string materialError;
+    if (!m_materials.save(MaterialCatalog::sidecarPath(path), &materialError)) {
+        return fileFail_(CommandKind::SaveSceneAs, path, "save scene: materials: " + materialError);
     }
     m_currentScenePath = path;
     markSceneClean_();

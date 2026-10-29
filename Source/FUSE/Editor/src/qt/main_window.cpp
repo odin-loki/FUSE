@@ -182,6 +182,10 @@ void MainWindow::buildDocks() {
     addPanelDock(kAssetBrowserDock, tr("Asset Browser"), m_assetBrowser);
     addPanelDock(kInspectorDock, tr("Inspector"), m_inspector);
     addPanelDock(kMaterialEditorDock, tr("Material Editor"), m_materialEditor);
+    connect(m_materialEditor, &MaterialEditorWidget::sceneEdited, this, [this]() {
+        refreshPanels();
+        updateEditActions();
+    });
     addPanelDock(kSdfSculptDock, tr("SDF Sculpt"), m_sdfSculpt);
     addPanelDock(kConsoleDock, tr("Console"), m_console);
     addPanelDock(kProfilerDock, tr("Profiler"), m_profiler);

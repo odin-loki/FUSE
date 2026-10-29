@@ -1,5 +1,7 @@
 #include "editor_panels.hpp"
 
+#include <fuse/editor/material_catalog.hpp>
+
 #include "property_pane_widget.hpp"
 
 #include <fuse/editor/command_queue.hpp>
@@ -18,6 +20,9 @@
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
+#include <QPixmap>
+#include <QImage>
+#include <QPushButton>
 #include <QDir>
 #include <QDoubleSpinBox>
 #include <QDropEvent>
@@ -1343,8 +1348,21 @@ void ProfilerWidget::refresh() {
 MaterialEditorWidget::MaterialEditorWidget(EditorHost& host, std::mutex& sceneMutex, QWidget* parent)
     : QWidget(parent), m_host(host), m_sceneMutex(sceneMutex) {
     auto* layout = new QFormLayout(this);
-    m_summary = new QLabel(this);
-    layout->addRow(m_summary);
+    auto* top = new QHBoxLayout();
+    m_list = new QComboBox(this);
+    m_list->setObjectName(QStringLiteral("fuseMaterialList"));
+    auto* add = new QPushButton(tr("New"), this);
+    add->setObjectName(QStringLiteral("fuseMaterialNew"));
+    top->addWidget(m_list, 1);
+    top->addWidget(add);
+    layout->addRow(tr("Material"), top);
+    m_preview = new QLabel(this);
+    m_preview->setFixedSize(96, 96);
+    m_preview->setAlignment(Qt::AlignCenter);
+    layout->addRow(m_preview);
+    m_color = new QPushButton(this);
+    m_color->setObjectName(QStringLiteral("fuseMaterialBaseColor"));
+    layout->addRow(tr("Base colour"), m_color);
     m_roughness = new QDoubleSpinBox(this);
     m_metallic = new QDoubleSpinBox(this);
     for (QDoubleSpinBox* spin : {m_roughness, m_metallic}) {
@@ -1354,27 +1372,215 @@ MaterialEditorWidget::MaterialEditorWidget(EditorHost& host, std::mutex& sceneMu
     }
     layout->addRow(tr("Roughness"), m_roughness);
     layout->addRow(tr("Metallic"), m_metallic);
+    m_assign = new QPushButton(tr("Assign to selection"), this);
+    m_assign->setObjectName(QStringLiteral("fuseMaterialAssign"));
+    layout->addRow(m_assign);
+    m_summary = new QLabel(this);
+    m_summary->setWordWrap(true);
+    layout->addRow(m_summary);
+
+    connect(m_list, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int i) {
+        if (!m_updating && i >= 0) {
+            selectMaterial(static_cast<u32>(i));
+        }
+    });
+    connect(add, &QPushButton::clicked, this, [this]() { newMaterial(); });
+    connect(m_assign, &QPushButton::clicked, this, [this]() { assignToSelection(); });
     connect(m_roughness, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double v) {
-        std::lock_guard<std::mutex> lock(m_sceneMutex);
-        m_panel.setRoughness(static_cast<f32>(v), m_host.commandStack());
+        if (!m_updating) {
+            setRoughness(v);
+        }
     });
     connect(m_metallic, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double v) {
-        std::lock_guard<std::mutex> lock(m_sceneMutex);
-        m_panel.setMetallic(static_cast<f32>(v), m_host.commandStack());
+        if (!m_updating) {
+            setMetallic(v);
+        }
+    });
+    connect(m_color, &QPushButton::clicked, this, [this]() {
+        float r = 1.f, g = 1.f, b = 1.f;
+        m_panel.baseColorSrgb(r, g, b);
+        const QColor picked = QColorDialog::getColor(QColor::fromRgbF(r, g, b), this, tr("Base colour"));
+        if (picked.isValid()) {
+            setBaseColor(picked);
+        }
     });
     refresh();
 }
 
-void MaterialEditorWidget::refresh() {
-    bool has = false;
+void MaterialEditorWidget::repopulate_() {
+    m_updating = true;
+    m_list->clear();
+    const MaterialCatalog& catalog = m_host.materials();
+    for (u32 i = 0; i < catalog.count(); ++i) {
+        m_list->addItem(QStringLiteral("%1: %2").arg(i).arg(QString::fromStdString(catalog.entry(i).name)));
+    }
+    if (!catalog.valid(m_current)) {
+        m_current = 0;
+    }
+    m_list->setCurrentIndex(static_cast<int>(m_current));
+    m_updating = false;
+}
+
+void MaterialEditorWidget::showCurrent_() {
+    MaterialEditState state;
+    QString name;
     {
         std::lock_guard<std::mutex> lock(m_sceneMutex);
-        m_panel.sync(m_host.editorState(), m_panel.catalogCount());
-        has = m_panel.hasSelectedMaterial();
+        const MaterialCatalog& catalog = m_host.materials();
+        if (!catalog.valid(m_current)) {
+            return;
+        }
+        state = catalog.entry(m_current).state;
+        name = QString::fromStdString(catalog.entry(m_current).name);
     }
-    m_summary->setText(has ? tr("Material %1").arg(m_panel.selectedMaterialId()) : tr("No material selected"));
-    m_roughness->setEnabled(has);
-    m_metallic->setEnabled(has);
+    m_panel.setEditState(state);
+    m_updating = true;
+    m_list->setCurrentIndex(static_cast<int>(m_current));
+    m_roughness->setValue(state.roughness);
+    m_metallic->setValue(state.metallic);
+    m_updating = false;
+    float r = 1.f, g = 1.f, b = 1.f;
+    m_panel.baseColorSrgb(r, g, b);
+    const QColor swatch = QColor::fromRgbF(r, g, b);
+    m_color->setText(swatch.name());
+    m_color->setStyleSheet(QStringLiteral("background:%1;color:%2;")
+                               .arg(swatch.name(), swatch.lightnessF() > 0.5 ? QStringLiteral("#000")
+                                                                            : QStringLiteral("#fff")));
+    m_preview->setPixmap(QPixmap::fromImage(previewImage()));
+    m_preview->setToolTip(name);
+}
+
+QImage MaterialEditorWidget::previewImage() const {
+    QImage image(96, 96, QImage::Format_RGBA8888);
+    image.fill(Qt::transparent);
+    if (!m_panel.renderPreview(96u, 96u, image.bits())) {
+        return {};
+    }
+    return image;
+}
+
+void MaterialEditorWidget::refresh() {
+    bool hasMaterial = false;
+    u32 entityMaterial = 0;
+    bool selectionChanged = false;
+    u32 revision = 0;
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        const ecs::EntityID sel = m_host.editorState().primarySelection;
+        selectionChanged = sel != m_lastSelection;
+        m_lastSelection = sel;
+        if (sel != ecs::EntityID::null()) {
+            hasMaterial = AssignMaterialCommand::materialOf(m_host.editorScene().registry(), sel, entityMaterial);
+        }
+        revision = m_host.materials().revision();
+        m_panel.sync(m_host.editorState(), m_host.materials().count());
+    }
+    // Follow the selection: picking an entity shows its material.
+    if (selectionChanged && hasMaterial && m_host.materials().valid(entityMaterial)) {
+        m_current = entityMaterial;
+    }
+    if (revision != m_shownRevision || selectionChanged) {
+        m_shownRevision = revision;
+        repopulate_();
+        showCurrent_();
+    }
+    m_assign->setEnabled(m_lastSelection != ecs::EntityID::null());
+    m_summary->setText(hasMaterial
+                           ? tr("Selection uses material %1").arg(entityMaterial)
+                           : (m_lastSelection != ecs::EntityID::null() ? tr("Selection has no Mesh / SDF object")
+                                                                        : tr("No entity selected")));
+}
+
+void MaterialEditorWidget::selectMaterial(u32 id) {
+    if (!m_host.materials().valid(id)) {
+        return;
+    }
+    m_current = id;
+    showCurrent_();
+}
+
+bool MaterialEditorWidget::applyState_(const MaterialEditState& state, const char* what) {
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        MaterialCatalog& catalog = m_host.materials();
+        if (!catalog.valid(m_current)) {
+            return false;
+        }
+        const MaterialEditState before = catalog.entry(m_current).state;
+        m_host.undoStack().execute(std::make_unique<MaterialEditCommand>(
+            catalog, m_current, before, state, std::string("Material ") + what));
+        m_shownRevision = catalog.revision();
+    }
+    showCurrent_();
+    emit sceneEdited();
+    return true;
+}
+
+bool MaterialEditorWidget::setRoughness(double v) {
+    if (!m_host.materials().valid(m_current)) {
+        return false;
+    }
+    MaterialEditState s = m_host.materials().entry(m_current).state;
+    s.roughness = static_cast<f32>(std::clamp(v, 0.0, 1.0));
+    return applyState_(s, "roughness");
+}
+
+bool MaterialEditorWidget::setMetallic(double v) {
+    if (!m_host.materials().valid(m_current)) {
+        return false;
+    }
+    MaterialEditState s = m_host.materials().entry(m_current).state;
+    s.metallic = static_cast<f32>(std::clamp(v, 0.0, 1.0));
+    return applyState_(s, "metallic");
+}
+
+bool MaterialEditorWidget::setBaseColor(const QColor& srgb) {
+    if (!m_host.materials().valid(m_current) || !srgb.isValid()) {
+        return false;
+    }
+    const auto toLinear = [](double c) {
+        return static_cast<f32>(c <= 0.04045 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4));
+    };
+    MaterialEditState s = m_host.materials().entry(m_current).state;
+    s.baseColorR = toLinear(srgb.redF());
+    s.baseColorG = toLinear(srgb.greenF());
+    s.baseColorB = toLinear(srgb.blueF());
+    return applyState_(s, "base colour");
+}
+
+u32 MaterialEditorWidget::newMaterial() {
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        MaterialCatalog& catalog = m_host.materials();
+        MaterialCatalogEntry entry;
+        entry.name = "Material " + std::to_string(catalog.count());
+        if (catalog.valid(m_current)) {
+            entry.state = catalog.entry(m_current).state;
+        }
+        m_host.undoStack().execute(std::make_unique<AddMaterialCommand>(catalog, std::move(entry)));
+        m_current = catalog.count() - 1u;
+    }
+    m_shownRevision = UINT32_MAX;
+    refresh();
+    emit sceneEdited();
+    return m_current;
+}
+
+bool MaterialEditorWidget::assignToSelection() {
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        const ecs::EntityID sel = m_host.editorState().primarySelection;
+        ecs::Registry& registry = m_host.editorScene().registry();
+        u32 before = 0;
+        if (sel == ecs::EntityID::null() || !AssignMaterialCommand::materialOf(registry, sel, before) ||
+            before == m_current) {
+            return false;
+        }
+        m_host.undoStack().execute(std::make_unique<AssignMaterialCommand>(registry, sel, before, m_current));
+    }
+    refresh();
+    emit sceneEdited();
+    return true;
 }
 
 // ---- SdfSculptWidget ------------------------------------------------------------------------------

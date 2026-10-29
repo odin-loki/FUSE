@@ -4,6 +4,7 @@
 #include <fuse/ai/uaisk_tree_reload.hpp>
 #include <fuse/cinematics/timeline_host_stub.hpp>
 #include <fuse/cinematics/timeline_loader.hpp>
+#include <fuse/editor/material_catalog.hpp>
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/command_stack.hpp>
 #include <fuse/editor/editor_scene.hpp>
@@ -59,6 +60,9 @@ public:
     CommandQueue& commandQueue() { return m_queue; }
     const CommandQueue& commandQueue() const { return m_queue; }
 
+    /// GUI-3 per-scene material catalog (Material Editor dock); saved as `<scene>.materials`.
+    MaterialCatalog& materials() { return m_materials; }
+    const MaterialCatalog& materials() const { return m_materials; }
     UndoStack& undoStack() { return m_undoStack; }
     const UndoStack& undoStack() const { return m_undoStack; }
 
@@ -195,6 +199,7 @@ private:
     // slots in their destructors, so the registry must be destroyed after the stack.
     EditorScene m_editorScene;
     UndoStack m_undoStack;
+    MaterialCatalog m_materials;
     EditorState m_state;
     scene::Scene m_runtimeScene;
     PlaySession m_playSession;

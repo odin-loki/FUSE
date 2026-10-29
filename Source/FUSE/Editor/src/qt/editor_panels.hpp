@@ -11,6 +11,7 @@
 #include <fuse/editor/sdf_sculpt_panel.hpp>
 
 #include <QColor>
+#include <QImage>
 #include <QPointer>
 #include <QTreeWidget>
 #include <QWidget>
@@ -32,6 +33,7 @@ class QLineEdit;
 class QListWidget;
 class QMenu;
 class QPlainTextEdit;
+class QPushButton;
 class QToolButton;
 
 namespace fuse::editor::qt {
@@ -324,13 +326,41 @@ public:
     void refresh();
     MaterialEditorPanel& panel() { return m_panel; }
 
+    // GUI-3: edits go through undoable commands on the host UndoStack.
+    [[nodiscard]] u32 currentMaterial() const { return m_current; }
+    void selectMaterial(u32 id);
+    bool setRoughness(double v);
+    bool setMetallic(double v);
+    bool setBaseColor(const QColor& srgb);
+    /// Append a new material (copy of the current one) and select it.
+    u32 newMaterial();
+    /// Assign the current material to the selected entity (Mesh / SDFObject).
+    bool assignToSelection();
+    [[nodiscard]] QImage previewImage() const;
+    QComboBox* materialList() const { return m_list; }
+
+signals:
+    void sceneEdited();
+
 private:
+    bool applyState_(const MaterialEditState& state, const char* what);
+    void showCurrent_();
+    void repopulate_();
+
     EditorHost& m_host;
     std::mutex& m_sceneMutex;
     MaterialEditorPanel m_panel;
+    QComboBox* m_list = nullptr;
+    QLabel* m_preview = nullptr;
     QLabel* m_summary = nullptr;
+    QPushButton* m_color = nullptr;
+    QPushButton* m_assign = nullptr;
     QDoubleSpinBox* m_roughness = nullptr;
     QDoubleSpinBox* m_metallic = nullptr;
+    u32 m_current = 0;
+    u32 m_shownRevision = UINT32_MAX;
+    ecs::EntityID m_lastSelection = ecs::EntityID::null();
+    bool m_updating = false;
 };
 
 /// B6.8 SDF Sculpt dock — `SdfSculptPanel` brush settings.

@@ -11,6 +11,8 @@
 //   entity     Entity menu create / duplicate / delete (undoable through the UndoStack)
 //   gizmo      transform toolbar (Select / Move / Rotate / Scale, Local, Snap) and viewport handle
 //              drags: one drag = one undo step, snap rounds, rotate / scale edit the transform
+//   material   Material Editor dock: catalog list, follow-selection, roughness / metallic / colour
+//              edits and New / Assign are undoable; the catalog saves / reloads beside the scene
 //   layout     dock layout + geometry save / restore through QSettings (temp settings path)
 //   profiler   frame-time graph, min / avg / max summary, Pause and Clear
 //   project    openProject() on a sample loads its world into the hierarchy; the window grabs to a
@@ -18,6 +20,10 @@
 #include "editor_panels.hpp"
 #include "main_window.hpp"
 #include "viewport_placeholder_widget.hpp"
+
+#include <fuse/ecs/components/sdf_object.hpp>
+#include <fuse/editor/material_catalog.hpp>
+#include <QComboBox>
 
 #include <fuse/core/init.hpp>
 #include <fuse/ecs/components/transform.hpp>
@@ -29,6 +35,7 @@
 #include <QDoubleSpinBox>
 #include <QCheckBox>
 #include <QImage>
+#include <QFileInfo>
 #include <QLabel>
 #include <QListWidget>
 #include <QMenu>
@@ -367,6 +374,70 @@ int gateGizmo(MainWindow& window) {
     return 0;
 }
 
+int gateMaterial(MainWindow& window) {
+    using fuse::editor::AssignMaterialCommand;
+    using fuse::u32;
+    auto* mat = window.materialEditor();
+    expect(mat != nullptr, "material: Material Editor dock widget");
+    if (mat == nullptr) {
+        return 1;
+    }
+    auto& catalog = window.host().materials();
+    expect(catalog.count() >= 5u && mat->materialList()->count() == static_cast<int>(catalog.count()),
+           "material: catalog populated and listed");
+    findAction(window, "fuseActionCreateSdfSphere")->trigger();
+    tick(window);
+    const ecs::EntityID e = window.host().editorState().primarySelection;
+    expect(mat->currentMaterial() == 0u, "material: follows the selection (new sphere uses 0)");
+
+    mat->selectMaterial(2);
+    expect(mat->assignToSelection(), "material: assign Gold to the selection");
+    u32 id = 99;
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        AssignMaterialCommand::materialOf(window.host().editorScene().registry(), e, id);
+    }
+    expect(id == 2u, "material: SDFObject material_id updated");
+
+    const float r0 = catalog.entry(2).state.roughness;
+    expect(mat->setRoughness(0.8), "material: set roughness");
+    expect(mat->setMetallic(0.25), "material: set metallic");
+    expect(std::fabs(catalog.entry(2).state.roughness - 0.8f) < 1e-5f &&
+               std::fabs(catalog.entry(2).state.metallic - 0.25f) < 1e-5f,
+           "material: catalog reflects the edits");
+    const QImage before = mat->previewImage();
+    expect(mat->setBaseColor(QColor(30, 200, 60)), "material: set base colour");
+    expect(catalog.entry(2).state.baseColorG > catalog.entry(2).state.baseColorR, "material: colour stored linear");
+    expect(!before.isNull() && mat->previewImage() != before, "material: preview re-renders");
+
+    window.updateEditActions();
+    findAction(window, MainWindow::kActionUndo)->trigger(); // merged roughness / metallic / colour step
+    tick(window);
+    expect(std::fabs(catalog.entry(2).state.roughness - r0) < 1e-5f, "material: undo reverts the edit");
+
+    const u32 n0 = catalog.count();
+    const u32 created = mat->newMaterial();
+    tick(window);
+    expect(catalog.count() == n0 + 1u && created == n0 && mat->materialList()->count() == static_cast<int>(n0 + 1u),
+           "material: New appends and lists a material");
+    findAction(window, MainWindow::kActionUndo)->trigger();
+    tick(window);
+    expect(catalog.count() == n0 && mat->materialList()->count() == static_cast<int>(n0),
+           "material: undo removes the new material");
+
+    QTemporaryDir dir;
+    const std::string scene = (dir.path() + QStringLiteral("/mat_scene.fusescene")).toStdString();
+    mat->selectMaterial(3);
+    mat->setRoughness(0.42);
+    expect(window.host().saveSceneAs(scene), "material: save scene");
+    expect(QFileInfo::exists(QString::fromStdString(fuse::editor::MaterialCatalog::sidecarPath(scene))),
+           "material: sidecar written");
+    expect(window.host().openScene(scene), "material: reopen scene");
+    tick(window);
+    expect(std::fabs(catalog.entry(3).state.roughness - 0.42f) < 1e-5f, "material: catalog round-trips");
+    return 0;
+}
+
 int gateLayout(MainWindow& window) {
     QTemporaryDir dir;
     QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope, dir.path());
@@ -449,6 +520,9 @@ int main(int argc, char** argv) {
         }
         if (gate == "gizmo" || gate == "all") {
             gateGizmo(window);
+        }
+        if (gate == "material" || gate == "all") {
+            gateMaterial(window);
         }
         if (gate == "layout" || gate == "all") {
             gateLayout(window);

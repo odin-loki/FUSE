@@ -32,6 +32,7 @@ set(FUSE_EDITOR_API_SOURCES
     src/scene_hierarchy_panel.cpp
     src/undo_stack.cpp
     src/transform_gizmo.cpp
+    src/material_catalog.cpp
     src/viewport_panel.cpp
     src/viewport_scene_view.cpp
     src/viewport_framebuffer.cpp

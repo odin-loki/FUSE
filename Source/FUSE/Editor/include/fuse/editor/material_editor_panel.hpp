@@ -67,6 +67,11 @@ public:
     [[nodiscard]] bool canRefreshPanel() const;
 
     bool selectMaterial(u32 materialId);
+    /// Load authoring values from an external catalog (GUI-3) without posting commands.
+    void setEditState(const MaterialEditState& state) {
+        m_editState = state;
+        m_previewDirty = true;
+    }
     bool setRoughness(f32 roughness, CommandStack& cmds);
     bool setMetallic(f32 metallic, CommandStack& cmds);
     bool setBaseColor(f32 r, f32 g, f32 b, CommandStack& cmds);
