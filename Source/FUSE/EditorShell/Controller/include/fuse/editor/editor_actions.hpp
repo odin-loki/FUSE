@@ -13,9 +13,11 @@ enum class ActionId : u16 {
     FileNewScene, FileOpenScene, FileSave, FileSaveAs, FileNewProject, FileOpenProject, FileQuit,
     EditUndo, EditRedo, EditPreferences,
     EntityCreateEmpty, EntityCreateCube, EntityCreateSdfSphere, EntityCreateSdfBox, EntityCreatePointLight,
-    EntityCreateDirectionalLight, EntityCreateCamera, EntityDuplicate, EntityDelete,
+    EntityCreateDirectionalLight, EntityCreateCamera, EntityDuplicate, EntityDelete, EntityGroup, EntityUngroup,
+    EntityOpenScript,
     PlayPlay, PlayPause, PlayResume, PlayStep, PlayStop,
     ViewResetLayout, ViewModeLit, ViewModeUnlit, ViewModeWireframe, ViewModeLitWireframe, ViewShowMeshBounds,
+    ViewShowColliders, ViewFrameSelected,
     Count
 };
 

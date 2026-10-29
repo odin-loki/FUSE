@@ -68,6 +68,25 @@ u8 asciiKey(Key& k, u32 c) {
     case '2': k = Key::Num2; return 1;
     case '3': k = Key::Num3; return 1;
     case '4': k = Key::Num4; return 1;
+    case 'b': case 'B': k = Key::B; return 1;
+    case 'f': case 'F': k = Key::F; return 1;
+    case 'g': case 'G': k = Key::G; return 1;
+    case 'h': case 'H': k = Key::H; return 1;
+    case 'i': case 'I': k = Key::I; return 1;
+    case 'j': case 'J': k = Key::J; return 1;
+    case 'k': case 'K': k = Key::K; return 1;
+    case 'l': case 'L': k = Key::L; return 1;
+    case 'm': case 'M': k = Key::M; return 1;
+    case 'p': case 'P': k = Key::P; return 1;
+    case 'r': case 'R': k = Key::R; return 1;
+    case 't': case 'T': k = Key::T; return 1;
+    case 'u': case 'U': k = Key::U; return 1;
+    case '0': k = Key::Num0; return 1;
+    case '5': k = Key::Num5; return 1;
+    case '6': k = Key::Num6; return 1;
+    case '7': k = Key::Num7; return 1;
+    case '8': k = Key::Num8; return 1;
+    case '9': k = Key::Num9; return 1;
     default: return 0;
     }
 }
@@ -174,6 +193,15 @@ Key mapKey(KeySym s, bool& ascii) {
     case 0xffbf: return Key::F2;
     case 0xffc2: return Key::F5;
     case 0xffc7: return Key::F10;
+    case 0xffbe: return Key::F1;
+    case 0xffc0: return Key::F3;
+    case 0xffc1: return Key::F4;
+    case 0xffc3: return Key::F6;
+    case 0xffc4: return Key::F7;
+    case 0xffc5: return Key::F8;
+    case 0xffc6: return Key::F9;
+    case 0xffc8: return Key::F11;
+    case 0xffc9: return Key::F12;
     default: break;
     }
     Key k = Key::Other;
@@ -317,6 +345,15 @@ Key mapVk(WPARAM vk, bool& ascii) {
     case VK_F2: return Key::F2;
     case VK_F5: return Key::F5;
     case VK_F10: return Key::F10;
+    case VK_F1: return Key::F1;
+    case VK_F3: return Key::F3;
+    case VK_F4: return Key::F4;
+    case VK_F6: return Key::F6;
+    case VK_F7: return Key::F7;
+    case VK_F8: return Key::F8;
+    case VK_F9: return Key::F9;
+    case VK_F11: return Key::F11;
+    case VK_F12: return Key::F12;
     default: break;
     }
     Key k = Key::Other;

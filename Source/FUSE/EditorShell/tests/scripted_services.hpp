@@ -11,7 +11,7 @@ namespace fuse::editor::test {
 struct ScriptedServices final : ShellServices {
     std::deque<std::optional<std::string>> files;
     std::deque<PromptAnswer> answers;
-    std::vector<std::string> asked, warnings;
+    std::vector<std::string> asked, warnings, opened;
     std::optional<std::string> next_() {
         if (files.empty()) return std::nullopt;
         auto f = files.front();
@@ -30,6 +30,7 @@ struct ScriptedServices final : ShellServices {
         return a;
     }
     void warn(std::string_view t, std::string_view x) override { warnings.emplace_back(std::string(t) + ": " + std::string(x)); }
+    bool openExternal(std::string_view path) override { opened.emplace_back(path); return true; }
 };
 
 } // namespace fuse::editor::test

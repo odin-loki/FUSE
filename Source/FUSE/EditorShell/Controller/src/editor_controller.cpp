@@ -2,6 +2,8 @@
 #include <fuse/project/loader.hpp>
 
 #include <fuse/ecs/components/camera.hpp>
+#include <fuse/ecs/components/collider.hpp>
+#include <fuse/ecs/components/script.hpp>
 #include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
@@ -10,6 +12,7 @@
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/editor_console_commands.hpp>
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/entity_clipboard.hpp>
 #include <fuse/editor/viewport_scene_view.hpp>
 #include <fuse/project/manifest.hpp>
 
@@ -17,6 +20,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -25,6 +29,18 @@
 namespace fuse::editor {
 
 namespace {
+/// World matrices for the overlay / handles without consuming the dirty flags the scene sync (SDF objects, picking)
+/// still has to see: TransformSystem::update, then the flags that were set are set again.
+void updateWorldKeepDirty(ecs::Registry& registry) {
+    std::vector<ecs::EntityID> dirty;
+    registry.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform& t) {
+        if (t.dirty) dirty.push_back(id);
+    });
+    if (dirty.empty()) return;
+    ecs::TransformSystem::update(registry);
+    for (const ecs::EntityID id : dirty)
+        if (auto* t = registry.get<ecs::Transform>(id)) t->dirty = true;
+}
 
 ecs::EntityID toId(EntityRef r) { return ecs::EntityID{r.index, r.generation}; }
 EntityRef toRef(ecs::EntityID id) { return EntityRef{id.index, id.generation}; }
@@ -38,7 +54,9 @@ u8 entityKind(const ecs::Registry& registry, ecs::EntityID id) {
     return 0;
 }
 
-std::string entityLabel(const ecs::Registry& registry, ecs::EntityID id) {
+std::string entityLabel(const ecs::Registry& registry, ecs::EntityID id, const EntityNames* names = nullptr) {
+    if (names != nullptr)
+        if (const std::string* n = names->find(id); n != nullptr && !n->empty()) return *n;
     const char* kind = "Entity";
     if (registry.has<ecs::SDFObject>(id)) kind = "SDF Object";
     else if (registry.has<ecs::Terrain>(id)) kind = "Terrain";
@@ -180,7 +198,7 @@ bool EditorController::refresh() {
         ecs::Registry& registry = m_host.editorScene().registry();
         struct Row { ecs::EntityID id, parent; std::string label; };
         std::vector<Row> rows;
-        registry.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform& t) { rows.push_back({id, t.parent, entityLabel(registry, id)}); });
+        registry.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform& t) { rows.push_back({id, t.parent, entityLabel(registry, id, &m_host.entityNames())}); });
         std::sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) { return a.id.index < b.id.index; });
         v.entityCount = u32(rows.size());
         const auto isSel = [&](ecs::EntityID id) { return std::find(state.selectedEntities.begin(), state.selectedEntities.end(), id) != state.selectedEntities.end(); };
@@ -249,6 +267,8 @@ bool EditorController::refresh() {
         }
     }
     v.recentFiles = m_recent;
+    v.recentProjects = m_recentProjects;
+    v.message = m_message;
     v.title = v.sceneName + (v.dirty ? "*" : "");
     if (!v.projectName.empty()) v.title += " - " + v.projectName;
     if (v.transport != TransportState::Stopped) v.title += v.transport == TransportState::Paused ? " [Paused]" : " [Playing]";
@@ -256,6 +276,7 @@ bool EditorController::refresh() {
     v.status = (v.transport == TransportState::Stopped ? std::string("Edit") : v.transport == TransportState::Paused ? std::string("Paused") : std::string("Playing")) +
                " | " + std::to_string(v.entityCount) + " entities | " + std::to_string(v.selection.size()) + " selected | tick " +
                std::to_string(v.gameTicks);
+    if (!v.message.empty()) v.status += " | " + v.message;
 
     // change key (everything but the tick counter / status, so an idle editor stays idle)
     std::string key = v.title + "|" + v.scenePath + "|" + std::to_string(int(v.transport)) + std::to_string(v.canUndo) + std::to_string(v.canRedo) +
@@ -267,6 +288,8 @@ bool EditorController::refresh() {
     }
     for (const auto& a : v.addableComponents) key += "|+" + a;
     for (const auto& r : v.recentFiles) key += "|r" + r;
+    for (const auto& r : v.recentProjects) key += "|p" + r;
+    key += "|m" + v.message;
     m_view = std::move(v);
     if (key == m_viewKey) return false;
     m_viewKey = std::move(key);
@@ -470,6 +493,14 @@ bool EditorController::newProject(const std::string& directory, const std::strin
     }
     if (ok && !scene.empty()) addRecent_(scene);
     if (ok) m_viewport.setProjectLabel(name);
+    if (ok) {
+        std::string root;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            root = m_host.projectManifest().projectRoot;
+        }
+        addRecentProject_(root.empty() ? directory : root);
+    }
     refresh();
     return ok;
 }
@@ -483,8 +514,12 @@ bool EditorController::openProject(const std::string& directory) {
         syncUndoJournal_();
         m_lastError = ok ? std::string() : m_host.lastFileResult().error;
     }
-    if (ok) m_viewport.setProjectLabel(std::filesystem::path(directory).filename().string());
-    else m_services.warn("Open Project", m_lastError);
+    if (ok) {
+        m_viewport.setProjectLabel(std::filesystem::path(directory).filename().string());
+        addRecentProject_(directory);
+    } else {
+        m_services.warn("Open Project", m_lastError);
+    }
     refresh();
     return ok;
 }
@@ -498,15 +533,45 @@ void EditorController::addRecent_(const std::string& path) {
     saveSettings_();
 }
 
-// Settings file (R6: FUSE formats, not QSettings): {"recentScenes": ["...", ...]}
-void EditorController::loadSettings_() {
-    if (m_options.settingsPath.empty()) return;
-    std::ifstream in(m_options.settingsPath);
-    if (!in) return;
-    std::stringstream ss;
-    ss << in.rdbuf();
-    const std::string text = ss.str();
-    const usize key = text.find("\"recentScenes\"");
+void EditorController::addRecentProject_(const std::string& root) {
+    if (root.empty()) return;
+    const std::string abs = absolutePath(root);
+    m_recentProjects.erase(std::remove(m_recentProjects.begin(), m_recentProjects.end(), abs), m_recentProjects.end());
+    m_recentProjects.insert(m_recentProjects.begin(), abs);
+    if (m_recentProjects.size() > m_options.maxRecentFiles) m_recentProjects.resize(m_options.maxRecentFiles);
+    saveSettings_();
+}
+
+bool EditorController::projectExists(const std::string& root) {
+    std::error_code ec;
+    return std::filesystem::is_regular_file(std::filesystem::path(root) / "project.json", ec);
+}
+
+bool EditorController::openRecentProject(u32 index) {
+    if (index >= m_recentProjects.size()) return false;
+    const std::string root = m_recentProjects[index];
+    if (!projectExists(root)) {
+        showMessage("Recent project is missing: " + root);
+        return false;
+    }
+    return openProject(root);
+}
+
+void EditorController::clearRecentProjects() {
+    m_recentProjects.clear();
+    saveSettings_();
+    refresh();
+}
+
+void EditorController::showMessage(std::string text) {
+    m_message = std::move(text);
+    refresh();
+}
+
+// Settings file (R6: FUSE formats, not QSettings): {"recentScenes": [...], "recentProjects": [...]}
+namespace {
+void readJsonStrings(const std::string& text, std::string_view name, std::vector<std::string>& out, usize cap) {
+    const usize key = text.find(std::string("\"") + std::string(name) + "\"");
     if (key == std::string::npos) return;
     usize i = text.find('[', key);
     const usize end = text.find(']', key);
@@ -519,9 +584,21 @@ void EditorController::loadSettings_() {
             if (text[q] == '\\' && q + 1 < text.size()) ++q;
             s += text[q];
         }
-        if (!s.empty() && m_recent.size() < m_options.maxRecentFiles) m_recent.push_back(s);
+        if (!s.empty() && out.size() < cap) out.push_back(s);
         i = q + 1;
     }
+}
+} // namespace
+
+void EditorController::loadSettings_() {
+    if (m_options.settingsPath.empty()) return;
+    std::ifstream in(m_options.settingsPath);
+    if (!in) return;
+    std::stringstream ss;
+    ss << in.rdbuf();
+    const std::string text = ss.str();
+    readJsonStrings(text, "recentScenes", m_recent, m_options.maxRecentFiles);
+    readJsonStrings(text, "recentProjects", m_recentProjects, m_options.maxRecentFiles);
 }
 
 void EditorController::saveSettings_() const {
@@ -531,6 +608,8 @@ void EditorController::saveSettings_() const {
     std::ofstream out(m_options.settingsPath, std::ios::trunc);
     out << "{\n  \"recentScenes\": [";
     for (usize i = 0; i < m_recent.size(); ++i) out << (i ? ", " : "") << '"' << jsonEscape(m_recent[i]) << '"';
+    out << "],\n  \"recentProjects\": [";
+    for (usize i = 0; i < m_recentProjects.size(); ++i) out << (i ? ", " : "") << '"' << jsonEscape(m_recentProjects[i]) << '"';
     out << "]\n}\n";
 }
 
@@ -680,6 +759,7 @@ void EditorController::viewportPointer(const ViewportPointerEvent& e) {
         m_lastY = e.y;
         return;
     }
+    if (colliderPointer_(e)) return; // collider handles win over the gizmo (Qt order)
     if (e.button == B::Left && e.kind == K::Down && gizmoPress_(e.x, e.y)) return;
     if (m_gizmo.dragging()) {
         if (e.kind == K::Move) gizmoMove_(e.x, e.y);
@@ -863,13 +943,348 @@ void EditorController::setShowMeshBounds(bool on) {
     ++m_gizmoVersion;
 }
 
+// ---- Entity menu: Duplicate subtree / Group / Ungroup / Open Script (Qt MainWindow parity) --------------------------
+bool EditorController::duplicateSelection() {
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        EditorState& state = m_host.editorState();
+        if (state.playing || !state.primarySelection.valid()) return false;
+        std::vector<ecs::EntityID> selection = state.selectedEntities;
+        if (selection.empty()) selection.push_back(state.primarySelection);
+        EntityClipboard scratch;
+        ecs::Registry& registry = m_host.editorScene().registry();
+        if (scratch.copy(registry, selection, &m_host.entityNames()) != 0u) {
+            const std::vector<ecs::EntityID> roots = scratch.paste(registry, m_host.undoStack(), state, &m_host.entityNames());
+            changed = !roots.empty();
+            if (changed) m_lastCreated = toRef(roots.front());
+        }
+    }
+    if (changed) refresh();
+    return changed;
+}
+
+bool EditorController::groupSelection() {
+    ecs::EntityID g;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_host.editorState().playing) return false;
+        g = editor::groupSelection(m_host.editorScene().registry(), m_host.undoStack(), m_host.editorState(), &m_host.entityNames());
+    }
+    if (!g.valid()) {
+        showMessage("Group: select entities that share one parent");
+        return false;
+    }
+    m_lastCreated = toRef(g);
+    m_message.clear();
+    refresh();
+    return true;
+}
+
+bool EditorController::ungroupSelection() {
+    std::size_t moved = 0;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_host.editorState().playing) return false;
+        moved = editor::ungroupSelection(m_host.editorScene().registry(), m_host.undoStack(), m_host.editorState());
+    }
+    if (moved == 0) {
+        showMessage("Ungroup: the selection has no children");
+        return false;
+    }
+    m_message.clear();
+    refresh();
+    return true;
+}
+
+std::string EditorController::selectedScriptPath() {
+    std::string path, root;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        const ecs::EntityID id = m_host.editorState().primarySelection;
+        if (!id.valid()) return {};
+        const ecs::Script* script = m_host.editorScene().registry().get<ecs::Script>(id);
+        if (script == nullptr || script->path().empty()) return {};
+        path = std::string(script->path());
+        root = m_host.playSession().scriptRoot();
+    }
+    std::filesystem::path p(path);
+    if (p.is_relative() && !root.empty()) p = std::filesystem::path(root) / p;
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(p, ec)) return {};
+    return std::filesystem::absolute(p, ec).lexically_normal().string();
+}
+
+bool EditorController::openScript() {
+    const std::string path = selectedScriptPath();
+    if (path.empty()) {
+        showMessage("The selection has no Script component with a .lua file");
+        return false;
+    }
+    (void)m_services.openExternal(path);
+    showMessage("Opened " + path + " (changes hot-reload while playing)");
+    return true;
+}
+
+// ---- View: Frame Selected, colliders -------------------------------------------------------------------------------
+bool EditorController::frameSelection() {
+    std::vector<ecs::vec3> points;
+    f32 extent = 0.5f;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        ecs::Registry& registry = m_host.editorScene().registry();
+        updateWorldKeepDirty(registry);
+        std::vector<ecs::EntityID> sel = m_host.editorState().selectedEntities;
+        if (sel.empty() && m_host.editorState().primarySelection.valid()) sel.push_back(m_host.editorState().primarySelection);
+        for (ecs::EntityID id : sel) {
+            const ecs::Transform* t = registry.alive(id) ? registry.get<ecs::Transform>(id) : nullptr;
+            if (t == nullptr) continue;
+            const auto& m = t->local_to_world.data;
+            const f32 sx = std::hypot(m[0], m[1], m[2]), sy = std::hypot(m[4], m[5], m[6]), sz = std::hypot(m[8], m[9], m[10]);
+            const ecs::Mesh* mesh = registry.get<ecs::Mesh>(id);
+            if (mesh != nullptr && mesh->aabb_max.x >= mesh->aabb_min.x && mesh->aabb_max.y >= mesh->aabb_min.y &&
+                mesh->aabb_max.z >= mesh->aabb_min.z) {
+                const f32 lc[3] = {(mesh->aabb_min.x + mesh->aabb_max.x) * 0.5f, (mesh->aabb_min.y + mesh->aabb_max.y) * 0.5f,
+                                   (mesh->aabb_min.z + mesh->aabb_max.z) * 0.5f};
+                points.push_back({m[0] * lc[0] + m[4] * lc[1] + m[8] * lc[2] + m[12], m[1] * lc[0] + m[5] * lc[1] + m[9] * lc[2] + m[13],
+                                  m[2] * lc[0] + m[6] * lc[1] + m[10] * lc[2] + m[14], 1.f});
+                const f32 hx = (mesh->aabb_max.x - mesh->aabb_min.x) * 0.5f * sx, hy = (mesh->aabb_max.y - mesh->aabb_min.y) * 0.5f * sy,
+                          hz = (mesh->aabb_max.z - mesh->aabb_min.z) * 0.5f * sz;
+                extent = std::max(extent, std::sqrt(hx * hx + hy * hy + hz * hz));
+            } else {
+                points.push_back({m[12], m[13], m[14], 1.f});
+                extent = std::max(extent, std::max({sx, sy, sz}));
+            }
+        }
+    }
+    if (points.empty()) {
+        showMessage("Nothing selected to frame");
+        return false;
+    }
+    ecs::vec3 c{0.f, 0.f, 0.f, 1.f};
+    for (const ecs::vec3& p : points) c.x += p.x, c.y += p.y, c.z += p.z;
+    const f32 inv = 1.f / f32(points.size());
+    c.x *= inv, c.y *= inv, c.z *= inv;
+    f32 radius = extent;
+    for (const ecs::vec3& p : points) radius = std::max(radius, std::hypot(p.x - c.x, p.y - c.y, p.z - c.z) + extent);
+    ViewportCamera& cam = m_viewport.camera();
+    const f32 halfFov = std::max(cam.fovDeg, 10.f) * 0.5f * 3.14159265f / 180.f;
+    const f32 distance = std::max(radius / std::sin(halfFov) * 1.1f, cam.nearPlane * 4.f);
+    const ecs::vec3 fwd = m_viewport.forward();
+    cam.positionX = c.x - fwd.x * distance;
+    cam.positionY = c.y - fwd.y * distance;
+    cam.positionZ = c.z - fwd.z * distance;
+    ++m_gizmoVersion; // the overlay moves with the camera
+    refresh();
+    return true;
+}
+
+void EditorController::setShowAllColliders(bool on) {
+    m_showAllColliders = on;
+    ++m_gizmoVersion;
+}
+
+std::vector<EditorController::ColliderHandleView> EditorController::colliderHandles_(ecs::EntityID& entity) {
+    std::vector<ColliderHandleView> out;
+    entity = {};
+    ecs::Registry& registry = m_host.editorScene().registry();
+    const ecs::EntityID id = m_host.editorState().primarySelection;
+    const ecs::Transform* t = id.valid() && registry.alive(id) ? registry.get<ecs::Transform>(id) : nullptr;
+    const ecs::Collider* c = t != nullptr ? registry.get<ecs::Collider>(id) : nullptr;
+    if (c == nullptr) return out;
+    updateWorldKeepDirty(registry);
+    const auto& m = t->local_to_world.data;
+    const auto add = [&](int axis, f32 dist, int param, f32 sign) {
+        f32 p[3] = {0.f, 0.f, 0.f};
+        p[axis] = dist;
+        f32 q[3] = {p[0], p[1], p[2]};
+        q[axis] += dist >= 0.f ? 1.f : -1.f;
+        const auto w = [&](const f32* v) {
+            return ecs::vec3{m[0] * v[0] + m[4] * v[1] + m[8] * v[2] + m[12], m[1] * v[0] + m[5] * v[1] + m[9] * v[2] + m[13],
+                             m[2] * v[0] + m[6] * v[1] + m[10] * v[2] + m[14], 1.f};
+        };
+        f32 ax = 0.f, ay = 0.f, bx = 0.f, by = 0.f;
+        if (!m_viewport.worldToScreen(w(p), ax, ay) || !m_viewport.worldToScreen(w(q), bx, by)) return;
+        out.push_back({ax, ay, bx - ax, by - ay, param, sign});
+    };
+    switch (c->shape) {
+    case ecs::Collider::Sphere:
+        for (int a = 0; a < 3; ++a) add(a, c->params.x, 0, 1.f);
+        break;
+    case ecs::Collider::Box: {
+        const f32 h[3] = {c->params.x, c->params.y, c->params.z};
+        for (int a = 0; a < 3; ++a) {
+            add(a, h[a], a, 1.f);
+            add(a, -h[a], a, 1.f);
+        }
+        break;
+    }
+    case ecs::Collider::Capsule:
+        add(0, c->params.x, 0, 1.f);
+        add(2, c->params.x, 0, 1.f);
+        add(1, c->params.y + c->params.x, 1, 1.f);
+        add(1, -(c->params.y + c->params.x), 1, 1.f);
+        break;
+    default: break;
+    }
+    if (!out.empty()) entity = id;
+    return out;
+}
+
+std::vector<EditorController::ColliderHandleView> EditorController::colliderHandles() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    ecs::EntityID e;
+    return colliderHandles_(e);
+}
+
+namespace {
+class ColliderEditCommand final : public UndoCommand {
+public:
+    ColliderEditCommand(ecs::Registry& r, ecs::EntityID e, const ecs::Collider& before, const ecs::Collider& after)
+        : m_registry(r), m_entity(e), m_before(before), m_after(after) {}
+    void execute() override { apply(m_after); }
+    void undo() override { apply(m_before); }
+    std::string description() const override { return "Resize collider"; }
+
+private:
+    void apply(const ecs::Collider& c) {
+        if (ecs::Collider* cur = m_registry.get<ecs::Collider>(m_entity)) *cur = c;
+    }
+    ecs::Registry& m_registry;
+    ecs::EntityID m_entity;
+    ecs::Collider m_before, m_after;
+};
+
+/// Collider wireframe in local space (Qt collectColliderLines_): circles for spheres / capsules, box edges.
+template <class Line> void colliderLines(const ecs::Collider& c, Line&& line) {
+    constexpr int kSeg = 24;
+    constexpr f32 kTau = 6.2831853f;
+    const auto circle = [&](int axis, f32 r, f32 o, int up = -1, f32 sign = 1.f) {
+        for (int i = 0; i < kSeg; ++i) {
+            const f32 a0 = kTau * f32(i) / kSeg, a1 = kTau * f32(i + 1) / kSeg;
+            f32 p0[3], p1[3];
+            const int u = (axis + 1) % 3, v = (axis + 2) % 3;
+            p0[axis] = o;
+            p1[axis] = o;
+            p0[u] = r * std::cos(a0);
+            p0[v] = r * std::sin(a0);
+            p1[u] = r * std::cos(a1);
+            p1[v] = r * std::sin(a1);
+            if (up >= 0 && (p0[up] * sign < -1e-4f || p1[up] * sign < -1e-4f)) continue;
+            if (up >= 0) {
+                p0[up] += sign * o;
+                p1[up] += sign * o;
+            }
+            line(p0, p1);
+        }
+    };
+    switch (c.shape) {
+    case ecs::Collider::Sphere:
+        for (int a = 0; a < 3; ++a) circle(a, c.params.x, 0.f);
+        break;
+    case ecs::Collider::Box: {
+        const f32 h[3] = {c.params.x, c.params.y, c.params.z};
+        for (int a = 0; a < 3; ++a) {
+            const int u = (a + 1) % 3, v = (a + 2) % 3;
+            for (int s = 0; s < 4; ++s) {
+                f32 p0[3], p1[3];
+                p0[a] = -h[a];
+                p1[a] = h[a];
+                p0[u] = p1[u] = (s & 1) ? h[u] : -h[u];
+                p0[v] = p1[v] = (s & 2) ? h[v] : -h[v];
+                line(p0, p1);
+            }
+        }
+        break;
+    }
+    case ecs::Collider::Capsule: {
+        const f32 r = c.params.x, hh = c.params.y;
+        circle(1, r, hh);
+        circle(1, r, -hh);
+        for (int s = 0; s < 4; ++s) {
+            const f32 x = s == 0 ? r : s == 1 ? -r : 0.f, z = s == 2 ? r : s == 3 ? -r : 0.f;
+            const f32 a[3] = {x, -hh, z}, b[3] = {x, hh, z};
+            line(a, b);
+        }
+        // Qt draws the cap arcs as half circles around X and Z (same construction)
+        circle(0, r, 0.f, 1, 1.f);
+        circle(2, r, 0.f, 1, 1.f);
+        circle(0, r, 0.f, 1, -1.f);
+        circle(2, r, 0.f, 1, -1.f);
+        break;
+    }
+    default: break;
+    }
+}
+} // namespace
+
+bool EditorController::colliderPointer_(const ViewportPointerEvent& e) {
+    using K = ViewportPointerEvent::Kind;
+    if (e.button != ViewportPointerEvent::Button::Left) return false;
+    if (e.kind == K::Down) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_host.editorState().playing) return false;
+        ecs::EntityID entity;
+        std::vector<ColliderHandleView> handles = colliderHandles_(entity);
+        int best = -1;
+        f32 bestD = 8.f * 8.f;
+        for (usize i = 0; i < handles.size(); ++i) {
+            const f32 dx = handles[i].x - e.x, dy = handles[i].y - e.y;
+            if (dx * dx + dy * dy <= bestD) bestD = dx * dx + dy * dy, best = int(i);
+        }
+        if (best < 0) return false;
+        const ecs::Collider* c = m_host.editorScene().registry().get<ecs::Collider>(entity);
+        m_colliderBefore = std::make_shared<ecs::Collider>(*c);
+        m_colliderHandleCache = std::move(handles);
+        m_colliderEntity = entity;
+        m_colliderDrag = best;
+        m_colliderStartX = e.x;
+        m_colliderStartY = e.y;
+        ++m_gizmoVersion;
+        return true;
+    }
+    if (m_colliderDrag < 0) return false;
+    if (e.kind == K::Move) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        const ColliderHandleView& h = m_colliderHandleCache[usize(m_colliderDrag)];
+        const f32 len2 = h.axisX * h.axisX + h.axisY * h.axisY;
+        ecs::Collider* c = m_host.editorScene().registry().get<ecs::Collider>(m_colliderEntity);
+        if (len2 < 1e-6f || c == nullptr) return true;
+        const f32 units = ((e.x - m_colliderStartX) * h.axisX + (e.y - m_colliderStartY) * h.axisY) / len2;
+        const auto* before = static_cast<const ecs::Collider*>(m_colliderBefore.get());
+        f32* p[3] = {&c->params.x, &c->params.y, &c->params.z};
+        const f32 start[3] = {before->params.x, before->params.y, before->params.z};
+        *p[h.param] = std::max(0.01f, start[h.param] + h.sign * units);
+        ++m_gizmoVersion;
+        return true;
+    }
+    if (e.kind == K::Up) {
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            ecs::Registry& registry = m_host.editorScene().registry();
+            const ecs::Collider* c = registry.get<ecs::Collider>(m_colliderEntity);
+            const auto* before = static_cast<const ecs::Collider*>(m_colliderBefore.get());
+            if (c != nullptr && std::memcmp(&c->params, &before->params, sizeof(c->params)) != 0)
+                m_host.undoStack().execute(std::make_unique<ColliderEditCommand>(registry, m_colliderEntity, *before, *c));
+            m_colliderDrag = -1;
+            m_colliderBefore.reset();
+            ++m_gizmoVersion;
+        }
+        syncUndoJournal_();
+        refresh(); // the Inspector's Collider fields
+        return true;
+    }
+    return false;
+}
+
 std::vector<EditorController::ViewportSegment> EditorController::viewportSegments(MeshEdgesFn edges, void* user, usize budget) {
     std::vector<ViewportSegment> out;
     const bool wire = editorViewModeWire(editorViewMode());
-    if (!wire && !m_showMeshBounds) return out;
+    if (!wire && !m_showMeshBounds && !m_showAllColliders && m_host.editorState().selectedEntities.empty()) return out;
     std::lock_guard<std::mutex> lock(m_mutex);
     ecs::Registry& registry = m_host.editorScene().registry();
-    ecs::TransformSystem::update(registry);
+    if (wire || m_showMeshBounds) ecs::TransformSystem::update(registry);
+    else updateWorldKeepDirty(registry); // colliders only: leave the scene sync its dirty flags
     const EditorState& state = m_host.editorState();
     const auto selected = [&](ecs::EntityID id) {
         return std::find(state.selectedEntities.begin(), state.selectedEntities.end(), id) != state.selectedEntities.end();
@@ -912,6 +1327,12 @@ std::vector<EditorController::ViewportSegment> EditorController::viewportSegment
             meshWire(id, t, box ? 0u : 1u, sc);
         });
     }
+    // collider wireframes: selected entities always, every collider with Show All Colliders (Qt colours = bounds)
+    registry.each<ecs::Transform, ecs::Collider>([&](ecs::EntityID id, ecs::Transform& t, ecs::Collider& c) {
+        const bool sel = selected(id);
+        if (!sel && !m_showAllColliders) return;
+        colliderLines(c, [&](const f32* a, const f32* b) { push(t, a, b, sel ? 1 : 0); });
+    });
     if (m_showMeshBounds) {
         registry.each<ecs::Transform, ecs::Mesh>([&](ecs::EntityID id, ecs::Transform& t, ecs::Mesh& mesh) {
             const f32 lo[3] = {mesh.aabb_min.x, mesh.aabb_min.y, mesh.aabb_min.z};
@@ -981,7 +1402,10 @@ bool EditorController::actionEnabled(ActionId id) const {
     case ActionId::EntityCreateDirectionalLight:
     case ActionId::EntityCreateCamera: return !playing;
     case ActionId::EntityDuplicate:
-    case ActionId::EntityDelete: return !playing && v.primary.valid();
+    case ActionId::EntityDelete:
+    case ActionId::EntityGroup:
+    case ActionId::EntityUngroup: return !playing && v.primary.valid();
+    case ActionId::EntityOpenScript: return v.primary.valid();
     case ActionId::PlayPlay: return !playing;
     case ActionId::PlayPause: return v.transport == TransportState::Playing;
     case ActionId::PlayResume:
@@ -1017,7 +1441,12 @@ bool EditorController::trigger(ActionId id) {
     case ActionId::EntityCreatePointLight: return runEntityAction(ContextMenuAction::CreatePointLight);
     case ActionId::EntityCreateDirectionalLight: return runEntityAction(ContextMenuAction::CreateDirectionalLight);
     case ActionId::EntityCreateCamera: return runEntityAction(ContextMenuAction::CreateCamera);
-    case ActionId::EntityDuplicate: return runEntityAction(ContextMenuAction::Duplicate);
+    case ActionId::EntityDuplicate: return duplicateSelection();
+    case ActionId::EntityGroup: return groupSelection();
+    case ActionId::EntityUngroup: return ungroupSelection();
+    case ActionId::EntityOpenScript: return openScript();
+    case ActionId::ViewShowColliders: setShowAllColliders(!m_showAllColliders); return true;
+    case ActionId::ViewFrameSelected: return frameSelection();
     case ActionId::EntityDelete: return runEntityAction(ContextMenuAction::Delete);
     case ActionId::PlayPlay: return transport(CommandKind::StartPlay);
     case ActionId::PlayPause: return transport(CommandKind::PausePlay);

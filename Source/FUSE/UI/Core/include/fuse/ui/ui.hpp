@@ -34,6 +34,8 @@ enum class Key : u16 {
     A, C, V, X, Y, Z, F2,
     W, S, D, Q, E, N, O, F5, F10, ///< appended for the editor shell (fly camera, File / Play shortcuts)
     Num1, Num2, Num3, Num4, ///< editor transform tools (Select / Move / Rotate / Scale)
+    B, F, G, H, I, J, K, L, M, P, R, T, U, Num0, Num5, Num6, Num7, Num8, Num9, ///< rebindable editor shortcuts
+    F1, F3, F4, F6, F7, F8, F9, F11, F12,
     Other
 };
 enum Mods : u8 { kModShift = 1, kModCtrl = 2, kModAlt = 4, kModSuper = 8 };

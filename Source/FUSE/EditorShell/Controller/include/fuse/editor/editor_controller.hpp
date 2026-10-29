@@ -49,6 +49,8 @@ public:
     virtual std::optional<Rgba> pickColour(Rgba initial) = 0;
     virtual PromptAnswer askSaveDiscardCancel(std::string_view text) = 0;
     virtual void warn(std::string_view title, std::string_view text) = 0;
+    /// Opens a file in the system editor (Qt QDesktopServices::openUrl). False when the shell cannot.
+    virtual bool openExternal(std::string_view path) { (void)path; return false; }
 };
 
 /// An entity as the shells see it (no ECS types).
@@ -103,6 +105,8 @@ struct EditorViewState {
     std::string status; ///< status bar text
     u32 gameTicks = 0;
     std::vector<std::string> recentFiles;
+    std::vector<std::string> recentProjects; ///< project roots, newest first (Qt File > Recent Projects)
+    std::string message;                     ///< transient status message (Qt statusBar()->showMessage)
 };
 
 /// Normalised viewport input (no toolkit types).
@@ -161,6 +165,12 @@ public:
     bool newProject(const std::string& directory, const std::string& name, u32 dimensionFlags,
                     const project::ModuleSettings& modules);
     bool openProject(const std::string& directory);
+    /// File > Recent Projects (Qt rebuildRecentProjectsMenu): reopen by index; missing project.json fails.
+    bool openRecentProject(u32 index);
+    [[nodiscard]] static bool projectExists(const std::string& root);
+    void clearRecentProjects();
+    /// Status bar message (Qt showMessage); cleared by the next one.
+    void showMessage(std::string text);
     [[nodiscard]] const std::string& lastError() const { return m_lastError; }
     [[nodiscard]] ShellServices& services() { return m_services; } ///< shell dialogs (pickers, warnings)
 
@@ -181,6 +191,16 @@ public:
     /// Entity menu / context-menu action on the current selection (create spawns at the origin). True on change.
     bool runEntityAction(ContextMenuAction action);
     [[nodiscard]] EntityRef lastCreated() const { return m_lastCreated; }
+    /// Entity > Duplicate (Qt): whole subtrees with their display names, one undo step; the copies are selected.
+    bool duplicateSelection();
+    /// Entity > Group Selection / Ungroup (Qt, shared groupSelection / ungroupSelection; one undo step each).
+    bool groupSelection();
+    bool ungroupSelection();
+    /// Absolute path of the primary selection's Lua script (relative paths resolve against the script root);
+    /// empty when it has no Script or the file is missing (Qt selectedScriptPath).
+    [[nodiscard]] std::string selectedScriptPath();
+    /// Entity > Open Script: ShellServices::openExternal on selectedScriptPath(). False when there is none.
+    bool openScript();
 
     // ---- console ----------------------------------------------------------------------------------------------
     [[nodiscard]] ConsolePanel& console() { return m_console; }
@@ -247,6 +267,22 @@ public:
     using MeshEdgesFn = const std::vector<f32>* (*)(void* user, u32 engineMeshId);
     /// Projected wireframe (wire view modes) and mesh-bounds (Show Mesh Bounds) segments, at most `budget` edges.
     std::vector<ViewportSegment> viewportSegments(MeshEdgesFn edges, void* user, usize budget = 400000);
+    /// View > Show All Colliders: collider wireframes of every entity (selected entities always show theirs).
+    void setShowAllColliders(bool on);
+    [[nodiscard]] bool showAllColliders() const { return m_showAllColliders; }
+    /// View > Frame Selected (Qt frameSelection): moves the camera back along its forward to fit the selection.
+    bool frameSelection();
+    /// Collider drag handles of the primary selection (Qt viewport): Box faces (half extents), Sphere radius,
+    /// Capsule radius / half height. A left press within 8 px drags it (one undo step per drag).
+    struct ColliderHandleView {
+        f32 x = 0.f, y = 0.f;         ///< viewport pixels
+        f32 axisX = 0.f, axisY = 0.f; ///< pixels per local unit outward
+        int param = 0;                ///< Collider.params component
+        f32 sign = 1.f;
+    };
+    [[nodiscard]] std::vector<ColliderHandleView> colliderHandles();
+    [[nodiscard]] bool colliderDragging() const { return m_colliderDrag >= 0; }
+    [[nodiscard]] std::size_t colliderDragHandle() const { return std::size_t(m_colliderDrag); }
     [[nodiscard]] bool gizmoDragging() const { return m_gizmo.dragging(); }
     /// Bumped by tool / drag changes so shells know to redraw the overlay.
     [[nodiscard]] u64 gizmoVersion() const { return m_gizmoVersion; }
@@ -317,6 +353,17 @@ private:
     bool m_gizmoMacroOpen = false;
     u64 m_gizmoVersion = 0;
     bool m_showMeshBounds = false;
+    bool m_showAllColliders = false;
+    std::vector<std::string> m_recentProjects;
+    std::string m_message;
+    std::vector<ColliderHandleView> m_colliderHandleCache; ///< laid out at drag start
+    ecs::EntityID m_colliderEntity{};
+    int m_colliderDrag = -1;
+    f32 m_colliderStartX = 0.f, m_colliderStartY = 0.f;
+    std::shared_ptr<void> m_colliderBefore; ///< ecs::Collider at drag start
+    std::vector<ColliderHandleView> colliderHandles_(ecs::EntityID& entity); // m_mutex held
+    void addRecentProject_(const std::string& root);
+    bool colliderPointer_(const ViewportPointerEvent& e);
     EditorPreferences m_prefs;
     bool refreshGizmo_(); // m_mutex held
     bool gizmoPress_(f32 px, f32 py);

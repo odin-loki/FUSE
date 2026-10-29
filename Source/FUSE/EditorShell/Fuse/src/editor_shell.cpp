@@ -13,6 +13,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <shellapi.h>
+#endif
 
 namespace fuse::editor::fui {
 
@@ -169,6 +176,7 @@ std::string editorShellCss(f32 fontScale) {
 EditorShellWindow::EditorShellWindow(fuse::app::AppWindow& window, EditorController& controller, EditorShellOptions options)
     : m_win(window), m_ui(window.ui()), m_c(controller), m_opt(options) {
     w::install(m_ui);
+    loadBindings_(); // menus / tooltips show the effective shortcuts
     if (m_ui.registry().find("editorshellroot") == 0xFFFFFFFFu) m_ui.registry().registerWidget<ShellRootW>();
     m_ui.addStyleSheet(editorShellCss(m_opt.fontScale));
     m_ui.setCss(m_ui.root(), "padding", "0px");
@@ -381,7 +389,9 @@ void EditorShellWindow::syncMenus_() {
     const EditorViewState& v = m_c.viewState();
     std::string key = v.undoLabel + '\x1f' + v.redoLabel;
     for (const std::string& r : v.recentFiles) key += '\x1f' + r;
-    key += '\x1f' + std::to_string(int(m_c.viewMode())) + (m_c.showMeshBounds() ? "b" : "");
+    key += '\x1f' + std::to_string(int(m_c.viewMode())) + (m_c.showMeshBounds() ? "b" : "") + (m_c.showAllColliders() ? "c" : "");
+    for (const std::string& r : v.recentProjects) key += "\x1fp" + r;
+    for (const std::string& b : m_bindings) key += '\x1e' + b;
     if (key == m_menuKey) return;
     m_menuKey = key;
     const auto menus = editorMenus();
@@ -404,8 +414,19 @@ void EditorShellWindow::syncMenus_() {
             if (a.id >= ActionId::ViewModeLit && a.id <= ActionId::ViewModeLitWireframe)
                 label = (int(m_c.viewMode()) == int(a.id) - int(ActionId::ViewModeLit) ? "[x] " : "[ ] ") + label;
             if (a.id == ActionId::ViewShowMeshBounds) label = (m_c.showMeshBounds() ? "[x] " : "[ ] ") + label;
-            if (*a.shortcut) label += "   (" + std::string(a.shortcut) + ")";
+            if (a.id == ActionId::ViewShowColliders) label = (m_c.showAllColliders() ? "[x] " : "[ ] ") + label;
+            if (!binding(a.id).empty()) label += "   (" + binding(a.id) + ")";
             add(label, i32(a.id));
+            if (a.id == ActionId::FileOpenProject && !v.recentProjects.empty()) {
+                // Qt "Recent Projects" submenu, inlined: missing folders are listed but disabled
+                for (u32 r = 0; r < v.recentProjects.size(); ++r) {
+                    const std::string& path = v.recentProjects[r];
+                    const bool ok = EditorController::projectExists(path);
+                    add("   " + std::filesystem::path(path).filename().string() + "  -  " + path + (ok ? "" : "  (missing)"),
+                        ok ? -100 - i32(r) : -1);
+                }
+                add("   Clear Recent Projects", -99);
+            }
             if (a.id == ActionId::FileOpenScene && !v.recentFiles.empty()) {
                 for (u32 r = 0; r < v.recentFiles.size(); ++r)
                     add("   " + std::to_string(r + 1) + "  " + std::filesystem::path(v.recentFiles[r]).filename().string(), -2 - i32(r));
@@ -418,7 +439,9 @@ void EditorShellWindow::syncMenus_() {
 void EditorShellWindow::menuPicked_(u32 menuIndex, u32 line) {
     if (menuIndex >= m_menuMap.size() || line >= m_menuMap[menuIndex].size()) return;
     const i32 code = m_menuMap[menuIndex][line];
-    if (code <= -2) m_c.fileOpenRecent(u32(-2 - code));
+    if (code <= -100) m_c.openRecentProject(u32(-100 - code));
+    else if (code == -99) m_c.clearRecentProjects();
+    else if (code <= -2) m_c.fileOpenRecent(u32(-2 - code));
     else if (code >= 0) m_c.trigger(ActionId(code));
     sync();
 }
@@ -430,7 +453,7 @@ void EditorShellWindow::buildToolbar_(NodeHandle bar) {
         if (*lastMenu && std::string_view(lastMenu) != a.menu) m_ui.addClass(w::panel(m_ui, bar), "ed-sep");
         lastMenu = a.menu;
         const NodeHandle b = w::toolButton(m_ui, bar, a.label, std::string("tool.") + a.stableId);
-        if (*a.shortcut) w::setTooltip(m_ui, b, std::string(a.label) + "  (" + a.shortcut + ")");
+        if (!binding(a.id).empty()) w::setTooltip(m_ui, b, std::string(a.label) + "  (" + binding(a.id) + ")");
         const ActionId id = a.id;
         m_ui.connect(b, SignalKind::Clicked, [this, id](UiContext&, NodeHandle, const SignalArgs&) { m_c.trigger(id); sync(); });
         m_toolButtons.emplace_back(id, b);
@@ -979,40 +1002,109 @@ void EditorShellWindow::updateOverlay_() {
         }
         o.dots.push_back({{g.handles[0].x0, g.handles[0].y0}, 4.f, Color::rgb(0xF0F0F0), Color::rgb(0x101010), 1.f});
     }
+    // collider drag handles (Qt paintColliders_: 9 px squares, yellow while dragged)
+    {
+        const auto handles = m_c.colliderHandles();
+        for (std::size_t i = 0; i < handles.size(); ++i) {
+            const bool active = m_c.colliderDragging() && i == m_c.colliderDragHandle();
+            o.dots.push_back({{handles[i].x, handles[i].y}, 4.5f, active ? Color::rgb(0xFFE65A) : Color::rgb(0x78FF8C), Color::rgb(0x142814), 1.f});
+        }
+    }
     w::viewportSetOverlay(m_ui, m_viewport, std::move(o));
 }
 
 // ---- shortcuts ------------------------------------------------------------------------------------------------------
+namespace {
+struct KeyName {
+    Key key;
+    const char* name;
+};
+constexpr KeyName kKeyNames[] = {
+    {Key::A, "A"}, {Key::B, "B"}, {Key::C, "C"}, {Key::D, "D"}, {Key::E, "E"}, {Key::F, "F"}, {Key::G, "G"},
+    {Key::H, "H"}, {Key::I, "I"}, {Key::J, "J"}, {Key::K, "K"}, {Key::L, "L"}, {Key::M, "M"}, {Key::N, "N"},
+    {Key::O, "O"}, {Key::P, "P"}, {Key::Q, "Q"}, {Key::R, "R"}, {Key::S, "S"}, {Key::T, "T"}, {Key::U, "U"},
+    {Key::V, "V"}, {Key::W, "W"}, {Key::X, "X"}, {Key::Y, "Y"}, {Key::Z, "Z"},
+    {Key::Num0, "0"}, {Key::Num1, "1"}, {Key::Num2, "2"}, {Key::Num3, "3"}, {Key::Num4, "4"}, {Key::Num5, "5"},
+    {Key::Num6, "6"}, {Key::Num7, "7"}, {Key::Num8, "8"}, {Key::Num9, "9"},
+    {Key::F1, "F1"}, {Key::F2, "F2"}, {Key::F3, "F3"}, {Key::F4, "F4"}, {Key::F5, "F5"}, {Key::F6, "F6"},
+    {Key::F7, "F7"}, {Key::F8, "F8"}, {Key::F9, "F9"}, {Key::F10, "F10"}, {Key::F11, "F11"}, {Key::F12, "F12"},
+    {Key::Delete, "Del"}, {Key::Space, "Space"}, {Key::Home, "Home"}, {Key::End, "End"},
+};
+std::string lowerAscii(std::string_view v) {
+    std::string o(v);
+    for (char& c : o) c = char(std::tolower(static_cast<unsigned char>(c)));
+    return o;
+}
+} // namespace
+
+std::string EditorShellWindow::shortcutText(Key key, u8 mods) {
+    const char* name = nullptr;
+    for (const KeyName& k : kKeyNames)
+        if (k.key == key) name = k.name;
+    if (!name) return {};
+    std::string t;
+    if (mods & fuse::ui::kModCtrl) t += "Ctrl+";
+    if (mods & fuse::ui::kModAlt) t += "Alt+";
+    if (mods & fuse::ui::kModShift) t += "Shift+";
+    return t + name;
+}
+
+std::string EditorShellWindow::normalizeShortcut(std::string_view text) {
+    u8 mods = 0;
+    std::optional<Key> key;
+    std::size_t at = 0;
+    while (at <= text.size()) {
+        std::size_t e = text.find('+', at);
+        if (e == at && e + 1 == text.size()) e = std::string_view::npos; // "Ctrl++" is not supported; tolerate
+        const std::string tok = lowerAscii(text.substr(at, e == std::string_view::npos ? std::string_view::npos : e - at));
+        std::string t;
+        for (char c : tok)
+            if (c != ' ') t += c;
+        if (t == "ctrl" || t == "control" || t == "cmd") mods |= fuse::ui::kModCtrl;
+        else if (t == "alt") mods |= fuse::ui::kModAlt;
+        else if (t == "shift") mods |= fuse::ui::kModShift;
+        else if (!t.empty()) {
+            if (key) return {};
+            for (const KeyName& k : kKeyNames)
+                if (lowerAscii(k.name) == t || (t == "delete" && k.key == Key::Delete)) key = k.key;
+            if (!key) return {};
+        }
+        if (e == std::string_view::npos) break;
+        at = e + 1;
+    }
+    return key ? shortcutText(*key, mods) : std::string{};
+}
+
+void EditorShellWindow::loadBindings_() {
+    const fuse::app::Settings& s = m_win.app().settings();
+    m_bindings.assign(editorActions().size(), {});
+    for (const ActionDesc& a : editorActions()) {
+        std::string b = normalizeShortcut(a.shortcut);
+        // "shortcut.<stableId>": "" = unbound, absent = the default (Qt QSettings shortcuts/<objectName>)
+        const std::string_view stored = s.get(std::string("shortcut.") + a.stableId, "\x01");
+        if (stored != "\x01") b = normalizeShortcut(stored);
+        m_bindings[std::size_t(a.id)] = b;
+    }
+    m_menuKey.clear();
+}
+
 bool EditorShellWindow::shortcut(Key key, u8 mods) {
-    const bool ctrl = (mods & fuse::ui::kModCtrl) != 0, shift = (mods & fuse::ui::kModShift) != 0;
+    const std::string combo = shortcutText(key, mods);
+    if (combo.empty()) return false;
     std::optional<ActionId> id;
-    if ((mods & fuse::ui::kModAlt) != 0 && !ctrl) {
-        switch (key) {
-        case Key::Num1: id = ActionId::ViewModeLit; break;
-        case Key::Num2: id = ActionId::ViewModeUnlit; break;
-        case Key::Num3: id = ActionId::ViewModeWireframe; break;
-        case Key::Num4: id = ActionId::ViewModeLitWireframe; break;
-        default: break;
+    for (const ActionDesc& a : editorActions())
+        if (m_bindings[std::size_t(a.id)] == combo) {
+            id = a.id;
+            break;
         }
-    }
-    if (ctrl) {
-        switch (key) {
-        case Key::N: id = ActionId::FileNewScene; break;
-        case Key::O: id = ActionId::FileOpenScene; break;
-        case Key::S: id = shift ? ActionId::FileSaveAs : ActionId::FileSave; break;
-        case Key::Z: id = shift ? ActionId::EditRedo : ActionId::EditUndo; break;
-        case Key::Y: id = ActionId::EditRedo; break;
-        case Key::D: id = ActionId::EntityDuplicate; break;
-        default: break;
-        }
-    } else if (key == Key::F5) {
-        id = shift ? ActionId::PlayStop : m_c.viewState().transport == TransportState::Stopped ? ActionId::PlayPlay
-             : m_c.viewState().transport == TransportState::Playing                         ? ActionId::PlayPause
-                                                                                            : ActionId::PlayResume;
-    } else if (key == Key::F10) {
-        id = ActionId::PlayStep;
-    }
+    // fixed alternates (Qt QKeySequence::Redo also answers Ctrl+Shift+Z / Ctrl+Y)
+    if (!id && (combo == "Ctrl+Shift+Z" || combo == "Ctrl+Y")) id = ActionId::EditRedo;
     if (!id) return false;
+    // F5 cycles play / pause / resume on the Play binding (Qt updateTransportActions)
+    if (*id == ActionId::PlayPlay || *id == ActionId::PlayPause || *id == ActionId::PlayResume) {
+        const TransportState t = m_c.viewState().transport;
+        id = t == TransportState::Stopped ? ActionId::PlayPlay : t == TransportState::Playing ? ActionId::PlayPause : ActionId::PlayResume;
+    }
     m_c.trigger(*id);
     sync();
     return true;
@@ -1020,6 +1112,20 @@ bool EditorShellWindow::shortcut(Key key, u8 mods) {
 
 bool EditorShellWindow::rootEvent(const Event& e, NodeHandle target) {
     if (e.type != EventType::KeyDown) return false;
+    // Preferences shortcut field records the pressed combination (QKeySequenceEdit)
+    if (preferencesOpen() && target == m_ui.find("prefs.shortcut_edit") && e.mods != 0) {
+        const std::string combo = shortcutText(e.key, e.mods);
+        if (!combo.empty()) {
+            m_ui.setText(target, combo);
+            return true;
+        }
+    }
+    // unmodified letter / digit shortcuts (F = Frame Selected) only act on the viewport or hierarchy; elsewhere
+    // they are typing
+    const std::string bare = shortcutText(e.key, 0);
+    const bool plainKey = (e.mods & (fuse::ui::kModCtrl | fuse::ui::kModAlt)) == 0 &&
+                          (bare.size() == 1 || e.key == Key::Delete || e.key == Key::Space);
+    if (plainKey && target != m_hierTree && target != m_viewport) return false;
     if (shortcut(e.key, e.mods)) return true;
     // Delete removes the selection unless a text field has the focus
     if (e.key == Key::Delete && (target == m_hierTree || target == m_viewport)) {
@@ -1151,9 +1257,16 @@ void EditorShellWindow::closeNewProjectWizard_() {
 
 // ---- Preferences (Qt PreferencesDialog parity) --------------------------------------------------------------------
 std::vector<std::string> EditorShellWindow::shortcutConflicts() {
+    std::vector<std::string> defaults;
+    for (const ActionDesc& a : editorActions()) defaults.push_back(normalizeShortcut(a.shortcut));
+    return shortcutConflicts(defaults);
+}
+
+std::vector<std::string> EditorShellWindow::shortcutConflicts(std::span<const std::string> bindings) {
     std::vector<std::pair<std::string, std::string>> bound;
     for (const ActionDesc& a : editorActions())
-        if (*a.shortcut) bound.emplace_back(a.shortcut, a.label);
+        if (std::size_t(a.id) < bindings.size() && !bindings[std::size_t(a.id)].empty())
+            bound.emplace_back(bindings[std::size_t(a.id)], a.label);
     std::sort(bound.begin(), bound.end());
     std::vector<std::string> out;
     for (std::size_t i = 0; i < bound.size();) {
@@ -1191,33 +1304,49 @@ void EditorShellWindow::openPreferences() {
     // Shortcuts: every named action with its key (Qt editableActions, sorted by text), filterable
     w::label(m_ui, body, "Shortcuts", "prefs.shortcuts_title");
     const NodeHandle filter = w::lineEdit(m_ui, body, "", "prefs.filter");
-    static constexpr auto rows = [](std::string_view f) {
-        std::vector<std::string> lines;
-        for (const ActionDesc& a : editorActions()) {
-            std::string text = std::string(a.label);
-            if (text.size() > 3 && text.compare(text.size() - 3, 3, "...") == 0) text.resize(text.size() - 3);
-            std::string line = text + "  [" + std::string(a.menu) + "]   " + (*a.shortcut ? a.shortcut : "-");
-            std::string lo = line, fl(f);
-            std::transform(lo.begin(), lo.end(), lo.begin(), [](unsigned char c) { return char(std::tolower(c)); });
-            std::transform(fl.begin(), fl.end(), fl.begin(), [](unsigned char c) { return char(std::tolower(c)); });
-            if (fl.empty() || lo.find(fl) != std::string::npos) lines.push_back(line);
-        }
-        std::sort(lines.begin(), lines.end(), [](const std::string& a, const std::string& b) {
-            return std::lexicographical_compare(a.begin(), a.end(), b.begin(), b.end(),
-                                                [](char x, char y) { return std::tolower(x) < std::tolower(y); });
-        });
-        std::string items;
-        for (const std::string& l : lines) items += (items.empty() ? "" : "\n") + l;
-        return items;
-    };
-    const NodeHandle list = w::listView(m_ui, body, rows(""), -1, "prefs.shortcuts");
+    m_prefsBindings = m_bindings;
+    const NodeHandle list = w::listView(m_ui, body, prefsRows_(""), -1, "prefs.shortcuts");
     m_ui.setCss(list, "height", "180px");
     m_ui.setCss(list, "min-width", "460px");
-    m_ui.connect(filter, SignalKind::TextChanged, [list](UiContext& u, NodeHandle n, const SignalArgs&) { u.setText(list, rows(u.text(n))); });
-    const std::vector<std::string> conflicts = shortcutConflicts();
-    std::string c = conflicts.empty() ? "No shortcut conflicts." : "Conflicts: ";
-    for (std::size_t i = 0; i < conflicts.size(); ++i) c += (i ? "; " : "") + conflicts[i];
-    w::label(m_ui, body, c, "prefs.conflicts");
+    m_ui.connect(filter, SignalKind::TextChanged, [this, list](UiContext& u, NodeHandle n, const SignalArgs&) { u.setText(list, prefsRows_(u.text(n))); });
+    // rebinding row (Qt: QKeySequenceEdit + Reset): press a combination in the field or type it, then Assign
+    // the row is a capture node like the shell root, so key presses in the field reach rootEvent (dialogs are not
+    // under the shell root) and are recorded as combinations
+    const NodeHandle bindRow = m_ui.create("editorshellroot", body, "prefs.shortcut_row").value_or(NodeHandle{});
+    m_ui.setUserData(bindRow, static_cast<u64>(reinterpret_cast<std::uintptr_t>(this)));
+    m_ui.addClass(bindRow, "row");
+    m_ui.setCss(bindRow, "gap", "6px");
+    m_ui.setCss(w::label(m_ui, bindRow, "Shortcut"), "min-width", "150px");
+    const NodeHandle edit = w::lineEdit(m_ui, bindRow, "", "prefs.shortcut_edit");
+    m_ui.setCss(edit, "min-width", "140px");
+    const NodeHandle assign = w::button(m_ui, bindRow, "Assign", "prefs.assign");
+    const NodeHandle clear = w::button(m_ui, bindRow, "Clear", "prefs.clear_shortcut");
+    const NodeHandle reset = w::button(m_ui, bindRow, "Reset", "prefs.reset_shortcut");
+    const NodeHandle resetAll = w::button(m_ui, bindRow, "Reset All", "prefs.reset_all");
+    m_ui.connect(list, SignalKind::ValueChanged, [this, edit](UiContext& u, NodeHandle n, const SignalArgs&) {
+        const i32 r = i32(u.value(n));
+        if (r >= 0 && std::size_t(r) < m_prefsRows.size()) u.setText(edit, m_prefsBindings[std::size_t(m_prefsRows[std::size_t(r)])]);
+    });
+    const auto selected = [this, list]() -> std::optional<ActionId> {
+        const i32 r = i32(m_ui.value(list));
+        if (r < 0 || std::size_t(r) >= m_prefsRows.size()) return std::nullopt;
+        return m_prefsRows[std::size_t(r)];
+    };
+    m_ui.connect(assign, SignalKind::Clicked, [this, selected, edit](UiContext& u, NodeHandle, const SignalArgs&) {
+        if (const auto id = selected()) setPreferencesShortcut(editorActions()[std::size_t(*id)].stableId, u.text(edit));
+    });
+    m_ui.connect(clear, SignalKind::Clicked, [this, selected](UiContext&, NodeHandle, const SignalArgs&) {
+        if (const auto id = selected()) setPreferencesShortcut(editorActions()[std::size_t(*id)].stableId, "");
+    });
+    m_ui.connect(reset, SignalKind::Clicked, [this, selected](UiContext&, NodeHandle, const SignalArgs&) {
+        if (const auto id = selected()) setPreferencesShortcut(editorActions()[std::size_t(*id)].stableId, editorActions()[std::size_t(*id)].shortcut);
+    });
+    m_ui.connect(resetAll, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+        for (const ActionDesc& a : editorActions()) m_prefsBindings[std::size_t(a.id)] = normalizeShortcut(a.shortcut);
+        prefsRefresh_();
+    });
+    w::label(m_ui, body, "", "prefs.conflicts");
+    prefsRefresh_();
     const NodeHandle buttons = w::panel(m_ui, body);
     m_ui.addClass(buttons, "row");
     m_ui.setCss(buttons, "gap", "6px");
@@ -1236,7 +1365,7 @@ void EditorShellWindow::openPreferences() {
 
 bool EditorShellWindow::applyPreferencesDialog_() {
     if (!preferencesOpen()) return false;
-    if (!shortcutConflicts().empty()) return false; // Qt refuses while shortcuts conflict
+    if (!preferencesConflicts().empty()) return false; // Qt refuses while shortcuts conflict
     EditorPreferences p;
     p.previewSun = m_ui.checked(m_ui.find("prefs.preview_sun"));
     p.cameraSpeed = m_ui.value(m_ui.find("prefs.camera_speed"));
@@ -1248,10 +1377,67 @@ bool EditorShellWindow::applyPreferencesDialog_() {
     s.set("prefs.cameraSpeed", p.cameraSpeed);
     s.set("prefs.lookSensitivity", p.lookSensitivity);
     s.set("prefs.restoreLayout", p.restoreLayout ? 1.0 : 0.0);
+    for (const ActionDesc& a : editorActions()) {
+        const std::string& b = m_prefsBindings[std::size_t(a.id)];
+        if (b == normalizeShortcut(a.shortcut)) {
+            if (s.get(std::string("shortcut.") + a.stableId, "\x01") != "\x01") s.set(std::string("shortcut.") + a.stableId, b);
+        } else {
+            s.set(std::string("shortcut.") + a.stableId, b);
+        }
+    }
+    m_bindings = m_prefsBindings;
+    m_menuKey.clear();
+    syncMenus_();
     (void)s.save(); // no settings file (tests, --settings unset): kept in memory
     m_viewportKey.clear(); // the preview sun changes the engine frame
     sync();
     return true;
+}
+
+std::string EditorShellWindow::prefsRows_(std::string_view f) {
+    // every named action with its key (Qt editableActions, sorted by text), filterable
+    std::vector<std::pair<std::string, ActionId>> lines;
+    const std::string fl = lowerAscii(f);
+    for (const ActionDesc& a : editorActions()) {
+        std::string text = std::string(a.label);
+        if (text.size() > 3 && text.compare(text.size() - 3, 3, "...") == 0) text.resize(text.size() - 3);
+        const std::string& b = m_prefsBindings[std::size_t(a.id)];
+        std::string line = text + "  [" + std::string(a.menu) + "]   " + (b.empty() ? "-" : b);
+        if (fl.empty() || lowerAscii(line).find(fl) != std::string::npos) lines.emplace_back(line, a.id);
+    }
+    std::sort(lines.begin(), lines.end(), [](const auto& a, const auto& b) { return lowerAscii(a.first) < lowerAscii(b.first); });
+    std::string items;
+    m_prefsRows.clear();
+    for (const auto& l : lines) {
+        items += (items.empty() ? "" : "\n") + l.first;
+        m_prefsRows.push_back(l.second);
+    }
+    return items;
+}
+
+void EditorShellWindow::prefsRefresh_() {
+    if (!preferencesOpen()) return;
+    const NodeHandle list = m_ui.find("prefs.shortcuts");
+    const i32 sel = i32(m_ui.value(list));
+    m_ui.setText(list, prefsRows_(m_ui.text(m_ui.find("prefs.filter"))));
+    if (sel >= 0) m_ui.setValue(list, f32(sel));
+    const std::vector<std::string> conflicts = preferencesConflicts();
+    std::string c = conflicts.empty() ? "No shortcut conflicts." : "Conflicts: ";
+    for (std::size_t i = 0; i < conflicts.size(); ++i) c += (i ? "; " : "") + conflicts[i];
+    m_ui.setText(m_ui.find("prefs.conflicts"), c);
+}
+
+bool EditorShellWindow::setPreferencesShortcut(std::string_view stableId, std::string_view combo) {
+    if (!preferencesOpen()) return false;
+    const std::string b = normalizeShortcut(combo);
+    if (b.empty() && !combo.empty()) return false;
+    for (const ActionDesc& a : editorActions())
+        if (stableId == a.stableId) {
+            m_prefsBindings[std::size_t(a.id)] = b;
+            prefsRefresh_();
+            return true;
+        }
+    return false;
 }
 
 void EditorShellWindow::closePreferences_() {
@@ -1329,5 +1515,18 @@ PromptAnswer DialogServices::askSaveDiscardCancel(std::string_view text) {
     }
 }
 void DialogServices::warn(std::string_view title, std::string_view text) { buttons_(title, text, "OK"); }
+
+bool DialogServices::openExternal(std::string_view path) {
+    // Qt QDesktopServices::openUrl(QUrl::fromLocalFile(path)): the system's handler for the file
+#ifdef _WIN32
+    const std::wstring w = std::filesystem::path(std::string(path)).wstring();
+    return reinterpret_cast<std::intptr_t>(ShellExecuteW(nullptr, L"open", w.c_str(), nullptr, nullptr, SW_SHOWNORMAL)) > 32;
+#else
+    std::string q = "'";
+    for (char c : path) q += c == '\'' ? std::string("'\\''") : std::string(1, c);
+    q += "'";
+    return std::system(("xdg-open " + q + " >/dev/null 2>&1 &").c_str()) == 0;
+#endif
+}
 
 } // namespace fuse::editor::fui

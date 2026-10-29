@@ -4,6 +4,7 @@
 #include "fuse/editor/fui/editor_shell.hpp"
 #include "scripted_services.hpp"
 
+#include <fuse/ecs/components/script.hpp>
 #include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/collider.hpp>
 #include <fuse/ecs/components/transform.hpp>
@@ -1305,6 +1306,300 @@ void gatePreferences(Rig& r) {
 }
 
 
+// ---- Qt parity: shortcut rebinding, recent projects, group / frame / duplicate subtree, colliders, open script ----
+namespace {
+EntityRef makeEntity(Rig& r, float x, float y, float z) {
+    CHECK(r.c.trigger(ActionId::EntityCreateEmpty));
+    r.frames();
+    const EntityRef e = r.c.lastCreated();
+    r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) {
+        if (auto* t = h.editorScene().registry().get<fuse::ecs::Transform>(fuse::ecs::EntityID{e.index, e.generation})) t->position = {x, y, z, 1.f};
+    });
+    r.c.refresh();
+    r.frames();
+    return e;
+}
+void viewportKey(Rig& r, Key k, fuse::ui::u8 mods) {
+    r.ui().setFocus(r.ui().find("viewport"));
+    r.ui().keyDown(k, mods);
+    r.ui().keyUp(k, mods);
+    r.frames();
+}
+std::size_t rowsLabelled(Rig& r, std::string_view label) {
+    std::size_t n = 0;
+    for (const auto& row : r.v().hierarchy) n += row.label == label;
+    return n;
+}
+void shot(Rig& r) {
+    if (!g_out.empty()) { r.win.rasterize({}); CHECK(r.win.writePng(g_out)); g_shotWritten = true; }
+}
+} // namespace
+
+// Preferences shortcut rebinding (Qt PreferencesDialog: QKeySequenceEdit, conflicts, Reset, persisted per action).
+void gateShortcutRebind(Rig& r) {
+    CHECK(r.shell.binding(ActionId::EntityGroup) == "Ctrl+G");
+    CHECK(fui::EditorShellWindow::normalizeShortcut("shift+ctrl+k") == "Ctrl+Shift+K");
+    CHECK(fui::EditorShellWindow::normalizeShortcut("Ctrl+Nope").empty());
+    CHECK(menuText(r, "Entity").find("Group Selection   (Ctrl+G)") != std::string::npos);
+    CHECK(r.c.trigger(ActionId::EditPreferences));
+    r.frames();
+    // a conflicting binding is shown live and OK / Apply refuse it
+    CHECK(r.shell.setPreferencesShortcut("entity.group", "Ctrl+D"));
+    r.frames();
+    const std::string conflicts(r.ui().text(r.ui().find("prefs.conflicts")));
+    std::printf("shortcut_rebind: %s\n", conflicts.c_str());
+    CHECK(conflicts.find("Ctrl+D: ") != std::string::npos && conflicts.find("Group Selection") != std::string::npos);
+    r.clickId("prefs.apply");
+    CHECK(r.shell.preferencesOpen() && r.shell.binding(ActionId::EntityGroup) == "Ctrl+G");
+    r.clickId("prefs.reset_all");
+    CHECK(r.shell.preferencesConflicts().empty());
+    // select the row, record Ctrl+Shift+K in the shortcut field, Assign
+    setField(r, "prefs.filter", "group sel");
+    r.ui().emit(r.ui().find("prefs.filter"), fuse::ui::SignalKind::TextChanged, {});
+    r.frames();
+    CHECK(std::string(r.ui().text(r.ui().find("prefs.shortcuts"))).find("Group Selection  [Entity]   Ctrl+G") == 0);
+    r.ui().setValue(r.ui().find("prefs.shortcuts"), 0.f, true);
+    r.frames();
+    CHECK(r.ui().text(r.ui().find("prefs.shortcut_edit")) == "Ctrl+G");
+    r.ui().setFocus(r.ui().find("prefs.shortcut_edit"));
+    r.ui().keyDown(Key::K, fuse::ui::kModCtrl | fuse::ui::kModShift);
+    r.frames();
+    CHECK(r.ui().text(r.ui().find("prefs.shortcut_edit")) == "Ctrl+Shift+K");
+    r.clickId("prefs.assign");
+    CHECK(std::string(r.ui().text(r.ui().find("prefs.shortcuts"))).find("Group Selection  [Entity]   Ctrl+Shift+K") == 0);
+    CHECK(r.ui().text(r.ui().find("prefs.conflicts")) == "No shortcut conflicts.");
+    shot(r);
+    r.clickId("prefs.ok");
+    CHECK(!r.shell.preferencesOpen() && r.shell.binding(ActionId::EntityGroup) == "Ctrl+Shift+K");
+    CHECK(r.app.settings().get("shortcut.entity.group") == "Ctrl+Shift+K");
+    CHECK(menuText(r, "Entity").find("Group Selection   (Ctrl+Shift+K)") != std::string::npos);
+    // the new key groups, the old one no longer does
+    const EntityRef a = makeEntity(r, -1.f, 0.f, 0.f), b = makeEntity(r, 1.f, 0.f, 0.f);
+    const EntityRef both[] = {a, b};
+    r.c.select(both, a);
+    r.frames();
+    viewportKey(r, Key::G, fuse::ui::kModCtrl);
+    CHECK(rowsLabelled(r, "Group") == 0);
+    viewportKey(r, Key::K, fuse::ui::kModCtrl | fuse::ui::kModShift);
+    CHECK(rowsLabelled(r, "Group") == 1);
+    // a new shell on the same settings loads the binding
+    auto& win2 = r.app.createWindow({.title = "FUSE Editor 2", .width = 1200, .height = 700});
+    EditorHost host2;
+    test::ScriptedServices sv2;
+    EditorController c2(host2, sv2);
+    {
+        fui::EditorShellWindow shell2(win2, c2, {});
+        CHECK(shell2.binding(ActionId::EntityGroup) == "Ctrl+Shift+K" && shell2.binding(ActionId::EntityUngroup) == "Ctrl+Shift+G");
+    }
+    std::printf("shortcut_rebind: Group Selection -> %s (persisted, reloaded)\n", r.shell.binding(ActionId::EntityGroup).c_str());
+}
+
+// File > Recent Projects (Qt): newest first, missing folders disabled, open from the menu, clear.
+void gateRecentProjects(Rig& r) {
+    const auto dir = scratchDir("recent_projects");
+    CHECK(r.c.newProject((dir / "Alpha").string(), "Alpha", 1u));
+    CHECK(r.c.newProject((dir / "Beta").string(), "Beta", 1u));
+    r.frames();
+    const auto recent = r.v().recentProjects;
+    CHECK(recent.size() >= 2);
+    CHECK(recent[0].find("Beta") != std::string::npos && recent[1].find("Alpha") != std::string::npos);
+    std::string file = menuText(r, "File");
+    CHECK(file.find("Recent Projects") != std::string::npos);
+    std::error_code ec;
+    std::filesystem::remove_all(recent[0], ec); // Beta goes missing
+    r.c.showMessage("refresh");
+    CHECK(r.c.openRecentProject(1)); // Alpha
+    r.frames();
+    file = menuText(r, "File");
+    std::printf("recent_projects: menu\n%s\n", file.c_str());
+    CHECK(file.find("Beta  -  " + recent[0] + "  (missing)") != std::string::npos);
+    CHECK(!r.c.openRecentProject(r.v().recentProjects[0].find("Alpha") != std::string::npos ? 1 : 0));
+    CHECK(r.v().status.find("Recent project is missing") != std::string::npos);
+    // pick Alpha from the menu: the line index of its entry
+    std::vector<std::string> lines;
+    {
+        std::size_t at = file.find('\n') + 1;
+        while (at <= file.size()) {
+            const std::size_t e = file.find('\n', at);
+            lines.push_back(file.substr(at, e == std::string::npos ? std::string::npos : e - at));
+            if (e == std::string::npos) break;
+            at = e + 1;
+        }
+    }
+    int alpha = -1, clear = -1;
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+        if (lines[i].find("Alpha  -  ") != std::string::npos) alpha = int(i);
+        if (lines[i].find("Clear Recent Projects") != std::string::npos) clear = int(i);
+    }
+    CHECK(alpha >= 0 && clear > alpha);
+    shot(r);
+    r.ui().emit(r.shell.menuNode("File"), fuse::ui::SignalKind::Submitted, {.value = float(alpha)});
+    r.frames();
+    CHECK(r.v().hasProject && r.v().recentProjects[0].find("Alpha") != std::string::npos);
+    r.ui().emit(r.shell.menuNode("File"), fuse::ui::SignalKind::Submitted, {.value = float(clear)});
+    r.frames();
+    CHECK(r.v().recentProjects.empty() && menuText(r, "File").find("Clear Recent Projects") == std::string::npos);
+    std::printf("recent_projects: %zu entries, missing disabled, opened from menu, cleared\n", recent.size());
+}
+
+// Entity > Group / Ungroup, Duplicate (whole subtree), View > Frame Selected (Qt parity, one undo step each).
+void gateEntityGroup(Rig& r) {
+    const EntityRef a = makeEntity(r, -2.f, 0.f, 4.f), b = makeEntity(r, 2.f, 0.f, 4.f);
+    const u32 base = r.v().entityCount;
+    const EntityRef both[] = {a, b};
+    r.c.select(both, a);
+    r.frames();
+    viewportKey(r, Key::G, fuse::ui::kModCtrl);
+    CHECK(rowsLabelled(r, "Group") == 1 && r.v().entityCount == base + 1);
+    std::size_t children = 0;
+    EntityRef group;
+    for (const auto& row : r.v().hierarchy)
+        if (row.label == "Group") group = row.entity;
+    for (const auto& row : r.v().hierarchy) children += row.parent == group && row.depth == 1;
+    CHECK(children == 2);
+    CHECK(r.v().primary == group);
+    // Duplicate copies the group with its children
+    viewportKey(r, Key::D, fuse::ui::kModCtrl);
+    CHECK(rowsLabelled(r, "Group") == 2 && r.v().entityCount == base + 4);
+    CHECK(r.c.trigger(ActionId::EditUndo));
+    r.frames();
+    CHECK(rowsLabelled(r, "Group") == 1 && r.v().entityCount == base + 1);
+    const EntityRef g1[] = {group};
+    r.c.select(g1, group);
+    r.frames();
+    // Frame Selected (F on the viewport): the camera moves to fit the group; F in a text field does nothing
+    const auto cam0 = r.c.viewport().camera();
+    CHECK(r.shell.showPanel("dock.hierarchy"));
+    r.frames();
+    r.ui().setFocus(r.ui().find("hierarchy.filter"));
+    CHECK(r.ui().focused() == r.ui().find("hierarchy.filter"));
+    r.ui().keyDown(Key::F, 0);
+    r.frames();
+    CHECK(r.c.viewport().camera().positionZ == cam0.positionZ);
+    r.ui().setText(r.ui().find("hierarchy.filter"), "");
+    r.ui().emit(r.ui().find("hierarchy.filter"), fuse::ui::SignalKind::TextChanged, {});
+    r.frames();
+    viewportKey(r, Key::F, 0);
+    const auto cam1 = r.c.viewport().camera();
+    std::printf("entity_group: frame camera (%.2f %.2f %.2f) -> (%.2f %.2f %.2f)\n", cam0.positionX, cam0.positionY, cam0.positionZ,
+                cam1.positionX, cam1.positionY, cam1.positionZ);
+    CHECK(std::fabs(cam1.positionX - cam0.positionX) + std::fabs(cam1.positionY - cam0.positionY) + std::fabs(cam1.positionZ - cam0.positionZ) > 0.1f);
+    float px = 0.f, py = 0.f;
+    CHECK(r.c.projectPoint(0.f, 0.f, 4.f, px, py));
+    const Rect vr = r.rect("viewport");
+    CHECK(std::fabs(px - vr.w * 0.5f) < vr.w * 0.1f && std::fabs(py - vr.h * 0.5f) < vr.h * 0.1f);
+    shot(r);
+    // Ungroup: children back at the top level, the group entity gone
+    viewportKey(r, Key::G, fuse::ui::kModCtrl | fuse::ui::kModShift);
+    CHECK(rowsLabelled(r, "Group") == 0 && r.v().entityCount == base);
+    for (const auto& row : r.v().hierarchy) CHECK(row.depth == 0);
+    CHECK(r.c.trigger(ActionId::EditUndo));
+    r.frames();
+    CHECK(rowsLabelled(r, "Group") == 1);
+    std::printf("entity_group: group / duplicate subtree / undo / frame / ungroup ok\n");
+}
+
+// Collider wireframes (selection, View > Show All Colliders) and drag handles with one undo step (Qt viewport).
+void gateColliders(Rig& r) {
+    const EntityRef e = makeEntity(r, 0.f, 0.f, 3.f);
+    const fuse::ecs::EntityID id{e.index, e.generation};
+    r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) {
+        fuse::ecs::Collider c;
+        c.shape = fuse::ecs::Collider::Box;
+        c.params = {0.5f, 0.5f, 0.5f, 0.f};
+        h.editorScene().registry().add<fuse::ecs::Collider>(id, c);
+    });
+    r.c.select({}, {});
+    r.frames();
+    CHECK(overlayLines(r, 0x78FF8C) == 0 && overlayLines(r, 0x5AC86E) == 0);
+    const EntityRef one[] = {e};
+    r.c.select(one, e);
+    r.frames();
+    const std::size_t sel = overlayLines(r, 0x78FF8C);
+    std::printf("colliders: %zu selected collider lines\n", sel);
+    CHECK(sel == 12); // box edges
+    const auto handles = r.c.colliderHandles();
+    CHECK(handles.size() == 6);
+    std::size_t dots = 0;
+    for (const auto& d : w::viewportOverlay(r.ui(), r.ui().find("viewport")).dots) dots += std::fabs(d.radius - 4.5f) < 0.01f;
+    CHECK(dots == 6);
+    // drag the +X face handle outward: one "Resize collider" undo step
+    std::size_t hx = handles.size();
+    for (std::size_t i = 0; i < handles.size(); ++i)
+        if (handles[i].param == 0 && handles[i].sign > 0) hx = i;
+    CHECK(hx < handles.size());
+    const auto h = handles[hx];
+    const float len = std::sqrt(h.axisX * h.axisX + h.axisY * h.axisY);
+    CHECK(len > 1.f);
+    const float ux = h.axisX / len, uy = h.axisY / len;
+    using PE = ViewportPointerEvent;
+    std::size_t undo0 = 0, undo1 = 0;
+    r.shell.panels().withScene([&](EditorHost& host, const ViewportPanel&) { undo0 = host.undoStack().undoCount(); });
+    r.c.viewportPointer({PE::Kind::Down, PE::Button::Left, h.x, h.y});
+    CHECK(r.c.colliderDragging());
+    for (int i = 1; i <= 4; ++i) r.c.viewportPointer({PE::Kind::Move, PE::Button::Left, h.x + ux * 10.f * float(i), h.y + uy * 10.f * float(i)});
+    r.frames();
+    shot(r);
+    r.c.viewportPointer({PE::Kind::Up, PE::Button::Left, h.x + ux * 40.f, h.y + uy * 40.f});
+    r.frames();
+    float half = 0.f;
+    r.shell.panels().withScene([&](EditorHost& host, const ViewportPanel&) {
+        if (auto* c = host.editorScene().registry().get<fuse::ecs::Collider>(id)) half = c->params.x;
+    });
+    r.shell.panels().withScene([&](EditorHost& host, const ViewportPanel&) { undo1 = host.undoStack().undoCount(); });
+    std::printf("colliders: +X half extent 0.50 -> %.3f (%zu undo step)\n", half, undo1 - undo0);
+    CHECK(half > 0.6f && undo1 == undo0 + 1);
+    CHECK(r.v().selection.size() == 1 && r.v().primary == e); // the drag did not reselect
+    CHECK(r.c.trigger(ActionId::EditUndo));
+    r.frames();
+    r.shell.panels().withScene([&](EditorHost& host, const ViewportPanel&) {
+        if (auto* c = host.editorScene().registry().get<fuse::ecs::Collider>(id)) half = c->params.x;
+    });
+    CHECK(std::fabs(half - 0.5f) < 1e-5f);
+    // Show All Colliders draws unselected colliders too
+    r.c.select({}, {});
+    r.frames();
+    CHECK(overlayLines(r, 0x5AC86E) == 0);
+    const auto idx = r.shell.menuItemIndex("View", ActionId::ViewShowColliders);
+    CHECK(idx >= 0);
+    r.ui().emit(r.shell.menuNode("View"), fuse::ui::SignalKind::Submitted, {.value = float(idx)});
+    r.frames();
+    CHECK(r.c.showAllColliders() && menuText(r, "View").find("[x] Show All Colliders") != std::string::npos);
+    CHECK(overlayLines(r, 0x5AC86E) == 12);
+    std::printf("colliders: show all -> %zu lines\n", overlayLines(r, 0x5AC86E));
+}
+
+// Entity > Open Script (Qt: QDesktopServices on the selection's .lua; Ctrl+E).
+void gateOpenScript(Rig& r) {
+    const auto dir = scratchDir("open_script");
+    const auto lua = dir / "mover.lua";
+    std::FILE* f = std::fopen(lua.string().c_str(), "wb");
+    CHECK(f != nullptr);
+    if (f) { std::fputs("return {}\n", f); std::fclose(f); }
+    const EntityRef plain = makeEntity(r, 0.f, 0.f, 3.f), scripted = makeEntity(r, 1.f, 0.f, 3.f);
+    r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) {
+        fuse::ecs::Script s;
+        s.set_path(lua.string());
+        h.editorScene().registry().add<fuse::ecs::Script>(fuse::ecs::EntityID{scripted.index, scripted.generation}, s);
+    });
+    const EntityRef p1[] = {plain};
+    r.c.select(p1, plain);
+    r.frames();
+    CHECK(!r.c.actionEnabled(ActionId::EntityOpenScript) || !r.c.openScript());
+    CHECK(r.sv.opened.empty());
+    const EntityRef s1[] = {scripted};
+    r.c.select(s1, scripted);
+    r.frames();
+    CHECK(r.c.actionEnabled(ActionId::EntityOpenScript));
+    viewportKey(r, Key::E, fuse::ui::kModCtrl);
+    CHECK(r.sv.opened.size() == 1);
+    CHECK(!r.sv.opened.empty() && std::filesystem::equivalent(r.sv.opened[0], lua));
+    std::printf("open_script: opened %s; status \"%s\"\n", r.sv.opened.empty() ? "-" : r.sv.opened[0].c_str(), r.v().status.c_str());
+    CHECK(r.v().status.find("Opened ") != std::string::npos);
+    CHECK(menuText(r, "Entity").find("Open Script   (Ctrl+E)") != std::string::npos);
+    shot(r);
+}
+
 // Terrain panel (Qt TerrainPanel parity): create a heightfield terrain, see it in the GPU viewport, sculpt a stroke
 // with one undo step, clear + undo.
 void gateTerrain(Rig& r) {
@@ -1462,7 +1757,7 @@ int main(int argc, char** argv) {
     Rig r(scale);
     const std::map<std::string, std::function<void(Rig&)>> gates{
         {"startup", gateStartup},        {"layout", gateLayout},           {"theme", gateTheme},
-        {"fuse_api", gateFuseApi},       {"wasd", gateWasd},               {"context_menu", gateContextMenu}, {"context_menu_dpr1_5", gateContextMenuDpr15}, {"icon", gateIcon}, {"view_modes", gateViewModes}, {"preferences", gatePreferences}, {"navigation", gateNavigation}, {"terrain", gateTerrain}, {"live_present", gateLivePresent},
+        {"fuse_api", gateFuseApi},       {"wasd", gateWasd},               {"context_menu", gateContextMenu}, {"context_menu_dpr1_5", gateContextMenuDpr15}, {"icon", gateIcon}, {"view_modes", gateViewModes}, {"preferences", gatePreferences}, {"navigation", gateNavigation}, {"terrain", gateTerrain}, {"shortcut_rebind", gateShortcutRebind}, {"recent_projects", gateRecentProjects}, {"entity_group", gateEntityGroup}, {"colliders", gateColliders}, {"open_script", gateOpenScript}, {"live_present", gateLivePresent},
         {"ui_frame", gateUiFrame},       {"idle_frames", gateIdle},        {"e15_console", gateConsole},
         {"e15_transport", gateTransport}, {"e20_inspector", gateInspector}, {"e20_reparent", gateReparent},
         {"e20_file_menu", gateFileMenu}, {"e20_wizard", gateWizard}, {"project_open", gateProjectOpen},  {"project_hub", gateProjectHub}, {"asset_browser", gateAssetBrowser},

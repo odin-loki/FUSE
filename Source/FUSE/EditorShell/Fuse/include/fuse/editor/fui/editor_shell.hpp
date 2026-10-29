@@ -72,6 +72,18 @@ public:
     [[nodiscard]] bool preferencesOpen() const { return m_prefsDialog.valid(); }
     /// "key: action, action" for every shortcut bound to more than one action (Qt PreferencesDialog::conflicts).
     [[nodiscard]] static std::vector<std::string> shortcutConflicts();
+    /// Same check over a binding table (one canonical combo per ActionId, "" = unbound).
+    [[nodiscard]] static std::vector<std::string> shortcutConflicts(std::span<const std::string> bindings);
+    /// Canonical "Ctrl+Alt+Shift+K" form of a combo string ("" when it does not parse).
+    [[nodiscard]] static std::string normalizeShortcut(std::string_view text);
+    [[nodiscard]] static std::string shortcutText(fuse::ui::Key key, fuse::ui::u8 mods);
+    /// Effective shortcut of an action (default from the action table unless rebound in Preferences).
+    [[nodiscard]] const std::string& binding(ActionId id) const { return m_bindings[std::size_t(id)]; }
+    /// Preferences dialog: rebinds `stableId` ("entity.group" or the Qt objectName) in the pending table and
+    /// refreshes the conflict line (Qt PreferencesDialog::setShortcutFor). Applied by OK / Apply.
+    bool setPreferencesShortcut(std::string_view stableId, std::string_view combo);
+    /// Preferences dialog: pending conflicts (what OK / Apply would refuse on).
+    [[nodiscard]] std::vector<std::string> preferencesConflicts() const { return shortcutConflicts(m_prefsBindings); }
 
     [[nodiscard]] fuse::app::AppWindow& window() { return m_win; }
     [[nodiscard]] EditorController& controller() { return m_c; }
@@ -159,6 +171,11 @@ private:
     NodeHandle m_gizmoSpace{}, m_gizmoSnap{};
     NodeHandle m_wizard{};
     NodeHandle m_prefsDialog{};
+    std::vector<std::string> m_bindings, m_prefsBindings; ///< per ActionId (effective / pending in Preferences)
+    std::vector<ActionId> m_prefsRows;                    ///< Preferences list row -> action
+    std::string prefsRows_(std::string_view filter);
+    void prefsRefresh_();
+    void loadBindings_();
     void closePreferences_();
     bool applyPreferencesDialog_();
     ContextMenuPlacement m_menuPlacement{};
@@ -186,6 +203,7 @@ public:
     std::optional<Rgba> pickColour(Rgba initial) override;
     PromptAnswer askSaveDiscardCancel(std::string_view text) override;
     void warn(std::string_view title, std::string_view text) override;
+    bool openExternal(std::string_view path) override;
 
 private:
     std::optional<std::string> file_(std::string_view title, std::string_view filter, std::string_view directory, bool save);

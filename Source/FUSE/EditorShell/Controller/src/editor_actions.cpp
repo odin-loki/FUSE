@@ -25,6 +25,9 @@ constexpr std::array<ActionDesc, static_cast<usize>(ActionId::Count)> kActions{{
     {A::EntityCreateCamera, "entity.create_camera", "Entity", "Create Camera", "", "fuseActionCreateCamera", false, false},
     {A::EntityDuplicate, "entity.duplicate", "Entity", "Duplicate", "Ctrl+D", "fuseActionDuplicate", true, false},
     {A::EntityDelete, "entity.delete", "Entity", "Delete", "Delete", "fuseActionDelete", false, false},
+    {A::EntityGroup, "entity.group", "Entity", "Group Selection", "Ctrl+G", "fuseActionGroup", false, false},
+    {A::EntityUngroup, "entity.ungroup", "Entity", "Ungroup", "Ctrl+Shift+G", "fuseActionUngroup", false, false},
+    {A::EntityOpenScript, "entity.open_script", "Entity", "Open Script", "Ctrl+E", "fuseActionOpenScript", true, false},
     {A::PlayPlay, "play.play", "Play", "Play", "F5", "fuseActionPlay", false, true},
     {A::PlayPause, "play.pause", "Play", "Pause", "F6", "fuseActionPause", false, true},
     {A::PlayResume, "play.resume", "Play", "Resume", "F7", "fuseActionResume", false, true},
@@ -36,6 +39,8 @@ constexpr std::array<ActionDesc, static_cast<usize>(ActionId::Count)> kActions{{
     {A::ViewModeWireframe, "view.mode_wireframe", "View", "View Mode: Wireframe", "Alt+3", "fuseActionViewWireframe", false, false},
     {A::ViewModeLitWireframe, "view.mode_lit_wireframe", "View", "View Mode: Lit Wireframe", "Alt+4", "fuseActionViewLitWireframe", false, false},
     {A::ViewShowMeshBounds, "view.show_mesh_bounds", "View", "Show Mesh Bounds", "", "fuseActionShowMeshBounds", true, false},
+    {A::ViewShowColliders, "view.show_colliders", "View", "Show All Colliders", "", "fuseActionShowColliders", false, false},
+    {A::ViewFrameSelected, "view.frame_selected", "View", "Frame Selected", "F", "fuseActionFrameSelected", false, false},
 }};
 constexpr std::array<const char*, 5> kMenus{{"File", "Edit", "Entity", "Play", "View"}};
 
