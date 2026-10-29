@@ -32,6 +32,7 @@ namespace fuse::editor::qt {
 class PreferencesDialog;
 class NavmeshPanel;
 class TerrainPanel;
+class LightingPanel;
 
 class AssetBrowserWidget;
 class TimelineWidget;
@@ -108,6 +109,7 @@ public:
     static constexpr const char* kTimelineDock = "dock.timeline";
     static constexpr const char* kNavigationDock = "dock.navigation";
     static constexpr const char* kTerrainDock = "dock.terrain";
+    static constexpr const char* kLightingDock = "dock.lighting";
 
     explicit MainWindow(const QString& samplesRoot, QWidget* parent = nullptr);
     MainWindow(const QString& samplesRoot, const Options& options, QWidget* parent = nullptr);
@@ -162,6 +164,7 @@ public:
     [[nodiscard]] TimelineWidget* timeline() const { return m_timeline; }
     [[nodiscard]] NavmeshPanel* navigation() const { return m_navigation; }
     [[nodiscard]] TerrainPanel* terrain() const { return m_terrain; }
+    [[nodiscard]] LightingPanel* lighting() const { return m_lighting; }
     [[nodiscard]] SeqPreviewPaneWidget* sequencer() const { return m_sequencer; }
     /// File / Edit toolbar (New, Open, Save, Undo, Redo) left of the transport bar.
     [[nodiscard]] QToolBar* mainToolBar() const { return m_mainBar; }
@@ -278,6 +281,7 @@ private:
     TimelineWidget* m_timeline = nullptr;
     NavmeshPanel* m_navigation = nullptr;
     TerrainPanel* m_terrain = nullptr;
+    LightingPanel* m_lighting = nullptr;
     std::vector<QDockWidget*> m_docks;
     QString m_samplesRoot;
     QLabel* m_statusLabel = nullptr;

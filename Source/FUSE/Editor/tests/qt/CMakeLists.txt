@@ -24,6 +24,7 @@ set(_fuse_qt_gate_tests
     asset_browser
     multi_viewport
     play_camera
+    lighting
     preferences
     build_package
 )

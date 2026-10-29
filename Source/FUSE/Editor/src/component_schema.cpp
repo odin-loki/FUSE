@@ -6,6 +6,7 @@
 #include <fuse/ecs/component_types.hpp>
 #include <fuse/ecs/components/camera.hpp>
 #include <fuse/ecs/components/collider.hpp>
+#include <fuse/ecs/components/environment.hpp>
 #include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
@@ -475,6 +476,37 @@ const std::vector<PropertyFieldDesc>& directionalFields() {
     return fields;
 }
 
+const std::vector<PropertyFieldDesc>& ambientFields() {
+    using ecs::AmbientLight;
+    static const std::vector<PropertyFieldDesc> fields = {
+        typedField("Color", "AmbientLight.color", FT::Color, readVec3<AmbientLight, &AmbientLight::color>,
+                   writeVec3<AmbientLight, &AmbientLight::color>, 0.0, 1.0e3, 0.01),
+        floatField("Intensity", "AmbientLight.intensity", 0.0, 1.0e3, 0.05, readF32<AmbientLight, &AmbientLight::intensity>,
+                   writeF32<AmbientLight, &AmbientLight::intensity>),
+    };
+    return fields;
+}
+
+const std::vector<PropertyFieldDesc>& fogFields() {
+    using ecs::EnvironmentFog;
+    static const std::vector<PropertyFieldDesc> fields = {
+        typedField("Color", "EnvironmentFog.color", FT::Color, readVec3<EnvironmentFog, &EnvironmentFog::color>,
+                   writeVec3<EnvironmentFog, &EnvironmentFog::color>, 0.0, 1.0e3, 0.01),
+        floatField("Density", "EnvironmentFog.density", 0.0, 1.0, 0.001, readF32<EnvironmentFog, &EnvironmentFog::density>,
+                   writeF32<EnvironmentFog, &EnvironmentFog::density>),
+        floatField("Start Distance", "EnvironmentFog.density_offset", 0.0, 1.0e5, 1.0,
+                   readF32<EnvironmentFog, &EnvironmentFog::density_offset>,
+                   writeF32<EnvironmentFog, &EnvironmentFog::density_offset>),
+        floatField("Height", "EnvironmentFog.atmosphere_height", 0.0, 1.0e5, 1.0,
+                   readF32<EnvironmentFog, &EnvironmentFog::atmosphere_height>,
+                   writeF32<EnvironmentFog, &EnvironmentFog::atmosphere_height>),
+        floatField("Visible Distance", "EnvironmentFog.visible_distance", 1.0, 1.0e6, 10.0,
+                   readF32<EnvironmentFog, &EnvironmentFog::visible_distance>,
+                   writeF32<EnvironmentFog, &EnvironmentFog::visible_distance>),
+    };
+    return fields;
+}
+
 const std::vector<PropertyFieldDesc>& pointFields() {
     static const std::vector<PropertyFieldDesc> fields = {
         typedField("Color", "PointLight.color", FT::Color, readVec3<PointLight, &PointLight::color>,
@@ -685,6 +717,8 @@ const std::vector<ComponentKindDesc>& kinds() {
         list.push_back(kind<Collider>("Collider", &colliderFields()));
         list.push_back(kind<Camera>("Camera", &cameraFields()));
         list.push_back(kind<DirectionalLight>("Directional Light", &directionalFields()));
+        list.push_back(kind<ecs::AmbientLight>("Ambient Light", &ambientFields()));
+        list.push_back(kind<ecs::EnvironmentFog>("Environment Fog", &fogFields()));
         list.push_back(kind<PointLight>("Point Light", &pointFields()));
         list.push_back(kind<SpotLight>("Spot Light", &spotFields()));
 #if defined(FUSE_WORLD3D_HAS_AUDIO)

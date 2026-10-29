@@ -27,6 +27,10 @@
 #include <fuse/ecs/components/script.hpp>
 #include <fuse/editor/runtime_viewport.hpp>
 #include <fuse/ecs/spawn_query.hpp>
+#include <fuse/ecs/components/environment.hpp>
+#include <fuse/ecs/components/light.hpp>
+#include <fuse/editor/component_schema.hpp>
+#include "lighting_panel.hpp"
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/systems/transform_system.hpp>
@@ -2490,6 +2494,74 @@ void pumpFor(int ms) {
     while (t.elapsed() < ms) QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
 }
 
+int gateLighting() {
+    namespace ecs = fuse::ecs;
+    using fuse::editor::qt::LightingPanel;
+    const std::filesystem::path samples = std::filesystem::path(FUSE_TEST_SOURCE_DIR) / "Samples" / "unification";
+    std::error_code ec;
+    const std::filesystem::path root = fuse::test::makeUniqueTempDir("fuse_qt_lighting");
+    std::filesystem::create_directories(root / "demo_3d_empty", ec);
+    std::filesystem::copy(samples / "demo_3d_empty", root / "demo_3d_empty",
+                          std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, ec);
+    MainWindow window(QString::fromStdString(root.string()), quietOptions());
+    expect(showAndExpose(window), "editor exposed");
+    auto& host = window.host();
+    const auto tick = [&](int n = 2) {
+        for (int i = 0; i < n; ++i) {
+            {
+                std::lock_guard<std::mutex> lock(window.sceneMutex());
+                host.gameTick();
+            }
+            pumpFor(10);
+        }
+    };
+    LightingPanel* panel = window.lighting();
+    expect(panel != nullptr && window.findChild<QDockWidget*>(QStringLiteral("dock.lighting")) != nullptr, "Lighting dock exists");
+    // Empty scene: Add Sun / Ambient / Fog build the environment (undoable).
+    panel->refresh();
+    expect(!panel->sunEntity().valid(), "no sun before a project is open");
+    const ecs::EntityID sun = panel->addSun();
+    expect(sun.valid(), "Add Sun creates a DirectionalLight entity");
+    expect(panel->addAmbient() && panel->addFog(), "Add Ambient / Add Fog post commands");
+    tick();
+    panel->refresh();
+    expect(panel->ambientEntity() == sun && panel->fogEntity() == sun, "ambient + fog live on the sun entity");
+    panel->setSunIntensity(3.5);
+    panel->setFogDensity(0.02);
+    panel->setSunAngles(30.0, 90.0);
+    tick();
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        auto& reg = host.editorScene().registry();
+        const auto* l = reg.get<ecs::DirectionalLight>(sun);
+        const auto* f = reg.get<ecs::EnvironmentFog>(sun);
+        const auto q = reg.get<ecs::Transform>(sun)->rotation;
+        const auto w = fuse::editor::quatFromEulerDeg(-30.f, 90.f, 0.f);
+        const float dot = std::fabs(q.x * w.x + q.y * w.y + q.z * w.z + q.w * w.w);
+        expect(l != nullptr && std::fabs(l->intensity - 3.5f) < 1e-4f, "sun intensity edit applied");
+        expect(f != nullptr && std::fabs(f->density - 0.02f) < 1e-5f, "fog density edit applied");
+        expect(dot > 0.9999f, fmt("sun elevation/azimuth applied (|q.w| match %.5f)", dot));
+    }
+    window.undoLatest();
+    tick();
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        const ecs::Transform* t = host.editorScene().registry().get<ecs::Transform>(sun);
+        const auto w = fuse::editor::quatFromEulerDeg(-30.f, 90.f, 0.f);
+        const float dot = std::fabs(t->rotation.x * w.x + t->rotation.y * w.y + t->rotation.z * w.z + t->rotation.w * w.w);
+        expect(dot < 0.9999f, "undo reverts the sun angle edit");
+    }
+    panel->refresh();
+    expect(window.findChild<QAction*>() != nullptr, "window alive");
+    // A real level: the sun / ambient / fog come from the level's FECS block.
+    expect(openProjectThroughHub(window, QStringLiteral("demo_3d_empty")), "demo_3d_empty opened");
+    tick();
+    panel->refresh();
+    expect(panel->sunEntity().valid() && panel->ambientEntity().valid() && panel->fogEntity().valid(),
+           "level sun, ambient and fog are in the editor scene");
+    return g_failures == 0 ? 0 : 1;
+}
+
 int gatePlayCamera() {
     // End to end: open a real project, spawn a cube, Play keeps it in view; Play from Spawn Point
     // moves to the spawn at eye height; Stop restores the editor camera.
@@ -2874,6 +2946,8 @@ int main(int argc, char** argv) {
             code = gatePreferences();
         } else if (gate == "asset_browser") {
             code = gateAssetBrowser();
+        } else if (gate == "lighting") {
+            code = gateLighting();
         } else if (gate == "play_camera") {
             code = gatePlayCamera();
         } else if (gate == "multi_viewport") {

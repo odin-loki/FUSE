@@ -174,6 +174,8 @@ if(FUSE_BUILD_EDITOR)
                 src/qt/navmesh_panel.cpp
                 src/qt/terrain_panel.hpp
                 src/qt/terrain_panel.cpp
+                src/qt/lighting_panel.hpp
+                src/qt/lighting_panel.cpp
                 src/qt/ortho_view_widget.cpp
                 src/qt/preferences_dialog.cpp
                 src/qt/preferences_dialog.hpp

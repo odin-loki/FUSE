@@ -4,6 +4,7 @@
 #include "preferences_dialog.hpp"
 #include "navmesh_panel.hpp"
 #include "terrain_panel.hpp"
+#include "lighting_panel.hpp"
 
 #include <fuse/editor/runtime_viewport.hpp>
 #include <QCoreApplication>
@@ -286,6 +287,8 @@ void MainWindow::buildDocks() {
     addPanelDock(kNavigationDock, tr("Navigation"), m_navigation);
     m_terrain = new TerrainPanel(m_host, m_sceneMutex, m_viewport, this);
     addPanelDock(kTerrainDock, tr("Terrain"), m_terrain);
+    m_lighting = new LightingPanel(m_host, m_sceneMutex, this);
+    addPanelDock(kLightingDock, tr("Lighting"), m_lighting);
     // Sequencer <-> Timeline: one playhead while "Link to Timeline" is on.
     m_sequencer->setRangeMs(m_host.timeline().durationMs());
     connect(m_timeline, &TimelineWidget::playheadChanged, m_sequencer, [this](int ms) {
@@ -958,6 +961,7 @@ void MainWindow::resetToDefaultLayout() {
     QDockWidget* timelineDock = dock(kTimelineDock);
     QDockWidget* navigationDock = dock(kNavigationDock);
     QDockWidget* terrainDock = dock(kTerrainDock);
+    QDockWidget* lightingDock = dock(kLightingDock);
 
     // Bottom spans the full width; left / right columns sit beside the viewport above it.
     setCorner(Qt::BottomLeftCorner, Qt::BottomDockWidgetArea);
@@ -973,6 +977,7 @@ void MainWindow::resetToDefaultLayout() {
     tabifyDockWidget(inspectorDock, sdfDock);
     tabifyDockWidget(inspectorDock, navigationDock);
     tabifyDockWidget(inspectorDock, terrainDock);
+    tabifyDockWidget(inspectorDock, lightingDock);
 
     addDockWidget(Qt::BottomDockWidgetArea, consoleDock);
     tabifyDockWidget(consoleDock, profilerDock);
@@ -1053,6 +1058,7 @@ void MainWindow::refreshPanels() {
     m_materialEditor->refresh();
     m_sdfSculpt->refresh();
     m_timeline->refresh();
+    if (m_lighting->isVisible()) m_lighting->refresh();
     m_viewport->update();
 }
 

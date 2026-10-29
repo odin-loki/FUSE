@@ -2,6 +2,8 @@
 #include <fuse/ecs/components/terrain.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/collider.hpp>
+#include <fuse/ecs/components/environment.hpp>
+#include <fuse/ecs/components/light.hpp>
 #include <atomic>
 #include <cstdlib>
 #include <fuse/editor/runtime_viewport.hpp>
@@ -1634,6 +1636,18 @@ namespace fuse::editor {
 // level's FECS component block, so wire-bound Mesh rows (e.g. a GroundPlane) arrive without bounds.
 // Read the FECS block once and copy each Mesh's local AABB onto the matching editor entity (scene
 // entities map in order, skipping wire stubs - the same walk as applyWireBindingsFromScene).
+namespace {
+template <typename T>
+void copyFileComponent(ecs::Registry& from, ecs::Registry& to, u32 fileIndex, ecs::EntityID toId) {
+    if (to.has<T>(toId)) return;
+    const T* found = nullptr;
+    from.each<T>([&](ecs::EntityID id, T& c) {
+        if (id.index == fileIndex) found = &c;
+    });
+    if (found != nullptr) to.add<T>(toId, *found);
+}
+} // namespace
+
 u32 RuntimeViewportHook::importLevelMeshBounds_(ecs::Registry& editorRegistry, const fuse::scene::Scene& scene,
                                                 const std::vector<ecs::EntityID>& entitiesBefore,
                                                 const std::string& worldPath) {
@@ -1667,6 +1681,10 @@ u32 RuntimeViewportHook::importLevelMeshBounds_(ecs::Registry& editorRegistry, c
             t->dirty = true;
         }
         if (i >= fileScene.entities().size() || fileScene.entities()[i].name != entities[i].name) continue;
+        // Lighting / environment rows the scene table cannot carry (sun, ambient, fog).
+        copyFileComponent<ecs::DirectionalLight>(fileRegistry, editorRegistry, static_cast<u32>(i), editorId);
+        copyFileComponent<ecs::AmbientLight>(fileRegistry, editorRegistry, static_cast<u32>(i), editorId);
+        copyFileComponent<ecs::EnvironmentFog>(fileRegistry, editorRegistry, static_cast<u32>(i), editorId);
         const auto it = fileMeshByIndex.find(static_cast<u32>(i));
         ecs::Mesh* mesh = editorRegistry.get<ecs::Mesh>(editorId);
         if (it == fileMeshByIndex.end() || mesh == nullptr) continue;
