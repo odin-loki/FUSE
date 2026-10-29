@@ -456,6 +456,48 @@ void ViewportPlaceholderWidget::mouseReleaseEvent(QMouseEvent* event) {
     QWidget::mouseReleaseEvent(event);
 }
 
+bool ViewportPlaceholderWidget::frameSelection() {
+    std::vector<ecs::vec3> points;
+    f32 extent = 0.5f;
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        ecs::Registry& registry = m_host.editorScene().registry();
+        ecs::TransformSystem::update(registry);
+        std::vector<ecs::EntityID> sel = m_host.editorState().selectedEntities;
+        if (sel.empty() && m_host.editorState().primarySelection.valid()) sel.push_back(m_host.editorState().primarySelection);
+        for (ecs::EntityID id : sel) {
+            const ecs::Transform* t = registry.alive(id) ? registry.get<ecs::Transform>(id) : nullptr;
+            if (t == nullptr) continue;
+            const auto& m = t->local_to_world.data;
+            points.push_back({m[12], m[13], m[14], 1.f});
+            const f32 sx = std::hypot(m[0], m[1], m[2]), sy = std::hypot(m[4], m[5], m[6]), sz = std::hypot(m[8], m[9], m[10]);
+            extent = std::max(extent, std::max({sx, sy, sz}));
+        }
+    }
+    if (points.empty()) return false;
+    ecs::vec3 c{0.f, 0.f, 0.f, 1.f};
+    for (const ecs::vec3& p : points) {
+        c.x += p.x;
+        c.y += p.y;
+        c.z += p.z;
+    }
+    const f32 inv = 1.f / static_cast<f32>(points.size());
+    c.x *= inv;
+    c.y *= inv;
+    c.z *= inv;
+    f32 radius = extent;
+    for (const ecs::vec3& p : points) radius = std::max(radius, std::hypot(p.x - c.x, p.y - c.y, p.z - c.z) + extent);
+    ViewportCamera& cam = m_panel.camera();
+    const f32 halfFov = std::max(cam.fovDeg, 10.f) * 0.5f * 3.14159265f / 180.f;
+    const f32 distance = std::max(radius / std::sin(halfFov) * 1.1f, cam.nearPlane * 4.f);
+    const ecs::vec3 fwd = m_panel.forward();
+    cam.positionX = c.x - fwd.x * distance;
+    cam.positionY = c.y - fwd.y * distance;
+    cam.positionZ = c.z - fwd.z * distance;
+    update();
+    return true;
+}
+
 void ViewportPlaceholderWidget::wheelEvent(QWheelEvent* event) {
     const float steps = static_cast<float>(event->angleDelta().y()) / 120.f;
     if (steps == 0.f) {

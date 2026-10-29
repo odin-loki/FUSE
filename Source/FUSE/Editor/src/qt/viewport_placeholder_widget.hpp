@@ -141,6 +141,8 @@ protected:
 public:
     [[nodiscard]] int sceneIconCount() const { return static_cast<int>(m_sceneIcons.size()); }
     void setSceneIconsVisible(bool on) { m_showSceneIcons = on; update(); }
+    /// Moves the camera (keeping yaw / pitch) so every selected entity fits the view. False when nothing is selected.
+    bool frameSelection();
 private:
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;

@@ -335,7 +335,7 @@ void MainWindow::buildMenus() {
         if (m_host.editorState().playing) return;
         {
             std::lock_guard<std::mutex> lock(m_sceneMutex);
-            m_clipboard.cut(m_host.editorScene().registry(), m_host.undoStack(), m_host.editorState());
+            m_clipboard.cut(m_host.editorScene().registry(), m_host.undoStack(), m_host.editorState(), &m_host.entityNames());
         }
         afterEdit();
     });
@@ -343,13 +343,13 @@ void MainWindow::buildMenus() {
         std::lock_guard<std::mutex> lock(m_sceneMutex);
         std::vector<ecs::EntityID> sel = m_host.editorState().selectedEntities;
         if (sel.empty() && m_host.editorState().primarySelection.valid()) sel.push_back(m_host.editorState().primarySelection);
-        m_clipboard.copy(m_host.editorScene().registry(), sel);
+        m_clipboard.copy(m_host.editorScene().registry(), sel, &m_host.entityNames());
     });
     m_actPaste = addEditAction(tr("&Paste"), "fuseActionPaste", QKeySequence::Paste, [this, afterEdit]() {
         if (m_host.editorState().playing) return;
         {
             std::lock_guard<std::mutex> lock(m_sceneMutex);
-            m_clipboard.paste(m_host.editorScene().registry(), m_host.undoStack(), m_host.editorState());
+            m_clipboard.paste(m_host.editorScene().registry(), m_host.undoStack(), m_host.editorState(), &m_host.entityNames());
         }
         afterEdit();
     });
@@ -454,6 +454,23 @@ void MainWindow::buildMenus() {
                                          QKeySequence(Qt::CTRL | Qt::Key_D));
     QAction* remove = addEntityAction(tr("De&lete"), "fuseActionDelete", ContextMenuAction::Delete,
                                       QKeySequence::Delete);
+    QAction* group = m_entityMenu->addAction(tr("&Group Selection"));
+    group->setObjectName(QStringLiteral("fuseActionGroup"));
+    group->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_G));
+    connect(group, &QAction::triggered, this, [this]() {
+        if (m_host.editorState().playing) return;
+        ecs::EntityID g;
+        {
+            std::lock_guard<std::mutex> lock(m_sceneMutex);
+            g = groupSelection(m_host.editorScene().registry(), m_host.undoStack(), m_host.editorState(), &m_host.entityNames());
+        }
+        if (!g.valid()) {
+            statusBar()->showMessage(tr("Group: select entities that share one parent"), 4000);
+            return;
+        }
+        refreshPanels();
+        if (m_viewport != nullptr) m_viewport->update();
+    });
     connect(m_entityMenu, &QMenu::aboutToShow, this, [this, duplicate, remove]() {
         std::lock_guard<std::mutex> lock(m_sceneMutex);
         const bool selected = m_host.editorState().primarySelection != ecs::EntityID::null();
@@ -462,6 +479,14 @@ void MainWindow::buildMenus() {
     });
 
     QMenu* view = menuBar()->addMenu(tr("&View"));
+    QAction* frame = view->addAction(tr("&Frame Selected"));
+    frame->setObjectName(QStringLiteral("fuseActionFrameSelected"));
+    frame->setShortcut(QKeySequence(Qt::Key_F));
+    frame->setShortcutContext(Qt::WindowShortcut);
+    connect(frame, &QAction::triggered, this, [this]() {
+        if (m_viewport != nullptr && !m_viewport->frameSelection()) statusBar()->showMessage(tr("Nothing selected to frame"), 3000);
+    });
+    view->addSeparator();
     for (QDockWidget* dock : m_docks) {
         view->addAction(dock->toggleViewAction());
     }

@@ -607,6 +607,35 @@ void testEntityNames() {
     expectTrue(reopened.entityNames().size() == 0u, "names: new scene clears names");
 }
 
+void testGroupAndNamedPaste() {
+    editor::EditorHost host;
+    host.gameTick();
+    ecs::Registry& registry = host.editorScene().registry();
+    const ecs::EntityID a = makeEntity(registry, {2.f, 0.f, 0.f});
+    const ecs::EntityID b = makeEntity(registry, {4.f, 2.f, 0.f});
+    host.entityNames().set(a, "Left");
+    editor::EditorState& state = host.editorState();
+    state.selectedEntities = {a, b};
+    state.primarySelection = b;
+    const ecs::EntityID g = editor::groupSelection(registry, host.undoStack(), state, &host.entityNames());
+    expectTrue(g.valid() && host.entityNames().get(g) == "Group", "group: creates a named group");
+    const ecs::Transform* gt = registry.get<ecs::Transform>(g);
+    const ecs::Transform* at = registry.get<ecs::Transform>(a);
+    expectTrue(gt != nullptr && gt->position.x == 3.f && gt->position.y == 1.f, "group: placed at the centroid");
+    expectTrue(at->parent == g && at->position.x == -1.f && at->position.y == -1.f, "group: child keeps its world position");
+    expectTrue(state.selectedEntities.size() == 1u && state.primarySelection == g, "group: selects the group");
+    host.undoStack().undo();
+    expectTrue(!registry.alive(g) && registry.get<ecs::Transform>(a)->parent == ecs::EntityID::null() &&
+                   registry.get<ecs::Transform>(a)->position.x == 2.f,
+               "group: one undo restores the original hierarchy");
+    editor::EntityClipboard clip;
+    clip.copy(registry, {a}, &host.entityNames());
+    const auto pasted = clip.paste(registry, host.undoStack(), state, &host.entityNames());
+    expectTrue(pasted.size() == 1u && host.entityNames().get(pasted[0]) == "Left", "clipboard: paste keeps the name");
+    host.undoStack().undo();
+    expectTrue(host.entityNames().get(pasted[0]).empty(), "clipboard: undo drops the pasted name");
+}
+
 int main() {
     testInspectorRowOk();
     if (g_failures != 0) {
@@ -624,6 +653,7 @@ int main() {
     testLinkedPrefab(dir);
     testClipboard();
     testEntityNames();
+    testGroupAndNamedPaste();
     std::error_code ec;
     fs::remove_all(dir, ec);
     std::printf("e20 inspector commands: %s (%d failure(s))\n", g_failures == 0 ? "PASS" : "FAIL", g_failures);

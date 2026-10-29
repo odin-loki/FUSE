@@ -10,7 +10,8 @@ bool contains(const std::vector<ecs::EntityID>& v, ecs::EntityID id) {
 }
 } // namespace
 
-usize EntityClipboard::copy(const ecs::Registry& registry, const std::vector<ecs::EntityID>& selection) {
+usize EntityClipboard::copy(const ecs::Registry& registry, const std::vector<ecs::EntityID>& selection,
+                           const EntityNames* names) {
     std::vector<ecs::EntityID> roots;
     for (ecs::EntityID id : selection) {
         if (!registry.alive(id) || contains(roots, id)) continue;
@@ -36,6 +37,7 @@ usize EntityClipboard::copy(const ecs::Registry& registry, const std::vector<ecs
         Entry e;
         e.components = captureEntityComponents(registry, root);
         e.originalParent = t != nullptr ? t->parent : ecs::EntityID::null();
+        if (names != nullptr) e.name = names->get(root);
         m_entries.push_back(std::move(e));
         order.push_back(root);
     }
@@ -47,6 +49,7 @@ usize EntityClipboard::copy(const ecs::Registry& registry, const std::vector<ecs
                 Entry e;
                 e.components = captureEntityComponents(registry, id);
                 e.parentEntry = static_cast<int>(i);
+                if (names != nullptr) e.name = names->get(id);
                 m_entries.push_back(std::move(e));
                 order.push_back(id);
             }
@@ -55,7 +58,8 @@ usize EntityClipboard::copy(const ecs::Registry& registry, const std::vector<ecs
     return m_entries.size();
 }
 
-std::vector<ecs::EntityID> EntityClipboard::paste(ecs::Registry& registry, UndoStack& undo, EditorState& state) {
+std::vector<ecs::EntityID> EntityClipboard::paste(ecs::Registry& registry, UndoStack& undo, EditorState& state,
+                                                  EntityNames* names) {
     std::vector<ecs::EntityID> roots;
     if (m_entries.empty()) return roots;
     std::vector<ecs::EntityID> created(m_entries.size(), ecs::EntityID::null());
@@ -75,6 +79,9 @@ std::vector<ecs::EntityID> EntityClipboard::paste(ecs::Registry& registry, UndoS
         CreateEntityCommand* raw = command.get();
         undo.execute(std::move(command));
         created[i] = raw->createdEntity();
+        if (names != nullptr && created[i].valid() && !m_entries[i].name.empty()) {
+            undo.execute(std::make_unique<RenameEntityCommand>(*names, created[i], m_entries[i].name));
+        }
         if (m_entries[i].parentEntry < 0 && created[i].valid()) roots.push_back(created[i]);
     }
     undo.endMacro();
@@ -86,10 +93,10 @@ std::vector<ecs::EntityID> EntityClipboard::paste(ecs::Registry& registry, UndoS
     return roots;
 }
 
-usize EntityClipboard::cut(ecs::Registry& registry, UndoStack& undo, EditorState& state) {
+usize EntityClipboard::cut(ecs::Registry& registry, UndoStack& undo, EditorState& state, EntityNames* names) {
     std::vector<ecs::EntityID> selection = state.selectedEntities;
     if (selection.empty() && state.primarySelection.valid()) selection.push_back(state.primarySelection);
-    const usize n = copy(registry, selection);
+    const usize n = copy(registry, selection, names);
     if (n == 0) return 0;
     // Delete the copied subtrees, children first.
     std::vector<ecs::EntityID> doomed;
@@ -111,6 +118,72 @@ usize EntityClipboard::cut(ecs::Registry& registry, UndoStack& undo, EditorState
     state.primarySelection = ecs::EntityID::null();
     state.sceneModified = true;
     return n;
+}
+
+ecs::EntityID groupSelection(ecs::Registry& registry, UndoStack& undo, EditorState& state, EntityNames* names,
+                             const std::string& name) {
+    std::vector<ecs::EntityID> selection = state.selectedEntities;
+    if (selection.empty() && state.primarySelection.valid()) selection.push_back(state.primarySelection);
+    std::vector<ecs::EntityID> roots;
+    for (ecs::EntityID id : selection) {
+        const ecs::Transform* t = registry.alive(id) ? registry.get<ecs::Transform>(id) : nullptr;
+        if (t == nullptr || contains(roots, id)) continue;
+        bool nested = false;
+        ecs::EntityID walk = id;
+        for (int guard = 0; guard < 256; ++guard) {
+            const ecs::Transform* wt = registry.get<ecs::Transform>(walk);
+            if (wt == nullptr || !wt->parent.valid()) break;
+            walk = wt->parent;
+            if (contains(selection, walk)) {
+                nested = true;
+                break;
+            }
+        }
+        if (!nested) roots.push_back(id);
+    }
+    if (roots.empty()) return ecs::EntityID::null();
+    const ecs::EntityID parent = registry.get<ecs::Transform>(roots.front())->parent;
+    f32 c[3] = {0.f, 0.f, 0.f};
+    for (ecs::EntityID id : roots) {
+        const ecs::Transform* t = registry.get<ecs::Transform>(id);
+        if (t->parent != parent) return ecs::EntityID::null();
+        c[0] += t->position.x;
+        c[1] += t->position.y;
+        c[2] += t->position.z;
+    }
+    const f32 inv = 1.f / static_cast<f32>(roots.size());
+    EntityComponentSet set{};
+    ecs::Transform gt{};
+    gt.position = {c[0] * inv, c[1] * inv, c[2] * inv, 1.f};
+    gt.parent = parent;
+    gt.dirty = true;
+    std::get<std::optional<ecs::Transform>>(set) = gt;
+    undo.beginMacro("Group " + std::to_string(roots.size()) + " entities");
+    auto create = std::make_unique<CreateEntityCommand>(registry, std::move(set), "Create group");
+    CreateEntityCommand* raw = create.get();
+    undo.execute(std::move(create));
+    const ecs::EntityID group = raw->createdEntity();
+    if (group.valid()) {
+        if (names != nullptr && !name.empty()) undo.execute(std::make_unique<RenameEntityCommand>(*names, group, name));
+        for (ecs::EntityID id : roots) {
+            // Same parent frame, identity group rotation / scale: the local offset is position - centroid.
+            const ecs::Transform* t = registry.get<ecs::Transform>(id);
+            const TransformCommand::State before = TransformCommand::capture(*t);
+            TransformCommand::State after = before;
+            after.position.x -= gt.position.x;
+            after.position.y -= gt.position.y;
+            after.position.z -= gt.position.z;
+            undo.execute(std::make_unique<ReparentEntityCommand>(registry, id, group, parent));
+            undo.execute(std::make_unique<TransformCommand>(registry, id, before, after));
+        }
+    }
+    undo.endMacro();
+    if (group.valid()) {
+        state.selectedEntities = {group};
+        state.primarySelection = group;
+        state.sceneModified = true;
+    }
+    return group;
 }
 
 } // namespace fuse::editor
