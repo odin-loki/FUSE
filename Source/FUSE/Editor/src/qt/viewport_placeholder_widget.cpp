@@ -3,9 +3,13 @@
 #include "viewport_vulkan_window.hpp"
 
 #include <fuse/cinematics/timeline_loader.hpp>
+#include <fuse/ecs/systems/transform_system.hpp>
 #include <fuse/editor/command_queue.hpp>
 
 #include <QAction>
+#include <QBitmap>
+#include <QDataStream>
+#include <QRegion>
 #include <QColor>
 #include <QKeyEvent>
 #include <QMenu>
@@ -31,6 +35,38 @@
 #include <vector>
 
 namespace fuse::editor::qt {
+
+class ViewportOverlayWidget final : public QWidget {
+public:
+    explicit ViewportOverlayWidget(ViewportPlaceholderWidget* owner) : QWidget(owner), m_owner(owner) {
+        setObjectName(QStringLiteral("fuseViewportOverlay"));
+        setAttribute(Qt::WA_NativeWindow, true);
+        setAttribute(Qt::WA_DontCreateNativeAncestors, true);
+        setAttribute(Qt::WA_OpaquePaintEvent, true);
+        setFocusPolicy(Qt::NoFocus);
+        setMouseTracking(true);
+    }
+    QImage image;
+
+protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter p(this);
+        p.drawImage(rect(), image);
+    }
+    void forward(QMouseEvent* e) {
+        QMouseEvent copy(e->type(), e->position(), e->scenePosition(), e->globalPosition(), e->button(),
+                         e->buttons(), e->modifiers(), e->pointingDevice());
+        QCoreApplication::sendEvent(m_owner, &copy);
+        e->setAccepted(copy.isAccepted());
+    }
+    void mousePressEvent(QMouseEvent* e) override { forward(e); }
+    void mouseMoveEvent(QMouseEvent* e) override { forward(e); }
+    void mouseReleaseEvent(QMouseEvent* e) override { forward(e); }
+    void wheelEvent(QWheelEvent* e) override { QCoreApplication::sendEvent(m_owner, e); }
+
+private:
+    ViewportPlaceholderWidget* m_owner;
+};
 
 ViewportPlaceholderWidget::ViewportPlaceholderWidget(EditorHost& host, std::mutex& sceneMutex, QWidget* parent)
     : QWidget(parent), m_host(host), m_sceneMutex(sceneMutex) {
@@ -146,6 +182,12 @@ bool ViewportPlaceholderWidget::attachVulkanWindow_(void* vkInstance) {
         return false;
     }
 
+    // Native overlay sibling exists before the Vulkan container so creating it later never
+    // re-parents/re-creates the native viewport hierarchy under a live swapchain.
+    if (m_overlay == nullptr) {
+        m_overlay = new ViewportOverlayWidget(this);
+        m_overlay->hide();
+    }
     m_vkWindow = new ViewportVulkanWindow(this);
     m_vkWindow->setVulkanInstance(m_qtVulkanInstance.get());
     m_vkContainer = QWidget::createWindowContainer(m_vkWindow, this, Qt::Widget);
@@ -260,6 +302,9 @@ void ViewportPlaceholderWidget::advanceFrame(float dt) {
     if (!vkPresenting &&
         (m_lookHeld || m_keys.forward || m_keys.back || m_keys.left || m_keys.right || m_keys.up || m_keys.down)) {
         update();
+    }
+    if (vkPresenting || m_overlayForced) {
+        syncOverlay();
     }
 }
 
@@ -615,11 +660,7 @@ void ViewportPlaceholderWidget::paintEvent(QPaintEvent* /*event*/) {
             .arg(cam.pitch, 0, 'f', 1)
             .arg(hook.runtimeTickCount())
             .arg(hook.isEmbedded() ? tr("yes") : tr("no")));
-    if (m_sculptMode) {
-        paintBrush_(painter);
-    } else {
-        paintGizmo_(painter);
-    }
+    paintInteractionOverlay(painter);
 
     const fuse::cinematics::SeqScrubPreview& seqPreview = m_host.cinematicsSeqScrubPreview();
     const QRect overlayRect = rect().adjusted(16, rect().height() - 72, -16, -16);
@@ -683,7 +724,19 @@ bool ViewportPlaceholderWidget::refreshGizmo() {
         return false;
     }
     m_gizmoEntity = entity;
-    return m_gizmo.layout(m_panel, *registry.get<ecs::Transform>(entity));
+    const ecs::Transform& transform = *registry.get<ecs::Transform>(entity);
+    const ecs::Transform* parent =
+        (transform.parent != ecs::EntityID::null() && registry.alive(transform.parent))
+            ? registry.get<ecs::Transform>(transform.parent)
+            : nullptr;
+    if (parent != nullptr) {
+        // Parent matrices may be a tick stale after an edit; refresh the hierarchy first.
+        ecs::TransformSystem::update(registry);
+        m_gizmo.setParentFrame(parent->local_to_world, parent->world_to_local);
+    } else {
+        m_gizmo.clearParentFrame();
+    }
+    return m_gizmo.layout(m_panel, transform);
 }
 
 bool ViewportPlaceholderWidget::gizmoPress(const QPointF& pos) {
@@ -909,6 +962,94 @@ void ViewportPlaceholderWidget::paintBrush_(QPainter& painter) {
     painter.drawEllipse(QPointF(cx * inv, cy * inv), radius, radius);
     painter.drawEllipse(QPointF(cx * inv, cy * inv), 2.0, 2.0);
     painter.restore();
+}
+
+} // namespace fuse::editor::qt
+
+namespace fuse::editor::qt {
+
+// ---- overlay over the embedded Vulkan window ------------------------------------------------------
+
+/// Native child above the Vulkan container; masked to the drawn pixels and forwarding mouse input
+/// to the viewport (so handle drags work the same as on the software path).
+
+void ViewportPlaceholderWidget::paintInteractionOverlay(QPainter& painter) {
+    if (m_sculptMode) {
+        paintBrush_(painter);
+    } else {
+        paintGizmo_(painter);
+    }
+}
+
+bool ViewportPlaceholderWidget::overlayActive() const { return m_overlay != nullptr && m_overlay->isVisible(); }
+
+QWidget* ViewportPlaceholderWidget::overlayWidget() const { return m_overlay; }
+
+void ViewportPlaceholderWidget::setOverlayForced(bool on) {
+    m_overlayForced = on;
+    syncOverlay(true);
+}
+
+void ViewportPlaceholderWidget::syncOverlay(bool force) {
+    static const bool kOverlayDisabled = qEnvironmentVariableIsSet("FUSE_EDITOR_NO_VK_OVERLAY");
+    const bool vkPresenting = !kOverlayDisabled && m_vkSurfacePosted && m_vkContainer != nullptr && m_vkContainer->isVisible();
+    if (!vkPresenting && !m_overlayForced) {
+        if (m_overlay != nullptr) {
+            m_overlay->hide();
+        }
+        m_overlayImage = QImage();
+        m_overlaySignature.clear();
+        return;
+    }
+    if (!m_gizmo.dragging() && !m_sculptMode) {
+        refreshGizmo();
+    }
+    // Change signature: tool state + projected handles (gizmo) or hover position (brush).
+    QByteArray sig;
+    {
+        QDataStream ds(&sig, QIODevice::WriteOnly);
+        ds << width() << height() << m_sculptMode << static_cast<int>(m_gizmo.settings().tool)
+           << m_gizmo.visible() << m_gizmo.dragAxis();
+        if (m_sculptMode) {
+            ds << m_hoverValid << m_hoverPos << (m_sculptPanel ? m_sculptPanel->brush().radius : 0.f)
+               << m_panel.camera().positionX << m_panel.camera().positionY << m_panel.camera().positionZ
+               << m_panel.camera().yaw << m_panel.camera().pitch;
+        } else if (m_gizmo.visible()) {
+            for (const GizmoHandle2D& h : m_gizmo.handles()) {
+                ds << h.visible << h.x0 << h.y0 << h.x1 << h.y1;
+            }
+        }
+    }
+    if (!force && sig == m_overlaySignature) {
+        return;
+    }
+    m_overlaySignature = sig;
+
+    const qreal dpr = devicePixelRatioF();
+    QImage img(size() * dpr, QImage::Format_ARGB32_Premultiplied);
+    img.setDevicePixelRatio(dpr);
+    img.fill(Qt::transparent);
+    {
+        QPainter p(&img);
+        paintInteractionOverlay(p);
+    }
+    m_overlayImage = img;
+    if (m_overlay == nullptr) {
+        m_overlay = new ViewportOverlayWidget(this);
+    }
+    // Shape to the opaque-ish pixels, grown by one px so the antialiased edge isn't clipped hard.
+    QRegion region(QBitmap::fromImage(
+        img.scaled(size(), Qt::IgnoreAspectRatio, Qt::FastTransformation).createAlphaMask(Qt::ThresholdAlphaDither)));
+    if (region.isEmpty()) {
+        m_overlay->hide();
+        return;
+    }
+    m_overlay->image = img;
+    m_overlay->setGeometry(rect());
+    m_overlay->setMask(region);
+    m_overlay->show();
+    m_overlay->raise();
+    m_overlay->update();
 }
 
 } // namespace fuse::editor::qt

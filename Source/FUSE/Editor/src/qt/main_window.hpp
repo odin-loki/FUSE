@@ -27,6 +27,7 @@ class QToolBar;
 namespace fuse::editor::qt {
 
 class AssetBrowserWidget;
+class TimelineWidget;
 class ConsoleWidget;
 class HierarchyWidget;
 class InspectorWidget;
@@ -96,6 +97,7 @@ public:
     static constexpr const char* kSdfSculptDock = "dock.sdf_sculpt";
     static constexpr const char* kProfilerDock = "dock.profiler";
     static constexpr const char* kSequencerDock = "dock.sequencer";
+    static constexpr const char* kTimelineDock = "dock.timeline";
 
     explicit MainWindow(const QString& samplesRoot, QWidget* parent = nullptr);
     MainWindow(const QString& samplesRoot, const Options& options, QWidget* parent = nullptr);
@@ -136,12 +138,16 @@ public:
     [[nodiscard]] QToolBar* transformToolBar() const { return m_transformBar; }
     [[nodiscard]] MaterialEditorWidget* materialEditor() const { return m_materialEditor; }
     [[nodiscard]] SdfSculptWidget* sdfSculpt() const { return m_sdfSculpt; }
+    [[nodiscard]] TimelineWidget* timeline() const { return m_timeline; }
     /// File / Edit toolbar (New, Open, Save, Undo, Redo) left of the transport bar.
     [[nodiscard]] QToolBar* mainToolBar() const { return m_mainBar; }
     /// Enable Undo / Redo from the host stacks; tooltips name the next undo / redo step.
     void updateEditActions();
     /// Open a project directory (project.json) — same path as the Project hub's Open button.
     void openProject(const QString& projectDirectory);
+    /// Select an entity for `--select`: "new" spawns an SDF sphere 6 units in front of the camera,
+    /// a number selects the entity with that index. Returns false when nothing was selected.
+    bool selectForScreenshot(const QString& spec);
     [[nodiscard]] QAction* transportAction(CommandKind kind) const;
     /// Enable / disable the transport actions from EditorState (runs on the status timer).
     void updateTransportActions();
@@ -221,6 +227,7 @@ private:
     SdfSculptWidget* m_sdfSculpt = nullptr;
     ProfilerWidget* m_profiler = nullptr;
     SeqPreviewPaneWidget* m_sequencer = nullptr;
+    TimelineWidget* m_timeline = nullptr;
     std::vector<QDockWidget*> m_docks;
     QString m_samplesRoot;
     QLabel* m_statusLabel = nullptr;

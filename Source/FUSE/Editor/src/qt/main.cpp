@@ -44,6 +44,11 @@ int main(int argc, char* argv[]) {
         QStringList() << "software-viewport",
         "Draw the viewport with the software placeholder instead of the embedded Vulkan window.");
     parser.addOption(softwareViewportOption);
+    QCommandLineOption selectOption(
+        QStringList() << "select",
+        "Select an entity after the project opens: 'new' (SDF sphere in front of the camera) or an entity index.",
+        "spec");
+    parser.addOption(selectOption);
     parser.process(app);
 
     QString samplesRoot = parser.value(samplesOption);
@@ -60,6 +65,14 @@ int main(int argc, char* argv[]) {
     window.show();
     if (parser.isSet(projectOption)) {
         window.openProject(QFileInfo(parser.value(projectOption)).absoluteFilePath());
+    }
+    if (parser.isSet(selectOption)) {
+        const QString spec = parser.value(selectOption);
+        QTimer::singleShot(parser.value(screenshotDelayOption).toInt() / 2, &window, [&window, spec]() {
+            if (!window.selectForScreenshot(spec)) {
+                qWarning("--select %s: nothing selected", qPrintable(spec));
+            }
+        });
     }
     if (parser.isSet(screenshotOption)) {
         const QString shotPath = parser.value(screenshotOption);

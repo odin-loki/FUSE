@@ -4,8 +4,10 @@
 #include "project_hub_widget.hpp"
 #include "property_pane_widget.hpp"
 #include "seq_preview_pane_widget.hpp"
+#include "timeline_widget.hpp"
 #include "viewport_placeholder_widget.hpp"
 
+#include <fuse/ecs/components/transform.hpp>
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/component_schema.hpp>
 #include <fuse/platform/thread.hpp>
@@ -176,6 +178,7 @@ void MainWindow::buildDocks() {
     m_sdfSculpt = new SdfSculptWidget(m_host, m_sceneMutex);
     m_profiler = new ProfilerWidget();
     m_sequencer = new SeqPreviewPaneWidget(m_host);
+    m_timeline = new TimelineWidget(m_host, m_sceneMutex);
 
     addPanelDock(kHierarchyDock, tr("Hierarchy"), m_hierarchy);
     addPanelDock(kProjectHubDock, tr("Projects"), m_projectHub);
@@ -192,6 +195,11 @@ void MainWindow::buildDocks() {
     addPanelDock(kConsoleDock, tr("Console"), m_console);
     addPanelDock(kProfilerDock, tr("Profiler"), m_profiler);
     addPanelDock(kSequencerDock, tr("Sequencer"), m_sequencer);
+    addPanelDock(kTimelineDock, tr("Timeline"), m_timeline);
+    connect(m_timeline, &TimelineWidget::sceneEdited, this, [this]() {
+        refreshPanels();
+        updateEditActions();
+    });
 
     connect(m_projectHub, &ProjectHubWidget::projectOpenRequested, this, &MainWindow::onProjectOpenRequested);
     connect(m_projectHub, &ProjectHubWidget::newProjectRequested, this, [this](const NewProjectRequest& request) {
@@ -498,6 +506,7 @@ void MainWindow::resetToDefaultLayout() {
     QDockWidget* consoleDock = dock(kConsoleDock);
     QDockWidget* profilerDock = dock(kProfilerDock);
     QDockWidget* sequencerDock = dock(kSequencerDock);
+    QDockWidget* timelineDock = dock(kTimelineDock);
 
     // Bottom spans the full width; left / right columns sit beside the viewport above it.
     setCorner(Qt::BottomLeftCorner, Qt::BottomDockWidgetArea);
@@ -515,6 +524,7 @@ void MainWindow::resetToDefaultLayout() {
     addDockWidget(Qt::BottomDockWidgetArea, consoleDock);
     tabifyDockWidget(consoleDock, profilerDock);
     tabifyDockWidget(consoleDock, sequencerDock);
+    tabifyDockWidget(consoleDock, timelineDock);
 
     for (QDockWidget* d : m_docks) {
         d->show();
@@ -587,6 +597,7 @@ void MainWindow::refreshPanels() {
     m_inspector->refresh();
     m_materialEditor->refresh();
     m_sdfSculpt->refresh();
+    m_timeline->refresh();
     m_viewport->update();
 }
 
@@ -1000,6 +1011,56 @@ void MainWindow::redoLatest() {
     }
     refreshPanels();
     updateWindowTitle();
+}
+
+} // namespace fuse::editor::qt
+
+namespace fuse::editor::qt {
+
+bool MainWindow::selectForScreenshot(const QString& spec) {
+    if (spec.compare("new", Qt::CaseInsensitive) == 0) {
+        QAction* create = findChild<QAction*>("fuseActionCreateSdfSphere");
+        if (create == nullptr) {
+            return false;
+        }
+        create->trigger();
+        {
+            std::lock_guard<std::mutex> lock(m_sceneMutex);
+            m_host.gameTick();
+        }
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        const ecs::EntityID e = m_host.editorState().primarySelection;
+        ecs::Transform* t = m_host.editorScene().registry().get<ecs::Transform>(e);
+        if (t == nullptr) {
+            return false;
+        }
+        const ecs::vec3 p = m_viewport->panel().position(), f = m_viewport->panel().forward();
+        t->position = ecs::vec3{p.x + f.x * 6.f, p.y + f.y * 6.f, p.z + f.z * 6.f, 1.f};
+    } else {
+        bool ok = false;
+        const u32 index = spec.toUInt(&ok);
+        if (!ok) {
+            return false;
+        }
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        auto& reg = m_host.editorScene().registry();
+        ecs::EntityID found = ecs::EntityID::null();
+        reg.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform&) {
+            if (id.index == index) {
+                found = id;
+            }
+        });
+        if (found == ecs::EntityID::null()) {
+            return false;
+        }
+        auto& state = m_host.editorState();
+        state.selectedEntities = {found};
+        state.primarySelection = found;
+    }
+    refreshPanels();
+    m_viewport->refreshGizmo();
+    m_viewport->update();
+    return true;
 }
 
 } // namespace fuse::editor::qt

@@ -8,6 +8,7 @@
 #include <fuse/editor/viewport_scene_view.hpp>
 
 #include <QElapsedTimer>
+#include <QImage>
 #include <QMenu>
 #include <QPointer>
 #include <QTimer>
@@ -22,6 +23,7 @@ class QPainter;
 namespace fuse::editor::qt {
 
 class ViewportVulkanWindow;
+class ViewportOverlayWidget;
 
 /// Editor viewport (B6.3 Qt host): drives the FUSE `ViewportPanel` fly camera from Qt key / mouse
 /// events, picks and opens the `EntityContextMenu` through `ViewportSceneView`, and posts resize /
@@ -106,6 +108,20 @@ public:
     /// first; the FUSE VkInstance itself is destroyed later with the host.
     void releaseVulkanViewport();
 
+    /// Gizmo / brush overlay over the embedded Vulkan window: a native child stacked above the
+    /// container and shaped (XShape / SetWindowRgn) to the drawn handles, so the swapchain stays
+    /// visible everywhere else. Inactive (hidden) on the software viewport, which paints inline.
+    [[nodiscard]] bool overlayActive() const;
+    [[nodiscard]] QWidget* overlayWidget() const;
+    /// Overlay contents as last rendered (ARGB, logical size × dpr); null when inactive.
+    [[nodiscard]] const QImage& overlayImage() const { return m_overlayImage; }
+    /// Re-render the overlay + mask if the gizmo / brush changed. Force skips the change check.
+    void syncOverlay(bool force = false);
+    /// Test hook: build the overlay even without a Vulkan surface (so CI can check it headless).
+    void setOverlayForced(bool on);
+    /// Paint the gizmo or the sculpt brush (whichever is active) with `painter`.
+    void paintInteractionOverlay(QPainter& painter);
+
 signals:
     /// ECS scene changed from the viewport (context menu create / delete, pick selection).
     void sceneEdited();
@@ -184,6 +200,10 @@ private:
     QTimer m_presentPollTimer;
     bool m_windowPresentRequested = false;
     bool m_vkSurfacePosted = false;
+    ViewportOverlayWidget* m_overlay = nullptr;
+    QImage m_overlayImage;
+    QByteArray m_overlaySignature;
+    bool m_overlayForced = false;
 };
 
 } // namespace fuse::editor::qt
