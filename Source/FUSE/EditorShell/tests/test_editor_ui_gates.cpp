@@ -4,6 +4,8 @@
 #include "fuse/editor/fui/editor_shell.hpp"
 #include "scripted_services.hpp"
 
+#include <fuse/ecs/components/light.hpp>
+#include <fuse/ecs/components/transform.hpp>
 #include <fuse/editor/editor_host.hpp>
 #include <fuse/editor/scene_viewport_host.hpp>
 #if defined(FUSE_EDITOR_UI_HAS_NATIVE)
@@ -570,10 +572,102 @@ u32 validationErrors() {
 #endif
 }
 
-void buildScene(Rig& r) {
-    for (ActionId id : {ActionId::EntityCreateCube, ActionId::EntityCreateSdfSphere, ActionId::EntityCreateDirectionalLight})
+struct GateScene { EntityRef cube, sphere, sun, lamp; };
+
+void place(Rig& r, EntityRef e, float x, float y, float z) {
+    r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) {
+        if (auto* t = h.editorScene().registry().get<fuse::ecs::Transform>(fuse::ecs::EntityID{e.index, e.generation}))
+            t->position = {x, y, z, 1.f};
+    });
+}
+
+/// SDF box left, sphere right (no overlap), a sun angled down onto them and a fill point light.
+GateScene buildScene(Rig& r) {
+    GateScene g;
+    auto make = [&](ActionId id) {
         CHECK(r.c.trigger(id));
+        r.frames();
+        return r.c.lastCreated();
+    };
+    g.cube = make(ActionId::EntityCreateSdfBox); // a Mesh cube has no buffers yet (nothing to draw, Qt too)
+    g.sphere = make(ActionId::EntityCreateSdfSphere);
+    g.sun = make(ActionId::EntityCreateDirectionalLight);
+    g.lamp = make(ActionId::EntityCreatePointLight);
+    place(r, g.cube, 1.4f, 0.f, 0.f); // screen left (the camera looks down +Z)
+    place(r, g.sphere, -1.4f, 0.f, 0.f);
+    place(r, g.lamp, 0.f, 2.5f, -2.5f);
+    r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) {
+        auto& reg = h.editorScene().registry();
+        const fuse::ecs::EntityID sun{g.sun.index, g.sun.generation}, lamp{g.lamp.index, g.lamp.generation};
+        if (auto* t = reg.get<fuse::ecs::Transform>(sun)) t->rotation = TransformGizmo::axisAngle({1.f, 0.f, 0.f, 0.f}, 0.8f);
+        if (auto* l = reg.get<fuse::ecs::DirectionalLight>(sun)) l->intensity = 3.f;
+        if (auto* l = reg.get<fuse::ecs::PointLight>(lamp)) l->intensity = 8.f;
+    });
+    r.c.refresh();
     r.frames(2);
+    return g;
+}
+
+/// Clicks the cube, drags the Move gizmo's X handle, checks the overlay, the edit and its undo.
+void gizmoDrag(Rig& r, const GateScene& g) {
+    float px = 0.f, py = 0.f;
+    CHECK(r.c.projectPoint(1.4f, 0.f, 0.f, px, py));
+    using PE = ViewportPointerEvent;
+    r.c.viewportPointer({PE::Kind::Down, PE::Button::Left, px, py});
+    r.c.viewportPointer({PE::Kind::Up, PE::Button::Left, px, py});
+    r.frames();
+    CHECK(r.v().primary == g.cube);
+    r.c.setTransformTool(TransformTool::Translate);
+    r.frames();
+    const EditorController::GizmoView gv = r.c.viewportGizmo();
+    CHECK(gv.visible && gv.handles[0].visible);
+    const fuse::ui::NodeHandle vp = r.ui().find("viewport");
+    CHECK(w::viewportOverlay(r.ui(), vp).lines.size() == 3u);
+    auto cubeX = [&] {
+        float x = 0.f;
+        r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) {
+            if (auto* t = h.editorScene().registry().get<fuse::ecs::Transform>(fuse::ecs::EntityID{g.cube.index, g.cube.generation})) x = t->position.x;
+        });
+        return x;
+    };
+    const float x0 = cubeX();
+    const GizmoHandle2D& hx = gv.handles[0];
+    const float dx = hx.x1 - hx.x0, dy = hx.y1 - hx.y0;
+    r.c.viewportPointer({PE::Kind::Down, PE::Button::Left, hx.x1 - dx * 0.1f, hx.y1 - dy * 0.1f});
+    CHECK(r.c.gizmoDragging());
+    for (int i = 1; i <= 4; ++i) {
+        r.c.viewportPointer({PE::Kind::Move, PE::Button::Left, hx.x1 + dx * 0.25f * float(i), hx.y1 + dy * 0.25f * float(i)});
+        r.frames();
+    }
+    CHECK(w::viewportOverlay(r.ui(), vp).lines.size() == 3u); // hot axis drawn while dragging
+    r.c.viewportPointer({PE::Kind::Up, PE::Button::Left, hx.x1 + dx, hx.y1 + dy});
+    r.frames();
+    CHECK(!r.c.gizmoDragging());
+    const float x1 = cubeX();
+    std::printf("gizmo: cube x %.2f -> %.2f\n", double(x0), double(x1));
+    CHECK(std::fabs(x1 - x0) > 0.2f);
+    CHECK(r.v().primary == g.cube); // a handle drag does not re-pick
+    r.c.undo();
+    r.c.tick();
+    r.c.refresh();
+    r.frames();
+    CHECK(std::fabs(cubeX() - x0) < 1e-4f); // one undo step per drag
+    r.c.redo();
+    r.c.tick();
+    r.c.refresh();
+    r.frames();
+    CHECK(std::fabs(cubeX() - x1) < 1e-4f);
+    r.c.setTransformTool(TransformTool::Select);
+    r.frames();
+    CHECK(w::viewportOverlay(r.ui(), vp).lines.empty());
+    r.c.setTransformTool(TransformTool::Translate);
+    r.frames();
+}
+
+void gateViewportGizmo(Rig& r) {
+    // software viewport (no device needed): picking + Move gizmo drag + overlay + undo
+    const GateScene g = buildScene(r);
+    gizmoDrag(r, g);
 }
 
 /// Distinct colours in the centre half of an image (a flat fill has 1-2; a lit 3D frame many).
@@ -590,7 +684,8 @@ void gateSceneViewport(Rig& r) {
     auto host = SceneViewportHost::create({.validation = true});
     if (!host->valid()) skip("scene renderer host: " + host->reason());
     std::printf("scene host device: %s\n", host->deviceName().c_str());
-    buildScene(r);
+    const GateScene scene = buildScene(r);
+    (void)scene;
     r.shell.setSceneViewport(host.get());
     r.frames(2);
     CHECK(r.shell.sceneFrames() >= 1 && host->framesRendered() >= 1);
@@ -641,7 +736,7 @@ void gateGpuViewport(Rig& r) {
         CHECK(native.gpuDraws(r.win));
         CHECK(native.gpuName() == host->deviceName());
         std::printf("gpu_viewport: presenter + scene renderer on one device: %s\n", host->deviceName().c_str());
-        buildScene(r);
+        const GateScene scene = buildScene(r);
         u32 binds = 0;
         r.shell.setSceneViewport(host.get(), [&](const SceneViewportFrame& f) {
             ++binds;
@@ -653,6 +748,9 @@ void gateGpuViewport(Rig& r) {
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
         }
         CHECK(binds >= 1 && r.shell.sceneFrames() >= 1);
+        const u32 framesBeforeDrag = r.shell.sceneFrames();
+        gizmoDrag(r, scene); // pick + drag in the GPU viewport: every edit renders a new engine frame
+        CHECK(r.shell.sceneFrames() > framesBeforeDrag);
         const fuse::ui::Image& img = r.shell.viewportImage();
         CHECK(img.externalSlot == 0);
         // zero-copy: the CPU pixels were never written (still the ChildBg fill), yet the window shows the 3D frame
@@ -730,7 +828,7 @@ int main(int argc, char** argv) {
         {"e20_file_menu", gateFileMenu},  {"project_hub", gateProjectHub}, {"asset_browser", gateAssetBrowser},
         {"material_editor", gateMaterialEditor}, {"sdf_sculpt", gateSdfSculpt}, {"profiler", gateProfiler},
         {"sequencer", gateSequencer}, {"timeline", gateTimeline},
-        {"scene_viewport", gateSceneViewport}, {"gpu_viewport", gateGpuViewport},
+        {"scene_viewport", gateSceneViewport}, {"viewport_gizmo", gateViewportGizmo}, {"gpu_viewport", gateGpuViewport},
     };
     g_out = out;
     if (fonts.count(gate)) gateFont(r, scale);

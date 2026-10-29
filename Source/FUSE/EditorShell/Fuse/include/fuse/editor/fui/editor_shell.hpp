@@ -139,6 +139,10 @@ private:
     u32 m_sceneFrames = 0;
     u64 m_sceneVersion = ~0ull;
     bool renderSceneViewport_(int wpx, int hpx, bool changed);
+    void updateOverlay_(); // transform gizmo over the viewport (CPU or zero-copy image)
+    NodeHandle m_gizmoTools[4]{};
+    std::string m_overlayKey;
+    u32 m_toolShown = ~0u;
     u64 m_seenVersion = ~0ull;
     std::string m_menuKey, m_viewportKey;
     bool m_keysHeld = false;

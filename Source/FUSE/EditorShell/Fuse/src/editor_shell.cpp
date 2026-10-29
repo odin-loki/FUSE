@@ -154,7 +154,10 @@ std::string editorShellCss(f32 fontScale) {
     css += ".ed-page { padding: 4px; gap: 4px; flex-grow: 1; background: " + tokenHex("ChildBg") + "; }\n";
     css += ".ed-dim { color: " + tokenHex("TextDisabled") + "; }\n";
     css += ".ed-centre { gap: 0px; padding: 0px; flex-grow: 1; }\n";
-    css += ".ed-vpinfo { padding: 2px 8px; color: " + tokenHex("TextDisabled") + "; background: " + tokenHex("TitleBg") + "; }\n";
+    css += ".ed-vpinfo { padding: 2px 8px; color: " + tokenHex("TextDisabled") + "; }\n";
+    css += ".ed-vpbar { background: " + tokenHex("TitleBg") + "; align-items: center; }\n";
+    css += ".ed-vptool { padding: 1px 8px; margin: 1px 0px 1px 2px; }\n";
+    css += ".ed-vptool.active { background: " + tokenHex("ButtonActive") + "; }\n";
     css += ".ed-status { padding: 3px 8px; color: " + tokenHex("Text") + "; background: " + tokenHex("TitleBgActive") + "; }\n";
     return css;
 }
@@ -280,8 +283,24 @@ void EditorShellWindow::build_() {
     // centre: viewport + info strip
     const NodeHandle centre = w::panel(m_ui, w::dockRegion(m_ui, m_dockArea, DockSide::Center), "editor.centre");
     m_ui.addClass(centre, "ed-centre");
-    m_viewportInfo = w::label(m_ui, centre, "Perspective", "viewport.info");
+    const NodeHandle vpBar = w::panel(m_ui, centre, "viewport.bar");
+    m_ui.addClass(vpBar, "row");
+    m_ui.addClass(vpBar, "ed-vpbar");
+    static constexpr std::pair<const char*, TransformTool> kTools[] = {
+        {"Select", TransformTool::Select}, {"Move", TransformTool::Translate}, {"Rotate", TransformTool::Rotate},
+        {"Scale", TransformTool::Scale}};
+    for (std::size_t i = 0; i < 4; ++i) {
+        const NodeHandle b = w::button(m_ui, vpBar, kTools[i].first, std::string("viewport.tool.") + kTools[i].first);
+        m_ui.addClass(b, "ed-vptool");
+        m_gizmoTools[i] = b;
+        m_ui.connect(b, SignalKind::Clicked, [this, t = kTools[i].second](UiContext&, NodeHandle, const SignalArgs&) {
+            m_c.setTransformTool(t);
+            sync();
+        });
+    }
+    m_viewportInfo = w::label(m_ui, vpBar, "Perspective", "viewport.info");
     m_ui.addClass(m_viewportInfo, "ed-vpinfo");
+    m_ui.setCss(m_viewportInfo, "flex-grow", "1");
     m_viewport = w::viewportWidget(m_ui, centre, m_imageIndex, u32(m_image.width), u32(m_image.height), "viewport");
     m_ui.setCss(m_viewport, "flex-grow", "1");
     // the image follows the widget size: keep the widget from sizing to the image (feedback on shrink)
@@ -767,6 +786,7 @@ void EditorShellWindow::setSceneViewport(SceneViewportHost* host, std::function<
     m_viewportKey.clear();
     m_sceneVersion = ~0ull;
     renderViewport_();
+    updateOverlay_();
 }
 
 bool EditorShellWindow::renderSceneViewport_(int wpx, int hpx, bool changed) {
@@ -796,6 +816,43 @@ bool EditorShellWindow::renderSceneViewport_(int wpx, int hpx, bool changed) {
                   m_c.viewportFlying() ? "   [flying: WASD QE, Shift fast]" : "");
     m_ui.setText(m_viewportInfo, info);
     return true;
+}
+
+void EditorShellWindow::updateOverlay_() {
+    const EditorController::GizmoView g = m_c.viewportGizmo();
+    const u32 tool = u32(g.tool);
+    if (tool != m_toolShown) {
+        m_toolShown = tool;
+        for (u32 i = 0; i < 4; ++i) {
+        if (i == tool) m_ui.addClass(m_gizmoTools[i], "active");
+        else m_ui.removeClass(m_gizmoTools[i], "active");
+        }
+    }
+    std::string key = std::to_string(tool) + "|" + std::to_string(g.dragAxis);
+    if (g.visible)
+        for (const GizmoHandle2D& h : g.handles)
+            key += "|" + std::to_string(int(h.x0)) + "," + std::to_string(int(h.y0)) + "," + std::to_string(int(h.x1)) + "," +
+                   std::to_string(int(h.y1)) + (h.visible ? "v" : "");
+    if (key == m_overlayKey) return;
+    m_overlayKey = key;
+    w::ViewportOverlay o;
+    if (g.visible) {
+        static const Color kAxis[3] = {Color::rgb(0xE5484D), Color::rgb(0x46C46A), Color::rgb(0x3E8EF7)};
+        const Color hot = Color::rgb(0xF5D547);
+        for (int a = 0; a < 3; ++a) {
+            const GizmoHandle2D& h = g.handles[std::size_t(a)];
+            if (!h.visible) continue;
+            const Color c = g.dragAxis == a ? hot : kAxis[a];
+            o.lines.push_back({{h.x0, h.y0}, {h.x1, h.y1}, c, 3.f});
+            switch (g.tool) {
+            case TransformTool::Scale: o.dots.push_back({{h.x1, h.y1}, 5.f, c, Color::rgb(0x101010), 1.f}); break;
+            case TransformTool::Rotate: o.dots.push_back({{h.x1, h.y1}, 6.f, Color{0, 0, 0, 0}, c, 2.f}); break;
+            default: o.dots.push_back({{h.x1, h.y1}, 4.f, c}); break;
+            }
+        }
+        o.dots.push_back({{g.handles[0].x0, g.handles[0].y0}, 4.f, Color::rgb(0xF0F0F0), Color::rgb(0x101010), 1.f});
+    }
+    w::viewportSetOverlay(m_ui, m_viewport, std::move(o));
 }
 
 // ---- shortcuts ------------------------------------------------------------------------------------------------------
@@ -865,6 +922,7 @@ bool EditorShellWindow::sync() {
     if (console) syncConsole_();
     m_pages->sync(m_lastSyncMs, m_frameTick);
     renderViewport_();
+    updateOverlay_();
     m_lastSyncMs = f32(std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - t0).count());
     return changed || console;
 }
