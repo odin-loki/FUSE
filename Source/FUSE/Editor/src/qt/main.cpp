@@ -65,6 +65,9 @@ int main(int argc, char* argv[]) {
     parser.addOption(showDockOption);
     QCommandLineOption playOption(QStringList() << "play", "Enter Play (PIE) after startup (screenshots of play mode).");
     parser.addOption(playOption);
+    QCommandLineOption viewportLayoutOption(QStringList() << "viewport-layout",
+                                            "Viewport layout at startup: single, two (perspective + Top) or quad.", "layout");
+    parser.addOption(viewportLayoutOption);
     parser.process(app);
 
     QString samplesRoot = parser.value(samplesOption);
@@ -117,6 +120,13 @@ int main(int argc, char* argv[]) {
                     }
                 }
             }
+        });
+    }
+    if (parser.isSet(viewportLayoutOption)) {
+        const QString l = parser.value(viewportLayoutOption).toLower();
+        const int layout = l == "quad" || l == "4" ? 2 : (l == "two" || l == "2") ? 1 : 0;
+        QTimer::singleShot(parser.value(screenshotDelayOption).toInt() / 2 + 700, &window, [&window, layout]() {
+            window.setViewportLayout(layout);
         });
     }
     if (parser.isSet(playOption)) {

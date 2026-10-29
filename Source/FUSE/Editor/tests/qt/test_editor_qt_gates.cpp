@@ -49,6 +49,7 @@
 #include "preferences_dialog.hpp"
 #include "navmesh_panel.hpp"
 #include "terrain_panel.hpp"
+#include "ortho_view_widget.hpp"
 #include <fuse/editor/terrain_builder.hpp>
 #include <QLabel>
 #include <QSettings>
@@ -317,7 +318,7 @@ int gateStartup(double appInitMs) {
     expect(window->docks().size() == 12u, "all 12 panels (hierarchy, projects, assets, inspector, material, sdf, navigation, terrain, "
                                          "console, profiler, sequencer, timeline) created as docks");
     expect(allPlaced, "every dock has its panel widget and a dock area");
-    expect(window->centralWidget() == window->viewport(), "viewport is the central widget");
+    expect(window->centralWidget() != nullptr && window->centralWidget()->isAncestorOf(window->viewport()), "viewport is in the central widget");
     if (fuse::core::timingBudgetsEnforced()) {
         const double budget = 1000.0 * timingScale();
         expect(appInitMs + totalMs < budget, fmt("editor initialises all panels + dockspace in < %.0f ms (%.1f ms, load x%.2f)",
@@ -2461,6 +2462,95 @@ void testUiScale() {
 
 } // namespace
 
+void pumpFor(int ms) {
+    QElapsedTimer t;
+    t.start();
+    while (t.elapsed() < ms) QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+}
+
+int gateMultiViewport() {
+    namespace ecs = fuse::ecs;
+    using fuse::editor::qt::OrthoViewWidget;
+    MainWindow window(samplesRoot(), quietOptions());
+    expect(showAndExpose(window), "editor exposed");
+    expect(window.viewportLayout() == 0 && !window.orthoView(0)->isVisible(), "single layout by default");
+    expect(window.selectForScreenshot(QStringLiteral("cube")), "create + select a cube");
+    pumpFor(200);
+    const ecs::EntityID cube = window.host().editorState().primarySelection;
+    window.setViewportLayout(2);
+    pumpFor(300);
+    bool allVisible = true;
+    for (int i = 0; i < 3; ++i) allVisible = allVisible && window.orthoView(i)->isVisible() && window.orthoView(i)->width() > 100;
+    expect(allVisible && window.viewport()->isVisible(), "quad layout shows perspective + Top/Front/Side");
+    expect(window.findChild<QAction*>(QStringLiteral("fuseActionViewportQuad"))->isChecked(), "View > Viewport Layout reflects quad");
+    OrthoViewWidget* top = window.orthoView(0);
+    top->grab();
+    expect(top->drawnCount() > 0, fmt("Top view draws entities (%d)", top->drawnCount()));
+    // The cube projects inside the view after framing; picking it there selects it.
+    ecs::vec3 pos{};
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        pos = window.host().editorScene().registry().get<ecs::Transform>(cube)->position;
+    }
+    expect(top->frameSelection(), "F frames the selection");
+    const QPointF at = top->worldToView(pos);
+    expect(top->rect().contains(at.toPoint()), "framed cube is inside the Top view");
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        window.host().editorState().selectedEntities.clear();
+        window.host().editorState().primarySelection = ecs::EntityID::null();
+    }
+    QTest::mouseClick(top, Qt::LeftButton, Qt::NoModifier, at.toPoint());
+    pumpFor(50);
+    expect(window.host().editorState().primarySelection == cube, "click in the Top view selects the cube");
+    // Drag in Top moves X/Z (not Y); one undo step.
+    const auto undo0 = window.host().undoStack().undoCount();
+    const float ppu = top->pixelsPerUnit();
+    QTest::mousePress(top, Qt::LeftButton, Qt::NoModifier, at.toPoint());
+    QMouseEvent mv(QEvent::MouseMove, at + QPointF(ppu * 2.0, 0), top->mapToGlobal(at + QPointF(ppu * 2.0, 0)), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(top, &mv);
+    QTest::mouseRelease(top, Qt::LeftButton, Qt::NoModifier, (at + QPointF(ppu * 2.0, 0)).toPoint());
+    ecs::vec3 moved{};
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        moved = window.host().editorScene().registry().get<ecs::Transform>(cube)->position;
+    }
+    expect(std::fabs(moved.x - pos.x - 2.f) < 0.1f && std::fabs(moved.y - pos.y) < 1e-4f && std::fabs(moved.z - pos.z) < 1e-4f,
+           fmt("Top drag moves +2 X (%.2f,%.2f,%.2f)", moved.x - pos.x, moved.y - pos.y, moved.z - pos.z));
+    expect(window.host().undoStack().undoCount() == undo0 + 1, "drag is one undo step");
+    window.undoLatest();
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        moved = window.host().editorScene().registry().get<ecs::Transform>(cube)->position;
+    }
+    expect(std::fabs(moved.x - pos.x) < 1e-4f, "undo restores the position");
+    // Front view: a drag up moves +Y.
+    OrthoViewWidget* front = window.orthoView(1);
+    front->frameSelection();
+    expect(front->dragSelection(QPointF(50, 50), QPointF(50, 50 - front->pixelsPerUnit())), "Front drag API");
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        moved = window.host().editorScene().registry().get<ecs::Transform>(cube)->position;
+    }
+    expect(std::fabs(moved.y - pos.y - 1.f) < 1e-3f && std::fabs(moved.x - pos.x) < 1e-4f, "Front drag up moves +Y");
+    window.undoLatest();
+    // Wheel zoom keeps the point under the cursor.
+    const QPointF c(top->width() * 0.3, top->height() * 0.4);
+    const ecs::vec3 w0 = top->viewToWorld(c, ecs::vec3{});
+    QWheelEvent wheel(c, top->mapToGlobal(c), QPoint(), QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QCoreApplication::sendEvent(top, &wheel);
+    const ecs::vec3 w1 = top->viewToWorld(c, ecs::vec3{});
+    expect(top->pixelsPerUnit() > ppu * 1.1f && std::fabs(w0.x - w1.x) < 1e-3f && std::fabs(w0.z - w1.z) < 1e-3f,
+           "wheel zooms about the cursor");
+    window.setViewportLayout(1);
+    pumpFor(100);
+    expect(top->isVisible() && !window.orthoView(1)->isVisible(), "two-up layout shows only Top");
+    window.setViewportLayout(0);
+    pumpFor(100);
+    expect(!top->isVisible() && window.viewport()->isVisible(), "single layout restores the perspective view");
+    return g_failures == 0 ? 0 : 1;
+}
+
 int gateTerrain() {
     namespace ecs = fuse::ecs;
     MainWindow window(samplesRoot(), quietOptions());
@@ -2646,6 +2736,8 @@ int main(int argc, char** argv) {
             code = gatePreferences();
         } else if (gate == "asset_browser") {
             code = gateAssetBrowser();
+        } else if (gate == "multi_viewport") {
+            code = gateMultiViewport();
         } else if (gate == "terrain") {
             code = gateTerrain();
         } else if (gate == "edit_tools") {

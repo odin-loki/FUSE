@@ -1,4 +1,6 @@
 #include "main_window.hpp"
+#include <QSplitter>
+#include "ortho_view_widget.hpp"
 #include "preferences_dialog.hpp"
 #include "navmesh_panel.hpp"
 #include "terrain_panel.hpp"
@@ -89,7 +91,37 @@ MainWindow::MainWindow(const QString& samplesRoot, const Options& options, QWidg
     setDockNestingEnabled(true);
 
     m_viewport = new ViewportPlaceholderWidget(m_host, m_sceneMutex, this);
-    setCentralWidget(m_viewport);
+    {
+        // Multi-viewport container: [perspective | Top] over [Front | Side]; ortho views start hidden.
+        auto* central = new QSplitter(Qt::Vertical, this);
+        central->setObjectName(QStringLiteral("fuseViewportSplitter"));
+        central->setChildrenCollapsible(false);
+        m_viewTopRow = new QSplitter(Qt::Horizontal, central);
+        m_viewTopRow->setChildrenCollapsible(false);
+        m_viewBottomRow = new QSplitter(Qt::Horizontal, central);
+        m_viewBottomRow->setChildrenCollapsible(false);
+        m_viewTopRow->addWidget(m_viewport);
+        using Axis = OrthoViewWidget::Axis;
+        const Axis axes[3] = {Axis::Top, Axis::Front, Axis::Side};
+        for (int i = 0; i < 3; ++i) {
+            m_ortho[i] = new OrthoViewWidget(m_host, m_sceneMutex, axes[i]);
+            (i == 0 ? m_viewTopRow : m_viewBottomRow)->addWidget(m_ortho[i]);
+            m_ortho[i]->hide();
+            connect(m_ortho[i], &OrthoViewWidget::selectionChanged, this, [this]() {
+                m_inspector->refresh();
+                m_viewport->update();
+                refreshPanels();
+            });
+            connect(m_ortho[i], &OrthoViewWidget::sceneEdited, this, [this]() {
+                m_viewport->update();
+                refreshPanels();
+            });
+        }
+        m_viewBottomRow->hide();
+        central->addWidget(m_viewTopRow);
+        central->addWidget(m_viewBottomRow);
+        setCentralWidget(central);
+    }
 
     buildDocks();
     buildTransport();
@@ -611,6 +643,19 @@ void MainWindow::buildMenus() {
         view->addAction(dock->toggleViewAction());
     }
     view->addSeparator();
+    QMenu* vpLayout = view->addMenu(tr("&Viewport Layout"));
+    m_viewportLayoutGroup = new QActionGroup(this);
+    const char* layoutNames[3] = {"fuseActionViewportSingle", "fuseActionViewportTwo", "fuseActionViewportQuad"};
+    const QString layoutLabels[3] = {tr("&Single"), tr("&Two (Perspective + Top)"), tr("&Quad (Perspective, Top, Front, Side)")};
+    for (int i = 0; i < 3; ++i) {
+        QAction* a = vpLayout->addAction(layoutLabels[i]);
+        a->setObjectName(QString::fromLatin1(layoutNames[i]));
+        a->setCheckable(true);
+        a->setChecked(i == 0);
+        a->setShortcut(QKeySequence(Qt::ALT | static_cast<Qt::Key>(Qt::Key_1 + i)));
+        m_viewportLayoutGroup->addAction(a);
+        connect(a, &QAction::triggered, this, [this, i]() { setViewportLayout(i); });
+    }
     QAction* reset = view->addAction(tr("Reset &Layout"));
     connect(reset, &QAction::triggered, this, &MainWindow::resetToDefaultLayout);
 
@@ -625,6 +670,30 @@ void MainWindow::buildMenus() {
     m_actMaximizeOnPlay->setObjectName(QStringLiteral("fuseActionMaximizeOnPlay"));
     m_actMaximizeOnPlay->setCheckable(true);
     m_actMaximizeOnPlay->setToolTip(tr("Hide the docks while playing; Stop restores the layout"));
+}
+
+void MainWindow::setViewportLayout(int layout) {
+    layout = std::clamp(layout, 0, 2);
+    m_viewportLayout = layout;
+    m_ortho[0]->setVisible(layout >= 1);
+    m_ortho[1]->setVisible(layout == 2);
+    m_ortho[2]->setVisible(layout == 2);
+    m_viewBottomRow->setVisible(layout == 2);
+    if (layout >= 1) {
+        const int w = std::max(2, m_viewTopRow->width());
+        m_viewTopRow->setSizes({w / 2, w / 2});
+        auto* central = qobject_cast<QSplitter*>(centralWidget());
+        if (layout == 2 && central != nullptr) {
+            const int h = std::max(2, central->height());
+            central->setSizes({h / 2, h / 2});
+            m_viewBottomRow->setSizes({w / 2, w / 2});
+        }
+        // Each ortho view frames the whole scene the first time it gets a size (OrthoViewWidget::resizeEvent).
+    }
+    if (m_viewportLayoutGroup != nullptr) {
+        const auto actions = m_viewportLayoutGroup->actions();
+        if (layout < actions.size()) actions[layout]->setChecked(true);
+    }
 }
 
 void MainWindow::setMaximizeOnPlay(bool on) {
@@ -1059,6 +1128,9 @@ void MainWindow::refreshStatusBar() {
                                                : tr("playing"))
             .arg(prefabInfo));
     updateTransportActions();
+    for (OrthoViewWidget* o : m_ortho) {
+        if (o != nullptr && o->isVisible()) o->update();
+    }
 }
 
 } // namespace fuse::editor::qt

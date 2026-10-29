@@ -22,6 +22,7 @@ set(_fuse_qt_gate_tests
     edit_tools
     terrain
     asset_browser
+    multi_viewport
     preferences
     build_package
 )

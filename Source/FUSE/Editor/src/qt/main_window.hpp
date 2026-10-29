@@ -25,6 +25,9 @@ class QLabel;
 class QMenu;
 class QToolBar;
 
+class QSplitter;
+class QActionGroup;
+
 namespace fuse::editor::qt {
 class PreferencesDialog;
 class NavmeshPanel;
@@ -41,6 +44,7 @@ class ProjectHubWidget;
 class SdfSculptWidget;
 class SeqPreviewPaneWidget;
 class ViewportPlaceholderWidget;
+class OrthoViewWidget;
 
 /// FUSE Qt 6 editor shell (B6.1): `QMainWindow` + one `QDockWidget` per panel around the central
 /// viewport. Every panel is bound to its Qt-free FUSE API object (`fuse::editor::*`); the game
@@ -113,6 +117,11 @@ public:
     std::mutex& sceneMutex() { return m_sceneMutex; }
 
     [[nodiscard]] ViewportPlaceholderWidget* viewport() const { return m_viewport; }
+    /// Multi-viewport (GUI-8): 0 = perspective only, 1 = perspective + Top, 2 = quad (perspective, Top, Front, Side).
+    void setViewportLayout(int layout);
+    [[nodiscard]] int viewportLayout() const { return m_viewportLayout; }
+    /// Orthographic views: 0 = Top, 1 = Front, 2 = Side.
+    [[nodiscard]] OrthoViewWidget* orthoView(int i) const { return (i >= 0 && i < 3) ? m_ortho[i] : nullptr; }
     [[nodiscard]] HierarchyWidget* hierarchy() const { return m_hierarchy; }
     [[nodiscard]] InspectorWidget* inspector() const { return m_inspector; }
     [[nodiscard]] ConsoleWidget* console() const { return m_console; }
@@ -286,6 +295,11 @@ private:
     QAction* m_actStep = nullptr;
     QAction* m_actStop = nullptr;
     QAction* m_actMaximizeOnPlay = nullptr;
+    OrthoViewWidget* m_ortho[3] = {nullptr, nullptr, nullptr};
+    QSplitter* m_viewTopRow = nullptr;
+    QSplitter* m_viewBottomRow = nullptr;
+    QActionGroup* m_viewportLayoutGroup = nullptr;
+    int m_viewportLayout = 0;
     bool m_wasPlaying = false;
     bool m_wasPaused = false;
     QByteArray m_prePlayState;
