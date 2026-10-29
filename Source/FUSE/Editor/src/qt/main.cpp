@@ -12,6 +12,8 @@
 #include <QFileInfo>
 #include <QPixmap>
 #include <QTimer>
+#include <QDockWidget>
+#include "timeline_widget.hpp"
 
 int main(int argc, char* argv[]) {
     fuse::core::initialize();
@@ -56,6 +58,11 @@ int main(int argc, char* argv[]) {
                                    "'cube' or 'sphere'; the new entity is selected.",
                                    "kind");
     parser.addOption(spawnOption);
+    QCommandLineOption showDockOption(QStringList() << "show-dock",
+                                      "Show and raise a dock after startup (repeatable): e.g. 'timeline', "
+                                      "'asset_browser', 'terrain' or a full object name such as 'dock.timeline'.",
+                                      "name");
+    parser.addOption(showDockOption);
     parser.process(app);
 
     QString samplesRoot = parser.value(samplesOption);
@@ -79,6 +86,34 @@ int main(int argc, char* argv[]) {
         QTimer::singleShot(parser.value(screenshotDelayOption).toInt() / 2, &window, [&window, spec]() {
             if (!window.selectForScreenshot(spec)) {
                 qWarning("--select %s: nothing selected", qPrintable(spec));
+            }
+        });
+    }
+    if (parser.isSet(showDockOption)) {
+        const QStringList names = parser.values(showDockOption);
+        QTimer::singleShot(parser.value(screenshotDelayOption).toInt() / 2 + 500, &window, [&window, names]() {
+            for (QString n : names) {
+                n = n.trimmed().toLower().replace('-', '_');
+                if (n == "assets") n = QStringLiteral("asset_browser");
+                if (!n.startsWith("dock.")) n.prepend(QStringLiteral("dock."));
+                QDockWidget* d = window.dock(n.toUtf8().constData());
+                if (d == nullptr) {
+                    qWarning("--show-dock %s: no such dock", qPrintable(n));
+                    continue;
+                }
+                d->show();
+                d->raise();
+                // Give a shown timeline something to display: key the selection at 0 s and 2 s.
+                if (n == "dock.timeline" && window.timeline() != nullptr &&
+                    window.timeline()->model().keyCount() == 0) {
+                    auto* tw = window.timeline();
+                    tw->scrubTo(0);
+                    if (tw->keySelection()) {
+                        tw->scrubTo(2000);
+                        tw->keySelection();
+                        tw->scrubTo(1000);
+                    }
+                }
             }
         });
     }

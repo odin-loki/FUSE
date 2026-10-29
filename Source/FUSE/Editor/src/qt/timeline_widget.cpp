@@ -91,7 +91,8 @@ TimelineWidget::TimelineWidget(EditorHost& host, std::mutex& sceneMutex, QWidget
     auto* fit = new QPushButton(tr("Fit"));
     fit->setObjectName(QStringLiteral("fuseTimelineFit"));
     fit->setToolTip(tr("Zoom to fit the clip (F). Ctrl+wheel zooms, Shift+wheel pans."));
-    for (QPushButton* b : {prevKey, nextKey, fit, m_loopButton}) b->setMaximumWidth(40);
+    for (QPushButton* b : {prevKey, nextKey, fit}) b->setMaximumWidth(40);
+    m_loopButton->setMaximumWidth(56);
     m_snapCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_snapCombo->setMinimumContentsLength(4);
     bar->insertWidget(1, prevKey);
