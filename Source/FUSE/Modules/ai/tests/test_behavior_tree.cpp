@@ -2388,6 +2388,7 @@ void testUtilityScore() {
 } // namespace
 
 int run_spatial_query_tests();
+int run_parallel_policy_tests();
 
 int main() {
     testUtilityScore();
@@ -2496,6 +2497,7 @@ int main() {
     testAgentEntityBindSyncsBindingPosition();
     testSequenceStatusCombine();
     g_failures += run_spatial_query_tests();
+    g_failures += run_parallel_policy_tests();
     fuse::core::shutdown();
 
     if (g_failures == 0) {
