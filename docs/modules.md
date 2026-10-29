@@ -12,6 +12,7 @@ Behavior trees and an agent runtime.
 - `loadTreeFromSpecs` / `loadTreeFromText` — editor and test loaders
 - `BehaviorRuntime` — snapshot eval on jobs, blackboard commit on the game thread
 - Spatial helpers: `bb.condition.allies_in_radius`, `bb.action.nearest_ally`
+- Navmesh reachability (`fuse/ai/nav_query.hpp`): `find_nearest_reachable_ally` / `count_reachable_allies` rank same-team allies by walking distance on a `fuse_navigation` grid (one flood fill per query), skipping allies behind walls or off the grid
 
 Headers: `Source/FUSE/Modules/ai/include/fuse/ai/`. Tests: `fuse_ai_*`. Sample: `Samples/unification/demo_ai_bt`.
 

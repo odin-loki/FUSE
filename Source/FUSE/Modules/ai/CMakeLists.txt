@@ -5,6 +5,7 @@ add_library(fuse_ai STATIC
     src/behavior_runtime.cpp
     src/node_registry.cpp
     src/spatial_query.cpp
+    src/nav_query.cpp
     src/parallel_policy.cpp
     src/tree_loader.cpp
     src/uaisk_script_import.cpp
@@ -23,6 +24,7 @@ add_library(fuse_ai STATIC
     include/fuse/ai/behavior_runtime.hpp
     include/fuse/ai/node_registry.hpp
     include/fuse/ai/spatial_query.hpp
+    include/fuse/ai/nav_query.hpp
     include/fuse/ai/parallel_policy.hpp
     include/fuse/ai/tree_loader.hpp
     include/fuse/ai/uaisk_template_hooks.hpp
@@ -43,7 +45,7 @@ target_include_directories(fuse_ai
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
-target_link_libraries(fuse_ai PUBLIC fuse_core fuse_world2d)
+target_link_libraries(fuse_ai PUBLIC fuse_core fuse_world2d fuse_navigation)
 if(FUSE_BUILD_SCRIPT)
     target_link_libraries(fuse_ai PUBLIC fuse_script)
 endif()

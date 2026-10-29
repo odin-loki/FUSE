@@ -64,7 +64,11 @@
 
 Spatial leaves fail when `BehaviorEvalContext::allies` is null or empty. `BlackboardView` default-constructed reads return false / zero.
 
-**Deferred:** faction masks, 3D positions, navmesh reachability.
+Beyond same-team XY queries: `FactionQuery` hostile lookups (`find_nearest_hostile`, `count_hostiles_in_radius`) test `AllyCandidate::factionMask` with 3D distance, and `find_nearest_visible_ally` rejects allies whose segment hits an `AabbBlocker`.
+
+**Navmesh reachability** (`fuse/ai/nav_query.hpp`, links `fuse_navigation`): `find_nearest_reachable_ally` ranks same-team allies by walking distance on a `GridNavmesh` (steps x cell size; optional max walk, 0 = unlimited; tie -> lowest `agentIndex`), and `count_reachable_allies` counts allies within a walk. One `step_field` flood fill per query into caller scratch; allies in blocked, sealed, or off-grid cells are skipped. Tests: `fuse_ai_nav_query`.
+
+**Deferred:** BT leaves for hostile and reachability queries (no navmesh on `BehaviorEvalContext` yet), 3D navmesh.
 
 ---
 
