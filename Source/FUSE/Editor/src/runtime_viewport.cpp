@@ -1,3 +1,4 @@
+#include <atomic>
 #include <cstdlib>
 #include <fuse/editor/runtime_viewport.hpp>
 
@@ -177,6 +178,18 @@ bool loadMaterialTextureRgba8(const std::string& path, const std::string& projec
     return true;
 }
 
+namespace {
+std::atomic<int> g_previewSun{-1}; ///< -1: not set yet (FUSE_EDITOR_NO_PREVIEW_SUN decides)
+} // namespace
+
+void setEditorPreviewSun(bool on) { g_previewSun.store(on ? 1 : 0); }
+
+bool editorPreviewSun() {
+    const int v = g_previewSun.load();
+    if (v >= 0) return v != 0;
+    return std::getenv("FUSE_EDITOR_NO_PREVIEW_SUN") == nullptr;
+}
+
 #if defined(FUSE_VULKAN_BACKEND)
 /// Material Editor textures: image files (PNG / TGA / BMP / JPEG), relative paths against the project root. The GPU
 /// scene starts lazily (first frame), so this runs before every frame until it found one.
@@ -185,6 +198,9 @@ void ensureMaterialTextureLoader(RuntimeViewportHeadlessGpuStub* gpu, const Runt
         return;
     }
     fuse::hybrid::HybridSceneRenderer* scene = gpu->hybrid->composer().gpuScene();
+    if (scene != nullptr) {
+        scene->setFallbackSun(editorPreviewSun());
+    }
     if (scene == nullptr || scene == gpu->textureLoaderOn) {
         return;
     }
@@ -193,8 +209,6 @@ void ensureMaterialTextureLoader(RuntimeViewportHeadlessGpuStub* gpu, const Runt
     scene->setTextureLoader([live](const std::string& path, u32& w, u32& h, std::vector<u32>& texels) {
         return loadMaterialTextureRgba8(path, live->projectRoot, w, h, texels);
     });
-    // Preview lighting: scenes without a DirectionalLight (e.g. demo_3d_empty) would otherwise render unlit.
-    scene->setFallbackSun(std::getenv("FUSE_EDITOR_NO_PREVIEW_SUN") == nullptr);
     gpu->textureLoaderOn = scene;
 }
 

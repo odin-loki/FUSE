@@ -166,6 +166,8 @@ if(FUSE_BUILD_EDITOR)
                 src/qt/project_settings_dialog.cpp
                 src/qt/build_package_dialog.cpp
                 src/qt/build_package_dialog.hpp
+                src/qt/preferences_dialog.cpp
+                src/qt/preferences_dialog.hpp
                 src/qt/project_hub_widget.hpp
                 src/qt/property_pane_widget.cpp
                 src/qt/property_pane_widget.hpp

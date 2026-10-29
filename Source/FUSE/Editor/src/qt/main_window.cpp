@@ -1,4 +1,7 @@
 #include "main_window.hpp"
+#include "preferences_dialog.hpp"
+
+#include <fuse/editor/runtime_viewport.hpp>
 #include <QCoreApplication>
 #include <QThread>
 #include <QElapsedTimer>
@@ -28,6 +31,7 @@
 #include <QFileInfo>
 #include <QProcess>
 #include <QSettings>
+#include <cstdlib>
 #include <QTimer>
 #include <QKeySequence>
 #include <QLabel>
@@ -140,8 +144,24 @@ MainWindow::MainWindow(const QString& samplesRoot, const Options& options, QWidg
     if (m_options.startFramePump) {
         m_viewport->setFramePumpEnabled(true);
     }
+    for (QAction* menuAction : menuBar()->actions()) {
+        if (menuAction->menu() != nullptr && menuAction->text() == tr("&Edit")) {
+            menuAction->menu()->addSeparator();
+            QAction* prefs = menuAction->menu()->addAction(tr("&Preferences..."));
+            prefs->setObjectName(QStringLiteral("fuseActionPreferences"));
+            prefs->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Comma));
+            prefs->setMenuRole(QAction::PreferencesRole);
+            connect(prefs, &QAction::triggered, this, [this]() { openPreferences(); });
+            break;
+        }
+    }
     if (m_options.persistLayout) {
-        restoreSettingsLayout();
+        const EditorPreferences prefs = EditorPreferences::load();
+        setEditorPreviewSun(prefs.previewSun && std::getenv("FUSE_EDITOR_NO_PREVIEW_SUN") == nullptr);
+        m_viewport->panel().camera().moveSpeed = static_cast<f32>(prefs.cameraSpeed);
+        m_viewport->panel().camera().lookSensitivity = static_cast<f32>(prefs.lookSensitivity);
+        applyShortcutOverrides(this);
+        if (prefs.restoreLayout) restoreSettingsLayout();
     }
     refreshPanels();
     refreshStatusBar();
@@ -1198,6 +1218,17 @@ void MainWindow::rebuildRecentMenu() {
         });
     }
     m_recentMenu->setEnabled(!m_recentFiles.isEmpty());
+}
+
+PreferencesDialog* MainWindow::openPreferences(bool modal) {
+    auto* dialog = new PreferencesDialog(this, m_viewport, this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    if (modal && m_fileDialogHook == nullptr) {
+        dialog->exec();
+        return nullptr;
+    }
+    dialog->show();
+    return dialog;
 }
 
 void MainWindow::addRecentProject(const QString& root) {

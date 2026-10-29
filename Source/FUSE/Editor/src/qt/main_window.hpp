@@ -26,6 +26,7 @@ class QMenu;
 class QToolBar;
 
 namespace fuse::editor::qt {
+class PreferencesDialog;
 
 class AssetBrowserWidget;
 class TimelineWidget;
@@ -174,6 +175,8 @@ public:
     [[nodiscard]] QStringList recentFiles() const { return m_recentFiles; }
     [[nodiscard]] QMenu* recentProjectsMenu() const { return m_recentProjectsMenu; }
     [[nodiscard]] QStringList recentProjects() const { return m_recentProjects; }
+    /// Edit > Preferences. Modal unless `modal` is false (tests); the non-modal dialog is returned.
+    PreferencesDialog* openPreferences(bool modal = true);
     void setDirtyPromptHook(DirtyPromptHook hook) { m_dirtyPromptHook = std::move(hook); }
     void setFileDialogHook(FileDialogHook hook) { m_fileDialogHook = std::move(hook); }
     [[nodiscard]] int dirtyPromptCount() const { return m_dirtyPromptCount; }

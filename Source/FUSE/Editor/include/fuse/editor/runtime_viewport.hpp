@@ -22,6 +22,11 @@ class Registry;
 
 namespace fuse::editor {
 
+/// Editor preview sun (lights scenes with no DirectionalLight; HybridSceneRenderer::setFallbackSun). Defaults to on
+/// unless FUSE_EDITOR_NO_PREVIEW_SUN is set; Preferences toggles it at runtime.
+void setEditorPreviewSun(bool on);
+[[nodiscard]] bool editorPreviewSun();
+
 class EditorHost;
 
 /// Editor-host request for a presenting viewport (fuse_editor Qt host). The game thread creates the
