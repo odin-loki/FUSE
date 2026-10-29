@@ -723,7 +723,8 @@ void collectTexts(QObject* root, QSet<QChar>& chars, int& strings) {
 int gateFont(double expectedScale) {
     const QString family = fuse::editor::qt::loadEditorFont();
     expect(!family.isEmpty(), fmt("bundled editor font registered from Qt resource (family '%s')", qPrintable(family)));
-    expect(family == QStringLiteral("Open Sans"), "editor font family is Open Sans");
+    expect(family == QStringLiteral("Open Sans") || family.startsWith(QStringLiteral("Open Sans [")),
+           "editor font family is Open Sans (foundry-qualified when a system Open Sans exists)");
     const QFont appFont = QApplication::font();
     const QFontInfo info(appFont);
     expect(info.family() == family, fmt("application font resolves to the bundled family (got '%s')",

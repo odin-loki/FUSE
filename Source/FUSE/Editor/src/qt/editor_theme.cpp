@@ -1,6 +1,7 @@
 #include "editor_theme.hpp"
 
 #include <QApplication>
+#include <QFile>
 #include <QFontDatabase>
 #include <QPainter>
 #include <QProxyStyle>
@@ -173,14 +174,54 @@ QString darkStyleSheet() {
     return s;
 }
 
+namespace {
+/// OS/2 achVendID of a TrueType/OpenType file (Qt uses it as the foundry name), or empty.
+QString fontVendorId(const QString& path) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return {};
+    }
+    const QByteArray d = file.readAll();
+    auto u16 = [&](qsizetype o) { return o + 2 <= d.size() ? (quint8(d[o]) << 8) | quint8(d[o + 1]) : 0; };
+    auto u32 = [&](qsizetype o) { return o + 4 <= d.size() ? (quint32(u16(o)) << 16) | quint32(u16(o + 2)) : 0u; };
+    const int numTables = u16(4);
+    for (int t = 0; t < numTables; ++t) {
+        const qsizetype rec = 12 + t * 16;
+        if (d.mid(rec, 4) == "OS/2") {
+            const qsizetype off = static_cast<qsizetype>(u32(rec + 8));
+            if (off + 62 > d.size()) {
+                return {};
+            }
+            return QString::fromLatin1(d.mid(off + 58, 4)).trimmed();
+        }
+    }
+    return {};
+}
+} // namespace
+
 QString loadEditorFont() {
     static const QString family = []() -> QString {
-        const int id = QFontDatabase::addApplicationFont(QStringLiteral(":/fuse/editor/fonts/OpenSans.ttf"));
+        const QString path = QStringLiteral(":/fuse/editor/fonts/OpenSans.ttf");
+        const int id = QFontDatabase::addApplicationFont(path);
         if (id < 0) {
             return {};
         }
         const QStringList families = QFontDatabase::applicationFontFamilies(id);
-        return families.isEmpty() ? QString() : families.front();
+        if (families.isEmpty()) {
+            return {};
+        }
+        // A system font with the same family name (e.g. Google's "Open Sans" variable font) makes Qt
+        // disambiguate both as "Open Sans [FOUNDRY]", and plain "Open Sans" may then resolve to the
+        // system copy. Pin "<family> [<OS/2 vendor id>]" of the bundled file so it always wins.
+        const QString plain = families.front();
+        const QString vendor = fontVendorId(path);
+        if (!vendor.isEmpty()) {
+            const QString qualified = plain + QStringLiteral(" [") + vendor + QStringLiteral("]");
+            if (QFontDatabase::families().contains(qualified)) {
+                return qualified;
+            }
+        }
+        return plain;
     }();
     return family;
 }
