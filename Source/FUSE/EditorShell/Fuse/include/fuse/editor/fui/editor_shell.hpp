@@ -57,6 +57,10 @@ public:
     void resetLayout();
     /// Makes `panelId`'s tab current (e.g. "dock.console").
     bool showPanel(std::string_view panelId);
+    /// File > New Project...: the New Project wizard dialog (name, location, dimension, UI layer, modules; Qt
+    /// NewProjectWizard parity). Ids "wizard.*"; Create writes project.json and opens the project.
+    void openNewProjectWizard();
+    [[nodiscard]] bool newProjectWizardOpen() const { return m_wizard.valid(); }
 
     [[nodiscard]] fuse::app::AppWindow& window() { return m_win; }
     [[nodiscard]] EditorController& controller() { return m_c; }
@@ -142,6 +146,8 @@ private:
     void updateOverlay_(); // transform gizmo over the viewport (CPU or zero-copy image)
     NodeHandle m_gizmoTools[4]{};
     NodeHandle m_gizmoSpace{}, m_gizmoSnap{};
+    NodeHandle m_wizard{};
+    void closeNewProjectWizard_();
     bool m_spaceShown = false;
     std::string m_overlayKey;
     u32 m_toolShown = ~0u;

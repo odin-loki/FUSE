@@ -180,6 +180,7 @@ EditorShellWindow::EditorShellWindow(fuse::app::AppWindow& window, EditorControl
             auto* self = static_cast<EditorShellWindow*>(user);
             switch (id) {
             case ActionId::ViewResetLayout: self->resetLayout(); return true;
+            case ActionId::FileNewProject: self->openNewProjectWizard(); return true;
             case ActionId::FileQuit:
                 if (self->m_c.requestClose()) self->m_win.requestClose();
                 return true;
@@ -977,6 +978,91 @@ bool EditorShellWindow::sync() {
     updateOverlay_();
     m_lastSyncMs = f32(std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - t0).count());
     return changed || console;
+}
+
+// ---- New Project wizard (Qt NewProjectWizard parity) ---------------------------------------------------------------
+void EditorShellWindow::openNewProjectWizard() {
+    if (newProjectWizardOpen()) return;
+    std::string location = m_models->projectHub().projectsRoot;
+    if (location.empty()) {
+        std::error_code ec;
+        location = std::filesystem::current_path(ec).string();
+    }
+    m_wizard = w::dialog(m_ui, "New FUSE Project", "wizard");
+    const NodeHandle body = w::dialogBody(m_ui, m_wizard);
+    m_ui.setCss(body, "gap", "4px");
+    const auto row = [&](std::string_view label) {
+        const NodeHandle r = w::panel(m_ui, body);
+        m_ui.addClass(r, "row");
+        m_ui.setCss(r, "gap", "6px");
+        const NodeHandle l = w::label(m_ui, r, label);
+        m_ui.setCss(l, "min-width", "80px");
+        return r;
+    };
+    NodeHandle r = row("Name");
+    const NodeHandle name = w::lineEdit(m_ui, r, "NewProject", "wizard.name");
+    m_ui.setCss(name, "flex-grow", "1");
+    r = row("Location");
+    const NodeHandle loc = w::lineEdit(m_ui, r, location, "wizard.location");
+    m_ui.setCss(loc, "flex-grow", "1");
+    m_ui.setCss(loc, "min-width", "260px");
+    const NodeHandle browse = w::button(m_ui, r, "...", "wizard.browse");
+    m_ui.connect(browse, SignalKind::Clicked, [this, loc](UiContext& u, NodeHandle, const SignalArgs&) {
+        if (const auto dir = m_c.services().pickDirectory("Project Location", u.text(loc)); dir && !dir->empty()) u.setText(loc, *dir);
+    });
+    const NodeHandle hint = w::label(m_ui, body, "", "wizard.hint");
+    r = row("Dimension");
+    w::comboBox(m_ui, r, "3D\n2D\nHybrid (3D + 2D)", 2, "wizard.dimension");
+    w::checkBox(m_ui, r, "UI layer", true, "wizard.ui");
+    r = row("Modules");
+    static constexpr std::pair<const char*, const char*> kModules[] = {
+        {"ai", "AI"}, {"cinematics", "Cinematics"}, {"fx", "FX"}, {"mechanics", "Mechanics"}, {"adventure", "Adventure"}};
+    for (const auto& [key, text] : kModules) w::checkBox(m_ui, r, text, false, std::string("wizard.module.") + key);
+    // project name + directory from the fields (captures stay small: InlineFn)
+    static constexpr auto target = [](const UiContext& u) {
+        std::string n(u.text(u.find("wizard.name")));
+        if (n.empty()) n = "NewProject";
+        return std::pair{n, (std::filesystem::path(std::string(u.text(u.find("wizard.location")))) / n).string()};
+    };
+    const auto updateHint = [hint](UiContext& u, NodeHandle, const SignalArgs&) { u.setText(hint, "Creates " + target(u).second); };
+    updateHint(m_ui, {}, {});
+    m_ui.connect(name, SignalKind::TextChanged, updateHint);
+    m_ui.connect(loc, SignalKind::TextChanged, updateHint);
+    const NodeHandle buttons = w::panel(m_ui, body);
+    m_ui.addClass(buttons, "row");
+    m_ui.setCss(buttons, "gap", "6px");
+    m_ui.setCss(buttons, "justify-content", "flex-end");
+    const NodeHandle create = w::button(m_ui, buttons, "Create", "wizard.create");
+    const NodeHandle cancel = w::button(m_ui, buttons, "Cancel", "wizard.cancel");
+    m_ui.connect(cancel, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { closeNewProjectWizard_(); });
+    m_ui.connect(create, SignalKind::Clicked, [this](UiContext& u, NodeHandle, const SignalArgs&) {
+        const auto [n, dir] = target(u);
+        const u32 dim = u32(u.value(u.find("wizard.dimension"))); // 0 3D, 1 2D, 2 Hybrid
+        u32 flags = 0;
+        if (dim != 1) flags |= kProjectEnable3D;
+        if (dim != 0) flags |= kProjectEnable2D;
+        if (u.checked(u.find("wizard.ui"))) flags |= kProjectEnableUI;
+        project::ModuleSettings m;
+        m.ai = u.checked(u.find("wizard.module.ai"));
+        m.cinematics = u.checked(u.find("wizard.module.cinematics"));
+        m.fx = u.checked(u.find("wizard.module.fx"));
+        m.mechanics = u.checked(u.find("wizard.module.mechanics"));
+        m.adventure = u.checked(u.find("wizard.module.adventure"));
+        closeNewProjectWizard_();
+        if (!m_models->hubNew(dir, n, flags, m) && !m_c.lastError().empty())
+            m_c.services().warn("New Project", m_c.lastError());
+        sync();
+    });
+    w::openDialog(m_ui, m_wizard);
+    m_ui.setFocus(name);
+}
+
+void EditorShellWindow::closeNewProjectWizard_() {
+    if (!newProjectWizardOpen()) return;
+    const NodeHandle d = m_wizard;
+    m_wizard = {};
+    w::closeDialog(m_ui, d);
+    m_ui.destroy(d);
 }
 
 // =====================================================================================================================

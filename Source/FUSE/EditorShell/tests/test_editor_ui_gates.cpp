@@ -6,6 +6,7 @@
 
 #include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/transform.hpp>
+#include <fuse/project/loader.hpp>
 #include <fuse/editor/editor_host.hpp>
 #include <fuse/editor/scene_viewport_host.hpp>
 #if defined(FUSE_EDITOR_UI_HAS_NATIVE)
@@ -388,6 +389,78 @@ void gateProjectHub(Rig& r) {
     CHECK(r.ui().text(r.ui().find("hub.current")).find("GateWorld") != std::string_view::npos);
     CHECK(r.ui().value(r.ui().find("hub.list")) == 0.f);
     std::printf("project_hub: %s\n", std::string(r.ui().text(r.ui().find("hub.current"))).c_str());
+}
+
+void gateWizard(Rig& r) {
+    // File > New Project... -> wizard (name, location, dimension, UI layer, modules) -> project.json -> project loads
+    const auto root = scratchDir("wizard");
+    r.shell.panels().setProjectsRoot(root.string());
+    r.frames();
+    CHECK(r.c.trigger(ActionId::FileNewProject));
+    r.frames();
+    CHECK(r.shell.newProjectWizardOpen());
+    CHECK(r.ui().text(r.ui().find("wizard.location")) == root.string());
+    r.clickId("wizard.cancel"); // Cancel creates nothing
+    r.frames();
+    CHECK(!r.shell.newProjectWizardOpen());
+    CHECK(!std::filesystem::exists(root / "NewProject"));
+    CHECK(r.c.trigger(ActionId::FileNewProject));
+    r.frames();
+    setField(r, "wizard.name", "WizWorld");
+    CHECK(r.ui().text(r.ui().find("wizard.hint")).find("WizWorld") != std::string_view::npos);
+    r.ui().setValue(r.ui().find("wizard.dimension"), 1.f, true); // 2D
+    r.clickId("wizard.ui");                                      // untick the UI layer
+    r.clickId("wizard.module.cinematics");
+    r.clickId("wizard.module.fx");
+    r.frames();
+    r.clickId("wizard.create");
+    r.frames(2);
+    CHECK(!r.shell.newProjectWizardOpen());
+    const auto loaded = fuse::project::loadFromDirectory((root / "WizWorld").string());
+    CHECK(loaded.status == fuse::project::LoadStatus::Ok);
+    const auto& m = loaded.manifest;
+    CHECK(!m.dimensions.enable3D && m.dimensions.enable2D && !m.dimensions.enableUI);
+    CHECK(m.modules.cinematics && m.modules.fx && !m.modules.ai && !m.modules.mechanics && !m.modules.adventure);
+    const ProjectHubView hub = r.shell.panels().projectHub();
+    CHECK(hub.hasProject && hub.name == "WizWorld");
+    std::printf("e20_wizard: %s 2D=%d UI=%d cinematics=%d fx=%d\n", hub.directory.c_str(), int(m.dimensions.enable2D),
+                int(m.dimensions.enableUI), int(m.modules.cinematics), int(m.modules.fx));
+    // leave the wizard open for the screenshot
+    CHECK(r.c.trigger(ActionId::FileNewProject));
+    setField(r, "wizard.name", "Another");
+    r.frames(2);
+}
+
+void gateProjectOpen(Rig& r) {
+    // Open Project loads the project's default world; a second open replaces it (Qt project_open twin)
+    const auto root = scratchDir("project_open");
+    CHECK(r.shell.showPanel("dock.project_hub"));
+    r.shell.panels().setProjectsRoot(root.string());
+    CHECK(r.shell.panels().hubNew((root / "Alpha").string(), "Alpha"));
+    CHECK(r.c.runEntityAction(ContextMenuAction::CreateSdfSphere));
+    CHECK(r.c.fileSave());
+    CHECK(r.shell.panels().hubNew((root / "Beta").string(), "Beta"));
+    r.frames(2);
+    const auto entities = [&] { return r.c.viewState().hierarchy.size(); };
+    const std::size_t betaCount = entities();
+    // select Alpha in the hub list and Open
+    ProjectHubView hub = r.shell.panels().projectHub();
+    CHECK(hub.projects.size() == 2u);
+    const NodeHandle list = r.ui().find("hub.list");
+    for (std::size_t i = 0; i < hub.projects.size(); ++i)
+        if (hub.projects[i].find("Alpha") != std::string::npos) r.ui().setValue(list, float(i), true);
+    r.clickId("hub.open");
+    r.frames(2);
+    hub = r.shell.panels().projectHub();
+    CHECK(hub.hasProject && hub.name == "Alpha");
+    const std::size_t alphaCount = entities();
+    CHECK(alphaCount == betaCount + 1); // Alpha's saved world (with the sphere) replaced Beta's
+    CHECK(r.shell.panels().hubOpen((root / "Beta").string()));
+    r.frames(2);
+    CHECK(r.shell.panels().projectHub().name == "Beta" && entities() == betaCount);
+    CHECK(r.shell.panels().hubOpen((root / "Alpha").string()));
+    r.frames(2);
+    std::printf("project_open: Alpha %zu entities, Beta %zu\n", alphaCount, betaCount);
 }
 
 void gateAssetBrowser(Rig& r) {
@@ -894,7 +967,7 @@ int main(int argc, char** argv) {
         {"fuse_api", gateFuseApi},       {"wasd", gateWasd},               {"context_menu", gateContextMenu},
         {"ui_frame", gateUiFrame},       {"idle_frames", gateIdle},        {"e15_console", gateConsole},
         {"e15_transport", gateTransport}, {"e20_inspector", gateInspector}, {"e20_reparent", gateReparent},
-        {"e20_file_menu", gateFileMenu},  {"project_hub", gateProjectHub}, {"asset_browser", gateAssetBrowser},
+        {"e20_file_menu", gateFileMenu}, {"e20_wizard", gateWizard}, {"project_open", gateProjectOpen},  {"project_hub", gateProjectHub}, {"asset_browser", gateAssetBrowser},
         {"material_editor", gateMaterialEditor}, {"sdf_sculpt", gateSdfSculpt}, {"profiler", gateProfiler},
         {"sequencer", gateSequencer}, {"timeline", gateTimeline},
         {"scene_viewport", gateSceneViewport}, {"viewport_gizmo", gateViewportGizmo}, {"gpu_viewport", gateGpuViewport},

@@ -61,7 +61,7 @@ if(TARGET fuse_app_native)
 endif()
 fuse_apply_cxx23(fuse_editor_ui_gates)
 set(FUSE_EDITOR_UI_GATES startup layout theme font_1 font_1_25 font_1_5 font_2 fuse_api wasd context_menu ui_frame
-    idle_frames e15_console e15_transport e20_inspector e20_reparent e20_file_menu
+    idle_frames e15_console e15_transport e20_inspector e20_reparent e20_file_menu e20_wizard project_open
     project_hub asset_browser material_editor sdf_sculpt profiler sequencer timeline viewport_gizmo scene_viewport gpu_viewport)
 set(FUSE_EDITOR_UI_SHOTS "${CMAKE_BINARY_DIR}/editor_ui_shots")
 file(MAKE_DIRECTORY "${FUSE_EDITOR_UI_SHOTS}")
