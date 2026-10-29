@@ -350,8 +350,8 @@ void setDateTimeEditValue(UiContext& ui, NodeHandle ed, int year, int month, int
 i64 dateTimeEditMinutes(const UiContext& ui, NodeHandle ed);
 u32 dateTimeEditField(const UiContext& ui, NodeHandle ed); ///< 0 year .. 4 minute
 
-/// Video widget (stub decoder): plays a VideoSource (function table) - the real Theora + fuse_audio source lands with
-/// UI10's media work; `testPatternSource()` is a built-in moving pattern. Space toggles play, the scrubber seeks.
+/// Video widget: plays a VideoSource (function table). Theora .ogv files: fuse_ui_video's `video::TheoraVideo::source()`
+/// (fuse/ui/video/theora_video.hpp); `testPatternSource()` is a built-in moving pattern. Audio sync is not done. Space toggles play, the scrubber seeks.
 /// value() = current frame. Frames are pulled from `frame()` into an image the rasteriser shows.
 struct VideoSource {
     void* user = nullptr;

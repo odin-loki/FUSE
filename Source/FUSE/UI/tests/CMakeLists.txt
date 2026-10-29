@@ -131,6 +131,12 @@ if(FUSE_UI_HAVE_SQL)
     target_link_libraries(fuse_ui_sql_model PRIVATE fuse_ui_sql)
 endif()
 
+# Theora video (UI10 media)
+if(TARGET fuse_ui_video)
+    fuse_ui_test(fuse_ui_theora_video test_theora_video.cpp)
+    target_link_libraries(fuse_ui_theora_video PRIVATE fuse_ui_video fuse_ui_theoraenc)
+endif()
+
 # UI8 designer prototype
 if(TARGET fuse_ui_designer_lib)
     fuse_ui_test(fuse_ui_designer_roundtrip test_designer.cpp)

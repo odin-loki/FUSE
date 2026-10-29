@@ -141,6 +141,12 @@ if(FUSE_BUILD_UI_DOC AND FUSE_BUILD_UI_WIDGETS)
 endif()
 
 # ---- fuse_ui_script: Lua bindings (vendored Lua 5.2, the fuse_script backend) ----
+# fuse_ui_video: Theora decode for the video widget (vendored libtheora 1.2.0 + libogg 1.3.6, BSD-3-Clause)
+option(FUSE_BUILD_UI_THEORA "Build fuse_ui_video (Theora .ogv decode for the video widget)" ON)
+if(FUSE_BUILD_UI_THEORA AND FUSE_BUILD_UI_WIDGETS)
+    add_subdirectory(Video)
+endif()
+
 # fuse_ui_designer (UI8 prototype): DesignDocument model + Designer UI over fuse_ui_doc
 if(FUSE_BUILD_UI_DESIGNER AND FUSE_BUILD_UI_WIDGETS AND FUSE_BUILD_UI_DOC)
     add_library(fuse_ui_designer_lib STATIC Designer/src/designer.cpp)
