@@ -1,5 +1,8 @@
 // UI9: the FUSE UI editor shell (see editor_shell.hpp).
 #include "fuse/editor/fui/editor_shell.hpp"
+#include "editor_shell_panels.hpp"
+
+#include <chrono>
 
 #include <fuse/editor/editor_theme_tokens.hpp>
 
@@ -26,15 +29,15 @@ namespace {
 
 constexpr ShellPanel kPanels[] = {
     {"dock.hierarchy", "Hierarchy", DockSide::Left, true},
-    {"dock.project_hub", "Project Hub", DockSide::Left, false},
-    {"dock.asset_browser", "Asset Browser", DockSide::Left, false},
+    {"dock.project_hub", "Project Hub", DockSide::Left, true},
+    {"dock.asset_browser", "Asset Browser", DockSide::Left, true},
     {"dock.inspector", "Inspector", DockSide::Right, true},
-    {"dock.material_editor", "Material Editor", DockSide::Right, false},
-    {"dock.sdf_sculpt", "SDF Sculpt", DockSide::Right, false},
+    {"dock.material_editor", "Material Editor", DockSide::Right, true},
+    {"dock.sdf_sculpt", "SDF Sculpt", DockSide::Right, true},
     {"dock.console", "Console", DockSide::Bottom, true},
-    {"dock.profiler", "Profiler", DockSide::Bottom, false},
-    {"dock.sequencer", "Sequencer", DockSide::Bottom, false},
-    {"dock.timeline", "Timeline", DockSide::Bottom, false},
+    {"dock.profiler", "Profiler", DockSide::Bottom, true},
+    {"dock.sequencer", "Sequencer", DockSide::Bottom, true},
+    {"dock.timeline", "Timeline", DockSide::Bottom, true},
 };
 constexpr const char* kSideDockIds[3] = {"dock.left", "dock.right", "dock.bottom"};
 constexpr const char* kSideTabIds[3] = {"tabs.left", "tabs.right", "tabs.bottom"};
@@ -166,6 +169,8 @@ EditorShellWindow::EditorShellWindow(fuse::app::AppWindow& window, EditorControl
     m_ui.setCss(m_ui.root(), "gap", "0px");
     m_image.resize(640, 360, fuse::ui::packPremultiplied(tokenColor("ChildBg")));
     m_imageIndex = m_win.addImage(&m_image);
+    m_models = std::make_unique<EditorPanels>(m_c);
+    m_pages = std::make_unique<ShellPanelPages>(*this, *m_models);
     build_();
     m_c.setShellActionHook(
         [](void* user, ActionId id) {
@@ -182,7 +187,7 @@ EditorShellWindow::EditorShellWindow(fuse::app::AppWindow& window, EditorControl
     m_c.refresh();
     sync();
     // poll the controller (game thread ticks, console output); sync() touches widgets only on change
-    m_ui.startTimer(1.f / 30.f, true, [this](UiContext&) { sync(); });
+    m_ui.startTimer(1.f / 30.f, true, [this](UiContext&) { frame(); });
 }
 
 EditorShellWindow::~EditorShellWindow() = default;
@@ -212,14 +217,28 @@ bool EditorShellWindow::showPanel(std::string_view panelId) {
     return false;
 }
 
+bool EditorShellWindow::panelVisible(std::string_view panelId) const {
+    for (u32 s = 0; s < 3; ++s) {
+        u32 tab = 0;
+        for (const ShellPanel& p : kPanels) {
+            if (sideIndex(p.side) != s) continue;
+            if (std::string_view(p.id).substr(5) == panelId || panelId == p.id)
+                return m_ui.alive(m_tabs[s]) && u32(m_ui.value(w::tabWidgetBar(m_ui, m_tabs[s]))) == tab;
+            ++tab;
+        }
+    }
+    return false;
+}
+
 void EditorShellWindow::resetLayout() {
     for (u32 s = 0; s < 3; ++s) {
         w::dockTo(m_ui, m_docks[s], kSides[s]);
         m_ui.setValue(w::tabWidgetBar(m_ui, m_tabs[s]), 0.f, true);
     }
-    m_ui.setCss(w::dockRegion(m_ui, m_dockArea, DockSide::Left), "width", "260px");
-    m_ui.setCss(w::dockRegion(m_ui, m_dockArea, DockSide::Right), "width", "320px");
-    m_ui.setCss(w::dockRegion(m_ui, m_dockArea, DockSide::Bottom), "height", "200px");
+    // dock regions are splitter panes sized by flex-basis (a splitter drag rewrites the basis; width is ignored)
+    m_ui.setCss(w::dockRegion(m_ui, m_dockArea, DockSide::Left), "flex-basis", "260px");
+    m_ui.setCss(w::dockRegion(m_ui, m_dockArea, DockSide::Right), "flex-basis", "320px");
+    m_ui.setCss(w::dockRegion(m_ui, m_dockArea, DockSide::Bottom), "flex-basis", "200px");
 }
 
 void EditorShellWindow::build_() {
@@ -255,7 +274,7 @@ void EditorShellWindow::build_() {
             if (std::string_view(p.id) == "dock.hierarchy") buildHierarchy_(page);
             else if (std::string_view(p.id) == "dock.inspector") buildInspector_(page);
             else if (std::string_view(p.id) == "dock.console") buildConsole_(page);
-            else buildPlaceholder_(page, p);
+            else if (!m_pages->build(std::string_view(p.id).substr(5), page)) buildPlaceholder_(page, p);
         }
     }
     // centre: viewport + info strip
@@ -596,6 +615,15 @@ void EditorShellWindow::viewportInput_() {
     using PE = ViewportPointerEvent;
     auto button = [&] { return in.button == fuse::ui::MouseButton::Right ? PE::Button::Right
                               : in.button == fuse::ui::MouseButton::Middle ? PE::Button::Middle : PE::Button::Left; };
+    // SDF Sculpt mode: left-button strokes go to the brush (one "Sculpt stroke" undo step per drag)
+    if (in.type == EventType::PointerDown || in.type == EventType::PointerMove || in.type == EventType::PointerUp) {
+        const PE::Kind kind = in.type == EventType::PointerDown ? PE::Kind::Down : in.type == EventType::PointerMove ? PE::Kind::Move : PE::Kind::Up;
+        if (m_models->sculptPointer({kind, button(), in.pos.x, in.pos.y})) {
+            if (in.type == EventType::PointerDown) m_ui.setFocus(m_viewport, fuse::ui::FocusReason::Pointer);
+            sync();
+            return;
+        }
+    }
     switch (in.type) {
     case EventType::PointerDown:
         m_ui.setFocus(m_viewport, fuse::ui::FocusReason::Pointer);
@@ -759,8 +787,15 @@ bool EditorShellWindow::rootEvent(const Event& e, NodeHandle target) {
     return false;
 }
 
+void EditorShellWindow::frame() {
+    m_frameTick = true;
+    sync();
+    m_frameTick = false;
+}
+
 // ---- sync -----------------------------------------------------------------------------------------------------------
 bool EditorShellWindow::sync() {
+    const auto t0 = std::chrono::steady_clock::now();
     ++m_syncs;
     if (m_keysHeld || m_c.viewportFlying()) {
         m_keysHeld = m_c.viewportTick(1.f / 30.f) || m_c.viewportFlying();
@@ -778,7 +813,9 @@ bool EditorShellWindow::sync() {
         syncInspector_();
     }
     if (console) syncConsole_();
+    m_pages->sync(m_lastSyncMs, m_frameTick);
     renderViewport_();
+    m_lastSyncMs = f32(std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - t0).count());
     return changed || console;
 }
 

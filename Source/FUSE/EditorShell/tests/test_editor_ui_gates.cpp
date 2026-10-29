@@ -14,6 +14,8 @@
 #include <filesystem>
 #include <functional>
 #include <map>
+#include <thread>
+#include <algorithm>
 
 using namespace fuse::editor;
 using fuse::u32;
@@ -44,7 +46,7 @@ struct Rig {
     void frames(int n = 1) {
         for (int i = 0; i < n; ++i) {
             c.tick();
-            shell.sync();
+            shell.frame();
             app.step(0.f);
         }
     }
@@ -104,6 +106,7 @@ void gateLayout(Rig& r) {
     r.frames();
     std::printf("layout: viewport w %.1f -> %.1f after reset; right %.0f,%.0f %.0fx%.0f\n", vp.w, r.rect("viewport").w, r.rect("dock.right").x, r.rect("dock.right").y, r.rect("dock.right").w, r.rect("dock.right").h);
     CHECK(std::fabs(r.rect("viewport").w - vp.w) < 2.f);
+    CHECK(std::fabs(r.rect("dock.right").w - 320.f) < 4.f && std::fabs(r.rect("dock.left").w - 260.f) < 4.f);
     CHECK(r.rect("dock.hierarchy").h > 50 && r.rect("dock.console").h > 30);
 }
 
@@ -346,6 +349,201 @@ void gateFileMenu(Rig& r) {
 }
 } // namespace
 
+// ---- UI9 panels (twins of the Qt panel gates) -------------------------------------------------------------------------
+std::filesystem::path scratchDir(const char* tag) {
+    const auto d = std::filesystem::temp_directory_path() / (std::string("fuse_editor_ui_") + tag);
+    std::error_code ec;
+    std::filesystem::remove_all(d, ec);
+    std::filesystem::create_directories(d, ec);
+    return d;
+}
+void setField(Rig& r, std::string_view id, std::string_view text) {
+    const NodeHandle n = r.ui().find(id);
+    r.ui().setFocus(n);
+    r.ui().keyDown(Key::A, fuse::ui::kModCtrl);
+    r.ui().textInput(text);
+    r.frames();
+}
+
+void gateProjectHub(Rig& r) {
+    CHECK(r.shell.showPanel("dock.project_hub"));
+    const auto root = scratchDir("hub");
+    r.shell.panels().setProjectsRoot(root.string());
+    r.frames();
+    CHECK(r.ui().text(r.ui().find("hub.current")) == "No project open");
+    setField(r, "hub.name", "GateWorld");
+    r.clickId("hub.new");
+    r.frames(2);
+    CHECK(std::filesystem::exists(root / "GateWorld" / "project.json"));
+    CHECK(r.ui().text(r.ui().find("hub.list")).find("GateWorld") != std::string_view::npos);
+    CHECK(r.ui().text(r.ui().find("hub.current")).find("GateWorld") != std::string_view::npos);
+    CHECK(r.ui().value(r.ui().find("hub.list")) == 0.f);
+    std::printf("project_hub: %s\n", std::string(r.ui().text(r.ui().find("hub.current"))).c_str());
+}
+
+void gateAssetBrowser(Rig& r) {
+    CHECK(r.shell.showPanel("dock.asset_browser"));
+    const auto root = scratchDir("assets");
+    std::filesystem::create_directories(root / "props");
+    for (const char* f : {"props/rock.fscene", "props/tree.png", "level.fscene", "notes.txt"}) std::fclose(std::fopen((root / f).string().c_str(), "w"));
+    r.shell.panels().setProjectsRoot(root.string());
+    r.frames(2);
+    const NodeHandle list = r.ui().find("assets.list");
+    std::string text(r.ui().text(list));
+    CHECK(text.find("props") != std::string::npos && text.find("level.fscene") != std::string::npos);
+    setField(r, "assets.filter", "level");
+    text = r.ui().text(list);
+    CHECK(text.find("level.fscene") != std::string::npos && text.find("notes") == std::string::npos);
+    setField(r, "assets.filter", "");
+    // enter the folder: select its row, Open
+    text = r.ui().text(list);
+    i32 row = 0;
+    for (std::size_t i = 0, l = 0; i < text.size(); ++i) {
+        if (text.compare(i, 5, "[dir]") == 0 && (i == 0 || text[i - 1] == '\n')) { row = i32(l); break; }
+        if (text[i] == '\n') ++l;
+    }
+    r.ui().setValue(list, float(row));
+    r.clickId("assets.open");
+    r.frames();
+    text = r.ui().text(list);
+    CHECK(text.find("rock.fscene") != std::string::npos && text.find("level.fscene") == std::string::npos);
+    CHECK(r.ui().text(r.ui().find("assets.path")).find("props") != std::string_view::npos);
+    r.clickId("assets.up");
+    CHECK(std::string(r.ui().text(list)).find("level.fscene") != std::string::npos);
+    std::printf("asset_browser: %s\n", std::string(r.ui().text(r.ui().find("assets.info"))).c_str());
+}
+
+void gateMaterialEditor(Rig& r) {
+    CHECK(r.shell.showPanel("dock.material_editor"));
+    r.c.runEntityAction(ContextMenuAction::CreateSdfSphere);
+    r.frames(2);
+    const NodeHandle list = r.ui().find("material.list");
+    const std::size_t before = std::count(r.ui().text(list).begin(), r.ui().text(list).end(), '\n');
+    r.clickId("material.new");
+    CHECK(std::size_t(std::count(r.ui().text(list).begin(), r.ui().text(list).end(), '\n')) == before + 1);
+    const u32 mat = u32(r.ui().value(list));
+    r.ui().setValue(r.ui().find("material.roughness"), 0.9f, true);
+    r.ui().setValue(r.ui().find("material.metallic"), 1.f, true);
+    r.ui().setValue(r.ui().find("material.shader"), 2.f, true);
+    r.frames();
+    MaterialView mv = r.shell.panels().materials();
+    CHECK(std::fabs(mv.state.roughness - 0.9f) < 1e-3f && mv.state.metallic > 0.99f && mv.shader == 2u);
+    // preview sphere drawn (centre pixel differs from the corner)
+    const fuse::ui::Image& img = r.win.image();
+    const Rect pv = r.rect("material.preview");
+    CHECK(pv.w >= 95.f && img.at(int(pv.x + pv.w * .5f), int(pv.y + pv.h * .5f)) != img.at(int(pv.x + 1), int(pv.y + 1)));
+    r.clickId("material.assign");
+    mv = r.shell.panels().materials();
+    CHECK(mv.selectionHasMaterial && mv.selectionMaterial == mat);
+    r.clickId("tool.edit.undo");
+    CHECK(!r.shell.panels().materials().selectionHasMaterial || r.shell.panels().materials().selectionMaterial != mat);
+    r.clickId("tool.edit.redo");
+    std::printf("material_editor: %s\n", r.shell.panels().materials().summary.c_str());
+}
+
+void gateSdfSculpt(Rig& r) {
+    CHECK(r.shell.showPanel("dock.sdf_sculpt"));
+    r.c.runEntityAction(ContextMenuAction::CreateSdfSphere); // strokes extend the selected SDF object (Qt rule)
+    r.frames(2);
+    const u32 base = r.v().entityCount;
+    r.ui().setValue(r.ui().find("sculpt.radius"), 2.f, true);
+    r.clickId("sculpt.mode");
+    CHECK(r.shell.panels().sculptMode());
+    const Rect vp = r.rect("viewport");
+    Vec2 at{vp.x + vp.w * 0.5f, vp.y + vp.h * 0.65f};
+    r.ui().pointerMove(at);
+    r.ui().pointerDown(at, fuse::ui::MouseButton::Left);
+    for (int i = 0; i < 6; ++i) { at.x += 12.f; r.ui().pointerMove(at); }
+    r.ui().pointerUp(at, fuse::ui::MouseButton::Left);
+    r.frames(2);
+    const SculptView sv = r.shell.panels().sculpt();
+    std::printf("sdf_sculpt: %u strokes, entities %u -> %u, %s\n", sv.strokes, base, r.v().entityCount, sv.summary.c_str());
+    CHECK(sv.strokes >= 1u && r.v().entityCount > base);
+    r.clickId("tool.edit.undo"); // the whole stroke is one step
+    CHECK(r.v().entityCount == base);
+    r.clickId("tool.edit.redo");
+    CHECK(r.v().entityCount > base);
+}
+
+void gateProfiler(Rig& r) {
+    CHECK(r.shell.showPanel("dock.profiler"));
+    r.frames(12);
+    ProfilerView pv = r.shell.panels().profiler();
+    CHECK(pv.frames >= 10u && !pv.history.empty());
+    CHECK(!r.ui().text(r.ui().find("profiler.summary")).empty());
+    r.clickId("profiler.pause");
+    const u32 f = r.shell.panels().profiler().frames;
+    r.frames(5);
+    CHECK(r.shell.panels().profiler().frames == f);
+    r.clickId("profiler.pause");
+    r.clickId("profiler.clear");
+    CHECK(r.shell.panels().profiler().history.size() <= 2u); // clear drops the history (the frame counter keeps counting)
+    r.frames(6);
+    std::printf("profiler: %s\n", r.shell.panels().profiler().summary.c_str());
+    // hidden: no samples (the idle editor stays idle)
+    r.shell.showPanel("dock.console");
+    const u32 g = r.shell.panels().profiler().frames;
+    r.frames(5);
+    CHECK(r.shell.panels().profiler().frames == g);
+    r.shell.showPanel("dock.profiler");
+    r.frames();
+}
+
+void gateTimeline(Rig& r) {
+    CHECK(r.shell.showPanel("dock.timeline"));
+    r.c.runEntityAction(ContextMenuAction::CreateSdfSphere);
+    r.frames(2);
+    r.clickId("timeline.key");
+    TimelineView tv = r.shell.panels().timeline();
+    CHECK(tv.keyCount >= 3u && !tv.lanes.empty());
+    // move the entity, key at 2 s
+    r.ui().setValue(r.ui().find("timeline.time"), 2000.f, true);
+    r.frames();
+    CHECK(r.shell.panels().timeline().playheadMs == 2000);
+    r.clickId("timeline.key");
+    tv = r.shell.panels().timeline();
+    CHECK(tv.keyCount >= 6u);
+    // scrub through the widget ruler
+    const Rect tl = r.rect("timeline.track");
+    r.ui().pointerMove({tl.x + tl.w * 0.5f, tl.y + 6.f});
+    r.ui().pointerDown({tl.x + tl.w * 0.5f, tl.y + 6.f});
+    r.ui().pointerUp({tl.x + tl.w * 0.5f, tl.y + 6.f});
+    r.frames();
+    CHECK(r.shell.panels().timeline().playheadMs != 2000);
+    r.ui().setValue(r.ui().find("timeline.time"), 2000.f, true);
+    r.clickId("timeline.delete_key");
+    CHECK(r.shell.panels().timeline().keyCount < tv.keyCount);
+    r.clickId("tool.edit.undo");
+    CHECK(r.shell.panels().timeline().keyCount == tv.keyCount);
+    r.clickId("timeline.play");
+    CHECK(r.shell.panels().timeline().playing && r.ui().text(r.ui().find("timeline.play")) == "Pause");
+    const i32 p0 = r.shell.panels().timeline().playheadMs;
+    for (int i = 0; i < 4; ++i) { std::this_thread::sleep_for(std::chrono::milliseconds(20)); r.frames(); }
+    CHECK(r.shell.panels().timeline().playheadMs != p0);
+    r.clickId("timeline.play");
+    std::printf("timeline: %s\n", r.shell.panels().timeline().status.c_str());
+}
+
+void gateSequencer(Rig& r) {
+    CHECK(r.shell.showPanel("dock.sequencer"));
+    r.frames();
+    CHECK(r.ui().checked(r.ui().find("sequencer.link")));
+    r.ui().setValue(r.ui().find("sequencer.scrub"), 0.5f, true);
+    r.frames();
+    SequencerView sv = r.shell.panels().sequencer();
+    CHECK(sv.scrubMs == sv.rangeMs / 2 && !r.ui().text(r.ui().find("sequencer.preview")).empty());
+    // linked: the timeline playhead drives the sequencer
+    r.shell.panels().timelineSetPlayhead(1250);
+    r.frames();
+    CHECK(r.shell.panels().sequencer().scrubMs == 1250);
+    r.clickId("sequencer.link");
+    CHECK(!r.shell.panels().sequencer().linked);
+    r.shell.panels().timelineSetPlayhead(3000);
+    r.frames();
+    CHECK(r.shell.panels().sequencer().scrubMs == 1250);
+    std::printf("sequencer: %s\n", std::string(r.ui().text(r.ui().find("sequencer.preview"))).c_str());
+}
+
 int main(int argc, char** argv) {
     std::string gate, out;
     for (int i = 1; i < argc; ++i) {
@@ -360,7 +558,9 @@ int main(int argc, char** argv) {
         {"fuse_api", gateFuseApi},       {"wasd", gateWasd},               {"context_menu", gateContextMenu},
         {"ui_frame", gateUiFrame},       {"idle_frames", gateIdle},        {"e15_console", gateConsole},
         {"e15_transport", gateTransport}, {"e20_inspector", gateInspector}, {"e20_reparent", gateReparent},
-        {"e20_file_menu", gateFileMenu},
+        {"e20_file_menu", gateFileMenu},  {"project_hub", gateProjectHub}, {"asset_browser", gateAssetBrowser},
+        {"material_editor", gateMaterialEditor}, {"sdf_sculpt", gateSdfSculpt}, {"profiler", gateProfiler},
+        {"sequencer", gateSequencer}, {"timeline", gateTimeline},
     };
     if (fonts.count(gate)) gateFont(r, scale);
     else if (gates.count(gate)) gates.at(gate)(r);

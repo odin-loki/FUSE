@@ -209,6 +209,7 @@ public:
     [[nodiscard]] std::mutex& sceneMutexForTests() { return m_mutex; }
 
 private:
+    friend class EditorPanels; // panel models share the scene mutex, host, viewport camera and picker
     void syncUndoJournal_();
     bool maybeSave_();
     void addRecent_(const std::string& path);

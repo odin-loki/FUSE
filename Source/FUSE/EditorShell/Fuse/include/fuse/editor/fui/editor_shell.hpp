@@ -8,6 +8,7 @@
 // right: Inspector | Material Editor | SDF Sculpt, bottom: Console | Profiler | Sequencer | Timeline; FUSE UI docks
 // stack, so each side is one dock holding a tab widget) around a software-rendered viewport / status bar.
 #include <fuse/editor/editor_controller.hpp>
+#include <fuse/editor/editor_panel_models.hpp>
 
 #include "fuse/app/app.hpp"
 
@@ -48,6 +49,8 @@ public:
     /// Pulls the controller state into the widgets (called by a UI timer; idempotent when nothing changed).
     /// Returns true when something was updated.
     bool sync();
+    /// One shell frame (the 30 Hz UI timer): sync() plus per-frame work (profiler sample, timeline playback).
+    void frame();
     /// Restores the default dock layout and tab pages (View > Reset Layout).
     void resetLayout();
     /// Makes `panelId`'s tab current (e.g. "dock.console").
@@ -57,6 +60,10 @@ public:
     [[nodiscard]] EditorController& controller() { return m_c; }
     [[nodiscard]] NodeHandle node(std::string_view id) const;
     [[nodiscard]] NodeHandle panelPage(std::string_view panelId) const;
+    /// True when `panelId` ("profiler" or "dock.profiler") is the current tab of its dock.
+    [[nodiscard]] bool panelVisible(std::string_view panelId) const;
+    /// The Qt-free models behind the seven UI9 panels.
+    [[nodiscard]] EditorPanels& panels() { return *m_models; }
     [[nodiscard]] NodeHandle viewportNode() const { return m_viewport; }
     [[nodiscard]] const fuse::ui::Image& viewportImage() const { return m_image; }
     [[nodiscard]] u32 viewportRenders() const { return m_renders; }
@@ -119,6 +126,10 @@ private:
     u64 m_seenVersion = ~0ull;
     std::string m_menuKey, m_viewportKey;
     bool m_keysHeld = false;
+    f32 m_lastSyncMs = 0.f;
+    bool m_frameTick = false;
+    std::unique_ptr<EditorPanels> m_models;
+    std::unique_ptr<class ShellPanelPages> m_pages;
 };
 
 /// ShellServices on FUSE UI dialogs (file dialog, message boxes). Each call runs a nested Application::step loop until

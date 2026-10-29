@@ -10,6 +10,7 @@ endif()
 add_library(fuse_editor_controller STATIC
     Controller/src/editor_actions.cpp
     Controller/src/editor_controller.cpp
+    Controller/src/editor_panel_models.cpp
 )
 target_include_directories(fuse_editor_controller PUBLIC Controller/include)
 target_link_libraries(fuse_editor_controller PUBLIC fuse_editor_api)
@@ -25,7 +26,7 @@ if(NOT FUSE_EDITOR_SHELL STREQUAL "fuse" OR NOT TARGET fuse_app)
     return()
 endif()
 
-add_library(fuse_editor_fuse STATIC Fuse/src/editor_shell.cpp)
+add_library(fuse_editor_fuse STATIC Fuse/src/editor_shell.cpp Fuse/src/editor_shell_panels.cpp)
 target_include_directories(fuse_editor_fuse PUBLIC Fuse/include)
 target_link_libraries(fuse_editor_fuse PUBLIC fuse_editor_controller fuse_app)
 fuse_apply_cxx23(fuse_editor_fuse)
@@ -42,7 +43,8 @@ add_executable(fuse_editor_ui_gates tests/test_editor_ui_gates.cpp)
 target_link_libraries(fuse_editor_ui_gates PRIVATE fuse_editor_fuse)
 fuse_apply_cxx23(fuse_editor_ui_gates)
 set(FUSE_EDITOR_UI_GATES startup layout theme font_1 font_1_25 font_1_5 font_2 fuse_api wasd context_menu ui_frame
-    idle_frames e15_console e15_transport e20_inspector e20_reparent e20_file_menu)
+    idle_frames e15_console e15_transport e20_inspector e20_reparent e20_file_menu
+    project_hub asset_browser material_editor sdf_sculpt profiler sequencer timeline)
 set(FUSE_EDITOR_UI_SHOTS "${CMAKE_BINARY_DIR}/editor_ui_shots")
 file(MAKE_DIRECTORY "${FUSE_EDITOR_UI_SHOTS}")
 foreach(gate ${FUSE_EDITOR_UI_GATES})
