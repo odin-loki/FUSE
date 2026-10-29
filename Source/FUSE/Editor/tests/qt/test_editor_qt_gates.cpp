@@ -1909,6 +1909,26 @@ int gateEditTools() {
         window.host().editorState().primarySelection = ecs::EntityID::null();
     }
     action("fuseActionFrameSelected")->trigger();  // nothing selected: no crash, camera unchanged
+    // Double-clicking a hierarchy row frames that entity.
+    window.refreshPanels();
+    {
+        QTreeWidgetItem* row = window.hierarchy()->itemFor(far);
+        expect(row != nullptr, "hierarchy row for the far entity");
+        if (row != nullptr) {
+            {
+                std::lock_guard<std::mutex> lock(window.sceneMutex());
+                vp->panel().camera().positionX = 0.f;
+                vp->panel().camera().positionY = 2.f;
+                vp->panel().camera().positionZ = 0.f;
+            }
+            emit window.hierarchy()->tree()->itemDoubleClicked(row, 0);
+            std::lock_guard<std::mutex> lock(window.sceneMutex());
+            const auto& cam = vp->panel().camera();
+            const f32 d = std::hypot(cam.positionX - 140.f, cam.positionY - 25.f, cam.positionZ + 90.f);
+            expect(d < 20.f && window.host().editorState().primarySelection == far,
+                   fmt("double-clicking a hierarchy row selects and frames it (%.2f m)", d));
+        }
+    }
 
     // Group Selection (Ctrl+G).
     expect(action("fuseActionGroup") != nullptr, "Entity > Group Selection exists");

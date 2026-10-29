@@ -100,6 +100,8 @@ public:
 signals:
     void sceneEdited();
     void selectionChanged();
+    /// A row was double-clicked (the main window frames that entity in the viewport).
+    void entityActivated(ecs::EntityID id);
 
 private:
     void onItemSelectionChanged();

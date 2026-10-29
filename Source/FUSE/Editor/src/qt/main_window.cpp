@@ -97,6 +97,17 @@ MainWindow::MainWindow(const QString& samplesRoot, const Options& options, QWidg
     connect(m_viewport, &ViewportPlaceholderWidget::sceneEdited, this, &MainWindow::refreshPanels);
     connect(m_viewport, &ViewportPlaceholderWidget::selectionChanged, this, &MainWindow::refreshPanels);
     connect(m_hierarchy, &HierarchyWidget::sceneEdited, this, &MainWindow::refreshPanels);
+    connect(m_hierarchy, &HierarchyWidget::entityActivated, this, [this](ecs::EntityID id) {
+        {
+            std::lock_guard<std::mutex> lock(m_sceneMutex);
+            EditorState& st = m_host.editorState();
+            if (std::find(st.selectedEntities.begin(), st.selectedEntities.end(), id) == st.selectedEntities.end()) {
+                st.selectedEntities = {id};
+                st.primarySelection = id;
+            }
+        }
+        if (m_viewport != nullptr) (void)m_viewport->frameSelection();
+    });
     connect(m_hierarchy, &HierarchyWidget::selectionChanged, this, [this]() {
         m_inspector->refresh();
         m_viewport->update();

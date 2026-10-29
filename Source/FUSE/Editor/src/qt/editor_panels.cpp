@@ -162,6 +162,10 @@ HierarchyWidget::HierarchyWidget(EditorHost& host, std::mutex& sceneMutex, QWidg
     connect(m_tree, &QTreeWidget::customContextMenuRequested, this, &HierarchyWidget::onContextMenuRequested);
     connect(m_tree, &HierarchyTreeWidget::rowsDropped, this, &HierarchyWidget::onRowsDropped);
     m_tree->setEditTriggers(QAbstractItemView::EditKeyPressed);
+    connect(m_tree, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem* item, int) {
+        const ecs::EntityID id = itemEntity(item);
+        if (item != nullptr && id.valid()) emit entityActivated(id);
+    });
     connect(m_tree, &QTreeWidget::itemChanged, this, &HierarchyWidget::onItemChanged);
 }
 
