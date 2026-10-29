@@ -174,9 +174,13 @@ void TimelineWidget::applyAtPlayhead_() {
 }
 
 void TimelineWidget::scrubTo(int ms) {
+    const int before = m_host.timeline().playheadMs();
     m_host.timeline().setPlayheadMs(ms);
     applyAtPlayhead_();
     refresh(true);
+    if (m_host.timeline().playheadMs() != before || ms == 0) {
+        emit playheadChanged(m_host.timeline().playheadMs());
+    }
 }
 
 void TimelineWidget::setPlaying(bool on) {

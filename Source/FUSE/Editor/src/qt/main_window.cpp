@@ -196,6 +196,17 @@ void MainWindow::buildDocks() {
     addPanelDock(kProfilerDock, tr("Profiler"), m_profiler);
     addPanelDock(kSequencerDock, tr("Sequencer"), m_sequencer);
     addPanelDock(kTimelineDock, tr("Timeline"), m_timeline);
+    // Sequencer <-> Timeline: one playhead while "Link to Timeline" is on.
+    m_sequencer->setRangeMs(m_host.timeline().durationMs());
+    connect(m_timeline, &TimelineWidget::playheadChanged, m_sequencer, [this](int ms) {
+        m_sequencer->setRangeMs(m_host.timeline().durationMs());
+        m_sequencer->followTimeline(ms);
+    });
+    connect(m_sequencer, &SeqPreviewPaneWidget::scrubbedTo, m_timeline, [this](int ms) {
+        if (m_host.timeline().playheadMs() != ms) {
+            m_timeline->scrubTo(ms);
+        }
+    });
     connect(m_timeline, &TimelineWidget::sceneEdited, this, [this]() {
         refreshPanels();
         updateEditActions();

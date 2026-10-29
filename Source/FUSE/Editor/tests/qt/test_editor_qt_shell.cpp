@@ -25,6 +25,7 @@
 //              non-empty image (the --screenshot path)
 #include "editor_panels.hpp"
 #include "main_window.hpp"
+#include "seq_preview_pane_widget.hpp"
 #include "timeline_widget.hpp"
 #include "viewport_placeholder_widget.hpp"
 
@@ -418,6 +419,24 @@ int gateTimeline(MainWindow& window) {
     }
     expect(!tw->playing() && tw->model().playheadMs() == tw->model().durationMs(), "timeline: Play runs to the end");
     expect(std::fabs(selectedTransform(window).position.x - 8.f) < 1e-3f, "timeline: end of play lands on the last key");
+    // Sequencer <-> Timeline link: one playhead both ways; unlinking stops following.
+    fuse::editor::qt::SeqPreviewPaneWidget* seq = window.sequencer();
+    expect(seq != nullptr && seq->linked(), "sequencer: linked to the timeline by default");
+    if (seq != nullptr) {
+        const fuse::u32 posts0 = seq->scrubPostCount();
+        tw->scrubTo(1500);
+        expect(seq->scrubBarMs() == 1500 && seq->scrubPostCount() > posts0,
+               "sequencer: timeline scrub moves the sequencer playhead and samples the sequence");
+        seq->scrubBar()->setValue(500);
+        expect(tw->model().playheadMs() == 500 && std::fabs(selectedTransform(window).position.x - 2.f) < 1e-3f,
+               "sequencer: sequencer scrub drives the timeline (and the keyed transform)");
+        seq->setLinked(false);
+        tw->scrubTo(1000);
+        expect(seq->scrubBarMs() == 500, "sequencer: unlinked sequencer ignores the timeline");
+        seq->scrubBar()->setValue(250);
+        expect(tw->model().playheadMs() == 1000, "sequencer: unlinked scrub leaves the timeline alone");
+        seq->setLinked(true);
+    }
     const QPixmap shot = tw->grab();
     expect(!shot.isNull(), "timeline: dock grabs");
     return 0;

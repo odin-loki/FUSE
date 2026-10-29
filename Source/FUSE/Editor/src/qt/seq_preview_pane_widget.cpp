@@ -1,12 +1,60 @@
 #include "seq_preview_pane_widget.hpp"
 
+#include <QHBoxLayout>
+#include <QSignalBlocker>
+
 namespace fuse::editor::qt {
 
 SeqPreviewPaneWidget::SeqPreviewPaneWidget(EditorHost& host, QWidget* parent)
     : QWidget(parent), m_host(host), m_seqImport(host) {
     auto* layout = new QVBoxLayout(this);
+    auto* row = new QHBoxLayout();
+    m_linkBox = new QCheckBox(tr("Link to Timeline"), this);
+    m_linkBox->setObjectName(QStringLiteral("fuseSequencerLink"));
+    m_linkBox->setToolTip(tr("Share one playhead with the Timeline dock"));
+    m_linkBox->setChecked(true);
+    m_scrub = new QSlider(Qt::Horizontal, this);
+    m_scrub->setObjectName(QStringLiteral("fuseSequencerScrub"));
+    m_scrub->setRange(0, 5000);
+    m_scrub->setSingleStep(10);
+    m_scrub->setPageStep(250);
+    row->addWidget(m_linkBox);
+    row->addWidget(m_scrub, 1);
+    layout->addLayout(row);
     m_previewLabel = new QLabel("Seq preview: (not scrubbed)", this);
     layout->addWidget(m_previewLabel);
+    layout->addStretch(1);
+    connect(m_scrub, &QSlider::valueChanged, this, [this](int ms) {
+        scrubToMs(ms);
+        if (!m_following && linked()) {
+            emit scrubbedTo(ms);
+        }
+    });
+}
+
+void SeqPreviewPaneWidget::setLinked(bool on) {
+    m_linkBox->setChecked(on);
+}
+
+void SeqPreviewPaneWidget::setRangeMs(int durationMs) {
+    const QSignalBlocker block(m_scrub);
+    m_scrub->setRange(0, durationMs > 0 ? durationMs : 1);
+}
+
+void SeqPreviewPaneWidget::followTimeline(int ms) {
+    if (!linked()) {
+        return;
+    }
+    m_following = true;
+    if (ms > m_scrub->maximum()) {
+        setRangeMs(ms);
+    }
+    if (m_scrub->value() == ms) {
+        scrubToMs(ms);
+    } else {
+        m_scrub->setValue(ms); // valueChanged -> scrubToMs; m_following suppresses the echo
+    }
+    m_following = false;
 }
 
 void SeqPreviewPaneWidget::wireEmbeddedOutpostIntro(fuse::cinematics::TimelineMs initialTimeMs) {

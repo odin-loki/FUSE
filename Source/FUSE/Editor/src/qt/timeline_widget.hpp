@@ -51,6 +51,8 @@ public:
 
 signals:
     void sceneEdited();
+    /// Playhead moved (scrub, play tick, time field): drives a linked Sequencer.
+    void playheadChanged(int ms);
 
 private:
     friend class TimelineCanvas;
