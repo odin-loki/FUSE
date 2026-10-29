@@ -61,6 +61,9 @@ private:
 struct Image {
     int width = 0, height = 0;
     std::vector<u32> pixels;
+    /// >= 0: on the GPU (fuse_ui_vk) path the image is the external texture bound to this slot
+    /// (UiVkRenderer::setExternalImage) and `pixels` are only the CPU rasteriser's fallback / screenshot copy.
+    int externalSlot = -1;
     void resize(int w, int h, u32 clear = 0) {
         width = w;
         height = h;
@@ -84,6 +87,9 @@ public:
     u32 addImage(const Image* img);
     /// Rasterises `list` over `target` (blending onto existing pixels) restricted to `scissor` (whole target when empty).
     void render(const DrawList& list, Image& target, Rect scissor = {}) const;
+    /// The registered images, by index (what packDrawList needs for the GPU path).
+    const Image* const* images() const { return m_images.data(); }
+    u32 imageCount() const { return u32(m_images.size()); }
 
 private:
     const u8* m_atlas = nullptr;

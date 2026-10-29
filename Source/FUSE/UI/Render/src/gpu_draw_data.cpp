@@ -37,6 +37,13 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         out.images[i * 4 + 0] = u32(out.images.size());
         out.images[i * 4 + 1] = img ? u32(img->width) : 1u;
         out.images[i * 4 + 2] = img ? u32(img->height) : 1u;
+        // external GPU texture: the kernel samples the bound slot; the CPU pixels stay the rasteriser's fallback
+        const bool ext = img && img->externalSlot >= 0 && img->externalSlot < 4;
+        out.images[i * 4 + 3] = ext ? u32(img->externalSlot) + 1u : 0u;
+        if (ext) {
+            out.images.push_back(0u);
+            continue;
+        }
         if (img && !img->pixels.empty()) out.images.insert(out.images.end(), img->pixels.begin(), img->pixels.end());
         else out.images.push_back(0u);
     }

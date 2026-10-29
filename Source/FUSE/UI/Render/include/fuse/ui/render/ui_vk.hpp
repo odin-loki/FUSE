@@ -25,6 +25,8 @@ struct UiVkDesc {
 class UiVkRenderer {
 public:
     static constexpr u32 kMaxSlots = 4;
+    /// External texture slots (fuse::ui::Image::externalSlot 0..3).
+    static constexpr u32 kMaxExternal = 4;
 
     UiVkRenderer() = default;
     ~UiVkRenderer() { destroy(); }
@@ -41,6 +43,14 @@ public:
     /// Records descriptor update + bind + dispatch for the last upload into `slot`. `targetView`: VkImageView of an
     /// RGBA8 storage image in GENERAL layout, at least data.push.extent in size.
     void record(void* commandBuffer, void* targetView, u32 slot);
+
+    /// Binds a sampled RGBA image (VkImageView, any colour format the device can sample) to external slot `ext`; it
+    /// must be in VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL when the recorded dispatch executes, and outlive it. Null
+    /// unbinds (a 1x1 dummy). Takes effect at the next record(); kImage commands whose Image has externalSlot == ext
+    /// sample it (nearest, scaled over the command rect) instead of the packed CPU pixels: the zero-copy path for
+    /// engine frames (the editor's 3D viewport).
+    void setExternalImage(u32 ext, void* view);
+    void* externalImage(u32 ext) const { return ext < kMaxExternal ? m_external[ext] : nullptr; }
 
     /// True when the kernel SPIR-V was compiled into this build.
     static bool kernelAvailable();
@@ -60,6 +70,12 @@ private:
     void* m_pipeline = nullptr;
     void* m_pool = nullptr;
     Slot m_slots[kMaxSlots]{};
+    void* m_external[kMaxExternal]{}; ///< VkImageView per external slot (null: dummy)
+    void* m_sampler = nullptr;        ///< nearest, clamp
+    void* m_dummy = nullptr;          ///< 1x1 VkImage bound to unused external slots
+    void* m_dummyMem = nullptr;
+    void* m_dummyView = nullptr;
+    bool m_dummyReady = false;        ///< layout transitioned (first record)
 };
 
 } // namespace fuse::ui::render
