@@ -137,6 +137,10 @@ public:
     void enterPlayViewportCamera(fuse::ecs::Registry& registry);
     /// Restore the camera snapshot from `enterPlayViewportCamera` (no-op when none).
     void exitPlayViewportCamera();
+    /// When false (default) Play keeps the current editor view, so what was visible stays visible.
+    /// When true Play jumps to the first active spawn point (lifted to eye height).
+    void setPlayFromSpawn(bool enabled) { m_playFromSpawn = enabled; }
+    bool playFromSpawn() const { return m_playFromSpawn; }
 
     RuntimeEmbedSession& embedSession() { return m_embedSession; }
     const RuntimeEmbedSession& embedSession() const { return m_embedSession; }
@@ -202,6 +206,7 @@ private:
     std::unordered_map<u64, TerrainBuilt> m_terrainBuilt;
     u32 m_terrainBuilds = 0;
     ViewportCamera m_playViewportCameraSnapshot{};
+    bool m_playFromSpawn = false;
 
 #if defined(FUSE_VULKAN_BACKEND)
     void* m_headlessGpuStub = nullptr;

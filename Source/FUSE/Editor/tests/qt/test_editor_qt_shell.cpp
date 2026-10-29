@@ -181,8 +181,17 @@ int gatePlay(MainWindow& window) {
     QAction* stop = window.transportAction(CommandKind::StopPlay);
     tick(window);
     expect(play->isEnabled() && !stop->isEnabled(), "play: stopped state");
+    const fuse::editor::ViewportCamera camBefore = window.host().runtimeViewport().panel().camera();
     play->trigger();
     tick(window, 3);
+    {
+        const fuse::editor::ViewportCamera& c = window.host().runtimeViewport().panel().camera();
+        expect(c.positionX == camBefore.positionX && c.positionY == camBefore.positionY &&
+                   c.positionZ == camBefore.positionZ && c.yaw == camBefore.yaw && c.pitch == camBefore.pitch,
+               "play: PIE keeps the editor view by default (spawned objects stay visible)");
+        expect(window.findChild<QAction*>(QStringLiteral("fuseActionPlayFromSpawn")) != nullptr,
+               "play: Play from Spawn Point toggle exists");
+    }
     expect(window.host().editorState().playing && !play->isEnabled() && stop->isEnabled(), "play: Play enters PIE");
     stop->trigger();
     tick(window, 2);

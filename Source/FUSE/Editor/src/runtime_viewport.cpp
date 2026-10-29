@@ -1363,9 +1363,10 @@ void RuntimeViewportHook::tick(EditorHost& host, f32 dt) {
 
 void RuntimeViewportHook::enterPlayViewportCamera(fuse::ecs::Registry& registry) {
     f32 spawn[3] = {};
-    if (!fuse::ecs::findFirstActiveSpawnWorldPosition(registry, spawn)) {
+    if (!m_playFromSpawn || !fuse::ecs::findFirstActiveSpawnWorldPosition(registry, spawn)) {
         return;
     }
+    spawn[1] += 1.7f; // eye height: a ground-level spawn otherwise puts the camera inside the floor
     if (!m_playViewportCameraSaved) {
         m_playViewportCameraSnapshot = m_panel.camera();
         m_playViewportCameraSaved = true;

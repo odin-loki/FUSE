@@ -670,6 +670,11 @@ void MainWindow::buildMenus() {
     m_actMaximizeOnPlay->setObjectName(QStringLiteral("fuseActionMaximizeOnPlay"));
     m_actMaximizeOnPlay->setCheckable(true);
     m_actMaximizeOnPlay->setToolTip(tr("Hide the docks while playing; Stop restores the layout"));
+    QAction* fromSpawn = play->addAction(tr("Play from &Spawn Point"));
+    fromSpawn->setObjectName(QStringLiteral("fuseActionPlayFromSpawn"));
+    fromSpawn->setCheckable(true);
+    fromSpawn->setToolTip(tr("Start Play at the first spawn point instead of the current editor view"));
+    connect(fromSpawn, &QAction::toggled, this, [this](bool on) { m_host.runtimeViewport().setPlayFromSpawn(on); });
 }
 
 void MainWindow::setViewportLayout(int layout) {
