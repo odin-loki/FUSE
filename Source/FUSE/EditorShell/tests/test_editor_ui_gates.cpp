@@ -186,24 +186,62 @@ void gateWasd(Rig& r) {
     CHECK(!r.sv.asked.empty());
 }
 
-void gateContextMenu(Rig& r) {
-    const u32 base = r.v().entityCount;
-    const Rect vp = r.ui().rect(r.ui().find("viewport"));
-    const Vec2 at{vp.x + vp.w * 0.5f, vp.y + vp.h * 0.5f};
+// Opens the viewport context menu at `at` and checks the panel matches EntityContextMenu::place (Qt QMenu::popup
+// rules: top-left at the click, flip left / up at the right / bottom window edge, clamp) in window logical px.
+static ContextMenuPlacement openMenuAt(Rig& r, Vec2 at, bool expectFlipY) {
     r.ui().pointerMove(at);
     r.ui().pointerDown(at, fuse::ui::MouseButton::Right);
     r.ui().pointerUp(at, fuse::ui::MouseButton::Right);
     r.frames();
     CHECK(r.c.contextMenuOpen());
+    int popups = 0;
+    for (NodeHandle n = r.ui().firstChild(r.ui().parent(r.ui().find("viewport.context"))); r.ui().alive(n); n = r.ui().nextSibling(n))
+        popups += r.ui().idOf(n) == "viewport.context";
+    CHECK(popups == 1);
     const NodeHandle menu = r.ui().find("viewport.context");
     CHECK(r.ui().alive(menu));
+    const NodeHandle panel = r.ui().firstChild(menu);
+    const Rect mr = r.ui().rect(panel);
+    const fuse::ui::Size win = r.ui().viewport();
+    ContextMenuHostGeometry host;
+    host.windowWidth = win.w;
+    host.windowHeight = win.h;
+    const ContextMenuPlacement want = EntityContextMenu::place(host, at.x, at.y, mr.w, mr.h);
+    const ContextMenuPlacement& got = r.shell.contextMenuPlacement();
+    std::printf("context menu at (%.1f,%.1f): panel %.1f,%.1f %.1fx%.1f, Qt place %.1f,%.1f flip %d/%d\n", at.x, at.y, mr.x, mr.y,
+                mr.w, mr.h, want.x, want.y, int(want.flippedX), int(want.flippedY));
+    CHECK(std::fabs(got.clickX - at.x) < 0.5f && std::fabs(got.clickY - at.y) < 0.5f);
+    CHECK(std::fabs(mr.x - want.x) <= 1.f && std::fabs(mr.y - want.y) <= 1.f);
+    CHECK(mr.x >= 0.f && mr.y >= 0.f && mr.x + mr.w <= win.w + 1.f && mr.y + mr.h <= win.h + 1.f);
+    CHECK(want.flippedY == (at.y + mr.h > win.h));
+    if (expectFlipY) CHECK(want.flippedY);
+    CHECK(want.flippedX == (at.x + mr.w > win.w));
+    if (want.flippedX) CHECK(mr.x + mr.w <= at.x + 1.f); else CHECK(std::fabs(mr.x - at.x) <= 1.f);
+    if (want.flippedY) CHECK(mr.y + mr.h <= at.y + 1.f); else CHECK(std::fabs(mr.y - at.y) <= 1.f);
+    return want;
+}
+
+void gateContextMenuAt(Rig& r, bool dpr15) {
+    const u32 base = r.v().entityCount;
+    Rect vp = r.ui().rect(r.ui().find("viewport"));
+    // centre: opens down-right at the click
+    openMenuAt(r, {vp.x + vp.w * 0.5f, vp.y + vp.h * 0.5f}, false);
     r.app.step(0.f);
     // first item: Create Empty (keyboard focus starts on it)
     r.ui().keyDown(Key::Enter);
     r.ui().keyUp(Key::Enter);
     r.frames(2);
     CHECK(r.v().entityCount == base + 1);
+    // a compact window: at the viewport's bottom-right corner the menu flips up (and left when it would overflow the
+    // right window edge), Qt QMenu::popup rules; the DPR 1.5 twin's larger menu flips where the 1.0 one may not
+    r.ui().setViewport({1000.f, 560.f});
+    r.frames(2);
+    vp = r.ui().rect(r.ui().find("viewport"));
+    const Vec2 corner{vp.x + vp.w - 6.f, vp.y + vp.h - 6.f};
+    openMenuAt(r, corner, dpr15);
 }
+void gateContextMenu(Rig& r) { gateContextMenuAt(r, false); }
+void gateContextMenuDpr15(Rig& r) { gateContextMenuAt(r, true); }
 
 void gateUiFrame(Rig& r) {
     // a pointer sweep along the toolbar (hover in / out of each button, 6 px steps): update + damage raster per frame
@@ -960,11 +998,11 @@ int main(int argc, char** argv) {
         else if (!std::strncmp(argv[i], "--out=", 6)) out = argv[i] + 6;
     }
     const std::map<std::string, float> fonts{{"font_1", 1.f}, {"font_1_25", 1.25f}, {"font_1_5", 1.5f}, {"font_2", 2.f}};
-    const float scale = fonts.count(gate) ? fonts.at(gate) : 1.f;
+    const float scale = fonts.count(gate) ? fonts.at(gate) : gate == "context_menu_dpr1_5" ? 1.5f : 1.f;
     Rig r(scale);
     const std::map<std::string, std::function<void(Rig&)>> gates{
         {"startup", gateStartup},        {"layout", gateLayout},           {"theme", gateTheme},
-        {"fuse_api", gateFuseApi},       {"wasd", gateWasd},               {"context_menu", gateContextMenu},
+        {"fuse_api", gateFuseApi},       {"wasd", gateWasd},               {"context_menu", gateContextMenu}, {"context_menu_dpr1_5", gateContextMenuDpr15},
         {"ui_frame", gateUiFrame},       {"idle_frames", gateIdle},        {"e15_console", gateConsole},
         {"e15_transport", gateTransport}, {"e20_inspector", gateInspector}, {"e20_reparent", gateReparent},
         {"e20_file_menu", gateFileMenu}, {"e20_wizard", gateWizard}, {"project_open", gateProjectOpen},  {"project_hub", gateProjectHub}, {"asset_browser", gateAssetBrowser},
@@ -977,7 +1015,7 @@ int main(int argc, char** argv) {
     else if (gates.count(gate)) gates.at(gate)(r);
     else { std::fprintf(stderr, "unknown gate '%s'\n", gate.c_str()); return 2; }
     if (!out.empty() && !g_shotWritten) {
-        if (gate != "e20_file_menu" && gate != "context_menu") r.frames();
+        if (gate != "e20_file_menu" && gate.rfind("context_menu", 0) != 0) r.frames();
         r.win.rasterize({});
         if (!r.win.writePng(out)) { std::fprintf(stderr, "cannot write %s\n", out.c_str()); ++g_fail; }
     }

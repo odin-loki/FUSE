@@ -669,8 +669,10 @@ void EditorShellWindow::viewportInput_() {
         break;
     case EventType::PointerMove: m_c.viewportPointer({PE::Kind::Move, button(), in.pos.x, in.pos.y}); break;
     case EventType::PointerUp: {
+        // one popup per open: the Up reaches this handler once per dispatch phase, and a stale menu must not stack
+        const bool wasOpen = m_c.contextMenuOpen() && m_ui.alive(m_ui.find("viewport.context"));
         m_c.viewportPointer({PE::Kind::Up, button(), in.pos.x, in.pos.y});
-        if (m_c.contextMenuOpen()) {
+        if (m_c.contextMenuOpen() && !wasOpen) {
             std::string items;
             for (const ContextMenuItem& it : m_c.contextMenu().items()) {
                 if (it.separatorBefore && !items.empty()) items += "\n-";
@@ -678,7 +680,23 @@ void EditorShellWindow::viewportInput_() {
             }
             const fuse::ui::Rect r = w::viewportImageRect(m_ui, m_viewport);
             const f32 sx = r.w / std::max(1.f, f32(m_image.width)), sy = r.h / std::max(1.f, f32(m_image.height));
-            const NodeHandle menu = w::popupMenu(m_ui, m_viewport, items, {r.x + in.pos.x * sx, r.y + in.pos.y * sy}, "viewport.context");
+            const fuse::ui::Vec2 at{r.x + in.pos.x * sx, r.y + in.pos.y * sy};
+            const NodeHandle menu = w::popupMenu(m_ui, m_viewport, items, at, "viewport.context");
+            // Qt QMenu::popup placement (EntityContextMenu::place): top-left at the click, flipped left / up when it
+            // would overflow the right / bottom window edge, then clamped (the popup layer alone only shifts)
+            m_ui.update(0.f);
+            if (const NodeHandle panel = m_ui.firstChild(menu); m_ui.alive(panel)) {
+                const fuse::ui::Rect mr = m_ui.rect(panel);
+                ContextMenuHostGeometry host;
+                host.viewportOriginX = r.x;
+                host.viewportOriginY = r.y;
+                host.devicePixelRatio = sx > 0.f ? 1.f / sx : 1.f;
+                host.windowWidth = m_ui.viewport().w;
+                host.windowHeight = m_ui.viewport().h;
+                m_menuPlacement = EntityContextMenu::place(host, at.x, at.y, mr.w, mr.h);
+                m_ui.setCss(panel, "left", std::to_string(m_menuPlacement.x) + "px");
+                m_ui.setCss(panel, "top", std::to_string(m_menuPlacement.y) + "px");
+            }
             m_ui.connect(menu, SignalKind::Submitted, [this](UiContext&, NodeHandle, const SignalArgs& a) {
                 // map the popup line (separators count) back to the item
                 u32 line = 0;

@@ -8,6 +8,7 @@
 // right: Inspector | Material Editor | SDF Sculpt, bottom: Console | Profiler | Sequencer | Timeline; FUSE UI docks
 // stack, so each side is one dock holding a tab widget) around a software-rendered viewport / status bar.
 #include <fuse/editor/editor_controller.hpp>
+#include <fuse/editor/entity_context_menu.hpp>
 #include <fuse/editor/editor_panel_models.hpp>
 #include <fuse/editor/scene_viewport_host.hpp>
 
@@ -60,6 +61,8 @@ public:
     /// File > New Project...: the New Project wizard dialog (name, location, dimension, UI layer, modules; Qt
     /// NewProjectWizard parity). Ids "wizard.*"; Create writes project.json and opens the project.
     void openNewProjectWizard();
+    /// Where the last viewport context menu was placed (Qt placement rules; context_menu gates).
+    [[nodiscard]] const ContextMenuPlacement& contextMenuPlacement() const { return m_menuPlacement; }
     [[nodiscard]] bool newProjectWizardOpen() const { return m_wizard.valid(); }
 
     [[nodiscard]] fuse::app::AppWindow& window() { return m_win; }
@@ -147,6 +150,7 @@ private:
     NodeHandle m_gizmoTools[4]{};
     NodeHandle m_gizmoSpace{}, m_gizmoSnap{};
     NodeHandle m_wizard{};
+    ContextMenuPlacement m_menuPlacement{};
     void closeNewProjectWizard_();
     bool m_spaceShown = false;
     std::string m_overlayKey;
