@@ -132,11 +132,25 @@ bool EditorTimeline::keyTransform(const ecs::Registry& registry, ecs::EntityID e
     for (const char* channel : kTimelineChannels) {
         cinematics::PropertyTrack& track = m_tracks[static_cast<size_t>(ensureTrack(entity.index, channel))];
         auto& keys = track.keyframes();
+        cinematics::PropertyKeyframe key{};
+        key.time_ms = timeMs;
+        auto existing = std::find_if(keys.begin(), keys.end(),
+                                     [&](const cinematics::PropertyKeyframe& k) { return k.time_ms == timeMs; });
+        if (existing != keys.end()) {
+            key = *existing; // re-keying keeps the key's interpolation / tangents
+        } else if (!keys.empty()) {
+            key.interp = keys.back().interp; // new keys follow the lane's current style
+            key.tangent_mode = keys.back().tangent_mode == cinematics::TangentMode::User
+                                   ? cinematics::TangentMode::Auto
+                                   : keys.back().tangent_mode;
+        }
+        key.value = channelValue(*t, channel);
         keys.erase(std::remove_if(keys.begin(), keys.end(),
                                   [&](const cinematics::PropertyKeyframe& k) { return k.time_ms == timeMs; }),
                    keys.end());
-        track.add_keyframe({timeMs, channelValue(*t, channel)});
+        track.add_keyframe(key);
         track.sort_keyframes();
+        track.update_tangents();
     }
     if (timeMs > m_durationMs) {
         m_durationMs = timeMs;
@@ -154,14 +168,16 @@ int EditorTimeline::moveKey(int track, int key, cinematics::TimelineMs timeMs) {
         return -1;
     }
     timeMs = std::clamp<cinematics::TimelineMs>(timeMs, 0, m_durationMs);
-    const f32 value = keys[static_cast<size_t>(key)].value;
+    cinematics::PropertyKeyframe moved = keys[static_cast<size_t>(key)];
+    moved.time_ms = timeMs;
     keys.erase(keys.begin() + key);
     // Landing on another key replaces it.
     keys.erase(std::remove_if(keys.begin(), keys.end(),
                               [&](const cinematics::PropertyKeyframe& k) { return k.time_ms == timeMs; }),
                keys.end());
-    keys.push_back({timeMs, value});
+    keys.push_back(moved);
     m_tracks[static_cast<size_t>(track)].sort_keyframes();
+    m_tracks[static_cast<size_t>(track)].update_tangents();
     touch();
     for (size_t i = 0; i < keys.size(); ++i) {
         if (keys[i].time_ms == timeMs) {
@@ -182,7 +198,45 @@ bool EditorTimeline::deleteKey(int track, int key) {
     keys.erase(keys.begin() + key);
     if (keys.empty()) {
         m_tracks.erase(m_tracks.begin() + track);
+    } else {
+        m_tracks[static_cast<size_t>(track)].update_tangents();
     }
+    touch();
+    return true;
+}
+
+bool EditorTimeline::setKeyInterp(int track, int key, cinematics::KeyInterp interp, cinematics::TangentMode mode) {
+    if (track < 0 || track >= static_cast<int>(m_tracks.size())) {
+        return false;
+    }
+    auto& keys = m_tracks[static_cast<size_t>(track)].keyframes();
+    if (key < 0 || key >= static_cast<int>(keys.size())) {
+        return false;
+    }
+    cinematics::PropertyKeyframe& k = keys[static_cast<size_t>(key)];
+    if (mode == cinematics::TangentMode::User && k.tangent_mode != cinematics::TangentMode::User) {
+        // Switching to user tangents starts from the current effective slopes (no visual jump).
+        m_tracks[static_cast<size_t>(track)].effective_tangents(static_cast<size_t>(key), k.in_tangent, k.out_tangent);
+    }
+    k.interp = interp;
+    k.tangent_mode = mode;
+    m_tracks[static_cast<size_t>(track)].update_tangents();
+    touch();
+    return true;
+}
+
+bool EditorTimeline::setKeyTangents(int track, int key, f32 inSlope, f32 outSlope) {
+    if (track < 0 || track >= static_cast<int>(m_tracks.size())) {
+        return false;
+    }
+    auto& keys = m_tracks[static_cast<size_t>(track)].keyframes();
+    if (key < 0 || key >= static_cast<int>(keys.size())) {
+        return false;
+    }
+    cinematics::PropertyKeyframe& k = keys[static_cast<size_t>(key)];
+    k.tangent_mode = cinematics::TangentMode::User;
+    k.in_tangent = inSlope;
+    k.out_tangent = outSlope;
     touch();
     return true;
 }
@@ -229,11 +283,13 @@ bool EditorTimeline::save(const std::string& path, std::string* error) const {
         }
         return false;
     }
-    out << "FUSEEDTL 1\nduration " << m_durationMs << "\n";
+    out << "FUSEEDTL 2\nduration " << m_durationMs << "\n";
     for (const auto& t : m_tracks) {
         out << "track " << t.target_object_id() << ' ' << t.property_path() << ' ' << t.keyframes().size() << '\n';
         for (const auto& k : t.keyframes()) {
-            out << "key " << k.time_ms << ' ' << k.value << '\n';
+            out << "key " << k.time_ms << ' ' << k.value << ' ' << cinematics::key_interp_name(k.interp) << ' '
+                << cinematics::tangent_mode_name(k.tangent_mode) << ' ' << k.in_tangent << ' ' << k.out_tangent
+                << '\n';
         }
     }
     return static_cast<bool>(out);
@@ -251,9 +307,9 @@ bool EditorTimeline::load(const std::string& path, std::string* error) {
     std::string magic;
     int version = 0;
     in >> magic >> version;
-    if (magic != "FUSEEDTL" || version != 1) {
+    if (magic != "FUSEEDTL" || (version != 1 && version != 2)) {
         if (error != nullptr) {
-            *error = "not a FUSEEDTL 1 file";
+            *error = "not a FUSEEDTL 1/2 file";
         }
         return false;
     }
@@ -271,9 +327,22 @@ bool EditorTimeline::load(const std::string& path, std::string* error) {
             for (size_t i = 0; i < n && in >> word && word == "key"; ++i) {
                 cinematics::PropertyKeyframe k;
                 in >> k.time_ms >> k.value;
+                if (version >= 2) {
+                    std::string interp, mode;
+                    in >> interp >> mode >> k.in_tangent >> k.out_tangent;
+                    if (!cinematics::parse_key_interp(interp, k.interp) ||
+                        !cinematics::parse_tangent_mode(mode, k.tangent_mode)) {
+                        if (error != nullptr) {
+                            *error = "bad key curve '" + interp + " " + mode + "'";
+                        }
+                        clear();
+                        return false;
+                    }
+                }
                 m_tracks[static_cast<size_t>(ti)].add_keyframe(k);
             }
             m_tracks[static_cast<size_t>(ti)].sort_keyframes();
+            m_tracks[static_cast<size_t>(ti)].update_tangents();
         }
     }
     touch();

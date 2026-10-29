@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 
 namespace {
 
@@ -217,6 +218,51 @@ void testTimeline() {
                loaded.tracks()[static_cast<size_t>(loaded.findTrack(e.index, "position.x"))].keyframes()[1].value == 4.f,
            "timeline: round-trip");
     std::filesystem::remove(path);
+
+    // Curves: cubic / constant / user tangents, preserved by retime and the v2 sidecar.
+    before = tl.tracks();
+    expect(tl.setKeyInterp(tx, 0, cinematics::KeyInterp::Constant, cinematics::TangentMode::Auto),
+           "timeline: set constant interpolation");
+    tl.apply(reg, 1000);
+    expect(std::fabs(reg.get<ecs::Transform>(e)->position.x) < 1e-4f, "timeline: constant holds the first key");
+    expect(tl.setKeyInterp(tx, 0, cinematics::KeyInterp::Cubic, cinematics::TangentMode::Flat),
+           "timeline: set cubic flat");
+    tl.setKeyInterp(tx, 1, cinematics::KeyInterp::Cubic, cinematics::TangentMode::Flat); // ease into the end key
+    tl.apply(reg, 1000);
+    expect(std::fabs(reg.get<ecs::Transform>(e)->position.x - 2.f) < 1e-3f, "timeline: flat cubic midpoint");
+    tl.apply(reg, 200);
+    expect(reg.get<ecs::Transform>(e)->position.x < 0.4f * 0.5f, "timeline: flat cubic eases in (below linear)");
+    expect(tl.setKeyTangents(tx, 0, 0.f, 8.f) &&
+               tl.tracks()[static_cast<size_t>(tx)].keyframes()[0].tangent_mode == cinematics::TangentMode::User,
+           "timeline: user tangents");
+    tl.apply(reg, 200);
+    const f32 steep = reg.get<ecs::Transform>(e)->position.x;
+    expect(steep > 0.4f, "timeline: steep user out tangent leads the linear curve");
+    const int moved = tl.moveKey(tx, 0, 100);
+    expect(moved == 0 && tl.tracks()[static_cast<size_t>(tx)].keyframes()[0].interp == cinematics::KeyInterp::Cubic &&
+               tl.tracks()[static_cast<size_t>(tx)].keyframes()[0].out_tangent == 8.f,
+           "timeline: retime keeps interpolation / tangents");
+    tl.moveKey(tx, 0, 0);
+    expect(tl.save(path.string()), "timeline: save v2 sidecar");
+    EditorTimeline curves;
+    expect(curves.load(path.string()), "timeline: load v2 sidecar");
+    const auto& ck = curves.tracks()[static_cast<size_t>(curves.findTrack(e.index, "position.x"))].keyframes()[0];
+    expect(ck.interp == cinematics::KeyInterp::Cubic && ck.tangent_mode == cinematics::TangentMode::User &&
+               ck.out_tangent == 8.f,
+           "timeline: v2 round-trips curves");
+    curves.apply(reg, 200);
+    expect(std::fabs(reg.get<ecs::Transform>(e)->position.x - steep) < 1e-4f, "timeline: loaded curve samples identically");
+    {
+        std::ofstream v1(path);
+        v1 << "FUSEEDTL 1\nduration 1000\ntrack 0 position.x 2\nkey 0 0\nkey 1000 4\n";
+    }
+    EditorTimeline legacy;
+    expect(legacy.load(path.string()) && legacy.keyCount() == 2u &&
+               legacy.tracks()[0].keyframes()[0].interp == cinematics::KeyInterp::Linear,
+           "timeline: v1 sidecar still loads (linear)");
+    std::filesystem::remove(path);
+    tl.tracks() = before;
+    tl.touch();
     before = tl.tracks();
     expect(tl.deleteKey(tx, 0), "timeline: delete key");
     undo.execute(std::make_unique<TimelineEditCommand>(tl, before, tl.tracks(), "Delete key"));

@@ -6,8 +6,11 @@
 #include <QTimer>
 #include <QWidget>
 
+#include <functional>
 #include <mutex>
 
+class QComboBox;
+class QDoubleSpinBox;
 class QLabel;
 class QPushButton;
 class QSpinBox;
@@ -36,6 +39,11 @@ public:
     bool selectKey(int track, int key);
     bool moveSelectedKey(int ms);
     bool deleteSelectedKey();
+    /// Curve editing on the selected key (one undo step each).
+    bool setSelectedKeyInterp(cinematics::KeyInterp interp, cinematics::TangentMode mode);
+    bool setSelectedKeyTangents(float inSlope, float outSlope);
+    /// Sampled value of the selected key's lane (what the curve strip draws).
+    [[nodiscard]] float sampleSelectedTrack(int ms) const;
     [[nodiscard]] int selectedTrack() const { return m_selTrack; }
     [[nodiscard]] int selectedKey() const { return m_selKey; }
     [[nodiscard]] TimelineCanvas* canvas() const { return m_canvas; }
@@ -51,6 +59,8 @@ private:
     void beginKeyDrag_();
     void dragKeyTo_(int ms);
     void endKeyDrag_();
+    bool editSelectedKey_(const char* what, const std::function<bool(EditorTimeline&)>& edit);
+    void syncCurveControls_();
 
     EditorHost& m_host;
     std::mutex& m_sceneMutex;
@@ -61,6 +71,9 @@ private:
     QSpinBox* m_timeSpin = nullptr;
     QSpinBox* m_durationSpin = nullptr;
     QLabel* m_status = nullptr;
+    QComboBox* m_interpCombo = nullptr;
+    QDoubleSpinBox* m_inTangent = nullptr;
+    QDoubleSpinBox* m_outTangent = nullptr;
     QTimer m_playTimer;
     QElapsedTimer m_playClock;
     int m_selTrack = -1;
@@ -78,11 +91,14 @@ public:
     static constexpr int kHeaderWidth = 170;
     static constexpr int kRulerHeight = 22;
     static constexpr int kLaneHeight = 18;
+    /// Curve strip under the lanes: the selected key's lane plotted value-over-time.
+    static constexpr int kCurveHeight = 90;
 
     explicit TimelineCanvas(TimelineWidget& owner);
     [[nodiscard]] int msToX(int ms) const;
     [[nodiscard]] int xToMs(int x) const;
     [[nodiscard]] QPoint keyPos(int track, int key) const;
+    [[nodiscard]] int curveTop() const;
 
 protected:
     void paintEvent(QPaintEvent* event) override;

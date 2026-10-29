@@ -44,6 +44,10 @@ public:
     /// Move key `key` of track `track` to `timeMs` (re-sorts; returns the key's new index or -1).
     int moveKey(int track, int key, cinematics::TimelineMs timeMs);
     bool deleteKey(int track, int key);
+    /// Curve editing: segment interpolation leaving the key and its tangent mode (Auto / Flat / User).
+    bool setKeyInterp(int track, int key, cinematics::KeyInterp interp, cinematics::TangentMode mode);
+    /// Set explicit (possibly broken) slopes in value units per second; switches the key to User tangents.
+    bool setKeyTangents(int track, int key, f32 inSlope, f32 outSlope);
     /// Write sampled channel values into the registry at `timeMs`. Returns entities touched.
     u32 apply(ecs::Registry& registry, cinematics::TimelineMs timeMs) const;
 
@@ -52,7 +56,7 @@ public:
     static std::array<f32, 3> eulerDeg(const ecs::quat& q);
     static ecs::quat fromEulerDeg(f32 x, f32 y, f32 z);
 
-    /// `<scene>.timeline` sidecar ("FUSEEDTL 1"). Missing file → load returns false, timeline cleared.
+    /// `<scene>.timeline` sidecar ("FUSEEDTL 2": keys carry interp / tangent mode / slopes; v1 still loads). Missing file → load returns false, timeline cleared.
     bool save(const std::string& path, std::string* error = nullptr) const;
     bool load(const std::string& path, std::string* error = nullptr);
     static std::string sidecarPath(const std::string& scenePath) { return scenePath + ".timeline"; }

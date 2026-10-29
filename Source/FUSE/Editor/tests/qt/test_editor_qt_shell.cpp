@@ -378,6 +378,37 @@ int gateTimeline(MainWindow& window) {
     expect(tw->deleteSelectedKey() && tw->model().keyCount() == 17u, "timeline: delete a key");
     window.undoLatest();
     expect(tw->model().keyCount() == 18u, "timeline: undo the delete");
+    // Curves: cubic (flat) on the first key eases position.x; the curve strip draws; one undo step.
+    expect(tw->selectKey(lane, 0), "timeline: select the 0 ms key");
+    const std::size_t undoC = window.host().undoStack().undoCount();
+    expect(tw->setSelectedKeyInterp(fuse::cinematics::KeyInterp::Cubic, fuse::cinematics::TangentMode::Flat),
+           "timeline: set cubic (flat) on the key");
+    expect(window.host().undoStack().undoCount() == undoC + 1, "timeline: interpolation change is one undo step");
+    tw->selectKey(lane, 1);
+    tw->setSelectedKeyInterp(fuse::cinematics::KeyInterp::Cubic, fuse::cinematics::TangentMode::Flat);
+    tw->selectKey(lane, 0);
+    tw->scrubTo(200);
+    expect(selectedTransform(window).position.x < 0.8f * 0.5f, "timeline: flat cubic eases in");
+    expect(std::fabs(tw->sampleSelectedTrack(1000) - 4.f) < 1e-3f, "timeline: cubic midpoint is symmetric");
+    expect(tw->setSelectedKeyTangents(0.f, 20.f) &&
+               tw->model().tracks()[static_cast<size_t>(lane)].keyframes()[0].tangent_mode ==
+                   fuse::cinematics::TangentMode::User,
+           "timeline: tangent edit switches to user tangents");
+    expect(tw->sampleSelectedTrack(200) > 0.8f, "timeline: steep out tangent leads the linear curve");
+    const QImage strip = tw->canvas()->grab().toImage();
+    int curvePixels = 0;
+    for (int y = tw->canvas()->curveTop(); y < std::min(strip.height(), tw->canvas()->curveTop() + 80); ++y) {
+        for (int x = 0; x < strip.width(); ++x) {
+            const QColor c = strip.pixelColor(x, y);
+            curvePixels += (c.green() > 180 && c.red() < 170) ? 1 : 0;
+        }
+    }
+    expect(curvePixels > 40, "timeline: curve strip plots the selected lane");
+    window.undoLatest();
+    window.undoLatest();
+    window.undoLatest();
+    expect(tw->model().tracks()[static_cast<size_t>(lane)].keyframes()[0].interp == fuse::cinematics::KeyInterp::Linear,
+           "timeline: undo restores linear");
     tw->scrubTo(0);
     tw->setPlaying(true);
     QElapsedTimer clock;
