@@ -259,14 +259,35 @@ float measureText(const Font& font, std::string_view s, float px, std::vector<Sh
     return defaultShaper().shape(font, px, s, scratch);
 }
 
+ShapeCacheStats shapeCacheStats(const Font& font) {
+    ShapeCacheStats st;
+#if FUSE_TEXT_FULL
+    if (font.m_state) detail::fullCacheStats(font.m_state->full, st.hits, st.misses);
+#else
+    (void)font;
+#endif
+    return st;
+}
+
 void layoutText(const Font& font, const ITextShaper& shaper, std::string_view s, const TextLayoutDesc& desc,
                 TextLayout& out) {
     out.lines.clear();
     out.metrics = font.metrics(desc.pixelSize);
-    shaper.shape(font, desc.pixelSize, s, out.glyphs);
     const float lh = std::ceil(out.metrics.lineHeight());
     const bool wrap = desc.maxWidth > 0.f && !desc.elide;
     auto& g = out.glyphs;
+#if FUSE_TEXT_FULL
+    const bool full = &shaper == fullShaper() && font.m_state && font.m_state->full;
+#else
+    const bool full = false;
+#endif
+    if (full) {
+#if FUSE_TEXT_FULL
+        detail::fullLayout(font.m_state->full, font.unitScale(desc.pixelSize), s, wrap ? desc.maxWidth : 0.f, lh,
+                           out.metrics.ascent, g, out.lines);
+#endif
+    } else {
+    shaper.shape(font, desc.pixelSize, s, out.glyphs);
     const std::uint32_t n = std::uint32_t(g.size());
 
     std::uint32_t lineStart = 0;
@@ -311,8 +332,12 @@ void layoutText(const Font& font, const ITextShaper& shaper, std::string_view s,
         if (c == ' ') lastBreak = i + 1;
     }
     if (lineStart < n || out.lines.empty() || (n > 0 && s[g[n - 1].cluster] == '\n')) emit(lineStart, n, n);
+    }
+    const std::uint32_t n = std::uint32_t(g.size());
+    bool anyRtl = false;
+    for (const auto& ln : out.lines) anyRtl |= ln.rtl;
 
-    if (desc.elide && desc.maxWidth > 0.f && !out.lines.empty() && out.lines[0].width > desc.maxWidth) {
+    if (desc.elide && !anyRtl && desc.maxWidth > 0.f && !out.lines.empty() && out.lines[0].width > desc.maxWidth) {
         // Keep glyphs while they fit with an ellipsis, then append U+2026 (or "...").
         const std::uint32_t ell = font.glyphIndex(0x2026);
         const std::uint32_t dot = font.glyphIndex('.');
@@ -336,8 +361,11 @@ void layoutText(const Font& font, const ITextShaper& shaper, std::string_view s,
     out.width = 0.f;
     for (const auto& ln : out.lines) out.width = std::max(out.width, ln.width);
     const float alignW = desc.maxWidth > 0.f ? desc.maxWidth : out.width;
-    if (desc.align != TextAlign::Start) {
+    if (desc.align != TextAlign::Start || anyRtl) {
         for (const auto& ln : out.lines) {
+            // Start / End follow the paragraph direction: Start is the right edge of an RTL line.
+            const bool toEnd = (desc.align == TextAlign::End) != ln.rtl;
+            if (desc.align != TextAlign::Center && !toEnd) continue;
             const float off = desc.align == TextAlign::Center ? std::floor((alignW - ln.width) * 0.5f) : alignW - ln.width;
             for (std::uint32_t k = ln.firstGlyph; k < ln.firstGlyph + ln.glyphCount; ++k) g[k].x += off;
         }

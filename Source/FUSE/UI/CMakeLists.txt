@@ -35,8 +35,8 @@ target_compile_definitions(fuse_text PRIVATE
     FUSE_TEXT_BUNDLED_FONT="${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf")
 target_compile_features(fuse_text PUBLIC cxx_std_23)
 
-# FULL profile (decision D2): HarfBuzz + FreeType through FetchContent (static, no optional deps). Spike: bidi
-# (SheenBidi) and UAX #14/#29 (libunibreak) are not fetched yet.
+# FULL profile (decision D2): HarfBuzz + FreeType through FetchContent (static, no optional deps), SheenBidi (UAX #9)
+# and libunibreak (UAX #14) fetched and compiled from their C sources.
 if(FUSE_UI_TEXT STREQUAL "FULL")
     include(FetchContent)
     set(FT_DISABLE_ZLIB ON CACHE BOOL "" FORCE)
@@ -58,9 +58,25 @@ if(FUSE_UI_TEXT STREQUAL "FULL")
     set(BUILD_SHARED_LIBS OFF)
     FetchContent_MakeAvailable(fuse_freetype fuse_harfbuzz)
     set(BUILD_SHARED_LIBS ${_fuse_bsl})
+    FetchContent_Declare(fuse_sheenbidi GIT_REPOSITORY https://github.com/Tehreer/SheenBidi.git
+        GIT_TAG v2.7 GIT_SHALLOW TRUE SOURCE_SUBDIR fuse_no_cmake)
+    FetchContent_Declare(fuse_unibreak GIT_REPOSITORY https://github.com/adah1972/libunibreak.git
+        GIT_TAG libunibreak_6_1 GIT_SHALLOW TRUE SOURCE_SUBDIR fuse_no_cmake)
+    # SOURCE_SUBDIR names a directory that does not exist: download only, the C sources are compiled below.
+    FetchContent_MakeAvailable(fuse_sheenbidi fuse_unibreak)
+    enable_language(C)
+    add_library(fuse_sheenbidi STATIC "${fuse_sheenbidi_SOURCE_DIR}/Source/SheenBidi.c")
+    target_compile_definitions(fuse_sheenbidi PRIVATE SB_CONFIG_UNITY)
+    target_include_directories(fuse_sheenbidi SYSTEM PUBLIC "${fuse_sheenbidi_SOURCE_DIR}/Headers")
+    target_include_directories(fuse_sheenbidi PRIVATE "${fuse_sheenbidi_SOURCE_DIR}/Source")
+    set(_ub "${fuse_unibreak_SOURCE_DIR}/src")
+    add_library(fuse_unibreak STATIC ${_ub}/linebreak.c ${_ub}/linebreakdata.c ${_ub}/linebreakdef.c
+        ${_ub}/unibreakbase.c ${_ub}/unibreakdef.c ${_ub}/eastasianwidthdef.c ${_ub}/emojidef.c)
+    target_include_directories(fuse_unibreak SYSTEM PUBLIC "${_ub}")
+    set_target_properties(fuse_sheenbidi fuse_unibreak PROPERTIES POSITION_INDEPENDENT_CODE ON)
     target_sources(fuse_text PRIVATE Text/src/text_full.cpp)
     target_compile_definitions(fuse_text PRIVATE FUSE_TEXT_FULL=1)
-    target_link_libraries(fuse_text PRIVATE harfbuzz freetype)
+    target_link_libraries(fuse_text PRIVATE harfbuzz freetype fuse_sheenbidi fuse_unibreak)
 endif()
 
 # ---- fuse_ui_core ----

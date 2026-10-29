@@ -43,6 +43,11 @@ struct FontMetrics {
     float lineHeight() const { return ascent - descent + lineGap; }
 };
 
+class ITextShaper;
+struct TextLayoutDesc;
+struct TextLayout;
+struct ShapeCacheStats;
+
 /// A TrueType / OpenType (glyf) font. Holds a copy of the file bytes; the parsed state points into it.
 class Font {
 public:
@@ -75,6 +80,8 @@ public:
 
 private:
     friend class HarfBuzzShaper;
+    friend void layoutText(const Font&, const ITextShaper&, std::string_view, const TextLayoutDesc&, TextLayout&);
+    friend ShapeCacheStats shapeCacheStats(const Font&);
     struct State;
     State* m_state = nullptr; // owned (pimpl); released in ~Font
     std::uint32_t m_id = 0;
@@ -120,6 +127,7 @@ struct TextLine {
     std::uint32_t byteBegin = 0, byteEnd = 0;
     float width = 0.f;
     float baseline = 0.f; ///< y of the baseline from the top of the block
+    bool rtl = false;     ///< paragraph base direction is right-to-left (FULL bidi); Start alignment then means right
 };
 
 enum class TextAlign : std::uint8_t { Start, Center, End };
@@ -143,6 +151,15 @@ struct TextLayout {
 /// the line break at a glyph). Clears and fills `out`.
 void layoutText(const Font& font, const ITextShaper& shaper, std::string_view utf8, const TextLayoutDesc& desc,
                 TextLayout& out);
+/// FULL profile: bidi runs (UAX #9, SheenBidi) are shaped per direction, lines break at UAX #14 opportunities
+/// (libunibreak) and each line is reordered visually (rule L2), so `glyphs` of a line are in visual order with
+/// increasing x. Shaped runs go through a fixed-capacity per-font cache (ring pools, no steady-state allocation).
+struct ShapeCacheStats {
+    std::uint64_t hits = 0, misses = 0;
+};
+/// Run-cache counters of `font` (zeros in MINIMAL builds).
+ShapeCacheStats shapeCacheStats(const Font& font);
+
 /// Width of a single line without wrapping (no allocation when `scratch` has capacity).
 float measureText(const Font& font, std::string_view utf8, float pixelSize, std::vector<ShapedGlyph>& scratch);
 
