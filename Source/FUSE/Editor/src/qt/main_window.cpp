@@ -1036,6 +1036,7 @@ bool MainWindow::selectForScreenshot(const QString& spec) {
         }
         const ecs::vec3 p = m_viewport->panel().position(), f = m_viewport->panel().forward();
         t->position = ecs::vec3{p.x + f.x * 6.f, p.y + f.y * 6.f, p.z + f.z * 6.f, 1.f};
+        t->dirty = true; // world matrix (and the GPU instance) follow the new position
     } else {
         bool ok = false;
         const u32 index = spec.toUInt(&ok);

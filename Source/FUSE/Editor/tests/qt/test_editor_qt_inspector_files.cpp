@@ -198,8 +198,10 @@ int gateInspector(MainWindow& window) {
     inspector->fieldSpin(QStringLiteral("PointLight.color"), 1)->setValue(0.25);
     tick(window);
     const ecs::Transform t = component<ecs::Transform>(window, e);
-    expect(closeTo(t.rotation.y, std::sqrt(0.5f)) && closeTo(t.rotation.w, std::sqrt(0.5f)) && t.dirty,
-           "inspector: Euler Y = 90 deg edits the quaternion (Transform dirty -> live viewport update)");
+    expect(closeTo(t.rotation.y, std::sqrt(0.5f)) && closeTo(t.rotation.w, std::sqrt(0.5f)) &&
+               // Either still dirty, or the viewport sync already ran TransformSystem (world matrix rotated).
+               (t.dirty || closeTo(std::fabs(t.local_to_world.data[2]), std::fabs(t.scale.x))),
+           "inspector: Euler Y = 90 deg edits the quaternion (Transform dirty / world matrix -> live viewport update)");
     expect(component<ecs::PointLight>(window, e).color.y == 0.25f, "inspector: colour edit");
 
     // Bool.

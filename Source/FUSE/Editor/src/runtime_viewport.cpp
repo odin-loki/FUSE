@@ -11,6 +11,7 @@
 #include <fuse/editor/viewport_vulkan_surface.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
+#include <fuse/ecs/systems/transform_system.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/spawn_query.hpp>
 #include <fuse/log/logger.hpp>
@@ -143,11 +144,24 @@ void recordViewportPresentDiagnostics(RuntimeEmbedSession& session,
 
 void attachEmbedWorldsToHybrid(RuntimeViewportHeadlessGpuStub* gpu, RuntimeEmbedSession& session,
                                const fuse::project::ProjectManifest& manifest) {
-    if (gpu == nullptr || gpu->hybrid == nullptr || gpu->worldsAttached) {
+    if (gpu == nullptr || gpu->hybrid == nullptr) {
+        return;
+    }
+    if (gpu->worldsAttached) {
+        // Attached before a project loaded: apply the project's dimensions now.
+        if (session.worldLoaded) {
+            const fuse::hybrid::DimensionFlags flags = fuse::project::toDimensionFlags(manifest.dimensions);
+            gpu->hybrid->composer().setProjectFlags(flags);
+            gpu->embedWorld3D.setEnabled(flags.enable3D);
+            gpu->embedWorld2D.setEnabled(flags.enable2D);
+        }
         return;
     }
 
     fuse::hybrid::DimensionFlags flags = fuse::project::toDimensionFlags(manifest.dimensions);
+    if (!session.worldLoaded) {
+        flags.enable3D = true; // no project: the editor scene is a 3D scene
+    }
     gpu->hybrid->composer().setProjectFlags(flags);
     gpu->embedWorld3D.setClearColor(0.08f, 0.12f, 0.18f);
     gpu->embedWorld3D.setEnabled(flags.enable3D);
@@ -742,6 +756,9 @@ void RuntimeViewportHook::syncEcsToEmbedWorld3D_(EditorHost& host) {
     // E03: the viewport renders the edited scene itself: World3D::render hands the editor's ECS registry
     // (Transform + Mesh + lights) and the viewport fly camera to the hybrid SceneRenderer (GPU path; the
     // PlaceholderRenderer only without a Vulkan device).
+    // World matrices must be current: the GPU extractor reads Transform::local_to_world, and editor
+    // edits (inspector, gizmo, scripted placement) only mark Transform::dirty. Free when nothing is dirty.
+    ecs::TransformSystem::update(host.editorScene().registry());
     gpu->embedWorld3D.setRenderRegistry(&host.editorScene().registry());
     {
         const ViewportCamera& cam = m_panel.camera();
@@ -830,6 +847,7 @@ void recreateHybridForExternalSurface(RuntimeViewportHook& hook, RuntimeViewport
         hook.swapchainHandoff().height > 0 ? hook.swapchainHandoff().height : hook.panel().height();
     bootstrapDesc.renderer.rhi.bootstrap.instance.enableValidation = false;
     bootstrapDesc.renderer.rhi.bootstrap.createSwapchain = true;
+    bootstrapDesc.scene.sdfProxyMeshes = true; // editor: sculpted SDFs visible in the raster viewport
     bootstrapDesc.renderer.rhi.bootstrap.swapchain = hook.buildSwapchainDescHandoff();
     // The hybrid bootstrap creates its own VkInstance, which cannot own the handed-off surface
     // (VkSurfaceKHR is per-instance). Start it headless; syncHybridBootstrapFromConsumedHandoff
@@ -874,6 +892,7 @@ void RuntimeViewportHook::tickHeadlessPresentStub_() {
         bootstrapDesc.presentable.swapchainHeight = m_panel.height() > 0 ? m_panel.height() : 480u;
         bootstrapDesc.renderer.rhi.bootstrap.instance.enableValidation = false;
         bootstrapDesc.renderer.rhi.bootstrap.createSwapchain = true;
+        bootstrapDesc.scene.sdfProxyMeshes = true; // editor: sculpted SDFs visible in the raster viewport
         if (m_surfaceHandoff.nativeSurface != nullptr) {
             bootstrapDesc.presentable.swapchainWidth = m_surfaceHandoff.width;
             bootstrapDesc.presentable.swapchainHeight = m_surfaceHandoff.height;
@@ -883,9 +902,8 @@ void RuntimeViewportHook::tickHeadlessPresentStub_() {
         if (gpu->hybrid != nullptr && gpu->hybrid->isReady()) {
             m_embedSession.wsiPresentPathReady = true;
             m_embedSession.headlessGpuReady = true;
-            if (m_embedSession.worldLoaded) {
-                attachEmbedWorldsToHybrid(gpu, m_embedSession, m_loadedManifest);
-            }
+            // No project yet: still attach (3D) so the edited scene renders on the GPU path.
+            attachEmbedWorldsToHybrid(gpu, m_embedSession, m_loadedManifest);
 #if defined(FUSE_HAS_VULKAN_RHI)
             syncHybridBootstrapFromConsumedHandoff(*gpu->hybrid, m_surfaceHandoff);
             maybeRetireSoftwarePlaceholder(gpu, m_embedSession, m_surfaceHandoff);
@@ -1046,6 +1064,7 @@ void RuntimeViewportHook::tickWindowPresent_() {
         bootstrapDesc.renderer.rhi.bootstrap.instance.extraExtensions = extensions.data();
         bootstrapDesc.renderer.rhi.bootstrap.instance.extraExtensionCount = static_cast<u32>(extensions.size());
         bootstrapDesc.renderer.rhi.bootstrap.createSwapchain = true;
+        bootstrapDesc.scene.sdfProxyMeshes = true; // editor: sculpted SDFs visible in the raster viewport
         gpu->hybrid = fuse::hybrid::HybridRendererBootstrap::create(bootstrapDesc);
 
         fuse::renderer::RhiContext* rhi =
@@ -1059,9 +1078,8 @@ void RuntimeViewportHook::tickWindowPresent_() {
         if (gpu->hybrid != nullptr && gpu->hybrid->isReady()) {
             m_embedSession.wsiPresentPathReady = true;
             m_embedSession.headlessGpuReady = true;
-            if (m_embedSession.worldLoaded) {
-                attachEmbedWorldsToHybrid(gpu, m_embedSession, m_loadedManifest);
-            }
+            // No project yet: still attach (3D) so the edited scene renders on the GPU path.
+            attachEmbedWorldsToHybrid(gpu, m_embedSession, m_loadedManifest);
         } else {
             gpu->hybrid.reset();
         }
