@@ -177,6 +177,27 @@ if(FUSE_BUILD_UI_VK)
             target_sources(fuse_ui_vk PRIVATE Render/src/ui_layer_gpu.cpp)
             target_link_libraries(fuse_ui_vk PUBLIC fuse_rhi)
             target_compile_definitions(fuse_ui_vk PUBLIC FUSE_HAS_VULKAN_RHI=1)
+            # The runtime UI stage (UiFrameSource -> frame::FrameUiSource) when the frame composer is in the tree.
+            if(TARGET fuse_frame)
+                target_link_libraries(fuse_ui_vk PUBLIC fuse_frame)
+                target_compile_definitions(fuse_ui_vk PUBLIC FUSE_UI_HAS_FRAME=1)
+                # E02 gate: the SceneRenderer UI stage fed by UiFrameSource (Renderer/cmake/scene_renderer.cmake).
+                if(TARGET fuse_scene_renderer_vk)
+                    target_link_libraries(fuse_scene_renderer_vk PRIVATE fuse_ui_vk)
+                    target_compile_definitions(fuse_scene_renderer_vk PRIVATE FUSE_SR_TEST_HAS_FUSE_UI=1)
+                    set(_sr_lock "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
+                    if(EXISTS "${_sr_lock}" OR FUSE_VULKAN_BACKEND)
+                        add_test(NAME fuse_scene_renderer_vk_fuse_ui_t0
+                                 COMMAND "${_sr_lock}" "$<TARGET_FILE:fuse_scene_renderer_vk>" --mode fuse_ui --tier t0)
+                    else()
+                        add_test(NAME fuse_scene_renderer_vk_fuse_ui_t0
+                                 COMMAND fuse_scene_renderer_vk --mode fuse_ui --tier t0)
+                    endif()
+                    set_tests_properties(fuse_scene_renderer_vk_fuse_ui_t0 PROPERTIES
+                        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json" RUN_SERIAL TRUE
+                        SKIP_RETURN_CODE 77 TIMEOUT 1800 LABELS "gate;vulkan;renderer;scene_renderer;ui")
+                endif()
+            endif()
         endif()
     else()
         message(STATUS "FUSE UI: no Vulkan loader found, fuse_ui_vk skipped (CPU raster only)")

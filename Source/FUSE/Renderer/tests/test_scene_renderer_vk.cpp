@@ -41,6 +41,11 @@
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/instance.hpp>
 #include <fuse/renderer/vk/upload_queue.hpp>
+#if FUSE_SR_TEST_HAS_FUSE_UI
+#include <fuse/ui/draw_list.hpp>
+#include <fuse/ui/render/gpu_draw_data.hpp>
+#include <fuse/ui/render/ui_layer_gpu.hpp>
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -1189,6 +1194,86 @@ int runUi(Context& ctx, SceneTier tier) {
     return 0;
 }
 
+
+#if FUSE_SR_TEST_HAS_FUSE_UI
+// FUSE UI as the runtime UI stage: UiFrameSource runs "ui.draw_list" over a cleared RGBA8 transient each frame and
+// the composer composites it. Checks: the UI image holds the packed rects (opaque red, 50% premultiplied blue,
+// transparent elsewhere), output == frame_ui_composite_texel(HUD-less, UI) everywhere, one UI image per frame.
+int runFuseUi(Context& ctx, SceneTier tier) {
+    SceneRig rig;
+    if (const int rc = initRig(ctx, rig, tier); rc != 0) {
+        return rc;
+    }
+    if ((rig.renderer.composer().available() & kStageUi) == 0u) {
+        std::printf("SKIP: UI composite kernel not built\n");
+        return kSkip;
+    }
+    fuse::ui::render::UiFrameSource ui;
+    if (!ui.init(ctx.device.get())) {
+        std::printf("SKIP: ui.draw_list kernel not available\n");
+        return kSkip;
+    }
+    expect(rig.renderer.setUiSource(ui.source()), "setUiSource(UiFrameSource)");
+    fuse::ui::DrawList list;
+    ui.setDrawList(&list);
+    u32 bad = 0, checked = 0, badUi = 0;
+    for (u32 f = 0; f < 3u; ++f) {
+        list.clear();
+        list.rect({4.f, 4.f, 20.f, 12.f}, fuse::ui::Color{1.f, 0.f, 0.f, 1.f});
+        list.rect({float(8 + f * 4), 20.f, 16.f, 8.f}, fuse::ui::Color{0.f, 0.f, 1.f, 0.5f});
+        rig.graph.reset();
+        const FrameGraphOutputs outs = rig.renderer.renderScene(rig.ecs.registry, cameraAt(f, true), rig.graph);
+        expect(outs.ui.valid(), "UiFrameSource returned the UI image");
+        const u32 w = rig.renderer.composer().outputWidth();
+        const u32 h = rig.renderer.composer().outputHeight();
+        Readback rb;
+        rb.begin(ctx, rig.graph);
+        const u64 oHud = rb.add(rig.graph, outs.hudless, w, h, 8u);
+        const u64 oOut = rb.add(rig.graph, outs.output, w, h, 8u);
+        const u64 oUi = rb.add(rig.graph, outs.ui, w, h, 4u);
+        rb.end(rig.graph);
+        expect(ctx.executor->execute(rig.graph).ok, "UI frame executes");
+        finishFrame(ctx, rig.renderer, rig.renderer.frameSerial());
+        const u64 n = static_cast<u64>(w) * h;
+        const std::vector<u8> hud = bytesAt(ctx, oHud, n * 8u);
+        const std::vector<u8> out = bytesAt(ctx, oOut, n * 8u);
+        const std::vector<u8> uiPx = bytesAt(ctx, oUi, n * 4u);
+        auto uiAt = [&](u32 x, u32 y, u32 c) { return uiPx[(static_cast<u64>(y) * w + x) * 4u + c]; };
+        badUi += (uiAt(10, 8, 0) == 255 && uiAt(10, 8, 3) == 255 && uiAt(10, 8, 2) == 0) ? 0u : 1u;
+        const u32 bx = 8 + f * 4 + 4;
+        badUi += (uiAt(bx, 24, 0) == 0 && uiAt(bx, 24, 2) >= 126 && uiAt(bx, 24, 2) <= 129 && uiAt(bx, 24, 3) >= 126 &&
+                  uiAt(bx, 24, 3) <= 129) ? 0u : 1u;
+        badUi += (uiAt(w - 2, h - 2, 3) == 0) ? 0u : 1u;
+        for (u64 p = 0; p < n; ++p) {
+            f32 s4[4], u4[4], ref[4];
+            for (u32 c = 0; c < 4u; ++c) {
+                u16 hs = 0;
+                std::memcpy(&hs, hud.data() + p * 8u + c * 2u, 2u);
+                s4[c] = halfToFloat(hs);
+                u4[c] = static_cast<f32>(uiPx[p * 4u + c]) / 255.f;
+            }
+            frame_ui_composite_texel(s4, u4, ref);
+            for (u32 c = 0; c < 4u; ++c) {
+                u16 ho = 0;
+                std::memcpy(&ho, out.data() + p * 8u + c * 2u, 2u);
+                const f32 g = halfToFloat(ho);
+                const f32 ulp = std::max(std::fabs(ref[c]) * (1.f / 1024.f), 6.1e-5f);
+                bad += std::fabs(g - ref[c]) <= ulp ? 0u : 1u;
+                ++checked;
+            }
+        }
+    }
+    std::printf("fuse_ui: %u UI images, %u UI probe misses, %u / %u channels off by > 1 half ulp\n", ui.frames(), badUi,
+                bad, checked);
+    expect(ui.frames() == 3u, "one UI image per frame");
+    expect(badUi == 0u, "ui.draw_list wrote the packed rects over a transparent clear");
+    expect(checked > 0u && bad == 0u, "frame.ui_composite(FUSE UI) == frame_ui_composite_texel (<= 1 half ulp)");
+    rig.renderer.setUiSource({});
+    ui.destroy();
+    return 0;
+}
+#endif
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1223,6 +1308,10 @@ int main(int argc, char** argv) {
             rc = runBlit(ctx, tier);
         } else if (mode == "ui") {
             rc = runUi(ctx, tier);
+#if FUSE_SR_TEST_HAS_FUSE_UI
+        } else if (mode == "fuse_ui") {
+            rc = runFuseUi(ctx, tier);
+#endif
         } else {
             std::fprintf(stderr, "unknown mode %s\n", mode.c_str());
             return 2;

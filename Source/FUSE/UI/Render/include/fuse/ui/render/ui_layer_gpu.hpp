@@ -6,6 +6,9 @@
 
 #include "fuse/ui/render/ui_vk.hpp"
 
+#if defined(FUSE_UI_HAS_FRAME)
+#include <fuse/renderer/frame/frame_composer.hpp>
+#endif
 #include <fuse/renderer/rg/graph.hpp>
 
 namespace fuse::renderer {
@@ -48,6 +51,44 @@ private:
     u32 m_slot = 0;
     u32 m_frames = 1;
 };
+
+#if defined(FUSE_UI_HAS_FRAME)
+/// The FUSE UI as the runtime UI stage (E02 frame::FrameUiSource): each frame it creates an RGBA8 transient of the
+/// output extent, clears it to transparent, runs "ui.draw_list" over it with the draw data set for the frame and hands
+/// it to the composer, which alpha-overs it onto the HUD-less output (frame.ui_composite) and gives it to frame
+/// generation. No steady-state allocations (the layer's ring slots are preallocated; packing keeps capacity).
+///
+///   UiFrameSource ui;  ui.init(&device);  composer.setUiSource(ui.source());
+///   per frame: build `list`;  ui.setDrawList(&list, atlas, atlasSize);  ... composer.addFrame(graph) ...
+/// The list is packed at the composer's output extent inside the callback (so it follows resizes).
+class UiFrameSource {
+public:
+    bool init(renderer::VulkanDevice* device, UiVkDesc limits = {}) { return m_layer.init(device, limits); }
+    void destroy() { m_layer.destroy(); }
+    bool valid() const { return m_layer.valid(); }
+    /// Draw list of the next frame(s) (must stay alive until the graph is built); null or empty: no UI image.
+    void setDrawList(const DrawList* list, const u8* atlas = nullptr, u32 atlasSize = 0) {
+        m_list = list;
+        m_atlas = atlas;
+        m_atlasSize = atlasSize;
+    }
+    renderer::frame::FrameUiSource source() { return {&UiFrameSource::recordFrame, this}; }
+    u32 frames() const { return m_frames; }
+    UiLayerGpu& layer() { return m_layer; }
+
+private:
+    static rg::TextureRef recordFrame(rg::Graph& graph, const renderer::frame::FrameUiContext& context, void* user);
+    static void clear(const rg::PassContext& context, void* user);
+
+    UiLayerGpu m_layer;
+    const DrawList* m_list = nullptr;
+    const u8* m_atlas = nullptr;
+    u32 m_atlasSize = 0;
+    GpuDrawData m_data; // packed per frame; keeps its capacity
+    rg::TextureRef m_target;
+    u32 m_frames = 0;
+};
+#endif // defined(FUSE_UI_HAS_FRAME)
 
 } // namespace fuse::ui::render
 
