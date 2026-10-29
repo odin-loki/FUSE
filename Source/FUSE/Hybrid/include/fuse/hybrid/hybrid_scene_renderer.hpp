@@ -61,6 +61,8 @@ struct HybridSceneRendererDesc {
     u32 materialCapacity = 256;
     u32 lightCapacity = 64;
     u32 entityCapacity = 4096; ///< >= the render registry's entity indices (World3D::kRegistryCapacity)
+    /// SDFObject entities render as builtin sphere / cube proxies (the editor viewport turns this on).
+    bool sdfProxyMeshes = false;
     u32 maxQuads = 1024;       ///< sprites + UI quads per frame
     /// Keep an RGBA8 copy of every headless frame in host-visible memory (readbackPixels()).
     bool headlessReadback = true;

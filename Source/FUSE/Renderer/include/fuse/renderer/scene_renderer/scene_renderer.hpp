@@ -83,6 +83,8 @@ struct SceneRendererDesc {
     /// registry bounds) whenever instances are added / removed, a material changed, or (dynamicSdf) any transform moved.
     bool sdfFromScene = true;
     bool dynamicSdf = false;
+    /// Draw SDFObject entities as builtin proxy meshes (gpu_scene::EcsExtractDesc::sdfProxyMeshes).
+    bool sdfProxyMeshes = false;
 };
 
 /// Per-frame inputs besides the camera.

@@ -16,6 +16,7 @@
 #include <fuse/compute_kernel/stats.hpp>
 #include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/mesh.hpp>
+#include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/tags.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/registry.hpp>
@@ -557,6 +558,53 @@ int runExtract() {
     expect(ex.instanceOf(e2).slot != h0.slot && ex.instanceOf(e2).slot != h1.slot,
            "a slot freed this frame is not reused this frame");
     expect(shadow.matches(scene), "shadow after removal");
+
+    // SDF proxies (editor viewport): SDFObject without Mesh -> builtin sphere / cube instance, size folded in.
+    {
+        World ws;
+        const ecs::EntityID sphere = ws.registry.create();
+        ecs::Transform st{};
+        st.position = {1.f, 2.f, 3.f, 1.f};
+        st.local_to_world.data[12] = 1.f;
+        st.local_to_world.data[13] = 2.f;
+        st.local_to_world.data[14] = 3.f;
+        ws.registry.add<ecs::Transform>(sphere, st);
+        ecs::SDFObject sdf{};
+        sdf.params = {0.5f, 0.f, 0.f, 0.f};
+        sdf.material_id = 3u;
+        ws.registry.add<ecs::SDFObject>(sphere, sdf);
+        const ecs::EntityID box = ws.registry.create();
+        ws.registry.add<ecs::Transform>(box, ecs::Transform{});
+        ecs::SDFObject b{};
+        b.type = ecs::SDFPrimitive::Box;
+        b.params = {2.f, 1.f, 0.25f, 0.f};
+        ws.registry.add<ecs::SDFObject>(box, b);
+        Shadow sh;
+        GpuScene sc;
+        sc.init(cpuDesc(&sh));
+        GpuSceneEcsExtractor off, on;
+        off.init(EcsExtractDesc{});
+        EcsExtractDesc pd{};
+        pd.sdfProxyMeshes = true;
+        on.init(pd);
+        sc.beginFrame(1);
+        const EcsExtractStats so = off.extract(ws.registry, sc);
+        expect(so.added == 0u, "SDF proxies off by default");
+        const EcsExtractStats sn = on.extract(ws.registry, sc);
+        sc.commit();
+        expect(sn.added == 2u, "SDF proxies: sphere + box extracted as instances");
+        const GpuInstance& si = sc.instance(on.instanceOf(sphere).slot);
+        const GpuInstance& bi = sc.instance(on.instanceOf(box).slot);
+        expect(si.mesh == pd.sdfProxySphereMesh && si.material == 3u && bi.mesh == pd.sdfProxyBoxMesh,
+               "SDF proxy mesh ids and material");
+        const GpuTransform& stf = sc.transform(on.instanceOf(sphere).slot);
+        const GpuTransform& btf = sc.transform(on.instanceOf(box).slot);
+        expect(std::fabs(stf.rows[0][0] - 0.5f) < 1e-6f && stf.rows[0][3] == 1.f && stf.rows[2][3] == 3.f,
+               "sphere proxy scaled by radius, translation kept");
+        expect(std::fabs(btf.rows[0][0] - 2.f) < 1e-6f && std::fabs(btf.rows[1][1] - 1.f) < 1e-6f &&
+                   std::fabs(btf.rows[2][2] - 0.25f) < 1e-6f,
+               "box proxy scaled by half extents");
+    }
     return 0;
 }
 

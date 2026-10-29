@@ -127,6 +127,7 @@ bool HybridSceneRenderer::initialize(renderer::VulkanDevice& device, const Hybri
     sd.renderWidth = desc.renderWidth;
     sd.renderHeight = desc.renderHeight;
     sd.tier = desc.tier;
+    sd.sdfProxyMeshes = desc.sdfProxyMeshes;
     sd.instanceCapacity = desc.instanceCapacity;
     sd.meshCapacity = desc.meshCapacity;
     sd.materialCapacity = desc.materialCapacity;

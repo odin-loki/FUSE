@@ -117,6 +117,7 @@ bool SceneRenderer::initialize(const SceneRendererDesc& desc) {
     }
     gpu_scene::EcsExtractDesc ed{};
     ed.entityCapacity = desc.entityCapacity;
+    ed.sdfProxyMeshes = desc.sdfProxyMeshes;
     m_extractor.init(ed);
     m_feed.reset();
     // Tier: Auto -> T2 when the device passes the ray-query gate.

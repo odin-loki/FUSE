@@ -1,3 +1,4 @@
+#include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene_ecs.hpp>
 
 #include <fuse/compute_kernel/launch.hpp>
@@ -232,6 +233,10 @@ EcsExtractStats GpuSceneEcsExtractor::extract(ecs::Registry& registry, GpuScene&
         [&](std::span<const ecs::EntityID> ids, std::span<ecs::Transform> transforms, std::span<ecs::Mesh> meshes,
             std::span<ecs::TagStatic>) { extractChunk(scene, ids, transforms, meshes, kInstanceStatic, stats); });
 
+    if (m_desc.sdfProxyMeshes) {
+        extractSdfProxies(registry, scene, stats);
+    }
+
     // Tracked entities not seen this frame lost their components or died.
     const std::vector<u32>& tracked = m_instances.list();
     for (usize i = tracked.size(); i-- > 0;) {
@@ -260,6 +265,48 @@ EcsExtractStats GpuSceneEcsExtractor::extract(ecs::Registry& registry, GpuScene&
         }
     }
     return stats;
+}
+
+void GpuSceneEcsExtractor::extractSdfProxies(ecs::Registry& registry, GpuScene& scene, EcsExtractStats& stats) {
+    registry.each_chunk<ecs::Transform, ecs::SDFObject>(
+        [&](std::span<const ecs::EntityID> ids, std::span<ecs::Transform> transforms, std::span<ecs::SDFObject> sdfs) {
+            const usize n = ids.size();
+            m_sdfTransforms.resize(n);
+            m_sdfMeshes.resize(n);
+            for (usize i = 0; i < n; ++i) {
+                const ecs::SDFObject& sdf = sdfs[i];
+                ecs::Transform t = transforms[i];
+                ecs::Mesh m{};
+                m.material_id = sdf.material_id;
+                m.visible = sdf.visible && sdf.op != ecs::SDFCsgOp::Subtract;
+                m.cast_shadow = sdf.casts_shadow;
+                const bool box = sdf.type == ecs::SDFPrimitive::Box;
+                const u32 meshId = box ? m_desc.sdfProxyBoxMesh : m_desc.sdfProxySphereMesh;
+                m.vertex_buffer = ecs::MeshVertexBufferHandle(meshId, 1u);
+                ecs::vec3 s{1.f, 1.f, 1.f, 0.f};
+                if (box) {
+                    s = ecs::vec3{sdf.params.x, sdf.params.y, sdf.params.z, 0.f};
+                } else {
+                    const f32 r = sdf.params.x > 0.f ? sdf.params.x : 1.f;
+                    s = ecs::vec3{r, r, r, 0.f};
+                }
+                m.aabb_min = ecs::vec3{-s.x, -s.y, -s.z, 0.f};
+                m.aabb_max = ecs::vec3{s.x, s.y, s.z, 0.f};
+                // Fold the primitive size into the local scale and the world matrix.
+                t.scale = ecs::vec3{t.scale.x * s.x, t.scale.y * s.y, t.scale.z * s.z, 0.f};
+                for (int c = 0; c < 3; ++c) {
+                    const f32 k = c == 0 ? s.x : (c == 1 ? s.y : s.z);
+                    for (int r = 0; r < 3; ++r) {
+                        t.local_to_world.data[c * 4 + r] *= k;
+                    }
+                }
+                m_sdfTransforms[i] = t;
+                m_sdfMeshes[i] = m;
+            }
+            extractChunk(scene, ids, std::span<const ecs::Transform>(m_sdfTransforms.data(), n),
+                         std::span<const ecs::Mesh>(m_sdfMeshes.data(), n), 0u, stats);
+        },
+        ecs::Without<ecs::Mesh>{});
 }
 
 void GpuSceneEcsExtractor::releaseAll(GpuScene& scene) {

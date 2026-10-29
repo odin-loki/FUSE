@@ -19,6 +19,8 @@
 
 #include <fuse/compute_kernel/kernel.hpp>
 #include <fuse/ecs/entity.hpp>
+#include <fuse/ecs/components/mesh.hpp>
+#include <fuse/ecs/components/transform.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
 
 #include <span>
@@ -45,6 +47,13 @@ struct EcsExtractDesc {
     u32 meshRemapCount = 0;
     /// Entity indices to pre-size the maps for (avoids growth allocations while populating).
     u32 entityCapacity = 1024;
+    /// Draw ecs::SDFObject entities (without a Mesh) as proxy meshes: spheres / capsules / torus /
+    /// cylinder / custom through `sdfProxySphereMesh` scaled by the radius, boxes through `sdfProxyBoxMesh`
+    /// scaled by the half extents. Off by default (the SDF march owns SDFs); the editor turns it on so
+    /// sculpted SDFs are visible in the raster viewport. Mesh ids are engine ids (pre-remap).
+    bool sdfProxyMeshes = false;
+    u32 sdfProxySphereMesh = 1; ///< world3d::BuiltinMesh::Sphere (radius 1)
+    u32 sdfProxyBoxMesh = 0;    ///< world3d::BuiltinMesh::Cube (half extent 1)
 };
 
 struct EcsExtractStats {
@@ -78,6 +87,9 @@ public:
     }
 
 private:
+    void extractSdfProxies(ecs::Registry& registry, GpuScene& scene, EcsExtractStats& stats);
+    std::vector<ecs::Transform> m_sdfTransforms; ///< scratch: SDF proxy transforms (scale folded in)
+    std::vector<ecs::Mesh> m_sdfMeshes;          ///< scratch: SDF proxy meshes
     /// Entity index -> GPU scene slot, with liveness stamps and a dense list for removal.
     class EntityMap {
     public:
