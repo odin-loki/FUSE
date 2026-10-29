@@ -86,6 +86,15 @@ const fuse::text::Font& defaultFont() {
         if (!r) { std::fprintf(stderr, "fuse_app: bundled font missing\n"); std::exit(2); }
         return std::move(*r);
     }();
+    // Bundled fallback chain (Hebrew, Arabic, Devanagari, colour emoji, symbols), attached once.
+    static const std::vector<fuse::text::Font> fallbacks = [] {
+        auto v = fuse::text::Font::bundledFallbacks();
+        std::vector<const fuse::text::Font*> chain;
+        for (const auto& x : v) chain.push_back(&x);
+        f.setFallbacks(std::move(chain));
+        return v;
+    }();
+    (void)fallbacks;
     return f;
 }
 

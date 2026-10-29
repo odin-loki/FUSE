@@ -128,21 +128,26 @@ void ImmediateUi::glyphs(std::int32_t x, std::int32_t y, std::string_view s, Col
     } close{*this, run};
     if (!m_font || !m_atlas || s.empty() || clipW <= 0) return;
     const f32 px = m_px * f32(m_scale);
-    fuse::text::defaultShaper().shape(*m_font, px, s, m_shape);
+    fuse::text::shapeText(*m_font, s, px, m_shape);
     const auto fm = m_font->metrics(px);
     const f32 boxH = f32((m_metrics.glyphHeight + 2) * m_scale);
     const f32 base = std::round(f32(y) - f32(m_scale) + (boxH - (fm.ascent - fm.descent)) * 0.5f + fm.ascent);
     for (const auto& g : m_shape) {
         if (g.x + g.advance > f32(clipW) + 0.5f) break;
         if (g.glyph == fuse::text::kInvisibleGlyph) continue;
-        const auto ag = m_atlas->get(*m_font, g.glyph, px);
-        if (!ag.valid || ag.w == 0) continue;
-        DrawCmd d;
-        d.op = DrawOp::Glyph;
-        d.rect = {std::round(f32(x) + g.x) + f32(ag.x0), base + f32(ag.y0), f32(ag.w), f32(ag.h)};
-        d.u = ag.u; d.v = ag.v; d.tw = ag.w; d.th = ag.h;
-        d.fill = c;
-        m_draws.push(d);
+        fuse::text::forEachPaintGlyph(*m_font, g, px, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
+                                                          const fuse::text::ColorLayer* layer) {
+            const auto ag = m_atlas->get(f, glyph, fpx);
+            if (!ag.valid || ag.w == 0) return;
+            DrawCmd d;
+            d.op = DrawOp::Glyph;
+            d.rect = {std::round(f32(x) + g.x) + f32(ag.x0), base + f32(ag.y0), f32(ag.w), f32(ag.h)};
+            d.u = ag.u; d.v = ag.v; d.tw = ag.w; d.th = ag.h;
+            d.fill = (!layer || layer->foreground)
+                         ? c
+                         : Color{f32(layer->r) / 255.f, f32(layer->g) / 255.f, f32(layer->b) / 255.f, f32(layer->a) / 255.f * c.a};
+            m_draws.push(d);
+        });
     }
 }
 

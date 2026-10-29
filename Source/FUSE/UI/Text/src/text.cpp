@@ -18,6 +18,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cctype>
 #include <cmath>
@@ -309,6 +310,9 @@ struct Font::State {
     stbtt_fontinfo info{};
     float unitsPerPixelScale1 = 0.f; // stbtt_ScaleForPixelHeight(info, 1)
     float emPerPixelSize = 1.f;      // em size in pixels for pixelSize 1 (pixel sizes are ascent-to-descent)
+    std::vector<const Font*> fallbacks;
+    std::vector<ColorLayer> layers;                       // COLRv0 layer records with CPAL palette 0 resolved
+    std::vector<std::array<std::uint32_t, 3>> colorBase; // (glyph, first layer, layer count), sorted by glyph
 #if FUSE_TEXT_FULL
     detail::FullFace* full = nullptr; // owned; HarfBuzz + FreeType over `bytes`
     ~State() { detail::fullDestroy(full); }
@@ -317,7 +321,51 @@ struct Font::State {
 
 namespace {
 std::atomic<std::uint32_t> g_fontIds{1};
+
+std::uint16_t be16(const std::uint8_t* p) { return std::uint16_t((p[0] << 8) | p[1]); }
+std::uint32_t be32(const std::uint8_t* p) { return (std::uint32_t(p[0]) << 24) | (std::uint32_t(p[1]) << 16) | (std::uint32_t(p[2]) << 8) | p[3]; }
+
+// COLR version 0 + CPAL palette 0. Bounds-checked: a malformed table leaves the font without colour glyphs.
+void loadColr(std::vector<std::uint8_t>& bytes, std::vector<ColorLayer>& layers,
+              std::vector<std::array<std::uint32_t, 3>>& colorBase, std::uint32_t fontStart) {
+    std::uint8_t* d = bytes.data();
+    const std::size_t n = bytes.size();
+    const std::uint32_t colr = stbtt__find_table(d, fontStart, "COLR");
+    const std::uint32_t cpal = stbtt__find_table(d, fontStart, "CPAL");
+    if (!colr || !cpal || colr + 14 > n || cpal + 12 > n) return;
+    const std::uint16_t numBase = be16(d + colr + 2), numLayers = be16(d + colr + 12);
+    const std::uint32_t baseOff = colr + be32(d + colr + 4), layerOff = colr + be32(d + colr + 8);
+    const std::uint16_t numEntries = be16(d + cpal + 2), numPalettes = be16(d + cpal + 4), numRecords = be16(d + cpal + 6);
+    const std::uint32_t recOff = cpal + be32(d + cpal + 8);
+    if (numPalettes == 0 || baseOff + std::size_t(numBase) * 6 > n || layerOff + std::size_t(numLayers) * 4 > n ||
+        recOff + std::size_t(numRecords) * 4 > n)
+        return;
+    const std::uint16_t first = be16(d + cpal + 12); // palette 0's first colour record
+    layers.reserve(numLayers);
+    for (std::uint32_t i = 0; i < numLayers; ++i) {
+        const std::uint8_t* l = d + layerOff + i * 4;
+        ColorLayer cl;
+        cl.glyph = be16(l);
+        const std::uint16_t pi = be16(l + 2);
+        if (pi == 0xFFFFu || pi >= numEntries || std::uint32_t(first) + pi >= numRecords) cl.foreground = true;
+        else {
+            const std::uint8_t* c = d + recOff + (std::uint32_t(first) + pi) * 4; // B G R A
+            cl.b = c[0];
+            cl.g = c[1];
+            cl.r = c[2];
+            cl.a = c[3];
+        }
+        layers.push_back(cl);
+    }
+    colorBase.reserve(numBase);
+    for (std::uint32_t i = 0; i < numBase; ++i) {
+        const std::uint8_t* b = d + baseOff + i * 6;
+        const std::uint32_t firstLayer = be16(b + 2), count = be16(b + 4);
+        if (firstLayer + count <= numLayers && count > 0) colorBase.push_back({be16(b), firstLayer, count});
+    }
+    std::sort(colorBase.begin(), colorBase.end());
 }
+} // namespace
 
 std::expected<Font, TextError> Font::fromBytes(std::span<const std::uint8_t> bytes) {
     if (bytes.size() < 12) return std::unexpected(TextError::InvalidFont);
@@ -330,6 +378,7 @@ std::expected<Font, TextError> Font::fromBytes(std::span<const std::uint8_t> byt
     }
     st->unitsPerPixelScale1 = stbtt_ScaleForPixelHeight(&st->info, 1.f);
     st->emPerPixelSize = st->unitsPerPixelScale1 / stbtt_ScaleForMappingEmToPixels(&st->info, 1.f);
+    loadColr(st->bytes, st->layers, st->colorBase, std::uint32_t(offset));
 #if FUSE_TEXT_FULL
     st->full = detail::fullCreate(st->bytes);
     if (!st->full) {
@@ -363,6 +412,49 @@ std::expected<Font, TextError> Font::bundled() {
 #else
     return std::unexpected(TextError::InvalidFont);
 #endif
+}
+
+std::vector<Font> Font::bundledFallbacks() {
+    std::vector<Font> out;
+#if defined(FUSE_TEXT_FONT_DIR)
+    // Emoji before Symbols 2 so emoji-presentation code points (U+2764 ...) come out in colour.
+    static const char* const kFiles[] = {"noto/NotoSansHebrew-Regular.ttf", "noto/NotoSansArabic-Regular.ttf",
+                                         "noto/NotoSansDevanagari-Regular.ttf", "twemoji/TwemojiMozilla.ttf",
+                                         "noto/NotoSansSymbols2-Regular.ttf"};
+    for (const char* f : kFiles)
+        if (auto font = fromFile(std::string(FUSE_TEXT_FONT_DIR) + "/" + f)) out.push_back(std::move(*font));
+#endif
+    return out;
+}
+
+void Font::setFallbacks(std::vector<const Font*> chain) {
+    if (!m_state) return;
+    std::erase_if(chain, [&](const Font* f) { return !f || !f->valid() || f == this; });
+    m_state->fallbacks = std::move(chain);
+}
+std::size_t Font::faceCount() const { return m_state ? 1 + m_state->fallbacks.size() : 1; }
+const Font& Font::face(std::uint16_t i) const {
+    return (i == 0 || !m_state || i > m_state->fallbacks.size()) ? *this : *m_state->fallbacks[i - 1];
+}
+std::uint16_t Font::faceFor(char32_t cp) const {
+    if (!m_state) return 0;
+    if (glyphIndex(cp)) return 0;
+    for (std::size_t k = 0; k < m_state->fallbacks.size(); ++k)
+        if (m_state->fallbacks[k]->glyphIndex(cp)) return std::uint16_t(k + 1);
+    return 0;
+}
+float Font::facePixelSize(std::uint16_t i, float px) const {
+    const Font& f = face(i);
+    if (&f == this) return px;
+    return px * m_state->emPerPixelSize / f.m_state->emPerPixelSize;
+}
+bool Font::hasColorGlyphs() const { return m_state && !m_state->colorBase.empty(); }
+std::span<const ColorLayer> Font::colorLayers(std::uint32_t glyph) const {
+    if (!m_state || m_state->colorBase.empty()) return {};
+    const auto& b = m_state->colorBase;
+    auto it = std::lower_bound(b.begin(), b.end(), glyph, [](const auto& e, std::uint32_t g) { return e[0] < g; });
+    if (it == b.end() || (*it)[0] != glyph) return {};
+    return std::span<const ColorLayer>(m_state->layers.data() + (*it)[1], (*it)[2]);
 }
 
 Font::Font(Font&& o) noexcept : m_state(std::exchange(o.m_state, nullptr)), m_id(o.m_id) {}
@@ -417,6 +509,13 @@ float MinimalShaper::shape(const Font& font, float px, std::string_view s, std::
     for (std::size_t i = 0; i < s.size();) {
         const std::size_t at = i;
         const char32_t cp = decodeUtf8(s, i);
+        // Default-ignorable format characters (ZWSP..RLM, word joiner.., variation selectors, tags) have no ink and
+        // no advance; without GSUB the sequences they steer fall back to their visible parts.
+        if ((cp >= 0x200B && cp <= 0x200F) || (cp >= 0x2060 && cp <= 0x2064) || (cp >= 0xFE00 && cp <= 0xFE0F) ||
+            cp == 0xFEFF || (cp >= 0xE0000 && cp <= 0xE0FFF)) {
+            out.push_back({kInvisibleGlyph, std::uint32_t(at), pen, 0.f});
+            continue;
+        }
         const std::uint32_t g = font.glyphIndex(cp);
         if (hasPrev) pen += font.kerning(prev, g, px);
         const float adv = font.advance(g, px);
@@ -454,8 +553,131 @@ const ITextShaper& defaultShaper() {
 #endif
 }
 
+// ---- Font fallback ---------------------------------------------------------------------------------------------
+namespace {
+// Code points that belong to the cluster before them keep its face (marks, ZWJ, emoji modifiers, VS16, tags, and
+// the pictographic after a ZWJ), so a grapheme is never split across faces.
+bool inheritsFace(char32_t cp, char32_t prev) {
+    const GraphemeBreak p = graphemeBreakProperty(cp);
+    return p == GraphemeBreak::Extend || p == GraphemeBreak::ZWJ || p == GraphemeBreak::SpacingMark ||
+           (prev == 0x200D && p == GraphemeBreak::ExtPict);
+}
+bool mayNeedFallback(const Font& font, std::string_view s) {
+    if (font.faceCount() < 2) return false;
+    for (const char c : s)
+        if (static_cast<unsigned char>(c) >= 0x80u) return true; // ASCII is always the primary face's
+    return false;
+}
+/// Maximal same-face runs in logical order: fn(begin, end, face).
+template <class Fn> void forEachFaceRun(const Font& font, std::string_view s, Fn&& fn) {
+    std::size_t runBegin = 0;
+    std::uint16_t runFace = 0;
+    char32_t prev = 0;
+    for (std::size_t i = 0; i < s.size();) {
+        const std::size_t at = i;
+        const char32_t cp = decodeUtf8(s, i);
+        std::uint16_t f = 0;
+        if (at > 0 && inheritsFace(cp, prev)) f = runFace;
+        else if (cp >= 0x20 && cp != 0x7F) f = font.faceFor(cp);
+        if (at == 0) runFace = f;
+        else if (f != runFace) {
+            fn(runBegin, at, runFace);
+            runBegin = at;
+            runFace = f;
+        }
+        prev = cp;
+    }
+    if (!s.empty()) fn(runBegin, s.size(), runFace);
+}
+float shapeWithFallback(const Font& font, const ITextShaper& shaper, float px, std::string_view s,
+                        std::vector<ShapedGlyph>& out) {
+    if (!mayNeedFallback(font, s)) return shaper.shape(font, px, s, out);
+    out.clear();
+    thread_local std::vector<ShapedGlyph> run;
+    float pen = 0.f;
+    forEachFaceRun(font, s, [&](std::size_t b, std::size_t e, std::uint16_t f) {
+        const float w = shaper.shape(font.face(f), font.facePixelSize(f, px), s.substr(b, e - b), run);
+        for (ShapedGlyph g : run) {
+            g.cluster += std::uint32_t(b);
+            g.x += pen;
+            g.face = f;
+            out.push_back(g);
+        }
+        pen += w;
+    });
+    return pen;
+}
+#if FUSE_TEXT_FULL
+// FULL layout shapes with the primary face only (bidi + line breaking + run cache); fallback runs are then
+// re-shaped with their face per line and the rest of the line shifts by the width change.
+void applyFallbackPerLine(const Font& font, const ITextShaper& shaper, float px, std::string_view s,
+                          std::vector<ShapedGlyph>& g, std::vector<TextLine>& lines) {
+    if (!mayNeedFallback(font, s)) return;
+    struct Span {
+        std::uint32_t b, e;
+        std::uint16_t face;
+    };
+    thread_local std::vector<Span> spans;
+    spans.clear();
+    forEachFaceRun(font, s, [&](std::size_t b, std::size_t e, std::uint16_t f) {
+        if (f) spans.push_back({std::uint32_t(b), std::uint32_t(e), f});
+    });
+    if (spans.empty()) return;
+    auto spanOf = [&](const ShapedGlyph& x) -> int {
+        if (x.glyph == kInvisibleGlyph) return -1;
+        for (std::size_t k = 0; k < spans.size(); ++k)
+            if (x.cluster >= spans[k].b && x.cluster < spans[k].e) return int(k);
+        return -1;
+    };
+    thread_local std::vector<ShapedGlyph> outG, run;
+    outG.clear();
+    for (TextLine& ln : lines) {
+        const std::uint32_t first = std::uint32_t(outG.size());
+        const std::uint32_t end = ln.firstGlyph + ln.glyphCount;
+        float shift = 0.f;
+        for (std::uint32_t k = ln.firstGlyph; k < end;) {
+            const int sp = spanOf(g[k]);
+            if (sp < 0) {
+                ShapedGlyph x = g[k++];
+                x.x += shift;
+                outG.push_back(x);
+                continue;
+            }
+            std::uint32_t j = k, lo = g[k].cluster;
+            float oldAdv = 0.f;
+            for (; j < end && spanOf(g[j]) == sp; ++j) {
+                oldAdv += g[j].advance;
+                lo = std::min(lo, g[j].cluster);
+            }
+            const Span& span = spans[std::size_t(sp)];
+            std::uint32_t hi = span.e;
+            if (ln.byteEnd > lo && ln.byteEnd < hi) hi = ln.byteEnd;
+            const float x0 = g[k].x + shift;
+            const float w = shaper.shape(font.face(span.face), font.facePixelSize(span.face, px), s.substr(lo, hi - lo), run);
+            for (ShapedGlyph r : run) {
+                r.cluster += lo;
+                r.x += x0;
+                r.face = span.face;
+                outG.push_back(r);
+            }
+            shift += w - oldAdv;
+            k = j;
+        }
+        ln.firstGlyph = first;
+        ln.glyphCount = std::uint32_t(outG.size()) - first;
+        ln.width += shift;
+    }
+    g.swap(outG);
+}
+#endif
+} // namespace
+
+float shapeText(const Font& font, std::string_view s, float px, std::vector<ShapedGlyph>& out) {
+    return shapeWithFallback(font, defaultShaper(), px, s, out);
+}
+
 float measureText(const Font& font, std::string_view s, float px, std::vector<ShapedGlyph>& scratch) {
-    return defaultShaper().shape(font, px, s, scratch);
+    return shapeText(font, s, px, scratch);
 }
 
 ShapeCacheStats shapeCacheStats(const Font& font) {
@@ -484,9 +706,10 @@ void layoutText(const Font& font, const ITextShaper& shaper, std::string_view s,
 #if FUSE_TEXT_FULL
         detail::fullLayout(font.m_state->full, font.unitScale(desc.pixelSize), s, wrap ? desc.maxWidth : 0.f, lh,
                            out.metrics.ascent, g, out.lines);
+        applyFallbackPerLine(font, shaper, desc.pixelSize, s, g, out.lines);
 #endif
     } else {
-    shaper.shape(font, desc.pixelSize, s, out.glyphs);
+    shapeWithFallback(font, shaper, desc.pixelSize, s, out.glyphs);
     const std::uint32_t n = std::uint32_t(g.size());
 
     std::uint32_t lineStart = 0;

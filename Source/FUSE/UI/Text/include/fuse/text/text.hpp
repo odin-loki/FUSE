@@ -53,6 +53,14 @@ struct FontMetrics {
     float lineHeight() const { return ascent - descent + lineGap; }
 };
 
+/// One layer of a COLRv0 colour glyph: an ordinary outline glyph filled with a CPAL palette colour (straight RGBA),
+/// or with the text colour when `foreground` is set. Layers paint bottom to top.
+struct ColorLayer {
+    std::uint32_t glyph = 0;
+    std::uint8_t r = 0, g = 0, b = 0, a = 255;
+    bool foreground = false;
+};
+
 class ITextShaper;
 struct TextLayoutDesc;
 struct TextLayout;
@@ -65,6 +73,9 @@ public:
     static std::expected<Font, TextError> fromFile(const std::string& path);
     /// FUSE's bundled UI font (vendor/fonts/opensans) when the build knows its path; InvalidFont otherwise.
     static std::expected<Font, TextError> bundled();
+    /// FUSE's bundled fallback faces in chain order: Noto Sans Hebrew, Arabic, Devanagari, Symbols 2 and Twemoji
+    /// (COLRv0 colour emoji). Fonts whose files are missing are skipped. Attach them with setFallbacks().
+    static std::vector<Font> bundledFallbacks();
 
     Font() = default;
     Font(Font&&) noexcept;
@@ -88,6 +99,24 @@ public:
     /// Font units to pixels at `pixelSize`.
     float unitScale(float pixelSize) const;
 
+    // ---- Fallback chain (Qt: QFont family substitution) ----
+    /// Faces tried in order for code points this font has no glyph for (non-owning; they must outlive this font).
+    /// Layout splits text into runs per face at grapheme-cluster granularity, so a base and its marks, emoji modifier
+    /// and ZWJ sequences stay on one face.
+    void setFallbacks(std::vector<const Font*> chain);
+    /// 1 + the number of fallbacks; face 0 is this font.
+    std::size_t faceCount() const;
+    const Font& face(std::uint16_t i) const;
+    /// First face (0 = this) whose cmap maps `cp`; 0 when no face has it (draws this font's .notdef).
+    std::uint16_t faceFor(char32_t cp) const;
+    /// Pixel size to use for face `i` so its em matches this font's em at `pixelSize`.
+    float facePixelSize(std::uint16_t i, float pixelSize) const;
+
+    // ---- Colour glyphs (COLRv0 + CPAL, palette 0) ----
+    bool hasColorGlyphs() const;
+    /// Layers of `glyph` when it is a colour glyph; empty for ordinary glyphs.
+    std::span<const ColorLayer> colorLayers(std::uint32_t glyph) const;
+
 private:
     friend class HarfBuzzShaper;
     friend void layoutText(const Font&, const ITextShaper&, std::string_view, const TextLayoutDesc&, TextLayout&);
@@ -106,6 +135,7 @@ struct ShapedGlyph {
     std::uint32_t cluster = 0; ///< byte offset of the source code point
     float x = 0.f;             ///< pen position (pixels) relative to the run start
     float advance = 0.f;
+    std::uint16_t face = 0;    ///< 0: the layout font; k: its fallback k (Font::face)
 };
 
 /// Shaper interface (FULL: HarfBuzz; MINIMAL: cmap + kerning).
@@ -172,6 +202,20 @@ struct ShapeCacheStats {
 };
 /// Run-cache counters of `font` (zeros in MINIMAL builds).
 ShapeCacheStats shapeCacheStats(const Font& font);
+
+/// Shapes one line with the default shaper and `font`'s fallback chain (glyph `face` set per run). Returns the width.
+float shapeText(const Font& font, std::string_view utf8, float pixelSize, std::vector<ShapedGlyph>& out);
+
+/// Calls fn(face, glyph, facePixelSize, layer) for every paint layer of a shaped glyph: once with layer == nullptr
+/// (draw in the text colour) for an ordinary glyph, or once per COLRv0 layer bottom to top for a colour glyph.
+template <class Fn> void forEachPaintGlyph(const Font& font, const ShapedGlyph& g, float pixelSize, Fn&& fn) {
+    const Font& f = font.face(g.face);
+    const float px = g.face ? font.facePixelSize(g.face, pixelSize) : pixelSize;
+    const auto layers = f.colorLayers(g.glyph);
+    if (layers.empty()) fn(f, g.glyph, px, static_cast<const ColorLayer*>(nullptr));
+    else
+        for (const ColorLayer& l : layers) fn(f, l.glyph, px, &l);
+}
 
 /// Width of a single line without wrapping (no allocation when `scratch` has capacity).
 float measureText(const Font& font, std::string_view utf8, float pixelSize, std::vector<ShapedGlyph>& scratch);

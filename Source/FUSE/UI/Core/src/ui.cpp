@@ -603,18 +603,23 @@ void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, 
         for (u32 k = ln.firstGlyph; k < ln.firstGlyph + ln.glyphCount; ++k) {
             const auto& g = tl.glyphs[k];
             if (g.glyph == fuse::text::kInvisibleGlyph) continue;
-            const auto ag = m_atlas.get(*m_font, g.glyph, px);
-            if (!ag.valid || ag.w == 0) continue;
-            DrawCmd c;
-            c.op = DrawOp::Glyph;
-            c.rect = {std::round(o.x + g.x) + f32(ag.x0), std::round(o.y + ln.baseline) + f32(ag.y0), f32(ag.w), f32(ag.h)};
-            c.u = ag.u;
-            c.v = ag.v;
-            c.tw = ag.w;
-            c.th = ag.h;
-            c.fill = col;
-            c.node = nodeIdx;
-            dl.push(c);
+            fuse::text::forEachPaintGlyph(*m_font, g, px, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
+                                                               const fuse::text::ColorLayer* layer) {
+                const auto ag = m_atlas.get(f, glyph, fpx);
+                if (!ag.valid || ag.w == 0) return;
+                DrawCmd c;
+                c.op = DrawOp::Glyph;
+                c.rect = {std::round(o.x + g.x) + f32(ag.x0), std::round(o.y + ln.baseline) + f32(ag.y0), f32(ag.w), f32(ag.h)};
+                c.u = ag.u;
+                c.v = ag.v;
+                c.tw = ag.w;
+                c.th = ag.h;
+                c.fill = (!layer || layer->foreground)
+                             ? col
+                             : Color{f32(layer->r) / 255.f, f32(layer->g) / 255.f, f32(layer->b) / 255.f, f32(layer->a) / 255.f * col.a};
+                c.node = nodeIdx;
+                dl.push(c);
+            });
         }
     }
 }
