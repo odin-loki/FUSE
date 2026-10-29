@@ -1348,9 +1348,17 @@ int gateUiFrame() {
 }
 
 int gateIdleFrames() {
-    const int kFrames = qEnvironmentVariableIsSet("FUSE_QT_IDLE_DEBUG_FRAMES") ? qEnvironmentVariableIntValue("FUSE_QT_IDLE_DEBUG_FRAMES") : 10000;
-    const int kMinRuns = qEnvironmentVariableIsSet("FUSE_QT_IDLE_DEBUG_FRAMES") ? 1 : 3;
-    const int kMaxRuns = qEnvironmentVariableIsSet("FUSE_QT_IDLE_DEBUG_FRAMES") ? 1 : 6;
+    // Each idle frame also runs a game tick (a Lavapipe GPU frame, ~30 ms on a loaded box): 3-6 runs
+    // of 10,000 frames took 15-30 min and looked like a hang. Under load the spike budget is skipped
+    // anyway (informational only), so one shorter run is enough for the memory / heap-creep checks.
+    const bool debugFrames = qEnvironmentVariableIsSet("FUSE_QT_IDLE_DEBUG_FRAMES");
+    const bool loaded = !debugFrames && timingScale() > 1.0;
+    const int kFrames = debugFrames ? qEnvironmentVariableIntValue("FUSE_QT_IDLE_DEBUG_FRAMES") : (loaded ? 2000 : 10000);
+    const int kMinRuns = debugFrames || loaded ? 1 : 3;
+    const int kMaxRuns = debugFrames || loaded ? 1 : 6;
+    if (loaded) {
+        std::printf("box under load (x%.2f): 1 run of %d idle frames (spike budget informational)\n", timingScale(), kFrames);
+    }
     constexpr double kSpikeFactor = 3.0;
     const long long rss0 = residentBytes();
     const long long heap0 = heapInUse();
