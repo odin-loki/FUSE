@@ -2526,6 +2526,66 @@ int gateTerrain() {
     return g_failures == 0 ? 0 : 1;
 }
 
+int gateAssetBrowser() {
+    using fuse::editor::AssetBrowser;
+    QTemporaryDir tmp;
+    expect(tmp.isValid(), "temp project");
+    QDir root(tmp.path());
+    root.mkpath(QStringLiteral("meshes/props"));
+    root.mkpath(QStringLiteral("textures"));
+    const auto touch = [&](const QString& rel) {
+        QFile f(root.filePath(rel));
+        if (f.open(QIODevice::WriteOnly)) f.write("x");
+    };
+    touch(QStringLiteral("meshes/rock.fusemesh"));
+    touch(QStringLiteral("meshes/props/crate.fusemesh"));
+    touch(QStringLiteral("textures/rock.png"));
+    touch(QStringLiteral("level.scene"));
+    fuse::editor::qt::AssetBrowserWidget w;
+    w.resize(420, 320);
+    w.show();
+    w.setProjectRoot(tmp.path());
+    expect(w.breadcrumbCount() == 1, fmt("root breadcrumb (%d)", w.breadcrumbCount()));
+    expect(w.statusLabel()->text().contains(QStringLiteral("items")), "status line counts items");
+    const int all = w.list()->count();
+    w.setTypeFilter(static_cast<int>(AssetBrowser::AssetType::Texture));
+    int nonFolder = 0;
+    for (int i = 0; i < w.list()->count(); ++i) {
+        if (!w.list()->item(i)->toolTip().startsWith(QLatin1String("Folder"))) ++nonFolder;
+    }
+    expect(w.list()->count() < all || nonFolder == 0, fmt("type filter hides other files (%d of %d, %d files)", w.list()->count(), all, nonFolder));
+    w.setTypeFilter(-1);
+    expect(w.list()->count() == all, "All types restores the listing");
+    w.setGridView(true);
+    expect(w.gridView() && w.list()->viewMode() == QListView::IconMode, "grid view");
+    w.setGridView(false);
+    expect(!w.gridView(), "list view");
+    w.navigateTo(QStringLiteral("meshes/props"));
+    expect(w.breadcrumbCount() == 3, fmt("breadcrumb root > meshes > props (%d)", w.breadcrumbCount()));
+    w.navigateTo(QString());
+    expect(w.breadcrumbCount() == 1, "breadcrumb jumps back to the root");
+    expect(w.createFolder(QStringLiteral("audio")) && root.exists(QStringLiteral("audio")), "New Folder creates it");
+    expect(!w.createFolder(QStringLiteral("audio")), "New Folder refuses an existing name");
+    expect(!w.createFolder(QStringLiteral("../escape")), "New Folder refuses path separators");
+    QString levelRel;
+    for (int i = 0; i < w.list()->count(); ++i) {
+        const QString rel = w.list()->item(i)->data(Qt::UserRole).toString();
+        if (rel.endsWith(QLatin1String("level.scene"))) levelRel = rel;
+    }
+    expect(!levelRel.isEmpty(), "scene file listed");
+    expect(w.renameEntry(levelRel, QStringLiteral("main.scene")) && root.exists(QStringLiteral("main.scene")) &&
+               !root.exists(QStringLiteral("level.scene")),
+           "Rename renames the file");
+    QMenu* menu = w.buildContextMenu(QStringLiteral("main.scene"));
+    QStringList texts;
+    for (QAction* a : menu->actions()) if (!a->isSeparator()) texts << a->text();
+    expect(texts.contains(QStringLiteral("Copy Path")) && texts.contains(QStringLiteral("Rename…")) &&
+               texts.contains(QStringLiteral("New Folder…")),
+           fmt("context menu: %s", qPrintable(texts.join(QStringLiteral(", ")))));
+    delete menu;
+    return g_failures == 0 ? 0 : 1;
+}
+
 int main(int argc, char** argv) {
     testQtGateNameOk();
     if (g_failures != 0) {
@@ -2584,6 +2644,8 @@ int main(int argc, char** argv) {
             code = gateBuildPackage();
         } else if (gate == "preferences") {
             code = gatePreferences();
+        } else if (gate == "asset_browser") {
+            code = gateAssetBrowser();
         } else if (gate == "terrain") {
             code = gateTerrain();
         } else if (gate == "edit_tools") {

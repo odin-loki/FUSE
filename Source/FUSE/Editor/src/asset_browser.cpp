@@ -190,7 +190,7 @@ const char* AssetBrowser::assetTypeLabel(AssetType type) {
 AssetBrowser::AssetType AssetBrowser::classifyFile(const std::string& extension) {
     const std::string ext = toLower(extension);
 
-    if (ext == ".obj" || ext == ".gltf" || ext == ".glb" || ext == ".fbx" || ext == ".dae") {
+    if (ext == ".obj" || ext == ".fusemesh" || ext == ".gltf" || ext == ".glb" || ext == ".fbx" || ext == ".dae") {
         return AssetType::Mesh;
     }
     if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tga" || ext == ".dds" ||

@@ -21,6 +21,7 @@ set(_fuse_qt_gate_tests
     project_settings
     edit_tools
     terrain
+    asset_browser
     preferences
     build_package
 )

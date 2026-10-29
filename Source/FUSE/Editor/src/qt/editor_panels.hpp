@@ -274,6 +274,24 @@ public:
     bool navigateUp();
     /// Rescan the current folder (the Refresh button).
     void rescan();
+    /// Grid (icon) view vs list view.
+    void setGridView(bool on);
+    [[nodiscard]] bool gridView() const;
+    /// Show only one asset type (folders always stay visible); -1 = all types.
+    void setTypeFilter(int assetType);
+    /// Jump to a project-relative folder ("" = project root), e.g. from the breadcrumb.
+    void navigateTo(const QString& relativeDir);
+    /// Breadcrumb buttons (root + one per folder level).
+    [[nodiscard]] int breadcrumbCount() const;
+    /// Create `name` in the current folder; false if it exists or the name is invalid.
+    bool createFolder(const QString& name);
+    /// Rename an entry of the current listing (same folder); false on clash / invalid name.
+    bool renameEntry(const QString& relativePath, const QString& newName);
+    /// Absolute path of an entry (for the clipboard / file manager).
+    [[nodiscard]] QString absolutePathOf(const QString& relativePath) const;
+    [[nodiscard]] QLabel* statusLabel() const { return m_status; }
+    /// The right-click menu for an entry ("" = empty area): Open, Copy Path, Rename…, New Folder…, Refresh.
+    QMenu* buildContextMenu(const QString& relativePath);
 
 signals:
     /// A scene asset was activated; `absolutePath` is the file to open.
@@ -281,6 +299,8 @@ signals:
 
 private:
     void rebuild();
+    void rebuildBreadcrumb();
+    void updateStatus();
 
     AssetBrowser m_model;
     QLineEdit* m_filter = nullptr;
@@ -288,6 +308,12 @@ private:
     QLabel* m_path = nullptr;
     QToolButton* m_up = nullptr;
     QToolButton* m_refresh = nullptr;
+    QToolButton* m_gridToggle = nullptr;
+    QComboBox* m_typeFilter = nullptr;
+    QWidget* m_crumbs = nullptr;
+    QLabel* m_status = nullptr;
+    int m_shown = 0;
+    int m_folders = 0;
 };
 
 /// GUI-1 frame-time graph: CPU ms per retained frame as bars, with the target-fps budget line.

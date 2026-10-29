@@ -43,6 +43,11 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
+#include <QDateTime>
+#include <QLocale>
+#include <QClipboard>
+#include <QMessageBox>
+#include <QInputDialog>
 #include <QPlainTextEdit>
 #include <QScrollBar>
 #include <QTreeWidget>
@@ -1258,39 +1263,87 @@ QIcon assetIcon(const QStyle* style, AssetBrowser::AssetType type) {
 AssetBrowserWidget::AssetBrowserWidget(QWidget* parent) : QWidget(parent) {
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(4, 4, 4, 4);
+    layout->setSpacing(3);
     auto* nav = new QHBoxLayout();
+    nav->setSpacing(2);
     m_up = new QToolButton(this);
     m_up->setObjectName(QStringLiteral("fuseAssetUp"));
     m_up->setIcon(style()->standardIcon(QStyle::SP_FileDialogToParent));
     m_up->setToolTip(tr("Parent folder"));
+    m_up->setAutoRaise(true);
     nav->addWidget(m_up);
+    // Breadcrumb: one flat button per folder level (the plain path label stays for tests / copy).
+    m_crumbs = new QWidget(this);
+    m_crumbs->setObjectName(QStringLiteral("fuseAssetBreadcrumb"));
+    auto* crumbLayout = new QHBoxLayout(m_crumbs);
+    crumbLayout->setContentsMargins(0, 0, 0, 0);
+    crumbLayout->setSpacing(0);
+    nav->addWidget(m_crumbs, 1);
     m_path = new QLabel(this);
     m_path->setObjectName(QStringLiteral("fuseAssetPath"));
     m_path->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    nav->addWidget(m_path, 1);
+    m_path->setVisible(false);
+    nav->addWidget(m_path);
+    m_gridToggle = new QToolButton(this);
+    m_gridToggle->setObjectName(QStringLiteral("fuseAssetGridToggle"));
+    m_gridToggle->setCheckable(true);
+    m_gridToggle->setAutoRaise(true);
+    m_gridToggle->setIcon(style()->standardIcon(QStyle::SP_FileDialogContentsView));
+    m_gridToggle->setToolTip(tr("Grid view"));
+    nav->addWidget(m_gridToggle);
     m_refresh = new QToolButton(this);
     m_refresh->setObjectName(QStringLiteral("fuseAssetRefresh"));
     m_refresh->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
     m_refresh->setToolTip(tr("Rescan folder"));
+    m_refresh->setAutoRaise(true);
     nav->addWidget(m_refresh);
     layout->addLayout(nav);
+    auto* filterRow = new QHBoxLayout();
+    filterRow->setSpacing(3);
     m_filter = new QLineEdit(this);
     m_filter->setPlaceholderText(tr("Filter assets…"));
     m_filter->setClearButtonEnabled(true);
-    layout->addWidget(m_filter);
+    filterRow->addWidget(m_filter, 1);
+    m_typeFilter = new QComboBox(this);
+    m_typeFilter->setObjectName(QStringLiteral("fuseAssetTypeFilter"));
+    m_typeFilter->addItem(tr("All types"), -1);
+    for (int t = static_cast<int>(AssetBrowser::AssetType::Mesh); t <= static_cast<int>(AssetBrowser::AssetType::Unknown); ++t) {
+        m_typeFilter->addItem(QString::fromLatin1(AssetBrowser::assetTypeLabel(static_cast<AssetBrowser::AssetType>(t))), t);
+    }
+    filterRow->addWidget(m_typeFilter);
+    layout->addLayout(filterRow);
     m_list = new QListWidget(this);
     m_list->setObjectName(QStringLiteral("fuseAssetList"));
+    m_list->setContextMenuPolicy(Qt::CustomContextMenu);
+    m_list->setUniformItemSizes(true);
     layout->addWidget(m_list, 1);
+    m_status = new QLabel(this);
+    m_status->setObjectName(QStringLiteral("fuseAssetStatus"));
+    m_status->setStyleSheet(QStringLiteral("color: palette(mid);"));
+    layout->addWidget(m_status);
     connect(m_filter, &QLineEdit::textChanged, this, [this](const QString& text) {
         m_model.setSearchFilter(text.toUtf8().constData());
         rebuild();
     });
+    connect(m_typeFilter, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int) { rebuild(); });
+    connect(m_gridToggle, &QToolButton::toggled, this, [this](bool on) { setGridView(on); });
     connect(m_up, &QToolButton::clicked, this, &AssetBrowserWidget::navigateUp);
     connect(m_refresh, &QToolButton::clicked, this, &AssetBrowserWidget::rescan);
     connect(m_list, &QListWidget::itemActivated, this, [this](QListWidgetItem* item) {
         if (item != nullptr) {
             activatePath(item->data(Qt::UserRole).toString());
         }
+    });
+    connect(m_list, &QListWidget::itemSelectionChanged, this, [this]() {
+        const QList<QListWidgetItem*> sel = m_list->selectedItems();
+        if (!sel.isEmpty()) m_model.selectEntry(sel.front()->data(Qt::UserRole).toString().toUtf8().constData());
+        updateStatus();
+    });
+    connect(m_list, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
+        QListWidgetItem* item = m_list->itemAt(pos);
+        QMenu* menu = buildContextMenu(item != nullptr ? item->data(Qt::UserRole).toString() : QString());
+        menu->setAttribute(Qt::WA_DeleteOnClose);
+        menu->popup(m_list->viewport()->mapToGlobal(pos));
     });
     rebuild();
 }
@@ -1307,6 +1360,7 @@ AssetBrowser::ActivateResult AssetBrowserWidget::activatePath(const QString& rel
     if (result == AssetBrowser::ActivateResult::EnteredFolder) {
         const QSignalBlocker block(m_filter);
         m_filter->clear();
+        m_model.setSearchFilter("");
         rebuild();
     } else if (result == AssetBrowser::ActivateResult::OpenScene) {
         emit sceneOpenRequested(QString::fromStdString(m_model.absolutePath(path)));
@@ -1322,24 +1376,191 @@ bool AssetBrowserWidget::navigateUp() {
     return moved;
 }
 
+void AssetBrowserWidget::navigateTo(const QString& relativeDir) {
+    if (m_model.projectRoot().empty()) return;
+    m_model.setCurrentDirectory(relativeDir.toUtf8().constData());
+    rebuild();
+}
+
 void AssetBrowserWidget::rescan() {
     m_model.refresh();
     rebuild();
 }
 
+void AssetBrowserWidget::setGridView(bool on) {
+    if (m_gridToggle->isChecked() != on) {
+        const QSignalBlocker block(m_gridToggle);
+        m_gridToggle->setChecked(on);
+    }
+    if (on) {
+        m_list->setViewMode(QListView::IconMode);
+        m_list->setIconSize(QSize(40, 40));
+        m_list->setGridSize(QSize(92, 78));
+        m_list->setResizeMode(QListView::Adjust);
+        m_list->setMovement(QListView::Static);
+        m_list->setWordWrap(true);
+        m_list->setTextElideMode(Qt::ElideMiddle);
+    } else {
+        m_list->setViewMode(QListView::ListMode);
+        m_list->setIconSize(QSize(16, 16));
+        m_list->setGridSize(QSize());
+        m_list->setWordWrap(false);
+    }
+    m_gridToggle->setToolTip(on ? tr("List view") : tr("Grid view"));
+}
+
+bool AssetBrowserWidget::gridView() const { return m_list->viewMode() == QListView::IconMode; }
+
+void AssetBrowserWidget::setTypeFilter(int assetType) {
+    const int idx = m_typeFilter->findData(assetType);
+    m_typeFilter->setCurrentIndex(idx >= 0 ? idx : 0);
+    rebuild();
+}
+
+int AssetBrowserWidget::breadcrumbCount() const { return m_crumbs->findChildren<QToolButton*>().size(); }
+
+namespace {
+bool validAssetName(const QString& name) {
+    return !name.isEmpty() && name != QLatin1String(".") && name != QLatin1String("..") && !name.contains(QLatin1Char('/')) &&
+           !name.contains(QLatin1Char('\\'));
+}
+} // namespace
+
+QString AssetBrowserWidget::absolutePathOf(const QString& relativePath) const {
+    return QString::fromStdString(m_model.absolutePath(relativePath.toStdString()));
+}
+
+bool AssetBrowserWidget::createFolder(const QString& name) {
+    if (m_model.projectRoot().empty() || !validAssetName(name)) return false;
+    QDir dir(QString::fromStdString(m_model.absolutePath(m_model.currentDirectory())));
+    if (dir.exists(name) || !dir.mkdir(name)) return false;
+    rescan();
+    return true;
+}
+
+bool AssetBrowserWidget::renameEntry(const QString& relativePath, const QString& newName) {
+    if (m_model.projectRoot().empty() || !validAssetName(newName)) return false;
+    const QFileInfo from(absolutePathOf(relativePath));
+    if (!from.exists()) return false;
+    const QString to = from.dir().filePath(newName);
+    if (QFileInfo::exists(to) || !QDir().rename(from.absoluteFilePath(), to)) return false;
+    rescan();
+    return true;
+}
+
+QMenu* AssetBrowserWidget::buildContextMenu(const QString& relativePath) {
+    auto* menu = new QMenu(this);
+    menu->setObjectName(QStringLiteral("fuseAssetContextMenu"));
+    if (!relativePath.isEmpty()) {
+        menu->addAction(tr("Open"), this, [this, relativePath]() { activatePath(relativePath); });
+        menu->addAction(tr("Copy Path"), this, [this, relativePath]() {
+            QApplication::clipboard()->setText(absolutePathOf(relativePath));
+        });
+        menu->addAction(tr("Copy Relative Path"), this, [relativePath]() { QApplication::clipboard()->setText(relativePath); });
+        menu->addAction(tr("Rename…"), this, [this, relativePath]() {
+            bool ok = false;
+            const QString current = QFileInfo(relativePath).fileName();
+            const QString name = QInputDialog::getText(this, tr("Rename"), tr("New name:"), QLineEdit::Normal, current, &ok);
+            if (ok && name != current && !renameEntry(relativePath, name)) {
+                QMessageBox::warning(this, tr("Rename"), tr("Could not rename to \"%1\".").arg(name));
+            }
+        });
+        menu->addSeparator();
+    }
+    QAction* folder = menu->addAction(tr("New Folder…"), this, [this]() {
+        bool ok = false;
+        const QString name = QInputDialog::getText(this, tr("New Folder"), tr("Folder name:"), QLineEdit::Normal,
+                                                   tr("New Folder"), &ok);
+        if (ok && !createFolder(name)) QMessageBox::warning(this, tr("New Folder"), tr("Could not create \"%1\".").arg(name));
+    });
+    folder->setEnabled(!m_model.projectRoot().empty());
+    menu->addAction(tr("Refresh"), this, &AssetBrowserWidget::rescan);
+    return menu;
+}
+
+void AssetBrowserWidget::rebuildBreadcrumb() {
+    auto* layout = static_cast<QHBoxLayout*>(m_crumbs->layout());
+    while (QLayoutItem* it = layout->takeAt(0)) {
+        delete it->widget();
+        delete it;
+    }
+    if (m_model.projectRoot().empty()) {
+        auto* none = new QLabel(tr("(no project open)"), m_crumbs);
+        layout->addWidget(none);
+        layout->addStretch(1);
+        return;
+    }
+    const QString dir = QString::fromStdString(m_model.currentDirectory());
+    const QStringList parts = dir.split(QLatin1Char('/'), Qt::SkipEmptyParts);
+    const auto addCrumb = [&](const QString& text, const QString& target, bool current) {
+        auto* b = new QToolButton(m_crumbs);
+        b->setText(text);
+        b->setAutoRaise(true);
+        b->setToolTip(target.isEmpty() ? tr("Project root") : target);
+        if (current) {
+            QFont f = b->font();
+            f.setBold(true);
+            b->setFont(f);
+        }
+        connect(b, &QToolButton::clicked, this, [this, target]() { navigateTo(target); });
+        layout->addWidget(b);
+    };
+    addCrumb(QFileInfo(QString::fromStdString(m_model.projectRoot())).fileName(), QString(), parts.isEmpty());
+    QString acc;
+    for (int i = 0; i < parts.size(); ++i) {
+        auto* sep = new QLabel(QStringLiteral("›"), m_crumbs);
+        layout->addWidget(sep);
+        acc = acc.isEmpty() ? parts[i] : acc + QLatin1Char('/') + parts[i];
+        addCrumb(parts[i], acc, i + 1 == parts.size());
+    }
+    layout->addStretch(1);
+}
+
 void AssetBrowserWidget::rebuild() {
+    const QString selected = QString::fromStdString(m_model.selectedEntry() != nullptr ? m_model.selectedEntry()->path : std::string());
+    const int typeFilter = m_typeFilter->currentData().toInt();
+    const QSignalBlocker block(m_list);
     m_list->clear();
+    int shown = 0, folders = 0;
     for (const AssetBrowser::AssetEntry& entry : m_model.entries()) { // already filtered by the model
+        if (typeFilter >= 0 && entry.type != AssetBrowser::AssetType::Folder && static_cast<int>(entry.type) != typeFilter) {
+            continue;
+        }
         auto* item = new QListWidgetItem(assetIcon(style(), entry.type), QString::fromStdString(entry.name), m_list);
-        item->setData(Qt::UserRole, QString::fromStdString(entry.path));
-        item->setToolTip(QStringLiteral("%1 — %2").arg(QString::fromLatin1(AssetBrowser::assetTypeLabel(entry.type)),
-                                                     QString::fromStdString(entry.path)));
+        const QString rel = QString::fromStdString(entry.path);
+        item->setData(Qt::UserRole, rel);
+        const QFileInfo info(QString::fromStdString(m_model.absolutePath(entry.path)));
+        QString tip = QStringLiteral("%1 — %2").arg(QString::fromLatin1(AssetBrowser::assetTypeLabel(entry.type)), rel);
+        if (entry.type != AssetBrowser::AssetType::Folder && info.exists()) {
+            tip += QStringLiteral("\n%1 · modified %2")
+                       .arg(QLocale().formattedDataSize(info.size()), info.lastModified().toString(QStringLiteral("yyyy-MM-dd HH:mm")));
+        }
+        item->setToolTip(tip);
+        if (rel == selected) item->setSelected(true);
+        ++shown;
+        if (entry.type == AssetBrowser::AssetType::Folder) ++folders;
     }
     const bool hasRoot = !m_model.projectRoot().empty();
     const QString dir = QString::fromStdString(m_model.currentDirectory());
     m_path->setText(hasRoot ? QStringLiteral("/%1").arg(dir) : tr("(no project open)"));
     m_up->setEnabled(hasRoot && !dir.isEmpty());
     m_refresh->setEnabled(hasRoot);
+    m_shown = shown;
+    m_folders = folders;
+    updateStatus();
+    rebuildBreadcrumb();
+}
+
+void AssetBrowserWidget::updateStatus() {
+    if (m_model.projectRoot().empty()) {
+        m_status->clear();
+        return;
+    }
+    QString status = tr("%1 items (%2 folders)").arg(m_shown).arg(m_folders);
+    if (const AssetBrowser::AssetEntry* e = m_model.selectedEntry()) {
+        status += tr(" · %1 (%2)").arg(QString::fromStdString(e->name), QString::fromLatin1(AssetBrowser::assetTypeLabel(e->type)));
+    }
+    m_status->setText(status);
 }
 
 // ---- ProfilerWidget -------------------------------------------------------------------------------
