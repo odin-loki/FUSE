@@ -7,6 +7,9 @@
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
+#include <QFileInfo>
+#include <QPixmap>
+#include <QTimer>
 
 int main(int argc, char* argv[]) {
     fuse::core::initialize();
@@ -27,6 +30,20 @@ int main(int argc, char* argv[]) {
         "path",
         QDir(QString::fromUtf8(qgetenv("FUSE_SAMPLES_ROOT"))).absolutePath());
     parser.addOption(samplesOption);
+    QCommandLineOption projectOption(QStringList() << "p" << "project",
+                                     "Project directory (project.json) to open on launch.", "dir");
+    parser.addOption(projectOption);
+    QCommandLineOption screenshotOption(
+        QStringList() << "screenshot",
+        "Grab the editor window to this PNG after --screenshot-delay ms, then quit.", "png");
+    parser.addOption(screenshotOption);
+    QCommandLineOption screenshotDelayOption(QStringList() << "screenshot-delay",
+                                             "Delay before --screenshot (ms).", "ms", "2500");
+    parser.addOption(screenshotDelayOption);
+    QCommandLineOption softwareViewportOption(
+        QStringList() << "software-viewport",
+        "Draw the viewport with the software placeholder instead of the embedded Vulkan window.");
+    parser.addOption(softwareViewportOption);
     parser.process(app);
 
     QString samplesRoot = parser.value(samplesOption);
@@ -35,8 +52,21 @@ int main(int argc, char* argv[]) {
                             .absoluteFilePath("../../../../Samples/unification");
     }
 
-    fuse::editor::qt::MainWindow window(samplesRoot);
+    fuse::editor::qt::MainWindow::Options options;
+    options.embeddedVulkanViewport = !parser.isSet(softwareViewportOption);
+    fuse::editor::qt::MainWindow window(samplesRoot, options);
     window.show();
+    if (parser.isSet(projectOption)) {
+        window.openProject(QFileInfo(parser.value(projectOption)).absoluteFilePath());
+    }
+    if (parser.isSet(screenshotOption)) {
+        const QString shotPath = parser.value(screenshotOption);
+        QTimer::singleShot(parser.value(screenshotDelayOption).toInt(), &window, [&window, shotPath]() {
+            window.refreshPanels();
+            const bool saved = window.grab().save(shotPath, "PNG");
+            QCoreApplication::exit(saved ? 0 : 1);
+        });
+    }
 
     const int code = app.exec();
     fuse::core::shutdown();
