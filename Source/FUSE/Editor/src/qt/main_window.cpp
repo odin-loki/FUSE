@@ -463,7 +463,12 @@ void MainWindow::buildTransport() {
     m_actResume = makeAction(tr("&Resume"), "fuseActionResume", CommandKind::ResumePlay, QStyle::SP_MediaSeekForward);
     m_actStep = makeAction(tr("S&tep"), "fuseActionStep", CommandKind::StepPlay, QStyle::SP_MediaSkipForward);
     m_actStep->setShortcut(QKeySequence(Qt::Key_F10));
+    // PIE shortcuts: F5 plays (or resumes when paused), Shift+F5 stops, F6 pauses.
+    m_actPlay->setShortcuts({QKeySequence(Qt::CTRL | Qt::Key_P), QKeySequence(Qt::Key_F5)});
+    m_actResume->setShortcut(QKeySequence(Qt::Key_F5));
+    m_actPause->setShortcut(QKeySequence(Qt::Key_F6));
     m_actStop = makeAction(tr("&Stop"), "fuseActionStop", CommandKind::StopPlay, QStyle::SP_MediaStop);
+    m_actStop->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F5));
     updateTransportActions();
 }
 
@@ -537,6 +542,24 @@ void MainWindow::updateTransportActions() {
     m_actResume->setEnabled(paused);
     m_actStep->setEnabled(paused);
     m_actStop->setEnabled(playing);
+    // PIE polish: scene file and entity-authoring commands act on the edit scene, so they are
+    // disabled while Play runs (the play registry is a copy); the viewport dock shows the state.
+    for (const char* name : {kActionSave, kActionSaveAs, "fuseActionSavePrefab", "fuseActionInstantiatePrefab"}) {
+        if (QAction* a = findChild<QAction*>(QString::fromLatin1(name))) {
+            a->setEnabled(!playing);
+        }
+    }
+    if (m_entityMenu != nullptr) {
+        m_entityMenu->setEnabled(!playing);
+    }
+    if (m_statusLabel != nullptr) {
+        const QString style = !playing ? QString()
+                              : QStringLiteral("QLabel { background: %1; color: white; padding: 0 6px; }")
+                                    .arg(paused ? QStringLiteral("#7a5a12") : QStringLiteral("#1f6e3a"));
+        if (m_statusLabel->styleSheet() != style) {
+            m_statusLabel->setStyleSheet(style);
+        }
+    }
 }
 
 QDockWidget* MainWindow::dock(const char* objectName) const {
@@ -684,6 +707,15 @@ double MainWindow::measureUiFrame() {
 }
 
 void MainWindow::refreshStatusBar() {
+    // The 100 ms status refresh must never stall the UI thread behind a long game tick (the first
+    // Lavapipe bring-up / pipeline build holds the scene mutex for seconds): skip this round when
+    // the game thread owns the scene; the next timer tick catches up.
+    if (m_gameThread.isRunning()) {
+        std::unique_lock<std::mutex> probe(m_sceneMutex, std::try_to_lock);
+        if (!probe.owns_lock()) {
+            return;
+        }
+    }
     syncProjectWorld();
     m_console->drainLog();
     updateTransportActions();
@@ -715,7 +747,10 @@ void MainWindow::refreshStatusBar() {
             .arg(m_host.gameTickCount())
             .arg(m_host.commandQueue().pendingCount())
             .arg(m_host.commandQueue().appliedCount())
-            .arg(m_host.editorState().playing ? tr("on") : tr("off")));
+            .arg(!m_host.editorState().playing ? tr("off")
+                 : m_host.editorState().paused ? tr("paused")
+                                               : tr("playing")));
+    updateTransportActions();
 }
 
 } // namespace fuse::editor::qt
@@ -752,6 +787,9 @@ void MainWindow::updateWindowTitle() {
     QString title = scene + (dirty ? QStringLiteral("*") : QString());
     if (!project.isEmpty()) {
         title += QStringLiteral(" - ") + project;
+    }
+    if (m_host.editorState().playing) {
+        title += m_host.editorState().paused ? tr(" [Paused]") : tr(" [Playing]");
     }
     title += QStringLiteral(" - ") + tr("FUSE Editor");
     if (windowTitle() != title) {
