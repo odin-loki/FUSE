@@ -34,7 +34,7 @@ target_compile_definitions(fuse_sl_mock_interposer PRIVATE $<$<PLATFORM_ID:Windo
 _fuse_nvidia_module(fuse_sl_mock_interposer "${FUSE_NVIDIA_PLUGIN_OUT}/streamline")
 
 add_executable(fuse_nvidia_plugin_gates test_nvidia_plugin_gates.cpp)
-target_include_directories(fuse_nvidia_plugin_gates PRIVATE "${_nv_mock_src}")
+target_include_directories(fuse_nvidia_plugin_gates PRIVATE "${_nv_mock_src}" "${CMAKE_CURRENT_SOURCE_DIR}/../../../include")
 target_link_libraries(fuse_nvidia_plugin_gates PRIVATE fuse_nvidia_plugin fuse_nvidia_streamline_mapping)
 add_dependencies(fuse_nvidia_plugin_gates ${_nv_mock_targets} fuse_sl_mock_interposer fuse_nvplugin_streamline)
 target_compile_definitions(fuse_nvidia_plugin_gates PRIVATE
