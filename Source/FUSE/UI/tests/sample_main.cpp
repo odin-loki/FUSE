@@ -2,6 +2,9 @@
 // and writes a PNG. Usage: fuse_ui_sample [out.png]
 #include "test_util.hpp"
 
+#if defined(__GNUC__)
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#endif
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
