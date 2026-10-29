@@ -476,6 +476,8 @@ WP-00 → WP-01 → WP-02 ──────────────────
 - `demo_hybrid_hud` now links with parity demos OFF.
 - `fuse_editor_qt_startup` runs on a private Xvfb.
 
+**U6 GUI-4 (2026-10-29):** Vulkan-viewport gizmo/brush overlay; parent-frame gizmo edits; catalog materials into `World3D`; Timeline dock with undoable keys and a `.timeline` sidecar; `--select` for screenshots; timing gates scale with box load. Gates: `fuse_editor_qt_shell_overlay`, `_timeline`.
+
 **FUSE UI:** the engine-native GUI framework (`fuse_ui_core`, `fuse_text`, widgets) is tracked separately. See [`../ui/README.md`](../ui/README.md) and [`../plans/FUSE_UI_PLAN.md`](../plans/FUSE_UI_PLAN.md).
 
 ---

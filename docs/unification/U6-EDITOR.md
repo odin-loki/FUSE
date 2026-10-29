@@ -194,12 +194,19 @@ All Qt shell gates run offscreen (`QT_QPA_PLATFORM=offscreen`) in `fuse_editor_q
 | **SDF Sculpt dock** with a *Sculpt in viewport* toggle. A left-drag applies `SdfSculptPanel::applyBrushStroke` at the picked surface, or at the y = 0 ground plane on a miss. One drag is one undo step, and a brush circle follows the cursor. The dock sets brush op, shape, material (from the catalog), radius, strength, spacing, GRIA α and X symmetry. | `fuse_editor_qt_shell_sculpt` |
 | `fuse_editor_qt_startup` always runs on a private Xvfb (`FUSE_FORCE_XVFB=1`). On the shared display, startup timing was flaky. | `fuse_editor_qt_startup` |
 
+GUI-4 (Oct 2026):
+
+- **Vulkan overlay.** The gizmo and sculpt-brush circle now draw over the embedded Vulkan viewport through a masked native sibling window (`ViewportOverlayWidget`: XShape on X11, `SetWindowRgn` on Windows), created before the Vulkan container so it never re-creates the native hierarchy under a live swapchain. It repaints only when its change signature (tool, handles, brush hover, camera) changes. `FUSE_EDITOR_NO_VK_OVERLAY=1` turns it off. The software viewport shares the same painter (`paintInteractionOverlay`).
+- **Parented gizmo edits.** The gizmo works in the parent frame: a world-space drag is mapped through the parent's inverse linear part, and world-space rotation uses the world axis expressed in the parent frame. (ECS `inverse_affine` ignores scale; the gizmo inverts with its own Cramer's-rule helper until that is fixed.)
+- **Materials reach the renderer.** When the catalog revision changes, the catalog is written into the embedded `World3D` material table (row id == `Mesh::material_id`), and mesh/SDF preview hints carry the catalog colour.
+- **Timeline.** `EditorTimeline` keys the 9 Transform channels of any entity on `cinematics::PropertyTrack`s. Every edit is one undo step. Timelines save as a `.timeline` sidecar (`FUSEEDTL 1`) beside the scene. The Timeline dock offers scrubbing, key/move/delete and play.
+- **`--select new|<index>`** selects an entity before `--screenshot` (`new` spawns an SDF sphere in front of the camera).
+- **Timing gates under load** scale by `FUSE_TIMING_SCALE` or 1.5 x (loadavg / threads)^2 once the box is oversubscribed. The spike gate is skipped under load.
+
 Still open:
 
-- Gizmo handles and the sculpt brush circle are drawn by the software viewport only. The embedded Vulkan viewport is a native child window, so it still receives the drags (mouse events are forwarded) but does not draw the overlay.
-- Gizmo edits of parented entities apply the delta in local space.
-- The renderer does not consume the material catalog yet. A bridge into `renderer::MaterialSystem` by id is still to do.
-- Timelines.
+- Curve editing / tangents in the timeline (keys are linear); sequencer clips are not yet bound to editor timelines.
+- Catalog materials map onto `World3D` only; there is no `renderer::MaterialSystem` texture/shader binding yet.
 
 The engine-native GUI framework that will eventually replace Qt (UI9) is tracked in [`../plans/FUSE_UI_PLAN.md`](../plans/FUSE_UI_PLAN.md). What is in tree so far is described in [`../ui/README.md`](../ui/README.md).
 
