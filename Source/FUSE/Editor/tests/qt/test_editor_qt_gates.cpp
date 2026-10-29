@@ -1241,6 +1241,16 @@ int gateProjectOpen() {
         expect(ecs1 > 0, "world objects spawned into the editor ECS registry");
         expect(rows1 == ecs1, "hierarchy dock lists every world object (refreshed by the status timer)");
         expect(window.windowTitle().contains(QStringLiteral("demo_3d_empty")), "window title names the project");
+        {
+            // The GroundPlane keeps its level transform (kGroundPlaneHalfExtent X/Z scale) and FECS bounds.
+            float groundHalf = 0.f;
+            window.host().editorScene().registry().each<fuse::ecs::Mesh>([&](fuse::ecs::EntityID id, fuse::ecs::Mesh& m) {
+                const fuse::ecs::Transform* t = window.host().editorScene().registry().get<fuse::ecs::Transform>(id);
+                if (t == nullptr) return;
+                groundHalf = std::max(groundHalf, std::min(m.aabb_max.x * t->scale.x, m.aabb_max.z * t->scale.z));
+            });
+            expect(groundHalf >= 255.f, fmt("ground plane spans its 256 half-extent in the editor (%.1f)", groundHalf));
+        }
 
         // A second project replaces the scene instead of accumulating into it.
         expect(openProjectThroughHub(window, QStringLiteral("demo_fx")), "second project opened");
@@ -2544,13 +2554,41 @@ int gateMultiViewport() {
     }
     expect(std::fabs(moved.y - pos.y - 1.f) < 1e-3f && std::fabs(moved.x - pos.x) < 1e-4f, "Front drag up moves +Y");
     window.undoLatest();
+    // Auto-frame ignores a huge ground box; Home (frameAll) still fits it.
+    ecs::EntityID ground{};
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        ecs::Registry& reg = window.host().editorScene().registry();
+        ground = reg.create();
+        ecs::Transform t{};
+        t.scale = ecs::vec3{256.f, 1.f, 256.f, 0.f};
+        reg.add(ground, t);
+        ecs::Mesh m{};
+        m.aabb_min = ecs::vec3{-1.f, 0.f, -1.f, 0.f};
+        m.aabb_max = ecs::vec3{1.f, 0.f, 1.f, 0.f};
+        reg.add(ground, m);
+        window.host().editorState().selectedEntities.clear();
+        window.host().editorState().primarySelection = ecs::EntityID::null();
+    }
+    const bool autoOk = top->frameAuto();
+    const float autoPpu = top->pixelsPerUnit();
+    expect(autoOk && autoPpu > 2.f, fmt("auto-frame skips the 512-unit ground (%.2f px/unit)", autoPpu));
+    const bool allOk = top->frameAll();
+    const float allPpu = top->pixelsPerUnit();
+    expect(allOk && allPpu < 2.f, fmt("frameAll fits the ground (%.2f px/unit)", allPpu));
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        window.host().editorScene().registry().destroy_entity(ground);
+    }
+    top->frameSelection();
     // Wheel zoom keeps the point under the cursor.
     const QPointF c(top->width() * 0.3, top->height() * 0.4);
+    const float ppuWheel = top->pixelsPerUnit();
     const ecs::vec3 w0 = top->viewToWorld(c, ecs::vec3{});
     QWheelEvent wheel(c, top->mapToGlobal(c), QPoint(), QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
     QCoreApplication::sendEvent(top, &wheel);
     const ecs::vec3 w1 = top->viewToWorld(c, ecs::vec3{});
-    expect(top->pixelsPerUnit() > ppu * 1.1f && std::fabs(w0.x - w1.x) < 1e-3f && std::fabs(w0.z - w1.z) < 1e-3f,
+    expect(top->pixelsPerUnit() > ppuWheel * 1.1f && std::fabs(w0.x - w1.x) < 1e-3f && std::fabs(w0.z - w1.z) < 1e-3f,
            "wheel zooms about the cursor");
     window.setViewportLayout(1);
     pumpFor(100);

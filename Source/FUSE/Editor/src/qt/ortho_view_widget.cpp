@@ -215,17 +215,24 @@ void OrthoViewWidget::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
     // Until the user pans / zooms / frames, keep the whole scene fitted as the splitter settles.
     if (!m_framed && width() > 50 && height() > 50) {
-        frame_(false, 8.0);
+        frame_(true, 8.0, true);
     }
 }
 
-bool OrthoViewWidget::frame_(bool selectionOnly, double minUnits) {
+bool OrthoViewWidget::frame_(bool selectionOnly, double minUnits, bool skipHuge) {
     collect_();
     QRectF bounds;
     bool any = false;
     const bool selOnly = selectionOnly && std::any_of(m_items.begin(), m_items.end(), [](const Item& i) { return i.selected; });
+    // Auto-frame skips huge boxes (ground planes, terrain) unless nothing else exists, so ordinary
+    // objects stay readable; frameAll() (Home) still fits everything.
+    const auto huge = [&](const Item& i) {
+        return std::max(i.rect.width(), i.rect.height()) / m_scale > kHugeExtentUnits;
+    };
+    const bool skip = skipHuge && !selOnly && std::any_of(m_items.begin(), m_items.end(), [&](const Item& i) { return !huge(i); });
     for (const Item& it : m_items) {
         if (selOnly && !it.selected) continue;
+        if (skip && huge(it)) continue;
         const QRectF r = it.rect.width() > 0.5 || it.rect.height() > 0.5 ? it.rect : QRectF(it.center - QPointF(4, 4), QSizeF(8, 8));
         bounds = any ? bounds.united(r) : r;
         any = true;

@@ -34,6 +34,9 @@ public:
     [[nodiscard]] QPointF worldToView(const ecs::vec3& p) const;
     [[nodiscard]] ecs::vec3 viewToWorld(QPointF pos, const ecs::vec3& depthFrom) const;
     [[nodiscard]] float pixelsPerUnit() const { return m_scale; }
+    /// Default framing (startup / layout change): the selection if any, else everything except huge
+    /// boxes such as ground planes (> kHugeExtentUnits) unless they are all there is.
+    bool frameAuto() { return frame_(true, 8.0, true); }
     void setPixelsPerUnit(float s);
     void setCenter(float u, float v);
     /// Fit the selection (or everything when nothing is selected). False when the scene is empty.
@@ -87,7 +90,8 @@ private:
     ecs::vec3 m_dragStartPos{};
     bool m_macroOpen = false;
     bool m_framed = false;
-    bool frame_(bool selectionOnly, double minUnits);
+    bool frame_(bool selectionOnly, double minUnits, bool skipHuge = false);
+    static constexpr double kHugeExtentUnits = 100.0;
 };
 
 } // namespace fuse::editor::qt
