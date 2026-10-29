@@ -272,3 +272,9 @@ Remaining: a true triangle wireframe view (needs a line / polygon-mode raster pi
 
 - Asset Browser: list/grid toggle (`fuseAssetGridToggle`), type filter (`fuseAssetTypeFilter`), clickable breadcrumb (`fuseAssetBreadcrumb`), status line (`fuseAssetStatus`), size/date tooltips, context menu (Open, Copy Path, Copy Relative Path, Rename…, New Folder…, Refresh). `.fusemesh` classified as Mesh. Gate: `asset_browser`.
 - Timeline: Ctrl+wheel zoom (anchored at cursor, 50 ms minimum), Shift+wheel pan, Fit (F); adaptive ruler; Loop (`fuseTimelineLoop`, L); frame snap 24/30/60 fps (`fuseTimelineSnap`; default 10 ms); previous/next key (`[` / `]`, buttons), Home/End. The toolbar no longer forces the window's minimum width. Covered in `shell_timeline`.
+
+## GUI-8: play-mode polish, multi-viewport, screenshot options
+
+- Play mode: the viewport gets a green (playing) / amber (paused) frame with a `PLAYING 3.6 s · 37 ticks` badge (session clock and tick count, frozen while paused). Play > Maximize Viewport on Play (`fuseActionMaximizeOnPlay`) hides the docks while playing and restores the layout on Stop. Covered in `shell_play`.
+- Multi-viewport: View > Viewport Layout (`fuseActionViewportSingle/Two/Quad`, Alt+1..3). The perspective view gets orthographic Top (X/Z), Front (X/Y) and Side (-Z/Y) views drawn with QPainter from the edit registry (mesh world AABBs, markers for other entities), so they need no extra swapchain. Click selects (Ctrl/Shift toggles), drag moves the selection in the view plane (one undo step), middle/right drag pans, the wheel zooms at the cursor, F frames the selection. The central widget is now a splitter that contains the viewport. Gate: `multi_viewport`.
+- Startup options: `--show-dock <name>` (repeatable; `timeline` also keys the selection so lanes show), `--play`, `--viewport-layout single|two|quad`.
