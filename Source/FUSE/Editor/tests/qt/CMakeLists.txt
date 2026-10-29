@@ -19,6 +19,7 @@ set(_fuse_qt_gate_tests
     ui_frame
     idle_frames
     project_settings
+    edit_tools
 )
 
 if(FUSE_EDITOR_QT_AVAILABLE AND TARGET fuse_editor_qt)

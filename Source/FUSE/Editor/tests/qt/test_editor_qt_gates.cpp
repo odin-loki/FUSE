@@ -35,6 +35,7 @@
 #include "main_window.hpp"
 #include "project_hub_widget.hpp"
 #include "project_settings_dialog.hpp"
+#include <fuse/ecs/components/light.hpp>
 
 #include <thread>
 #include <fuse/editor/qt_gate_name.hpp>
@@ -1677,6 +1678,84 @@ int gateProjectSettings() {
     return 0;
 }
 
+/// edit_tools: multi-select (Select All / Ctrl-click toggle), copy / cut / paste, scene search
+/// terms, and light / camera icons in the viewport (clicking one selects it).
+int gateEditTools() {
+    namespace ecs = fuse::ecs;
+    using fuse::f32;
+    MainWindow window(samplesRoot(), quietOptions());
+    expect(showAndExpose(window), "editor exposed");
+    populateScene(window, 4);
+    auto countEntities = [&]() {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        int n = 0;
+        window.host().editorScene().registry().each<ecs::Transform>([&](ecs::EntityID, ecs::Transform&) { ++n; });
+        return n;
+    };
+    auto action = [&](const char* name) { return window.findChild<QAction*>(QString::fromLatin1(name)); };
+    const int base = countEntities();
+    expect(base >= 4, fmt("scene populated (%d entities)", base));
+    action("fuseActionSelectAll")->trigger();
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        expect(static_cast<int>(window.host().editorState().selectedEntities.size()) == base, "Select All selects every entity");
+    }
+    window.hierarchy()->refresh();
+    expect(window.hierarchy()->tree()->selectedItems().size() == base, "hierarchy shows the multi-selection");
+    action("fuseActionCopy")->trigger();
+    expect(!window.clipboard().empty(), "copy fills the clipboard");
+    window.updateEditActions();
+    expect(action("fuseActionPaste")->isEnabled(), "paste enabled after copy");
+    action("fuseActionPaste")->trigger();
+    expect(countEntities() == 2 * base, fmt("paste duplicates the selection (%d)", countEntities()));
+    window.undoLatest();
+    expect(countEntities() == base, "one undo removes the paste");
+    action("fuseActionDeselectAll")->trigger();
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        expect(window.host().editorState().selectedEntities.empty(), "Deselect All clears the selection");
+    }
+
+    // Scene search.
+    using fuse::editor::qt::HierarchyWidget;
+    expect(HierarchyWidget::matchesSearch("Mesh #3", {"Transform", "Mesh", "Collider"}, 3, "collider"), "search matches components");
+    expect(HierarchyWidget::matchesSearch("Mesh #3", {"Transform", "Mesh"}, 3, "mesh #3"), "search terms combine");
+    expect(!HierarchyWidget::matchesSearch("Mesh #3", {"Transform", "Mesh"}, 3, "mesh #4"), "search #id filters");
+    action("fuseActionFind")->trigger();
+    window.hierarchy()->searchEdit()->setText(QStringLiteral("sdf"));
+    const int sdfRows = window.hierarchy()->entityRowCount();
+    expect(sdfRows >= 1 && sdfRows < base, fmt("hierarchy search narrows rows (%d of %d)", sdfRows, base));
+    window.hierarchy()->searchEdit()->clear();
+
+    // Light / camera icons: a point light 6 m in front of the viewport camera.
+    ViewportPlaceholderWidget* vp = window.viewport();
+    ecs::EntityID light;
+    QPointF expected;
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        const qreal dpr = vp->devicePixelRatioF();
+        const auto ray = vp->panel().screenRay(static_cast<f32>(vp->width() * dpr * 0.3), static_cast<f32>(vp->height() * dpr * 0.3));
+        ecs::Registry& reg = window.host().editorScene().registry();
+        light = reg.create();
+        ecs::Transform t{};
+        t.position = {ray.origin.x + ray.direction.x * 6.f, ray.origin.y + ray.direction.y * 6.f,
+                      ray.origin.z + ray.direction.z * 6.f, 1.f};
+        reg.add(light, t);
+        reg.add(light, ecs::PointLight{});
+        f32 sx = 0.f, sy = 0.f;
+        vp->panel().worldToScreen(t.position, sx, sy);
+        expected = QPointF(sx / dpr, sy / dpr);
+    }
+    (void)vp->grab();
+    expect(vp->sceneIconCount() >= 1, fmt("viewport draws light icons (%d)", vp->sceneIconCount()));
+    QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, expected.toPoint());
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        expect(window.host().editorState().primarySelection == light, "clicking a light icon selects the light");
+    }
+    return 0;
+}
+
 int gateLivePresent() {
 #if defined(FUSE_VULKAN_BACKEND)
     if (QGuiApplication::platformName() != QLatin1String("xcb")) {
@@ -1967,6 +2046,8 @@ int main(int argc, char** argv) {
             code = gatePresentAdopt();
         } else if (gate == "live_present") {
             code = gateLivePresent();
+        } else if (gate == "edit_tools") {
+            code = gateEditTools();
         } else if (gate == "project_settings") {
             code = gateProjectSettings();
         } else if (gate == "idle_frames") {

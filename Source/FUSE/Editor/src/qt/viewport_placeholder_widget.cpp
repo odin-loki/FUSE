@@ -3,6 +3,8 @@
 #include "viewport_vulkan_window.hpp"
 
 #include <fuse/cinematics/timeline_loader.hpp>
+#include <fuse/ecs/components/camera.hpp>
+#include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/systems/transform_system.hpp>
 #include <fuse/editor/command_queue.hpp>
 
@@ -383,11 +385,15 @@ void ViewportPlaceholderWidget::mousePressEvent(QMouseEvent* event) {
         }
         syncPanelSize();
         const qreal dpr = devicePixelRatioF();
-        {
+        const bool additive = (event->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier)) != 0;
+        ecs::EntityID hit = sceneIconAt_(event->position());
+        if (!hit.valid()) {
             std::lock_guard<std::mutex> lock(m_sceneMutex);
-            m_sceneView.pickAndSelect(m_host.editorScene(), m_panel, static_cast<f32>(event->position().x() * dpr),
-                                      static_cast<f32>(event->position().y() * dpr), m_host.editorState());
+            const ViewportPickResult r = m_sceneView.pick(m_host.editorScene(), m_panel, static_cast<f32>(event->position().x() * dpr),
+                                                          static_cast<f32>(event->position().y() * dpr));
+            hit = r.hit ? r.entity : ecs::EntityID::null();
         }
+        applyClickSelection_(hit, additive);
         emit selectionChanged();
         refreshGizmo();
         update();
@@ -778,6 +784,33 @@ void ViewportPlaceholderWidget::gizmoMove(const QPointF& pos) {
         }
         const TransformCommand::State before = TransformCommand::capture(*transform);
         m_host.undoStack().execute(std::make_unique<TransformCommand>(registry, m_gizmoEntity, before, after));
+        // Multi-select: the move delta applies to every other selected root (children follow
+        // their parents; rotate / scale stay per-entity on the primary).
+        if (m_gizmo.settings().tool == TransformTool::Translate) {
+            const f32 dx = after.position.x - before.position.x, dy = after.position.y - before.position.y,
+                      dz = after.position.z - before.position.z;
+            const std::vector<ecs::EntityID> selection = m_host.editorState().selectedEntities;
+            auto selectedAncestor = [&](ecs::EntityID id) {
+                for (int guard = 0; guard < 64; ++guard) {
+                    const ecs::Transform* t = registry.get<ecs::Transform>(id);
+                    if (t == nullptr || !t->parent.valid()) return false;
+                    id = t->parent;
+                    if (std::find(selection.begin(), selection.end(), id) != selection.end()) return true;
+                }
+                return false;
+            };
+            for (ecs::EntityID other : selection) {
+                if (other == m_gizmoEntity || !registry.alive(other) || selectedAncestor(other)) continue;
+                const ecs::Transform* ot = registry.get<ecs::Transform>(other);
+                if (ot == nullptr) continue;
+                const TransformCommand::State ob = TransformCommand::capture(*ot);
+                TransformCommand::State oa = ob;
+                oa.position.x += dx;
+                oa.position.y += dy;
+                oa.position.z += dz;
+                m_host.undoStack().execute(std::make_unique<TransformCommand>(registry, other, ob, oa));
+            }
+        }
     }
     emit sceneEdited();
     update();
@@ -795,7 +828,145 @@ void ViewportPlaceholderWidget::gizmoRelease() {
     update();
 }
 
+void ViewportPlaceholderWidget::applyClickSelection_(ecs::EntityID hit, bool additive) {
+    std::lock_guard<std::mutex> lock(m_sceneMutex);
+    EditorState& state = m_host.editorState();
+    if (!additive) {
+        state.selectedEntities.clear();
+        state.primarySelection = ecs::EntityID::null();
+        if (hit.valid()) {
+            state.selectedEntities.push_back(hit);
+            state.primarySelection = hit;
+        }
+        return;
+    }
+    if (!hit.valid()) return;
+    auto& sel = state.selectedEntities;
+    const auto it = std::find(sel.begin(), sel.end(), hit);
+    if (it != sel.end()) {
+        sel.erase(it);
+        if (state.primarySelection == hit) state.primarySelection = sel.empty() ? ecs::EntityID::null() : sel.back();
+    } else {
+        sel.push_back(hit);
+        state.primarySelection = hit;
+    }
+}
+
+ecs::EntityID ViewportPlaceholderWidget::sceneIconAt_(const QPointF& pos) const {
+    if (!m_showSceneIcons) return ecs::EntityID::null();
+    for (const SceneIcon& icon : m_sceneIcons) {
+        if (std::hypot(icon.pos.x() - pos.x(), icon.pos.y() - pos.y()) <= 11.0) return icon.id;
+    }
+    return ecs::EntityID::null();
+}
+
+namespace {
+ecs::vec3 rotateByQuat(const ecs::quat& q, f32 x, f32 y, f32 z) {
+    // v' = v + 2w(q x v) + 2 q x (q x v)
+    const f32 cx = q.y * z - q.z * y, cy = q.z * x - q.x * z, cz = q.x * y - q.y * x;
+    const f32 ccx = q.y * cz - q.z * cy, ccy = q.z * cx - q.x * cz, ccz = q.x * cy - q.y * cx;
+    return {x + 2.f * (q.w * cx + ccx), y + 2.f * (q.w * cy + ccy), z + 2.f * (q.w * cz + ccz), 0.f};
+}
+} // namespace
+
+void ViewportPlaceholderWidget::paintSceneIcons_(QPainter& painter) {
+    m_sceneIcons.clear();
+    if (!m_showSceneIcons) return;
+    enum Kind { Point, Spot, Directional, Cam };
+    struct Item {
+        ecs::EntityID id;
+        Kind kind;
+        ecs::vec3 pos;
+        ecs::vec3 fwd;
+        QColor color;
+        bool selected;
+    };
+    std::vector<Item> items;
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        ecs::Registry& registry = m_host.editorScene().registry();
+        const auto& sel = m_host.editorState().selectedEntities;
+        registry.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform& t) {
+            Kind kind;
+            ecs::vec3 c{1.f, 1.f, 1.f, 0.f};
+            if (const auto* l = registry.get<ecs::PointLight>(id)) { kind = Point; c = l->color; }
+            else if (const auto* s = registry.get<ecs::SpotLight>(id)) { kind = Spot; c = s->color; }
+            else if (const auto* d = registry.get<ecs::DirectionalLight>(id)) { kind = Directional; c = d->color; }
+            else if (registry.get<ecs::Camera>(id) != nullptr) { kind = Cam; c = {0.8f, 0.85f, 0.95f, 0.f}; }
+            else return;
+            const bool hasParent = t.parent.valid();
+            const ecs::vec3 p = hasParent ? ecs::vec3{t.local_to_world.data[12], t.local_to_world.data[13], t.local_to_world.data[14], 1.f}
+                                          : ecs::vec3{t.position.x, t.position.y, t.position.z, 1.f};
+            const auto toByte = [](f32 v) { return std::clamp(static_cast<int>(v * 255.f), 60, 255); };
+            items.push_back({id, kind, p, rotateByQuat(t.rotation, 0.f, 0.f, -1.f),
+                             QColor(toByte(c.x), toByte(c.y), toByte(c.z)),
+                             std::find(sel.begin(), sel.end(), id) != sel.end()});
+        });
+    }
+    const qreal inv = 1.0 / devicePixelRatioF();
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    for (const Item& it : items) {
+        f32 sx = 0.f, sy = 0.f;
+        if (!m_panel.worldToScreen(it.pos, sx, sy)) continue;
+        const QPointF p(sx * inv, sy * inv);
+        if (!rect().adjusted(-12, -12, 12, 12).contains(p.toPoint())) continue;
+        m_sceneIcons.push_back({it.id, p});
+        const QColor line = it.selected ? QColor(255, 200, 40) : it.color;
+        painter.setPen(QPen(QColor(0, 0, 0, 160), 4.0));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawEllipse(p, 8.0, 8.0);
+        painter.setPen(QPen(line, it.selected ? 2.5 : 1.8));
+        // Screen-space direction (spot / directional / camera).
+        QPointF dir(0, 0);
+        if (it.kind != Point) {
+            const ecs::vec3 tip{it.pos.x + it.fwd.x, it.pos.y + it.fwd.y, it.pos.z + it.fwd.z, 1.f};
+            f32 tx = 0.f, ty = 0.f;
+            if (m_panel.worldToScreen(tip, tx, ty)) {
+                const QPointF d(tx * inv - p.x(), ty * inv - p.y());
+                const qreal len = std::hypot(d.x(), d.y());
+                if (len > 0.5) dir = d / len;
+            }
+        }
+        switch (it.kind) {
+        case Point:
+            painter.setBrush(it.color);
+            painter.drawEllipse(p, 5.0, 5.0);
+            for (int k = 0; k < 8; ++k) {
+                const qreal a = k * M_PI / 4.0;
+                const QPointF u(std::cos(a), std::sin(a));
+                painter.drawLine(p + u * 8.0, p + u * 12.0);
+            }
+            break;
+        case Spot: {
+            const QPointF n(-dir.y(), dir.x());
+            painter.drawPolygon(QPolygonF({p, p + dir * 22.0 + n * 9.0, p + dir * 22.0 - n * 9.0}));
+            painter.setBrush(it.color);
+            painter.drawEllipse(p, 4.0, 4.0);
+            break;
+        }
+        case Directional:
+            painter.setBrush(Qt::NoBrush);
+            painter.drawEllipse(p, 6.0, 6.0);
+            painter.drawLine(p, p + dir * 26.0);
+            painter.drawLine(p + dir * 26.0, p + dir * 20.0 + QPointF(-dir.y(), dir.x()) * 4.0);
+            painter.drawLine(p + dir * 26.0, p + dir * 20.0 - QPointF(-dir.y(), dir.x()) * 4.0);
+            break;
+        case Cam: {
+            painter.setBrush(Qt::NoBrush);
+            painter.drawRect(QRectF(p.x() - 7.0, p.y() - 5.0, 10.0, 10.0));
+            const QPointF n(-dir.y(), dir.x());
+            const QPointF f = dir.isNull() ? QPointF(1, 0) : dir, nn = dir.isNull() ? QPointF(0, 1) : n;
+            painter.drawPolygon(QPolygonF({p + f * 5.0, p + f * 18.0 + nn * 8.0, p + f * 18.0 - nn * 8.0}));
+            break;
+        }
+        }
+    }
+    painter.restore();
+}
+
 void ViewportPlaceholderWidget::paintGizmo_(QPainter& painter) {
+    paintSceneIcons_(painter);
     if (!m_gizmo.dragging()) {
         refreshGizmo();
     }

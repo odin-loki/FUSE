@@ -132,6 +132,16 @@ signals:
 
 protected:
     void paintGizmo_(QPainter& painter);
+    /// Light / camera icons (point = bulb + rays, spot = cone, directional = sun + arrow, camera =
+    /// frustum); clicking one selects its entity (lights / cameras have no pickable geometry).
+    void paintSceneIcons_(QPainter& painter);
+    ecs::EntityID sceneIconAt_(const QPointF& pos) const;
+    /// Click selection: plain click replaces, Ctrl / Shift click toggles membership.
+    void applyClickSelection_(ecs::EntityID hit, bool additive);
+public:
+    [[nodiscard]] int sceneIconCount() const { return static_cast<int>(m_sceneIcons.size()); }
+    void setSceneIconsVisible(bool on) { m_showSceneIcons = on; update(); }
+private:
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void showEvent(QShowEvent* event) override;
@@ -171,6 +181,12 @@ private:
     TransformGizmo m_gizmo;
     ecs::EntityID m_gizmoEntity = ecs::EntityID::null();
     bool m_gizmoMacroOpen = false;
+    struct SceneIcon {
+        ecs::EntityID id;
+        QPointF pos; ///< widget (logical) pixels
+    };
+    std::vector<SceneIcon> m_sceneIcons;
+    bool m_showSceneIcons = true;
     int m_gizmoHover = -1;
     SdfSculptPanel* m_sculptPanel = nullptr;
     bool m_sculptMode = false;
