@@ -5,6 +5,7 @@
 #include "scripted_services.hpp"
 
 #include <fuse/ecs/components/light.hpp>
+#include <fuse/ecs/components/collider.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/project/loader.hpp>
 #include <fuse/editor/editor_host.hpp>
@@ -1303,6 +1304,53 @@ void gatePreferences(Rig& r) {
     setEditorPreviewSun(true);
 }
 
+
+// Navigation panel (Qt NavmeshPanel parity): bake from colliders, test path around the obstacle, viewport overlay.
+void gateNavigation(Rig& r) {
+    CHECK(r.shell.showPanel("dock.navigation"));
+    r.frames();
+    CHECK(r.rect("dock.navigation").h > 50);
+    CHECK(r.ui().text(r.ui().find("nav.status")) == "Not baked");
+    r.clickId("nav.test_path");
+    CHECK(r.ui().text(r.ui().find("nav.status")) == "Bake the navmesh first");
+    // a 2 x 2 x 6 m wall across the straight line from (-5,0) to (5,0)
+    CHECK(r.c.trigger(ActionId::EntityCreateEmpty));
+    r.frames();
+    const EntityRef wall = r.c.lastCreated();
+    r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) {
+        auto& reg = h.editorScene().registry();
+        const fuse::ecs::EntityID id{wall.index, wall.generation};
+        if (auto* t = reg.get<fuse::ecs::Transform>(id)) t->position = {0.f, 1.f, 0.f, 1.f};
+        fuse::ecs::Collider c;
+        c.shape = fuse::ecs::Collider::Box;
+        c.params = {1.f, 1.f, 3.f, 0.f};
+        reg.add<fuse::ecs::Collider>(id, c);
+    });
+    r.ui().setValue(r.ui().find("nav.extent"), 12.f, true); // 24 x 24 cells of 0.5 m
+    r.frames();
+    r.clickId("nav.bake");
+    const NavigationView v = r.shell.panels().navigation();
+    std::printf("navigation: %s\n", v.status.c_str());
+    CHECK(v.built && v.cells == 24 && v.colliders == 1);
+    CHECK(v.blocked == 4u * 12u); // 2 m x 6 m at 0.5 m cells
+    r.clickId("nav.test_path");
+    const NavigationView p = r.shell.panels().navigation();
+    std::printf("navigation: %s\n", p.status.c_str());
+    CHECK(p.waypoints > 21); // straight would be 21 cells; it detours around the wall
+    CHECK(r.ui().text(r.ui().find("nav.status")).find("Path: ") == 0);
+    // overlay: outline (4) + 2 per blocked cell + path segments, light blue
+    const std::size_t lines = overlayLines(r, 0x46C8FF);
+    std::printf("navigation: %zu overlay lines\n", lines);
+    CHECK(lines >= 4 + 2 * 48 && lines <= 4 + 2 * 48 + p.waypoints);
+    r.ui().setChecked(r.ui().find("nav.show"), false);
+    r.ui().emit(r.ui().find("nav.show"), fuse::ui::SignalKind::Toggled, {.flag = false});
+    r.frames();
+    CHECK(overlayLines(r, 0x46C8FF) == 0);
+    r.ui().emit(r.ui().find("nav.show"), fuse::ui::SignalKind::Toggled, {.flag = true});
+    r.frames(2);
+    CHECK(overlayLines(r, 0x46C8FF) == lines);
+}
+
 int main(int argc, char** argv) {
     std::string gate, out;
     for (int i = 1; i < argc; ++i) {
@@ -1314,7 +1362,7 @@ int main(int argc, char** argv) {
     Rig r(scale);
     const std::map<std::string, std::function<void(Rig&)>> gates{
         {"startup", gateStartup},        {"layout", gateLayout},           {"theme", gateTheme},
-        {"fuse_api", gateFuseApi},       {"wasd", gateWasd},               {"context_menu", gateContextMenu}, {"context_menu_dpr1_5", gateContextMenuDpr15}, {"icon", gateIcon}, {"view_modes", gateViewModes}, {"preferences", gatePreferences}, {"live_present", gateLivePresent},
+        {"fuse_api", gateFuseApi},       {"wasd", gateWasd},               {"context_menu", gateContextMenu}, {"context_menu_dpr1_5", gateContextMenuDpr15}, {"icon", gateIcon}, {"view_modes", gateViewModes}, {"preferences", gatePreferences}, {"navigation", gateNavigation}, {"live_present", gateLivePresent},
         {"ui_frame", gateUiFrame},       {"idle_frames", gateIdle},        {"e15_console", gateConsole},
         {"e15_transport", gateTransport}, {"e20_inspector", gateInspector}, {"e20_reparent", gateReparent},
         {"e20_file_menu", gateFileMenu}, {"e20_wizard", gateWizard}, {"project_open", gateProjectOpen},  {"project_hub", gateProjectHub}, {"asset_browser", gateAssetBrowser},

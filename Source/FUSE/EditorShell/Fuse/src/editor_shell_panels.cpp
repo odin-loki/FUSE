@@ -54,6 +54,7 @@ bool ShellPanelPages::build(std::string_view id, NodeHandle page) {
     else if (id == "profiler") buildProfiler_(page);
     else if (id == "sequencer") buildSequencer_(page);
     else if (id == "timeline") buildTimeline_(page);
+    else if (id == "navigation") buildNavigation_(page);
     else return false;
     return true;
 }
@@ -73,6 +74,7 @@ void ShellPanelPages::sync(f32 uiMs, bool frame) {
     m_seenRevision = m_m.revision();
     if (all) { syncHub_(); syncAssets_(); syncMaterial_(); syncSculpt_(); }
     syncProfiler_();
+    syncNavigation_();
     syncSequencer_();
     syncTimeline_();
     if (!all) { syncMaterial_(); syncSculpt_(); syncAssets_(); syncHub_(); }
@@ -260,6 +262,43 @@ void ShellPanelPages::syncMaterial_() {
 }
 
 // ---- SDF Sculpt -----------------------------------------------------------------------------------------------------
+// ---- Navigation (Qt NavmeshPanel) ----------------------------------------------------------------------------------
+void ShellPanelPages::buildNavigation_(NodeHandle page) {
+    const NavigationView v = m_m.navigation();
+    NodeHandle f = field_(page, "Cell size (m)");
+    m_navCell = w::spinBox(m_ui, f, 0.05f, 50.f, v.cellSize, 0.25f, "nav.cell_size");
+    m_ui.connect(m_navCell, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) { m_m.setNavCellSize(a.value); });
+    f = field_(page, "Half extent");
+    m_navExtent = w::spinBox(m_ui, f, 1.f, 512.f, f32(v.halfExtent), 1.f, "nav.extent");
+    w::setTooltip(m_ui, m_navExtent, "Half size of the grid in cells, centred on the world origin");
+    m_ui.connect(m_navExtent, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) { m_m.setNavHalfExtent(u32(a.value)); });
+    const NodeHandle bake = w::button(m_ui, page, "Bake Navmesh", "nav.bake");
+    m_ui.connect(bake, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { m_m.navBake(); m_shell.sync(); });
+    m_navShow = w::checkBox(m_ui, page, "Show in viewport", v.show, "nav.show");
+    m_ui.connect(m_navShow, SignalKind::Toggled, [this](UiContext&, NodeHandle, const SignalArgs& a) { m_m.setNavShow(a.flag); m_shell.sync(); });
+    static constexpr const char* kAxis[2] = {"x", "z"};
+    f = field_(page, "From x/z");
+    for (int i = 0; i < 2; ++i) m_navFrom[i] = w::spinBox(m_ui, f, -10000.f, 10000.f, i == 0 ? -5.f : 0.f, 0.5f, std::string("nav.from_") + kAxis[i]);
+    f = field_(page, "To x/z");
+    for (int i = 0; i < 2; ++i) m_navTo[i] = w::spinBox(m_ui, f, -10000.f, 10000.f, i == 0 ? 5.f : 0.f, 0.5f, std::string("nav.to_") + kAxis[i]);
+    const NodeHandle path = w::button(m_ui, page, "Test Path", "nav.test_path");
+    m_ui.connect(path, SignalKind::Clicked, [this](UiContext& u, NodeHandle, const SignalArgs&) {
+        m_m.navTestPath(u.value(m_navFrom[0]), u.value(m_navFrom[1]), u.value(m_navTo[0]), u.value(m_navTo[1]));
+        m_shell.sync();
+    });
+    m_navStatus = w::label(m_ui, page, v.status, "nav.status");
+    m_ui.addClass(m_navStatus, "ed-dim");
+}
+void ShellPanelPages::syncNavigation_() {
+    if (!m_navStatus) return;
+    const NavigationView v = m_m.navigation();
+    std::string key = v.status + (v.show ? "1" : "0");
+    if (key == m_navKey) return;
+    m_navKey = std::move(key);
+    m_ui.setText(m_navStatus, v.status);
+    m_ui.setChecked(m_navShow, v.show);
+}
+
 void ShellPanelPages::buildSculpt_(NodeHandle page) {
     m_scMode = w::checkBox(m_ui, page, "Sculpt in viewport", false, "sculpt.mode");
     w::setTooltip(m_ui, m_scMode, "Left-drag in the viewport stamps the brush (one undo step per stroke)");

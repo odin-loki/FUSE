@@ -26,6 +26,8 @@ private:
     void buildProfiler_(NodeHandle page);
     void buildSequencer_(NodeHandle page);
     void buildTimeline_(NodeHandle page);
+    void buildNavigation_(NodeHandle page);
+    void syncNavigation_();
     void syncHub_();
     void syncAssets_();
     void syncMaterial_();
@@ -63,6 +65,9 @@ private:
 
     NodeHandle m_sqLink, m_sqScrub, m_sqPreview;
     std::string m_sqKey;
+
+    NodeHandle m_navCell, m_navExtent, m_navShow, m_navFrom[2], m_navTo[2], m_navStatus;
+    std::string m_navKey;
 
     NodeHandle m_tlBox, m_tlWidget, m_tlPlay, m_tlTime, m_tlLength, m_tlStatus;
     std::string m_tlKey;

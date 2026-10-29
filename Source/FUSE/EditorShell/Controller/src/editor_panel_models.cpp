@@ -1,6 +1,9 @@
 #include <fuse/editor/editor_panel_models.hpp>
 
+#include <fuse/ecs/components/collider.hpp>
 #include <fuse/ecs/components/transform.hpp>
+#include <fuse/ecs/systems/transform_system.hpp>
+#include <fuse/navigation/grid_navmesh.hpp>
 #include <fuse/editor/asset_browser.hpp>
 #include <fuse/editor/cinematics_seq_import.hpp>
 #include <fuse/editor/editor_host.hpp>
@@ -483,6 +486,117 @@ void EditorPanels::sequencerScrub(i32 ms) {
     }
     m_seqImport->postViewportSeqPreviewAtMs(ms);
     ++m_revision;
+}
+
+// ---- Navigation (Qt NavmeshPanel) -----------------------------------------------------------------------------------
+namespace {
+navigation::GridNavmesh& navMesh(std::shared_ptr<void>& p) {
+    if (!p) p = std::make_shared<navigation::GridNavmesh>();
+    return *static_cast<navigation::GridNavmesh*>(p.get());
+}
+} // namespace
+
+bool EditorPanels::navBake() {
+    const u32 n = m_nav.halfExtent * 2u;
+    const f32 cs = m_nav.cellSize;
+    const f32 o = -f32(m_nav.halfExtent) * cs;
+    struct Box { f32 x0, x1, z0, z1; };
+    std::vector<Box> boxes;
+    withScene([&](EditorHost& host, const ViewportPanel&) {
+        ecs::Registry& reg = host.editorScene().registry();
+        ecs::TransformSystem::update(reg);
+        reg.each<ecs::Transform, ecs::Collider>([&](ecs::EntityID, ecs::Transform& t, ecs::Collider& c) {
+            if (c.is_trigger) return;
+            f32 h[3] = {0.f, 0.f, 0.f};
+            switch (c.shape) {
+            case ecs::Collider::Sphere: h[0] = h[1] = h[2] = c.params.x; break;
+            case ecs::Collider::Box: h[0] = c.params.x; h[1] = c.params.y; h[2] = c.params.z; break;
+            case ecs::Collider::Capsule: h[0] = h[2] = c.params.x; h[1] = c.params.x + c.params.y; break;
+            default: return;
+            }
+            const auto& m = t.local_to_world.data;
+            const f32 ex = std::fabs(m[0]) * h[0] + std::fabs(m[4]) * h[1] + std::fabs(m[8]) * h[2];
+            const f32 ez = std::fabs(m[2]) * h[0] + std::fabs(m[6]) * h[1] + std::fabs(m[10]) * h[2];
+            const f32 ey = std::fabs(m[1]) * h[0] + std::fabs(m[5]) * h[1] + std::fabs(m[9]) * h[2];
+            if (m[13] + ey <= 0.05f) return; // ground slabs are walkable
+            boxes.push_back({m[12] - ex, m[12] + ex, m[14] - ez, m[14] + ez});
+        });
+    });
+    m_navBlocked.assign(usize(n) * n, 0u);
+    m_navPath.clear();
+    u32 blocked = 0;
+    const bool ok = n > 0 && cs > 0.f && navMesh(m_navMesh).build(n, n, cs, [&](u32 x, u32 y) {
+        const f32 cx = o + (f32(x) + 0.5f) * cs, cz = o + (f32(y) + 0.5f) * cs;
+        for (const Box& b : boxes)
+            if (cx >= b.x0 && cx <= b.x1 && cz >= b.z0 && cz <= b.z1) {
+                m_navBlocked[usize(y) * n + x] = 1u;
+                ++blocked;
+                return true;
+            }
+        return false;
+    });
+    m_nav.built = ok;
+    m_nav.cells = ok ? n : 0u;
+    m_nav.blocked = blocked;
+    m_nav.colliders = u32(boxes.size());
+    m_nav.waypoints = 0;
+    char b[160];
+    if (ok) std::snprintf(b, sizeof b, "Baked %u x %u cells (%g m): %u blocked by %zu collider(s)", n, n, double(cs), blocked, boxes.size());
+    else std::snprintf(b, sizeof b, "Bake failed: invalid grid");
+    m_nav.status = b;
+    ++m_revision;
+    return ok;
+}
+
+u32 EditorPanels::navTestPath(f32 ax, f32 az, f32 bx, f32 bz) {
+    m_navPath.clear();
+    m_nav.waypoints = 0;
+    ++m_revision;
+    if (!m_nav.built) {
+        m_nav.status = "Bake the navmesh first";
+        return 0;
+    }
+    navigation::GridNavmesh& mesh = navMesh(m_navMesh);
+    const f32 o = -f32(m_nav.cells / 2u) * mesh.cell_size();
+    navigation::Cell a, c;
+    if (!mesh.cell_at(ax - o, az - o, a) || !mesh.cell_at(bx - o, bz - o, c)) {
+        m_nav.status = "Path endpoints are outside the navmesh";
+        return 0;
+    }
+    const auto points = mesh.find_path(a, c);
+    for (const auto& p : points) {
+        m_navPath.push_back(o + p.x);
+        m_navPath.push_back(o + p.y);
+    }
+    m_nav.waypoints = u32(points.size());
+    char b[96];
+    if (points.empty()) std::snprintf(b, sizeof b, "No path");
+    else std::snprintf(b, sizeof b, "Path: %zu waypoints, %g m", points.size(), double(f32(points.size() - 1) * mesh.cell_size()));
+    m_nav.status = b;
+    return m_nav.waypoints;
+}
+
+std::vector<f32> EditorPanels::navSegments() const {
+    std::vector<f32> segs;
+    if (!m_nav.show || !m_nav.built || !m_navMesh) return segs;
+    const auto& mesh = *static_cast<const navigation::GridNavmesh*>(m_navMesh.get());
+    const u32 n = m_nav.cells;
+    const f32 cs = mesh.cell_size(), o = -f32(n / 2u) * cs, y = 0.02f;
+    const auto seg = [&](f32 ax, f32 az, f32 bx, f32 bz, f32 yy) { segs.insert(segs.end(), {ax, yy, az, bx, yy, bz}); };
+    const f32 e = o + f32(n) * cs;
+    seg(o, o, e, o, y);
+    seg(e, o, e, e, y);
+    seg(e, e, o, e, y);
+    seg(o, e, o, o, y);
+    for (u32 cy = 0; cy < n; ++cy)
+        for (u32 cx = 0; cx < n; ++cx) {
+            if (m_navBlocked[usize(cy) * n + cx] == 0u) continue;
+            const f32 x0 = o + f32(cx) * cs, z0 = o + f32(cy) * cs;
+            seg(x0, z0, x0 + cs, z0 + cs, y);
+            seg(x0 + cs, z0, x0, z0 + cs, y);
+        }
+    for (usize i = 0; i + 3 < m_navPath.size(); i += 2) seg(m_navPath[i], m_navPath[i + 1], m_navPath[i + 2], m_navPath[i + 3], 0.1f);
+    return segs;
 }
 
 } // namespace fuse::editor

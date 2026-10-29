@@ -35,6 +35,7 @@ constexpr ShellPanel kPanels[] = {
     {"dock.inspector", "Inspector", DockSide::Right, true},
     {"dock.material_editor", "Material Editor", DockSide::Right, true},
     {"dock.sdf_sculpt", "SDF Sculpt", DockSide::Right, true},
+    {"dock.navigation", "Navigation", DockSide::Right, true},
     {"dock.console", "Console", DockSide::Bottom, true},
     {"dock.profiler", "Profiler", DockSide::Bottom, true},
     {"dock.sequencer", "Sequencer", DockSide::Bottom, true},
@@ -917,6 +918,21 @@ void EditorShellWindow::updateOverlay_() {
         key += "|seg" + std::to_string(segs.size()) + ":" + std::to_string(h);
     }
     key += "|vm" + std::to_string(int(m_c.viewMode())) + (m_c.showMeshBounds() ? "b" : "");
+    // Navigation panel overlay (Qt nav role: light blue), world segments projected per frame
+    std::vector<f32> nav;
+    {
+        const std::vector<f32> w3 = m_models->navSegments();
+        for (usize k = 0; k + 6u <= w3.size(); k += 6u) {
+            f32 ax = 0.f, ay = 0.f, bx = 0.f, by = 0.f;
+            if (m_c.projectPoint(w3[k], w3[k + 1], w3[k + 2], ax, ay) && m_c.projectPoint(w3[k + 3], w3[k + 4], w3[k + 5], bx, by))
+                nav.insert(nav.end(), {ax, ay, bx, by});
+        }
+        if (!nav.empty()) {
+            u64 h = 1469598103934665603ull;
+            for (f32 v : nav) h = (h ^ u64(std::int64_t(v * 4.f))) * 1099511628211ull;
+            key += "|nav" + std::to_string(nav.size()) + ":" + std::to_string(h);
+        }
+    }
     if (key == m_overlayKey) return;
     m_overlayKey = key;
     w::ViewportOverlay o;
@@ -925,6 +941,8 @@ void EditorShellWindow::updateOverlay_() {
                 : s.role == 1 ? Color::rgb(0x78FF8C, 230.f / 255.f) : Color::rgb(0x5AC86E, 150.f / 255.f);
         o.lines.push_back({{s.x0, s.y0}, {s.x1, s.y1}, c, s.role >= 3 ? 1.f : 1.4f});
     }
+    for (usize k = 0; k + 4u <= nav.size(); k += 4u)
+        o.lines.push_back({{nav[k], nav[k + 1]}, {nav[k + 2], nav[k + 3]}, Color::rgb(0x46C8FF, 170.f / 255.f), 1.4f});
     if (g.visible) {
         static const Color kAxis[3] = {Color::rgb(0xE5484D), Color::rgb(0x46C46A), Color::rgb(0x3E8EF7)};
         const Color hot = Color::rgb(0xF5D547);

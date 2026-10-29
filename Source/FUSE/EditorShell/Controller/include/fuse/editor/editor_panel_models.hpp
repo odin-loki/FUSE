@@ -53,6 +53,19 @@ struct SculptView {
     std::string summary;
 };
 
+/// Navigation panel (Qt NavmeshPanel): grid navmesh baked from the scene's non-trigger colliders.
+struct NavigationView {
+    f32 cellSize = 0.5f;
+    u32 halfExtent = 40;   ///< cells each side of the world origin
+    bool show = true;      ///< draw in the viewport
+    bool built = false;
+    u32 cells = 0;         ///< grid side (2 * halfExtent)
+    u32 blocked = 0;
+    u32 colliders = 0;
+    u32 waypoints = 0;     ///< last test path
+    std::string status = "Not baked";
+};
+
 struct ProfilerView {
     ProfilerPanel::FrameStats stats{};
     ProfilerPanel::FrameProfileData latest{};
@@ -159,6 +172,18 @@ public:
     void timelineSetPlaying(bool on);
     bool timelineAdvance(f32 dt);         ///< while playing: moves the playhead (loops); true when it moved
 
+    // ---- Navigation ----
+    [[nodiscard]] NavigationView navigation() const { return m_nav; }
+    void setNavCellSize(f32 size) { m_nav.cellSize = size; ++m_revision; }
+    void setNavHalfExtent(u32 cells) { m_nav.halfExtent = cells; ++m_revision; }
+    void setNavShow(bool on) { m_nav.show = on; ++m_revision; }
+    /// Bakes from the current scene (Qt NavmeshPanel::bake: collider world AABBs above y 0.05 block cells).
+    bool navBake();
+    /// A* between two world XZ points on the baked mesh; the waypoint count (0: no path).
+    u32 navTestPath(f32 ax, f32 az, f32 bx, f32 bz);
+    /// World segments of the navmesh overlay (x0 y0 z0 x1 y1 z1): grid outline, a cross per blocked cell, the path.
+    [[nodiscard]] std::vector<f32> navSegments() const;
+
     // ---- Sequencer ----
     [[nodiscard]] SequencerView sequencer() const { return m_seq; }
     void sequencerSetLinked(bool on) { m_seq.linked = on; ++m_revision; }
@@ -170,6 +195,10 @@ private:
 
     EditorController& m_c;
     u64 m_revision = 1;
+    NavigationView m_nav;
+    std::shared_ptr<void> m_navMesh; ///< navigation::GridNavmesh (kept out of this header)
+    std::vector<u8> m_navBlocked;
+    std::vector<f32> m_navPath; ///< world xz pairs
     std::string m_projectsRoot;
     std::unique_ptr<class AssetBrowser> m_assets;
     std::string m_assetsRoot;
