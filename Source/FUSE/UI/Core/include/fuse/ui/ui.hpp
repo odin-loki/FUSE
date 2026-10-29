@@ -241,6 +241,9 @@ public:
     Size viewport() const { return m_viewport; }
     void update(f32 dtSeconds = 0.f);
     bool needsUpdate() const; ///< false when an on-demand app can sleep
+    /// Seconds until the context needs an update: 0 when dirty / animating / commands pending, the earliest timer
+    /// otherwise, +inf when idle (an on-demand loop sleeps this long or until input).
+    f32 nextWakeSeconds() const;
     const DrawList& drawList() const { return m_draw; }
     Rect damage() const { return m_damage; }
     const FrameStats& stats() const { return m_stats; }

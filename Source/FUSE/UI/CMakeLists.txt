@@ -204,6 +204,12 @@ if(FUSE_BUILD_UI_VK)
     endif()
 endif()
 
+# ---- fuse_app: application shell (UI5) ----
+option(FUSE_BUILD_UI_APP "Build fuse_app (Application / AppWindow, on-demand loop) and its samples" ON)
+if(FUSE_BUILD_UI_APP AND TARGET fuse_ui_doc)
+    add_subdirectory(App)
+endif()
+
 if(FUSE_BUILD_UI_TESTS AND FUSE_BUILD_UI_WIDGETS)
     add_subdirectory(tests)
 endif()

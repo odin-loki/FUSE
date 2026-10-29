@@ -1081,6 +1081,16 @@ bool UiContext::needsUpdate() const {
     return m_head.load(std::memory_order_acquire) != m_tail;
 }
 
+f32 UiContext::nextWakeSeconds() const {
+    if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount) return 0.f;
+    if (m_styles.sheetVersion() != m_seenSheetVersion) return 0.f;
+    if (m_head.load(std::memory_order_acquire) != m_tail) return 0.f;
+    f32 t = std::numeric_limits<f32>::infinity();
+    for (const auto& tm : m_timers)
+        if (tm.active) t = std::min(t, std::max(0.f, tm.left));
+    return t;
+}
+
 // ---- Hit testing and dispatch --------------------------------------------------------------------------------------
 NodeHandle UiContext::hitRec(u32 i, Vec2 p) const {
     const Node& n = m_nodes[i];

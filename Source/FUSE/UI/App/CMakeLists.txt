@@ -1,0 +1,16 @@
+# fuse_app (plan UI5): application shell for UI-only projects + samples.
+add_library(fuse_app STATIC src/app.cpp)
+target_include_directories(fuse_app PUBLIC include PRIVATE ${FUSE_UI_REPO_ROOT}/vendor/stb)
+target_link_libraries(fuse_app PUBLIC fuse_ui_doc)
+if(WIN32 OR MINGW)
+    # no extra libs (CreateMutexA / MoveFileExA are kernel32)
+endif()
+
+option(FUSE_BUILD_APP_SAMPLES "Build the fuse_app samples (hello_app, notes_app)" ON)
+if(FUSE_BUILD_APP_SAMPLES)
+    foreach(s hello_app notes_app)
+        add_executable(${s} samples/${s}.cpp)
+        target_link_libraries(${s} PRIVATE fuse_app)
+        target_compile_definitions(${s} PRIVATE FUSE_APP_SAMPLE_UI_DIR="${CMAKE_CURRENT_SOURCE_DIR}/samples/ui")
+    endforeach()
+endif()
