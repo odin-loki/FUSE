@@ -620,6 +620,34 @@ CastScratch& castScratch() {
     return s;
 }
 
+/// Certified separating-plane bound for a triangle target: the triangle's own plane, oriented
+/// toward the caster core. GJK's lower bound degrades to ~0 when a caster corner is within a
+/// millimetre of a large triangle (float error in the closest-point direction), which stops the
+/// advancement early; the face plane stays exact there. False when the caster core straddles the
+/// plane or the triangle is degenerate.
+bool trianglePlaneBound(const ConvexCore& caster, const ConvexCore& tri, vec3& outNormal, f32& outGap) {
+    vec3 normal = (tri.p1 - tri.p0).cross(tri.p2 - tri.p0);
+    const f32 length = normal.length();
+    if (!(length > 1e-12f)) {
+        return false;
+    }
+    normal = normal * (1.f / length);
+    const f32 offset = normal.dot(tri.p0);
+    const f32 lowest = normal.dot(caster.support(normal * -1.f)) - offset;
+    if (lowest > 0.f) {
+        outNormal = normal;
+        outGap = lowest;
+        return true;
+    }
+    const f32 highest = normal.dot(caster.support(normal)) - offset;
+    if (highest < 0.f) {
+        outNormal = normal * -1.f;
+        outGap = -highest;
+        return true;
+    }
+    return false;
+}
+
 /// Conservative advancement of a convex caster core against one convex target core (translation).
 bool convexCast(const ConvexCore& caster, vec3 dir, f32 maxDistance, const ConvexCore& target,
                 const ShapeCastOptions& options, ShapeCastHit& hit) {
@@ -645,8 +673,18 @@ bool convexCast(const ConvexCore& caster, vec3 dir, f32 maxDistance, const Conve
             hit.point = g.pointB;
             return true;
         }
-        const f32 gap = g.lowerBound - radii;
-        const f32 approach = -n.dot(dir);
+        f32 gap = g.lowerBound - radii;
+        f32 approach = -n.dot(dir);
+        if (target.kind == ConvexCore::Kind::Triangle) {
+            // Either separating plane is a certified bound; advance along the tighter one.
+            vec3 planeNormal{};
+            f32 planeGap = 0.f;
+            if (trianglePlaneBound(caster.moved(dir * t), target, planeNormal, planeGap) && planeGap - radii > gap) {
+                gap = planeGap - radii;
+                n = planeNormal;
+                approach = -n.dot(dir);
+            }
+        }
         if (gap <= options.tolerance) {
             if (approach <= 1e-6f) {
                 return false; // touching but sliding along / moving away: never penetrates
