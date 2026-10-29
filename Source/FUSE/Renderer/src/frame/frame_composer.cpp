@@ -1309,7 +1309,7 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         fd.camera = cluster;
         fd.lighting = m_lighting.frameConstantsAddress();
         fd.shadows = (plan & kStageVsm) != 0u ? m_vsmShadows.shadowConstantsAddress() : 0u;
-        fd.ddgi = (plan & kStageDdgi) != 0u ? m_ddgi.volumeAddress() : 0u;
+        fd.ddgi = ((plan & kStageDdgi) != 0u && settings.fogDdgi) ? m_ddgi.volumeAddress() : 0u;
         fd.depth = &depth;
         fd.lit = chain;
         fd.resetHistory = desc.resetHistory;
@@ -1861,7 +1861,7 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
         volumetric_gpu::FogGraphInputs fi{};
         fi.lights = lighting.lists;
         fi.scene = &sceneRefs;
-        if ((plan & kStageDdgi) != 0u) {
+        if ((plan & kStageDdgi) != 0u && m_settings.fogDdgi) {
             fi.ddgi = ddgiRefs.work;
         }
         fi.depth = depth;

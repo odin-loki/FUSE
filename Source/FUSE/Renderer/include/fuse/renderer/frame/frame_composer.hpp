@@ -218,6 +218,9 @@ struct FrameSettings {
     vsm::VsmFilterDesc vsmFilter{};
     bool ddgi = true;
     f32 ddgiSkyRadiance[3] = {0.05f, 0.07f, 0.1f}; ///< DDGI misses without the atmosphere (and the RT reflection misses)
+    /// DDGI irradiance as froxel-fog in-scatter (WP-6.1 x WP-8.1). Off by default: unscaled it washes the
+    /// lit frame out to a flat fill (editor live_present gate).
+    bool fogDdgi = false;
     bool ddgiAtmosphereSky = true; ///< DDGI misses take the WP-8.2 sky radiance (plans the atmosphere LUTs)
     bool rtShadows = true; ///< T2 only
     bool denoise = true;   ///< T2 RT shadows through SVGF (else light.shade reads the raw 1-spp visibility)
