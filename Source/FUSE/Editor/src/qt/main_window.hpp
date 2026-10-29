@@ -63,6 +63,9 @@ public:
     static constexpr const char* kActionSaveAs = "fuseActionSaveSceneAs";
     static constexpr const char* kActionNewProject = "fuseActionNewProject";
     static constexpr const char* kActionQuit = "fuseActionQuit";
+    static constexpr const char* kActionOpenProject = "fuseActionOpenProject";
+    static constexpr const char* kActionUndo = "fuseActionUndo";
+    static constexpr const char* kActionRedo = "fuseActionRedo";
     static constexpr int kMaxRecentFiles = 8;
 
     /// Answers the unsaved-changes prompt instead of a modal QMessageBox (tests): receives the
@@ -119,6 +122,12 @@ public:
     /// Each action posts the matching command (StartPlay, PausePlay, ResumePlay, StepPlay, StopPlay)
     /// to the host's CommandQueue; the game tick drives PlaySession / PlayModeController.
     [[nodiscard]] QToolBar* transportToolBar() const { return m_transportBar; }
+    /// File / Edit toolbar (New, Open, Save, Undo, Redo) left of the transport bar.
+    [[nodiscard]] QToolBar* mainToolBar() const { return m_mainBar; }
+    /// Enable Undo / Redo from the host stacks; tooltips name the next undo / redo step.
+    void updateEditActions();
+    /// Open a project directory (project.json) — same path as the Project hub's Open button.
+    void openProject(const QString& projectDirectory);
     [[nodiscard]] QAction* transportAction(CommandKind kind) const;
     /// Enable / disable the transport actions from EditorState (runs on the status timer).
     void updateTransportActions();
@@ -196,6 +205,9 @@ private:
     QString m_samplesRoot;
     QLabel* m_statusLabel = nullptr;
     QToolBar* m_transportBar = nullptr;
+    QToolBar* m_mainBar = nullptr;
+    QAction* m_actUndo = nullptr;
+    QAction* m_actRedo = nullptr;
     QAction* m_actPlay = nullptr;
     QAction* m_actPause = nullptr;
     QAction* m_actResume = nullptr;

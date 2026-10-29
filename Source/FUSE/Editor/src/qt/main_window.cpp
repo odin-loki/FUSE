@@ -196,17 +196,57 @@ void MainWindow::buildMenus() {
     file->addSeparator();
     connect(addFileAction(tr("New &Project..."), kActionNewProject, QKeySequence()), &QAction::triggered,
             m_projectHub, &ProjectHubWidget::runNewProjectWizard);
+    connect(addFileAction(tr("Open P&roject..."), kActionOpenProject, QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_O)),
+            &QAction::triggered, this, [this]() {
+                if (!maybeSaveChanges()) {
+                    return;
+                }
+                const QString dir = QFileDialog::getExistingDirectory(this, tr("Open Project"), m_samplesRoot);
+                if (!dir.isEmpty()) {
+                    openProject(dir);
+                }
+            });
     file->addSeparator();
     QAction* quit = addFileAction(tr("&Quit"), kActionQuit, QKeySequence::Quit);
     connect(quit, &QAction::triggered, this, &QWidget::close);
 
     QMenu* edit = menuBar()->addMenu(tr("&Edit"));
-    QAction* undo = edit->addAction(tr("&Undo"));
+    QAction* undo = edit->addAction(style()->standardIcon(QStyle::SP_ArrowBack), tr("&Undo"));
+    undo->setObjectName(QString::fromLatin1(kActionUndo));
     undo->setShortcut(QKeySequence::Undo);
-    connect(undo, &QAction::triggered, this, &MainWindow::undoLatest);
-    QAction* redo = edit->addAction(tr("&Redo"));
+    connect(undo, &QAction::triggered, this, [this]() {
+        undoLatest();
+        updateEditActions();
+    });
+    QAction* redo = edit->addAction(style()->standardIcon(QStyle::SP_ArrowForward), tr("&Redo"));
+    redo->setObjectName(QString::fromLatin1(kActionRedo));
     redo->setShortcut(QKeySequence::Redo);
-    connect(redo, &QAction::triggered, this, &MainWindow::redoLatest);
+    connect(redo, &QAction::triggered, this, [this]() {
+        redoLatest();
+        updateEditActions();
+    });
+    m_actUndo = undo;
+    m_actRedo = redo;
+    connect(edit, &QMenu::aboutToShow, this, &MainWindow::updateEditActions);
+
+    // File / Edit toolbar, left of the transport bar.
+    m_mainBar = new QToolBar(tr("Main"), this);
+    m_mainBar->setObjectName(QStringLiteral("fuseMainToolBar"));
+    m_mainBar->setMovable(false);
+    insertToolBar(m_transportBar, m_mainBar);
+    const auto toolbarFileAction = [this](const char* objectName, QStyle::StandardPixmap icon) {
+        if (QAction* action = fileAction(objectName)) {
+            action->setIcon(style()->standardIcon(icon));
+            m_mainBar->addAction(action);
+        }
+    };
+    toolbarFileAction(kActionNewScene, QStyle::SP_FileIcon);
+    toolbarFileAction(kActionOpenScene, QStyle::SP_DialogOpenButton);
+    toolbarFileAction(kActionSave, QStyle::SP_DialogSaveButton);
+    m_mainBar->addSeparator();
+    m_mainBar->addAction(m_actUndo);
+    m_mainBar->addAction(m_actRedo);
+    updateEditActions();
 
     QMenu* view = menuBar()->addMenu(tr("&View"));
     for (QDockWidget* dock : m_docks) {
@@ -264,6 +304,25 @@ QAction* MainWindow::transportAction(CommandKind kind) const {
     default:
         return nullptr;
     }
+}
+
+void MainWindow::updateEditActions() {
+    if (m_actUndo == nullptr) {
+        return;
+    }
+    bool canUndo = false;
+    bool canRedo = false;
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        canUndo = m_host.undoStack().canUndo() || m_host.commandStack().canUndo();
+        canRedo = m_host.undoStack().canRedo() || m_host.commandStack().canRedo();
+    }
+    m_actUndo->setEnabled(canUndo);
+    m_actRedo->setEnabled(canRedo);
+}
+
+void MainWindow::openProject(const QString& projectDirectory) {
+    onProjectOpenRequested(projectDirectory);
 }
 
 void MainWindow::updateTransportActions() {
@@ -424,6 +483,7 @@ void MainWindow::refreshStatusBar() {
     syncProjectWorld();
     m_console->drainLog();
     updateTransportActions();
+    updateEditActions();
     u32 applied = 0;
     {
         std::lock_guard<std::mutex> lock(m_sceneMutex);

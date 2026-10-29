@@ -1067,6 +1067,7 @@ int gateFuseApi() {
     }
     expect(undo != nullptr, "Edit > Undo present");
     if (undo != nullptr) {
+        window.updateEditActions(); // the status timer does this ~10 Hz in the live editor
         undo->trigger();
         QCoreApplication::processEvents();
         expect(!registry.alive(created), "Edit > Undo reverts the create through the UndoStack");
