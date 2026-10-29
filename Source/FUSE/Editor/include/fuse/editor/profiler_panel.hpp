@@ -3,6 +3,7 @@
 #include <fuse/types.hpp>
 
 #include <array>
+#include <vector>
 
 namespace fuse::editor {
 
@@ -42,6 +43,19 @@ public:
 
     bool isPaused() const { return m_paused; }
     void setPaused(bool paused) { m_paused = paused; }
+
+    /// GUI-1: CPU frame-time statistics over the retained history (zeros when empty).
+    struct FrameStats {
+        u32 frames = 0;
+        f32 minMs = 0.f;
+        f32 avgMs = 0.f;
+        f32 maxMs = 0.f;
+        f32 avgFps = 0.f;      ///< 1000 / avgMs
+        u32 overBudget = 0;    ///< frames slower than 1000 / targetFps
+    };
+    [[nodiscard]] FrameStats cpuStats() const;
+    /// CPU ms of the retained frames, oldest first (for the frame-time graph).
+    void copyCpuHistory(std::vector<f32>& out) const;
 
     f32 targetFps() const { return m_targetFps; }
     void setTargetFps(f32 fps) { m_targetFps = fps; }

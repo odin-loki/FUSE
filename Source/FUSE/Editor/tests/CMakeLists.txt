@@ -94,6 +94,12 @@ add_executable(fuse_editor_panels_b69_b612_tests
 target_link_libraries(fuse_editor_panels_b69_b612_tests PRIVATE fuse_editor_api fuse_core fuse_scene)
 add_test(NAME fuse_editor_panels_b69_b612 COMMAND fuse_editor_panels_b69_b612_tests)
 
+add_executable(fuse_editor_gui_models_tests
+    test_editor_gui_models.cpp
+)
+target_link_libraries(fuse_editor_gui_models_tests PRIVATE fuse_editor_api fuse_core)
+add_test(NAME fuse_editor_gui_models COMMAND fuse_editor_gui_models_tests)
+
 add_executable(fuse_editor_phase6_integration_tests
     test_editor_phase6_integration.cpp
 )

@@ -127,6 +127,44 @@ bool AssetBrowser::selectEntry(const char* relativePath) {
     return false;
 }
 
+AssetBrowser::ActivateResult AssetBrowser::activate(const char* relativePath) {
+    if (relativePath == nullptr) {
+        return ActivateResult::None;
+    }
+    const std::string path = relativePath;
+    const auto it = std::find_if(m_entries.begin(), m_entries.end(),
+                                 [&](const AssetEntry& entry) { return entry.path == path; });
+    if (it == m_entries.end()) {
+        return ActivateResult::None;
+    }
+    switch (it->type) {
+    case AssetType::Folder:
+        m_searchFilter.clear();
+        setCurrentDirectory(path.c_str());
+        return ActivateResult::EnteredFolder;
+    case AssetType::Scene:
+        m_selectedPath = path;
+        return ActivateResult::OpenScene;
+    default:
+        m_selectedPath = path;
+        return ActivateResult::Selected;
+    }
+}
+
+bool AssetBrowser::navigateUp() {
+    if (m_currentDirectory.empty()) {
+        return false;
+    }
+    const std::filesystem::path parent = std::filesystem::path(m_currentDirectory).parent_path();
+    const std::string next = parent.generic_string();
+    setCurrentDirectory(next == "." ? "" : next.c_str());
+    return true;
+}
+
+std::string AssetBrowser::absolutePath(const std::string& relativePath) const {
+    return joinPath(m_projectRoot, relativePath);
+}
+
 const char* AssetBrowser::assetTypeLabel(AssetType type) {
     switch (type) {
     case AssetType::Folder:
@@ -162,7 +200,7 @@ AssetBrowser::AssetType AssetBrowser::classifyFile(const std::string& extension)
     if (ext == ".mat" || ext == ".material" || ext == ".fusemat") {
         return AssetType::Material;
     }
-    if (ext == ".scene" || ext == ".fuse" || ext == ".mis") {
+    if (ext == ".scene" || ext == ".fuse" || ext == ".mis" || ext == ".fuselevel") {
         return AssetType::Scene;
     }
     if (ext == ".wav" || ext == ".ogg" || ext == ".mp3" || ext == ".flac") {

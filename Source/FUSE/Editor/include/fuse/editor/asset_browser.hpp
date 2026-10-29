@@ -44,6 +44,21 @@ public:
 
     static const char* assetTypeLabel(AssetType type);
 
+    /// GUI-1: what activating (double-clicking) an entry does.
+    enum class ActivateResult : u8 {
+        None = 0,     ///< path not in the current listing
+        EnteredFolder,///< folder: the browser now lists it
+        OpenScene,    ///< scene file: the editor should open it
+        Selected,     ///< any other asset: selected
+    };
+    /// Folder -> navigate into it; scene -> OpenScene; other -> select. `relativePath` is an
+    /// `AssetEntry::path` from the current listing.
+    ActivateResult activate(const char* relativePath);
+    /// Go to the parent of the current directory. False when already at the project root.
+    bool navigateUp();
+    /// Absolute path of a project-relative entry path.
+    [[nodiscard]] std::string absolutePath(const std::string& relativePath) const;
+
 private:
     static AssetType classifyFile(const std::string& extension);
     static bool matchesFilter(const AssetEntry& entry, const std::string& filter);
