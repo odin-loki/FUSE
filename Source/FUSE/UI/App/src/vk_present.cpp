@@ -47,6 +47,7 @@ typedef unsigned long VisualID;
 #include <cstdio>
 #include <cstring>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace fuse::app::detail {
@@ -62,6 +63,7 @@ struct VkCtx {
     SurfaceSource::Kind kind = SurfaceSource::Xlib;
     char name[256] = {};
     u32 windows = 0;
+    bool adopted = false; ///< instance + device belong to the caller (NativeOptions::adoptDevice)
 };
 
 namespace {
@@ -175,8 +177,49 @@ VkCtx* vkCtxCreate(SurfaceSource::Kind kind, std::string& err) {
     return c;
 }
 
+VkCtx* vkCtxAdopt(SurfaceSource::Kind kind, const VulkanDeviceHandles& h, std::string& err) {
+    if (!h.instance || !h.physicalDevice || !h.device || !h.queue) {
+        err = "adoptDevice needs instance, physical device, device and queue";
+        return nullptr;
+    }
+    auto* c = new VkCtx{};
+    c->kind = kind;
+    c->adopted = true;
+    c->instance = static_cast<VkInstance>(h.instance);
+    c->phys = static_cast<VkPhysicalDevice>(h.physicalDevice);
+    c->device = static_cast<VkDevice>(h.device);
+    c->queue = static_cast<VkQueue>(h.queue);
+    c->family = h.queueFamily;
+    // the owner registered both with the loader (fuse_rhi's VulkanInstance / VulkanDevice); entry points are loaded
+    if (!K.load(c->instance)) {
+        err = "the adopted instance lacks the surface / swapchain entry points";
+        delete c;
+        return nullptr;
+    }
+    VkPhysicalDeviceProperties props;
+    vkGetPhysicalDeviceProperties(c->phys, &props);
+    std::snprintf(c->name, sizeof c->name, "%s", props.deviceName);
+    VkCommandPoolCreateInfo pci{};
+    pci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    pci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    pci.queueFamilyIndex = c->family;
+    if (!ok(vkCreateCommandPool(c->device, &pci, nullptr, &c->pool), "vkCreateCommandPool", err)) {
+        delete c;
+        return nullptr;
+    }
+    return c;
+}
+
 void vkCtxDestroy(VkCtx* c) {
     if (!c) return;
+    if (c->adopted) {
+        if (c->device) {
+            vkDeviceWaitIdle(c->device);
+            if (c->pool) vkDestroyCommandPool(c->device, c->pool, nullptr);
+        }
+        delete c;
+        return;
+    }
     if (c->device) {
         vkDeviceWaitIdle(c->device);
         if (c->pool) vkDestroyCommandPool(c->device, c->pool, nullptr);
@@ -278,6 +321,7 @@ struct VkWin {
     u32 frame = 0;
     bool needFull = true;
     bool gpuDraw = false;
+    ExternalTexture external[4]{};
 #if defined(FUSE_APP_HAS_UI_VK)
     fuse::ui::render::UiVkRenderer gpu;
     fuse::ui::render::GpuDrawData data;
@@ -507,6 +551,12 @@ VkWin* vkWinCreate(VkCtx* c, const SurfaceSource& s, const NativeOptions& o, std
 
 bool vkWinGpuDraws(const VkWin* w) { return w && w->gpuDraw; }
 
+bool vkWinSetExternal(VkWin* w, unsigned slot, const ExternalTexture& t) {
+    if (!w || !w->gpuDraw || slot >= 4) return false;
+    w->external[slot] = t;
+    return true;
+}
+
 void vkWinDestroy(VkWin* w) {
     if (!w) return;
     VkCtx* c = w->ctx;
@@ -566,7 +616,9 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
 #if defined(FUSE_APP_HAS_UI_VK)
     if (w->gpuDraw) {
         UiContext& ui = win.ui();
-        fuse::ui::render::packDrawList(ui.drawList(), W, H, w->data, ui.atlas().pixels(), u32(ui.atlas().size()));
+        const CpuRasterizer& raster = win.rasterizer();
+        fuse::ui::render::packDrawList(ui.drawList(), W, H, w->data, ui.atlas().pixels(), u32(ui.atlas().size()),
+                                       raster.images(), raster.imageCount());
         if (!w->gpu.upload(f, w->data)) return false;
     }
 #endif
@@ -600,7 +652,31 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
                                                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, G, G);
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0,
                              nullptr, 1, &b1);
+        // external textures (engine frames on this device): their writer's layout -> sampled for the kernel and back.
+        // ALL_COMMANDS / MEMORY_WRITE orders after earlier submissions on this queue (same-queue producer).
+        VkImageMemoryBarrier eb[4];
+        u32 en = 0;
+        for (u32 e = 0; e < 4; ++e) {
+            const ExternalTexture& x = w->external[e];
+            const bool bound = x.image && x.view && x.layout != VK_IMAGE_LAYOUT_UNDEFINED;
+            w->gpu.setExternalImage(e, bound ? x.view : nullptr);
+            if (!bound) continue;
+            eb[en++] = imageBarrier(static_cast<VkImage>(x.image), VK_ACCESS_MEMORY_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                                    VkImageLayout(x.layout), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        }
+        if (en)
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr,
+                                 0, nullptr, en, eb);
         w->gpu.record(cmd, w->canvasView, f);
+        if (en) {
+            for (u32 i = 0; i < en; ++i) {
+                std::swap(eb[i].oldLayout, eb[i].newLayout);
+                eb[i].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                eb[i].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+            }
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr,
+                                 0, nullptr, en, eb);
+        }
         VkImageMemoryBarrier b2 = imageBarrier(w->canvas, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT, G, G);
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
                              nullptr, 1, &b2);

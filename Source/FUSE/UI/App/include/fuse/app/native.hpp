@@ -30,7 +30,27 @@ enum class VkDrawMode : fuse::ui::u8 {
     GpuDraw,   ///< fuse_ui_vk "ui.draw_list" kernel renders the draw list on the GPU
     CpuUpload, ///< CPU raster of the damaged region, uploaded and blitted
 };
+/// Raw Vulkan handles (VkInstance / VkPhysicalDevice / VkDevice / VkQueue). As NativeOptions::adoptDevice the
+/// presenter runs on this device instead of creating its own (the instance needs VK_KHR_surface + the platform surface
+/// extension, the device VK_KHR_swapchain, the queue graphics or compute + present): GPU images of the same device
+/// (an engine frame) can then be drawn by the UI kernel without a copy (setExternalTexture). The presenter submits on
+/// `queue` from the UI thread; the owner keeps the device alive past the NativePlatform and must not use the queue
+/// from another thread concurrently.
+struct VulkanDeviceHandles {
+    void* instance = nullptr;
+    void* physicalDevice = nullptr;
+    void* device = nullptr;
+    void* queue = nullptr;
+    unsigned queueFamily = 0;
+};
+/// A sampled image of the presenter's device for fuse_ui_vk's external slots (fuse::ui::Image::externalSlot).
+struct ExternalTexture {
+    void* image = nullptr;  ///< VkImage (null: unbind)
+    void* view = nullptr;   ///< VkImageView, sampled usage
+    unsigned layout = 0;    ///< its VkImageLayout when the UI frame is submitted; restored after the UI pass
+};
 struct NativeOptions {
+    VulkanDeviceHandles adoptDevice{}; ///< instance + device set: present on that device (see VulkanDeviceHandles)
     bool vulkan = true;            ///< false: never create a Vulkan presenter
     VkDrawMode drawMode = VkDrawMode::Auto;
     bool vsync = true;             ///< FIFO (true) or MAILBOX / IMMEDIATE when available
@@ -57,6 +77,10 @@ public:
     bool capture(const AppWindow& w, fuse::ui::Image& out);
     /// Native handles: X11 Display* / Window, Win32 HINSTANCE / HWND (0 when not shown).
     void* nativeDisplay() const;
+    /// Binds `tex` to external slot `slot` (0..3) of the window's GPU draw kernel; images whose externalSlot == slot
+    /// then show it. Re-set it whenever the image, view or its layout change (each engine frame). False when the
+    /// window is not GPU drawn (the CPU pixels of the Image are shown instead).
+    bool setExternalTexture(const AppWindow& w, unsigned slot, const ExternalTexture& tex);
     unsigned long long nativeWindow(const AppWindow& w) const;
 
     struct Impl;

@@ -19,7 +19,10 @@ struct VkCtx;
 struct VkWin;
 /// Instance with the surface extension for `kind`; device chosen on the first window. Null when Vulkan is missing.
 VkCtx* vkCtxCreate(SurfaceSource::Kind kind, std::string& err);
+/// Wraps an existing instance + device (NativeOptions::adoptDevice); not destroyed by vkCtxDestroy.
+VkCtx* vkCtxAdopt(SurfaceSource::Kind kind, const VulkanDeviceHandles& h, std::string& err);
 void vkCtxDestroy(VkCtx* c);
+bool vkWinSetExternal(VkWin* w, unsigned slot, const ExternalTexture& t);
 const char* vkCtxDeviceName(const VkCtx* c);
 VkWin* vkWinCreate(VkCtx* c, const SurfaceSource& s, const NativeOptions& o, std::string& err);
 bool vkWinPresent(VkWin* w, AppWindow& win, fuse::ui::Rect damage);

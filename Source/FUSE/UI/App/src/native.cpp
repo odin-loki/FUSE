@@ -35,7 +35,9 @@ namespace detail {
 struct VkCtx {};
 struct VkWin {};
 VkCtx* vkCtxCreate(SurfaceSource::Kind, std::string& err) { err = "built without Vulkan"; return nullptr; }
+VkCtx* vkCtxAdopt(SurfaceSource::Kind, const VulkanDeviceHandles&, std::string& err) { err = "built without Vulkan"; return nullptr; }
 void vkCtxDestroy(VkCtx*) {}
+bool vkWinSetExternal(VkWin*, unsigned, const ExternalTexture&) { return false; }
 const char* vkCtxDeviceName(const VkCtx*) { return ""; }
 VkWin* vkWinCreate(VkCtx*, const SurfaceSource&, const NativeOptions&, std::string&) { return nullptr; }
 bool vkWinPresent(VkWin*, AppWindow&, Rect) { return false; }
@@ -222,10 +224,12 @@ struct NativePlatform::Impl {
         if (!vkTried && opts.vulkan) {
             vkTried = true;
 #if defined(_WIN32)
-            vk = detail::vkCtxCreate(SurfaceSource::Win32, error);
+            const auto kind = SurfaceSource::Win32;
 #else
-            vk = detail::vkCtxCreate(SurfaceSource::Xlib, error);
+            const auto kind = SurfaceSource::Xlib;
 #endif
+            vk = opts.adoptDevice.instance && opts.adoptDevice.device ? detail::vkCtxAdopt(kind, opts.adoptDevice, error)
+                                                                      : detail::vkCtxCreate(kind, error);
         }
         return vk;
     }
@@ -575,7 +579,8 @@ bool NativePlatform::Impl::captureOs(const Rec& r, Image& out) {
     x.Sync(dpy, 0);
     const Size sz = r.win->size();
     x11::Image* img = x.GetImage(dpy, x11::Window(r.handle), 0, 0, unsigned(sz.w), unsigned(sz.h), ~0ul, 2 /*ZPixmap*/);
-    if (!img) return false;
+    // window not fully on screen (GetImage: BadMatch) or not mapped: a Vulkan window reports the frame it presented
+    if (!img) return r.vk && detail::vkWinReadback(r.vk, out);
     bool good = img->bits_per_pixel == 32;
     if (good) {
         out.resize(img->width, img->height);
@@ -670,6 +675,10 @@ bool NativePlatform::gpuDraws(const AppWindow& w) const {
     return r && detail::vkWinGpuDraws(r->vk);
 }
 std::string_view NativePlatform::lastError() const { return m->error; }
+bool NativePlatform::setExternalTexture(const AppWindow& w, unsigned slot, const ExternalTexture& tex) {
+    const Impl::Rec* r = m->find(w);
+    return r && detail::vkWinSetExternal(r->vk, slot, tex);
+}
 bool NativePlatform::capture(const AppWindow& w, Image& out) {
     const Impl::Rec* r = m->find(w);
     return r && r->handle && m->captureOs(*r, out);
