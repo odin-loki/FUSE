@@ -161,6 +161,8 @@ HierarchyWidget::HierarchyWidget(EditorHost& host, std::mutex& sceneMutex, QWidg
     connect(m_tree, &QTreeWidget::itemSelectionChanged, this, &HierarchyWidget::onItemSelectionChanged);
     connect(m_tree, &QTreeWidget::customContextMenuRequested, this, &HierarchyWidget::onContextMenuRequested);
     connect(m_tree, &HierarchyTreeWidget::rowsDropped, this, &HierarchyWidget::onRowsDropped);
+    m_tree->setEditTriggers(QAbstractItemView::EditKeyPressed);
+    connect(m_tree, &QTreeWidget::itemChanged, this, &HierarchyWidget::onItemChanged);
 }
 
 void HierarchyWidget::focusSearch() {
@@ -271,6 +273,7 @@ void HierarchyWidget::refresh() {
         ecs::EntityID parent;
         QString label;
         QStringList components;
+        QString searchLabel;
     };
     std::vector<Row> rows;
     std::vector<ecs::EntityID> selected;
@@ -283,7 +286,10 @@ void HierarchyWidget::refresh() {
             std::apply([&](const auto&... c) {
                 ((c.has_value() ? (void)comps.append(QString::fromLatin1(std::decay_t<decltype(*c)>::component_name)) : (void)0), ...);
             }, set);
-            rows.push_back({id, t.parent, entityLabel(registry, id), comps});
+            const QString fallback = entityLabel(registry, id);
+            const QString named = QString::fromStdString(m_host.entityNames().get(id));
+            rows.push_back({id, t.parent, named.isEmpty() ? fallback : named, comps,
+                            named.isEmpty() ? fallback : named + QLatin1Char(' ') + fallback});
         });
         selected = m_host.editorState().selectedEntities;
     }
@@ -298,10 +304,11 @@ void HierarchyWidget::refresh() {
     };
     // Flat when filtering (matches are shown without their non-matching ancestors).
     for (const Row& row : rows) {
-        if (!filter.isEmpty() && !matchesSearch(row.label, row.components, row.id.index, filter)) {
+        if (!filter.isEmpty() && !matchesSearch(row.searchLabel, row.components, row.id.index, filter)) {
             continue;
         }
         auto* item = new QTreeWidgetItem(QStringList{row.label});
+        item->setFlags(item->flags() | Qt::ItemIsEditable);
         item->setData(0, kEntityIndexRole, row.id.index);
         item->setData(0, kEntityGenerationRole, row.id.generation);
         items[row.id.index] = item;
@@ -369,6 +376,12 @@ void HierarchyWidget::onContextMenuRequested(const QPoint& pos) {
     }
     auto* menu = new QMenu(this);
     menu->setAttribute(Qt::WA_DeleteOnClose);
+    if (clicked.valid()) {
+        QAction* rename = menu->addAction(tr("Rename"));
+        rename->setShortcut(QKeySequence(Qt::Key_F2));
+        connect(rename, &QAction::triggered, this, [this, clicked]() { beginRename(clicked); });
+        menu->addSeparator();
+    }
     for (const ContextMenuItem& item : m_contextMenu.items()) {
         if (item.separatorBefore) {
             menu->addSeparator();
@@ -392,6 +405,41 @@ void HierarchyWidget::onContextMenuRequested(const QPoint& pos) {
     m_contextMenu.setMenuSize(static_cast<f32>(hint.width()), static_cast<f32>(hint.height()));
     const ContextMenuPlacement& p = m_contextMenu.placement();
     menu->popup(top->mapToGlobal(QPoint(static_cast<int>(std::lround(p.x)), static_cast<int>(std::lround(p.y)))));
+}
+
+bool HierarchyWidget::renameEntity(ecs::EntityID id, const QString& name) {
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        if (!m_host.editorScene().registry().alive(id)) return false;
+        const std::string next = name.trimmed().toStdString();
+        if (m_host.entityNames().get(id) == next) return false;
+        m_host.undoStack().execute(std::make_unique<RenameEntityCommand>(m_host.entityNames(), id, next));
+    }
+    emit sceneEdited();
+    refresh();
+    return true;
+}
+
+void HierarchyWidget::beginRename(ecs::EntityID id) {
+    if (QTreeWidgetItem* item = itemFor(id)) {
+        m_tree->setCurrentItem(item);
+        m_tree->editItem(item, 0);
+    }
+}
+
+void HierarchyWidget::onItemChanged(QTreeWidgetItem* item, int column) {
+    if (m_syncing || item == nullptr || column != 0) return;
+    const ecs::EntityID id = itemEntity(item);
+    QString text = item->text(0).trimmed();
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        // Typing the default label back (or clearing the text) removes the custom name.
+        if (text == entityLabel(m_host.editorScene().registry(), id)) text.clear();
+    }
+    // Defer: refresh() rebuilds the tree, which must not happen inside the item's own signal.
+    QMetaObject::invokeMethod(this, [this, id, text]() {
+        if (!renameEntity(id, text)) refresh();
+    }, Qt::QueuedConnection);
 }
 
 // ---- InspectorWidget ------------------------------------------------------------------------------

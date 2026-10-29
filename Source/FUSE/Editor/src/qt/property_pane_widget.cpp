@@ -68,14 +68,17 @@ void PropertyPaneWidget::refresh() {
 void PropertyPaneWidget::syncNameField() {
     m_syncingFields = true;
 
+    // ECS entity display name (EditorHost::entityNames); the legacy runtime-scene name is not shown.
     const PropertyInspector& inspector = m_bridge.propertyInspector();
-    std::string name;
-    const bool hasName = inspector.getName(m_bridge.host().runtimeScene(), name);
-    m_nameEdit->setEnabled(hasName);
-    if (hasName) {
-        m_nameEdit->setText(QString::fromStdString(name));
+    const EditorHost& host = m_bridge.host();
+    const bool hasEntity = inspector.hasSelection() && host.editorScene().registry().alive(inspector.target());
+    m_nameEdit->setEnabled(hasEntity);
+    if (hasEntity) {
+        if (!m_nameEdit->hasFocus()) m_nameEdit->setText(QString::fromStdString(host.entityNames().get(inspector.target())));
+        m_nameEdit->setPlaceholderText(QStringLiteral("#%1 (unnamed)").arg(inspector.target().index));
     } else {
         m_nameEdit->clear();
+        m_nameEdit->setPlaceholderText(QString());
     }
 
     m_syncingFields = false;
@@ -120,7 +123,7 @@ void PropertyPaneWidget::onNameEdited() {
         return;
     }
 
-    m_bridge.postSetProperty(inspector.target(), "name", m_nameEdit->text().toStdString());
+    m_bridge.postSetProperty(inspector.target(), "entity.name", m_nameEdit->text().trimmed().toStdString());
 }
 
 void PropertyPaneWidget::onPositionEdited() {

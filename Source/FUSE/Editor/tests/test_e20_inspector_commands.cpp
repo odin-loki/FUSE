@@ -584,6 +584,29 @@ void testClipboard() {
     expectTrue(count() == base, "clipboard: paste after cut restores it");
 }
 
+void testEntityNames() {
+    editor::EditorHost host;
+    host.gameTick();
+    ecs::Registry& registry = host.editorScene().registry();
+    const ecs::EntityID a = makeEntity(registry, {1.f, 0.f, 0.f});
+    const ecs::EntityID b = makeEntity(registry, {2.f, 0.f, 0.f});
+    host.undoStack().execute(std::make_unique<editor::RenameEntityCommand>(host.entityNames(), a, "  Hero\n "));
+    expectTrue(host.entityNames().get(a) == "Hero", "names: rename trims whitespace / newlines");
+    host.undoStack().undo();
+    expectTrue(host.entityNames().get(a).empty(), "names: undo restores the unnamed entity");
+    host.undoStack().redo();
+    host.entityNames().set(b, "Crate 01");
+    const std::string path = (fuse::test::makeUniqueTempDir("fuse_e20_names") / "names.fuselevel").string();
+    expectTrue(host.saveSceneAs(path), "names: scene saves");
+    editor::EditorHost reopened;
+    reopened.gameTick();
+    expectTrue(reopened.openScene(path), "names: scene reopens");
+    expectTrue(reopened.entityNames().get(a) == "Hero" && reopened.entityNames().get(b) == "Crate 01",
+               "names: sidecar round-trips");
+    reopened.newScene(fuse::scene::SceneDimension::World3D, "x");
+    expectTrue(reopened.entityNames().size() == 0u, "names: new scene clears names");
+}
+
 int main() {
     testInspectorRowOk();
     if (g_failures != 0) {
@@ -600,6 +623,7 @@ int main() {
     testPrefab(dir);
     testLinkedPrefab(dir);
     testClipboard();
+    testEntityNames();
     std::error_code ec;
     fs::remove_all(dir, ec);
     std::printf("e20 inspector commands: %s (%d failure(s))\n", g_failures == 0 ? "PASS" : "FAIL", g_failures);

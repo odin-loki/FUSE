@@ -129,6 +129,7 @@ void EditorHost::markSceneClean_() {
 
 void EditorHost::resetForSceneSwitch_() {
     m_prefabLinks.clear();
+    m_entityNames.clear();
     // Stops PIE, drops undo / command history and selection, empties registry + runtime scene.
     resetSceneForProjectOpen();
 }
@@ -200,6 +201,7 @@ bool EditorHost::openScene(const std::string& path) {
     m_materials.load(MaterialCatalog::sidecarPath(path)); // optional sidecar; defaults otherwise
     m_timeline.load(EditorTimeline::sidecarPath(path));   // optional; empty timeline otherwise
     loadPrefabLinks_(path);                                // optional; no links otherwise
+    m_entityNames.load(EntityNames::sidecarPath(path));    // optional; unnamed otherwise
     m_runtimeViewport.onSceneFileOpened(m_editorScene.registry());
     markSceneClean_();
     ++m_sceneLoadCount;
@@ -238,6 +240,9 @@ bool EditorHost::saveSceneAs(const std::string& path) {
         }
     }
     savePrefabLinks_(path);
+    if (!m_entityNames.save(EntityNames::sidecarPath(path))) {
+        return fileFail_(CommandKind::SaveSceneAs, path, "save scene: cannot write entity names");
+    }
     m_currentScenePath = path;
     markSceneClean_();
     ++m_sceneSaveCount;

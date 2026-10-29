@@ -5,6 +5,7 @@
 #include <fuse/cinematics/timeline_host_stub.hpp>
 #include <fuse/cinematics/timeline_loader.hpp>
 #include <fuse/editor/editor_timeline.hpp>
+#include <fuse/editor/entity_names.hpp>
 #include <fuse/editor/material_catalog.hpp>
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/command_stack.hpp>
@@ -68,6 +69,9 @@ public:
     /// GUI-5 keyframe timeline of the open scene (`<scene>.timeline` sidecar).
     EditorTimeline& timeline() { return m_timeline; }
     const EditorTimeline& timeline() const { return m_timeline; }
+    /// Editor display names (`<scene>.names` sidecar); rename through `RenameEntityCommand` for undo.
+    EntityNames& entityNames() { return m_entityNames; }
+    const EntityNames& entityNames() const { return m_entityNames; }
     UndoStack& undoStack() { return m_undoStack; }
     const UndoStack& undoStack() const { return m_undoStack; }
 
@@ -233,6 +237,7 @@ private:
     UndoStack m_undoStack;
     MaterialCatalog m_materials;
     EditorTimeline m_timeline;
+    EntityNames m_entityNames;
     struct PrefabLink {
         std::string path;
         std::vector<ecs::EntityID> entities;     ///< instance entities, prefab order (root first)

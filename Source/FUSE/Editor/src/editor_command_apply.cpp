@@ -462,6 +462,13 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
 
     ecs::Registry& registry = host.editorScene().registry();
 
+    if (command.propertyName == "entity.name") {
+        if (host.entityNames().get(entity) == command.propertyValue) return true;
+        host.undoStack().execute(std::make_unique<RenameEntityCommand>(host.entityNames(), entity, command.propertyValue));
+        host.editorState().sceneModified = true;
+        return true;
+    }
+
     if (command.propertyName == "transform.trs") {
         ecs::Transform* transform = registry.get<ecs::Transform>(entity);
         GizmoTransform trs{};

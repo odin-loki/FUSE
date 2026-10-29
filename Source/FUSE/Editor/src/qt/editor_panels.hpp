@@ -86,6 +86,10 @@ public:
     [[nodiscard]] int entityRowCount() const;
     [[nodiscard]] static QString entityLabel(const ecs::Registry& registry, ecs::EntityID id);
     [[nodiscard]] EntityContextMenu& contextMenuModel() { return m_contextMenu; }
+    /// Sets the editor display name (empty restores the default label) as one undo step.
+    bool renameEntity(ecs::EntityID id, const QString& name);
+    /// Starts in-place editing of `id`'s row (F2 / context menu Rename).
+    void beginRename(ecs::EntityID id);
     /// Tree row of `id` (null when not shown).
     [[nodiscard]] QTreeWidgetItem* itemFor(ecs::EntityID id) const;
     /// Posts one ReparentObject command (kReparentKeepWorldPose) per entity; entities whose
@@ -101,6 +105,7 @@ private:
     void onItemSelectionChanged();
     void onContextMenuRequested(const QPoint& pos);
     void onRowsDropped(const QList<QTreeWidgetItem*>& dragged, QTreeWidgetItem* newParent);
+    void onItemChanged(QTreeWidgetItem* item, int column);
 
     EditorHost& m_host;
     std::mutex& m_sceneMutex;

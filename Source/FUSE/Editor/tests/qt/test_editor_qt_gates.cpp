@@ -1826,6 +1826,33 @@ int gateEditTools() {
     expect(sdfRows >= 1 && sdfRows < base, fmt("hierarchy search narrows rows (%d of %d)", sdfRows, base));
     window.hierarchy()->searchEdit()->clear();
 
+    // Rename: in-place edit of the hierarchy row -> one undo step, shown and searchable.
+    ecs::EntityID named;
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        window.host().editorScene().registry().each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform&) { if (!named.valid()) named = id; });
+    }
+    window.hierarchy()->refresh();
+    QTreeWidgetItem* row = window.hierarchy()->itemFor(named);
+    expect(row != nullptr && (row->flags() & Qt::ItemIsEditable), "hierarchy rows are editable (F2)");
+    if (row != nullptr) row->setText(0, QStringLiteral("Hero Rock"));
+    QCoreApplication::processEvents();
+    QCoreApplication::processEvents();
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        expect(window.host().entityNames().get(named) == "Hero Rock", "editing the row renames the entity");
+    }
+    row = window.hierarchy()->itemFor(named);
+    expect(row != nullptr && row->text(0) == QStringLiteral("Hero Rock"), "hierarchy shows the name");
+    window.hierarchy()->searchEdit()->setText(QStringLiteral("hero"));
+    expect(window.hierarchy()->entityRowCount() == 1, "search matches entity names");
+    window.hierarchy()->searchEdit()->clear();
+    window.undoLatest();
+    {
+        std::lock_guard<std::mutex> lock(window.sceneMutex());
+        expect(window.host().entityNames().get(named).empty(), "undo removes the name");
+    }
+
     // Light / camera icons: a point light 6 m in front of the viewport camera.
     ViewportPlaceholderWidget* vp = window.viewport();
     ecs::EntityID light;
