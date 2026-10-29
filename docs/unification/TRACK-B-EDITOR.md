@@ -29,7 +29,7 @@
 | `PlaySession` / `PlayWorldSnapshot` | `play_session.hpp` | B6.12 deepen — PIE start/stop, tick accumulator, world snapshot capture/restore, coalesced dirty restore; B6.12 deepen follow-up — `consumeFixedSteps`, snapshot helpers, stable entity ordering |
 | `EditorHost` | `editor_host.hpp` | `CommandQueue` (UI→game) + `UndoStack` (B6.2) |
 
-**Not in scope:** Qt dock widgets, embedded Vulkan viewport, `QUndoStack` adapter, live material preview RT, real picking/rendering, Qt asset grid/profiler plots/console chrome.
+**Not in scope (here):** live material preview RT, GPU SDF carve, screen-space gizmo rendering. The Qt docks, embedded Vulkan viewport, picking, asset browser chrome, profiler plots and console have since landed in the U6 Qt shell. See [U6-EDITOR.md](./U6-EDITOR.md) §8 GUI-1.
 
 ---
 
@@ -136,8 +136,8 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 - [x] `ViewportPanel` headless API — camera state, mode, project label
 - [x] `setDimensions` / `needsResize` resize flag
 - [x] `tick(dt)` frame counter for game-thread stub
-- [ ] Embedded Vulkan surface + framebuffer rebuild (U6 follow-up)
-- [ ] Free-camera WASD input + entity picking (deferred)
+- [x] Embedded Vulkan surface + framebuffer rebuild (U6: `ViewportVulkanWindow`, `fuse_editor_qt_live_present`)
+- [x] Free-camera WASD input + entity picking (U6 Qt viewport: `ViewportSceneView::pickAndSelect`)
 
 ### B6.4 — In-Viewport Gizmos
 
@@ -160,7 +160,7 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 - [x] `reparentSelection` via `UndoStack` + post-command `refresh`
 - [x] `fuse_editor_hierarchy_model` — flatten, search, reparent + undo
 - [x] Drag-and-drop reparent UI — E20: `HierarchyTreeWidget` internal-move drop posts `ReparentObject` + `kReparentKeepWorldPose` (world pose kept, one undo step, cycles refused) — `fuse_editor_qt_e20_reparent`, `fuse_editor_e20_inspector_commands`
-- [ ] Right-click create/delete entity menu (deferred)
+- [x] Right-click create/delete entity menu (hierarchy context menu + Entity menu; `fuse_editor_qt_shell_entity`)
 
 ### B6.6 — Property Inspector Panel
 
@@ -219,14 +219,14 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 - [x] `AssetBrowser::init(project_root)` filesystem scan
 - [x] Extension-based type classification + `setSearchFilter`
 - [x] `fuse_editor_panels_b69_b612` asset browser coverage
-- [ ] Qt grid/tree chrome (U6 follow-up)
+- [x] Qt asset chrome: Up / Refresh / filter / icons / double-click open (`AssetBrowser::activate`, `fuse_editor_qt_shell_assets`)
 
 ### B6.10 — Profiler Panel
 
 - [x] `ProfilerPanel::pushFrameData` 256-frame ring buffer
 - [x] `setPaused(true)` freezes capture
 - [x] Frame history count + latest-frame accessor
-- [ ] Qt profiler plots (U6 follow-up)
+- [x] Qt profiler plot: frame-time graph + stats, Pause / Clear (`ProfilerPanel::cpuStats`, `fuse_editor_qt_shell_profiler`)
 - [ ] Core `FrameProfileData` scope events wired (see [TRACK-B-CORE-B16.md](./TRACK-B-CORE-B16.md))
 
 ### B6.11 — Console Panel
