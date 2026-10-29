@@ -26,6 +26,34 @@ void fillRect(std::vector<Color>& layer, const Rect& panel, std::int32_t x0, std
 
 } // namespace
 
+namespace {
+// Small antialiased glyphs over a busy game frame read washed out at linear coverage. Boost coverage with
+// a gamma-0.55 curve (stem darkening, as FreeType/macOS do for light-on-dark text); 0 and 255 stay fixed.
+struct GlyphContrastLut {
+    std::uint8_t v[256]{};
+    constexpr GlyphContrastLut() {
+        for (int i = 0; i < 256; ++i) {
+            // y = (i/255)^0.55 = (i/255)^(11/20): bisect y^20 = x^11 on [0, 1] (constexpr, no <cmath>).
+            const double x = i / 255.0;
+            double q = 1;
+            for (int j = 0; j < 11; ++j) q *= x;
+            double lo = 0, hi = 1;
+            for (int k = 0; k < 40; ++k) {
+                const double m = 0.5 * (lo + hi);
+                double p = 1;
+                for (int j = 0; j < 20; ++j) p *= m;
+                (p < q ? lo : hi) = m;
+            }
+            const double y = 0.5 * (lo + hi);
+            int r = int(y * 255.0 + 0.5);
+            v[i] = std::uint8_t(r < 0 ? 0 : r > 255 ? 255 : r);
+        }
+    }
+    constexpr std::uint8_t operator[](std::uint32_t i) const { return v[i]; }
+};
+constexpr GlyphContrastLut kGlyphContrast{};
+} // namespace
+
 void rasterize(const DrawList& draws, const Rect& panel, std::vector<Color>& layer) {
     const std::size_t n = panel.empty() ? 0u : static_cast<std::size_t>(panel.w) * static_cast<std::size_t>(panel.h);
     if (layer.size() < n) {
@@ -52,7 +80,7 @@ void rasterize(const DrawList& draws, const Rect& panel, std::vector<Color>& lay
                 const std::uint8_t* cov = atlas + static_cast<std::size_t>(c.v + (y - c.y)) * static_cast<std::size_t>(as) + c.u;
                 Color* row = layer.data() + static_cast<std::size_t>(y - panel.y) * static_cast<std::size_t>(panel.w);
                 for (std::int32_t x = x0; x < x1; ++x) {
-                    const std::uint32_t a = cov[x - c.x];
+                    const std::uint32_t a = kGlyphContrast[cov[x - c.x]];
                     if (a == 0) {
                         continue;
                     }
