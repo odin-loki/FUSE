@@ -11,7 +11,7 @@ namespace fuse::editor {
 
 enum class ActionId : u16 {
     FileNewScene, FileOpenScene, FileSave, FileSaveAs, FileNewProject, FileOpenProject, FileQuit,
-    EditUndo, EditRedo,
+    EditUndo, EditRedo, EditPreferences,
     EntityCreateEmpty, EntityCreateCube, EntityCreateSdfSphere, EntityCreateSdfBox, EntityCreatePointLight,
     EntityCreateDirectionalLight, EntityCreateCamera, EntityDuplicate, EntityDelete,
     PlayPlay, PlayPause, PlayResume, PlayStep, PlayStop,

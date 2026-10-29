@@ -15,6 +15,7 @@ constexpr std::array<ActionDesc, static_cast<usize>(ActionId::Count)> kActions{{
     {A::FileQuit, "file.quit", "File", "Quit", "Ctrl+Q", "fuseActionQuit", true, false},
     {A::EditUndo, "edit.undo", "Edit", "Undo", "Ctrl+Z", "fuseActionUndo", false, true},
     {A::EditRedo, "edit.redo", "Edit", "Redo", "Ctrl+Y", "fuseActionRedo", false, true},
+    {A::EditPreferences, "edit.preferences", "Edit", "Preferences...", "", "fuseActionPreferences", true, false},
     {A::EntityCreateEmpty, "entity.create_empty", "Entity", "Create Empty", "Ctrl+Shift+N", "fuseActionCreateEmpty", false, false},
     {A::EntityCreateCube, "entity.create_cube", "Entity", "Create Cube", "", "fuseActionCreateCube", false, false},
     {A::EntityCreateSdfSphere, "entity.create_sdf_sphere", "Entity", "Create SDF Sphere", "", "fuseActionCreateSdfSphere", false, false},

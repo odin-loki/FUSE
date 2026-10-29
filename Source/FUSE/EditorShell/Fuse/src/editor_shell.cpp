@@ -7,6 +7,7 @@
 #include <fuse/editor/editor_theme_tokens.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -181,6 +182,7 @@ EditorShellWindow::EditorShellWindow(fuse::app::AppWindow& window, EditorControl
             switch (id) {
             case ActionId::ViewResetLayout: self->resetLayout(); return true;
             case ActionId::FileNewProject: self->openNewProjectWizard(); return true;
+            case ActionId::EditPreferences: self->openPreferences(); return true;
             case ActionId::FileQuit:
                 if (self->m_c.requestClose()) self->m_win.requestClose();
                 return true;
@@ -188,6 +190,16 @@ EditorShellWindow::EditorShellWindow(fuse::app::AppWindow& window, EditorControl
             }
         },
         this);
+    {
+        // Edit > Preferences, persisted like the Qt QSettings prefs/* keys
+        const fuse::app::Settings& s = m_win.app().settings();
+        EditorPreferences p;
+        p.previewSun = s.flag("prefs.previewSun", p.previewSun);
+        p.cameraSpeed = s.number("prefs.cameraSpeed", p.cameraSpeed);
+        p.lookSensitivity = s.number("prefs.lookSensitivity", p.lookSensitivity);
+        p.restoreLayout = s.flag("prefs.restoreLayout", p.restoreLayout);
+        m_c.applyPreferences(p);
+    }
     m_c.refresh();
     sync();
     // poll the controller (game thread ticks, console output); sync() touches widgets only on change
@@ -1114,6 +1126,119 @@ void EditorShellWindow::closeNewProjectWizard_() {
     if (!newProjectWizardOpen()) return;
     const NodeHandle d = m_wizard;
     m_wizard = {};
+    w::closeDialog(m_ui, d);
+    m_ui.destroy(d);
+}
+
+// ---- Preferences (Qt PreferencesDialog parity) --------------------------------------------------------------------
+std::vector<std::string> EditorShellWindow::shortcutConflicts() {
+    std::vector<std::pair<std::string, std::string>> bound;
+    for (const ActionDesc& a : editorActions())
+        if (*a.shortcut) bound.emplace_back(a.shortcut, a.label);
+    std::sort(bound.begin(), bound.end());
+    std::vector<std::string> out;
+    for (std::size_t i = 0; i < bound.size();) {
+        std::size_t j = i + 1;
+        while (j < bound.size() && bound[j].first == bound[i].first) ++j;
+        if (j - i > 1) {
+            std::string line = bound[i].first + ":";
+            for (std::size_t k = i; k < j; ++k) line += (k == i ? " " : ", ") + bound[k].second;
+            out.push_back(line);
+        }
+        i = j;
+    }
+    return out;
+}
+
+void EditorShellWindow::openPreferences() {
+    if (preferencesOpen()) return;
+    const EditorPreferences p = m_c.preferences();
+    m_prefsDialog = w::dialog(m_ui, "Preferences", "prefs");
+    const NodeHandle body = w::dialogBody(m_ui, m_prefsDialog);
+    m_ui.setCss(body, "gap", "4px");
+    const auto row = [&](std::string_view label) {
+        const NodeHandle r = w::panel(m_ui, body);
+        m_ui.addClass(r, "row");
+        m_ui.setCss(r, "gap", "6px");
+        const NodeHandle l = w::label(m_ui, r, label);
+        m_ui.setCss(l, "min-width", "150px");
+        return r;
+    };
+    w::label(m_ui, body, "General", "prefs.general");
+    w::checkBox(m_ui, row("Viewport"), "Preview sun when the scene has no light", p.previewSun, "prefs.preview_sun");
+    w::spinBox(m_ui, row("Camera speed (units/s)"), 0.5f, 500.f, f32(p.cameraSpeed), 0.5f, "prefs.camera_speed");
+    w::spinBox(m_ui, row("Look sensitivity (deg/px)"), 0.01f, 2.f, f32(p.lookSensitivity), 0.01f, "prefs.look_sensitivity");
+    w::checkBox(m_ui, row("Layout"), "Restore the dock layout at startup", p.restoreLayout, "prefs.restore_layout");
+    // Shortcuts: every named action with its key (Qt editableActions, sorted by text), filterable
+    w::label(m_ui, body, "Shortcuts", "prefs.shortcuts_title");
+    const NodeHandle filter = w::lineEdit(m_ui, body, "", "prefs.filter");
+    static constexpr auto rows = [](std::string_view f) {
+        std::vector<std::string> lines;
+        for (const ActionDesc& a : editorActions()) {
+            std::string text = std::string(a.label);
+            if (text.size() > 3 && text.compare(text.size() - 3, 3, "...") == 0) text.resize(text.size() - 3);
+            std::string line = text + "  [" + std::string(a.menu) + "]   " + (*a.shortcut ? a.shortcut : "-");
+            std::string lo = line, fl(f);
+            std::transform(lo.begin(), lo.end(), lo.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+            std::transform(fl.begin(), fl.end(), fl.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+            if (fl.empty() || lo.find(fl) != std::string::npos) lines.push_back(line);
+        }
+        std::sort(lines.begin(), lines.end(), [](const std::string& a, const std::string& b) {
+            return std::lexicographical_compare(a.begin(), a.end(), b.begin(), b.end(),
+                                                [](char x, char y) { return std::tolower(x) < std::tolower(y); });
+        });
+        std::string items;
+        for (const std::string& l : lines) items += (items.empty() ? "" : "\n") + l;
+        return items;
+    };
+    const NodeHandle list = w::listView(m_ui, body, rows(""), -1, "prefs.shortcuts");
+    m_ui.setCss(list, "height", "180px");
+    m_ui.setCss(list, "min-width", "460px");
+    m_ui.connect(filter, SignalKind::TextChanged, [list](UiContext& u, NodeHandle n, const SignalArgs&) { u.setText(list, rows(u.text(n))); });
+    const std::vector<std::string> conflicts = shortcutConflicts();
+    std::string c = conflicts.empty() ? "No shortcut conflicts." : "Conflicts: ";
+    for (std::size_t i = 0; i < conflicts.size(); ++i) c += (i ? "; " : "") + conflicts[i];
+    w::label(m_ui, body, c, "prefs.conflicts");
+    const NodeHandle buttons = w::panel(m_ui, body);
+    m_ui.addClass(buttons, "row");
+    m_ui.setCss(buttons, "gap", "6px");
+    m_ui.setCss(buttons, "justify-content", "flex-end");
+    const NodeHandle ok = w::button(m_ui, buttons, "OK", "prefs.ok");
+    const NodeHandle apply = w::button(m_ui, buttons, "Apply", "prefs.apply");
+    const NodeHandle cancel = w::button(m_ui, buttons, "Cancel", "prefs.cancel");
+    m_ui.connect(cancel, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { closePreferences_(); });
+    m_ui.connect(apply, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { applyPreferencesDialog_(); });
+    m_ui.connect(ok, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) {
+        if (applyPreferencesDialog_()) closePreferences_();
+    });
+    w::openDialog(m_ui, m_prefsDialog);
+    m_ui.setFocus(filter);
+}
+
+bool EditorShellWindow::applyPreferencesDialog_() {
+    if (!preferencesOpen()) return false;
+    if (!shortcutConflicts().empty()) return false; // Qt refuses while shortcuts conflict
+    EditorPreferences p;
+    p.previewSun = m_ui.checked(m_ui.find("prefs.preview_sun"));
+    p.cameraSpeed = m_ui.value(m_ui.find("prefs.camera_speed"));
+    p.lookSensitivity = m_ui.value(m_ui.find("prefs.look_sensitivity"));
+    p.restoreLayout = m_ui.checked(m_ui.find("prefs.restore_layout"));
+    m_c.applyPreferences(p);
+    fuse::app::Settings& s = m_win.app().settings();
+    s.set("prefs.previewSun", p.previewSun ? 1.0 : 0.0);
+    s.set("prefs.cameraSpeed", p.cameraSpeed);
+    s.set("prefs.lookSensitivity", p.lookSensitivity);
+    s.set("prefs.restoreLayout", p.restoreLayout ? 1.0 : 0.0);
+    (void)s.save(); // no settings file (tests, --settings unset): kept in memory
+    m_viewportKey.clear(); // the preview sun changes the engine frame
+    sync();
+    return true;
+}
+
+void EditorShellWindow::closePreferences_() {
+    if (!preferencesOpen()) return;
+    const NodeHandle d = m_prefsDialog;
+    m_prefsDialog = {};
     w::closeDialog(m_ui, d);
     m_ui.destroy(d);
 }

@@ -1247,6 +1247,62 @@ void gateViewModes(Rig& r) {
     r.shell.setSceneViewport(nullptr); // the host dies with this gate
 }
 
+
+// Edit > Preferences... (Qt PreferencesDialog parity): general options, shortcut list + filter, conflicts, persist.
+void gatePreferences(Rig& r) {
+    CHECK(menuText(r, "Edit").find("Preferences...") != std::string::npos);
+    CHECK(fui::EditorShellWindow::shortcutConflicts().empty());
+    CHECK(editorPreviewSun() && std::fabs(r.c.viewport().camera().moveSpeed - 10.f) < 1e-4f);
+    const auto idx = r.shell.menuItemIndex("Edit", ActionId::EditPreferences);
+    CHECK(idx >= 0);
+    r.ui().emit(r.shell.menuNode("Edit"), fuse::ui::SignalKind::Submitted, {.value = float(idx)});
+    r.frames();
+    CHECK(r.shell.preferencesOpen());
+    CHECK(r.ui().checked(r.ui().find("prefs.preview_sun")) && r.ui().checked(r.ui().find("prefs.restore_layout")));
+    CHECK(std::fabs(r.ui().value(r.ui().find("prefs.camera_speed")) - 10.f) < 1e-4f);
+    const std::string all(r.ui().text(r.ui().find("prefs.shortcuts")));
+    CHECK(all.find("Undo  [Edit]   Ctrl+Z") != std::string::npos && all.find("View Mode: Wireframe  [View]   Alt+3") != std::string::npos);
+    CHECK(r.ui().text(r.ui().find("prefs.conflicts")) == "No shortcut conflicts.");
+    // filter (Qt filterRows): "alt+" keeps only the four view modes
+    r.ui().setText(r.ui().find("prefs.filter"), "alt+");
+    r.ui().emit(r.ui().find("prefs.filter"), fuse::ui::SignalKind::TextChanged, {});
+    r.frames();
+    const std::string filtered(r.ui().text(r.ui().find("prefs.shortcuts")));
+    CHECK(std::count(filtered.begin(), filtered.end(), '\n') == 3 && filtered.find("Lit Wireframe") != std::string::npos);
+    // Cancel discards edits
+    r.ui().setChecked(r.ui().find("prefs.preview_sun"), false);
+    r.clickId("prefs.cancel");
+    CHECK(!r.shell.preferencesOpen() && editorPreviewSun());
+    // edit + OK: applied to the viewport camera / preview sun and persisted in the app settings
+    CHECK(r.c.trigger(ActionId::EditPreferences));
+    r.frames();
+    r.ui().setChecked(r.ui().find("prefs.preview_sun"), false);
+    r.ui().setValue(r.ui().find("prefs.camera_speed"), 25.f);
+    r.ui().setValue(r.ui().find("prefs.look_sensitivity"), 0.5f);
+    r.ui().setChecked(r.ui().find("prefs.restore_layout"), false);
+    r.frames();
+    if (!g_out.empty()) { r.win.rasterize({}); CHECK(r.win.writePng(g_out)); g_shotWritten = true; }
+    r.clickId("prefs.ok");
+    CHECK(!r.shell.preferencesOpen());
+    CHECK(!editorPreviewSun());
+    CHECK(std::fabs(r.c.viewport().camera().moveSpeed - 25.f) < 1e-4f && std::fabs(r.c.viewport().camera().lookSensitivity - 0.5f) < 1e-4f);
+    const auto& s = r.app.settings();
+    CHECK(!s.flag("prefs.previewSun", true) && std::fabs(s.number("prefs.cameraSpeed") - 25.0) < 1e-6 && !s.flag("prefs.restoreLayout", true));
+    // a new shell on the same app picks them up (startup load)
+    auto& win2 = r.app.createWindow({.title = "FUSE Editor 2", .width = 1200, .height = 700});
+    EditorHost host2;
+    test::ScriptedServices sv2;
+    EditorController c2(host2, sv2);
+    setEditorPreviewSun(true);
+    {
+        fui::EditorShellWindow shell2(win2, c2, {});
+        CHECK(!c2.preferences().previewSun && !editorPreviewSun() && std::fabs(c2.viewport().camera().moveSpeed - 25.f) < 1e-4f);
+        std::printf("preferences: speed %.1f look %.2f sun %d restore %d (reloaded)\n", c2.preferences().cameraSpeed,
+                    c2.preferences().lookSensitivity, int(c2.preferences().previewSun), int(c2.preferences().restoreLayout));
+    }
+    setEditorPreviewSun(true);
+}
+
 int main(int argc, char** argv) {
     std::string gate, out;
     for (int i = 1; i < argc; ++i) {
@@ -1258,7 +1314,7 @@ int main(int argc, char** argv) {
     Rig r(scale);
     const std::map<std::string, std::function<void(Rig&)>> gates{
         {"startup", gateStartup},        {"layout", gateLayout},           {"theme", gateTheme},
-        {"fuse_api", gateFuseApi},       {"wasd", gateWasd},               {"context_menu", gateContextMenu}, {"context_menu_dpr1_5", gateContextMenuDpr15}, {"icon", gateIcon}, {"view_modes", gateViewModes}, {"live_present", gateLivePresent},
+        {"fuse_api", gateFuseApi},       {"wasd", gateWasd},               {"context_menu", gateContextMenu}, {"context_menu_dpr1_5", gateContextMenuDpr15}, {"icon", gateIcon}, {"view_modes", gateViewModes}, {"preferences", gatePreferences}, {"live_present", gateLivePresent},
         {"ui_frame", gateUiFrame},       {"idle_frames", gateIdle},        {"e15_console", gateConsole},
         {"e15_transport", gateTransport}, {"e20_inspector", gateInspector}, {"e20_reparent", gateReparent},
         {"e20_file_menu", gateFileMenu}, {"e20_wizard", gateWizard}, {"project_open", gateProjectOpen},  {"project_hub", gateProjectHub}, {"asset_browser", gateAssetBrowser},

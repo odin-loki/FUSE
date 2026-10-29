@@ -64,6 +64,14 @@ public:
     /// Where the last viewport context menu was placed (Qt placement rules; context_menu gates).
     [[nodiscard]] const ContextMenuPlacement& contextMenuPlacement() const { return m_menuPlacement; }
     [[nodiscard]] bool newProjectWizardOpen() const { return m_wizard.valid(); }
+    /// Edit > Preferences... (Qt PreferencesDialog parity): General options (preview sun, camera speed, look
+    /// sensitivity, restore layout) and the Shortcuts list with a filter and the conflict check. Ids "prefs.*".
+    /// OK / Apply apply them (EditorController::applyPreferences) and persist them in the app settings
+    /// ("prefs.previewSun", ...); they are loaded at startup.
+    void openPreferences();
+    [[nodiscard]] bool preferencesOpen() const { return m_prefsDialog.valid(); }
+    /// "key: action, action" for every shortcut bound to more than one action (Qt PreferencesDialog::conflicts).
+    [[nodiscard]] static std::vector<std::string> shortcutConflicts();
 
     [[nodiscard]] fuse::app::AppWindow& window() { return m_win; }
     [[nodiscard]] EditorController& controller() { return m_c; }
@@ -150,6 +158,9 @@ private:
     NodeHandle m_gizmoTools[4]{};
     NodeHandle m_gizmoSpace{}, m_gizmoSnap{};
     NodeHandle m_wizard{};
+    NodeHandle m_prefsDialog{};
+    void closePreferences_();
+    bool applyPreferencesDialog_();
     ContextMenuPlacement m_menuPlacement{};
     void closeNewProjectWizard_();
     bool m_spaceShown = false;

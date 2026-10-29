@@ -113,6 +113,15 @@ struct ViewportPointerEvent {
     f32 x = 0.f, y = 0.f; ///< viewport pixels
 };
 
+/// Edit > Preferences general options (Qt EditorPreferences: prefs/previewSun, cameraSpeed, lookSensitivity,
+/// restoreLayout). Qt-free; the FUSE shell persists them in the app settings file.
+struct EditorPreferences {
+    bool previewSun = true;
+    f64 cameraSpeed = 10.0;
+    f64 lookSensitivity = 0.2;
+    bool restoreLayout = true;
+};
+
 class EditorController {
 public:
     struct Options {
@@ -223,6 +232,9 @@ public:
     // ---- view modes (Qt View > View Mode, Show Mesh Bounds) -------------------------------------------------
     // The mode is the editor-wide setting the Qt viewport reads (setEditorViewMode): Unlit / Wireframe render
     // surfaces unlit, Wireframe / Lit Wireframe overlay the real triangle edges of every mesh and SDF proxy.
+    /// Applies Edit > Preferences: preview sun (shared editor setting), fly speed and look sensitivity.
+    void applyPreferences(const EditorPreferences& p);
+    [[nodiscard]] EditorPreferences preferences() const { return m_prefs; }
     void setViewMode(EditorViewMode mode);
     [[nodiscard]] EditorViewMode viewMode() const { return editorViewMode(); }
     void setShowMeshBounds(bool on);
@@ -305,6 +317,7 @@ private:
     bool m_gizmoMacroOpen = false;
     u64 m_gizmoVersion = 0;
     bool m_showMeshBounds = false;
+    EditorPreferences m_prefs;
     bool refreshGizmo_(); // m_mutex held
     bool gizmoPress_(f32 px, f32 py);
     void gizmoMove_(f32 px, f32 py);

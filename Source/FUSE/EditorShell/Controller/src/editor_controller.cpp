@@ -845,6 +845,14 @@ bool EditorController::projectPoint(f32 x, f32 y, f32 z, f32& px, f32& py) const
     return m_viewport.worldToScreen(w, px, py);
 }
 
+void EditorController::applyPreferences(const EditorPreferences& p) {
+    m_prefs = p;
+    setEditorPreviewSun(p.previewSun);
+    m_viewport.camera().moveSpeed = f32(p.cameraSpeed);
+    m_viewport.camera().lookSensitivity = f32(p.lookSensitivity);
+    ++m_gizmoVersion;
+}
+
 void EditorController::setViewMode(EditorViewMode mode) {
     setEditorViewMode(mode);
     ++m_gizmoVersion;
