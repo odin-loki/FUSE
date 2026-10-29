@@ -324,6 +324,16 @@ void viewportSetImage(UiContext& ui, NodeHandle vp, u32 imageIndex, u32 imageW, 
 Rect viewportImageRect(const UiContext& ui, NodeHandle vp); ///< letterboxed rect in context coordinates
 const ViewportInput& viewportLastInput(const UiContext& ui, NodeHandle vp);
 u32 viewportInputCount(const UiContext& ui, NodeHandle vp);
+/// Vector overlay painted over the viewport image (gizmos, selection markers), in image pixel coordinates; it is part
+/// of the UI draw list, so it composes over an external (zero-copy) image as well as a CPU one.
+struct ViewportOverlay {
+    struct Line { Vec2 a, b; Color color; f32 width = 2.f; };
+    struct Dot { Vec2 center; f32 radius = 4.f; Color color; Color border{}; f32 borderWidth = 0.f; };
+    std::vector<Line> lines;
+    std::vector<Dot> dots;
+};
+void viewportSetOverlay(UiContext& ui, NodeHandle vp, ViewportOverlay overlay);
+const ViewportOverlay& viewportOverlay(const UiContext& ui, NodeHandle vp);
 
 /// Code editor: multi-line text with a line-number gutter, syntax colouring (Lua / C-like keywords, strings,
 /// numbers, comments), caret + selection with Shift, Tab inserts spaces, auto-indent on Enter, undo (Ctrl+Z),

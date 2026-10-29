@@ -567,7 +567,7 @@ struct TimelineW {
 
 // =====================================================================================================================
 // Viewport
-struct ViewportState { u32 image = 0, w = 1, h = 1, count = 0; ViewportInput last; };
+struct ViewportState { u32 image = 0, w = 1, h = 1, count = 0; ViewportInput last; ViewportOverlay overlay; };
 Pool<ViewportState>& vpPool() { static Pool<ViewportState> p; return p; }
 Rect letterbox(Rect c, u32 w, u32 h) {
     const f32 s = std::min(c.w / f32(std::max(1u, w)), c.h / f32(std::max(1u, h)));
@@ -591,6 +591,20 @@ struct ViewportW {
         c.fill = Color{1.f, 1.f, 1.f, pc.opacity};
         c.node = pc.node.index;
         dl.push(c);
+        const ViewportOverlay& o = s->overlay;
+        if (o.lines.empty() && o.dots.empty()) return;
+        const Rect r = c.rect;
+        const f32 sx = r.w / f32(s->w), sy = r.h / f32(s->h);
+        auto map = [&](Vec2 p) { return Vec2{r.x + p.x * sx, r.y + p.y * sy}; };
+        dl.pushClip(r);
+        for (const ViewportOverlay::Line& l : o.lines) dl.line(map(l.a), map(l.b), pc.tint(l.color), l.width);
+        for (const ViewportOverlay::Dot& d : o.dots) {
+            const Vec2 p = map(d.center);
+            const f32 rad = d.radius;
+            dl.roundedRect({p.x - rad, p.y - rad, rad * 2.f, rad * 2.f}, pc.tint(d.color), {rad, rad, rad, rad},
+                           pc.tint(d.border), d.borderWidth);
+        }
+        dl.popClip();
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
@@ -1518,6 +1532,17 @@ const ViewportInput& viewportLastInput(const UiContext& ui, NodeHandle vp) {
     static const ViewportInput none;
     const ViewportState* s = vpPool().get(ui, vp);
     return s ? s->last : none;
+}
+void viewportSetOverlay(UiContext& ui, NodeHandle vp, ViewportOverlay overlay) {
+    ViewportState* s = vpPool().get(ui, vp);
+    if (!s) return;
+    s->overlay = std::move(overlay);
+    ui.invalidate(vp);
+}
+const ViewportOverlay& viewportOverlay(const UiContext& ui, NodeHandle vp) {
+    static const ViewportOverlay none;
+    const ViewportState* s = vpPool().get(ui, vp);
+    return s ? s->overlay : none;
 }
 u32 viewportInputCount(const UiContext& ui, NodeHandle vp) { const ViewportState* s = vpPool().get(ui, vp); return s ? s->count : 0u; }
 
