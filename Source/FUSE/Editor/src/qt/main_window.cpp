@@ -1,4 +1,7 @@
 #include "main_window.hpp"
+#include <QCoreApplication>
+#include <QThread>
+#include <QElapsedTimer>
 #include "project_settings_dialog.hpp"
 
 #include "editor_panels.hpp"
@@ -1052,7 +1055,17 @@ bool MainWindow::selectForScreenshot(const QString& spec) {
             return false;
         }
         create->trigger();
-        {
+        if (m_gameThread.isRunning()) {
+            // The game thread owns rendering (HybridComposer::render is render-thread only): wait for
+            // it to drain the create command instead of ticking on the UI thread.
+            const u32 target = m_host.gameTickCount() + 2u;
+            QElapsedTimer waited;
+            waited.start();
+            while (m_host.gameTickCount() < target && waited.elapsed() < 10000) {
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+                QThread::msleep(5);
+            }
+        } else {
             std::lock_guard<std::mutex> lock(m_sceneMutex);
             m_host.gameTick();
         }
