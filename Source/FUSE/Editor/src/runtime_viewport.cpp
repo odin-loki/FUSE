@@ -1,6 +1,7 @@
 #include <fuse/editor/terrain_builder.hpp>
 #include <fuse/ecs/components/terrain.hpp>
 #include <fuse/ecs/components/mesh.hpp>
+#include <fuse/ecs/components/collider.hpp>
 #include <atomic>
 #include <cstdlib>
 #include <fuse/editor/runtime_viewport.hpp>
@@ -32,6 +33,7 @@
 #include <fuse/world3d/world_3d.hpp>
 #include <fuse/scene/project_io.hpp>
 #include <fuse/scene/serialiser.hpp>
+#include <fuse/scene/wire_stub.hpp>
 #include <fuse/scene/wire_runtime_bind.hpp>
 
 #include <vector>
@@ -510,8 +512,12 @@ void RuntimeViewportHook::ensureWorldLoaded_(EditorHost& host) {
 
     m_embedSession.loadedWorldPath = fuse::scene::resolveDefaultWorldPath(projectLoad.manifest);
     m_embedSession.worldEntityCount = runtimeScene.entityCount();
+    ecs::Registry& editorRegistry = host.editorScene().registry();
+    std::vector<ecs::EntityID> entitiesBefore;
+    editorRegistry.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform&) { entitiesBefore.push_back(id); });
     const fuse::scene::WireRuntimeBindResult wireBindings =
-        fuse::scene::applyWireBindingsFromScene(host.editorScene().registry(), runtimeScene);
+        fuse::scene::applyWireBindingsFromScene(editorRegistry, runtimeScene);
+    importLevelMeshBounds_(editorRegistry, runtimeScene, entitiesBefore, m_embedSession.loadedWorldPath);
     m_embedSession.wireDatablockEntries = wireBindings.datablockEntries;
     m_embedSession.wireMaterialEntries = wireBindings.materialEntries;
     m_embedSession.wireEcsMaterialApplied = wireBindings.ecsMaterialApplied;
@@ -1282,6 +1288,7 @@ void RuntimeViewportHook::tick(EditorHost& host, f32 dt) {
     syncEcsToEmbedWorld3D_(host);
     syncMeshSdfPreviewFromEcs_(host);
     syncTerrainMeshes(host.editorScene().registry());
+    fillMissingMeshBounds(host.editorScene().registry());
 
     if (!m_lastProjectLabel.empty()) {
         if (host.runtimeScene().name() != m_lastProjectLabel) {
@@ -1547,5 +1554,119 @@ void RuntimeViewportHook::syncTerrainMeshes(ecs::Registry& registry) {
         m_terrainBuilt.erase(static_cast<u64>(id.index) | (static_cast<u64>(id.generation) << 32));
     }
     if (!missingMesh.empty()) syncTerrainMeshes(registry);
+}
+} // namespace fuse::editor
+
+namespace fuse::editor {
+u32 RuntimeViewportHook::fillMissingMeshBounds(ecs::Registry& registry) {
+    u32 updated = 0;
+#if defined(FUSE_VULKAN_BACKEND)
+    fuse::hybrid::HybridSceneRenderer* scene = nullptr;
+    if (const RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub); gpu != nullptr && gpu->hybrid != nullptr) {
+        scene = gpu->hybrid->composer().gpuScene();
+    }
+#endif
+    registry.each<ecs::Mesh>([&](ecs::EntityID id, ecs::Mesh& mesh) {
+        const bool degenerate = mesh.aabb_min.x >= mesh.aabb_max.x && mesh.aabb_min.y >= mesh.aabb_max.y &&
+                                mesh.aabb_min.z >= mesh.aabb_max.z;
+        if (!degenerate) return;
+        f32 lo[3] = {}, hi[3] = {};
+        bool found = false;
+#if defined(FUSE_VULKAN_BACKEND)
+        // 1) Real geometry: the registered GPU mesh's vertices.
+        if (scene != nullptr && mesh.vertex_buffer.isValid()) {
+            const std::vector<f32>* edges = scene->sceneRenderer().meshes().wireframeEdges(mesh.vertex_buffer.index());
+            if (edges != nullptr && edges->size() >= 3u) {
+                for (int a = 0; a < 3; ++a) lo[a] = hi[a] = (*edges)[a];
+                for (usize k = 0; k + 3u <= edges->size(); k += 3u) {
+                    for (int a = 0; a < 3; ++a) {
+                        lo[a] = (std::min)(lo[a], (*edges)[k + a]);
+                        hi[a] = (std::max)(hi[a], (*edges)[k + a]);
+                    }
+                }
+                found = true;
+            }
+        }
+#endif
+        // 2) No geometry (e.g. a legacy GroundPlane): use the collider's shape.
+        if (!found) {
+            if (const ecs::Collider* c = registry.get<ecs::Collider>(id)) {
+                const ecs::vec3& q = c->params;
+                switch (c->shape) {
+                case ecs::Collider::Box:
+                    lo[0] = -q.x; lo[1] = -q.y; lo[2] = -q.z; hi[0] = q.x; hi[1] = q.y; hi[2] = q.z;
+                    found = q.x > 0.f || q.y > 0.f || q.z > 0.f;
+                    break;
+                case ecs::Collider::Sphere:
+                    for (int a = 0; a < 3; ++a) { lo[a] = -q.x; hi[a] = q.x; }
+                    found = q.x > 0.f;
+                    break;
+                case ecs::Collider::Capsule:
+                    lo[0] = lo[2] = -q.x; hi[0] = hi[2] = q.x; lo[1] = -(q.y + q.x); hi[1] = q.y + q.x;
+                    found = q.x > 0.f;
+                    break;
+                case ecs::Collider::Plane: {
+                    // Infinite plane: show a 100 x 100 patch through the origin, flat along the normal's
+                    // dominant axis.
+                    constexpr f32 kHalf = 50.f;
+                    const f32 n[3] = {std::fabs(q.x), std::fabs(q.y), std::fabs(q.z)};
+                    const int axis = n[1] >= n[0] && n[1] >= n[2] ? 1 : (n[0] >= n[2] ? 0 : 2);
+                    for (int a = 0; a < 3; ++a) { lo[a] = -kHalf; hi[a] = kHalf; }
+                    lo[axis] = hi[axis] = c->scalar;
+                    found = true;
+                    break;
+                }
+                default: break;
+                }
+            }
+        }
+        if (!found) return;
+        mesh.aabb_min = ecs::vec3{lo[0], lo[1], lo[2], 0.f};
+        mesh.aabb_max = ecs::vec3{hi[0], hi[1], hi[2], 0.f};
+        ++updated;
+    });
+    return updated;
+}
+} // namespace fuse::editor
+
+namespace fuse::editor {
+// The editor scene is rebuilt from the level's scene table (names + transforms), which drops the
+// level's FECS component block, so wire-bound Mesh rows (e.g. a GroundPlane) arrive without bounds.
+// Read the FECS block once and copy each Mesh's local AABB onto the matching editor entity (scene
+// entities map in order, skipping wire stubs - the same walk as applyWireBindingsFromScene).
+u32 RuntimeViewportHook::importLevelMeshBounds_(ecs::Registry& editorRegistry, const fuse::scene::Scene& scene,
+                                                const std::vector<ecs::EntityID>& entitiesBefore,
+                                                const std::string& worldPath) {
+    if (worldPath.empty()) return 0;
+    fuse::scene::Scene fileScene;
+    ecs::Registry fileRegistry;
+    if (fuse::scene::SceneSerialiser::loadWithRegistry(worldPath, fileScene, fileRegistry).status !=
+        fuse::scene::SerialiseStatus::Ok) {
+        return 0;
+    }
+    std::unordered_map<u32, const ecs::Mesh*> fileMeshByIndex;
+    fileRegistry.each<ecs::Mesh>([&](ecs::EntityID id, ecs::Mesh& mesh) { fileMeshByIndex[id.index] = &mesh; });
+    std::vector<ecs::EntityID> created;
+    editorRegistry.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform&) {
+        if (std::find(entitiesBefore.begin(), entitiesBefore.end(), id) == entitiesBefore.end()) created.push_back(id);
+    });
+    std::sort(created.begin(), created.end(), [](ecs::EntityID a, ecs::EntityID b) { return a.index < b.index; });
+    u32 updated = 0;
+    usize k = 0;
+    const auto& entities = scene.entities();
+    for (usize i = 0; i < entities.size() && k < created.size(); ++i) {
+        if (fuse::scene::isWireStubEntityName(entities[i].name)) continue;
+        const ecs::EntityID editorId = created[k++];
+        if (i >= fileScene.entities().size() || fileScene.entities()[i].name != entities[i].name) continue;
+        const auto it = fileMeshByIndex.find(static_cast<u32>(i));
+        ecs::Mesh* mesh = editorRegistry.get<ecs::Mesh>(editorId);
+        if (it == fileMeshByIndex.end() || mesh == nullptr) continue;
+        const ecs::Mesh& src = *it->second;
+        if (src.aabb_max.x < src.aabb_min.x || src.aabb_max.y < src.aabb_min.y || src.aabb_max.z < src.aabb_min.z) continue;
+        mesh->aabb_min = src.aabb_min;
+        mesh->aabb_max = src.aabb_max;
+        ++updated;
+    }
+    return updated;
 }
 } // namespace fuse::editor

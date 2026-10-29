@@ -17,6 +17,10 @@
 #include <unordered_map>
 #include <vector>
 
+namespace fuse::scene {
+class Scene;
+}
+
 namespace fuse::ecs {
 class Registry;
 }
@@ -87,6 +91,10 @@ public:
     /// Rebuild the Mesh of every Terrain entity whose component changed (also runs from tick()); call under the
     /// scene mutex.
     void syncTerrainMeshes(ecs::Registry& registry);
+    /// Fill Mesh::aabb_min/max for meshes loaded without bounds (e.g. level ground meshes) from the
+    /// registered GPU mesh's vertices, so ortho views, picking and framing see real boxes.
+    /// Returns how many Mesh rows were updated.
+    u32 fillMissingMeshBounds(ecs::Registry& registry);
 
     void requestResize(u32 width, u32 height);
     void setProjectLabel(std::string label);
@@ -205,6 +213,8 @@ private:
     };
     std::unordered_map<u64, TerrainBuilt> m_terrainBuilt;
     u32 m_terrainBuilds = 0;
+    u32 importLevelMeshBounds_(ecs::Registry& editorRegistry, const fuse::scene::Scene& scene,
+                               const std::vector<ecs::EntityID>& entitiesBefore, const std::string& worldPath);
     ViewportCamera m_playViewportCameraSnapshot{};
     bool m_playFromSpawn = false;
 

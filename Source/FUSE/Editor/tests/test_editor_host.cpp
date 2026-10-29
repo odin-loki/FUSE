@@ -90,6 +90,8 @@ void testHostPieStartStopViaQueue() {
     host.editorScene().registry().add(spawnEntity, spawnT);
     host.editorScene().registry().add(spawnEntity, fuse::ecs::SpawnMarker{});
     const fuse::editor::ViewportCamera beforePlay = host.runtimeViewport().panel().camera();
+    expectTrue(!host.runtimeViewport().playFromSpawn(), "PIE keeps the editor view by default");
+    host.runtimeViewport().setPlayFromSpawn(true); // Play > Play from Spawn Point
 
     fuse::editor::EditorCommand start;
     start.kind = fuse::editor::CommandKind::StartPlay;
@@ -99,7 +101,7 @@ void testHostPieStartStopViaQueue() {
     expectTrue(host.editorState().playing, "PIE start applied on game thread");
     expectTrue(host.playSession().isActive(), "play session active after start command");
     const fuse::editor::ViewportCamera& atPlay = host.runtimeViewport().panel().camera();
-    expectTrue(atPlay.positionY == kSpawnY, "PIE start snaps viewport to spawn height");
+    expectTrue(atPlay.positionY == kSpawnY + 1.7f, "PIE start snaps viewport to spawn eye height");
 
     fuse::editor::EditorCommand stop;
     stop.kind = fuse::editor::CommandKind::StopPlay;
