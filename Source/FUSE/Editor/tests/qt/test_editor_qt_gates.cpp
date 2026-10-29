@@ -1930,6 +1930,35 @@ int gateEditTools() {
         }
     }
 
+    // Duplicate (Ctrl+D) copies the whole subtree and keeps names, as one undo step.
+    {
+        ecs::EntityID parentE, childE;
+        {
+            std::lock_guard<std::mutex> lock(window.sceneMutex());
+            ecs::Registry& reg = window.host().editorScene().registry();
+            parentE = reg.create();
+            childE = reg.create();
+            ecs::Transform t{};
+            reg.add(parentE, t);
+            t.parent = parentE;
+            reg.add(childE, t);
+            window.host().entityNames().set(parentE, "Tower");
+            window.host().editorState().selectedEntities = {parentE};
+            window.host().editorState().primarySelection = parentE;
+        }
+        const int before = countEntities();
+        action("fuseActionDuplicate")->trigger();
+        const int after = countEntities();
+        expect(after == before + 2, fmt("Duplicate copies the subtree (%d -> %d)", before, after));
+        {
+            std::lock_guard<std::mutex> lock(window.sceneMutex());
+            const ecs::EntityID copy = window.host().editorState().primarySelection;
+            expect(copy != parentE && window.host().entityNames().get(copy) == "Tower", "Duplicate keeps the name");
+        }
+        window.undoLatest();
+        expect(countEntities() == before, "one undo removes the duplicated subtree");
+    }
+
     // Group Selection (Ctrl+G).
     expect(action("fuseActionGroup") != nullptr, "Entity > Group Selection exists");
     ecs::EntityID g1, g2;

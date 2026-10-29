@@ -651,9 +651,21 @@ bool MainWindow::runEntityAction(ContextMenuAction action) {
         if (needsSelection && state.primarySelection == ecs::EntityID::null()) {
             return false;
         }
+        if (action == ContextMenuAction::Duplicate && !state.playing) {
+            // Whole subtrees and their display names, one undo step, copies selected (the context-menu
+            // model's Duplicate copies only the selected entities themselves).
+            std::vector<ecs::EntityID> selection = state.selectedEntities;
+            if (selection.empty()) selection.push_back(state.primarySelection);
+            EntityClipboard scratch;
+            ecs::Registry& registry = m_host.editorScene().registry();
+            if (scratch.copy(registry, selection, &m_host.entityNames()) != 0u) {
+                changed = !scratch.paste(registry, m_host.undoStack(), state, &m_host.entityNames()).empty();
+            }
+        } else {
         m_entityActions.openAt(state.primarySelection, ecs::vec3{0.f, 0.f, 0.f}, state);
         changed = m_entityActions.activate(action, m_host.editorScene(), state, m_host.undoStack());
         m_entityActions.close();
+        }
     }
     if (changed) {
         refreshPanels();
