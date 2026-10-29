@@ -54,6 +54,8 @@ int main(int argc, char* argv[]) {
 
     fuse::editor::qt::MainWindow::Options options;
     options.embeddedVulkanViewport = !parser.isSet(softwareViewportOption);
+    // Screenshots use the default layout; interactive sessions keep the user's dock layout.
+    options.persistLayout = !parser.isSet(screenshotOption);
     fuse::editor::qt::MainWindow window(samplesRoot, options);
     window.show();
     if (parser.isSet(projectOption)) {

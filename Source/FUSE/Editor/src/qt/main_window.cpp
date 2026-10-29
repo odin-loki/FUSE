@@ -107,9 +107,32 @@ MainWindow::MainWindow(const QString& samplesRoot, const Options& options, QWidg
     if (m_options.startFramePump) {
         m_viewport->setFramePumpEnabled(true);
     }
+    if (m_options.persistLayout) {
+        restoreSettingsLayout();
+    }
     refreshPanels();
     refreshStatusBar();
     updateWindowTitle();
+}
+
+void MainWindow::saveSettingsLayout() const {
+    QSettings settings(QStringLiteral("FUSE"), QStringLiteral("FUSE Editor"));
+    settings.setValue(QString::fromLatin1(kSettingsGeometry), saveGeometry());
+    settings.setValue(QString::fromLatin1(kSettingsLayout), saveLayout());
+}
+
+bool MainWindow::restoreSettingsLayout() {
+    const QSettings settings(QStringLiteral("FUSE"), QStringLiteral("FUSE Editor"));
+    const QByteArray geometry = settings.value(QString::fromLatin1(kSettingsGeometry)).toByteArray();
+    const QByteArray layout = settings.value(QString::fromLatin1(kSettingsLayout)).toByteArray();
+    bool ok = false;
+    if (!geometry.isEmpty()) {
+        ok = restoreGeometry(geometry);
+    }
+    if (!layout.isEmpty()) {
+        ok = restoreLayout(layout) || ok;
+    }
+    return ok;
 }
 
 MainWindow::~MainWindow() {
@@ -843,6 +866,9 @@ void MainWindow::rebuildRecentMenu() {
 
 void MainWindow::closeEvent(QCloseEvent* event) {
     if (maybeSaveChanges()) {
+        if (m_options.persistLayout) {
+            saveSettingsLayout();
+        }
         event->accept();
     } else {
         event->ignore();
