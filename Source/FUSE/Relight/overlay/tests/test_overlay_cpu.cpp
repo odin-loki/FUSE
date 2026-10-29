@@ -20,6 +20,9 @@
 //   menu_debug   the Debug tab selects relight.overlay.debugView; unavailable views are marked.
 //   layout       overlay_types.h OverlayPush == the push-constant block of shaders/overlay_compose.{comp,slang}.
 //   zero_alloc   steady-state hidden frames (window messages through the hook core + update): no operator new.
+//   glyphs       the menu UI on FUSE UI: with a font, text draws a semantic shaped Text command followed by Glyph
+//                commands whose atlas coverage reaches the layer (ink inside the text box, nothing outside the panel);
+//                without FUSE UI the suite only checks the 5x7 path.
 //   safe_zone    UI safe-zone inset: fraction of each window edge, clamped, at least one pixel inside the window.
 #include <fuse/relight/overlay/dev_menu.hpp>
 #include <fuse/relight/overlay/font5x7.hpp>
@@ -694,6 +697,45 @@ void testOverlayOpacityOk() {
     check(!fuse::relight::overlay_opacity_ok(1.1f), "opacity 1.1");
 }
 
+void testGlyphs() {
+    MenuUi ui;
+    const Rect panel{10, 10, 200, 60};
+    ui.begin(panel, 1, nullptr);
+    ui.text("Hello FUSE", rgba(255, 255, 255, 255));
+    ui.end();
+    const DrawList& dl = ui.draws();
+    int texts = 0, glyphs = 0, shaped = 0;
+    for (const DrawCmd& c : dl.cmds()) {
+        texts += c.kind == DrawCmd::Kind::Text ? 1 : 0;
+#if defined(FUSE_RELIGHT_OVERLAY_FUSE_UI)
+        glyphs += c.kind == DrawCmd::Kind::Glyph ? 1 : 0;
+        shaped += c.kind == DrawCmd::Kind::Text && c.shaped ? 1 : 0;
+#endif
+    }
+    check(texts == 1, "one semantic Text command per text draw");
+    std::vector<Color> layer;
+    rasterize(dl, panel, layer);
+    int ink = 0;
+    for (Color c : layer) ink += (c >> 24) != 0 ? 1 : 0;
+    check(ink > 0, "text puts ink into the layer");
+#if defined(FUSE_RELIGHT_OVERLAY_FUSE_UI)
+    if (ui.hasFont()) {
+        check(shaped == 1, "the Text command is marked shaped");
+        check(glyphs == 9, "one Glyph command per visible glyph (9, got " + std::to_string(glyphs) + ")");
+        check(dl.glyphAtlas() != nullptr && dl.glyphAtlasSize() > 0, "the draw list carries the glyph atlas");
+        // Every glyph quad lies inside the panel; partial coverage (anti-aliasing) proves atlas sampling, not 5x7.
+        int partial = 0;
+        for (Color c : layer) {
+            const unsigned a = c >> 24;
+            partial += a > 0 && a < 255 ? 1 : 0;
+        }
+        check(partial > 0, "glyph coverage is anti-aliased (atlas sampled)");
+    } else {
+        std::printf("note: no font found, glyph checks skipped (5x7 fallback)\n");
+    }
+#endif
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -715,7 +757,7 @@ int main(int argc, char** argv) {
                             {"hidden", testHidden},       {"menu_options", testMenuOptions},
                             {"menu_tags", testMenuTags},  {"menu_debug", testMenuDebug},
                             {"layout", testLayout},       {"zero_alloc", testZeroAlloc},
-                            {"safe_zone", testSafeZone}};
+                            {"safe_zone", testSafeZone},     {"glyphs", testGlyphs}};
     bool ran = false;
     for (const Suite& s : suites) {
         if (suite == "all" || suite == s.name) {

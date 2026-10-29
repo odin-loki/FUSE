@@ -26,7 +26,7 @@ if(COMMAND fuse_apply_cxx23)
 else()
     set_target_properties(fuse_relight_overlay_tests PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 endif()
-foreach(_suite font ui input script raster debug_map hidden menu_options menu_tags menu_debug layout zero_alloc)
+foreach(_suite font ui input script raster debug_map hidden menu_options menu_tags menu_debug layout zero_alloc glyphs)
     add_test(NAME rl_overlay_${_suite} COMMAND fuse_relight_overlay_tests ${_suite}
              WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
     set_tests_properties(rl_overlay_${_suite} PROPERTIES LABELS "gate;relight" TIMEOUT 300)
