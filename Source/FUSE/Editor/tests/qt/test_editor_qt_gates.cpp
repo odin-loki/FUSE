@@ -322,7 +322,7 @@ int gateStartup(double appInitMs) {
                 "total %.1f ms (%zu docks)\n",
                 appInitMs, constructMs, totalMs, appInitMs + totalMs, window->docks().size());
     expect(exposed, "main window exposed");
-    expect(window->docks().size() == 12u, "all 12 panels (hierarchy, projects, assets, inspector, material, sdf, navigation, terrain, "
+    expect(window->docks().size() == 13u, "all 13 panels (hierarchy, projects, assets, inspector, material, sdf, navigation, terrain, lighting, "
                                          "console, profiler, sequencer, timeline) created as docks");
     expect(allPlaced, "every dock has its panel widget and a dock area");
     expect(window->centralWidget() != nullptr && window->centralWidget()->isAncestorOf(window->viewport()), "viewport is in the central widget");
