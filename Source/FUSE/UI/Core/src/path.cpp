@@ -1,5 +1,6 @@
 // fuse::ui::Path: vector paths flattened to edges for DrawOp::Path (CPU rasteriser + ui.draw_list kernel).
 #include "fuse/ui/draw_list.hpp"
+#include "fuse/ui/from_chars.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -207,7 +208,7 @@ bool Path::appendSvg(std::string_view d) {
         const char* b = d.data() + i;
         const char* e = d.data() + d.size();
         if (*b == '+') ++b;
-        const auto r = std::from_chars(b, e, v);
+        const auto r = fromChars(b, e, v);
         if (r.ec != std::errc{}) return false;
         i = std::size_t(r.ptr - d.data());
         return true;

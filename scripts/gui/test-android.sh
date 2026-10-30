@@ -2,7 +2,7 @@
 # Android: build the sample APK with the NDK, then run the emulator smoke test (frame, tap, IME, a11y tree).
 # Env: ANDROID_SDK (or ANDROID_HOME), ANDROID_NDK (or ANDROID_NDK_HOME / ANDROID_NDK_LATEST_HOME), JAVA_HOME (JDK 17),
 #      ABIS (default "x86_64 arm64-v8a"), OUT (default build-gui-android), EMULATOR=0 to skip the emulator,
-#      ANDROID_ACCEL=off forces software CPU emulation (where nested KVM is unusable), AVD (default fuse34; created when missing), SERIAL (use an already-running device instead of booting one), BOOT_TIMEOUT seconds (1800).
+#      ANDROID_ACCEL=off forces software CPU emulation (where nested KVM is unusable), AVD (default fuse34; created when missing), SERIAL (use an already-running device instead of booting one), BOOT_TIMEOUT seconds (1800), KEEP_EMULATOR=1 leaves a booted emulator running, WAIT_SECS (smoke log waits).
 source "$(dirname "$0")/lib.sh"
 export ANDROID_SDK=${ANDROID_SDK:-${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}}
 export ANDROID_NDK=${ANDROID_NDK:-${ANDROID_NDK_HOME:-${ANDROID_NDK_LATEST_HOME:-}}}
@@ -30,5 +30,5 @@ if [ -z "${SERIAL:-}" ] && ! "$ADB" devices | grep -q 'device$'; then
 fi
 [ -n "${SERIAL:-}" ] && export ANDROID_SERIAL=$SERIAL
 step "emulator smoke" env ADB="$ADB" "$UI/App/android/run_emulator_smoke.sh" "$APK"
-[ -n "$EPID" ] && { "$ADB" emu kill >/dev/null 2>&1; wait $EPID 2>/dev/null; }
+[ -n "$EPID" ] && [ "${KEEP_EMULATOR:-0}" != 1 ] && { "$ADB" emu kill >/dev/null 2>&1; wait $EPID 2>/dev/null; }
 summary android

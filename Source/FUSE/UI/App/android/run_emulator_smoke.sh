@@ -2,15 +2,30 @@
 # Emulator smoke test for the android_hello APK (build_apk.sh): install, launch, check the first frame, tap the
 # button (clicks=1), type into the line edit through the IME (text=hello) and check the TalkBack tree (uiautomator
 # sees the FUSE widgets as Button / EditText virtual views). Needs a booted device on adb. Usage: run_emulator_smoke.sh <apk>
+# Env: ADB, SKIP_INSTALL=1, WAIT_SECS per log wait (120; raise for software-emulated devices).
 set -euo pipefail
 APK=${1:?apk}
 ADB=${ADB:-adb}
 $ADB shell settings put global hide_error_dialogs 1
-[ -n "${SKIP_INSTALL:-}" ] || timeout 600 $ADB install -r --no-streaming "$APK" >/dev/null
+# Right after sys.boot_completed a software-emulated device may not have the package manager up yet: wait, then
+# retry the install (output kept so a failure says why).
+for _ in $(seq 120); do $ADB shell pm path android 2>/dev/null | grep -q package: && break; sleep 5; done
+if [ -z "${SKIP_INSTALL:-}" ]; then
+    # adb-install verification times out on slow emulators; a debug build signed by another keystore cannot update.
+    $ADB shell settings put global verifier_verify_adb_installs 0 || true
+    $ADB shell settings put global package_verifier_enable 0 || true
+    ok=; for _ in 1 2 3; do
+        out=$(timeout 900 $ADB install -r --no-streaming "$APK" 2>&1 || true); echo "$out"
+        grep -q '^Success' <<<"$out" && { ok=1; break; }
+        grep -q INSTALL_FAILED_UPDATE_INCOMPATIBLE <<<"$out" && $ADB uninstall org.fuse.ui.hello >/dev/null
+        sleep 20
+    done
+    [ -n "$ok" ] || { echo "FAIL: install"; exit 1; }
+fi
 $ADB shell am force-stop org.fuse.ui.hello
 $ADB logcat -c
 $ADB shell am start -n org.fuse.ui.hello/org.fuse.ui.FuseActivity >/dev/null
-wait_log() { for _ in $(seq 60); do $ADB logcat -d | grep -q "$1" && return 0; sleep 2; done; echo "FAIL: $1"; exit 1; }
+wait_log() { for _ in $(seq $(( ${WAIT_SECS:-120} / 2 ))); do $ADB logcat -d | grep -q "$1" && return 0; sleep 2; done; echo "FAIL: $1"; exit 1; }
 wait_log "fuse_ui: first frame"
 # FUSE_EXPECT_VULKAN=1: the APK was built with the Vulkan presenter and the device has Vulkan (emulator
 # -gpu swiftshader_indirect / host): the swapchain path must have drawn that frame.
