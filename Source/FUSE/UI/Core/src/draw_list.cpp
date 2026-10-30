@@ -66,6 +66,96 @@ void DrawList::backdrop(const Rect& r, f32 blur, const std::array<f32, 4>& radii
     m_cmds.push_back(c);
 }
 
+void DrawList::backdrop(const Rect& r, f32 blur, const std::array<f32, 4>& radii, const ColorMatrix& filter, Color tint) {
+    backdrop(r, blur, radii, tint);
+    if (filter.identity()) return;
+    DrawCmd& c = m_cmds.back();
+    c.stops = u32(m_stops.size());
+    c.stopCount = 4;
+    for (int k = 0; k < 4; ++k) {
+        const f32* row = filter.m.data() + k * 5;
+        m_stops.push_back({row[4], Color{row[0], row[1], row[2], row[3]}});
+    }
+}
+
+// ---- ColorMatrix (Filter Effects 1, section 13 shorthand equivalents) ----
+namespace {
+ColorMatrix rgb3(const f32 a[9], f32 off = 0.f) {
+    ColorMatrix c;
+    for (int r = 0; r < 3; ++r) {
+        for (int k = 0; k < 3; ++k) c.m[std::size_t(r * 5 + k)] = a[r * 3 + k];
+        c.m[std::size_t(r * 5 + 4)] = off;
+    }
+    return c;
+}
+} // namespace
+ColorMatrix ColorMatrix::brightness(f32 a) {
+    a = std::max(a, 0.f);
+    const f32 v[9] = {a, 0, 0, 0, a, 0, 0, 0, a};
+    return rgb3(v);
+}
+ColorMatrix ColorMatrix::contrast(f32 a) {
+    a = std::max(a, 0.f);
+    const f32 v[9] = {a, 0, 0, 0, a, 0, 0, 0, a};
+    return rgb3(v, 0.5f - 0.5f * a);
+}
+ColorMatrix ColorMatrix::saturate(f32 s) {
+    s = std::max(s, 0.f);
+    const f32 v[9] = {0.213f + 0.787f * s, 0.715f - 0.715f * s, 0.072f - 0.072f * s,
+                      0.213f - 0.213f * s, 0.715f + 0.285f * s, 0.072f - 0.072f * s,
+                      0.213f - 0.213f * s, 0.715f - 0.715f * s, 0.072f + 0.928f * s};
+    return rgb3(v);
+}
+ColorMatrix ColorMatrix::grayscale(f32 a) {
+    const f32 g = 1.f - std::clamp(a, 0.f, 1.f);
+    const f32 v[9] = {0.2126f + 0.7874f * g, 0.7152f - 0.7152f * g, 0.0722f - 0.0722f * g,
+                      0.2126f - 0.2126f * g, 0.7152f + 0.2848f * g, 0.0722f - 0.0722f * g,
+                      0.2126f - 0.2126f * g, 0.7152f - 0.7152f * g, 0.0722f + 0.9278f * g};
+    return rgb3(v);
+}
+ColorMatrix ColorMatrix::sepia(f32 a) {
+    const f32 g = 1.f - std::clamp(a, 0.f, 1.f);
+    const f32 v[9] = {0.393f + 0.607f * g, 0.769f - 0.769f * g, 0.189f - 0.189f * g,
+                      0.349f - 0.349f * g, 0.686f + 0.314f * g, 0.168f - 0.168f * g,
+                      0.272f - 0.272f * g, 0.534f - 0.534f * g, 0.131f + 0.869f * g};
+    return rgb3(v);
+}
+ColorMatrix ColorMatrix::hueRotate(f32 deg) {
+    const f32 r = deg * 3.14159265358979f / 180.f, c = std::cos(r), s = std::sin(r);
+    const f32 v[9] = {0.213f + c * 0.787f - s * 0.213f, 0.715f - c * 0.715f - s * 0.715f, 0.072f - c * 0.072f + s * 0.928f,
+                      0.213f - c * 0.213f + s * 0.143f, 0.715f + c * 0.285f + s * 0.140f, 0.072f - c * 0.072f - s * 0.283f,
+                      0.213f - c * 0.213f - s * 0.787f, 0.715f - c * 0.715f + s * 0.715f, 0.072f + c * 0.928f + s * 0.072f};
+    return rgb3(v);
+}
+ColorMatrix ColorMatrix::invert(f32 a) {
+    a = std::clamp(a, 0.f, 1.f);
+    const f32 k = 1.f - 2.f * a;
+    const f32 v[9] = {k, 0, 0, 0, k, 0, 0, 0, k};
+    return rgb3(v, a);
+}
+ColorMatrix ColorMatrix::opacity(f32 a) {
+    ColorMatrix c;
+    c.m[18] = std::clamp(a, 0.f, 1.f);
+    return c;
+}
+ColorMatrix ColorMatrix::then(const ColorMatrix& n) const {
+    ColorMatrix o;
+    for (int r = 0; r < 4; ++r) {
+        for (int k = 0; k < 5; ++k) {
+            f32 acc = k == 4 ? n.m[std::size_t(r * 5 + 4)] : 0.f;
+            for (int j = 0; j < 4; ++j) acc += n.m[std::size_t(r * 5 + j)] * m[std::size_t(j * 5 + k)];
+            o.m[std::size_t(r * 5 + k)] = acc;
+        }
+    }
+    return o;
+}
+void ColorMatrix::apply(const f32 in[4], f32 out[4]) const {
+    for (int r = 0; r < 4; ++r) {
+        const f32* w = m.data() + r * 5;
+        out[r] = std::clamp(w[0] * in[0] + w[1] * in[1] + w[2] * in[2] + w[3] * in[3] + w[4], 0.f, 1.f);
+    }
+}
+
 void DrawList::line(Vec2 a, Vec2 b, Color col, f32 width) {
     DrawCmd c;
     c.op = DrawOp::Line;
@@ -125,6 +215,8 @@ u64 DrawList::hash() const {
         h = fnv(h, &c.borderWidth, 4);
         h = fnv(h, c.radius.data(), 16);
         h = fnv(h, &c.blur, 4);
+        if (c.op == DrawOp::Backdrop && c.stopCount == 4 && std::size_t(c.stops) + 4 <= m_stops.size())
+            h = fnv(h, m_stops.data() + c.stops, 4 * sizeof(GradientStop));
         if ((c.gradient & 15u) >= kGradientLinearStops) {
             h = fnv(h, c.gradXf.data(), 24);
             h = fnv(h, &c.stopCount, 2);
@@ -289,12 +381,28 @@ struct ClipPathRef {
 namespace {
 // Backdrop blur, the reference: three box passes per axis (~Gaussian, sigma ~ blur / 2) over the pixels under the
 // rounded rect, sampled from a margin of `blur` around it (clamped to the target), then mixed in by coverage.
+// backdrop-filter colour matrix on one premultiplied 0..255 pixel (rows as GradientStops: colour = r g b a, offset)
+void filterPixel(const GradientStop* rows, const f32* b, f32* out) {
+    const f32 a = b[3] / 255.f;
+    f32 st[4] = {0.f, 0.f, 0.f, a};
+    if (a > 0.f)
+        for (int k = 0; k < 3; ++k) st[k] = std::clamp(b[k] / 255.f / a, 0.f, 1.f);
+    f32 res[4];
+    for (int k = 0; k < 4; ++k) {
+        const GradientStop& w = rows[k];
+        const f32 v = w.color.r * st[0] + w.color.g * st[1] + w.color.b * st[2] + w.color.a * st[3] + w.offset;
+        res[k] = std::clamp(v, 0.f, 1.f);
+    }
+    for (int k = 0; k < 3; ++k) out[k] = res[k] * res[3] * 255.f;
+    out[3] = res[3] * 255.f;
+}
 // Clip paths active at the backdrop (DrawOp::ClipPath / pushClipLayers) multiply its coverage like any other command.
 void backdropBlur(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& target, const PathEdge* edges = nullptr,
-                  const ClipPathRef* paths = nullptr, u8 pathCount = 0) {
+                  const ClipPathRef* paths = nullptr, u8 pathCount = 0, const GradientStop* filterRows = nullptr,
+                  std::size_t filterRowCount = 0) {
     const Rect area = c.rect.intersect(clipR).intersect({0.f, 0.f, f32(target.width), f32(target.height)});
     if (area.empty()) return;
-    const int r = std::max(1, int(std::lround(c.blur / 3.f)));
+    const int r = c.blur > 0.f ? std::max(1, int(std::lround(c.blur / 3.f))) : 0; // 0: filter only, no blur
     const int x0 = int(std::floor(area.x)), y0 = int(std::floor(area.y));
     const int x1 = int(std::ceil(area.right())), y1 = int(std::ceil(area.bottom()));
     const int m = 3 * r;
@@ -314,8 +422,13 @@ void backdropBlur(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& ta
         buf.swap(tmp);
     };
     (void)pass;
-    simd::boxHorizontalN(buf.data(), tmp.data(), scratch.data(), w, h, r, 1.f / f32(2 * r + 1), 3);
-    for (int it = 0; it < 3; ++it) vertical();
+    if (r > 0) {
+        simd::boxHorizontalN(buf.data(), tmp.data(), scratch.data(), w, h, r, 1.f / f32(2 * r + 1), 3);
+        for (int it = 0; it < 3; ++it) vertical();
+    }
+    // colour matrix (backdrop-filter functions): on the straight-alpha value of the blurred pixel, re-premultiplied.
+    // Same arithmetic as ui_backdrop.glsl (applyFilter)
+    const GradientStop* fm = (c.stopCount == 4 && filterRows && std::size_t(c.stops) + 4 <= filterRowCount) ? filterRows + c.stops : nullptr;
     const std::array<f32, 4> clipRad{clipRadius, clipRadius, clipRadius, clipRadius};
     const Px tint = premul(c.fill, 1.f);
     for (int y = y0; y < y1; ++y)
@@ -327,6 +440,11 @@ void backdropBlur(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& ta
             if (cov <= 0.f) continue;
             u32& d = target.pixels[std::size_t(y) * std::size_t(target.width) + std::size_t(x)];
             const f32* b = &buf[(std::size_t(y - sy0) * std::size_t(w) + std::size_t(x - sx0)) * 4];
+            f32 fb[4];
+            if (fm) {
+                filterPixel(fm, b, fb);
+                b = fb;
+            }
             u32 o = 0;
             for (int k = 0; k < 4; ++k) {
                 const f32 dv = f32((d >> (8 * k)) & 0xFFu);
@@ -375,7 +493,10 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
         case DrawOp::PopClip:
             if (depth > 0) --depth;
             continue;
-        case DrawOp::Backdrop: backdropBlur(c, clip.r, clip.radius, target, list.pathEdges().data(), clipPaths, clip.paths); continue;
+        case DrawOp::Backdrop:
+            backdropBlur(c, clip.r, clip.radius, target, list.pathEdges().data(), clipPaths, clip.paths, list.gradientStops().data(),
+                         list.gradientStops().size());
+            continue;
         default: break;
         }
         Rect bounds = c.rect;

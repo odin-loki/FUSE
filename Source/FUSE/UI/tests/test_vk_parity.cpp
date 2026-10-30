@@ -512,6 +512,27 @@ int main() {
             vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
             check("backdrop_clip", compare(cpuB, out));
         }
+        {   // backdrop-filter colour functions, with and without blur: each panel one function, plus a chain
+            DrawList bf;
+            for (int i = 0; i < 12; ++i) bf.rect({f32(i * 40), 0, 20, f32(H)}, Color::rgb(i & 1 ? 0xff4422u : 0x22aaffu, i % 3 ? 1.f : 0.6f));
+            bf.gradientRect({0, 200, f32(W), 60}, Color::rgb(0x30c060), Color::rgb(0xf0e020), false);
+            const ColorMatrix fx[] = {ColorMatrix::brightness(1.4f), ColorMatrix::contrast(1.8f), ColorMatrix::saturate(2.5f),
+                                      ColorMatrix::grayscale(1.f), ColorMatrix::hueRotate(120.f), ColorMatrix::invert(0.8f),
+                                      ColorMatrix::sepia(1.f), ColorMatrix::opacity(0.4f),
+                                      ColorMatrix::sepia(0.6f).then(ColorMatrix::hueRotate(-45.f)).then(ColorMatrix::contrast(0.7f))};
+            for (int k = 0; k < 9; ++k) {
+                const Rect r{f32(8 + (k % 5) * 94), f32(20 + (k / 5) * 190), 86, 170};
+                bf.backdrop(r, k & 1 ? 0.f : 6.f, {10, 10, 10, 10}, fx[k], k == 8 ? Color::rgb(0xffffff, 0.15f) : Color{});
+            }
+            Image cpuF;
+            cpuF.resize(int(W), int(H), 0xFF000000u);
+            CpuRasterizer rf;
+            rf.render(bf, cpuF);
+            packDrawList(bf, W, H, data);
+            UI_CHECK(gpu.upload(0, data));
+            vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+            check("backdrop_filter", compare(cpuF, out));
+        }
         }
 #endif
     }

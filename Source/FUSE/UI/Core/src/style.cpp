@@ -73,6 +73,7 @@ constexpr PropInfo kProps[] = {
     {Prop::GradientAngle, "gradient-angle", T::Number, false, false, false},
     {Prop::GradientStops, "gradient-stops", T::Stops, false, false, false},
     {Prop::BackgroundClip, "background-clip", T::Enum, false, false, false},
+    {Prop::BackdropFilter, "backdrop-filter", T::Filter, false, false, false},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -109,6 +110,7 @@ constexpr EnumWord kEnums[] = {
     {Prop::BackgroundClip, "border-box", u8(BackgroundClip::BorderBox)},
     {Prop::BackgroundClip, "padding-box", u8(BackgroundClip::PaddingBox)},
     {Prop::BackgroundClip, "content-box", u8(BackgroundClip::ContentBox)},
+    {Prop::BackgroundClip, "text", u8(BackgroundClip::Text)},
 };
 
 std::string_view trim(std::string_view s) {
@@ -267,6 +269,52 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
         return unit.empty() || unit == "%";
     }
     case T::Color: return parseColor(text, out.color);
+    case T::Filter: { // "none" | fn(<arg>) ... : blur(<len>), brightness / contrast / saturate / grayscale / invert / sepia /
+                      // opacity(<number> | <pct>), hue-rotate(<angle>)
+        if (text == "none") return true;
+        static constexpr std::pair<std::string_view, FilterFn> kFns[] = {
+            {"blur", FilterFn::Blur}, {"brightness", FilterFn::Brightness}, {"contrast", FilterFn::Contrast},
+            {"saturate", FilterFn::Saturate}, {"grayscale", FilterFn::Grayscale}, {"hue-rotate", FilterFn::HueRotate},
+            {"invert", FilterFn::Invert}, {"sepia", FilterFn::Sepia}, {"opacity", FilterFn::Opacity}};
+        std::size_t i = 0;
+        while (i < text.size()) {
+            while (i < text.size() && std::isspace(static_cast<unsigned char>(text[i]))) ++i;
+            if (i >= text.size()) break;
+            const std::size_t open = text.find('(', i), close = text.find(')', i);
+            if (open == std::string_view::npos || close == std::string_view::npos || close < open || out.trackCount >= kMaxGridTracks) return false;
+            const std::string_view name = trim(text.substr(i, open - i)), arg = trim(text.substr(open + 1, close - open - 1));
+            i = close + 1;
+            bool known = false;
+            FilterFn fn{};
+            for (const auto& [n, f] : kFns)
+                if (n == name) known = true, fn = f;
+            if (!known) return false;
+            f32 v = 0.f;
+            std::string_view unit;
+            if (fn == FilterFn::Blur) {
+                Length l;
+                if (!arg.empty() && !parseLength(arg, l)) return false;
+                v = arg.empty() ? 0.f : l.value;
+            } else if (fn == FilterFn::HueRotate) {
+                if (!arg.empty() && !parseNumber(arg, v, unit)) return false;
+                if (unit == "turn") v *= 360.f;
+                else if (unit == "rad") v *= 180.f / 3.14159265f;
+                else if (unit == "grad") v *= 0.9f;
+                else if (!unit.empty() && unit != "deg" && !(v == 0.f)) return false;
+            } else {
+                v = 1.f; // CSS default amount
+                if (!arg.empty()) {
+                    if (!parseNumber(arg, v, unit)) return false;
+                    if (unit == "%") v /= 100.f;
+                    else if (!unit.empty()) return false;
+                }
+            }
+            out.fns[out.trackCount] = u8(fn);
+            out.tracks[out.trackCount].value = v;
+            ++out.trackCount;
+        }
+        return true;
+    }
     case T::Stops: { // "<color> [<offset>%], ..." (CSS colour-stop list; missing offsets spread evenly)
         std::vector<std::string_view> items;
         int depth = 0;
@@ -395,6 +443,15 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::ShadowY: s.shadowY = v.len.value; break;
     case Prop::PointerEvents: s.pointerEvents = v.b; break;
     case Prop::BackgroundClip: s.backgroundClip = fuse::ui::BackgroundClip(v.e); break;
+    case Prop::BackdropFilter:
+        s.backdropFilterCount = 0;
+        s.backdropBlur = 0.f;
+        for (u8 k = 0; k < v.trackCount; ++k) {
+            if (FilterFn(v.fns[k]) == FilterFn::Blur) { s.backdropBlur = v.tracks[k].value; continue; }
+            s.backdropFilterFns[s.backdropFilterCount] = FilterFn(v.fns[k]);
+            s.backdropFilterAmounts[s.backdropFilterCount++] = v.tracks[k].value;
+        }
+        break;
     case Prop::Count: break;
     }
 }

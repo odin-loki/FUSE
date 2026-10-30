@@ -561,7 +561,7 @@ void UiVkRenderer::record(void* commandBuffer, void* targetView, u32 slotIndex) 
             vkCmdDispatch(cmd, u32((threads + 63) / 64), 1, 1);
         };
         run(0, w * h);
-        for (int it = 0; it < 3; ++it) {
+        for (int it = 0; it < (pass.radius ? 3 : 0); ++it) { // radius 0: backdrop-filter without blur
             computeBarrier(cmd);
             run(1, h * 4);
             computeBarrier(cmd);

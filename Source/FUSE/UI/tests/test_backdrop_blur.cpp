@@ -12,6 +12,8 @@
 #include "stb_image_write.h"
 
 #include <cstdio>
+#include <array>
+#include <cmath>
 #include <cstdlib>
 #include <string>
 
@@ -153,6 +155,93 @@ int main(int argc, char** argv) {
         for (const DrawCmd& c : ui.drawList().cmds())
             if (c.node == b.index && c.op == DrawOp::Rect && c.borderWidth == 4.f && c.rect == rb) border = true;
         UI_CHECK(border);
+    }
+    // ColorMatrix: CSS function values on known colours
+    {
+        auto run = [](const ColorMatrix& m, f32 r, f32 g, f32 b, f32 a = 1.f) {
+            const f32 in[4] = {r, g, b, a};
+            std::array<f32, 4> o{};
+            m.apply(in, o.data());
+            return o;
+        };
+        auto near = [](f32 a, f32 b) { return std::abs(a - b) < 2e-3f; };
+        auto o = run(ColorMatrix::invert(1.f), 1, 0, 0);
+        UI_CHECK(near(o[0], 0) && near(o[1], 1) && near(o[2], 1));
+        o = run(ColorMatrix::grayscale(1.f), 1, 0, 0);
+        UI_CHECK(near(o[0], 0.2126f) && near(o[1], 0.2126f) && near(o[2], 0.2126f));
+        o = run(ColorMatrix::brightness(0.5f), 0.8f, 0.4f, 0.2f);
+        UI_CHECK(near(o[0], 0.4f) && near(o[1], 0.2f) && near(o[2], 0.1f));
+        o = run(ColorMatrix::contrast(0.f), 0.9f, 0.1f, 0.3f);
+        UI_CHECK(near(o[0], 0.5f) && near(o[1], 0.5f) && near(o[2], 0.5f));
+        o = run(ColorMatrix::opacity(0.25f), 1, 1, 1);
+        UI_CHECK(near(o[3], 0.25f) && near(o[0], 1.f));
+        o = run(ColorMatrix::hueRotate(360.f), 0.3f, 0.6f, 0.9f);
+        UI_CHECK(near(o[0], 0.3f) && near(o[1], 0.6f) && near(o[2], 0.9f));
+        o = run(ColorMatrix::saturate(1.f), 0.3f, 0.6f, 0.9f);
+        UI_CHECK(near(o[0], 0.3f) && near(o[1], 0.6f) && near(o[2], 0.9f));
+        o = run(ColorMatrix::sepia(1.f), 1, 1, 1);
+        UI_CHECK(near(o[0], 1.f) && near(o[1], 1.f) && o[2] < 0.95f);
+        // then(): brightness(0.5) then invert(1) = 1 - 0.5 x
+        o = run(ColorMatrix::brightness(0.5f).then(ColorMatrix::invert(1.f)), 0.8f, 0.4f, 0.f);
+        UI_CHECK(near(o[0], 0.6f) && near(o[1], 0.8f) && near(o[2], 1.f));
+        UI_CHECK(ColorMatrix{}.identity() && !ColorMatrix::invert(1.f).identity());
+        // filter-only backdrop (blur 0): an inverted panel, edges untouched, no blur
+        DrawList dl;
+        scene(dl);
+        dl.backdrop(card, 0.f, {0, 0, 0, 0}, ColorMatrix::invert(1.f));
+        Image f;
+        f.resize(320, 200, 0xFF000000u);
+        CpuRasterizer().render(dl, f);
+        for (int x : {70, 139, 140, 200})
+            for (int k = 0; k < 3; ++k) UI_CHECK(std::abs(ch(f.at(x, 100), k) - (255 - ch(ref.at(x, 100), k))) <= 1);
+        UI_CHECK(f.at(30, 100) == ref.at(30, 100));
+    }
+    // CSS: backdrop-filter parses blur + colour functions in order; background-clip: text clips to the glyphs
+    {
+        UiContext ui({.viewport = {320, 200}, .font = &font()});
+        w::install(ui);
+        auto sheet = StyleSheet::parse(".f { backdrop-filter: blur(6px) brightness(120%) hue-rotate(0.5turn) invert(1); background: rgba(0,0,0,0); }"
+                                       ".t { background-clip: text; background: #ff00ff; color: rgba(0,0,0,0); font-size: 40px; }");
+        UI_CHECK(sheet.has_value());
+        if (sheet) ui.styles().addSheet(std::move(*sheet));
+        const NodeHandle a = w::label(ui, ui.root(), "x");
+        const NodeHandle t = w::label(ui, ui.root(), "HI");
+        ui.addClass(a, "f");
+        ui.addClass(t, "t");
+        ui.update();
+        const ComputedStyle& cs = ui.computed(a);
+        UI_CHECK(cs.backdropBlur == 6.f && cs.backdropFilterCount == 3);
+        UI_CHECK(cs.backdropFilterFns[0] == FilterFn::Brightness && std::abs(cs.backdropFilterAmounts[0] - 1.2f) < 1e-5f);
+        UI_CHECK(cs.backdropFilterFns[1] == FilterFn::HueRotate && std::abs(cs.backdropFilterAmounts[1] - 180.f) < 1e-3f);
+        UI_CHECK(cs.backdropFilterFns[2] == FilterFn::Invert);
+        const DrawCmd* bd = nullptr;
+        for (const DrawCmd& c : ui.drawList().cmds())
+            if (c.node == a.index && c.op == DrawOp::Backdrop) bd = &c;
+        UI_CHECK(bd && bd->stopCount == 4 && bd->blur == 6.f);
+        UI_CHECK(ui.computed(t).backgroundClip == BackgroundClip::Text);
+        bool clipFirst = false, fill = false;
+        for (const DrawCmd& c : ui.drawList().cmds()) {
+            if (c.node != t.index && !(c.op == DrawOp::ClipPath)) continue;
+            if (c.op == DrawOp::ClipPath && !fill) clipFirst = true;
+            if (c.node == t.index && c.op == DrawOp::Rect && c.fill.a > 0.f) fill = true;
+        }
+        UI_CHECK(clipFirst && fill);
+        Image img2;
+        img2.resize(320, 200, 0xFF000000u);
+        CpuRasterizer r2;
+        r2.setGlyphAtlas(ui.atlas().pixels(), ui.atlas().size());
+        r2.render(ui.drawList(), img2);
+        const Rect tr = ui.rect(t);
+        int magenta = 0, total = 0;
+        for (int y = int(tr.y); y < int(tr.bottom()); ++y)
+            for (int x = int(tr.x); x < int(tr.right()); ++x) {
+                ++total;
+                const u32 p = img2.at(x, y);
+                magenta += ch(p, 0) > 200 && ch(p, 2) > 200 && ch(p, 1) < 60;
+            }
+        std::printf("  background-clip:text: %d of %d px magenta (rect %g,%g %gx%g)\n", magenta, total, tr.x, tr.y, tr.w, tr.h);
+        if (std::getenv("FUSE_DUMP_CLIPTEXT")) stbi_write_png(std::getenv("FUSE_DUMP_CLIPTEXT"), 320, 200, 4, img2.pixels.data(), 320 * 4);
+        UI_CHECK(magenta > 40 && magenta < total / 2); // the letters only, not the box
     }
     return finish("fuse_ui_backdrop_blur");
 }

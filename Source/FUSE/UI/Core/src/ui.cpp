@@ -554,7 +554,7 @@ void UiContext::styleRec(u32 i, bool parentChanged) {
             // compare layout-relevant fields only
             la.background = lb.background; la.background2 = lb.background2; la.borderColor = lb.borderColor;
             la.color = lb.color; la.shadowColor = lb.shadowColor; la.opacity = lb.opacity; la.radius = lb.radius;
-            la.gradient = lb.gradient; la.gradientAngle = lb.gradientAngle; la.gradientStopCount = lb.gradientStopCount; la.gradientOffsets = lb.gradientOffsets; la.gradientColors = lb.gradientColors; la.shadowBlur = lb.shadowBlur; la.shadowX = lb.shadowX; la.shadowY = lb.shadowY; la.backdropBlur = lb.backdropBlur; la.backgroundClip = lb.backgroundClip;
+            la.gradient = lb.gradient; la.gradientAngle = lb.gradientAngle; la.gradientStopCount = lb.gradientStopCount; la.gradientOffsets = lb.gradientOffsets; la.gradientColors = lb.gradientColors; la.shadowBlur = lb.shadowBlur; la.shadowX = lb.shadowX; la.shadowY = lb.shadowY; la.backdropBlur = lb.backdropBlur; la.backgroundClip = lb.backgroundClip; la.backdropFilterCount = lb.backdropFilterCount; la.backdropFilterFns = lb.backdropFilterFns; la.backdropFilterAmounts = lb.backdropFilterAmounts;
             la.pointerEvents = lb.pointerEvents; la.borderWidth = lb.borderWidth; la.textAlign = lb.textAlign;
             if (fontChanged) {
                 m_cold[i]->layoutWidth = -1.f;
@@ -990,7 +990,61 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     }
     const bool clipped = s.backgroundClip != BackgroundClip::BorderBox;
     const bool hasBorder = s.borderWidth > 0.f && s.borderColor.a > 0.f;
-    if (s.backdropBlur > 0.f && !bg.empty()) dl.backdrop(bg, s.backdropBlur, bgRad);
+    // background-clip: text — background and backdrop only inside the node's glyph outlines (an empty clip without text)
+    const bool textClip = s.backgroundClip == BackgroundClip::Text;
+    if (textClip) {
+        const Rect content = contentRect(h);
+        Path glyphs;
+        if (m_font && !m_cold[i]->text.empty()) {
+            const auto& tl = m_cold[i]->layout;
+            const Vec2 o{content.x, content.y + std::floor(std::max(0.f, content.h - tl.height) * 0.5f)};
+            std::vector<fuse::text::GlyphOutlineCmd> oc;
+            for (const auto& ln : tl.lines)
+                for (u32 k = ln.firstGlyph; k < ln.firstGlyph + ln.glyphCount; ++k) {
+                    const auto& g = tl.glyphs[k];
+                    if (g.glyph == fuse::text::kInvisibleGlyph) continue;
+                    fuse::text::forEachPaintGlyph(*m_font, g, s.fontSize, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
+                                                                             const fuse::text::ColorLayer* layer) {
+                        if (layer && !layer->foreground) return;
+                        oc.clear();
+                        if (!f.glyphOutline(glyph, fpx, oc)) return;
+                        const f32 bx = std::round(o.x + g.x), by = std::round(o.y + ln.baseline);
+                        for (const auto& c : oc) {
+                            const Vec2 p{bx + c.x, by + c.y};
+                            switch (c.kind) {
+                            case fuse::text::GlyphOutlineCmd::Move: glyphs.moveTo(p); break;
+                            case fuse::text::GlyphOutlineCmd::Line: glyphs.lineTo(p); break;
+                            case fuse::text::GlyphOutlineCmd::Quad: glyphs.quadTo({bx + c.cx, by + c.cy}, p); break;
+                            case fuse::text::GlyphOutlineCmd::Cubic: glyphs.cubicTo({bx + c.cx, by + c.cy}, {bx + c.cx1, by + c.cy1}, p); break;
+                            }
+                        }
+                        glyphs.close();
+                    });
+                }
+        }
+        if (glyphs.empty()) glyphs.rect({n.rect.x, n.rect.y, 0.f, 0.f});
+        dl.pushClipPath(glyphs);
+        bg = n.rect;
+        bgRad = s.radius;
+    }
+    if ((s.backdropBlur > 0.f || s.backdropFilterCount) && !bg.empty()) {
+        ColorMatrix fm;
+        for (u8 k = 0; k < s.backdropFilterCount; ++k) {
+            const f32 a = s.backdropFilterAmounts[k];
+            switch (s.backdropFilterFns[k]) {
+            case FilterFn::Brightness: fm = fm.then(ColorMatrix::brightness(a)); break;
+            case FilterFn::Contrast: fm = fm.then(ColorMatrix::contrast(a)); break;
+            case FilterFn::Saturate: fm = fm.then(ColorMatrix::saturate(a)); break;
+            case FilterFn::Grayscale: fm = fm.then(ColorMatrix::grayscale(a)); break;
+            case FilterFn::HueRotate: fm = fm.then(ColorMatrix::hueRotate(a)); break;
+            case FilterFn::Invert: fm = fm.then(ColorMatrix::invert(a)); break;
+            case FilterFn::Sepia: fm = fm.then(ColorMatrix::sepia(a)); break;
+            case FilterFn::Opacity: fm = fm.then(ColorMatrix::opacity(a)); break;
+            case FilterFn::Blur: break;
+            }
+        }
+        dl.backdrop(bg, s.backdropBlur, bgRad, fm);
+    }
     if (s.gradient == GradientDir::Angle && s.gradientStopCount >= 2) {
         std::vector<GradientStop> st(s.gradientStopCount);
         for (u8 k = 0; k < s.gradientStopCount; ++k) st[k] = {s.gradientOffsets[k], tint(s.gradientColors[k])};
@@ -999,13 +1053,19 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     } else if (s.gradient != GradientDir::None && s.gradient != GradientDir::Angle) {
         dl.gradientRect(bg, tint(s.background), tint(s.background2), s.gradient == GradientDir::Vertical, bgRad);
         if (hasBorder) dl.roundedRect(n.rect, {}, s.radius, tint(s.borderColor), s.borderWidth);
+    } else if (textClip) {
+        if (s.background.a > 0.f) dl.roundedRect(bg, tint(s.background), bgRad);
     } else if (clipped && (s.background.a > 0.f || hasBorder)) {
         if (s.background.a > 0.f && !bg.empty()) dl.roundedRect(bg, tint(s.background), bgRad);
         if (hasBorder) dl.roundedRect(n.rect, {}, s.radius, tint(s.borderColor), s.borderWidth);
     } else if (s.background.a > 0.f || hasBorder) {
         dl.roundedRect(n.rect, tint(s.background), s.radius, tint(s.borderColor), s.borderWidth);
     }
-    for (std::size_t k = dl.size() - std::min<std::size_t>(dl.size(), 4); k < dl.size(); ++k)
+    if (textClip) {
+        dl.popClip();
+        if (hasBorder) dl.roundedRect(n.rect, {}, s.radius, tint(s.borderColor), s.borderWidth);
+    }
+    for (std::size_t k = dl.size() - std::min<std::size_t>(dl.size(), 6); k < dl.size(); ++k)
         if (dl.cmds()[k].node == 0xFFFFFFFFu) dl.cmds()[k].node = i;
     const WidgetClass& wc = m_registry.get(n.cls);
     const Rect content = contentRect(h);

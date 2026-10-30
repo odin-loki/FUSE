@@ -45,8 +45,10 @@ enum class Direction : u8 { Row, Column };
 enum class Align : u8 { Auto, Start, Center, End, Stretch };
 enum class Justify : u8 { Start, Center, End, SpaceBetween, SpaceAround };
 enum class Overflow : u8 { Visible, Clip, Scroll };
+/// CSS filter functions (backdrop-filter), in list order.
+enum class FilterFn : u8 { Blur, Brightness, Contrast, Saturate, Grayscale, HueRotate, Invert, Sepia, Opacity };
 /// CSS background-clip: the box the background (and backdrop blur) is painted in; the border stays on the border box.
-enum class BackgroundClip : u8 { BorderBox, PaddingBox, ContentBox };
+enum class BackgroundClip : u8 { BorderBox, PaddingBox, ContentBox, Text }; ///< Text: inside the node's glyph outlines
 enum class GradientDir : u8 { None, Vertical, Horizontal, Angle }; ///< Angle: CSS multi-stop linear-gradient
 enum class TextAlignment : u8 { Start, Center, End };
 
@@ -86,6 +88,9 @@ struct ComputedStyle {
     f32 opacity = 1.f;
     f32 shadowBlur = 0.f, shadowX = 0.f, shadowY = 0.f;
     f32 backdropBlur = 0.f; ///< backdrop-filter: blur(<len>) / backdrop-blur: <len> (frosted glass under the background)
+    u8 backdropFilterCount = 0; ///< backdrop-filter colour functions (blur goes to backdropBlur)
+    std::array<FilterFn, kMaxGridTracks> backdropFilterFns{};
+    std::array<f32, kMaxGridTracks> backdropFilterAmounts{};
     BackgroundClip backgroundClip = BackgroundClip::BorderBox; ///< background-clip: border-box | padding-box | content-box
     bool pointerEvents = true;
     friend bool operator==(const ComputedStyle&, const ComputedStyle&) = default;
@@ -98,11 +103,11 @@ enum class Prop : u8 {
     AlignItems, AlignSelf, Justify, Wrap, Overflow, GridColumns, GridColumn, GridColumnSpan, GridRow, GridRowSpan,
     Left, Top, Right, Bottom, CenterX, CenterY, Background, Background2, Gradient, BorderColor, BorderWidth,
     RadiusTL, RadiusTR, RadiusBR, RadiusBL, Color, FontSize, TextAlign, Opacity, ShadowColor, ShadowBlur, ShadowX,
-    ShadowY, PointerEvents, BackdropBlur, GradientAngle, GradientStops, BackgroundClip, Count
+    ShadowY, PointerEvents, BackdropBlur, GradientAngle, GradientStops, BackgroundClip, BackdropFilter, Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
 
-enum class PropType : u8 { Bool, Enum, Length, Number, Color, Tracks, Stops }; ///< Stops: offsets in tracks[].value, colours in stopColors
+enum class PropType : u8 { Bool, Enum, Length, Number, Color, Tracks, Stops, Filter }; ///< Filter: fns[] + tracks[].value amounts ///< Stops: offsets in tracks[].value, colours in stopColors
 struct PropInfo {
     Prop id;
     std::string_view cssName;
@@ -127,6 +132,7 @@ struct PropValue {
     std::array<Length, kMaxGridTracks> tracks{};
     u8 trackCount = 0;
     std::array<fuse::ui::Color, kMaxGridTracks> stopColors{};
+    std::array<u8, kMaxGridTracks> fns{}; ///< Filter: FilterFn per entry
     static PropValue ofBool(bool v) { PropValue p; p.type = PropType::Bool; p.b = v; return p; }
     static PropValue ofEnum(u8 v) { PropValue p; p.type = PropType::Enum; p.e = v; return p; }
     static PropValue ofLength(Length v) { PropValue p; p.type = PropType::Length; p.len = v; return p; }

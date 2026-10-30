@@ -337,6 +337,18 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             f32 fb[2];
             std::memcpy(fb, bits, 8);
             put4(g.grad2, c.gradXf[4], c.gradXf[5], fb[0], fb[1]);
+        } else if (c.op == DrawOp::Backdrop && c.stopCount == 4 && std::size_t(c.stops) + 4 <= list.gradientStops().size()) {
+            // backdrop-filter colour matrix: 4 rows x (r, g, b, a, offset) words, as the CPU's filterPixel reads them
+            const u32 at = u32(out.images.size());
+            for (u32 i = 0; i < 4; ++i) {
+                const GradientStop& st = list.gradientStops()[c.stops + i];
+                const f32 w[5] = {st.color.r, st.color.g, st.color.b, st.color.a, st.offset};
+                for (f32 f : w) { u32 u; std::memcpy(&u, &f, 4); out.images.push_back(u); }
+            }
+            u32 bits[2] = {at, 4u};
+            f32 fb[2];
+            std::memcpy(fb, bits, 8);
+            put4(g.grad2, 0.f, 0.f, fb[0], fb[1]);
         }
     };
     // one draw command (not clip / backdrop / path): a compact glyph record (glyphScratch, 7 words + node + source)
@@ -753,7 +765,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             // same box as CpuRasterizer's backdropBlur: area = rect & clip & target, source = area + 3r margin
             const Rect area = c.rect.intersect(clip.r).intersect(full);
             if (area.empty()) continue;
-            const int r = std::max(1, int(std::lround(c.blur / 3.f)));
+            const int r = c.blur > 0.f ? std::max(1, int(std::lround(c.blur / 3.f))) : 0; // 0: filter only
             const int x0 = int(std::floor(area.x)), y0 = int(std::floor(area.y));
             const int x1 = int(std::ceil(area.right())), y1 = int(std::ceil(area.bottom()));
             const int mg = 3 * r;

@@ -46,6 +46,28 @@ struct GradientStop {
     Color color;      ///< straight alpha; interpolated straight (like the 2-stop kinds)
 };
 
+/// CSS filter functions as one affine colour matrix on straight-alpha sRGB values in 0..1 (feColorMatrix layout:
+/// row k = out channel k (r, g, b, a), columns r, g, b, a, offset). Functions compose in CSS order with then():
+/// `ColorMatrix::brightness(1.2f).then(ColorMatrix::saturate(0.5f))` is `brightness(1.2) saturate(0.5)`. Composing
+/// skips the per-step clamp of a filter chain, which only matters when an intermediate step leaves 0..1.
+struct ColorMatrix {
+    std::array<f32, 20> m{1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0};
+    static ColorMatrix brightness(f32 a);
+    static ColorMatrix contrast(f32 a);
+    static ColorMatrix saturate(f32 s);
+    static ColorMatrix grayscale(f32 a);  ///< 0..1
+    static ColorMatrix sepia(f32 a);      ///< 0..1
+    static ColorMatrix hueRotate(f32 deg);
+    static ColorMatrix invert(f32 a);     ///< 0..1
+    static ColorMatrix opacity(f32 a);    ///< 0..1
+    /// this filter, then `next`
+    ColorMatrix then(const ColorMatrix& next) const;
+    bool identity() const { return *this == ColorMatrix{}; }
+    /// out = M * (r, g, b, a, 1), clamped to 0..1 (straight alpha in and out)
+    void apply(const f32 in[4], f32 out[4]) const;
+    friend bool operator==(const ColorMatrix&, const ColorMatrix&) = default;
+};
+
 /// A multi-stop gradient at any angle / ellipse / transform. `toUnit` maps a pixel to gradient space (affine
 /// [a b c d e f]: x' = a x + c y + e, y' = b x + d y + f).
 struct Gradient {
@@ -171,6 +193,9 @@ public:
     void line(Vec2 a, Vec2 b, Color c, f32 width);
     /// Backdrop blur (CSS backdrop-filter: blur()): everything drawn before this command under `r` is blurred.
     void backdrop(const Rect& r, f32 blur, const std::array<f32, 4>& radii, Color tint = {});
+    /// Backdrop filter (CSS backdrop-filter: blur() then colour functions): blur (0 = none), then `filter` per pixel.
+    /// The matrix rides in gradientStops() (4 rows of 5 as stops; DrawCmd::stops / stopCount = 4).
+    void backdrop(const Rect& r, f32 blur, const std::array<f32, 4>& radii, const ColorMatrix& filter, Color tint = {});
     /// Fills `p` (fill.a == 0: no fill) and strokes it (`strokeWidth` > 0, centred on the outline).
     void path(const Path& p, Color fill, bool evenOdd = false, Color stroke = {}, f32 strokeWidth = 0.f);
     void gradientPath(const Path& p, Color from, Color to, GradientKind kind, bool evenOdd = false);

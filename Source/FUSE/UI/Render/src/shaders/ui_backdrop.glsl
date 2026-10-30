@@ -56,6 +56,27 @@ float sdRoundRect(float px, float py, vec4 r, vec4 rad) {
     precise float l2 = ox * ox + oy * oy;
     return sqrt(l2) + min(max(qx, qy), 0.0) - rr;
 }
+// backdrop-filter colour matrix (filterPixel in Core/src/draw_list.cpp): premultiplied 0..255 in and out
+vec4 applyFilter(uint at, vec4 b) {
+    precise float a = b.w / 255.0;
+    precise vec4 st = vec4(0.0, 0.0, 0.0, a);
+    if (a > 0.0)
+        for (int k = 0; k < 3; ++k) { precise float q = b[k] / 255.0 / a; st[k] = clamp(q, 0.0, 1.0); }
+    precise vec4 res;
+    for (int k = 0; k < 4; ++k) {
+        const uint w = at + uint(k) * 5u;
+        precise float v = edgeWord(w) * st.x + edgeWord(w + 1u) * st.y + edgeWord(w + 2u) * st.z + edgeWord(w + 3u) * st.w + edgeWord(w + 4u);
+#ifdef UI_HDR
+        res[k] = k == 3 ? clamp(v, 0.0, 1.0) : max(v, 0.0);
+#else
+        res[k] = clamp(v, 0.0, 1.0);
+#endif
+    }
+    precise vec4 o;
+    for (int k = 0; k < 3; ++k) o[k] = res[k] * res.w * 255.0;
+    o.w = res.w * 255.0;
+    return o;
+}
 uint q8(float v) { return uint(floor(clamp(v, 0.0, 1.0) * 255.0 + 0.5)); }
 
 void main() {
@@ -118,9 +139,11 @@ void main() {
 #ifdef UI_HDR
         const vec4 d0 = imageLoad(ui_target, ip);
         const uint bi = (uint(y - pc.srcOrigin.y) * uint(w) + uint(x - pc.srcOrigin.x)) * 4u;
+        vec4 bv = vec4(ui_scratch.v[bi], ui_scratch.v[bi + 1u], ui_scratch.v[bi + 2u], ui_scratch.v[bi + 3u]);
+        if (floatBitsToUint(c.grad2.w) == 4u) bv = applyFilter(floatBitsToUint(c.grad2.z), bv);
         vec4 o;
         for (int k = 0; k < 4; ++k) {
-            precise float m = d0[k] + (ui_scratch.v[bi + uint(k)] / 255.0 - d0[k]) * cov;
+            precise float m = d0[k] + (bv[k] / 255.0 - d0[k]) * cov;
             o[k] = max(m, 0.0);
         }
         o.a = min(o.a, 1.0);
@@ -134,10 +157,12 @@ void main() {
 #else
         const uvec4 d0 = uvec4(floor(imageLoad(ui_target, ip) * 255.0 + 0.5));
         const uint bi = (uint(y - pc.srcOrigin.y) * uint(w) + uint(x - pc.srcOrigin.x)) * 4u;
+        vec4 bv = vec4(ui_scratch.v[bi], ui_scratch.v[bi + 1u], ui_scratch.v[bi + 2u], ui_scratch.v[bi + 3u]);
+        if (floatBitsToUint(c.grad2.w) == 4u) bv = applyFilter(floatBitsToUint(c.grad2.z), bv);
         uvec4 o;
         for (int k = 0; k < 4; ++k) {
             const float dv = float(d0[k]);
-            precise float m = dv + (ui_scratch.v[bi + uint(k)] - dv) * cov;
+            precise float m = dv + (bv[k] - dv) * cov;
             o[k] = uint(clamp(m >= 0.0 ? floor(m + 0.5) : ceil(m - 0.5), 0.0, 255.0)); // std::lround
         }
         if (c.fill.a > 0.0) {
