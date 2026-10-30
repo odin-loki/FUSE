@@ -2,6 +2,7 @@
 // (FORGE); shared-memory buffers, keymaps and data transfer use the seam's fd helpers.
 #include "fuse/app/wayland.hpp"
 #include "wl_protocol.hpp"
+#include "native_internal.hpp"
 
 #include "fuse/ui/os.hpp"
 
@@ -36,7 +37,7 @@ std::string_view preferredWindowSystem() {
 
 #if defined(_WIN32) || defined(__APPLE__)
 struct WaylandPlatform::Impl {};
-WaylandPlatform::WaylandPlatform(Application&, const char*) : m(std::make_unique<Impl>()) {}
+WaylandPlatform::WaylandPlatform(Application&, const char*, const NativeOptions&) : m(std::make_unique<Impl>()) {}
 WaylandPlatform::~WaylandPlatform() = default;
 bool WaylandPlatform::available() const { return false; }
 std::string_view WaylandPlatform::lastError() const { return "Wayland is not available on this platform"; }
@@ -46,7 +47,11 @@ bool WaylandPlatform::capture(const AppWindow&, Image&) const { return false; }
 bool WaylandPlatform::configured(const AppWindow&) const { return false; }
 void* WaylandPlatform::nativeDisplay() const { return nullptr; }
 bool WaylandPlatform::roundtrip() { return false; }
+bool WaylandPlatform::gpuPresents(const AppWindow&) const { return false; }
+bool WaylandPlatform::gpuDraws(const AppWindow&) const { return false; }
+std::string_view WaylandPlatform::gpuName() const { return {}; }
 #else
+using detail::SurfaceSource;
 
 namespace {
 struct Proxy; // wl_proxy / wl_display
@@ -148,6 +153,8 @@ struct WaylandPlatform::Impl {
         int pendingW = 0, pendingH = 0;
         Buffer bufs[2];
         Image shown;
+        detail::VkWin* vk = nullptr; ///< Vulkan swapchain on `surface` (then no wl_shm buffers are attached)
+        bool vkTried = false;
     };
     std::vector<std::unique_ptr<Win>> wins;
     Win* pointerFocus = nullptr;
@@ -191,7 +198,33 @@ struct WaylandPlatform::Impl {
         std::string mime, data;
     } source;
 
-    explicit Impl(Application& a) : app(a) {}
+    NativeOptions opts;
+    detail::VkCtx* vk = nullptr;
+    bool vkCtxTried = false;
+    std::string vkError;
+
+    Impl(Application& a, const NativeOptions& o) : app(a), opts(o) {}
+
+    /// The window's Vulkan presenter, created on its first configured present (the surface has its xdg role and
+    /// has acked a configure, so the WSI's first attach + commit is legal). Null: present with wl_shm.
+    detail::VkWin* vulkanFor(Win& w) {
+        if (w.vkTried) return w.vk;
+        w.vkTried = true;
+        if (!opts.vulkan) return nullptr;
+        if (!vkCtxTried) {
+            vkCtxTried = true;
+            vk = opts.adoptDevice.instance && opts.adoptDevice.device
+                     ? detail::vkCtxAdopt(SurfaceSource::Wayland, opts.adoptDevice, vkError)
+                     : detail::vkCtxCreate(SurfaceSource::Wayland, vkError);
+        }
+        if (!vk) return nullptr;
+        SurfaceSource s;
+        s.kind = SurfaceSource::Wayland;
+        s.display = dpy;
+        s.surface = w.surface;
+        w.vk = detail::vkWinCreate(vk, s, opts, vkError);
+        return w.vk;
+    }
 
     Win* find(Proxy* surface) {
         for (auto& w : wins)
@@ -459,8 +492,15 @@ struct WaylandPlatform::Impl {
     static bool present(void* user, AppWindow& aw, Rect damage) {
         Win& w = *static_cast<Win*>(user);
         Impl& m = *w.impl;
-        aw.rasterizeCpu(damage);
         if (&w == m.tiFocus) m.syncTextInput();
+        if (w.configured) {
+            if (detail::VkWin* vk = m.vulkanFor(w)) {
+                const bool ok = detail::vkWinPresent(vk, aw, damage); // acquire / blit / vkQueuePresentKHR commits
+                m.l.flush(m.dpy);
+                return ok;
+            }
+        }
+        aw.rasterizeCpu(damage);
         if (!w.configured) return true;
         const Image& img = aw.image();
         Buffer* b = !w.bufs[0].busy ? &w.bufs[0] : !w.bufs[1].busy ? &w.bufs[1] : nullptr;
@@ -498,6 +538,7 @@ struct WaylandPlatform::Impl {
     static void destroyWin(void* user) {
         Win* w = static_cast<Win*>(user);
         Impl& m = *w->impl;
+        if (w->vk) { detail::vkWinDestroy(w->vk); w->vk = nullptr; } // the swapchain goes before its wl_surface
         for (auto& b : w->bufs)
             if (b.buf) m.l.marshal(b.buf, 0, nullptr, 1, kDestroy);
         if (w->popup) m.l.marshal(w->popup, 0, nullptr, 1, kDestroy);
@@ -632,7 +673,8 @@ struct WaylandPlatform::Impl {
     }
 };
 
-WaylandPlatform::WaylandPlatform(Application& app, const char* name) : m(std::make_unique<Impl>(app)) {
+WaylandPlatform::WaylandPlatform(Application& app, const char* name, const NativeOptions& o)
+    : m(std::make_unique<Impl>(app, o)) {
     if (!name && os::env("WAYLAND_DISPLAY").empty()) { m->error = "no WAYLAND_DISPLAY"; return; }
     if (!m->l.load()) { m->error = "libwayland-client.so.0 not found"; return; }
     m->haveXkb = m->xkb.load();
@@ -668,10 +710,11 @@ WaylandPlatform::~WaylandPlatform() {
     if (!m->dpy) return;
     while (!m->wins.empty()) m->wins.back()->win->setPresenter({}); // destroyWin erases
     if (available()) m->app.setEventSource(m->previous);
+    detail::vkCtxDestroy(m->vk); // after every VkWin (destroyWin), before the wl_display goes
     m->l.disconnect(m->dpy);
 }
 bool WaylandPlatform::available() const { return m->dpy && m->compositor && m->shm && m->wmBase; }
-std::string_view WaylandPlatform::lastError() const { return m->error; }
+std::string_view WaylandPlatform::lastError() const { return m->error.empty() ? std::string_view(m->vkError) : std::string_view(m->error); }
 void* WaylandPlatform::nativeDisplay() const { return m->dpy; }
 bool WaylandPlatform::roundtrip() { return m->dpy && m->l.roundtrip(m->dpy) >= 0; }
 
@@ -735,10 +778,24 @@ bool WaylandPlatform::showPopup(AppWindow& aw, AppWindow& parent, Rect anchor, b
     return true;
 }
 bool WaylandPlatform::capture(const AppWindow& aw, Image& out) const {
-    for (auto& w : m->wins)
-        if (w->win == &aw && w->shown.width > 0) { out = w->shown; return true; }
+    for (auto& w : m->wins) {
+        if (w->win != &aw) continue;
+        if (w->vk) return detail::vkWinReadback(w->vk, out);
+        if (w->shown.width > 0) { out = w->shown; return true; }
+    }
     return false;
 }
+bool WaylandPlatform::gpuPresents(const AppWindow& aw) const {
+    for (auto& w : m->wins)
+        if (w->win == &aw) return w->vk != nullptr;
+    return false;
+}
+bool WaylandPlatform::gpuDraws(const AppWindow& aw) const {
+    for (auto& w : m->wins)
+        if (w->win == &aw) return w->vk && detail::vkWinGpuDraws(w->vk);
+    return false;
+}
+std::string_view WaylandPlatform::gpuName() const { return detail::vkCtxDeviceName(m->vk); }
 bool WaylandPlatform::configured(const AppWindow& aw) const {
     for (auto& w : m->wins)
         if (w->win == &aw) return w->configured;

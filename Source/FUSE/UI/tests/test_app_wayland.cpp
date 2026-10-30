@@ -13,6 +13,10 @@
 //     commit_string/done -> committed text
 //   * xdg_popup: showPopup sends the positioner (size, anchor rect), the popup configure size wins, popup_done
 //     closes the popup window
+//   * --vulkan: the same run with a Vulkan swapchain on the wl_surface (VK_KHR_wayland_surface, CPU-raster upload):
+//     the buffers the WSI commits (wl_shm with lavapipe / swiftshader) must equal the CPU raster pixel for pixel,
+//     and every other check still holds. --vulkan-gpu: the same with the ui.draw_list GPU kernel drawing (committed
+//     buffers == swapchain readback). Exit 77 there when no ICD offers VK_KHR_wayland_surface.
 // Exit 77 when libwayland-server / -client are not installed.
 #include "fuse/app/wayland.hpp"
 #include "fuse/ui/os.hpp"
@@ -242,7 +246,9 @@ void compositorThread() {
 void run(std::function<void()> f) { std::lock_guard lk(mu); cmds.push_back(std::move(f)); }
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    const bool gpuDraw = argc > 1 && std::strcmp(argv[1], "--vulkan-gpu") == 0;
+    const bool vulkan = gpuDraw || (argc > 1 && std::strcmp(argv[1], "--vulkan") == 0);
     if (!S.load()) { std::printf("fuse_app_wayland: skipped (no libwayland-server)\n"); return 77; }
     for (int i = 0; i < 16; ++i) destroyFirst[i] = noop;
     destroyFirst[0] = reinterpret_cast<Fn>(&destroyReq);
@@ -274,7 +280,11 @@ int main() {
 
     {
         app::Application a{{.name = "gate_wayland", .loadSettings = false}};
-        app::WaylandPlatform wlp(a, sock);
+        app::NativeOptions no;
+        no.vulkan = vulkan;
+        no.vsync = false;
+        no.drawMode = gpuDraw ? app::VkDrawMode::GpuDraw : app::VkDrawMode::CpuUpload;
+        app::WaylandPlatform wlp(a, sock, no);
         CHECK(wlp.available());
         if (!wlp.available()) std::fprintf(stderr, "error: %.*s\n", int(wlp.lastError().size()), wlp.lastError().data());
         auto& win = a.createWindow({.title = "fuse wayland", .width = 300, .height = 200});
@@ -286,6 +296,21 @@ int main() {
         auto pump = [&](int n) { for (int i = 0; i < n; ++i) { a.step(0.005f); wlp.roundtrip(); } };
         pump(20);
         CHECK(wlp.configured(win));
+        if (vulkan && !wlp.gpuPresents(win)) {
+            std::printf("fuse_app_wayland --vulkan: skipped (%.*s)\n", int(wlp.lastError().size()), wlp.lastError().data());
+            stop = true;
+            th.join();
+            return 77;
+        }
+        if (gpuDraw && !wlp.gpuDraws(win)) {
+            std::printf("fuse_app_wayland --vulkan-gpu: skipped (no ui.draw_list kernel)\n");
+            stop = true;
+            th.join();
+            return 77;
+        }
+        if (vulkan)
+            std::printf("fuse_app_wayland: Vulkan present (%s) on %.*s\n", gpuDraw ? "GPU draw" : "CPU upload",
+                        int(wlp.gpuName().size()), wlp.gpuName().data());
         CHECK(u32(win.size().w) == 360u && u32(win.size().h) == 240u); // compositor's configure size won
         {
             std::lock_guard lk(mu);

@@ -10,9 +10,15 @@
 //   if (wl.available()) wl.show(app.createWindow({.title = "Hello"}));
 //   else { /* fall back to NativePlatform (X11 / XWayland) */ }
 //
-// Declare WaylandPlatform after the Application. Vulkan presentation (VK_KHR_wayland_surface) is not wired yet.
+// Declare WaylandPlatform after the Application.
+//
+// Presentation: with NativeOptions::vulkan (the default) and a Vulkan loader + ICD exposing VK_KHR_wayland_surface,
+// each window presents through a Vulkan swapchain on its wl_surface (the same presenter as X11 / Win32: GPU draw
+// kernel or CPU-raster upload, see NativeOptions::drawMode). Without one it falls back to wl_shm buffers of the CPU
+// raster. gpuPresents() tells which one a window got.
 #pragma once
 #include "fuse/app/app.hpp"
+#include "fuse/app/native.hpp"
 #include <memory>
 #include <string_view>
 
@@ -20,7 +26,7 @@ namespace fuse::app {
 
 class WaylandPlatform {
 public:
-    explicit WaylandPlatform(Application& app, const char* displayName = nullptr);
+    explicit WaylandPlatform(Application& app, const char* displayName = nullptr, const NativeOptions& o = {});
     ~WaylandPlatform();
     WaylandPlatform(const WaylandPlatform&) = delete;
     WaylandPlatform& operator=(const WaylandPlatform&) = delete;
@@ -39,6 +45,12 @@ public:
     bool capture(const AppWindow& w, fuse::ui::Image& out) const;
     /// Has the compositor configured (mapped) `w`?
     bool configured(const AppWindow& w) const;
+    /// True when `w` presents through a Vulkan swapchain (VK_KHR_wayland_surface), false for wl_shm.
+    bool gpuPresents(const AppWindow& w) const;
+    /// True when the GPU draw kernel (not the CPU-raster upload) draws `w`.
+    bool gpuDraws(const AppWindow& w) const;
+    /// "llvmpipe (LLVM ...)" etc. once a Vulkan presenter exists; empty otherwise.
+    std::string_view gpuName() const;
     /// wl_display* (for a Vulkan surface or a toolkit sharing the connection).
     void* nativeDisplay() const;
     /// Blocks until the compositor processed all requests (tests).

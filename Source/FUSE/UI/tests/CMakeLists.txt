@@ -277,6 +277,14 @@ if(TARGET fuse_app_native AND UNIX AND NOT APPLE)
     target_link_libraries(fuse_app_wayland PRIVATE fuse_app_native)
     add_test(NAME fuse_app_wayland COMMAND fuse_app_wayland)
     set_tests_properties(fuse_app_wayland PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 60 LABELS "fuse_ui;gate")
+    # Same run presented through a Vulkan swapchain on the wl_surface (lavapipe's wl_shm WSI); skips without an ICD.
+    set(FUSE_TEST_VK_ICD "/usr/share/vulkan/icd.d/lvp_icd.json" CACHE STRING "Vulkan ICD manifest for the Wayland Vulkan test")
+    add_test(NAME fuse_app_wayland_vk COMMAND fuse_app_wayland --vulkan)
+    set_tests_properties(fuse_app_wayland_vk PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
+                         ENVIRONMENT "VK_ICD_FILENAMES=${FUSE_TEST_VK_ICD}" LABELS "fuse_ui;gate;vulkan")
+    add_test(NAME fuse_app_wayland_vk_gpu COMMAND fuse_app_wayland --vulkan-gpu)
+    set_tests_properties(fuse_app_wayland_vk_gpu PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
+                         ENVIRONMENT "VK_ICD_FILENAMES=${FUSE_TEST_VK_ICD}" LABELS "fuse_ui;gate;vulkan")
 endif()
 
 if(TARGET fuse_app)
