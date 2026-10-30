@@ -101,6 +101,9 @@ struct GpuDrawData {
     /// packDrawList scratch: per-glyph ink boxes (open-addressed by atlas rect, rebuilt every pack; kept for capacity)
     std::vector<u64> inkKeys;
     std::vector<u32> inkBoxes;
+    const u8* inkAtlas = nullptr; ///< ink boxes stay valid while atlas pointer, size and generation match
+    u32 inkSize = 0, inkGen = ~0u;
+    std::size_t inkCount = 0;
 
     /// Persistent packing: a new process-unique value whenever packDrawList produces new content. When the inputs equal the previous pack
     /// (same list contents, size, scissor, image pixels, and a known unchanged atlasGeneration), packDrawList keeps the

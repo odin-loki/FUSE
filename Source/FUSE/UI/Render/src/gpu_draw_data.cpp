@@ -141,6 +141,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             }
             p += k;
         }
+        s = std::min(s, mn - p);
         while (s < mn - p) {
             const std::size_t k = std::min(B, mn - p - s);
             if (std::memcmp(prev + m - s - k, cur + n - s - k, k * sizeof(DrawCmd)) != 0) {
@@ -221,10 +222,13 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     // glyph ink boxes: the tight rect of non-zero atlas coverage inside each glyph bitmap (x0 | y0<<8 | x1<<16 | y1<<24,
     // relative to the bitmap; ~0u = blank). Glyph records shrink to it, so tiles their padding / blank margin merely
     // touches never list them (per-tile culling) and run column ranges narrow; outside the ink a == 0, so bit-exact.
-    if (out.inkKeys.size() < 1024) out.inkKeys.assign(1024, ~0ull), out.inkBoxes.assign(1024, 0u);
-    else std::fill(out.inkKeys.begin(), out.inkKeys.end(), ~0ull);
-    std::size_t inkCount = 0;
     const u32 atlasS = atlas ? atlasSize : 0;
+    // kept across frames while the atlas is the same (pointer, size, generation); else rescanned
+    if (out.inkKeys.size() < 1024) out.inkKeys.assign(1024, ~0ull), out.inkBoxes.assign(1024, 0u), out.inkCount = 0;
+    else if (atlasGeneration == ~0u || out.inkAtlas != atlas || out.inkSize != atlasS || out.inkGen != atlasGeneration)
+        std::fill(out.inkKeys.begin(), out.inkKeys.end(), ~0ull), out.inkCount = 0;
+    out.inkAtlas = atlas, out.inkSize = atlasS, out.inkGen = atlasGeneration;
+    std::size_t& inkCount = out.inkCount;
     const auto inkBox = [&](u32 u, u32 v, u32 tw, u32 th) -> u32 {
         const u64 key = u64(u) | (u64(v) << 16) | (u64(tw) << 32) | (u64(th) << 48);
         for (;;) {
@@ -324,14 +328,13 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     // empty) at passHeader[pass]; slots: count, entries, glyph run records
     const auto tileHeader = [&](u32 pass) { return out.passHeader[pass]; };
     // writes entT / runT into the (pass, tile) slot: in place while it fits, else a new slot at the end
-    const auto placeTile = [&](u32 pass, u32 t) {
+    const auto placeTileFrom = [&](u32 pass, u32 t, const u32* ent, u32 E, const u32* run, u32 R) {
         const u32 si = pass * tileCount + t;
-        const u32 E = u32(entT.size());
         if (E == 0) {
             out.tiles[tileHeader(pass) + t] = 0u;
             return;
         }
-        const u32 size = 1 + E + u32(runT.size());
+        const u32 size = 1 + E + R;
         if (size > out.tileSlotCap[si]) {
             out.tileHoles += out.tileSlotCap[si];
             out.tileSlotCap[si] = size + size / 8;
@@ -342,9 +345,12 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         u32* d = out.tiles.data() + off;
         d[0] = E;
         for (u32 k = 0; k < E; ++k)
-            d[1 + k] = (entT[k] & kGlyphRun) == kGlyphRun ? kGlyphRun | (entT[k] - kGlyphRun + off + 1 + E) : entT[k];
-        if (!runT.empty()) std::memcpy(d + 1 + E, runT.data(), runT.size() * 4);
+            d[1 + k] = (ent[k] & kGlyphRun) == kGlyphRun ? kGlyphRun | (ent[k] - kGlyphRun + off + 1 + E) : ent[k];
+        if (R) std::memcpy(d + 1 + E, run, std::size_t(R) * 4);
         out.tiles[tileHeader(pass) + t] = off;
+    };
+    const auto placeTile = [&](u32 pass, u32 t) {
+        placeTileFrom(pass, t, entT.data(), u32(entT.size()), runT.data(), u32(runT.size()));
     };
     // bins areas (paint order) into the tiles of one draw pass
     const auto binAreas = [&](const Area* as, std::size_t na, u32 pass) {
@@ -1131,8 +1137,6 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     out.passes.clear();
     out.atlasSize = atlasS;
     out.push = {{width, height}, tilesX, out.atlasSize, tileCount, imageCount, {0, 0}, {width, height}, 0, 0};
-    std::fill(out.inkKeys.begin(), out.inkKeys.end(), ~0ull);
-    inkCount = 0;
 
     // images: table then pixels
     out.images.resize(std::size_t(imageCount) * 4);
@@ -1181,6 +1185,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     areas.clear();
     areas.reserve(n); // one growth step per frame at most (text pages are 10^4+ glyph quads)
     out.cmdScratch.reserve(n + 1);
+    out.glyphScratch.reserve(n * 9);
     segments.clear();
     u32 clipRec = 0;
     clipVer = 1;
@@ -1197,8 +1202,11 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         out.cmdSlotOf.resize(nc);
         out.cmdMap.resize(nc);
         out.touched.clear();
+        u32 lastNode = ~0u; // runs of one node: one map lookup (node values are arbitrary, so the first is real)
+        GpuDrawData::GlyphSlot* lastSl = nullptr;
         for (std::size_t q = 0; q < nc; ++q) {
-            GpuDrawData::GlyphSlot& sl = out.cmdSlots[out.cmdScratchNode[q]];
+            if (!lastSl || out.cmdScratchNode[q] != lastNode) lastNode = out.cmdScratchNode[q], lastSl = &out.cmdSlots[lastNode];
+            GpuDrawData::GlyphSlot& sl = *lastSl;
             if (sl.stamp != out.frameStamp) {
                 sl.stamp = out.frameStamp;
                 sl.count = sl.cursor = 0;
@@ -1246,8 +1254,11 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         const std::size_t ng = out.glyphScratch.size() / 9;
         out.glyphSlotOf.resize(ng);
         out.touched.clear();
+        u32 lastNode = ~0u;
+        GpuDrawData::GlyphSlot* lastSl = nullptr;
         for (std::size_t g = 0; g < ng; ++g) {
-            GpuDrawData::GlyphSlot& sl = out.glyphSlots[out.glyphScratch[g * 9 + 7]];
+            if (!lastSl || out.glyphScratch[g * 9 + 7] != lastNode) lastNode = out.glyphScratch[g * 9 + 7], lastSl = &out.glyphSlots[lastNode];
+            GpuDrawData::GlyphSlot& sl = *lastSl;
             if (sl.stamp != out.frameStamp) {
                 sl.stamp = out.frameStamp;
                 sl.count = sl.cursor = 0;
