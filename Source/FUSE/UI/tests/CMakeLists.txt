@@ -373,7 +373,7 @@ if(TARGET fuse_ui_extras)
     # system web engine: needs a display, so Linux / BSD runs it under Xvfb
     find_program(FUSE_XVFB_RUN Xvfb)
     set(FUSE_UI_ISOLATED_X ${CMAKE_CURRENT_SOURCE_DIR}/run_isolated_x.sh)
-    if(UNIX AND NOT APPLE AND NOT ANDROID AND FUSE_XVFB_RUN)
+    if(UNIX AND NOT APPLE AND NOT ANDROID AND NOT CMAKE_CROSSCOMPILING AND FUSE_XVFB_RUN)
         add_test(NAME fuse_ui_extras_webview COMMAND ${FUSE_UI_ISOLATED_X} -- $<TARGET_FILE:fuse_ui_extras_tests> --gate=webview)
         set_tests_properties(fuse_ui_extras_webview PROPERTIES LABELS fuse_ui TIMEOUT 120
             ENVIRONMENT "WEBKIT_DISABLE_COMPOSITING_MODE=1;LIBGL_ALWAYS_SOFTWARE=1")
