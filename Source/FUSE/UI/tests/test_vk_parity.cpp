@@ -6,6 +6,7 @@
 #include "test_util.hpp"
 #include "vk_headless.hpp"
 #if FUSE_PARITY_EXTRAS
+#include "fuse/ui/extras/charts.hpp"
 #include "fuse/ui/extras/datavis3d.hpp"
 #include "fuse/ui/extras/svg.hpp"
 #endif
@@ -432,6 +433,42 @@ int main() {
                 for (u32 px : cpuX.pixels) { const unsigned char rgb[3] = {u8(px), u8(px >> 8), u8(px >> 16)}; std::fwrite(rgb, 1, 3, fp); }
                 std::fclose(fp);
             }
+        }
+        {   // charts (2D): line + area gradient, stacked bars, donut, candles, heatmap, bubbles, polar, a decimated
+            // 200k-point envelope; labels skipped (glyph parity is covered above), so only geometry is compared
+            namespace ch = fuse::ui::charts;
+            DrawList cl;
+            cl.rect({0, 0, f32(W), f32(H)}, Color::rgb(0x101014));
+            auto cell = [&](int i) { return Rect{f32(i % 4) * f32(W) / 4.f, f32(i / 4) * f32(H) / 2.f, f32(W) / 4.f, f32(H) / 2.f}; };
+            const ch::SeriesType kinds[] = {ch::SeriesType::Area, ch::SeriesType::StackedBar, ch::SeriesType::Donut, ch::SeriesType::Candlestick,
+                                            ch::SeriesType::Heatmap, ch::SeriesType::Bubble, ch::SeriesType::Spline, ch::SeriesType::Line};
+            for (int i = 0; i < 8; ++i) {
+                ch::Chart c;
+                c.animate = false;
+                c.legend = ch::LegendPos::None;
+                c.polar = i == 6;
+                ch::Series& sr = c.add(kinds[i]);
+                if (kinds[i] == ch::SeriesType::Candlestick)
+                    for (int k = 0; k < 16; ++k) { const f32 o = 10 + std::sin(f32(k)) * 3; sr.candles.push_back({f32(k), o, o + 2, o - 2, o + (k % 2 ? 1.f : -1.f)}); }
+                else if (kinds[i] == ch::SeriesType::Heatmap) {
+                    sr.rows = 8, sr.cols = 10;
+                    for (u32 k = 0; k < 80; ++k) sr.y.push_back(std::sin(f32(k % 10) * 0.6f) + std::cos(f32(k / 10) * 0.5f));
+                } else {
+                    const int n = i == 7 ? 200000 : 24;
+                    for (int k = 0; k < n; ++k) { sr.x.push_back(f32(k)); sr.y.push_back(5 + 4 * std::sin(f32(k) * (i == 7 ? 0.0005f : 0.3f)) + (i == 7 ? f32(k % 97) * 0.01f : 0.f)); }
+                    if (kinds[i] == ch::SeriesType::Bubble) for (int k = 0; k < n; ++k) sr.size.push_back(f32(3 + k % 5));
+                    if (kinds[i] == ch::SeriesType::StackedBar) { ch::Series& b2 = c.add(kinds[i]); b2.x = sr.x; for (f32 v : sr.y) b2.y.push_back(10 - v); }
+                }
+                ch::render(c, cl, cell(i));
+            }
+            Image cpuCh;
+            cpuCh.resize(int(W), int(H), 0xFF000000u);
+            CpuRasterizer rc;
+            rc.render(cl, cpuCh);
+            packDrawList(cl, W, H, data);
+            UI_CHECK(gpu.upload(0, data));
+            vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+            check("charts", compare(cpuCh, out));
         }
         {   // layered clips: per-pixel SVG mask (gradient fade + two-tone shapes), clipPath union (overlap, opposite
             // windings, mixed clip-rule), and DrawList::pushClipLayers directly with a radial ramp

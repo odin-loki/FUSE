@@ -1,0 +1,195 @@
+// FUSE Charts: 2D graphs and charts (Qt Charts / Qt Graphs 2D parity and more) and the 3D graphs (Qt Graphs 3D /
+// Data Visualization: bars, scatter, surface, line, area) behind one public API, `fuse::gui::charts`.
+//
+// A Chart is plain data (axes, series, theme). charts::render() lays it out and emits DrawList commands only (paths,
+// rects, gradients, glyphs), so a chart draws through the Vulkan draw-list kernel on the GPU path and through the CPU
+// rasteriser otherwise, with the same pixels (parity gate fuse_ui_vk_parity "charts"). Large series are decimated
+// per plot pixel column before anything is emitted (min/max envelope on forge::lane SIMD, or LTTB), so a 1M-point
+// series costs O(visible pixels) draw commands. Streaming series keep a bounded ring (Series::capacity).
+//
+// chartView() is the retained widget: hover tooltips, wheel zoom, drag pan, rubber-band zoom (Shift+drag), click
+// selection, legend toggles, keyboard point navigation, accessible summary, entry animation, ItemModel binding and
+// image export. Colours default to the widget's computed style (text colour, background) so CSS themes apply.
+//
+// Pending (FORGE text / locale / datetime wrapper): AxisType::DateTime is accepted but labelled numerically; label
+// formatting is printf-style and locale independent.
+#pragma once
+
+#include "fuse/ui/draw_list.hpp"
+#include "fuse/ui/extras/datavis3d.hpp"
+#include "fuse/ui/ui.hpp"
+#include "fuse/ui/widgets/widgets.hpp"
+
+#include <cmath>
+#include <cstddef>
+#include <functional>
+#include <span>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace fuse::ui::charts {
+
+enum class SeriesType : u8 {
+    Line, Spline, StepLine, Scatter, Area, StackedArea, PercentArea,
+    Bar, StackedBar, PercentBar, HorizontalBar, HorizontalStackedBar, HorizontalPercentBar,
+    Pie, Donut, Candlestick, Ohlc, BoxPlot, Histogram, Heatmap, Bubble,
+};
+enum class AxisType : u8 { Value, Log, Category, DateTime /* pending: labelled as numbers */ };
+enum class AxisEdge : u8 { Bottom, Left, Top, Right };
+enum class LegendPos : u8 { None, Top, Bottom, Left, Right };
+enum class Decimation : u8 { Auto, None, MinMax, Lttb };
+
+struct Axis {
+    AxisType type = AxisType::Value;
+    AxisEdge edge = AxisEdge::Bottom;
+    f32 min = NAN, max = NAN;          ///< fixed range (NaN: from the data, rounded to nice ticks)
+    f32 viewMin = NAN, viewMax = NAN;  ///< zoom / pan window inside the range (NaN: whole range)
+    f32 logBase = 10.f;
+    std::vector<std::string> categories; ///< Category: label i sits at value i
+    std::string title;
+    std::string labelFormat = "%g";      ///< printf format for value labels
+    u32 tickCount = 5;
+    bool grid = true, visible = true, reversed = false, nice = true;
+};
+
+struct Candle { f32 x, open, high, low, close; };
+struct BoxItem { f32 x, lower, q1, median, q3, upper; std::vector<f32> outliers = {}; };
+
+struct Series {
+    SeriesType type = SeriesType::Line;
+    std::string name;
+    Color color{};             ///< a == 0: theme palette
+    u32 xAxis = 0, yAxis = 1;  ///< indices into Chart::axes
+    bool visible = true;
+    /// Line / scatter / area / bar / bubble: points (x[i], y[i]); bars on a category axis use x = category index.
+    /// Histogram: y holds the raw samples. Pie / donut: y holds slice values, `labels` the slice names.
+    std::vector<f32> x, y;
+    std::vector<f32> size;     ///< bubble radii (data units of `bubbleScale` px)
+    std::vector<std::string> labels;
+    std::vector<Candle> candles;
+    std::vector<BoxItem> boxes;
+    u32 rows = 0, cols = 0;    ///< heatmap grid: y holds rows * cols values row-major; x range = cols, y range = rows
+    std::vector<GradientStop> colormap; ///< heatmap (empty: viridis-like)
+    u32 bins = 0;              ///< histogram bins (0: Sturges)
+    f32 lineWidth = 2.f, markerSize = 0.f, barWidth = 0.8f, holeSize = 0.5f, bubbleScale = 1.f;
+    Decimation decimation = Decimation::Auto;
+    /// Streaming: append() keeps at most `capacity` points (0 = unbounded), dropping the oldest (amortised O(1)).
+    std::size_t capacity = 0;
+    void append(f32 px, f32 py);
+    void append(std::span<const f32> px, std::span<const f32> py);
+    std::size_t count() const { return y.size() - m_head; }
+    std::span<const f32> xs() const { return std::span<const f32>(x).subspan(std::min(m_head, x.size())); }
+    std::span<const f32> ys() const { return std::span<const f32>(y).subspan(m_head); }
+    void clear() { x.clear(), y.clear(), m_head = 0; }
+    std::size_t m_head = 0; ///< ring start (internal)
+};
+
+struct Theme {
+    Color background, plot, grid, axis, text, tooltipBg, tooltipText, selection;
+    std::vector<Color> palette;
+    f32 fontSize = 12.f;
+    static Theme dark();
+    static Theme light();
+    /// Theme from a computed style: text = color, background = background (palette from dark / light by luminance).
+    static Theme fromStyle(const ComputedStyle& s);
+};
+
+struct Selected { u32 series, index; };
+
+struct Chart {
+    std::string title;
+    std::vector<Axis> axes; ///< default: [0] bottom value axis, [1] left value axis
+    std::vector<Series> series;
+    LegendPos legend = LegendPos::Top;
+    Theme theme = Theme::dark();
+    bool polar = false;     ///< QPolarChart: axis 0 is angular (one turn = its range), axis 1 radial
+    bool animate = true;    ///< entry / data-change animation in the widget
+    f32 progress = 1.f;     ///< animation 0..1 (bars grow, lines reveal, pies sweep)
+    i32 hoverSeries = -1, hoverIndex = -1;
+    std::vector<Selected> selection;
+    Chart();
+    Series& add(SeriesType type, std::string_view name = {});
+};
+
+/// Text hooks (the widget passes the UiContext's font). Null: labels are skipped, sizes estimated.
+struct TextFns {
+    std::function<f32(std::string_view, f32 px)> measure;
+    std::function<void(DrawList&, std::string_view, Rect, Color, f32 px, TextAlignment)> draw;
+};
+struct Layout {
+    Rect plot, legend, title;
+    std::vector<Rect> legendItems; ///< per series (empty rect when not shown)
+};
+struct RenderStats {
+    std::size_t inputPoints = 0, drawnPoints = 0, commands = 0;
+};
+struct Hit {
+    i32 series = -1, index = -1;
+    f32 x = 0, y = 0;   ///< data values
+    Vec2 screen{};
+    i32 legendItem = -1;
+};
+
+Layout layout(const Chart& c, Rect bounds, const TextFns* text = nullptr);
+void render(const Chart& c, DrawList& dl, Rect bounds, const TextFns* text = nullptr, RenderStats* stats = nullptr);
+Hit hitTest(const Chart& c, Rect bounds, Vec2 pos, f32 radius = 10.f, const TextFns* text = nullptr);
+/// Resolved [lo, hi] of every axis (data, fixed or zoomed); `full` ignores the zoom window.
+std::vector<std::pair<f32, f32>> axisRanges(const Chart& c, bool full = false);
+/// Axis value <-> pixel along [a, b] (log / reversed aware).
+f32 toPixel(const Axis& ax, f32 lo, f32 hi, f32 v, f32 a, f32 b);
+f32 fromPixel(const Axis& ax, f32 lo, f32 hi, f32 p, f32 a, f32 b);
+/// Tick values in [lo, hi] (nice steps; log: powers of the base; category: every index that fits).
+std::vector<f32> ticks(const Axis& ax, f32 lo, f32 hi);
+std::string formatTick(const Axis& ax, f32 v);
+/// Zoom `axis` by `factor` (< 1 zooms in) around data value `centre`; pan by data delta. Reset clears the windows.
+void zoom(Chart& c, u32 axis, f32 factor, f32 centre);
+void pan(Chart& c, u32 axis, f32 delta);
+void zoomTo(Chart& c, u32 axis, f32 lo, f32 hi);
+void resetZoom(Chart& c);
+std::string tooltip(const Chart& c, u32 series, u32 index);
+/// Accessible summary ("Line chart, 2 series: ... ") used as the widget's a11y name.
+std::string describe(const Chart& c);
+
+// ---- decimation (also usable on their own) ----
+/// Index range [first, last) of sorted `x` overlapping [lo, hi] plus one neighbour each side.
+std::pair<std::size_t, std::size_t> visibleRange(std::span<const f32> x, f32 lo, f32 hi);
+/// Min / max of `v` (forge::lane SIMD where available).
+void minMax(std::span<const f32> v, f32& lo, f32& hi);
+/// Per-bucket first / min / max / last indices over `buckets` equal x slices (sorted x): keeps every extreme, so the
+/// drawn envelope is pixel-identical to the full series at one bucket per pixel column.
+void decimateMinMax(std::span<const f32> x, std::span<const f32> y, u32 buckets, std::vector<u32>& out);
+/// Largest-Triangle-Three-Buckets: `threshold` representative indices (first and last kept).
+void lttb(std::span<const f32> x, std::span<const f32> y, u32 threshold, std::vector<u32>& out);
+
+// ---- image export ----
+/// Renders the chart on the CPU (glyph atlas from `ui`) into `out` (w x h).
+void renderImage(UiContext& ui, const Chart& c, int w, int h, Image& out);
+/// Writes RGBA8 `img` as PNG (stored deflate). Returns false on I/O failure.
+bool writePng(const Image& img, const std::string& path);
+
+// ---- widget ----
+/// QChartView: hover -> tooltip + node value = point index (ValueChanged), click toggles selection (Toggled),
+/// wheel zooms x (Ctrl: y too) around the pointer, drag pans, Shift+drag rubber-band zooms, legend click toggles a
+/// series, Left / Right / Home / End walk points (screen readers hear the tooltip), Escape resets the zoom.
+NodeHandle chartView(UiContext& ui, NodeHandle parent, std::string_view id = {});
+/// The widget's chart (call chartChanged after editing).
+Chart* chartOf(UiContext& ui, NodeHandle view);
+/// Repaints, refreshes the accessible summary and (Chart::animate) restarts the entry animation.
+void chartChanged(UiContext& ui, NodeHandle view, bool animateChange = false);
+/// Hovered point (series, index), -1 none.
+Hit chartHovered(const UiContext& ui, NodeHandle view);
+std::string chartTooltip(const UiContext& ui, NodeHandle view);
+/// Model binding (QVXYModelMapper / QBarModelMapper): column `xColumn` (-1: row index) against each `yColumns`
+/// column, one series each (named by the header). Re-read with chartModelChanged after the model changes.
+struct ModelMapping {
+    const widgets::ItemModel* model = nullptr;
+    i32 xColumn = 0;
+    std::vector<u32> yColumns;
+    SeriesType type = SeriesType::Line;
+};
+void bindModel(UiContext& ui, NodeHandle view, ModelMapping m);
+void chartModelChanged(UiContext& ui, NodeHandle view);
+bool exportImage(UiContext& ui, NodeHandle view, const std::string& pngPath, int w = 0, int h = 0);
+
+} // namespace fuse::ui::charts

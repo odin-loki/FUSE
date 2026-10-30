@@ -30,6 +30,7 @@
 #include "fuse/ui/doc/document.hpp"
 #include "fuse/ui/doc/hot_reload.hpp"
 #include "fuse/ui/extras/extras.hpp"
+#include "fuse/ui/extras/charts.hpp"
 #include "fuse/app/app.hpp"
 #include "fuse/app/native.hpp"
 
@@ -49,6 +50,8 @@ namespace os = fuse::ui::os;
 namespace i18n = fuse::ui::i18n;
 namespace desktop = fuse::ui::desktop;
 namespace pdf = fuse::ui::pdf;
+// Charts and graphs (2D series, axes, interaction, decimation, export; 3D via charts::chart3d).
+namespace charts = fuse::ui::charts;
 
 // Application shell.
 using fuse::app::Application;
