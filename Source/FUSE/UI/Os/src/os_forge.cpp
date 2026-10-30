@@ -276,4 +276,92 @@ NativeDialogResult nativeFileDialog(const NativeDialogSpec& s) {
     return res;
 }
 
+
+// ---- fd plumbing (Wayland) ------------------------------------------------------------------------------------
+// FORGE gap: forge::os::shared_memory is name-based and does not expose its fd, and forge::os::mapping cannot map
+// an inherited fd, so the anonymous-fd buffer and fd mapping below use POSIX directly (memfd_create where present,
+// else shm_open + unlink). Pipes and fd reads/writes use forge::os::pipe_end.
+#if !defined(_WIN32)
+} // namespace fuse::ui::os
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <forge/os/pipe.hpp>
+namespace fuse::ui::os {
+SharedBuffer& SharedBuffer::operator=(SharedBuffer&& o) noexcept {
+    if (this != &o) {
+        this->~SharedBuffer();
+        fd = std::exchange(o.fd, -1);
+        data = std::exchange(o.data, nullptr);
+        size = std::exchange(o.size, 0);
+    }
+    return *this;
+}
+SharedBuffer::~SharedBuffer() {
+    if (data) ::munmap(data, size);
+    if (fd >= 0) ::close(fd);
+    data = nullptr;
+    fd = -1;
+}
+std::expected<SharedBuffer, std::string> createSharedBuffer(std::size_t size) {
+    int fd = -1;
+#if defined(__linux__) || defined(__FreeBSD__)
+    fd = ::memfd_create("fuse-ui", MFD_CLOEXEC);
+#endif
+    if (fd < 0) {
+        std::string name = "/fuse-ui-" + std::to_string(fo::pid()) + "-" + std::to_string(fo::monotonic_ns());
+        fd = ::shm_open(name.c_str(), O_RDWR | O_CREAT | O_EXCL, 0600);
+        if (fd >= 0) ::shm_unlink(name.c_str());
+    }
+    if (fd < 0) return std::unexpected(std::string("shared memory fd"));
+    if (::ftruncate(fd, off_t(size)) != 0) { ::close(fd); return std::unexpected(std::string("ftruncate")); }
+    void* p = ::mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (p == MAP_FAILED) { ::close(fd); return std::unexpected(std::string("mmap")); }
+    SharedBuffer b;
+    b.fd = fd;
+    b.data = p;
+    b.size = size;
+    return b;
+}
+std::expected<std::string, std::string> readMappedFd(int fd, std::size_t size) {
+    void* p = ::mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (p == MAP_FAILED) return std::unexpected(std::string("mmap fd"));
+    std::string s(static_cast<const char*>(p), size);
+    ::munmap(p, size);
+    return s;
+}
+std::expected<std::pair<int, int>, std::string> makePipe() {
+    auto r = fo::make_pipe();
+    if (!r) return std::unexpected(r.err.what);
+    int a = ::dup(r->read.native()), b = ::dup(r->write.native()); // pipe_end closes its own fds
+    if (a >= 0) ::fcntl(a, F_SETFD, FD_CLOEXEC);
+    if (b >= 0) ::fcntl(b, F_SETFD, FD_CLOEXEC);
+    return std::pair{a, b};
+}
+std::string readAllAndClose(int fd, int timeoutMs) {
+    fo::pipe_end e(fd);
+    std::string out;
+    for (;;) {
+        std::string c = e.read_some(65536, timeoutMs);
+        if (c.empty()) break;
+        out += c;
+    }
+    return out;
+}
+bool writeAllAndClose(int fd, std::string_view data) {
+    fo::pipe_end e(fd);
+    return bool(e.write_all(data));
+}
+void closeFd(int fd) { if (fd >= 0) ::close(fd); }
+#else
+SharedBuffer& SharedBuffer::operator=(SharedBuffer&& o) noexcept { std::swap(fd, o.fd); std::swap(data, o.data); std::swap(size, o.size); return *this; }
+SharedBuffer::~SharedBuffer() = default;
+std::expected<SharedBuffer, std::string> createSharedBuffer(std::size_t) { return std::unexpected(std::string("unsupported")); }
+std::expected<std::string, std::string> readMappedFd(int, std::size_t) { return std::unexpected(std::string("unsupported")); }
+std::expected<std::pair<int, int>, std::string> makePipe() { return std::unexpected(std::string("unsupported")); }
+std::string readAllAndClose(int, int) { return {}; }
+bool writeAllAndClose(int, std::string_view) { return false; }
+void closeFd(int) {}
+#endif
+
 } // namespace fuse::ui::os

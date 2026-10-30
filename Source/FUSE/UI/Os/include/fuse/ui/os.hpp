@@ -4,7 +4,9 @@
 // layer builds with -DFUSE_UI_OS_BACKEND=custom and supplies its own translation unit defining these functions.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <expected>
 #include <initializer_list>
 #include <memory>
@@ -78,6 +80,30 @@ std::expected<std::vector<std::string>, std::string> clipboardTypes();
 std::expected<std::string, std::string> clipboardData(std::string_view mime);
 /// Offers `data` under `mime`. (One type per call; the last call owns the clipboard.)
 bool setClipboardData(std::string_view mime, std::string_view data);
+
+/// File-descriptor plumbing for window-system protocols that pass fds (Wayland shm buffers, keymaps, data
+/// transfer). POSIX only; on Windows these fail. Backed by forge::os pipes / mappings plus the FORGE gaps noted in
+/// os_forge.cpp (anonymous shared-memory fd).
+struct SharedBuffer {
+    int fd = -1;
+    void* data = nullptr;
+    std::size_t size = 0;
+    SharedBuffer() = default;
+    SharedBuffer(SharedBuffer&& o) noexcept { *this = std::move(o); }
+    SharedBuffer& operator=(SharedBuffer&& o) noexcept;
+    ~SharedBuffer();
+};
+/// Anonymous shared memory of `size` bytes with an fd to hand to another process.
+std::expected<SharedBuffer, std::string> createSharedBuffer(std::size_t size);
+/// Reads `size` bytes of a mappable fd (e.g. a Wayland keymap); the fd stays open.
+std::expected<std::string, std::string> readMappedFd(int fd, std::size_t size);
+/// Pipe: {read fd, write fd}; both close-on-exec.
+std::expected<std::pair<int, int>, std::string> makePipe();
+/// Reads `fd` to EOF (waiting at most `timeoutMs` per chunk) and closes it.
+std::string readAllAndClose(int fd, int timeoutMs = 2000);
+/// Writes all of `data` to `fd` and closes it.
+bool writeAllAndClose(int fd, std::string_view data);
+void closeFd(int fd);
 
 /// Native (system) file dialog (G2). Default backend: zenity / kdialog (Linux, BSD), osascript (macOS), spawned
 /// through FORGE. Returns std::nullopt-like `unavailable` when no native dialog exists, so the caller falls back to

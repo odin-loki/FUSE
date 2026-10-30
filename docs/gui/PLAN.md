@@ -72,7 +72,7 @@ Window-system backends (one per platform family) sit under `fuse_app_native` beh
 | Platform | Window + input | IME | Present | A11y | State |
 |---|---|---|---|---|---|
 | Linux X11 | native (runtime-loaded libX11) | XIM | Vulkan swapchain / CPU upload | AT-SPI via AccessKit | **done**, gated on Xvfb + lavapipe |
-| Linux Wayland | SDL3 per D1(c), native later | text-input-v3 | Vulkan | AT-SPI | planned (G2) |
+| Linux Wayland | native libwayland-client (runtime-loaded), xdg-shell, wl_shm | wl_keyboard+xkbcommon (text-input-v3 TODO) | wl_shm CPU raster (Vulkan TODO) | AT-SPI | **done (G2)**: window, input, DnD in+out; gated by in-process libwayland-server compositor test |
 | Windows | native Win32 | IMM32 | Vulkan / GDI fallback | UIA via AccessKit | **done**, gated under Wine |
 | FreeBSD | X11 backend (same code) | XIM | Vulkan / CPU | AT-SPI | builds expected; CI cross-compile in G1 |
 | macOS | Cocoa via SDL3 → native NSView | NSTextInputClient | MoltenVK / CAMetalLayer | NSAccessibility | scaffold (G3) |
@@ -128,6 +128,7 @@ Headless (offscreen CPU raster) works everywhere and is what the test suite uses
   bit-exact vs scalar, gated by `fuse_ui_simd_blur`). Horizontal pass (pixel transpose + lane sweep) and solid
   span fills (`simd::fillSpan`) also on `forge::lane`.
 - **G2**: Wayland (SDL3 path per D1), OS-level drag and drop, rich clipboard MIME, native file dialogs, hot reload on
+  Wayland done natively (not SDL3: fits the runtime-loaded X11 architecture): `fuse/app/wayland.hpp`, gate `fuse_app_wayland`. X11 XDND drag-out done (`fuse_app_xdnd`). SIMD horizontal blur + span fills on forge::lane.
   `forge::os::file_watch`.
   *Status:* hot reload done: `fuse::ui::doc::HotReload` (styles replaced in place via `StyleEngine::replaceSheet`,
   documents via `Document::reload`, last-good kept on bad edits; test `fuse_ui_hot_reload`).

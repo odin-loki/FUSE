@@ -252,6 +252,9 @@ u8 mods(unsigned state) {
               ((state & 64) ? kModSuper : 0));
 }
 } // namespace x11
+namespace detail { // shared with the Wayland backend: XKB keysyms == X11 keysyms
+Key keyFromKeysym(unsigned long sym, bool& ascii) { return x11::mapKey(sym, ascii); }
+} // namespace detail
 #endif
 
 // ---- shared ----------------------------------------------------------------------------------------------------------

@@ -144,6 +144,10 @@ public:
     void key(fuse::ui::Key k, fuse::ui::u8 mods = 0) { m_ui.keyDown(k, mods); m_ui.keyUp(k, mods); }
     void text(std::string_view utf8) { m_ui.textInput(utf8); }
 
+    /// CPU-rasterises the damaged region into image() (what the headless presenter does); for software presenters
+    /// that copy image() into an OS buffer (Wayland wl_shm).
+    void rasterizeCpu(fuse::ui::Rect damage) { presentHeadless(nullptr, *this, damage); }
+
     /// System drag and drop into this window (G2; X11 XDND today). `paths` are local files decoded from a
     /// text/uri-list; other payloads arrive raw in `data` with their `mime`.
     struct ExternalDrop {
@@ -245,6 +249,7 @@ public:
 
     /// Replaces the event pump (an empty source restores the default sleep pump).
     void setEventSource(const EventSource& s);
+    const EventSource& eventSource() const { return m_events; }
     void setClock(const Clock& c) { m_clock = c; }
     /// One loop iteration: pump events (waiting at most until the next UI deadline, capped by `maxWait`), then
     /// update / present every window that needs it and drop closed windows. False once the app should exit.
