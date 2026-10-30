@@ -499,6 +499,13 @@ bool UiContext::reorderChildren(NodeHandle h, std::span<const NodeHandle> order)
     relinkChildren(h.index, idx);
     return true;
 }
+void UiContext::setLayoutHook(NodeHandle n, LayoutHook hook) {
+    std::erase_if(m_layoutHooks, [&](const LayoutHookEntry& h) { return h.index == n.index; });
+    if (hook && alive(n)) {
+        m_layoutHooks.push_back({n.index, n.generation, hook});
+        markLayout(n.index);
+    }
+}
 void UiContext::sortChildren(NodeHandle h, const std::function<bool(NodeHandle, NodeHandle)>& less) {
     if (!node(h) || !less) return;
     std::vector<u32> idx;
@@ -2728,6 +2735,13 @@ void UiContext::update(f32 dt) {
         }
     };
     styleAndLayout();
+    if (!m_layoutHooks.empty()) { // widgets reacting to their new geometry (tool bar overflow)
+        std::erase_if(m_layoutHooks, [&](const LayoutHookEntry& h) { return !alive(NodeHandle{h.index, h.gen}); });
+        const auto hooks = m_layoutHooks; // a hook may add / remove hooks
+        for (const LayoutHookEntry& h : hooks)
+            if (alive(NodeHandle{h.index, h.gen})) h.fn(*this, NodeHandle{h.index, h.gen});
+        if (m_anyStyleDirty || m_anyLayoutDirty) styleAndLayout();
+    }
     // scroll / view timelines read the new layout (scroll offsets, subject boxes): one more pass when they moved
     if ((!m_timelineAnims.empty() || !m_cssTlNodes.empty()) && syncTimelines()) styleAndLayout();
     removeReplaced();

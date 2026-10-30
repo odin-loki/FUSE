@@ -57,7 +57,11 @@ struct SplitHandle { // between two panes; value() = 1 when the splitter is stac
         const Rect ra = ui.rect(a), rb = ui.rect(b);
         const f32 start = v ? ra.y : ra.x, total = v ? ra.h + rb.h : ra.w + rb.w;
         if (total < 2.f * kMinPane) return;
-        const f32 na = std::clamp(pos - start, kMinPane, total - kMinPane);
+        f32 na = std::clamp(pos - start, kMinPane, total - kMinPane);
+        if (ui.hasClass(ui.parent(h), "collapsible")) { // QSplitter::setChildrenCollapsible: past half the minimum, snap shut
+            if (pos - start < kMinPane * 0.5f) na = 0.f;
+            else if (start + total - pos < kMinPane * 0.5f) na = total;
+        }
         const bool fa = ui.hasClass(a, "fixed"), fb = ui.hasClass(b, "fixed");
         if (fa || !fb) { // the fixed pane follows the handle; with none fixed the first pane becomes fixed
             if (!fa) { ui.addClass(a, "fixed"); ui.setCss(a, "flex-grow", "0"); ui.setCss(a, "flex-shrink", "0"); }
@@ -188,6 +192,12 @@ struct TableState {
     Vec2 bandA, bandB;
     std::set<u64> bandBase; ///< Ctrl+band: the selection the band adds to
     i64 pendingRow = -1, pendingCol = 0; ///< press on a selected item: narrowed on release unless it became a drag
+    u8 order[kMaxCols]{};    ///< visual -> logical column (QHeaderView::logicalIndex)
+    f32 hiddenW[kMaxCols]{}; ///< > 0: column hidden, width to restore (QHeaderView::hideSection)
+    bool movable = false;    ///< QHeaderView::setSectionsMovable
+    i32 hdrPress = -1;       ///< logical section pressed (movable header: sort on release, or move on drag)
+    bool hdrMove = false;
+    f32 hdrX = 0.f, hdrAt = 0.f;
 };
 // Process-wide pool (the UI is single-threaded); a slot is reused once its node is gone.
 std::vector<std::unique_ptr<TableState>>& pool() { static std::vector<std::unique_ptr<TableState>> p; return p; }
@@ -247,10 +257,43 @@ struct TableView {
     /// keeps column `col` in view (QAbstractItemView::scrollTo for the current cell)
     static void showCol(UiContext& ui, NodeHandle n, TableState& s, u32 col) {
         f32 x0 = 0.f;
-        for (u32 k = 0; k < col && k < cols(s); ++k) x0 += s.colW[k];
+        for (u32 vi = 0; vi < cols(s) && s.order[vi] != col; ++vi) x0 += s.colW[s.order[vi]];
         const f32 x1 = x0 + (col < cols(s) ? s.colW[col] : 0.f), vw = viewW(ui, n);
         if (x0 < s.xOff) setX(ui, n, s, x0);
         else if (x1 > s.xOff + vw) setX(ui, n, s, std::min(x0, x1 - vw));
+    }
+    /// logical column under content-x `x` (the last visible one past the end)
+    static u32 colAt(const TableState& s, f32 x) {
+        u32 last = s.order[0];
+        f32 at = 0.f;
+        for (u32 vi = 0; vi < cols(s); ++vi) {
+            const u32 k = s.order[vi];
+            if (s.colW[k] <= 0.f) continue;
+            last = k;
+            if (x < (at += s.colW[k])) return k;
+        }
+        return last;
+    }
+    static u32 visualOf(const TableState& s, u32 logical) {
+        for (u32 vi = 0; vi < cols(s); ++vi) if (s.order[vi] == logical) return vi;
+        return logical;
+    }
+    /// next shown column from `col`, `dir` visual steps (Left/Right follow the visual order and skip hidden ones)
+    static i64 stepCol(const TableState& s, i64 col, i32 dir) {
+        i64 vi = visualOf(s, u32(std::max<i64>(col, 0)));
+        for (vi += dir; vi >= 0 && vi < i64(cols(s)); vi += dir)
+            if (s.colW[s.order[vi]] > 0.f) return s.order[vi];
+        return -1;
+    }
+    static void moveSection(UiContext& ui, NodeHandle n, TableState& s, u32 from, u32 to) {
+        const u32 nc = cols(s);
+        if (from >= nc || to >= nc || from == to) return;
+        const u8 k = s.order[from];
+        if (from < to) std::copy(s.order + from + 1, s.order + to + 1, s.order + from);
+        else std::copy_backward(s.order + to, s.order + from, s.order + from + 1);
+        s.order[to] = k;
+        ui.emit(n, SignalKind::Event, {.value = f32(k), .text = "sectionMoved"});
+        ui.invalidate(n);
     }
     static void bandSelect(UiContext& ui, NodeHandle n, TableState& s) {
         const Rect c = ui.contentRect(n);
@@ -263,7 +306,7 @@ struct TableView {
         const i64 r1 = std::min<i64>(i64(nr) - 1, i64(s.first) + i64(std::floor((y1 - c.y - hh) / rh)));
         std::vector<u32> cs;
         f32 x = c.x - s.xOff;
-        for (u32 k = 0; k < nc; x += s.colW[k], ++k)
+        for (u32 vi = 0, k = s.order[0]; vi < nc; x += s.colW[k], ++vi, k = vi < nc ? s.order[vi] : 0)
             if (s.colW[k] > 0.f && x < x1 && x + s.colW[k] > x0) cs.push_back(k);
         for (i64 r = r0; r <= r1; ++r) {
             if (s.sel.behavior == SelectionBehavior::Rows) keys.insert(u64(r));
@@ -344,7 +387,8 @@ struct TableView {
             r.role = A11yRole::Row; r.part = 1; r.rowIndex = 0; r.bounds = {c.x, c.y, c.w, hh};
             out.push_back(std::move(r));
             f32 x = c.x - s->xOff;
-            for (u32 k = 0; k < nc; ++k) {
+            for (u32 vi = 0; vi < nc; ++vi) { const u32 k = s->order[vi];
+                if (s->hiddenW[k] > 0.f) continue; // hidden sections are not exposed
                 A11ySnapshotNode hc;
                 hc.role = A11yRole::ColumnHeader; hc.part = 2 + k; hc.parent = rowAt; hc.rowIndex = 0; hc.colIndex = i32(k);
                 hc.name = std::string(s->model->header ? s->model->header(s->model->user, k) : std::string_view{});
@@ -364,7 +408,8 @@ struct TableView {
             r.state.selected = s->sel.rowFullySelected(row, nc, sel, s->curCol);
             out.push_back(std::move(r));
             f32 x = c.x - s->xOff;
-            for (u32 k = 0; k < nc; ++k) {
+            for (u32 vi = 0; vi < nc; ++vi) { const u32 k = s->order[vi];
+                if (s->hiddenW[k] > 0.f) continue; // hidden sections are not exposed
                 A11ySnapshotNode gc;
                 gc.role = A11yRole::GridCell; gc.part = id + 1u + k; gc.parent = rowAt;
                 gc.rowIndex = i32(row + h); gc.colIndex = i32(k);
@@ -390,7 +435,7 @@ struct TableView {
         if (s->header) {
             dl.rect({c.x, c.y, c.w, hh}, pc.tint(Color::rgb(0x2A2A33)));
             f32 x = c.x - s->xOff;
-            for (u32 k = 0; k < nc; ++k) {
+            for (u32 vi = 0; vi < nc; ++vi) { const u32 k = s->order[vi];
                 const Rect cell{x + 6.f, c.y, s->colW[k] - 12.f, hh};
                 const std::string_view h = s->model->header ? s->model->header(s->model->user, k) : std::string_view{};
                 dl.pushClip({x, c.y, s->colW[k], hh});
@@ -414,7 +459,7 @@ struct TableView {
             if (full) dl.rect({c.x, y, c.w, rh}, acc.withAlpha(acc.a * 0.55f));
             else if (row & 1u) dl.rect({c.x, y, c.w, rh}, pc.tint(Color::rgb(0xFFFFFF, 0.035f)));
             f32 x = c.x - s->xOff;
-            for (u32 k = 0; k < nc; ++k) {
+            for (u32 vi = 0; vi < nc; ++vi) { const u32 k = s->order[vi];
                 if (s->colW[k] <= 0.f) continue;
                 if (!full && cellSel(ui, pc.node, *s, row, k)) dl.rect({x, y, s->colW[k], rh}, acc.withAlpha(acc.a * 0.55f));
                 if (i32(row) == sel && k == s->curCol && (pc.states & kStateFocus) && (s->sel.explicitSet() || s->sel.behavior != SelectionBehavior::Rows))
@@ -477,9 +522,12 @@ struct TableView {
             }
             if (e.pos.y < c.y + hh) {
                 f32 x = c.x - s->xOff;
-                for (u32 k = 0; k < cols(*s); ++k) {
+                for (u32 vi = 0; vi < cols(*s); ++vi) {
+                    const u32 k = s->order[vi];
+                    if (s->colW[k] <= 0.f) continue;
                     x += s->colW[k];
                     if (std::abs(e.pos.x - x) <= 4.f) { s->resizing = i32(k); s->grab = x - s->colW[k]; return true; }
+                    if (e.pos.x < x && s->movable) { s->hdrPress = i32(k); s->hdrMove = false; s->hdrX = s->hdrAt = e.pos.x; return true; }
                     if (e.pos.x < x) { // sort
                         s->asc = s->sortCol == i32(k) ? !s->asc : true;
                         s->sortCol = i32(k);
@@ -492,8 +540,7 @@ struct TableView {
             }
             const i64 row = i64(s->first) + i64((e.pos.y - c.y - hh) / rh);
             if (row < i64(rows(*s))) {
-                u32 col = 0;
-                for (f32 x = c.x - s->xOff + s->colW[0]; col + 1 < cols(*s) && e.pos.x >= x; x += s->colW[++col]) {}
+                const u32 col = colAt(*s, e.pos.x - c.x + s->xOff);
                 const bool dragging = (s->dd.drag || s->dd.internalMove) && e.button == MouseButton::Left;
                 s->pendingRow = -1;
                 s->curCol = col;
@@ -573,8 +620,13 @@ struct TableView {
                 const f32 f = std::clamp((e.pos.x - tr.x - s->grab) / std::max(1.f, tr.w - th.w), 0.f, 1.f);
                 setX(ui, ec.node, *s, f * maxX(ui, ec.node, *s));
                 ui.invalidate(ec.node);
+            } else if (s->hdrPress >= 0) {
+                s->hdrAt = e.pos.x;
+                if (std::abs(e.pos.x - s->hdrX) > 6.f) s->hdrMove = true; // QApplication::startDragDistance
+                ui.invalidate(ec.node);
             } else if (s->resizing >= 0) {
                 s->colW[s->resizing] = std::max(24.f, std::round(e.pos.x - s->grab));
+                setX(ui, ec.node, *s, s->xOff); // re-clamp the horizontal scroll to the new total width
                 ui.invalidate(ec.node);
             } else if (s->dragScroll) {
                 Rect tr, th;
@@ -591,6 +643,25 @@ struct TableView {
                 const i64 r = s->pendingRow;
                 s->pendingRow = -1;
                 if (s->sel.click(r, s->pendingCol, 0, rowsFn())) changed(ui, ec.node);
+            }
+            if (s->hdrPress >= 0) {
+                const u32 k = u32(s->hdrPress);
+                s->hdrPress = -1;
+                if (s->hdrMove) { // drop the section before the one under the pointer (QHeaderView::moveSection)
+                    const u32 at = colAt(*s, e.pos.x - c.x + s->xOff);
+                    f32 x0 = 0.f;
+                    for (u32 vi = 0; vi < visualOf(*s, at); ++vi) x0 += s->colW[s->order[vi]];
+                    u32 to = visualOf(*s, at) + (e.pos.x - c.x + s->xOff > x0 + s->colW[at] * 0.5f ? 1u : 0u);
+                    const u32 from = visualOf(*s, k);
+                    if (to > from) --to;
+                    if (to != from) moveSection(ui, ec.node, *s, from, to);
+                } else {
+                    s->asc = s->sortCol == i32(k) ? !s->asc : true;
+                    s->sortCol = i32(k);
+                    ui.emit(ec.node, SignalKind::Toggled, {.value = f32(k), .flag = s->asc});
+                }
+                s->hdrMove = false;
+                ui.invalidate(ec.node);
             }
             if (s->dragScroll || s->hDrag || s->band) ui.invalidate(ec.node);
             s->resizing = -1;
@@ -618,11 +689,11 @@ struct TableView {
             case Key::End: navTo(ui, ec.node, *s, ctrl || s->sel.behavior == SelectionBehavior::Rows ? i64(rows(*s)) - 1 : std::max<i64>(cur, 0), ctrl || s->sel.behavior == SelectionBehavior::Rows ? cc : i64(cols(*s)) - 1, e.mods); return true;
             case Key::Left:
                 if (s->sel.behavior == SelectionBehavior::Rows) return false;
-                navTo(ui, ec.node, *s, std::max<i64>(cur, 0), cc - 1, e.mods);
+                if (const i64 nc2 = stepCol(*s, cc, -1); nc2 >= 0) navTo(ui, ec.node, *s, std::max<i64>(cur, 0), nc2, e.mods);
                 return true;
             case Key::Right:
                 if (s->sel.behavior == SelectionBehavior::Rows) return false;
-                navTo(ui, ec.node, *s, std::max<i64>(cur, 0), cc + 1, e.mods);
+                if (const i64 nc2 = stepCol(*s, cc, +1); nc2 >= 0) navTo(ui, ec.node, *s, std::max<i64>(cur, 0), nc2, e.mods);
                 return true;
             case Key::Space:
                 if (cur < 0) return false;
@@ -805,6 +876,42 @@ NodeHandle splitter(UiContext& ui, NodeHandle parent, bool stacked, std::string_
     return s;
 }
 NodeHandle splitterPane(UiContext& ui, NodeHandle split, f32 size, std::string_view id) { return addPane(ui, split, size, id); }
+
+std::vector<f32> splitterSizes(const UiContext& ui, NodeHandle split) {
+    std::vector<f32> out;
+    const bool v = ui.hasClass(split, "stacked");
+    for (NodeHandle c = ui.firstChild(split); ui.alive(c); c = ui.nextSibling(c))
+        if (ui.hasClass(c, "pane")) out.push_back(std::round(v ? ui.rect(c).h : ui.rect(c).w));
+    return out;
+}
+void setSplitterSizes(UiContext& ui, NodeHandle split, std::span<const f32> sizes) {
+    std::size_t i = 0;
+    for (NodeHandle c = ui.firstChild(split); ui.alive(c) && i < sizes.size(); c = ui.nextSibling(c)) {
+        if (!ui.hasClass(c, "pane")) continue;
+        const f32 px = sizes[i++];
+        if (px >= 0.f) {
+            ui.addClass(c, "fixed");
+            ui.setCss(c, "flex-grow", "0");
+            ui.setCss(c, "flex-shrink", "0");
+            setBasis(ui, c, px);
+        } else { // < 0: back to sharing the rest
+            ui.removeClass(c, "fixed");
+            ui.setCss(c, "flex-grow", "1");
+            ui.setCss(c, "flex-shrink", "1");
+            setBasis(ui, c, 0.f);
+        }
+    }
+}
+void setSplitterCollapsible(UiContext& ui, NodeHandle split, bool on) {
+    if (on) ui.addClass(split, "collapsible");
+    else ui.removeClass(split, "collapsible");
+    const bool v = ui.hasClass(split, "stacked");
+    for (NodeHandle c = ui.firstChild(split); ui.alive(c); c = ui.nextSibling(c))
+        if (ui.hasClass(c, "pane")) { // a collapsed pane must be able to reach 0 px
+            ui.setCss(c, v ? "min-height" : "min-width", on ? "0px" : "auto");
+            ui.setCss(c, "overflow", on ? "hidden" : "visible");
+        }
+}
 
 // ---- dock API --------------------------------------------------------------------------------------------------------
 NodeHandle dockArea(UiContext& ui, NodeHandle parent, std::string_view id) {
@@ -1035,6 +1142,7 @@ NodeHandle tableView(UiContext& ui, NodeHandle parent, const ItemModel* model, s
     s.model = model;
     const u32 nc = TableView::cols(s);
     for (u32 c = 0; c < nc; ++c) s.colW[c] = c + 1 == nc ? 160.f : 120.f;
+    for (u32 c = 0; c < kMaxCols; ++c) s.order[c] = u8(c);
     ui.setRange(n, -1.f, 1e9f, 1.f);
     ui.setValue(n, -1.f);
     return n;
@@ -1061,7 +1169,7 @@ f32 tableColumnWidth(const UiContext& ui, NodeHandle table, u32 col) {
     return s && col < kMaxCols ? s->colW[col] : 0.f;
 }
 void setTableColumnWidth(UiContext& ui, NodeHandle table, u32 col, f32 px) {
-    if (TableState* s = stateOf(ui, table); s && col < kMaxCols) { s->colW[col] = std::max(24.f, px); ui.invalidate(table); }
+    if (TableState* s = stateOf(ui, table); s && col < kMaxCols) { s->colW[col] = std::max(24.f, px); TableView::setX(ui, table, *s, s->xOff); ui.invalidate(table); }
 }
 void setTableDelegate(UiContext& ui, NodeHandle table, u32 col, const CellDelegate* delegate) {
     if (TableState* s = stateOf(ui, table); s && col < kMaxCols) { s->delegate[col] = delegate; ui.invalidate(table); }
@@ -1156,4 +1264,36 @@ bool dockRestoreLayout(UiContext& ui, NodeHandle area, std::string_view text) {
     return true;
 }
 
+} // namespace fuse::ui::widgets
+
+namespace fuse::ui::widgets {
+void setTableColumnsMovable(UiContext& ui, NodeHandle table, bool on) { if (TableState* s = stateOf(ui, table)) s->movable = on; }
+void tableMoveColumn(UiContext& ui, NodeHandle table, u32 fromVisual, u32 toVisual) {
+    if (TableState* s = stateOf(ui, table)) TableView::moveSection(ui, table, *s, fromVisual, toVisual);
+}
+u32 tableLogicalColumn(const UiContext& ui, NodeHandle table, u32 visual) {
+    const TableState* s = stateOf(ui, table);
+    return s && visual < TableView::cols(*s) ? s->order[visual] : visual;
+}
+u32 tableVisualColumn(const UiContext& ui, NodeHandle table, u32 logical) {
+    const TableState* s = stateOf(ui, table);
+    return s ? TableView::visualOf(*s, logical) : logical;
+}
+void setTableColumnHidden(UiContext& ui, NodeHandle table, u32 col, bool hidden) {
+    TableState* s = stateOf(ui, table);
+    if (!s || col >= kMaxCols || hidden == (s->hiddenW[col] > 0.f)) return;
+    if (hidden) { s->hiddenW[col] = std::max(1.f, s->colW[col]); s->colW[col] = 0.f; }
+    else { s->colW[col] = s->hiddenW[col]; s->hiddenW[col] = 0.f; }
+    if (hidden && s->curCol == col) {
+        i64 nc = TableView::stepCol(*s, col, +1);
+        if (nc < 0) nc = TableView::stepCol(*s, col, -1);
+        if (nc >= 0) s->curCol = u32(nc);
+    }
+    TableView::setX(ui, table, *s, s->xOff);
+    ui.invalidate(table);
+}
+bool tableColumnHidden(const UiContext& ui, NodeHandle table, u32 col) {
+    const TableState* s = stateOf(ui, table);
+    return s && col < kMaxCols && s->hiddenW[col] > 0.f;
+}
 } // namespace fuse::ui::widgets

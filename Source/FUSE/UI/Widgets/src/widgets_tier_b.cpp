@@ -1,5 +1,6 @@
 // FUSE UI Tier B widgets (plan §5): overlay layer, popup scope, popup menu + combo box list, menu bar, modal dialog,
 // tooltip, virtualised list view, tree view, tab bar / tab widget, scroll area.
+#include <set>
 #include <unordered_map>
 #include "fuse/ui/widgets/widgets.hpp"
 #include "widgets_internal.hpp"
@@ -227,6 +228,19 @@ struct MenuBar {
         return s;
     }
 };
+struct ToolBar {
+    static constexpr std::string_view kName = "toolbar";
+    static constexpr A11yRole kRole = A11yRole::Group;
+    static ComputedStyle defaults() {
+        ComputedStyle s;
+        s.direction = Direction::Row;
+        return s;
+    }
+};
+struct ToolBarSep {
+    static constexpr std::string_view kName = "toolbarseparator";
+    static constexpr A11yRole kRole = A11yRole::Separator;
+};
 struct MenuButton { // text = "Title\nitem\nitem..."
     static constexpr std::string_view kName = "menubutton";
     static constexpr A11yRole kRole = A11yRole::Button;
@@ -396,6 +410,9 @@ struct TreeState {
     bool droppedSelf = false;   ///< that drag was dropped (moved / copied) on this tree itself
     bool barDrag = false;
     f32 grab = 0.f;
+    bool band = false; ///< rubber-band selection from empty space (Multi / Extended)
+    Vec2 bandA, bandB;
+    std::set<u64> bandBase;
 };
 std::unordered_map<const UiContext*, std::unordered_map<u32, TreeState>>& treeStates() {
     static std::unordered_map<const UiContext*, std::unordered_map<u32, TreeState>> m;
@@ -624,6 +641,11 @@ struct TreeView {
             if (ind.h <= 2.f) dl.rect(ind, accent(pc).withAlpha(pc.opacity));
             else dl.roundedRect(ind, {}, {}, accent(pc).withAlpha(pc.opacity), 1.5f);
         }
+        if (s.band) { // QRubberBand
+            const Rect b{std::min(s.bandA.x, s.bandB.x), std::min(s.bandA.y, s.bandB.y), std::abs(s.bandB.x - s.bandA.x), std::abs(s.bandB.y - s.bandA.y)};
+            dl.rect(b, accent(pc).withAlpha(pc.opacity * 0.2f));
+            dl.roundedRect(b, {}, {}, accent(pc).withAlpha(pc.opacity * 0.8f), 1.f);
+        }
         if (bar) {
             dl.rect(tr, pc.tint(Color::rgb(0x000000, 0.15f)), kBar * 0.5f);
             dl.rect(th, pc.tint(Color::rgb(s.barDrag ? 0xB4B4C0 : 0x8A8A96, 0.85f)), kBar * 0.5f);
@@ -714,6 +736,20 @@ struct TreeView {
         select(ui, n, line);
         if (s.sel.navigate(line, 0, mods, rowsFn(ui, n))) changed(ui, n);
     }
+    /// rows the band's vertical extent touches (whole rows: QTreeView selects by row)
+    static void bandSelect(UiContext& ui, NodeHandle n, TreeState& st) {
+        const Rect c = ui.contentRect(n);
+        const f32 rh = rowHeight(ui, n);
+        const i64 r0 = std::max<i64>(0, i64(st.first) + i64(std::floor((std::min(st.bandA.y, st.bandB.y) - c.y) / rh)));
+        const i64 r1 = i64(st.first) + i64(std::floor((std::max(st.bandA.y, st.bandB.y) - c.y) / rh));
+        std::set<u64> keys = st.bandBase;
+        rowInfo(ui, n, [&](u32 r, u32 l) {
+            if (i64(r) >= r0 && i64(r) <= r1) keys.insert(u64(l));
+            return i64(r) > r1;
+        });
+        if (keys != st.sel.keys) { st.sel.keys = std::move(keys); changed(ui, n); }
+        ui.invalidate(n);
+    }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
         UiContext& ui = ec.ui;
@@ -732,7 +768,15 @@ struct TreeView {
             }
             const i64 row = i64(st.first) + i64((e.pos.y - c.y) / rowHeight(ui, n));
             const Hit h = rowInfo(ui, n, [&](u32 r, u32) { return i64(r) == row; });
-            if (h.line < 0) return true;
+            if (h.line < 0) {
+                if (e.button == MouseButton::Left && (st.sel.mode == SelectionMode::Multi || st.sel.mode == SelectionMode::Extended)) {
+                    st.band = true;
+                    st.bandA = st.bandB = e.pos;
+                    st.bandBase = (e.mods & (kModCtrl | kModSuper)) ? st.sel.keys : std::set<u64>{};
+                    bandSelect(ui, n, st);
+                }
+                return true;
+            }
             const f32 ax = c.x + 4.f + f32(h.depth) * kIndent;
             if (h.kids && e.pos.x >= ax && e.pos.x < ax + 14.f) { setTreeExpanded(ui, n, u32(h.line), !h.open); return true; }
             st.pendingLine = -1;
@@ -787,6 +831,15 @@ struct TreeView {
             return true;
         }
         if (e.type == EventType::PointerMove) {
+            if (st.band) {
+                if (ui.pressed() != n) { st.band = false; return false; }
+                st.bandB = e.pos;
+                const Rect c = ui.contentRect(n);
+                if (e.pos.y > c.bottom()) setFirst(ui, n, i64(st.first) + 1);
+                else if (e.pos.y < c.y) setFirst(ui, n, i64(st.first) - 1);
+                bandSelect(ui, n, st);
+                return true;
+            }
             if (st.barDrag) {
                 Rect tr, th;
                 if (!barGeom(ui, n, tr, th)) return true;
@@ -799,6 +852,7 @@ struct TreeView {
         }
         if (e.type == EventType::PointerUp) {
             if (st.barDrag) { st.barDrag = false; ui.invalidate(n); return true; }
+            if (st.band) { st.band = false; ui.invalidate(n); return true; }
             if (dnd::release(ui, n, e.pos, e.mods)) return true;
             if (st.pendingLine >= 0) { // a click (no drag) on a selected row selects just it
                 const i64 l = st.pendingLine;
@@ -920,6 +974,8 @@ void registerTierB(UiContext& ui) {
     r.registerWidget<Menu>();
     r.registerWidget<MenuItem>();
     r.registerWidget<MenuBar>();
+    r.registerWidget<ToolBar>();
+    r.registerWidget<ToolBarSep>();
     r.registerWidget<MenuButton>();
     r.registerWidget<Tooltip>();
     r.registerWidget<ListView>();
@@ -1039,6 +1095,133 @@ bool popupOpen(const UiContext& ui, NodeHandle scope) { return ui.alive(scope) &
 NodeHandle menuBar(UiContext& ui, NodeHandle parent, std::string_view id) {
     registerTierB(ui);
     return make(ui, "menubar", parent, id);
+}
+namespace {
+struct ToolBarState {
+    u32 gen = 0;
+    bool vertical = false;
+    NodeHandle ext;
+    NodeHandle menu; ///< the open extension menu
+    std::unordered_map<u32, f32> size; ///< last shown main-axis size per item (node index)
+    std::vector<NodeHandle> hidden;    ///< items this bar hid (in order)
+};
+std::unordered_map<const UiContext*, std::unordered_map<u32, ToolBarState>>& toolBars() {
+    static std::unordered_map<const UiContext*, std::unordered_map<u32, ToolBarState>> m;
+    return m;
+}
+ToolBarState* toolBarState(const UiContext& ui, NodeHandle bar) {
+    auto& m = toolBars()[&ui];
+    auto it = m.find(bar.index);
+    return it != m.end() && it->second.gen == bar.generation && ui.alive(bar) ? &it->second : nullptr;
+}
+bool isSep(const UiContext& ui, NodeHandle n) { return ui.classOf(n) == ui.registry().find("toolbarseparator"); }
+/// After layout: keep the extension button last, then hide what does not fit (QToolBarLayout).
+void toolBarLayout(UiContext& ui, NodeHandle bar) {
+    ToolBarState* st = toolBarState(ui, bar);
+    if (!st || !ui.alive(st->ext)) return;
+    for (NodeHandle c = ui.nextSibling(st->ext); ui.alive(c); c = ui.nextSibling(st->ext)) ui.insertBefore(c, st->ext);
+    const bool v = st->vertical;
+    const Rect cr = ui.contentRect(bar);
+    const f32 avail = v ? cr.h : cr.w, gap = ui.computed(bar).gap;
+    bool reshrink = false; // items keep their natural size (no flex squeeze): measured on the next pass
+    for (NodeHandle c = ui.firstChild(bar); ui.alive(c); c = ui.nextSibling(c))
+        if (ui.computed(c).shrink != 0.f) { ui.setCss(c, "flex-shrink", "0"); reshrink = true; }
+    if (reshrink) { ui.invalidate(bar); return; }
+    std::vector<NodeHandle> items;
+    for (NodeHandle c = ui.firstChild(bar); ui.alive(c) && c != st->ext; c = ui.nextSibling(c)) {
+        const bool ours = std::find(st->hidden.begin(), st->hidden.end(), c) != st->hidden.end();
+        if (!ours && !ui.computed(c).visible) continue; // hidden by the app: not ours to show
+        if (!ours) { const Rect r = ui.rect(c); st->size[c.index] = v ? r.h : r.w; }
+        items.push_back(c);
+    }
+    auto sz = [&](NodeHandle c) { auto it = st->size.find(c.index); return it == st->size.end() ? 0.f : it->second; };
+    f32 total = 0.f;
+    for (std::size_t i = 0; i < items.size(); ++i) total += sz(items[i]) + (i ? gap : 0.f);
+    std::vector<NodeHandle> hide;
+    if (total > avail + 0.5f) {
+        const Rect er = ui.rect(st->ext);
+        f32 extSz = ui.computed(st->ext).visible ? (v ? er.h : er.w) : 0.f;
+        if (extSz <= 0.f) extSz = st->size.count(st->ext.index) ? st->size[st->ext.index] : 24.f;
+        const f32 budget = avail - extSz - gap;
+        f32 run = 0.f;
+        std::size_t keep = 0;
+        for (; keep < items.size(); ++keep) {
+            const f32 next = run + (keep ? gap : 0.f) + sz(items[keep]);
+            if (next > budget + 0.5f) break;
+            run = next;
+        }
+        while (keep > 0 && isSep(ui, items[keep - 1])) --keep; // no separator left dangling before the cut
+        hide.assign(items.begin() + std::ptrdiff_t(keep), items.end());
+    }
+    if (hide == st->hidden) return; // stable: no style churn
+    for (NodeHandle c : st->hidden) if (ui.alive(c)) ui.setCss(c, "display", "flex");
+    for (NodeHandle c : hide) ui.setCss(c, "display", "none");
+    st->hidden = std::move(hide);
+    if (st->hidden.empty()) ui.setCss(st->ext, "display", "none");
+    else {
+        ui.setCss(st->ext, "display", "flex");
+        const Rect er = ui.rect(st->ext);
+        if ((v ? er.h : er.w) > 0.f) st->size[st->ext.index] = v ? er.h : er.w;
+    }
+}
+} // namespace
+
+NodeHandle toolBar(UiContext& ui, NodeHandle parent, bool vertical, std::string_view id) {
+    registerTierB(ui);
+    const NodeHandle bar = make(ui, "toolbar", parent, id);
+    ui.setA11y(bar, A11yRole::Group, "toolbar");
+    if (vertical) ui.setCss(bar, "flex-direction", "column");
+    ui.setCss(bar, "overflow", "hidden");
+    ToolBarState& st = toolBars()[&ui][bar.index];
+    st = ToolBarState{bar.generation, vertical};
+    st.ext = toolButton(ui, bar, "\u00BB");
+    ui.addClass(st.ext, "toolbar-extension");
+    ui.setA11y(st.ext, A11yRole::Button, "More");
+    ui.setCss(st.ext, "flex-shrink", "0");
+    ui.connect(st.ext, SignalKind::Clicked, [bar](UiContext& c, NodeHandle ext, const SignalArgs&) {
+        ToolBarState* s = toolBarState(c, bar);
+        if (!s || s->hidden.empty()) return;
+        std::string items;
+        for (NodeHandle h : s->hidden) {
+            if (!items.empty()) items.push_back('\n');
+            if (isSep(c, h)) { items += "-"; continue; }
+            std::string t(c.text(h));
+            items += t.empty() ? std::string("(item)") : t;
+        }
+        const Rect r = c.rect(ext);
+        s->menu = popupMenu(c, ext, items, s->vertical ? Vec2{r.right(), r.y} : Vec2{r.x, r.bottom()});
+    });
+    ui.connect(st.ext, SignalKind::Submitted, [bar](UiContext& c, NodeHandle, const SignalArgs& a) {
+        ToolBarState* s = toolBarState(c, bar);
+        if (!s) return;
+        const u32 i = u32(a.value);
+        if (c.alive(s->menu)) closePopup(c, s->menu); // also when the pick was signalled on the button directly
+        s->menu = {};
+        if (i < s->hidden.size() && c.alive(s->hidden[i])) c.emit(s->hidden[i], SignalKind::Clicked, {});
+    });
+    ui.setCss(st.ext, "display", "none");
+    ui.setLayoutHook(bar, &toolBarLayout);
+    return bar;
+}
+NodeHandle toolBarSeparator(UiContext& ui, NodeHandle bar) {
+    const NodeHandle s = make(ui, "toolbarseparator", bar, {});
+    const ToolBarState* st = toolBarState(ui, bar);
+    const bool v = st && st->vertical;
+    ui.setCss(s, v ? "height" : "width", "1px");
+    ui.setCss(s, v ? "width" : "height", "auto");
+    ui.setCss(s, "align-self", "stretch");
+    ui.setCss(s, "margin", v ? "4px 2px" : "2px 4px");
+    ui.setCss(s, "background", "#55555f");
+    ui.setCss(s, "flex-shrink", "0");
+    return s;
+}
+NodeHandle toolBarExtension(const UiContext& ui, NodeHandle bar) {
+    const ToolBarState* st = toolBarState(ui, bar);
+    return st ? st->ext : NodeHandle{};
+}
+std::vector<NodeHandle> toolBarOverflow(const UiContext& ui, NodeHandle bar) {
+    const ToolBarState* st = toolBarState(ui, bar);
+    return st ? st->hidden : std::vector<NodeHandle>{};
 }
 NodeHandle menuBarMenu(UiContext& ui, NodeHandle bar, std::string_view title, std::string_view items, std::string_view id) {
     const NodeHandle b = make(ui, "menubutton", bar, id);

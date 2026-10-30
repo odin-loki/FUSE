@@ -60,19 +60,27 @@ public:
     }
     ULONG STDMETHODCALLTYPE AddRef() override { return ++refs; }
     ULONG STDMETHODCALLTYPE Release() override { const ULONG r = --refs; if (!r) delete this; return r; }
+    ~DropTarget() { if (helper) helper->Release(); }
     HRESULT STDMETHODCALLTYPE DragEnter(IDataObject* data, DWORD, POINTL pt, DWORD* effect) override {
         FORMATETC f{CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
         FORMATETC t{CF_UNICODETEXT, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
         ok = win && win->acceptsExternalDrops() && (data->QueryGetData(&f) == S_OK || data->QueryGetData(&t) == S_OK || !mimeFormats(data).empty());
-        return DragOver(0, pt, effect);
+        const HRESULT r = DragOver(0, pt, effect);
+        // the source's drag image (IDragSourceHelper) drawn over this window while the drag is here
+        if (!helper)
+            CoCreateInstance(CLSID_DragDropHelper, nullptr, CLSCTX_INPROC_SERVER, IID_IDropTargetHelper, reinterpret_cast<void**>(&helper));
+        if (helper) { POINT p{pt.x, pt.y}; helper->DragEnter(hwnd, data, &p, *effect); }
+        return r;
     }
     HRESULT STDMETHODCALLTYPE DragOver(DWORD, POINTL pt, DWORD* effect) override {
         *effect = ok ? DROPEFFECT_COPY : DROPEFFECT_NONE;
         if (ok) { win->ui().pointerMove(client(pt)); win->requestRedraw(); }
+        if (helper) { POINT p{pt.x, pt.y}; helper->DragOver(&p, *effect); }
         return S_OK;
     }
-    HRESULT STDMETHODCALLTYPE DragLeave() override { ok = false; return S_OK; }
+    HRESULT STDMETHODCALLTYPE DragLeave() override { ok = false; if (helper) helper->DragLeave(); return S_OK; }
     HRESULT STDMETHODCALLTYPE Drop(IDataObject* data, DWORD, POINTL pt, DWORD* effect) override {
+        if (helper) { POINT p{pt.x, pt.y}; helper->Drop(data, &p, ok ? DROPEFFECT_COPY : DROPEFFECT_NONE); }
         *effect = DROPEFFECT_NONE;
         if (!ok) return S_OK;
         AppWindow::ExternalDrop d;
@@ -142,6 +150,7 @@ private:
     }
     std::atomic<ULONG> refs{1};
     bool ok = false;
+    IDropTargetHelper* helper = nullptr; // shell drag image over this window
 };
 
 /// Static data object: CF_HDROP (+ CF_UNICODETEXT of the paths / text).
@@ -185,7 +194,34 @@ public:
     HRESULT STDMETHODCALLTYPE GetDataHere(FORMATETC*, STGMEDIUM*) override { return E_NOTIMPL; }
     HRESULT STDMETHODCALLTYPE QueryGetData(FORMATETC* f) override { return pick(f) ? S_OK : DV_E_FORMATETC; }
     HRESULT STDMETHODCALLTYPE GetCanonicalFormatEtc(FORMATETC*, FORMATETC* out) override { out->ptd = nullptr; return E_NOTIMPL; }
-    HRESULT STDMETHODCALLTYPE SetData(FORMATETC*, STGMEDIUM*, BOOL) override { return E_NOTIMPL; }
+    /// HGLOBAL formats only: what the shell's drag image helper (IDragSourceHelper) stores ("DragImageBits",
+    /// "DragContext", ...) so targets can draw the image.
+    HRESULT STDMETHODCALLTYPE SetData(FORMATETC* f, STGMEDIUM* m, BOOL release) override {
+        if (!f || !m || m->tymed != TYMED_HGLOBAL || !(f->tymed & TYMED_HGLOBAL) || !m->hGlobal) return DV_E_TYMED;
+        HGLOBAL g = m->hGlobal;
+        if (!release) {
+            const SIZE_T n = GlobalSize(g);
+            HGLOBAL c = GlobalAlloc(GMEM_MOVEABLE, n);
+            if (!c) return E_OUTOFMEMORY;
+            std::memcpy(GlobalLock(c), GlobalLock(g), n);
+            GlobalUnlock(g);
+            GlobalUnlock(c);
+            g = c;
+        } else if (m->pUnkForRelease) { // ownership stays with the caller's object: keep a copy instead
+            const SIZE_T n = GlobalSize(g);
+            HGLOBAL c = GlobalAlloc(GMEM_MOVEABLE, n);
+            if (!c) return E_OUTOFMEMORY;
+            std::memcpy(GlobalLock(c), GlobalLock(g), n);
+            GlobalUnlock(g);
+            GlobalUnlock(c);
+            ReleaseStgMedium(m);
+            g = c;
+        }
+        for (auto& [cf, old] : extra)
+            if (cf == f->cfFormat) { GlobalFree(old); old = g; return S_OK; }
+        extra.emplace_back(f->cfFormat, g);
+        return S_OK;
+    }
     HRESULT STDMETHODCALLTYPE EnumFormatEtc(DWORD dir, IEnumFORMATETC** out) override {
         if (dir != DATADIR_GET) return E_NOTIMPL;
         std::vector<FORMATETC> fs;
@@ -260,6 +296,48 @@ IDataObject* win32MakeDataObject(const AppWindow::ExternalDrag& d) {
     return o;
 }
 
+/// The payload's pixmap as a top-down 32 bpp premultiplied BGRA DIB section (what SHDRAGIMAGE wants); null without one.
+void* win32DragBitmap(const AppWindow::ExternalDrag& d) {
+    if (d.image.empty() || d.imageW <= 0 || d.imageH <= 0 || d.image.size() < std::size_t(d.imageW) * std::size_t(d.imageH)) return nullptr;
+    BITMAPINFO bi{};
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = LONG(d.imageW);
+    bi.bmiHeader.biHeight = -LONG(d.imageH);
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+    void* bits = nullptr;
+    HBITMAP bmp = CreateDIBSection(nullptr, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
+    if (!bmp || !bits) return nullptr;
+    auto* px = static_cast<std::uint32_t*>(bits);
+    for (std::size_t i = 0, n = std::size_t(d.imageW) * std::size_t(d.imageH); i < n; ++i) {
+        const std::uint32_t c = d.image[i]; // RGBA8 in memory: 0xAABBGGRR -> BGRA8: 0xAARRGGBB
+        px[i] = (c & 0xFF00FF00u) | ((c & 0xFFu) << 16) | ((c >> 16) & 0xFFu);
+    }
+    GdiFlush();
+    return bmp;
+}
+
+/// Attaches the payload pixmap to `data` through the shell drag image helper (IDragSourceHelper::InitializeFromBitmap),
+/// so Explorer and other OLE targets using IDropTargetHelper draw it under the pointer. Returns the HRESULT
+/// (S_FALSE: no pixmap).
+long win32AttachDragImage(IDataObject* data, const AppWindow::ExternalDrag& d) {
+    HBITMAP bmp = static_cast<HBITMAP>(win32DragBitmap(d));
+    if (!bmp) return S_FALSE;
+    IDragSourceHelper* helper = nullptr;
+    HRESULT hr = CoCreateInstance(CLSID_DragDropHelper, nullptr, CLSCTX_INPROC_SERVER, IID_IDragSourceHelper, reinterpret_cast<void**>(&helper));
+    if (FAILED(hr) || !helper) { DeleteObject(bmp); return hr; }
+    SHDRAGIMAGE sdi{};
+    sdi.sizeDragImage = {LONG(d.imageW), LONG(d.imageH)};
+    sdi.ptOffset = {LONG(d.hotX), LONG(d.hotY)};
+    sdi.hbmpDragImage = bmp;
+    sdi.crColorKey = CLR_NONE;
+    hr = helper->InitializeFromBitmap(&sdi, data); // takes the bitmap on success
+    if (FAILED(hr)) DeleteObject(bmp);
+    helper->Release();
+    return hr;
+}
+
 /// Drag cursors with no stock IDC_*: Copy = arrow + "+" badge, Link = arrow + shortcut-arrow badge (32x32 ARGB,
 /// hotspot at the arrow tip), built once. Other shapes: null (the caller uses LoadCursorW).
 void* win32CursorHandle(CursorShape shape) {
@@ -329,6 +407,7 @@ IDropTarget* win32DropTarget(void* target) { return static_cast<DropTarget*>(tar
 /// Modal OLE drag (returns after the drop / cancel); reports the outcome to `w`.
 bool win32DoDragDrop(AppWindow& w, const AppWindow::ExternalDrag& d) {
     IDataObject* data = win32MakeDataObject(d);
+    win32AttachDragImage(data, d); // best effort: without it the OS shows the cursor only
     auto* src = new DropSource;
     DWORD effect = DROPEFFECT_NONE;
     const HRESULT hr = DoDragDrop(data, src, DROPEFFECT_COPY | DROPEFFECT_LINK, &effect);

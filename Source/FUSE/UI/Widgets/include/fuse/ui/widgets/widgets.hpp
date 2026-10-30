@@ -252,6 +252,13 @@ void closePopup(UiContext& ui, NodeHandle n);
 /// True while a popup scope is open.
 bool popupOpen(const UiContext& ui, NodeHandle scope);
 
+/// QToolBar: a row (or column) of tool buttons / any widgets. Items that do not fit go into the extension button's
+/// menu ("»", QToolBarExtension), in order; picking one emits Clicked on that item. Separators at the cut are hidden.
+NodeHandle toolBar(UiContext& ui, NodeHandle parent, bool vertical = false, std::string_view id = {});
+NodeHandle toolBarSeparator(UiContext& ui, NodeHandle bar);
+NodeHandle toolBarExtension(const UiContext& ui, NodeHandle bar);           ///< the "»" button (hidden while all fit)
+std::vector<NodeHandle> toolBarOverflow(const UiContext& ui, NodeHandle bar); ///< items now in the extension menu
+
 /// A horizontal menu bar; menuBarMenu adds a title button whose popup lists `items` (Submitted re-emitted on it).
 NodeHandle menuBar(UiContext& ui, NodeHandle parent, std::string_view id = {});
 NodeHandle menuBarMenu(UiContext& ui, NodeHandle bar, std::string_view title, std::string_view items, std::string_view id = {});
@@ -346,6 +353,12 @@ NodeHandle scrollArea(UiContext& ui, NodeHandle parent, std::string_view id = {}
 /// that many px (dragging resizes it); size 0 panes share the rest. Dragging emits ValueChanged {px} on the splitter.
 NodeHandle splitter(UiContext& ui, NodeHandle parent, bool stacked = false, std::string_view id = {});
 NodeHandle splitterPane(UiContext& ui, NodeHandle split, f32 size = 0.f, std::string_view id = {});
+/// QSplitter::sizes / setSizes: main-axis px of each pane. setSplitterSizes: >= 0 fixes the pane at that size,
+/// < 0 makes it share the rest again.
+std::vector<f32> splitterSizes(const UiContext& ui, NodeHandle split);
+void setSplitterSizes(UiContext& ui, NodeHandle split, std::span<const f32> sizes);
+/// QSplitter::setChildrenCollapsible: dragging a handle past half the minimum pane size collapses that pane to 0.
+void setSplitterCollapsible(UiContext& ui, NodeHandle split, bool on);
 
 /// Dock area: left / right / bottom regions around a centre, each resizable by splitter handles and hidden while
 /// empty. Dock widgets are titled panels with a close button; several in one region stack.
@@ -414,6 +427,15 @@ void tableModelChanged(UiContext& ui, NodeHandle table);
 u32 tableFirstVisible(const UiContext& ui, NodeHandle table);
 f32 tableColumnWidth(const UiContext& ui, NodeHandle table, u32 col);
 void setTableColumnWidth(UiContext& ui, NodeHandle table, u32 col, f32 px);
+/// QHeaderView section moving / hiding. Columns keep their logical index (model column, sort column, curCol);
+/// only the on-screen order changes. A header drag past the start-drag distance moves the section on a movable
+/// header (a plain click still sorts, on release) and emits SignalKind::Event {text "sectionMoved", value logical}.
+void setTableColumnsMovable(UiContext& ui, NodeHandle table, bool on);
+void tableMoveColumn(UiContext& ui, NodeHandle table, u32 fromVisual, u32 toVisual);
+u32 tableLogicalColumn(const UiContext& ui, NodeHandle table, u32 visual);
+u32 tableVisualColumn(const UiContext& ui, NodeHandle table, u32 logical);
+void setTableColumnHidden(UiContext& ui, NodeHandle table, u32 col, bool hidden);
+bool tableColumnHidden(const UiContext& ui, NodeHandle table, u32 col);
 /// List view over column 0 of a model (shares the table machinery, no header).
 NodeHandle modelListView(UiContext& ui, NodeHandle parent, const ItemModel* model, std::string_view id = {});
 
@@ -507,17 +529,28 @@ struct CellDelegate {
 void setTableDelegate(UiContext& ui, NodeHandle table, u32 col, const CellDelegate* delegate);
 
 /// Sort / filter proxy over a source model (not owned). Identity (no row map, no memory) until a filter or sort is
-/// set; filtering is a case-insensitive substring match on one column. Call invalidate() after the source changes.
+/// set; filtering is a case-insensitive substring match on one column (or all, kAllColumns), ANDed with an optional
+/// row predicate. Call invalidate() after the source changes.
 class SortFilterProxy {
 public:
     explicit SortFilterProxy(const ItemModel* source);
     SortFilterProxy(const SortFilterProxy&) = delete;
     SortFilterProxy& operator=(const SortFilterProxy&) = delete;
+    static constexpr u32 kAllColumns = ~0u; ///< setFilter column: match in any column (filterKeyColumn -1)
+    /// Row filter beyond the needle (QSortFilterProxyModel::filterAcceptsRow): false hides source row `row`.
+    using RowFilter = bool (*)(const void* user, const ItemModel& source, u32 row);
+    /// Strict-weak "a sorts before b" on the sort column's text (lessThan); replaces the numeric / string default.
+    using LessThan = bool (*)(const void* user, std::string_view a, std::string_view b);
     void setFilter(u32 col, std::string_view needle); ///< empty needle = no filter
+    void setRowFilter(RowFilter fn, const void* user = nullptr); ///< nullptr clears
+    void setLessThan(LessThan fn, const void* user = nullptr);   ///< nullptr = default ordering
     void sortBy(i32 col, bool ascending);              ///< col < 0 = source order
+    i32 sortColumn() const { return m_sortCol; }
+    bool sortAscending() const { return m_asc; }
     void invalidate();
     u32 rows() const;
-    u32 sourceRow(u32 row) const { return m_identity ? row : m_map[row]; }
+    u32 sourceRow(u32 row) const { return m_identity ? row : m_map[row]; }        ///< mapToSource
+    i64 proxyRow(u32 sourceRow) const;                                             ///< mapFromSource; -1 = filtered out
     const ItemModel& model() const { return m_model; }
 
 private:
@@ -528,6 +561,12 @@ private:
     u32 m_filterCol = 0;
     i32 m_sortCol = -1;
     bool m_asc = true, m_identity = true;
+    RowFilter m_rowFilter = nullptr;
+    const void* m_rowFilterUser = nullptr;
+    LessThan m_less = nullptr;
+    const void* m_lessUser = nullptr;
+    mutable std::vector<i64> m_inverse; ///< lazily built source -> proxy map
+    mutable bool m_inverseValid = false;
 };
 
 /// Virtualised icon / tile grid over column 0 of a model: tiles of tileW x tileH flow left to right, rows scroll.

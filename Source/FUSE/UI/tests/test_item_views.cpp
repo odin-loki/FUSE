@@ -331,5 +331,62 @@ int main() {
         ui.update(1.f / 60.f);
         UI_CHECK(partRect(ui, ht, A11yRole::GridCell, "h0").x == r.x);
     }
+    // ---- h-scroll re-clamped when columns shrink ----
+    {
+        const NodeHandle ht = ui.find("ht");
+        UI_CHECK(ui.alive(ht));
+        const Rect r = ui.contentRect(ht);
+        ui.wheel(mid(ui.rect(ht)), {-20.f, 0.f}); // fully right
+        ui.update(1.f / 60.f);
+        UI_CHECK(partRect(ui, ht, A11yRole::GridCell, "h0").x < r.x);
+        for (u32 k = 0; k < 3; ++k) w::setTableColumnWidth(ui, ht, k, 50.f); // 150 px fits: no h-scroll left
+        ui.update(1.f / 60.f);
+        UI_CHECK(partRect(ui, ht, A11yRole::GridCell, "h0").x == r.x);
+    }
+    // ---- tree rubber band + Shift+PageDown in Multi ----
+    {
+        const NodeHandle tb = w::treeView(ui, col, "r0\nr1\n\tr1a\nr2\nr3", "tband");
+        ui.setCss(tb, "height", "200px");
+        w::setItemSelectionMode(ui, tb, w::SelectionMode::Extended);
+        ui.update(1.f / 60.f);
+        const Rect r1 = partRect(ui, tb, A11yRole::GridCell, "r1"), r3 = partRect(ui, tb, A11yRole::GridCell, "r3");
+        const Vec2 a{r3.x + 10.f, r3.bottom() + 8.f};
+        UI_CHECK(a.y < ui.contentRect(tb).bottom());
+        ui.pointerDown(a);
+        ui.pointerMove({a.x + 3.f, r3.y + 2.f});
+        ui.pointerMove({a.x + 6.f, r1.y + 2.f});
+        UI_CHECK_EQ(lines(w::selectedRows(ui, tb)), std::string("1,2,3,4,"));
+        ui.pointerUp({a.x + 6.f, r1.y + 2.f});
+        ui.update(1.f / 60.f);
+        w::setItemSelectionMode(ui, tb, w::SelectionMode::Multi);
+        w::clearItemSelection(ui, tb);
+        ui.setFocus(tb);
+        click(ui, cell(tb, "r0")); // toggles r0 on, anchor r0
+        key(ui, Key::PageDown, kModShift);
+        UI_CHECK_EQ(lines(w::selectedRows(ui, tb)), std::string("0,1,2,3,4,"));
+        key(ui, Key::Up); // Multi: plain arrows move only
+        UI_CHECK_EQ(lines(w::selectedRows(ui, tb)), std::string("0,1,2,3,4,"));
+    }
+    // ---- pixmap drag image at pos - hotspot ----
+    {
+        const NodeHandle ps = w::panel(ui, col);
+        ui.setCss(ps, "height", "30px");
+        ui.update(1.f / 60.f);
+        w::setDragSource(ui, ps, [](UiContext&, NodeHandle, Vec2, w::DragPayload& p) {
+            p.set("text/plain", "pix"); p.imageIndex = 3; p.imageW = 32.f; p.imageH = 24.f; p.hotX = 8.f; p.hotY = 6.f; return true; });
+        const Vec2 a = mid(ui.rect(ps));
+        ui.pointerDown(a);
+        ui.pointerMove({a.x + 20.f, a.y});
+        ui.pointerMove({a.x + 40.f, a.y + 5.f});
+        ui.update(1.f / 60.f);
+        const NodeHandle img = w::dragImage(ui);
+        UI_CHECK(ui.alive(img) && ui.hasClass(img, "drag-image"));
+        const Rect ir = ui.rect(img);
+        UI_CHECK(std::abs(ir.x - (a.x + 40.f - 8.f)) < 1.f && std::abs(ir.y - (a.y + 5.f - 6.f)) < 1.f && std::abs(ir.w - 32.f) < 1.f && std::abs(ir.h - 24.f) < 1.f);
+        w::cancelDrag(ui);
+        ui.pointerUp({a.x + 40.f, a.y + 5.f});
+        ui.update(1.f / 60.f);
+        UI_CHECK(!ui.alive(w::dragImage(ui)) && !w::dragActive(ui));
+    }
     return fuse::ui::test::finish("fuse_ui_item_views");
 }

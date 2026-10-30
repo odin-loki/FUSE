@@ -335,6 +335,11 @@ public:
     bool reorderChildren(NodeHandle parent, std::span<const NodeHandle> order);
     /// Stable sort of `parent`'s children by `less`.
     void sortChildren(NodeHandle parent, const std::function<bool(NodeHandle, NodeHandle)>& less);
+    /// Called after each layout pass that arranged `n` (ResizeObserver / QLayout::setGeometry style): the hook may read
+    /// rects and change styles (show / hide overflow items); one more style + layout pass then runs in the same
+    /// update(). Null removes it. One hook per node; dropped with the node.
+    using LayoutHook = void (*)(UiContext&, NodeHandle);
+    void setLayoutHook(NodeHandle n, LayoutHook hook);
     u32 nodeCount() const { return m_live; }
     NodeHandle find(std::string_view id) const;
     NodeHandle handleOf(u32 index) const;
@@ -743,6 +748,8 @@ private:
         u32 anim = ~0u, animGen = 0; ///< scripted animation (callbacks)
     };
     std::vector<MotionEvent> m_motionEvents; ///< dispatched at the end of update()
+    struct LayoutHookEntry { u32 index, gen; LayoutHook fn; };
+    std::vector<LayoutHookEntry> m_layoutHooks;
 
     struct Command {
         std::atomic<u64> seq{0};

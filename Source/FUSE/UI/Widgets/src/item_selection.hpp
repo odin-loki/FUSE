@@ -79,7 +79,13 @@ struct ItemSelection {
     bool navigate(i64 r, i64 c, u8 mods, Rows&& rows) {
         if (!explicitSet() || r < 0) return false;
         const auto before = keys;
-        if (mode == SelectionMode::Multi) return false; // MultiSelection: arrows move the current item only
+        if (mode == SelectionMode::Multi) { // MultiSelection: arrows move the current item; Shift(+PageUp / Down...) adds the range
+            if (!(mods & kModShift)) return false;
+            std::set<u64> s = keys;
+            range(r, c, rows, s);
+            keys = std::move(s);
+            return keys != before;
+        }
         if (mods & kModShift) {
             std::set<u64> s;
             range(r, c, rows, s);

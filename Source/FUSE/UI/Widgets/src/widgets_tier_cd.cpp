@@ -997,25 +997,51 @@ void SortFilterProxy::setFilter(u32 col, std::string_view needle) {
     for (char& c : m_needle) c = char(std::tolower(static_cast<unsigned char>(c)));
     invalidate();
 }
+void SortFilterProxy::setRowFilter(RowFilter fn, const void* user) {
+    m_rowFilter = fn;
+    m_rowFilterUser = user;
+    invalidate();
+}
+void SortFilterProxy::setLessThan(LessThan fn, const void* user) {
+    m_less = fn;
+    m_lessUser = user;
+    invalidate();
+}
+i64 SortFilterProxy::proxyRow(u32 sourceRow) const {
+    if (m_identity) return sourceRow < rows() ? i64(sourceRow) : -1;
+    if (!m_inverseValid) {
+        m_inverse.assign(m_src && m_src->rows ? m_src->rows(m_src->user) : 0u, -1);
+        for (std::size_t i = 0; i < m_map.size(); ++i) if (m_map[i] < m_inverse.size()) m_inverse[m_map[i]] = i64(i);
+        m_inverseValid = true;
+    }
+    return sourceRow < m_inverse.size() ? m_inverse[sourceRow] : -1;
+}
 void SortFilterProxy::sortBy(i32 col, bool ascending) {
     m_sortCol = col;
     m_asc = ascending;
     invalidate();
 }
 void SortFilterProxy::invalidate() {
-    m_identity = m_needle.empty() && m_sortCol < 0;
+    m_identity = m_needle.empty() && m_sortCol < 0 && !m_rowFilter;
     m_map.clear();
+    m_inverse.clear();
+    m_inverseValid = false;
     if (m_identity || !m_src || !m_src->rows) { m_map.shrink_to_fit(); return; }
     const u32 n = m_src->rows(m_src->user);
     std::string scratch, low;
     m_map.reserve(m_needle.empty() ? n : n / 4);
     for (u32 r = 0; r < n; ++r) {
         if (!m_needle.empty()) {
-            const std::string_view d = m_src->data(m_src->user, r, m_filterCol, scratch);
-            low.assign(d);
-            for (char& c : low) c = char(std::tolower(static_cast<unsigned char>(c)));
-            if (low.find(m_needle) == std::string::npos) continue;
+            bool hit = false;
+            const u32 c0 = m_filterCol == kAllColumns ? 0u : m_filterCol, c1 = m_filterCol == kAllColumns ? m_src->columns : m_filterCol + 1u;
+            for (u32 col = c0; col < c1 && !hit; ++col) {
+                low.assign(m_src->data(m_src->user, r, col, scratch));
+                for (char& c : low) c = char(std::tolower(static_cast<unsigned char>(c)));
+                hit = low.find(m_needle) != std::string::npos;
+            }
+            if (!hit) continue;
         }
+        if (m_rowFilter && !m_rowFilter(m_rowFilterUser, *m_src, r)) continue;
         m_map.push_back(r);
     }
     if (m_sortCol >= 0 && u32(m_sortCol) < m_src->columns) {
@@ -1023,6 +1049,7 @@ void SortFilterProxy::invalidate() {
         const u32 col = u32(m_sortCol);
         std::vector<double> num(m_map.size());
         bool numeric = true;
+        if (m_less) numeric = false;
         for (std::size_t i = 0; i < m_map.size() && numeric; ++i) numeric = parseNum(m_src->data(m_src->user, m_map[i], col, scratch), num[i]);
         std::vector<u32> idx(m_map.size());
         std::iota(idx.begin(), idx.end(), 0u);
@@ -1031,7 +1058,8 @@ void SortFilterProxy::invalidate() {
         } else {
             std::vector<std::string> keys(m_map.size());
             for (std::size_t i = 0; i < m_map.size(); ++i) keys[i].assign(m_src->data(m_src->user, m_map[i], col, scratch));
-            std::stable_sort(idx.begin(), idx.end(), [&](u32 a, u32 b) { return m_asc ? keys[a] < keys[b] : keys[b] < keys[a]; });
+            const auto less = [&](u32 a, u32 b) { return m_less ? m_less(m_lessUser, keys[a], keys[b]) : keys[a] < keys[b]; };
+            std::stable_sort(idx.begin(), idx.end(), [&](u32 a, u32 b) { return m_asc ? less(a, b) : less(b, a); });
         }
         std::vector<u32> sorted(m_map.size());
         for (std::size_t i = 0; i < idx.size(); ++i) sorted[i] = m_map[idx[i]];
