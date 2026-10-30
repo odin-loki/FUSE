@@ -1,3 +1,5 @@
+#include "fuse/ui/from_chars.hpp"
+#include "fuse/ui/os.hpp"
 #include "fuse/ui/doc/document.hpp"
 
 #include "fuse/ui/widgets/widgets.hpp"
@@ -37,7 +39,7 @@ void Model::setString(u32 s, std::string_view v) {
     var.isString = true;
     var.text.assign(v);
     double d = 0.0;
-    const auto r = std::from_chars(v.data(), v.data() + v.size(), d);
+    const auto r = fuse::ui::fromChars(v.data(), v.data() + v.size(), d);
     var.number = r.ec == std::errc{} ? d : 0.0;
     var.version = ++m_version;
 }
@@ -91,7 +93,7 @@ struct ExprParser {
             std::size_t j = i;
             while (j < s.size() && ((s[j] >= '0' && s[j] <= '9') || s[j] == '.' || s[j] == 'e' || s[j] == 'E')) ++j;
             double v = 0;
-            const auto r = std::from_chars(s.data() + i, s.data() + j, v);
+            const auto r = fuse::ui::fromChars(s.data() + i, s.data() + j, v);
             if (r.ec != std::errc{}) return fail("bad number");
             i = j;
             code.push_back({Expr::Op::Num, 0, v});
@@ -258,7 +260,7 @@ std::expected<Template, std::string> Template::compile(std::string_view src, Mod
         if (!body.empty() && body[0] == '=') { twoWay = true; body.remove_prefix(1); }
         if (const auto colon = body.rfind(':'); colon != std::string_view::npos) {
             int d = 0;
-            const auto r = std::from_chars(body.data() + colon + 1, body.data() + body.size(), d);
+            const auto r = fuse::ui::fromChars(body.data() + colon + 1, body.data() + body.size(), d);
             if (r.ec != std::errc{} || r.ptr != body.data() + body.size() || d < 0 || d > 9)
                 return std::unexpected("bad ':decimals' in \"" + std::string(src) + "\"");
             p.decimals = d;
@@ -669,11 +671,9 @@ std::expected<void, DocError> Document::reload(std::string_view json) {
 }
 
 bool readTextFile(const char* path, std::string& out) {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) return false;
-    std::ostringstream ss;
-    ss << f.rdbuf();
-    out = ss.str();
+    auto text = fuse::ui::os::readFile(path); // fuse::ui::os seam (FORGE)
+    if (!text) return false;
+    out = std::move(*text);
     return true;
 }
 

@@ -45,7 +45,7 @@ enum class Direction : u8 { Row, Column };
 enum class Align : u8 { Auto, Start, Center, End, Stretch };
 enum class Justify : u8 { Start, Center, End, SpaceBetween, SpaceAround };
 enum class Overflow : u8 { Visible, Clip, Scroll };
-enum class GradientDir : u8 { None, Vertical, Horizontal };
+enum class GradientDir : u8 { None, Vertical, Horizontal, Angle }; ///< Angle: CSS multi-stop linear-gradient
 enum class TextAlignment : u8 { Start, Center, End };
 
 inline constexpr int kMaxGridTracks = 8;
@@ -73,6 +73,10 @@ struct ComputedStyle {
     // paint
     Color background, background2, borderColor, color = Color::rgb(0xFFFFFF), shadowColor;
     GradientDir gradient = GradientDir::None;
+    f32 gradientAngle = 180.f; ///< GradientDir::Angle: CSS degrees (0 = to top, 90 = to right)
+    u8 gradientStopCount = 0;  ///< GradientDir::Angle stops (offsets 0..1, colours straight alpha)
+    std::array<f32, kMaxGridTracks> gradientOffsets{};
+    std::array<Color, kMaxGridTracks> gradientColors{};
     f32 borderWidth = 0.f;
     std::array<f32, 4> radius{}; ///< tl, tr, br, bl
     f32 fontSize = 14.f;
@@ -91,11 +95,11 @@ enum class Prop : u8 {
     AlignItems, AlignSelf, Justify, Wrap, Overflow, GridColumns, GridColumn, GridColumnSpan, GridRow, GridRowSpan,
     Left, Top, Right, Bottom, CenterX, CenterY, Background, Background2, Gradient, BorderColor, BorderWidth,
     RadiusTL, RadiusTR, RadiusBR, RadiusBL, Color, FontSize, TextAlign, Opacity, ShadowColor, ShadowBlur, ShadowX,
-    ShadowY, PointerEvents, BackdropBlur, Count
+    ShadowY, PointerEvents, BackdropBlur, GradientAngle, GradientStops, Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
 
-enum class PropType : u8 { Bool, Enum, Length, Number, Color, Tracks };
+enum class PropType : u8 { Bool, Enum, Length, Number, Color, Tracks, Stops }; ///< Stops: offsets in tracks[].value, colours in stopColors
 struct PropInfo {
     Prop id;
     std::string_view cssName;
@@ -119,6 +123,7 @@ struct PropValue {
     fuse::ui::Color color;
     std::array<Length, kMaxGridTracks> tracks{};
     u8 trackCount = 0;
+    std::array<fuse::ui::Color, kMaxGridTracks> stopColors{};
     static PropValue ofBool(bool v) { PropValue p; p.type = PropType::Bool; p.b = v; return p; }
     static PropValue ofEnum(u8 v) { PropValue p; p.type = PropType::Enum; p.e = v; return p; }
     static PropValue ofLength(Length v) { PropValue p; p.type = PropType::Length; p.len = v; return p; }
@@ -217,6 +222,10 @@ public:
     StyleEngine();
     void clearSheets();
     void addSheet(StyleSheet sheet);
+    /// Swaps sheet `index` (cascade position kept) — used by style hot reload. False when out of range.
+    bool replaceSheet(u32 index, StyleSheet sheet);
+    u32 sheetCount() const { return u32(m_sheets.size()); }
+    const StyleSheet& sheet(u32 i) const { return m_sheets[i]; }
     u32 sheetVersion() const { return m_version; }
     /// Computes the style of `node`: defaults → inherited from `parentStyle` → matched rules → `inlineValues`.
     /// Returns an index into the table (allocates only for a never-seen combination).
@@ -230,6 +239,7 @@ private:
     bool matchSimple(const StyleSubject& s, u32 node, const SimpleSelector& sel) const;
     bool resolveVar(std::string_view raw, Prop p, PropValue& out, int depth) const;
     u32 intern(const ComputedStyle& cs);
+    void reorder();
     std::vector<StyleSheet> m_sheets;
     std::vector<const StyleRule*> m_ordered; ///< all rules, sorted by (specificity, sheet, order)
     std::vector<const StyleRule*> m_scratch;

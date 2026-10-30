@@ -1,5 +1,6 @@
 // FUSE UI Tier D (2) widgets (plan §5): font picker, file dialog, node graph, curve editor, timeline, viewport,
 // code editor, date-time edit and a video widget over a pluggable decoder (stub: test pattern).
+#include "fuse/ui/os.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
 #include "widgets_internal.hpp"
 
@@ -106,16 +107,15 @@ bool globMatch(std::string_view pat, std::string_view s) {
     return p == pat.size();
 }
 std::string joinPath(std::string_view dir, std::string_view name) {
-    std::filesystem::path p{std::string(dir)};
+    std::filesystem::path p{std::string(dir)}; // std:: path algebra only; no OS access here
     p /= std::string(name);
     return p.lexically_normal().generic_string();
 }
 bool fileAccept(UiContext& ui, NodeHandle dlg, FileDlgState& s, std::string_view name) {
     if (name.empty()) return false;
     const std::string full = joinPath(s.dir, name);
-    std::error_code ec;
-    if (std::filesystem::is_directory(full, ec)) return fileDialogNavigate(ui, dlg, full);
-    if (!s.save && !std::filesystem::exists(full, ec)) return false;
+    if (fuse::ui::os::isDirectory(full)) return fileDialogNavigate(ui, dlg, full);
+    if (!s.save && !fuse::ui::os::exists(full)) return false;
     s.accepted = full;
     closeDialog(ui, dlg);
     ui.emit(dlg, SignalKind::Submitted, {.text = s.accepted});
@@ -1217,10 +1217,10 @@ struct VideoW {
         dl.rect(track, pc.tint(Color::rgb(0x3A3A45)), 2.f);
         dl.rect({track.x, track.y, track.w * f, 4.f}, accentOf(pc), 2.f);
         dot(dl, {track.x + track.w * f, cy}, 6.f, pc.tint(Color::rgb(0xFFFFFF)));
-        char b[32];
-        const f32 secs = f32(s->frame) / std::max(1.f, s->src->fps);
-        std::snprintf(b, sizeof b, "%d:%02d.%02d", int(secs) / 60, int(secs) % 60, int(std::fmod(secs, 1.f) * 100.f));
-        ui.paintString(dl, b, {track.right() + 8.f, bar.y, 62.f, kBar}, pc.tint(pc.style.color), pc.style.fontSize * 0.8f,
+        const f32 lfs = pc.style.fontSize * 0.8f;
+        std::string b = videoTimeText(s->frame, s->src->frames, s->src->fps, true);
+        if (ui.measureString(b, lfs) > 62.f) b = videoTimeText(s->frame, s->src->frames, s->src->fps, false);
+        ui.paintString(dl, b, {track.right() + 8.f, bar.y, 62.f, kBar}, pc.tint(pc.style.color), lfs,
                        TextAlignment::Start, pc.node.index);
     }
     static void seekX(UiContext& ui, NodeHandle n, VideoState& s, f32 x) {
@@ -1354,16 +1354,14 @@ NodeHandle fileDialog(UiContext& ui, std::string_view title, std::string_view di
 bool fileDialogNavigate(UiContext& ui, NodeHandle dlg, std::string_view directory) {
     FileDlgState* s = filePool().get(ui, dlg);
     if (!s) return false;
-    namespace fs = std::filesystem;
-    std::error_code ec;
-    const fs::path dir = fs::absolute(fs::path(std::string(directory)), ec).lexically_normal();
-    if (ec || !fs::is_directory(dir, ec)) return false;
+    const std::string dir = fuse::ui::os::absolutePath(std::filesystem::path(std::string(directory)).lexically_normal().generic_string());
+    auto listing = fuse::ui::os::listDirectory(dir); // OS access through the fuse::ui::os seam (FORGE)
+    if (!listing) return false;
     std::vector<std::string> folders, files;
-    for (fs::directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
-        const std::string name = it->path().filename().string();
+    for (const auto& e : *listing) {
+        const std::string& name = e.name;
         if (name.empty() || name[0] == '.') continue;
-        std::error_code e2;
-        if (it->is_directory(e2)) folders.push_back(name + "/");
+        if (e.isDir) folders.push_back(name + "/");
         else if (s->filters.empty() || std::any_of(s->filters.begin(), s->filters.end(), [&](const std::string& f) { return globMatch(f, name); }))
             files.push_back(name);
     }
@@ -1372,7 +1370,7 @@ bool fileDialogNavigate(UiContext& ui, NodeHandle dlg, std::string_view director
     };
     std::sort(folders.begin(), folders.end(), ci);
     std::sort(files.begin(), files.end(), ci);
-    s->dir = dir.generic_string();
+    s->dir = dir;
     if (s->dir.size() > 1 && s->dir.back() == '/') s->dir.pop_back();
     s->entries = std::move(folders);
     s->entries.insert(s->entries.end(), files.begin(), files.end());
@@ -1683,6 +1681,17 @@ const VideoSource& testPatternSource() {
     static const VideoSource src{nullptr, 160, 90, 300, 30.f, &patternFrame};
     return src;
 }
+std::string videoTimeText(u32 frame, u32 frames, f32 fps, bool withDuration) {
+    // whole centiseconds, rounded once: no float truncation (0.29 s printing as 0:00.28), no fps clamp
+    const double r = fps > 0.f ? double(fps) : 30.0;
+    auto mmss = [&](u32 f) {
+        const long long cs = std::llround(double(f) * 100.0 / r);
+        char o[40];
+        std::snprintf(o, sizeof o, "%lld:%02lld.%02lld", cs / 6000, (cs / 100) % 60, cs % 100);
+        return std::string(o);
+    };
+    return withDuration ? mmss(frame) + " / " + mmss(frames) : mmss(frame);
+}
 NodeHandle videoWidget(UiContext& ui, NodeHandle parent, const VideoSource* source, std::string_view id) {
     registerTierD2(ui);
     const NodeHandle n = make(ui, "video", parent, id);
@@ -1698,16 +1707,38 @@ NodeHandle videoWidget(UiContext& ui, NodeHandle parent, const VideoSource* sour
 }
 const Image* videoImage(const UiContext& ui, NodeHandle v) { const VideoState* s = videoPool().get(ui, v); return s ? &s->img : nullptr; }
 void videoSetImageIndex(UiContext& ui, NodeHandle v, u32 index) { if (VideoState* s = videoPool().get(ui, v)) { s->index = index; ui.invalidate(v); } }
+namespace {
+void videoShow(UiContext& ui, NodeHandle v, VideoState& s, u32 frame) {
+    s.frame = std::min(frame, s.src->frames ? s.src->frames - 1 : 0);
+    decode(s);
+    ui.setValue(v, f32(s.frame), true);
+    ui.invalidate(v);
+}
+} // namespace
 void videoPlay(UiContext& ui, NodeHandle v, bool play) {
     VideoState* s = videoPool().get(ui, v);
     if (!s || !s->src || s->playing == play) return;
     s->playing = play;
+    if (s->src->playback) s->src->playback(s->src->user, play, s->frame);
     if (play) {
         s->timer = ui.startTimer(1.f / std::max(1.f, s->src->fps), true, [v](UiContext& u) {
             VideoState* st = videoPool().get(u, v);
             if (!st || !st->playing) return;
-            const u32 next = st->frame + 1 >= st->src->frames ? 0 : st->frame + 1;
-            videoSeek(u, v, next);
+            const u32 last = st->src->frames ? st->src->frames - 1 : 0;
+            if (st->src->clock) { // follow the source's audio clock when it runs
+                const double t = st->src->clock(st->src->user);
+                if (t >= 0.0) {
+                    const u32 f = u32(std::min<double>(last, std::floor(t * double(st->src->fps) + 1e-6)));
+                    if (f >= last && st->frame >= last) { // end of media: loop like the frame-stepped path
+                        if (st->src->playback) st->src->playback(st->src->user, true, 0);
+                        videoShow(u, v, *st, 0);
+                    } else if (f != st->frame) videoShow(u, v, *st, f);
+                    return;
+                }
+            }
+            const u32 next = st->frame + 1 > last ? 0 : st->frame + 1;
+            if (next == 0 && st->src->playback) st->src->playback(st->src->user, true, 0);
+            videoShow(u, v, *st, next);
         });
     } else ui.cancelTimer(s->timer);
     ui.emit(v, SignalKind::Toggled, {.flag = play});
@@ -1717,10 +1748,8 @@ bool videoPlaying(const UiContext& ui, NodeHandle v) { const VideoState* s = vid
 void videoSeek(UiContext& ui, NodeHandle v, u32 frame) {
     VideoState* s = videoPool().get(ui, v);
     if (!s || !s->src) return;
-    s->frame = std::min(frame, s->src->frames ? s->src->frames - 1 : 0);
-    decode(*s);
-    ui.setValue(v, f32(s->frame), true);
-    ui.invalidate(v);
+    videoShow(ui, v, *s, frame);
+    if (s->playing && s->src->playback) s->src->playback(s->src->user, true, s->frame);
 }
 u32 videoFrame(const UiContext& ui, NodeHandle v) { const VideoState* s = videoPool().get(ui, v); return s ? s->frame : 0u; }
 u32 videoDecodedFrames(const UiContext& ui, NodeHandle v) { const VideoState* s = videoPool().get(ui, v); return s ? s->decoded : 0u; }

@@ -1,4 +1,5 @@
-// fuse_app native backends: the Vulkan swapchain presenter shared by the X11 and Win32 window code.
+// fuse_app native backends: the Vulkan swapchain presenter shared by the X11, Win32, Wayland, Android and
+// Cocoa / UIKit (Metal surface) window code.
 #pragma once
 
 #include "fuse/app/native.hpp"
@@ -8,8 +9,11 @@
 namespace fuse::app::detail {
 
 struct SurfaceSource {
-    enum Kind { Xlib, Win32 } kind = Xlib;
-    void* display = nullptr;        ///< X11 Display*
+    /// Xlib / Win32: NativePlatform. Wayland: WaylandPlatform (wl_display* + wl_surface*). Android: ANativeWindow*.
+    /// Metal: a CAMetalLayer* (macOS / iOS through MoltenVK or KosmicKrisp, VK_EXT_metal_surface; UNVERIFIED).
+    enum Kind { Xlib, Win32, Wayland, Android, Metal } kind = Xlib;
+    void* display = nullptr;        ///< X11 Display* / wl_display*
+    void* surface = nullptr;        ///< wl_surface* / ANativeWindow* / CAMetalLayer*
     unsigned long xwindow = 0;      ///< X11 Window
     void* hinstance = nullptr;      ///< Win32 HINSTANCE
     void* hwnd = nullptr;           ///< Win32 HWND
@@ -27,6 +31,8 @@ const char* vkCtxDeviceName(const VkCtx* c);
 VkWin* vkWinCreate(VkCtx* c, const SurfaceSource& s, const NativeOptions& o, std::string& err);
 bool vkWinPresent(VkWin* w, AppWindow& win, fuse::ui::Rect damage);
 bool vkWinGpuDraws(const VkWin* w);
+bool vkWinHdrContent(const VkWin* w);
+OutputColorSpace vkWinColorSpace(const VkWin* w);
 void vkWinDestroy(VkWin* w);
 /// Reads back the last presented frame (the canvas blitted into the swapchain).
 bool vkWinReadback(VkWin* w, fuse::ui::Image& out);

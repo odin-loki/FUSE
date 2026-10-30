@@ -1,9 +1,12 @@
 #include "fuse/ui/style.hpp"
 
+#include <cstdlib>
 #include <algorithm>
 #include <cctype>
 #include <charconv>
 #include <cstring>
+#include <cstdio>
+#include <vector>
 
 namespace fuse::ui {
 
@@ -67,6 +70,8 @@ constexpr PropInfo kProps[] = {
     {Prop::ShadowY, "shadow-y", T::Length, false, true, false},
     {Prop::PointerEvents, "pointer-events", T::Bool, false, false, false},
     {Prop::BackdropBlur, "backdrop-blur", T::Length, false, true, false},
+    {Prop::GradientAngle, "gradient-angle", T::Number, false, false, false},
+    {Prop::GradientStops, "gradient-stops", T::Stops, false, false, false},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -96,7 +101,7 @@ constexpr EnumWord kEnums[] = {
     {Prop::Overflow, "clip", u8(Overflow::Clip)},     {Prop::Overflow, "scroll", u8(Overflow::Scroll)},
     {Prop::Overflow, "auto", u8(Overflow::Scroll)},
     {Prop::Gradient, "none", u8(GradientDir::None)},  {Prop::Gradient, "vertical", u8(GradientDir::Vertical)},
-    {Prop::Gradient, "horizontal", u8(GradientDir::Horizontal)},
+    {Prop::Gradient, "horizontal", u8(GradientDir::Horizontal)}, {Prop::Gradient, "angle", u8(GradientDir::Angle)},
     {Prop::TextAlign, "left", u8(TextAlignment::Start)}, {Prop::TextAlign, "start", u8(TextAlignment::Start)},
     {Prop::TextAlign, "center", u8(TextAlignment::Center)}, {Prop::TextAlign, "right", u8(TextAlignment::End)},
     {Prop::TextAlign, "end", u8(TextAlignment::End)},
@@ -142,9 +147,45 @@ int hexval(char c) {
 }
 
 struct NamedColor { std::string_view name; u32 hex; };
-constexpr NamedColor kNamed[] = {{"black", 0x000000}, {"white", 0xFFFFFF}, {"red", 0xFF0000}, {"green", 0x008000},
-                                 {"blue", 0x0000FF}, {"yellow", 0xFFFF00}, {"gray", 0x808080}, {"grey", 0x808080},
-                                 {"orange", 0xFFA500}, {"cyan", 0x00FFFF}, {"magenta", 0xFF00FF}};
+/// CSS Color Module 4 named colours (SVG uses the same set).
+constexpr NamedColor kNamed[] = {
+    {"aliceblue", 0xF0F8FF}, {"antiquewhite", 0xFAEBD7}, {"aqua", 0x00FFFF}, {"aquamarine", 0x7FFFD4},
+    {"azure", 0xF0FFFF}, {"beige", 0xF5F5DC}, {"bisque", 0xFFE4C4}, {"black", 0x000000},
+    {"blanchedalmond", 0xFFEBCD}, {"blue", 0x0000FF}, {"blueviolet", 0x8A2BE2}, {"brown", 0xA52A2A},
+    {"burlywood", 0xDEB887}, {"cadetblue", 0x5F9EA0}, {"chartreuse", 0x7FFF00}, {"chocolate", 0xD2691E},
+    {"coral", 0xFF7F50}, {"cornflowerblue", 0x6495ED}, {"cornsilk", 0xFFF8DC}, {"crimson", 0xDC143C},
+    {"cyan", 0x00FFFF}, {"darkblue", 0x00008B}, {"darkcyan", 0x008B8B}, {"darkgoldenrod", 0xB8860B},
+    {"darkgray", 0xA9A9A9}, {"darkgreen", 0x006400}, {"darkgrey", 0xA9A9A9}, {"darkkhaki", 0xBDB76B},
+    {"darkmagenta", 0x8B008B}, {"darkolivegreen", 0x556B2F}, {"darkorange", 0xFF8C00}, {"darkorchid", 0x9932CC},
+    {"darkred", 0x8B0000}, {"darksalmon", 0xE9967A}, {"darkseagreen", 0x8FBC8F}, {"darkslateblue", 0x483D8B},
+    {"darkslategray", 0x2F4F4F}, {"darkslategrey", 0x2F4F4F}, {"darkturquoise", 0x00CED1}, {"darkviolet", 0x9400D3},
+    {"deeppink", 0xFF1493}, {"deepskyblue", 0x00BFFF}, {"dimgray", 0x696969}, {"dimgrey", 0x696969},
+    {"dodgerblue", 0x1E90FF}, {"firebrick", 0xB22222}, {"floralwhite", 0xFFFAF0}, {"forestgreen", 0x228B22},
+    {"fuchsia", 0xFF00FF}, {"gainsboro", 0xDCDCDC}, {"ghostwhite", 0xF8F8FF}, {"gold", 0xFFD700},
+    {"goldenrod", 0xDAA520}, {"gray", 0x808080}, {"green", 0x008000}, {"greenyellow", 0xADFF2F},
+    {"grey", 0x808080}, {"honeydew", 0xF0FFF0}, {"hotpink", 0xFF69B4}, {"indianred", 0xCD5C5C},
+    {"indigo", 0x4B0082}, {"ivory", 0xFFFFF0}, {"khaki", 0xF0E68C}, {"lavender", 0xE6E6FA},
+    {"lavenderblush", 0xFFF0F5}, {"lawngreen", 0x7CFC00}, {"lemonchiffon", 0xFFFACD}, {"lightblue", 0xADD8E6},
+    {"lightcoral", 0xF08080}, {"lightcyan", 0xE0FFFF}, {"lightgoldenrodyellow", 0xFAFAD2}, {"lightgray", 0xD3D3D3},
+    {"lightgreen", 0x90EE90}, {"lightgrey", 0xD3D3D3}, {"lightpink", 0xFFB6C1}, {"lightsalmon", 0xFFA07A},
+    {"lightseagreen", 0x20B2AA}, {"lightskyblue", 0x87CEFA}, {"lightslategray", 0x778899}, {"lightslategrey", 0x778899},
+    {"lightsteelblue", 0xB0C4DE}, {"lightyellow", 0xFFFFE0}, {"lime", 0x00FF00}, {"limegreen", 0x32CD32},
+    {"linen", 0xFAF0E6}, {"magenta", 0xFF00FF}, {"maroon", 0x800000}, {"mediumaquamarine", 0x66CDAA},
+    {"mediumblue", 0x0000CD}, {"mediumorchid", 0xBA55D3}, {"mediumpurple", 0x9370DB}, {"mediumseagreen", 0x3CB371},
+    {"mediumslateblue", 0x7B68EE}, {"mediumspringgreen", 0x00FA9A}, {"mediumturquoise", 0x48D1CC}, {"mediumvioletred", 0xC71585},
+    {"midnightblue", 0x191970}, {"mintcream", 0xF5FFFA}, {"mistyrose", 0xFFE4E1}, {"moccasin", 0xFFE4B5},
+    {"navajowhite", 0xFFDEAD}, {"navy", 0x000080}, {"oldlace", 0xFDF5E6}, {"olive", 0x808000},
+    {"olivedrab", 0x6B8E23}, {"orange", 0xFFA500}, {"orangered", 0xFF4500}, {"orchid", 0xDA70D6},
+    {"palegoldenrod", 0xEEE8AA}, {"palegreen", 0x98FB98}, {"paleturquoise", 0xAFEEEE}, {"palevioletred", 0xDB7093},
+    {"papayawhip", 0xFFEFD5}, {"peachpuff", 0xFFDAB9}, {"peru", 0xCD853F}, {"pink", 0xFFC0CB},
+    {"plum", 0xDDA0DD}, {"powderblue", 0xB0E0E6}, {"purple", 0x800080}, {"rebeccapurple", 0x663399},
+    {"red", 0xFF0000}, {"rosybrown", 0xBC8F8F}, {"royalblue", 0x4169E1}, {"saddlebrown", 0x8B4513},
+    {"salmon", 0xFA8072}, {"sandybrown", 0xF4A460}, {"seagreen", 0x2E8B57}, {"seashell", 0xFFF5EE},
+    {"sienna", 0xA0522D}, {"silver", 0xC0C0C0}, {"skyblue", 0x87CEEB}, {"slateblue", 0x6A5ACD},
+    {"slategray", 0x708090}, {"slategrey", 0x708090}, {"snow", 0xFFFAFA}, {"springgreen", 0x00FF7F},
+    {"steelblue", 0x4682B4}, {"tan", 0xD2B48C}, {"teal", 0x008080}, {"thistle", 0xD8BFD8},
+    {"tomato", 0xFF6347}, {"turquoise", 0x40E0D0}, {"violet", 0xEE82EE}, {"wheat", 0xF5DEB3},
+    {"white", 0xFFFFFF}, {"whitesmoke", 0xF5F5F5}, {"yellow", 0xFFFF00}, {"yellowgreen", 0x9ACD32}};
 } // namespace
 
 const PropInfo& propInfo(Prop p) { return kProps[int(p)]; }
@@ -222,6 +263,48 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
         return unit.empty() || unit == "%";
     }
     case T::Color: return parseColor(text, out.color);
+    case T::Stops: { // "<color> [<offset>%], ..." (CSS colour-stop list; missing offsets spread evenly)
+        std::vector<std::string_view> items;
+        int depth = 0;
+        std::size_t s0 = 0;
+        for (std::size_t i = 0; i <= text.size(); ++i) {
+            if (i < text.size() && text[i] == '(') ++depth;
+            if (i < text.size() && text[i] == ')') --depth;
+            if (i == text.size() || (text[i] == ',' && depth == 0)) items.push_back(trim(text.substr(s0, i - s0))), s0 = i + 1;
+        }
+        if (items.size() < 2 || items.size() > std::size_t(kMaxGridTracks)) return false;
+        f32 off[kMaxGridTracks];
+        bool has[kMaxGridTracks] = {};
+        for (std::size_t i = 0; i < items.size(); ++i) {
+            std::string_view it = items[i];
+            // colour, then an optional trailing offset outside any parentheses
+            const std::size_t close = it.rfind(')');
+            const std::size_t sp = it.find_last_of(" \t");
+            std::string_view col = it;
+            if (sp != std::string_view::npos && (close == std::string_view::npos || sp > close)) {
+                std::string_view unit;
+                f32 v = 0.f;
+                if (!parseNumber(trim(it.substr(sp + 1)), v, unit) || (unit != "%" && !unit.empty())) return false;
+                off[i] = unit == "%" ? v / 100.f : v, has[i] = true;
+                col = trim(it.substr(0, sp));
+            }
+            if (!parseColor(col, out.stopColors[i])) return false;
+        }
+        const std::size_t n = items.size();
+        if (!has[0]) off[0] = 0.f, has[0] = true;
+        if (!has[n - 1]) off[n - 1] = 1.f, has[n - 1] = true;
+        for (std::size_t i = 1; i < n; ++i) {
+            if (has[i]) continue;
+            std::size_t j = i;
+            while (!has[j]) ++j;
+            for (std::size_t k = i; k < j; ++k) off[k] = off[i - 1] + (off[j] - off[i - 1]) * f32(k - i + 1) / f32(j - i + 1);
+            for (std::size_t k = i; k < j; ++k) has[k] = true;
+        }
+        f32 lo = 0.f;
+        for (std::size_t i = 0; i < n; ++i) lo = std::max(lo, off[i]), out.tracks[i] = Length::px(lo); // non-decreasing
+        out.trackCount = u8(n);
+        return true;
+    }
     case T::Tracks: {
         out.trackCount = 0;
         while (!text.empty()) {
@@ -296,6 +379,14 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::ShadowColor: s.shadowColor = v.color; break;
     case Prop::ShadowBlur: s.shadowBlur = v.len.value; break;
     case Prop::BackdropBlur: s.backdropBlur = v.len.value; break;
+    case Prop::GradientAngle: s.gradientAngle = v.num; break;
+    case Prop::GradientStops:
+        s.gradientStopCount = v.trackCount;
+        for (u8 i = 0; i < kMaxGridTracks; ++i) {
+            s.gradientOffsets[i] = i < v.trackCount ? v.tracks[i].value : 0.f;
+            s.gradientColors[i] = i < v.trackCount ? v.stopColors[i] : Color{};
+        }
+        break;
     case Prop::ShadowX: s.shadowX = v.len.value; break;
     case Prop::ShadowY: s.shadowY = v.len.value; break;
     case Prop::PointerEvents: s.pointerEvents = v.b; break;
@@ -506,7 +597,52 @@ void addShorthand(StyleRule& rule, std::string_view name, std::string_view value
                 s = i + 1;
             }
         }
-        if (k == 3) {
+        const bool legacy = k == 3 && s > args.size() && (parts[0] == "vertical" || parts[0] == "horizontal" || parts[0] == "to right" || parts[0] == "to bottom");
+        // CSS form: linear-gradient([<angle> | to <side-or-corner>,] <color-stop>, <color-stop>, ...)
+        f32 angle = 180.f;
+        std::string_view stops = args;
+        bool angleOk = !legacy;
+        if (!legacy) {
+            const std::size_t comma = [&] {
+                int d = 0;
+                for (std::size_t i = 0; i < args.size(); ++i) {
+                    if (args[i] == '(') ++d;
+                    else if (args[i] == ')') --d;
+                    else if (args[i] == ',' && d == 0) return i;
+                }
+                return args.size();
+            }();
+            const std::string_view first = trim(args.substr(0, comma));
+            std::string_view unit;
+            f32 v = 0.f;
+            if (first.starts_with("to ")) {
+                const bool t = first.find("top") != std::string_view::npos, b = first.find("bottom") != std::string_view::npos;
+                const bool l = first.find("left") != std::string_view::npos, r = first.find("right") != std::string_view::npos;
+                if (t && r) angle = 45.f; else if (b && r) angle = 135.f; else if (b && l) angle = 225.f; else if (t && l) angle = 315.f;
+                else if (t) angle = 0.f; else if (r) angle = 90.f; else if (b) angle = 180.f; else if (l) angle = 270.f;
+                else angleOk = false;
+                stops = comma < args.size() ? args.substr(comma + 1) : std::string_view{};
+            } else if (parseNumber(first, v, unit) && (unit == "deg" || unit == "rad" || unit == "turn" || unit == "grad")) {
+                angle = unit == "deg" ? v : unit == "rad" ? v * 57.29577951f : unit == "turn" ? v * 360.f : v * 0.9f;
+                stops = comma < args.size() ? args.substr(comma + 1) : std::string_view{};
+            }
+        }
+        if (angleOk) {
+            PropValue pv;
+            if (parsePropValue(Prop::GradientStops, stops, pv)) {
+                char ab[32];
+                std::snprintf(ab, sizeof ab, "%g", double(angle));
+                addDecl(rule, Prop::Gradient, "angle", line, diags);
+                addDecl(rule, Prop::GradientAngle, ab, line, diags);
+                addDecl(rule, Prop::GradientStops, stops, line, diags);
+                // first / last colours keep a 2-stop fallback for code that reads background / background-end
+                Declaration d0;
+                d0.prop = Prop::Background, d0.value = PropValue::ofColor(pv.stopColors[0]);
+                rule.decls.push_back(d0);
+                d0.prop = Prop::Background2, d0.value = PropValue::ofColor(pv.stopColors[pv.trackCount - 1]);
+                rule.decls.push_back(d0);
+            } else if (diags) diags->push_back({StyleError::BadValue, line, "linear-gradient"});
+        } else if (k == 3) {
             addDecl(rule, Prop::Gradient, parts[0] == "to right" ? "horizontal" : (parts[0] == "to bottom" ? "vertical" : parts[0]), line, diags);
             addDecl(rule, Prop::Background, parts[1], line, diags);
             addDecl(rule, Prop::Background2, parts[2], line, diags);
@@ -552,7 +688,7 @@ std::expected<StyleSheet, StyleDiagnostic> StyleSheet::parse(std::string_view cs
                         d.raw.assign(value);
                         tokens.emplace_back(d.customHash, d.raw);
                         proto.decls.push_back(std::move(d));
-                    } else if (findProp(name, p)) addDecl(proto, p, value, line, diags);
+                    } else if (!(name == "background" && value.starts_with("linear-gradient")) && findProp(name, p)) addDecl(proto, p, value, line, diags);
                     else addShorthand(proto, name, value, line, diags);
                 }
             }
@@ -606,6 +742,17 @@ void StyleEngine::clearSheets() {
 
 void StyleEngine::addSheet(StyleSheet sheet) {
     m_sheets.push_back(std::move(sheet));
+    reorder();
+}
+
+bool StyleEngine::replaceSheet(u32 index, StyleSheet sheet) {
+    if (index >= m_sheets.size()) return false;
+    m_sheets[index] = std::move(sheet);
+    reorder();
+    return true;
+}
+
+void StyleEngine::reorder() {
     m_ordered.clear();
     u32 sheetIdx = 0;
     std::vector<std::pair<u64, const StyleRule*>> keyed;

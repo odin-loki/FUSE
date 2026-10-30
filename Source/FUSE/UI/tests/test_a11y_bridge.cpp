@@ -87,10 +87,23 @@ int main() {
         ad.update(); // no AT listening: inactive, nothing pushed, no crash
         ad.setWindowFocused(true);
     }
+    {
+        a::PlatformAdapter pa(b, nullptr);
+        UI_CHECK(pa.valid() && std::string(a::PlatformAdapter::backendName()) == "atspi");
+        ui.setValue(sl, 20.f, true);
+        ui.update(1.f / 60.f);
+        pa.update();
+        pa.setWindowFocused(false);
+    }
 #endif
     std::printf("a11y: AccessKit backend linked (%zu-byte debug dump)\n", dbg.size());
 #else
     UI_CHECK(!a::accessKitAvailable());
+    {
+        a::PlatformAdapter pa(b, nullptr);
+        UI_CHECK(!pa.valid() && std::string(a::PlatformAdapter::backendName()) == "none");
+        pa.update();
+    }
     std::printf("a11y: built without AccessKit (FUSE_UI_ACCESSKIT_DIR unset)\n");
 #endif
     return finish("fuse_ui_a11y_bridge");

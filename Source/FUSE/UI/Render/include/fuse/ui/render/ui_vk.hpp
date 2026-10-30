@@ -20,6 +20,9 @@ struct UiVkDesc {
     u32 maxTileWords = 1u << 18;
     u32 maxImageWords = 1u << 20;
     u32 maxAtlasSize = 1024;
+    /// Backdrop blur scratch (device-local floats, 32 bytes per pixel of a blur's source box). A blur whose source
+    /// box exceeds it is skipped (the panel is drawn unblurred).
+    u32 maxBlurPixels = 1u << 21;
 };
 
 class UiVkRenderer {
@@ -54,6 +57,20 @@ public:
 
     /// True when the kernel SPIR-V was compiled into this build.
     static bool kernelAvailable();
+    /// True when DrawOp::Backdrop runs on the GPU (ui.backdrop kernel built in and created at init).
+    bool backdropOnGpu() const { return m_blurPipeline != nullptr; }
+    /// HDR target: record() then expects an RGBA16F storage image holding extended-range sRGB-encoded values (1.0 =
+    /// SDR white; brighter content above it, see color::hdr), blended in float without 8-bit quantisation (the
+    /// ui_draw_list_hdr / ui_backdrop_hdr variants). False (and unchanged) when the HDR kernel is not built in.
+    bool setTargetHdr(bool hdr);
+    bool targetHdr() const { return m_hdrTarget; }
+    bool hdrTargetAvailable() const { return m_pipelineHdr != nullptr; }
+    /// Glyph atlas uploads since init (stays flat while GpuDrawData::atlasGeneration does not change).
+    u64 atlasUploads() const { return m_atlasUploads; }
+    /// Bytes written into mapped slot memory by upload() since init (cmds, tiles, images, atlas). An unchanged frame
+    /// (same GpuDrawData::contentVersion) writes nothing; a changed one writes only the 4 KB pages that differ from
+    /// what the slot already holds.
+    u64 uploadedBytes() const { return m_uploadedBytes; }
 
 private:
     struct Slot {
@@ -61,13 +78,23 @@ private:
         void* memory = nullptr; ///< VkDeviceMemory
         u8* mapped = nullptr;
         void* set = nullptr; ///< VkDescriptorSet
+        void* blurSet = nullptr; ///< VkDescriptorSet of ui.backdrop
         GpuPush push{};
+        std::vector<GpuPass> passes;
+        const u8* atlasPtr = nullptr;
+        u32 atlasSize = 0;
+        u32 atlasGeneration = ~0u;
+        u64 contentVersion = 0; ///< GpuDrawData::contentVersion last uploaded (process-unique)
+        std::vector<u8> shadow[3]; ///< CPU copy of the mapped cmds / tiles / images (page diff source)
     };
+    u64 m_uploadedBytes = 0;
     UiVkDesc m_desc{};
     u64 m_offsets[5] = {};  ///< cmds, tiles, atlas, images, end
     void* m_setLayout = nullptr;
     void* m_layout = nullptr;
     void* m_pipeline = nullptr;
+    void* m_pipelineHdr = nullptr; ///< ui_draw_list_hdr (RGBA16F target)
+    bool m_hdrTarget = false;
     void* m_pool = nullptr;
     Slot m_slots[kMaxSlots]{};
     void* m_external[kMaxExternal]{}; ///< VkImageView per external slot (null: dummy)
@@ -76,6 +103,49 @@ private:
     void* m_dummyMem = nullptr;
     void* m_dummyView = nullptr;
     bool m_dummyReady = false;        ///< layout transitioned (first record)
+    void* m_blurSetLayout = nullptr;
+    void* m_blurLayout = nullptr;
+    void* m_blurPipeline = nullptr;
+    void* m_blurPipelineHdr = nullptr;
+    void* m_scratch = nullptr; ///< VkBuffer, device-local floats
+    void* m_scratchMem = nullptr;
+    u64 m_atlasUploads = 0;
+};
+
+/// "ui.encode_pq" / "ui.encode_scrgb": converts an RGBA8 sRGB canvas (or, with `hdrSource`, the RGBA16F extended-range
+/// canvas of UiVkRenderer::setTargetHdr, where values above 1 are brighter than SDR white) (storage image, GENERAL) into an HDR output
+/// image over a box: HDR10 (rgb10_a2: Rec.2020 + PQ, as color::toHdr10) or scRGB (rgba16f: linear, 1.0 = 80 nits).
+/// Both images must be in GENERAL layout with STORAGE usage; barriers around the dispatch are the caller's.
+class UiVkEncoder {
+public:
+    enum class Mode : u8 { Hdr10, ScRgb };
+    UiVkEncoder() = default;
+    ~UiVkEncoder() { destroy(); }
+    UiVkEncoder(const UiVkEncoder&) = delete;
+    UiVkEncoder& operator=(const UiVkEncoder&) = delete;
+
+    static bool kernelAvailable(Mode mode, bool hdrSource = false);
+    /// `slots`: descriptor sets, one per frame in flight (record() into a slot whose last use has completed).
+    bool init(void* device, Mode mode, u32 slots = 2, bool hdrSource = false);
+    bool hdrSource() const { return m_hdrSource; }
+    void destroy();
+    bool valid() const { return m_pipeline != nullptr; }
+    Mode mode() const { return m_mode; }
+    /// VkFormat value of the output image (VK_FORMAT_A2B10G10R10_UNORM_PACK32 or VK_FORMAT_R16G16B16A16_SFLOAT).
+    u32 outputFormat() const;
+    void record(void* commandBuffer, u32 slot, void* srcView, void* dstView, int x0, int y0, int x1, int y1,
+                f32 sdrWhiteNits);
+
+private:
+    void* m_device = nullptr;
+    void* m_setLayout = nullptr;
+    void* m_layout = nullptr;
+    void* m_pipeline = nullptr;
+    void* m_pool = nullptr;
+    void* m_sets[UiVkRenderer::kMaxSlots]{};
+    u32 m_slots = 0;
+    Mode m_mode = Mode::Hdr10;
+    bool m_hdrSource = false;
 };
 
 } // namespace fuse::ui::render

@@ -51,14 +51,33 @@ struct ExternalTexture {
     void* view = nullptr;   ///< VkImageView, sampled usage
     unsigned layout = 0;    ///< its VkImageLayout when the UI frame is submitted; restored after the UI pass
 };
+/// Swapchain colour space request (Vulkan presenters). The UI renders into an 8-bit canvas that is blitted to the
+/// swapchain, so the content must already be encoded for the chosen space: convert colours/images with
+/// fuse::ui::color (convert(c, Srgb, DisplayP3), toHdr10(c)). Unavailable spaces fall back to Srgb; query the
+/// granted one with NativePlatform::outputColorSpace(w).
+enum class OutputColorSpace : unsigned char {
+    Srgb,      ///< VK_COLOR_SPACE_SRGB_NONLINEAR_KHR (always)
+    DisplayP3, ///< VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT, 8-bit
+    Hdr10,     ///< VK_COLOR_SPACE_HDR10_ST2084_EXT (Rec.2020 + PQ), A2B10G10R10 swapchain
+    ScRgb,     ///< VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT (linear sRGB, 1.0 = 80 nits), R16G16B16A16_SFLOAT; GPU encode only
+};
 struct NativeOptions {
     VulkanDeviceHandles adoptDevice{}; ///< instance + device set: present on that device (see VulkanDeviceHandles)
     bool vulkan = true;            ///< false: never create a Vulkan presenter
     VkDrawMode drawMode = VkDrawMode::Auto;
     bool vsync = true;             ///< FIFO (true) or MAILBOX / IMMEDIATE when available
+    OutputColorSpace colorSpace = OutputColorSpace::Srgb; ///< needs VK_EXT_swapchain_colorspace for non-sRGB
+    /// Hdr10 / ScRgb with GPU draw and the GPU encoder: draw into an RGBA16F canvas so colours brighter than SDR white
+    /// (color::hdr / hdrNits, components above 1) reach the display; otherwise the canvas is 8-bit SDR content.
+    bool hdrContent = true;
+    f32 sdrWhiteNits = 203.f;      ///< Hdr10: luminance of sRGB white (ITU-R BT.2408 reference white)
+    f32 hdrMaxNits = 1000.f;       ///< Hdr10: mastering peak / MaxCLL sent as HDR metadata (VK_EXT_hdr_metadata, DXGI, Wayland)
     /// Popup menus / combo lists / submenus as their own borderless OS windows (Qt-style; may extend past the main
     /// window, clamp to the screen). X11: override-redirect windows; Win32: WS_POPUP + WS_EX_NOACTIVATE owned windows.
     bool osPopups = false;
+    /// Win32: per-monitor DPI v2 awareness (AppWindow::scale() follows the monitor, WM_DPICHANGED re-renders).
+    /// false: leave the process DPI mode alone (the system bitmap-stretches the window).
+    bool dpiAware = true;
 };
 
 class NativePlatform {
@@ -77,6 +96,11 @@ public:
     std::string_view gpuName() const;
     /// True when the GPU kernel (not the CPU upload path) draws the window.
     bool gpuDraws(const AppWindow& w) const;
+    /// The swapchain colour space actually granted (NativeOptions::colorSpace or the Srgb fallback).
+    OutputColorSpace outputColorSpace(const AppWindow& w) const;
+    /// True when the window draws into the RGBA16F HDR canvas (NativeOptions::hdrContent granted): color::hdr colours
+    /// above SDR white are shown brighter. False: content is clipped to SDR white.
+    bool hdrContent(const AppWindow& w) const;
     std::string_view lastError() const;
     /// Reads back what the OS shows in the window's client area (tests / screenshots of real windows).
     bool capture(const AppWindow& w, fuse::ui::Image& out);
@@ -96,6 +120,8 @@ public:
     /// Read back from the OS: the icon sizes (widths) the window carries now (X11 every _NET_WM_ICON entry; Win32 the
     /// big + small WM_GETICON icons). Empty when unset / not shown.
     std::vector<int> iconSizes(const AppWindow& w) const;
+    /// Read back from the OS: the title the window shows now (X11 _NET_WM_NAME / WM_NAME; Win32 GetWindowTextW).
+    std::string osTitle(const AppWindow& w) const;
 
     /// OS-window popups (NativeOptions::osPopups): how many popup windows `w` shows now, each one's native handle,
     /// its screen rect (physical px) and a read-back of its pixels.

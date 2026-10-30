@@ -2,6 +2,9 @@
 #include "fuse/ui/a11y/a11y.hpp"
 
 #if FUSE_UI_HAVE_ACCESSKIT
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 #include "accesskit.h"
 
 namespace fuse::ui::a11y {
@@ -86,7 +89,7 @@ std::string accessKitDebug(const void* update) {
 }
 void freeAccessKitUpdate(void* update) { accesskit_tree_update_free(static_cast<accesskit_tree_update*>(update)); }
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(_WIN32) || defined(__APPLE__)
 namespace {
 accesskit_tree_update* activate(void* user) {
     Bridge* b = static_cast<Bridge*>(user);
@@ -115,6 +118,65 @@ void onAction(accesskit_action_request* req, void* user) {
 void onDeactivate(void*) {}
 accesskit_tree_update* factory(void* user) { return static_cast<accesskit_tree_update*>(buildAccessKitUpdate(*static_cast<Bridge*>(user), false)); }
 } // namespace
+#endif
+
+#if defined(_WIN32)
+const char* PlatformAdapter::backendName() { return "uia"; }
+PlatformAdapter::PlatformAdapter(Bridge& b, void* hwnd, bool) : m_bridge(b) {
+    m_bridge.sync();
+    if (hwnd) m_adapter = accesskit_windows_subclassing_adapter_new(static_cast<HWND>(hwnd), activate, &m_bridge, onAction, &m_bridge);
+}
+PlatformAdapter::~PlatformAdapter() {
+    if (m_adapter) accesskit_windows_subclassing_adapter_free(static_cast<accesskit_windows_subclassing_adapter*>(m_adapter));
+}
+void PlatformAdapter::update() {
+    m_bridge.drain();
+    if (m_bridge.sync() && m_adapter)
+        if (auto* ev = accesskit_windows_subclassing_adapter_update_if_active(static_cast<accesskit_windows_subclassing_adapter*>(m_adapter), factory, &m_bridge))
+            accesskit_windows_queued_events_raise(ev);
+}
+void PlatformAdapter::setWindowFocused(bool) {} // UIA tracks focus through the subclassed HWND
+#elif defined(__APPLE__)
+const char* PlatformAdapter::backendName() { return "nsaccessibility"; }
+PlatformAdapter::PlatformAdapter(Bridge& b, void* w, bool isView) : m_bridge(b) {
+    m_bridge.sync();
+    if (w) m_adapter = isView ? accesskit_macos_subclassing_adapter_new(w, activate, &m_bridge, onAction, &m_bridge)
+                              : accesskit_macos_subclassing_adapter_for_window(w, activate, &m_bridge, onAction, &m_bridge);
+}
+PlatformAdapter::~PlatformAdapter() {
+    if (m_adapter) accesskit_macos_subclassing_adapter_free(static_cast<accesskit_macos_subclassing_adapter*>(m_adapter));
+}
+void PlatformAdapter::update() {
+    m_bridge.drain();
+    if (m_bridge.sync() && m_adapter)
+        if (auto* ev = accesskit_macos_subclassing_adapter_update_if_active(static_cast<accesskit_macos_subclassing_adapter*>(m_adapter), factory, &m_bridge))
+            accesskit_macos_queued_events_raise(ev);
+}
+void PlatformAdapter::setWindowFocused(bool f) {
+    if (m_adapter)
+        if (auto* ev = accesskit_macos_subclassing_adapter_update_view_focus_state(static_cast<accesskit_macos_subclassing_adapter*>(m_adapter), f))
+            accesskit_macos_queued_events_raise(ev);
+}
+#elif defined(__linux__)
+const char* PlatformAdapter::backendName() { return "atspi"; }
+PlatformAdapter::PlatformAdapter(Bridge& b, void*, bool) : m_bridge(b) {
+    m_bridge.sync();
+    m_adapter = accesskit_unix_adapter_new(activate, &m_bridge, onAction, &m_bridge, onDeactivate, &m_bridge);
+}
+PlatformAdapter::~PlatformAdapter() {
+    if (m_adapter) accesskit_unix_adapter_free(static_cast<accesskit_unix_adapter*>(m_adapter));
+}
+void PlatformAdapter::update() {
+    m_bridge.drain();
+    if (m_bridge.sync() && m_adapter)
+        accesskit_unix_adapter_update_if_active(static_cast<accesskit_unix_adapter*>(m_adapter), factory, &m_bridge);
+}
+void PlatformAdapter::setWindowFocused(bool f) {
+    if (m_adapter) accesskit_unix_adapter_update_window_focus_state(static_cast<accesskit_unix_adapter*>(m_adapter), f);
+}
+#endif
+
+#if defined(__linux__)
 
 UnixAdapter::UnixAdapter(Bridge& b) : m_bridge(b) {
     m_bridge.sync();
@@ -138,5 +200,10 @@ void UnixAdapter::setWindowFocused(bool focused) {
 #else
 namespace fuse::ui::a11y {
 bool accessKitAvailable() { return false; }
+const char* PlatformAdapter::backendName() { return "none"; }
+PlatformAdapter::PlatformAdapter(Bridge& b, void*, bool) : m_bridge(b) {}
+PlatformAdapter::~PlatformAdapter() = default;
+void PlatformAdapter::update() { m_bridge.drain(); m_bridge.sync(); }
+void PlatformAdapter::setWindowFocused(bool) {}
 } // namespace fuse::ui::a11y
 #endif

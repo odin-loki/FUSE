@@ -284,6 +284,10 @@ public:
     const FrameStats& stats() const { return m_stats; }
     u64 frameIndex() const { return m_frame; }
     void markAllDirty();
+    /// Physical pixels per logical unit (HiDPI). Layout stays in logical units; glyphs are rasterised at
+    /// px * scale and emitted at logical size (rect = texel size / scale) so scaleDrawList() renders them 1:1.
+    void setPixelScale(f32 scale);
+    f32 pixelScale() const { return m_pixelScale; }
     /// Repaints `n` next update (widgets whose paint reads external state, e.g. item models).
     void invalidate(NodeHandle n) { if (node(n)) markPaint(n.index); }
 
@@ -399,6 +403,7 @@ private:
     StyleEngine m_styles;
     const fuse::text::Font* m_font = nullptr;
     fuse::text::GlyphAtlas m_atlas;
+    f32 m_pixelScale = 1.f;
     std::vector<Node> m_nodes;
     std::vector<std::unique_ptr<Cold>> m_cold;
     std::vector<u32> m_free;
