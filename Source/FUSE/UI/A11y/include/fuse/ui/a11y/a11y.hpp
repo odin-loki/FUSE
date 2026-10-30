@@ -16,7 +16,7 @@ namespace fuse::ui::a11y {
 inline u64 idOf(NodeHandle n) { return (u64(n.generation) << 32) | u64(n.index + 1u); }
 inline NodeHandle nodeOf(u64 id) { return {u32(id & 0xFFFFFFFFu) - 1u, u32(id >> 32)}; }
 
-enum class Action : u8 { Focus, Click, Increment, Decrement, SetValue };
+enum class Action : u8 { Focus, Click, Increment, Decrement, SetValue, Expand, Collapse };
 struct ActionRequest {
     Action action = Action::Focus;
     u64 target = 0;

@@ -48,6 +48,22 @@ inline std::uint8_t modsFromMeta(int32_t meta) {
     return m;
 }
 
+/// A11yState -> spoken state (AccessibilityNodeInfo.setStateDescription / UIKit accessibilityValue): expandable
+/// fields say "expanded" / "collapsed"; a field driving a suggestion list adds "suggestions" while it is open.
+inline std::string stateDescription(const fuse::ui::A11yState& s) {
+    if (s.expanded < 0) return {};
+    std::string o = s.expanded ? "expanded" : "collapsed";
+    if (s.expanded > 0 && s.autoComplete != fuse::ui::A11yAutoComplete::None && s.autoComplete != fuse::ui::A11yAutoComplete::Inline) o += ", suggestions";
+    return o;
+}
+/// Extra nativeA11yInfo floats: [13] expanded (-1 n/a, 0, 1), [14] selected, [15] index of the active descendant
+/// in the snapshot (-1 none; TalkBack moves accessibility focus there).
+inline void a11yStateFloats(const fuse::ui::A11yState& s, float* f, float activeIndex) {
+    f[0] = float(s.expanded);
+    f[1] = s.selected ? 1.f : 0.f;
+    f[2] = activeIndex;
+}
+
 /// A11yRole -> AccessibilityNodeInfo.setClassName (TalkBack derives the spoken role from it).
 inline const char* className(fuse::ui::A11yRole r) {
     using R = fuse::ui::A11yRole;
@@ -85,7 +101,7 @@ inline int32_t utf8OffsetOfUtf16(const char* s, int32_t len, int32_t u16) {
 
 namespace fuse::app::uikit {
 /// A11yRole -> UIAccessibilityTraits bits (UIKit's documented constant values).
-inline std::uint64_t traits(fuse::ui::A11yRole r, bool disabled, bool checked) {
+inline std::uint64_t traits(fuse::ui::A11yRole r, bool disabled, bool checked, bool selected = false) {
     using R = fuse::ui::A11yRole;
     constexpr std::uint64_t kButton = 1ull << 0, kLink = 1ull << 1, kImage = 1ull << 2, kSelected = 1ull << 3,
                             kStatic = 1ull << 6, kNotEnabled = 1ull << 8, kAdjustable = 1ull << 12, kHeader = 1ull << 16;
@@ -100,7 +116,7 @@ inline std::uint64_t traits(fuse::ui::A11yRole r, bool disabled, bool checked) {
     case R::ProgressBar: t = 1ull << 10; break; // UpdatesFrequently
     default: break;
     }
-    if (checked) t |= kSelected;
+    if (checked || selected) t |= kSelected; // list options: UIAccessibilityTraitSelected
     if (disabled) t |= kNotEnabled;
     return t;
 }

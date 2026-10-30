@@ -93,6 +93,17 @@ void refilter(CState& s, std::string_view prefix, bool all) {
     const MatchMode mm = s.o.mode == CompletionMode::Inline ? MatchMode::StartsWith : s.o.filter;
     const std::u32string pre = fold(prefix, s.o.caseSensitive);
     const u32 n = rowCount(s);
+    const bool sorted = s.o.sorting == (s.o.caseSensitive ? ModelSorting::CaseSensitivelySorted : ModelSorting::CaseInsensitivelySorted);
+    if (!all && sorted && mm == MatchMode::StartsWith) {
+        u32 lo = 0, hi = n; // first row not less than the prefix
+        while (lo < hi) {
+            const u32 mid = lo + (hi - lo) / 2;
+            if (fold(rowText(s, mid), s.o.caseSensitive) < pre) lo = mid + 1;
+            else hi = mid;
+        }
+        for (u32 r = lo; r < n && matches(fold(rowText(s, r), s.o.caseSensitive), pre, mm); ++r) s.matches.push_back(r);
+        return;
+    }
     for (u32 r = 0; r < n; ++r) {
         const bool hit = matches(fold(rowText(s, r), s.o.caseSensitive), pre, mm);
         if (all || hit) s.matches.push_back(r);
@@ -269,7 +280,22 @@ std::string_view itemAt(std::string_view s, u32 index) {
     }
 }
 NodeHandle comboEdit(const UiContext& ui, NodeHandle combo) { return ui.alive(combo) ? ui.firstChild(combo) : NodeHandle{}; }
-InsertPolicy comboPolicy(const UiContext& ui, NodeHandle combo) { return InsertPolicy(ui.userData(combo) & 0xFFu); }
+struct ComboState {
+    u32 gen = 0;
+    EditableComboOptions o;
+    const ItemModel* model = nullptr;
+    u32 column = 0;
+};
+std::unordered_map<const UiContext*, std::unordered_map<u32, ComboState>>& comboStores() {
+    static std::unordered_map<const UiContext*, std::unordered_map<u32, ComboState>> m;
+    return m;
+}
+ComboState& comboState(const UiContext& ui, NodeHandle combo) {
+    ComboState& c = comboStores()[&ui][combo.index];
+    if (c.gen != combo.generation) c = ComboState{combo.generation};
+    return c;
+}
+InsertPolicy comboPolicy(const UiContext& ui, NodeHandle combo) { return comboState(ui, combo).o.policy; }
 void comboSetCurrent(UiContext& ui, NodeHandle combo, i32 idx, bool setText) {
     const std::string_view items = ui.text(combo);
     const bool changed = i32(ui.value(combo)) != idx;
@@ -285,24 +311,55 @@ void comboSetCurrent(UiContext& ui, NodeHandle combo, i32 idx, bool setText) {
 }
 void comboSetItems(UiContext& ui, NodeHandle combo, std::string items) {
     ui.setText(combo, items);
-    setCompleter(ui, comboEdit(ui, combo), {.items = std::move(items), .mode = CompletionMode::Inline});
+    const ComboState& cs = comboState(ui, combo);
+    if (cs.model) setCompleter(ui, comboEdit(ui, combo), {.model = cs.model, .column = cs.column, .mode = CompletionMode::Inline});
+    else setCompleter(ui, comboEdit(ui, combo), {.items = std::move(items), .mode = CompletionMode::Inline});
     if (itemCount(ui.text(combo)) == 0) setCompleter(ui, comboEdit(ui, combo), {});
+}
+std::string modelItems(const ItemModel* m, u32 col) {
+    std::string out, scratch;
+    const u32 n = m && m->rows ? m->rows(m->user) : 0u;
+    for (u32 r = 0; r < n; ++r) {
+        if (r) out += '\n';
+        if (m->data) {
+            std::string_view t = m->data(m->user, r, col, scratch);
+            for (char ch : t) out += ch == '\n' ? ' ' : ch; // one line per item
+        }
+    }
+    return out;
 }
 /// Enter in the field: select the matching item, else insert the text per the policy (QComboBox::insertPolicy)
 void comboCommit(UiContext& ui, NodeHandle combo, std::string_view text) {
-    if (const i32 at = comboFindText(ui, combo, text); at >= 0) { comboSetCurrent(ui, combo, at, false); return; }
-    const InsertPolicy pol = comboPolicy(ui, combo);
-    if (text.empty() || pol == InsertPolicy::NoInsert) return;
+    const ComboState& cs = comboState(ui, combo);
+    if (!cs.o.duplicatesEnabled || cs.model)
+        if (const i32 at = comboFindText(ui, combo, text); at >= 0) { comboSetCurrent(ui, combo, at, false); return; }
+    const InsertPolicy pol = cs.o.policy;
+    if (text.empty() || pol == InsertPolicy::NoInsert || cs.model) return;
     std::vector<std::string> v;
     const std::string_view items = ui.text(combo);
     for (u32 i = 0, n = itemCount(items); i < n; ++i) v.emplace_back(itemAt(items, i));
-    std::size_t pos = pol == InsertPolicy::InsertAtTop ? 0 : v.size();
-    if (pol == InsertPolicy::InsertAlphabetically) {
+    const i32 cur = i32(ui.value(combo));
+    std::size_t pos = v.size();
+    bool replace = false;
+    switch (pol) {
+    case InsertPolicy::InsertAtTop: pos = 0; break;
+    case InsertPolicy::InsertAtBottom: pos = v.size(); break;
+    case InsertPolicy::InsertAlphabetically: {
         const std::u32string key = fold(text, false);
         pos = 0;
         while (pos < v.size() && fold(v[pos], false) <= key) ++pos;
+        break;
     }
-    v.insert(v.begin() + std::ptrdiff_t(pos), std::string(text));
+    case InsertPolicy::InsertAtCurrent: replace = cur >= 0 && std::size_t(cur) < v.size(); pos = replace ? std::size_t(cur) : v.size(); break;
+    case InsertPolicy::InsertAfterCurrent: pos = cur >= 0 ? std::min(v.size(), std::size_t(cur) + 1) : v.size(); break;
+    case InsertPolicy::InsertBeforeCurrent: pos = cur >= 0 ? std::min(v.size(), std::size_t(cur)) : 0; break;
+    case InsertPolicy::NoInsert: return;
+    }
+    if (replace) v[pos] = std::string(text);
+    else {
+        if (v.size() >= cs.o.maxCount) return; // QComboBox::maxCount: full, nothing inserted
+        v.insert(v.begin() + std::ptrdiff_t(pos), std::string(text));
+    }
     std::string joined;
     for (std::size_t i = 0; i < v.size(); ++i) { if (i) joined += '\n'; joined += v[i]; }
     comboSetItems(ui, combo, std::move(joined));
@@ -537,7 +594,7 @@ NodeHandle editableComboBox(UiContext& ui, NodeHandle parent, std::string_view i
     auto h = ui.create("editcombo", parent, id);
     if (!h) return {};
     const NodeHandle combo = *h;
-    ui.setUserData(combo, u64(policy));
+    comboState(ui, combo).o.policy = policy;
     ui.setRange(combo, -1.f, 1e9f, 1.f);
     const NodeHandle edit = lineEdit(ui, combo);
     ui.setCss(edit, "flex-grow", "1");
@@ -575,6 +632,55 @@ i32 comboFindText(const UiContext& ui, NodeHandle combo, std::string_view text, 
 }
 void comboShowList(UiContext& ui, NodeHandle combo) {
     if (!completerPopupVisible(ui, comboEdit(ui, combo))) comboToggleList(ui, combo);
+}
+
+
+void setComboOptions(UiContext& ui, NodeHandle combo, EditableComboOptions o) {
+    if (!ui.alive(combo)) return;
+    LineEditOptions le;
+    le.validator = o.validator;
+    le.fixup = o.fixup;
+    setLineEditOptions(ui, comboEdit(ui, combo), std::move(le));
+    comboState(ui, combo).o = std::move(o);
+}
+void setComboValidator(UiContext& ui, NodeHandle combo, Validator v, Fixup f) {
+    if (!ui.alive(combo)) return;
+    EditableComboOptions o = comboState(ui, combo).o;
+    o.validator = std::move(v);
+    o.fixup = std::move(f);
+    setComboOptions(ui, combo, std::move(o));
+}
+void setComboModel(UiContext& ui, NodeHandle combo, const ItemModel* model, u32 column) {
+    if (!ui.alive(combo)) return;
+    ComboState& cs = comboState(ui, combo);
+    cs.model = model;
+    cs.column = column;
+    comboSetItems(ui, combo, model ? modelItems(model, column) : std::string(ui.text(combo)));
+    const i32 n = i32(comboCount(ui, combo));
+    if (i32(ui.value(combo)) >= n) setComboCurrentIndex(ui, combo, n ? 0 : -1);
+}
+void comboModelChanged(UiContext& ui, NodeHandle combo) {
+    const ComboState& cs = comboState(ui, combo);
+    if (!cs.model) return;
+    ui.setText(combo, modelItems(cs.model, cs.column));
+    completerModelChanged(ui, comboEdit(ui, combo));
+    const i32 n = i32(comboCount(ui, combo));
+    if (i32(ui.value(combo)) >= n) setComboCurrentIndex(ui, combo, n ? n - 1 : -1);
+}
+u32 comboCount(const UiContext& ui, NodeHandle combo) { return ui.alive(combo) ? itemCount(ui.text(combo)) : 0u; }
+std::string comboItemText(const UiContext& ui, NodeHandle combo, u32 index) {
+    return index < comboCount(ui, combo) ? std::string(itemAt(ui.text(combo), index)) : std::string{};
+}
+void setCompletionPrefix(UiContext& ui, NodeHandle edit, std::string_view prefix) {
+    CState* s = stateOf(ui, edit);
+    if (!s) return;
+    const bool was = s->shown;
+    refilter(*s, prefix, s->o.mode == CompletionMode::UnfilteredPopup);
+    if (was) show(ui, edit, *s);
+}
+std::string completionPrefix(UiContext& ui, NodeHandle edit) {
+    const CState* s = stateOf(ui, edit);
+    return s ? s->prefix : std::string{};
 }
 
 } // namespace fuse::ui::widgets

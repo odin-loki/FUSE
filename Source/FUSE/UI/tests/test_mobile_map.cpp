@@ -39,6 +39,23 @@ int main() {
     st = mt.unmark();
     CHECK(!mt.active() && st.setComposition && st.commit == "\xF0\x9F\x98\x80" "a");
     CHECK(!mt.unmark().setComposition);
+    { // A11yState: expanded / selected / suggestions (completer, editable combo)
+        A11yState st;
+        CHECK(an::stateDescription(st).empty());
+        st.expanded = 0;
+        CHECK(an::stateDescription(st) == "collapsed");
+        st.expanded = 1;
+        st.autoComplete = A11yAutoComplete::List;
+        CHECK(an::stateDescription(st) == "expanded, suggestions");
+        st.autoComplete = A11yAutoComplete::Inline;
+        CHECK(an::stateDescription(st) == "expanded");
+        st.selected = true;
+        float f[3] = {};
+        an::a11yStateFloats(st, f, 7.f);
+        CHECK(f[0] == 1.f && f[1] == 1.f && f[2] == 7.f);
+        CHECK(uk::traits(A11yRole::ListItem, false, false, true) == (1ull << 3));
+        CHECK(uk::traits(A11yRole::ListItem, false, false, false) == 0);
+    }
     std::printf("fuse_app_mobile_map: %s\n", g_fail ? "FAIL" : "OK");
     return g_fail ? 1 : 0;
 }

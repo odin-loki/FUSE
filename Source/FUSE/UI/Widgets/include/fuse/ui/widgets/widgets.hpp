@@ -110,6 +110,10 @@ struct ItemModel;
 /// QCompleter::CompletionMode / Qt::MatchFlags filter mode.
 enum class CompletionMode : u8 { Popup, Inline, UnfilteredPopup };
 enum class MatchMode : u8 { StartsWith, Contains, EndsWith };
+/// QCompleter::ModelSorting. A sorted model (by code point, after case folding for CaseInsensitivelySorted) whose
+/// sorting matches `caseSensitive` is searched by binary search for StartsWith / Inline matching: O(log n + matches)
+/// model reads instead of a full scan.
+enum class ModelSorting : u8 { Unsorted, CaseSensitivelySorted, CaseInsensitivelySorted };
 struct CompleterOptions {
     const ItemModel* model = nullptr; ///< not owned; must outlive the edit (call completerModelChanged on change)
     u32 column = 0;                   ///< QCompleter::completionColumn
@@ -119,6 +123,7 @@ struct CompleterOptions {
     MatchMode filter = MatchMode::StartsWith; ///< Inline mode always matches StartsWith (as Qt)
     u32 maxVisibleItems = 7;
     bool wrapAround = true;
+    ModelSorting sorting = ModelSorting::Unsorted;
 };
 /// Attaches a completer to a line edit (an empty model and item list removes it). The prefix is the whole text, as
 /// QLineEdit: typing (not programmatic setLineEditText) refilters. Popup: a list under the field (in the overlay layer,
@@ -134,6 +139,10 @@ void setCompleter(UiContext& ui, NodeHandle edit, CompleterOptions options);
 void completerModelChanged(UiContext& ui, NodeHandle edit);
 /// QCompleter::complete(): shows the popup for the current text (all rows when the text is empty).
 void complete(UiContext& ui, NodeHandle edit);
+/// QCompleter::setCompletionPrefix / completionPrefix: filter for `prefix` without touching the field's text (the
+/// popup, when open, follows). Typing in the field sets the prefix to the whole text again.
+void setCompletionPrefix(UiContext& ui, NodeHandle edit, std::string_view prefix);
+std::string completionPrefix(UiContext& ui, NodeHandle edit);
 /// Number of current completions (QCompleter::completionCount) and the text of one.
 u32 completionCount(UiContext& ui, NodeHandle edit);
 std::string completionAt(UiContext& ui, NodeHandle edit, u32 index);
@@ -149,7 +158,8 @@ NodeHandle completerPopup(const UiContext& ui, NodeHandle edit);
 /// selects the item whose text matches exactly, else inserts the text per the policy (QComboBox::InsertPolicy) and
 /// makes it current. Changes emit ValueChanged {index} and TextChanged {item} on the combo. A11y: ComboBox with
 /// expanded / controls, holding the TextField.
-enum class InsertPolicy : u8 { NoInsert, InsertAtTop, InsertAtBottom, InsertAlphabetically };
+enum class InsertPolicy : u8 { NoInsert, InsertAtTop, InsertAtBottom, InsertAlphabetically, InsertAtCurrent,
+                               InsertAfterCurrent, InsertBeforeCurrent };
 NodeHandle editableComboBox(UiContext& ui, NodeHandle parent, std::string_view items, i32 selected = 0,
                             InsertPolicy policy = InsertPolicy::InsertAtBottom, std::string_view id = {});
 NodeHandle comboLineEdit(const UiContext& ui, NodeHandle combo);
@@ -158,6 +168,24 @@ void setComboCurrentIndex(UiContext& ui, NodeHandle combo, i32 index); ///< -1 c
 /// QComboBox::findText (exact; case-insensitive when !caseSensitive). -1 when absent.
 i32 comboFindText(const UiContext& ui, NodeHandle combo, std::string_view text, bool caseSensitive = true);
 void comboShowList(UiContext& ui, NodeHandle combo); ///< QComboBox::showPopup
+/// QComboBox::setInsertPolicy / setMaxCount / setDuplicatesEnabled / setValidator. Insertion is refused once the
+/// combo holds maxCount items (InsertAtCurrent still replaces). With duplicates enabled Enter inserts even when an
+/// item matches. A validator gates Enter (only Acceptable text selects / inserts) and may fixup.
+struct EditableComboOptions {
+    InsertPolicy policy = InsertPolicy::InsertAtBottom;
+    u32 maxCount = 0x7FFFFFFFu;
+    bool duplicatesEnabled = false;
+    Validator validator; ///< null: everything Acceptable
+    Fixup fixup;
+};
+void setComboOptions(UiContext& ui, NodeHandle combo, EditableComboOptions options);
+void setComboValidator(UiContext& ui, NodeHandle combo, Validator validator, Fixup fixup = {});
+/// Items from a model column (QComboBox::setModel / setModelColumn); the model is not owned and is read-only here,
+/// so Enter only selects (no insertion). Call comboModelChanged after its rows change. nullptr returns to own items.
+void setComboModel(UiContext& ui, NodeHandle combo, const ItemModel* model, u32 column = 0);
+void comboModelChanged(UiContext& ui, NodeHandle combo);
+u32 comboCount(const UiContext& ui, NodeHandle combo);
+std::string comboItemText(const UiContext& ui, NodeHandle combo, u32 index);
 
 // ---- Tier B (plan §5) ------------------------------------------------------------------------------------------------
 // Popups, menus, dialogs and tooltips live in the overlay layer: a core "layer" node kept as the root's last child,

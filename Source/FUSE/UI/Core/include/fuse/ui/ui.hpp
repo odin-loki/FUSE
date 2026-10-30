@@ -269,6 +269,10 @@ public:
     /// Expanded / selected / auto-complete / active-descendant / controls (reset when the node is destroyed).
     void setA11yState(NodeHandle n, const A11yState& st);
     A11yState a11yState(NodeHandle n) const;
+    /// Assistive-tech expand / collapse (AccessKit Expand / Collapse, Android ACTION_EXPAND / COLLAPSE) of a node with
+    /// an expanded state: focuses it (or its first focusable descendant) and sends Alt+Down to open, Escape to close.
+    /// False when the node is not expandable or already in that state.
+    bool a11yExpand(NodeHandle n, bool open);
     A11yRole role(NodeHandle n) const;
     void setUserData(NodeHandle n, u64 v);
     u64 userData(NodeHandle n) const;

@@ -214,9 +214,10 @@ NSString* str(std::string_view s) { return [[NSString alloc] initWithBytes:s.dat
         el.accessibilityLabel = str(n.name);
         // password fields: no value is ever exposed, and VoiceOver announces "secure text field" from the hint
         if (n.protectedText) el.accessibilityHint = @"secure text field";
-        el.accessibilityTraits = UIAccessibilityTraits(fa::uikit::traits(n.role, n.disabled, n.checked));
+        el.accessibilityTraits = UIAccessibilityTraits(fa::uikit::traits(n.role, n.disabled, n.checked, n.state.selected));
         el.accessibilityFrameInContainerSpace = CGRectMake(n.bounds.x, n.bounds.y, n.bounds.w, n.bounds.h);
         if (n.hi > n.lo) el.accessibilityValue = [NSString stringWithFormat:@"%g", double(n.value)];
+        if (const std::string st = fuse::app::android::stateDescription(n.state); !st.empty()) el.accessibilityValue = str(st);
         [els addObject:el];
     }
     self.fuseA11y = els;

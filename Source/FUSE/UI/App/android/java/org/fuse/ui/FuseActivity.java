@@ -22,8 +22,9 @@ public class FuseActivity extends NativeActivity {
     static native void nativeText(boolean commit, String text, int caret);
     static native int nativeA11yCount();
     static native float[] nativeA11yInfo(int index);
-    static native String nativeA11yString(int index, int which); // 0 = name, 1 = class name
+    static native String nativeA11yString(int index, int which); // 0 = name, 1 = class name, 2 = state description
     static native void nativeA11yClick(int index);
+    static native void nativeA11yExpand(int index, boolean open);
 
     private FuseInputView input;
 
@@ -105,6 +106,14 @@ public class FuseActivity extends NativeActivity {
                 info.setChecked(f[3] != 0);
                 info.setEnabled(f[4] == 0);
                 info.setPassword(f.length > 12 && f[12] != 0);
+                if (f.length > 15) {
+                    info.setSelected(f[14] != 0);
+                    if (f[13] >= 0) {
+                        info.addAction(f[13] > 0 ? AccessibilityNodeInfo.AccessibilityAction.ACTION_COLLAPSE
+                                                 : AccessibilityNodeInfo.AccessibilityAction.ACTION_EXPAND);
+                        if (android.os.Build.VERSION.SDK_INT >= 30) info.setStateDescription(nativeA11yString(id, 2));
+                    }
+                }
                 info.setVisibleToUser(true);
                 final Rect r = new Rect((int) f[5], (int) f[6], (int) (f[5] + f[7]), (int) (f[6] + f[8]));
                 info.setBoundsInParent(r); // deprecated; screen bounds below are what services use
@@ -123,6 +132,10 @@ public class FuseActivity extends NativeActivity {
             }
             @Override public boolean performAction(int id, int action, Bundle args) {
                 if (action == AccessibilityNodeInfo.ACTION_CLICK && id >= 0) { nativeA11yClick(id); return true; }
+                // expand / collapse: the field's own toggle (Alt+Down on a combo, complete() on a completer field)
+                if ((action == AccessibilityNodeInfo.ACTION_EXPAND || action == AccessibilityNodeInfo.ACTION_COLLAPSE) && id >= 0) {
+                    nativeA11yExpand(id, action == AccessibilityNodeInfo.ACTION_EXPAND); return true;
+                }
                 return false;
             }
         };

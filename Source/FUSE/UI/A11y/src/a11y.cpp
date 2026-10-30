@@ -70,6 +70,8 @@ bool Bridge::perform(const ActionRequest& r) {
         return true;
     }
     case Action::SetValue: m_ui.setValue(n, r.value, true); return true;
+    case Action::Expand: return m_ui.a11yExpand(n, true);
+    case Action::Collapse: return m_ui.a11yExpand(n, false);
     }
     return false;
 }

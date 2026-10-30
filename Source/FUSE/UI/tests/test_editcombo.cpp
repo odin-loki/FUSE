@@ -4,6 +4,7 @@
 
 #include "fuse/ui/widgets/widgets.hpp"
 
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -145,5 +146,80 @@ int main() {
     UI_CHECK(box && field && button);
     ui.setFocus(other);
     ui.update();
+    // ---- round 3: remaining insert policies, maxCount, duplicates, validator, model ----
+    {
+        auto mk = [&](w::InsertPolicy p, i32 sel) {
+            const NodeHandle c = w::editableComboBox(ui, col, "A\nB\nC", sel, p);
+            ui.update();
+            return c;
+        };
+        auto enter = [&](NodeHandle c, std::string_view t) {
+            const NodeHandle e = w::comboLineEdit(ui, c);
+            ui.setFocus(e);
+            w::setLineEditText(ui, e, "");
+            ui.textInput(t);
+            ui.keyDown(Key::Enter);
+        };
+        NodeHandle c = mk(w::InsertPolicy::InsertAfterCurrent, 0);
+        enter(c, "x");
+        UI_CHECK(items(ui, c) == "A\nx\nB\nC" && w::comboCurrentIndex(ui, c) == 1);
+        c = mk(w::InsertPolicy::InsertBeforeCurrent, 2);
+        enter(c, "x");
+        UI_CHECK(items(ui, c) == "A\nB\nx\nC" && w::comboCurrentIndex(ui, c) == 2);
+        c = mk(w::InsertPolicy::InsertAtCurrent, 1);
+        enter(c, "x");
+        UI_CHECK(items(ui, c) == "A\nx\nC" && w::comboCurrentIndex(ui, c) == 1);
+        // maxCount: full -> nothing inserted, index unchanged; AtCurrent still replaces
+        c = mk(w::InsertPolicy::InsertAtBottom, 0);
+        w::setComboOptions(ui, c, {.policy = w::InsertPolicy::InsertAtBottom, .maxCount = 3});
+        enter(c, "x");
+        UI_CHECK(items(ui, c) == "A\nB\nC" && w::comboCurrentIndex(ui, c) == 0);
+        w::setComboOptions(ui, c, {.policy = w::InsertPolicy::InsertAtCurrent, .maxCount = 3});
+        enter(c, "x");
+        UI_CHECK(items(ui, c) == "x\nB\nC");
+        // duplicates
+        c = mk(w::InsertPolicy::InsertAtBottom, 0);
+        enter(c, "B");
+        UI_CHECK(items(ui, c) == "A\nB\nC" && w::comboCurrentIndex(ui, c) == 1);
+        w::setComboOptions(ui, c, {.duplicatesEnabled = true});
+        enter(c, "B");
+        UI_CHECK(items(ui, c) == "A\nB\nC\nB" && w::comboCurrentIndex(ui, c) == 3 && w::comboCount(ui, c) == 4);
+        // validator: digits only; Intermediate / Invalid text never inserts
+        c = mk(w::InsertPolicy::InsertAtBottom, 0);
+        w::setComboValidator(ui, c, [](std::string_view t) {
+            if (t.empty()) return w::Validation::Intermediate;
+            for (char ch : t) if (ch < '0' || ch > '9') return w::Validation::Invalid;
+            return w::Validation::Acceptable;
+        });
+        ui.setFocus(w::comboLineEdit(ui, c));
+        w::setLineEditText(ui, w::comboLineEdit(ui, c), "");
+        ui.textInput("4");
+        ui.textInput("z");
+        ui.textInput("2");
+        UI_CHECK(w::lineEditText(ui, w::comboLineEdit(ui, c)) == "42");
+        ui.keyDown(Key::Enter);
+        UI_CHECK(items(ui, c) == "A\nB\nC\n42");
+        // model-backed: items mirror the column, Enter selects but never inserts
+        w::StringTableModel tm("id\tcity");
+        tm.addRow("1\tOslo");
+        tm.addRow("2\tParis");
+        c = mk(w::InsertPolicy::InsertAtBottom, 0);
+        w::setComboModel(ui, c, &tm.model(), 1);
+        UI_CHECK(w::comboCount(ui, c) == 2 && w::comboItemText(ui, c, 1) == "Paris");
+        enter(c, "Rome");
+        UI_CHECK(w::comboCount(ui, c) == 2);
+        tm.addRow("3\tRome");
+        w::comboModelChanged(ui, c);
+        UI_CHECK(w::comboCount(ui, c) == 3);
+        enter(c, "Ro"); // inline completion now sees the new row
+        UI_CHECK(w::comboCurrentIndex(ui, c) == 2 && w::lineEditText(ui, w::comboLineEdit(ui, c)) == "Rome");
+        // assistive-tech Expand / Collapse (AccessKit, TalkBack ACTION_EXPAND / COLLAPSE)
+        ui.setFocus(other);
+        UI_CHECK(ui.a11yState(c).expanded == 0 && ui.a11yExpand(c, true));
+        UI_CHECK(w::completerPopupVisible(ui, w::comboLineEdit(ui, c)) && ui.a11yState(c).expanded == 1);
+        UI_CHECK(!ui.a11yExpand(c, true) && ui.a11yExpand(c, false));
+        UI_CHECK(!w::completerPopupVisible(ui, w::comboLineEdit(ui, c)) && ui.a11yState(c).expanded == 0);
+        UI_CHECK(!ui.a11yExpand(other, true)); // not expandable
+    }
     return fuse::ui::test::finish("fuse_ui_editcombo");
 }

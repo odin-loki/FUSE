@@ -215,8 +215,13 @@ struct AndroidPlatform::Impl {
             if (e.commit) { ui.textComposition({}, 0); if (!e.text.empty()) ui.textInput(e.text); }
             else ui.textComposition(e.text, am::utf8OffsetOfUtf16(e.text.data(), i32(e.text.size()), e.caret));
         }
-        for (u32 i : c) { // TalkBack double-tap: click the node's centre
+        for (u32 i : c) { // TalkBack double-tap: click the node's centre; high bits: expand / collapse
             std::lock_guard lk(g_mu);
+            if (i & 0xC0000000u) {
+                const u32 k = i & 0x3FFFFFFFu;
+                if (k < a11y.size()) ui.a11yExpand(a11y[k].n.node, (i & 0x80000000u) != 0);
+                continue;
+            }
             if (i < a11y.size()) {
                 const Rect r = a11y[i].n.bounds;
                 const Vec2 p{r.x + r.w / 2, r.y + r.h / 2};
@@ -370,9 +375,9 @@ JNIEXPORT jint JNICALL Java_org_fuse_ui_FuseActivity_nativeA11yCount(JNIEnv*, jc
     if (!m) return 0;
     return jint(m->a11y.size());
 }
-/// [parent, focusable, focused, checked, disabled, x, y, w, h, value, lo, hi]
+/// [parent, focusable, focused, checked, disabled, x, y, w, h, value, lo, hi, protected, expanded, selected, active]
 JNIEXPORT jfloatArray JNICALL Java_org_fuse_ui_FuseActivity_nativeA11yInfo(JNIEnv* e, jclass, jint i) {
-    float f[13] = {};
+    float f[16] = {};
     {
         std::lock_guard lk(g_mu);
         auto* m = g_impl;
@@ -383,9 +388,14 @@ JNIEXPORT jfloatArray JNICALL Java_org_fuse_ui_FuseActivity_nativeA11yInfo(JNIEn
         f[1] = n.focusable; f[2] = n.focused; f[3] = n.checked; f[4] = n.disabled;
         f[5] = n.bounds.x; f[6] = n.bounds.y; f[7] = n.bounds.w; f[8] = n.bounds.h;
         f[9] = n.value; f[10] = n.lo; f[11] = n.hi; f[12] = n.protectedText;
+        float active = -1.f;
+        if (n.state.activeDescendant.valid())
+            for (std::size_t k = 0; k < m->a11y.size(); ++k)
+                if (m->a11y[k].n.node == n.state.activeDescendant) active = float(k);
+        fuse::app::android::a11yStateFloats(n.state, f + 13, active);
     }
-    jfloatArray a = e->NewFloatArray(13);
-    e->SetFloatArrayRegion(a, 0, 13, f);
+    jfloatArray a = e->NewFloatArray(16);
+    e->SetFloatArrayRegion(a, 0, 16, f);
     return a;
 }
 JNIEXPORT jstring JNICALL Java_org_fuse_ui_FuseActivity_nativeA11yString(JNIEnv* e, jclass, jint i, jint which) {
@@ -395,9 +405,17 @@ JNIEXPORT jstring JNICALL Java_org_fuse_ui_FuseActivity_nativeA11yString(JNIEnv*
         auto* m = g_impl;
         if (!m) return nullptr;
         if (i < 0 || std::size_t(i) >= m->a11y.size()) return nullptr;
-        s = which == 0 ? m->a11y[std::size_t(i)].n.name : m->a11y[std::size_t(i)].cls;
+        const auto& an = m->a11y[std::size_t(i)];
+        s = which == 0 ? an.n.name : which == 2 ? fuse::app::android::stateDescription(an.n.state) : an.cls;
     }
     return e->NewStringUTF(s.c_str());
+}
+JNIEXPORT void JNICALL Java_org_fuse_ui_FuseActivity_nativeA11yExpand(JNIEnv*, jclass, jint i, jboolean open) {
+    std::lock_guard lk(g_mu);
+    if (auto* m = g_impl; m && i >= 0) {
+        m->clicks.push_back(fuse::ui::u32(i) | (open ? 0x80000000u : 0x40000000u));
+        ALooper_wake(m->state->looper);
+    }
 }
 JNIEXPORT void JNICALL Java_org_fuse_ui_FuseActivity_nativeA11yClick(JNIEnv*, jclass, jint i) {
     std::lock_guard lk(g_mu);

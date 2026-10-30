@@ -511,6 +511,20 @@ bool UiContext::a11yProtected(NodeHandle h) const { return node(h) && m_cold[h.i
 void UiContext::setA11yState(NodeHandle h, const A11yState& st) {
     if (node(h)) m_cold[h.index]->a11y = st;
 }
+bool UiContext::a11yExpand(NodeHandle h, bool open) {
+    if (!node(h) || m_cold[h.index]->a11y.expanded < 0 || (m_cold[h.index]->a11y.expanded > 0) == open) return false;
+    NodeHandle f = h;
+    auto firstFocusable = [&](auto&& self, u32 i) -> u32 {
+        if (focusableNode(i)) return i;
+        for (u32 k = m_nodes[i].first; k != kNone; k = m_nodes[k].next)
+            if (const u32 r = self(self, k); r != kNone) return r;
+        return kNone;
+    };
+    if (const u32 i = firstFocusable(firstFocusable, h.index); i != kNone) f = handleOf(i);
+    setFocus(f, FocusReason::Keyboard);
+    keyDown(open ? Key::Down : Key::Escape, open ? u8(kModAlt) : u8(0));
+    return true;
+}
 A11yState UiContext::a11yState(NodeHandle h) const { return node(h) ? m_cold[h.index]->a11y : A11yState{}; }
 A11yRole UiContext::role(NodeHandle h) const { return node(h) ? node(h)->role : A11yRole::None; }
 void UiContext::setUserData(NodeHandle h, u64 v) {

@@ -4,6 +4,7 @@
 
 #include "fuse/ui/widgets/widgets.hpp"
 
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -254,5 +255,38 @@ int main() {
     UI_CHECK(ui.a11yState(fruit).autoComplete == A11yAutoComplete::None);
     ui.update();
 
+    // ---- round 3: binary search on a sorted model, completion prefix ----
+    {
+        struct Big { std::vector<std::string> v; mutable u32 reads = 0; } big;
+        for (u32 k = 0; k < 20000; ++k) { char b[16]; std::snprintf(b, sizeof b, "w%05u", k); big.v.emplace_back(b); }
+        w::ItemModel bm;
+        bm.user = &big;
+        bm.rows = [](const void* u) { return u32(static_cast<const Big*>(u)->v.size()); };
+        bm.data = [](const void* u, u32 r, u32, std::string&) -> std::string_view {
+            auto* b = static_cast<const Big*>(u);
+            ++b->reads;
+            return b->v[r];
+        };
+        const NodeHandle e2 = w::lineEdit(ui, ui.root(), "", "big");
+        ui.update();
+        w::setCompleter(ui, e2, {.model = &bm, .sorting = w::ModelSorting::CaseInsensitivelySorted});
+        ui.setFocus(e2);
+        big.reads = 0;
+        ui.textInput("w1234");
+        UI_CHECK(w::completionCount(ui, e2) == 10 && w::completionAt(ui, e2, 0) == "w12340");
+        UI_CHECK(big.reads < 200); // a full scan would read 20000 rows
+        w::setCompleter(ui, e2, {.model = &bm}); // unsorted: same result, full scan
+        w::setLineEditText(ui, e2, "");
+        big.reads = 0;
+        ui.textInput("w1234");
+        UI_CHECK(w::completionCount(ui, e2) == 10 && big.reads >= 20000);
+        // completion prefix: filters without editing the text
+        w::setCompletionPrefix(ui, e2, "w0000");
+        UI_CHECK(w::completionPrefix(ui, e2) == "w0000" && w::completionCount(ui, e2) == 10);
+        UI_CHECK(w::lineEditText(ui, e2) == "w1234");
+        ui.textInput("5");
+        UI_CHECK(w::completionPrefix(ui, e2) == "w12345" && w::completionCount(ui, e2) == 1);
+        ui.keyDown(Key::Escape);
+    }
     return fuse::ui::test::finish("fuse_ui_completer");
 }

@@ -57,7 +57,10 @@ void* buildAccessKitUpdate(const Bridge& b, bool includeTree) {
         if (s.disabled) accesskit_node_set_disabled(n);
         if (s.focusable) accesskit_node_add_action(n, ACCESSKIT_ACTION_FOCUS);
         if (s.focusable && !ranged(s.role) && s.role != A11yRole::TextField) accesskit_node_add_action(n, ACCESSKIT_ACTION_CLICK);
-        if (s.state.expanded >= 0) accesskit_node_set_expanded(n, s.state.expanded > 0);
+        if (s.state.expanded >= 0) {
+            accesskit_node_set_expanded(n, s.state.expanded > 0);
+            accesskit_node_add_action(n, s.state.expanded > 0 ? ACCESSKIT_ACTION_COLLAPSE : ACCESSKIT_ACTION_EXPAND);
+        }
         if (s.role == A11yRole::ListItem) accesskit_node_set_selected(n, s.state.selected);
         if (s.state.autoComplete != A11yAutoComplete::None)
             accesskit_node_set_auto_complete(n, s.state.autoComplete == A11yAutoComplete::Inline ? ACCESSKIT_AUTO_COMPLETE_INLINE
@@ -113,6 +116,8 @@ void onAction(accesskit_action_request* req, void* user) {
     switch (req->action) {
     case ACCESSKIT_ACTION_FOCUS: r.action = Action::Focus; break;
     case ACCESSKIT_ACTION_CLICK: r.action = Action::Click; break;
+    case ACCESSKIT_ACTION_EXPAND: r.action = Action::Expand; break;
+    case ACCESSKIT_ACTION_COLLAPSE: r.action = Action::Collapse; break;
     case ACCESSKIT_ACTION_INCREMENT: r.action = Action::Increment; break;
     case ACCESSKIT_ACTION_DECREMENT: r.action = Action::Decrement; break;
     case ACCESSKIT_ACTION_SET_VALUE:
