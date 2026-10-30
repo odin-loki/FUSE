@@ -1707,16 +1707,38 @@ NodeHandle videoWidget(UiContext& ui, NodeHandle parent, const VideoSource* sour
 }
 const Image* videoImage(const UiContext& ui, NodeHandle v) { const VideoState* s = videoPool().get(ui, v); return s ? &s->img : nullptr; }
 void videoSetImageIndex(UiContext& ui, NodeHandle v, u32 index) { if (VideoState* s = videoPool().get(ui, v)) { s->index = index; ui.invalidate(v); } }
+namespace {
+void videoShow(UiContext& ui, NodeHandle v, VideoState& s, u32 frame) {
+    s.frame = std::min(frame, s.src->frames ? s.src->frames - 1 : 0);
+    decode(s);
+    ui.setValue(v, f32(s.frame), true);
+    ui.invalidate(v);
+}
+} // namespace
 void videoPlay(UiContext& ui, NodeHandle v, bool play) {
     VideoState* s = videoPool().get(ui, v);
     if (!s || !s->src || s->playing == play) return;
     s->playing = play;
+    if (s->src->playback) s->src->playback(s->src->user, play, s->frame);
     if (play) {
         s->timer = ui.startTimer(1.f / std::max(1.f, s->src->fps), true, [v](UiContext& u) {
             VideoState* st = videoPool().get(u, v);
             if (!st || !st->playing) return;
-            const u32 next = st->frame + 1 >= st->src->frames ? 0 : st->frame + 1;
-            videoSeek(u, v, next);
+            const u32 last = st->src->frames ? st->src->frames - 1 : 0;
+            if (st->src->clock) { // follow the source's audio clock when it runs
+                const double t = st->src->clock(st->src->user);
+                if (t >= 0.0) {
+                    const u32 f = u32(std::min<double>(last, std::floor(t * double(st->src->fps) + 1e-6)));
+                    if (f >= last && st->frame >= last) { // end of media: loop like the frame-stepped path
+                        if (st->src->playback) st->src->playback(st->src->user, true, 0);
+                        videoShow(u, v, *st, 0);
+                    } else if (f != st->frame) videoShow(u, v, *st, f);
+                    return;
+                }
+            }
+            const u32 next = st->frame + 1 > last ? 0 : st->frame + 1;
+            if (next == 0 && st->src->playback) st->src->playback(st->src->user, true, 0);
+            videoShow(u, v, *st, next);
         });
     } else ui.cancelTimer(s->timer);
     ui.emit(v, SignalKind::Toggled, {.flag = play});
@@ -1726,10 +1748,8 @@ bool videoPlaying(const UiContext& ui, NodeHandle v) { const VideoState* s = vid
 void videoSeek(UiContext& ui, NodeHandle v, u32 frame) {
     VideoState* s = videoPool().get(ui, v);
     if (!s || !s->src) return;
-    s->frame = std::min(frame, s->src->frames ? s->src->frames - 1 : 0);
-    decode(*s);
-    ui.setValue(v, f32(s->frame), true);
-    ui.invalidate(v);
+    videoShow(ui, v, *s, frame);
+    if (s->playing && s->src->playback) s->src->playback(s->src->user, true, s->frame);
 }
 u32 videoFrame(const UiContext& ui, NodeHandle v) { const VideoState* s = videoPool().get(ui, v); return s ? s->frame : 0u; }
 u32 videoDecodedFrames(const UiContext& ui, NodeHandle v) { const VideoState* s = videoPool().get(ui, v); return s ? s->decoded : 0u; }

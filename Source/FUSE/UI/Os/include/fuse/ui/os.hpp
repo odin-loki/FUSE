@@ -71,6 +71,28 @@ public:
 /// Tries each file name in order (e.g. "libX11.so.6", "libX11.so"); null when none loads.
 std::unique_ptr<Library> loadLibrary(std::initializer_list<const char*> names);
 
+/// Audio output (PCM float playback). Built on loadLibrary, so it serves every OS backend: PulseAudio (libpulse-simple)
+/// then ALSA (libasound) on Linux / BSD, waveOut (winmm) on Windows; other platforms report no backend.
+/// `device`: backend-specific name (ALSA PCM such as "default" / "null"; empty = system default). The environment
+/// variable FUSE_UI_AUDIO_DEVICE overrides an empty `device` ("alsa:<pcm>" forces ALSA, "pulse" forces PulseAudio).
+class AudioOutput {
+public:
+    virtual ~AudioOutput() = default;
+    /// Queues interleaved float samples; blocks while the device buffer is full (that is the playback clock).
+    virtual bool write(const float* interleaved, std::size_t frames) = 0;
+    /// Waits until everything written has been played.
+    virtual void drain() = 0;
+    /// Frames accepted by write() so far.
+    virtual std::uint64_t framesWritten() const = 0;
+    /// Seconds of written audio not yet heard (device latency + queue), best effort.
+    virtual double latencySeconds() const = 0;
+    virtual std::string backend() const = 0; ///< "pulse", "alsa:<pcm>", "winmm"
+    virtual std::uint32_t sampleRate() const = 0;
+    virtual std::uint32_t channels() const = 0;
+};
+std::unique_ptr<AudioOutput> openAudioOutput(std::uint32_t sampleRate, std::uint32_t channels, std::string* error = nullptr,
+                                             std::string_view device = {});
+
 /// Text clipboard without a bound window (window backends override this with their own selection handling).
 std::expected<std::string, std::string> clipboardText();
 bool setClipboardText(std::string_view text);

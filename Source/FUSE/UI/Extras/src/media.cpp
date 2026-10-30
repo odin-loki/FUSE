@@ -1,225 +1,231 @@
-// Multimedia extras: SystemVideo (runtime-loaded GStreamer decode) and the audio level meter. See media.hpp.
+// Multimedia extras: SystemVideo (streaming decode over the backend in media_*.cpp, audio through os::AudioOutput)
+// and the audio level meter. See media.hpp.
 #include "fuse/ui/extras/media.hpp"
+
+#include "media_internal.hpp"
 
 #include "fuse/ui/os.hpp"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
+#include <thread>
 
 namespace fuse::ui::media {
-namespace {
-#if defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
-#define FUSE_MEDIA_GST 1
-// GStreamer through opaque pointers only; GstMapInfo is the one struct read (stable 1.x layout).
-struct GstMapInfo {
-    void* memory;
-    int flags;
-    u8* data;
-    std::size_t size, maxsize;
-    void* user_data[4];
-    void* reserved[4];
-};
-struct GError {
-    u32 domain;
-    int code;
-    char* message;
-};
-struct Gst {
-    std::unique_ptr<os::Library> core, app;
-    int (*gst_init_check)(int*, char***, GError**) = nullptr;
-    void* (*gst_parse_launch)(const char*, GError**) = nullptr;
-    void* (*gst_bin_get_by_name)(void*, const char*) = nullptr;
-    int (*gst_element_set_state)(void*, int) = nullptr;
-    int (*gst_element_get_state)(void*, int*, int*, u64) = nullptr;
-    void (*gst_object_unref)(void*) = nullptr;
-    void* (*gst_sample_get_buffer)(void*) = nullptr;
-    void* (*gst_sample_get_caps)(void*) = nullptr;
-    void* (*gst_caps_get_structure)(void*, u32) = nullptr;
-    int (*gst_structure_get_int)(void*, const char*, int*) = nullptr;
-    int (*gst_structure_get_fraction)(void*, const char*, int*, int*) = nullptr;
-    int (*gst_buffer_map)(void*, GstMapInfo*, int) = nullptr;
-    void (*gst_buffer_unmap)(void*, GstMapInfo*) = nullptr;
-    void (*gst_mini_object_unref)(void*) = nullptr;
-    void* (*gst_element_factory_find)(const char*) = nullptr;
-    void (*gst_version)(u32*, u32*, u32*, u32*) = nullptr;
-    void* (*gst_app_sink_try_pull_sample)(void*, u64) = nullptr;
-    int (*gst_app_sink_is_eos)(void*) = nullptr;
-    void* (*gst_element_get_bus)(void*) = nullptr;
-    void* (*gst_bus_timed_pop_filtered)(void*, u64, int) = nullptr;
-    void (*g_error_free)(GError*) = nullptr;
-    bool ok = false;
-};
-Gst& gst() {
-    static Gst& g = *new Gst{}; // never unloaded: GStreamer keeps threads past static destruction
-    static bool once = [] {
-        g.core = os::loadLibrary({"libgstreamer-1.0.so.0", "libgstreamer-1.0.so"});
-        g.app = os::loadLibrary({"libgstapp-1.0.so.0", "libgstapp-1.0.so"});
-        if (!g.core || !g.app) return false;
-        bool all = true;
-        auto L = [&](os::Library& lib, auto& f, const char* n) {
-            f = lib.get<std::remove_reference_t<decltype(f)>>(n);
-            all = all && f;
-        };
-#define C(n) L(*g.core, g.n, #n)
-        C(gst_init_check); C(gst_parse_launch); C(gst_bin_get_by_name); C(gst_element_set_state); C(gst_element_get_state);
-        C(gst_object_unref); C(gst_sample_get_buffer); C(gst_sample_get_caps); C(gst_caps_get_structure);
-        C(gst_structure_get_int); C(gst_structure_get_fraction); C(gst_buffer_map); C(gst_buffer_unmap);
-        C(gst_mini_object_unref); C(gst_element_factory_find); C(gst_version);
-        C(gst_element_get_bus); C(gst_bus_timed_pop_filtered);
-#undef C
-        L(*g.app, g.gst_app_sink_try_pull_sample, "gst_app_sink_try_pull_sample");
-        L(*g.app, g.gst_app_sink_is_eos, "gst_app_sink_is_eos");
-        g.g_error_free = g.core->get<void (*)(GError*)>("g_error_free");
-        if (!g.g_error_free)
-            if (auto glib = os::loadLibrary({"libglib-2.0.so.0"})) g.g_error_free = glib->get<void (*)(GError*)>("g_error_free"), glib.release();
-        if (!all) return false;
-        if (!g.gst_init_check(nullptr, nullptr, nullptr)) return false;
-        // decodebin / videoconvert / appsink must all be installed for files to play
-        for (const char* f : {"appsink", "videoconvert", "decodebin"}) {
-            void* fac = g.gst_element_factory_find(f);
-            if (!fac) return false;
-            g.gst_object_unref(fac);
-        }
-        g.ok = true;
-        return true;
-    }();
-    (void)once;
-    return g;
-}
-#endif
-} // namespace
 
 struct SystemVideo::Impl {
-    u32 w = 0, h = 0;
-    f32 fps = 30.f;
-    std::vector<std::vector<u32>> frames;
+    std::unique_ptr<detail::Decoder> video;
+    detail::StreamInfo vi;
+    u32 frames = 0;
+    std::string path, audioDesc;
+    bool fromFile = false;
+    // frame cache (LRU over cacheSlots())
+    struct Slot {
+        u32 index = ~0u;
+        u64 used = 0;
+        std::vector<u32> px;
+    };
+    std::vector<Slot> slots;
+    u64 tick = 0;
+    u32 nextIndex = 0; // index the decoder delivers next without seeking
+    u32 decoded = 0, seeks = 0;
+    std::vector<u32> scratch;
+    std::mutex videoMutex; // frame() may be called from any thread
     widgets::VideoSource src;
+    // audio
+    detail::StreamInfo ai;
+    bool audio = false, outputEnabled = true;
+    std::thread worker;
+    std::atomic<bool> stop{false}, running{false};
+    std::atomic<u64> played{0};
+    std::atomic<double> startSec{0.0}, latency{0.0};
+    std::string backend = "none";
+    std::mutex tapMutex;
+    std::function<void(std::span<const f32>, u32, u32)> tap;
 
-    bool run(const std::string& desc, u32 maxFrames, std::string* error) {
-        auto fail = [&](std::string e) {
-            if (error) *error = std::move(e);
-            frames.clear(), w = h = 0;
-            return false;
-        };
-#if FUSE_MEDIA_GST
-        Gst& g = gst();
-        if (!g.ok) return fail("GStreamer (core, app, decodebin, videoconvert) is not available");
-        GError* err = nullptr;
-        void* pipe = g.gst_parse_launch(desc.c_str(), &err);
-        if (err) {
-            std::string m = err->message ? err->message : "parse error";
-            if (g.g_error_free) g.g_error_free(err);
-            if (pipe) g.gst_object_unref(pipe);
-            return fail(m);
-        }
-        if (!pipe) return fail("gst_parse_launch failed");
-        void* sink = g.gst_bin_get_by_name(pipe, "fusesink");
-        if (!sink) {
-            g.gst_object_unref(pipe);
-            return fail("pipeline has no sink");
-        }
-        constexpr int kNull = 1, kPlaying = 4, kFailure = 0;
-        frames.clear(), w = h = 0;
-        std::string why;
-        if (g.gst_element_set_state(pipe, kPlaying) == kFailure) why = "could not start the decoder (unsupported or missing file)";
-        constexpr u64 kTimeout = 5'000'000'000ull; // 5 s per frame: a stalled pipeline (error) ends the decode
-        while (why.empty() && frames.size() < maxFrames) {
-            void* sample = g.gst_app_sink_try_pull_sample(sink, kTimeout);
-            if (!sample) {
-                if (!g.gst_app_sink_is_eos(sink) && frames.empty()) why = "decoder produced no frames";
-                break;
-            }
-            if (frames.empty()) {
-                void* st = g.gst_caps_get_structure(g.gst_sample_get_caps(sample), 0);
-                int iw = 0, ih = 0, fn = 0, fd = 1;
-                g.gst_structure_get_int(st, "width", &iw);
-                g.gst_structure_get_int(st, "height", &ih);
-                if (g.gst_structure_get_fraction(st, "framerate", &fn, &fd) && fn > 0 && fd > 0) fps = f32(fn) / f32(fd);
-                w = u32(std::max(iw, 0)), h = u32(std::max(ih, 0));
-            }
-            GstMapInfo mi{};
-            void* buf = g.gst_sample_get_buffer(sample);
-            if (w && h && buf && g.gst_buffer_map(buf, &mi, 1)) {
-                const std::size_t n = std::size_t(w) * h;
-                const std::size_t stride = mi.size / h; // RGBA rows, padded to 4 bytes (already a multiple)
-                if (stride >= std::size_t(w) * 4) {
-                    std::vector<u32> px(n);
-                    for (u32 y = 0; y < h; ++y) std::memcpy(px.data() + std::size_t(y) * w, mi.data + y * stride, std::size_t(w) * 4);
-                    for (u32& p : px) p |= 0xFF000000u; // opaque
-                    frames.push_back(std::move(px));
-                }
-                g.gst_buffer_unmap(buf, &mi);
-            }
-            g.gst_mini_object_unref(sample);
-        }
-        if (why.empty() && g.gst_app_sink_is_eos(sink)) {
-            // let the rest of the pipeline (e.g. a muxer branch writing a file) finish before tearing it down
-            if (void* bus = g.gst_element_get_bus(pipe)) {
-                constexpr int kEos = 1, kError = 2;
-                if (void* msg = g.gst_bus_timed_pop_filtered(bus, kTimeout, kEos | kError)) g.gst_mini_object_unref(msg);
-                g.gst_object_unref(bus);
-            }
-        }
-        g.gst_element_set_state(pipe, kNull);
-        g.gst_object_unref(sink);
-        g.gst_object_unref(pipe);
-        if (!why.empty()) return fail(why);
-        if (frames.empty()) return fail("no video frames");
+    ~Impl() { stopAudio(); }
+    void reset() {
+        stopAudio();
+        video.reset();
+        vi = {}, ai = {}, audio = false, frames = 0;
+        slots.clear(), tick = 0, nextIndex = 0, decoded = 0, seeks = 0;
+    }
+    bool openAudioProbe() { // probe the audio track once so hasAudio / rate are known before playback
+        std::string e;
+        auto d = fromFile ? detail::openFile(path, detail::StreamKind::Audio, &e)
+                          : (audioDesc.empty() ? nullptr : detail::openPipeline(audioDesc, detail::StreamKind::Audio, &e));
+        if (!d) return false;
+        ai = d->info();
+        return ai.rate && ai.channels;
+    }
+    void finishOpen(u32 maxFrames) {
+        vi = video->info();
+        frames = std::min(vi.frames, maxFrames);
+        slots.assign(SystemVideo::cacheSlots(), {});
+        scratch.resize(std::size_t(vi.width) * vi.height);
+        nextIndex = vi.atEnd ? ~0u - 64 : 0; // forces a seek on the first read
+        audio = openAudioProbe();
         src = {};
-        src.user = this, src.width = w, src.height = h, src.frames = u32(frames.size()), src.fps = fps;
-        src.frame = [](void* u, u32 i, u32* rgba) {
-            auto* s = static_cast<Impl*>(u);
-            if (s->frames.empty()) return;
-            const auto& f = s->frames[std::min<std::size_t>(i, s->frames.size() - 1)];
-            std::memcpy(rgba, f.data(), f.size() * 4);
+        src.user = this;
+        src.width = vi.width, src.height = vi.height, src.frames = frames, src.fps = vi.fps;
+        src.frame = [](void* u, u32 i, u32* out) {
+            auto* m = static_cast<Impl*>(u);
+            if (const u32* p = m->get(i)) std::memcpy(out, p, std::size_t(m->vi.width) * m->vi.height * 4);
         };
+        if (audio) {
+            src.playback = [](void* u, bool playing, u32 f) {
+                auto* m = static_cast<Impl*>(u);
+                if (playing) m->playAudio(double(f) / double(m->vi.fps), nullptr);
+                else m->stopAudio();
+            };
+            src.clock = [](void* u) { return static_cast<Impl*>(u)->clock(); };
+        }
+    }
+    const u32* get(u32 i) {
+        if (!video || i >= frames) return nullptr;
+        std::lock_guard lk(videoMutex);
+        for (Slot& s : slots)
+            if (s.index == i) {
+                s.used = ++tick;
+                return s.px.data();
+            }
+        // sequential when the target is a little ahead (playback); otherwise seek
+        if (i < nextIndex || i > nextIndex + 15) {
+            ++seeks;
+            if (!video->seekFrame(i)) return nullptr;
+            nextIndex = i; // provisional: corrected by the delivered index below
+        }
+        for (u32 guard = 0; guard < 64; ++guard) {
+            u32 got = 0;
+            if (!video->readFrame(scratch.data(), got)) return nullptr;
+            ++decoded;
+            nextIndex = got + 1;
+            if (got >= i) {
+                Slot* victim = &slots[0];
+                for (Slot& s : slots)
+                    if (s.used < victim->used) victim = &s;
+                victim->index = i, victim->used = ++tick;
+                victim->px = scratch;
+                return victim->px.data();
+            }
+        }
+        return nullptr;
+    }
+    double clock() const {
+        if (!running) return -1.0;
+        const double heard = double(played.load()) / double(std::max(1u, ai.rate)) - latency.load();
+        return startSec.load() + std::max(0.0, heard);
+    }
+    void stopAudio() {
+        stop = true;
+        if (worker.joinable()) worker.join();
+        stop = false;
+        running = false;
+    }
+    bool playAudio(double from, std::string* err) {
+        stopAudio();
+        if (!audio) {
+            if (err) *err = "no audio track";
+            return false;
+        }
+        std::string e;
+        std::unique_ptr<detail::Decoder> dec = fromFile ? detail::openFile(path, detail::StreamKind::Audio, &e)
+                                                        : detail::openPipeline(audioDesc, detail::StreamKind::Audio, &e);
+        if (!dec || (from > 0.0 && !dec->seekSeconds(from))) {
+            if (err) *err = dec ? "audio seek failed" : e;
+            return false;
+        }
+        std::unique_ptr<os::AudioOutput> out;
+        if (outputEnabled) out = os::openAudioOutput(ai.rate, ai.channels, nullptr);
+        backend = out ? out->backend() : "none";
+        latency = out ? out->latencySeconds() : 0.0;
+        played = 0, startSec = from, running = true;
+        worker = std::thread([this, d = std::move(dec), o = std::move(out)]() mutable {
+            std::vector<f32> buf;
+            const auto t0 = std::chrono::steady_clock::now();
+            while (!stop) {
+                buf.clear();
+                if (!d->readAudio(buf)) break;
+                const u32 ch = ai.channels;
+                const std::size_t nf = buf.size() / ch;
+                if (!nf) continue;
+                {
+                    std::lock_guard lk(tapMutex);
+                    if (tap) tap(std::span<const f32>(buf.data(), nf * ch), ch, ai.rate);
+                }
+                if (o) { // write in ~20 ms pieces so stop is responsive
+                    const std::size_t piece = std::max<std::size_t>(1, ai.rate / 50);
+                    for (std::size_t at = 0; at < nf && !stop; at += piece) {
+                        const std::size_t n = std::min(piece, nf - at);
+                        if (!o->write(buf.data() + at * ch, n)) { o.reset(); break; }
+                        played += n;
+                    }
+                } else { // no device: pace by the wall clock
+                    played += nf;
+                    const auto due = t0 + std::chrono::duration<double>(double(played.load()) / ai.rate);
+                    while (!stop && std::chrono::steady_clock::now() < due) std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                }
+            }
+            if (o && !stop) o->drain();
+            running = false;
+        });
         return true;
-#else
-        (void)desc, (void)maxFrames;
-        return fail("no system video decoder backend on this platform");
-#endif
     }
 };
 
 SystemVideo::SystemVideo() : m(std::make_unique<Impl>()) {}
 SystemVideo::~SystemVideo() = default;
-bool SystemVideo::available() {
-#if FUSE_MEDIA_GST
-    return gst().ok;
-#else
-    return false;
-#endif
-}
-std::string SystemVideo::backendName() {
-#if FUSE_MEDIA_GST
-    if (!gst().ok) return {};
-    u32 a = 0, b = 0, c = 0, d = 0;
-    gst().gst_version(&a, &b, &c, &d);
-    char s[48];
-    std::snprintf(s, sizeof s, "gstreamer %u.%u.%u", a, b, c);
-    return s;
-#else
-    return {};
-#endif
-}
-static const char* kTail = " ! videoconvert ! video/x-raw,format=RGBA ! appsink name=fusesink sync=false max-buffers=4";
+bool SystemVideo::available() { return detail::backendAvailable(); }
+std::string SystemVideo::backendName() { return detail::backendName(); }
 bool SystemVideo::openFile(const std::string& path, u32 maxFrames, std::string* error) {
-    if (path.find_first_of("\"\\") != std::string::npos) {
-        if (error) *error = "unsupported character in path";
-        return false;
-    }
-    return m->run("filesrc location=\"" + path + "\" ! decodebin" + kTail, maxFrames, error);
+    m->reset();
+    m->video = detail::openFile(path, detail::StreamKind::Video, error);
+    if (!m->video) return false;
+    m->fromFile = true, m->path = path, m->audioDesc.clear();
+    m->finishOpen(maxFrames);
+    return true;
 }
-bool SystemVideo::openPipeline(const std::string& d, u32 maxFrames, std::string* error) { return m->run(d + kTail, maxFrames, error); }
-bool SystemVideo::valid() const { return !m->frames.empty(); }
-u32 SystemVideo::width() const { return m->w; }
-u32 SystemVideo::height() const { return m->h; }
-u32 SystemVideo::frameCount() const { return u32(m->frames.size()); }
-f32 SystemVideo::fps() const { return m->fps; }
-const u32* SystemVideo::frame(u32 i) const { return i < m->frames.size() ? m->frames[i].data() : nullptr; }
+bool SystemVideo::openPipeline(const std::string& d, u32 maxFrames, std::string* error, const std::string& audioDesc) {
+    m->reset();
+    m->video = detail::openPipeline(d, detail::StreamKind::Video, error);
+    if (!m->video) return false;
+    m->fromFile = false, m->path.clear(), m->audioDesc = audioDesc;
+    m->finishOpen(maxFrames);
+    return true;
+}
+bool SystemVideo::valid() const { return m->video && m->frames; }
+u32 SystemVideo::width() const { return m->vi.width; }
+u32 SystemVideo::height() const { return m->vi.height; }
+u32 SystemVideo::frameCount() const { return m->frames; }
+f32 SystemVideo::fps() const { return m->vi.fps; }
+double SystemVideo::durationSeconds() const { return m->vi.fps > 0 ? double(m->frames) / m->vi.fps : 0.0; }
+const u32* SystemVideo::frame(u32 i) const { return m->get(i); }
+u32 SystemVideo::decodedFrames() const { return m->decoded; }
+u32 SystemVideo::seekCount() const { return m->seeks; }
+u32 SystemVideo::cachedFrames() const {
+    u32 n = 0;
+    for (const auto& s : m->slots) n += s.index != ~0u;
+    return n;
+}
 const widgets::VideoSource& SystemVideo::source() const { return m->src; }
+bool SystemVideo::hasAudio() const { return m->audio; }
+u32 SystemVideo::audioRate() const { return m->ai.rate; }
+u32 SystemVideo::audioChannels() const { return m->ai.channels; }
+bool SystemVideo::playAudio(double from, std::string* e) { return m->playAudio(from, e); }
+void SystemVideo::stopAudio() { m->stopAudio(); }
+bool SystemVideo::audioPlaying() const { return m->running; }
+double SystemVideo::audioClock() const { return m->clock(); }
+u64 SystemVideo::audioFramesPlayed() const { return m->played; }
+void SystemVideo::setAudioTap(std::function<void(std::span<const f32>, u32, u32)> t) {
+    std::lock_guard lk(m->tapMutex);
+    m->tap = std::move(t);
+}
+void SystemVideo::setAudioOutputEnabled(bool e) { m->outputEnabled = e; }
+std::string SystemVideo::audioBackend() const { return m->backend; }
 
 } // namespace fuse::ui::media
 

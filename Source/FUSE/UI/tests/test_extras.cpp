@@ -1423,18 +1423,39 @@ void gateMedia() {
             const u32 bar2 = sv.frame(0)[2 * 64 + 12]; // second bar yellow: blue low
             CHECK((bar2 & 0xFF) > 150 && ((bar2 >> 16) & 0xFF) < 60);
             CHECK(!sv.frame(12) && sv.source().frames == 12 && sv.source().frame);
+            {   // streaming: sequential reads never seek, the cache holds cacheSlots() frames, a jump back seeks
+                fuse::ui::media::SystemVideo st;
+                CHECK(st.openPipeline("videotestsrc num-buffers=40 ! video/x-raw,width=16,height=8,framerate=30/1", 1000, &err));
+                const u32 seeks0 = st.seekCount();
+                for (u32 i = 0; i < 40; ++i) CHECK(st.frame(i));
+                CHECK(st.frameCount() == 40 && st.cachedFrames() == fuse::ui::media::SystemVideo::cacheSlots());
+                const u32 seq = st.seekCount() - seeks0;
+                CHECK(seq <= 1); // at most the rewind after counting frames
+                CHECK(st.frame(39) && st.seekCount() - seeks0 == seq); // cached
+                CHECK(st.frame(3) && st.seekCount() - seeks0 == seq + 1);
+                CHECK(st.frame(20) && st.seekCount() - seeks0 == seq + 2); // > 15 ahead: seek, not decode 16 frames
+                CHECK(st.decodedFrames() < 60);
+                std::printf("  streaming: decoded %u frames, %u seeks\n", st.decodedFrames(), st.seekCount());
+            }
             // max-frame cap
             fuse::ui::media::SystemVideo cap;
             CHECK(cap.openPipeline("videotestsrc num-buffers=30 ! video/x-raw,width=16,height=8", 5) && cap.frameCount() == 5);
             // a real container file round-trip through decodebin (Theora/Ogg written by the system encoder when present)
             const std::string tmp = fuse::ui::os::env("TMPDIR").empty() ? "/tmp" : fuse::ui::os::env("TMPDIR");
             const std::string file = tmp + "/fuse_media_gate.ogv";
-            fuse::ui::media::SystemVideo enc;
-            const bool wrote = enc.openPipeline("videotestsrc num-buffers=6 ! video/x-raw,width=32,height=24 ! tee name=t t. ! queue ! theoraenc ! oggmux ! filesink location=" + file + " t. ! queue", 100);
+            const bool wrote = [&] { // closing a pipeline with its own file sink runs it to the end
+                fuse::ui::media::SystemVideo e;
+                return e.openPipeline("videotestsrc num-buffers=6 ! video/x-raw,width=32,height=24 ! tee name=t t. ! queue ! theoraenc ! oggmux ! filesink location=" + file + " t. ! queue", 100);
+            }();
             if (wrote) {
+                // a path with spaces and both quote kinds goes to the decoder verbatim
+                const std::string odd = tmp + "/fuse media 'gate\" (1).ogv";
+                CHECK(std::rename(file.c_str(), odd.c_str()) == 0);
                 fuse::ui::media::SystemVideo fv;
-                CHECK(fv.openFile(file, 100, &err) && fv.width() == 32 && fv.height() == 24 && fv.frameCount() == 6);
-                std::remove(file.c_str());
+                CHECK(fv.openFile(odd, 100, &err) && fv.width() == 32 && fv.height() == 24 && fv.frameCount() == 6);
+                if (!fv.valid()) std::printf("  odd path: %s\n", err.c_str());
+                CHECK(fv.frame(5) && fv.frame(0) && !fv.hasAudio());
+                std::remove(odd.c_str());
             } else std::printf("  (no theoraenc: file round-trip skipped)\n");
             vid = w::videoWidget(ui, ui.root(), &sv.source(), "sysvideo");
             ui.setCss(vid, "width", "320px");
@@ -1446,6 +1467,38 @@ void gateMedia() {
             w::videoSeek(ui, vid, 7);
             step(ui);
             CHECK(w::videoFrame(ui, vid) == 7 && w::videoImage(ui, vid)->at(2, 2) == sv.frame(7)[2 * 64 + 2]);
+            // audio track: audiotestsrc through os::AudioOutput (ALSA "null" device when ALSA exists, else paced)
+#ifndef _WIN32
+            ::setenv("FUSE_UI_AUDIO_DEVICE", "alsa:null", 1);
+#endif
+            fuse::ui::media::SystemVideo av;
+            CHECK(av.openPipeline("videotestsrc num-buffers=12 ! video/x-raw,width=16,height=8,framerate=25/1", 100, &err,
+                                  "audiotestsrc num-buffers=20 samplesperbuffer=480 wave=sine freq=1000 volume=0.5 ! audio/x-raw,rate=48000,channels=2"));
+            CHECK(av.hasAudio() && av.audioRate() == 48000 && av.audioChannels() == 2);
+            std::atomic<u32> tapped{0};
+            std::atomic<f32> peak{0.f};
+            av.setAudioTap([&](std::span<const f32> s, u32 ch, u32) {
+                f32 p = peak;
+                for (f32 x : s) p = std::max(p, std::abs(x));
+                peak = p;
+                tapped += u32(s.size() / ch);
+            });
+            CHECK(av.playAudio(0.0, &err));
+            for (int i = 0; i < 300 && av.audioPlaying(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            CHECK(!av.audioPlaying() && tapped == 9600 && av.audioFramesPlayed() == 9600 && av.audioClock() < 0.0);
+            CHECK(peak > 0.45f && peak < 0.55f);
+            std::printf("  audio: backend %s, %u frames, peak %.3f\n", av.audioBackend().c_str(), tapped.load(), double(peak.load()));
+            // the widget drives the audio: play starts it at the shown frame, the audio clock paces the frames
+            tapped = 0;
+            NodeHandle avw = w::videoWidget(ui, ui.root(), &av.source(), "avvideo");
+            CHECK(av.source().playback && av.source().clock);
+            w::videoSeek(ui, avw, 5);
+            w::videoPlay(ui, avw, true);
+            CHECK(av.audioPlaying());
+            std::this_thread::sleep_for(std::chrono::milliseconds(60));
+            w::videoPlay(ui, avw, false);
+            CHECK(!av.audioPlaying() && tapped > 0 && tapped < 9600); // started 0.2 s in: fewer than all frames
+            ui.destroy(avw);
         }
     }
     step(ui);

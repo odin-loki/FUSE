@@ -409,6 +409,12 @@ struct VideoSource {
     f32 fps = 30.f;
     /// Fills `rgba` (width * height premultiplied RGBA8, R in the low byte) with frame `index`.
     void (*frame)(void* user, u32 index, u32* rgba) = nullptr;
+    /// Optional: told when playback starts / stops and when the user seeks during playback (at `frame`); a source
+    /// with an audio track starts / stops / repositions its audio here.
+    void (*playback)(void* user, bool playing, u32 frame) = nullptr;
+    /// Optional master clock (seconds of media actually heard); while it returns >= 0 during playback the widget
+    /// shows the frame at that time instead of advancing one frame per tick (audio-driven A/V sync).
+    double (*clock)(void* user) = nullptr;
 };
 const VideoSource& testPatternSource();
 NodeHandle videoWidget(UiContext& ui, NodeHandle parent, const VideoSource* source, std::string_view id = {});

@@ -1,15 +1,17 @@
 #pragma once
 // Multimedia extras: a video source backed by the platform's own decoder, loaded at runtime, and an audio level meter.
 //
-//   SystemVideo  decodes any file the system decoder can play into frames for widgets::videoWidget. Linux / BSD:
-//                GStreamer 1.x (libgstreamer-1.0 + libgstapp-1.0) loaded through the os seam, nothing linked at build
-//                time; decodebin picks whatever codecs are installed. Other platforms: available() is false for now.
-//                Frames are decoded up front (up to maxFrames) so seeking is random access; this suits UI clips, not
-//                feature-length video.
+//   SystemVideo  plays any file the system decoder handles through widgets::videoWidget, with its audio track
+//                through os::AudioOutput. Decoders are loaded at runtime, nothing linked at build time:
+//                Linux / BSD GStreamer 1.x (decodebin picks the installed codecs), Windows Media Foundation
+//                (IMFSourceReader), Apple AVFoundation (AVAssetReader; UNVERIFIED: written without a Mac to test on).
+//                Decoding streams: a small frame cache, sequential reads during playback, a seek for jumps, so memory
+//                does not grow with the clip length. Paths are passed to the decoder as-is (no quoting rules).
 //   audioLevelMeter  a per-channel peak / RMS meter in dBFS with ballistics (instant attack, timed release), a
 //                peak-hold tick and a latching clip lamp. Feed it interleaved float samples.
 #include "fuse/ui/widgets/widgets.hpp"
 
+#include <functional>
 #include <memory>
 #include <span>
 #include <string>
@@ -30,19 +32,49 @@ public:
     /// "gstreamer 1.x.y", or empty when unavailable.
     static std::string backendName();
 
-    bool openFile(const std::string& path, u32 maxFrames = 3000, std::string* error = nullptr);
-    /// Decode a GStreamer source description (e.g. "videotestsrc num-buffers=10"); it is followed by the RGBA
-    /// conversion and the sink. For tests and generated content.
-    bool openPipeline(const std::string& sourceDescription, u32 maxFrames = 3000, std::string* error = nullptr);
+    /// `maxFrames` caps frameCount(). Opens the audio track too when the file has one.
+    bool openFile(const std::string& path, u32 maxFrames = 1u << 30, std::string* error = nullptr);
+    /// GStreamer source descriptions (e.g. "videotestsrc num-buffers=10"), each followed by the conversion and the
+    /// sink; an empty `audioDescription` means no audio. For tests and generated content.
+    bool openPipeline(const std::string& sourceDescription, u32 maxFrames = 1u << 30, std::string* error = nullptr,
+                      const std::string& audioDescription = {});
     bool valid() const;
 
     u32 width() const;
     u32 height() const;
     u32 frameCount() const;
     f32 fps() const;
-    /// Frame `index` as opaque RGBA8 (R in the low byte); nullptr when out of range.
+    double durationSeconds() const;
+    /// Frame `index` as opaque RGBA8 (R in the low byte), decoded on demand; nullptr when out of range or the
+    /// decoder failed. The pointer stays valid until `cacheSlots()` further distinct frames have been requested.
     const u32* frame(u32 index) const;
-    /// A VideoSource over the decoded frames (valid while this object lives).
+    static constexpr u32 cacheSlots() { return 8; }
+    /// Decode statistics: frames decoded, seeks issued, frames currently cached.
+    u32 decodedFrames() const;
+    u32 seekCount() const;
+    u32 cachedFrames() const;
+
+    // ---- audio ----
+    bool hasAudio() const;
+    u32 audioRate() const;
+    u32 audioChannels() const;
+    /// Start the audio track at `fromSeconds` on a worker thread (stops a running one first). Without an output
+    /// device (none available, or setAudioOutputEnabled(false)) it is paced by the wall clock instead, so the tap
+    /// and the clock still work.
+    bool playAudio(double fromSeconds = 0.0, std::string* error = nullptr);
+    void stopAudio();
+    bool audioPlaying() const;
+    /// Seconds of the track heard so far (output position minus device latency); < 0 when audio is not playing.
+    double audioClock() const;
+    u64 audioFramesPlayed() const;
+    /// Receives each decoded block (interleaved float) on the audio thread, e.g. for audioLevelMeterPush via a queue.
+    void setAudioTap(std::function<void(std::span<const f32> interleaved, u32 channels, u32 rate)> tap);
+    void setAudioOutputEnabled(bool enabled);
+    /// The os::AudioOutput backend in use ("pulse", "alsa", "winmm", "none").
+    std::string audioBackend() const;
+
+    /// A VideoSource for videoWidget (valid while this object lives): frames on demand, and playback / seek drive
+    /// the audio track, whose clock paces the video.
     const widgets::VideoSource& source() const;
 
 private:
