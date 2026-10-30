@@ -181,7 +181,19 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         if (area.empty()) continue;
         if (c.op == DrawOp::Glyph && !atlas) continue;
         if (c.op == DrawOp::Image && c.image >= imageCount) continue;
-        pack(c, clip);
+        if (c.op == DrawOp::Path) {
+            // edges ride in the images buffer as float words (no extra binding): info.w = word offset
+            const std::size_t n = std::size_t(c.tw) | (std::size_t(c.th) << 16);
+            if (n == 0 || std::size_t(c.image) + n > list.pathEdges().size()) continue;
+            const u32 at = u32(out.images.size());
+            const PathEdge* e = list.pathEdges().data() + c.image;
+            out.images.resize(out.images.size() + n * 5);
+            std::memcpy(out.images.data() + at, e, n * sizeof(PathEdge));
+            pack(c, clip);
+            out.cmds.back().info[3] = at;
+        } else {
+            pack(c, clip);
+        }
         areas.push_back({std::max(0, int(std::floor(area.x))), std::max(0, int(std::floor(area.y))),
                          std::min(int(width), int(std::ceil(area.right()))), std::min(int(height), int(std::ceil(area.bottom())))});
     }

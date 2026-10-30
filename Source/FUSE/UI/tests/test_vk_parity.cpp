@@ -7,6 +7,7 @@
 #include "vk_headless.hpp"
 
 #include <atomic>
+#include <cmath>
 #include <cstdlib>
 #include <new>
 
@@ -270,6 +271,39 @@ int main() {
         vk.run(prev, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 1); });
         check("damage-blur", compare(cpu7, out));
         UI_CHECK_EQ(out.at(5, 5), prev.at(5, 5)); // outside the box: untouched
+    }
+
+    // 8. vector paths: SVG fill (non-zero + even-odd), stroke over a gradient fill, radial gradients, a clipped path
+    {
+        DrawList pl;
+        pl.rect({0, 0, 488, 400}, Color::rgb(0x181818));
+        pl.path(Path::fromSvg("M40 40 L200 60 L120 200 Z M60 60 L150 80 L110 150 Z"), Color::rgb(0x44aaff), false);
+        pl.path(Path::fromSvg("M240 40 l160 20 l-80 140 z m20 20 l90 20 l-40 70 z"), Color::rgb(0xffaa44, 0.8f), true);
+        Path star;
+        for (int i = 0; i < 10; ++i) {
+            const f32 a = f32(i) * 0.6283185f - 1.5707963f, r = i & 1 ? 30.f : 70.f;
+            if (i == 0) star.moveTo({120 + r * std::cos(a), 300 + r * std::sin(a)});
+            else star.lineTo({120 + r * std::cos(a), 300 + r * std::sin(a)});
+        }
+        star.close();
+        pl.gradientPath(star, Color::rgb(0xffff00), Color::rgb(0xff0000), kGradientRadial);
+        pl.path(Path().circle({330, 290}, 70), Color::rgb(0x22cc66, 0.6f), false, Color::rgb(0xffffff), 4.f);
+        pl.path(Path::fromSvg("M260 380 C300 300 380 460 440 360"), Color{}, false, Color::rgb(0xff44ff), 3.f);
+        pl.gradientRect({20, 210, 60, 60}, Color::rgb(0x0000ff), Color::rgb(0x00ffff), false); // radial-free rect
+        pl.cmds().back().gradient = kGradientRadial;
+        pl.pushClip({300, 0, 100, 120}, 16.f);
+        pl.path(Path().circle({350, 60}, 80), Color::rgb(0xcc2222));
+        pl.popClip();
+        Image cpu8;
+        cpu8.resize(int(W), int(H), 0xFF000000u);
+        init.resize(int(W), int(H), 0xFF000000u);
+        CpuRasterizer r8;
+        r8.render(pl, cpu8);
+        packDrawList(pl, W, H, data);
+        UI_CHECK(gpu.upload(0, data));
+        vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+        check("paths", compare(cpu8, out));
+        UI_CHECK(cpu8.at(120, 300) != 0xFF181818u);          // star filled
     }
 
     // 7. glyph atlas uploads only when its generation changes

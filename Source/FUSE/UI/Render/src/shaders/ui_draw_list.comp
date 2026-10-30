@@ -46,7 +46,7 @@ layout(push_constant) uniform UiPush {
     uint flags;     // 1: start from opaque black (damage clear) instead of the target's contents
 } pc;
 
-const uint kRect = 0u, kShadow = 1u, kGlyph = 2u, kImage = 3u, kLine = 4u;
+const uint kRect = 0u, kShadow = 1u, kGlyph = 2u, kImage = 3u, kLine = 4u, kPath = 8u;
 
 float sdRoundRect(float px, float py, vec4 r, vec4 rad) {
     precise float cx = r.x + r.z * 0.5;
@@ -93,6 +93,17 @@ vec4 extFetch(uint e, ivec2 q) {
     return texelFetch(ui_ext3, q, 0);
 }
 
+float gradientT(uint kind, float px, float py, vec4 r) {
+    if (kind == 1u) return clamp((py - r.y) / max(r.w, 1.0), 0.0, 1.0);
+    if (kind == 2u) return clamp((px - r.x) / max(r.z, 1.0), 0.0, 1.0);
+    precise float dx = px - (r.x + r.z * 0.5);
+    precise float dy = py - (r.y + r.w * 0.5);
+    precise float rad = max(max(r.z, r.w) * 0.5, 1.0);
+    precise float l2 = dx * dx + dy * dy;
+    return clamp(sqrt(l2) / rad, 0.0, 1.0);
+}
+float edgeWord(uint i) { return uintBitsToFloat(ui_images.data[i]); }
+
 uint atlasByte(uint idx) { return (ui_atlas.words[idx >> 2] >> ((idx & 3u) * 8u)) & 0xFFu; }
 
 void main() {
@@ -131,8 +142,7 @@ void main() {
             if (outer <= 0.0) continue;
             vec4 fill = c.fill;
             if (gradient != 0u) {
-                float t = gradient == 1u ? clamp((py - c.rect.y) / max(c.rect.w, 1.0), 0.0, 1.0)
-                                         : clamp((px - c.rect.x) / max(c.rect.z, 1.0), 0.0, 1.0);
+                const float t = gradientT(gradient, px, py, c.rect);
                 precise vec4 f = fill + (c.fill2 - fill) * t;
                 fill = f;
             }
@@ -178,6 +188,57 @@ void main() {
             const float kk = clipCov * (c.fill.a > 0.0 ? c.fill.a : 1.0);
             blend(dst, vec4(float(s & 0xFFu) / 255.0 * kk, float((s >> 8) & 0xFFu) / 255.0 * kk,
                             float((s >> 16) & 0xFFu) / 255.0 * kk, float(s >> 24) / 255.0 * kk));
+        } else if (op == kPath) {
+            // DrawOp::Path: same loop as pathSample() in Core/src/draw_list.cpp
+            const uint n = c.info.z, base = c.info.w;
+            int wind[16];
+            for (int k = 0; k < 16; ++k) wind[k] = 0;
+            precise float s2 = 3.0e38;
+            for (uint i = 0u; i < n; ++i) {
+                const uint o = base + i * 5u;
+                const float ax = edgeWord(o), ay = edgeWord(o + 1u), bx = edgeWord(o + 2u), by = edgeWord(o + 3u);
+                precise float vx = bx - ax;
+                precise float vy = by - ay;
+                if (edgeWord(o + 4u) == 0.0) {
+                    precise float len2 = max(vx * vx + vy * vy, 1e-12);
+                    precise float t = clamp(((px - ax) * vx + (py - ay) * vy) / len2, 0.0, 1.0);
+                    precise float ex = px - (ax + vx * t);
+                    precise float ey = py - (ay + vy * t);
+                    precise float q = ex * ex + ey * ey;
+                    s2 = min(s2, q);
+                }
+                if (ay == by) continue;
+                const int dir = by > ay ? 1 : -1;
+                const float lo = min(ay, by), hi = max(ay, by);
+                for (int j = 0; j < 4; ++j) {
+                    precise float sy = py - 0.5 + (float(j) + 0.5) * 0.25;
+                    if (sy < lo || sy >= hi) continue;
+                    precise float xi = ax + (sy - ay) * vx / vy;
+                    for (int k = 0; k < 4; ++k) {
+                        precise float sx = px - 0.5 + (float(k) + 0.5) * 0.25;
+                        if (xi > sx) wind[j * 4 + k] += dir;
+                    }
+                }
+            }
+            const bool evenOdd = (c.info.y >> 16) != 0u;
+            int inCount = 0;
+            for (int k = 0; k < 16; ++k) inCount += evenOdd ? (wind[k] & 1) : (wind[k] != 0 ? 1 : 0);
+            const float ds = sqrt(s2);
+            precise float fc = float(inCount) / 16.0 * clipCov;
+            vec4 fill = c.fill;
+            if (gradient != 0u) {
+                const float t = gradientT(gradient, px, py, c.rect);
+                precise vec4 f = fill + (c.fill2 - fill) * t;
+                fill = f;
+            }
+            vec4 o = premul(fill, fill.a > 0.0 || gradient != 0u ? fc : 0.0);
+            if (c.params.x > 0.0) {
+                precise float sc = clamp(0.5 - (ds - c.params.x * 0.5), 0.0, 1.0) * clipCov;
+                const vec4 pb = premul(c.border, sc);
+                precise vec4 oo = pb + o * (1.0 - pb.a);
+                o = oo;
+            }
+            blend(dst, o);
         } else if (op == kLine) {
             precise float vx = c.rect.z - c.rect.x;
             precise float vy = c.rect.w - c.rect.y;

@@ -8,6 +8,7 @@
 
 #include <array>
 #include <span>
+#include <string_view>
 #include <vector>
 
 namespace fuse::ui {
@@ -21,6 +22,52 @@ enum class DrawOp : u8 {
     PushClip, ///< intersect the clip with `rect` (rounded clips: radius[0])
     PopClip,
     Backdrop, ///< frosted glass: blurs what is already drawn under the rounded `rect` (radius `blur`), then `fill` over it
+    Path,     ///< filled / stroked vector path: edges DrawList::pathEdges()[image .. image + count) (count = tw | th << 16),
+              ///< fill rule `v` (0 non-zero, 1 even-odd), `fill` (+ `gradient` / `fill2` over `rect`), stroke `border` /
+              ///< `borderWidth`; `rect` = bounds. Analytic AA from the distance to the nearest edge.
+};
+
+/// Gradient kinds (DrawCmd::gradient) for Rect and Path: from `fill` to `fill2` across `rect`.
+enum GradientKind : u8 { kGradientNone = 0, kGradientVertical = 1, kGradientHorizontal = 2, kGradientRadial = 3 };
+
+/// One flattened path edge (DrawOp::Path). `fillOnly`: the implicit closing edge of an open contour (it bounds the
+/// fill but is not stroked).
+struct PathEdge {
+    f32 x0, y0, x1, y1;
+    f32 fillOnly;
+};
+
+/// A vector path (SVG / canvas style): contours of lines, quadratic and cubic Béziers, flattened on build.
+class Path {
+public:
+    Path& moveTo(Vec2 p);
+    Path& lineTo(Vec2 p);
+    Path& quadTo(Vec2 c, Vec2 p);
+    Path& cubicTo(Vec2 c1, Vec2 c2, Vec2 p);
+    Path& close();
+    Path& rect(const Rect& r);
+    Path& circle(Vec2 c, f32 r);
+    /// SVG path data (`d` attribute): M L H V C S Q T Z, absolute and relative; arcs (A) are drawn as lines to their
+    /// end point. Returns false (path left with what parsed) on a syntax error.
+    bool appendSvg(std::string_view d);
+    static Path fromSvg(std::string_view d) {
+        Path p;
+        p.appendSvg(d);
+        return p;
+    }
+    /// Maps every point: p * scale + offset (SVG viewBox placement).
+    Path& transform(Vec2 scale, Vec2 offset);
+    const std::vector<PathEdge>& edges() const;
+    Rect bounds() const;
+    bool empty() const { return edges().empty(); }
+
+private:
+    void edge(Vec2 a, Vec2 b);
+    void unclose() const; ///< drops the implicit closing edge before the contour continues
+    mutable std::vector<PathEdge> m_edges;
+    Vec2 m_last{}, m_start{}, m_ctrl{};
+    bool m_hasCtrl = false, m_inContour = false;
+    mutable bool m_implicitClose = false; ///< m_edges ends with the open contour's fill-only closing edge
 };
 
 struct DrawCmd {
@@ -38,7 +85,10 @@ struct DrawCmd {
 
 class DrawList {
 public:
-    void clear() { m_cmds.clear(); }
+    void clear() {
+        m_cmds.clear();
+        m_edges.clear();
+    }
     void reserve(std::size_t n) { m_cmds.reserve(n); }
     void push(const DrawCmd& c) { m_cmds.push_back(c); }
     void rect(const Rect& r, Color fill, f32 radius = 0.f);
@@ -48,6 +98,12 @@ public:
     void line(Vec2 a, Vec2 b, Color c, f32 width);
     /// Backdrop blur (CSS backdrop-filter: blur()): everything drawn before this command under `r` is blurred.
     void backdrop(const Rect& r, f32 blur, const std::array<f32, 4>& radii, Color tint = {});
+    /// Fills `p` (fill.a == 0: no fill) and strokes it (`strokeWidth` > 0, centred on the outline).
+    void path(const Path& p, Color fill, bool evenOdd = false, Color stroke = {}, f32 strokeWidth = 0.f);
+    void gradientPath(const Path& p, Color from, Color to, GradientKind kind, bool evenOdd = false);
+    const std::vector<PathEdge>& pathEdges() const { return m_edges; }
+    /// Copies `c` from `src` (its path edges too, for DrawOp::Path).
+    void pushFrom(const DrawList& src, DrawCmd c);
     void pushClip(const Rect& r, f32 radius = 0.f);
     void popClip();
     const std::vector<DrawCmd>& cmds() const { return m_cmds; }
@@ -59,7 +115,9 @@ public:
     void translate(Vec2 d);
 
 private:
+    friend void scaleDrawList(const DrawList& in, f32 scale, DrawList& out);
     std::vector<DrawCmd> m_cmds;
+    std::vector<PathEdge> m_edges;
 };
 
 /// A premultiplied RGBA8 image.

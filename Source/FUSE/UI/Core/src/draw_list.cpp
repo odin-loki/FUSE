@@ -47,6 +47,7 @@ void DrawList::translate(Vec2 d) {
         c.rect.y += d.y;
         if (c.op == DrawOp::Line) { c.rect.w += d.x; c.rect.h += d.y; }
     }
+    for (PathEdge& e : m_edges) { e.x0 += d.x; e.y0 += d.y; e.x1 += d.x; e.y1 += d.y; }
 }
 
 void DrawList::backdrop(const Rect& r, f32 blur, const std::array<f32, 4>& radii, Color tint) {
@@ -79,6 +80,8 @@ void scaleDrawList(const DrawList& in, f32 s, DrawList& out) {
         if (c.op == DrawOp::Glyph) c.rect = {std::round(c.rect.x), std::round(c.rect.y), f32(c.tw), f32(c.th)};
         out.push(c);
     }
+    out.m_edges = in.m_edges;
+    for (PathEdge& e : out.m_edges) { e.x0 *= s; e.y0 *= s; e.x1 *= s; e.y1 *= s; }
 }
 void DrawList::pushClip(const Rect& r, f32 radius) {
     DrawCmd c;
@@ -115,6 +118,7 @@ u64 DrawList::hash() const {
         h = fnv(h, c.radius.data(), 16);
         h = fnv(h, &c.blur, 4);
     }
+    if (!m_edges.empty()) h = fnv(h, m_edges.data(), m_edges.size() * sizeof(PathEdge));
     return h;
 }
 
@@ -153,6 +157,48 @@ inline void blend(u32& dst, Px s) {
 inline Px premul(Color c, f32 cov) {
     const f32 a = std::clamp(c.a, 0.f, 1.f) * cov;
     return {c.r * a, c.g * a, c.b * a, a};
+}
+
+/// Gradient parameter of (px, py) across `r` (GradientKind); the GPU kernel has the same arithmetic.
+inline f32 gradientT(u8 kind, f32 px, f32 py, const Rect& r) {
+    if (kind == kGradientVertical) return std::clamp((py - r.y) / std::max(r.h, 1.f), 0.f, 1.f);
+    if (kind == kGradientHorizontal) return std::clamp((px - r.x) / std::max(r.w, 1.f), 0.f, 1.f);
+    const f32 dx = px - (r.x + r.w * 0.5f), dy = py - (r.y + r.h * 0.5f);
+    const f32 rad = std::max(std::max(r.w, r.h) * 0.5f, 1.f);
+    return std::clamp(std::sqrt(dx * dx + dy * dy) / rad, 0.f, 1.f);
+}
+inline Color lerpColor(Color a, Color b, f32 t) {
+    return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t};
+}
+/// DrawOp::Path at a pixel: fill coverage from the winding rule at 4x4 sub-samples (exact for overlapping contours and
+/// holes), stroke distance to the nearest stroked edge. The GPU kernel runs the same loop.
+inline void pathSample(const PathEdge* e, std::size_t n, f32 px, f32 py, bool evenOdd, f32& fillCov, f32& dStroke) {
+    int wind[16] = {};
+    f32 s2 = 3.0e38f;
+    for (std::size_t i = 0; i < n; ++i) {
+        const f32 ax = e[i].x0, ay = e[i].y0, bx = e[i].x1, by = e[i].y1;
+        const f32 vx = bx - ax, vy = by - ay;
+        if (e[i].fillOnly == 0.f) {
+            const f32 len2 = std::max(vx * vx + vy * vy, 1e-12f);
+            const f32 t = std::clamp(((px - ax) * vx + (py - ay) * vy) / len2, 0.f, 1.f);
+            const f32 ex = px - (ax + vx * t), ey = py - (ay + vy * t);
+            s2 = std::min(s2, ex * ex + ey * ey);
+        }
+        if (ay == by) continue;
+        const int dir = by > ay ? 1 : -1;
+        const f32 lo = std::min(ay, by), hi = std::max(ay, by);
+        for (int j = 0; j < 4; ++j) {
+            const f32 sy = py - 0.5f + (f32(j) + 0.5f) * 0.25f;
+            if (sy < lo || sy >= hi) continue;
+            const f32 xi = ax + (sy - ay) * vx / vy;
+            for (int k = 0; k < 4; ++k)
+                if (xi > px - 0.5f + (f32(k) + 0.5f) * 0.25f) wind[j * 4 + k] += dir;
+        }
+    }
+    int in = 0;
+    for (int w : wind) in += evenOdd ? (w & 1) : (w != 0);
+    fillCov = f32(in) / 16.f;
+    dStroke = std::sqrt(s2);
 }
 
 /// Signed distance from p to a rounded rect (negative inside).
@@ -293,12 +339,7 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
                     const f32 outer = std::clamp(0.5f - d, 0.f, 1.f) * clipCov;
                     if (outer <= 0.f) break;
                     Color fill = c.fill;
-                    if (c.gradient) {
-                        const f32 t = c.gradient == 1 ? std::clamp((py - c.rect.y) / std::max(c.rect.h, 1.f), 0.f, 1.f)
-                                                      : std::clamp((px - c.rect.x) / std::max(c.rect.w, 1.f), 0.f, 1.f);
-                        fill = {fill.r + (c.fill2.r - fill.r) * t, fill.g + (c.fill2.g - fill.g) * t,
-                                fill.b + (c.fill2.b - fill.b) * t, fill.a + (c.fill2.a - fill.a) * t};
-                    }
+                    if (c.gradient) fill = lerpColor(fill, c.fill2, gradientT(c.gradient, px, py, c.rect));
                     if (c.borderWidth > 0.f && c.border.a > 0.f) {
                         const f32 inner = std::clamp(0.5f - (d + c.borderWidth), 0.f, 1.f) * clipCov;
                         const Px pf = premul(fill, inner);
@@ -346,6 +387,24 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
                     const f32 d = std::sqrt(ex * ex + ey * ey) - c.borderWidth * 0.5f;
                     const f32 cov = std::clamp(0.5f - d, 0.f, 1.f) * clipCov;
                     if (cov > 0.f) blend(row[x], premul(c.fill, cov));
+                    break;
+                }
+                case DrawOp::Path: {
+                    const std::size_t n = std::size_t(c.tw) | (std::size_t(c.th) << 16);
+                    if (std::size_t(c.image) + n > list.pathEdges().size()) break;
+                    f32 fc = 0.f, ds = 0.f;
+                    pathSample(list.pathEdges().data() + c.image, n, px, py, c.v != 0, fc, ds);
+                    fc *= clipCov;
+                    Color fill = c.fill;
+                    if (c.gradient) fill = lerpColor(fill, c.fill2, gradientT(c.gradient, px, py, c.rect));
+                    Px o = premul(fill, fill.a > 0.f || c.gradient ? fc : 0.f);
+                    if (c.borderWidth > 0.f) {
+                        const f32 sc = std::clamp(0.5f - (ds - c.borderWidth * 0.5f), 0.f, 1.f) * clipCov;
+                        // stroke over fill (source-over within the command)
+                        const Px pb = premul(c.border, sc);
+                        o = {pb.r + o.r * (1.f - pb.a), pb.g + o.g * (1.f - pb.a), pb.b + o.b * (1.f - pb.a), pb.a + o.a * (1.f - pb.a)};
+                    }
+                    blend(row[x], o);
                     break;
                 }
                 default: break;
