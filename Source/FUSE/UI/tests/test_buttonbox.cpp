@@ -82,5 +82,64 @@ int main() {
     ui.update();
     const Rect s1 = ui.rect(save), d1 = ui.rect(w::dialogButtonBoxButton(ui, box, w::StdButton::Discard));
     UI_CHECK(d1.y > s1.y && std::abs(d1.x - s1.x) < 1.f);
+
+    // QDialog keys: Enter = default button, Escape = reject button, a focused push button presses itself
+    {
+        f32 res = -1.f; std::string txt;
+        auto watch = [&](NodeHandle d) { ui.connect(d, SignalKind::Submitted, [&](UiContext&, NodeHandle, const SignalArgs& a) { res = a.value; txt = a.text; }); };
+        NodeHandle mb = w::messageBox(ui, "Q", "Save?", "Save\nDiscard\nCancel");
+        watch(mb); ui.update();
+        ui.keyDown(Key::Escape, 0); ui.update();
+        UI_CHECK(res == 2.f && txt == "Cancel");
+        mb = w::messageBox(ui, "Q", "Save?", "Save\nDiscard\nCancel");
+        watch(mb); ui.update(); res = -1.f;
+        ui.keyDown(Key::Enter, 0); ui.update();
+        UI_CHECK(res == 0.f && txt == "Save");
+        // focused Discard: Enter presses it, not the default
+        mb = w::messageBox(ui, "Q", "Save?", "Save\nDiscard\nCancel");
+        watch(mb); ui.update(); res = -1.f;
+        for (NodeHandle b : w::dialogButtonBoxButtons(ui, ui.nextSibling(ui.firstChild(w::dialogBody(ui, mb)))))
+            if (ui.text(b) == "Discard") ui.setFocus(b, FocusReason::Keyboard);
+        ui.keyDown(Key::Enter, 0); ui.update();
+        UI_CHECK(res == 1.f && txt == "Discard");
+        // custom-only buttons: Escape = last
+        mb = w::messageBox(ui, "Q", "Pick", "Alpha\nBeta");
+        watch(mb); ui.update(); res = -1.f;
+        ui.keyDown(Key::Escape, 0); ui.update();
+        UI_CHECK(res == 1.f);
+        // input dialog: Enter in the line edit accepts with its text, Escape rejects
+        NodeHandle in = w::inputDialog(ui, "Name", "Name:", "bob");
+        watch(in); ui.update(); res = -1.f;
+        ui.keyDown(Key::Enter, 0); ui.update();
+        UI_CHECK(res == 1.f && txt == "bob");
+        in = w::inputDialog(ui, "Name", "Name:", "bob");
+        watch(in); ui.update(); res = -1.f;
+        ui.keyDown(Key::Escape, 0); ui.update();
+        UI_CHECK(res == 0.f);
+        // wizard: Enter = Next until the last page, then Finish; Escape = Cancel
+        NodeHandle wz = w::wizard(ui, "W", "One\nTwo");
+        watch(wz); ui.update(); res = -1.f;
+        ui.keyDown(Key::Enter, 0); ui.update();
+        UI_CHECK(res == -1.f && w::wizardCurrent(ui, wz) == 1);
+        ui.keyDown(Key::Enter, 0); ui.update();
+        UI_CHECK(res == 1.f);
+        wz = w::wizard(ui, "W", "One\nTwo");
+        watch(wz); ui.update(); res = -1.f;
+        ui.keyDown(Key::Escape, 0); ui.update();
+        UI_CHECK(res == 0.f);
+        // plain dialog with explicit default / reject
+        const NodeHandle dl = w::dialog(ui, "D");
+        const NodeHandle ok = w::button(ui, w::dialogBody(ui, dl), "Go"), no = w::button(ui, w::dialogBody(ui, dl), "Stop");
+        int go = 0, stop = 0;
+        ui.connect(ok, SignalKind::Clicked, [&](UiContext&, NodeHandle, const SignalArgs&) { ++go; });
+        ui.connect(no, SignalKind::Clicked, [&](UiContext&, NodeHandle, const SignalArgs&) { ++stop; });
+        w::setDialogDefaultButton(ui, dl, ok); w::setDialogRejectButton(ui, dl, no);
+        w::openDialog(ui, dl); ui.update();
+        ui.keyDown(Key::Enter, 0); ui.keyDown(Key::Escape, 0); ui.update();
+        UI_CHECK(go == 1 && stop == 1);
+        ui.setDisabled(no, true);
+        ui.keyDown(Key::Escape, 0); ui.update(); // no enabled reject: closes
+        UI_CHECK(stop == 1 && go == 1);
+    }
     return fuse::ui::test::finish("fuse_ui_buttonbox");
 }

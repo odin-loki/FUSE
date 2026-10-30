@@ -13,7 +13,7 @@ struct BoxState {
     DialogButtonBoxOptions o;
     std::vector<Entry> items;
     u32 seq = 0;
-    NodeHandle def;
+    NodeHandle def, rej;
 };
 std::unordered_map<const UiContext*, std::unordered_map<u32, BoxState>>& boxes() {
     static std::unordered_map<const UiContext*, std::unordered_map<u32, BoxState>> m;
@@ -101,14 +101,22 @@ void relayout(UiContext& ui, NodeHandle box, BoxState& st) {
     }
     if (st.o.centerButtons) stretch(ui, box);
     // default button: first Accept, else first Yes (in visual order)
-    if (ui.alive(st.def)) ui.removeClass(st.def, "default");
-    st.def = {};
+    if (ui.alive(st.def)) { ui.removeClass(st.def, "default"); ui.removeClass(st.def, "dialog-default"); }
+    if (ui.alive(st.rej)) ui.removeClass(st.rej, "dialog-reject");
+    st.def = st.rej = {};
     for (ButtonRole want : {ButtonRole::Accept, ButtonRole::Yes}) {
         for (NodeHandle c = ui.firstChild(box); ui.alive(c) && !ui.alive(st.def); c = ui.nextSibling(c))
             for (const Entry& e : st.items) if (e.btn == c && e.role == want) { st.def = c; break; }
         if (ui.alive(st.def)) break;
     }
-    if (ui.alive(st.def)) ui.addClass(st.def, "default");
+    if (ui.alive(st.def)) { ui.addClass(st.def, "default"); ui.addClass(st.def, "dialog-default"); }
+    // the enclosing dialog's Escape presses the first Reject, else No, button (QDialog::reject)
+    for (ButtonRole want : {ButtonRole::Reject, ButtonRole::No}) {
+        for (NodeHandle c = ui.firstChild(box); ui.alive(c) && !ui.alive(st.rej); c = ui.nextSibling(c))
+            for (const Entry& e : st.items) if (e.btn == c && e.role == want) { st.rej = c; break; }
+        if (ui.alive(st.rej)) break;
+    }
+    if (ui.alive(st.rej)) ui.addClass(st.rej, "dialog-reject");
     ui.markAllDirty();
 }
 
@@ -224,6 +232,10 @@ std::vector<NodeHandle> dialogButtonBoxButtons(const UiContext& ui, NodeHandle b
     for (NodeHandle c = ui.firstChild(box); ui.alive(c); c = ui.nextSibling(c))
         if (!ui.hasClass(c, "buttonbox-stretch")) v.push_back(c);
     return v;
+}
+NodeHandle dialogButtonBoxRejectButton(const UiContext& ui, NodeHandle box) {
+    const BoxState* st = boxOf(ui, box);
+    return st && ui.alive(st->rej) ? st->rej : NodeHandle{};
 }
 NodeHandle dialogButtonBoxDefault(const UiContext& ui, NodeHandle box) {
     const BoxState* st = boxOf(ui, box);

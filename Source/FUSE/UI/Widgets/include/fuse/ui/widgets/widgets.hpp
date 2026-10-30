@@ -261,6 +261,10 @@ NodeHandle dialog(UiContext& ui, std::string_view title, std::string_view id = {
 NodeHandle dialogBody(const UiContext& ui, NodeHandle dlg);
 void openDialog(UiContext& ui, NodeHandle dlg);
 void closeDialog(UiContext& ui, NodeHandle dlg);
+/// QDialog keys: Enter presses the default button (class "dialog-default") unless a push button has focus; Escape
+/// presses the reject button (class "dialog-reject"), else closes. A dialog button box sets both automatically.
+void setDialogDefaultButton(UiContext& ui, NodeHandle dlg, NodeHandle button);
+void setDialogRejectButton(UiContext& ui, NodeHandle dlg, NodeHandle button);
 
 /// Shows `text` under `node` after `delay` seconds of hover; hides on leave. Returns the tooltip node.
 NodeHandle setTooltip(UiContext& ui, NodeHandle node, std::string_view text, f32 delay = 0.5f);

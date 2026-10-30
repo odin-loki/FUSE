@@ -72,6 +72,15 @@ NodeHandle firstFocusable(const UiContext& ui, NodeHandle n) {
     }
     return {};
 }
+/// First enabled descendant with class `cls` (dialog default / reject buttons).
+NodeHandle findClass(const UiContext& ui, NodeHandle n, std::string_view cls) {
+    for (NodeHandle c = ui.firstChild(n); ui.alive(c); c = ui.nextSibling(c)) {
+        if (ui.hasClass(c, cls) && !ui.disabled(c)) return c;
+        const NodeHandle d = findClass(ui, c, cls);
+        if (d.valid()) return d;
+    }
+    return {};
+}
 void destroyCmd(UiContext& ui, NodeHandle n, u64, u64) {
     if (ui.alive(n)) ui.destroy(n);
 }
@@ -92,8 +101,20 @@ struct Popup {
             return true; // a modal scrim keeps focus inside the dialog
         }
         if (e.type == EventType::KeyDown && e.key == Key::Escape) {
-            closePopup(ec.ui, ec.node);
+            // QDialog::reject: a dialog's reject button handles Escape (its slots decide), else the dialog closes
+            if (const NodeHandle r = modal ? findClass(ec.ui, ec.node, "dialog-reject") : NodeHandle{}; r.valid())
+                ec.ui.emit(r, SignalKind::Clicked, {});
+            else closePopup(ec.ui, ec.node);
             return true;
+        }
+        if (modal && e.type == EventType::KeyDown && e.key == Key::Enter && !(e.mods & (kModCtrl | kModAlt | kModSuper))) {
+            // QDialog: Enter presses the default button unless a push button has focus (autoDefault: it presses itself)
+            const NodeHandle f = ec.ui.focused();
+            if (ec.ui.alive(f) && ec.ui.registry().get(ec.ui.classOf(f)).name == "button") return false;
+            if (const NodeHandle d = findClass(ec.ui, ec.node, "dialog-default"); d.valid()) {
+                ec.ui.emit(d, SignalKind::Clicked, {});
+                return true;
+            }
         }
         return false;
     }
@@ -689,6 +710,20 @@ void openDialog(UiContext& ui, NodeHandle dlg) {
     if (f.valid()) ui.setFocus(f, FocusReason::Keyboard);
 }
 void closeDialog(UiContext& ui, NodeHandle dlg) { closePopup(ui, dlg); }
+void setDialogDefaultButton(UiContext& ui, NodeHandle dlg, NodeHandle button) {
+    const NodeHandle scope = ui.parent(dlg);
+    if (!ui.alive(scope)) return;
+    for (NodeHandle old = findClass(ui, scope, "dialog-default"); old.valid(); old = findClass(ui, scope, "dialog-default"))
+        ui.removeClass(old, "dialog-default");
+    if (ui.alive(button)) ui.addClass(button, "dialog-default");
+}
+void setDialogRejectButton(UiContext& ui, NodeHandle dlg, NodeHandle button) {
+    const NodeHandle scope = ui.parent(dlg);
+    if (!ui.alive(scope)) return;
+    for (NodeHandle old = findClass(ui, scope, "dialog-reject"); old.valid(); old = findClass(ui, scope, "dialog-reject"))
+        ui.removeClass(old, "dialog-reject");
+    if (ui.alive(button)) ui.addClass(button, "dialog-reject");
+}
 
 NodeHandle setTooltip(UiContext& ui, NodeHandle node, std::string_view text, f32 delay) {
     registerTierB(ui);

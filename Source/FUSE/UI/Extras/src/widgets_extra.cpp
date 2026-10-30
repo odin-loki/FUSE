@@ -409,6 +409,9 @@ void wizUpdate(UiContext& ui, WizardState& s) {
     ui.setDisabled(s.back, s.cur == 0);
     ui.setCss(s.next, "display", s.cur + 1 < s.count ? "flex" : "none");
     ui.setCss(s.finish, "display", s.cur + 1 >= s.count ? "flex" : "none");
+    setDialogDefaultButton(ui, s.card, s.cur + 1 < s.count ? s.next : s.finish); // QWizard: Next, then Finish, is default
+    if (ui.focused() == s.next && s.cur + 1 >= s.count) ui.setFocus(s.finish, FocusReason::Keyboard);
+    if (ui.focused() == s.finish && s.cur + 1 < s.count) ui.setFocus(s.next, FocusReason::Keyboard);
 }
 
 struct CompleterState { std::vector<std::string> entries; u32 max = 8; };
@@ -542,6 +545,21 @@ void showStatusMessage(UiContext& ui, NodeHandle bar, std::string_view text, f32
 std::string_view statusMessage(const UiContext& ui, NodeHandle bar) { return ui.text(ui.firstChild(bar)); }
 NodeHandle statusBarPermanent(const UiContext& ui, NodeHandle bar) { return nth(ui, bar, 1); }
 
+namespace {
+ButtonRole messageButtonRole(std::string_view b) {
+    std::string l(b);
+    for (char& c : l) c = char(std::tolower(static_cast<unsigned char>(c)));
+    if (l == "ok" || l == "save" || l == "save all" || l == "open" || l == "retry" || l == "ignore") return ButtonRole::Accept;
+    if (l == "yes" || l == "yes to all") return ButtonRole::Yes;
+    if (l == "no" || l == "no to all") return ButtonRole::No;
+    if (l == "cancel" || l == "close" || l == "abort") return ButtonRole::Reject;
+    if (l == "discard" || l == "don't save" || l == "close without saving") return ButtonRole::Destructive;
+    if (l == "help") return ButtonRole::Help;
+    if (l == "apply") return ButtonRole::Apply;
+    if (l == "reset" || l == "restore defaults") return ButtonRole::Reset;
+    return ButtonRole::Action;
+}
+} // namespace
 // ---- message box / input dialog -----------------------------------------------------------------------------------------
 NodeHandle messageBox(UiContext& ui, std::string_view title, std::string_view text, std::string_view buttons, MessageIcon icon, std::string_view id) {
     registerExtraWidgets(ui);
@@ -556,11 +574,14 @@ NodeHandle messageBox(UiContext& ui, std::string_view title, std::string_view te
     }
     const NodeHandle l = label(ui, row, text);
     ui.addClass(l, "msgbox-text");
-    const NodeHandle btns = panel(ui, body);
+    // QMessageBox: a dialog button box; roles from the usual button names so the platform order and Enter / Escape apply
+    const NodeHandle btns = dialogButtonBox(ui, body, 0);
     ui.addClass(btns, "dialog-buttons");
     u32 i = 0;
+    NodeHandle last;
     for (std::string_view b : split(buttons)) {
-        const NodeHandle bt = button(ui, btns, b);
+        const NodeHandle bt = dialogButtonBoxAdd(ui, btns, b, messageButtonRole(b));
+        last = bt;
         ui.connect(bt, SignalKind::Clicked, [dlg, i](UiContext& c, NodeHandle self, const SignalArgs&) {
             const std::string t(c.text(self));
             closeDialog(c, dlg);
@@ -568,7 +589,10 @@ NodeHandle messageBox(UiContext& ui, std::string_view title, std::string_view te
         });
         ++i;
     }
+    if (!dialogButtonBoxRejectButton(ui, btns).valid()) setDialogRejectButton(ui, dlg, last); // Escape = last button
+    if (!dialogButtonBoxDefault(ui, btns).valid()) setDialogDefaultButton(ui, dlg, last);
     openDialog(ui, dlg);
+    if (const NodeHandle d = dialogButtonBoxDefault(ui, btns); d.valid()) ui.setFocus(d, FocusReason::Keyboard);
     return dlg;
 }
 NodeHandle inputDialog(UiContext& ui, std::string_view title, std::string_view prompt, std::string_view initial, std::string_view id) {
@@ -577,9 +601,9 @@ NodeHandle inputDialog(UiContext& ui, std::string_view title, std::string_view p
     const NodeHandle body = dialogBody(ui, dlg);
     label(ui, body, prompt);
     const NodeHandle le = lineEdit(ui, body, initial);
-    const NodeHandle btns = panel(ui, body);
+    const NodeHandle btns = dialogButtonBox(ui, body, StdButton::Ok | StdButton::Cancel);
     ui.addClass(btns, "dialog-buttons");
-    const NodeHandle ok = button(ui, btns, "OK"), cancel = button(ui, btns, "Cancel");
+    const NodeHandle ok = dialogButtonBoxButton(ui, btns, StdButton::Ok), cancel = dialogButtonBoxButton(ui, btns, StdButton::Cancel);
     auto accept = [dlg, le](UiContext& c, NodeHandle, const SignalArgs&) {
         const std::string t = c.editBuffer(le).text();
         closeDialog(c, dlg);
@@ -622,6 +646,8 @@ NodeHandle wizard(UiContext& ui, std::string_view title, std::string_view pageTi
     s.back = button(ui, btns, "< Back");
     s.next = button(ui, btns, "Next >");
     s.finish = button(ui, btns, "Finish");
+    // QWizard keeps its own Back / Next / Finish / Cancel row (it is not a QDialogButtonBox); Escape = Cancel
+    setDialogRejectButton(ui, dlg, cancel);
     ui.connect(s.back, SignalKind::Clicked, [dlg](UiContext& c, NodeHandle, const SignalArgs&) { wizardBack(c, dlg); });
     ui.connect(s.next, SignalKind::Clicked, [dlg](UiContext& c, NodeHandle, const SignalArgs&) { wizardNext(c, dlg); });
     ui.connect(s.finish, SignalKind::Clicked, [dlg](UiContext& c, NodeHandle, const SignalArgs&) {
@@ -636,6 +662,7 @@ NodeHandle wizard(UiContext& ui, std::string_view title, std::string_view pageTi
     });
     wizUpdate(ui, s);
     openDialog(ui, dlg);
+    ui.setFocus(s.count > 1 ? s.next : s.finish, FocusReason::Keyboard); // QWizard focuses the default button
     return dlg;
 }
 NodeHandle wizardPage(const UiContext& ui, NodeHandle wiz, u32 index) {

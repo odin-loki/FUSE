@@ -39,7 +39,9 @@ NodeHandle statusBarPermanent(const UiContext& ui, NodeHandle bar);
 
 enum class MessageIcon : u8 { None, Information, Warning, Critical, Question };
 /// Opens a modal message box; clicking button i (buttons '\n'-separated, e.g. "Save\nDiscard\nCancel") emits
-/// Submitted {value = i, text = button} on the returned dialog card and closes it. Escape = last button.
+/// Submitted {value = i, text = button} on the returned dialog card and closes it. The buttons sit in a dialog button box
+/// (roles from their names, platform order); Enter = the accept / yes button (else the last), Escape = the reject / no
+/// button (else the last).
 NodeHandle messageBox(UiContext& ui, std::string_view title, std::string_view text, std::string_view buttons = "OK",
                       MessageIcon icon = MessageIcon::Information, std::string_view id = {});
 /// Opens a modal text prompt; OK / Enter emits Submitted {text, value = 1}, Cancel emits Submitted {value = 0}.
@@ -184,6 +186,8 @@ ButtonRole dialogButtonBoxRole(const UiContext& ui, NodeHandle box, NodeHandle b
 /// The buttons in visual order (left to right / top to bottom).
 std::vector<NodeHandle> dialogButtonBoxButtons(const UiContext& ui, NodeHandle box);
 NodeHandle dialogButtonBoxDefault(const UiContext& ui, NodeHandle box);
+/// The button the enclosing dialog's Escape presses: the first Reject, else No (class "dialog-reject").
+NodeHandle dialogButtonBoxRejectButton(const UiContext& ui, NodeHandle box);
 /// Qt's text for a standard button under a layout ("Don't Save" / "Close without Saving" for Discard on macOS / GNOME).
 std::string standardButtonText(u32 standardButton, ButtonBoxLayout layout = ButtonBoxLayout::Platform);
 
