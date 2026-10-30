@@ -1351,6 +1351,35 @@ void gateDataViz3dBsp() {
             }
         }
     CHECK(pairs > 0 && bad == 0);
+    // translucent split surface: the cut edges between pieces of one face are covered (no lighter seam lines).
+    // A seam pixel is a local brightness dip across a 1-px line: darker than both neighbours on one axis while those
+    // neighbours agree. Dump: FUSE_DUMP_DV3D=<png>.
+    {
+        d3::Scene sc;
+        sc.kind = d3::Kind::Surface;
+        sc.rows = sc.cols = 14;
+        for (u32 r = 0; r < 14; ++r)
+            for (u32 c = 0; c < 14; ++c) sc.values.push_back(std::sin(f32(c) * 0.9f) * std::cos(f32(r) * 0.7f));
+        sc.colormap = {{0.f, Color::rgb(0x40A0FF, 0.5f)}, {1.f, Color::rgb(0xFFC040, 0.5f)}};
+        sc.wireframe = false, sc.shading = false, sc.grid = false;
+        sc.camera.pitch = 35.f;
+        DrawList dl;
+        d3::render(sc, dl, {0, 0, 640, 480}, Color::rgb(0x808080));
+        Image img;
+        img.resize(640, 480, 0xFF101010u);
+        CpuRasterizer().render(dl, img);
+        int dips = 0;
+        auto lum = [&](int x, int y) { const u32 p = img.at(x, y); return int(p & 0xFF) + int((p >> 8) & 0xFF) + int((p >> 16) & 0xFF); };
+        for (int y = 1; y < 479; ++y)
+            for (int x = 1; x < 639; ++x) {
+                const int m = lum(x, y);
+                const int l = lum(x - 1, y), r = lum(x + 1, y), u = lum(x, y - 1), d = lum(x, y + 1);
+                dips += (std::abs(l - r) < 6 && m < std::min(l, r) - 24) || (std::abs(u - d) < 6 && m < std::min(u, d) - 24);
+            }
+        std::printf("  dataviz3d translucent seams: %d dip pixels\n", dips);
+        if (const char* out = std::getenv("FUSE_DUMP_DV3D")) stbi_write_png(out, 640, 480, 4, img.pixels.data(), 640 * 4);
+        CHECK(dips < 120); // 767 without the cover
+    }
 }
 
 void gateDataViz3d() {

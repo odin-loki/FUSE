@@ -71,8 +71,17 @@ struct GpuPass {
     i32 area[4] = {};
     u32 radius = 0;
     f32 inv = 0.f;
+    /// backdrop / layer passes: flags bit 0 colour matrix, bit 1 drop shadow (box radius `radius2`, 1 / (2 r2 + 1) `inv2`)
+    u32 radius2 = 0;
+    f32 inv2 = 0.f;
+    /// layer passes: scratch floats of the enclosing layers' saved pixels plus this one's (w * h * 4), counted from
+    /// the scratch end; backdrop passes: the enclosing layers' total. The renderer skips a backdrop, or both passes
+    /// of a layer, whose work floats do not fit below it.
+    u32 saveTop = 0;
 };
-inline constexpr u32 kPassDraw = 0, kPassBackdrop = 1;
+/// kPassLayerBegin: save the pixels under a PushFilter's box to scratch and clear it; kPassLayerEnd: the PopFilter
+/// composite (src = area = the layer box)
+inline constexpr u32 kPassDraw = 0, kPassBackdrop = 1, kPassLayerBegin = 2, kPassLayerEnd = 3;
 
 struct GpuDrawData {
     std::vector<GpuCmd> cmds;

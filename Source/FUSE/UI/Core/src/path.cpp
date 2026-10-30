@@ -471,7 +471,7 @@ void DrawList::gradientPath(const Path& p, const Gradient& g, bool evenOdd, Colo
 }
 
 void DrawList::pushFrom(const DrawList& src, DrawCmd c) {
-    if ((c.gradient & 15u) >= kGradientLinearStops || (c.op == DrawOp::Backdrop && c.stopCount)) {
+    if ((c.gradient & 15u) >= kGradientLinearStops || ((c.op == DrawOp::Backdrop || c.op == DrawOp::PushFilter || c.op == DrawOp::PopFilter) && c.stopCount)) {
         const u32 at = u32(m_stops.size());
         if (std::size_t(c.stops) + c.stopCount <= src.m_stops.size())
             m_stops.insert(m_stops.end(), src.m_stops.begin() + c.stops, src.m_stops.begin() + c.stops + c.stopCount);

@@ -243,5 +243,64 @@ int main(int argc, char** argv) {
         if (std::getenv("FUSE_DUMP_CLIPTEXT")) stbi_write_png(std::getenv("FUSE_DUMP_CLIPTEXT"), 320, 200, 4, img2.pixels.data(), 320 * 4);
         UI_CHECK(magenta > 40 && magenta < total / 2); // the letters only, not the box
     }
+    // element filter layer: isolation (an opacity filter over two overlapping opaque rects shows no seam between them),
+    // matrix applies to the subtree only, drop-shadow lands at the offset
+    {
+        DrawList dl;
+        dl.rect({0, 0, 320, 200}, Color::rgb(0x000000));
+        dl.pushFilter(ColorMatrix::opacity(0.5f));
+        dl.rect({20, 20, 60, 40}, Color::rgb(0xffffff));
+        dl.rect({50, 20, 60, 40}, Color::rgb(0xffffff)); // overlaps the first: a layer keeps it one shape
+        dl.popFilter();
+        dl.pushFilter(ColorMatrix{}, 0.f, DropShadow{{10, 10}, 0.f, Color::rgb(0xff0000)});
+        dl.rect({150, 20, 40, 40}, Color::rgb(0x00ff00));
+        dl.popFilter();
+        Image f;
+        f.resize(320, 200, 0xFF000000u);
+        CpuRasterizer().render(dl, f);
+        const int a = ch(f.at(30, 40), 0), b = ch(f.at(65, 40), 0), c = ch(f.at(100, 40), 0);
+        std::printf("  filter layer: opacity %d %d %d\n", a, b, c);
+        UI_CHECK(std::abs(a - 128) <= 2 && std::abs(b - a) <= 1 && std::abs(c - a) <= 1);
+        UI_CHECK(ch(f.at(170, 40), 1) > 250 && ch(f.at(170, 40), 0) < 5);     // element over its shadow
+        UI_CHECK(ch(f.at(195, 65), 0) > 250 && ch(f.at(195, 65), 1) < 5);     // shadow at +10,+10
+        UI_CHECK(ch(f.at(145, 15), 0) < 5 && ch(f.at(205, 75), 0) < 5);       // nothing beyond it
+    }
+    // CSS filter / drop-shadow / url() parse and reach the draw list
+    {
+        UiContext ui({.viewport = {320, 200}, .font = &font()});
+        w::install(ui);
+        UI_CHECK(ui.defineFilter("warm", "sepia(1) drop-shadow(2px 3px 4px #ff0000)"));
+        UI_CHECK(!ui.defineFilter("bad", "sepia("));
+        auto sheet = StyleSheet::parse(".e { filter: blur(2px) grayscale(50%) drop-shadow(4px 5px 6px rgba(0,0,0,0.5)); }"
+                                       ".u { filter: url(#warm) invert(1); }"
+                                       ".b { backdrop-filter: blur(3px) drop-shadow(#00ff00 1px 2px); background: rgba(0,0,0,0); }");
+        UI_CHECK(sheet.has_value());
+        if (sheet) ui.styles().addSheet(std::move(*sheet));
+        const NodeHandle e = w::label(ui, ui.root(), "e");
+        const NodeHandle u = w::label(ui, ui.root(), "u");
+        const NodeHandle b = w::label(ui, ui.root(), "b");
+        ui.addClass(e, "e");
+        ui.addClass(u, "u");
+        ui.addClass(b, "b");
+        ui.update();
+        const ComputedStyle& es = ui.computed(e);
+        UI_CHECK(es.filterBlur == 2.f && es.filterShadow.x == 4.f && es.filterShadow.y == 5.f && es.filterShadow.blur == 6.f);
+        UI_CHECK(std::abs(es.filterShadow.color.a - 0.5f) < 0.01f);
+        const ComputedStyle& us = ui.computed(u);
+        UI_CHECK(us.filterCount == 2 && us.filterFns[0] == FilterFn::Url && us.filterFns[1] == FilterFn::Invert);
+        const ComputedStyle& bs = ui.computed(b);
+        UI_CHECK(bs.backdropBlur == 3.f && bs.backdropShadow.x == 1.f && bs.backdropShadow.y == 2.f && bs.backdropShadow.color.g > 0.99f);
+        int pushE = 0, pushU = 0, pops = 0;
+        const DrawCmd* bd = nullptr;
+        for (const DrawCmd& c : ui.drawList().cmds()) {
+            if (c.op == DrawOp::PushFilter && c.node == e.index) pushE += c.blur == 2.f && c.stopCount == 6;
+            if (c.op == DrawOp::PushFilter && c.node == u.index) pushU += c.stopCount == 6; // url's shadow folded in
+            pops += c.op == DrawOp::PopFilter;
+            if (c.op == DrawOp::Backdrop && c.node == b.index) bd = &c;
+        }
+        std::printf("  css filter: push e %d u %d, pops %d\n", pushE, pushU, pops);
+        UI_CHECK(pushE == 1 && pushU == 1 && pops == 2);
+        UI_CHECK(bd && bd->stopCount == 6);
+    }
     return finish("fuse_ui_backdrop_blur");
 }

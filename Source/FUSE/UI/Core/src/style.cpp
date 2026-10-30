@@ -5,6 +5,8 @@
 #include <cctype>
 #include <charconv>
 #include <cstring>
+#include <deque>
+#include <mutex>
 #include <cstdio>
 #include <vector>
 
@@ -74,6 +76,7 @@ constexpr PropInfo kProps[] = {
     {Prop::GradientStops, "gradient-stops", T::Stops, false, false, false},
     {Prop::BackgroundClip, "background-clip", T::Enum, false, false, false},
     {Prop::BackdropFilter, "backdrop-filter", T::Filter, false, false, false},
+    {Prop::Filter, "filter", T::Filter, false, false, false},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -245,6 +248,30 @@ bool parseColor(std::string_view s, Color& out) {
     return false;
 }
 
+namespace {
+struct FilterNames {
+    std::mutex mu;
+    std::deque<std::string> names; // deque: stable addresses for the returned views
+};
+FilterNames& filterNames() {
+    static FilterNames n;
+    return n;
+}
+} // namespace
+u32 filterNameId(std::string_view id) {
+    FilterNames& t = filterNames();
+    std::lock_guard lock(t.mu);
+    for (std::size_t i = 0; i < t.names.size(); ++i)
+        if (t.names[i] == id) return u32(i);
+    t.names.emplace_back(id);
+    return u32(t.names.size() - 1);
+}
+std::string_view filterName(u32 id) {
+    FilterNames& t = filterNames();
+    std::lock_guard lock(t.mu);
+    return id < t.names.size() ? std::string_view(t.names[id]) : std::string_view{};
+}
+
 bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
     text = trim(text);
     const PropInfo& pi = propInfo(p);
@@ -270,18 +297,25 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
     }
     case T::Color: return parseColor(text, out.color);
     case T::Filter: { // "none" | fn(<arg>) ... : blur(<len>), brightness / contrast / saturate / grayscale / invert / sepia /
-                      // opacity(<number> | <pct>), hue-rotate(<angle>)
+                      // opacity(<number> | <pct>), hue-rotate(<angle>), drop-shadow(<dx> <dy> [<blur>] [<color>]), url(#id)
         if (text == "none") return true;
         static constexpr std::pair<std::string_view, FilterFn> kFns[] = {
             {"blur", FilterFn::Blur}, {"brightness", FilterFn::Brightness}, {"contrast", FilterFn::Contrast},
             {"saturate", FilterFn::Saturate}, {"grayscale", FilterFn::Grayscale}, {"hue-rotate", FilterFn::HueRotate},
-            {"invert", FilterFn::Invert}, {"sepia", FilterFn::Sepia}, {"opacity", FilterFn::Opacity}};
+            {"invert", FilterFn::Invert}, {"sepia", FilterFn::Sepia}, {"opacity", FilterFn::Opacity},
+            {"drop-shadow", FilterFn::DropShadow}, {"url", FilterFn::Url}};
         std::size_t i = 0;
         while (i < text.size()) {
             while (i < text.size() && std::isspace(static_cast<unsigned char>(text[i]))) ++i;
             if (i >= text.size()) break;
-            const std::size_t open = text.find('(', i), close = text.find(')', i);
-            if (open == std::string_view::npos || close == std::string_view::npos || close < open || out.trackCount >= kMaxGridTracks) return false;
+            const std::size_t open = text.find('(', i);
+            if (open == std::string_view::npos || out.trackCount >= kMaxGridTracks) return false;
+            std::size_t close = open; // the matching ')' (drop-shadow colours nest: rgba(...))
+            for (int depth = 0; close < text.size(); ++close) {
+                if (text[close] == '(') ++depth;
+                else if (text[close] == ')' && --depth == 0) break;
+            }
+            if (close >= text.size()) return false;
             const std::string_view name = trim(text.substr(i, open - i)), arg = trim(text.substr(open + 1, close - open - 1));
             i = close + 1;
             bool known = false;
@@ -301,6 +335,37 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
                 else if (unit == "rad") v *= 180.f / 3.14159265f;
                 else if (unit == "grad") v *= 0.9f;
                 else if (!unit.empty() && unit != "deg" && !(v == 0.f)) return false;
+            } else if (fn == FilterFn::Url) {
+                std::string_view id = arg;
+                if (id.size() >= 2 && (id.front() == '"' || id.front() == '\'') && id.back() == id.front()) id = id.substr(1, id.size() - 2);
+                if (id.empty() || id.front() != '#') return false;
+                const u32 k = filterNameId(id.substr(1));
+                std::memcpy(&v, &k, 4);
+            } else if (fn == FilterFn::DropShadow) {
+                // lengths (2 or 3) and an optional colour, in either order (default: black)
+                FilterShadow sh{};
+                sh.color = Color{0.f, 0.f, 0.f, 1.f};
+                f32 lens[3] = {};
+                int nl = 0;
+                std::size_t j = 0;
+                while (j < arg.size()) {
+                    while (j < arg.size() && std::isspace(static_cast<unsigned char>(arg[j]))) ++j;
+                    if (j >= arg.size()) break;
+                    std::size_t e = j;
+                    for (int depth = 0; e < arg.size(); ++e) {
+                        if (arg[e] == '(') ++depth;
+                        else if (arg[e] == ')') --depth;
+                        else if (depth == 0 && std::isspace(static_cast<unsigned char>(arg[e]))) break;
+                    }
+                    const std::string_view tok = arg.substr(j, e - j);
+                    j = e;
+                    Length l;
+                    if (nl < 3 && parseLength(tok, l)) lens[nl++] = l.value;
+                    else if (!parseColor(tok, sh.color)) return false;
+                }
+                if (nl < 2) return false;
+                sh.x = lens[0], sh.y = lens[1], sh.blur = std::max(0.f, lens[2]);
+                out.shadow = sh;
             } else {
                 v = 1.f; // CSS default amount
                 if (!arg.empty()) {
@@ -446,10 +511,23 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::BackdropFilter:
         s.backdropFilterCount = 0;
         s.backdropBlur = 0.f;
+        s.backdropShadow = {};
         for (u8 k = 0; k < v.trackCount; ++k) {
             if (FilterFn(v.fns[k]) == FilterFn::Blur) { s.backdropBlur = v.tracks[k].value; continue; }
+            if (FilterFn(v.fns[k]) == FilterFn::DropShadow) { s.backdropShadow = v.shadow; continue; }
             s.backdropFilterFns[s.backdropFilterCount] = FilterFn(v.fns[k]);
             s.backdropFilterAmounts[s.backdropFilterCount++] = v.tracks[k].value;
+        }
+        break;
+    case Prop::Filter:
+        s.filterCount = 0;
+        s.filterBlur = 0.f;
+        s.filterShadow = {};
+        for (u8 k = 0; k < v.trackCount; ++k) {
+            if (FilterFn(v.fns[k]) == FilterFn::Blur) { s.filterBlur = v.tracks[k].value; continue; }
+            if (FilterFn(v.fns[k]) == FilterFn::DropShadow) { s.filterShadow = v.shadow; continue; }
+            s.filterFns[s.filterCount] = FilterFn(v.fns[k]);
+            s.filterAmounts[s.filterCount++] = v.tracks[k].value;
         }
         break;
     case Prop::Count: break;

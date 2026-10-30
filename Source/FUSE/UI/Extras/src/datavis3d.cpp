@@ -1,6 +1,7 @@
 // 3D data visualisation: CPU projection + BSP depth ordering (painter's sort for points / lines) onto DrawList paths. See datavis3d.hpp.
 #include "fuse/ui/extras/datavis3d.hpp"
 
+#include <cstdlib>
 #include <algorithm>
 #include <cstdio>
 #include <memory>
@@ -394,30 +395,54 @@ void render(const Scene& s, DrawList& dl, Rect target, Color gridColor, std::vec
         for (; ri < rest.size() && rest[ri].depth <= -9.f; ++ri) dl.path(rest[ri].path, rest[ri].fill, false, rest[ri].stroke, rest[ri].strokeW);
     for (const BspFragment& f : bspOrder(faces, v.persp, v.dist)) {
         const Prim& p = prims[faceOf[f.source]];
-        if (f.pts.size() == faces[f.source].size() && std::equal(f.pts.begin(), f.pts.end(), faces[f.source].begin(),
+        const bool translucent = p.fill.a < 1.f && p.fill.a > 0.f;
+        if (!translucent && f.pts.size() == faces[f.source].size() && std::equal(f.pts.begin(), f.pts.end(), faces[f.source].begin(),
                                                                 [](Vec3 a, Vec3 b) { return a.x == b.x && a.y == b.y && a.z == b.z; })) {
             dl.path(p.path, p.fill, false, p.stroke, p.strokeW); // unsplit: the original path
             continue;
         }
-        // split part: fill the piece; where its edge is a BSP cut (not a real edge) run a hairline in the fill colour
-        // over it so the neighbouring pieces meet without an anti-aliasing seam (opaque fills only: a translucent
-        // line would double up), then the wire outline along the source polygon's own edges.
-        Path piece;
+        // split part: fill the piece; where its edge is a BSP cut (not a real edge) the neighbouring pieces must meet
+        // without an anti-aliasing seam. Opaque fills: a hairline in the fill colour over the cut. Translucent fills
+        // (a line would double up; these take this path split or not, since a surface's or bar's neighbouring faces
+        // share edges just the same): every edge moves outward by g (outer silhouettes grow by g < 0.21 px) so that, on the shared pixels, two coverages
+        // c = 0.5 + g composite to the fill's own alpha: 1 - (1 - c a)^2 = a  ->  c = (1 - sqrt(1 - a)) / a.
+        // Then the wire outline along the source polygon's own edges.
         std::vector<Vec2> sp(f.pts.size());
-        for (std::size_t j = 0; j < f.pts.size(); ++j) {
-            sp[j] = toScreen(v, f.pts[j]);
-            if (j == 0) piece.moveTo(sp[j]);
-            else piece.lineTo(sp[j]);
+        for (std::size_t j = 0; j < f.pts.size(); ++j) sp[j] = toScreen(v, f.pts[j]);
+        const std::size_t n = sp.size();
+        std::vector<Vec2> fillPts = sp;
+        const auto isCut = [&](std::size_t j) { return !f.cut.empty() && f.cut[j]; };
+        if (translucent && n >= 3) {
+            const f32 a = p.fill.a;
+            const f32 g = (1.f - std::sqrt(1.f - a)) / a - 0.5f;
+            f32 area = 0.f;
+            for (std::size_t j = 0; j < n; ++j) area += sp[j].x * sp[(j + 1) % n].y - sp[(j + 1) % n].x * sp[j].y;
+            const f32 side = area > 0.f ? 1.f : -1.f; // outward normal of edge d is side * (d.y, -d.x)
+            std::vector<Vec2> nrm(n, Vec2{0.f, 0.f}); // unit outward edge normals
+            for (std::size_t j = 0; j < n; ++j) {
+                const Vec2 d{sp[(j + 1) % n].x - sp[j].x, sp[(j + 1) % n].y - sp[j].y};
+                const f32 len = std::sqrt(d.x * d.x + d.y * d.y);
+                if (len >= 1e-4f) nrm[j] = {side * d.y / len, -side * d.x / len};
+            }
+            for (std::size_t j = 0; j < n; ++j) { // vertex j: meet of the offset edges j-1 and j (miter, capped at 4g)
+                const Vec2 a0 = nrm[(j + n - 1) % n], a1 = nrm[j];
+                const f32 k = std::max(1.f + a0.x * a1.x + a0.y * a1.y, 0.125f);
+                fillPts[j].x += g * (a0.x + a1.x) / k, fillPts[j].y += g * (a0.y + a1.y) / k;
+            }
+        }
+        Path piece;
+        for (std::size_t j = 0; j < n; ++j) {
+            if (j == 0) piece.moveTo(fillPts[j]);
+            else piece.lineTo(fillPts[j]);
         }
         piece.close();
         dl.path(piece, p.fill, false, {}, 0.f);
-        const std::size_t n = sp.size();
         if (p.fill.a >= 1.f)
             for (std::size_t j = 0; j < n; ++j)
-                if (f.cut[j]) dl.line(sp[j], sp[(j + 1) % n], p.fill, 1.f);
+                if (isCut(j)) dl.line(sp[j], sp[(j + 1) % n], p.fill, 1.f);
         if (p.strokeW > 0.f && p.stroke.a > 0.f)
             for (std::size_t j = 0; j < n; ++j)
-                if (!f.cut[j]) dl.line(sp[j], sp[(j + 1) % n], p.stroke, p.strokeW);
+                if (!isCut(j)) dl.line(sp[j], sp[(j + 1) % n], p.stroke, p.strokeW);
     }
     for (; ri < rest.size(); ++ri) dl.path(rest[ri].path, rest[ri].fill, false, rest[ri].stroke, rest[ri].strokeW);
     dl.popClip();

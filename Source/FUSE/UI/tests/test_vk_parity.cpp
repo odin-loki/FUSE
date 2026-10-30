@@ -533,6 +533,54 @@ int main() {
             vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
             check("backdrop_filter", compare(cpuF, out));
         }
+        {   // element filter layers: matrix, blur, drop-shadow, nested, under a rounded clip and a path clip;
+            // backdrop-filter drop-shadow
+            DrawList fl;
+            for (int i = 0; i < 12; ++i) fl.rect({f32(i * 40), 0, 20, f32(H)}, Color::rgb(i & 1 ? 0xff4422u : 0x22aaffu));
+            fl.pushFilter(ColorMatrix::opacity(0.5f).then(ColorMatrix::sepia(1.f)));
+            fl.rect({20, 20, 120, 80}, Color::rgb(0x40ff40));
+            fl.rect({80, 50, 120, 80}, Color::rgb(0xffffff), 12.f);
+            fl.popFilter();
+            fl.pushFilter(ColorMatrix{}, 4.f, DropShadow{{6, 8}, 9.f, Color::rgb(0x000000, 0.7f)});
+            fl.rect({240, 30, 90, 90}, Color::rgb(0xffe020), 20.f);
+            fl.pushFilter(ColorMatrix::invert(1.f));
+            fl.rect({260, 50, 50, 50}, Color::rgb(0x2040ff));
+            fl.popFilter();
+            fl.popFilter();
+            fl.pushClip({30, 160, 160, 160}, 24.f);
+            fl.pushFilter(ColorMatrix::hueRotate(90.f), 2.f, DropShadow{{-5, 4}, 3.f, Color::rgb(0xff00ff)});
+            fl.rect({10, 150, 150, 100}, Color::rgb(0x30c0c0, 0.8f));
+            fl.popFilter();
+            fl.popClip();
+            Path circ;
+            circ.circle({330, 250}, 70);
+            fl.pushClipPath(circ);
+            fl.pushFilter(ColorMatrix::grayscale(1.f), 0.f, DropShadow{{8, 8}, 0.f, Color::rgb(0x00ff00, 0.6f)});
+            fl.rect({280, 200, 80, 80}, Color::rgb(0xff2020));
+            fl.popFilter();
+            fl.popClip();
+            Image cpuL;
+            cpuL.resize(int(W), int(H), 0xFF000000u);
+            CpuRasterizer rl;
+            rl.render(fl, cpuL);
+            packDrawList(fl, W, H, data);
+            UI_CHECK(gpu.upload(0, data));
+            vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+            check("filter_layer", compare(cpuL, out));
+
+            DrawList bs;
+            for (int i = 0; i < 12; ++i) bs.rect({f32(i * 40), 0, 20, f32(H)}, Color::rgb(i & 1 ? 0xff4422u : 0x22aaffu));
+            bs.backdrop({60, 60, 180, 160}, 5.f, {14, 14, 14, 14}, ColorMatrix::opacity(0.5f), DropShadow{{10, 12}, 8.f, Color::rgb(0x000000, 0.8f)});
+            bs.backdrop({280, 80, 140, 140}, 0.f, {0, 0, 0, 0}, ColorMatrix::opacity(0.3f), DropShadow{{-6, 6}, 0.f, Color::rgb(0x00ff00)});
+            Image cpuS;
+            cpuS.resize(int(W), int(H), 0xFF000000u);
+            CpuRasterizer rs;
+            rs.render(bs, cpuS);
+            packDrawList(bs, W, H, data);
+            UI_CHECK(gpu.upload(0, data));
+            vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+            check("backdrop_shadow", compare(cpuS, out));
+        }
         }
 #endif
     }

@@ -38,6 +38,10 @@ layout(push_constant) uniform BlurPush {
     uint cmd;
     uint radius;
     float inv;
+    uint base; // box passes: buf at v[base], tmp at v[base + n]
+    uint save; // layer passes: saved pixels at v[save]
+    uint pad0;
+    uint pad1;
 } pc;
 
 float sdRoundRect(float px, float py, vec4 r, vec4 rad) {
@@ -77,6 +81,32 @@ vec4 applyFilter(uint at, vec4 b) {
     o.w = res.w * 255.0;
     return o;
 }
+// drop shadow under premultiplied 0..255 `f` at box (x, y): plane (v[2n..], the filtered box blurred by the shadow
+// radius) alpha at (x - dx, y - dy), tinted; withShadow in Core/src/draw_list.cpp
+vec4 withShadow(uint at, vec4 f, int x, int y, int w, int h, uint n) {
+    const int qx = x - int(edgeWord(at + 20u)), qy = y - int(edgeWord(at + 21u));
+    float sa = 0.0;
+    if (qx >= 0 && qy >= 0 && qx < w && qy < h) sa = ui_scratch.v[2u * n + uint(qy * w + qx) * 4u + 3u];
+    precise float sA = edgeWord(at + 25u) * (sa / 255.0);
+    precise vec4 S = vec4(edgeWord(at + 22u) * sA * 255.0, edgeWord(at + 23u) * sA * 255.0, edgeWord(at + 24u) * sA * 255.0, sA * 255.0);
+    precise float inv = 1.0 - f.w / 255.0;
+    precise vec4 o;
+    for (int k = 0; k < 4; ++k) { precise float t = S[k] * inv; o[k] = f[k] + t; }
+    return o;
+}
+float clipCoverage(GpuCmd c, float px, float py) {
+    precise float cov = 1.0;
+    if (c.params.z > 0.0) cov = cov * clamp(0.5 - sdRoundRect(px, py, c.clip, vec4(c.params.z)), 0.0, 1.0);
+    const uint clipList = floatBitsToUint(c.params.w);
+    if (clipList != 0u) {
+        const uint cnt = ui_images.data[clipList];
+        for (uint q = 0u; q < cnt && cov > 0.0; ++q) {
+            const uint e = clipList + 1u + q * 3u;
+            cov = cov * clipPathCoverage(ui_images.data[e], ui_images.data[e + 1u], ui_images.data[e + 2u] != 0u, px, py);
+        }
+    }
+    return cov;
+}
 uint q8(float v) { return uint(floor(clamp(v, 0.0, 1.0) * 255.0 + 0.5)); }
 
 void main() {
@@ -98,7 +128,7 @@ void main() {
         // buf -> tmp along x: one (row, channel) per thread
         if (id >= uint(h * 4)) return;
         const int y = int(id) / 4, k = int(id) % 4;
-        const uint row = uint(y * w) * 4u + uint(k);
+        const uint row = pc.base + uint(y * w) * 4u + uint(k);
         precise float acc = 0.0;
         for (int i = -r; i <= r; ++i) acc = acc + ui_scratch.v[row + uint(clamp(i, 0, w - 1)) * 4u];
         for (int i = 0; i < w; ++i) {
@@ -109,7 +139,7 @@ void main() {
     } else if (pc.mode == 2u) {
         // tmp -> buf along y: one (column, channel) per thread
         if (id >= uint(w * 4)) return;
-        const uint col = id; // x * 4 + k
+        const uint col = pc.base + id; // x * 4 + k
         const uint stride = uint(w) * 4u;
         precise float acc = 0.0;
         for (int i = -r; i <= r; ++i) acc = acc + ui_scratch.v[n + uint(clamp(i, 0, h - 1)) * stride + col];
@@ -118,6 +148,61 @@ void main() {
             precise float d = ui_scratch.v[n + uint(clamp(i + r + 1, 0, h - 1)) * stride + col] - ui_scratch.v[n + uint(clamp(i - r, 0, h - 1)) * stride + col];
             acc = acc + d;
         }
+    } else if (pc.mode == 4u) {
+        // layer begin: save the box, clear it to transparent
+        if (id >= uint(w * h)) return;
+        const ivec2 ip = pc.srcOrigin + ivec2(int(id) % w, int(id) / w);
+        const vec4 t = imageLoad(ui_target, ip);
+#ifdef UI_HDR
+        for (int k = 0; k < 4; ++k) ui_scratch.v[pc.save + id * 4u + uint(k)] = t[k] * 255.0;
+#else
+        const uvec4 b = uvec4(floor(t * 255.0 + 0.5));
+        for (int k = 0; k < 4; ++k) ui_scratch.v[pc.save + id * 4u + uint(k)] = float(b[k]);
+#endif
+        imageStore(ui_target, ip, vec4(0.0));
+    } else if (pc.mode == 5u) {
+        // colour matrix over the box; with a drop shadow, a copy to the shadow plane v[2n..]
+        if (id >= uint(w * h)) return;
+        const GpuCmd c = ui_cmds.cmds[pc.cmd];
+        const uint i = id * 4u;
+        vec4 b = vec4(ui_scratch.v[i], ui_scratch.v[i + 1u], ui_scratch.v[i + 2u], ui_scratch.v[i + 3u]);
+        b = applyFilter(floatBitsToUint(c.grad2.z), b);
+        for (int k = 0; k < 4; ++k) ui_scratch.v[i + uint(k)] = b[k];
+        if (floatBitsToUint(c.grad2.w) == 6u)
+            for (int k = 0; k < 4; ++k) ui_scratch.v[2u * n + i + uint(k)] = b[k];
+    } else if (pc.mode == 6u) {
+        // layer end: filtered layer (+ shadow) over the saved pixels, mixed by the clip coverage
+        if (id >= uint(w * h)) return;
+        const int lx = int(id) % w, ly = int(id) / w;
+        const ivec2 ip = pc.srcOrigin + ivec2(lx, ly);
+        const GpuCmd c = ui_cmds.cmds[pc.cmd];
+        const float cov = clipCoverage(c, float(ip.x) + 0.5, float(ip.y) + 0.5);
+        const uint si = pc.save + id * 4u;
+        const vec4 u = vec4(ui_scratch.v[si], ui_scratch.v[si + 1u], ui_scratch.v[si + 2u], ui_scratch.v[si + 3u]);
+        vec4 o = vec4(ui_scratch.v[id * 4u], ui_scratch.v[id * 4u + 1u], ui_scratch.v[id * 4u + 2u], ui_scratch.v[id * 4u + 3u]);
+        if (floatBitsToUint(c.grad2.w) == 6u) o = withShadow(floatBitsToUint(c.grad2.z), o, lx, ly, w, h, n);
+        precise float inv = 1.0 - o.w / 255.0;
+#ifdef UI_HDR
+        vec4 res = u / 255.0;
+        if (cov > 0.0) {
+            for (int k = 0; k < 4; ++k) {
+                precise float rv = o[k] + u[k] * inv;
+                precise float m = u[k] + (rv - u[k]) * cov;
+                res[k] = max(m / 255.0, 0.0);
+            }
+            res.a = min(res.a, 1.0);
+        }
+        imageStore(ui_target, ip, res);
+#else
+        uvec4 res = uvec4(u);
+        if (cov > 0.0)
+            for (int k = 0; k < 4; ++k) {
+                precise float rv = o[k] + u[k] * inv;
+                precise float m = u[k] + (rv - u[k]) * cov;
+                res[k] = uint(clamp(m >= 0.0 ? floor(m + 0.5) : ceil(m - 0.5), 0.0, 255.0)); // std::lround
+            }
+        imageStore(ui_target, ip, vec4(res) / 255.0);
+#endif
     } else {
         const int aw = pc.area.z - pc.area.x, ah = pc.area.w - pc.area.y;
         if (id >= uint(aw * ah)) return;
@@ -140,7 +225,7 @@ void main() {
         const vec4 d0 = imageLoad(ui_target, ip);
         const uint bi = (uint(y - pc.srcOrigin.y) * uint(w) + uint(x - pc.srcOrigin.x)) * 4u;
         vec4 bv = vec4(ui_scratch.v[bi], ui_scratch.v[bi + 1u], ui_scratch.v[bi + 2u], ui_scratch.v[bi + 3u]);
-        if (floatBitsToUint(c.grad2.w) == 4u) bv = applyFilter(floatBitsToUint(c.grad2.z), bv);
+        if (floatBitsToUint(c.grad2.w) == 6u) bv = withShadow(floatBitsToUint(c.grad2.z), bv, x - pc.srcOrigin.x, y - pc.srcOrigin.y, w, h, n);
         vec4 o;
         for (int k = 0; k < 4; ++k) {
             precise float m = d0[k] + (bv[k] / 255.0 - d0[k]) * cov;
@@ -158,7 +243,7 @@ void main() {
         const uvec4 d0 = uvec4(floor(imageLoad(ui_target, ip) * 255.0 + 0.5));
         const uint bi = (uint(y - pc.srcOrigin.y) * uint(w) + uint(x - pc.srcOrigin.x)) * 4u;
         vec4 bv = vec4(ui_scratch.v[bi], ui_scratch.v[bi + 1u], ui_scratch.v[bi + 2u], ui_scratch.v[bi + 3u]);
-        if (floatBitsToUint(c.grad2.w) == 4u) bv = applyFilter(floatBitsToUint(c.grad2.z), bv);
+        if (floatBitsToUint(c.grad2.w) == 6u) bv = withShadow(floatBitsToUint(c.grad2.z), bv, x - pc.srcOrigin.x, y - pc.srcOrigin.y, w, h, n);
         uvec4 o;
         for (int k = 0; k < 4; ++k) {
             const float dv = float(d0[k]);

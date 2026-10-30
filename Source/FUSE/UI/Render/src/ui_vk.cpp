@@ -86,8 +86,11 @@ struct BlurPush {
     u32 mode, cmd;
     u32 radius;
     f32 inv;
+    u32 base; ///< box passes: buf at scratch[base], tmp at scratch[base + w h 4]
+    u32 save; ///< layer passes: saved pixels at scratch[save]
+    u32 pad[2];
 };
-static_assert(sizeof(BlurPush) == 48);
+static_assert(sizeof(BlurPush) == 64);
 void computeBarrier(VkCommandBuffer cmd) {
     VkMemoryBarrier mb{};
     mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
@@ -537,11 +540,14 @@ void UiVkRenderer::record(void* commandBuffer, void* targetView, u32 slotIndex) 
             vkCmdDispatch(cmd, (push.size[0] + kUiTile - 1) / kUiTile, (push.size[1] + kUiTile - 1) / kUiTile, 1);
             continue;
         }
-        // backdrop blur (skipped without the kernel or beyond the scratch: the panel stays unblurred, as before)
+        // backdrop / filter layer (skipped without the kernel or beyond the scratch: the panel stays unblurred, the
+        // layer unfiltered, as before)
         const i64 w = pass.src[2], h = pass.src[3];
         const i64 aw = pass.area[2] - pass.area[0], ah = pass.area[3] - pass.area[1];
         void* const blurPipe = m_hdrTarget ? m_blurPipelineHdr : m_blurPipeline;
-        if (!blurPipe || w <= 0 || h <= 0 || aw <= 0 || ah <= 0 || w * h > i64(m_desc.maxBlurPixels)) continue;
+        const i64 cap = i64(std::max(1u, m_desc.maxBlurPixels)) * 8; // scratch floats
+        const i64 work = w * h * ((pass.flags & 2u) ? 16 : 8);
+        if (!blurPipe || w <= 0 || h <= 0 || aw <= 0 || ah <= 0 || work + i64(pass.saveTop) > cap) continue;
         const VkPipelineLayout bl = static_cast<VkPipelineLayout>(m_blurLayout);
         const VkDescriptorSet bs = static_cast<VkDescriptorSet>(s.blurSet);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, static_cast<VkPipeline>(blurPipe));
@@ -555,20 +561,42 @@ void UiVkRenderer::record(void* commandBuffer, void* targetView, u32 slotIndex) 
         for (int k = 0; k < 4; ++k) bp.area[k] = pass.area[k];
         bp.radius = pass.radius;
         bp.inv = pass.inv;
+        bp.save = u32(cap - i64(pass.saveTop));
         auto run = [&](u32 mode, i64 threads) {
             bp.mode = mode;
             vkCmdPushConstants(cmd, bl, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(BlurPush), &bp);
             vkCmdDispatch(cmd, u32((threads + 63) / 64), 1, 1);
         };
+        if (pass.kind == kPassLayerBegin) { // save + clear
+            run(4, w * h);
+            continue;
+        }
+        const auto blur3 = [&] {
+            for (int it = 0; it < (bp.radius ? 3 : 0); ++it) { // radius 0: no blur
+                computeBarrier(cmd);
+                run(1, h * 4);
+                computeBarrier(cmd);
+                run(2, w * 4);
+            }
+        };
         run(0, w * h);
-        for (int it = 0; it < (pass.radius ? 3 : 0); ++it) { // radius 0: backdrop-filter without blur
+        blur3();
+        if (pass.flags & 1u) { // colour matrix (+ shadow plane copy)
             computeBarrier(cmd);
-            run(1, h * 4);
-            computeBarrier(cmd);
-            run(2, w * 4);
+            run(5, w * h);
+        }
+        if (pass.flags & 2u) { // drop shadow plane: its own blur at scratch[2 w h 4]
+            bp.base = u32(w * h * 8);
+            bp.radius = pass.radius2;
+            bp.inv = pass.inv2;
+            blur3();
+            bp.base = 0;
+            bp.radius = pass.radius;
+            bp.inv = pass.inv;
         }
         computeBarrier(cmd);
-        run(3, aw * ah);
+        if (pass.kind == kPassLayerEnd) run(6, w * h);
+        else run(3, aw * ah);
     }
 }
 

@@ -27,6 +27,9 @@ enum class DrawOp : u8 {
               ///< `borderWidth`; `rect` = bounds. Analytic AA from the distance to the nearest edge.
     ClipPath, ///< intersect the clip with a path's fill region (edges as Path, fill rule `v`); PopClip ends it. Coverage
               ///< from the same 4x4 winding sub-samples as Path; nests (all active clip paths multiply).
+    PushFilter, ///< CSS `filter`: commands up to the matching PopFilter draw into an isolated layer over `rect` (the
+                ///< pixel box, set by DrawList::popFilter from the layer's ink plus the filter's reach); see pushFilter
+    PopFilter,  ///< ends the layer: blur, colour matrix, drop shadow, then composited over what was under it
 };
 
 /// Gradient kinds (DrawCmd::gradient, low 4 bits) for Rect and Path. 1..3: from `fill` to `fill2` across `rect`.
@@ -66,6 +69,15 @@ struct ColorMatrix {
     /// out = M * (r, g, b, a, 1), clamped to 0..1 (straight alpha in and out)
     void apply(const f32 in[4], f32 out[4]) const;
     friend bool operator==(const ColorMatrix&, const ColorMatrix&) = default;
+};
+
+/// CSS drop-shadow(<dx> <dy> <blur> <color>): the alpha of the filtered image, blurred (box radius round(blur / 6),
+/// three passes), offset by whole pixels (rounded), tinted and drawn under it.
+struct DropShadow {
+    Vec2 offset{};
+    f32 blur = 0.f;
+    Color color{};
+    bool visible() const { return color.a > 0.f; }
 };
 
 /// A multi-stop gradient at any angle / ellipse / transform. `toUnit` maps a pixel to gradient space (affine
@@ -183,6 +195,7 @@ public:
         m_cmds.clear();
         m_edges.clear();
         m_stops.clear();
+        m_filterStack.clear();
     }
     void reserve(std::size_t n) { m_cmds.reserve(n); }
     void push(const DrawCmd& c) { m_cmds.push_back(c); }
@@ -196,6 +209,18 @@ public:
     /// Backdrop filter (CSS backdrop-filter: blur() then colour functions): blur (0 = none), then `filter` per pixel.
     /// The matrix rides in gradientStops() (4 rows of 5 as stops; DrawCmd::stops / stopCount = 4).
     void backdrop(const Rect& r, f32 blur, const std::array<f32, 4>& radii, const ColorMatrix& filter, Color tint = {});
+    /// As above plus a drop shadow of the filtered backdrop (CSS backdrop-filter: drop-shadow()): drawn under the
+    /// backdrop's own pixels, so it only shows where the backdrop is translucent. Shadow data: stops 4 / 5 (stopCount 6).
+    void backdrop(const Rect& r, f32 blur, const std::array<f32, 4>& radii, const ColorMatrix& filter, const DropShadow& shadow,
+                  Color tint = {});
+    /// CSS `filter` on an element: what is drawn until popFilter() goes to an isolated (transparent) layer, which is
+    /// then blurred (`blur`, as backdrop), passed through `matrix`, given `shadow`, and composited over the pixels
+    /// under it (within the clip in force; clip paths and rounded clips multiply). Fixed order: blur, matrix, shadow.
+    /// The layer is a backdrop root: a backdrop inside it sees only the layer. Nests.
+    void pushFilter(const ColorMatrix& matrix, f32 blur = 0.f, const DropShadow& shadow = {});
+    /// Ends the innermost pushFilter: sets both commands' `rect` to the layer's pixel box (ink bounds of the commands
+    /// in between, grown by the blur and shadow reach).
+    void popFilter();
     /// Fills `p` (fill.a == 0: no fill) and strokes it (`strokeWidth` > 0, centred on the outline).
     void path(const Path& p, Color fill, bool evenOdd = false, Color stroke = {}, f32 strokeWidth = 0.f);
     void gradientPath(const Path& p, Color from, Color to, GradientKind kind, bool evenOdd = false);
@@ -225,8 +250,14 @@ private:
     std::vector<DrawCmd> m_cmds;
     std::vector<PathEdge> m_edges;
     std::vector<GradientStop> m_stops;
+    std::vector<u32> m_filterStack; ///< open pushFilter command indices
+    void putFilter(DrawCmd& c, const ColorMatrix& m, const DropShadow& shadow);
     void applyGradient(DrawCmd& c, const Gradient& g);
 };
+
+/// PushFilter / PopFilter pairing: partner[i] = the matching command's index, ~0u for other commands and for an
+/// unmatched push / pop (both rasterisers ignore those).
+void matchFilters(const DrawList& list, std::vector<u32>& partner);
 
 /// Multi-stop gradient colour of command `c` at pixel centre (px, py); the GPU kernel has the same arithmetic.
 Color gradientStopsColor(const DrawCmd& c, const GradientStop* stops, f32 px, f32 py);

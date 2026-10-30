@@ -457,15 +457,23 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             f32 fb[2];
             std::memcpy(fb, bits, 8);
             put4(g.grad2, c.gradXf[4], c.gradXf[5], fb[0], fb[1]);
-        } else if (c.op == DrawOp::Backdrop && c.stopCount == 4 && std::size_t(c.stops) + 4 <= list.gradientStops().size()) {
-            // backdrop-filter colour matrix: 4 rows x (r, g, b, a, offset) words, as the CPU's filterPixel reads them
+        } else if ((c.op == DrawOp::Backdrop || c.op == DrawOp::PushFilter || c.op == DrawOp::PopFilter) &&
+                   (c.stopCount == 4 || c.stopCount == 6) && std::size_t(c.stops) + c.stopCount <= list.gradientStops().size()) {
+            // filter colour matrix: 4 rows x (r, g, b, a, offset) words, as the CPU's filterPixel reads them; then with
+            // a drop shadow: dx, dy (whole pixels), colour r g b a (straight)
             const u32 at = vsz();
             for (u32 i = 0; i < 4; ++i) {
                 const GradientStop& st = list.gradientStops()[c.stops + i];
                 const f32 w[5] = {st.color.r, st.color.g, st.color.b, st.color.a, st.offset};
                 for (f32 f : w) { u32 u; std::memcpy(&u, &f, 4); V->push_back(u); }
             }
-            u32 bits[2] = {at, 4u};
+            if (c.stopCount == 6) {
+                const GradientStop* sh = list.gradientStops().data() + c.stops + 4;
+                const f32 w[6] = {f32(std::lround(sh[1].color.r)), f32(std::lround(sh[1].color.g)), sh[0].color.r, sh[0].color.g,
+                                  sh[0].color.b, sh[0].color.a};
+                for (f32 f : w) { u32 u; std::memcpy(&u, &f, 4); V->push_back(u); }
+            }
+            u32 bits[2] = {at, u32(c.stopCount)};
             f32 fb[2];
             std::memcpy(fb, bits, 8);
             put4(g.grad2, 0.f, 0.f, fb[0], fb[1]);
@@ -569,6 +577,31 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         GpuPass blur; ///< the backdrop pass that follows it
     };
     thread_local std::vector<Segment> segments;
+    // CSS filter layers: open layer boxes and the save area top (floats in the blur scratch buffer)
+    struct LayerBox {
+        int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+        u32 save = 0;
+    };
+    thread_local std::vector<LayerBox> layerBoxes;
+    layerBoxes.clear();
+    u32 saveTop = 0;
+    thread_local std::vector<u32> partner;
+    partner.clear();
+    bool hasFilters = false;
+    for (std::size_t i = 0; i < n && !hasFilters; ++i) hasFilters = cur[i].op == DrawOp::PushFilter;
+    if (hasFilters) matchFilters(list, partner);
+    const auto filterPass = [&](const DrawCmd& c, GpuPass& bp) {
+        bp.flags = 0;
+        if ((c.stopCount != 4 && c.stopCount != 6) || std::size_t(c.stops) + c.stopCount > list.gradientStops().size()) return;
+        bp.flags = 1u;
+        if (c.stopCount == 6) {
+            const f32 sb = list.gradientStops()[c.stops + 4].offset;
+            const int r2 = sb > 0.f ? std::max(1, int(std::lround(sb / 6.f))) : 0;
+            bp.flags |= 2u;
+            bp.radius2 = u32(r2);
+            bp.inv2 = 1.f / f32(2 * r2 + 1);
+        }
+    };
     u32 clipVer = 1;
     int clipFloor = 0;     // incremental: the range may not pop below its starting depth
     bool unbalanced = false;
@@ -642,7 +675,50 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             bp.area[3] = y1;
             bp.radius = u32(r);
             bp.inv = 1.f / f32(2 * r + 1);
+            filterPass(c, bp);
+            bp.saveTop = saveTop;
             segments.push_back({u32(areas.size()), u32(ci), bp}); // the draw segment closes here
+            return;
+        }
+        if (c.op == DrawOp::PushFilter || c.op == DrawOp::PopFilter) {
+            // CSS filter layer: begin saves + clears the box, end composites (CpuRasterizer layerBegin / layerEnd)
+            if (ci >= partner.size() || partner[ci] == ~0u) return;
+            LayerBox lb{};
+            if (c.op == DrawOp::PushFilter) {
+                const Rect area = c.rect.intersect(clip.r).intersect(full);
+                if (!area.empty()) {
+                    lb.x0 = int(std::floor(area.x)), lb.y0 = int(std::floor(area.y));
+                    lb.x1 = int(std::ceil(area.right())), lb.y1 = int(std::ceil(area.bottom()));
+                }
+                lb.save = saveTop;
+                saveTop += u32(std::max(0, lb.x1 - lb.x0) * std::max(0, lb.y1 - lb.y0) * 4);
+                layerBoxes.push_back(lb);
+            } else {
+                if (layerBoxes.empty()) return;
+                lb = layerBoxes.back();
+                layerBoxes.pop_back();
+            }
+            const u32 top = lb.save + u32(std::max(0, lb.x1 - lb.x0) * std::max(0, lb.y1 - lb.y0) * 4);
+            if (c.op == DrawOp::PopFilter) saveTop = lb.save;
+            if (lb.x1 <= lb.x0 || lb.y1 <= lb.y0) return;
+            const u32 id = u32(out.cmdScratch.size());
+            pack(c, clip, ci);
+            slotOut = id;
+            GpuPass bp;
+            bp.kind = c.op == DrawOp::PushFilter ? kPassLayerBegin : kPassLayerEnd;
+            bp.cmd = id;
+            bp.src[0] = bp.area[0] = lb.x0;
+            bp.src[1] = bp.area[1] = lb.y0;
+            bp.src[2] = lb.x1 - lb.x0;
+            bp.src[3] = lb.y1 - lb.y0;
+            bp.area[2] = lb.x1;
+            bp.area[3] = lb.y1;
+            const int r = c.blur > 0.f ? std::max(1, int(std::lround(c.blur / 3.f))) : 0;
+            bp.radius = u32(r);
+            bp.inv = 1.f / f32(2 * r + 1);
+            filterPass(c, bp);
+            bp.saveTop = top;
+            segments.push_back({u32(areas.size()), u32(ci), bp});
             return;
         }
         if (c.op == DrawOp::Path) {
@@ -739,7 +815,10 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     // one changed range [p, ep) -> [p, ec): re-emit only the range (clip ops inside it must be balanced; backdrops
     // keep their count), put its records into free spots of their node slots, and rebuild only the tiles it
     // touches (one draw segment) or the segments it spans (backdrops in it)
-    if (others && structural && out.tilePasses > 0 && out.tileCountPrev == tileCount && out.cmdSlot.size() == m &&
+    // (filter layers: full pack; their save areas and pass order span the whole list)
+    bool prevFilters = false;
+    for (std::size_t i = 0; i < m && !prevFilters && !hasFilters; ++i) prevFilters = out.prevCmds[i].op == DrawOp::PushFilter;
+    if (others && structural && !hasFilters && !prevFilters && out.tilePasses > 0 && out.tileCountPrev == tileCount && out.cmdSlot.size() == m &&
         out.cmdBox.size() == m && out.images.size() == out.packedImageWords &&
         (out.arena.empty() || out.images.size() == out.arenaBase + out.arena.size()) && (ep - p) + (ec - p) <= 4096 &&
         !(out.arenaHoles > out.arenaLive && out.arenaHoles > 4096) && out.cmdVol.size() == m && tablesKept()) {
