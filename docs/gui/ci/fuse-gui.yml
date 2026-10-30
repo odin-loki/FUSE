@@ -125,7 +125,7 @@ jobs:
         with: { submodules: true }
       - uses: vmactions/freebsd-vm@v1
         with:
-          release: "14.2"
+          release: "14.4"
           usesh: true
           prepare: pkg install -y cmake ninja llvm18 libX11 libxkbcommon wayland
           run: |
