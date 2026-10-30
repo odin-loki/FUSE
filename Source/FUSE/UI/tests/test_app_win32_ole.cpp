@@ -1,6 +1,8 @@
 // fuse_app_win32_ole (Windows / Wine): OLE drag and drop and the IFileDialog native dialog.
 //   1. the window's registered IDropTarget accepts our own CF_HDROP data object -> onExternalDrop paths
 //   2. a real DoDragDrop started by AppWindow::beginExternalDrag lands back on the window (self drop)
+//   1b. a multi-format data object (text + registered MIME formats) -> ExternalDrop::formats with the bytes
+//   1c. the custom copy / link drag cursors (win32CursorHandle): 32x32 ARGB, hotspot at the arrow tip, distinct
 //   3. os::nativeFileDialog (IFileOpenDialog) shows, a helper thread presses OK, the preset file comes back
 #include "fuse/app/app.hpp"
 #include "fuse/app/native.hpp"
@@ -14,7 +16,10 @@
 #include <string>
 #include <thread>
 
-namespace fuse::app::detail { IDataObject* win32MakeDataObject(const AppWindow::ExternalDrag& d); }
+namespace fuse::app::detail {
+IDataObject* win32MakeDataObject(const AppWindow::ExternalDrag& d);
+void* win32CursorHandle(fuse::ui::CursorShape);
+}
 namespace app = fuse::app;
 using namespace fuse::ui;
 static int g_fail = 0;
@@ -26,7 +31,8 @@ int main(int argc, char** argv) {
     std::vector<std::string> got;
     std::string mime;
     int ended = -1, drops = 0;
-    win.onExternalDrop([&](app::AppWindow&, const app::AppWindow::ExternalDrop& d) { got = d.paths; mime = d.mime; ++drops; });
+    app::AppWindow::ExternalDrop last;
+    win.onExternalDrop([&](app::AppWindow&, const app::AppWindow::ExternalDrop& d) { got = d.paths; mime = d.mime; last = d; ++drops; });
     win.onExternalDragEnd([&](bool ok) { ended = ok ? 1 : 0; });
     app::NativePlatform native(a);
     native.show(win);
@@ -48,6 +54,35 @@ int main(int argc, char** argv) {
         CHECK(target->Drop(data, 0, pt, &eff) == S_OK && eff == DROPEFFECT_COPY);
         data->Release();
         CHECK(got.size() == 2 && got[0] == "C:/tmp/a b.txt" && got[1] == "C:/tmp/c.png" && mime == "text/uri-list");
+        // 1b. multi-format
+        app::AppWindow::ExternalDrag md{.mime = "text/plain", .data = "hi"};
+        md.formats = {{"application/x-fuse-test", "42"}, {"text/html", "<i>x</i>"}};
+        data = app::detail::win32MakeDataObject(md);
+        eff = DROPEFFECT_COPY;
+        CHECK(target->DragEnter(data, MK_LBUTTON, pt, &eff) == S_OK && eff == DROPEFFECT_COPY);
+        eff = DROPEFFECT_COPY;
+        CHECK(target->Drop(data, 0, pt, &eff) == S_OK && eff == DROPEFFECT_COPY);
+        data->Release();
+        CHECK(last.mime == "text/plain" && last.data == "hi");
+        int found = 0;
+        for (const auto& [m, v] : last.formats) found += (m == "application/x-fuse-test" && v == "42") + (m == "text/html" && v == "<i>x</i>");
+        CHECK(found == 2);
+    }
+    // 1c. custom drag cursors
+    {
+        auto* copy = static_cast<HCURSOR>(app::detail::win32CursorHandle(CursorShape::Copy));
+        auto* link = static_cast<HCURSOR>(app::detail::win32CursorHandle(CursorShape::Link));
+        CHECK(copy && link && copy != link);
+        CHECK(app::detail::win32CursorHandle(CursorShape::Copy) == copy); // built once
+        CHECK(app::detail::win32CursorHandle(CursorShape::Move) == nullptr);
+        ICONINFO ii{};
+        if (copy && GetIconInfo(copy, &ii)) {
+            CHECK(!ii.fIcon && ii.xHotspot == 0 && ii.yHotspot == 0);
+            BITMAP bm{};
+            CHECK(ii.hbmColor && GetObjectW(ii.hbmColor, sizeof(bm), &bm) && bm.bmWidth == 32 && bm.bmHeight == 32);
+            if (ii.hbmColor) DeleteObject(ii.hbmColor);
+            if (ii.hbmMask) DeleteObject(ii.hbmMask);
+        } else CHECK(false);
     }
 
     // 2. real DoDragDrop: cursor over our client area, button already up -> immediate drop on the window

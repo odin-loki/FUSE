@@ -153,4 +153,26 @@ struct ScaleTables {
         frac = {"wp_fractional_scale_v1", 1, 1, frReq, 1, frEv};
     }
 };
+/// wp_cursor_shape_manager_v1 / wp_cursor_shape_device_v1 (cursor-shape-v1, staging v1): the compositor draws a
+/// named cursor (no client buffer). Only the requests FUSE sends are listed (get_tablet_tool_v2 omitted).
+struct CursorShapeTables {
+    Interface manager{}, device{};
+    const Interface* tGetPointer[2]{}; // n o(wl_pointer)
+    const Interface* none[2]{};
+    Message mgrReq[2]{}, devReq[2]{};
+    void init(const Interface* wlPointer) {
+        tGetPointer[0] = &device; tGetPointer[1] = wlPointer;
+        mgrReq[0] = {"destroy", "", none};
+        mgrReq[1] = {"get_pointer", "no", tGetPointer};
+        devReq[0] = {"destroy", "", none};
+        devReq[1] = {"set_shape", "uu", none};
+        manager = {"wp_cursor_shape_manager_v1", 1, 2, mgrReq, 0, nullptr};
+        device = {"wp_cursor_shape_device_v1", 1, 2, devReq, 0, nullptr};
+    }
+};
+/// cursor-shape-v1 enum values for CursorShape (Default, Pointer, Text, Copy, Move, Link, Forbidden, Grabbing)
+inline constexpr uint32_t kCursorShapes[8] = {1 /*default*/, 4 /*pointer*/, 9 /*text*/, 12 /*copy*/, 13 /*move*/,
+                                              11 /*alias*/, 15 /*not_allowed*/, 17 /*grabbing*/};
+/// freedesktop cursor names for the same (libwayland-cursor / Xcursor themes)
+inline constexpr const char* kCursorNames[8] = {"default", "pointer", "text", "copy", "move", "alias", "not-allowed", "grabbing"};
 } // namespace fuse::app::wl

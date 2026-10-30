@@ -47,6 +47,7 @@ bool WaylandPlatform::capture(const AppWindow&, Image&) const { return false; }
 bool WaylandPlatform::configured(const AppWindow&) const { return false; }
 void* WaylandPlatform::nativeDisplay() const { return nullptr; }
 bool WaylandPlatform::roundtrip() { return false; }
+std::string_view WaylandPlatform::cursorBackend() const { return {}; }
 bool WaylandPlatform::gpuPresents(const AppWindow&) const { return false; }
 bool WaylandPlatform::gpuDraws(const AppWindow&) const { return false; }
 bool WaylandPlatform::hdrContent(const AppWindow&) const { return false; }
@@ -94,6 +95,26 @@ struct Lib {
         i(seat, "wl_seat_interface"); i(pointer, "wl_pointer_interface"); i(keyboard, "wl_keyboard_interface");
         i(output, "wl_output_interface"); i(ddm, "wl_data_device_manager_interface"); i(dataDevice, "wl_data_device_interface");
         i(dataOffer, "wl_data_offer_interface"); i(dataSource, "wl_data_source_interface"); i(callback, "wl_callback_interface");
+        return all;
+    }
+};
+
+/// libwayland-cursor (optional): the themed cursor fallback when the compositor lacks cursor-shape-v1.
+struct CursorLib {
+    struct Image { uint32_t width, height, hotspot_x, hotspot_y, delay; };
+    struct Cursor { unsigned image_count; Image** images; char* name; };
+    std::unique_ptr<os::Library> so;
+    void* (*themeLoad)(const char*, int, Proxy*) = nullptr;
+    void (*themeDestroy)(void*) = nullptr;
+    Cursor* (*getCursor)(void*, const char*) = nullptr;
+    Proxy* (*imageBuffer)(Image*) = nullptr;
+    bool load() {
+        so = os::loadLibrary({"libwayland-cursor.so.0", "libwayland-cursor.so"});
+        if (!so) return false;
+        bool all = true;
+        auto f = [&](auto& fn, const char* n) { fn = reinterpret_cast<std::remove_reference_t<decltype(fn)>>(so->symbol(n)); all = all && fn; };
+        f(themeLoad, "wl_cursor_theme_load"); f(themeDestroy, "wl_cursor_theme_destroy");
+        f(getCursor, "wl_cursor_theme_get_cursor"); f(imageBuffer, "wl_cursor_image_get_buffer");
         return all;
     }
 };
@@ -169,6 +190,15 @@ struct WaylandPlatform::Impl {
     std::vector<std::unique_ptr<Win>> wins;
     Win* pointerFocus = nullptr;
     Win* keyFocus = nullptr;
+    // pointer cursor: cursor-shape-v1 when offered, else a libwayland-cursor theme on a cursor surface
+    wl::CursorShapeTables shapeTables;
+    Proxy *shapeMgr = nullptr, *shapeDevice = nullptr, *cursorSurface = nullptr;
+    CursorLib cursorLib;
+    bool cursorLibTried = false;
+    void* cursorTheme = nullptr;
+    const char* cursorVia = "";
+    int appliedShape = -1;     ///< last shape set for lastEnterSerial (-1: none since the enter)
+    u32 appliedCursorRev = ~0u; ///< focused window's UiContext::cursorRevision() when applied
     Vec2 pointerPos{};
     uint32_t lastButtonSerial = 0, lastEnterSerial = 0;
     bool buttonDown = false;
@@ -205,7 +235,13 @@ struct WaylandPlatform::Impl {
     struct Source {
         Proxy* src = nullptr;
         Win* win = nullptr;
-        std::string mime, data;
+        std::vector<std::pair<std::string, std::string>> formats; ///< offered mime -> data ([0] preferred)
+        Proxy *icon = nullptr, *iconBuf = nullptr;                 ///< drag icon surface + its wl_shm buffer
+        os::SharedBuffer iconMem;
+        const std::string* find(std::string_view mime) const {
+            for (const auto& [m, d] : formats) if (m == mime) return &d;
+            return nullptr;
+        }
     } source;
 
     NativeOptions opts;
@@ -263,6 +299,7 @@ struct WaylandPlatform::Impl {
             m.l.addListener(m.seat, const_cast<void (**)(void)>(lis.fns), &m);
         } else if (n == "wl_data_device_manager") m.ddm = m.bind(name, m.l.ddm, std::min(ver, 3u));
         else if (n == "zwp_text_input_manager_v3") m.tiMgr = m.bind(name, &m.tiTables.manager, 1);
+        else if (n == "wp_cursor_shape_manager_v1") m.shapeMgr = m.bind(name, &m.shapeTables.manager, 1);
     }
     static void onGlobalRemove(void*, Proxy*, uint32_t) {}
     static void onPing(void* d, Proxy* wm, uint32_t serial) {
@@ -278,6 +315,7 @@ struct WaylandPlatform::Impl {
             static const auto lis = listen(&ptrEnter, &ptrLeave, &ptrMotion, &ptrButton, &ptrAxis, &ptrFrame,
                                            &ptrAxisSource, &ptrAxisStop, &ptrAxisDiscrete);
             m.l.addListener(m.pointer, const_cast<void (**)(void)>(lis.fns), &m);
+            if (m.shapeMgr) m.shapeDevice = m.l.marshal(m.shapeMgr, 1, &m.shapeTables.device, 1, 0, nullptr, m.pointer);
         }
         if ((caps & 2) && !m.keyboard) {
             m.keyboard = m.l.marshal(seat, 1, m.l.keyboard, m.l.version(seat), 0, nullptr);
@@ -291,6 +329,48 @@ struct WaylandPlatform::Impl {
         m.lastEnterSerial = serial;
         m.pointerPos = {f32(wl::fromFixed(x)), f32(wl::fromFixed(y))};
         if (m.pointerFocus) m.pointerFocus->win->ui().pointerMove(m.pointerPos);
+        m.appliedShape = -1; // a new enter serial: the cursor must be set again
+        m.syncCursor();
+    }
+    /// The focused window's UiContext::cursorShape() -> the pointer cursor (set_shape, or a themed cursor surface).
+    /// Wayland only accepts it with the latest wl_pointer.enter serial, so it is re-sent on every enter.
+    void syncCursor() {
+        if (!pointerFocus || !pointer) return;
+        UiContext& ui = pointerFocus->win->ui();
+        if (appliedShape >= 0 && appliedCursorRev == ui.cursorRevision()) return;
+        appliedCursorRev = ui.cursorRevision();
+        const u32 s = u32(ui.cursorShape()) < 8 ? u32(ui.cursorShape()) : 0u;
+        if (int(s) == appliedShape) return;
+        appliedShape = int(s);
+        if (shapeDevice) {
+            l.marshal(shapeDevice, 1, nullptr, 1, 0, lastEnterSerial, wl::kCursorShapes[s]);
+            l.flush(dpy);
+            cursorVia = "cursor-shape-v1";
+            return;
+        }
+        if (!cursorLibTried) {
+            cursorLibTried = true;
+            if (cursorLib.load() && shm) {
+                const std::string size = os::env("XCURSOR_SIZE");
+                const std::string theme = os::env("XCURSOR_THEME");
+                cursorTheme = cursorLib.themeLoad(theme.empty() ? nullptr : theme.c_str(), size.empty() ? 24 : std::max(8, std::atoi(size.c_str())), shm);
+            }
+        }
+        if (!cursorTheme) return; // compositor default
+        CursorLib::Cursor* c = cursorLib.getCursor(cursorTheme, wl::kCursorNames[s]);
+        if (!c && s != 0) c = cursorLib.getCursor(cursorTheme, "left_ptr");
+        if (!c || !c->image_count) return;
+        CursorLib::Image* im = c->images[0];
+        Proxy* buf = cursorLib.imageBuffer(im);
+        if (!buf) return;
+        if (!cursorSurface) cursorSurface = l.marshal(compositor, 0, l.surface, l.version(compositor), 0, nullptr);
+        if (!cursorSurface) return;
+        l.marshal(cursorSurface, 1, nullptr, l.version(cursorSurface), 0, buf, 0, 0);
+        l.marshal(cursorSurface, 2, nullptr, l.version(cursorSurface), 0, 0, 0, int32_t(im->width), int32_t(im->height));
+        l.marshal(cursorSurface, 6, nullptr, l.version(cursorSurface), 0);
+        l.marshal(pointer, 0, nullptr, l.version(pointer), 0, lastEnterSerial, cursorSurface, int32_t(im->hotspot_x), int32_t(im->hotspot_y));
+        l.flush(dpy);
+        cursorVia = "libwayland-cursor";
     }
     static void ptrLeave(void* d, Proxy*, uint32_t, Proxy*) { static_cast<Impl*>(d)->pointerFocus = nullptr; }
     static void ptrMotion(void* d, Proxy*, uint32_t, wl::Fixed x, wl::Fixed y) {
@@ -300,6 +380,7 @@ struct WaylandPlatform::Impl {
         AppWindow& w = *m.pointerFocus->win;
         w.ui().setModifiers(m.modsNow);
         w.ui().pointerMove(m.pointerPos);
+        m.syncCursor();
         if (m.buttonDown)
             if (auto drag = w.takeExternalDrag()) m.startDrag(*m.pointerFocus, std::move(*drag));
     }
@@ -560,6 +641,7 @@ struct WaylandPlatform::Impl {
             m.l.marshal(w.top, 2, nullptr, 1, 0, aw.title().c_str());
         }
         if (w.configured) m.syncScaleState(w);
+        if (&w == m.pointerFocus) m.syncCursor();
         if (w.configured) {
             if (detail::VkWin* vk = m.vulkanFor(w)) {
                 const bool ok = detail::vkWinPresent(vk, aw, damage); // acquire / blit / vkQueuePresentKHR commits
@@ -688,13 +770,28 @@ struct WaylandPlatform::Impl {
         AppWindow::ExternalDrop drop;
         drop.pos = m.dndPos;
         drop.mime = m.dndMime == "text/uri-list" ? "text/uri-list" : "text/plain";
-        if (m.source.src && m.source.win) {
-            drop.data = m.source.data; // our own drag: no round trip through a pipe we would block on
-        } else if (auto p = os::makePipe()) {
-            m.l.marshal(offer, 1, nullptr, m.l.version(offer), 0, m.dndMime.c_str(), p->second);
-            os::closeFd(p->second);
-            m.l.flush(m.dpy);
-            drop.data = os::readAllAndClose(p->first);
+        // the preferred type, then the rest of the offer (up to 8 types): one pipe each
+        std::vector<std::string> want{m.dndMime};
+        for (const auto& t : m.offers[offer])
+            if (want.size() < 8 && std::find(want.begin(), want.end(), t) == want.end()) want.push_back(t);
+        const bool own = m.source.src && m.source.win;
+        for (const auto& t : want) {
+            std::string bytes;
+            if (own) { // our own drag: no round trip through a pipe we would block on
+                const std::string* v = m.source.find(t);
+                if (!v) continue;
+                bytes = *v;
+            } else if (auto p = os::makePipe()) {
+                m.l.marshal(offer, 1, nullptr, m.l.version(offer), 0, t.c_str(), p->second);
+                os::closeFd(p->second);
+                m.l.flush(m.dpy);
+                bytes = os::readAllAndClose(p->first);
+            } else continue;
+            const std::string mime = t == "UTF8_STRING" || t.starts_with("text/plain") ? "text/plain" : t;
+            bool dup = false;
+            for (const auto& f : drop.formats) dup |= f.first == mime;
+            if (&t == &want.front()) drop.data = bytes;
+            if (!dup) drop.formats.emplace_back(mime, std::move(bytes));
         }
         if (drop.mime == "text/uri-list") drop.paths = AppWindow::pathsFromUriList(drop.data);
         if (m.l.version(offer) >= 3) m.l.marshal(offer, 3, nullptr, m.l.version(offer), 0);
@@ -715,26 +812,58 @@ struct WaylandPlatform::Impl {
         if (!ddm || !dataDevice || source.src) return;
         source = {};
         source.win = &w;
-        if (!d.paths.empty()) { source.mime = "text/uri-list"; source.data = AppWindow::uriListFromPaths(d.paths); }
-        else { source.mime = d.mime.empty() || d.mime == "text/plain" ? "text/plain;charset=utf-8" : d.mime; source.data = std::move(d.data); }
+        for (auto& [mime, data] : d.offered()) {
+            if (mime == "text/plain") { // the usual text spellings, all with the same bytes
+                source.formats.emplace_back("text/plain;charset=utf-8", data);
+                source.formats.emplace_back("UTF8_STRING", data);
+            }
+            source.formats.emplace_back(std::move(mime), std::move(data));
+        }
+        if (source.formats.empty()) { source = {}; return; }
         source.src = l.marshal(ddm, 0, l.dataSource, l.version(ddm), 0, nullptr);
         static const auto lis = listen(&srcTarget, &srcSend, &srcCancelled, &srcDropPerformed, &srcFinished, &srcAction);
         l.addListener(source.src, const_cast<void (**)(void)>(lis.fns), this);
-        l.marshal(source.src, 0, nullptr, l.version(source.src), 0, source.mime.c_str());
-        if (source.mime == "text/plain;charset=utf-8") l.marshal(source.src, 0, nullptr, l.version(source.src), 0, "text/plain");
+        for (const auto& f : source.formats) l.marshal(source.src, 0, nullptr, l.version(source.src), 0, f.first.c_str());
         if (l.version(source.src) >= 3) l.marshal(source.src, 2, nullptr, l.version(source.src), 0, 1u);
-        l.marshal(dataDevice, 0, nullptr, l.version(dataDevice), 0, source.src, w.surface, nullptr, lastButtonSerial);
+        // drag icon: the pixmap on its own surface, offset so the hotspot sits under the pointer
+        if (!d.image.empty() && d.imageW && d.imageH && d.image.size() == std::size_t(d.imageW) * d.imageH && shm) {
+            const int stride = int(d.imageW) * 4;
+            if (auto mem = os::createSharedBuffer(std::size_t(stride) * d.imageH)) {
+                source.iconMem = std::move(*mem);
+                auto* dst = static_cast<u32*>(source.iconMem.data);
+                for (std::size_t i = 0; i < d.image.size(); ++i) { // premultiplied 0xAABBGGRR -> ARGB8888 (premultiplied)
+                    const u32 p = d.image[i];
+                    dst[i] = (p & 0xFF00FF00u) | ((p & 0xFFu) << 16) | ((p >> 16) & 0xFFu);
+                }
+                Proxy* pool = l.marshal(shm, 0, l.shmPool, 1, 0, nullptr, source.iconMem.fd, int32_t(source.iconMem.size));
+                source.iconBuf = l.marshal(pool, 0, l.buffer, 1, 0, nullptr, 0, int32_t(d.imageW), int32_t(d.imageH), stride, 0u /*ARGB8888*/);
+                l.marshal(pool, 1, nullptr, 1, kDestroy);
+                source.icon = l.marshal(compositor, 0, l.surface, l.version(compositor), 0, nullptr);
+                // hotspot: wl_surface.offset from v5 (attach with a non-zero offset is a protocol error there)
+                const bool v5 = l.version(source.icon) >= 5;
+                l.marshal(source.icon, 1, nullptr, l.version(source.icon), 0, source.iconBuf, v5 ? 0 : -d.hotX, v5 ? 0 : -d.hotY);
+                if (v5) l.marshal(source.icon, 10, nullptr, l.version(source.icon), 0, -d.hotX, -d.hotY);
+                l.marshal(source.icon, 2, nullptr, l.version(source.icon), 0, 0, 0, int32_t(d.imageW), int32_t(d.imageH));
+                l.marshal(source.icon, 6, nullptr, l.version(source.icon), 0);
+            }
+        }
+        l.marshal(dataDevice, 0, nullptr, l.version(dataDevice), 0, source.src, w.surface, source.icon, lastButtonSerial);
         l.flush(dpy);
     }
     void endDrag(bool ok) {
         if (!source.src) return;
         l.marshal(source.src, 1, nullptr, l.version(source.src), kDestroy);
+        if (source.icon) l.marshal(source.icon, 0, nullptr, l.version(source.icon), kDestroy);
+        if (source.iconBuf) l.marshal(source.iconBuf, 0, nullptr, 1, kDestroy);
         AppWindow* w = source.win ? source.win->win : nullptr;
         source = {};
         if (w) w->deliverExternalDragEnd(ok);
     }
     static void srcTarget(void*, Proxy*, const char*) {}
-    static void srcSend(void* d, Proxy*, const char*, int32_t fd) { os::writeAllAndClose(fd, static_cast<Impl*>(d)->source.data); }
+    static void srcSend(void* d, Proxy*, const char* mime, int32_t fd) {
+        const std::string* v = static_cast<Impl*>(d)->source.find(mime ? mime : "");
+        os::writeAllAndClose(fd, v ? *v : std::string());
+    }
     static void srcCancelled(void* d, Proxy*) { static_cast<Impl*>(d)->endDrag(false); }
     static void srcDropPerformed(void*, Proxy*) {}
     static void srcFinished(void* d, Proxy*) { static_cast<Impl*>(d)->endDrag(true); }
@@ -765,6 +894,7 @@ WaylandPlatform::WaylandPlatform(Application& app, const char* name, const Nativ
     m->xdg.init(m->l.surface, m->l.seat, m->l.output);
     m->tiTables.init(m->l.surface, m->l.seat);
     m->scaleTables.init(m->l.surface);
+    m->shapeTables.init(m->l.pointer);
     m->dpy = m->l.connect(name);
     if (!m->dpy) { m->error = "cannot connect to the Wayland display"; return; }
     m->registry = m->l.marshal(m->dpy, 1, m->l.registry, m->l.version(m->dpy), 0, nullptr);
@@ -796,12 +926,16 @@ WaylandPlatform::~WaylandPlatform() {
     while (!m->wins.empty()) m->wins.back()->win->setPresenter({}); // destroyWin erases
     if (available()) m->app.setEventSource(m->previous);
     detail::vkCtxDestroy(m->vk); // after every VkWin (destroyWin), before the wl_display goes
+    if (m->shapeDevice) m->l.marshal(m->shapeDevice, 0, nullptr, 1, kDestroy);
+    if (m->cursorSurface) m->l.marshal(m->cursorSurface, 0, nullptr, m->l.version(m->cursorSurface), kDestroy);
+    if (m->cursorTheme) m->cursorLib.themeDestroy(m->cursorTheme); // owns the cursor wl_buffers
     m->l.disconnect(m->dpy);
 }
 bool WaylandPlatform::available() const { return m->dpy && m->compositor && m->shm && m->wmBase; }
 std::string_view WaylandPlatform::lastError() const { return m->error.empty() ? std::string_view(m->vkError) : std::string_view(m->error); }
 void* WaylandPlatform::nativeDisplay() const { return m->dpy; }
 bool WaylandPlatform::roundtrip() { return m->dpy && m->l.roundtrip(m->dpy) >= 0; }
+std::string_view WaylandPlatform::cursorBackend() const { return m->cursorVia; }
 
 bool WaylandPlatform::show(AppWindow& aw) {
     if (!available()) return false;

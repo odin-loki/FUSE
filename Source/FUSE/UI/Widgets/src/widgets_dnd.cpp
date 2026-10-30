@@ -76,12 +76,22 @@ void stopTimers(UiContext& ui, Dnd& d) {
 }
 void placeImage(UiContext& ui, Dnd& d) {
     if (!ui.alive(d.image)) return;
-    ui.setCss(d.image, "left", std::to_string(int(d.pos.x + 14.f)) + "px");
-    ui.setCss(d.image, "top", std::to_string(int(d.pos.y + 10.f)) + "px");
+    const bool pix = d.payload.imageIndex >= 0;
+    ui.setCss(d.image, "left", std::to_string(int(pix ? d.pos.x - d.payload.hotX : d.pos.x + 14.f)) + "px");
+    ui.setCss(d.image, "top", std::to_string(int(pix ? d.pos.y - d.payload.hotY : d.pos.y + 10.f)) + "px");
     if (d.action == 0) ui.addClass(d.image, "drag-refused");
     else ui.removeClass(d.image, "drag-refused");
 }
 void makeImage(UiContext& ui, Dnd& d) {
+    if (d.payload.imageIndex >= 0) {
+        d.image = image(ui, overlayLayer(ui), u32(d.payload.imageIndex), d.payload.imageW, d.payload.imageH);
+        ui.addClass(d.image, "drag-image");
+        ui.setCss(d.image, "position", "absolute");
+        ui.setCss(d.image, "pointer-events", "none");
+        ui.setCss(d.image, "opacity", "0.85");
+        placeImage(ui, d);
+        return;
+    }
     std::string t = d.payload.label;
     if (t.empty()) {
         t = std::string(d.payload.get("text/plain"));

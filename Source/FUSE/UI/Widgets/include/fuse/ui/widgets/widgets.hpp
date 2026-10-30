@@ -417,6 +417,11 @@ struct DragPayload {
     /// Drag image text (QDrag::setPixmap): shown in a card under the pointer while dragging; empty = the first line of
     /// text/plain, else the first format's type.
     std::string label;
+    /// Drag pixmap (QDrag::setPixmap + setHotSpot): an image index registered with the renderer (as for image()),
+    /// drawn `imageW` x `imageH` with the pointer at (hotX, hotY) inside it. Replaces the label card in-app;
+    /// AppWindow hands its pixels to the OS as the drag icon on handoff (Wayland icon surface). -1 = no pixmap.
+    i32 imageIndex = -1;
+    f32 imageW = 0.f, imageH = 0.f, hotX = 0.f, hotY = 0.f;
     std::string_view get(std::string_view mime) const;
     bool has(std::string_view mime) const;
     void set(std::string_view mime, std::string_view data);

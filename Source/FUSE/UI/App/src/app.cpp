@@ -177,17 +177,38 @@ AppWindow::AppWindow(Application& app, const WindowDesc& d, u32 id)
     // wl_data_device, Win32 OLE): the backend picks it up on its next pointer motion and reports back through
     // deliverExternalDragEnd
     widgets::setExternalDragHandler(m_ui, [this](UiContext&, const widgets::DragPayload& p) {
+        if (p.formats.empty()) return false;
         ExternalDrag d;
         if (p.has("text/uri-list")) d.paths = pathsFromUriList(p.get("text/uri-list"));
-        if (d.paths.empty()) {
-            if (p.has("text/plain")) { d.mime = "text/plain"; d.data = std::string(p.get("text/plain")); }
-            else if (!p.formats.empty()) { d.mime = p.formats.front().first; d.data = p.formats.front().second; }
-            else return false;
+        if (p.has("text/plain")) { d.mime = "text/plain"; d.data = std::string(p.get("text/plain")); }
+        else if (d.paths.empty()) { d.mime = p.formats.front().first; d.data = p.formats.front().second; }
+        for (const auto& f : p.formats)
+            if (f.first != "text/uri-list" && f.first != d.mime) d.formats.push_back(f);
+        if (p.imageIndex >= 0 && u32(p.imageIndex) < m_raster.imageCount()) {
+            if (const fuse::ui::Image* im = m_raster.images()[p.imageIndex]; im && im->width > 0 && im->height > 0) {
+                d.image = im->pixels;
+                d.imageW = u32(im->width);
+                d.imageH = u32(im->height);
+                const f32 sx = p.imageW > 0.f ? f32(im->width) / p.imageW : 1.f, sy = p.imageH > 0.f ? f32(im->height) / p.imageH : 1.f;
+                d.hotX = i32(p.hotX * sx);
+                d.hotY = i32(p.hotY * sy);
+            }
         }
         return beginExternalDrag(std::move(d));
     });
     m_presenter = {this, &AppWindow::presentHeadless, nullptr, true}; // offscreen: unpaced
     setScale(d.dpiScale); // WindowDesc::dpiScale seeds the HiDPI scale; backends update it on monitor changes
+}
+std::vector<std::pair<std::string, std::string>> AppWindow::ExternalDrag::offered() const {
+    std::vector<std::pair<std::string, std::string>> out;
+    auto add = [&](std::string m, std::string d) {
+        for (const auto& [k, v] : out) if (k == m) return;
+        out.emplace_back(std::move(m), std::move(d));
+    };
+    if (!paths.empty()) add("text/uri-list", uriListFromPaths(paths));
+    if (!data.empty() || !mime.empty()) add(mime.empty() ? "text/plain" : mime, data);
+    for (const auto& [m, d] : formats) add(m, d);
+    return out;
 }
 void AppWindow::deliverExternalDragEnd(bool accepted) {
     if (widgets::externalDragActive(m_ui)) widgets::finishExternalDrag(m_ui, accepted ? widgets::DropCopy : widgets::DropIgnore);

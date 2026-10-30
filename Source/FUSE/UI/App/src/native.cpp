@@ -27,6 +27,7 @@ namespace fuse::app::detail { // win32_dnd.cpp
 void* win32RegisterDrop(HWND, AppWindow*);
 void win32RevokeDrop(HWND, void*);
 bool win32DoDragDrop(AppWindow&, const AppWindow::ExternalDrag&);
+void* win32CursorHandle(fuse::ui::CursorShape); // copy / link drag cursors (win32_dnd.cpp); null for the rest
 } // namespace fuse::app::detail
 #else
 #include <poll.h>
@@ -180,6 +181,7 @@ struct Lib {
     int (*UngrabPointer)(Display*, unsigned long) = nullptr;
     int (*ConvertSelection)(Display*, Atom, Atom, Atom, Window, unsigned long) = nullptr; // optional (XDND)
     int (*SetSelectionOwner)(Display*, Atom, Window, unsigned long) = nullptr;              // optional (XDND source)
+    char* (*GetAtomName)(Display*, Atom) = nullptr;                                          // optional (multi-format drops)
     XID (*CreateFontCursor)(Display*, unsigned) = nullptr;                                    // optional (cursor shapes)
     int (*DefineCursor)(Display*, Window, XID) = nullptr;
     std::unique_ptr<fuse::ui::os::Library> xcursor;                                           // optional libXcursor (themed)
@@ -207,6 +209,7 @@ struct Lib {
         get(GrabPointer, "XGrabPointer"); get(UngrabPointer, "XUngrabPointer");
         ConvertSelection = reinterpret_cast<decltype(ConvertSelection)>(so->symbol("XConvertSelection"));
         SetSelectionOwner = reinterpret_cast<decltype(SetSelectionOwner)>(so->symbol("XSetSelectionOwner"));
+        GetAtomName = reinterpret_cast<decltype(GetAtomName)>(so->symbol("XGetAtomName"));
         CreateFontCursor = reinterpret_cast<decltype(CreateFontCursor)>(so->symbol("XCreateFontCursor"));
         DefineCursor = reinterpret_cast<decltype(DefineCursor)>(so->symbol("XDefineCursor"));
         if ((xcursor = fuse::ui::os::loadLibrary({"libXcursor.so.1", "libXcursor.so"})))
@@ -319,13 +322,17 @@ struct NativePlatform::Impl {
                   actionCopy = 0, uriList = 0, textPlain = 0, utf8 = 0, prop = 0;
         x11::Window source = 0;
         x11::Atom type = 0; ///< best offered type
+        std::vector<x11::Atom> offered; ///< every type the source offers
+        std::vector<x11::Atom> fetch;   ///< still to convert on drop (preferred first)
+        AppWindow::ExternalDrop got;    ///< collected while fetching
+        unsigned long dropTime = 0;
         fuse::ui::Vec2 pos{};
     } dnd;
     // XDND source (dragging out)
     struct DragOut {
         Rec* rec = nullptr;
-        std::string data;
-        x11::Atom type = 0;
+        std::vector<std::pair<x11::Atom, std::string>> types; ///< offered (atom, data); [0] preferred
+        x11::Atom type = 0; ///< types[0]
         x11::Window target = 0;   ///< current XdndAware window under the pointer
         bool accepted = false, dropped = false;
         unsigned long time = 0;
@@ -376,6 +383,10 @@ struct NativePlatform::Impl {
     void syncPopups(Rec& r);
     void syncTitle(Rec& r);
     void syncCursor(Rec& r); ///< UiContext::cursorShape() -> the OS pointer cursor (drag feedback)
+#if !defined(_WIN32)
+    x11::XID xCursor(u32 shape); ///< cached themed / font cursor for a CursorShape (0: none available)
+    x11::XID cursors[8]{};       ///< per connection (the server frees them on XCloseDisplay)
+#endif
     /// An outside click (grabbed pointer outside every window of the app, or the app deactivated): close every popup.
     static void closeAllPopups(Rec& r) {
         UiContext& ui = r.win->ui();
@@ -593,13 +604,17 @@ SIZE outerSizeForClient(int cw, int ch, DWORD style, UINT dpi) {
 }
 
 static LPCWSTR winCursor(CursorShape c) {
-    switch (c) { // no stock copy / move / link drag cursors (OLE draws its own once the drag leaves the window)
+    switch (c) { // no stock copy / link cursors: winCursorHandle builds those (OLE draws its own outside the window)
     case CursorShape::Pointer: case CursorShape::Grabbing: return reinterpret_cast<LPCWSTR>(IDC_HAND);
     case CursorShape::Text: return reinterpret_cast<LPCWSTR>(IDC_IBEAM);
     case CursorShape::Move: return reinterpret_cast<LPCWSTR>(IDC_SIZEALL);
     case CursorShape::Forbidden: return reinterpret_cast<LPCWSTR>(IDC_NO);
     default: return reinterpret_cast<LPCWSTR>(IDC_ARROW);
     }
+}
+static HCURSOR winCursorHandle(CursorShape c) {
+    if (void* own = detail::win32CursorHandle(c)) return static_cast<HCURSOR>(own);
+    return LoadCursorW(nullptr, winCursor(c));
 }
 LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto* r = reinterpret_cast<NativePlatform::Impl::Rec*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
@@ -640,7 +655,7 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
     switch (msg) {
     case WM_SETCURSOR:
-        if (LOWORD(lp) == HTCLIENT) { SetCursor(LoadCursorW(nullptr, winCursor(ui.cursorShape()))); return TRUE; }
+        if (LOWORD(lp) == HTCLIENT) { SetCursor(winCursorHandle(ui.cursorShape())); return TRUE; }
         break;
     case WM_MOUSEMOVE:
         ui.pointerMove(at(lp));
@@ -1165,11 +1180,25 @@ bool NativePlatform::Impl::dragStart(Rec& r, AppWindow::ExternalDrag d) {
     if (!dnd.aware || !x.SetSelectionOwner || drag.rec) return false;
     drag = {};
     drag.rec = &r;
-    if (!d.paths.empty()) { drag.data = AppWindow::uriListFromPaths(d.paths); drag.type = dnd.uriList; }
-    else { drag.data = std::move(d.data); drag.type = d.mime == "text/plain" || d.mime.empty() ? dnd.utf8 : x.InternAtom(dpy, d.mime.c_str(), 0); }
+    for (auto& [mime, data] : d.offered()) {
+        if (mime == "text/plain") { // UTF8_STRING + text/plain;charset=utf-8 + text/plain (XDND text convention)
+            drag.types.emplace_back(dnd.utf8, data);
+            drag.types.emplace_back(x.InternAtom(dpy, "text/plain;charset=utf-8", 0), data);
+            drag.types.emplace_back(dnd.textPlain, std::move(data));
+        } else drag.types.emplace_back(x.InternAtom(dpy, mime.c_str(), 0), std::move(data));
+        if (drag.types.size() >= 16) break;
+    }
+    if (drag.types.empty()) { drag.rec = nullptr; return false; }
+    drag.type = drag.types[0].first;
     const x11::Window self = x11::Window(r.handle);
+    { // XdndTypeList: the full list (Enter carries at most three inline)
+        std::vector<long> v;
+        for (const auto& t : drag.types) v.push_back(long(t.first));
+        x.ChangeProperty(dpy, self, x.InternAtom(dpy, "XdndTypeList", 0), 4 /*XA_ATOM*/, 32, 0, reinterpret_cast<const unsigned char*>(v.data()), int(v.size()));
+    }
     x.SetSelectionOwner(dpy, dnd.selection, self, 0);
-    x.GrabPointer(dpy, self, 0, (1u << 3) | (1u << 6), 1, 1, 0, 0, 0); // motion + release, wherever the pointer is
+    // motion + release wherever the pointer is; the grab shows the copy cursor while over other clients
+    x.GrabPointer(dpy, self, 0, (1u << 3) | (1u << 6), 1, 1, 0, xCursor(u32(fuse::ui::CursorShape::Copy)), 0);
     x.Flush(dpy);
     return true;
 }
@@ -1183,7 +1212,7 @@ void NativePlatform::Impl::dragEnd(bool accepted) {
     r->win->deliverExternalDragEnd(accepted);
 }
 bool NativePlatform::Impl::dragEvent(const x11::Event& ev) {
-    if (ev.type == x11::SelectionRequest && dnd.selection && ev.selreq.selection == dnd.selection && !drag.data.empty()) {
+    if (ev.type == x11::SelectionRequest && dnd.selection && ev.selreq.selection == dnd.selection && !drag.types.empty()) {
         const auto& q = ev.selreq;
         x11::Event n{};
         n.selection.type = x11::SelectionNotify;
@@ -1192,10 +1221,10 @@ bool NativePlatform::Impl::dragEvent(const x11::Event& ev) {
         n.selection.selection = q.selection;
         n.selection.target = q.target;
         n.selection.time = q.time;
-        const bool ok = q.target == drag.type || (drag.type == dnd.utf8 && q.target == dnd.textPlain);
-        if (ok && q.property) {
-            x.ChangeProperty(dpy, q.requestor, q.property, q.target, 8, 0,
-                             reinterpret_cast<const unsigned char*>(drag.data.data()), int(drag.data.size()));
+        const std::string* data = nullptr;
+        for (const auto& t : drag.types) if (t.first == q.target) { data = &t.second; break; }
+        if (data && q.property) {
+            x.ChangeProperty(dpy, q.requestor, q.property, q.target, 8, 0, reinterpret_cast<const unsigned char*>(data->data()), int(data->size()));
             n.selection.property = q.property;
         }
         x.SendEvent(dpy, q.requestor, 0, 0, &n);
@@ -1210,7 +1239,11 @@ bool NativePlatform::Impl::dragEvent(const x11::Event& ev) {
             if (drag.target) dndSend(drag.target, dnd.leave, 0, 0, 0, 0, self);
             drag.target = t;
             drag.accepted = false;
-            if (t) dndSend(t, dnd.enter, long(5) << 24, long(drag.type), drag.type == dnd.utf8 ? long(dnd.textPlain) : 0, 0, self);
+            if (t) {
+                long inl[3] = {0, 0, 0};
+                for (std::size_t i = 0; i < 3 && i < drag.types.size(); ++i) inl[i] = long(drag.types[i].first);
+                dndSend(t, dnd.enter, (long(5) << 24) | (drag.types.size() > 3 ? 1 : 0), inl[0], inl[1], inl[2], self);
+            }
         }
         if (t) dndSend(t, dnd.position, 0, (long(ev.input.x_root) << 16) | (ev.input.y_root & 0xFFFF), long(ev.input.time),
                        long(dnd.actionCopy), self);
@@ -1256,7 +1289,9 @@ void NativePlatform::Impl::dndClient(Rec& r, const x11::ClientEv& c) {
     if (c.message_type == dnd.enter) {
         dnd.source = x11::Window(c.l[0]);
         dnd.type = 0;
+        dnd.offered.clear();
         auto consider = [&](x11::Atom t) {
+            dnd.offered.push_back(t);
             if (t == dnd.uriList) dnd.type = t; // files win
             else if (!dnd.type && (t == dnd.utf8 || t == dnd.textPlain)) dnd.type = t;
         };
@@ -1281,29 +1316,55 @@ void NativePlatform::Impl::dndClient(Rec& r, const x11::ClientEv& c) {
     } else if (c.message_type == dnd.leave) {
         dnd.source = 0;
     } else if (c.message_type == dnd.drop) {
-        if (accept && dnd.type) x.ConvertSelection(dpy, dnd.selection, dnd.type, dnd.prop, self, (unsigned long)c.l[2]);
-        else dndSend(x11::Window(c.l[0]), dnd.finished, 0, 0, 0, 0, self);
+        if (accept && dnd.type) { // the preferred type first, then the rest (up to 8), one ConvertSelection each
+            dnd.got = {};
+            dnd.got.pos = dnd.pos;
+            dnd.fetch = {dnd.type};
+            for (x11::Atom t : dnd.offered)
+                if (t != dnd.type && dnd.fetch.size() < 8 && std::find(dnd.fetch.begin(), dnd.fetch.end(), t) == dnd.fetch.end()) dnd.fetch.push_back(t);
+            dnd.dropTime = (unsigned long)c.l[2];
+            x.ConvertSelection(dpy, dnd.selection, dnd.fetch.front(), dnd.prop, self, dnd.dropTime);
+        } else dndSend(x11::Window(c.l[0]), dnd.finished, 0, 0, 0, 0, self);
     }
 }
 void NativePlatform::Impl::dndSelection(Rec& r, const x11::SelectionEv& e) {
-    if (!dnd.source || e.selection != dnd.selection) return;
+    if (!dnd.source || e.selection != dnd.selection || dnd.fetch.empty()) return;
     const x11::Window self = x11::Window(r.handle);
-    bool ok = false;
+    const x11::Atom asked = dnd.fetch.front();
+    const bool preferred = dnd.got.formats.empty() && dnd.got.mime.empty();
+    bool got = false;
     if (e.property) {
         x11::Atom actual = 0; int fmt = 0; unsigned long n = 0, after = 0; unsigned char* data = nullptr;
         if (x.GetWindowProperty(dpy, self, dnd.prop, 0, 1 << 24, 1, 0 /*AnyPropertyType*/, &actual, &fmt, &n, &after, &data) == 0 && data) {
-            AppWindow::ExternalDrop d;
-            d.data.assign(reinterpret_cast<const char*>(data), n * std::size_t(fmt / 8));
+            std::string bytes(reinterpret_cast<const char*>(data), n * std::size_t(fmt / 8));
             x.Free(data);
-            d.pos = dnd.pos;
-            d.mime = dnd.type == dnd.uriList ? "text/uri-list" : "text/plain";
-            if (dnd.type == dnd.uriList) d.paths = AppWindow::pathsFromUriList(d.data);
-            r.win->deliverExternalDrop(d);
-            ok = true;
+            std::string mime;
+            if (asked == dnd.utf8 || asked == dnd.textPlain) mime = "text/plain";
+            else if (x.GetAtomName) {
+                if (char* nm = x.GetAtomName(dpy, asked)) { mime = nm; x.Free(nm); }
+                if (mime.starts_with("text/plain;")) mime = "text/plain";
+            }
+            if (!mime.empty()) {
+                bool dup = false;
+                for (const auto& f : dnd.got.formats) dup |= f.first == mime;
+                if (!dup) dnd.got.formats.emplace_back(mime, bytes);
+            }
+            if (preferred) {
+                dnd.got.data = std::move(bytes);
+                dnd.got.mime = asked == dnd.uriList ? "text/uri-list" : "text/plain";
+                if (asked == dnd.uriList) dnd.got.paths = AppWindow::pathsFromUriList(dnd.got.data);
+            }
+            got = true;
         }
     }
+    dnd.fetch.erase(dnd.fetch.begin());
+    if (preferred && !got) dnd.fetch.clear(); // the preferred type failed: refuse
+    if (!dnd.fetch.empty()) { x.ConvertSelection(dpy, dnd.selection, dnd.fetch.front(), dnd.prop, self, dnd.dropTime); x.Flush(dpy); return; }
+    const bool ok = !dnd.got.mime.empty();
+    if (ok) r.win->deliverExternalDrop(dnd.got);
     dndSend(dnd.source, dnd.finished, ok ? 1 : 0, ok ? long(dnd.actionCopy) : 0, 0, 0, self);
     dnd.source = 0;
+    dnd.got = {};
 }
 
 NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std::make_unique<Impl>(app, o)) {
@@ -1529,7 +1590,7 @@ void NativePlatform::Impl::syncCursor(Rec& r) {
     if (!r.handle) return;
     POINT p;
     if (GetCursorPos(&p) && (WindowFromPoint(p) == reinterpret_cast<HWND>(r.handle) || GetCapture() == reinterpret_cast<HWND>(r.handle)))
-        SetCursor(LoadCursorW(nullptr, winCursor(r.win->ui().cursorShape())));
+        SetCursor(winCursorHandle(r.win->ui().cursorShape()));
 }
 std::string NativePlatform::osTitle(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);
@@ -1604,17 +1665,21 @@ void NativePlatform::Impl::syncCursor(Rec& r) {
     if (rev == r.cursorRev) return;
     r.cursorRev = rev;
     if (!r.handle || !dpy || !x.DefineCursor) return;
+    const u32 i = u32(r.win->ui().cursorShape());
+    // Default: no cursor of our own (None inherits the parent's, as before any drag); others from xCursor
+    const x11::XID c = i == 0 ? 0 : xCursor(i);
+    if (i != 0 && !c) return;
+    x.DefineCursor(dpy, x11::Window(r.handle), c);
+    x.Flush(dpy);
+}
+x11::XID NativePlatform::Impl::xCursor(u32 i) {
     // themed names (freedesktop cursor spec) through libXcursor, else the core cursor font (X11/cursorfont.h)
     static constexpr const char* kNames[] = {"default", "pointer", "text", "copy", "move", "alias", "not-allowed", "grabbing"};
     static constexpr unsigned kFont[] = {68 /*left_ptr*/, 60 /*hand2*/, 152 /*xterm*/, 90 /*plus*/, 52 /*fleur*/, 68, 0 /*X_cursor*/, 58 /*hand1*/};
-    const u32 i = u32(r.win->ui().cursorShape());
-    if (i >= 8) return;
-    static x11::XID cache[8]{};
-    if (!cache[i] && x.LibraryLoadCursor) cache[i] = x.LibraryLoadCursor(dpy, kNames[i]);
-    if (!cache[i] && x.CreateFontCursor) cache[i] = x.CreateFontCursor(dpy, kFont[i]);
-    if (!cache[i]) return;
-    x.DefineCursor(dpy, x11::Window(r.handle), cache[i]);
-    x.Flush(dpy);
+    if (i >= 8) return 0;
+    if (!cursors[i] && x.LibraryLoadCursor) cursors[i] = x.LibraryLoadCursor(dpy, kNames[i]);
+    if (!cursors[i] && x.CreateFontCursor) cursors[i] = x.CreateFontCursor(dpy, kFont[i]);
+    return cursors[i];
 }
 std::string NativePlatform::osTitle(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);

@@ -185,6 +185,9 @@ public:
         std::vector<std::string> paths;
         std::string mime, data;
         fuse::ui::Vec2 pos;
+        /// Every format the backend fetched (mime -> data), the preferred `mime` / `data` included. X11 and Wayland
+        /// fetch up to 8 offered types; Win32 CF_HDROP / CF_UNICODETEXT plus registered MIME clipboard formats.
+        std::vector<std::pair<std::string, std::string>> formats;
     };
     using DropHandler = std::function<void(AppWindow&, const ExternalDrop&)>;
     void onExternalDrop(DropHandler h) { m_onDrop = std::move(h); }
@@ -200,6 +203,16 @@ public:
     struct ExternalDrag {
         std::vector<std::string> paths;
         std::string mime, data;
+        /// More formats offered alongside (QMimeData with several types): mime -> data. The target picks.
+        std::vector<std::pair<std::string, std::string>> formats;
+        /// Drag image (premultiplied RGBA8, `imageW` x `imageH`, hotspot offset); Wayland uses it as the drag icon
+        /// surface, Win32 through IDragSourceHelper. Empty = no icon.
+        std::vector<fuse::ui::u32> image;
+        fuse::ui::u32 imageW = 0, imageH = 0;
+        fuse::ui::i32 hotX = 0, hotY = 0;
+        /// All offered formats in preference order: text/uri-list of `paths`, then `mime` / `data` (empty mime ->
+        /// text/plain), then `formats` (duplicates dropped).
+        std::vector<std::pair<std::string, std::string>> offered() const;
     };
     bool beginExternalDrag(ExternalDrag d) {
         if (m_pendingDrag) return false;

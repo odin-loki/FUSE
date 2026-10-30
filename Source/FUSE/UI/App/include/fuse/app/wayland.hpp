@@ -57,6 +57,9 @@ public:
     void* nativeDisplay() const;
     /// Blocks until the compositor processed all requests (tests).
     bool roundtrip();
+    /// How the pointer cursor follows UiContext::cursorShape(): "cursor-shape-v1", "libwayland-cursor", or "" (not
+    /// set yet / the compositor's default). Diagnostics.
+    std::string_view cursorBackend() const;
 
     struct Impl;
 

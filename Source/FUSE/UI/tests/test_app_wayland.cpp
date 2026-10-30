@@ -7,6 +7,9 @@
 //     to AppWindow::onExternalDrop with decoded paths
 //   * drag out: AppWindow::beginExternalDrag -> wl_data_device.start_drag; the compositor pulls the payload with
 //     wl_data_source.send and finishes -> onExternalDragEnd(true)
+//   * multi-format drag out with a pixmap: every format offered (custom MIME pulled back), the icon surface given to
+//     start_drag carries a buffer of the pixmap's size
+//   * cursor-shape-v1: UiContext::setCursorShape -> wp_cursor_shape_device_v1.set_shape with the enter serial
 //   * keyboard + client-side key repeat: an XKB keymap (built with libxkbcommon), repeat_info, one held key types
 //     several characters into a focused lineedit and stops on release
 //   * text-input-v3 IME: enter -> enable + set_cursor_rectangle + commit; preedit_string/done -> composition;
@@ -31,6 +34,7 @@
 #include <cstring>
 #include <deque>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <string>
 #include <memory>
@@ -101,6 +105,7 @@ std::deque<std::function<void()>> cmds;
 std::atomic<bool> stop{false};
 R *g_surface = nullptr, *g_xsurf = nullptr, *g_top = nullptr, *g_pointer = nullptr, *g_device = nullptr, *g_pending = nullptr;
 R* g_dragSource = nullptr;
+R* g_dragIcon = nullptr;
 R *g_keyboard = nullptr, *g_ti = nullptr, *g_surface2 = nullptr, *g_popup = nullptr, *g_popXsurf = nullptr;
 int g_tiEnable = 0, g_tiDisable = 0, g_tiCommit = 0, g_tiCursorH = 0, g_posW = 0, g_posH = 0, g_anchorW = 0;
 bool g_popCfg = false, g_popDestroyed = false;
@@ -122,7 +127,15 @@ R* make(C* c, const wl::Interface* i, int v, uint32_t id, const void* impl, void
 }
 
 // wl_surface
-void sAttach(C*, R*, R* buffer, int32_t, int32_t) { g_pending = buffer; }
+struct Attach { int w = 0, h = 0, dx = 0; };
+std::map<R*, Attach> g_attached; // every non-toplevel surface's last attach (drag icons are attached before start_drag)
+void sAttach(C*, R* r, R* buffer, int32_t dx, int32_t) {
+    if (r != g_surface && r != g_surface2 && buffer) {
+        if (ShmBuf* b = S.shmGet(buffer)) { std::lock_guard lk(mu); g_attached[r] = {S.shmW(b), S.shmH(b), dx}; }
+        return;
+    }
+    g_pending = buffer;
+}
 void sFrame(C* c, R* r, uint32_t id) { R* cb = make(c, S.callback, 1, id, noops); S.post(cb, 0, 0u); S.resDestroy(cb); (void)r; }
 void sCommit(C*, R* r) {
     ++g_commits;
@@ -157,7 +170,7 @@ void sCommit(C*, R* r) {
 Fn surfaceImpl[11];
 void cCreateSurface(C* c, R* r, uint32_t id) {
     R* s = make(c, S.surface, S.resVersion(r), id, surfaceImpl);
-    (g_surface ? g_surface2 : g_surface) = s;
+    if (!g_surface) g_surface = s; // the popup's surface is picked up by get_xdg_surface
 }
 void cCreateRegion(C* c, R*, uint32_t id) { make(c, S.region, 1, id, destroyFirst); }
 Fn compositorImpl[2] = {reinterpret_cast<Fn>(&cCreateSurface), reinterpret_cast<Fn>(&cCreateRegion)};
@@ -171,6 +184,7 @@ Fn xsurfImpl[5];
 void wmGetXdgSurface(C* c, R*, uint32_t id, R* surf) {
     R* x = make(c, &S.xdg.surface, 1, id, xsurfImpl);
     (surf == g_surface ? g_xsurf : g_popXsurf) = x;
+    if (surf != g_surface) g_surface2 = surf;
 }
 void posSize(C*, R*, int32_t w, int32_t h) { g_posW = w; g_posH = h; }
 void posAnchor(C*, R*, int32_t, int32_t, int32_t w, int32_t) { g_anchorW = w; }
@@ -238,11 +252,24 @@ bool makeKeymap() {
     std::free(text); // keymap / context leak: test process
     return true;
 }
+// cursor-shape-v1
+wl::CursorShapeTables CS;
+std::vector<uint32_t> g_shapes;
+uint32_t g_enterSerial = 0, g_shapeSerialBad = 0;
+void shapeSet(C*, R*, uint32_t serial, uint32_t shape) {
+    std::lock_guard lk(mu);
+    g_shapes.push_back(shape);
+    if (serial != g_enterSerial) ++g_shapeSerialBad;
+}
+Fn shapeDevImpl[2] = {reinterpret_cast<Fn>(&destroyReq), reinterpret_cast<Fn>(&shapeSet)};
+void shapeGetPointer(C* c, R*, uint32_t id, R*) { make(c, &CS.device, 1, id, shapeDevImpl); }
+Fn shapeMgrImpl[2] = {reinterpret_cast<Fn>(&destroyReq), reinterpret_cast<Fn>(&shapeGetPointer)};
+void bindShapeMgr(C* c, void*, uint32_t, uint32_t id) { make(c, &CS.manager, 1, id, shapeMgrImpl); }
 // data device
 void srcOffer(C*, R*, const char* mime) { std::lock_guard lk(mu); g_sourceMimes.emplace_back(mime); }
 Fn sourceImpl[3] = {reinterpret_cast<Fn>(&srcOffer), reinterpret_cast<Fn>(&destroyReq), noop};
 void ddmCreateSource(C* c, R* r, uint32_t id) { make(c, S.source, S.resVersion(r), id, sourceImpl); }
-void devStartDrag(C*, R*, R* source, R*, R*, uint32_t) { std::lock_guard lk(mu); g_dragSource = source; }
+void devStartDrag(C*, R*, R* source, R*, R* icon, uint32_t) { std::lock_guard lk(mu); g_dragSource = source; g_dragIcon = icon; }
 Fn deviceImpl[3] = {reinterpret_cast<Fn>(&devStartDrag), noop, reinterpret_cast<Fn>(&destroyReq)};
 void ddmGetDevice(C* c, R* r, uint32_t id, R*) { g_device = make(c, S.device, S.resVersion(r), id, deviceImpl); }
 Fn ddmImpl[2] = {reinterpret_cast<Fn>(&ddmCreateSource), reinterpret_cast<Fn>(&ddmGetDevice)};
@@ -281,6 +308,7 @@ int main(int argc, char** argv) {
     xsurfImpl[4] = reinterpret_cast<Fn>(&xsAck);
     TI.init(S.surface, S.seat);
     SC.init(S.surface);
+    CS.init(S.pointer);
     const bool haveKeymap = makeKeymap();
     if (!haveKeymap) std::printf("fuse_app_wayland: no libxkbcommon, keyboard checks skipped\n");
 
@@ -297,6 +325,7 @@ int main(int argc, char** argv) {
     S.globalCreate(g_dpy, &TI.manager, 1, nullptr, &bindTiMgr);
     S.globalCreate(g_dpy, &SC.viewporter, 1, nullptr, &bindViewporter);
     S.globalCreate(g_dpy, &SC.fracManager, 1, nullptr, &bindFracMgr);
+    S.globalCreate(g_dpy, &CS.manager, 1, nullptr, &bindShapeMgr);
     std::thread th(compositorThread);
 
     {
@@ -351,10 +380,24 @@ int main(int argc, char** argv) {
 
         // pointer enter + motion (gives the client an input serial for start_drag)
         run([&] {
-            S.post(g_pointer, 0, S.nextSerial(g_dpy), g_surface, wl::toFixed(40), wl::toFixed(40));
+            { std::lock_guard lk(mu); g_enterSerial = S.nextSerial(g_dpy); }
+            S.post(g_pointer, 0, g_enterSerial, g_surface, wl::toFixed(40), wl::toFixed(40));
             S.post(g_pointer, 2, 1u, wl::toFixed(41), wl::toFixed(41));
         });
         pump(10);
+        // cursor-shape-v1: the enter sets the default shape, a UI change sends the new one
+        { std::lock_guard lk(mu); CHECK(!g_shapes.empty() && g_shapes.front() == 1u); }
+        win.ui().setCursorShape(CursorShape::Copy);
+        win.requestRedraw();
+        for (int i = 0; i < 50; ++i) { pump(1); std::lock_guard lk(mu); if (!g_shapes.empty() && g_shapes.back() == 12u) break; }
+        win.ui().setCursorShape(CursorShape::Default);
+        win.requestRedraw();
+        for (int i = 0; i < 50; ++i) { pump(1); std::lock_guard lk(mu); if (!g_shapes.empty() && g_shapes.back() == 1u && g_shapes.size() >= 3) break; }
+        {
+            std::lock_guard lk(mu);
+            CHECK(g_shapes.size() >= 3 && g_shapes[g_shapes.size() - 2] == 12u && g_shapes.back() == 1u);
+            CHECK(g_shapeSerialBad == 0);
+        }
         const int clicks = 0;
         // drop in
         run([&] {
@@ -403,6 +446,48 @@ int main(int argc, char** argv) {
             CHECK(!g_sourceMimes.empty() && g_sourceMimes[0] == "text/uri-list");
         }
         CHECK(dragEnd == 1);
+
+        // multi-format drag out with a pixmap (16x8, hotspot 4,2)
+        {
+            { std::lock_guard lk(mu); g_dragSource = nullptr; g_dragIcon = nullptr; g_sourceMimes.clear(); }
+            dragEnd = -1;
+            app::AppWindow::ExternalDrag md{.mime = "text/plain", .data = "hi"};
+            md.formats = {{"application/x-fuse-test", "42"}};
+            md.image.assign(16 * 8, 0xFF3366CCu);
+            md.imageW = 16; md.imageH = 8; md.hotX = 4; md.hotY = 2;
+            CHECK(win.beginExternalDrag(std::move(md)));
+            run([&] { S.post(g_pointer, 2, 6u, wl::toFixed(22), wl::toFixed(22)); });
+            R* s2 = nullptr;
+            for (int i = 0; i < 100 && !s2; ++i) { pump(1); std::lock_guard lk(mu); s2 = g_dragSource; }
+            CHECK(s2 != nullptr);
+            {
+                std::lock_guard lk(mu);
+                bool custom = false, text = false;
+                for (const auto& mm : g_sourceMimes) { custom |= mm == "application/x-fuse-test"; text |= mm == "text/plain;charset=utf-8"; }
+                CHECK(custom && text);
+                const Attach ic = g_dragIcon && g_attached.count(g_dragIcon) ? g_attached[g_dragIcon] : Attach{};
+                CHECK(g_dragIcon != nullptr && ic.w == 16 && ic.h == 8 && ic.dx == -4);
+            }
+            if (s2) {
+                struct Pull { std::atomic<bool> done{false}; std::string data; };
+                auto pull = std::make_shared<Pull>();
+                std::thread reader;
+                run([&] {
+                    auto p = os::makePipe();
+                    S.post(s2, 1, "application/x-fuse-test", p->second);
+                    os::closeFd(p->second);
+                    S.flushClients(g_dpy);
+                    reader = std::thread([fd = p->first, pull] { pull->data = os::readAllAndClose(fd); pull->done = true; });
+                });
+                const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+                while (!pull->done && std::chrono::steady_clock::now() < end) pump(1);
+                if (pull->done) reader.join(); else reader.detach();
+                CHECK(pull->done && pull->data == "42");
+                run([&] { S.post(s2, 3); S.post(s2, 4); });
+                for (int i = 0; i < 100 && dragEnd < 0; ++i) pump(1);
+            }
+            CHECK(dragEnd == 1);
+        }
 
         // ---- keyboard: client-side repeat into a focused lineedit ----
         CHECK(win.loadText(R"({"fuseui":1,"root":{"class":"lineedit","id":"e","text":""}})").has_value());
