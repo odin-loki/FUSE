@@ -31,6 +31,7 @@
 #include <expected>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace fuse::ui {
@@ -440,6 +441,24 @@ public:
     bool resolveDecl(const Declaration& d, PropValue& out) const;
     bool structural() const { return m_structural; }
     bool relational() const { return m_relational; }
+    /// Invalidation reach of a selector feature (class, attribute, state, tree position) changing on a node, over all
+    /// sheets: which other nodes may change their match. Levels saturate at kDeep.
+    struct Invalidation {
+        static constexpr u8 kDeep = 255;
+        u8 down = 0;          ///< descendant levels (child combinator: 1 each, descendant: deep)
+        bool sib = false;     ///< later siblings (and their descendants to `down`)
+        u8 hasUp = 0;         ///< :has() anchors: ancestor levels above the node (0 with hasPrev: siblings only)
+        bool hasPrev = false; ///< :has() anchors among earlier siblings (of the node and of each ancestor walked)
+        bool has = false;     ///< inside some :has() argument
+        u8 hasDown = 0;       ///< from each anchor: descendant levels whose match depends on the anchor
+        bool hasSib = false;  ///< from each anchor: later siblings
+        void merge(const Invalidation& o);
+    };
+    const Invalidation& classInvalidation(u32 classHash) const;
+    const Invalidation& attrInvalidation(u32 nameHash) const;
+    const Invalidation& stateInvalidation() const { return m_stateInv; }
+    /// Insert / remove / reorder / :empty changes (type, position): reach through :has() and the deepest `down`.
+    const Invalidation& treeInvalidation() const { return m_treeInv; }
     bool isScratch(u32 index) const { return index < m_isScratch.size() && m_isScratch[index]; }
     /// Unshared table slots for per-node styles that change every frame (transitions): never deduplicated, reused.
     u32 allocScratch(const ComputedStyle& cs);
@@ -464,6 +483,9 @@ private:
     std::vector<u32> m_hashIndex; ///< open addressing into m_table (+1)
     std::vector<u8> m_isScratch;  ///< per table entry
     bool m_structural = false, m_relational = false;
+    std::unordered_map<u32, Invalidation> m_classInv, m_attrInv;
+    Invalidation m_stateInv, m_treeInv, m_noInv;
+    void buildInvalidation();
     std::vector<u32> m_freeScratch;
     u32 m_version = 0;
 };

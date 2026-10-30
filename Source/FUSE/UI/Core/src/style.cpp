@@ -1596,6 +1596,7 @@ void StyleEngine::clearSheets() {
     m_sheets.clear();
     m_ordered.clear();
     m_structural = m_relational = false;
+    buildInvalidation();
     ++m_version;
 }
 
@@ -1626,7 +1627,142 @@ void StyleEngine::reorder() {
         m_structural = m_structural || sh.structural();
         m_relational = m_relational || sh.relational();
     }
+    buildInvalidation();
     ++m_version;
+}
+
+// ---- invalidation sets -----------------------------------------------------------------------------------------------
+void StyleEngine::Invalidation::merge(const Invalidation& o) {
+    down = std::max(down, o.down);
+    sib = sib || o.sib;
+    hasUp = std::max(hasUp, o.hasUp);
+    hasPrev = hasPrev || o.hasPrev;
+    has = has || o.has;
+    hasDown = std::max(hasDown, o.hasDown);
+    hasSib = hasSib || o.hasSib;
+}
+const StyleEngine::Invalidation& StyleEngine::classInvalidation(u32 h) const {
+    auto it = m_classInv.find(h);
+    return it != m_classInv.end() ? it->second : m_noInv;
+}
+const StyleEngine::Invalidation& StyleEngine::attrInvalidation(u32 h) const {
+    auto it = m_attrInv.find(h);
+    return it != m_attrInv.end() ? it->second : m_noInv;
+}
+namespace {
+using Inv = StyleEngine::Invalidation;
+using Comb = SimpleSelector::Combinator;
+u8 addLevels(u8 a, u8 b) { return u16(a) + u16(b) >= Inv::kDeep ? Inv::kDeep : u8(a + b); }
+struct InvCtx {
+    u8 down = 0;
+    bool sib = false;
+    bool inHas = false;
+    u8 hasDown = 0;
+    bool hasSib = false;
+};
+struct InvBuilder {
+    std::unordered_map<u32, Inv>& cls;
+    std::unordered_map<u32, Inv>& attr;
+    Inv& state;
+    Inv& tree;
+    void feature(const SimpleSelector& sel, const Inv& v) {
+        for (u8 i = 0; i < sel.classCount; ++i) cls[sel.classes[i]].merge(v);
+        for (const auto& a : sel.attrs) attr[a.nameHash].merge(v);
+        if (sel.idHash) attr[hashId("id")].merge(v);
+        if (sel.states) state.merge(v);
+        tree.merge(v); // a node can start / stop matching by moving
+    }
+    void chain(const std::vector<SimpleSelector>& c, const InvCtx& ctx, int depth) {
+        const std::size_t n = c.size();
+        for (std::size_t k = 0; k < n; ++k) {
+            Inv v;
+            // reach to the chain's subject (compounds right of k)
+            u8 down = 0;
+            bool sib = false;
+            for (std::size_t j = k + 1; j < n; ++j) {
+                switch (c[j].combinator) {
+                case Comb::Child: down = addLevels(down, 1); break;
+                case Comb::Descendant: down = Inv::kDeep; break;
+                case Comb::Adjacent: case Comb::Sibling: sib = true; break;
+                case Comb::None: break;
+                }
+            }
+            if (ctx.inHas) {
+                // anchor relation: compounds 0..k (the first combinator is the relation to the anchor)
+                u8 up = 0;
+                bool prev = false;
+                for (std::size_t j = 0; j <= k; ++j) {
+                    const Comb cb = j == 0 && c[0].combinator == Comb::None ? Comb::Descendant : c[j].combinator;
+                    if (cb == Comb::Child) up = addLevels(up, 1);
+                    else if (cb == Comb::Descendant) up = Inv::kDeep;
+                    else if (cb == Comb::Adjacent || cb == Comb::Sibling) prev = true;
+                }
+                v.has = true;
+                v.hasUp = up;
+                v.hasPrev = prev;
+                v.hasDown = ctx.hasDown;
+                v.hasSib = ctx.hasSib;
+                // inside the argument: other argument compounds are re-matched from the anchor, nothing else
+            } else {
+                v.down = addLevels(ctx.down, down);
+                v.sib = ctx.sib || sib;
+            }
+            feature(c[k], v);
+            for (const auto& lg : c[k].logicals) {
+                InvCtx sub;
+                if (depth > 16) continue;
+                if (lg.kind == SimpleSelector::Logical::Kind::Has) {
+                    if (ctx.inHas) { // nested :has(): any ancestor / earlier sibling
+                        sub = ctx;
+                        sub.hasDown = Inv::kDeep;
+                        sub.hasSib = true;
+                    } else {
+                        sub.inHas = true;
+                        sub.hasDown = v.down;
+                        sub.hasSib = v.sib;
+                    }
+                    for (const auto& a : lg.args) chain(a, sub, depth + 1);
+                    if (ctx.inHas) { // conservatively widen: the nested anchor is anywhere around the outer one
+                        Inv w = v;
+                        w.hasUp = Inv::kDeep;
+                        w.hasPrev = true;
+                        w.hasDown = Inv::kDeep;
+                        w.hasSib = true;
+                        for (const auto& a : lg.args)
+                            for (const auto& x : a) feature(x, w);
+                    }
+                } else if (ctx.inHas) {
+                    // :is() / :not() / :where() inside :has(): their compounds relate to compound k in either direction
+                    Inv w = v;
+                    w.hasUp = Inv::kDeep;
+                    w.hasPrev = true;
+                    for (const auto& a : lg.args)
+                        for (const auto& x : a) {
+                            feature(x, w);
+                            for (const auto& l2 : x.logicals) {
+                                InvCtx s2 = ctx;
+                                s2.hasDown = Inv::kDeep;
+                                s2.hasSib = true;
+                                for (const auto& a2 : l2.args) chain(a2, s2, depth + 2);
+                            }
+                        }
+                } else {
+                    sub.down = v.down;
+                    sub.sib = v.sib;
+                    for (const auto& a : lg.args) chain(a, sub, depth + 1);
+                }
+            }
+        }
+    }
+};
+} // namespace
+void StyleEngine::buildInvalidation() {
+    m_classInv.clear();
+    m_attrInv.clear();
+    m_stateInv = m_treeInv = m_noInv = {};
+    InvBuilder b{m_classInv, m_attrInv, m_stateInv, m_treeInv};
+    for (const auto& sh : m_sheets)
+        for (const auto& r : sh.m_rules) b.chain(r.chain, {}, 0);
 }
 
 namespace {

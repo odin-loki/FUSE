@@ -506,6 +506,11 @@ private:
     bool nodeLive(u32 i) const;
     void markSiblings(u32 parent);
     void markRelational(u32 i);
+    /// Marks the nodes whose selector match may change when a feature with reach `v` changes on node i.
+    void invalidate(u32 i, const StyleEngine::Invalidation& v);
+    void markHasAnchors(u32 i, const StyleEngine::Invalidation& v, bool self);
+    void markDown(u32 i, u8 levels);
+    void invalidateClasses(u32 i, std::span<const u32> classHashes);
     void relinkChildren(u32 parent, const std::vector<u32>& order);
     struct ScriptAnim;
     ScriptAnim* scriptAnim(AnimationHandle a);

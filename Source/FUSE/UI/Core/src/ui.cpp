@@ -260,6 +260,8 @@ void UiContext::linkBefore(u32 i, u32 p, u32 before) {
     }
     markSiblings(p);
     markRelational(i);
+    markStyle(i);
+    markDown(i, m_styles.treeInvalidation().down); // ancestors changed for the whole subtree
 }
 void UiContext::markSiblings(u32 p) {
     if (!m_styles.structural() || p == kNone) return; // :nth-* / sibling combinators / :empty depend on positions
@@ -267,13 +269,48 @@ void UiContext::markSiblings(u32 p) {
     for (u32 k = m_nodes[p].first; k != kNone; k = m_nodes[k].next) markStyle(k);
     markRelational(p);
 }
-// :has(): a change at i can flip the match of any ancestor, and of earlier siblings of i and of its ancestors
+// Tree change at i (insert / remove / reorder / :empty): the :has() anchors that can see i, and i's subtree when
+// descendant selectors reach it (a moved subtree changes ancestors).
 void UiContext::markRelational(u32 i) {
-    if (!m_styles.relational()) return;
-    for (u32 a = i; a != kNone; a = m_nodes[a].parent) {
-        markStyle(a);
-        for (u32 p = m_nodes[a].prev; p != kNone; p = m_nodes[p].prev) markStyle(p);
+    const StyleEngine::Invalidation& v = m_styles.treeInvalidation();
+    if (v.has) markHasAnchors(i, v, true);
+}
+void UiContext::markDown(u32 i, u8 levels) {
+    if (!levels) return;
+    const u8 next = levels == StyleEngine::Invalidation::kDeep ? levels : u8(levels - 1);
+    for (u32 c = m_nodes[i].first; c != kNone; c = m_nodes[c].next) {
+        markStyle(c);
+        markDown(c, next);
     }
+}
+void UiContext::markHasAnchors(u32 i, const StyleEngine::Invalidation& v, bool self) {
+    auto anchor = [&](u32 a) {
+        markStyle(a);
+        markDown(a, v.hasDown);
+        if (v.hasSib)
+            for (u32 s = m_nodes[a].next; s != kNone; s = m_nodes[s].next) markStyle(s), markDown(s, v.hasDown);
+    };
+    u32 a = i;
+    for (u32 lvl = 0; a != kNone; ++lvl) {
+        if (lvl > 0 || self) anchor(a);
+        if (v.hasPrev)
+            for (u32 p = m_nodes[a].prev; p != kNone; p = m_nodes[p].prev) anchor(p);
+        if (v.hasUp != StyleEngine::Invalidation::kDeep && lvl >= v.hasUp) break;
+        a = m_nodes[a].parent;
+    }
+}
+void UiContext::invalidate(u32 i, const StyleEngine::Invalidation& v) {
+    markStyle(i);
+    markDown(i, v.down);
+    if (v.sib)
+        for (u32 s = m_nodes[i].next; s != kNone; s = m_nodes[s].next) markStyle(s), markDown(s, v.down);
+    if (v.has) markHasAnchors(i, v, false);
+}
+void UiContext::invalidateClasses(u32 i, std::span<const u32> classHashes) {
+    static const u32 kClassAttr = hashId("class");
+    StyleEngine::Invalidation v = m_styles.attrInvalidation(kClassAttr);
+    for (u32 c : classHashes) v.merge(m_styles.classInvalidation(c));
+    invalidate(i, v);
 }
 
 void UiContext::unlink(u32 i) {
@@ -566,10 +603,7 @@ void UiContext::addClass(NodeHandle h, std::string_view cls) {
         std::string& names = m_cold[h.index]->classNames;
         if (!names.empty()) names += ' ';
         names.append(cls);
-        markStyle(h.index);
-        for (u32 k = n->first; k != kNone; k = m_nodes[k].next) markStyle(k);
-        if (m_styles.structural()) markSiblings(n->parent);
-        markRelational(h.index);
+        invalidateClasses(h.index, std::span<const u32>(&c, 1));
     }
 }
 void UiContext::setAttribute(NodeHandle h, std::string_view name, std::string_view value) {
@@ -577,13 +611,10 @@ void UiContext::setAttribute(NodeHandle h, std::string_view name, std::string_vi
     if (!n) return;
     if (name == "class") { // the class list itself
         const std::string list(value); // value may view classNames
+        invalidateClasses(h.index, std::span<const u32>(n->classes.data(), n->classCount)); // the old classes
         n->classCount = 0;
         m_cold[h.index]->classNames.clear();
         value = list;
-        markStyle(h.index);
-        for (u32 j = n->first; j != kNone; j = m_nodes[j].next) markStyle(j);
-        if (m_styles.structural()) markSiblings(n->parent);
-        markRelational(h.index);
         std::size_t i = 0;
         while (i < value.size()) {
             while (i < value.size() && std::isspace(static_cast<unsigned char>(value[i]))) ++i;
@@ -601,10 +632,7 @@ void UiContext::setAttribute(NodeHandle h, std::string_view name, std::string_vi
         if (it->second == value) return;
         it->second.assign(value);
     } else at.emplace_back(k, std::string(value));
-    markStyle(h.index);
-    for (u32 j = n->first; j != kNone; j = m_nodes[j].next) markStyle(j);
-    if (m_styles.structural()) markSiblings(n->parent);
-    markRelational(h.index);
+    invalidate(h.index, m_styles.attrInvalidation(k));
 }
 void UiContext::removeAttribute(NodeHandle h, std::string_view name) {
     Node* n = node(h);
@@ -613,10 +641,7 @@ void UiContext::removeAttribute(NodeHandle h, std::string_view name) {
     auto& at = m_cold[h.index]->attrs;
     const u32 k = hashId(name);
     if (std::erase_if(at, [&](auto& a) { return a.first == k; }) == 0) return;
-    markStyle(h.index);
-    for (u32 j = n->first; j != kNone; j = m_nodes[j].next) markStyle(j);
-    if (m_styles.structural()) markSiblings(n->parent);
-    markRelational(h.index);
+    invalidate(h.index, m_styles.attrInvalidation(k));
 }
 std::optional<std::string_view> UiContext::attribute(NodeHandle h, std::string_view name) const {
     std::string_view v;
@@ -648,10 +673,7 @@ void UiContext::removeClass(NodeHandle h, std::string_view cls) {
                 }
                 i = e + 1;
             }
-            markStyle(h.index);
-            for (u32 j = n->first; j != kNone; j = m_nodes[j].next) markStyle(j);
-            if (m_styles.structural()) markSiblings(n->parent);
-            markRelational(h.index);
+            invalidateClasses(h.index, std::span<const u32>(&c, 1));
             return;
         }
 }
@@ -738,11 +760,8 @@ void UiContext::setState(NodeHandle h, u32 bits, bool on) {
     const u32 s = on ? (n->state | bits) : (n->state & ~bits);
     if (s == n->state) return;
     n->state = s;
-    markStyle(h.index);
     markPaint(h.index);
-    for (u32 k = n->first; k != kNone; k = m_nodes[k].next) markStyle(k);
-    if (m_styles.structural()) markSiblings(n->parent); // + / ~ combinators over states
-    markRelational(h.index);
+    invalidate(h.index, m_styles.stateInvalidation());
 }
 u32 UiContext::states(NodeHandle h) const { return node(h) ? node(h)->state : 0u; }
 void UiContext::setFocusable(NodeHandle h, bool on) {
