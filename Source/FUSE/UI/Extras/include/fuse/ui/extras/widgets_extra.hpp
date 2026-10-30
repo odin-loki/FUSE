@@ -152,6 +152,41 @@ NodeHandle virtualKeyboardKey(const UiContext& ui, NodeHandle keyboard, std::str
 /// Show the keyboard while the UI wants text input (UiContext::wantsTextInput), hide it otherwise; call per frame.
 void virtualKeyboardAutoShow(UiContext& ui, NodeHandle keyboard);
 
+/// QDialogButtonBox: standard buttons (Qt's bit values) and custom ones, each with a role, laid out in the platform's
+/// order (Windows / macOS / KDE / GNOME button orders, as Qt's QPlatformDialogHelper layouts).
+namespace StdButton {
+enum : u32 {
+    Ok = 0x400, Save = 0x800, SaveAll = 0x1000, Open = 0x2000, Yes = 0x4000, YesToAll = 0x8000, No = 0x10000,
+    NoToAll = 0x20000, Abort = 0x40000, Retry = 0x80000, Ignore = 0x100000, Close = 0x200000, Cancel = 0x400000,
+    Discard = 0x800000, Help = 0x1000000, Apply = 0x2000000, Reset = 0x4000000, RestoreDefaults = 0x8000000
+};
+}
+enum class ButtonRole : u8 { Accept, Reject, Destructive, Action, Help, Yes, No, Reset, Apply };
+enum class ButtonBoxLayout : u8 { Platform, Windows, Mac, Kde, Gnome };
+struct DialogButtonBoxOptions {
+    ButtonBoxLayout layout = ButtonBoxLayout::Platform; ///< Platform = Mac on Apple, else Windows (Qt's generic theme)
+    bool centerButtons = false;                         ///< QDialogButtonBox::centerButtons
+    bool vertical = false;                              ///< Qt::Vertical: a column, same order
+};
+/// Clicking a button emits on the box: Clicked {value = role, text} (QDialogButtonBox::clicked; Help role =
+/// helpRequested), then Submitted {value = 1} for Accept / Yes roles (accepted) or {value = 0} for Reject / No
+/// (rejected). The first Accept (else Yes) button gets the "default" class (QPushButton::autoDefault).
+NodeHandle dialogButtonBox(UiContext& ui, NodeHandle parent, u32 standardButtons, const DialogButtonBoxOptions& o = {},
+                           std::string_view id = {});
+/// Replaces the standard buttons (custom ones stay).
+void setDialogButtonBoxStandardButtons(UiContext& ui, NodeHandle box, u32 standardButtons);
+NodeHandle dialogButtonBoxAdd(UiContext& ui, NodeHandle box, std::string_view text, ButtonRole role);
+void dialogButtonBoxRemove(UiContext& ui, NodeHandle box, NodeHandle button);
+void setDialogButtonBoxOptions(UiContext& ui, NodeHandle box, const DialogButtonBoxOptions& o);
+NodeHandle dialogButtonBoxButton(const UiContext& ui, NodeHandle box, u32 standardButton); ///< invalid when absent
+u32 dialogButtonBoxStandardOf(const UiContext& ui, NodeHandle box, NodeHandle button);     ///< 0 for custom buttons
+ButtonRole dialogButtonBoxRole(const UiContext& ui, NodeHandle box, NodeHandle button);
+/// The buttons in visual order (left to right / top to bottom).
+std::vector<NodeHandle> dialogButtonBoxButtons(const UiContext& ui, NodeHandle box);
+NodeHandle dialogButtonBoxDefault(const UiContext& ui, NodeHandle box);
+/// Qt's text for a standard button under a layout ("Don't Save" / "Close without Saving" for Discard on macOS / GNOME).
+std::string standardButtonText(u32 standardButton, ButtonBoxLayout layout = ButtonBoxLayout::Platform);
+
 void registerExtraWidgets(UiContext& ui);
 
 } // namespace fuse::ui::widgets

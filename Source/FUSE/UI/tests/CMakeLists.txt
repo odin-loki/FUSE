@@ -399,6 +399,11 @@ endif()
 
 # Qt-parity extras (undo, gestures, i18n, desktop, pdf, ...): one ctest per gate.
 if(TARGET fuse_ui_extras)
+    add_executable(fuse_ui_buttonbox test_buttonbox.cpp)
+    target_link_libraries(fuse_ui_buttonbox PRIVATE fuse_ui_extras)
+    target_include_directories(fuse_ui_buttonbox PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
+    add_test(NAME fuse_ui_buttonbox COMMAND fuse_ui_buttonbox)
+    set_tests_properties(fuse_ui_buttonbox PROPERTIES LABELS fuse_ui)
     add_executable(fuse_ui_extras_tests test_extras.cpp)
     target_link_libraries(fuse_ui_extras_tests PRIVATE fuse_ui_extras)
     target_include_directories(fuse_ui_extras_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
