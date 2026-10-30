@@ -122,6 +122,10 @@ Headless (offscreen CPU raster) works everywhere and is what the test suite uses
   env, libX11 loading) onto it; `fuse/gui.hpp` + `fuse::gui` target; example app; tests green.
 - **G1**: Route the remaining direct OS calls (font file read, file dialog directory listing, AccessKit loading) through
   the seam; FreeBSD + macOS cross-compile jobs; CPU raster inner loops on `forge::lane`.
+  *Status: done.* OS calls on seam (42870318b); CI jobs staged in `docs/gui/ci/fuse-gui.yml` (needs moving to
+  `.github/workflows`, token lacks `workflow` scope; unverified); backdrop-blur vertical pass on `forge::lane`
+  (`Core/src/simd/`, AVX2 picked via `forge::lane::detect()`, built from FORGE sources as `fuse_forge_lane`;
+  bit-exact vs scalar, gated by `fuse_ui_simd_blur`).
 - **G2**: Wayland (SDL3 path per D1), OS-level drag and drop, rich clipboard MIME, native file dialogs, hot reload on
   `forge::os::file_watch`.
 - **G3**: macOS: Cocoa window, NSTextInputClient IME, MoltenVK present, NSAccessibility.

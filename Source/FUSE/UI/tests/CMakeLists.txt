@@ -252,3 +252,12 @@ if(TARGET fuse_ui_game)
         set_tests_properties(fuse_ui_game_hud_demo fuse_ui_game_world_panel_demo PROPERTIES LABELS fuse_ui)
     endif()
 endif()
+
+# FORGE-lane CPU raster kernels: bit-exact vs scalar (G1).
+add_executable(fuse_ui_simd_blur test_simd_blur.cpp)
+target_link_libraries(fuse_ui_simd_blur PRIVATE fuse_ui_core)
+if(TARGET fuse_forge)
+    target_link_libraries(fuse_ui_simd_blur PRIVATE fuse_forge)
+endif()
+add_test(NAME fuse_ui_simd_blur COMMAND fuse_ui_simd_blur)
+set_tests_properties(fuse_ui_simd_blur PROPERTIES LABELS "fuse_ui;gate")

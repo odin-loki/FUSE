@@ -101,7 +101,20 @@ if(FUSE_UI_TEXT STREQUAL "FULL")
 endif()
 
 # ---- fuse_ui_core ----
-add_library(fuse_ui_core STATIC Core/src/style.cpp Core/src/draw_list.cpp Core/src/ui.cpp Core/src/immediate.cpp)
+add_library(fuse_ui_core STATIC Core/src/style.cpp Core/src/draw_list.cpp Core/src/ui.cpp Core/src/immediate.cpp
+    Core/src/simd/box_blur.cpp)
+# CPU raster SIMD on FORGE lane (docs/gui/PLAN.md G1): header-only vec + FORGE's runtime CPU detection.
+if(TARGET fuse_forge)
+    target_link_libraries(fuse_ui_core PRIVATE fuse_forge)
+    if(TARGET fuse_forge_lane)
+        target_link_libraries(fuse_ui_core PRIVATE fuse_forge_lane)
+        target_compile_definitions(fuse_ui_core PRIVATE FUSE_UI_HAS_FORGE_LANE=1)
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
+            target_sources(fuse_ui_core PRIVATE Core/src/simd/box_blur_avx2.cpp)
+            set_source_files_properties(Core/src/simd/box_blur_avx2.cpp PROPERTIES COMPILE_OPTIONS "-mavx2;-mfma;-mf16c")
+        endif()
+    endif()
+endif()
 target_include_directories(fuse_ui_core PUBLIC Core/include)
 target_link_libraries(fuse_ui_core PUBLIC fuse_text)
 if(FUSE_UI_ACCESSIBILITY)

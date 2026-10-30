@@ -1,3 +1,4 @@
+#include "simd/box_blur.hpp"
 #include <algorithm>
 #include "fuse/ui/draw_list.hpp"
 
@@ -201,7 +202,11 @@ void backdropBlur(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& ta
             }
         buf.swap(tmp);
     };
-    for (int it = 0; it < 3; ++it) { pass(false); pass(true); }
+    auto vertical = [&] { // rows are contiguous: one FORGE-lane vector sweep over all columns x channels
+        simd::boxVertical(buf.data(), tmp.data(), w * 4, h, r, 1.f / f32(2 * r + 1));
+        buf.swap(tmp);
+    };
+    for (int it = 0; it < 3; ++it) { pass(false); vertical(); }
     const std::array<f32, 4> clipRad{clipRadius, clipRadius, clipRadius, clipRadius};
     const Px tint = premul(c.fill, 1.f);
     for (int y = y0; y < y1; ++y)
