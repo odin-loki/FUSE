@@ -126,4 +126,31 @@ struct TextInputTables {
         input = {"zwp_text_input_v3", 1, 8, inReq, 6, inEv};
     }
 };
+/// wp_viewporter / wp_viewport (viewporter, stable v1) + wp_fractional_scale_manager_v1 / wp_fractional_scale_v1
+/// (fractional-scale-v1, staging v1): the compositor sends preferred_scale in 120ths; the client renders a buffer at
+/// logical * scale and maps it back to the logical size with wp_viewport.set_destination (buffer scale stays 1).
+struct ScaleTables {
+    Interface viewporter{}, viewport{}, fracManager{}, frac{};
+    const Interface* tGetViewport[2]{}; // n o(surface)
+    const Interface* tGetFrac[2]{};     // n o(surface)
+    const Interface* none[4]{};
+    Message vpMgrReq[2]{}, vpReq[3]{}, fmReq[2]{}, frReq[1]{}, frEv[1]{};
+    void init(const Interface* wlSurface) {
+        tGetViewport[0] = &viewport; tGetViewport[1] = wlSurface;
+        tGetFrac[0] = &frac; tGetFrac[1] = wlSurface;
+        vpMgrReq[0] = {"destroy", "", none};
+        vpMgrReq[1] = {"get_viewport", "no", tGetViewport};
+        vpReq[0] = {"destroy", "", none};
+        vpReq[1] = {"set_source", "ffff", none};
+        vpReq[2] = {"set_destination", "ii", none};
+        fmReq[0] = {"destroy", "", none};
+        fmReq[1] = {"get_fractional_scale", "no", tGetFrac};
+        frReq[0] = {"destroy", "", none};
+        frEv[0] = {"preferred_scale", "u", none};
+        viewporter = {"wp_viewporter", 1, 2, vpMgrReq, 0, nullptr};
+        viewport = {"wp_viewport", 1, 3, vpReq, 0, nullptr};
+        fracManager = {"wp_fractional_scale_manager_v1", 1, 2, fmReq, 0, nullptr};
+        frac = {"wp_fractional_scale_v1", 1, 1, frReq, 1, frEv};
+    }
+};
 } // namespace fuse::app::wl

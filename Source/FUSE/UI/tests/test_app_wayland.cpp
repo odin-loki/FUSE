@@ -13,6 +13,8 @@
 //     commit_string/done -> committed text
 //   * xdg_popup: showPopup sends the positioner (size, anchor rect), the popup configure size wins, popup_done
 //     closes the popup window
+//   * HiDPI: wp_fractional_scale_v1.preferred_scale (1.5x, 2x) -> AppWindow::setScale, a physical-size buffer
+//     (540x360 for a 360x240 window) and wp_viewport.set_destination(360, 240)
 //   * --vulkan: the same run with a Vulkan swapchain on the wl_surface (VK_KHR_wayland_surface, CPU-raster upload):
 //     the buffers the WSI commits (wl_shm with lavapipe / swiftshader) must equal the CPU raster pixel for pixel,
 //     and every other check still holds. --vulkan-gpu: the same with the ui.draw_list GPU kernel drawing (committed
@@ -196,6 +198,21 @@ void bindSeat(C* c, void*, uint32_t v, uint32_t id) {
 }
 // text-input-v3
 wl::TextInputTables TI;
+// viewporter + fractional-scale-v1
+wl::ScaleTables SC;
+R *g_frac = nullptr;
+int g_destW = 0, g_destH = 0;
+void vpDest(C*, R* r, int32_t w, int32_t h) { if (S.userData(r) == g_surface) { std::lock_guard lk(mu); g_destW = w; g_destH = h; } }
+Fn vpImpl[3] = {reinterpret_cast<Fn>(&destroyReq), noop, reinterpret_cast<Fn>(&vpDest)};
+void vpGet(C* c, R*, uint32_t id, R* surf) { make(c, &SC.viewport, 1, id, vpImpl, surf); }
+Fn vpMgrImpl[2] = {reinterpret_cast<Fn>(&destroyReq), reinterpret_cast<Fn>(&vpGet)};
+void bindViewporter(C* c, void*, uint32_t, uint32_t id) { make(c, &SC.viewporter, 1, id, vpMgrImpl); }
+void fracGet(C* c, R*, uint32_t id, R* surf) {
+    R* f = make(c, &SC.frac, 1, id, destroyFirst);
+    if (surf == g_surface) g_frac = f;
+}
+Fn fracMgrImpl[2] = {reinterpret_cast<Fn>(&destroyReq), reinterpret_cast<Fn>(&fracGet)};
+void bindFracMgr(C* c, void*, uint32_t, uint32_t id) { make(c, &SC.fracManager, 1, id, fracMgrImpl); }
 void tiEnable(C*, R*) { ++g_tiEnable; }
 void tiDisable(C*, R*) { ++g_tiDisable; }
 void tiCursor(C*, R*, int32_t, int32_t, int32_t, int32_t h) { g_tiCursorH = h; }
@@ -262,6 +279,7 @@ int main(int argc, char** argv) {
     xsurfImpl[2] = reinterpret_cast<Fn>(&xsGetPopup);
     xsurfImpl[4] = reinterpret_cast<Fn>(&xsAck);
     TI.init(S.surface, S.seat);
+    SC.init(S.surface);
     const bool haveKeymap = makeKeymap();
     if (!haveKeymap) std::printf("fuse_app_wayland: no libxkbcommon, keyboard checks skipped\n");
 
@@ -276,6 +294,8 @@ int main(int argc, char** argv) {
     S.globalCreate(g_dpy, S.seat, 5, nullptr, &bindSeat);
     S.globalCreate(g_dpy, S.ddm, 3, nullptr, &bindDdm);
     S.globalCreate(g_dpy, &TI.manager, 1, nullptr, &bindTiMgr);
+    S.globalCreate(g_dpy, &SC.viewporter, 1, nullptr, &bindViewporter);
+    S.globalCreate(g_dpy, &SC.fracManager, 1, nullptr, &bindFracMgr);
     std::thread th(compositorThread);
 
     {
@@ -410,6 +430,31 @@ int main(int argc, char** argv) {
         ui.setFocus(NodeHandle{});
         for (int i = 0; i < 50 && !g_tiDisable; ++i) { win.requestRedraw(); pump(1); }
         { std::lock_guard lk(mu); CHECK(g_tiDisable == 1); }
+
+        // ---- HiDPI: fractional scale ----
+        CHECK(g_frac != nullptr && win.scale() == 1.f);
+        { std::lock_guard lk(mu); CHECK(g_destW == 360 && g_destH == 240); }
+        for (const uint32_t s120 : {180u, 240u}) {
+            run([&, s120] { S.post(g_frac, 0, s120); });
+            const int want = 360 * int(s120) / 120;
+            for (int i = 0; i < 100; ++i) {
+                win.requestRedraw();
+                pump(1);
+                std::lock_guard lk(mu);
+                if (g_shown.width == want) break;
+            }
+            CHECK(win.scale() == f32(s120) / 120.f && u32(win.size().w) == 360u);
+            Image hi;
+            CHECK(wlp.capture(win, hi));
+            std::lock_guard lk(mu);
+            CHECK(g_shown.width == want && g_shown.height == 240 * int(s120) / 120);
+            CHECK(g_destW == 360 && g_destH == 240);
+            CHECK(hi.width == g_shown.width && hi.pixels == g_shown.pixels);
+        }
+        std::printf("fuse_app_wayland: hidpi %dx%d -> viewport %dx%d\n", g_shown.width, g_shown.height, g_destW, g_destH);
+        run([&] { S.post(g_frac, 0, 120u); });
+        for (int i = 0; i < 100 && win.scale() != 1.f; ++i) pump(1);
+        CHECK(win.scale() == 1.f);
 
         // ---- xdg_popup ----
         auto& pop = a.createWindow({.title = "menu", .width = 120, .height = 80});

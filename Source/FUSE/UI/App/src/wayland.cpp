@@ -133,6 +133,8 @@ struct WaylandPlatform::Impl {
     bool haveXkb = false;
     wl::XdgTables xdg;
     wl::TextInputTables tiTables;
+    wl::ScaleTables scaleTables;
+    Proxy *viewporter = nullptr, *fracMgr = nullptr;
     Proxy* dpy = nullptr;
     Proxy *registry = nullptr, *compositor = nullptr, *shm = nullptr, *wmBase = nullptr, *seat = nullptr,
           *pointer = nullptr, *keyboard = nullptr, *ddm = nullptr, *dataDevice = nullptr;
@@ -155,6 +157,11 @@ struct WaylandPlatform::Impl {
         Image shown;
         detail::VkWin* vk = nullptr; ///< Vulkan swapchain on `surface` (then no wl_shm buffers are attached)
         bool vkTried = false;
+        // HiDPI: fractional-scale-v1 + viewporter when offered, else wl_surface.preferred_buffer_scale (v6)
+        Proxy *viewport = nullptr, *frac = nullptr;
+        uint32_t scale120 = 0;     ///< preferred_scale (0: none received)
+        int32_t bufferScale = 1;   ///< integer preferred_buffer_scale
+        int32_t destW = 0, destH = 0, sentBufferScale = 1;
     };
     std::vector<std::unique_ptr<Win>> wins;
     Win* pointerFocus = nullptr;
@@ -239,7 +246,9 @@ struct WaylandPlatform::Impl {
     static void onGlobal(void* d, Proxy*, uint32_t name, const char* iface, uint32_t ver) {
         Impl& m = *static_cast<Impl*>(d);
         const std::string_view n(iface);
-        if (n == "wl_compositor") m.compositor = m.bind(name, m.l.compositor, std::min(ver, 4u));
+        if (n == "wl_compositor") m.compositor = m.bind(name, m.l.compositor, std::min(ver, 6u));
+        else if (n == "wp_viewporter") m.viewporter = m.bind(name, &m.scaleTables.viewporter, 1);
+        else if (n == "wp_fractional_scale_manager_v1") m.fracMgr = m.bind(name, &m.scaleTables.fracManager, 1);
         else if (n == "wl_shm") m.shm = m.bind(name, m.l.shm, 1);
         else if (n == "xdg_wm_base") {
             m.wmBase = m.bind(name, &m.xdg.wmBase, 1);
@@ -488,11 +497,62 @@ struct WaylandPlatform::Impl {
     static void popDone(void* d, Proxy*) { static_cast<Win*>(d)->win->requestClose(); }
     static void bufRelease(void* d, Proxy*) { static_cast<Buffer*>(d)->busy = false; }
 
+    // ---- HiDPI ----
+    static void surfEnter(void*, Proxy*, Proxy*) {}
+    static void surfLeave(void*, Proxy*, Proxy*) {}
+    static void surfPreferredScale(void* d, Proxy*, int32_t s) {
+        Win& w = *static_cast<Win*>(d);
+        w.bufferScale = std::max(1, s);
+        w.impl->applyScale(w);
+    }
+    static void surfPreferredTransform(void*, Proxy*, uint32_t) {}
+    static void fracPreferred(void* d, Proxy*, uint32_t scale120) {
+        Win& w = *static_cast<Win*>(d);
+        w.scale120 = scale120;
+        w.impl->applyScale(w);
+    }
+    void attachScale(Win& w) {
+        static const auto sl = listen(&surfEnter, &surfLeave, &surfPreferredScale, &surfPreferredTransform);
+        l.addListener(w.surface, const_cast<void (**)(void)>(sl.fns), &w);
+        if (viewporter && fracMgr) {
+            w.viewport = l.marshal(viewporter, 1, &scaleTables.viewport, 1, 0, nullptr, w.surface);
+            w.frac = l.marshal(fracMgr, 1, &scaleTables.frac, 1, 0, nullptr, w.surface);
+            static const auto fl = listen(&fracPreferred);
+            l.addListener(w.frac, const_cast<void (**)(void)>(fl.fns), &w);
+        }
+        applyScale(w);
+    }
+    void applyScale(Win& w) {
+        const f32 s = w.frac && w.scale120 ? f32(w.scale120) / 120.f : f32(w.bufferScale);
+        if (s != w.win->scale()) w.win->setScale(s);
+        w.win->requestRedraw();
+    }
+    /// Double-buffered surface state for the next commit (ours or the Vulkan WSI's): the viewport maps the
+    /// physical-size buffer to the logical size; without fractional-scale the integer buffer scale does.
+    void syncScaleState(Win& w) {
+        const Size sz = w.win->size();
+        if (w.viewport) {
+            const int32_t dw = std::max(1, int32_t(std::lround(sz.w))), dh = std::max(1, int32_t(std::lround(sz.h)));
+            if (dw != w.destW || dh != w.destH) {
+                l.marshal(w.viewport, 2, nullptr, 1, 0, dw, dh);
+                w.destW = dw;
+                w.destH = dh;
+            }
+        } else if (l.version(w.surface) >= 3) {
+            const int32_t bs = int32_t(std::lround(w.win->scale()));
+            if (bs != w.sentBufferScale) {
+                l.marshal(w.surface, 8, nullptr, l.version(w.surface), 0, bs); // wl_surface.set_buffer_scale
+                w.sentBufferScale = bs;
+            }
+        }
+    }
+
     // ---- presentation (wl_shm) ----
     static bool present(void* user, AppWindow& aw, Rect damage) {
         Win& w = *static_cast<Win*>(user);
         Impl& m = *w.impl;
         if (&w == m.tiFocus) m.syncTextInput();
+        if (w.configured) m.syncScaleState(w);
         if (w.configured) {
             if (detail::VkWin* vk = m.vulkanFor(w)) {
                 const bool ok = detail::vkWinPresent(vk, aw, damage); // acquire / blit / vkQueuePresentKHR commits
@@ -541,6 +601,8 @@ struct WaylandPlatform::Impl {
         if (w->vk) { detail::vkWinDestroy(w->vk); w->vk = nullptr; } // the swapchain goes before its wl_surface
         for (auto& b : w->bufs)
             if (b.buf) m.l.marshal(b.buf, 0, nullptr, 1, kDestroy);
+        if (w->frac) m.l.marshal(w->frac, 0, nullptr, 1, kDestroy);
+        if (w->viewport) m.l.marshal(w->viewport, 0, nullptr, 1, kDestroy);
         if (w->popup) m.l.marshal(w->popup, 0, nullptr, 1, kDestroy);
         if (w->top) m.l.marshal(w->top, 0, nullptr, 1, kDestroy);
         if (w->xsurf) m.l.marshal(w->xsurf, 0, nullptr, 1, kDestroy);
@@ -680,6 +742,7 @@ WaylandPlatform::WaylandPlatform(Application& app, const char* name, const Nativ
     m->haveXkb = m->xkb.load();
     m->xdg.init(m->l.surface, m->l.seat, m->l.output);
     m->tiTables.init(m->l.surface, m->l.seat);
+    m->scaleTables.init(m->l.surface);
     m->dpy = m->l.connect(name);
     if (!m->dpy) { m->error = "cannot connect to the Wayland display"; return; }
     m->registry = m->l.marshal(m->dpy, 1, m->l.registry, m->l.version(m->dpy), 0, nullptr);
@@ -725,6 +788,7 @@ bool WaylandPlatform::show(AppWindow& aw) {
     w->win = &aw;
     auto& l = m->l;
     w->surface = l.marshal(m->compositor, 0, l.surface, l.version(m->compositor), 0, nullptr);
+    m->attachScale(*w);
     w->xsurf = l.marshal(m->wmBase, 2, &m->xdg.surface, 1, 0, nullptr, w->surface);
     static const auto xl = listen(&Impl::xsurfConfigure);
     l.addListener(w->xsurf, const_cast<void (**)(void)>(xl.fns), w.get());
@@ -752,6 +816,7 @@ bool WaylandPlatform::showPopup(AppWindow& aw, AppWindow& parent, Rect anchor, b
     w->impl = m.get();
     w->win = &aw;
     w->surface = l.marshal(m->compositor, 0, l.surface, l.version(m->compositor), 0, nullptr);
+    m->attachScale(*w);
     w->xsurf = l.marshal(m->wmBase, 2, &m->xdg.surface, 1, 0, nullptr, w->surface);
     static const auto xl = listen(&Impl::xsurfConfigure);
     l.addListener(w->xsurf, const_cast<void (**)(void)>(xl.fns), w.get());
