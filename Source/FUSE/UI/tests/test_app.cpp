@@ -12,6 +12,14 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <cstdlib>
+// FUSE_UI_PERF_SCALE multiplies wall-clock budgets for emulated hosts (qemu TCG, software emulators); default 1.
+static double perfScale() {
+    const char* e = std::getenv("FUSE_UI_PERF_SCALE");
+    const double v = e ? std::atof(e) : 1.0;
+    return v > 0.0 ? v : 1.0;
+}
+
 
 using namespace fuse::ui;
 namespace app = fuse::app;
@@ -135,7 +143,7 @@ int helloStartup() {
     const double ms = std::chrono::duration<double, std::milli>(C::now() - t0).count();
     std::printf("fuse_app_hello_startup: first frame after %.1f ms (headless CPU present)\n", ms);
     CHECK(w.framesPresented() == 1);
-    CHECK(ms <= 150.0);
+    CHECK(ms <= 150.0 * perfScale());
     // the presented image has the button face in it (not just the clear colour)
     const Rect b = w.ui().rect(w.ui().find("b"));
     CHECK(w.image().at(int(b.x + b.w * 0.5f), int(b.y + 2.f)) != 0xFF000000u);

@@ -23,6 +23,14 @@
 #include <new>
 #include <string>
 #include <vector>
+#include <cstdlib>
+// FUSE_UI_PERF_SCALE multiplies wall-clock budgets for emulated hosts (qemu TCG, software emulators); default 1.
+static double perfScale() {
+    const char* e = std::getenv("FUSE_UI_PERF_SCALE");
+    const double v = e ? std::atof(e) : 1.0;
+    return v > 0.0 ? v : 1.0;
+}
+
 
 #ifndef FUSE_UI6_GATE
 #define FUSE_UI6_GATE "tier_c"
@@ -253,8 +261,8 @@ int modelView1M() {
                 "scroll; %.1f cell reads/frame; nodes %u\n", frames, med, p95, mx, allocs, bytes, double(big.reads) / frames, ui.nodeCount());
     UI_CHECK(monotonic);
     UI_CHECK(ui.stats().drawCmds > vis * 2); // the frames really painted the visible cells
-    UI_CHECK(med <= 4.0);
-    UI_CHECK(p95 <= 8.0);
+    UI_CHECK(med <= 4.0 * perfScale());
+    UI_CHECK(p95 <= 8.0 * perfScale());
     UI_CHECK(bytes <= 64 * 1024);          // flat memory: nothing grows with rows scrolled
     UI_CHECK_EQ(ui.nodeCount(), nodes);    // no per-row nodes
     UI_CHECK(double(big.reads) / frames <= double(vis * 4 + 8)); // only visible cells are read
