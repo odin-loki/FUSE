@@ -93,6 +93,7 @@ constexpr PropInfo kProps[] = {
     {Prop::AnimationPlayState, "animation-play-state", T::List, false, false, false},
     {Prop::TransitionBehavior, "transition-behavior", T::List, false, false, false},
     {Prop::AnimationComposition, "animation-composition", T::List, false, false, false},
+    {Prop::Transform, "transform", T::Transform, false, true, false},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -572,8 +573,75 @@ f32 easeValue(const Easing& s, f32 t) {
     return by(u);
 }
 
+namespace {
+f32 transformIdentity(u8 fn) { return fn >= u8(TransformFn::ScaleX) ? 1.f : 0.f; }
+// The list as an affine map about the origin: each function applies to the already transformed space (CSS order).
+Affine2 composeTransform(const u8* fns, const f32* args, u8 n) {
+    Affine2 m;
+    for (u8 k = 0; k < n; ++k) switch (TransformFn(fns[k])) {
+        case TransformFn::TranslateX: m.offset.x += m.scale.x * args[k]; break;
+        case TransformFn::TranslateY: m.offset.y += m.scale.y * args[k]; break;
+        case TransformFn::ScaleX: m.scale.x *= args[k]; break;
+        case TransformFn::ScaleY: m.scale.y *= args[k]; break;
+        }
+    return m;
+}
+Affine2 composeTransform(const PropValue& v) {
+    f32 a[kMaxGridTracks];
+    for (u8 k = 0; k < v.trackCount; ++k) a[k] = v.tracks[k].value;
+    return composeTransform(v.fns.data(), a, v.trackCount);
+}
+// Canonical 4-function form (scale then translate in pre-scale units cannot be expressed; translate then scale can).
+PropValue transformFromAffine(const Affine2& m) {
+    PropValue r;
+    r.type = PropType::Transform;
+    const u8 fns[4] = {u8(TransformFn::TranslateX), u8(TransformFn::TranslateY), u8(TransformFn::ScaleX), u8(TransformFn::ScaleY)};
+    const f32 a[4] = {m.offset.x, m.offset.y, m.scale.x, m.scale.y};
+    for (u8 k = 0; k < 4; ++k) r.fns[k] = fns[k], r.tracks[k] = Length::px(a[k]);
+    r.trackCount = 4;
+    return r;
+}
+// Lists whose functions match pairwise (the shorter padded with identity functions, CSS Transforms 1 §9).
+bool transformsMatch(const PropValue& a, const PropValue& b) {
+    const u8 n = std::min(a.trackCount, b.trackCount);
+    for (u8 k = 0; k < n; ++k)
+        if (a.fns[k] != b.fns[k]) return false;
+    return true;
+}
+PropValue padTransform(const PropValue& v, const PropValue& like) {
+    PropValue r = v;
+    for (u8 k = v.trackCount; k < like.trackCount; ++k) r.fns[k] = like.fns[k], r.tracks[k] = Length::px(transformIdentity(like.fns[k]));
+    r.trackCount = std::max(v.trackCount, like.trackCount);
+    return r;
+}
+} // namespace
+
+Affine2 transformOf(const ComputedStyle& s, const Rect& box) {
+    u8 fns[kMaxGridTracks];
+    for (u8 k = 0; k < s.transformCount; ++k) fns[k] = u8(s.transformFns[k]);
+    Affine2 m = composeTransform(fns, s.transformArgs.data(), s.transformCount);
+    const f32 ox = box.x + box.w * 0.5f, oy = box.y + box.h * 0.5f; // p' = O + M(p - O)
+    m.offset.x += ox - m.scale.x * ox;
+    m.offset.y += oy - m.scale.y * oy;
+    return m;
+}
+
 PropValue interpolateProp(const PropValue& a, const PropValue& b, f32 k) {
     if (a.type != b.type) return k < 0.5f ? a : b;
+    if (a.type == T::Transform) {
+        if (transformsMatch(a, b)) {
+            const PropValue pa = padTransform(a, b), pb = padTransform(b, a);
+            PropValue r = pb;
+            for (u8 i = 0; i < r.trackCount; ++i)
+                r.tracks[i].value = pa.tracks[i].value + (pb.tracks[i].value - pa.tracks[i].value) * k;
+            return r;
+        }
+        const Affine2 ma = composeTransform(a), mb = composeTransform(b); // mismatched lists: the composed maps
+        Affine2 m;
+        m.scale = {ma.scale.x + (mb.scale.x - ma.scale.x) * k, ma.scale.y + (mb.scale.y - ma.scale.y) * k};
+        m.offset = {ma.offset.x + (mb.offset.x - ma.offset.x) * k, ma.offset.y + (mb.offset.y - ma.offset.y) * k};
+        return transformFromAffine(m);
+    }
     PropValue r = b;
     switch (a.type) {
     case T::Number: r.num = a.num + (b.num - a.num) * k; break;
@@ -603,6 +671,11 @@ bool samePropValue(const PropValue& a, const PropValue& b) {
     case T::Color: return a.color.r == b.color.r && a.color.g == b.color.g && a.color.b == b.color.b && a.color.a == b.color.a;
     case T::Bool: return a.b == b.b;
     case T::Enum: return a.e == b.e;
+    case T::Transform:
+        if (a.trackCount != b.trackCount) return false;
+        for (u8 k = 0; k < a.trackCount; ++k)
+            if (a.fns[k] != b.fns[k] || a.tracks[k].value != b.tracks[k].value) return false;
+        return true;
     default: return false;
     }
 }
@@ -617,6 +690,33 @@ PropValue interpolateDiscrete(Prop p, const PropValue& a, const PropValue& b, f3
 PropValue compositeProp(const PropValue& u, const PropValue& v, AnimComposite c) {
     if (c == AnimComposite::Replace || u.type != v.type) return v;
     PropValue r = v;
+    if (v.type == T::Transform) {
+        if (c == AnimComposite::Add) { // CSS Transforms: the lists concatenate (underlying first)
+            if (u.trackCount + v.trackCount > kMaxGridTracks) {
+                const Affine2 mu = composeTransform(u), mv = composeTransform(v);
+                Affine2 m;
+                m.scale = {mu.scale.x * mv.scale.x, mu.scale.y * mv.scale.y};
+                m.offset = {mu.offset.x + mu.scale.x * mv.offset.x, mu.offset.y + mu.scale.y * mv.offset.y};
+                return transformFromAffine(m);
+            }
+            r = u;
+            for (u8 k = 0; k < v.trackCount; ++k) r.fns[r.trackCount] = v.fns[k], r.tracks[r.trackCount++] = v.tracks[k];
+            return r;
+        }
+        if (transformsMatch(u, v)) { // accumulate: matching functions combine their arguments
+            const PropValue pu = padTransform(u, v);
+            r = padTransform(v, u);
+            for (u8 k = 0; k < r.trackCount; ++k)
+                r.tracks[k].value = r.fns[k] >= u8(TransformFn::ScaleX) ? pu.tracks[k].value + r.tracks[k].value - 1.f
+                                                                         : pu.tracks[k].value + r.tracks[k].value;
+            return r;
+        }
+        const Affine2 mu = composeTransform(u), mv = composeTransform(v);
+        Affine2 m;
+        m.scale = {mu.scale.x + mv.scale.x - 1.f, mu.scale.y + mv.scale.y - 1.f};
+        m.offset = {mu.offset.x + mv.offset.x, mu.offset.y + mv.offset.y};
+        return transformFromAffine(m);
+    }
     switch (v.type) {
     case T::Number: r.num = u.num + v.num; break;
     case T::Length:
@@ -659,6 +759,50 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
     }
     case T::Color: return parseColor(text, out.color);
     case T::List: return parseList(p, text, out);
+    case T::Transform: { // "none" | translate(x[, y]) translateX(x) translateY(y) scale(sx[, sy]) scaleX(s) scaleY(s)
+        if (text == "none") return true;
+        std::size_t i = 0;
+        auto push = [&](TransformFn f, f32 a) {
+            if (out.trackCount >= kMaxGridTracks) return false;
+            out.fns[out.trackCount] = u8(f);
+            out.tracks[out.trackCount++] = Length::px(a);
+            return true;
+        };
+        while (i < text.size()) {
+            while (i < text.size() && std::isspace(static_cast<unsigned char>(text[i]))) ++i;
+            if (i >= text.size()) break;
+            const std::size_t open = text.find('(', i), close = text.find(')', i);
+            if (open == std::string_view::npos || close == std::string_view::npos || close < open) return false;
+            const std::string_view name = trim(text.substr(i, open - i));
+            std::string_view arg = trim(text.substr(open + 1, close - open - 1));
+            i = close + 1;
+            f32 a[2];
+            int n = 0;
+            const bool scale = name.starts_with("scale");
+            while (!arg.empty() && n < 2) {
+                std::size_t sep = arg.find_first_of(", ");
+                const std::string_view tok = trim(arg.substr(0, sep));
+                arg = sep == std::string_view::npos ? std::string_view{} : trim(arg.substr(sep + 1));
+                if (!arg.empty() && arg.front() == ',') arg = trim(arg.substr(1));
+                std::string_view unit;
+                if (!parseNumber(tok, a[n], unit)) return false;
+                if (scale ? !(unit.empty() || unit == "%") : !(unit.empty() || unit == "px")) return false;
+                if (unit == "%") a[n] /= 100.f;
+                ++n;
+            }
+            if (n == 0 || !arg.empty()) return false;
+            bool ok;
+            if (name == "translate") ok = push(TransformFn::TranslateX, a[0]) && push(TransformFn::TranslateY, n > 1 ? a[1] : 0.f);
+            else if (name == "translateX" && n == 1) ok = push(TransformFn::TranslateX, a[0]);
+            else if (name == "translateY" && n == 1) ok = push(TransformFn::TranslateY, a[0]);
+            else if (name == "scale") ok = push(TransformFn::ScaleX, a[0]) && push(TransformFn::ScaleY, n > 1 ? a[1] : a[0]);
+            else if (name == "scaleX" && n == 1) ok = push(TransformFn::ScaleX, a[0]);
+            else if (name == "scaleY" && n == 1) ok = push(TransformFn::ScaleY, a[0]);
+            else ok = false;
+            if (!ok) return false;
+        }
+        return true;
+    }
     case T::Filter: { // "none" | fn(<arg>) ... : blur(<len>), brightness / contrast / saturate / grayscale / invert / sepia /
                       // opacity(<number> | <pct>), hue-rotate(<angle>), drop-shadow(<dx> <dy> [<blur>] [<color>]), url(#id)
         if (text == "none") return true;
@@ -882,6 +1026,13 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
             s.backdropFilterAmounts[k] = k < v.trackCount ? v.tracks[k].value : 0.f;
         }
         break;
+    case Prop::Transform:
+        s.transformCount = v.trackCount;
+        for (u8 k = 0; k < kMaxGridTracks; ++k) {
+            s.transformFns[k] = k < v.trackCount ? TransformFn(v.fns[k]) : TransformFn{};
+            s.transformArgs[k] = k < v.trackCount ? v.tracks[k].value : 0.f;
+        }
+        break;
     case Prop::Filter:
         s.filterCount = v.trackCount;
         s.filterShadows = v.shadows;
@@ -986,6 +1137,13 @@ PropValue readProp(const ComputedStyle& s, Prop p) {
     case Prop::ShadowX: return PropValue::ofLength(Length::px(s.shadowX));
     case Prop::ShadowY: return PropValue::ofLength(Length::px(s.shadowY));
     case Prop::BackdropBlur: return PropValue::ofLength(Length::px(s.backdropBlur));
+    case Prop::Transform: {
+        PropValue v;
+        v.type = T::Transform;
+        v.trackCount = s.transformCount;
+        for (u8 k = 0; k < s.transformCount; ++k) v.fns[k] = u8(s.transformFns[k]), v.tracks[k] = Length::px(s.transformArgs[k]);
+        return v;
+    }
     default: break;
     }
     PropValue v;

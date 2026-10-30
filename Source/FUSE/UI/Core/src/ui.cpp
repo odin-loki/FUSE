@@ -61,6 +61,7 @@ struct UiContext::Cold {
     fuse::text::TextLayout layout;
     f32 layoutWidth = -1.f, layoutSize = -1.f;
     std::unique_ptr<fuse::text::TextEditBuffer> edit;
+    Rect xfPainted{}; ///< CSS transform: where the transformed subtree painted last (damage when it moves)
     // CSS transitions: running per property; the node shows a scratch style (target + interpolated values)
     struct Running {
         u8 prop = 0;
@@ -163,6 +164,8 @@ struct UiContext::ScriptAnim {
     std::string_view id; // interned
     f32 t = 0.f;
     AnimPlayState state = AnimPlayState::Idle;
+    bool tlActive = true; // progress-based timeline active
+    bool progressBased() const { return o.timeline.kind != AnimTimeline::Kind::Document; }
     f32 active() const { return o.duration > 0.f && o.iterations > 0.f ? o.duration * o.iterations : 0.f; }
     f32 end() const { return std::max(0.f, o.delay + active() + o.endDelay); }
 };
@@ -1143,7 +1146,7 @@ bool UiContext::nodeLive(u32 i) const {
     for (const Cold::Anim& a : c.anims)
         if (!a.paused && a.phase != 2) return true;
     for (u32 id : c.scripted)
-        if (m_scriptAnims[id]->state == AnimPlayState::Running) return true;
+        if (m_scriptAnims[id]->state == AnimPlayState::Running && !m_scriptAnims[id]->progressBased()) return true;
     return false;
 }
 bool UiContext::motionLive() const {
@@ -1179,7 +1182,7 @@ void UiContext::scriptEvent(u32 id, SignalKind k) {
 }
 void UiContext::settleScriptAnim(u32 id) {
     ScriptAnim& a = *m_scriptAnims[id];
-    if (a.state != AnimPlayState::Running) return;
+    if (a.state != AnimPlayState::Running || a.progressBased()) return;
     const f32 end = a.end();
     const f32 r = a.o.playbackRate;
     if ((r > 0.f && a.t >= end) || (r < 0.f && a.t <= 0.f)) {
@@ -1190,13 +1193,13 @@ void UiContext::settleScriptAnim(u32 id) {
 }
 void UiContext::advanceScriptAnim(u32 id, f32 dt) {
     ScriptAnim& a = *m_scriptAnims[id];
-    if (a.state != AnimPlayState::Running) return;
+    if (a.state != AnimPlayState::Running || a.progressBased()) return;
     a.t += dt * a.o.playbackRate;
     settleScriptAnim(id);
 }
 // Directed, eased iteration progress at the animation's current time; false: no effect (idle / not filling).
 bool UiContext::scriptTiming(const ScriptAnim& a, f32& dp) const {
-    if (a.state == AnimPlayState::Idle) return false;
+    if (a.state == AnimPlayState::Idle || !a.tlActive) return false;
     const AnimationOptions& o = a.o;
     const f32 active = a.active();
     const f32 e = a.t - o.delay;
@@ -1256,6 +1259,74 @@ bool UiContext::sampleScriptAnim(const ScriptAnim& a, ComputedStyle& d) const {
     return applied;
 }
 
+f32 UiContext::timelineProgress(NodeHandle target, const AnimTimeline& t) const {
+    const f32 nan = std::numeric_limits<f32>::quiet_NaN();
+    if (t.kind == AnimTimeline::Kind::Document || !node(target)) return nan;
+    const u8 ax = t.axis ? 1 : 0;
+    auto scroller = [&](u32 from) { // nearest ancestor scroll container
+        for (u32 a = m_nodes[from].parent; a != kNone; a = m_nodes[a].parent)
+            if (m_styles.style(m_nodes[a].style).overflow == Overflow::Scroll) return a;
+        return kNone;
+    };
+    if (t.kind == AnimTimeline::Kind::Scroll) {
+        const u32 sc = node(t.source) ? t.source.index : scroller(target.index);
+        if (sc == kNone) return nan;
+        const Node& n = m_nodes[sc];
+        const Rect c = contentRect({sc, n.gen});
+        const f32 range = ax ? n.extent.h - c.h : n.extent.w - c.w;
+        if (!(range > 0.f)) return nan;
+        return std::clamp((ax ? n.scroll.y : n.scroll.x) / range, 0.f, 1.f);
+    }
+    const u32 subj = node(t.source) ? t.source.index : target.index;
+    const u32 sc = scroller(subj);
+    if (sc == kNone) return nan;
+    const Rect port = contentRect({sc, m_nodes[sc].gen}), r = m_nodes[subj].rect;
+    const f32 ps = (ax ? port.y : port.x) + t.insetStart, pe = (ax ? port.bottom() : port.right()) - t.insetEnd;
+    const f32 rs = ax ? r.y : r.x, rl = ax ? r.h : r.w;
+    const f32 span = (pe - ps) + rl;
+    if (!(span > 0.f)) return nan;
+    return std::clamp((pe - rs) / span, 0.f, 1.f);
+}
+f32 UiContext::animTimelineProgress(AnimationHandle h) const {
+    const ScriptAnim* a = scriptAnim(h);
+    if (!a || !a->progressBased()) return std::numeric_limits<f32>::quiet_NaN();
+    return timelineProgress({a->node, a->nodeGen}, a->o.timeline);
+}
+double UiContext::animStartTime(AnimationHandle h) const {
+    const ScriptAnim* a = scriptAnim(h);
+    if (!a || a->progressBased() || a->state != AnimPlayState::Running || a->o.playbackRate == 0.f)
+        return std::numeric_limits<double>::quiet_NaN();
+    return m_docTime - double(a->t) / double(a->o.playbackRate);
+}
+bool UiContext::syncTimelines() {
+    bool moved = false;
+    for (std::size_t k = 0; k < m_timelineAnims.size();) {
+        const u32 id = m_timelineAnims[k];
+        ScriptAnim& a = *m_scriptAnims[id];
+        if (!a.alive || !a.progressBased()) {
+            m_timelineAnims[k] = m_timelineAnims.back();
+            m_timelineAnims.pop_back();
+            continue;
+        }
+        ++k;
+        if (a.state != AnimPlayState::Running) continue;
+        const f32 p = timelineProgress({a.node, a.nodeGen}, a.o.timeline);
+        const bool active = !std::isnan(p);
+        f32 t = a.t;
+        if (active) {
+            const f32 end = a.end();
+            t = a.o.playbackRate < 0.f ? (1.f - p) * end : p * end;
+        }
+        if (active != a.tlActive || t != a.t) {
+            a.tlActive = active;
+            a.t = t;
+            markStyle(a.node);
+            moved = true;
+        }
+    }
+    return moved;
+}
+
 AnimationHandle UiContext::animate(NodeHandle h, std::vector<AnimKeyframe> frames, AnimationOptions o) {
     if (!node(h) || frames.empty()) return {};
     // resolve offsets: explicit ones must ascend within [0,1]; missing ones are spaced evenly (Web Animations §4.4.3)
@@ -1304,6 +1375,11 @@ AnimationHandle UiContext::animate(NodeHandle h, std::vector<AnimKeyframe> frame
     a.id = a.o.id.empty() ? std::string_view{} : animationName(animationNameId(a.o.id));
     a.t = 0.f;
     a.state = AnimPlayState::Idle;
+    a.tlActive = true;
+    if (a.progressBased()) {
+        if (a.o.duration <= 0.f) a.o.duration = 1.f; // CSS `auto` duration: the timeline's whole range
+        if (std::find(m_timelineAnims.begin(), m_timelineAnims.end(), id) == m_timelineAnims.end()) m_timelineAnims.push_back(id);
+    }
     c.scripted.push_back(id);
     const AnimationHandle ah{id, a.gen};
     if (a.o.autoplay) animPlay(ah);
@@ -1987,6 +2063,31 @@ void UiContext::filterStages(const FilterFn* fns, const f32* amounts, u8 count, 
 void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     Node& n = m_nodes[i];
     const ComputedStyle& s = m_styles.style(n.style);
+    // CSS transform: paint the node and its subtree as usual, then map the commands it added (outermost, so a filter
+    // layer moves with it). Damage covers the old and new transformed boxes.
+    if (s.visible && m_xfNode != i && s.transformCount) {
+        const Affine2 m = transformOf(s, n.rect);
+        if (!m.identity()) {
+            const std::size_t c0 = dl.size(), e0 = dl.edgeCount();
+            const u32 outer = m_xfNode;
+            const bool dirty = n.dirty & kDirtyPaint;
+            m_xfNode = i;
+            paintRec(i, opacity, dl);
+            m_xfNode = outer;
+            dl.transformRange(c0, e0, m.scale, m.offset);
+            Rect box{n.rect.x * m.scale.x + m.offset.x, n.rect.y * m.scale.y + m.offset.y, n.rect.w * m.scale.x, n.rect.h * m.scale.y};
+            if (box.w < 0.f) box.x += box.w, box.w = -box.w;
+            if (box.h < 0.f) box.y += box.h, box.h = -box.h;
+            Rect& last = m_cold[i]->xfPainted;
+            if (dirty || !(box == last)) m_damage = m_damage.unite(box).unite(last);
+            last = box;
+            return;
+        }
+    }
+    if (n.dirty & kDirtyPaint) {
+        Rect& last = m_cold[i]->xfPainted;
+        if (!last.empty()) m_damage = m_damage.unite(last), last = {};
+    }
     // CSS filter: the node and its subtree go to one isolated layer (DrawList::pushFilter); this visit wraps a second
     // one that paints as usual. The damage grows by the filter's reach (blur, shadow offset + blur).
     if (s.visible && m_filterNode != i && s.filterCount) {
@@ -2216,6 +2317,7 @@ void UiContext::update(f32 dt) {
     m_stats = {};
     m_damage = {};
     drainCommands();
+    if (dt > 0.f) m_docTime += double(dt);
     if (dt > 0.f) {
         for (u32 t = 0; t < m_timers.size(); ++t) {
             if (!m_timers[t].active) continue;
@@ -2269,13 +2371,19 @@ void UiContext::update(f32 dt) {
         }
         ++k;
     }
-    if (m_anyStyleDirty || m_styles.sheetVersion() != m_seenSheetVersion) stylePass();
-    if (m_anyLayoutDirty) {
-        Node& r = m_nodes[m_root.index];
-        if (r.measureKey != Size{m_viewport.w, m_viewport.h}) measure(m_root.index, m_viewport);
-        arrange(m_root.index, {0.f, 0.f, m_viewport.w, m_viewport.h});
-        m_anyLayoutDirty = false;
-    }
+    if (!m_timelineAnims.empty()) syncTimelines();
+    auto styleAndLayout = [&] {
+        if (m_anyStyleDirty || m_styles.sheetVersion() != m_seenSheetVersion) stylePass();
+        if (m_anyLayoutDirty) {
+            Node& r = m_nodes[m_root.index];
+            if (r.measureKey != Size{m_viewport.w, m_viewport.h}) measure(m_root.index, m_viewport);
+            arrange(m_root.index, {0.f, 0.f, m_viewport.w, m_viewport.h});
+            m_anyLayoutDirty = false;
+        }
+    };
+    styleAndLayout();
+    // scroll / view timelines read the new layout (scroll offsets, subject boxes): one more pass when they moved
+    if (!m_timelineAnims.empty() && syncTimelines()) styleAndLayout();
     paintPass();
     if (!m_motionEvents.empty()) { // CSS transition / animation events, after the frame is consistent
         std::vector<MotionEvent> ev;

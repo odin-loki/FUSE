@@ -17,6 +17,8 @@
 //               with all longhands: name, duration, timing-function, delay, iteration-count, direction, fill-mode,
 //               play-state (CSS Animations 1); animationstart / iteration / end / cancel signals;
 //               animation-composition: replace | add | accumulate (CSS Animations 2)
+//   transform   translate() translateX() translateY() scale() scaleX() scaleY() (paint-only, about the box centre);
+//               animatable: matching lists per function, otherwise the composed maps
 //   discrete    transition-behavior: normal | allow-discrete — discrete properties (display, enums, ...) flip at the
 //               midpoint; display keeps the shown value for the whole transition (CSS Transitions 2)
 //   logical     :not() :is() :where() (forgiving, zero specificity) :has() (relative: `:has(> a)`, `:has(+ a)`,
@@ -64,6 +66,13 @@ enum class Overflow : u8 { Visible, Clip, Scroll };
 /// CSS filter functions (backdrop-filter), in list order.
 /// DropShadow: the one shadow of the list (the last one wins); Url: url(#id), amount = filterNameId(id) bit-cast,
 /// resolved at paint time by UiContext::defineFilter.
+/// CSS transform functions (2D translate / scale subset), in list order; arguments: translate px, scale factor.
+enum class TransformFn : u8 { TranslateX, TranslateY, ScaleX, ScaleY };
+/// The axis-aligned 2D affine map a transform list composes to: p' = scale * p + offset (about the origin).
+struct Affine2 {
+    Vec2 scale{1.f, 1.f}, offset{0.f, 0.f};
+    bool identity() const { return scale.x == 1.f && scale.y == 1.f && offset.x == 0.f && offset.y == 0.f; }
+};
 enum class FilterFn : u8 { Blur, Brightness, Contrast, Saturate, Grayscale, HueRotate, Invert, Sepia, Opacity, DropShadow, Url };
 /// drop-shadow(<dx> <dy> [<blur>] [<color>]); color.a == 0: none
 struct FilterShadow {
@@ -160,6 +169,9 @@ struct ComputedStyle {
     std::array<f32, kMaxGridTracks> backdropFilterAmounts{};
     std::array<FilterShadow, kMaxFilterShadows> backdropShadows{};
     /// CSS `filter` (element), same encoding; painted as nested isolated layers in CSS order
+    u8 transformCount = 0; ///< transform: functions in list order (CSS: about the border-box centre)
+    std::array<TransformFn, kMaxGridTracks> transformFns{};
+    std::array<f32, kMaxGridTracks> transformArgs{};
     u8 filterCount = 0;
     std::array<FilterFn, kMaxGridTracks> filterFns{};
     std::array<f32, kMaxGridTracks> filterAmounts{};
@@ -218,12 +230,12 @@ enum class Prop : u8 {
     ShadowY, PointerEvents, BackdropBlur, GradientAngle, GradientStops, BackgroundClip, BackdropFilter, Filter,
     TransitionProperty, TransitionDuration, TransitionTimingFunction, TransitionDelay,
     AnimationName, AnimationDuration, AnimationTimingFunction, AnimationDelay, AnimationIterationCount,
-    AnimationDirection, AnimationFillMode, AnimationPlayState, TransitionBehavior, AnimationComposition, Count
+    AnimationDirection, AnimationFillMode, AnimationPlayState, TransitionBehavior, AnimationComposition, Transform, Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
 static_assert(kPropCount <= 128, "PropMask holds 128 properties");
 
-enum class PropType : u8 { Bool, Enum, Length, Number, Color, Tracks, Stops, Filter, List }; ///< Filter: fns[] + tracks[].value amounts ///< Stops: offsets in tracks[].value, colours in stopColors
+enum class PropType : u8 { Bool, Enum, Length, Number, Color, Tracks, Stops, Filter, List, Transform }; ///< Transform: fns[] (TransformFn) + tracks[].value arguments ///< Filter: fns[] + tracks[].value amounts ///< Stops: offsets in tracks[].value, colours in stopColors
 struct PropInfo {
     Prop id;
     std::string_view cssName;
@@ -273,7 +285,11 @@ bool samePropValue(const PropValue& a, const PropValue& b);
 PropValue interpolateDiscrete(Prop p, const PropValue& a, const PropValue& b, f32 k);
 /// Combines an effect value with the underlying value: Replace keeps v; Add / Accumulate sum numbers, same-unit
 /// lengths and colour components (clamped); other types (or mismatched units) replace.
+/// Transform lists: Add appends v's functions to the underlying list (scale(2) + scale(3) = scale(2) scale(3), x6);
+/// Accumulate sums matching functions (translate adds, scale factors add minus one: scale(2) + scale(3) = scale(4)).
 PropValue compositeProp(const PropValue& underlying, const PropValue& v, AnimComposite c);
+/// The 2D map a computed transform paints with, about the centre of `box` (CSS transform-origin: 50% 50%).
+Affine2 transformOf(const ComputedStyle& s, const Rect& box);
 /// Copies inherited properties from parent into s.
 void inheritFrom(ComputedStyle& s, const ComputedStyle& parent);
 

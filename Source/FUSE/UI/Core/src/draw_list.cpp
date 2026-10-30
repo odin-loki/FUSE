@@ -58,6 +58,49 @@ void DrawList::translate(Vec2 d) {
         }
 }
 
+void DrawList::transformRange(std::size_t fromCmd, std::size_t fromEdge, Vec2 sc, Vec2 o) {
+    const f32 m = std::min(std::fabs(sc.x), std::fabs(sc.y));
+    auto px = [&](f32 x) { return x * sc.x + o.x; };
+    auto py = [&](f32 y) { return y * sc.y + o.y; };
+    for (std::size_t i = fromCmd; i < m_cmds.size(); ++i) {
+        DrawCmd& c = m_cmds[i];
+        if (c.op == DrawOp::Line) {
+            c.rect = {px(c.rect.x), py(c.rect.y), px(c.rect.w), py(c.rect.h)};
+            c.borderWidth *= m;
+            continue;
+        }
+        Rect r{px(c.rect.x), py(c.rect.y), c.rect.w * sc.x, c.rect.h * sc.y};
+        if (r.w < 0.f) r.x += r.w, r.w = -r.w; // mirrored: keep a positive extent
+        if (r.h < 0.f) r.y += r.h, r.h = -r.h;
+        if (c.op == DrawOp::Glyph) r = {std::round(r.x), std::round(r.y), c.rect.w, c.rect.h};
+        c.rect = r;
+        for (f32& rr : c.radius) rr *= m;
+        c.borderWidth *= m;
+        c.blur *= m;
+        if ((c.gradient & 15u) >= kGradientLinearStops) { // toUnit((p' - o) / s)
+            auto& g = c.gradXf;
+            g[0] /= sc.x, g[1] /= sc.x, g[2] /= sc.y, g[3] /= sc.y;
+            g[4] -= g[0] * o.x + g[2] * o.y;
+            g[5] -= g[1] * o.x + g[3] * o.y;
+        }
+    }
+    for (std::size_t i = fromEdge; i < m_edges.size(); ++i) {
+        PathEdge& e = m_edges[i];
+        if (e.fillOnly < 0.f) { // pushClipLayers header (+ two gradient parameter edges): not coordinates
+            if (e.fillOnly < -1.5f && i + 2 < m_edges.size()) {
+                PathEdge& a = m_edges[i + 1];
+                PathEdge& b = m_edges[i + 2];
+                a.x0 /= sc.x, a.y0 /= sc.x, a.x1 /= sc.y, a.y1 /= sc.y; // toUnit((p' - o) / s)
+                b.x0 -= a.x0 * o.x + a.x1 * o.y;
+                b.y0 -= a.y0 * o.x + a.y1 * o.y;
+                i += 2;
+            }
+            continue;
+        }
+        e.x0 = px(e.x0), e.y0 = py(e.y0), e.x1 = px(e.x1), e.y1 = py(e.y1);
+    }
+}
+
 void DrawList::backdrop(const Rect& r, f32 blur, const std::array<f32, 4>& radii, Color tint) {
     DrawCmd c;
     c.op = DrawOp::Backdrop;

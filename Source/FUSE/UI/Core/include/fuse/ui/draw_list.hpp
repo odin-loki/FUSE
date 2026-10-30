@@ -327,6 +327,11 @@ public:
     u64 hash() const;
     /// Moves every command by `d` (Line end points included): re-bases a subtree's list to a popup window's origin.
     void translate(Vec2 d);
+    std::size_t edgeCount() const { return m_edges.size(); }
+    /// Maps commands [fromCmd, size()) and path edges [fromEdge, edgeCount()) by p' = p * scale + offset (CSS
+    /// transform of a painted subtree). Radii, border widths and blur scale by the smaller factor; glyphs move but
+    /// keep their texel size; filter-program lengths are not rescaled.
+    void transformRange(std::size_t fromCmd, std::size_t fromEdge, Vec2 scale, Vec2 offset);
 
 private:
     friend void scaleDrawList(const DrawList& in, f32 scale, DrawList& out);

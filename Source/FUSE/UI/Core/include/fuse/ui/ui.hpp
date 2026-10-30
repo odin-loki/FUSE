@@ -96,6 +96,19 @@ struct AnimKeyframe {
     AnimComposite composite = AnimComposite::Replace;
     std::vector<std::pair<Prop, PropValue>> values;
 };
+/// The timeline an animation follows (Web Animations 1 / Scroll-driven Animations 1). Document: wall time from
+/// UiContext::update. Scroll: progress of a scroll container's offset along an axis (0 at the start, 1 at the end of
+/// its range). View: progress of a subject crossing its scroll container's scrollport (`cover` range: 0 when its
+/// start edge enters at the end of the scrollport, 1 when its end edge leaves at the start), shrunk by the insets.
+/// A progress-based timeline maps its 0..1 progress onto the animation's whole end time (a zero duration becomes 1 s,
+/// the CSS `auto` duration); it never finishes and is inactive (no effect) while the container cannot scroll.
+struct AnimTimeline {
+    enum class Kind : u8 { Document, Scroll, View };
+    Kind kind = Kind::Document;
+    NodeHandle source; ///< Scroll: the container (none: nearest scrolling ancestor); View: the subject (none: the target)
+    u8 axis = 1;       ///< 0 = x (inline), 1 = y (block)
+    f32 insetStart = 0.f, insetEnd = 0.f; ///< View: px
+};
 /// KeyframeEffectOptions + Animation settings.
 struct AnimationOptions {
     f32 duration = 0.f, delay = 0.f, endDelay = 0.f; ///< seconds
@@ -107,6 +120,7 @@ struct AnimationOptions {
     Easing easing{Easing::Kind::Bezier, 0.f, 0.f, 1.f, 1.f}; ///< whole-iteration timing function (default linear)
     AnimComposite composite = AnimComposite::Replace;
     bool autoplay = true;
+    AnimTimeline timeline;
     std::string id;
     std::function<void(UiContext&, AnimationHandle)> onFinish, onCancel; ///< after the frame's signals
 };
@@ -462,6 +476,14 @@ public:
     bool animValid(AnimationHandle a) const;
     /// Overall progress 0..1 of the active interval (computed timing); NaN when idle.
     f32 animProgress(AnimationHandle a) const;
+    /// The animation's timeline progress 0..1 (Scroll / View); NaN for document timelines and inactive ones.
+    f32 animTimelineProgress(AnimationHandle a) const;
+    /// Progress 0..1 of a timeline for `target` (as an animation on `target` would see it); NaN when inactive.
+    f32 timelineProgress(NodeHandle target, const AnimTimeline& t) const;
+    /// The document timeline: seconds of update(dt) time since the context was created (document.timeline.currentTime).
+    double documentTime() const { return m_docTime; }
+    /// The document time at which a running document-timeline animation started (Animation.startTime); NaN otherwise.
+    double animStartTime(AnimationHandle a) const;
     /// The scripted animations of n (and its descendants with subtree) that are not idle (getAnimations()).
     std::vector<AnimationHandle> animations(NodeHandle n, bool subtree = false) const;
 
@@ -521,6 +543,9 @@ private:
     void settleScriptAnim(u32 index); ///< running past an end: finish
     bool scriptTiming(const ScriptAnim& a, f32& dp) const;
     bool sampleScriptAnim(const ScriptAnim& a, ComputedStyle& d) const;
+    bool syncTimelines(); ///< progress-based animations follow their timelines; true when one moved
+    std::vector<u32> m_timelineAnims;
+    double m_docTime = 0.0;
     std::vector<std::unique_ptr<ScriptAnim>> m_scriptAnims;
     std::vector<u32> m_freeScriptAnims;
     void queueMotion(u32 i, SignalKind k, f32 elapsed, std::string_view text);
@@ -551,6 +576,7 @@ private:
     std::unordered_map<u32, FilterDef> m_filterDefs;
     std::unordered_map<std::string, Image> m_filterImages; ///< defineFilterImage
     FilterImageResolver filterImageResolver() const;
+    u32 m_xfNode = ~0u;     ///< node whose transform paintRec is inside (its second, unmapped visit)
     u32 m_filterNode = ~0u; ///< node whose filter layer paintRec is inside (its second, unwrapped visit)
     /// Overlay scrollbar geometry of a scroll container along an axis (0 = x, 1 = y); false when it does not overflow.
     bool scrollBarGeom(u32 i, u8 axis, Rect& track, Rect& thumb) const;

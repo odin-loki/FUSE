@@ -106,7 +106,7 @@ bool readJson(Reader& r, JsonValue& v, u32 depth) {
 // Same rule as Document::buildNode: every key except these is a property (bindings live there).
 bool structuralKey(std::string_view k) {
     return k == "class" || k == "id" || k == "children" || k == "on" || k == "classes" || k == "style" ||
-           k == "items" || k == "tabIndex" || k == "a11yName" || k == "image" || k == "step";
+           k == "items" || k == "tabIndex" || k == "a11yName" || k == "image" || k == "step" || k == "animate";
 }
 bool isBinding(const JsonValue& v) { return v.isString() && v.string.find('{') != std::string::npos; }
 
@@ -166,6 +166,8 @@ void writeValue(Writer& w, const PropValue& v) {
     for (u8 i = 0; i < v.trackCount; ++i) writeLength(w, v.tracks[i]);
     if (v.type == PropType::Stops)
         for (u8 i = 0; i < v.trackCount; ++i) { w.f32_(v.stopColors[i].r); w.f32_(v.stopColors[i].g); w.f32_(v.stopColors[i].b); w.f32_(v.stopColors[i].a); }
+    if (v.type == PropType::Transform)
+        for (u8 i = 0; i < v.trackCount; ++i) w.u8_(v.fns[i]);
     if (v.type == PropType::Filter) {
         for (u8 i = 0; i < v.trackCount; ++i) w.u8_(v.fns[i]);
         w.u8_(v.shadowCount);
@@ -184,7 +186,7 @@ void writeValue(Writer& w, const PropValue& v) {
 }
 bool readValue(Reader& r, PropValue& v) {
     const u8 t = r.u8_();
-    if (t > u8(PropType::List)) return r.ok = false;
+    if (t > u8(PropType::Transform)) return r.ok = false;
     v.type = PropType(t);
     v.b = r.u8_() != 0;
     v.e = r.u8_();
@@ -196,6 +198,9 @@ bool readValue(Reader& r, PropValue& v) {
     for (u8 i = 0; i < v.trackCount && r.ok; ++i) readLength(r, v.tracks[i]);
     if (v.type == PropType::Stops)
         for (u8 i = 0; i < v.trackCount && r.ok; ++i) { v.stopColors[i].r = r.f32_(); v.stopColors[i].g = r.f32_(); v.stopColors[i].b = r.f32_(); v.stopColors[i].a = r.f32_(); }
+    if (v.type == PropType::Transform)
+        for (u8 i = 0; i < v.trackCount && r.ok; ++i)
+            if ((v.fns[i] = r.u8_()) > u8(TransformFn::ScaleY)) return r.ok = false;
     if (v.type == PropType::Filter) {
         for (u8 i = 0; i < v.trackCount && r.ok; ++i) v.fns[i] = r.u8_();
         v.shadowCount = r.u8_();
