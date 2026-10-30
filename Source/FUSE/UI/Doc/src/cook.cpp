@@ -148,10 +148,12 @@ void writeValue(Writer& w, const PropValue& v) {
     w.f32_(v.color.r); w.f32_(v.color.g); w.f32_(v.color.b); w.f32_(v.color.a);
     w.u8_(v.trackCount);
     for (u8 i = 0; i < v.trackCount; ++i) writeLength(w, v.tracks[i]);
+    if (v.type == PropType::Stops)
+        for (u8 i = 0; i < v.trackCount; ++i) { w.f32_(v.stopColors[i].r); w.f32_(v.stopColors[i].g); w.f32_(v.stopColors[i].b); w.f32_(v.stopColors[i].a); }
 }
 bool readValue(Reader& r, PropValue& v) {
     const u8 t = r.u8_();
-    if (t > u8(PropType::Tracks)) return r.ok = false;
+    if (t > u8(PropType::Stops)) return r.ok = false;
     v.type = PropType(t);
     v.b = r.u8_() != 0;
     v.e = r.u8_();
@@ -161,6 +163,8 @@ bool readValue(Reader& r, PropValue& v) {
     v.trackCount = r.u8_();
     if (v.trackCount > kMaxGridTracks) return r.ok = false;
     for (u8 i = 0; i < v.trackCount && r.ok; ++i) readLength(r, v.tracks[i]);
+    if (v.type == PropType::Stops)
+        for (u8 i = 0; i < v.trackCount && r.ok; ++i) { v.stopColors[i].r = r.f32_(); v.stopColors[i].g = r.f32_(); v.stopColors[i].b = r.f32_(); v.stopColors[i].a = r.f32_(); }
     return r.ok;
 }
 void writeSheet(Writer& w, const StyleSheet& s) {

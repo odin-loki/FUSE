@@ -5,6 +5,8 @@
 #include <cctype>
 #include <charconv>
 #include <cstring>
+#include <cstdio>
+#include <vector>
 
 namespace fuse::ui {
 
@@ -68,6 +70,8 @@ constexpr PropInfo kProps[] = {
     {Prop::ShadowY, "shadow-y", T::Length, false, true, false},
     {Prop::PointerEvents, "pointer-events", T::Bool, false, false, false},
     {Prop::BackdropBlur, "backdrop-blur", T::Length, false, true, false},
+    {Prop::GradientAngle, "gradient-angle", T::Number, false, false, false},
+    {Prop::GradientStops, "gradient-stops", T::Stops, false, false, false},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -97,7 +101,7 @@ constexpr EnumWord kEnums[] = {
     {Prop::Overflow, "clip", u8(Overflow::Clip)},     {Prop::Overflow, "scroll", u8(Overflow::Scroll)},
     {Prop::Overflow, "auto", u8(Overflow::Scroll)},
     {Prop::Gradient, "none", u8(GradientDir::None)},  {Prop::Gradient, "vertical", u8(GradientDir::Vertical)},
-    {Prop::Gradient, "horizontal", u8(GradientDir::Horizontal)},
+    {Prop::Gradient, "horizontal", u8(GradientDir::Horizontal)}, {Prop::Gradient, "angle", u8(GradientDir::Angle)},
     {Prop::TextAlign, "left", u8(TextAlignment::Start)}, {Prop::TextAlign, "start", u8(TextAlignment::Start)},
     {Prop::TextAlign, "center", u8(TextAlignment::Center)}, {Prop::TextAlign, "right", u8(TextAlignment::End)},
     {Prop::TextAlign, "end", u8(TextAlignment::End)},
@@ -259,6 +263,48 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
         return unit.empty() || unit == "%";
     }
     case T::Color: return parseColor(text, out.color);
+    case T::Stops: { // "<color> [<offset>%], ..." (CSS colour-stop list; missing offsets spread evenly)
+        std::vector<std::string_view> items;
+        int depth = 0;
+        std::size_t s0 = 0;
+        for (std::size_t i = 0; i <= text.size(); ++i) {
+            if (i < text.size() && text[i] == '(') ++depth;
+            if (i < text.size() && text[i] == ')') --depth;
+            if (i == text.size() || (text[i] == ',' && depth == 0)) items.push_back(trim(text.substr(s0, i - s0))), s0 = i + 1;
+        }
+        if (items.size() < 2 || items.size() > std::size_t(kMaxGridTracks)) return false;
+        f32 off[kMaxGridTracks];
+        bool has[kMaxGridTracks] = {};
+        for (std::size_t i = 0; i < items.size(); ++i) {
+            std::string_view it = items[i];
+            // colour, then an optional trailing offset outside any parentheses
+            const std::size_t close = it.rfind(')');
+            const std::size_t sp = it.find_last_of(" \t");
+            std::string_view col = it;
+            if (sp != std::string_view::npos && (close == std::string_view::npos || sp > close)) {
+                std::string_view unit;
+                f32 v = 0.f;
+                if (!parseNumber(trim(it.substr(sp + 1)), v, unit) || (unit != "%" && !unit.empty())) return false;
+                off[i] = unit == "%" ? v / 100.f : v, has[i] = true;
+                col = trim(it.substr(0, sp));
+            }
+            if (!parseColor(col, out.stopColors[i])) return false;
+        }
+        const std::size_t n = items.size();
+        if (!has[0]) off[0] = 0.f, has[0] = true;
+        if (!has[n - 1]) off[n - 1] = 1.f, has[n - 1] = true;
+        for (std::size_t i = 1; i < n; ++i) {
+            if (has[i]) continue;
+            std::size_t j = i;
+            while (!has[j]) ++j;
+            for (std::size_t k = i; k < j; ++k) off[k] = off[i - 1] + (off[j] - off[i - 1]) * f32(k - i + 1) / f32(j - i + 1);
+            for (std::size_t k = i; k < j; ++k) has[k] = true;
+        }
+        f32 lo = 0.f;
+        for (std::size_t i = 0; i < n; ++i) lo = std::max(lo, off[i]), out.tracks[i] = Length::px(lo); // non-decreasing
+        out.trackCount = u8(n);
+        return true;
+    }
     case T::Tracks: {
         out.trackCount = 0;
         while (!text.empty()) {
@@ -333,6 +379,14 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::ShadowColor: s.shadowColor = v.color; break;
     case Prop::ShadowBlur: s.shadowBlur = v.len.value; break;
     case Prop::BackdropBlur: s.backdropBlur = v.len.value; break;
+    case Prop::GradientAngle: s.gradientAngle = v.num; break;
+    case Prop::GradientStops:
+        s.gradientStopCount = v.trackCount;
+        for (u8 i = 0; i < kMaxGridTracks; ++i) {
+            s.gradientOffsets[i] = i < v.trackCount ? v.tracks[i].value : 0.f;
+            s.gradientColors[i] = i < v.trackCount ? v.stopColors[i] : Color{};
+        }
+        break;
     case Prop::ShadowX: s.shadowX = v.len.value; break;
     case Prop::ShadowY: s.shadowY = v.len.value; break;
     case Prop::PointerEvents: s.pointerEvents = v.b; break;
@@ -543,7 +597,52 @@ void addShorthand(StyleRule& rule, std::string_view name, std::string_view value
                 s = i + 1;
             }
         }
-        if (k == 3) {
+        const bool legacy = k == 3 && s > args.size() && (parts[0] == "vertical" || parts[0] == "horizontal" || parts[0] == "to right" || parts[0] == "to bottom");
+        // CSS form: linear-gradient([<angle> | to <side-or-corner>,] <color-stop>, <color-stop>, ...)
+        f32 angle = 180.f;
+        std::string_view stops = args;
+        bool angleOk = !legacy;
+        if (!legacy) {
+            const std::size_t comma = [&] {
+                int d = 0;
+                for (std::size_t i = 0; i < args.size(); ++i) {
+                    if (args[i] == '(') ++d;
+                    else if (args[i] == ')') --d;
+                    else if (args[i] == ',' && d == 0) return i;
+                }
+                return args.size();
+            }();
+            const std::string_view first = trim(args.substr(0, comma));
+            std::string_view unit;
+            f32 v = 0.f;
+            if (first.starts_with("to ")) {
+                const bool t = first.find("top") != std::string_view::npos, b = first.find("bottom") != std::string_view::npos;
+                const bool l = first.find("left") != std::string_view::npos, r = first.find("right") != std::string_view::npos;
+                if (t && r) angle = 45.f; else if (b && r) angle = 135.f; else if (b && l) angle = 225.f; else if (t && l) angle = 315.f;
+                else if (t) angle = 0.f; else if (r) angle = 90.f; else if (b) angle = 180.f; else if (l) angle = 270.f;
+                else angleOk = false;
+                stops = comma < args.size() ? args.substr(comma + 1) : std::string_view{};
+            } else if (parseNumber(first, v, unit) && (unit == "deg" || unit == "rad" || unit == "turn" || unit == "grad")) {
+                angle = unit == "deg" ? v : unit == "rad" ? v * 57.29577951f : unit == "turn" ? v * 360.f : v * 0.9f;
+                stops = comma < args.size() ? args.substr(comma + 1) : std::string_view{};
+            }
+        }
+        if (angleOk) {
+            PropValue pv;
+            if (parsePropValue(Prop::GradientStops, stops, pv)) {
+                char ab[32];
+                std::snprintf(ab, sizeof ab, "%g", double(angle));
+                addDecl(rule, Prop::Gradient, "angle", line, diags);
+                addDecl(rule, Prop::GradientAngle, ab, line, diags);
+                addDecl(rule, Prop::GradientStops, stops, line, diags);
+                // first / last colours keep a 2-stop fallback for code that reads background / background-end
+                Declaration d0;
+                d0.prop = Prop::Background, d0.value = PropValue::ofColor(pv.stopColors[0]);
+                rule.decls.push_back(d0);
+                d0.prop = Prop::Background2, d0.value = PropValue::ofColor(pv.stopColors[pv.trackCount - 1]);
+                rule.decls.push_back(d0);
+            } else if (diags) diags->push_back({StyleError::BadValue, line, "linear-gradient"});
+        } else if (k == 3) {
             addDecl(rule, Prop::Gradient, parts[0] == "to right" ? "horizontal" : (parts[0] == "to bottom" ? "vertical" : parts[0]), line, diags);
             addDecl(rule, Prop::Background, parts[1], line, diags);
             addDecl(rule, Prop::Background2, parts[2], line, diags);
@@ -589,7 +688,7 @@ std::expected<StyleSheet, StyleDiagnostic> StyleSheet::parse(std::string_view cs
                         d.raw.assign(value);
                         tokens.emplace_back(d.customHash, d.raw);
                         proto.decls.push_back(std::move(d));
-                    } else if (findProp(name, p)) addDecl(proto, p, value, line, diags);
+                    } else if (!(name == "background" && value.starts_with("linear-gradient")) && findProp(name, p)) addDecl(proto, p, value, line, diags);
                     else addShorthand(proto, name, value, line, diags);
                 }
             }
