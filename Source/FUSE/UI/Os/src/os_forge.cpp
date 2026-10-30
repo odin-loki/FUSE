@@ -227,7 +227,7 @@ std::vector<std::string> nativeFileDialogCommand(const NativeDialogSpec& s) {
     }
     case fo::platform::windows:
     case fo::platform::ios:
-    case fo::platform::android: return {}; // Win32 IFileDialog lives in the window backend (G3); mobile: G4
+    case fo::platform::android: return {}; // Win32: IFileDialog (file_dialog_win32.cpp, no child process); mobile: G4
     default: break;
     }
     if (!fo::find_executable("zenity").empty()) {
@@ -256,7 +256,23 @@ std::vector<std::string> nativeFileDialogCommand(const NativeDialogSpec& s) {
     return {};
 }
 
+std::vector<std::pair<std::string, std::string>> fileDialogFilterSpec(const NativeDialogSpec& s) {
+    std::vector<std::pair<std::string, std::string>> out;
+    for (const auto& f : s.filters) {
+        if (f.patterns.empty()) continue;
+        out.emplace_back(f.name.empty() ? join(f.patterns, ";") : f.name, join(f.patterns, ";"));
+    }
+    return out;
+}
+
+#if defined(_WIN32)
+NativeDialogResult win32FileDialog(const NativeDialogSpec& s); // file_dialog_win32.cpp
+#endif
+
 NativeDialogResult nativeFileDialog(const NativeDialogSpec& s) {
+#if defined(_WIN32)
+    return win32FileDialog(s);
+#endif
     NativeDialogResult res;
     auto argv = nativeFileDialogCommand(s);
     if (argv.empty()) { res.unavailable = true; return res; }
@@ -286,6 +302,9 @@ NativeDialogResult nativeFileDialog(const NativeDialogSpec& s) {
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#if defined(__ANDROID__)
+#include <sys/syscall.h>
+#endif
 #include <forge/os/pipe.hpp>
 namespace fuse::ui::os {
 SharedBuffer& SharedBuffer::operator=(SharedBuffer&& o) noexcept {
@@ -305,14 +324,18 @@ SharedBuffer::~SharedBuffer() {
 }
 std::expected<SharedBuffer, std::string> createSharedBuffer(std::size_t size) {
     int fd = -1;
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(__ANDROID__)
+    fd = int(::syscall(__NR_memfd_create, "fuse-ui", MFD_CLOEXEC)); // bionic only exports memfd_create from API 30
+#elif defined(__linux__) || defined(__FreeBSD__)
     fd = ::memfd_create("fuse-ui", MFD_CLOEXEC);
 #endif
+#if !defined(__ANDROID__) // no POSIX shm on Android
     if (fd < 0) {
         std::string name = "/fuse-ui-" + std::to_string(fo::pid()) + "-" + std::to_string(fo::monotonic_ns());
         fd = ::shm_open(name.c_str(), O_RDWR | O_CREAT | O_EXCL, 0600);
         if (fd >= 0) ::shm_unlink(name.c_str());
     }
+#endif
     if (fd < 0) return std::unexpected(std::string("shared memory fd"));
     if (::ftruncate(fd, off_t(size)) != 0) { ::close(fd); return std::unexpected(std::string("ftruncate")); }
     void* p = ::mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);

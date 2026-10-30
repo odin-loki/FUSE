@@ -1,5 +1,6 @@
 #include "fuse/ui/style.hpp"
 
+#include <cstdlib>
 #include <algorithm>
 #include <cctype>
 #include <charconv>

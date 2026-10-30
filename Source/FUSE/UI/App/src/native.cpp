@@ -23,6 +23,11 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+namespace fuse::app::detail { // win32_dnd.cpp
+void* win32RegisterDrop(HWND, AppWindow*);
+void win32RevokeDrop(HWND, void*);
+bool win32DoDragDrop(AppWindow&, const AppWindow::ExternalDrag&);
+} // namespace fuse::app::detail
 #else
 #include <poll.h>
 #endif
@@ -279,6 +284,7 @@ struct NativePlatform::Impl {
 #if defined(_WIN32)
         std::vector<u32> bgra; ///< GDI fallback staging
         wchar_t highSurrogate = 0;
+        void* dropTarget = nullptr; ///< OLE IDropTarget (win32_dnd.cpp)
 #endif
     };
 
@@ -561,7 +567,15 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     default: break;
     }
     switch (msg) {
-    case WM_MOUSEMOVE: ui.pointerMove(lparamPos(lp)); return 0;
+    case WM_MOUSEMOVE:
+        ui.pointerMove(lparamPos(lp));
+        if (wp & (MK_LBUTTON | MK_RBUTTON))
+            if (auto drag = w.takeExternalDrag()) {
+                ReleaseCapture();
+                ui.pointerUp(lparamPos(lp));
+                detail::win32DoDragDrop(w, *drag); // modal OLE loop
+            }
+        return 0;
     case WM_LBUTTONDOWN: SetCapture(hwnd); ui.pointerDown(lparamPos(lp), MouseButton::Left); return 0;
     case WM_RBUTTONDOWN: ui.pointerDown(lparamPos(lp), MouseButton::Right); return 0;
     case WM_MBUTTONDOWN: ui.pointerDown(lparamPos(lp), MouseButton::Middle); return 0;
@@ -715,6 +729,7 @@ bool NativePlatform::Impl::createOsWindow(Rec& r) {
     }
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&r));
     r.handle = reinterpret_cast<unsigned long long>(hwnd);
+    r.dropTarget = detail::win32RegisterDrop(hwnd, r.win);
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
     return true;
@@ -722,6 +737,8 @@ bool NativePlatform::Impl::createOsWindow(Rec& r) {
 void NativePlatform::Impl::destroyOsWindow(Rec& r) {
     if (!r.handle) return;
     HWND hwnd = reinterpret_cast<HWND>(r.handle);
+    detail::win32RevokeDrop(hwnd, r.dropTarget);
+    r.dropTarget = nullptr;
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
     DestroyWindow(hwnd);
     r.handle = 0;

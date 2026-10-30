@@ -1,4 +1,5 @@
 // fuse_app (plan UI5): Application, AppWindow, on-demand loop, settings store, command line, single instance.
+#include "fuse/ui/from_chars.hpp"
 #include <cctype>
 #include "fuse/app/app.hpp"
 
@@ -33,7 +34,7 @@ using namespace fuse::ui;
 namespace {
 bool parseDouble(std::string_view s, double& out) {
     if (s.empty()) return false;
-    const auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), out);
+    const auto [p, ec] = fuse::ui::fromChars(s.data(), s.data() + s.size(), out);
     return ec == std::errc{} && p == s.data() + s.size();
 }
 double steadyNow(void*) { return fuse::ui::os::monotonicSeconds(); }

@@ -125,5 +125,7 @@ struct NativeDialogResult {
 NativeDialogResult nativeFileDialog(const NativeDialogSpec& spec);
 /// Argument vector the default backend would run (testable without a display); empty when unavailable.
 std::vector<std::string> nativeFileDialogCommand(const NativeDialogSpec& spec);
+/// {display name, "*.png;*.jpg"} pairs as IFileDialog::SetFileTypes wants them (also used by the Win32 backend).
+std::vector<std::pair<std::string, std::string>> fileDialogFilterSpec(const NativeDialogSpec& spec);
 
 } // namespace fuse::ui::os
