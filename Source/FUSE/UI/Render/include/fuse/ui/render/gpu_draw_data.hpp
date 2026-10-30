@@ -91,6 +91,8 @@ struct GpuDrawData {
     std::vector<u32> tiles;
     std::vector<GpuPass> passes; ///< in order; passes[0] is always a draw pass
     std::vector<u32> images; ///< per image: offset (in u32 pixels into `pixels`), width, height, 0; then pixels
+    std::vector<u32> prevImages; ///< the last full pack's images (a full pack swaps it in; outgrown slots restore their old words from it)
+    u32 prevArenaBase = 0;
     GpuPush push{};
     const u8* atlas = nullptr; ///< glyph coverage atlas (atlasSize^2 bytes), uploaded as-is
     u32 atlasSize = 0;
@@ -141,8 +143,7 @@ struct GpuDrawData {
     std::unordered_map<u32, GlyphSlot> glyphSlots;
     std::unordered_map<FillKey, u32, FillHash> fillSlots; ///< colour -> absolute images word offset
     u32 arenaBase = 0, arenaHoles = 0, arenaLive = 0, frameStamp = 0;
-    std::vector<u32> glyphScratch;          ///< per glyph this pack: 7 record words + node (then absolute offset)
-    std::vector<GlyphSlot*> glyphSlotOf;
+    std::vector<u32> glyphScratch;          ///< glyphs not written in place (incremental packs, outgrown nodes): 7 record words + node + source
     std::vector<u32> touched;
     std::vector<u32> arenaSrc; ///< per arena word: source DrawList index of the record starting there
 

@@ -485,9 +485,26 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             put4(g.grad2, 0.f, 0.f, fb[0], fb[1]);
         }
     };
+    // full pack, direct glyphs: a record goes straight into its node's arena slot while the slot (from the last
+    // frame) has room, with its final id; a node that outgrows its slot moves its records so far, and the rest, to
+    // the overflow scratch (glyphScratch + ovArea / ovOld), which the glyph slot pass places as before
+    bool directGlyphs = false;
+    thread_local std::vector<u32> gTouched, ovArea, ovOld, refLocal;
+    u32 dNode = 0, glyphTotal = 0;
+    GpuDrawData::GlyphSlot* dSl = nullptr;
+    const auto scratchGlyph = [&](const u32* rec7, u32 node, u32 src, u32 areaIdx, u32 oldAbs) {
+        const std::size_t at = out.glyphScratch.size();
+        out.glyphScratch.resize(at + 9);
+        u32* w = out.glyphScratch.data() + at;
+        std::memcpy(w, rec7, kCompactGlyphWords * 4);
+        w[7] = node;
+        w[8] = src;
+        ovArea.push_back(areaIdx);
+        ovOld.push_back(oldAbs);
+    };
     // one draw command (not clip / backdrop / path): a compact glyph record (glyphScratch, 7 words + node + source)
     // or a GpuCmd (cmdScratch); its area goes to `areas` with a scratch id (kCompactGlyph | glyph index, or the
-    // cmdScratch index) that the slot passes turn into the final one
+    // cmdScratch index) that the slot passes turn into the final one (direct glyphs: the final id at once)
     const auto emit = [&](const DrawCmd& c, std::size_t ci, const Clip& clip, u32& slotOut, u64& boxOut) {
         Rect bounds = c.rect;
         if (c.op == DrawOp::Shadow)
@@ -549,6 +566,48 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
                 lastFill = c.fill;
             }
             const auto u16i = [](int v) { return u32(std::clamp(v, -32768, 32767) + 32768); };
+            if (directGlyphs) {
+                const u32 rw[kCompactGlyphWords] = {
+                    u16i(ox) | (u16i(oy) << 16), gu | (gv << 16),
+                    std::min<u32>(gtw, 0xFFFFu) | (std::min<u32>(gth, 0x3FFFu) << 16) | (fast ? 0u : kGlyphBoxed) |
+                        (ref != ~0u ? kGlyphRounded : 0u),
+                    fillAt, u16i(bx0) | (u16i(by0) << 16), u16i(bx1) | (u16i(by1) << 16), ref};
+                if (!dSl || c.node != dNode) dNode = c.node, dSl = &out.glyphSlots[c.node];
+                GpuDrawData::GlyphSlot& sl = *dSl;
+                if (sl.stamp != out.frameStamp) {
+                    sl.stamp = out.frameStamp;
+                    sl.count = sl.cursor = 0;
+                    gTouched.push_back(c.node);
+                }
+                ++sl.count;
+                ++glyphTotal;
+                if (sl.cursor < sl.cap) {
+                    const u32 local = sl.off + sl.cursor++ * kCompactGlyphWords;
+                    std::memcpy(out.arena.data() + local, rw, sizeof rw);
+                    out.arenaSrc[local] = u32(ci);
+                    if (ref != ~0u) refLocal.push_back(local), refLocal.push_back(c.node);
+                    g.id = kCompactGlyph | (out.arenaBase + local);
+                    slotOut = g.id;
+                } else {
+                    if (sl.cursor != ~0u) { // outgrown: its records so far join the overflow scratch, in order
+                        const bool undo = out.prevArenaBase == out.arenaBase;
+                        for (u32 k = 0; k < sl.cursor; ++k) {
+                            const u32 local = sl.off + k * kCompactGlyphWords;
+                            scratchGlyph(out.arena.data() + local, c.node, out.arenaSrc[local], ~0u, out.arenaBase + local);
+                            const std::size_t abs = std::size_t(out.arenaBase) + local;
+                            if (undo && abs + kCompactGlyphWords <= out.prevImages.size()) // the hole keeps last frame's words
+                                std::memcpy(out.arena.data() + local, out.prevImages.data() + abs, kCompactGlyphWords * 4);
+                        }
+                        sl.cursor = ~0u;
+                    }
+                    scratchGlyph(rw, c.node, u32(ci), u32(areas.size()), ~0u);
+                    g.id = kCompactGlyph;
+                    slotOut = g.id; // final id set by the glyph slot pass
+                }
+                boxOut = boxOf(g);
+                areas.push_back(g);
+                return;
+            }
             const u32 gi = u32(out.glyphScratch.size() / 9);
             out.glyphScratch.resize(out.glyphScratch.size() + 9);
             u32* w = out.glyphScratch.data() + std::size_t(gi) * 9;
@@ -1129,10 +1188,13 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     out.cmdVol.assign(n, 0ull); // volatile words of a full pack live in images (rebuilt every full pack)
     out.clipRuns.clear();
     out.glyphScratch.clear();
-    out.glyphSlotOf.clear();
     out.cmdScratch.clear();
     out.cmdScratchNode.clear();
     out.cmdScratchSrc.clear();
+    if (attempt == 0) { // keep the last images: outgrown glyph slots put back their old (dead) words from it
+        out.images.swap(out.prevImages);
+        out.prevArenaBase = out.arenaBase;
+    } else out.prevImages.clear();
     out.images.clear();
     out.passes.clear();
     out.atlasSize = atlasS;
@@ -1189,6 +1251,10 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     segments.clear();
     u32 clipRec = 0;
     clipVer = 1;
+    gTouched.clear(), ovArea.clear(), ovOld.clear(), refLocal.clear();
+    dSl = nullptr, glyphTotal = 0;
+    out.arenaSrc.resize(out.arena.size(), ~0u);
+    directGlyphs = true;
     for (std::size_t ci = 0; ci < n; ++ci) {
         if (clipRec != clipVer) { // clip runs: the clip in force from here on (incremental packs start from it)
             out.clipRuns.push_back({u32(ci), stack[depth].r, stack[depth].radius, stack[depth].pathList, u32(depth)});
@@ -1196,6 +1262,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         }
         step(ci, out.cmdSlot[ci], out.cmdBox[ci]);
     }
+    directGlyphs = false;
     // command slot pass: GpuCmds of each source node keep their cmds slot while they fit
     {
         const std::size_t nc = out.cmdScratch.size();
@@ -1247,26 +1314,14 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         for (auto& sg : segments) sg.blur.cmd = out.cmdMap[sg.blur.cmd];
         for (std::size_t g = 0; g < out.glyphScratch.size(); g += 9)
             if (out.glyphScratch[g + 6] != ~0u) out.glyphScratch[g + 6] = out.cmdMap[out.glyphScratch[g + 6]];
+        for (std::size_t q = 0; q < refLocal.size(); q += 2) // not in a slot its node outgrew (restored hole words)
+            if (out.glyphSlots[refLocal[q + 1]].cursor != ~0u) out.arena[refLocal[q] + 6] = out.cmdMap[out.arena[refLocal[q] + 6]];
     }
     // glyph slot pass: each source node keeps its arena slot while its glyphs fit, so added / removed / moved commands
-    // of one node rewrite only that slot; other nodes' records keep their words (the upload page diff skips them)
+    // of one node rewrite only that slot; other nodes' records keep their words (the upload page diff skips them).
+    // Records that fit were written in place by emit; outgrown nodes get a new slot at the arena end with headroom
+    // (in first-appearance order) and take their records from the overflow scratch
     {
-        const std::size_t ng = out.glyphScratch.size() / 9;
-        out.glyphSlotOf.resize(ng);
-        out.touched.clear();
-        u32 lastNode = ~0u;
-        GpuDrawData::GlyphSlot* lastSl = nullptr;
-        for (std::size_t g = 0; g < ng; ++g) {
-            if (!lastSl || out.glyphScratch[g * 9 + 7] != lastNode) lastNode = out.glyphScratch[g * 9 + 7], lastSl = &out.glyphSlots[lastNode];
-            GpuDrawData::GlyphSlot& sl = *lastSl;
-            if (sl.stamp != out.frameStamp) {
-                sl.stamp = out.frameStamp;
-                sl.count = sl.cursor = 0;
-                out.touched.push_back(out.glyphScratch[g * 9 + 7]);
-            }
-            ++sl.count;
-            out.glyphSlotOf[g] = &sl;
-        }
         for (auto it = out.glyphSlots.begin(); it != out.glyphSlots.end();) { // vanished nodes free their slots
             if (it->second.stamp != out.frameStamp) {
                 out.arenaHoles += it->second.cap * kCompactGlyphWords;
@@ -1274,29 +1329,44 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             } else ++it;
         }
         out.arenaLive = 0;
-        for (u32 node : out.touched) {
+        for (u32 node : gTouched) {
             GpuDrawData::GlyphSlot& sl = out.glyphSlots[node];
-            if (sl.count > sl.cap) { // grow: a new slot at the arena end with headroom; the old one becomes a hole
+            if (sl.count > sl.cap) { // grow: the old slot becomes a hole
                 out.arenaHoles += sl.cap * kCompactGlyphWords;
                 sl.cap = sl.count + sl.count / 8;
                 sl.off = u32(out.arena.size());
+                sl.cursor = 0;
                 out.arena.resize(out.arena.size() + std::size_t(sl.cap) * kCompactGlyphWords, 0u);
             }
             out.arenaLive += sl.cap * kCompactGlyphWords;
         }
         out.arenaSrc.resize(out.arena.size(), ~0u);
+        const std::size_t ng = out.glyphScratch.size() / 9;
+        thread_local std::vector<std::pair<u32, u32>> moved; // old -> new absolute offset of outgrown records
+        moved.clear();
+        u32 lastNode = ~0u;
+        GpuDrawData::GlyphSlot* lastSl = nullptr;
         for (std::size_t g = 0; g < ng; ++g) {
-            GpuDrawData::GlyphSlot& sl = *out.glyphSlotOf[g];
-            const u32 local = sl.off + sl.cursor++ * kCompactGlyphWords;
-            std::memcpy(out.arena.data() + local, out.glyphScratch.data() + g * 9, kCompactGlyphWords * 4);
-            out.arenaSrc[local] = out.glyphScratch[g * 9 + 8];
-            out.glyphScratch[g * 9 + 7] = out.arenaBase + local; // absolute record offset
+            const u32* w = out.glyphScratch.data() + g * 9;
+            if (!lastSl || w[7] != lastNode) lastNode = w[7], lastSl = &out.glyphSlots[lastNode];
+            const u32 local = lastSl->off + lastSl->cursor++ * kCompactGlyphWords;
+            std::memcpy(out.arena.data() + local, w, kCompactGlyphWords * 4);
+            out.arenaSrc[local] = w[8];
+            const u32 id = kCompactGlyph | (out.arenaBase + local);
+            out.cmdSlot[w[8]] = id;
+            if (ovArea[g] != ~0u) areas[ovArea[g]].id = id;
+            else moved.push_back({ovOld[g], out.arenaBase + local});
         }
-        if (ng == 0) out.resetArena(); // no glyphs: drop the arena (nothing references it)
-        for (Area& a : areas)
-            if ((a.id & kGlyphRun) == kCompactGlyph) a.id = kCompactGlyph | out.glyphScratch[std::size_t(a.id & ~kCompactGlyph) * 9 + 7];
-        for (u32& sl : out.cmdSlot)
-            if (sl != ~0u && (sl & kCompactGlyph)) sl = kCompactGlyph | out.glyphScratch[std::size_t(sl & ~kCompactGlyph) * 9 + 7];
+        if (!moved.empty()) { // ids handed out before their node outgrew its slot
+            std::sort(moved.begin(), moved.end());
+            for (Area& a : areas)
+                if ((a.id & kGlyphRun) == kCompactGlyph) {
+                    const u32 abs = a.id & ~kCompactGlyph;
+                    const auto it = std::lower_bound(moved.begin(), moved.end(), std::pair<u32, u32>{abs, 0u});
+                    if (it != moved.end() && it->first == abs) a.id = kCompactGlyph | it->second;
+                }
+        }
+        if (glyphTotal == 0) out.resetArena(); // no glyphs: drop the arena (nothing references it)
     }
     // volatile words (images, edges, stops, clip lists) must end before the arena; else move the arena up
     if (!out.arena.empty() && out.images.size() > out.arenaBase) {
