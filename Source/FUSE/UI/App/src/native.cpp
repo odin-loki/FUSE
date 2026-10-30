@@ -1342,7 +1342,8 @@ PresenterKind NativePlatform::show(AppWindow& w) {
     r->kind = r->vk ? PresenterKind::Vulkan : PresenterKind::Headless;
 #endif
     if (m->opts.osPopups) w.ui().setOsPopups(true); // screen bounds arrive with the first present
-    w.setPresenter({r, &Impl::present, &Impl::destroy});
+    // Vulkan FIFO waits for the display; the CPU paths (X11 / GDI) are paced by AppWindow::maxFrameRate
+    w.setPresenter({r, &Impl::present, &Impl::destroy, r->vk != nullptr && m->opts.vsync});
     return r->kind;
 }
 

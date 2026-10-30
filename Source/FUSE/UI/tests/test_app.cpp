@@ -228,6 +228,57 @@ int hidpi() {
     return 0;
 }
 
+int framePacing() {
+    app::Application a{{.name = "gate_pacing", .loadSettings = false}};
+    Virt v;
+    useVirtual(a, v);
+    auto& w = a.createWindow({.width = 100, .height = 80});
+    // an un-vsynced presenter (a CPU blit): Continuous frames are spaced 1/60 s on the app clock, the loop sleeps between
+    struct Count { int n = 0; } cnt;
+    w.setPresenter({&cnt, [](void* u, app::AppWindow&, Rect) { ++static_cast<Count*>(u)->n; return true; }, nullptr, false});
+    w.setRedrawPolicy(app::RedrawPolicy::Continuous);
+    a.step(0.f);
+    CHECK(cnt.n == 1);
+    const f32 wake = a.nextWake();
+    CHECK(wake > 0.016f && wake < 0.0168f); // the next deadline, not "now"
+    const double t0 = v.t;
+    while (v.t - t0 < 1.0 - 1e-6) a.step();
+    CHECK(cnt.n >= 60 && cnt.n <= 62);       // 1 + 60 in one second
+    CHECK(a.stats().sleeps >= 58);            // every frame waited for its deadline
+    // a stall (2 s without steps) does not burst: the cadence restarts from now
+    v.t += 2.0;
+    const int c0 = cnt.n;
+    a.step(0.f);
+    a.step(0.f);
+    CHECK(cnt.n == c0 + 1);
+    // unlimited rate: every step presents
+    w.setMaxFrameRate(0.f);
+    CHECK(a.nextWake() == 0.f);
+    const int c1 = cnt.n;
+    for (int i = 0; i < 5; ++i) a.step(0.f);
+    CHECK(cnt.n == c1 + 5);
+    // vsynced presenters are never paced by the app clock
+    w.setMaxFrameRate(60.f);
+    w.setPresenter({&cnt, [](void* u, app::AppWindow&, Rect) { ++static_cast<Count*>(u)->n; return true; }, nullptr, true});
+    const int c2 = cnt.n;
+    for (int i = 0; i < 5; ++i) a.step(0.f);
+    CHECK(cnt.n == c2 + 5);
+    // compositor throttle: nothing presents while a frame callback is pending, the time is kept for the UI
+    w.setFramePending(true);
+    CHECK(std::isinf(a.nextWake()));
+    const int c3 = cnt.n;
+    for (int i = 0; i < 5; ++i) a.step(0.f);
+    CHECK(cnt.n == c3);
+    w.setFramePending(false);
+    a.step(0.f);
+    CHECK(cnt.n == c3 + 1);
+    // OnDemand idle windows stay idle (pacing adds no wakeups)
+    w.setRedrawPolicy(app::RedrawPolicy::OnDemand);
+    a.step(0.f);
+    CHECK(std::isinf(a.nextWake()));
+    return 0;
+}
+
 int main() {
     const std::string g = FUSE_APP_GATE;
     if (g == "idle_zero_frames") idleZeroFrames();
@@ -235,6 +286,7 @@ int main() {
     else if (g == "hello_startup") helloStartup();
     else if (g == "settings") settings();
     else if (g == "hidpi") hidpi();
+    else if (g == "frame_pacing") framePacing();
     std::printf("fuse_app_%s: %s\n", g.c_str(), g_fail ? "FAILED" : "OK");
     return g_fail ? 1 : 0;
 }

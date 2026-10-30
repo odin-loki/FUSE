@@ -173,7 +173,7 @@ void Settings::remove(std::string_view key) {
 AppWindow::AppWindow(Application& app, const WindowDesc& d, u32 id)
     : m_app(app), m_ui({.viewport = {f32(d.width), f32(d.height)}, .font = &defaultFont()}), m_title(d.title), m_id(id) {
     widgets::install(m_ui);
-    m_presenter = {this, &AppWindow::presentHeadless, nullptr};
+    m_presenter = {this, &AppWindow::presentHeadless, nullptr, true}; // offscreen: unpaced
     setScale(d.dpiScale); // WindowDesc::dpiScale seeds the HiDPI scale; backends update it on monitor changes
 }
 AppWindow::~AppWindow() {
@@ -182,7 +182,7 @@ AppWindow::~AppWindow() {
 }
 void AppWindow::setPresenter(const Presenter& p) {
     if (m_presenter.destroy) m_presenter.destroy(m_presenter.user);
-    m_presenter = p.present ? p : Presenter{this, &AppWindow::presentHeadless, nullptr};
+    m_presenter = p.present ? p : Presenter{this, &AppWindow::presentHeadless, nullptr, true} /* offscreen: unpaced */;
     m_forceRedraw = true;
 }
 void AppWindow::resize(u32 width, u32 height) {
@@ -247,8 +247,26 @@ bool AppWindow::writePng(const std::string& path) const {
     if (m_image.width <= 0) return false;
     return stbi_write_png(path.c_str(), m_image.width, m_image.height, 4, m_image.pixels.data(), m_image.width * 4) != 0;
 }
+bool AppWindow::wantsFrame() const {
+    return m_forceRedraw || m_policy == RedrawPolicy::Continuous || m_ui.nextWakeSeconds() <= 0.f;
+}
+f32 AppWindow::wakeIn(double now) const {
+    if (m_closing) return 0.f;
+    if (m_framePending) return std::numeric_limits<f32>::infinity(); // the compositor's frame event wakes the pump
+    f32 t = wantsFrame() ? 0.f : m_ui.nextWakeSeconds();
+    if (paced() && t < std::numeric_limits<f32>::infinity() && m_nextFrame > now)
+        t = std::max(t, f32(m_nextFrame - now));
+    return t;
+}
 bool AppWindow::frame(f32 dt) {
     if (!m_forceRedraw && m_policy == RedrawPolicy::OnDemand && !m_ui.needsUpdate()) return false;
+    const double now = m_app.now();
+    if (m_framePending || (paced() && m_nextFrame > now)) { // too early: nextWake sleeps until the deadline / event
+        m_heldDt += dt; // skipped frames' time still reaches UI timers and animations
+        return false;
+    }
+    dt += m_heldDt;
+    m_heldDt = 0.f;
     m_ui.update(dt); // advances timers; presents only when something repainted
     if (m_doc && m_doc->refresh()) m_ui.update(0.f);
     if (!m_ui.stats().repainted && !m_forceRedraw && m_policy == RedrawPolicy::OnDemand) return false;
@@ -256,6 +274,11 @@ bool AppWindow::frame(f32 dt) {
     m_forceRedraw = false;
     if (!m_presenter.present || !m_presenter.present(m_presenter.user, *this, dmg)) return false;
     ++m_frames;
+    if (paced()) {
+        // a fixed cadence; after a stall (more than one interval behind) restart it from now instead of bursting
+        const double interval = 1.0 / double(m_maxRate);
+        m_nextFrame = m_nextFrame < 0.0 || now - m_nextFrame > interval ? now + interval : m_nextFrame + interval;
+    }
     return true;
 }
 
@@ -285,10 +308,8 @@ void Application::setEventSource(const EventSource& s) { m_events = s.pump ? s :
 double Application::now() const { return m_clock.now(m_clock.user); }
 f32 Application::nextWake() const {
     f32 t = std::numeric_limits<f32>::infinity();
-    for (const auto& w : m_windows) {
-        if (w->m_forceRedraw || w->m_closing || w->m_policy == RedrawPolicy::Continuous) return 0.f;
-        t = std::min(t, w->m_ui.nextWakeSeconds());
-    }
+    const double n = now();
+    for (const auto& w : m_windows) t = std::min(t, w->wakeIn(n));
     return t;
 }
 bool Application::step(f32 maxWait) {

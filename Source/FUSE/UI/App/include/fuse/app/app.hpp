@@ -93,6 +93,9 @@ struct Presenter {
     void* user = nullptr;
     bool (*present)(void* user, AppWindow& w, fuse::ui::Rect damage) = nullptr;
     void (*destroy)(void* user) = nullptr; ///< called when the window closes
+    /// present() blocks on the display's refresh (Vulkan FIFO, CADisplayLink...): the window is not paced by the
+    /// app clock then. Otherwise frames are spaced by AppWindow::maxFrameRate().
+    bool vsynced = false;
 };
 
 class AppWindow {
@@ -124,6 +127,14 @@ public:
     void setRedrawPolicy(RedrawPolicy p) { m_policy = p; }
     RedrawPolicy redrawPolicy() const { return m_policy; }
     void setPresenter(const Presenter& p);
+    /// Frame pacing for presenters that do not wait for the display (Presenter::vsynced false): at most `hz` frames
+    /// per second on the app clock (default 60; 0 = unlimited). Continuous windows then sleep between frames.
+    void setMaxFrameRate(f32 hz) { m_maxRate = hz > 0.f ? hz : 0.f; }
+    f32 maxFrameRate() const { return m_maxRate; }
+    /// Compositor throttle (Wayland wl_surface.frame): while pending no frame is presented; the backend clears it when
+    /// the compositor signals the next frame (no busy redraws for hidden / occluded surfaces).
+    void setFramePending(bool p) { m_framePending = p; }
+    bool framePending() const { return m_framePending; }
     /// Frames presented so far (the idle gate checks this stays flat).
     u64 framesPresented() const { return m_frames; }
     void requestClose() { m_closing = true; }
@@ -211,6 +222,14 @@ private:
     fuse::ui::CpuRasterizer m_raster;
     RedrawPolicy m_policy = RedrawPolicy::OnDemand;
     u64 m_frames = 0;
+    double m_nextFrame = -1.0; ///< app-clock time the next paced frame may present
+    f32 m_maxRate = 60.f;
+    f32 m_heldDt = 0.f;
+    bool m_framePending = false;
+    bool paced() const { return !m_presenter.vsynced && m_maxRate > 0.f; }
+    bool wantsFrame() const;
+    /// Seconds until this window needs a frame (0 = now, +inf = idle), pacing included.
+    f32 wakeIn(double now) const;
     u32 m_id;
     bool m_closing = false, m_forceRedraw = true;
 };

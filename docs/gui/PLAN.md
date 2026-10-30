@@ -167,3 +167,18 @@ Every phase: commits on `gui-framework`, pushed after each milestone; never to `
 - Cocoa: backingScaleFactor -> contentsScale/drawableSize/setScale, viewDidChangeBackingProperties; NSDraggingDestination drop-in (files + text). UNVERIFIED (no macOS host).
 - UIKit: screen.scale -> contentScaleFactor/CAMetalLayer drawableSize/setScale. UNVERIFIED.
 - Shaders: configure-time GLSL->SPIR-V (glslangValidator/glslang/glslc) with precompiled fallback; target fuse_ui_spv_fixtures.
+
+### Rendering track: GPU effects, damage repaint, pacing, benchmarks (gui-render)
+- Done: `ui.backdrop` compute kernel. Backdrop blur runs on the GPU between draw-list segments and is bit-exact with the CPU `backdropBlur` (vk_parity: 0 differing pixels). The draw kernel now dispatches only over the damage box, with a clear-to-black flag. vk_present uses this for partial frames and no longer clears or redraws the whole canvas.
+- Done: the glyph atlas uploads only when `GlyphAtlas::version()` changes. `version()` is new; it is bumped whenever a glyph is rasterised or the atlas is reset.
+- Done: frame pacing.
+  - `Presenter::vsynced` presenters are not paced; this covers Vulkan FIFO, Wayland with vsync, UIKit CADisplayLink and headless.
+  - Other presenters (X11/GDI/Cocoa CPU paths, and Vulkan without vsync) are paced by `AppWindow::setMaxFrameRate`, default 60, on the app clock. Skipped time is carried into the next `update`.
+  - Wayland SHM throttles on `wl_surface.frame` through `AppWindow::setFramePending`.
+  - Gate: fuse_app_frame_pacing.
+- Done: fuse_ui_bench_render (label `bench`) measures CPU vs GPU for a full frame, a damage box, backdrop blur and a text page. It writes bench_render.json.
+- Left:
+  - A GPU path for Shadow (it still uses the analytic SDF in the draw kernel, which is fine).
+  - GPU timestamp queries in the bench instead of wall-time minus baseline.
+  - Cocoa CVDisplayLink (it is paced at the moment).
+  - The Apple paths are unverified on hardware.

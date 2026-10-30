@@ -285,7 +285,7 @@ static bool presentFn(void* user, fa::AppWindow& aw, Rect damage) {
     const CGSize sz = self.window.bounds.size;
     st.win = &st.app->createWindow({.title = st.desc.name, .width = u32(sz.width), .height = u32(sz.height),
                                           .dpiScale = f32(self.window.screen.scale)});
-    st.win->setPresenter({(__bridge void*)self.view, &presentFn, nullptr});
+    st.win->setPresenter({(__bridge void*)self.view, &presentFn, nullptr, true}); // CADisplayLink paces
     if (st.setup) st.setup(*st.app, *st.win);
     st.win->requestRedraw();
     self.link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick)];

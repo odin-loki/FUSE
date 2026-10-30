@@ -157,6 +157,7 @@ struct WaylandPlatform::Impl {
         Image shown;
         detail::VkWin* vk = nullptr; ///< Vulkan swapchain on `surface` (then no wl_shm buffers are attached)
         bool vkTried = false;
+        Proxy* frameCb = nullptr; ///< wl_surface.frame of the last SHM commit (AppWindow::framePending until done)
         // HiDPI: fractional-scale-v1 + viewporter when offered, else wl_surface.preferred_buffer_scale (v6)
         Proxy *viewport = nullptr, *frac = nullptr;
         uint32_t scale120 = 0;     ///< preferred_scale (0: none received)
@@ -591,14 +592,29 @@ struct WaylandPlatform::Impl {
         m.l.marshal(w.surface, 1, nullptr, m.l.version(w.surface), 0, b->buf, 0, 0);
         if (m.l.version(w.surface) >= 4) m.l.marshal(w.surface, 9, nullptr, m.l.version(w.surface), 0, 0, 0, img.width, img.height);
         else m.l.marshal(w.surface, 2, nullptr, m.l.version(w.surface), 0, 0, 0, img.width, img.height);
+        if (m.opts.vsync && !w.frameCb) { // throttle to the compositor's frame clock (no frames while hidden)
+            w.frameCb = m.l.marshal(w.surface, 3, m.l.callback, 1, 0, nullptr);
+            static const auto lis = listen(&frameDone);
+            if (w.frameCb) {
+                m.l.addListener(w.frameCb, const_cast<void (**)(void)>(lis.fns), &w);
+                aw.setFramePending(true);
+            }
+        }
         m.l.marshal(w.surface, 6, nullptr, m.l.version(w.surface), 0);
         m.l.flush(m.dpy);
         return true;
+    }
+    static void frameDone(void* d, Proxy* cb, uint32_t) {
+        Win& w = *static_cast<Win*>(d);
+        w.impl->l.destroy(cb);
+        w.frameCb = nullptr;
+        if (w.win) w.win->setFramePending(false);
     }
     static void destroyWin(void* user) {
         Win* w = static_cast<Win*>(user);
         Impl& m = *w->impl;
         if (w->vk) { detail::vkWinDestroy(w->vk); w->vk = nullptr; } // the swapchain goes before its wl_surface
+        if (w->frameCb) { m.l.destroy(w->frameCb); w->frameCb = nullptr; }
         for (auto& b : w->bufs)
             if (b.buf) m.l.marshal(b.buf, 0, nullptr, 1, kDestroy);
         if (w->frac) m.l.marshal(w->frac, 0, nullptr, 1, kDestroy);
@@ -801,7 +817,7 @@ bool WaylandPlatform::show(AppWindow& aw) {
     l.flush(m->dpy);
     Impl::Win* raw = w.get();
     m->wins.push_back(std::move(w));
-    aw.setPresenter({raw, &Impl::present, &Impl::destroyWin});
+    aw.setPresenter({raw, &Impl::present, &Impl::destroyWin, m->opts.vsync}); // frame callbacks / FIFO pace
     l.roundtrip(m->dpy);
     return true;
 }
@@ -838,7 +854,7 @@ bool WaylandPlatform::showPopup(AppWindow& aw, AppWindow& parent, Rect anchor, b
     l.flush(m->dpy);
     Impl::Win* raw = w.get();
     m->wins.push_back(std::move(w));
-    aw.setPresenter({raw, &Impl::present, &Impl::destroyWin});
+    aw.setPresenter({raw, &Impl::present, &Impl::destroyWin, m->opts.vsync}); // frame callbacks / FIFO pace
     l.roundtrip(m->dpy);
     return true;
 }
