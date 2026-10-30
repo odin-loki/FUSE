@@ -278,5 +278,58 @@ int main() {
         ui.pointerUp({-5.f, a.y});
         UI_CHECK(!w::dragActive(ui) && doneAction == w::DropIgnore);
     }
+
+    // ---- rubber band + horizontal scroll ----
+    {
+        static w::StringTableModel hm("A\tB\tC");
+        for (int i = 0; i < 4; ++i) hm.addRow("h" + std::to_string(i) + "\tm" + std::to_string(i) + "\tz" + std::to_string(i));
+        const NodeHandle ht = w::tableView(ui, col, &hm.model(), "ht");
+        ui.setCss(ht, "height", "200px");
+        ui.setCss(ht, "width", "200px");
+        w::setItemSelectionMode(ui, ht, w::SelectionMode::Extended);
+        ui.update(1.f / 60.f);
+        const Rect r = ui.contentRect(ht), h1 = partRect(ui, ht, A11yRole::GridCell, "h1"), h3 = partRect(ui, ht, A11yRole::GridCell, "h3");
+        // band from the empty space below the rows up into h1..h3
+        const Vec2 a{r.x + 30.f, h3.bottom() + 20.f};
+        UI_CHECK(a.y < r.bottom() - 10.f);
+        ui.pointerDown(a);
+        ui.pointerMove({a.x + 5.f, h3.y + 3.f});
+        ui.pointerMove({a.x + 10.f, h1.y + 3.f});
+        UI_CHECK_EQ(lines(w::selectedRows(ui, ht)), std::string("1,2,3,"));
+        ui.pointerUp({a.x + 10.f, h1.y + 3.f});
+        ui.update(1.f / 60.f);
+        // Ctrl band adds row 0's cell-free strip; plain band elsewhere replaces
+        ui.setModifiers(kModCtrl);
+        ui.pointerDown(a);
+        ui.setModifiers(0);
+        ui.pointerMove({a.x, partRect(ui, ht, A11yRole::GridCell, "h0").y + 2.f});
+        UI_CHECK_EQ(lines(w::selectedRows(ui, ht)), std::string("0,1,2,3,"));
+        ui.pointerUp({a.x, h1.y});
+        click(ui, a);
+        UI_CHECK(w::selectedRows(ui, ht).empty());
+        // shift+wheel / horizontal wheel scroll sideways; the bar costs a row's worth of height only if needed
+        const f32 z0 = partRect(ui, ht, A11yRole::GridCell, "z0").x;
+        ui.setModifiers(kModShift);
+        ui.wheel(mid(ui.rect(ht)), {0.f, -2.f});
+        ui.setModifiers(0);
+        ui.update(1.f / 60.f);
+        const f32 z1 = partRect(ui, ht, A11yRole::GridCell, "z0").x;
+        UI_CHECK(z1 < z0 && w::tableFirstVisible(ui, ht) == 0u);
+        ui.wheel(mid(ui.rect(ht)), {4.f, 0.f}); // back to the start
+        ui.update(1.f / 60.f);
+        UI_CHECK(partRect(ui, ht, A11yRole::GridCell, "z0").x == z0);
+        // keyboard: the current cell is kept in view
+        w::setItemSelectionBehavior(ui, ht, w::SelectionBehavior::Items);
+        ui.setFocus(ht);
+        click(ui, cell(ht, "h0"));
+        key(ui, Key::Right);
+        key(ui, Key::Right);
+        ui.update(1.f / 60.f);
+        const Rect z = partRect(ui, ht, A11yRole::GridCell, "z0");
+        UI_CHECK(w::tableCurrentColumn(ui, ht) == 2u && z.right() <= r.right() + 0.5f && z.x >= r.x - 0.5f);
+        key(ui, Key::Home);
+        ui.update(1.f / 60.f);
+        UI_CHECK(partRect(ui, ht, A11yRole::GridCell, "h0").x == r.x);
+    }
     return fuse::ui::test::finish("fuse_ui_item_views");
 }

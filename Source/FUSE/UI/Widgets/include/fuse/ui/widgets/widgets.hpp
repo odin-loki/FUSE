@@ -315,11 +315,19 @@ void setTreeFirstVisible(UiContext& ui, NodeHandle tree, u32 row);
 /// tree moves it with its subtree above / below / onto (as last child of) the row under the pointer, shown by a drop
 /// indicator; a row cannot go into its own subtree. After a move the moved row is selected and `moved(from, to)` gets
 /// the old and new line index.
+/// `acceptDrops` (DragDropMode::DragDrop): the tree also takes drops from other trees ("application/x-fuse-tree-subtree":
+/// the dragged rows with their subtrees, depth-relative) or plain text (one row per line, tabs = depth), inserted
+/// above / below / onto the row under the pointer (or appended below the last row) with the proposed action (Ctrl
+/// copies); `inserted(at, count)` reports the new head lines. A drag that ends with Move in another view removes the
+/// dragged rows from the source tree (`removed(line)` per removed head, old index, descending).
 struct TreeDragDrop {
     bool drag = false, internalMove = false;
+    bool acceptDrops = false;
     bool autoScroll = true;      ///< QAbstractItemView::autoScroll: hovering within 16 px of the top / bottom edge scrolls
     f32 autoExpandDelay = -1.f;  ///< QTreeView::autoExpandDelay (s): hovering onto a collapsed row expands it; < 0 off
     std::function<void(UiContext&, NodeHandle tree, u32 from, u32 to)> moved;
+    std::function<void(UiContext&, NodeHandle tree, u32 at, u32 count)> inserted;
+    std::function<void(UiContext&, NodeHandle tree, u32 line)> removed;
 };
 void setTreeDragDrop(UiContext& ui, NodeHandle tree, TreeDragDrop opts);
 
@@ -368,6 +376,8 @@ public:
     void sortBy(u32 col, bool ascending);
     void moveRow(u32 from, u32 to); ///< row `from` ends up at index `to` (others shift)
     void moveRows(const std::vector<u32>& rows, u32 to); ///< see TableDragDrop::moveRows
+    void insertRows(u32 at, std::string_view rowsTsv);    ///< one row per line, cells tab-separated
+    void removeRows(const std::vector<u32>& rows);
     u32 rows() const { return m_rows; }
     std::string_view cell(u32 row, u32 col) const { return m_cells[std::size_t(row) * m_cols + col]; }
     const ItemModel& model() const { return m_model; }
@@ -391,6 +401,12 @@ struct TableDragDrop {
     bool autoScroll = true; ///< hovering near the top / bottom edge scrolls (QAbstractItemView::autoScroll)
     /// Move `rows` (ascending) so that they end up contiguous, in order, starting at index `to` of the result.
     std::function<void(UiContext&, NodeHandle table, const std::vector<u32>& rows, u32 to)> moveRows;
+    /// DragDrop mode: rows dragged from another view ("text/plain": one row per line, cells tab-separated) dropped in the
+    /// gap before row `at`; insert them and return true. Called with the proposed action (Ctrl copies).
+    bool acceptDrops = false;
+    std::function<bool(UiContext&, NodeHandle table, std::string_view rowsTsv, u32 at, u8 action)> insertRows;
+    /// A drag from this table that ended as a Move in another view: remove `rows` (ascending).
+    std::function<void(UiContext&, NodeHandle table, const std::vector<u32>& rows)> removeRows;
 };
 void setTableDragDrop(UiContext& ui, NodeHandle table, TableDragDrop opts);
 /// Call after the model's rows change (re-clamps the scroll, repaints).

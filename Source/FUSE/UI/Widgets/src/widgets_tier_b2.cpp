@@ -180,6 +180,13 @@ struct TableState {
     TableDragDrop dd;
     detail::ItemSelection sel;
     u32 curCol = 0;
+    std::vector<u32> dragRows; ///< rows of the drag this table started
+    bool droppedSelf = false;
+    f32 xOff = 0.f;      ///< horizontal scroll (QAbstractScrollArea::horizontalScrollBar)
+    bool hDrag = false;  ///< dragging the horizontal bar's thumb
+    bool band = false;   ///< rubber-band selection in progress (QAbstractItemView::rubberBand)
+    Vec2 bandA, bandB;
+    std::set<u64> bandBase; ///< Ctrl+band: the selection the band adds to
     i64 pendingRow = -1, pendingCol = 0; ///< press on a selected item: narrowed on release unless it became a drag
 };
 // Process-wide pool (the UI is single-threaded); a slot is reused once its node is gone.
@@ -221,8 +228,53 @@ struct TableView {
         return {std::max(160.f, w + kBar), rowHeight(ui, n) * 8.f};
     }
     static f32 headerH(const UiContext& ui, NodeHandle n, const TableState& s) { return s.header ? rowHeight(ui, n) : 0.f; }
+    static f32 totalW(const TableState& s) { f32 w = 0.f; for (u32 k = 0; k < cols(s); ++k) w += s.colW[k]; return w; }
+    static f32 viewW(const UiContext& ui, NodeHandle n) { return std::max(1.f, ui.contentRect(n).w - kBar); }
+    static f32 maxX(const UiContext& ui, NodeHandle n, const TableState& s) { return std::max(0.f, totalW(s) - viewW(ui, n)); }
+    static bool hasH(const UiContext& ui, NodeHandle n, const TableState& s) { return maxX(ui, n, s) > 0.5f; }
+    static void setX(UiContext& ui, NodeHandle n, TableState& s, f32 x) {
+        x = std::clamp(std::round(x), 0.f, maxX(ui, n, s));
+        if (x != s.xOff) { s.xOff = x; ui.invalidate(n); }
+    }
+    static bool hBarGeom(const UiContext& ui, NodeHandle n, const TableState& s, Rect& track, Rect& thumb) {
+        if (!hasH(ui, n, s)) return false;
+        const Rect c = ui.contentRect(n);
+        track = {c.x, c.bottom() - kBar, c.w - kBar, kBar};
+        const f32 tw = std::max(16.f, track.w * viewW(ui, n) / totalW(s));
+        thumb = {track.x + (track.w - tw) * s.xOff / std::max(1.f, maxX(ui, n, s)), track.y, tw, kBar};
+        return true;
+    }
+    /// keeps column `col` in view (QAbstractItemView::scrollTo for the current cell)
+    static void showCol(UiContext& ui, NodeHandle n, TableState& s, u32 col) {
+        f32 x0 = 0.f;
+        for (u32 k = 0; k < col && k < cols(s); ++k) x0 += s.colW[k];
+        const f32 x1 = x0 + (col < cols(s) ? s.colW[col] : 0.f), vw = viewW(ui, n);
+        if (x0 < s.xOff) setX(ui, n, s, x0);
+        else if (x1 > s.xOff + vw) setX(ui, n, s, std::min(x0, x1 - vw));
+    }
+    static void bandSelect(UiContext& ui, NodeHandle n, TableState& s) {
+        const Rect c = ui.contentRect(n);
+        const f32 rh = rowHeight(ui, n), hh = headerH(ui, n, s);
+        const u32 nr = rows(s), nc = cols(s);
+        const f32 y0 = std::min(s.bandA.y, s.bandB.y), y1 = std::max(s.bandA.y, s.bandB.y);
+        const f32 x0 = std::min(s.bandA.x, s.bandB.x), x1 = std::max(s.bandA.x, s.bandB.x);
+        std::set<u64> keys = s.bandBase;
+        const i64 r0 = std::max<i64>(0, i64(s.first) + i64(std::floor((y0 - c.y - hh) / rh)));
+        const i64 r1 = std::min<i64>(i64(nr) - 1, i64(s.first) + i64(std::floor((y1 - c.y - hh) / rh)));
+        std::vector<u32> cs;
+        f32 x = c.x - s.xOff;
+        for (u32 k = 0; k < nc; x += s.colW[k], ++k)
+            if (s.colW[k] > 0.f && x < x1 && x + s.colW[k] > x0) cs.push_back(k);
+        for (i64 r = r0; r <= r1; ++r) {
+            if (s.sel.behavior == SelectionBehavior::Rows) keys.insert(u64(r));
+            else for (u32 k : cs) keys.insert(s.sel.key(r, k));
+        }
+        if (keys != s.sel.keys) { s.sel.keys = std::move(keys); changed(ui, n); }
+        ui.invalidate(n);
+    }
     static u32 visible(const UiContext& ui, NodeHandle n, const TableState& s) {
-        return std::max(1u, u32((ui.contentRect(n).h - headerH(ui, n, s)) / rowHeight(ui, n)));
+        const f32 h = ui.contentRect(n).h - headerH(ui, n, s) - (hasH(ui, n, s) ? kBar : 0.f);
+        return std::max(1u, u32(h / rowHeight(ui, n)));
     }
     static void setFirst(UiContext& ui, NodeHandle n, TableState& s, i64 f) {
         const u32 r = rows(s), vis = visible(ui, n, s);
@@ -257,6 +309,7 @@ struct TableView {
         col = std::clamp<i64>(col, 0, nc ? i64(nc) - 1 : 0);
         const bool colMoved = u32(col) != s.curCol;
         s.curCol = u32(col);
+        if (s.sel.behavior != SelectionBehavior::Rows) showCol(ui, n, s, u32(col));
         select(ui, n, s, row);
         if (colMoved && s.sel.mode == SelectionMode::Single && s.sel.behavior != SelectionBehavior::Rows)
             ui.emit(n, SignalKind::SelectionChanged, {.value = f32(row)});
@@ -290,7 +343,7 @@ struct TableView {
             A11ySnapshotNode r;
             r.role = A11yRole::Row; r.part = 1; r.rowIndex = 0; r.bounds = {c.x, c.y, c.w, hh};
             out.push_back(std::move(r));
-            f32 x = c.x;
+            f32 x = c.x - s->xOff;
             for (u32 k = 0; k < nc; ++k) {
                 A11ySnapshotNode hc;
                 hc.role = A11yRole::ColumnHeader; hc.part = 2 + k; hc.parent = rowAt; hc.rowIndex = 0; hc.colIndex = i32(k);
@@ -310,7 +363,7 @@ struct TableView {
             r.role = A11yRole::Row; r.part = id; r.rowIndex = i32(row + h); r.bounds = {c.x, y, c.w, rh};
             r.state.selected = s->sel.rowFullySelected(row, nc, sel, s->curCol);
             out.push_back(std::move(r));
-            f32 x = c.x;
+            f32 x = c.x - s->xOff;
             for (u32 k = 0; k < nc; ++k) {
                 A11ySnapshotNode gc;
                 gc.role = A11yRole::GridCell; gc.part = id + 1u + k; gc.parent = rowAt;
@@ -336,7 +389,7 @@ struct TableView {
         dl.pushClip(c);
         if (s->header) {
             dl.rect({c.x, c.y, c.w, hh}, pc.tint(Color::rgb(0x2A2A33)));
-            f32 x = c.x;
+            f32 x = c.x - s->xOff;
             for (u32 k = 0; k < nc; ++k) {
                 const Rect cell{x + 6.f, c.y, s->colW[k] - 12.f, hh};
                 const std::string_view h = s->model->header ? s->model->header(s->model->user, k) : std::string_view{};
@@ -360,7 +413,7 @@ struct TableView {
             const bool full = s->sel.rowFullySelected(row, nc, sel, s->curCol);
             if (full) dl.rect({c.x, y, c.w, rh}, acc.withAlpha(acc.a * 0.55f));
             else if (row & 1u) dl.rect({c.x, y, c.w, rh}, pc.tint(Color::rgb(0xFFFFFF, 0.035f)));
-            f32 x = c.x;
+            f32 x = c.x - s->xOff;
             for (u32 k = 0; k < nc; ++k) {
                 if (s->colW[k] <= 0.f) continue;
                 if (!full && cellSel(ui, pc.node, *s, row, k)) dl.rect({x, y, s->colW[k], rh}, acc.withAlpha(acc.a * 0.55f));
@@ -377,6 +430,15 @@ struct TableView {
             }
         }
         if (Rect ind; dropIndicator(ui, pc.node, ind)) dl.rect(ind, acc);
+        if (s->band) {
+            const Rect b{std::min(s->bandA.x, s->bandB.x), std::min(s->bandA.y, s->bandB.y), std::abs(s->bandB.x - s->bandA.x), std::abs(s->bandB.y - s->bandA.y)};
+            dl.rect(b, acc.withAlpha(acc.a * 0.2f));
+            dl.roundedRect(b, {}, {}, acc.withAlpha(acc.a * 0.8f), 1.f);
+        }
+        if (Rect htr, hth; hBarGeom(ui, pc.node, *s, htr, hth)) {
+            dl.rect(htr, pc.tint(Color::rgb(0x000000, 0.15f)), kBar * 0.5f);
+            dl.rect(hth, pc.tint(Color::rgb(s->hDrag ? 0xB4B4C0 : 0x8A8A96, 0.85f)), kBar * 0.5f);
+        }
         Rect tr, th;
         if (barGeom(ui, pc.node, *s, tr, th)) {
             dl.rect(tr, pc.tint(Color::rgb(0x000000, 0.15f)), kBar * 0.5f);
@@ -396,7 +458,16 @@ struct TableView {
         case EventType::PointerDown: {
             s->resizing = -1;
             s->dragScroll = false;
+            s->hDrag = false;
+            s->band = false;
             Rect tr, th;
+            if (hBarGeom(ui, ec.node, *s, tr, th) && tr.contains(e.pos)) {
+                s->hDrag = true;
+                s->grab = th.contains(e.pos) ? e.pos.x - th.x : th.w * 0.5f;
+                Event mv = e;
+                mv.type = EventType::PointerMove;
+                return onEvent(ec, mv);
+            }
             if (barGeom(ui, ec.node, *s, tr, th) && tr.contains(e.pos)) {
                 s->dragScroll = true;
                 s->grab = th.contains(e.pos) ? e.pos.y - th.y : th.h * 0.5f;
@@ -405,7 +476,7 @@ struct TableView {
                 return onEvent(ec, mv);
             }
             if (e.pos.y < c.y + hh) {
-                f32 x = c.x;
+                f32 x = c.x - s->xOff;
                 for (u32 k = 0; k < cols(*s); ++k) {
                     x += s->colW[k];
                     if (std::abs(e.pos.x - x) <= 4.f) { s->resizing = i32(k); s->grab = x - s->colW[k]; return true; }
@@ -422,7 +493,7 @@ struct TableView {
             const i64 row = i64(s->first) + i64((e.pos.y - c.y - hh) / rh);
             if (row < i64(rows(*s))) {
                 u32 col = 0;
-                for (f32 x = c.x + s->colW[0]; col + 1 < cols(*s) && e.pos.x >= x; x += s->colW[++col]) {}
+                for (f32 x = c.x - s->xOff + s->colW[0]; col + 1 < cols(*s) && e.pos.x >= x; x += s->colW[++col]) {}
                 const bool dragging = (s->dd.drag || s->dd.internalMove) && e.button == MouseButton::Left;
                 s->pendingRow = -1;
                 s->curCol = col;
@@ -460,16 +531,49 @@ struct TableView {
                         p.set("application/x-fuse-table-row", idx);
                         if (rs.size() > 1) p.label = std::to_string(rs.size()) + " rows";
                         p.actions = internal ? u8(DropMove) : u8(DropCopy | DropMove);
+                        t->dragRows = rs;
+                        t->droppedSelf = false;
                         return true;
+                    }, [](UiContext& c2, NodeHandle self, u8 action) {
+                        TableState* t = stateOf(c2, self);
+                        if (!t) return;
+                        std::vector<u32> rs = std::move(t->dragRows);
+                        const bool own = t->droppedSelf;
+                        t->dragRows.clear();
+                        t->droppedSelf = false;
+                        if (action != DropMove || own || rs.empty() || !t->dd.removeRows) return;
+                        std::sort(rs.begin(), rs.end());
+                        auto cb = t->dd.removeRows;
+                        cb(c2, self, rs);
+                        tableModelChanged(c2, self);
+                        if ((t = stateOf(c2, self)) && t->sel.explicitSet()) { t->sel.keys.clear(); TableView::changed(c2, self); }
                     });
                 }
+            } else if (e.button == MouseButton::Left && (s->sel.mode == SelectionMode::Multi || s->sel.mode == SelectionMode::Extended)) {
+                // empty space: rubber band (Ctrl adds to the selection)
+                s->band = true;
+                s->bandA = s->bandB = e.pos;
+                const bool add = e.mods & (kModCtrl | kModSuper);
+                s->bandBase = add ? s->sel.keys : std::set<u64>{};
+                bandSelect(ui, ec.node, *s);
             }
             return true;
         }
         case EventType::PointerMove:
             if (dnd::move(ui, ec.node, e.pos, e.mods)) return true;
-            if (ui.pressed() != ec.node && !s->dragScroll) return false;
-            if (s->resizing >= 0) {
+            if (ui.pressed() != ec.node && !s->dragScroll && !s->hDrag) return false;
+            if (s->band) {
+                s->bandB = e.pos;
+                if (e.pos.y > c.bottom() - (hasH(ui, ec.node, *s) ? kBar : 0.f)) setFirst(ui, ec.node, *s, i64(s->first) + 1);
+                else if (e.pos.y < c.y + hh) setFirst(ui, ec.node, *s, i64(s->first) - 1);
+                bandSelect(ui, ec.node, *s);
+            } else if (s->hDrag) {
+                Rect tr, th;
+                if (!hBarGeom(ui, ec.node, *s, tr, th)) return true;
+                const f32 f = std::clamp((e.pos.x - tr.x - s->grab) / std::max(1.f, tr.w - th.w), 0.f, 1.f);
+                setX(ui, ec.node, *s, f * maxX(ui, ec.node, *s));
+                ui.invalidate(ec.node);
+            } else if (s->resizing >= 0) {
                 s->colW[s->resizing] = std::max(24.f, std::round(e.pos.x - s->grab));
                 ui.invalidate(ec.node);
             } else if (s->dragScroll) {
@@ -488,13 +592,19 @@ struct TableView {
                 s->pendingRow = -1;
                 if (s->sel.click(r, s->pendingCol, 0, rowsFn())) changed(ui, ec.node);
             }
-            if (s->dragScroll) ui.invalidate(ec.node);
+            if (s->dragScroll || s->hDrag || s->band) ui.invalidate(ec.node);
             s->resizing = -1;
             s->dragScroll = false;
+            s->hDrag = false;
+            s->band = false;
             return false;
-        case EventType::Wheel:
-            setFirst(ui, ec.node, *s, i64(s->first) - i64(std::lround(e.wheel.y * 3.f)));
+        case EventType::Wheel: {
+            // horizontal wheel / tilt, or Shift+wheel (QAbstractScrollArea), scrolls sideways
+            const f32 dx = e.wheel.x != 0.f ? e.wheel.x : (e.mods & kModShift) ? e.wheel.y : 0.f;
+            if (dx != 0.f) setX(ui, ec.node, *s, s->xOff - dx * 3.f * rh);
+            else setFirst(ui, ec.node, *s, i64(s->first) - i64(std::lround(e.wheel.y * 3.f)));
             return true;
+        }
         case EventType::KeyDown: {
             const i64 cur = i64(ui.value(ec.node)), vis = visible(ui, ec.node, *s);
             const i64 cc = s->curCol;
@@ -775,16 +885,64 @@ void StringTableModel::addRow(std::string_view cells) {
     for (; n < m_cols; ++n) m_cells.emplace_back();
     ++m_rows;
 }
+void StringTableModel::insertRows(u32 at, std::string_view rowsTsv) {
+    at = std::min(at, m_rows);
+    std::vector<std::string> add;
+    u32 n = 0;
+    for (std::size_t p = 0; p <= rowsTsv.size();) {
+        const std::size_t e = std::min(rowsTsv.find('\n', p), rowsTsv.size());
+        const std::string_view line = rowsTsv.substr(p, e - p);
+        p = e + 1;
+        if (line.empty()) continue;
+        u32 k = 0;
+        eachTab(line, [&](std::string_view c) { if (k++ < m_cols) add.emplace_back(c); });
+        for (; k < m_cols; ++k) add.emplace_back();
+        ++n;
+    }
+    m_cells.insert(m_cells.begin() + std::ptrdiff_t(std::size_t(at) * m_cols), add.begin(), add.end());
+    m_rows += n;
+}
+void StringTableModel::removeRows(const std::vector<u32>& rows) {
+    std::vector<u32> rs(rows);
+    std::sort(rs.begin(), rs.end(), std::greater<>());
+    rs.erase(std::unique(rs.begin(), rs.end()), rs.end());
+    for (u32 r : rs) {
+        if (r >= m_rows) continue;
+        const auto b = m_cells.begin() + std::ptrdiff_t(std::size_t(r) * m_cols);
+        m_cells.erase(b, b + m_cols);
+        --m_rows;
+    }
+}
 void setTableDragDrop(UiContext& ui, NodeHandle table, TableDragDrop opts) {
     TableState* s = stateOf(ui, table);
     if (!s) return;
-    const bool internal = opts.internalMove;
+    const bool target = opts.internalMove || opts.acceptDrops;
     s->dd = std::move(opts);
-    if (!internal) { setDropTarget(ui, table, {}); return; }
+    if (!target) { setDropTarget(ui, table, {}); return; }
     setDropTarget(ui, table, [](UiContext& c, NodeHandle t, const DropEvent& e) -> u8 {
         if (e.phase == DropPhase::Leave) { setDropIndicator(c, t, {}); return 0; }
         TableState* st = stateOf(c, t);
-        if (!st || e.source != t || !e.payload->has("application/x-fuse-table-row")) return DropIgnore;
+        if (!st) return DropIgnore;
+        if (e.source != t || !e.payload->has("application/x-fuse-table-row")) { // foreign rows (DragDrop mode)
+            if (!st->dd.acceptDrops || !st->dd.insertRows || !e.payload->has("text/plain")) return DropIgnore;
+            const u8 action = e.proposed & DropCopy ? u8(DropCopy) : e.proposed & DropMove ? u8(DropMove) : u8(0);
+            if (!action) return DropIgnore;
+            const Rect r = c.contentRect(t);
+            const f32 rh = rowHeight(c, t), hh = TableView::headerH(c, t, *st);
+            const u32 nr = TableView::rows(*st);
+            const i64 gap = std::clamp<i64>(i64(st->first) + i64(std::lround((e.pos.y - r.y - hh) / rh)), 0, nr);
+            if (e.phase != DropPhase::Drop) {
+                const f32 y = r.y + hh + f32(gap - i64(st->first)) * rh;
+                setDropIndicator(c, t, {r.x, y - 1.f, r.w - TableView::kBar, 2.f});
+                return action;
+            }
+            setDropIndicator(c, t, {});
+            auto cb = st->dd.insertRows;
+            if (!cb(c, t, e.payload->get("text/plain"), u32(gap), action)) return DropIgnore;
+            tableModelChanged(c, t);
+            if ((st = stateOf(c, t))) TableView::select(c, t, *st, u32(gap));
+            return action;
+        }
         std::vector<u32> froms;
         for (std::string_view v = e.payload->get("application/x-fuse-table-row"); !v.empty();) {
             const std::size_t k = v.find(',');
@@ -819,6 +977,7 @@ void setTableDragDrop(UiContext& ui, NodeHandle table, TableDragDrop opts) {
         for (u32 i = 0; i < froms.size(); ++i) same &= froms[i] == to + i;
         if (same) return DropIgnore;
         if (st->dd.moveRows) { auto cb = st->dd.moveRows; cb(c, t, froms, to); }
+        st->droppedSelf = true;
         c.invalidate(t);
         TableView::select(c, t, *st, to);
         if (st->sel.explicitSet() && st->sel.behavior == SelectionBehavior::Rows) {

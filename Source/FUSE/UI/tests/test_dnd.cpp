@@ -166,5 +166,62 @@ int main() {
     UI_CHECK_EQ(sunk, std::string("r2\t2"));
     // header and column resize still work (no drag from the header)
     UI_CHECK(!w::dragActive(ui));
+
+    // cross-view: tree -> tree (DragDrop mode) moves the subtree; Ctrl copies; table -> table moves rows
+    {
+        ui.destroy(col);
+        const NodeHandle row2 = w::panel(ui, ui.root());
+        ui.setCss(row2, "flex-direction", "row");
+        const NodeHandle t1 = w::treeView(ui, row2, "x\n\tx1\ny", "t1");
+        const NodeHandle t2 = w::treeView(ui, row2, "p\nq", "t2");
+        for (NodeHandle t : {t1, t2}) { ui.setCss(t, "height", "150px"); ui.setCss(t, "width", "150px"); }
+        u32 ins = 0, rem = 0;
+        w::setTreeDragDrop(ui, t1, {.drag = true, .acceptDrops = true, .removed = [&](UiContext&, NodeHandle, u32) { ++rem; }});
+        w::setTreeDragDrop(ui, t2, {.drag = true, .acceptDrops = true, .inserted = [&](UiContext&, NodeHandle, u32, u32 n) { ins += n; }});
+        ui.update(1.f / 60.f);
+        auto r1 = [&](std::string_view n) { return partRect(ui, t1, A11yRole::Row, n); };
+        auto r2 = [&](std::string_view n) { return partRect(ui, t2, A11yRole::Row, n); };
+        drag(ui, mid(r1("x")), mid(r2("p"))); // onto p: x (with x1) becomes p's child
+        UI_CHECK_EQ(std::string(ui.text(t2)), std::string("p\n\tx\n\t\tx1\nq"));
+        UI_CHECK_EQ(std::string(ui.text(t1)), std::string("y"));
+        UI_CHECK(ins == 1 && rem == 1);
+        drag(ui, mid(r1("y")), {r2("q").x + 20.f, r2("q").bottom() + 30.f}, kModCtrl); // below the rows, copy
+        UI_CHECK_EQ(std::string(ui.text(t2)), std::string("p\n\tx\n\t\tx1\nq\ny"));
+        UI_CHECK_EQ(std::string(ui.text(t1)), std::string("y"));
+        UI_CHECK(rem == 1);
+        // a plain-text drop into the tree (tabs = depth)
+        const NodeHandle src2 = w::panel(ui, row2);
+        ui.setCss(src2, "width", "40px"); ui.setCss(src2, "height", "40px");
+        w::setDragSource(ui, src2, [](UiContext&, NodeHandle, Vec2, w::DragPayload& p) { p.set("text/plain", "n\n\tn1"); p.actions = w::DropCopy; return true; });
+        ui.update(1.f / 60.f);
+        const Rect pr = r2("p");
+        drag(ui, mid(ui.rect(src2)), {pr.x + 20.f, pr.y + 2.f});
+        UI_CHECK_EQ(std::string(ui.text(t2)), std::string("n\n\tn1\np\n\tx\n\t\tx1\nq\ny"));
+
+        ui.destroy(row2);
+        const NodeHandle row3 = w::panel(ui, ui.root());
+        ui.setCss(row3, "flex-direction", "row");
+        static w::StringTableModel ma("N"), mb("N");
+        ma.addRow("a0"); ma.addRow("a1"); ma.addRow("a2"); mb.addRow("b0");
+        const NodeHandle ta = w::tableView(ui, row3, &ma.model(), "ta");
+        const NodeHandle tb = w::tableView(ui, row3, &mb.model(), "tb");
+        for (NodeHandle t : {ta, tb}) { ui.setCss(t, "height", "150px"); ui.setCss(t, "width", "150px"); }
+        auto mk = [&](w::StringTableModel& m) {
+            w::TableDragDrop d{.drag = true, .acceptDrops = true};
+            d.insertRows = [&m](UiContext&, NodeHandle, std::string_view rows, u32 at, u8) { m.insertRows(at, rows); return true; };
+            d.removeRows = [&m](UiContext&, NodeHandle, const std::vector<u32>& rs) { m.removeRows(rs); };
+            return d;
+        };
+        w::setTableDragDrop(ui, ta, mk(ma));
+        w::setTableDragDrop(ui, tb, mk(mb));
+        ui.update(1.f / 60.f);
+        auto ca = [&](std::string_view n) { return partRect(ui, ta, A11yRole::GridCell, n); };
+        auto cb = [&](std::string_view n) { return partRect(ui, tb, A11yRole::GridCell, n); };
+        drag(ui, mid(ca("a1")), {cb("b0").x + 10.f, cb("b0").y + 2.f}); // gap above b0
+        UI_CHECK(mb.rows() == 2 && mb.cell(0, 0) == "a1" && mb.cell(1, 0) == "b0");
+        UI_CHECK(ma.rows() == 2 && ma.cell(0, 0) == "a0" && ma.cell(1, 0) == "a2");
+        drag(ui, mid(cb("b0")), {ca("a2").x + 10.f, ca("a2").bottom() - 2.f}, kModCtrl); // copy below a2
+        UI_CHECK(ma.rows() == 3 && ma.cell(2, 0) == "b0" && mb.rows() == 2);
+    }
     return fuse::ui::test::finish("fuse_ui_dnd");
 }

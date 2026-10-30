@@ -392,6 +392,8 @@ struct TreeState {
     detail::ItemSelection sel;
     u32 first = 0;
     i64 pendingLine = -1; ///< Extended / Multi press on a selected row: narrow the selection on release unless dragged
+    std::vector<u32> dragHeads; ///< rows of the drag this tree started (removed when it ends as a Move elsewhere)
+    bool droppedSelf = false;   ///< that drag was dropped (moved / copied) on this tree itself
     bool barDrag = false;
     f32 grab = 0.f;
 };
@@ -408,7 +410,105 @@ const TreeDragDrop* treeDndOf(const UiContext& ui, NodeHandle n) {
     const TreeState& s = treeState(ui, n);
     return (s.o.drag || s.o.internalMove) ? &s.o : nullptr;
 }
+/// Rebuilds the collapsed-line mask (userData, one bit per line < 64) after lines moved: `newOf[old]` = new index or -1.
+u64 remapMask(u64 old, const std::vector<i64>& newOf) {
+    u64 m = 0;
+    for (std::size_t o = 0; o < newOf.size() && o < 64; ++o)
+        if ((old >> o & 1u) && newOf[o] >= 0 && newOf[o] < 64) m |= u64(1) << newOf[o];
+    return m;
+}
+/// The blocks (row + subtree) headed by `heads`, each re-based to depth 0, '\n'-joined.
+std::string treeBlocks(const UiContext& ui, NodeHandle n, std::vector<u32> heads) {
+    std::vector<std::string_view> lines;
+    eachLine(ui.text(n), [&](u32, std::string_view l) { lines.push_back(l); return true; });
+    std::sort(heads.begin(), heads.end());
+    std::string out;
+    u32 skipTo = 0;
+    for (u32 h : heads) {
+        if (h >= lines.size() || h < skipTo) continue; // inside a block already taken
+        const u32 d0 = depthOf(lines[h]);
+        u32 e = h + 1;
+        while (e < lines.size() && depthOf(lines[e]) > d0) ++e;
+        for (u32 k = h; k < e; ++k) {
+            if (!out.empty()) out.push_back('\n');
+            out.append(depthOf(lines[k]) - d0, '\t');
+            out.append(lines[k].substr(depthOf(lines[k])));
+        }
+        skipTo = e;
+    }
+    return out;
+}
+enum class DropZone : u8;
+std::vector<u32> treeInsert(UiContext& ui, NodeHandle n, std::string_view block, i64 to, DropZone z);
+/// Removes the blocks headed by `heads` (descending old heads returned).
+std::vector<u32> treeRemove(UiContext& ui, NodeHandle n, std::vector<u32> heads) {
+    std::vector<std::string_view> lines;
+    eachLine(ui.text(n), [&](u32, std::string_view l) { lines.push_back(l); return true; });
+    std::sort(heads.begin(), heads.end());
+    std::vector<bool> gone(lines.size(), false);
+    std::vector<u32> removed;
+    for (u32 h : heads) {
+        if (h >= lines.size() || gone[h]) continue;
+        const u32 d0 = depthOf(lines[h]);
+        gone[h] = true;
+        for (u32 k = h + 1; k < lines.size() && depthOf(lines[k]) > d0; ++k) gone[k] = true;
+        removed.push_back(h);
+    }
+    std::vector<i64> newOf(lines.size(), -1);
+    std::string out;
+    i64 i = 0;
+    for (u32 k = 0; k < lines.size(); ++k) {
+        if (gone[k]) continue;
+        if (i) out.push_back('\n');
+        out.append(lines[k]);
+        newOf[k] = i++;
+    }
+    ui.setUserData(n, remapMask(ui.userData(n), newOf));
+    ui.setText(n, out);
+    std::reverse(removed.begin(), removed.end());
+    return removed;
+}
 enum class DropZone : u8 { Above, Below, Onto };
+/// Inserts `block` (lines, tabs = depth relative to the block) above / below / onto line `to` (to < 0: appended at
+/// depth 0); returns the new indices of the block's top-level heads.
+std::vector<u32> treeInsert(UiContext& ui, NodeHandle n, std::string_view block, i64 to, DropZone z) {
+    std::vector<std::string_view> lines, add;
+    eachLine(ui.text(n), [&](u32, std::string_view l) { lines.push_back(l); return true; });
+    if (ui.text(n).empty()) lines.clear();
+    eachLine(block, [&](u32, std::string_view l) { if (!l.empty()) add.push_back(l); return true; });
+    if (add.empty() || to >= i64(lines.size())) return {};
+    u32 at = u32(lines.size()), depth = 0;
+    if (to >= 0) {
+        const u32 dt = depthOf(lines[std::size_t(to)]);
+        u32 tEnd = u32(to) + 1;
+        while (tEnd < lines.size() && depthOf(lines[tEnd]) > dt) ++tEnd;
+        depth = z == DropZone::Onto ? dt + 1 : dt;
+        at = z == DropZone::Above ? u32(to) : tEnd;
+    }
+    u32 base = 0xFFFFFFFFu;
+    for (std::string_view l : add) base = std::min(base, depthOf(l));
+    std::vector<i64> newOf(lines.size(), -1);
+    std::vector<u32> heads;
+    std::string out;
+    u32 i = 0;
+    auto line = [&](std::string_view l) { if (i) out.push_back('\n'); out.append(l); ++i; };
+    for (u32 k = 0; k <= lines.size(); ++k) {
+        if (k == at)
+            for (std::string_view l : add) {
+                const u32 d = depthOf(l) - base;
+                if (d == 0) heads.push_back(i);
+                std::string s(depth + d, '\t');
+                s.append(l.substr(depthOf(l)));
+                line(s);
+            }
+        if (k < lines.size()) { newOf[k] = i; line(lines[k]); }
+    }
+    u64 mask = remapMask(ui.userData(n), newOf);
+    if (z == DropZone::Onto && to >= 0 && newOf[std::size_t(to)] < 64) mask &= ~(u64(1) << newOf[std::size_t(to)]); // expand the new parent
+    ui.setUserData(n, mask);
+    ui.setText(n, out);
+    return heads;
+}
 /// Moves lines `froms` (each with its subtree; lines inside another moved subtree go along with it) above / below /
 /// onto line `to`, keeping their order; returns (old, new) index of each moved head (empty = refused).
 std::vector<std::pair<u32, u32>> treeMove(UiContext& ui, NodeHandle n, std::vector<u32> froms, u32 to, DropZone z) {
@@ -655,6 +755,9 @@ struct TreeView {
                     if (s2.sel.explicitSet() && s2.sel.keys.contains(line))
                         for (u64 k : s2.sel.keys) lines.push_back(u32(k));
                     else lines.push_back(line);
+                    s2.dragHeads = lines;
+                    s2.droppedSelf = false;
+                    p.set("application/x-fuse-tree-subtree", treeBlocks(c2, self, lines));
                     std::string txt, idx;
                     for (u32 l : lines) {
                         const std::string_view t = nth(c2.text(self), l);
@@ -667,6 +770,18 @@ struct TreeView {
                     p.label = lines.size() > 1 ? std::to_string(lines.size()) + " items" : txt;
                     p.actions = internal ? u8(DropMove) : u8(DropCopy | DropMove);
                     return true;
+                }, [](UiContext& c2, NodeHandle self, u8 action) {
+                    // QAbstractItemView::startDrag: a Move into another view (or app) takes the rows out here
+                    TreeState& s2 = treeState(c2, self);
+                    std::vector<u32> heads = std::move(s2.dragHeads);
+                    const bool self2 = s2.droppedSelf;
+                    s2.dragHeads.clear();
+                    s2.droppedSelf = false;
+                    if (action != DropMove || self2 || heads.empty()) return;
+                    const auto gone = treeRemove(c2, self, heads);
+                    c2.setValue(self, -1.f);
+                    if (s2.sel.explicitSet()) { s2.sel.keys.clear(); TreeView::changed(c2, self); }
+                    if (s2.o.removed) { auto cb = s2.o.removed; for (u32 h : gone) cb(c2, self, h); }
                 });
             }
             return true;
@@ -1032,19 +1147,26 @@ void setTreeExpanded(UiContext& ui, NodeHandle tree, u32 line, bool open) {
     ui.emit(tree, SignalKind::Toggled, {.value = f32(line), .flag = open});
 }
 void setTreeDragDrop(UiContext& ui, NodeHandle tree, TreeDragDrop opts) {
-    const bool internal = opts.internalMove;
+    const bool target = opts.internalMove || opts.acceptDrops;
     treeState(ui, tree).o = std::move(opts);
-    if (!internal) { setDropTarget(ui, tree, {}); return; }
+    if (!target) { setDropTarget(ui, tree, {}); return; }
     setDropTarget(ui, tree, [](UiContext& c, NodeHandle t, const DropEvent& e) -> u8 {
         if (e.phase == DropPhase::Leave) { setDropIndicator(c, t, {}); return 0; }
-        if (e.source != t || !e.payload->has("application/x-fuse-tree-line")) return DropIgnore;
-        std::vector<u32> froms;
-        for (std::string_view v = e.payload->get("application/x-fuse-tree-line"); !v.empty();) {
-            const std::size_t k = v.find(',');
-            froms.push_back(u32(std::stoul(std::string(v.substr(0, k)))));
-            v = k == std::string_view::npos ? std::string_view{} : v.substr(k + 1);
-        }
         TreeState& st = treeState(c, t);
+        const bool self = e.source == t && e.payload->has("application/x-fuse-tree-line");
+        // own rows: InternalMove moves; DragDrop moves or (Ctrl) copies. Foreign: DragDrop inserts.
+        u8 action = 0;
+        if (self) action = st.o.internalMove && !st.o.acceptDrops ? u8(DropMove) : (e.proposed & (DropCopy | DropMove));
+        else if (st.o.acceptDrops && (e.payload->has("application/x-fuse-tree-subtree") || e.payload->has("text/plain")))
+            action = e.proposed & DropCopy ? u8(DropCopy) : e.proposed & DropMove ? u8(DropMove) : (e.payload->actions & DropCopy ? u8(DropCopy) : u8(0));
+        if (!action) return DropIgnore;
+        std::vector<u32> froms;
+        if (self)
+            for (std::string_view v = e.payload->get("application/x-fuse-tree-line"); !v.empty();) {
+                const std::size_t k = v.find(',');
+                froms.push_back(u32(std::stoul(std::string(v.substr(0, k)))));
+                v = k == std::string_view::npos ? std::string_view{} : v.substr(k + 1);
+            }
         const Rect r = c.contentRect(t);
         const f32 rh = rowHeight(c, t);
         if (e.phase == DropPhase::Move && st.o.autoScroll) // QAbstractItemView::autoScroll near the top / bottom edge
@@ -1055,17 +1177,33 @@ void setTreeDragDrop(UiContext& ui, NodeHandle tree, TreeDragDrop opts) {
             });
         const i64 row = i64(st.first) + i64((e.pos.y - r.y) / rh);
         const auto h = TreeView::rowInfo(c, t, [&](u32 rr, u32) { return i64(rr) == row; });
-        if (h.line < 0) { setDropIndicator(c, t, {}); return DropIgnore; }
+        const bool copySelf = self && action == DropCopy;
+        if (h.line < 0) { // below the last row: foreign rows / copies append at the end
+            if (self && !copySelf) { setDropIndicator(c, t, {}); return DropIgnore; }
+            const f32 y = r.y + f32(i64(treeVisibleRows(c, t)) - i64(st.first)) * rh;
+            if (e.phase != DropPhase::Drop) { setDropIndicator(c, t, {r.x + 4.f, y - 1.f, r.w - 8.f, 2.f}); return action; }
+            setDropIndicator(c, t, {});
+            const std::string block = self ? treeBlocks(c, t, froms) : std::string(e.payload->has("application/x-fuse-tree-subtree")
+                                                                                       ? e.payload->get("application/x-fuse-tree-subtree")
+                                                                                       : e.payload->get("text/plain"));
+            const auto heads = treeInsert(c, t, block, -1, DropZone::Below);
+            if (heads.empty()) return DropIgnore;
+            if (self) st.droppedSelf = true;
+            TreeView::select(c, t, heads.front());
+            if (st.o.inserted) { auto cb = st.o.inserted; cb(c, t, heads.front(), u32(heads.size())); }
+            return action;
+        }
         const f32 y0 = r.y + f32(h.row - i64(st.first)) * rh, fy = (e.pos.y - y0) / rh;
         const DropZone z = fy < 0.25f ? DropZone::Above : fy > 0.75f ? DropZone::Below : DropZone::Onto;
-        // not into a moved row's own subtree
-        std::vector<u32> depth;
-        eachLine(c.text(t), [&](u32, std::string_view l) { depth.push_back(depthOf(l)); return true; });
-        for (u32 from : froms) {
-            if (from >= depth.size()) return DropIgnore;
-            u32 end = from + 1;
-            while (end < depth.size() && depth[end] > depth[from]) ++end;
-            if (u32(h.line) >= from && u32(h.line) < end) { setDropIndicator(c, t, {}); return DropIgnore; }
+        if (self && !copySelf) { // not into a moved row's own subtree
+            std::vector<u32> depth;
+            eachLine(c.text(t), [&](u32, std::string_view l) { depth.push_back(depthOf(l)); return true; });
+            for (u32 from : froms) {
+                if (from >= depth.size()) return DropIgnore;
+                u32 end = from + 1;
+                while (end < depth.size() && depth[end] > depth[from]) ++end;
+                if (u32(h.line) >= from && u32(h.line) < end) { setDropIndicator(c, t, {}); return DropIgnore; }
+            }
         }
         if (e.phase == DropPhase::Move && z == DropZone::Onto && h.kids && !h.open && st.o.autoExpandDelay >= 0.f) {
             const u32 line = u32(h.line);
@@ -1075,21 +1213,34 @@ void setTreeDragDrop(UiContext& ui, NodeHandle tree, TreeDragDrop opts) {
         if (e.phase != DropPhase::Drop) {
             setDropIndicator(c, t, z == DropZone::Onto ? Rect{r.x + 1.f, y0 + 1.f, r.w - 2.f, rh - 2.f}
                                                        : Rect{x, z == DropZone::Above ? y0 - 1.f : y0 + rh - 1.f, r.right() - x, 2.f});
-            return DropMove;
+            return action;
         }
         setDropIndicator(c, t, {});
-        const auto heads = treeMove(c, t, froms, u32(h.line), z);
-        if (heads.empty()) return DropIgnore;
+        std::vector<u32> newHeads;
+        if (self && !copySelf) {
+            const auto heads = treeMove(c, t, froms, u32(h.line), z);
+            if (heads.empty()) return DropIgnore;
+            for (const auto& hd : heads) newHeads.push_back(hd.second);
+            st.droppedSelf = true;
+            if (st.o.moved) { auto cb = st.o.moved; for (const auto& [o, nw] : heads) cb(c, t, o, nw); }
+        } else {
+            const std::string block = self ? treeBlocks(c, t, froms) : std::string(e.payload->has("application/x-fuse-tree-subtree")
+                                                                                       ? e.payload->get("application/x-fuse-tree-subtree")
+                                                                                       : e.payload->get("text/plain"));
+            newHeads = treeInsert(c, t, block, h.line, z);
+            if (newHeads.empty()) return DropIgnore;
+            if (self) st.droppedSelf = true;
+            if (st.o.inserted) { auto cb = st.o.inserted; cb(c, t, newHeads.front(), u32(newHeads.size())); }
+        }
         c.setValue(t, -1.f);
-        TreeView::select(c, t, heads.front().second);
+        TreeView::select(c, t, newHeads.front());
         if (st.sel.explicitSet()) {
             st.sel.keys.clear();
-            for (const auto& hd : heads) st.sel.keys.insert(hd.second);
-            st.sel.anchorR = heads.front().second;
+            for (u32 hd : newHeads) st.sel.keys.insert(hd);
+            st.sel.anchorR = newHeads.front();
             TreeView::changed(c, t);
         }
-        if (st.o.moved) { auto cb = st.o.moved; for (const auto& [o, nw] : heads) cb(c, t, o, nw); }
-        return DropMove;
+        return action;
     });
 }
 namespace detail {
