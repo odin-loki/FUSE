@@ -161,6 +161,11 @@ public:
         presentHeadless(nullptr, *this, damage);
         return m_image;
     }
+    /// Float (HDR) CPU raster of `damage` (whole window when empty / resized / the format changed) into hdrImage():
+    /// colours above SDR white kept (color::hdr, Image::hdrPixels); for presenters with an RGBA16F canvas.
+    /// `format` Rgba16F rounds each frame to binary16, Rgba32F keeps f32.
+    const fuse::ui::HdrImage& rasterizeHdr(fuse::ui::Rect damage, fuse::ui::PixelFormat format = fuse::ui::PixelFormat::Rgba16F);
+    const fuse::ui::HdrImage& hdrImage() const { return m_hdrImage; }
 
     // input (backends call these; they forward to the UiContext and wake the loop)
     void pointerMove(fuse::ui::Vec2 p) { m_ui.pointerMove(p); }
@@ -228,6 +233,7 @@ private:
     f32 m_scale = 1.f;
     fuse::ui::DrawList m_scaledList;
     fuse::ui::Image m_image;
+    fuse::ui::HdrImage m_hdrImage;
     fuse::ui::CpuRasterizer m_raster;
     RedrawPolicy m_policy = RedrawPolicy::OnDemand;
     u64 m_frames = 0;

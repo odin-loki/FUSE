@@ -53,7 +53,7 @@ template <class F> double msPer(int n, F&& f, bool cpuClock = false) {
 }
 struct Row {
     std::string name;
-    double cpu = 0, gpu = -1, gpuWall = -1, pack = 0, repack = 0, patch = 0;
+    double cpu = 0, cpuHdr = 0, gpu = -1, gpuWall = -1, pack = 0, repack = 0, patch = 0;
     double insKb = -1, insPack = 0; ///< a glyph inserted mid-list (structural): upload KB and pack ms
     double editKb = -1; ///< bytes upload() writes after one command's colour changes (page diff), KB
     std::size_t cmds = 0;
@@ -120,11 +120,15 @@ int main(int argc, char** argv) {
     r.setGlyphAtlas(ui.atlas().pixels(), ui.atlas().size());
     Image img;
     img.resize(int(W), int(H), 0xFF000000u);
+    HdrImage hdrImg; // float CPU raster (HDR canvas), Rgba16F
+    hdrImg.format = PixelFormat::Rgba16F;
+    hdrImg.resize(int(W), int(H));
     std::vector<Row> rows;
     for (const Scene& s : scenes) {
         Row row{s.name};
         row.cmds = s.list->cmds().size();
         row.cpu = msPer(iters, [&] { r.render(*s.list, img, s.scissor); }, true);
+        row.cpuHdr = msPer(iters, [&] { r.render(*s.list, hdrImg, s.scissor); }, true);
         GpuDrawData packed;
         row.pack = msPer(iters, [&] {
             packDrawList(*s.list, W, H, packed, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, s.scissor);
@@ -249,19 +253,19 @@ int main(int argc, char** argv) {
 
     std::printf("fuse_ui_bench_render %ux%u, %d iterations, GPU: %s (%s)\n", W, H, iters, device.c_str(),
                 timestamps ? "timestamp queries" : "wall time");
-    std::printf("  %-16s %8s %10s %10s %12s %10s %10s %9s %9s %9s %9s %8s %8s\n", "scene", "cmds", "cpu ms", "gpu ms", "gpu wall ms",
+    std::printf("  %-16s %8s %10s %10s %10s %12s %10s %10s %9s %9s %9s %9s %8s %8s\n", "scene", "cmds", "cpu ms", "cpu f16 ms", "gpu ms", "gpu wall ms",
                 "pack ms", "repack ms", "patch ms", "tiles KB", "data KB", "edit KB", "ins ms", "ins KB");
     for (const Row& row : rows)
-        std::printf("  %-16s %8zu %10.3f %10.3f %12.3f %10.3f %10.3f %9.3f %9zu %9zu %9.0f %8.3f %8.0f\n", row.name.c_str(),
-                    row.cmds, row.cpu, row.gpu, row.gpuWall, row.pack, row.repack, row.patch, row.tileKb, row.imageKb, row.editKb,
+        std::printf("  %-16s %8zu %10.3f %10.3f %10.3f %12.3f %10.3f %10.3f %9.3f %9zu %9zu %9.0f %8.3f %8.0f\n", row.name.c_str(),
+                    row.cmds, row.cpu, row.cpuHdr, row.gpu, row.gpuWall, row.pack, row.repack, row.patch, row.tileKb, row.imageKb, row.editKb,
                     row.insPack, row.insKb);
     if (!out.empty()) {
         if (FILE* f = std::fopen(out.c_str(), "wb")) {
             std::fprintf(f, "{\"width\":%u,\"height\":%u,\"iterations\":%d,\"device\":\"%s\",\"timestamps\":%s,\"scenes\":[", W, H, iters,
                          device.c_str(), timestamps ? "true" : "false");
             for (std::size_t i = 0; i < rows.size(); ++i)
-                std::fprintf(f, "%s{\"name\":\"%s\",\"cmds\":%zu,\"cpu_ms\":%.4f,\"gpu_ms\":%.4f,\"gpu_wall_ms\":%.4f,\"pack_ms\":%.4f,\"repack_ms\":%.4f}",
-                             i ? "," : "", rows[i].name.c_str(), rows[i].cmds, rows[i].cpu, rows[i].gpu, rows[i].gpuWall, rows[i].pack, rows[i].repack);
+                std::fprintf(f, "%s{\"name\":\"%s\",\"cmds\":%zu,\"cpu_ms\":%.4f,\"cpu_hdr_ms\":%.4f,\"gpu_ms\":%.4f,\"gpu_wall_ms\":%.4f,\"pack_ms\":%.4f,\"repack_ms\":%.4f}",
+                             i ? "," : "", rows[i].name.c_str(), rows[i].cmds, rows[i].cpu, rows[i].cpuHdr, rows[i].gpu, rows[i].gpuWall, rows[i].pack, rows[i].repack);
             std::fprintf(f, "]}\n");
             std::fclose(f);
         }

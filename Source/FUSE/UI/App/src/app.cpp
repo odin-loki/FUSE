@@ -239,6 +239,26 @@ bool AppWindow::presentHeadless(void*, AppWindow& w, Rect damage) {
     w.m_raster.render(w.pixelDrawList(), w.m_image, {f32(x0), f32(y0), f32(x1 - x0), f32(y1 - y0)});
     return true;
 }
+const HdrImage& AppWindow::rasterizeHdr(Rect damage, PixelFormat format) {
+    const Size px = pixelSize();
+    const int iw = int(px.w), ih = int(px.h);
+    const f32 s = m_scale;
+    const PixelFormat fmt = format == PixelFormat::Rgba32F ? PixelFormat::Rgba32F : PixelFormat::Rgba16F;
+    const bool full = m_hdrImage.width != iw || m_hdrImage.height != ih || m_hdrImage.format != fmt;
+    if (full) {
+        m_hdrImage.format = fmt;
+        m_hdrImage.resize(iw, ih);
+    }
+    m_raster.setGlyphAtlas(m_ui.atlas().pixels(), m_ui.atlas().size());
+    const Rect r = full || damage.empty() ? Rect{0.f, 0.f, f32(iw), f32(ih)}
+                                          : Rect{damage.x * s, damage.y * s, damage.w * s, damage.h * s};
+    const int x0 = std::max(0, int(std::floor(r.x))), y0 = std::max(0, int(std::floor(r.y)));
+    const int x1 = std::min(iw, int(std::ceil(r.x + r.w))), y1 = std::min(ih, int(std::ceil(r.y + r.h)));
+    for (int y = y0; y < y1; ++y)
+        std::fill_n(m_hdrImage.pixels.begin() + std::ptrdiff_t(y) * iw + x0, std::max(0, x1 - x0), PixelF{0.f, 0.f, 0.f, 1.f});
+    m_raster.render(pixelDrawList(), m_hdrImage, {f32(x0), f32(y0), f32(x1 - x0), f32(y1 - y0)});
+    return m_hdrImage;
+}
 bool writePng(const Image& img, const std::string& path) {
     if (img.width <= 0) return false;
     return stbi_write_png(path.c_str(), img.width, img.height, 4, img.pixels.data(), img.width * 4) != 0;

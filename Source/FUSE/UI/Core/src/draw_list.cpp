@@ -1,9 +1,11 @@
 #include "simd/box_blur.hpp"
 #include <algorithm>
 #include "fuse/ui/draw_list.hpp"
+#include "fuse/ui/color_space.hpp"
 
 #include <cmath>
 #include <cstring>
+#include <type_traits>
 
 namespace fuse::ui {
 
@@ -421,6 +423,78 @@ inline Px premul(Color c, f32 cov) {
     return {c.r * a, c.g * a, c.b * a, a};
 }
 
+/// Float target blend (ui_draw_list.glsl blend() under UI_HDR): source-over without quantisation, rgb kept >= 0
+/// (above 1 = brighter than SDR white), alpha clamped to [0, 1].
+inline void blend(PixelF& d, Px s) {
+    if (s.a <= 0.f && s.r <= 0.f && s.g <= 0.f && s.b <= 0.f) return;
+    const f32 inv = 1.f - s.a;
+    d = {std::max(s.r + d.r * inv, 0.f), std::max(s.g + d.g * inv, 0.f), std::max(s.b + d.b * inv, 0.f),
+         std::clamp(s.a + d.a * inv, 0.f, 1.f)};
+}
+// backdrop / layer helpers per target pixel: premultiplied 0..255 float in, and the store back (ui_backdrop.glsl)
+inline void load255(u32 p, f32* o) {
+    for (int k = 0; k < 4; ++k) o[k] = f32((p >> (8 * k)) & 0xFFu);
+}
+inline void load255(const PixelF& p, f32* o) {
+    o[0] = p.r * 255.f, o[1] = p.g * 255.f, o[2] = p.b * 255.f, o[3] = p.a * 255.f;
+}
+/// blurred backdrop `b` (0..255) mixed over the pixel by `cov`
+inline void backdropMix(u32& d, const f32* b, f32 cov) {
+    u32 o = 0;
+    for (int k = 0; k < 4; ++k) {
+        const f32 dv = f32((d >> (8 * k)) & 0xFFu);
+        o |= u32(std::clamp(std::lround(dv + (b[k] - dv) * cov), 0l, 255l)) << (8 * k);
+    }
+    d = o;
+}
+inline void backdropMix(PixelF& d, const f32* b, f32 cov) {
+    f32* v = &d.r;
+    for (int k = 0; k < 4; ++k) v[k] = std::max(v[k] + (b[k] / 255.f - v[k]) * cov, 0.f);
+    d.a = std::min(d.a, 1.f);
+}
+/// filtered layer `o` (0..255) over the saved pixel `u`, mixed by the clip coverage `cov` (> 0)
+inline u32 layerMix(u32 u, const f32* o, f32 cov) {
+    const f32 inv = 1.f - o[3] / 255.f;
+    u32 res = 0;
+    for (int k = 0; k < 4; ++k) {
+        const f32 bv = f32((u >> (8 * k)) & 0xFFu);
+        const f32 rv = o[k] + bv * inv;
+        const f32 m = bv + (rv - bv) * cov;
+        res |= u32(std::clamp(std::lround(m), 0l, 255l)) << (8 * k);
+    }
+    return res;
+}
+inline PixelF layerMix(const PixelF& under, const f32* o, f32 cov) {
+    const f32 inv = 1.f - o[3] / 255.f;
+    f32 u[4], res[4];
+    load255(under, u);
+    for (int k = 0; k < 4; ++k) {
+        const f32 rv = o[k] + u[k] * inv;
+        const f32 m = u[k] + (rv - u[k]) * cov;
+        res[k] = std::max(m / 255.f, 0.f);
+    }
+    return {res[0], res[1], res[2], std::min(res[3], 1.f)};
+}
+inline void storeSpan(u32* p, int n, u32 v) { simd::fillSpan(p, n, v); }
+inline void storeSpan(PixelF* p, int n, PixelF v) { std::fill_n(p, n, v); }
+/// Image texel at (sx, sy) blended by k (clip coverage x opacity)
+inline void imageTexel(u32& d, const Image& img, int sx, int sy, f32 k) {
+    const u32 s = img.at(sx, sy);
+    if (k >= 1.f && (s >> 24) == 255u) { d = s; return; } // opaque texel: blend() would store it
+    blend(d, {f32(s & 0xFF) / 255.f * k, f32((s >> 8) & 0xFF) / 255.f * k, f32((s >> 16) & 0xFF) / 255.f * k, f32(s >> 24) / 255.f * k});
+}
+inline void imageTexel(PixelF& d, const Image& img, int sx, int sy, f32 k) {
+    if (img.hasHdr()) { // RGBA16F premultiplied texels: values above 1 kept (ui_draw_list.glsl, ext 0x100)
+        const u64 h = img.hdrPixels[std::size_t(sy) * std::size_t(img.width) + std::size_t(sx)];
+        const f32 r = std::max(color::halfToFloat(u16(h)), 0.f), g = std::max(color::halfToFloat(u16(h >> 16)), 0.f),
+                  b = std::max(color::halfToFloat(u16(h >> 32)), 0.f), a = std::clamp(color::halfToFloat(u16(h >> 48)), 0.f, 1.f);
+        blend(d, {r * k, g * k, b * k, a * k});
+        return;
+    }
+    const u32 s = img.at(sx, sy);
+    blend(d, {f32(s & 0xFF) / 255.f * k, f32((s >> 8) & 0xFF) / 255.f * k, f32((s >> 16) & 0xFF) / 255.f * k, f32(s >> 24) / 255.f * k});
+}
+
 /// Gradient parameter of (px, py) across `r` (GradientKind); the GPU kernel has the same arithmetic.
 inline f32 gradientT(u8 kind, f32 px, f32 py, const Rect& r) {
     if (kind == kGradientVertical) return std::clamp((py - r.y) / std::max(r.h, 1.f), 0.f, 1.f);
@@ -539,7 +613,8 @@ namespace {
 // Backdrop blur, the reference: three box passes per axis (~Gaussian, sigma ~ blur / 2) over the pixels under the
 // rounded rect, sampled from a margin of `blur` around it (clamped to the target), then mixed in by coverage.
 // backdrop-filter colour matrix on one premultiplied 0..255 pixel (rows as GradientStops: colour = r g b a, offset)
-void filterPixel(const GradientStop* rows, const f32* b, f32* out) {
+// (hdr: the float target keeps rgb above 1, as ui_backdrop.glsl under UI_HDR)
+void filterPixel(const GradientStop* rows, const f32* b, f32* out, bool hdr) {
     const f32 a = b[3] / 255.f;
     f32 st[4] = {0.f, 0.f, 0.f, a};
     if (a > 0.f)
@@ -548,7 +623,7 @@ void filterPixel(const GradientStop* rows, const f32* b, f32* out) {
     for (int k = 0; k < 4; ++k) {
         const GradientStop& w = rows[k];
         const f32 v = w.color.r * st[0] + w.color.g * st[1] + w.color.b * st[2] + w.color.a * st[3] + w.offset;
-        res[k] = std::clamp(v, 0.f, 1.f);
+        res[k] = hdr && k < 3 ? std::max(v, 0.f) : std::clamp(v, 0.f, 1.f);
     }
     for (int k = 0; k < 3; ++k) out[k] = res[k] * res[3] * 255.f;
     out[3] = res[3] * 255.f;
@@ -586,11 +661,11 @@ FilterData filterData(const DrawCmd& c, const GradientStop* stops, std::size_t n
     return f;
 }
 /// matrix over every pixel of the box; with a shadow, `plane` = the filtered box blurred by the shadow radius
-void applyFilterBox(const FilterData& f, std::vector<f32>& buf, std::vector<f32>& plane, std::vector<f32>& tmp, int w, int h) {
+void applyFilterBox(const FilterData& f, std::vector<f32>& buf, std::vector<f32>& plane, std::vector<f32>& tmp, int w, int h, bool hdr) {
     if (!f.rows) return;
     for (std::size_t i = 0; i < buf.size(); i += 4) {
         f32 o[4];
-        filterPixel(f.rows, &buf[i], o);
+        filterPixel(f.rows, &buf[i], o, hdr);
         std::memcpy(&buf[i], o, 16);
     }
     if (!f.shadow) return;
@@ -607,7 +682,8 @@ void withShadow(const FilterData& f, const std::vector<f32>& plane, int x, int y
     for (int k = 0; k < 4; ++k) b[k] = b[k] + S[k] * inv;
 }
 // Clip paths active at the backdrop (DrawOp::ClipPath / pushClipLayers) multiply its coverage like any other command.
-void backdropBlur(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& target, const PathEdge* edges = nullptr,
+template <class T>
+void backdropBlur(const DrawCmd& c, const Rect& clipR, f32 clipRadius, T& target, const PathEdge* edges = nullptr,
                   const ClipPathRef* paths = nullptr, u8 pathCount = 0, const GradientStop* filterRows = nullptr,
                   std::size_t filterRowCount = 0) {
     const Rect area = c.rect.intersect(clipR).intersect({0.f, 0.f, f32(target.width), f32(target.height)});
@@ -621,15 +697,14 @@ void backdropBlur(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& ta
     const int w = sx1 - sx0, h = sy1 - sy0;
     std::vector<f32> buf(std::size_t(w) * std::size_t(h) * 4), tmp(buf.size());
     for (int y = 0; y < h; ++y)
-        for (int x = 0; x < w; ++x) {
-            const u32 p = target.pixels[std::size_t(sy0 + y) * std::size_t(target.width) + std::size_t(sx0 + x)];
-            for (int k = 0; k < 4; ++k) buf[(std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4 + std::size_t(k)] = f32((p >> (8 * k)) & 0xFFu);
-        }
+        for (int x = 0; x < w; ++x)
+            load255(target.pixels[std::size_t(sy0 + y) * std::size_t(target.width) + std::size_t(sx0 + x)],
+                    &buf[(std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4]);
     boxBlur3(buf, tmp, w, h, r);
     // colour matrix over the whole source box, then the drop shadow plane (ui_backdrop.glsl modes 5 and 3)
     const FilterData fd = filterData(c, filterRows, filterRowCount);
     std::vector<f32> plane;
-    applyFilterBox(fd, buf, plane, tmp, w, h);
+    applyFilterBox(fd, buf, plane, tmp, w, h, std::is_same_v<std::decay_t<decltype(target.pixels[0])>, PixelF>);
     const std::array<f32, 4> clipRad{clipRadius, clipRadius, clipRadius, clipRadius};
     for (int y = y0; y < y1; ++y)
         for (int x = x0; x < x1; ++x) {
@@ -638,16 +713,11 @@ void backdropBlur(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& ta
             if (clipRadius > 0.f) cov *= std::clamp(0.5f - sdRoundRect(px, py, clipR, clipRad), 0.f, 1.f);
             for (u8 q = 0; q < pathCount && cov > 0.f; ++q) cov *= clipEntryCoverage(edges + paths[q].at, paths[q].n, px, py, paths[q].evenOdd);
             if (cov <= 0.f) continue;
-            u32& d = target.pixels[std::size_t(y) * std::size_t(target.width) + std::size_t(x)];
+            auto& d = target.pixels[std::size_t(y) * std::size_t(target.width) + std::size_t(x)];
             f32 b[4];
             std::memcpy(b, &buf[(std::size_t(y - sy0) * std::size_t(w) + std::size_t(x - sx0)) * 4], 16);
             if (fd.shadow) withShadow(fd, plane, x - sx0, y - sy0, w, h, b);
-            u32 o = 0;
-            for (int k = 0; k < 4; ++k) {
-                const f32 dv = f32((d >> (8 * k)) & 0xFFu);
-                o |= u32(std::clamp(std::lround(dv + (b[k] - dv) * cov), 0l, 255l)) << (8 * k);
-            }
-            d = o;
+            backdropMix(d, b, cov);
             if (c.fill.a > 0.f) blend(d, premul(c.fill, cov));
         }
 }
@@ -680,7 +750,7 @@ void boxPassV(const f32* in, f32* out, int w, int h, int r, f32 inv) {
         }
     }
 }
-void runFilterProgram(const GradientStop* prog, std::vector<f32>& plane0, int w, int h) {
+void runFilterProgram(const GradientStop* prog, std::vector<f32>& plane0, int w, int h, bool hdr) {
     const int K = int(prog[0].offset), P = std::clamp(int(prog[0].color.r), 2, 32);
     const std::size_t n = std::size_t(w) * std::size_t(h) * 4;
     std::vector<std::vector<f32>> pl;
@@ -724,7 +794,7 @@ void runFilterProgram(const GradientStop* prog, std::vector<f32>& plane0, int w,
                 const f32* b = B + q;
                 f32 r[4];
                 if (kind == FeOp::Matrix) {
-                    filterPixel(op + 1, a, r);
+                    filterPixel(op + 1, a, r, hdr);
                 } else if (kind == FeOp::Flood) {
                     const f32 al = prm(3);
                     r[0] = prm(0) * al * 255.f, r[1] = prm(1) * al * 255.f, r[2] = prm(2) * al * 255.f, r[3] = al * 255.f;
@@ -778,11 +848,13 @@ void runFilterProgram(const GradientStop* prog, std::vector<f32>& plane0, int w,
 }
 
 /// An open CSS filter layer (PushFilter): its pixel box and the pixels it covered (restored under the result).
+template <class P>
 struct Layer {
     int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
-    std::vector<u32> under;
+    std::vector<P> under;
 };
-void layerBegin(const DrawCmd& c, const Rect& clipR, Image& target, Layer& L) {
+template <class T, class P>
+void layerBegin(const DrawCmd& c, const Rect& clipR, T& target, Layer<P>& L) {
     const Rect area = c.rect.intersect(clipR).intersect({0.f, 0.f, f32(target.width), f32(target.height)});
     L = {};
     if (area.empty()) return;
@@ -791,31 +863,32 @@ void layerBegin(const DrawCmd& c, const Rect& clipR, Image& target, Layer& L) {
     L.under.resize(std::size_t(L.x1 - L.x0) * std::size_t(L.y1 - L.y0));
     for (int y = L.y0; y < L.y1; ++y)
         for (int x = L.x0; x < L.x1; ++x) {
-            u32& d = target.pixels[std::size_t(y) * std::size_t(target.width) + std::size_t(x)];
+            P& d = target.pixels[std::size_t(y) * std::size_t(target.width) + std::size_t(x)];
             L.under[std::size_t(y - L.y0) * std::size_t(L.x1 - L.x0) + std::size_t(x - L.x0)] = d;
-            d = 0u;
+            d = P{};
         }
 }
 // ui_backdrop.glsl modes 0, 1 / 2, 5, 6: the layer as float, blurred, filtered, shadowed, then over the saved pixels
 // (mixed by the clip coverage: outside the clip the saved pixel comes back unchanged)
-void layerEnd(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& target, const Layer& L, const PathEdge* edges,
+template <class T, class P>
+void layerEnd(const DrawCmd& c, const Rect& clipR, f32 clipRadius, T& target, const Layer<P>& L, const PathEdge* edges,
               const ClipPathRef* paths, u8 pathCount, const GradientStop* filterRows, std::size_t filterRowCount) {
     const int w = L.x1 - L.x0, h = L.y1 - L.y0;
     if (w <= 0 || h <= 0) return;
     std::vector<f32> buf(std::size_t(w) * std::size_t(h) * 4), tmp(buf.size()), plane;
     for (int y = 0; y < h; ++y)
-        for (int x = 0; x < w; ++x) {
-            const u32 p = target.pixels[std::size_t(L.y0 + y) * std::size_t(target.width) + std::size_t(L.x0 + x)];
-            for (int k = 0; k < 4; ++k) buf[(std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4 + std::size_t(k)] = f32((p >> (8 * k)) & 0xFFu);
-        }
+        for (int x = 0; x < w; ++x)
+            load255(target.pixels[std::size_t(L.y0 + y) * std::size_t(target.width) + std::size_t(L.x0 + x)],
+                    &buf[(std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4]);
+    constexpr bool hdr = std::is_same_v<P, PixelF>;
     FilterData fd{};
     if (isFilterProgram(c) && filterRows && std::size_t(c.stops) + c.stopCount <= filterRowCount) {
-        runFilterProgram(filterRows + c.stops, buf, w, h);
+        runFilterProgram(filterRows + c.stops, buf, w, h, hdr);
     } else {
         const int r = c.blur > 0.f ? std::max(1, int(std::lround(c.blur / 3.f))) : 0;
         boxBlur3(buf, tmp, w, h, r);
         fd = filterData(c, filterRows, filterRowCount);
-        applyFilterBox(fd, buf, plane, tmp, w, h);
+        applyFilterBox(fd, buf, plane, tmp, w, h, hdr);
     }
     const std::array<f32, 4> clipRad{clipRadius, clipRadius, clipRadius, clipRadius};
     const bool chained = c.v != 0; // inner layer of a chain: the outermost applies the clip coverage
@@ -826,27 +899,21 @@ void layerEnd(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& target
             if (!chained && clipRadius > 0.f) cov *= std::clamp(0.5f - sdRoundRect(px, py, clipR, clipRad), 0.f, 1.f);
             for (u8 q = 0; q < (chained ? 0 : pathCount) && cov > 0.f; ++q) cov *= clipEntryCoverage(edges + paths[q].at, paths[q].n, px, py, paths[q].evenOdd);
             const std::size_t i = std::size_t(y) * std::size_t(w) + std::size_t(x);
-            u32& d = target.pixels[std::size_t(L.y0 + y) * std::size_t(target.width) + std::size_t(L.x0 + x)];
-            const u32 u = L.under[i];
+            P& d = target.pixels[std::size_t(L.y0 + y) * std::size_t(target.width) + std::size_t(L.x0 + x)];
+            const P& u = L.under[i];
             if (cov <= 0.f) { d = u; continue; }
             f32 o[4];
             std::memcpy(o, &buf[i * 4], 16);
             if (fd.shadow) withShadow(fd, plane, x, y, w, h, o);
-            const f32 inv = 1.f - o[3] / 255.f;
-            u32 res = 0;
-            for (int k = 0; k < 4; ++k) {
-                const f32 bv = f32((u >> (8 * k)) & 0xFFu);
-                const f32 rv = o[k] + bv * inv;
-                const f32 m = bv + (rv - bv) * cov;
-                res |= u32(std::clamp(std::lround(m), 0l, 255l)) << (8 * k);
-            }
-            d = res;
+            d = layerMix(u, o, cov);
         }
 }
-} // namespace
 
-void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) const {
-    if (target.width <= 0 || target.height <= 0) return;
+// The rasteriser over one target pixel type (u32 RGBA8 or PixelF); every per-pixel store goes through the overloads
+// above, so the RGBA8 instantiation is the 8-bit path unchanged.
+template <class T>
+void rasterize(const u8* m_atlas, int m_atlasSize, const std::vector<const Image*>& m_images, const DrawList& list, T& target, Rect scissor) {
+    using P = typename decltype(T::pixels)::value_type;
     Rect full{0.f, 0.f, f32(target.width), f32(target.height)};
     if (scissor.empty()) scissor = full;
     scissor = scissor.intersect(full);
@@ -857,7 +924,7 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
     stack[0] = {scissor, 0.f, 0};
     std::vector<u32> partner;
     matchFilters(list, partner);
-    std::vector<Layer> layers;
+    std::vector<Layer<P>> layers;
     for (std::size_t ci = 0; ci < list.cmds().size(); ++ci) {
         const DrawCmd& c = list.cmds()[ci];
         const Clip& clip = stack[depth];
@@ -920,7 +987,7 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
             const int gx0 = std::max(x0, ox), gx1 = std::min(x1, ox + int(c.tw));
             const int gy0 = std::max(y0, oy), gy1 = std::min(y1, oy + int(c.th));
             for (int y = gy0; y < gy1; ++y) {
-                u32* row = target.pixels.data() + std::size_t(y) * std::size_t(target.width);
+                P* row = target.pixels.data() + std::size_t(y) * std::size_t(target.width);
                 const u8* src = m_atlas + std::size_t(c.v + (y - oy)) * std::size_t(m_atlasSize) + std::size_t(c.u);
                 for (int x = gx0; x < gx1; ++x)
                     if (const u8 a = src[x - ox]) blend(row[x], premul(c.fill, f32(a) / 255.f * 1.f));
@@ -932,18 +999,16 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
         // fast path: the interior of an opaque, ungraded rect (pixel centres at least max radius + border + 0.5 inside
         // every edge have full coverage) is a plain store of the packed fill (same bytes blend() would produce)
         int ix0 = 0, ix1 = 0, iy0 = 0, iy1 = 0;
-        u32 solid = 0;
+        P solid{};
         if (c.op == DrawOp::Rect && !c.gradient && c.fill.a >= 1.f && clip.radius <= 0.f && clip.paths == 0) {
             const f32 m = std::max({c.radius[0], c.radius[1], c.radius[2], c.radius[3], 0.f}) +
                           (c.borderWidth > 0.f && c.border.a > 0.f ? c.borderWidth : 0.f) + 0.5f;
             ix0 = int(std::ceil(c.rect.x + m - 0.5f)), ix1 = int(std::floor(c.rect.right() - m - 0.5f)) + 1;
             iy0 = int(std::ceil(c.rect.y + m - 0.5f)), iy1 = int(std::floor(c.rect.bottom() - m - 0.5f)) + 1;
-            u32 probe = 0;
-            blend(probe, premul(c.fill, 1.f));
-            solid = probe;
+            blend(solid, premul(c.fill, 1.f));
         }
         for (int y = y0; y < y1; ++y) {
-            u32* row = target.pixels.data() + std::size_t(y) * std::size_t(target.width);
+            P* row = target.pixels.data() + std::size_t(y) * std::size_t(target.width);
             if (c.op == DrawOp::Path) {
                 // scanline edge list: only edges that can affect this row's winding sub-samples, or whose stroke
                 // distance can reach it (farther stroke edges cannot change a non-zero coverage), so bit-exact
@@ -967,7 +1032,7 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
             }
             const bool solidRow = y >= iy0 && y < iy1;
             const int sa = std::max(x0, ix0), sb = std::min(x1, ix1);
-            if (solidRow && sa < sb) simd::fillSpan(row + sa, sb - sa, solid);
+            if (solidRow && sa < sb) storeSpan(row + sa, sb - sa, solid);
             for (int x = x0; x < x1; ++x) {
                 if (solidRow && x >= ix0 && x < ix1) {
                     x = ix1 - 1; // span stored above
@@ -1019,11 +1084,7 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
                     const Image& img = *m_images[c.image];
                     const int sx = std::clamp(int((px - c.rect.x) / c.rect.w * f32(img.width)), 0, img.width - 1);
                     const int sy = std::clamp(int((py - c.rect.y) / c.rect.h * f32(img.height)), 0, img.height - 1);
-                    const u32 s = img.at(sx, sy);
-                    const f32 k = clipCov * (c.fill.a > 0.f ? c.fill.a : 1.f);
-                    if (k >= 1.f && (s >> 24) == 255u) { row[x] = s; break; } // opaque texel: blend() would store it
-                    blend(row[x], {f32(s & 0xFF) / 255.f * k, f32((s >> 8) & 0xFF) / 255.f * k,
-                                   f32((s >> 16) & 0xFF) / 255.f * k, f32(s >> 24) / 255.f * k});
+                    imageTexel(row[x], img, sx, sy, clipCov * (c.fill.a > 0.f ? c.fill.a : 1.f));
                     break;
                 }
                 case DrawOp::Line: {
@@ -1059,6 +1120,42 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
                 }
             }
         }
+    }
+}
+} // namespace
+
+void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) const {
+    if (target.width <= 0 || target.height <= 0) return;
+    rasterize(m_atlas, m_atlasSize, m_images, list, target, scissor);
+}
+
+void CpuRasterizer::render(const DrawList& list, HdrImage& target, Rect scissor) const {
+    if (target.width <= 0 || target.height <= 0 || target.pixels.size() != std::size_t(target.width) * std::size_t(target.height)) return;
+    rasterize(m_atlas, m_atlasSize, m_images, list, target, scissor);
+    if (target.format != PixelFormat::Rgba16F) return;
+    // RGBA16F storage: what was drawn rounded to binary16 (the GPU HDR canvas stores each pass that way)
+    Rect full{0.f, 0.f, f32(target.width), f32(target.height)};
+    const Rect r = scissor.empty() ? full : scissor.intersect(full);
+    const int x0 = int(std::floor(r.x)), y0 = int(std::floor(r.y)), x1 = int(std::ceil(r.right())), y1 = int(std::ceil(r.bottom()));
+    for (int y = y0; y < y1; ++y) {
+        f32* v = &target.pixels[std::size_t(y) * std::size_t(target.width) + std::size_t(x0)].r;
+        for (std::size_t i = 0, n = std::size_t(std::max(0, x1 - x0)) * 4; i < n; ++i) v[i] = color::quantizeHalf(v[i]);
+    }
+}
+
+void HdrImage::packHalfRow(int y, int x0, int x1, u64* out) const {
+    const PixelF* p = pixels.data() + std::size_t(y) * std::size_t(width);
+    for (int x = x0; x < x1; ++x)
+        *out++ = u64(color::floatToHalf(p[x].r)) | (u64(color::floatToHalf(p[x].g)) << 16) |
+                 (u64(color::floatToHalf(p[x].b)) << 32) | (u64(color::floatToHalf(p[x].a)) << 48);
+}
+
+void HdrImage::toRgba8(Image& out) const {
+    out.resize(width, height);
+    auto q = [](f32 v) { return u32(std::clamp(v, 0.f, 1.f) * 255.f + 0.5f); };
+    for (std::size_t i = 0; i < pixels.size(); ++i) {
+        const PixelF& p = pixels[i];
+        out.pixels[i] = q(p.r) | (q(p.g) << 8) | (q(p.b) << 16) | (q(p.a) << 24);
     }
 }
 

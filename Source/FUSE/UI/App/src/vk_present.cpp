@@ -50,8 +50,8 @@ typedef unsigned long VisualID;
 #define FUSE_APP_VOLK(x)
 #endif
 
-#if defined(FUSE_APP_HAS_UI_VK)
 #include "fuse/ui/color_space.hpp"
+#if defined(FUSE_APP_HAS_UI_VK)
 #include "fuse/ui/os.hpp"
 #include "fuse/ui/render/gpu_draw_data.hpp"
 #include "fuse/ui/render/ui_vk.hpp"
@@ -520,7 +520,9 @@ struct VkWin {
 #if defined(FUSE_APP_HAS_UI_VK)
         if ((space == OutputColorSpace::Hdr10 || space == OutputColorSpace::ScRgb) && gpuEncode) {
             // HDR content: a float canvas when the draw kernel has its RGBA16F variant and the encoder its float source
-            const bool hdrCanvas = opts.hdrContent && gpuDraw && gpu.hdrTargetAvailable() &&
+            // (GPU draw: ui_draw_list_hdr; CPU upload: the float CPU raster, packed to RGBA16F rows)
+            const bool hdrCanvas = opts.hdrContent && opts.canvasFormat != CanvasFormat::Rgba8 &&
+                                   (!gpuDraw || gpu.hdrTargetAvailable()) &&
                                    fuse::ui::render::UiVkEncoder::kernelAvailable(encMode, true);
             if (!encoder.valid() || encoder.mode() != encMode || encoder.hdrSource() != hdrCanvas)
                 encoder.init(ctx->device, encMode, kFrames, hdrCanvas);
@@ -653,7 +655,7 @@ struct VkWin {
         canvasFresh = true;
         outputFresh = true;
         if (!gpuDraw) {
-            uploadSize = VkDeviceSize(extent.width) * extent.height * 4;
+            uploadSize = VkDeviceSize(extent.width) * extent.height * (canvasHdr ? 8 : 4);
             for (u32 i = 0; i < kFrames; ++i) {
                 VkBufferCreateInfo bi{};
                 bi.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -864,7 +866,14 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
         if (!w->gpu.upload(f, w->data)) return false;
     }
 #endif
-    if (!w->gpuDraw) {
+    if (!w->gpuDraw && w->canvasHdr) { // float CPU raster -> RGBA16F canvas rows
+        const fuse::ui::HdrImage& img = win.rasterizeHdr(full ? Rect{} : damage, w->opts.canvasFormat == CanvasFormat::Rgba32F
+                                                                                    ? fuse::ui::PixelFormat::Rgba32F
+                                                                                    : fuse::ui::PixelFormat::Rgba16F);
+        if (img.width != int(W) || img.height != int(H)) return false;
+        for (int y = y0; y < y1; ++y)
+            img.packHalfRow(y, x0, x1, reinterpret_cast<u64*>(w->uploadPtr[f] + (std::size_t(y) * W + x0) * 8));
+    } else if (!w->gpuDraw) {
         const Image& img = win.rasterize(full ? Rect{} : damage); // logical damage; rasterize() scales it
         if (img.width != int(W) || img.height != int(H)) return false;
         for (int y = y0; y < y1; ++y) {
@@ -928,7 +937,7 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
 #endif
     } else {
         VkBufferImageCopy cp{};
-        cp.bufferOffset = (VkDeviceSize(y0) * W + VkDeviceSize(x0)) * 4;
+        cp.bufferOffset = (VkDeviceSize(y0) * W + VkDeviceSize(x0)) * (w->canvasHdr ? 8 : 4);
         cp.bufferRowLength = W;
         cp.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
         cp.imageOffset = {x0, y0, 0};
@@ -1007,7 +1016,7 @@ bool vkWinReadback(VkWin* w, Image& out) {
     const u32 W = w->extent.width, H = w->extent.height;
     VkBufferCreateInfo bi{};
     bi.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bi.size = VkDeviceSize(W) * H * 4;
+    bi.size = VkDeviceSize(W) * H * (w->canvasHdr ? 8 : 4); // RGBA16F HDR canvas: 8 bytes a pixel
     bi.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     VkBuffer buf = VK_NULL_HANDLE;
     VkDeviceMemory mem = VK_NULL_HANDLE;
@@ -1048,8 +1057,16 @@ bool vkWinReadback(VkWin* w, Image& out) {
     void* p = nullptr;
     if (good && vkMapMemory(c.device, mem, 0, bi.size, 0, &p) == VK_SUCCESS) {
         out.resize(int(W), int(H));
-        std::memcpy(out.pixels.data(), p, std::size_t(bi.size));
-        for (u32& px : out.pixels) px |= 0xFF000000u;
+        if (w->canvasHdr) { // SDR view of the float canvas: clamp at SDR white, quantise
+            const u16* hp = static_cast<const u16*>(p);
+            auto q = [](f32 v) { return u32(std::clamp(v, 0.f, 1.f) * 255.f + 0.5f); };
+            for (std::size_t i = 0; i < out.pixels.size(); ++i, hp += 4)
+                out.pixels[i] = q(fuse::ui::color::halfToFloat(hp[0])) | (q(fuse::ui::color::halfToFloat(hp[1])) << 8) |
+                                (q(fuse::ui::color::halfToFloat(hp[2])) << 16) | 0xFF000000u;
+        } else {
+            std::memcpy(out.pixels.data(), p, std::size_t(bi.size));
+            for (u32& px : out.pixels) px |= 0xFF000000u;
+        }
         vkUnmapMemory(c.device, mem);
     } else {
         good = false;

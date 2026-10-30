@@ -124,24 +124,51 @@ inline Color hdrNits(Color c, f32 nits, f32 sdrWhiteNits = 203.f) { return hdr(c
 /// Linear-light brightness of an extended-range colour relative to SDR white (1 = SDR white).
 inline f32 hdrBrightness(Color c) { return luminance(c); }
 
+/// f32 -> IEEE binary16 bits, round-to-nearest-even (finite range; NaN -> 0, overflow -> inf).
+inline u16 floatToHalf(f32 f) {
+    if (!(f == f)) return 0;
+    u32 x;
+    std::memcpy(&x, &f, 4);
+    const u32 sign = (x >> 16) & 0x8000u;
+    x &= 0x7FFFFFFFu;
+    if (x >= 0x47800000u) return u16(sign | 0x7C00u);
+    if (x < 0x38800000u) { // subnormal / zero
+        const f32 v = std::ldexp(std::abs(f), 24);
+        return u16(sign | u32(std::nearbyint(v)));
+    }
+    const u32 r = x - 0x38000000u; // rebias exponent 127 -> 15
+    return u16(sign | ((r + 0x0FFFu + ((r >> 13) & 1u)) >> 13));
+}
+/// IEEE binary16 bits -> f32 (exact).
+inline f32 halfToFloat(u16 h) {
+    const u32 s = u32(h & 0x8000u) << 16, e = (h >> 10) & 31u, m = h & 1023u;
+    u32 x;
+    if (e == 0) {
+        const f32 v = f32(m) * 5.9604645e-8f; // 2^-24: subnormal / zero
+        return s ? -v : v;
+    }
+    if (e == 31u) x = s | 0x7F800000u | (m << 13);
+    else x = s | (((h & 0x7FFFu) + 0x1C000u) << 13); // rebias exponent 15 -> 127
+    f32 v;
+    std::memcpy(&v, &x, 4);
+    return v;
+}
+/// `f` rounded to the nearest binary16 value, as f32: halfToFloat(floatToHalf(f)) (one rounding step on the bits in
+/// the normal half range).
+inline f32 quantizeHalf(f32 f) {
+    u32 x;
+    std::memcpy(&x, &f, 4);
+    const u32 a = x & 0x7FFFFFFFu;
+    if (a < 0x38800000u || a >= 0x477FE000u) return halfToFloat(floatToHalf(f)); // subnormal, overflow, inf / NaN
+    x = (x + 0x0FFFu + ((x >> 13) & 1u)) & ~0x1FFFu;
+    std::memcpy(&f, &x, 4);
+    return f;
+}
 /// One Image::hdrPixels texel: an extended-range colour (e.g. from hdr()) premultiplied and packed as RGBA16F.
 inline u64 packHdrPixel(Color c) {
-    const auto half = [](f32 f) -> u64 { // round-to-nearest-even binary16 (finite range; NaN -> 0, overflow -> inf)
-        if (!(f == f)) return 0;
-        u32 x;
-        std::memcpy(&x, &f, 4);
-        const u32 sign = (x >> 16) & 0x8000u;
-        x &= 0x7FFFFFFFu;
-        if (x >= 0x47800000u) return sign | 0x7C00u;
-        if (x < 0x38800000u) { // subnormal / zero
-            const f32 v = std::ldexp(std::abs(f), 24);
-            return sign | u32(std::nearbyint(v));
-        }
-        const u32 r = x - 0x38000000u; // rebias exponent 127 -> 15
-        return sign | ((r + 0x0FFFu + ((r >> 13) & 1u)) >> 13);
-    };
     const f32 a = std::clamp(c.a, 0.f, 1.f);
-    return half(c.r * a) | (half(c.g * a) << 16) | (half(c.b * a) << 32) | (half(a) << 48);
+    return u64(floatToHalf(c.r * a)) | (u64(floatToHalf(c.g * a)) << 16) | (u64(floatToHalf(c.b * a)) << 32) |
+           (u64(floatToHalf(a)) << 48);
 }
 
 /// An SDR sRGB colour as an HDR10 (Rec.2020 primaries, PQ) signal, with SDR white mapped to `sdrWhiteNits`.

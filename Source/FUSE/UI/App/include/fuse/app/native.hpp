@@ -32,6 +32,13 @@ enum class VkDrawMode : fuse::ui::u8 {
     GpuDraw,   ///< fuse_ui_vk "ui.draw_list" kernel renders the draw list on the GPU
     CpuUpload, ///< CPU raster of the damaged region, uploaded and blitted
 };
+/// Canvas precision of a window presented through Vulkan (NativeOptions::canvasFormat).
+enum class CanvasFormat : fuse::ui::u8 {
+    Auto,    ///< float (Rgba16F) when HDR content is granted (hdrContent, Hdr10 / ScRgb output, GPU encoder), else Rgba8
+    Rgba8,   ///< always 8-bit SDR content (HDR colours clip at SDR white)
+    Rgba16F, ///< as Auto; the CPU upload path rasterises in float rounded to binary16 per frame (= the GPU HDR canvas)
+    Rgba32F, ///< as Auto; the CPU upload path keeps its raster in f32 (rounded to the RGBA16F canvas only on upload)
+};
 /// Raw Vulkan handles (VkInstance / VkPhysicalDevice / VkDevice / VkQueue). As NativeOptions::adoptDevice the
 /// presenter runs on this device instead of creating its own (the instance needs VK_KHR_surface + the platform surface
 /// extension, the device VK_KHR_swapchain, the queue graphics or compute + present): GPU images of the same device
@@ -67,9 +74,12 @@ struct NativeOptions {
     VkDrawMode drawMode = VkDrawMode::Auto;
     bool vsync = true;             ///< FIFO (true) or MAILBOX / IMMEDIATE when available
     OutputColorSpace colorSpace = OutputColorSpace::Srgb; ///< needs VK_EXT_swapchain_colorspace for non-sRGB
-    /// Hdr10 / ScRgb with GPU draw and the GPU encoder: draw into an RGBA16F canvas so colours brighter than SDR white
+    /// Hdr10 / ScRgb with the GPU encoder (GPU draw or CPU upload): draw into an RGBA16F canvas so colours brighter than SDR white
     /// (color::hdr / hdrNits, components above 1) reach the display; otherwise the canvas is 8-bit SDR content.
     bool hdrContent = true;
+    /// Rgba8 forces SDR content; Auto / Rgba16F / Rgba32F take the float canvas when HDR content is granted, on the GPU
+    /// draw path (ui_draw_list_hdr) and the CPU upload path (CpuRasterizer::render into an HdrImage) alike.
+    CanvasFormat canvasFormat = CanvasFormat::Auto;
     f32 sdrWhiteNits = 203.f;      ///< Hdr10: luminance of sRGB white (ITU-R BT.2408 reference white)
     f32 hdrMaxNits = 1000.f;       ///< Hdr10: mastering peak / MaxCLL sent as HDR metadata (VK_EXT_hdr_metadata, DXGI, Wayland)
     /// Popup menus / combo lists / submenus as their own borderless OS windows (Qt-style; may extend past the main

@@ -326,6 +326,33 @@ struct Image {
 /// Packs a straight colour to premultiplied RGBA8.
 u32 packPremultiplied(Color c);
 
+/// CPU raster target precision: Rgba8 is Image; the float formats are HdrImage.
+enum class PixelFormat : u8 { Rgba8, Rgba16F, Rgba32F };
+
+/// One premultiplied float pixel of an HdrImage (extended-range sRGB-encoded, 1.0 = SDR white; rgb may exceed 1).
+struct PixelF {
+    f32 r = 0.f, g = 0.f, b = 0.f, a = 0.f;
+};
+
+/// Float CPU raster target (the CPU counterpart of the GPU HDR canvas, UiVkRenderer::setTargetHdr): blends in float
+/// without 8-bit rounding and keeps colours above SDR white (color::hdr, Image::hdrPixels). Pixels are held as f32;
+/// with `format` Rgba16F, CpuRasterizer::render rounds what it drew to binary16 (what an RGBA16F canvas stores).
+struct HdrImage {
+    int width = 0, height = 0;
+    PixelFormat format = PixelFormat::Rgba32F;
+    std::vector<PixelF> pixels;
+    void resize(int w, int h, PixelF clear = {0.f, 0.f, 0.f, 1.f}) {
+        width = w;
+        height = h;
+        pixels.assign(std::size_t(w) * std::size_t(h), clear);
+    }
+    const PixelF& at(int x, int y) const { return pixels[std::size_t(y) * std::size_t(width) + std::size_t(x)]; }
+    /// Pixels [x0, x1) of row y as RGBA16F (r | g << 16 | b << 32 | a << 48), e.g. for an RGBA16F canvas upload.
+    void packHalfRow(int y, int x0, int x1, u64* out) const;
+    /// Quantises the box to 8-bit premultiplied (as the 8-bit path stores: clamp to [0, 1], round) into `out`.
+    void toRgba8(Image& out) const;
+};
+
 /// Logical units -> physical pixels (HiDPI / fractional scaling): every rect (Line endpoints included), radius,
 /// border width and blur multiplied by `scale`. Glyphs are snapped to whole pixels and keep their texel size, so
 /// text stays crisp when UiContext::setPixelScale(scale) rasterised it at the physical size.
@@ -342,6 +369,10 @@ public:
     u32 addImage(const Image* img);
     /// Rasterises `list` over `target` (blending onto existing pixels) restricted to `scissor` (whole target when empty).
     void render(const DrawList& list, Image& target, Rect scissor = {}) const;
+    /// Float raster (HDR): same coverage, blur, gradients, images and text as the 8-bit render, blended in float like
+    /// ui_draw_list_hdr / ui_backdrop_hdr (rgb >= 0, alpha in [0, 1], no per-blend quantisation). Images with
+    /// hdrPixels draw those; others their 8-bit pixels.
+    void render(const DrawList& list, HdrImage& target, Rect scissor = {}) const;
     /// The registered images, by index (what packDrawList needs for the GPU path).
     const Image* const* images() const { return m_images.data(); }
     u32 imageCount() const { return u32(m_images.size()); }

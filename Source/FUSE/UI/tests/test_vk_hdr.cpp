@@ -3,6 +3,7 @@
 // blend, so it may differ by a code or two); color::hdr colours keep their extended values above 1.0; and the
 // float-source encoder (ui_encode_pq_hdr) turns them into PQ codes brighter than SDR white. Skips (77) without Vulkan.
 #include "fuse/ui/color_space.hpp"
+#include "hdr_scene.hpp"
 #include "fuse/ui/render/ui_vk.hpp"
 #include "test_util.hpp"
 #include "vk_headless.hpp"
@@ -44,6 +45,25 @@ void compareSdr(const char* what, const Image& cpu, const std::vector<u16>& gpu)
     std::printf("%-10s max err %d, >1 on %zu / %zu\n", what, maxErr, over1, cpu.pixels.size());
     UI_CHECK(maxErr <= 3);
     UI_CHECK(double(over1) < 0.005 * double(cpu.pixels.size()));
+}
+/// float CPU raster (HdrImage, Rgba16F) vs the GPU HDR target: per component |cpu - gpu| relative to max(|gpu|, 1/64)
+void compareHdr(const char* what, const HdrImage& cpu, const std::vector<u16>& gpu) {
+    f32 worst = 0.f;
+    std::size_t over = 0, wx = 0;
+    for (std::size_t i = 0; i < cpu.pixels.size(); ++i) {
+        const f32* c = &cpu.pixels[i].r;
+        f32 m = 0.f;
+        for (int k = 0; k < 4; ++k) {
+            const f32 g = halfToFloat(gpu[i * 4 + std::size_t(k)]);
+            m = std::max(m, std::abs(c[k] - g) / std::max(std::abs(g), 1.f / 64.f));
+        }
+        if (m > worst) worst = m, wx = i;
+        over += m > 4e-3f ? 1 : 0;
+    }
+    std::printf("%-10s float parity: worst rel %.5f at (%zu, %zu), >0.4%% on %zu / %zu\n", what, double(worst), wx % std::size_t(cpu.width),
+                wx / std::size_t(cpu.width), over, cpu.pixels.size());
+    UI_CHECK_EQ(over, std::size_t(0)); // within binary16 rounding (2^-10 relative) of each other
+    UI_CHECK(worst < 4e-3f);
 }
 } // namespace
 
@@ -305,6 +325,39 @@ int main() {
         std::printf("img-hdr   half image 2.5 -> %.4f, at 50%% %.4f\n", double(v), double(h));
         UI_CHECK(std::abs(v - 2.5f) < 2e-3f);
         UI_CHECK(std::abs(h - 1.25f) < 2e-3f);
+    }
+    // 6. float CPU raster parity: the same lists through CpuRasterizer::render(HdrImage) (Rgba16F) and the HDR kernel
+    {
+        UiContext ui({.viewport = {f32(W), f32(H)}, .font = &font()});
+        widgets::install(ui);
+        buildSample(ui);
+        ui.update();
+        HdrImage cpu;
+        cpu.format = PixelFormat::Rgba16F;
+        cpu.resize(int(W), int(H));
+        CpuRasterizer r;
+        r.setGlyphAtlas(ui.atlas().pixels(), ui.atlas().size());
+        r.render(ui.drawList(), cpu);
+        packDrawList(ui.drawList(), W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()));
+        UI_CHECK(gpu.upload(0, data));
+        vk.runBytes(black.data(), out.data(), [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+        compareHdr("sample", cpu, out);
+    }
+    {
+        Image im;
+        buildHdrImage(im);
+        CpuRasterizer r;
+        const u32 id = r.addImage(&im);
+        DrawList dl;
+        buildHdrScene(dl, id);
+        HdrImage cpu;
+        cpu.format = PixelFormat::Rgba16F;
+        cpu.resize(int(W), int(H));
+        r.render(dl, cpu);
+        packDrawList(dl, W, H, data, nullptr, 0, r.images(), r.imageCount());
+        UI_CHECK(gpu.upload(1, data));
+        vk.runBytes(black.data(), out.data(), [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 1); });
+        compareHdr("scene", cpu, out);
     }
     return finish("fuse_ui_vk_hdr");
 }
