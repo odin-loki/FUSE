@@ -1,10 +1,7 @@
 # fuse_app (plan UI5): application shell for UI-only projects + samples.
 add_library(fuse_app STATIC src/app.cpp)
 target_include_directories(fuse_app PUBLIC include PRIVATE ${FUSE_UI_REPO_ROOT}/vendor/stb)
-target_link_libraries(fuse_app PUBLIC fuse_ui_doc)
-if(WIN32 OR MINGW)
-    # no extra libs (CreateMutexA / MoveFileExA are kernel32)
-endif()
+target_link_libraries(fuse_app PUBLIC fuse_ui_doc fuse_ui_os)
 
 # fuse_app_native: real OS windows (X11 via runtime-loaded libX11, Win32) + Vulkan swapchain presenter.
 add_library(fuse_app_native STATIC src/native.cpp)

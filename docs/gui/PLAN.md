@@ -1,6 +1,8 @@
 # FUSE GUI framework — execution plan (gui-framework branch)
 
 Status: active, 2026-10-30. Owner: Odin Loch.
+G0 progress: FORGE submodule + `fuse_forge`, `fuse::ui::os` seam, `fuse_app` / `fuse_text` / X11 loader moved onto
+it, `<fuse/gui.hpp>` + `fuse::gui`, `gui_quickstart` example; standalone UI build 69/69 ctest green on Linux (clang 18).
 Companion to the long-form design in [`../plans/FUSE_UI_PLAN.md`](../plans/FUSE_UI_PLAN.md) (architecture, decisions D1–D7,
 phase history) and the usage guide [`../ui/README.md`](../ui/README.md). This file is the short, binding plan for
 finishing the GUI framework as a product every one of Odin's packages can depend on.

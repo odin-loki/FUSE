@@ -1,3 +1,4 @@
+#include "fuse/ui/os.hpp"
 #include "fuse/text/text.hpp"
 
 #define STBTT_STATIC
@@ -413,16 +414,9 @@ std::expected<Font, TextError> Font::fromBytes(std::span<const std::uint8_t> byt
 }
 
 std::expected<Font, TextError> Font::fromFile(const std::string& path) {
-    std::FILE* fp = std::fopen(path.c_str(), "rb");
-    if (!fp) return std::unexpected(TextError::InvalidFont);
-    std::vector<std::uint8_t> data;
-    std::uint8_t buf[16384];
-    for (;;) {
-        const std::size_t n = std::fread(buf, 1, sizeof buf, fp);
-        data.insert(data.end(), buf, buf + n);
-        if (n < sizeof buf) break;
-    }
-    std::fclose(fp);
+    auto bytes = fuse::ui::os::readFile(path); // OS access goes through the fuse::ui::os seam (FORGE)
+    if (!bytes) return std::unexpected(TextError::InvalidFont);
+    const std::vector<std::uint8_t> data(bytes->begin(), bytes->end());
     return fromBytes(data);
 }
 

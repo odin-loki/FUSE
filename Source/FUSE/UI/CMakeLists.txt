@@ -27,9 +27,29 @@ if(FUSE_UI_TEXT STREQUAL "COOKED")
     message(STATUS "FUSE UI: text profile COOKED not implemented yet — using MINIMAL")
 endif()
 
+# ---- fuse_ui_os: the OS seam (docs/gui/PLAN.md §1), FORGE-backed by default ----
+set(FUSE_UI_OS_BACKEND "forge" CACHE STRING "OS layer behind fuse::ui::os: forge (FORGE submodule) or custom")
+set_property(CACHE FUSE_UI_OS_BACKEND PROPERTY STRINGS forge custom)
+set(FUSE_UI_OS_SOURCES "" CACHE STRING "custom backend: source file(s) implementing fuse/ui/os.hpp")
+if(FUSE_UI_OS_BACKEND STREQUAL "forge")
+    include("${FUSE_UI_REPO_ROOT}/cmake/FuseForge.cmake")
+    fuse_add_forge()
+    add_library(fuse_ui_os STATIC Os/src/os_forge.cpp)
+    target_link_libraries(fuse_ui_os PRIVATE fuse_forge)
+else()
+    if(NOT FUSE_UI_OS_SOURCES)
+        message(FATAL_ERROR "FUSE_UI_OS_BACKEND=custom needs FUSE_UI_OS_SOURCES")
+    endif()
+    add_library(fuse_ui_os STATIC ${FUSE_UI_OS_SOURCES})
+endif()
+add_library(fuse::ui_os ALIAS fuse_ui_os)
+target_include_directories(fuse_ui_os PUBLIC Os/include)
+target_compile_features(fuse_ui_os PUBLIC cxx_std_23)
+
 # ---- fuse_text ----
 add_library(fuse_text STATIC Text/src/text.cpp)
 target_include_directories(fuse_text PUBLIC Text/include)
+target_link_libraries(fuse_text PRIVATE fuse_ui_os)
 target_include_directories(fuse_text SYSTEM PRIVATE "${FUSE_UI_REPO_ROOT}/vendor/stb")
 target_compile_definitions(fuse_text PRIVATE
     FUSE_TEXT_BUNDLED_FONT="${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf"
@@ -273,6 +293,19 @@ endif()
 if(TARGET fuse_ui_designer_lib AND TARGET fuse_app_native)
     add_executable(fuse_ui_designer Designer/app/designer_main.cpp)
     target_link_libraries(fuse_ui_designer PRIVATE fuse_ui_designer_lib fuse_app_native)
+endif()
+
+# ---- fuse::gui: the public API (docs/gui/PLAN.md §4) — one header <fuse/gui.hpp>, one target ----
+if(TARGET fuse_app_native AND TARGET fuse_ui_widgets)
+    add_library(fuse_gui INTERFACE)
+    add_library(fuse::gui ALIAS fuse_gui)
+    target_include_directories(fuse_gui INTERFACE Public/include)
+    target_link_libraries(fuse_gui INTERFACE fuse_app_native fuse_ui_widgets fuse_ui_os)
+    option(FUSE_BUILD_GUI_EXAMPLES "Build the fuse::gui public-API examples" ON)
+    if(FUSE_BUILD_GUI_EXAMPLES)
+        add_executable(gui_quickstart Public/examples/gui_quickstart.cpp)
+        target_link_libraries(gui_quickstart PRIVATE fuse::gui)
+    endif()
 endif()
 
 # ---- fuse_ui_game: game UI (UI7) — HUD widgets, world markers / panels, gamepad nav, input arbitration ----

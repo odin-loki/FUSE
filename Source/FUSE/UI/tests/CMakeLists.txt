@@ -156,6 +156,19 @@ foreach(g font_picker file_dialog node_graph curve_timeline viewport code_edit d
     set_tests_properties(fuse_ui_widget_${g} PROPERTIES LABELS "fuse_ui;gate")
 endforeach()
 
+# OS seam (docs/gui/PLAN.md §1): fuse::ui::os on FORGE, Settings + single-instance through it
+if(TARGET fuse_app)
+    add_executable(fuse_ui_os_seam test_os_seam.cpp)
+    target_link_libraries(fuse_ui_os_seam PRIVATE fuse_app fuse_ui_os)
+    target_include_directories(fuse_ui_os_seam PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME fuse_ui_os_seam COMMAND fuse_ui_os_seam)
+    set_tests_properties(fuse_ui_os_seam PROPERTIES LABELS "fuse_ui;gate")
+endif()
+if(TARGET gui_quickstart)
+    add_test(NAME fuse_gui_quickstart COMMAND gui_quickstart --screenshot=${CMAKE_CURRENT_BINARY_DIR}/gui_quickstart.png)
+    set_tests_properties(fuse_gui_quickstart PROPERTIES LABELS "fuse_ui;gate")
+endif()
+
 # UI5 gates: fuse_app on-demand loop (virtual clock, headless presenter)
 if(TARGET fuse_app)
     foreach(g idle_zero_frames multiwindow hello_startup settings)

@@ -2,6 +2,7 @@
 // Win32, plus the presenter selection (Vulkan swapchain -> GDI on Win32 -> headless). See native.hpp.
 #include "native_internal.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
+#include "fuse/ui/os.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -9,6 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -22,7 +24,6 @@
 #endif
 #include <windows.h>
 #else
-#include <dlfcn.h>
 #include <poll.h>
 #endif
 
@@ -130,7 +131,7 @@ enum { KeyPress = 2, KeyRelease = 3, ButtonPress = 4, ButtonRelease = 5, MotionN
 constexpr long kMask = 1 | 2 | 4 | 8 | (1 << 6) | (1 << 15) | (1 << 17) | (1 << 21);
 
 struct Lib {
-    void* so = nullptr;
+    std::unique_ptr<fuse::ui::os::Library> so; // loaded through the OS seam (FORGE)
     Display* (*OpenDisplay)(const char*) = nullptr;
     int (*CloseDisplay)(Display*) = nullptr;
     int (*DefaultScreen)(Display*) = nullptr;
@@ -170,12 +171,11 @@ struct Lib {
     int (*UngrabPointer)(Display*, unsigned long) = nullptr;
 
     bool load() {
-        so = dlopen("libX11.so.6", RTLD_NOW | RTLD_LOCAL);
-        if (!so) so = dlopen("libX11.so", RTLD_NOW | RTLD_LOCAL);
+        so = fuse::ui::os::loadLibrary({"libX11.so.6", "libX11.so"});
         if (!so) return false;
         bool all = true;
         auto get = [&](auto& fn, const char* name) {
-            fn = reinterpret_cast<std::remove_reference_t<decltype(fn)>>(dlsym(so, name));
+            fn = reinterpret_cast<std::remove_reference_t<decltype(fn)>>(so->symbol(name));
             all = all && fn;
         };
         get(OpenDisplay, "XOpenDisplay"); get(CloseDisplay, "XCloseDisplay"); get(DefaultScreen, "XDefaultScreen");
@@ -986,8 +986,8 @@ bool NativePlatform::Impl::captureX(unsigned long win, unsigned w, unsigned h, I
 }
 
 NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std::make_unique<Impl>(app, o)) {
-    const char* disp = std::getenv("DISPLAY");
-    if (disp && *disp && m->x.load()) {
+    const std::string disp = fuse::ui::os::env("DISPLAY");
+    if (!disp.empty() && m->x.load()) {
         m->dpy = m->x.OpenDisplay(nullptr);
         if (m->dpy) {
             m->x.SetErrorHandler(&x11::ignoreErrors);
@@ -997,7 +997,7 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
             m->error = "cannot open X display";
         }
     } else {
-        m->error = disp && *disp ? "libX11.so.6 not found" : "no DISPLAY";
+        m->error = !disp.empty() ? "libX11.so.6 not found" : "no DISPLAY";
     }
     if (m->dpy) app.setEventSource({m.get(), &Impl::pump});
 }

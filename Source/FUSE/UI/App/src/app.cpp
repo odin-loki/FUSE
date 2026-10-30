@@ -2,6 +2,7 @@
 #include "fuse/app/app.hpp"
 
 #include "fuse/ui/doc/document.hpp"
+#include "fuse/ui/os.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -10,20 +11,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
 #include <limits>
 #include <sstream>
-#include <thread>
-
-#if defined(_WIN32)
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#else
-#include <fcntl.h>
-#include <sys/file.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#endif
 
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
@@ -46,14 +35,10 @@ bool parseDouble(std::string_view s, double& out) {
     const auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), out);
     return ec == std::errc{} && p == s.data() + s.size();
 }
-double steadyNow(void*) {
-    using C = std::chrono::steady_clock;
-    static const C::time_point t0 = C::now();
-    return std::chrono::duration<double>(C::now() - t0).count();
-}
+double steadyNow(void*) { return fuse::ui::os::monotonicSeconds(); }
 /// Default event source (no OS windows): sleeps for the wait, capped so quit() from a callback is seen.
 bool sleepPump(void*, Application&, f32 wait) {
-    if (wait > 0.f) std::this_thread::sleep_for(std::chrono::duration<double>(std::min(wait, 0.25f)));
+    if (wait > 0.f) fuse::ui::os::sleepSeconds(std::min(wait, 0.25f));
     return true;
 }
 std::string escape(std::string_view s) {
@@ -128,21 +113,13 @@ double CommandLine::number(std::string_view key, double fallback) const {
 }
 
 // ---- Settings ------------------------------------------------------------------------------------------------------
-std::string Settings::defaultDir(std::string_view app) {
-#if defined(_WIN32)
-    const char* base = std::getenv("APPDATA");
-    return std::string(base ? base : ".") + "\\" + std::string(app);
-#else
-    if (const char* x = std::getenv("XDG_CONFIG_HOME"); x && *x) return std::string(x) + "/" + std::string(app);
-    const char* home = std::getenv("HOME");
-    return std::string(home ? home : ".") + "/.config/" + std::string(app);
-#endif
-}
+std::string Settings::defaultDir(std::string_view app) { return fuse::ui::os::configDir(app); }
 bool Settings::load() {
     m_items.clear();
     m_dirty = false;
-    std::ifstream f(m_path, std::ios::binary);
-    if (!f) return false;
+    auto text = fuse::ui::os::readFile(m_path);
+    if (!text) return false;
+    std::istringstream f(std::move(*text));
     std::string line;
     while (std::getline(f, line)) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
@@ -156,30 +133,9 @@ bool Settings::load() {
 bool Settings::save() {
     if (!m_dirty) return true;
     if (m_path.empty()) return false;
-    if (const std::size_t slash = m_path.find_last_of("/\\"); slash != std::string::npos) {
-        const std::string dir = m_path.substr(0, slash); // create the chain (best effort, no <filesystem>)
-        for (std::size_t i = 1; i <= dir.size(); ++i)
-            if (i == dir.size() || dir[i] == '/' || dir[i] == '\\') {
-                const std::string part = dir.substr(0, i);
-#if defined(_WIN32)
-                CreateDirectoryA(part.c_str(), nullptr);
-#else
-                ::mkdir(part.c_str(), 0700);
-#endif
-            }
-    }
-    const std::string tmp = m_path + ".tmp";
-    {
-        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
-        if (!f) return false;
-        for (const auto& [k, v] : m_items) f << escape(k) << '=' << escape(v) << '\n';
-        if (!f) return false;
-    }
-#if defined(_WIN32)
-    if (!MoveFileExA(tmp.c_str(), m_path.c_str(), MOVEFILE_REPLACE_EXISTING)) return false;
-#else
-    if (std::rename(tmp.c_str(), m_path.c_str()) != 0) return false;
-#endif
+    std::string out;
+    for (const auto& [k, v] : m_items) out += escape(k) + '=' + escape(v) + '\n';
+    if (!fuse::ui::os::writeFileAtomic(m_path, out)) return false; // creates parent dirs, atomic rename
     m_dirty = false;
     return true;
 }
@@ -243,11 +199,9 @@ std::expected<void, std::string> AppWindow::loadText(std::string_view json, doc:
     return {};
 }
 std::expected<void, std::string> AppWindow::load(std::string_view path, doc::Model* model) {
-    std::ifstream f{std::string(path), std::ios::binary};
-    if (!f) return std::unexpected("cannot open " + std::string(path));
-    std::stringstream ss;
-    ss << f.rdbuf();
-    return loadText(ss.str(), model);
+    auto text = fuse::ui::os::readFile(path);
+    if (!text) return std::unexpected("cannot open " + std::string(path) + ": " + text.error());
+    return loadText(*text, model);
 }
 bool AppWindow::presentHeadless(void*, AppWindow& w, Rect damage) {
     const int iw = int(w.m_ui.viewport().w), ih = int(w.m_ui.viewport().h);
@@ -293,28 +247,13 @@ Application::Application(const AppDesc& d) : m_name(d.name), m_args(d.argc, d.ar
         m_settings.load();
     }
     if (d.singleInstance) {
-#if defined(_WIN32)
-        const std::string mx = "Local\\fuse_app_" + m_name;
-        HANDLE h = CreateMutexA(nullptr, TRUE, mx.c_str());
-        m_primary = h && GetLastError() != ERROR_ALREADY_EXISTS;
-        m_lock = h;
-#else
-        const char* rt = std::getenv("XDG_RUNTIME_DIR");
-        const std::string path = std::string(rt && *rt ? rt : "/tmp") + "/fuse_app_" + m_name + "_" + std::to_string(::getuid()) + ".lock";
-        const int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0600);
-        m_primary = fd >= 0 && ::flock(fd, LOCK_EX | LOCK_NB) == 0;
-        if (fd >= 0) m_lock = reinterpret_cast<void*>(std::intptr_t(fd) + 1);
-#endif
+        m_lock = fuse::ui::os::tryLockInstance(m_name);
+        m_primary = m_lock != nullptr;
     }
 }
 Application::~Application() {
     m_windows.clear();
     m_settings.save();
-#if defined(_WIN32)
-    if (m_lock) CloseHandle(static_cast<HANDLE>(m_lock));
-#else
-    if (m_lock) ::close(int(reinterpret_cast<std::intptr_t>(m_lock) - 1)); // releases the flock
-#endif
 }
 AppWindow& Application::createWindow(const WindowDesc& d) {
     m_windows.push_back(std::make_unique<AppWindow>(*this, d, m_nextId++));

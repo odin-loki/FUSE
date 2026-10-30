@@ -8,6 +8,7 @@
 // CPU into the window's image (tests, screenshots, servers); desktop / mobile presenters plug in the same way.
 #pragma once
 
+#include "fuse/ui/os.hpp"
 #include "fuse/ui/ui.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
 
@@ -227,7 +228,7 @@ private:
     Clock m_clock;
     LoopStats m_stats;
     double m_last = -1.0;
-    void* m_lock = nullptr; ///< platform instance-lock handle
+    std::unique_ptr<fuse::ui::os::InstanceLock> m_lock; ///< single-instance lock (fuse::ui::os seam)
     u32 m_nextId = 1;
     int m_exit = 0;
     bool m_quit = false, m_primary = true;

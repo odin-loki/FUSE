@@ -1,0 +1,53 @@
+// fuse::ui::os — the one seam between FUSE GUI and the OS layer (docs/gui/PLAN.md §1).
+// GUI code never calls the OS for files, environment, clocks, locks or dynamic loading itself; it calls these.
+// The default implementation (Os/src/os_forge.cpp) forwards to FORGE (forge::os). A package with a different OS
+// layer builds with -DFUSE_UI_OS_BACKEND=custom and supplies its own translation unit defining these functions.
+#pragma once
+
+#include <cstdint>
+#include <expected>
+#include <initializer_list>
+#include <memory>
+#include <string>
+#include <string_view>
+
+namespace fuse::ui::os {
+
+/// Environment variable, or `fallback` when unset / empty.
+std::string env(std::string_view name, std::string_view fallback = {});
+/// Per-user configuration directory for `app` (%APPDATA%\app, $XDG_CONFIG_HOME/app, ~/.config/app, ...).
+std::string configDir(std::string_view app);
+/// Per-user runtime directory for sockets and locks ($XDG_RUNTIME_DIR, else the temp dir).
+std::string runtimeDir();
+
+std::expected<std::string, std::string> readFile(std::string_view path);
+/// Writes through a temporary file and an atomic rename, creating missing parent directories.
+std::expected<void, std::string> writeFileAtomic(std::string_view path, std::string_view data);
+bool isDirectory(std::string_view path);
+
+/// Seconds on a monotonic clock (arbitrary origin, fixed for the process).
+double monotonicSeconds();
+void sleepSeconds(double seconds);
+
+/// Exclusive per-user lock named `name`; empty when another process holds it. Released on destruction.
+class InstanceLock {
+public:
+    virtual ~InstanceLock() = default;
+};
+std::unique_ptr<InstanceLock> tryLockInstance(std::string_view name);
+
+/// Runtime-loaded shared library (window-system, Vulkan and accessibility libraries are loaded this way).
+class Library {
+public:
+    virtual ~Library() = default;
+    virtual void* symbol(const char* name) const = 0;
+    template <class F> F get(const char* name) const { return reinterpret_cast<F>(symbol(name)); }
+};
+/// Tries each file name in order (e.g. "libX11.so.6", "libX11.so"); null when none loads.
+std::unique_ptr<Library> loadLibrary(std::initializer_list<const char*> names);
+
+/// Text clipboard without a bound window (window backends override this with their own selection handling).
+std::expected<std::string, std::string> clipboardText();
+bool setClipboardText(std::string_view text);
+
+} // namespace fuse::ui::os
