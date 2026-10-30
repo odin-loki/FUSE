@@ -159,8 +159,11 @@ private:
     std::expected<void, DocError> bindProp(NodeHandle node, std::string_view prop, const JsonValue& v,
                                            const std::string& path);
     void apply(u32 binding);
+    std::expected<void, DocError> buildAnimate(NodeHandle node, const JsonValue& v, const std::string& path);
+    void setOrder(NodeHandle node, double order);
+    void sortChildren(NodeHandle parent);
 
-    enum class Target : u8 { Text, Value, Checked, Disabled, Visible, Min, Max };
+    enum class Target : u8 { Text, Value, Checked, Disabled, Visible, Min, Max, Order };
     struct Binding {
         NodeHandle node;
         Target target;
@@ -178,6 +181,8 @@ private:
     u32 m_reused = 0;
     NodeHandle m_parent, m_root;
     std::vector<Binding> m_bindings;
+    std::vector<std::pair<NodeHandle, double>> m_order; ///< "order" keys: siblings sort by them (stable, default 0)
+    std::vector<AnimationHandle> m_anims;               ///< "animate" keys (cancelled on reload)
     std::vector<std::string> m_actions;
     std::vector<ConnectionHandle> m_connections;
     ActionFn m_action;

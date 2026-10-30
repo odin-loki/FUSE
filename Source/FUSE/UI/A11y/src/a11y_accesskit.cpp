@@ -2,6 +2,9 @@
 #include "fuse/ui/a11y/a11y.hpp"
 
 #if FUSE_UI_HAVE_ACCESSKIT
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 #include "accesskit.h"
 
 namespace fuse::ui::a11y {
@@ -31,6 +34,15 @@ accesskit_role roleOf(A11yRole r) {
     case A11yRole::SpinBox: return ACCESSKIT_ROLE_SPIN_BUTTON;
     case A11yRole::ScrollBar: return ACCESSKIT_ROLE_SCROLL_BAR;
     case A11yRole::Tab: return ACCESSKIT_ROLE_TAB;
+    case A11yRole::DateInput: return ACCESSKIT_ROLE_DATE_INPUT;
+    case A11yRole::TimeInput: return ACCESSKIT_ROLE_TIME_INPUT;
+    case A11yRole::DateTimeInput: return ACCESSKIT_ROLE_DATE_TIME_INPUT;
+    case A11yRole::Grid: return ACCESSKIT_ROLE_GRID;
+    case A11yRole::Row: return ACCESSKIT_ROLE_ROW;
+    case A11yRole::GridCell: return ACCESSKIT_ROLE_GRID_CELL;
+    case A11yRole::ColumnHeader: return ACCESSKIT_ROLE_COLUMN_HEADER;
+    case A11yRole::ToolBar: return ACCESSKIT_ROLE_TOOLBAR;
+    case A11yRole::TabList: return ACCESSKIT_ROLE_TAB_LIST;
     case A11yRole::None: break;
     }
     return ACCESSKIT_ROLE_UNKNOWN;
@@ -47,12 +59,32 @@ void* buildAccessKitUpdate(const Bridge& b, bool includeTree) {
     std::vector<accesskit_node_id> kids;
     for (u32 i = 0; i < v.size(); ++i) {
         const A11ySnapshotNode& s = v[i];
-        accesskit_node* n = accesskit_node_new(roleOf(s.role));
+        // protected fields: PasswordInput (UIA IsPassword = true, AT-SPI ROLE_PASSWORD_TEXT, NSSecureTextField)
+        accesskit_node* n = accesskit_node_new(s.protectedText && s.role == A11yRole::TextField ? ACCESSKIT_ROLE_PASSWORD_INPUT : roleOf(s.role));
         if (!s.name.empty()) accesskit_node_set_label_with_length(n, s.name.data(), s.name.size());
         accesskit_node_set_bounds(n, {double(s.bounds.x), double(s.bounds.y), double(s.bounds.x + s.bounds.w), double(s.bounds.y + s.bounds.h)});
         if (s.disabled) accesskit_node_set_disabled(n);
         if (s.focusable) accesskit_node_add_action(n, ACCESSKIT_ACTION_FOCUS);
         if (s.focusable && !ranged(s.role) && s.role != A11yRole::TextField) accesskit_node_add_action(n, ACCESSKIT_ACTION_CLICK);
+        if (s.state.expanded >= 0) {
+            accesskit_node_set_expanded(n, s.state.expanded > 0);
+            accesskit_node_add_action(n, s.state.expanded > 0 ? ACCESSKIT_ACTION_COLLAPSE : ACCESSKIT_ACTION_EXPAND);
+        }
+        if (s.role == A11yRole::ListItem || s.role == A11yRole::GridCell || s.role == A11yRole::Row) accesskit_node_set_selected(n, s.state.selected);
+        if (s.rowIndex >= 0) accesskit_node_set_row_index(n, size_t(s.rowIndex));
+        if (s.colIndex >= 0) accesskit_node_set_column_index(n, size_t(s.colIndex));
+        if (s.rowCount) accesskit_node_set_row_count(n, s.rowCount);
+        if (s.colCount) accesskit_node_set_column_count(n, s.colCount);
+        if (s.level) accesskit_node_set_level(n, s.level);
+        if (s.sortDirection) // AccessKit / ARIA aria-sort on the sorted column header
+            accesskit_node_set_sort_direction(n, s.sortDirection == 1 ? ACCESSKIT_SORT_DIRECTION_ASCENDING : ACCESSKIT_SORT_DIRECTION_DESCENDING);
+        if (s.state.autoComplete != A11yAutoComplete::None)
+            accesskit_node_set_auto_complete(n, s.state.autoComplete == A11yAutoComplete::Inline ? ACCESSKIT_AUTO_COMPLETE_INLINE
+                                                : s.state.autoComplete == A11yAutoComplete::List ? ACCESSKIT_AUTO_COMPLETE_LIST
+                                                                                                  : ACCESSKIT_AUTO_COMPLETE_BOTH);
+        if (s.state.activeDescendant.valid()) accesskit_node_set_active_descendant(n, idOf(s.state.activeDescendant));
+        if (s.state.controls.valid()) { const accesskit_node_id c = idOf(s.state.controls); accesskit_node_set_controls(n, 1, &c); }
+        if (!s.valueText.empty()) accesskit_node_set_value_with_length(n, s.valueText.data(), s.valueText.size());
         if (toggles(s.role)) accesskit_node_set_toggled(n, s.checked ? ACCESSKIT_TOGGLED_TRUE : ACCESSKIT_TOGGLED_FALSE);
         if (ranged(s.role)) {
             accesskit_node_set_numeric_value(n, double(s.value));
@@ -65,9 +97,9 @@ void* buildAccessKitUpdate(const Bridge& b, bool includeTree) {
             }
         }
         kids.clear();
-        for (u32 c : b.children(i)) kids.push_back(idOf(v[c].node));
+        for (u32 c : b.children(i)) kids.push_back(idOf(v[c]));
         if (!kids.empty()) accesskit_node_set_children(n, kids.size(), kids.data());
-        accesskit_tree_update_push_node(u, idOf(s.node), n); // takes ownership
+        accesskit_tree_update_push_node(u, idOf(s), n); // takes ownership
     }
     if (includeTree && !v.empty()) {
         accesskit_tree* t = accesskit_tree_new(idOf(v[0].node));
@@ -86,7 +118,7 @@ std::string accessKitDebug(const void* update) {
 }
 void freeAccessKitUpdate(void* update) { accesskit_tree_update_free(static_cast<accesskit_tree_update*>(update)); }
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(_WIN32) || defined(__APPLE__)
 namespace {
 accesskit_tree_update* activate(void* user) {
     Bridge* b = static_cast<Bridge*>(user);
@@ -101,6 +133,8 @@ void onAction(accesskit_action_request* req, void* user) {
     switch (req->action) {
     case ACCESSKIT_ACTION_FOCUS: r.action = Action::Focus; break;
     case ACCESSKIT_ACTION_CLICK: r.action = Action::Click; break;
+    case ACCESSKIT_ACTION_EXPAND: r.action = Action::Expand; break;
+    case ACCESSKIT_ACTION_COLLAPSE: r.action = Action::Collapse; break;
     case ACCESSKIT_ACTION_INCREMENT: r.action = Action::Increment; break;
     case ACCESSKIT_ACTION_DECREMENT: r.action = Action::Decrement; break;
     case ACCESSKIT_ACTION_SET_VALUE:
@@ -115,6 +149,65 @@ void onAction(accesskit_action_request* req, void* user) {
 void onDeactivate(void*) {}
 accesskit_tree_update* factory(void* user) { return static_cast<accesskit_tree_update*>(buildAccessKitUpdate(*static_cast<Bridge*>(user), false)); }
 } // namespace
+#endif
+
+#if defined(_WIN32)
+const char* PlatformAdapter::backendName() { return "uia"; }
+PlatformAdapter::PlatformAdapter(Bridge& b, void* hwnd, bool) : m_bridge(b) {
+    m_bridge.sync();
+    if (hwnd) m_adapter = accesskit_windows_subclassing_adapter_new(static_cast<HWND>(hwnd), activate, &m_bridge, onAction, &m_bridge);
+}
+PlatformAdapter::~PlatformAdapter() {
+    if (m_adapter) accesskit_windows_subclassing_adapter_free(static_cast<accesskit_windows_subclassing_adapter*>(m_adapter));
+}
+void PlatformAdapter::update() {
+    m_bridge.drain();
+    if (m_bridge.sync() && m_adapter)
+        if (auto* ev = accesskit_windows_subclassing_adapter_update_if_active(static_cast<accesskit_windows_subclassing_adapter*>(m_adapter), factory, &m_bridge))
+            accesskit_windows_queued_events_raise(ev);
+}
+void PlatformAdapter::setWindowFocused(bool) {} // UIA tracks focus through the subclassed HWND
+#elif defined(__APPLE__)
+const char* PlatformAdapter::backendName() { return "nsaccessibility"; }
+PlatformAdapter::PlatformAdapter(Bridge& b, void* w, bool isView) : m_bridge(b) {
+    m_bridge.sync();
+    if (w) m_adapter = isView ? accesskit_macos_subclassing_adapter_new(w, activate, &m_bridge, onAction, &m_bridge)
+                              : accesskit_macos_subclassing_adapter_for_window(w, activate, &m_bridge, onAction, &m_bridge);
+}
+PlatformAdapter::~PlatformAdapter() {
+    if (m_adapter) accesskit_macos_subclassing_adapter_free(static_cast<accesskit_macos_subclassing_adapter*>(m_adapter));
+}
+void PlatformAdapter::update() {
+    m_bridge.drain();
+    if (m_bridge.sync() && m_adapter)
+        if (auto* ev = accesskit_macos_subclassing_adapter_update_if_active(static_cast<accesskit_macos_subclassing_adapter*>(m_adapter), factory, &m_bridge))
+            accesskit_macos_queued_events_raise(ev);
+}
+void PlatformAdapter::setWindowFocused(bool f) {
+    if (m_adapter)
+        if (auto* ev = accesskit_macos_subclassing_adapter_update_view_focus_state(static_cast<accesskit_macos_subclassing_adapter*>(m_adapter), f))
+            accesskit_macos_queued_events_raise(ev);
+}
+#elif defined(__linux__)
+const char* PlatformAdapter::backendName() { return "atspi"; }
+PlatformAdapter::PlatformAdapter(Bridge& b, void*, bool) : m_bridge(b) {
+    m_bridge.sync();
+    m_adapter = accesskit_unix_adapter_new(activate, &m_bridge, onAction, &m_bridge, onDeactivate, &m_bridge);
+}
+PlatformAdapter::~PlatformAdapter() {
+    if (m_adapter) accesskit_unix_adapter_free(static_cast<accesskit_unix_adapter*>(m_adapter));
+}
+void PlatformAdapter::update() {
+    m_bridge.drain();
+    if (m_bridge.sync() && m_adapter)
+        accesskit_unix_adapter_update_if_active(static_cast<accesskit_unix_adapter*>(m_adapter), factory, &m_bridge);
+}
+void PlatformAdapter::setWindowFocused(bool f) {
+    if (m_adapter) accesskit_unix_adapter_update_window_focus_state(static_cast<accesskit_unix_adapter*>(m_adapter), f);
+}
+#endif
+
+#if defined(__linux__)
 
 UnixAdapter::UnixAdapter(Bridge& b) : m_bridge(b) {
     m_bridge.sync();
@@ -138,5 +231,10 @@ void UnixAdapter::setWindowFocused(bool focused) {
 #else
 namespace fuse::ui::a11y {
 bool accessKitAvailable() { return false; }
+const char* PlatformAdapter::backendName() { return "none"; }
+PlatformAdapter::PlatformAdapter(Bridge& b, void*, bool) : m_bridge(b) {}
+PlatformAdapter::~PlatformAdapter() = default;
+void PlatformAdapter::update() { m_bridge.drain(); m_bridge.sync(); }
+void PlatformAdapter::setWindowFocused(bool) {}
 } // namespace fuse::ui::a11y
 #endif

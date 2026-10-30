@@ -2,6 +2,7 @@
 // Win32, plus the presenter selection (Vulkan swapchain -> GDI on Win32 -> headless). See native.hpp.
 #include "native_internal.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
+#include "fuse/ui/os.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -9,6 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -21,8 +23,13 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+namespace fuse::app::detail { // win32_dnd.cpp
+void* win32RegisterDrop(HWND, AppWindow*);
+void win32RevokeDrop(HWND, void*);
+bool win32DoDragDrop(AppWindow&, const AppWindow::ExternalDrag&);
+void* win32CursorHandle(fuse::ui::CursorShape); // copy / link drag cursors (win32_dnd.cpp); null for the rest
+} // namespace fuse::app::detail
 #else
-#include <dlfcn.h>
 #include <poll.h>
 #endif
 
@@ -43,6 +50,8 @@ const char* vkCtxDeviceName(const VkCtx*) { return ""; }
 VkWin* vkWinCreate(VkCtx*, const SurfaceSource&, const NativeOptions&, std::string&) { return nullptr; }
 bool vkWinPresent(VkWin*, AppWindow&, Rect) { return false; }
 bool vkWinGpuDraws(const VkWin*) { return false; }
+bool vkWinHdrContent(const VkWin*) { return false; }
+OutputColorSpace vkWinColorSpace(const VkWin*) { return OutputColorSpace::Srgb; }
 void vkWinDestroy(VkWin*) {}
 bool vkWinReadback(VkWin*, Image&) { return false; }
 } // namespace detail
@@ -118,7 +127,9 @@ struct InputEv {
 };
 struct ConfigureEv { int type; unsigned long serial; int send_event; Display* display; Window event, window; int x, y, width, height; };
 struct ClientEv { int type; unsigned long serial; int send_event; Display* display; Window window; Atom message_type; int format; long l[5]; };
-union Event { int type; AnyEv any; InputEv input; ConfigureEv configure; ClientEv client; long pad[24]; };
+struct SelectionRequestEv { int type; unsigned long serial; int send_event; Display* display; Window owner, requestor; Atom selection, target, property; unsigned long time; };
+struct SelectionEv { int type; unsigned long serial; int send_event; Display* display; Window requestor; Atom selection, target, property; unsigned long time; };
+union Event { int type; AnyEv any; InputEv input; ConfigureEv configure; ClientEv client; SelectionEv selection; SelectionRequestEv selreq; long pad[24]; };
 struct Image;
 struct ImageFuncs { Image* (*create)(); int (*destroy)(Image*); };
 struct Image {
@@ -126,11 +137,11 @@ struct Image {
         bytes_per_line, bits_per_pixel; unsigned long red_mask, green_mask, blue_mask; char* obdata; ImageFuncs f;
 };
 enum { KeyPress = 2, KeyRelease = 3, ButtonPress = 4, ButtonRelease = 5, MotionNotify = 6, FocusOut = 10, Expose = 12,
-       MapNotify = 19, ConfigureNotify = 22, ClientMessage = 33 };
+       MapNotify = 19, ConfigureNotify = 22, SelectionRequest = 30, SelectionNotify = 31, ClientMessage = 33 };
 constexpr long kMask = 1 | 2 | 4 | 8 | (1 << 6) | (1 << 15) | (1 << 17) | (1 << 21);
 
 struct Lib {
-    void* so = nullptr;
+    std::unique_ptr<fuse::ui::os::Library> so; // loaded through the OS seam (FORGE)
     Display* (*OpenDisplay)(const char*) = nullptr;
     int (*CloseDisplay)(Display*) = nullptr;
     int (*DefaultScreen)(Display*) = nullptr;
@@ -168,14 +179,20 @@ struct Lib {
     int (*SendEvent)(Display*, Window, int, long, Event*) = nullptr;
     int (*GrabPointer)(Display*, Window, int, unsigned, int, int, Window, XID, unsigned long) = nullptr;
     int (*UngrabPointer)(Display*, unsigned long) = nullptr;
+    int (*ConvertSelection)(Display*, Atom, Atom, Atom, Window, unsigned long) = nullptr; // optional (XDND)
+    int (*SetSelectionOwner)(Display*, Atom, Window, unsigned long) = nullptr;              // optional (XDND source)
+    char* (*GetAtomName)(Display*, Atom) = nullptr;                                          // optional (multi-format drops)
+    XID (*CreateFontCursor)(Display*, unsigned) = nullptr;                                    // optional (cursor shapes)
+    int (*DefineCursor)(Display*, Window, XID) = nullptr;
+    std::unique_ptr<fuse::ui::os::Library> xcursor;                                           // optional libXcursor (themed)
+    XID (*LibraryLoadCursor)(Display*, const char*) = nullptr;
 
     bool load() {
-        so = dlopen("libX11.so.6", RTLD_NOW | RTLD_LOCAL);
-        if (!so) so = dlopen("libX11.so", RTLD_NOW | RTLD_LOCAL);
+        so = fuse::ui::os::loadLibrary({"libX11.so.6", "libX11.so"});
         if (!so) return false;
         bool all = true;
         auto get = [&](auto& fn, const char* name) {
-            fn = reinterpret_cast<std::remove_reference_t<decltype(fn)>>(dlsym(so, name));
+            fn = reinterpret_cast<std::remove_reference_t<decltype(fn)>>(so->symbol(name));
             all = all && fn;
         };
         get(OpenDisplay, "XOpenDisplay"); get(CloseDisplay, "XCloseDisplay"); get(DefaultScreen, "XDefaultScreen");
@@ -190,6 +207,13 @@ struct Lib {
         get(TranslateCoordinates, "XTranslateCoordinates"); get(ChangeWindowAttributes, "XChangeWindowAttributes");
         get(DisplayWidth, "XDisplayWidth"); get(DisplayHeight, "XDisplayHeight"); get(SendEvent, "XSendEvent");
         get(GrabPointer, "XGrabPointer"); get(UngrabPointer, "XUngrabPointer");
+        ConvertSelection = reinterpret_cast<decltype(ConvertSelection)>(so->symbol("XConvertSelection"));
+        SetSelectionOwner = reinterpret_cast<decltype(SetSelectionOwner)>(so->symbol("XSetSelectionOwner"));
+        GetAtomName = reinterpret_cast<decltype(GetAtomName)>(so->symbol("XGetAtomName"));
+        CreateFontCursor = reinterpret_cast<decltype(CreateFontCursor)>(so->symbol("XCreateFontCursor"));
+        DefineCursor = reinterpret_cast<decltype(DefineCursor)>(so->symbol("XDefineCursor"));
+        if ((xcursor = fuse::ui::os::loadLibrary({"libXcursor.so.1", "libXcursor.so"})))
+            LibraryLoadCursor = reinterpret_cast<decltype(LibraryLoadCursor)>(xcursor->symbol("XcursorLibraryLoadCursor"));
         return all;
     }
 };
@@ -246,6 +270,9 @@ u8 mods(unsigned state) {
               ((state & 64) ? kModSuper : 0));
 }
 } // namespace x11
+namespace detail { // shared with the Wayland backend: XKB keysyms == X11 keysyms
+Key keyFromKeysym(unsigned long sym, bool& ascii) { return x11::mapKey(sym, ascii); }
+} // namespace detail
 #endif
 
 // ---- shared ----------------------------------------------------------------------------------------------------------
@@ -258,18 +285,24 @@ struct NativePlatform::Impl {
         unsigned long long handle = 0; ///< X11 Window / HWND
         bool mapped = false;
         bool focused = false;
+        u64 titleRev = ~0ull; ///< AppWindow::titleRevision() the OS window shows (~0: sync on the first frame)
+        u32 cursorRev = 0;    ///< UiContext::cursorRevision() the OS cursor shows
         struct Popup {
             unsigned long long handle = 0;
             Rect screen;   ///< physical screen rect
             Rect rect;     ///< context rect (input offset)
             u64 revision = ~0ull;
+            NodeHandle node;   ///< the surface's overlay node (windows follow their node across frames)
+            bool tool = false; ///< floating dock / tool bar (Qt::Tool): no grab, no outside-click close
             Image img;
             std::vector<u32> staged; ///< OS pixel order
         };
         std::vector<Popup> popups;
+        unsigned long long grabbed = 0; ///< menu popup window holding the pointer grab (0: none)
 #if defined(_WIN32)
         std::vector<u32> bgra; ///< GDI fallback staging
         wchar_t highSurrogate = 0;
+        void* dropTarget = nullptr; ///< OLE IDropTarget (win32_dnd.cpp)
 #endif
     };
 
@@ -286,6 +319,35 @@ struct NativePlatform::Impl {
     x11::Lib x;
     x11::Display* dpy = nullptr;
     x11::Atom wmProtocols = 0, wmDelete = 0;
+    // XDND v5 drop target (system drag and drop into a window)
+    struct Dnd {
+        x11::Atom aware = 0, enter = 0, position = 0, status = 0, leave = 0, drop = 0, finished = 0, selection = 0,
+                  actionCopy = 0, uriList = 0, textPlain = 0, utf8 = 0, prop = 0;
+        x11::Window source = 0;
+        x11::Atom type = 0; ///< best offered type
+        std::vector<x11::Atom> offered; ///< every type the source offers
+        std::vector<x11::Atom> fetch;   ///< still to convert on drop (preferred first)
+        AppWindow::ExternalDrop got;    ///< collected while fetching
+        unsigned long dropTime = 0;
+        fuse::ui::Vec2 pos{};
+    } dnd;
+    // XDND source (dragging out)
+    struct DragOut {
+        Rec* rec = nullptr;
+        std::vector<std::pair<x11::Atom, std::string>> types; ///< offered (atom, data); [0] preferred
+        x11::Atom type = 0; ///< types[0]
+        x11::Window target = 0;   ///< current XdndAware window under the pointer
+        bool accepted = false, dropped = false;
+        unsigned long time = 0;
+    } drag;
+    bool dragStart(Rec& r, AppWindow::ExternalDrag d);
+    bool dragEvent(const x11::Event& ev); ///< true when consumed
+    void dragEnd(bool accepted);
+    x11::Window dndTargetAt(int rx, int ry);
+    void dndInit();
+    void dndClient(Rec& r, const x11::ClientEv& c);
+    void dndSelection(Rec& r, const x11::SelectionEv& e);
+    void dndSend(x11::Window to, x11::Atom type, long l1, long l2, long l3, long l4, x11::Window self);
 #endif
 
     Impl(Application& a, const NativeOptions& o) : app(a), opts(o) {}
@@ -322,11 +384,18 @@ struct NativePlatform::Impl {
     bool captureOs(const Rec& r, Image& out);
     // OS-window popups
     void syncPopups(Rec& r);
+    void syncTitle(Rec& r);
+    void syncCursor(Rec& r); ///< UiContext::cursorShape() -> the OS pointer cursor (drag feedback)
+#if !defined(_WIN32)
+    x11::XID xCursor(u32 shape); ///< cached themed / font cursor for a CursorShape (0: none available)
+    x11::XID cursors[8]{};       ///< per connection (the server frees them on XCloseDisplay)
+#endif
     /// An outside click (grabbed pointer outside every window of the app, or the app deactivated): close every popup.
     static void closeAllPopups(Rec& r) {
         UiContext& ui = r.win->ui();
         std::vector<NodeHandle> nodes;
-        for (const auto& ps : ui.popupSurfaces()) nodes.push_back(ps.node);
+        for (const auto& ps : ui.popupSurfaces())
+            if (!ps.tool) nodes.push_back(ps.node); // tool windows (floating docks / tool bars) stay
         for (NodeHandle n : nodes)
             if (ui.alive(n)) fuse::ui::widgets::closePopup(ui, n);
         r.win->requestRedraw();
@@ -356,19 +425,23 @@ void NativePlatform::Impl::syncPopups(Rec& r) {
     int ox = 0, oy = 0;
     Rect work;
     if (screenInfo(r, ox, oy, work)) {
-        const f32 s = 1.f; // context px = physical / scale
+        const f32 s = r.win->scale(); // context px = physical / scale
         ui.setOsPopups(true, {(work.x - f32(ox)) / s, (work.y - f32(oy)) / s, work.w / s, work.h / s});
     }
     const auto& surf = ui.popupSurfaces();
-    const bool had = !r.popups.empty();
-    while (r.popups.size() > surf.size()) {
-        destroyPopupOs(r.popups.back());
-        r.popups.pop_back();
+    // windows follow their node: a menu opening / closing does not reshuffle the tool windows (floating docks)
+    std::vector<Rec::Popup> next;
+    next.reserve(surf.size());
+    for (const auto& ps : surf) {
+        auto it = std::find_if(r.popups.begin(), r.popups.end(), [&](const Rec::Popup& q) { return q.node == ps.node && q.handle; });
+        if (it != r.popups.end()) { next.push_back(std::move(*it)); it->handle = 0; }
+        else { next.emplace_back(); next.back().node = ps.node; next.back().tool = ps.tool; }
     }
-    if (had && r.popups.empty()) grabPointer(r, false);
-    const f32 s = 1.f;
+    for (Rec::Popup& q : r.popups)
+        if (q.handle) destroyPopupOs(q);
+    r.popups = std::move(next);
+    const f32 s = r.win->scale();
     for (std::size_t i = 0; i < surf.size(); ++i) {
-        if (i == r.popups.size()) r.popups.emplace_back();
         Rec::Popup& p = r.popups[i];
         const auto& ps = surf[i];
         const Rect scr{std::round(f32(ox) + ps.rect.x * s), std::round(f32(oy) + ps.rect.y * s), std::max(1.f, std::ceil(ps.rect.w * s)),
@@ -377,8 +450,7 @@ void NativePlatform::Impl::syncPopups(Rec& r) {
         p.rect = ps.rect;
         p.screen = scr;
         if (!p.handle) {
-            if (!createPopupOs(r, p)) { r.popups.pop_back(); return; }
-            if (i == 0) grabPointer(r, true); // Qt::Popup: clicks anywhere else on screen close the menu
+            if (!createPopupOs(r, p)) { r.popups.erase(r.popups.begin() + std::ptrdiff_t(i)); return; }
         } else if (moved) {
             movePopupOs(p);
         }
@@ -393,17 +465,23 @@ void NativePlatform::Impl::syncPopups(Rec& r) {
             if (s == 1.f) {
                 rz.render(ps.draw, p.img);
             } else {
-                DrawList scaled = ps.draw;
-                for (DrawCmd& c : scaled.cmds()) { c.rect.x *= s; c.rect.y *= s; c.rect.w *= s; c.rect.h *= s; }
+                DrawList scaled;
+                scaleDrawList(ps.draw, s, scaled); // radii / borders / blur / crisp glyphs too
                 rz.render(scaled, p.img);
             }
             blitPopupOs(p);
         }
     }
+    // Qt::Popup: while a menu shows, clicks anywhere else on screen close it (the grab goes to the first menu window)
+    const auto menu = std::find_if(r.popups.begin(), r.popups.end(), [](const Rec::Popup& q) { return !q.tool && q.handle; });
+    if (menu != r.popups.end() && r.grabbed != menu->handle) { r.grabbed = menu->handle; grabPointer(r, true); }
+    else if (menu == r.popups.end() && r.grabbed) { r.grabbed = 0; grabPointer(r, false); }
 }
 
 bool NativePlatform::Impl::present(void* user, AppWindow& w, Rect damage) {
     Rec& r = *static_cast<Rec*>(user);
+    if (r.titleRev != w.titleRevision()) r.impl->syncTitle(r);
+    r.impl->syncCursor(r);
     switch (r.kind) {
     case PresenterKind::Vulkan: {
         const bool ok = detail::vkWinPresent(r.vk, w, damage);
@@ -499,11 +577,63 @@ u8 winMods() {
 }
 Vec2 lparamPos(LPARAM lp) { return {f32(short(LOWORD(lp))), f32(short(HIWORD(lp)))}; }
 
+// ---- per-monitor DPI v2 (user32 entry points resolved at run time: Windows 10 1703+, graceful before) ----
+#ifndef WM_DPICHANGED
+#define WM_DPICHANGED 0x02E0
+#endif
+FARPROC user32Proc(const char* name) {
+    static HMODULE u = GetModuleHandleW(L"user32.dll");
+    return u ? GetProcAddress(u, name) : nullptr;
+}
+/// Per-monitor-v2 awareness (per-window DPI, scaled non-client area, WM_DPICHANGED); older systems: system DPI.
+void enablePerMonitorDpi() {
+    static bool done = false;
+    if (done) return;
+    done = true;
+    using SetCtx = BOOL(WINAPI*)(HANDLE);
+    if (auto f = reinterpret_cast<SetCtx>(reinterpret_cast<void*>(user32Proc("SetProcessDpiAwarenessContext"))))
+        if (f(reinterpret_cast<HANDLE>(LONG_PTR(-4)))) return; // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+    using SetAware = BOOL(WINAPI*)();
+    if (auto f = reinterpret_cast<SetAware>(reinterpret_cast<void*>(user32Proc("SetProcessDPIAware")))) f();
+}
+UINT dpiForWindow(HWND hwnd) {
+    using Fn = UINT(WINAPI*)(HWND);
+    static auto f = reinterpret_cast<Fn>(reinterpret_cast<void*>(user32Proc("GetDpiForWindow")));
+    if (f && hwnd) if (const UINT d = f(hwnd)) return d;
+    HDC dc = GetDC(hwnd);
+    const int d = dc ? GetDeviceCaps(dc, LOGPIXELSX) : 96;
+    if (dc) ReleaseDC(hwnd, dc);
+    return d > 0 ? UINT(d) : 96u;
+}
+/// Outer window size for a client area of `cw` x `ch` physical pixels at `dpi`.
+SIZE outerSizeForClient(int cw, int ch, DWORD style, UINT dpi) {
+    RECT rc{0, 0, cw, ch};
+    using Fn = BOOL(WINAPI*)(LPRECT, DWORD, BOOL, DWORD, UINT);
+    static auto f = reinterpret_cast<Fn>(reinterpret_cast<void*>(user32Proc("AdjustWindowRectExForDpi")));
+    if (!f || !f(&rc, style, FALSE, 0, dpi)) AdjustWindowRect(&rc, style, FALSE);
+    return {rc.right - rc.left, rc.bottom - rc.top};
+}
+
+static LPCWSTR winCursor(CursorShape c) {
+    switch (c) { // no stock copy / link cursors: winCursorHandle builds those (OLE draws its own outside the window)
+    case CursorShape::Pointer: case CursorShape::Grabbing: return reinterpret_cast<LPCWSTR>(IDC_HAND);
+    case CursorShape::Text: return reinterpret_cast<LPCWSTR>(IDC_IBEAM);
+    case CursorShape::Move: return reinterpret_cast<LPCWSTR>(IDC_SIZEALL);
+    case CursorShape::Forbidden: return reinterpret_cast<LPCWSTR>(IDC_NO);
+    default: return reinterpret_cast<LPCWSTR>(IDC_ARROW);
+    }
+}
+static HCURSOR winCursorHandle(CursorShape c) {
+    if (void* own = detail::win32CursorHandle(c)) return static_cast<HCURSOR>(own);
+    return LoadCursorW(nullptr, winCursor(c));
+}
 LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto* r = reinterpret_cast<NativePlatform::Impl::Rec*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     if (!r || !r->win) return DefWindowProcW(hwnd, msg, wp, lp);
     AppWindow& w = *r->win;
     UiContext& ui = w.ui();
+    const f32 sc = w.scale(); // physical client pixels per logical unit (per-monitor DPI)
+    auto at = [sc](LPARAM l) { const Vec2 v = lparamPos(l); return Vec2{v.x / sc, v.y / sc}; };
     switch (msg) {
     case WM_CLOSE: w.requestClose(); return 0;
     case WM_ACTIVATEAPP: // another application took the pointer / focus: popups close (Qt::Popup)
@@ -519,25 +649,45 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
     case WM_ERASEBKGND: return 1;
     case WM_SIZE:
-        if (LOWORD(lp) && HIWORD(lp)) w.resize(LOWORD(lp), HIWORD(lp));
+        if (LOWORD(lp) && HIWORD(lp))
+            w.resize(u32(std::max(1l, std::lround(f32(LOWORD(lp)) / sc))), u32(std::max(1l, std::lround(f32(HIWORD(lp)) / sc))));
         return 0;
+    case WM_DPICHANGED: { // moved to a monitor with another scale: re-render at the new DPI, take the suggested rect
+        w.setScale(f32(LOWORD(wp)) / 96.f);
+        const RECT* rc = reinterpret_cast<const RECT*>(lp);
+        SetWindowPos(hwnd, nullptr, rc->left, rc->top, rc->right - rc->left, rc->bottom - rc->top, SWP_NOZORDER | SWP_NOACTIVATE);
+        w.requestRedraw();
+        return 0;
+    }
     case WM_MOUSEMOVE: case WM_LBUTTONDOWN: case WM_RBUTTONDOWN: case WM_MBUTTONDOWN: case WM_LBUTTONUP: case WM_RBUTTONUP: case WM_MBUTTONUP:
         ui.setModifiers(u8(((wp & MK_SHIFT) ? kModShift : 0) | ((wp & MK_CONTROL) ? kModCtrl : 0) | ((GetKeyState(VK_MENU) < 0) ? kModAlt : 0)));
         break;
     default: break;
     }
     switch (msg) {
-    case WM_MOUSEMOVE: ui.pointerMove(lparamPos(lp)); return 0;
-    case WM_LBUTTONDOWN: SetCapture(hwnd); ui.pointerDown(lparamPos(lp), MouseButton::Left); return 0;
-    case WM_RBUTTONDOWN: ui.pointerDown(lparamPos(lp), MouseButton::Right); return 0;
-    case WM_MBUTTONDOWN: ui.pointerDown(lparamPos(lp), MouseButton::Middle); return 0;
-    case WM_LBUTTONUP: ReleaseCapture(); ui.pointerUp(lparamPos(lp)); return 0;
+    case WM_SETCURSOR:
+        if (LOWORD(lp) == HTCLIENT) { SetCursor(winCursorHandle(ui.cursorShape())); return TRUE; }
+        break;
+    case WM_MOUSEMOVE:
+        ui.pointerMove(at(lp));
+        r->impl->syncCursor(*r);
+        if (wp & (MK_LBUTTON | MK_RBUTTON))
+            if (auto drag = w.takeExternalDrag()) {
+                ReleaseCapture();
+                ui.pointerUp(at(lp));
+                detail::win32DoDragDrop(w, *drag); // modal OLE loop
+            }
+        return 0;
+    case WM_LBUTTONDOWN: SetCapture(hwnd); ui.pointerDown(at(lp), MouseButton::Left); return 0;
+    case WM_RBUTTONDOWN: ui.pointerDown(at(lp), MouseButton::Right); return 0;
+    case WM_MBUTTONDOWN: ui.pointerDown(at(lp), MouseButton::Middle); return 0;
+    case WM_LBUTTONUP: ReleaseCapture(); ui.pointerUp(at(lp)); return 0;
     case WM_RBUTTONUP:
-    case WM_MBUTTONUP: ui.pointerUp(lparamPos(lp)); return 0;
+    case WM_MBUTTONUP: ui.pointerUp(at(lp)); return 0;
     case WM_MOUSEWHEEL: {
         POINT p{short(LOWORD(lp)), short(HIWORD(lp))};
         ScreenToClient(hwnd, &p);
-        ui.wheel({f32(p.x), f32(p.y)}, {0.f, f32(GET_WHEEL_DELTA_WPARAM(wp)) / WHEEL_DELTA});
+        ui.wheel({f32(p.x) / sc, f32(p.y) / sc}, {0.f, f32(GET_WHEEL_DELTA_WPARAM(wp)) / WHEEL_DELTA});
         return 0;
     }
     case WM_KEYDOWN:
@@ -578,7 +728,7 @@ LRESULT CALLBACK popupProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (!r->impl->findPopup(reinterpret_cast<unsigned long long>(hwnd), idx)) return DefWindowProcW(hwnd, msg, wp, lp);
     NativePlatform::Impl::Rec::Popup& p = r->popups[idx];
     UiContext& ui = r->win->ui();
-    const f32 s = 1.f;
+    const f32 s = r->win->scale();
     const Vec2 lp2 = lparamPos(lp);
     const Vec2 pos{p.rect.x + lp2.x / s, p.rect.y + lp2.y / s};
     switch (msg) {
@@ -592,7 +742,8 @@ LRESULT CALLBACK popupProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_ERASEBKGND: return 1;
     case WM_MOUSEMOVE: ui.pointerMove(pos); r->win->requestRedraw(); return 0;
     case WM_LBUTTONDOWN: case WM_RBUTTONDOWN: case WM_MBUTTONDOWN:
-        if (lp2.x < 0.f || lp2.y < 0.f || lp2.x >= p.screen.w || lp2.y >= p.screen.h) { // captured click elsewhere
+        if (p.tool) SetCapture(hwnd); // a title drag keeps the pointer while the window moves under it
+        else if (lp2.x < 0.f || lp2.y < 0.f || lp2.x >= p.screen.w || lp2.y >= p.screen.h) { // captured click elsewhere
             NativePlatform::Impl::closeAllPopups(*r);
             return 0;
         }
@@ -600,7 +751,11 @@ LRESULT CALLBACK popupProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         else ui.pointerDown(pos, MouseButton::Right);
         r->win->requestRedraw();
         return 0;
-    case WM_LBUTTONUP: case WM_RBUTTONUP: ui.pointerUp(pos); r->win->requestRedraw(); return 0;
+    case WM_LBUTTONUP: case WM_RBUTTONUP:
+        if (p.tool && GetCapture() == hwnd) ReleaseCapture();
+        ui.pointerUp(pos);
+        r->win->requestRedraw();
+        return 0;
     default: break;
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
@@ -621,7 +776,8 @@ bool NativePlatform::Impl::screenInfo(const Rec& r, int& ox, int& oy, Rect& work
 }
 void NativePlatform::Impl::grabPointer(Rec&, bool) {} // Win32: WM_ACTIVATEAPP closes popups instead of a grab
 bool NativePlatform::Impl::createPopupOs(Rec& r, Rec::Popup& p) {
-    HWND hwnd = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST, kPopupClass, L"", WS_POPUP, int(p.screen.x),
+    // tool windows (floating docks / tool bars) are owned, so they stay above the main window, but not topmost
+    HWND hwnd = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | (p.tool ? 0 : WS_EX_TOPMOST), kPopupClass, L"", WS_POPUP, int(p.screen.x),
                                 int(p.screen.y), int(p.screen.w), int(p.screen.h), reinterpret_cast<HWND>(r.handle), nullptr, hinst, nullptr);
     if (!hwnd) return false;
     p.handle = reinterpret_cast<unsigned long long>(hwnd);
@@ -668,8 +824,13 @@ bool NativePlatform::Impl::postClickOs(unsigned long long h, Vec2 at) {
 
 bool NativePlatform::Impl::createOsWindow(Rec& r) {
     const Size sz = r.win->size();
-    RECT rc{0, 0, LONG(sz.w), LONG(sz.h)};
-    AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
+    // created at the primary monitor's DPI, then sized for the DPI of the monitor it actually landed on
+    HDC sdc = GetDC(nullptr);
+    const UINT dpi0 = sdc ? UINT(std::max(96, GetDeviceCaps(sdc, LOGPIXELSX))) : 96u;
+    if (sdc) ReleaseDC(nullptr, sdc);
+    const SIZE outer0 = outerSizeForClient(int(std::lround(sz.w * f32(dpi0) / 96.f)), int(std::lround(sz.h * f32(dpi0) / 96.f)),
+                                           WS_OVERLAPPEDWINDOW, dpi0);
+    RECT rc{0, 0, outer0.cx, outer0.cy};
     const std::string& t = r.win->title();
     std::wstring wt(std::size_t(MultiByteToWideChar(CP_UTF8, 0, t.data(), int(t.size()), nullptr, 0)), L'\0');
     if (!wt.empty()) MultiByteToWideChar(CP_UTF8, 0, t.data(), int(t.size()), wt.data(), int(wt.size()));
@@ -679,8 +840,16 @@ bool NativePlatform::Impl::createOsWindow(Rec& r) {
         error = "CreateWindowExW failed";
         return false;
     }
+    const UINT dpi = dpiForWindow(hwnd);
+    r.win->setScale(f32(dpi) / 96.f);
+    if (dpi != dpi0) {
+        const SIZE o = outerSizeForClient(int(std::lround(sz.w * r.win->scale())), int(std::lround(sz.h * r.win->scale())),
+                                          WS_OVERLAPPEDWINDOW, dpi);
+        SetWindowPos(hwnd, nullptr, 0, 0, o.cx, o.cy, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&r));
     r.handle = reinterpret_cast<unsigned long long>(hwnd);
+    r.dropTarget = detail::win32RegisterDrop(hwnd, r.win);
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
     return true;
@@ -688,6 +857,8 @@ bool NativePlatform::Impl::createOsWindow(Rec& r) {
 void NativePlatform::Impl::destroyOsWindow(Rec& r) {
     if (!r.handle) return;
     HWND hwnd = reinterpret_cast<HWND>(r.handle);
+    detail::win32RevokeDrop(hwnd, r.dropTarget);
+    r.dropTarget = nullptr;
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
     DestroyWindow(hwnd);
     r.handle = 0;
@@ -751,6 +922,7 @@ bool NativePlatform::Impl::capturePopupOs(const Rec::Popup& p, Image& out) {
 
 NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std::make_unique<Impl>(app, o)) {
     m->hinst = GetModuleHandleW(nullptr);
+    if (o.dpiAware) enablePerMonitorDpi();
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof wc;
     wc.style = CS_HREDRAW | CS_VREDRAW;
@@ -782,6 +954,10 @@ bool NativePlatform::Impl::createOsWindow(Rec& r) {
     x.StoreName(dpy, w, r.win->title().c_str());
     x.SelectInput(dpy, w, x11::kMask);
     x.SetWMProtocols(dpy, w, &wmDelete, 1);
+    if (dnd.aware && x.ConvertSelection) {
+        const unsigned long version = 5;
+        x.ChangeProperty(dpy, w, dnd.aware, 4 /*XA_ATOM*/, 32, 0 /*Replace*/, reinterpret_cast<const unsigned char*>(&version), 1);
+    }
     x.MapWindow(dpy, w);
     x.Flush(dpy);
     r.handle = w;
@@ -805,6 +981,7 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
     while (x.Pending(m.dpy)) {
         x11::Event ev{};
         x.NextEvent(m.dpy, &ev);
+        if (m.dragEvent(ev)) continue;
         std::size_t pi = 0;
         if (Rec* pr = m.findPopup(ev.any.window, pi)) { // a popup window: input in context coordinates of its owner
             Rec::Popup& p = pr->popups[pi];
@@ -813,7 +990,7 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
             const Vec2 pos{p.rect.x + f32(ev.input.x) / s, p.rect.y + f32(ev.input.y) / s};
             if (ev.type == x11::Expose) m.blitPopupOs(p);
             else if (ev.type == x11::MotionNotify) { ui.setModifiers(x11::mods(ev.input.state)); ui.pointerMove(pos); }
-            else if (ev.type == x11::ButtonPress && (ev.input.x < 0 || ev.input.y < 0 || f32(ev.input.x) >= p.screen.w ||
+            else if (ev.type == x11::ButtonPress && !p.tool && (ev.input.x < 0 || ev.input.y < 0 || f32(ev.input.x) >= p.screen.w ||
                                                      f32(ev.input.y) >= p.screen.h)) {
                 closeAllPopups(*pr); // grabbed click outside every window of the app
                 continue;
@@ -835,7 +1012,9 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
         switch (ev.type) {
         case x11::ClientMessage:
             if (ev.client.message_type == m.wmProtocols && x11::Atom(ev.client.l[0]) == m.wmDelete) w.requestClose();
+            else m.dndClient(*r, ev.client);
             break;
+        case x11::SelectionNotify: m.dndSelection(*r, ev.selection); break;
         case x11::MapNotify: r->mapped = true; w.requestRedraw(); break;
         case x11::Expose: r->mapped = true; w.requestRedraw(); break;
         case x11::ConfigureNotify: {
@@ -845,7 +1024,12 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
                 w.resize(u32(ev.configure.width), u32(ev.configure.height));
             break;
         }
-        case x11::MotionNotify: ui.setModifiers(x11::mods(in.state)); ui.pointerMove(pos); break;
+        case x11::MotionNotify:
+            ui.setModifiers(x11::mods(in.state));
+            ui.pointerMove(pos);
+            m.syncCursor(*r);
+            if (auto d = w.takeExternalDrag()) { m.drag.time = in.time; m.dragStart(*r, std::move(*d)); }
+            break;
         case x11::ButtonPress:
             ui.setModifiers(x11::mods(in.state));
             if (in.detail == 4 || in.detail == 5) ui.wheel(pos, {0.f, in.detail == 4 ? 1.f : -1.f});
@@ -899,7 +1083,8 @@ bool NativePlatform::Impl::createPopupOs(Rec& r, Rec::Popup& p) {
     a.override_redirect = 1; // no WM frame / focus: a menu window (Qt::Popup)
     a.save_under = 1;
     x.ChangeWindowAttributes(dpy, w, x11::kCWOverrideRedirect | x11::kCWSaveUnder, &a);
-    const x11::Atom type = x.InternAtom(dpy, "_NET_WM_WINDOW_TYPE", 0), menu = x.InternAtom(dpy, "_NET_WM_WINDOW_TYPE_POPUP_MENU", 0);
+    const x11::Atom type = x.InternAtom(dpy, "_NET_WM_WINDOW_TYPE", 0),
+                    menu = x.InternAtom(dpy, p.tool ? "_NET_WM_WINDOW_TYPE_UTILITY" : "_NET_WM_WINDOW_TYPE_POPUP_MENU", 0);
     x.ChangeProperty(dpy, w, type, 4 /*XA_ATOM*/, 32, 0, reinterpret_cast<const unsigned char*>(&menu), 1);
     x.SelectInput(dpy, w, x11::kPopupMask);
     x.MapWindow(dpy, w);
@@ -908,10 +1093,11 @@ bool NativePlatform::Impl::createPopupOs(Rec& r, Rec::Popup& p) {
 }
 void NativePlatform::Impl::grabPointer(Rec& r, bool on) {
     if (!on) { x.UngrabPointer(dpy, 0); x.Flush(dpy); return; }
-    if (r.popups.empty() || !r.popups[0].handle) return;
+    const auto menu = std::find_if(r.popups.begin(), r.popups.end(), [](const Rec::Popup& q) { return !q.tool && q.handle; });
+    if (menu == r.popups.end()) return;
     x.Sync(dpy, 0); // the override-redirect window must be viewable before it can grab
     // owner_events: the app's own windows (main + popups) keep their events; everything else reports to the popup
-    x.GrabPointer(dpy, x11::Window(r.popups[0].handle), 1, (1u << 2) | (1u << 3) | (1u << 6), 1, 1, 0, 0, 0);
+    x.GrabPointer(dpy, x11::Window(menu->handle), 1, (1u << 2) | (1u << 3) | (1u << 6), 1, 1, 0, 0, 0);
     x.Flush(dpy);
 }
 void NativePlatform::Impl::movePopupOs(Rec::Popup& p) {
@@ -985,19 +1171,235 @@ bool NativePlatform::Impl::captureX(unsigned long win, unsigned w, unsigned h, I
     return good;
 }
 
+void NativePlatform::Impl::dndInit() {
+    auto a = [&](const char* n) { return x.InternAtom(dpy, n, 0); };
+    dnd.aware = a("XdndAware"); dnd.enter = a("XdndEnter"); dnd.position = a("XdndPosition"); dnd.status = a("XdndStatus");
+    dnd.leave = a("XdndLeave"); dnd.drop = a("XdndDrop"); dnd.finished = a("XdndFinished");
+    dnd.selection = a("XdndSelection"); dnd.actionCopy = a("XdndActionCopy"); dnd.uriList = a("text/uri-list");
+    dnd.textPlain = a("text/plain"); dnd.utf8 = a("UTF8_STRING"); dnd.prop = a("FUSE_XDND");
+}
+x11::Window NativePlatform::Impl::dndTargetAt(int rx, int ry) {
+    const x11::Window root = x.RootWindow(dpy, x.DefaultScreen(dpy));
+    x11::Window cur = root;
+    for (int depth = 0; depth < 16; ++depth) {
+        if (cur != root) {
+            x11::Atom actual = 0; int fmt = 0; unsigned long n = 0, after = 0; unsigned char* data = nullptr;
+            if (x.GetWindowProperty(dpy, cur, dnd.aware, 0, 1, 0, 4, &actual, &fmt, &n, &after, &data) == 0 && data) {
+                x.Free(data);
+                if (n) return cur;
+            }
+        }
+        int wx = 0, wy = 0; x11::Window child = 0;
+        if (!x.TranslateCoordinates(dpy, root, cur, rx, ry, &wx, &wy, &child) || !child) return 0;
+        cur = child;
+    }
+    return 0;
+}
+bool NativePlatform::Impl::dragStart(Rec& r, AppWindow::ExternalDrag d) {
+    if (!dnd.aware || !x.SetSelectionOwner || drag.rec) return false;
+    drag = {};
+    drag.rec = &r;
+    for (auto& [mime, data] : d.offered()) {
+        if (mime == "text/plain") { // UTF8_STRING + text/plain;charset=utf-8 + text/plain (XDND text convention)
+            drag.types.emplace_back(dnd.utf8, data);
+            drag.types.emplace_back(x.InternAtom(dpy, "text/plain;charset=utf-8", 0), data);
+            drag.types.emplace_back(dnd.textPlain, std::move(data));
+        } else drag.types.emplace_back(x.InternAtom(dpy, mime.c_str(), 0), std::move(data));
+        if (drag.types.size() >= 16) break;
+    }
+    if (drag.types.empty()) { drag.rec = nullptr; return false; }
+    drag.type = drag.types[0].first;
+    const x11::Window self = x11::Window(r.handle);
+    { // XdndTypeList: the full list (Enter carries at most three inline)
+        std::vector<long> v;
+        for (const auto& t : drag.types) v.push_back(long(t.first));
+        x.ChangeProperty(dpy, self, x.InternAtom(dpy, "XdndTypeList", 0), 4 /*XA_ATOM*/, 32, 0, reinterpret_cast<const unsigned char*>(v.data()), int(v.size()));
+    }
+    x.SetSelectionOwner(dpy, dnd.selection, self, 0);
+    // motion + release wherever the pointer is; the grab shows the copy cursor while over other clients
+    x.GrabPointer(dpy, self, 0, (1u << 3) | (1u << 6), 1, 1, 0, xCursor(u32(fuse::ui::CursorShape::Copy)), 0);
+    x.Flush(dpy);
+    return true;
+}
+void NativePlatform::Impl::dragEnd(bool accepted) {
+    if (!drag.rec) return;
+    x.UngrabPointer(dpy, 0);
+    x.Flush(dpy);
+    Rec* r = drag.rec;
+    drag.rec = nullptr;
+    drag.target = 0;
+    r->win->deliverExternalDragEnd(accepted);
+}
+bool NativePlatform::Impl::dragEvent(const x11::Event& ev) {
+    if (ev.type == x11::SelectionRequest && dnd.selection && ev.selreq.selection == dnd.selection && !drag.types.empty()) {
+        const auto& q = ev.selreq;
+        x11::Event n{};
+        n.selection.type = x11::SelectionNotify;
+        n.selection.display = dpy;
+        n.selection.requestor = q.requestor;
+        n.selection.selection = q.selection;
+        n.selection.target = q.target;
+        n.selection.time = q.time;
+        const std::string* data = nullptr;
+        for (const auto& t : drag.types) if (t.first == q.target) { data = &t.second; break; }
+        if (data && q.property) {
+            x.ChangeProperty(dpy, q.requestor, q.property, q.target, 8, 0, reinterpret_cast<const unsigned char*>(data->data()), int(data->size()));
+            n.selection.property = q.property;
+        }
+        x.SendEvent(dpy, q.requestor, 0, 0, &n);
+        x.Flush(dpy);
+        return true;
+    }
+    if (!drag.rec) return false;
+    const x11::Window self = x11::Window(drag.rec->handle);
+    if (ev.type == x11::MotionNotify && !drag.dropped) {
+        const x11::Window t = dndTargetAt(ev.input.x_root, ev.input.y_root);
+        if (t != drag.target) {
+            if (drag.target) dndSend(drag.target, dnd.leave, 0, 0, 0, 0, self);
+            drag.target = t;
+            drag.accepted = false;
+            if (t) {
+                long inl[3] = {0, 0, 0};
+                for (std::size_t i = 0; i < 3 && i < drag.types.size(); ++i) inl[i] = long(drag.types[i].first);
+                dndSend(t, dnd.enter, (long(5) << 24) | (drag.types.size() > 3 ? 1 : 0), inl[0], inl[1], inl[2], self);
+            }
+        }
+        if (t) dndSend(t, dnd.position, 0, (long(ev.input.x_root) << 16) | (ev.input.y_root & 0xFFFF), long(ev.input.time),
+                       long(dnd.actionCopy), self);
+        return true;
+    }
+    if (ev.type == x11::ButtonRelease && !drag.dropped) {
+        if (drag.target && drag.accepted) {
+            drag.dropped = true;
+            dndSend(drag.target, dnd.drop, 0, long(ev.input.time), 0, 0, self); // finish on XdndFinished
+        } else {
+            if (drag.target) dndSend(drag.target, dnd.leave, 0, 0, 0, 0, self);
+            dragEnd(false);
+        }
+        return true;
+    }
+    if (ev.type == x11::ClientMessage && ev.client.message_type == dnd.status) {
+        drag.accepted = (ev.client.l[1] & 1) != 0;
+        return true;
+    }
+    if (ev.type == x11::ClientMessage && ev.client.message_type == dnd.finished) {
+        dragEnd(drag.dropped && (ev.client.l[1] & 1));
+        return true;
+    }
+    if (ev.type == x11::ButtonPress || ev.type == x11::MotionNotify || ev.type == x11::ButtonRelease) return true;
+    return false;
+}
+void NativePlatform::Impl::dndSend(x11::Window to, x11::Atom type, long l1, long l2, long l3, long l4, x11::Window self) {
+    x11::Event e{};
+    e.client.type = x11::ClientMessage;
+    e.client.display = dpy;
+    e.client.window = to;
+    e.client.message_type = type;
+    e.client.format = 32;
+    e.client.l[0] = long(self);
+    e.client.l[1] = l1; e.client.l[2] = l2; e.client.l[3] = l3; e.client.l[4] = l4;
+    x.SendEvent(dpy, to, 0, 0, &e);
+    x.Flush(dpy);
+}
+void NativePlatform::Impl::dndClient(Rec& r, const x11::ClientEv& c) {
+    if (!dnd.aware || !x.ConvertSelection) return;
+    const x11::Window self = x11::Window(r.handle);
+    const bool accept = r.win->acceptsExternalDrops();
+    if (c.message_type == dnd.enter) {
+        dnd.source = x11::Window(c.l[0]);
+        dnd.type = 0;
+        dnd.offered.clear();
+        auto consider = [&](x11::Atom t) {
+            dnd.offered.push_back(t);
+            if (t == dnd.uriList) dnd.type = t; // files win
+            else if (!dnd.type && (t == dnd.utf8 || t == dnd.textPlain)) dnd.type = t;
+        };
+        if (c.l[1] & 1) { // more than three types: XdndTypeList on the source
+            x11::Atom actual = 0; int fmt = 0; unsigned long n = 0, after = 0; unsigned char* data = nullptr;
+            const x11::Atom typeList = x.InternAtom(dpy, "XdndTypeList", 0);
+            if (x.GetWindowProperty(dpy, dnd.source, typeList, 0, 64, 0, 4, &actual, &fmt, &n, &after, &data) == 0 && data) {
+                for (unsigned long i = 0; i < n; ++i) consider(reinterpret_cast<x11::Atom*>(data)[i]);
+                x.Free(data);
+            }
+        } else {
+            for (int i = 2; i < 5; ++i) if (c.l[i]) consider(x11::Atom(c.l[i]));
+        }
+    } else if (c.message_type == dnd.position) {
+        const int rx = int((unsigned long)c.l[2] >> 16), ry = int(c.l[2] & 0xFFFF);
+        int wx = 0, wy = 0; x11::Window child = 0;
+        x.TranslateCoordinates(dpy, x.RootWindow(dpy, x.DefaultScreen(dpy)), self, rx, ry, &wx, &wy, &child);
+        dnd.pos = {f32(wx), f32(wy)};
+        r.win->ui().pointerMove(dnd.pos); // hover feedback under the drag
+        const bool ok = accept && dnd.type;
+        dndSend(x11::Window(c.l[0]), dnd.status, ok ? 1 : 0, 0, 0, ok ? long(dnd.actionCopy) : 0, self);
+    } else if (c.message_type == dnd.leave) {
+        dnd.source = 0;
+    } else if (c.message_type == dnd.drop) {
+        if (accept && dnd.type) { // the preferred type first, then the rest (up to 8), one ConvertSelection each
+            dnd.got = {};
+            dnd.got.pos = dnd.pos;
+            dnd.fetch = {dnd.type};
+            for (x11::Atom t : dnd.offered)
+                if (t != dnd.type && dnd.fetch.size() < 8 && std::find(dnd.fetch.begin(), dnd.fetch.end(), t) == dnd.fetch.end()) dnd.fetch.push_back(t);
+            dnd.dropTime = (unsigned long)c.l[2];
+            x.ConvertSelection(dpy, dnd.selection, dnd.fetch.front(), dnd.prop, self, dnd.dropTime);
+        } else dndSend(x11::Window(c.l[0]), dnd.finished, 0, 0, 0, 0, self);
+    }
+}
+void NativePlatform::Impl::dndSelection(Rec& r, const x11::SelectionEv& e) {
+    if (!dnd.source || e.selection != dnd.selection || dnd.fetch.empty()) return;
+    const x11::Window self = x11::Window(r.handle);
+    const x11::Atom asked = dnd.fetch.front();
+    const bool preferred = dnd.got.formats.empty() && dnd.got.mime.empty();
+    bool got = false;
+    if (e.property) {
+        x11::Atom actual = 0; int fmt = 0; unsigned long n = 0, after = 0; unsigned char* data = nullptr;
+        if (x.GetWindowProperty(dpy, self, dnd.prop, 0, 1 << 24, 1, 0 /*AnyPropertyType*/, &actual, &fmt, &n, &after, &data) == 0 && data) {
+            std::string bytes(reinterpret_cast<const char*>(data), n * std::size_t(fmt / 8));
+            x.Free(data);
+            std::string mime;
+            if (asked == dnd.utf8 || asked == dnd.textPlain) mime = "text/plain";
+            else if (x.GetAtomName) {
+                if (char* nm = x.GetAtomName(dpy, asked)) { mime = nm; x.Free(nm); }
+                if (mime.starts_with("text/plain;")) mime = "text/plain";
+            }
+            if (!mime.empty()) {
+                bool dup = false;
+                for (const auto& f : dnd.got.formats) dup |= f.first == mime;
+                if (!dup) dnd.got.formats.emplace_back(mime, bytes);
+            }
+            if (preferred) {
+                dnd.got.data = std::move(bytes);
+                dnd.got.mime = asked == dnd.uriList ? "text/uri-list" : "text/plain";
+                if (asked == dnd.uriList) dnd.got.paths = AppWindow::pathsFromUriList(dnd.got.data);
+            }
+            got = true;
+        }
+    }
+    dnd.fetch.erase(dnd.fetch.begin());
+    if (preferred && !got) dnd.fetch.clear(); // the preferred type failed: refuse
+    if (!dnd.fetch.empty()) { x.ConvertSelection(dpy, dnd.selection, dnd.fetch.front(), dnd.prop, self, dnd.dropTime); x.Flush(dpy); return; }
+    const bool ok = !dnd.got.mime.empty();
+    if (ok) r.win->deliverExternalDrop(dnd.got);
+    dndSend(dnd.source, dnd.finished, ok ? 1 : 0, ok ? long(dnd.actionCopy) : 0, 0, 0, self);
+    dnd.source = 0;
+    dnd.got = {};
+}
+
 NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std::make_unique<Impl>(app, o)) {
-    const char* disp = std::getenv("DISPLAY");
-    if (disp && *disp && m->x.load()) {
+    const std::string disp = fuse::ui::os::env("DISPLAY");
+    if (!disp.empty() && m->x.load()) {
         m->dpy = m->x.OpenDisplay(nullptr);
         if (m->dpy) {
             m->x.SetErrorHandler(&x11::ignoreErrors);
             m->wmProtocols = m->x.InternAtom(m->dpy, "WM_PROTOCOLS", 0);
             m->wmDelete = m->x.InternAtom(m->dpy, "WM_DELETE_WINDOW", 0);
+            m->dndInit();
         } else {
             m->error = "cannot open X display";
         }
     } else {
-        m->error = disp && *disp ? "libX11.so.6 not found" : "no DISPLAY";
+        m->error = !disp.empty() ? "libX11.so.6 not found" : "no DISPLAY";
     }
     if (m->dpy) app.setEventSource({m.get(), &Impl::pump});
 }
@@ -1050,7 +1452,8 @@ PresenterKind NativePlatform::show(AppWindow& w) {
     r->kind = r->vk ? PresenterKind::Vulkan : PresenterKind::Headless;
 #endif
     if (m->opts.osPopups) w.ui().setOsPopups(true); // screen bounds arrive with the first present
-    w.setPresenter({r, &Impl::present, &Impl::destroy});
+    // Vulkan FIFO waits for the display; the CPU paths (X11 / GDI) are paced by AppWindow::maxFrameRate
+    w.setPresenter({r, &Impl::present, &Impl::destroy, r->vk != nullptr && m->opts.vsync});
     return r->kind;
 }
 
@@ -1059,9 +1462,17 @@ PresenterKind NativePlatform::kind(const AppWindow& w) const {
     return r ? r->kind : PresenterKind::Headless;
 }
 std::string_view NativePlatform::gpuName() const { return detail::vkCtxDeviceName(m->vk); }
+OutputColorSpace NativePlatform::outputColorSpace(const AppWindow& w) const {
+    const Impl::Rec* r = m->find(w);
+    return r ? detail::vkWinColorSpace(r->vk) : OutputColorSpace::Srgb;
+}
 bool NativePlatform::gpuDraws(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);
     return r && detail::vkWinGpuDraws(r->vk);
+}
+bool NativePlatform::hdrContent(const AppWindow& w) const {
+    const Impl::Rec* r = m->find(w);
+    return r && detail::vkWinHdrContent(r->vk);
 }
 std::string_view NativePlatform::lastError() const { return m->error; }
 bool NativePlatform::setExternalTexture(const AppWindow& w, unsigned slot, const ExternalTexture& tex) {
@@ -1075,6 +1486,10 @@ bool NativePlatform::capture(const AppWindow& w, Image& out) {
 std::size_t NativePlatform::popupCount(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);
     return r ? r->popups.size() : 0;
+}
+bool NativePlatform::popupIsTool(const AppWindow& w, std::size_t i) const {
+    const Impl::Rec* r = m->find(w);
+    return r && i < r->popups.size() && r->popups[i].tool;
 }
 unsigned long long NativePlatform::popupWindow(const AppWindow& w, std::size_t i) const {
     const Impl::Rec* r = m->find(w);
@@ -1183,6 +1598,33 @@ std::vector<int> NativePlatform::iconSizes(const AppWindow& w) const {
         if (const int wpx = iconWidth(reinterpret_cast<HICON>(SendMessageW(hwnd, WM_GETICON, which, 0)))) out.push_back(wpx);
     return out;
 }
+void NativePlatform::Impl::syncTitle(Rec& r) {
+    r.titleRev = r.win->titleRevision();
+    if (!r.handle) return;
+    const std::string& t = r.win->title();
+    std::wstring wt(std::size_t(MultiByteToWideChar(CP_UTF8, 0, t.data(), int(t.size()), nullptr, 0)), L'\0');
+    if (!wt.empty()) MultiByteToWideChar(CP_UTF8, 0, t.data(), int(t.size()), wt.data(), int(wt.size()));
+    SetWindowTextW(reinterpret_cast<HWND>(r.handle), wt.c_str());
+}
+void NativePlatform::Impl::syncCursor(Rec& r) {
+    const u32 rev = r.win->ui().cursorRevision();
+    if (rev == r.cursorRev) return;
+    r.cursorRev = rev;
+    if (!r.handle) return;
+    POINT p;
+    if (GetCursorPos(&p) && (WindowFromPoint(p) == reinterpret_cast<HWND>(r.handle) || GetCapture() == reinterpret_cast<HWND>(r.handle)))
+        SetCursor(winCursorHandle(r.win->ui().cursorShape()));
+}
+std::string NativePlatform::osTitle(const AppWindow& w) const {
+    const Impl::Rec* r = m->find(w);
+    if (!r || !r->handle) return {};
+    HWND hwnd = reinterpret_cast<HWND>(r->handle);
+    std::wstring wt(std::size_t(GetWindowTextLengthW(hwnd)) + 1, L'\0');
+    wt.resize(std::size_t(GetWindowTextW(hwnd, wt.data(), int(wt.size()))));
+    std::string out(std::size_t(WideCharToMultiByte(CP_UTF8, 0, wt.data(), int(wt.size()), nullptr, 0, nullptr, nullptr)), '\0');
+    if (!out.empty()) WideCharToMultiByte(CP_UTF8, 0, wt.data(), int(wt.size()), out.data(), int(out.size()), nullptr, nullptr);
+    return out;
+}
 #else
 bool NativePlatform::setIcon(const AppWindow& w, std::span<const Image> sizes) {
     const Impl::Rec* r = m->find(w);
@@ -1230,6 +1672,56 @@ std::vector<int> NativePlatform::iconSizes(const AppWindow& w) const {
         i += 2 + iw * ih;
     }
     m->x.Free(prop);
+    return out;
+}
+void NativePlatform::Impl::syncTitle(Rec& r) {
+    r.titleRev = r.win->titleRevision();
+    if (!r.handle || !dpy) return;
+    const std::string& t = r.win->title();
+    x.StoreName(dpy, x11::Window(r.handle), t.c_str()); // WM_NAME (Latin-1 for old WMs)
+    const x11::Atom netName = x.InternAtom(dpy, "_NET_WM_NAME", 0), utf8 = x.InternAtom(dpy, "UTF8_STRING", 0);
+    x.ChangeProperty(dpy, x11::Window(r.handle), netName, utf8, 8, 0 /*Replace*/, reinterpret_cast<const unsigned char*>(t.data()), int(t.size()));
+    x.Flush(dpy);
+}
+void NativePlatform::Impl::syncCursor(Rec& r) {
+    const u32 rev = r.win->ui().cursorRevision();
+    if (rev == r.cursorRev) return;
+    r.cursorRev = rev;
+    if (!r.handle || !dpy || !x.DefineCursor) return;
+    const u32 i = u32(r.win->ui().cursorShape());
+    // Default: no cursor of our own (None inherits the parent's, as before any drag); others from xCursor
+    const x11::XID c = i == 0 ? 0 : xCursor(i);
+    if (i != 0 && !c) return;
+    x.DefineCursor(dpy, x11::Window(r.handle), c);
+    x.Flush(dpy);
+}
+x11::XID NativePlatform::Impl::xCursor(u32 i) {
+    // themed names (freedesktop cursor spec) through libXcursor, else the core cursor font (X11/cursorfont.h)
+    static constexpr const char* kNames[] = {"default", "pointer", "text", "copy", "move", "alias", "not-allowed", "grabbing"};
+    static constexpr unsigned kFont[] = {68 /*left_ptr*/, 60 /*hand2*/, 152 /*xterm*/, 90 /*plus*/, 52 /*fleur*/, 68, 0 /*X_cursor*/, 58 /*hand1*/};
+    if (i >= 8) return 0;
+    if (!cursors[i] && x.LibraryLoadCursor) cursors[i] = x.LibraryLoadCursor(dpy, kNames[i]);
+    if (!cursors[i] && x.CreateFontCursor) cursors[i] = x.CreateFontCursor(dpy, kFont[i]);
+    return cursors[i];
+}
+std::string NativePlatform::osTitle(const AppWindow& w) const {
+    const Impl::Rec* r = m->find(w);
+    if (!r || !r->handle || !m->dpy) return {};
+    auto& x = m->x;
+    std::string out;
+    x.Sync(m->dpy, 0);
+    for (const char* name : {"_NET_WM_NAME", "WM_NAME"}) {
+        const x11::Atom a = x.InternAtom(m->dpy, name, 0);
+        x11::Atom type = 0;
+        int format = 0;
+        unsigned long n = 0, after = 0;
+        unsigned char* prop = nullptr;
+        if (x.GetWindowProperty(m->dpy, x11::Window(r->handle), a, 0, 1L << 16, 0, 0 /*AnyPropertyType*/, &type, &format, &n, &after, &prop) == 0 && prop) {
+            if (format == 8 && n > 0) out.assign(reinterpret_cast<const char*>(prop), n);
+            x.Free(prop);
+        }
+        if (!out.empty()) break;
+    }
     return out;
 }
 #endif
