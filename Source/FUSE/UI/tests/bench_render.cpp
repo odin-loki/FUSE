@@ -53,7 +53,7 @@ template <class F> double msPer(int n, F&& f, bool cpuClock = false) {
 }
 struct Row {
     std::string name;
-    double cpu = 0, gpu = -1, gpuWall = -1, pack = 0, repack = 0;
+    double cpu = 0, gpu = -1, gpuWall = -1, pack = 0, repack = 0, patch = 0;
     double editKb = -1; ///< bytes upload() writes after one command's colour changes (page diff), KB
     std::size_t cmds = 0;
     std::size_t tileKb = 0, imageKb = 0; ///< packed upload sizes
@@ -133,6 +133,23 @@ int main(int argc, char** argv) {
             packDrawList(*s.list, W, H, packed, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, s.scissor, ui.atlas().version());
         }, true);
         if (!packed.reused) std::fprintf(stderr, "bench: %s repack was not reused\n", s.name);
+        { // colour-only frames: alternate one command's colour (each pack is an in-place patch)
+            DrawList edited = *s.list;
+            for (std::size_t k = edited.cmds().size(); k-- > 0;)
+                if (edited.cmds()[k].op == DrawOp::Glyph || edited.cmds()[k].op == DrawOp::Rect) {
+                    const_cast<DrawCmd&>(edited.cmds()[k]).fill.r = 1.f - edited.cmds()[k].fill.r;
+                    break;
+                }
+            int flip = 0;
+            bool allPatched = true;
+            row.patch = msPer(iters, [&] {
+                packDrawList((flip++ & 1) ? *s.list : edited, W, H, packed, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0,
+                             s.scissor, ui.atlas().version());
+                allPatched = allPatched && packed.patched;
+            }, true);
+            if (!allPatched) std::fprintf(stderr, "bench: %s colour edit was not patched\n", s.name);
+            packDrawList(*s.list, W, H, packed, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, s.scissor, ui.atlas().version());
+        }
         row.tileKb = packed.tileBytes() / 1024;
         row.imageKb = packed.imageBytes() / 1024;
         rows.push_back(row);
@@ -160,8 +177,7 @@ int main(int argc, char** argv) {
         GpuDrawData data;
         for (std::size_t i = 0; i < std::size(scenes); ++i) {
             const Scene& s = scenes[i];
-            packDrawList(*s.list, W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, s.scissor);
-            data.atlasGeneration = ui.atlas().version();
+            packDrawList(*s.list, W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, s.scissor, ui.atlas().version());
             if (!data.passes.empty()) data.passes[0].flags |= render::kPassClear; // as vk_present: start from black, no load
             if (!gpu.upload(0, data)) { // over the renderer limits: report as missing, never time an empty frame
                 std::fprintf(stderr, "bench: %s exceeds GPU upload limits\n", s.name);
@@ -207,11 +223,11 @@ int main(int argc, char** argv) {
 
     std::printf("fuse_ui_bench_render %ux%u, %d iterations, GPU: %s (%s)\n", W, H, iters, device.c_str(),
                 timestamps ? "timestamp queries" : "wall time");
-    std::printf("  %-16s %8s %10s %10s %12s %10s %10s %9s %9s %9s\n", "scene", "cmds", "cpu ms", "gpu ms", "gpu wall ms",
-                "pack ms", "repack ms", "tiles KB", "data KB", "edit KB");
+    std::printf("  %-16s %8s %10s %10s %12s %10s %10s %9s %9s %9s %9s\n", "scene", "cmds", "cpu ms", "gpu ms", "gpu wall ms",
+                "pack ms", "repack ms", "patch ms", "tiles KB", "data KB", "edit KB");
     for (const Row& row : rows)
-        std::printf("  %-16s %8zu %10.3f %10.3f %12.3f %10.3f %10.3f %9zu %9zu %9.0f\n", row.name.c_str(), row.cmds, row.cpu,
-                    row.gpu, row.gpuWall, row.pack, row.repack, row.tileKb, row.imageKb, row.editKb);
+        std::printf("  %-16s %8zu %10.3f %10.3f %12.3f %10.3f %10.3f %9.3f %9zu %9zu %9.0f\n", row.name.c_str(), row.cmds, row.cpu,
+                    row.gpu, row.gpuWall, row.pack, row.repack, row.patch, row.tileKb, row.imageKb, row.editKb);
     if (!out.empty()) {
         if (FILE* f = std::fopen(out.c_str(), "wb")) {
             std::fprintf(f, "{\"width\":%u,\"height\":%u,\"iterations\":%d,\"device\":\"%s\",\"timestamps\":%s,\"scenes\":[", W, H, iters,

@@ -481,8 +481,10 @@ int main() {
         const u64 b1 = gpu.uploadedBytes();
         packDrawList(edited, W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, {}, gen);
         UI_CHECK(!data.reused);
+        UI_CHECK(data.patched); // colour-only: patched in place, not repacked
         UI_CHECK(gpu.upload(0, data));
         const u64 wrote = gpu.uploadedBytes() - b1;
+        UI_CHECK(wrote <= 3 * 4096); // the record's page and the appended fill
         UI_CHECK(wrote > 0 && wrote < data.cmdBytes() + data.tileBytes() + data.imageBytes());
         Image cpuE;
         cpuE.resize(int(W), int(H), 0xFF000000u);
@@ -491,6 +493,34 @@ int main() {
         re.render(edited, cpuE);
         vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
         check("incremental-upload", compare(cpuE, out));
+        // a rect colour change patches its GpuCmd; a moved command is structural (full repack), and still correct
+        DrawList e2 = edited;
+        for (std::size_t k = 0; k < e2.cmds().size(); ++k)
+            if (e2.cmds()[k].op == DrawOp::Rect) {
+                const_cast<DrawCmd&>(e2.cmds()[k]).fill = Color::rgb(0x00ff88);
+                break;
+            }
+        packDrawList(e2, W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, {}, gen);
+        UI_CHECK(data.patched);
+        UI_CHECK(gpu.upload(0, data));
+        Image cpuR;
+        cpuR.resize(int(W), int(H), 0xFF000000u);
+        re.render(e2, cpuR);
+        vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+        check("patch-rect", compare(cpuR, out));
+        for (std::size_t k = e2.cmds().size(); k-- > 0;)
+            if (e2.cmds()[k].op == DrawOp::Glyph) {
+                const_cast<DrawCmd&>(e2.cmds()[k]).rect.x += 3.f;
+                break;
+            }
+        packDrawList(e2, W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, {}, gen);
+        UI_CHECK(!data.patched && !data.reused);
+        UI_CHECK(gpu.upload(0, data));
+        cpuR.resize(int(W), int(H), 0xFF000000u);
+        std::fill(cpuR.pixels.begin(), cpuR.pixels.end(), 0xFF000000u);
+        re.render(e2, cpuR);
+        vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+        check("moved-glyph", compare(cpuR, out));
         std::printf("  incremental: %llu of %zu bytes written\n", (unsigned long long)wrote,
                     data.cmdBytes() + data.tileBytes() + data.imageBytes());
     }

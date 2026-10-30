@@ -8,6 +8,9 @@
 
 namespace fuse::ui::render {
 
+// the colour-only patch compares DrawCmd field by field: a new field must be added there
+static_assert(sizeof(DrawCmd) == 140, "DrawCmd changed: update the field compare in packDrawList");
+
 namespace {
 struct Clip {
     Rect r;
@@ -43,29 +46,97 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         };
         bool same = atlasGeneration != ~0u && out.atlasGeneration == atlasGeneration && out.prevAtlas == atlas &&
                     std::memcmp(key, out.prevKey, sizeof key) == 0 && out.contentVersion != 0;
-        // always run all three (each refreshes its copy)
-        same = sameVec(out.prevCmds, list.cmds()) && same;
+        // commands: block compare; a differing command whose only change is its fill colour becomes a patch (the
+        // packed geometry, tiles and runs do not depend on it), anything else forces a full repack
+        out.patches.clear();
+        bool structural = out.prevCmds.size() != list.cmds().size();
+        {
+            const DrawCmd* cur = list.cmds().data();
+            const std::size_t n = list.cmds().size();
+            if (structural) {
+                out.prevCmds.assign(cur, cur + n);
+            } else {
+                constexpr std::size_t B = 64;
+                for (std::size_t i = 0; i < n; i += B) {
+                    const std::size_t k = std::min(B, n - i);
+                    if (std::memcmp(out.prevCmds.data() + i, cur + i, k * sizeof(DrawCmd)) == 0) continue;
+                    for (std::size_t j = i; j < i + k && !structural; ++j) {
+                        // field by field: copies need not keep padding bytes, so a byte compare can differ on equal commands
+                        const DrawCmd& p = out.prevCmds[j];
+                        const DrawCmd& q = cur[j];
+                        const auto bits = [](const auto& x, const auto& y) { return std::memcmp(&x, &y, sizeof x) == 0; };
+                        const bool rest = p.op == q.op && p.gradient == q.gradient && p.u == q.u && p.v == q.v && p.tw == q.tw &&
+                                          p.th == q.th && p.image == q.image && p.node == q.node && bits(p.rect.x, q.rect.x) &&
+                                          bits(p.rect.y, q.rect.y) && bits(p.rect.w, q.rect.w) && bits(p.rect.h, q.rect.h) &&
+                                          bits(p.fill2, q.fill2) && bits(p.border, q.border) && bits(p.borderWidth, q.borderWidth) &&
+                                          bits(p.radius, q.radius) && bits(p.blur, q.blur) && bits(p.gradXf, q.gradXf) &&
+                                          p.stops == q.stops && p.stopCount == q.stopCount;
+                        if (rest && bits(p.fill, q.fill)) continue;
+                        if (rest) out.patches.push_back(u32(j));
+                        else structural = true;
+                    }
+                    std::memcpy(out.prevCmds.data() + i, cur + i, k * sizeof(DrawCmd));
+                }
+            }
+        }
+        // always run both (each refreshes its copy)
         same = sameVec(out.prevEdges, list.pathEdges()) && same;
         same = sameVec(out.prevStops, list.gradientStops()) && same;
+        same = same && !structural;
         if (same) // image pixels: compare with the copies already in the packed buffer
             for (u32 i = 0; i < imageCount && same; ++i) {
                 const Image* img = images ? images[i] : nullptr;
                 const u32* t = out.images.data() + i * 4;
                 const bool ext = img && img->externalSlot >= 0 && img->externalSlot < 4;
+                const bool hdr = !ext && img && img->hasHdr();
                 if (t[1] != (img ? u32(img->width) : 1u) || t[2] != (img ? u32(img->height) : 1u) ||
-                    t[3] != (ext ? u32(img->externalSlot) + 1u : 0u))
+                    t[3] != (ext ? u32(img->externalSlot) + 1u : hdr ? kImageHalf : 0u))
                     same = false;
+                else if (hdr)
+                    same = std::size_t(t[0]) + img->hdrPixels.size() * 2 <= out.images.size() &&
+                           std::memcmp(out.images.data() + t[0], img->hdrPixels.data(), img->hdrPixels.size() * 8) == 0;
                 else if (!ext && img && !img->pixels.empty())
                     same = std::size_t(t[0]) + img->pixels.size() <= out.images.size() &&
                            std::memcmp(out.images.data() + t[0], img->pixels.data(), img->pixels.size() * 4) == 0;
             }
         std::memcpy(out.prevKey, key, sizeof key);
         out.prevAtlas = atlas;
-        out.reused = same;
-        if (same) return;
+        out.reused = same && out.patches.empty();
+        out.patched = false;
+        if (out.reused) return;
+        // colour-only frame: patch the packed fills in place. Glyph records get their fill words appended at the end
+        // of `images` (deduplicated against earlier patches), so no other word moves and the upload page diff writes
+        // only the touched records / commands and the tail.
+        if (same && out.cmdSlot.size() == list.cmds().size() &&
+            out.images.size() + out.patches.size() * 4 <= out.packedImageWords + 4096) {
+            for (u32 idx : out.patches) {
+                const u32 slot = out.cmdSlot[idx];
+                if (slot == ~0u) continue; // culled
+                const Color f = list.cmds()[idx].fill;
+                if (slot & kCompactGlyph) {
+                    u32 at = ~0u;
+                    const f32 col[4] = {f.r, f.g, f.b, f.a};
+                    for (u32 q = out.packedImageWords; q + 4 <= out.images.size(); q += 4)
+                        if (std::memcmp(out.images.data() + q, col, sizeof col) == 0) { at = q; break; }
+                    if (at == ~0u) {
+                        at = u32(out.images.size());
+                        out.images.resize(out.images.size() + 4);
+                        std::memcpy(out.images.data() + at, col, sizeof col);
+                    }
+                    out.images[(slot & ~kCompactGlyph) + 3] = at;
+                } else {
+                    put4(out.cmds[slot].fill, f.r, f.g, f.b, f.a);
+                }
+            }
+            out.patched = true;
+            static std::atomic<u64> pv{1ull << 62}; // own range, still process-unique
+            out.contentVersion = ++pv;
+            return;
+        }
         static std::atomic<u64> versions{0}; // process-unique, so a slot never mistakes another GpuDrawData's content
         out.contentVersion = ++versions;
     }
+    out.cmdSlot.assign(list.cmds().size(), ~0u);
     out.cmds.clear();
     out.tiles.clear();
     out.images.clear();
@@ -134,6 +205,13 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         out.images[i * 4 + 3] = ext ? u32(img->externalSlot) + 1u : 0u;
         if (ext) {
             out.images.push_back(0u);
+            continue;
+        }
+        if (img && img->hasHdr()) { // 2 words per pixel: r | g << 16, b | a << 16 (half floats)
+            out.images[i * 4 + 3] = kImageHalf;
+            const std::size_t at = out.images.size();
+            out.images.resize(at + img->hdrPixels.size() * 2);
+            std::memcpy(out.images.data() + at, img->hdrPixels.data(), img->hdrPixels.size() * 8);
             continue;
         }
         if (img && !img->pixels.empty()) out.images.insert(out.images.end(), img->pixels.begin(), img->pixels.end());
@@ -302,6 +380,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         }
     };
     for (const DrawCmd& c : list.cmds()) {
+        const std::size_t ci = std::size_t(&c - list.cmds().data());
         if (c.op == DrawOp::PushClip) {
             if (depth < 31) {
                 ++depth;
@@ -356,6 +435,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             closeSegment();
             const u32 id = u32(out.cmds.size());
             pack(c, clip);
+            out.cmdSlot[ci] = id;
             areas.push_back({0, 0, 0, 0, id}); // never binned
             segBegin = u32(areas.size());
             GpuPass p;
@@ -449,6 +529,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             g.x1 = std::min(g.x1, bx1), g.y1 = std::min(g.y1, by1);
             if (g.x1 <= g.x0 || g.y1 <= g.y0) continue;
             g.id = kCompactGlyph | at;
+            out.cmdSlot[ci] = g.id;
             areas.push_back(g);
             continue;
         }
@@ -486,6 +567,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         }
         Area pa = pixels;
         pa.id = u32(out.cmds.size() - 1);
+        out.cmdSlot[ci] = pa.id;
         areas.push_back(pa);
     }
     closeSegment();
@@ -497,6 +579,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     }
     out.tiles.push_back(0u); // never empty
     if (out.cmds.empty()) out.cmds.push_back(GpuCmd{}); // non-empty buffer; no tile references it
+    out.packedImageWords = u32(out.images.size());
 }
 
 } // namespace fuse::ui::render

@@ -279,5 +279,32 @@ int main() {
         vkDestroyImage(vk.device, ext, nullptr);
         vkFreeMemory(vk.device, mem, nullptr);
     }
+    // 5. HDR CPU image (Image::hdrPixels): 2.5x white texels drawn at 2.5 on the float target; 50% opacity halves it
+    {
+        Image im;
+        im.resize(2, 2, 0xFFFFFFFFu); // 8-bit fallback (CPU raster / SDR)
+        const Color w25{2.5f, 2.5f, 2.5f, 1.f};
+        UI_CHECK_EQ(C::packHdrPixel(w25), 0x3C00410041004100ull);
+        UI_CHECK_EQ(C::packHdrPixel(Color{1, 1, 1, 1}), 0x3C003C003C003C00ull);
+        im.hdrPixels.assign(4, C::packHdrPixel(w25));
+        UI_CHECK(im.hasHdr());
+        const Image* imgs[1] = {&im};
+        DrawList dl;
+        DrawCmd c;
+        c.op = DrawOp::Image;
+        c.rect = {20, 20, 80, 80};
+        dl.push(c);
+        c.rect = {120, 20, 80, 80};
+        c.fill = Color{0, 0, 0, 0.5f};
+        dl.push(c);
+        packDrawList(dl, W, H, data, nullptr, 0, imgs, 1);
+        UI_CHECK_EQ(data.images[3], kImageHalf);
+        UI_CHECK(gpu.upload(0, data));
+        vk.runBytes(black.data(), out.data(), [&](VkCommandBuffer cmd) { gpu.record((void*)cmd, (void*)vk.view, 0); });
+        const f32 v = halfToFloat(out[(std::size_t(50) * W + 50) * 4]), h = halfToFloat(out[(std::size_t(50) * W + 150) * 4]);
+        std::printf("img-hdr   half image 2.5 -> %.4f, at 50%% %.4f\n", double(v), double(h));
+        UI_CHECK(std::abs(v - 2.5f) < 2e-3f);
+        UI_CHECK(std::abs(h - 1.25f) < 2e-3f);
+    }
     return finish("fuse_ui_vk_hdr");
 }

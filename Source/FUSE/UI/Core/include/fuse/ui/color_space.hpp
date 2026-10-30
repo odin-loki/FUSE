@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
 
 namespace fuse::ui::color {
 
@@ -122,6 +123,26 @@ inline Color hdr(Color c, f32 brightness) {
 inline Color hdrNits(Color c, f32 nits, f32 sdrWhiteNits = 203.f) { return hdr(c, nits / sdrWhiteNits); }
 /// Linear-light brightness of an extended-range colour relative to SDR white (1 = SDR white).
 inline f32 hdrBrightness(Color c) { return luminance(c); }
+
+/// One Image::hdrPixels texel: an extended-range colour (e.g. from hdr()) premultiplied and packed as RGBA16F.
+inline u64 packHdrPixel(Color c) {
+    const auto half = [](f32 f) -> u64 { // round-to-nearest-even binary16 (finite range; NaN -> 0, overflow -> inf)
+        if (!(f == f)) return 0;
+        u32 x;
+        std::memcpy(&x, &f, 4);
+        const u32 sign = (x >> 16) & 0x8000u;
+        x &= 0x7FFFFFFFu;
+        if (x >= 0x47800000u) return sign | 0x7C00u;
+        if (x < 0x38800000u) { // subnormal / zero
+            const f32 v = std::ldexp(std::abs(f), 24);
+            return sign | u32(std::nearbyint(v));
+        }
+        const u32 r = x - 0x38000000u; // rebias exponent 127 -> 15
+        return sign | ((r + 0x0FFFu + ((r >> 13) & 1u)) >> 13);
+    };
+    const f32 a = std::clamp(c.a, 0.f, 1.f);
+    return half(c.r * a) | (half(c.g * a) << 16) | (half(c.b * a) << 32) | (half(a) << 48);
+}
 
 /// An SDR sRGB colour as an HDR10 (Rec.2020 primaries, PQ) signal, with SDR white mapped to `sdrWhiteNits`.
 inline Color toHdr10(Color c, f32 sdrWhiteNits = 203.f) {

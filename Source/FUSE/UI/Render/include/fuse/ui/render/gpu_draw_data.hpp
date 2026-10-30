@@ -54,6 +54,8 @@ inline constexpr u32 kMinGlyphRun = 3;
 /// GpuCmd op of a clip carrier: holds clip rect / radius for compact glyphs; never binned.
 inline constexpr u32 kClipCarrier = 9;
 inline constexpr u32 kPassClear = 1u;
+/// Image table word 3: 0 = RGBA8 pixels, 1..4 = external slot + 1, kImageHalf = RGBA16F pixels (2 words each).
+inline constexpr u32 kImageHalf = 0x100u;
 
 /// The frame is a sequence of passes: tile-binned draw segments separated by backdrop blurs (each blur reads what
 /// the previous segments drew). kind 0: draw (GpuPush.tileBase = tileBase); kind 1: backdrop blur of cmds[cmd] over
@@ -91,6 +93,13 @@ struct GpuDrawData {
     /// packed buffers, sets `reused`, and leaves `contentVersion` alone, so UiVkRenderer::upload skips the copy.
     u64 contentVersion = 0;
     bool reused = false;
+    /// Colour-only frame: the inputs differ from the previous pack only in DrawCmd::fill, so packDrawList patched the
+    /// packed fills in place (GpuCmd::fill, or the glyph record's fill word pointing at words appended to `images`)
+    /// instead of repacking; the rest of the buffers keep their layout and the upload diff stays small.
+    bool patched = false;
+    std::vector<u32> cmdSlot;  ///< per DrawList command: GpuCmd index, kCompactGlyph | record offset, or ~0u (not packed)
+    std::vector<u32> patches;  ///< scratch: fill-only changed command indices
+    u32 packedImageWords = 0;  ///< images.size() after the last full pack (patch fills go after it)
     /// previous inputs (compared, then refreshed from the first difference on); kept for capacity
     std::vector<DrawCmd> prevCmds;
     std::vector<PathEdge> prevEdges;

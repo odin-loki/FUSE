@@ -304,7 +304,7 @@ void main() {
             const uint img = c.info.w;
             if (img >= pc.imageCount) continue;
             const uint ext = ui_images.data[img * 4u + 3u];
-            if (ext != 0u) {
+            if (ext != 0u && ext != 0x100u) {
                 // straight RGBA texture, nearest-scaled over the rect (same mapping as the CPU image path)
                 const ivec2 es = max(extSize(ext - 1u), ivec2(1));
                 const int ex = clamp(int((px - c.rect.x) / c.rect.z * float(es.x)), 0, es.x - 1);
@@ -323,6 +323,13 @@ void main() {
             const uint off = ui_images.data[img * 4u], w = ui_images.data[img * 4u + 1u], h = ui_images.data[img * 4u + 2u];
             const int sx = clamp(int((px - c.rect.x) / c.rect.z * float(w)), 0, int(w) - 1);
             const int sy = clamp(int((py - c.rect.y) / c.rect.w * float(h)), 0, int(h) - 1);
+            if (ext == 0x100u) { // RGBA16F pixels (Image::hdrPixels, premultiplied): values above 1 kept on HDR targets
+                const uint at = off + (uint(sy) * w + uint(sx)) * 2u;
+                const vec2 rg = unpackHalf2x16(ui_images.data[at]), ba = unpackHalf2x16(ui_images.data[at + 1u]);
+                const float hk = clipCov * (c.fill.a > 0.0 ? c.fill.a : 1.0);
+                blend(dst, vec4(max(vec3(rg, ba.x), vec3(0.0)), clamp(ba.y, 0.0, 1.0)) * hk);
+                continue;
+            }
             const uint s = ui_images.data[off + uint(sy) * w + uint(sx)];
             const float kk = clipCov * (c.fill.a > 0.0 ? c.fill.a : 1.0);
             blend(dst, vec4(float(s & 0xFFu) / 255.0 * kk, float((s >> 8) & 0xFFu) / 255.0 * kk,

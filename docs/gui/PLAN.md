@@ -207,12 +207,17 @@ Every phase: commits on `gui-framework`, pushed after each milestone; never to `
 - Done: persistent GPU buffers. `packDrawList(..., atlasGeneration)` keeps the previous pack when the inputs are unchanged: list contents, size, scissor, image pixels and a known atlas generation. It sets `GpuDrawData::reused` and keeps `contentVersion`, which is process-unique. `UiVkRenderer::upload` then writes nothing. A changed frame writes only the 4 KB pages that differ from what the slot holds, tracked against a per-slot CPU shadow; `uploadedBytes()` counts them. vk_present passes the atlas version.
   - Release lavapipe text_page: repack 0.51 ms instead of 3.8 ms, 0 bytes uploaded for an unchanged frame, and 1.5 of 3.1 MB after one glyph colour change. Inserted fill words shift the later records and runs, so those pages differ.
   - Gate: fuse_ui_vk_parity "incremental-upload".
+- Done: colour-only patching. When a frame differs from the previous pack only in DrawCmd::fill (hover, selection, caret or theme tint), packDrawList patches in place and sets `GpuDrawData::patched`. A GpuCmd gets its fill rewritten; a glyph record's fill word is pointed at deduplicated words appended after the packed data, using a per-command slot map (`cmdSlot`). Nothing else moves, so the page diff uploads only the touched pages.
+  - Release text_page: patch 0.56 ms instead of a 4 ms repack, and 7 KB uploaded instead of 1.5 MB.
+  - Geometry, order or count changes still repack fully.
+  - Gates: fuse_ui_vk_parity "incremental-upload", "patch-rect" and "moved-glyph".
+- Done: HDR CPU images. `Image::hdrPixels` holds premultiplied RGBA16F texels, built with `color::packHdrPixel`, plus an 8-bit `pixels` fallback. The GPU path ships them as half words (image table flag `kImageHalf`) and keeps values above 1 on the HDR target. Gate: fuse_ui_vk_hdr "img-hdr" (2.5 stays 2.5).
 - Done: HDR external textures. On the HDR target, float external textures keep values above 1 (rgb >= 0, alpha 0..1). Gate: fuse_ui_vk_hdr "ext-hdr" (3.0 stays 3.0).
 - Shaders: variants are `#include`s of shared `.glsl` bodies (GL_GOOGLE_include_directive); CMake rebuilds on body changes.
 - Left:
   - Upstream the FORGE `display_hdr` (os.hpp) and bump the submodule. Until then the Win32 check is compiled out (local change only, awaiting the owner).
-  - HDR on the CPU-upload path (no float raster), and HDR CPU images: kImage pixels are 8-bit (external float textures are HDR).
-  - Incremental pack for changed frames: a changed frame still repacks fully (about 3.8 ms on text_page), and an insertion shifts every later images word. Stable per-run record slots would fix both.
+  - HDR on the CPU-upload path: CpuRasterizer is 8-bit. A float raster means a second pixel pipeline (blend, AA, blur, images); not started.
+  - Structural changes (moved, added or removed commands) still repack fully (about 4 ms on text_page), and an insertion shifts every later images word. Stable record slots keyed by DrawCmd::node would fix that.
   - Wayland: when the Vulkan WSI is given an HDR10 colour space, it attaches wp_color_management_v1 to the surface itself, and a second app-side object would be a protocol error.
   - GPU text on lavapipe is still slower than the CPU (about 21 vs 14-16 ms). The cost is per-pixel glyph loops on a software rasteriser; real GPUs are not measured here.
   - The Apple paths (CVDisplayLink, Metal surface) are unverified on hardware.

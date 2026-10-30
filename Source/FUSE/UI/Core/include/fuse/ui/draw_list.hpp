@@ -186,6 +186,11 @@ struct Image {
     /// >= 0: on the GPU (fuse_ui_vk) path the image is the external texture bound to this slot
     /// (UiVkRenderer::setExternalImage) and `pixels` are only the CPU rasteriser's fallback / screenshot copy.
     int externalSlot = -1;
+    /// Optional HDR pixels (width * height, premultiplied RGBA16F: r | g << 16 | b << 32 | a << 48, 1.0 = SDR white).
+    /// When present the GPU path draws them instead of `pixels`, keeping values above 1 on an HDR target
+    /// (UiVkRenderer::setTargetHdr); `pixels` stay the 8-bit copy the CPU rasteriser and SDR screenshots use.
+    std::vector<u64> hdrPixels;
+    bool hasHdr() const { return !hdrPixels.empty() && hdrPixels.size() == std::size_t(width) * std::size_t(height); }
     void resize(int w, int h, u32 clear = 0) {
         width = w;
         height = h;
