@@ -294,9 +294,12 @@ int styleCooked() {
     UI_CHECK_EQ(sheet->tokens().size(), parsed->tokens().size());
     std::printf("theme.fusestyle: %zu text bytes -> %zu cooked bytes, %zu rules, %zu tokens\n", css.size(), cooked->size(),
                 sheet->rules().size(), sheet->tokens().size());
-    { // filter and transition values survive cooking (format v2)
+    { // filter, transition / animation lists, @keyframes and attribute / :nth selectors survive cooking (format v3)
         const std::string_view fx = "panel { filter: blur(2px) drop-shadow(1px 2px 3px #102030) url(#glow); "
-                                    "transition: background 150ms ease-out, opacity 1s steps(3, jump-both) 0.2s, width 2s cubic-bezier(0.1, 0.7, 1, 0.1); }";
+                                    "transition: background 150ms ease-out, opacity 1s steps(3, jump-both) 0.2s, width 2s cubic-bezier(0.1, 0.7, 1, 0.1); "
+                                    "animation: pulse 2s linear infinite alternate both, glow 1s 3 paused; }"
+                                    "@keyframes pulse { from { opacity: 0.2; } 50% { opacity: 0.6; animation-timing-function: ease-in; } }"
+                                    "panel[data-k^=\"Ab\" i]:nth-child(2n+1) ~ panel:last-of-type { height: 33px; }";
         auto ck = cookStyle(fx);
         auto ls = ck ? loadCookedStyle(bytes(*ck)) : std::expected<StyleSheet, std::string>(std::unexpected(std::string("cook")));
         auto ps = StyleSheet::parse(fx);
@@ -309,7 +312,19 @@ int styleCooked() {
             a.update();
             b.update();
             UI_CHECK(a.computed(na) == b.computed(nb));
-            UI_CHECK_EQ(int(b.computed(nb).transitionCount), 3);
+            UI_CHECK_EQ(int(b.computed(nb).transitionPropertyCount), 3);
+            UI_CHECK_EQ(int(b.computed(nb).animationNameCount), 2);
+            UI_CHECK(b.computed(nb).animationName[0] == animationNameId("pulse"));
+            UI_CHECK(b.computed(nb).animationPaused[1] == 1 && b.computed(nb).animationIterations[1] == 3.f);
+            UI_CHECK(std::fabs(b.computed(nb).opacity - 0.2f) < 1e-4f); // pulse at t = 0 (backwards fill)
+            UI_CHECK_EQ(b.styles().sheet(0).keyframes().size(), std::size_t(1));
+            UI_CHECK(b.styles().sheet(0).keyframes()[0].frames[1].hasEase);
+            const NodeHandle a2 = a.create(a.registry().find("panel"), a.root()), b2 = b.create(b.registry().find("panel"), b.root());
+            a.setAttribute(na, "data-k", "abc");
+            b.setAttribute(nb, "data-k", "aBC");
+            a.update();
+            b.update();
+            UI_CHECK(a.computed(a2).height.value == 33.f && b.computed(b2).height.value == 33.f);
             UI_CHECK_EQ(int(b.computed(nb).filterCount), 3);
         }
     }

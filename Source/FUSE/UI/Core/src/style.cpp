@@ -7,6 +7,7 @@
 #include <charconv>
 #include <cstring>
 #include <deque>
+#include <limits>
 #include <mutex>
 #include <cstdio>
 #include <vector>
@@ -78,7 +79,18 @@ constexpr PropInfo kProps[] = {
     {Prop::BackgroundClip, "background-clip", T::Enum, false, false, false},
     {Prop::BackdropFilter, "backdrop-filter", T::Filter, false, false, false},
     {Prop::Filter, "filter", T::Filter, false, false, false},
-    {Prop::Transition, "transition", T::Transition, false, false, false},
+    {Prop::TransitionProperty, "transition-property", T::List, false, false, false},
+    {Prop::TransitionDuration, "transition-duration", T::List, false, false, false},
+    {Prop::TransitionTimingFunction, "transition-timing-function", T::List, false, false, false},
+    {Prop::TransitionDelay, "transition-delay", T::List, false, false, false},
+    {Prop::AnimationName, "animation-name", T::List, false, false, false},
+    {Prop::AnimationDuration, "animation-duration", T::List, false, false, false},
+    {Prop::AnimationTimingFunction, "animation-timing-function", T::List, false, false, false},
+    {Prop::AnimationDelay, "animation-delay", T::List, false, false, false},
+    {Prop::AnimationIterationCount, "animation-iteration-count", T::List, false, false, false},
+    {Prop::AnimationDirection, "animation-direction", T::List, false, false, false},
+    {Prop::AnimationFillMode, "animation-fill-mode", T::List, false, false, false},
+    {Prop::AnimationPlayState, "animation-play-state", T::List, false, false, false},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -275,23 +287,23 @@ std::string_view filterName(u32 id) {
 }
 
 // `transition` property names: longhands, plus shorthands expanding to their longhands
-static bool transitionProps(std::string_view name, u64& mask) {
-    auto bit = [](Prop p) { return u64(1) << u8(p); };
+static bool transitionProps(std::string_view name, PropMask& m) {
+    auto bit = [&](Prop p) { m.set(u8(p)); };
     if (name == "all") {
         for (int k = 0; k < kPropCount; ++k)
-            if (kProps[k].animatable) mask |= u64(1) << k;
+            if (kProps[k].animatable) m.set(u32(k));
         return true;
     }
-    if (name == "background" || name == "background-color") { mask |= bit(Prop::Background) | bit(Prop::Background2); return true; }
-    if (name == "padding") { mask |= bit(Prop::PaddingLeft) | bit(Prop::PaddingTop) | bit(Prop::PaddingRight) | bit(Prop::PaddingBottom); return true; }
-    if (name == "margin") { mask |= bit(Prop::MarginLeft) | bit(Prop::MarginTop) | bit(Prop::MarginRight) | bit(Prop::MarginBottom); return true; }
-    if (name == "border-radius") { mask |= bit(Prop::RadiusTL) | bit(Prop::RadiusTR) | bit(Prop::RadiusBR) | bit(Prop::RadiusBL); return true; }
-    if (name == "border") { mask |= bit(Prop::BorderColor) | bit(Prop::BorderWidth); return true; }
-    if (name == "box-shadow") { mask |= bit(Prop::ShadowColor) | bit(Prop::ShadowBlur) | bit(Prop::ShadowX) | bit(Prop::ShadowY); return true; }
-    if (name == "inset") { mask |= bit(Prop::Left) | bit(Prop::Top) | bit(Prop::Right) | bit(Prop::Bottom); return true; }
+    if (name == "background" || name == "background-color") { bit(Prop::Background); bit(Prop::Background2); return true; }
+    if (name == "padding") { bit(Prop::PaddingLeft); bit(Prop::PaddingTop); bit(Prop::PaddingRight); bit(Prop::PaddingBottom); return true; }
+    if (name == "margin") { bit(Prop::MarginLeft); bit(Prop::MarginTop); bit(Prop::MarginRight); bit(Prop::MarginBottom); return true; }
+    if (name == "border-radius") { bit(Prop::RadiusTL); bit(Prop::RadiusTR); bit(Prop::RadiusBR); bit(Prop::RadiusBL); return true; }
+    if (name == "border") { bit(Prop::BorderColor); bit(Prop::BorderWidth); return true; }
+    if (name == "box-shadow") { bit(Prop::ShadowColor); bit(Prop::ShadowBlur); bit(Prop::ShadowX); bit(Prop::ShadowY); return true; }
+    if (name == "inset") { bit(Prop::Left); bit(Prop::Top); bit(Prop::Right); bit(Prop::Bottom); return true; }
     Prop p;
     if (!findProp(name, p)) return false;
-    if (propInfo(p).animatable) mask |= bit(p); // discrete properties: accepted, not animated
+    if (propInfo(p).animatable) bit(p); // discrete properties: accepted, not animated
     return true;
 }
 static bool parseTime(std::string_view w, f32& out) {
@@ -301,9 +313,9 @@ static bool parseTime(std::string_view w, f32& out) {
     else if (unit != "s") return false;
     return true;
 }
-static bool parseTiming(std::string_view w, TransitionSpec& t) {
-    using K = TransitionSpec::Kind;
-    using SP = TransitionSpec::StepPos;
+static bool parseTiming(std::string_view w, Easing& t) {
+    using K = Easing::Kind;
+    using SP = Easing::StepPos;
     auto bez = [&](f32 a, f32 b, f32 c, f32 d) { t.kind = K::Bezier, t.x1 = a, t.y1 = b, t.x2 = c, t.y2 = d; return true; };
     if (w == "ease") return bez(0.25f, 0.1f, 0.25f, 1.f);
     if (w == "linear") return bez(0.f, 0.f, 1.f, 1.f);
@@ -349,49 +361,165 @@ static bool parseTiming(std::string_view w, TransitionSpec& t) {
     }
     return false;
 }
-// "none" | <single-transition> [, <single-transition>]*  with  [<property> | all] || <time> || <easing> || <time>
-static bool parseTransition(std::string_view text, PropValue& out) {
-    if (text == "none") return true;
-    std::size_t s = 0;
+bool parseEasing(std::string_view text, Easing& out) { return parseTiming(trim(text), out); }
+
+// Splits on top-level commas / whitespace (parentheses nest)
+static void splitTop(std::string_view text, char sep, std::vector<std::string_view>& out) {
+    out.clear();
     int depth = 0;
+    std::size_t s = 0;
     for (std::size_t i = 0; i <= text.size(); ++i) {
         if (i < text.size() && text[i] == '(') ++depth;
         if (i < text.size() && text[i] == ')') --depth;
-        if (i < text.size() && !(text[i] == ',' && depth == 0)) continue;
+        const bool at = i == text.size() || (depth == 0 && (sep == ' ' ? std::isspace(static_cast<unsigned char>(text[i])) != 0 : text[i] == sep));
+        if (!at) continue;
         const std::string_view item = trim(text.substr(s, i - s));
         s = i + 1;
-        if (item.empty() || out.trackCount >= kMaxTransitions) return false;
-        TransitionSpec t;
+        if (sep != ' ' || !item.empty()) out.push_back(item);
+    }
+}
+static bool isIdent(std::string_view w) {
+    if (w.empty() || std::isdigit(static_cast<unsigned char>(w[0]))) return false;
+    for (char c : w)
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_') return false;
+    return true;
+}
+static bool parseDirection(std::string_view w, u8& out) {
+    if (w == "normal") out = u8(AnimDirection::Normal);
+    else if (w == "reverse") out = u8(AnimDirection::Reverse);
+    else if (w == "alternate") out = u8(AnimDirection::Alternate);
+    else if (w == "alternate-reverse") out = u8(AnimDirection::AlternateReverse);
+    else return false;
+    return true;
+}
+static bool parseFill(std::string_view w, u8& out) {
+    if (w == "none") out = u8(AnimFill::None);
+    else if (w == "forwards") out = u8(AnimFill::Forwards);
+    else if (w == "backwards") out = u8(AnimFill::Backwards);
+    else if (w == "both") out = u8(AnimFill::Both);
+    else return false;
+    return true;
+}
+static bool parsePlay(std::string_view w, u8& out) {
+    if (w == "running") out = 0;
+    else if (w == "paused") out = 1;
+    else return false;
+    return true;
+}
+static bool parseIterations(std::string_view w, f32& out) {
+    if (w == "infinite") { out = std::numeric_limits<f32>::infinity(); return true; }
+    std::string_view unit;
+    return parseNumber(w, out, unit) && unit.empty() && out >= 0.f;
+}
+// One entry of a transition-* / animation-* longhand list
+static bool parseListItem(Prop p, std::string_view w, PropValue& out, u8 k, bool single) {
+    switch (p) {
+    case Prop::TransitionProperty:
+        if (w == "none") return single;
+        return isIdent(w) && w != "initial" && w != "inherit" && w != "unset" && w != "default" &&
+               transitionProps(w, out.masks[k]);
+    case Prop::TransitionDuration: case Prop::AnimationDuration:
+        return parseTime(w, out.tracks[k].value) && out.tracks[k].value >= 0.f;
+    case Prop::TransitionDelay: case Prop::AnimationDelay: return parseTime(w, out.tracks[k].value);
+    case Prop::TransitionTimingFunction: case Prop::AnimationTimingFunction: return parseTiming(w, out.eases[k]);
+    case Prop::AnimationName:
+        if (w == "none") { out.ids[k] = 0; return true; }
+        if (!isIdent(w) || w == "initial" || w == "inherit" || w == "unset" || w == "default") return false;
+        out.ids[k] = animationNameId(w);
+        return true;
+    case Prop::AnimationIterationCount: return parseIterations(w, out.tracks[k].value);
+    case Prop::AnimationDirection: return parseDirection(w, out.fns[k]);
+    case Prop::AnimationFillMode: return parseFill(w, out.fns[k]);
+    case Prop::AnimationPlayState: return parsePlay(w, out.fns[k]);
+    default: return false;
+    }
+}
+static bool parseList(Prop p, std::string_view text, PropValue& out) {
+    std::vector<std::string_view> items;
+    splitTop(text, ',', items);
+    if (items.empty() || items.size() > std::size_t(kMaxTransitions)) return false;
+    for (std::size_t k = 0; k < items.size(); ++k) {
+        if (items[k].empty() || !parseListItem(p, items[k], out, u8(k), items.size() == 1)) return false;
+        ++out.trackCount;
+    }
+    return true;
+}
+static PropValue listValue(PropType) { PropValue v; v.type = PropType::List; return v; }
+
+// `transition` shorthand: "none" | <single-transition>#, [<property> | all | none] || <time> || <easing> || <time>
+static bool parseTransitionShorthand(std::string_view text, PropValue (&out)[4]) {
+    for (auto& v : out) v = listValue(PropType::List);
+    std::vector<std::string_view> items, words;
+    splitTop(text, ',', items);
+    if (items.empty() || items.size() > std::size_t(kMaxTransitions)) return false;
+    for (std::size_t k = 0; k < items.size(); ++k) {
+        splitTop(items[k], ' ', words);
+        if (words.empty()) return false;
         bool haveProp = false, haveEase = false;
         int times = 0;
-        std::size_t w0 = 0;
-        int d = 0;
-        for (std::size_t j = 0; j <= item.size(); ++j) {
-            if (j < item.size() && item[j] == '(') ++d;
-            if (j < item.size() && item[j] == ')') --d;
-            if (j < item.size() && !(std::isspace(static_cast<unsigned char>(item[j])) && d == 0)) continue;
-            const std::string_view w = trim(item.substr(w0, j - w0));
-            w0 = j + 1;
-            if (w.empty()) continue;
+        Easing e;
+        f32 dur = 0.f, delay = 0.f;
+        PropMask m;
+        for (auto w : words) {
             f32 v = 0.f;
             if (times < 2 && parseTime(w, v)) {
-                if (times == 0 && v < 0.f) return false; // negative durations are invalid (delays may be negative)
-                (times++ == 0 ? t.duration : t.delay) = v;
-            } else if (!haveEase && parseTiming(w, t)) haveEase = true;
-            else if (!haveProp && w != "none" && transitionProps(w, t.props)) haveProp = true;
-            else if (!haveProp && w == "none") haveProp = true; // covers nothing
+                if (times == 0 && v < 0.f) return false;
+                (times++ == 0 ? dur : delay) = v;
+            } else if (!haveEase && parseTiming(w, e)) haveEase = true;
+            else if (!haveProp && w == "none") { if (items.size() != 1) return false; haveProp = true; }
+            else if (!haveProp && isIdent(w) && transitionProps(w, m)) haveProp = true;
             else return false;
         }
-        if (!haveProp) transitionProps("all", t.props);
-        out.transitions[out.trackCount++] = t;
+        if (!haveProp) transitionProps("all", m);
+        out[0].masks[k] = m, out[1].tracks[k].value = dur, out[2].eases[k] = e, out[3].tracks[k].value = delay;
+        for (auto& v : out) ++v.trackCount;
     }
-    return depth == 0;
+    return true;
+}
+// `animation` shorthand: <single-animation>#, <time> || <easing> || <time> || <iteration-count> || <direction> ||
+// <fill-mode> || <play-state> || [none | <name>]
+static bool parseAnimationShorthand(std::string_view text, PropValue (&out)[8]) {
+    for (auto& v : out) v = listValue(PropType::List);
+    std::vector<std::string_view> items, words;
+    splitTop(text, ',', items);
+    if (items.empty() || items.size() > std::size_t(kMaxTransitions)) return false;
+    for (std::size_t k = 0; k < items.size(); ++k) {
+        splitTop(items[k], ' ', words);
+        if (words.empty()) return false;
+        bool hEase = false, hIter = false, hDir = false, hFill = false, hPlay = false, hName = false;
+        int times = 0;
+        f32 dur = 0.f, delay = 0.f, iter = 1.f;
+        Easing e;
+        u8 dir = 0, fill = 0, play = 0;
+        u32 name = 0;
+        for (auto w : words) {
+            f32 v = 0.f;
+            if (times < 2 && parseTime(w, v)) {
+                if (times == 0 && v < 0.f) return false;
+                (times++ == 0 ? dur : delay) = v;
+            } else if (!hEase && parseTiming(w, e)) hEase = true;
+            else if (!hIter && parseIterations(w, iter)) hIter = true;
+            else if (!hDir && parseDirection(w, dir)) hDir = true;
+            else if (!hFill && w != "none" && parseFill(w, fill)) hFill = true;
+            else if (!hPlay && parsePlay(w, play)) hPlay = true;
+            else if (!hName && w == "none") hName = true;
+            else if (!hFill && w == "none") hFill = true; // second none: fill-mode
+            else if (!hName && isIdent(w) && w != "initial" && w != "inherit" && w != "unset" && w != "default") {
+                name = animationNameId(w);
+                hName = true;
+            } else return false;
+        }
+        out[0].ids[k] = name, out[1].tracks[k].value = dur, out[2].eases[k] = e, out[3].tracks[k].value = delay;
+        out[4].tracks[k].value = iter, out[5].fns[k] = dir, out[6].fns[k] = fill, out[7].fns[k] = play;
+        for (auto& v : out) ++v.trackCount;
+    }
+    return true;
 }
 
-f32 transitionEase(const TransitionSpec& s, f32 t) {
+f32 easeValue(const Easing& s, f32 t) {
     t = std::clamp(t, 0.f, 1.f);
-    if (s.kind == TransitionSpec::Kind::Steps) {
-        using SP = TransitionSpec::StepPos;
+    if (s.kind == Easing::Kind::Steps) {
+        using SP = Easing::StepPos;
         const f32 n = f32(s.steps);
         f32 step = std::floor(t * n);
         if (s.stepPos == SP::JumpStart || s.stepPos == SP::JumpBoth) step += 1.f;
@@ -483,7 +611,7 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
         return unit.empty() || unit == "%";
     }
     case T::Color: return parseColor(text, out.color);
-    case T::Transition: return parseTransition(text, out);
+    case T::List: return parseList(p, text, out);
     case T::Filter: { // "none" | fn(<arg>) ... : blur(<len>), brightness / contrast / saturate / grayscale / invert / sepia /
                       // opacity(<number> | <pct>), hue-rotate(<angle>), drop-shadow(<dx> <dy> [<blur>] [<color>]), url(#id)
         if (text == "none") return true;
@@ -715,9 +843,44 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
             s.filterAmounts[k] = k < v.trackCount ? v.tracks[k].value : 0.f;
         }
         break;
-    case Prop::Transition:
-        s.transitionCount = v.trackCount;
-        s.transitions = v.transitions;
+    case Prop::TransitionProperty:
+        s.transitionPropertyCount = v.trackCount ? v.trackCount : 1; // none: one empty entry
+        s.transitionProperty = v.masks;
+        break;
+    case Prop::TransitionDuration:
+        s.transitionDurationCount = v.trackCount;
+        for (u8 k = 0; k < kMaxTransitions; ++k) s.transitionDuration[k] = v.tracks[k].value;
+        break;
+    case Prop::TransitionTimingFunction: s.transitionEaseCount = v.trackCount; s.transitionEase = v.eases; break;
+    case Prop::TransitionDelay:
+        s.transitionDelayCount = v.trackCount;
+        for (u8 k = 0; k < kMaxTransitions; ++k) s.transitionDelay[k] = v.tracks[k].value;
+        break;
+    case Prop::AnimationName: s.animationNameCount = v.trackCount; s.animationName = v.ids; break;
+    case Prop::AnimationDuration:
+        s.animationDurationCount = v.trackCount;
+        for (u8 k = 0; k < kMaxTransitions; ++k) s.animationDuration[k] = v.tracks[k].value;
+        break;
+    case Prop::AnimationTimingFunction: s.animationEaseCount = v.trackCount; s.animationEase = v.eases; break;
+    case Prop::AnimationDelay:
+        s.animationDelayCount = v.trackCount;
+        for (u8 k = 0; k < kMaxTransitions; ++k) s.animationDelay[k] = v.tracks[k].value;
+        break;
+    case Prop::AnimationIterationCount:
+        s.animationIterationCount = v.trackCount;
+        for (u8 k = 0; k < kMaxTransitions; ++k) s.animationIterations[k] = v.tracks[k].value;
+        break;
+    case Prop::AnimationDirection:
+        s.animationDirectionCount = v.trackCount;
+        for (u8 k = 0; k < kMaxTransitions; ++k) s.animationDirection[k] = AnimDirection(v.fns[k]);
+        break;
+    case Prop::AnimationFillMode:
+        s.animationFillCount = v.trackCount;
+        for (u8 k = 0; k < kMaxTransitions; ++k) s.animationFill[k] = AnimFill(v.fns[k]);
+        break;
+    case Prop::AnimationPlayState:
+        s.animationPlayCount = v.trackCount;
+        for (u8 k = 0; k < kMaxTransitions; ++k) s.animationPaused[k] = v.fns[k];
         break;
     case Prop::Count: break;
     }
@@ -807,33 +970,69 @@ struct Cursor {
 };
 
 
+// An+B (CSS Syntax 3 §6): odd, even, <int>, [+-]?<int>?n[ [+-] <int>]
+bool parseNthImpl(std::string_view t, i32& a, i32& b) {
+    std::string w;
+    for (char c : t)
+        if (!std::isspace(static_cast<unsigned char>(c))) w += char(std::tolower(static_cast<unsigned char>(c)));
+    if (w == "odd") { a = 2, b = 1; return true; }
+    if (w == "even") { a = 2, b = 0; return true; }
+    auto num = [](std::string_view s, i32& out) {
+        if (s.empty()) return false;
+        std::size_t i = 0;
+        bool neg = false;
+        if (s[0] == '+' || s[0] == '-') neg = s[0] == '-', ++i;
+        if (i >= s.size()) return false;
+        i64 v = 0;
+        for (; i < s.size(); ++i) {
+            if (!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
+            v = v * 10 + (s[i] - '0');
+            if (v > 1000000) return false;
+        }
+        out = i32(neg ? -v : v);
+        return true;
+    };
+    const auto n = w.find('n');
+    if (n == std::string::npos) { a = 0; return num(w, b); }
+    const std::string_view as = std::string_view(w).substr(0, n), bs = std::string_view(w).substr(n + 1);
+    if (as.empty() || as == "+") a = 1;
+    else if (as == "-") a = -1;
+    else if (!num(as, a)) return false;
+    if (bs.empty()) { b = 0; return true; }
+    if (bs[0] != '+' && bs[0] != '-') return false;
+    return num(bs, b);
+}
+
 bool parseSelector(std::string_view text, StyleRule& rule, bool& isRoot) {
+    using C = SimpleSelector::Combinator;
     rule.chain.clear();
     isRoot = false;
     std::size_t i = 0;
-    auto comb = SimpleSelector::Combinator::None;
+    auto comb = C::None;
     u32 ids = 0, cls = 0, types = 0;
+    auto isComb = [](char c) { return c == '>' || c == '+' || c == '~'; };
+    auto ident = [&](std::size_t from) {
+        std::size_t k = from;
+        while (k < text.size() && (std::isalnum(static_cast<unsigned char>(text[k])) || text[k] == '-' || text[k] == '_')) ++k;
+        return k;
+    };
     while (i < text.size()) {
         while (i < text.size() && std::isspace(static_cast<unsigned char>(text[i]))) {
             ++i;
-            if (!rule.chain.empty() && comb == SimpleSelector::Combinator::None) comb = SimpleSelector::Combinator::Descendant;
+            if (!rule.chain.empty() && comb == C::None) comb = C::Descendant;
         }
         if (i >= text.size()) break;
-        if (text[i] == '>') {
-            comb = SimpleSelector::Combinator::Child;
+        if (isComb(text[i])) {
+            if (rule.chain.empty()) return false;
+            comb = text[i] == '>' ? C::Child : text[i] == '+' ? C::Adjacent : C::Sibling;
             ++i;
             continue;
         }
         SimpleSelector sel;
-        sel.combinator = rule.chain.empty() ? SimpleSelector::Combinator::None : comb;
+        sel.combinator = rule.chain.empty() ? C::None : comb;
         bool any = false;
-        while (i < text.size() && !std::isspace(static_cast<unsigned char>(text[i])) && text[i] != '>') {
+        while (i < text.size() && !std::isspace(static_cast<unsigned char>(text[i])) && !isComb(text[i])) {
             const char c = text[i];
-            auto ident = [&](std::size_t from) {
-                std::size_t k = from;
-                while (k < text.size() && (std::isalnum(static_cast<unsigned char>(text[k])) || text[k] == '-' || text[k] == '_')) ++k;
-                return k;
-            };
             if (c == '*') { ++i; any = true; }
             else if (c == '#') { const auto e = ident(i + 1); sel.idHash = hashId(text.substr(i + 1, e - i - 1)); i = e; ++ids; any = true; }
             else if (c == '.') {
@@ -841,11 +1040,78 @@ bool parseSelector(std::string_view text, StyleRule& rule, bool& isRoot) {
                 if (sel.classCount >= 4) return false;
                 sel.classes[sel.classCount++] = hashId(text.substr(i + 1, e - i - 1));
                 i = e; ++cls; any = true;
+            } else if (c == '[') {
+                // [ name ( op value )? ( i | s )? ]
+                std::size_t k = i + 1;
+                auto ws = [&] { while (k < text.size() && std::isspace(static_cast<unsigned char>(text[k]))) ++k; };
+                ws();
+                const std::size_t ne = ident(k);
+                if (ne == k) return false;
+                SimpleSelector::Attr at;
+                at.nameHash = hashId(text.substr(k, ne - k));
+                k = ne;
+                ws();
+                if (k >= text.size()) return false;
+                using Op = SimpleSelector::Attr::Op;
+                if (text[k] != ']') {
+                    static constexpr std::pair<char, Op> kOps[] = {{'~', Op::Word}, {'|', Op::DashPrefix}, {'^', Op::Prefix},
+                                                                  {'$', Op::Suffix}, {'*', Op::Contains}};
+                    if (text[k] == '=') { at.op = Op::Equals; ++k; }
+                    else {
+                        bool found = false;
+                        for (auto [ch, op] : kOps)
+                            if (text[k] == ch && k + 1 < text.size() && text[k + 1] == '=') { at.op = op; k += 2; found = true; }
+                        if (!found) return false;
+                    }
+                    ws();
+                    if (k >= text.size()) return false;
+                    if (text[k] == '"' || text[k] == '\'') {
+                        const char q = text[k];
+                        const auto e = text.find(q, k + 1);
+                        if (e == std::string_view::npos) return false;
+                        at.value.assign(text.substr(k + 1, e - k - 1));
+                        k = e + 1;
+                    } else {
+                        const auto e = ident(k);
+                        if (e == k) return false;
+                        at.value.assign(text.substr(k, e - k));
+                        k = e;
+                    }
+                    ws();
+                    if (k < text.size() && (text[k] == 'i' || text[k] == 'I' || text[k] == 's' || text[k] == 'S')) {
+                        at.ci = text[k] == 'i' || text[k] == 'I';
+                        ++k;
+                        ws();
+                    }
+                }
+                if (k >= text.size() || text[k] != ']') return false;
+                if (at.ci) for (char& ch : at.value) ch = char(std::tolower(static_cast<unsigned char>(ch)));
+                sel.attrs.push_back(std::move(at));
+                i = k + 1; ++cls; any = true;
             } else if (c == ':') {
                 const auto e = ident(i + 1);
                 const auto name = text.substr(i + 1, e - i - 1);
                 i = e; any = true;
                 if (name == "root") { isRoot = true; continue; }
+                using NK = SimpleSelector::Nth::Kind;
+                auto nth = [&](NK k, i32 a, i32 b) { sel.nths.push_back({k, a, b}); ++cls; };
+                if (name == "first-child") { nth(NK::Child, 0, 1); continue; }
+                if (name == "last-child") { nth(NK::LastChild, 0, 1); continue; }
+                if (name == "only-child") { nth(NK::Child, 0, 1); sel.nths.push_back({NK::LastChild, 0, 1}); continue; }
+                if (name == "first-of-type") { nth(NK::OfType, 0, 1); continue; }
+                if (name == "last-of-type") { nth(NK::LastOfType, 0, 1); continue; }
+                if (name == "only-of-type") { nth(NK::OfType, 0, 1); sel.nths.push_back({NK::LastOfType, 0, 1}); continue; }
+                if (name == "nth-child" || name == "nth-last-child" || name == "nth-of-type" || name == "nth-last-of-type") {
+                    if (i >= text.size() || text[i] != '(') return false;
+                    const auto close = text.find(')', i);
+                    if (close == std::string_view::npos) return false;
+                    i32 a = 0, b = 0;
+                    if (!parseNthImpl(text.substr(i + 1, close - i - 1), a, b)) return false;
+                    i = close + 1;
+                    nth(name == "nth-child" ? NK::Child : name == "nth-last-child" ? NK::LastChild
+                        : name == "nth-of-type" ? NK::OfType : NK::LastOfType, a, b);
+                    continue;
+                }
                 u32 bit = 0;
                 if (name == "hover") bit = kStateHover;
                 else if (name == "pressed" || name == "active") bit = kStatePressed;
@@ -864,9 +1130,10 @@ bool parseSelector(std::string_view text, StyleRule& rule, bool& isRoot) {
             } else return false;
         }
         if (!any) return false;
-        rule.chain.push_back(sel);
-        comb = SimpleSelector::Combinator::None;
+        rule.chain.push_back(std::move(sel));
+        comb = C::None;
     }
+    if (comb != C::None && comb != C::Descendant) return false; // dangling combinator
     rule.specificity = (std::min(ids, 255u) << 16) | (std::min(cls, 255u) << 8) | std::min(types, 255u);
     return !rule.chain.empty() || isRoot;
 }
@@ -904,6 +1171,26 @@ void splitWords(std::string_view v, std::string_view* out, int& n, int max) {
 
 void addShorthand(StyleRule& rule, std::string_view name, std::string_view value, u32 line,
                   std::vector<StyleDiagnostic>* diags) {
+    if (name == "transition" || name == "animation") {
+        static constexpr Prop kT[] = {Prop::TransitionProperty, Prop::TransitionDuration, Prop::TransitionTimingFunction,
+                                      Prop::TransitionDelay};
+        static constexpr Prop kA[] = {Prop::AnimationName, Prop::AnimationDuration, Prop::AnimationTimingFunction,
+                                      Prop::AnimationDelay, Prop::AnimationIterationCount, Prop::AnimationDirection,
+                                      Prop::AnimationFillMode, Prop::AnimationPlayState};
+        PropValue t[4], an[8];
+        const bool isT = name == "transition";
+        if (isT ? !parseTransitionShorthand(value, t) : !parseAnimationShorthand(value, an)) {
+            if (diags) diags->push_back({StyleError::BadValue, line, std::string(name) + ": " + std::string(value)});
+            return;
+        }
+        for (int k = 0; k < (isT ? 4 : 8); ++k) {
+            Declaration d;
+            d.prop = isT ? kT[k] : kA[k];
+            d.value = isT ? t[k] : an[k];
+            rule.decls.push_back(std::move(d));
+        }
+        return;
+    }
     std::string_view w[4];
     int n = 0;
     auto four = [&](Prop t, Prop r, Prop b, Prop l) {
@@ -1011,54 +1298,137 @@ void addShorthand(StyleRule& rule, std::string_view name, std::string_view value
 
 } // namespace
 
+bool parseNth(std::string_view t, i32& a, i32& b) { return parseNthImpl(t, a, b); }
+
+namespace {
+void parseDecls(std::string_view body, u32 line, StyleRule& proto, std::vector<std::pair<u32, std::string>>* tokens,
+                std::vector<StyleDiagnostic>* diags) {
+    while (!body.empty()) {
+        const auto semi = body.find(';');
+        std::string_view decl = trim(body.substr(0, semi));
+        if (!decl.empty()) {
+            const auto colon = decl.find(':');
+            if (colon == std::string_view::npos) {
+                if (diags) diags->push_back({StyleError::Syntax, line, std::string(decl)});
+            } else {
+                const auto name = trim(decl.substr(0, colon));
+                const auto value = trim(decl.substr(colon + 1));
+                Prop p;
+                if (name.starts_with("--")) {
+                    if (tokens) {
+                        Declaration d;
+                        d.customHash = hashId(name);
+                        d.raw.assign(value);
+                        tokens->emplace_back(d.customHash, d.raw);
+                        proto.decls.push_back(std::move(d));
+                    }
+                } else if (!(name == "background" && value.starts_with("linear-gradient")) && findProp(name, p)) addDecl(proto, p, value, line, diags);
+                else addShorthand(proto, name, value, line, diags);
+            }
+        }
+        if (semi == std::string_view::npos) break;
+        body.remove_prefix(semi + 1);
+    }
+}
+// Top-level comma split that respects (), [] and quotes
+void splitSelectors(std::string_view list, std::vector<std::string_view>& out) {
+    out.clear();
+    int depth = 0;
+    char quote = 0;
+    std::size_t s = 0;
+    for (std::size_t i = 0; i <= list.size(); ++i) {
+        if (i < list.size()) {
+            const char c = list[i];
+            if (quote) { if (c == quote) quote = 0; continue; }
+            if (c == '"' || c == '\'') { quote = c; continue; }
+            if (c == '(' || c == '[') ++depth;
+            if (c == ')' || c == ']') --depth;
+            if (c != ',' || depth > 0) continue;
+        }
+        out.push_back(trim(list.substr(s, i - s)));
+        s = i + 1;
+    }
+}
+} // namespace
+
 std::expected<StyleSheet, StyleDiagnostic> StyleSheet::parse(std::string_view css, std::vector<StyleDiagnostic>* diags) {
     StyleSheet sheet;
     Cursor c{css};
     u32 order = 0;
+    std::vector<std::string_view> list;
     for (;;) {
         c.skipWs();
         if (c.i >= css.size()) break;
         const auto brace = css.find('{', c.i);
         if (brace == std::string_view::npos) return std::unexpected(StyleDiagnostic{StyleError::Syntax, c.line, "expected '{'"});
         const std::string_view selectors = trim(css.substr(c.i, brace - c.i));
+        const u32 line = c.line;
+        if (selectors.starts_with("@keyframes") || selectors.starts_with("@-webkit-keyframes")) {
+            // @keyframes <name> { <selector-list> { decls } ... }
+            std::size_t close = brace + 1;
+            int depth = 1;
+            for (; close < css.size() && depth > 0; ++close) depth += css[close] == '{' ? 1 : css[close] == '}' ? -1 : 0;
+            if (depth != 0) return std::unexpected(StyleDiagnostic{StyleError::Syntax, c.line, "expected '}'"});
+            --close; // the matching '}'
+            for (std::size_t k = c.i; k < close; ++k)
+                if (css[k] == '\n') ++c.line;
+            std::string_view name = trim(selectors.substr(selectors.find(' ') == std::string_view::npos ? selectors.size() : selectors.find(' ')));
+            if (name.size() >= 2 && (name.front() == '"' || name.front() == '\'') && name.back() == name.front()) name = name.substr(1, name.size() - 2);
+            if (name.empty() || name == "none") {
+                if (diags) diags->push_back({StyleError::Syntax, line, "bad @keyframes name"});
+                c.i = close + 1;
+                continue;
+            }
+            KeyframesRule kr;
+            kr.name = animationNameId(name);
+            std::string_view inner = css.substr(brace + 1, close - brace - 1);
+            while (!trim(inner).empty()) {
+                const auto ob = inner.find('{'), cb = inner.find('}');
+                if (ob == std::string_view::npos || cb == std::string_view::npos || cb < ob) {
+                    if (diags) diags->push_back({StyleError::Syntax, line, "bad keyframe block"});
+                    break;
+                }
+                StyleRule proto;
+                parseDecls(inner.substr(ob + 1, cb - ob - 1), line, proto, nullptr, diags);
+                Keyframe kf;
+                for (auto& d : proto.decls) {
+                    if (d.prop == Prop::AnimationTimingFunction) {
+                        if (d.value.trackCount == 1) kf.hasEase = true, kf.ease = d.value.eases[0];
+                    } else if (d.prop != Prop::Count && propInfo(d.prop).animatable) kf.decls.push_back(std::move(d)); // others ignored (CSS Animations 1 §3)
+                }
+                splitSelectors(trim(inner.substr(0, ob)), list);
+                for (auto sel : list) {
+                    f32 off = -1.f;
+                    std::string_view unit;
+                    if (sel == "from") off = 0.f;
+                    else if (sel == "to") off = 1.f;
+                    else if (parseNumber(sel, off, unit) && unit == "%" && off >= 0.f && off <= 100.f) off /= 100.f;
+                    else off = -1.f;
+                    if (off < 0.f) {
+                        if (diags) diags->push_back({StyleError::Syntax, line, "bad keyframe selector: " + std::string(sel)});
+                        continue;
+                    }
+                    kf.offset = off;
+                    kr.frames.push_back(kf);
+                }
+                inner.remove_prefix(cb + 1);
+            }
+            std::stable_sort(kr.frames.begin(), kr.frames.end(), [](const Keyframe& x, const Keyframe& y) { return x.offset < y.offset; });
+            sheet.m_keyframes.push_back(std::move(kr));
+            c.i = close + 1;
+            continue;
+        }
         const auto close = css.find('}', brace);
         if (close == std::string_view::npos) return std::unexpected(StyleDiagnostic{StyleError::Syntax, c.line, "expected '}'"});
-        const u32 line = c.line;
         for (std::size_t k = c.i; k < close; ++k)
             if (css[k] == '\n') ++c.line;
         StyleRule proto;
-        std::string_view body = css.substr(brace + 1, close - brace - 1);
         std::vector<std::pair<u32, std::string>> tokens;
-        // declarations
-        while (!body.empty()) {
-            const auto semi = body.find(';');
-            std::string_view decl = trim(body.substr(0, semi));
-            if (!decl.empty()) {
-                const auto colon = decl.find(':');
-                if (colon == std::string_view::npos) {
-                    if (diags) diags->push_back({StyleError::Syntax, line, std::string(decl)});
-                } else {
-                    const auto name = trim(decl.substr(0, colon));
-                    const auto value = trim(decl.substr(colon + 1));
-                    Prop p;
-                    if (name.starts_with("--")) {
-                        Declaration d;
-                        d.customHash = hashId(name);
-                        d.raw.assign(value);
-                        tokens.emplace_back(d.customHash, d.raw);
-                        proto.decls.push_back(std::move(d));
-                    } else if (!(name == "background" && value.starts_with("linear-gradient")) && findProp(name, p)) addDecl(proto, p, value, line, diags);
-                    else addShorthand(proto, name, value, line, diags);
-                }
-            }
-            if (semi == std::string_view::npos) break;
-            body.remove_prefix(semi + 1);
-        }
+        parseDecls(css.substr(brace + 1, close - brace - 1), line, proto, &tokens, diags);
         // one rule per selector in the list
-        std::string_view list = selectors;
-        while (!list.empty()) {
-            const auto comma = list.find(',');
-            const auto one = trim(list.substr(0, comma));
+        splitSelectors(selectors, list);
+        for (auto one : list) {
+            if (one.empty()) continue;
             StyleRule rule;
             bool isRoot = false;
             if (!parseSelector(one, rule, isRoot)) {
@@ -1070,12 +1440,19 @@ std::expected<StyleSheet, StyleDiagnostic> StyleSheet::parse(std::string_view cs
                 if (isRoot) for (auto& t : tokens) sheet.m_tokens.push_back(t);
                 if (!rule.chain.empty() || isRoot) sheet.m_rules.push_back(std::move(rule));
             }
-            if (comma == std::string_view::npos) break;
-            list.remove_prefix(comma + 1);
         }
         c.i = close + 1;
     }
     return sheet;
+}
+
+bool StyleSheet::structural() const {
+    for (const auto& r : m_rules)
+        for (const auto& sel : r.chain)
+            if (!sel.nths.empty() || sel.combinator == SimpleSelector::Combinator::Adjacent ||
+                sel.combinator == SimpleSelector::Combinator::Sibling)
+                return true;
+    return false;
 }
 
 bool StyleSheet::token(u32 h, std::string_view& out) const {
@@ -1096,6 +1473,7 @@ StyleEngine::StyleEngine() {
 void StyleEngine::clearSheets() {
     m_sheets.clear();
     m_ordered.clear();
+    m_structural = false;
     ++m_version;
 }
 
@@ -1121,8 +1499,58 @@ void StyleEngine::reorder() {
     }
     std::stable_sort(keyed.begin(), keyed.end(), [](auto& a, auto& b) { return a.first < b.first; });
     for (auto& k : keyed) m_ordered.push_back(k.second);
+    m_structural = false;
+    for (const auto& sh : m_sheets) m_structural = m_structural || sh.structural();
     ++m_version;
 }
+
+namespace {
+bool attrMatch(const SimpleSelector::Attr& at, std::string_view v) {
+    using Op = SimpleSelector::Attr::Op;
+    std::string low;
+    if (at.ci) {
+        low.reserve(v.size());
+        for (char ch : v) low += char(std::tolower(static_cast<unsigned char>(ch)));
+        v = low;
+    }
+    const std::string_view w = at.value;
+    switch (at.op) {
+    case Op::Exists: return true;
+    case Op::Equals: return v == w;
+    case Op::Word: {
+        if (w.empty() || w.find_first_of(" \t\n") != std::string_view::npos) return false;
+        std::size_t i = 0;
+        while (i < v.size()) {
+            while (i < v.size() && std::isspace(static_cast<unsigned char>(v[i]))) ++i;
+            std::size_t e = i;
+            while (e < v.size() && !std::isspace(static_cast<unsigned char>(v[e]))) ++e;
+            if (e > i && v.substr(i, e - i) == w) return true;
+            i = e;
+        }
+        return false;
+    }
+    case Op::DashPrefix: return v == w || (v.size() > w.size() && v.starts_with(w) && v[w.size()] == '-');
+    case Op::Prefix: return !w.empty() && v.starts_with(w);
+    case Op::Suffix: return !w.empty() && v.ends_with(w);
+    case Op::Contains: return !w.empty() && v.find(w) != std::string_view::npos;
+    }
+    return false;
+}
+// 1-based position among siblings (from the end for Last*; same type only for *OfType)
+bool nthMatch(const StyleSubject& s, u32 node, const SimpleSelector::Nth& n) {
+    using K = SimpleSelector::Nth::Kind;
+    const bool last = n.kind == K::LastChild || n.kind == K::LastOfType;
+    const bool typed = n.kind == K::OfType || n.kind == K::LastOfType;
+    const u32 t = typed ? s.typeHash(node) : 0;
+    i64 pos = 1;
+    for (u32 c = last ? s.nextSibling(node) : s.prevSibling(node); c != 0xFFFFFFFFu; c = last ? s.nextSibling(c) : s.prevSibling(c))
+        if (!typed || s.typeHash(c) == t) ++pos;
+    // pos = a*k + b for some integer k >= 0
+    if (n.a == 0) return pos == n.b;
+    const i64 d = pos - n.b;
+    return d % n.a == 0 && d / n.a >= 0;
+}
+} // namespace
 
 bool StyleEngine::matchSimple(const StyleSubject& s, u32 node, const SimpleSelector& sel) const {
     if (sel.typeHash && s.typeHash(node) != sel.typeHash) return false;
@@ -1130,30 +1558,50 @@ bool StyleEngine::matchSimple(const StyleSubject& s, u32 node, const SimpleSelec
     for (u8 k = 0; k < sel.classCount; ++k)
         if (!s.hasClass(node, sel.classes[k])) return false;
     if ((s.states(node) & sel.states) != sel.states) return false;
+    for (const auto& at : sel.attrs) {
+        std::string_view v;
+        if (!s.attribute(node, at.nameHash, v) || !attrMatch(at, v)) return false;
+    }
+    for (const auto& n : sel.nths)
+        if (!nthMatch(s, node, n)) return false;
     return true;
 }
 
 bool StyleEngine::matches(const StyleSubject& s, u32 node, const StyleRule& rule) const {
     if (rule.root) return s.parent(node) == 0xFFFFFFFFu;
-    int k = int(rule.chain.size()) - 1;
+    return matchFrom(s, node, rule, int(rule.chain.size()) - 1);
+}
+
+// Right-to-left with backtracking over descendant / general-sibling combinators.
+bool StyleEngine::matchFrom(const StyleSubject& s, u32 node, const StyleRule& rule, int k) const {
+    using C = SimpleSelector::Combinator;
     if (!matchSimple(s, node, rule.chain[std::size_t(k)])) return false;
-    u32 cur = node;
-    while (k > 0) {
-        const auto comb = rule.chain[std::size_t(k)].combinator;
-        --k;
-        const auto& want = rule.chain[std::size_t(k)];
-        if (comb == SimpleSelector::Combinator::Child) {
-            cur = s.parent(cur);
-            if (cur == 0xFFFFFFFFu || !matchSimple(s, cur, want)) return false;
-        } else {
-            for (;;) {
-                cur = s.parent(cur);
-                if (cur == 0xFFFFFFFFu) return false;
-                if (matchSimple(s, cur, want)) break;
-            }
-        }
+    if (k == 0) return true;
+    const auto comb = rule.chain[std::size_t(k)].combinator;
+    switch (comb) {
+    case C::Child: { const u32 p = s.parent(node); return p != 0xFFFFFFFFu && matchFrom(s, p, rule, k - 1); }
+    case C::Adjacent: { const u32 p = s.prevSibling(node); return p != 0xFFFFFFFFu && matchFrom(s, p, rule, k - 1); }
+    case C::Sibling:
+        for (u32 p = s.prevSibling(node); p != 0xFFFFFFFFu; p = s.prevSibling(p))
+            if (matchFrom(s, p, rule, k - 1)) return true;
+        return false;
+    default:
+        for (u32 p = s.parent(node); p != 0xFFFFFFFFu; p = s.parent(p))
+            if (matchFrom(s, p, rule, k - 1)) return true;
+        return false;
     }
-    return true;
+}
+
+const KeyframesRule* StyleEngine::keyframes(u32 name) const {
+    for (auto it = m_sheets.rbegin(); it != m_sheets.rend(); ++it)
+        for (auto k = it->keyframes().rbegin(); k != it->keyframes().rend(); ++k)
+            if (k->name == name) return &*k;
+    return nullptr;
+}
+
+bool StyleEngine::resolveDecl(const Declaration& d, PropValue& out) const {
+    if (d.raw.empty()) { out = d.value; return true; }
+    return resolveVar(d.raw, d.prop, out, 0);
 }
 
 bool StyleEngine::resolveVar(std::string_view raw, Prop p, PropValue& out, int depth) const {

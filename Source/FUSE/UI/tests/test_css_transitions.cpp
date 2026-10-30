@@ -11,39 +11,45 @@ using namespace fuse::ui::test;
 
 namespace {
 bool near(f32 a, f32 b, f32 eps = 1e-3f) { return std::fabs(a - b) <= eps; }
-TransitionSpec spec(std::string_view text, int idx = 0) {
-    PropValue v;
-    Prop p;
-    UI_CHECK(findProp("transition", p));
-    UI_CHECK(parsePropValue(p, text, v));
-    return v.transitions[std::size_t(idx)];
+// `transition: <text>` applied to a default style (the shorthand expands to the four longhands)
+bool styleOf(std::string_view text, ComputedStyle& cs) {
+    std::vector<StyleDiagnostic> diags;
+    auto sh = StyleSheet::parse("x { transition: " + std::string(text) + "; }", &diags);
+    if (!sh || !diags.empty() || sh->rules().empty()) return false;
+    cs = {};
+    for (const Declaration& d : sh->rules()[0].decls) applyProp(cs, d.prop, d.value);
+    return true;
 }
-bool parses(std::string_view text) {
-    PropValue v;
-    return parsePropValue(Prop::Transition, text, v);
+bool parses(std::string_view text) { ComputedStyle cs; return styleOf(text, cs); }
+TransitionSpec spec(std::string_view text, Prop p = Prop::Width) {
+    ComputedStyle cs;
+    TransitionSpec t;
+    UI_CHECK(styleOf(text, cs));
+    UI_CHECK(cs.transitionFor(u8(p), t));
+    return t;
 }
-u64 bit(Prop p) { return u64(1) << u8(p); }
+bool covers(std::string_view text, Prop p) { ComputedStyle cs; TransitionSpec t; return styleOf(text, cs) && cs.transitionFor(u8(p), t); }
 } // namespace
 
 int main() {
     // ---- parsing ----
     {
-        PropValue v;
-        UI_CHECK(parsePropValue(Prop::Transition, "background-color 200ms ease-in 0.1s, opacity 1s linear", v));
-        UI_CHECK_EQ(int(v.trackCount), 2);
-        UI_CHECK(v.transitions[0].props == (bit(Prop::Background) | bit(Prop::Background2)));
-        UI_CHECK(near(v.transitions[0].duration, 0.2f) && near(v.transitions[0].delay, 0.1f));
-        UI_CHECK(v.transitions[0].x1 == 0.42f && v.transitions[0].x2 == 1.f);
-        UI_CHECK(v.transitions[1].props == bit(Prop::Opacity) && v.transitions[1].duration == 1.f);
-        UI_CHECK(parsePropValue(Prop::Transition, "none", v) && v.trackCount == 0);
-        const TransitionSpec all = spec("2s");
-        UI_CHECK(all.props & bit(Prop::Width));
-        UI_CHECK(all.props & bit(Prop::Color));
-        UI_CHECK(!(all.props & bit(Prop::Layout))); // discrete: not animated
-        UI_CHECK(spec("padding 1s").props == (bit(Prop::PaddingLeft) | bit(Prop::PaddingTop) | bit(Prop::PaddingRight) | bit(Prop::PaddingBottom)));
-        UI_CHECK(spec("1s cubic-bezier(0.1, 0.7, 1.0, 0.1) width").x2 == 1.f);
-        const TransitionSpec st = spec("color 1s steps(4, jump-start)");
-        UI_CHECK(st.kind == TransitionSpec::Kind::Steps && st.steps == 4 && st.stepPos == TransitionSpec::StepPos::JumpStart);
+        ComputedStyle cs;
+        UI_CHECK(styleOf("background-color 200ms ease-in 0.1s, opacity 1s linear", cs));
+        UI_CHECK_EQ(int(cs.transitionPropertyCount), 2);
+        TransitionSpec t;
+        UI_CHECK(cs.transitionFor(u8(Prop::Background), t) && cs.transitionFor(u8(Prop::Background2), t));
+        UI_CHECK(near(t.duration, 0.2f) && near(t.delay, 0.1f));
+        UI_CHECK(t.ease.x1 == 0.42f && t.ease.x2 == 1.f);
+        UI_CHECK(cs.transitionFor(u8(Prop::Opacity), t) && t.duration == 1.f);
+        UI_CHECK(!cs.transitionFor(u8(Prop::Width), t));
+        UI_CHECK(styleOf("none", cs) && !cs.transitionFor(u8(Prop::Width), t));
+        UI_CHECK(covers("2s", Prop::Width) && covers("2s", Prop::Color));
+        UI_CHECK(!covers("2s", Prop::Layout)); // discrete: not animated
+        UI_CHECK(covers("padding 1s", Prop::PaddingLeft) && covers("padding 1s", Prop::PaddingBottom) && !covers("padding 1s", Prop::Width));
+        UI_CHECK(spec("1s cubic-bezier(0.1, 0.7, 1.0, 0.1) width").ease.x2 == 1.f);
+        const TransitionSpec st = spec("color 1s steps(4, jump-start)", Prop::Color);
+        UI_CHECK(st.ease.kind == Easing::Kind::Steps && st.ease.steps == 4 && st.ease.stepPos == Easing::StepPos::JumpStart);
         UI_CHECK(!parses("width -1s"));                        // negative duration
         UI_CHECK(parses("width 1s -0.5s"));                    // negative delay is fine
         UI_CHECK(!parses("width 1s 2s 3s"));                   // three times
@@ -52,6 +58,7 @@ int main() {
         UI_CHECK(!parses("width 1s steps(0)"));
         UI_CHECK(!parses("width 1s steps(1, jump-none)"));
         UI_CHECK(!parses("width 1s, , opacity 1s"));
+        UI_CHECK(!parses("width 1s, none"));                   // none only alone
     }
     // ---- timing functions ----
     {
@@ -117,9 +124,11 @@ panel:hover { background: #ff0000; opacity: 0; width: 200px; color: #ffffff; }
     const f32 shown = ui.computed(p).opacity;
     UI_CHECK(near(shown, 0.875f));
     UI_CHECK(near(ui.computed(p).background.r, 1.f));
-    ui.update(1.5f); // background back after 1 s; opacity waits 1 s then tweens from 0.875 toward 1 over 2 s
+    // reversing: opacity returns to its start value, so the 2 s run shortens by how far it got (0.125): 0.25 s after
+    // the 1 s delay (CSS Transitions 1 §3.3)
+    ui.update(1.1f);
     UI_CHECK(ui.computed(p).background == Color::rgb(0x000000));
-    UI_CHECK(near(ui.computed(p).opacity, 0.875f + 0.125f * 0.25f));
+    UI_CHECK(near(ui.computed(p).opacity, 0.875f + 0.125f * 0.4f));
     ui.update(5.f);
     UI_CHECK(near(ui.computed(p).opacity, 1.f));
     ui.update(0.f);

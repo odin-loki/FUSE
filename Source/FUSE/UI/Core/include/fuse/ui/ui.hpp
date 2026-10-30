@@ -22,6 +22,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <optional>
 #include <vector>
 
 namespace fuse::ui {
@@ -76,7 +77,10 @@ struct ClipboardHooks {
 enum class SignalKind : u8 { Clicked, Toggled, ValueChanged, TextChanged, Submitted, FocusChanged, HoverChanged, Event,
                               EditingFinished, ///< line edit: Enter or focus loss with Acceptable text (QLineEdit::editingFinished)
                               Highlighted,     ///< completer: a completion was highlighted {value = row, text} (QCompleter::highlighted)
-                              Activated        ///< completer: a completion was chosen {value = row, text} (QCompleter::activated)
+                              Activated,       ///< completer: a completion was chosen {value = row, text} (QCompleter::activated)
+                              // CSS motion events (text: property or animation name; value: elapsedTime in seconds)
+                              TransitionRun, TransitionStart, TransitionEnd, TransitionCancel,
+                              AnimationStart, AnimationIteration, AnimationEnd, AnimationCancel
 };
 struct SignalArgs {
     f32 value = 0.f;
@@ -240,6 +244,11 @@ public:
 
     // properties
     void addClass(NodeHandle n, std::string_view cls);
+    /// Attributes for CSS attribute selectors ([name], [name="v"], ...).
+    void setAttribute(NodeHandle n, std::string_view name, std::string_view value);
+    void removeAttribute(NodeHandle n, std::string_view name);
+    std::optional<std::string_view> attribute(NodeHandle n, std::string_view name) const;
+    bool attributeAt(u32 index, u32 nameHash, std::string_view& out) const; ///< style matching
     void removeClass(NodeHandle n, std::string_view cls);
     bool hasClass(NodeHandle n, std::string_view cls) const;
     void set(NodeHandle n, Prop p, const PropValue& v);
@@ -378,9 +387,11 @@ public:
     enum class AnimProp : u8 { Opacity, OffsetX, OffsetY, Value };
     enum class Ease : u8 { Linear, InOutCubic, OutBack };
     void animate(NodeHandle n, AnimProp p, f32 to, f32 seconds, Ease e = Ease::InOutCubic);
-    bool animating() const { return m_animCount > 0 || !m_transNodes.empty(); }
+    bool animating() const { return m_animCount > 0 || motionLive(); }
     /// Nodes with CSS transitions running (tests, inspector).
-    u32 transitionCount() const { return u32(m_transNodes.size()); }
+    u32 transitionCount() const;
+    /// Nodes with CSS animations that still advance (not finished, not paused).
+    u32 animationCount() const;
 
     // cross-thread commands (any thread)
     bool post(CommandFn fn, NodeHandle n, u64 a = 0, u64 b = 0);
@@ -417,8 +428,12 @@ private:
     void markPaint(u32 i);
     void stylePass();
     void styleRec(u32 i, bool parentChanged);
-    u32 applyTransitions(u32 i, u32 idx, const ComputedStyle& shown);
+    u32 applyMotion(u32 i, u32 idx, const ComputedStyle& shown, bool styled);
     void dropTransitions(u32 i);
+    bool motionLive() const;
+    bool nodeLive(u32 i) const;
+    void markSiblings(u32 parent);
+    void queueMotion(u32 i, SignalKind k, f32 elapsed, std::string_view text);
     Size measure(u32 i, Size avail);
     void arrange(u32 i, Rect box);
     void arrangeChildren(u32 i);
@@ -528,7 +543,14 @@ private:
     };
     std::vector<Anim> m_anims;
     u32 m_animCount = 0;
-    std::vector<u32> m_transNodes; ///< nodes with running CSS transitions (scratch styles)
+    std::vector<u32> m_transNodes; ///< nodes with CSS transitions or animations (scratch styles)
+    struct MotionEvent {
+        u32 node, gen;
+        SignalKind kind;
+        f32 elapsed;
+        std::string_view text; ///< static (property css name / interned animation name)
+    };
+    std::vector<MotionEvent> m_motionEvents; ///< dispatched at the end of update()
 
     struct Command {
         std::atomic<u64> seq{0};

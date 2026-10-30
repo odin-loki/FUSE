@@ -63,11 +63,25 @@ struct UiContext::Cold {
     // CSS transitions: running per property; the node shows a scratch style (target + interpolated values)
     struct Running {
         u8 prop = 0;
-        PropValue from, to;
+        PropValue from, to, revStart; ///< revStart: reversing-adjusted start value (CSS Transitions 1 §3.3)
         f32 t = 0.f;
         TransitionSpec spec;
+        f32 factor = 1.f; ///< reversing shortening factor
+        bool started = false;
     };
     std::vector<Running> trans;
+    // CSS animations (one per animation-name entry with @keyframes)
+    struct Anim {
+        u32 name = 0;
+        u8 slot = 0;
+        f32 t = 0.f;    ///< time since the animation was applied (excludes paused time)
+        signed char phase = -1;  ///< -1 idle, 0 before, 1 active, 2 after
+        i64 iter = -1;
+        bool paused = false;
+    };
+    std::vector<Anim> anims;
+    std::vector<std::pair<u32, std::string>> attrs;
+    bool inMotionList = false;
     u32 transTarget = 0, transScratch = ~0u;
     u32 inhScratch = ~0u; ///< style slot while an ancestor's transition changes inherited values every frame
     bool styled = false; ///< styled once (no transitions on the first style)
@@ -128,6 +142,9 @@ struct ContextSubject final : StyleSubject {
     }
     u32 states(u32 n) const override { return nodes[n].state; }
     u32 parent(u32 n) const override { return nodes[n].parent; }
+    u32 prevSibling(u32 n) const override { return nodes[n].prev; }
+    u32 nextSibling(u32 n) const override { return nodes[n].next; }
+    bool attribute(u32 n, u32 h, std::string_view& out) const override { return ui.attributeAt(n, h, out); }
 };
 
 // ---- Lifetime ------------------------------------------------------------------------------------------------------
@@ -185,6 +202,9 @@ u32 UiContext::alloc() {
         c.layoutWidth = c.layoutSize = -1.f;
         c.edit.reset();
         c.trans.clear();
+        c.anims.clear();
+        c.attrs.clear();
+        c.inMotionList = false;
         c.transScratch = ~0u;
         c.inhScratch = ~0u;
         c.styled = false;
@@ -216,6 +236,11 @@ void UiContext::linkBefore(u32 i, u32 p, u32 before) {
         else pn.first = i;
         b.prev = i;
     }
+    markSiblings(p);
+}
+void UiContext::markSiblings(u32 p) {
+    if (!m_styles.structural() || p == kNone) return; // :nth-* / sibling combinators depend on positions
+    for (u32 k = m_nodes[p].first; k != kNone; k = m_nodes[k].next) markStyle(k);
 }
 
 void UiContext::unlink(u32 i) {
@@ -226,7 +251,9 @@ void UiContext::unlink(u32 i) {
     else p.first = n.next;
     if (n.next != kNone) m_nodes[n.next].prev = n.prev;
     else p.last = n.prev;
+    const u32 parent = n.parent;
     n.parent = n.prev = n.next = kNone;
+    markSiblings(parent);
 }
 
 NodeHandle UiContext::create(u32 cls, NodeHandle parent, std::string_view id) {
@@ -389,6 +416,41 @@ void UiContext::addClass(NodeHandle h, std::string_view cls) {
         markStyle(h.index);
         for (u32 k = n->first; k != kNone; k = m_nodes[k].next) markStyle(k);
     }
+}
+void UiContext::setAttribute(NodeHandle h, std::string_view name, std::string_view value) {
+    Node* n = node(h);
+    if (!n) return;
+    auto& at = m_cold[h.index]->attrs;
+    const u32 k = hashId(name);
+    auto it = std::find_if(at.begin(), at.end(), [&](auto& a) { return a.first == k; });
+    if (it != at.end()) {
+        if (it->second == value) return;
+        it->second.assign(value);
+    } else at.emplace_back(k, std::string(value));
+    markStyle(h.index);
+    for (u32 j = n->first; j != kNone; j = m_nodes[j].next) markStyle(j);
+    if (m_styles.structural()) markSiblings(n->parent);
+}
+void UiContext::removeAttribute(NodeHandle h, std::string_view name) {
+    Node* n = node(h);
+    if (!n) return;
+    auto& at = m_cold[h.index]->attrs;
+    const u32 k = hashId(name);
+    if (std::erase_if(at, [&](auto& a) { return a.first == k; }) == 0) return;
+    markStyle(h.index);
+    for (u32 j = n->first; j != kNone; j = m_nodes[j].next) markStyle(j);
+    if (m_styles.structural()) markSiblings(n->parent);
+}
+std::optional<std::string_view> UiContext::attribute(NodeHandle h, std::string_view name) const {
+    std::string_view v;
+    if (!node(h) || !attributeAt(h.index, hashId(name), v)) return std::nullopt;
+    return v;
+}
+bool UiContext::attributeAt(u32 i, u32 nameHash, std::string_view& out) const {
+    for (const auto& [k, v] : m_cold[i]->attrs)
+        if (k == nameHash) { out = v; return true; }
+    if (nameHash == hashId("id") && !m_cold[i]->id.empty()) { out = m_cold[i]->id; return true; } // [id=...]
+    return false;
 }
 void UiContext::removeClass(NodeHandle h, std::string_view cls) {
     Node* n = node(h);
@@ -589,9 +651,12 @@ void UiContext::styleRec(u32 i, bool parentChanged) {
         bool copied = false;
         if (m_styles.isScratch(before)) shown = m_styles.style(before), copied = true;
         u32 idx;
-        if (ps && m_styles.isScratch(m_nodes[n.parent].style)) {
+        const bool parentTweens = ps && m_styles.isScratch(m_nodes[n.parent].style);
+        ComputedStyle inhCs;
+        if (parentTweens) inhCs = m_styles.computeValue(subj, i, ps, &wc.defaults, cold.inl);
+        if (parentTweens && cold.trans.empty() && cold.anims.empty() && !inhCs.hasAnimations()) {
             // the parent tweens: inherited values change every frame; keep this node in its own slot meanwhile
-            const ComputedStyle cs = m_styles.computeValue(subj, i, ps, &wc.defaults, cold.inl);
+            const ComputedStyle& cs = inhCs;
             if (cold.inhScratch == ~0u) cold.inhScratch = m_styles.allocScratch(cs);
             else m_styles.setScratch(cold.inhScratch, cs);
             idx = cold.inhScratch;
@@ -602,9 +667,10 @@ void UiContext::styleRec(u32 i, bool parentChanged) {
                 m_styles.freeScratch(cold.inhScratch);
                 cold.inhScratch = ~0u;
             }
-            if (cold.styled && (!cold.trans.empty() || m_styles.style(idx).transitionCount)) {
+            const ComputedStyle& ns = m_styles.style(idx);
+            if (!cold.trans.empty() || !cold.anims.empty() || ns.hasAnimations() || (cold.styled && ns.hasTransitions())) {
                 if (!copied) shown = m_styles.style(before), copied = true;
-                idx = applyTransitions(i, idx, shown);
+                idx = applyMotion(i, idx, shown, cold.styled);
             }
         }
         ++m_stats.styled;
@@ -633,9 +699,9 @@ void UiContext::styleRec(u32 i, bool parentChanged) {
     for (u32 c = n.first; c != kNone; c = m_nodes[c].next) styleRec(c, changed);
 }
 
-// CSS Transitions 1: when a node's computed value of an animatable property changes and its new style has a
-// `transition` covering it, the property tweens from the value shown at that moment to the new one. The node then
-// shows a per-node scratch style (the interned target with the running values applied), rebuilt each frame.
+// CSS Transitions 1 / CSS Animations 1. A node with motion shows a per-node scratch style: the interned target
+// (`transTarget`) with animation values applied (in animation-name order), then running transitions on top. The
+// scratch is rebuilt each frame while anything advances; events are queued and dispatched after update().
 void UiContext::dropTransitions(u32 i) {
     Cold& c = *m_cold[i];
     if (c.inhScratch != ~0u) {
@@ -643,57 +709,227 @@ void UiContext::dropTransitions(u32 i) {
         c.inhScratch = ~0u;
     }
     c.trans.clear();
+    c.anims.clear();
+    if (c.inMotionList) {
+        std::erase(m_transNodes, i);
+        c.inMotionList = false;
+    }
     if (c.transScratch != ~0u) {
         if (m_nodes[i].style == c.transScratch) m_nodes[i].style = c.transTarget;
         m_styles.freeScratch(c.transScratch);
         c.transScratch = ~0u;
     }
 }
-u32 UiContext::applyTransitions(u32 i, u32 idx, const ComputedStyle& shown) {
+void UiContext::queueMotion(u32 i, SignalKind k, f32 elapsed, std::string_view text) {
+    m_motionEvents.push_back({i, m_nodes[i].gen, k, elapsed, text});
+}
+
+namespace {
+// The value of property p at directed progress dp of a @keyframes rule; false: the rule does not animate p.
+bool keyframeValue(const StyleEngine& se, const KeyframesRule& kr, Prop p, const ComputedStyle& base, f32 dp,
+                   const Easing& animEase, PropValue& out) {
+    struct Stop { f32 off; PropValue v; Easing e; };
+    Stop stops[16];
+    int n = 0;
+    for (const Keyframe& f : kr.frames) {
+        const Declaration* d = nullptr;
+        for (const Declaration& x : f.decls)
+            if (x.prop == p) d = &x; // last declaration in the keyframe wins
+        if (!d) continue;
+        PropValue v;
+        if (!se.resolveDecl(*d, v)) continue;
+        const Easing e = f.hasEase ? f.ease : animEase;
+        if (n > 0 && stops[n - 1].off == f.offset) { stops[n - 1].v = v; stops[n - 1].e = e; continue; } // later wins
+        if (n == 15) break;
+        stops[n++] = {f.offset, v, e};
+    }
+    if (n == 0) return false;
+    const PropValue b = readProp(base, p);
+    if (stops[0].off > 0.f) { // implicit 0% / 100% keyframes take the underlying value
+        for (int k = n; k > 0; --k) stops[k] = stops[k - 1];
+        stops[0] = {0.f, b, animEase};
+        ++n;
+    }
+    if (stops[n - 1].off < 1.f) stops[n++] = {1.f, b, animEase};
+    int k = 0;
+    while (k + 2 < n && dp >= stops[k + 1].off) ++k;
+    if (n == 1) { out = stops[0].v; return true; }
+    const f32 span = stops[k + 1].off - stops[k].off;
+    const f32 local = span > 0.f ? std::clamp((dp - stops[k].off) / span, 0.f, 1.f) : 1.f;
+    out = interpolateProp(stops[k].v, stops[k + 1].v, easeValue(stops[k].e, local));
+    return true;
+}
+template <class T, std::size_t N> const T& cyc(const std::array<T, N>& a, u8 count, u8 k) { return a[std::size_t(count ? k % count : 0)]; }
+} // namespace
+
+u32 UiContext::applyMotion(u32 i, u32 idx, const ComputedStyle& shown, bool styled) {
     Cold& c = *m_cold[i];
     const u32 prevTarget = c.transScratch != ~0u ? c.transTarget : m_nodes[i].style;
-    if (idx != prevTarget) {
-        const ComputedStyle& ns = m_styles.style(idx);
+    const bool retarget = idx != prevTarget || !styled;
+    const ComputedStyle& ns = m_styles.style(idx);
+    // transitions: start, retarget, reverse (with shortening) or cancel per animatable property
+    if (styled && idx != prevTarget) {
         const ComputedStyle os = m_styles.style(prevTarget);
         for (int p = 0; p < kPropCount; ++p) {
             if (!propInfo(Prop(p)).animatable) continue;
+            const std::string_view pname = propInfo(Prop(p)).cssName;
             auto it = std::find_if(c.trans.begin(), c.trans.end(), [&](const Cold::Running& r) { return r.prop == p; });
             const PropValue to = readProp(ns, Prop(p));
             if (it == c.trans.end() && samePropValue(readProp(os, Prop(p)), to)) continue;
-            const TransitionSpec* sp = ns.transitionFor(u8(p));
+            TransitionSpec sp;
+            const bool has = ns.transitionFor(u32(p), sp);
             const PropValue from = readProp(shown, Prop(p));
             const bool lengthMismatch = from.type == PropType::Length && from.len.unit != to.len.unit;
-            if (!sp || sp->duration + sp->delay <= 0.f || sp->duration < 0.f || lengthMismatch || samePropValue(from, to)) {
-                if (it != c.trans.end()) c.trans.erase(it);
+            if (!has || sp.duration + sp.delay <= 0.f || lengthMismatch || samePropValue(from, to)) {
+                if (it != c.trans.end()) {
+                    if (!samePropValue(it->to, to) || !has) queueMotion(i, SignalKind::TransitionCancel, std::max(0.f, it->t - it->spec.delay), pname);
+                    c.trans.erase(it);
+                }
                 continue;
             }
             if (it != c.trans.end() && samePropValue(it->to, to)) continue;
-            Cold::Running r{u8(p), from, to, 0.f, *sp};
-            if (it != c.trans.end()) *it = r;
-            else c.trans.push_back(r);
+            Cold::Running r{u8(p), from, to, from, 0.f, sp, 1.f, false};
+            if (it != c.trans.end() && samePropValue(it->revStart, to)) {
+                // reversing an unfinished transition: shorten by how far the old one got
+                const Cold::Running& o = *it;
+                const f32 e = o.t - o.spec.delay;
+                const f32 out = e < 0.f ? 0.f : easeValue(o.spec.ease, o.spec.duration > 0.f ? e / o.spec.duration : 1.f);
+                r.factor = std::clamp(std::fabs(out * o.factor + 1.f - o.factor), 0.f, 1.f);
+                r.revStart = o.to;
+                r.spec.duration *= r.factor;
+                if (r.spec.delay < 0.f) r.spec.delay *= r.factor;
+            }
+            if (it != c.trans.end()) {
+                queueMotion(i, SignalKind::TransitionCancel, std::max(0.f, it->t - it->spec.delay), pname);
+                *it = r;
+            } else c.trans.push_back(r);
+            queueMotion(i, SignalKind::TransitionRun, std::max(0.f, -r.spec.delay), pname);
         }
-        c.transTarget = idx;
     }
-    std::erase_if(c.trans, [](const Cold::Running& r) { return r.t >= r.spec.delay + r.spec.duration; });
-    if (c.trans.empty()) {
+    c.transTarget = idx;
+    // animations: match the animation-name list (by name, in order) to the running ones
+    if (retarget) {
+        std::vector<Cold::Anim> next;
+        for (u8 k = 0; k < ns.animationNameCount; ++k) {
+            const u32 name = ns.animationName[k];
+            if (!name || !m_styles.keyframes(name)) continue;
+            auto it = std::find_if(c.anims.begin(), c.anims.end(), [&](const Cold::Anim& a) { return a.name == name; });
+            if (it != c.anims.end()) {
+                next.push_back(*it);
+                c.anims.erase(it);
+            } else next.push_back(Cold::Anim{name, k});
+            next.back().slot = k;
+        }
+        for (const Cold::Anim& a : c.anims)
+            if (a.phase == 1) queueMotion(i, SignalKind::AnimationCancel, 0.f, animationName(a.name));
+        c.anims = std::move(next);
+    }
+    ComputedStyle d = ns;
+    bool applied = false;
+    for (Cold::Anim& a : c.anims) {
+        const KeyframesRule* kr = m_styles.keyframes(a.name);
+        if (!kr) continue;
+        const u8 k = a.slot;
+        const f32 dur = cyc(ns.animationDuration, ns.animationDurationCount, k);
+        const f32 delay = cyc(ns.animationDelay, ns.animationDelayCount, k);
+        const f32 iters = cyc(ns.animationIterations, ns.animationIterationCount, k);
+        const AnimDirection dir = cyc(ns.animationDirection, ns.animationDirectionCount, k);
+        const AnimFill fill = cyc(ns.animationFill, ns.animationFillCount, k);
+        const Easing& ease = cyc(ns.animationEase, ns.animationEaseCount, k);
+        a.paused = cyc(ns.animationPaused, ns.animationPlayCount, k) != 0;
+        const f32 active = dur > 0.f && iters > 0.f ? dur * iters : 0.f; // may be inf
+        const f32 e = a.t - delay;
+        const signed char phase = e < 0.f ? 0 : (std::isfinite(active) && e >= active) ? 2 : 1;
+        double overall = 0.0;
+        if (phase == 1) overall = double(e) / double(dur);
+        else if (phase == 2) overall = double(iters);
+        i64 iter = i64(std::floor(overall));
+        double prog = overall - double(iter);
+        if (phase == 2 && prog == 0.0 && iters > 0.f) iter -= 1, prog = 1.0; // ends at the end of the last iteration
+        const std::string_view nm = animationName(a.name);
+        if (phase >= 1 && a.phase < 1) queueMotion(i, SignalKind::AnimationStart, std::clamp(-delay, 0.f, active), nm);
+        if (phase == 1 && a.phase == 1 && iter > a.iter) queueMotion(i, SignalKind::AnimationIteration, f32(iter) * dur, nm);
+        if (phase == 2 && a.phase != 2) queueMotion(i, SignalKind::AnimationEnd, active, nm);
+        a.phase = phase, a.iter = iter;
+        const bool fills = phase == 1 || (phase == 0 && (fill == AnimFill::Backwards || fill == AnimFill::Both)) ||
+                           (phase == 2 && (fill == AnimFill::Forwards || fill == AnimFill::Both));
+        if (!fills) continue;
+        if (phase == 0) iter = 0, prog = 0.0;
+        const bool odd = (iter & 1) != 0;
+        const bool rev = dir == AnimDirection::Reverse || (dir == AnimDirection::Alternate && odd) ||
+                         (dir == AnimDirection::AlternateReverse && !odd);
+        const f32 dp = f32(rev ? 1.0 - prog : prog);
+        PropMask seen;
+        for (const Keyframe& f : kr->frames)
+            for (const Declaration& x : f.decls) {
+                if (seen.has(u8(x.prop))) continue;
+                seen.set(u8(x.prop));
+                PropValue v;
+                if (keyframeValue(m_styles, *kr, x.prop, ns, dp, ease, v)) applyProp(d, x.prop, v), applied = true;
+            }
+    }
+    // running transitions on top; start / end events
+    for (auto it = c.trans.begin(); it != c.trans.end();) {
+        Cold::Running& r = *it;
+        const std::string_view pname = propInfo(Prop(r.prop)).cssName;
+        const f32 e = r.t - r.spec.delay;
+        if (!r.started && e >= 0.f) {
+            r.started = true;
+            queueMotion(i, SignalKind::TransitionStart, std::clamp(-r.spec.delay, 0.f, r.spec.duration), pname);
+        }
+        if (e >= r.spec.duration) {
+            queueMotion(i, SignalKind::TransitionEnd, r.spec.duration, pname);
+            it = c.trans.erase(it);
+            continue;
+        }
+        PropValue v = r.from;
+        if (e >= 0.f) v = interpolateProp(r.from, r.to, easeValue(r.spec.ease, r.spec.duration > 0.f ? e / r.spec.duration : 1.f));
+        applyProp(d, Prop(r.prop), v);
+        applied = true;
+        ++it;
+    }
+    if ((!c.trans.empty() || !c.anims.empty()) && !c.inMotionList) {
+        c.inMotionList = true;
+        m_transNodes.push_back(i);
+    }
+    if (!applied) {
         if (c.transScratch != ~0u) {
             m_styles.freeScratch(c.transScratch);
             c.transScratch = ~0u;
         }
         return idx;
     }
-    ComputedStyle d = m_styles.style(idx);
-    for (const Cold::Running& r : c.trans) {
-        const f32 e = r.t - r.spec.delay;
-        PropValue v = r.from;
-        if (e >= 0.f) v = interpolateProp(r.from, r.to, transitionEase(r.spec, r.spec.duration > 0.f ? e / r.spec.duration : 1.f));
-        applyProp(d, Prop(r.prop), v);
-    }
-    if (c.transScratch == ~0u) {
-        c.transScratch = m_styles.allocScratch(d);
-        m_transNodes.push_back(i);
-    } else m_styles.setScratch(c.transScratch, d);
+    if (c.transScratch == ~0u) c.transScratch = m_styles.allocScratch(d);
+    else m_styles.setScratch(c.transScratch, d);
     return c.transScratch;
+}
+
+bool UiContext::nodeLive(u32 i) const {
+    const Cold& c = *m_cold[i];
+    if (!c.trans.empty()) return true;
+    for (const Cold::Anim& a : c.anims)
+        if (!a.paused && a.phase != 2) return true;
+    return false;
+}
+bool UiContext::motionLive() const {
+    if (!m_motionEvents.empty()) return true;
+    for (u32 i : m_transNodes)
+        if (m_nodes[i].alive && nodeLive(i)) return true;
+    return false;
+}
+u32 UiContext::transitionCount() const {
+    u32 n = 0;
+    for (u32 i : m_transNodes) n += m_nodes[i].alive && !m_cold[i]->trans.empty();
+    return n;
+}
+u32 UiContext::animationCount() const {
+    u32 n = 0;
+    for (u32 i : m_transNodes) {
+        if (!m_nodes[i].alive) continue;
+        for (const Cold::Anim& a : m_cold[i]->anims)
+            if (!a.paused && a.phase != 2) { ++n; break; }
+    }
+    return n;
 }
 
 void UiContext::stylePass() {
@@ -1458,15 +1694,21 @@ void UiContext::update(f32 dt) {
             if (a.t >= a.duration) { a.active = false; --m_animCount; }
         }
     }
-    for (std::size_t k = 0; k < m_transNodes.size();) { // advance CSS transitions; finished ones end in the style pass
+    for (std::size_t k = 0; k < m_transNodes.size();) { // advance CSS transitions / animations (applied in the style pass)
         const u32 i = m_transNodes[k];
-        if (!m_nodes[i].alive || m_cold[i]->transScratch == ~0u) {
+        Cold& c = *m_cold[i];
+        if (!m_nodes[i].alive || (c.trans.empty() && c.anims.empty())) {
+            c.inMotionList = false;
             m_transNodes[k] = m_transNodes.back();
             m_transNodes.pop_back();
             continue;
         }
-        for (auto& r : m_cold[i]->trans) r.t += std::max(dt, 0.f);
-        markStyle(i);
+        if (nodeLive(i)) {
+            for (auto& r : c.trans) r.t += std::max(dt, 0.f);
+            for (auto& a : c.anims)
+                if (!a.paused) a.t += std::max(dt, 0.f);
+            markStyle(i);
+        }
         ++k;
     }
     if (m_anyStyleDirty || m_styles.sheetVersion() != m_seenSheetVersion) stylePass();
@@ -1477,10 +1719,18 @@ void UiContext::update(f32 dt) {
         m_anyLayoutDirty = false;
     }
     paintPass();
+    if (!m_motionEvents.empty()) { // CSS transition / animation events, after the frame is consistent
+        std::vector<MotionEvent> ev;
+        ev.swap(m_motionEvents);
+        for (const MotionEvent& e : ev) {
+            const NodeHandle h{e.node, e.gen};
+            if (node(h)) emit(h, e.kind, {.value = e.elapsed, .text = e.text});
+        }
+    }
 }
 
 bool UiContext::needsUpdate() const {
-    if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount || !m_transNodes.empty()) return true;
+    if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount || motionLive()) return true;
     if (m_styles.sheetVersion() != m_seenSheetVersion) return true;
     for (const auto& t : m_timers)
         if (t.active) return true;
@@ -1488,7 +1738,7 @@ bool UiContext::needsUpdate() const {
 }
 
 f32 UiContext::nextWakeSeconds() const {
-    if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount || !m_transNodes.empty()) return 0.f;
+    if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount || motionLive()) return 0.f;
     if (m_styles.sheetVersion() != m_seenSheetVersion) return 0.f;
     if (m_head.load(std::memory_order_acquire) != m_tail) return 0.f;
     f32 t = std::numeric_limits<f32>::infinity();

@@ -141,6 +141,14 @@ int l_on(lua_State* L) {
     else if (sig == "editingFinished") k = SignalKind::EditingFinished;
     else if (sig == "highlighted") k = SignalKind::Highlighted;
     else if (sig == "activated") k = SignalKind::Activated;
+    else if (sig == "transitionRun") k = SignalKind::TransitionRun;
+    else if (sig == "transitionStart") k = SignalKind::TransitionStart;
+    else if (sig == "transitionEnd") k = SignalKind::TransitionEnd;
+    else if (sig == "transitionCancel") k = SignalKind::TransitionCancel;
+    else if (sig == "animationStart") k = SignalKind::AnimationStart;
+    else if (sig == "animationIteration") k = SignalKind::AnimationIteration;
+    else if (sig == "animationEnd") k = SignalKind::AnimationEnd;
+    else if (sig == "animationCancel") k = SignalKind::AnimationCancel;
     else return luaL_error(L, "ui.on: unknown signal '%s'", sig.data());
     lua_pushvalue(L, 3);
     const int ref = luaL_ref(L, LUA_REGISTRYINDEX);

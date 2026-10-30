@@ -7,9 +7,15 @@
 //   tokens      custom properties (`--accent: #3af`) declared in `:root` (or any rule matching the node) — theme tokens
 //   cascade     specificity (ids, classes + pseudo, types), then source order; inline (node API) values win;
 //               inherited properties: color, font-size, text-align
-//   transitions `transition: <property> <duration> [<timing-function>] [<delay>], ...` (CSS Transitions 1): animatable
-//               lengths, numbers and colours tween from the shown value when the computed value changes (UiContext)
-// Not yet: attribute selectors, :nth-child, @keyframes, transition-* longhands.
+//               attribute selectors [a] [a=v] [a~=v] [a|=v] [a^=v] [a$=v] [a*=v] (` i` / ` s` flags; UiContext::setAttribute),
+//               :first-child :last-child :only-child :nth-child() :nth-last-child() and the -of-type family (An+B,
+//               odd, even), sibling combinators `+` and `~`
+//   transitions `transition` and transition-property / -duration / -timing-function / -delay (CSS Transitions 1):
+//               animatable lengths, numbers and colours tween from the shown value when the computed value changes;
+//               reversing shortening; transitionrun / start / end / cancel signals (UiContext)
+//   animations  `@keyframes name { from / to / <pct>[, ...] { decls; animation-timing-function } }` and `animation`
+//               with all longhands: name, duration, timing-function, delay, iteration-count, direction, fill-mode,
+//               play-state (CSS Animations 1); animationstart / iteration / end / cancel signals
 #pragma once
 
 #include "fuse/ui/types.hpp"
@@ -67,23 +73,40 @@ enum class TextAlignment : u8 { Start, Center, End };
 
 inline constexpr int kMaxGridTracks = 8;
 inline constexpr int kMaxFilterShadows = 4; ///< drop-shadow() entries per filter list
-inline constexpr int kMaxTransitions = 8;   ///< entries of a `transition` list
+inline constexpr int kMaxTransitions = 8;   ///< entries of a transition-* / animation-* list
 
-/// One `transition` entry: the properties it covers (bit per Prop; shorthands such as padding expand to their
-/// longhands), duration and delay in seconds, and the timing function (cubic-bezier or steps()).
-struct TransitionSpec {
+/// A CSS easing function (cubic-bezier() or steps()); default `ease`.
+struct Easing {
     enum class Kind : u8 { Bezier, Steps };
     enum class StepPos : u8 { JumpStart, JumpEnd, JumpNone, JumpBoth };
-    u64 props = 0;
-    f32 duration = 0.f, delay = 0.f;
     Kind kind = Kind::Bezier;
-    f32 x1 = 0.25f, y1 = 0.1f, x2 = 0.25f, y2 = 1.f; ///< default `ease`
+    f32 x1 = 0.25f, y1 = 0.1f, x2 = 0.25f, y2 = 1.f;
     u8 steps = 1;
     StepPos stepPos = StepPos::JumpEnd;
-    friend bool operator==(const TransitionSpec&, const TransitionSpec&) = default;
+    friend bool operator==(const Easing&, const Easing&) = default;
 };
-/// The eased output progress of a timing function at input progress t in [0, 1] (CSS Easing 1).
-f32 transitionEase(const TransitionSpec& s, f32 t);
+/// The eased output progress at input progress t in [0, 1] (CSS Easing 1).
+f32 easeValue(const Easing& e, f32 t);
+bool parseEasing(std::string_view text, Easing& out);
+/// A set of properties (bit per Prop).
+struct PropMask {
+    std::array<u64, 2> w{};
+    bool has(u32 p) const { return (w[p >> 6] >> (p & 63)) & 1u; }
+    void set(u32 p) { w[p >> 6] |= u64(1) << (p & 63); }
+    friend bool operator==(const PropMask&, const PropMask&) = default;
+};
+/// The transition that applies to one property (assembled from the transition-* lists).
+struct TransitionSpec {
+    f32 duration = 0.f, delay = 0.f;
+    Easing ease;
+};
+/// Back-compat alias of easeValue.
+inline f32 transitionEase(const TransitionSpec& s, f32 t) { return easeValue(s.ease, t); }
+enum class AnimDirection : u8 { Normal, Reverse, Alternate, AlternateReverse };
+enum class AnimFill : u8 { None, Forwards, Backwards, Both };
+/// Interned animation / keyframes names (the filter-name table; stable for the process). 0 = none.
+inline u32 animationNameId(std::string_view name) { return filterNameId(name) + 1; }
+inline std::string_view animationName(u32 id) { return id ? filterName(id - 1) : std::string_view("none"); }
 
 /// The fully resolved style of a node. Trivially copyable; deduplicated in StyleTable.
 struct ComputedStyle {
@@ -132,13 +155,40 @@ struct ComputedStyle {
     std::array<FilterShadow, kMaxFilterShadows> filterShadows{};
     BackgroundClip backgroundClip = BackgroundClip::BorderBox; ///< background-clip: border-box | padding-box | content-box
     bool pointerEvents = true;
-    u8 transitionCount = 0; ///< `transition` list (later entries win for the same property)
-    std::array<TransitionSpec, kMaxTransitions> transitions{};
-    /// The entry covering `p` (nullptr: no transition)
-    const TransitionSpec* transitionFor(u8 p) const {
-        for (int k = int(transitionCount) - 1; k >= 0; --k)
-            if (transitions[std::size_t(k)].props >> p & 1u) return &transitions[std::size_t(k)];
-        return nullptr;
+    // transition-* lists (lengths independent; property entries index the others cyclically)
+    u8 transitionPropertyCount = 1, transitionDurationCount = 1, transitionEaseCount = 1, transitionDelayCount = 1;
+    std::array<PropMask, kMaxTransitions> transitionProperty{PropMask{{~u64(0), ~u64(0)}}}; ///< initial: all
+    std::array<f32, kMaxTransitions> transitionDuration{}, transitionDelay{};
+    std::array<Easing, kMaxTransitions> transitionEase{};
+    // animation-* lists (animation-name entries index the others cyclically)
+    u8 animationNameCount = 1, animationDurationCount = 1, animationEaseCount = 1, animationDelayCount = 1,
+       animationIterationCount = 1, animationDirectionCount = 1, animationFillCount = 1, animationPlayCount = 1;
+    std::array<u32, kMaxTransitions> animationName{}; ///< animationNameId; 0 = none
+    std::array<f32, kMaxTransitions> animationDuration{}, animationDelay{};
+    std::array<f32, kMaxTransitions> animationIterations{1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f}; ///< inf = infinite
+    std::array<Easing, kMaxTransitions> animationEase{};
+    std::array<AnimDirection, kMaxTransitions> animationDirection{};
+    std::array<AnimFill, kMaxTransitions> animationFill{};
+    std::array<u8, kMaxTransitions> animationPaused{};
+    /// The transition covering property `p` (the last transition-property entry naming it); false: none.
+    bool transitionFor(u32 p, TransitionSpec& out) const {
+        for (int k = int(transitionPropertyCount) - 1; k >= 0; --k)
+            if (transitionProperty[std::size_t(k)].has(p)) {
+                out.duration = transitionDuration[std::size_t(k % transitionDurationCount)];
+                out.delay = transitionDelay[std::size_t(k % transitionDelayCount)];
+                out.ease = transitionEase[std::size_t(k % transitionEaseCount)];
+                return true;
+            }
+        return false;
+    }
+    bool hasTransitions() const {
+        for (u8 k = 0; k < transitionDurationCount; ++k) if (transitionDuration[k] > 0.f) return true;
+        for (u8 k = 0; k < transitionDelayCount; ++k) if (transitionDelay[k] > 0.f) return true;
+        return false;
+    }
+    bool hasAnimations() const {
+        for (u8 k = 0; k < animationNameCount; ++k) if (animationName[k]) return true;
+        return false;
     }
     friend bool operator==(const ComputedStyle&, const ComputedStyle&) = default;
 };
@@ -150,12 +200,15 @@ enum class Prop : u8 {
     AlignItems, AlignSelf, Justify, Wrap, Overflow, GridColumns, GridColumn, GridColumnSpan, GridRow, GridRowSpan,
     Left, Top, Right, Bottom, CenterX, CenterY, Background, Background2, Gradient, BorderColor, BorderWidth,
     RadiusTL, RadiusTR, RadiusBR, RadiusBL, Color, FontSize, TextAlign, Opacity, ShadowColor, ShadowBlur, ShadowX,
-    ShadowY, PointerEvents, BackdropBlur, GradientAngle, GradientStops, BackgroundClip, BackdropFilter, Filter, Transition, Count
+    ShadowY, PointerEvents, BackdropBlur, GradientAngle, GradientStops, BackgroundClip, BackdropFilter, Filter,
+    TransitionProperty, TransitionDuration, TransitionTimingFunction, TransitionDelay,
+    AnimationName, AnimationDuration, AnimationTimingFunction, AnimationDelay, AnimationIterationCount,
+    AnimationDirection, AnimationFillMode, AnimationPlayState, Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
-static_assert(kPropCount <= 64, "TransitionSpec::props is a u64 mask");
+static_assert(kPropCount <= 128, "PropMask holds 128 properties");
 
-enum class PropType : u8 { Bool, Enum, Length, Number, Color, Tracks, Stops, Filter, Transition }; ///< Filter: fns[] + tracks[].value amounts ///< Stops: offsets in tracks[].value, colours in stopColors
+enum class PropType : u8 { Bool, Enum, Length, Number, Color, Tracks, Stops, Filter, List }; ///< Filter: fns[] + tracks[].value amounts ///< Stops: offsets in tracks[].value, colours in stopColors
 struct PropInfo {
     Prop id;
     std::string_view cssName;
@@ -183,7 +236,11 @@ struct PropValue {
     std::array<u8, kMaxGridTracks> fns{}; ///< Filter: FilterFn per entry
     std::array<FilterShadow, kMaxFilterShadows> shadows{}; ///< Filter: drop-shadow() entries (fn amount = index)
     u8 shadowCount = 0;
-    std::array<TransitionSpec, kMaxTransitions> transitions{}; ///< Transition: entries (count in trackCount)
+    /// List (transition-* / animation-* longhands; count in trackCount): masks (property), tracks[k].value (times,
+    /// iteration counts), eases (timing functions), ids (animation names), fns[k] (direction / fill / play state)
+    std::array<PropMask, kMaxTransitions> masks{};
+    std::array<Easing, kMaxTransitions> eases{};
+    std::array<u32, kMaxTransitions> ids{};
     static PropValue ofBool(bool v) { PropValue p; p.type = PropType::Bool; p.b = v; return p; }
     static PropValue ofEnum(u8 v) { PropValue p; p.type = PropType::Enum; p.e = v; return p; }
     static PropValue ofLength(Length v) { PropValue p; p.type = PropType::Length; p.len = v; return p; }
@@ -224,7 +281,25 @@ struct SimpleSelector {
     std::array<u32, 4> classes{};
     u8 classCount = 0;
     u32 states = 0;
-    enum class Combinator : u8 { None, Descendant, Child } combinator = Combinator::None; ///< to the previous (left)
+    enum class Combinator : u8 { None, Descendant, Child, Adjacent, Sibling } combinator = Combinator::None; ///< to the previous (left)
+    /// [name], [name=v], [name~=v], [name|=v], [name^=v], [name$=v], [name*=v]; ci: ` i` flag
+    struct Attr {
+        enum class Op : u8 { Exists, Equals, Word, DashPrefix, Prefix, Suffix, Contains };
+        u32 nameHash = 0;
+        Op op = Op::Exists;
+        bool ci = false;
+        std::string value;
+        friend bool operator==(const Attr&, const Attr&) = default;
+    };
+    std::vector<Attr> attrs;
+    /// :nth-child(An+B) (Child), :nth-last-child (LastChild), :nth-of-type (OfType), :nth-last-of-type (LastOfType)
+    struct Nth {
+        enum class Kind : u8 { Child, LastChild, OfType, LastOfType };
+        Kind kind = Kind::Child;
+        i32 a = 0, b = 1;
+        friend bool operator==(const Nth&, const Nth&) = default;
+    };
+    std::vector<Nth> nths;
 };
 
 struct Declaration {
@@ -250,6 +325,25 @@ struct StyleSubject {
     virtual bool hasClass(u32 node, u32 classHash) const = 0;
     virtual u32 states(u32 node) const = 0;
     virtual u32 parent(u32 node) const = 0; ///< 0xFFFFFFFF at the root
+    virtual u32 prevSibling(u32) const { return 0xFFFFFFFFu; }
+    virtual u32 nextSibling(u32) const { return 0xFFFFFFFFu; }
+    /// Attribute value of `node` (false: absent).
+    virtual bool attribute(u32, u32 /*nameHash*/, std::string_view&) const { return false; }
+};
+
+/// Parses An+B (odd, even, 3, -n+2, 2n+1, ...).
+bool parseNth(std::string_view text, i32& a, i32& b);
+
+/// @keyframes: offsets 0..1 with their declarations (animatable properties) and optional per-keyframe easing.
+struct Keyframe {
+    f32 offset = 0.f;
+    std::vector<Declaration> decls;
+    bool hasEase = false;
+    Easing ease;
+};
+struct KeyframesRule {
+    u32 name = 0; ///< animationNameId
+    std::vector<Keyframe> frames; ///< sorted by offset (stable)
 };
 
 class StyleSheet {
@@ -263,17 +357,23 @@ public:
     bool token(u32 nameHash, std::string_view& out) const;
     const std::vector<std::pair<u32, std::string>>& tokens() const { return m_tokens; }
     /// Rebuilds a parsed sheet from its parts (cooked `.fusestyle` loading; see fuse/ui/doc/cook.hpp).
-    static StyleSheet fromParts(std::vector<StyleRule> rules, std::vector<std::pair<u32, std::string>> tokens) {
+    static StyleSheet fromParts(std::vector<StyleRule> rules, std::vector<std::pair<u32, std::string>> tokens,
+                                std::vector<KeyframesRule> keyframes = {}) {
         StyleSheet s;
         s.m_rules = std::move(rules);
         s.m_tokens = std::move(tokens);
+        s.m_keyframes = std::move(keyframes);
         return s;
     }
+    const std::vector<KeyframesRule>& keyframes() const { return m_keyframes; }
+    /// Uses structural (:nth-*, sibling) selectors: sibling changes restyle the siblings.
+    bool structural() const;
 
 private:
     friend class StyleEngine;
     std::vector<StyleRule> m_rules;
     std::vector<std::pair<u32, std::string>> m_tokens;
+    std::vector<KeyframesRule> m_keyframes;
 };
 
 /// Parses one value for `p` (also used by inline setters and markup). False on a bad value.
@@ -299,6 +399,11 @@ public:
     /// compute() without interning
     ComputedStyle computeValue(const StyleSubject& subject, u32 node, const ComputedStyle* parentStyle,
                                const ComputedStyle* defaults, const std::vector<std::pair<Prop, PropValue>>& inlineValues);
+    /// The last @keyframes rule named `name` over all sheets (nullptr: none).
+    const KeyframesRule* keyframes(u32 name) const;
+    /// Resolves a keyframe declaration (var() against the sheets' tokens).
+    bool resolveDecl(const Declaration& d, PropValue& out) const;
+    bool structural() const { return m_structural; }
     bool isScratch(u32 index) const { return index < m_isScratch.size() && m_isScratch[index]; }
     /// Unshared table slots for per-node styles that change every frame (transitions): never deduplicated, reused.
     u32 allocScratch(const ComputedStyle& cs);
@@ -306,6 +411,7 @@ public:
     void freeScratch(u32 index) { m_freeScratch.push_back(index); }
     u32 tableSize() const { return u32(m_table.size()); }
     bool matches(const StyleSubject& subject, u32 node, const StyleRule& rule) const;
+    bool matchFrom(const StyleSubject& subject, u32 node, const StyleRule& rule, int k) const;
 
 private:
     bool matchSimple(const StyleSubject& s, u32 node, const SimpleSelector& sel) const;
@@ -319,6 +425,7 @@ private:
     std::vector<ComputedStyle> m_table;
     std::vector<u32> m_hashIndex; ///< open addressing into m_table (+1)
     std::vector<u8> m_isScratch;  ///< per table entry
+    bool m_structural = false;
     std::vector<u32> m_freeScratch;
     u32 m_version = 0;
 };

@@ -351,6 +351,14 @@ std::expected<SignalKind, std::string> signalOf(std::string_view s) {
     if (s == "editingFinished") return SignalKind::EditingFinished;
     if (s == "highlighted") return SignalKind::Highlighted;
     if (s == "activated") return SignalKind::Activated;
+    if (s == "transitionRun") return SignalKind::TransitionRun;
+    if (s == "transitionStart") return SignalKind::TransitionStart;
+    if (s == "transitionEnd") return SignalKind::TransitionEnd;
+    if (s == "transitionCancel") return SignalKind::TransitionCancel;
+    if (s == "animationStart") return SignalKind::AnimationStart;
+    if (s == "animationIteration") return SignalKind::AnimationIteration;
+    if (s == "animationEnd") return SignalKind::AnimationEnd;
+    if (s == "animationCancel") return SignalKind::AnimationCancel;
     return std::unexpected("unknown signal '" + std::string(s) + "'");
 }
 } // namespace

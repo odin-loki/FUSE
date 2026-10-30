@@ -139,6 +139,22 @@ bool readLength(Reader& r, Length& l) {
     l.unit = Unit(u);
     return r.ok;
 }
+void writeEasing(Writer& w, const Easing& e) {
+    w.u8_(u8(e.kind));
+    w.f32_(e.x1); w.f32_(e.y1); w.f32_(e.x2); w.f32_(e.y2);
+    w.u8_(e.steps); w.u8_(u8(e.stepPos));
+}
+bool readEasing(Reader& r, Easing& e) {
+    const u8 kind = r.u8_();
+    if (kind > u8(Easing::Kind::Steps)) return r.ok = false;
+    e.kind = Easing::Kind(kind);
+    e.x1 = r.f32_(); e.y1 = r.f32_(); e.x2 = r.f32_(); e.y2 = r.f32_();
+    e.steps = r.u8_();
+    const u8 pos = r.u8_();
+    if (pos > u8(Easing::StepPos::JumpBoth) || e.steps == 0) return r.ok = false;
+    e.stepPos = Easing::StepPos(pos);
+    return r.ok;
+}
 void writeValue(Writer& w, const PropValue& v) {
     w.u8_(u8(v.type));
     w.u8_(v.b ? 1 : 0);
@@ -158,19 +174,17 @@ void writeValue(Writer& w, const PropValue& v) {
             w.f32_(sh.color.r); w.f32_(sh.color.g); w.f32_(sh.color.b); w.f32_(sh.color.a);
         }
     }
-    if (v.type == PropType::Transition)
+    if (v.type == PropType::List)
         for (u8 i = 0; i < v.trackCount; ++i) {
-            const TransitionSpec& t = v.transitions[i];
-            w.u32_(u32(t.props)); w.u32_(u32(t.props >> 32));
-            w.f32_(t.duration); w.f32_(t.delay);
-            w.u8_(u8(t.kind));
-            w.f32_(t.x1); w.f32_(t.y1); w.f32_(t.x2); w.f32_(t.y2);
-            w.u8_(t.steps); w.u8_(u8(t.stepPos));
+            for (u64 m : v.masks[i].w) { w.u32_(u32(m)); w.u32_(u32(m >> 32)); }
+            writeEasing(w, v.eases[i]);
+            w.str(v.ids[i] ? std::string(animationName(v.ids[i])) : std::string());
+            w.u8_(v.fns[i]);
         }
 }
 bool readValue(Reader& r, PropValue& v) {
     const u8 t = r.u8_();
-    if (t > u8(PropType::Transition)) return r.ok = false;
+    if (t > u8(PropType::List)) return r.ok = false;
     v.type = PropType(t);
     v.b = r.u8_() != 0;
     v.e = r.u8_();
@@ -178,7 +192,7 @@ bool readValue(Reader& r, PropValue& v) {
     v.num = r.f32_();
     v.color.r = r.f32_(); v.color.g = r.f32_(); v.color.b = r.f32_(); v.color.a = r.f32_();
     v.trackCount = r.u8_();
-    if (v.trackCount > kMaxGridTracks || (v.type == PropType::Transition && v.trackCount > kMaxTransitions)) return r.ok = false;
+    if (v.trackCount > kMaxGridTracks || (v.type == PropType::List && v.trackCount > kMaxTransitions)) return r.ok = false;
     for (u8 i = 0; i < v.trackCount && r.ok; ++i) readLength(r, v.tracks[i]);
     if (v.type == PropType::Stops)
         for (u8 i = 0; i < v.trackCount && r.ok; ++i) { v.stopColors[i].r = r.f32_(); v.stopColors[i].g = r.f32_(); v.stopColors[i].b = r.f32_(); v.stopColors[i].a = r.f32_(); }
@@ -190,20 +204,13 @@ bool readValue(Reader& r, PropValue& v) {
             sh.color.r = r.f32_(); sh.color.g = r.f32_(); sh.color.b = r.f32_(); sh.color.a = r.f32_();
         }
     }
-    if (v.type == PropType::Transition)
+    if (v.type == PropType::List)
         for (u8 i = 0; i < v.trackCount && r.ok; ++i) {
-            TransitionSpec& t = v.transitions[i];
-            const u64 lo = r.u32_(), hi = r.u32_();
-            t.props = lo | hi << 32;
-            t.duration = r.f32_(); t.delay = r.f32_();
-            const u8 kind = r.u8_();
-            if (kind > u8(TransitionSpec::Kind::Steps)) return r.ok = false;
-            t.kind = TransitionSpec::Kind(kind);
-            t.x1 = r.f32_(); t.y1 = r.f32_(); t.x2 = r.f32_(); t.y2 = r.f32_();
-            t.steps = r.u8_();
-            const u8 pos = r.u8_();
-            if (pos > u8(TransitionSpec::StepPos::JumpBoth)) return r.ok = false;
-            t.stepPos = TransitionSpec::StepPos(pos);
+            for (u64& m : v.masks[i].w) { const u64 lo = r.u32_(), hi = r.u32_(); m = lo | hi << 32; }
+            readEasing(r, v.eases[i]);
+            const std::string name = r.str();
+            v.ids[i] = name.empty() ? 0 : animationNameId(name);
+            v.fns[i] = r.u8_();
         }
     return r.ok;
 }
@@ -223,6 +230,10 @@ void writeSheet(Writer& w, const StyleSheet& s) {
             for (u8 i = 0; i < sel.classCount; ++i) w.u32_(sel.classes[i]);
             w.u32_(sel.states);
             w.u8_(u8(sel.combinator));
+            w.u32_(u32(sel.attrs.size()));
+            for (const auto& at : sel.attrs) { w.u32_(at.nameHash); w.u8_(u8(at.op)); w.u8_(at.ci ? 1 : 0); w.str(at.value); }
+            w.u32_(u32(sel.nths.size()));
+            for (const auto& n : sel.nths) { w.u8_(u8(n.kind)); w.i32_(n.a); w.i32_(n.b); }
         }
         w.u32_(u32(rule.decls.size()));
         for (const Declaration& d : rule.decls) {
@@ -234,6 +245,18 @@ void writeSheet(Writer& w, const StyleSheet& s) {
     }
     w.u32_(u32(s.tokens().size()));
     for (const auto& [h, text] : s.tokens()) { w.u32_(h); w.str(text); }
+    w.u32_(u32(s.keyframes().size()));
+    for (const KeyframesRule& k : s.keyframes()) {
+        w.str(std::string(animationName(k.name)));
+        w.u32_(u32(k.frames.size()));
+        for (const Keyframe& f : k.frames) {
+            w.f32_(f.offset);
+            w.u8_(f.hasEase ? 1 : 0);
+            writeEasing(w, f.ease);
+            w.u32_(u32(f.decls.size()));
+            for (const Declaration& d : f.decls) { w.u32_(u32(d.prop)); writeValue(w, d.value); w.str(d.raw); }
+        }
+    }
 }
 std::expected<StyleSheet, std::string> readSheet(Reader& r) {
     if (!r.magic(kStyleMagic)) return std::unexpected("not a cooked style (bad magic / version)");
@@ -251,8 +274,24 @@ std::expected<StyleSheet, std::string> readSheet(Reader& r) {
             for (u8 i = 0; i < sel.classCount; ++i) sel.classes[i] = r.u32_();
             sel.states = r.u32_();
             const u8 c = r.u8_();
-            if (c > u8(SimpleSelector::Combinator::Child)) return std::unexpected("cooked style: bad combinator");
+            if (c > u8(SimpleSelector::Combinator::Sibling)) return std::unexpected("cooked style: bad combinator");
             sel.combinator = SimpleSelector::Combinator(c);
+            sel.attrs.resize(r.count(6));
+            for (auto& at : sel.attrs) {
+                at.nameHash = r.u32_();
+                const u8 op = r.u8_();
+                if (op > u8(SimpleSelector::Attr::Op::Contains)) return std::unexpected("cooked style: bad attribute selector");
+                at.op = SimpleSelector::Attr::Op(op);
+                at.ci = r.u8_() != 0;
+                at.value = r.str();
+            }
+            sel.nths.resize(r.count(9));
+            for (auto& n : sel.nths) {
+                const u8 k = r.u8_();
+                if (k > u8(SimpleSelector::Nth::Kind::LastOfType)) return std::unexpected("cooked style: bad :nth");
+                n.kind = SimpleSelector::Nth::Kind(k);
+                n.a = r.i32_(); n.b = r.i32_();
+            }
         }
         if (rule.chain.empty() && !rule.root && r.ok) return std::unexpected("cooked style: empty selector");
         rule.decls.resize(r.count(40));
@@ -268,8 +307,31 @@ std::expected<StyleSheet, std::string> readSheet(Reader& r) {
     }
     std::vector<std::pair<u32, std::string>> tokens(r.count(8));
     for (auto& [h, text] : tokens) { h = r.u32_(); text = r.str(); }
+    std::vector<KeyframesRule> kfs(r.ok ? r.count(8) : 0);
+    for (KeyframesRule& k : kfs) {
+        const std::string name = r.str();
+        if (name.empty()) return std::unexpected("cooked style: bad @keyframes");
+        k.name = animationNameId(name);
+        k.frames.resize(r.count(10));
+        for (Keyframe& f : k.frames) {
+            f.offset = r.f32_();
+            if (!(f.offset >= 0.f && f.offset <= 1.f)) return std::unexpected("cooked style: bad keyframe offset");
+            f.hasEase = r.u8_() != 0;
+            readEasing(r, f.ease);
+            f.decls.resize(r.count(10));
+            for (Declaration& d : f.decls) {
+                const u32 p = r.u32_();
+                if (p >= u32(Prop::Count)) return std::unexpected("cooked style: bad property");
+                d.prop = Prop(p);
+                readValue(r, d.value);
+                d.raw = r.str();
+            }
+            if (!r.ok) break;
+        }
+        if (!r.ok) break;
+    }
     if (!r.ok) return std::unexpected("cooked style: truncated or corrupt");
-    return StyleSheet::fromParts(std::move(rules), std::move(tokens));
+    return StyleSheet::fromParts(std::move(rules), std::move(tokens), std::move(kfs));
 }
 } // namespace
 
