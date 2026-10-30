@@ -5,6 +5,8 @@
 
 #include "fuse/ui/draw_list.hpp"
 
+#include <cstring>
+#include <unordered_map>
 #include <vector>
 
 namespace fuse::ui::render {
@@ -99,7 +101,52 @@ struct GpuDrawData {
     bool patched = false;
     std::vector<u32> cmdSlot;  ///< per DrawList command: GpuCmd index, kCompactGlyph | record offset, or ~0u (not packed)
     std::vector<u32> patches;  ///< scratch: fill-only changed command indices
-    u32 packedImageWords = 0;  ///< images.size() after the last full pack (patch fills go after it)
+    u32 packedImageWords = 0;
+
+    /// Glyph slot arena (the tail of `images`, from `arenaBase`): every source node (DrawCmd::node) owns a slot of
+    /// compact glyph records that stays put while its glyphs fit (headroom 1/8), and fill colours are interned there.
+    /// Adding, removing or moving a node's glyphs rewrites only its slot; the other records keep their words, so
+    /// UiVkRenderer::upload's page diff skips them. Volatile words (images, edges, stops, runs) stay below
+    /// `arenaBase`, which moves up (one repack) only when they outgrow it; holes are compacted when they dominate.
+    struct GlyphSlot {
+        u32 off = 0, cap = 0; ///< arena word offset, capacity in records
+        u32 count = 0, cursor = 0, stamp = 0;
+    };
+    struct FillKey {
+        u32 w[4];
+        bool operator==(const FillKey& o) const { return w[0] == o.w[0] && w[1] == o.w[1] && w[2] == o.w[2] && w[3] == o.w[3]; }
+    };
+    struct FillHash {
+        std::size_t operator()(const FillKey& k) const {
+            return std::size_t((u64(k.w[0]) * 0x9E3779B97F4A7C15ull) ^ (u64(k.w[1]) * 0xC2B2AE3D27D4EB4Full) ^
+                               (u64(k.w[2]) * 0x165667B19E3779F9ull) ^ (u64(k.w[3]) * 0x27D4EB2F165667C5ull));
+        }
+    };
+    std::vector<u32> arena;
+    std::unordered_map<u32, GlyphSlot> glyphSlots;
+    std::unordered_map<FillKey, u32, FillHash> fillSlots; ///< colour -> absolute images word offset
+    u32 arenaBase = 0, arenaHoles = 0, arenaLive = 0, frameStamp = 0;
+    std::vector<u32> glyphScratch;          ///< per glyph this pack: 7 record words + node (then absolute offset)
+    std::vector<GlyphSlot*> glyphSlotOf;
+    std::vector<u32> touched;
+    void resetArena() {
+        arena.clear();
+        glyphSlots.clear();
+        fillSlots.clear();
+        arenaHoles = arenaLive = 0;
+    }
+    /// Interns a fill colour in the arena; returns its absolute images word offset.
+    u32 fillSlot(Color c) {
+        FillKey k;
+        const f32 col[4] = {c.r, c.g, c.b, c.a};
+        std::memcpy(k.w, col, sizeof col);
+        const auto it = fillSlots.find(k);
+        if (it != fillSlots.end()) return it->second;
+        const u32 at = arenaBase + u32(arena.size());
+        arena.insert(arena.end(), k.w, k.w + 4);
+        fillSlots.emplace(k, at);
+        return at;
+    }  ///< images.size() after the last full pack (patch fills go after it)
     /// previous inputs (compared, then refreshed from the first difference on); kept for capacity
     std::vector<DrawCmd> prevCmds;
     std::vector<PathEdge> prevEdges;

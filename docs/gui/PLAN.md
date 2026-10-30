@@ -221,3 +221,4 @@ Every phase: commits on `gui-framework`, pushed after each milestone; never to `
   - Wayland: when the Vulkan WSI is given an HDR10 colour space, it attaches wp_color_management_v1 to the surface itself, and a second app-side object would be a protocol error.
   - GPU text on lavapipe is still slower than the CPU (about 21 vs 14-16 ms). The cost is per-pixel glyph loops on a software rasteriser; real GPUs are not measured here.
   - The Apple paths (CVDisplayLink, Metal surface) are unverified on hardware.
+- Done: node-keyed glyph slot arena in packDrawList — glyph records live in per-node slots with slack (grow-in-place, holes compacted on reset); inserting/removing/moving glyphs in one node rewrites only that slot plus cmds/tiles (text_page insert: 70 KB of 3.6 MB uploaded). Parity tests inserted-glyph / removed-glyph.

@@ -54,6 +54,7 @@ template <class F> double msPer(int n, F&& f, bool cpuClock = false) {
 struct Row {
     std::string name;
     double cpu = 0, gpu = -1, gpuWall = -1, pack = 0, repack = 0, patch = 0;
+    double insKb = -1, insPack = 0; ///< a glyph inserted mid-list (structural): upload KB and pack ms
     double editKb = -1; ///< bytes upload() writes after one command's colour changes (page diff), KB
     std::size_t cmds = 0;
     std::size_t tileKb = 0, imageKb = 0; ///< packed upload sizes
@@ -90,6 +91,7 @@ int main(int argc, char** argv) {
                     DrawCmd g = g0;
                     g.rect.x = std::floor(g.rect.x * 0.3f) + f32(col * 160);
                     g.rect.y = std::floor(g.rect.y * 0.05f) + f32(row * 16);
+                    g.node = u32(100000 + row * 8 + col); // one text block per source node
                     text.push(g);
                 }
     }
@@ -196,6 +198,24 @@ int main(int argc, char** argv) {
                 packDrawList(edited, W, H, ed, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, s.scissor, ui.atlas().version());
                 if (gpu.upload(0, ed)) rows[i].editKb = double(gpu.uploadedBytes() - before) / 1024.0;
                 gpu.upload(0, data); // back to the scene (rewrites only those pages)
+                // structural: insert a copy of a mid-list glyph (same node) -> node slots keep the other records
+                std::vector<DrawCmd> cmds = s.list->cmds();
+                std::size_t mid = cmds.size() / 2;
+                while (mid < cmds.size() && cmds[mid].op != DrawOp::Glyph) ++mid;
+                if (mid < cmds.size()) {
+                    DrawCmd extra = cmds[mid];
+                    extra.rect.x += 1.f;
+                    cmds.insert(cmds.begin() + std::ptrdiff_t(mid), extra);
+                    DrawList ins;
+                    for (const DrawCmd& c : cmds) ins.push(c);
+                    GpuDrawData id = data;
+                    const auto t0 = std::chrono::steady_clock::now();
+                    packDrawList(ins, W, H, id, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, s.scissor, ui.atlas().version());
+                    rows[i].insPack = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+                    const u64 b = gpu.uploadedBytes();
+                    if (gpu.upload(0, id)) rows[i].insKb = double(gpu.uploadedBytes() - b) / 1024.0;
+                    gpu.upload(0, data);
+                }
             }
             double device = 0.0;
             const double t = msPer(iters, [&] {
@@ -223,11 +243,12 @@ int main(int argc, char** argv) {
 
     std::printf("fuse_ui_bench_render %ux%u, %d iterations, GPU: %s (%s)\n", W, H, iters, device.c_str(),
                 timestamps ? "timestamp queries" : "wall time");
-    std::printf("  %-16s %8s %10s %10s %12s %10s %10s %9s %9s %9s %9s\n", "scene", "cmds", "cpu ms", "gpu ms", "gpu wall ms",
-                "pack ms", "repack ms", "patch ms", "tiles KB", "data KB", "edit KB");
+    std::printf("  %-16s %8s %10s %10s %12s %10s %10s %9s %9s %9s %9s %8s %8s\n", "scene", "cmds", "cpu ms", "gpu ms", "gpu wall ms",
+                "pack ms", "repack ms", "patch ms", "tiles KB", "data KB", "edit KB", "ins ms", "ins KB");
     for (const Row& row : rows)
-        std::printf("  %-16s %8zu %10.3f %10.3f %12.3f %10.3f %10.3f %9.3f %9zu %9zu %9.0f\n", row.name.c_str(), row.cmds, row.cpu,
-                    row.gpu, row.gpuWall, row.pack, row.repack, row.patch, row.tileKb, row.imageKb, row.editKb);
+        std::printf("  %-16s %8zu %10.3f %10.3f %12.3f %10.3f %10.3f %9.3f %9zu %9zu %9.0f %8.3f %8.0f\n", row.name.c_str(),
+                    row.cmds, row.cpu, row.gpu, row.gpuWall, row.pack, row.repack, row.patch, row.tileKb, row.imageKb, row.editKb,
+                    row.insPack, row.insKb);
     if (!out.empty()) {
         if (FILE* f = std::fopen(out.c_str(), "wb")) {
             std::fprintf(f, "{\"width\":%u,\"height\":%u,\"iterations\":%d,\"device\":\"%s\",\"timestamps\":%s,\"scenes\":[", W, H, iters,

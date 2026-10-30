@@ -136,7 +136,13 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         static std::atomic<u64> versions{0}; // process-unique, so a slot never mistakes another GpuDrawData's content
         out.contentVersion = ++versions;
     }
+    // glyph slot arena: compacted when the holes left by moved / vanished nodes outweigh the live slots
+    if ((out.arenaHoles > out.arenaLive && out.arena.size() > 65536) || out.fillSlots.size() > 8192) out.resetArena();
+    for (int attempt = 0; attempt < 2; ++attempt) {
+    ++out.frameStamp;
     out.cmdSlot.assign(list.cmds().size(), ~0u);
+    out.glyphScratch.clear();
+    out.glyphSlotOf.clear();
     out.cmds.clear();
     out.tiles.clear();
     out.images.clear();
@@ -247,15 +253,23 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     areas.reserve(list.cmds().size()); // one growth step per frame at most (text pages are 10^4+ glyph quads)
     out.cmds.reserve(list.cmds().size() + 1);
     u32 segBegin = 0;
+    struct Segment {
+        u32 end;   ///< areas index where the draw segment closes
+        GpuPass blur; ///< the backdrop pass that follows it
+    };
+    thread_local std::vector<Segment> segments;
+    segments.clear();
     u32 clipRef = ~0u; // carrier cmd of the current glyph clip
     Clip lastClip{};
     Color lastFill{};
     u32 fillAt = ~0u;
-    auto closeSegment = [&] {
+    // a compact glyph record (in the slot arena, addressed by its absolute images word offset)
+    const auto rec = [&](u32 abs) -> const u32* { return out.arena.data() + (abs - out.arenaBase); };
+    auto closeSegment = [&](u32 segEnd) {
         const u32 tileBase = u32(out.tiles.size());
         out.tiles.resize(std::size_t(tileBase) + tileCount + 1, 0u);
         u32* off = out.tiles.data() + tileBase;
-        for (u32 i = segBegin; i < areas.size(); ++i) {
+        for (u32 i = segBegin; i < segEnd; ++i) {
             const Area& a = areas[i];
             if (a.x1 <= a.x0 || a.y1 <= a.y0) continue;
             const int tx0 = a.x0 / int(kUiTile), tx1 = (a.x1 - 1) / int(kUiTile);
@@ -277,7 +291,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         cursor.assign(off, off + tileCount);
         const std::size_t base = std::size_t(tileBase) + tileCount + 1;
         out.tiles.resize(base + sum, 0u);
-        for (u32 i = segBegin; i < areas.size(); ++i) {
+        for (u32 i = segBegin; i < segEnd; ++i) {
             const Area& a = areas[i];
             if (a.x1 <= a.x0 || a.y1 <= a.y0) continue;
             const int tx0 = a.x0 / int(kUiTile), tx1 = (a.x1 - 1) / int(kUiTile);
@@ -301,7 +315,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
                 off[t] = w;
                 for (u32 k = b; k < e;) {
                     u32 j = k;
-                    auto x0 = [&](u32 id) { return out.images[(id & ~kCompactGlyph) + 4] & 0xFFFFu; };
+                    auto x0 = [&](u32 id) { return rec(id & ~kCompactGlyph)[4] & 0xFFFFu; };
                     if ((ids[k] & kGlyphRun) == kCompactGlyph)
                         while (j + 1 < e && (ids[j + 1] & kGlyphRun) == kCompactGlyph && x0(ids[j + 1]) >= x0(ids[j])) ++j;
                     if (j - k + 1 < kMinGlyphRun) {
@@ -314,7 +328,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
                     u32 y0 = 0xFFFFu, y1 = 0, maxW = 0;
                     for (u32 q = 0; q < n; ++q) {
                         const u32 g = ids[k + q] & ~kCompactGlyph;
-                        const u32 b0 = out.images[g + 4], b1 = out.images[g + 5];
+                        const u32 b0 = rec(g)[4], b1 = rec(g)[5];
                         y0 = std::min(y0, b0 >> 16);
                         y1 = std::max(y1, b1 >> 16);
                         maxW = std::max(maxW, (b1 & 0xFFFFu) - (b0 & 0xFFFFu));
@@ -342,7 +356,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         p.kind = kPassDraw;
         p.tileBase = tileBase;
         out.passes.push_back(p);
-        segBegin = u32(areas.size());
+        segBegin = segEnd;
     };
     auto pack = [&](const DrawCmd& c, const Clip& clip) {
         GpuCmd& g = out.cmds.emplace_back(); // built in place (every field is written below)
@@ -432,12 +446,11 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             const int m = 3 * r;
             const int sx0 = std::max(0, x0 - m), sy0 = std::max(0, y0 - m);
             const int sx1 = std::min(int(width), x1 + m), sy1 = std::min(int(height), y1 + m);
-            closeSegment();
+            const u32 segEnd = u32(areas.size()); // the draw segment closes here (binned after the slot pass)
             const u32 id = u32(out.cmds.size());
             pack(c, clip);
             out.cmdSlot[ci] = id;
             areas.push_back({0, 0, 0, 0, id}); // never binned
-            segBegin = u32(areas.size());
             GpuPass p;
             p.kind = kPassBackdrop;
             p.cmd = id;
@@ -451,7 +464,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             p.area[3] = y1;
             p.radius = u32(r);
             p.inv = 1.f / f32(2 * r + 1);
-            out.passes.push_back(p);
+            segments.push_back({segEnd, p});
             continue;
         }
         Rect bounds = c.rect;
@@ -491,11 +504,8 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             const bool fast = gx0 == c.rect.x && gy0 == c.rect.y && gx1 == c.rect.x + c.rect.w && gy1 == c.rect.y + c.rect.h &&
                               c.rect.x == std::floor(c.rect.x) && c.rect.y == std::floor(c.rect.y) && c.rect.w == f32(c.tw) &&
                               c.rect.h == f32(c.th);
-            if (!(c.fill == lastFill) || fillAt == ~0u) { // fill colours are shared by consecutive glyphs
-                fillAt = u32(out.images.size());
-                const f32 col[4] = {c.fill.r, c.fill.g, c.fill.b, c.fill.a};
-                out.images.resize(out.images.size() + 4);
-                std::memcpy(out.images.data() + fillAt, col, sizeof col);
+            if (!(c.fill == lastFill) || fillAt == ~0u) { // consecutive glyphs share a colour; else the arena table
+                fillAt = out.fillSlot(c.fill);
                 lastFill = c.fill;
             }
             // ink trim: origin / uv / size shrink to the bitmap's ink box (pixel boxes intersected with it)
@@ -513,9 +523,11 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
                 if (bx1 <= bx0 || by1 <= by0) continue; // the clip keeps only blank margin
             }
             const auto u16i = [](int v) { return u32(std::clamp(v, -32768, 32767) + 32768); };
-            const u32 at = u32(out.images.size());
-            out.images.resize(out.images.size() + kCompactGlyphWords);
-            u32* w = out.images.data() + at;
+            // record -> scratch (7 words + source node); placed in the node's slot after the command pass
+            const u32 gi = u32(out.glyphScratch.size() / 8);
+            out.glyphScratch.resize(out.glyphScratch.size() + 8);
+            u32* w = out.glyphScratch.data() + std::size_t(gi) * 8;
+            w[7] = c.node;
             w[0] = u16i(ox) | (u16i(oy) << 16);
             w[1] = gu | (gv << 16);
             w[2] = std::min<u32>(gtw, 0xFFFFu) | (std::min<u32>(gth, 0x3FFFu) << 16) | (fast ? 0u : kGlyphBoxed) |
@@ -528,8 +540,8 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             g.x0 = std::max(g.x0, bx0), g.y0 = std::max(g.y0, by0);
             g.x1 = std::min(g.x1, bx1), g.y1 = std::min(g.y1, by1);
             if (g.x1 <= g.x0 || g.y1 <= g.y0) continue;
-            g.id = kCompactGlyph | at;
-            out.cmdSlot[ci] = g.id;
+            g.id = kCompactGlyph | gi; // glyph index until the slot pass
+            out.cmdSlot[ci] = kCompactGlyph | gi;
             areas.push_back(g);
             continue;
         }
@@ -570,7 +582,66 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         out.cmdSlot[ci] = pa.id;
         areas.push_back(pa);
     }
-    closeSegment();
+    // slot pass: each source node keeps its arena slot while its glyphs fit, so added / removed / moved commands of
+    // one node rewrite only that slot; other nodes' records keep their words (the upload page diff skips them)
+    {
+        const std::size_t ng = out.glyphScratch.size() / 8;
+        out.glyphSlotOf.resize(ng);
+        out.touched.clear();
+        for (std::size_t g = 0; g < ng; ++g) {
+            GpuDrawData::GlyphSlot& sl = out.glyphSlots[out.glyphScratch[g * 8 + 7]];
+            if (sl.stamp != out.frameStamp) {
+                sl.stamp = out.frameStamp;
+                sl.count = sl.cursor = 0;
+                out.touched.push_back(out.glyphScratch[g * 8 + 7]);
+            }
+            ++sl.count;
+            out.glyphSlotOf[g] = &sl;
+        }
+        for (auto it = out.glyphSlots.begin(); it != out.glyphSlots.end();) { // vanished nodes free their slots
+            if (it->second.stamp != out.frameStamp) {
+                out.arenaHoles += it->second.cap * kCompactGlyphWords;
+                it = out.glyphSlots.erase(it);
+            } else ++it;
+        }
+        out.arenaLive = 0;
+        for (u32 node : out.touched) {
+            GpuDrawData::GlyphSlot& sl = out.glyphSlots[node];
+            if (sl.count > sl.cap) { // grow: a new slot at the arena end with headroom; the old one becomes a hole
+                out.arenaHoles += sl.cap * kCompactGlyphWords;
+                sl.cap = sl.count + sl.count / 8 + 2;
+                sl.off = u32(out.arena.size());
+                out.arena.resize(out.arena.size() + std::size_t(sl.cap) * kCompactGlyphWords, 0u);
+            }
+            out.arenaLive += sl.cap * kCompactGlyphWords;
+        }
+        for (std::size_t g = 0; g < ng; ++g) {
+            GpuDrawData::GlyphSlot& sl = *out.glyphSlotOf[g];
+            const u32 local = sl.off + sl.cursor++ * kCompactGlyphWords;
+            std::memcpy(out.arena.data() + local, out.glyphScratch.data() + g * 8, kCompactGlyphWords * 4);
+            out.glyphScratch[g * 8 + 7] = out.arenaBase + local; // absolute record offset
+        }
+        if (ng == 0) out.resetArena(); // no glyphs: drop the arena (nothing references it)
+        for (Area& a : areas)
+            if ((a.id & kGlyphRun) == kCompactGlyph) a.id = kCompactGlyph | out.glyphScratch[std::size_t(a.id & ~kCompactGlyph) * 8 + 7];
+        for (u32& sl : out.cmdSlot)
+            if (sl != ~0u && (sl & kCompactGlyph)) sl = kCompactGlyph | out.glyphScratch[std::size_t(sl & ~kCompactGlyph) * 8 + 7];
+    }
+    for (const auto& sg : segments) {
+        closeSegment(sg.end);
+        out.passes.push_back(sg.blur);
+    }
+    closeSegment(u32(areas.size()));
+    // volatile words (images, edges, stops, clip lists, runs) must end before the arena; else move the arena up
+    if (!out.arena.empty() && out.images.size() > out.arenaBase) {
+        out.arenaBase = u32(out.images.size() + out.images.size() / 8 + 256);
+        out.resetArena();
+        continue; // repack once against the new base
+    }
+    if (!out.arena.empty()) { // no glyphs: no arena, no padding
+        out.images.resize(out.arenaBase, 0u);
+        out.images.insert(out.images.end(), out.arena.begin(), out.arena.end());
+    }
     // drop a trailing empty draw segment after a backdrop (nothing to draw); passes[0] always stays
     if (out.passes.size() > 1 && out.passes.back().kind == kPassDraw &&
         out.tiles[out.passes.back().tileBase + tileCount] == 0) {
@@ -580,6 +651,8 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     out.tiles.push_back(0u); // never empty
     if (out.cmds.empty()) out.cmds.push_back(GpuCmd{}); // non-empty buffer; no tile references it
     out.packedImageWords = u32(out.images.size());
+    break;
+    }
 }
 
 } // namespace fuse::ui::render

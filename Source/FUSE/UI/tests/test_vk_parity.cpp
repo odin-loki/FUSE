@@ -521,6 +521,38 @@ int main() {
         re.render(e2, cpuR);
         vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
         check("moved-glyph", compare(cpuR, out));
+        // structural edits keyed by source node: a glyph inserted mid-list, then one removed; records of other nodes
+        // keep their slots, so the upload stays a fraction of the buffers
+        {
+            std::vector<DrawCmd> cmds = e2.cmds();
+            std::size_t mid = cmds.size() / 2;
+            while (mid < cmds.size() && cmds[mid].op != DrawOp::Glyph) ++mid;
+            UI_CHECK(mid < cmds.size());
+            DrawCmd extra = cmds[mid];
+            extra.rect.x += 1.f;
+            cmds.insert(cmds.begin() + std::ptrdiff_t(mid), extra);
+            DrawList ins;
+            for (const DrawCmd& c : cmds) ins.push(c);
+            const u64 b2 = gpu.uploadedBytes();
+            packDrawList(ins, W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, {}, gen);
+            UI_CHECK(gpu.upload(0, data));
+            const u64 insWrote = gpu.uploadedBytes() - b2;
+            std::fill(cpuR.pixels.begin(), cpuR.pixels.end(), 0xFF000000u);
+            re.render(ins, cpuR);
+            vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+            check("inserted-glyph", compare(cpuR, out));
+            cmds.erase(cmds.begin() + std::ptrdiff_t(mid) + 1);
+            DrawList rem;
+            for (const DrawCmd& c : cmds) rem.push(c);
+            packDrawList(rem, W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, {}, gen);
+            UI_CHECK(gpu.upload(0, data));
+            std::fill(cpuR.pixels.begin(), cpuR.pixels.end(), 0xFF000000u);
+            re.render(rem, cpuR);
+            vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+            check("removed-glyph", compare(cpuR, out));
+            std::printf("  structural: insert wrote %llu of %zu bytes\n", (unsigned long long)insWrote,
+                        data.cmdBytes() + data.tileBytes() + data.imageBytes());
+        }
         std::printf("  incremental: %llu of %zu bytes written\n", (unsigned long long)wrote,
                     data.cmdBytes() + data.tileBytes() + data.imageBytes());
     }
