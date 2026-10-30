@@ -1286,6 +1286,18 @@ void gateDataViz3dBsp() {
     for (bool persp : {false, true}) {
         const auto frags = d3::bspOrder(polys, persp, 5.f);
         CHECK(frags.size() == 3);
+        // the split pieces mark exactly their shared edge (on x = 0) as a cut; all other edges are source edges
+        int cuts = 0;
+        for (const auto& f : frags) {
+            CHECK(f.cut.empty() || f.cut.size() == f.pts.size());
+            for (std::size_t j = 0; j < f.cut.size(); ++j)
+                if (f.cut[j]) {
+                    ++cuts;
+                    const auto &p0 = f.pts[j], &p1 = f.pts[(j + 1) % f.pts.size()];
+                    CHECK(std::abs(p0.x) < 1e-3f && std::abs(p1.x) < 1e-3f && std::abs(p0.z) < 1e-3f);
+                }
+        }
+        CHECK(cuts == 2);
         Image img;
         img.resize(300, 300, 0xFF000000u);
         DrawList dl;

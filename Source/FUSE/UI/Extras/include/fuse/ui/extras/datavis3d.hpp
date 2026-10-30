@@ -69,6 +69,9 @@ void render(const Scene& s, DrawList& dl, Rect target, Color gridColor, std::vec
 struct BspFragment {
     u32 source;
     std::vector<Vec3> pts;
+    /// cut[i]: edge pts[i] -> pts[i + 1] lies on a BSP splitting plane (not an edge of the source polygon). Empty when
+    /// the fragment is the whole polygon.
+    std::vector<bool> cut = {};
 };
 /// Back-to-front paint order of camera-space polygons (x right, y up, z towards the viewer) by a BSP tree: polygons
 /// straddling a splitting plane are cut, so interpenetrating and cyclically overlapping faces still paint correctly

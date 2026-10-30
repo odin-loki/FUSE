@@ -108,18 +108,23 @@ struct BspBuild {
         if (nb == 0 && nf == 0) { on.push_back(f); return; }
         if (nb == 0) { front.push_back(f); return; }
         if (nf == 0) { back.push_back(f); return; }
-        BspFragment b{f.source, {}}, fr{f.source, {}};
+        BspFragment b{f.source, {}, {}}, fr{f.source, {}, {}};
+        auto was = [&](std::size_t i) { return !f.cut.empty() && f.cut[i]; };
         for (std::size_t i = 0; i < f.pts.size(); ++i) {
             const std::size_t j = (i + 1) % f.pts.size();
             const Vec3 &a = f.pts[i], &c = f.pts[j];
             const f32 da = d[i], dc = d[j];
-            if (da >= -kEps) fr.pts.push_back(a);
-            if (da <= kEps) b.pts.push_back(a);
-            if ((da > kEps && dc < -kEps) || (da < -kEps && dc > kEps)) {
+            const bool cross = (da > kEps && dc < -kEps) || (da < -kEps && dc > kEps);
+            // the edge leaving a pushed vertex runs along source edge i when the next point of that piece lies on it
+            if (da >= -kEps) { fr.pts.push_back(a); fr.cut.push_back(dc >= -kEps || cross ? was(i) : true); }
+            if (da <= kEps) { b.pts.push_back(a); b.cut.push_back(dc <= kEps || cross ? was(i) : true); }
+            if (cross) {
                 const f32 t = da / (da - dc);
                 const Vec3 x{a.x + (c.x - a.x) * t, a.y + (c.y - a.y) * t, a.z + (c.z - a.z) * t};
                 fr.pts.push_back(x);
+                fr.cut.push_back(dc > kEps ? was(i) : true);
                 b.pts.push_back(x);
+                b.cut.push_back(dc < -kEps ? was(i) : true);
             }
         }
         if (b.pts.size() >= 3) back.push_back(std::move(b));
@@ -187,7 +192,7 @@ std::vector<BspFragment> bspOrder(const std::vector<std::vector<Vec3>>& polys, b
     std::vector<BspFragment> out, in;
     in.reserve(polys.size());
     for (std::size_t i = 0; i < polys.size(); ++i)
-        if (polys[i].size() >= 3) in.push_back({u32(i), polys[i]});
+        if (polys[i].size() >= 3) in.push_back({u32(i), polys[i], {}});
     out.reserve(in.size());
     BspBuild{polys, perspective, eyeDist, out}.run(std::move(in));
     return out;
@@ -394,14 +399,25 @@ void render(const Scene& s, DrawList& dl, Rect target, Color gridColor, std::vec
             dl.path(p.path, p.fill, false, p.stroke, p.strokeW); // unsplit: the original path
             continue;
         }
-        Path piece; // split part: fill only (the cut edge is not a real edge; the wire outline stays on whole faces)
+        // split part: fill the piece; where its edge is a BSP cut (not a real edge) run a hairline in the fill colour
+        // over it so the neighbouring pieces meet without an anti-aliasing seam (opaque fills only: a translucent
+        // line would double up), then the wire outline along the source polygon's own edges.
+        Path piece;
+        std::vector<Vec2> sp(f.pts.size());
         for (std::size_t j = 0; j < f.pts.size(); ++j) {
-            const Vec2 sp = toScreen(v, f.pts[j]);
-            if (j == 0) piece.moveTo(sp);
-            else piece.lineTo(sp);
+            sp[j] = toScreen(v, f.pts[j]);
+            if (j == 0) piece.moveTo(sp[j]);
+            else piece.lineTo(sp[j]);
         }
         piece.close();
         dl.path(piece, p.fill, false, {}, 0.f);
+        const std::size_t n = sp.size();
+        if (p.fill.a >= 1.f)
+            for (std::size_t j = 0; j < n; ++j)
+                if (f.cut[j]) dl.line(sp[j], sp[(j + 1) % n], p.fill, 1.f);
+        if (p.strokeW > 0.f && p.stroke.a > 0.f)
+            for (std::size_t j = 0; j < n; ++j)
+                if (!f.cut[j]) dl.line(sp[j], sp[(j + 1) % n], p.stroke, p.strokeW);
     }
     for (; ri < rest.size(); ++ri) dl.path(rest[ri].path, rest[ri].fill, false, rest[ri].stroke, rest[ri].strokeW);
     dl.popClip();
