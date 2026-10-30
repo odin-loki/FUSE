@@ -35,6 +35,9 @@ enum class DrawOp : u8 {
 enum GradientKind : u8 {
     kGradientNone = 0, kGradientVertical = 1, kGradientHorizontal = 2, kGradientRadial = 3,
     kGradientLinearStops = 4, kGradientRadialStops = 5,
+    /// 6: radial with a focal point (SVG fx / fy): DrawCmd::focal holds the focal point in gradient space
+    /// (|f| < 1); t solves |(x', y') - f (1 - t)| = t, i.e. circles interpolating from the focal point to the unit circle.
+    kGradientRadialFocal = 6,
 };
 enum class GradientSpread : u8 { Pad = 0, Repeat = 1, Reflect = 2 };
 
@@ -50,6 +53,7 @@ struct Gradient {
     GradientSpread spread = GradientSpread::Pad;
     std::array<f32, 6> toUnit{1.f, 0.f, 0.f, 1.f, 0.f, 0.f};
     std::vector<GradientStop> stops;
+    Vec2 focal{0.f, 0.f}; ///< radial: focal point in gradient space (0 = the centre); kept inside |f| <= 0.99
     /// t = 0 at `from`, 1 at `to` (SVG linearGradient x1 y1 x2 y2).
     static Gradient linear(Vec2 from, Vec2 to, std::vector<GradientStop> stops, GradientSpread spread = GradientSpread::Pad);
     /// CSS linear-gradient(<angle>deg, ...) over `box`: 0 = to top, 90 = to right; the gradient line spans the box
@@ -57,6 +61,9 @@ struct Gradient {
     static Gradient linearAngle(const Rect& box, f32 degrees, std::vector<GradientStop> stops);
     /// t = 0 at `centre`, 1 on the ellipse (rx, ry) (SVG radialGradient cx cy r; CSS radial-gradient ellipse).
     static Gradient radialAt(Vec2 centre, f32 rx, f32 ry, std::vector<GradientStop> stops, GradientSpread spread = GradientSpread::Pad);
+    /// As radialAt with t = 0 at the focal point `focus` (SVG radialGradient fx fy; focal radius 0).
+    static Gradient radialFocal(Vec2 centre, f32 rx, f32 ry, Vec2 focus, std::vector<GradientStop> stops,
+                                GradientSpread spread = GradientSpread::Pad);
     /// Applies a user-space transform to the gradient (SVG gradientTransform / objectBoundingBox units).
     Gradient& transform(const std::array<f32, 6>& m);
     /// Colour at gradient parameter t (spread applied) — the exact arithmetic of the rasterisers.
@@ -145,6 +152,7 @@ struct DrawCmd {
     std::array<f32, 6> gradXf{}; ///< kinds 4 / 5: pixel -> gradient space
     u32 stops = 0;               ///< kinds 4 / 5: first stop in DrawList::gradientStops()
     u16 stopCount = 0;
+    std::array<f32, 2> focal{}; ///< kind 6: focal point in gradient space
 };
 
 class DrawList {

@@ -456,6 +456,9 @@ int main() {
             ml.pushClipLayers(two);
             ml.rect({0, 240, 480, 160}, Color::rgb(0x40FF80));
             ml.popClip();
+            // radial gradient with a focal point (SVG fx / fy): t = 0 at the focus, 1 on the circle
+            ml.gradientRect({380, 250, 100, 140}, Gradient::radialFocal({430, 320}, 50, 50, {405, 320},
+                                                     {{0.f, Color::rgb(0xFFFFFF)}, {1.f, Color::rgb(0x0000FF)}}, GradientSpread::Reflect));
             Image cpuM;
             cpuM.resize(int(W), int(H), 0xFF000000u);
             CpuRasterizer rm;
@@ -471,6 +474,8 @@ int main() {
             // union: inside the circle, the triangle over the frame's hole, and the frame: blue; the hole alone: background
             const auto blueAt = [&](int x, int y) { return ((cpuM.at(x, y) >> 16) & 0xFF) > 200; };
             UI_CHECK(blueAt(300, 120) && blueAt(396, 120) && blueAt(372, 60) && !blueAt(420, 120) && !blueAt(250, 20));
+            UI_CHECK(r(405, 320) > 245 && r(455, 320) < r(430, 320) && r(379 + 100, 320) < 40); // white at the focus, not the centre
+            UI_CHECK(r(410, 320) > r(450, 320) + 60); // asymmetric: 5 px from the focus vs 5 px from the far edge
             UI_CHECK(g(120, 320) > 200 && g(185, 345) < 60 && g(250, 315) > 100 && g(250, 315) < 160);
             if (const char* dir = std::getenv("FUSE_PARITY_OUT")) {
                 const std::string f = std::string(dir) + "/clip_layers.ppm";

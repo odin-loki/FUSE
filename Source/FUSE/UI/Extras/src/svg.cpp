@@ -419,7 +419,10 @@ struct Builder {
             if (n == "radialGradient") {
                 g.kind = kGradientRadial;
                 const f32 r = coord("r", "50%", 2);
-                g.unit = fuse::ui::Gradient::radialAt({coord("cx", "50%", 0), coord("cy", "50%", 1)}, std::max(r, 1e-6f), std::max(r, 1e-6f), st, spread);
+                const Vec2 c{coord("cx", "50%", 0), coord("cy", "50%", 1)};
+                const std::string_view fxs = chainAttr(*e, "fx"), fys = chainAttr(*e, "fy");
+                const Vec2 f{fxs.empty() ? c.x : coord("fx", "50%", 0), fys.empty() ? c.y : coord("fy", "50%", 1)};
+                g.unit = fuse::ui::Gradient::radialFocal(c, std::max(r, 1e-6f), std::max(r, 1e-6f), f, st, spread);
             } else {
                 const f32 x1 = coord("x1", "0%", 0), y1 = coord("y1", "0%", 1), x2 = coord("x2", "100%", 0), y2 = coord("y2", "0%", 1);
                 g.kind = std::abs(x2 - x1) >= std::abs(y2 - y1) ? kGradientHorizontal : kGradientVertical;

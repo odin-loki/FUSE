@@ -131,6 +131,15 @@ vec4 gradientStops(uint gradient, GpuCmd c, float px, float py) {
     precise float v = c.grad.y * px + c.grad.w * py + c.grad2.y;
     precise float uv = u * u + v * v;
     float t = (gradient & 15u) == 4u ? u : sqrt(uv);
+    if ((gradient & 15u) == 6u) { // focal radial (kGradientRadialFocal): focal point in the 2 words before the stops
+        const uint fa = floatBitsToUint(c.grad2.z);
+        const float fx = edgeWord(fa - 2u), fy = edgeWord(fa - 1u);
+        precise float dx = u - fx;
+        precise float dy = v - fy;
+        precise float dF = dx * fx + dy * fy;
+        precise float k = 1.0 - (fx * fx + fy * fy);
+        t = (dF + sqrt(max(dF * dF + k * (dx * dx + dy * dy), 0.0))) / k;
+    }
     const uint spread = gradient >> 4;
     if (spread == 1u) { precise float r = t - floor(t); t = r; }
     else if (spread == 2u) { precise float m = t - 2.0 * floor(t * 0.5); t = m > 1.0 ? 2.0 - m : m; }

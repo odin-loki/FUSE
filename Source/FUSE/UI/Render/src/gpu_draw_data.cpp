@@ -9,7 +9,7 @@
 namespace fuse::ui::render {
 
 // the colour-only patch compares DrawCmd field by field: a new field must be added there
-static_assert(sizeof(DrawCmd) == 140, "DrawCmd changed: update the field compare in packDrawList");
+static_assert(sizeof(DrawCmd) == 148, "DrawCmd changed: update the field compare in packDrawList");
 
 namespace {
 struct Clip {
@@ -70,7 +70,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
                                           bits(p.rect.y, q.rect.y) && bits(p.rect.w, q.rect.w) && bits(p.rect.h, q.rect.h) &&
                                           bits(p.fill2, q.fill2) && bits(p.border, q.border) && bits(p.borderWidth, q.borderWidth) &&
                                           bits(p.radius, q.radius) && bits(p.blur, q.blur) && bits(p.gradXf, q.gradXf) &&
-                                          p.stops == q.stops && p.stopCount == q.stopCount;
+                                          p.stops == q.stops && p.stopCount == q.stopCount && p.focal == q.focal;
                         if (rest && bits(p.fill, q.fill)) continue;
                         if (rest) out.patches.push_back(u32(j));
                         else structural = true;
@@ -380,6 +380,8 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         if ((c.gradient & 15u) >= kGradientLinearStops) {
             const auto& stops = list.gradientStops();
             const u32 n = std::size_t(c.stops) + c.stopCount <= stops.size() ? c.stopCount : 0u;
+            if ((c.gradient & 15u) == kGradientRadialFocal) // the focal point rides just before the stops
+                for (f32 f : c.focal) { u32 u; std::memcpy(&u, &f, 4); out.images.push_back(u); }
             const u32 at = u32(out.images.size());
             for (u32 i = 0; i < n; ++i) { // 5 float words per stop, after the image / edge words
                 const GradientStop& st = stops[c.stops + i];

@@ -378,6 +378,11 @@ Gradient Gradient::linearAngle(const Rect& box, f32 degrees, std::vector<Gradien
     const Vec2 c{box.x + box.w * 0.5f, box.y + box.h * 0.5f};
     return linear({c.x - sx * half, c.y - sy * half}, {c.x + sx * half, c.y + sy * half}, std::move(stops));
 }
+Gradient Gradient::radialFocal(Vec2 centre, f32 rx, f32 ry, Vec2 focus, std::vector<GradientStop> stops, GradientSpread spread) {
+    Gradient g = radialAt(centre, rx, ry, std::move(stops), spread);
+    g.focal = {(focus.x - centre.x) / std::max(rx, 1e-6f), (focus.y - centre.y) / std::max(ry, 1e-6f)};
+    return g;
+}
 Gradient Gradient::radialAt(Vec2 centre, f32 rx, f32 ry, std::vector<GradientStop> stops, GradientSpread spread) {
     Gradient g;
     g.radial = true;
@@ -421,12 +426,21 @@ Color gradientStopsColor(const DrawCmd& c, const GradientStop* stops, f32 px, f3
     const auto& m = c.gradXf;
     const f32 u = m[0] * px + m[2] * py + m[4];
     const f32 v = m[1] * px + m[3] * py + m[5];
-    const f32 t = (c.gradient & 15u) == kGradientLinearStops ? u : std::sqrt(u * u + v * v);
+    f32 t = (c.gradient & 15u) == kGradientLinearStops ? u : std::sqrt(u * u + v * v);
+    if ((c.gradient & 15u) == kGradientRadialFocal) {
+        const f32 fx = c.focal[0], fy = c.focal[1], dx = u - fx, dy = v - fy;
+        const f32 dF = dx * fx + dy * fy, k = 1.f - (fx * fx + fy * fy);
+        t = (dF + std::sqrt(std::max(dF * dF + k * (dx * dx + dy * dy), 0.f))) / k;
+    }
     return stopColor(stops, c.stopCount, spreadT(u8(c.gradient >> 4), t));
 }
 
 void DrawList::applyGradient(DrawCmd& c, const Gradient& g) {
-    c.gradient = u8((g.radial ? kGradientRadialStops : kGradientLinearStops) | (u8(g.spread) << 4));
+    Vec2 f = g.focal;
+    const bool focal = g.radial && (f.x != 0.f || f.y != 0.f);
+    if (const f32 len = std::sqrt(f.x * f.x + f.y * f.y); len > 0.99f) f = {f.x * 0.99f / len, f.y * 0.99f / len};
+    c.gradient = u8((focal ? kGradientRadialFocal : g.radial ? kGradientRadialStops : kGradientLinearStops) | (u8(g.spread) << 4));
+    c.focal = focal ? std::array<f32, 2>{f.x, f.y} : std::array<f32, 2>{};
     c.gradXf = g.toUnit;
     c.stops = u32(m_stops.size());
     const std::size_t n = std::min<std::size_t>(g.stops.size(), 64);
