@@ -2,6 +2,7 @@
 
 #include "fuse/ui/os.hpp"
 
+#include <cstdlib>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>

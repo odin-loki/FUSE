@@ -1,6 +1,11 @@
 // Qt-parity extras gates (--gate=<name>; no argument runs all): undo gesture i18n desktop pdf containers dialogs
 // lcd_keyseq mdi completer graphics widget_pdf. FUSE_EXTRAS_OUT=<dir> writes extras.png / extras.pdf.
 #include "test_util.hpp"
+#include <atomic>
+#include <cstdlib>
+#include <thread>
+#include <unistd.h>
+#include "fuse/ui/extras/dbus.hpp"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 #include "fuse/ui/extras/extras.hpp"
@@ -526,12 +531,141 @@ void gateWidgetPdf() {
         stbi_write_png((dir + "/extras.png").c_str(), img.width, img.height, 4, img.pixels.data(), img.width * 4);
     }
 }
+
+// Private session bus (dbus-daemon) + an in-process fake StatusNotifierWatcher / AppMenu registrar on a second
+// connection: drives the real SNI + dbusmenu exports end to end. Skips (passes) when dbus-daemon / libdbus are absent.
+void gateTray() {
+    using namespace fuse::ui::dbus;
+    namespace os = fuse::ui::os;
+        if (!available() || os::findExecutable("dbus-daemon").empty()) { std::printf("tray: skipped (no libdbus / dbus-daemon)\n"); return; }
+    const std::string sock = "/tmp/fuse_tray_bus_" + std::to_string(::getpid());
+    const std::string addr = "unix:path=" + sock;
+    // forge::os::spawn_wait leaks the child's pipe write ends (pout[1] / perr[1] are not closed after dup2), so a
+    // background daemon would hold them and spawn_wait would block until it exits: close every inherited fd.
+    if (os::findExecutable("bash").empty()) { std::printf("tray: skipped (no bash)\n"); return; }
+    std::string closeFds;
+    for (int fd = 3; fd < 32; ++fd) closeFds += " " + std::to_string(fd) + ">&-";
+    auto d = os::runProcess({"bash", "-c", "setsid dbus-daemon --session --address=" + addr + " --nofork --nopidfile </dev/null >/dev/null 2>&1" + closeFds + " & echo $!"}, {}, 5000);
+    CHECK(d && d->exitCode == 0);
+    if (!d || d->exitCode != 0) return;
+    const std::string pid = d->out.substr(0, d->out.find('\n'));
+    for (int i = 0; i < 200 && !os::exists(sock); ++i) os::sleepSeconds(0.01);
+    ::setenv("DBUS_SESSION_BUS_ADDRESS", addr.c_str(), 1);
+
+    auto host = Connection::open(addr);
+    CHECK(host != nullptr);
+    if (!host) return;
+    CHECK(host->requestName("org.kde.StatusNotifierWatcher") && host->requestName("com.canonical.AppMenu.Registrar"));
+    std::string registered, menuPath;
+    u32 window = 0;
+    host->exportObject("/StatusNotifierWatcher", [&](Connection& c, const Message& m) {
+        if (!m.isCall("org.kde.StatusNotifierWatcher", "RegisterStatusNotifierItem")) return false;
+        registered = m.read().str();
+        Message r = m.reply(); c.send(r);
+        return true;
+    });
+    host->exportObject("/com/canonical/AppMenu/Registrar", [&](Connection& c, const Message& m) {
+        if (!m.isCall("com.canonical.AppMenu.Registrar", "RegisterWindow")) return false;
+        Reader rd = m.read();
+        window = rd.u32v(); rd.next(); menuPath = rd.str();
+        Message r = m.reply(); c.send(r);
+        return true;
+    });
+    CHECK(TrayIcon::available() && std::string(TrayIcon::backendName()) == "sni");
+
+    TrayIcon tray;
+    tray.setTitle("FUSE Tray");
+    tray.setToolTip("FUSE", "running");
+    Image icon; icon.resize(2, 1);
+    icon.pixels = {0xFF0000FFu, 0x80000080u}; // opaque red, half-alpha premultiplied red
+    tray.setIcon(icon);
+    int quit = 0, act = 0, scroll = 0;
+    bool darkChecked = false;
+    tray.setMenu({{.label = "&Open", .shortcut = "Ctrl+O"}, MenuItem::sep(),
+                  {.label = "Theme", .children = {{.label = "Dark", .onTriggered = [&] { darkChecked = true; }, .checkable = true}}},
+                  {.label = "&Quit", .onTriggered = [&] { ++quit; }}});
+    tray.onActivated = [&](int x, int y) { act = x * 1000 + y; };
+    tray.onScroll = [&](int dlt, bool h) { scroll = h ? -dlt : dlt; };
+    CHECK(tray.show());
+    const std::string svc = tray.serviceName();
+    std::atomic<bool> done{false};
+    std::string title, pixels, layoutDump, busctlOut;
+    u32 rev = 0;
+    std::thread client([&] {
+        auto c = Connection::open(addr);
+        if (!c) { done = true; return; }
+        Message g = Message::call(svc, "/StatusNotifierItem", "org.freedesktop.DBus.Properties", "Get");
+        g.args().s("org.kde.StatusNotifierItem").s("Title");
+        Message r = c->callBlocking(g);
+        title = r.read().recurse().str();
+        Message gp = Message::call(svc, "/StatusNotifierItem", "org.freedesktop.DBus.Properties", "Get");
+        gp.args().s("org.kde.StatusNotifierItem").s("IconPixmap");
+        Message rp = c->callBlocking(gp);
+        Reader st = rp.read().recurse().recurse().recurse(); // v -> a -> (iiay)
+        st.next(); st.next();
+        pixels = st.bytes();
+        Message gl = Message::call(svc, "/MenuBar", "com.canonical.dbusmenu", "GetLayout");
+        gl.args().i(0).i(-1).open('a', "s").close();
+        Message rl = c->callBlocking(gl);
+        Reader lr = rl.read();
+        rev = lr.u32v();
+        // layout: (i a{sv} av) -> walk top-level children labels
+        lr.next();
+        Reader root = lr.recurse();
+        root.next(); root.next();
+        for (Reader kids = root.recurse(); kids.type() == 'v'; kids.next()) {
+            Reader n = kids.recurse().recurse();
+            const i32 id = n.i32v();
+            n.next();
+            for (Reader p = n.recurse(); p.type() == 'e'; p.next()) {
+                Reader e = p.recurse();
+                const std::string k = e.str();
+                e.next();
+                if (k == "label" || k == "type") layoutDump += std::to_string(id) + ":" + e.recurse().str() + ";";
+            }
+        }
+        auto event = [&](i32 id) {
+            Message ev = Message::call(svc, "/MenuBar", "com.canonical.dbusmenu", "Event");
+            ev.args().i(id).s("clicked").open('v', "s").s("").close().u(0);
+            c->callBlocking(ev);
+        };
+        event(5);  // Quit (ids: 1 Open, 2 sep, 3 Theme, 4 Dark, 5 Quit)
+        event(4);  // Dark (checkable)
+        Message a = Message::call(svc, "/StatusNotifierItem", "org.kde.StatusNotifierItem", "Activate");
+        a.args().i(12).i(34);
+        c->callBlocking(a);
+        Message sc = Message::call(svc, "/StatusNotifierItem", "org.kde.StatusNotifierItem", "Scroll");
+        sc.args().i(3).s("horizontal");
+        c->callBlocking(sc);
+        if (auto b = os::runProcess({"busctl", "--address=" + addr, "--", "call", svc, "/MenuBar", "com.canonical.dbusmenu", "GetLayout", "iias", "3", "-1", "0"}, {}, 5000))
+            busctlOut = b->out + b->err;
+        done = true;
+    });
+    const double t0 = os::monotonicSeconds();
+    while (!done && os::monotonicSeconds() - t0 < 15) { tray.poll(); host->poll(5); }
+    client.join();
+    CHECK(registered == svc);
+    CHECK(title == "FUSE Tray");
+    CHECK(pixels.size() == 8 && u8(pixels[0]) == 255 && u8(pixels[1]) == 255 && u8(pixels[2]) == 0 && u8(pixels[4]) == 0x80 && u8(pixels[5]) == 255);
+    CHECK(rev >= 1 && layoutDump == "1:_Open;2:separator;3:Theme;5:_Quit;");
+    CHECK(quit == 1 && darkChecked && tray.menu()[2].children[0].checked);
+    CHECK(act == 12034 && scroll == -3);
+    CHECK(os::findExecutable("busctl").empty() || busctlOut.find("\"Dark\" \"toggle-type\" s \"checkmark\" \"toggle-state\" i 1") != std::string::npos);
+    std::printf("tray: busctl GetLayout(3): %s", busctlOut.c_str());
+
+    GlobalMenuBar bar(0x4200001);
+    CHECK(bar.setMenus({{.label = "&File", .children = {{.label = "&New"}, {.label = "E&xit"}}}, {.label = "&Help"}}));
+    for (int i = 0; i < 50 && menuPath.empty(); ++i) { host->poll(5); bar.poll(); }
+    CHECK(window == 0x4200001 && menuPath == bar.objectPath() && bar.active());
+    tray.hide();
+    os::runProcess({"kill", pid});
+}
 } // namespace
 
 int main(int argc, char** argv) {
     const std::map<std::string, std::function<void()>> gates{
         {"undo", gateUndo}, {"gesture", gateGesture}, {"i18n", gateI18n}, {"desktop", gateDesktop}, {"pdf", gatePdf}, {"containers", gateContainers}, {"dialogs", gateDialogs}, {"lcd_keyseq", gateLcdKeyseq},
-        {"mdi", gateMdi}, {"completer", gateCompleter}, {"graphics", gateGraphics}, {"widget_pdf", gateWidgetPdf}};
+        {"mdi", gateMdi}, {"completer", gateCompleter}, {"graphics", gateGraphics}, {"widget_pdf", gateWidgetPdf}, {"tray", gateTray}};
     std::string only;
     for (int i = 1; i < argc; ++i) if (std::strncmp(argv[i], "--gate=", 7) == 0) only = argv[i] + 7;
     for (auto& [n, f] : gates) if (only.empty() || only == n) { f(); std::printf("gate %s: %s\n", n.c_str(), g_fail ? "FAIL" : "ok"); }

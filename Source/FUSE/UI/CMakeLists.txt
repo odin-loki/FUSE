@@ -139,9 +139,18 @@ endif()
 # graphics scene, extra widgets) — docs/gui/PLAN.md §5 ----
 if(FUSE_BUILD_UI_WIDGETS)
     file(GLOB FUSE_UI_EXTRAS_SRC CONFIGURE_DEPENDS Extras/src/*.cpp)
+    if(APPLE)
+        list(APPEND FUSE_UI_EXTRAS_SRC Extras/src/tray_cocoa.mm)
+    endif()
     add_library(fuse_ui_extras STATIC ${FUSE_UI_EXTRAS_SRC})
     target_include_directories(fuse_ui_extras PUBLIC Extras/include)
     target_link_libraries(fuse_ui_extras PUBLIC fuse_ui_widgets fuse_ui_os)
+    if(WIN32)
+        target_link_libraries(fuse_ui_extras PUBLIC shell32 user32 gdi32)
+    elseif(APPLE)
+        target_link_libraries(fuse_ui_extras PUBLIC "-framework AppKit")
+        set_source_files_properties(Extras/src/tray_cocoa.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+    endif()
 endif()
 
 # ---- fuse_ui_doc: .fuseui JSON documents, binding model and expression bytecode ----
