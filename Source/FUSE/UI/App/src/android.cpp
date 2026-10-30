@@ -406,7 +406,7 @@ JNIEXPORT jstring JNICALL Java_org_fuse_ui_FuseActivity_nativeA11yString(JNIEnv*
         if (!m) return nullptr;
         if (i < 0 || std::size_t(i) >= m->a11y.size()) return nullptr;
         const auto& an = m->a11y[std::size_t(i)];
-        s = which == 0 ? an.n.name : which == 2 ? fuse::app::android::stateDescription(an.n.state) : an.cls;
+        s = which == 0 ? an.n.name : which == 2 ? fuse::app::android::stateDescription(an.n) : an.cls;
     }
     return e->NewStringUTF(s.c_str());
 }

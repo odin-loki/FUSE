@@ -258,8 +258,13 @@ struct ProgressBar {
 struct SpinState {
     u32 gen = 0;
     SpinBoxOptions o;
-    bool editing = false;
-    std::string buf; ///< typed clean text while editing
+    bool editing = false;   ///< the user changed the text (buf holds it) since the last commit
+    std::string buf;        ///< typed clean text while editing
+    std::size_t caret = std::string::npos, anchor = 0; ///< byte offsets into the editable (clean) text; npos = end
+    bool dragging = false;
+    TimerHandle timer{};    ///< arrow-button auto-repeat
+    i32 repeatDir = 0;
+    f32 interval = 0.f, accel = 0.f;
 };
 std::unordered_map<const UiContext*, std::unordered_map<u32, SpinState>>& spinStores() {
     static std::unordered_map<const UiContext*, std::unordered_map<u32, SpinState>> m;
@@ -289,12 +294,23 @@ std::string spinClean(const UiContext& ui, NodeHandle n, const SpinState* s, dou
     if (out == "-0" || out.starts_with("-0.") && out.find_first_not_of("0.", 1) == std::string::npos) out.erase(0, 1);
     return out;
 }
+bool spinSpecial(const UiContext& ui, NodeHandle n, const SpinState* s) {
+    return s && !s->editing && !s->o.specialValueText.empty() && ui.value(n) <= ui.rangeMin(n);
+}
+/// the editable part of the shown text (no prefix / suffix): the typed text, the special text, or the value
+std::string spinEditable(const UiContext& ui, NodeHandle n, const SpinState* s) {
+    if (s && s->editing) return s->buf;
+    if (spinSpecial(ui, n, s)) return s->o.specialValueText;
+    return spinClean(ui, n, s, double(ui.value(n)));
+}
+std::string_view spinPrefix(const UiContext& ui, NodeHandle n, const SpinState* s) {
+    return s && !spinSpecial(ui, n, s) ? std::string_view(s->o.prefix) : std::string_view{};
+}
 std::string spinDisplay(const UiContext& ui, NodeHandle n) {
     const SpinState* s = spinFind(ui, n);
-    if (s && s->editing) return s->o.prefix + s->buf + s->o.suffix;
-    if (s && !s->o.specialValueText.empty() && ui.value(n) <= ui.rangeMin(n)) return s->o.specialValueText;
-    const std::string c = spinClean(ui, n, s, double(ui.value(n)));
-    return s ? s->o.prefix + c + s->o.suffix : c;
+    if (!s) return spinClean(ui, n, s, double(ui.value(n)));
+    if (spinSpecial(ui, n, s)) return s->o.specialValueText;
+    return s->o.prefix + spinEditable(ui, n, s) + s->o.suffix;
 }
 /// QSpinBox::valueFromText on the clean text (prefix / suffix already stripped); nullopt = not a number
 std::optional<double> spinParse(const UiContext& ui, NodeHandle n, const SpinState& s, std::string_view t) {
@@ -309,6 +325,13 @@ std::optional<double> spinParse(const UiContext& ui, NodeHandle n, const SpinSta
     const double v = std::strtod(z.c_str(), &end);
     if (end != z.c_str() + z.size() || !std::isfinite(v)) return std::nullopt;
     return v;
+}
+void spinSelectAll(SpinState& s) { s.anchor = 0; s.caret = std::string::npos; }
+/// caret / anchor clamped to the editable text (npos = end)
+void spinClamp(const UiContext& ui, NodeHandle n, SpinState& s) {
+    const std::size_t len = spinEditable(ui, n, &s).size();
+    s.caret = std::min(s.caret, len);
+    s.anchor = std::min(s.anchor, len);
 }
 /// QAbstractSpinBox::stepBy: wrapping (past either end jumps to the other end, as Qt), adaptive decimal step
 void spinStep(UiContext& ui, NodeHandle n, i32 steps) {
@@ -328,6 +351,7 @@ void spinStep(UiContext& ui, NodeHandle n, i32 steps) {
         else if (v < lo) v = cur <= lo ? hi : lo;
     }
     ui.setValue(n, f32(v), true);
+    if (SpinState* m = spinFind(ui, n)) spinSelectAll(*m); // Qt selects the stepped value
 }
 /// Enter / focus out / stepping while typing: an in-range number is taken (clamped), anything else reverts
 void spinCommit(UiContext& ui, NodeHandle n, bool finished) {
@@ -339,6 +363,7 @@ void spinCommit(UiContext& ui, NodeHandle n, bool finished) {
     s->editing = false;
     if (const auto v = spinParse(ui, n, *s, s->buf)) ui.setValue(n, f32(std::clamp(*v, double(ui.rangeMin(n)), double(ui.rangeMax(n)))), true);
     s->buf.clear();
+    spinSelectAll(*s);
     ui.invalidate(n);
     if (finished) ui.emit(n, SignalKind::EditingFinished, {.value = ui.value(n)});
 }
@@ -347,12 +372,76 @@ void spinEdited(UiContext& ui, NodeHandle n, SpinState& s) {
     if (!s.o.keyboardTracking) return;
     if (const auto v = spinParse(ui, n, s, s.buf); v && *v >= ui.rangeMin(n) && *v <= ui.rangeMax(n)) ui.setValue(n, f32(*v), true);
 }
+/// start typing: the editable text becomes the buffer (caret / selection kept)
+void spinBegin(const UiContext& ui, NodeHandle n, SpinState& s) {
+    spinClamp(ui, n, s);
+    if (!s.editing) { s.buf = spinEditable(ui, n, &s); s.editing = true; }
+}
+bool spinEraseSel(SpinState& s) {
+    const std::size_t a = std::min(s.anchor, s.caret), b = std::max(s.anchor, s.caret);
+    if (a == b) return false;
+    s.buf.erase(a, b - a);
+    s.caret = s.anchor = a;
+    return true;
+}
+void spinInsert(UiContext& ui, NodeHandle n, SpinState& s, std::string_view text) {
+    std::string ins;
+    for (char ch : text) {
+        const bool numeric = (ch >= '0' && ch <= '9') || ch == '-' || ch == '+' || ch == '.' || ch == ',' || ch == 'e' || ch == 'E';
+        if ((numeric || s.o.valueFromText || !s.o.specialValueText.empty()) && (u8(ch) >= 0x20 || (u8(ch) & 0x80))) ins += ch;
+    }
+    if (ins.empty()) return;
+    spinBegin(ui, n, s);
+    spinEraseSel(s);
+    if (s.buf.size() + ins.size() > 64) return;
+    s.buf.insert(s.caret, ins);
+    s.caret += ins.size();
+    s.anchor = s.caret;
+    spinEdited(ui, n, s);
+}
+std::size_t u8Prev(std::string_view t, std::size_t i) { if (!i) return 0; --i; while (i && (u8(t[i]) & 0xC0) == 0x80) --i; return i; }
+std::size_t u8Next(std::string_view t, std::size_t i) { if (i >= t.size()) return t.size(); ++i; while (i < t.size() && (u8(t[i]) & 0xC0) == 0x80) ++i; return i; }
+/// byte offset in the editable text nearest to window x
+std::size_t spinHit(const UiContext& ui, NodeHandle n, const SpinState& s, f32 x) {
+    const Rect c = ui.contentRect(n);
+    const f32 px = ui.computed(n).fontSize;
+    const std::string pre(spinPrefix(ui, n, &s));
+    const std::string t = spinEditable(ui, n, &s);
+    std::size_t best = 0;
+    f32 bestD = 1e30f;
+    for (std::size_t i = 0;; i = u8Next(t, i)) {
+        const f32 cx = c.x + const_cast<UiContext&>(ui).measureString(pre + t.substr(0, i), px);
+        if (std::abs(cx - x) < bestD) { bestD = std::abs(cx - x); best = i; }
+        if (i >= t.size()) break;
+    }
+    return best;
+}
+constexpr f32 kSpinRepeatDelay = 0.5f, kSpinRepeatRate = 0.15f; // Qt SH_SpinBox_ClickAutoRepeatThreshold / Rate
+void spinStopRepeat(UiContext& ui, SpinState& s) {
+    if (s.repeatDir) ui.cancelTimer(s.timer);
+    s.repeatDir = 0;
+}
+void spinArm(UiContext& ui, NodeHandle n, f32 delay) {
+    SpinState* s = spinFind(ui, n);
+    if (!s) return;
+    s->timer = ui.startTimer(delay, false, [n](UiContext& u) {
+        SpinState* st = spinFind(u, n);
+        if (!st || !st->repeatDir || !u.alive(n)) return;
+        spinStep(u, n, st->repeatDir);
+        if (st->o.accelerated) { // QAbstractSpinBox::accelerated: the repeat interval shrinks by 5% of the rate per tick
+            st->accel += kSpinRepeatRate * 0.05f;
+            st->interval = std::max(0.01f, kSpinRepeatRate - st->accel);
+        }
+        spinArm(u, n, st->interval);
+    });
+}
 
 struct SpinBox {
     static constexpr std::string_view kName = "spinbox";
     static constexpr A11yRole kRole = A11yRole::SpinBox;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
+    static std::string a11yValueText(const UiContext& ui, NodeHandle n) { return spinDisplay(ui, n); }
     static Size measure(UiContext& ui, NodeHandle n, Size) {
         const SpinState* s = spinFind(ui, n);
         f32 w = textSize(ui, n, spinDisplay(ui, n)).w;
@@ -364,13 +453,20 @@ struct SpinBox {
         return {std::max(48.f, w) + 20.f, textSize(ui, n, "0").h};
     }
     static void paint(const PaintContext& pc, DrawList& dl) {
-        const std::string t = spinDisplay(pc.ui, pc.node);
+        UiContext& ui = pc.ui;
+        const std::string t = spinDisplay(ui, pc.node);
         const Rect c = pc.content;
-        labelAt(pc, dl, t, {c.x, c.y, c.w - 20.f, c.h}, TextAlignment::Start);
-        if (const SpinState* s = spinFind(pc.ui, pc.node); s && s->editing && pc.ui.focused() == pc.node) {
-            const f32 x = c.x + std::ceil(pc.ui.measureString(s->o.prefix + s->buf, pc.style.fontSize));
-            dl.rect({x, c.y + 1.f, 1.f, c.h - 2.f}, textCol(pc));
+        const SpinState* s = spinFind(ui, pc.node);
+        if (s && ui.focused() == pc.node) {
+            const std::string pre(spinPrefix(ui, pc.node, s));
+            const std::string ed = spinEditable(ui, pc.node, s);
+            auto xAt = [&](std::size_t i) { return c.x + std::ceil(ui.measureString(pre + ed.substr(0, std::min(i, ed.size())), pc.style.fontSize)); };
+            const std::size_t a = std::min(s->anchor, s->caret), b = std::max(s->anchor, s->caret);
+            if (std::min(a, ed.size()) != std::min(b, ed.size()))
+                dl.rect({xAt(a), c.y + 1.f, xAt(b) - xAt(a), c.h - 2.f}, accent(pc).withAlpha(0.45f * pc.opacity));
+            else dl.rect({xAt(s->caret), c.y + 1.f, 1.f, c.h - 2.f}, textCol(pc));
         }
+        labelAt(pc, dl, t, {c.x, c.y, c.w - 20.f, c.h}, TextAlignment::Start);
         const f32 ax = c.right() - 10.f, my = c.y + c.h * 0.5f;
         const Color a = textCol(pc);
         dl.line({ax - 4.f, my - 3.f}, {ax, my - 7.f}, a, 1.5f);
@@ -382,42 +478,105 @@ struct SpinBox {
         if (ec.phase != Phase::Target) return false;
         UiContext& ui = ec.ui;
         const NodeHandle n = ec.node;
-        if (e.type == EventType::FocusIn) { ui.setTextCaret(n, ui.contentRect(n)); return false; }
-        if (e.type == EventType::FocusOut) { spinCommit(ui, n, true); return false; }
+        if (e.type == EventType::FocusIn) { // Qt selects the whole value on focus
+            spinSelectAll(spinEnsure(ui, n));
+            ui.setTextCaret(n, ui.contentRect(n));
+            ui.invalidate(n);
+            return false;
+        }
+        if (e.type == EventType::FocusOut) {
+            if (SpinState* s = spinFind(ui, n)) spinStopRepeat(ui, *s);
+            spinCommit(ui, n, true);
+            return false;
+        }
         if (e.type == EventType::PointerDown) {
+            SpinState& s = spinEnsure(ui, n);
             const Rect c = ui.contentRect(n);
-            if (e.pos.x >= c.right() - 20.f) { spinCommit(ui, n, false); spinStep(ui, n, e.pos.y < c.y + c.h * 0.5f ? 1 : -1); }
+            if (e.pos.x >= c.right() - 20.f) { // arrow: step now, auto-repeat while held
+                spinCommit(ui, n, false);
+                spinStopRepeat(ui, s);
+                s.repeatDir = e.pos.y < c.y + c.h * 0.5f ? 1 : -1;
+                s.accel = 0.f;
+                s.interval = kSpinRepeatRate;
+                spinStep(ui, n, s.repeatDir);
+                spinArm(ui, n, kSpinRepeatDelay);
+                return true;
+            }
+            spinClamp(ui, n, s);
+            s.caret = spinHit(ui, n, s, e.pos.x);
+            if (!(e.mods & kModShift)) s.anchor = s.caret;
+            s.dragging = true;
+            ui.invalidate(n);
             return true;
         }
+        if (e.type == EventType::PointerMove) {
+            SpinState* s = spinFind(ui, n);
+            if (s && s->dragging && ui.pressed() == n) { s->caret = spinHit(ui, n, *s, e.pos.x); ui.invalidate(n); return true; }
+            return false;
+        }
+        if (e.type == EventType::PointerUp) {
+            if (SpinState* s = spinFind(ui, n)) { s->dragging = false; spinStopRepeat(ui, *s); }
+            return false;
+        }
         if (e.type == EventType::Wheel) { spinCommit(ui, n, false); spinStep(ui, n, e.wheel.y > 0.f ? 1 : -1); return true; }
-        if (e.type == EventType::Text) { // typing replaces the shown value (Qt selects all on keyboard focus)
+        if (e.type == EventType::Text) {
             SpinState& s = spinEnsure(ui, n);
-            if (!s.editing) { s.editing = true; s.buf.clear(); }
-            for (char ch : e.text) {
-                const bool numeric = (ch >= '0' && ch <= '9') || ch == '-' || ch == '+' || ch == '.' || ch == ',' || ch == 'e' || ch == 'E';
-                if ((numeric || s.o.valueFromText || !s.o.specialValueText.empty()) && s.buf.size() < 64 && u8(ch) >= 0x20) s.buf += ch;
+            spinInsert(ui, n, s, e.text);
+            return true;
+        }
+        if (e.type != EventType::KeyDown) return false;
+        SpinState& s = spinEnsure(ui, n);
+        spinClamp(ui, n, s);
+        const bool shift = (e.mods & kModShift) != 0, ctrl = (e.mods & (kModCtrl | kModSuper)) != 0;
+        const std::string ed = spinEditable(ui, n, &s);
+        auto move = [&](std::size_t to) { s.caret = to; if (!shift) s.anchor = to; ui.invalidate(n); return true; };
+        switch (e.key) {
+        case Key::Left: {
+            if (!shift && s.anchor != s.caret) return move(std::min(s.anchor, s.caret));
+            return move(u8Prev(ed, s.caret));
+        }
+        case Key::Right: {
+            if (!shift && s.anchor != s.caret) return move(std::max(s.anchor, s.caret));
+            return move(u8Next(ed, s.caret));
+        }
+        case Key::Home: return move(0);
+        case Key::End: return move(ed.size());
+        case Key::A: if (ctrl) { s.anchor = 0; s.caret = ed.size(); ui.invalidate(n); return true; } return false;
+        case Key::C: case Key::X: {
+            if (!ctrl) return false;
+            const std::size_t a = std::min(s.anchor, s.caret), b = std::max(s.anchor, s.caret);
+            if (a == b) return true;
+            ui.setClipboardText(std::string_view(ed).substr(a, b - a));
+            if (e.key == Key::X) { spinBegin(ui, n, s); spinEraseSel(s); spinEdited(ui, n, s); }
+            return true;
+        }
+        case Key::V: {
+            if (!ctrl) return false;
+            std::string clip;
+            if (ui.clipboardText(clip)) spinInsert(ui, n, s, clip);
+            return true;
+        }
+        case Key::Backspace: case Key::Delete: {
+            spinBegin(ui, n, s);
+            if (!spinEraseSel(s)) {
+                if (e.key == Key::Backspace) { const std::size_t p = u8Prev(s.buf, s.caret); s.buf.erase(p, s.caret - p); s.caret = s.anchor = p; }
+                else { const std::size_t q = u8Next(s.buf, s.caret); s.buf.erase(s.caret, q - s.caret); s.anchor = s.caret; }
             }
             spinEdited(ui, n, s);
             return true;
         }
-        if (e.type != EventType::KeyDown) return false;
-        if (SpinState* s = spinFind(ui, n); s && s->editing) {
-            if (e.key == Key::Backspace) {
-                while (!s->buf.empty() && (u8(s->buf.back()) & 0xC0) == 0x80) s->buf.pop_back();
-                if (!s->buf.empty()) s->buf.pop_back();
-                spinEdited(ui, n, *s);
-                return true;
-            }
-            if (e.key == Key::Escape) { s->editing = false; s->buf.clear(); ui.invalidate(n); return true; }
+        case Key::Escape:
+            if (!s.editing) return false;
+            s.editing = false;
+            s.buf.clear();
+            spinSelectAll(s);
+            ui.invalidate(n);
+            return true;
+        case Key::Enter: spinCommit(ui, n, true); return true;
+        default: break;
         }
-        if (e.key == Key::Enter) { spinCommit(ui, n, true); return true; }
         const i32 dir = e.key == Key::Up ? 1 : e.key == Key::Down ? -1 : e.key == Key::PageUp ? 10 : e.key == Key::PageDown ? -10 : 0;
         if (dir) { spinCommit(ui, n, false); spinStep(ui, n, dir); return true; }
-        if (e.key == Key::Home || e.key == Key::End) {
-            if (spinFind(ui, n) && spinFind(ui, n)->editing) return true; // caret keys while typing: no-op
-            ui.setValue(n, e.key == Key::Home ? ui.rangeMin(n) : ui.rangeMax(n), true);
-            return true;
-        }
         return false;
     }
 };
@@ -1260,6 +1419,7 @@ void setSpinBoxOptions(UiContext& ui, NodeHandle spin, SpinBoxOptions o) {
     s.o = std::move(o);
     s.editing = false;
     s.buf.clear();
+    spinSelectAll(s);
     ui.markAllDirty(); // measure depends on the options
 }
 std::string spinBoxText(const UiContext& ui, NodeHandle spin) { return ui.alive(spin) ? spinDisplay(ui, spin) : std::string{}; }
@@ -1267,6 +1427,24 @@ std::string spinBoxCleanText(const UiContext& ui, NodeHandle spin) {
     if (!ui.alive(spin)) return {};
     const SpinState* s = spinFind(ui, spin);
     return s && s->editing ? s->buf : spinClean(ui, spin, s, double(ui.value(spin)));
+}
+void spinBoxSelection(const UiContext& ui, NodeHandle spin, u32& from, u32& to, u32& caret) {
+    from = to = caret = 0;
+    SpinState* s = ui.alive(spin) ? spinFind(ui, spin) : nullptr;
+    if (!s) return;
+    const std::size_t len = spinEditable(ui, spin, s).size();
+    const std::size_t c = std::min(s->caret, len), a = std::min(s->anchor, len);
+    from = u32(std::min(a, c));
+    to = u32(std::max(a, c));
+    caret = u32(c);
+}
+void setSpinBoxSelection(UiContext& ui, NodeHandle spin, u32 from, u32 to) {
+    if (!ui.alive(spin)) return;
+    SpinState& s = spinEnsure(ui, spin);
+    s.anchor = from;
+    s.caret = to;
+    spinClamp(ui, spin, s);
+    ui.invalidate(spin);
 }
 void spinBoxStepBy(UiContext& ui, NodeHandle spin, i32 steps) {
     if (!ui.alive(spin)) return;

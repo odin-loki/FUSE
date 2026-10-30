@@ -56,6 +56,12 @@ inline std::string stateDescription(const fuse::ui::A11yState& s) {
     if (s.expanded > 0 && s.autoComplete != fuse::ui::A11yAutoComplete::None && s.autoComplete != fuse::ui::A11yAutoComplete::Inline) o += ", suggestions";
     return o;
 }
+/// Spoken value of a snapshot node: the shown value text (spin box "$ 5 ea", a date) then the expanded state.
+inline std::string stateDescription(const fuse::ui::A11ySnapshotNode& n) {
+    std::string st = stateDescription(n.state);
+    if (n.valueText.empty()) return st;
+    return st.empty() ? n.valueText : n.valueText + ", " + st;
+}
 /// Extra nativeA11yInfo floats: [13] expanded (-1 n/a, 0, 1), [14] selected, [15] index of the active descendant
 /// in the snapshot (-1 none; TalkBack moves accessibility focus there).
 inline void a11yStateFloats(const fuse::ui::A11yState& s, float* f, float activeIndex) {
@@ -80,6 +86,8 @@ inline const char* className(fuse::ui::A11yRole r) {
     case R::Image: return "android.widget.ImageView";
     case R::ComboBox: return "android.widget.Spinner";
     case R::SpinBox: return "android.widget.NumberPicker";
+    case R::DateInput: case R::DateTimeInput: return "android.widget.DatePicker";
+    case R::TimeInput: return "android.widget.TimePicker";
     case R::Text: case R::Link: return "android.widget.TextView";
     default: return "android.view.View";
     }
@@ -112,7 +120,7 @@ inline std::uint64_t traits(fuse::ui::A11yRole r, bool disabled, bool checked, b
     case R::Link: t = kLink; break;
     case R::Image: t = kImage; break;
     case R::Text: t = kStatic; break;
-    case R::Slider: case R::Dial: case R::SpinBox: t = kAdjustable; break;
+    case R::Slider: case R::Dial: case R::SpinBox: case R::DateInput: case R::TimeInput: case R::DateTimeInput: t = kAdjustable; break;
     case R::ProgressBar: t = 1ull << 10; break; // UpdatesFrequently
     default: break;
     }

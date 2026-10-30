@@ -9,7 +9,7 @@ namespace {
 bool same(const A11ySnapshotNode& a, const A11ySnapshotNode& b, u64 pa, u64 pb) {
     return a.role == b.role && a.name == b.name && a.bounds.x == b.bounds.x && a.bounds.y == b.bounds.y &&
            a.bounds.w == b.bounds.w && a.bounds.h == b.bounds.h && a.focusable == b.focusable && a.focused == b.focused &&
-           a.checked == b.checked && a.disabled == b.disabled && a.protectedText == b.protectedText && a.state == b.state && a.value == b.value && a.lo == b.lo && a.hi == b.hi && pa == pb;
+           a.checked == b.checked && a.disabled == b.disabled && a.protectedText == b.protectedText && a.state == b.state && a.valueText == b.valueText && a.value == b.value && a.lo == b.lo && a.hi == b.hi && pa == pb;
 }
 } // namespace
 

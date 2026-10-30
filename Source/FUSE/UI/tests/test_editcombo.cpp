@@ -57,7 +57,13 @@ int main() {
     ui.textInput("bl");
     UI_CHECK(w::lineEditText(ui, edit) == "blue" && ui.editBuffer(edit).selection() == "ue");
     UI_CHECK(!w::completerPopupVisible(ui, edit));
-    ui.keyDown(Key::Enter); // "blue" is not an exact (case-sensitive) item: inserted at the bottom
+    ui.keyDown(Key::Enter); // Qt MatchFixedString: "blue" selects "Blue" and the field shows the item's own case
+    UI_CHECK(items(ui, combo) == "Red\nGreen\nBlue" && w::comboCurrentIndex(ui, combo) == 2 && idxSig == 2);
+    UI_CHECK(w::lineEditText(ui, edit) == "Blue");
+    w::setComboOptions(ui, combo, {.caseSensitive = true});
+    w::setLineEditText(ui, edit, "");
+    ui.textInput("bl");
+    ui.keyDown(Key::Enter); // case-sensitive: not an item, inserted at the bottom
     UI_CHECK(items(ui, combo) == "Red\nGreen\nBlue\nblue" && w::comboCurrentIndex(ui, combo) == 3 && idxSig == 3);
     w::setLineEditText(ui, edit, "");
     ui.textInput("Gr");
@@ -84,7 +90,7 @@ int main() {
 
     // ---- drop button: opens the list under the whole combo; click an option ----
     ui.update();
-    const NodeHandle drop = child(ui, combo, 1);
+    const NodeHandle drop = child(ui, combo, 2); // [icon] edit, button
     ui.pointerDown(ctr(ui.rect(drop)), MouseButton::Left);
     ui.pointerUp(ctr(ui.rect(drop)), MouseButton::Left);
     UI_CHECK(w::completerPopupVisible(ui, edit));
@@ -211,7 +217,7 @@ int main() {
         tm.addRow("3\tRome");
         w::comboModelChanged(ui, c);
         UI_CHECK(w::comboCount(ui, c) == 3);
-        enter(c, "Ro"); // inline completion now sees the new row
+        enter(c, "ro"); // inline (typed case kept), Enter matches "Rome" ignoring case completion now sees the new row
         UI_CHECK(w::comboCurrentIndex(ui, c) == 2 && w::lineEditText(ui, w::comboLineEdit(ui, c)) == "Rome");
         // assistive-tech Expand / Collapse (AccessKit, TalkBack ACTION_EXPAND / COLLAPSE)
         ui.setFocus(other);
@@ -220,6 +226,50 @@ int main() {
         UI_CHECK(!ui.a11yExpand(c, true) && ui.a11yExpand(c, false));
         UI_CHECK(!w::completerPopupVisible(ui, w::comboLineEdit(ui, c)) && ui.a11yState(c).expanded == 0);
         UI_CHECK(!ui.a11yExpand(other, true)); // not expandable
+    }
+    // ---- round 4: item icons / user data, insert / remove ----
+    {
+        const NodeHandle c = w::editableComboBox(ui, col, "", -1);
+        ui.update();
+        UI_CHECK(w::comboCurrentIndex(ui, c) == -1);
+        w::comboAddItem(ui, c, "Apple", 3, 100);
+        UI_CHECK(w::comboCurrentIndex(ui, c) == 0 && w::lineEditText(ui, w::comboLineEdit(ui, c)) == "Apple");
+        w::comboAddItem(ui, c, "Cherry", w::kNoIcon, 300);
+        w::comboInsertItem(ui, c, 1, "Banana", 5, 200);
+        UI_CHECK(items(ui, c) == "Apple\nBanana\nCherry" && w::comboItemIcon(ui, c, 1) == 5 && w::comboItemData(ui, c, 2) == 300);
+        UI_CHECK(w::comboFindData(ui, c, 200) == 1 && w::comboFindData(ui, c, 7) == -1);
+        // the field's icon shows the current item's icon
+        ui.update();
+        const NodeHandle ic = ui.firstChild(c);
+        UI_CHECK(ui.userData(ic) == 3 && ui.rect(ic).w == 16.f);
+        w::setComboCurrentIndex(ui, c, 2);
+        ui.update();
+        UI_CHECK(ui.rect(ic).w == 0.f); // Cherry: no icon
+        // inserting before the current item keeps it current; meta follows the items
+        w::comboInsertItem(ui, c, 0, "Apricot", 9, 50);
+        UI_CHECK(w::comboCurrentIndex(ui, c) == 3 && w::comboItemData(ui, c, 3) == 300 && w::comboItemIcon(ui, c, 1) == 3);
+        // policy insertion shifts meta too
+        w::setComboOptions(ui, c, {.policy = w::InsertPolicy::InsertAtTop});
+        const NodeHandle e = w::comboLineEdit(ui, c);
+        ui.setFocus(e);
+        w::setLineEditText(ui, e, "");
+        ui.textInput("Date");
+        ui.keyDown(Key::Enter);
+        UI_CHECK(items(ui, c) == "Date\nApricot\nApple\nBanana\nCherry" && w::comboItemData(ui, c, 0) == 0);
+        UI_CHECK(w::comboItemIcon(ui, c, 0) == w::kNoIcon && w::comboItemData(ui, c, 4) == 300 && w::comboFindData(ui, c, 100) == 2);
+        // the list rows carry the icons
+        w::comboShowList(ui, c);
+        ui.update();
+        const NodeHandle pop = w::completerPopup(ui, e);
+        UI_CHECK(ui.userData(child(ui, pop, 1)) == 10 && ui.userData(child(ui, pop, 0)) == 0); // image index + 1
+        ui.keyDown(Key::Escape);
+        // remove: the current item removed -> the next one becomes current
+        w::setComboCurrentIndex(ui, c, 3);
+        w::comboRemoveItem(ui, c, 3);
+        UI_CHECK(items(ui, c) == "Date\nApricot\nApple\nCherry" && w::comboCurrentIndex(ui, c) == 3);
+        UI_CHECK(w::lineEditText(ui, e) == "Cherry" && w::comboItemData(ui, c, 3) == 300);
+        w::comboRemoveItem(ui, c, 0);
+        UI_CHECK(w::comboCurrentIndex(ui, c) == 2 && w::comboItemIcon(ui, c, 0) == 9);
     }
     return fuse::ui::test::finish("fuse_ui_editcombo");
 }

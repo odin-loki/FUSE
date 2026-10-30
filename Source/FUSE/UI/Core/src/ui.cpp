@@ -22,7 +22,8 @@ enum Dirty : u8 { kDirtyStyle = 1, kDirtyLayout = 2, kDirtyPaint = 4, kDirtyText
 const char* a11yRoleName(A11yRole r) {
     static const char* names[] = {"none", "window", "group", "text", "button", "checkbox", "radio", "switch",
                                   "slider", "progressbar", "textfield", "scrollarea", "list", "listitem", "image",
-                                  "separator", "link", "combobox", "spinbox", "dial", "scrollbar", "tab"};
+                                  "separator", "link", "combobox", "spinbox", "dial", "scrollbar", "tab",
+                                  "dateinput", "timeinput", "datetimeinput"};
     return names[u32(r)];
 }
 
@@ -2042,7 +2043,9 @@ bool UiContext::focusNext(bool backward) {
     const std::size_t sz = m_scratchOrder.size();
     if (at == sz) nx = backward ? sz - 1 : 0;
     else nx = backward ? (at + sz - 1) % sz : (at + 1) % sz;
+    m_focusBackward = backward;
     setFocus(handleOf(m_scratchOrder[nx]), FocusReason::Keyboard);
+    m_focusBackward = false;
     return true;
 }
 
@@ -2098,6 +2101,7 @@ void UiContext::setFocus(NodeHandle h, FocusReason why) {
         setState(h, kStateFocus, true);
         setState(h, kStateFocusVisible, vis);
         Event e; e.type = EventType::FocusIn; e.focusReason = why;
+        if (m_focusBackward) e.mods = kModShift; // Shift+Tab: widgets with inner parts (date sections) enter at the end
         dispatch(h.index, e);
         if (node(h)) emit(h, SignalKind::FocusChanged, {.flag = true});
     }
@@ -2309,6 +2313,7 @@ void UiContext::snapshotA11y(std::vector<A11ySnapshotNode>& out) const {
             s.value = n.value;
             s.lo = n.lo;
             s.hi = n.hi;
+            if (auto f = m_registry.get(n.cls).a11yValueText) s.valueText = f(*this, s.node);
             p = u32(out.size());
             out.push_back(std::move(s));
         }

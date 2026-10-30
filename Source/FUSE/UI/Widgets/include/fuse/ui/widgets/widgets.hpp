@@ -42,7 +42,7 @@ NodeHandle toggleSwitch(UiContext& ui, NodeHandle parent, std::string_view text,
 NodeHandle slider(UiContext& ui, NodeHandle parent, f32 lo, f32 hi, f32 value, f32 step = 0.f, std::string_view id = {});
 NodeHandle scrollBar(UiContext& ui, NodeHandle parent, bool vertical, std::string_view id = {});
 NodeHandle spinBox(UiContext& ui, NodeHandle parent, f32 lo, f32 hi, f32 value, f32 step = 1.f, std::string_view id = {});
-/// QSpinBox / QDoubleSpinBox parity on a spinBox: typed entry (typing replaces the value; Backspace, Escape cancels,
+/// QSpinBox / QDoubleSpinBox parity on a spinBox: typed entry (focus selects the value, typing replaces it; Backspace, Escape cancels,
 /// Enter / focus out commits an in-range number clamped, anything else reverts; editingFinished), prefix / suffix,
 /// decimals, wrapping, specialValueText (shown at the minimum, typing it selects the minimum), adaptive decimal
 /// stepping, keyboardTracking (valueChanged per keystroke or only on commit), textFromValue / valueFromText.
@@ -53,6 +53,7 @@ struct SpinBoxOptions {
     std::string specialValueText;
     bool adaptiveStep = false; ///< QAbstractSpinBox::AdaptiveDecimalStepType
     bool keyboardTracking = true;
+    bool accelerated = false; ///< QAbstractSpinBox::accelerated: holding an arrow button repeats faster and faster
     std::function<std::string(double)> textFromValue;                     ///< clean text, without prefix / suffix
     std::function<std::optional<double>(std::string_view)> valueFromText; ///< nullopt: not a value
 };
@@ -60,6 +61,11 @@ void setSpinBoxOptions(UiContext& ui, NodeHandle spin, SpinBoxOptions options);
 std::string spinBoxText(const UiContext& ui, NodeHandle spin);      ///< QAbstractSpinBox::text (what is shown)
 std::string spinBoxCleanText(const UiContext& ui, NodeHandle spin); ///< QSpinBox::cleanText
 void spinBoxStepBy(UiContext& ui, NodeHandle spin, i32 steps);      ///< QAbstractSpinBox::stepBy
+/// Selection / caret in the editable text (byte offsets, without prefix / suffix). Focus selects all (as Qt);
+/// Left / Right / Home / End (Shift extends), Ctrl+A, click / drag, Ctrl+C / X / V; typing replaces the selection.
+/// Holding an arrow button repeats after 0.5 s every 0.15 s (Qt's style defaults), faster when accelerated.
+void spinBoxSelection(const UiContext& ui, NodeHandle spin, u32& from, u32& to, u32& caret);
+void setSpinBoxSelection(UiContext& ui, NodeHandle spin, u32 from, u32 to);
 /// Items separated by '\n'; value() is the selected index. (Tier A: cycles in place; the popup list is Tier B.)
 NodeHandle comboBox(UiContext& ui, NodeHandle parent, std::string_view items, u32 selected = 0, std::string_view id = {});
 NodeHandle lineEdit(UiContext& ui, NodeHandle parent, std::string_view text = {}, std::string_view id = {});
@@ -143,7 +149,10 @@ struct CompleterOptions {
     u32 maxVisibleItems = 7;
     bool wrapAround = true;
     ModelSorting sorting = ModelSorting::Unsorted;
+    /// Optional per-row icon (rasteriser image index, kNoIcon for none), painted before the row text in the popup.
+    std::function<u32(u32 row)> icon;
 };
+inline constexpr u32 kNoIcon = 0xFFFFFFFFu;
 /// Attaches a completer to a line edit (an empty model and item list removes it). The prefix is the whole text, as
 /// QLineEdit: typing (not programmatic setLineEditText) refilters. Popup: a list under the field (in the overlay layer,
 /// keyboard focus stays in the field); Down / Up / PageDown / PageUp / Home+Ctrl / End+Ctrl move the highlight and
@@ -194,6 +203,8 @@ struct EditableComboOptions {
     InsertPolicy policy = InsertPolicy::InsertAtBottom;
     u32 maxCount = 0x7FFFFFFFu;
     bool duplicatesEnabled = false;
+    /// Enter matches an item ignoring case (Qt's default Qt::MatchFixedString) and then shows the item's own text.
+    bool caseSensitive = false;
     Validator validator; ///< null: everything Acceptable
     Fixup fixup;
 };
@@ -204,6 +215,18 @@ void setComboValidator(UiContext& ui, NodeHandle combo, Validator validator, Fix
 void setComboModel(UiContext& ui, NodeHandle combo, const ItemModel* model, u32 column = 0);
 void comboModelChanged(UiContext& ui, NodeHandle combo);
 u32 comboCount(const UiContext& ui, NodeHandle combo);
+/// Per-item icon (rasteriser image index; kNoIcon none) and user data (QComboBox::setItemIcon / setItemData /
+/// findData). Icons show in the list and before the field for the current item. They follow their items through
+/// insertion (any policy), comboInsertItem / comboRemoveItem; with a model they are per model row.
+void setComboItemIcon(UiContext& ui, NodeHandle combo, u32 index, u32 image);
+u32 comboItemIcon(const UiContext& ui, NodeHandle combo, u32 index);
+void setComboItemData(UiContext& ui, NodeHandle combo, u32 index, u64 data);
+u64 comboItemData(const UiContext& ui, NodeHandle combo, u32 index);
+i32 comboFindData(const UiContext& ui, NodeHandle combo, u64 data);
+/// QComboBox::insertItem / addItem / removeItem (own items only; ignored with a model).
+void comboInsertItem(UiContext& ui, NodeHandle combo, u32 index, std::string_view text, u32 image = kNoIcon, u64 data = 0);
+void comboAddItem(UiContext& ui, NodeHandle combo, std::string_view text, u32 image = kNoIcon, u64 data = 0);
+void comboRemoveItem(UiContext& ui, NodeHandle combo, u32 index);
 std::string comboItemText(const UiContext& ui, NodeHandle combo, u32 index);
 
 // ---- Tier B (plan §5) ------------------------------------------------------------------------------------------------
@@ -542,16 +565,48 @@ void codeEditSetCaret(UiContext& ui, NodeHandle ed, u32 line, u32 column);
 /// Token class of the character at (line, column): 0 text, 1 keyword, 2 string, 3 number, 4 comment.
 u8 codeEditTokenAt(const UiContext& ui, NodeHandle ed, u32 line, u32 column);
 
-/// Date-time edit: "YYYY-MM-DD HH:MM" in fields; Left / Right pick a field, Up / Down step it (with carry and
-/// month-length clamping), digits type into it, the button (or Space) opens a calendar popup. value() = days since
-/// 1970-01-01 (exact in f32); dateTimeEditMinutes() = minutes since 1970-01-01 00:00 (civil time, no zone). Changes
-/// emit ValueChanged.
+/// Civil date and time (no zone), as QDateTime with Qt::LocalTime ignored.
+struct DateTime {
+    int year = 2000, month = 1, day = 1, hour = 0, minute = 0, second = 0, msec = 0;
+};
+struct DateTimeEditOptions {
+    /// QDateTimeEdit::displayFormat letters: yy yyyy, M MM MMM MMMM, d dd ddd dddd, H HH (24 h), h hh (12 h with AP),
+    /// m mm, s ss, z zzz, AP ap; '...' quotes literals. Empty = "yyyy-MM-dd HH:mm" / "yyyy-MM-dd" / "HH:mm".
+    /// Month / day names are English (no locale data).
+    std::string displayFormat;
+    bool calendarPopup = true;  ///< ignored for timeEdit
+    bool wrapping = false;      ///< stepping past a section's end wraps inside the section (Qt)
+    bool carry = false;         ///< stepping carries into the next unit instead (the legacy dateTimeEdit overload)
+    DateTime minimum{100, 1, 1}, maximum{9999, 12, 31, 23, 59, 59, 999};
+};
+/// QDateTimeEdit / QDateEdit / QTimeEdit: the display format's sections are edited one at a time. Left / Right /
+/// Home / End and Tab / Shift+Tab (then the focus chain) pick a section, a click picks the one under the pointer;
+/// Up / Down / wheel step it (PageUp / PageDown by 10) clamped to the section and the month length, digits type
+/// into it and advance when no more digits fit, month / weekday names match by prefix, a / p set AM / PM, a
+/// separator jumps to the next section. Space / F4 / Alt+Down / the button open the calendar popup (it keeps the
+/// time). Enter emits EditingFinished. value() = days since 1970-01-01 (exact in f32); ValueChanged carries the
+/// days and the ISO 8601 text. The a11y role is DateTimeInput / DateInput / TimeInput, with the shown text as value.
+NodeHandle dateTimeEdit(UiContext& ui, NodeHandle parent, const DateTime& value, const DateTimeEditOptions& o = {},
+                        std::string_view id = {});
+NodeHandle dateEdit(UiContext& ui, NodeHandle parent, int year, int month, int day, const DateTimeEditOptions& o = {},
+                    std::string_view id = {});
+NodeHandle timeEdit(UiContext& ui, NodeHandle parent, int hour, int minute, int second = 0, const DateTimeEditOptions& o = {},
+                    std::string_view id = {});
+/// Legacy: "yyyy-MM-dd HH:mm" with carry stepping (minute 59 + 1 -> next hour).
 NodeHandle dateTimeEdit(UiContext& ui, NodeHandle parent, int year, int month, int day, int hour = 0, int minute = 0,
                         std::string_view id = {});
+void setDateTimeEditOptions(UiContext& ui, NodeHandle ed, const DateTimeEditOptions& o);
+DateTime dateTimeEditDateTime(const UiContext& ui, NodeHandle ed);
+void setDateTimeEditDateTime(UiContext& ui, NodeHandle ed, const DateTime& value); ///< clamped to min / max
 void dateTimeEditValue(const UiContext& ui, NodeHandle ed, int& year, int& month, int& day, int& hour, int& minute);
 void setDateTimeEditValue(UiContext& ui, NodeHandle ed, int year, int month, int day, int hour, int minute);
 i64 dateTimeEditMinutes(const UiContext& ui, NodeHandle ed);
-u32 dateTimeEditField(const UiContext& ui, NodeHandle ed); ///< 0 year .. 4 minute
+std::string dateTimeEditText(const UiContext& ui, NodeHandle ed);
+u32 dateTimeEditField(const UiContext& ui, NodeHandle ed); ///< current section (index among the editable sections)
+u32 dateTimeEditSectionCount(const UiContext& ui, NodeHandle ed);
+void setDateTimeEditSection(UiContext& ui, NodeHandle ed, u32 index);
+std::string dateTimeEditSectionText(const UiContext& ui, NodeHandle ed, u32 index);
+bool dateTimeEditPopupOpen(const UiContext& ui, NodeHandle ed);
 
 /// Video widget: plays a VideoSource (function table). Theora .ogv files: fuse_ui_video's `video::TheoraVideo::source()`
 /// (fuse/ui/video/theora_video.hpp); `testPatternSource()` is a built-in moving pattern. Audio sync is not done. Space toggles play, the scrubber seeks.

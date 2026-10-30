@@ -137,7 +137,20 @@ struct CompleterItem { // value = index into matches
         const Color acc = pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD));
         if (pc.ui.checked(pc.node)) dl.rect(pc.rect, acc.withAlpha(0.35f * pc.opacity));
         else if (pc.states & kStateHover) dl.rect(pc.rect, acc.withAlpha(0.15f * pc.opacity));
-        pc.ui.paintString(dl, pc.ui.text(pc.node), pc.content, pc.tint(pc.style.color), pc.style.fontSize, TextAlignment::Start, pc.node.index);
+        Rect tr = pc.content;
+        if (const u64 ic = pc.ui.userData(pc.node)) { // icon image index + 1
+            const f32 sz = std::min(16.f, tr.h);
+            DrawCmd c;
+            c.op = DrawOp::Image;
+            c.image = u32(ic - 1);
+            c.rect = {tr.x, tr.y + (tr.h - sz) * 0.5f, sz, sz};
+            c.fill = Color{1.f, 1.f, 1.f, pc.opacity};
+            c.node = pc.node.index;
+            dl.push(c);
+            tr.x += sz + 4.f;
+            tr.w -= sz + 4.f;
+        }
+        pc.ui.paintString(dl, pc.ui.text(pc.node), tr, pc.tint(pc.style.color), pc.style.fontSize, TextAlignment::Start, pc.node.index);
     }
     static bool onEvent(EventContext& ec, const Event& e);
 };
@@ -186,6 +199,8 @@ void layoutRows(UiContext& ui, NodeHandle edit, CState& s, bool follow = true) {
     u32 i = s.first;
     for (NodeHandle it = ui.firstChild(s.popup); ui.alive(it); it = ui.nextSibling(it), ++i) {
         ui.setText(it, rowText(s, s.matches[i]));
+        const u32 ic = s.o.icon ? s.o.icon(s.matches[i]) : kNoIcon;
+        ui.setUserData(it, ic == kNoIcon ? 0u : u64(ic) + 1u);
         ui.setValue(it, f32(i), false);
         const bool sel = i32(i) == s.cur;
         ui.setChecked(it, sel);
@@ -279,12 +294,14 @@ std::string_view itemAt(std::string_view s, u32 index) {
         at = nl + 1;
     }
 }
-NodeHandle comboEdit(const UiContext& ui, NodeHandle combo) { return ui.alive(combo) ? ui.firstChild(combo) : NodeHandle{}; }
 struct ComboState {
     u32 gen = 0;
     EditableComboOptions o;
     const ItemModel* model = nullptr;
     u32 column = 0;
+    NodeHandle edit, icon;
+    std::vector<u32> icons; ///< per item (kNoIcon none), parallel to the items / model rows
+    std::vector<u64> data;
 };
 std::unordered_map<const UiContext*, std::unordered_map<u32, ComboState>>& comboStores() {
     static std::unordered_map<const UiContext*, std::unordered_map<u32, ComboState>> m;
@@ -296,6 +313,26 @@ ComboState& comboState(const UiContext& ui, NodeHandle combo) {
     return c;
 }
 InsertPolicy comboPolicy(const UiContext& ui, NodeHandle combo) { return comboState(ui, combo).o.policy; }
+NodeHandle comboEdit(const UiContext& ui, NodeHandle combo) {
+    if (!ui.alive(combo)) return {};
+    const ComboState& c = comboState(ui, combo);
+    return ui.alive(c.edit) ? c.edit : ui.firstChild(combo);
+}
+void comboSyncIcon(UiContext& ui, NodeHandle combo) {
+    const ComboState& c = comboState(ui, combo);
+    if (!ui.alive(c.icon)) return;
+    const i32 cur = i32(ui.value(combo));
+    const u32 ic = cur >= 0 && std::size_t(cur) < c.icons.size() ? c.icons[std::size_t(cur)] : kNoIcon;
+    ui.setCss(c.icon, "display", ic == kNoIcon ? "none" : "flex");
+    if (ic != kNoIcon) ui.setUserData(c.icon, ic);
+    ui.invalidate(c.icon);
+}
+void comboInsertMeta(ComboState& c, std::size_t at, u32 icon, u64 data, std::size_t count) {
+    c.icons.resize(std::max(c.icons.size(), count - 1), kNoIcon);
+    c.data.resize(std::max(c.data.size(), count - 1), 0);
+    c.icons.insert(c.icons.begin() + std::ptrdiff_t(std::min(at, c.icons.size())), icon);
+    c.data.insert(c.data.begin() + std::ptrdiff_t(std::min(at, c.data.size())), data);
+}
 void comboSetCurrent(UiContext& ui, NodeHandle combo, i32 idx, bool setText) {
     const std::string_view items = ui.text(combo);
     const bool changed = i32(ui.value(combo)) != idx;
@@ -307,13 +344,19 @@ void comboSetCurrent(UiContext& ui, NodeHandle combo, i32 idx, bool setText) {
         ui.emit(combo, SignalKind::ValueChanged, {.value = f32(idx)});
         ui.emit(combo, SignalKind::TextChanged, {.text = t});
     }
+    comboSyncIcon(ui, combo);
     ui.invalidate(combo);
 }
 void comboSetItems(UiContext& ui, NodeHandle combo, std::string items) {
     ui.setText(combo, items);
     const ComboState& cs = comboState(ui, combo);
-    if (cs.model) setCompleter(ui, comboEdit(ui, combo), {.model = cs.model, .column = cs.column, .mode = CompletionMode::Inline});
-    else setCompleter(ui, comboEdit(ui, combo), {.items = std::move(items), .mode = CompletionMode::Inline});
+    UiContext* up = &ui;
+    auto icon = [up, combo](u32 row) {
+        const ComboState& c = comboState(*up, combo);
+        return row < c.icons.size() ? c.icons[row] : kNoIcon;
+    };
+    if (cs.model) setCompleter(ui, comboEdit(ui, combo), {.model = cs.model, .column = cs.column, .mode = CompletionMode::Inline, .icon = icon});
+    else setCompleter(ui, comboEdit(ui, combo), {.items = std::move(items), .mode = CompletionMode::Inline, .icon = icon});
     if (itemCount(ui.text(combo)) == 0) setCompleter(ui, comboEdit(ui, combo), {});
 }
 std::string modelItems(const ItemModel* m, u32 col) {
@@ -332,7 +375,12 @@ std::string modelItems(const ItemModel* m, u32 col) {
 void comboCommit(UiContext& ui, NodeHandle combo, std::string_view text) {
     const ComboState& cs = comboState(ui, combo);
     if (!cs.o.duplicatesEnabled || cs.model)
-        if (const i32 at = comboFindText(ui, combo, text); at >= 0) { comboSetCurrent(ui, combo, at, false); return; }
+        if (const i32 at = comboFindText(ui, combo, text, cs.o.caseSensitive); at >= 0) {
+            comboSetCurrent(ui, combo, at, false);
+            if (lineEditText(ui, comboEdit(ui, combo)) != itemAt(ui.text(combo), u32(at))) // show the item's own case
+                detail::lineEditComplete(ui, comboEdit(ui, combo), itemAt(ui.text(combo), u32(at)), std::string::npos);
+            return;
+        }
     const InsertPolicy pol = cs.o.policy;
     if (text.empty() || pol == InsertPolicy::NoInsert || cs.model) return;
     std::vector<std::string> v;
@@ -359,6 +407,7 @@ void comboCommit(UiContext& ui, NodeHandle combo, std::string_view text) {
     else {
         if (v.size() >= cs.o.maxCount) return; // QComboBox::maxCount: full, nothing inserted
         v.insert(v.begin() + std::ptrdiff_t(pos), std::string(text));
+        comboInsertMeta(comboState(ui, combo), pos, kNoIcon, 0, v.size());
     }
     std::string joined;
     for (std::size_t i = 0; i < v.size(); ++i) { if (i) joined += '\n'; joined += v[i]; }
@@ -596,7 +645,15 @@ NodeHandle editableComboBox(UiContext& ui, NodeHandle parent, std::string_view i
     const NodeHandle combo = *h;
     comboState(ui, combo).o.policy = policy;
     ui.setRange(combo, -1.f, 1e9f, 1.f);
+    if (auto ic = ui.create("image", combo)) {
+        comboState(ui, combo).icon = *ic;
+        ui.setCss(*ic, "width", "16px");
+        ui.setCss(*ic, "height", "16px");
+        ui.setCss(*ic, "align-self", "center");
+        ui.setCss(*ic, "display", "none");
+    }
     const NodeHandle edit = lineEdit(ui, combo);
+    comboState(ui, combo).edit = edit;
     ui.setCss(edit, "flex-grow", "1");
     if (auto d = ui.create("combodrop", combo)) ui.setA11y(*d, A11yRole::Button, "Open list");
     comboSetItems(ui, combo, std::string(items));
@@ -610,7 +667,8 @@ NodeHandle editableComboBox(UiContext& ui, NodeHandle parent, std::string_view i
     ui.connect(edit, SignalKind::Activated, [combo](UiContext& u, NodeHandle, const SignalArgs& a) {
         CState* s = stateOf(u, comboEdit(u, combo));
         // a pick from the full list is an index into the items; an inline completion is matched by text on Enter
-        if (s && s->o.mode == CompletionMode::Inline && comboFindText(u, combo, a.text) >= 0) comboSetCurrent(u, combo, comboFindText(u, combo, a.text), false);
+        const bool cs = comboState(u, combo).o.caseSensitive;
+        if (s && s->o.mode == CompletionMode::Inline && comboFindText(u, combo, a.text, cs) >= 0) comboSetCurrent(u, combo, comboFindText(u, combo, a.text, cs), false);
     });
     ui.connect(edit, SignalKind::Submitted, [combo](UiContext& u, NodeHandle, const SignalArgs& a) { comboCommit(u, combo, a.text); });
     return combo;
@@ -681,6 +739,77 @@ void setCompletionPrefix(UiContext& ui, NodeHandle edit, std::string_view prefix
 std::string completionPrefix(UiContext& ui, NodeHandle edit) {
     const CState* s = stateOf(ui, edit);
     return s ? s->prefix : std::string{};
+}
+
+void setComboItemIcon(UiContext& ui, NodeHandle combo, u32 index, u32 image) {
+    if (index >= comboCount(ui, combo)) return;
+    ComboState& c = comboState(ui, combo);
+    if (c.icons.size() <= index) c.icons.resize(index + 1, kNoIcon);
+    c.icons[index] = image;
+    comboSyncIcon(ui, combo);
+    if (CState* s = stateOf(ui, comboEdit(ui, combo)); s && s->shown) layoutRows(ui, comboEdit(ui, combo), *s, false);
+}
+u32 comboItemIcon(const UiContext& ui, NodeHandle combo, u32 index) {
+    if (!ui.alive(combo)) return kNoIcon;
+    const ComboState& c = comboState(ui, combo);
+    return index < c.icons.size() ? c.icons[index] : kNoIcon;
+}
+void setComboItemData(UiContext& ui, NodeHandle combo, u32 index, u64 data) {
+    if (index >= comboCount(ui, combo)) return;
+    ComboState& c = comboState(ui, combo);
+    if (c.data.size() <= index) c.data.resize(index + 1, 0);
+    c.data[index] = data;
+}
+u64 comboItemData(const UiContext& ui, NodeHandle combo, u32 index) {
+    if (!ui.alive(combo)) return 0;
+    const ComboState& c = comboState(ui, combo);
+    return index < c.data.size() ? c.data[index] : 0;
+}
+i32 comboFindData(const UiContext& ui, NodeHandle combo, u64 data) {
+    const u32 n = comboCount(ui, combo);
+    for (u32 i = 0; i < n; ++i)
+        if (comboItemData(ui, combo, i) == data) return i32(i);
+    return -1;
+}
+void comboInsertItem(UiContext& ui, NodeHandle combo, u32 index, std::string_view text, u32 image, u64 data) {
+    if (!ui.alive(combo) || comboState(ui, combo).model) return;
+    std::vector<std::string> v;
+    const std::string_view items = ui.text(combo);
+    for (u32 i = 0, n = itemCount(items); i < n; ++i) v.emplace_back(itemAt(items, i));
+    const std::size_t at = std::min<std::size_t>(index, v.size());
+    v.insert(v.begin() + std::ptrdiff_t(at), std::string(text));
+    comboInsertMeta(comboState(ui, combo), at, image, data, v.size());
+    std::string joined;
+    for (std::size_t i = 0; i < v.size(); ++i) { if (i) joined += '\n'; joined += v[i]; }
+    const i32 cur = i32(ui.value(combo));
+    comboSetItems(ui, combo, std::move(joined));
+    if (cur >= 0 && std::size_t(cur) >= at) ui.setValue(combo, f32(cur + 1), false); // the current item stays current (Qt)
+    else if (cur < 0 && v.size() == 1) comboSetCurrent(ui, combo, 0, true);         // first item becomes current
+    comboSyncIcon(ui, combo);
+}
+void comboAddItem(UiContext& ui, NodeHandle combo, std::string_view text, u32 image, u64 data) {
+    comboInsertItem(ui, combo, 0xFFFFFFFFu, text, image, data);
+}
+void comboRemoveItem(UiContext& ui, NodeHandle combo, u32 index) {
+    if (!ui.alive(combo) || comboState(ui, combo).model || index >= comboCount(ui, combo)) return;
+    std::vector<std::string> v;
+    const std::string_view items = ui.text(combo);
+    for (u32 i = 0, n = itemCount(items); i < n; ++i) v.emplace_back(itemAt(items, i));
+    v.erase(v.begin() + index);
+    ComboState& c = comboState(ui, combo);
+    if (index < c.icons.size()) c.icons.erase(c.icons.begin() + index);
+    if (index < c.data.size()) c.data.erase(c.data.begin() + index);
+    std::string joined;
+    for (std::size_t i = 0; i < v.size(); ++i) { if (i) joined += '\n'; joined += v[i]; }
+    const i32 cur = i32(ui.value(combo));
+    comboSetItems(ui, combo, std::move(joined));
+    if (cur > i32(index)) ui.setValue(combo, f32(cur - 1), false);
+    else if (cur == i32(index)) { // Qt: the next item (or the previous at the end) becomes current
+        ui.setValue(combo, -2.f, false);
+        if (v.empty()) setComboCurrentIndex(ui, combo, -1);
+        else comboSetCurrent(ui, combo, std::min<i32>(cur, i32(v.size()) - 1), true);
+    }
+    comboSyncIcon(ui, combo);
 }
 
 } // namespace fuse::ui::widgets

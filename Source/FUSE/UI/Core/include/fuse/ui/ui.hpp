@@ -94,7 +94,8 @@ using CommandFn = void (*)(UiContext&, NodeHandle, u64 a, u64 b);
 // ---- Accessibility -------------------------------------------------------------------------------------------------
 enum class A11yRole : u8 {
     None, Window, Group, Text, Button, CheckBox, RadioButton, Switch, Slider, ProgressBar, TextField, ScrollArea,
-    List, ListItem, Image, Separator, Link, ComboBox, SpinBox, Dial, ScrollBar, Tab
+    List, ListItem, Image, Separator, Link, ComboBox, SpinBox, Dial, ScrollBar, Tab,
+    DateInput, TimeInput, DateTimeInput ///< sectioned date / time fields (AccessKit DateInput / TimeInput / DateTimeInput)
 };
 const char* a11yRoleName(A11yRole r);
 /// Extra accessible state set by widgets (UiContext::setA11yState): listbox / combobox semantics.
@@ -119,6 +120,7 @@ struct A11ySnapshotNode {
     bool protectedText = false; ///< password field: AccessKit PasswordInput (UIA IsPassword, AT-SPI password text)
     f32 value = 0.f, lo = 0.f, hi = 0.f;
     A11yState state;
+    std::string valueText; ///< what the widget shows for its value (spin box "$ 5 ea", a date) - read instead of the number
 };
 
 // ---- Widget classes ------------------------------------------------------------------------------------------------
@@ -153,6 +155,8 @@ struct WidgetClass {
     void (*paint)(const PaintContext&, DrawList&) = nullptr;
     /// Returns true when consumed (stops propagation).
     bool (*onEvent)(EventContext&, const Event&) = nullptr;
+    /// Optional: the shown value text for assistive tech (A11ySnapshotNode::valueText).
+    std::string (*a11yValueText)(const UiContext&, NodeHandle) = nullptr;
     /// Default style (applied before style sheets).
     ComputedStyle defaults{};
 };
@@ -176,6 +180,7 @@ public:
         if constexpr (requires { &W::measure; }) c.measure = &W::measure;
         if constexpr (requires { &W::paint; }) c.paint = &W::paint;
         if constexpr (requires { &W::onEvent; }) c.onEvent = &W::onEvent;
+        if constexpr (requires { &W::a11yValueText; }) c.a11yValueText = &W::a11yValueText;
         if constexpr (requires { W::defaults(); }) c.defaults = W::defaults();
         return add(std::move(c));
     }
@@ -502,6 +507,7 @@ private:
     u32 m_seenSheetVersion = 0;
     NodeHandle m_hover, m_pressed, m_focus, m_modal;
     bool m_focusVisible = false;
+    bool m_focusBackward = false; ///< focusNext(backward) in progress: FocusIn carries kModShift
     bool m_spatialNav = false;
     std::string m_composition;
     i32 m_compositionCaret = 0;

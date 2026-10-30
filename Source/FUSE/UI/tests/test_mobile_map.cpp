@@ -55,6 +55,14 @@ int main() {
         CHECK(f[0] == 1.f && f[1] == 1.f && f[2] == 7.f);
         CHECK(uk::traits(A11yRole::ListItem, false, false, true) == (1ull << 3));
         CHECK(uk::traits(A11yRole::ListItem, false, false, false) == 0);
+        A11ySnapshotNode sn;
+        sn.valueText = "$ 5 ea";
+        CHECK(an::stateDescription(sn) == "$ 5 ea");
+        sn.state.expanded = 0;
+        CHECK(an::stateDescription(sn) == "$ 5 ea, collapsed");
+        CHECK(std::string(an::className(A11yRole::DateInput)) == "android.widget.DatePicker");
+        CHECK(std::string(an::className(A11yRole::TimeInput)) == "android.widget.TimePicker");
+        CHECK(uk::traits(A11yRole::DateTimeInput, false, false) == (1ull << 12));
     }
     std::printf("fuse_app_mobile_map: %s\n", g_fail ? "FAIL" : "OK");
     return g_fail ? 1 : 0;

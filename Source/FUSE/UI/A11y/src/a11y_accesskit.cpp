@@ -34,6 +34,9 @@ accesskit_role roleOf(A11yRole r) {
     case A11yRole::SpinBox: return ACCESSKIT_ROLE_SPIN_BUTTON;
     case A11yRole::ScrollBar: return ACCESSKIT_ROLE_SCROLL_BAR;
     case A11yRole::Tab: return ACCESSKIT_ROLE_TAB;
+    case A11yRole::DateInput: return ACCESSKIT_ROLE_DATE_INPUT;
+    case A11yRole::TimeInput: return ACCESSKIT_ROLE_TIME_INPUT;
+    case A11yRole::DateTimeInput: return ACCESSKIT_ROLE_DATE_TIME_INPUT;
     case A11yRole::None: break;
     }
     return ACCESSKIT_ROLE_UNKNOWN;
@@ -68,6 +71,7 @@ void* buildAccessKitUpdate(const Bridge& b, bool includeTree) {
                                                                                                   : ACCESSKIT_AUTO_COMPLETE_BOTH);
         if (s.state.activeDescendant.valid()) accesskit_node_set_active_descendant(n, idOf(s.state.activeDescendant));
         if (s.state.controls.valid()) { const accesskit_node_id c = idOf(s.state.controls); accesskit_node_set_controls(n, 1, &c); }
+        if (!s.valueText.empty()) accesskit_node_set_value_with_length(n, s.valueText.data(), s.valueText.size());
         if (toggles(s.role)) accesskit_node_set_toggled(n, s.checked ? ACCESSKIT_TOGGLED_TRUE : ACCESSKIT_TOGGLED_FALSE);
         if (ranged(s.role)) {
             accesskit_node_set_numeric_value(n, double(s.value));

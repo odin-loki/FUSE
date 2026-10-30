@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <optional>
 #include <string>
+#include <vector>
 
 using namespace fuse::ui;
 namespace w = fuse::ui::widgets;
@@ -151,5 +152,90 @@ int main() {
     ui.pointerDown({r.right() - 6.f, r.y + 3.f}, MouseButton::Left);
     ui.pointerUp({r.right() - 6.f, r.y + 3.f}, MouseButton::Left);
     UI_CHECK(ui.value(sp) == 11.f);
+
+    // ---- caret / selection: focus selects all, typing replaces, Shift+arrows, Home / End, clipboard ----
+    const NodeHandle cs = w::spinBox(ui, col, 0.f, 9999.f, 1234.f, 1.f, "caret");
+    w::setSpinBoxOptions(ui, cs, {.prefix = "#"});
+    ui.update();
+    ui.setFocus(cs);
+    u32 f0 = 0, f1 = 0, cc = 0;
+    w::spinBoxSelection(ui, cs, f0, f1, cc);
+    UI_CHECK(f0 == 0 && f1 == 4 && cc == 4);
+    ui.keyDown(Key::Home);
+    ui.keyDown(Key::Right);
+    ui.keyDown(Key::Right, kModShift);
+    ui.keyDown(Key::Right, kModShift);
+    w::spinBoxSelection(ui, cs, f0, f1, cc);
+    UI_CHECK(f0 == 1 && f1 == 3 && cc == 3);
+    ui.keyDown(Key::C, kModCtrl);
+    std::string clip;
+    UI_CHECK(ui.clipboardText(clip) && clip == "23");
+    ui.textInput("9");
+    UI_CHECK(w::spinBoxCleanText(ui, cs) == "194" && ui.value(cs) == 194.f);
+    ui.keyDown(Key::End);
+    ui.keyDown(Key::V, kModCtrl);
+    UI_CHECK(w::spinBoxCleanText(ui, cs) == "19423" && ui.value(cs) == 194.f); // out of range: not tracked
+    ui.keyDown(Key::Backspace);
+    ui.keyDown(Key::Home);
+    ui.keyDown(Key::Delete);
+    UI_CHECK(w::spinBoxCleanText(ui, cs) == "942" && ui.value(cs) == 942.f);
+    ui.keyDown(Key::A, kModCtrl);
+    ui.keyDown(Key::X, kModCtrl);
+    UI_CHECK(w::spinBoxCleanText(ui, cs).empty() && ui.clipboardText(clip) && clip == "942");
+    ui.keyDown(Key::Escape);
+    UI_CHECK(w::spinBoxText(ui, cs) == "#942");
+    w::spinBoxSelection(ui, cs, f0, f1, cc);
+    UI_CHECK(f0 == 0 && f1 == 3);
+    w::setSpinBoxSelection(ui, cs, 1, 1);
+    ui.textInput("0");
+    ui.keyDown(Key::Enter);
+    UI_CHECK(ui.value(cs) == 9042.f);
+    w::spinBoxSelection(ui, cs, f0, f1, cc);
+    UI_CHECK(f0 == 0 && f1 == 4); // Enter selects the committed value
+    // click places the caret, drag selects
+    ui.update();
+    const Rect cr = ui.contentRect(cs);
+    ui.pointerDown({cr.x + 1.f, cr.y + cr.h * 0.5f}, MouseButton::Left);
+    w::spinBoxSelection(ui, cs, f0, f1, cc);
+    UI_CHECK(f0 == 0 && f1 == 0);
+    ui.pointerMove({cr.x + 200.f, cr.y + cr.h * 0.5f});
+    ui.pointerUp({cr.x + 200.f, cr.y + cr.h * 0.5f}, MouseButton::Left);
+    w::spinBoxSelection(ui, cs, f0, f1, cc);
+    UI_CHECK(f0 == 0 && f1 == 4);
+
+    // ---- auto-repeat: 0.5 s threshold then every 0.15 s; accelerated shrinks the interval ----
+    auto holdUp = [&](NodeHandle h, f32 secs) {
+        const Rect hr = ui.contentRect(h);
+        const Vec2 p{hr.right() - 6.f, hr.y + 2.f};
+        ui.pointerDown(p, MouseButton::Left);
+        for (f32 t = 0.f; t < secs - 1e-4f; t += 0.01f) ui.update(0.01f);
+        ui.pointerUp(p, MouseButton::Left);
+    };
+    const NodeHandle rp = w::spinBox(ui, col, 0.f, 10000.f, 0.f, 1.f, "rep");
+    ui.update();
+    holdUp(rp, 0.45f);
+    UI_CHECK(ui.value(rp) == 1.f);
+    ui.setValue(rp, 0.f);
+    holdUp(rp, 1.0f); // 1 + ticks at 0.5, 0.65, 0.8, 0.95
+    UI_CHECK(ui.value(rp) == 5.f);
+    for (int i = 0; i < 100; ++i) ui.update(0.01f); // released: no more steps
+    UI_CHECK(ui.value(rp) == 5.f);
+    ui.setValue(rp, 0.f);
+    w::setSpinBoxOptions(ui, rp, {.accelerated = true});
+    holdUp(rp, 1.5f);
+    UI_CHECK(ui.value(rp) > 8.f); // unaccelerated 1.5 s = 8 steps
+    ui.setValue(rp, 0.f);
+    holdUp(rp, 3.0f);
+    const f32 accelSteps = ui.value(rp);
+    UI_CHECK(accelSteps > 40.f); // unaccelerated 3 s = 18 steps
+
+    // ---- accessibility: the value text is what is shown ----
+    ui.update();
+    bool seen = false;
+    std::vector<A11ySnapshotNode> snap;
+    ui.snapshotA11y(snap);
+    for (const A11ySnapshotNode& a : snap)
+        if (a.node == cs) seen = a.valueText == "#9042";
+    UI_CHECK(seen);
     return fuse::ui::test::finish("fuse_ui_spinbox");
 }
