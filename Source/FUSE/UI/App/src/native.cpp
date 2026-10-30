@@ -119,7 +119,8 @@ struct InputEv {
 };
 struct ConfigureEv { int type; unsigned long serial; int send_event; Display* display; Window event, window; int x, y, width, height; };
 struct ClientEv { int type; unsigned long serial; int send_event; Display* display; Window window; Atom message_type; int format; long l[5]; };
-union Event { int type; AnyEv any; InputEv input; ConfigureEv configure; ClientEv client; long pad[24]; };
+struct SelectionEv { int type; unsigned long serial; int send_event; Display* display; Window requestor; Atom selection, target, property; unsigned long time; };
+union Event { int type; AnyEv any; InputEv input; ConfigureEv configure; ClientEv client; SelectionEv selection; long pad[24]; };
 struct Image;
 struct ImageFuncs { Image* (*create)(); int (*destroy)(Image*); };
 struct Image {
@@ -127,7 +128,7 @@ struct Image {
         bytes_per_line, bits_per_pixel; unsigned long red_mask, green_mask, blue_mask; char* obdata; ImageFuncs f;
 };
 enum { KeyPress = 2, KeyRelease = 3, ButtonPress = 4, ButtonRelease = 5, MotionNotify = 6, FocusOut = 10, Expose = 12,
-       MapNotify = 19, ConfigureNotify = 22, ClientMessage = 33 };
+       MapNotify = 19, ConfigureNotify = 22, SelectionNotify = 31, ClientMessage = 33 };
 constexpr long kMask = 1 | 2 | 4 | 8 | (1 << 6) | (1 << 15) | (1 << 17) | (1 << 21);
 
 struct Lib {
@@ -169,6 +170,7 @@ struct Lib {
     int (*SendEvent)(Display*, Window, int, long, Event*) = nullptr;
     int (*GrabPointer)(Display*, Window, int, unsigned, int, int, Window, XID, unsigned long) = nullptr;
     int (*UngrabPointer)(Display*, unsigned long) = nullptr;
+    int (*ConvertSelection)(Display*, Atom, Atom, Atom, Window, unsigned long) = nullptr; // optional (XDND)
 
     bool load() {
         so = fuse::ui::os::loadLibrary({"libX11.so.6", "libX11.so"});
@@ -190,6 +192,7 @@ struct Lib {
         get(TranslateCoordinates, "XTranslateCoordinates"); get(ChangeWindowAttributes, "XChangeWindowAttributes");
         get(DisplayWidth, "XDisplayWidth"); get(DisplayHeight, "XDisplayHeight"); get(SendEvent, "XSendEvent");
         get(GrabPointer, "XGrabPointer"); get(UngrabPointer, "XUngrabPointer");
+        ConvertSelection = reinterpret_cast<decltype(ConvertSelection)>(so->symbol("XConvertSelection"));
         return all;
     }
 };
@@ -286,6 +289,18 @@ struct NativePlatform::Impl {
     x11::Lib x;
     x11::Display* dpy = nullptr;
     x11::Atom wmProtocols = 0, wmDelete = 0;
+    // XDND v5 drop target (system drag and drop into a window)
+    struct Dnd {
+        x11::Atom aware = 0, enter = 0, position = 0, status = 0, leave = 0, drop = 0, finished = 0, selection = 0,
+                  actionCopy = 0, uriList = 0, textPlain = 0, utf8 = 0, prop = 0;
+        x11::Window source = 0;
+        x11::Atom type = 0; ///< best offered type
+        fuse::ui::Vec2 pos{};
+    } dnd;
+    void dndInit();
+    void dndClient(Rec& r, const x11::ClientEv& c);
+    void dndSelection(Rec& r, const x11::SelectionEv& e);
+    void dndSend(x11::Window to, x11::Atom type, long l1, long l2, long l3, long l4, x11::Window self);
 #endif
 
     Impl(Application& a, const NativeOptions& o) : app(a), opts(o) {}
@@ -782,6 +797,10 @@ bool NativePlatform::Impl::createOsWindow(Rec& r) {
     x.StoreName(dpy, w, r.win->title().c_str());
     x.SelectInput(dpy, w, x11::kMask);
     x.SetWMProtocols(dpy, w, &wmDelete, 1);
+    if (dnd.aware && x.ConvertSelection) {
+        const unsigned long version = 5;
+        x.ChangeProperty(dpy, w, dnd.aware, 4 /*XA_ATOM*/, 32, 0 /*Replace*/, reinterpret_cast<const unsigned char*>(&version), 1);
+    }
     x.MapWindow(dpy, w);
     x.Flush(dpy);
     r.handle = w;
@@ -835,7 +854,9 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
         switch (ev.type) {
         case x11::ClientMessage:
             if (ev.client.message_type == m.wmProtocols && x11::Atom(ev.client.l[0]) == m.wmDelete) w.requestClose();
+            else m.dndClient(*r, ev.client);
             break;
+        case x11::SelectionNotify: m.dndSelection(*r, ev.selection); break;
         case x11::MapNotify: r->mapped = true; w.requestRedraw(); break;
         case x11::Expose: r->mapped = true; w.requestRedraw(); break;
         case x11::ConfigureNotify: {
@@ -985,6 +1006,82 @@ bool NativePlatform::Impl::captureX(unsigned long win, unsigned w, unsigned h, I
     return good;
 }
 
+void NativePlatform::Impl::dndInit() {
+    auto a = [&](const char* n) { return x.InternAtom(dpy, n, 0); };
+    dnd.aware = a("XdndAware"); dnd.enter = a("XdndEnter"); dnd.position = a("XdndPosition"); dnd.status = a("XdndStatus");
+    dnd.leave = a("XdndLeave"); dnd.drop = a("XdndDrop"); dnd.finished = a("XdndFinished");
+    dnd.selection = a("XdndSelection"); dnd.actionCopy = a("XdndActionCopy"); dnd.uriList = a("text/uri-list");
+    dnd.textPlain = a("text/plain"); dnd.utf8 = a("UTF8_STRING"); dnd.prop = a("FUSE_XDND");
+}
+void NativePlatform::Impl::dndSend(x11::Window to, x11::Atom type, long l1, long l2, long l3, long l4, x11::Window self) {
+    x11::Event e{};
+    e.client.type = x11::ClientMessage;
+    e.client.display = dpy;
+    e.client.window = to;
+    e.client.message_type = type;
+    e.client.format = 32;
+    e.client.l[0] = long(self);
+    e.client.l[1] = l1; e.client.l[2] = l2; e.client.l[3] = l3; e.client.l[4] = l4;
+    x.SendEvent(dpy, to, 0, 0, &e);
+    x.Flush(dpy);
+}
+void NativePlatform::Impl::dndClient(Rec& r, const x11::ClientEv& c) {
+    if (!dnd.aware || !x.ConvertSelection) return;
+    const x11::Window self = x11::Window(r.handle);
+    const bool accept = r.win->acceptsExternalDrops();
+    if (c.message_type == dnd.enter) {
+        dnd.source = x11::Window(c.l[0]);
+        dnd.type = 0;
+        auto consider = [&](x11::Atom t) {
+            if (t == dnd.uriList) dnd.type = t; // files win
+            else if (!dnd.type && (t == dnd.utf8 || t == dnd.textPlain)) dnd.type = t;
+        };
+        if (c.l[1] & 1) { // more than three types: XdndTypeList on the source
+            x11::Atom actual = 0; int fmt = 0; unsigned long n = 0, after = 0; unsigned char* data = nullptr;
+            const x11::Atom typeList = x.InternAtom(dpy, "XdndTypeList", 0);
+            if (x.GetWindowProperty(dpy, dnd.source, typeList, 0, 64, 0, 4, &actual, &fmt, &n, &after, &data) == 0 && data) {
+                for (unsigned long i = 0; i < n; ++i) consider(reinterpret_cast<x11::Atom*>(data)[i]);
+                x.Free(data);
+            }
+        } else {
+            for (int i = 2; i < 5; ++i) if (c.l[i]) consider(x11::Atom(c.l[i]));
+        }
+    } else if (c.message_type == dnd.position) {
+        const int rx = int((unsigned long)c.l[2] >> 16), ry = int(c.l[2] & 0xFFFF);
+        int wx = 0, wy = 0; x11::Window child = 0;
+        x.TranslateCoordinates(dpy, x.RootWindow(dpy, x.DefaultScreen(dpy)), self, rx, ry, &wx, &wy, &child);
+        dnd.pos = {f32(wx), f32(wy)};
+        r.win->ui().pointerMove(dnd.pos); // hover feedback under the drag
+        const bool ok = accept && dnd.type;
+        dndSend(x11::Window(c.l[0]), dnd.status, ok ? 1 : 0, 0, 0, ok ? long(dnd.actionCopy) : 0, self);
+    } else if (c.message_type == dnd.leave) {
+        dnd.source = 0;
+    } else if (c.message_type == dnd.drop) {
+        if (accept && dnd.type) x.ConvertSelection(dpy, dnd.selection, dnd.type, dnd.prop, self, (unsigned long)c.l[2]);
+        else dndSend(x11::Window(c.l[0]), dnd.finished, 0, 0, 0, 0, self);
+    }
+}
+void NativePlatform::Impl::dndSelection(Rec& r, const x11::SelectionEv& e) {
+    if (!dnd.source || e.selection != dnd.selection) return;
+    const x11::Window self = x11::Window(r.handle);
+    bool ok = false;
+    if (e.property) {
+        x11::Atom actual = 0; int fmt = 0; unsigned long n = 0, after = 0; unsigned char* data = nullptr;
+        if (x.GetWindowProperty(dpy, self, dnd.prop, 0, 1 << 24, 1, 0 /*AnyPropertyType*/, &actual, &fmt, &n, &after, &data) == 0 && data) {
+            AppWindow::ExternalDrop d;
+            d.data.assign(reinterpret_cast<const char*>(data), n * std::size_t(fmt / 8));
+            x.Free(data);
+            d.pos = dnd.pos;
+            d.mime = dnd.type == dnd.uriList ? "text/uri-list" : "text/plain";
+            if (dnd.type == dnd.uriList) d.paths = AppWindow::pathsFromUriList(d.data);
+            r.win->deliverExternalDrop(d);
+            ok = true;
+        }
+    }
+    dndSend(dnd.source, dnd.finished, ok ? 1 : 0, ok ? long(dnd.actionCopy) : 0, 0, 0, self);
+    dnd.source = 0;
+}
+
 NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std::make_unique<Impl>(app, o)) {
     const std::string disp = fuse::ui::os::env("DISPLAY");
     if (!disp.empty() && m->x.load()) {
@@ -993,6 +1090,7 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
             m->x.SetErrorHandler(&x11::ignoreErrors);
             m->wmProtocols = m->x.InternAtom(m->dpy, "WM_PROTOCOLS", 0);
             m->wmDelete = m->x.InternAtom(m->dpy, "WM_DELETE_WINDOW", 0);
+            m->dndInit();
         } else {
             m->error = "cannot open X display";
         }

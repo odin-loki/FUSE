@@ -134,6 +134,9 @@ Headless (offscreen CPU raster) works everywhere and is what the test suite uses
   spawned via `forge::os::spawn_wait`; `unavailable` -> in-UI FileDialog fallback; Win32 IFileDialog with G3 backend).
   Rich clipboard done on the seam: `os::clipboardTypes/clipboardData/setClipboardData` by MIME (wl-clipboard /
   xclip via FORGE process; text/plain falls back to `forge::os::clipboard`).
+  System drag and drop (receive) done on X11: XDND v5 drop target in `native.cpp` (XdndAware/Enter/Position/Status/
+  Drop/Finished, uri-list preferred over text), surfaced as `AppWindow::onExternalDrop` with decoded file paths.
+  Left: XDND drag *source*, Win32 OLE IDropTarget, Wayland (wl_data_device) - with the Wayland backend.
 - **G3**: macOS: Cocoa window, NSTextInputClient IME, MoltenVK present, NSAccessibility.
 - **G4**: iOS + Android: surfaces, touch/pen, lifecycle, virtual keyboard, mobile a11y; emulator/simulator gates.
 - **G5**: tray/notifications/global menu, printing, web view, designer to product.

@@ -13,6 +13,7 @@
 #include "fuse/ui/widgets/widgets.hpp"
 
 #include <expected>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -143,7 +144,26 @@ public:
     void key(fuse::ui::Key k, fuse::ui::u8 mods = 0) { m_ui.keyDown(k, mods); m_ui.keyUp(k, mods); }
     void text(std::string_view utf8) { m_ui.textInput(utf8); }
 
+    /// System drag and drop into this window (G2; X11 XDND today). `paths` are local files decoded from a
+    /// text/uri-list; other payloads arrive raw in `data` with their `mime`.
+    struct ExternalDrop {
+        std::vector<std::string> paths;
+        std::string mime, data;
+        fuse::ui::Vec2 pos;
+    };
+    using DropHandler = std::function<void(AppWindow&, const ExternalDrop&)>;
+    void onExternalDrop(DropHandler h) { m_onDrop = std::move(h); }
+    bool acceptsExternalDrops() const { return bool(m_onDrop); }
+    /// Called by window backends (and tests) when a drop lands.
+    void deliverExternalDrop(const ExternalDrop& d) {
+        if (m_onDrop) m_onDrop(*this, d);
+        requestRedraw();
+    }
+    /// file:// URIs of a text/uri-list as local paths (percent-decoded; comments and non-file URIs skipped).
+    static std::vector<std::string> pathsFromUriList(std::string_view uriList);
+
 private:
+    DropHandler m_onDrop;
     friend class Application;
     bool frame(f32 dt); ///< update + present when needed; true when presented
     static bool presentHeadless(void* user, AppWindow& w, fuse::ui::Rect damage);

@@ -297,4 +297,32 @@ int Application::fail(std::string_view message) {
     return 1;
 }
 
+std::vector<std::string> AppWindow::pathsFromUriList(std::string_view list) {
+    std::vector<std::string> out;
+    auto hex = [](char c) { return c >= '0' && c <= '9' ? c - '0' : (c | 32) >= 'a' && (c | 32) <= 'f' ? (c | 32) - 'a' + 10 : -1; };
+    std::size_t a = 0;
+    while (a < list.size()) {
+        std::size_t b = list.find('\n', a);
+        if (b == std::string_view::npos) b = list.size();
+        std::string_view line = list.substr(a, b - a);
+        a = b + 1;
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.remove_suffix(1);
+        if (line.empty() || line[0] == '#' || !line.starts_with("file://")) continue;
+        line.remove_prefix(7);
+        if (std::size_t slash = line.find('/'); slash != 0 && slash != std::string_view::npos) line.remove_prefix(slash); // host
+        std::string p;
+        for (std::size_t i = 0; i < line.size(); ++i) {
+            if (line[i] == '%' && i + 2 < line.size() && hex(line[i + 1]) >= 0 && hex(line[i + 2]) >= 0) {
+                p += char(hex(line[i + 1]) * 16 + hex(line[i + 2]));
+                i += 2;
+            } else p += line[i];
+        }
+#if defined(_WIN32)
+        if (p.size() > 2 && p[0] == '/' && p[2] == ':') p.erase(0, 1);
+#endif
+        out.push_back(std::move(p));
+    }
+    return out;
+}
+
 } // namespace fuse::app

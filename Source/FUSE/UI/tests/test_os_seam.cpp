@@ -49,7 +49,14 @@ static void testNativeDialog() {
 static void testNativeDialog() {}
 #endif
 
+static void testUriList() {
+    auto p = fuse::app::AppWindow::pathsFromUriList("# c\r\nfile:///tmp/a%20b.png\r\nhttp://x/y\nfile://host/srv/c.txt\n");
+    UI_CHECK_EQ(p.size(), std::size_t(2));
+    if (p.size() == 2) { UI_CHECK(p[0] == "/tmp/a b.png"); UI_CHECK(p[1] == "/srv/c.txt"); }
+}
+
 int main() {
+    testUriList();
     testNativeDialog();
     const std::string dir = os::runtimeDir() + "/fuse_ui_os_seam_test/nested";
     const std::string file = dir + "/a.txt";
