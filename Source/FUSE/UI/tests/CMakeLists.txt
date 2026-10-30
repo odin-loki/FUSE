@@ -73,6 +73,7 @@ set_tests_properties(fuse_ui_cpu_raster_golden PROPERTIES WORKING_DIRECTORY ${CM
 fuse_ui_test(fuse_ui_cpu_hdr test_cpu_hdr.cpp)
 fuse_ui_test(fuse_ui_lineedit test_lineedit.cpp)
 fuse_ui_test(fuse_ui_completer test_completer.cpp)
+fuse_ui_test(fuse_ui_editcombo test_editcombo.cpp)
 fuse_ui_test(fuse_ui_zero_alloc_steady test_zero_alloc_steady.cpp)
 fuse_ui_test(fuse_ui_bench_10k test_bench_10k.cpp)
 # wall-clock gate: not alongside other tests (ctest -j load made it flaky under Wine)

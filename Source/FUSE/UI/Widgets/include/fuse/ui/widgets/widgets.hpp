@@ -143,6 +143,22 @@ bool completerPopupVisible(const UiContext& ui, NodeHandle edit);
 /// The popup list node (invalid until first shown).
 NodeHandle completerPopup(const UiContext& ui, NodeHandle edit);
 
+/// Editable combo box (QComboBox::setEditable(true)): a line edit with an inline, case-insensitive completer over the
+/// items and a drop button. value() = current index (-1 none), text = items ('\n'). Up / Down / PageUp / PageDown
+/// step the current item, Alt+Down / Alt+Up / F4 / the button open the full list (current row highlighted). Enter
+/// selects the item whose text matches exactly, else inserts the text per the policy (QComboBox::InsertPolicy) and
+/// makes it current. Changes emit ValueChanged {index} and TextChanged {item} on the combo. A11y: ComboBox with
+/// expanded / controls, holding the TextField.
+enum class InsertPolicy : u8 { NoInsert, InsertAtTop, InsertAtBottom, InsertAlphabetically };
+NodeHandle editableComboBox(UiContext& ui, NodeHandle parent, std::string_view items, i32 selected = 0,
+                            InsertPolicy policy = InsertPolicy::InsertAtBottom, std::string_view id = {});
+NodeHandle comboLineEdit(const UiContext& ui, NodeHandle combo);
+i32 comboCurrentIndex(const UiContext& ui, NodeHandle combo);
+void setComboCurrentIndex(UiContext& ui, NodeHandle combo, i32 index); ///< -1 clears the field
+/// QComboBox::findText (exact; case-insensitive when !caseSensitive). -1 when absent.
+i32 comboFindText(const UiContext& ui, NodeHandle combo, std::string_view text, bool caseSensitive = true);
+void comboShowList(UiContext& ui, NodeHandle combo); ///< QComboBox::showPopup
+
 // ---- Tier B (plan §5) ------------------------------------------------------------------------------------------------
 // Popups, menus, dialogs and tooltips live in the overlay layer: a core "layer" node kept as the root's last child,
 // laid out over the viewport and outside the flow. A popup is a viewport-sized scope node (the scrim) holding the

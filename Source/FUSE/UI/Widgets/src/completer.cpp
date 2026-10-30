@@ -146,6 +146,12 @@ void syncA11y(UiContext& ui, NodeHandle edit, CState& s) {
         for (NodeHandle it = ui.firstChild(s.popup); ui.alive(it); it = ui.nextSibling(it))
             if (i32(ui.value(it)) == s.cur) a.activeDescendant = it;
     ui.setA11yState(edit, a);
+    if (const NodeHandle p = ui.parent(edit); ui.alive(p) && ui.classOf(p) == ui.registry().find("editcombo")) {
+        A11yState c = ui.a11yState(p);
+        c.expanded = s.shown ? 1 : 0;
+        c.controls = a.controls;
+        ui.setA11yState(p, c);
+    }
 }
 
 /// fill the popup rows from s.first (creates / destroys row nodes to the shown count)
@@ -250,11 +256,133 @@ bool CompleterItem::onEvent(EventContext& ec, const Event& e) {
     return true;
 }
 
+
+// ---- editable combo box (QComboBox::setEditable) ----------------------------------------------------------------------
+u32 itemCount(std::string_view s) { return s.empty() ? 0u : u32(std::count(s.begin(), s.end(), '\n') + 1); }
+std::string_view itemAt(std::string_view s, u32 index) {
+    std::size_t at = 0;
+    for (u32 i = 0;; ++i) {
+        const std::size_t nl = s.find('\n', at);
+        if (i == index) return s.substr(at, nl == std::string_view::npos ? std::string_view::npos : nl - at);
+        if (nl == std::string_view::npos) return {};
+        at = nl + 1;
+    }
+}
+NodeHandle comboEdit(const UiContext& ui, NodeHandle combo) { return ui.alive(combo) ? ui.firstChild(combo) : NodeHandle{}; }
+InsertPolicy comboPolicy(const UiContext& ui, NodeHandle combo) { return InsertPolicy(ui.userData(combo) & 0xFFu); }
+void comboSetCurrent(UiContext& ui, NodeHandle combo, i32 idx, bool setText) {
+    const std::string_view items = ui.text(combo);
+    const bool changed = i32(ui.value(combo)) != idx;
+    ui.setValue(combo, f32(idx), false);
+    const std::string t(idx >= 0 ? itemAt(items, u32(idx)) : std::string_view{});
+    if (setText && idx >= 0) detail::lineEditComplete(ui, comboEdit(ui, combo), t, std::string::npos);
+    if (CState* s = stateOf(ui, comboEdit(ui, combo))) s->prefix = std::string(lineEditText(ui, comboEdit(ui, combo)));
+    if (changed) {
+        ui.emit(combo, SignalKind::ValueChanged, {.value = f32(idx)});
+        ui.emit(combo, SignalKind::TextChanged, {.text = t});
+    }
+    ui.invalidate(combo);
+}
+void comboSetItems(UiContext& ui, NodeHandle combo, std::string items) {
+    ui.setText(combo, items);
+    setCompleter(ui, comboEdit(ui, combo), {.items = std::move(items), .mode = CompletionMode::Inline});
+    if (itemCount(ui.text(combo)) == 0) setCompleter(ui, comboEdit(ui, combo), {});
+}
+/// Enter in the field: select the matching item, else insert the text per the policy (QComboBox::insertPolicy)
+void comboCommit(UiContext& ui, NodeHandle combo, std::string_view text) {
+    if (const i32 at = comboFindText(ui, combo, text); at >= 0) { comboSetCurrent(ui, combo, at, false); return; }
+    const InsertPolicy pol = comboPolicy(ui, combo);
+    if (text.empty() || pol == InsertPolicy::NoInsert) return;
+    std::vector<std::string> v;
+    const std::string_view items = ui.text(combo);
+    for (u32 i = 0, n = itemCount(items); i < n; ++i) v.emplace_back(itemAt(items, i));
+    std::size_t pos = pol == InsertPolicy::InsertAtTop ? 0 : v.size();
+    if (pol == InsertPolicy::InsertAlphabetically) {
+        const std::u32string key = fold(text, false);
+        pos = 0;
+        while (pos < v.size() && fold(v[pos], false) <= key) ++pos;
+    }
+    v.insert(v.begin() + std::ptrdiff_t(pos), std::string(text));
+    std::string joined;
+    for (std::size_t i = 0; i < v.size(); ++i) { if (i) joined += '\n'; joined += v[i]; }
+    comboSetItems(ui, combo, std::move(joined));
+    ui.setValue(combo, -2.f, false); // force "changed"
+    comboSetCurrent(ui, combo, i32(pos), false);
+}
+void comboToggleList(UiContext& ui, NodeHandle combo) {
+    const NodeHandle edit = comboEdit(ui, combo);
+    CState* s = stateOf(ui, edit);
+    if (!s) return;
+    if (s->shown) { hide(ui, edit, *s); return; }
+    refilter(*s, lineEditText(ui, edit), true);
+    s->cur = i32(ui.value(combo)) < i32(s->matches.size()) ? i32(ui.value(combo)) : -1;
+    show(ui, edit, *s);
+    // the list hangs under the whole combo, not just the field
+    const Rect r = ui.rect(combo);
+    ui.set(s->popup, Prop::Left, PropValue::ofLength(Length::px(r.x)));
+    ui.set(s->popup, Prop::MinWidth, PropValue::ofLength(Length::px(r.w)));
+}
+
+struct EditCombo { // text = items, value = current index (-1 none), userData = InsertPolicy
+    static constexpr std::string_view kName = "editcombo";
+    static constexpr A11yRole kRole = A11yRole::ComboBox;
+    static ComputedStyle defaults() {
+        ComputedStyle s;
+        s.direction = Direction::Row;
+        return s;
+    }
+    static bool onEvent(EventContext& ec, const Event& e) {
+        UiContext& ui = ec.ui;
+        const NodeHandle edit = comboEdit(ui, ec.node);
+        if (e.type == EventType::Wheel && ec.phase != Phase::Capture && !completerPopupVisible(ui, edit)) {
+            const i32 n = i32(itemCount(ui.text(ec.node))), cur = i32(ui.value(ec.node));
+            if (n) comboSetCurrent(ui, ec.node, std::clamp(cur + (e.wheel.y < 0.f ? 1 : -1), 0, n - 1), true);
+            return n > 0;
+        }
+        if (e.type != EventType::KeyDown || ec.phase != Phase::Capture || ec.target != edit) return false;
+        const bool alt = e.mods & kModAlt;
+        if (e.key == Key::F4 || ((e.key == Key::Down || e.key == Key::Up) && alt)) { comboToggleList(ui, ec.node); return true; }
+        if (completerPopupVisible(ui, edit)) return false; // the list navigates
+        if (e.key == Key::Up || e.key == Key::Down || e.key == Key::PageUp || e.key == Key::PageDown) {
+            const i32 n = i32(itemCount(ui.text(ec.node)));
+            if (!n) return true;
+            const i32 cur = i32(ui.value(ec.node));
+            i32 to = e.key == Key::Down ? cur + 1 : e.key == Key::Up ? cur - 1 : e.key == Key::PageDown ? n - 1 : 0;
+            if (cur < 0) to = e.key == Key::Up ? n - 1 : 0;
+            comboSetCurrent(ui, ec.node, std::clamp(to, 0, n - 1), true);
+            return true;
+        }
+        return false;
+    }
+};
+struct ComboDrop {
+    static constexpr std::string_view kName = "combodrop";
+    static constexpr A11yRole kRole = A11yRole::Button;
+    static constexpr bool kInteractive = true;
+    static Size measure(UiContext& ui, NodeHandle n, Size) { return {16.f, rowH(ui, n) - 6.f}; }
+    static void paint(const PaintContext& pc, DrawList& dl) {
+        const Rect c = pc.content;
+        const Color col = pc.tint(pc.style.color);
+        const f32 ax = c.x + c.w * 0.5f, my = c.y + c.h * 0.5f;
+        dl.line({ax - 4.f, my - 2.f}, {ax, my + 2.f}, col, 1.5f);
+        dl.line({ax, my + 2.f}, {ax + 4.f, my - 2.f}, col, 1.5f);
+    }
+    static bool onEvent(EventContext& ec, const Event& e) {
+        if (e.type != EventType::Click || ec.phase != Phase::Target) return false;
+        const NodeHandle combo = ec.ui.parent(ec.node);
+        ec.ui.setFocus(comboEdit(ec.ui, combo), FocusReason::Pointer);
+        comboToggleList(ec.ui, combo);
+        return true;
+    }
+};
+
 void registerCompleter(UiContext& ui) {
     auto& r = ui.registry();
     if (r.find("completer") != 0xFFFFFFFFu) return;
     r.registerWidget<CompleterList>();
     r.registerWidget<CompleterItem>();
+    r.registerWidget<EditCombo>();
+    r.registerWidget<ComboDrop>();
 }
 
 } // namespace
@@ -265,7 +393,7 @@ bool completerKey(UiContext& ui, NodeHandle edit, const Event& e) {
     if (!s || e.type != EventType::KeyDown) return false;
     const i32 n = i32(s->matches.size());
     const bool ctrl = e.mods & kModCtrl;
-    if (s->o.mode == CompletionMode::Inline) {
+    if (s->o.mode == CompletionMode::Inline && !s->shown) {
         if ((e.key == Key::Up || e.key == Key::Down) && n > 0) { // cycle the inline completion
             const i32 to = s->cur < 0 ? (e.key == Key::Down ? 0 : n - 1) : (s->cur + (e.key == Key::Down ? 1 : n - 1)) % n;
             s->cur = to;
@@ -286,7 +414,7 @@ bool completerKey(UiContext& ui, NodeHandle edit, const Event& e) {
         return false;
     }
     if (!s->shown) {
-        if (e.key == Key::Down && !ctrl) {
+        if (e.key == Key::Down && !ctrl && s->o.mode != CompletionMode::Inline) {
             complete(ui, edit);
             return true;
         }
@@ -321,6 +449,7 @@ void completerEdited(UiContext& ui, NodeHandle edit, bool deletion) {
     if (!s) return;
     const std::string text(lineEditText(ui, edit));
     if (s->o.mode == CompletionMode::Inline) {
+        if (s->shown) hide(ui, edit, *s); // typing closes an opened full list (editable combo)
         refilter(*s, text, false);
         auto& eb = ui.editBuffer(edit);
         if (deletion || s->matches.empty() || text.empty() || eb.hasSelection() || eb.cursor() != eb.text().size()) return;
@@ -399,6 +528,53 @@ bool completerPopupVisible(const UiContext& ui, NodeHandle edit) {
 NodeHandle completerPopup(const UiContext& ui, NodeHandle edit) {
     const CState* s = stateOf(ui, edit);
     return s ? s->popup : NodeHandle{};
+}
+
+
+NodeHandle editableComboBox(UiContext& ui, NodeHandle parent, std::string_view items, i32 selected, InsertPolicy policy,
+                            std::string_view id) {
+    registerCompleter(ui);
+    auto h = ui.create("editcombo", parent, id);
+    if (!h) return {};
+    const NodeHandle combo = *h;
+    ui.setUserData(combo, u64(policy));
+    ui.setRange(combo, -1.f, 1e9f, 1.f);
+    const NodeHandle edit = lineEdit(ui, combo);
+    ui.setCss(edit, "flex-grow", "1");
+    if (auto d = ui.create("combodrop", combo)) ui.setA11y(*d, A11yRole::Button, "Open list");
+    comboSetItems(ui, combo, std::string(items));
+    const i32 n = i32(itemCount(items));
+    ui.setValue(combo, -1.f, false);
+    if (selected >= 0 && selected < n) {
+        ui.setValue(combo, f32(selected), false);
+        setLineEditText(ui, edit, itemAt(items, u32(selected)));
+        if (CState* s = stateOf(ui, edit)) s->prefix.assign(itemAt(items, u32(selected)));
+    }
+    ui.connect(edit, SignalKind::Activated, [combo](UiContext& u, NodeHandle, const SignalArgs& a) {
+        CState* s = stateOf(u, comboEdit(u, combo));
+        // a pick from the full list is an index into the items; an inline completion is matched by text on Enter
+        if (s && s->o.mode == CompletionMode::Inline && comboFindText(u, combo, a.text) >= 0) comboSetCurrent(u, combo, comboFindText(u, combo, a.text), false);
+    });
+    ui.connect(edit, SignalKind::Submitted, [combo](UiContext& u, NodeHandle, const SignalArgs& a) { comboCommit(u, combo, a.text); });
+    return combo;
+}
+NodeHandle comboLineEdit(const UiContext& ui, NodeHandle combo) { return comboEdit(ui, combo); }
+i32 comboCurrentIndex(const UiContext& ui, NodeHandle combo) { return ui.alive(combo) ? i32(ui.value(combo)) : -1; }
+void setComboCurrentIndex(UiContext& ui, NodeHandle combo, i32 index) {
+    const i32 n = i32(itemCount(ui.text(combo)));
+    if (index < -1 || index >= n) return;
+    if (index < 0) { ui.setValue(combo, -1.f, false); setLineEditText(ui, comboEdit(ui, combo), {}); return; }
+    comboSetCurrent(ui, combo, index, true);
+}
+i32 comboFindText(const UiContext& ui, NodeHandle combo, std::string_view text, bool caseSensitive) {
+    const std::string_view items = ui.text(combo);
+    const std::u32string key = fold(text, caseSensitive);
+    for (u32 i = 0, n = itemCount(items); i < n; ++i)
+        if (caseSensitive ? itemAt(items, i) == text : fold(itemAt(items, i), false) == key) return i32(i);
+    return -1;
+}
+void comboShowList(UiContext& ui, NodeHandle combo) {
+    if (!completerPopupVisible(ui, comboEdit(ui, combo))) comboToggleList(ui, combo);
 }
 
 } // namespace fuse::ui::widgets
