@@ -5,6 +5,12 @@
 // AccessibilityNodeProvider fed from UiContext::snapshotA11y. With a plain android.app.NativeActivity, text falls
 // back to KeyEvent.getUnicodeChar and there is no accessibility tree.
 //
+// Presentation: with NativeOptions::vulkan (default) and a device that can present to the ANativeWindow
+// (VK_KHR_android_surface; every Android 7+ device with Vulkan, the emulator with -gpu swiftshader_indirect / host),
+// the window presents through the shared Vulkan swapchain presenter (GPU draw kernel or CPU-raster upload, see
+// NativeOptions::drawMode). Otherwise the CPU raster is blitted with ANativeWindow_lock. The swapchain is dropped on
+// APP_CMD_TERM_WINDOW and rebuilt on the next APP_CMD_INIT_WINDOW.
+//
 //   void android_main(android_app* state) {
 //       fuse::app::androidInstallFonts(state);
 //       fuse::app::Application app{{.name = "hello", .loadSettings = false}};
@@ -16,7 +22,9 @@
 //   }
 #pragma once
 #include "fuse/app/app.hpp"
+#include "fuse/app/native.hpp"
 #include <memory>
+#include <string_view>
 
 struct android_app;
 
@@ -28,7 +36,7 @@ bool androidInstallFonts(android_app* state);
 
 class AndroidPlatform {
 public:
-    AndroidPlatform(Application& app, android_app* state);
+    AndroidPlatform(Application& app, android_app* state, const NativeOptions& o = {});
     ~AndroidPlatform();
     AndroidPlatform(const AndroidPlatform&) = delete;
     AndroidPlatform& operator=(const AndroidPlatform&) = delete;
@@ -36,6 +44,10 @@ public:
     bool show(AppWindow& w);
     /// Has a surface (between APP_CMD_INIT_WINDOW and APP_CMD_TERM_WINDOW).
     bool hasSurface() const;
+    /// True while the window presents through Vulkan (false: ANativeWindow_lock CPU blit).
+    bool gpuPresents() const;
+    /// The Vulkan device name once a swapchain exists; empty otherwise.
+    std::string_view gpuName() const;
     struct Impl;
 
 private:

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Builds org.fuse.ui.hello (NativeActivity sample + FuseActivity) without Gradle:
 #   ANDROID_SDK=... ANDROID_NDK=... JAVA_HOME=... ./build_apk.sh <out-dir> [abi...]
+# FUSE_ANDROID_VK=OFF drops the Vulkan swapchain presenter (CPU ANativeWindow_lock blit only).
 # Uses: cmake + ninja (NDK toolchain), javac, d8, aapt2, zipalign, apksigner (build-tools 34), keytool.
 set -euo pipefail
 OUT=$(realpath -m "${1:?out dir}"); shift
@@ -16,7 +17,7 @@ for abi in "${ABIS[@]}"; do
     cmake -S "$UI" -B "$OUT/build-$abi" -G Ninja -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK/build/cmake/android.toolchain.cmake" -DANDROID_ABI="$abi" \
         -DANDROID_PLATFORM=android-26 -DFUSE_BUILD_UI_TESTS=OFF -DFUSE_BUILD_UI_DESIGNER=OFF \
-        -DFUSE_BUILD_GUI_EXAMPLES=OFF -DFUSE_BUILD_UI_THEORA=OFF -DFUSE_BUILD_UI_VK=OFF -DFUSE_BUILD_APP_SAMPLES=ON >/dev/null
+        -DFUSE_BUILD_GUI_EXAMPLES=OFF -DFUSE_BUILD_UI_THEORA=OFF -DFUSE_BUILD_UI_VK="${FUSE_ANDROID_VK:-ON}" -DFUSE_BUILD_APP_SAMPLES=ON >/dev/null
     ninja -C "$OUT/build-$abi" fuse_android_hello >/dev/null
     mkdir -p "$OUT/stage/lib/$abi"
     "$ANDROID_NDK"/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip -o "$OUT/stage/lib/$abi/libfuse_android_hello.so" \

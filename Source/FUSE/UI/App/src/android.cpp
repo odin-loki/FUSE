@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include "fuse/app/android.hpp"
 #include "android_map.hpp"
+#include "native_internal.hpp"
 
 #include <android/log.h>
 #include <android/native_window.h>
@@ -51,7 +52,43 @@ struct AndroidPlatform::Impl {
     std::vector<u32> clicks;
     f32 a11yScale = 1.f;
 
-    Impl(Application& a, android_app* s) : app(a), state(s) {}
+    NativeOptions opts;
+    detail::VkCtx* vk = nullptr;
+    detail::VkWin* vkWin = nullptr;
+    bool vkCtxTried = false, vkFailed = false;
+    std::string vkError;
+
+    Impl(Application& a, android_app* s, const NativeOptions& o) : app(a), state(s), opts(o) {}
+
+    /// Swapchain on the current ANativeWindow (lazily, on the first present after APP_CMD_INIT_WINDOW).
+    detail::VkWin* vulkan() {
+        if (vkWin || vkFailed || !surface || !opts.vulkan) return vkWin;
+        if (!vkCtxTried) {
+            vkCtxTried = true;
+            vk = opts.adoptDevice.instance && opts.adoptDevice.device
+                     ? detail::vkCtxAdopt(detail::SurfaceSource::Android, opts.adoptDevice, vkError)
+                     : detail::vkCtxCreate(detail::SurfaceSource::Android, vkError);
+        }
+        if (vk) {
+            detail::SurfaceSource src;
+            src.kind = detail::SurfaceSource::Android;
+            src.surface = surface;
+            vkWin = detail::vkWinCreate(vk, src, opts, vkError);
+        }
+        if (!vkWin) {
+            vkFailed = true; // CPU blit from now on (the window may have been locked by nobody yet)
+            FUSE_LOGI("fuse_ui: Vulkan present unavailable (%s), CPU blit", vkError.c_str());
+            if (surface) ANativeWindow_setBuffersGeometry(surface, 0, 0, AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM);
+        } else {
+            FUSE_LOGI("fuse_ui: Vulkan present on %s (%s)", detail::vkCtxDeviceName(vk),
+                      detail::vkWinGpuDraws(vkWin) ? "GPU draw" : "CPU upload");
+        }
+        return vkWin;
+    }
+    void dropSwapchain() {
+        if (vkWin) detail::vkWinDestroy(vkWin);
+        vkWin = nullptr;
+    }
 
     // ---- JNI helpers (glue thread) ----
     JNIEnv* env() {
@@ -95,9 +132,11 @@ struct AndroidPlatform::Impl {
         case APP_CMD_INIT_WINDOW:
         case APP_CMD_WINDOW_RESIZED:
         case APP_CMD_CONFIG_CHANGED:
+            if (m.surface != s->window) m.dropSwapchain(); // a new ANativeWindow: new VkSurfaceKHR
             m.surface = s->window;
             if (m.surface) {
-                ANativeWindow_setBuffersGeometry(m.surface, 0, 0, AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM);
+                // the CPU blit path wants RGBA8888 buffers; a Vulkan swapchain sets its own format
+                if (!m.opts.vulkan || m.vkFailed) ANativeWindow_setBuffersGeometry(m.surface, 0, 0, AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM);
                 if (m.win) {
                     const u32 w = u32(ANativeWindow_getWidth(m.surface)), h = u32(ANativeWindow_getHeight(m.surface));
                     if (u32(m.win->size().w) != w || u32(m.win->size().h) != h) m.win->resize(w, h);
@@ -105,7 +144,7 @@ struct AndroidPlatform::Impl {
                 }
             }
             break;
-        case APP_CMD_TERM_WINDOW: m.surface = nullptr; break;
+        case APP_CMD_TERM_WINDOW: m.dropSwapchain(); m.surface = nullptr; break; // before the window goes
         case APP_CMD_WINDOW_REDRAW_NEEDED: if (m.win) m.win->requestRedraw(); break;
         case APP_CMD_DESTROY: m.app.quit(0); break;
         default: break;
@@ -205,7 +244,6 @@ struct AndroidPlatform::Impl {
     }
     static bool present(void* user, AppWindow& aw, Rect damage) {
         Impl& m = *static_cast<Impl*>(user);
-        aw.rasterizeCpu(damage);
         m.setIme(aw.ui().wantsTextInput());
         {
             std::vector<A11ySnapshotNode> snap;
@@ -214,6 +252,12 @@ struct AndroidPlatform::Impl {
             m.a11y.clear();
             for (auto& n : snap) m.a11y.push_back({n, am::className(n.role)});
         }
+        if (detail::VkWin* vw = m.vulkan()) {
+            if (!detail::vkWinPresent(vw, aw, damage)) return false;
+            if (++m.frames == 1) FUSE_LOGI("fuse_ui: first frame %dx%d (vulkan)", int(aw.size().w), int(aw.size().h));
+            return true;
+        }
+        aw.rasterizeCpu(damage);
         if (!m.surface) return true;
         ANativeWindow_Buffer b;
         if (ANativeWindow_lock(m.surface, &b, nullptr) != 0) return false;
@@ -230,7 +274,8 @@ struct AndroidPlatform::Impl {
 
 static AndroidPlatform::Impl* g_impl = nullptr; // for the JNI natives (one activity per process)
 
-AndroidPlatform::AndroidPlatform(Application& app, android_app* state) : m(std::make_unique<Impl>(app, state)) {
+AndroidPlatform::AndroidPlatform(Application& app, android_app* state, const NativeOptions& o)
+    : m(std::make_unique<Impl>(app, state, o)) {
     state->userData = m.get();
     state->onAppCmd = &Impl::onCmd;
     state->onInputEvent = &Impl::onInput;
@@ -244,6 +289,8 @@ AndroidPlatform::~AndroidPlatform() {
         g_impl = nullptr;
     }
     if (m->win) m->win->setPresenter({});
+    m->dropSwapchain();
+    detail::vkCtxDestroy(m->vk);
     m->app.setEventSource(m->previous);
     m->state->userData = nullptr;
     m->state->onAppCmd = nullptr;
@@ -259,6 +306,8 @@ bool AndroidPlatform::show(AppWindow& w) {
     }
     return true;
 }
+bool AndroidPlatform::gpuPresents() const { return m->vkWin != nullptr; }
+std::string_view AndroidPlatform::gpuName() const { return detail::vkCtxDeviceName(m->vk); }
 bool androidInstallFonts(android_app* state) {
     AAssetManager* am = state->activity->assetManager;
     const char* base = state->activity->internalDataPath;
