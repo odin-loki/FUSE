@@ -1164,12 +1164,12 @@ void gateSvg() {
   <polyline points="0,49 50,30 100,49" fill="none" stroke="white" stroke-width="2"/>
   <line x1="0" y1="0" x2="100" y2="50" stroke="none"/>
   <use xlink:href="#dot" x="90" y="10"/>
-  <text x="0" y="0">ignored</text>
+  <text x="0" y="0">t</text>
 </svg>)svg";
     sv::Document d;
     CHECK(d.load(kDoc));
     CHECK(d.size().w == 200.f && d.size().h == 100.f && d.viewBox().w == 100.f);
-    CHECK(d.shapes().size() == 6); // bg, box, circle, arc, polyline, use'd dot (line has no paint)
+    CHECK(d.shapes().size() == 7); // bg, box, circle, arc, polyline, use'd dot, text (line has no paint)
     const Rect box = d.boundsOf("box");
     CHECK(std::abs(box.x - 10.f) < 0.01f && std::abs(box.w - 20.f) < 0.01f);
     const Rect grp = d.boundsOf("grp");
@@ -1200,6 +1200,77 @@ void gateSvg() {
     CHECK(arcL[0] > arcL[2] && arcR[2] > arcR[0]); // red -> blue gradient
     if (const std::string dir = fuse::ui::os::env("FUSE_EXTRAS_OUT"); !dir.empty())
         stbi_write_png((dir + "/svg.png").c_str(), img.width, img.height, 4, img.pixels.data(), img.width * 4);
+
+    // ---- multi-stop gradients at any angle, <text>, clipPath, mask, pattern ----
+    const char* kAdv = R"svg(<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
+  <defs>
+    <linearGradient id="diag" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff0000"/><stop offset="50%" stop-color="#00ff00"/><stop offset="1" stop-color="#0000ff"/>
+    </linearGradient>
+    <linearGradient id="rep" href="#diag" x1="10" y1="0" x2="30" y2="0" gradientUnits="userSpaceOnUse" spreadMethod="reflect"/>
+    <radialGradient id="rg" gradientTransform="rotate(30 0.5 0.5)" r="0.5">
+      <stop offset="0" stop-color="white"/><stop offset="0.5" stop-color="yellow"/><stop offset="1" stop-color="black"/>
+    </radialGradient>
+    <clipPath id="circ"><circle cx="250" cy="50" r="40"/></clipPath>
+    <clipPath id="bb" clipPathUnits="objectBoundingBox"><rect x="0" y="0" width="0.5" height="1"/></clipPath>
+    <mask id="half"><rect x="0" y="0" width="400" height="300" fill="white" fill-opacity="0.5"/></mask>
+    <pattern id="chk" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+      <rect width="10" height="10" fill="red"/><rect x="10" y="10" width="10" height="10" fill="red"/>
+    </pattern>
+  </defs>
+  <rect width="400" height="300" fill="black"/>
+  <rect id="g1" x="10" y="10" width="100" height="100" fill="url(#diag)"/>
+  <rect x="200" y="0" width="100" height="100" fill="#00ffff" clip-path="url(#circ)"/>
+  <g clip-path="url(#bb)"><rect x="320" y="10" width="60" height="60" fill="white"/></g>
+  <rect x="10" y="130" width="100" height="40" fill="white" mask="url(#half)"/>
+  <rect x="130" y="130" width="80" height="80" fill="url(#chk)"/>
+  <circle cx="300" cy="170" r="40" fill="url(#rg)"/>
+  <rect x="10" y="190" width="100" height="10" fill="url(#rep)"/>
+  <text id="t1" x="200" y="280" font-size="40" text-anchor="middle" fill="white">Hi <tspan fill="#ff00ff" dy="-5">SVG</tspan></text>
+  <text id="t2" x="10" y="250" style="font-size:20px" fill="none" stroke="yellow" stroke-width="1">Outline</text>
+</svg>)svg";
+    sv::Document a;
+    CHECK(a.load(kAdv));
+    CHECK(a.clips().size() == 3 && a.patterns().size() == 1);
+    {
+        const Rect t1 = a.boundsOf("t1");
+        CHECK(t1.w > 60.f && std::abs((t1.x + t1.w * 0.5f) - 200.f) < 6.f && t1.bottom() <= 282.f && t1.y > 230.f); // centred
+        CHECK(!a.boundsOf("t2").empty());
+    }
+    DrawList adl;
+    a.render(adl, {0, 0, 400, 300});
+    Image ai;
+    ai.resize(400, 300, 0xFF000000u);
+    CpuRasterizer ar;
+    ar.render(adl, ai);
+    auto ap = [&](int x, int y) {
+        const u32 v = ai.at(x, y);
+        return std::array<int, 3>{int(v & 0xFF), int((v >> 8) & 0xFF), int((v >> 16) & 0xFF)};
+    };
+    const auto gTL = ap(14, 14), gMid = ap(60, 60), gBR = ap(106, 106), gOff = ap(100, 20); // 3 stops on the diagonal
+    CHECK(gTL[0] > 200 && gTL[1] < 60);
+    CHECK(gMid[1] > 200 && gMid[0] < 60 && gMid[2] < 60);
+    CHECK(gBR[2] > 200 && gBR[1] < 60);
+    CHECK(gOff[1] > 200); // (100,20) is on the t = 0.5 diagonal: green
+    CHECK(ap(250, 50)[2] > 200 && ap(205, 5)[2] < 30); // clipPath circle: inside cyan, rect corner clipped
+    CHECK(ap(330, 40)[0] > 200 && ap(370, 40)[0] < 30); // bbox clip: left half only
+    const auto m = ap(60, 150);
+    CHECK(m[0] > 100 && m[0] < 160); // mask: 50% luminance
+    CHECK(ap(135, 135)[0] > 200 && ap(145, 135)[0] < 30 && ap(145, 145)[0] > 200 && ap(135, 145)[0] < 30); // checker tiles
+    CHECK(ap(300, 170)[0] > 200 && ap(300, 170)[2] > 200); // radial centre white
+    CHECK(ap(12, 195)[0] > 150 && ap(28, 195)[2] > 150 && ap(48, 195)[0] > 150); // reflect: red, blue, red again
+    int textWhite = 0, textMagenta = 0, outline = 0;
+    for (int y = 230; y < 290; ++y)
+        for (int x = 100; x < 300; ++x) {
+            const auto c = ap(x, y);
+            textWhite += c[0] > 200 && c[1] > 200 && c[2] > 200;
+            textMagenta += c[0] > 200 && c[1] < 60 && c[2] > 200;
+        }
+    for (int y = 230; y < 255; ++y)
+        for (int x = 10; x < 90; ++x) { const auto c = ap(x, y); outline += c[0] > 150 && c[1] > 150 && c[2] < 60; }
+    CHECK(textWhite > 100 && textMagenta > 150 && outline > 60);
+    if (const std::string dir = fuse::ui::os::env("FUSE_EXTRAS_OUT"); !dir.empty())
+        stbi_write_png((dir + "/svg_advanced.png").c_str(), ai.width, ai.height, 4, ai.pixels.data(), ai.width * 4);
 }
 
 void gateCharts() {

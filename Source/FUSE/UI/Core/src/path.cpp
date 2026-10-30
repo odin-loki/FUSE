@@ -139,6 +139,16 @@ const std::vector<PathEdge>& Path::edges() const {
     }
     return m_edges;
 }
+Path& Path::append(const Path& o) {
+    (void)edges();
+    const auto& e = o.edges();
+    m_edges.insert(m_edges.end(), e.begin(), e.end());
+    m_implicitClose = false;
+    m_inContour = false;
+    m_hasCtrl = false;
+    m_start = m_last = o.m_last;
+    return *this;
+}
 Rect Path::bounds() const {
     const auto& e = edges();
     if (e.empty()) return {};

@@ -63,13 +63,13 @@ struct Gradient {
     Color at(f32 t) const;
 };
 
-/// One flattened path edge (DrawOp::Path). `fillOnly`: the implicit closing edge of an open contour (it bounds the
-/// fill but is not stroked).
 struct PathEdge;
 /// Fill coverage of the path edges `e[0..n)` at pixel centre (px, py): 4x4 winding sub-samples (DrawOp::Path's fill
 /// arithmetic; the GPU kernel's clip-path coverage matches it).
 f32 pathFillCoverage(const PathEdge* e, std::size_t n, f32 px, f32 py, bool evenOdd);
 
+/// One flattened path edge (DrawOp::Path). `fillOnly`: the implicit closing edge of an open contour (it bounds the
+/// fill but is not stroked).
 struct PathEdge {
     f32 x0, y0, x1, y1;
     f32 fillOnly;
@@ -99,6 +99,8 @@ public:
     Path& transform(Vec2 scale, Vec2 offset);
     /// Maps every point by the affine matrix [a c e; b d f] (SVG transform order): x' = a x + c y + e, y' = b x + d y + f.
     Path& transform(const std::array<f32, 6>& m);
+    /// Adds `o`'s contours (closed as they are) after this path's (QPainterPath::addPath).
+    Path& append(const Path& o);
     const std::vector<PathEdge>& edges() const;
     Rect bounds() const;
     bool empty() const { return edges().empty(); }

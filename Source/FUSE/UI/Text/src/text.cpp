@@ -516,6 +516,25 @@ void Font::glyphBox(std::uint32_t glyph, float px, int& x0, int& y0, int& x1, in
     const float s = m_state->unitsPerPixelScale1 * px;
     stbtt_GetGlyphBitmapBox(&m_state->info, int(glyph), s, s, &x0, &y0, &x1, &y1);
 }
+bool Font::glyphOutline(std::uint32_t glyph, float px, std::vector<GlyphOutlineCmd>& out) const {
+    out.clear();
+    if (!m_state) return false;
+    const float s = m_state->unitsPerPixelScale1 * px;
+    stbtt_vertex* v = nullptr;
+    const int n = stbtt_GetGlyphShape(&m_state->info, int(glyph), &v);
+    for (int i = 0; i < n; ++i) {
+        GlyphOutlineCmd c;
+        c.kind = v[i].type == STBTT_vmove ? GlyphOutlineCmd::Move
+                 : v[i].type == STBTT_vline ? GlyphOutlineCmd::Line
+                 : v[i].type == STBTT_vcurve ? GlyphOutlineCmd::Quad : GlyphOutlineCmd::Cubic;
+        c.x = float(v[i].x) * s, c.y = -float(v[i].y) * s;
+        c.cx = float(v[i].cx) * s, c.cy = -float(v[i].cy) * s;
+        c.cx1 = float(v[i].cx1) * s, c.cy1 = -float(v[i].cy1) * s;
+        out.push_back(c);
+    }
+    if (v) stbtt_FreeShape(&m_state->info, v);
+    return !out.empty();
+}
 void Font::rasterise(std::uint32_t glyph, float px, std::uint8_t* dst, int w, int h, int stride) const {
 #if FUSE_TEXT_FULL
     return detail::fullRasterise(m_state->full, glyph, m_state->emPerPixelSize * px, dst, w, h, stride);

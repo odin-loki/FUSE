@@ -61,6 +61,13 @@ struct ColorLayer {
     bool foreground = false;
 };
 
+/// One outline command of a glyph (pixels, pen at the origin, y down): move / line to (x, y), quadratic with control
+/// (cx, cy), cubic with controls (cx, cy) and (cx1, cy1).
+struct GlyphOutlineCmd {
+    enum Kind : std::uint8_t { Move, Line, Quad, Cubic } kind = Move;
+    float x = 0, y = 0, cx = 0, cy = 0, cx1 = 0, cy1 = 0;
+};
+
 class ITextShaper;
 struct TextLayoutDesc;
 struct TextLayout;
@@ -94,6 +101,8 @@ public:
     void glyphBox(std::uint32_t glyph, float pixelSize, int& x0, int& y0, int& x1, int& y1) const;
     /// Rasterises 8-bit coverage into `dst` (row stride `stride`) of size w*h.
     void rasterise(std::uint32_t glyph, float pixelSize, std::uint8_t* dst, int w, int h, int stride) const;
+    /// Vector outline of `glyph` at `pixelSize` (same scale as advance()); false for empty glyphs (space).
+    bool glyphOutline(std::uint32_t glyph, float pixelSize, std::vector<GlyphOutlineCmd>& out) const;
     /// Stable id for caches (unique per loaded font in this process).
     std::uint32_t id() const { return m_id; }
     /// Font units to pixels at `pixelSize`.
