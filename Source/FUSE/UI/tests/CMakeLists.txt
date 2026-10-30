@@ -124,7 +124,7 @@ if(WIN32) # text_services.cpp uses IMM32 (ImmAssociateContextEx etc.)
     target_link_libraries(fuse_ui_text_input PRIVATE imm32)
 endif()
 
-# .fuseui documents and Lua bindings.
+# .fuseui documents and FORGE script bindings.
 if(TARGET fuse_ui_doc)
     # ---- UI8 gates: cookers, binding bytecode, hot reload identity, inspector, cooked registration, fuzz ----
     set(FUSE_UI8_COOKED_DIR ${CMAKE_CURRENT_BINARY_DIR}/cooked)
@@ -173,9 +173,9 @@ if(TARGET fuse_ui_doc)
     target_link_libraries(fuse_ui_hot_reload PRIVATE fuse_ui_doc fuse_ui_os)
 endif()
 if(TARGET fuse_ui_script)
-    fuse_ui_test(fuse_ui_lua_bindings test_lua.cpp)
-    target_link_libraries(fuse_ui_lua_bindings PRIVATE fuse_ui_script)
-    target_compile_definitions(fuse_ui_lua_bindings PRIVATE FUSE_UI_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data")
+    fuse_ui_test(fuse_ui_script_bindings test_script.cpp)
+    target_link_libraries(fuse_ui_script_bindings PRIVATE fuse_ui_script)
+    target_compile_definitions(fuse_ui_script_bindings PRIVATE FUSE_UI_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data")
 endif()
 
 add_executable(fuse_ui_sample sample_main.cpp)

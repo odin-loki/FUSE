@@ -1,4 +1,4 @@
-// Example .fuseui document (used by fuse_ui_doc_load and fuse_ui_lua_bindings).
+// Example .fuseui document (used by fuse_ui_doc_load and fuse_ui_script_bindings).
 {
   "fuseui": 1,
   "style": ".settings { gap: 6px; padding: 12px; } .hp { color: #ffcc66; }",
