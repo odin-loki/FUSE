@@ -478,6 +478,14 @@ struct Builder {
                 if (auto it = gradients.find(st.fill.ref); it != gradients.end()) {
                     const Color a = it->second.from, b = it->second.to;
                     s.fill = Color{(a.r + b.r) * 0.5f, (a.g + b.g) * 0.5f, (a.b + b.b) * 0.5f, (a.a + b.a) * 0.5f * st.fillOpacity * st.opacity};
+                    const GradDef& g = it->second; // the full gradient too: masks evaluate it per pixel
+                    if (!g.bbox || (localBox.w > 0.f && localBox.h > 0.f)) {
+                        fuse::ui::Gradient gr = g.unit;
+                        if (g.bbox) gr.transform({localBox.w, 0, 0, localBox.h, localBox.x, localBox.y});
+                        gr.transform(m);
+                        for (GradientStop& k : gr.stops) k.color = k.color.withAlpha(k.color.a * st.fillOpacity * st.opacity);
+                        s.paint = std::move(gr);
+                    }
                 } else s.fill = Color{1, 1, 1, st.fillOpacity * st.opacity};
             }
             shapes.push_back(std::move(s));
@@ -639,16 +647,28 @@ struct Builder {
         for (auto& c : ce.children) b.walk(*c, StyleState{}, cm);
         ClipRegion r;
         r.parent = outer;
-        f32 lum = 0.f, area = 0.f;
+        auto lumOf = [](Color c) { return (0.2125f * c.r + 0.7154f * c.g + 0.0721f * c.b) * c.a; };
         for (const Shape& s : geo) {
             r.path.append(s.path);
             r.evenOdd = s.evenOdd;
-            const Rect bb = s.path.bounds();
-            const f32 a = std::max(bb.w * bb.h, 1e-3f);
-            lum += a * (0.2125f * s.fill.r + 0.7154f * s.fill.g + 0.0721f * s.fill.b) * s.fill.a;
-            area += a;
+            ClipLayer l;
+            l.path = s.path;
+            l.evenOdd = s.evenOdd;
+            if (mask) {
+                if (!s.paint.stops.empty()) { // ramp between the end stops along the gradient's own geometry
+                    const Color c0 = s.paint.stops.front().color, c1 = s.paint.stops.back().color;
+                    l.gradient = s.paint.radial ? 2 : 1;
+                    l.toUnit = s.paint.toUnit;
+                    l.value0 = lumOf(c0), l.alpha0 = c0.a; // stop alphas carry the opacities
+                    l.value1 = lumOf(c1), l.alpha1 = c1.a;
+                } else if (s.gradient != kGradientNone) {
+                    l.value0 = 0.5f * (lumOf(s.fill) + lumOf(s.fill2)), l.alpha0 = 0.5f * (s.fill.a + s.fill2.a);
+                } else l.value0 = lumOf(s.fill), l.alpha0 = s.fill.a;
+            }
+            r.layers.push_back(std::move(l));
         }
         if (geo.size() > 1) r.evenOdd = false;
+        if (!mask && geo.size() <= 1) r.layers.clear(); // one plain path: the classic clip entry
         const int idx = int(clips.size());
         clips.push_back(std::move(r)); // empty geometry clips everything (SVG: an empty clipPath hides the element)
         for (std::size_t i = first; i < shapes.size(); ++i) {
@@ -658,13 +678,6 @@ struct Builder {
                 int k = s.clip;
                 while (k >= 0 && clips[std::size_t(k)].parent != outer && clips[std::size_t(k)].parent != idx) k = clips[std::size_t(k)].parent;
                 if (k >= 0 && clips[std::size_t(k)].parent == outer) clips[std::size_t(k)].parent = idx;
-            }
-            if (mask) {
-                const f32 f = area > 0.f ? std::clamp(lum / area, 0.f, 1.f) : 0.f;
-                s.fill = s.fill.withAlpha(s.fill.a * f);
-                s.fill2 = s.fill2.withAlpha(s.fill2.a * f);
-                s.stroke = s.stroke.withAlpha(s.stroke.a * f);
-                for (GradientStop& g : s.paint.stops) g.color = g.color.withAlpha(g.color.a * f);
             }
         }
     }
@@ -861,6 +874,18 @@ void Document::render(DrawList& dl, Rect target, f32 opacity) const {
         for (int k = s.clip; k >= 0 && depth < 32; k = m_clips[std::size_t(k)].parent) chain[depth++] = k;
         for (int i = depth - 1; i >= 0; --i) {
             const ClipRegion& r = m_clips[std::size_t(chain[i])];
+            if (!r.layers.empty()) {
+                std::vector<ClipLayer> ls = r.layers;
+                for (ClipLayer& l : ls) {
+                    l.path.transform(T);
+                    fuse::ui::Gradient g;
+                    g.toUnit = l.toUnit;
+                    g.transform(T);
+                    l.toUnit = g.toUnit;
+                }
+                dl.pushClipLayers(ls);
+                continue;
+            }
             Path cp = r.path;
             cp.transform(T);
             dl.pushClipPath(cp, r.evenOdd);

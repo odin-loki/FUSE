@@ -41,8 +41,11 @@ struct Shape {
 
 /// A clip region in document space (clipPath geometry, or a mask's geometry).
 struct ClipRegion {
-    Path path;
+    Path path; ///< all geometry merged (bounds, hit tests)
     bool evenOdd = false;
+    /// When non-empty, the exact region drawn: one layer per clipPath child (a union, each with its own clip-rule)
+    /// or per mask child (per-pixel luminance x alpha, gradients as a ramp between their end stops).
+    std::vector<ClipLayer> layers;
     int parent = -1; ///< outer region also clipping (intersection), -1 none
 };
 

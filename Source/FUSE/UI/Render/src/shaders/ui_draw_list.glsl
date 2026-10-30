@@ -159,7 +159,7 @@ vec4 gradientStops(uint gradient, GpuCmd c, float px, float py) {
 uint atlasByte(uint idx) { return (ui_atlas.words[idx >> 2] >> ((idx & 3u) * 8u)) & 0xFFu; }
 
 // DrawOp::ClipPath coverage: same 4x4 winding loop as pathFillCoverage() in Core/src/draw_list.cpp
-float clipPathCoverage(uint base, uint n, bool evenOdd, float px, float py) {
+float windCoverage(uint base, uint n, bool evenOdd, float px, float py) {
     int wind[16];
     for (int k = 0; k < 16; ++k) wind[k] = 0;
     for (uint i = 0u; i < n; ++i) {
@@ -183,6 +183,35 @@ float clipPathCoverage(uint base, uint n, bool evenOdd, float px, float py) {
     int inCount = 0;
     for (int k = 0; k < 16; ++k) inCount += evenOdd ? (wind[k] & 1) : (wind[k] != 0 ? 1 : 0);
     return float(inCount) / 16.0;
+}
+
+// a ClipPath entry: a plain path, or layered clip data (header edge with fillOnly < 0), as clipEntryCoverage()
+float clipPathCoverage(uint base, uint n, bool evenOdd, float px, float py) {
+    if (n == 0u || edgeWord(base + 4u) >= 0.0) return windCoverage(base, n, evenOdd, px, py);
+    precise float m = 0.0;
+    for (uint i = 0u; i < n;) {
+        const uint h = base + i * 5u;
+        const int g = int(-1.0 - edgeWord(h + 4u));
+        const uint cnt = uint(edgeWord(h + 2u));
+        const uint at = i + 1u + (g != 0 ? 2u : 0u);
+        if (at + cnt > n) break;
+        const float cov = windCoverage(base + at * 5u, cnt, edgeWord(h + 1u) != 0.0, px, py);
+        if (cov > 0.0) {
+            precise float v = edgeWord(h);
+            precise float a = edgeWord(h + 3u);
+            if (g != 0) {
+                const uint p0 = h + 5u, p1 = h + 10u;
+                precise float ux = edgeWord(p0) * px + edgeWord(p0 + 2u) * py + edgeWord(p1);
+                precise float uy = edgeWord(p0 + 1u) * px + edgeWord(p0 + 3u) * py + edgeWord(p1 + 1u);
+                const float t = clamp(g == 1 ? ux : sqrt(ux * ux + uy * uy), 0.0, 1.0);
+                v = v + (edgeWord(p1 + 2u) - v) * t;
+                a = a + (edgeWord(p1 + 3u) - a) * t;
+            }
+            m = v * cov + m * (1.0 - a * cov);
+        }
+        i = at + cnt;
+    }
+    return clamp(m, 0.0, 1.0);
 }
 
 // compact glyph record at word o (gpu_draw_data.hpp); pi = pixel + 32768. Same coverage maths as the kGlyph branch.

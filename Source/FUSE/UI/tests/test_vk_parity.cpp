@@ -433,6 +433,54 @@ int main() {
                 std::fclose(fp);
             }
         }
+        {   // layered clips: per-pixel SVG mask (gradient fade + two-tone shapes), clipPath union (overlap, opposite
+            // windings, mixed clip-rule), and DrawList::pushClipLayers directly with a radial ramp
+            DrawList ml;
+            ml.rect({0, 0, f32(W), f32(H)}, Color::rgb(0x101014));
+            fuse::ui::svg::Document md;
+            UI_CHECK(md.load(R"svg(<svg viewBox="0 0 200 100"><defs>
+                <linearGradient id="fade" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="white"/><stop offset="1" stop-color="black"/></linearGradient>
+                <mask id="m" maskContentUnits="userSpaceOnUse"><rect x="0" y="0" width="100" height="100" fill="url(#fade)"/><circle cx="50" cy="50" r="20" fill="#808080"/></mask>
+                <clipPath id="u"><circle cx="130" cy="50" r="30"/><path d="M150 20 h40 v60 h-40 z M160 30 v40 h20 v-40 z" clip-rule="evenodd"/><path d="M140 50 L170 20 L170 80 Z"/></clipPath></defs>
+                <rect width="100" height="100" fill="orange" mask="url(#m)"/><rect x="100" width="100" height="100" fill="#3080ff" clip-path="url(#u)"/></svg>)svg"));
+            md.render(ml, {0, 0, 480, 240});
+            ClipLayer ring;
+            ring.path.circle({120, 320}, 70);
+            ring.gradient = 2;
+            ring.toUnit = {1.f / 70.f, 0, 0, 1.f / 70.f, -120.f / 70.f, -320.f / 70.f};
+            ring.value0 = 1.f, ring.value1 = 0.f;
+            ClipLayer bar;
+            bar.path.rect({60, 300, 300, 30});
+            bar.value0 = bar.alpha0 = 0.5f;
+            const ClipLayer two[] = {ring, bar};
+            ml.pushClipLayers(two);
+            ml.rect({0, 240, 480, 160}, Color::rgb(0x40FF80));
+            ml.popClip();
+            Image cpuM;
+            cpuM.resize(int(W), int(H), 0xFF000000u);
+            CpuRasterizer rm;
+            rm.render(ml, cpuM);
+            packDrawList(ml, W, H, data);
+            UI_CHECK(gpu.upload(0, data));
+            vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+            check("clip_layers", compare(cpuM, out));
+            auto g = [&](int x, int y) { return int((cpuM.at(x, y) >> 8) & 0xFF); }; // green channel
+            auto r = [&](int x, int y) { return int(cpuM.at(x, y) & 0xFF); };
+            // mask: the fade runs left (opaque) to right (clear); the grey circle replaces it with ~50 %
+            UI_CHECK(r(10, 30) > 200 && r(230, 30) < 60 && r(100, 100) > 110 && r(100, 100) < 160);
+            // union: inside the circle, the triangle over the frame's hole, and the frame: blue; the hole alone: background
+            const auto blueAt = [&](int x, int y) { return ((cpuM.at(x, y) >> 16) & 0xFF) > 200; };
+            UI_CHECK(blueAt(300, 120) && blueAt(396, 120) && blueAt(372, 60) && !blueAt(420, 120) && !blueAt(250, 20));
+            UI_CHECK(g(120, 320) > 200 && g(185, 345) < 60 && g(250, 315) > 100 && g(250, 315) < 160);
+            if (const char* dir = std::getenv("FUSE_PARITY_OUT")) {
+                const std::string f = std::string(dir) + "/clip_layers.ppm";
+                if (FILE* fp = std::fopen(f.c_str(), "wb")) {
+                    std::fprintf(fp, "P6 %d %d 255\n", cpuM.width, cpuM.height);
+                    for (u32 px : cpuM.pixels) { const unsigned char rgb[3] = {u8(px), u8(px >> 8), u8(px >> 16)}; std::fwrite(rgb, 1, 3, fp); }
+                    std::fclose(fp);
+                }
+            }
+        }
 #endif
     }
 

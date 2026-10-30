@@ -206,6 +206,31 @@ f32 pathFillCoverage(const PathEdge* e, std::size_t n, f32 px, f32 py, bool even
     for (int w : wind) in += evenOdd ? (w & 1) : (w != 0);
     return f32(in) / 16.f;
 }
+f32 clipEntryCoverage(const PathEdge* e, std::size_t n, f32 px, f32 py, bool evenOdd) {
+    if (n == 0 || e[0].fillOnly >= 0.f) return pathFillCoverage(e, n, px, py, evenOdd);
+    f32 m = 0.f;
+    for (std::size_t i = 0; i < n;) {
+        const PathEdge& h = e[i];
+        const int g = int(-1.f - h.fillOnly);
+        const std::size_t cnt = std::size_t(h.x1);
+        std::size_t at = i + 1 + (g ? 2u : 0u);
+        if (at + cnt > n) break;
+        const f32 cov = pathFillCoverage(e + at, cnt, px, py, h.y0 != 0.f);
+        if (cov > 0.f) {
+            f32 v = h.x0, a = h.y1;
+            if (g) {
+                const PathEdge& p0 = e[i + 1];
+                const PathEdge& p1 = e[i + 2];
+                const f32 ux = p0.x0 * px + p0.x1 * py + p1.x0, uy = p0.y0 * px + p0.y1 * py + p1.y0;
+                const f32 t = std::clamp(g == 1 ? ux : std::sqrt(ux * ux + uy * uy), 0.f, 1.f);
+                v = v + (p1.x1 - v) * t, a = a + (p1.y1 - a) * t;
+            }
+            m = v * cov + m * (1.f - a * cov);
+        }
+        i = at + cnt;
+    }
+    return std::clamp(m, 0.f, 1.f);
+}
 namespace {
 inline void pathSample(const PathEdge* e, std::size_t n, f32 px, f32 py, bool evenOdd, f32& fillCov, f32& dStroke) {
     int wind[16] = {};
@@ -426,7 +451,7 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
                 f32 clipCov = 1.f;
                 if (clip.radius > 0.f) clipCov = std::clamp(0.5f - sdRoundRect(px, py, clipOuter, clipRad), 0.f, 1.f);
                 for (u8 q = 0; q < clip.paths && clipCov > 0.f; ++q)
-                    clipCov *= pathFillCoverage(list.pathEdges().data() + clipPaths[q].at, clipPaths[q].n, px, py, clipPaths[q].evenOdd);
+                    clipCov *= clipEntryCoverage(list.pathEdges().data() + clipPaths[q].at, clipPaths[q].n, px, py, clipPaths[q].evenOdd);
                 if (clipCov <= 0.f) continue;
                 switch (c.op) {
                 case DrawOp::Rect: {

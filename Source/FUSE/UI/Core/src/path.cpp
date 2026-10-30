@@ -299,6 +299,37 @@ void DrawList::path(const Path& p, Color fill, bool evenOdd, Color stroke, f32 s
     m_edges.insert(m_edges.end(), e.begin(), e.end());
     m_cmds.push_back(c);
 }
+void DrawList::pushClipLayers(std::span<const ClipLayer> layers) {
+    // edge stream: per layer a header {value0, evenOdd, edgeCount, alpha0, -1 - gradient}, for gradients two
+    // parameter edges {toUnit[0..3], 0} {toUnit[4], toUnit[5], value1, alpha1, 0}, then the layer's edges
+    DrawCmd c;
+    c.op = DrawOp::ClipPath;
+    c.image = u32(m_edges.size());
+    bool any = false;
+    Rect b{};
+    for (const ClipLayer& l : layers) {
+        const auto& e = l.path.edges();
+        if (e.empty()) continue;
+        const Rect lb = l.path.bounds();
+        if (!any) b = lb, any = true;
+        else {
+            const f32 x0 = std::min(b.x, lb.x), y0 = std::min(b.y, lb.y);
+            b = {x0, y0, std::max(b.right(), lb.right()) - x0, std::max(b.bottom(), lb.bottom()) - y0};
+        }
+        const u8 g = l.gradient <= 2 ? l.gradient : 0;
+        m_edges.push_back({l.value0, l.evenOdd ? 1.f : 0.f, f32(e.size()), l.alpha0, -1.f - f32(g)});
+        if (g) {
+            m_edges.push_back({l.toUnit[0], l.toUnit[1], l.toUnit[2], l.toUnit[3], 0.f});
+            m_edges.push_back({l.toUnit[4], l.toUnit[5], l.value1, l.alpha1, 0.f});
+        }
+        m_edges.insert(m_edges.end(), e.begin(), e.end());
+    }
+    const std::size_t n = m_edges.size() - c.image;
+    c.rect = b;
+    c.tw = u16(n & 0xFFFFu);
+    c.th = u16(n >> 16);
+    m_cmds.push_back(c); // no layers: n == 0, which clips everything (like an empty clip path)
+}
 void DrawList::pushClipPath(const Path& p, bool evenOdd) {
     const auto& e = p.edges();
     DrawCmd c;

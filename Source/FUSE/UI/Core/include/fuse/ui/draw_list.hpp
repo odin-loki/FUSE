@@ -67,6 +67,9 @@ struct PathEdge;
 /// Fill coverage of the path edges `e[0..n)` at pixel centre (px, py): 4x4 winding sub-samples (DrawOp::Path's fill
 /// arithmetic; the GPU kernel's clip-path coverage matches it).
 f32 pathFillCoverage(const PathEdge* e, std::size_t n, f32 px, f32 py, bool evenOdd);
+/// Coverage of one ClipPath entry: a plain path (pathFillCoverage) or layered clip data (DrawList::pushClipLayers),
+/// recognised by a header edge with fillOnly < 0. The GPU kernel's clipPathCoverage matches it.
+f32 clipEntryCoverage(const PathEdge* e, std::size_t n, f32 px, f32 py, bool evenOdd);
 
 /// One flattened path edge (DrawOp::Path). `fillOnly`: the implicit closing edge of an open contour (it bounds the
 /// fill but is not stroked).
@@ -112,6 +115,20 @@ private:
     Vec2 m_last{}, m_start{}, m_ctrl{};
     bool m_hasCtrl = false, m_inContour = false;
     mutable bool m_implicitClose = false; ///< m_edges ends with the open contour's fill-only closing edge
+};
+
+/// One layer of a layered clip (DrawList::pushClipLayers): a filled region with a mask value. Layers composite in
+/// order like painted content ("over"), giving a per-pixel value M = v * cov + M * (1 - a * cov): SVG masks (v =
+/// luminance x alpha of the layer's paint, a = its alpha) and clip-path unions (v = a = 1: M = union coverage).
+/// `gradient` 1 / 2 varies v and a along a linear / radial ramp: t = x' or |(x', y')| with (x', y') = toUnit(pixel),
+/// clamped to 0..1, from (value0, alpha0) to (value1, alpha1).
+struct ClipLayer {
+    Path path;
+    bool evenOdd = false;
+    f32 value0 = 1.f, alpha0 = 1.f;
+    u8 gradient = 0;
+    std::array<f32, 6> toUnit{1.f, 0.f, 0.f, 1.f, 0.f, 0.f};
+    f32 value1 = 1.f, alpha1 = 1.f;
 };
 
 struct DrawCmd {
@@ -160,6 +177,8 @@ public:
     void popClip();
     /// Clips everything until the matching popClip() to `p`'s fill region (Qt: QPainter::setClipPath; SVG clipPath).
     void pushClipPath(const Path& p, bool evenOdd = false);
+    /// Clips (multiplies coverage) by the per-pixel value of `layers` until popClip(); see ClipLayer.
+    void pushClipLayers(std::span<const ClipLayer> layers);
     const std::vector<DrawCmd>& cmds() const { return m_cmds; }
     std::vector<DrawCmd>& cmds() { return m_cmds; }
     std::size_t size() const { return m_cmds.size(); }
