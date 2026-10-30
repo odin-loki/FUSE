@@ -5,6 +5,10 @@
 #include "fuse/ui/render/ui_vk.hpp"
 #include "test_util.hpp"
 #include "vk_headless.hpp"
+#if FUSE_PARITY_EXTRAS
+#include "fuse/ui/extras/datavis3d.hpp"
+#include "fuse/ui/extras/svg.hpp"
+#endif
 
 #include <atomic>
 #include <cmath>
@@ -387,6 +391,49 @@ int main() {
         UI_CHECK(cc(10, 210) == 0x202020u);            // outside the star: background
         UI_CHECK(cc(120, 310) != 0x202020u);           // star centre (ring hole): gradient
         UI_CHECK(cc(330, 30) == 0x202020u);            // outside the circle, inside the rounded rect
+#if FUSE_PARITY_EXTRAS
+        // SVG text / clipPath / pattern / multi-stop gradients and 3D surface / scatter / bars: CPU == Vulkan
+        DrawList xl;
+        xl.rect({0, 0, f32(W), f32(H)}, Color::rgb(0x101014));
+        fuse::ui::svg::Document doc;
+        UI_CHECK(doc.load(R"svg(<svg viewBox="0 0 200 100"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="red"/>
+            <stop offset=".5" stop-color="lime"/><stop offset="1" stop-color="blue"/></linearGradient><clipPath id="c"><circle cx="50" cy="50" r="40"/></clipPath>
+            <pattern id="p" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="5" height="5" fill="orange"/></pattern></defs>
+            <rect width="100" height="100" fill="url(#g)" clip-path="url(#c)"/><rect x="110" y="10" width="80" height="40" fill="url(#p)"/>
+            <text x="150" y="85" font-size="24" text-anchor="middle" fill="white">Ag</text></svg>)svg"));
+        doc.render(xl, {0, 0, 240, 120});
+        namespace d3 = fuse::ui::dv3d;
+        d3::Scene sf;
+        sf.rows = sf.cols = 12;
+        for (u32 r = 0; r < 12; ++r)
+            for (u32 c = 0; c < 12; ++c) sf.values.push_back(std::sin(f32(c) * 0.5f) * std::cos(f32(r) * 0.4f));
+        d3::render(sf, xl, {250, 0, 240, 200}, Color::rgb(0xFFFFFF));
+        d3::Scene sc;
+        sc.kind = d3::Kind::Scatter;
+        for (int i = 0; i < 60; ++i) sc.points.push_back({std::cos(f32(i) * 0.3f), f32(i) * 0.05f, std::sin(f32(i) * 0.3f)});
+        d3::render(sc, xl, {0, 120, 240, 200}, Color::rgb(0xFFFFFF));
+        d3::Scene sb;
+        sb.kind = d3::Kind::Bars;
+        sb.rows = 3, sb.cols = 4;
+        sb.values = {1, 2, 3, 4, 2, 3, 4, 5, 3, 4, 5, 6};
+        d3::render(sb, xl, {250, 200, 240, 200}, Color::rgb(0xFFFFFF));
+        Image cpuX;
+        cpuX.resize(int(W), int(H), 0xFF000000u);
+        CpuRasterizer rx;
+        rx.render(xl, cpuX);
+        packDrawList(xl, W, H, data);
+        UI_CHECK(gpu.upload(0, data));
+        vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+        check("svg+dataviz3d", compare(cpuX, out));
+        if (const char* dir = std::getenv("FUSE_PARITY_OUT")) {
+            const std::string f = std::string(dir) + "/dataviz3d.ppm";
+            if (FILE* fp = std::fopen(f.c_str(), "wb")) {
+                std::fprintf(fp, "P6 %d %d 255\n", cpuX.width, cpuX.height);
+                for (u32 px : cpuX.pixels) { const unsigned char rgb[3] = {u8(px), u8(px >> 8), u8(px >> 16)}; std::fwrite(rgb, 1, 3, fp); }
+                std::fclose(fp);
+            }
+        }
+#endif
     }
 
     // 7. glyph atlas uploads only when its generation changes

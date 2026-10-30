@@ -13,6 +13,7 @@
 #include "fuse/ui/extras/extras.hpp"
 #include "fuse/ui/extras/declarative.hpp"
 #include "fuse/ui/extras/svg.hpp"
+#include "fuse/ui/extras/datavis3d.hpp"
 #include "fuse/ui/os.hpp"
 
 #include <cmath>
@@ -1273,6 +1274,85 @@ void gateSvg() {
         stbi_write_png((dir + "/svg_advanced.png").c_str(), ai.width, ai.height, 4, ai.pixels.data(), ai.width * 4);
 }
 
+void gateDataViz3d() {
+    namespace d3 = fuse::ui::dv3d;
+    Screen s;
+    UiContext& ui = s.ui;
+    ui.setCss(ui.root(), "flex-direction", "row");
+    ui.setCss(ui.root(), "flex-wrap", "wrap");
+    const NodeHandle surf = w::dataViz3d(ui, ui.root(), d3::Kind::Surface, "surf");
+    const NodeHandle scat = w::dataViz3d(ui, ui.root(), d3::Kind::Scatter, "scat");
+    const NodeHandle bars = w::dataViz3d(ui, ui.root(), d3::Kind::Bars, "bars");
+    for (NodeHandle n : {surf, scat, bars}) { ui.setCss(n, "width", "320px"); ui.setCss(n, "height", "260px"); }
+    std::vector<f32> grid;
+    for (u32 r = 0; r < 16; ++r)
+        for (u32 c = 0; c < 16; ++c) grid.push_back(std::exp(-((f32(c) - 7.5f) * (f32(c) - 7.5f) + (f32(r) - 7.5f) * (f32(r) - 7.5f)) / 18.f));
+    w::dataViz3dSetGrid(ui, surf, 16, 16, grid);
+    w::dataViz3dScene(ui, surf)->axis[1].title = "height";
+    std::vector<d3::Vec3> pts;
+    for (int i = 0; i < 80; ++i) pts.push_back({std::cos(f32(i) * 0.25f), f32(i) / 80.f, std::sin(f32(i) * 0.25f)});
+    w::dataViz3dSetPoints(ui, scat, pts);
+    const f32 bv[] = {1, 2, 3, 2, 4, 6, 3, 6, 9};
+    w::dataViz3dSetGrid(ui, bars, 3, 3, bv);
+    for (int i = 0; i < 3; ++i) step(ui);
+    Image img;
+    fuse::ui::test::render(ui, img);
+    auto px = [&](Vec2 p) {
+        const u32 v = img.at(int(p.x), int(p.y));
+        return std::array<int, 3>{int(v & 0xFF), int((v >> 8) & 0xFF), int((v >> 16) & 0xFF)};
+    };
+    auto content = [&](NodeHandle n) { return ui.rect(n); };
+    // surface: the peak (top of the colormap) is red, the rim (bottom) blue
+    const d3::Scene* ss = w::dataViz3dScene(ui, surf);
+    const Vec2 peak = d3::project(*ss, content(surf), {7.5f, 0.95f, 7.5f});
+    const auto pk = px({peak.x, peak.y + 3.f});
+    CHECK(pk[0] > 150 && pk[2] < 120);
+    const Vec2 rim = d3::project(*ss, content(surf), {1.f, 0.f, 14.f});
+    const auto rm = px(rim);
+    CHECK(rm[2] > 120 && rm[0] < 120);
+    // hover a scatter point -> value + tooltip
+    const d3::Scene* sc = w::dataViz3dScene(ui, scat);
+    const Vec2 p40 = d3::project(*sc, content(scat), pts[40]);
+    ui.pointerMove(p40);
+    step(ui);
+    const i32 hov = w::dataViz3dHovered(ui, scat);
+    CHECK(hov >= 0 && std::abs(pts[std::size_t(hov)].x - pts[40].x) < 0.2f);
+    const auto tip = w::dataViz3dTooltip(ui, scat);
+    CHECK(tip.size() == 3 && tip[0].rfind("x: ", 0) == 0);
+    // drag orbits, wheel zooms, Home resets
+    const f32 yaw0 = w::dataViz3dCamera(ui, scat).yaw;
+    ui.pointerDown(p40);
+    ui.pointerMove({p40.x + 40.f, p40.y + 20.f});
+    ui.pointerUp({p40.x + 40.f, p40.y + 20.f});
+    step(ui);
+    const d3::Camera c1 = w::dataViz3dCamera(ui, scat);
+    CHECK(std::abs(c1.yaw - (yaw0 + 20.f)) < 0.01f && std::abs(c1.pitch - 35.f) < 0.01f);
+    ui.wheel(p40, {0.f, 2.f});
+    step(ui);
+    CHECK(std::abs(w::dataViz3dCamera(ui, scat).zoom - 1.21f) < 0.01f);
+    ui.keyDown(Key::Home);
+    step(ui);
+    CHECK(std::abs(w::dataViz3dCamera(ui, scat).yaw - yaw0) < 0.01f);
+    // bars: the tallest bar's top is pickable and lit; tooltip has row / column / value
+    const d3::Scene* sb = w::dataViz3dScene(ui, bars);
+    const Vec2 top = d3::project(*sb, content(bars), {2.f, 9.f, 2.f});
+    ui.pointerMove(top);
+    step(ui);
+    CHECK(w::dataViz3dHovered(ui, bars) == 8);
+    const auto bt = w::dataViz3dTooltip(ui, bars);
+    CHECK(bt.size() == 3 && bt[2] == "value: 9");
+    fuse::ui::test::render(ui, img);
+    const auto barTop = px({top.x, top.y + 4.f});
+    CHECK(barTop[0] + barTop[1] + barTop[2] > 200);
+    // orthographic camera keeps the projection centred and finite
+    d3::Scene o = *sb;
+    o.camera.perspective = false;
+    const Vec2 oc = d3::project(o, {0, 0, 200, 200}, {1.f, 4.5f, 1.f});
+    CHECK(std::abs(oc.x - 100.f) < 1.f && std::abs(oc.y - 100.f) < 1.f);
+    if (const std::string dir = fuse::ui::os::env("FUSE_EXTRAS_OUT"); !dir.empty())
+        stbi_write_png((dir + "/dataviz3d.png").c_str(), img.width, img.height, 4, img.pixels.data(), img.width * 4);
+}
+
 void gateCharts() {
     Screen s;
     UiContext& ui = s.ui;
@@ -1405,7 +1485,7 @@ void gateCharts() {
 int main(int argc, char** argv) {
     const std::map<std::string, std::function<void()>> gates{
         {"undo", gateUndo}, {"gesture", gateGesture}, {"i18n", gateI18n}, {"desktop", gateDesktop}, {"pdf", gatePdf}, {"containers", gateContainers}, {"dialogs", gateDialogs}, {"lcd_keyseq", gateLcdKeyseq},
-        {"mdi", gateMdi}, {"completer", gateCompleter}, {"graphics", gateGraphics}, {"widget_pdf", gateWidgetPdf}, {"tray", gateTray}, {"richtext", gateRichText}, {"webview", gateWebView}, {"declarative", gateDeclarative}, {"vkeyboard", gateVirtualKeyboard}, {"svg", gateSvg}, {"charts", gateCharts}};
+        {"mdi", gateMdi}, {"completer", gateCompleter}, {"graphics", gateGraphics}, {"widget_pdf", gateWidgetPdf}, {"tray", gateTray}, {"richtext", gateRichText}, {"webview", gateWebView}, {"declarative", gateDeclarative}, {"vkeyboard", gateVirtualKeyboard}, {"svg", gateSvg}, {"charts", gateCharts}, {"dataviz3d", gateDataViz3d}};
     std::string only;
     for (int i = 1; i < argc; ++i) if (std::strncmp(argv[i], "--gate=", 7) == 0) only = argv[i] + 7;
     for (auto& [n, f] : gates) if (only.empty() || only == n) { f(); std::printf("gate %s: %s\n", n.c_str(), g_fail ? "FAIL" : "ok"); }
