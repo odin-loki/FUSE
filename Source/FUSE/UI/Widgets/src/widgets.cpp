@@ -641,10 +641,11 @@ struct LineEdit {
         }
         dl.popClip();
     }
-    static void changed(UiContext& ui, NodeHandle n) {
+    static void changed(UiContext& ui, NodeHandle n, bool deletion = false) {
         publishText(ui, n);
         leEnsure(ui, n).dirty = true;
         ui.emit(n, SignalKind::TextChanged, {.text = leText(ui, n)});
+        if (ui.alive(n)) detail::completerEdited(ui, n, deletion);
     }
     /// Enter / focus loss: fixup when not Acceptable, then Submitted (Enter) and EditingFinished when Acceptable
     static void finish(UiContext& ui, NodeHandle n, bool enter) {
@@ -748,8 +749,9 @@ struct LineEdit {
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
         UiContext& ui = ec.ui;
-        if (e.type == EventType::FocusOut) { finish(ui, ec.node, false); ui.setValue(ec.node, ui.value(ec.node) + 1.f); return false; }
+        if (e.type == EventType::FocusOut) { detail::completerFocusOut(ui, ec.node); finish(ui, ec.node, false); ui.setValue(ec.node, ui.value(ec.node) + 1.f); return false; }
         if (e.type == EventType::FocusIn) { ui.setValue(ec.node, ui.value(ec.node) + 1.f); return false; } // echo-on-edit repaint
+        if (e.type == EventType::KeyDown && detail::completerKey(ui, ec.node, e)) return true;
         auto& eb = ui.editBuffer(ec.node);
         const LineEditOptions& o = leOpts(ui, ec.node);
         if (LineEditState* st = leState(ui, ec.node); st && !st->cells.empty() && e.type != EventType::PointerDown) {
@@ -781,6 +783,7 @@ struct LineEdit {
         if (e.type != EventType::KeyDown) return false;
         const bool sh = e.mods & kModShift, ctrl = e.mods & kModCtrl;
         bool edit = false;
+        const bool deletion = e.key == Key::Backspace || e.key == Key::Delete || e.key == Key::X;
         // masked fields jump by whole fields with Ctrl (no word boundaries leak through, as Qt)
         switch (e.key) {
         case Key::Left: ctrl ? (masked ? eb.home(sh) : eb.wordLeft(sh)) : eb.moveLeft(sh); break;
@@ -811,7 +814,7 @@ struct LineEdit {
         case Key::Enter: finish(ui, ec.node, true); return true;
         default: return false;
         }
-        if (edit) changed(ui, ec.node);
+        if (edit) changed(ui, ec.node, deletion);
         else ui.setValue(ec.node, ui.value(ec.node) + 1.f); // caret moved: repaint (value counts caret moves)
         return true;
     }
@@ -1031,6 +1034,22 @@ void setLineEditText(UiContext& ui, NodeHandle n, std::string_view t) {
     publishText(ui, n);
     ui.emit(n, SignalKind::TextChanged, {.text = leText(ui, n)});
 }
+namespace detail {
+void lineEditComplete(UiContext& ui, NodeHandle n, std::string_view text, std::size_t selFrom) {
+    auto& eb = ui.editBuffer(n);
+    const std::string_view t = clipCodePoints(text, leOpts(ui, n).maxLength);
+    eb.setText(t);
+    eb.end(false);
+    if (selFrom != std::string::npos && selFrom < t.size()) {
+        eb.home(false);
+        while (eb.cursor() < selFrom) eb.moveRight(false);
+        eb.end(true);
+    }
+    publishText(ui, n);
+    leEnsure(ui, n).dirty = true;
+    ui.emit(n, SignalKind::TextChanged, {.text = leText(ui, n)});
+}
+} // namespace detail
 Fixup intFixup(long long lo, long long hi) {
     return [lo, hi](std::string& t) {
         char* end = nullptr;

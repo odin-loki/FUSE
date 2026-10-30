@@ -74,7 +74,9 @@ struct ClipboardHooks {
 
 // ---- Signals -------------------------------------------------------------------------------------------------------
 enum class SignalKind : u8 { Clicked, Toggled, ValueChanged, TextChanged, Submitted, FocusChanged, HoverChanged, Event,
-                              EditingFinished ///< line edit: Enter or focus loss with Acceptable text (QLineEdit::editingFinished)
+                              EditingFinished, ///< line edit: Enter or focus loss with Acceptable text (QLineEdit::editingFinished)
+                              Highlighted,     ///< completer: a completion was highlighted {value = row, text} (QCompleter::highlighted)
+                              Activated        ///< completer: a completion was chosen {value = row, text} (QCompleter::activated)
 };
 struct SignalArgs {
     f32 value = 0.f;
@@ -91,6 +93,16 @@ enum class A11yRole : u8 {
     List, ListItem, Image, Separator, Link, ComboBox, SpinBox, Dial, ScrollBar, Tab
 };
 const char* a11yRoleName(A11yRole r);
+/// Extra accessible state set by widgets (UiContext::setA11yState): listbox / combobox semantics.
+enum class A11yAutoComplete : u8 { None, Inline, List, Both };
+struct A11yState {
+    signed char expanded = -1;          ///< -1 not expandable, 0 collapsed, 1 expanded (popup shown)
+    bool selected = false;              ///< list item selection (ARIA aria-selected)
+    A11yAutoComplete autoComplete = A11yAutoComplete::None;
+    NodeHandle activeDescendant;        ///< the highlighted option while focus stays here (aria-activedescendant)
+    NodeHandle controls;                ///< the popup this field drives (aria-controls)
+    bool operator==(const A11yState&) const = default;
+};
 /// One accessible node in a flattened snapshot (UiContext::snapshotA11y). Nodes with role None are skipped and
 /// their children re-parented, as in dumpA11y. `parent` indexes the snapshot vector (~0u for the top node).
 struct A11ySnapshotNode {
@@ -102,6 +114,7 @@ struct A11ySnapshotNode {
     bool focusable = false, focused = false, checked = false, disabled = false;
     bool protectedText = false; ///< password field: AccessKit PasswordInput (UIA IsPassword, AT-SPI password text)
     f32 value = 0.f, lo = 0.f, hi = 0.f;
+    A11yState state;
 };
 
 // ---- Widget classes ------------------------------------------------------------------------------------------------
@@ -253,6 +266,9 @@ public:
     /// Marks a text field as protected (password): platform adapters expose it as a password input.
     void setA11yProtected(NodeHandle n, bool on);
     bool a11yProtected(NodeHandle n) const;
+    /// Expanded / selected / auto-complete / active-descendant / controls (reset when the node is destroyed).
+    void setA11yState(NodeHandle n, const A11yState& st);
+    A11yState a11yState(NodeHandle n) const;
     A11yRole role(NodeHandle n) const;
     void setUserData(NodeHandle n, u64 v);
     u64 userData(NodeHandle n) const;

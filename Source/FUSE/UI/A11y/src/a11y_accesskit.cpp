@@ -57,6 +57,14 @@ void* buildAccessKitUpdate(const Bridge& b, bool includeTree) {
         if (s.disabled) accesskit_node_set_disabled(n);
         if (s.focusable) accesskit_node_add_action(n, ACCESSKIT_ACTION_FOCUS);
         if (s.focusable && !ranged(s.role) && s.role != A11yRole::TextField) accesskit_node_add_action(n, ACCESSKIT_ACTION_CLICK);
+        if (s.state.expanded >= 0) accesskit_node_set_expanded(n, s.state.expanded > 0);
+        if (s.role == A11yRole::ListItem) accesskit_node_set_selected(n, s.state.selected);
+        if (s.state.autoComplete != A11yAutoComplete::None)
+            accesskit_node_set_auto_complete(n, s.state.autoComplete == A11yAutoComplete::Inline ? ACCESSKIT_AUTO_COMPLETE_INLINE
+                                                : s.state.autoComplete == A11yAutoComplete::List ? ACCESSKIT_AUTO_COMPLETE_LIST
+                                                                                                  : ACCESSKIT_AUTO_COMPLETE_BOTH);
+        if (s.state.activeDescendant.valid()) accesskit_node_set_active_descendant(n, idOf(s.state.activeDescendant));
+        if (s.state.controls.valid()) { const accesskit_node_id c = idOf(s.state.controls); accesskit_node_set_controls(n, 1, &c); }
         if (toggles(s.role)) accesskit_node_set_toggled(n, s.checked ? ACCESSKIT_TOGGLED_TRUE : ACCESSKIT_TOGGLED_FALSE);
         if (ranged(s.role)) {
             accesskit_node_set_numeric_value(n, double(s.value));

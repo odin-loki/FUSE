@@ -2,6 +2,8 @@
 // tree update (when built with FUSE_UI_ACCESSKIT_DIR) and the AT-SPI adapter lifecycle (no AT bus needed: the
 // adapter stays inactive and update() is a no-op).
 #include "test_util.hpp"
+#include <cstdio>
+#include <cstdlib>
 
 #include "fuse/ui/a11y/a11y.hpp"
 
@@ -20,6 +22,8 @@ int main() {
     const NodeHandle le = w::lineEdit(ui, panel, "hello", "name");
     const NodeHandle pin = w::lineEdit(ui, panel, "s3cr3t", "pin");
     w::setLineEditOptions(ui, pin, {.echo = w::EchoMode::Password});
+    const NodeHandle city = w::lineEdit(ui, panel, "", "city");
+    w::setCompleter(ui, city, {.items = "Sydney\nSingapore"});
     ui.setA11y(sl, A11yRole::Slider, "Volume");
     ui.update(1.f / 60.f);
 
@@ -83,6 +87,29 @@ int main() {
     UI_CHECK(dbg.find("FUSE UI") != std::string::npos);
     // password field: PasswordInput role (UIA IsPassword, AT-SPI password text), secret absent from the tree
     UI_CHECK(dbg.find("PasswordInput") != std::string::npos && dbg.find("s3cr3t") == std::string::npos);
+    a::freeAccessKitUpdate(up);
+    { // completer: autoComplete List, expanded, controls + activeDescendant -> the highlighted ListItem (selected)
+        const NodeHandle prevFocus = ui.focused();
+        ui.setFocus(city);
+        ui.textInput("s");
+        ui.keyDown(Key::Down);
+        ui.update(1.f / 60.f);
+        b.sync();
+        void* up2 = a::buildAccessKitUpdate(b);
+        const std::string d2 = a::accessKitDebug(up2);
+        if (std::getenv("FUSE_AK_DUMP")) std::fprintf(stderr, "%s\n", d2.c_str());
+        if (d2.find("auto_complete") == std::string::npos) std::fprintf(stderr, "%s\n", d2.c_str());
+        UI_CHECK(d2.find("auto_complete: List") != std::string::npos);
+        UI_CHECK(d2.find("expanded: true") != std::string::npos && d2.find("active_descendant: #") != std::string::npos);
+        UI_CHECK(d2.find("controls: [#") != std::string::npos && d2.find("selected: true") != std::string::npos && d2.find("selected: false") != std::string::npos);
+        if (d2.find("active_descendant") == std::string::npos) std::fprintf(stderr, "%s\n", d2.c_str());
+        a::freeAccessKitUpdate(up2);
+        ui.keyDown(Key::Escape);
+        ui.setFocus(prevFocus);
+        ui.update(1.f / 60.f);
+        b.sync();
+    }
+    up = a::buildAccessKitUpdate(b);
     a::freeAccessKitUpdate(up);
 #if defined(__linux__)
     {

@@ -105,6 +105,44 @@ NodeHandle panel(UiContext& ui, NodeHandle parent, std::string_view id = {});
 /// Selected item text of a combo box.
 std::string_view comboText(const UiContext& ui, NodeHandle combo);
 
+// ---- QCompleter parity -----------------------------------------------------------------------------------------------
+struct ItemModel;
+/// QCompleter::CompletionMode / Qt::MatchFlags filter mode.
+enum class CompletionMode : u8 { Popup, Inline, UnfilteredPopup };
+enum class MatchMode : u8 { StartsWith, Contains, EndsWith };
+struct CompleterOptions {
+    const ItemModel* model = nullptr; ///< not owned; must outlive the edit (call completerModelChanged on change)
+    u32 column = 0;                   ///< QCompleter::completionColumn
+    std::string items;                ///< '\n'-separated list, used when `model` is null (QStringListModel)
+    CompletionMode mode = CompletionMode::Popup;
+    bool caseSensitive = false;       ///< Qt default: Qt::CaseSensitive; we default to the common insensitive case
+    MatchMode filter = MatchMode::StartsWith; ///< Inline mode always matches StartsWith (as Qt)
+    u32 maxVisibleItems = 7;
+    bool wrapAround = true;
+};
+/// Attaches a completer to a line edit (an empty model and item list removes it). The prefix is the whole text, as
+/// QLineEdit: typing (not programmatic setLineEditText) refilters. Popup: a list under the field (in the overlay layer,
+/// keyboard focus stays in the field); Down / Up / PageDown / PageUp / Home+Ctrl / End+Ctrl move the highlight and
+/// put the completion in the field (Highlighted signal on the edit), stepping past either end returns to the typed
+/// prefix; Enter / Tab / click choose (Activated, then Enter still submits as returnPressed); Escape closes and restores
+/// the prefix. Inline: the first match is appended selected after the caret (not after Backspace / Delete);
+/// Up / Down cycle the matches. UnfilteredPopup: every row is listed, the best match highlighted.
+/// A11y: the field gets autoComplete (inline / list / both), expanded, controls -> the list and activeDescendant ->
+/// the highlighted option; the list is a List of ListItem options with `selected` on the highlighted one.
+void setCompleter(UiContext& ui, NodeHandle edit, CompleterOptions options);
+/// Recompute matches after the model changed (keeps the popup open if it still has rows).
+void completerModelChanged(UiContext& ui, NodeHandle edit);
+/// QCompleter::complete(): shows the popup for the current text (all rows when the text is empty).
+void complete(UiContext& ui, NodeHandle edit);
+/// Number of current completions (QCompleter::completionCount) and the text of one.
+u32 completionCount(UiContext& ui, NodeHandle edit);
+std::string completionAt(UiContext& ui, NodeHandle edit, u32 index);
+/// Highlighted row in the completion list (-1 none), QCompleter::currentRow.
+i32 completerCurrentRow(UiContext& ui, NodeHandle edit);
+bool completerPopupVisible(const UiContext& ui, NodeHandle edit);
+/// The popup list node (invalid until first shown).
+NodeHandle completerPopup(const UiContext& ui, NodeHandle edit);
+
 // ---- Tier B (plan §5) ------------------------------------------------------------------------------------------------
 // Popups, menus, dialogs and tooltips live in the overlay layer: a core "layer" node kept as the root's last child,
 // laid out over the viewport and outside the flow. A popup is a viewport-sized scope node (the scrim) holding the
