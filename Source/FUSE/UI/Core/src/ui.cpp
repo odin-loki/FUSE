@@ -2321,6 +2321,11 @@ f32 planeDepth(const Mat4& m, const Rect& r) {
     const f32 z = m.at(2, 0) * cx + m.at(2, 1) * cy + m.at(2, 3), w = m.at(3, 0) * cx + m.at(3, 1) * cy + m.at(3, 3);
     return w > 0.f ? z / w : -std::numeric_limits<f32>::infinity();
 }
+// z / w of the local point q (z = 0) under m: the plane's depth at that pixel (larger = nearer)
+f32 depthAt(const Mat4& m, Vec2 q) {
+    const f32 z = m.at(2, 0) * q.x + m.at(2, 1) * q.y + m.at(2, 3), w = m.at(3, 0) * q.x + m.at(3, 1) * q.y + m.at(3, 3);
+    return w > 0.f ? z / w : -std::numeric_limits<f32>::infinity();
+}
 // backface-visibility: hidden: the back faces the viewer when the inverse's (3, 3) entry is negative (CSS Transforms 2)
 bool backFacing(const Mat4& m) {
     Mat4 inv;
@@ -2335,6 +2340,133 @@ std::array<f32, 9> mul3(const std::array<f32, 9>& a, const std::array<f32, 9>& b
     return r;
 }
 } // namespace
+namespace {
+using V3 = Frag3d::V3;
+struct Plane4 { f32 nx, ny, nz, d; };
+// Newell normal + offset; false for a degenerate (zero-area) polygon
+bool planeOf(const std::vector<V3>& p, Plane4& out) {
+    f32 nx = 0.f, ny = 0.f, nz = 0.f, cx = 0.f, cy = 0.f, cz = 0.f;
+    for (std::size_t k = 0; k < p.size(); ++k) {
+        const V3& a = p[k];
+        const V3& b = p[(k + 1) % p.size()];
+        nx += (a.y - b.y) * (a.z + b.z), ny += (a.z - b.z) * (a.x + b.x), nz += (a.x - b.x) * (a.y + b.y);
+        cx += a.x, cy += a.y, cz += a.z;
+    }
+    const f32 len = std::sqrt(nx * nx + ny * ny + nz * nz);
+    if (!(len > 1e-6f)) return false;
+    const f32 inv = 1.f / f32(p.size());
+    out = {nx / len, ny / len, nz / len, 0.f};
+    out.d = -(out.nx * cx + out.ny * cy + out.nz * cz) * inv;
+    return true;
+}
+constexpr f32 kPlaneEps = 0.01f; // px (projected space)
+constexpr std::size_t kMaxFrags = 512;
+// splits convex poly by pl into front (>= 0) and back parts
+void splitPoly(const std::vector<V3>& poly, const std::vector<f32>& sd, std::vector<V3>& front, std::vector<V3>& back) {
+    for (std::size_t k = 0; k < poly.size(); ++k) {
+        const std::size_t j = (k + 1) % poly.size();
+        const V3& a = poly[k];
+        const V3& b = poly[j];
+        const f32 da = sd[k], db = sd[j];
+        if (da >= -kPlaneEps) front.push_back(a);
+        if (da <= kPlaneEps) back.push_back(a);
+        if ((da > kPlaneEps && db < -kPlaneEps) || (da < -kPlaneEps && db > kPlaneEps)) {
+            const f32 t = da / (da - db);
+            const V3 m{a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t};
+            front.push_back(m), back.push_back(m);
+        }
+    }
+}
+// back-to-front order for a viewer at z = +inf looking down -z (larger z is nearer, as translateZ)
+bool bspRec(std::vector<Frag3d>&& in, std::vector<Frag3d>& out, std::size_t& budget, int depth) {
+    if (in.empty()) return true;
+    if (depth > 64) return false;
+    Plane4 pl;
+    std::size_t si = 0;
+    while (si < in.size() && !planeOf(in[si].pts, pl)) ++si;
+    if (si == in.size()) { // all degenerate (edge-on): nothing visible
+        for (auto& f : in) out.push_back(std::move(f));
+        return true;
+    }
+    std::vector<Frag3d> front, back, on;
+    std::vector<f32> sd;
+    for (std::size_t k = 0; k < in.size(); ++k) {
+        Frag3d& f = in[k];
+        if (k == si) { on.push_back(std::move(f)); continue; }
+        sd.resize(f.pts.size());
+        bool pos = false, neg = false;
+        for (std::size_t v = 0; v < f.pts.size(); ++v) {
+            sd[v] = pl.nx * f.pts[v].x + pl.ny * f.pts[v].y + pl.nz * f.pts[v].z + pl.d;
+            pos |= sd[v] > kPlaneEps, neg |= sd[v] < -kPlaneEps;
+        }
+        if (!pos && !neg) on.push_back(std::move(f));
+        else if (!neg) front.push_back(std::move(f));
+        else if (!pos) back.push_back(std::move(f));
+        else {
+            if (budget == 0) return false;
+            --budget;
+            Frag3d a{f.plane, {}, false}, b{f.plane, {}, false};
+            splitPoly(f.pts, sd, a.pts, b.pts);
+            if (a.pts.size() >= 3) front.push_back(std::move(a));
+            if (b.pts.size() >= 3) back.push_back(std::move(b));
+        }
+    }
+    // coplanar fragments keep document order (the splitter may not be first)
+    std::stable_sort(on.begin(), on.end(), [](const Frag3d& x, const Frag3d& y) { return x.plane < y.plane; });
+    const bool frontFaces = pl.nz >= 0.f;
+    auto& first = frontFaces ? back : front;
+    auto& second = frontFaces ? front : back;
+    if (!bspRec(std::move(first), out, budget, depth + 1)) return false;
+    for (auto& f : on) out.push_back(std::move(f));
+    return bspRec(std::move(second), out, budget, depth + 1);
+}
+} // namespace
+bool UiContext::bspOrder(const std::vector<Plane3d>& planes, std::vector<Frag3d>& out) const {
+    std::vector<Frag3d> in;
+    in.reserve(planes.size());
+    for (u32 k = 0; k < planes.size(); ++k) {
+        const Plane3d& pl = planes[k];
+        const Rect r = pl.selfOnly ? m_nodes[pl.node].rect : paintBounds(pl.node);
+        Frag3d f{k, {}, true};
+        const Vec2 cs[4] = {{r.x, r.y}, {r.x + r.w, r.y}, {r.x + r.w, r.y + r.h}, {r.x, r.y + r.h}};
+        for (const Vec2 c : cs) {
+            const Mat4& m = pl.m;
+            const f32 w = m.at(3, 0) * c.x + m.at(3, 1) * c.y + m.at(3, 3);
+            if (!(w > 1e-4f)) return false;
+            f.pts.push_back({(m.at(0, 0) * c.x + m.at(0, 1) * c.y + m.at(0, 3)) / w, (m.at(1, 0) * c.x + m.at(1, 1) * c.y + m.at(1, 3)) / w,
+                             (m.at(2, 0) * c.x + m.at(2, 1) * c.y + m.at(2, 3)) / w});
+        }
+        in.push_back(std::move(f));
+    }
+    std::size_t budget = kMaxFrags;
+    out.clear();
+    return bspRec(std::move(in), out, budget, 0);
+}
+// the node's box united with its in-flow descendants' boxes (overflow-visible content a flat plane paints); a
+// clipping node bounds its subtree
+// trial paint of node i alone into a scratch list (state restored): does it emit anything?
+bool UiContext::paintsSelf(u32 i, f32 opacity) {
+    Node& n = m_nodes[i];
+    const auto dirty = n.dirty;
+    const Rect xp = m_cold[i]->xfPainted, dmg = m_damage;
+    const u32 outer = m_xfNode, outerSelf = m_selfOnly;
+    m_xfNode = i, m_selfOnly = i;
+    m_scratch3d.clear();
+    paintRec(i, opacity, m_scratch3d);
+    m_xfNode = outer, m_selfOnly = outerSelf;
+    n.dirty = dirty, m_cold[i]->xfPainted = xp, m_damage = dmg;
+    if (m_scratch3d.size() > 0) return true;
+    n.dirty &= u8(~kDirtyPaint); // not painted: settled
+    return false;
+}
+Rect UiContext::paintBounds(u32 i) const {
+    const Node& n = m_nodes[i];
+    Rect r = n.rect;
+    if (m_styles.style(n.style).overflow != Overflow::Visible) return r;
+    for (u32 k = n.first; k != kNone; k = m_nodes[k].next)
+        if (m_styles.style(m_nodes[k].style).visible) r = r.unite(paintBounds(k));
+    return r;
+}
 void UiContext::collectPlanes(u32 i, const Mat4& acc, std::vector<Plane3d>& out) const {
     const Node& n = m_nodes[i];
     if (!m_styles.style(n.style).visible) return;
@@ -2394,30 +2526,56 @@ bool UiContext::paintTransformed(u32 i, f32 opacity, DrawList& dl) {
     std::vector<Plane3d> planes;
     if (pres) collectPlanes(i, M, planes);
     else planes.push_back({i, M, false, 0.f});
-    std::stable_sort(planes.begin(), planes.end(), [](const Plane3d& a, const Plane3d& b) { return a.depth < b.depth; });
+    if (planes.size() > 1) { // a preserve-3d node that paints nothing itself is no plane (it would only split others)
+        std::erase_if(planes, [&](const Plane3d& pl) { return pl.selfOnly && !paintsSelf(pl.node, opacity); });
+    }
+    // paint order: a BSP tree over the planes' quads in projected space (x / w, y / w, z / w; projective maps keep
+    // planes planar), splitting planes that intersect; falls back to centre depth when a corner is behind the viewer
+    std::vector<Frag3d> frags;
+    if (planes.size() < 2 || !bspOrder(planes, frags)) {
+        std::stable_sort(planes.begin(), planes.end(), [](const Plane3d& a, const Plane3d& b) { return a.depth < b.depth; });
+        frags.clear();
+        for (u32 k = 0; k < planes.size(); ++k) frags.push_back({k, {}, true});
+    }
     const u32 outer = m_xfNode, outerSelf = m_selfOnly;
     const Rect outerDamage = m_damage;
-    m_damage = {};
-    Rect box;
-    for (const Plane3d& pl : planes) {
+    Rect box, tight;
+    bool wide = false; // inner damage could not be mapped: repaint the whole box
+    for (const Frag3d& f : frags) {
+        const Plane3d& pl = planes[f.plane];
         const ComputedStyle& ps = m_styles.style(m_nodes[pl.node].style);
         if (ps.backfaceHidden && backFacing(pl.m)) continue;
         const std::array<f32, 9> H = pl.m.flatten();
         std::array<f32, 9> Hi;
         if (!invert3(H, Hi)) continue;
+        if (!f.whole) {
+            Path clip;
+            for (std::size_t v = 0; v < f.pts.size(); ++v) v ? clip.lineTo({f.pts[v].x, f.pts[v].y}) : clip.moveTo({f.pts[v].x, f.pts[v].y});
+            clip.close();
+            dl.pushClipPath(clip);
+        }
         const std::size_t c0 = dl.size();
-        if (H[6] == 0.f && H[7] == 0.f) dl.pushTransform({H[0] / H[8], H[3] / H[8], H[1] / H[8], H[4] / H[8], H[2] / H[8], H[5] / H[8]});
+        const bool affine = H[6] == 0.f && H[7] == 0.f;
+        if (affine) dl.pushTransform({H[0] / H[8], H[3] / H[8], H[1] / H[8], H[4] / H[8], H[2] / H[8], H[5] / H[8]});
         else dl.pushProjective(H);
         m_xfNode = pl.node;
         m_selfOnly = pl.selfOnly ? pl.node : ~0u;
+        m_damage = {};
         paintRec(pl.node, opacity, dl);
         dl.popTransform();
-        if (c0 < dl.size() && dl.cmds()[c0].op == DrawOp::PushFilter) box = box.unite(dl.cmds()[c0].rect);
+        if (!f.whole) dl.popClip();
+        Rect fb;
+        if (c0 < dl.size() && dl.cmds()[c0].op == DrawOp::PushFilter) fb = dl.cmds()[c0].rect, box = box.unite(fb);
+        if (!m_damage.empty()) { // tight: the plane's inner damage through its homography (within the layer box)
+            const Rect r = mapRectHomography(H, m_damage);
+            if (r.empty()) wide = true;
+            else tight = tight.unite(fb.empty() ? r : r.intersect(fb));
+        }
     }
     m_xfNode = outer, m_selfOnly = outerSelf;
-    const Rect inner = m_damage;
     m_damage = outerDamage;
-    if (dirty || !inner.empty() || !(box == last)) m_damage = m_damage.unite(box).unite(last);
+    if (dirty || wide || !(box == last)) m_damage = m_damage.unite(box).unite(last);
+    else if (!tight.empty()) m_damage = m_damage.unite(tight);
     last = box;
     return true;
 }
@@ -2783,8 +2941,9 @@ f32 UiContext::nextWakeSeconds() const {
 // ---- Hit testing and dispatch --------------------------------------------------------------------------------------
 // p is in the current flat plane; acc is the 3D context's accumulated map when the parent preserves 3D (else
 // identity). A flat node maps p into its own space for itself and its children; a preserve-3d node hands p and
-// its map on, and tests its children nearest first (centre depth, as painted).
-NodeHandle UiContext::hitRec(u32 i, Vec2 p, const Mat4& acc) const {
+// its map on, and returns the child hit nearest the viewer at p (depth of each hit plane at p, so intersecting planes
+// pick the visible one; ties go to the later sibling, as painted); its own box only when nothing nearer is hit.
+NodeHandle UiContext::hitRec(u32 i, Vec2 p, const Mat4& acc, f32* depth) const {
     const Node& n = m_nodes[i];
     const ComputedStyle& s = m_styles.style(n.style);
     if (!s.visible || n.animOpacity <= 0.f) return {};
@@ -2806,21 +2965,31 @@ NodeHandle UiContext::hitRec(u32 i, Vec2 p, const Mat4& acc) const {
     }
     const bool inside = n.rect.contains(q);
     if (!inside && s.overflow != Overflow::Visible) return {};
+    const f32 selfDepth = depthAt(a, q);
     if (pres) {
-        std::vector<std::pair<f32, u32>> order;
-        for (u32 k = n.first; k != kNone; k = m_nodes[k].next) order.push_back({planeDepth(a * nodeMatrix(k), m_nodes[k].rect), k});
-        std::stable_sort(order.begin(), order.end(), [](const auto& x, const auto& y) { return x.first > y.first; });
-        for (const auto& [d, k] : order) {
-            (void)d;
-            const NodeHandle h = hitRec(k, p, a);
-            if (h.valid()) return h;
+        NodeHandle best;
+        f32 bestD = -std::numeric_limits<f32>::infinity();
+        for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
+            f32 d = -std::numeric_limits<f32>::infinity();
+            const NodeHandle h = hitRec(k, p, a, &d);
+            if (h.valid() && (!best.valid() || d >= bestD)) best = h, bestD = d;
+        }
+        if (best.valid() && (!(inside && !selfHidden && s.pointerEvents) || bestD >= selfDepth)) {
+            if (depth) *depth = bestD;
+            return best;
         }
     } else
         for (u32 k = n.last; k != kNone; k = m_nodes[k].prev) {
             const NodeHandle h = hitRec(k, q, Mat4{});
-            if (h.valid()) return h;
+            if (h.valid()) {
+                if (depth) *depth = selfDepth;
+                return h;
+            }
         }
-    if (inside && !selfHidden && s.pointerEvents) return {i, n.gen};
+    if (inside && !selfHidden && s.pointerEvents) {
+        if (depth) *depth = selfDepth;
+        return {i, n.gen};
+    }
     return {};
 }
 std::array<f32, 9> UiContext::screenMap(NodeHandle h) const {

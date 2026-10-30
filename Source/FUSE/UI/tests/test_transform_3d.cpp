@@ -144,6 +144,76 @@ int main() {
         const u32 px = img.at(100, 100);
         UI_CHECK((px & 0xFF) > 128 && ((px >> 16) & 0xFF) < 64); // red (low byte) on top, not blue
     }
+    // ---- intersecting preserve-3d planes: BSP splits them, each half shows the nearer plane -----------------------
+    {
+        UiContext ui({.viewport = {200, 200}});
+        const NodeHandle p = box(ui, ui.root(), "width: 200px; height: 200px; flex-shrink: 0; perspective: 500px");
+        const NodeHandle g = box(ui, p, "width: 200px; height: 200px; flex-shrink: 0; transform-style: preserve-3d");
+        // rotateY(+45): the left half comes forward (z = -x sin 45); rotateY(-45): the right half
+        const NodeHandle A = box(ui, g, "flex-shrink: 0; margin-left: 50px; margin-top: 50px; width: 100px; height: 100px; background: #f00; transform: rotateY(45deg)");
+        const NodeHandle B = box(ui, g, "flex-shrink: 0; margin-left: 50px; margin-top: -100px; width: 100px; height: 100px; background: #00f; transform: rotateY(-45deg)");
+        ui.update(0.f);
+        Image img;
+        img.resize(200, 200, 0xFF000000u);
+        CpuRasterizer().render(ui.drawList(), img);
+        auto R = [&](int x, int y) { return int(img.at(x, y) & 0xFF); };
+        auto Bl = [&](int x, int y) { return int((img.at(x, y) >> 16) & 0xFF); };
+        UI_CHECK(R(80, 100) > 200 && Bl(80, 100) < 50);  // left: A (red) in front
+        UI_CHECK(Bl(120, 100) > 200 && R(120, 100) < 50); // right: B (blue) in front, though A was split
+        UI_CHECK(ui.hitTest({80.f, 100.f}) == A);
+        UI_CHECK(ui.hitTest({120.f, 100.f}) == B);
+        bool clipped = false; // the split pieces paint through clip paths
+        for (const DrawCmd& c : ui.drawList().cmds()) clipped |= c.op == DrawOp::ClipPath;
+        UI_CHECK(clipped);
+        // parallel planes are not split (no clip paths)
+        UI_CHECK(ui.setCss(B, "transform", "rotateY(45deg) translateZ(-10px)"));
+        ui.update(0.f);
+        clipped = false;
+        for (const DrawCmd& c : ui.drawList().cmds()) clipped |= c.op == DrawOp::ClipPath;
+        UI_CHECK(!clipped);
+        UI_CHECK(ui.hitTest({100.f, 100.f}) == A);
+    }
+    // ---- back faces are not hit when hidden ---------------------------------------------------------------------
+    {
+        UiContext ui({.viewport = {200, 200}});
+        const NodeHandle p = box(ui, ui.root(), "width: 200px; height: 200px; flex-shrink: 0; perspective: 400px");
+        const NodeHandle c = box(ui, p, "width: 100px; height: 100px; margin: 50px; flex-shrink: 0; transform: rotateY(180deg)");
+        ui.update(0.f);
+        UI_CHECK(ui.hitTest({100.f, 100.f}) == c);
+        UI_CHECK(ui.setCss(c, "backface-visibility", "hidden"));
+        ui.update(0.f);
+        UI_CHECK(ui.hitTest({100.f, 100.f}) == p);
+        UI_CHECK(ui.setCss(c, "transform", "rotateY(170deg)"));
+        ui.update(0.f);
+        UI_CHECK(ui.hitTest({100.f, 100.f}) == p);
+        UI_CHECK(ui.setCss(c, "transform", "rotateY(80deg)"));
+        ui.update(0.f);
+        UI_CHECK(ui.hitTest({100.f, 100.f}) == c);
+    }
+    // ---- tight damage: a change inside one plane of a 3D context repaints that plane's projected box only ------------
+    // (the renderer resamples a transform layer whole, so the damage still grows to the touched layer's box)
+    {
+        UiContext ui({.viewport = {400, 300}});
+        const NodeHandle p = box(ui, ui.root(), "width: 400px; height: 300px; flex-shrink: 0; perspective: 600px");
+        const NodeHandle g = box(ui, p, "width: 400px; height: 300px; flex-shrink: 0; flex-direction: row; transform-style: preserve-3d; transform: rotateX(10deg)");
+        const NodeHandle c1 = box(ui, g, "width: 120px; height: 120px; margin: 40px; flex-shrink: 0; background: #333; transform: rotateY(30deg)");
+        const NodeHandle c2 = box(ui, g, "width: 120px; height: 120px; margin: 40px; flex-shrink: 0; background: #555; transform: translateZ(20px)");
+        const NodeHandle k = box(ui, c1, "width: 10px; height: 10px; flex-shrink: 0; background: #f00");
+        ui.update(0.f);
+        UI_CHECK(ui.setCss(k, "background", "#0f0"));
+        ui.update(0.f);
+        const Rect d = ui.damage();
+        Vec2 s, o;
+        UI_CHECK(ui.fromLocal(k, {ui.rect(k).x + 5.f, ui.rect(k).y + 5.f}, s));
+        UI_CHECK(ui.fromLocal(c2, {ui.rect(c2).x + 60.f, ui.rect(c2).y + 60.f}, o));
+        UI_CHECK(!d.empty() && d.contains(s));
+        UI_CHECK(!d.contains(o)); // the other plane is untouched
+        UI_CHECK(d.w < 200.f);
+        // a transform change still repaints old + new boxes
+        UI_CHECK(ui.setCss(c2, "transform", "translateZ(-20px)"));
+        ui.update(0.f);
+        UI_CHECK(ui.damage().contains(o));
+    }
     // ---- dispatch: Event::pos in the receiver's local space, client untouched -------------------------------------
     {
         UiContext ui({.viewport = {200, 200}});

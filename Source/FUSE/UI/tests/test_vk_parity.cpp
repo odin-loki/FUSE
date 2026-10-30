@@ -812,6 +812,25 @@ int main() {
                 vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
                 check("projective_layer", compare(cpuP, out));
             }
+            {   // a BSP-split preserve-3d piece: a projective layer under a convex clip path
+                DrawList pl;
+                xfList(pl, 1.f);
+                Path piece;
+                piece.moveTo({130, 80}).lineTo({330, 110}).lineTo({300, 300}).lineTo({150, 260}).close();
+                pl.pushClipPath(piece);
+                pl.pushProjective({0.9f, -0.1f, 30.f, 0.08f, 1.05f, -5.f, -0.0006f, 0.0004f, 1.f});
+                pl.rect({100, 80, 280, 220}, Color::rgb(0x30c060, 0.9f), 18.f);
+                pl.popTransform();
+                pl.popClip();
+                Image cpuP;
+                cpuP.resize(int(W), int(H), 0xFF000000u);
+                CpuRasterizer rp;
+                rp.render(pl, cpuP);
+                packDrawList(pl, W, H, data);
+                UI_CHECK(gpu.upload(0, data));
+                vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+                check("projective_clip_path", compare(cpuP, out));
+            }
 
             // oversized layers on a small scratch: tiled (banded) layer ends match the CPU
             UiVkRenderer small;

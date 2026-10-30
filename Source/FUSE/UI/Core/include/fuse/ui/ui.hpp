@@ -30,6 +30,9 @@
 
 namespace fuse::ui {
 
+/// Internal (preserve-3d paint order): a (piece of a) plane; pts = projected convex polygon (screen x, y; depth z),
+/// whole = unsplit.
+struct Frag3d { struct V3 { f32 x, y, z; }; u32 plane; std::vector<V3> pts; bool whole; };
 class UiContext;
 
 // ---- Input ---------------------------------------------------------------------------------------------------------
@@ -653,11 +656,15 @@ private:
     bool preserves3d(u32 i) const;       ///< transform-style: preserve-3d in effect (no grouping property)
     struct Plane3d { u32 node; Mat4 m; bool selfOnly; f32 depth; };
     void collectPlanes(u32 i, const Mat4& acc, std::vector<Plane3d>& out) const;
+    bool bspOrder(const std::vector<Plane3d>& planes, std::vector<Frag3d>& out) const;
+    Rect paintBounds(u32 i) const;
+    bool paintsSelf(u32 i, f32 opacity);
+    DrawList m_scratch3d;
     bool paintTransformed(u32 i, f32 opacity, DrawList& dl);
     u32 m_filterNode = ~0u; ///< node whose filter layer paintRec is inside (its second, unwrapped visit)
     /// Overlay scrollbar geometry of a scroll container along an axis (0 = x, 1 = y); false when it does not overflow.
     bool scrollBarGeom(u32 i, u8 axis, Rect& track, Rect& thumb) const;
-    NodeHandle hitRec(u32 i, Vec2 p, const Mat4& acc) const;
+    NodeHandle hitRec(u32 i, Vec2 p, const Mat4& acc, f32* depth = nullptr) const;
     bool dispatch(u32 target, const Event& e);
     void setHover(u32 i);
     u32 interactiveAncestor(u32 i) const;
