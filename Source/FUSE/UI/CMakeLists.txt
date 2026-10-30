@@ -246,6 +246,10 @@ if(FUSE_BUILD_UI_SCRIPT AND TARGET fuse_ui_doc AND FUSE_UI_OS_BACKEND STREQUAL "
         if(TARGET fuse_ui_widgets)
             target_link_libraries(fuse_ui_script PRIVATE fuse_ui_widgets)
         endif()
+        if(TARGET fuse_ui_extras)
+            target_link_libraries(fuse_ui_script PRIVATE fuse_ui_extras)
+            target_compile_definitions(fuse_ui_script PRIVATE FUSE_UI_SCRIPT_CHARTS=1)
+        endif()
     endif()
 endif()
 

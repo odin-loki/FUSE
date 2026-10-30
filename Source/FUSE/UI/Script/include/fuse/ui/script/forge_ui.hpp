@@ -18,9 +18,25 @@
 //         {{"duration", 0.3}, {"easing", "ease-out"}, {"fill", "forwards"}, {"onfinish", [](auto a) { ... }}});
 //         ui::animPlay/animPause/animReverse/animFinish/animCancel/animCommitStyles(a), animSetCurrentTime(a, s),
 //         animSetPlaybackRate(a, r), animCurrentTime/animPlaybackRate/animPlayState/animProgress/animId/animTarget(a),
-//         ui::animations(h[, subtree])
+//         ui::animations(h[, subtree]); animSetKeyframes(a, css) animSetTarget(a, h) animPersist(a) animReplaceState(a)
+//         animStartTime(a) animTimelineProgress(a) ui::documentTime(); options also take {"timeline", "scroll(#id y)" /
+//         "view(x 10px 20%)"}, {"rangeStart", "entry 0%"}, {"rangeEnd", "exit 100%"} or {"range", "cover"}, {"onremove", fn}
+//         ui::timelineProgress(h, "view()"[, start, end]) (nullptr while inactive)
+//   transforms (2D / 3D): ui::toLocal(h, x, y) / ui::fromLocal(h, x, y) -> {x, y} or nullptr; ui::screenMap(h) (3x3)
+//   charts: auto c = ui::chartView(parent[, "id"]); ui::chartSet(c, {{"title", ..}, {"legend", "bottom"},
+//         {"theme", "light"}, {"axes", {{{"type", "category"}, {"categories", {..}}}, ..}},
+//         {"series", {{{"type", "bar"}, {"name", ..}, {"x", {..}}, {"y", {..}}, {"color", "#f00"}}, ..}}}[, animate])
+//         chartSeries(c, i, spec) chartAxis(c, i, spec) chartAppend(c, i, x, y | {xs}, {ys}) chartClear(c, i)
+//         chartSeriesCount(c) chartPointCount(c, i) chartZoom(c, axis, factor, centre) chartPan(c, axis, d)
+//         chartZoomTo(c, axis, lo, hi) chartResetZoom(c) chartRange(c, axis[, full]) chartHovered(c) -> {series, index,
+//         x, y} chartTooltip(c[, series, index]) chartSelection(c) chartDescribe(c) chartExport(c, "a.png"[, w, h])
+//         3D: auto s = ui::chart3dView(parent, "surface" | "scatter" | "bars" | "line" | "area"[, "id"]);
+//         ui::chart3dSet(s, {{"rows", r}, {"cols", c}, {"values", {..}}, {"points", {{x, y, z}, ..}}, {"camera",
+//         {{"yaw", ..}, {"pitch", ..}, {"zoom", ..}}}, {"axes", ..}, ...}) chart3dCamera chart3dHovered
+//         chart3dSelection chart3dTooltip
 //   signals: clicked toggled valueChanged textChanged submitted focusChanged hoverChanged editingFinished highlighted
 //            activated transitionRun/Start/End/Cancel animationStart/Iteration/End/Cancel finish cancel
+//            remove selectionChanged
 //
 // Errors are script exceptions (HostError, catchable with try / catch), never C++ exceptions out of run(). Handles are
 // generation-checked: a stale handle reads as nullptr from every getter and is ignored by setters.

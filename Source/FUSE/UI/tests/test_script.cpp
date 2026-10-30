@@ -104,6 +104,98 @@ int main() {
         UI_CHECK(fs.run(R"(auto c = ui::on("n1", "clicked", [](auto h, auto a) {}); assert(ui::off(c)); assert(!ui::off(c));)", &err));
         UI_CHECK_EQ(fs.callbackCount(), before);
 
+        // effect ops, timelines + ranges, coordinates through transforms
+        err.clear();
+        ok = fs.run(R"fs(
+            auto b = ui::animate("n1", "from { opacity: 0 } to { opacity: 1 }", {{"duration", 1.0}});
+            assert(ui::animReplaceState(b) == "active", "replace");
+            assert(ui::animSetKeyframes(b, "from { opacity: 0.5 } to { opacity: 1 }"), "kf");
+            assert(ui::animSetTarget(b, "n2"), "target"); assert(ui::animTarget(b) == ui::find("n2"), "target2");
+            assert(ui::animPersist(b), "persist"); assert(ui::animReplaceState(b) == "persisted", "persisted");
+            assert(ui::documentTime() >= 0.0, "doc time");
+            ui::animCancel(b);
+            auto v = ui::animate("n1", "from { opacity: 0 } to { opacity: 1 }",
+                                 {{"timeline", "view(y 10px)"}, {"rangeStart", "entry 0%"}, {"rangeEnd", "exit 100%"}, {"fill", "both"},
+                                  {"onremove", [](auto a) {}}});
+            assert(v != nullptr, "view anim");
+            auto w = ui::animate("n1", "from { opacity: 0 } to { opacity: 1 }", {{"timeline", "scroll(nearest block)"}, {"range", "cover"}});
+            assert(w != nullptr, "scroll anim");
+            ui::timelineProgress("n1", "view()", "contain 10%", "contain 90%");
+            bool threw = false;
+            try { ui::animate("n1", "from { opacity: 0 } to { opacity: 1 }", {{"rangeStart", "entry ten"}}); }
+            catch (const std::exception& e) { threw = true; }
+            assert(threw, "bad range");
+            threw = false;
+            try { ui::animate("n1", "from { opacity: 0 } to { opacity: 1 }", {{"timeline", "warp()"}}); }
+            catch (const std::exception& e) { threw = true; }
+            assert(threw, "bad timeline");
+            ui::animCancel(v); ui::animCancel(w);
+            ui::css("n2", "transform", "translate(10px, 5px) scale(2)");
+        )fs", &err);
+        if (!ok) std::fprintf(stderr, "script: %s\n", err.c_str());
+        UI_CHECK(ok);
+        ui.update(1.f / 60.f);
+        err.clear();
+        ok = fs.run(R"fs(
+            auto l = ui::toLocal("n2", 40.0, 30.0);
+            assert(l != nullptr && l.size() == 2, "toLocal");
+            auto g = ui::fromLocal("n2", l[0], l[1]);
+            assert((g[0] - 40.0) * (g[0] - 40.0) + (g[1] - 30.0) * (g[1] - 30.0) < 0.01, "round trip");
+            assert(ui::screenMap("n2").size() == 9, "map");
+            assert(ui::screenMap("n2")[0] > 1.5, "scaled");
+        )fs", &err);
+        if (!ok) std::fprintf(stderr, "script: %s\n", err.c_str());
+        UI_CHECK(ok);
+
+        // charts (2D + 3D)
+        err.clear();
+        ok = fs.run(R"fs(
+            auto c = ui::chartView(ui::root(), "chart");
+            ui::chartSet(c, {{"title", "Sales"}, {"legend", "bottom"}, {"theme", "light"},
+                             {"axes", {{{"type", "category"}, {"categories", {"a", "b", "c"}}}, {{"title", "units"}, {"min", 0.0}}}},
+                             {"series", {{{"type", "bar"}, {"name", "2025"}, {"y", {1.0, 2.0, 3.0}}},
+                                         {{"type", "line"}, {"name", "2026"}, {"x", {0.0, 1.0, 2.0}}, {"y", {2.0, 2.5, 4.0}}, {"color", "#ff0000"}}}}});
+            assert(ui::chartSeriesCount(c) == 2, "series");
+            assert(ui::chartPointCount(c, 0) == 3, "points");
+            ui::chartAppend(c, 1, 3.0, 5.0);
+            ui::chartAppend(c, 1, {4.0, 5.0}, {6.0, 7.0});
+            assert(ui::chartPointCount(c, 1) == 6, std::to_string(ui::chartPointCount(c, 1)));
+            ui::chartSeries(c, 1, {{"capacity", 4}});
+            ui::chartAppend(c, 1, 6.0, 8.0);
+            assert(ui::chartPointCount(c, 1) == 4, "capacity");
+            auto r = ui::chartRange(c, 1);
+            assert(r[0] <= 0.0 && r[1] >= 8.0, "range");
+            ui::chartZoomTo(c, 1, 1.0, 2.0);
+            assert(ui::chartRange(c, 1)[1] == 2.0, "zoomed");
+            ui::chartResetZoom(c);
+            assert(ui::chartDescribe(c).size() > 0, "describe");
+            assert(ui::chartTooltip(c, 0, 1).size() > 0, "tooltip");
+            assert(ui::chartHovered(c) == nullptr, "hover");
+            assert(ui::chartSelection(c).size() == 0, "selection");
+            ui::chartClear(c, 0);
+            assert(ui::chartPointCount(c, 0) == 0, "clear");
+            bool threw = false;
+            try { ui::chartSet(c, {{"series", {{{"type", "nope"}}}}}); } catch (const std::exception& e) { threw = true; }
+            assert(threw, "bad type");
+            threw = false;
+            try { ui::chartSet("n1", {{"title", "x"}}); } catch (const std::exception& e) { threw = true; }
+            assert(threw, "not a chart");
+
+            auto s = ui::chart3dView(ui::root(), "surface", "surf");
+            ui::chart3dSet(s, {{"rows", 2}, {"cols", 2}, {"values", {0.0, 1.0, 1.0, 2.0}}, {"camera", {{"yaw", 10.0}, {"pitch", 30.0}}},
+                               {"axes", {{{"title", "x"}}, {{"title", "y"}, {"max", 3.0}}}}});
+            assert(ui::chart3dCamera(s)["yaw"] == 10.0, "yaw");
+            assert(ui::chartDescribe(s).size() > 0, "describe3d");
+            assert(ui::chart3dHovered(s) == nullptr, "hover3d");
+            assert(ui::chart3dSelection(s).size() == 0, "sel3d");
+            auto p = ui::chart3dView(ui::root(), "scatter");
+            ui::chart3dSet(p, {{"points", {{0.0, 0.0, 0.0}, {1.0, 2.0, 3.0}}}, {"pointColors", {"red", "blue"}}});
+            ui::destroy(p);
+        )fs", &err);
+        if (!ok) std::fprintf(stderr, "script: %s\n", err.c_str());
+        UI_CHECK(ok);
+        for (int i = 0; i < 3; ++i) ui.update(1.f / 60.f);
+
         // errors become script errors with a message, never exceptions
         err.clear();
         UI_CHECK(!fs.run(R"(ui::load("{\"fuseui\":1,\"root\":{\"class\":\"nope\"}}");)", &err));

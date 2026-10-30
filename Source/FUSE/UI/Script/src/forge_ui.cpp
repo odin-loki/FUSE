@@ -6,6 +6,10 @@
 
 #include <forge/json/json.hpp>
 
+#if FUSE_UI_SCRIPT_CHARTS
+#include "fuse/ui/extras/charts.hpp"
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -100,7 +104,50 @@ constexpr SignalName kSignals[] = {
     {"animationCancel", SignalKind::AnimationCancel},
     {"finish", SignalKind::ScriptFinish},
     {"cancel", SignalKind::ScriptCancel},
+    {"remove", SignalKind::ScriptRemove},
+    {"selectionChanged", SignalKind::SelectionChanged},
 };
+
+std::string_view trimView(std::string_view t) {
+    while (!t.empty() && (t.front() == ' ' || t.front() == '\t')) t.remove_prefix(1);
+    while (!t.empty() && (t.back() == ' ' || t.back() == '\t')) t.remove_suffix(1);
+    return t;
+}
+bool parseLen(std::string_view w, Length& out) {
+    const bool pct = w.ends_with('%');
+    if (pct) w.remove_suffix(1);
+    else if (w.ends_with("px")) w.remove_suffix(2);
+    if (w.empty()) return false;
+    char* end = nullptr;
+    const std::string t(w);
+    const double v = std::strtod(t.c_str(), &end);
+    if (end != t.c_str() + t.size()) return false;
+    out = pct ? Length::pct(f32(v)) : Length::px(f32(v));
+    return true;
+}
+/// "normal" | "<name> [<length-percentage>]" | "<length-percentage>" (animation-range-start / -end).
+AnimRange parseRange(std::string_view t, bool isEnd, const char* fn) {
+    AnimRange r;
+    static constexpr std::pair<const char*, TimelineRange> names[] = {
+        {"normal", TimelineRange::Normal}, {"cover", TimelineRange::Cover}, {"contain", TimelineRange::Contain},
+        {"entry", TimelineRange::Entry}, {"exit", TimelineRange::Exit}, {"entry-crossing", TimelineRange::EntryCrossing},
+        {"exit-crossing", TimelineRange::ExitCrossing}};
+    t = trimView(t);
+    const std::size_t sp = t.find(' ');
+    const std::string_view w = t.substr(0, sp);
+    bool named = false;
+    for (auto& [n, k] : names)
+        if (w == n) r.name = k, named = true;
+    std::string_view rest = named ? (sp == std::string_view::npos ? std::string_view{} : trimView(t.substr(sp + 1))) : t;
+    if (!rest.empty()) {
+        if (!parseLen(rest, r.offset)) fail(std::string(fn) + ": bad range '" + std::string(t) + "'");
+    } else if (named && r.name != TimelineRange::Normal) r.offset = Length::pct(isEnd ? 100.f : 0.f);
+    return r;
+}
+} // namespace
+
+namespace {
+
 
 } // namespace
 
@@ -155,6 +202,40 @@ struct ForgeUi::Impl {
         s.m_docs.push_back(std::move(*d));
         return out(node(root));
     }
+    /// "document" | "scroll([#id] [nearest|root|self] [block|inline|x|y])" | "view([#id] [axis] [inset-start [inset-end]])"
+    bool parseTimeline(std::string_view t, AnimTimeline& out) {
+        t = trimView(t);
+        out = {};
+        if (t == "document" || t.empty()) return true;
+        const bool scroll = t.starts_with("scroll("), view = t.starts_with("view(");
+        if ((!scroll && !view) || t.back() != ')') return false;
+        out.kind = scroll ? AnimTimeline::Kind::Scroll : AnimTimeline::Kind::View;
+        std::string_view args = t.substr(scroll ? 7 : 5);
+        args.remove_suffix(1);
+        int insets = 0;
+        while (!(args = trimView(args)).empty()) {
+            const std::size_t sp = args.find(' ');
+            const std::string_view w = args.substr(0, sp);
+            args = sp == std::string_view::npos ? std::string_view{} : args.substr(sp + 1);
+            if (w == "block" || w == "y") out.axis = 1;
+            else if (w == "inline" || w == "x") out.axis = 0;
+            else if (w == "nearest" || w == "self") {}
+            else if (w == "root") out.source = ui().root();
+            else if (w.starts_with('#')) {
+                if (!(out.source = ui().find(w.substr(1)))) return false;
+            } else if (view && insets < 2) {
+                Length l;
+                if (w == "auto") l = Length::px(0.f);
+                else if (!parseLen(w, l)) return false;
+                const bool pct = l.unit == Unit::Percent;
+                f32& px = insets ? out.insetEnd : out.insetStart;
+                f32& pc = insets ? out.insetEndPct : out.insetStartPct;
+                (pct ? pc : px) = l.value;
+                if (insets++ == 0) (pct ? out.insetEndPct : out.insetEnd) = l.value; // one inset: both ends
+            } else return false;
+        }
+        return true;
+    }
     AnimationOptions animOptions(const json::value& in) {
         AnimationOptions opt;
         // `{{"duration", 0.3}, ...}` arrives as a list of [key, value] pairs; std::map literals arrive as objects.
@@ -194,6 +275,32 @@ struct ForgeUi::Impl {
             if (!parseEasing(e->str(), opt.easing)) fail("ui::animate: bad easing '" + e->str() + "'");
         if (const auto* ap = o.find("autoplay"); ap && ap->is_bool()) opt.autoplay = ap->b();
         opt.id = o.str_or("id", "");
+        if (const auto* t = o.find("timeline"); t && t->is_str())
+            if (!parseTimeline(t->str(), opt.timeline)) fail("ui::animate: bad timeline '" + t->str() + "'");
+        if (const auto* r = o.find("rangeStart"); r && r->is_str()) opt.rangeStart = parseRange(r->str(), false, "ui::animate");
+        if (const auto* r = o.find("rangeEnd"); r && r->is_str()) opt.rangeEnd = parseRange(r->str(), true, "ui::animate");
+        if (const auto* r = o.find("range"); r && r->is_str()) { // "entry 10% exit 90%" / "cover"
+            const std::string v = r->str();
+            std::size_t cut = std::string::npos;
+            for (const char* n : {" normal", " cover", " contain", " entry", " exit"}) {
+                const auto p = v.find(n, 1);
+                if (p != std::string::npos && p < cut) cut = p;
+            }
+            opt.rangeStart = parseRange(v.substr(0, cut), false, "ui::animate");
+            opt.rangeEnd = parseRange(cut == std::string::npos ? v.substr(0, v.find(' ')) : v.substr(cut + 1), true, "ui::animate");
+        }
+        if (const std::uint64_t rem = [&]() -> std::uint64_t {
+                const auto* f = o.find("onremove");
+                const auto* id = f && f->is_obj() ? f->find("$callback") : nullptr;
+                return id && id->is_num() ? std::uint64_t(id->num()) : 0;
+            }()) {
+            hold(rem);
+            Impl* self = this;
+            opt.onRemove = [self, rem](UiContext&, AnimationHandle a) {
+                if (std::find(self->owned.begin(), self->owned.end(), rem) == self->owned.end()) return;
+                self->invoke(rem, {anim(a)}, "onremove");
+            };
+        }
         auto cb = [&](const char* key) -> std::uint64_t {
             const auto* f = o.find(key);
             if (!f || !f->is_obj()) return 0;
@@ -221,6 +328,7 @@ struct ForgeUi::Impl {
         return opt;
     }
     void install();
+    void installCharts();
 };
 
 void ForgeUi::Impl::install() {
@@ -526,6 +634,447 @@ void ForgeUi::Impl::install() {
             for (AnimationHandle x : I.ui().animations(h, truthy(arg(a, 1)))) l.push_back(anim(x));
         return out(json::value(std::move(l)));
     });
+    def("animSetKeyframes", 2, 2, [](Impl& I, const Args& a) {
+        return out(json::value(I.ui().animSetKeyframes(unpackAnim(arg(a, 0)), str(a, 1, "ui::animSetKeyframes"))));
+    });
+    def("animSetTarget", 2, 2, [](Impl& I, const Args& a) {
+        return out(json::value(I.ui().animSetTarget(unpackAnim(arg(a, 0)), I.nodeArg(a, 1))));
+    });
+    animOp("animPersist", &UiContext::animPersist);
+    def("animReplaceState", 1, 1, [](Impl& I, const Args& a) {
+        const AnimationHandle h = unpackAnim(arg(a, 0));
+        if (!I.ui().animValid(h)) return none();
+        static const char* names[] = {"active", "removed", "persisted"};
+        return out(std::string(names[int(I.ui().animReplaceState(h))]));
+    });
+    def("animStartTime", 1, 1, [](Impl& I, const Args& a) {
+        const AnimationHandle h = unpackAnim(arg(a, 0));
+        const double t = I.ui().animValid(h) ? I.ui().animStartTime(h) : std::numeric_limits<double>::quiet_NaN();
+        return std::isnan(t) ? none() : out(json::value(t));
+    });
+    def("animTimelineProgress", 1, 1, [](Impl& I, const Args& a) {
+        const AnimationHandle h = unpackAnim(arg(a, 0));
+        const f32 p = I.ui().animValid(h) ? I.ui().animTimelineProgress(h) : std::numeric_limits<f32>::quiet_NaN();
+        return std::isnan(p) ? none() : out(json::value(double(p)));
+    });
+    def("documentTime", 0, 0, [](Impl& I, const Args&) { return out(json::value(I.ui().documentTime())); });
+    // timelineProgress(node, "view()" [, "entry 0%", "exit 100%"]): nullptr while the timeline is inactive
+    def("timelineProgress", 2, 4, [](Impl& I, const Args& a) {
+        const NodeHandle h = I.needNode(a, 0, "ui::timelineProgress");
+        AnimTimeline t;
+        if (!I.parseTimeline(str(a, 1, "ui::timelineProgress"), t)) fail("ui::timelineProgress: bad timeline");
+        f32 p;
+        if (has(a, 2) || has(a, 3))
+            p = I.ui().timelineProgress(h, t, has(a, 2) ? parseRange(str(a, 2, "ui::timelineProgress"), false, "ui::timelineProgress") : AnimRange{},
+                                        has(a, 3) ? parseRange(str(a, 3, "ui::timelineProgress"), true, "ui::timelineProgress") : AnimRange{});
+        else p = I.ui().timelineProgress(h, t);
+        return std::isnan(p) ? none() : out(json::value(double(p)));
+    });
+    // ---- coordinates through CSS transforms (2D / 3D): context <-> a node's local (untransformed) space
+    auto point = [](Vec2 p) {
+        json::array r;
+        r.push_back(double(p.x));
+        r.push_back(double(p.y));
+        return json::value(std::move(r));
+    };
+    auto mapFn = [&](const char* name, bool (UiContext::*f)(NodeHandle, Vec2, Vec2&) const) {
+        def(name, 3, 3, [f, point, name](Impl& I, const Args& a) {
+            const std::string fn = std::string("ui::") + name;
+            const NodeHandle h = I.needNode(a, 0, fn.c_str());
+            Vec2 o{};
+            if (!(I.ui().*f)(h, Vec2{f32(num(a, 1, fn.c_str())), f32(num(a, 2, fn.c_str()))}, o)) return none();
+            return out(point(o));
+        });
+    };
+    mapFn("toLocal", &UiContext::toLocal);
+    mapFn("fromLocal", &UiContext::fromLocal);
+    def("screenMap", 1, 1, [](Impl& I, const Args& a) {
+        json::array m;
+        for (f32 v : I.ui().screenMap(I.needNode(a, 0, "ui::screenMap"))) m.push_back(double(v));
+        return out(json::value(std::move(m)));
+    });
+    installCharts();
+}
+
+namespace {
+/// `{{"k", v}, ...}` pair lists (FORGE brace literals) -> objects, recursively for nested specs; other values as-is.
+json::value objOf(const json::value& in) {
+    if (!in.is_arr() || in.arr().empty()) return in;
+    for (const auto& p : in.arr())
+        if (!p.is_arr() || p.arr().size() != 2 || !p.arr()[0].is_str()) return in;
+    json::object m;
+    for (const auto& p : in.arr()) m.emplace_back(p.arr()[0].str(), p.arr()[1]);
+    return json::value(std::move(m));
+}
+#if FUSE_UI_SCRIPT_CHARTS
+std::vector<f32> floats(const json::value* v, const char* fn) {
+    std::vector<f32> r;
+    if (!v) return r;
+    if (!v->is_arr()) fail(std::string(fn) + ": expected a list of numbers");
+    for (const auto& x : v->arr()) r.push_back(x.is_num() ? f32(x.num()) : NAN);
+    return r;
+}
+std::vector<std::string> strings(const json::value* v) {
+    std::vector<std::string> r;
+    if (v && v->is_arr())
+        for (const auto& x : v->arr()) r.push_back(x.is_str() ? x.str() : json::dump(x));
+    return r;
+}
+Color colorOf(const json::value* v, const char* fn) {
+    Color c{};
+    if (v && v->is_str() && !parseColor(v->str(), c)) fail(std::string(fn) + ": bad colour '" + v->str() + "'");
+    return c;
+}
+template <class E, std::size_t N>
+E enumOf(const json::value* v, const std::pair<const char*, E> (&names)[N], E def, const char* fn) {
+    if (!v || !v->is_str()) return def;
+    for (auto& [n, e] : names)
+        if (v->str() == n) return e;
+    fail(std::string(fn) + ": unknown value '" + v->str() + "'");
+}
+using namespace fuse::ui::charts;
+constexpr std::pair<const char*, SeriesType> kSeries[] = {
+    {"line", SeriesType::Line}, {"spline", SeriesType::Spline}, {"stepLine", SeriesType::StepLine},
+    {"scatter", SeriesType::Scatter}, {"area", SeriesType::Area}, {"stackedArea", SeriesType::StackedArea},
+    {"percentArea", SeriesType::PercentArea}, {"bar", SeriesType::Bar}, {"stackedBar", SeriesType::StackedBar},
+    {"percentBar", SeriesType::PercentBar}, {"horizontalBar", SeriesType::HorizontalBar},
+    {"horizontalStackedBar", SeriesType::HorizontalStackedBar}, {"horizontalPercentBar", SeriesType::HorizontalPercentBar},
+    {"pie", SeriesType::Pie}, {"donut", SeriesType::Donut}, {"candlestick", SeriesType::Candlestick},
+    {"ohlc", SeriesType::Ohlc}, {"boxPlot", SeriesType::BoxPlot}, {"histogram", SeriesType::Histogram},
+    {"heatmap", SeriesType::Heatmap}, {"bubble", SeriesType::Bubble}};
+constexpr std::pair<const char*, AxisType> kAxisType[] = {
+    {"value", AxisType::Value}, {"log", AxisType::Log}, {"category", AxisType::Category}, {"datetime", AxisType::DateTime}};
+constexpr std::pair<const char*, AxisEdge> kEdge[] = {
+    {"bottom", AxisEdge::Bottom}, {"left", AxisEdge::Left}, {"top", AxisEdge::Top}, {"right", AxisEdge::Right}};
+constexpr std::pair<const char*, LegendPos> kLegend[] = {
+    {"none", LegendPos::None}, {"top", LegendPos::Top}, {"bottom", LegendPos::Bottom}, {"left", LegendPos::Left}, {"right", LegendPos::Right}};
+constexpr std::pair<const char*, Decimation> kDecim[] = {
+    {"auto", Decimation::Auto}, {"none", Decimation::None}, {"minmax", Decimation::MinMax}, {"lttb", Decimation::Lttb}};
+constexpr std::pair<const char*, Kind3D> kKind3D[] = {
+    {"surface", Kind3D::Surface}, {"scatter", Kind3D::Scatter}, {"bars", Kind3D::Bars}, {"line", Kind3D::Line}, {"area", Kind3D::Area}};
+f32 numOr(const json::value& o, const char* k, f32 d) {
+    const auto* v = o.find(k);
+    return v && v->is_num() ? f32(v->num()) : d;
+}
+bool boolOr(const json::value& o, const char* k, bool d) {
+    const auto* v = o.find(k);
+    return v ? truthy(*v) : d;
+}
+void applyAxis(Axis& ax, const json::value& in) {
+    const json::value o = objOf(in);
+    if (!o.is_obj()) fail("ui::chartSet: an axis must be a map");
+    ax.type = enumOf(o.find("type"), kAxisType, ax.type, "ui::chartSet");
+    ax.edge = enumOf(o.find("edge"), kEdge, ax.edge, "ui::chartSet");
+    ax.min = numOr(o, "min", ax.min), ax.max = numOr(o, "max", ax.max);
+    ax.logBase = numOr(o, "logBase", ax.logBase);
+    if (o.find("categories")) ax.categories = strings(o.find("categories"));
+    ax.title = o.str_or("title", ax.title);
+    ax.labelFormat = o.str_or("labelFormat", ax.labelFormat);
+    ax.tickCount = u32(numOr(o, "tickCount", f32(ax.tickCount)));
+    ax.grid = boolOr(o, "grid", ax.grid), ax.visible = boolOr(o, "visible", ax.visible);
+    ax.reversed = boolOr(o, "reversed", ax.reversed), ax.nice = boolOr(o, "nice", ax.nice);
+}
+void applySeries(Series& se, const json::value& o) {
+    const char* fn = "ui::chartSet";
+    se.name = o.str_or("name", se.name);
+    if (o.find("color")) se.color = colorOf(o.find("color"), fn);
+    se.xAxis = u32(numOr(o, "xAxis", f32(se.xAxis))), se.yAxis = u32(numOr(o, "yAxis", f32(se.yAxis)));
+    se.visible = boolOr(o, "visible", se.visible);
+    if (o.find("x")) se.x = floats(o.find("x"), fn), se.m_head = 0;
+    if (o.find("y")) se.y = floats(o.find("y"), fn), se.m_head = 0;
+    if (o.find("y") && !o.find("x") && se.x.size() != se.y.size()) {
+        se.x.resize(se.y.size());
+        for (std::size_t i = 0; i < se.x.size(); ++i) se.x[i] = f32(i);
+    }
+    if (o.find("size")) se.size = floats(o.find("size"), fn);
+    if (o.find("labels")) se.labels = strings(o.find("labels"));
+    if (const auto* c = o.find("candles"); c && c->is_arr()) { // [[x, open, high, low, close], ...]
+        se.candles.clear();
+        for (const auto& r : c->arr()) {
+            const auto v = floats(&r, fn);
+            if (v.size() != 5) fail("ui::chartSet: a candle is [x, open, high, low, close]");
+            se.candles.push_back({v[0], v[1], v[2], v[3], v[4]});
+        }
+    }
+    if (const auto* b = o.find("boxes"); b && b->is_arr()) { // [[x, lower, q1, median, q3, upper, outliers...], ...]
+        se.boxes.clear();
+        for (const auto& r : b->arr()) {
+            const auto v = floats(&r, fn);
+            if (v.size() < 6) fail("ui::chartSet: a box is [x, lower, q1, median, q3, upper, outliers...]");
+            se.boxes.push_back({v[0], v[1], v[2], v[3], v[4], v[5], std::vector<f32>(v.begin() + 6, v.end())});
+        }
+    }
+    se.rows = u32(numOr(o, "rows", f32(se.rows))), se.cols = u32(numOr(o, "cols", f32(se.cols)));
+    se.bins = u32(numOr(o, "bins", f32(se.bins)));
+    se.lineWidth = numOr(o, "lineWidth", se.lineWidth), se.markerSize = numOr(o, "markerSize", se.markerSize);
+    se.barWidth = numOr(o, "barWidth", se.barWidth), se.holeSize = numOr(o, "holeSize", se.holeSize);
+    se.bubbleScale = numOr(o, "bubbleScale", se.bubbleScale);
+    se.decimation = enumOf(o.find("decimation"), kDecim, se.decimation, fn);
+    se.capacity = std::size_t(numOr(o, "capacity", f32(se.capacity)));
+    if (se.capacity && se.count() > se.capacity) { // keep the newest `capacity` points
+        const auto xs = se.xs(), ys = se.ys();
+        std::vector<f32> nx(xs.end() - std::ptrdiff_t(std::min(se.capacity, xs.size())), xs.end());
+        std::vector<f32> ny(ys.end() - std::ptrdiff_t(se.capacity), ys.end());
+        se.x = std::move(nx), se.y = std::move(ny), se.m_head = 0;
+    }
+}
+json::value hitOf(const Hit& h) {
+    if (h.series < 0) return json::value(nullptr);
+    json::object o;
+    o.emplace_back("series", double(h.series));
+    o.emplace_back("index", double(h.index));
+    o.emplace_back("x", double(h.x));
+    o.emplace_back("y", double(h.y));
+    return json::value(std::move(o));
+}
+#endif
+} // namespace
+
+void ForgeUi::Impl::installCharts() {
+#if FUSE_UI_SCRIPT_CHARTS
+    auto& e = s.m_engine;
+    Impl* I = this;
+    auto def = [&](const char* name, int lo, int hi, auto fn) {
+        e.define(std::string("ui::") + name, lo, hi, [I, fn](const std::string& js) -> std::string {
+            const json::value v = json::parse(js);
+            return fn(*I, v.arr());
+        });
+    };
+    auto chart = [](Impl& I, const Args& a, const char* fn) -> Chart& {
+        const NodeHandle h = I.needNode(a, 0, fn);
+        Chart* c = chartOf(I.ui(), h);
+        if (!c) fail(std::string(fn) + ": not a chart view");
+        return *c;
+    };
+    // chartView(parent [, id]) -> node (QChartView)
+    def("chartView", 1, 2, [](Impl& I, const Args& a) {
+        const NodeHandle p = I.needNode(a, 0, "ui::chartView");
+        return out(node(chartView(I.ui(), p, has(a, 1) ? str(a, 1, "ui::chartView") : std::string())));
+    });
+    // chartSet(view, {{"title", ..}, {"legend", "bottom"}, {"theme", "light"}, {"polar", b}, {"animate", b},
+    //   {"axes", {axis...}}, {"series", {{{"type", "bar"}, {"name", ..}, {"y", {..}}, ...}, ...}}}) replaces what it names
+    def("chartSet", 2, 3, [chart](Impl& I, const Args& a) {
+        Chart& c = chart(I, a, "ui::chartSet");
+        const json::value o = objOf(arg(a, 1));
+        if (!o.is_obj()) fail("ui::chartSet: the spec must be a map");
+        c.title = o.str_or("title", c.title);
+        c.legend = enumOf(o.find("legend"), kLegend, c.legend, "ui::chartSet");
+        c.polar = boolOr(o, "polar", c.polar), c.animate = boolOr(o, "animate", c.animate);
+        if (const auto* t = o.find("theme"); t && t->is_str()) {
+            if (t->str() == "light") c.theme = Theme::light();
+            else if (t->str() == "dark") c.theme = Theme::dark();
+            else fail("ui::chartSet: theme is \"light\" or \"dark\"");
+        }
+        if (const auto* ax = o.find("axes"); ax && ax->is_arr()) {
+            c.axes.resize(std::max<std::size_t>(ax->arr().size(), 2));
+            for (std::size_t i = 0; i < ax->arr().size(); ++i) applyAxis(c.axes[i], ax->arr()[i]);
+        }
+        if (const auto* sl = o.find("series"); sl && sl->is_arr()) {
+            c.series.clear();
+            for (const auto& x : sl->arr()) {
+                const json::value so = objOf(x);
+                if (!so.is_obj()) fail("ui::chartSet: a series must be a map");
+                Series& se = c.add(enumOf(so.find("type"), kSeries, SeriesType::Line, "ui::chartSet"));
+                applySeries(se, so);
+            }
+        }
+        chartChanged(I.ui(), I.nodeArg(a, 0), truthy(arg(a, 2)));
+        return none();
+    });
+    // chartSeries(view, index, spec): edits one series in place; chartAxis(view, index, spec) likewise
+    def("chartSeries", 3, 3, [chart](Impl& I, const Args& a) {
+        Chart& c = chart(I, a, "ui::chartSeries");
+        const std::size_t i = std::size_t(num(a, 1, "ui::chartSeries"));
+        if (i >= c.series.size()) fail("ui::chartSeries: no such series");
+        const json::value o = objOf(arg(a, 2));
+        if (!o.is_obj()) fail("ui::chartSeries: the spec must be a map");
+        if (o.find("type")) c.series[i].type = enumOf(o.find("type"), kSeries, c.series[i].type, "ui::chartSeries");
+        applySeries(c.series[i], o);
+        chartChanged(I.ui(), I.nodeArg(a, 0));
+        return none();
+    });
+    def("chartAxis", 3, 3, [chart](Impl& I, const Args& a) {
+        Chart& c = chart(I, a, "ui::chartAxis");
+        const std::size_t i = std::size_t(num(a, 1, "ui::chartAxis"));
+        if (i >= c.axes.size()) c.axes.resize(i + 1);
+        applyAxis(c.axes[i], arg(a, 2));
+        chartChanged(I.ui(), I.nodeArg(a, 0));
+        return none();
+    });
+    def("chartSeriesCount", 1, 1, [chart](Impl& I, const Args& a) {
+        return out(json::value(double(chart(I, a, "ui::chartSeriesCount").series.size())));
+    });
+    def("chartPointCount", 2, 2, [chart](Impl& I, const Args& a) {
+        Chart& c = chart(I, a, "ui::chartPointCount");
+        const std::size_t i = std::size_t(num(a, 1, "ui::chartPointCount"));
+        return i < c.series.size() ? out(json::value(double(c.series[i].count()))) : none();
+    });
+    // chartAppend(view, series, x, y) or (view, series, {xs}, {ys}): streaming (Series::capacity keeps the newest)
+    def("chartAppend", 4, 4, [chart](Impl& I, const Args& a) {
+        Chart& c = chart(I, a, "ui::chartAppend");
+        const std::size_t i = std::size_t(num(a, 1, "ui::chartAppend"));
+        if (i >= c.series.size()) fail("ui::chartAppend: no such series");
+        if (arg(a, 2).is_arr()) {
+            const auto xs = floats(&arg(a, 2), "ui::chartAppend"), ys = floats(&arg(a, 3), "ui::chartAppend");
+            if (xs.size() != ys.size()) fail("ui::chartAppend: x and y lengths differ");
+            c.series[i].append(xs, ys);
+        } else c.series[i].append(f32(num(a, 2, "ui::chartAppend")), f32(num(a, 3, "ui::chartAppend")));
+        chartChanged(I.ui(), I.nodeArg(a, 0));
+        return none();
+    });
+    def("chartClear", 2, 2, [chart](Impl& I, const Args& a) {
+        Chart& c = chart(I, a, "ui::chartClear");
+        const std::size_t i = std::size_t(num(a, 1, "ui::chartClear"));
+        if (i < c.series.size()) c.series[i].clear();
+        chartChanged(I.ui(), I.nodeArg(a, 0));
+        return none();
+    });
+    def("chartZoom", 4, 4, [chart](Impl& I, const Args& a) {
+        zoom(chart(I, a, "ui::chartZoom"), u32(num(a, 1, "ui::chartZoom")), f32(num(a, 2, "ui::chartZoom")), f32(num(a, 3, "ui::chartZoom")));
+        chartChanged(I.ui(), I.nodeArg(a, 0));
+        return none();
+    });
+    def("chartPan", 3, 3, [chart](Impl& I, const Args& a) {
+        pan(chart(I, a, "ui::chartPan"), u32(num(a, 1, "ui::chartPan")), f32(num(a, 2, "ui::chartPan")));
+        chartChanged(I.ui(), I.nodeArg(a, 0));
+        return none();
+    });
+    def("chartZoomTo", 4, 4, [chart](Impl& I, const Args& a) {
+        zoomTo(chart(I, a, "ui::chartZoomTo"), u32(num(a, 1, "ui::chartZoomTo")), f32(num(a, 2, "ui::chartZoomTo")), f32(num(a, 3, "ui::chartZoomTo")));
+        chartChanged(I.ui(), I.nodeArg(a, 0));
+        return none();
+    });
+    def("chartResetZoom", 1, 1, [chart](Impl& I, const Args& a) {
+        resetZoom(chart(I, a, "ui::chartResetZoom"));
+        chartChanged(I.ui(), I.nodeArg(a, 0));
+        return none();
+    });
+    // chartRange(view, axis [, full]) -> {lo, hi}
+    def("chartRange", 2, 3, [chart](Impl& I, const Args& a) {
+        const auto r = axisRanges(chart(I, a, "ui::chartRange"), truthy(arg(a, 2)));
+        const std::size_t i = std::size_t(num(a, 1, "ui::chartRange"));
+        if (i >= r.size()) return none();
+        json::array l;
+        l.push_back(double(r[i].first));
+        l.push_back(double(r[i].second));
+        return out(json::value(std::move(l)));
+    });
+    def("chartHovered", 1, 1, [](Impl& I, const Args& a) {
+        return out(hitOf(chartHovered(I.ui(), I.needNode(a, 0, "ui::chartHovered"))));
+    });
+    def("chartTooltip", 1, 3, [chart](Impl& I, const Args& a) {
+        if (has(a, 1))
+            return out(json::value(tooltip(chart(I, a, "ui::chartTooltip"), u32(num(a, 1, "ui::chartTooltip")), u32(num(a, 2, "ui::chartTooltip")))));
+        return out(json::value(chartTooltip(I.ui(), I.needNode(a, 0, "ui::chartTooltip"))));
+    });
+    def("chartSelection", 1, 1, [chart](Impl& I, const Args& a) {
+        json::array l;
+        for (const Selected& x : chart(I, a, "ui::chartSelection").selection) {
+            json::array p;
+            p.push_back(double(x.series));
+            p.push_back(double(x.index));
+            l.push_back(json::value(std::move(p)));
+        }
+        return out(json::value(std::move(l)));
+    });
+    def("chartDescribe", 1, 1, [](Impl& I, const Args& a) {
+        const NodeHandle h = I.needNode(a, 0, "ui::chartDescribe");
+        if (Chart* c = chartOf(I.ui(), h)) return out(json::value(describe(*c)));
+        if (Chart3D* c = chart3dOf(I.ui(), h)) return out(json::value(describe(*c)));
+        fail("ui::chartDescribe: not a chart view");
+    });
+    def("chartExport", 2, 4, [](Impl& I, const Args& a) {
+        const NodeHandle h = I.needNode(a, 0, "ui::chartExport");
+        const std::string path = str(a, 1, "ui::chartExport");
+        const int w = has(a, 2) ? int(num(a, 2, "ui::chartExport")) : 0, hh = has(a, 3) ? int(num(a, 3, "ui::chartExport")) : 0;
+        if (chartOf(I.ui(), h)) return out(json::value(exportImage(I.ui(), h, path, w, hh)));
+        if (chart3dOf(I.ui(), h)) return out(json::value(exportImage3d(I.ui(), h, path, w, hh)));
+        fail("ui::chartExport: not a chart view");
+    });
+    // ---- 3D graphs
+    auto chart3 = [](Impl& I, const Args& a, const char* fn) -> Chart3D& {
+        Chart3D* c = chart3dOf(I.ui(), I.needNode(a, 0, fn));
+        if (!c) fail(std::string(fn) + ": not a 3D chart view");
+        return *c;
+    };
+    def("chart3dView", 2, 3, [](Impl& I, const Args& a) {
+        const NodeHandle p = I.needNode(a, 0, "ui::chart3dView");
+        const json::value k = arg(a, 1);
+        const Kind3D kind = enumOf(&k, kKind3D, Kind3D::Surface, "ui::chart3dView");
+        return out(node(chart3dView(I.ui(), p, kind, has(a, 2) ? str(a, 2, "ui::chart3dView") : std::string())));
+    });
+    // chart3dSet(view, {{"rows", r}, {"cols", c}, {"values", {..}}, {"points", {{x, y, z}, ..}}, {"pointColors", {..}},
+    //   {"axes", {{{"title", ..}, {"min", ..}, {"max", ..}, {"ticks", n}}, ..}}, {"camera", {{"yaw", ..}, ..}},
+    //   {"wireframe", b}, {"shading", b}, {"grid", b}, {"pointSize", px}, {"lineWidth", px}, {"seriesColors", {..}},
+    //   {"maxPoints", n}, {"maxGrid", n}})
+    def("chart3dSet", 2, 2, [chart3](Impl& I, const Args& a) {
+        const char* fn = "ui::chart3dSet";
+        Chart3D& c = chart3(I, a, fn);
+        const json::value o = objOf(arg(a, 1));
+        if (!o.is_obj()) fail("ui::chart3dSet: the spec must be a map");
+        c.rows = u32(numOr(o, "rows", f32(c.rows))), c.cols = u32(numOr(o, "cols", f32(c.cols)));
+        if (o.find("values")) c.values = floats(o.find("values"), fn);
+        if (const auto* pts = o.find("points"); pts && pts->is_arr()) {
+            c.points.clear();
+            for (const auto& p : pts->arr()) {
+                const auto v = floats(&p, fn);
+                if (v.size() != 3) fail("ui::chart3dSet: a point is {x, y, z}");
+                c.points.push_back({v[0], v[1], v[2]});
+            }
+        }
+        auto colours = [&](const char* k, std::vector<Color>& dst) {
+            if (const auto* l = o.find(k); l && l->is_arr()) {
+                dst.clear();
+                for (const auto& x : l->arr()) dst.push_back(colorOf(&x, fn));
+            }
+        };
+        colours("pointColors", c.pointColors);
+        colours("seriesColors", c.seriesColors);
+        c.pointSize = numOr(o, "pointSize", c.pointSize), c.lineWidth = numOr(o, "lineWidth", c.lineWidth);
+        c.wireframe = boolOr(o, "wireframe", c.wireframe), c.shading = boolOr(o, "shading", c.shading);
+        c.grid = boolOr(o, "grid", c.grid);
+        c.maxPoints = u32(numOr(o, "maxPoints", f32(c.maxPoints))), c.maxGrid = u32(numOr(o, "maxGrid", f32(c.maxGrid)));
+        if (const auto* ax = o.find("axes"); ax && ax->is_arr())
+            for (std::size_t i = 0; i < ax->arr().size() && i < 3; ++i) {
+                const json::value x = objOf(ax->arr()[i]);
+                if (!x.is_obj()) fail("ui::chart3dSet: an axis must be a map");
+                c.axis[i].min = numOr(x, "min", c.axis[i].min), c.axis[i].max = numOr(x, "max", c.axis[i].max);
+                c.axis[i].title = x.str_or("title", c.axis[i].title);
+                c.axis[i].ticks = u32(numOr(x, "ticks", f32(c.axis[i].ticks)));
+            }
+        if (const auto* cam = o.find("camera")) {
+            const json::value x = objOf(*cam);
+            if (!x.is_obj()) fail("ui::chart3dSet: camera must be a map");
+            c.camera.yaw = numOr(x, "yaw", c.camera.yaw), c.camera.pitch = numOr(x, "pitch", c.camera.pitch);
+            c.camera.zoom = numOr(x, "zoom", c.camera.zoom), c.camera.perspective = boolOr(x, "perspective", c.camera.perspective);
+        }
+        chart3dChanged(I.ui(), I.nodeArg(a, 0));
+        return none();
+    });
+    def("chart3dCamera", 1, 1, [chart3](Impl& I, const Args& a) {
+        const Camera3D& cam = chart3(I, a, "ui::chart3dCamera").camera;
+        json::object o;
+        o.emplace_back("yaw", double(cam.yaw));
+        o.emplace_back("pitch", double(cam.pitch));
+        o.emplace_back("zoom", double(cam.zoom));
+        o.emplace_back("perspective", cam.perspective);
+        return out(json::value(std::move(o)));
+    });
+    def("chart3dHovered", 1, 1, [](Impl& I, const Args& a) {
+        const i32 i = chart3dHovered(I.ui(), I.needNode(a, 0, "ui::chart3dHovered"));
+        return i < 0 ? none() : out(json::value(double(i)));
+    });
+    def("chart3dSelection", 1, 1, [](Impl& I, const Args& a) {
+        json::array l;
+        for (u32 i : chart3dSelection(I.ui(), I.needNode(a, 0, "ui::chart3dSelection"))) l.push_back(double(i));
+        return out(json::value(std::move(l)));
+    });
+    def("chart3dTooltip", 1, 1, [](Impl& I, const Args& a) {
+        json::array l;
+        for (auto& t : chart3dTooltip(I.ui(), I.needNode(a, 0, "ui::chart3dTooltip"))) l.push_back(t);
+        return out(json::value(std::move(l)));
+    });
+#endif
 }
 
 ForgeUi::ForgeUi(forge::script::engine& engine, UiContext& ui, doc::Model& model)
