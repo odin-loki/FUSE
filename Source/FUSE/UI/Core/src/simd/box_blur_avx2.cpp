@@ -4,4 +4,5 @@ namespace fuse::ui::simd {
 void boxVerticalAvx2(const float* s, float* d, int stride, int h, int r, float inv) {
     detail::boxVerticalLane<forge::lane::x86_64_v3>(s, d, stride, h, r, inv);
 }
+void fillSpanAvx2(unsigned* d, int n, unsigned v) { detail::fillSpanLane<forge::lane::x86_64_v3>(d, n, v); }
 }

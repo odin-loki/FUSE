@@ -125,7 +125,8 @@ Headless (offscreen CPU raster) works everywhere and is what the test suite uses
   *Status: done.* OS calls on seam (42870318b); CI jobs staged in `docs/gui/ci/fuse-gui.yml` (needs moving to
   `.github/workflows`, token lacks `workflow` scope; unverified); backdrop-blur vertical pass on `forge::lane`
   (`Core/src/simd/`, AVX2 picked via `forge::lane::detect()`, built from FORGE sources as `fuse_forge_lane`;
-  bit-exact vs scalar, gated by `fuse_ui_simd_blur`).
+  bit-exact vs scalar, gated by `fuse_ui_simd_blur`). Horizontal pass (pixel transpose + lane sweep) and solid
+  span fills (`simd::fillSpan`) also on `forge::lane`.
 - **G2**: Wayland (SDL3 path per D1), OS-level drag and drop, rich clipboard MIME, native file dialogs, hot reload on
   `forge::os::file_watch`.
   *Status:* hot reload done: `fuse::ui::doc::HotReload` (styles replaced in place via `StyleEngine::replaceSheet`,

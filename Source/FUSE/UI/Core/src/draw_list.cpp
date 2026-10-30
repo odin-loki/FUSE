@@ -182,26 +182,8 @@ void backdropBlur(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& ta
             const u32 p = target.pixels[std::size_t(sy0 + y) * std::size_t(target.width) + std::size_t(sx0 + x)];
             for (int k = 0; k < 4; ++k) buf[(std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4 + std::size_t(k)] = f32((p >> (8 * k)) & 0xFFu);
         }
-    auto pass = [&](bool vertical) {
-        const int n = vertical ? h : w, lines = vertical ? w : h;
-        const f32 inv = 1.f / f32(2 * r + 1);
-        for (int l = 0; l < lines; ++l)
-            for (int k = 0; k < 4; ++k) {
-                auto at = [&](int i) -> f32& {
-                    i = std::clamp(i, 0, n - 1);
-                    const std::size_t px = vertical ? std::size_t(i) * std::size_t(w) + std::size_t(l) : std::size_t(l) * std::size_t(w) + std::size_t(i);
-                    return buf[px * 4 + std::size_t(k)];
-                };
-                f32 acc = 0.f;
-                for (int i = -r; i <= r; ++i) acc += at(i);
-                for (int i = 0; i < n; ++i) {
-                    const std::size_t px = vertical ? std::size_t(i) * std::size_t(w) + std::size_t(l) : std::size_t(l) * std::size_t(w) + std::size_t(i);
-                    tmp[px * 4 + std::size_t(k)] = acc * inv;
-                    acc += at(i + r + 1) - at(i - r);
-                }
-            }
-        buf.swap(tmp);
-    };
+    std::vector<f32> scratch(buf.size());
+    auto pass = [&](bool) { simd::boxHorizontal(buf.data(), tmp.data(), scratch.data(), w, h, r, 1.f / f32(2 * r + 1)); };
     auto vertical = [&] { // rows are contiguous: one FORGE-lane vector sweep over all columns x channels
         simd::boxVertical(buf.data(), tmp.data(), w * 4, h, r, 1.f / f32(2 * r + 1));
         buf.swap(tmp);
@@ -282,9 +264,11 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
         for (int y = y0; y < y1; ++y) {
             u32* row = target.pixels.data() + std::size_t(y) * std::size_t(target.width);
             const bool solidRow = y >= iy0 && y < iy1;
+            const int sa = std::max(x0, ix0), sb = std::min(x1, ix1);
+            if (solidRow && sa < sb) simd::fillSpan(row + sa, sb - sa, solid);
             for (int x = x0; x < x1; ++x) {
                 if (solidRow && x >= ix0 && x < ix1) {
-                    row[x] = solid;
+                    x = ix1 - 1; // span stored above
                     continue;
                 }
                 const f32 px = f32(x) + 0.5f, py = f32(y) + 0.5f;

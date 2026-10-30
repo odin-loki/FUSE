@@ -1,6 +1,8 @@
 #pragma once
 #include <forge/lane/vec.hpp>
 #include <algorithm>
+#include <bit>
+#include <cstring>
 
 namespace fuse::ui::simd::detail {
 inline void boxVerticalScalar(const float* src, float* dst, int stride, int h, int r, float inv, int j0) {
@@ -31,5 +33,15 @@ void boxVerticalLane(const float* src, float* dst, int stride, int h, int r, flo
         }
     }
     boxVerticalScalar(src, dst, stride, h, r, inv, j);
+}
+template <forge::lane::Target Tg>
+void fillSpanLane(unsigned* dst, int n, unsigned value) {
+    namespace L = forge::lane;
+    constexpr int N = L::vec<float, Tg>::N;
+    const auto v = L::splat<Tg>(std::bit_cast<float>(value));
+    int i = 0;
+    float* f = reinterpret_cast<float*>(dst);
+    for (; i + N <= n; i += N) L::store(f + i, v);
+    for (; i < n; ++i) dst[i] = value;
 }
 } // namespace fuse::ui::simd::detail
