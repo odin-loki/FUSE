@@ -316,11 +316,20 @@ void DrawList::pushClipLayers(std::span<const ClipLayer> layers) {
             const f32 x0 = std::min(b.x, lb.x), y0 = std::min(b.y, lb.y);
             b = {x0, y0, std::max(b.right(), lb.right()) - x0, std::max(b.bottom(), lb.bottom()) - y0};
         }
-        const u8 g = l.gradient <= 2 ? l.gradient : 0;
+        const bool tex = l.gradient == 3 && l.texW && l.texH && l.texels.size() >= std::size_t(l.texW) * l.texH;
+        const u8 g = tex ? 3 : l.gradient <= 2 ? l.gradient : 0;
         m_edges.push_back({l.value0, l.evenOdd ? 1.f : 0.f, f32(e.size()), l.alpha0, -1.f - f32(g)});
         if (g) {
             m_edges.push_back({l.toUnit[0], l.toUnit[1], l.toUnit[2], l.toUnit[3], 0.f});
-            m_edges.push_back({l.toUnit[4], l.toUnit[5], l.value1, l.alpha1, 0.f});
+            m_edges.push_back({l.toUnit[4], l.toUnit[5], tex ? f32(l.texW) : l.value1, tex ? f32(l.texH) : l.alpha1, 0.f});
+        }
+        if (tex) {
+            const std::size_t n = std::size_t(l.texW) * l.texH;
+            for (std::size_t k = 0; k < n; k += 4) {
+                f32 d[4] = {};
+                for (std::size_t j = 0; j < 4 && k + j < n; ++j) d[j] = std::clamp(l.texels[k + j], 0.f, 1.f);
+                m_edges.push_back({d[0], d[1], d[2], d[3], -0.5f});
+            }
         }
         m_edges.insert(m_edges.end(), e.begin(), e.end());
     }

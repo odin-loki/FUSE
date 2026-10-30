@@ -146,9 +146,9 @@ int main() {
         PropValue v;
         for (const char* ok : {"none", "inset(10px)", "inset(5% 10px round 4px)", "circle()", "circle(50px at left top)", "circle(closest-side at 20% 30%)",
                                "ellipse(40px 20px)", "ellipse(farthest-side 10% at center)", "polygon(0 0, 100% 0, 50% 100%)",
-                               "polygon(evenodd, 0 0, 10px 0, 10px 10px) border-box"})
+                               "polygon(evenodd, 0 0, 10px 0, 10px 10px) border-box", "url(#x)", "padding-box", "path('M 0 0 L 10 0 L 0 10 Z')", "path(evenodd, 'M0 0h10v10z') content-box"})
             UI_CHECK(parsePropValue(Prop::ClipPath, ok, v));
-        for (const char* bad : {"inset()", "circle(1px 2px)", "polygon(0 0, 1px 1px)", "polygon(0 0 0, 1 1, 2 2)", "url(#x)", "ellipse(1px)"})
+        for (const char* bad : {"inset()", "circle(1px 2px)", "polygon(0 0, 1px 1px)", "polygon(0 0 0, 1 1, 2 2)", "url()", "path('')", "path('M 0 0 Q')", "inset(1px) circle()", "border-box padding-box", "ellipse(1px)"})
             UI_CHECK(!parsePropValue(Prop::ClipPath, bad, v));
         UiContext ui({.viewport = {200, 200}});
         ui.styles().addSheet(sheet(".c { width: 100px; height: 100px; flex-shrink: 0; background: #f00; clip-path: circle(50px); } "

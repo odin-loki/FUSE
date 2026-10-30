@@ -40,7 +40,9 @@
 
 namespace fuse::ui {
 
-enum class Unit : u8 { Auto, Px, Percent, Fr };
+/// Vw..Cqmax are resolved to Px when a style is computed (viewport: StyleEngine::mediaEnv; container units: the
+/// nearest container, else the viewport), so layout only sees Auto / Px / Percent / Fr.
+enum class Unit : u8 { Auto, Px, Percent, Fr, Vw, Vh, Vmin, Vmax, Cqw, Cqh, Cqi, Cqb, Cqmin, Cqmax };
 struct Length {
     f32 value = 0.f;
     Unit unit = Unit::Auto;
@@ -281,12 +283,11 @@ struct ComputedStyle {
     std::array<u8, kMaxTransitions> animationRangeStartName{}, animationRangeEndName{};
     std::array<Length, kMaxTransitions> animationRangeStartOffset{}, animationRangeEndOffset{};
     /// container-type (0 normal, 1 size, 2 inline-size) / container-name (hashId of each ident)
-    /// clip-path basic shape (border box): 0 none, 1 inset (clipArgs 0-3 t r b l, 4 round radius), 2 circle (0 r,
-    /// auto = closest-side; 1-2 centre), 3 ellipse (0-1 radii, 2-3 centre), 4 polygon (clipCount points: x, y pairs;
-    /// clipEvenOdd fill rule)
-    u8 clipShape = 0, clipCount = 0;
-    bool clipEvenOdd = false;
-    std::array<Length, 2 * kMaxTransitions> clipArgs{};
+    /// clip-path and mask-* longhands: interned source text (animationNameId of the normalised value; 0 = initial),
+    /// parsed on use (fuse/ui/css_masking.hpp)
+    u32 clipPath = 0;
+    u32 maskImage = 0, maskMode = 0, maskComposite = 0, maskSize = 0, maskPosition = 0, maskRepeat = 0, maskOrigin = 0,
+        maskClip = 0;
     u8 containerType = 0;
     u8 containerNameCount = 0;
     std::array<u32, kMaxTransitions> containerName{};
@@ -361,7 +362,8 @@ enum class Prop : u8 {
     AnimationDirection, AnimationFillMode, AnimationPlayState, TransitionBehavior, AnimationComposition, Transform,
     TransformOrigin, AnimationTimeline, ScrollTimeline, ViewTimeline, Perspective, PerspectiveOrigin,
     BackfaceVisibility, TransformStyle, ViewTimelineInset, TimelineScope, AnimationRangeStart, AnimationRangeEnd,
-    ContainerType, ContainerName, ClipPath, Count
+    ContainerType, ContainerName, ClipPath, MaskImage, MaskMode, MaskComposite, MaskSize, MaskPosition, MaskRepeat,
+    MaskOrigin, MaskClip, Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
 static_assert(kPropCount <= 128, "PropMask holds 128 properties");
@@ -508,15 +510,24 @@ struct StyleRule {
     static constexpr u16 kNone = 0xFFFF;
     u16 layer = kNone; ///< cascade layer (index into the sheet's layers()); kNone = unlayered
     u16 cond = kNone;  ///< @media / @container condition (index into the sheet's conditions()); kNone = always
+    u16 scope = kNone; ///< @scope (index into the sheet's scopes()): limits checked at match time
+};
+/// @scope (<roots>) [to (<limits>)]: rules inside are rewritten like nesting (roots as `&`); a matched node must not
+/// be at or below a limit element that is below its scoping root.
+struct StyleScope {
+    std::vector<std::vector<SimpleSelector>> roots, limits;
 };
 
 /// A conditional group rule (@media / @container): a comma list of queries, each a conjunction of features (or
 /// `not` the conjunction). Nested groups chain through `parent`.
 struct StyleCondition {
     enum class Kind : u8 { Media, Container };
-    enum class Feature : u8 { Always, Never, Width, Height, AspectRatio, Landscape, Dark, ReducedMotion };
+    enum class Feature : u8 { Always, Never, Width, Height, AspectRatio, Landscape, Dark, ReducedMotion, Hover, AnyHover,
+                              Pointer, AnyPointer, Resolution, Style };
     enum class Op : u8 { Ge, Le, Gt, Lt, Eq };
-    struct Test { Feature f = Feature::Always; Op op = Op::Eq; f32 v = 0.f; };
+    /// Pointer / AnyPointer: v = 0 none, 1 coarse, 2 fine; Resolution: dppx; Style: custom property `name`
+    /// (customHash) equals `value` (trimmed text; v = 1: any value)
+    struct Test { Feature f = Feature::Always; Op op = Op::Eq; f32 v = 0.f; u32 name = 0; std::string value; };
     struct Query { bool negate = false; std::vector<Test> all; };
     Kind kind = Kind::Media;
     u32 containerName = 0; ///< @container <name>: animationNameId; 0 = the nearest container
@@ -527,6 +538,9 @@ struct StyleCondition {
 struct MediaEnv {
     f32 width = 800.f, height = 600.f;
     bool dark = false, reducedMotion = false;
+    bool hover = true, anyHover = true;  ///< primary / any pointer can hover
+    u8 pointer = 2, anyPointer = 2;      ///< 0 none, 1 coarse, 2 fine (primary / best of any)
+    f32 resolution = 1.f;                ///< dppx
     bool operator==(const MediaEnv&) const = default;
 };
 /// Evaluates one query list against a size (width, height) and the env (media) or a container size.
@@ -550,6 +564,9 @@ struct StyleSubject {
     /// @container: content-box size of node's nearest ancestor container named `nameHash` (0: any) with the
     /// axes the query needs (`block`: container-type size). False: no such container (the query is false).
     virtual bool containerSize(u32 /*node*/, u32 /*nameHash*/, bool /*block*/, f32& /*w*/, f32& /*h*/) const { return false; }
+    /// @container style(): node's nearest ancestor style container (any element; named: container-name matches).
+    /// 0xFFFFFFFF: none.
+    virtual u32 styleContainer(u32 node, u32 nameHash) const { return nameHash ? 0xFFFFFFFFu : parent(node); }
 };
 
 /// Parses An+B (odd, even, 3, -n+2, 2n+1, ...).
@@ -581,18 +598,20 @@ public:
     /// Rebuilds a parsed sheet from its parts (cooked `.fusestyle` loading; see fuse/ui/doc/cook.hpp).
     static StyleSheet fromParts(std::vector<StyleRule> rules, std::vector<std::pair<u32, std::string>> tokens,
                                 std::vector<KeyframesRule> keyframes = {}, std::vector<std::string> layers = {},
-                                std::vector<StyleCondition> conditions = {}) {
+                                std::vector<StyleCondition> conditions = {}, std::vector<StyleScope> scopes = {}) {
         StyleSheet s;
         s.m_rules = std::move(rules);
         s.m_tokens = std::move(tokens);
         s.m_keyframes = std::move(keyframes);
         s.m_layers = std::move(layers);
         s.m_conds = std::move(conditions);
+        s.m_scopes = std::move(scopes);
         return s;
     }
     /// @layer names (dotted full names, first-declaration order).
     const std::vector<std::string>& layers() const { return m_layers; }
     const std::vector<StyleCondition>& conditions() const { return m_conds; }
+    const std::vector<StyleScope>& scopes() const { return m_scopes; }
     const std::vector<KeyframesRule>& keyframes() const { return m_keyframes; }
     /// Uses structural (:nth-*, sibling) selectors: sibling changes restyle the siblings.
     bool structural() const;
@@ -607,11 +626,14 @@ private:
     std::vector<KeyframesRule> m_keyframes;
     std::vector<std::string> m_layers;
     std::vector<StyleCondition> m_conds;
+    std::vector<StyleScope> m_scopes;
 };
 
 /// Parses one value for `p` (also used by inline setters and markup). False on a bad value.
 bool parsePropValue(Prop p, std::string_view text, PropValue& out);
 bool parseColor(std::string_view text, Color& out);
+/// A CSS <length> / <percentage> / fr / auto (px, dp, %, fr, vw.., cq*..).
+bool parseCssLength(std::string_view text, Length& out);
 
 /// Ordered sheets + deduplicated computed-style table + matcher.
 class StyleEngine {
@@ -628,7 +650,13 @@ public:
     bool setMediaEnv(const MediaEnv& env);
     const MediaEnv& mediaEnv() const { return m_env; }
     /// Some rule depends on @container (UiContext re-styles containers' subtrees when their size changes).
-    bool usesContainerQueries() const { return m_hasContainer; }
+    /// (also: container-relative units cq*)
+    bool usesContainerQueries() const { return m_hasContainer || m_hasCqUnits || m_inlCq; }
+    /// Inline values with viewport / container units (UiContext::setCss): keeps the matching restyle triggers on.
+    void noteInlineValue(const PropValue& v);
+    /// Value of custom property `nameHash` on `node` (its matching rules, inherited from ancestors, then sheet
+    /// tokens). False: not defined.
+    bool customValue(const StyleSubject& s, u32 node, u32 nameHash, std::string_view& out) const;
     /// Computes the style of `node`: defaults → inherited from `parentStyle` → matched rules → `inlineValues`.
     /// Returns an index into the table (allocates only for a never-seen combination).
     u32 compute(const StyleSubject& subject, u32 node, const ComputedStyle* parentStyle,
@@ -684,7 +712,12 @@ private:
     std::vector<u8> m_mediaOk; ///< per sheet condition (flattened): @media result under m_env
     std::vector<u32> m_condBase; ///< per sheet: first index into m_mediaOk
     MediaEnv m_env;
-    bool m_hasContainer = false;
+    bool m_hasContainer = false, m_hasCqUnits = false, m_hasVp = false, m_hasStyleQuery = false, m_hasScope = false;
+    bool m_inlCq = false, m_inlVp = false;
+    mutable int m_styleDepth = 0;
+    bool scopeOk(const StyleSubject& s, u32 node, u32 orderedIdx) const;
+    bool styleTest(const StyleSubject& s, u32 node, u32 containerName, const StyleCondition::Test& t) const;
+    void resolveUnits(const StyleSubject& s, u32 node, PropValue& v) const;
     bool condOk(const StyleSubject& s, u32 node, u32 orderedIdx) const;
     void evalMedia();
     std::vector<const StyleRule*> m_scratch;

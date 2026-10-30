@@ -1,4 +1,5 @@
 #include "fuse/ui/ui.hpp"
+#include "fuse/ui/css_masking.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -167,6 +168,15 @@ struct ContextSubject final : StyleSubject {
             return true;
         }
         return false;
+    }
+    u32 styleContainer(u32 n, u32 name) const override {
+        for (u32 a = nodes[n].parent; a != 0xFFFFFFFFu; a = nodes[a].parent) {
+            if (!name) return a;
+            const ComputedStyle& cs = ui.m_styles.style(nodes[a].style);
+            for (u8 k = 0; k < cs.containerNameCount; ++k)
+                if (cs.containerName[k] == name) return a;
+        }
+        return 0xFFFFFFFFu;
     }
 };
 
@@ -882,6 +892,16 @@ void UiContext::scrollTo(NodeHandle h, Vec2 o) {
 void UiContext::setMediaPreferences(bool dark, bool reducedMotion) {
     MediaEnv env = m_styles.mediaEnv();
     env.dark = dark, env.reducedMotion = reducedMotion;
+    m_styles.setMediaEnv(env);
+}
+void UiContext::setInputMedia(bool hover, bool anyHover, u8 pointer, u8 anyPointer) {
+    MediaEnv env = m_styles.mediaEnv();
+    env.hover = hover, env.anyHover = anyHover, env.pointer = std::min<u8>(pointer, 2), env.anyPointer = std::min<u8>(anyPointer, 2);
+    m_styles.setMediaEnv(env);
+}
+void UiContext::setMediaResolution(f32 dppx) {
+    MediaEnv env = m_styles.mediaEnv();
+    env.resolution = dppx > 0.f ? dppx : 1.f;
     m_styles.setMediaEnv(env);
 }
 bool UiContext::syncContainers() {
@@ -2267,6 +2287,17 @@ int UiContext::defineSvgFilters(std::string_view svgText) {
 }
 
 void UiContext::defineFilterImage(std::string_view name, Image image) { m_filterImages[std::string(name)] = std::move(image); }
+void UiContext::defineClipPath(std::string_view id, Path path, bool evenOdd, bool objectBoundingBox) {
+    m_clipPathDefs[std::string(id)] = {std::move(path), evenOdd, objectBoundingBox};
+    for (Node& k : m_nodes) k.dirty |= kDirtyPaint;
+}
+void UiContext::defineClipPath(std::string_view id, std::string_view svgPathData, bool evenOdd, bool objectBoundingBox) {
+    defineClipPath(id, Path::fromSvg(svgPathData), evenOdd, objectBoundingBox);
+}
+void UiContext::defineMaskImage(std::string_view name, Image image) {
+    m_maskImages[std::string(name)] = std::move(image);
+    for (Node& k : m_nodes) k.dirty |= kDirtyPaint;
+}
 
 FilterImageResolver UiContext::filterImageResolver() const {
     return [this](std::string_view name) -> const Image* {
@@ -2618,102 +2649,6 @@ bool UiContext::paintTransformed(u32 i, f32 opacity, DrawList& dl) {
     return true;
 }
 
-namespace {
-// ---- clip-path basic shapes (border box) ----------------------------------------------------------------------------
-f32 clipLen(const Length& l, f32 ref) { return l.unit == Unit::Percent ? l.value * 0.01f * ref : l.value; }
-struct ClipGeom {
-    u8 kind = 0;
-    Rect r;           // inset: the inner rect
-    f32 radius = 0.f; // inset round
-    Vec2 c, rad;      // circle / ellipse
-    std::vector<Vec2> pts;
-};
-ClipGeom clipGeom(const ComputedStyle& s, const Rect& b) {
-    ClipGeom g;
-    g.kind = s.clipShape;
-    const auto& a = s.clipArgs;
-    switch (s.clipShape) {
-    case 1: {
-        const f32 t = clipLen(a[0], b.h), r = clipLen(a[1], b.w), bo = clipLen(a[2], b.h), l = clipLen(a[3], b.w);
-        g.r = {b.x + l, b.y + t, std::max(0.f, b.w - l - r), std::max(0.f, b.h - t - bo)};
-        g.radius = std::min(clipLen(a[4], b.w), std::min(g.r.w, g.r.h) * 0.5f);
-        break;
-    }
-    case 2: case 3: {
-        const int pi = s.clipShape == 2 ? 1 : 2;
-        g.c = {b.x + clipLen(a[pi], b.w), b.y + clipLen(a[pi + 1], b.h)};
-        const f32 dl = g.c.x - b.x, dr = b.x + b.w - g.c.x, dt = g.c.y - b.y, db = b.y + b.h - g.c.y;
-        auto rr = [&](const Length& l, bool horiz, f32 ref) { // Auto: closest-side (value 0) / farthest-side (-1)
-            if (l.unit != Unit::Auto) return clipLen(l, ref);
-            const bool far = l.value < 0.f;
-            auto pick = [far](f32 x, f32 y) { return far ? std::max(x, y) : std::min(x, y); };
-            if (s.clipShape == 2) return pick(pick(dl, dr), pick(dt, db));
-            return horiz ? pick(dl, dr) : pick(dt, db);
-        };
-        if (s.clipShape == 2) {
-            const f32 r = rr(a[0], true, std::sqrt(b.w * b.w + b.h * b.h) / std::sqrt(2.f));
-            g.rad = {r, r};
-        } else g.rad = {rr(a[0], true, b.w), rr(a[1], false, b.h)};
-        break;
-    }
-    case 4:
-        for (u8 k = 0; k < s.clipCount; ++k) g.pts.push_back({b.x + clipLen(a[2 * k], b.w), b.y + clipLen(a[2 * k + 1], b.h)});
-        break;
-    default: break;
-    }
-    return g;
-}
-Path clipShapePath(const ComputedStyle& s, const Rect& b) {
-    const ClipGeom g = clipGeom(s, b);
-    Path p;
-    switch (g.kind) {
-    case 1:
-        if (g.radius > 0.f) {
-            const f32 r = g.radius, x0 = g.r.x, y0 = g.r.y, x1 = g.r.x + g.r.w, y1 = g.r.y + g.r.h;
-            p.moveTo({x0 + r, y0}).lineTo({x1 - r, y0}).arcTo({r, r}, 0.f, false, true, {x1, y0 + r}).lineTo({x1, y1 - r})
-                .arcTo({r, r}, 0.f, false, true, {x1 - r, y1}).lineTo({x0 + r, y1}).arcTo({r, r}, 0.f, false, true, {x0, y1 - r})
-                .lineTo({x0, y0 + r}).arcTo({r, r}, 0.f, false, true, {x0 + r, y0}).close();
-        } else p.rect(g.r);
-        break;
-    case 2: case 3: p.ellipse(g.c, g.rad.x, g.rad.y); break;
-    case 4:
-        p.moveTo(g.pts[0]);
-        for (std::size_t k = 1; k < g.pts.size(); ++k) p.lineTo(g.pts[k]);
-        p.close();
-        break;
-    default: break;
-    }
-    return p;
-}
-bool clipShapeContains(const ComputedStyle& s, const Rect& b, Vec2 q) {
-    const ClipGeom g = clipGeom(s, b);
-    switch (g.kind) {
-    case 1: {
-        if (!g.r.contains(q)) return false;
-        const f32 r = g.radius; // outside a rounded corner
-        const f32 cx = std::clamp(q.x, g.r.x + r, g.r.x + g.r.w - r), cy = std::clamp(q.y, g.r.y + r, g.r.y + g.r.h - r);
-        return (q.x - cx) * (q.x - cx) + (q.y - cy) * (q.y - cy) <= r * r + 1e-3f;
-    }
-    case 2: case 3: {
-        if (g.rad.x <= 0.f || g.rad.y <= 0.f) return false;
-        const f32 dx = (q.x - g.c.x) / g.rad.x, dy = (q.y - g.c.y) / g.rad.y;
-        return dx * dx + dy * dy <= 1.f;
-    }
-    case 4: {
-        int wind = 0, cross = 0;
-        for (std::size_t k = 0, j = g.pts.size() - 1; k < g.pts.size(); j = k++) {
-            const Vec2 a = g.pts[j], c = g.pts[k];
-            if ((a.y <= q.y) != (c.y <= q.y)) {
-                const f32 x = a.x + (q.y - a.y) / (c.y - a.y) * (c.x - a.x);
-                if (q.x < x) { ++cross; wind += c.y > a.y ? 1 : -1; }
-            }
-        }
-        return s.clipEvenOdd ? (cross & 1) != 0 : wind != 0;
-    }
-    default: return true;
-    }
-}
-} // namespace
 
 void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     Node& n = m_nodes[i];
@@ -2724,14 +2659,47 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
         Rect& last = m_cold[i]->xfPainted;
         if (!last.empty()) m_damage = m_damage.unite(last), last = {};
     }
-    // clip-path: the node and its subtree inside the shape (a second visit paints as usual)
-    if (s.visible && s.clipShape && m_clipPathNode != i) {
+    // clip-path / mask: the node and its subtree inside the shape, times the mask (a second visit paints as usual)
+    if (s.visible && (s.clipPath || s.maskImage) && m_clipPathNode != i) {
+        int pushed = 0;
+        bool hidden = false;
+        if (s.clipPath) {
+            const ClipPathSpec& spec = clipPathSpec(s.clipPath);
+            if (spec.kind == ClipPathSpec::Kind::Url) {
+                if (const auto it = m_clipPathDefs.find(spec.url); it != m_clipPathDefs.end()) {
+                    Path p = it->second.path;
+                    if (it->second.objectBoundingBox) p.transform(Vec2{n.rect.w, n.rect.h}, Vec2{n.rect.x, n.rect.y});
+                    else p.transform(Vec2{1.f, 1.f}, Vec2{n.rect.x, n.rect.y});
+                    dl.pushClipPath(p, it->second.evenOdd);
+                    ++pushed;
+                } // a missing reference: no clipping
+            } else if (spec.kind != ClipPathSpec::Kind::None) {
+                const Path p = clipPathShape(spec, cssBox(s, n.rect, spec.box));
+                if (p.empty()) hidden = true;
+                else {
+                    dl.pushClipPath(p, spec.evenOdd);
+                    ++pushed;
+                }
+            }
+            if (pushed) dl.cmds()[dl.size() - 1].node = i;
+        }
+        if (hidden) return; // an empty shape clips everything
+        if (s.maskImage) {
+            ClipLayer layer;
+            const MaskImageLookup images = [this](std::string_view nm) -> const Image* {
+                const auto it = m_maskImages.find(std::string(nm));
+                return it == m_maskImages.end() ? nullptr : &it->second;
+            };
+            if (buildMaskClip(s, n.rect, images, layer)) {
+                dl.pushClipLayers(std::span<const ClipLayer>(&layer, 1));
+                dl.cmds()[dl.size() - 1].node = i;
+                ++pushed;
+            }
+        }
         const u32 outer = m_clipPathNode;
         m_clipPathNode = i;
-        dl.pushClipPath(clipShapePath(s, n.rect), s.clipEvenOdd);
-        dl.cmds()[dl.size() - 1].node = i;
         paintRec(i, opacity, dl);
-        dl.popClip();
+        for (int k = 0; k < pushed; ++k) dl.popClip();
         m_clipPathNode = outer;
         return;
     }
@@ -3119,7 +3087,22 @@ NodeHandle UiContext::hitRec(u32 i, Vec2 p, const Mat4& acc, f32* depth) const {
     }
     const bool inside = n.rect.contains(q);
     if (!inside && s.overflow != Overflow::Visible) return {};
-    if (s.clipShape && !clipShapeContains(s, n.rect, q)) return {}; // clip-path clips hit testing (subtree too)
+    if (s.clipPath) { // clip-path clips hit testing (subtree too); masks do not
+        const ClipPathSpec& spec = clipPathSpec(s.clipPath);
+        if (spec.kind == ClipPathSpec::Kind::Url) {
+            if (const auto it = m_clipPathDefs.find(spec.url); it != m_clipPathDefs.end()) {
+                const Vec2 local = it->second.objectBoundingBox
+                                       ? Vec2{n.rect.w > 0.f ? (q.x - n.rect.x) / n.rect.w : 0.f, n.rect.h > 0.f ? (q.y - n.rect.y) / n.rect.h : 0.f}
+                                       : Vec2{q.x - n.rect.x, q.y - n.rect.y};
+                const auto& e = it->second.path.edges();
+                if (it->second.objectBoundingBox) {
+                    Path p = it->second.path;
+                    p.transform(Vec2{n.rect.w, n.rect.h}, Vec2{n.rect.x, n.rect.y});
+                    if (pathFillCoverage(p.edges().data(), p.edges().size(), q.x, q.y, it->second.evenOdd) < 0.5f) return {};
+                } else if (pathFillCoverage(e.data(), e.size(), local.x, local.y, it->second.evenOdd) < 0.5f) return {};
+            }
+        } else if (spec.kind != ClipPathSpec::Kind::None && !clipPathContains(spec, cssBox(s, n.rect, spec.box), q)) return {};
+    }
     const f32 selfDepth = depthAt(a, q);
     if (pres) {
         NodeHandle best;

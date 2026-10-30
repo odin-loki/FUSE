@@ -616,6 +616,39 @@ int main() {
             }
             for (u32 e = 0; e < 4; ++e) gpu.setExternalImage(e, nullptr);
         }
+        {   // CSS mask texture clip layer (ClipLayer gradient 3): bilinear texels, an odd texel count (partial data edge),
+            // nested inside a clip path, and a translated draw list (DrawList::transform keeps the data edges)
+            DrawList tl;
+            tl.rect({0, 0, f32(W), f32(H)}, Color::rgb(0x101014));
+            ClipLayer tex;
+            tex.gradient = 3;
+            tex.path.rect({20, 20, 300, 200});
+            tex.texW = 7, tex.texH = 5;
+            for (int y = 0; y < 5; ++y)
+                for (int x = 0; x < 7; ++x) tex.texels.push_back(((x + y) & 1) ? 1.f : f32(x) / 7.f);
+            tex.toUnit = {7.f / 300.f, 0, 0, 5.f / 200.f, -20.f * 7.f / 300.f, -20.f * 5.f / 200.f};
+            Path circ;
+            circ.circle({260, 200}, 120);
+            tl.pushClipPath(circ);
+            const ClipLayer one[] = {tex};
+            tl.pushClipLayers(one);
+            tl.rect({0, 0, f32(W), f32(H)}, Color::rgb(0xFF8040));
+            tl.popClip();
+            tl.popClip();
+            tl.pushTransform({1, 0, 0, 1, 150, 150});
+            tl.pushClipLayers(one);
+            tl.rect({0, 0, 400, 300}, Color::rgb(0x40A0FF));
+            tl.popClip();
+            tl.popTransform();
+            Image cpuT;
+            cpuT.resize(int(W), int(H), 0xFF000000u);
+            CpuRasterizer rt;
+            rt.render(tl, cpuT);
+            packDrawList(tl, W, H, data);
+            UI_CHECK(gpu.upload(0, data));
+            vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+            check("mask_texture", compare(cpuT, out));
+        }
         {   // layered clips: per-pixel SVG mask (gradient fade + two-tone shapes), clipPath union (overlap, opposite
             // windings, mixed clip-rule), and DrawList::pushClipLayers directly with a radial ramp
             DrawList ml;

@@ -743,11 +743,32 @@ f32 clipEntryCoverage(const PathEdge* e, std::size_t n, f32 px, f32 py, bool eve
         const int g = int(-1.f - h.fillOnly);
         const std::size_t cnt = std::size_t(h.x1);
         std::size_t at = i + 1 + (g ? 2u : 0u);
+        const u32 tw = g == 3 && i + 2 < n ? u32(e[i + 2].x1) : 0u, th = g == 3 && i + 2 < n ? u32(e[i + 2].y1) : 0u;
+        const std::size_t data = at;
+        if (g == 3) at += (std::size_t(tw) * th + 3) / 4;
         if (at + cnt > n) break;
         const f32 cov = pathFillCoverage(e + at, cnt, px, py, h.y0 != 0.f);
         if (cov > 0.f) {
             f32 v = h.x0, a = h.y1;
-            if (g) {
+            if (g == 3) { // mask texture: bilinear, clamped (same arithmetic as ui_clip.glsl)
+                const PathEdge& p0 = e[i + 1];
+                const PathEdge& p1 = e[i + 2];
+                const f32 ux = p0.x0 * px + p0.x1 * py + p1.x0, uy = p0.y0 * px + p0.y1 * py + p1.y0;
+                auto texel = [&](int x, int y) {
+                    x = std::clamp(x, 0, int(tw) - 1), y = std::clamp(y, 0, int(th) - 1);
+                    const std::size_t k = std::size_t(y) * tw + std::size_t(x);
+                    const PathEdge& d = e[data + k / 4];
+                    const f32 w4[4] = {d.x0, d.y0, d.x1, d.y1};
+                    return w4[k % 4];
+                };
+                const f32 fx = ux - 0.5f, fy = uy - 0.5f;
+                const f32 x0 = std::floor(fx), y0 = std::floor(fy);
+                const f32 tx = fx - x0, ty = fy - y0;
+                const int ix = int(x0), iy = int(y0);
+                const f32 top = texel(ix, iy) + (texel(ix + 1, iy) - texel(ix, iy)) * tx;
+                const f32 bot = texel(ix, iy + 1) + (texel(ix + 1, iy + 1) - texel(ix, iy + 1)) * tx;
+                v = a = top + (bot - top) * ty;
+            } else if (g) {
                 const PathEdge& p0 = e[i + 1];
                 const PathEdge& p1 = e[i + 2];
                 const f32 ux = p0.x0 * px + p0.x1 * py + p1.x0, uy = p0.y0 * px + p0.y1 * py + p1.y0;

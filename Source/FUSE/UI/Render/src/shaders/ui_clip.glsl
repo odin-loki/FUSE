@@ -35,13 +35,37 @@ float clipPathCoverage(uint base, uint n, bool evenOdd, float px, float py) {
         const uint h = base + i * 5u;
         const int g = int(-1.0 - edgeWord(h + 4u));
         const uint cnt = uint(edgeWord(h + 2u));
-        const uint at = i + 1u + (g != 0 ? 2u : 0u);
+        uint at = i + 1u + (g != 0 ? 2u : 0u);
+        const uint tw = g == 3 ? uint(edgeWord(h + 12u)) : 0u, th = g == 3 ? uint(edgeWord(h + 13u)) : 0u;
+        const uint data = at;
+        if (g == 3) at += (tw * th + 3u) / 4u;
         if (at + cnt > n) break;
         const float cov = windCoverage(base + at * 5u, cnt, edgeWord(h + 1u) != 0.0, px, py);
         if (cov > 0.0) {
             precise float v = edgeWord(h);
             precise float a = edgeWord(h + 3u);
-            if (g != 0) {
+            if (g == 3) { // mask texture: bilinear, clamped (as clipEntryCoverage)
+                const uint p0 = h + 5u, p1 = h + 10u;
+                precise float ux = edgeWord(p0) * px + edgeWord(p0 + 2u) * py + edgeWord(p1);
+                precise float uy = edgeWord(p0 + 1u) * px + edgeWord(p0 + 3u) * py + edgeWord(p1 + 1u);
+                precise float fx = ux - 0.5;
+                precise float fy = uy - 0.5;
+                const float x0 = floor(fx), y0 = floor(fy);
+                precise float tx = fx - x0;
+                precise float ty = fy - y0;
+                const int ix = int(x0), iy = int(y0);
+                float t4[4];
+                for (int q = 0; q < 4; ++q) {
+                    const int xx = clamp(ix + (q & 1), 0, int(tw) - 1), yy = clamp(iy + (q >> 1), 0, int(th) - 1);
+                    const uint k = uint(yy) * tw + uint(xx);
+                    const uint w = base + (data + k / 4u) * 5u + (k % 4u);
+                    t4[q] = edgeWord(w);
+                }
+                precise float top = t4[0] + (t4[1] - t4[0]) * tx;
+                precise float bot = t4[2] + (t4[3] - t4[2]) * tx;
+                v = top + (bot - top) * ty;
+                a = v;
+            } else if (g != 0) {
                 const uint p0 = h + 5u, p1 = h + 10u;
                 precise float ux = edgeWord(p0) * px + edgeWord(p0 + 2u) * py + edgeWord(p1);
                 precise float uy = edgeWord(p0 + 1u) * px + edgeWord(p0 + 3u) * py + edgeWord(p1 + 1u);

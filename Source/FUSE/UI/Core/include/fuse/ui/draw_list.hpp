@@ -238,6 +238,9 @@ private:
 /// luminance x alpha of the layer's paint, a = its alpha) and clip-path unions (v = a = 1: M = union coverage).
 /// `gradient` 1 / 2 varies v and a along a linear / radial ramp: t = x' or |(x', y')| with (x', y') = toUnit(pixel),
 /// clamped to 0..1, from (value0, alpha0) to (value1, alpha1).
+/// `gradient` 3: a mask texture (CSS mask-*): v = a = bilinear sample of `texels` (texW x texH, row-major, 0..1) at
+/// (x', y') = toUnit(pixel) in texel units (texel centres at +0.5; edges clamp). Encoded after the parameter edges as
+/// ceil(texW * texH / 4) data edges (4 texels each, fillOnly -0.5).
 struct ClipLayer {
     Path path;
     bool evenOdd = false;
@@ -245,6 +248,8 @@ struct ClipLayer {
     u8 gradient = 0;
     std::array<f32, 6> toUnit{1.f, 0.f, 0.f, 1.f, 0.f, 0.f};
     f32 value1 = 1.f, alpha1 = 1.f;
+    u16 texW = 0, texH = 0;
+    std::vector<f32> texels;
 };
 
 struct DrawCmd {

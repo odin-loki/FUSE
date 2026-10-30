@@ -311,6 +311,12 @@ public:
     int defineSvgFilters(std::string_view svgText);
     /// Names a premultiplied RGBA8 image for SVG feImage href="name" (or "#name") in filters defined after this.
     void defineFilterImage(std::string_view name, Image image);
+    /// clip-path: url(#id) targets (an SVG <clipPath>): `path` in px from the node's border-box origin, or with
+    /// `objectBoundingBox` in 0..1 units of the border box. An undefined id does not clip.
+    void defineClipPath(std::string_view id, Path path, bool evenOdd = false, bool objectBoundingBox = false);
+    void defineClipPath(std::string_view id, std::string_view svgPathData, bool evenOdd = false, bool objectBoundingBox = false);
+    /// mask-image: url(name) images (premultiplied RGBA8). An undefined name is a transparent layer.
+    void defineMaskImage(std::string_view name, Image image);
     std::expected<void, UiError> addStyleSheet(std::string_view css, std::vector<StyleDiagnostic>* diags = nullptr);
     void addStyleSheet(StyleSheet sheet); ///< an already parsed (or cooked) sheet
     void clearStyleSheets();
@@ -418,6 +424,10 @@ public:
     Size viewport() const { return m_viewport; }
     /// @media (prefers-color-scheme: dark) / (prefers-reduced-motion: reduce) inputs (the viewport feeds width / height).
     void setMediaPreferences(bool dark, bool reducedMotion);
+    /// @media hover / any-hover / pointer / any-pointer inputs (pointer: 0 none, 1 coarse, 2 fine). Default: a mouse.
+    void setInputMedia(bool hover, bool anyHover, u8 pointer, u8 anyPointer);
+    /// @media resolution (device pixels per CSS px).
+    void setMediaResolution(f32 dppx);
     void update(f32 dtSeconds = 0.f);
     bool needsUpdate() const; ///< false when an on-demand app can sleep
     /// Seconds until the context needs an update: 0 when dirty / animating / commands pending, the earliest timer
@@ -654,6 +664,9 @@ private:
                       std::vector<FilterStage>& out, int depth = 0) const;
     std::unordered_map<u32, FilterDef> m_filterDefs;
     std::unordered_map<std::string, Image> m_filterImages; ///< defineFilterImage
+    struct ClipPathDef { Path path; bool evenOdd = false; bool objectBoundingBox = false; };
+    std::unordered_map<std::string, ClipPathDef> m_clipPathDefs; ///< defineClipPath
+    std::unordered_map<std::string, Image> m_maskImages;         ///< defineMaskImage
     FilterImageResolver filterImageResolver() const;
     u32 m_xfNode = ~0u;     ///< node whose transform paintRec is inside (its second, unmapped visit)
     u32 m_selfOnly = ~0u;   ///< preserve-3d plane being painted without its children (separate planes)

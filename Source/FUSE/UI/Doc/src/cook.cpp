@@ -135,7 +135,7 @@ void writeLength(Writer& w, const Length& l) { w.f32_(l.value); w.u8_(u8(l.unit)
 bool readLength(Reader& r, Length& l) {
     l.value = r.f32_();
     const u8 u = r.u8_();
-    if (u > u8(Unit::Fr)) return r.ok = false;
+    if (u > u8(Unit::Cqmax)) return r.ok = false;
     l.unit = Unit(u);
     return r.ok;
 }
@@ -261,6 +261,7 @@ void writeSheet(Writer& w, const StyleSheet& s) {
         w.u8_(rule.root ? 1 : 0);
         w.u32_(rule.layer);
         w.u32_(rule.cond);
+        w.u32_(rule.scope);
         w.u32_(u32(rule.chain.size()));
         for (const SimpleSelector& sel : rule.chain) writeSelector(w, sel);
         w.u32_(u32(rule.decls.size()));
@@ -296,9 +297,18 @@ void writeSheet(Writer& w, const StyleSheet& s) {
         for (const auto& q : c.any) {
             w.u8_(q.negate ? 1 : 0);
             w.u32_(u32(q.all.size()));
-            for (const auto& t : q.all) { w.u8_(u8(t.f)); w.u8_(u8(t.op)); w.f32_(t.v); }
+            for (const auto& t : q.all) { w.u8_(u8(t.f)); w.u8_(u8(t.op)); w.f32_(t.v); w.u32_(t.name); w.str(t.value); }
         }
     }
+    w.u32_(u32(s.scopes().size()));
+    for (const StyleScope& sc : s.scopes())
+        for (const auto* list : {&sc.roots, &sc.limits}) {
+            w.u32_(u32(list->size()));
+            for (const auto& chain : *list) {
+                w.u32_(u32(chain.size()));
+                for (const SimpleSelector& x : chain) writeSelector(w, x);
+            }
+        }
 }
 std::expected<void, std::string> readSelector(Reader& r, SimpleSelector& sel, int depth) {
     sel.typeHash = r.u32_();
@@ -350,10 +360,11 @@ std::expected<StyleSheet, std::string> readSheet(Reader& r) {
         rule.specificity = r.u32_();
         rule.order = r.u32_();
         rule.root = r.u8_() != 0;
-        const u32 layer = r.u32_(), cond = r.u32_();
-        if (layer > StyleRule::kNone || cond > StyleRule::kNone) return std::unexpected("cooked style: bad rule layer / condition");
+        const u32 layer = r.u32_(), cond = r.u32_(), scope = r.u32_();
+        if (layer > StyleRule::kNone || cond > StyleRule::kNone || scope > StyleRule::kNone) return std::unexpected("cooked style: bad rule layer / condition");
         rule.layer = u16(layer);
         rule.cond = u16(cond);
+        rule.scope = u16(scope);
         rule.chain.resize(r.count(14));
         for (SimpleSelector& sel : rule.chain)
             if (auto e = readSelector(r, sel, 0); !e) return std::unexpected(e.error());
@@ -413,19 +424,33 @@ std::expected<StyleSheet, std::string> readSheet(Reader& r) {
             q.all.resize(r.count(6));
             for (auto& t : q.all) {
                 const u8 f = r.u8_(), op = r.u8_();
-                if (f > u8(StyleCondition::Feature::ReducedMotion) || op > u8(StyleCondition::Op::Eq)) return std::unexpected("cooked style: bad condition");
+                if (f > u8(StyleCondition::Feature::Style) || op > u8(StyleCondition::Op::Eq)) return std::unexpected("cooked style: bad condition");
                 t.f = StyleCondition::Feature(f);
                 t.op = StyleCondition::Op(op);
                 t.v = r.f32_();
+                t.name = r.u32_();
+                t.value = r.str();
             }
             if (!r.ok) break;
         }
     }
+    std::vector<StyleScope> scopes(r.ok ? r.count(8) : 0);
+    for (StyleScope& sc : scopes)
+        for (auto* list : {&sc.roots, &sc.limits}) {
+            list->resize(r.ok ? r.count(4) : 0);
+            for (auto& chain : *list) {
+                chain.resize(r.ok ? r.count(14) : 0);
+                for (SimpleSelector& x : chain)
+                    if (auto e = readSelector(r, x, 0); !e) return std::unexpected(e.error());
+                if (chain.empty() && r.ok) return std::unexpected("cooked style: empty scope selector");
+            }
+        }
     if (!r.ok) return std::unexpected("cooked style: truncated or corrupt");
     for (const StyleRule& rule : rules)
-        if ((rule.layer != StyleRule::kNone && rule.layer >= layers.size()) || (rule.cond != StyleRule::kNone && rule.cond >= conds.size()))
+        if ((rule.layer != StyleRule::kNone && rule.layer >= layers.size()) || (rule.cond != StyleRule::kNone && rule.cond >= conds.size()) ||
+            (rule.scope != StyleRule::kNone && rule.scope >= scopes.size()))
             return std::unexpected("cooked style: bad rule layer / condition");
-    return StyleSheet::fromParts(std::move(rules), std::move(tokens), std::move(kfs), std::move(layers), std::move(conds));
+    return StyleSheet::fromParts(std::move(rules), std::move(tokens), std::move(kfs), std::move(layers), std::move(conds), std::move(scopes));
 }
 } // namespace
 
