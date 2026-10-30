@@ -12,6 +12,9 @@ $ADB logcat -c
 $ADB shell am start -n org.fuse.ui.hello/org.fuse.ui.FuseActivity >/dev/null
 wait_log() { for _ in $(seq 60); do $ADB logcat -d | grep -q "$1" && return 0; sleep 2; done; echo "FAIL: $1"; exit 1; }
 wait_log "fuse_ui: first frame"
+# FUSE_EXPECT_VULKAN=1: the APK was built with the Vulkan presenter and the device has Vulkan (emulator
+# -gpu swiftshader_indirect / host): the swapchain path must have drawn that frame.
+if [ -n "${FUSE_EXPECT_VULKAN:-}" ]; then wait_log "fuse_ui: Vulkan present on"; wait_log "first frame .*(vulkan)"; fi
 $ADB shell uiautomator dump /sdcard/fuse_ui.xml >/dev/null
 TREE=$($ADB shell cat /sdcard/fuse_ui.xml)
 grep -q 'text="Click me"[^>]*class="android.widget.Button"' <<<"$TREE" || { echo "FAIL: a11y Button"; exit 1; }
