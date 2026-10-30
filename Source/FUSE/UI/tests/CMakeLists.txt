@@ -2,6 +2,56 @@
 set(FUSE_UI_REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
 set(FUSE_UI_STB ${FUSE_UI_REPO_ROOT}/vendor/stb)
 
+# Vulkan ICD for the GPU gates. -DFUSE_TEST_VK_ICD=<manifest[:manifest]> wins; else $VK_ICD_FILENAMES at configure
+# time; else a Lavapipe manifest found in the usual places. Empty = no override, so the loader's own discovery
+# (and whatever VK_ICD_FILENAMES / VK_DRIVER_FILES ctest is started with) applies. A stale path is ignored.
+set(FUSE_TEST_VK_ICD "" CACHE STRING "Vulkan ICD manifest(s) for the Vulkan gates (empty = loader discovery)")
+set(FUSE_UI_VK_ICD "")
+if(FUSE_TEST_VK_ICD)
+    string(REPLACE ":" ";" _icds "${FUSE_TEST_VK_ICD}")
+    list(GET _icds 0 _icd0)
+    if(EXISTS "${_icd0}")
+        set(FUSE_UI_VK_ICD "${FUSE_TEST_VK_ICD}")
+    else()
+        message(STATUS "fuse_ui tests: FUSE_TEST_VK_ICD=${FUSE_TEST_VK_ICD} does not exist; using loader discovery")
+    endif()
+elseif(DEFINED ENV{VK_ICD_FILENAMES})
+    set(FUSE_UI_VK_ICD "$ENV{VK_ICD_FILENAMES}")
+else()
+    file(GLOB _lvp /usr/share/vulkan/icd.d/lvp_icd*.json /usr/local/share/vulkan/icd.d/lvp_icd*.json
+         /etc/vulkan/icd.d/lvp_icd*.json)
+    if(_lvp)
+        list(GET _lvp 0 FUSE_UI_VK_ICD)
+    endif()
+endif()
+function(fuse_ui_vk_env test)
+    if(FUSE_UI_VK_ICD)
+        set_property(TEST ${test} APPEND PROPERTY ENVIRONMENT "VK_ICD_FILENAMES=${FUSE_UI_VK_ICD}"
+                     "VK_DRIVER_FILES=${FUSE_UI_VK_ICD}")
+    endif()
+endfunction()
+
+# Cross builds run under Wine: the toolchain's runtime DLLs (libc++.dll, libunwind.dll, libwinpthread-1.dll for
+# llvm-mingw) are not next to the tests, so put their directory on WINEPATH for every test and build-time run.
+set(FUSE_UI_WINEPATH "")
+if(CMAKE_CROSSCOMPILING AND WIN32 AND CMAKE_CROSSCOMPILING_EMULATOR)
+    get_filename_component(_ccbin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    file(GLOB _rt "${_ccbin}/../${CMAKE_SYSTEM_PROCESSOR}-w64-mingw32/bin/libc++.dll"
+         "${_ccbin}/../${CMAKE_SYSTEM_PROCESSOR}-w64-mingw32/bin/libwinpthread-1.dll"
+         "${_ccbin}/libc++.dll" "${_ccbin}/libwinpthread-1.dll")
+    if(_rt)
+        list(GET _rt 0 _rt0)
+        get_filename_component(_rtdir "${_rt0}" DIRECTORY)
+        get_filename_component(_rtdir "${_rtdir}" REALPATH)
+        string(REPLACE "/" "\\" _rtwin "${_rtdir}")
+        set(FUSE_UI_WINEPATH "Z:${_rtwin}")
+    endif()
+endif()
+set(FUSE_UI_EMULATOR ${CMAKE_CROSSCOMPILING_EMULATOR})
+if(FUSE_UI_WINEPATH)
+    set(FUSE_UI_EMULATOR ${CMAKE_COMMAND} -E env "WINEPATH=${FUSE_UI_WINEPATH}" ${CMAKE_CROSSCOMPILING_EMULATOR})
+endif()
+
 function(fuse_ui_test name src)
     add_executable(${name} ${src} ${ARGN})
     target_link_libraries(${name} PRIVATE fuse_ui_widgets)
@@ -67,7 +117,7 @@ if(TARGET fuse_ui_doc)
         add_custom_command(
             OUTPUT ${FUSE_UI8_REG_CPP} ${FUSE_UI8_COOKED_DIR}/settings.fuseuic ${FUSE_UI8_COOKED_DIR}/theme.fusestylec
             COMMAND ${CMAKE_COMMAND} -E make_directory ${FUSE_UI8_COOKED_DIR}
-            COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:fuse_ui_cook> --out=${FUSE_UI8_COOKED_DIR}
+            COMMAND ${FUSE_UI_EMULATOR} $<TARGET_FILE:fuse_ui_cook> --out=${FUSE_UI8_COOKED_DIR}
                     --registration=${FUSE_UI8_REG_CPP} ${CMAKE_CURRENT_SOURCE_DIR}/data/settings.fuseui
                     ${CMAKE_CURRENT_SOURCE_DIR}/data/theme.fusestyle
             DEPENDS fuse_ui_cook ${CMAKE_CURRENT_SOURCE_DIR}/data/settings.fuseui ${CMAKE_CURRENT_SOURCE_DIR}/data/theme.fusestyle
@@ -191,8 +241,7 @@ if(TARGET fuse_app)
         else()
             add_test(NAME fuse_app_native_window COMMAND fuse_app_native_window --out=${CMAKE_CURRENT_BINARY_DIR})
         endif()
-        set_tests_properties(fuse_app_native_window PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300
-            ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json" LABELS "fuse_ui;gate;vulkan")
+        set_tests_properties(fuse_app_native_window PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300 LABELS "fuse_ui;gate;vulkan")
         add_executable(fuse_app_xdnd test_app_xdnd.cpp)
         target_link_libraries(fuse_app_xdnd PRIVATE fuse_app_native)
         if(FUSE_UI_XVFB_RUN AND NOT WIN32)
@@ -209,8 +258,7 @@ if(TARGET fuse_app)
         else()
             add_test(NAME fuse_app_os_popups COMMAND fuse_app_os_popups --out=${CMAKE_CURRENT_BINARY_DIR})
         endif()
-        set_tests_properties(fuse_app_os_popups PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300
-            ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json" LABELS "fuse_ui;gate;vulkan")
+        set_tests_properties(fuse_app_os_popups PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300 LABELS "fuse_ui;gate;vulkan")
     endif()
     if(TARGET hello_app)
         add_test(NAME fuse_app_hello_sample COMMAND hello_app --screenshot=${CMAKE_CURRENT_BINARY_DIR}/hello_app.png)
@@ -278,13 +326,10 @@ if(TARGET fuse_app_native AND UNIX AND NOT APPLE)
     add_test(NAME fuse_app_wayland COMMAND fuse_app_wayland)
     set_tests_properties(fuse_app_wayland PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 60 LABELS "fuse_ui;gate")
     # Same run presented through a Vulkan swapchain on the wl_surface (lavapipe's wl_shm WSI); skips without an ICD.
-    set(FUSE_TEST_VK_ICD "/usr/share/vulkan/icd.d/lvp_icd.json" CACHE STRING "Vulkan ICD manifest for the Wayland Vulkan test")
     add_test(NAME fuse_app_wayland_vk COMMAND fuse_app_wayland --vulkan)
-    set_tests_properties(fuse_app_wayland_vk PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
-                         ENVIRONMENT "VK_ICD_FILENAMES=${FUSE_TEST_VK_ICD}" LABELS "fuse_ui;gate;vulkan")
+    set_tests_properties(fuse_app_wayland_vk PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120 LABELS "fuse_ui;gate;vulkan")
     add_test(NAME fuse_app_wayland_vk_gpu COMMAND fuse_app_wayland --vulkan-gpu)
-    set_tests_properties(fuse_app_wayland_vk_gpu PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
-                         ENVIRONMENT "VK_ICD_FILENAMES=${FUSE_TEST_VK_ICD}" LABELS "fuse_ui;gate;vulkan")
+    set_tests_properties(fuse_app_wayland_vk_gpu PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120 LABELS "fuse_ui;gate;vulkan")
 endif()
 
 if(TARGET fuse_app)
@@ -326,3 +371,15 @@ if(TARGET fuse_ui_extras AND WIN32)
     add_test(NAME fuse_ui_tray_win32 COMMAND fuse_ui_tray_win32)
     set_tests_properties(fuse_ui_tray_win32 PROPERTIES RUN_SERIAL TRUE TIMEOUT 120 LABELS "fuse_ui;gate")
 endif()
+
+# ---- environment shared by every test in this directory ----
+get_property(_fuse_ui_tests DIRECTORY PROPERTY TESTS)
+foreach(t IN LISTS _fuse_ui_tests)
+    get_test_property(${t} LABELS _labels)
+    if(_labels MATCHES "vulkan|gpu")
+        fuse_ui_vk_env(${t})
+    endif()
+    if(FUSE_UI_WINEPATH)
+        set_property(TEST ${t} APPEND PROPERTY ENVIRONMENT "WINEPATH=${FUSE_UI_WINEPATH}")
+    endif()
+endforeach()

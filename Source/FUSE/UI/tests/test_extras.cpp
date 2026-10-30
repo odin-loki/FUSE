@@ -535,6 +535,9 @@ void gateWidgetPdf() {
 // Private session bus (dbus-daemon) + an in-process fake StatusNotifierWatcher / AppMenu registrar on a second
 // connection: drives the real SNI + dbusmenu exports end to end. Skips (passes) when dbus-daemon / libdbus are absent.
 void gateTray() {
+#ifdef _WIN32
+    std::printf("tray: skipped (session D-Bus gate is POSIX-only; Win32 tray has its own gate)\n");
+#else
     using namespace fuse::ui::dbus;
     namespace os = fuse::ui::os;
         if (!available() || os::findExecutable("dbus-daemon").empty()) { std::printf("tray: skipped (no libdbus / dbus-daemon)\n"); return; }
@@ -659,6 +662,7 @@ void gateTray() {
     CHECK(window == 0x4200001 && menuPath == bar.objectPath() && bar.active());
     tray.hide();
     os::runProcess({"kill", pid});
+#endif
 }
 
 void gateRichText() {
