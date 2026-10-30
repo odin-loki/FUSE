@@ -171,8 +171,17 @@ NSString* str(std::string_view s) { return [[NSString alloc] initWithBytes:s.dat
 - (void)touchesCancelled:(NSSet<UITouch*>*)t withEvent:(UIEvent*)e { [self touchesEnded:t withEvent:e]; }
 - (void)layoutSubviews {
     [super layoutSubviews];
-    if (self.metal) self.metal.frame = self.bounds;
-    if (g().win) g().win->resize(u32(self.bounds.size.width), u32(self.bounds.size.height));
+    const CGFloat sc = self.window ? self.window.screen.scale : UIScreen.mainScreen.scale;
+    self.contentScaleFactor = sc;
+    if (self.metal) {
+        self.metal.frame = self.bounds;
+        self.metal.contentsScale = sc;
+        self.metal.drawableSize = CGSizeMake(self.bounds.size.width * sc, self.bounds.size.height * sc);
+    }
+    if (g().win) {
+        g().win->setScale(f32(sc)); // points layout, pixel image/swapchain (HiDPI, UNVERIFIED)
+        g().win->resize(u32(self.bounds.size.width), u32(self.bounds.size.height));
+    }
 }
 // Presenter: CPU raster -> layer contents.
 - (void)presentImage {
@@ -233,8 +242,10 @@ static fa::detail::VkWin* vulkanFor(FuseUIView* v) {
                 : d::vkCtxCreate(d::SurfaceSource::Metal, st.vkError);
     if (!st.vk) return nullptr;
     CAMetalLayer* layer = [CAMetalLayer layer];
-    layer.contentsScale = 1.0; // the AppWindow is sized in points (layoutSubviews); HiDPI drawables are a TODO
+    const CGFloat sc = v.contentScaleFactor;
+    layer.contentsScale = sc; // AppWindow is laid out in points, swapchain is pixelSize() (setScale)
     layer.frame = v.bounds;
+    layer.drawableSize = CGSizeMake(v.bounds.size.width * sc, v.bounds.size.height * sc);
     layer.opaque = YES;
     [v.layer addSublayer:layer];
     d::SurfaceSource src;

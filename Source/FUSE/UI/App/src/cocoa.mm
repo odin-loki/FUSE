@@ -96,6 +96,46 @@ NSString* str(std::string_view s) { return [[NSString alloc] initWithBytes:s.dat
 - (void)draggingSession:(NSDraggingSession*)s endedAtPoint:(NSPoint)p operation:(NSDragOperation)op {
     _owner->win->deliverExternalDragEnd(op != NSDragOperationNone);
 }
+// NSDraggingDestination (drop in, UNVERIFIED): file URLs -> paths, else plain text.
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)info {
+    if (!_owner || !_owner->win->acceptsExternalDrops()) return NSDragOperationNone;
+    NSPasteboard* pb = info.draggingPasteboard;
+    return [pb canReadObjectForClasses:@[ [NSURL class], [NSString class] ] options:nil] ? NSDragOperationCopy
+                                                                                       : NSDragOperationNone;
+}
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)info { return [self draggingEntered:info]; }
+- (BOOL)prepareForDragOperation:(id<NSDraggingInfo>)info { return [self draggingEntered:info] != NSDragOperationNone; }
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)info {
+    if (!_owner || !_owner->win->acceptsExternalDrops()) return NO;
+    NSPasteboard* pb = info.draggingPasteboard;
+    AppWindow::ExternalDrop d;
+    NSPoint p = [self convertPoint:info.draggingLocation fromView:nil];
+    d.pos = {f32(p.x), f32(p.y)};
+    NSArray<NSURL*>* urls = [pb readObjectsForClasses:@[ [NSURL class] ]
+                                              options:@{NSPasteboardURLReadingFileURLsOnlyKey : @YES}];
+    for (NSURL* u in urls) if (u.fileURL && u.path) d.paths.emplace_back(u.path.UTF8String);
+    if (d.paths.empty()) {
+        NSString* t = [pb stringForType:NSPasteboardTypeString];
+        if (!t) return NO;
+        d.mime = "text/plain";
+        d.data = t.UTF8String;
+    }
+    _owner->win->deliverExternalDrop(d);
+    return YES;
+}
+// HiDPI (UNVERIFIED): logical layout, backing-scale pixels; layer + swapchain follow the screen.
+- (void)viewDidChangeBackingProperties {
+    [super viewDidChangeBackingProperties];
+    if (!_owner) return;
+    const CGFloat sc = self.window ? self.window.backingScaleFactor : 1.0;
+    self.layer.contentsScale = sc;
+    if (_owner->metal) {
+        const NSSize b = self.bounds.size;
+        _owner->metal.drawableSize = CGSizeMake(b.width * sc, b.height * sc);
+    }
+    _owner->win->setScale(f32(sc));
+    _owner->win->requestRedraw();
+}
 - (void)rightMouseDragged:(NSEvent*)e { [self mouseMoved:e]; }
 - (void)otherMouseDragged:(NSEvent*)e { [self mouseMoved:e]; }
 - (void)down:(NSEvent*)e button:(MouseButton)b {
@@ -218,6 +258,10 @@ static std::string utf8Of(id s) {
 - (void)windowDidResize:(NSNotification*)n {
     NSSize s = _owner->view.bounds.size;
     _owner->win->resize(u32(s.width), u32(s.height));
+    if (_owner->metal) {
+        const CGFloat sc = _owner->window.backingScaleFactor;
+        _owner->metal.drawableSize = CGSizeMake(s.width * sc, s.height * sc);
+    }
     _owner->win->requestRedraw();
 }
 @end
@@ -245,7 +289,9 @@ struct fa::CocoaPlatform::Impl {
         }
         if (!vk) return false;
         CAMetalLayer* layer = [CAMetalLayer layer];
-        layer.contentsScale = 1.0; // logical == pixel size until HiDPI (backingScaleFactor) lands
+        const CGFloat sc = w.window ? w.window.backingScaleFactor : 1.0;
+        layer.contentsScale = sc; // logical points, physical pixels (AppWindow::setScale)
+        layer.drawableSize = CGSizeMake(w.view.bounds.size.width * sc, w.view.bounds.size.height * sc);
         layer.frame = w.view.bounds;
         layer.autoresizingMask = kCALayerWidthSizable | kCALayerHeightSizable;
         w.view.layer = layer; // set before wantsLayer: layer-hosting, AppKit won't draw into it
@@ -322,10 +368,13 @@ bool fa::CocoaPlatform::show(AppWindow& aw) {
     w->window.releasedWhenClosed = NO;
     w->window.acceptsMouseMovedEvents = YES;
     w->view = [[FuseView alloc] initWithFrame:NSMakeRect(0, 0, s.w, s.h)];
+    aw.setScale(f32(w->window.backingScaleFactor)); // before the swapchain is sized from pixelSize()
     if (!m->attachVulkan(*w)) w->view.wantsLayer = YES;
     w->view.layerContentsRedrawPolicy = NSViewLayerContentsRedrawOnSetNeedsDisplay;
     w->view.owner = w.get();
-    if (aw.acceptsExternalDrops()) [w->view registerForDraggedTypes:@[ NSPasteboardTypeFileURL ]];
+    if (aw.acceptsExternalDrops())
+        [w->view registerForDraggedTypes:@[ NSPasteboardTypeFileURL, NSPasteboardTypeString ]];
+    w->view.layer.contentsScale = w->window.backingScaleFactor; // CGImage fallback holds pixelSize() pixels
     w->window.contentView = w->view;
     FuseWindowDelegate* d = [[FuseWindowDelegate alloc] init];
     d.owner = w.get();
@@ -348,5 +397,4 @@ bool fa::CocoaPlatform::gpuPresents(const AppWindow& aw) const {
     return false;
 }
 const char* fa::CocoaPlatform::gpuName() const { return m->vk ? detail::vkCtxDeviceName(m->vk) : ""; }
-// TODO(G3, unverified): NSDraggingDestination (drop in) on FuseView -> AppWindow::deliverExternalDrop;
-// HiDPI backingScaleFactor (CAMetalLayer.contentsScale + drawableSize).
+// G3 (UNVERIFIED, no macOS host): NSDraggingDestination drop-in and backingScaleFactor HiDPI above.

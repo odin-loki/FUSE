@@ -174,6 +174,7 @@ AppWindow::AppWindow(Application& app, const WindowDesc& d, u32 id)
     : m_app(app), m_ui({.viewport = {f32(d.width), f32(d.height)}, .font = &defaultFont()}), m_title(d.title), m_id(id) {
     widgets::install(m_ui);
     m_presenter = {this, &AppWindow::presentHeadless, nullptr};
+    setScale(d.dpiScale); // WindowDesc::dpiScale seeds the HiDPI scale; backends update it on monitor changes
 }
 AppWindow::~AppWindow() {
     m_doc.reset();
