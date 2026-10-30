@@ -204,8 +204,9 @@ void main() {
 #endif
     const uint tile = (p.y / 16u) * pc.tilesX + (p.x / 16u);
     // per tile: begin | end (absolute word indices of its slot's entries; gpu_draw_data.hpp)
-    const uint begin = ui_tiles.data[pc.tileBase + 2u * tile];
-    const uint end = ui_tiles.data[pc.tileBase + 2u * tile + 1u];
+    const uint slot = ui_tiles.data[pc.tileBase + tile]; // 0 = the empty slot (data[0] == 0)
+    const uint begin = slot + 1u;
+    const uint end = begin + ui_tiles.data[slot];
     const float px = float(p.x) + 0.5, py = float(p.y) + 0.5;
     for (uint k = begin; k < end; ++k) {
         const uint id = ui_tiles.data[k];

@@ -149,12 +149,14 @@ struct GpuDrawData {
     /// of plain draw commands (no clip / backdrop / path / stop-gradient ops, single draw pass) re-emits only that
     /// range: its records go into free spots of their node's slots, and only the tiles it touches are rebuilt.
     bool incremental = false;
-    std::vector<u64> cmdTiles; ///< per DrawList command: tile box x0 | y0 << 16 | x1 << 32 | y1 << 48, ~0 = none
+    std::vector<u64> cmdBox;             ///< per DrawList command: pixel box (u16 x0|y0|x1|y1), ~0 = none
+    std::vector<u32> backdropSrc;        ///< DrawList indices of the effective backdrops (one per segment)
     struct ClipRun {
         u32 from; ///< first DrawList index under this clip
         Rect r;
         f32 radius;
         u32 pathList;
+        u32 depth; ///< clip stack depth there
     };
     std::vector<ClipRun> clipRuns;
     std::vector<std::pair<u32, u32>> freeRecs, freeCmds; ///< (node, absolute record offset / cmds index)

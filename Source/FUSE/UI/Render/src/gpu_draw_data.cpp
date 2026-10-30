@@ -48,18 +48,22 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     // ---- input diff: one changed range [p, m - s) -> [p, n - s) of the command list, plus the other inputs ----
     std::size_t p = 0, s = 0;
     bool inputs = false, genSame = false, structural = false;
+    bool others = false; // inputs apart from the edge / stop tables (edgeDiff / stopDiff: their first changed entry)
+    std::size_t edgeDiff = ~std::size_t(0), stopDiff = ~std::size_t(0);
     {
         u32 key[9] = {width, height, atlasSize, imageCount, atlasGeneration};
         const f32 sc[4] = {scissor.x, scissor.y, scissor.w, scissor.h};
         std::memcpy(&key[5], sc, sizeof sc);
-        const auto sameVec = [](auto& prev, const auto& cv) { // compare; on a difference refresh prev from there on
-            using T = typename std::decay_t<decltype(cv)>::value_type;
+        const auto sameVec = [](auto& prev, const auto& cv, std::size_t& at) { // compare; on a difference refresh
+            using T = typename std::decay_t<decltype(cv)>::value_type;        // prev from there on (at = first diff)
             const std::size_t k = std::min(prev.size(), cv.size());
             std::size_t i = 0;
             constexpr std::size_t B = 256;
             while (i < k && std::memcmp(prev.data() + i, cv.data() + i, std::min(B, k - i) * sizeof(T)) == 0) i += B;
             i = std::min(i, k);
-            if (i == k && prev.size() == cv.size()) return true;
+            while (i < k && std::memcmp(prev.data() + i, cv.data() + i, sizeof(T)) == 0) ++i;
+            at = i;
+            if (i == k && prev.size() == cv.size()) return at = ~std::size_t(0), true;
             prev.resize(cv.size());
             std::memcpy(prev.data() + i, cv.data() + i, (cv.size() - i) * sizeof(T));
             return false;
@@ -68,8 +72,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
                  std::memcmp(key + 5, out.prevKey + 5, 16) == 0;
         genSame = atlasGeneration != ~0u && out.atlasGeneration == atlasGeneration;
         // always run both (each refreshes its copy)
-        inputs = sameVec(out.prevEdges, list.pathEdges()) && inputs;
-        inputs = sameVec(out.prevStops, list.gradientStops()) && inputs;
+        const bool tables = sameVec(out.prevEdges, list.pathEdges(), edgeDiff) & sameVec(out.prevStops, list.gradientStops(), stopDiff);
         if (inputs) // image pixels: compare with the copies already in the packed buffer
             for (u32 i = 0; i < imageCount && inputs; ++i) {
                 const Image* img = images ? images[i] : nullptr;
@@ -88,6 +91,8 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             }
         std::memcpy(out.prevKey, key, sizeof key);
         out.prevAtlas = atlas;
+        others = inputs;
+        inputs = inputs && tables;
         // common prefix / suffix (block memcmp, field compare on a mismatching block)
         const DrawCmd* prev = out.prevCmds.data();
         const std::size_t mn = std::min(n, m);
@@ -225,10 +230,10 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     };
     thread_local std::vector<Area> areas;
     thread_local std::vector<u32> cursor, csr, entT, runT, rawT;
-    const auto tileBoxOf = [](const Area& a) -> u64 {
+    // pixel box of an area (u16 each: x0 | y0 << 16 | x1 << 32 | y1 << 48); ~0 = nothing binned
+    const auto boxOf = [](const Area& a) -> u64 {
         if (a.x1 <= a.x0 || a.y1 <= a.y0) return ~0ull;
-        return u64(u32(a.x0) / kUiTile) | (u64(u32(a.y0) / kUiTile) << 16) | (u64(u32(a.x1 - 1) / kUiTile) << 32) |
-               (u64(u32(a.y1 - 1) / kUiTile) << 48);
+        return u64(u32(a.x0)) | (u64(u32(a.y0)) << 16) | (u64(u32(a.x1)) << 32) | (u64(u32(a.y1)) << 48);
     };
     // a compact glyph record (in the slot arena, addressed by its absolute images word offset)
     const auto rec = [&](u32 abs) -> const u32* { return out.arena.data() + (abs - out.arenaBase); };
@@ -274,24 +279,77 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             k = j + 1;
         }
     };
+    // tile buffer: tiles[0] = 0 (the empty slot); per pass a header of one word per tile (its slot offset, 0 =
+    // empty) at 1 + pass * tileCount; slots: count, entries, glyph run records
+    const auto tileHeader = [&](u32 pass) { return 1u + pass * tileCount; };
     // writes entT / runT into the (pass, tile) slot: in place while it fits, else a new slot at the end
     const auto placeTile = [&](u32 pass, u32 t) {
         const u32 si = pass * tileCount + t;
-        const u32 E = u32(entT.size()), size = E + u32(runT.size());
+        const u32 E = u32(entT.size());
+        if (E == 0) {
+            out.tiles[tileHeader(pass) + t] = 0u;
+            return;
+        }
+        const u32 size = 1 + E + u32(runT.size());
         if (size > out.tileSlotCap[si]) {
             out.tileHoles += out.tileSlotCap[si];
-            out.tileSlotCap[si] = size + size / 8 + 4;
+            out.tileSlotCap[si] = size + size / 8;
             out.tileSlotOff[si] = u32(out.tiles.size());
             out.tiles.resize(out.tiles.size() + out.tileSlotCap[si], 0u);
         }
         const u32 off = out.tileSlotOff[si];
         u32* d = out.tiles.data() + off;
-        for (u32 k = 0; k < E; ++k) d[k] = (entT[k] & kGlyphRun) == kGlyphRun ? kGlyphRun | (entT[k] - kGlyphRun + off + E) : entT[k];
-        if (!runT.empty()) std::memcpy(d + E, runT.data(), runT.size() * 4);
-        u32* h = out.tiles.data() + std::size_t(pass) * 2 * tileCount + 2 * t;
-        h[0] = off;
-        h[1] = off + E;
+        d[0] = E;
+        for (u32 k = 0; k < E; ++k)
+            d[1 + k] = (entT[k] & kGlyphRun) == kGlyphRun ? kGlyphRun | (entT[k] - kGlyphRun + off + 1 + E) : entT[k];
+        if (!runT.empty()) std::memcpy(d + 1 + E, runT.data(), runT.size() * 4);
+        out.tiles[tileHeader(pass) + t] = off;
     };
+    // bins areas (paint order) into the tiles of one draw pass
+    const auto binAreas = [&](const Area* as, std::size_t na, u32 pass) {
+        csr.assign(std::size_t(tileCount) + 1, 0u);
+        u32* off = csr.data();
+        for (std::size_t i = 0; i < na; ++i) {
+            const Area& a = as[i];
+            if (a.x1 <= a.x0 || a.y1 <= a.y0) continue;
+            const int tx0 = a.x0 / int(kUiTile), tx1 = (a.x1 - 1) / int(kUiTile);
+            const int ty0 = a.y0 / int(kUiTile), ty1 = (a.y1 - 1) / int(kUiTile);
+            for (int ty = ty0; ty <= ty1; ++ty)
+                for (int tx = tx0; tx <= tx1; ++tx) ++off[std::size_t(ty) * tilesX + tx];
+        }
+        u32 sum = 0; // prefix sums -> offsets; then ids in draw order
+        for (u32 t = 0; t < tileCount; ++t) {
+            const u32 k = off[t];
+            off[t] = sum;
+            sum += k;
+        }
+        off[tileCount] = sum;
+        cursor.assign(off, off + tileCount);
+        csr.resize(std::size_t(tileCount) + 1 + sum);
+        off = csr.data();
+        u32* ids = csr.data() + tileCount + 1;
+        for (std::size_t i = 0; i < na; ++i) {
+            const Area& a = as[i];
+            if (a.x1 <= a.x0 || a.y1 <= a.y0) continue;
+            const int tx0 = a.x0 / int(kUiTile), tx1 = (a.x1 - 1) / int(kUiTile);
+            const int ty0 = a.y0 / int(kUiTile), ty1 = (a.y1 - 1) / int(kUiTile);
+            for (int ty = ty0; ty <= ty1; ++ty)
+                for (int tx = tx0; tx <= tx1; ++tx) ids[cursor[std::size_t(ty) * tilesX + tx]++] = a.id;
+        }
+        u32 live = 0;
+        for (u32 t = 0; t < tileCount; ++t) {
+            buildTile(ids + off[t], off[t + 1] - off[t], t);
+            placeTile(pass, t);
+            live += out.tileSlotCap[pass * tileCount + t];
+        }
+        out.tileLive += live;
+    };
+    // volatile words (edges, clip lists, stops) are appended to *V at absolute offset vb + V->size(): `images`
+    // in a full pack, the arena tail in an incremental one
+    std::vector<u32>* V = &out.images;
+    u32 vb = 0;
+    const auto vsz = [&] { return vb + u32(V->size()); };
+    const auto vr = [&](u32 abs) { return abs < vb ? out.images[abs] : (*V)[abs - vb]; };
 
     Clip stack[32];
     int depth = 0;
@@ -325,12 +383,12 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             const auto& stops = list.gradientStops();
             const u32 ns = std::size_t(c.stops) + c.stopCount <= stops.size() ? c.stopCount : 0u;
             if ((c.gradient & 15u) == kGradientRadialFocal) // the focal point rides just before the stops
-                for (f32 f : c.focal) { u32 u; std::memcpy(&u, &f, 4); out.images.push_back(u); }
-            const u32 at = u32(out.images.size());
+                for (f32 f : c.focal) { u32 u; std::memcpy(&u, &f, 4); V->push_back(u); }
+            const u32 at = vsz();
             for (u32 i = 0; i < ns; ++i) { // 5 float words per stop, after the image / edge words
                 const GradientStop& st = stops[c.stops + i];
                 const f32 w[5] = {st.offset, st.color.r, st.color.g, st.color.b, st.color.a};
-                for (f32 f : w) { u32 u; std::memcpy(&u, &f, 4); out.images.push_back(u); }
+                for (f32 f : w) { u32 u; std::memcpy(&u, &f, 4); V->push_back(u); }
             }
             put4(g.grad, c.gradXf[0], c.gradXf[1], c.gradXf[2], c.gradXf[3]);
             u32 bits[2] = {at, ns};
@@ -339,11 +397,11 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             put4(g.grad2, c.gradXf[4], c.gradXf[5], fb[0], fb[1]);
         } else if (c.op == DrawOp::Backdrop && c.stopCount == 4 && std::size_t(c.stops) + 4 <= list.gradientStops().size()) {
             // backdrop-filter colour matrix: 4 rows x (r, g, b, a, offset) words, as the CPU's filterPixel reads them
-            const u32 at = u32(out.images.size());
+            const u32 at = vsz();
             for (u32 i = 0; i < 4; ++i) {
                 const GradientStop& st = list.gradientStops()[c.stops + i];
                 const f32 w[5] = {st.color.r, st.color.g, st.color.b, st.color.a, st.offset};
-                for (f32 f : w) { u32 u; std::memcpy(&u, &f, 4); out.images.push_back(u); }
+                for (f32 f : w) { u32 u; std::memcpy(&u, &f, 4); V->push_back(u); }
             }
             u32 bits[2] = {at, 4u};
             f32 fb[2];
@@ -430,7 +488,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             w[8] = u32(ci);
             g.id = kCompactGlyph | gi;
             slotOut = g.id;
-            boxOut = tileBoxOf(g);
+            boxOut = boxOf(g);
             areas.push_back(g);
             return;
         }
@@ -438,8 +496,136 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         pa.id = u32(out.cmdScratch.size());
         pack(c, clip, ci);
         slotOut = pa.id;
-        boxOut = tileBoxOf(pa);
+        boxOut = boxOf(pa);
         areas.push_back(pa);
+    };
+    // one DrawList command in paint order: clip ops update the stack, a Backdrop closes the draw segment, paths
+    // carry their edges in the volatile words, the rest go through emit
+    struct Segment {
+        u32 end;      ///< areas index where the draw segment closes
+        u32 src;      ///< DrawList index of the backdrop
+        GpuPass blur; ///< the backdrop pass that follows it
+    };
+    thread_local std::vector<Segment> segments;
+    u32 clipVer = 1;
+    int clipFloor = 0;     // incremental: the range may not pop below its starting depth
+    bool unbalanced = false;
+    const auto step = [&](std::size_t ci, u32& slotOut, u64& boxOut) {
+        const DrawCmd& c = cur[ci];
+        if (c.op == DrawOp::PushClip) {
+            if (depth < 31) {
+                ++depth, ++clipVer;
+                stack[depth] = {stack[depth - 1].r.intersect(c.rect), c.radius[0], stack[depth - 1].pathList};
+                if (stack[depth - 1].radius > 0.f && c.radius[0] <= 0.f) stack[depth].radius = 0.f;
+            }
+            return;
+        }
+        if (c.op == DrawOp::ClipPath) {
+            // same clip state as CpuRasterizer: bounds (+1 px) intersect the rect clip; the edges and the list of
+            // every active clip path ride in the volatile words
+            if (depth < 31) {
+                ++depth, ++clipVer;
+                stack[depth] = stack[depth - 1];
+                const std::size_t ne = std::size_t(c.tw) | (std::size_t(c.th) << 16);
+                if (ne == 0 || std::size_t(c.image) + ne > list.pathEdges().size()) {
+                    stack[depth].r = {};
+                    return;
+                }
+                stack[depth].r = stack[depth].r.intersect({c.rect.x - 1.f, c.rect.y - 1.f, c.rect.w + 2.f, c.rect.h + 2.f});
+                const u32 at = vsz();
+                const std::size_t vl = V->size();
+                V->resize(vl + ne * 5);
+                std::memcpy(V->data() + vl, list.pathEdges().data() + c.image, ne * sizeof(PathEdge));
+                const u32 parent = stack[depth - 1].pathList;
+                const u32 pc = parent ? vr(parent) : 0u;
+                const u32 lo = vsz();
+                V->push_back(pc + 1);
+                for (u32 q = 0; q < pc * 3; ++q) V->push_back(vr(parent + 1 + q));
+                V->push_back(at);
+                V->push_back(u32(ne));
+                V->push_back(c.v ? 1u : 0u);
+                stack[depth].pathList = lo;
+            }
+            return;
+        }
+        if (c.op == DrawOp::PopClip) {
+            if (depth > clipFloor) --depth, ++clipVer;
+            else if (clipFloor > 0) unbalanced = true;
+            return;
+        }
+        const Clip& clip = stack[depth];
+        if (c.op == DrawOp::Backdrop) {
+            // same box as CpuRasterizer's backdropBlur: area = rect & clip & target, source = area + 3r margin
+            const Rect area = c.rect.intersect(clip.r).intersect(full);
+            if (area.empty()) return;
+            const int r = c.blur > 0.f ? std::max(1, int(std::lround(c.blur / 3.f))) : 0; // 0: filter only
+            const int x0 = int(std::floor(area.x)), y0 = int(std::floor(area.y));
+            const int x1 = int(std::ceil(area.right())), y1 = int(std::ceil(area.bottom()));
+            const int mg = 3 * r;
+            const int sx0 = std::max(0, x0 - mg), sy0 = std::max(0, y0 - mg);
+            const int sx1 = std::min(int(width), x1 + mg), sy1 = std::min(int(height), y1 + mg);
+            const u32 id = u32(out.cmdScratch.size());
+            pack(c, clip, ci);
+            slotOut = id;
+            GpuPass bp;
+            bp.kind = kPassBackdrop;
+            bp.cmd = id;
+            bp.src[0] = sx0;
+            bp.src[1] = sy0;
+            bp.src[2] = sx1 - sx0;
+            bp.src[3] = sy1 - sy0;
+            bp.area[0] = x0;
+            bp.area[1] = y0;
+            bp.area[2] = x1;
+            bp.area[3] = y1;
+            bp.radius = u32(r);
+            bp.inv = 1.f / f32(2 * r + 1);
+            segments.push_back({u32(areas.size()), u32(ci), bp}); // the draw segment closes here
+            return;
+        }
+        if (c.op == DrawOp::Path) {
+            const Rect area = c.rect.intersect(clip.r);
+            if (area.empty()) return;
+            const Area pixels{std::max(0, int(std::floor(area.x))), std::max(0, int(std::floor(area.y))),
+                              std::min(int(width), int(std::ceil(area.right()))), std::min(int(height), int(std::ceil(area.bottom()))), 0u};
+            // edges ride in the volatile words as floats (no extra binding): info.w = word offset
+            const std::size_t ne = std::size_t(c.tw) | (std::size_t(c.th) << 16);
+            if (ne == 0 || std::size_t(c.image) + ne > list.pathEdges().size()) return;
+            const u32 at = vsz();
+            const PathEdge* e = list.pathEdges().data() + c.image;
+            const std::size_t vl = V->size();
+            V->resize(vl + ne * 5);
+            std::memcpy(V->data() + vl, e, ne * sizeof(PathEdge));
+            // tile-row edge lists: edges whose y-range (grown by the stroke reach) touches the 16-px row. Dropped
+            // edges cannot change the winding sub-samples or a non-zero stroke coverage there, so results are identical
+            const f32 reach = c.borderWidth * 0.5f + 1.f;
+            const u32 r0 = u32(pixels.y0) / kUiTile, r1 = u32(std::max(pixels.y1 - 1, pixels.y0)) / kUiTile;
+            const u32 rows = r1 - r0 + 1;
+            std::vector<u32>& W = *V;
+            const std::size_t tb = W.size();
+            W.resize(tb + 2 + rows + 1);
+            W[tb] = r0;
+            W[tb + 1] = rows;
+            const std::size_t lb = W.size();
+            for (u32 r = 0; r < rows; ++r) {
+                W[tb + 2 + r] = u32(W.size() - lb);
+                const f32 top = f32((r0 + r) * kUiTile) - reach, bottom = f32((r0 + r + 1) * kUiTile) + reach;
+                for (std::size_t k = 0; k < ne; ++k) {
+                    const f32 lo = std::min(e[k].y0, e[k].y1), hi = std::max(e[k].y0, e[k].y1);
+                    if (hi >= top && lo <= bottom) W.push_back(u32(k));
+                }
+            }
+            W[tb + 2 + rows] = u32(W.size() - lb);
+            Area pa = pixels;
+            pa.id = u32(out.cmdScratch.size());
+            pack(c, clip, ci);
+            out.cmdScratch.back().info[3] = at;
+            slotOut = pa.id;
+            boxOut = boxOf(pa);
+            areas.push_back(pa);
+            return;
+        }
+        emit(c, ci, clip, slotOut, boxOut);
     };
     // record placement outside a full pack: a free spot of the node's slot, its headroom, or the arena end
     const auto allocRec = [&](u32 node) -> u32 {
@@ -476,77 +662,133 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         return (id & kCompactGlyph) ? out.arenaSrc[(id & ~kCompactGlyph) - out.arenaBase] : out.cmdSrc[id];
     };
 
+    // commands outside the changed range keep their packed words: their edges / stops must lie before the first
+    // changed table entry
+    const auto tablesKept = [&] {
+        if (edgeDiff == ~std::size_t(0) && stopDiff == ~std::size_t(0)) return true;
+        const auto keeps = [&](const DrawCmd& c) {
+            if ((c.op == DrawOp::Path || c.op == DrawOp::ClipPath) &&
+                std::size_t(c.image) + (std::size_t(c.tw) | (std::size_t(c.th) << 16)) > edgeDiff)
+                return false;
+            return c.stopCount == 0 || std::size_t(c.stops) + c.stopCount <= stopDiff;
+        };
+        for (std::size_t i = 0; i < p; ++i)
+            if (!keeps(cur[i])) return false;
+        for (std::size_t i = ec; i < n; ++i)
+            if (!keeps(cur[i])) return false;
+        return true;
+    };
+
     // ---- incremental structural pack ----
-    if (inputs && structural && out.passes.size() == 1 && out.tilePasses == 1 && out.tileCountPrev == tileCount &&
-        out.cmdSlot.size() == m && out.cmdTiles.size() == m && out.images.size() == out.packedImageWords &&
-        (out.arena.empty() ? out.images.size() <= out.arenaBase : out.images.size() == out.arenaBase + out.arena.size()) &&
-        (ep - p) + (ec - p) <= 4096) {
+    // one changed range [p, ep) -> [p, ec): re-emit only the range (clip ops inside it must be balanced; backdrops
+    // keep their count), put its records into free spots of their node slots, and rebuild only the tiles it
+    // touches (one draw segment) or the segments it spans (backdrops in it)
+    if (others && structural && out.tilePasses > 0 && out.tileCountPrev == tileCount && out.cmdSlot.size() == m &&
+        out.cmdBox.size() == m && out.images.size() == out.packedImageWords &&
+        (out.arena.empty() || out.images.size() == out.arenaBase + out.arena.size()) && (ep - p) + (ec - p) <= 4096 && tablesKept()) {
         bool ok = true;
-        for (std::size_t i = p; i < ep && ok; ++i) ok = plainOp(out.prevCmds[i]);
-        bool glyphs = false;
-        for (std::size_t i = p; i < ec && ok; ++i) ok = plainOp(cur[i]), glyphs |= cur[i].op == DrawOp::Glyph;
-        // the clip in force over the range (no clip op inside it)
         const auto cr = std::upper_bound(out.clipRuns.begin(), out.clipRuns.end(), u32(p),
                                          [](u32 v, const GpuDrawData::ClipRun& r) { return v < r.from; });
         if (cr == out.clipRuns.begin()) ok = false;
-        Clip clip{};
+        Clip c0{};
+        int d0 = 0;
+        u32 oldBd = 0;
         if (ok) {
-            const auto& r = *(cr - 1);
-            clip = {r.r, r.radius, r.pathList};
-            if (glyphs && clip.radius > 0.f) ok = false; // rounded glyph clips share carrier cmds
+            c0 = {(cr - 1)->r, (cr - 1)->radius, (cr - 1)->pathList};
+            d0 = int((cr - 1)->depth);
+            int d = d0; // the old range must be balanced too (the suffix was packed under the clip after it)
+            for (std::size_t i = p; i < ep && ok; ++i) {
+                const DrawOp op = out.prevCmds[i].op;
+                if (op == DrawOp::PushClip || op == DrawOp::ClipPath) { if (d < 31) ++d; }
+                else if (op == DrawOp::PopClip) { if (d > d0) --d; else if (d0 > 0) ok = false; }
+                else if (op == DrawOp::Backdrop && out.cmdSlot[i] != ~0u) ++oldBd;
+            }
+            ok = ok && d == d0;
         }
+        // segment of the range: backdrops before p; the range's old backdrops are the next oldBd
+        const u32 k0 = u32(std::lower_bound(out.backdropSrc.begin(), out.backdropSrc.end(), u32(p)) - out.backdropSrc.begin());
+        if (ok && k0 + oldBd >= out.tilePasses) ok = false; // a dropped trailing segment
         if (ok) {
+            if (out.arena.empty()) { // volatile words and records go to the arena tail: give it room
+                if (out.images.size() > out.arenaBase) out.arenaBase = u32(out.images.size() + out.images.size() / 8 + 256);
+                out.images.resize(out.arenaBase, 0u);
+            }
             const u32 arena0 = u32(out.arena.size());
+            V = &out.arena;
+            vb = out.arenaBase;
             areas.clear();
+            segments.clear();
             out.cmdScratch.clear();
             out.cmdScratchNode.clear();
             out.cmdScratchSrc.clear();
             out.glyphScratch.clear();
-            thread_local std::vector<u32> newSlot;
-            thread_local std::vector<u64> newTiles;
+            depth = d0;
+            stack[depth] = c0;
+            clipFloor = d0;
+            unbalanced = false;
+            clipRef = ~0u;
+            lastClip = {};
+            lastFill = {};
+            fillAt = ~0u;
+            thread_local std::vector<u32> newSlot, areaOf;
+            thread_local std::vector<u64> newBox;
+            thread_local std::vector<GpuDrawData::ClipRun> newRuns;
             newSlot.assign(ec - p, ~0u);
-            newTiles.assign(ec - p, ~0ull);
-            thread_local std::vector<u32> areaOf; // per new command: its areas index or ~0u
+            newBox.assign(ec - p, ~0ull);
             areaOf.assign(ec - p, ~0u);
+            newRuns.clear();
+            const u32 ver0 = clipVer;
+            u32 clipRec = clipVer;
             for (std::size_t i = p; i < ec; ++i) {
+                if (clipRec != clipVer) {
+                    newRuns.push_back({u32(i), stack[depth].r, stack[depth].radius, stack[depth].pathList, u32(depth)});
+                    clipRec = clipVer;
+                }
                 const std::size_t before = areas.size();
-                emit(cur[i], i, clip, newSlot[i - p], newTiles[i - p]);
+                step(i, newSlot[i - p], newBox[i - p]);
                 if (areas.size() > before) areaOf[i - p] = u32(before);
             }
-            // affected tiles: old and new boxes of the range
+            if (clipVer != ver0 && ec < n) newRuns.push_back({u32(ec), c0.r, c0.radius, c0.pathList, u32(d0)});
+            ok = !unbalanced && depth == d0 && segments.size() == oldBd;
+            const u32 nb = oldBd;
+            // affected tiles of segment k0 (no backdrop in the range): old and new boxes
             thread_local std::vector<u32> mark, affected;
             if (mark.size() < tileCount) mark.assign(tileCount, 0u);
             affected.clear();
             const auto addBox = [&](u64 b) {
                 if (b == ~0ull) return;
-                const u32 tx0 = u32(b & 0xFFFF), ty0 = u32((b >> 16) & 0xFFFF), tx1 = u32((b >> 32) & 0xFFFF), ty1 = u32(b >> 48);
+                const u32 tx0 = u32(b & 0xFFFF) / kUiTile, ty0 = u32((b >> 16) & 0xFFFF) / kUiTile;
+                const u32 tx1 = (u32((b >> 32) & 0xFFFF) - 1) / kUiTile, ty1 = (u32(b >> 48) - 1) / kUiTile;
                 for (u32 ty = ty0; ty <= ty1; ++ty)
                     for (u32 tx = tx0; tx <= tx1; ++tx) {
                         const u32 t = ty * tilesX + tx;
                         if (!mark[t]) mark[t] = 1, affected.push_back(t);
                     }
             };
-            for (std::size_t i = p; i < ep; ++i) addBox(out.cmdTiles[i]);
-            for (u64 b : newTiles) addBox(b);
-            for (u32 t : affected) mark[t] = 0;
-            if (affected.size() <= tileCount / 2 + 16) {
-                // old tile lists, runs expanded, split around the range: prefix | (removed) | suffix
-                struct Span { u32 t, pre0, pre1, suf1; };
-                thread_local std::vector<Span> spans;
-                spans.clear();
+            bool merge = ok && nb == 0;
+            if (merge) {
+                for (std::size_t i = p; i < ep; ++i) addBox(out.cmdBox[i]);
+                for (u64 b : newBox) addBox(b);
+                for (u32 t : affected) mark[t] = 0;
+                merge = affected.size() <= tileCount / 2 + 16; // else rebuild the whole segment
+            }
+            struct Span { u32 t, pre0, pre1, suf1; };
+            thread_local std::vector<Span> spans;
+            spans.clear();
+            if (merge) { // old tile lists, runs expanded, split around the range: prefix | (removed) | suffix
                 rawT.clear();
+                const u32 hb = tileHeader(k0);
                 for (u32 t : affected) {
-                    const u32 b = out.tiles[2 * t], e = out.tiles[2 * t + 1];
-                    Span sp{t, u32(rawT.size()), 0, 0};
+                    const u32 h = out.tiles[hb + t], e = h ? out.tiles[h] : 0u;
+                    Span sp{t, u32(rawT.size()), u32(rawT.size()), 0};
                     bool pre = true;
-                    sp.pre1 = sp.pre0;
-                    for (u32 k = b; k < e; ++k) {
+                    const auto one = [&](u32 x) {
+                        const u32 src = srcOf(x);
+                        if (src < p) { rawT.push_back(x); if (pre) sp.pre1 = u32(rawT.size()); }
+                        else if (src >= ep) { pre = false; rawT.push_back(x); }
+                    };
+                    for (u32 k = h + 1; k < h + 1 + e; ++k) {
                         const u32 id = out.tiles[k];
-                        const auto one = [&](u32 x) {
-                            const u32 src = srcOf(x);
-                            if (src < p) { rawT.push_back(x); if (pre) sp.pre1 = u32(rawT.size()); }
-                            else if (src >= ep) { if (pre) pre = false, sp.pre1 = u32(rawT.size()); rawT.push_back(x); }
-                        };
                         if ((id & kGlyphRun) == kGlyphRun) {
                             const u32 o = id & ~kGlyphRun, nr = out.tiles[o];
                             for (u32 q = 0; q < nr; ++q) one(kCompactGlyph | out.tiles[o + 2 + kUiTile + q]);
@@ -555,6 +797,8 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
                     sp.suf1 = u32(rawT.size());
                     spans.push_back(sp);
                 }
+            }
+            if (ok) {
                 // free the old range's records / cmds, place the new ones (free spots of their node's slots first)
                 for (std::size_t i = p; i < ep; ++i) {
                     const u32 sl = out.cmdSlot[i];
@@ -576,10 +820,18 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
                 out.cmdMap.resize(out.cmdScratch.size());
                 for (std::size_t q = 0; q < out.cmdScratch.size(); ++q) {
                     const u32 at = allocCmd(out.cmdScratchNode[q]);
-                    out.cmds[at] = out.cmdScratch[q];
-                    if (out.cmdSrc.size() < out.cmds.size()) out.cmdSrc.resize(out.cmds.size(), ~0u);
-                    out.cmdSrc[at] = out.cmdScratchSrc[q];
                     out.cmdMap[q] = at;
+                }
+                for (std::size_t q = 0; q < out.cmdScratch.size(); ++q) { // carriers referenced by new records
+                    GpuCmd& g = out.cmds[out.cmdMap[q]];
+                    g = out.cmdScratch[q];
+                    if (out.cmdSrc.size() < out.cmds.size()) out.cmdSrc.resize(out.cmds.size(), ~0u);
+                    out.cmdSrc[out.cmdMap[q]] = out.cmdScratchSrc[q];
+                }
+                for (std::size_t gi = 0; gi < out.glyphScratch.size() / 9; ++gi) {
+                    const u32 abs = out.glyphScratch[gi * 9 + 7];
+                    u32& ref = out.arena[abs - out.arenaBase + 6];
+                    if (ref != ~0u) ref = out.cmdMap[ref];
                 }
                 const auto finalId = [&](u32 id) {
                     return (id & kCompactGlyph) ? kCompactGlyph | out.glyphScratch[std::size_t(id & ~kCompactGlyph) * 9 + 7] : out.cmdMap[id];
@@ -587,42 +839,81 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
                 for (Area& a : areas) a.id = finalId(a.id);
                 for (u32& sl : newSlot)
                     if (sl != ~0u) sl = finalId(sl);
-                // rebuild the touched tiles: prefix + the range's new entries covering the tile + suffix
-                thread_local std::vector<u32> merged;
-                for (const Span& sp : spans) {
-                    merged.assign(rawT.begin() + sp.pre0, rawT.begin() + sp.pre1);
-                    const u32 tx = sp.t % tilesX, ty = sp.t / tilesX;
-                    for (std::size_t i = 0; i < ec - p; ++i) {
-                        const u64 b = newTiles[i];
-                        if (b == ~0ull || areaOf[i] == ~0u) continue;
-                        if (tx < (b & 0xFFFF) || ty < ((b >> 16) & 0xFFFF) || tx > ((b >> 32) & 0xFFFF) || ty > (b >> 48)) continue;
-                        merged.push_back(areas[areaOf[i]].id);
-                    }
-                    merged.insert(merged.end(), rawT.begin() + sp.pre1, rawT.begin() + sp.suf1);
-                    buildTile(merged.data(), u32(merged.size()), sp.t);
-                    placeTile(0, sp.t);
+                // backdrop passes of the range (same count): draw pass j is passes[2j], its blur passes[2j + 1]
+                for (u32 j = 0; j < nb; ++j) {
+                    GpuPass bp = segments[j].blur;
+                    bp.cmd = out.cmdMap[bp.cmd];
+                    out.passes[2 * (k0 + j) + 1] = bp;
                 }
+                if (merge) // the touched tiles: prefix + the range's new entries covering the tile + suffix
+                    for (const Span& sp : spans) {
+                        thread_local std::vector<u32> merged;
+                        merged.assign(rawT.begin() + sp.pre0, rawT.begin() + sp.pre1);
+                        const u32 tx = sp.t % tilesX, ty = sp.t / tilesX;
+                        for (std::size_t i = 0; i < ec - p; ++i) {
+                            const u64 b = newBox[i];
+                            if (b == ~0ull || areaOf[i] == ~0u) continue;
+                            const Area& a = areas[areaOf[i]];
+                            if (int(tx) < a.x0 / int(kUiTile) || int(ty) < a.y0 / int(kUiTile) ||
+                                int(tx) > (a.x1 - 1) / int(kUiTile) || int(ty) > (a.y1 - 1) / int(kUiTile))
+                                continue;
+                            merged.push_back(a.id);
+                        }
+                        merged.insert(merged.end(), rawT.begin() + sp.pre1, rawT.begin() + sp.suf1);
+                        buildTile(merged.data(), u32(merged.size()), sp.t);
+                        placeTile(k0, sp.t);
+                    }
                 // per-command tables follow the range; the suffix's source indices shift by the size change
+                const i64 delta = i64(ec) - i64(ep);
                 if (n == m) {
                     std::copy(newSlot.begin(), newSlot.end(), out.cmdSlot.begin() + std::ptrdiff_t(p));
-                    std::copy(newTiles.begin(), newTiles.end(), out.cmdTiles.begin() + std::ptrdiff_t(p));
+                    std::copy(newBox.begin(), newBox.end(), out.cmdBox.begin() + std::ptrdiff_t(p));
                 } else {
                     out.cmdSlot.erase(out.cmdSlot.begin() + std::ptrdiff_t(p), out.cmdSlot.begin() + std::ptrdiff_t(ep));
                     out.cmdSlot.insert(out.cmdSlot.begin() + std::ptrdiff_t(p), newSlot.begin(), newSlot.end());
-                    out.cmdTiles.erase(out.cmdTiles.begin() + std::ptrdiff_t(p), out.cmdTiles.begin() + std::ptrdiff_t(ep));
-                    out.cmdTiles.insert(out.cmdTiles.begin() + std::ptrdiff_t(p), newTiles.begin(), newTiles.end());
+                    out.cmdBox.erase(out.cmdBox.begin() + std::ptrdiff_t(p), out.cmdBox.begin() + std::ptrdiff_t(ep));
+                    out.cmdBox.insert(out.cmdBox.begin() + std::ptrdiff_t(p), newBox.begin(), newBox.end());
                     for (std::size_t i = ec; i < n; ++i) {
                         const u32 sl = out.cmdSlot[i];
                         if (sl == ~0u) continue;
                         if (sl & kCompactGlyph) out.arenaSrc[(sl & ~kCompactGlyph) - out.arenaBase] = u32(i);
                         else out.cmdSrc[sl] = u32(i);
                     }
-                    const i64 delta = i64(ec) - i64(ep);
-                    for (auto& r : out.clipRuns)
-                        if (r.from > p) r.from = u32(i64(r.from) + delta);
                 }
-                // images mirror the arena: rewritten records, then whatever the range appended (records, fills)
-                if (out.images.size() < out.arenaBase) out.images.resize(out.arenaBase, 0u);
+                { // clip runs: drop the old range's, shift the suffix's, add the new range's
+                    auto& runs = out.clipRuns;
+                    std::size_t w = 0, at = runs.size();
+                    for (std::size_t r = 0; r < runs.size(); ++r) {
+                        GpuDrawData::ClipRun cr2 = runs[r];
+                        if (cr2.from > p && cr2.from <= ep) continue;
+                        if (cr2.from > ep) cr2.from = u32(i64(cr2.from) + delta), at = std::min(at, w);
+                        runs[w++] = cr2;
+                    }
+                    runs.resize(w);
+                    at = std::min(at, runs.size());
+                    runs.insert(runs.begin() + std::ptrdiff_t(at), newRuns.begin(), newRuns.end());
+                }
+                { // backdrop source indices
+                    auto& bs = out.backdropSrc;
+                    for (std::size_t j = k0 + nb; j < bs.size(); ++j) bs[j] = u32(i64(bs[j]) + delta);
+                    for (u32 j = 0; j < nb; ++j) bs[k0 + j] = segments[j].src;
+                }
+                // segments spanned by backdrops in the range: rebinned from the stored boxes (no re-emission)
+                if (!merge) {
+                    for (u32 j = k0; j <= k0 + nb; ++j) {
+                        const std::size_t from = j == 0 ? 0 : std::size_t(out.backdropSrc[j - 1]) + 1;
+                        const std::size_t to = j < out.backdropSrc.size() ? out.backdropSrc[j] : n;
+                        areas.clear();
+                        for (std::size_t i = from; i < to; ++i) {
+                            const u64 b = out.cmdBox[i];
+                            if (b == ~0ull || out.cmdSlot[i] == ~0u) continue;
+                            areas.push_back({int(b & 0xFFFF), int((b >> 16) & 0xFFFF), int((b >> 32) & 0xFFFF), int(b >> 48), out.cmdSlot[i]});
+                        }
+                        binAreas(areas.data(), areas.size(), j);
+                    }
+                }
+                // images mirror the arena: rewritten records, then whatever the range appended (records, words)
+                out.arenaHoles += u32(out.arena.size()) - arena0; // re-slotted by the next full pack
                 for (u32 abs : written) std::memcpy(out.images.data() + abs, rec(abs), kCompactGlyphWords * 4);
                 out.images.insert(out.images.end(), out.arena.begin() + arena0, out.arena.end());
                 out.packedImageWords = u32(out.images.size());
@@ -630,6 +921,9 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
                 out.incremental = true;
                 return;
             }
+            V = &out.images;
+            vb = 0;
+            clipFloor = 0;
         }
     }
 
@@ -647,7 +941,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     for (int attempt = 0; attempt < 2; ++attempt) {
     ++out.frameStamp;
     out.cmdSlot.assign(n, ~0u);
-    out.cmdTiles.assign(n, ~0ull);
+    out.cmdBox.assign(n, ~0ull);
     out.clipRuns.clear();
     out.glyphScratch.clear();
     out.glyphSlotOf.clear();
@@ -708,131 +1002,15 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     areas.clear();
     areas.reserve(n); // one growth step per frame at most (text pages are 10^4+ glyph quads)
     out.cmdScratch.reserve(n + 1);
-    struct Segment {
-        u32 end;   ///< areas index where the draw segment closes
-        GpuPass blur; ///< the backdrop pass that follows it
-    };
-    thread_local std::vector<Segment> segments;
     segments.clear();
-    u32 clipVer = 1, clipRec = 0;
+    u32 clipRec = 0;
+    clipVer = 1;
     for (std::size_t ci = 0; ci < n; ++ci) {
-        const DrawCmd& c = cur[ci];
         if (clipRec != clipVer) { // clip runs: the clip in force from here on (incremental packs start from it)
-            out.clipRuns.push_back({u32(ci), stack[depth].r, stack[depth].radius, stack[depth].pathList});
+            out.clipRuns.push_back({u32(ci), stack[depth].r, stack[depth].radius, stack[depth].pathList, u32(depth)});
             clipRec = clipVer;
         }
-        if (c.op == DrawOp::PushClip) {
-            if (depth < 31) {
-                ++depth, ++clipVer;
-                stack[depth] = {stack[depth - 1].r.intersect(c.rect), c.radius[0], stack[depth - 1].pathList};
-                if (stack[depth - 1].radius > 0.f && c.radius[0] <= 0.f) stack[depth].radius = 0.f;
-            }
-            continue;
-        }
-        if (c.op == DrawOp::ClipPath) {
-            // same clip state as CpuRasterizer: bounds (+1 px) intersect the rect clip; the edges and the list of
-            // every active clip path ride in the images buffer
-            if (depth < 31) {
-                ++depth, ++clipVer;
-                stack[depth] = stack[depth - 1];
-                const std::size_t ne = std::size_t(c.tw) | (std::size_t(c.th) << 16);
-                if (ne == 0 || std::size_t(c.image) + ne > list.pathEdges().size()) {
-                    stack[depth].r = {};
-                    continue;
-                }
-                stack[depth].r = stack[depth].r.intersect({c.rect.x - 1.f, c.rect.y - 1.f, c.rect.w + 2.f, c.rect.h + 2.f});
-                const u32 at = u32(out.images.size());
-                out.images.resize(out.images.size() + ne * 5);
-                std::memcpy(out.images.data() + at, list.pathEdges().data() + c.image, ne * sizeof(PathEdge));
-                const u32 parent = stack[depth - 1].pathList;
-                const u32 pc = parent ? out.images[parent] : 0u;
-                const u32 lo = u32(out.images.size());
-                out.images.push_back(pc + 1);
-                for (u32 q = 0; q < pc * 3; ++q) out.images.push_back(out.images[parent + 1 + q]);
-                out.images.push_back(at);
-                out.images.push_back(u32(ne));
-                out.images.push_back(c.v ? 1u : 0u);
-                stack[depth].pathList = lo;
-            }
-            continue;
-        }
-        if (c.op == DrawOp::PopClip) {
-            if (depth > 0) --depth, ++clipVer;
-            continue;
-        }
-        const Clip& clip = stack[depth];
-        if (c.op == DrawOp::Backdrop) {
-            // same box as CpuRasterizer's backdropBlur: area = rect & clip & target, source = area + 3r margin
-            const Rect area = c.rect.intersect(clip.r).intersect(full);
-            if (area.empty()) continue;
-            const int r = c.blur > 0.f ? std::max(1, int(std::lround(c.blur / 3.f))) : 0; // 0: filter only
-            const int x0 = int(std::floor(area.x)), y0 = int(std::floor(area.y));
-            const int x1 = int(std::ceil(area.right())), y1 = int(std::ceil(area.bottom()));
-            const int mg = 3 * r;
-            const int sx0 = std::max(0, x0 - mg), sy0 = std::max(0, y0 - mg);
-            const int sx1 = std::min(int(width), x1 + mg), sy1 = std::min(int(height), y1 + mg);
-            const u32 segEnd = u32(areas.size()); // the draw segment closes here (binned after the slot passes)
-            const u32 id = u32(out.cmdScratch.size());
-            pack(c, clip, ci);
-            out.cmdSlot[ci] = id;
-            GpuPass bp;
-            bp.kind = kPassBackdrop;
-            bp.cmd = id;
-            bp.src[0] = sx0;
-            bp.src[1] = sy0;
-            bp.src[2] = sx1 - sx0;
-            bp.src[3] = sy1 - sy0;
-            bp.area[0] = x0;
-            bp.area[1] = y0;
-            bp.area[2] = x1;
-            bp.area[3] = y1;
-            bp.radius = u32(r);
-            bp.inv = 1.f / f32(2 * r + 1);
-            segments.push_back({segEnd, bp});
-            continue;
-        }
-        if (c.op == DrawOp::Path) {
-            Rect bounds = c.rect;
-            const Rect area = bounds.intersect(clip.r);
-            if (area.empty()) continue;
-            const Area pixels{std::max(0, int(std::floor(area.x))), std::max(0, int(std::floor(area.y))),
-                              std::min(int(width), int(std::ceil(area.right()))), std::min(int(height), int(std::ceil(area.bottom()))), 0u};
-            // edges ride in the images buffer as float words (no extra binding): info.w = word offset
-            const std::size_t ne = std::size_t(c.tw) | (std::size_t(c.th) << 16);
-            if (ne == 0 || std::size_t(c.image) + ne > list.pathEdges().size()) continue;
-            const u32 at = u32(out.images.size());
-            const PathEdge* e = list.pathEdges().data() + c.image;
-            out.images.resize(out.images.size() + ne * 5);
-            std::memcpy(out.images.data() + at, e, ne * sizeof(PathEdge));
-            // tile-row edge lists: edges whose y-range (grown by the stroke reach) touches the 16-px row. Dropped
-            // edges cannot change the winding sub-samples or a non-zero stroke coverage there, so results are identical
-            const f32 reach = c.borderWidth * 0.5f + 1.f;
-            const u32 r0 = u32(pixels.y0) / kUiTile, r1 = u32(std::max(pixels.y1 - 1, pixels.y0)) / kUiTile;
-            const u32 rows = r1 - r0 + 1;
-            const std::size_t tb = out.images.size();
-            out.images.resize(tb + 2 + rows + 1);
-            out.images[tb] = r0;
-            out.images[tb + 1] = rows;
-            const std::size_t lb = out.images.size();
-            for (u32 r = 0; r < rows; ++r) {
-                out.images[tb + 2 + r] = u32(out.images.size() - lb);
-                const f32 top = f32((r0 + r) * kUiTile) - reach, bottom = f32((r0 + r + 1) * kUiTile) + reach;
-                for (std::size_t k = 0; k < ne; ++k) {
-                    const f32 lo = std::min(e[k].y0, e[k].y1), hi = std::max(e[k].y0, e[k].y1);
-                    if (hi >= top && lo <= bottom) out.images.push_back(u32(k));
-                }
-            }
-            out.images[tb + 2 + rows] = u32(out.images.size() - lb);
-            Area pa = pixels;
-            pa.id = u32(out.cmdScratch.size());
-            pack(c, clip, ci);
-            out.cmdScratch.back().info[3] = at;
-            out.cmdSlot[ci] = pa.id;
-            out.cmdTiles[ci] = tileBoxOf(pa);
-            areas.push_back(pa);
-            continue;
-        }
-        emit(c, ci, clip, out.cmdSlot[ci], out.cmdTiles[ci]);
+        step(ci, out.cmdSlot[ci], out.cmdBox[ci]);
     }
     // command slot pass: GpuCmds of each source node keep their cmds slot while they fit
     {
@@ -861,7 +1039,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             GpuDrawData::GlyphSlot& sl = out.cmdSlots[node];
             if (sl.count > sl.cap) {
                 out.cmdHoles += sl.cap;
-                sl.cap = sl.count + sl.count / 8 + 2;
+                sl.cap = sl.count + sl.count / 8;
                 sl.off = u32(out.cmds.size());
                 out.cmds.resize(out.cmds.size() + sl.cap);
             }
@@ -910,7 +1088,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             GpuDrawData::GlyphSlot& sl = out.glyphSlots[node];
             if (sl.count > sl.cap) { // grow: a new slot at the arena end with headroom; the old one becomes a hole
                 out.arenaHoles += sl.cap * kCompactGlyphWords;
-                sl.cap = sl.count + sl.count / 8 + 2;
+                sl.cap = sl.count + sl.count / 8;
                 sl.off = u32(out.arena.size());
                 out.arena.resize(out.arena.size() + std::size_t(sl.cap) * kCompactGlyphWords, 0u);
             }
@@ -939,73 +1117,40 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     // tile binning: one draw pass per segment (a trailing empty one after a backdrop is dropped); slots per
     // (pass, tile) keep their place while their content fits
     {
-        u32 lastBegin = segments.empty() ? 0u : segments.back().end;
+        const u32 lastBegin = segments.empty() ? 0u : segments.back().end;
         bool lastEmpty = true;
         for (u32 i = lastBegin; i < areas.size() && lastEmpty; ++i)
             lastEmpty = areas[i].x1 <= areas[i].x0 || areas[i].y1 <= areas[i].y0;
         const u32 passCount = u32(segments.size()) + ((segments.empty() || !lastEmpty) ? 1u : 0u);
-        const std::size_t header = std::size_t(passCount) * 2 * tileCount;
         if (passCount != out.tilePasses || tileCount != out.tileCountPrev ||
             (out.tileHoles > out.tileLive && out.tiles.size() > 65536)) {
-            out.tiles.assign(header, 0u);
+            out.tiles.assign(1 + std::size_t(passCount) * tileCount, 0u);
             out.tileSlotOff.assign(std::size_t(passCount) * tileCount, 0u);
             out.tileSlotCap.assign(std::size_t(passCount) * tileCount, 0u);
             out.tilePasses = passCount;
             out.tileCountPrev = tileCount;
             out.tileHoles = 0;
         }
-        u32 segBegin = 0;
-        const auto closeSegment = [&](u32 segEnd, u32 pass) {
-            csr.assign(std::size_t(tileCount) + 1, 0u);
-            u32* off = csr.data();
-            for (u32 i = segBegin; i < segEnd; ++i) {
-                const Area& a = areas[i];
-                if (a.x1 <= a.x0 || a.y1 <= a.y0) continue;
-                const int tx0 = a.x0 / int(kUiTile), tx1 = (a.x1 - 1) / int(kUiTile);
-                const int ty0 = a.y0 / int(kUiTile), ty1 = (a.y1 - 1) / int(kUiTile);
-                for (int ty = ty0; ty <= ty1; ++ty)
-                    for (int tx = tx0; tx <= tx1; ++tx) ++off[std::size_t(ty) * tilesX + tx];
-            }
-            u32 sum = 0; // prefix sums -> offsets; then ids in draw order
-            for (u32 t = 0; t < tileCount; ++t) {
-                const u32 k = off[t];
-                off[t] = sum;
-                sum += k;
-            }
-            off[tileCount] = sum;
-            cursor.assign(off, off + tileCount);
-            csr.resize(std::size_t(tileCount) + 1 + sum);
-            off = csr.data();
-            u32* ids = csr.data() + tileCount + 1;
-            for (u32 i = segBegin; i < segEnd; ++i) {
-                const Area& a = areas[i];
-                if (a.x1 <= a.x0 || a.y1 <= a.y0) continue;
-                const int tx0 = a.x0 / int(kUiTile), tx1 = (a.x1 - 1) / int(kUiTile);
-                const int ty0 = a.y0 / int(kUiTile), ty1 = (a.y1 - 1) / int(kUiTile);
-                for (int ty = ty0; ty <= ty1; ++ty)
-                    for (int tx = tx0; tx <= tx1; ++tx) ids[cursor[std::size_t(ty) * tilesX + tx]++] = a.id;
-            }
-            u32 live = 0;
-            for (u32 t = 0; t < tileCount; ++t) {
-                buildTile(ids + off[t], off[t + 1] - off[t], t);
-                placeTile(pass, t);
-                live += out.tileSlotCap[pass * tileCount + t];
-            }
-            out.tileLive += live;
+        out.tileLive = 0;
+        out.backdropSrc.clear();
+        u32 segBegin = 0, pass = 0;
+        const auto drawPass = [&](u32 k) {
             GpuPass dp;
             dp.kind = kPassDraw;
-            dp.tileBase = u32(std::size_t(pass) * 2 * tileCount);
+            dp.tileBase = tileHeader(k);
             out.passes.push_back(dp);
-            segBegin = segEnd;
         };
-        out.tileLive = 0;
-        u32 pass = 0;
         for (const auto& sg : segments) {
-            closeSegment(sg.end, pass++);
+            binAreas(areas.data() + segBegin, sg.end - segBegin, pass);
+            drawPass(pass++);
             out.passes.push_back(sg.blur);
+            out.backdropSrc.push_back(sg.src);
+            segBegin = sg.end;
         }
-        if (pass < passCount) closeSegment(u32(areas.size()), pass);
-        if (out.tiles.empty()) out.tiles.push_back(0u); // never empty
+        if (pass < passCount) {
+            binAreas(areas.data() + segBegin, areas.size() - segBegin, pass);
+            drawPass(pass);
+        }
     }
     if (!out.arena.empty()) { // no glyphs: no arena, no padding
         out.images.resize(out.arenaBase, 0u);

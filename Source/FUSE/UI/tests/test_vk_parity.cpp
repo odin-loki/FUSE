@@ -675,6 +675,56 @@ int main() {
                 vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
                 check(step ? "rect+removed" : "inserted-rect", compare(cpuR, out));
             }
+            // clip push / pop, a stop gradient, a path, then backdrops (multi-pass frames): all re-emit only the range
+            {
+                const std::vector<DrawCmd> base = cmds;
+                const std::size_t at = base.size() / 2;
+                const auto frame = [&](const char* name, auto&& extra, bool incr) {
+                    DrawList fl;
+                    for (std::size_t i = 0; i < at; ++i) fl.pushFrom(e2, base[i]);
+                    extra(fl);
+                    for (std::size_t i = at; i < base.size(); ++i) fl.pushFrom(e2, base[i]);
+                    packDrawList(fl, W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, {}, gen);
+                    if (incr) UI_CHECK(data.incremental);
+                    if (incr && !data.incremental) std::printf("  %s: not incremental\n", name);
+                    UI_CHECK(gpu.upload(0, data));
+                    std::fill(cpuR.pixels.begin(), cpuR.pixels.end(), 0xFF000000u);
+                    re.render(fl, cpuR);
+                    vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+                    check(name, compare(cpuR, out));
+                };
+                const auto none = [](DrawList&) {};
+                frame("base", none, false);
+                frame("clip-range", [](DrawList& l) {
+                    l.pushClip({30.f, 20.f, 120.f, 60.f}, 10.f);
+                    l.rect({20.f, 10.f, 160.f, 90.f}, Color{0.9f, 0.3f, 0.2f, 0.8f});
+                    l.popClip();
+                }, true);
+                frame("stop-gradient", [](DrawList& l) {
+                    l.gradientRect({50.f, 40.f, 140.f, 70.f},
+                                   Gradient::linear({50.f, 40.f}, {190.f, 110.f},
+                                                    {{0.f, Color{1.f, 0.f, 0.f, 1.f}}, {0.5f, Color{0.f, 1.f, 0.f, 0.6f}}, {1.f, Color{0.f, 0.f, 1.f, 1.f}}}),
+                                   {8.f, 8.f, 8.f, 8.f});
+                }, true);
+                frame("path-insert", [](DrawList& l) {
+                    Path pth;
+                    pth.circle({90.f, 60.f}, 35.f);
+                    l.path(pth, Color{0.1f, 0.7f, 0.4f, 0.9f}, false, Color{0.f, 0.f, 0.f, 1.f}, 2.f);
+                }, true);
+                frame("backdrop-insert", [](DrawList& l) { l.backdrop({40.f, 30.f, 120.f, 60.f}, 9.f, {6.f, 6.f, 6.f, 6.f}); }, false);
+                frame("backdrop-moved", [](DrawList& l) { l.backdrop({52.f, 36.f, 120.f, 60.f}, 9.f, {6.f, 6.f, 6.f, 6.f}); }, true);
+                frame("multipass-rect", [](DrawList& l) {
+                    l.backdrop({52.f, 36.f, 120.f, 60.f}, 9.f, {6.f, 6.f, 6.f, 6.f});
+                    l.rect({60.f, 40.f, 50.f, 30.f}, Color{1.f, 1.f, 1.f, 0.5f}, 4.f);
+                }, true);
+                frame("multipass-clip", [](DrawList& l) {
+                    l.backdrop({52.f, 36.f, 120.f, 60.f}, 9.f, {6.f, 6.f, 6.f, 6.f});
+                    l.pushClip({60.f, 40.f, 40.f, 20.f}, 6.f);
+                    l.rect({60.f, 40.f, 50.f, 30.f}, Color{1.f, 1.f, 1.f, 0.5f}, 4.f);
+                    l.popClip();
+                }, true);
+                frame("backdrop-removed", none, false);
+            }
             std::printf("  structural: insert wrote %llu of %zu bytes\n", (unsigned long long)insWrote,
                         data.cmdBytes() + data.tileBytes() + data.imageBytes());
         }

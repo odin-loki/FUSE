@@ -202,12 +202,13 @@ int main(int argc, char** argv) {
                 std::vector<DrawCmd> cmds = s.list->cmds();
                 std::size_t mid = cmds.size() / 2;
                 while (mid < cmds.size() && cmds[mid].op != DrawOp::Glyph) ++mid;
+                if (mid == cmds.size()) mid = cmds.size() / 2; // no glyphs: a copy of the middle command (paths)
                 if (mid < cmds.size()) {
                     DrawCmd extra = cmds[mid];
                     extra.rect.x += 1.f;
                     cmds.insert(cmds.begin() + std::ptrdiff_t(mid), extra);
                     DrawList ins;
-                    for (const DrawCmd& c : cmds) ins.push(c);
+                    for (const DrawCmd& c : cmds) ins.pushFrom(*s.list, c); // edges / stops re-appended in order
                     // in place (no copy of the 3.5 MB pack): best of 5 insert / restore round trips
                     double best = 1e30;
                     for (int r = 0; r < 5; ++r) {
