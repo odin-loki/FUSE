@@ -362,6 +362,13 @@ if(TARGET fuse_ui_extras)
         add_test(NAME fuse_ui_extras_${g} COMMAND fuse_ui_extras_tests --gate=${g})
         set_tests_properties(fuse_ui_extras_${g} PROPERTIES LABELS fuse_ui)
     endforeach()
+    # system web engine: needs a display, so Linux / BSD runs it under Xvfb
+    find_program(FUSE_XVFB_RUN xvfb-run)
+    if(UNIX AND NOT APPLE AND NOT ANDROID AND FUSE_XVFB_RUN)
+        add_test(NAME fuse_ui_extras_webview COMMAND ${FUSE_XVFB_RUN} -a $<TARGET_FILE:fuse_ui_extras_tests> --gate=webview)
+        set_tests_properties(fuse_ui_extras_webview PROPERTIES LABELS fuse_ui TIMEOUT 120 RUN_SERIAL TRUE
+            ENVIRONMENT "WEBKIT_DISABLE_COMPOSITING_MODE=1;LIBGL_ALWAYS_SOFTWARE=1")
+    endif()
 endif()
 
 # Win32 tray + HMENU global menu bar (run under Wine by the cross build's emulator)

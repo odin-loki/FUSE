@@ -3,7 +3,9 @@
 #include "test_util.hpp"
 #include <atomic>
 #include <cstdlib>
+#include <chrono>
 #include <thread>
+#include <vector>
 #include <unistd.h>
 #include "fuse/ui/extras/dbus.hpp"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -812,12 +814,67 @@ void gateRichText() {
     ui.textInput("x");
     CHECK(re->doc.plainText() == "Big\nb i s u l");
 }
+
+// System web engine (WebKitGTK here; run under Xvfb). Skips cleanly when no engine / display is present.
+void gateWebView() {
+    using fuse::ui::web::WebView;
+    if (!WebView::available()) { std::printf("webview: no system engine (%s), skipped\n", WebView::backendName()); return; }
+    std::printf("webview backend: %s\n", WebView::backendName());
+    WebView v;
+    CHECK(v.create(nullptr, {40, 40, 640, 480}));
+    std::vector<std::string> msgs, titles, loads;
+    v.onMessage = [&](const std::string& m) { msgs.push_back(m); };
+    v.onTitleChanged = [&](const std::string& t) { titles.push_back(t); };
+    v.onLoadFinished = [&](const std::string& u) { loads.push_back(u); };
+    auto pump = [&](const std::function<bool()>& until) {
+        for (int i = 0; i < 1500 && !until(); ++i) { v.poll(); std::this_thread::sleep_for(std::chrono::milliseconds(10)); }
+        return until();
+    };
+    v.loadHtml("<html><head><title>T1</title></head><body><script>fuse.postMessage('hello ' + (2 + 3));</script></body></html>", "https://fuse.invalid/");
+    CHECK(pump([&] { return !loads.empty() && !msgs.empty(); }));
+    CHECK(!msgs.empty() && msgs[0] == "hello 5");
+    CHECK(v.title() == "T1" && !titles.empty() && titles.back() == "T1");
+    CHECK(v.url() == "https://fuse.invalid/");
+    int done = 0;
+    std::string res;
+    bool ok = false;
+    v.evaluate("document.title = 'T2'; 6 * 7", [&](bool k, std::string r) { ok = k; res = std::move(r); ++done; });
+    CHECK(pump([&] { return done == 1; }));
+    CHECK(ok && res == "42");
+    CHECK(pump([&] { return v.title() == "T2"; }) && titles.back() == "T2");
+    v.evaluate("throw new Error('boom')", [&](bool k, std::string r) { ok = k; res = std::move(r); ++done; });
+    CHECK(pump([&] { return done == 2; }) && !ok && res.find("boom") != std::string::npos);
+    const std::string file = "/tmp/fuse_webview_" + std::to_string(::getpid()) + ".html";
+    if (FILE* f = std::fopen(file.c_str(), "w")) { std::fputs("<title>File</title><p>file</p>", f); std::fclose(f); }
+    loads.clear();
+    v.navigate("file://" + file);
+    CHECK(pump([&] { return !loads.empty() && v.title() == "File"; }));
+    CHECK(v.url() == "file://" + file);
+    const std::string file2 = file + ".2.html";
+    if (FILE* f = std::fopen(file2.c_str(), "w")) { std::fputs("<title>Two</title>", f); std::fclose(f); }
+    loads.clear();
+    v.navigate("file://" + file2);
+    CHECK(pump([&] { return !loads.empty() && v.title() == "Two"; }));
+    loads.clear();
+    v.back();
+    CHECK(pump([&] { return !loads.empty() && v.title() == "File"; }) && v.url() == "file://" + file);
+    loads.clear();
+    v.forward();
+    CHECK(pump([&] { return !loads.empty() && v.title() == "Two"; }));
+    std::remove(file2.c_str());
+    v.setBounds({10, 10, 320, 240});
+    v.setVisible(false);
+    v.poll();
+    v.destroy();
+    CHECK(!v.valid());
+    std::remove(file.c_str());
+}
 } // namespace
 
 int main(int argc, char** argv) {
     const std::map<std::string, std::function<void()>> gates{
         {"undo", gateUndo}, {"gesture", gateGesture}, {"i18n", gateI18n}, {"desktop", gateDesktop}, {"pdf", gatePdf}, {"containers", gateContainers}, {"dialogs", gateDialogs}, {"lcd_keyseq", gateLcdKeyseq},
-        {"mdi", gateMdi}, {"completer", gateCompleter}, {"graphics", gateGraphics}, {"widget_pdf", gateWidgetPdf}, {"tray", gateTray}, {"richtext", gateRichText}};
+        {"mdi", gateMdi}, {"completer", gateCompleter}, {"graphics", gateGraphics}, {"widget_pdf", gateWidgetPdf}, {"tray", gateTray}, {"richtext", gateRichText}, {"webview", gateWebView}};
     std::string only;
     for (int i = 1; i < argc; ++i) if (std::strncmp(argv[i], "--gate=", 7) == 0) only = argv[i] + 7;
     for (auto& [n, f] : gates) if (only.empty() || only == n) { f(); std::printf("gate %s: %s\n", n.c_str(), g_fail ? "FAIL" : "ok"); }

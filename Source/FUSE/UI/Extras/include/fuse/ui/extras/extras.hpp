@@ -7,4 +7,5 @@
 #include "fuse/ui/extras/richtext.hpp"
 #include "fuse/ui/extras/tray.hpp"
 #include "fuse/ui/extras/undo.hpp"
+#include "fuse/ui/extras/webview.hpp"
 #include "fuse/ui/extras/widgets_extra.hpp"

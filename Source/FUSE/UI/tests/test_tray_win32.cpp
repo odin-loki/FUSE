@@ -5,6 +5,7 @@
 #include <cstdio>
 
 #include "fuse/ui/extras/tray.hpp"
+#include "fuse/ui/extras/webview.hpp"
 
 using namespace fuse::ui;
 static int g_fail = 0;
@@ -59,6 +60,16 @@ int main() {
     tray.hide();
     CHECK(FindWindowExW(HWND_MESSAGE, nullptr, L"FuseTrayWindow", nullptr) == nullptr);
     DestroyWindow(w);
+    // WebView2: without the Edge runtime (Wine) the backend must report unavailable and fail create() cleanly.
+    {
+        fuse::ui::web::WebView wv;
+        const bool avail = fuse::ui::web::WebView::available();
+        std::printf("webview: %s available=%d\n", fuse::ui::web::WebView::backendName(), int(avail));
+        if (!avail) CHECK(!wv.create(nullptr, {0, 0, 320, 240}) && !wv.valid() && wv.url().empty());
+        bool called = false, ok = true;
+        wv.evaluate("1", [&](bool k, std::string) { called = true; ok = k; });
+        if (!avail) CHECK(called && !ok);
+    }
     std::printf("fuse_ui_tray_win32: %s\n", g_fail ? "FAIL" : "OK");
     return g_fail ? 1 : 0;
 }
