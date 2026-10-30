@@ -420,6 +420,8 @@ bool videoPlaying(const UiContext& ui, NodeHandle video);
 void videoSeek(UiContext& ui, NodeHandle video, u32 frame);
 u32 videoFrame(const UiContext& ui, NodeHandle video);
 u32 videoDecodedFrames(const UiContext& ui, NodeHandle video);
+/// The transport label: "m:ss.cc" position (frame / fps, rounded to centiseconds), optionally " / " duration.
+std::string videoTimeText(u32 frame, u32 frames, f32 fps, bool withDuration);
 
 /// Registers the Tier D (2) classes; install() calls it.
 void registerTierD2(UiContext& ui);

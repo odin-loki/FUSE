@@ -1217,10 +1217,10 @@ struct VideoW {
         dl.rect(track, pc.tint(Color::rgb(0x3A3A45)), 2.f);
         dl.rect({track.x, track.y, track.w * f, 4.f}, accentOf(pc), 2.f);
         dot(dl, {track.x + track.w * f, cy}, 6.f, pc.tint(Color::rgb(0xFFFFFF)));
-        char b[32];
-        const f32 secs = f32(s->frame) / std::max(1.f, s->src->fps);
-        std::snprintf(b, sizeof b, "%d:%02d.%02d", int(secs) / 60, int(secs) % 60, int(std::fmod(secs, 1.f) * 100.f));
-        ui.paintString(dl, b, {track.right() + 8.f, bar.y, 62.f, kBar}, pc.tint(pc.style.color), pc.style.fontSize * 0.8f,
+        const f32 lfs = pc.style.fontSize * 0.8f;
+        std::string b = videoTimeText(s->frame, s->src->frames, s->src->fps, true);
+        if (ui.measureString(b, lfs) > 62.f) b = videoTimeText(s->frame, s->src->frames, s->src->fps, false);
+        ui.paintString(dl, b, {track.right() + 8.f, bar.y, 62.f, kBar}, pc.tint(pc.style.color), lfs,
                        TextAlignment::Start, pc.node.index);
     }
     static void seekX(UiContext& ui, NodeHandle n, VideoState& s, f32 x) {
@@ -1680,6 +1680,17 @@ u32 dateTimeEditField(const UiContext& ui, NodeHandle ed) { const DtState* s = d
 const VideoSource& testPatternSource() {
     static const VideoSource src{nullptr, 160, 90, 300, 30.f, &patternFrame};
     return src;
+}
+std::string videoTimeText(u32 frame, u32 frames, f32 fps, bool withDuration) {
+    // whole centiseconds, rounded once: no float truncation (0.29 s printing as 0:00.28), no fps clamp
+    const double r = fps > 0.f ? double(fps) : 30.0;
+    auto mmss = [&](u32 f) {
+        const long long cs = std::llround(double(f) * 100.0 / r);
+        char o[40];
+        std::snprintf(o, sizeof o, "%lld:%02lld.%02lld", cs / 6000, (cs / 100) % 60, cs % 100);
+        return std::string(o);
+    };
+    return withDuration ? mmss(frame) + " / " + mmss(frames) : mmss(frame);
 }
 NodeHandle videoWidget(UiContext& ui, NodeHandle parent, const VideoSource* source, std::string_view id) {
     registerTierD2(ui);
