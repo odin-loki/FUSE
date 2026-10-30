@@ -2,9 +2,10 @@
 // Multimedia extras: a video source backed by the platform's own decoder, loaded at runtime, and an audio level meter.
 //
 //   SystemVideo  plays any file the system decoder handles through widgets::videoWidget, with its audio track
-//                through os::AudioOutput. Decoders are loaded at runtime, nothing linked at build time:
-//                Linux / BSD GStreamer 1.x (decodebin picks the installed codecs), Windows Media Foundation
-//                (IMFSourceReader), Apple AVFoundation (AVAssetReader; UNVERIFIED: written without a Mac to test on).
+//                through os::AudioOutput. Linux / BSD: GStreamer 1.x (decodebin picks the installed codecs) and
+//                Windows: Media Foundation (IMFSourceReader; tested under Wine), both loaded at runtime. Apple:
+//                AVFoundation (AVAssetReader, linked; UNVERIFIED, written without a Mac; os::AudioOutput has no
+//                CoreAudio backend yet, so audio is decoded and tapped but not heard there).
 //                Decoding streams: a small frame cache, sequential reads during playback, a seek for jumps, so memory
 //                does not grow with the clip length. Paths are passed to the decoder as-is (no quoting rules).
 //   audioLevelMeter  a per-channel peak / RMS meter in dBFS with ballistics (instant attack, timed release), a

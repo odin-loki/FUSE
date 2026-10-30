@@ -99,12 +99,15 @@ struct SystemVideo::Impl {
             if (!video->seekFrame(i)) return nullptr;
             nextIndex = i; // provisional: corrected by the delivered index below
         }
+        bool any = false;
         for (u32 guard = 0; guard < 64; ++guard) {
             u32 got = 0;
-            if (!video->readFrame(scratch.data(), got)) return nullptr;
-            ++decoded;
-            nextIndex = got + 1;
-            if (got >= i) {
+            const bool read = video->readFrame(scratch.data(), got);
+            // a duration-derived count can exceed the frames actually present by one or two (stream ends, timestamp
+            // rounding): past the end, the last decoded frame stands in
+            if (!read && !(any && i + 3 >= frames)) return nullptr;
+            if (read) ++decoded, nextIndex = got + 1, any = true;
+            if (!read || got >= i) {
                 Slot* victim = &slots[0];
                 for (Slot& s : slots)
                     if (s.used < victim->used) victim = &s;

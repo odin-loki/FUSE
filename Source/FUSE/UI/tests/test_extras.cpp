@@ -1412,6 +1412,42 @@ void gateMedia() {
     std::vector<const Image*> images;
     NodeHandle vid{};
     if (fuse::ui::media::SystemVideo::available()) {
+        // a checked-in MJPEG + PCM AVI clip (15 frames 32x24 @ 15 fps SMPTE bars, 1 s 440 Hz sine at 0.5, mono 22050)
+        // through whichever backend this platform has: GStreamer, Media Foundation (on Wine via winegstreamer), AVF
+        std::string clip = FUSE_UI_TEST_DATA "/media_clip.avi";
+#ifdef _WIN32
+        if (clip[0] == '/') clip = "Z:" + clip; // Wine: the unix root is drive Z
+#endif
+        fuse::ui::media::SystemVideo cv;
+        if (cv.openFile(clip, 1000, &err)) {
+            CHECK(cv.width() == 32 && cv.height() == 24 && std::abs(cv.fps() - 15.f) < 0.01f);
+            CHECK(cv.frameCount() >= 14 && cv.frameCount() <= 16);
+            const u32* f0 = cv.frame(0);
+            CHECK(f0 && (f0[2 * 32 + 1] & 0xFF) > 140 && ((f0[2 * 32 + 1] >> 16) & 0xFF) > 140);
+            CHECK(f0 && ((f0[2 * 32 + 6] >> 16) & 0xFF) < 60 && (f0[2 * 32 + 6] & 0xFF) > 150); // second bar yellow
+            CHECK(f0 && (f0[22 * 32 + 1] & 0xFF) < 60); // bottom-left dark blue: rows are not flipped
+            if (f0) std::printf("  clip px top-left %08x, bar2 %08x, bottom %08x\n", f0[2 * 32 + 1], f0[2 * 32 + 6], f0[22 * 32 + 1]);
+            CHECK(cv.frame(cv.frameCount() - 1) && cv.frame(1) && cv.frame(1) != nullptr);
+            CHECK(cv.hasAudio() && cv.audioRate() == 22050 && cv.audioChannels() == 1);
+            std::atomic<u32> n{0};
+            std::atomic<f32> pk{0.f};
+            cv.setAudioTap([&](std::span<const f32> s, u32 ch, u32) {
+                f32 p = pk;
+                for (f32 x : s) p = std::max(p, std::abs(x));
+                pk = p, n += u32(s.size() / ch);
+            });
+            cv.setAudioOutputEnabled(false); // paced by the clock: no device needed
+            CHECK(cv.playAudio(0.0, &err));
+            for (int i = 0; i < 400 && cv.audioPlaying(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            CHECK(n > 20000 && n < 24000 && pk > 0.4f && pk < 0.6f);
+            std::printf("  clip via %s: %u frames, audio %u frames peak %.3f, %u decoded %u seeks\n", fuse::ui::media::SystemVideo::backendName().c_str(),
+                        cv.frameCount(), n.load(), double(pk.load()), cv.decodedFrames(), cv.seekCount());
+        } else {
+            std::printf("  clip not decodable here (%s)\n", err.c_str());
+            CHECK(fuse::ui::media::SystemVideo::backendName().rfind("gstreamer", 0) != 0); // GStreamer must play it
+        }
+    }
+    if (fuse::ui::media::SystemVideo::available() && fuse::ui::media::SystemVideo::backendName().rfind("gstreamer", 0) == 0) {
         CHECK(!fuse::ui::media::SystemVideo::backendName().empty());
         const bool ok = sv.openPipeline("videotestsrc num-buffers=12 pattern=smpte ! video/x-raw,width=64,height=48,framerate=25/1", 100, &err);
         CHECK(ok);
@@ -1443,20 +1479,32 @@ void gateMedia() {
             // a real container file round-trip through decodebin (Theora/Ogg written by the system encoder when present)
             const std::string tmp = fuse::ui::os::env("TMPDIR").empty() ? "/tmp" : fuse::ui::os::env("TMPDIR");
             const std::string file = tmp + "/fuse_media_gate.ogv";
-            const bool wrote = [&] { // closing a pipeline with its own file sink runs it to the end
-                fuse::ui::media::SystemVideo e;
-                return e.openPipeline("videotestsrc num-buffers=6 ! video/x-raw,width=32,height=24 ! tee name=t t. ! queue ! theoraenc ! oggmux ! filesink location=" + file + " t. ! queue", 100);
-            }();
-            if (wrote) {
-                // a path with spaces and both quote kinds goes to the decoder verbatim
-                const std::string odd = tmp + "/fuse media 'gate\" (1).ogv";
-                CHECK(std::rename(file.c_str(), odd.c_str()) == 0);
+            {   // a path with spaces and both quote kinds goes to the decoder verbatim
+                const std::string odd = tmp + "/fuse media 'gate\" (1).avi";
+                {
+                    std::FILE* in = std::fopen(FUSE_UI_TEST_DATA "/media_clip.avi", "rb");
+                    std::FILE* out = std::fopen(odd.c_str(), "wb");
+                    CHECK(in && out);
+                    char b[4096];
+                    for (std::size_t k; in && out && (k = std::fread(b, 1, sizeof b, in)) > 0;) std::fwrite(b, 1, k, out);
+                    if (in) std::fclose(in);
+                    if (out) std::fclose(out);
+                }
                 fuse::ui::media::SystemVideo fv;
-                CHECK(fv.openFile(odd, 100, &err) && fv.width() == 32 && fv.height() == 24 && fv.frameCount() == 6);
+                CHECK(fv.openFile(odd, 100, &err) && fv.width() == 32 && fv.height() == 24 && fv.hasAudio());
                 if (!fv.valid()) std::printf("  odd path: %s\n", err.c_str());
-                CHECK(fv.frame(5) && fv.frame(0) && !fv.hasAudio());
+                CHECK(fv.frame(5) && fv.frame(0));
                 std::remove(odd.c_str());
-            } else std::printf("  (no theoraenc: file round-trip skipped)\n");
+            }
+            {   // closing a pipeline that also writes a file runs it to the end, so the file is complete
+                {
+                    fuse::ui::media::SystemVideo e;
+                    CHECK(e.openPipeline("videotestsrc num-buffers=6 ! video/x-raw,width=32,height=24 ! tee name=t t. ! queue ! theoraenc ! oggmux ! filesink location=" + file + " t. ! queue", 100));
+                }
+                fuse::ui::media::SystemVideo fv;
+                CHECK(fv.openFile(file, 100, &err) && fv.frameCount() == 6);
+                std::remove(file.c_str());
+            }
             vid = w::videoWidget(ui, ui.root(), &sv.source(), "sysvideo");
             ui.setCss(vid, "width", "320px");
             ui.setCss(vid, "height", "280px");

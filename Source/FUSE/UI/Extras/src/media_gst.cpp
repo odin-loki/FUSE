@@ -119,7 +119,7 @@ public:
 
     explicit GstDecoder(StreamKind k) : kind(k) {}
     std::string desc, location;
-    bool hasLocation = false, ended = false, ownSink = false;
+    bool hasLocation = false, ended = false, ownSink = false, busEnded = false;
     double lastSeek = -1.0; // target of the seek the next read follows (for one restart-and-retry)
     ~GstDecoder() override { teardown(); }
     void teardown() {
@@ -130,6 +130,8 @@ public:
                 if (!s) break;
                 g.gst_mini_object_unref(s);
             }
+        if (pipe && ownSink && !busEnded) // the app sink may finish before the other sinks: wait for the pipeline EOS
+            if (void* msg = g.gst_bus_timed_pop_filtered(bus, 5'000'000'000ull, kMsgEos | kMsgError)) g.gst_mini_object_unref(msg);
         if (pipe) g.gst_element_set_state(pipe, kStateNull);
         if (bus) g.gst_object_unref(bus);
         if (sink) g.gst_object_unref(sink);
@@ -150,7 +152,7 @@ public:
             if (g.gst_app_sink_is_eos(sink)) return ended = true, nullptr;
             if (void* msg = g.gst_bus_timed_pop_filtered(bus, 0, kMsgError | kMsgEos)) {
                 g.gst_mini_object_unref(msg);
-                ended = true;
+                ended = busEnded = true;
                 return nullptr;
             }
         }
@@ -160,7 +162,7 @@ public:
     // num-buffers=N do not produce again after a seek once they hit their end
     bool launch(std::string* err) {
         auto fail = [&](std::string m) { if (err) *err = std::move(m); return false; };
-        ended = false;
+        ended = busEnded = false;
         GError* ge = nullptr;
         pipe = g.gst_parse_launch(desc.c_str(), &ge);
         if (ge) {
