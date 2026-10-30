@@ -359,6 +359,34 @@ int main() {
                 std::fclose(fp);
             }
         }
+        // clip paths: nested star + even-odd ring clip over rects, a gradient, a stroked path and a rounded clip
+        DrawList cl;
+        cl.rect({0, 0, f32(W), f32(H)}, Color::rgb(0x202020));
+        cl.pushClipPath(star);
+        cl.rect({0, 200, 260, 220}, Color::rgb(0x33cc66));
+        cl.gradientRect({0, 200, 260, 220}, Gradient::linearAngle({0, 200, 260, 220}, 45.f, rainbow));
+        cl.pushClipPath(Path().circle({120, 310}, 50).circle({120, 310}, 25), true);
+        cl.rect({0, 200, 260, 220}, Color::rgb(0xffffff, 0.7f));
+        cl.popClip();
+        cl.popClip();
+        cl.pushClip({300, 20, 200, 160}, 20.f);
+        cl.pushClipPath(Path().circle({400, 100}, 70));
+        cl.path(Path().moveTo({300, 30}).lineTo({500, 170}), {}, false, Color::rgb(0xffcc00), 9.f);
+        cl.rect({300, 100, 200, 100}, Color::rgb(0x3366ff, 0.8f));
+        cl.popClip();
+        cl.popClip();
+        Image cpuC;
+        cpuC.resize(int(W), int(H), 0xFF000000u);
+        CpuRasterizer rc;
+        rc.render(cl, cpuC);
+        packDrawList(cl, W, H, data);
+        UI_CHECK(gpu.upload(0, data));
+        vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+        check("clip_paths", compare(cpuC, out));
+        auto cc = [&](int x, int y) { return cpuC.at(x, y) & 0xFFFFFFu; };
+        UI_CHECK(cc(10, 210) == 0x202020u);            // outside the star: background
+        UI_CHECK(cc(120, 310) != 0x202020u);           // star centre (ring hole): gradient
+        UI_CHECK(cc(330, 30) == 0x202020u);            // outside the circle, inside the rounded rect
     }
 
     // 7. glyph atlas uploads only when its generation changes

@@ -25,6 +25,8 @@ enum class DrawOp : u8 {
     Path,     ///< filled / stroked vector path: edges DrawList::pathEdges()[image .. image + count) (count = tw | th << 16),
               ///< fill rule `v` (0 non-zero, 1 even-odd), `fill` (+ `gradient` / `fill2` over `rect`), stroke `border` /
               ///< `borderWidth`; `rect` = bounds. Analytic AA from the distance to the nearest edge.
+    ClipPath, ///< intersect the clip with a path's fill region (edges as Path, fill rule `v`); PopClip ends it. Coverage
+              ///< from the same 4x4 winding sub-samples as Path; nests (all active clip paths multiply).
 };
 
 /// Gradient kinds (DrawCmd::gradient, low 4 bits) for Rect and Path. 1..3: from `fill` to `fill2` across `rect`.
@@ -63,6 +65,11 @@ struct Gradient {
 
 /// One flattened path edge (DrawOp::Path). `fillOnly`: the implicit closing edge of an open contour (it bounds the
 /// fill but is not stroked).
+struct PathEdge;
+/// Fill coverage of the path edges `e[0..n)` at pixel centre (px, py): 4x4 winding sub-samples (DrawOp::Path's fill
+/// arithmetic; the GPU kernel's clip-path coverage matches it).
+f32 pathFillCoverage(const PathEdge* e, std::size_t n, f32 px, f32 py, bool evenOdd);
+
 struct PathEdge {
     f32 x0, y0, x1, y1;
     f32 fillOnly;
@@ -149,6 +156,8 @@ public:
     void pushFrom(const DrawList& src, DrawCmd c);
     void pushClip(const Rect& r, f32 radius = 0.f);
     void popClip();
+    /// Clips everything until the matching popClip() to `p`'s fill region (Qt: QPainter::setClipPath; SVG clipPath).
+    void pushClipPath(const Path& p, bool evenOdd = false);
     const std::vector<DrawCmd>& cmds() const { return m_cmds; }
     std::vector<DrawCmd>& cmds() { return m_cmds; }
     std::size_t size() const { return m_cmds.size(); }

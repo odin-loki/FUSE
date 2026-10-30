@@ -288,6 +288,18 @@ void DrawList::path(const Path& p, Color fill, bool evenOdd, Color stroke, f32 s
     m_edges.insert(m_edges.end(), e.begin(), e.end());
     m_cmds.push_back(c);
 }
+void DrawList::pushClipPath(const Path& p, bool evenOdd) {
+    const auto& e = p.edges();
+    DrawCmd c;
+    c.op = DrawOp::ClipPath;
+    c.rect = p.bounds();
+    c.v = evenOdd ? 1 : 0;
+    c.image = u32(m_edges.size());
+    c.tw = u16(e.size() & 0xFFFFu);
+    c.th = u16(e.size() >> 16);
+    m_edges.insert(m_edges.end(), e.begin(), e.end());
+    m_cmds.push_back(c);
+}
 void DrawList::gradientPath(const Path& p, Color from, Color to, GradientKind kind, bool evenOdd) {
     const std::size_t n = m_cmds.size();
     path(p, from, evenOdd);
@@ -410,7 +422,7 @@ void DrawList::pushFrom(const DrawList& src, DrawCmd c) {
         else c.stopCount = 0;
         c.stops = at;
     }
-    if (c.op == DrawOp::Path) {
+    if (c.op == DrawOp::Path || c.op == DrawOp::ClipPath) {
         const std::size_t n = std::size_t(c.tw) | (std::size_t(c.th) << 16);
         const u32 at = u32(m_edges.size());
         if (std::size_t(c.image) + n <= src.m_edges.size())

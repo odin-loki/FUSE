@@ -141,6 +141,33 @@ vec4 gradientStops(uint gradient, GpuCmd c, float px, float py) {
 
 uint atlasByte(uint idx) { return (ui_atlas.words[idx >> 2] >> ((idx & 3u) * 8u)) & 0xFFu; }
 
+// DrawOp::ClipPath coverage: same 4x4 winding loop as pathFillCoverage() in Core/src/draw_list.cpp
+float clipPathCoverage(uint base, uint n, bool evenOdd, float px, float py) {
+    int wind[16];
+    for (int k = 0; k < 16; ++k) wind[k] = 0;
+    for (uint i = 0u; i < n; ++i) {
+        const uint o = base + i * 5u;
+        const float ax = edgeWord(o), ay = edgeWord(o + 1u), bx = edgeWord(o + 2u), by = edgeWord(o + 3u);
+        if (ay == by) continue;
+        precise float vx = bx - ax;
+        precise float vy = by - ay;
+        const int dir = by > ay ? 1 : -1;
+        const float lo = min(ay, by), hi = max(ay, by);
+        for (int j = 0; j < 4; ++j) {
+            precise float sy = py - 0.5 + (float(j) + 0.5) * 0.25;
+            if (sy < lo || sy >= hi) continue;
+            precise float xi = ax + (sy - ay) * vx / vy;
+            for (int k = 0; k < 4; ++k) {
+                precise float sx = px - 0.5 + (float(k) + 0.5) * 0.25;
+                if (xi > sx) wind[j * 4 + k] += dir;
+            }
+        }
+    }
+    int inCount = 0;
+    for (int k = 0; k < 16; ++k) inCount += evenOdd ? (wind[k] & 1) : (wind[k] != 0 ? 1 : 0);
+    return float(inCount) / 16.0;
+}
+
 void main() {
     if (gl_GlobalInvocationID.x >= pc.size.x || gl_GlobalInvocationID.y >= pc.size.y) return;
     const uvec2 p = gl_GlobalInvocationID.xy + pc.origin;
@@ -196,6 +223,14 @@ void main() {
         if (int(p.x) < int(floor(ax0)) || int(p.x) >= int(ceil(ax1)) || int(p.y) < int(floor(ay0)) || int(p.y) >= int(ceil(ay1))) continue;
         float clipCov = 1.0;
         if (c.params.z > 0.0) clipCov = clamp(0.5 - sdRoundRect(px, py, c.clip, vec4(c.params.z)), 0.0, 1.0);
+        const uint clipList = floatBitsToUint(c.params.w);
+        if (clipList != 0u) {
+            const uint cnt = ui_images.data[clipList];
+            for (uint q = 0u; q < cnt && clipCov > 0.0; ++q) {
+                const uint e = clipList + 1u + q * 3u;
+                clipCov *= clipPathCoverage(ui_images.data[e], ui_images.data[e + 1u], ui_images.data[e + 2u] != 0u, px, py);
+            }
+        }
         if (clipCov <= 0.0) continue;
         if (op == kRect) {
             const float d = sdRoundRect(px, py, c.rect, c.radius);

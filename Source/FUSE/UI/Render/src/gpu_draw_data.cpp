@@ -10,6 +10,7 @@ namespace {
 struct Clip {
     Rect r;
     f32 radius;
+    u32 pathList = 0; ///< images word offset of the active clip-path list (count, then at / n / evenOdd each); 0 = none
 };
 void put4(f32 (&d)[4], f32 a, f32 b, f32 c, f32 e) {
     d[0] = a;
@@ -65,7 +66,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     }
     Clip stack[32];
     int depth = 0;
-    stack[0] = {scissor, 0.f};
+    stack[0] = {scissor, 0.f, 0u};
 
     // commands + their pixel areas; a Backdrop closes the current draw segment (its tile table is built from the
     // segment's commands) and becomes a blur pass over what was drawn so far
@@ -134,7 +135,11 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         put4(g.border, c.border.r, c.border.g, c.border.b, c.border.a);
         put4(g.radius, c.radius[0], c.radius[1], c.radius[2], c.radius[3]);
         put4(g.clip, clip.r.x, clip.r.y, clip.r.w, clip.r.h);
-        put4(g.params, c.borderWidth, c.blur, clip.radius, 0.f);
+        {
+            f32 pl;
+            std::memcpy(&pl, &clip.pathList, 4);
+            put4(g.params, c.borderWidth, c.blur, clip.radius, pl);
+        }
         g.info[0] = u32(c.op) | (u32(c.gradient) << 8);
         g.info[1] = u32(c.u) | (u32(c.v) << 16);
         g.info[2] = u32(c.tw) | (u32(c.th) << 16);
@@ -161,8 +166,36 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         if (c.op == DrawOp::PushClip) {
             if (depth < 31) {
                 ++depth;
-                stack[depth] = {stack[depth - 1].r.intersect(c.rect), c.radius[0]};
+                stack[depth] = {stack[depth - 1].r.intersect(c.rect), c.radius[0], stack[depth - 1].pathList};
                 if (stack[depth - 1].radius > 0.f && c.radius[0] <= 0.f) stack[depth].radius = 0.f;
+            }
+            continue;
+        }
+        if (c.op == DrawOp::ClipPath) {
+            // same clip state as CpuRasterizer: bounds (+1 px) intersect the rect clip; the edges and the list of
+            // every active clip path ride in the images buffer
+            if (depth < 31) {
+                ++depth;
+                stack[depth] = stack[depth - 1];
+                const std::size_t n = std::size_t(c.tw) | (std::size_t(c.th) << 16);
+                if (n == 0 || std::size_t(c.image) + n > list.pathEdges().size()) {
+                    stack[depth].r = {};
+                    continue;
+                }
+                stack[depth].r = stack[depth].r.intersect({c.rect.x - 1.f, c.rect.y - 1.f, c.rect.w + 2.f, c.rect.h + 2.f});
+                if (out.images.empty()) out.images.push_back(0u); // list offsets are never 0
+                const u32 at = u32(out.images.size());
+                out.images.resize(out.images.size() + n * 5);
+                std::memcpy(out.images.data() + at, list.pathEdges().data() + c.image, n * sizeof(PathEdge));
+                const u32 parent = stack[depth - 1].pathList;
+                const u32 pc = parent ? out.images[parent] : 0u;
+                const u32 lo = u32(out.images.size());
+                out.images.push_back(pc + 1);
+                for (u32 q = 0; q < pc * 3; ++q) out.images.push_back(out.images[parent + 1 + q]);
+                out.images.push_back(at);
+                out.images.push_back(u32(n));
+                out.images.push_back(c.v ? 1u : 0u);
+                stack[depth].pathList = lo;
             }
             continue;
         }
@@ -216,7 +249,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         if (c.op == DrawOp::Image && c.image >= imageCount) continue;
         const Area pixels{std::max(0, int(std::floor(area.x))), std::max(0, int(std::floor(area.y))),
                           std::min(int(width), int(std::ceil(area.right()))), std::min(int(height), int(std::ceil(area.bottom()))), 0u};
-        if (c.op == DrawOp::Glyph) {
+        if (c.op == DrawOp::Glyph && clip.pathList == 0) {
             // compact glyph (44 bytes in the images buffer instead of a 128-byte GpuCmd): rect, uv, size, fill and a
             // reference to a clip carrier cmd (one per distinct clip, never binned)
             if (clipRef == ~0u || !(clip.r == lastClip.r) || clip.radius != lastClip.radius) {

@@ -185,6 +185,28 @@ inline Color lerpColor(Color a, Color b, f32 t) {
 }
 /// DrawOp::Path at a pixel: fill coverage from the winding rule at 4x4 sub-samples (exact for overlapping contours and
 /// holes), stroke distance to the nearest stroked edge. The GPU kernel runs the same loop.
+} // namespace
+f32 pathFillCoverage(const PathEdge* e, std::size_t n, f32 px, f32 py, bool evenOdd) {
+    int wind[16] = {};
+    for (std::size_t i = 0; i < n; ++i) {
+        const f32 ax = e[i].x0, ay = e[i].y0, bx = e[i].x1, by = e[i].y1;
+        if (ay == by) continue;
+        const f32 vx = bx - ax, vy = by - ay;
+        const int dir = by > ay ? 1 : -1;
+        const f32 lo = std::min(ay, by), hi = std::max(ay, by);
+        for (int j = 0; j < 4; ++j) {
+            const f32 sy = py - 0.5f + (f32(j) + 0.5f) * 0.25f;
+            if (sy < lo || sy >= hi) continue;
+            const f32 xi = ax + (sy - ay) * vx / vy;
+            for (int k = 0; k < 4; ++k)
+                if (xi > px - 0.5f + (f32(k) + 0.5f) * 0.25f) wind[j * 4 + k] += dir;
+        }
+    }
+    int in = 0;
+    for (int w : wind) in += evenOdd ? (w & 1) : (w != 0);
+    return f32(in) / 16.f;
+}
+namespace {
 inline void pathSample(const PathEdge* e, std::size_t n, f32 px, f32 py, bool evenOdd, f32& fillCov, f32& dStroke) {
     int wind[16] = {};
     f32 s2 = 3.0e38f;
@@ -230,6 +252,11 @@ inline f32 sdRoundRect(f32 px, f32 py, const Rect& r, const std::array<f32, 4>& 
 struct Clip {
     Rect r;
     f32 radius;
+    u8 paths = 0; ///< active clip paths (ClipPath) up to this level
+};
+struct ClipPathRef {
+    u32 at, n;
+    bool evenOdd;
 };
 
 } // namespace
@@ -292,15 +319,29 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
     Clip stack[32];
     int depth = 0;
     std::vector<PathEdge> rowEdges;
-    stack[0] = {scissor, 0.f};
+    ClipPathRef clipPaths[32];
+    stack[0] = {scissor, 0.f, 0};
     for (const DrawCmd& c : list.cmds()) {
         const Clip& clip = stack[depth];
         switch (c.op) {
         case DrawOp::PushClip:
             if (depth < 31) {
                 ++depth;
-                stack[depth] = {stack[depth - 1].r.intersect(c.rect), c.radius[0]};
+                stack[depth] = {stack[depth - 1].r.intersect(c.rect), c.radius[0], stack[depth - 1].paths};
                 if (stack[depth - 1].radius > 0.f && c.radius[0] <= 0.f) stack[depth].radius = 0.f;
+            }
+            continue;
+        case DrawOp::ClipPath:
+            if (depth < 31) {
+                ++depth;
+                stack[depth] = stack[depth - 1];
+                const std::size_t n = std::size_t(c.tw) | (std::size_t(c.th) << 16);
+                const bool ok = std::size_t(c.image) + n <= list.pathEdges().size();
+                if (!ok || n == 0) stack[depth].r = {};
+                else {
+                    stack[depth].r = stack[depth].r.intersect({c.rect.x - 1.f, c.rect.y - 1.f, c.rect.w + 2.f, c.rect.h + 2.f});
+                    clipPaths[stack[depth].paths++] = {c.image, u32(n), c.v != 0};
+                }
             }
             continue;
         case DrawOp::PopClip:
@@ -320,7 +361,7 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
         if (area.empty()) continue;
         const int x0 = int(std::floor(area.x)), y0 = int(std::floor(area.y));
         const int x1 = int(std::ceil(area.right())), y1 = int(std::ceil(area.bottom()));
-        if (c.op == DrawOp::Glyph && clip.radius <= 0.f) {
+        if (c.op == DrawOp::Glyph && clip.radius <= 0.f && clip.paths == 0) {
             // glyph fast path (text-heavy frames are thousands of small quads): straight atlas rows, no per-pixel clip
             // or op dispatch; identical arithmetic to the generic Glyph case (clipCov == 1)
             if (!m_atlas) continue;
@@ -341,7 +382,7 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
         // every edge have full coverage) is a plain store of the packed fill (same bytes blend() would produce)
         int ix0 = 0, ix1 = 0, iy0 = 0, iy1 = 0;
         u32 solid = 0;
-        if (c.op == DrawOp::Rect && !c.gradient && c.fill.a >= 1.f && clip.radius <= 0.f) {
+        if (c.op == DrawOp::Rect && !c.gradient && c.fill.a >= 1.f && clip.radius <= 0.f && clip.paths == 0) {
             const f32 m = std::max({c.radius[0], c.radius[1], c.radius[2], c.radius[3], 0.f}) +
                           (c.borderWidth > 0.f && c.border.a > 0.f ? c.borderWidth : 0.f) + 0.5f;
             ix0 = int(std::ceil(c.rect.x + m - 0.5f)), ix1 = int(std::floor(c.rect.right() - m - 0.5f)) + 1;
@@ -384,6 +425,8 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
                 const f32 px = f32(x) + 0.5f, py = f32(y) + 0.5f;
                 f32 clipCov = 1.f;
                 if (clip.radius > 0.f) clipCov = std::clamp(0.5f - sdRoundRect(px, py, clipOuter, clipRad), 0.f, 1.f);
+                for (u8 q = 0; q < clip.paths && clipCov > 0.f; ++q)
+                    clipCov *= pathFillCoverage(list.pathEdges().data() + clipPaths[q].at, clipPaths[q].n, px, py, clipPaths[q].evenOdd);
                 if (clipCov <= 0.f) continue;
                 switch (c.op) {
                 case DrawOp::Rect: {
