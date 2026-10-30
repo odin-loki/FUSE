@@ -12,5 +12,5 @@ step "cross configure" env FREEBSD_SYSROOT="$SYSROOT" cmake -S "$UI" -B "$BUILD_
     -DCMAKE_TOOLCHAIN_FILE="$ROOT/docs/gui/ci/freebsd-cross.cmake" -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \
     -DCMAKE_C_COMPILER_TARGET=x86_64-unknown-freebsd$V -DCMAKE_CXX_COMPILER_TARGET=x86_64-unknown-freebsd$V
 step "cross build" build
-step "ELF is FreeBSD" bash -c "f=\$(find '$BUILD_DIR' -maxdepth 3 -type f -perm -u+x -name 'fuse_*' | head -1); [ -n \"\$f\" ] && file \"\$f\" | grep -q FreeBSD"
+step "ELF is FreeBSD" bash -c "f=\$(find '$BUILD_DIR' -maxdepth 3 -type f -perm -u+x -name 'fuse_*' | head -1); [ -n \"\$f\" ] && readelf -h \"\$f\" | grep -q FreeBSD"
 summary freebsd-cross
