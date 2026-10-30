@@ -1,0 +1,45 @@
+# FUSE GUI CI (docs/gui/PLAN.md G1). Staged here because the pushing token lacks the `workflow` scope:
+# move to .github/workflows/fuse-gui.yml to enable.
+name: fuse-gui
+on:
+  push:
+    paths: ["Source/FUSE/UI/**", "cmake/FuseForge.cmake", "vendor/forge", "docs/gui/ci/**", ".github/workflows/fuse-gui.yml"]
+  pull_request:
+    paths: ["Source/FUSE/UI/**", "cmake/FuseForge.cmake", "vendor/forge"]
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: true }
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build xvfb mesa-vulkan-drivers libvulkan-dev clang-18
+      - run: cmake -S Source/FUSE/UI -B build -G Ninja -DCMAKE_CXX_COMPILER=clang++-18 -DCMAKE_C_COMPILER=clang-18
+      - run: cmake --build build -j
+      - run: ctest --test-dir build --output-on-failure -j4
+
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: true }
+      - run: brew install ninja
+      - run: cmake -S Source/FUSE/UI -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      - run: cmake --build build -j
+      - run: ctest --test-dir build --output-on-failure -j4 -E "native_window|os_popups"   # no Cocoa backend yet (G3)
+
+  freebsd:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: true }
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          release: "14.2"
+          usesh: true
+          prepare: pkg install -y cmake ninja llvm18 libX11
+          run: |
+            cmake -S Source/FUSE/UI -B build -G Ninja -DCMAKE_CXX_COMPILER=clang++18 -DCMAKE_C_COMPILER=clang18
+            cmake --build build -j4
+            ctest --test-dir build --output-on-failure -j2 -E "native_window|os_popups"
