@@ -156,3 +156,11 @@ Headless (offscreen CPU raster) works everywhere and is what the test suite uses
   extra widgets, MDI, graphics view. Left: system tray, global menu bar, web view, rich text editor, a11y adapters.
 
 Every phase: commits on `gui-framework`, pushed after each milestone; never to `main`; no force pushes.
+
+### Rendering track: HiDPI / shaders / DnD (gui-render)
+- HiDPI core: AppWindow::setScale/pixelSize/pixelDrawList, crisp glyphs via UiContext::setPixelScale; WindowDesc::dpiScale seeds it. Gate: fuse_app_hidpi.
+- Wayland: wp_fractional_scale_v1 + wp_viewporter, preferred_buffer_scale fallback (tested shm + Vulkan).
+- Win32: per-monitor DPI v2, WM_DPICHANGED, DPI-scaled input/popups (built with llvm-mingw, run under wine).
+- Cocoa: backingScaleFactor -> contentsScale/drawableSize/setScale, viewDidChangeBackingProperties; NSDraggingDestination drop-in (files + text). UNVERIFIED (no macOS host).
+- UIKit: screen.scale -> contentScaleFactor/CAMetalLayer drawableSize/setScale. UNVERIFIED.
+- Shaders: configure-time GLSL->SPIR-V (glslangValidator/glslang/glslc) with precompiled fallback; target fuse_ui_spv_fixtures.
