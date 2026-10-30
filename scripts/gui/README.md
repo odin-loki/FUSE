@@ -13,9 +13,10 @@ Dependencies are installed where sensible (apt/pkg/brew/winget/sdkmanager); `FUS
 | `test-macos.sh` | macOS | Cocoa build + ctest |
 | `test-ios-sim.sh` | macOS + Xcode | iOS simulator build of `fuse_app_native` (build only) |
 | `test-android.sh` | Linux/macOS | NDK APK build, boots an AVD (or uses `SERIAL`), emulator smoke: frame, tap, IME, a11y |
+| `freebsd-cross.sh` | Linux | FreeBSD sysroot + clang cross-build (build only) |
 | `test-freebsd.sh` | FreeBSD | pkg deps, base clang build + ctest |
 | `run-freebsd-vm.sh` | Linux | boots a FreeBSD 14.4 cloud image in qemu, copies sources, runs `test-freebsd.sh` inside |
 | `test-all.sh [platform...]` | any | runs every script applicable to the host, prints one table, logs in `build-gui-logs/` |
 
 Notes: `VM_ACCEL=tcg` / `ANDROID_ACCEL=off` force software emulation where nested KVM is present but hangs.
-A Linux FreeBSD cross-build without a VM: `docs/gui/ci/freebsd-cross.cmake`.
+`freebsd-cross.sh` (Linux): FreeBSD cross-build without a VM (`docs/gui/ci/freebsd-cross.cmake`). Full guide: `docs/gui/TESTING.md`.

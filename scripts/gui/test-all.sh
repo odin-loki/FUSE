@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Run every GUI platform script that can run on this host and print one table.
-# Usage: test-all.sh [platform...]   platforms: linux wine android freebsd-vm macos ios-sim  (default: all applicable to host)
+# Usage: test-all.sh [platform...]   platforms: linux wine android freebsd-cross freebsd-vm macos ios-sim  (default: all applicable to host)
 # Windows hosts: run test-windows.ps1 directly.
 cd "$(dirname "$0")"; HERE=$PWD
 case $(uname) in
-  Linux) DEF="linux wine android freebsd-vm" ;; Darwin) DEF="macos ios-sim" ;; FreeBSD) DEF="freebsd" ;; *) DEF="" ;;
+  Linux) DEF="linux wine android freebsd-cross freebsd-vm" ;; Darwin) DEF="macos ios-sim" ;; FreeBSD) DEF="freebsd" ;; *) DEF="" ;;
 esac
 P=(${@:-$DEF}); R=(); rc=0
 for p in "${P[@]}"; do
