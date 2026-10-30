@@ -1,0 +1,91 @@
+# FUSE Master Plan — TOC companion
+
+Master bytes: 206168
+
+## All ### B*.* headings (74)
+
+- B1.1 — Project Structure & Build System
+- B1.2 — Type System & Fundamental Types
+- B1.3 — Memory & Allocator System
+- B1.4 — Math Library
+- B1.5 — Job System & Fiber Scheduler
+- B1.6 — Logging, Assert & Profiler
+- B1.7 — Platform Abstraction & Window
+- B1.8 — Phase 1 Deliverables & Test Suite
+- B2.1 — Vulkan Bootstrap
+- B2.2 — Swapchain & Frame Management
+- B2.3 — Resource System & Bindless Architecture
+- B2.4 — Shader System & Pipeline Compiler
+- B2.5 — Command Buffer & Render Graph
+- B2.6 — CUDA-Vulkan Interop
+- B2.7 — SDF Ray Marcher (CUDA)
+- B2.8 — Rasterisation Pipeline
+- B2.9 — Composite Pass
+- B2.10 — Renderer Initialisation & Main Loop
+- B2.11 — Phase 2 Deliverables & Test Suite
+- B3.1 — Entity-Component-System Architecture
+- B3.2 — Core Component Types
+- B3.3 — Core Systems
+- B3.4 — Bounding Volume Hierarchy (BVH)
+- B3.5 — Sparse Voxel Octree (SVO)
+- B3.6 — Scene Manager
+- B3.7 — Scene Serialisation
+- B3.8 — Camera System
+- B3.9 — Phase 3 Deliverables & Test Suite
+- B4.1 — Physics Architecture
+- B4.2 — Broad Phase: Spatial Hash
+- B4.3 — Narrow Phase: Exact Collision Detection
+- B4.4 — Constraint Solver: Position Based Dynamics
+- B4.5 — Barnes-Hut N-Body (Gravity & Force Fields)
+- B4.6 — Continuous Collision Detection
+- B4.7 — Voxel Destruction
+- B4.8 — Soft Body & Cloth
+- B4.9 — Physics Manager & ECS Integration
+- B4.10 — Collision Callbacks & Event System
+- B4.11 — Phase 4 Deliverables & Test Suite
+- B5.1 — Rendering Architecture Upgrade
+- B5.2 — G-Buffer Layout (Revised)
+- B5.3 — PBR Material System
+- B5.4 — Clustered Deferred Shading
+- B5.5 — Shadow System
+- B5.6 — Global Illumination: DDGI
+- B5.7 — Screen-Space Effects (CUDA)
+- B5.8 — Atmosphere & Sky
+- B5.9 — Temporal Anti-Aliasing
+- B5.10 — Post-Processing Stack
+- B5.11 — Lens Flare & Volumetric Lighting
+- B5.12 — Phase 5 Deliverables & Test Suite
+- B6.1 — Editor Architecture
+- B6.2 — Command System & Undo/Redo
+- B6.3 — Viewport Panel
+- B6.4 — In-Viewport Gizmos
+- B6.5 — Scene Hierarchy Panel
+- B6.6 — Property Inspector Panel
+- B6.7 — Material Editor Panel
+- B6.8 — SDF Sculpt Panel
+- B6.9 — Asset Browser Panel
+- B6.10 — Profiler Panel
+- B6.11 — Console Panel
+- B6.12 — Play Mode & Scene Simulation
+- B6.13 — Phase 6 Deliverables & Test Suite
+- B7.1 — Animation System
+- B7.2 — Spatial Audio Engine
+- B7.3 — Scripting Layer
+- B7.4 — Networking
+- B7.5 — Terrain System
+- B7.6 — World Partition & Streaming
+- B7.7 — VFX System
+- B7.8 — Platform Hardening
+- B7.9 — Asset Pipeline (Offline Tools)
+- B7.10 — Phase 7 Deliverables & Test Suite
+
+## Expected counts
+- B1: 1.1–1.8 (8)
+- B2: 2.1–2.11 (11)
+- B3: 3.1–3.9 (9)
+- B4: 4.1–4.11 (11)
+- B5: 5.1–5.12 (12)
+- B6: 6.1–6.13 (13)
+- B7: 7.1–7.10 (10)
+- Total: 74
+
