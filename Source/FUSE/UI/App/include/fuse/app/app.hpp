@@ -159,11 +159,32 @@ public:
         if (m_onDrop) m_onDrop(*this, d);
         requestRedraw();
     }
+    /// Drag data out of this window into other applications (G2; X11 XDND source). Call while a pointer button is
+    /// held (typically from a widget's drag-start); the window backend takes it on its next pump. `paths` are sent
+    /// as text/uri-list, otherwise `data` under `mime` (text/plain -> also UTF8_STRING). False if a drag is pending.
+    struct ExternalDrag {
+        std::vector<std::string> paths;
+        std::string mime, data;
+    };
+    bool beginExternalDrag(ExternalDrag d) {
+        if (m_pendingDrag) return false;
+        m_pendingDrag = std::make_unique<ExternalDrag>(std::move(d));
+        return true;
+    }
+    /// Backend side: the pending drag, if any (ownership passes to the caller).
+    std::unique_ptr<ExternalDrag> takeExternalDrag() { return std::move(m_pendingDrag); }
+    /// Called by the backend when an outgoing drag ends (`accepted`: the target took it).
+    void onExternalDragEnd(std::function<void(bool accepted)> f) { m_onDragEnd = std::move(f); }
+    void deliverExternalDragEnd(bool accepted) { if (m_onDragEnd) m_onDragEnd(accepted); }
+    /// Local paths as a text/uri-list (file:// with percent-encoding).
+    static std::string uriListFromPaths(const std::vector<std::string>& paths);
     /// file:// URIs of a text/uri-list as local paths (percent-decoded; comments and non-file URIs skipped).
     static std::vector<std::string> pathsFromUriList(std::string_view uriList);
 
 private:
     DropHandler m_onDrop;
+    std::unique_ptr<ExternalDrag> m_pendingDrag;
+    std::function<void(bool)> m_onDragEnd;
     friend class Application;
     bool frame(f32 dt); ///< update + present when needed; true when presented
     static bool presentHeadless(void* user, AppWindow& w, fuse::ui::Rect damage);

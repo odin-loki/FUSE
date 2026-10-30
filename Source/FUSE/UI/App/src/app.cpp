@@ -1,4 +1,5 @@
 // fuse_app (plan UI5): Application, AppWindow, on-demand loop, settings store, command line, single instance.
+#include <cctype>
 #include "fuse/app/app.hpp"
 
 #include "fuse/ui/doc/document.hpp"
@@ -295,6 +296,25 @@ int Application::fail(std::string_view message) {
     std::fprintf(stderr, "%s: %.*s\n", m_name.c_str(), int(message.size()), message.data());
     m_exit = 1;
     return 1;
+}
+
+std::string AppWindow::uriListFromPaths(const std::vector<std::string>& paths) {
+    static const char* hexd = "0123456789ABCDEF";
+    std::string out;
+    for (const auto& p0 : paths) {
+        std::string p = p0;
+#if defined(_WIN32)
+        for (char& c : p) if (c == '\\') c = '/';
+        if (p.size() > 1 && p[1] == ':') p.insert(0, "/");
+#endif
+        out += "file://";
+        for (unsigned char c : p) {
+            if (std::isalnum(c) || c == '/' || c == '-' || c == '_' || c == '.' || c == '~') out += char(c);
+            else { out += '%'; out += hexd[c >> 4]; out += hexd[c & 15]; }
+        }
+        out += "\r\n";
+    }
+    return out;
 }
 
 std::vector<std::string> AppWindow::pathsFromUriList(std::string_view list) {

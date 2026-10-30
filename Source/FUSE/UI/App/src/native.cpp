@@ -119,8 +119,9 @@ struct InputEv {
 };
 struct ConfigureEv { int type; unsigned long serial; int send_event; Display* display; Window event, window; int x, y, width, height; };
 struct ClientEv { int type; unsigned long serial; int send_event; Display* display; Window window; Atom message_type; int format; long l[5]; };
+struct SelectionRequestEv { int type; unsigned long serial; int send_event; Display* display; Window owner, requestor; Atom selection, target, property; unsigned long time; };
 struct SelectionEv { int type; unsigned long serial; int send_event; Display* display; Window requestor; Atom selection, target, property; unsigned long time; };
-union Event { int type; AnyEv any; InputEv input; ConfigureEv configure; ClientEv client; SelectionEv selection; long pad[24]; };
+union Event { int type; AnyEv any; InputEv input; ConfigureEv configure; ClientEv client; SelectionEv selection; SelectionRequestEv selreq; long pad[24]; };
 struct Image;
 struct ImageFuncs { Image* (*create)(); int (*destroy)(Image*); };
 struct Image {
@@ -128,7 +129,7 @@ struct Image {
         bytes_per_line, bits_per_pixel; unsigned long red_mask, green_mask, blue_mask; char* obdata; ImageFuncs f;
 };
 enum { KeyPress = 2, KeyRelease = 3, ButtonPress = 4, ButtonRelease = 5, MotionNotify = 6, FocusOut = 10, Expose = 12,
-       MapNotify = 19, ConfigureNotify = 22, SelectionNotify = 31, ClientMessage = 33 };
+       MapNotify = 19, ConfigureNotify = 22, SelectionRequest = 30, SelectionNotify = 31, ClientMessage = 33 };
 constexpr long kMask = 1 | 2 | 4 | 8 | (1 << 6) | (1 << 15) | (1 << 17) | (1 << 21);
 
 struct Lib {
@@ -171,6 +172,7 @@ struct Lib {
     int (*GrabPointer)(Display*, Window, int, unsigned, int, int, Window, XID, unsigned long) = nullptr;
     int (*UngrabPointer)(Display*, unsigned long) = nullptr;
     int (*ConvertSelection)(Display*, Atom, Atom, Atom, Window, unsigned long) = nullptr; // optional (XDND)
+    int (*SetSelectionOwner)(Display*, Atom, Window, unsigned long) = nullptr;              // optional (XDND source)
 
     bool load() {
         so = fuse::ui::os::loadLibrary({"libX11.so.6", "libX11.so"});
@@ -193,6 +195,7 @@ struct Lib {
         get(DisplayWidth, "XDisplayWidth"); get(DisplayHeight, "XDisplayHeight"); get(SendEvent, "XSendEvent");
         get(GrabPointer, "XGrabPointer"); get(UngrabPointer, "XUngrabPointer");
         ConvertSelection = reinterpret_cast<decltype(ConvertSelection)>(so->symbol("XConvertSelection"));
+        SetSelectionOwner = reinterpret_cast<decltype(SetSelectionOwner)>(so->symbol("XSetSelectionOwner"));
         return all;
     }
 };
@@ -297,6 +300,19 @@ struct NativePlatform::Impl {
         x11::Atom type = 0; ///< best offered type
         fuse::ui::Vec2 pos{};
     } dnd;
+    // XDND source (dragging out)
+    struct DragOut {
+        Rec* rec = nullptr;
+        std::string data;
+        x11::Atom type = 0;
+        x11::Window target = 0;   ///< current XdndAware window under the pointer
+        bool accepted = false, dropped = false;
+        unsigned long time = 0;
+    } drag;
+    bool dragStart(Rec& r, AppWindow::ExternalDrag d);
+    bool dragEvent(const x11::Event& ev); ///< true when consumed
+    void dragEnd(bool accepted);
+    x11::Window dndTargetAt(int rx, int ry);
     void dndInit();
     void dndClient(Rec& r, const x11::ClientEv& c);
     void dndSelection(Rec& r, const x11::SelectionEv& e);
@@ -824,6 +840,7 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
     while (x.Pending(m.dpy)) {
         x11::Event ev{};
         x.NextEvent(m.dpy, &ev);
+        if (m.dragEvent(ev)) continue;
         std::size_t pi = 0;
         if (Rec* pr = m.findPopup(ev.any.window, pi)) { // a popup window: input in context coordinates of its owner
             Rec::Popup& p = pr->popups[pi];
@@ -866,7 +883,11 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
                 w.resize(u32(ev.configure.width), u32(ev.configure.height));
             break;
         }
-        case x11::MotionNotify: ui.setModifiers(x11::mods(in.state)); ui.pointerMove(pos); break;
+        case x11::MotionNotify:
+            ui.setModifiers(x11::mods(in.state));
+            ui.pointerMove(pos);
+            if (auto d = w.takeExternalDrag()) { m.drag.time = in.time; m.dragStart(*r, std::move(*d)); }
+            break;
         case x11::ButtonPress:
             ui.setModifiers(x11::mods(in.state));
             if (in.detail == 4 || in.detail == 5) ui.wheel(pos, {0.f, in.detail == 4 ? 1.f : -1.f});
@@ -1012,6 +1033,99 @@ void NativePlatform::Impl::dndInit() {
     dnd.leave = a("XdndLeave"); dnd.drop = a("XdndDrop"); dnd.finished = a("XdndFinished");
     dnd.selection = a("XdndSelection"); dnd.actionCopy = a("XdndActionCopy"); dnd.uriList = a("text/uri-list");
     dnd.textPlain = a("text/plain"); dnd.utf8 = a("UTF8_STRING"); dnd.prop = a("FUSE_XDND");
+}
+x11::Window NativePlatform::Impl::dndTargetAt(int rx, int ry) {
+    const x11::Window root = x.RootWindow(dpy, x.DefaultScreen(dpy));
+    x11::Window cur = root;
+    for (int depth = 0; depth < 16; ++depth) {
+        if (cur != root) {
+            x11::Atom actual = 0; int fmt = 0; unsigned long n = 0, after = 0; unsigned char* data = nullptr;
+            if (x.GetWindowProperty(dpy, cur, dnd.aware, 0, 1, 0, 4, &actual, &fmt, &n, &after, &data) == 0 && data) {
+                x.Free(data);
+                if (n) return cur;
+            }
+        }
+        int wx = 0, wy = 0; x11::Window child = 0;
+        if (!x.TranslateCoordinates(dpy, root, cur, rx, ry, &wx, &wy, &child) || !child) return 0;
+        cur = child;
+    }
+    return 0;
+}
+bool NativePlatform::Impl::dragStart(Rec& r, AppWindow::ExternalDrag d) {
+    if (!dnd.aware || !x.SetSelectionOwner || drag.rec) return false;
+    drag = {};
+    drag.rec = &r;
+    if (!d.paths.empty()) { drag.data = AppWindow::uriListFromPaths(d.paths); drag.type = dnd.uriList; }
+    else { drag.data = std::move(d.data); drag.type = d.mime == "text/plain" || d.mime.empty() ? dnd.utf8 : x.InternAtom(dpy, d.mime.c_str(), 0); }
+    const x11::Window self = x11::Window(r.handle);
+    x.SetSelectionOwner(dpy, dnd.selection, self, 0);
+    x.GrabPointer(dpy, self, 0, (1u << 3) | (1u << 6), 1, 1, 0, 0, 0); // motion + release, wherever the pointer is
+    x.Flush(dpy);
+    return true;
+}
+void NativePlatform::Impl::dragEnd(bool accepted) {
+    if (!drag.rec) return;
+    x.UngrabPointer(dpy, 0);
+    x.Flush(dpy);
+    Rec* r = drag.rec;
+    drag.rec = nullptr;
+    drag.target = 0;
+    r->win->deliverExternalDragEnd(accepted);
+}
+bool NativePlatform::Impl::dragEvent(const x11::Event& ev) {
+    if (ev.type == x11::SelectionRequest && dnd.selection && ev.selreq.selection == dnd.selection && !drag.data.empty()) {
+        const auto& q = ev.selreq;
+        x11::Event n{};
+        n.selection.type = x11::SelectionNotify;
+        n.selection.display = dpy;
+        n.selection.requestor = q.requestor;
+        n.selection.selection = q.selection;
+        n.selection.target = q.target;
+        n.selection.time = q.time;
+        const bool ok = q.target == drag.type || (drag.type == dnd.utf8 && q.target == dnd.textPlain);
+        if (ok && q.property) {
+            x.ChangeProperty(dpy, q.requestor, q.property, q.target, 8, 0,
+                             reinterpret_cast<const unsigned char*>(drag.data.data()), int(drag.data.size()));
+            n.selection.property = q.property;
+        }
+        x.SendEvent(dpy, q.requestor, 0, 0, &n);
+        x.Flush(dpy);
+        return true;
+    }
+    if (!drag.rec) return false;
+    const x11::Window self = x11::Window(drag.rec->handle);
+    if (ev.type == x11::MotionNotify && !drag.dropped) {
+        const x11::Window t = dndTargetAt(ev.input.x_root, ev.input.y_root);
+        if (t != drag.target) {
+            if (drag.target) dndSend(drag.target, dnd.leave, 0, 0, 0, 0, self);
+            drag.target = t;
+            drag.accepted = false;
+            if (t) dndSend(t, dnd.enter, long(5) << 24, long(drag.type), drag.type == dnd.utf8 ? long(dnd.textPlain) : 0, 0, self);
+        }
+        if (t) dndSend(t, dnd.position, 0, (long(ev.input.x_root) << 16) | (ev.input.y_root & 0xFFFF), long(ev.input.time),
+                       long(dnd.actionCopy), self);
+        return true;
+    }
+    if (ev.type == x11::ButtonRelease && !drag.dropped) {
+        if (drag.target && drag.accepted) {
+            drag.dropped = true;
+            dndSend(drag.target, dnd.drop, 0, long(ev.input.time), 0, 0, self); // finish on XdndFinished
+        } else {
+            if (drag.target) dndSend(drag.target, dnd.leave, 0, 0, 0, 0, self);
+            dragEnd(false);
+        }
+        return true;
+    }
+    if (ev.type == x11::ClientMessage && ev.client.message_type == dnd.status) {
+        drag.accepted = (ev.client.l[1] & 1) != 0;
+        return true;
+    }
+    if (ev.type == x11::ClientMessage && ev.client.message_type == dnd.finished) {
+        dragEnd(drag.dropped && (ev.client.l[1] & 1));
+        return true;
+    }
+    if (ev.type == x11::ButtonPress || ev.type == x11::MotionNotify || ev.type == x11::ButtonRelease) return true;
+    return false;
 }
 void NativePlatform::Impl::dndSend(x11::Window to, x11::Atom type, long l1, long l2, long l3, long l4, x11::Window self) {
     x11::Event e{};

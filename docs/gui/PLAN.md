@@ -137,7 +137,9 @@ Headless (offscreen CPU raster) works everywhere and is what the test suite uses
   xclip via FORGE process; text/plain falls back to `forge::os::clipboard`).
   System drag and drop (receive) done on X11: XDND v5 drop target in `native.cpp` (XdndAware/Enter/Position/Status/
   Drop/Finished, uri-list preferred over text), surfaced as `AppWindow::onExternalDrop` with decoded file paths.
-  Left: XDND drag *source*, Win32 OLE IDropTarget, Wayland (wl_data_device) - with the Wayland backend.
+  XDND drag source done: `AppWindow::beginExternalDrag` (uri-list or MIME data; SelectionRequest served,
+  Finished -> `onExternalDragEnd`); `fuse_app_xdnd` drives a real drag+drop round trip under Xvfb with xdotool.
+  Left: Win32 OLE IDropTarget/IDropSource.
 - **G3**: macOS: Cocoa window, NSTextInputClient IME, MoltenVK present, NSAccessibility.
 - **G4**: iOS + Android: surfaces, touch/pen, lifecycle, virtual keyboard, mobile a11y; emulator/simulator gates.
 - **G5**: tray/notifications/global menu, printing, web view, designer to product.
