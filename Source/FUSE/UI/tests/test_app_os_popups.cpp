@@ -1,3 +1,5 @@
+#include <chrono>
+#include <thread>
 // OS-window popups gate (plan UI5): with NativeOptions::osPopups a popup menu is its own borderless OS window (X11
 // override-redirect / Win32 WS_POPUP + WS_EX_NOACTIVATE), like Qt's QMenu, so it can extend past the main window.
 //   * the menu is left out of the main window's draw list and shown in exactly one popup window
@@ -33,7 +35,14 @@ int main(int argc, char** argv) {
     UiContext& ui = win.ui();
     const NodeHandle btn = w::button(ui, ui.root(), "File", "file");
     native.show(win);
-    for (int i = 0; i < 400 && win.framesPresented() < 1; ++i) a.step(0.01f);
+    // wait on conditions with a wall-clock deadline (fixed step counts were too short under ctest -jN load)
+    auto waitFor = [&](auto&& done, double seconds = 10.0) {
+        const auto end = std::chrono::steady_clock::now() + std::chrono::duration<double>(seconds);
+        while (!done() && std::chrono::steady_clock::now() < end) { a.step(0.005f); std::this_thread::sleep_for(std::chrono::milliseconds(2)); }
+        for (int i = 0; i < 5; ++i) a.step(0.005f); // let the last configure / expose settle
+        return done();
+    };
+    waitFor([&] { return win.framesPresented() >= 1; });
     for (int i = 0; i < 20; ++i) a.step(0.005f);
     CHECK(ui.osPopups());
 
@@ -44,7 +53,8 @@ int main(int argc, char** argv) {
     for (int i = 1; i <= 12; ++i) items += (i > 1 ? "\n" : "") + std::string("Item ") + std::to_string(i);
     const NodeHandle scope = w::popupMenu(ui, btn, items, {40.f, 60.f});
     win.requestRedraw();
-    for (int i = 0; i < 40; ++i) a.step(0.005f);
+    Image probe;
+    waitFor([&] { return native.popupCount(win) == 1 && native.capturePopup(win, 0, probe) && probe.width > 0; });
 
     CHECK(ui.popupSurfaces().size() == 1);
     CHECK(native.popupCount(win) == 1);
@@ -104,8 +114,7 @@ int main(int argc, char** argv) {
     const Rect ir = ui.rect(item);
     CHECK(ir.y > 160.f);
     CHECK(native.postClick(native.popupWindow(win, 0), {ir.x + ir.w * 0.5f - menu.x, ir.y + ir.h * 0.5f - menu.y}));
-    for (int i = 0; i < 200 && picked < 0.f; ++i) a.step(0.01f);
-    for (int i = 0; i < 20; ++i) a.step(0.005f);
+    waitFor([&] { return picked >= 0.f && native.popupCount(win) == 0; });
     std::printf("  picked %.0f \"%s\"; popup windows now %zu\n", picked, pickedText.c_str(), native.popupCount(win));
     CHECK(picked == 10.f && pickedText == "Item 11");
     CHECK(native.popupCount(win) == 0 && ui.popupSurfaces().empty());
@@ -115,10 +124,10 @@ int main(int argc, char** argv) {
     picked = -1.f;
     w::popupMenu(ui, btn, items, {40.f, 60.f});
     win.requestRedraw();
-    for (int i = 0; i < 40; ++i) a.step(0.005f);
+    waitFor([&] { return native.popupCount(win) == 1 && native.capturePopup(win, 0, probe) && probe.width > 0; });
     CHECK(native.popupCount(win) == 1);
     CHECK(native.postClick(native.popupWindow(win, 0), {-30.f, 400.f}));
-    for (int i = 0; i < 200 && native.popupCount(win) != 0; ++i) a.step(0.01f);
+    waitFor([&] { return native.popupCount(win) == 0; });
     std::printf("  outside click: popup windows now %zu, picked %.0f\n", native.popupCount(win), picked);
     CHECK(native.popupCount(win) == 0 && picked < 0.f);
 

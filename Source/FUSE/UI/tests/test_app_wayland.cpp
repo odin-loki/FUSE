@@ -33,6 +33,7 @@
 #include <functional>
 #include <mutex>
 #include <string>
+#include <memory>
 #include <thread>
 #include <unistd.h>
 
@@ -372,15 +373,23 @@ int main(int argc, char** argv) {
         for (int i = 0; i < 100 && !src; ++i) { pump(1); std::lock_guard lk(mu); src = g_dragSource; }
         CHECK(src != nullptr);
         if (src) {
-            std::atomic<bool> pulled{false};
+            // The reader owns its state through a shared_ptr and is joined when done: it used to be detached with a
+            // reference to a stack flag and wrote g_pulled unlocked, so when the 200-pump wait ran out under ctest -jN
+            // load it wrote into a dead frame (SegFault seen at -j32). Wait on a wall-clock deadline instead.
+            struct Pull { std::atomic<bool> done{false}; std::string data; };
+            auto pull = std::make_shared<Pull>();
+            std::thread reader;
             run([&] {
                 auto p = os::makePipe();
                 S.post(src, 1, "text/uri-list", p->second);
                 os::closeFd(p->second);
                 S.flushClients(g_dpy);
-                std::thread([fd = p->first, &pulled] { g_pulled = os::readAllAndClose(fd); pulled = true; }).detach();
+                reader = std::thread([fd = p->first, pull] { pull->data = os::readAllAndClose(fd); pull->done = true; });
             });
-            for (int i = 0; i < 200 && !pulled; ++i) pump(1);
+            const auto pullEnd = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+            while (!pull->done && std::chrono::steady_clock::now() < pullEnd) pump(1);
+            if (pull->done) { reader.join(); std::lock_guard lk(mu); g_pulled = pull->data; }
+            else reader.detach(); // owns `pull`; the CHECK below reports the failure
             run([&] { S.post(src, 3); S.post(src, 4); });
             for (int i = 0; i < 100 && dragEnd < 0; ++i) pump(1);
             std::lock_guard lk(mu);
