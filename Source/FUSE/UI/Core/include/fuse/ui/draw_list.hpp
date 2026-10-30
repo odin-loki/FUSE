@@ -312,6 +312,10 @@ public:
     /// with filters and other transforms. Local ink outside the clip in force (or the target) is not kept.
     void pushTransform(const std::array<f32, 6>& m);
     void popTransform() { popFilter(); }
+    /// A projective (CSS 3D, flattened) transform: H row-major 3x3, screen = (H (x, y, 1)) / w. Like pushTransform,
+    /// with DrawCmd::tw = 1 and the inverse's third row in radius[0..2] (pixel -> local: q = (g . p) / (r . p); pixels
+    /// with r . p <= 0 are behind the viewer and get nothing). The layer box clips the ink to the half-plane in front.
+    void pushProjective(const std::array<f32, 9>& H);
     /// Fills `p` (fill.a == 0: no fill) and strokes it (`strokeWidth` > 0, centred on the outline).
     void path(const Path& p, Color fill, bool evenOdd = false, Color stroke = {}, f32 strokeWidth = 0.f);
     void gradientPath(const Path& p, Color from, Color to, GradientKind kind, bool evenOdd = false);
@@ -364,6 +368,8 @@ inline bool isTransformLayer(const DrawCmd& c) {
 }
 /// Bilinear sample (zero outside) of a premultiplied float box `buf` (w x h, 4 floats per pixel) at box-local
 /// continuous point (fx, fy) (texel centres at i + 0.5); ui_backdrop.glsl mode 6 has the same arithmetic.
+/// The local point a projective layer (tw == 1) samples at pixel (px, py); false behind the viewer.
+bool sampleProjective(const DrawCmd& c, f32 px, f32 py, f32& qx, f32& qy);
 void sampleLayerBilinear(const f32* buf, int w, int h, f32 fx, f32 fy, f32 out[4]);
 
 /// Multi-stop gradient colour of command `c` at pixel centre (px, py); the GPU kernel has the same arithmetic.

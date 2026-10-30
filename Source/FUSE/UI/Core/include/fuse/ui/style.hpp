@@ -68,9 +68,16 @@ enum class Overflow : u8 { Visible, Clip, Scroll };
 /// CSS filter functions (backdrop-filter), in list order.
 /// DropShadow: the one shadow of the list (the last one wins); Url: url(#id), amount = filterNameId(id) bit-cast,
 /// resolved at paint time by UiContext::defineFilter.
-/// CSS transform functions (2D), in list order; arguments: translate px, scale factor, rotate / skew degrees.
-/// matrix(a, b, c, d, e, f) is the six consecutive entries MatA..MatF; skew(ax, ay) with ay != 0 is stored as matrix.
-enum class TransformFn : u8 { TranslateX, TranslateY, ScaleX, ScaleY, Rotate, SkewX, SkewY, MatA, MatB, MatC, MatD, MatE, MatF };
+/// CSS transform functions (2D and 3D), in list order; arguments: translate px, scale factor, rotate / skew degrees,
+/// perspective px (0: none). matrix(a, b, c, d, e, f) is the six consecutive entries MatA..MatF; skew(ax, ay) with
+/// ay != 0 is stored as matrix. rotate3d(x, y, z, a) is R3X R3Y R3Z R3A; matrix3d() is the sixteen entries M3_0..M3_15
+/// (column-major, as written). Each multi-entry function applies at its last entry.
+enum class TransformFn : u8 {
+    TranslateX, TranslateY, ScaleX, ScaleY, Rotate, SkewX, SkewY, MatA, MatB, MatC, MatD, MatE, MatF,
+    TranslateZ, ScaleZ, RotateX, RotateY, R3X, R3Y, R3Z, R3A, Perspective,
+    M3_0, M3_1, M3_2, M3_3, M3_4, M3_5, M3_6, M3_7, M3_8, M3_9, M3_10, M3_11, M3_12, M3_13, M3_14, M3_15
+};
+inline constexpr int kMaxTransformArgs = 32; ///< entries of a transform list (matrix3d() takes 16)
 /// A 2D affine map: x' = a x + c y + e, y' = b x + d y + f (CSS matrix(a, b, c, d, e, f)).
 struct Affine2 {
     f32 a = 1.f, b = 0.f, c = 0.f, d = 1.f, e = 0.f, f = 0.f;
@@ -107,6 +114,55 @@ struct Decomposed2 {
 };
 Decomposed2 decompose(const Affine2& m);
 Affine2 recompose(const Decomposed2& d);
+/// A 3D homogeneous map (CSS matrix3d order: column-major, m[col * 4 + row]); points are column vectors.
+struct Mat4 {
+    std::array<f32, 16> m{1.f, 0.f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f, 0.f, 1.f};
+    f32 at(int row, int col) const { return m[std::size_t(col * 4 + row)]; }
+    f32& at(int row, int col) { return m[std::size_t(col * 4 + row)]; }
+    bool identity() const { return *this == Mat4{}; }
+    /// a 2D affine map (no z, no perspective): CSS "is2D"
+    bool is2D() const {
+        return at(2, 0) == 0.f && at(2, 1) == 0.f && at(0, 2) == 0.f && at(1, 2) == 0.f && at(2, 2) == 1.f && at(3, 2) == 0.f &&
+               at(2, 3) == 0.f && at(3, 0) == 0.f && at(3, 1) == 0.f && at(3, 3) == 1.f;
+    }
+    static Mat4 from(const Affine2& a) {
+        Mat4 r;
+        r.at(0, 0) = a.a, r.at(1, 0) = a.b, r.at(0, 1) = a.c, r.at(1, 1) = a.d, r.at(0, 3) = a.e, r.at(1, 3) = a.f;
+        return r;
+    }
+    static Mat4 translate(f32 x, f32 y, f32 z) { Mat4 r; r.at(0, 3) = x, r.at(1, 3) = y, r.at(2, 3) = z; return r; }
+    Affine2 affine() const { return {at(0, 0), at(1, 0), at(0, 1), at(1, 1), at(0, 3), at(1, 3)}; }
+    /// this * n: n applies first.
+    Mat4 operator*(const Mat4& n) const {
+        Mat4 r;
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < 4; ++j) {
+                f32 v = 0.f;
+                for (int k = 0; k < 4; ++k) v += at(i, k) * n.at(k, j);
+                r.at(i, j) = v;
+            }
+        return r;
+    }
+    /// The plane z = 0 to the screen: rows / columns (x, y, w) of the matrix (row-major 3x3).
+    std::array<f32, 9> flatten() const {
+        return {at(0, 0), at(0, 1), at(0, 3), at(1, 0), at(1, 1), at(1, 3), at(3, 0), at(3, 1), at(3, 3)};
+    }
+    bool inverse(Mat4& out) const;
+    friend bool operator==(const Mat4&, const Mat4&) = default;
+};
+/// 3x3 homography helpers (row-major): (X, Y, W) = H (x, y, 1), point = (X / W, Y / W).
+bool invert3(const std::array<f32, 9>& h, std::array<f32, 9>& out);
+/// false when the point is behind the viewer (W <= 0)
+bool mapHomography(const std::array<f32, 9>& h, Vec2 p, Vec2& out);
+/// Bounds of r under h (the part in front of the viewer); empty when none is.
+Rect mapRectHomography(const std::array<f32, 9>& h, const Rect& r);
+/// CSS Transforms 2 3D decomposition (translate, scale, skew xy / xz / yz, perspective, quaternion).
+struct Decomposed3 {
+    std::array<f32, 3> t{}, s{1.f, 1.f, 1.f}, k{}; ///< k: skew xy, xz, yz
+    std::array<f32, 4> p{0.f, 0.f, 0.f, 1.f}, q{0.f, 0.f, 0.f, 1.f};
+};
+bool decompose3(const Mat4& m, Decomposed3& out);
+Mat4 recompose3(const Decomposed3& d);
 enum class FilterFn : u8 { Blur, Brightness, Contrast, Saturate, Grayscale, HueRotate, Invert, Sepia, Opacity, DropShadow, Url };
 /// drop-shadow(<dx> <dy> [<blur>] [<color>]); color.a == 0: none
 struct FilterShadow {
@@ -204,9 +260,26 @@ struct ComputedStyle {
     std::array<FilterShadow, kMaxFilterShadows> backdropShadows{};
     /// CSS `filter` (element), same encoding; painted as nested isolated layers in CSS order
     u8 transformCount = 0; ///< transform: functions in list order (about transformOrigin)
-    std::array<TransformFn, kMaxGridTracks> transformFns{};
-    std::array<f32, kMaxGridTracks> transformArgs{};
+    std::array<TransformFn, kMaxTransformArgs> transformFns{};
+    std::array<f32, kMaxTransformArgs> transformArgs{};
     std::array<Length, 2> transformOrigin{Length::pct(50.f), Length::pct(50.f)}; ///< transform-origin (border box)
+    f32 transformOriginZ = 0.f;          ///< transform-origin third value (px)
+    f32 perspective = 0.f;               ///< perspective: px for the children's 3D transforms (0: none)
+    std::array<Length, 2> perspectiveOrigin{Length::pct(50.f), Length::pct(50.f)};
+    bool backfaceHidden = false;         ///< backface-visibility: hidden
+    bool preserve3d = false;             ///< transform-style: preserve-3d
+    /// view-timeline-inset (Unit::Auto: auto = 0)
+    std::array<Length, 2> viewTimelineInset{};
+    /// view(<axis> <inset>{1,2}) insets per animation-timeline entry
+    std::array<std::array<Length, 2>, kMaxTransitions> animationTimelineInset{};
+    /// timeline-scope: names (animationNameId) whose descendant-declared timelines become visible here; all: every name
+    u8 timelineScopeCount = 0;
+    bool timelineScopeAll = false;
+    std::array<u32, kMaxTransitions> timelineScope{};
+    /// animation-range-start / -end per animation entry: name (TimelineRange) + offset (% of the range or px)
+    u8 animationRangeStartCount = 1, animationRangeEndCount = 1;
+    std::array<u8, kMaxTransitions> animationRangeStartName{}, animationRangeEndName{};
+    std::array<Length, kMaxTransitions> animationRangeStartOffset{}, animationRangeEndOffset{};
     /// animation-timeline entries (index like the other animation-* lists): kind 0 auto (document), 1 none, 2 a named
     /// scroll / view timeline (name = animationNameId of the dashed ident), 3 scroll(), 4 view(); arg: axis (bit 0:
     /// 1 = block / y) | scroller << 1 (scroll(): 0 nearest, 1 root, 2 self)
@@ -276,7 +349,8 @@ enum class Prop : u8 {
     TransitionProperty, TransitionDuration, TransitionTimingFunction, TransitionDelay,
     AnimationName, AnimationDuration, AnimationTimingFunction, AnimationDelay, AnimationIterationCount,
     AnimationDirection, AnimationFillMode, AnimationPlayState, TransitionBehavior, AnimationComposition, Transform,
-    TransformOrigin, AnimationTimeline, ScrollTimeline, ViewTimeline, Count
+    TransformOrigin, AnimationTimeline, ScrollTimeline, ViewTimeline, Perspective, PerspectiveOrigin,
+    BackfaceVisibility, TransformStyle, ViewTimelineInset, TimelineScope, AnimationRangeStart, AnimationRangeEnd, Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
 static_assert(kPropCount <= 128, "PropMask holds 128 properties");
@@ -314,6 +388,10 @@ struct PropValue {
     std::array<PropMask, kMaxTransitions> masks{};
     std::array<Easing, kMaxTransitions> eases{};
     std::array<u32, kMaxTransitions> ids{};
+    std::array<std::array<Length, 2>, kMaxTransitions> pairs{}; ///< List: view() insets / animation-range offsets
+    /// Transform: functions + arguments (count in trackCount, up to kMaxTransformArgs)
+    std::array<u8, kMaxTransformArgs> xfns{};
+    std::array<f32, kMaxTransformArgs> xargs{};
     static PropValue ofBool(bool v) { PropValue p; p.type = PropType::Bool; p.b = v; return p; }
     static PropValue ofEnum(u8 v) { PropValue p; p.type = PropType::Enum; p.e = v; return p; }
     static PropValue ofLength(Length v) { PropValue p; p.type = PropType::Length; p.len = v; return p; }
@@ -334,8 +412,16 @@ PropValue interpolateDiscrete(Prop p, const PropValue& a, const PropValue& b, f3
 /// Transform lists: Add appends v's functions to the underlying list (scale(2) + scale(3) = scale(2) scale(3), x6);
 /// Accumulate sums matching functions (translate adds, scale factors add minus one: scale(2) + scale(3) = scale(4)).
 PropValue compositeProp(const PropValue& underlying, const PropValue& v, AnimComposite c);
-/// The 2D map a computed transform paints with, about its transform-origin in `box` (the border box).
+/// The 2D map a computed transform paints with, about its transform-origin in `box` (the border box); a 3D
+/// transform gives its 2D part (use transform3dOf).
 Affine2 transformOf(const ComputedStyle& s, const Rect& box);
+/// The full 3D map about transform-origin (x, y, z).
+Mat4 transform3dOf(const ComputedStyle& s, const Rect& box);
+/// The perspective a parent with `perspective` applies to its children (about perspective-origin in its border box);
+/// identity without perspective.
+Mat4 perspectiveOf(const ComputedStyle& parent, const Rect& parentBox);
+/// animation-range names (Scroll-driven Animations 1): Normal = the whole timeline
+enum class TimelineRange : u8 { Normal, Cover, Contain, Entry, Exit, EntryCrossing, ExitCrossing };
 /// Copies inherited properties from parent into s.
 void inheritFrom(ComputedStyle& s, const ComputedStyle& parent);
 
@@ -508,7 +594,7 @@ public:
     struct Invalidation {
         static constexpr u8 kDeep = 255;
         u8 down = 0;          ///< descendant levels (child combinator: 1 each, descendant: deep)
-        bool sib = false;     ///< later siblings (and their descendants to `down`)
+        u8 sib = 0;           ///< later element siblings reached (`+`: 1 each, `~`: kDeep = all), with descendants to `down`
         u8 hasUp = 0;         ///< :has() anchors: ancestor levels above the node (0 with hasPrev: siblings only)
         bool hasPrev = false; ///< :has() anchors among earlier siblings (of the node and of each ancestor walked)
         bool has = false;     ///< inside some :has() argument

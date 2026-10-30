@@ -162,12 +162,15 @@ void writeValue(Writer& w, const PropValue& v) {
     writeLength(w, v.len);
     w.f32_(v.num);
     w.f32_(v.color.r); w.f32_(v.color.g); w.f32_(v.color.b); w.f32_(v.color.a);
-    w.u8_(v.trackCount);
-    for (u8 i = 0; i < v.trackCount; ++i) writeLength(w, v.tracks[i]);
+    const u8 tracks = v.type == PropType::Transform ? 0 : v.trackCount;
+    w.u8_(tracks);
+    for (u8 i = 0; i < tracks; ++i) writeLength(w, v.tracks[i]);
     if (v.type == PropType::Stops)
         for (u8 i = 0; i < v.trackCount; ++i) { w.f32_(v.stopColors[i].r); w.f32_(v.stopColors[i].g); w.f32_(v.stopColors[i].b); w.f32_(v.stopColors[i].a); }
-    if (v.type == PropType::Transform)
-        for (u8 i = 0; i < v.trackCount; ++i) w.u8_(v.fns[i]);
+    if (v.type == PropType::Transform) {
+        w.u8_(v.trackCount);
+        for (u8 i = 0; i < v.trackCount; ++i) { w.u8_(v.xfns[i]); w.f32_(v.xargs[i]); }
+    }
     if (v.type == PropType::Filter) {
         for (u8 i = 0; i < v.trackCount; ++i) w.u8_(v.fns[i]);
         w.u8_(v.shadowCount);
@@ -182,6 +185,7 @@ void writeValue(Writer& w, const PropValue& v) {
             writeEasing(w, v.eases[i]);
             w.str(v.ids[i] ? std::string(animationName(v.ids[i])) : std::string());
             w.u8_(v.fns[i]);
+            for (const Length& l : v.pairs[i]) writeLength(w, l);
         }
 }
 bool readValue(Reader& r, PropValue& v) {
@@ -198,9 +202,14 @@ bool readValue(Reader& r, PropValue& v) {
     for (u8 i = 0; i < v.trackCount && r.ok; ++i) readLength(r, v.tracks[i]);
     if (v.type == PropType::Stops)
         for (u8 i = 0; i < v.trackCount && r.ok; ++i) { v.stopColors[i].r = r.f32_(); v.stopColors[i].g = r.f32_(); v.stopColors[i].b = r.f32_(); v.stopColors[i].a = r.f32_(); }
-    if (v.type == PropType::Transform)
-        for (u8 i = 0; i < v.trackCount && r.ok; ++i)
-            if ((v.fns[i] = r.u8_()) > u8(TransformFn::MatF)) return r.ok = false;
+    if (v.type == PropType::Transform) {
+        v.trackCount = r.u8_();
+        if (v.trackCount > kMaxTransformArgs) return r.ok = false;
+        for (u8 i = 0; i < v.trackCount && r.ok; ++i) {
+            if ((v.xfns[i] = r.u8_()) > u8(TransformFn::M3_15)) return r.ok = false;
+            v.xargs[i] = r.f32_();
+        }
+    }
     if (v.type == PropType::Filter) {
         for (u8 i = 0; i < v.trackCount && r.ok; ++i) v.fns[i] = r.u8_();
         v.shadowCount = r.u8_();
@@ -216,6 +225,7 @@ bool readValue(Reader& r, PropValue& v) {
             const std::string name = r.str();
             v.ids[i] = name.empty() ? 0 : animationNameId(name);
             v.fns[i] = r.u8_();
+            for (Length& l : v.pairs[i]) readLength(r, l);
         }
     return r.ok;
 }

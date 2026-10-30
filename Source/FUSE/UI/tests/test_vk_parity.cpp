@@ -728,6 +728,22 @@ int main() {
                 vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
                 check("transform_layer", compare(cpuXf, out));
             }
+            {   // projective (CSS 3D) layer: per-pixel homography divide, CPU vs GPU
+                DrawList pl;
+                xfList(pl, 1.f);
+                pl.pushProjective({1.1f, 0.15f, -20.f, 0.05f, 1.f, 10.f, 0.0008f, 0.0002f, 0.8f});
+                pl.rect({120, 90, 260, 180}, Color::rgb(0xe08020, 0.8f), 24.f);
+                pl.rect({160, 130, 60, 60}, Color::rgb(0x2040e0), 0.f);
+                pl.popTransform();
+                Image cpuP;
+                cpuP.resize(int(W), int(H), 0xFF000000u);
+                CpuRasterizer rp;
+                rp.render(pl, cpuP);
+                packDrawList(pl, W, H, data);
+                UI_CHECK(gpu.upload(0, data));
+                vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+                check("projective_layer", compare(cpuP, out));
+            }
 
             // oversized layers on a small scratch: tiled (banded) layer ends match the CPU
             UiVkRenderer small;

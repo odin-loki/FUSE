@@ -58,6 +58,37 @@ void conjugateLayer(std::array<f32, 6>& g, Vec2 s, Vec2 o) {
     g[4] = s.x * tx + o.x;
     g[5] = s.y * ty + o.y;
 }
+// Projective layer (tw == 1): G (pixel -> local, homogeneous) rows (g0 g2 g4), (g1 g3 g5), (radius 0..2);
+// after q = p * s + o: G' = T G T^-1, rescaled by a positive factor (the sign of w is kept).
+void conjugateProjective(DrawCmd& c, Vec2 s, Vec2 o) {
+    auto& g = c.gradXf;
+    double G[9] = {g[0], g[2], g[4], g[1], g[3], g[5], c.radius[0], c.radius[1], c.radius[2]};
+    bool zero = true;
+    for (double v : G) zero = zero && v == 0.0;
+    if (zero) return;
+    const double T[9] = {s.x, 0, o.x, 0, s.y, o.y, 0, 0, 1};
+    const double Ti[9] = {1.0 / s.x, 0, -o.x / s.x, 0, 1.0 / s.y, -o.y / s.y, 0, 0, 1};
+    double A[9] = {}, R[9] = {};
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j)
+            for (int k = 0; k < 3; ++k) A[i * 3 + j] += T[i * 3 + k] * G[k * 3 + j];
+    double mx = 0.0;
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j) {
+            for (int k = 0; k < 3; ++k) R[i * 3 + j] += A[i * 3 + k] * Ti[k * 3 + j];
+            mx = std::max(mx, std::fabs(R[i * 3 + j]));
+        }
+    if (!(mx > 0.0) || !std::isfinite(mx)) return;
+    for (double& v : R) v /= mx;
+    g = {f32(R[0]), f32(R[3]), f32(R[1]), f32(R[4]), f32(R[2]), f32(R[5])};
+    c.radius = {f32(R[6]), f32(R[7]), f32(R[8]), 0.f};
+}
+void conjugateLayerCmd(DrawCmd& c, Vec2 s, Vec2 o, const std::array<f32, 4>& radius) {
+    if (c.tw == 1) {
+        c.radius = radius;
+        conjugateProjective(c, s, o);
+    } else conjugateLayer(c.gradXf, s, o);
+}
 } // namespace
 
 void DrawList::translate(Vec2 d) {
@@ -72,7 +103,7 @@ void DrawList::translate(Vec2 d) {
             auto& m = c.gradXf;
             m[4] -= m[0] * d.x + m[2] * d.y;
             m[5] -= m[1] * d.x + m[3] * d.y;
-        } else if (isTransformLayer(c)) conjugateLayer(c.gradXf, {1.f, 1.f}, d);
+        } else if (isTransformLayer(c)) conjugateLayerCmd(c, {1.f, 1.f}, d, c.radius);
 }
 
 void DrawList::transformRange(std::size_t fromCmd, std::size_t fromEdge, Vec2 sc, Vec2 o) {
@@ -91,6 +122,7 @@ void DrawList::transformRange(std::size_t fromCmd, std::size_t fromEdge, Vec2 sc
         if (r.h < 0.f) r.y += r.h, r.h = -r.h;
         if (c.op == DrawOp::Glyph) r = {std::round(r.x), std::round(r.y), c.rect.w, c.rect.h};
         c.rect = r;
+        const std::array<f32, 4> rad0 = c.radius;
         for (f32& rr : c.radius) rr *= m;
         c.borderWidth *= m;
         c.blur *= m;
@@ -99,7 +131,7 @@ void DrawList::transformRange(std::size_t fromCmd, std::size_t fromEdge, Vec2 sc
             g[0] /= sc.x, g[1] /= sc.x, g[2] /= sc.y, g[3] /= sc.y;
             g[4] -= g[0] * o.x + g[2] * o.y;
             g[5] -= g[1] * o.x + g[3] * o.y;
-        } else if (isTransformLayer(c)) conjugateLayer(c.gradXf, sc, o);
+        } else if (isTransformLayer(c)) conjugateLayerCmd(c, sc, o, rad0);
     }
     for (std::size_t i = fromEdge; i < m_edges.size(); ++i) {
         PathEdge& e = m_edges[i];
@@ -219,6 +251,36 @@ void DrawList::pushTransform(const std::array<f32, 6>& m) {
     m_cmds.push_back(c);
 }
 
+void DrawList::pushProjective(const std::array<f32, 9>& H) {
+    DrawCmd c;
+    c.op = DrawOp::PushFilter;
+    c.u = 2;
+    c.tw = 1;
+    const double a = H[0], b = H[1], cc = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7], i = H[8];
+    const double A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g;
+    const double det = a * A + b * B + cc * C;
+    c.radius = {};
+    if (std::isfinite(det) && std::fabs(det) > 1e-12) {
+        double R[9] = {A, -(b * i - cc * h), b * f - cc * e, B, a * i - cc * g, -(a * f - cc * d), C, -(a * h - b * g), a * e - b * d};
+        double mx = 0.0;
+        for (double& v : R) v /= det, mx = std::max(mx, std::fabs(v));
+        for (double& v : R) v /= mx; // a positive scale: front points keep w > 0
+        c.gradXf = {f32(R[0]), f32(R[3]), f32(R[1]), f32(R[4]), f32(R[2]), f32(R[5])};
+        c.radius = {f32(R[6]), f32(R[7]), f32(R[8]), 0.f};
+    } // else all zero: singular, dropped at popFilter
+    m_filterStack.push_back(u32(m_cmds.size()));
+    m_cmds.push_back(c);
+}
+
+bool sampleProjective(const DrawCmd& c, f32 px, f32 py, f32& qx, f32& qy) {
+    const auto& g = c.gradXf;
+    const f32 qw = c.radius[0] * px + c.radius[1] * py + c.radius[2];
+    if (!(qw > 0.f)) return false;
+    qx = (g[0] * px + g[2] * py + g[4]) / qw;
+    qy = (g[1] * px + g[3] * py + g[5]) / qw;
+    return true;
+}
+
 void sampleLayerBilinear(const f32* buf, int w, int h, f32 fx, f32 fy, f32 out[4]) {
     const f32 sx = std::clamp(fx - 0.5f, -2.f, f32(w) + 1.f), sy = std::clamp(fy - 0.5f, -2.f, f32(h) + 1.f);
     const f32 flx = std::floor(sx), fly = std::floor(sy);
@@ -269,7 +331,45 @@ void DrawList::popFilter() {
     Rect ink{};
     for (std::size_t i = at + 1; i < m_cmds.size(); ++i) ink = unite(ink, inkBounds(m_cmds[i]));
     DrawCmd c = m_cmds[at];
-    if (c.u == 2) { // transform layer: the local ink plus its image under the forward map
+    if (c.u == 2 && c.tw == 1) { // projective layer: the local ink plus its image (in front of the viewer)
+        const auto& g = c.gradXf;
+        const double G[9] = {g[0], g[2], g[4], g[1], g[3], g[5], c.radius[0], c.radius[1], c.radius[2]};
+        const double A = G[4] * G[8] - G[5] * G[7], B = -(G[3] * G[8] - G[5] * G[6]), C = G[3] * G[7] - G[4] * G[6];
+        const double det = G[0] * A + G[1] * B + G[2] * C;
+        if (det == 0.0 || !std::isfinite(det)) { m_cmds.resize(at); return; }
+        if (ink.empty()) c.rect = {};
+        else {
+            const double H[9] = {A / det, -(G[1] * G[8] - G[2] * G[7]) / det, (G[1] * G[5] - G[2] * G[4]) / det,
+                                 B / det, (G[0] * G[8] - G[2] * G[6]) / det, -(G[0] * G[5] - G[2] * G[3]) / det,
+                                 C / det, -(G[0] * G[7] - G[1] * G[6]) / det, (G[0] * G[4] - G[1] * G[3]) / det};
+            // forward w of a local point is 1 / (G w) > 0 in front: clip the ink quad to H's w > eps, map, bound
+            const double sign = 1.0; // G's scale is positive, so H = G^-1 has w > 0 in front
+            constexpr double kEps = 1e-6, kLim = 16384.0;
+            double lx = kLim, ly = kLim, hx = -kLim, hy = -kLim;
+            bool any = false;
+            auto add = [&](double x, double y) {
+                const double w = std::max(sign * (H[6] * x + H[7] * y + H[8]), kEps);
+                const double X = std::clamp((H[0] * x + H[1] * y + H[2]) / w, -kLim, kLim);
+                const double Y = std::clamp((H[3] * x + H[4] * y + H[5]) / w, -kLim, kLim);
+                lx = std::min(lx, X), ly = std::min(ly, Y), hx = std::max(hx, X), hy = std::max(hy, Y);
+                any = true;
+            };
+            const double qx[4] = {ink.x, ink.right(), ink.right(), ink.x}, qy[4] = {ink.y, ink.y, ink.bottom(), ink.bottom()};
+            for (int k = 0; k < 4; ++k) {
+                const int n = (k + 1) % 4;
+                const double wa = sign * (H[6] * qx[k] + H[7] * qy[k] + H[8]) - kEps, wb = sign * (H[6] * qx[n] + H[7] * qy[n] + H[8]) - kEps;
+                if (wa >= 0.0) add(qx[k], qy[k]);
+                if ((wa >= 0.0) != (wb >= 0.0)) {
+                    const double t = wa / (wa - wb);
+                    add(qx[k] + (qx[n] - qx[k]) * t, qy[k] + (qy[n] - qy[k]) * t);
+                }
+            }
+            Rect u = ink;
+            if (any) u = unite(ink, Rect{f32(lx) - 1.f, f32(ly) - 1.f, f32(hx - lx) + 2.f, f32(hy - ly) + 2.f});
+            const f32 x0 = std::floor(u.x), y0 = std::floor(u.y);
+            c.rect = {x0, y0, std::ceil(u.right()) - x0, std::ceil(u.bottom()) - y0};
+        }
+    } else if (c.u == 2) { // transform layer: the local ink plus its image under the forward map
         const auto& g = c.gradXf;
         const double det = double(g[0]) * double(g[3]) - double(g[1]) * double(g[2]);
         if (det == 0.0) { // singular (CSS: not rendered)
@@ -421,12 +521,13 @@ void scaleDrawList(const DrawList& in, f32 s, DrawList& out) {
     out.reserve(in.size());
     for (DrawCmd c : in.cmds()) {
         c.rect = {c.rect.x * s, c.rect.y * s, c.rect.w * s, c.rect.h * s};
+        const std::array<f32, 4> rad0 = c.radius;
         for (f32& r : c.radius) r *= s;
         c.borderWidth *= s;
         c.blur *= s;
         if (c.op == DrawOp::Glyph) c.rect = {std::round(c.rect.x), std::round(c.rect.y), f32(c.tw), f32(c.th)};
         if ((c.gradient & 15u) >= kGradientLinearStops) for (int i = 0; i < 4; ++i) c.gradXf[std::size_t(i)] /= s; // toUnit(p / s)
-        else if (isTransformLayer(c)) conjugateLayer(c.gradXf, {s, s}, {});
+        else if (isTransformLayer(c)) conjugateLayerCmd(c, {s, s}, {}, rad0);
         out.push(c);
     }
     out.m_stops = in.m_stops;
@@ -480,7 +581,7 @@ u64 DrawList::hash() const {
         if ((c.op == DrawOp::Backdrop || c.op == DrawOp::PushFilter || c.op == DrawOp::PopFilter) && c.stopCount &&
             std::size_t(c.stops) + c.stopCount <= m_stops.size())
             h = fnv(h, m_stops.data() + c.stops, std::size_t(c.stopCount) * sizeof(GradientStop));
-        if (isTransformLayer(c)) h = fnv(h, c.gradXf.data(), 24);
+        if (isTransformLayer(c)) { h = fnv(h, c.gradXf.data(), 24); h = fnv(h, &c.tw, sizeof(c.tw)); }
         if ((c.gradient & 15u) >= kGradientLinearStops) {
             h = fnv(h, c.gradXf.data(), 24);
             h = fnv(h, &c.stopCount, 2);
@@ -887,7 +988,11 @@ void layerEnd(const DrawCmd& c, const Rect& clipR, f32 clipRadius, T& target, co
         for (int y = 0; y < h; ++y)
             for (int x = 0; x < w; ++x) {
                 const f32 px = f32(L.x0 + x) + 0.5f, py = f32(L.y0 + y) + 0.5f;
-                const f32 qx = g[0] * px + g[2] * py + g[4], qy = g[1] * px + g[3] * py + g[5];
+                f32 qx = g[0] * px + g[2] * py + g[4], qy = g[1] * px + g[3] * py + g[5];
+                if (c.tw == 1 && !sampleProjective(c, px, py, qx, qy)) { // behind the viewer: nothing
+                    std::fill_n(&tmp[(std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4], 4, 0.f);
+                    continue;
+                }
                 sampleLayerBilinear(buf.data(), w, h, qx - f32(L.x0), qy - f32(L.y0), &tmp[(std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4]);
             }
         buf.swap(tmp);

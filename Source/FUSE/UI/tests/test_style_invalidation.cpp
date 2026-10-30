@@ -151,5 +151,25 @@ panel:hover .hov { width: 70px; }
         ui.update(0.f);
         UI_CHECK_EQ(W(t2), 10.f);
     }
+    {   // precise `+`: a class change reaches only the next sibling (`.m + x`) / next two (`.m2 + x + x`), not all later ones
+        UiContext u2({.viewport = {800, 600}});
+        const u32 pn = u2.registry().find("panel");
+        UI_CHECK(u2.addStyleSheet(".m + panel { width: 5px; } .m2 + panel + panel { width: 6px; }").has_value());
+        const NodeHandle host = u2.create(pn, u2.root());
+        std::vector<NodeHandle> row;
+        for (int i = 0; i < 20; ++i) row.push_back(u2.create(pn, host));
+        u2.update(0.f);
+        u2.addClass(row[0], "m");
+        u2.update(0.f);
+        UI_CHECK_EQ(u2.computed(row[1]).width.value, 5.f);
+        UI_CHECK(u2.stats().styled <= 2u); // the node and its next sibling, not the other 18
+        u2.addClass(row[5], "m2");
+        u2.update(0.f);
+        UI_CHECK_EQ(u2.computed(row[7]).width.value, 6.f);
+        UI_CHECK(u2.stats().styled <= 3u);
+        u2.removeClass(row[0], "m");
+        u2.update(0.f);
+        UI_CHECK(u2.computed(row[1]).width.value != 5.f);
+    }
     return finish("fuse_ui_style_invalidation");
 }

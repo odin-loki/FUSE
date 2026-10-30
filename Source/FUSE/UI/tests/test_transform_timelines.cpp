@@ -45,7 +45,7 @@ int main() {
         UiContext ui({.viewport = {200, 200}});
         const NodeHandle n = box(ui, ui.root(), "width: 20px; height: 10px; background: #f00; flex-shrink: 0");
         UI_CHECK(ui.setCss(n, "transform", "translate(10px, 5px) scale(2)"));
-        UI_CHECK(!ui.setCss(n, "transform", "perspective(10px)"));
+        UI_CHECK(!ui.setCss(n, "transform", "frobnicate(1)"));
         UI_CHECK(!ui.setCss(n, "transform", "translate(1em)"));
         ui.update(0.f);
         UI_CHECK_EQ(int(ui.computed(n).transformCount), 4);

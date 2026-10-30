@@ -19,6 +19,7 @@
 #include <concepts>
 #include <expected>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <span>
 #include <string>
@@ -57,7 +58,9 @@ enum class Phase : u8 { Capture, Target, Bubble };
 
 struct Event {
     EventType type = EventType::PointerMove;
-    Vec2 pos;              ///< pointer events: context coordinates
+    Vec2 pos;              ///< pointer events: the receiving node's own (untransformed) space; NaN when its
+                           ///< transform maps the point behind the viewer
+    Vec2 client{std::numeric_limits<f32>::quiet_NaN(), 0.f}; ///< pointer events: context coordinates (set by dispatch)
     MouseButton button = MouseButton::Left;
     Key key = Key::None;
     u8 mods = 0;
@@ -112,6 +115,16 @@ struct AnimTimeline {
     NodeHandle source; ///< Scroll: the container (none: nearest scrolling ancestor); View: the subject (none: the target)
     u8 axis = 1;       ///< 0 = x (inline), 1 = y (block)
     f32 insetStart = 0.f, insetEnd = 0.f; ///< View: px
+    f32 insetStartPct = 0.f, insetEndPct = 0.f; ///< View: plus these % of the scrollport (view-timeline-inset)
+};
+/// animation-range-start / -end (Scroll-driven Animations 1): a named range of a view timeline (cover, contain,
+/// entry, exit, entry-crossing, exit-crossing) plus an offset into it (% of the range or px; Auto: 0% for the start,
+/// 100% for the end). Normal: the timeline's start / end; Normal with an offset measures from the timeline's start
+/// (cover). Scroll timelines know no names (they use the whole range). Outside a non-normal range the progress runs
+/// below 0 / above 1, so the animation is in its before / after phase (fill-mode applies).
+struct AnimRange {
+    TimelineRange name = TimelineRange::Normal;
+    Length offset{};
 };
 /// KeyframeEffectOptions + Animation settings.
 struct AnimationOptions {
@@ -125,6 +138,7 @@ struct AnimationOptions {
     AnimComposite composite = AnimComposite::Replace;
     bool autoplay = true;
     AnimTimeline timeline;
+    AnimRange rangeStart, rangeEnd; ///< progress-based timelines: the attachment range
     std::string id;
     std::function<void(UiContext&, AnimationHandle)> onFinish, onCancel, onRemove; ///< after the frame's signals
 };
@@ -454,6 +468,13 @@ public:
     bool setClipboardText(std::string_view utf8);
     bool clipboardText(std::string& out) const;
     NodeHandle hitTest(Vec2 p) const;
+    /// A viewport point in the node's own layout (untransformed) space, through every transform (2D, 3D,
+    /// perspective, preserve-3d) above and on it; false when singular or behind the viewer.
+    bool toLocal(NodeHandle n, Vec2 p, Vec2& out) const;
+    /// The inverse: a point of the node's layout space on the viewport.
+    bool fromLocal(NodeHandle n, Vec2 p, Vec2& out) const;
+    /// The node's layout space to the viewport (row-major 3x3 homography, screen = H (x, y, 1) / w).
+    std::array<f32, 9> screenMap(NodeHandle n) const;
     NodeHandle hovered() const { return m_hover; }
     Vec2 pointer() const { return m_pointer; } ///< last pointer position
     NodeHandle pressed() const { return m_pressed; }
@@ -517,6 +538,8 @@ public:
     f32 animTimelineProgress(AnimationHandle a) const;
     /// Progress 0..1 of a timeline for `target` (as an animation on `target` would see it); NaN when inactive.
     f32 timelineProgress(NodeHandle target, const AnimTimeline& t) const;
+    /// Progress through an animation-range (unclamped when either end is not normal; NaN: inactive).
+    f32 timelineProgress(NodeHandle target, const AnimTimeline& t, const AnimRange& start, const AnimRange& end) const;
     /// The document timeline: seconds of update(dt) time since the context was created (document.timeline.currentTime).
     double documentTime() const { return m_docTime; }
     /// The document time at which a running document-timeline animation started (Animation.startTime); NaN otherwise.
@@ -620,10 +643,16 @@ private:
     std::unordered_map<std::string, Image> m_filterImages; ///< defineFilterImage
     FilterImageResolver filterImageResolver() const;
     u32 m_xfNode = ~0u;     ///< node whose transform paintRec is inside (its second, unmapped visit)
+    u32 m_selfOnly = ~0u;   ///< preserve-3d plane being painted without its children (separate planes)
+    Mat4 nodeMatrix(u32 i) const;        ///< parent's perspective * own transform (about the origins)
+    bool preserves3d(u32 i) const;       ///< transform-style: preserve-3d in effect (no grouping property)
+    struct Plane3d { u32 node; Mat4 m; bool selfOnly; f32 depth; };
+    void collectPlanes(u32 i, const Mat4& acc, std::vector<Plane3d>& out) const;
+    bool paintTransformed(u32 i, f32 opacity, DrawList& dl);
     u32 m_filterNode = ~0u; ///< node whose filter layer paintRec is inside (its second, unwrapped visit)
     /// Overlay scrollbar geometry of a scroll container along an axis (0 = x, 1 = y); false when it does not overflow.
     bool scrollBarGeom(u32 i, u8 axis, Rect& track, Rect& thumb) const;
-    NodeHandle hitRec(u32 i, Vec2 p) const;
+    NodeHandle hitRec(u32 i, Vec2 p, const Mat4& acc) const;
     bool dispatch(u32 target, const Event& e);
     void setHover(u32 i);
     u32 interactiveAncestor(u32 i) const;

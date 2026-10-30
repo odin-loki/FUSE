@@ -490,12 +490,22 @@ void main() {
         const uint si = pc.save + uint(g.y * (pc.area.z - pc.area.x) + g.x) * 4u;
         const vec4 u = vec4(ui_scratch.v[si], ui_scratch.v[si + 1u], ui_scratch.v[si + 2u], ui_scratch.v[si + 3u]);
         vec4 o;
-        if (c.grad2.y == 2.0) { // transform layer: bilinear resample through the pixel -> local map (sampleLayerBilinear)
+        if (c.grad2.y == 2.0 || c.grad2.y == 3.0) { // transform layer: bilinear resample through the pixel -> local map
+                                                     // (sampleLayerBilinear; 3: projective, sampleProjective)
             const int aw = pc.area.z - pc.area.x, ah = pc.area.w - pc.area.y;
             precise float px = float(ip.x) + 0.5;
             precise float py = float(ip.y) + 0.5;
             precise float qx = c.grad.x * px + c.grad.z * py + c.grad2.z;
             precise float qy = c.grad.y * px + c.grad.w * py + c.grad2.w;
+            bool behind = false;
+            if (c.grad2.y == 3.0) {
+                precise float qw = c.radius.x * px + c.radius.y * py + c.radius.z;
+                behind = !(qw > 0.0);
+                if (!behind) {
+                    qx = qx / qw;
+                    qy = qy / qw;
+                }
+            }
             precise float fx = qx - float(pc.area.x);
             precise float fy = qy - float(pc.area.y);
             precise float sx = clamp(fx - 0.5, -2.0, float(aw) + 1.0);
@@ -511,6 +521,7 @@ void main() {
                 precise float bot = p01[k] + (p11[k] - p01[k]) * tx;
                 o[k] = top + (bot - top) * ty;
             }
+            if (behind) o = vec4(0.0);
         } else {
             o = vec4(ui_scratch.v[li * 4u], ui_scratch.v[li * 4u + 1u], ui_scratch.v[li * 4u + 2u], ui_scratch.v[li * 4u + 3u]);
             if (floatBitsToUint(c.grad2.w) == 6u) o = withShadow(floatBitsToUint(c.grad2.z), o, lx, ly, w, h, n);

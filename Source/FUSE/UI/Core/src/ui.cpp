@@ -308,8 +308,10 @@ void UiContext::markHasAnchors(u32 i, const StyleEngine::Invalidation& v, bool s
 void UiContext::invalidate(u32 i, const StyleEngine::Invalidation& v) {
     markStyle(i);
     markDown(i, v.down);
-    if (v.sib)
-        for (u32 s = m_nodes[i].next; s != kNone; s = m_nodes[s].next) markStyle(s), markDown(s, v.down);
+    // `+` reaches only the next v.sib siblings; `~` (kDeep) all later ones
+    u32 n = 0;
+    for (u32 s = m_nodes[i].next; s != kNone && n < v.sib; s = m_nodes[s].next, n += v.sib != StyleEngine::Invalidation::kDeep)
+        markStyle(s), markDown(s, v.down);
     if (v.has) markHasAnchors(i, v, false);
 }
 void UiContext::invalidateClasses(u32 i, std::span<const u32> classHashes) {
@@ -994,6 +996,11 @@ bool discreteCapable(PropType t) {
     return t == PropType::Bool || t == PropType::Enum || t == PropType::Length || t == PropType::Number || t == PropType::Color;
 }
 template <class T, std::size_t N> const T& cyc(const std::array<T, N>& a, u8 count, u8 k) { return a[std::size_t(count ? k % count : 0)]; }
+// animation-range-start / -end of animation entry k
+AnimRange cssRange(const ComputedStyle& s, u8 k, bool end) {
+    return end ? AnimRange{TimelineRange(cyc(s.animationRangeEndName, s.animationRangeEndCount, k)), cyc(s.animationRangeEndOffset, s.animationRangeEndCount, k)}
+               : AnimRange{TimelineRange(cyc(s.animationRangeStartName, s.animationRangeStartCount, k)), cyc(s.animationRangeStartOffset, s.animationRangeStartCount, k)};
+}
 } // namespace
 
 u32 UiContext::applyMotion(u32 i, u32 idx, const ComputedStyle& shown, bool styled) {
@@ -1074,7 +1081,8 @@ u32 UiContext::applyMotion(u32 i, u32 idx, const ComputedStyle& shown, bool styl
         const int tk = cssTimeline(i, ns, k, tl);
         a.tl = tk != 0;
         if (a.tl) { // progress-based: the timeline's 0..1 maps onto the active interval (auto duration = 1, inf = 1)
-            const f32 p = tk == 2 ? timelineProgress({i, m_nodes[i].gen}, tl) : std::numeric_limits<f32>::quiet_NaN();
+            const f32 p = tk == 2 ? timelineProgress({i, m_nodes[i].gen}, tl, cssRange(ns, k, false), cssRange(ns, k, true))
+                                  : std::numeric_limits<f32>::quiet_NaN();
             a.tlP = p;
             if (!(dur > 0.f)) dur = 1.f;
             if (!std::isfinite(iters)) iters = 1.f;
@@ -1311,10 +1319,56 @@ f32 UiContext::timelineProgress(NodeHandle target, const AnimTimeline& t) const 
     if (!(span > 0.f)) return nan;
     return std::clamp((pe - rs) / span, 0.f, 1.f);
 }
+f32 UiContext::timelineProgress(NodeHandle target, const AnimTimeline& t, const AnimRange& rs, const AnimRange& re) const {
+    if (rs.name == TimelineRange::Normal && re.name == TimelineRange::Normal && rs.offset.isAuto() && re.offset.isAuto())
+        return timelineProgress(target, t);
+    const f32 nan = std::numeric_limits<f32>::quiet_NaN();
+    if (std::isnan(timelineProgress(target, t))) return nan; // inactive
+    const u8 ax = t.axis ? 1 : 0;
+    f32 pos = 0.f, P = 0.f, S = 0.f; // position along the cover range [0, P + S]; scroll: S = 0, P = the scroll range
+    bool view = false;
+    if (t.kind == AnimTimeline::Kind::Scroll) {
+        u32 sc = node(t.source) ? t.source.index : kNone;
+        for (u32 a = m_nodes[target.index].parent; sc == kNone && a != kNone; a = m_nodes[a].parent)
+            if (m_styles.style(m_nodes[a].style).overflow == Overflow::Scroll) sc = a;
+        const Node& n = m_nodes[sc];
+        const Rect c = contentRect({sc, n.gen});
+        P = ax ? n.extent.h - c.h : n.extent.w - c.w;
+        pos = ax ? n.scroll.y : n.scroll.x;
+    } else {
+        view = true;
+        const u32 subj = node(t.source) ? t.source.index : target.index;
+        u32 sc = kNone;
+        for (u32 a = m_nodes[subj].parent; sc == kNone && a != kNone; a = m_nodes[a].parent)
+            if (m_styles.style(m_nodes[a].style).overflow == Overflow::Scroll) sc = a;
+        const Rect port = contentRect({sc, m_nodes[sc].gen}), r = m_nodes[subj].rect;
+        const f32 plen = ax ? port.h : port.w;
+        const f32 ps = (ax ? port.y : port.x) + t.insetStart + plen * t.insetStartPct / 100.f;
+        const f32 pe = (ax ? port.bottom() : port.right()) - t.insetEnd - plen * t.insetEndPct / 100.f;
+        P = pe - ps, S = ax ? r.h : r.w;
+        pos = pe - (ax ? r.y : r.x);
+    }
+    auto at = [&](const AnimRange& r, bool isEnd) {
+        f32 lo = 0.f, hi = P + S;
+        if (view) switch (r.name) {
+            case TimelineRange::Contain: lo = std::min(S, P), hi = std::max(S, P); break;
+            case TimelineRange::Entry: lo = 0.f, hi = std::min(S, P); break;
+            case TimelineRange::Exit: lo = std::max(S, P), hi = P + S; break;
+            case TimelineRange::EntryCrossing: lo = 0.f, hi = S; break;
+            case TimelineRange::ExitCrossing: lo = P, hi = P + S; break;
+            default: break;
+            }
+        if (r.offset.isAuto()) return isEnd ? hi : lo;
+        return lo + r.offset.resolve(hi - lo, 0.f);
+    };
+    const f32 a = at(rs, false), b = at(re, true);
+    if (!(b - a > 0.f)) return nan;
+    return (pos - a) / (b - a);
+}
 f32 UiContext::animTimelineProgress(AnimationHandle h) const {
     const ScriptAnim* a = scriptAnim(h);
     if (!a || !a->progressBased()) return std::numeric_limits<f32>::quiet_NaN();
-    return timelineProgress({a->node, a->nodeGen}, a->o.timeline);
+    return timelineProgress({a->node, a->nodeGen}, a->o.timeline, a->o.rangeStart, a->o.rangeEnd);
 }
 double UiContext::animStartTime(AnimationHandle h) const {
     const ScriptAnim* a = scriptAnim(h);
@@ -1334,7 +1388,7 @@ bool UiContext::syncTimelines() {
         }
         ++k;
         if (a.state != AnimPlayState::Running) continue;
-        const f32 p = timelineProgress({a.node, a.nodeGen}, a.o.timeline);
+        const f32 p = timelineProgress({a.node, a.nodeGen}, a.o.timeline, a.o.rangeStart, a.o.rangeEnd);
         const bool active = !std::isnan(p);
         f32 t = a.t;
         if (active) {
@@ -1358,7 +1412,8 @@ bool UiContext::syncTimelines() {
                 any = true;
                 AnimTimeline tl;
                 const int tk = cssTimeline(i, ns, a.slot, tl);
-                const f32 p = tk == 2 ? timelineProgress({i, m_nodes[i].gen}, tl) : std::numeric_limits<f32>::quiet_NaN();
+                const f32 p = tk == 2 ? timelineProgress({i, m_nodes[i].gen}, tl, cssRange(ns, a.slot, false), cssRange(ns, a.slot, true))
+                                      : std::numeric_limits<f32>::quiet_NaN();
                 if (tk == 0 || (p != a.tlP && !(std::isnan(p) && std::isnan(a.tlP)))) changed = true;
             }
         }
@@ -1372,6 +1427,14 @@ bool UiContext::syncTimelines() {
     }
     return moved;
 }
+namespace {
+void setInsets(AnimTimeline& t, const std::array<Length, 2>& in) {
+    t.insetStart = in[0].unit == Unit::Px ? in[0].value : 0.f;
+    t.insetStartPct = in[0].unit == Unit::Percent ? in[0].value : 0.f;
+    t.insetEnd = in[1].unit == Unit::Px ? in[1].value : 0.f;
+    t.insetEndPct = in[1].unit == Unit::Percent ? in[1].value : 0.f;
+}
+} // namespace
 int UiContext::cssTimeline(u32 i, const ComputedStyle& s, u8 k, AnimTimeline& t) const {
     if (!s.animationTimelineCount) return 0;
     const u8 kind = cyc(s.animationTimelineKind, s.animationTimelineCount, k);
@@ -1385,22 +1448,45 @@ int UiContext::cssTimeline(u32 i, const ComputedStyle& s, u8 k, AnimTimeline& t)
         if ((arg >> 1) == 1) t.source = m_root;
         else if ((arg >> 1) == 2) t.source = {i, m_nodes[i].gen};
         return 2;
-    case 4: // view(<axis>): the target is the subject
+    case 4: { // view(<axis> <inset>{0,2}): the target is the subject
         t.kind = AnimTimeline::Kind::View;
         t.axis = arg & 1;
+        setInsets(t, s.animationTimelineInset[k % s.animationTimelineCount]);
         return 2;
+    }
     case 2: { // named: scroll-timeline / view-timeline declared on the node or an ancestor (nearest wins)
         const u32 name = cyc(s.animationTimelineName, s.animationTimelineCount, k);
-        for (u32 a = i; a != kNone; a = m_nodes[a].parent) {
-            const ComputedStyle& as = a == i ? s : m_styles.style(m_nodes[a].style);
+        auto declared = [&](u32 a, const ComputedStyle& as) {
             if (as.scrollTimelineName == name) {
                 t.kind = AnimTimeline::Kind::Scroll, t.axis = as.scrollTimelineAxis, t.source = {a, m_nodes[a].gen};
-                return 2;
+                return true;
             }
             if (as.viewTimelineName == name) {
                 t.kind = AnimTimeline::Kind::View, t.axis = as.viewTimelineAxis, t.source = {a, m_nodes[a].gen};
-                return 2;
+                setInsets(t, as.viewTimelineInset);
+                return true;
             }
+            return false;
+        };
+        for (u32 a = i; a != kNone; a = m_nodes[a].parent) {
+            const ComputedStyle& as = a == i ? s : m_styles.style(m_nodes[a].style);
+            if (declared(a, as)) return 2;
+            bool scoped = as.timelineScopeAll;
+            for (u8 q = 0; q < as.timelineScopeCount && !scoped; ++q) scoped = as.timelineScope[q] == name;
+            if (!scoped) continue;
+            // timeline-scope: the name's timeline declared by exactly one descendant (several: inactive)
+            int found = 0;
+            AnimTimeline hit;
+            auto walk = [&](auto&& self, u32 p) -> void {
+                for (u32 c = m_nodes[p].first; c != kNone && found < 2; c = m_nodes[c].next) {
+                    if (declared(c, m_styles.style(m_nodes[c].style))) ++found, hit = t;
+                    self(self, c);
+                }
+            };
+            walk(walk, a);
+            if (found == 1) { t = hit; return 2; }
+            t = {};
+            return 1;
         }
         return 1;
     }
@@ -2207,23 +2293,74 @@ void UiContext::filterStages(const FilterFn* fns, const f32* amounts, u8 count, 
     close();
 }
 
-void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
+Mat4 UiContext::nodeMatrix(u32 i) const {
+    const Node& n = m_nodes[i];
+    const ComputedStyle& s = m_styles.style(n.style);
+    Mat4 m = s.transformCount ? transform3dOf(s, n.rect) : Mat4{};
+    if (n.parent != kNone) {
+        const ComputedStyle& ps = m_styles.style(m_nodes[n.parent].style);
+        if (ps.perspective > 0.f) m = perspectiveOf(ps, m_nodes[n.parent].rect) * m;
+    }
+    return m;
+}
+bool UiContext::preserves3d(u32 i) const {
+    const ComputedStyle& s = m_styles.style(m_nodes[i].style);
+    // grouping properties force flattening (CSS Transforms 2 §transform-style)
+    return s.preserve3d && s.overflow == Overflow::Visible && s.filterCount == 0 && s.opacity >= 1.f && s.backdropFilterCount == 0;
+}
+namespace {
+f32 planeDepth(const Mat4& m, const Rect& r) {
+    const f32 cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f;
+    const f32 z = m.at(2, 0) * cx + m.at(2, 1) * cy + m.at(2, 3), w = m.at(3, 0) * cx + m.at(3, 1) * cy + m.at(3, 3);
+    return w > 0.f ? z / w : -std::numeric_limits<f32>::infinity();
+}
+// backface-visibility: hidden: the back faces the viewer when the inverse's (3, 3) entry is negative (CSS Transforms 2)
+bool backFacing(const Mat4& m) {
+    Mat4 inv;
+    return m.inverse(inv) && inv.at(2, 2) < 0.f;
+}
+constexpr std::array<f32, 9> kIdentity3{1.f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f, 1.f};
+std::array<f32, 9> mul3(const std::array<f32, 9>& a, const std::array<f32, 9>& b) {
+    std::array<f32, 9> r{};
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j)
+            for (int k = 0; k < 3; ++k) r[std::size_t(i * 3 + j)] += a[std::size_t(i * 3 + k)] * b[std::size_t(k * 3 + j)];
+    return r;
+}
+} // namespace
+void UiContext::collectPlanes(u32 i, const Mat4& acc, std::vector<Plane3d>& out) const {
+    const Node& n = m_nodes[i];
+    if (!m_styles.style(n.style).visible) return;
+    if (!preserves3d(i)) { out.push_back({i, acc, false, planeDepth(acc, n.rect)}); return; }
+    out.push_back({i, acc, true, planeDepth(acc, n.rect)});
+    for (u32 k = n.first; k != kNone; k = m_nodes[k].next) collectPlanes(k, acc * nodeMatrix(k), out);
+}
+// Paints node i through its transform; false when it has none (paint as usual). 2D maps: translate / scale map the
+// commands exactly (transformRange), others wrap them in a transform layer (DrawList::pushTransform). 3D maps flatten
+// to a homography (DrawList::pushProjective). preserve-3d: the node and its descendants up to the first flat one are
+// separate planes in one 3D context, each its own layer, painted back to front by the depth of their centres (no
+// plane splitting). Damage: 2D maps map the inner damage; otherwise any change repaints the whole box.
+bool UiContext::paintTransformed(u32 i, f32 opacity, DrawList& dl) {
     Node& n = m_nodes[i];
     const ComputedStyle& s = m_styles.style(n.style);
-    // CSS transform: paint the node and its subtree as usual (outermost, so a filter layer moves with it), then
-    // either map the commands it added (translate / scale: exact) or wrap them in a transform layer (rotate / skew /
-    // scale / matrix: DrawList::pushTransform, resampled by both rasterisers). Damage raised inside the subtree is in
-    // local coordinates: it is mapped through the transform; the old and new transformed boxes are damaged too.
-    if (s.visible && m_xfNode != i && s.transformCount) {
-        const Affine2 m = transformOf(s, n.rect);
-        if (!m.identity()) {
-            Affine2 inv;
-            const bool dirty = n.dirty & kDirtyPaint;
-            Rect& last = m_cold[i]->xfPainted;
-            if (!m.inverse(inv)) { // singular: not rendered
-                if (!last.empty()) m_damage = m_damage.unite(last), last = {};
-                return;
-            }
+    const bool pres = preserves3d(i);
+    const bool parentPersp = n.parent != kNone && m_styles.style(m_nodes[n.parent].style).perspective > 0.f;
+    if (!s.transformCount && !pres && !parentPersp) return false;
+    const Mat4 M = nodeMatrix(i);
+    Rect& last = m_cold[i]->xfPainted;
+    const bool dirty = n.dirty & kDirtyPaint;
+    auto drop = [&] { // not rendered (singular / back face)
+        if (!last.empty()) m_damage = m_damage.unite(last), last = {};
+        return true;
+    };
+    if (!pres) {
+        const std::array<f32, 9> H = M.flatten();
+        std::array<f32, 9> Hi;
+        if (s.backfaceHidden && backFacing(M)) return drop();
+        if (!invert3(H, Hi)) return drop();
+        if (H == kIdentity3) return false;
+        if (H[6] == 0.f && H[7] == 0.f) { // affine
+            const Affine2 m{H[0] / H[8], H[3] / H[8], H[1] / H[8], H[4] / H[8], H[2] / H[8], H[5] / H[8]};
             const std::size_t c0 = dl.size(), e0 = dl.edgeCount();
             const u32 outer = m_xfNode;
             const Rect outerDamage = m_damage;
@@ -2244,9 +2381,45 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
             if (!inner.empty()) m_damage = m_damage.unite(m.mapRect(inner));
             if (dirty || !(box == last)) m_damage = m_damage.unite(box).unite(last);
             last = box;
-            return;
+            return true;
         }
     }
+    std::vector<Plane3d> planes;
+    if (pres) collectPlanes(i, M, planes);
+    else planes.push_back({i, M, false, 0.f});
+    std::stable_sort(planes.begin(), planes.end(), [](const Plane3d& a, const Plane3d& b) { return a.depth < b.depth; });
+    const u32 outer = m_xfNode, outerSelf = m_selfOnly;
+    const Rect outerDamage = m_damage;
+    m_damage = {};
+    Rect box;
+    for (const Plane3d& pl : planes) {
+        const ComputedStyle& ps = m_styles.style(m_nodes[pl.node].style);
+        if (ps.backfaceHidden && backFacing(pl.m)) continue;
+        const std::array<f32, 9> H = pl.m.flatten();
+        std::array<f32, 9> Hi;
+        if (!invert3(H, Hi)) continue;
+        const std::size_t c0 = dl.size();
+        if (H[6] == 0.f && H[7] == 0.f) dl.pushTransform({H[0] / H[8], H[3] / H[8], H[1] / H[8], H[4] / H[8], H[2] / H[8], H[5] / H[8]});
+        else dl.pushProjective(H);
+        m_xfNode = pl.node;
+        m_selfOnly = pl.selfOnly ? pl.node : ~0u;
+        paintRec(pl.node, opacity, dl);
+        dl.popTransform();
+        if (c0 < dl.size() && dl.cmds()[c0].op == DrawOp::PushFilter) box = box.unite(dl.cmds()[c0].rect);
+    }
+    m_xfNode = outer, m_selfOnly = outerSelf;
+    const Rect inner = m_damage;
+    m_damage = outerDamage;
+    if (dirty || !inner.empty() || !(box == last)) m_damage = m_damage.unite(box).unite(last);
+    last = box;
+    return true;
+}
+
+void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
+    Node& n = m_nodes[i];
+    const ComputedStyle& s = m_styles.style(n.style);
+    // CSS transform (2D / 3D / perspective / preserve-3d): see paintTransformed
+    if (s.visible && m_xfNode != i && paintTransformed(i, opacity, dl)) return;
     if (n.dirty & kDirtyPaint) {
         Rect& last = m_cold[i]->xfPainted;
         if (!last.empty()) m_damage = m_damage.unite(last), last = {};
@@ -2389,7 +2562,7 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
         const f32 y = content.y + std::floor(std::max(0.f, content.h - tl.height) * 0.5f);
         paintTextLayout(dl, tl, {content.x, y}, tint(s.color), s.fontSize, i);
     }
-    if (n.first == kNone) return;
+    if (n.first == kNone || m_selfOnly == i) return; // a preserve-3d plane: the children are planes of their own
     const bool clip = s.overflow != Overflow::Visible;
     if (clip) dl.pushClip(n.rect, rad);
     for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
@@ -2594,30 +2767,89 @@ f32 UiContext::nextWakeSeconds() const {
 }
 
 // ---- Hit testing and dispatch --------------------------------------------------------------------------------------
-NodeHandle UiContext::hitRec(u32 i, Vec2 p) const {
+// p is in the current flat plane; acc is the 3D context's accumulated map when the parent preserves 3D (else
+// identity). A flat node maps p into its own space for itself and its children; a preserve-3d node hands p and
+// its map on, and tests its children nearest first (centre depth, as painted).
+NodeHandle UiContext::hitRec(u32 i, Vec2 p, const Mat4& acc) const {
     const Node& n = m_nodes[i];
     const ComputedStyle& s = m_styles.style(n.style);
     if (!s.visible || n.animOpacity <= 0.f) return {};
-    if (s.transformCount) { // CSS transform: test in the node's local (untransformed) space
-        const Affine2 m = transformOf(s, n.rect);
-        if (!m.identity()) {
-            Affine2 inv;
-            if (!m.inverse(inv)) return {};
-            p = inv.apply(p);
+    const bool inCtx = n.parent != kNone && preserves3d(n.parent);
+    const bool parentPersp = n.parent != kNone && m_styles.style(m_nodes[n.parent].style).perspective > 0.f;
+    const bool pres = preserves3d(i);
+    Mat4 a = acc;
+    if (s.transformCount || parentPersp) a = inCtx ? acc * nodeMatrix(i) : nodeMatrix(i);
+    else if (!inCtx) a = Mat4{};
+    Vec2 q = p;
+    bool selfHidden = false;
+    if (!a.identity()) {
+        if (s.backfaceHidden && backFacing(a)) {
+            if (!pres) return {};
+            selfHidden = true;
         }
+        std::array<f32, 9> Hi;
+        if (!invert3(a.flatten(), Hi) || !mapHomography(Hi, p, q)) return {};
     }
-    const bool inside = n.rect.contains(p);
+    const bool inside = n.rect.contains(q);
     if (!inside && s.overflow != Overflow::Visible) return {};
-    for (u32 k = n.last; k != kNone; k = m_nodes[k].prev) {
-        const NodeHandle h = hitRec(k, p);
-        if (h.valid()) return h;
-    }
-    if (inside && s.pointerEvents) return {i, n.gen};
+    if (pres) {
+        std::vector<std::pair<f32, u32>> order;
+        for (u32 k = n.first; k != kNone; k = m_nodes[k].next) order.push_back({planeDepth(a * nodeMatrix(k), m_nodes[k].rect), k});
+        std::stable_sort(order.begin(), order.end(), [](const auto& x, const auto& y) { return x.first > y.first; });
+        for (const auto& [d, k] : order) {
+            (void)d;
+            const NodeHandle h = hitRec(k, p, a);
+            if (h.valid()) return h;
+        }
+    } else
+        for (u32 k = n.last; k != kNone; k = m_nodes[k].prev) {
+            const NodeHandle h = hitRec(k, q, Mat4{});
+            if (h.valid()) return h;
+        }
+    if (inside && !selfHidden && s.pointerEvents) return {i, n.gen};
     return {};
 }
-NodeHandle UiContext::hitTest(Vec2 p) const { return hitRec(m_root.index, p); }
+std::array<f32, 9> UiContext::screenMap(NodeHandle h) const {
+    std::array<f32, 9> total = kIdentity3;
+    if (!node(h)) return total;
+    bool any = false; // fast path (no allocation): nothing transforms on the chain
+    for (u32 a = h.index; a != kNone && !any; a = m_nodes[a].parent) {
+        const Node& n = m_nodes[a];
+        any = m_styles.style(n.style).transformCount || (n.parent != kNone && m_styles.style(m_nodes[n.parent].style).perspective > 0.f);
+    }
+    if (!any) return total;
+    // root to node: a flat ancestor ends a stage (its plane), a preserve-3d parent extends the 3D context's map
+    Mat4 acc;
+    auto step = [&](auto&& self, u32 a) -> void {
+        const Node& n = m_nodes[a];
+        if (n.parent != kNone) self(self, n.parent);
+        const bool inCtx = n.parent != kNone && preserves3d(n.parent);
+        const bool parentPersp = n.parent != kNone && m_styles.style(m_nodes[n.parent].style).perspective > 0.f;
+        const bool has = m_styles.style(n.style).transformCount || parentPersp;
+        if (inCtx) { if (has) acc = acc * nodeMatrix(a); return; }
+        if (!acc.identity()) total = mul3(total, acc.flatten());
+        acc = has ? nodeMatrix(a) : Mat4{};
+    };
+    step(step, h.index);
+    if (!acc.identity()) total = mul3(total, acc.flatten());
+    return total;
+}
+bool UiContext::toLocal(NodeHandle h, Vec2 p, Vec2& out) const {
+    const std::array<f32, 9> H = screenMap(h);
+    if (H == kIdentity3) { out = p; return true; }
+    std::array<f32, 9> Hi;
+    return invert3(H, Hi) && mapHomography(Hi, p, out);
+}
+bool UiContext::fromLocal(NodeHandle h, Vec2 p, Vec2& out) const {
+    const std::array<f32, 9> H = screenMap(h);
+    if (H == kIdentity3) { out = p; return true; }
+    return mapHomography(H, p, out);
+}
+NodeHandle UiContext::hitTest(Vec2 p) const { return hitRec(m_root.index, p, Mat4{}); }
 
-bool UiContext::dispatch(u32 target, const Event& e) {
+bool UiContext::dispatch(u32 target, const Event& ev) {
+    Event e = ev;
+    if (std::isnan(e.client.x)) e.client = e.pos;
     m_path.clear();
     for (u32 a = target; a != kNone; a = m_nodes[a].parent) m_path.push_back(a);
     const NodeHandle th{target, m_nodes[target].gen};
@@ -2626,7 +2858,12 @@ bool UiContext::dispatch(u32 target, const Event& e) {
         const WidgetClass& wc = m_registry.get(m_nodes[k].cls);
         if (!wc.onEvent) return false;
         EventContext ec{*this, {k, m_nodes[k].gen}, th, ph};
-        return wc.onEvent(ec, e);
+        // pointer positions in the receiving node's own (untransformed) space; client keeps context coordinates
+        const std::array<f32, 9> H = screenMap({k, m_nodes[k].gen});
+        if (H == kIdentity3) return wc.onEvent(ec, e);
+        Event le = e;
+        if (!toLocal({k, m_nodes[k].gen}, e.client, le.pos)) le.pos = {std::numeric_limits<f32>::quiet_NaN(), std::numeric_limits<f32>::quiet_NaN()};
+        return wc.onEvent(ec, le);
     };
     for (std::size_t k = m_path.size(); k-- > 1;)
         if (call(m_path[k], Phase::Capture)) return true;
