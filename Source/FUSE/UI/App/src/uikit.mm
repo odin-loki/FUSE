@@ -212,6 +212,8 @@ NSString* str(std::string_view s) { return [[NSString alloc] initWithBytes:s.dat
         if (n.name.empty() && !n.focusable) continue;
         UIAccessibilityElement* el = [[UIAccessibilityElement alloc] initWithAccessibilityContainer:self];
         el.accessibilityLabel = str(n.name);
+        // password fields: no value is ever exposed, and VoiceOver announces "secure text field" from the hint
+        if (n.protectedText) el.accessibilityHint = @"secure text field";
         el.accessibilityTraits = UIAccessibilityTraits(fa::uikit::traits(n.role, n.disabled, n.checked));
         el.accessibilityFrameInContainerSpace = CGRectMake(n.bounds.x, n.bounds.y, n.bounds.w, n.bounds.h);
         if (n.hi > n.lo) el.accessibilityValue = [NSString stringWithFormat:@"%g", double(n.value)];

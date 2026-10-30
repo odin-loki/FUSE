@@ -6,7 +6,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
-#include <regex>
 #include <unordered_map>
 
 namespace fuse::ui::widgets {
@@ -351,9 +350,19 @@ struct ComboBox {
 
 // ---- LineEdit ------------------------------------------------------------------------------------------------------
 // Per-field options live beside the context, keyed by node slot + generation (a reused slot gets defaults back).
+struct MaskCell {
+    char kind = 0;     ///< 0: literal; else the mask letter (A a N n X x 9 0 D d # H h B b)
+    char32_t lit = 0;
+    signed char caseMode = 0;   ///< 1 upper, -1 lower
+};
 struct LineEditState {
     u32 gen = 0;
     LineEditOptions o;
+    std::vector<MaskCell> cells; ///< input mask (empty: none)
+    std::u32string vals;         ///< per cell: entered code point, 0 = blank
+    char32_t blank = U' ';
+    std::string text;            ///< masked fields: literals + filled cells (lineEditText)
+    bool dirty = false;          ///< edited since the last editingFinished
 };
 struct LineEditStore {
     std::vector<std::unique_ptr<LineEditState>> slots;
@@ -368,6 +377,22 @@ const LineEditOptions* leOptions(const UiContext& ui, NodeHandle n) {
     if (it == m.end() || n.index >= it->second.slots.size()) return nullptr;
     const auto& s = it->second.slots[n.index];
     return s && s->gen == n.generation ? &s->o : nullptr;
+}
+LineEditState* leState(const UiContext& ui, NodeHandle n) {
+    auto& m = lineEditStores();
+    const auto it = m.find(&ui);
+    if (it == m.end() || n.index >= it->second.slots.size()) return nullptr;
+    auto& s = it->second.slots[n.index];
+    return s && s->gen == n.generation ? s.get() : nullptr;
+}
+LineEditState& leEnsure(UiContext& ui, NodeHandle n) {
+    if (LineEditState* s = leState(ui, n)) return *s;
+    auto& st = lineEditStores()[&ui];
+    if (st.slots.size() <= n.index) st.slots.resize(n.index + 1);
+    auto& s = st.slots[n.index];
+    s = std::make_unique<LineEditState>();
+    s->gen = n.generation;
+    return *s;
 }
 const LineEditOptions& leOpts(const UiContext& ui, NodeHandle n) {
     static const LineEditOptions kDefault;
@@ -429,11 +454,144 @@ Shown shownText(const LineEditOptions& o, std::string_view real, bool focused) {
 /// the node text: the real text, or for masked / hidden fields what is on screen (never the secret)
 void publishText(UiContext& ui, NodeHandle n) {
     const LineEditOptions& o = leOpts(ui, n);
-    const std::string& t = ui.editBuffer(n).text();
+    const LineEditState* st = leState(ui, n);
+    const std::string& t = st && !st->cells.empty() ? st->text : ui.editBuffer(n).text();
     if (o.echo == EchoMode::Normal) ui.setText(n, t);
     else ui.setText(n, shownText(o, t, false).text);
 }
 Validation leValidate(const LineEditOptions& o, std::string_view t) { return o.validator ? o.validator(t) : Validation::Acceptable; }
+
+// ---- input mask (QLineEdit::inputMask) ----
+std::u32string decode32(std::string_view s) {
+    std::u32string o;
+    for (std::size_t i = 0; i < s.size();) {
+        const unsigned char c = static_cast<unsigned char>(s[i]);
+        int k = c < 0x80 ? 0 : c < 0xE0 ? 1 : c < 0xF0 ? 2 : 3;
+        char32_t cp = k == 0 ? c : k == 1 ? (c & 0x1F) : k == 2 ? (c & 0x0F) : (c & 0x07);
+        ++i;
+        for (; k > 0 && i < s.size(); --k, ++i) cp = (cp << 6) | (static_cast<unsigned char>(s[i]) & 0x3F);
+        o += cp;
+    }
+    return o;
+}
+void parseMask(std::string_view mask, LineEditState& st) {
+    st.cells.clear();
+    st.blank = U' ';
+    std::u32string m = decode32(mask);
+    // trailing ";c": blank character
+    for (std::size_t k = m.size(); k-- > 0;) {
+        if (m[k] != U';') continue;
+        std::size_t bs = 0;
+        for (std::size_t j = k; j-- > 0 && m[j] == U'\\';) ++bs;
+        if (bs % 2) continue;
+        if (k + 1 < m.size()) st.blank = m[k + 1];
+        m.resize(k);
+        break;
+    }
+    signed char cm = 0;
+    for (std::size_t k = 0; k < m.size(); ++k) {
+        const char32_t c = m[k];
+        if (c == U'>') { cm = 1; continue; }
+        if (c == U'<') { cm = -1; continue; }
+        if (c == U'!') { cm = 0; continue; }
+        MaskCell cell;
+        if (c == U'\\' && k + 1 < m.size()) cell.lit = m[++k];
+        else if (c < 128 && std::string_view("AaNnXx90Dd#HhBb").find(char(c)) != std::string_view::npos) cell.kind = char(c);
+        else cell.lit = c;
+        cell.caseMode = cm;
+        st.cells.push_back(cell);
+    }
+    st.vals.assign(st.cells.size(), 0);
+}
+bool maskRequired(char k) { return k >= 'A' && k <= 'Z' ? true : k == '9' || k == 'D'; }
+bool maskAccepts(char k, char32_t c) {
+    const bool alpha = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c > 127 && c != 0xA0);
+    const bool digit = c >= '0' && c <= '9';
+    switch (k) {
+    case 'A': case 'a': return alpha;
+    case 'N': case 'n': return alpha || digit;
+    case 'X': case 'x': return c >= 32 && c != 127;
+    case '9': case '0': return digit;
+    case 'D': case 'd': return c >= '1' && c <= '9';
+    case '#': return digit || c == '+' || c == '-';
+    case 'H': case 'h': return digit || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+    case 'B': case 'b': return c == '0' || c == '1';
+    default: return false;
+    }
+}
+char32_t maskCase(signed char cm, char32_t c) {
+    if (cm > 0 && c >= 'a' && c <= 'z') return c - 32;
+    if (cm < 0 && c >= 'A' && c <= 'Z') return c + 32;
+    return c;
+}
+std::string maskDisplay(const LineEditState& st) {
+    std::string o;
+    for (std::size_t k = 0; k < st.cells.size(); ++k)
+        o += utf8Of(st.cells[k].kind ? (st.vals[k] ? st.vals[k] : st.blank) : st.cells[k].lit);
+    return o;
+}
+std::string maskStripped(const LineEditState& st, std::size_t from = 0, std::size_t to = ~std::size_t(0)) {
+    std::string o;
+    for (std::size_t k = from; k < st.cells.size() && k < to; ++k) {
+        if (!st.cells[k].kind) o += utf8Of(st.cells[k].lit);
+        else if (st.vals[k]) o += utf8Of(st.vals[k]);
+    }
+    return o;
+}
+bool maskComplete(const LineEditState& st) {
+    for (std::size_t k = 0; k < st.cells.size(); ++k)
+        if (st.cells[k].kind && maskRequired(st.cells[k].kind) && !st.vals[k]) return false;
+    return true;
+}
+/// type code points from cell `cur`; returns the new caret cell
+std::size_t maskType(LineEditState& st, std::size_t cur, std::u32string_view in) {
+    const std::size_t n = st.cells.size();
+    for (char32_t c : in) {
+        if (cur < n && !st.cells[cur].kind && st.cells[cur].lit == c) { ++cur; continue; }
+        if (cur > 0 && cur <= n && !st.cells[cur - 1].kind && st.cells[cur - 1].lit == c) continue; // stepped over already
+        std::size_t j = cur;
+        while (j < n && !st.cells[j].kind) ++j;
+        if (j >= n) break;
+        if (!maskAccepts(st.cells[j].kind, c)) {
+            // a separator typed mid-section jumps past the next matching literal (Qt: "1." in "000.000")
+            std::size_t k = j;
+            while (k < n && st.cells[k].kind) ++k;
+            if (k < n && st.cells[k].lit == c) {
+                cur = k + 1;
+                while (cur < n && !st.cells[cur].kind) ++cur;
+            }
+            continue;
+        }
+        st.vals[j] = maskCase(st.cells[j].caseMode, c);
+        cur = j + 1;
+        while (cur < n && !st.cells[cur].kind) ++cur;
+    }
+    return cur;
+}
+void maskClear(LineEditState& st, std::size_t a, std::size_t b) {
+    for (std::size_t k = a; k < b && k < st.cells.size(); ++k) st.vals[k] = 0;
+}
+/// buffer <- display, caret at cell `cur`
+void maskSync(UiContext& ui, NodeHandle n, LineEditState& st, std::size_t cur) {
+    st.text = maskStripped(st);
+    auto& eb = ui.editBuffer(n);
+    eb.setText(maskDisplay(st));
+    eb.home(false);
+    for (std::size_t k = 0; k < cur; ++k) eb.moveRight(false);
+}
+Validation leStateOf(UiContext& ui, NodeHandle n) {
+    const LineEditState* st = leState(ui, n);
+    if (st && !st->cells.empty()) {
+        const Validation v = leValidate(st->o, st->text);
+        return v == Validation::Acceptable && !maskComplete(*st) ? Validation::Intermediate : v;
+    }
+    return leValidate(leOpts(ui, n), ui.editBuffer(n).text());
+}
+std::string_view leText(UiContext& ui, NodeHandle n) {
+    const LineEditState* st = leState(ui, n);
+    if (st && !st->cells.empty()) return st->text;
+    return ui.editBuffer(n).text();
+}
 
 struct LineEdit {
     static constexpr std::string_view kName = "lineedit";
@@ -485,7 +643,82 @@ struct LineEdit {
     }
     static void changed(UiContext& ui, NodeHandle n) {
         publishText(ui, n);
-        ui.emit(n, SignalKind::TextChanged, {.text = ui.editBuffer(n).text()});
+        leEnsure(ui, n).dirty = true;
+        ui.emit(n, SignalKind::TextChanged, {.text = leText(ui, n)});
+    }
+    /// Enter / focus loss: fixup when not Acceptable, then Submitted (Enter) and EditingFinished when Acceptable
+    static void finish(UiContext& ui, NodeHandle n, bool enter) {
+        Validation v = leStateOf(ui, n);
+        const LineEditState* st0 = leState(ui, n);
+        if (v != Validation::Acceptable && st0 && st0->o.fixup) {
+            std::string t(leText(ui, n));
+            st0->o.fixup(t);
+            if (t != leText(ui, n)) {
+                setLineEditText(ui, n, t);
+                v = leStateOf(ui, n);
+            }
+        }
+        if (v != Validation::Acceptable || !ui.alive(n)) return;
+        LineEditState& st = leEnsure(ui, n);
+        if (!enter && !st.dirty) return;
+        st.dirty = false;
+        const std::string t(leText(ui, n));
+        if (enter) ui.emit(n, SignalKind::Submitted, {.text = t});
+        if (ui.alive(n)) ui.emit(n, SignalKind::EditingFinished, {.text = t});
+    }
+    /// input-mask editing: returns true when consumed (`edit` set when the cells changed)
+    static bool maskEvent(UiContext& ui, NodeHandle n, LineEditState& st, const Event& e) {
+        auto& eb = ui.editBuffer(n);
+        const std::string& d = eb.text();
+        std::size_t cur = codePoints(std::string_view(d).substr(0, eb.cursor()));
+        const std::size_t anc = codePoints(std::string_view(d).substr(0, eb.anchor()));
+        const std::size_t a = std::min(cur, anc), b = std::max(cur, anc);
+        const bool ctrl = e.mods & kModCtrl;
+        const std::u32string before = st.vals;
+        std::string copy;
+        if (e.type == EventType::Text) {
+            if (st.o.readOnly) return true;
+            if (a != b) { maskClear(st, a, b); cur = a; }
+            cur = maskType(st, cur, decode32(e.text));
+        } else if (e.type == EventType::KeyDown) {
+            if (e.key == Key::Backspace || e.key == Key::Delete) {
+                if (st.o.readOnly) return true;
+                if (a != b) { maskClear(st, a, b); cur = a; }
+                else if (e.key == Key::Backspace) {
+                    std::size_t j = cur;
+                    while (j > 0 && !st.cells[j - 1].kind) --j;
+                    if (j > 0) { st.vals[j - 1] = 0; cur = j - 1; }
+                } else {
+                    std::size_t j = cur;
+                    while (j < st.cells.size() && !st.cells[j].kind) ++j;
+                    if (j < st.cells.size()) st.vals[j] = 0;
+                }
+            } else if (ctrl && (e.key == Key::X || e.key == Key::C)) {
+                if (a == b || leMasked(st.o, true) || st.o.echo == EchoMode::NoEcho) return true;
+                ui.setClipboardText(maskStripped(st, a, b));
+                if (e.key == Key::C || st.o.readOnly) return true;
+                maskClear(st, a, b);
+                cur = a;
+            } else if (ctrl && e.key == Key::V) {
+                if (st.o.readOnly) return true;
+                std::string paste;
+                if (!ui.clipboardText(paste)) return true;
+                if (a != b) { maskClear(st, a, b); cur = a; }
+                cur = maskType(st, cur, decode32(paste));
+            } else if (ctrl && (e.key == Key::Z || e.key == Key::Y)) {
+                return true; // no undo log for masked input (the buffer is rebuilt per edit)
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+        if (st.vals == before) { maskSync(ui, n, st, cur); ui.setValue(n, ui.value(n) + 1.f); return true; }
+        const std::string stripped = maskStripped(st);
+        if (leValidate(st.o, stripped) == Validation::Invalid) { st.vals = before; return true; }
+        maskSync(ui, n, st, cur);
+        changed(ui, n);
+        return true;
     }
     /// run one edit; rejected (buffer restored) when it makes the text Invalid
     template <class F>
@@ -515,8 +748,14 @@ struct LineEdit {
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
         UiContext& ui = ec.ui;
+        if (e.type == EventType::FocusOut) { finish(ui, ec.node, false); ui.setValue(ec.node, ui.value(ec.node) + 1.f); return false; }
+        if (e.type == EventType::FocusIn) { ui.setValue(ec.node, ui.value(ec.node) + 1.f); return false; } // echo-on-edit repaint
         auto& eb = ui.editBuffer(ec.node);
         const LineEditOptions& o = leOpts(ui, ec.node);
+        if (LineEditState* st = leState(ui, ec.node); st && !st->cells.empty() && e.type != EventType::PointerDown) {
+            if (e.type == EventType::KeyDown && e.key == Key::Enter) { finish(ui, ec.node, true); return true; }
+            if (maskEvent(ui, ec.node, *st, e)) return true;
+        }
         const bool masked = o.echo != EchoMode::Normal && o.echo != EchoMode::PasswordEchoOnEdit;
         if (e.type == EventType::Text) {
             if (insertText(ui, ec.node, e.text)) changed(ui, ec.node);
@@ -569,9 +808,7 @@ struct LineEdit {
         }
         case Key::Z: if (!ctrl) return false; edit = guarded(ui, ec.node, [&](fuse::text::TextEditBuffer& b) { sh ? b.redo() : b.undo(); }); break;
         case Key::Y: if (!ctrl) return false; edit = guarded(ui, ec.node, [](fuse::text::TextEditBuffer& b) { b.redo(); }); break;
-        case Key::Enter:
-            if (leValidate(o, eb.text()) == Validation::Acceptable) ui.emit(ec.node, SignalKind::Submitted, {.text = eb.text()});
-            return true;
+        case Key::Enter: finish(ui, ec.node, true); return true;
         default: return false;
         }
         if (edit) changed(ui, ec.node);
@@ -759,25 +996,62 @@ std::string_view comboText(const UiContext& ui, NodeHandle n) { return item(ui.t
 
 void setLineEditOptions(UiContext& ui, NodeHandle n, LineEditOptions o) {
     if (!ui.alive(n)) return;
-    auto& st = lineEditStores()[&ui];
-    if (st.slots.size() <= n.index) st.slots.resize(n.index + 1);
-    auto& s = st.slots[n.index];
-    if (!s) s = std::make_unique<LineEditState>();
-    s->gen = n.generation;
-    s->o = std::move(o);
+    LineEditState& s = leEnsure(ui, n);
+    const std::string old(leText(ui, n));
+    const bool wasMasked = !s.cells.empty();
+    s.o = std::move(o);
+    s.cells.clear();
+    s.vals.clear();
+    s.text.clear();
     auto& eb = ui.editBuffer(n);
-    if (codePoints(eb.text()) > s->o.maxLength) { eb.setText(clipCodePoints(eb.text(), s->o.maxLength)); eb.end(false); }
+    if (!s.o.inputMask.empty()) {
+        parseMask(s.o.inputMask, s);
+        maskType(s, 0, decode32(old));
+        maskSync(ui, n, s, 0);
+    } else {
+        if (wasMasked) { eb.setText(old); eb.end(false); }
+        if (codePoints(eb.text()) > s.o.maxLength) { eb.setText(clipCodePoints(eb.text(), s.o.maxLength)); eb.end(false); }
+    }
+    ui.setA11yProtected(n, s.o.echo != EchoMode::Normal);
     publishText(ui, n);
     ui.setValue(n, ui.value(n) + 1.f); // repaint
 }
-std::string_view lineEditText(UiContext& ui, NodeHandle n) { return ui.editBuffer(n).text(); }
-Validation lineEditState(UiContext& ui, NodeHandle n) { return leValidate(leOpts(ui, n), ui.editBuffer(n).text()); }
+std::string_view lineEditText(UiContext& ui, NodeHandle n) { return leText(ui, n); }
+Validation lineEditState(UiContext& ui, NodeHandle n) { return leStateOf(ui, n); }
 void setLineEditText(UiContext& ui, NodeHandle n, std::string_view t) {
     auto& eb = ui.editBuffer(n);
-    eb.setText(clipCodePoints(t, leOpts(ui, n).maxLength));
-    eb.end(false);
+    if (LineEditState* st = leState(ui, n); st && !st->cells.empty()) {
+        st->vals.assign(st->cells.size(), 0);
+        maskType(*st, 0, decode32(t));
+        maskSync(ui, n, *st, st->cells.size());
+    } else {
+        eb.setText(clipCodePoints(t, leOpts(ui, n).maxLength));
+        eb.end(false);
+    }
     publishText(ui, n);
-    ui.emit(n, SignalKind::TextChanged, {.text = eb.text()});
+    ui.emit(n, SignalKind::TextChanged, {.text = leText(ui, n)});
+}
+Fixup intFixup(long long lo, long long hi) {
+    return [lo, hi](std::string& t) {
+        char* end = nullptr;
+        const std::string s = t;
+        long long v = std::strtoll(s.c_str(), &end, 10);
+        if (end == s.c_str()) v = lo > 0 ? lo : hi < 0 ? hi : 0;
+        t = std::to_string(std::clamp(v, lo, hi));
+    };
+}
+Fixup doubleFixup(double lo, double hi, int decimals) {
+    return [lo, hi, decimals](std::string& t) {
+        char* end = nullptr;
+        const std::string s = t;
+        double v = std::strtod(s.c_str(), &end);
+        if (end == s.c_str()) v = lo > 0 ? lo : hi < 0 ? hi : 0.0;
+        v = std::clamp(v, lo, hi);
+        char buf[64];
+        if (decimals >= 17) std::snprintf(buf, sizeof buf, "%.17g", v);
+        else std::snprintf(buf, sizeof buf, "%.*f", std::max(decimals, 0), v);
+        t = buf;
+    };
 }
 
 namespace {
@@ -836,12 +1110,6 @@ Validator doubleValidator(double lo, double hi, int decimals) {
         if (v >= lo && v <= hi) return Validation::Acceptable;
         if (!expo && !dot && ((v > hi && v >= 0) || (v < lo && v < 0))) return Validation::Invalid;
         return Validation::Intermediate;
-    };
-}
-Validator regexValidator(std::string_view pattern) {
-    auto re = std::make_shared<const std::regex>(std::string(pattern), std::regex::ECMAScript);
-    return [re](std::string_view t) {
-        return std::regex_match(t.begin(), t.end(), *re) ? Validation::Acceptable : Validation::Intermediate;
     };
 }
 

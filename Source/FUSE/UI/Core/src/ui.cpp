@@ -54,6 +54,7 @@ struct UiContext::Cold {
     std::string id;
     std::string text;
     std::string a11yName;
+    bool a11yProtected = false;
     std::vector<std::pair<Prop, PropValue>> inl;
     fuse::text::TextLayout layout;
     f32 layoutWidth = -1.f, layoutSize = -1.f;
@@ -166,6 +167,7 @@ u32 UiContext::alloc() {
         c.id.clear();
         c.text.clear();
         c.a11yName.clear();
+        c.a11yProtected = false;
         c.inl.clear();
         c.layoutWidth = c.layoutSize = -1.f;
         c.edit.reset();
@@ -483,6 +485,10 @@ void UiContext::setA11y(NodeHandle h, A11yRole r, std::string_view name) {
     n->flags |= kFlagRoleSet;
     m_cold[h.index]->a11yName.assign(name);
 }
+void UiContext::setA11yProtected(NodeHandle h, bool on) {
+    if (node(h)) m_cold[h.index]->a11yProtected = on;
+}
+bool UiContext::a11yProtected(NodeHandle h) const { return node(h) && m_cold[h.index]->a11yProtected; }
 A11yRole UiContext::role(NodeHandle h) const { return node(h) ? node(h)->role : A11yRole::None; }
 void UiContext::setUserData(NodeHandle h, u64 v) {
     if (Node* n = node(h)) n->user = v;
@@ -1911,6 +1917,7 @@ void UiContext::snapshotA11y(std::vector<A11ySnapshotNode>& out) const {
             s.focused = m_focus.index == i && m_focus.generation == n.gen;
             s.checked = (n.state & kStateChecked) != 0;
             s.disabled = (n.state & kStateDisabled) != 0;
+            s.protectedText = m_cold[i]->a11yProtected;
             s.value = n.value;
             s.lo = n.lo;
             s.hi = n.hi;

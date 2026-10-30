@@ -73,7 +73,9 @@ struct ClipboardHooks {
 };
 
 // ---- Signals -------------------------------------------------------------------------------------------------------
-enum class SignalKind : u8 { Clicked, Toggled, ValueChanged, TextChanged, Submitted, FocusChanged, HoverChanged, Event };
+enum class SignalKind : u8 { Clicked, Toggled, ValueChanged, TextChanged, Submitted, FocusChanged, HoverChanged, Event,
+                              EditingFinished ///< line edit: Enter or focus loss with Acceptable text (QLineEdit::editingFinished)
+};
 struct SignalArgs {
     f32 value = 0.f;
     bool flag = false;
@@ -98,6 +100,7 @@ struct A11ySnapshotNode {
     std::string name; ///< a11y name, else the node text
     Rect bounds;      ///< window coordinates (logical px)
     bool focusable = false, focused = false, checked = false, disabled = false;
+    bool protectedText = false; ///< password field: AccessKit PasswordInput (UIA IsPassword, AT-SPI password text)
     f32 value = 0.f, lo = 0.f, hi = 0.f;
 };
 
@@ -247,6 +250,9 @@ public:
     void setTabIndex(NodeHandle n, i32 index);
     void setFocusScope(NodeHandle n, bool on);
     void setA11y(NodeHandle n, A11yRole role, std::string_view name = {});
+    /// Marks a text field as protected (password): platform adapters expose it as a password input.
+    void setA11yProtected(NodeHandle n, bool on);
+    bool a11yProtected(NodeHandle n) const;
     A11yRole role(NodeHandle n) const;
     void setUserData(NodeHandle n, u64 v);
     u64 userData(NodeHandle n) const;

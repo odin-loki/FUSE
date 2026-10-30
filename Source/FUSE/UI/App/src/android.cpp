@@ -372,7 +372,7 @@ JNIEXPORT jint JNICALL Java_org_fuse_ui_FuseActivity_nativeA11yCount(JNIEnv*, jc
 }
 /// [parent, focusable, focused, checked, disabled, x, y, w, h, value, lo, hi]
 JNIEXPORT jfloatArray JNICALL Java_org_fuse_ui_FuseActivity_nativeA11yInfo(JNIEnv* e, jclass, jint i) {
-    float f[12] = {};
+    float f[13] = {};
     {
         std::lock_guard lk(g_mu);
         auto* m = g_impl;
@@ -382,10 +382,10 @@ JNIEXPORT jfloatArray JNICALL Java_org_fuse_ui_FuseActivity_nativeA11yInfo(JNIEn
         f[0] = n.parent == ~0u ? -1.f : float(n.parent);
         f[1] = n.focusable; f[2] = n.focused; f[3] = n.checked; f[4] = n.disabled;
         f[5] = n.bounds.x; f[6] = n.bounds.y; f[7] = n.bounds.w; f[8] = n.bounds.h;
-        f[9] = n.value; f[10] = n.lo; f[11] = n.hi;
+        f[9] = n.value; f[10] = n.lo; f[11] = n.hi; f[12] = n.protectedText;
     }
-    jfloatArray a = e->NewFloatArray(12);
-    e->SetFloatArrayRegion(a, 0, 12, f);
+    jfloatArray a = e->NewFloatArray(13);
+    e->SetFloatArrayRegion(a, 0, 13, f);
     return a;
 }
 JNIEXPORT jstring JNICALL Java_org_fuse_ui_FuseActivity_nativeA11yString(JNIEnv* e, jclass, jint i, jint which) {

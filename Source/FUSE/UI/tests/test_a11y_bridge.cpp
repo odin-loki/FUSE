@@ -18,6 +18,8 @@ int main() {
     const NodeHandle cb = w::checkBox(ui, panel, "Autosave", false, "autosave");
     const NodeHandle sl = w::slider(ui, panel, 0.f, 100.f, 40.f, 0.f, "volume");
     const NodeHandle le = w::lineEdit(ui, panel, "hello", "name");
+    const NodeHandle pin = w::lineEdit(ui, panel, "s3cr3t", "pin");
+    w::setLineEditOptions(ui, pin, {.echo = w::EchoMode::Password});
     ui.setA11y(sl, A11yRole::Slider, "Volume");
     ui.update(1.f / 60.f);
 
@@ -36,6 +38,8 @@ int main() {
     UI_CHECK(find(ok) && find(ok)->role == A11yRole::Button && find(ok)->name == "Save" && find(ok)->focusable);
     UI_CHECK(find(sl) && find(sl)->name == "Volume" && find(sl)->hi == 100.f && find(sl)->value == 40.f);
     UI_CHECK(find(cb) && !find(cb)->checked);
+    UI_CHECK(find(pin) && find(pin)->protectedText && find(pin)->name.find("s3cr3t") == std::string::npos);
+    UI_CHECK(find(le) && !find(le)->protectedText);
     // parents precede children; every child is listed under its parent
     for (u32 i = 1; i < b.nodes().size(); ++i) {
         const u32 p = b.nodes()[i].parent;
@@ -77,6 +81,8 @@ int main() {
     UI_CHECK(dbg.find("Volume") != std::string::npos);
     UI_CHECK(dbg.find("CheckBox") != std::string::npos && dbg.find("Slider") != std::string::npos);
     UI_CHECK(dbg.find("FUSE UI") != std::string::npos);
+    // password field: PasswordInput role (UIA IsPassword, AT-SPI password text), secret absent from the tree
+    UI_CHECK(dbg.find("PasswordInput") != std::string::npos && dbg.find("s3cr3t") == std::string::npos);
     a::freeAccessKitUpdate(up);
 #if defined(__linux__)
     {

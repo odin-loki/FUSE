@@ -348,6 +348,7 @@ std::expected<SignalKind, std::string> signalOf(std::string_view s) {
     if (s == "submitted") return SignalKind::Submitted;
     if (s == "focusChanged") return SignalKind::FocusChanged;
     if (s == "hoverChanged") return SignalKind::HoverChanged;
+    if (s == "editingFinished") return SignalKind::EditingFinished;
     return std::unexpected("unknown signal '" + std::string(s) + "'");
 }
 } // namespace

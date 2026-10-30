@@ -50,7 +50,8 @@ void* buildAccessKitUpdate(const Bridge& b, bool includeTree) {
     std::vector<accesskit_node_id> kids;
     for (u32 i = 0; i < v.size(); ++i) {
         const A11ySnapshotNode& s = v[i];
-        accesskit_node* n = accesskit_node_new(roleOf(s.role));
+        // protected fields: PasswordInput (UIA IsPassword = true, AT-SPI ROLE_PASSWORD_TEXT, NSSecureTextField)
+        accesskit_node* n = accesskit_node_new(s.protectedText && s.role == A11yRole::TextField ? ACCESSKIT_ROLE_PASSWORD_INPUT : roleOf(s.role));
         if (!s.name.empty()) accesskit_node_set_label_with_length(n, s.name.data(), s.name.size());
         accesskit_node_set_bounds(n, {double(s.bounds.x), double(s.bounds.y), double(s.bounds.x + s.bounds.w), double(s.bounds.y + s.bounds.h)});
         if (s.disabled) accesskit_node_set_disabled(n);

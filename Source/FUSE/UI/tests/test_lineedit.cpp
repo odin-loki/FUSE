@@ -133,7 +133,7 @@ int main() {
     for (char ch : std::string("12.345")) type(ui, std::string(1, ch));
     UI_CHECK(w::lineEditText(ui, dbl) == "12.34");
 
-    // ---- regex validator gates Submitted only ----
+    // ---- regex validator: partial matches Intermediate, dead prefixes Invalid ----
     int mailOk = 0;
     ui.connect(mail, SignalKind::Submitted, [&](UiContext&, NodeHandle, const SignalArgs&) { ++mailOk; });
     w::setLineEditOptions(ui, mail, {.placeholder = "you@example.com", .validator = w::regexValidator(R"([^@\s]+@[^@\s]+\.\w+)")});
@@ -180,5 +180,132 @@ int main() {
     ui.setFocus(fresh);
     type(ui, "visible");
     UI_CHECK(ui.text(fresh) == "visible");
+
+    // ---- partial regex matcher ----
+    using V = w::Validation;
+    auto rx = [](std::string_view p, std::string_view t) { return w::regexPartialMatch(p, t); };
+    UI_CHECK(rx("[A-Z]{3}-\\d{2,4}", "") == V::Intermediate);
+    UI_CHECK(rx("[A-Z]{3}-\\d{2,4}", "AB") == V::Intermediate);
+    UI_CHECK(rx("[A-Z]{3}-\\d{2,4}", "ABC-1") == V::Intermediate);
+    UI_CHECK(rx("[A-Z]{3}-\\d{2,4}", "ABC-12") == V::Acceptable);
+    UI_CHECK(rx("[A-Z]{3}-\\d{2,4}", "ABC-1234") == V::Acceptable);
+    UI_CHECK(rx("[A-Z]{3}-\\d{2,4}", "ABC-12345") == V::Invalid);
+    UI_CHECK(rx("[A-Z]{3}-\\d{2,4}", "AB1") == V::Invalid);
+    UI_CHECK(rx("^(?:cat|car)s?$", "ca") == V::Intermediate);
+    UI_CHECK(rx("^(?:cat|car)s?$", "cars") == V::Acceptable);
+    UI_CHECK(rx("^(?:cat|car)s?$", "cab") == V::Invalid);
+    UI_CHECK(rx("a*b+?c?", "aaab") == V::Acceptable);
+    UI_CHECK(rx("[^0-9\\s]+", "ab c") == V::Invalid);
+    UI_CHECK(rx("\\w+@\\w+\\.\\w{2,}", "me@x.i") == V::Intermediate);
+    UI_CHECK(rx("x{2,}", "xxxxxxx") == V::Acceptable);
+    UI_CHECK(rx("caf\u00e9.", "caf\u00e9\u00fc") == V::Acceptable); // code points, not bytes
+    UI_CHECK(rx("", "") == V::Acceptable && rx("", "a") == V::Invalid);
+    bool sup = true;
+    UI_CHECK(rx("(a)\\1", "aa") == V::Acceptable); // backreference: std::regex fallback
+    w::regexPartialMatch("(a)\\1", "", &sup);
+    UI_CHECK(!sup);
+    w::regexPartialMatch("[a-c]+(?:x|y){1,3}", "", &sup);
+    UI_CHECK(sup);
+    // a regex-validated field now rejects dead keystrokes
+    const NodeHandle code = w::lineEdit(ui, col, "", "code");
+    w::setLineEditOptions(ui, code, {.validator = w::regexValidator("[A-Z]{2}\\d{3}")});
+    ui.setFocus(code);
+    for (char ch : std::string("Ab1C23456")) type(ui, std::string(1, ch));
+    UI_CHECK(w::lineEditText(ui, code) == "AC234"); // 'b' (lower), '1' after one letter, '5', '6' (too long): dead
+    w::setLineEditText(ui, code, "");
+    for (char ch : std::string("AB12x345")) type(ui, std::string(1, ch));
+    UI_CHECK(w::lineEditText(ui, code) == "AB123");
+    UI_CHECK(w::lineEditState(ui, code) == V::Acceptable);
+
+    // ---- fixup + editingFinished ----
+    const NodeHandle age = w::lineEdit(ui, col, "", "age");
+    int finished = 0, ageSubmit = 0;
+    std::string finText;
+    ui.connect(age, SignalKind::EditingFinished, [&](UiContext&, NodeHandle, const SignalArgs& a) { ++finished; finText.assign(a.text); });
+    ui.connect(age, SignalKind::Submitted, [&](UiContext&, NodeHandle, const SignalArgs&) { ++ageSubmit; });
+    w::setLineEditOptions(ui, age, {.validator = w::intValidator(18, 120), .fixup = w::intFixup(18, 120)});
+    ui.setFocus(age);
+    type(ui, "7");
+    ui.keyDown(Key::Enter); // "7" Intermediate -> fixup clamps to 18
+    UI_CHECK(w::lineEditText(ui, age) == "18" && ageSubmit == 1 && finished == 1 && finText == "18");
+    ui.setFocus(plain); // no edit since: focus loss does not repeat it
+    UI_CHECK(finished == 1);
+    ui.setFocus(age);
+    type(ui, "0"); // 180 -> rejected (Invalid); type a valid edit instead
+    ui.keyDown(Key::Backspace);
+    type(ui, "9"); // "19"
+    ui.setFocus(plain);
+    UI_CHECK(finished == 2 && finText == "19" && ageSubmit == 1);
+    w::setLineEditOptions(ui, age, {.validator = w::intValidator(18, 120)}); // no fixup: Intermediate never finishes
+    ui.setFocus(age);
+    w::setLineEditText(ui, age, "");
+    type(ui, "5");
+    ui.setFocus(plain);
+    UI_CHECK(finished == 2);
+    std::string dfx = "3.14159";
+    w::doubleFixup(0.0, 3.0, 2)(dfx);
+    UI_CHECK(dfx == "3.00");
+
+    // ---- input mask ----
+    const NodeHandle ip = w::lineEdit(ui, col, "", "ip");
+    w::setLineEditOptions(ui, ip, {.inputMask = "000.000.000.000;_"});
+    UI_CHECK(ui.editBuffer(ip).text() == "___.___.___.___");
+    UI_CHECK(w::lineEditState(ui, ip) == V::Acceptable); // all optional
+    ui.setFocus(ip);
+    ui.keyDown(Key::Home);
+    type(ui, "192.168.1.1");
+    UI_CHECK(ui.editBuffer(ip).text() == "192.168.1__.1__");
+    UI_CHECK(w::lineEditText(ui, ip) == "192.168.1.1");
+    const NodeHandle lic = w::lineEdit(ui, col, "", "lic");
+    std::string licSignal;
+    ui.connect(lic, SignalKind::TextChanged, [&](UiContext&, NodeHandle, const SignalArgs& a) { licSignal.assign(a.text); });
+    w::setLineEditOptions(ui, lic, {.inputMask = ">AAA-999<aa"});
+    ui.setFocus(lic);
+    type(ui, "ab1");   // '1' is not a letter: dropped
+    UI_CHECK(ui.editBuffer(lic).text() == "AB -     ");
+    type(ui, "c-42");  // '-' typed at the literal steps over it
+    UI_CHECK(ui.editBuffer(lic).text() == "ABC-42   ");
+    UI_CHECK(w::lineEditState(ui, lic) == V::Intermediate);
+    type(ui, "7XY");
+    UI_CHECK(ui.editBuffer(lic).text() == "ABC-427xy" && w::lineEditText(ui, lic) == "ABC-427xy" && licSignal == "ABC-427xy");
+    UI_CHECK(w::lineEditState(ui, lic) == V::Acceptable);
+    type(ui, "z"); // full: ignored
+    UI_CHECK(w::lineEditText(ui, lic) == "ABC-427xy");
+    ui.keyDown(Key::Backspace);
+    ui.keyDown(Key::Backspace);
+    UI_CHECK(ui.editBuffer(lic).text() == "ABC-427  ");
+    ui.keyDown(Key::Backspace); // over nothing literal: clears '7'
+    ui.keyDown(Key::Backspace);
+    ui.keyDown(Key::Backspace);
+    ui.keyDown(Key::Backspace); // steps over '-' and clears 'C'
+    UI_CHECK(ui.editBuffer(lic).text() == "AB -     " && w::lineEditText(ui, lic) == "AB-");
+    ui.keyDown(Key::A, kModCtrl);
+    ui.keyDown(Key::Delete);
+    UI_CHECK(ui.editBuffer(lic).text() == "   -     ");
+    w::setLineEditText(ui, lic, "xyz123ab");
+    UI_CHECK(w::lineEditText(ui, lic) == "XYZ-123ab");
+    ui.keyDown(Key::A, kModCtrl);
+    ui.keyDown(Key::C, kModCtrl);
+    ui.clipboardText(clip);
+    UI_CHECK(clip == "XYZ-123ab");
+    const NodeHandle esc = w::lineEdit(ui, col, "", "esc");
+    w::setLineEditOptions(ui, esc, {.inputMask = "\\A99"});
+    ui.setFocus(esc);
+    type(ui, "5");
+    UI_CHECK(ui.editBuffer(esc).text() == "A5 " && w::lineEditState(ui, esc) == V::Intermediate);
+
+    // ---- protected a11y flag ----
+    const NodeHandle pw2 = w::lineEdit(ui, col, "", "pw2");
+    w::setLineEditOptions(ui, pw2, {.echo = w::EchoMode::Password});
+    ui.update();
+    ui.snapshotA11y(snap);
+    bool prot = false, plainProt = true;
+    for (const auto& s : snap) {
+        if (s.node == pw2) prot = s.protectedText;
+        if (s.node == plain) plainProt = s.protectedText;
+    }
+    UI_CHECK(prot && !plainProt);
+    w::setLineEditOptions(ui, pw2, {});
+    UI_CHECK(!ui.a11yProtected(pw2));
     return fuse::ui::test::finish("fuse_ui_lineedit");
 }

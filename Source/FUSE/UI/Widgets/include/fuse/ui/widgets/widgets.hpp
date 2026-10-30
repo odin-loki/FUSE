@@ -53,12 +53,21 @@ enum class EchoMode : u8 { Normal, NoEcho, Password, PasswordEchoOnEdit };
 /// for Acceptable text, as QLineEdit::returnPressed.
 enum class Validation : u8 { Invalid, Intermediate, Acceptable };
 using Validator = std::function<Validation(std::string_view text)>;
+/// QValidator::fixup: on Enter / focus loss with non-Acceptable text, may rewrite it (e.g. clamp into range).
+using Fixup = std::function<void(std::string& text)>;
 struct LineEditOptions {
     EchoMode echo = EchoMode::Normal;
     u32 maxLength = 32767;   ///< in code points (Qt: QChars); typing / paste is truncated to fit
     std::string placeholder; ///< drawn dimmed while the field is empty
     bool readOnly = false;   ///< caret, selection and copy still work
     Validator validator;     ///< null: everything Acceptable
+    Fixup fixup;             ///< null: none
+    /// QLineEdit::inputMask: A a (letter) N n (letter / digit) X x (any) 9 0 (digit) D d (1-9) # (digit / sign)
+    /// H h (hex) B b (binary); upper case = required. > < ! switch case conversion, \ escapes a literal, a trailing
+    /// ";c" sets the blank character (default space). Every other character is a literal. Typing fills the next
+    /// editable cell, a literal typed at a literal steps over it; text is Acceptable once every required cell is
+    /// filled (and the validator agrees). lineEditText() = literals + filled cells (blanks removed), as Qt's text().
+    std::string inputMask;
     char32_t maskChar = U'•';
 };
 void setLineEditOptions(UiContext& ui, NodeHandle edit, LineEditOptions options);
@@ -66,13 +75,24 @@ void setLineEditOptions(UiContext& ui, NodeHandle edit, LineEditOptions options)
 std::string_view lineEditText(UiContext& ui, NodeHandle edit);
 Validation lineEditState(UiContext& ui, NodeHandle edit);
 /// Replace the text programmatically (not validated, truncated to maxLength; emits TextChanged). Caret to the end.
+/// With an input mask the characters are typed into the cells (non-matching ones are dropped).
 void setLineEditText(UiContext& ui, NodeHandle edit, std::string_view text);
 /// QIntValidator / QDoubleValidator / QRegularExpressionValidator. Number validators: a partial number ("", "-",
 /// "1." or a value outside the range that more digits could still fix) is Intermediate. regexValidator: a full match
-/// is Acceptable, anything else Intermediate (std::regex has no partial matching), so it gates Submitted only.
+/// is Acceptable, a prefix of some match is Intermediate, anything else Invalid (so non-matching keystrokes are
+/// rejected, as QRegularExpressionValidator). Partial matching runs on a small Thompson NFA over code points: literals,
+/// . [classes] (ranges, negation, \d \w \s), \d \D \w \W \s \S, groups (?:), |, * + ? {m} {m,} {m,n} (lazy forms
+/// accepted), ^ $ at the ends. Other syntax (backreferences, lookaround) falls back to std::regex full matching, with
+/// non-matches Intermediate.
 Validator intValidator(long long lo, long long hi);
 Validator doubleValidator(double lo, double hi, int decimals = 1000);
 Validator regexValidator(std::string_view ecmaPattern);
+/// Fixups: clamp into [lo, hi] (non-numbers become the bound nearest 0); round to `decimals`.
+Fixup intFixup(long long lo, long long hi);
+Fixup doubleFixup(double lo, double hi, int decimals);
+/// Partial regex match on its own (Invalid / Intermediate / Acceptable); false in `supported` when the pattern
+/// uses syntax the matcher does not have.
+Validation regexPartialMatch(std::string_view ecmaPattern, std::string_view text, bool* supported = nullptr);
 
 NodeHandle progressBar(UiContext& ui, NodeHandle parent, f32 value01, std::string_view id = {});
 NodeHandle dial(UiContext& ui, NodeHandle parent, f32 lo, f32 hi, f32 value, std::string_view id = {});

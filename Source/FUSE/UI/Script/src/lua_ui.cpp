@@ -138,6 +138,7 @@ int l_on(lua_State* L) {
     else if (sig == "textChanged") k = SignalKind::TextChanged;
     else if (sig == "submitted") k = SignalKind::Submitted;
     else if (sig == "focusChanged") k = SignalKind::FocusChanged;
+    else if (sig == "editingFinished") k = SignalKind::EditingFinished;
     else return luaL_error(L, "ui.on: unknown signal '%s'", sig.data());
     lua_pushvalue(L, 3);
     const int ref = luaL_ref(L, LUA_REGISTRYINDEX);

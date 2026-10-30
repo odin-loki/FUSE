@@ -104,6 +104,7 @@ public class FuseActivity extends NativeActivity {
                 info.setCheckable(false);
                 info.setChecked(f[3] != 0);
                 info.setEnabled(f[4] == 0);
+                info.setPassword(f.length > 12 && f[12] != 0);
                 info.setVisibleToUser(true);
                 final Rect r = new Rect((int) f[5], (int) f[6], (int) (f[5] + f[7]), (int) (f[6] + f[8]));
                 info.setBoundsInParent(r); // deprecated; screen bounds below are what services use
