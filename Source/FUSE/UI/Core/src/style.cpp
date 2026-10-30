@@ -1,6 +1,7 @@
 #include "fuse/ui/style.hpp"
 
 #include <cstdlib>
+#include <cmath>
 #include <algorithm>
 #include <cctype>
 #include <charconv>
@@ -77,6 +78,7 @@ constexpr PropInfo kProps[] = {
     {Prop::BackgroundClip, "background-clip", T::Enum, false, false, false},
     {Prop::BackdropFilter, "backdrop-filter", T::Filter, false, false, false},
     {Prop::Filter, "filter", T::Filter, false, false, false},
+    {Prop::Transition, "transition", T::Transition, false, false, false},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -272,6 +274,191 @@ std::string_view filterName(u32 id) {
     return id < t.names.size() ? std::string_view(t.names[id]) : std::string_view{};
 }
 
+// `transition` property names: longhands, plus shorthands expanding to their longhands
+static bool transitionProps(std::string_view name, u64& mask) {
+    auto bit = [](Prop p) { return u64(1) << u8(p); };
+    if (name == "all") {
+        for (int k = 0; k < kPropCount; ++k)
+            if (kProps[k].animatable) mask |= u64(1) << k;
+        return true;
+    }
+    if (name == "background" || name == "background-color") { mask |= bit(Prop::Background) | bit(Prop::Background2); return true; }
+    if (name == "padding") { mask |= bit(Prop::PaddingLeft) | bit(Prop::PaddingTop) | bit(Prop::PaddingRight) | bit(Prop::PaddingBottom); return true; }
+    if (name == "margin") { mask |= bit(Prop::MarginLeft) | bit(Prop::MarginTop) | bit(Prop::MarginRight) | bit(Prop::MarginBottom); return true; }
+    if (name == "border-radius") { mask |= bit(Prop::RadiusTL) | bit(Prop::RadiusTR) | bit(Prop::RadiusBR) | bit(Prop::RadiusBL); return true; }
+    if (name == "border") { mask |= bit(Prop::BorderColor) | bit(Prop::BorderWidth); return true; }
+    if (name == "box-shadow") { mask |= bit(Prop::ShadowColor) | bit(Prop::ShadowBlur) | bit(Prop::ShadowX) | bit(Prop::ShadowY); return true; }
+    if (name == "inset") { mask |= bit(Prop::Left) | bit(Prop::Top) | bit(Prop::Right) | bit(Prop::Bottom); return true; }
+    Prop p;
+    if (!findProp(name, p)) return false;
+    if (propInfo(p).animatable) mask |= bit(p); // discrete properties: accepted, not animated
+    return true;
+}
+static bool parseTime(std::string_view w, f32& out) {
+    std::string_view unit;
+    if (!parseNumber(w, out, unit)) return false;
+    if (unit == "ms") out /= 1000.f;
+    else if (unit != "s") return false;
+    return true;
+}
+static bool parseTiming(std::string_view w, TransitionSpec& t) {
+    using K = TransitionSpec::Kind;
+    using SP = TransitionSpec::StepPos;
+    auto bez = [&](f32 a, f32 b, f32 c, f32 d) { t.kind = K::Bezier, t.x1 = a, t.y1 = b, t.x2 = c, t.y2 = d; return true; };
+    if (w == "ease") return bez(0.25f, 0.1f, 0.25f, 1.f);
+    if (w == "linear") return bez(0.f, 0.f, 1.f, 1.f);
+    if (w == "ease-in") return bez(0.42f, 0.f, 1.f, 1.f);
+    if (w == "ease-out") return bez(0.f, 0.f, 0.58f, 1.f);
+    if (w == "ease-in-out") return bez(0.42f, 0.f, 0.58f, 1.f);
+    if (w == "step-start") { t.kind = K::Steps, t.steps = 1, t.stepPos = SP::JumpStart; return true; }
+    if (w == "step-end") { t.kind = K::Steps, t.steps = 1, t.stepPos = SP::JumpEnd; return true; }
+    const auto open = w.find('(');
+    if (open == std::string_view::npos || w.back() != ')') return false;
+    const std::string_view fn = w.substr(0, open), args = w.substr(open + 1, w.size() - open - 2);
+    std::string_view a[4];
+    int n = 0;
+    for (std::size_t s = 0, i = 0; i <= args.size(); ++i)
+        if (i == args.size() || args[i] == ',') {
+            if (n == 4) return false;
+            a[n++] = trim(args.substr(s, i - s));
+            s = i + 1;
+        }
+    std::string_view unit;
+    if (fn == "cubic-bezier") {
+        f32 v[4];
+        if (n != 4) return false;
+        for (int k = 0; k < 4; ++k)
+            if (!parseNumber(a[k], v[k], unit) || !unit.empty()) return false;
+        if (v[0] < 0.f || v[0] > 1.f || v[2] < 0.f || v[2] > 1.f) return false;
+        return bez(v[0], v[1], v[2], v[3]);
+    }
+    if (fn == "steps") {
+        f32 c = 0.f;
+        if (n < 1 || n > 2 || !parseNumber(a[0], c, unit) || !unit.empty() || c < 1.f || c != std::floor(c) || c > 255.f) return false;
+        SP pos = SP::JumpEnd;
+        if (n == 2) {
+            if (a[1] == "jump-start" || a[1] == "start") pos = SP::JumpStart;
+            else if (a[1] == "jump-end" || a[1] == "end") pos = SP::JumpEnd;
+            else if (a[1] == "jump-none") pos = SP::JumpNone;
+            else if (a[1] == "jump-both") pos = SP::JumpBoth;
+            else return false;
+        }
+        if (pos == SP::JumpNone && c < 2.f) return false;
+        t.kind = K::Steps, t.steps = u8(c), t.stepPos = pos;
+        return true;
+    }
+    return false;
+}
+// "none" | <single-transition> [, <single-transition>]*  with  [<property> | all] || <time> || <easing> || <time>
+static bool parseTransition(std::string_view text, PropValue& out) {
+    if (text == "none") return true;
+    std::size_t s = 0;
+    int depth = 0;
+    for (std::size_t i = 0; i <= text.size(); ++i) {
+        if (i < text.size() && text[i] == '(') ++depth;
+        if (i < text.size() && text[i] == ')') --depth;
+        if (i < text.size() && !(text[i] == ',' && depth == 0)) continue;
+        const std::string_view item = trim(text.substr(s, i - s));
+        s = i + 1;
+        if (item.empty() || out.trackCount >= kMaxTransitions) return false;
+        TransitionSpec t;
+        bool haveProp = false, haveEase = false;
+        int times = 0;
+        std::size_t w0 = 0;
+        int d = 0;
+        for (std::size_t j = 0; j <= item.size(); ++j) {
+            if (j < item.size() && item[j] == '(') ++d;
+            if (j < item.size() && item[j] == ')') --d;
+            if (j < item.size() && !(std::isspace(static_cast<unsigned char>(item[j])) && d == 0)) continue;
+            const std::string_view w = trim(item.substr(w0, j - w0));
+            w0 = j + 1;
+            if (w.empty()) continue;
+            f32 v = 0.f;
+            if (times < 2 && parseTime(w, v)) {
+                if (times == 0 && v < 0.f) return false; // negative durations are invalid (delays may be negative)
+                (times++ == 0 ? t.duration : t.delay) = v;
+            } else if (!haveEase && parseTiming(w, t)) haveEase = true;
+            else if (!haveProp && w != "none" && transitionProps(w, t.props)) haveProp = true;
+            else if (!haveProp && w == "none") haveProp = true; // covers nothing
+            else return false;
+        }
+        if (!haveProp) transitionProps("all", t.props);
+        out.transitions[out.trackCount++] = t;
+    }
+    return depth == 0;
+}
+
+f32 transitionEase(const TransitionSpec& s, f32 t) {
+    t = std::clamp(t, 0.f, 1.f);
+    if (s.kind == TransitionSpec::Kind::Steps) {
+        using SP = TransitionSpec::StepPos;
+        const f32 n = f32(s.steps);
+        f32 step = std::floor(t * n);
+        if (s.stepPos == SP::JumpStart || s.stepPos == SP::JumpBoth) step += 1.f;
+        if (t >= 1.f && s.stepPos != SP::JumpStart && s.stepPos != SP::JumpBoth) step = n; // the end value at 1
+        const f32 jumps = s.stepPos == SP::JumpNone ? n - 1.f : s.stepPos == SP::JumpBoth ? n + 1.f : n;
+        if (t >= 1.f) return 1.f;
+        return std::min(step, jumps) / jumps;
+    }
+    if (s.x1 == s.y1 && s.x2 == s.y2) return t; // linear
+    // x(u) = 3(1-u)^2 u x1 + 3(1-u) u^2 x2 + u^3; solve x(u) = t (Newton, then bisection), return y(u)
+    const auto bx = [&](f32 u) { const f32 v = 1.f - u; return 3.f * v * v * u * s.x1 + 3.f * v * u * u * s.x2 + u * u * u; };
+    const auto by = [&](f32 u) { const f32 v = 1.f - u; return 3.f * v * v * u * s.y1 + 3.f * v * u * u * s.y2 + u * u * u; };
+    const auto dx = [&](f32 u) { const f32 v = 1.f - u; return 3.f * v * v * s.x1 + 6.f * v * u * (s.x2 - s.x1) + 3.f * u * u * (1.f - s.x2); };
+    f32 u = t;
+    for (int k = 0; k < 8; ++k) {
+        const f32 e = bx(u) - t;
+        if (std::fabs(e) < 1e-6f) return by(u);
+        const f32 g = dx(u);
+        if (std::fabs(g) < 1e-6f) break;
+        u = std::clamp(u - e / g, 0.f, 1.f);
+    }
+    f32 lo = 0.f, hi = 1.f;
+    u = t;
+    for (int k = 0; k < 40; ++k) {
+        const f32 x = bx(u);
+        if (std::fabs(x - t) < 1e-6f) break;
+        (x < t ? lo : hi) = u;
+        u = 0.5f * (lo + hi);
+    }
+    return by(u);
+}
+
+PropValue interpolateProp(const PropValue& a, const PropValue& b, f32 k) {
+    if (a.type != b.type) return k < 0.5f ? a : b;
+    PropValue r = b;
+    switch (a.type) {
+    case T::Number: r.num = a.num + (b.num - a.num) * k; break;
+    case T::Length:
+        if (a.len.unit != b.len.unit) return k < 0.5f ? a : b;
+        r.len.value = a.len.value + (b.len.value - a.len.value) * k;
+        break;
+    case T::Color: { // premultiplied
+        const f32 al = a.color.a + (b.color.a - a.color.a) * k;
+        r.color.a = std::clamp(al, 0.f, 1.f);
+        if (r.color.a <= 0.f) { r.color.r = r.color.g = r.color.b = 0.f; break; }
+        const f32 ca[3] = {a.color.r, a.color.g, a.color.b}, cb[3] = {b.color.r, b.color.g, b.color.b};
+        f32 o[3];
+        for (int c = 0; c < 3; ++c) o[c] = std::clamp((ca[c] * a.color.a + (cb[c] * b.color.a - ca[c] * a.color.a) * k) / r.color.a, 0.f, 1.f);
+        r.color.r = o[0], r.color.g = o[1], r.color.b = o[2];
+        break;
+    }
+    default: return k < 0.5f ? a : b;
+    }
+    return r;
+}
+bool samePropValue(const PropValue& a, const PropValue& b) {
+    if (a.type != b.type) return false;
+    switch (a.type) {
+    case T::Number: return a.num == b.num;
+    case T::Length: return a.len == b.len;
+    case T::Color: return a.color.r == b.color.r && a.color.g == b.color.g && a.color.b == b.color.b && a.color.a == b.color.a;
+    case T::Bool: return a.b == b.b;
+    case T::Enum: return a.e == b.e;
+    default: return false;
+    }
+}
+
 bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
     text = trim(text);
     const PropInfo& pi = propInfo(p);
@@ -296,6 +483,7 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
         return unit.empty() || unit == "%";
     }
     case T::Color: return parseColor(text, out.color);
+    case T::Transition: return parseTransition(text, out);
     case T::Filter: { // "none" | fn(<arg>) ... : blur(<len>), brightness / contrast / saturate / grayscale / invert / sepia /
                       // opacity(<number> | <pct>), hue-rotate(<angle>), drop-shadow(<dx> <dy> [<blur>] [<color>]), url(#id)
         if (text == "none") return true;
@@ -527,6 +715,10 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
             s.filterAmounts[k] = k < v.trackCount ? v.tracks[k].value : 0.f;
         }
         break;
+    case Prop::Transition:
+        s.transitionCount = v.trackCount;
+        s.transitions = v.transitions;
+        break;
     case Prop::Count: break;
     }
 }
@@ -547,6 +739,35 @@ PropValue readProp(const ComputedStyle& s, Prop p) {
     case Prop::Direction: return PropValue::ofEnum(u8(s.direction));
     case Prop::TextAlign: return PropValue::ofEnum(u8(s.textAlign));
     case Prop::BackgroundClip: return PropValue::ofEnum(u8(s.backgroundClip));
+    case Prop::MinWidth: return PropValue::ofLength(s.minWidth);
+    case Prop::MinHeight: return PropValue::ofLength(s.minHeight);
+    case Prop::MaxWidth: return PropValue::ofLength(s.maxWidth);
+    case Prop::MaxHeight: return PropValue::ofLength(s.maxHeight);
+    case Prop::Basis: return PropValue::ofLength(s.basis);
+    case Prop::Shrink: return PropValue::ofNumber(s.shrink);
+    case Prop::PaddingLeft: return PropValue::ofLength(Length::px(s.padding.l));
+    case Prop::PaddingTop: return PropValue::ofLength(Length::px(s.padding.t));
+    case Prop::PaddingRight: return PropValue::ofLength(Length::px(s.padding.r));
+    case Prop::PaddingBottom: return PropValue::ofLength(Length::px(s.padding.b));
+    case Prop::MarginLeft: return PropValue::ofLength(Length::px(s.margin.l));
+    case Prop::MarginTop: return PropValue::ofLength(Length::px(s.margin.t));
+    case Prop::MarginRight: return PropValue::ofLength(Length::px(s.margin.r));
+    case Prop::MarginBottom: return PropValue::ofLength(Length::px(s.margin.b));
+    case Prop::Left: return PropValue::ofLength(s.left);
+    case Prop::Top: return PropValue::ofLength(s.top);
+    case Prop::Right: return PropValue::ofLength(s.right);
+    case Prop::Bottom: return PropValue::ofLength(s.bottom);
+    case Prop::Background2: return PropValue::ofColor(s.background2);
+    case Prop::BorderWidth: return PropValue::ofLength(Length::px(s.borderWidth));
+    case Prop::RadiusTL: return PropValue::ofLength(Length::px(s.radius[0]));
+    case Prop::RadiusTR: return PropValue::ofLength(Length::px(s.radius[1]));
+    case Prop::RadiusBR: return PropValue::ofLength(Length::px(s.radius[2]));
+    case Prop::RadiusBL: return PropValue::ofLength(Length::px(s.radius[3]));
+    case Prop::ShadowColor: return PropValue::ofColor(s.shadowColor);
+    case Prop::ShadowBlur: return PropValue::ofLength(Length::px(s.shadowBlur));
+    case Prop::ShadowX: return PropValue::ofLength(Length::px(s.shadowX));
+    case Prop::ShadowY: return PropValue::ofLength(Length::px(s.shadowY));
+    case Prop::BackdropBlur: return PropValue::ofLength(Length::px(s.backdropBlur));
     default: break;
     }
     PropValue v;
@@ -976,21 +1197,50 @@ u32 StyleEngine::intern(const ComputedStyle& cs) {
         slot = (slot + 1) & mask;
     }
     if ((m_table.size() + 1) * 2 > m_hashIndex.size()) {
-        // grow and rehash
+        // grow and rehash in place (indices are handed out: never reorder; scratch slots stay unhashed)
         std::vector<u32> bigger(m_hashIndex.size() * 2, 0);
         m_hashIndex.swap(bigger);
         const auto keep = std::move(m_table);
+        const auto flags = std::move(m_isScratch);
         m_table.clear();
+        m_isScratch.clear();
         m_table.reserve(keep.size() * 2);
-        for (const auto& k : keep) intern(k);
+        for (std::size_t k = 0; k < keep.size(); ++k) {
+            if (flags[k]) { m_table.push_back(keep[k]); m_isScratch.push_back(1); continue; }
+            [[maybe_unused]] const u32 at = intern(keep[k]);
+        }
         return intern(cs);
     }
     m_table.push_back(cs);
+    m_isScratch.push_back(0);
     m_hashIndex[slot] = u32(m_table.size());
     return u32(m_table.size() - 1);
 }
+u32 StyleEngine::allocScratch(const ComputedStyle& cs) {
+    if (!m_freeScratch.empty()) {
+        const u32 i = m_freeScratch.back();
+        m_freeScratch.pop_back();
+        m_table[i] = cs;
+        return i;
+    }
+    if ((m_table.size() + 1) * 2 > m_hashIndex.size()) { // keep the load factor: grow via a rehash first
+        std::vector<u32> bigger(m_hashIndex.size() * 2, 0);
+        m_hashIndex.swap(bigger);
+        const auto keep = std::move(m_table);
+        const auto flags = std::move(m_isScratch);
+        m_table.clear();
+        m_isScratch.clear();
+        for (std::size_t k = 0; k < keep.size(); ++k) {
+            if (flags[k]) { m_table.push_back(keep[k]); m_isScratch.push_back(1); continue; }
+            [[maybe_unused]] const u32 at = intern(keep[k]);
+        }
+    }
+    m_table.push_back(cs);
+    m_isScratch.push_back(1);
+    return u32(m_table.size() - 1);
+}
 
-u32 StyleEngine::compute(const StyleSubject& s, u32 node, const ComputedStyle* parent, const ComputedStyle* defaults,
+ComputedStyle StyleEngine::computeValue(const StyleSubject& s, u32 node, const ComputedStyle* parent, const ComputedStyle* defaults,
                          const std::vector<std::pair<Prop, PropValue>>& inl) {
     ComputedStyle cs = defaults ? *defaults : ComputedStyle{};
     if (parent) inheritFrom(cs, *parent);
@@ -1012,7 +1262,11 @@ u32 StyleEngine::compute(const StyleSubject& s, u32 node, const ComputedStyle* p
             }
         }
     for (const auto& [p, v] : inl) applyProp(cs, p, v);
-    return intern(cs);
+    return cs;
+}
+u32 StyleEngine::compute(const StyleSubject& s, u32 node, const ComputedStyle* parent, const ComputedStyle* defaults,
+                         const std::vector<std::pair<Prop, PropValue>>& inl) {
+    return intern(computeValue(s, node, parent, defaults, inl));
 }
 
 } // namespace fuse::ui

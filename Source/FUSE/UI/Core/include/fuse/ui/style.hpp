@@ -7,7 +7,9 @@
 //   tokens      custom properties (`--accent: #3af`) declared in `:root` (or any rule matching the node) — theme tokens
 //   cascade     specificity (ids, classes + pseudo, types), then source order; inline (node API) values win;
 //               inherited properties: color, font-size, text-align
-// Not yet: transitions (the animation core tweens node opacity / offsets), attribute selectors, :nth-child.
+//   transitions `transition: <property> <duration> [<timing-function>] [<delay>], ...` (CSS Transitions 1): animatable
+//               lengths, numbers and colours tween from the shown value when the computed value changes (UiContext)
+// Not yet: attribute selectors, :nth-child, @keyframes, transition-* longhands.
 #pragma once
 
 #include "fuse/ui/types.hpp"
@@ -65,6 +67,23 @@ enum class TextAlignment : u8 { Start, Center, End };
 
 inline constexpr int kMaxGridTracks = 8;
 inline constexpr int kMaxFilterShadows = 4; ///< drop-shadow() entries per filter list
+inline constexpr int kMaxTransitions = 8;   ///< entries of a `transition` list
+
+/// One `transition` entry: the properties it covers (bit per Prop; shorthands such as padding expand to their
+/// longhands), duration and delay in seconds, and the timing function (cubic-bezier or steps()).
+struct TransitionSpec {
+    enum class Kind : u8 { Bezier, Steps };
+    enum class StepPos : u8 { JumpStart, JumpEnd, JumpNone, JumpBoth };
+    u64 props = 0;
+    f32 duration = 0.f, delay = 0.f;
+    Kind kind = Kind::Bezier;
+    f32 x1 = 0.25f, y1 = 0.1f, x2 = 0.25f, y2 = 1.f; ///< default `ease`
+    u8 steps = 1;
+    StepPos stepPos = StepPos::JumpEnd;
+    friend bool operator==(const TransitionSpec&, const TransitionSpec&) = default;
+};
+/// The eased output progress of a timing function at input progress t in [0, 1] (CSS Easing 1).
+f32 transitionEase(const TransitionSpec& s, f32 t);
 
 /// The fully resolved style of a node. Trivially copyable; deduplicated in StyleTable.
 struct ComputedStyle {
@@ -113,6 +132,14 @@ struct ComputedStyle {
     std::array<FilterShadow, kMaxFilterShadows> filterShadows{};
     BackgroundClip backgroundClip = BackgroundClip::BorderBox; ///< background-clip: border-box | padding-box | content-box
     bool pointerEvents = true;
+    u8 transitionCount = 0; ///< `transition` list (later entries win for the same property)
+    std::array<TransitionSpec, kMaxTransitions> transitions{};
+    /// The entry covering `p` (nullptr: no transition)
+    const TransitionSpec* transitionFor(u8 p) const {
+        for (int k = int(transitionCount) - 1; k >= 0; --k)
+            if (transitions[std::size_t(k)].props >> p & 1u) return &transitions[std::size_t(k)];
+        return nullptr;
+    }
     friend bool operator==(const ComputedStyle&, const ComputedStyle&) = default;
 };
 
@@ -123,11 +150,12 @@ enum class Prop : u8 {
     AlignItems, AlignSelf, Justify, Wrap, Overflow, GridColumns, GridColumn, GridColumnSpan, GridRow, GridRowSpan,
     Left, Top, Right, Bottom, CenterX, CenterY, Background, Background2, Gradient, BorderColor, BorderWidth,
     RadiusTL, RadiusTR, RadiusBR, RadiusBL, Color, FontSize, TextAlign, Opacity, ShadowColor, ShadowBlur, ShadowX,
-    ShadowY, PointerEvents, BackdropBlur, GradientAngle, GradientStops, BackgroundClip, BackdropFilter, Filter, Count
+    ShadowY, PointerEvents, BackdropBlur, GradientAngle, GradientStops, BackgroundClip, BackdropFilter, Filter, Transition, Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
+static_assert(kPropCount <= 64, "TransitionSpec::props is a u64 mask");
 
-enum class PropType : u8 { Bool, Enum, Length, Number, Color, Tracks, Stops, Filter }; ///< Filter: fns[] + tracks[].value amounts ///< Stops: offsets in tracks[].value, colours in stopColors
+enum class PropType : u8 { Bool, Enum, Length, Number, Color, Tracks, Stops, Filter, Transition }; ///< Filter: fns[] + tracks[].value amounts ///< Stops: offsets in tracks[].value, colours in stopColors
 struct PropInfo {
     Prop id;
     std::string_view cssName;
@@ -155,6 +183,7 @@ struct PropValue {
     std::array<u8, kMaxGridTracks> fns{}; ///< Filter: FilterFn per entry
     std::array<FilterShadow, kMaxFilterShadows> shadows{}; ///< Filter: drop-shadow() entries (fn amount = index)
     u8 shadowCount = 0;
+    std::array<TransitionSpec, kMaxTransitions> transitions{}; ///< Transition: entries (count in trackCount)
     static PropValue ofBool(bool v) { PropValue p; p.type = PropType::Bool; p.b = v; return p; }
     static PropValue ofEnum(u8 v) { PropValue p; p.type = PropType::Enum; p.e = v; return p; }
     static PropValue ofLength(Length v) { PropValue p; p.type = PropType::Length; p.len = v; return p; }
@@ -163,6 +192,10 @@ struct PropValue {
 };
 void applyProp(ComputedStyle& s, Prop p, const PropValue& v);
 PropValue readProp(const ComputedStyle& s, Prop p);
+/// Interpolates two values of an animatable property (lengths of different units and other types switch at 0.5;
+/// colours in premultiplied sRGB as CSS does). k may leave [0, 1] (overshooting cubic-bezier).
+PropValue interpolateProp(const PropValue& a, const PropValue& b, f32 k);
+bool samePropValue(const PropValue& a, const PropValue& b);
 /// Copies inherited properties from parent into s.
 void inheritFrom(ComputedStyle& s, const ComputedStyle& parent);
 
@@ -263,6 +296,14 @@ public:
     u32 compute(const StyleSubject& subject, u32 node, const ComputedStyle* parentStyle,
                 const ComputedStyle* defaults, const std::vector<std::pair<Prop, PropValue>>& inlineValues);
     const ComputedStyle& style(u32 index) const { return m_table[index]; }
+    /// compute() without interning
+    ComputedStyle computeValue(const StyleSubject& subject, u32 node, const ComputedStyle* parentStyle,
+                               const ComputedStyle* defaults, const std::vector<std::pair<Prop, PropValue>>& inlineValues);
+    bool isScratch(u32 index) const { return index < m_isScratch.size() && m_isScratch[index]; }
+    /// Unshared table slots for per-node styles that change every frame (transitions): never deduplicated, reused.
+    u32 allocScratch(const ComputedStyle& cs);
+    void setScratch(u32 index, const ComputedStyle& cs) { m_table[index] = cs; }
+    void freeScratch(u32 index) { m_freeScratch.push_back(index); }
     u32 tableSize() const { return u32(m_table.size()); }
     bool matches(const StyleSubject& subject, u32 node, const StyleRule& rule) const;
 
@@ -277,6 +318,8 @@ private:
     std::vector<std::pair<u32, std::string_view>> m_localTokens;
     std::vector<ComputedStyle> m_table;
     std::vector<u32> m_hashIndex; ///< open addressing into m_table (+1)
+    std::vector<u8> m_isScratch;  ///< per table entry
+    std::vector<u32> m_freeScratch;
     u32 m_version = 0;
 };
 

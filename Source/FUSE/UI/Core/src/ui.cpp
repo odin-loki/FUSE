@@ -59,6 +59,17 @@ struct UiContext::Cold {
     fuse::text::TextLayout layout;
     f32 layoutWidth = -1.f, layoutSize = -1.f;
     std::unique_ptr<fuse::text::TextEditBuffer> edit;
+    // CSS transitions: running per property; the node shows a scratch style (target + interpolated values)
+    struct Running {
+        u8 prop = 0;
+        PropValue from, to;
+        f32 t = 0.f;
+        TransitionSpec spec;
+    };
+    std::vector<Running> trans;
+    u32 transTarget = 0, transScratch = ~0u;
+    u32 inhScratch = ~0u; ///< style slot while an ancestor's transition changes inherited values every frame
+    bool styled = false; ///< styled once (no transitions on the first style)
 };
 
 // ---- Registry ------------------------------------------------------------------------------------------------------
@@ -171,6 +182,10 @@ u32 UiContext::alloc() {
         c.inl.clear();
         c.layoutWidth = c.layoutSize = -1.f;
         c.edit.reset();
+        c.trans.clear();
+        c.transScratch = ~0u;
+        c.inhScratch = ~0u;
+        c.styled = false;
     } else {
         i = u32(m_nodes.size());
         m_nodes.emplace_back();
@@ -248,6 +263,8 @@ void UiContext::destroyRec(u32 i) {
         destroyRec(c);
         c = nx;
     }
+    dropTransitions(i);
+    m_cold[i]->styled = false;
     Node& n = m_nodes[i];
     m_damage = m_damage.unite(n.rect);
     if (m_hover.index == i) m_hover = {};
@@ -547,11 +564,35 @@ void UiContext::styleRec(u32 i, bool parentChanged) {
         const ComputedStyle* ps = n.parent != kNone ? &m_styles.style(m_nodes[n.parent].style) : nullptr;
         const WidgetClass& wc = m_registry.get(n.cls);
         const u32 before = n.style;
-        const u32 idx = m_styles.compute(subj, i, ps, &wc.defaults, m_cold[i]->inl);
+        Cold& cold = *m_cold[i];
+        ComputedStyle shown; // previous shown style when it lives in a scratch slot or transitions may run
+        bool copied = false;
+        if (m_styles.isScratch(before)) shown = m_styles.style(before), copied = true;
+        u32 idx;
+        if (ps && m_styles.isScratch(m_nodes[n.parent].style)) {
+            // the parent tweens: inherited values change every frame; keep this node in its own slot meanwhile
+            const ComputedStyle cs = m_styles.computeValue(subj, i, ps, &wc.defaults, cold.inl);
+            if (cold.inhScratch == ~0u) cold.inhScratch = m_styles.allocScratch(cs);
+            else m_styles.setScratch(cold.inhScratch, cs);
+            idx = cold.inhScratch;
+        } else {
+            idx = m_styles.compute(subj, i, ps, &wc.defaults, cold.inl);
+            if (cold.inhScratch != ~0u && idx != cold.inhScratch) {
+                if (!copied) shown = m_styles.style(before), copied = true;
+                m_styles.freeScratch(cold.inhScratch);
+                cold.inhScratch = ~0u;
+            }
+            if (cold.styled && (!cold.trans.empty() || m_styles.style(idx).transitionCount)) {
+                if (!copied) shown = m_styles.style(before), copied = true;
+                idx = applyTransitions(i, idx, shown);
+            }
+        }
         ++m_stats.styled;
         n.dirty &= u8(~kDirtyStyle);
-        if (idx != before) {
-            ComputedStyle la = m_styles.style(before);
+        const bool scratchStep = idx == before && m_styles.isScratch(idx) && !(shown == m_styles.style(idx));
+        cold.styled = true;
+        if (idx != before || scratchStep) {
+            ComputedStyle la = copied ? shown : m_styles.style(before);
             const ComputedStyle& lb = m_styles.style(idx);
             const bool fontChanged = la.fontSize != lb.fontSize || la.textAlign != lb.textAlign;
             n.style = idx;
@@ -570,6 +611,69 @@ void UiContext::styleRec(u32 i, bool parentChanged) {
         }
     }
     for (u32 c = n.first; c != kNone; c = m_nodes[c].next) styleRec(c, changed);
+}
+
+// CSS Transitions 1: when a node's computed value of an animatable property changes and its new style has a
+// `transition` covering it, the property tweens from the value shown at that moment to the new one. The node then
+// shows a per-node scratch style (the interned target with the running values applied), rebuilt each frame.
+void UiContext::dropTransitions(u32 i) {
+    Cold& c = *m_cold[i];
+    if (c.inhScratch != ~0u) {
+        m_styles.freeScratch(c.inhScratch);
+        c.inhScratch = ~0u;
+    }
+    c.trans.clear();
+    if (c.transScratch != ~0u) {
+        if (m_nodes[i].style == c.transScratch) m_nodes[i].style = c.transTarget;
+        m_styles.freeScratch(c.transScratch);
+        c.transScratch = ~0u;
+    }
+}
+u32 UiContext::applyTransitions(u32 i, u32 idx, const ComputedStyle& shown) {
+    Cold& c = *m_cold[i];
+    const u32 prevTarget = c.transScratch != ~0u ? c.transTarget : m_nodes[i].style;
+    if (idx != prevTarget) {
+        const ComputedStyle& ns = m_styles.style(idx);
+        const ComputedStyle os = m_styles.style(prevTarget);
+        for (int p = 0; p < kPropCount; ++p) {
+            if (!propInfo(Prop(p)).animatable) continue;
+            auto it = std::find_if(c.trans.begin(), c.trans.end(), [&](const Cold::Running& r) { return r.prop == p; });
+            const PropValue to = readProp(ns, Prop(p));
+            if (it == c.trans.end() && samePropValue(readProp(os, Prop(p)), to)) continue;
+            const TransitionSpec* sp = ns.transitionFor(u8(p));
+            const PropValue from = readProp(shown, Prop(p));
+            const bool lengthMismatch = from.type == PropType::Length && from.len.unit != to.len.unit;
+            if (!sp || sp->duration + sp->delay <= 0.f || sp->duration < 0.f || lengthMismatch || samePropValue(from, to)) {
+                if (it != c.trans.end()) c.trans.erase(it);
+                continue;
+            }
+            if (it != c.trans.end() && samePropValue(it->to, to)) continue;
+            Cold::Running r{u8(p), from, to, 0.f, *sp};
+            if (it != c.trans.end()) *it = r;
+            else c.trans.push_back(r);
+        }
+        c.transTarget = idx;
+    }
+    std::erase_if(c.trans, [](const Cold::Running& r) { return r.t >= r.spec.delay + r.spec.duration; });
+    if (c.trans.empty()) {
+        if (c.transScratch != ~0u) {
+            m_styles.freeScratch(c.transScratch);
+            c.transScratch = ~0u;
+        }
+        return idx;
+    }
+    ComputedStyle d = m_styles.style(idx);
+    for (const Cold::Running& r : c.trans) {
+        const f32 e = r.t - r.spec.delay;
+        PropValue v = r.from;
+        if (e >= 0.f) v = interpolateProp(r.from, r.to, transitionEase(r.spec, r.spec.duration > 0.f ? e / r.spec.duration : 1.f));
+        applyProp(d, Prop(r.prop), v);
+    }
+    if (c.transScratch == ~0u) {
+        c.transScratch = m_styles.allocScratch(d);
+        m_transNodes.push_back(i);
+    } else m_styles.setScratch(c.transScratch, d);
+    return c.transScratch;
 }
 
 void UiContext::stylePass() {
@@ -1334,6 +1438,17 @@ void UiContext::update(f32 dt) {
             if (a.t >= a.duration) { a.active = false; --m_animCount; }
         }
     }
+    for (std::size_t k = 0; k < m_transNodes.size();) { // advance CSS transitions; finished ones end in the style pass
+        const u32 i = m_transNodes[k];
+        if (!m_nodes[i].alive || m_cold[i]->transScratch == ~0u) {
+            m_transNodes[k] = m_transNodes.back();
+            m_transNodes.pop_back();
+            continue;
+        }
+        for (auto& r : m_cold[i]->trans) r.t += std::max(dt, 0.f);
+        markStyle(i);
+        ++k;
+    }
     if (m_anyStyleDirty || m_styles.sheetVersion() != m_seenSheetVersion) stylePass();
     if (m_anyLayoutDirty) {
         Node& r = m_nodes[m_root.index];
@@ -1345,7 +1460,7 @@ void UiContext::update(f32 dt) {
 }
 
 bool UiContext::needsUpdate() const {
-    if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount) return true;
+    if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount || !m_transNodes.empty()) return true;
     if (m_styles.sheetVersion() != m_seenSheetVersion) return true;
     for (const auto& t : m_timers)
         if (t.active) return true;
@@ -1353,7 +1468,7 @@ bool UiContext::needsUpdate() const {
 }
 
 f32 UiContext::nextWakeSeconds() const {
-    if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount) return 0.f;
+    if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount || !m_transNodes.empty()) return 0.f;
     if (m_styles.sheetVersion() != m_seenSheetVersion) return 0.f;
     if (m_head.load(std::memory_order_acquire) != m_tail) return 0.f;
     f32 t = std::numeric_limits<f32>::infinity();

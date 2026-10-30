@@ -294,6 +294,25 @@ int styleCooked() {
     UI_CHECK_EQ(sheet->tokens().size(), parsed->tokens().size());
     std::printf("theme.fusestyle: %zu text bytes -> %zu cooked bytes, %zu rules, %zu tokens\n", css.size(), cooked->size(),
                 sheet->rules().size(), sheet->tokens().size());
+    { // filter and transition values survive cooking (format v2)
+        const std::string_view fx = "panel { filter: blur(2px) drop-shadow(1px 2px 3px #102030) url(#glow); "
+                                    "transition: background 150ms ease-out, opacity 1s steps(3, jump-both) 0.2s, width 2s cubic-bezier(0.1, 0.7, 1, 0.1); }";
+        auto ck = cookStyle(fx);
+        auto ls = ck ? loadCookedStyle(bytes(*ck)) : std::expected<StyleSheet, std::string>(std::unexpected(std::string("cook")));
+        auto ps = StyleSheet::parse(fx);
+        UI_CHECK(ls && ps);
+        if (ls && ps) {
+            UiContext a({.viewport = {100, 100}}), b({.viewport = {100, 100}});
+            a.addStyleSheet(std::move(*ps));
+            b.addStyleSheet(std::move(*ls));
+            const NodeHandle na = a.create(a.registry().find("panel"), a.root()), nb = b.create(b.registry().find("panel"), b.root());
+            a.update();
+            b.update();
+            UI_CHECK(a.computed(na) == b.computed(nb));
+            UI_CHECK_EQ(int(b.computed(nb).transitionCount), 3);
+            UI_CHECK_EQ(int(b.computed(nb).filterCount), 3);
+        }
+    }
     auto build = [](UiContext& ui) {
         const NodeHandle card = w::panel(ui, ui.root(), "settings");
         ui.addClass(card, "card");

@@ -358,7 +358,9 @@ public:
     enum class AnimProp : u8 { Opacity, OffsetX, OffsetY, Value };
     enum class Ease : u8 { Linear, InOutCubic, OutBack };
     void animate(NodeHandle n, AnimProp p, f32 to, f32 seconds, Ease e = Ease::InOutCubic);
-    bool animating() const { return m_animCount > 0; }
+    bool animating() const { return m_animCount > 0 || !m_transNodes.empty(); }
+    /// Nodes with CSS transitions running (tests, inspector).
+    u32 transitionCount() const { return u32(m_transNodes.size()); }
 
     // cross-thread commands (any thread)
     bool post(CommandFn fn, NodeHandle n, u64 a = 0, u64 b = 0);
@@ -395,6 +397,8 @@ private:
     void markPaint(u32 i);
     void stylePass();
     void styleRec(u32 i, bool parentChanged);
+    u32 applyTransitions(u32 i, u32 idx, const ComputedStyle& shown);
+    void dropTransitions(u32 i);
     Size measure(u32 i, Size avail);
     void arrange(u32 i, Rect box);
     void arrangeChildren(u32 i);
@@ -504,6 +508,7 @@ private:
     };
     std::vector<Anim> m_anims;
     u32 m_animCount = 0;
+    std::vector<u32> m_transNodes; ///< nodes with running CSS transitions (scratch styles)
 
     struct Command {
         std::atomic<u64> seq{0};

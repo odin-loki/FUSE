@@ -150,10 +150,27 @@ void writeValue(Writer& w, const PropValue& v) {
     for (u8 i = 0; i < v.trackCount; ++i) writeLength(w, v.tracks[i]);
     if (v.type == PropType::Stops)
         for (u8 i = 0; i < v.trackCount; ++i) { w.f32_(v.stopColors[i].r); w.f32_(v.stopColors[i].g); w.f32_(v.stopColors[i].b); w.f32_(v.stopColors[i].a); }
+    if (v.type == PropType::Filter) {
+        for (u8 i = 0; i < v.trackCount; ++i) w.u8_(v.fns[i]);
+        w.u8_(v.shadowCount);
+        for (const FilterShadow& sh : v.shadows) {
+            w.f32_(sh.x); w.f32_(sh.y); w.f32_(sh.blur);
+            w.f32_(sh.color.r); w.f32_(sh.color.g); w.f32_(sh.color.b); w.f32_(sh.color.a);
+        }
+    }
+    if (v.type == PropType::Transition)
+        for (u8 i = 0; i < v.trackCount; ++i) {
+            const TransitionSpec& t = v.transitions[i];
+            w.u32_(u32(t.props)); w.u32_(u32(t.props >> 32));
+            w.f32_(t.duration); w.f32_(t.delay);
+            w.u8_(u8(t.kind));
+            w.f32_(t.x1); w.f32_(t.y1); w.f32_(t.x2); w.f32_(t.y2);
+            w.u8_(t.steps); w.u8_(u8(t.stepPos));
+        }
 }
 bool readValue(Reader& r, PropValue& v) {
     const u8 t = r.u8_();
-    if (t > u8(PropType::Stops)) return r.ok = false;
+    if (t > u8(PropType::Transition)) return r.ok = false;
     v.type = PropType(t);
     v.b = r.u8_() != 0;
     v.e = r.u8_();
@@ -161,10 +178,33 @@ bool readValue(Reader& r, PropValue& v) {
     v.num = r.f32_();
     v.color.r = r.f32_(); v.color.g = r.f32_(); v.color.b = r.f32_(); v.color.a = r.f32_();
     v.trackCount = r.u8_();
-    if (v.trackCount > kMaxGridTracks) return r.ok = false;
+    if (v.trackCount > kMaxGridTracks || (v.type == PropType::Transition && v.trackCount > kMaxTransitions)) return r.ok = false;
     for (u8 i = 0; i < v.trackCount && r.ok; ++i) readLength(r, v.tracks[i]);
     if (v.type == PropType::Stops)
         for (u8 i = 0; i < v.trackCount && r.ok; ++i) { v.stopColors[i].r = r.f32_(); v.stopColors[i].g = r.f32_(); v.stopColors[i].b = r.f32_(); v.stopColors[i].a = r.f32_(); }
+    if (v.type == PropType::Filter) {
+        for (u8 i = 0; i < v.trackCount && r.ok; ++i) v.fns[i] = r.u8_();
+        v.shadowCount = r.u8_();
+        for (FilterShadow& sh : v.shadows) {
+            sh.x = r.f32_(); sh.y = r.f32_(); sh.blur = r.f32_();
+            sh.color.r = r.f32_(); sh.color.g = r.f32_(); sh.color.b = r.f32_(); sh.color.a = r.f32_();
+        }
+    }
+    if (v.type == PropType::Transition)
+        for (u8 i = 0; i < v.trackCount && r.ok; ++i) {
+            TransitionSpec& t = v.transitions[i];
+            const u64 lo = r.u32_(), hi = r.u32_();
+            t.props = lo | hi << 32;
+            t.duration = r.f32_(); t.delay = r.f32_();
+            const u8 kind = r.u8_();
+            if (kind > u8(TransitionSpec::Kind::Steps)) return r.ok = false;
+            t.kind = TransitionSpec::Kind(kind);
+            t.x1 = r.f32_(); t.y1 = r.f32_(); t.x2 = r.f32_(); t.y2 = r.f32_();
+            t.steps = r.u8_();
+            const u8 pos = r.u8_();
+            if (pos > u8(TransitionSpec::StepPos::JumpBoth)) return r.ok = false;
+            t.stepPos = TransitionSpec::StepPos(pos);
+        }
     return r.ok;
 }
 void writeSheet(Writer& w, const StyleSheet& s) {
