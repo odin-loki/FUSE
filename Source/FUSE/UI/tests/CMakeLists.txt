@@ -173,7 +173,7 @@ endif()
 
 # UI5 gates: fuse_app on-demand loop (virtual clock, headless presenter)
 if(TARGET fuse_app)
-    foreach(g idle_zero_frames multiwindow hello_startup settings)
+    foreach(g idle_zero_frames multiwindow hello_startup settings hidpi)
         add_executable(fuse_app_${g} test_app.cpp)
         target_link_libraries(fuse_app_${g} PRIVATE fuse_app)
         target_include_directories(fuse_app_${g} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

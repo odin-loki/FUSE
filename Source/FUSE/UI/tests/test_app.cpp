@@ -3,6 +3,7 @@
 //   multiwindow      — two windows update and present independently; closing the last one ends run()
 //   hello_startup    — Application + window + document to the first presented frame, ≤ 150 ms (headless)
 //   settings         — command line parsing, settings round trip, single-instance lock
+//   hidpi            — AppWindow::setScale: physical-size frames, crisp glyphs at 2x / 1.5x, matches 1x downsampled
 #include "fuse/app/app.hpp"
 #include "fuse/ui/doc/document.hpp"
 
@@ -176,12 +177,64 @@ int settings() {
 }
 } // namespace
 
+int hidpi() {
+    app::Application a{{.name = "gate_hidpi", .loadSettings = false}};
+    Virt v;
+    useVirtual(a, v);
+    fuse::ui::doc::Model m;
+    m.set("n", 7.0);
+    auto& w1 = a.createWindow({.width = 200, .height = 100});
+    auto& w2 = a.createWindow({.width = 200, .height = 100});
+    auto& w3 = a.createWindow({.width = 200, .height = 100});
+    CHECK(w1.loadText(kDoc, &m) && w2.loadText(kDoc, &m) && w3.loadText(kDoc, &m));
+    w2.setScale(2.f);
+    w3.setScale(1.5f);
+    a.step(0.f);
+    CHECK(w1.image().width == 200 && w1.image().height == 100);
+    CHECK(w2.image().width == 400 && w2.image().height == 200);
+    CHECK(w3.image().width == 300 && w3.image().height == 150);
+    CHECK(w2.size().w == 200.f && w2.pixelSize().w == 400.f);
+    // glyphs: rasterised at the physical size, drawn 1:1 (no stretched texels), about twice as tall at 2x
+    double th1 = 0, th2 = 0;
+    int glyphs1 = 0, glyphs2 = 0;
+    for (const auto& c : w1.pixelDrawList().cmds()) if (c.op == DrawOp::Glyph) { th1 += c.th; ++glyphs1; }
+    for (const auto& c : w2.pixelDrawList().cmds()) {
+        if (c.op != DrawOp::Glyph) continue;
+        th2 += c.th;
+        ++glyphs2;
+        CHECK(c.rect.w == f32(c.tw) && c.rect.h == f32(c.th) && c.rect.x == std::round(c.rect.x));
+    }
+    CHECK(glyphs1 > 0 && glyphs1 == glyphs2);
+    CHECK(th2 > th1 * 1.6 && th2 < th1 * 2.4);
+    // the 2x frame box-filtered back to 1x matches the 1x frame (edges / hinting differ a little)
+    double err = 0;
+    for (int y = 0; y < 100; ++y)
+        for (int x = 0; x < 200; ++x)
+            for (int ch = 0; ch < 3; ++ch) {
+                int sum = 0;
+                for (int k = 0; k < 4; ++k) sum += int((w2.image().at(2 * x + (k & 1), 2 * y + (k >> 1)) >> (8 * ch)) & 0xFF);
+                err += std::abs(sum / 4 - int((w1.image().at(x, y) >> (8 * ch)) & 0xFF));
+            }
+    err /= 200.0 * 100.0 * 3.0;
+    std::printf("hidpi: mean |2x downsampled - 1x| = %.2f\n", err);
+    CHECK(err < 4.0);
+    // logical damage is scaled: an input-driven repaint stays inside the frame and keeps the size
+    w2.pointerMove({20.f, 70.f});
+    a.step(0.f);
+    CHECK(w2.image().width == 400);
+    w2.setScale(1.f);
+    a.step(0.f);
+    CHECK(w2.image().width == 200);
+    return 0;
+}
+
 int main() {
     const std::string g = FUSE_APP_GATE;
     if (g == "idle_zero_frames") idleZeroFrames();
     else if (g == "multiwindow") multiwindow();
     else if (g == "hello_startup") helloStartup();
     else if (g == "settings") settings();
+    else if (g == "hidpi") hidpi();
     std::printf("fuse_app_%s: %s\n", g.c_str(), g_fail ? "FAILED" : "OK");
     return g_fail ? 1 : 0;
 }

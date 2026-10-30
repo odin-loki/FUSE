@@ -205,18 +205,37 @@ std::expected<void, std::string> AppWindow::load(std::string_view path, doc::Mod
     if (!text) return std::unexpected("cannot open " + std::string(path) + ": " + text.error());
     return loadText(*text, model);
 }
+void AppWindow::setScale(f32 s) {
+    s = s > 0.f ? s : 1.f;
+    if (s == m_scale) return;
+    m_scale = s;
+    m_ui.setPixelScale(s);
+    m_forceRedraw = true;
+}
+Size AppWindow::pixelSize() const {
+    const Size v = m_ui.viewport();
+    return {std::max(1.f, std::round(v.w * m_scale)), std::max(1.f, std::round(v.h * m_scale))};
+}
+const DrawList& AppWindow::pixelDrawList() {
+    if (m_scale == 1.f) return m_ui.drawList();
+    scaleDrawList(m_ui.drawList(), m_scale, m_scaledList);
+    return m_scaledList;
+}
 bool AppWindow::presentHeadless(void*, AppWindow& w, Rect damage) {
-    const int iw = int(w.m_ui.viewport().w), ih = int(w.m_ui.viewport().h);
+    const Size px = w.pixelSize();
+    const int iw = int(px.w), ih = int(px.h);
+    const f32 s = w.m_scale;
     const bool full = w.m_image.width != iw || w.m_image.height != ih;
     if (full) w.m_image.resize(iw, ih, 0xFF000000u);
     w.m_raster.setGlyphAtlas(w.m_ui.atlas().pixels(), w.m_ui.atlas().size());
-    const Rect r = full || damage.empty() ? Rect{0.f, 0.f, f32(iw), f32(ih)} : damage;
+    const Rect r = full || damage.empty() ? Rect{0.f, 0.f, f32(iw), f32(ih)}
+                                          : Rect{damage.x * s, damage.y * s, damage.w * s, damage.h * s};
     // clear the damaged region, then rasterise the list clipped to it (incremental present)
     const int x0 = std::max(0, int(std::floor(r.x))), y0 = std::max(0, int(std::floor(r.y)));
     const int x1 = std::min(iw, int(std::ceil(r.x + r.w))), y1 = std::min(ih, int(std::ceil(r.y + r.h)));
     for (int y = y0; y < y1; ++y)
         std::fill_n(w.m_image.pixels.begin() + std::ptrdiff_t(y) * iw + x0, std::max(0, x1 - x0), 0xFF000000u);
-    w.m_raster.render(w.m_ui.drawList(), w.m_image, {f32(x0), f32(y0), f32(x1 - x0), f32(y1 - y0)});
+    w.m_raster.render(w.pixelDrawList(), w.m_image, {f32(x0), f32(y0), f32(x1 - x0), f32(y1 - y0)});
     return true;
 }
 bool writePng(const Image& img, const std::string& path) {

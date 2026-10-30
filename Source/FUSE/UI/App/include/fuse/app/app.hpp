@@ -114,6 +114,13 @@ public:
 
     void resize(u32 width, u32 height); ///< logical units; forces a full repaint
     fuse::ui::Size size() const { return m_ui.viewport(); }
+    /// Physical pixels per logical unit (HiDPI / fractional scaling; backends set it from the output scale).
+    /// image() and swapchains are pixelSize(); input, layout and size() stay logical.
+    void setScale(f32 s);
+    f32 scale() const { return m_scale; }
+    fuse::ui::Size pixelSize() const;
+    /// ui().drawList() in physical pixels (the list itself when scale() == 1).
+    const fuse::ui::DrawList& pixelDrawList();
     void setRedrawPolicy(RedrawPolicy p) { m_policy = p; }
     RedrawPolicy redrawPolicy() const { return m_policy; }
     void setPresenter(const Presenter& p);
@@ -198,6 +205,8 @@ private:
     std::unique_ptr<fuse::ui::doc::Document> m_doc;
     std::string m_title;
     Presenter m_presenter;
+    f32 m_scale = 1.f;
+    fuse::ui::DrawList m_scaledList;
     fuse::ui::Image m_image;
     fuse::ui::CpuRasterizer m_raster;
     RedrawPolicy m_policy = RedrawPolicy::OnDemand;

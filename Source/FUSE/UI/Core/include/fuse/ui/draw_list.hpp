@@ -81,6 +81,11 @@ struct Image {
 /// Packs a straight colour to premultiplied RGBA8.
 u32 packPremultiplied(Color c);
 
+/// Logical units -> physical pixels (HiDPI / fractional scaling): every rect (Line endpoints included), radius,
+/// border width and blur multiplied by `scale`. Glyphs are snapped to whole pixels and keep their texel size, so
+/// text stays crisp when UiContext::setPixelScale(scale) rasterised it at the physical size.
+void scaleDrawList(const DrawList& in, f32 scale, DrawList& out);
+
 class CpuRasterizer {
 public:
     /// Coverage atlas for Glyph commands (non-owning; must outlive render calls).

@@ -597,6 +597,12 @@ f32 UiContext::measureString(std::string_view s, f32 px) {
     return fuse::text::measureText(*m_font, s, px, m_shapeScratch);
 }
 
+void UiContext::setPixelScale(f32 scale) {
+    scale = scale > 0.f ? scale : 1.f;
+    if (scale == m_pixelScale) return;
+    m_pixelScale = scale;
+    markAllDirty();
+}
 void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, Vec2 o, Color col, f32 px, u32 nodeIdx) {
     if (!m_font || col.a <= 0.f) return;
     for (const auto& ln : tl.lines) {
@@ -605,11 +611,16 @@ void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, 
             if (g.glyph == fuse::text::kInvisibleGlyph) continue;
             fuse::text::forEachPaintGlyph(*m_font, g, px, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
                                                                const fuse::text::ColorLayer* layer) {
-                const auto ag = m_atlas.get(f, glyph, fpx);
+                const f32 ps = m_pixelScale;
+                const auto ag = m_atlas.get(f, glyph, ps == 1.f ? fpx : fpx * ps);
                 if (!ag.valid || ag.w == 0) return;
                 DrawCmd c;
                 c.op = DrawOp::Glyph;
-                c.rect = {std::round(o.x + g.x) + f32(ag.x0), std::round(o.y + ln.baseline) + f32(ag.y0), f32(ag.w), f32(ag.h)};
+                if (ps == 1.f)
+                    c.rect = {std::round(o.x + g.x) + f32(ag.x0), std::round(o.y + ln.baseline) + f32(ag.y0), f32(ag.w), f32(ag.h)};
+                else // pixel-snapped at the physical size, stored in logical units (scaleDrawList undoes the / ps)
+                    c.rect = {(std::round((o.x + g.x) * ps) + f32(ag.x0)) / ps, (std::round((o.y + ln.baseline) * ps) + f32(ag.y0)) / ps,
+                              f32(ag.w) / ps, f32(ag.h) / ps};
                 c.u = ag.u;
                 c.v = ag.v;
                 c.tw = ag.w;

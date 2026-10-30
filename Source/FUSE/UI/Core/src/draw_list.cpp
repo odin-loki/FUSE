@@ -68,6 +68,18 @@ void DrawList::line(Vec2 a, Vec2 b, Color col, f32 width) {
     m_cmds.push_back(c);
 }
 
+void scaleDrawList(const DrawList& in, f32 s, DrawList& out) {
+    out.clear();
+    out.reserve(in.size());
+    for (DrawCmd c : in.cmds()) {
+        c.rect = {c.rect.x * s, c.rect.y * s, c.rect.w * s, c.rect.h * s};
+        for (f32& r : c.radius) r *= s;
+        c.borderWidth *= s;
+        c.blur *= s;
+        if (c.op == DrawOp::Glyph) c.rect = {std::round(c.rect.x), std::round(c.rect.y), f32(c.tw), f32(c.th)};
+        out.push(c);
+    }
+}
 void DrawList::pushClip(const Rect& r, f32 radius) {
     DrawCmd c;
     c.op = DrawOp::PushClip;

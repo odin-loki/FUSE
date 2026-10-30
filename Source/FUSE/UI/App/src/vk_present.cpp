@@ -662,8 +662,9 @@ void vkWinDestroy(VkWin* w) {
 
 bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
     VkCtx& c = *w->ctx;
-    const Size vp = win.size();
-    const u32 vw = u32(std::max(1.f, std::round(vp.w))), vh = u32(std::max(1.f, std::round(vp.h)));
+    const Size vp = win.pixelSize(); // physical pixels (HiDPI: logical size * scale)
+    const f32 scale = win.scale();
+    const u32 vw = u32(vp.w), vh = u32(vp.h);
     std::string err;
     if (!w->swapchain || w->extent.width != vw || w->extent.height != vh) {
         if (!w->createSwapchain(vw, vh, err)) {
@@ -672,7 +673,7 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
         }
         // the surface decides the size (X11 / Win32 report the client area): follow it
         if (w->extent.width != vw || w->extent.height != vh) {
-            win.resize(w->extent.width, w->extent.height); // redraws at the new size next iteration
+            win.resize(u32(std::lround(f32(w->extent.width) / scale)), u32(std::lround(f32(w->extent.height) / scale)));
             return false;
         }
     }
@@ -690,7 +691,8 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
 
     const u32 W = w->extent.width, H = w->extent.height;
     const bool full = w->needFull || w->canvasFresh || damage.empty();
-    Rect dmg = full ? Rect{0.f, 0.f, f32(W), f32(H)} : damage;
+    Rect dmg = full ? Rect{0.f, 0.f, f32(W), f32(H)}
+                    : Rect{damage.x * scale, damage.y * scale, damage.w * scale, damage.h * scale};
     int x0 = std::max(0, int(std::floor(dmg.x))), y0 = std::max(0, int(std::floor(dmg.y)));
     int x1 = std::min(int(W), int(std::ceil(dmg.x + dmg.w))), y1 = std::min(int(H), int(std::ceil(dmg.y + dmg.h)));
     if (x1 <= x0 || y1 <= y0) { x0 = y0 = 0; x1 = int(W); y1 = int(H); }
@@ -699,13 +701,13 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
     if (w->gpuDraw) {
         UiContext& ui = win.ui();
         const CpuRasterizer& raster = win.rasterizer();
-        fuse::ui::render::packDrawList(ui.drawList(), W, H, w->data, ui.atlas().pixels(), u32(ui.atlas().size()),
+        fuse::ui::render::packDrawList(win.pixelDrawList(), W, H, w->data, ui.atlas().pixels(), u32(ui.atlas().size()),
                                        raster.images(), raster.imageCount());
         if (!w->gpu.upload(f, w->data)) return false;
     }
 #endif
     if (!w->gpuDraw) {
-        const Image& img = win.rasterize(full ? Rect{} : dmg);
+        const Image& img = win.rasterize(full ? Rect{} : damage); // logical damage; rasterize() scales it
         if (img.width != int(W) || img.height != int(H)) return false;
         for (int y = y0; y < y1; ++y)
             std::memcpy(w->uploadPtr[f] + (std::size_t(y) * W + x0) * 4, img.pixels.data() + std::size_t(y) * W + x0,
