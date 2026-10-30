@@ -660,12 +660,160 @@ void gateTray() {
     tray.hide();
     os::runProcess({"kill", pid});
 }
+
+void gateRichText() {
+    using namespace fuse::ui::rich;
+    // headless editor
+    RichTextEditor ed;
+    ed.insertText("Hello world");
+    ed.setCursor(6); ed.setCursor(11, true); // select "world"
+    ed.toggleBold();
+    CHECK(ed.doc.formatOfByte(6).bold && !ed.doc.formatOfByte(5).bold);
+    ed.toggleBold();
+    CHECK(!ed.doc.formatOfByte(6).bold);
+    ed.toggleBold();
+    ed.setColor(Color::rgb(0xFF0000));
+    ed.setCursor(11);
+    ed.newParagraph();
+    ed.setList(ListKind::Ordered);
+    ed.typing = {};
+    ed.insertText("one");
+    ed.newParagraph();
+    ed.insertText("two");
+    CHECK(ed.doc.blockCount() == 3 && ed.doc.blockFormat(2).list == ListKind::Ordered && ed.doc.listNumber(2) == 2);
+    ed.newParagraph();
+    ed.newParagraph(); // empty item leaves the list
+    CHECK(ed.doc.blockCount() == 4 && ed.doc.blockFormat(3).list == ListKind::None);
+    ed.setCursor(0);
+    ed.setHeading(1);
+    ed.setAlign(fuse::ui::rich::Align::Center);
+    CHECK(ed.doc.plainText() == "Hello world\none\ntwo\n");
+    // undo / redo
+    const RichDocument before = ed.doc;
+    ed.setCursor(ed.doc.size());
+    ed.insertText("abc");
+    ed.insertText("def");
+    ed.undo();
+    CHECK(ed.doc == before);
+    ed.redo();
+    CHECK(ed.doc.plainText() == "Hello world\none\ntwo\nabcdef");
+    ed.backspace(); ed.backspace();
+    CHECK(ed.doc.plainText().ends_with("abcd"));
+    ed.undo();
+    CHECK(ed.doc.plainText().ends_with("abcdef"));
+    // HTML round trip
+    const std::string html = ed.doc.toHtml();
+    CHECK(html.find("<h1 style=\"text-align:center;\">Hello <b><span style=\"color:#ff0000;\">world</span></b></h1>") != std::string::npos);
+    CHECK(html.find("<ol>\n<li>one</li>\n<li>two</li>\n</ol>") != std::string::npos);
+    RichDocument h2;
+    h2.fromHtml(html);
+    CHECK(h2 == ed.doc);
+    // foreign HTML
+    RichDocument fh;
+    fh.fromHtml("<html><head><style>p{}</style></head><body><p>A &amp; <a href=\"https://x.org\">link</a><br>next <span style=\"font-weight:700; font-size:12pt; text-decoration: underline line-through\">styled</span></p>\n<ul><li>x<ul><li>y</li></ul></li></ul></body></html>");
+    CHECK(fh.plainText() == "A & link\nnext styled\nx\ny");
+    CHECK(fh.formatOfByte(4).link == "https://x.org");
+    const CharFormat st = fh.formatOfByte(fh.plainText().find("styled"));
+    CHECK(st.bold && st.underline && st.strike && std::abs(st.size - 16.f) < 0.01f);
+    CHECK(fh.blockFormat(3).list == ListKind::Bullet && fh.blockFormat(3).indent == 1);
+    // Markdown round trip
+    const std::string md = ed.doc.toMarkdown();
+    CHECK(md.starts_with("# Hello **world**\n\n1. one\n2. two\n\n"));
+    RichDocument m2;
+    m2.fromMarkdown("## Title\n\nSome **bold _both_** and ~~gone~~ [site](https://a.b) <u>u</u> \\*lit\\*\n\n- a\n  - b\n3. c\n");
+    CHECK(m2.plainText() == "Title\nSome bold both and gone site u *lit*\na\nb\nc");
+    CHECK(m2.blockFormat(0).heading == 2 && m2.blockFormat(3).indent == 1 && m2.blockFormat(4).list == ListKind::Ordered);
+    const std::size_t both = m2.plainText().find("both");
+    CHECK(m2.formatOfByte(both).bold && m2.formatOfByte(both).italic && !m2.formatOfByte(both - 2).italic);
+    CHECK(m2.formatOfByte(m2.plainText().find("site")).link == "https://a.b" && m2.formatOfByte(m2.plainText().find("gone")).strike);
+    RichDocument m3;
+    m3.fromMarkdown(m2.toMarkdown());
+    CHECK(m3 == m2);
+    // layout: wrapping, caret and hit testing with a fixed-advance measure
+    auto meas = [](std::string_view s, f32 px) { return f32(s.size()) * px * 0.5f; };
+    auto lh = [](f32 px) { return px * 1.25f; };
+    RichDocument ld;
+    ld.setPlainText("aaaa bbbb cccc\nxxxxxxxxxxxxxxxxxxxx");
+    const RichLayout L = layout(ld, 100.f, 10.f, meas, lh); // 20 chars per line
+    CHECK(L.lines.size() == 2); // 20 x fit exactly
+    const RichLayout L2 = layout(ld, 50.f, 10.f, meas, lh); // 10 chars per line
+    CHECK(L2.lines.size() == 2 + 2 && L2.lines[0].b == 10 && L2.lines[2].b - L2.lines[2].a == 10);
+    CHECK(L2.hitTest({26.f, 2.f}, ld, meas) == 5 && L2.caretRect(5, ld, meas).x == 25.f);
+    CHECK(L2.lineOf(10) == 1 && L2.hitTest({0.f, 13.f}, ld, meas) == 10);
+
+    // widget
+    Screen s;
+    UiContext& ui = s.ui;
+    const NodeHandle te = w::richTextEdit(ui, ui.root());
+    ui.setCss(te, "width", "400px");
+    ui.setCss(te, "height", "200px");
+    std::string changed, link;
+    ui.connect(te, SignalKind::TextChanged, [&](UiContext&, NodeHandle, const SignalArgs& a) { changed = a.text; });
+    ui.connect(te, SignalKind::Submitted, [&](UiContext&, NodeHandle, const SignalArgs& a) { link = a.text; });
+    step(ui);
+    clickNode(ui, te);
+    CHECK(ui.focused() == te);
+    ui.textInput("Hi ");
+    ui.keyDown(Key::B, kModCtrl);
+    ui.textInput("there");
+    CHECK(changed == "Hi there");
+    RichTextEditor* re = w::richEditor(ui, te);
+    CHECK(re && re->doc.formatOfByte(4).bold && !re->doc.formatOfByte(1).bold);
+    ui.keyDown(Key::Home, kModShift);
+    ui.keyDown(Key::U, kModCtrl);
+    CHECK(re->doc.formatOfByte(0).underline && re->doc.formatOfByte(7).underline);
+    ui.keyDown(Key::C, kModCtrl);
+    ui.keyDown(Key::End);
+    ui.keyDown(Key::Enter);
+    ui.keyDown(Key::V, kModCtrl);
+    CHECK(changed == "Hi there\nHi there");
+    ui.keyDown(Key::Z, kModCtrl);
+    CHECK(changed == "Hi there\n");
+    ui.keyDown(Key::Y, kModCtrl);
+    ui.keyDown(Key::Up);
+    CHECK(re->doc.blockAt(re->cursor) == 0);
+    w::setRichHtml(ui, te, "<p>Go <a href=\"https://fuse.dev\">here</a> now</p><p>second</p>");
+    step(ui);
+    const Rect cr = ui.contentRect(te);
+    const f32 hx = cr.x + ui.measureString("Go h", ui.computed(te).fontSize);
+    ui.setModifiers(kModCtrl);
+    click(ui, {hx, cr.y + 6.f});
+    ui.setModifiers(0);
+    CHECK(link == "https://fuse.dev");
+    click(ui, {cr.x + 2.f, cr.y + ui.font()->metrics(ui.computed(te).fontSize).lineHeight() * 1.5f});
+    CHECK(re->cursor == re->doc.blockStart(1));
+    w::setRichMarkdown(ui, te, "# Big\n\n- **b** _i_ ~~s~~ <u>u</u> [l](https://l)\n");
+    CHECK(w::richMarkdown(ui, te) == "# Big\n\n- **b** _i_ ~~s~~ <u>u</u> [l](https://l)\n");
+    step(ui);
+    ui.setFocus(te, FocusReason::Programmatic);
+    w::richEditor(ui, te)->selectAll();
+    ui.invalidate(te);
+    step(ui); // paints selection, list marker, heading, decorations and caret
+    if (const std::string dir = fuse::ui::os::env("FUSE_EXTRAS_OUT"); !dir.empty()) {
+        w::setRichHtml(ui, te, "<h2>Rich <i>text</i></h2><p>Plain, <b>bold</b>, <u>under</u>, <s>strike</s>, "
+                               "<span style=\"color:#e0703a\">colour</span>, <span style=\"font-size:22px\">big</span> and a "
+                               "<a href=\"x\">link</a> wrapping across the width of the editor.</p><ol><li>first</li><li>second</li></ol>"
+                               "<p style=\"text-align:center\">centred</p>");
+        w::richEditor(ui, te)->setCursor(9);
+        w::richEditor(ui, te)->setCursor(14, true);
+        ui.setCss(te, "height", "300px");
+        for (int i = 0; i < 3; ++i) step(ui);
+        Image img;
+        fuse::ui::test::render(ui, img);
+        stbi_write_png((dir + "/richtext.png").c_str(), img.width, img.height, 4, img.pixels.data(), img.width * 4);
+        w::setRichMarkdown(ui, te, "# Big\n\n- **b** _i_ ~~s~~ <u>u</u> [l](https://l)\n");
+    }
+    w::setRichReadOnly(ui, te, true);
+    link.clear();
+    ui.textInput("x");
+    CHECK(re->doc.plainText() == "Big\nb i s u l");
+}
 } // namespace
 
 int main(int argc, char** argv) {
     const std::map<std::string, std::function<void()>> gates{
         {"undo", gateUndo}, {"gesture", gateGesture}, {"i18n", gateI18n}, {"desktop", gateDesktop}, {"pdf", gatePdf}, {"containers", gateContainers}, {"dialogs", gateDialogs}, {"lcd_keyseq", gateLcdKeyseq},
-        {"mdi", gateMdi}, {"completer", gateCompleter}, {"graphics", gateGraphics}, {"widget_pdf", gateWidgetPdf}, {"tray", gateTray}};
+        {"mdi", gateMdi}, {"completer", gateCompleter}, {"graphics", gateGraphics}, {"widget_pdf", gateWidgetPdf}, {"tray", gateTray}, {"richtext", gateRichText}};
     std::string only;
     for (int i = 1; i < argc; ++i) if (std::strncmp(argv[i], "--gate=", 7) == 0) only = argv[i] + 7;
     for (auto& [n, f] : gates) if (only.empty() || only == n) { f(); std::printf("gate %s: %s\n", n.c_str(), g_fail ? "FAIL" : "ok"); }
