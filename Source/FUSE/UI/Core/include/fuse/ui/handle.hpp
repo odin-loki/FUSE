@@ -20,6 +20,15 @@ struct ConnectionHandle {
     friend bool operator==(const ConnectionHandle&, const ConnectionHandle&) = default;
 };
 
+/// A scripted (Web Animations-style) animation; see UiContext::animate.
+struct AnimationHandle {
+    u32 index = 0xFFFFFFFFu;
+    u32 generation = 0;
+    bool valid() const { return index != 0xFFFFFFFFu; }
+    explicit operator bool() const { return valid(); }
+    friend bool operator==(const AnimationHandle&, const AnimationHandle&) = default;
+};
+
 struct TimerHandle {
     u32 index = 0xFFFFFFFFu;
     u32 generation = 0;

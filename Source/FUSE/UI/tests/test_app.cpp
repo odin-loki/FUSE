@@ -3,6 +3,7 @@
 //   multiwindow      — two windows update and present independently; closing the last one ends run()
 //   hello_startup    — Application + window + document to the first presented frame, ≤ 150 ms (headless)
 //   settings         — command line parsing, settings round trip, single-instance lock
+//   hidpi            — AppWindow::setScale: physical-size frames, crisp glyphs at 2x / 1.5x, matches 1x downsampled
 #include "fuse/app/app.hpp"
 #include "fuse/ui/doc/document.hpp"
 
@@ -11,6 +12,14 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <cstdlib>
+// FUSE_UI_PERF_SCALE multiplies wall-clock budgets for emulated hosts (qemu TCG, software emulators); default 1.
+static double perfScale() {
+    const char* e = std::getenv("FUSE_UI_PERF_SCALE");
+    const double v = e ? std::atof(e) : 1.0;
+    return v > 0.0 ? v : 1.0;
+}
+
 
 using namespace fuse::ui;
 namespace app = fuse::app;
@@ -134,7 +143,7 @@ int helloStartup() {
     const double ms = std::chrono::duration<double, std::milli>(C::now() - t0).count();
     std::printf("fuse_app_hello_startup: first frame after %.1f ms (headless CPU present)\n", ms);
     CHECK(w.framesPresented() == 1);
-    CHECK(ms <= 150.0);
+    CHECK(ms <= 150.0 * perfScale());
     // the presented image has the button face in it (not just the clear colour)
     const Rect b = w.ui().rect(w.ui().find("b"));
     CHECK(w.image().at(int(b.x + b.w * 0.5f), int(b.y + 2.f)) != 0xFF000000u);
@@ -176,12 +185,116 @@ int settings() {
 }
 } // namespace
 
+int hidpi() {
+    app::Application a{{.name = "gate_hidpi", .loadSettings = false}};
+    Virt v;
+    useVirtual(a, v);
+    fuse::ui::doc::Model m;
+    m.set("n", 7.0);
+    auto& w1 = a.createWindow({.width = 200, .height = 100});
+    auto& w2 = a.createWindow({.width = 200, .height = 100});
+    auto& w3 = a.createWindow({.width = 200, .height = 100});
+    CHECK(w1.loadText(kDoc, &m) && w2.loadText(kDoc, &m) && w3.loadText(kDoc, &m));
+    w2.setScale(2.f);
+    w3.setScale(1.5f);
+    a.step(0.f);
+    CHECK(w1.image().width == 200 && w1.image().height == 100);
+    CHECK(w2.image().width == 400 && w2.image().height == 200);
+    CHECK(w3.image().width == 300 && w3.image().height == 150);
+    CHECK(w2.size().w == 200.f && w2.pixelSize().w == 400.f);
+    // glyphs: rasterised at the physical size, drawn 1:1 (no stretched texels), about twice as tall at 2x
+    double th1 = 0, th2 = 0;
+    int glyphs1 = 0, glyphs2 = 0;
+    for (const auto& c : w1.pixelDrawList().cmds()) if (c.op == DrawOp::Glyph) { th1 += c.th; ++glyphs1; }
+    for (const auto& c : w2.pixelDrawList().cmds()) {
+        if (c.op != DrawOp::Glyph) continue;
+        th2 += c.th;
+        ++glyphs2;
+        CHECK(c.rect.w == f32(c.tw) && c.rect.h == f32(c.th) && c.rect.x == std::round(c.rect.x));
+    }
+    CHECK(glyphs1 > 0 && glyphs1 == glyphs2);
+    CHECK(th2 > th1 * 1.6 && th2 < th1 * 2.4);
+    // the 2x frame box-filtered back to 1x matches the 1x frame (edges / hinting differ a little)
+    double err = 0;
+    for (int y = 0; y < 100; ++y)
+        for (int x = 0; x < 200; ++x)
+            for (int ch = 0; ch < 3; ++ch) {
+                int sum = 0;
+                for (int k = 0; k < 4; ++k) sum += int((w2.image().at(2 * x + (k & 1), 2 * y + (k >> 1)) >> (8 * ch)) & 0xFF);
+                err += std::abs(sum / 4 - int((w1.image().at(x, y) >> (8 * ch)) & 0xFF));
+            }
+    err /= 200.0 * 100.0 * 3.0;
+    std::printf("hidpi: mean |2x downsampled - 1x| = %.2f\n", err);
+    CHECK(err < 4.0);
+    // logical damage is scaled: an input-driven repaint stays inside the frame and keeps the size
+    w2.pointerMove({20.f, 70.f});
+    a.step(0.f);
+    CHECK(w2.image().width == 400);
+    w2.setScale(1.f);
+    a.step(0.f);
+    CHECK(w2.image().width == 200);
+    return 0;
+}
+
+int framePacing() {
+    app::Application a{{.name = "gate_pacing", .loadSettings = false}};
+    Virt v;
+    useVirtual(a, v);
+    auto& w = a.createWindow({.width = 100, .height = 80});
+    // an un-vsynced presenter (a CPU blit): Continuous frames are spaced 1/60 s on the app clock, the loop sleeps between
+    struct Count { int n = 0; } cnt;
+    w.setPresenter({&cnt, [](void* u, app::AppWindow&, Rect) { ++static_cast<Count*>(u)->n; return true; }, nullptr, false});
+    w.setRedrawPolicy(app::RedrawPolicy::Continuous);
+    a.step(0.f);
+    CHECK(cnt.n == 1);
+    const f32 wake = a.nextWake();
+    CHECK(wake > 0.016f && wake < 0.0168f); // the next deadline, not "now"
+    const double t0 = v.t;
+    while (v.t - t0 < 1.0 - 1e-6) a.step();
+    CHECK(cnt.n >= 60 && cnt.n <= 62);       // 1 + 60 in one second
+    CHECK(a.stats().sleeps >= 58);            // every frame waited for its deadline
+    // a stall (2 s without steps) does not burst: the cadence restarts from now
+    v.t += 2.0;
+    const int c0 = cnt.n;
+    a.step(0.f);
+    a.step(0.f);
+    CHECK(cnt.n == c0 + 1);
+    // unlimited rate: every step presents
+    w.setMaxFrameRate(0.f);
+    CHECK(a.nextWake() == 0.f);
+    const int c1 = cnt.n;
+    for (int i = 0; i < 5; ++i) a.step(0.f);
+    CHECK(cnt.n == c1 + 5);
+    // vsynced presenters are never paced by the app clock
+    w.setMaxFrameRate(60.f);
+    w.setPresenter({&cnt, [](void* u, app::AppWindow&, Rect) { ++static_cast<Count*>(u)->n; return true; }, nullptr, true});
+    const int c2 = cnt.n;
+    for (int i = 0; i < 5; ++i) a.step(0.f);
+    CHECK(cnt.n == c2 + 5);
+    // compositor throttle: nothing presents while a frame callback is pending, the time is kept for the UI
+    w.setFramePending(true);
+    CHECK(std::isinf(a.nextWake()));
+    const int c3 = cnt.n;
+    for (int i = 0; i < 5; ++i) a.step(0.f);
+    CHECK(cnt.n == c3);
+    w.setFramePending(false);
+    a.step(0.f);
+    CHECK(cnt.n == c3 + 1);
+    // OnDemand idle windows stay idle (pacing adds no wakeups)
+    w.setRedrawPolicy(app::RedrawPolicy::OnDemand);
+    a.step(0.f);
+    CHECK(std::isinf(a.nextWake()));
+    return 0;
+}
+
 int main() {
     const std::string g = FUSE_APP_GATE;
     if (g == "idle_zero_frames") idleZeroFrames();
     else if (g == "multiwindow") multiwindow();
     else if (g == "hello_startup") helloStartup();
     else if (g == "settings") settings();
+    else if (g == "hidpi") hidpi();
+    else if (g == "frame_pacing") framePacing();
     std::printf("fuse_app_%s: %s\n", g.c_str(), g_fail ? "FAILED" : "OK");
     return g_fail ? 1 : 0;
 }

@@ -294,6 +294,65 @@ int styleCooked() {
     UI_CHECK_EQ(sheet->tokens().size(), parsed->tokens().size());
     std::printf("theme.fusestyle: %zu text bytes -> %zu cooked bytes, %zu rules, %zu tokens\n", css.size(), cooked->size(),
                 sheet->rules().size(), sheet->tokens().size());
+    { // filter, transition / animation lists, @keyframes and attribute / :nth selectors survive cooking (format v3)
+        const std::string_view fx = "panel { filter: blur(2px) drop-shadow(1px 2px 3px #102030) url(#glow); "
+                                    "transition: background 150ms ease-out, opacity 1s steps(3, jump-both) 0.2s, width 2s cubic-bezier(0.1, 0.7, 1, 0.1); "
+                                    "animation: pulse 2s linear infinite alternate both, glow 1s 3 paused; }"
+                                    "@keyframes pulse { from { opacity: 0.2; } 50% { opacity: 0.6; animation-timing-function: ease-in; } }"
+                                    "panel[data-k^=\"Ab\" i]:nth-child(2n+1) ~ panel:last-of-type { height: 33px; }";
+        auto ck = cookStyle(fx);
+        auto ls = ck ? loadCookedStyle(bytes(*ck)) : std::expected<StyleSheet, std::string>(std::unexpected(std::string("cook")));
+        auto ps = StyleSheet::parse(fx);
+        UI_CHECK(ls && ps);
+        if (ls && ps) {
+            UiContext a({.viewport = {100, 100}}), b({.viewport = {100, 100}});
+            a.addStyleSheet(std::move(*ps));
+            b.addStyleSheet(std::move(*ls));
+            const NodeHandle na = a.create(a.registry().find("panel"), a.root()), nb = b.create(b.registry().find("panel"), b.root());
+            a.update();
+            b.update();
+            UI_CHECK(a.computed(na) == b.computed(nb));
+            UI_CHECK_EQ(int(b.computed(nb).transitionPropertyCount), 3);
+            UI_CHECK_EQ(int(b.computed(nb).animationNameCount), 2);
+            UI_CHECK(b.computed(nb).animationName[0] == animationNameId("pulse"));
+            UI_CHECK(b.computed(nb).animationPaused[1] == 1 && b.computed(nb).animationIterations[1] == 3.f);
+            UI_CHECK(std::fabs(b.computed(nb).opacity - 0.2f) < 1e-4f); // pulse at t = 0 (backwards fill)
+            UI_CHECK_EQ(b.styles().sheet(0).keyframes().size(), std::size_t(1));
+            UI_CHECK(b.styles().sheet(0).keyframes()[0].frames[1].hasEase);
+            const NodeHandle a2 = a.create(a.registry().find("panel"), a.root()), b2 = b.create(b.registry().find("panel"), b.root());
+            a.setAttribute(na, "data-k", "abc");
+            b.setAttribute(nb, "data-k", "aBC");
+            a.update();
+            b.update();
+            UI_CHECK(a.computed(a2).height.value == 33.f && b.computed(b2).height.value == 33.f);
+            UI_CHECK_EQ(int(b.computed(nb).filterCount), 3);
+        }
+    }
+    { // logical selectors, :empty, transition-behavior and animation-composition survive cooking (format v4)
+        const std::string_view fx = "panel:not(.x, :is(.y, #z)):where(panel) { width: 7px; }"
+                                    "panel:has(> label:empty, + panel.s) { height: 9px; transition: all 1s allow-discrete; animation-composition: add, accumulate; }";
+        auto ck = cookStyle(fx);
+        auto ls = ck ? loadCookedStyle(bytes(*ck)) : std::expected<StyleSheet, std::string>(std::unexpected(std::string("cook")));
+        auto ps = StyleSheet::parse(fx);
+        UI_CHECK(ls && ps);
+        if (ls && ps) {
+            UI_CHECK(ls->relational() && ls->rules()[0].specificity == ps->rules()[0].specificity);
+            UiContext a({.viewport = {100, 100}}), b({.viewport = {100, 100}});
+            a.addStyleSheet(std::move(*ps));
+            b.addStyleSheet(std::move(*ls));
+            for (UiContext* u : {&a, &b}) {
+                const NodeHandle p = u->create(u->registry().find("panel"), u->root());
+                const NodeHandle q = u->create(u->registry().find("panel"), u->root());
+                u->create(u->registry().find("label"), p);
+                u->update();
+                UI_CHECK(u->computed(p).width.value == 7.f && u->computed(p).height.value == 9.f);
+                UI_CHECK(u->computed(p).transitionDiscrete[0] == 1 && u->computed(p).animationComposite[1] == AnimComposite::Accumulate);
+                u->addClass(q, "x");
+                u->update();
+                UI_CHECK(u->computed(q).width.value != 7.f);
+            }
+        }
+    }
     auto build = [](UiContext& ui) {
         const NodeHandle card = w::panel(ui, ui.root(), "settings");
         ui.addClass(card, "card");

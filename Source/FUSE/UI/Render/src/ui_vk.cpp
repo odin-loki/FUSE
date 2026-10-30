@@ -9,8 +9,65 @@
 #include "ui_draw_list_spv.h" // generated: kUiDrawListSpv
 #define FUSE_UI_VK_HAS_KERNEL 1
 #endif
+#if __has_include("ui_backdrop_spv.h")
+#include "ui_backdrop_spv.h" // generated: kUiBackdropSpv
+#define FUSE_UI_VK_HAS_BACKDROP 1
+#endif
+
+#if __has_include("ui_encode_pq_spv.h")
+#include "ui_encode_pq_spv.h" // generated: kUiEncodePqSpv
+#define FUSE_UI_VK_HAS_ENCODE_PQ 1
+#endif
+#if __has_include("ui_encode_scrgb_spv.h")
+#include "ui_encode_scrgb_spv.h" // generated: kUiEncodeScrgbSpv
+#define FUSE_UI_VK_HAS_ENCODE_SCRGB 1
+#endif
+
+#if __has_include("ui_draw_list_hdr_spv.h")
+#include "ui_draw_list_hdr_spv.h" // generated: kUiDrawListHdrSpv
+#define FUSE_UI_VK_HAS_KERNEL_HDR 1
+#endif
+#if __has_include("ui_backdrop_hdr_spv.h")
+#include "ui_backdrop_hdr_spv.h" // generated: kUiBackdropHdrSpv
+#define FUSE_UI_VK_HAS_BACKDROP_HDR 1
+#endif
+#if __has_include("ui_encode_pq_hdr_spv.h")
+#include "ui_encode_pq_hdr_spv.h" // generated: kUiEncodePqHdrSpv
+#define FUSE_UI_VK_HAS_ENCODE_PQ_HDR 1
+#endif
+#if __has_include("ui_encode_scrgb_hdr_spv.h")
+#include "ui_encode_scrgb_hdr_spv.h" // generated: kUiEncodeScrgbHdrSpv
+#define FUSE_UI_VK_HAS_ENCODE_SCRGB_HDR 1
+#endif
 
 namespace fuse::ui::render {
+
+namespace {
+// compute pipeline from embedded SPIR-V (null on failure)
+void* makeCompute(VkDevice device, VkPipelineLayout layout, const u32* code, std::size_t size) {
+    VkShaderModuleCreateInfo mi{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    mi.codeSize = size;
+    mi.pCode = code;
+    VkShaderModule m{};
+    if (vkCreateShaderModule(device, &mi, nullptr, &m) != VK_SUCCESS) return nullptr;
+    VkComputePipelineCreateInfo ci{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+    ci.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    ci.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    ci.stage.module = m;
+    ci.stage.pName = "main";
+    ci.layout = layout;
+    VkPipeline p{};
+    const VkResult r = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &ci, nullptr, &p);
+    vkDestroyShaderModule(device, m, nullptr);
+    return r == VK_SUCCESS ? static_cast<void*>(p) : nullptr;
+}
+} // namespace
+
+bool UiVkRenderer::setTargetHdr(bool hdr) {
+    if (hdr && !m_pipelineHdr) return false;
+    m_hdrTarget = hdr;
+    return true;
+}
 
 bool UiVkRenderer::kernelAvailable() {
 #if defined(FUSE_UI_VK_HAS_KERNEL)
@@ -22,6 +79,30 @@ bool UiVkRenderer::kernelAvailable() {
 
 namespace {
 u64 alignUp(u64 v, u64 a) { return (v + a - 1) / a * a; }
+/// ui.backdrop push block (must match BlurPush in ui_backdrop.comp).
+struct BlurPush {
+    i32 area[4];
+    i32 srcOrigin[2], srcSize[2];
+    u32 mode, cmd;
+    u32 radius;
+    f32 inv;
+    u32 base; ///< box passes: buf at scratch[base], tmp at scratch[base + w h 4]
+    u32 save; ///< layer passes: saved pixels at scratch[save]
+    u32 instr;  ///< modes 7..9: program instruction
+    u32 flags;  ///< bit 0: mode 0 loads from the compact copy
+    u32 bandY0, bandY1; ///< mode 6: source-local rows to composite
+    u32 compact; ///< tiled layer end: compact layer copy at scratch[compact]
+    u32 pad;
+};
+static_assert(sizeof(BlurPush) == 80);
+void computeBarrier(VkCommandBuffer cmd) {
+    VkMemoryBarrier mb{};
+    mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    mb.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    mb.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0,
+                         nullptr, 0, nullptr);
+}
 } // namespace
 
 bool UiVkRenderer::init(const UiVkDesc& desc) {
@@ -87,14 +168,17 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
     vkDestroyShaderModule(device, module, nullptr);
     if (pr != VK_SUCCESS) return destroy(), false;
     m_pipeline = pipeline;
+#if defined(FUSE_UI_VK_HAS_KERNEL_HDR)
+    m_pipelineHdr = makeCompute(device, layout, kUiDrawListHdrSpv, sizeof(kUiDrawListHdrSpv));
+#endif
 
     const u32 n = m_desc.framesInFlight;
-    const VkDescriptorPoolSize sizes[3] = {{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, n},
-                                           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4 * n},
+    const VkDescriptorPoolSize sizes[3] = {{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2 * n},
+                                           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 7 * n},
                                            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kMaxExternal * n}};
     VkDescriptorPoolCreateInfo dpi{};
     dpi.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    dpi.maxSets = n;
+    dpi.maxSets = 2 * n;
     dpi.poolSizeCount = 3;
     dpi.pPoolSizes = sizes;
     VkDescriptorPool pool{};
@@ -103,6 +187,80 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
 
     VkPhysicalDeviceMemoryProperties mem{};
     vkGetPhysicalDeviceMemoryProperties(phys, &mem);
+
+#if defined(FUSE_UI_VK_HAS_BACKDROP)
+    // ui.backdrop: optional (a failure here keeps the draw kernel; backdrops are then drawn unblurred)
+    [&] {
+        VkDescriptorSetLayoutBinding bb[4]{}; // target, cmds, scratch, images (clip-path lists)
+        for (u32 i = 0; i < 4; ++i) {
+            bb[i].binding = i;
+            bb[i].descriptorType = i == 0 ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            bb[i].descriptorCount = 1;
+            bb[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        }
+        VkDescriptorSetLayoutCreateInfo bli{};
+        bli.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        bli.bindingCount = 4;
+        bli.pBindings = bb;
+        VkDescriptorSetLayout bl{};
+        if (vkCreateDescriptorSetLayout(device, &bli, nullptr, &bl) != VK_SUCCESS) return;
+        m_blurSetLayout = bl;
+        const VkPushConstantRange br{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(BlurPush)};
+        VkPipelineLayoutCreateInfo bpl{};
+        bpl.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        bpl.setLayoutCount = 1;
+        bpl.pSetLayouts = &bl;
+        bpl.pushConstantRangeCount = 1;
+        bpl.pPushConstantRanges = &br;
+        VkPipelineLayout blay{};
+        if (vkCreatePipelineLayout(device, &bpl, nullptr, &blay) != VK_SUCCESS) return;
+        m_blurLayout = blay;
+        VkBufferCreateInfo sbi{};
+        sbi.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        sbi.size = VkDeviceSize(std::max(1u, m_desc.maxBlurPixels)) * 32;
+        sbi.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        VkBuffer sb{};
+        if (vkCreateBuffer(device, &sbi, nullptr, &sb) != VK_SUCCESS) return;
+        m_scratch = sb;
+        VkMemoryRequirements sreq{};
+        vkGetBufferMemoryRequirements(device, sb, &sreq);
+        VkPhysicalDeviceMemoryProperties mp{};
+        vkGetPhysicalDeviceMemoryProperties(phys, &mp);
+        u32 st = ~0u;
+        for (u32 t = 0; t < mp.memoryTypeCount && st == ~0u; ++t)
+            if ((sreq.memoryTypeBits & (1u << t)) && (mp.memoryTypes[t].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) st = t;
+        for (u32 t = 0; t < mp.memoryTypeCount && st == ~0u; ++t)
+            if (sreq.memoryTypeBits & (1u << t)) st = t;
+        VkMemoryAllocateInfo sai{};
+        sai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        sai.allocationSize = sreq.size;
+        sai.memoryTypeIndex = st;
+        VkDeviceMemory sm{};
+        if (st == ~0u || vkAllocateMemory(device, &sai, nullptr, &sm) != VK_SUCCESS) return;
+        m_scratchMem = sm;
+        if (vkBindBufferMemory(device, sb, sm, 0) != VK_SUCCESS) return;
+        VkShaderModuleCreateInfo bmi{};
+        bmi.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        bmi.codeSize = sizeof(kUiBackdropSpv);
+        bmi.pCode = kUiBackdropSpv;
+        VkShaderModule bm{};
+        if (vkCreateShaderModule(device, &bmi, nullptr, &bm) != VK_SUCCESS) return;
+        VkComputePipelineCreateInfo bci{};
+        bci.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+        bci.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        bci.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+        bci.stage.module = bm;
+        bci.stage.pName = "main";
+        bci.layout = blay;
+        VkPipeline bp{};
+        const VkResult bpr = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &bci, nullptr, &bp);
+        vkDestroyShaderModule(device, bm, nullptr);
+        if (bpr == VK_SUCCESS) m_blurPipeline = bp;
+#if defined(FUSE_UI_VK_HAS_BACKDROP_HDR)
+        m_blurPipelineHdr = makeCompute(device, blay, kUiBackdropHdrSpv, sizeof(kUiBackdropHdrSpv));
+#endif
+    }();
+#endif
 
     // external texture slots: nearest sampler + a 1x1 dummy image for unbound slots
     VkSamplerCreateInfo smi{};
@@ -202,6 +360,30 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
             w[i].pBufferInfo = &infos[i];
         }
         vkUpdateDescriptorSets(device, 4, w, 0, nullptr);
+        if (m_blurPipeline) {
+            VkDescriptorSetAllocateInfo bai{};
+            bai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+            bai.descriptorPool = pool;
+            bai.descriptorSetCount = 1;
+            const VkDescriptorSetLayout bl = static_cast<VkDescriptorSetLayout>(m_blurSetLayout);
+            bai.pSetLayouts = &bl;
+            VkDescriptorSet bs{};
+            if (vkAllocateDescriptorSets(device, &bai, &bs) != VK_SUCCESS) return destroy(), false;
+            slot.blurSet = bs;
+            VkDescriptorBufferInfo bi2[3] = {{buf, m_offsets[0], m_offsets[1] - m_offsets[0]},
+                                             {static_cast<VkBuffer>(m_scratch), 0, VK_WHOLE_SIZE},
+                                             {buf, m_offsets[3], m_offsets[4] - m_offsets[3]}};
+            VkWriteDescriptorSet bw[3]{};
+            for (u32 i = 0; i < 3; ++i) {
+                bw[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                bw[i].dstSet = bs;
+                bw[i].dstBinding = i + 1;
+                bw[i].descriptorCount = 1;
+                bw[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                bw[i].pBufferInfo = &bi2[i];
+            }
+            vkUpdateDescriptorSets(device, 3, bw, 0, nullptr);
+        }
     }
     return true;
 #else
@@ -224,10 +406,23 @@ void UiVkRenderer::destroy() {
     if (m_dummyMem) vkFreeMemory(device, static_cast<VkDeviceMemory>(m_dummyMem), nullptr);
     if (m_sampler) vkDestroySampler(device, static_cast<VkSampler>(m_sampler), nullptr);
     m_dummyView = m_dummy = m_dummyMem = m_sampler = nullptr;
+    if (m_blurPipeline) vkDestroyPipeline(device, static_cast<VkPipeline>(m_blurPipeline), nullptr);
+    if (m_blurPipelineHdr) vkDestroyPipeline(device, static_cast<VkPipeline>(m_blurPipelineHdr), nullptr);
+    m_blurPipelineHdr = nullptr;
+    if (m_blurLayout) vkDestroyPipelineLayout(device, static_cast<VkPipelineLayout>(m_blurLayout), nullptr);
+    if (m_blurSetLayout) vkDestroyDescriptorSetLayout(device, static_cast<VkDescriptorSetLayout>(m_blurSetLayout), nullptr);
+    if (m_scratch) vkDestroyBuffer(device, static_cast<VkBuffer>(m_scratch), nullptr);
+    if (m_scratchMem) vkFreeMemory(device, static_cast<VkDeviceMemory>(m_scratchMem), nullptr);
+    m_blurPipeline = m_blurLayout = m_blurSetLayout = m_scratch = m_scratchMem = nullptr;
+    m_atlasUploads = 0;
+    m_uploadedBytes = 0;
     m_dummyReady = false;
     for (void*& e : m_external) e = nullptr;
     if (m_pool) vkDestroyDescriptorPool(device, static_cast<VkDescriptorPool>(m_pool), nullptr);
     if (m_pipeline) vkDestroyPipeline(device, static_cast<VkPipeline>(m_pipeline), nullptr);
+    if (m_pipelineHdr) vkDestroyPipeline(device, static_cast<VkPipeline>(m_pipelineHdr), nullptr);
+    m_pipelineHdr = nullptr;
+    m_hdrTarget = false;
     if (m_layout) vkDestroyPipelineLayout(device, static_cast<VkPipelineLayout>(m_layout), nullptr);
     if (m_setLayout) vkDestroyDescriptorSetLayout(device, static_cast<VkDescriptorSetLayout>(m_setLayout), nullptr);
     m_pool = m_pipeline = m_layout = m_setLayout = nullptr;
@@ -240,11 +435,43 @@ bool UiVkRenderer::upload(u32 slotIndex, const GpuDrawData& d) {
         d.images.size() > m_desc.maxImageWords || d.atlasSize > m_desc.maxAtlasSize)
         return false;
     Slot& s = m_slots[slotIndex];
-    std::memcpy(s.mapped + m_offsets[0], d.cmds.data(), d.cmdBytes());
-    std::memcpy(s.mapped + m_offsets[1], d.tiles.data(), d.tileBytes());
-    if (d.atlas && d.atlasSize) std::memcpy(s.mapped + m_offsets[2], d.atlas, d.atlasBytes());
-    std::memcpy(s.mapped + m_offsets[3], d.images.data(), d.imageBytes());
+    // persistent buffers: the slot already holds this exact content -> no copy at all
+    const bool sameContent = s.contentVersion == d.contentVersion && d.contentVersion != 0;
+    if (!sameContent) {
+        // page diff against what the slot holds: only changed 4 KB pages reach the mapped memory
+        const auto put = [&](int b, u64 off, const void* src, std::size_t n) {
+            std::vector<u8>& sh = s.shadow[b];
+            const u8* p = static_cast<const u8*>(src);
+            constexpr std::size_t P = 4096;
+            const std::size_t old = sh.size();
+            if (sh.size() < n) sh.resize(n);
+            for (std::size_t i = 0; i < n; i += P) {
+                const std::size_t k = std::min(P, n - i);
+                if (i + k <= old && std::memcmp(sh.data() + i, p + i, k) == 0) continue;
+                std::memcpy(sh.data() + i, p + i, k);
+                std::memcpy(s.mapped + off + i, p + i, k);
+                m_uploadedBytes += k;
+            }
+        };
+        put(0, m_offsets[0], d.cmds.data(), d.cmdBytes());
+        put(1, m_offsets[1], d.tiles.data(), d.tileBytes());
+        put(2, m_offsets[3], d.images.data(), d.imageBytes());
+        s.contentVersion = d.contentVersion;
+    }
+    // glyph atlas: only when it changed since this slot last held it (atlasGeneration ~0u = unknown: always)
+    const bool atlasSame = d.atlasGeneration != ~0u && s.atlasGeneration == d.atlasGeneration && s.atlasPtr == d.atlas &&
+                           s.atlasSize == d.atlasSize;
+    if (d.atlas && d.atlasSize && !atlasSame) {
+        std::memcpy(s.mapped + m_offsets[2], d.atlas, d.atlasBytes());
+        m_uploadedBytes += d.atlasBytes();
+        ++m_atlasUploads;
+    }
+    s.atlasPtr = d.atlas;
+    s.atlasSize = d.atlasSize;
+    s.atlasGeneration = d.atlasGeneration;
     s.push = d.push;
+    s.passes.assign(d.passes.begin(), d.passes.end());
+    if (s.passes.empty()) s.passes.push_back(GpuPass{}); // pre-pass data: one draw over tileBase 0
     return true;
 }
 
@@ -290,13 +517,296 @@ void UiVkRenderer::record(void* commandBuffer, void* targetView, u32 slotIndex) 
         w[i].pImageInfo = &ii[i];
     }
     vkUpdateDescriptorSets(device, 1 + kMaxExternal, w, 0, nullptr);
+    if (s.blurSet) {
+        VkWriteDescriptorSet bw{};
+        bw.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        bw.dstSet = static_cast<VkDescriptorSet>(s.blurSet);
+        bw.dstBinding = 0;
+        bw.descriptorCount = 1;
+        bw.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        bw.pImageInfo = &ii[0];
+        vkUpdateDescriptorSets(device, 1, &bw, 0, nullptr);
+    }
     const VkDescriptorSet set = static_cast<VkDescriptorSet>(s.set);
+    const VkPipelineLayout layout = static_cast<VkPipelineLayout>(m_layout);
+    if (s.push.size[0] == 0 || s.push.size[1] == 0) return; // empty damage box
+    bool first = true;
+    for (const GpuPass& pass : s.passes) {
+        if (!first) computeBarrier(cmd);
+        first = false;
+        if (pass.kind == kPassDraw) {
+            GpuPush push = s.push;
+            push.tileBase = pass.tileBase;
+            push.flags = pass.flags;
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, static_cast<VkPipeline>(m_hdrTarget ? m_pipelineHdr : m_pipeline));
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, nullptr);
+            vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(GpuPush), &push);
+            vkCmdDispatch(cmd, (push.size[0] + kUiTile - 1) / kUiTile, (push.size[1] + kUiTile - 1) / kUiTile, 1);
+            continue;
+        }
+        // backdrop / filter layer (skipped without the kernel or beyond the scratch: the panel stays unblurred, the
+        // layer unfiltered, as before)
+        const i64 w = pass.src[2], h = pass.src[3];
+        const i64 aw = pass.area[2] - pass.area[0], ah = pass.area[3] - pass.area[1];
+        void* const blurPipe = m_hdrTarget ? m_blurPipelineHdr : m_blurPipeline;
+        const i64 cap = i64(std::max(1u, m_desc.maxBlurPixels)) * 8; // scratch floats
+        const bool layerPass = pass.kind == kPassLayerBegin || pass.kind == kPassLayerEnd;
+        const i64 planes = (pass.flags & 4u) ? i64(pass.planes) : (pass.flags & 2u) ? 4 : 2;
+        const i64 work = w * h * 4 * planes;
+        // a layer whose work does not fit is tiled: a compact copy of its box (1 word per pixel, 2 for HDR) and
+        // bands of `band` rows, each processed with `margin` rows of context around it. Begin and end decide alike.
+        const i64 margin = i64(pass.margin);
+        const i64 compactWords = w * h * (m_hdrTarget ? 2 : 1);
+        i64 band = h;
+        if (layerPass && work + i64(pass.saveTop) > cap) {
+            const i64 rows = (cap - i64(pass.saveTop) - compactWords) / std::max<i64>(1, w * 4 * planes);
+            band = std::min(h, rows - 2 * margin);
+        }
+        const bool tiled = band < h;
+        if (!blurPipe || w <= 0 || h <= 0 || aw <= 0 || ah <= 0 || (!layerPass && work + i64(pass.saveTop) > cap) || band < 1)
+            continue;
+        const VkPipelineLayout bl = static_cast<VkPipelineLayout>(m_blurLayout);
+        const VkDescriptorSet bs = static_cast<VkDescriptorSet>(s.blurSet);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, static_cast<VkPipeline>(blurPipe));
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, bl, 0, 1, &bs, 0, nullptr);
+        BlurPush bp{};
+        bp.cmd = pass.cmd;
+        bp.srcOrigin[0] = pass.src[0];
+        bp.srcOrigin[1] = pass.src[1];
+        bp.srcSize[0] = pass.src[2];
+        bp.srcSize[1] = pass.src[3];
+        for (int k = 0; k < 4; ++k) bp.area[k] = pass.area[k];
+        bp.radius = pass.radius;
+        bp.inv = pass.inv;
+        bp.save = u32(cap - i64(pass.saveTop));
+        bp.bandY0 = 0;
+        bp.bandY1 = u32(h);
+        auto run = [&](u32 mode, i64 threads) {
+            bp.mode = mode;
+            vkCmdPushConstants(cmd, bl, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(BlurPush), &bp);
+            vkCmdDispatch(cmd, u32((threads + 63) / 64), 1, 1);
+        };
+        if (pass.kind == kPassLayerBegin) { // save + clear
+            run(4, w * h);
+            continue;
+        }
+        // load, filter and composite rows [b0, b1) of a source of bw x bh pixels (the whole box untiled)
+        const auto process = [&](i64 bw, i64 bh) {
+            const auto blur3 = [&] {
+                for (int it = 0; it < (bp.radius ? 3 : 0); ++it) { // radius 0: no blur
+                    computeBarrier(cmd);
+                    run(1, bh * 4);
+                    computeBarrier(cmd);
+                    run(2, bw * 4);
+                }
+            };
+            run(0, bw * bh);
+            if (pass.flags & 4u) { // SVG filter program: one dispatch per op, blurs as 3 x (H, V)
+                for (u32 i = 0; i < pass.ops; ++i) {
+                    bp.instr = i;
+                    computeBarrier(cmd);
+                    run(7, bw * bh);
+                    if (i < 32 && (pass.blurMask >> i & 1u))
+                        for (int it = 0; it < 3; ++it) {
+                            computeBarrier(cmd);
+                            run(8, bh * 4);
+                            computeBarrier(cmd);
+                            if (it == 2) bp.flags |= 2u; // last vertical pass clears outside the subregion
+                            run(9, bw * 4);
+                            bp.flags &= ~2u;
+                        }
+                }
+            } else {
+                blur3();
+                if (pass.flags & 1u) { // colour matrix (+ shadow plane copy)
+                    computeBarrier(cmd);
+                    run(5, bw * bh);
+                }
+                if (pass.flags & 2u) { // drop shadow plane: its own blur at scratch[2 w h 4]
+                    bp.base = u32(bw * bh * 8);
+                    bp.radius = pass.radius2;
+                    bp.inv = pass.inv2;
+                    blur3();
+                    bp.base = 0;
+                    bp.radius = pass.radius;
+                    bp.inv = pass.inv;
+                }
+            }
+            computeBarrier(cmd);
+            if (pass.kind == kPassLayerEnd) run(6, bw * i64(bp.bandY1 - bp.bandY0));
+            else run(3, aw * ah);
+        };
+        if (!tiled) {
+            process(w, h);
+            continue;
+        }
+        bp.compact = u32(i64(bp.save) - compactWords);
+        run(10, w * h);
+        bp.flags = 1u;
+        for (i64 b0 = 0; b0 < h; b0 += band) {
+            const i64 b1 = std::min(h, b0 + band);
+            const i64 s0 = std::max<i64>(0, b0 - margin), s1 = std::min(h, b1 + margin);
+            bp.srcOrigin[1] = pass.src[1] + i32(s0);
+            bp.srcSize[1] = i32(s1 - s0);
+            bp.bandY0 = u32(b0 - s0);
+            bp.bandY1 = u32(b1 - s0);
+            computeBarrier(cmd);
+            process(w, s1 - s0);
+        }
+    }
+}
+
+// ---- UiVkEncoder -------------------------------------------------------------------------------------------------
+namespace {
+struct EncodePush {
+    i32 area[4];
+    f32 sdrWhite;
+};
+bool encodeCode(UiVkEncoder::Mode m, bool hdrSource, const u32*& code, std::size_t& size) {
+    code = nullptr;
+    size = 0;
+    if (hdrSource) {
+#if defined(FUSE_UI_VK_HAS_ENCODE_PQ_HDR)
+        if (m == UiVkEncoder::Mode::Hdr10) code = kUiEncodePqHdrSpv, size = sizeof(kUiEncodePqHdrSpv);
+#endif
+#if defined(FUSE_UI_VK_HAS_ENCODE_SCRGB_HDR)
+        if (m == UiVkEncoder::Mode::ScRgb) code = kUiEncodeScrgbHdrSpv, size = sizeof(kUiEncodeScrgbHdrSpv);
+#endif
+        return code != nullptr;
+    }
+#if defined(FUSE_UI_VK_HAS_ENCODE_PQ)
+    if (m == UiVkEncoder::Mode::Hdr10) code = kUiEncodePqSpv, size = sizeof(kUiEncodePqSpv);
+#endif
+#if defined(FUSE_UI_VK_HAS_ENCODE_SCRGB)
+    if (m == UiVkEncoder::Mode::ScRgb) code = kUiEncodeScrgbSpv, size = sizeof(kUiEncodeScrgbSpv);
+#endif
+    return code != nullptr;
+}
+} // namespace
+
+bool UiVkEncoder::kernelAvailable(Mode mode, bool hdrSource) {
+    const u32* c;
+    std::size_t n;
+    return encodeCode(mode, hdrSource, c, n);
+}
+
+u32 UiVkEncoder::outputFormat() const {
+    return m_mode == Mode::Hdr10 ? u32(VK_FORMAT_A2B10G10R10_UNORM_PACK32) : u32(VK_FORMAT_R16G16B16A16_SFLOAT);
+}
+
+bool UiVkEncoder::init(void* devicePtr, Mode mode, u32 slots, bool hdrSource) {
+    destroy();
+    const u32* code;
+    std::size_t size;
+    if (!devicePtr || !encodeCode(mode, hdrSource, code, size)) return false;
+    m_hdrSource = hdrSource;
+    VkDevice device = static_cast<VkDevice>(devicePtr);
+    m_device = devicePtr;
+    m_mode = mode;
+    m_slots = std::clamp(slots, 1u, UiVkRenderer::kMaxSlots);
+    VkDescriptorSetLayoutBinding b[2]{};
+    for (u32 i = 0; i < 2; ++i) {
+        b[i].binding = i;
+        b[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        b[i].descriptorCount = 1;
+        b[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+    VkDescriptorSetLayoutCreateInfo li{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    li.bindingCount = 2;
+    li.pBindings = b;
+    VkDescriptorSetLayout sl{};
+    if (vkCreateDescriptorSetLayout(device, &li, nullptr, &sl) != VK_SUCCESS) return destroy(), false;
+    m_setLayout = sl;
+    const VkPushConstantRange pr{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(EncodePush)};
+    VkPipelineLayoutCreateInfo pli{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    pli.setLayoutCount = 1;
+    pli.pSetLayouts = &sl;
+    pli.pushConstantRangeCount = 1;
+    pli.pPushConstantRanges = &pr;
+    VkPipelineLayout pl{};
+    if (vkCreatePipelineLayout(device, &pli, nullptr, &pl) != VK_SUCCESS) return destroy(), false;
+    m_layout = pl;
+    VkShaderModuleCreateInfo mi{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    mi.codeSize = size;
+    mi.pCode = code;
+    VkShaderModule sm{};
+    if (vkCreateShaderModule(device, &mi, nullptr, &sm) != VK_SUCCESS) return destroy(), false;
+    VkComputePipelineCreateInfo ci{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+    ci.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    ci.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    ci.stage.module = sm;
+    ci.stage.pName = "main";
+    ci.layout = pl;
+    VkPipeline pp{};
+    const VkResult pr2 = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &ci, nullptr, &pp);
+    vkDestroyShaderModule(device, sm, nullptr);
+    if (pr2 != VK_SUCCESS) return destroy(), false;
+    const VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2 * m_slots};
+    VkDescriptorPoolCreateInfo poi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+    poi.maxSets = m_slots;
+    poi.poolSizeCount = 1;
+    poi.pPoolSizes = &ps;
+    VkDescriptorPool pool{};
+    if (vkCreateDescriptorPool(device, &poi, nullptr, &pool) != VK_SUCCESS) {
+        vkDestroyPipeline(device, pp, nullptr);
+        return destroy(), false;
+    }
+    m_pool = pool;
+    VkDescriptorSetLayout layouts[UiVkRenderer::kMaxSlots];
+    std::fill(layouts, layouts + m_slots, sl);
+    VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    ai.descriptorPool = pool;
+    ai.descriptorSetCount = m_slots;
+    ai.pSetLayouts = layouts;
+    VkDescriptorSet sets[UiVkRenderer::kMaxSlots]{};
+    if (vkAllocateDescriptorSets(device, &ai, sets) != VK_SUCCESS) {
+        vkDestroyPipeline(device, pp, nullptr);
+        return destroy(), false;
+    }
+    for (u32 i = 0; i < m_slots; ++i) m_sets[i] = sets[i];
+    m_pipeline = pp;
+    return true;
+}
+
+void UiVkEncoder::destroy() {
+    if (!m_device) return;
+    VkDevice device = static_cast<VkDevice>(m_device);
+    if (m_pipeline) vkDestroyPipeline(device, static_cast<VkPipeline>(m_pipeline), nullptr);
+    if (m_pool) vkDestroyDescriptorPool(device, static_cast<VkDescriptorPool>(m_pool), nullptr);
+    if (m_layout) vkDestroyPipelineLayout(device, static_cast<VkPipelineLayout>(m_layout), nullptr);
+    if (m_setLayout) vkDestroyDescriptorSetLayout(device, static_cast<VkDescriptorSetLayout>(m_setLayout), nullptr);
+    m_pipeline = m_pool = m_layout = m_setLayout = nullptr;
+    for (void*& s : m_sets) s = nullptr;
+    m_device = nullptr;
+}
+
+void UiVkEncoder::record(void* commandBuffer, u32 slot, void* srcView, void* dstView, int x0, int y0, int x1, int y1,
+                         f32 sdrWhiteNits) {
+    if (!valid() || slot >= m_slots || x1 <= x0 || y1 <= y0) return;
+    VkDevice device = static_cast<VkDevice>(m_device);
+    VkCommandBuffer cmd = static_cast<VkCommandBuffer>(commandBuffer);
+    VkDescriptorImageInfo ii[2]{};
+    ii[0].imageView = static_cast<VkImageView>(srcView);
+    ii[0].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    ii[1].imageView = static_cast<VkImageView>(dstView);
+    ii[1].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    VkWriteDescriptorSet wr[2]{};
+    for (u32 i = 0; i < 2; ++i) {
+        wr[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        wr[i].dstSet = static_cast<VkDescriptorSet>(m_sets[slot]);
+        wr[i].dstBinding = i;
+        wr[i].descriptorCount = 1;
+        wr[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        wr[i].pImageInfo = &ii[i];
+    }
+    vkUpdateDescriptorSets(device, 2, wr, 0, nullptr);
+    const VkDescriptorSet set = static_cast<VkDescriptorSet>(m_sets[slot]);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, static_cast<VkPipeline>(m_pipeline));
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, static_cast<VkPipelineLayout>(m_layout), 0, 1, &set, 0,
                             nullptr);
-    vkCmdPushConstants(cmd, static_cast<VkPipelineLayout>(m_layout), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(GpuPush),
-                       &s.push);
-    vkCmdDispatch(cmd, (s.push.extent[0] + kUiTile - 1) / kUiTile, (s.push.extent[1] + kUiTile - 1) / kUiTile, 1);
+    const EncodePush push{{x0, y0, x1, y1}, sdrWhiteNits};
+    vkCmdPushConstants(cmd, static_cast<VkPipelineLayout>(m_layout), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof push, &push);
+    vkCmdDispatch(cmd, u32(x1 - x0 + 15) / 16, u32(y1 - y0 + 15) / 16, 1);
 }
 
 } // namespace fuse::ui::render

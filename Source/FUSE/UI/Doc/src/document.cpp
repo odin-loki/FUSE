@@ -1,3 +1,5 @@
+#include "fuse/ui/from_chars.hpp"
+#include "fuse/ui/os.hpp"
 #include "fuse/ui/doc/document.hpp"
 
 #include "fuse/ui/widgets/widgets.hpp"
@@ -37,7 +39,7 @@ void Model::setString(u32 s, std::string_view v) {
     var.isString = true;
     var.text.assign(v);
     double d = 0.0;
-    const auto r = std::from_chars(v.data(), v.data() + v.size(), d);
+    const auto r = fuse::ui::fromChars(v.data(), v.data() + v.size(), d);
     var.number = r.ec == std::errc{} ? d : 0.0;
     var.version = ++m_version;
 }
@@ -91,7 +93,7 @@ struct ExprParser {
             std::size_t j = i;
             while (j < s.size() && ((s[j] >= '0' && s[j] <= '9') || s[j] == '.' || s[j] == 'e' || s[j] == 'E')) ++j;
             double v = 0;
-            const auto r = std::from_chars(s.data() + i, s.data() + j, v);
+            const auto r = fuse::ui::fromChars(s.data() + i, s.data() + j, v);
             if (r.ec != std::errc{}) return fail("bad number");
             i = j;
             code.push_back({Expr::Op::Num, 0, v});
@@ -258,7 +260,7 @@ std::expected<Template, std::string> Template::compile(std::string_view src, Mod
         if (!body.empty() && body[0] == '=') { twoWay = true; body.remove_prefix(1); }
         if (const auto colon = body.rfind(':'); colon != std::string_view::npos) {
             int d = 0;
-            const auto r = std::from_chars(body.data() + colon + 1, body.data() + body.size(), d);
+            const auto r = fuse::ui::fromChars(body.data() + colon + 1, body.data() + body.size(), d);
             if (r.ec != std::errc{} || r.ptr != body.data() + body.size() || d < 0 || d > 9)
                 return std::unexpected("bad ':decimals' in \"" + std::string(src) + "\"");
             p.decimals = d;
@@ -346,6 +348,19 @@ std::expected<SignalKind, std::string> signalOf(std::string_view s) {
     if (s == "submitted") return SignalKind::Submitted;
     if (s == "focusChanged") return SignalKind::FocusChanged;
     if (s == "hoverChanged") return SignalKind::HoverChanged;
+    if (s == "editingFinished") return SignalKind::EditingFinished;
+    if (s == "highlighted") return SignalKind::Highlighted;
+    if (s == "activated") return SignalKind::Activated;
+    if (s == "transitionRun") return SignalKind::TransitionRun;
+    if (s == "transitionStart") return SignalKind::TransitionStart;
+    if (s == "transitionEnd") return SignalKind::TransitionEnd;
+    if (s == "transitionCancel") return SignalKind::TransitionCancel;
+    if (s == "animationStart") return SignalKind::AnimationStart;
+    if (s == "animationIteration") return SignalKind::AnimationIteration;
+    if (s == "animationEnd") return SignalKind::AnimationEnd;
+    if (s == "animationCancel") return SignalKind::AnimationCancel;
+    if (s == "finish") return SignalKind::ScriptFinish;
+    if (s == "cancel") return SignalKind::ScriptCancel;
     return std::unexpected("unknown signal '" + std::string(s) + "'");
 }
 } // namespace
@@ -438,6 +453,8 @@ std::expected<NodeHandle, DocError> Document::buildNode(const JsonValue& n, Node
             m_ui.setA11y(node, m_ui.role(node), v.string);
         } else if (key == "image" && v.isNumber()) {
             m_ui.setUserData(node, u64(v.number));
+        } else if (key == "animate") {
+            continue; // after the node's properties and children (a view timeline needs its scroll container)
         } else if (key == "step" && v.isNumber()) {
             m_ui.setRange(node, m_ui.rangeMin(node), m_ui.rangeMax(node), f32(v.number));
         } else {
@@ -467,8 +484,157 @@ std::expected<NodeHandle, DocError> Document::buildNode(const JsonValue& n, Node
             if (!c) return c;
             path.resize(len);
         }
+        sortChildren(node);
     }
+    if (const JsonValue* an = n.get("animate"))
+        if (auto r = buildAnimate(node, *an, path); !r) return std::unexpected(r.error());
     return node;
+}
+
+void Document::setOrder(NodeHandle node, double order) {
+    for (auto& [h, o] : m_order)
+        if (h == node) { o = order; return; }
+    m_order.emplace_back(node, order);
+}
+void Document::sortChildren(NodeHandle parent) {
+    if (!m_ui.alive(parent)) return;
+    std::vector<std::pair<NodeHandle, double>> kids;
+    bool any = false;
+    for (NodeHandle c = m_ui.firstChild(parent); c; c = m_ui.nextSibling(c)) {
+        double o = 0.0;
+        for (const auto& [h, v] : m_order)
+            if (h == c) { o = v; any = true; break; }
+        kids.emplace_back(c, o);
+    }
+    if (!any) return;
+    std::stable_sort(kids.begin(), kids.end(), [](const auto& a, const auto& b) { return a.second < b.second; });
+    for (u32 k = 0; k < kids.size(); ++k)
+        if (m_ui.childIndex(kids[k].first) != i32(k)) m_ui.setChildIndex(kids[k].first, k);
+}
+
+namespace {
+std::string_view trimView(std::string_view t) {
+    while (!t.empty() && (t.front() == ' ' || t.front() == '\t')) t.remove_prefix(1);
+    while (!t.empty() && (t.back() == ' ' || t.back() == '\t')) t.remove_suffix(1);
+    return t;
+}
+bool parseTimelineText(UiContext& ui, std::string_view t, AnimTimeline& out) {
+    t = trimView(t);
+    out = {};
+    if (t == "document" || t.empty()) return true;
+    const bool scroll = t.starts_with("scroll("), view = t.starts_with("view(");
+    if ((!scroll && !view) || t.back() != ')') return false;
+    out.kind = scroll ? AnimTimeline::Kind::Scroll : AnimTimeline::Kind::View;
+    std::string_view args = t.substr(scroll ? 7 : 5);
+    args.remove_suffix(1);
+    int insets = 0;
+    while (!(args = trimView(args)).empty()) {
+        const std::size_t sp = args.find(' ');
+        const std::string_view w = args.substr(0, sp);
+        args = sp == std::string_view::npos ? std::string_view{} : args.substr(sp + 1);
+        if (w == "block" || w == "y") out.axis = 1;
+        else if (w == "inline" || w == "x") out.axis = 0;
+        else if (w == "nearest" || w == "self") {}
+        else if (w.starts_with('#')) {
+            out.source = ui.find(w.substr(1));
+            if (!out.source) return false;
+        } else if (view && insets < 2) {
+            double px = 0.0;
+            std::string_view num = w;
+            if (num.ends_with("px")) num.remove_suffix(2);
+            if (std::from_chars(num.data(), num.data() + num.size(), px).ec != std::errc{}) return false;
+            (insets++ ? out.insetEnd : out.insetStart) = f32(px);
+            if (insets == 1) out.insetEnd = f32(px); // one inset: both ends
+        } else return false;
+    }
+    return true;
+}
+} // namespace
+
+std::expected<void, DocError> Document::buildAnimate(NodeHandle node, const JsonValue& v, const std::string& path) {
+    if (v.isArray()) {
+        for (const JsonValue& e : v.array)
+            if (auto r = buildAnimate(node, e, path); !r) return r;
+        return {};
+    }
+    auto bad = [&](std::string m) { return std::unexpected(DocError{path, "animate: " + std::move(m)}); };
+    if (!v.isObject()) return bad("must be an object or an array of objects");
+    AnimationOptions o;
+    const JsonValue* frames = nullptr;
+    for (const auto& [k, x] : v.object) {
+        auto num = [&](f32& out) { if (!x.isNumber()) return false; out = f32(x.number); return true; };
+        bool ok = true;
+        if (k == "keyframes") frames = &x;
+        else if (k == "duration") ok = num(o.duration);
+        else if (k == "delay") ok = num(o.delay);
+        else if (k == "endDelay") ok = num(o.endDelay);
+        else if (k == "iterationStart") ok = num(o.iterationStart);
+        else if (k == "playbackRate") ok = num(o.playbackRate);
+        else if (k == "iterations") {
+            if (x.isString() && x.string == "infinite") o.iterations = std::numeric_limits<f32>::infinity();
+            else ok = num(o.iterations);
+        } else if (k == "direction" && x.isString()) {
+            if (x.string == "normal") o.direction = AnimDirection::Normal;
+            else if (x.string == "reverse") o.direction = AnimDirection::Reverse;
+            else if (x.string == "alternate") o.direction = AnimDirection::Alternate;
+            else if (x.string == "alternate-reverse") o.direction = AnimDirection::AlternateReverse;
+            else ok = false;
+        } else if (k == "fill" && x.isString()) {
+            if (x.string == "none" || x.string == "auto") o.fill = AnimFill::None;
+            else if (x.string == "forwards") o.fill = AnimFill::Forwards;
+            else if (x.string == "backwards") o.fill = AnimFill::Backwards;
+            else if (x.string == "both") o.fill = AnimFill::Both;
+            else ok = false;
+        } else if (k == "composite" && x.isString()) {
+            if (x.string == "replace") o.composite = AnimComposite::Replace;
+            else if (x.string == "add") o.composite = AnimComposite::Add;
+            else if (x.string == "accumulate") o.composite = AnimComposite::Accumulate;
+            else ok = false;
+        } else if (k == "easing" && x.isString()) ok = parseEasing(x.string, o.easing);
+        else if (k == "id" && x.isString()) o.id = x.string;
+        else if (k == "autoplay" && x.isBool()) o.autoplay = x.boolean;
+        else if (k == "timeline" && x.isString()) ok = parseTimelineText(m_ui, x.string, o.timeline);
+        else ok = false;
+        if (!ok) return bad("bad option '" + k + "'");
+    }
+    if (!frames) return bad("needs keyframes");
+    AnimationHandle h;
+    if (frames->isString()) h = m_ui.animate(node, frames->string, std::move(o));
+    else if (frames->isArray()) {
+        std::vector<AnimKeyframe> kf;
+        for (const JsonValue& f : frames->array) {
+            if (!f.isObject()) return bad("keyframe must be an object");
+            AnimKeyframe k;
+            for (const auto& [name, x] : f.object) {
+                if (name == "offset") {
+                    if (!x.isNumber()) return bad("offset must be a number");
+                    k.offset = f32(x.number);
+                } else if (name == "easing") {
+                    if (!x.isString() || !parseEasing(x.string, k.ease)) return bad("bad keyframe easing");
+                    k.hasEase = true;
+                } else if (name == "composite") {
+                    if (!x.isString()) return bad("bad keyframe composite");
+                    k.hasComposite = true;
+                    if (x.string == "add") k.composite = AnimComposite::Add;
+                    else if (x.string == "accumulate") k.composite = AnimComposite::Accumulate;
+                    else if (x.string == "replace") k.composite = AnimComposite::Replace;
+                    else return bad("bad keyframe composite");
+                } else {
+                    Prop p;
+                    PropValue pv;
+                    std::string css;
+                    appendCss(css, x);
+                    if (!findProp(name, p) || !parsePropValue(p, css, pv)) return bad("bad keyframe property " + name + ": " + css);
+                    k.values.emplace_back(p, pv);
+                }
+            }
+            kf.push_back(std::move(k));
+        }
+        h = m_ui.animate(node, std::move(kf), std::move(o));
+    } else return bad("keyframes must be CSS text or an array");
+    if (!h) return bad("invalid keyframes or timing");
+    m_anims.push_back(h);
+    return {};
 }
 
 std::expected<void, DocError> Document::bindProp(NodeHandle node, std::string_view prop, const JsonValue& v,
@@ -481,6 +647,7 @@ std::expected<void, DocError> Document::bindProp(NodeHandle node, std::string_vi
     else if (prop == "visible") target = Target::Visible;
     else if (prop == "min") target = Target::Min;
     else if (prop == "max") target = Target::Max;
+    else if (prop == "order") target = Target::Order;
     else return std::unexpected(DocError{path, "unknown property '" + std::string(prop) + "'"});
 
     if (!isBindingString(v)) { // constant
@@ -497,6 +664,10 @@ std::expected<void, DocError> Document::bindProp(NodeHandle node, std::string_vi
             if (!v.isNumber()) return std::unexpected(DocError{path, std::string(prop) + " must be a number"});
             if (target == Target::Min) m_ui.setRange(node, f32(v.number), m_ui.rangeMax(node), m_ui.rangeStep(node));
             else m_ui.setRange(node, m_ui.rangeMin(node), f32(v.number), m_ui.rangeStep(node));
+            break;
+        case Target::Order:
+            if (!v.isNumber()) return std::unexpected(DocError{path, "order must be a number"});
+            setOrder(node, v.number);
             break;
         case Target::Checked: case Target::Disabled: case Target::Visible:
             if (!v.isBool()) return std::unexpected(DocError{path, std::string(prop) + " must be a boolean"});
@@ -553,6 +724,10 @@ void Document::apply(u32 bi) {
         case Target::Checked: m_ui.setChecked(b.node, v != 0.0); break;
         case Target::Disabled: m_ui.setDisabled(b.node, v != 0.0); break;
         case Target::Visible: m_ui.setCss(b.node, "display", v != 0.0 ? "flex" : "none"); break;
+        case Target::Order:
+            setOrder(b.node, v);
+            sortChildren(m_ui.parent(b.node));
+            break;
         default: break;
         }
     }
@@ -628,6 +803,9 @@ std::expected<void, DocError> Document::reload(std::string_view json) {
     m_connections.clear();
     m_bindings.clear();
     m_actions.clear();
+    m_order.clear();
+    for (AnimationHandle a : m_anims) m_ui.animCancel(a);
+    m_anims.clear();
     // Park the id nodes under a hidden holder, drop the rest of the old tree.
     NodeHandle holder;
     if (!m_reuse.empty()) {
@@ -669,11 +847,9 @@ std::expected<void, DocError> Document::reload(std::string_view json) {
 }
 
 bool readTextFile(const char* path, std::string& out) {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) return false;
-    std::ostringstream ss;
-    ss << f.rdbuf();
-    out = ss.str();
+    auto text = fuse::ui::os::readFile(path); // fuse::ui::os seam (FORGE)
+    if (!text) return false;
+    out = std::move(*text);
     return true;
 }
 
