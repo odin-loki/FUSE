@@ -75,7 +75,7 @@ Window-system backends (one per platform family) sit under `fuse_app_native` beh
 | Linux Wayland | native libwayland-client (runtime-loaded), xdg-shell, wl_shm | wl_keyboard+xkbcommon (text-input-v3 TODO) | wl_shm CPU raster (Vulkan TODO) | AT-SPI | **done (G2)**: window, input, DnD in+out; gated by in-process libwayland-server compositor test |
 | Windows | native Win32 | IMM32 | Vulkan / GDI fallback | UIA via AccessKit | **done**, gated under Wine |
 | FreeBSD | X11 backend (same code) | XIM | Vulkan / CPU | AT-SPI | builds expected; CI cross-compile in G1 |
-| macOS | Cocoa via SDL3 → native NSView | NSTextInputClient | MoltenVK / CAMetalLayer | NSAccessibility | scaffold (G3) |
+| macOS | native Cocoa NSWindow + layer-backed NSView (`fuse/app/cocoa.hpp`) | NSTextInputClient | CGImage CPU raster (MoltenVK TODO) | NSAccessibilityElement tree | **written, UNVERIFIED (G3)**: never compiled (no Apple SDK on Linux host); only `cocoa_map.hpp` tables tested |
 | iOS | UIKit via SDL3 | UITextInput | MoltenVK | UIAccessibility | scaffold (G4) |
 | Android | ANativeActivity via SDL3 | InputConnection | Vulkan `ANativeWindow` | AccessibilityNodeProvider | scaffold (G4) |
 

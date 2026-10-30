@@ -5,6 +5,12 @@ target_link_libraries(fuse_app PUBLIC fuse_ui_doc fuse_ui_os)
 
 # fuse_app_native: real OS windows (X11 via runtime-loaded libX11, Win32) + Vulkan swapchain presenter.
 add_library(fuse_app_native STATIC src/native.cpp src/wayland.cpp)
+if(APPLE) # G3 Cocoa backend: UNVERIFIED (never built; written on Linux)
+    enable_language(OBJCXX)
+    target_sources(fuse_app_native PRIVATE src/cocoa.mm)
+    set_source_files_properties(src/cocoa.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+    target_link_libraries(fuse_app_native PRIVATE "-framework Cocoa" "-framework QuartzCore")
+endif()
 target_link_libraries(fuse_app_native PUBLIC fuse_app)
 if(FUSE_UI_VK_LINK)
     target_sources(fuse_app_native PRIVATE src/vk_present.cpp)
