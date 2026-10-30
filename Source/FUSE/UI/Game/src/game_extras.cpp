@@ -3,6 +3,7 @@
 
 #include "fuse/ui/widgets/widgets.hpp"
 
+#include <cstdlib>
 #include <algorithm>
 #include <bit>
 #include <cmath>

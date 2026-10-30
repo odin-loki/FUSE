@@ -1,0 +1,131 @@
+diff --git a/script/include/forge/script/script.hpp b/script/include/forge/script/script.hpp
+index 783ec4c..2df0c28 100644
+--- a/script/include/forge/script/script.hpp
++++ b/script/include/forge/script/script.hpp
+@@ -54,6 +54,17 @@ public:
+     int repl();                                                                // interactive loop on stdin/stdout
+     std::string stats();
+ 
++    // ---- host bindings (embedding): native C++ functions callable from scripts, and script callbacks the host
++    // can invoke later. Values cross as JSON text, like the plugin ABI (plugin.h). A script function passed as an
++    // argument arrives as {"$callback": id}; keep the id and call it with call(id, args), release() it when done.
++    // `name` may be qualified ("ui::find"); scripts call it as ui::find(...) (or ui.find after `auto ui = ...`).
++    // A host function reports an error by throwing; the script sees HostError with what().
++    using host_fn = std::function<std::string(const std::string& args_json)>;
++    void define(const std::string& name, int min_args, int max_args, host_fn fn);
++    result call(std::uint64_t callback, const std::string& args_json = "[]");   // re-entrant (safe inside a host fn)
++    void release(std::uint64_t callback);
++    std::size_t callbacks() const;                                             // live callback ids
++
+     struct impl;
+ private:
+     std::unique_ptr<impl> p_;
+diff --git a/script/src/builtins.cpp b/script/src/builtins.cpp
+index b6f8a36..5451a9e 100644
+--- a/script/src/builtins.cpp
++++ b/script/src/builtins.cpp
+@@ -881,4 +881,36 @@ void install_builtins(Shared& sh) {
+     for (auto& [k, v] : B) if (auto* r = std::get_if<Ref<Obj>>(&v)) if (*r) (*r)->frozen = true;
+ }
+ 
++Value host_native(Shared& sh, const std::string& name, int lo, int hi, std::function<std::string(const std::string&)> fn) {
++    Shared* shp = &sh;
++    return native(name, std::max(0, lo), hi < 0 ? -1 : hi, [shp, name, fn = std::move(fn)](Interp& in, Args& a) -> Value {
++        // Script callables anywhere in the arguments (also inside lists / maps) become {"$callback": id}.
++        std::function<json::value(const Value&, int)> conv = [&](const Value& x, int depth) -> json::value {
++            if (depth > 256) in.raise("ValueError", name + ": arguments nested too deep (cycle?)");
++            if (as<Function>(x) || as<Native>(x) || as<Bound>(x)) {
++                std::uint64_t id;
++                { std::lock_guard g(shp->cb_m); id = shp->cb_next++; shp->callbacks[id] = x; }
++                json::object o; o.emplace_back("$callback", double(id)); return json::value(std::move(o));
++            }
++            if (auto* l = as<List>(x)) { json::array r; for (auto& e : l->items) r.push_back(conv(e, depth + 1)); return json::value(std::move(r)); }
++            if (auto* m = as<Map>(x)) { json::object o; for (auto& [k, e] : m->entries) o.emplace_back(as<String>(k) ? as<String>(k)->s : in.str(k), conv(e, depth + 1)); return json::value(std::move(o)); }
++            return to_json(in, x);
++        };
++        json::array arr;
++        for (auto& x : a) arr.push_back(conv(x, 0));
++        std::string res;
++        try { res = fn(json::dump(json::value(std::move(arr)))); }
++        catch (const ScriptError&) { throw; }
++        catch (const std::exception& e) { in.raise("HostError", name + ": " + e.what()); }
++        if (res.empty()) return Nil{};
++        try { return from_json(json::parse(res)); }
++        catch (const forge_exception& e) { in.raise("HostError", name + ": bad JSON result: " + e.what()); }
++    });
++}
++Value host_args(const std::string& js) {
++    Value v = from_json(json::parse(js.empty() ? "[]" : js));
++    if (!as<List>(v)) { auto l = make<List>(); l->push(v); return obj(l); }
++    return v;
++}
++
+ } // namespace forge::script
+diff --git a/script/src/engine.cpp b/script/src/engine.cpp
+index 57ddb38..2af488c 100644
+--- a/script/src/engine.cpp
++++ b/script/src/engine.cpp
+@@ -73,7 +73,7 @@ engine::engine(options o) : p_(std::make_unique<impl>()) {
+     sh.builtins["args"] = obj(l);
+     p_->fresh();
+ }
+-engine::~engine() { p_->in.reset(); p_->sh->modules.clear(); Heap::instance().collect(); }
++engine::~engine() { { std::lock_guard g(p_->sh->cb_m); p_->sh->callbacks.clear(); } p_->in.reset(); p_->sh->modules.clear(); Heap::instance().collect(); }
+ 
+ result engine::run_file(const std::string& path) {
+     auto src = os::read_file(path);
+@@ -159,4 +159,31 @@ int engine::repl() {
+     return 0;
+ }
+ 
++void engine::define(const std::string& name, int min_args, int max_args, host_fn fn) {
++    p_->sh->builtins[name] = host_native(*p_->sh, name, min_args, max_args, std::move(fn));
++}
++result engine::call(std::uint64_t id, const std::string& args_json) {
++    Value f;
++    { std::lock_guard g(p_->sh->cb_m); auto it = p_->sh->callbacks.find(id); if (it != p_->sh->callbacks.end()) f = it->second; }
++    result r;
++    if (is_nil(f)) { r.ok = false; r.error_type = "ValueError"; r.error = "ValueError: no callback " + std::to_string(id); return r; }
++    auto& in = *p_->in;
++    const int depth = in.depth; auto frames = in.frames; const int line = in.line;
++    const bool nested = depth > 0 || !frames.empty();
++    if (!nested) { p_->sh->interrupt = false; }
++    try {
++        Value args = host_args(args_json);
++        std::vector<Value> a = as<List>(args)->items;
++        Value v = in.call(f, a);
++        if (!is_nil(v)) r.value = in.repr(v);
++    } catch (...) {
++        r = p_->fail(std::current_exception());
++        in.depth = depth; in.frames = std::move(frames);
++    }
++    in.line = line;
++    return r;
++}
++void engine::release(std::uint64_t id) { std::lock_guard g(p_->sh->cb_m); p_->sh->callbacks.erase(id); }
++std::size_t engine::callbacks() const { std::lock_guard g(p_->sh->cb_m); return p_->sh->callbacks.size(); }
++
+ } // namespace forge::script
+diff --git a/script/src/interp.hpp b/script/src/interp.hpp
+index e365b7d..029a1f6 100644
+--- a/script/src/interp.hpp
++++ b/script/src/interp.hpp
+@@ -47,6 +47,8 @@ struct Shared {
+     std::vector<std::shared_ptr<const FnDecl>> keep;           // programs whose AST must outlive globals
+     std::unordered_map<std::string, std::unordered_map<std::string, Value>> methods;   // built-in methods by receiver type
+     std::unordered_map<std::string, Ref<Class>> classes;       // built-in classes (ProcResult, ...)
++    std::mutex cb_m; std::uint64_t cb_next = 1;                // engine::define / call: script callbacks held by the host
++    std::unordered_map<std::uint64_t, Value> callbacks;
+ };
+ 
+ struct Chunk;
+@@ -143,6 +145,9 @@ Value deep_copy(Interp& in, const Value& v, std::unordered_map<const Obj*, Value
+ struct NodeIter;   // runtime iterator
+ 
+ void install_builtins(Shared& sh);
++// engine::define: a native that converts its arguments to JSON (script callables become {"$callback": id}).
++Value host_native(Shared& sh, const std::string& name, int lo, int hi, std::function<std::string(const std::string&)> fn);
++Value host_args(const std::string& json_array);              // JSON array -> argument list (List)
+ void install_cpp_std(Shared& sh);
+ void install_automation(Shared& sh);
+ void install_ai(Shared& sh);

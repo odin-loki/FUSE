@@ -1,9 +1,15 @@
 // FUSE UI Tier D (2) widgets (plan §5): font picker, file dialog, node graph, curve editor, timeline, viewport,
 // code editor, date-time edit and a video widget over a pluggable decoder (stub: test pattern).
+#include "fuse/ui/os.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
 #include "widgets_internal.hpp"
 
 #include <algorithm>
+#include <ctime>
+#include <iomanip>
+#include <locale>
+#include <sstream>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -106,16 +112,15 @@ bool globMatch(std::string_view pat, std::string_view s) {
     return p == pat.size();
 }
 std::string joinPath(std::string_view dir, std::string_view name) {
-    std::filesystem::path p{std::string(dir)};
+    std::filesystem::path p{std::string(dir)}; // std:: path algebra only; no OS access here
     p /= std::string(name);
     return p.lexically_normal().generic_string();
 }
 bool fileAccept(UiContext& ui, NodeHandle dlg, FileDlgState& s, std::string_view name) {
     if (name.empty()) return false;
     const std::string full = joinPath(s.dir, name);
-    std::error_code ec;
-    if (std::filesystem::is_directory(full, ec)) return fileDialogNavigate(ui, dlg, full);
-    if (!s.save && !std::filesystem::exists(full, ec)) return false;
+    if (fuse::ui::os::isDirectory(full)) return fileDialogNavigate(ui, dlg, full);
+    if (!s.save && !fuse::ui::os::exists(full)) return false;
     s.accepted = full;
     closeDialog(ui, dlg);
     ui.emit(dlg, SignalKind::Submitted, {.text = s.accepted});
@@ -1007,75 +1012,317 @@ struct CodeEditW {
 };
 
 // =====================================================================================================================
-// Date-time edit
-struct DtState { int f[5] = {1970, 1, 1, 0, 0}; u32 field = 0; std::string typed; NodeHandle popup; };
-Pool<DtState>& dtPool() { static Pool<DtState> p; return p; }
+// Date-time edit (QDateTimeEdit / QDateEdit / QTimeEdit): a display format parsed into sections over one civil
+// millisecond value (no time zone).
+constexpr i64 kMsDay = 86400000;
 int monthDays(int y, int m) {
     static const int d[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
     return m == 2 && ((y % 4 == 0 && y % 100 != 0) || y % 400 == 0) ? 29 : d[(m - 1) % 12];
 }
-void dtNormalize(DtState& s) {
-    s.f[0] = std::clamp(s.f[0], 1, 9999);
-    s.f[1] = std::clamp(s.f[1], 1, 12);
-    s.f[2] = std::clamp(s.f[2], 1, monthDays(s.f[0], s.f[1]));
-    s.f[3] = std::clamp(s.f[3], 0, 23);
-    s.f[4] = std::clamp(s.f[4], 0, 59);
+constexpr const char* kMonthNames[] = {"January", "February", "March", "April", "May", "June", "July",
+                                       "August", "September", "October", "November", "December"};
+constexpr const char* kDayNames[] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+/// Month / weekday names: the C++ runtime's locale data (std::time_put %B %b %A %a over the OS locales), else the
+/// English names above. No locale tables of our own.
+struct DtNames { std::string month[12], monthShort[12], day[7], dayShort[7]; bool localized = false; };
+const DtNames& dtNames(const std::string& loc) {
+    static std::vector<std::pair<std::string, std::unique_ptr<DtNames>>> cache;
+    for (auto& [k, v] : cache) if (k == loc) return *v;
+    auto n = std::make_unique<DtNames>();
+    for (int i = 0; i < 12; ++i) { n->month[i] = kMonthNames[i]; n->monthShort[i] = n->month[i].substr(0, 3); }
+    for (int i = 0; i < 7; ++i) { n->day[i] = kDayNames[i]; n->dayShort[i] = n->day[i].substr(0, 3); }
+    if (!loc.empty()) {
+        try {
+            const std::locale L = loc == "system" ? std::locale("") : std::locale(loc);
+            auto fmt = [&](const std::tm& t, const char* f) {
+                std::ostringstream os;
+                os.imbue(L);
+                os << std::put_time(&t, f);
+                return os.str();
+            };
+            for (int i = 0; i < 12; ++i) {
+                std::tm t{}; t.tm_year = 100; t.tm_mon = i; t.tm_mday = 1;
+                const std::string a = fmt(t, "%B"), b = fmt(t, "%b");
+                if (!a.empty()) n->month[i] = a;
+                if (!b.empty()) n->monthShort[i] = b;
+            }
+            for (int i = 0; i < 7; ++i) {
+                std::tm t{}; t.tm_wday = (i + 1) % 7; // Monday first
+                const std::string a = fmt(t, "%A"), b = fmt(t, "%a");
+                if (!a.empty()) n->day[i] = a;
+                if (!b.empty()) n->dayShort[i] = b;
+            }
+            n->localized = true;
+        } catch (const std::exception&) {} // the runtime has no such locale (e.g. MinGW): English
+    }
+    cache.emplace_back(loc, std::move(n));
+    return *cache.back().second;
 }
-i64 dtMinutes(const DtState& s) { return i64(daysFromCivil(s.f[0], s.f[1], s.f[2])) * 1440 + s.f[3] * 60 + s.f[4]; }
-void dtSetFromMinutes(DtState& s, i64 m) {
-    const i64 d = m >= 0 ? m / 1440 : -((-m + 1439) / 1440);
-    const i64 r = m - d * 1440;
-    civilFromDays(i32(d), s.f[0], s.f[1], s.f[2]);
-    s.f[3] = int(r / 60);
-    s.f[4] = int(r % 60);
+enum class DtKind : u8 { Literal, Year, Month, Day, Weekday, Hour24, Hour12, Minute, Second, Msec, AmPm };
+struct DtSection {
+    DtKind kind = DtKind::Literal;
+    u8 count = 0;       ///< pattern letters (yy / yyyy, M..MMMM, ...); AP: 1 = upper-case, 0 = lower
+    std::string lit;    ///< Literal text
+};
+struct DtFields { int y = 1970, mo = 1, d = 1, h = 0, mi = 0, s = 0, ms = 0; };
+DtFields dtSplit(i64 v) {
+    DtFields f;
+    const i64 day = v >= 0 ? v / kMsDay : -((-v + kMsDay - 1) / kMsDay);
+    i64 r = v - day * kMsDay;
+    civilFromDays(i32(day), f.y, f.mo, f.d);
+    f.h = int(r / 3600000); r %= 3600000;
+    f.mi = int(r / 60000); r %= 60000;
+    f.s = int(r / 1000);
+    f.ms = int(r % 1000);
+    return f;
 }
-void dtPublish(UiContext& ui, NodeHandle n, DtState& s) {
-    dtNormalize(s);
+i64 dtJoin(const DtFields& f) {
+    const int d = std::min(f.d, monthDays(f.y, f.mo));
+    return i64(daysFromCivil(f.y, f.mo, d)) * kMsDay + i64(f.h) * 3600000 + i64(f.mi) * 60000 + i64(f.s) * 1000 + f.ms;
+}
+i64 dtJoin(const DateTime& t) { return dtJoin(DtFields{t.year, t.month, t.day, t.hour, t.minute, t.second, t.msec}); }
+DateTime dtToDateTime(i64 v) { const DtFields f = dtSplit(v); return {f.y, f.mo, f.d, f.h, f.mi, f.s, f.ms}; }
+/// Qt display-format letters; '...' quotes a literal ('' = a quote). Unknown characters are literals.
+std::vector<DtSection> dtParseFormat(std::string_view f) {
+    std::vector<DtSection> out;
+    auto lit = [&](std::string_view t) {
+        if (out.empty() || out.back().kind != DtKind::Literal) out.push_back({});
+        out.back().lit += t;
+    };
+    for (std::size_t i = 0; i < f.size();) {
+        const char c = f[i];
+        if (c == '\'') {
+            std::size_t j = i + 1;
+            if (j < f.size() && f[j] == '\'') { lit("'"); i += 2; continue; }
+            std::string t;
+            while (j < f.size()) {
+                if (f[j] == '\'') { if (j + 1 < f.size() && f[j + 1] == '\'') { t += '\''; j += 2; continue; } break; }
+                t += f[j++];
+            }
+            lit(t);
+            i = j + 1;
+            continue;
+        }
+        std::size_t n = 1;
+        while (i + n < f.size() && f[i + n] == c) ++n;
+        auto sec = [&](DtKind k, u8 cnt, std::size_t used) { out.push_back({k, cnt, {}}); i += used; };
+        switch (c) {
+        case 'y': if (n >= 4) sec(DtKind::Year, 4, 4); else if (n >= 2) sec(DtKind::Year, 2, 2); else { lit("y"); ++i; } break;
+        case 'M': sec(DtKind::Month, u8(std::min<std::size_t>(n, 4)), std::min<std::size_t>(n, 4)); break;
+        case 'd': if (n >= 3) sec(DtKind::Weekday, u8(std::min<std::size_t>(n, 4)), std::min<std::size_t>(n, 4));
+                  else sec(DtKind::Day, u8(n), n); break;
+        case 'H': sec(DtKind::Hour24, u8(std::min<std::size_t>(n, 2)), std::min<std::size_t>(n, 2)); break;
+        case 'h': sec(DtKind::Hour12, u8(std::min<std::size_t>(n, 2)), std::min<std::size_t>(n, 2)); break;
+        case 'm': sec(DtKind::Minute, u8(std::min<std::size_t>(n, 2)), std::min<std::size_t>(n, 2)); break;
+        case 's': sec(DtKind::Second, u8(std::min<std::size_t>(n, 2)), std::min<std::size_t>(n, 2)); break;
+        case 'z': sec(DtKind::Msec, n >= 3 ? 3 : 1, n >= 3 ? 3 : 1); break;
+        case 'A': case 'a':
+            if (i + 1 < f.size() && (f[i + 1] == 'P' || f[i + 1] == 'p')) sec(DtKind::AmPm, c == 'A' ? 1 : 0, 2);
+            else { lit(std::string(1, c)); ++i; }
+            break;
+        default: lit(std::string(1, c)); ++i; break;
+        }
+    }
+    // Qt: with an AP section, h / hh are 12-hour; without one they mean 24-hour
+    const bool ap = std::any_of(out.begin(), out.end(), [](const DtSection& s) { return s.kind == DtKind::AmPm; });
+    if (!ap) for (DtSection& s : out) if (s.kind == DtKind::Hour12) s.kind = DtKind::Hour24;
+    return out;
+}
+std::string dtSectionText(const DtSection& s, const DtFields& f, const DtNames& nm) {
     char b[32];
-    std::snprintf(b, sizeof b, "%04d-%02d-%02d %02d:%02d", s.f[0], s.f[1], s.f[2], s.f[3], s.f[4]);
-    ui.setText(n, b);
-    ui.setValue(n, f32(daysFromCivil(s.f[0], s.f[1], s.f[2])), true); // days: exact in f32
+    auto num = [&](int v, int w) { std::snprintf(b, sizeof b, "%0*d", w, v); return std::string(b); };
+    switch (s.kind) {
+    case DtKind::Literal: return s.lit;
+    case DtKind::Year: return s.count == 4 ? num(f.y, 4) : num(f.y % 100, 2);
+    case DtKind::Month:
+        if (s.count >= 3) return s.count == 3 ? nm.monthShort[f.mo - 1] : nm.month[f.mo - 1];
+        return num(f.mo, s.count);
+    case DtKind::Day: return num(f.d, s.count);
+    case DtKind::Weekday: {
+        const int wd = int(((i64(daysFromCivil(f.y, f.mo, f.d)) % 7 + 7 + 3) % 7)); // 1970-01-01 was a Thursday
+        return s.count == 3 ? nm.dayShort[wd] : nm.day[wd];
+    }
+    case DtKind::Hour24: return num(f.h, s.count);
+    case DtKind::Hour12: return num(f.h % 12 ? f.h % 12 : 12, s.count);
+    case DtKind::Minute: return num(f.mi, s.count);
+    case DtKind::Second: return num(f.s, s.count);
+    case DtKind::Msec: return num(f.ms, s.count);
+    case DtKind::AmPm: return s.count ? (f.h < 12 ? "AM" : "PM") : (f.h < 12 ? "am" : "pm");
+    }
+    return {};
+}
+struct DtState {
+    i64 v = 0, lo = 0, hi = 0;
+    std::vector<DtSection> secs;
+    std::vector<u32> editable; ///< indices into secs of the non-literal sections
+    std::string format;
+    u32 field = 0;             ///< index into editable
+    std::string typed;
+    bool justAdvanced = false; ///< a full section auto-advanced: the separator typed next is swallowed
+    NodeHandle popup;
+    bool calendarPopup = true, wrapping = false, carry = false;
+    u8 type = 0;
+    int wantDay = 0;           ///< the day last set on purpose: month / year changes return to it when it fits (Qt)
+    int yearStart = -1;        ///< two-digit years map into [yearStart, yearStart + 99]; -1 = the current century
+    const DtNames* names = nullptr;               ///< 0 date-time, 1 date, 2 time
+};
+Pool<DtState>& dtPool() { static Pool<DtState> p; return p; }
+void dtSetFormat(DtState& s, std::string_view f) {
+    s.format = std::string(f);
+    s.secs = dtParseFormat(f);
+    s.editable.clear();
+    for (u32 i = 0; i < s.secs.size(); ++i) if (s.secs[i].kind != DtKind::Literal) s.editable.push_back(i);
+    if (s.editable.empty()) s.field = 0; else s.field = std::min<u32>(s.field, u32(s.editable.size()) - 1);
+    s.typed.clear();
+}
+const DtSection* dtCur(const DtState& s) { return s.editable.empty() ? nullptr : &s.secs[s.editable[s.field]]; }
+bool dtHasDate(const DtState& s) {
+    for (const DtSection& x : s.secs)
+        if (x.kind == DtKind::Year || x.kind == DtKind::Month || x.kind == DtKind::Day || x.kind == DtKind::Weekday) return true;
+    return false;
+}
+std::string dtText(const DtState& s, std::vector<std::pair<u32, u32>>* spans = nullptr) {
+    const DtFields f = dtSplit(s.v);
+    std::string t;
+    for (const DtSection& x : s.secs) {
+        const u32 a = u32(t.size());
+        t += dtSectionText(x, f, *s.names);
+        if (spans && x.kind != DtKind::Literal) spans->push_back({a, u32(t.size())});
+    }
+    return t;
+}
+std::string dtIso(i64 v) {
+    const DtFields f = dtSplit(v);
+    char b[40];
+    std::snprintf(b, sizeof b, "%04d-%02d-%02dT%02d:%02d:%02d.%03d", f.y, f.mo, f.d, f.h, f.mi, f.s, f.ms);
+    return b;
+}
+void dtPublish(UiContext& ui, NodeHandle n, DtState& s, i64 nv, bool emit = true, bool keepDay = false) {
+    nv = std::clamp(nv, s.lo, s.hi);
+    const bool changed = nv != s.v;
+    s.v = nv;
+    if (!keepDay || !s.wantDay) s.wantDay = dtSplit(nv).d;
+    ui.setText(n, dtText(s));
+    const i64 day = nv >= 0 ? nv / kMsDay : -((-nv + kMsDay - 1) / kMsDay);
+    ui.setValue(n, f32(day)); // days since 1970: exact in f32
     ui.invalidate(n);
+    if (changed && emit) ui.emit(n, SignalKind::ValueChanged, {.value = f32(day), .text = dtIso(nv)});
 }
-void dtStep(DtState& s, int d) {
-    switch (s.field) {
-    case 0: s.f[0] += d; break;
-    case 1: {
-        int m = s.f[0] * 12 + (s.f[1] - 1) + d;
-        s.f[0] = m / 12; s.f[1] = m % 12 + 1;
+/// stepping a section: Qt clamps at the section's ends (wrapping wraps inside the section); `carry` (the legacy
+/// dateTimeEdit) carries into the next larger unit instead. The day is clamped to the month length either way.
+i64 dtStepped(const DtState& s, int d) {
+    const DtSection* sec = dtCur(s);
+    if (!sec) return s.v;
+    DtFields f = dtSplit(s.v);
+    const DtFields lo = dtSplit(s.lo), hi = dtSplit(s.hi);
+    auto wrapIn = [&](int v, int a, int b) {
+        if (s.wrapping) { const int span = b - a + 1; return a + ((v - a) % span + span) % span; }
+        return std::clamp(v, a, b);
+    };
+    switch (sec->kind) {
+    case DtKind::Year: f.y = s.wrapping ? wrapIn(f.y + d, lo.y, hi.y) : std::clamp(f.y + d, 1, 9999); break; // then clamped to min / max
+    case DtKind::Month:
+        if (s.carry) { const int m = f.y * 12 + (f.mo - 1) + d; f.y = m / 12; f.mo = m % 12 + 1; }
+        else f.mo = wrapIn(f.mo + d, 1, 12);
         break;
+    case DtKind::Day:
+        if (s.carry) return s.v + i64(d) * kMsDay;
+        f.d = wrapIn(f.d + d, 1, monthDays(f.y, f.mo));
+        break;
+    case DtKind::Weekday: return s.v + i64(d) * kMsDay;
+    case DtKind::Hour24: case DtKind::Hour12:
+        if (s.carry) return s.v + i64(d) * 3600000;
+        f.h = wrapIn(f.h + d, 0, 23);
+        break;
+    case DtKind::Minute: if (s.carry) return s.v + i64(d) * 60000; f.mi = wrapIn(f.mi + d, 0, 59); break;
+    case DtKind::Second: if (s.carry) return s.v + i64(d) * 1000; f.s = wrapIn(f.s + d, 0, 59); break;
+    case DtKind::Msec: if (s.carry) return s.v + d; f.ms = wrapIn(f.ms + d, 0, 999); break;
+    case DtKind::AmPm: if ((d > 0) == (f.h < 12) || s.wrapping) f.h = (f.h + 12) % 24; break;
+    case DtKind::Literal: break;
     }
-    case 2: { int y, mo, dd; civilFromDays(daysFromCivil(s.f[0], s.f[1], s.f[2]) + d, y, mo, dd); s.f[0] = y; s.f[1] = mo; s.f[2] = dd; break; }
-    case 3: dtSetFromMinutes(s, dtMinutes(s) + d * 60); return;
-    default: dtSetFromMinutes(s, dtMinutes(s) + d); return;
-    }
-    s.f[2] = std::min(s.f[2], monthDays(s.f[0], s.f[1]));
+    if ((sec->kind == DtKind::Year || sec->kind == DtKind::Month) && s.wantDay) f.d = s.wantDay;
+    f.d = std::min(f.d, monthDays(f.y, f.mo));
+    return dtJoin(f);
 }
+/// typed value for a numeric section; nullopt = rejected
+i64 dtWithField(const DtState& s, const DtSection& sec, int v, bool& ok) {
+    DtFields f = dtSplit(s.v);
+    ok = true;
+    switch (sec.kind) {
+    case DtKind::Year:
+        if (sec.count != 2) f.y = v;
+        else if (s.yearStart >= 0) f.y = s.yearStart + ((v - s.yearStart % 100) % 100 + 100) % 100; // QDate baseYear window
+        else f.y = f.y / 100 * 100 + v;
+        ok = f.y >= 1;
+        if (s.wantDay) f.d = s.wantDay;
+        break;
+    case DtKind::Month: f.mo = v; ok = v >= 1 && v <= 12; if (s.wantDay) f.d = s.wantDay; break;
+    case DtKind::Day: f.d = v; ok = v >= 1 && v <= 31; break; // clamped to the month length on join
+    case DtKind::Hour24: f.h = v; ok = v <= 23; break;
+    case DtKind::Hour12: ok = v >= 1 && v <= 12; f.h = (v % 12) + (f.h >= 12 ? 12 : 0); break;
+    case DtKind::Minute: f.mi = v; ok = v <= 59; break;
+    case DtKind::Second: f.s = v; ok = v <= 59; break;
+    case DtKind::Msec: f.ms = v; ok = v <= 999; break;
+    default: ok = false; break;
+    }
+    return ok ? dtJoin(f) : s.v;
+}
+u32 dtMaxDigits(const DtSection& s) { return s.kind == DtKind::Year ? s.count : s.kind == DtKind::Msec ? 3 : 2; }
+int dtMaxValue(const DtSection& s) {
+    switch (s.kind) {
+    case DtKind::Year: return s.count == 4 ? 9999 : 99;
+    case DtKind::Month: case DtKind::Hour12: return 12;
+    case DtKind::Day: return 31;
+    case DtKind::Hour24: return 23;
+    case DtKind::Minute: case DtKind::Second: return 59;
+    default: return 999;
+    }
+}
+bool dtNumeric(const DtSection& s) {
+    return s.kind != DtKind::AmPm && s.kind != DtKind::Weekday && s.kind != DtKind::Literal && !(s.kind == DtKind::Month && s.count >= 3);
+}
+void dtAdvance(DtState& s, bool automatic = true) {
+    s.typed.clear();
+    if (s.field + 1 < s.editable.size()) { ++s.field; s.justAdvanced = automatic; }
+}
+
 struct DateTimeW {
     static constexpr std::string_view kName = "datetimeedit";
-    static constexpr A11yRole kRole = A11yRole::SpinBox;
+    static constexpr A11yRole kRole = A11yRole::DateTimeInput;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
     static constexpr f32 kBtn = 22.f;
-    static constexpr u32 kStart[5] = {0, 5, 8, 11, 14}, kLen[5] = {4, 2, 2, 2, 2};
+    static std::string a11yValueText(const UiContext& ui, NodeHandle n) { return std::string(ui.text(n)); }
+    static bool button(const DtState& s) { return s.calendarPopup && dtHasDate(s); }
     static Size measure(UiContext& ui, NodeHandle n, Size) {
         const f32 fs = ui.computed(n).fontSize;
-        return {ui.measureString("0000-00-00 00:00", fs) + kBtn + 10.f, std::ceil(fs * 1.4f)};
+        const DtState* s = dtPool().get(ui, n);
+        if (!s) return {80.f, std::ceil(fs * 1.4f)};
+        // widest rendering: 8-glyph digits, the longest month / day names, PM
+        DtState w = *s;
+        w.v = dtJoin(DtFields{2000, 9, 27, 20, 0, 0, 0}); // September, Wednesday
+        const std::string t = dtText(w);
+        std::string digits;
+        for (char c : t) digits += (c >= '0' && c <= '9') ? '0' : c;
+        return {ui.measureString(digits, fs) + (button(*s) ? kBtn : 0.f) + 10.f, std::ceil(fs * 1.4f)};
     }
     static void paint(const PaintContext& pc, DrawList& dl) {
         UiContext& ui = pc.ui;
         DtState* s = dtPool().get(ui, pc.node);
         if (!s) return;
         const Rect c = pc.content;
-        const std::string_view t = ui.text(pc.node);
+        std::vector<std::pair<u32, u32>> spans;
+        const std::string t = dtText(*s, &spans);
         const f32 fs = pc.style.fontSize;
-        const bool focused = ui.focused() == pc.node;
-        if (focused && t.size() >= 16) {
-            const f32 x0 = c.x + ui.measureString(t.substr(0, kStart[s->field]), fs);
-            const f32 x1 = c.x + ui.measureString(t.substr(0, kStart[s->field] + kLen[s->field]), fs);
+        const f32 bw = button(*s) ? kBtn : 0.f;
+        if (ui.focused() == pc.node && s->field < spans.size()) {
+            const std::string_view tv(t);
+            const f32 x0 = c.x + ui.measureString(tv.substr(0, spans[s->field].first), fs);
+            const f32 x1 = c.x + ui.measureString(tv.substr(0, spans[s->field].second), fs);
             dl.rect({x0 - 1.f, c.y + 1.f, x1 - x0 + 2.f, c.h - 2.f}, accentOf(pc).withAlpha(0.55f * pc.opacity), 3.f);
         }
-        ui.paintString(dl, t, {c.x, c.y, c.w - kBtn, c.h}, pc.tint(pc.style.color), fs, TextAlignment::Start, pc.node.index);
+        ui.paintString(dl, t, {c.x, c.y, c.w - bw, c.h}, pc.tint(pc.style.color), fs, TextAlignment::Start, pc.node.index);
+        if (!bw) return;
         const Rect b{c.right() - kBtn, c.y, kBtn, c.h};
         dl.rect(b, pc.tint(Color::rgb(0xFFFFFF, 0.06f)), 3.f);
         // calendar glyph: a small page with a header bar
@@ -1084,20 +1331,83 @@ struct DateTimeW {
         dl.rect({g.x, g.y, g.w, 3.f}, pc.tint(pc.style.color), 1.f);
     }
     static void openPopup(UiContext& ui, NodeHandle n, DtState& s) {
+        if (!button(s)) return;
         const Rect r = ui.rect(n);
         const NodeHandle card = detail::popupPanel(ui, n, {r.x, r.bottom() + 2.f});
         if (!ui.alive(card)) return;
-        const NodeHandle cal = calendar(ui, card, s.f[0], s.f[1], s.f[2]);
+        const DtFields f = dtSplit(s.v);
+        const NodeHandle cal = calendar(ui, card, f.y, f.mo, f.d);
+        const DtFields lo = dtSplit(s.lo), hi = dtSplit(s.hi);
+        setCalendarRange(ui, cal, lo.y, lo.mo, lo.d, hi.y, hi.mo, hi.d);
         ui.setFocus(cal, FocusReason::Keyboard);
-        auto pick = [n](UiContext& u, NodeHandle c, const SignalArgs&) {
+        auto pick = [n](UiContext& u, NodeHandle c, const SignalArgs&) { // the date changes, the time is kept
             DtState* st = dtPool().get(u, n);
             if (!st) return;
-            calendarDate(u, c, st->f[0], st->f[1], st->f[2]);
-            dtPublish(u, n, *st);
+            DtFields g = dtSplit(st->v);
+            calendarDate(u, c, g.y, g.mo, g.d);
+            dtPublish(u, n, *st, dtJoin(g));
         };
         ui.connect(cal, SignalKind::ValueChanged, pick);
-        ui.connect(cal, SignalKind::Submitted, [n](UiContext& u, NodeHandle c, const SignalArgs&) { closePopup(u, c); (void)n; });
+        ui.connect(cal, SignalKind::Submitted, [](UiContext& u, NodeHandle c, const SignalArgs&) { closePopup(u, c); });
         s.popup = card;
+    }
+    static bool typeChar(UiContext& ui, NodeHandle n, DtState& s, char ch) {
+        const DtSection* sec = dtCur(s);
+        if (!sec) return false;
+        // a separator jumps to the next section (Qt: typing the following literal)
+        const u32 si = s.editable[s.field];
+        const bool just = s.justAdvanced;
+        s.justAdvanced = false;
+        if (just && si > 0 && s.secs[si - 1].kind == DtKind::Literal && s.secs[si - 1].lit.find(ch) != std::string::npos &&
+            !(ch >= '0' && ch <= '9'))
+            return true; // "5/" after the day auto-advanced: the slash is already behind the caret
+        if (si + 1 < s.secs.size() && s.secs[si + 1].kind == DtKind::Literal && !s.secs[si + 1].lit.empty() &&
+            s.secs[si + 1].lit.find(ch) != std::string::npos && !(ch >= '0' && ch <= '9')) {
+            dtAdvance(s);
+            return true;
+        }
+        if (sec->kind == DtKind::AmPm) {
+            const char l = char(std::tolower(u8(ch)));
+            if (l != 'a' && l != 'p') return false;
+            DtFields f = dtSplit(s.v);
+            if ((l == 'p') != (f.h >= 12)) f.h = (f.h + 12) % 24;
+            dtPublish(ui, n, s, dtJoin(f));
+            dtAdvance(s);
+            return true;
+        }
+        if (!dtNumeric(*sec)) { // month / weekday names: prefix match, advance once unique
+            if (!std::isalpha(u8(ch))) return false;
+            s.typed += char(std::tolower(u8(ch)));
+            const bool month = sec->kind == DtKind::Month;
+            int hit = -1, hits = 0;
+            for (int i = 0; i < (month ? 12 : 7); ++i) {
+                std::string nm = month ? s.names->month[i] : s.names->day[i];
+                for (char& c : nm) c = char(std::tolower(u8(c)));
+                if (nm.starts_with(s.typed)) { if (hit < 0) hit = i; ++hits; }
+            }
+            if (hit < 0) { s.typed.clear(); return true; }
+            DtFields f = dtSplit(s.v);
+            i64 nv;
+            if (month) { f.mo = hit + 1; if (s.wantDay) f.d = s.wantDay; nv = dtJoin(f); }
+            else {
+                const int wd = int(((i64(daysFromCivil(f.y, f.mo, f.d)) % 7 + 7 + 3) % 7));
+                nv = s.v + i64(hit - wd) * kMsDay; // the same week, Monday first
+            }
+            dtPublish(ui, n, s, nv, true, month);
+            if (hits == 1) dtAdvance(s);
+            return true;
+        }
+        if (ch < '0' || ch > '9') return false;
+        s.typed += ch;
+        int v = std::atoi(s.typed.c_str());
+        if (v > dtMaxValue(*sec)) { s.typed = std::string(1, ch); v = ch - '0'; }
+        const bool full = s.typed.size() >= dtMaxDigits(*sec) || i64(v) * 10 > dtMaxValue(*sec);
+        if (sec->kind == DtKind::Year && !full) return true; // a partial year would jump to year 2
+        bool ok = false;
+        const i64 nv = dtWithField(s, *sec, v, ok);
+        if (ok) dtPublish(ui, n, s, nv, true, sec->kind == DtKind::Year || sec->kind == DtKind::Month);
+        if (full) dtAdvance(s);
+        return true;
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
@@ -1105,42 +1415,61 @@ struct DateTimeW {
         DtState* s = dtPool().get(ui, ec.node);
         if (!s) return false;
         const Rect c = ui.contentRect(ec.node);
+        const u32 last = s->editable.empty() ? 0 : u32(s->editable.size()) - 1;
+        auto go = [&](u32 f) { s->field = f; s->typed.clear(); s->justAdvanced = false; ui.invalidate(ec.node); return true; };
+        auto step = [&](int d) {
+            s->typed.clear();
+            const DtSection* c0 = dtCur(*s);
+            const bool ym = c0 && (c0->kind == DtKind::Year || c0->kind == DtKind::Month) && !s->carry;
+            dtPublish(ui, ec.node, *s, dtStepped(*s, d), true, ym);
+            return true;
+        };
         switch (e.type) {
+        case EventType::FocusIn:
+            if (e.focusReason == FocusReason::Keyboard) go((e.mods & kModShift) ? last : 0);
+            return false;
+        case EventType::FocusOut: s->typed.clear(); return false;
         case EventType::PointerDown: {
             ui.setFocus(ec.node, FocusReason::Pointer);
-            if (e.pos.x >= c.right() - kBtn) { openPopup(ui, ec.node, *s); return true; }
-            const std::string_view t = ui.text(ec.node);
+            if (button(*s) && e.pos.x >= c.right() - kBtn) { openPopup(ui, ec.node, *s); return true; }
+            std::vector<std::pair<u32, u32>> spans;
+            const std::string t = dtText(*s, &spans);
             const f32 fs = ui.computed(ec.node).fontSize;
-            for (u32 k = 5; k-- > 0;)
-                if (e.pos.x >= c.x + ui.measureString(t.substr(0, kStart[k]), fs) - 3.f) { s->field = k; break; }
-            s->typed.clear();
-            ui.invalidate(ec.node);
+            for (u32 k = u32(spans.size()); k-- > 0;)
+                if (k == 0 || e.pos.x >= c.x + ui.measureString(std::string_view(t).substr(0, spans[k].first), fs) - 3.f) return go(k);
             return true;
         }
-        case EventType::Wheel: dtStep(*s, e.wheel.y > 0 ? 1 : -1); dtPublish(ui, ec.node, *s); return true;
+        case EventType::Wheel: return step(e.wheel.y > 0 ? 1 : -1);
         case EventType::Text: {
             bool any = false;
-            for (char ch : e.text) {
-                if (ch < '0' || ch > '9') continue;
-                any = true;
-                s->typed += ch;
-                int v = std::atoi(s->typed.c_str());
-                if (s->field == 0 && s->typed.size() < 4) continue;
-                s->f[s->field] = v;
-                if (s->typed.size() >= kLen[s->field]) { s->typed.clear(); s->field = std::min(4u, s->field + 1); }
-            }
-            if (any) dtPublish(ui, ec.node, *s);
+            for (char ch : e.text) any |= typeChar(ui, ec.node, *s, ch);
+            ui.invalidate(ec.node);
             return any;
         }
-        case EventType::KeyDown:
+        case EventType::KeyDown: {
+            const bool shift = (e.mods & kModShift) != 0;
             switch (e.key) {
-            case Key::Left: s->field = s->field ? s->field - 1 : 0; s->typed.clear(); ui.invalidate(ec.node); return true;
-            case Key::Right: s->field = std::min(4u, s->field + 1); s->typed.clear(); ui.invalidate(ec.node); return true;
-            case Key::Up: dtStep(*s, 1); dtPublish(ui, ec.node, *s); return true;
-            case Key::Down: dtStep(*s, -1); dtPublish(ui, ec.node, *s); return true;
-            case Key::Space: openPopup(ui, ec.node, *s); return true;
+            case Key::Left: return go(s->field ? s->field - 1 : 0);
+            case Key::Right: return go(std::min(last, s->field + 1));
+            case Key::Home: return go(0);
+            case Key::End: return go(last);
+            case Key::Tab: // sections first, then the focus chain (QDateTimeEdit::focusNextPrevChild)
+                if (shift ? s->field == 0 : s->field >= last) return false;
+                return go(shift ? s->field - 1 : s->field + 1);
+            case Key::Up: return step(1);
+            case Key::Down:
+                if (e.mods & kModAlt) { openPopup(ui, ec.node, *s); return true; }
+                return step(-1);
+            case Key::PageUp: return step(10);
+            case Key::PageDown: return step(-10);
+            case Key::Enter:
+                s->typed.clear();
+                ui.emit(ec.node, SignalKind::EditingFinished, {.value = ui.value(ec.node), .text = dtIso(s->v)});
+                return true;
+            case Key::Space: case Key::F4: openPopup(ui, ec.node, *s); return button(*s);
             default: return false;
             }
+        }
         default: return false;
         }
     }
@@ -1217,10 +1546,10 @@ struct VideoW {
         dl.rect(track, pc.tint(Color::rgb(0x3A3A45)), 2.f);
         dl.rect({track.x, track.y, track.w * f, 4.f}, accentOf(pc), 2.f);
         dot(dl, {track.x + track.w * f, cy}, 6.f, pc.tint(Color::rgb(0xFFFFFF)));
-        char b[32];
-        const f32 secs = f32(s->frame) / std::max(1.f, s->src->fps);
-        std::snprintf(b, sizeof b, "%d:%02d.%02d", int(secs) / 60, int(secs) % 60, int(std::fmod(secs, 1.f) * 100.f));
-        ui.paintString(dl, b, {track.right() + 8.f, bar.y, 62.f, kBar}, pc.tint(pc.style.color), pc.style.fontSize * 0.8f,
+        const f32 lfs = pc.style.fontSize * 0.8f;
+        std::string b = videoTimeText(s->frame, s->src->frames, s->src->fps, true);
+        if (ui.measureString(b, lfs) > 62.f) b = videoTimeText(s->frame, s->src->frames, s->src->fps, false);
+        ui.paintString(dl, b, {track.right() + 8.f, bar.y, 62.f, kBar}, pc.tint(pc.style.color), lfs,
                        TextAlignment::Start, pc.node.index);
     }
     static void seekX(UiContext& ui, NodeHandle n, VideoState& s, f32 x) {
@@ -1354,16 +1683,14 @@ NodeHandle fileDialog(UiContext& ui, std::string_view title, std::string_view di
 bool fileDialogNavigate(UiContext& ui, NodeHandle dlg, std::string_view directory) {
     FileDlgState* s = filePool().get(ui, dlg);
     if (!s) return false;
-    namespace fs = std::filesystem;
-    std::error_code ec;
-    const fs::path dir = fs::absolute(fs::path(std::string(directory)), ec).lexically_normal();
-    if (ec || !fs::is_directory(dir, ec)) return false;
+    const std::string dir = fuse::ui::os::absolutePath(std::filesystem::path(std::string(directory)).lexically_normal().generic_string());
+    auto listing = fuse::ui::os::listDirectory(dir); // OS access through the fuse::ui::os seam (FORGE)
+    if (!listing) return false;
     std::vector<std::string> folders, files;
-    for (fs::directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
-        const std::string name = it->path().filename().string();
+    for (const auto& e : *listing) {
+        const std::string& name = e.name;
         if (name.empty() || name[0] == '.') continue;
-        std::error_code e2;
-        if (it->is_directory(e2)) folders.push_back(name + "/");
+        if (e.isDir) folders.push_back(name + "/");
         else if (s->filters.empty() || std::any_of(s->filters.begin(), s->filters.end(), [&](const std::string& f) { return globMatch(f, name); }))
             files.push_back(name);
     }
@@ -1372,7 +1699,7 @@ bool fileDialogNavigate(UiContext& ui, NodeHandle dlg, std::string_view director
     };
     std::sort(folders.begin(), folders.end(), ci);
     std::sort(files.begin(), files.end(), ci);
-    s->dir = dir.generic_string();
+    s->dir = dir;
     if (s->dir.size() > 1 && s->dir.back() == '/') s->dir.pop_back();
     s->entries = std::move(folders);
     s->entries.insert(s->entries.end(), files.begin(), files.end());
@@ -1653,35 +1980,122 @@ u8 codeEditTokenAt(const UiContext& ui, NodeHandle ed, u32 line, u32 col) {
 }
 
 // ---- date-time edit ---------------------------------------------------------------------------------------------------
-NodeHandle dateTimeEdit(UiContext& ui, NodeHandle parent, int y, int m, int d, int hh, int mm, std::string_view id) {
+namespace {
+NodeHandle dtMake(UiContext& ui, NodeHandle parent, u8 type, i64 v, const DateTimeEditOptions& o, std::string_view id) {
     registerTierD2(ui);
     const NodeHandle n = make(ui, "datetimeedit", parent, id);
     if (!ui.alive(n)) return n;
-    dtPool().create(ui, n);
-    ui.setA11y(n, A11yRole::SpinBox, "Date and time");
+    DtState& s = dtPool().create(ui, n);
+    s.type = type;
+    s.v = v;
     ui.setRange(n, -1.0e7f, 1.0e7f);
-    setDateTimeEditValue(ui, n, y, m, d, hh, mm);
+    ui.setA11y(n, type == 1 ? A11yRole::DateInput : type == 2 ? A11yRole::TimeInput : A11yRole::DateTimeInput,
+               type == 1 ? "Date" : type == 2 ? "Time" : "Date and time");
+    setDateTimeEditOptions(ui, n, o);
     return n;
 }
-void dateTimeEditValue(const UiContext& ui, NodeHandle ed, int& y, int& m, int& d, int& hh, int& mm) {
-    const DtState* s = dtPool().get(ui, ed);
-    const DtState z;
-    const DtState& r = s ? *s : z;
-    y = r.f[0]; m = r.f[1]; d = r.f[2]; hh = r.f[3]; mm = r.f[4];
-}
-void setDateTimeEditValue(UiContext& ui, NodeHandle ed, int y, int m, int d, int hh, int mm) {
+} // namespace
+void setDateTimeEditOptions(UiContext& ui, NodeHandle ed, const DateTimeEditOptions& o) {
     DtState* s = dtPool().get(ui, ed);
     if (!s) return;
-    s->f[0] = y; s->f[1] = m; s->f[2] = d; s->f[3] = hh; s->f[4] = mm;
-    dtPublish(ui, ed, *s);
+    std::string_view f = o.displayFormat;
+    if (f.empty()) f = s->type == 1 ? "yyyy-MM-dd" : s->type == 2 ? "HH:mm" : "yyyy-MM-dd HH:mm";
+    dtSetFormat(*s, f);
+    s->calendarPopup = o.calendarPopup && s->type != 2;
+    s->wrapping = o.wrapping;
+    s->carry = o.carry;
+    s->yearStart = o.twoDigitYearStart;
+    s->names = &dtNames(o.locale);
+    s->lo = dtJoin(o.minimum);
+    s->hi = std::max(s->lo, dtJoin(o.maximum));
+    if (s->type == 2) { // QTimeEdit: one day
+        const i64 day = s->v >= 0 ? s->v / kMsDay : -((-s->v + kMsDay - 1) / kMsDay);
+        s->lo = std::max(s->lo, day * kMsDay);
+        s->hi = std::min(s->hi, day * kMsDay + kMsDay - 1);
+    }
+    dtPublish(ui, ed, *s, s->v, false);
 }
-i64 dateTimeEditMinutes(const UiContext& ui, NodeHandle ed) { const DtState* s = dtPool().get(ui, ed); return s ? dtMinutes(*s) : 0; }
+NodeHandle dateTimeEdit(UiContext& ui, NodeHandle parent, const DateTime& v, const DateTimeEditOptions& o, std::string_view id) {
+    return dtMake(ui, parent, 0, dtJoin(v), o, id);
+}
+NodeHandle dateEdit(UiContext& ui, NodeHandle parent, int y, int m, int d, const DateTimeEditOptions& o, std::string_view id) {
+    return dtMake(ui, parent, 1, dtJoin(DateTime{y, m, d}), o, id);
+}
+NodeHandle timeEdit(UiContext& ui, NodeHandle parent, int hh, int mm, int ss, const DateTimeEditOptions& o, std::string_view id) {
+    return dtMake(ui, parent, 2, dtJoin(DateTime{2000, 1, 1, hh, mm, ss}), o, id);
+}
+NodeHandle dateTimeEdit(UiContext& ui, NodeHandle parent, int y, int m, int d, int hh, int mm, std::string_view id) {
+    return dtMake(ui, parent, 0, dtJoin(DateTime{y, m, d, hh, mm}), {.carry = true}, id);
+}
+DateTime dateTimeEditDateTime(const UiContext& ui, NodeHandle ed) {
+    const DtState* s = dtPool().get(ui, ed);
+    return s ? dtToDateTime(s->v) : DateTime{1970, 1, 1};
+}
+void setDateTimeEditDateTime(UiContext& ui, NodeHandle ed, const DateTime& v) {
+    DtState* s = dtPool().get(ui, ed);
+    if (!s) return;
+    i64 nv = dtJoin(v);
+    if (s->type == 2) { // keep the time edit's (hidden) date
+        const i64 day = s->lo >= 0 ? s->lo / kMsDay : -((-s->lo + kMsDay - 1) / kMsDay);
+        const i64 t = nv - (nv >= 0 ? nv / kMsDay : -((-nv + kMsDay - 1) / kMsDay)) * kMsDay;
+        nv = day * kMsDay + t;
+    }
+    dtPublish(ui, ed, *s, nv);
+}
+void dateTimeEditValue(const UiContext& ui, NodeHandle ed, int& y, int& m, int& d, int& hh, int& mm) {
+    const DateTime t = dateTimeEditDateTime(ui, ed);
+    y = t.year; m = t.month; d = t.day; hh = t.hour; mm = t.minute;
+}
+void setDateTimeEditValue(UiContext& ui, NodeHandle ed, int y, int m, int d, int hh, int mm) {
+    setDateTimeEditDateTime(ui, ed, DateTime{y, m, d, hh, mm});
+}
+i64 dateTimeEditMinutes(const UiContext& ui, NodeHandle ed) {
+    const DtState* s = dtPool().get(ui, ed);
+    if (!s) return 0;
+    return s->v >= 0 ? s->v / 60000 : -((-s->v + 59999) / 60000);
+}
 u32 dateTimeEditField(const UiContext& ui, NodeHandle ed) { const DtState* s = dtPool().get(ui, ed); return s ? s->field : 0u; }
+std::string dateTimeEditText(const UiContext& ui, NodeHandle ed) { return std::string(ui.text(ed)); }
+u32 dateTimeEditSectionCount(const UiContext& ui, NodeHandle ed) {
+    const DtState* s = dtPool().get(ui, ed);
+    return s ? u32(s->editable.size()) : 0u;
+}
+void setDateTimeEditSection(UiContext& ui, NodeHandle ed, u32 index) {
+    DtState* s = dtPool().get(ui, ed);
+    if (!s || index >= s->editable.size()) return;
+    s->field = index;
+    s->typed.clear();
+    ui.invalidate(ed);
+}
+std::string dateTimeEditSectionText(const UiContext& ui, NodeHandle ed, u32 index) {
+    const DtState* s = dtPool().get(ui, ed);
+    if (!s || index >= s->editable.size()) return {};
+    return dtSectionText(s->secs[s->editable[index]], dtSplit(s->v), *s->names);
+}
+bool dateTimeEditLocalized(const UiContext& ui, NodeHandle ed) {
+    const DtState* s = dtPool().get(ui, ed);
+    return s && s->names && s->names->localized;
+}
+bool dateTimeEditPopupOpen(const UiContext& ui, NodeHandle ed) {
+    const DtState* s = dtPool().get(ui, ed);
+    return s && ui.alive(s->popup);
+}
 
 // ---- video ------------------------------------------------------------------------------------------------------------
 const VideoSource& testPatternSource() {
     static const VideoSource src{nullptr, 160, 90, 300, 30.f, &patternFrame};
     return src;
+}
+std::string videoTimeText(u32 frame, u32 frames, f32 fps, bool withDuration) {
+    // whole centiseconds, rounded once: no float truncation (0.29 s printing as 0:00.28), no fps clamp
+    const double r = fps > 0.f ? double(fps) : 30.0;
+    auto mmss = [&](u32 f) {
+        const long long cs = std::llround(double(f) * 100.0 / r);
+        char o[40];
+        std::snprintf(o, sizeof o, "%lld:%02lld.%02lld", cs / 6000, (cs / 100) % 60, cs % 100);
+        return std::string(o);
+    };
+    return withDuration ? mmss(frame) + " / " + mmss(frames) : mmss(frame);
 }
 NodeHandle videoWidget(UiContext& ui, NodeHandle parent, const VideoSource* source, std::string_view id) {
     registerTierD2(ui);
@@ -1698,16 +2112,38 @@ NodeHandle videoWidget(UiContext& ui, NodeHandle parent, const VideoSource* sour
 }
 const Image* videoImage(const UiContext& ui, NodeHandle v) { const VideoState* s = videoPool().get(ui, v); return s ? &s->img : nullptr; }
 void videoSetImageIndex(UiContext& ui, NodeHandle v, u32 index) { if (VideoState* s = videoPool().get(ui, v)) { s->index = index; ui.invalidate(v); } }
+namespace {
+void videoShow(UiContext& ui, NodeHandle v, VideoState& s, u32 frame) {
+    s.frame = std::min(frame, s.src->frames ? s.src->frames - 1 : 0);
+    decode(s);
+    ui.setValue(v, f32(s.frame), true);
+    ui.invalidate(v);
+}
+} // namespace
 void videoPlay(UiContext& ui, NodeHandle v, bool play) {
     VideoState* s = videoPool().get(ui, v);
     if (!s || !s->src || s->playing == play) return;
     s->playing = play;
+    if (s->src->playback) s->src->playback(s->src->user, play, s->frame);
     if (play) {
         s->timer = ui.startTimer(1.f / std::max(1.f, s->src->fps), true, [v](UiContext& u) {
             VideoState* st = videoPool().get(u, v);
             if (!st || !st->playing) return;
-            const u32 next = st->frame + 1 >= st->src->frames ? 0 : st->frame + 1;
-            videoSeek(u, v, next);
+            const u32 last = st->src->frames ? st->src->frames - 1 : 0;
+            if (st->src->clock) { // follow the source's audio clock when it runs
+                const double t = st->src->clock(st->src->user);
+                if (t >= 0.0) {
+                    const u32 f = u32(std::min<double>(last, std::floor(t * double(st->src->fps) + 1e-6)));
+                    if (f >= last && st->frame >= last) { // end of media: loop like the frame-stepped path
+                        if (st->src->playback) st->src->playback(st->src->user, true, 0);
+                        videoShow(u, v, *st, 0);
+                    } else if (f != st->frame) videoShow(u, v, *st, f);
+                    return;
+                }
+            }
+            const u32 next = st->frame + 1 > last ? 0 : st->frame + 1;
+            if (next == 0 && st->src->playback) st->src->playback(st->src->user, true, 0);
+            videoShow(u, v, *st, next);
         });
     } else ui.cancelTimer(s->timer);
     ui.emit(v, SignalKind::Toggled, {.flag = play});
@@ -1717,10 +2153,8 @@ bool videoPlaying(const UiContext& ui, NodeHandle v) { const VideoState* s = vid
 void videoSeek(UiContext& ui, NodeHandle v, u32 frame) {
     VideoState* s = videoPool().get(ui, v);
     if (!s || !s->src) return;
-    s->frame = std::min(frame, s->src->frames ? s->src->frames - 1 : 0);
-    decode(*s);
-    ui.setValue(v, f32(s->frame), true);
-    ui.invalidate(v);
+    videoShow(ui, v, *s, frame);
+    if (s->playing && s->src->playback) s->src->playback(s->src->user, true, s->frame);
 }
 u32 videoFrame(const UiContext& ui, NodeHandle v) { const VideoState* s = videoPool().get(ui, v); return s ? s->frame : 0u; }
 u32 videoDecodedFrames(const UiContext& ui, NodeHandle v) { const VideoState* s = videoPool().get(ui, v); return s ? s->decoded : 0u; }

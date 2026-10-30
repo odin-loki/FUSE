@@ -1,7 +1,10 @@
 // fuse_app (plan UI5): Application, AppWindow, on-demand loop, settings store, command line, single instance.
+#include "fuse/ui/from_chars.hpp"
+#include <cctype>
 #include "fuse/app/app.hpp"
 
 #include "fuse/ui/doc/document.hpp"
+#include "fuse/ui/os.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -10,20 +13,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
 #include <limits>
 #include <sstream>
-#include <thread>
-
-#if defined(_WIN32)
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#else
-#include <fcntl.h>
-#include <sys/file.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#endif
 
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
@@ -43,17 +34,13 @@ using namespace fuse::ui;
 namespace {
 bool parseDouble(std::string_view s, double& out) {
     if (s.empty()) return false;
-    const auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), out);
+    const auto [p, ec] = fuse::ui::fromChars(s.data(), s.data() + s.size(), out);
     return ec == std::errc{} && p == s.data() + s.size();
 }
-double steadyNow(void*) {
-    using C = std::chrono::steady_clock;
-    static const C::time_point t0 = C::now();
-    return std::chrono::duration<double>(C::now() - t0).count();
-}
+double steadyNow(void*) { return fuse::ui::os::monotonicSeconds(); }
 /// Default event source (no OS windows): sleeps for the wait, capped so quit() from a callback is seen.
 bool sleepPump(void*, Application&, f32 wait) {
-    if (wait > 0.f) std::this_thread::sleep_for(std::chrono::duration<double>(std::min(wait, 0.25f)));
+    if (wait > 0.f) fuse::ui::os::sleepSeconds(std::min(wait, 0.25f));
     return true;
 }
 std::string escape(std::string_view s) {
@@ -128,21 +115,13 @@ double CommandLine::number(std::string_view key, double fallback) const {
 }
 
 // ---- Settings ------------------------------------------------------------------------------------------------------
-std::string Settings::defaultDir(std::string_view app) {
-#if defined(_WIN32)
-    const char* base = std::getenv("APPDATA");
-    return std::string(base ? base : ".") + "\\" + std::string(app);
-#else
-    if (const char* x = std::getenv("XDG_CONFIG_HOME"); x && *x) return std::string(x) + "/" + std::string(app);
-    const char* home = std::getenv("HOME");
-    return std::string(home ? home : ".") + "/.config/" + std::string(app);
-#endif
-}
+std::string Settings::defaultDir(std::string_view app) { return fuse::ui::os::configDir(app); }
 bool Settings::load() {
     m_items.clear();
     m_dirty = false;
-    std::ifstream f(m_path, std::ios::binary);
-    if (!f) return false;
+    auto text = fuse::ui::os::readFile(m_path);
+    if (!text) return false;
+    std::istringstream f(std::move(*text));
     std::string line;
     while (std::getline(f, line)) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
@@ -156,30 +135,9 @@ bool Settings::load() {
 bool Settings::save() {
     if (!m_dirty) return true;
     if (m_path.empty()) return false;
-    if (const std::size_t slash = m_path.find_last_of("/\\"); slash != std::string::npos) {
-        const std::string dir = m_path.substr(0, slash); // create the chain (best effort, no <filesystem>)
-        for (std::size_t i = 1; i <= dir.size(); ++i)
-            if (i == dir.size() || dir[i] == '/' || dir[i] == '\\') {
-                const std::string part = dir.substr(0, i);
-#if defined(_WIN32)
-                CreateDirectoryA(part.c_str(), nullptr);
-#else
-                ::mkdir(part.c_str(), 0700);
-#endif
-            }
-    }
-    const std::string tmp = m_path + ".tmp";
-    {
-        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
-        if (!f) return false;
-        for (const auto& [k, v] : m_items) f << escape(k) << '=' << escape(v) << '\n';
-        if (!f) return false;
-    }
-#if defined(_WIN32)
-    if (!MoveFileExA(tmp.c_str(), m_path.c_str(), MOVEFILE_REPLACE_EXISTING)) return false;
-#else
-    if (std::rename(tmp.c_str(), m_path.c_str()) != 0) return false;
-#endif
+    std::string out;
+    for (const auto& [k, v] : m_items) out += escape(k) + '=' + escape(v) + '\n';
+    if (!fuse::ui::os::writeFileAtomic(m_path, out)) return false; // creates parent dirs, atomic rename
     m_dirty = false;
     return true;
 }
@@ -215,7 +173,47 @@ void Settings::remove(std::string_view key) {
 AppWindow::AppWindow(Application& app, const WindowDesc& d, u32 id)
     : m_app(app), m_ui({.viewport = {f32(d.width), f32(d.height)}, .font = &defaultFont()}), m_title(d.title), m_id(id) {
     widgets::install(m_ui);
-    m_presenter = {this, &AppWindow::presentHeadless, nullptr};
+    // a widget drag (setDragSource / item views) leaving the window continues as an OS drag (X11 XDND, Wayland
+    // wl_data_device, Win32 OLE): the backend picks it up on its next pointer motion and reports back through
+    // deliverExternalDragEnd
+    widgets::setExternalDragHandler(m_ui, [this](UiContext&, const widgets::DragPayload& p) {
+        if (p.formats.empty()) return false;
+        ExternalDrag d;
+        if (p.has("text/uri-list")) d.paths = pathsFromUriList(p.get("text/uri-list"));
+        if (p.has("text/plain")) { d.mime = "text/plain"; d.data = std::string(p.get("text/plain")); }
+        else if (d.paths.empty()) { d.mime = p.formats.front().first; d.data = p.formats.front().second; }
+        for (const auto& f : p.formats)
+            if (f.first != "text/uri-list" && f.first != d.mime) d.formats.push_back(f);
+        if (p.imageIndex >= 0 && u32(p.imageIndex) < m_raster.imageCount()) {
+            if (const fuse::ui::Image* im = m_raster.images()[p.imageIndex]; im && im->width > 0 && im->height > 0) {
+                d.image = im->pixels;
+                d.imageW = u32(im->width);
+                d.imageH = u32(im->height);
+                const f32 sx = p.imageW > 0.f ? f32(im->width) / p.imageW : 1.f, sy = p.imageH > 0.f ? f32(im->height) / p.imageH : 1.f;
+                d.hotX = i32(p.hotX * sx);
+                d.hotY = i32(p.hotY * sy);
+            }
+        }
+        return beginExternalDrag(std::move(d));
+    });
+    m_presenter = {this, &AppWindow::presentHeadless, nullptr, true}; // offscreen: unpaced
+    setScale(d.dpiScale); // WindowDesc::dpiScale seeds the HiDPI scale; backends update it on monitor changes
+}
+std::vector<std::pair<std::string, std::string>> AppWindow::ExternalDrag::offered() const {
+    std::vector<std::pair<std::string, std::string>> out;
+    auto add = [&](std::string m, std::string d) {
+        for (const auto& [k, v] : out) if (k == m) return;
+        out.emplace_back(std::move(m), std::move(d));
+    };
+    if (!paths.empty()) add("text/uri-list", uriListFromPaths(paths));
+    if (!data.empty() || !mime.empty()) add(mime.empty() ? "text/plain" : mime, data);
+    for (const auto& [m, d] : formats) add(m, d);
+    return out;
+}
+void AppWindow::deliverExternalDragEnd(bool accepted) {
+    if (widgets::externalDragActive(m_ui)) widgets::finishExternalDrag(m_ui, accepted ? widgets::DropCopy : widgets::DropIgnore);
+    if (m_onDragEnd) m_onDragEnd(accepted);
+    requestRedraw();
 }
 AppWindow::~AppWindow() {
     m_doc.reset();
@@ -223,7 +221,7 @@ AppWindow::~AppWindow() {
 }
 void AppWindow::setPresenter(const Presenter& p) {
     if (m_presenter.destroy) m_presenter.destroy(m_presenter.user);
-    m_presenter = p.present ? p : Presenter{this, &AppWindow::presentHeadless, nullptr};
+    m_presenter = p.present ? p : Presenter{this, &AppWindow::presentHeadless, nullptr, true} /* offscreen: unpaced */;
     m_forceRedraw = true;
 }
 void AppWindow::resize(u32 width, u32 height) {
@@ -243,25 +241,62 @@ std::expected<void, std::string> AppWindow::loadText(std::string_view json, doc:
     return {};
 }
 std::expected<void, std::string> AppWindow::load(std::string_view path, doc::Model* model) {
-    std::ifstream f{std::string(path), std::ios::binary};
-    if (!f) return std::unexpected("cannot open " + std::string(path));
-    std::stringstream ss;
-    ss << f.rdbuf();
-    return loadText(ss.str(), model);
+    auto text = fuse::ui::os::readFile(path);
+    if (!text) return std::unexpected("cannot open " + std::string(path) + ": " + text.error());
+    return loadText(*text, model);
+}
+void AppWindow::setScale(f32 s) {
+    s = s > 0.f ? s : 1.f;
+    if (s == m_scale) return;
+    m_scale = s;
+    m_ui.setPixelScale(s);
+    m_forceRedraw = true;
+}
+Size AppWindow::pixelSize() const {
+    const Size v = m_ui.viewport();
+    return {std::max(1.f, std::round(v.w * m_scale)), std::max(1.f, std::round(v.h * m_scale))};
+}
+const DrawList& AppWindow::pixelDrawList() {
+    if (m_scale == 1.f) return m_ui.drawList();
+    scaleDrawList(m_ui.drawList(), m_scale, m_scaledList);
+    return m_scaledList;
 }
 bool AppWindow::presentHeadless(void*, AppWindow& w, Rect damage) {
-    const int iw = int(w.m_ui.viewport().w), ih = int(w.m_ui.viewport().h);
+    const Size px = w.pixelSize();
+    const int iw = int(px.w), ih = int(px.h);
+    const f32 s = w.m_scale;
     const bool full = w.m_image.width != iw || w.m_image.height != ih;
     if (full) w.m_image.resize(iw, ih, 0xFF000000u);
     w.m_raster.setGlyphAtlas(w.m_ui.atlas().pixels(), w.m_ui.atlas().size());
-    const Rect r = full || damage.empty() ? Rect{0.f, 0.f, f32(iw), f32(ih)} : damage;
+    const Rect r = full || damage.empty() ? Rect{0.f, 0.f, f32(iw), f32(ih)}
+                                          : Rect{damage.x * s, damage.y * s, damage.w * s, damage.h * s};
     // clear the damaged region, then rasterise the list clipped to it (incremental present)
     const int x0 = std::max(0, int(std::floor(r.x))), y0 = std::max(0, int(std::floor(r.y)));
     const int x1 = std::min(iw, int(std::ceil(r.x + r.w))), y1 = std::min(ih, int(std::ceil(r.y + r.h)));
     for (int y = y0; y < y1; ++y)
         std::fill_n(w.m_image.pixels.begin() + std::ptrdiff_t(y) * iw + x0, std::max(0, x1 - x0), 0xFF000000u);
-    w.m_raster.render(w.m_ui.drawList(), w.m_image, {f32(x0), f32(y0), f32(x1 - x0), f32(y1 - y0)});
+    w.m_raster.render(w.pixelDrawList(), w.m_image, {f32(x0), f32(y0), f32(x1 - x0), f32(y1 - y0)});
     return true;
+}
+const HdrImage& AppWindow::rasterizeHdr(Rect damage, PixelFormat format) {
+    const Size px = pixelSize();
+    const int iw = int(px.w), ih = int(px.h);
+    const f32 s = m_scale;
+    const PixelFormat fmt = format == PixelFormat::Rgba32F ? PixelFormat::Rgba32F : PixelFormat::Rgba16F;
+    const bool full = m_hdrImage.width != iw || m_hdrImage.height != ih || m_hdrImage.format != fmt;
+    if (full) {
+        m_hdrImage.format = fmt;
+        m_hdrImage.resize(iw, ih);
+    }
+    m_raster.setGlyphAtlas(m_ui.atlas().pixels(), m_ui.atlas().size());
+    const Rect r = full || damage.empty() ? Rect{0.f, 0.f, f32(iw), f32(ih)}
+                                          : Rect{damage.x * s, damage.y * s, damage.w * s, damage.h * s};
+    const int x0 = std::max(0, int(std::floor(r.x))), y0 = std::max(0, int(std::floor(r.y)));
+    const int x1 = std::min(iw, int(std::ceil(r.x + r.w))), y1 = std::min(ih, int(std::ceil(r.y + r.h)));
+    for (int y = y0; y < y1; ++y)
+        std::fill_n(m_hdrImage.pixels.begin() + std::ptrdiff_t(y) * iw + x0, std::max(0, x1 - x0), PixelF{0.f, 0.f, 0.f, 1.f});
+    m_raster.render(pixelDrawList(), m_hdrImage, {f32(x0), f32(y0), f32(x1 - x0), f32(y1 - y0)});
+    return m_hdrImage;
 }
 bool writePng(const Image& img, const std::string& path) {
     if (img.width <= 0) return false;
@@ -271,8 +306,26 @@ bool AppWindow::writePng(const std::string& path) const {
     if (m_image.width <= 0) return false;
     return stbi_write_png(path.c_str(), m_image.width, m_image.height, 4, m_image.pixels.data(), m_image.width * 4) != 0;
 }
+bool AppWindow::wantsFrame() const {
+    return m_forceRedraw || m_policy == RedrawPolicy::Continuous || m_ui.nextWakeSeconds() <= 0.f;
+}
+f32 AppWindow::wakeIn(double now) const {
+    if (m_closing) return 0.f;
+    if (m_framePending) return std::numeric_limits<f32>::infinity(); // the compositor's frame event wakes the pump
+    f32 t = wantsFrame() ? 0.f : m_ui.nextWakeSeconds();
+    if (paced() && t < std::numeric_limits<f32>::infinity() && m_nextFrame > now)
+        t = std::max(t, f32(m_nextFrame - now));
+    return t;
+}
 bool AppWindow::frame(f32 dt) {
     if (!m_forceRedraw && m_policy == RedrawPolicy::OnDemand && !m_ui.needsUpdate()) return false;
+    const double now = m_app.now();
+    if (m_framePending || (paced() && m_nextFrame > now)) { // too early: nextWake sleeps until the deadline / event
+        m_heldDt += dt; // skipped frames' time still reaches UI timers and animations
+        return false;
+    }
+    dt += m_heldDt;
+    m_heldDt = 0.f;
     m_ui.update(dt); // advances timers; presents only when something repainted
     if (m_doc && m_doc->refresh()) m_ui.update(0.f);
     if (!m_ui.stats().repainted && !m_forceRedraw && m_policy == RedrawPolicy::OnDemand) return false;
@@ -280,6 +333,11 @@ bool AppWindow::frame(f32 dt) {
     m_forceRedraw = false;
     if (!m_presenter.present || !m_presenter.present(m_presenter.user, *this, dmg)) return false;
     ++m_frames;
+    if (paced()) {
+        // a fixed cadence; after a stall (more than one interval behind) restart it from now instead of bursting
+        const double interval = 1.0 / double(m_maxRate);
+        m_nextFrame = m_nextFrame < 0.0 || now - m_nextFrame > interval ? now + interval : m_nextFrame + interval;
+    }
     return true;
 }
 
@@ -293,28 +351,13 @@ Application::Application(const AppDesc& d) : m_name(d.name), m_args(d.argc, d.ar
         m_settings.load();
     }
     if (d.singleInstance) {
-#if defined(_WIN32)
-        const std::string mx = "Local\\fuse_app_" + m_name;
-        HANDLE h = CreateMutexA(nullptr, TRUE, mx.c_str());
-        m_primary = h && GetLastError() != ERROR_ALREADY_EXISTS;
-        m_lock = h;
-#else
-        const char* rt = std::getenv("XDG_RUNTIME_DIR");
-        const std::string path = std::string(rt && *rt ? rt : "/tmp") + "/fuse_app_" + m_name + "_" + std::to_string(::getuid()) + ".lock";
-        const int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0600);
-        m_primary = fd >= 0 && ::flock(fd, LOCK_EX | LOCK_NB) == 0;
-        if (fd >= 0) m_lock = reinterpret_cast<void*>(std::intptr_t(fd) + 1);
-#endif
+        m_lock = fuse::ui::os::tryLockInstance(m_name);
+        m_primary = m_lock != nullptr;
     }
 }
 Application::~Application() {
     m_windows.clear();
     m_settings.save();
-#if defined(_WIN32)
-    if (m_lock) CloseHandle(static_cast<HANDLE>(m_lock));
-#else
-    if (m_lock) ::close(int(reinterpret_cast<std::intptr_t>(m_lock) - 1)); // releases the flock
-#endif
 }
 AppWindow& Application::createWindow(const WindowDesc& d) {
     m_windows.push_back(std::make_unique<AppWindow>(*this, d, m_nextId++));
@@ -324,10 +367,8 @@ void Application::setEventSource(const EventSource& s) { m_events = s.pump ? s :
 double Application::now() const { return m_clock.now(m_clock.user); }
 f32 Application::nextWake() const {
     f32 t = std::numeric_limits<f32>::infinity();
-    for (const auto& w : m_windows) {
-        if (w->m_forceRedraw || w->m_closing || w->m_policy == RedrawPolicy::Continuous) return 0.f;
-        t = std::min(t, w->m_ui.nextWakeSeconds());
-    }
+    const double n = now();
+    for (const auto& w : m_windows) t = std::min(t, w->wakeIn(n));
     return t;
 }
 bool Application::step(f32 maxWait) {
@@ -356,6 +397,53 @@ int Application::fail(std::string_view message) {
     std::fprintf(stderr, "%s: %.*s\n", m_name.c_str(), int(message.size()), message.data());
     m_exit = 1;
     return 1;
+}
+
+std::string AppWindow::uriListFromPaths(const std::vector<std::string>& paths) {
+    static const char* hexd = "0123456789ABCDEF";
+    std::string out;
+    for (const auto& p0 : paths) {
+        std::string p = p0;
+#if defined(_WIN32)
+        for (char& c : p) if (c == '\\') c = '/';
+        if (p.size() > 1 && p[1] == ':') p.insert(0, "/");
+#endif
+        out += "file://";
+        for (unsigned char c : p) {
+            if (std::isalnum(c) || c == '/' || c == '-' || c == '_' || c == '.' || c == '~') out += char(c);
+            else { out += '%'; out += hexd[c >> 4]; out += hexd[c & 15]; }
+        }
+        out += "\r\n";
+    }
+    return out;
+}
+
+std::vector<std::string> AppWindow::pathsFromUriList(std::string_view list) {
+    std::vector<std::string> out;
+    auto hex = [](char c) { return c >= '0' && c <= '9' ? c - '0' : (c | 32) >= 'a' && (c | 32) <= 'f' ? (c | 32) - 'a' + 10 : -1; };
+    std::size_t a = 0;
+    while (a < list.size()) {
+        std::size_t b = list.find('\n', a);
+        if (b == std::string_view::npos) b = list.size();
+        std::string_view line = list.substr(a, b - a);
+        a = b + 1;
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.remove_suffix(1);
+        if (line.empty() || line[0] == '#' || !line.starts_with("file://")) continue;
+        line.remove_prefix(7);
+        if (std::size_t slash = line.find('/'); slash != 0 && slash != std::string_view::npos) line.remove_prefix(slash); // host
+        std::string p;
+        for (std::size_t i = 0; i < line.size(); ++i) {
+            if (line[i] == '%' && i + 2 < line.size() && hex(line[i + 1]) >= 0 && hex(line[i + 2]) >= 0) {
+                p += char(hex(line[i + 1]) * 16 + hex(line[i + 2]));
+                i += 2;
+            } else p += line[i];
+        }
+#if defined(_WIN32)
+        if (p.size() > 2 && p[0] == '/' && p[2] == ':') p.erase(0, 1);
+#endif
+        out.push_back(std::move(p));
+    }
+    return out;
 }
 
 } // namespace fuse::app

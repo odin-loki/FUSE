@@ -106,7 +106,7 @@ bool readJson(Reader& r, JsonValue& v, u32 depth) {
 // Same rule as Document::buildNode: every key except these is a property (bindings live there).
 bool structuralKey(std::string_view k) {
     return k == "class" || k == "id" || k == "children" || k == "on" || k == "classes" || k == "style" ||
-           k == "items" || k == "tabIndex" || k == "a11yName" || k == "image" || k == "step";
+           k == "items" || k == "tabIndex" || k == "a11yName" || k == "image" || k == "step" || k == "animate";
 }
 bool isBinding(const JsonValue& v) { return v.isString() && v.string.find('{') != std::string::npos; }
 
@@ -135,8 +135,24 @@ void writeLength(Writer& w, const Length& l) { w.f32_(l.value); w.u8_(u8(l.unit)
 bool readLength(Reader& r, Length& l) {
     l.value = r.f32_();
     const u8 u = r.u8_();
-    if (u > u8(Unit::Fr)) return r.ok = false;
+    if (u > u8(Unit::Cqmax)) return r.ok = false;
     l.unit = Unit(u);
+    return r.ok;
+}
+void writeEasing(Writer& w, const Easing& e) {
+    w.u8_(u8(e.kind));
+    w.f32_(e.x1); w.f32_(e.y1); w.f32_(e.x2); w.f32_(e.y2);
+    w.u8_(e.steps); w.u8_(u8(e.stepPos));
+}
+bool readEasing(Reader& r, Easing& e) {
+    const u8 kind = r.u8_();
+    if (kind > u8(Easing::Kind::Steps)) return r.ok = false;
+    e.kind = Easing::Kind(kind);
+    e.x1 = r.f32_(); e.y1 = r.f32_(); e.x2 = r.f32_(); e.y2 = r.f32_();
+    e.steps = r.u8_();
+    const u8 pos = r.u8_();
+    if (pos > u8(Easing::StepPos::JumpBoth) || e.steps == 0) return r.ok = false;
+    e.stepPos = Easing::StepPos(pos);
     return r.ok;
 }
 void writeValue(Writer& w, const PropValue& v) {
@@ -146,12 +162,35 @@ void writeValue(Writer& w, const PropValue& v) {
     writeLength(w, v.len);
     w.f32_(v.num);
     w.f32_(v.color.r); w.f32_(v.color.g); w.f32_(v.color.b); w.f32_(v.color.a);
-    w.u8_(v.trackCount);
-    for (u8 i = 0; i < v.trackCount; ++i) writeLength(w, v.tracks[i]);
+    const u8 tracks = v.type == PropType::Transform ? 0 : v.trackCount;
+    w.u8_(tracks);
+    for (u8 i = 0; i < tracks; ++i) writeLength(w, v.tracks[i]);
+    if (v.type == PropType::Stops)
+        for (u8 i = 0; i < v.trackCount; ++i) { w.f32_(v.stopColors[i].r); w.f32_(v.stopColors[i].g); w.f32_(v.stopColors[i].b); w.f32_(v.stopColors[i].a); }
+    if (v.type == PropType::Transform) {
+        w.u8_(v.trackCount);
+        for (u8 i = 0; i < v.trackCount; ++i) { w.u8_(v.xfns[i]); w.f32_(v.xargs[i]); }
+    }
+    if (v.type == PropType::Filter) {
+        for (u8 i = 0; i < v.trackCount; ++i) w.u8_(v.fns[i]);
+        w.u8_(v.shadowCount);
+        for (const FilterShadow& sh : v.shadows) {
+            w.f32_(sh.x); w.f32_(sh.y); w.f32_(sh.blur);
+            w.f32_(sh.color.r); w.f32_(sh.color.g); w.f32_(sh.color.b); w.f32_(sh.color.a);
+        }
+    }
+    if (v.type == PropType::List)
+        for (u8 i = 0; i < v.trackCount; ++i) {
+            for (u64 m : v.masks[i].w) { w.u32_(u32(m)); w.u32_(u32(m >> 32)); }
+            writeEasing(w, v.eases[i]);
+            w.str(v.ids[i] ? std::string(animationName(v.ids[i])) : std::string());
+            w.u8_(v.fns[i]);
+            for (const Length& l : v.pairs[i]) writeLength(w, l);
+        }
 }
 bool readValue(Reader& r, PropValue& v) {
     const u8 t = r.u8_();
-    if (t > u8(PropType::Tracks)) return r.ok = false;
+    if (t > u8(PropType::Transform)) return r.ok = false;
     v.type = PropType(t);
     v.b = r.u8_() != 0;
     v.e = r.u8_();
@@ -159,9 +198,58 @@ bool readValue(Reader& r, PropValue& v) {
     v.num = r.f32_();
     v.color.r = r.f32_(); v.color.g = r.f32_(); v.color.b = r.f32_(); v.color.a = r.f32_();
     v.trackCount = r.u8_();
-    if (v.trackCount > kMaxGridTracks) return r.ok = false;
+    if (v.trackCount > kMaxGridTracks || (v.type == PropType::List && v.trackCount > kMaxTransitions)) return r.ok = false;
     for (u8 i = 0; i < v.trackCount && r.ok; ++i) readLength(r, v.tracks[i]);
+    if (v.type == PropType::Stops)
+        for (u8 i = 0; i < v.trackCount && r.ok; ++i) { v.stopColors[i].r = r.f32_(); v.stopColors[i].g = r.f32_(); v.stopColors[i].b = r.f32_(); v.stopColors[i].a = r.f32_(); }
+    if (v.type == PropType::Transform) {
+        v.trackCount = r.u8_();
+        if (v.trackCount > kMaxTransformArgs) return r.ok = false;
+        for (u8 i = 0; i < v.trackCount && r.ok; ++i) {
+            if ((v.xfns[i] = r.u8_()) > u8(TransformFn::M3_15)) return r.ok = false;
+            v.xargs[i] = r.f32_();
+        }
+    }
+    if (v.type == PropType::Filter) {
+        for (u8 i = 0; i < v.trackCount && r.ok; ++i) v.fns[i] = r.u8_();
+        v.shadowCount = r.u8_();
+        for (FilterShadow& sh : v.shadows) {
+            sh.x = r.f32_(); sh.y = r.f32_(); sh.blur = r.f32_();
+            sh.color.r = r.f32_(); sh.color.g = r.f32_(); sh.color.b = r.f32_(); sh.color.a = r.f32_();
+        }
+    }
+    if (v.type == PropType::List)
+        for (u8 i = 0; i < v.trackCount && r.ok; ++i) {
+            for (u64& m : v.masks[i].w) { const u64 lo = r.u32_(), hi = r.u32_(); m = lo | hi << 32; }
+            readEasing(r, v.eases[i]);
+            const std::string name = r.str();
+            v.ids[i] = name.empty() ? 0 : animationNameId(name);
+            v.fns[i] = r.u8_();
+            for (Length& l : v.pairs[i]) readLength(r, l);
+        }
     return r.ok;
+}
+void writeSelector(Writer& w, const SimpleSelector& sel) {
+    w.u32_(sel.typeHash);
+    w.u32_(sel.idHash);
+    w.u8_(sel.classCount);
+    for (u8 i = 0; i < sel.classCount; ++i) w.u32_(sel.classes[i]);
+    w.u32_(sel.states);
+    w.u8_(u8(sel.combinator));
+    w.u32_(u32(sel.attrs.size()));
+    for (const auto& at : sel.attrs) { w.u32_(at.nameHash); w.u8_(u8(at.op)); w.u8_(at.ci ? 1 : 0); w.str(at.value); }
+    w.u32_(u32(sel.nths.size()));
+    for (const auto& n : sel.nths) { w.u8_(u8(n.kind)); w.i32_(n.a); w.i32_(n.b); }
+    w.u8_(sel.flags);
+    w.u32_(u32(sel.logicals.size()));
+    for (const auto& lg : sel.logicals) {
+        w.u8_(u8(lg.kind));
+        w.u32_(u32(lg.args.size()));
+        for (const auto& chain : lg.args) {
+            w.u32_(u32(chain.size()));
+            for (const SimpleSelector& x : chain) writeSelector(w, x);
+        }
+    }
 }
 void writeSheet(Writer& w, const StyleSheet& s) {
     w.raw(kStyleMagic, 4);
@@ -171,15 +259,11 @@ void writeSheet(Writer& w, const StyleSheet& s) {
         w.u32_(rule.specificity);
         w.u32_(rule.order);
         w.u8_(rule.root ? 1 : 0);
+        w.u32_(rule.layer);
+        w.u32_(rule.cond);
+        w.u32_(rule.scope);
         w.u32_(u32(rule.chain.size()));
-        for (const SimpleSelector& sel : rule.chain) {
-            w.u32_(sel.typeHash);
-            w.u32_(sel.idHash);
-            w.u8_(sel.classCount);
-            for (u8 i = 0; i < sel.classCount; ++i) w.u32_(sel.classes[i]);
-            w.u32_(sel.states);
-            w.u8_(u8(sel.combinator));
-        }
+        for (const SimpleSelector& sel : rule.chain) writeSelector(w, sel);
         w.u32_(u32(rule.decls.size()));
         for (const Declaration& d : rule.decls) {
             w.u32_(u32(d.prop));
@@ -190,6 +274,84 @@ void writeSheet(Writer& w, const StyleSheet& s) {
     }
     w.u32_(u32(s.tokens().size()));
     for (const auto& [h, text] : s.tokens()) { w.u32_(h); w.str(text); }
+    w.u32_(u32(s.keyframes().size()));
+    for (const KeyframesRule& k : s.keyframes()) {
+        w.str(std::string(animationName(k.name)));
+        w.u32_(u32(k.frames.size()));
+        for (const Keyframe& f : k.frames) {
+            w.f32_(f.offset);
+            w.u8_(f.hasEase ? 1 : 0);
+            writeEasing(w, f.ease);
+            w.u32_(u32(f.decls.size()));
+            for (const Declaration& d : f.decls) { w.u32_(u32(d.prop)); writeValue(w, d.value); w.str(d.raw); }
+        }
+    }
+    w.u32_(u32(s.layers().size()));
+    for (const std::string& l : s.layers()) w.str(l);
+    w.u32_(u32(s.conditions().size()));
+    for (const StyleCondition& c : s.conditions()) {
+        w.u8_(u8(c.kind));
+        w.str(c.containerName ? std::string(animationName(c.containerName)) : std::string());
+        w.u32_(c.parent);
+        w.u32_(u32(c.any.size()));
+        for (const auto& q : c.any) {
+            w.u8_(q.negate ? 1 : 0);
+            w.u32_(u32(q.all.size()));
+            for (const auto& t : q.all) { w.u8_(u8(t.f)); w.u8_(u8(t.op)); w.f32_(t.v); w.u32_(t.name); w.str(t.value); }
+        }
+    }
+    w.u32_(u32(s.scopes().size()));
+    for (const StyleScope& sc : s.scopes())
+        for (const auto* list : {&sc.roots, &sc.limits}) {
+            w.u32_(u32(list->size()));
+            for (const auto& chain : *list) {
+                w.u32_(u32(chain.size()));
+                for (const SimpleSelector& x : chain) writeSelector(w, x);
+            }
+        }
+}
+std::expected<void, std::string> readSelector(Reader& r, SimpleSelector& sel, int depth) {
+    sel.typeHash = r.u32_();
+    sel.idHash = r.u32_();
+    sel.classCount = r.u8_();
+    if (sel.classCount > sel.classes.size()) return std::unexpected("cooked style: bad selector");
+    for (u8 i = 0; i < sel.classCount; ++i) sel.classes[i] = r.u32_();
+    sel.states = r.u32_();
+    const u8 c = r.u8_();
+    if (c > u8(SimpleSelector::Combinator::Sibling)) return std::unexpected("cooked style: bad combinator");
+    sel.combinator = SimpleSelector::Combinator(c);
+    sel.attrs.resize(r.count(6));
+    for (auto& at : sel.attrs) {
+        at.nameHash = r.u32_();
+        const u8 op = r.u8_();
+        if (op > u8(SimpleSelector::Attr::Op::Contains)) return std::unexpected("cooked style: bad attribute selector");
+        at.op = SimpleSelector::Attr::Op(op);
+        at.ci = r.u8_() != 0;
+        at.value = r.str();
+    }
+    sel.nths.resize(r.count(9));
+    for (auto& n : sel.nths) {
+        const u8 k = r.u8_();
+        if (k > u8(SimpleSelector::Nth::Kind::LastOfType)) return std::unexpected("cooked style: bad :nth");
+        n.kind = SimpleSelector::Nth::Kind(k);
+        n.a = r.i32_(); n.b = r.i32_();
+    }
+    sel.flags = r.u8_();
+    if (sel.flags > 3) return std::unexpected("cooked style: bad selector flags");
+    sel.logicals.resize(r.count(5));
+    if (!sel.logicals.empty() && depth >= 8) return std::unexpected("cooked style: selector nesting too deep");
+    for (auto& lg : sel.logicals) {
+        const u8 k = r.u8_();
+        if (k > u8(SimpleSelector::Logical::Kind::Has)) return std::unexpected("cooked style: bad logical selector");
+        lg.kind = SimpleSelector::Logical::Kind(k);
+        lg.args.resize(r.count(4));
+        for (auto& chain : lg.args) {
+            chain.resize(r.count(14));
+            for (SimpleSelector& x : chain)
+                if (auto e = readSelector(r, x, depth + 1); !e) return e;
+        }
+    }
+    return {};
 }
 std::expected<StyleSheet, std::string> readSheet(Reader& r) {
     if (!r.magic(kStyleMagic)) return std::unexpected("not a cooked style (bad magic / version)");
@@ -198,18 +360,14 @@ std::expected<StyleSheet, std::string> readSheet(Reader& r) {
         rule.specificity = r.u32_();
         rule.order = r.u32_();
         rule.root = r.u8_() != 0;
+        const u32 layer = r.u32_(), cond = r.u32_(), scope = r.u32_();
+        if (layer > StyleRule::kNone || cond > StyleRule::kNone || scope > StyleRule::kNone) return std::unexpected("cooked style: bad rule layer / condition");
+        rule.layer = u16(layer);
+        rule.cond = u16(cond);
+        rule.scope = u16(scope);
         rule.chain.resize(r.count(14));
-        for (SimpleSelector& sel : rule.chain) {
-            sel.typeHash = r.u32_();
-            sel.idHash = r.u32_();
-            sel.classCount = r.u8_();
-            if (sel.classCount > sel.classes.size()) return std::unexpected("cooked style: bad selector");
-            for (u8 i = 0; i < sel.classCount; ++i) sel.classes[i] = r.u32_();
-            sel.states = r.u32_();
-            const u8 c = r.u8_();
-            if (c > u8(SimpleSelector::Combinator::Child)) return std::unexpected("cooked style: bad combinator");
-            sel.combinator = SimpleSelector::Combinator(c);
-        }
+        for (SimpleSelector& sel : rule.chain)
+            if (auto e = readSelector(r, sel, 0); !e) return std::unexpected(e.error());
         if (rule.chain.empty() && !rule.root && r.ok) return std::unexpected("cooked style: empty selector");
         rule.decls.resize(r.count(40));
         for (Declaration& d : rule.decls) {
@@ -224,8 +382,75 @@ std::expected<StyleSheet, std::string> readSheet(Reader& r) {
     }
     std::vector<std::pair<u32, std::string>> tokens(r.count(8));
     for (auto& [h, text] : tokens) { h = r.u32_(); text = r.str(); }
+    std::vector<KeyframesRule> kfs(r.ok ? r.count(8) : 0);
+    for (KeyframesRule& k : kfs) {
+        const std::string name = r.str();
+        if (name.empty()) return std::unexpected("cooked style: bad @keyframes");
+        k.name = animationNameId(name);
+        k.frames.resize(r.count(10));
+        for (Keyframe& f : k.frames) {
+            f.offset = r.f32_();
+            if (!(f.offset >= 0.f && f.offset <= 1.f)) return std::unexpected("cooked style: bad keyframe offset");
+            f.hasEase = r.u8_() != 0;
+            readEasing(r, f.ease);
+            f.decls.resize(r.count(10));
+            for (Declaration& d : f.decls) {
+                const u32 p = r.u32_();
+                if (p >= u32(Prop::Count)) return std::unexpected("cooked style: bad property");
+                d.prop = Prop(p);
+                readValue(r, d.value);
+                d.raw = r.str();
+            }
+            if (!r.ok) break;
+        }
+        if (!r.ok) break;
+    }
+    std::vector<std::string> layers(r.ok ? r.count(1) : 0);
+    for (auto& l : layers) l = r.str();
+    std::vector<StyleCondition> conds(r.ok ? r.count(9) : 0);
+    for (std::size_t ci = 0; ci < conds.size() && r.ok; ++ci) {
+        StyleCondition& c = conds[ci];
+        const u8 kind = r.u8_();
+        if (kind > u8(StyleCondition::Kind::Container)) return std::unexpected("cooked style: bad condition");
+        c.kind = StyleCondition::Kind(kind);
+        const std::string cname = r.str();
+        c.containerName = cname.empty() ? 0 : animationNameId(cname);
+        const u32 par = r.u32_();
+        if (par != StyleRule::kNone && par >= ci) return std::unexpected("cooked style: bad condition parent");
+        c.parent = u16(par);
+        c.any.resize(r.count(5));
+        for (auto& q : c.any) {
+            q.negate = r.u8_() != 0;
+            q.all.resize(r.count(6));
+            for (auto& t : q.all) {
+                const u8 f = r.u8_(), op = r.u8_();
+                if (f > u8(StyleCondition::Feature::Style) || op > u8(StyleCondition::Op::Eq)) return std::unexpected("cooked style: bad condition");
+                t.f = StyleCondition::Feature(f);
+                t.op = StyleCondition::Op(op);
+                t.v = r.f32_();
+                t.name = r.u32_();
+                t.value = r.str();
+            }
+            if (!r.ok) break;
+        }
+    }
+    std::vector<StyleScope> scopes(r.ok ? r.count(8) : 0);
+    for (StyleScope& sc : scopes)
+        for (auto* list : {&sc.roots, &sc.limits}) {
+            list->resize(r.ok ? r.count(4) : 0);
+            for (auto& chain : *list) {
+                chain.resize(r.ok ? r.count(14) : 0);
+                for (SimpleSelector& x : chain)
+                    if (auto e = readSelector(r, x, 0); !e) return std::unexpected(e.error());
+                if (chain.empty() && r.ok) return std::unexpected("cooked style: empty scope selector");
+            }
+        }
     if (!r.ok) return std::unexpected("cooked style: truncated or corrupt");
-    return StyleSheet::fromParts(std::move(rules), std::move(tokens));
+    for (const StyleRule& rule : rules)
+        if ((rule.layer != StyleRule::kNone && rule.layer >= layers.size()) || (rule.cond != StyleRule::kNone && rule.cond >= conds.size()) ||
+            (rule.scope != StyleRule::kNone && rule.scope >= scopes.size()))
+            return std::unexpected("cooked style: bad rule layer / condition");
+    return StyleSheet::fromParts(std::move(rules), std::move(tokens), std::move(kfs), std::move(layers), std::move(conds), std::move(scopes));
 }
 } // namespace
 

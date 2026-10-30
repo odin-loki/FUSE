@@ -131,6 +131,28 @@ int main(int argc, char** argv) {
         CHECK(d.maxErr == 0);
         if (!out.empty()) app::writePng(shown, out + "/native_cpu_upload.png");
     }
+    // CPU upload with HDR content (scRGB output + GPU encoder): the float CPU raster feeds the RGBA16F canvas
+    {
+        app::Application b{{.name = "gate_native_cpu_hdr", .loadSettings = false}};
+        app::NativePlatform cpu(b, {.drawMode = app::VkDrawMode::CpuUpload, .colorSpace = app::OutputColorSpace::ScRgb});
+        auto& w = b.createWindow({.title = "fuse_app gate (CPU upload HDR)", .width = 300, .height = 200});
+        CHECK(w.loadText(kDoc, &model));
+        CHECK(cpu.show(w) == app::PresenterKind::Vulkan && !cpu.gpuDraws(w));
+        for (int i = 0; i < 400 && w.framesPresented() < 2; ++i) b.step(0.01f);
+        CHECK(w.framesPresented() >= 1);
+        if (cpu.hdrContent(w)) {
+            const HdrImage& h = w.hdrImage();
+            CHECK(h.width == w.image().width || w.image().width == 0);
+            Image q;
+            h.toRgba8(q);
+            const Image ref = w.rasterize({});
+            const Diff d = compare(q, ref);
+            std::printf("  native_cpu_upload_hdr: float canvas %dx%d, vs 8-bit raster max channel error %d\n", h.width, h.height, d.maxErr);
+            CHECK(h.width > 0 && d.maxErr <= 3);
+        } else {
+            std::printf("  native_cpu_upload_hdr: HDR output not granted here (%s), SDR canvas\n", cpu.lastError().data());
+        }
+    }
     std::printf("fuse_app_native_window: %s\n", g_fail ? "FAILED" : "OK");
     return g_fail ? 1 : 0;
 }

@@ -8,10 +8,12 @@
 // CPU into the window's image (tests, screenshots, servers); desktop / mobile presenters plug in the same way.
 #pragma once
 
+#include "fuse/ui/os.hpp"
 #include "fuse/ui/ui.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
 
 #include <expected>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -91,6 +93,9 @@ struct Presenter {
     void* user = nullptr;
     bool (*present)(void* user, AppWindow& w, fuse::ui::Rect damage) = nullptr;
     void (*destroy)(void* user) = nullptr; ///< called when the window closes
+    /// present() blocks on the display's refresh (Vulkan FIFO, CADisplayLink...): the window is not paced by the
+    /// app clock then. Otherwise frames are spaced by AppWindow::maxFrameRate().
+    bool vsynced = false;
 };
 
 class AppWindow {
@@ -104,7 +109,15 @@ public:
     Application& app() { return m_app; }
     u32 id() const { return m_id; }
     const std::string& title() const { return m_title; }
-    void setTitle(std::string_view t) { m_title = t; }
+    /// Retitles the window; a shown OS window follows on its next frame (X11 WM_NAME + _NET_WM_NAME, SetWindowTextW,
+    /// xdg_toplevel.set_title, NSWindow.title).
+    void setTitle(std::string_view t) {
+        if (t == m_title) return;
+        m_title = t;
+        ++m_titleRev;
+        requestRedraw();
+    }
+    u64 titleRevision() const { return m_titleRev; }
     /// Loads a .fuseui document (file path) into the window root, replacing a previous one. `model` may be null.
     std::expected<void, std::string> load(std::string_view path, fuse::ui::doc::Model* model = nullptr);
     std::expected<void, std::string> loadText(std::string_view json, fuse::ui::doc::Model* model = nullptr);
@@ -112,9 +125,24 @@ public:
 
     void resize(u32 width, u32 height); ///< logical units; forces a full repaint
     fuse::ui::Size size() const { return m_ui.viewport(); }
+    /// Physical pixels per logical unit (HiDPI / fractional scaling; backends set it from the output scale).
+    /// image() and swapchains are pixelSize(); input, layout and size() stay logical.
+    void setScale(f32 s);
+    f32 scale() const { return m_scale; }
+    fuse::ui::Size pixelSize() const;
+    /// ui().drawList() in physical pixels (the list itself when scale() == 1).
+    const fuse::ui::DrawList& pixelDrawList();
     void setRedrawPolicy(RedrawPolicy p) { m_policy = p; }
     RedrawPolicy redrawPolicy() const { return m_policy; }
     void setPresenter(const Presenter& p);
+    /// Frame pacing for presenters that do not wait for the display (Presenter::vsynced false): at most `hz` frames
+    /// per second on the app clock (default 60; 0 = unlimited). Continuous windows then sleep between frames.
+    void setMaxFrameRate(f32 hz) { m_maxRate = hz > 0.f ? hz : 0.f; }
+    f32 maxFrameRate() const { return m_maxRate; }
+    /// Compositor throttle (Wayland wl_surface.frame): while pending no frame is presented; the backend clears it when
+    /// the compositor signals the next frame (no busy redraws for hidden / occluded surfaces).
+    void setFramePending(bool p) { m_framePending = p; }
+    bool framePending() const { return m_framePending; }
     /// Frames presented so far (the idle gate checks this stays flat).
     u64 framesPresented() const { return m_frames; }
     void requestClose() { m_closing = true; }
@@ -133,6 +161,11 @@ public:
         presentHeadless(nullptr, *this, damage);
         return m_image;
     }
+    /// Float (HDR) CPU raster of `damage` (whole window when empty / resized / the format changed) into hdrImage():
+    /// colours above SDR white kept (color::hdr, Image::hdrPixels); for presenters with an RGBA16F canvas.
+    /// `format` Rgba16F rounds each frame to binary16, Rgba32F keeps f32.
+    const fuse::ui::HdrImage& rasterizeHdr(fuse::ui::Rect damage, fuse::ui::PixelFormat format = fuse::ui::PixelFormat::Rgba16F);
+    const fuse::ui::HdrImage& hdrImage() const { return m_hdrImage; }
 
     // input (backends call these; they forward to the UiContext and wake the loop)
     void pointerMove(fuse::ui::Vec2 p) { m_ui.pointerMove(p); }
@@ -142,7 +175,64 @@ public:
     void key(fuse::ui::Key k, fuse::ui::u8 mods = 0) { m_ui.keyDown(k, mods); m_ui.keyUp(k, mods); }
     void text(std::string_view utf8) { m_ui.textInput(utf8); }
 
+    /// CPU-rasterises the damaged region into image() (what the headless presenter does); for software presenters
+    /// that copy image() into an OS buffer (Wayland wl_shm).
+    void rasterizeCpu(fuse::ui::Rect damage) { presentHeadless(nullptr, *this, damage); }
+
+    /// System drag and drop into this window (G2; X11 XDND today). `paths` are local files decoded from a
+    /// text/uri-list; other payloads arrive raw in `data` with their `mime`.
+    struct ExternalDrop {
+        std::vector<std::string> paths;
+        std::string mime, data;
+        fuse::ui::Vec2 pos;
+        /// Every format the backend fetched (mime -> data), the preferred `mime` / `data` included. X11 and Wayland
+        /// fetch up to 8 offered types; Win32 CF_HDROP / CF_UNICODETEXT plus registered MIME clipboard formats.
+        std::vector<std::pair<std::string, std::string>> formats;
+    };
+    using DropHandler = std::function<void(AppWindow&, const ExternalDrop&)>;
+    void onExternalDrop(DropHandler h) { m_onDrop = std::move(h); }
+    bool acceptsExternalDrops() const { return bool(m_onDrop); }
+    /// Called by window backends (and tests) when a drop lands.
+    void deliverExternalDrop(const ExternalDrop& d) {
+        if (m_onDrop) m_onDrop(*this, d);
+        requestRedraw();
+    }
+    /// Drag data out of this window into other applications (G2; X11 XDND source). Call while a pointer button is
+    /// held (typically from a widget's drag-start); the window backend takes it on its next pump. `paths` are sent
+    /// as text/uri-list, otherwise `data` under `mime` (text/plain -> also UTF8_STRING). False if a drag is pending.
+    struct ExternalDrag {
+        std::vector<std::string> paths;
+        std::string mime, data;
+        /// More formats offered alongside (QMimeData with several types): mime -> data. The target picks.
+        std::vector<std::pair<std::string, std::string>> formats;
+        /// Drag image (premultiplied RGBA8, `imageW` x `imageH`, hotspot offset); Wayland uses it as the drag icon
+        /// surface, Win32 through IDragSourceHelper. Empty = no icon.
+        std::vector<fuse::ui::u32> image;
+        fuse::ui::u32 imageW = 0, imageH = 0;
+        fuse::ui::i32 hotX = 0, hotY = 0;
+        /// All offered formats in preference order: text/uri-list of `paths`, then `mime` / `data` (empty mime ->
+        /// text/plain), then `formats` (duplicates dropped).
+        std::vector<std::pair<std::string, std::string>> offered() const;
+    };
+    bool beginExternalDrag(ExternalDrag d) {
+        if (m_pendingDrag) return false;
+        m_pendingDrag = std::make_unique<ExternalDrag>(std::move(d));
+        return true;
+    }
+    /// Backend side: the pending drag, if any (ownership passes to the caller).
+    std::unique_ptr<ExternalDrag> takeExternalDrag() { return std::move(m_pendingDrag); }
+    /// Called by the backend when an outgoing drag ends (`accepted`: the target took it).
+    void onExternalDragEnd(std::function<void(bool accepted)> f) { m_onDragEnd = std::move(f); }
+    void deliverExternalDragEnd(bool accepted); ///< also ends a widget drag handed off to the OS (widgets::DragPayload)
+    /// Local paths as a text/uri-list (file:// with percent-encoding).
+    static std::string uriListFromPaths(const std::vector<std::string>& paths);
+    /// file:// URIs of a text/uri-list as local paths (percent-decoded; comments and non-file URIs skipped).
+    static std::vector<std::string> pathsFromUriList(std::string_view uriList);
+
 private:
+    DropHandler m_onDrop;
+    std::unique_ptr<ExternalDrag> m_pendingDrag;
+    std::function<void(bool)> m_onDragEnd;
     friend class Application;
     bool frame(f32 dt); ///< update + present when needed; true when presented
     static bool presentHeadless(void* user, AppWindow& w, fuse::ui::Rect damage);
@@ -151,11 +241,23 @@ private:
     fuse::ui::UiContext m_ui;
     std::unique_ptr<fuse::ui::doc::Document> m_doc;
     std::string m_title;
+    u64 m_titleRev = 0;
     Presenter m_presenter;
+    f32 m_scale = 1.f;
+    fuse::ui::DrawList m_scaledList;
     fuse::ui::Image m_image;
+    fuse::ui::HdrImage m_hdrImage;
     fuse::ui::CpuRasterizer m_raster;
     RedrawPolicy m_policy = RedrawPolicy::OnDemand;
     u64 m_frames = 0;
+    double m_nextFrame = -1.0; ///< app-clock time the next paced frame may present
+    f32 m_maxRate = 60.f;
+    f32 m_heldDt = 0.f;
+    bool m_framePending = false;
+    bool paced() const { return !m_presenter.vsynced && m_maxRate > 0.f; }
+    bool wantsFrame() const;
+    /// Seconds until this window needs a frame (0 = now, +inf = idle), pacing included.
+    f32 wakeIn(double now) const;
     u32 m_id;
     bool m_closing = false, m_forceRedraw = true;
 };
@@ -203,6 +305,7 @@ public:
 
     /// Replaces the event pump (an empty source restores the default sleep pump).
     void setEventSource(const EventSource& s);
+    const EventSource& eventSource() const { return m_events; }
     void setClock(const Clock& c) { m_clock = c; }
     /// One loop iteration: pump events (waiting at most until the next UI deadline, capped by `maxWait`), then
     /// update / present every window that needs it and drop closed windows. False once the app should exit.
@@ -227,7 +330,7 @@ private:
     Clock m_clock;
     LoopStats m_stats;
     double m_last = -1.0;
-    void* m_lock = nullptr; ///< platform instance-lock handle
+    std::unique_ptr<fuse::ui::os::InstanceLock> m_lock; ///< single-instance lock (fuse::ui::os seam)
     u32 m_nextId = 1;
     int m_exit = 0;
     bool m_quit = false, m_primary = true;

@@ -14,9 +14,15 @@ namespace fuse::ui::a11y {
 
 /// Stable platform id for a node: generation in the high half, slot in the low half (never 0).
 inline u64 idOf(NodeHandle n) { return (u64(n.generation) << 32) | u64(n.index + 1u); }
-inline NodeHandle nodeOf(u64 id) { return {u32(id & 0xFFFFFFFFu) - 1u, u32(id >> 32)}; }
+/// Virtual part (A11ySnapshotNode::part): top bit set, part in bits 32..62, owner slot low (generations are below 2^31).
+inline u64 idOf(NodeHandle n, u32 part) {
+    return part ? (1ull << 63) | (u64(part & 0x7FFFFFFFu) << 32) | u64(n.index + 1u) : idOf(n);
+}
+inline u64 idOf(const A11ySnapshotNode& s) { return idOf(s.node, s.part); }
+/// Parts map to no handle (invalid); use Bridge::ownerOf for them.
+inline NodeHandle nodeOf(u64 id) { return id >> 63 ? NodeHandle{} : NodeHandle{u32(id & 0xFFFFFFFFu) - 1u, u32(id >> 32)}; }
 
-enum class Action : u8 { Focus, Click, Increment, Decrement, SetValue };
+enum class Action : u8 { Focus, Click, Increment, Decrement, SetValue, Expand, Collapse };
 struct ActionRequest {
     Action action = Action::Focus;
     u64 target = 0;
@@ -76,5 +82,26 @@ private:
     void* m_adapter = nullptr;
 };
 #endif
+
+/// Platform screen-reader adapter for one native window, driven by a Bridge (same contract as UnixAdapter):
+/// Windows: UI Automation through AccessKit's subclassing adapter (`nativeWindow` = HWND).
+/// macOS: NSAccessibility through AccessKit's subclassing adapter (`nativeWindow` = NSWindow*, or NSView* with isView).
+/// Linux/BSD: AT-SPI (nativeWindow ignored). Without AccessKit the adapter is inert (valid() == false).
+/// Android and iOS use the app layer's own providers (AccessibilityNodeProvider / UIAccessibilityElement).
+class PlatformAdapter {
+public:
+    PlatformAdapter(Bridge& b, void* nativeWindow, bool isView = false);
+    ~PlatformAdapter();
+    PlatformAdapter(const PlatformAdapter&) = delete;
+    PlatformAdapter& operator=(const PlatformAdapter&) = delete;
+    void update();
+    void setWindowFocused(bool focused);
+    bool valid() const { return m_adapter != nullptr; }
+    static const char* backendName(); ///< "uia", "nsaccessibility", "atspi" or "none"
+
+private:
+    Bridge& m_bridge;
+    void* m_adapter = nullptr;
+};
 
 } // namespace fuse::ui::a11y

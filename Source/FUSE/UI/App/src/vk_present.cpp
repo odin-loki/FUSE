@@ -27,6 +27,19 @@ typedef unsigned long VisualID;
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_xlib.h>
 #endif
+// The other WSI headers only forward-declare their window types (struct wl_display / wl_surface / ANativeWindow;
+// CAMetalLayer is `void` outside Objective-C): no platform headers needed, every surface kind builds everywhere and
+// the entry points are resolved at run time.
+#include <vulkan/vulkan_wayland.h>
+#include <vulkan/vulkan_android.h>
+#include <vulkan/vulkan_metal.h>
+#ifndef VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
+#define VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME "VK_KHR_portability_enumeration"
+#define VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR 0x00000001
+#endif
+#ifndef VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME
+#define VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME "VK_KHR_portability_subset"
+#endif
 
 #if defined(FUSE_HAS_VULKAN_RHI)
 // In-tree with fuse_rhi every vk* name is a volk function pointer: raw instances / devices must be registered so
@@ -37,7 +50,9 @@ typedef unsigned long VisualID;
 #define FUSE_APP_VOLK(x)
 #endif
 
+#include "fuse/ui/color_space.hpp"
 #if defined(FUSE_APP_HAS_UI_VK)
+#include "fuse/ui/os.hpp"
 #include "fuse/ui/render/gpu_draw_data.hpp"
 #include "fuse/ui/render/ui_vk.hpp"
 #endif
@@ -46,6 +61,7 @@ typedef unsigned long VisualID;
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -61,6 +77,8 @@ struct VkCtx {
     u32 family = ~0u;
     VkCommandPool pool = VK_NULL_HANDLE;
     SurfaceSource::Kind kind = SurfaceSource::Xlib;
+    bool colorSpaceExt = false; ///< VK_EXT_swapchain_colorspace enabled on our instance
+    PFN_vkSetHdrMetadataEXT setHdrMetadata = nullptr; ///< VK_EXT_hdr_metadata enabled on our device
     char name[256] = {};
     u32 windows = 0;
     bool adopted = false; ///< instance + device belong to the caller (NativeOptions::adoptDevice)
@@ -88,6 +106,9 @@ struct Khr {
 #if !defined(_WIN32)
     PFN_vkCreateXlibSurfaceKHR CreateXlibSurfaceKHR = nullptr;
 #endif
+    PFN_vkCreateWaylandSurfaceKHR CreateWaylandSurfaceKHR = nullptr; ///< optional (instance kind Wayland)
+    PFN_vkCreateAndroidSurfaceKHR CreateAndroidSurfaceKHR = nullptr; ///< optional (instance kind Android)
+    PFN_vkCreateMetalSurfaceEXT CreateMetalSurfaceEXT = nullptr;     ///< optional (instance kind Metal)
     bool load(VkInstance inst) {
         bool all = true;
         auto get = [&](auto& fn, const char* name) {
@@ -107,10 +128,14 @@ struct Khr {
 #if defined(_WIN32)
         get(CreateWin32SurfaceKHR, "vkCreateWin32SurfaceKHR");
 #endif
+        const bool core = all;
+        CreateWaylandSurfaceKHR = reinterpret_cast<PFN_vkCreateWaylandSurfaceKHR>(vkGetInstanceProcAddr(inst, "vkCreateWaylandSurfaceKHR"));
+        CreateAndroidSurfaceKHR = reinterpret_cast<PFN_vkCreateAndroidSurfaceKHR>(vkGetInstanceProcAddr(inst, "vkCreateAndroidSurfaceKHR"));
+        CreateMetalSurfaceEXT = reinterpret_cast<PFN_vkCreateMetalSurfaceEXT>(vkGetInstanceProcAddr(inst, "vkCreateMetalSurfaceEXT"));
 #if !defined(_WIN32)
-        get(CreateXlibSurfaceKHR, "vkCreateXlibSurfaceKHR");
+        CreateXlibSurfaceKHR = reinterpret_cast<PFN_vkCreateXlibSurfaceKHR>(vkGetInstanceProcAddr(inst, "vkCreateXlibSurfaceKHR"));
 #endif
-        return all;
+        return core;
     }
 };
 Khr K; // one Vulkan instance per process (VkCtx); its WSI functions
@@ -141,26 +166,52 @@ VkImageMemoryBarrier imageBarrier(VkImage img, VkAccessFlags src, VkAccessFlags 
     b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
     return b;
 }
+
+/// The instance extension that creates `kind` surfaces.
+const char* surfaceExtension(SurfaceSource::Kind kind) {
+    switch (kind) {
+    case SurfaceSource::Win32: return "VK_KHR_win32_surface";
+    case SurfaceSource::Xlib: return "VK_KHR_xlib_surface";
+    case SurfaceSource::Wayland: return VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME;
+    case SurfaceSource::Android: return VK_KHR_ANDROID_SURFACE_EXTENSION_NAME;
+    case SurfaceSource::Metal: return VK_EXT_METAL_SURFACE_EXTENSION_NAME;
+    }
+    return "";
+}
+bool instanceHas(const char* ext) {
+    u32 n = 0;
+    vkEnumerateInstanceExtensionProperties(nullptr, &n, nullptr);
+    std::vector<VkExtensionProperties> ep(n);
+    if (n) vkEnumerateInstanceExtensionProperties(nullptr, &n, ep.data());
+    return std::any_of(ep.begin(), ep.end(), [&](const VkExtensionProperties& e) { return std::strcmp(e.extensionName, ext) == 0; });
+}
 } // namespace
 
 VkCtx* vkCtxCreate(SurfaceSource::Kind kind, std::string& err) {
     auto* c = new VkCtx{};
     c->kind = kind;
-    const char* exts[] = {VK_KHR_SURFACE_EXTENSION_NAME,
-#if defined(_WIN32)
-                          VK_KHR_WIN32_SURFACE_EXTENSION_NAME
-#else
-                          VK_KHR_XLIB_SURFACE_EXTENSION_NAME
-#endif
-    };
+    const char* exts[4] = {VK_KHR_SURFACE_EXTENSION_NAME, surfaceExtension(kind), nullptr, nullptr};
+    u32 extCount = 2;
+    VkInstanceCreateFlags flags = 0;
+    // MoltenVK is a "portability" implementation: since loader 1.3.216 it is only enumerated with this flag.
+    // non-sRGB swapchain colour spaces (NativeOptions::colorSpace); harmless when unused
+    if (instanceHas(VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME)) {
+        exts[extCount++] = VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME;
+        c->colorSpaceExt = true;
+    }
+    if (kind == SurfaceSource::Metal && instanceHas(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)) {
+        exts[extCount++] = VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME;
+        flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+    }
     VkApplicationInfo ai{};
     ai.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     ai.pApplicationName = "fuse_app";
     ai.apiVersion = VK_API_VERSION_1_1;
     VkInstanceCreateInfo ici{};
     ici.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    ici.flags = flags;
     ici.pApplicationInfo = &ai;
-    ici.enabledExtensionCount = 2;
+    ici.enabledExtensionCount = extCount;
     ici.ppEnabledExtensionNames = exts;
     if (!ok(vkCreateInstance(&ici, nullptr, &c->instance), "vkCreateInstance (surface extensions)", err)) {
         delete c;
@@ -278,14 +329,29 @@ bool pickDevice(VkCtx& c, VkSurfaceKHR surface, std::string& err) {
     qci.queueFamilyIndex = c.family;
     qci.queueCount = 1;
     qci.pQueuePriorities = &prio;
-    const char* dext[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    const char* dext[3] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, nullptr, nullptr};
+    bool hdrMeta = false;
+    u32 dextCount = 1;
+    { // a portability implementation (MoltenVK) must have VK_KHR_portability_subset enabled when it exposes it
+        u32 en = 0;
+        vkEnumerateDeviceExtensionProperties(c.phys, nullptr, &en, nullptr);
+        std::vector<VkExtensionProperties> ep(en);
+        if (en) vkEnumerateDeviceExtensionProperties(c.phys, nullptr, &en, ep.data());
+        for (const VkExtensionProperties& e : ep)
+            if (std::strcmp(e.extensionName, VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME) == 0) dext[dextCount++] = VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME;
+            else if (std::strcmp(e.extensionName, VK_EXT_HDR_METADATA_EXTENSION_NAME) == 0 && !hdrMeta) {
+                dext[dextCount++] = VK_EXT_HDR_METADATA_EXTENSION_NAME; // HDR10 mastering metadata for the swapchain
+                hdrMeta = true;
+            }
+    }
     VkDeviceCreateInfo dci{};
     dci.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     dci.queueCreateInfoCount = 1;
     dci.pQueueCreateInfos = &qci;
-    dci.enabledExtensionCount = 1;
+    dci.enabledExtensionCount = dextCount;
     dci.ppEnabledExtensionNames = dext;
     if (!ok(vkCreateDevice(c.phys, &dci, nullptr, &c.device), "vkCreateDevice", err)) return false;
+    if (hdrMeta) c.setHdrMetadata = reinterpret_cast<PFN_vkSetHdrMetadataEXT>(vkGetDeviceProcAddr(c.device, "vkSetHdrMetadataEXT"));
     FUSE_APP_VOLK(fuse::renderer::vkloader::registerDevice(c.device, c.instance));
     vkGetDeviceQueue(c.device, c.family, 0, &c.queue);
     VkCommandPoolCreateInfo pci{};
@@ -302,6 +368,7 @@ struct VkWin {
     VkSurfaceKHR surface = VK_NULL_HANDLE;
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkFormat format = VK_FORMAT_UNDEFINED;
+    OutputColorSpace space = OutputColorSpace::Srgb;
     VkExtent2D extent{0, 0};
     std::vector<VkImage> images;
     std::vector<VkSemaphore> renderDone; ///< per swapchain image
@@ -310,6 +377,10 @@ struct VkWin {
     VkDeviceMemory canvasMem = VK_NULL_HANDLE;
     VkImageView canvasView = VK_NULL_HANDLE;
     bool canvasFresh = true; ///< UNDEFINED layout, contents invalid
+    bool outputFresh = true; ///< HDR output image: UNDEFINED layout, encode it whole
+    SurfaceSource::Kind kind = SurfaceSource::Xlib;
+    void* hwnd = nullptr;           ///< Win32 window (DXGI HDR query)
+    f32 displayPeakNits = 0.f;      ///< from the OS seam when known
     // frames
     VkCommandBuffer cmd[kFrames]{};
     VkFence fence[kFrames]{};
@@ -321,6 +392,23 @@ struct VkWin {
     u32 frame = 0;
     bool needFull = true;
     bool gpuDraw = false;
+    bool canvasHdr = false; ///< RGBA16F canvas (HDR content via the GPU encoder)
+    std::unique_ptr<fuse::ui::color::Hdr10Packer> hdr; ///< HDR10 without the GPU encoder: canvas is A2B10G10R10 PQ
+    // HDR with the GPU encoder: the canvas stays RGBA8 sRGB (CPU upload or draw kernel), ui.encode_pq / _scrgb writes
+    // the damage box into `output` (A2B10G10R10 or RGBA16F), which is what gets blitted to the swapchain
+    VkImage output = VK_NULL_HANDLE;
+    VkDeviceMemory outputMem = VK_NULL_HANDLE;
+    VkImageView outputView = VK_NULL_HANDLE;
+#if defined(FUSE_APP_HAS_UI_VK)
+    fuse::ui::render::UiVkEncoder encoder;
+#endif
+    bool encodeOnGpu() const {
+#if defined(FUSE_APP_HAS_UI_VK)
+        return encoder.valid() && output;
+#else
+        return false;
+#endif
+    }
     ExternalTexture external[4]{};
 #if defined(FUSE_APP_HAS_UI_VK)
     fuse::ui::render::UiVkRenderer gpu;
@@ -339,6 +427,12 @@ struct VkWin {
         canvasView = VK_NULL_HANDLE;
         canvas = VK_NULL_HANDLE;
         canvasMem = VK_NULL_HANDLE;
+        if (outputView) vkDestroyImageView(d, outputView, nullptr);
+        if (output) vkDestroyImage(d, output, nullptr);
+        if (outputMem) vkFreeMemory(d, outputMem, nullptr);
+        outputView = VK_NULL_HANDLE;
+        output = VK_NULL_HANDLE;
+        outputMem = VK_NULL_HANDLE;
         for (u32 i = 0; i < kFrames; ++i) {
             if (upload[i]) vkDestroyBuffer(d, upload[i], nullptr);
             if (uploadMem[i]) vkFreeMemory(d, uploadMem[i], nullptr);
@@ -373,11 +467,78 @@ struct VkWin {
         }
         VkSurfaceFormatKHR sf = fmts[0];
         for (const VkSurfaceFormatKHR& f : fmts)
-            if (f.format == VK_FORMAT_B8G8R8A8_UNORM || f.format == VK_FORMAT_R8G8B8A8_UNORM) {
+            if ((f.format == VK_FORMAT_B8G8R8A8_UNORM || f.format == VK_FORMAT_R8G8B8A8_UNORM) &&
+                f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
                 sf = f;
                 break;
             }
+        space = OutputColorSpace::Srgb;
+        // requested wide-gamut / HDR space: the canvas (RGBA8 UNORM) is blitted, so any blit-capable UNORM target works
+        // (adopted instances may lack the extension: their formats list then has no such entries anyway)
+        bool gpuEncode = false; // HDR encode kernel for the requested space
+#if defined(FUSE_APP_HAS_UI_VK)
+        using Enc = fuse::ui::render::UiVkEncoder;
+        const Enc::Mode encMode = opts.colorSpace == OutputColorSpace::ScRgb ? Enc::Mode::ScRgb : Enc::Mode::Hdr10;
+        gpuEncode = (opts.colorSpace == OutputColorSpace::Hdr10 || opts.colorSpace == OutputColorSpace::ScRgb) &&
+                    Enc::kernelAvailable(encMode);
+#endif
+        // Win32: drivers may list HDR colour spaces while Windows drives the monitor in SDR (the picture would come
+        // out washed out); the OS seam's DXGI query decides, and supplies the panel's peak for the HDR metadata
+        bool hdrAllowed = true;
+        if (kind == SurfaceSource::Win32 && opts.colorSpace != OutputColorSpace::Srgb &&
+            opts.colorSpace != OutputColorSpace::DisplayP3) {
+            const fuse::ui::os::DisplayHdr dh = fuse::ui::os::displayHdr(hwnd);
+            if (dh.known) {
+                hdrAllowed = dh.enabled;
+                displayPeakNits = dh.maxNits;
+            }
+        }
+        if (opts.colorSpace != OutputColorSpace::Srgb && hdrAllowed &&
+            (opts.colorSpace != OutputColorSpace::ScRgb || gpuEncode)) {
+            const VkColorSpaceKHR want = opts.colorSpace == OutputColorSpace::DisplayP3 ? VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT
+                                         : opts.colorSpace == OutputColorSpace::ScRgb ? VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT
+                                                                                       : VK_COLOR_SPACE_HDR10_ST2084_EXT;
+            for (const VkSurfaceFormatKHR& f : fmts) {
+                const bool fmtOk = opts.colorSpace == OutputColorSpace::DisplayP3
+                                       ? (f.format == VK_FORMAT_B8G8R8A8_UNORM || f.format == VK_FORMAT_R8G8B8A8_UNORM)
+                                   : opts.colorSpace == OutputColorSpace::ScRgb
+                                       ? f.format == VK_FORMAT_R16G16B16A16_SFLOAT
+                                       : (f.format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 || f.format == VK_FORMAT_A2R10G10B10_UNORM_PACK32);
+                if (f.colorSpace != want || !fmtOk) continue;
+                VkFormatProperties fp{};
+                vkGetPhysicalDeviceFormatProperties(ctx->phys, f.format, &fp);
+                if (!(fp.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT)) continue;
+                sf = f;
+                space = opts.colorSpace;
+                break;
+            }
+        }
         format = sf.format;
+        // HDR: preferably the GPU encoder (canvas stays RGBA8, draw kernel allowed); else HDR10 packs on the CPU
+        // into an A2B10G10R10 canvas (the draw kernel writes RGBA8 storage, so that path is CPU upload only)
+        hdr.reset();
+#if defined(FUSE_APP_HAS_UI_VK)
+        if ((space == OutputColorSpace::Hdr10 || space == OutputColorSpace::ScRgb) && gpuEncode) {
+            // HDR content: a float canvas when the draw kernel has its RGBA16F variant and the encoder its float source
+            // (GPU draw: ui_draw_list_hdr; CPU upload: the float CPU raster, packed to RGBA16F rows)
+            const bool hdrCanvas = opts.hdrContent && opts.canvasFormat != CanvasFormat::Rgba8 &&
+                                   (!gpuDraw || gpu.hdrTargetAvailable()) &&
+                                   fuse::ui::render::UiVkEncoder::kernelAvailable(encMode, true);
+            if (!encoder.valid() || encoder.mode() != encMode || encoder.hdrSource() != hdrCanvas)
+                encoder.init(ctx->device, encMode, kFrames, hdrCanvas);
+        } else {
+            encoder.destroy();
+        }
+        const bool encReady = encoder.valid();
+        canvasHdr = encReady && encoder.hdrSource();
+        if (gpuDraw) gpu.setTargetHdr(canvasHdr);
+#else
+        const bool encReady = false;
+#endif
+        if (space == OutputColorSpace::Hdr10 && !encReady) {
+            hdr = std::make_unique<fuse::ui::color::Hdr10Packer>(opts.sdrWhiteNits);
+            gpuDraw = false;
+        }
         VkPresentModeKHR mode = VK_PRESENT_MODE_FIFO_KHR;
         if (!opts.vsync) {
             u32 pn = 0;
@@ -413,6 +574,20 @@ struct VkWin {
             swapchain = VK_NULL_HANDLE;
             return false;
         }
+        if (space == OutputColorSpace::Hdr10 && ctx->setHdrMetadata) {
+            // SMPTE ST 2086 mastering display: Rec.2020 primaries, D65, the app's peak; content light = SDR white frames
+            VkHdrMetadataEXT md{};
+            md.sType = VK_STRUCTURE_TYPE_HDR_METADATA_EXT;
+            md.displayPrimaryRed = {0.708f, 0.292f};
+            md.displayPrimaryGreen = {0.170f, 0.797f};
+            md.displayPrimaryBlue = {0.131f, 0.046f};
+            md.whitePoint = {0.3127f, 0.3290f};
+            md.maxLuminance = displayPeakNits > 0.f ? std::min(opts.hdrMaxNits, displayPeakNits) : opts.hdrMaxNits;
+            md.minLuminance = 0.0001f;
+            md.maxContentLightLevel = md.maxLuminance;
+            md.maxFrameAverageLightLevel = opts.sdrWhiteNits;
+            ctx->setHdrMetadata(d, 1, &swapchain, &md);
+        }
         u32 n = 0;
         K.GetSwapchainImagesKHR(d, swapchain, &n, nullptr);
         images.resize(n);
@@ -422,17 +597,25 @@ struct VkWin {
         semi.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
         for (VkSemaphore& s : renderDone)
             if (!ok(vkCreateSemaphore(d, &semi, nullptr, &s), "vkCreateSemaphore", err)) return false;
-        // canvas: RGBA8, the kernel's image format and the CPU raster's byte order
+        // canvas: RGBA8, the kernel's image format and the CPU raster's byte order (HDR10: A2B10G10R10, same 4 bytes)
+        // (HDR content: RGBA16F extended-range sRGB, drawn by the kernel only)
+        const VkFormat canvasFormat = hdr ? VK_FORMAT_A2B10G10R10_UNORM_PACK32
+                                          : canvasHdr ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_R8G8B8A8_UNORM;
         VkImageCreateInfo ii{};
         ii.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         ii.imageType = VK_IMAGE_TYPE_2D;
-        ii.format = VK_FORMAT_R8G8B8A8_UNORM;
+        ii.format = canvasFormat;
         ii.extent = {extent.width, extent.height, 1};
         ii.mipLevels = 1;
         ii.arrayLayers = 1;
         ii.samples = VK_SAMPLE_COUNT_1_BIT;
         ii.tiling = VK_IMAGE_TILING_OPTIMAL;
-        ii.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | (gpuDraw ? VkImageUsageFlags(VK_IMAGE_USAGE_STORAGE_BIT) : VkImageUsageFlags(0));
+        bool encoding = false;
+#if defined(FUSE_APP_HAS_UI_VK)
+        encoding = encoder.valid();
+#endif
+        ii.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                   (gpuDraw || encoding ? VkImageUsageFlags(VK_IMAGE_USAGE_STORAGE_BIT) : VkImageUsageFlags(0));
         ii.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         if (!ok(vkCreateImage(d, &ii, nullptr, &canvas), "vkCreateImage canvas", err)) return false;
         VkMemoryRequirements mr;
@@ -448,12 +631,31 @@ struct VkWin {
         vi.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         vi.image = canvas;
         vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        vi.format = VK_FORMAT_R8G8B8A8_UNORM;
+        vi.format = canvasFormat;
         vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
         if (!ok(vkCreateImageView(d, &vi, nullptr, &canvasView), "canvas view", err)) return false;
+#if defined(FUSE_APP_HAS_UI_VK)
+        if (encoding) { // HDR output image: encoder target, blit source
+            VkImageCreateInfo oi = ii;
+            oi.format = VkFormat(encoder.outputFormat());
+            oi.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+            if (!ok(vkCreateImage(d, &oi, nullptr, &output), "vkCreateImage output", err)) return false;
+            vkGetImageMemoryRequirements(d, output, &mr);
+            mai.allocationSize = mr.size;
+            mai.memoryTypeIndex = memType(ctx->phys, mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            if (mai.memoryTypeIndex == ~0u) mai.memoryTypeIndex = memType(ctx->phys, mr.memoryTypeBits, 0);
+            if (!ok(vkAllocateMemory(d, &mai, nullptr, &outputMem), "output memory", err)) return false;
+            vkBindImageMemory(d, output, outputMem, 0);
+            VkImageViewCreateInfo ov = vi;
+            ov.image = output;
+            ov.format = oi.format;
+            if (!ok(vkCreateImageView(d, &ov, nullptr, &outputView), "output view", err)) return false;
+        }
+#endif
         canvasFresh = true;
+        outputFresh = true;
         if (!gpuDraw) {
-            uploadSize = VkDeviceSize(extent.width) * extent.height * 4;
+            uploadSize = VkDeviceSize(extent.width) * extent.height * (canvasHdr ? 8 : 4);
             for (u32 i = 0; i < kFrames; ++i) {
                 VkBufferCreateInfo bi{};
                 bi.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -484,19 +686,53 @@ VkWin* vkWinCreate(VkCtx* c, const SurfaceSource& s, const NativeOptions& o, std
     auto* w = new VkWin{};
     w->ctx = c;
     w->opts = o;
+    VkResult sr = VK_ERROR_EXTENSION_NOT_PRESENT;
+    w->kind = s.kind;
+    if (s.kind == SurfaceSource::Win32) w->hwnd = s.hwnd;
+    switch (s.kind) {
+    case SurfaceSource::Win32: {
 #if defined(_WIN32)
-    VkWin32SurfaceCreateInfoKHR si{};
-    si.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-    si.hinstance = static_cast<HINSTANCE>(s.hinstance);
-    si.hwnd = static_cast<HWND>(s.hwnd);
-    const VkResult sr = K.CreateWin32SurfaceKHR(c->instance, &si, nullptr, &w->surface);
-#else
-    VkXlibSurfaceCreateInfoKHR si{};
-    si.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
-    si.dpy = static_cast<Display*>(s.display);
-    si.window = s.xwindow;
-    const VkResult sr = K.CreateXlibSurfaceKHR(c->instance, &si, nullptr, &w->surface);
+        VkWin32SurfaceCreateInfoKHR si{};
+        si.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+        si.hinstance = static_cast<HINSTANCE>(s.hinstance);
+        si.hwnd = static_cast<HWND>(s.hwnd);
+        sr = K.CreateWin32SurfaceKHR(c->instance, &si, nullptr, &w->surface);
 #endif
+        break;
+    }
+    case SurfaceSource::Xlib: {
+#if !defined(_WIN32)
+        VkXlibSurfaceCreateInfoKHR si{};
+        si.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
+        si.dpy = static_cast<Display*>(s.display);
+        si.window = s.xwindow;
+        if (K.CreateXlibSurfaceKHR) sr = K.CreateXlibSurfaceKHR(c->instance, &si, nullptr, &w->surface);
+#endif
+        break;
+    }
+    case SurfaceSource::Wayland: {
+        VkWaylandSurfaceCreateInfoKHR si{};
+        si.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
+        si.display = static_cast<wl_display*>(s.display);
+        si.surface = static_cast<wl_surface*>(s.surface);
+        if (K.CreateWaylandSurfaceKHR) sr = K.CreateWaylandSurfaceKHR(c->instance, &si, nullptr, &w->surface);
+        break;
+    }
+    case SurfaceSource::Android: {
+        VkAndroidSurfaceCreateInfoKHR si{};
+        si.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
+        si.window = static_cast<ANativeWindow*>(s.surface);
+        if (K.CreateAndroidSurfaceKHR) sr = K.CreateAndroidSurfaceKHR(c->instance, &si, nullptr, &w->surface);
+        break;
+    }
+    case SurfaceSource::Metal: {
+        VkMetalSurfaceCreateInfoEXT si{};
+        si.sType = VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT;
+        si.pLayer = static_cast<const CAMetalLayer*>(s.surface);
+        if (K.CreateMetalSurfaceEXT) sr = K.CreateMetalSurfaceEXT(c->instance, &si, nullptr, &w->surface);
+        break;
+    }
+    }
     if (!ok(sr, "vkCreate*SurfaceKHR", err)) {
         delete w;
         return nullptr;
@@ -550,6 +786,8 @@ VkWin* vkWinCreate(VkCtx* c, const SurfaceSource& s, const NativeOptions& o, std
 }
 
 bool vkWinGpuDraws(const VkWin* w) { return w && w->gpuDraw; }
+bool vkWinHdrContent(const VkWin* w) { return w && w->canvasHdr; }
+OutputColorSpace vkWinColorSpace(const VkWin* w) { return w ? w->space : OutputColorSpace::Srgb; }
 
 bool vkWinSetExternal(VkWin* w, unsigned slot, const ExternalTexture& t) {
     if (!w || !w->gpuDraw || slot >= 4) return false;
@@ -580,8 +818,9 @@ void vkWinDestroy(VkWin* w) {
 
 bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
     VkCtx& c = *w->ctx;
-    const Size vp = win.size();
-    const u32 vw = u32(std::max(1.f, std::round(vp.w))), vh = u32(std::max(1.f, std::round(vp.h)));
+    const Size vp = win.pixelSize(); // physical pixels (HiDPI: logical size * scale)
+    const f32 scale = win.scale();
+    const u32 vw = u32(vp.w), vh = u32(vp.h);
     std::string err;
     if (!w->swapchain || w->extent.width != vw || w->extent.height != vh) {
         if (!w->createSwapchain(vw, vh, err)) {
@@ -590,7 +829,7 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
         }
         // the surface decides the size (X11 / Win32 report the client area): follow it
         if (w->extent.width != vw || w->extent.height != vh) {
-            win.resize(w->extent.width, w->extent.height); // redraws at the new size next iteration
+            win.resize(u32(std::lround(f32(w->extent.width) / scale)), u32(std::lround(f32(w->extent.height) / scale)));
             return false;
         }
     }
@@ -608,7 +847,8 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
 
     const u32 W = w->extent.width, H = w->extent.height;
     const bool full = w->needFull || w->canvasFresh || damage.empty();
-    Rect dmg = full ? Rect{0.f, 0.f, f32(W), f32(H)} : damage;
+    Rect dmg = full ? Rect{0.f, 0.f, f32(W), f32(H)}
+                    : Rect{damage.x * scale, damage.y * scale, damage.w * scale, damage.h * scale};
     int x0 = std::max(0, int(std::floor(dmg.x))), y0 = std::max(0, int(std::floor(dmg.y)));
     int x1 = std::min(int(W), int(std::ceil(dmg.x + dmg.w))), y1 = std::min(int(H), int(std::ceil(dmg.y + dmg.h)));
     if (x1 <= x0 || y1 <= y0) { x0 = y0 = 0; x1 = int(W); y1 = int(H); }
@@ -617,17 +857,31 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
     if (w->gpuDraw) {
         UiContext& ui = win.ui();
         const CpuRasterizer& raster = win.rasterizer();
-        fuse::ui::render::packDrawList(ui.drawList(), W, H, w->data, ui.atlas().pixels(), u32(ui.atlas().size()),
-                                       raster.images(), raster.imageCount());
+        // damage repaint: the kernel runs over the damage box only, starting it from opaque black (as presentHeadless
+        // clears it); the canvas keeps every other pixel from the previous frame
+        fuse::ui::render::packDrawList(win.pixelDrawList(), W, H, w->data, ui.atlas().pixels(), u32(ui.atlas().size()),
+                                       raster.images(), raster.imageCount(),
+                                       Rect{f32(x0), f32(y0), f32(x1 - x0), f32(y1 - y0)}, ui.atlas().version());
+        if (!w->data.passes.empty()) w->data.passes[0].flags |= fuse::ui::render::kPassClear;
         if (!w->gpu.upload(f, w->data)) return false;
     }
 #endif
-    if (!w->gpuDraw) {
-        const Image& img = win.rasterize(full ? Rect{} : dmg);
+    if (!w->gpuDraw && w->canvasHdr) { // float CPU raster -> RGBA16F canvas rows
+        const fuse::ui::HdrImage& img = win.rasterizeHdr(full ? Rect{} : damage, w->opts.canvasFormat == CanvasFormat::Rgba32F
+                                                                                    ? fuse::ui::PixelFormat::Rgba32F
+                                                                                    : fuse::ui::PixelFormat::Rgba16F);
         if (img.width != int(W) || img.height != int(H)) return false;
         for (int y = y0; y < y1; ++y)
-            std::memcpy(w->uploadPtr[f] + (std::size_t(y) * W + x0) * 4, img.pixels.data() + std::size_t(y) * W + x0,
-                        std::size_t(x1 - x0) * 4);
+            img.packHalfRow(y, x0, x1, reinterpret_cast<u64*>(w->uploadPtr[f] + (std::size_t(y) * W + x0) * 8));
+    } else if (!w->gpuDraw) {
+        const Image& img = win.rasterize(full ? Rect{} : damage); // logical damage; rasterize() scales it
+        if (img.width != int(W) || img.height != int(H)) return false;
+        for (int y = y0; y < y1; ++y) {
+            u8* dst = w->uploadPtr[f] + (std::size_t(y) * W + x0) * 4;
+            const u32* src = img.pixels.data() + std::size_t(y) * W + x0;
+            if (w->hdr) w->hdr->pack(src, reinterpret_cast<u32*>(dst), std::size_t(x1 - x0));
+            else std::memcpy(dst, src, std::size_t(x1 - x0) * 4);
+        }
     }
 
     VkCommandBuffer cmd = w->cmd[f];
@@ -647,7 +901,7 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
         VkClearColorValue black{};
         black.float32[3] = 1.f;
         const VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        vkCmdClearColorImage(cmd, w->canvas, G, &black, 1, &range);
+        if (full) vkCmdClearColorImage(cmd, w->canvas, G, &black, 1, &range); // partial: the kernel clears the box
         VkImageMemoryBarrier b1 = imageBarrier(w->canvas, VK_ACCESS_TRANSFER_WRITE_BIT,
                                                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, G, G);
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0,
@@ -683,7 +937,7 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
 #endif
     } else {
         VkBufferImageCopy cp{};
-        cp.bufferOffset = (VkDeviceSize(y0) * W + VkDeviceSize(x0)) * 4;
+        cp.bufferOffset = (VkDeviceSize(y0) * W + VkDeviceSize(x0)) * (w->canvasHdr ? 8 : 4);
         cp.bufferRowLength = W;
         cp.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
         cp.imageOffset = {x0, y0, 0};
@@ -692,6 +946,25 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
         VkImageMemoryBarrier b2 = imageBarrier(w->canvas, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT, G, G);
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b2);
     }
+    VkImage blitSrc = w->canvas;
+#if defined(FUSE_APP_HAS_UI_VK)
+    if (w->encodeOnGpu()) { // canvas (sRGB RGBA8) -> HDR output over the damage box (the output keeps the rest)
+        VkImageMemoryBarrier e0[2] = {imageBarrier(w->canvas, VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                                                   VK_ACCESS_SHADER_READ_BIT, G, G),
+                                      imageBarrier(w->output, VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+                                                   w->outputFresh ? VK_IMAGE_LAYOUT_UNDEFINED : G, G)};
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 2, e0);
+        const bool all = w->outputFresh;
+        w->encoder.record(cmd, f, w->canvasView, w->outputView, all ? 0 : x0, all ? 0 : y0, all ? int(W) : x1,
+                          all ? int(H) : y1, w->opts.sdrWhiteNits);
+        w->outputFresh = false;
+        VkImageMemoryBarrier e1 = imageBarrier(w->output, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT, G, G);
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                             nullptr, 1, &e1);
+        blitSrc = w->output;
+    }
+#endif
     VkImage sw = w->images[index];
     VkImageMemoryBarrier s0 = imageBarrier(sw, 0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
                                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
@@ -702,7 +975,7 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
     blit.dstSubresource = blit.srcSubresource;
     blit.srcOffsets[1] = {int(W), int(H), 1};
     blit.dstOffsets[1] = {int(W), int(H), 1};
-    vkCmdBlitImage(cmd, w->canvas, G, sw, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_NEAREST);
+    vkCmdBlitImage(cmd, blitSrc, G, sw, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_NEAREST);
     VkImageMemoryBarrier s1 = imageBarrier(sw, VK_ACCESS_TRANSFER_WRITE_BIT, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &s1);
@@ -743,7 +1016,7 @@ bool vkWinReadback(VkWin* w, Image& out) {
     const u32 W = w->extent.width, H = w->extent.height;
     VkBufferCreateInfo bi{};
     bi.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bi.size = VkDeviceSize(W) * H * 4;
+    bi.size = VkDeviceSize(W) * H * (w->canvasHdr ? 8 : 4); // RGBA16F HDR canvas: 8 bytes a pixel
     bi.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     VkBuffer buf = VK_NULL_HANDLE;
     VkDeviceMemory mem = VK_NULL_HANDLE;
@@ -784,8 +1057,16 @@ bool vkWinReadback(VkWin* w, Image& out) {
     void* p = nullptr;
     if (good && vkMapMemory(c.device, mem, 0, bi.size, 0, &p) == VK_SUCCESS) {
         out.resize(int(W), int(H));
-        std::memcpy(out.pixels.data(), p, std::size_t(bi.size));
-        for (u32& px : out.pixels) px |= 0xFF000000u;
+        if (w->canvasHdr) { // SDR view of the float canvas: clamp at SDR white, quantise
+            const u16* hp = static_cast<const u16*>(p);
+            auto q = [](f32 v) { return u32(std::clamp(v, 0.f, 1.f) * 255.f + 0.5f); };
+            for (std::size_t i = 0; i < out.pixels.size(); ++i, hp += 4)
+                out.pixels[i] = q(fuse::ui::color::halfToFloat(hp[0])) | (q(fuse::ui::color::halfToFloat(hp[1])) << 8) |
+                                (q(fuse::ui::color::halfToFloat(hp[2])) << 16) | 0xFF000000u;
+        } else {
+            std::memcpy(out.pixels.data(), p, std::size_t(bi.size));
+            for (u32& px : out.pixels) px |= 0xFF000000u;
+        }
         vkUnmapMemory(c.device, mem);
     } else {
         good = false;
