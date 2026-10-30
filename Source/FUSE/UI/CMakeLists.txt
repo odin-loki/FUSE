@@ -280,7 +280,9 @@ if(FUSE_BUILD_UI_VK)
         file(MAKE_DIRECTORY "${_gen}")
         # kernels: <name>.comp -> <name>.comp.spv -> <name>_spv.h (symbol k<Camel>Spv)
         set(_shaders "ui_draw_list=kUiDrawListSpv" "ui_backdrop=kUiBackdropSpv" "ui_encode_pq=kUiEncodePqSpv"
-                     "ui_encode_scrgb=kUiEncodeScrgbSpv")
+                     "ui_encode_scrgb=kUiEncodeScrgbSpv" "ui_draw_list_hdr=kUiDrawListHdrSpv"
+                     "ui_backdrop_hdr=kUiBackdropHdrSpv" "ui_encode_pq_hdr=kUiEncodePqHdrSpv"
+                     "ui_encode_scrgb_hdr=kUiEncodeScrgbHdrSpv")
         set(_shader_dir "${CMAKE_CURRENT_SOURCE_DIR}/Render/src/shaders")
         set(_cc "")
         if(FUSE_UI_GLSLANG)
@@ -307,6 +309,7 @@ if(FUSE_BUILD_UI_VK)
         target_include_directories(fuse_ui_vk PRIVATE "${_gen}")
         set(_fixture_copies "")
         set(_fixture_deps "")
+        file(GLOB _shader_bodies "${_shader_dir}/*.glsl") # shared bodies #included by the .comp variants
         foreach(_pair IN LISTS _shaders)
             string(REPLACE "=" ";" _kv "${_pair}")
             list(GET _kv 0 _name)
@@ -317,7 +320,7 @@ if(FUSE_BUILD_UI_VK)
             if(_cc)
                 set(_spv "${_gen}/${_name}.comp.spv")
                 add_custom_command(OUTPUT "${_spv}" COMMAND ${_cc} "${_src}" -o "${_spv}"
-                    DEPENDS "${_src}" COMMENT "GLSL -> SPIR-V ${_name}.comp" VERBATIM)
+                    DEPENDS "${_src}" ${_shader_bodies} COMMENT "GLSL -> SPIR-V ${_name}.comp" VERBATIM)
                 list(APPEND _fixture_copies COMMAND "${CMAKE_COMMAND}" -E copy "${_spv}" "${_fixture}")
                 list(APPEND _fixture_deps "${_spv}")
             elseif(EXISTS "${_fixture}")

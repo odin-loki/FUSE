@@ -1,0 +1,400 @@
+// FUSE UI GPU backend (fuse_ui_vk, plan §4.9 / UI4): "ui.draw_list" — rasterises a packed DrawList (GpuDrawData,
+// include/fuse/ui/render/gpu_draw_data.hpp) into an RGBA8 storage image, blending over what is there.
+// The specification is fuse::ui::CpuRasterizer (Core/src/draw_list.cpp): same per-pixel arithmetic, same operation
+// order, 8-bit quantisation after every blend; gated with fuse_ui_vk_parity (max channel error and FLIP-style mean).
+// Commands are binned into 16x16 tiles on the CPU (each tile lists the commands that touch it, in draw order); the
+// rounded clip of each command is resolved on the CPU into the command (clip rect + radius), so there is no clip stack.
+// Backdrop blurs split the list into segments (one dispatch each, ui_backdrop.comp in between); a dispatch covers only
+// the damage box (push origin / size), so partial repaints touch only damaged pixels.
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+struct GpuCmd {
+    vec4 rect;   // x, y, w, h (Line: x0, y0, x1, y1)
+    vec4 fill;   // straight RGBA
+    vec4 fill2;  // gradient end
+    vec4 border; // straight RGBA
+    vec4 radius; // tl, tr, br, bl
+    vec4 clip;   // clip rect (x, y, w, h), already intersected with the scissor
+    vec4 params; // borderWidth, blur, clipRadius, 0
+    uvec4 info;  // op | gradient << 8, u | v << 16, tw | th << 16, image
+    vec4 grad;   // multi-stop gradients: pixel -> gradient space a, b, c, d
+    vec4 grad2;  // e, f, stop word offset (uint bits, in ui_images), stop count (uint bits)
+};
+
+#ifdef UI_HDR
+// HDR variant (ui_draw_list_hdr.comp): RGBA16F target holding extended-range sRGB-encoded values (1.0 = SDR white,
+// above it brighter, see color::hdr). Same coverage maths; blends in float without 8-bit quantisation.
+layout(set = 0, binding = 0, rgba16f) uniform image2D ui_target;
+#define PIX vec4
+#else
+layout(set = 0, binding = 0, rgba8) uniform image2D ui_target;
+#define PIX uvec4
+#endif
+layout(set = 0, binding = 1, std430) readonly buffer UiCmds { GpuCmd cmds[]; } ui_cmds;
+layout(set = 0, binding = 2, std430) readonly buffer UiTiles { uint data[]; } ui_tiles; // offsets[tiles + 1], then ids
+layout(set = 0, binding = 3, std430) readonly buffer UiAtlas { uint words[]; } ui_atlas;
+layout(set = 0, binding = 4, std430) readonly buffer UiImages { uint data[]; } ui_images; // per image: off, w, h, ext
+// External textures (UiVkRenderer::setExternalImage): GPU images drawn by kImage commands whose image entry has
+// ext = slot + 1 (fuse::ui::Image::externalSlot), e.g. the engine's 3D viewport frame without a CPU copy. Separate
+// bindings (no descriptor-indexing feature); unbound slots hold a 1x1 dummy.
+layout(set = 0, binding = 5) uniform sampler2D ui_ext0;
+layout(set = 0, binding = 6) uniform sampler2D ui_ext1;
+layout(set = 0, binding = 7) uniform sampler2D ui_ext2;
+layout(set = 0, binding = 8) uniform sampler2D ui_ext3;
+
+layout(push_constant) uniform UiPush {
+    uvec2 extent;
+    uint tilesX;
+    uint atlasSize;
+    uint tileCount;
+    uint imageCount;
+    uvec2 origin;   // dispatch region (the damage box; the whole target for a full frame)
+    uvec2 size;
+    uint tileBase;  // this draw segment's tile table (segments are separated by backdrop blur passes)
+    uint flags;     // 1: start from opaque black (damage clear) instead of the target's contents
+} pc;
+
+const uint kRect = 0u, kShadow = 1u, kGlyph = 2u, kImage = 3u, kLine = 4u, kPath = 8u;
+const uint kCompactGlyph = 0x80000000u; // tile entry flag: compact glyph record in ui_images
+const uint kGlyphRun = 0xC0000000u;     // tile entry flags: run of compact glyphs in ui_images
+
+float sdRoundRect(float px, float py, vec4 r, vec4 rad) {
+    precise float cx = r.x + r.z * 0.5;
+    precise float cy = r.y + r.w * 0.5;
+    precise float hx = r.z * 0.5;
+    precise float hy = r.w * 0.5;
+    precise float dx = px - cx;
+    precise float dy = py - cy;
+    float rr = dx < 0.0 ? (dy < 0.0 ? rad.x : rad.w) : (dy < 0.0 ? rad.y : rad.z);
+    rr = min(rr, min(hx, hy));
+    precise float qx = abs(dx) - hx + rr;
+    precise float qy = abs(dy) - hy + rr;
+    precise float ox = max(qx, 0.0);
+    precise float oy = max(qy, 0.0);
+    precise float l2 = ox * ox + oy * oy;
+    return sqrt(l2) + min(max(qx, qy), 0.0) - rr;
+}
+
+uint q8(float v) { return uint(floor(clamp(v, 0.0, 1.0) * 255.0 + 0.5)); }
+
+#ifdef UI_HDR
+void blend(inout vec4 dst, vec4 s) {
+    if (s.a <= 0.0 && s.r <= 0.0 && s.g <= 0.0 && s.b <= 0.0) return;
+    precise float inv = 1.0 - s.a;
+    precise vec4 o = s + dst * inv;
+    dst = vec4(max(o.rgb, vec3(0.0)), clamp(o.a, 0.0, 1.0));
+}
+#else
+void blend(inout uvec4 dst, vec4 s) {
+    if (s.a <= 0.0 && s.r <= 0.0 && s.g <= 0.0 && s.b <= 0.0) return;
+    precise float inv = 1.0 - s.a;
+    precise vec4 d = vec4(dst) / 255.0;
+    precise vec4 o = s + d * inv;
+    dst = uvec4(q8(o.r), q8(o.g), q8(o.b), q8(o.a));
+}
+#endif
+
+vec4 premul(vec4 c, float cov) {
+    precise float a = clamp(c.a, 0.0, 1.0) * cov;
+    return vec4(c.r * a, c.g * a, c.b * a, a);
+}
+
+ivec2 extSize(uint e) {
+    if (e == 0u) return textureSize(ui_ext0, 0);
+    if (e == 1u) return textureSize(ui_ext1, 0);
+    if (e == 2u) return textureSize(ui_ext2, 0);
+    return textureSize(ui_ext3, 0);
+}
+vec4 extFetch(uint e, ivec2 q) {
+    if (e == 0u) return texelFetch(ui_ext0, q, 0);
+    if (e == 1u) return texelFetch(ui_ext1, q, 0);
+    if (e == 2u) return texelFetch(ui_ext2, q, 0);
+    return texelFetch(ui_ext3, q, 0);
+}
+
+float gradientT(uint kind, float px, float py, vec4 r) {
+    if (kind == 1u) return clamp((py - r.y) / max(r.w, 1.0), 0.0, 1.0);
+    if (kind == 2u) return clamp((px - r.x) / max(r.z, 1.0), 0.0, 1.0);
+    precise float dx = px - (r.x + r.z * 0.5);
+    precise float dy = py - (r.y + r.w * 0.5);
+    precise float rad = max(max(r.z, r.w) * 0.5, 1.0);
+    precise float l2 = dx * dx + dy * dy;
+    return clamp(sqrt(l2) / rad, 0.0, 1.0);
+}
+float edgeWord(uint i) { return uintBitsToFloat(ui_images.data[i]); }
+
+// Multi-stop gradient (kinds 4 linear / 5 radial, spread in bits 4-5): same arithmetic as
+// fuse::ui::gradientStopsColor. Stops ride in ui_images as 5 float words (offset, r, g, b, a).
+vec4 gradientStops(uint gradient, GpuCmd c, float px, float py) {
+    precise float u = c.grad.x * px + c.grad.z * py + c.grad2.x;
+    precise float v = c.grad.y * px + c.grad.w * py + c.grad2.y;
+    precise float uv = u * u + v * v;
+    float t = (gradient & 15u) == 4u ? u : sqrt(uv);
+    const uint spread = gradient >> 4;
+    if (spread == 1u) { precise float r = t - floor(t); t = r; }
+    else if (spread == 2u) { precise float m = t - 2.0 * floor(t * 0.5); t = m > 1.0 ? 2.0 - m : m; }
+    else t = clamp(t, 0.0, 1.0);
+    const uint at = floatBitsToUint(c.grad2.z), n = floatBitsToUint(c.grad2.w);
+    if (n == 0u) return vec4(0.0);
+    vec4 prev = vec4(edgeWord(at + 1u), edgeWord(at + 2u), edgeWord(at + 3u), edgeWord(at + 4u));
+    float prevOff = edgeWord(at);
+    if (t <= prevOff) return prev;
+    for (uint i = 1u; i < n; ++i) {
+        const uint w = at + i * 5u;
+        const float off = edgeWord(w);
+        const vec4 col = vec4(edgeWord(w + 1u), edgeWord(w + 2u), edgeWord(w + 3u), edgeWord(w + 4u));
+        if (t <= off) {
+            precise float span = off - prevOff;
+            precise float f = span > 1e-6 ? (t - prevOff) / span : 1.0;
+            precise vec4 o = prev + (col - prev) * f;
+            return o;
+        }
+        prev = col;
+        prevOff = off;
+    }
+    return prev;
+}
+
+uint atlasByte(uint idx) { return (ui_atlas.words[idx >> 2] >> ((idx & 3u) * 8u)) & 0xFFu; }
+
+// DrawOp::ClipPath coverage: same 4x4 winding loop as pathFillCoverage() in Core/src/draw_list.cpp
+float clipPathCoverage(uint base, uint n, bool evenOdd, float px, float py) {
+    int wind[16];
+    for (int k = 0; k < 16; ++k) wind[k] = 0;
+    for (uint i = 0u; i < n; ++i) {
+        const uint o = base + i * 5u;
+        const float ax = edgeWord(o), ay = edgeWord(o + 1u), bx = edgeWord(o + 2u), by = edgeWord(o + 3u);
+        if (ay == by) continue;
+        precise float vx = bx - ax;
+        precise float vy = by - ay;
+        const int dir = by > ay ? 1 : -1;
+        const float lo = min(ay, by), hi = max(ay, by);
+        for (int j = 0; j < 4; ++j) {
+            precise float sy = py - 0.5 + (float(j) + 0.5) * 0.25;
+            if (sy < lo || sy >= hi) continue;
+            precise float xi = ax + (sy - ay) * vx / vy;
+            for (int k = 0; k < 4; ++k) {
+                precise float sx = px - 0.5 + (float(k) + 0.5) * 0.25;
+                if (xi > sx) wind[j * 4 + k] += dir;
+            }
+        }
+    }
+    int inCount = 0;
+    for (int k = 0; k < 16; ++k) inCount += evenOdd ? (wind[k] & 1) : (wind[k] != 0 ? 1 : 0);
+    return float(inCount) / 16.0;
+}
+
+// compact glyph record at word o (gpu_draw_data.hpp); pi = pixel + 32768. Same coverage maths as the kGlyph branch.
+void compactGlyph(uint o, ivec2 pi, float px, float py, inout PIX dst) {
+    const uint org = ui_images.data[o], uv = ui_images.data[o + 1u], sz = ui_images.data[o + 2u];
+    if ((sz & (1u << 30)) != 0u) { // boxed: clipped / fractional glyph, same pixel box as the kGlyph branch
+        const uint b0 = ui_images.data[o + 4u], b1 = ui_images.data[o + 5u];
+        if (pi.x < int(b0 & 0xFFFFu) || pi.y < int(b0 >> 16) || pi.x >= int(b1 & 0xFFFFu) || pi.y >= int(b1 >> 16)) return;
+    }
+    const int gx = pi.x - int(org & 0xFFFFu), gy = pi.y - int(org >> 16);
+    const int tw = int(sz & 0xFFFFu), th = int((sz >> 16) & 0x3FFFu);
+    if (gx < 0 || gy < 0 || gx >= tw || gy >= th || pc.atlasSize == 0u) return;
+    const uint a = atlasByte(((uv >> 16) + uint(gy)) * pc.atlasSize + (uv & 0xFFFFu) + uint(gx));
+    if (a == 0u) return;
+    float gcov = 1.0;
+    if ((sz & (1u << 31)) != 0u) {
+        const uint ref = ui_images.data[o + 6u];
+        gcov = clamp(0.5 - sdRoundRect(px, py, ui_cmds.cmds[ref].clip, vec4(ui_cmds.cmds[ref].params.z)), 0.0, 1.0);
+        if (gcov <= 0.0) return;
+    }
+    const uint f = ui_images.data[o + 3u];
+    const vec4 fill = vec4(edgeWord(f), edgeWord(f + 1u), edgeWord(f + 2u), edgeWord(f + 3u));
+    blend(dst, premul(fill, float(a) / 255.0 * gcov));
+}
+
+void main() {
+    if (gl_GlobalInvocationID.x >= pc.size.x || gl_GlobalInvocationID.y >= pc.size.y) return;
+    const uvec2 p = gl_GlobalInvocationID.xy + pc.origin;
+    if (p.x >= pc.extent.x || p.y >= pc.extent.y) return;
+    const ivec2 ip = ivec2(p);
+#ifdef UI_HDR
+    vec4 dst = (pc.flags & 1u) != 0u ? vec4(0.0, 0.0, 0.0, 1.0) : imageLoad(ui_target, ip);
+#else
+    uvec4 dst = (pc.flags & 1u) != 0u ? uvec4(0u, 0u, 0u, 255u) : uvec4(floor(imageLoad(ui_target, ip) * 255.0 + 0.5));
+#endif
+    const uint tile = (p.y / 16u) * pc.tilesX + (p.x / 16u);
+    const uint begin = ui_tiles.data[pc.tileBase + tile];
+    const uint end = ui_tiles.data[pc.tileBase + tile + 1u];
+    const float px = float(p.x) + 0.5, py = float(p.y) + 0.5;
+    for (uint k = begin; k < end; ++k) {
+        const uint id = ui_tiles.data[pc.tileBase + pc.tileCount + 1u + k];
+        if ((id & kGlyphRun) == kGlyphRun) {
+            // glyph run (gpu_draw_data.hpp): n, y0|y1, per-column candidate ranges, record offsets; the candidates
+            // are blended in run (= paint) order
+            const uint o = id & 0x3FFFFFFFu;
+            const uint n = ui_images.data[o], yb = ui_images.data[o + 1u];
+            const ivec2 pi = ivec2(p.xy) + 32768;
+            if (pi.y < int(yb & 0xFFFFu) || pi.y >= int(yb >> 16)) continue;
+            const uint range = ui_images.data[o + 2u + (p.x & 15u)];
+            const uint s0 = range & 0xFFFFu, hi = range >> 16;
+            for (uint j = s0; j < hi; ++j) compactGlyph(ui_images.data[o + 18u + j], pi, px, py, dst);
+            continue;
+        }
+        if ((id & kCompactGlyph) != 0u) {
+            compactGlyph(id & 0x7FFFFFFFu, ivec2(p.xy) + 32768, px, py, dst);
+            continue;
+        }
+        const GpuCmd c = ui_cmds.cmds[id];
+        const uint op = c.info.x & 0xFFu;
+        const uint gradient = (c.info.x >> 8) & 0xFFu;
+        // pixel must lie in the command's clipped pixel area (same integer bounds as the CPU loop)
+        vec4 b = c.rect;
+        if (op == kShadow) b = vec4(c.rect.x - c.params.y * 2.0, c.rect.y - c.params.y * 2.0, c.rect.z + c.params.y * 4.0, c.rect.w + c.params.y * 4.0);
+        if (op == kLine) {
+            precise float hw = c.params.x * 0.5 + 1.0;
+            b = vec4(min(c.rect.x, c.rect.z) - hw, min(c.rect.y, c.rect.w) - hw, abs(c.rect.z - c.rect.x) + 2.0 * hw, abs(c.rect.w - c.rect.y) + 2.0 * hw);
+        }
+        precise float ax0 = max(b.x, c.clip.x);
+        precise float ay0 = max(b.y, c.clip.y);
+        precise float ax1 = min(b.x + b.z, c.clip.x + c.clip.z);
+        precise float ay1 = min(b.y + b.w, c.clip.y + c.clip.w);
+        if (ax1 <= ax0 || ay1 <= ay0) continue;
+        if (int(p.x) < int(floor(ax0)) || int(p.x) >= int(ceil(ax1)) || int(p.y) < int(floor(ay0)) || int(p.y) >= int(ceil(ay1))) continue;
+        float clipCov = 1.0;
+        if (c.params.z > 0.0) clipCov = clamp(0.5 - sdRoundRect(px, py, c.clip, vec4(c.params.z)), 0.0, 1.0);
+        const uint clipList = floatBitsToUint(c.params.w);
+        if (clipList != 0u) {
+            const uint cnt = ui_images.data[clipList];
+            for (uint q = 0u; q < cnt && clipCov > 0.0; ++q) {
+                const uint e = clipList + 1u + q * 3u;
+                clipCov *= clipPathCoverage(ui_images.data[e], ui_images.data[e + 1u], ui_images.data[e + 2u] != 0u, px, py);
+            }
+        }
+        if (clipCov <= 0.0) continue;
+        if (op == kRect) {
+            const float d = sdRoundRect(px, py, c.rect, c.radius);
+            precise float outer = clamp(0.5 - d, 0.0, 1.0) * clipCov;
+            if (outer <= 0.0) continue;
+            vec4 fill = c.fill;
+            if (gradient >= 4u) {
+                fill = gradientStops(gradient, c, px, py);
+            } else if (gradient != 0u) {
+                const float t = gradientT(gradient, px, py, c.rect);
+                precise vec4 f = fill + (c.fill2 - fill) * t;
+                fill = f;
+            }
+            if (c.params.x > 0.0 && c.border.a > 0.0) {
+                precise float inner = clamp(0.5 - (d + c.params.x), 0.0, 1.0) * clipCov;
+                const vec4 pf = premul(fill, inner);
+                const vec4 pb = premul(c.border, outer - inner);
+                blend(dst, pf + pb);
+            } else {
+                blend(dst, premul(fill, outer));
+            }
+        } else if (op == kShadow) {
+            const float d = sdRoundRect(px, py, c.rect, c.radius);
+            const float bl = max(c.params.y, 0.5);
+            precise float t = clamp((d + bl) / (2.0 * bl), 0.0, 1.0);
+            precise float cov = (1.0 - t * t * (3.0 - 2.0 * t)) * clipCov;
+            blend(dst, premul(c.fill, cov));
+        } else if (op == kGlyph) {
+            const int gx = int(p.x) - int(c.rect.x), gy = int(p.y) - int(c.rect.y);
+            const int tw = int(c.info.z & 0xFFFFu), th = int(c.info.z >> 16);
+            if (gx < 0 || gy < 0 || gx >= tw || gy >= th || pc.atlasSize == 0u) continue;
+            const uint u = c.info.y & 0xFFFFu, v = c.info.y >> 16;
+            const uint a = atlasByte((v + uint(gy)) * pc.atlasSize + u + uint(gx));
+            if (a != 0u) blend(dst, premul(c.fill, float(a) / 255.0 * clipCov));
+        } else if (op == kImage) {
+            const uint img = c.info.w;
+            if (img >= pc.imageCount) continue;
+            const uint ext = ui_images.data[img * 4u + 3u];
+            if (ext != 0u) {
+                // straight RGBA texture, nearest-scaled over the rect (same mapping as the CPU image path)
+                const ivec2 es = max(extSize(ext - 1u), ivec2(1));
+                const int ex = clamp(int((px - c.rect.x) / c.rect.z * float(es.x)), 0, es.x - 1);
+                const int ey = clamp(int((py - c.rect.y) / c.rect.w * float(es.y)), 0, es.y - 1);
+                const vec4 t = clamp(extFetch(ext - 1u, ivec2(ex, ey)), 0.0, 1.0);
+                const float ek = clipCov * (c.fill.a > 0.0 ? c.fill.a : 1.0);
+                blend(dst, vec4(t.rgb * t.a * ek, t.a * ek));
+                continue;
+            }
+            const uint off = ui_images.data[img * 4u], w = ui_images.data[img * 4u + 1u], h = ui_images.data[img * 4u + 2u];
+            const int sx = clamp(int((px - c.rect.x) / c.rect.z * float(w)), 0, int(w) - 1);
+            const int sy = clamp(int((py - c.rect.y) / c.rect.w * float(h)), 0, int(h) - 1);
+            const uint s = ui_images.data[off + uint(sy) * w + uint(sx)];
+            const float kk = clipCov * (c.fill.a > 0.0 ? c.fill.a : 1.0);
+            blend(dst, vec4(float(s & 0xFFu) / 255.0 * kk, float((s >> 8) & 0xFFu) / 255.0 * kk,
+                            float((s >> 16) & 0xFFu) / 255.0 * kk, float(s >> 24) / 255.0 * kk));
+        } else if (op == kPath) {
+            // DrawOp::Path: same loop as pathSample() in Core/src/draw_list.cpp
+            const uint n = c.info.z, base = c.info.w;
+            int wind[16];
+            for (int k = 0; k < 16; ++k) wind[k] = 0;
+            precise float s2 = 3.0e38;
+            // per-tile-row edge lists (packed after the edges): only edges that can reach this tile row
+            const uint tb = base + n * 5u;
+            const uint row = p.y / 16u - ui_images.data[tb];
+            if (row >= ui_images.data[tb + 1u]) continue;
+            const uint lb = tb + 2u + ui_images.data[tb + 1u] + 1u;
+            const uint i0 = ui_images.data[tb + 2u + row], i1 = ui_images.data[tb + 3u + row];
+            for (uint li = i0; li < i1; ++li) {
+                const uint o = base + ui_images.data[lb + li] * 5u;
+                const float ax = edgeWord(o), ay = edgeWord(o + 1u), bx = edgeWord(o + 2u), by = edgeWord(o + 3u);
+                precise float vx = bx - ax;
+                precise float vy = by - ay;
+                if (edgeWord(o + 4u) == 0.0) {
+                    precise float len2 = max(vx * vx + vy * vy, 1e-12);
+                    precise float t = clamp(((px - ax) * vx + (py - ay) * vy) / len2, 0.0, 1.0);
+                    precise float ex = px - (ax + vx * t);
+                    precise float ey = py - (ay + vy * t);
+                    precise float q = ex * ex + ey * ey;
+                    s2 = min(s2, q);
+                }
+                if (ay == by) continue;
+                const int dir = by > ay ? 1 : -1;
+                const float lo = min(ay, by), hi = max(ay, by);
+                for (int j = 0; j < 4; ++j) {
+                    precise float sy = py - 0.5 + (float(j) + 0.5) * 0.25;
+                    if (sy < lo || sy >= hi) continue;
+                    precise float xi = ax + (sy - ay) * vx / vy;
+                    for (int k = 0; k < 4; ++k) {
+                        precise float sx = px - 0.5 + (float(k) + 0.5) * 0.25;
+                        if (xi > sx) wind[j * 4 + k] += dir;
+                    }
+                }
+            }
+            const bool evenOdd = (c.info.y >> 16) != 0u;
+            int inCount = 0;
+            for (int k = 0; k < 16; ++k) inCount += evenOdd ? (wind[k] & 1) : (wind[k] != 0 ? 1 : 0);
+            const float ds = sqrt(s2);
+            precise float fc = float(inCount) / 16.0 * clipCov;
+            vec4 fill = c.fill;
+            if (gradient >= 4u) {
+                fill = gradientStops(gradient, c, px, py);
+            } else if (gradient != 0u) {
+                const float t = gradientT(gradient, px, py, c.rect);
+                precise vec4 f = fill + (c.fill2 - fill) * t;
+                fill = f;
+            }
+            vec4 o = premul(fill, fill.a > 0.0 || gradient != 0u ? fc : 0.0);
+            if (c.params.x > 0.0) {
+                precise float sc = clamp(0.5 - (ds - c.params.x * 0.5), 0.0, 1.0) * clipCov;
+                const vec4 pb = premul(c.border, sc);
+                precise vec4 oo = pb + o * (1.0 - pb.a);
+                o = oo;
+            }
+            blend(dst, o);
+        } else if (op == kLine) {
+            precise float vx = c.rect.z - c.rect.x;
+            precise float vy = c.rect.w - c.rect.y;
+            precise float len2 = max(vx * vx + vy * vy, 1e-6);
+            precise float t = clamp(((px - c.rect.x) * vx + (py - c.rect.y) * vy) / len2, 0.0, 1.0);
+            precise float ex = px - (c.rect.x + vx * t);
+            precise float ey = py - (c.rect.y + vy * t);
+            precise float d = sqrt(ex * ex + ey * ey) - c.params.x * 0.5;
+            precise float cov = clamp(0.5 - d, 0.0, 1.0) * clipCov;
+            if (cov > 0.0) blend(dst, premul(c.fill, cov));
+        }
+    }
+#ifdef UI_HDR
+    imageStore(ui_target, ip, dst);
+#else
+    imageStore(ui_target, ip, vec4(dst) / 255.0);
+#endif
+}

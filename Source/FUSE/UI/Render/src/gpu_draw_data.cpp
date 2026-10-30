@@ -32,6 +32,51 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     const u32 tilesX = (width + kUiTile - 1) / kUiTile, tilesY = (height + kUiTile - 1) / kUiTile;
     const u32 tileCount = tilesX * tilesY;
     out.push = {{width, height}, tilesX, out.atlasSize, tileCount, imageCount, {0, 0}, {width, height}, 0, 0};
+    // glyph ink boxes: the tight rect of non-zero atlas coverage inside each glyph bitmap (x0 | y0<<8 | x1<<16 | y1<<24,
+    // relative to the bitmap; ~0u = blank). Glyph records shrink to it, so tiles their padding / blank margin merely
+    // touches never list them (per-tile culling) and run column ranges narrow; outside the ink a == 0, so bit-exact.
+    if (out.inkKeys.size() < 1024) out.inkKeys.assign(1024, ~0ull), out.inkBoxes.assign(1024, 0u);
+    else std::fill(out.inkKeys.begin(), out.inkKeys.end(), ~0ull);
+    std::size_t inkCount = 0;
+    const auto inkBox = [&](u32 u, u32 v, u32 tw, u32 th) -> u32 {
+        const u64 key = u64(u) | (u64(v) << 16) | (u64(tw) << 32) | (u64(th) << 48);
+        for (;;) {
+            const std::size_t mask = out.inkKeys.size() - 1;
+            std::size_t i = std::size_t((key * 0x9E3779B97F4A7C15ull) >> 40) & mask;
+            while (out.inkKeys[i] != ~0ull && out.inkKeys[i] != key) i = (i + 1) & mask;
+            if (out.inkKeys[i] == key) return out.inkBoxes[i];
+            if ((inkCount + 1) * 2 > out.inkKeys.size()) { // grow (first frames only), rehash
+                std::vector<u64> keys(out.inkKeys.size() * 2, ~0ull);
+                std::vector<u32> boxes(keys.size(), 0u);
+                for (std::size_t j = 0; j < out.inkKeys.size(); ++j) {
+                    if (out.inkKeys[j] == ~0ull) continue;
+                    std::size_t q = std::size_t((out.inkKeys[j] * 0x9E3779B97F4A7C15ull) >> 40) & (keys.size() - 1);
+                    while (keys[q] != ~0ull) q = (q + 1) & (keys.size() - 1);
+                    keys[q] = out.inkKeys[j];
+                    boxes[q] = out.inkBoxes[j];
+                }
+                out.inkKeys.swap(keys);
+                out.inkBoxes.swap(boxes);
+                continue;
+            }
+            u32 x0 = tw, y0 = th, x1 = 0, y1 = 0;
+            const u32 S = out.atlasSize;
+            for (u32 y = 0; y < th && v + y < S; ++y) {
+                const u8* row = atlas + std::size_t(v + y) * S + u;
+                for (u32 x = 0; x < tw && u + x < S; ++x)
+                    if (row[x]) {
+                        x0 = std::min(x0, x), x1 = std::max(x1, x + 1);
+                        y0 = std::min(y0, y), y1 = std::max(y1, y + 1);
+                    }
+            }
+            // ~0u: blank; 0xFFFFFFFE: too large for 8-bit fields (kept untrimmed); else the packed box
+            const u32 box = x1 <= x0 ? ~0u : (tw > 255 || th > 255) ? 0xFFFFFFFEu : x0 | (y0 << 8) | (x1 << 16) | (y1 << 24);
+            out.inkKeys[i] = key;
+            out.inkBoxes[i] = box;
+            ++inkCount;
+            return box;
+        }
+    };
 
     // images: table then pixels
     out.images.resize(std::size_t(imageCount) * 4);
@@ -317,7 +362,6 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
                 }
                 ref = clipRef;
             }
-            const auto u16b = [](f32 v) { return u32(std::clamp(int(v), -32768, 32767) + 32768); };
             // fast record: an unclipped glyph on integer pixels whose rect is its bitmap size; the kernel's bitmap
             // bounds test is then exactly the kGlyph pixel-box test, so the box words are not read
             const bool fast = gx0 == c.rect.x && gy0 == c.rect.y && gx1 == c.rect.x + c.rect.w && gy1 == c.rect.y + c.rect.h &&
@@ -330,18 +374,36 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
                 std::memcpy(out.images.data() + fillAt, col, sizeof col);
                 lastFill = c.fill;
             }
+            // ink trim: origin / uv / size shrink to the bitmap's ink box (pixel boxes intersected with it)
+            int ox = int(c.rect.x), oy = int(c.rect.y); // int() truncation, as the kernel's int(r.x)
+            u32 gu = c.u, gv = c.v, gtw = c.tw, gth = c.th;
+            int bx0 = int(std::floor(gx0)), by0 = int(std::floor(gy0)), bx1 = int(std::ceil(gx1)), by1 = int(std::ceil(gy1));
+            const u32 ink = inkBox(c.u, c.v, c.tw, c.th);
+            if (ink == ~0u) continue; // blank bitmap (space): no coverage anywhere
+            if (ink != 0xFFFFFFFEu) {
+                const u32 ix0 = ink & 0xFFu, iy0 = (ink >> 8) & 0xFFu, ix1 = (ink >> 16) & 0xFFu, iy1 = ink >> 24;
+                ox += int(ix0), oy += int(iy0);
+                gu += ix0, gv += iy0, gtw = ix1 - ix0, gth = iy1 - iy0;
+                bx0 = std::max(bx0, ox), by0 = std::max(by0, oy);
+                bx1 = std::min(bx1, ox + int(gtw)), by1 = std::min(by1, oy + int(gth));
+                if (bx1 <= bx0 || by1 <= by0) continue; // the clip keeps only blank margin
+            }
+            const auto u16i = [](int v) { return u32(std::clamp(v, -32768, 32767) + 32768); };
             const u32 at = u32(out.images.size());
             out.images.resize(out.images.size() + kCompactGlyphWords);
             u32* w = out.images.data() + at;
-            w[0] = u16b(c.rect.x) | (u16b(c.rect.y) << 16); // int() truncation, as the kernel's int(r.x)
-            w[1] = u32(c.u) | (u32(c.v) << 16);
-            w[2] = std::min<u32>(c.tw, 0xFFFFu) | (std::min<u32>(c.th, 0x3FFFu) << 16) | (fast ? 0u : kGlyphBoxed) |
+            w[0] = u16i(ox) | (u16i(oy) << 16);
+            w[1] = gu | (gv << 16);
+            w[2] = std::min<u32>(gtw, 0xFFFFu) | (std::min<u32>(gth, 0x3FFFu) << 16) | (fast ? 0u : kGlyphBoxed) |
                    (ref != ~0u ? kGlyphRounded : 0u);
             w[3] = fillAt;
-            w[4] = u16b(std::floor(gx0)) | (u16b(std::floor(gy0)) << 16);
-            w[5] = u16b(std::ceil(gx1)) | (u16b(std::ceil(gy1)) << 16);
+            w[4] = u16i(bx0) | (u16i(by0) << 16);
+            w[5] = u16i(bx1) | (u16i(by1) << 16);
             w[6] = ref;
             Area g = pixels;
+            g.x0 = std::max(g.x0, bx0), g.y0 = std::max(g.y0, by0);
+            g.x1 = std::min(g.x1, bx1), g.y1 = std::min(g.y1, by1);
+            if (g.x1 <= g.x0 || g.y1 <= g.y0) continue;
             g.id = kCompactGlyph | at;
             areas.push_back(g);
             continue;

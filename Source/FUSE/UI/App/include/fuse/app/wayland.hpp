@@ -49,6 +49,8 @@ public:
     bool gpuPresents(const AppWindow& w) const;
     /// True when the GPU draw kernel (not the CPU-raster upload) draws `w`.
     bool gpuDraws(const AppWindow& w) const;
+    /// True when `w` draws into the RGBA16F HDR canvas (see NativePlatform::hdrContent).
+    bool hdrContent(const AppWindow& w) const;
     /// "llvmpipe (LLVM ...)" etc. once a Vulkan presenter exists; empty otherwise.
     std::string_view gpuName() const;
     /// wl_display* (for a Vulkan surface or a toolkit sharing the connection).

@@ -37,6 +37,8 @@ struct VkHeadless {
     VkDeviceMemory stagingMem = VK_NULL_HANDLE;
     void* stagingPtr = nullptr;
     u32 w = 0, h = 0;
+    VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
+    u32 bpp = 4; ///< bytes per pixel of `format`
     char deviceName[256] = {};
 
     u32 memType(u32 bits, VkMemoryPropertyFlags want) const {
@@ -47,9 +49,11 @@ struct VkHeadless {
         return ~0u;
     }
 
-    bool init(u32 width, u32 height) {
+    bool init(u32 width, u32 height, VkFormat fmt = VK_FORMAT_R8G8B8A8_UNORM, u32 bytesPerPixel = 4) {
         w = width;
         h = height;
+        format = fmt;
+        bpp = bytesPerPixel;
         VkApplicationInfo ai{VK_STRUCTURE_TYPE_APPLICATION_INFO};
         ai.apiVersion = VK_API_VERSION_1_1;
         VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
@@ -96,7 +100,7 @@ struct VkHeadless {
 
         VkImageCreateInfo ii{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
         ii.imageType = VK_IMAGE_TYPE_2D;
-        ii.format = VK_FORMAT_R8G8B8A8_UNORM;
+        ii.format = format;
         ii.extent = {w, h, 1};
         ii.mipLevels = 1;
         ii.arrayLayers = 1;
@@ -115,12 +119,12 @@ struct VkHeadless {
         VkImageViewCreateInfo vci{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
         vci.image = image;
         vci.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        vci.format = VK_FORMAT_R8G8B8A8_UNORM;
+        vci.format = format;
         vci.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
         if (vkCreateImageView(device, &vci, nullptr, &view) != VK_SUCCESS) return false;
 
         VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-        bci.size = VkDeviceSize(w) * h * 4;
+        bci.size = VkDeviceSize(w) * h * bpp;
         bci.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         vkCreateBuffer(device, &bci, nullptr, &staging);
         vkGetBufferMemoryRequirements(device, staging, &req);
@@ -136,7 +140,13 @@ struct VkHeadless {
     /// Uploads `init` into the image, runs `fn(cmd)` with the image in GENERAL, reads the result into `out`.
     template <class F>
     void run(const Image& init, Image& out, F&& fn) {
-        std::memcpy(stagingPtr, init.pixels.data(), std::size_t(w) * h * 4);
+        out.resize(int(w), int(h));
+        runBytes(init.pixels.data(), out.pixels.data(), fn);
+    }
+    /// run() on raw texels (w * h * bpp bytes each way), for non-RGBA8 formats.
+    template <class F>
+    void runBytes(const void* init, void* out, F&& fn) {
+        std::memcpy(stagingPtr, init, std::size_t(w) * h * bpp);
         VkCommandBufferAllocateInfo cai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
         cai.commandPool = pool;
         cai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -178,8 +188,7 @@ struct VkHeadless {
         vkQueueSubmit(queue, 1, &si, VK_NULL_HANDLE);
         vkQueueWaitIdle(queue);
         vkFreeCommandBuffers(device, pool, 1, &cmd);
-        out.resize(int(w), int(h));
-        std::memcpy(out.pixels.data(), stagingPtr, std::size_t(w) * h * 4);
+        std::memcpy(out, stagingPtr, std::size_t(w) * h * bpp);
     }
 
     ~VkHeadless() {

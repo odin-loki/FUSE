@@ -392,6 +392,7 @@ struct VkWin {
     u32 frame = 0;
     bool needFull = true;
     bool gpuDraw = false;
+    bool canvasHdr = false; ///< RGBA16F canvas (HDR content via the GPU encoder)
     std::unique_ptr<fuse::ui::color::Hdr10Packer> hdr; ///< HDR10 without the GPU encoder: canvas is A2B10G10R10 PQ
     // HDR with the GPU encoder: the canvas stays RGBA8 sRGB (CPU upload or draw kernel), ui.encode_pq / _scrgb writes
     // the damage box into `output` (A2B10G10R10 or RGBA16F), which is what gets blitted to the swapchain
@@ -518,11 +519,17 @@ struct VkWin {
         hdr.reset();
 #if defined(FUSE_APP_HAS_UI_VK)
         if ((space == OutputColorSpace::Hdr10 || space == OutputColorSpace::ScRgb) && gpuEncode) {
-            if (!encoder.valid() || encoder.mode() != encMode) encoder.init(ctx->device, encMode, kFrames);
+            // HDR content: a float canvas when the draw kernel has its RGBA16F variant and the encoder its float source
+            const bool hdrCanvas = opts.hdrContent && gpuDraw && gpu.hdrTargetAvailable() &&
+                                   fuse::ui::render::UiVkEncoder::kernelAvailable(encMode, true);
+            if (!encoder.valid() || encoder.mode() != encMode || encoder.hdrSource() != hdrCanvas)
+                encoder.init(ctx->device, encMode, kFrames, hdrCanvas);
         } else {
             encoder.destroy();
         }
         const bool encReady = encoder.valid();
+        canvasHdr = encReady && encoder.hdrSource();
+        if (gpuDraw) gpu.setTargetHdr(canvasHdr);
 #else
         const bool encReady = false;
 #endif
@@ -589,7 +596,9 @@ struct VkWin {
         for (VkSemaphore& s : renderDone)
             if (!ok(vkCreateSemaphore(d, &semi, nullptr, &s), "vkCreateSemaphore", err)) return false;
         // canvas: RGBA8, the kernel's image format and the CPU raster's byte order (HDR10: A2B10G10R10, same 4 bytes)
-        const VkFormat canvasFormat = hdr ? VK_FORMAT_A2B10G10R10_UNORM_PACK32 : VK_FORMAT_R8G8B8A8_UNORM;
+        // (HDR content: RGBA16F extended-range sRGB, drawn by the kernel only)
+        const VkFormat canvasFormat = hdr ? VK_FORMAT_A2B10G10R10_UNORM_PACK32
+                                          : canvasHdr ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_R8G8B8A8_UNORM;
         VkImageCreateInfo ii{};
         ii.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         ii.imageType = VK_IMAGE_TYPE_2D;
@@ -775,6 +784,7 @@ VkWin* vkWinCreate(VkCtx* c, const SurfaceSource& s, const NativeOptions& o, std
 }
 
 bool vkWinGpuDraws(const VkWin* w) { return w && w->gpuDraw; }
+bool vkWinHdrContent(const VkWin* w) { return w && w->canvasHdr; }
 OutputColorSpace vkWinColorSpace(const VkWin* w) { return w ? w->space : OutputColorSpace::Srgb; }
 
 bool vkWinSetExternal(VkWin* w, unsigned slot, const ExternalTexture& t) {

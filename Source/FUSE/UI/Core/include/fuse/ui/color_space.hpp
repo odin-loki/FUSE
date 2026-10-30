@@ -108,6 +108,21 @@ inline f32 contrastRatio(Color a, Color b) {
     const f32 la = luminance(a), lb = luminance(b);
     return (std::max(la, lb) + 0.05f) / (std::min(la, lb) + 0.05f);
 }
+/// HDR content: `c` (sRGB) at `brightness` times its SDR luminance in linear light (1 = as SDR, 4 = four times SDR
+/// white), re-encoded on the odd-extended sRGB curve, so components may exceed 1. The GPU HDR canvas (NativeOptions::
+/// hdrContent with an Hdr10 / ScRgb output, UiVkRenderer::setTargetHdr) keeps it; 8-bit targets clip it at 1.
+inline Color hdr(Color c, f32 brightness) {
+    Color l = toLinear(c);
+    l.r *= brightness;
+    l.g *= brightness;
+    l.b *= brightness;
+    return fromLinear(l);
+}
+/// hdr() with the brightness as absolute luminance: `nits` for c's white point, SDR white at `sdrWhiteNits`.
+inline Color hdrNits(Color c, f32 nits, f32 sdrWhiteNits = 203.f) { return hdr(c, nits / sdrWhiteNits); }
+/// Linear-light brightness of an extended-range colour relative to SDR white (1 = SDR white).
+inline f32 hdrBrightness(Color c) { return luminance(c); }
+
 /// An SDR sRGB colour as an HDR10 (Rec.2020 primaries, PQ) signal, with SDR white mapped to `sdrWhiteNits`.
 inline Color toHdr10(Color c, f32 sdrWhiteNits = 203.f) {
     Color l = toLinear(c);

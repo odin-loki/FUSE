@@ -31,6 +31,7 @@ const char* vkCtxDeviceName(const VkCtx* c);
 VkWin* vkWinCreate(VkCtx* c, const SurfaceSource& s, const NativeOptions& o, std::string& err);
 bool vkWinPresent(VkWin* w, AppWindow& win, fuse::ui::Rect damage);
 bool vkWinGpuDraws(const VkWin* w);
+bool vkWinHdrContent(const VkWin* w);
 OutputColorSpace vkWinColorSpace(const VkWin* w);
 void vkWinDestroy(VkWin* w);
 /// Reads back the last presented frame (the canvas blitted into the swapchain).

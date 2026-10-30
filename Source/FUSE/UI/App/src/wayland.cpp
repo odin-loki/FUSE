@@ -49,6 +49,7 @@ void* WaylandPlatform::nativeDisplay() const { return nullptr; }
 bool WaylandPlatform::roundtrip() { return false; }
 bool WaylandPlatform::gpuPresents(const AppWindow&) const { return false; }
 bool WaylandPlatform::gpuDraws(const AppWindow&) const { return false; }
+bool WaylandPlatform::hdrContent(const AppWindow&) const { return false; }
 std::string_view WaylandPlatform::gpuName() const { return {}; }
 #else
 using detail::SurfaceSource;
@@ -879,6 +880,11 @@ bool WaylandPlatform::gpuPresents(const AppWindow& aw) const {
 bool WaylandPlatform::gpuDraws(const AppWindow& aw) const {
     for (auto& w : m->wins)
         if (w->win == &aw) return w->vk && detail::vkWinGpuDraws(w->vk);
+    return false;
+}
+bool WaylandPlatform::hdrContent(const AppWindow& aw) const {
+    for (auto& w : m->wins)
+        if (w->win == &aw) return w->vk && detail::vkWinHdrContent(w->vk);
     return false;
 }
 std::string_view WaylandPlatform::gpuName() const { return detail::vkCtxDeviceName(m->vk); }

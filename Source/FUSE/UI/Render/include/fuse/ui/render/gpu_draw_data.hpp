@@ -82,6 +82,10 @@ struct GpuDrawData {
     /// ~0u (packDrawList's default) = unknown, upload every frame.
     u32 atlasGeneration = ~0u;
 
+    /// packDrawList scratch: per-glyph ink boxes (open-addressed by atlas rect, rebuilt every pack; kept for capacity)
+    std::vector<u64> inkKeys;
+    std::vector<u32> inkBoxes;
+
     std::size_t cmdBytes() const { return cmds.size() * sizeof(GpuCmd); }
     std::size_t tileBytes() const { return tiles.size() * 4; }
     std::size_t imageBytes() const { return images.size() * 4; }

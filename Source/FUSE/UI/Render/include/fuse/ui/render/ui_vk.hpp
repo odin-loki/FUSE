@@ -59,6 +59,12 @@ public:
     static bool kernelAvailable();
     /// True when DrawOp::Backdrop runs on the GPU (ui.backdrop kernel built in and created at init).
     bool backdropOnGpu() const { return m_blurPipeline != nullptr; }
+    /// HDR target: record() then expects an RGBA16F storage image holding extended-range sRGB-encoded values (1.0 =
+    /// SDR white; brighter content above it, see color::hdr), blended in float without 8-bit quantisation (the
+    /// ui_draw_list_hdr / ui_backdrop_hdr variants). False (and unchanged) when the HDR kernel is not built in.
+    bool setTargetHdr(bool hdr);
+    bool targetHdr() const { return m_hdrTarget; }
+    bool hdrTargetAvailable() const { return m_pipelineHdr != nullptr; }
     /// Glyph atlas uploads since init (stays flat while GpuDrawData::atlasGeneration does not change).
     u64 atlasUploads() const { return m_atlasUploads; }
 
@@ -80,6 +86,8 @@ private:
     void* m_setLayout = nullptr;
     void* m_layout = nullptr;
     void* m_pipeline = nullptr;
+    void* m_pipelineHdr = nullptr; ///< ui_draw_list_hdr (RGBA16F target)
+    bool m_hdrTarget = false;
     void* m_pool = nullptr;
     Slot m_slots[kMaxSlots]{};
     void* m_external[kMaxExternal]{}; ///< VkImageView per external slot (null: dummy)
@@ -91,12 +99,14 @@ private:
     void* m_blurSetLayout = nullptr;
     void* m_blurLayout = nullptr;
     void* m_blurPipeline = nullptr;
+    void* m_blurPipelineHdr = nullptr;
     void* m_scratch = nullptr; ///< VkBuffer, device-local floats
     void* m_scratchMem = nullptr;
     u64 m_atlasUploads = 0;
 };
 
-/// "ui.encode_pq" / "ui.encode_scrgb": converts an RGBA8 sRGB canvas (storage image, GENERAL) into an HDR output
+/// "ui.encode_pq" / "ui.encode_scrgb": converts an RGBA8 sRGB canvas (or, with `hdrSource`, the RGBA16F extended-range
+/// canvas of UiVkRenderer::setTargetHdr, where values above 1 are brighter than SDR white) (storage image, GENERAL) into an HDR output
 /// image over a box: HDR10 (rgb10_a2: Rec.2020 + PQ, as color::toHdr10) or scRGB (rgba16f: linear, 1.0 = 80 nits).
 /// Both images must be in GENERAL layout with STORAGE usage; barriers around the dispatch are the caller's.
 class UiVkEncoder {
@@ -107,9 +117,10 @@ public:
     UiVkEncoder(const UiVkEncoder&) = delete;
     UiVkEncoder& operator=(const UiVkEncoder&) = delete;
 
-    static bool kernelAvailable(Mode mode);
+    static bool kernelAvailable(Mode mode, bool hdrSource = false);
     /// `slots`: descriptor sets, one per frame in flight (record() into a slot whose last use has completed).
-    bool init(void* device, Mode mode, u32 slots = 2);
+    bool init(void* device, Mode mode, u32 slots = 2, bool hdrSource = false);
+    bool hdrSource() const { return m_hdrSource; }
     void destroy();
     bool valid() const { return m_pipeline != nullptr; }
     Mode mode() const { return m_mode; }
@@ -127,6 +138,7 @@ private:
     void* m_sets[UiVkRenderer::kMaxSlots]{};
     u32 m_slots = 0;
     Mode m_mode = Mode::Hdr10;
+    bool m_hdrSource = false;
 };
 
 } // namespace fuse::ui::render

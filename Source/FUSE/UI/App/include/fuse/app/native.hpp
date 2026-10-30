@@ -67,6 +67,9 @@ struct NativeOptions {
     VkDrawMode drawMode = VkDrawMode::Auto;
     bool vsync = true;             ///< FIFO (true) or MAILBOX / IMMEDIATE when available
     OutputColorSpace colorSpace = OutputColorSpace::Srgb; ///< needs VK_EXT_swapchain_colorspace for non-sRGB
+    /// Hdr10 / ScRgb with GPU draw and the GPU encoder: draw into an RGBA16F canvas so colours brighter than SDR white
+    /// (color::hdr / hdrNits, components above 1) reach the display; otherwise the canvas is 8-bit SDR content.
+    bool hdrContent = true;
     f32 sdrWhiteNits = 203.f;      ///< Hdr10: luminance of sRGB white (ITU-R BT.2408 reference white)
     f32 hdrMaxNits = 1000.f;       ///< Hdr10: mastering peak / MaxCLL sent as HDR metadata (VK_EXT_hdr_metadata, DXGI, Wayland)
     /// Popup menus / combo lists / submenus as their own borderless OS windows (Qt-style; may extend past the main
@@ -95,6 +98,9 @@ public:
     bool gpuDraws(const AppWindow& w) const;
     /// The swapchain colour space actually granted (NativeOptions::colorSpace or the Srgb fallback).
     OutputColorSpace outputColorSpace(const AppWindow& w) const;
+    /// True when the window draws into the RGBA16F HDR canvas (NativeOptions::hdrContent granted): color::hdr colours
+    /// above SDR white are shown brighter. False: content is clipped to SDR white.
+    bool hdrContent(const AppWindow& w) const;
     std::string_view lastError() const;
     /// Reads back what the OS shows in the window's client area (tests / screenshots of real windows).
     bool capture(const AppWindow& w, fuse::ui::Image& out);

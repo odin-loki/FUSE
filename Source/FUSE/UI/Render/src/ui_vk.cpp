@@ -23,7 +23,51 @@
 #define FUSE_UI_VK_HAS_ENCODE_SCRGB 1
 #endif
 
+#if __has_include("ui_draw_list_hdr_spv.h")
+#include "ui_draw_list_hdr_spv.h" // generated: kUiDrawListHdrSpv
+#define FUSE_UI_VK_HAS_KERNEL_HDR 1
+#endif
+#if __has_include("ui_backdrop_hdr_spv.h")
+#include "ui_backdrop_hdr_spv.h" // generated: kUiBackdropHdrSpv
+#define FUSE_UI_VK_HAS_BACKDROP_HDR 1
+#endif
+#if __has_include("ui_encode_pq_hdr_spv.h")
+#include "ui_encode_pq_hdr_spv.h" // generated: kUiEncodePqHdrSpv
+#define FUSE_UI_VK_HAS_ENCODE_PQ_HDR 1
+#endif
+#if __has_include("ui_encode_scrgb_hdr_spv.h")
+#include "ui_encode_scrgb_hdr_spv.h" // generated: kUiEncodeScrgbHdrSpv
+#define FUSE_UI_VK_HAS_ENCODE_SCRGB_HDR 1
+#endif
+
 namespace fuse::ui::render {
+
+namespace {
+// compute pipeline from embedded SPIR-V (null on failure)
+void* makeCompute(VkDevice device, VkPipelineLayout layout, const u32* code, std::size_t size) {
+    VkShaderModuleCreateInfo mi{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    mi.codeSize = size;
+    mi.pCode = code;
+    VkShaderModule m{};
+    if (vkCreateShaderModule(device, &mi, nullptr, &m) != VK_SUCCESS) return nullptr;
+    VkComputePipelineCreateInfo ci{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+    ci.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    ci.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    ci.stage.module = m;
+    ci.stage.pName = "main";
+    ci.layout = layout;
+    VkPipeline p{};
+    const VkResult r = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &ci, nullptr, &p);
+    vkDestroyShaderModule(device, m, nullptr);
+    return r == VK_SUCCESS ? static_cast<void*>(p) : nullptr;
+}
+} // namespace
+
+bool UiVkRenderer::setTargetHdr(bool hdr) {
+    if (hdr && !m_pipelineHdr) return false;
+    m_hdrTarget = hdr;
+    return true;
+}
 
 bool UiVkRenderer::kernelAvailable() {
 #if defined(FUSE_UI_VK_HAS_KERNEL)
@@ -117,6 +161,9 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
     vkDestroyShaderModule(device, module, nullptr);
     if (pr != VK_SUCCESS) return destroy(), false;
     m_pipeline = pipeline;
+#if defined(FUSE_UI_VK_HAS_KERNEL_HDR)
+    m_pipelineHdr = makeCompute(device, layout, kUiDrawListHdrSpv, sizeof(kUiDrawListHdrSpv));
+#endif
 
     const u32 n = m_desc.framesInFlight;
     const VkDescriptorPoolSize sizes[3] = {{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2 * n},
@@ -202,6 +249,9 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
         const VkResult bpr = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &bci, nullptr, &bp);
         vkDestroyShaderModule(device, bm, nullptr);
         if (bpr == VK_SUCCESS) m_blurPipeline = bp;
+#if defined(FUSE_UI_VK_HAS_BACKDROP_HDR)
+        m_blurPipelineHdr = makeCompute(device, blay, kUiBackdropHdrSpv, sizeof(kUiBackdropHdrSpv));
+#endif
     }();
 #endif
 
@@ -349,6 +399,8 @@ void UiVkRenderer::destroy() {
     if (m_sampler) vkDestroySampler(device, static_cast<VkSampler>(m_sampler), nullptr);
     m_dummyView = m_dummy = m_dummyMem = m_sampler = nullptr;
     if (m_blurPipeline) vkDestroyPipeline(device, static_cast<VkPipeline>(m_blurPipeline), nullptr);
+    if (m_blurPipelineHdr) vkDestroyPipeline(device, static_cast<VkPipeline>(m_blurPipelineHdr), nullptr);
+    m_blurPipelineHdr = nullptr;
     if (m_blurLayout) vkDestroyPipelineLayout(device, static_cast<VkPipelineLayout>(m_blurLayout), nullptr);
     if (m_blurSetLayout) vkDestroyDescriptorSetLayout(device, static_cast<VkDescriptorSetLayout>(m_blurSetLayout), nullptr);
     if (m_scratch) vkDestroyBuffer(device, static_cast<VkBuffer>(m_scratch), nullptr);
@@ -359,6 +411,9 @@ void UiVkRenderer::destroy() {
     for (void*& e : m_external) e = nullptr;
     if (m_pool) vkDestroyDescriptorPool(device, static_cast<VkDescriptorPool>(m_pool), nullptr);
     if (m_pipeline) vkDestroyPipeline(device, static_cast<VkPipeline>(m_pipeline), nullptr);
+    if (m_pipelineHdr) vkDestroyPipeline(device, static_cast<VkPipeline>(m_pipelineHdr), nullptr);
+    m_pipelineHdr = nullptr;
+    m_hdrTarget = false;
     if (m_layout) vkDestroyPipelineLayout(device, static_cast<VkPipelineLayout>(m_layout), nullptr);
     if (m_setLayout) vkDestroyDescriptorSetLayout(device, static_cast<VkDescriptorSetLayout>(m_setLayout), nullptr);
     m_pool = m_pipeline = m_layout = m_setLayout = nullptr;
@@ -453,7 +508,7 @@ void UiVkRenderer::record(void* commandBuffer, void* targetView, u32 slotIndex) 
             GpuPush push = s.push;
             push.tileBase = pass.tileBase;
             push.flags = pass.flags;
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, static_cast<VkPipeline>(m_pipeline));
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, static_cast<VkPipeline>(m_hdrTarget ? m_pipelineHdr : m_pipeline));
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, nullptr);
             vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(GpuPush), &push);
             vkCmdDispatch(cmd, (push.size[0] + kUiTile - 1) / kUiTile, (push.size[1] + kUiTile - 1) / kUiTile, 1);
@@ -462,10 +517,11 @@ void UiVkRenderer::record(void* commandBuffer, void* targetView, u32 slotIndex) 
         // backdrop blur (skipped without the kernel or beyond the scratch: the panel stays unblurred, as before)
         const i64 w = pass.src[2], h = pass.src[3];
         const i64 aw = pass.area[2] - pass.area[0], ah = pass.area[3] - pass.area[1];
-        if (!m_blurPipeline || w <= 0 || h <= 0 || aw <= 0 || ah <= 0 || w * h > i64(m_desc.maxBlurPixels)) continue;
+        void* const blurPipe = m_hdrTarget ? m_blurPipelineHdr : m_blurPipeline;
+        if (!blurPipe || w <= 0 || h <= 0 || aw <= 0 || ah <= 0 || w * h > i64(m_desc.maxBlurPixels)) continue;
         const VkPipelineLayout bl = static_cast<VkPipelineLayout>(m_blurLayout);
         const VkDescriptorSet bs = static_cast<VkDescriptorSet>(s.blurSet);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, static_cast<VkPipeline>(m_blurPipeline));
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, static_cast<VkPipeline>(blurPipe));
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, bl, 0, 1, &bs, 0, nullptr);
         BlurPush bp{};
         bp.cmd = pass.cmd;
@@ -499,9 +555,18 @@ struct EncodePush {
     i32 area[4];
     f32 sdrWhite;
 };
-bool encodeCode(UiVkEncoder::Mode m, const u32*& code, std::size_t& size) {
+bool encodeCode(UiVkEncoder::Mode m, bool hdrSource, const u32*& code, std::size_t& size) {
     code = nullptr;
     size = 0;
+    if (hdrSource) {
+#if defined(FUSE_UI_VK_HAS_ENCODE_PQ_HDR)
+        if (m == UiVkEncoder::Mode::Hdr10) code = kUiEncodePqHdrSpv, size = sizeof(kUiEncodePqHdrSpv);
+#endif
+#if defined(FUSE_UI_VK_HAS_ENCODE_SCRGB_HDR)
+        if (m == UiVkEncoder::Mode::ScRgb) code = kUiEncodeScrgbHdrSpv, size = sizeof(kUiEncodeScrgbHdrSpv);
+#endif
+        return code != nullptr;
+    }
 #if defined(FUSE_UI_VK_HAS_ENCODE_PQ)
     if (m == UiVkEncoder::Mode::Hdr10) code = kUiEncodePqSpv, size = sizeof(kUiEncodePqSpv);
 #endif
@@ -512,21 +577,22 @@ bool encodeCode(UiVkEncoder::Mode m, const u32*& code, std::size_t& size) {
 }
 } // namespace
 
-bool UiVkEncoder::kernelAvailable(Mode mode) {
+bool UiVkEncoder::kernelAvailable(Mode mode, bool hdrSource) {
     const u32* c;
     std::size_t n;
-    return encodeCode(mode, c, n);
+    return encodeCode(mode, hdrSource, c, n);
 }
 
 u32 UiVkEncoder::outputFormat() const {
     return m_mode == Mode::Hdr10 ? u32(VK_FORMAT_A2B10G10R10_UNORM_PACK32) : u32(VK_FORMAT_R16G16B16A16_SFLOAT);
 }
 
-bool UiVkEncoder::init(void* devicePtr, Mode mode, u32 slots) {
+bool UiVkEncoder::init(void* devicePtr, Mode mode, u32 slots, bool hdrSource) {
     destroy();
     const u32* code;
     std::size_t size;
-    if (!devicePtr || !encodeCode(mode, code, size)) return false;
+    if (!devicePtr || !encodeCode(mode, hdrSource, code, size)) return false;
+    m_hdrSource = hdrSource;
     VkDevice device = static_cast<VkDevice>(devicePtr);
     m_device = devicePtr;
     m_mode = mode;

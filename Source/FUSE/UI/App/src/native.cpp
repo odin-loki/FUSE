@@ -49,6 +49,7 @@ const char* vkCtxDeviceName(const VkCtx*) { return ""; }
 VkWin* vkWinCreate(VkCtx*, const SurfaceSource&, const NativeOptions&, std::string&) { return nullptr; }
 bool vkWinPresent(VkWin*, AppWindow&, Rect) { return false; }
 bool vkWinGpuDraws(const VkWin*) { return false; }
+bool vkWinHdrContent(const VkWin*) { return false; }
 OutputColorSpace vkWinColorSpace(const VkWin*) { return OutputColorSpace::Srgb; }
 void vkWinDestroy(VkWin*) {}
 bool vkWinReadback(VkWin*, Image&) { return false; }
@@ -1363,6 +1364,10 @@ OutputColorSpace NativePlatform::outputColorSpace(const AppWindow& w) const {
 bool NativePlatform::gpuDraws(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);
     return r && detail::vkWinGpuDraws(r->vk);
+}
+bool NativePlatform::hdrContent(const AppWindow& w) const {
+    const Impl::Rec* r = m->find(w);
+    return r && detail::vkWinHdrContent(r->vk);
 }
 std::string_view NativePlatform::lastError() const { return m->error; }
 bool NativePlatform::setExternalTexture(const AppWindow& w, unsigned slot, const ExternalTexture& tex) {

@@ -55,6 +55,7 @@ struct Row {
     std::string name;
     double cpu = 0, gpu = -1, gpuWall = -1, pack = 0;
     std::size_t cmds = 0;
+    std::size_t tileKb = 0, imageKb = 0; ///< packed upload sizes
 };
 } // namespace
 
@@ -125,6 +126,8 @@ int main(int argc, char** argv) {
         row.pack = msPer(iters, [&] {
             packDrawList(*s.list, W, H, packed, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, s.scissor);
         }, true);
+        row.tileKb = packed.tileBytes() / 1024;
+        row.imageKb = packed.imageBytes() / 1024;
         rows.push_back(row);
     }
     std::string device = "none";
@@ -184,9 +187,11 @@ int main(int argc, char** argv) {
 
     std::printf("fuse_ui_bench_render %ux%u, %d iterations, GPU: %s (%s)\n", W, H, iters, device.c_str(),
                 timestamps ? "timestamp queries" : "wall time");
-    std::printf("  %-16s %8s %10s %10s %12s %10s\n", "scene", "cmds", "cpu ms", "gpu ms", "gpu wall ms", "pack ms");
+    std::printf("  %-16s %8s %10s %10s %12s %10s %9s %9s\n", "scene", "cmds", "cpu ms", "gpu ms", "gpu wall ms", "pack ms",
+                "tiles KB", "data KB");
     for (const Row& row : rows)
-        std::printf("  %-16s %8zu %10.3f %10.3f %12.3f %10.3f\n", row.name.c_str(), row.cmds, row.cpu, row.gpu, row.gpuWall, row.pack);
+        std::printf("  %-16s %8zu %10.3f %10.3f %12.3f %10.3f %9zu %9zu\n", row.name.c_str(), row.cmds, row.cpu, row.gpu,
+                    row.gpuWall, row.pack, row.tileKb, row.imageKb);
     if (!out.empty()) {
         if (FILE* f = std::fopen(out.c_str(), "wb")) {
             std::fprintf(f, "{\"width\":%u,\"height\":%u,\"iterations\":%d,\"device\":\"%s\",\"timestamps\":%s,\"scenes\":[", W, H, iters,
