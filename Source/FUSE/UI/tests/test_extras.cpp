@@ -557,7 +557,9 @@ void gateTray() {
     for (int i = 0; i < 200 && !os::exists(sock); ++i) os::sleepSeconds(0.01);
     ::setenv("DBUS_SESSION_BUS_ADDRESS", addr.c_str(), 1);
 
+    // the socket file appears at bind(), slightly before listen(): retry briefly instead of racing the daemon.
     auto host = Connection::open(addr);
+    for (int i = 0; i < 200 && !host; ++i) { os::sleepSeconds(0.01); host = Connection::open(addr); }
     CHECK(host != nullptr);
     if (!host) return;
     CHECK(host->requestName("org.kde.StatusNotifierWatcher") && host->requestName("com.canonical.AppMenu.Registrar"));
