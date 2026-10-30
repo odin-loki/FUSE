@@ -295,7 +295,121 @@ void DrawList::gradientPath(const Path& p, Color from, Color to, GradientKind ki
     m_cmds.back().gradient = kind;
     m_cmds.back().fill2 = to;
 }
+// ---- multi-stop gradients ------------------------------------------------------------------------------------------
+namespace {
+std::array<f32, 6> composeAffine(const std::array<f32, 6>& A, const std::array<f32, 6>& B) { // A(B(p))
+    return {A[0] * B[0] + A[2] * B[1], A[1] * B[0] + A[3] * B[1], A[0] * B[2] + A[2] * B[3], A[1] * B[2] + A[3] * B[3],
+            A[0] * B[4] + A[2] * B[5] + A[4], A[1] * B[4] + A[3] * B[5] + A[5]};
+}
+bool invertAffine(const std::array<f32, 6>& m, std::array<f32, 6>& out) {
+    const f32 det = m[0] * m[3] - m[1] * m[2];
+    if (std::abs(det) < 1e-12f) return false;
+    const f32 id = 1.f / det;
+    out = {m[3] * id, -m[1] * id, -m[2] * id, m[0] * id, (m[2] * m[5] - m[3] * m[4]) * id, (m[1] * m[4] - m[0] * m[5]) * id};
+    return true;
+}
+} // namespace
+
+Gradient Gradient::linear(Vec2 from, Vec2 to, std::vector<GradientStop> stops, GradientSpread spread) {
+    Gradient g;
+    g.spread = spread;
+    g.stops = std::move(stops);
+    const f32 dx = to.x - from.x, dy = to.y - from.y, l2 = std::max(dx * dx + dy * dy, 1e-12f);
+    g.toUnit = {dx / l2, 0.f, dy / l2, 0.f, -(from.x * dx + from.y * dy) / l2, 0.f};
+    return g;
+}
+Gradient Gradient::linearAngle(const Rect& box, f32 degrees, std::vector<GradientStop> stops) {
+    const f32 a = degrees * 3.14159265358979f / 180.f, sx = std::sin(a), sy = -std::cos(a);
+    const f32 half = (std::abs(box.w * sx) + std::abs(box.h * sy)) * 0.5f;
+    const Vec2 c{box.x + box.w * 0.5f, box.y + box.h * 0.5f};
+    return linear({c.x - sx * half, c.y - sy * half}, {c.x + sx * half, c.y + sy * half}, std::move(stops));
+}
+Gradient Gradient::radialAt(Vec2 centre, f32 rx, f32 ry, std::vector<GradientStop> stops, GradientSpread spread) {
+    Gradient g;
+    g.radial = true;
+    g.spread = spread;
+    g.stops = std::move(stops);
+    rx = std::max(rx, 1e-6f);
+    ry = std::max(ry, 1e-6f);
+    g.toUnit = {1.f / rx, 0.f, 0.f, 1.f / ry, -centre.x / rx, -centre.y / ry};
+    return g;
+}
+Gradient& Gradient::transform(const std::array<f32, 6>& m) {
+    std::array<f32, 6> inv;
+    if (invertAffine(m, inv)) toUnit = composeAffine(toUnit, inv);
+    return *this;
+}
+namespace {
+inline f32 spreadT(u8 spread, f32 t) {
+    if (spread == u8(GradientSpread::Repeat)) return t - std::floor(t);
+    if (spread == u8(GradientSpread::Reflect)) {
+        const f32 m = t - 2.f * std::floor(t * 0.5f);
+        return m > 1.f ? 2.f - m : m;
+    }
+    return std::clamp(t, 0.f, 1.f);
+}
+inline Color stopColor(const GradientStop* s, u32 n, f32 t) {
+    if (n == 0) return {};
+    if (t <= s[0].offset) return s[0].color;
+    for (u32 i = 1; i < n; ++i)
+        if (t <= s[i].offset) {
+            const f32 span = s[i].offset - s[i - 1].offset;
+            const f32 f = span > 1e-6f ? (t - s[i - 1].offset) / span : 1.f;
+            const Color a = s[i - 1].color, b = s[i].color;
+            return {a.r + (b.r - a.r) * f, a.g + (b.g - a.g) * f, a.b + (b.b - a.b) * f, a.a + (b.a - a.a) * f};
+        }
+    return s[n - 1].color;
+}
+} // namespace
+Color Gradient::at(f32 t) const { return stopColor(stops.data(), u32(stops.size()), spreadT(u8(spread), t)); }
+
+Color gradientStopsColor(const DrawCmd& c, const GradientStop* stops, f32 px, f32 py) {
+    const auto& m = c.gradXf;
+    const f32 u = m[0] * px + m[2] * py + m[4];
+    const f32 v = m[1] * px + m[3] * py + m[5];
+    const f32 t = (c.gradient & 15u) == kGradientLinearStops ? u : std::sqrt(u * u + v * v);
+    return stopColor(stops, c.stopCount, spreadT(u8(c.gradient >> 4), t));
+}
+
+void DrawList::applyGradient(DrawCmd& c, const Gradient& g) {
+    c.gradient = u8((g.radial ? kGradientRadialStops : kGradientLinearStops) | (u8(g.spread) << 4));
+    c.gradXf = g.toUnit;
+    c.stops = u32(m_stops.size());
+    const std::size_t n = std::min<std::size_t>(g.stops.size(), 64);
+    f32 last = 0.f;
+    for (std::size_t i = 0; i < n; ++i) { // SVG: offsets clamp to [0, 1] and to the previous offset
+        GradientStop st = g.stops[i];
+        st.offset = std::max(last, std::clamp(st.offset, 0.f, 1.f));
+        last = st.offset;
+        m_stops.push_back(st);
+    }
+    c.stopCount = u16(n);
+    // 2-colour approximation for consumers without stop support (PDF export, legacy paths)
+    if (n) { c.fill = g.stops.front().color; c.fill2 = g.stops[n - 1].color; }
+}
+void DrawList::gradientRect(const Rect& r, const Gradient& g, const std::array<f32, 4>& radii) {
+    DrawCmd c;
+    c.op = DrawOp::Rect;
+    c.rect = r;
+    c.radius = radii;
+    applyGradient(c, g);
+    if (c.stopCount) m_cmds.push_back(c);
+}
+void DrawList::gradientPath(const Path& p, const Gradient& g, bool evenOdd, Color stroke, f32 strokeWidth) {
+    const std::size_t n = m_cmds.size();
+    path(p, g.stops.empty() ? Color{} : g.stops.front().color, evenOdd, stroke, strokeWidth);
+    if (m_cmds.size() == n || g.stops.empty()) return;
+    applyGradient(m_cmds.back(), g);
+}
+
 void DrawList::pushFrom(const DrawList& src, DrawCmd c) {
+    if ((c.gradient & 15u) >= kGradientLinearStops) {
+        const u32 at = u32(m_stops.size());
+        if (std::size_t(c.stops) + c.stopCount <= src.m_stops.size())
+            m_stops.insert(m_stops.end(), src.m_stops.begin() + c.stops, src.m_stops.begin() + c.stops + c.stopCount);
+        else c.stopCount = 0;
+        c.stops = at;
+    }
     if (c.op == DrawOp::Path) {
         const std::size_t n = std::size_t(c.tw) | (std::size_t(c.th) << 16);
         const u32 at = u32(m_edges.size());

@@ -19,6 +19,8 @@ struct GpuCmd {
     vec4 clip;   // clip rect (x, y, w, h), already intersected with the scissor
     vec4 params; // borderWidth, blur, clipRadius, 0
     uvec4 info;  // op | gradient << 8, u | v << 16, tw | th << 16, image
+    vec4 grad;   // multi-stop gradients: pixel -> gradient space a, b, c, d
+    vec4 grad2;  // e, f, stop word offset (uint bits, in ui_images), stop count (uint bits)
 };
 
 layout(set = 0, binding = 0, rgba8) uniform image2D ui_target;
@@ -105,6 +107,38 @@ float gradientT(uint kind, float px, float py, vec4 r) {
 }
 float edgeWord(uint i) { return uintBitsToFloat(ui_images.data[i]); }
 
+// Multi-stop gradient (kinds 4 linear / 5 radial, spread in bits 4-5): same arithmetic as
+// fuse::ui::gradientStopsColor. Stops ride in ui_images as 5 float words (offset, r, g, b, a).
+vec4 gradientStops(uint gradient, GpuCmd c, float px, float py) {
+    precise float u = c.grad.x * px + c.grad.z * py + c.grad2.x;
+    precise float v = c.grad.y * px + c.grad.w * py + c.grad2.y;
+    precise float uv = u * u + v * v;
+    float t = (gradient & 15u) == 4u ? u : sqrt(uv);
+    const uint spread = gradient >> 4;
+    if (spread == 1u) { precise float r = t - floor(t); t = r; }
+    else if (spread == 2u) { precise float m = t - 2.0 * floor(t * 0.5); t = m > 1.0 ? 2.0 - m : m; }
+    else t = clamp(t, 0.0, 1.0);
+    const uint at = floatBitsToUint(c.grad2.z), n = floatBitsToUint(c.grad2.w);
+    if (n == 0u) return vec4(0.0);
+    vec4 prev = vec4(edgeWord(at + 1u), edgeWord(at + 2u), edgeWord(at + 3u), edgeWord(at + 4u));
+    float prevOff = edgeWord(at);
+    if (t <= prevOff) return prev;
+    for (uint i = 1u; i < n; ++i) {
+        const uint w = at + i * 5u;
+        const float off = edgeWord(w);
+        const vec4 col = vec4(edgeWord(w + 1u), edgeWord(w + 2u), edgeWord(w + 3u), edgeWord(w + 4u));
+        if (t <= off) {
+            precise float span = off - prevOff;
+            precise float f = span > 1e-6 ? (t - prevOff) / span : 1.0;
+            precise vec4 o = prev + (col - prev) * f;
+            return o;
+        }
+        prev = col;
+        prevOff = off;
+    }
+    return prev;
+}
+
 uint atlasByte(uint idx) { return (ui_atlas.words[idx >> 2] >> ((idx & 3u) * 8u)) & 0xFFu; }
 
 void main() {
@@ -168,7 +202,9 @@ void main() {
             precise float outer = clamp(0.5 - d, 0.0, 1.0) * clipCov;
             if (outer <= 0.0) continue;
             vec4 fill = c.fill;
-            if (gradient != 0u) {
+            if (gradient >= 4u) {
+                fill = gradientStops(gradient, c, px, py);
+            } else if (gradient != 0u) {
                 const float t = gradientT(gradient, px, py, c.rect);
                 precise vec4 f = fill + (c.fill2 - fill) * t;
                 fill = f;
@@ -259,7 +295,9 @@ void main() {
             const float ds = sqrt(s2);
             precise float fc = float(inCount) / 16.0 * clipCov;
             vec4 fill = c.fill;
-            if (gradient != 0u) {
+            if (gradient >= 4u) {
+                fill = gradientStops(gradient, c, px, py);
+            } else if (gradient != 0u) {
                 const float t = gradientT(gradient, px, py, c.rect);
                 precise vec4 f = fill + (c.fill2 - fill) * t;
                 fill = f;

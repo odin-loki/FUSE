@@ -9,7 +9,10 @@
 #include <atomic>
 #include <cmath>
 #include <cstdlib>
+#include <cstdio>
 #include <new>
+#include <string>
+#include <vector>
 
 static std::atomic<unsigned long long> g_allocs{0};
 void* operator new(std::size_t n) {
@@ -307,6 +310,55 @@ int main() {
         vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
         check("paths", compare(cpu8, out));
         UI_CHECK(cpu8.at(120, 300) != 0xFF181818u);          // star filled
+    }
+
+    // 9. multi-stop gradients at any angle: linear (CSS angles, SVG points, repeat / reflect), elliptical radial,
+    //    transformed, on rounded rects and paths (with stroke), translated draw list
+    {
+        DrawList gl;
+        gl.rect({0, 0, 488, 400}, Color::rgb(0x101010));
+        const std::vector<GradientStop> rainbow = {{0.f, Color::rgb(0xff0000)}, {0.25f, Color::rgb(0xffff00)}, {0.5f, Color::rgb(0x00ff00)},
+                                                   {0.75f, Color::rgb(0x00ffff)}, {1.f, Color::rgb(0x0000ff, 0.5f)}};
+        gl.gradientRect({10, 10, 150, 90}, Gradient::linearAngle({10, 10, 150, 90}, 30.f, rainbow), {12, 12, 12, 12});
+        gl.gradientRect({170, 10, 150, 90}, Gradient::linearAngle({170, 10, 150, 90}, 135.f, rainbow));
+        gl.gradientRect({330, 10, 150, 90}, Gradient::linear({340, 20}, {370, 40}, {{0.f, Color::rgb(0xffffff)}, {1.f, Color::rgb(0x2244ff)}}, GradientSpread::Reflect));
+        gl.gradientRect({10, 110, 150, 90}, Gradient::linear({10, 110}, {40, 110}, {{0.f, Color::rgb(0xff00ff)}, {0.5f, Color::rgb(0x000000)}, {1.f, Color::rgb(0x00ff00)}}, GradientSpread::Repeat));
+        gl.gradientRect({170, 110, 150, 90}, Gradient::radialAt({245, 155}, 75.f, 45.f, rainbow), {45, 45, 45, 45});
+        Gradient tg = Gradient::radialAt({0, 0}, 1.f, 1.f, {{0.f, Color::rgb(0xffffff)}, {0.6f, Color::rgb(0xff8800)}, {1.f, Color::rgb(0x330000)}}, GradientSpread::Reflect);
+        tg.transform({30.f, 15.f, -10.f, 20.f, 405.f, 155.f}); // rotated, sheared ellipse
+        gl.gradientRect({330, 110, 150, 90}, tg);
+        Path star;
+        for (int i = 0; i < 10; ++i) {
+            const f32 a = f32(i) * 0.6283185f - 1.5707963f, r = i & 1 ? 40.f : 90.f;
+            if (i == 0) star.moveTo({120 + r * std::cos(a), 310 + r * std::sin(a)});
+            else star.lineTo({120 + r * std::cos(a), 310 + r * std::sin(a)});
+        }
+        star.close();
+        gl.gradientPath(star, Gradient::linearAngle(star.bounds(), 200.f, rainbow), false, Color::rgb(0xffffff), 2.f);
+        DrawList sub; // moved by translate(): the gradient moves with the geometry
+        sub.gradientPath(Path().circle({60, 60}, 55), Gradient::radialAt({60, 60}, 55.f, 55.f, rainbow, GradientSpread::Pad));
+        sub.translate({270, 250});
+        for (const DrawCmd& c : sub.cmds()) gl.pushFrom(sub, c);
+        Image cpu9;
+        cpu9.resize(int(W), int(H), 0xFF000000u);
+        init.resize(int(W), int(H), 0xFF000000u);
+        CpuRasterizer r9;
+        r9.render(gl, cpu9);
+        packDrawList(gl, W, H, data);
+        UI_CHECK(gpu.upload(0, data));
+        vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+        check("gradients", compare(cpu9, out));
+        auto ch = [&](int x, int y, int k) { return int((cpu9.at(x, y) >> (8 * k)) & 0xFF); };
+        UI_CHECK(ch(330, 310, 0) > 200 && ch(330, 310, 1) < 40);             // translated radial: red centre
+        UI_CHECK(ch(245, 155, 0) > 200 && ch(245, 155, 2) < 40);             // radial centre red
+        if (const char* dir = std::getenv("FUSE_PARITY_OUT")) {
+            const std::string f = std::string(dir) + "/gradients.ppm";
+            if (FILE* fp = std::fopen(f.c_str(), "wb")) {
+                std::fprintf(fp, "P6 %d %d 255\n", cpu9.width, cpu9.height);
+                for (u32 px : cpu9.pixels) { const unsigned char rgb[3] = {u8(px), u8(px >> 8), u8(px >> 16)}; std::fwrite(rgb, 1, 3, fp); }
+                std::fclose(fp);
+            }
+        }
     }
 
     // 7. glyph atlas uploads only when its generation changes

@@ -9,7 +9,7 @@
 
 namespace fuse::ui::render {
 
-/// One command (std430, 128 bytes) — must match `GpuCmd` in ui_draw_list.comp.
+/// One command (std430, 160 bytes) — must match `GpuCmd` in ui_draw_list.comp.
 struct GpuCmd {
     f32 rect[4];
     f32 fill[4];
@@ -19,8 +19,10 @@ struct GpuCmd {
     f32 clip[4];
     f32 params[4]; ///< borderWidth, blur, clipRadius, 0
     u32 info[4];   ///< op | gradient << 8, u | v << 16, tw | th << 16, image
+    f32 grad[4];   ///< multi-stop gradients: pixel -> gradient space a, b, c, d
+    f32 grad2[4];  ///< e, f, stop word offset in `images` (u32 bits), stop count (u32 bits)
 };
-static_assert(sizeof(GpuCmd) == 128, "GpuCmd must match the kernel's std430 layout");
+static_assert(sizeof(GpuCmd) == 160, "GpuCmd must match the kernel's std430 layout");
 
 /// Push constants of ui.draw_list (must match `UiPush`). One dispatch covers origin .. origin + size (the damage
 /// region; the whole target for a full frame) and reads the tile table starting at `tileBase`.

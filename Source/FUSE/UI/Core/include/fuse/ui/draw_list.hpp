@@ -27,8 +27,39 @@ enum class DrawOp : u8 {
               ///< `borderWidth`; `rect` = bounds. Analytic AA from the distance to the nearest edge.
 };
 
-/// Gradient kinds (DrawCmd::gradient) for Rect and Path: from `fill` to `fill2` across `rect`.
-enum GradientKind : u8 { kGradientNone = 0, kGradientVertical = 1, kGradientHorizontal = 2, kGradientRadial = 3 };
+/// Gradient kinds (DrawCmd::gradient, low 4 bits) for Rect and Path. 1..3: from `fill` to `fill2` across `rect`.
+/// 4 / 5: multi-stop linear / radial (DrawCmd::gradXf maps a pixel to gradient space; t = x' (linear) or |(x', y')|
+/// (radial); colour from the stop table DrawList::gradientStops()[stops .. stops + stopCount)); bits 4-5: spread.
+enum GradientKind : u8 {
+    kGradientNone = 0, kGradientVertical = 1, kGradientHorizontal = 2, kGradientRadial = 3,
+    kGradientLinearStops = 4, kGradientRadialStops = 5,
+};
+enum class GradientSpread : u8 { Pad = 0, Repeat = 1, Reflect = 2 };
+
+struct GradientStop {
+    f32 offset = 0.f; ///< 0..1, non-decreasing (DrawList clamps)
+    Color color;      ///< straight alpha; interpolated straight (like the 2-stop kinds)
+};
+
+/// A multi-stop gradient at any angle / ellipse / transform. `toUnit` maps a pixel to gradient space (affine
+/// [a b c d e f]: x' = a x + c y + e, y' = b x + d y + f).
+struct Gradient {
+    bool radial = false;
+    GradientSpread spread = GradientSpread::Pad;
+    std::array<f32, 6> toUnit{1.f, 0.f, 0.f, 1.f, 0.f, 0.f};
+    std::vector<GradientStop> stops;
+    /// t = 0 at `from`, 1 at `to` (SVG linearGradient x1 y1 x2 y2).
+    static Gradient linear(Vec2 from, Vec2 to, std::vector<GradientStop> stops, GradientSpread spread = GradientSpread::Pad);
+    /// CSS linear-gradient(<angle>deg, ...) over `box`: 0 = to top, 90 = to right; the gradient line spans the box
+    /// corners (length |w sin a| + |h cos a|).
+    static Gradient linearAngle(const Rect& box, f32 degrees, std::vector<GradientStop> stops);
+    /// t = 0 at `centre`, 1 on the ellipse (rx, ry) (SVG radialGradient cx cy r; CSS radial-gradient ellipse).
+    static Gradient radialAt(Vec2 centre, f32 rx, f32 ry, std::vector<GradientStop> stops, GradientSpread spread = GradientSpread::Pad);
+    /// Applies a user-space transform to the gradient (SVG gradientTransform / objectBoundingBox units).
+    Gradient& transform(const std::array<f32, 6>& m);
+    /// Colour at gradient parameter t (spread applied) — the exact arithmetic of the rasterisers.
+    Color at(f32 t) const;
+};
 
 /// One flattened path edge (DrawOp::Path). `fillOnly`: the implicit closing edge of an open contour (it bounds the
 /// fill but is not stroked).
@@ -85,6 +116,9 @@ struct DrawCmd {
     f32 borderWidth = 0.f;
     std::array<f32, 4> radius{};
     f32 blur = 0.f;
+    std::array<f32, 6> gradXf{}; ///< kinds 4 / 5: pixel -> gradient space
+    u32 stops = 0;               ///< kinds 4 / 5: first stop in DrawList::gradientStops()
+    u16 stopCount = 0;
 };
 
 class DrawList {
@@ -92,6 +126,7 @@ public:
     void clear() {
         m_cmds.clear();
         m_edges.clear();
+        m_stops.clear();
     }
     void reserve(std::size_t n) { m_cmds.reserve(n); }
     void push(const DrawCmd& c) { m_cmds.push_back(c); }
@@ -105,6 +140,10 @@ public:
     /// Fills `p` (fill.a == 0: no fill) and strokes it (`strokeWidth` > 0, centred on the outline).
     void path(const Path& p, Color fill, bool evenOdd = false, Color stroke = {}, f32 strokeWidth = 0.f);
     void gradientPath(const Path& p, Color from, Color to, GradientKind kind, bool evenOdd = false);
+    /// Multi-stop gradient fill (any angle, ellipse, transform, spread) of a rounded rect / a path (+ optional stroke).
+    void gradientRect(const Rect& r, const Gradient& g, const std::array<f32, 4>& radii = {});
+    void gradientPath(const Path& p, const Gradient& g, bool evenOdd = false, Color stroke = {}, f32 strokeWidth = 0.f);
+    const std::vector<GradientStop>& gradientStops() const { return m_stops; }
     const std::vector<PathEdge>& pathEdges() const { return m_edges; }
     /// Copies `c` from `src` (its path edges too, for DrawOp::Path).
     void pushFrom(const DrawList& src, DrawCmd c);
@@ -122,7 +161,12 @@ private:
     friend void scaleDrawList(const DrawList& in, f32 scale, DrawList& out);
     std::vector<DrawCmd> m_cmds;
     std::vector<PathEdge> m_edges;
+    std::vector<GradientStop> m_stops;
+    void applyGradient(DrawCmd& c, const Gradient& g);
 };
+
+/// Multi-stop gradient colour of command `c` at pixel centre (px, py); the GPU kernel has the same arithmetic.
+Color gradientStopsColor(const DrawCmd& c, const GradientStop* stops, f32 px, f32 py);
 
 /// A premultiplied RGBA8 image.
 struct Image {

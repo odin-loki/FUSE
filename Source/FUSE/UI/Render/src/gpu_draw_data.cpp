@@ -139,6 +139,23 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         g.info[1] = u32(c.u) | (u32(c.v) << 16);
         g.info[2] = u32(c.tw) | (u32(c.th) << 16);
         g.info[3] = c.image;
+        put4(g.grad, 0.f, 0.f, 0.f, 0.f);
+        put4(g.grad2, 0.f, 0.f, 0.f, 0.f);
+        if ((c.gradient & 15u) >= kGradientLinearStops) {
+            const auto& stops = list.gradientStops();
+            const u32 n = std::size_t(c.stops) + c.stopCount <= stops.size() ? c.stopCount : 0u;
+            const u32 at = u32(out.images.size());
+            for (u32 i = 0; i < n; ++i) { // 5 float words per stop, after the image / edge words
+                const GradientStop& st = stops[c.stops + i];
+                const f32 w[5] = {st.offset, st.color.r, st.color.g, st.color.b, st.color.a};
+                for (f32 f : w) { u32 u; std::memcpy(&u, &f, 4); out.images.push_back(u); }
+            }
+            put4(g.grad, c.gradXf[0], c.gradXf[1], c.gradXf[2], c.gradXf[3]);
+            u32 bits[2] = {at, n};
+            f32 fb[2];
+            std::memcpy(fb, bits, 8);
+            put4(g.grad2, c.gradXf[4], c.gradXf[5], fb[0], fb[1]);
+        }
     };
     for (const DrawCmd& c : list.cmds()) {
         if (c.op == DrawOp::PushClip) {

@@ -48,6 +48,12 @@ void DrawList::translate(Vec2 d) {
         if (c.op == DrawOp::Line) { c.rect.w += d.x; c.rect.h += d.y; }
     }
     for (PathEdge& e : m_edges) { e.x0 += d.x; e.y0 += d.y; e.x1 += d.x; e.y1 += d.y; }
+    for (DrawCmd& c : m_cmds)
+        if ((c.gradient & 15u) >= kGradientLinearStops) { // toUnit(p - d)
+            auto& m = c.gradXf;
+            m[4] -= m[0] * d.x + m[2] * d.y;
+            m[5] -= m[1] * d.x + m[3] * d.y;
+        }
 }
 
 void DrawList::backdrop(const Rect& r, f32 blur, const std::array<f32, 4>& radii, Color tint) {
@@ -78,8 +84,10 @@ void scaleDrawList(const DrawList& in, f32 s, DrawList& out) {
         c.borderWidth *= s;
         c.blur *= s;
         if (c.op == DrawOp::Glyph) c.rect = {std::round(c.rect.x), std::round(c.rect.y), f32(c.tw), f32(c.th)};
+        if ((c.gradient & 15u) >= kGradientLinearStops) for (int i = 0; i < 4; ++i) c.gradXf[std::size_t(i)] /= s; // toUnit(p / s)
         out.push(c);
     }
+    out.m_stops = in.m_stops;
     out.m_edges = in.m_edges;
     for (PathEdge& e : out.m_edges) { e.x0 *= s; e.y0 *= s; e.x1 *= s; e.y1 *= s; }
 }
@@ -117,6 +125,11 @@ u64 DrawList::hash() const {
         h = fnv(h, &c.borderWidth, 4);
         h = fnv(h, c.radius.data(), 16);
         h = fnv(h, &c.blur, 4);
+        if ((c.gradient & 15u) >= kGradientLinearStops) {
+            h = fnv(h, c.gradXf.data(), 24);
+            h = fnv(h, &c.stopCount, 2);
+            if (std::size_t(c.stops) + c.stopCount <= m_stops.size()) h = fnv(h, m_stops.data() + c.stops, std::size_t(c.stopCount) * sizeof(GradientStop));
+        }
     }
     if (!m_edges.empty()) h = fnv(h, m_edges.data(), m_edges.size() * sizeof(PathEdge));
     return h;
@@ -378,7 +391,9 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
                     const f32 outer = std::clamp(0.5f - d, 0.f, 1.f) * clipCov;
                     if (outer <= 0.f) break;
                     Color fill = c.fill;
-                    if (c.gradient) fill = lerpColor(fill, c.fill2, gradientT(c.gradient, px, py, c.rect));
+                    if (c.gradient >= kGradientLinearStops && c.stopCount && std::size_t(c.stops) + c.stopCount <= list.gradientStops().size())
+                        fill = gradientStopsColor(c, list.gradientStops().data() + c.stops, px, py);
+                    else if (c.gradient && c.gradient < kGradientLinearStops) fill = lerpColor(fill, c.fill2, gradientT(c.gradient, px, py, c.rect));
                     if (c.borderWidth > 0.f && c.border.a > 0.f) {
                         const f32 inner = std::clamp(0.5f - (d + c.borderWidth), 0.f, 1.f) * clipCov;
                         const Px pf = premul(fill, inner);
@@ -433,7 +448,9 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
                     pathSample(rowEdges.data(), rowEdges.size(), px, py, c.v != 0, fc, ds);
                     fc *= clipCov;
                     Color fill = c.fill;
-                    if (c.gradient) fill = lerpColor(fill, c.fill2, gradientT(c.gradient, px, py, c.rect));
+                    if (c.gradient >= kGradientLinearStops && c.stopCount && std::size_t(c.stops) + c.stopCount <= list.gradientStops().size())
+                        fill = gradientStopsColor(c, list.gradientStops().data() + c.stops, px, py);
+                    else if (c.gradient && c.gradient < kGradientLinearStops) fill = lerpColor(fill, c.fill2, gradientT(c.gradient, px, py, c.rect));
                     Px o = premul(fill, fill.a > 0.f || c.gradient ? fc : 0.f);
                     if (c.borderWidth > 0.f) {
                         const f32 sc = std::clamp(0.5f - (ds - c.borderWidth * 0.5f), 0.f, 1.f) * clipCov;

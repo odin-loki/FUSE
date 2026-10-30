@@ -16,6 +16,8 @@ struct GpuCmd {
     vec4 clip;
     vec4 params; // borderWidth, blur, clipRadius, 0
     uvec4 info;
+    vec4 grad;  // multi-stop gradient (unused here; keeps the 160-byte std430 stride of ui_draw_list.comp)
+    vec4 grad2;
 };
 
 layout(set = 0, binding = 0, rgba8) uniform image2D ui_target;
