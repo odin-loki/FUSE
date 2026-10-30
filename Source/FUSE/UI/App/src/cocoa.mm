@@ -1,7 +1,9 @@
 // Cocoa backend (G3). UNVERIFIED: never compiled — see fuse/app/cocoa.hpp.
 #import <Cocoa/Cocoa.h>
+#import <QuartzCore/CAMetalLayer.h>
 #include "fuse/app/cocoa.hpp"
 #include "cocoa_map.hpp"
+#include "native_internal.hpp"
 #include <vector>
 
 using namespace fuse::ui;
@@ -17,6 +19,8 @@ struct Win {
     fa::AppWindow* win = nullptr;
     NSWindow* window = nil;
     FuseView* view = nil;
+    CAMetalLayer* metal = nil;           ///< layer-hosting backing when Vulkan presents
+    fa::detail::VkWin* vk = nullptr;
 };
 }
 
@@ -53,7 +57,7 @@ NSString* str(std::string_view s) { return [[NSString alloc] initWithBytes:s.dat
 - (BOOL)acceptsFirstResponder { return YES; }
 - (BOOL)wantsUpdateLayer { return YES; }
 - (void)updateLayer {
-    if (!_owner) return;
+    if (!_owner || _owner->vk) return; // the swapchain owns the CAMetalLayer's contents
     const Image& img = _owner->win->image();
     if (img.width <= 0 || img.height <= 0) return;
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
@@ -223,7 +227,37 @@ struct fa::CocoaPlatform::Impl {
     EventSource previous;
     std::vector<std::unique_ptr<Win>> wins;
     std::vector<FuseWindowDelegate*> delegates;
-    explicit Impl(Application& a) : app(a) {}
+    NativeOptions opts;
+    detail::VkCtx* vk = nullptr;
+    bool vkTried = false;
+    std::string vkError;
+    explicit Impl(Application& a, const NativeOptions& o) : app(a), opts(o) {}
+    ~Impl() { if (vk) detail::vkCtxDestroy(vk); }
+
+    /// Turns `w.view` into a layer-hosting view over a CAMetalLayer and builds the swapchain on it (UNVERIFIED).
+    bool attachVulkan(Win& w) {
+        if (!opts.vulkan) return false;
+        if (!vkTried) {
+            vkTried = true;
+            vk = opts.adoptDevice.instance && opts.adoptDevice.device
+                     ? detail::vkCtxAdopt(detail::SurfaceSource::Metal, opts.adoptDevice, vkError)
+                     : detail::vkCtxCreate(detail::SurfaceSource::Metal, vkError);
+        }
+        if (!vk) return false;
+        CAMetalLayer* layer = [CAMetalLayer layer];
+        layer.contentsScale = 1.0; // logical == pixel size until HiDPI (backingScaleFactor) lands
+        layer.frame = w.view.bounds;
+        layer.autoresizingMask = kCALayerWidthSizable | kCALayerHeightSizable;
+        w.view.layer = layer; // set before wantsLayer: layer-hosting, AppKit won't draw into it
+        w.view.wantsLayer = YES;
+        detail::SurfaceSource src;
+        src.kind = detail::SurfaceSource::Metal;
+        src.surface = (__bridge void*)layer;
+        w.vk = detail::vkWinCreate(vk, src, opts, vkError);
+        if (!w.vk) { w.view.layer = nil; return false; } // back to an AppKit-owned layer + CGImage contents
+        w.metal = layer;
+        return true;
+    }
 
     static bool pump(void* user, Application&, f32 wait) {
         @autoreleasepool {
@@ -239,20 +273,26 @@ struct fa::CocoaPlatform::Impl {
     }
     static bool present(void* user, AppWindow& aw, Rect damage) {
         Win& w = *static_cast<Win*>(user);
-        aw.rasterizeCpu(damage);
-        w.view.needsDisplay = YES;
+        if (w.vk) {
+            if (!detail::vkWinPresent(w.vk, aw, damage)) return false;
+        } else {
+            aw.rasterizeCpu(damage);
+            w.view.needsDisplay = YES;
+        }
         if (aw.ui().wantsTextInput()) [w.view.inputContext invalidateCharacterCoordinates];
         [w.view rebuildA11y]; // TODO: only when the a11y version changed
         return true;
     }
     static void destroy(void* user) {
         Win* w = static_cast<Win*>(user);
+        if (w->vk) detail::vkWinDestroy(w->vk); // before the layer goes away
+        w->vk = nullptr;
         [w->window orderOut:nil];
         w->window = nil;
     }
 };
 
-fa::CocoaPlatform::CocoaPlatform(Application& app) : m(std::make_unique<Impl>(app)) {
+fa::CocoaPlatform::CocoaPlatform(Application& app, const NativeOptions& o) : m(std::make_unique<Impl>(app, o)) {
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
     [NSApp finishLaunching];
@@ -260,7 +300,11 @@ fa::CocoaPlatform::CocoaPlatform(Application& app) : m(std::make_unique<Impl>(ap
     app.setEventSource({m.get(), &Impl::pump});
 }
 fa::CocoaPlatform::~CocoaPlatform() {
-    for (auto& w : m->wins) if (w->win) w->win->setPresenter({});
+    for (auto& w : m->wins) {
+        if (w->win) w->win->setPresenter({});
+        if (w->vk) detail::vkWinDestroy(w->vk);
+        w->vk = nullptr;
+    }
     m->app.setEventSource(m->previous);
 }
 bool fa::CocoaPlatform::available() const { return NSApp != nil; }
@@ -278,7 +322,7 @@ bool fa::CocoaPlatform::show(AppWindow& aw) {
     w->window.releasedWhenClosed = NO;
     w->window.acceptsMouseMovedEvents = YES;
     w->view = [[FuseView alloc] initWithFrame:NSMakeRect(0, 0, s.w, s.h)];
-    w->view.wantsLayer = YES;
+    if (!m->attachVulkan(*w)) w->view.wantsLayer = YES;
     w->view.layerContentsRedrawPolicy = NSViewLayerContentsRedrawOnSetNeedsDisplay;
     w->view.owner = w.get();
     if (aw.acceptsExternalDrops()) [w->view registerForDraggedTypes:@[ NSPasteboardTypeFileURL ]];
@@ -299,5 +343,10 @@ void* fa::CocoaPlatform::nativeWindow(const AppWindow& aw) const {
     for (auto& w : m->wins) if (w->win == &aw) return (__bridge void*)w->window;
     return nullptr;
 }
+bool fa::CocoaPlatform::gpuPresents(const AppWindow& aw) const {
+    for (auto& w : m->wins) if (w->win == &aw) return w->vk != nullptr;
+    return false;
+}
+const char* fa::CocoaPlatform::gpuName() const { return m->vk ? detail::vkCtxDeviceName(m->vk) : ""; }
 // TODO(G3, unverified): NSDraggingDestination (drop in) on FuseView -> AppWindow::deliverExternalDrop;
-// HiDPI backingScaleFactor; CAMetalLayer + MoltenVK presenter.
+// HiDPI backingScaleFactor (CAMetalLayer.contentsScale + drawableSize).

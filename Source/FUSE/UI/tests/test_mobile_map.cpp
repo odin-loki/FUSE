@@ -23,6 +23,22 @@ int main() {
     CHECK(uk::traits(A11yRole::Button, false, false) == 1);
     CHECK(uk::traits(A11yRole::Slider, true, false) == ((1ull << 12) | (1ull << 8)));
     CHECK(uk::traits(A11yRole::CheckBox, false, true) == (1ull | (1ull << 3)));
+    // iOS marked text: pinyin "ni" -> "nǐ" (2 units, caret at the end) -> commit 你; unmark commits as-is
+    CHECK(uk::utf16Length(s) == 6 && uk::utf16Length("") == 0);
+    uk::MarkedText mt;
+    auto st = mt.setMarked("ni", 2);
+    CHECK(mt.active() && st.setComposition && st.composition == "ni" && st.caret == 2 && st.commit.empty());
+    st = mt.setMarked("n\xC7\x90", 1); // nǐ, caret after n
+    CHECK(st.caret == 1 && mt.length16() == 2);
+    st = mt.insert("\xE4\xBD\xA0"); // 你
+    CHECK(!mt.active() && st.setComposition && st.composition.empty() && st.commit == "\xE4\xBD\xA0");
+    st = mt.insert("x"); // plain typing: no composition reset
+    CHECK(!st.setComposition && st.commit == "x");
+    mt.setMarked("\xF0\x9F\x98\x80" "a", 3); // 😀a, caret after a (UTF-16 3 -> byte 5)
+    CHECK(mt.setMarked("\xF0\x9F\x98\x80" "a", 3).caret == 5);
+    st = mt.unmark();
+    CHECK(!mt.active() && st.setComposition && st.commit == "\xF0\x9F\x98\x80" "a");
+    CHECK(!mt.unmark().setComposition);
     std::printf("fuse_app_mobile_map: %s\n", g_fail ? "FAIL" : "OK");
     return g_fail ? 1 : 0;
 }

@@ -8,13 +8,17 @@
 // first macOS build.
 #pragma once
 #include "fuse/app/app.hpp"
+#include "fuse/app/native.hpp"
 #include <memory>
 
 namespace fuse::app {
 
 class CocoaPlatform {
 public:
-    explicit CocoaPlatform(Application& app);
+    /// `o.vulkan` (default on): each view is backed by a CAMetalLayer presented through Vulkan-on-Metal (MoltenVK /
+    /// KosmicKrisp, VK_EXT_metal_surface + portability enumeration; UNVERIFIED). Falls back to CGImage layer contents
+    /// when no Vulkan loader/ICD is present or the build has no Vulkan.
+    explicit CocoaPlatform(Application& app, const NativeOptions& o = {});
     ~CocoaPlatform();
     CocoaPlatform(const CocoaPlatform&) = delete;
     CocoaPlatform& operator=(const CocoaPlatform&) = delete;
@@ -22,6 +26,9 @@ public:
     bool show(AppWindow& w);
     /// NSWindow* for `w` (nullptr when not shown).
     void* nativeWindow(const AppWindow& w) const;
+    /// True when `w` presents through the Vulkan swapchain (false: CGImage fallback or not shown yet).
+    bool gpuPresents(const AppWindow& w) const;
+    const char* gpuName() const;
     struct Impl;
 
 private:

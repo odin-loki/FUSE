@@ -10,12 +10,17 @@
 // first Xcode build.
 #pragma once
 #include "fuse/app/app.hpp"
+#include "fuse/app/native.hpp"
 #include <functional>
 
 namespace fuse::app {
 
 /// Runs the iOS app. `setup` gets the Application and the one full-screen AppWindow (already sized to the screen in
 /// points) and loads its UI. Never returns while the app lives.
-int uikitMain(int argc, char** argv, AppDesc desc, std::function<void(Application&, AppWindow&)> setup);
+/// `o.vulkan` (default on): the view hosts a CAMetalLayer presented through Vulkan-on-Metal (MoltenVK,
+/// VK_EXT_metal_surface + portability enumeration; UNVERIFIED), else CPU raster -> CGImage layer contents.
+/// Text input is UITextInput with marked text (IME composition -> UiContext::textComposition; UNVERIFIED).
+int uikitMain(int argc, char** argv, AppDesc desc, std::function<void(Application&, AppWindow&)> setup,
+              const NativeOptions& o = {});
 
 } // namespace fuse::app

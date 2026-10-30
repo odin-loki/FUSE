@@ -2,6 +2,8 @@
 #pragma once
 #include "fuse/ui/ui.hpp"
 #include <cstdint>
+#include <string>
+#include <string_view>
 
 namespace fuse::app::android {
 
@@ -102,4 +104,57 @@ inline std::uint64_t traits(fuse::ui::A11yRole r, bool disabled, bool checked) {
     if (disabled) t |= kNotEnabled;
     return t;
 }
+
+/// UTF-16 code units in a UTF-8 string (UITextInput positions / NSRange are UTF-16).
+inline std::int32_t utf16Length(std::string_view s) {
+    std::int32_t units = 0;
+    for (std::size_t i = 0; i < s.size();) {
+        const unsigned char c = static_cast<unsigned char>(s[i]);
+        const int n = c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
+        units += n == 4 ? 2 : 1;
+        i += std::size_t(n);
+    }
+    return units;
+}
+
+/// iOS IME marked text (UITextInput setMarkedText / unmarkText / insertText) mapped onto UiContext: the marked
+/// string is the composition (UiContext::textComposition, caret in UTF-8 bytes) and finished text goes to
+/// UiContext::textInput. FUSE keeps no document mirror, so the "document" UIKit sees is exactly the marked string
+/// (positions 0..utf16Length(marked)); kana -> kanji, pinyin, Hangul jamo and dictation all fit that model.
+struct MarkedText {
+    std::string marked; ///< UTF-8, empty when nothing is being composed
+    struct Step {
+        bool setComposition = false; ///< call textComposition(composition, caret)
+        std::string composition;
+        std::int32_t caret = 0;      ///< UTF-8 byte offset into composition
+        std::string commit;          ///< non-empty: call textInput(commit) (after the composition update)
+    };
+    bool active() const { return !marked.empty(); }
+    std::int32_t length16() const { return utf16Length(marked); }
+    /// setMarkedText:selectedRange: (`selUtf16` = selectedRange.location, relative to the new marked text).
+    Step setMarked(std::string_view utf8, std::int32_t selUtf16) {
+        marked.assign(utf8);
+        Step st;
+        st.setComposition = true;
+        st.composition = marked;
+        st.caret = fuse::app::android::utf8OffsetOfUtf16(marked.data(), std::int32_t(marked.size()), selUtf16 < 0 ? 0 : selUtf16);
+        return st;
+    }
+    /// unmarkText: the marked text is accepted as-is.
+    Step unmark() {
+        Step st;
+        st.setComposition = !marked.empty();
+        st.commit = std::move(marked);
+        marked.clear();
+        return st;
+    }
+    /// insertText: replaces the marked text (if any) with `utf8`.
+    Step insert(std::string_view utf8) {
+        Step st;
+        st.setComposition = !marked.empty();
+        marked.clear();
+        st.commit.assign(utf8);
+        return st;
+    }
+};
 } // namespace fuse::app::uikit
