@@ -110,8 +110,15 @@ Headless (offscreen CPU raster) works everywhere and is what the test suite uses
 | QML / declarative, hot reload, scripting | `.fuseui`, Lua | done |
 | Designer | `fuse_ui_designer` | prototype |
 | Native file dialogs | `vendor/nativeFileDialogs` | G2 |
-| System tray, notifications, global menu bar | — | G5 |
-| Printing / PDF output | — | G5 |
+| Desktop notifications, open URL | `fuse::ui::desktop` (notify-send / osascript / PowerShell toast, via FORGE process) | done (G5) |
+| System tray, global menu bar | — | G5: not started (needs StatusNotifierItem/DBus, Shell_NotifyIcon, NSStatusItem) |
+| Printing / PDF output, print preview | `fuse::ui::pdf` (vector PDF writer, DrawList to PDF, `PrintPreview::paginate`) + `desktop::print` (lp / Start-Process / open) | done (G5); glyphs are 1-bit stencil masks, not anti-aliased |
+| QUndoStack / QUndoGroup | `fuse::ui::UndoStack`, merge, macros, clean state, limit | done (G5) |
+| QGesture (tap, long press, pan, pinch, swipe) | `GestureRecognizer` | done (G5) |
+| i18n: tr/trn, .po catalogs, plurals, locale numbers, RTL direction | `fuse::ui::i18n` | done (G5) |
+| QGroupBox, QStackedWidget, QToolBox, QStatusBar, QMessageBox, QInputDialog, QWizard, QLCDNumber, QKeySequenceEdit, QCompleter | `widgets_extra.hpp` | done (G5) |
+| QMdiArea (tile, cascade, drag, resize, close) | `mdiArea` / `mdiSubWindow` | done (G5) |
+| QGraphicsScene / QGraphicsView (grid index, z order, hit testing, selection, zoom, pan, rubber band) | `GraphicsScene` / `graphicsView` | done (G5) |
 | Web view | system web view widget | G5 (optional) |
 | Beyond Qt: game HUD/world-space UI, GPU draw-list compute, deterministic replay, immediate + retained in one tree | `fuse_ui_game`, `immediate.hpp` | done |
 
@@ -144,5 +151,8 @@ Headless (offscreen CPU raster) works everywhere and is what the test suite uses
 - **G3**: macOS: Cocoa window, NSTextInputClient IME, MoltenVK present, NSAccessibility.
 - **G4**: iOS + Android: surfaces, touch/pen, lifecycle, virtual keyboard, mobile a11y; emulator/simulator gates.
 - **G5**: tray/notifications/global menu, printing, web view, designer to product.
+  *Status:* `fuse_ui_extras` (Extras/), gated by `fuse_ui_extras_<gate>` tests (12 gates). Done: notifications,
+  open URL, PDF writer + DrawList printing + print preview pagination, system printing, undo, gestures, i18n,
+  extra widgets, MDI, graphics view. Left: system tray, global menu bar, web view, rich text editor, a11y adapters.
 
 Every phase: commits on `gui-framework`, pushed after each milestone; never to `main`; no force pushes.

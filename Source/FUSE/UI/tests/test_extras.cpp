@@ -1,4 +1,8 @@
-// Qt-parity extras gates (--gate=<name>; no argument runs all): undo gesture i18n desktop pdf
+// Qt-parity extras gates (--gate=<name>; no argument runs all): undo gesture i18n desktop pdf containers dialogs
+// lcd_keyseq mdi completer graphics widget_pdf. FUSE_EXTRAS_OUT=<dir> writes extras.png / extras.pdf.
+#include "test_util.hpp"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
 #include "fuse/ui/extras/extras.hpp"
 #include "fuse/ui/os.hpp"
 
@@ -10,6 +14,7 @@
 #include <string>
 
 using namespace fuse::ui;
+namespace pdf = fuse::ui::pdf;
 
 namespace {
 int g_fail = 0;
@@ -235,11 +240,298 @@ void gatePdf() {
     const std::string out = fuse::ui::os::env("FUSE_EXTRAS_PDF_OUT");
     if (!out.empty()) CHECK(d.save(out));
 }
+
+namespace w = fuse::ui::widgets;
+using w::GraphicsScene; using w::GraphicsShape;
+void step(UiContext& ui) { ui.update(1.f / 60.f); }
+Vec2 ctr(Rect r) { return {r.x + r.w * 0.5f, r.y + r.h * 0.5f}; }
+void click(UiContext& ui, Vec2 p) { ui.pointerMove(p); ui.pointerDown(p); ui.pointerUp(p); step(ui); }
+void clickNode(UiContext& ui, NodeHandle n) { click(ui, ctr(ui.rect(n))); }
+struct Screen {
+    UiContext ui{{.viewport = {1200, 800}, .font = &fuse::ui::test::font()}};
+    Screen() { w::install(ui); w::registerExtraWidgets(ui); step(ui); }
+};
+NodeHandle findText(UiContext& ui, NodeHandle root, std::string_view t) {
+    if (ui.text(root) == t) return root;
+    for (NodeHandle c = ui.firstChild(root); ui.alive(c); c = ui.nextSibling(c))
+        if (NodeHandle f = findText(ui, c, t); f.valid()) return f;
+    return {};
+}
+
+void gateContainers() {
+    Screen s;
+    UiContext& ui = s.ui;
+    const NodeHandle gb = w::groupBox(ui, ui.root(), "Options", true);
+    const NodeHandle body = w::groupBoxBody(ui, gb);
+    w::label(ui, body, "inside");
+    bool toggled = true;
+    ui.connect(gb, SignalKind::Toggled, [&toggled](UiContext&, NodeHandle, const SignalArgs& a) { toggled = a.flag; });
+    step(ui);
+    clickNode(ui, ui.firstChild(gb));
+    CHECK(!toggled && ui.disabled(body));
+
+    const NodeHandle st = w::stackedWidget(ui, ui.root());
+    const NodeHandle p0 = w::stackedAddPage(ui, st), p1 = w::stackedAddPage(ui, st);
+    w::label(ui, p0, "zero"); w::label(ui, p1, "one");
+    step(ui);
+    CHECK(ui.computed(p0).visible && !ui.computed(p1).visible && w::stackedCount(ui, st) == 2);
+    int changed = 0;
+    ui.connect(st, SignalKind::ValueChanged, [&changed](UiContext&, NodeHandle, const SignalArgs&) { ++changed; });
+    w::setStackedIndex(ui, st, 1);
+    step(ui);
+    CHECK(!ui.computed(p0).visible && ui.computed(p1).visible && changed == 1 && w::stackedIndex(ui, st) == 1);
+
+    const NodeHandle tb = w::toolBox(ui, ui.root(), "General\nAdvanced\nAbout");
+    step(ui);
+    CHECK(ui.computed(w::toolBoxPage(ui, tb, 0)).visible && !ui.computed(w::toolBoxPage(ui, tb, 2)).visible);
+    clickNode(ui, ui.nextSibling(w::toolBoxPage(ui, tb, 1)));
+    step(ui);
+    CHECK(ui.computed(w::toolBoxPage(ui, tb, 2)).visible && !ui.computed(w::toolBoxPage(ui, tb, 0)).visible && u32(ui.value(tb)) == 2);
+
+    const NodeHandle sb = w::statusBar(ui, ui.root());
+    w::label(ui, w::statusBarPermanent(ui, sb), "Ln 1, Col 1");
+    w::showStatusMessage(ui, sb, "Saved", 0.5f);
+    CHECK(w::statusMessage(ui, sb) == "Saved");
+    for (int i = 0; i < 40; ++i) step(ui);
+    CHECK(w::statusMessage(ui, sb).empty());
+    w::showStatusMessage(ui, sb, "Sticky");
+    for (int i = 0; i < 40; ++i) step(ui);
+    CHECK(w::statusMessage(ui, sb) == "Sticky");
+}
+
+void gateDialogs() {
+    Screen s;
+    UiContext& ui = s.ui;
+    int picked = -1;
+    std::string pickedText;
+    const NodeHandle mb = w::messageBox(ui, "Unsaved", "Save changes?", "Save\nDiscard\nCancel", w::MessageIcon::Question);
+    ui.connect(mb, SignalKind::Submitted, [&](UiContext&, NodeHandle, const SignalArgs& a) { picked = int(a.value); pickedText = a.text; });
+    step(ui);
+    CHECK(ui.computed(ui.parent(mb)).visible);
+    clickNode(ui, findText(ui, mb, "Discard"));
+    step(ui);
+    CHECK(picked == 1 && pickedText == "Discard" && !ui.computed(ui.parent(mb)).visible);
+
+    std::string got;
+    float ok = -1;
+    const NodeHandle in = w::inputDialog(ui, "Rename", "New name:", "old");
+    ui.connect(in, SignalKind::Submitted, [&](UiContext&, NodeHandle, const SignalArgs& a) { ok = a.value; got = a.text; });
+    step(ui);
+    ui.keyDown(Key::End); ui.keyUp(Key::End);
+    ui.textInput("er");
+    step(ui);
+    ui.keyDown(Key::Enter); ui.keyUp(Key::Enter);
+    step(ui);
+    CHECK(ok == 1.f && got == "older");
+
+    const NodeHandle wz = w::wizard(ui, "Setup", "Welcome\nLicence\nDone");
+    float fin = -1;
+    ui.connect(wz, SignalKind::Submitted, [&](UiContext&, NodeHandle, const SignalArgs& a) { fin = a.value; });
+    bool accepted = false;
+    w::setWizardValidator(ui, wz, [&accepted](u32 page) { return page != 1 || accepted; });
+    w::label(ui, w::wizardPage(ui, wz, 1), "Accept?");
+    step(ui);
+    CHECK(w::wizardCurrent(ui, wz) == 0 && ui.disabled(findText(ui, wz, "< Back")));
+    clickNode(ui, findText(ui, wz, "Next >"));
+    CHECK(w::wizardCurrent(ui, wz) == 1 && findText(ui, wz, "Licence").valid());
+    clickNode(ui, findText(ui, wz, "Next >"));
+    CHECK(w::wizardCurrent(ui, wz) == 1); // blocked by validator
+    accepted = true;
+    clickNode(ui, findText(ui, wz, "Next >"));
+    step(ui);
+    CHECK(w::wizardCurrent(ui, wz) == 2 && ui.computed(findText(ui, wz, "Finish")).visible);
+    clickNode(ui, findText(ui, wz, "Finish"));
+    CHECK(fin == 1.f);
+}
+
+void gateLcdKeyseq() {
+    Screen s;
+    UiContext& ui = s.ui;
+    CHECK(w::sevenSegment('8') == 0x7F && w::sevenSegment('1') == 0x06 && w::sevenSegment(' ') == 0);
+    const NodeHandle lcd = w::lcdNumber(ui, ui.root(), 6);
+    ui.setValue(lcd, 42.5f);
+    CHECK(w::lcdText(ui, lcd) == "42.5");
+    w::setLcdBase(ui, lcd, 16);
+    ui.setValue(lcd, 255.f);
+    CHECK(w::lcdText(ui, lcd) == "ff");
+    w::setLcdText(ui, lcd, "12:34");
+    CHECK(w::lcdText(ui, lcd) == "12:34");
+    step(ui);
+    CHECK(w::keySequenceText(Key::S, kModCtrl | kModShift) == "Ctrl+Shift+S" && w::keySequenceText(Key::F5, 0) == "F5");
+    const NodeHandle ks = w::keySequenceEdit(ui, ui.root());
+    std::string rec;
+    ui.connect(ks, SignalKind::Submitted, [&rec](UiContext&, NodeHandle, const SignalArgs& a) { rec = a.text; });
+    step(ui);
+    clickNode(ui, ks);
+    ui.keyDown(Key::P, kModCtrl | kModAlt);
+    CHECK(rec == "Ctrl+Alt+P" && ui.text(ks) == "Ctrl+Alt+P");
+    ui.keyDown(Key::Escape);
+    CHECK(ui.text(ks).empty());
+}
+
+void gateMdi() {
+    Screen s;
+    UiContext& ui = s.ui;
+    ui.setCss(ui.root(), "padding", "0px");
+    const NodeHandle area = w::mdiArea(ui, ui.root());
+    ui.setCss(area, "height", "600px");
+    const NodeHandle a = w::mdiSubWindow(ui, area, "Doc A", {20, 20, 300, 200});
+    const NodeHandle b = w::mdiSubWindow(ui, area, "Doc B", {100, 80, 300, 200});
+    w::label(ui, w::mdiBody(ui, a), "A body");
+    step(ui);
+    CHECK(w::mdiActive(ui, area) == b);
+    const Rect ra = ui.rect(a);
+    CHECK(std::abs(ra.w - 300.f) < 1.f && std::abs(ra.h - 200.f) < 1.f);
+    click(ui, {ra.x + 10, ra.y + ra.h - 20}); // part of A not covered by B
+    step(ui);
+    CHECK(w::mdiActive(ui, area) == a);
+    // drag A's title bar by (+50, +30)
+    const Rect tbar = ui.rect(ui.firstChild(a));
+    const Vec2 p0{tbar.x + 30, tbar.y + tbar.h * 0.5f};
+    ui.pointerMove(p0); ui.pointerDown(p0); step(ui);
+    ui.pointerMove({p0.x + 25, p0.y + 15}); step(ui);
+    ui.pointerMove({p0.x + 50, p0.y + 30}); step(ui);
+    ui.pointerUp({p0.x + 50, p0.y + 30}); step(ui);
+    const Rect g = w::mdiGeometry(ui, a);
+    CHECK(std::abs(g.x - 70.f) < 1.f && std::abs(g.y - 50.f) < 1.f);
+    // resize grip
+    const NodeHandle grip = ui.nextSibling(w::mdiBody(ui, a));
+    const Vec2 q = ctr(ui.rect(grip));
+    ui.pointerMove(q); ui.pointerDown(q); step(ui);
+    ui.pointerMove({q.x + 40, q.y + 20}); step(ui);
+    ui.pointerUp({q.x + 40, q.y + 20}); step(ui);
+    CHECK(std::abs(w::mdiGeometry(ui, a).w - 340.f) < 1.f && std::abs(w::mdiGeometry(ui, a).h - 220.f) < 1.f);
+    w::mdiTile(ui, area);
+    step(ui);
+    CHECK(std::abs(w::mdiGeometry(ui, a).w - w::mdiGeometry(ui, b).w) < 1.f && w::mdiGeometry(ui, a).y == w::mdiGeometry(ui, b).y);
+    w::mdiCascade(ui, area);
+    // close B
+    bool closed = false;
+    ui.connect(b, SignalKind::Submitted, [&closed](UiContext&, NodeHandle, const SignalArgs&) { closed = true; });
+    step(ui);
+    w::mdiTile(ui, area);
+    step(ui);
+    const NodeHandle x = ui.nextSibling(ui.firstChild(ui.firstChild(b)));
+    clickNode(ui, x);
+    step(ui);
+    CHECK(closed && !ui.alive(b) && w::mdiSubWindows(ui, area).size() == 1);
+}
+
+void gateCompleter() {
+    const std::vector<std::string> e{"apple", "apricot", "banana", "grape", "pineapple"};
+    const auto m = w::completions(e, "ap");
+    CHECK(m.size() == 4 && m[0] == "apple" && m[1] == "apricot" && m[2] == "grape" && m[3] == "pineapple");
+    CHECK(w::completions(e, "", 2).size() == 2);
+    Screen s;
+    UiContext& ui = s.ui;
+    const NodeHandle le = w::lineEdit(ui, ui.root(), "");
+    w::attachCompleter(ui, le, e);
+    step(ui);
+    clickNode(ui, le);
+    ui.textInput("ban");
+    step(ui);
+    ui.keyDown(Key::Down); ui.keyUp(Key::Down);
+    step(ui);
+    const NodeHandle item = findText(ui, ui.root(), "banana");
+    CHECK(item.valid());
+    if (item.valid()) { clickNode(ui, item); step(ui); }
+    CHECK(ui.editBuffer(le).text() == "banana");
+}
+
+void gateGraphics() {
+    GraphicsScene sc;
+    const u32 r = sc.add({.shape = GraphicsShape::Rect, .rect = {0, 0, 100, 100}});
+    const u32 e = sc.add({.shape = GraphicsShape::Ellipse, .rect = {50, 50, 100, 100}, .fill = Color::rgb(0xFF5555), .z = 1});
+    const u32 l = sc.add({.shape = GraphicsShape::Line, .rect = {300, 0, 100, 100}, .strokeWidth = 2});
+    const u32 p = sc.add({.shape = GraphicsShape::Polygon, .points = {{500, 0}, {600, 0}, {550, 100}}});
+    sc.add({.shape = GraphicsShape::Text, .rect = {0, 200, 200, 30}, .fill = Color::rgb(0xFFFFFF), .text = "scene text"});
+    CHECK(sc.itemAt({90, 90}) == e);         // ellipse is above (z = 1)
+    CHECK(sc.itemAt({10, 10}) == r);
+    CHECK(sc.itemAt({52, 52}) == r);         // outside the ellipse's curve
+    CHECK(sc.itemAt({350, 50}) == l && sc.itemAt({350, 60}) == ~0u);
+    CHECK(sc.itemAt({550, 50}) == p && sc.itemAt({505, 90}) == ~0u);
+    CHECK(sc.itemsIn({0, 0, 200, 200}).size() == 2);
+    // spatial index under many items
+    for (int i = 0; i < 20000; ++i) sc.add({.rect = {f32(1000 + (i % 200) * 20), f32((i / 200) * 20), 10, 10}, .z = -1});
+    CHECK(sc.itemAt({1000 + 20 * 5 + 5, 20 * 7 + 5}) != ~0u && sc.size() == 20005);
+    const Rect b = sc.bounds();
+    CHECK(b.x == 0 && b.right() >= 4990);
+    Screen s;
+    UiContext& ui = s.ui;
+    ui.setCss(ui.root(), "padding", "0px");
+    GraphicsScene small;
+    const u32 a = small.add({.rect = {10, 10, 50, 50}});
+    const u32 c = small.add({.shape = GraphicsShape::Ellipse, .rect = {100, 10, 50, 50}, .fill = Color::rgb(0x55FF55)});
+    const NodeHandle v = w::graphicsView(ui, ui.root(), &small);
+    step(ui);
+    i32 sel = -2;
+    ui.connect(v, SignalKind::ValueChanged, [&sel](UiContext&, NodeHandle, const SignalArgs& g) { sel = i32(g.value); });
+    const Vec2 pa = w::sceneToView(ui, v, {35, 35});
+    click(ui, pa);
+    CHECK(sel == i32(a) && small.item(a)->selected);
+    // drag moves the selected item
+    ui.pointerMove(pa); ui.pointerDown(pa); step(ui);
+    ui.pointerMove({pa.x + 20, pa.y + 10}); step(ui);
+    ui.pointerUp({pa.x + 20, pa.y + 10}); step(ui);
+    CHECK(std::abs(small.item(a)->rect.x - 30.f) < 0.01f && std::abs(small.item(a)->rect.y - 20.f) < 0.01f);
+    // zoom around the pointer keeps the scene point fixed
+    const Vec2 sp0 = w::viewToScene(ui, v, {200, 150});
+    ui.wheel({200, 150}, {0, 2});
+    const Vec2 sp1 = w::viewToScene(ui, v, {200, 150});
+    CHECK(w::viewZoom(ui, v) > 1.3f && std::abs(sp0.x - sp1.x) < 0.01f && std::abs(sp0.y - sp1.y) < 0.01f);
+    // rubber band selects both
+    w::setViewTransform(ui, v, 1.f, {0, 0});
+    const Vec2 o = w::sceneToView(ui, v, {0, 0}), q = w::sceneToView(ui, v, {200, 100});
+    ui.pointerMove({o.x + 1, o.y + 1}); ui.pointerDown({o.x + 1, o.y + 1}); step(ui);
+    ui.pointerMove(q); step(ui);
+    ui.pointerUp(q); step(ui);
+    CHECK(small.selection().size() == 2);
+    ui.keyDown(Key::Delete);
+    CHECK(small.size() == 0 && !small.item(c));
+    small.add({.rect = {0, 0, 1000, 500}});
+    w::fitInView(ui, v);
+    CHECK(w::viewZoom(ui, v) < 1.2f);
+}
+
+void gateWidgetPdf() {
+    Screen s;
+    UiContext& ui = s.ui;
+    ui.setCss(ui.root(), "padding", "12px");
+    ui.setCss(ui.root(), "gap", "8px");
+    const NodeHandle gb = w::groupBox(ui, ui.root(), "Printing");
+    w::label(ui, w::groupBoxBody(ui, gb), "Widget tree rendered straight to vector PDF");
+    w::button(ui, w::groupBoxBody(ui, gb), "A button");
+    const NodeHandle lcd = w::lcdNumber(ui, ui.root(), 5);
+    ui.setValue(lcd, 1234.5f);
+    static GraphicsScene sc;
+    sc.add({.rect = {10, 10, 80, 50}});
+    sc.add({.shape = GraphicsShape::Ellipse, .rect = {60, 30, 70, 70}, .fill = Color::rgb(0xFF7043), .z = 1});
+    const NodeHandle v = w::graphicsView(ui, ui.root(), &sc);
+    ui.setCss(v, "width", "300px");
+    ui.setCss(v, "height", "160px");
+    const NodeHandle sb = w::statusBar(ui, ui.root());
+    w::showStatusMessage(ui, sb, "Ready");
+    for (int i = 0; i < 3; ++i) step(ui);
+    pdf::PdfDocument d;
+    d.newPage(pdf::A4);
+    const f32 k = (pdf::A4.w - pdf::mm(30)) / ui.viewport().w;
+    d.renderDrawList(ui.drawList(), {pdf::mm(15), pdf::mm(15)}, k, ui.atlas().pixels(), ui.atlas().size());
+    const std::string out = d.finish();
+    CHECK(out.find("/ImageMask true") != std::string::npos && out.size() > 2000);
+    const std::string dir = fuse::ui::os::env("FUSE_EXTRAS_OUT");
+    if (!dir.empty()) {
+        CHECK(d.save(dir + "/extras.pdf"));
+        Image img;
+        fuse::ui::test::render(ui, img);
+        stbi_write_png((dir + "/extras.png").c_str(), img.width, img.height, 4, img.pixels.data(), img.width * 4);
+    }
+}
 } // namespace
 
 int main(int argc, char** argv) {
     const std::map<std::string, std::function<void()>> gates{
-        {"undo", gateUndo}, {"gesture", gateGesture}, {"i18n", gateI18n}, {"desktop", gateDesktop}, {"pdf", gatePdf}};
+        {"undo", gateUndo}, {"gesture", gateGesture}, {"i18n", gateI18n}, {"desktop", gateDesktop}, {"pdf", gatePdf}, {"containers", gateContainers}, {"dialogs", gateDialogs}, {"lcd_keyseq", gateLcdKeyseq},
+        {"mdi", gateMdi}, {"completer", gateCompleter}, {"graphics", gateGraphics}, {"widget_pdf", gateWidgetPdf}};
     std::string only;
     for (int i = 1; i < argc; ++i) if (std::strncmp(argv[i], "--gate=", 7) == 0) only = argv[i] + 7;
     for (auto& [n, f] : gates) if (only.empty() || only == n) { f(); std::printf("gate %s: %s\n", n.c_str(), g_fail ? "FAIL" : "ok"); }
