@@ -407,6 +407,7 @@ void UiVkRenderer::destroy() {
     if (m_scratchMem) vkFreeMemory(device, static_cast<VkDeviceMemory>(m_scratchMem), nullptr);
     m_blurPipeline = m_blurLayout = m_blurSetLayout = m_scratch = m_scratchMem = nullptr;
     m_atlasUploads = 0;
+    m_uploadedBytes = 0;
     m_dummyReady = false;
     for (void*& e : m_external) e = nullptr;
     if (m_pool) vkDestroyDescriptorPool(device, static_cast<VkDescriptorPool>(m_pool), nullptr);
@@ -426,19 +427,40 @@ bool UiVkRenderer::upload(u32 slotIndex, const GpuDrawData& d) {
         d.images.size() > m_desc.maxImageWords || d.atlasSize > m_desc.maxAtlasSize)
         return false;
     Slot& s = m_slots[slotIndex];
-    std::memcpy(s.mapped + m_offsets[0], d.cmds.data(), d.cmdBytes());
-    std::memcpy(s.mapped + m_offsets[1], d.tiles.data(), d.tileBytes());
+    // persistent buffers: the slot already holds this exact content -> no copy at all
+    const bool sameContent = s.contentVersion == d.contentVersion && d.contentVersion != 0;
+    if (!sameContent) {
+        // page diff against what the slot holds: only changed 4 KB pages reach the mapped memory
+        const auto put = [&](int b, u64 off, const void* src, std::size_t n) {
+            std::vector<u8>& sh = s.shadow[b];
+            const u8* p = static_cast<const u8*>(src);
+            constexpr std::size_t P = 4096;
+            const std::size_t old = sh.size();
+            if (sh.size() < n) sh.resize(n);
+            for (std::size_t i = 0; i < n; i += P) {
+                const std::size_t k = std::min(P, n - i);
+                if (i + k <= old && std::memcmp(sh.data() + i, p + i, k) == 0) continue;
+                std::memcpy(sh.data() + i, p + i, k);
+                std::memcpy(s.mapped + off + i, p + i, k);
+                m_uploadedBytes += k;
+            }
+        };
+        put(0, m_offsets[0], d.cmds.data(), d.cmdBytes());
+        put(1, m_offsets[1], d.tiles.data(), d.tileBytes());
+        put(2, m_offsets[3], d.images.data(), d.imageBytes());
+        s.contentVersion = d.contentVersion;
+    }
     // glyph atlas: only when it changed since this slot last held it (atlasGeneration ~0u = unknown: always)
     const bool atlasSame = d.atlasGeneration != ~0u && s.atlasGeneration == d.atlasGeneration && s.atlasPtr == d.atlas &&
                            s.atlasSize == d.atlasSize;
     if (d.atlas && d.atlasSize && !atlasSame) {
         std::memcpy(s.mapped + m_offsets[2], d.atlas, d.atlasBytes());
+        m_uploadedBytes += d.atlasBytes();
         ++m_atlasUploads;
     }
     s.atlasPtr = d.atlas;
     s.atlasSize = d.atlasSize;
     s.atlasGeneration = d.atlasGeneration;
-    std::memcpy(s.mapped + m_offsets[3], d.images.data(), d.imageBytes());
     s.push = d.push;
     s.passes.assign(d.passes.begin(), d.passes.end());
     if (s.passes.empty()) s.passes.push_back(GpuPass{}); // pre-pass data: one draw over tileBase 0

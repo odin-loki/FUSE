@@ -53,7 +53,8 @@ template <class F> double msPer(int n, F&& f, bool cpuClock = false) {
 }
 struct Row {
     std::string name;
-    double cpu = 0, gpu = -1, gpuWall = -1, pack = 0;
+    double cpu = 0, gpu = -1, gpuWall = -1, pack = 0, repack = 0;
+    double editKb = -1; ///< bytes upload() writes after one command's colour changes (page diff), KB
     std::size_t cmds = 0;
     std::size_t tileKb = 0, imageKb = 0; ///< packed upload sizes
 };
@@ -126,6 +127,12 @@ int main(int argc, char** argv) {
         row.pack = msPer(iters, [&] {
             packDrawList(*s.list, W, H, packed, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, s.scissor);
         }, true);
+        // persistent pack: the same list again with a known atlas generation is detected and kept
+        packDrawList(*s.list, W, H, packed, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, s.scissor, ui.atlas().version());
+        row.repack = msPer(iters, [&] {
+            packDrawList(*s.list, W, H, packed, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, s.scissor, ui.atlas().version());
+        }, true);
+        if (!packed.reused) std::fprintf(stderr, "bench: %s repack was not reused\n", s.name);
         row.tileKb = packed.tileBytes() / 1024;
         row.imageKb = packed.imageBytes() / 1024;
         rows.push_back(row);
@@ -161,6 +168,19 @@ int main(int argc, char** argv) {
                 rows[i].gpu = rows[i].gpuWall = -1.0;
                 continue;
             }
+            { // incremental upload: one command's colour changes -> repack, then only the differing pages are written
+                DrawList edited = *s.list;
+                GpuDrawData ed = data;
+                for (std::size_t k = edited.cmds().size(); k-- > 0;)
+                    if (edited.cmds()[k].op == DrawOp::Glyph || edited.cmds()[k].op == DrawOp::Rect) {
+                        const_cast<DrawCmd&>(edited.cmds()[k]).fill.r = 1.f - edited.cmds()[k].fill.r;
+                        break;
+                    }
+                const u64 before = gpu.uploadedBytes();
+                packDrawList(edited, W, H, ed, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, s.scissor, ui.atlas().version());
+                if (gpu.upload(0, ed)) rows[i].editKb = double(gpu.uploadedBytes() - before) / 1024.0;
+                gpu.upload(0, data); // back to the scene (rewrites only those pages)
+            }
             double device = 0.0;
             const double t = msPer(iters, [&] {
                 vk.run(init, res, [&](VkCommandBuffer c) {
@@ -187,18 +207,18 @@ int main(int argc, char** argv) {
 
     std::printf("fuse_ui_bench_render %ux%u, %d iterations, GPU: %s (%s)\n", W, H, iters, device.c_str(),
                 timestamps ? "timestamp queries" : "wall time");
-    std::printf("  %-16s %8s %10s %10s %12s %10s %9s %9s\n", "scene", "cmds", "cpu ms", "gpu ms", "gpu wall ms", "pack ms",
-                "tiles KB", "data KB");
+    std::printf("  %-16s %8s %10s %10s %12s %10s %10s %9s %9s %9s\n", "scene", "cmds", "cpu ms", "gpu ms", "gpu wall ms",
+                "pack ms", "repack ms", "tiles KB", "data KB", "edit KB");
     for (const Row& row : rows)
-        std::printf("  %-16s %8zu %10.3f %10.3f %12.3f %10.3f %9zu %9zu\n", row.name.c_str(), row.cmds, row.cpu, row.gpu,
-                    row.gpuWall, row.pack, row.tileKb, row.imageKb);
+        std::printf("  %-16s %8zu %10.3f %10.3f %12.3f %10.3f %10.3f %9zu %9zu %9.0f\n", row.name.c_str(), row.cmds, row.cpu,
+                    row.gpu, row.gpuWall, row.pack, row.repack, row.tileKb, row.imageKb, row.editKb);
     if (!out.empty()) {
         if (FILE* f = std::fopen(out.c_str(), "wb")) {
             std::fprintf(f, "{\"width\":%u,\"height\":%u,\"iterations\":%d,\"device\":\"%s\",\"timestamps\":%s,\"scenes\":[", W, H, iters,
                          device.c_str(), timestamps ? "true" : "false");
             for (std::size_t i = 0; i < rows.size(); ++i)
-                std::fprintf(f, "%s{\"name\":\"%s\",\"cmds\":%zu,\"cpu_ms\":%.4f,\"gpu_ms\":%.4f,\"gpu_wall_ms\":%.4f,\"pack_ms\":%.4f}",
-                             i ? "," : "", rows[i].name.c_str(), rows[i].cmds, rows[i].cpu, rows[i].gpu, rows[i].gpuWall, rows[i].pack);
+                std::fprintf(f, "%s{\"name\":\"%s\",\"cmds\":%zu,\"cpu_ms\":%.4f,\"gpu_ms\":%.4f,\"gpu_wall_ms\":%.4f,\"pack_ms\":%.4f,\"repack_ms\":%.4f}",
+                             i ? "," : "", rows[i].name.c_str(), rows[i].cmds, rows[i].cpu, rows[i].gpu, rows[i].gpuWall, rows[i].pack, rows[i].repack);
             std::fprintf(f, "]}\n");
             std::fclose(f);
         }

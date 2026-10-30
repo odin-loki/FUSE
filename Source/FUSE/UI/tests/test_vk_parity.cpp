@@ -452,8 +452,53 @@ int main() {
         check("atlas-skip", compare(cpu, out));
     }
 
+    // 8. persistent pack + incremental upload: an unchanged frame is kept (no pack, no bytes written); one changed
+    //    colour repacks but writes only the differing pages, and still renders like the CPU
+    {
+        const u32 gen = ui.atlas().version();
+        packDrawList(ui.drawList(), W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, {}, gen);
+        UI_CHECK(!data.reused);
+        UI_CHECK(gpu.upload(0, data));
+        const u64 v = data.contentVersion, b0 = gpu.uploadedBytes();
+        packDrawList(ui.drawList(), W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, {}, gen);
+        UI_CHECK(data.reused);
+        UI_CHECK_EQ(data.contentVersion, v);
+        UI_CHECK(gpu.upload(0, data));
+        UI_CHECK_EQ(gpu.uploadedBytes(), b0);
+        // a different generation or scissor is never reused
+        packDrawList(ui.drawList(), W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, {}, gen + 1);
+        UI_CHECK(!data.reused);
+        packDrawList(ui.drawList(), W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, {0, 0, 50, 50}, gen + 1);
+        UI_CHECK(!data.reused);
+        packDrawList(ui.drawList(), W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, {}, gen);
+        UI_CHECK(gpu.upload(0, data));
+        DrawList edited = ui.drawList();
+        for (std::size_t k = edited.cmds().size(); k-- > 0;)
+            if (edited.cmds()[k].op == DrawOp::Glyph) {
+                const_cast<DrawCmd&>(edited.cmds()[k]).fill = Color::rgb(0xff0000);
+                break;
+            }
+        const u64 b1 = gpu.uploadedBytes();
+        packDrawList(edited, W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, {}, gen);
+        UI_CHECK(!data.reused);
+        UI_CHECK(gpu.upload(0, data));
+        const u64 wrote = gpu.uploadedBytes() - b1;
+        UI_CHECK(wrote > 0 && wrote < data.cmdBytes() + data.tileBytes() + data.imageBytes());
+        Image cpuE;
+        cpuE.resize(int(W), int(H), 0xFF000000u);
+        CpuRasterizer re;
+        re.setGlyphAtlas(ui.atlas().pixels(), ui.atlas().size());
+        re.render(edited, cpuE);
+        vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+        check("incremental-upload", compare(cpuE, out));
+        std::printf("  incremental: %llu of %zu bytes written\n", (unsigned long long)wrote,
+                    data.cmdBytes() + data.tileBytes() + data.imageBytes());
+    }
+
     // 4. steady state: packing + uploading the same frame again does not allocate
     packDrawList(ui.drawList(), W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()));
+    UI_CHECK(gpu.upload(0, data)); // warm both slots' page shadows
+    UI_CHECK(gpu.upload(1, data));
     const auto before = g_allocs.load();
     for (int i = 0; i < 10; ++i) {
         packDrawList(ui.drawList(), W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()));

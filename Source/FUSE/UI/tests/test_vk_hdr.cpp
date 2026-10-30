@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 using namespace fuse::ui;
@@ -204,6 +205,78 @@ int main() {
         vkFreeMemory(vk.device, bmem, nullptr);
         vkDestroyImageView(vk.device, view, nullptr);
         vkDestroyImage(vk.device, img, nullptr);
+        vkFreeMemory(vk.device, mem, nullptr);
+    }
+    // 4. HDR external texture: an RGBA16F engine frame holding 3.0 (3x SDR white) keeps it on the HDR target
+    {
+        VkImageCreateInfo ii{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        ii.imageType = VK_IMAGE_TYPE_2D;
+        ii.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+        ii.extent = {2, 2, 1};
+        ii.mipLevels = ii.arrayLayers = 1;
+        ii.samples = VK_SAMPLE_COUNT_1_BIT;
+        ii.tiling = VK_IMAGE_TILING_OPTIMAL;
+        ii.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        VkImage ext{};
+        UI_CHECK(vkCreateImage(vk.device, &ii, nullptr, &ext) == VK_SUCCESS);
+        VkMemoryRequirements mr;
+        vkGetImageMemoryRequirements(vk.device, ext, &mr);
+        VkMemoryAllocateInfo mai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+        mai.allocationSize = mr.size;
+        mai.memoryTypeIndex = vk.memType(mr.memoryTypeBits, 0);
+        VkDeviceMemory mem{};
+        UI_CHECK(vkAllocateMemory(vk.device, &mai, nullptr, &mem) == VK_SUCCESS);
+        vkBindImageMemory(vk.device, ext, mem, 0);
+        VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+        vi.image = ext;
+        vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        vi.format = ii.format;
+        vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        VkImageView view{};
+        UI_CHECK(vkCreateImageView(vk.device, &vi, nullptr, &view) == VK_SUCCESS);
+        // the harness stages `init` and copies it to the target first; the texture copies texels 0..3 of the same
+        // staging buffer (target pixels (0..3, 0), outside the checked area)
+        std::vector<u16> init = black;
+        const u16 texel[4] = {0x4200, 0x4200, 0x4200, 0x3C00}; // 3.0, 3.0, 3.0, 1.0
+        for (int i = 0; i < 4; ++i) std::memcpy(init.data() + i * 4, texel, 8);
+        Image e;
+        e.resize(2, 2, 0xFFFFFFFFu);
+        e.externalSlot = 0;
+        const Image* imgs[1] = {&e};
+        DrawList dl;
+        DrawCmd c;
+        c.op = DrawOp::Image;
+        c.rect = {20, 20, 80, 80};
+        dl.push(c);
+        packDrawList(dl, W, H, data, nullptr, 0, imgs, 1);
+        gpu.setExternalImage(0, (void*)view);
+        UI_CHECK(gpu.upload(0, data));
+        vk.runBytes(init.data(), out.data(), [&](VkCommandBuffer cmd) { // upload the texture, then draw it
+            VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+            b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            b.image = ext;
+            b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            b.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
+            VkBufferImageCopy cp{};
+            cp.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            cp.imageExtent = {2, 2, 1};
+            vkCmdCopyBufferToImage(cmd, vk.staging, ext, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &cp);
+            b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            b.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
+            gpu.record((void*)cmd, (void*)vk.view, 0);
+        });
+        const f32 v = halfToFloat(out[(std::size_t(50) * W + 50) * 4]);
+        std::printf("ext-hdr   float texture 3.0 -> %.4f\n", double(v));
+        UI_CHECK(std::abs(v - 3.f) < 2e-3f);
+        gpu.setExternalImage(0, nullptr);
+        vkDestroyImageView(vk.device, view, nullptr);
+        vkDestroyImage(vk.device, ext, nullptr);
         vkFreeMemory(vk.device, mem, nullptr);
     }
     return finish("fuse_ui_vk_hdr");

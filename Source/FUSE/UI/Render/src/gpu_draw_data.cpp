@@ -1,8 +1,10 @@
 #include "fuse/ui/render/gpu_draw_data.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstring>
+#include <type_traits>
 
 namespace fuse::ui::render {
 
@@ -21,12 +23,54 @@ void put4(f32 (&d)[4], f32 a, f32 b, f32 c, f32 e) {
 } // namespace
 
 void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out, const u8* atlas, u32 atlasSize,
-                  const Image* const* images, u32 imageCount, Rect scissor) {
+                  const Image* const* images, u32 imageCount, Rect scissor, u32 atlasGeneration) {
+    // persistent pack: identical inputs keep the previous buffers (contentVersion unchanged -> no upload)
+    {
+        u32 key[9] = {width, height, atlasSize, imageCount, atlasGeneration};
+        const f32 sc[4] = {scissor.x, scissor.y, scissor.w, scissor.h};
+        std::memcpy(&key[5], sc, sizeof sc);
+        const auto sameVec = [](auto& prev, const auto& cur) { // compare; on a difference refresh prev from there on
+            using T = typename std::decay_t<decltype(cur)>::value_type;
+            const std::size_t n = std::min(prev.size(), cur.size());
+            std::size_t i = 0;
+            constexpr std::size_t B = 256;
+            while (i < n && std::memcmp(prev.data() + i, cur.data() + i, std::min(B, n - i) * sizeof(T)) == 0) i += B;
+            i = std::min(i, n);
+            if (i == n && prev.size() == cur.size()) return true;
+            prev.resize(cur.size());
+            std::memcpy(prev.data() + i, cur.data() + i, (cur.size() - i) * sizeof(T));
+            return false;
+        };
+        bool same = atlasGeneration != ~0u && out.atlasGeneration == atlasGeneration && out.prevAtlas == atlas &&
+                    std::memcmp(key, out.prevKey, sizeof key) == 0 && out.contentVersion != 0;
+        // always run all three (each refreshes its copy)
+        same = sameVec(out.prevCmds, list.cmds()) && same;
+        same = sameVec(out.prevEdges, list.pathEdges()) && same;
+        same = sameVec(out.prevStops, list.gradientStops()) && same;
+        if (same) // image pixels: compare with the copies already in the packed buffer
+            for (u32 i = 0; i < imageCount && same; ++i) {
+                const Image* img = images ? images[i] : nullptr;
+                const u32* t = out.images.data() + i * 4;
+                const bool ext = img && img->externalSlot >= 0 && img->externalSlot < 4;
+                if (t[1] != (img ? u32(img->width) : 1u) || t[2] != (img ? u32(img->height) : 1u) ||
+                    t[3] != (ext ? u32(img->externalSlot) + 1u : 0u))
+                    same = false;
+                else if (!ext && img && !img->pixels.empty())
+                    same = std::size_t(t[0]) + img->pixels.size() <= out.images.size() &&
+                           std::memcmp(out.images.data() + t[0], img->pixels.data(), img->pixels.size() * 4) == 0;
+            }
+        std::memcpy(out.prevKey, key, sizeof key);
+        out.prevAtlas = atlas;
+        out.reused = same;
+        if (same) return;
+        static std::atomic<u64> versions{0}; // process-unique, so a slot never mistakes another GpuDrawData's content
+        out.contentVersion = ++versions;
+    }
     out.cmds.clear();
     out.tiles.clear();
     out.images.clear();
     out.passes.clear();
-    out.atlasGeneration = ~0u;
+    out.atlasGeneration = atlasGeneration;
     out.atlas = atlas;
     out.atlasSize = atlas ? atlasSize : 0;
     const u32 tilesX = (width + kUiTile - 1) / kUiTile, tilesY = (height + kUiTile - 1) / kUiTile;

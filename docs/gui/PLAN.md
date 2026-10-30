@@ -204,10 +204,15 @@ Every phase: commits on `gui-framework`, pushed after each milestone; never to `
   - The CPU raster and 8-bit targets clip at 1.
   - Gate: fuse_ui_vk_hdr. SDR scenes are within 1 code of the CPU; 4x white stays at 1.824; the PQ code goes 594 to 746 (SDR white vs 4x).
 - Done: glyph ink culling. Each glyph record shrinks to the ink box of its atlas bitmap: origin, uv, size and pixel boxes, computed once per pack per unique glyph in a reused open-addressed table. Blank bitmaps are dropped, and tiles that only the padding touches no longer list the glyph. It is bit-exact. FUSE's atlas bitmaps are already tight, so text_page does not change (same tile bytes); it helps padded or SDF-style atlases.
+- Done: persistent GPU buffers. `packDrawList(..., atlasGeneration)` keeps the previous pack when the inputs are unchanged: list contents, size, scissor, image pixels and a known atlas generation. It sets `GpuDrawData::reused` and keeps `contentVersion`, which is process-unique. `UiVkRenderer::upload` then writes nothing. A changed frame writes only the 4 KB pages that differ from what the slot holds, tracked against a per-slot CPU shadow; `uploadedBytes()` counts them. vk_present passes the atlas version.
+  - Release lavapipe text_page: repack 0.51 ms instead of 3.8 ms, 0 bytes uploaded for an unchanged frame, and 1.5 of 3.1 MB after one glyph colour change. Inserted fill words shift the later records and runs, so those pages differ.
+  - Gate: fuse_ui_vk_parity "incremental-upload".
+- Done: HDR external textures. On the HDR target, float external textures keep values above 1 (rgb >= 0, alpha 0..1). Gate: fuse_ui_vk_hdr "ext-hdr" (3.0 stays 3.0).
 - Shaders: variants are `#include`s of shared `.glsl` bodies (GL_GOOGLE_include_directive); CMake rebuilds on body changes.
 - Left:
   - Upstream the FORGE `display_hdr` (os.hpp) and bump the submodule. Until then the Win32 check is compiled out (local change only, awaiting the owner).
-  - HDR on the CPU-upload path (no float raster), and HDR images/textures: kImage pixels are 8-bit, and external textures are clamped to 1.
+  - HDR on the CPU-upload path (no float raster), and HDR CPU images: kImage pixels are 8-bit (external float textures are HDR).
+  - Incremental pack for changed frames: a changed frame still repacks fully (about 3.8 ms on text_page), and an insertion shifts every later images word. Stable per-run record slots would fix both.
   - Wayland: when the Vulkan WSI is given an HDR10 colour space, it attaches wp_color_management_v1 to the surface itself, and a second app-side object would be a protocol error.
   - GPU text on lavapipe is still slower than the CPU (about 21 vs 14-16 ms). The cost is per-pixel glyph loops on a software rasteriser; real GPUs are not measured here.
   - The Apple paths (CVDisplayLink, Metal surface) are unverified on hardware.

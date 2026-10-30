@@ -859,8 +859,7 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
         // clears it); the canvas keeps every other pixel from the previous frame
         fuse::ui::render::packDrawList(win.pixelDrawList(), W, H, w->data, ui.atlas().pixels(), u32(ui.atlas().size()),
                                        raster.images(), raster.imageCount(),
-                                       Rect{f32(x0), f32(y0), f32(x1 - x0), f32(y1 - y0)});
-        w->data.atlasGeneration = ui.atlas().version();
+                                       Rect{f32(x0), f32(y0), f32(x1 - x0), f32(y1 - y0)}, ui.atlas().version());
         if (!w->data.passes.empty()) w->data.passes[0].flags |= fuse::ui::render::kPassClear;
         if (!w->gpu.upload(f, w->data)) return false;
     }

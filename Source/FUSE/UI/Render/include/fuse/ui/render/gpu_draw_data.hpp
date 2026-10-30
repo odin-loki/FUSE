@@ -86,6 +86,18 @@ struct GpuDrawData {
     std::vector<u64> inkKeys;
     std::vector<u32> inkBoxes;
 
+    /// Persistent packing: a new process-unique value whenever packDrawList produces new content. When the inputs equal the previous pack
+    /// (same list contents, size, scissor, image pixels, and a known unchanged atlasGeneration), packDrawList keeps the
+    /// packed buffers, sets `reused`, and leaves `contentVersion` alone, so UiVkRenderer::upload skips the copy.
+    u64 contentVersion = 0;
+    bool reused = false;
+    /// previous inputs (compared, then refreshed from the first difference on); kept for capacity
+    std::vector<DrawCmd> prevCmds;
+    std::vector<PathEdge> prevEdges;
+    std::vector<GradientStop> prevStops;
+    u32 prevKey[9] = {};
+    const u8* prevAtlas = nullptr;
+
     std::size_t cmdBytes() const { return cmds.size() * sizeof(GpuCmd); }
     std::size_t tileBytes() const { return tiles.size() * 4; }
     std::size_t imageBytes() const { return images.size() * 4; }
@@ -95,7 +107,10 @@ struct GpuDrawData {
 /// Packs `list` for a width x height target, restricted to `scissor` (whole target when empty). `images` are the
 /// rasteriser image views (same indices as DrawCmd::image); `atlas` / `atlasSize` the glyph atlas. The dispatch
 /// region (push.origin / size) is the scissor's pixel box, so a damage scissor repaints only the damaged pixels.
+/// `atlasGeneration` (fuse::text::GlyphAtlas::version()) is stored in out.atlasGeneration; when known (not ~0u) an
+/// unchanged frame reuses the previous pack (GpuDrawData::reused) instead of repacking.
 void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out, const u8* atlas = nullptr,
-                  u32 atlasSize = 0, const Image* const* images = nullptr, u32 imageCount = 0, Rect scissor = {});
+                  u32 atlasSize = 0, const Image* const* images = nullptr, u32 imageCount = 0, Rect scissor = {},
+                  u32 atlasGeneration = ~0u);
 
 } // namespace fuse::ui::render

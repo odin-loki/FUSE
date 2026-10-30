@@ -67,6 +67,10 @@ public:
     bool hdrTargetAvailable() const { return m_pipelineHdr != nullptr; }
     /// Glyph atlas uploads since init (stays flat while GpuDrawData::atlasGeneration does not change).
     u64 atlasUploads() const { return m_atlasUploads; }
+    /// Bytes written into mapped slot memory by upload() since init (cmds, tiles, images, atlas). An unchanged frame
+    /// (same GpuDrawData::contentVersion) writes nothing; a changed one writes only the 4 KB pages that differ from
+    /// what the slot already holds.
+    u64 uploadedBytes() const { return m_uploadedBytes; }
 
 private:
     struct Slot {
@@ -80,7 +84,10 @@ private:
         const u8* atlasPtr = nullptr;
         u32 atlasSize = 0;
         u32 atlasGeneration = ~0u;
+        u64 contentVersion = 0; ///< GpuDrawData::contentVersion last uploaded (process-unique)
+        std::vector<u8> shadow[3]; ///< CPU copy of the mapped cmds / tiles / images (page diff source)
     };
+    u64 m_uploadedBytes = 0;
     UiVkDesc m_desc{};
     u64 m_offsets[5] = {};  ///< cmds, tiles, atlas, images, end
     void* m_setLayout = nullptr;

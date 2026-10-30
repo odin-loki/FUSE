@@ -309,7 +309,13 @@ void main() {
                 const ivec2 es = max(extSize(ext - 1u), ivec2(1));
                 const int ex = clamp(int((px - c.rect.x) / c.rect.z * float(es.x)), 0, es.x - 1);
                 const int ey = clamp(int((py - c.rect.y) / c.rect.w * float(es.y)), 0, es.y - 1);
+#ifdef UI_HDR
+                // HDR target: a float texture's values above 1 (extended-range sRGB, 1.0 = SDR white) pass through
+                const vec4 tr = extFetch(ext - 1u, ivec2(ex, ey));
+                const vec4 t = vec4(max(tr.rgb, vec3(0.0)), clamp(tr.a, 0.0, 1.0));
+#else
                 const vec4 t = clamp(extFetch(ext - 1u, ivec2(ex, ey)), 0.0, 1.0);
+#endif
                 const float ek = clipCov * (c.fill.a > 0.0 ? c.fill.a : 1.0);
                 blend(dst, vec4(t.rgb * t.a * ek, t.a * ek));
                 continue;
