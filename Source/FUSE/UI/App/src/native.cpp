@@ -292,10 +292,13 @@ struct NativePlatform::Impl {
             Rect screen;   ///< physical screen rect
             Rect rect;     ///< context rect (input offset)
             u64 revision = ~0ull;
+            NodeHandle node;   ///< the surface's overlay node (windows follow their node across frames)
+            bool tool = false; ///< floating dock / tool bar (Qt::Tool): no grab, no outside-click close
             Image img;
             std::vector<u32> staged; ///< OS pixel order
         };
         std::vector<Popup> popups;
+        unsigned long long grabbed = 0; ///< menu popup window holding the pointer grab (0: none)
 #if defined(_WIN32)
         std::vector<u32> bgra; ///< GDI fallback staging
         wchar_t highSurrogate = 0;
@@ -391,7 +394,8 @@ struct NativePlatform::Impl {
     static void closeAllPopups(Rec& r) {
         UiContext& ui = r.win->ui();
         std::vector<NodeHandle> nodes;
-        for (const auto& ps : ui.popupSurfaces()) nodes.push_back(ps.node);
+        for (const auto& ps : ui.popupSurfaces())
+            if (!ps.tool) nodes.push_back(ps.node); // tool windows (floating docks / tool bars) stay
         for (NodeHandle n : nodes)
             if (ui.alive(n)) fuse::ui::widgets::closePopup(ui, n);
         r.win->requestRedraw();
@@ -425,15 +429,19 @@ void NativePlatform::Impl::syncPopups(Rec& r) {
         ui.setOsPopups(true, {(work.x - f32(ox)) / s, (work.y - f32(oy)) / s, work.w / s, work.h / s});
     }
     const auto& surf = ui.popupSurfaces();
-    const bool had = !r.popups.empty();
-    while (r.popups.size() > surf.size()) {
-        destroyPopupOs(r.popups.back());
-        r.popups.pop_back();
+    // windows follow their node: a menu opening / closing does not reshuffle the tool windows (floating docks)
+    std::vector<Rec::Popup> next;
+    next.reserve(surf.size());
+    for (const auto& ps : surf) {
+        auto it = std::find_if(r.popups.begin(), r.popups.end(), [&](const Rec::Popup& q) { return q.node == ps.node && q.handle; });
+        if (it != r.popups.end()) { next.push_back(std::move(*it)); it->handle = 0; }
+        else { next.emplace_back(); next.back().node = ps.node; next.back().tool = ps.tool; }
     }
-    if (had && r.popups.empty()) grabPointer(r, false);
+    for (Rec::Popup& q : r.popups)
+        if (q.handle) destroyPopupOs(q);
+    r.popups = std::move(next);
     const f32 s = r.win->scale();
     for (std::size_t i = 0; i < surf.size(); ++i) {
-        if (i == r.popups.size()) r.popups.emplace_back();
         Rec::Popup& p = r.popups[i];
         const auto& ps = surf[i];
         const Rect scr{std::round(f32(ox) + ps.rect.x * s), std::round(f32(oy) + ps.rect.y * s), std::max(1.f, std::ceil(ps.rect.w * s)),
@@ -442,8 +450,7 @@ void NativePlatform::Impl::syncPopups(Rec& r) {
         p.rect = ps.rect;
         p.screen = scr;
         if (!p.handle) {
-            if (!createPopupOs(r, p)) { r.popups.pop_back(); return; }
-            if (i == 0) grabPointer(r, true); // Qt::Popup: clicks anywhere else on screen close the menu
+            if (!createPopupOs(r, p)) { r.popups.erase(r.popups.begin() + std::ptrdiff_t(i)); return; }
         } else if (moved) {
             movePopupOs(p);
         }
@@ -465,6 +472,10 @@ void NativePlatform::Impl::syncPopups(Rec& r) {
             blitPopupOs(p);
         }
     }
+    // Qt::Popup: while a menu shows, clicks anywhere else on screen close it (the grab goes to the first menu window)
+    const auto menu = std::find_if(r.popups.begin(), r.popups.end(), [](const Rec::Popup& q) { return !q.tool && q.handle; });
+    if (menu != r.popups.end() && r.grabbed != menu->handle) { r.grabbed = menu->handle; grabPointer(r, true); }
+    else if (menu == r.popups.end() && r.grabbed) { r.grabbed = 0; grabPointer(r, false); }
 }
 
 bool NativePlatform::Impl::present(void* user, AppWindow& w, Rect damage) {
@@ -731,7 +742,8 @@ LRESULT CALLBACK popupProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_ERASEBKGND: return 1;
     case WM_MOUSEMOVE: ui.pointerMove(pos); r->win->requestRedraw(); return 0;
     case WM_LBUTTONDOWN: case WM_RBUTTONDOWN: case WM_MBUTTONDOWN:
-        if (lp2.x < 0.f || lp2.y < 0.f || lp2.x >= p.screen.w || lp2.y >= p.screen.h) { // captured click elsewhere
+        if (p.tool) SetCapture(hwnd); // a title drag keeps the pointer while the window moves under it
+        else if (lp2.x < 0.f || lp2.y < 0.f || lp2.x >= p.screen.w || lp2.y >= p.screen.h) { // captured click elsewhere
             NativePlatform::Impl::closeAllPopups(*r);
             return 0;
         }
@@ -739,7 +751,11 @@ LRESULT CALLBACK popupProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         else ui.pointerDown(pos, MouseButton::Right);
         r->win->requestRedraw();
         return 0;
-    case WM_LBUTTONUP: case WM_RBUTTONUP: ui.pointerUp(pos); r->win->requestRedraw(); return 0;
+    case WM_LBUTTONUP: case WM_RBUTTONUP:
+        if (p.tool && GetCapture() == hwnd) ReleaseCapture();
+        ui.pointerUp(pos);
+        r->win->requestRedraw();
+        return 0;
     default: break;
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
@@ -760,7 +776,8 @@ bool NativePlatform::Impl::screenInfo(const Rec& r, int& ox, int& oy, Rect& work
 }
 void NativePlatform::Impl::grabPointer(Rec&, bool) {} // Win32: WM_ACTIVATEAPP closes popups instead of a grab
 bool NativePlatform::Impl::createPopupOs(Rec& r, Rec::Popup& p) {
-    HWND hwnd = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST, kPopupClass, L"", WS_POPUP, int(p.screen.x),
+    // tool windows (floating docks / tool bars) are owned, so they stay above the main window, but not topmost
+    HWND hwnd = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | (p.tool ? 0 : WS_EX_TOPMOST), kPopupClass, L"", WS_POPUP, int(p.screen.x),
                                 int(p.screen.y), int(p.screen.w), int(p.screen.h), reinterpret_cast<HWND>(r.handle), nullptr, hinst, nullptr);
     if (!hwnd) return false;
     p.handle = reinterpret_cast<unsigned long long>(hwnd);
@@ -973,7 +990,7 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
             const Vec2 pos{p.rect.x + f32(ev.input.x) / s, p.rect.y + f32(ev.input.y) / s};
             if (ev.type == x11::Expose) m.blitPopupOs(p);
             else if (ev.type == x11::MotionNotify) { ui.setModifiers(x11::mods(ev.input.state)); ui.pointerMove(pos); }
-            else if (ev.type == x11::ButtonPress && (ev.input.x < 0 || ev.input.y < 0 || f32(ev.input.x) >= p.screen.w ||
+            else if (ev.type == x11::ButtonPress && !p.tool && (ev.input.x < 0 || ev.input.y < 0 || f32(ev.input.x) >= p.screen.w ||
                                                      f32(ev.input.y) >= p.screen.h)) {
                 closeAllPopups(*pr); // grabbed click outside every window of the app
                 continue;
@@ -1066,7 +1083,8 @@ bool NativePlatform::Impl::createPopupOs(Rec& r, Rec::Popup& p) {
     a.override_redirect = 1; // no WM frame / focus: a menu window (Qt::Popup)
     a.save_under = 1;
     x.ChangeWindowAttributes(dpy, w, x11::kCWOverrideRedirect | x11::kCWSaveUnder, &a);
-    const x11::Atom type = x.InternAtom(dpy, "_NET_WM_WINDOW_TYPE", 0), menu = x.InternAtom(dpy, "_NET_WM_WINDOW_TYPE_POPUP_MENU", 0);
+    const x11::Atom type = x.InternAtom(dpy, "_NET_WM_WINDOW_TYPE", 0),
+                    menu = x.InternAtom(dpy, p.tool ? "_NET_WM_WINDOW_TYPE_UTILITY" : "_NET_WM_WINDOW_TYPE_POPUP_MENU", 0);
     x.ChangeProperty(dpy, w, type, 4 /*XA_ATOM*/, 32, 0, reinterpret_cast<const unsigned char*>(&menu), 1);
     x.SelectInput(dpy, w, x11::kPopupMask);
     x.MapWindow(dpy, w);
@@ -1075,10 +1093,11 @@ bool NativePlatform::Impl::createPopupOs(Rec& r, Rec::Popup& p) {
 }
 void NativePlatform::Impl::grabPointer(Rec& r, bool on) {
     if (!on) { x.UngrabPointer(dpy, 0); x.Flush(dpy); return; }
-    if (r.popups.empty() || !r.popups[0].handle) return;
+    const auto menu = std::find_if(r.popups.begin(), r.popups.end(), [](const Rec::Popup& q) { return !q.tool && q.handle; });
+    if (menu == r.popups.end()) return;
     x.Sync(dpy, 0); // the override-redirect window must be viewable before it can grab
     // owner_events: the app's own windows (main + popups) keep their events; everything else reports to the popup
-    x.GrabPointer(dpy, x11::Window(r.popups[0].handle), 1, (1u << 2) | (1u << 3) | (1u << 6), 1, 1, 0, 0, 0);
+    x.GrabPointer(dpy, x11::Window(menu->handle), 1, (1u << 2) | (1u << 3) | (1u << 6), 1, 1, 0, 0, 0);
     x.Flush(dpy);
 }
 void NativePlatform::Impl::movePopupOs(Rec::Popup& p) {
@@ -1467,6 +1486,10 @@ bool NativePlatform::capture(const AppWindow& w, Image& out) {
 std::size_t NativePlatform::popupCount(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);
     return r ? r->popups.size() : 0;
+}
+bool NativePlatform::popupIsTool(const AppWindow& w, std::size_t i) const {
+    const Impl::Rec* r = m->find(w);
+    return r && i < r->popups.size() && r->popups[i].tool;
 }
 unsigned long long NativePlatform::popupWindow(const AppWindow& w, std::size_t i) const {
     const Impl::Rec* r = m->find(w);

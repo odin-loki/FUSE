@@ -84,6 +84,8 @@ struct NativeOptions {
     f32 hdrMaxNits = 1000.f;       ///< Hdr10: mastering peak / MaxCLL sent as HDR metadata (VK_EXT_hdr_metadata, DXGI, Wayland)
     /// Popup menus / combo lists / submenus as their own borderless OS windows (Qt-style; may extend past the main
     /// window, clamp to the screen). X11: override-redirect windows; Win32: WS_POPUP + WS_EX_NOACTIVATE owned windows.
+    /// Floating dock widgets and tool bars (class "ostool") are shown as OS tool windows the same way (Wayland:
+    /// subsurfaces of the main window, which may also extend past it).
     bool osPopups = false;
     /// Win32: per-monitor DPI v2 awareness (AppWindow::scale() follows the monitor, WM_DPICHANGED re-renders).
     /// false: leave the process DPI mode alone (the system bitmap-stretches the window).
@@ -137,6 +139,10 @@ public:
     /// its screen rect (physical px) and a read-back of its pixels.
     std::size_t popupCount(const AppWindow& w) const;
     unsigned long long popupWindow(const AppWindow& w, std::size_t i) const;
+    /// True when popup window `i` is a tool window: a floating dock widget / tool bar ("ostool" node) shown as an
+    /// owned OS window (X11 _NET_WM_WINDOW_TYPE_UTILITY override-redirect, Win32 owned WS_EX_TOOLWINDOW) that takes
+    /// no pointer grab, survives outside clicks and moves with its node.
+    bool popupIsTool(const AppWindow& w, std::size_t i) const;
     fuse::ui::Rect popupScreenRect(const AppWindow& w, std::size_t i) const;
     bool capturePopup(const AppWindow& w, std::size_t i, fuse::ui::Image& out);
     /// The window's top-left on screen (client area).

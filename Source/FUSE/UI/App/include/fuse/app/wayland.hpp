@@ -20,6 +20,7 @@
 #include "fuse/app/app.hpp"
 #include "fuse/app/native.hpp"
 #include <memory>
+#include <cstddef>
 #include <string_view>
 
 namespace fuse::app {
@@ -43,6 +44,11 @@ public:
     bool showPopup(AppWindow& w, AppWindow& parent, fuse::ui::Rect anchor, bool grab = true);
     /// The pixels last committed for `w` (RGBA like fuse::ui::Image).
     bool capture(const AppWindow& w, fuse::ui::Image& out) const;
+    /// With NativeOptions::osPopups, floating dock widgets / tool bars ("ostool" nodes) are wl_subsurfaces of the
+    /// window (desynchronised, wl_shm, positioned at their context rect, may extend past the window; input is fed back
+    /// in context coordinates). How many `w` shows now, and the pixels + context rect last committed for one.
+    std::size_t toolSurfaceCount(const AppWindow& w) const;
+    bool captureToolSurface(const AppWindow& w, std::size_t i, fuse::ui::Image& out, fuse::ui::Rect* rect = nullptr) const;
     /// Has the compositor configured (mapped) `w`?
     bool configured(const AppWindow& w) const;
     /// True when `w` presents through a Vulkan swapchain (VK_KHR_wayland_surface), false for wl_shm.

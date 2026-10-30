@@ -44,6 +44,8 @@ std::string_view WaylandPlatform::lastError() const { return "Wayland is not ava
 bool WaylandPlatform::show(AppWindow&) { return false; }
 bool WaylandPlatform::showPopup(AppWindow&, AppWindow&, Rect, bool) { return false; }
 bool WaylandPlatform::capture(const AppWindow&, Image&) const { return false; }
+std::size_t WaylandPlatform::toolSurfaceCount(const AppWindow&) const { return 0; }
+bool WaylandPlatform::captureToolSurface(const AppWindow&, std::size_t, Image&, Rect*) const { return false; }
 bool WaylandPlatform::configured(const AppWindow&) const { return false; }
 void* WaylandPlatform::nativeDisplay() const { return nullptr; }
 bool WaylandPlatform::roundtrip() { return false; }
@@ -78,7 +80,8 @@ struct Lib {
     uint32_t (*version)(Proxy*) = nullptr;
     const Interface *registry = nullptr, *compositor = nullptr, *surface = nullptr, *shm = nullptr, *shmPool = nullptr,
                     *buffer = nullptr, *seat = nullptr, *pointer = nullptr, *keyboard = nullptr, *output = nullptr,
-                    *ddm = nullptr, *dataDevice = nullptr, *dataOffer = nullptr, *dataSource = nullptr, *callback = nullptr;
+                    *ddm = nullptr, *dataDevice = nullptr, *dataOffer = nullptr, *dataSource = nullptr, *callback = nullptr,
+                    *subcompositor = nullptr, *subsurface = nullptr;
     bool load() {
         so = os::loadLibrary({"libwayland-client.so.0", "libwayland-client.so"});
         if (!so) return false;
@@ -95,6 +98,7 @@ struct Lib {
         i(seat, "wl_seat_interface"); i(pointer, "wl_pointer_interface"); i(keyboard, "wl_keyboard_interface");
         i(output, "wl_output_interface"); i(ddm, "wl_data_device_manager_interface"); i(dataDevice, "wl_data_device_interface");
         i(dataOffer, "wl_data_offer_interface"); i(dataSource, "wl_data_source_interface"); i(callback, "wl_callback_interface");
+        i(subcompositor, "wl_subcompositor_interface"); i(subsurface, "wl_subsurface_interface");
         return all;
     }
 };
@@ -158,6 +162,7 @@ struct WaylandPlatform::Impl {
     wl::ScaleTables scaleTables;
     Proxy *viewporter = nullptr, *fracMgr = nullptr;
     Proxy* dpy = nullptr;
+    Proxy* subcomp = nullptr; ///< wl_subcompositor: floating docks / tool bars as subsurfaces
     Proxy *registry = nullptr, *compositor = nullptr, *shm = nullptr, *wmBase = nullptr, *seat = nullptr,
           *pointer = nullptr, *keyboard = nullptr, *ddm = nullptr, *dataDevice = nullptr;
     std::string error;
@@ -186,6 +191,17 @@ struct WaylandPlatform::Impl {
         uint32_t scale120 = 0;     ///< preferred_scale (0: none received)
         int32_t bufferScale = 1;   ///< integer preferred_buffer_scale
         int32_t destW = 0, destH = 0, sentBufferScale = 1;
+        /// Tool windows (UiContext "ostool" surfaces: floating docks / tool bars): desynchronised subsurfaces of
+        /// `surface`, positioned at their context rect (they may extend past the window), with wl_shm buffers.
+        struct Tool {
+            NodeHandle node;
+            Proxy *surface = nullptr, *sub = nullptr;
+            Buffer bufs[2];
+            Rect rect;
+            u64 revision = ~0ull;
+            Image img;
+        };
+        std::vector<std::unique_ptr<Tool>> tools; ///< stable addresses: the buffers are listener user data
     };
     std::vector<std::unique_ptr<Win>> wins;
     Win* pointerFocus = nullptr;
@@ -277,6 +293,21 @@ struct WaylandPlatform::Impl {
             if (w->surface == surface) return w.get();
         return nullptr;
     }
+    /// The window owning a tool subsurface; `origin` = its context rect origin (input is fed in context coordinates).
+    Win* findTool(Proxy* surface, Vec2& origin) {
+        for (auto& w : wins)
+            for (auto& t : w->tools)
+                if (t->surface == surface) { origin = {t->rect.x, t->rect.y}; return w.get(); }
+        return nullptr;
+    }
+    Proxy* pointerSurface = nullptr;
+    Vec2 pointerLocal{};
+    /// pointer position in the focused window's context coordinates (a tool subsurface adds its current origin)
+    Vec2 mapPointer() {
+        Vec2 o{};
+        if (pointerSurface && findTool(pointerSurface, o)) return {pointerLocal.x + o.x, pointerLocal.y + o.y};
+        return pointerLocal;
+    }
     Proxy* bind(uint32_t name, const Interface* iface, uint32_t ver) {
         return l.marshal(registry, 0, iface, ver, 0, name, iface->name, ver, nullptr);
     }
@@ -289,6 +320,7 @@ struct WaylandPlatform::Impl {
         else if (n == "wp_viewporter") m.viewporter = m.bind(name, &m.scaleTables.viewporter, 1);
         else if (n == "wp_fractional_scale_manager_v1") m.fracMgr = m.bind(name, &m.scaleTables.fracManager, 1);
         else if (n == "wl_shm") m.shm = m.bind(name, m.l.shm, 1);
+        else if (n == "wl_subcompositor") m.subcomp = m.bind(name, m.l.subcompositor, 1);
         else if (n == "xdg_wm_base") {
             m.wmBase = m.bind(name, &m.xdg.wmBase, 1);
             static const auto lis = listen(&onPing);
@@ -325,9 +357,13 @@ struct WaylandPlatform::Impl {
     }
     static void ptrEnter(void* d, Proxy*, uint32_t serial, Proxy* surface, wl::Fixed x, wl::Fixed y) {
         Impl& m = *static_cast<Impl*>(d);
+        Vec2 o{};
         m.pointerFocus = m.find(surface);
+        if (!m.pointerFocus) m.pointerFocus = m.findTool(surface, o);
+        m.pointerSurface = surface;
         m.lastEnterSerial = serial;
-        m.pointerPos = {f32(wl::fromFixed(x)), f32(wl::fromFixed(y))};
+        m.pointerLocal = {f32(wl::fromFixed(x)), f32(wl::fromFixed(y))};
+        m.pointerPos = m.mapPointer();
         if (m.pointerFocus) m.pointerFocus->win->ui().pointerMove(m.pointerPos);
         m.appliedShape = -1; // a new enter serial: the cursor must be set again
         m.syncCursor();
@@ -372,10 +408,15 @@ struct WaylandPlatform::Impl {
         l.flush(dpy);
         cursorVia = "libwayland-cursor";
     }
-    static void ptrLeave(void* d, Proxy*, uint32_t, Proxy*) { static_cast<Impl*>(d)->pointerFocus = nullptr; }
+    static void ptrLeave(void* d, Proxy*, uint32_t, Proxy*) {
+        Impl& m = *static_cast<Impl*>(d);
+        m.pointerFocus = nullptr;
+        m.pointerSurface = nullptr;
+    }
     static void ptrMotion(void* d, Proxy*, uint32_t, wl::Fixed x, wl::Fixed y) {
         Impl& m = *static_cast<Impl*>(d);
-        m.pointerPos = {f32(wl::fromFixed(x)), f32(wl::fromFixed(y))};
+        m.pointerLocal = {f32(wl::fromFixed(x)), f32(wl::fromFixed(y))};
+        m.pointerPos = m.mapPointer();
         if (!m.pointerFocus) return;
         AppWindow& w = *m.pointerFocus->win;
         w.ui().setModifiers(m.modsNow);
@@ -387,8 +428,12 @@ struct WaylandPlatform::Impl {
     static void ptrButton(void* d, Proxy*, uint32_t serial, uint32_t, uint32_t button, uint32_t state) {
         Impl& m = *static_cast<Impl*>(d);
         if (!m.pointerFocus) return;
+        m.pointerPos = m.mapPointer(); // a tool subsurface may have moved since the last motion
         UiContext& ui = m.pointerFocus->win->ui();
         ui.setModifiers(m.modsNow);
+        // the context position moved without a motion event (the subsurface under a grab moved): deliver it first so
+        // a drag ends where the button was released
+        if (ui.pointer().x != m.pointerPos.x || ui.pointer().y != m.pointerPos.y) ui.pointerMove(m.pointerPos);
         if (state == 1) {
             m.lastButtonSerial = serial;
             m.buttonDown = true;
@@ -645,6 +690,7 @@ struct WaylandPlatform::Impl {
         if (w.configured) {
             if (detail::VkWin* vk = m.vulkanFor(w)) {
                 const bool ok = detail::vkWinPresent(vk, aw, damage); // acquire / blit / vkQueuePresentKHR commits
+                m.syncTools(w);
                 m.l.flush(m.dpy);
                 return ok;
             }
@@ -689,8 +735,94 @@ struct WaylandPlatform::Impl {
             }
         }
         m.l.marshal(w.surface, 6, nullptr, m.l.version(w.surface), 0);
+        m.syncTools(w);
         m.l.flush(m.dpy);
         return true;
+    }
+    /// Uploads `img` into a free buffer of `bufs` (XRGB8888) and returns it; null when both are with the compositor.
+    Buffer* shmUpload(Buffer (&bufs)[2], const Image& img) {
+        Buffer* b = !bufs[0].busy ? &bufs[0] : !bufs[1].busy ? &bufs[1] : nullptr;
+        if (!b) return nullptr;
+        if (b->w != img.width || b->h != img.height || !b->buf) {
+            if (b->buf) l.marshal(b->buf, 0, nullptr, 1, kDestroy);
+            b->buf = nullptr;
+            const int stride = img.width * 4;
+            auto mem = os::createSharedBuffer(std::size_t(stride) * std::size_t(img.height));
+            if (!mem) return nullptr;
+            b->mem = std::move(*mem);
+            Proxy* pool = l.marshal(shm, 0, l.shmPool, 1, 0, nullptr, b->mem.fd, int32_t(b->mem.size));
+            b->buf = l.marshal(pool, 0, l.buffer, 1, 0, nullptr, 0, img.width, img.height, stride, kShmXrgb);
+            l.marshal(pool, 1, nullptr, 1, kDestroy);
+            static const auto lis = listen(&bufRelease);
+            l.addListener(b->buf, const_cast<void (**)(void)>(lis.fns), b);
+            b->w = img.width;
+            b->h = img.height;
+        }
+        auto* dst = static_cast<u32*>(b->mem.data);
+        for (std::size_t i = 0; i < img.pixels.size(); ++i) {
+            const u32 p = img.pixels[i];
+            dst[i] = 0xFF000000u | ((p & 0xFFu) << 16) | (p & 0xFF00u) | ((p >> 16) & 0xFFu);
+        }
+        return b;
+    }
+    void destroyTool(Win::Tool& t) {
+        for (auto& b : t.bufs)
+            if (b.buf) l.marshal(b.buf, 0, nullptr, 1, kDestroy);
+        if (t.sub) l.marshal(t.sub, 0, nullptr, 1, kDestroy);
+        if (t.surface) l.marshal(t.surface, 0, nullptr, l.version(t.surface), kDestroy);
+        if (pointerSurface == t.surface) pointerSurface = nullptr;
+        t.surface = t.sub = nullptr;
+        for (auto& b : t.bufs) b.buf = nullptr;
+    }
+    /// UiContext tool surfaces -> subsurfaces (created, moved with set_position, re-rasterised when changed).
+    void syncTools(Win& w) {
+        if (!subcomp || !opts.osPopups) return;
+        UiContext& ui = w.win->ui();
+        const auto& surf = ui.popupSurfaces();
+        std::vector<std::unique_ptr<Win::Tool>> next;
+        bool moved = false;
+        for (const auto& ps : surf) {
+            if (!ps.tool) continue;
+            auto it = std::find_if(w.tools.begin(), w.tools.end(), [&](const auto& t) { return t && t->node == ps.node; });
+            if (it != w.tools.end()) next.push_back(std::move(*it));
+            else {
+                auto tp = std::make_unique<Win::Tool>();
+                Win::Tool& t = *tp;
+                t.node = ps.node;
+                t.surface = l.marshal(compositor, 0, l.surface, l.version(compositor), 0, nullptr);
+                t.sub = l.marshal(subcomp, 1, l.subsurface, 1, 0, nullptr, t.surface, w.surface);
+                if (!t.surface || !t.sub) { destroyTool(t); continue; }
+                l.marshal(t.sub, 5, nullptr, 1, 0); // set_desync: its own commits show at once
+                next.push_back(std::move(tp));
+            }
+            Win::Tool& t = *next.back();
+            if (t.rect.x != ps.rect.x || t.rect.y != ps.rect.y) {
+                l.marshal(t.sub, 1, nullptr, 1, 0, int32_t(std::lround(ps.rect.x)), int32_t(std::lround(ps.rect.y)));
+                moved = true;
+            }
+            const bool resized = t.rect.w != ps.rect.w || t.rect.h != ps.rect.h;
+            t.rect = ps.rect;
+            if (t.revision == ps.revision && !resized) continue;
+            const int iw = std::max(1, int(std::ceil(ps.rect.w))), ih = std::max(1, int(std::ceil(ps.rect.h)));
+            u32 clear = 0xFF000000u; // as on X11/Win32: the panel's own fill shows in the corners its radius leaves
+            for (const DrawCmd& c : ps.draw.cmds())
+                if (c.op != DrawOp::Shadow && c.fill.a > 0.9f) { clear = packPremultiplied(c.fill) | 0xFF000000u; break; }
+            t.img.resize(iw, ih, clear);
+            CpuRasterizer rz = w.win->rasterizer();
+            rz.setGlyphAtlas(ui.atlas().pixels(), ui.atlas().size());
+            rz.render(ps.draw, t.img);
+            if (Buffer* b = shmUpload(t.bufs, t.img)) {
+                t.revision = ps.revision;
+                b->busy = true;
+                l.marshal(t.surface, 1, nullptr, l.version(t.surface), 0, b->buf, 0, 0);
+                l.marshal(t.surface, 2, nullptr, l.version(t.surface), 0, 0, 0, iw, ih);
+                l.marshal(t.surface, 6, nullptr, l.version(t.surface), 0);
+            }
+        }
+        for (auto& t : w.tools)
+            if (t) { destroyTool(*t); moved = true; }
+        w.tools = std::move(next);
+        if (moved && !vulkanFor(w)) l.marshal(w.surface, 6, nullptr, l.version(w.surface), 0); // position = parent state
     }
     static void frameDone(void* d, Proxy* cb, uint32_t) {
         Win& w = *static_cast<Win*>(d);
@@ -701,6 +833,8 @@ struct WaylandPlatform::Impl {
     static void destroyWin(void* user) {
         Win* w = static_cast<Win*>(user);
         Impl& m = *w->impl;
+        for (auto& t : w->tools) m.destroyTool(*t);
+        w->tools.clear();
         if (w->vk) { detail::vkWinDestroy(w->vk); w->vk = nullptr; } // the swapchain goes before its wl_surface
         if (w->frameCb) { m.l.destroy(w->frameCb); w->frameCb = nullptr; }
         for (auto& b : w->bufs)
@@ -957,9 +1091,24 @@ bool WaylandPlatform::show(AppWindow& aw) {
     l.flush(m->dpy);
     Impl::Win* raw = w.get();
     m->wins.push_back(std::move(w));
+    if (m->opts.osPopups && m->subcomp) aw.ui().setOsToolWindows(true); // menus stay xdg_popup (showPopup)
     aw.setPresenter({raw, &Impl::present, &Impl::destroyWin, m->opts.vsync}); // frame callbacks / FIFO pace
     l.roundtrip(m->dpy);
     return true;
+}
+std::size_t WaylandPlatform::toolSurfaceCount(const AppWindow& aw) const {
+    for (auto& w : m->wins)
+        if (w->win == &aw) return w->tools.size();
+    return 0;
+}
+bool WaylandPlatform::captureToolSurface(const AppWindow& aw, std::size_t i, Image& out, Rect* rect) const {
+    for (auto& w : m->wins)
+        if (w->win == &aw && i < w->tools.size() && w->tools[i]->revision != ~0ull) {
+            out = w->tools[i]->img;
+            if (rect) *rect = w->tools[i]->rect;
+            return true;
+        }
+    return false;
 }
 bool WaylandPlatform::showPopup(AppWindow& aw, AppWindow& parent, Rect anchor, bool grab) {
     if (!available()) return false;
@@ -994,6 +1143,7 @@ bool WaylandPlatform::showPopup(AppWindow& aw, AppWindow& parent, Rect anchor, b
     l.flush(m->dpy);
     Impl::Win* raw = w.get();
     m->wins.push_back(std::move(w));
+    if (m->opts.osPopups && m->subcomp) aw.ui().setOsToolWindows(true); // menus stay xdg_popup (showPopup)
     aw.setPresenter({raw, &Impl::present, &Impl::destroyWin, m->opts.vsync}); // frame callbacks / FIFO pace
     l.roundtrip(m->dpy);
     return true;

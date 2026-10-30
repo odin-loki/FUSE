@@ -6,6 +6,9 @@
 //     (Forbidden over the source, Move over a target, Default after the drop)
 //   * an OS drag (wl_data_device.start_drag with the button serial, three formats and a pixmap icon surface)
 //     dropped back on our own surface by weston's drag grab: every format arrives, the source sees dnd_finished.
+//   * a floating dock as a wl_subsurface tool surface (osPopups): its committed pixels equal the CPU raster of its
+//     popup surface, the main surface does not draw it, and a real pointer drag on its title (weston delivering
+//     events to the subsurface) moves the dock and the subsurface with it.
 // Exit 77 without weston / xdotool / a display, or when weston does not come up.
 #include "fuse/app/wayland.hpp"
 #include "fuse/ui/os.hpp"
@@ -66,6 +69,7 @@ int main(int argc, char** argv) {
     app::Application a{{.name = "gate_weston", .argc = argc, .argv = argv, .loadSettings = false}};
     app::NativeOptions no;
     no.vulkan = false;
+    no.osPopups = true;
     app::WaylandPlatform wlp(a, sock.c_str(), no);
     if (!wlp.available()) {
         std::printf("fuse_app_weston: skipped (%.*s)\n", int(wlp.lastError().size()), wlp.lastError().data());
@@ -141,6 +145,62 @@ int main(int argc, char** argv) {
     }
     CHECK(dragEnd == 1);
     CHECK(wlp.roundtrip());
+
+    // ---- floating dock = wl_subsurface tool surface ----
+    {
+        const NodeHandle area = w::dockArea(ui, ui.root(), "wdocks");
+        const NodeHandle dock = w::dockWidget(ui, area, "Tool dock", w::DockSide::Left, "wdock");
+        w::dockFloat(ui, dock, {300.f, 200.f, 220.f, 130.f});
+        win.requestRedraw();
+        for (int i = 0; i < 200 && wlp.toolSurfaceCount(win) != 1; ++i) pump(10);
+        pump(100);
+        CHECK(ui.osToolWindows() && wlp.toolSurfaceCount(win) == 1);
+        Image shown, ref;
+        Rect tr2{};
+        CHECK(wlp.captureToolSurface(win, 0, shown, &tr2));
+        CHECK(tr2.x == 300.f && tr2.y == 200.f && tr2.w == 220.f && tr2.h == 130.f);
+        bool inMain = false;
+        for (const DrawCmd& c : ui.drawList().cmds()) inMain |= c.node == ui.firstChild(dock).index;
+        CHECK(!inMain);
+        int err = 255;
+        if (ui.popupSurfaces().size() == 1) {
+            const auto& ps = ui.popupSurfaces()[0];
+            u32 clear = 0xFF000000u;
+            for (const DrawCmd& c : ps.draw.cmds())
+                if (c.op != DrawOp::Shadow && c.fill.a > 0.9f) { clear = packPremultiplied(c.fill) | 0xFF000000u; break; }
+            ref.resize(int(tr2.w), int(tr2.h), clear);
+            CpuRasterizer rz = win.rasterizer();
+            rz.setGlyphAtlas(ui.atlas().pixels(), ui.atlas().size());
+            rz.render(ps.draw, ref);
+            if (shown.width == ref.width && shown.height == ref.height) {
+                err = 0;
+                for (std::size_t i = 0; i < ref.pixels.size(); ++i)
+                    for (int c = 0; c < 3; ++c)
+                        err = std::max(err, std::abs(int((shown.pixels[i] >> (8 * c)) & 0xFF) - int((ref.pixels[i] >> (8 * c)) & 0xFF)));
+            }
+        }
+        CHECK(err <= 2);
+        // drag its title with the real pointer
+        const Rect tt = ui.rect(ui.firstChild(dock));
+        const int gx = int(tt.x) + 30, gy = int(tt.y + tt.h * 0.5f);
+        xdo("mousemove " + std::to_string(gx) + " " + std::to_string(gy)); pump(150);
+        xdo("mousedown 1"); pump(100);
+        xdo("mousemove " + std::to_string(gx + 20) + " " + std::to_string(gy + 10)); pump(100);
+        xdo("mousemove " + std::to_string(gx + 40) + " " + std::to_string(gy + 20)); pump(150);
+        xdo("mouseup 1"); pump(200);
+        const Rect moved = ui.rect(dock);
+        Rect tr3{};
+        Image after;
+        CHECK(wlp.captureToolSurface(win, 0, after, &tr3));
+        std::printf("fuse_app_weston: tool subsurface %gx%g err %d; dragged to %g,%g (subsurface %g,%g)\n", double(tr2.w), double(tr2.h), err,
+                    double(moved.x), double(moved.y), double(tr3.x), double(tr3.y));
+        CHECK(std::abs(moved.x - 340.f) < 1.f && std::abs(moved.y - 220.f) < 1.f && tr3.x == moved.x && tr3.y == moved.y);
+        w::dockTo(ui, dock, w::DockSide::Left);
+        win.requestRedraw();
+        for (int i = 0; i < 100 && wlp.toolSurfaceCount(win) != 0; ++i) pump(10);
+        CHECK(wlp.toolSurfaceCount(win) == 0);
+        CHECK(wlp.roundtrip());
+    }
     std::printf("fuse_app_weston: cursor via %s, drops=%zu formats=%zu dragEnd=%d %s\n", via.c_str(), drops.size(),
                 drops.empty() ? std::size_t(0) : drops[0].formats.size(), dragEnd, g_fail ? "FAIL" : "OK");
     return g_fail ? 1 : 0;

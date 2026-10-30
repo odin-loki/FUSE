@@ -67,6 +67,7 @@ inline const char* nsRole(fuse::ui::A11yRole r) {
     case R::SpinBox: return "AXIncrementor";
     case R::ScrollBar: return "AXScrollBar";
     case R::Tab: return "AXRadioButton"; // NSAccessibilityTabGroup children are radio buttons
+    case R::TabList: return "AXTabGroup";
     default: return "AXUnknown";
     }
 }

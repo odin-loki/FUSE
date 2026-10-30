@@ -194,6 +194,10 @@ struct DockMeta {
     DockSide side = DockSide::Left;
     Vec2 press, grab;
     bool pressed = false, dragging = false;
+    double lastPress = -1.0; ///< documentTime of the last title press (double-click float / re-dock)
+    Vec2 lastPressAt;
+    NodeHandle zone;         ///< drop-zone highlight shown while dragging (overlay layer)
+    Rect zoneRect{};
 };
 struct GroupMeta { NodeHandle current; };
 std::unordered_map<const UiContext*, std::unordered_map<u32, DockMeta>>& dockMetas() {
@@ -282,6 +286,10 @@ struct TableState {
     i32 hdrPress = -1;       ///< logical section pressed (movable header: sort on release, or move on drag)
     bool hdrMove = false;
     f32 hdrX = 0.f, hdrAt = 0.f, hdrGrab = 0.f; ///< press x, pointer x, press offset into the section
+    HeaderResizeMode mode[kMaxCols]{}; ///< QHeaderView::sectionResizeMode
+    bool hdrMenu = false;              ///< right-click header menu hides / shows sections
+    i32 edgeCol = -1;                  ///< last divider press (double-click resizes to contents)
+    double edgeAt = -1.0;
 };
 // Process-wide pool (the UI is single-threaded); a slot is reused once its node is gone.
 std::vector<std::unique_ptr<TableState>>& pool() { static std::vector<std::unique_ptr<TableState>> p; return p; }
@@ -322,6 +330,70 @@ struct TableView {
         return {std::max(160.f, w + kBar), rowHeight(ui, n) * 8.f};
     }
     static f32 headerH(const UiContext& ui, NodeHandle n, const TableState& s) { return s.header ? rowHeight(ui, n) : 0.f; }
+    /// QHeaderView::sectionSizeHint / resizeColumnToContents: widest of the header and the first 1000 rows
+    /// (QHeaderView::resizeContentsPrecision default), plus the cell padding and the sort arrow room.
+    static f32 contentsW(UiContext& ui, NodeHandle n, TableState& s, u32 k) {
+        const f32 fs = ui.computed(n).fontSize;
+        f32 w = 0.f;
+        if (s.header && s.model->header) w = ui.measureString(s.model->header(s.model->user, k), fs) + 16.f;
+        for (u32 r = 0, nr = std::min(rows(s), 1000u); r < nr; ++r) w = std::max(w, ui.measureString(s.model->data(s.model->user, r, k, s.scratch), fs));
+        return std::max(24.f, std::ceil(w) + 14.f);
+    }
+    /// Applies Stretch / ResizeToContents section modes (hidden sections keep 0).
+    static void applyModes(UiContext& ui, NodeHandle n, TableState& s) {
+        if (!s.model) return;
+        const u32 nc = cols(s);
+        u32 stretch = 0;
+        f32 fixed = 0.f;
+        bool changedW = false;
+        for (u32 k = 0; k < nc; ++k) {
+            if (s.hiddenW[k] > 0.f) continue;
+            if (s.mode[k] == HeaderResizeMode::ResizeToContents) {
+                const f32 w = contentsW(ui, n, s, k);
+                changedW |= w != s.colW[k];
+                s.colW[k] = w;
+            }
+            if (s.mode[k] == HeaderResizeMode::Stretch) ++stretch;
+            else fixed += s.colW[k];
+        }
+        if (stretch) {
+            const f32 each = std::max(24.f, std::floor((viewW(ui, n) - fixed) / f32(stretch)));
+            for (u32 k = 0; k < nc; ++k)
+                if (s.hiddenW[k] <= 0.f && s.mode[k] == HeaderResizeMode::Stretch && s.colW[k] != each) { s.colW[k] = each; changedW = true; }
+        }
+        if (changedW) { setX(ui, n, s, s.xOff); ui.invalidate(n); }
+    }
+    static void layoutHook(UiContext& ui, NodeHandle n) { if (TableState* s = stateOf(ui, n)) applyModes(ui, n, *s); }
+    /// Right-click header menu: one checked item per section (logical order); picking toggles it. The last shown
+    /// section cannot be hidden.
+    static void openHeaderMenu(UiContext& ui, NodeHandle n, TableState& s, Vec2 at) {
+        std::string items;
+        const u32 nc = cols(s);
+        for (u32 k = 0; k < nc; ++k) {
+            if (k) items += '\n';
+            std::string_view h = s.model->header ? s.model->header(s.model->user, k) : std::string_view{};
+            items += h.empty() ? "Column " + std::to_string(k + 1) : std::string(h);
+        }
+        const NodeHandle scope = popupMenu(ui, {}, items, at);
+        if (!ui.alive(scope)) return;
+        ui.addClass(scope, "header-menu");
+        u32 k = 0;
+        const NodeHandle menu = ui.firstChild(scope);
+        for (NodeHandle it = ui.firstChild(menu); ui.alive(it); it = ui.nextSibling(it)) ui.setChecked(it, s.hiddenW[k++] <= 0.f);
+        ui.connect(scope, SignalKind::Submitted, [n](UiContext& c, NodeHandle, const SignalArgs& a) {
+            TableState* t = stateOf(c, n);
+            if (!t || a.value < 0.f) return;
+            const u32 col = u32(a.value);
+            const bool hide = !tableColumnHidden(c, n, col);
+            if (hide) {
+                u32 shown = 0;
+                for (u32 j = 0; j < cols(*t); ++j) shown += t->hiddenW[j] <= 0.f;
+                if (shown <= 1) return;
+            }
+            setTableColumnHidden(c, n, col, hide);
+            c.emit(n, SignalKind::Event, {.value = f32(col), .text = hide ? "sectionHidden" : "sectionShown"});
+        });
+    }
     static f32 totalW(const TableState& s) { f32 w = 0.f; for (u32 k = 0; k < cols(s); ++k) w += s.colW[k]; return w; }
     static f32 viewW(const UiContext& ui, NodeHandle n) { return std::max(1.f, ui.contentRect(n).w - kBar); }
     static f32 maxX(const UiContext& ui, NodeHandle n, const TableState& s) { return std::max(0.f, totalW(s) - viewW(ui, n)); }
@@ -634,12 +706,30 @@ struct TableView {
                 return onEvent(ec, mv);
             }
             if (e.pos.y < c.y + hh) {
+                if (e.button == MouseButton::Right) {
+                    if (s->hdrMenu) openHeaderMenu(ui, ec.node, *s, e.pos);
+                    return true;
+                }
                 f32 x = c.x - s->xOff;
                 for (u32 vi = 0; vi < cols(*s); ++vi) {
                     const u32 k = s->order[vi];
                     if (s->colW[k] <= 0.f) continue;
                     x += s->colW[k];
-                    if (std::abs(e.pos.x - x) <= 4.f) { s->resizing = i32(k); s->grab = x - s->colW[k]; return true; }
+                    if (std::abs(e.pos.x - x) <= 4.f && s->mode[k] == HeaderResizeMode::Interactive) {
+                        const double now = ui.documentTime();
+                        if (s->edgeCol == i32(k) && now - s->edgeAt <= 0.4) { // divider double-click: fit to contents
+                            s->edgeCol = -1;
+                            s->colW[k] = contentsW(ui, ec.node, *s, k);
+                            applyModes(ui, ec.node, *s);
+                            setX(ui, ec.node, *s, s->xOff);
+                            ui.emit(ec.node, SignalKind::Event, {.value = f32(k), .text = "sectionResized"});
+                            ui.invalidate(ec.node);
+                            return true;
+                        }
+                        s->edgeCol = i32(k);
+                        s->edgeAt = now;
+                        s->resizing = i32(k); s->grab = x - s->colW[k]; return true;
+                    }
                     if (e.pos.x < x && s->movable) { s->hdrPress = i32(k); s->hdrMove = false; s->hdrX = s->hdrAt = e.pos.x; s->hdrGrab = e.pos.x - (x - s->colW[k]); return true; }
                     if (e.pos.x < x) { // sort
                         s->asc = s->sortCol == i32(k) ? !s->asc : true;
@@ -739,6 +829,7 @@ struct TableView {
                 ui.invalidate(ec.node);
             } else if (s->resizing >= 0) {
                 s->colW[s->resizing] = std::max(24.f, std::round(e.pos.x - s->grab));
+                applyModes(ui, ec.node, *s); // stretch sections absorb the change
                 setX(ui, ec.node, *s, s->xOff); // re-clamp the horizontal scroll to the new total width
                 ui.invalidate(ec.node);
             } else if (s->dragScroll) {
@@ -1076,7 +1167,7 @@ void dockTo(UiContext& ui, NodeHandle dock, DockSide side) {
     if (DockMeta* m = dockMeta(ui, dock)) {
         m->side = side;
         if (ui.hasClass(dock, "dock-floating")) {
-            ui.removeClass(dock, "dock-floating");
+            ui.removeClass(dock, "dock-floating"); ui.removeClass(dock, "ostool");
             for (const char* p : {"left", "top", "width", "height"}) ui.setCss(dock, p, "auto");
             ui.setCss(dock, "flex-grow", "1");
             ui.emit(dock, SignalKind::Event, {.flag = false, .text = "topLevelChanged"});
@@ -1267,6 +1358,7 @@ NodeHandle tableView(UiContext& ui, NodeHandle parent, const ItemModel* model, s
     for (u32 c = 0; c < kMaxCols; ++c) s.order[c] = u8(c);
     ui.setRange(n, -1.f, 1e9f, 1.f);
     ui.setValue(n, -1.f);
+    ui.setLayoutHook(n, &TableView::layoutHook);
     return n;
 }
 NodeHandle modelListView(UiContext& ui, NodeHandle parent, const ItemModel* model, std::string_view id) {
@@ -1313,7 +1405,7 @@ void dockFloat(UiContext& ui, NodeHandle dock, Rect at) {
     }
     m->floatRect = at;
     ui.moveTo(dock, overlayLayer(ui));
-    ui.addClass(dock, "dock-floating");
+    ui.addClass(dock, "dock-floating"); ui.addClass(dock, "ostool");
     ui.setCss(dock, "flex-grow", "0");
     char b[32];
     const f32 v[4] = {at.x, at.y, at.w, at.h};
@@ -1338,7 +1430,7 @@ void dockTabify(UiContext& ui, NodeHandle first, NodeHandle second) {
     const NodeHandle area = areaOf(ui, first);
     if (ui.hasClass(first, "dock-floating")) dockTo(ui, first, dockMeta(ui, first)->side);
     if (ui.hasClass(second, "dock-floating")) {
-        ui.removeClass(second, "dock-floating");
+        ui.removeClass(second, "dock-floating"); ui.removeClass(second, "ostool");
         for (const char* p : {"left", "top", "width", "height"}) ui.setCss(second, p, "auto");
         ui.setCss(second, "flex-grow", "1");
         ui.emit(second, SignalKind::Event, {.flag = false, .text = "topLevelChanged"});
@@ -1419,10 +1511,71 @@ NodeHandle dockDropTarget(const UiContext& ui, NodeHandle area, NodeHandle self,
     if (p.y > a.bottom() - kZone) { side = DockSide::Bottom; return area; }
     return {};
 }
+namespace {
+/// The rect a drop at `p` would fill (QMainWindow's rubber band): the target dock, else the side region (or a
+/// quarter strip of the area along that side when the region is empty). Empty: no drop target.
+Rect dockZoneRect(const UiContext& ui, NodeHandle area, NodeHandle self, Vec2 p) {
+    DockSide side = DockSide::Left;
+    const NodeHandle t = dockDropTarget(ui, area, self, p, side);
+    if (!ui.alive(t)) return {};
+    if (t != area) { const NodeHandle g = groupOf(ui, t); return ui.rect(ui.alive(g) ? g : t); }
+    const Rect a = ui.rect(area), reg = ui.rect(dockRegion(ui, area, side));
+    if (ui.computed(dockRegion(ui, area, side)).visible && reg.w > 1.f && reg.h > 1.f) return reg;
+    switch (side) {
+    case DockSide::Left: return {a.x, a.y, a.w * 0.25f, a.h};
+    case DockSide::Right: return {a.right() - a.w * 0.25f, a.y, a.w * 0.25f, a.h};
+    default: return {a.x, a.bottom() - a.h * 0.25f, a.w, a.h * 0.25f};
+    }
+}
+void setDockZone(UiContext& ui, DockMeta& m, Rect r) {
+    if (r.empty()) {
+        if (ui.alive(m.zone)) ui.destroy(m.zone);
+        m.zone = {};
+        m.zoneRect = {};
+        return;
+    }
+    if (!ui.alive(m.zone)) {
+        m.zone = panel(ui, overlayLayer(ui));
+        ui.addClass(m.zone, "dockdropzone");
+        ui.setCss(m.zone, "pointer-events", "none");
+        ui.setCss(m.zone, "background", "rgba(78,140,255,0.28)");
+        ui.setCss(m.zone, "border", "2px solid rgba(78,140,255,0.9)");
+        ui.setCss(m.zone, "border-radius", "4px");
+    }
+    if (r.x == m.zoneRect.x && r.y == m.zoneRect.y && r.w == m.zoneRect.w && r.h == m.zoneRect.h) return;
+    m.zoneRect = r;
+    char b[32];
+    const f32 v[4] = {r.x, r.y, r.w, r.h};
+    const char* props[4] = {"left", "top", "width", "height"};
+    for (int i = 0; i < 4; ++i) { std::snprintf(b, sizeof b, "%.0fpx", double(v[i])); ui.setCss(m.zone, props[i], b); }
+}
+} // namespace
+bool dockDropHighlight(const UiContext& ui, NodeHandle dock, Rect& out) {
+    const DockMeta* m = dockMeta(ui, dock);
+    if (!m || !ui.alive(m->zone)) return false;
+    out = m->zoneRect;
+    return true;
+}
 namespace detail {
 void dockTitlePress(UiContext& ui, NodeHandle dock, Vec2 p) {
     DockMeta* m = dockMeta(ui, dock);
     if (!m) return;
+    // QDockWidget: a double-click on the title floats a docked dock / puts a floating one back where it was
+    const double now = ui.documentTime();
+    if (m->lastPress >= 0.0 && now - m->lastPress <= 0.4 && std::hypot(p.x - m->lastPressAt.x, p.y - m->lastPressAt.y) <= 4.f &&
+        !ui.hasClass(dock, "dock-nomove")) {
+        m->lastPress = -1.0;
+        m->pressed = false;
+        if (ui.hasClass(dock, "dock-floating")) dockTo(ui, dock, m->side);
+        else {
+            const Rect r = ui.rect(dock);
+            const Rect fr = m->floatRect.w > 0.f ? m->floatRect : Rect{r.x + 24.f, r.y + 24.f, r.w, r.h};
+            dockFloat(ui, dock, fr);
+        }
+        return;
+    }
+    m->lastPress = now;
+    m->lastPressAt = p;
     const Rect r = ui.rect(dock);
     m->pressed = true;
     m->dragging = false;
@@ -1438,12 +1591,14 @@ void dockTitleMove(UiContext& ui, NodeHandle dock, Vec2 p) {
     dockFloat(ui, dock, {p.x - m->grab.x, p.y - m->grab.y, m->floatRect.w > 0.f && ui.hasClass(dock, "dock-floating") ? m->floatRect.w : r.w,
                          m->floatRect.h > 0.f && ui.hasClass(dock, "dock-floating") ? m->floatRect.h : r.h});
     ui.addClass(dock, "dock-dragging");
+    setDockZone(ui, *m, dockZoneRect(ui, m->area, dock, p));
 }
 bool dockTitleRelease(UiContext& ui, NodeHandle dock, Vec2 p) {
     DockMeta* m = dockMeta(ui, dock);
     if (!m || !m->pressed) return false;
     m->pressed = false;
     ui.removeClass(dock, "dock-dragging");
+    setDockZone(ui, *m, {});
     if (!m->dragging) return false;
     m->dragging = false;
     DockSide side = m->side;
@@ -1625,6 +1780,7 @@ void setTableColumnHidden(UiContext& ui, NodeHandle table, u32 col, bool hidden)
         if (nc < 0) nc = TableView::stepCol(*s, col, -1);
         if (nc >= 0) s->curCol = u32(nc);
     }
+    TableView::applyModes(ui, table, *s);
     TableView::setX(ui, table, *s, s->xOff);
     ui.invalidate(table);
 }
@@ -1632,6 +1788,27 @@ bool tableColumnHidden(const UiContext& ui, NodeHandle table, u32 col) {
     const TableState* s = stateOf(ui, table);
     return s && col < kMaxCols && s->hiddenW[col] > 0.f;
 }
+void setTableColumnResizeMode(UiContext& ui, NodeHandle table, u32 col, HeaderResizeMode mode) {
+    TableState* s = stateOf(ui, table);
+    if (!s || col >= kMaxCols) return;
+    s->mode[col] = mode;
+    TableView::applyModes(ui, table, *s);
+    ui.invalidate(table);
+}
+HeaderResizeMode tableColumnResizeMode(const UiContext& ui, NodeHandle table, u32 col) {
+    const TableState* s = stateOf(ui, table);
+    return s && col < kMaxCols ? s->mode[col] : HeaderResizeMode::Interactive;
+}
+void resizeTableColumnToContents(UiContext& ui, NodeHandle table, u32 col) {
+    TableState* s = stateOf(ui, table);
+    if (!s || !s->model || col >= TableView::cols(*s) || s->hiddenW[col] > 0.f) return;
+    s->colW[col] = TableView::contentsW(ui, table, *s, col);
+    TableView::applyModes(ui, table, *s);
+    TableView::setX(ui, table, *s, s->xOff);
+    ui.invalidate(table);
+}
+void setTableHeaderMenu(UiContext& ui, NodeHandle table, bool on) { if (TableState* s = stateOf(ui, table)) s->hdrMenu = on; }
+bool tableHeaderMenu(const UiContext& ui, NodeHandle table) { const TableState* s = stateOf(ui, table); return s && s->hdrMenu; }
 } // namespace fuse::ui::widgets
 
 namespace fuse::ui::widgets {

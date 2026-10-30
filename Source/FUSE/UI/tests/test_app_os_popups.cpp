@@ -136,6 +136,63 @@ int main(int argc, char** argv) {
     std::printf("  outside click: popup windows now %zu, picked %.0f\n", native.popupCount(win), picked);
     CHECK(native.popupCount(win) == 0 && picked < 0.f);
 
+    // floating dock = OS tool window (X11 _NET_WM_WINDOW_TYPE_UTILITY owned window / Win32 owned WS_POPUP, no grab):
+    // left out of the main window's draw list, its pixels are its own surface's raster, and a menu opened meanwhile
+    // still grabs and closes on an outside click while the tool window stays
+    {
+        const NodeHandle area = w::dockArea(ui, ui.root(), "osdocks");
+        const NodeHandle dock = w::dockWidget(ui, area, "Tool dock", w::DockSide::Left, "osdock");
+        w::dockFloat(ui, dock, {180.f, 90.f, 220.f, 130.f}); // extends past the 320x160 window
+        win.requestRedraw();
+        waitFor([&] { return native.popupCount(win) == 1 && native.capturePopup(win, 0, probe) && probe.width > 0; });
+        CHECK(native.popupCount(win) == 1 && native.popupIsTool(win, 0));
+        CHECK(ui.popupSurfaces().size() == 1 && ui.popupSurfaces()[0].tool);
+        const NodeHandle title = ui.firstChild(dock);
+        bool inMain = false;
+        for (const DrawCmd& c : ui.drawList().cmds()) inMain |= c.node == title.index;
+        CHECK(!inMain);
+        const Rect ts = native.popupScreenRect(win, 0);
+        CHECK(ts.x == origin.x + 180.f && ts.y == origin.y + 90.f && ts.w == 220.f && ts.h == 130.f);
+        Image tshown, tref;
+        CHECK(native.capturePopup(win, 0, tshown));
+        if (!ui.popupSurfaces().empty()) {
+            const auto& ps = ui.popupSurfaces()[0];
+            u32 clear = 0xFF000000u;
+            for (const DrawCmd& c : ps.draw.cmds())
+                if (c.op != DrawOp::Shadow && c.fill.a > 0.9f) { clear = packPremultiplied(c.fill) | 0xFF000000u; break; }
+            tref.resize(int(ts.w), int(ts.h), clear);
+            CpuRasterizer rz = win.rasterizer();
+            rz.setGlyphAtlas(ui.atlas().pixels(), ui.atlas().size());
+            rz.render(ps.draw, tref);
+        }
+        int terr = 255;
+        if (tshown.width == tref.width && tshown.height == tref.height) {
+            terr = 0;
+            for (std::size_t i = 0; i < tref.pixels.size(); ++i)
+                for (int c = 0; c < 3; ++c)
+                    terr = std::max(terr, std::abs(int((tshown.pixels[i] >> (8 * c)) & 0xFF) - int((tref.pixels[i] >> (8 * c)) & 0xFF)));
+        }
+        std::printf("  tool window %.0f,%.0f %.0fx%.0f read-back max channel error %d\n", ts.x, ts.y, ts.w, ts.h, terr);
+        CHECK(terr <= 2);
+        // a menu on top: two OS windows, only the menu is not a tool; an outside click closes just the menu
+        w::popupMenu(ui, btn, items, {20.f, 40.f});
+        win.requestRedraw();
+        waitFor([&] { return native.popupCount(win) == 2; });
+        CHECK(native.popupCount(win) == 2);
+        std::size_t mi = 0;
+        for (std::size_t i = 0; i < native.popupCount(win); ++i) if (!native.popupIsTool(win, i)) mi = i;
+        CHECK(!native.popupIsTool(win, mi));
+        CHECK(native.postClick(native.popupWindow(win, mi), {-30.f, 400.f}));
+        waitFor([&] { return native.popupCount(win) == 1; });
+        CHECK(native.popupCount(win) == 1 && native.popupIsTool(win, 0));
+        // re-docking removes the tool window
+        w::dockTo(ui, dock, w::DockSide::Left);
+        win.requestRedraw();
+        waitFor([&] { return native.popupCount(win) == 0; });
+        CHECK(native.popupCount(win) == 0 && ui.popupSurfaces().empty());
+        std::printf("  tool window: menu grab independent, re-dock closes it\n");
+    }
+
     win.requestClose();
     a.step(0.f);
     std::printf("fuse_app_os_popups: %s\n", g_fail ? "FAILED" : "OK");

@@ -435,5 +435,265 @@ int main() {
         ui.destroy(tabs);
         frames(ui);
     }
+    // ---- dock drop-zone highlight, double-click float / re-dock, OS tool windows ----
+    {
+        ui.setCss(col, "display", "none");
+        const NodeHandle host = w::panel(ui, ui.root());
+        ui.setCss(host, "width", "880px");
+        ui.setCss(host, "height", "600px");
+        ui.setCss(host, "padding", "0px");
+        const NodeHandle area = w::dockArea(ui, host, "da2");
+        const NodeHandle d1 = w::dockWidget(ui, area, "Outline", w::DockSide::Left, "e.outline");
+        const NodeHandle d2 = w::dockWidget(ui, area, "Console", w::DockSide::Bottom, "e.console");
+        frames(ui);
+        const Rect ar = ui.rect(area);
+        // drag Outline toward the right edge: the right drop zone lights up while dragging, then clears
+        const Rect t1 = ui.rect(ui.firstChild(d1));
+        const Vec2 g{t1.x + 30.f, t1.y + t1.h * 0.5f};
+        Rect hz;
+        UI_CHECK(!w::dockDropHighlight(ui, d1, hz));
+        ui.pointerDown(g); ui.pointerMove({g.x + 200.f, g.y + 100.f}); ui.update(1.f / 60.f);
+        ui.pointerMove({ar.right() - 60.f, g.y + 100.f}); ui.update(1.f / 60.f);
+        ui.pointerMove({ar.right() - 10.f, g.y + 100.f}); ui.update(1.f / 60.f);
+        UI_CHECK(w::dockDropHighlight(ui, d1, hz));
+        std::printf("drop zone %.0f,%.0f %.0fx%.0f\n", hz.x, hz.y, hz.w, hz.h);
+        UI_CHECK(hz.w > 0.f && hz.x > ar.x + ar.w * 0.5f && hz.right() <= ar.right() + 0.5f);
+        ui.pointerUp({ar.right() - 10.f, g.y + 100.f}); frames(ui);
+        UI_CHECK(!w::dockDropHighlight(ui, d1, hz));
+        UI_CHECK(ui.parent(d1) == w::dockRegion(ui, area, w::DockSide::Right));
+        // double-click the Console title: floats; double-click again: back to the bottom
+        auto dbl = [&](NodeHandle d) {
+            const Rect tr = ui.rect(ui.firstChild(d));
+            const Vec2 p{tr.x + 30.f, tr.y + tr.h * 0.5f};
+            ui.pointerDown(p); ui.pointerUp(p); ui.update(1.f / 60.f);
+            ui.pointerDown(p); ui.pointerUp(p); frames(ui);
+        };
+        dbl(d2);
+        UI_CHECK(w::dockIsFloating(ui, d2) && ui.hasClass(d2, "ostool"));
+        dbl(d2);
+        UI_CHECK(!w::dockIsFloating(ui, d2) && !ui.hasClass(d2, "ostool") && ui.parent(d2) == w::dockRegion(ui, area, w::DockSide::Bottom));
+        // two slow clicks do not
+        {
+            const Rect tr = ui.rect(ui.firstChild(d2));
+            const Vec2 p{tr.x + 30.f, tr.y + tr.h * 0.5f};
+            click(ui, p);
+            ui.update(0.5f);
+            click(ui, p);
+            UI_CHECK(!w::dockIsFloating(ui, d2));
+        }
+        // OS tool windows: a floating dock becomes a tool surface; menus stay in the window
+        ui.setOsToolWindows(true);
+        w::dockFloat(ui, d2, {300, 200, 260, 140});
+        frames(ui);
+        UI_CHECK(ui.popupSurfaces().size() == 1u && ui.popupSurfaces()[0].tool && ui.popupSurfaces()[0].node == d2);
+        if (!ui.popupSurfaces().empty()) UI_CHECK(!ui.popupSurfaces()[0].draw.cmds().empty());
+        w::dockTo(ui, d2, w::DockSide::Bottom);
+        frames(ui);
+        UI_CHECK(ui.popupSurfaces().empty());
+        ui.setOsToolWindows(false);
+        ui.destroy(host);
+        ui.setCss(col, "display", "flex");
+        frames(ui);
+    }
+    // ---- tab positions, elide, icons, tooltips, per-tab a11y ----
+    {
+        const NodeHandle tabs = w::tabWidget(ui, col, "Alpha\nBeta\nGamma", "tw2");
+        ui.setCss(tabs, "height", "160px");
+        const NodeHandle bar = w::tabWidgetBar(ui, tabs);
+        const NodeHandle pA = w::tabPage(ui, tabs, 0);
+        frames(ui);
+        // a11y: TabList with Tab parts
+        {
+            std::vector<A11ySnapshotNode> v;
+            ui.snapshotA11y(v);
+            int n = 0, sel = -1;
+            bool listRole = false;
+            for (const auto& a : v) {
+                if (a.node == bar && !a.part) listRole = a.role == A11yRole::TabList;
+                if (a.node == bar && a.part && a.role == A11yRole::Tab) { if (a.state.selected) sel = a.colIndex; ++n; }
+            }
+            UI_CHECK(listRole && n == 3 && sel == 0);
+            UI_CHECK(partRect(ui, bar, A11yRole::Tab, "Beta").w > 0.f);
+            w::setTabEnabled(ui, bar, 2, false);
+            ui.snapshotA11y(v);
+            bool dis = false;
+            for (const auto& a : v) if (a.node == bar && a.part == 3u) dis = a.disabled;
+            UI_CHECK(dis);
+            w::setTabEnabled(ui, bar, 2, true);
+        }
+        // West: bar left of the pages, tabs stacked; Down steps
+        w::setTabPosition(ui, tabs, w::TabPosition::West);
+        frames(ui);
+        Rect r0 = w::tabBarTabRect(ui, bar, 0), r1 = w::tabBarTabRect(ui, bar, 1);
+        UI_CHECK(w::tabPosition(ui, tabs) == w::TabPosition::West);
+        UI_CHECK(ui.rect(bar).right() <= ui.rect(pA).x + 0.5f && r1.y >= r0.bottom() - 0.5f && r1.x == r0.x);
+        ui.setFocus(bar);
+        ui.keyDown(Key::Down); ui.keyUp(Key::Down); ui.update(1.f / 60.f);
+        UI_CHECK(ui.value(bar) == 1.f);
+        click(ui, mid(w::tabBarTabRect(ui, bar, 0)));
+        UI_CHECK(ui.value(bar) == 0.f);
+        // East: bar right of the pages
+        w::setTabPosition(ui, tabs, w::TabPosition::East);
+        frames(ui);
+        UI_CHECK(ui.rect(bar).x >= ui.rect(pA).right() - 0.5f && w::tabWidgetBar(ui, tabs) == bar && w::tabPage(ui, tabs, 0) == pA);
+        // South: below
+        w::setTabPosition(ui, tabs, w::TabPosition::South);
+        frames(ui);
+        UI_CHECK(ui.rect(bar).y >= ui.rect(pA).bottom() - 0.5f);
+        r0 = w::tabBarTabRect(ui, bar, 0); r1 = w::tabBarTabRect(ui, bar, 1);
+        UI_CHECK(r1.x >= r0.right() - 0.5f);
+        w::setTabPosition(ui, tabs, w::TabPosition::North);
+        frames(ui);
+        UI_CHECK(ui.rect(bar).bottom() <= ui.rect(pA).y + 0.5f);
+        // icons: the tab grows by the icon and the bar draws it
+        const f32 wb = w::tabBarTabRect(ui, bar, 1).w;
+        w::setTabIcon(ui, bar, 1, 7u);
+        frames(ui);
+        UI_CHECK(w::tabIcon(ui, bar, 1) == 7u && w::tabBarTabRect(ui, bar, 1).w > wb + 15.f);
+        auto imageDrawn = [&](u32 img, Rect in) {
+            for (const DrawCmd& c : ui.drawList().cmds())
+                if (c.op == DrawOp::Image && c.image == img && in.contains({c.rect.x + 1.f, c.rect.y + 1.f})) return true;
+            return false;
+        };
+        UI_CHECK(imageDrawn(7u, w::tabBarTabRect(ui, bar, 1)));
+        // tooltips follow the tab; shown after hovering 0.5 s
+        w::setTabToolTip(ui, bar, 1, "Beta tip");
+        UI_CHECK(w::tabToolTip(ui, bar, 1) == "Beta tip");
+        ui.pointerMove(mid(w::tabBarTabRect(ui, bar, 1)));
+        ui.update(0.2f);
+        UI_CHECK(!ui.alive(w::tabBarToolTip(ui, bar)) || !ui.computed(w::tabBarToolTip(ui, bar)).visible);
+        ui.update(0.4f); frames(ui);
+        const NodeHandle tip = w::tabBarToolTip(ui, bar);
+        UI_CHECK(ui.alive(tip) && ui.computed(tip).visible && ui.text(tip) == "Beta tip");
+        ui.pointerMove(mid(w::tabBarTabRect(ui, bar, 0)));
+        frames(ui);
+        UI_CHECK(!ui.computed(tip).visible);
+        w::tabBarMoveTab(ui, bar, 1, 2);
+        UI_CHECK(w::tabToolTip(ui, bar, 2) == "Beta tip" && w::tabIcon(ui, bar, 2) == 7u && w::tabIcon(ui, bar, 1) == w::kNoIcon);
+        ui.pointerMove({5.f, 690.f});
+        // elide without scroll buttons: tabs shrink to fit and texts end in a drawn ellipsis
+        for (int i = 0; i < 6; ++i) w::tabWidgetAddPage(ui, tabs, "A rather long tab title " + std::to_string(i));
+        ui.setCss(tabs, "width", "400px");
+        w::setTabUsesScrollButtons(ui, bar, false);
+        w::setTabElideMode(ui, bar, w::ElideMode::Right);
+        frames(ui);
+        const Rect bc = ui.contentRect(bar), lastR = w::tabBarTabRect(ui, bar, 8);
+        UI_CHECK(!w::tabUsesScrollButtons(ui, bar) && w::tabElideMode(ui, bar) == w::ElideMode::Right);
+        UI_CHECK(lastR.right() <= bc.right() + 1.f && w::tabBarScroll(ui, bar) == 0.f);
+        int dots = 0;
+        for (const DrawCmd& c : ui.drawList().cmds())
+            if (c.op == DrawOp::Rect && c.rect.w == 2.f && c.rect.h == 2.f && bc.contains({c.rect.x, c.rect.y})) ++dots;
+        std::printf("elide dots drawn: %d\n", dots);
+        UI_CHECK(dots >= 3 * 6);
+        w::setTabElideMode(ui, bar, w::ElideMode::Middle);
+        frames(ui);
+        w::setTabElideMode(ui, bar, w::ElideMode::Left);
+        frames(ui);
+        // removing a page drops its icon / tip
+        w::tabWidgetRemovePage(ui, tabs, 0);
+        UI_CHECK(w::tabToolTip(ui, bar, 1) == "Beta tip" && w::tabIcon(ui, bar, 1) == 7u);
+        ui.destroy(tabs);
+        frames(ui);
+    }
+    // ---- header resize modes, divider double-click, hide-column menu ----
+    {
+        static w::StringTableModel tm("Name\tKind\tNotes");
+        tm.addRow("a\tshort\tx");
+        tm.addRow("b\ta much longer kind value\ty");
+        const NodeHandle t = w::tableView(ui, col, &tm.model(), "hm");
+        ui.setCss(t, "width", "600px");
+        ui.setCss(t, "height", "200px");
+        frames(ui);
+        std::vector<std::string> ev;
+        ui.connect(t, SignalKind::Event, [&ev](UiContext&, NodeHandle, const SignalArgs& a) { if (!a.event) ev.emplace_back(a.text); });
+        const Rect c = ui.contentRect(t);
+        const f32 vw = c.w - 8.f, hy = c.y + 8.f;
+        w::setTableColumnResizeMode(ui, t, 1, w::HeaderResizeMode::ResizeToContents);
+        w::setTableColumnResizeMode(ui, t, 2, w::HeaderResizeMode::Stretch);
+        frames(ui);
+        const f32 c0 = w::tableColumnWidth(ui, t, 0), c1 = w::tableColumnWidth(ui, t, 1), c2 = w::tableColumnWidth(ui, t, 2);
+        std::printf("modes: %.0f %.0f %.0f (view %.0f)\n", c0, c1, c2, vw);
+        UI_CHECK(std::abs(c1 - (std::ceil(ui.measureString("a much longer kind value", ui.computed(t).fontSize)) + 14.f)) < 1.f);
+        UI_CHECK(std::abs(c0 + c1 + c2 - vw) <= 1.f);
+        UI_CHECK(w::tableColumnResizeMode(ui, t, 2) == w::HeaderResizeMode::Stretch);
+        // dragging the Interactive divider: the stretch section absorbs it
+        ui.pointerDown({c.x + c0, hy}); ui.pointerMove({c.x + c0 + 40.f, hy}); ui.pointerUp({c.x + c0 + 40.f, hy}); frames(ui);
+        UI_CHECK(std::abs(w::tableColumnWidth(ui, t, 0) - (c0 + 40.f)) < 1.f && std::abs(w::tableColumnWidth(ui, t, 2) - (c2 - 40.f)) < 1.f);
+        // Fixed: the divider does not drag
+        w::setTableColumnResizeMode(ui, t, 0, w::HeaderResizeMode::Fixed);
+        const f32 f0 = w::tableColumnWidth(ui, t, 0);
+        ui.pointerDown({c.x + f0, hy}); ui.pointerMove({c.x + f0 + 50.f, hy}); ui.pointerUp({c.x + f0 + 50.f, hy}); frames(ui);
+        UI_CHECK(w::tableColumnWidth(ui, t, 0) == f0);
+        // Interactive divider double-click fits to contents
+        w::setTableColumnResizeMode(ui, t, 0, w::HeaderResizeMode::Interactive);
+        const f32 i0 = w::tableColumnWidth(ui, t, 0);
+        ui.pointerDown({c.x + i0, hy}); ui.pointerUp({c.x + i0, hy}); ui.update(1.f / 60.f);
+        ui.pointerDown({c.x + i0, hy}); ui.pointerUp({c.x + i0, hy}); frames(ui);
+        UI_CHECK(w::tableColumnWidth(ui, t, 0) < i0 && !ev.empty() && ev.back() == "sectionResized");
+        // right-click menu hides / shows sections
+        w::setTableHeaderMenu(ui, t, true);
+        auto openMenu = [&]() -> NodeHandle {
+            ui.pointerDown({c.x + 10.f, hy}, MouseButton::Right); ui.pointerUp({c.x + 10.f, hy}); frames(ui);
+            for (NodeHandle p = ui.firstChild(w::overlayLayer(ui)); ui.alive(p); p = ui.nextSibling(p))
+                if (ui.hasClass(p, "header-menu") && ui.computed(p).visible) return ui.firstChild(p);
+            return {};
+        };
+        NodeHandle menu = openMenu();
+        UI_CHECK(ui.alive(menu));
+        std::vector<NodeHandle> its;
+        for (NodeHandle it = ui.firstChild(menu); ui.alive(it); it = ui.nextSibling(it)) its.push_back(it);
+        UI_CHECK(its.size() == 3u && ui.checked(its[0]) && ui.checked(its[1]) && ui.checked(its[2]) && ui.text(its[1]) == "Kind");
+        if (its.size() == 3u) click(ui, mid(ui.rect(its[1])));
+        frames(ui);
+        UI_CHECK(w::tableColumnHidden(ui, t, 1) && !ev.empty() && ev.back() == "sectionHidden");
+        UI_CHECK(std::abs(w::tableColumnWidth(ui, t, 0) + w::tableColumnWidth(ui, t, 2) - vw) <= 1.f); // stretch refills
+        menu = openMenu();
+        its.clear();
+        for (NodeHandle it = ui.firstChild(menu); ui.alive(it); it = ui.nextSibling(it)) its.push_back(it);
+        UI_CHECK(its.size() == 3u && !ui.checked(its[1]));
+        if (its.size() == 3u) click(ui, mid(ui.rect(its[1])));
+        frames(ui);
+        UI_CHECK(!w::tableColumnHidden(ui, t, 1) && ev.back() == "sectionShown");
+        ui.destroy(t);
+        frames(ui);
+    }
+    // ---- list view icon mode ----
+    {
+        const NodeHandle lv = w::listView(ui, col, "One\nTwo\nThree\nFour\nFive\nSix\nSeven", 0, "lvi");
+        ui.setCss(lv, "width", "300px");
+        ui.setCss(lv, "height", "200px");
+        w::setListViewMode(ui, lv, w::ListViewMode::Icon);
+        w::setListItemIcon(ui, lv, 0, 9u);
+        frames(ui);
+        UI_CHECK(w::listViewMode(ui, lv) == w::ListViewMode::Icon && w::listGridSize(ui, lv).w == 96.f);
+        const Rect a0 = w::listItemRect(ui, lv, 0), a1 = w::listItemRect(ui, lv, 1);
+        u32 k = 1;
+        while (k < 7 && w::listItemRect(ui, lv, k).y == a0.y) ++k;
+        std::printf("icon mode: %u per row\n", k);
+        UI_CHECK(k == 3u && a1.x == a0.right() && a1.y == a0.y && w::listItemRect(ui, lv, k).y == a0.bottom());
+        bool icon = false;
+        for (const DrawCmd& c : ui.drawList().cmds()) if (c.op == DrawOp::Image && c.image == 9u && a0.contains({c.rect.x + 1.f, c.rect.y + 1.f})) icon = true;
+        UI_CHECK(icon);
+        ui.setFocus(lv);
+        ui.keyDown(Key::Right); ui.keyUp(Key::Right); ui.update(1.f / 60.f);
+        UI_CHECK(ui.value(lv) == 1.f);
+        ui.keyDown(Key::Down); ui.keyUp(Key::Down); ui.update(1.f / 60.f);
+        UI_CHECK(ui.value(lv) == f32(1 + k));
+        click(ui, mid(w::listItemRect(ui, lv, 2)));
+        UI_CHECK(ui.value(lv) == 2.f && w::listItemAt(ui, lv, mid(w::listItemRect(ui, lv, 5))) == 5);
+        std::vector<A11ySnapshotNode> v;
+        ui.snapshotA11y(v);
+        int items = 0, sel = -1;
+        for (const auto& a : v) if (a.node == lv && a.part && a.role == A11yRole::ListItem) { ++items; if (a.state.selected) sel = a.rowIndex; }
+        UI_CHECK(items == 7 && sel == 2);
+        ui.keyDown(Key::End); ui.keyUp(Key::End); ui.update(1.f / 60.f);
+        UI_CHECK(ui.value(lv) == 6.f);
+        // back to list mode: one column of rows
+        w::setListViewMode(ui, lv, w::ListViewMode::List);
+        frames(ui);
+        UI_CHECK(w::listItemRect(ui, lv, 1).y > w::listItemRect(ui, lv, 0).y && w::listItemRect(ui, lv, 1).x == w::listItemRect(ui, lv, 0).x);
+        ui.destroy(lv);
+        frames(ui);
+    }
     return fuse::ui::test::finish("fuse_ui_widget_gaps");
 }

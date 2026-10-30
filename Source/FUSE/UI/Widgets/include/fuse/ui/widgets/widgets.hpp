@@ -293,6 +293,20 @@ NodeHandle setTooltip(UiContext& ui, NodeHandle node, std::string_view text, f32
 NodeHandle listView(UiContext& ui, NodeHandle parent, std::string_view items, i32 selected = -1, std::string_view id = {});
 std::string_view listItem(const UiContext& ui, NodeHandle list, u32 index);
 u32 listFirstVisible(const UiContext& ui, NodeHandle list);
+/// QListView::ViewMode. Icon: items flow left to right in grid cells (setListGridSize, default 96 x 80) with the
+/// icon (setListIconSize, default 48) centred over the label; userData then counts rows of cells. Arrows move in 2D
+/// (Up / Down by a row of cells), PageUp / PageDown by a screen. List mode draws the icon 16 px before the text.
+/// Both modes expose ListItem a11y parts (part = index + 1). Icons are rasteriser image indices (kNoIcon none).
+enum class ListViewMode : u8 { List, Icon };
+void setListViewMode(UiContext& ui, NodeHandle list, ListViewMode mode);
+ListViewMode listViewMode(const UiContext& ui, NodeHandle list);
+void setListGridSize(UiContext& ui, NodeHandle list, Size grid);
+Size listGridSize(const UiContext& ui, NodeHandle list);
+void setListIconSize(UiContext& ui, NodeHandle list, f32 px);
+void setListItemIcon(UiContext& ui, NodeHandle list, u32 index, u32 image);
+u32 listItemIcon(const UiContext& ui, NodeHandle list, u32 index);
+Rect listItemRect(UiContext& ui, NodeHandle list, u32 index); ///< context space, scrolled
+i32 listItemAt(UiContext& ui, NodeHandle list, Vec2 p);       ///< -1 none
 
 /// Tree view: one line per node, leading tabs give the depth. value() = selected line. Rows 0..63 can collapse
 /// (expansion state is a 64-bit mask; deeper rows stay expanded). Toggling emits Toggled {value = line, flag = open}.
@@ -359,7 +373,8 @@ NodeHandle tabPage(const UiContext& ui, NodeHandle tabs, u32 index);
 /// value = index (the app removes the tab, e.g. tabWidgetRemovePage). Movable tabs reorder live while dragged
 /// (start distance 10 px) and emit Event text "tabMoved <from> <to>", value = to; in a tab widget the pages
 /// follow. Disabled tabs are greyed and skipped by click, arrows, Home / End and the wheel (which steps the
-/// current tab). Tabs that overflow scroll, with two scroll buttons at the right; the current tab is kept visible.
+/// current tab). Tabs that overflow scroll, with two scroll buttons at the far end; the current tab is kept visible.
+/// Accessibility: the bar is a TabList whose tabs are virtual Tab parts (part = index + 1, selected, disabled).
 void setTabsClosable(UiContext& ui, NodeHandle bar, bool on);
 bool tabsClosable(const UiContext& ui, NodeHandle bar);
 void setTabsMovable(UiContext& ui, NodeHandle bar, bool on);
@@ -373,6 +388,26 @@ f32 tabBarScroll(const UiContext& ui, NodeHandle bar);
 NodeHandle tabWidgetAddPage(UiContext& ui, NodeHandle tabs, std::string_view title);
 void tabWidgetRemovePage(UiContext& ui, NodeHandle tabs, u32 index);
 NodeHandle tabWidgetBar(const UiContext& ui, NodeHandle tabs);
+/// QTabWidget::TabPosition / QTabBar::Shape. West / East stack the tabs vertically (text stays horizontal) with
+/// the selection indicator on the edge facing the page; arrows Up / Down also step. On a tab widget this also
+/// places the bar on that side of the pages.
+enum class TabPosition : u8 { North, South, West, East };
+void setTabPosition(UiContext& ui, NodeHandle barOrTabs, TabPosition pos);
+TabPosition tabPosition(const UiContext& ui, NodeHandle barOrTabs);
+/// QTabBar::elideMode (default None: titles clip). Elision only clips and draws an ellipsis shape; it does not
+/// re-measure text. setTabUsesScrollButtons(false): an overflowing horizontal bar shrinks its tabs to fit instead.
+enum class ElideMode : u8 { None, Left, Right, Middle };
+void setTabElideMode(UiContext& ui, NodeHandle bar, ElideMode mode);
+ElideMode tabElideMode(const UiContext& ui, NodeHandle bar);
+void setTabUsesScrollButtons(UiContext& ui, NodeHandle bar, bool on);
+bool tabUsesScrollButtons(const UiContext& ui, NodeHandle bar);
+/// QTabBar::setTabIcon (rasteriser image index, kNoIcon none; 16 px before the title) / setTabToolTip (shown after
+/// hovering the tab for 0.5 s; tabBarToolTip is its overlay node, invalid until first shown). Both follow moves.
+void setTabIcon(UiContext& ui, NodeHandle bar, u32 index, u32 image);
+u32 tabIcon(const UiContext& ui, NodeHandle bar, u32 index);
+void setTabToolTip(UiContext& ui, NodeHandle bar, u32 index, std::string_view text);
+std::string_view tabToolTip(const UiContext& ui, NodeHandle bar, u32 index);
+NodeHandle tabBarToolTip(const UiContext& ui, NodeHandle bar);
 
 /// Scroll area: a column panel with overflow: scroll (wheel scrolls; role ScrollArea).
 NodeHandle scrollArea(UiContext& ui, NodeHandle parent, std::string_view id = {});
@@ -403,6 +438,10 @@ void dockClose(UiContext& ui, NodeHandle dock); ///< hides (dockTo re-shows); em
 /// bar) tabs it there, over the area's 48 px left / right / bottom band docks it on that side, else it stays
 /// floating. dockTo re-docks. Changes emit SignalKind::Event {text "topLevelChanged", flag = floating}.
 void dockFloat(UiContext& ui, NodeHandle dock, Rect at);
+/// While a dock title is dragged: the drop-zone rect it would fill if released now (the target dock / tab group,
+/// the side region, or a quarter strip of the area); false when the drop would leave it floating. A double-click on a
+/// title floats a docked dock and re-docks a floating one (QDockWidget).
+bool dockDropHighlight(const UiContext& ui, NodeHandle dock, Rect& out);
 bool dockIsFloating(const UiContext& ui, NodeHandle dock);
 Rect dockFloatGeometry(const UiContext& ui, NodeHandle dock);
 void setDockMovable(UiContext& ui, NodeHandle dock, bool on); ///< QDockWidget::DockWidgetMovable (default on)
@@ -479,6 +518,17 @@ u32 tableLogicalColumn(const UiContext& ui, NodeHandle table, u32 visual);
 u32 tableVisualColumn(const UiContext& ui, NodeHandle table, u32 logical);
 void setTableColumnHidden(UiContext& ui, NodeHandle table, u32 col, bool hidden);
 bool tableColumnHidden(const UiContext& ui, NodeHandle table, u32 col);
+/// QHeaderView::ResizeMode per section. Interactive (default): the divider drags, double-clicking it fits the section
+/// to its contents (Event "sectionResized"). Fixed: no drag. Stretch: stretch sections share what the others leave of
+/// the viewport width (min 24 px). ResizeToContents: the widest of the header and the first 1000 rows.
+enum class HeaderResizeMode : u8 { Interactive, Fixed, Stretch, ResizeToContents };
+void setTableColumnResizeMode(UiContext& ui, NodeHandle table, u32 col, HeaderResizeMode mode);
+HeaderResizeMode tableColumnResizeMode(const UiContext& ui, NodeHandle table, u32 col);
+void resizeTableColumnToContents(UiContext& ui, NodeHandle table, u32 col);
+/// Right-clicking the header opens a menu listing every section, checked while shown (popup class "header-menu");
+/// picking one hides / shows it (Event "sectionHidden" / "sectionShown", value = column). The last shown section stays.
+void setTableHeaderMenu(UiContext& ui, NodeHandle table, bool on);
+bool tableHeaderMenu(const UiContext& ui, NodeHandle table);
 /// While a header section is being moved: the section image under the pointer and the drop marker x (context space).
 bool tableHeaderDrag(UiContext& ui, NodeHandle table, Rect& image, f32& dropX);
 /// List view over column 0 of a model (shares the table machinery, no header).

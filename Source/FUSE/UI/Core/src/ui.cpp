@@ -24,7 +24,7 @@ const char* a11yRoleName(A11yRole r) {
     static const char* names[] = {"none", "window", "group", "text", "button", "checkbox", "radio", "switch",
                                   "slider", "progressbar", "textfield", "scrollarea", "list", "listitem", "image",
                                   "separator", "link", "combobox", "spinbox", "dial", "scrollbar", "tab",
-                                  "dateinput", "timeinput", "datetimeinput", "grid", "row", "gridcell", "columnheader", "toolbar"};
+                                  "dateinput", "timeinput", "datetimeinput", "grid", "row", "gridcell", "columnheader", "toolbar", "tablist"};
     return names[u32(r)];
 }
 
@@ -2221,7 +2221,7 @@ void UiContext::arrangeChildren(u32 i) {
                 if (cs.centerY) py = (c.h - h) * 0.5f + t - b;
                 else if (!hasT && hasB) py = c.h - b - h;
             }
-            if (s.layout == LayoutKind::Anchor && hasClass({k, m_nodes[k].gen}, "clamp")) { // keep popups on screen
+            if (s.layout == LayoutKind::Anchor && (hasClass({k, m_nodes[k].gen}, "clamp") || hasClass({k, m_nodes[k].gen}, "ostool"))) { // keep popups / tool windows on screen
                 const Rect a = popupArea();
                 px = std::max(a.x - c.x, std::min(px, a.x + a.w - c.x - w - cs.margin.h()));
                 py = std::max(a.y - c.y, std::min(py, a.y + a.h - c.y - h - cs.margin.v()));
@@ -2849,7 +2849,8 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
             if (m_nodes[k].dirty & kDirtyPaint) { m_damage = m_damage.unite(m_nodes[k].rect.intersect(n.rect)); m_nodes[k].dirty &= u8(~kDirtyPaint); }
             continue;
         }
-        if (m_osPopups && &dl == &m_draw && hasClass({k, m_nodes[k].gen}, "clamp")) { // own OS window
+        if ((m_osPopups || m_osTools) && &dl == &m_draw &&
+            ((m_osPopups && hasClass({k, m_nodes[k].gen}, "clamp")) || hasClass({k, m_nodes[k].gen}, "ostool"))) { // own OS window
             m_popupPending.push_back(k);
             continue;
         }
@@ -2902,6 +2903,7 @@ void UiContext::paintPass() {
         PopupSurface ps;
         ps.node = {k, m_nodes[k].gen};
         ps.rect = m_nodes[k].rect;
+        ps.tool = hasClass(ps.node, "ostool");
         const Rect saved = m_damage;
         paintRec(k, 1.f, ps.draw);
         m_damage = saved; // a popup window repaints itself; the main window is not damaged by it
@@ -2928,7 +2930,13 @@ void UiContext::setOsPopups(bool on, Rect screen) {
         return;
     m_osPopups = on;
     m_popupScreen = screen;
-    if (!on) m_popupSurfaces.clear();
+    if (!on && !m_osTools) m_popupSurfaces.clear();
+    markAllDirty();
+}
+void UiContext::setOsToolWindows(bool on) {
+    if (on == m_osTools) return;
+    m_osTools = on;
+    if (!on && !m_osPopups) m_popupSurfaces.clear();
     markAllDirty();
 }
 Rect UiContext::popupArea() const {

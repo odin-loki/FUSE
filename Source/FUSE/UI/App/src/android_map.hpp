@@ -91,6 +91,7 @@ inline const char* className(fuse::ui::A11yRole r) {
     case R::Text: case R::Link: case R::ColumnHeader: return "android.widget.TextView";
     case R::Grid: return "android.widget.GridView";
     case R::ToolBar: return "android.widget.Toolbar";
+    case R::TabList: return "android.widget.TabWidget";
     default: return "android.view.View";
     }
 }
@@ -125,6 +126,7 @@ inline std::uint64_t traits(fuse::ui::A11yRole r, bool disabled, bool checked, b
     case R::ColumnHeader: t = kStatic | kHeader; break;
     case R::Slider: case R::Dial: case R::SpinBox: case R::DateInput: case R::TimeInput: case R::DateTimeInput: t = kAdjustable; break;
     case R::ProgressBar: t = 1ull << 10; break; // UpdatesFrequently
+    case R::TabList: t = 1ull << 28; break;     // UIAccessibilityTraitTabBar (0x10000000)
     default: break;
     }
     if (checked || selected) t |= kSelected; // list options: UIAccessibilityTraitSelected

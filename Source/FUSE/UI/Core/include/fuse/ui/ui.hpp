@@ -166,7 +166,8 @@ enum class A11yRole : u8 {
     List, ListItem, Image, Separator, Link, ComboBox, SpinBox, Dial, ScrollBar, Tab,
     DateInput, TimeInput, DateTimeInput, ///< sectioned date / time fields (AccessKit DateInput / TimeInput / DateTimeInput)
     Grid, Row, GridCell, ColumnHeader,   ///< item views (table / tree / calendar grids); usually virtual parts
-    ToolBar                              ///< QToolBar / ARIA toolbar
+    ToolBar,                             ///< QToolBar / ARIA toolbar
+    TabList                              ///< QTabBar (its tabs are virtual Tab parts) / ARIA tablist
 };
 const char* a11yRoleName(A11yRole r);
 /// Extra accessible state set by widgets (UiContext::setA11yState): listbox / combobox semantics.
@@ -439,15 +440,22 @@ public:
     /// own list in popup-local coordinates (popupSurfaces()) for the host to show in a borderless OS window at
     /// window origin + rect, so a popup may extend past the window. They then clamp to `screen` (the work area in
     /// context coordinates; empty = the viewport) instead of the viewport. Pointer input for a popup window is fed
-    /// back in context coordinates (local + rect origin).
+    /// back in context coordinates (local + rect origin). Nodes with class "ostool" (floating dock widgets and tool
+    /// bars) become surfaces too, flagged `tool`: a host shows them as tool windows that take no pointer grab and do
+    /// not close on outside clicks (Qt::Tool), and moves them as their rect moves.
     struct PopupSurface {
         NodeHandle node;
+        bool tool = false; ///< "ostool" (floating dock / tool bar) rather than a menu / list popup
         Rect rect;      ///< context coordinates (may lie outside the viewport)
         DrawList draw;  ///< origin = rect top-left
         u64 revision = 0; ///< bumps whenever `draw` or `rect` changes
     };
     void setOsPopups(bool on, Rect screen = {});
     bool osPopups() const { return m_osPopups; }
+    /// Only the "ostool" nodes (floating docks / tool bars) become surfaces; menus stay in the window (hosts whose
+    /// menus are shown another way, e.g. Wayland xdg_popup windows).
+    void setOsToolWindows(bool on);
+    bool osToolWindows() const { return m_osTools || m_osPopups; }
     /// Where popups may be placed: the screen bounds with OS popups, the viewport otherwise.
     Rect popupArea() const;
     const std::vector<PopupSurface>& popupSurfaces() const { return m_popupSurfaces; }
@@ -711,6 +719,7 @@ private:
     DrawList m_draw;
     Rect m_damage;
     bool m_osPopups = false;
+    bool m_osTools = false;
     Rect m_popupScreen;
     std::vector<u32> m_popupPending;
     std::vector<PopupSurface> m_popupSurfaces;
