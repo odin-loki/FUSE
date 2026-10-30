@@ -156,16 +156,24 @@ add_executable(fuse_ui_sample sample_main.cpp)
 target_link_libraries(fuse_ui_sample PRIVATE fuse_ui_widgets)
 target_include_directories(fuse_ui_sample PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
 
+fuse_ui_test(fuse_ui_color_path test_color_path.cpp)
+
+# render benchmarks (CPU vs GPU: full frame, damage repaint, backdrop blur, text, paths): numbers, not a gate.
+# ctest -L bench -V. Without fuse_ui_vk (e.g. the Windows cross build) only the CPU and pack columns are measured.
+fuse_ui_test(fuse_ui_bench_render bench_render.cpp)
+target_link_libraries(fuse_ui_bench_render PRIVATE fuse_ui_render)
+set_tests_properties(fuse_ui_bench_render PROPERTIES LABELS "bench" RUN_SERIAL TRUE TIMEOUT 600)
+if(TARGET fuse_ui_vk)
+    target_link_libraries(fuse_ui_bench_render PRIVATE fuse_ui_vk ${FUSE_UI_VK_LINK})
+    target_compile_definitions(fuse_ui_bench_render PRIVATE FUSE_UI_BENCH_GPU=1)
+    set_tests_properties(fuse_ui_bench_render PROPERTIES LABELS "bench;gpu")
+endif()
+
 # UI4 gate: GPU draw-list backend vs the CPU reference (lavapipe / any Vulkan device; 77 = skipped, no device).
 if(TARGET fuse_ui_vk)
     fuse_ui_test(fuse_ui_vk_parity test_vk_parity.cpp)
     target_link_libraries(fuse_ui_vk_parity PRIVATE fuse_ui_vk ${FUSE_UI_VK_LINK})
     set_tests_properties(fuse_ui_vk_parity PROPERTIES SKIP_RETURN_CODE 77 LABELS "ui;gpu")
-    # render benchmarks (CPU vs GPU: full frame, damage repaint, backdrop blur, text): numbers, not a gate.
-    # ctest -L bench -V; JSON in the build tree (tests/bench_render.json)
-    fuse_ui_test(fuse_ui_bench_render bench_render.cpp)
-    target_link_libraries(fuse_ui_bench_render PRIVATE fuse_ui_vk ${FUSE_UI_VK_LINK})
-    set_tests_properties(fuse_ui_bench_render PROPERTIES LABELS "bench;gpu" RUN_SERIAL TRUE TIMEOUT 600)
 endif()
 
 fuse_ui_test(fuse_ui_text_full test_text_full.cpp)

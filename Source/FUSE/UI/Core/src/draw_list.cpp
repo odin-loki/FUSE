@@ -246,7 +246,9 @@ void backdropBlur(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& ta
         simd::boxVertical(buf.data(), tmp.data(), w * 4, h, r, 1.f / f32(2 * r + 1));
         buf.swap(tmp);
     };
-    for (int it = 0; it < 3; ++it) { pass(false); vertical(); }
+    (void)pass;
+    simd::boxHorizontalN(buf.data(), tmp.data(), scratch.data(), w, h, r, 1.f / f32(2 * r + 1), 3);
+    for (int it = 0; it < 3; ++it) vertical();
     const std::array<f32, 4> clipRad{clipRadius, clipRadius, clipRadius, clipRadius};
     const Px tint = premul(c.fill, 1.f);
     for (int y = y0; y < y1; ++y)
@@ -276,6 +278,7 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
     scissor = scissor.intersect(full);
     Clip stack[32];
     int depth = 0;
+    std::vector<PathEdge> rowEdges;
     stack[0] = {scissor, 0.f};
     for (const DrawCmd& c : list.cmds()) {
         const Clip& clip = stack[depth];
@@ -304,6 +307,21 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
         if (area.empty()) continue;
         const int x0 = int(std::floor(area.x)), y0 = int(std::floor(area.y));
         const int x1 = int(std::ceil(area.right())), y1 = int(std::ceil(area.bottom()));
+        if (c.op == DrawOp::Glyph && clip.radius <= 0.f) {
+            // glyph fast path (text-heavy frames are thousands of small quads): straight atlas rows, no per-pixel clip
+            // or op dispatch; identical arithmetic to the generic Glyph case (clipCov == 1)
+            if (!m_atlas) continue;
+            const int ox = int(c.rect.x), oy = int(c.rect.y);
+            const int gx0 = std::max(x0, ox), gx1 = std::min(x1, ox + int(c.tw));
+            const int gy0 = std::max(y0, oy), gy1 = std::min(y1, oy + int(c.th));
+            for (int y = gy0; y < gy1; ++y) {
+                u32* row = target.pixels.data() + std::size_t(y) * std::size_t(target.width);
+                const u8* src = m_atlas + std::size_t(c.v + (y - oy)) * std::size_t(m_atlasSize) + std::size_t(c.u);
+                for (int x = gx0; x < gx1; ++x)
+                    if (const u8 a = src[x - ox]) blend(row[x], premul(c.fill, f32(a) / 255.f * 1.f));
+            }
+            continue;
+        }
         const Rect clipOuter = clip.r; // the rounded clip uses the top clip rect's own shape
         const std::array<f32, 4> clipRad{clip.radius, clip.radius, clip.radius, clip.radius};
         // fast path: the interior of an opaque, ungraded rect (pixel centres at least max radius + border + 0.5 inside
@@ -321,6 +339,27 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
         }
         for (int y = y0; y < y1; ++y) {
             u32* row = target.pixels.data() + std::size_t(y) * std::size_t(target.width);
+            if (c.op == DrawOp::Path) {
+                // scanline edge list: only edges that can affect this row's winding sub-samples, or whose stroke
+                // distance can reach it (farther stroke edges cannot change a non-zero coverage), so bit-exact
+                rowEdges.clear();
+                const std::size_t n = std::size_t(c.tw) | (std::size_t(c.th) << 16);
+                if (std::size_t(c.image) + n <= list.pathEdges().size()) {
+                    const PathEdge* e = list.pathEdges().data() + c.image;
+                    const f32 py = f32(y) + 0.5f, reach = c.borderWidth * 0.5f + 1.f;
+                    for (std::size_t i = 0; i < n; ++i) {
+                        const f32 lo = std::min(e[i].y0, e[i].y1), hi = std::max(e[i].y0, e[i].y1);
+                        const bool wind = lo != hi && hi > py - 0.5f && lo <= py + 0.5f;
+                        const bool str = e[i].fillOnly == 0.f && c.borderWidth > 0.f && hi >= py - reach && lo <= py + reach;
+                        if (wind || str) {
+                            PathEdge q = e[i];
+                            if (!str) q.fillOnly = 1.f;
+                            rowEdges.push_back(q);
+                        }
+                    }
+                }
+                if (rowEdges.empty()) continue;
+            }
             const bool solidRow = y >= iy0 && y < iy1;
             const int sa = std::max(x0, ix0), sb = std::min(x1, ix1);
             if (solidRow && sa < sb) simd::fillSpan(row + sa, sb - sa, solid);
@@ -390,10 +429,8 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
                     break;
                 }
                 case DrawOp::Path: {
-                    const std::size_t n = std::size_t(c.tw) | (std::size_t(c.th) << 16);
-                    if (std::size_t(c.image) + n > list.pathEdges().size()) break;
                     f32 fc = 0.f, ds = 0.f;
-                    pathSample(list.pathEdges().data() + c.image, n, px, py, c.v != 0, fc, ds);
+                    pathSample(rowEdges.data(), rowEdges.size(), px, py, c.v != 0, fc, ds);
                     fc *= clipCov;
                     Color fill = c.fill;
                     if (c.gradient) fill = lerpColor(fill, c.fill2, gradientT(c.gradient, px, py, c.rect));

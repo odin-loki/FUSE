@@ -177,8 +177,16 @@ Every phase: commits on `gui-framework`, pushed after each milestone; never to `
   - Wayland SHM throttles on `wl_surface.frame` through `AppWindow::setFramePending`.
   - Gate: fuse_app_frame_pacing.
 - Done: fuse_ui_bench_render (label `bench`) measures CPU vs GPU for a full frame, a damage box, backdrop blur and a text page. It writes bench_render.json.
+- Done: shadows are drawn on the GPU by the draw kernel (analytic SDF identical to the CPU; vk_parity "primitives"); no separate pass needed.
+- Done: the bench uses GPU timestamp queries (device time) with wall-minus-baseline as the fallback; CPU columns are thread CPU time, minimum over iterations (the box is shared). It is registered in every build; without fuse_ui_vk (Windows cross build) only the CPU and pack columns run.
+
+### Rendering track: vector paths, colour, perf (gui-render)
+- Done: `fuse::ui::Path` (moveTo/lineTo/quadTo/cubicTo/arcTo/close, rect, circle, transform) and SVG path data (M L H V C S Q T A Z, relative forms, true elliptical arcs per SVG 1.1 F.6.5). `DrawList::path` (non-zero / even-odd fill + stroke) and `gradientPath` (vertical / horizontal / radial). CPU and the ui.draw_list kernel are bit-exact (vk_parity "paths": 0 differing pixels).
+- Done: CPU perf: per-scanline path edge lists (bit-exact), a glyph fast path, and one transpose per backdrop blur with row-major box passes. Release lavapipe box: vector_paths 252 -> 40 ms, text_page 26 -> 14 ms, backdrop_blur 28 -> 23.5 ms.
+- Done: colour management basics in `fuse/ui/color_space.hpp`: sRGB / Display P3 / Rec.2020 transfer curves and gamut matrices, PQ and HLG, `toHdr10`, luminance and WCAG contrast. `NativeOptions::colorSpace` (Srgb / DisplayP3 / Hdr10) picks a matching swapchain format through VK_EXT_swapchain_colorspace, falling back to sRGB; `NativePlatform::outputColorSpace(w)` reports what was granted. Content must be encoded by the app (the canvas stays RGBA8).
+- Done (UNVERIFIED, no macOS host): Cocoa CPU presenter paced by CVDisplayLink (vsynced presenter + `setFramePending`, cleared on the main queue each refresh).
 - Left:
-  - A GPU path for Shadow (it still uses the analytic SDF in the draw kernel, which is fine).
-  - GPU timestamp queries in the bench instead of wall-time minus baseline.
-  - Cocoa CVDisplayLink (it is paced at the moment).
-  - The Apple paths are unverified on hardware.
+  - HDR: a float / 10-bit canvas and kernel-side PQ encoding (8-bit HDR10 bands); Wayland / Win32 colour-space hints.
+  - Path perf: per-pixel x culling or coverage accumulation (sparse scanline) for very large paths; GPU path tiles bin by bounding box only.
+  - Windows CPU blur is slower than Linux (no AVX2 lane dispatch in the mingw build).
+  - The Apple paths (CVDisplayLink, Metal surface) are unverified on hardware.

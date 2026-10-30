@@ -68,6 +68,50 @@ Path& Path::cubicTo(Vec2 c1, Vec2 c2, Vec2 p) {
     m_hasCtrl = true;
     return *this;
 }
+Path& Path::arcTo(Vec2 radii, f32 rotationDeg, bool largeArc, bool sweep, Vec2 p) {
+    // SVG 1.1 F.6.5/F.6.6: endpoint -> centre parameterisation, out-of-range radii scaled up, zero radius = line
+    if (!m_inContour) moveTo(m_last);
+    const Vec2 a = m_last;
+    f32 rx = std::abs(radii.x), ry = std::abs(radii.y);
+    if ((a.x == p.x && a.y == p.y)) return *this;
+    if (rx == 0.f || ry == 0.f) return lineTo(p);
+    const f32 phi = rotationDeg * 3.14159265358979f / 180.f, cs = std::cos(phi), sn = std::sin(phi);
+    const f32 dx = (a.x - p.x) * 0.5f, dy = (a.y - p.y) * 0.5f;
+    const f32 x1 = cs * dx + sn * dy, y1 = -sn * dx + cs * dy;
+    const f32 lambda = (x1 * x1) / (rx * rx) + (y1 * y1) / (ry * ry);
+    if (lambda > 1.f) {
+        const f32 k = std::sqrt(lambda);
+        rx *= k;
+        ry *= k;
+    }
+    const f32 num = rx * rx * ry * ry - rx * rx * y1 * y1 - ry * ry * x1 * x1;
+    const f32 den = rx * rx * y1 * y1 + ry * ry * x1 * x1;
+    f32 co = den > 0.f ? std::sqrt(std::max(0.f, num / den)) : 0.f;
+    if (largeArc == sweep) co = -co;
+    const f32 cx1 = co * rx * y1 / ry, cy1 = -co * ry * x1 / rx;
+    const f32 cx = cs * cx1 - sn * cy1 + (a.x + p.x) * 0.5f, cy = sn * cx1 + cs * cy1 + (a.y + p.y) * 0.5f;
+    auto angle = [](f32 ux, f32 uy, f32 vx, f32 vy) { return std::atan2(ux * vy - uy * vx, ux * vx + uy * vy); };
+    const f32 ux = (x1 - cx1) / rx, uy = (y1 - cy1) / ry, vx = (-x1 - cx1) / rx, vy = (-y1 - cy1) / ry;
+    const f32 t1 = angle(1.f, 0.f, ux, uy);
+    f32 dt = angle(ux, uy, vx, vy);
+    constexpr f32 kTau = 6.28318530717959f;
+    if (!sweep && dt > 0.f) dt -= kTau;
+    if (sweep && dt < 0.f) dt += kTau;
+    // chord count for a sagitta error <= 0.05 px on the larger radius
+    const f32 rm = std::max(rx, ry), step = 2.f * std::acos(std::clamp(1.f - 0.05f / std::max(rm, 0.05f), -1.f, 1.f));
+    const int n = std::clamp(int(std::ceil(std::abs(dt) / std::max(step, 1e-3f))), 2, 256);
+    Vec2 prev = a;
+    for (int i = 1; i <= n; ++i) {
+        const f32 t = t1 + dt * f32(i) / f32(n);
+        const f32 ex = rx * std::cos(t), ey = ry * std::sin(t);
+        const Vec2 q = i == n ? p : Vec2{cs * ex - sn * ey + cx, sn * ex + cs * ey + cy};
+        edge(prev, q);
+        prev = q;
+    }
+    m_last = p;
+    m_hasCtrl = false;
+    return *this;
+}
 Path& Path::close() {
     if (m_inContour) edge(m_last, m_start);
     m_last = m_start;
@@ -197,7 +241,7 @@ bool Path::appendSvg(std::string_view d) {
         }
         case 'a':
             if (!read(3) || !flag(a[3]) || !flag(a[4]) || !number(a[5]) || !number(a[6])) return false;
-            lineTo({o.x + a[5], o.y + a[6]});
+            arcTo({a[0], a[1]}, a[2], a[3] != 0.f, a[4] != 0.f, {o.x + a[5], o.y + a[6]});
             break;
         case 'z': close(); cmd = 0; break;
         default: return false;

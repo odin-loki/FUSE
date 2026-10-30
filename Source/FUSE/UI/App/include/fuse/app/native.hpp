@@ -51,11 +51,21 @@ struct ExternalTexture {
     void* view = nullptr;   ///< VkImageView, sampled usage
     unsigned layout = 0;    ///< its VkImageLayout when the UI frame is submitted; restored after the UI pass
 };
+/// Swapchain colour space request (Vulkan presenters). The UI renders into an 8-bit canvas that is blitted to the
+/// swapchain, so the content must already be encoded for the chosen space: convert colours/images with
+/// fuse::ui::color (convert(c, Srgb, DisplayP3), toHdr10(c)). Unavailable spaces fall back to Srgb; query the
+/// granted one with NativePlatform::outputColorSpace(w).
+enum class OutputColorSpace : unsigned char {
+    Srgb,      ///< VK_COLOR_SPACE_SRGB_NONLINEAR_KHR (always)
+    DisplayP3, ///< VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT, 8-bit
+    Hdr10,     ///< VK_COLOR_SPACE_HDR10_ST2084_EXT (Rec.2020 + PQ), A2B10G10R10 swapchain
+};
 struct NativeOptions {
     VulkanDeviceHandles adoptDevice{}; ///< instance + device set: present on that device (see VulkanDeviceHandles)
     bool vulkan = true;            ///< false: never create a Vulkan presenter
     VkDrawMode drawMode = VkDrawMode::Auto;
     bool vsync = true;             ///< FIFO (true) or MAILBOX / IMMEDIATE when available
+    OutputColorSpace colorSpace = OutputColorSpace::Srgb; ///< needs VK_EXT_swapchain_colorspace for non-sRGB
     /// Popup menus / combo lists / submenus as their own borderless OS windows (Qt-style; may extend past the main
     /// window, clamp to the screen). X11: override-redirect windows; Win32: WS_POPUP + WS_EX_NOACTIVATE owned windows.
     bool osPopups = false;
@@ -80,6 +90,8 @@ public:
     std::string_view gpuName() const;
     /// True when the GPU kernel (not the CPU upload path) draws the window.
     bool gpuDraws(const AppWindow& w) const;
+    /// The swapchain colour space actually granted (NativeOptions::colorSpace or the Srgb fallback).
+    OutputColorSpace outputColorSpace(const AppWindow& w) const;
     std::string_view lastError() const;
     /// Reads back what the OS shows in the window's client area (tests / screenshots of real windows).
     bool capture(const AppWindow& w, fuse::ui::Image& out);

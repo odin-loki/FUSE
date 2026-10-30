@@ -44,11 +44,12 @@ public:
     Path& lineTo(Vec2 p);
     Path& quadTo(Vec2 c, Vec2 p);
     Path& cubicTo(Vec2 c1, Vec2 c2, Vec2 p);
+    /// SVG elliptical arc from the current point to p (radii, x-axis rotation in degrees, large-arc and sweep flags).
+    Path& arcTo(Vec2 radii, f32 rotationDeg, bool largeArc, bool sweep, Vec2 p);
     Path& close();
     Path& rect(const Rect& r);
     Path& circle(Vec2 c, f32 r);
-    /// SVG path data (`d` attribute): M L H V C S Q T Z, absolute and relative; arcs (A) are drawn as lines to their
-    /// end point. Returns false (path left with what parsed) on a syntax error.
+    /// SVG path data (`d` attribute): M L H V C S Q T A Z, absolute and relative (A = true elliptical arcs). Returns false (path left with what parsed) on a syntax error.
     bool appendSvg(std::string_view d);
     static Path fromSvg(std::string_view d) {
         Path p;

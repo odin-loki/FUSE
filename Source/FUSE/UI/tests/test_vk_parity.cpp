@@ -289,6 +289,9 @@ int main() {
         pl.gradientPath(star, Color::rgb(0xffff00), Color::rgb(0xff0000), kGradientRadial);
         pl.path(Path().circle({330, 290}, 70), Color::rgb(0x22cc66, 0.6f), false, Color::rgb(0xffffff), 4.f);
         pl.path(Path::fromSvg("M260 380 C300 300 380 460 440 360"), Color{}, false, Color::rgb(0xff44ff), 3.f);
+        // true SVG arcs: a rotated elliptical ring (even-odd) with a stroked large-arc segment
+        pl.path(Path::fromSvg("M20 330 A50 25 30 1 1 120 330 A50 25 30 1 1 20 330 Z M45 330 a25 12 30 1 0 50 0 a25 12 30 1 0 -50 0 z"),
+                Color::rgb(0x66dd88), true, Color::rgb(0x224422), 1.5f);
         pl.gradientRect({20, 210, 60, 60}, Color::rgb(0x0000ff), Color::rgb(0x00ffff), false); // radial-free rect
         pl.cmds().back().gradient = kGradientRadial;
         pl.pushClip({300, 0, 100, 120}, 16.f);

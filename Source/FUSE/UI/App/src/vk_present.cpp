@@ -74,6 +74,7 @@ struct VkCtx {
     u32 family = ~0u;
     VkCommandPool pool = VK_NULL_HANDLE;
     SurfaceSource::Kind kind = SurfaceSource::Xlib;
+    bool colorSpaceExt = false; ///< VK_EXT_swapchain_colorspace enabled on our instance
     char name[256] = {};
     u32 windows = 0;
     bool adopted = false; ///< instance + device belong to the caller (NativeOptions::adoptDevice)
@@ -185,10 +186,15 @@ bool instanceHas(const char* ext) {
 VkCtx* vkCtxCreate(SurfaceSource::Kind kind, std::string& err) {
     auto* c = new VkCtx{};
     c->kind = kind;
-    const char* exts[3] = {VK_KHR_SURFACE_EXTENSION_NAME, surfaceExtension(kind), nullptr};
+    const char* exts[4] = {VK_KHR_SURFACE_EXTENSION_NAME, surfaceExtension(kind), nullptr, nullptr};
     u32 extCount = 2;
     VkInstanceCreateFlags flags = 0;
     // MoltenVK is a "portability" implementation: since loader 1.3.216 it is only enumerated with this flag.
+    // non-sRGB swapchain colour spaces (NativeOptions::colorSpace); harmless when unused
+    if (instanceHas(VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME)) {
+        exts[extCount++] = VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME;
+        c->colorSpaceExt = true;
+    }
     if (kind == SurfaceSource::Metal && instanceHas(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)) {
         exts[extCount++] = VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME;
         flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
@@ -352,6 +358,7 @@ struct VkWin {
     VkSurfaceKHR surface = VK_NULL_HANDLE;
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkFormat format = VK_FORMAT_UNDEFINED;
+    OutputColorSpace space = OutputColorSpace::Srgb;
     VkExtent2D extent{0, 0};
     std::vector<VkImage> images;
     std::vector<VkSemaphore> renderDone; ///< per swapchain image
@@ -423,10 +430,30 @@ struct VkWin {
         }
         VkSurfaceFormatKHR sf = fmts[0];
         for (const VkSurfaceFormatKHR& f : fmts)
-            if (f.format == VK_FORMAT_B8G8R8A8_UNORM || f.format == VK_FORMAT_R8G8B8A8_UNORM) {
+            if ((f.format == VK_FORMAT_B8G8R8A8_UNORM || f.format == VK_FORMAT_R8G8B8A8_UNORM) &&
+                f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
                 sf = f;
                 break;
             }
+        space = OutputColorSpace::Srgb;
+        // requested wide-gamut / HDR space: the canvas (RGBA8 UNORM) is blitted, so any blit-capable UNORM target works
+        // (adopted instances may lack the extension: their formats list then has no such entries anyway)
+        if (opts.colorSpace != OutputColorSpace::Srgb) {
+            const VkColorSpaceKHR want = opts.colorSpace == OutputColorSpace::DisplayP3 ? VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT
+                                                                                         : VK_COLOR_SPACE_HDR10_ST2084_EXT;
+            for (const VkSurfaceFormatKHR& f : fmts) {
+                const bool fmtOk = opts.colorSpace == OutputColorSpace::DisplayP3
+                                       ? (f.format == VK_FORMAT_B8G8R8A8_UNORM || f.format == VK_FORMAT_R8G8B8A8_UNORM)
+                                       : (f.format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 || f.format == VK_FORMAT_A2R10G10B10_UNORM_PACK32);
+                if (f.colorSpace != want || !fmtOk) continue;
+                VkFormatProperties fp{};
+                vkGetPhysicalDeviceFormatProperties(ctx->phys, f.format, &fp);
+                if (!(fp.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT)) continue;
+                sf = f;
+                space = opts.colorSpace;
+                break;
+            }
+        }
         format = sf.format;
         VkPresentModeKHR mode = VK_PRESENT_MODE_FIFO_KHR;
         if (!opts.vsync) {
@@ -632,6 +659,7 @@ VkWin* vkWinCreate(VkCtx* c, const SurfaceSource& s, const NativeOptions& o, std
 }
 
 bool vkWinGpuDraws(const VkWin* w) { return w && w->gpuDraw; }
+OutputColorSpace vkWinColorSpace(const VkWin* w) { return w ? w->space : OutputColorSpace::Srgb; }
 
 bool vkWinSetExternal(VkWin* w, unsigned slot, const ExternalTexture& t) {
     if (!w || !w->gpuDraw || slot >= 4) return false;

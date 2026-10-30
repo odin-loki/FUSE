@@ -1,4 +1,6 @@
 #include "box_blur.hpp"
+#include <cstring>
+#include <utility>
 #include "box_blur_kernel.hpp"
 #if defined(FUSE_UI_HAS_FORGE_LANE)
 #include <forge/lane/dispatch.hpp>
@@ -46,6 +48,20 @@ void boxHorizontal(float* buf, float* tmp, float* scratch, int w, int h, int r, 
         for (int y = 0; y < h; ++y)
             std::memcpy(buf + (std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4,
                         tmp + (std::size_t(x) * std::size_t(h) + std::size_t(y)) * 4, 16);
+}
+void boxHorizontalN(float* buf, float* tmp, float* scratch, int w, int h, int r, float inv, int passes) {
+    // one transpose each way for all passes (box passes commute), instead of two per pass
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x)
+            std::memcpy(scratch + (std::size_t(x) * std::size_t(h) + std::size_t(y)) * 4,
+                        buf + (std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4, 16);
+    float* a = scratch;
+    float* b = tmp;
+    for (int i = 0; i < passes; ++i) { active().fn(a, b, h * 4, w, r, inv); std::swap(a, b); }
+    for (int x = 0; x < w; ++x)
+        for (int y = 0; y < h; ++y)
+            std::memcpy(buf + (std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4,
+                        a + (std::size_t(x) * std::size_t(h) + std::size_t(y)) * 4, 16);
 }
 const char* boxTarget() { return active().name; }
 } // namespace fuse::ui::simd

@@ -75,6 +75,8 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     thread_local std::vector<Area> areas;
     thread_local std::vector<u32> cursor;
     areas.clear();
+    areas.reserve(list.cmds().size()); // one growth step per frame at most (text pages are 10^4+ glyph quads)
+    out.cmds.reserve(list.cmds().size() + 1);
     u32 segBegin = 0;
     auto closeSegment = [&] {
         const u32 tileBase = u32(out.tiles.size());

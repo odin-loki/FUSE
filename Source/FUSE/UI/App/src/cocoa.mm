@@ -1,6 +1,7 @@
 // Cocoa backend (G3). UNVERIFIED: never compiled — see fuse/app/cocoa.hpp.
 #import <Cocoa/Cocoa.h>
 #import <QuartzCore/CAMetalLayer.h>
+#import <CoreVideo/CVDisplayLink.h>
 #include "fuse/app/cocoa.hpp"
 #include "cocoa_map.hpp"
 #include "native_internal.hpp"
@@ -22,6 +23,7 @@ struct Win {
     CAMetalLayer* metal = nil;           ///< layer-hosting backing when Vulkan presents
     fa::detail::VkWin* vk = nullptr;
     unsigned long long titleRev = 0; ///< AppWindow::titleRevision() shown in NSWindow.title
+    CVDisplayLinkRef link = nullptr;     ///< CPU presenter pacing: one frame per display refresh (UNVERIFIED)
 };
 }
 
@@ -318,6 +320,40 @@ struct fa::CocoaPlatform::Impl {
             return any;
         }
     }
+    // CVDisplayLink pacing (UNVERIFIED, no macOS host): after each CPU present the window is frame-pending until the
+    // display's next refresh; the link's thread hops to the main queue, clears it and posts an app-defined event so a
+    // blocked pump() returns. Blocks re-check the window is still alive (it may close between refresh and dispatch).
+    static CVReturn displayTick(CVDisplayLinkRef, const CVTimeStamp*, const CVTimeStamp*, CVOptionFlags, CVOptionFlags*,
+                                void* ctx) {
+        Win* w = static_cast<Win*>(ctx);
+        Impl* impl = w->impl;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            bool alive = false;
+            for (auto& o : impl->wins) alive |= o.get() == w;
+            if (!alive || !w->win || !w->win->framePending()) return;
+            w->win->setFramePending(false);
+            NSEvent* wake = [NSEvent otherEventWithType:NSEventTypeApplicationDefined location:NSZeroPoint modifierFlags:0
+                                              timestamp:0 windowNumber:0 context:nil subtype:0 data1:0 data2:0];
+            [NSApp postEvent:wake atStart:NO];
+        });
+        return kCVReturnSuccess;
+    }
+    static bool startDisplayLink(Win& w) {
+        if (CVDisplayLinkCreateWithActiveCGDisplays(&w.link) != kCVReturnSuccess || !w.link) return false;
+        CVDisplayLinkSetOutputCallback(w.link, &displayTick, &w);
+        if (CVDisplayLinkStart(w.link) != kCVReturnSuccess) {
+            CVDisplayLinkRelease(w.link);
+            w.link = nullptr;
+            return false;
+        }
+        return true;
+    }
+    static void stopDisplayLink(Win& w) {
+        if (!w.link) return;
+        CVDisplayLinkStop(w.link); // waits for a running callback; queued main-queue blocks re-check liveness
+        CVDisplayLinkRelease(w.link);
+        w.link = nullptr;
+    }
     static bool present(void* user, AppWindow& aw, Rect damage) {
         Win& w = *static_cast<Win*>(user);
         if (w.window && w.titleRev != aw.titleRevision()) { w.titleRev = aw.titleRevision(); w.window.title = str(aw.title()); }
@@ -326,6 +362,7 @@ struct fa::CocoaPlatform::Impl {
         } else {
             aw.rasterizeCpu(damage);
             w.view.needsDisplay = YES;
+            if (w.link) aw.setFramePending(true); // cleared by the next display refresh
         }
         if (aw.ui().wantsTextInput()) [w.view.inputContext invalidateCharacterCoordinates];
         [w.view rebuildA11y]; // TODO: only when the a11y version changed
@@ -333,6 +370,7 @@ struct fa::CocoaPlatform::Impl {
     }
     static void destroy(void* user) {
         Win* w = static_cast<Win*>(user);
+        stopDisplayLink(*w);
         if (w->vk) detail::vkWinDestroy(w->vk); // before the layer goes away
         w->vk = nullptr;
         [w->window orderOut:nil];
@@ -349,6 +387,7 @@ fa::CocoaPlatform::CocoaPlatform(Application& app, const NativeOptions& o) : m(s
 }
 fa::CocoaPlatform::~CocoaPlatform() {
     for (auto& w : m->wins) {
+        Impl::stopDisplayLink(*w);
         if (w->win) w->win->setPresenter({});
         if (w->vk) detail::vkWinDestroy(w->vk);
         w->vk = nullptr;
@@ -386,7 +425,13 @@ bool fa::CocoaPlatform::show(AppWindow& aw) {
     [w->window center];
     [w->window makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
-    aw.setPresenter({w.get(), &Impl::present, &Impl::destroy});
+    // Vulkan FIFO blocks on the display (vsynced); the CPU path is paced by the display link when one starts,
+    // else by AppWindow::maxFrameRate
+    bool vsynced = w->vk && m->opts.vsync;
+    if (!w->vk && Impl::startDisplayLink(*w)) vsynced = true;
+    Presenter pr{w.get(), &Impl::present, &Impl::destroy};
+    pr.vsynced = vsynced;
+    aw.setPresenter(pr);
     m->wins.push_back(std::move(w));
     return true;
 }

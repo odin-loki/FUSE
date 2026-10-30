@@ -1,11 +1,16 @@
+#include <ctime>
 // fuse_ui_bench_render: render performance of the CPU reference rasteriser and the GPU backend (ui.draw_list +
 // ui.backdrop on whatever Vulkan device is present; lavapipe in CI) for a full frame, a damage repaint, backdrop blur
 // and a text-heavy page. Prints a table and writes JSON (--out=<file>). No thresholds: a trend tool, not a gate
 // (label "bench"). GPU times are timestamp queries around the recorded UI work (device time, every pass and barrier);
 // devices without timestamps fall back to wall time minus the harness' transfer round trip (an empty submit).
-#include "fuse/ui/render/ui_vk.hpp"
+// Builds without Vulkan (e.g. the Windows cross build) still run the CPU rows and the draw-data pack.
+#include "fuse/ui/render/gpu_draw_data.hpp"
 #include "test_util.hpp"
+#if FUSE_UI_BENCH_GPU
+#include "fuse/ui/render/ui_vk.hpp"
 #include "vk_headless.hpp"
+#endif
 
 #include <algorithm>
 #include <chrono>
@@ -19,16 +24,32 @@
 using namespace fuse::ui;
 using namespace fuse::ui::test;
 using fuse::ui::render::GpuDrawData;
+#if FUSE_UI_BENCH_GPU
 using fuse::ui::render::UiVkRenderer;
+#endif
 using fuse::ui::render::packDrawList;
 
 namespace {
 using Clock = std::chrono::steady_clock;
-template <class F> double msPer(int n, F&& f) {
+// thread CPU time (the box is shared and often oversubscribed, so wall time measures the scheduler); the CPU
+// rasterizer is single-threaded. Windows keeps wall time (minimum over iterations)
+double threadMs() { return double(std::clock()) * 1000.0 / CLOCKS_PER_SEC; }
+template <class F> double msPer(int n, F&& f, bool cpuClock = false) {
     f(); // warm
-    const auto t0 = Clock::now();
-    for (int i = 0; i < n; ++i) f();
-    return std::chrono::duration<double, std::milli>(Clock::now() - t0).count() / n;
+    double best = 1e300; // minimum per iteration: robust against other load on the machine
+    for (int i = 0; i < n; ++i) {
+        const auto w0 = Clock::now();
+        const double t0 = threadMs();
+        f();
+        const double wall = std::chrono::duration<double, std::milli>(Clock::now() - w0).count();
+#if defined(_WIN32)
+        (void)t0; // the CRT clock() ticks in whole milliseconds there: wall time (minimum) instead
+        best = std::min(best, wall);
+#else
+        best = std::min(best, cpuClock ? threadMs() - t0 : wall);
+#endif
+    }
+    return best;
 }
 struct Row {
     std::string name;
@@ -97,14 +118,19 @@ int main(int argc, char** argv) {
     std::vector<Row> rows;
     for (const Scene& s : scenes) {
         Row row{s.name};
-        row.cpu = msPer(iters, [&] { r.render(*s.list, img, s.scissor); });
+        row.cpu = msPer(iters, [&] { r.render(*s.list, img, s.scissor); }, true);
+        GpuDrawData packed;
+        row.pack = msPer(iters, [&] {
+            packDrawList(*s.list, W, H, packed, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, s.scissor);
+        }, true);
         rows.push_back(row);
     }
+    std::string device = "none";
+    bool timestamps = false;
+#if FUSE_UI_BENCH_GPU
 
     VkHeadless vk;
     UiVkRenderer gpu;
-    std::string device = "none";
-    bool timestamps = false;
     if (UiVkRenderer::kernelAvailable() && vk.init(W, H) &&
         gpu.init({.physicalDevice = (void*)vk.phys, .device = (void*)vk.device, .framesInFlight = 1}) && gpu.valid()) {
         device = vk.deviceName;
@@ -122,9 +148,7 @@ int main(int argc, char** argv) {
         GpuDrawData data;
         for (std::size_t i = 0; i < std::size(scenes); ++i) {
             const Scene& s = scenes[i];
-            rows[i].pack = msPer(iters, [&] {
-                packDrawList(*s.list, W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, s.scissor);
-            });
+            packDrawList(*s.list, W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, s.scissor);
             data.atlasGeneration = ui.atlas().version();
             gpu.upload(0, data);
             double device = 0.0;
@@ -149,6 +173,7 @@ int main(int argc, char** argv) {
         }
         if (qp) vkDestroyQueryPool(vk.device, qp, nullptr);
     }
+#endif
 
     std::printf("fuse_ui_bench_render %ux%u, %d iterations, GPU: %s (%s)\n", W, H, iters, device.c_str(),
                 timestamps ? "timestamp queries" : "wall time");
@@ -166,6 +191,8 @@ int main(int argc, char** argv) {
             std::fclose(f);
         }
     }
+#if FUSE_UI_BENCH_GPU
     gpu.destroy();
+#endif
     return 0;
 }

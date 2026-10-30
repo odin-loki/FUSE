@@ -7,6 +7,7 @@ namespace fuse::ui::simd {
 void boxVertical(const float* src, float* dst, int stride, int h, int r, float inv);
 /// Horizontal pass over `h` rows of `w` RGBA pixels (4 floats each): pixel-transpose, the vertical lane sweep, and
 /// back. `scratch` holds w*h*4 floats. Bit-identical to the scalar per-channel sliding window.
+void boxHorizontalN(float* buf, float* tmp, float* scratch, int w, int h, int r, float inv, int passes);
 void boxHorizontal(float* buf, float* tmp, float* scratch, int w, int h, int r, float inv);
 /// Stores `value` into dst[0..n) with FORGE-lane vector stores (u32 bits carried in float lanes, moves only).
 void fillSpan(unsigned* dst, int n, unsigned value);

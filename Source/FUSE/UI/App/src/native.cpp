@@ -49,6 +49,7 @@ const char* vkCtxDeviceName(const VkCtx*) { return ""; }
 VkWin* vkWinCreate(VkCtx*, const SurfaceSource&, const NativeOptions&, std::string&) { return nullptr; }
 bool vkWinPresent(VkWin*, AppWindow&, Rect) { return false; }
 bool vkWinGpuDraws(const VkWin*) { return false; }
+OutputColorSpace vkWinColorSpace(const VkWin*) { return OutputColorSpace::Srgb; }
 void vkWinDestroy(VkWin*) {}
 bool vkWinReadback(VkWin*, Image&) { return false; }
 } // namespace detail
@@ -1355,6 +1356,10 @@ PresenterKind NativePlatform::kind(const AppWindow& w) const {
     return r ? r->kind : PresenterKind::Headless;
 }
 std::string_view NativePlatform::gpuName() const { return detail::vkCtxDeviceName(m->vk); }
+OutputColorSpace NativePlatform::outputColorSpace(const AppWindow& w) const {
+    const Impl::Rec* r = m->find(w);
+    return r ? detail::vkWinColorSpace(r->vk) : OutputColorSpace::Srgb;
+}
 bool NativePlatform::gpuDraws(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);
     return r && detail::vkWinGpuDraws(r->vk);
