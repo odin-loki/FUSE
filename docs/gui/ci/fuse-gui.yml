@@ -1,33 +1,122 @@
-# FUSE GUI CI (docs/gui/PLAN.md G1). Staged here because the pushing token lacks the `workflow` scope:
-# move to .github/workflows/fuse-gui.yml to enable.
+# FUSE GUI CI (docs/gui/PLAN.md). STAGED HERE because the pushing token lacks the `workflow` scope:
+# `git mv docs/gui/ci/fuse-gui.yml .github/workflows/fuse-gui.yml` (with a workflow-scoped token) to enable.
 name: fuse-gui
 on:
   push:
-    paths: ["Source/FUSE/UI/**", "cmake/FuseForge.cmake", "vendor/forge", "docs/gui/ci/**", ".github/workflows/fuse-gui.yml"]
+    branches: [gui-framework, gui-render, gui-features]
+    paths: ["Source/FUSE/UI/**", "cmake/FuseForge.cmake", "vendor/forge", "vendor/fonts/**", "docs/gui/ci/**", ".github/workflows/fuse-gui.yml"]
   pull_request:
     paths: ["Source/FUSE/UI/**", "cmake/FuseForge.cmake", "vendor/forge"]
   workflow_dispatch:
 
+concurrency: { group: "fuse-gui-${{ github.ref }}", cancel-in-progress: true }
+
+env:
+  UI: Source/FUSE/UI
+
 jobs:
   linux:
+    name: linux (${{ matrix.mode }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [headless, x11, wayland]
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: true }
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build clang-18 xvfb weston mesa-vulkan-drivers libvulkan-dev libwayland-client0 libwayland-server0 libxkbcommon0 libx11-6
+      - run: cmake -S $UI -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_COMPILER=clang++-18 -DCMAKE_C_COMPILER=clang-18
+      - run: cmake --build build -j
+      - name: test (headless)
+        if: matrix.mode == 'headless'
+        run: env -u DISPLAY -u WAYLAND_DISPLAY ctest --test-dir build --output-on-failure -j4
+      - name: test (X11 under Xvfb, lavapipe Vulkan)
+        if: matrix.mode == 'x11'
+        run: xvfb-run -a -s "-screen 0 1280x800x24" ctest --test-dir build --output-on-failure -j2
+      - name: test (Wayland under headless weston)
+        if: matrix.mode == 'wayland'
+        run: |
+          export XDG_RUNTIME_DIR=$(mktemp -d) && chmod 700 $XDG_RUNTIME_DIR
+          weston --backend=headless --socket=wl-fuse --idle-time=0 &
+          for i in $(seq 50); do [ -S $XDG_RUNTIME_DIR/wl-fuse ] && break; sleep 0.2; done
+          WAYLAND_DISPLAY=wl-fuse FUSE_UI_BACKEND=wayland ctest --test-dir build --output-on-failure -j2
+
+  windows-msvc:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: true }
+      - uses: ilammy/msvc-dev-cmd@v1
+      - run: cmake -S $env:UI -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl
+      - run: cmake --build build -j
+      - run: ctest --test-dir build --output-on-failure -j4
+
+  windows-mingw-wine:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with: { submodules: true }
-      - run: sudo apt-get update && sudo apt-get install -y ninja-build xvfb mesa-vulkan-drivers libvulkan-dev clang-18
-      - run: cmake -S Source/FUSE/UI -B build -G Ninja -DCMAKE_CXX_COMPILER=clang++-18 -DCMAKE_C_COMPILER=clang-18
-      - run: cmake --build build -j
-      - run: ctest --test-dir build --output-on-failure -j4
+      - run: |
+          sudo dpkg --add-architecture i386 && sudo apt-get update
+          sudo apt-get install -y ninja-build wine64 xvfb
+          curl -sL https://github.com/mstorsjo/llvm-mingw/releases/download/20241119/llvm-mingw-20241119-ucrt-ubuntu-20.04-x86_64.tar.xz | tar -xJ -C $HOME
+          echo "$HOME/llvm-mingw-20241119-ucrt-ubuntu-20.04-x86_64/bin" >> $GITHUB_PATH
+      - run: |
+          cmake -S $UI -B build -G Ninja -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_C_COMPILER=x86_64-w64-mingw32-clang \
+            -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-clang++ -DCMAKE_EXE_LINKER_FLAGS="-static" \
+            -DCMAKE_CROSSCOMPILING_EMULATOR="xvfb-run;-a;wine"
+          cmake --build build -j
+      - run: wineboot -u && ctest --test-dir build --output-on-failure -j2
 
   macos:
-    runs-on: macos-15
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with: { submodules: true }
       - run: brew install ninja
-      - run: cmake -S Source/FUSE/UI -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      - run: cmake -S $UI -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
       - run: cmake --build build -j
-      - run: ctest --test-dir build --output-on-failure -j4 -E "native_window|os_popups"   # no Cocoa backend yet (G3)
+      - run: ctest --test-dir build --output-on-failure -j4
+
+  ios-simulator:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: true }
+      - run: brew install ninja
+      - run: |
+          cmake -S $UI -B build -G Ninja -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphonesimulator \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DFUSE_BUILD_UI_TESTS=OFF \
+            -DFUSE_BUILD_UI_DESIGNER=OFF -DFUSE_BUILD_GUI_EXAMPLES=OFF -DFUSE_BUILD_UI_VK=OFF
+          cmake --build build -j --target fuse_app_native
+
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: true }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: build APK (arm64-v8a + x86_64)
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;34.0.0" "platforms;android-34" >/dev/null
+          ANDROID_SDK=$ANDROID_HOME ANDROID_NDK=$ANDROID_NDK_LATEST_HOME $UI/App/android/build_apk.sh build-apk arm64-v8a x86_64
+      - uses: actions/upload-artifact@v4
+        with: { name: fuse_hello.apk, path: build-apk/fuse_hello.apk }
+      - name: enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - name: emulator smoke (frame, tap, IME, a11y)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: default
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          script: Source/FUSE/UI/App/android/run_emulator_smoke.sh build-apk/fuse_hello.apk
 
   freebsd:
     runs-on: ubuntu-24.04
@@ -38,8 +127,8 @@ jobs:
         with:
           release: "14.2"
           usesh: true
-          prepare: pkg install -y cmake ninja llvm18 libX11
+          prepare: pkg install -y cmake ninja llvm18 libX11 libxkbcommon wayland
           run: |
             cmake -S Source/FUSE/UI -B build -G Ninja -DCMAKE_CXX_COMPILER=clang++18 -DCMAKE_C_COMPILER=clang18
             cmake --build build -j4
-            ctest --test-dir build --output-on-failure -j2 -E "native_window|os_popups"
+            ctest --test-dir build --output-on-failure -j2
