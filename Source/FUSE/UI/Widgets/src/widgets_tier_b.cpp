@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include "fuse/ui/widgets/widgets.hpp"
 #include "widgets_internal.hpp"
+#include "item_selection.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -385,49 +386,68 @@ void eachTreeRow(std::string_view s, u64 collapsed, F&& f) {
     });
     flush(0xFFFFFFFFu);
 }
-struct TreeDnd { u32 gen = 0; TreeDragDrop o; };
-std::unordered_map<const UiContext*, std::unordered_map<u32, TreeDnd>>& treeDnd() {
-    static std::unordered_map<const UiContext*, std::unordered_map<u32, TreeDnd>> m;
+struct TreeState {
+    u32 gen = 0;
+    TreeDragDrop o;
+    detail::ItemSelection sel;
+    u32 first = 0;
+    i64 pendingLine = -1; ///< Extended / Multi press on a selected row: narrow the selection on release unless dragged
+    bool barDrag = false;
+    f32 grab = 0.f;
+};
+std::unordered_map<const UiContext*, std::unordered_map<u32, TreeState>>& treeStates() {
+    static std::unordered_map<const UiContext*, std::unordered_map<u32, TreeState>> m;
     return m;
 }
+TreeState& treeState(const UiContext& ui, NodeHandle n) {
+    TreeState& s = treeStates()[&ui][n.index];
+    if (s.gen != n.generation) s = TreeState{n.generation};
+    return s;
+}
 const TreeDragDrop* treeDndOf(const UiContext& ui, NodeHandle n) {
-    auto& m = treeDnd()[&ui];
-    auto it = m.find(n.index);
-    return it != m.end() && it->second.gen == n.generation ? &it->second.o : nullptr;
+    const TreeState& s = treeState(ui, n);
+    return (s.o.drag || s.o.internalMove) ? &s.o : nullptr;
 }
 enum class DropZone : u8 { Above, Below, Onto };
-/// Moves line `from` with its subtree above / below / onto line `to`; returns the new index of `from` or -1.
-i64 treeMove(UiContext& ui, NodeHandle n, u32 from, u32 to, DropZone z) {
+/// Moves lines `froms` (each with its subtree; lines inside another moved subtree go along with it) above / below /
+/// onto line `to`, keeping their order; returns (old, new) index of each moved head (empty = refused).
+std::vector<std::pair<u32, u32>> treeMove(UiContext& ui, NodeHandle n, std::vector<u32> froms, u32 to, DropZone z) {
     std::vector<std::string_view> lines;
     eachLine(ui.text(n), [&](u32, std::string_view l) { lines.push_back(l); return true; });
-    if (from >= lines.size() || to >= lines.size()) return -1;
-    const u32 d0 = depthOf(lines[from]);
-    u32 end = from + 1;
-    while (end < lines.size() && depthOf(lines[end]) > d0) ++end;
-    if (to >= from && to < end) return -1; // into its own subtree
+    std::sort(froms.begin(), froms.end());
+    std::vector<i32> blockOf(lines.size(), -1); // line -> index of its block head in `heads`
+    std::vector<u32> heads;
+    for (u32 f : froms) {
+        if (f >= lines.size() || blockOf[f] >= 0) continue;
+        const u32 d0 = depthOf(lines[f]);
+        blockOf[f] = i32(heads.size());
+        for (u32 k = f + 1; k < lines.size() && depthOf(lines[k]) > d0; ++k) blockOf[k] = i32(heads.size());
+        heads.push_back(f);
+    }
+    if (heads.empty() || to >= lines.size() || blockOf[to] >= 0) return {};
     const u32 dt = depthOf(lines[to]);
     u32 tEnd = to + 1;
     while (tEnd < lines.size() && depthOf(lines[tEnd]) > dt) ++tEnd;
     const u32 newDepth = z == DropZone::Onto ? dt + 1 : dt;
-    u32 at = z == DropZone::Above ? to : tEnd; // insertion index in the original numbering
-    std::vector<u32> order; // new order as original indices
-    for (u32 i = 0; i < lines.size(); ++i) {
-        if (i == at) for (u32 k = from; k < end; ++k) order.push_back(k);
-        if (i < from || i >= end) order.push_back(i);
+    const u32 at = z == DropZone::Above ? to : tEnd;
+    std::vector<u32> order, moved;
+    for (u32 k = 0; k < lines.size(); ++k) if (blockOf[k] >= 0) moved.push_back(k);
+    for (u32 i = 0; i <= lines.size(); ++i) {
+        if (i == at) order.insert(order.end(), moved.begin(), moved.end());
+        if (i < lines.size() && blockOf[i] < 0) order.push_back(i);
     }
-    if (at >= lines.size()) for (u32 k = from; k < end; ++k) order.push_back(k);
     const u64 oldMask = ui.userData(n);
     u64 mask = 0;
     std::string out;
-    i64 newFrom = -1;
+    std::vector<std::pair<u32, u32>> newHeads;
     for (u32 i = 0; i < order.size(); ++i) {
         const u32 o = order[i];
         std::string_view l = lines[o];
-        if (o >= from && o < end) {
-            const u32 d = depthOf(l) - d0 + newDepth;
+        if (blockOf[o] >= 0) {
+            const u32 d = depthOf(l) - depthOf(lines[heads[u32(blockOf[o])]]) + newDepth;
             out.append(d, '\t');
             l = l.substr(depthOf(l));
-            if (o == from) newFrom = i;
+            if (o == heads[u32(blockOf[o])]) newHeads.emplace_back(o, i);
         }
         out.append(l);
         if (i + 1 < order.size()) out.push_back('\n');
@@ -436,7 +456,7 @@ i64 treeMove(UiContext& ui, NodeHandle n, u32 from, u32 to, DropZone z) {
     }
     ui.setUserData(n, mask);
     ui.setText(n, out);
-    return newFrom;
+    return newHeads;
 }
 struct TreeView {
     static constexpr std::string_view kName = "treeview";
@@ -444,31 +464,69 @@ struct TreeView {
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
     static constexpr f32 kIndent = 16.f;
+    static constexpr f32 kBar = 8.f;
     static Size measure(UiContext& ui, NodeHandle n, Size) {
         return {200.f, rowHeight(ui, n) * f32(std::clamp(treeVisibleRows(ui, n), 1u, 10u))};
+    }
+    static u32 visible(UiContext& ui, NodeHandle n) { return std::max(1u, u32(ui.contentRect(n).h / rowHeight(ui, n))); }
+    static void setFirst(UiContext& ui, NodeHandle n, i64 f) {
+        TreeState& s = treeState(ui, n);
+        const u32 total = treeVisibleRows(ui, n), vis = visible(ui, n);
+        const u32 nf = u32(std::clamp<i64>(f, 0, total > vis ? i64(total - vis) : 0));
+        if (nf != s.first) { s.first = nf; ui.invalidate(n); }
+    }
+    static void ensureVisible(UiContext& ui, NodeHandle n, i64 row) {
+        if (row < 0) return;
+        const TreeState& s = treeState(ui, n);
+        const u32 vis = visible(ui, n);
+        if (row < i64(s.first)) setFirst(ui, n, row);
+        else if (row >= i64(s.first + vis)) setFirst(ui, n, row - i64(vis) + 1);
+    }
+    static bool barGeom(UiContext& ui, NodeHandle n, Rect& track, Rect& thumb) {
+        const u32 total = treeVisibleRows(ui, n), vis = visible(ui, n);
+        if (total <= vis) return false;
+        const Rect c = ui.contentRect(n);
+        track = {c.right() - kBar, c.y, kBar, c.h};
+        const f32 tl = std::max(16.f, c.h * f32(vis) / f32(total));
+        thumb = {track.x, c.y + (c.h - tl) * f32(treeState(ui, n).first) / f32(total - vis), kBar, tl};
+        return true;
+    }
+    static bool lineSelected(const UiContext& ui, NodeHandle n, i64 line) {
+        return treeState(ui, n).sel.has(line, 0, i64(ui.value(n)), 0);
     }
     static void paint(const PaintContext& pc, DrawList& dl) {
         UiContext& ui = pc.ui;
         const Rect c = pc.content;
         const f32 rh = rowHeight(ui, pc.node);
-        const i64 sel = i64(ui.value(pc.node));
+        const i64 cur = i64(ui.value(pc.node));
+        const TreeState& s = treeState(ui, pc.node);
+        Rect tr, th;
+        const bool bar = barGeom(ui, pc.node, tr, th);
+        const f32 w = c.w - (bar ? kBar : 0.f);
         dl.pushClip(c);
         eachTreeRow(ui.text(pc.node), ui.userData(pc.node), [&](u32 row, u32 line, u32 depth, bool kids, bool open, std::string_view t) {
-            const Rect r{c.x, c.y + f32(row) * rh, c.w, rh};
+            if (row < s.first) return true;
+            const Rect r{c.x, c.y + f32(row - s.first) * rh, w, rh};
             if (r.y > c.bottom()) return false;
-            if (i64(line) == sel) dl.rect(r, accent(pc).withAlpha((pc.states & kStateFocus ? 0.55f : 0.3f) * pc.opacity), 3.f);
+            if (lineSelected(ui, pc.node, line)) dl.rect(r, accent(pc).withAlpha((pc.states & kStateFocus ? 0.55f : 0.3f) * pc.opacity), 3.f);
+            else if (i64(line) == cur && s.sel.explicitSet() && (pc.states & kStateFocus)) // current item outline
+                dl.roundedRect(r, {}, {}, accent(pc).withAlpha(0.7f * pc.opacity), 1.f);
             const f32 x = r.x + 4.f + f32(depth) * kIndent, my = r.y + rh * 0.5f;
             if (kids) {
                 const Color a = textCol(pc);
                 if (open) { dl.line({x + 2.f, my - 2.f}, {x + 6.f, my + 2.f}, a, 1.5f); dl.line({x + 6.f, my + 2.f}, {x + 10.f, my - 2.f}, a, 1.5f); }
                 else { dl.line({x + 4.f, my - 4.f}, {x + 8.f, my}, a, 1.5f); dl.line({x + 8.f, my}, {x + 4.f, my + 4.f}, a, 1.5f); }
             }
-            labelAt(pc, dl, t, {x + 14.f, r.y + 3.f, c.right() - x - 14.f, rh - 6.f});
+            labelAt(pc, dl, t, {x + 14.f, r.y + 3.f, r.right() - x - 14.f, rh - 6.f});
             return true;
         });
         if (Rect ind; dropIndicator(ui, pc.node, ind)) { // QAbstractItemView drop indicator: a line between rows, a box onto one
             if (ind.h <= 2.f) dl.rect(ind, accent(pc).withAlpha(pc.opacity));
             else dl.roundedRect(ind, {}, {}, accent(pc).withAlpha(pc.opacity), 1.5f);
+        }
+        if (bar) {
+            dl.rect(tr, pc.tint(Color::rgb(0x000000, 0.15f)), kBar * 0.5f);
+            dl.rect(th, pc.tint(Color::rgb(s.barDrag ? 0xB4B4C0 : 0x8A8A96, 0.85f)), kBar * 0.5f);
         }
         dl.popClip();
     }
@@ -478,17 +536,20 @@ struct TreeView {
         UiContext& ui = const_cast<UiContext&>(cui);
         const Rect c = ui.contentRect(n);
         const f32 rh = rowHeight(ui, n);
-        const i64 sel = i64(ui.value(n));
+        const i64 cur = i64(ui.value(n));
+        const u32 first = treeState(ui, n).first;
         self.rowCount = treeVisibleRows(ui, n);
         self.colCount = 1;
         eachTreeRow(ui.text(n), ui.userData(n), [&](u32 row, u32 line, u32 depth, bool kids, bool open, std::string_view t) {
-            const Rect b{c.x, c.y + f32(row) * rh, c.w, rh};
+            if (row < first) return true;
+            const Rect b{c.x, c.y + f32(row - first) * rh, c.w, rh};
             if (b.y > c.bottom()) return false;
+            const bool sel = lineSelected(ui, n, line);
             const u32 rowAt = u32(out.size());
             A11ySnapshotNode r;
             r.role = A11yRole::Row; r.part = 2u * line + 1u; r.rowIndex = i32(row); r.level = depth + 1u; r.bounds = b;
             r.name = std::string(t);
-            r.state.selected = i64(line) == sel;
+            r.state.selected = sel;
             r.state.expanded = kids ? (open ? 1 : 0) : -1;
             out.push_back(std::move(r));
             A11ySnapshotNode gc;
@@ -496,11 +557,19 @@ struct TreeView {
             gc.name = std::string(t);
             const f32 x = b.x + 18.f + f32(depth) * kIndent;
             gc.bounds = {x, b.y, b.right() - x, rh}; // the text, not the arrow: a click selects
-            gc.state.selected = i64(line) == sel;
-            gc.focused = i64(line) == sel;
+            gc.state.selected = sel;
+            gc.focused = i64(line) == cur;
             out.push_back(std::move(gc));
             return true;
         });
+    }
+    /// AT Expand / Collapse on a row (or its cell) part.
+    static bool a11yPartExpand(UiContext& ui, NodeHandle n, u32 part, bool open) {
+        const u32 line = (part - 1u) / 2u;
+        const Hit h = rowInfo(ui, n, [&](u32, u32 l) { return l == line; });
+        if (h.line < 0 || !h.kids || h.open == open) return false;
+        setTreeExpanded(ui, n, line, open);
+        return true;
     }
     struct Hit { i64 line = -1; u32 depth = 0; bool kids = false, open = false; i64 row = -1; };
     static Hit rowInfo(UiContext& ui, NodeHandle n, auto pred) {
@@ -512,56 +581,141 @@ struct TreeView {
         });
         return h;
     }
+    /// Visual rows from line a to line b (inclusive) as lines.
+    static auto rowsFn(UiContext& ui, NodeHandle n) {
+        return [&ui, n](i64 a, i64 b, std::vector<i64>& out) {
+            const i64 ra = rowInfo(ui, n, [&](u32, u32 l) { return i64(l) == a; }).row, rb = rowInfo(ui, n, [&](u32, u32 l) { return i64(l) == b; }).row;
+            const i64 lo = std::min(ra, rb), hi = std::max(ra, rb);
+            eachTreeRow(ui.text(n), ui.userData(n), [&](u32 row, u32 line, u32, bool, bool, std::string_view) {
+                if (i64(row) > hi) return false;
+                if (i64(row) >= lo) out.push_back(line);
+                return true;
+            });
+        };
+    }
+    /// Makes `line` current (value()); scrolls it into view.
     static void select(UiContext& ui, NodeHandle n, i64 line) {
-        if (line < 0 || i64(ui.value(n)) == line) return;
+        if (line < 0) return;
+        ensureVisible(ui, n, rowInfo(ui, n, [&](u32, u32 l) { return i64(l) == line; }).row);
+        if (i64(ui.value(n)) == line) return;
         ui.setValue(n, f32(line), true);
         std::string_view t = nth(ui.text(n), u32(line));
         ui.emit(n, SignalKind::TextChanged, {.text = t.substr(depthOf(t))});
+        if (treeState(ui, n).sel.mode == SelectionMode::Single) ui.emit(n, SignalKind::SelectionChanged, {.value = f32(line)});
+    }
+    static void changed(UiContext& ui, NodeHandle n) {
+        ui.invalidate(n);
+        ui.emit(n, SignalKind::SelectionChanged, {.value = ui.value(n)});
+    }
+    /// keyboard move to `line` with selection per mode
+    static void navTo(UiContext& ui, NodeHandle n, i64 line, u8 mods) {
+        if (line < 0) return;
+        TreeState& s = treeState(ui, n);
+        select(ui, n, line);
+        if (s.sel.navigate(line, 0, mods, rowsFn(ui, n))) changed(ui, n);
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
         UiContext& ui = ec.ui;
         const NodeHandle n = ec.node;
+        TreeState& st = treeState(ui, n);
         const i64 sel = i64(ui.value(n));
+        if (e.type == EventType::Wheel) { setFirst(ui, n, i64(st.first) - i64(std::lround(e.wheel.y * 3.f))); return true; }
         if (e.type == EventType::PointerDown) {
             const Rect c = ui.contentRect(n);
-            const i64 row = i64((e.pos.y - c.y) / rowHeight(ui, n));
+            if (Rect tr, th; barGeom(ui, n, tr, th) && tr.contains(e.pos)) {
+                st.barDrag = true;
+                st.grab = th.contains(e.pos) ? e.pos.y - th.y : th.h * 0.5f;
+                Event mv = e;
+                mv.type = EventType::PointerMove;
+                return onEvent(ec, mv);
+            }
+            const i64 row = i64(st.first) + i64((e.pos.y - c.y) / rowHeight(ui, n));
             const Hit h = rowInfo(ui, n, [&](u32 r, u32) { return i64(r) == row; });
             if (h.line < 0) return true;
             const f32 ax = c.x + 4.f + f32(h.depth) * kIndent;
-            if (h.kids && e.pos.x >= ax && e.pos.x < ax + 14.f) setTreeExpanded(ui, n, u32(h.line), !h.open);
-            else {
+            if (h.kids && e.pos.x >= ax && e.pos.x < ax + 14.f) { setTreeExpanded(ui, n, u32(h.line), !h.open); return true; }
+            st.pendingLine = -1;
+            const bool dragging = (st.o.drag || st.o.internalMove) && e.button == MouseButton::Left;
+            if (dragging && !(e.mods & (kModShift | kModCtrl | kModSuper)) && st.sel.explicitSet() && st.sel.keys.contains(u64(h.line)) &&
+                st.sel.mode != SelectionMode::Multi) {
+                st.pendingLine = h.line; // keep the selection for a multi-row drag; narrow on release
                 select(ui, n, h.line);
-                if (const TreeDragDrop* o = treeDndOf(ui, n); o && (o->drag || o->internalMove) && e.button == MouseButton::Left) {
-                    const u32 line = u32(h.line);
-                    const bool internal = o->internalMove && !o->drag;
-                    dnd::press(ui, n, e.pos, [line, internal](UiContext& c2, NodeHandle self, Vec2, DragPayload& p) {
-                        const std::string_view t = nth(c2.text(self), line);
-                        p.set("text/plain", t.substr(depthOf(t)));
-                        p.set("application/x-fuse-tree-line", std::to_string(line));
-                        p.actions = internal ? u8(DropMove) : u8(DropCopy | DropMove);
-                        return true;
-                    });
-                }
+            } else {
+                select(ui, n, h.line);
+                if (st.sel.click(h.line, 0, e.mods, rowsFn(ui, n))) changed(ui, n);
+            }
+            if (dragging) {
+                const bool internal = st.o.internalMove && !st.o.drag;
+                const u32 line = u32(h.line);
+                dnd::press(ui, n, e.pos, [line, internal](UiContext& c2, NodeHandle self, Vec2, DragPayload& p) {
+                    TreeState& s2 = treeState(c2, self);
+                    s2.pendingLine = -1;
+                    std::vector<u32> lines;
+                    if (s2.sel.explicitSet() && s2.sel.keys.contains(line))
+                        for (u64 k : s2.sel.keys) lines.push_back(u32(k));
+                    else lines.push_back(line);
+                    std::string txt, idx;
+                    for (u32 l : lines) {
+                        const std::string_view t = nth(c2.text(self), l);
+                        if (!txt.empty()) { txt.push_back('\n'); idx.push_back(','); }
+                        txt.append(t.substr(depthOf(t)));
+                        idx.append(std::to_string(l));
+                    }
+                    p.set("text/plain", txt);
+                    p.set("application/x-fuse-tree-line", idx);
+                    p.label = lines.size() > 1 ? std::to_string(lines.size()) + " items" : txt;
+                    p.actions = internal ? u8(DropMove) : u8(DropCopy | DropMove);
+                    return true;
+                });
             }
             return true;
         }
-        if (e.type == EventType::PointerMove) return dnd::move(ui, n, e.pos, e.mods);
-        if (e.type == EventType::PointerUp) return dnd::release(ui, n, e.pos, e.mods);
+        if (e.type == EventType::PointerMove) {
+            if (st.barDrag) {
+                Rect tr, th;
+                if (!barGeom(ui, n, tr, th)) return true;
+                const u32 total = treeVisibleRows(ui, n), vis = visible(ui, n);
+                const f32 f = std::clamp((e.pos.y - tr.y - st.grab) / std::max(1.f, tr.h - th.h), 0.f, 1.f);
+                setFirst(ui, n, i64(std::lround(f * f32(total - vis))));
+                return true;
+            }
+            return dnd::move(ui, n, e.pos, e.mods);
+        }
+        if (e.type == EventType::PointerUp) {
+            if (st.barDrag) { st.barDrag = false; ui.invalidate(n); return true; }
+            if (dnd::release(ui, n, e.pos, e.mods)) return true;
+            if (st.pendingLine >= 0) { // a click (no drag) on a selected row selects just it
+                const i64 l = st.pendingLine;
+                st.pendingLine = -1;
+                if (st.sel.click(l, 0, 0, rowsFn(ui, n))) changed(ui, n);
+            }
+            return false;
+        }
         if (e.type == EventType::KeyDown && e.key == Key::Escape && dragActive(ui)) { cancelDrag(ui); return true; }
         if (e.type != EventType::KeyDown) return false;
         const Hit cur = rowInfo(ui, n, [&](u32, u32 l) { return i64(l) == sel; });
+        auto lineAtRow = [&](i64 want) { return rowInfo(ui, n, [&](u32 r, u32) { return i64(r) == want; }).line; };
+        const i64 total = treeVisibleRows(ui, n), vis = visible(ui, n);
         switch (e.key) {
-        case Key::Down: {
-            const i64 want = cur.row + 1;
-            select(ui, n, rowInfo(ui, n, [&](u32 r, u32) { return i64(r) == want; }).line);
+        case Key::Down: navTo(ui, n, lineAtRow(std::min(cur.row + 1, total - 1)), e.mods); return true;
+        case Key::Up: navTo(ui, n, lineAtRow(cur.row < 0 ? 0 : std::max<i64>(cur.row - 1, 0)), e.mods); return true;
+        case Key::PageDown: navTo(ui, n, lineAtRow(std::clamp<i64>(cur.row + vis, 0, total - 1)), e.mods); return true;
+        case Key::PageUp: navTo(ui, n, lineAtRow(std::clamp<i64>(cur.row - vis, 0, total - 1)), e.mods); return true;
+        case Key::Home: navTo(ui, n, lineAtRow(0), e.mods); return true;
+        case Key::End: navTo(ui, n, lineAtRow(total - 1), e.mods); return true;
+        case Key::Space:
+            if (cur.line < 0) return false;
+            if (st.sel.mode == SelectionMode::Multi || (st.sel.mode == SelectionMode::Extended && (e.mods & (kModCtrl | kModSuper)))) {
+                st.sel.toggle(cur.line, 0);
+                changed(ui, n);
+                return true;
+            }
+            return false;
+        case Key::A:
+            if (!(e.mods & (kModCtrl | kModSuper))) return false;
+            selectAllItems(ui, n);
             return true;
-        }
-        case Key::Up: {
-            const i64 want = cur.row < 0 ? 0 : cur.row - 1;
-            select(ui, n, rowInfo(ui, n, [&](u32 r, u32) { return i64(r) == want; }).line);
-            return true;
-        }
         case Key::Right: if (cur.kids && !cur.open) setTreeExpanded(ui, n, u32(cur.line), true); return true;
         case Key::Left:
             if (cur.kids && cur.open) setTreeExpanded(ui, n, u32(cur.line), false);
@@ -572,7 +726,7 @@ struct TreeView {
                     if (d < cur.depth) parent = l;
                     return true;
                 });
-                select(ui, n, parent);
+                navTo(ui, n, parent, 0);
             }
             return true;
         case Key::Enter:
@@ -879,27 +1033,44 @@ void setTreeExpanded(UiContext& ui, NodeHandle tree, u32 line, bool open) {
 }
 void setTreeDragDrop(UiContext& ui, NodeHandle tree, TreeDragDrop opts) {
     const bool internal = opts.internalMove;
-    treeDnd()[&ui][tree.index] = {tree.generation, std::move(opts)};
+    treeState(ui, tree).o = std::move(opts);
     if (!internal) { setDropTarget(ui, tree, {}); return; }
     setDropTarget(ui, tree, [](UiContext& c, NodeHandle t, const DropEvent& e) -> u8 {
         if (e.phase == DropPhase::Leave) { setDropIndicator(c, t, {}); return 0; }
         if (e.source != t || !e.payload->has("application/x-fuse-tree-line")) return DropIgnore;
-        const u32 from = u32(std::stoul(std::string(e.payload->get("application/x-fuse-tree-line"))));
+        std::vector<u32> froms;
+        for (std::string_view v = e.payload->get("application/x-fuse-tree-line"); !v.empty();) {
+            const std::size_t k = v.find(',');
+            froms.push_back(u32(std::stoul(std::string(v.substr(0, k)))));
+            v = k == std::string_view::npos ? std::string_view{} : v.substr(k + 1);
+        }
+        TreeState& st = treeState(c, t);
         const Rect r = c.contentRect(t);
         const f32 rh = rowHeight(c, t);
-        const i64 row = i64((e.pos.y - r.y) / rh);
+        if (e.phase == DropPhase::Move && st.o.autoScroll) // QAbstractItemView::autoScroll near the top / bottom edge
+            dnd::autoScroll(c, t, r, [](UiContext& c2, NodeHandle v, i32 dir) {
+                const u32 before = treeState(c2, v).first;
+                TreeView::setFirst(c2, v, i64(before) + dir);
+                return treeState(c2, v).first != before;
+            });
+        const i64 row = i64(st.first) + i64((e.pos.y - r.y) / rh);
         const auto h = TreeView::rowInfo(c, t, [&](u32 rr, u32) { return i64(rr) == row; });
         if (h.line < 0) { setDropIndicator(c, t, {}); return DropIgnore; }
-        const f32 y0 = r.y + f32(h.row) * rh, fy = (e.pos.y - y0) / rh;
+        const f32 y0 = r.y + f32(h.row - i64(st.first)) * rh, fy = (e.pos.y - y0) / rh;
         const DropZone z = fy < 0.25f ? DropZone::Above : fy > 0.75f ? DropZone::Below : DropZone::Onto;
-        // not into its own subtree
-        u32 d0 = 0, end = from + 1;
+        // not into a moved row's own subtree
         std::vector<u32> depth;
         eachLine(c.text(t), [&](u32, std::string_view l) { depth.push_back(depthOf(l)); return true; });
-        if (from >= depth.size()) return DropIgnore;
-        d0 = depth[from];
-        while (end < depth.size() && depth[end] > d0) ++end;
-        if (u32(h.line) >= from && u32(h.line) < end) { setDropIndicator(c, t, {}); return DropIgnore; }
+        for (u32 from : froms) {
+            if (from >= depth.size()) return DropIgnore;
+            u32 end = from + 1;
+            while (end < depth.size() && depth[end] > depth[from]) ++end;
+            if (u32(h.line) >= from && u32(h.line) < end) { setDropIndicator(c, t, {}); return DropIgnore; }
+        }
+        if (e.phase == DropPhase::Move && z == DropZone::Onto && h.kids && !h.open && st.o.autoExpandDelay >= 0.f) {
+            const u32 line = u32(h.line);
+            dnd::hoverDelay(c, t, line, st.o.autoExpandDelay, [line](UiContext& c2, NodeHandle v) { setTreeExpanded(c2, v, line, true); });
+        }
         const f32 x = r.x + 4.f + f32(h.depth + (z == DropZone::Onto ? 1u : 0u)) * TreeView::kIndent;
         if (e.phase != DropPhase::Drop) {
             setDropIndicator(c, t, z == DropZone::Onto ? Rect{r.x + 1.f, y0 + 1.f, r.w - 2.f, rh - 2.f}
@@ -907,14 +1078,27 @@ void setTreeDragDrop(UiContext& ui, NodeHandle tree, TreeDragDrop opts) {
             return DropMove;
         }
         setDropIndicator(c, t, {});
-        const i64 nf = treeMove(c, t, from, u32(h.line), z);
-        if (nf < 0) return DropIgnore;
+        const auto heads = treeMove(c, t, froms, u32(h.line), z);
+        if (heads.empty()) return DropIgnore;
         c.setValue(t, -1.f);
-        TreeView::select(c, t, nf);
-        if (const TreeDragDrop* o = treeDndOf(c, t); o && o->moved) { auto cb = o->moved; cb(c, t, from, u32(nf)); }
+        TreeView::select(c, t, heads.front().second);
+        if (st.sel.explicitSet()) {
+            st.sel.keys.clear();
+            for (const auto& hd : heads) st.sel.keys.insert(hd.second);
+            st.sel.anchorR = heads.front().second;
+            TreeView::changed(c, t);
+        }
+        if (st.o.moved) { auto cb = st.o.moved; for (const auto& [o, nw] : heads) cb(c, t, o, nw); }
         return DropMove;
     });
 }
+namespace detail {
+ItemSelection* treeSelection(const UiContext& ui, NodeHandle tree) { return &treeState(ui, tree).sel; }
+u32 treeLineCount(const UiContext& ui, NodeHandle tree) { return count(ui.text(tree)); }
+void treeSelectionChanged(UiContext& ui, NodeHandle tree) { TreeView::changed(ui, tree); }
+} // namespace detail
+u32 treeFirstVisible(const UiContext& ui, NodeHandle tree) { return treeState(ui, tree).first; }
+void setTreeFirstVisible(UiContext& ui, NodeHandle tree, u32 row) { TreeView::setFirst(ui, tree, row); }
 u32 treeVisibleRows(const UiContext& ui, NodeHandle tree) {
     u32 rows = 0;
     eachTreeRow(ui.text(tree), ui.userData(tree), [&](u32, u32, u32, bool, bool, std::string_view) { ++rows; return true; });

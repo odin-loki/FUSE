@@ -180,6 +180,10 @@ struct Lib {
     int (*UngrabPointer)(Display*, unsigned long) = nullptr;
     int (*ConvertSelection)(Display*, Atom, Atom, Atom, Window, unsigned long) = nullptr; // optional (XDND)
     int (*SetSelectionOwner)(Display*, Atom, Window, unsigned long) = nullptr;              // optional (XDND source)
+    XID (*CreateFontCursor)(Display*, unsigned) = nullptr;                                    // optional (cursor shapes)
+    int (*DefineCursor)(Display*, Window, XID) = nullptr;
+    std::unique_ptr<fuse::ui::os::Library> xcursor;                                           // optional libXcursor (themed)
+    XID (*LibraryLoadCursor)(Display*, const char*) = nullptr;
 
     bool load() {
         so = fuse::ui::os::loadLibrary({"libX11.so.6", "libX11.so"});
@@ -203,6 +207,10 @@ struct Lib {
         get(GrabPointer, "XGrabPointer"); get(UngrabPointer, "XUngrabPointer");
         ConvertSelection = reinterpret_cast<decltype(ConvertSelection)>(so->symbol("XConvertSelection"));
         SetSelectionOwner = reinterpret_cast<decltype(SetSelectionOwner)>(so->symbol("XSetSelectionOwner"));
+        CreateFontCursor = reinterpret_cast<decltype(CreateFontCursor)>(so->symbol("XCreateFontCursor"));
+        DefineCursor = reinterpret_cast<decltype(DefineCursor)>(so->symbol("XDefineCursor"));
+        if ((xcursor = fuse::ui::os::loadLibrary({"libXcursor.so.1", "libXcursor.so"})))
+            LibraryLoadCursor = reinterpret_cast<decltype(LibraryLoadCursor)>(xcursor->symbol("XcursorLibraryLoadCursor"));
         return all;
     }
 };
@@ -275,6 +283,7 @@ struct NativePlatform::Impl {
         bool mapped = false;
         bool focused = false;
         u64 titleRev = ~0ull; ///< AppWindow::titleRevision() the OS window shows (~0: sync on the first frame)
+        u32 cursorRev = 0;    ///< UiContext::cursorRevision() the OS cursor shows
         struct Popup {
             unsigned long long handle = 0;
             Rect screen;   ///< physical screen rect
@@ -366,6 +375,7 @@ struct NativePlatform::Impl {
     // OS-window popups
     void syncPopups(Rec& r);
     void syncTitle(Rec& r);
+    void syncCursor(Rec& r); ///< UiContext::cursorShape() -> the OS pointer cursor (drag feedback)
     /// An outside click (grabbed pointer outside every window of the app, or the app deactivated): close every popup.
     static void closeAllPopups(Rec& r) {
         UiContext& ui = r.win->ui();
@@ -449,6 +459,7 @@ void NativePlatform::Impl::syncPopups(Rec& r) {
 bool NativePlatform::Impl::present(void* user, AppWindow& w, Rect damage) {
     Rec& r = *static_cast<Rec*>(user);
     if (r.titleRev != w.titleRevision()) r.impl->syncTitle(r);
+    r.impl->syncCursor(r);
     switch (r.kind) {
     case PresenterKind::Vulkan: {
         const bool ok = detail::vkWinPresent(r.vk, w, damage);
@@ -581,6 +592,15 @@ SIZE outerSizeForClient(int cw, int ch, DWORD style, UINT dpi) {
     return {rc.right - rc.left, rc.bottom - rc.top};
 }
 
+static LPCWSTR winCursor(CursorShape c) {
+    switch (c) { // no stock copy / move / link drag cursors (OLE draws its own once the drag leaves the window)
+    case CursorShape::Pointer: case CursorShape::Grabbing: return reinterpret_cast<LPCWSTR>(IDC_HAND);
+    case CursorShape::Text: return reinterpret_cast<LPCWSTR>(IDC_IBEAM);
+    case CursorShape::Move: return reinterpret_cast<LPCWSTR>(IDC_SIZEALL);
+    case CursorShape::Forbidden: return reinterpret_cast<LPCWSTR>(IDC_NO);
+    default: return reinterpret_cast<LPCWSTR>(IDC_ARROW);
+    }
+}
 LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto* r = reinterpret_cast<NativePlatform::Impl::Rec*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     if (!r || !r->win) return DefWindowProcW(hwnd, msg, wp, lp);
@@ -619,8 +639,12 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     default: break;
     }
     switch (msg) {
+    case WM_SETCURSOR:
+        if (LOWORD(lp) == HTCLIENT) { SetCursor(LoadCursorW(nullptr, winCursor(ui.cursorShape()))); return TRUE; }
+        break;
     case WM_MOUSEMOVE:
         ui.pointerMove(at(lp));
+        r->impl->syncCursor(*r);
         if (wp & (MK_LBUTTON | MK_RBUTTON))
             if (auto drag = w.takeExternalDrag()) {
                 ReleaseCapture();
@@ -971,6 +995,7 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
         case x11::MotionNotify:
             ui.setModifiers(x11::mods(in.state));
             ui.pointerMove(pos);
+            m.syncCursor(*r);
             if (auto d = w.takeExternalDrag()) { m.drag.time = in.time; m.dragStart(*r, std::move(*d)); }
             break;
         case x11::ButtonPress:
@@ -1497,6 +1522,15 @@ void NativePlatform::Impl::syncTitle(Rec& r) {
     if (!wt.empty()) MultiByteToWideChar(CP_UTF8, 0, t.data(), int(t.size()), wt.data(), int(wt.size()));
     SetWindowTextW(reinterpret_cast<HWND>(r.handle), wt.c_str());
 }
+void NativePlatform::Impl::syncCursor(Rec& r) {
+    const u32 rev = r.win->ui().cursorRevision();
+    if (rev == r.cursorRev) return;
+    r.cursorRev = rev;
+    if (!r.handle) return;
+    POINT p;
+    if (GetCursorPos(&p) && (WindowFromPoint(p) == reinterpret_cast<HWND>(r.handle) || GetCapture() == reinterpret_cast<HWND>(r.handle)))
+        SetCursor(LoadCursorW(nullptr, winCursor(r.win->ui().cursorShape())));
+}
 std::string NativePlatform::osTitle(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);
     if (!r || !r->handle) return {};
@@ -1563,6 +1597,23 @@ void NativePlatform::Impl::syncTitle(Rec& r) {
     x.StoreName(dpy, x11::Window(r.handle), t.c_str()); // WM_NAME (Latin-1 for old WMs)
     const x11::Atom netName = x.InternAtom(dpy, "_NET_WM_NAME", 0), utf8 = x.InternAtom(dpy, "UTF8_STRING", 0);
     x.ChangeProperty(dpy, x11::Window(r.handle), netName, utf8, 8, 0 /*Replace*/, reinterpret_cast<const unsigned char*>(t.data()), int(t.size()));
+    x.Flush(dpy);
+}
+void NativePlatform::Impl::syncCursor(Rec& r) {
+    const u32 rev = r.win->ui().cursorRevision();
+    if (rev == r.cursorRev) return;
+    r.cursorRev = rev;
+    if (!r.handle || !dpy || !x.DefineCursor) return;
+    // themed names (freedesktop cursor spec) through libXcursor, else the core cursor font (X11/cursorfont.h)
+    static constexpr const char* kNames[] = {"default", "pointer", "text", "copy", "move", "alias", "not-allowed", "grabbing"};
+    static constexpr unsigned kFont[] = {68 /*left_ptr*/, 60 /*hand2*/, 152 /*xterm*/, 90 /*plus*/, 52 /*fleur*/, 68, 0 /*X_cursor*/, 58 /*hand1*/};
+    const u32 i = u32(r.win->ui().cursorShape());
+    if (i >= 8) return;
+    static x11::XID cache[8]{};
+    if (!cache[i] && x.LibraryLoadCursor) cache[i] = x.LibraryLoadCursor(dpy, kNames[i]);
+    if (!cache[i] && x.CreateFontCursor) cache[i] = x.CreateFontCursor(dpy, kFont[i]);
+    if (!cache[i]) return;
+    x.DefineCursor(dpy, x11::Window(r.handle), cache[i]);
     x.Flush(dpy);
 }
 std::string NativePlatform::osTitle(const AppWindow& w) const {

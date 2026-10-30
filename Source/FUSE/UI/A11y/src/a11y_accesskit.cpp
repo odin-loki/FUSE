@@ -74,6 +74,8 @@ void* buildAccessKitUpdate(const Bridge& b, bool includeTree) {
         if (s.rowCount) accesskit_node_set_row_count(n, s.rowCount);
         if (s.colCount) accesskit_node_set_column_count(n, s.colCount);
         if (s.level) accesskit_node_set_level(n, s.level);
+        if (s.sortDirection) // AccessKit / ARIA aria-sort on the sorted column header
+            accesskit_node_set_sort_direction(n, s.sortDirection == 1 ? ACCESSKIT_SORT_DIRECTION_ASCENDING : ACCESSKIT_SORT_DIRECTION_DESCENDING);
         if (s.state.autoComplete != A11yAutoComplete::None)
             accesskit_node_set_auto_complete(n, s.state.autoComplete == A11yAutoComplete::Inline ? ACCESSKIT_AUTO_COMPLETE_INLINE
                                                 : s.state.autoComplete == A11yAutoComplete::List ? ACCESSKIT_AUTO_COMPLETE_LIST

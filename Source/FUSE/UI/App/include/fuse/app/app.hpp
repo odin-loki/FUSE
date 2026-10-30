@@ -210,7 +210,7 @@ public:
     std::unique_ptr<ExternalDrag> takeExternalDrag() { return std::move(m_pendingDrag); }
     /// Called by the backend when an outgoing drag ends (`accepted`: the target took it).
     void onExternalDragEnd(std::function<void(bool accepted)> f) { m_onDragEnd = std::move(f); }
-    void deliverExternalDragEnd(bool accepted) { if (m_onDragEnd) m_onDragEnd(accepted); }
+    void deliverExternalDragEnd(bool accepted); ///< also ends a widget drag handed off to the OS (widgets::DragPayload)
     /// Local paths as a text/uri-list (file:// with percent-encoding).
     static std::string uriListFromPaths(const std::vector<std::string>& paths);
     /// file:// URIs of a text/uri-list as local paths (percent-decoded; comments and non-file URIs skipped).

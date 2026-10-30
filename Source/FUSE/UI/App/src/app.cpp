@@ -173,8 +173,26 @@ void Settings::remove(std::string_view key) {
 AppWindow::AppWindow(Application& app, const WindowDesc& d, u32 id)
     : m_app(app), m_ui({.viewport = {f32(d.width), f32(d.height)}, .font = &defaultFont()}), m_title(d.title), m_id(id) {
     widgets::install(m_ui);
+    // a widget drag (setDragSource / item views) leaving the window continues as an OS drag (X11 XDND, Wayland
+    // wl_data_device, Win32 OLE): the backend picks it up on its next pointer motion and reports back through
+    // deliverExternalDragEnd
+    widgets::setExternalDragHandler(m_ui, [this](UiContext&, const widgets::DragPayload& p) {
+        ExternalDrag d;
+        if (p.has("text/uri-list")) d.paths = pathsFromUriList(p.get("text/uri-list"));
+        if (d.paths.empty()) {
+            if (p.has("text/plain")) { d.mime = "text/plain"; d.data = std::string(p.get("text/plain")); }
+            else if (!p.formats.empty()) { d.mime = p.formats.front().first; d.data = p.formats.front().second; }
+            else return false;
+        }
+        return beginExternalDrag(std::move(d));
+    });
     m_presenter = {this, &AppWindow::presentHeadless, nullptr, true}; // offscreen: unpaced
     setScale(d.dpiScale); // WindowDesc::dpiScale seeds the HiDPI scale; backends update it on monitor changes
+}
+void AppWindow::deliverExternalDragEnd(bool accepted) {
+    if (widgets::externalDragActive(m_ui)) widgets::finishExternalDrag(m_ui, accepted ? widgets::DropCopy : widgets::DropIgnore);
+    if (m_onDragEnd) m_onDragEnd(accepted);
+    requestRedraw();
 }
 AppWindow::~AppWindow() {
     m_doc.reset();

@@ -130,6 +130,41 @@ int main() {
             if (n.node == tree && n.role == A11yRole::Row && n.name == "root") UI_CHECK(n.state.expanded == 0);
         }
         UI_CHECK(treeRows == 2u);
+        // AT Expand / Collapse on a tree row part (QAccessibleTree expand / collapse actions)
+        auto treeRowId = [&](std::string_view name) {
+            for (const auto& n : b.nodes()) if (n.node == tree && n.role == A11yRole::Row && n.name == name) return a::idOf(n);
+            return u64(0);
+        };
+        auto countTreeRows = [&] {
+            ui.update(1.f / 60.f);
+            b.sync();
+            u32 k = 0;
+            for (const auto& n : b.nodes()) k += n.node == tree && n.role == A11yRole::Row;
+            return k;
+        };
+        UI_CHECK(b.perform({a::Action::Expand, treeRowId("root")}));
+        UI_CHECK(w::treeExpanded(ui, tree, 0) && countTreeRows() == 4u);
+        UI_CHECK(!b.perform({a::Action::Expand, treeRowId("leaf a")})); // a leaf: nothing to expand
+        UI_CHECK(b.perform({a::Action::Collapse, treeRowId("root")}));
+        UI_CHECK(!w::treeExpanded(ui, tree, 0) && countTreeRows() == 2u);
+        b.perform({a::Action::Expand, treeRowId("root")});
+        countTreeRows();
+        // sort direction on the sorted column header (aria-sort)
+        Rect hdr;
+        for (const auto& n : b.nodes()) if (n.node == tbl && n.role == A11yRole::ColumnHeader && n.name == "Size") { hdr = n.bounds; UI_CHECK(n.sortDirection == 0); }
+        ui.pointerDown({hdr.x + 10.f, hdr.y + hdr.h * 0.5f});
+        ui.pointerUp({hdr.x + 10.f, hdr.y + hdr.h * 0.5f});
+        ui.update(1.f / 60.f);
+        b.sync();
+        u8 dir = 0;
+        for (const auto& n : b.nodes()) if (n.node == tbl && n.role == A11yRole::ColumnHeader && n.name == "Size") dir = n.sortDirection;
+        UI_CHECK(dir == 1);
+        ui.pointerDown({hdr.x + 10.f, hdr.y + hdr.h * 0.5f});
+        ui.pointerUp({hdr.x + 10.f, hdr.y + hdr.h * 0.5f});
+        ui.update(1.f / 60.f);
+        b.sync();
+        for (const auto& n : b.nodes()) if (n.node == tbl && n.role == A11yRole::ColumnHeader && n.name == "Size") dir = n.sortDirection;
+        UI_CHECK(dir == 2);
     }
 
 #if FUSE_UI_HAVE_ACCESSKIT
@@ -145,6 +180,7 @@ int main() {
     // table / tree grids: Grid / Row / ColumnHeader / GridCell with table indices and tree levels
     UI_CHECK(dbg.find("Grid") != std::string::npos && dbg.find("GridCell") != std::string::npos && dbg.find("ColumnHeader") != std::string::npos);
     UI_CHECK(dbg.find("row_index") != std::string::npos && dbg.find("column_count") != std::string::npos && dbg.find("level") != std::string::npos);
+    UI_CHECK(dbg.find("sort_direction") != std::string::npos);
     a::freeAccessKitUpdate(up);
     { // completer: autoComplete List, expanded, controls + activeDescendant -> the highlighted ListItem (selected)
         const NodeHandle prevFocus = ui.focused();

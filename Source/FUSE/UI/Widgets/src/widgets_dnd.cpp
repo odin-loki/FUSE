@@ -24,6 +24,17 @@ struct Dnd {
     std::unordered_map<u32, Source> sources;
     NodeHandle indNode;
     Rect indRect;
+    NodeHandle image;          ///< drag image card (overlay layer, pointer-events none)
+    bool external = false;     ///< handed off to the OS drag (setExternalDragHandler)
+    std::function<bool(UiContext&, const DragPayload&)> externalStart;
+    // auto-scroll / hover delay
+    TimerHandle scrollTimer, hoverTimer;
+    NodeHandle scrollView, hoverView;
+    Rect scrollArea;
+    std::function<bool(UiContext&, NodeHandle, i32)> scrollFn;
+    u64 hoverKey = ~0ull;
+    std::function<void(UiContext&, NodeHandle)> hoverFn;
+    u8 mods = 0;
 };
 std::unordered_map<const UiContext*, Dnd>& all() { static std::unordered_map<const UiContext*, Dnd> m; return m; }
 Dnd& dndOf(const UiContext& ui) { return all()[&ui]; }
@@ -38,6 +49,7 @@ u8 proposedAction(u8 allowed, u8 mods) {
 void deliver(UiContext& ui, Dnd& d, NodeHandle t, DropPhase ph, u8 mods) {
     auto it = d.targets.find(t.index);
     if (it == d.targets.end() || it->second.gen != t.generation || !it->second.fn) return;
+    d.mods = mods;
     const DropEvent ev{ph, d.pos, &d.payload, proposedAction(d.payload.actions, mods), d.src, mods};
     DropHandler fn = it->second.fn; // the handler may re-register
     const u8 a = fn(ui, t, ev);
@@ -51,8 +63,49 @@ NodeHandle targetAt(const UiContext& ui, const Dnd& d, Vec2 p) {
     }
     return {};
 }
+CursorShape cursorFor(u8 action) {
+    return action & DropMove ? CursorShape::Move : action & DropCopy ? CursorShape::Copy : action & DropLink ? CursorShape::Link : CursorShape::Forbidden;
+}
+void stopTimers(UiContext& ui, Dnd& d) {
+    if (d.scrollTimer.valid()) ui.cancelTimer(d.scrollTimer);
+    if (d.hoverTimer.valid()) ui.cancelTimer(d.hoverTimer);
+    d.scrollTimer = d.hoverTimer = {};
+    d.scrollView = d.hoverView = {};
+    d.scrollFn = {};
+    d.hoverKey = ~0ull;
+}
+void placeImage(UiContext& ui, Dnd& d) {
+    if (!ui.alive(d.image)) return;
+    ui.setCss(d.image, "left", std::to_string(int(d.pos.x + 14.f)) + "px");
+    ui.setCss(d.image, "top", std::to_string(int(d.pos.y + 10.f)) + "px");
+    if (d.action == 0) ui.addClass(d.image, "drag-refused");
+    else ui.removeClass(d.image, "drag-refused");
+}
+void makeImage(UiContext& ui, Dnd& d) {
+    std::string t = d.payload.label;
+    if (t.empty()) {
+        t = std::string(d.payload.get("text/plain"));
+        if (const std::size_t nl = t.find('\n'); nl != std::string::npos) t.resize(nl);
+        if (t.empty() && !d.payload.formats.empty()) t = d.payload.formats.front().first;
+    }
+    if (t.size() > 64) t = t.substr(0, 61) + "...";
+    d.image = label(ui, overlayLayer(ui), t);
+    ui.addClass(d.image, "drag-image");
+    ui.setCss(d.image, "position", "absolute");
+    ui.setCss(d.image, "pointer-events", "none");
+    ui.setCss(d.image, "opacity", "0.85");
+    ui.setCss(d.image, "padding", "2px 8px");
+    ui.setCss(d.image, "border-radius", "4px");
+    ui.setCss(d.image, "background-color", "#2A2A33");
+    placeImage(ui, d);
+}
 void endDrag(UiContext& ui, Dnd& d, u8 action) {
     const NodeHandle src = d.src;
+    stopTimers(ui, d);
+    if (ui.alive(d.image)) ui.destroy(d.image);
+    d.image = {};
+    d.external = false;
+    ui.setCursorShape(CursorShape::Default);
     DragFinished done = std::move(d.done);
     if (ui.alive(d.indNode)) ui.invalidate(d.indNode);
     d.indNode = {};
@@ -116,6 +169,7 @@ void cancelDrag(UiContext& ui) {
 }
 void setDropIndicator(UiContext& ui, NodeHandle n, Rect r) {
     Dnd& d = dndOf(ui);
+    if (!n.valid()) { if (ui.alive(d.indNode)) ui.invalidate(d.indNode); d.indNode = {}; return; }
     if (ui.alive(d.indNode)) ui.invalidate(d.indNode);
     d.indNode = r.w > 0.f || r.h > 0.f ? n : NodeHandle{};
     d.indRect = r;
@@ -153,6 +207,23 @@ bool move(UiContext& ui, NodeHandle src, Vec2 p, u8 mods) {
             return false;
         }
         d.active = true;
+        makeImage(ui, d);
+    }
+    if (d.external) return true;
+    const Size vp = ui.viewport();
+    if (d.externalStart && (p.x < 0.f || p.y < 0.f || p.x >= vp.w || p.y >= vp.h)) {
+        // left the window: hand the drag to the OS (QDrag continues outside the application)
+        if (ui.alive(d.target)) deliver(ui, d, d.target, DropPhase::Leave, mods);
+        d.target = {};
+        auto start = d.externalStart;
+        if (start(ui, d.payload)) {
+            d.external = true;
+            stopTimers(ui, d);
+            if (ui.alive(d.image)) ui.destroy(d.image);
+            d.image = {};
+            setDropIndicator(ui, {}, {});
+            return true;
+        }
     }
     const NodeHandle t = targetAt(ui, d, p);
     if (t != d.target) {
@@ -164,13 +235,20 @@ bool move(UiContext& ui, NodeHandle src, Vec2 p, u8 mods) {
         if (ui.alive(t)) deliver(ui, d, t, DropPhase::Enter, mods);
     }
     if (ui.alive(t)) deliver(ui, d, t, DropPhase::Move, mods);
+    if (d.scrollView.valid() && d.scrollView != t) stopTimers(ui, d);
+    if (d.hoverView.valid() && d.hoverView != t) { if (d.hoverTimer.valid()) ui.cancelTimer(d.hoverTimer); d.hoverTimer = {}; d.hoverView = {}; d.hoverKey = ~0ull; }
+    if (!ui.alive(t)) d.action = 0;
+    ui.setCursorShape(cursorFor(d.action)); // QDrag cursor feedback: move / copy / link, forbidden when refused
+    placeImage(ui, d);
     return true;
 }
 bool release(UiContext& ui, NodeHandle src, Vec2 p, u8 mods) {
     Dnd& d = dndOf(ui);
     if (d.src != src) return false;
     if (!d.active) { d.armed = false; d.start = {}; d.done = {}; return false; }
+    if (d.external) return true; // the OS drag finishes it (finishExternalDrag)
     move(ui, src, p, mods);
+    if (d.external) return true;
     u8 action = 0;
     if (ui.alive(d.target) && d.action) {
         deliver(ui, d, d.target, DropPhase::Drop, mods);
@@ -179,6 +257,65 @@ bool release(UiContext& ui, NodeHandle src, Vec2 p, u8 mods) {
     endDrag(ui, d, action);
     return true;
 }
+void autoScroll(UiContext& ui, NodeHandle view, Rect area, std::function<bool(UiContext&, NodeHandle, i32 dir)> scroll) {
+    Dnd& d = dndOf(ui);
+    if (!d.active) return;
+    constexpr f32 kMargin = 16.f; // QAbstractItemView::autoScrollMargin
+    const bool near = d.pos.y < area.y + kMargin || d.pos.y > area.bottom() - kMargin;
+    if (!near) {
+        if (d.scrollTimer.valid()) ui.cancelTimer(d.scrollTimer);
+        d.scrollTimer = {};
+        d.scrollView = {};
+        return;
+    }
+    d.scrollView = view;
+    d.scrollArea = area;
+    d.scrollFn = std::move(scroll);
+    if (d.scrollTimer.valid()) return;
+    d.scrollTimer = ui.startTimer(0.05f, true, [](UiContext& c) {
+        Dnd& dd = dndOf(c);
+        const NodeHandle v = dd.scrollView;
+        const bool top = dd.pos.y < dd.scrollArea.y + kMargin, bottom = dd.pos.y > dd.scrollArea.bottom() - kMargin;
+        if (!dd.active || !c.alive(v) || dd.target != v || !(top || bottom) || !dd.scrollFn || !dd.scrollFn(c, v, top ? -1 : 1)) {
+            if (dd.scrollTimer.valid()) c.cancelTimer(dd.scrollTimer);
+            dd.scrollTimer = {};
+            return;
+        }
+        deliver(c, dd, v, DropPhase::Move, dd.mods); // the row under the pointer changed
+        c.setCursorShape(cursorFor(dd.action));
+    });
+}
+void hoverDelay(UiContext& ui, NodeHandle view, u64 key, f32 delay, std::function<void(UiContext&, NodeHandle)> fn) {
+    Dnd& d = dndOf(ui);
+    if (!d.active || (d.hoverView == view && d.hoverKey == key && d.hoverTimer.valid())) return;
+    if (d.hoverTimer.valid()) ui.cancelTimer(d.hoverTimer);
+    d.hoverView = view;
+    d.hoverKey = key;
+    d.hoverFn = std::move(fn);
+    d.hoverTimer = ui.startTimer(std::max(delay, 0.001f), false, [](UiContext& c) {
+        Dnd& dd = dndOf(c);
+        dd.hoverTimer = {};
+        const NodeHandle view = dd.hoverView;
+        if (!dd.active || dd.target != view || !c.alive(view) || !dd.hoverFn) return;
+        dd.hoverKey = ~0ull;
+        auto fn = std::move(dd.hoverFn);
+        fn(c, view);
+        deliver(c, dd, view, DropPhase::Move, dd.mods);
+    });
+}
 } // namespace dnd
+
+void setExternalDragHandler(UiContext& ui, std::function<bool(UiContext&, const DragPayload&)> start) { dndOf(ui).externalStart = std::move(start); }
+void finishExternalDrag(UiContext& ui, u8 action) {
+    Dnd& d = dndOf(ui);
+    if (!d.active || !d.external) return;
+    u8 a = action & d.payload.actions;
+    if (!a && action) // the OS reports accepted / refused only: the source's preferred allowed action
+        a = d.payload.actions & DropCopy ? u8(DropCopy) : d.payload.actions & DropMove ? u8(DropMove) : u8(d.payload.actions & DropLink);
+    endDrag(ui, d, a);
+}
+bool externalDragActive(const UiContext& ui) { return dndOf(ui).active && dndOf(ui).external; }
+Vec2 dragPosition(const UiContext& ui) { return dndOf(ui).pos; }
+NodeHandle dragImage(const UiContext& ui) { return dndOf(ui).image; }
 
 } // namespace fuse::ui::widgets

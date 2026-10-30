@@ -793,6 +793,11 @@ bool UiContext::a11yProtected(NodeHandle h) const { return node(h) && m_cold[h.i
 void UiContext::setA11yState(NodeHandle h, const A11yState& st) {
     if (node(h)) m_cold[h.index]->a11y = st;
 }
+bool UiContext::a11yPartExpand(NodeHandle h, u32 part, bool open) {
+    if (!node(h) || !part) return false;
+    auto f = m_registry.get(m_nodes[h.index].cls).a11yPartExpand;
+    return f && f(*this, h, part, open);
+}
 bool UiContext::a11yExpand(NodeHandle h, bool open) {
     if (!node(h) || m_cold[h.index]->a11y.expanded < 0 || (m_cold[h.index]->a11y.expanded > 0) == open) return false;
     NodeHandle f = h;

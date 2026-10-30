@@ -20,4 +20,10 @@ void completerFocusOut(UiContext& ui, NodeHandle edit);
 /// Sets a line edit's text from the completer (TextChanged, no refilter); selects [selFrom, end) unless npos.
 void lineEditComplete(UiContext& ui, NodeHandle edit, std::string_view text, std::size_t selFrom);
 
+struct ItemSelection;
+/// Tree view selection state (item_selection.hpp) for the shared selection API in widgets_tier_b2.cpp.
+ItemSelection* treeSelection(const UiContext& ui, NodeHandle tree);
+u32 treeLineCount(const UiContext& ui, NodeHandle tree);
+void treeSelectionChanged(UiContext& ui, NodeHandle tree);
+
 } // namespace fuse::ui::widgets::detail

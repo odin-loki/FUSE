@@ -283,6 +283,33 @@ void setTreeExpanded(UiContext& ui, NodeHandle tree, u32 line, bool open);
 /// Number of rows currently shown (collapsed subtrees skipped).
 u32 treeVisibleRows(const UiContext& ui, NodeHandle tree);
 
+/// QAbstractItemView::SelectionMode / SelectionBehavior for the tree and table views. Single (default): the current item
+/// (value()) is the selection. Multi: a click or Space toggles. Extended: click selects one, Ctrl+click toggles,
+/// Shift+click / Shift+arrows select the range from the anchor, Ctrl+arrows move the current item only, Ctrl+Space toggles,
+/// Ctrl+A selects all. Contiguous: like Extended without Ctrl toggling. None: nothing is selected. Behaviour (table
+/// only; the tree is always Rows): Items selects cells, Rows whole rows, Columns whole columns. Changes emit
+/// SignalKind::SelectionChanged. In Extended / Multi a press on an already selected item keeps the selection until
+/// release, so several items can be dragged.
+enum class SelectionMode : u8 { Single, Multi, Extended, Contiguous, None };
+enum class SelectionBehavior : u8 { Items, Rows, Columns };
+void setItemSelectionMode(UiContext& ui, NodeHandle view, SelectionMode m);
+void setItemSelectionBehavior(UiContext& ui, NodeHandle view, SelectionBehavior b);
+SelectionMode itemSelectionMode(const UiContext& ui, NodeHandle view);
+/// Rows (tree lines) whose every cell is selected, ascending.
+std::vector<u32> selectedRows(const UiContext& ui, NodeHandle view);
+/// Selected cells as (row, column), row-major (tree: column 0).
+std::vector<std::pair<u32, u32>> selectedItems(const UiContext& ui, NodeHandle view);
+bool itemSelected(const UiContext& ui, NodeHandle view, u32 row, u32 col = 0);
+/// Selects / deselects a row (Rows behaviour, also for Items: all its cells); Single mode makes it current.
+void setRowSelected(UiContext& ui, NodeHandle view, u32 row, bool on);
+void clearItemSelection(UiContext& ui, NodeHandle view);
+void selectAllItems(UiContext& ui, NodeHandle view);
+/// Table current column (Items / Columns behaviour; Left / Right move it).
+u32 tableCurrentColumn(const UiContext& ui, NodeHandle table);
+/// Tree scrolling: first shown row (wheel, keys keep the current row visible, scrollbar drag).
+u32 treeFirstVisible(const UiContext& ui, NodeHandle tree);
+void setTreeFirstVisible(UiContext& ui, NodeHandle tree, u32 row);
+
 /// QAbstractItemView drag and drop for the tree view. `drag`: rows drag out as "text/plain" (the line text) and
 /// "application/x-fuse-tree-line" (the line index). `internalMove` (DragDropMode::InternalMove): dropping a row in the same
 /// tree moves it with its subtree above / below / onto (as last child of) the row under the pointer, shown by a drop
@@ -290,6 +317,8 @@ u32 treeVisibleRows(const UiContext& ui, NodeHandle tree);
 /// the old and new line index.
 struct TreeDragDrop {
     bool drag = false, internalMove = false;
+    bool autoScroll = true;      ///< QAbstractItemView::autoScroll: hovering within 16 px of the top / bottom edge scrolls
+    f32 autoExpandDelay = -1.f;  ///< QTreeView::autoExpandDelay (s): hovering onto a collapsed row expands it; < 0 off
     std::function<void(UiContext&, NodeHandle tree, u32 from, u32 to)> moved;
 };
 void setTreeDragDrop(UiContext& ui, NodeHandle tree, TreeDragDrop opts);
@@ -338,6 +367,7 @@ public:
     void clear() { m_cells.clear(); m_rows = 0; }
     void sortBy(u32 col, bool ascending);
     void moveRow(u32 from, u32 to); ///< row `from` ends up at index `to` (others shift)
+    void moveRows(const std::vector<u32>& rows, u32 to); ///< see TableDragDrop::moveRows
     u32 rows() const { return m_rows; }
     std::string_view cell(u32 row, u32 col) const { return m_cells[std::size_t(row) * m_cols + col]; }
     const ItemModel& model() const { return m_model; }
@@ -352,12 +382,15 @@ private:
 /// ValueChanged; Enter -> Submitted), wheel / keys / scrollbar drag scroll. Only visible rows are read and painted.
 NodeHandle tableView(UiContext& ui, NodeHandle parent, const ItemModel* model, std::string_view id = {});
 /// QTableView drag and drop. `drag`: rows drag out as "text/plain" (cells tab-joined) and
-/// "application/x-fuse-table-row" (the row index). `internalMove`: dropping between rows of the same table calls
-/// `moveRow(from, to)` (the caller moves its model row; StringTableModel::moveRow does it), with a gap indicator,
-/// then re-selects the moved row.
+/// "application/x-fuse-table-row" (the row indices, comma-separated). With a multi-row selection (Extended / Multi) a
+/// drag from a selected row carries all selected rows. `internalMove`: dropping between rows of the same table calls
+/// `moveRows(rows, to)` (the caller moves its model rows; StringTableModel::moveRows does it), with a gap indicator,
+/// then re-selects the moved rows.
 struct TableDragDrop {
     bool drag = false, internalMove = false;
-    std::function<void(UiContext&, NodeHandle table, u32 from, u32 to)> moveRow;
+    bool autoScroll = true; ///< hovering near the top / bottom edge scrolls (QAbstractItemView::autoScroll)
+    /// Move `rows` (ascending) so that they end up contiguous, in order, starting at index `to` of the result.
+    std::function<void(UiContext&, NodeHandle table, const std::vector<u32>& rows, u32 to)> moveRows;
 };
 void setTableDragDrop(UiContext& ui, NodeHandle table, TableDragDrop opts);
 /// Call after the model's rows change (re-clamps the scroll, repaints).
@@ -381,6 +414,9 @@ enum DropAction : u8 { DropIgnore = 0, DropCopy = 1, DropMove = 2, DropLink = 4 
 struct DragPayload {
     std::vector<std::pair<std::string, std::string>> formats;
     u8 actions = DropCopy | DropMove;
+    /// Drag image text (QDrag::setPixmap): shown in a card under the pointer while dragging; empty = the first line of
+    /// text/plain, else the first format's type.
+    std::string label;
     std::string_view get(std::string_view mime) const;
     bool has(std::string_view mime) const;
     void set(std::string_view mime, std::string_view data);
@@ -421,7 +457,23 @@ namespace dnd {
 void press(UiContext& ui, NodeHandle src, Vec2 p, DragStarter start, DragFinished done = {});
 bool move(UiContext& ui, NodeHandle src, Vec2 p, u8 mods);
 bool release(UiContext& ui, NodeHandle src, Vec2 p, u8 mods);
+/// From a drop handler's Move: while the pointer stays within 16 px of `area`'s top / bottom edge, calls
+/// `scroll(dir = -1 / +1)` every 50 ms (QAbstractItemView::autoScroll) and re-delivers Move; stops when it returns false,
+/// the pointer leaves the margin or the drag ends.
+void autoScroll(UiContext& ui, NodeHandle view, Rect area, std::function<bool(UiContext&, NodeHandle, i32 dir)> scroll);
+/// From a drop handler's Move: runs `fn` once the pointer has hovered `key` on `view` for `delay` seconds (auto-expand).
+void hoverDelay(UiContext& ui, NodeHandle view, u64 key, f32 delay, std::function<void(UiContext&, NodeHandle)> fn);
 } // namespace dnd
+/// OS drag handoff (QDrag leaving the window): when an in-app drag leaves the viewport, `start` gets the payload; if it
+/// returns true the drag continues as an OS drag (fuse::app installs AppWindow::beginExternalDrag here) and ends with
+/// finishExternalDrag. Empty `start` = drags stay in-app.
+void setExternalDragHandler(UiContext& ui, std::function<bool(UiContext&, const DragPayload&)> start);
+/// The OS drag ended: `action` = what the other application did (DropIgnore if refused / cancelled).
+void finishExternalDrag(UiContext& ui, u8 action);
+bool externalDragActive(const UiContext& ui);
+Vec2 dragPosition(const UiContext& ui);
+/// The drag image node (a card in the overlay layer; none when no drag runs).
+NodeHandle dragImage(const UiContext& ui);
 
 // ---- Tier C: delegates, proxies, grid view (plan §5) ------------------------------------------------------------------
 /// Cell delegate: custom painting for one table column (the view still owns selection, scrolling and the row stripe).

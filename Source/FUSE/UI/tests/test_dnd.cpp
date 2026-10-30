@@ -146,8 +146,8 @@ int main() {
         if (e.phase == w::DropPhase::Drop) sunk = std::string(e.payload->get("text/plain"));
         return e.payload->has("text/plain") ? e.proposed : u8(w::DropIgnore);
     });
-    w::setTableDragDrop(ui, tbl, {.drag = true, .internalMove = true, .moveRow = [&](UiContext& c, NodeHandle t, u32 f, u32 to) {
-        tm.moveRow(f, to); w::tableModelChanged(c, t);
+    w::setTableDragDrop(ui, tbl, {.drag = true, .internalMove = true, .moveRows = [&](UiContext& c, NodeHandle t, const std::vector<u32>& f, u32 to) {
+        tm.moveRows(f, to); w::tableModelChanged(c, t);
     }});
     ui.update(1.f / 60.f);
     auto cellR = [&](std::string_view n) { return partRect(ui, tbl, A11yRole::GridCell, n); };

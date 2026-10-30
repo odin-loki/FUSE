@@ -85,8 +85,11 @@ enum class SignalKind : u8 { Clicked, Toggled, ValueChanged, TextChanged, Submit
                               AnimationStart, AnimationIteration, AnimationEnd, AnimationCancel,
                               // scripted animations (UiContext::animate): text = the animation id, value = currentTime
                               ScriptFinish, ScriptCancel,
-                              ScriptRemove ///< a finished, filling animation fully overridden by later ones was removed
+                              ScriptRemove, ///< a finished, filling animation fully overridden by later ones was removed
+                              SelectionChanged ///< item views: the selection set changed (QItemSelectionModel::selectionChanged)
 };
+/// Pointer cursor the UI asks the window for (backends map it to the OS cursor; drag and drop feedback).
+enum class CursorShape : u8 { Default, Pointer, Text, Copy, Move, Link, Forbidden, Grabbing };
 // ---- Scripted animations (Web Animations-style) -------------------------------------------------------------------
 /// One keyframe of UiContext::animate (Web Animations "Keyframe").
 struct AnimKeyframe {
@@ -176,6 +179,7 @@ struct A11ySnapshotNode {
     i32 rowIndex = -1, colIndex = -1; ///< Row / GridCell / ColumnHeader position
     u32 rowCount = 0, colCount = 0;   ///< Grid size
     u32 level = 0;                    ///< tree row depth, 1-based (0 = not hierarchical)
+    u8 sortDirection = 0;             ///< ColumnHeader: 0 none, 1 ascending, 2 descending
 };
 
 // ---- Widget classes ------------------------------------------------------------------------------------------------
@@ -216,6 +220,8 @@ struct WidgetClass {
     /// the appended nodes or ~0u for the owner. The core fills `node` and rebases `parent`. `self` is the owner's own
     /// snapshot entry (set its rowCount / colCount, activeDescendant-like state).
     void (*a11yParts)(const UiContext&, NodeHandle, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>&) = nullptr;
+    /// Optional: AT Expand / Collapse on a virtual part (tree row). True when handled.
+    bool (*a11yPartExpand)(UiContext&, NodeHandle, u32 part, bool open) = nullptr;
     /// Default style (applied before style sheets).
     ComputedStyle defaults{};
 };
@@ -241,6 +247,7 @@ public:
         if constexpr (requires { &W::onEvent; }) c.onEvent = &W::onEvent;
         if constexpr (requires { &W::a11yValueText; }) c.a11yValueText = &W::a11yValueText;
         if constexpr (requires { &W::a11yParts; }) c.a11yParts = &W::a11yParts;
+        if constexpr (requires { &W::a11yPartExpand; }) c.a11yPartExpand = &W::a11yPartExpand;
         if constexpr (requires { W::defaults(); }) c.defaults = W::defaults();
         return add(std::move(c));
     }
@@ -360,6 +367,12 @@ public:
     /// an expanded state: focuses it (or its first focusable descendant) and sends Alt+Down to open, Escape to close.
     /// False when the node is not expandable or already in that state.
     bool a11yExpand(NodeHandle n, bool open);
+    /// AT Expand / Collapse on virtual part `part` of `n` (WidgetClass::a11yPartExpand).
+    bool a11yPartExpand(NodeHandle n, u32 part, bool open);
+    /// Cursor the window should show (backends poll cursorRevision()); drag and drop sets Copy / Move / Link / Forbidden.
+    void setCursorShape(CursorShape c) { if (c != m_cursor) { m_cursor = c; ++m_cursorRev; } }
+    CursorShape cursorShape() const { return m_cursor; }
+    u32 cursorRevision() const { return m_cursorRev; }
     A11yRole role(NodeHandle n) const;
     void setUserData(NodeHandle n, u64 v);
     u64 userData(NodeHandle n) const;
@@ -659,6 +672,8 @@ private:
     Vec2 m_pointer{-1.f, -1.f};
     u8 m_mods = 0;
     struct ScrollDrag { NodeHandle node; u8 axis = 0; f32 grab = 0.f; } m_scrollDrag;
+    CursorShape m_cursor = CursorShape::Default;
+    u32 m_cursorRev = 0;
     std::vector<u32> m_path;
     std::vector<u32> m_scratchOrder;
     std::vector<std::pair<u32, i32>> m_scratchTab;
