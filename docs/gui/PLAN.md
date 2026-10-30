@@ -104,22 +104,22 @@ Headless (offscreen CPU raster) works everywhere and is what the test suite uses
 | Text: shaping, bidi, fallback, emoji, grapheme editing | `fuse_text` FULL | done |
 | IME pre-edit, candidate window placement | `syncTextInput` | done desktop |
 | Animation framework, easing, springs, kinetic scroll | core + platform feel | done |
-| Accessibility | a11y tree + AccessKit (Linux) | partial: Win/mac/mobile adapters |
+| Accessibility | a11y tree + AccessKit; `PlatformAdapter` (UIA on Windows, NSAccessibility on macOS, AT-SPI on Linux); Android AccessibilityNodeProvider, iOS UIAccessibilityElement | done: Linux + Android verified; Windows UIA built (llvm-mingw); macOS + iOS UNVERIFIED (no Apple SDK) |
 | Drag and drop (in-app) | core | done; OS-level DnD G2 |
 | Clipboard text | window-system + FORGE fallback | done; rich MIME G2 |
 | QML / declarative, hot reload, scripting | `.fuseui`, Lua | done |
-| Designer | `fuse_ui_designer` | prototype |
+| Designer | `fuse_ui_designer`: palette/outline/canvas/properties, drag-drop, multi-select, style sheet, undo, copy/cut/paste/duplicate (clipboard JSON, id renumbering), shortcuts, dirty title, validation, live preview mode, device-size frames | done (product pass); gate fuse_ui_designer_roundtrip |
 | Native file dialogs | `vendor/nativeFileDialogs` | G2 |
 | Desktop notifications, open URL | `fuse::ui::desktop` (notify-send / osascript / PowerShell toast, via FORGE process) | done (G5) |
-| System tray, global menu bar | — | G5: not started (needs StatusNotifierItem/DBus, Shell_NotifyIcon, NSStatusItem) |
-| Printing / PDF output, print preview | `fuse::ui::pdf` (vector PDF writer, DrawList to PDF, `PrintPreview::paginate`) + `desktop::print` (lp / Start-Process / open) | done (G5); glyphs are 1-bit stencil masks, not anti-aliased |
+| System tray, global menu bar | `fuse::ui::tray` (StatusNotifierItem + com.canonical.dbusmenu over runtime-loaded libdbus, Shell_NotifyIcon, NSStatusItem/NSMenu) | done: Linux D-Bus gate + Win32 under Wine; macOS UNVERIFIED |
+| Printing / PDF output, print preview | `fuse::ui::pdf` (vector PDF writer, DrawList to PDF, `PrintPreview::paginate`) + `desktop::print` (lp / Start-Process / open) | done (G5); anti-aliased glyphs (8-bit soft mask) |
 | QUndoStack / QUndoGroup | `fuse::ui::UndoStack`, merge, macros, clean state, limit | done (G5) |
 | QGesture (tap, long press, pan, pinch, swipe) | `GestureRecognizer` | done (G5) |
 | i18n: tr/trn, .po catalogs, plurals, locale numbers, RTL direction | `fuse::ui::i18n` | done (G5) |
 | QGroupBox, QStackedWidget, QToolBox, QStatusBar, QMessageBox, QInputDialog, QWizard, QLCDNumber, QKeySequenceEdit, QCompleter | `widgets_extra.hpp` | done (G5) |
 | QMdiArea (tile, cascade, drag, resize, close) | `mdiArea` / `mdiSubWindow` | done (G5) |
 | QGraphicsScene / QGraphicsView (grid index, z order, hit testing, selection, zoom, pan, rubber band) | `GraphicsScene` / `graphicsView` | done (G5) |
-| Web view | system web view widget | G5 (optional) |
+| Web view | `fuse::ui::web::WebView` over the runtime-loaded system engine (WebKitGTK, WebView2, WKWebView) + `fuse.postMessage` bridge | done: WebKitGTK verified (gate fuse_ui_extras_webview); WebView2 compiled, not run (no runtime under Wine); WKWebView UNVERIFIED |
 | Beyond Qt: game HUD/world-space UI, GPU draw-list compute, deterministic replay, immediate + retained in one tree | `fuse_ui_game`, `immediate.hpp` | done |
 
 ## 6. Phases for this branch
@@ -153,7 +153,10 @@ Headless (offscreen CPU raster) works everywhere and is what the test suite uses
 - **G5**: tray/notifications/global menu, printing, web view, designer to product.
   *Status:* `fuse_ui_extras` (Extras/), gated by `fuse_ui_extras_<gate>` tests (12 gates). Done: notifications,
   open URL, PDF writer + DrawList printing + print preview pagination, system printing, undo, gestures, i18n,
-  extra widgets, MDI, graphics view. Left: system tray, global menu bar, web view, rich text editor, a11y adapters.
+  extra widgets, MDI, graphics view, system tray + global menu, rich text editor (`richtextedit`, HTML/Markdown), web view,
+  a11y platform adapters, anti-aliased PDF text, designer product pass. Left: run the Apple + WebView2 paths on real hosts;
+  rich text italic is drawn upright and Justify falls back to left; reparenting WebKitGTK into a FUSE X11 window is experimental.
+  Known FORGE bug (reported, not fixed here): `spawn_wait` leaks pipe fds into children.
 
 Every phase: commits on `gui-framework`, pushed after each milestone; never to `main`; no force pushes.
 

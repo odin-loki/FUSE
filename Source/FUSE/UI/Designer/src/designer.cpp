@@ -5,6 +5,8 @@
 #include "fuse/ui/widgets/widgets.hpp"
 
 #include <algorithm>
+#include <cctype>
+#include <functional>
 #include <charconv>
 #include <cstdio>
 #include <fstream>
@@ -175,6 +177,7 @@ bool DesignDocument::load(std::string_view json, std::string* error) {
             m_undo.clear();
             m_redo.clear();
             ++m_rev;
+            m_savedText = save();
             return true;
         }
     }
@@ -461,7 +464,9 @@ bool DesignDocument::undo() {
     m_undo.pop_back();
     auto undo = std::move(m_undo);
     auto redo = std::move(m_redo);
+    std::string saved = std::move(m_savedText);
     load(prev);
+    m_savedText = std::move(saved);
     m_undo = std::move(undo);
     m_redo = std::move(redo);
     m_redo.push_back(std::move(cur));
@@ -474,11 +479,98 @@ bool DesignDocument::redo() {
     m_redo.pop_back();
     auto undo = std::move(m_undo);
     auto redo = std::move(m_redo);
+    std::string saved = std::move(m_savedText);
     load(next);
+    m_savedText = std::move(saved);
     m_undo = std::move(undo);
     m_redo = std::move(redo);
     m_undo.push_back(std::move(cur));
     return true;
+}
+
+// ---- clipboard / validation ---------------------------------------------------------------------------------------------
+std::string DesignDocument::copy(const std::vector<u32>& indices) const {
+    std::vector<u32> sorted = indices;
+    std::sort(sorted.begin(), sorted.end());
+    sorted.erase(std::unique(sorted.begin(), sorted.end()), sorted.end());
+    JsonValue nodes;
+    nodes.type = JsonValue::Type::Array;
+    for (u32 i : sorted) {
+        bool under = false;
+        for (u32 k : sorted) under |= k != i && isAncestor(k, i);
+        if (const DesignNode* n = node(i); n && !under) nodes.array.push_back(toJson(*n));
+    }
+    JsonValue top;
+    top.type = JsonValue::Type::Object;
+    top.object.emplace_back("fuseui-clip", num(1));
+    top.object.emplace_back("nodes", std::move(nodes));
+    return writeJson(top);
+}
+
+std::vector<u32> DesignDocument::paste(std::string_view clip, u32 parent, u32 position) {
+    auto parsed = doc::parseJson(clip);
+    if (!parsed || !parsed->isObject()) return {};
+    std::vector<const JsonValue*> src;
+    if (const JsonValue* ns = parsed->get("nodes"); ns && ns->isArray()) for (const JsonValue& v : ns->array) src.push_back(&v);
+    else if (const JsonValue* r = parsed->get("root")) src.push_back(r);
+    else src.push_back(&*parsed);
+    std::vector<DesignNode> nodes;
+    std::string err;
+    for (const JsonValue* v : src) {
+        nodes.emplace_back();
+        if (!fromJson(*v, nodes.back(), err)) return {};
+    }
+    if (nodes.empty()) return {};
+    // target container and slot
+    const DesignNode* p = node(parent);
+    if (!p) return {};
+    if (!isContainer(p->cls())) {
+        const u32 pp = parentOf(parent);
+        if (pp == kNone) return {};
+        position = childSlot(parent) + 1;
+        parent = pp;
+    }
+    // fresh ids where they clash with the document or with each other
+    std::vector<std::string> taken;
+    auto used = [&](const std::string& id) { return findId(id) != kNone || std::find(taken.begin(), taken.end(), id) != taken.end(); };
+    std::function<void(DesignNode&)> renumber = [&](DesignNode& n) {
+        std::string id(n.id());
+        if (id.empty() || used(id)) {
+            std::string base = id.empty() ? std::string(n.cls()) : id;
+            while (!base.empty() && std::isdigit((unsigned char)base.back())) base.pop_back();
+            if (base.empty()) base = "node";
+            for (int k = 1;; ++k) if (!used(base + std::to_string(k))) { id = base + std::to_string(k); break; }
+            setMember(n.props, "id", str(id));
+        }
+        taken.push_back(id);
+        for (DesignNode& c : n.children) renumber(c);
+    };
+    std::vector<std::string> ids;
+    for (DesignNode& n : nodes) { renumber(n); ids.emplace_back(n.id()); }
+    checkpoint();
+    DesignNode* tp = nodeMut(parent);
+    std::size_t at = std::min<std::size_t>(position, tp->children.size());
+    for (DesignNode& n : nodes) tp->children.insert(tp->children.begin() + std::ptrdiff_t(at++), std::move(n));
+    std::vector<u32> out;
+    for (const std::string& id : ids) out.push_back(findId(id));
+    return out;
+}
+
+std::vector<DesignDocument::Issue> DesignDocument::validate(const std::function<bool(std::string_view)>& knownClass) const {
+    std::vector<Issue> out;
+    std::vector<std::pair<std::string_view, u32>> seen;
+    u32 idx = 0;
+    walk(m_root, idx, kNone, 0, [&](const DesignNode& n, u32 me, u32, u32) {
+        const std::string_view id = n.id();
+        if (id.empty()) out.push_back({me, std::string(n.cls()) + " has no id"});
+        else if (auto it = std::find_if(seen.begin(), seen.end(), [&](const auto& s) { return s.first == id; }); it != seen.end())
+            out.push_back({me, "duplicate id #" + std::string(id)});
+        else seen.emplace_back(id, me);
+        if (!n.children.empty() && !isContainer(n.cls())) out.push_back({me, std::string(n.cls()) + " #" + std::string(id) + " cannot hold children"});
+        if (knownClass && !knownClass(n.cls())) out.push_back({me, "unknown class '" + std::string(n.cls()) + "'"});
+        return false;
+    });
+    return out;
 }
 
 // ---- Designer UI ------------------------------------------------------------------------------------------------------
@@ -493,6 +585,7 @@ struct CanvasW {
     static constexpr A11yRole kRole = A11yRole::Group;
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Capture && ec.phase != Phase::Target) return false;
+        if (Designer* d = designerOf(ec.ui, ec.node); d && d->previewMode()) return false; // widgets run live
         switch (e.type) {
         case EventType::PointerDown:
             if (Designer* d = designerOf(ec.ui, ec.node)) d->canvasPick(ec.target, e.mods);
@@ -571,6 +664,7 @@ Designer::Designer(UiContext& ui, NodeHandle parent) : m_ui(ui) {
         .dsel { border: 2px #4aa3ff; }
         .designer-style { height: 190px; }
         .designer-status { padding: 4px 8px; color: var(--text-dim); }
+        .designcanvas.previewing { border: 2px #3ccf7a; }
     )");
     if (!ui.alive(parent)) parent = ui.root();
     m_root = ui.create("designerroot", parent, "designer").value_or(NodeHandle{});
@@ -581,11 +675,25 @@ Designer::Designer(UiContext& ui, NodeHandle parent) : m_ui(ui) {
     ui.addClass(m_toolbar, "designer-bar");
     struct Btn { const char* text; const char* id; };
     for (const Btn b : {Btn{"New", "designer.new"}, Btn{"Undo", "designer.undo"}, Btn{"Redo", "designer.redo"}, Btn{"Delete", "designer.delete"},
-                        Btn{"Up", "designer.up"}, Btn{"Down", "designer.down"}}) {
+                        Btn{"Up", "designer.up"}, Btn{"Down", "designer.down"},
+                        Btn{"Save", "designer.save"}, Btn{"Copy", "designer.copy"}, Btn{"Cut", "designer.cut"}, Btn{"Paste", "designer.paste"},
+                        Btn{"Duplicate", "designer.duplicate"}, Btn{"Preview", "designer.preview"}, Btn{"Fill", "designer.fill"},
+                        Btn{"Phone", "designer.phone"}, Btn{"Tablet", "designer.tablet"}, Btn{"Desktop", "designer.desktop"}}) {
         const NodeHandle h = w::toolButton(ui, m_toolbar, b.text, b.id);
+        if (std::string_view(b.id) == "designer.preview") m_previewBtn = h;
         const std::string_view id = b.id; // string literal: static storage
         ui.connect(h, SignalKind::Clicked, [this, id](UiContext&, NodeHandle, const SignalArgs&) {
-            if (id == "designer.new") { m_doc.reset(); m_sel = 0; m_multi.clear(); rebuild(); setStatus("New document"); }
+            if (id == "designer.new") { m_doc.reset(); m_path.clear(); m_sel = 0; m_multi.clear(); rebuild(); setStatus("New document"); }
+            else if (id == "designer.save") { if (!save()) setStatus("No file yet: save with saveFile(path)"); }
+            else if (id == "designer.copy") copySelection();
+            else if (id == "designer.cut") cutSelection();
+            else if (id == "designer.paste") pasteClipboard();
+            else if (id == "designer.duplicate") duplicateSelection();
+            else if (id == "designer.preview") setPreviewMode(!m_preview);
+            else if (id == "designer.fill") setDeviceSize(0, 0);
+            else if (id == "designer.phone") setDeviceSize(390, 844);
+            else if (id == "designer.tablet") setDeviceSize(820, 1180);
+            else if (id == "designer.desktop") setDeviceSize(1280, 800);
             else if (id == "designer.undo") undo();
             else if (id == "designer.redo") redo();
             else if (id == "designer.delete") deleteSelected();
@@ -616,6 +724,9 @@ Designer::Designer(UiContext& ui, NodeHandle parent) : m_ui(ui) {
     m_canvas = ui.create("designcanvas", body, "designer.canvas").value_or(NodeHandle{});
     ui.addClass(m_canvas, "designcanvas");
     ui.setUserData(m_canvas, static_cast<u64>(reinterpret_cast<std::uintptr_t>(this)));
+    m_frame = w::panel(ui, m_canvas, "designer.frame"); // device-size frame the form is laid out in
+    ui.setCss(m_frame, "padding", "0px");
+    ui.setCss(m_frame, "flex-grow", "1");
     const NodeHandle right = w::panel(ui, body, "designer.right");
     ui.addClass(right, "designer-props");
     ui.addClass(w::label(ui, right, "Properties"), "designer-title");
@@ -643,7 +754,9 @@ Designer::~Designer() {
 
 void Designer::setStatus(std::string s) {
     m_status = std::move(s);
-    m_ui.setText(m_statusLabel, m_status);
+    std::string shown = m_status;
+    if (!m_issues.empty()) shown += "  |  " + std::to_string(m_issues.size()) + " issue(s): " + m_issues.front().message;
+    m_ui.setText(m_statusLabel, shown);
 }
 
 bool Designer::open(std::string_view json, std::string* error) {
@@ -668,11 +781,15 @@ bool Designer::openFile(const std::string& path, std::string* error) {
         setStatus("Cannot read " + path);
         return false;
     }
-    return open(text, error);
+    if (!open(text, error)) return false;
+    m_path = path;
+    touched();
+    return true;
 }
 
 bool Designer::saveFile(const std::string& path) {
     const bool ok = bool(fuse::ui::os::writeFileAtomic(path, m_doc.save())); // fuse::ui::os seam (FORGE)
+    if (ok) { m_path = path; m_doc.markSaved(); touched(); }
     setStatus(ok ? "Saved " + path : "Cannot write " + path);
     return ok;
 }
@@ -681,7 +798,7 @@ void Designer::rebuild() {
     m_live.reset();
     m_map.clear();
     // preview model: binding variables resolve to defaults
-    auto live = doc::Document::load(m_ui, m_doc.previewText(), &m_model, m_canvas);
+    auto live = doc::Document::load(m_ui, m_doc.previewText(), &m_model, m_frame);
     if (live) {
         m_live = std::move(*live);
     } else {
@@ -706,6 +823,7 @@ void Designer::rebuild() {
     m_multi = keep;
     applyHighlight();
     refreshProperties();
+    touched();
 }
 
 void Designer::refreshOutline() {
@@ -869,6 +987,13 @@ bool Designer::rootEvent(const Event& e, NodeHandle target) {
         return false;
     };
     switch (e.type) {
+    case EventType::KeyDown: {
+        // text fields (property grid, style sheet, live widgets in preview) keep their keys
+        if (e.key == Key::F5) return handleKey(e.key, e.mods);
+        const NodeHandle f = m_ui.focused();
+        const bool editing = m_ui.alive(f) && (inside(f, m_props) || inside(f, m_styleEdit) || (m_preview && inside(f, m_canvas)));
+        return !editing && handleKey(e.key, e.mods);
+    }
     case EventType::PointerDown: {
         m_drag = {};
         if (e.button != MouseButton::Left) return false;
@@ -1008,6 +1133,130 @@ void Designer::undo() {
 }
 void Designer::redo() {
     if (m_doc.redo()) { m_multi.clear(); rebuild(); setStatus("Redo"); }
+}
+
+// ---- product features -----------------------------------------------------------------------------------------------
+void Designer::touched() {
+    const UiContext& ui = m_ui;
+    m_issues = m_doc.validate([&ui](std::string_view c) { return ui.registry().find(c) != 0xFFFFFFFFu; });
+    const std::string t = windowTitle();
+    if (t != m_lastTitle) {
+        m_lastTitle = t;
+        if (onTitleChanged) onTitleChanged(t);
+    }
+}
+
+std::string Designer::windowTitle() const {
+    std::string name = m_path.empty() ? std::string("Untitled.fuseui") : m_path.substr(m_path.find_last_of("/\\") + 1);
+    if (m_doc.isModified()) name += '*';
+    return name + " - FUSE UI Designer";
+}
+
+bool Designer::save() { return !m_path.empty() && saveFile(m_path); }
+
+void Designer::selectIds(const std::vector<std::string>& ids) {
+    m_multi.clear();
+    bool first = true;
+    for (const std::string& id : ids) {
+        const u32 i = m_doc.findId(id);
+        if (i == DesignDocument::kNone) continue;
+        if (first) { m_sel = i; first = false; } else m_multi.push_back(i);
+    }
+    if (!m_multi.empty()) { m_multi.push_back(m_sel); m_sel = m_multi.front(); m_multi.erase(m_multi.begin()); }
+}
+
+void Designer::copySelection() {
+    std::vector<u32> sel = selection();
+    std::erase(sel, 0u); // the root is the form itself
+    if (sel.empty()) { setStatus("Nothing to copy"); return; }
+    m_ui.setClipboardText(m_doc.copy(sel));
+    setStatus("Copied " + std::to_string(sel.size()));
+}
+
+void Designer::cutSelection() {
+    if (selection().size() == 1 && m_sel == 0) { setStatus("The root cannot be cut"); return; }
+    copySelection();
+    deleteSelected();
+}
+
+bool Designer::pasteClipboard() {
+    std::string clip;
+    if (!m_ui.clipboardText(clip)) { setStatus("Clipboard is empty"); return false; }
+    const std::vector<u32> added = m_doc.paste(clip, m_sel);
+    if (added.empty()) { setStatus("Clipboard holds no widgets"); return false; }
+    std::vector<std::string> ids;
+    for (u32 i : added) ids.emplace_back(m_doc.node(i)->id());
+    selectIds(ids);
+    rebuild();
+    setStatus("Pasted " + std::to_string(added.size()));
+    return true;
+}
+
+void Designer::duplicateSelection() {
+    std::vector<u32> sel = selection();
+    std::erase(sel, 0u);
+    if (sel.empty()) return;
+    // after the last outermost selected node, inside its parent
+    const std::string clip = m_doc.copy(sel);
+    u32 last = sel.back();
+    while (m_doc.parentOf(last) != DesignDocument::kNone && std::find(sel.begin(), sel.end(), m_doc.parentOf(last)) != sel.end()) last = m_doc.parentOf(last);
+    const u32 parent = m_doc.parentOf(last);
+    const std::vector<u32> added = m_doc.paste(clip, parent, m_doc.childSlot(last) + 1);
+    std::vector<std::string> ids;
+    for (u32 i : added) ids.emplace_back(m_doc.node(i)->id());
+    selectIds(ids);
+    rebuild();
+    setStatus("Duplicated " + std::to_string(added.size()));
+}
+
+void Designer::setPreviewMode(bool on) {
+    m_preview = on;
+    m_drag = {};
+    if (on) { m_ui.addClass(m_canvas, "previewing"); for (NodeHandle h : m_lit) if (m_ui.alive(h)) m_ui.removeClass(h, "dsel"); m_lit.clear(); }
+    else { m_ui.removeClass(m_canvas, "previewing"); rebuild(); } // drop what the preview changed
+    if (m_ui.alive(m_previewBtn)) m_ui.setText(m_previewBtn, on ? "Design" : "Preview");
+    setStatus(on ? "Preview: the form runs live (F5 to return)" : "Design mode");
+}
+
+void Designer::setDeviceSize(f32 wd, f32 ht) {
+    if (wd <= 0 || ht <= 0) {
+        m_ui.setCss(m_frame, "width", "auto");
+        m_ui.setCss(m_frame, "height", "auto");
+        m_ui.setCss(m_frame, "flex-grow", "1");
+        setStatus("Canvas: fill");
+        return;
+    }
+    m_ui.setCss(m_frame, "flex-grow", "0");
+    m_ui.setCss(m_frame, "width", std::to_string(int(wd)) + "px");
+    m_ui.setCss(m_frame, "height", std::to_string(int(ht)) + "px");
+    setStatus("Canvas: " + std::to_string(int(wd)) + " x " + std::to_string(int(ht)));
+}
+
+bool Designer::handleKey(Key k, u8 mods) {
+    const bool ctrl = (mods & (kModCtrl | kModSuper)) != 0, alt = (mods & kModAlt) != 0, shift = (mods & kModShift) != 0;
+    if (k == Key::F5) { setPreviewMode(!m_preview); return true; }
+    if (m_preview) return false;
+    if (ctrl) {
+        switch (k) {
+        case Key::Z: shift ? redo() : undo(); return true;
+        case Key::Y: redo(); return true;
+        case Key::C: copySelection(); return true;
+        case Key::X: cutSelection(); return true;
+        case Key::V: pasteClipboard(); return true;
+        case Key::D: duplicateSelection(); return true;
+        case Key::S: if (!save()) setStatus("No file yet: save with saveFile(path)"); return true;
+        case Key::N: m_doc.reset(); m_path.clear(); m_sel = 0; m_multi.clear(); rebuild(); setStatus("New document"); return true;
+        default: return false;
+        }
+    }
+    if (alt && (k == Key::Up || k == Key::Down)) { moveSelected(k == Key::Up ? -1 : 1); return true; }
+    if (k == Key::Delete || k == Key::Backspace) { deleteSelected(); return true; }
+    if (k == Key::Escape) {
+        const u32 p = m_doc.parentOf(m_sel);
+        if (p != DesignDocument::kNone) select(p);
+        return true;
+    }
+    return false;
 }
 
 } // namespace fuse::ui::designer

@@ -10,6 +10,7 @@
 #include "fuse/ui/doc/document.hpp"
 #include "fuse/ui/ui.hpp"
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -74,6 +75,20 @@ public:
     /// Give every node without an id a unique one ("<class><n>"). Returns how many were added.
     u32 ensureIds();
 
+    /// Clipboard text for `indices` (outermost nodes only, document order): {"fuseui-clip": 1, "nodes": [...]}.
+    std::string copy(const std::vector<u32>& indices) const;
+    /// Insert clipboard nodes (also accepts one bare node or a whole .fuseui document) into container `parent` at
+    /// `position`, or after `parent` when it is a leaf. Clashing ids get fresh ones. One undo step; returns the new
+    /// preorder indices (empty on bad input).
+    std::vector<u32> paste(std::string_view clip, u32 parent, u32 position = ~0u);
+    /// Unsaved edits since load() / markSaved() (undoing back to the saved text clears it).
+    bool isModified() const { return save() != m_savedText; }
+    void markSaved() { m_savedText = save(); }
+    struct Issue { u32 index; std::string message; };
+    /// Problems a load would hit or that break bindings: duplicate / missing ids, children under a leaf class,
+    /// classes `knownClass` rejects.
+    std::vector<Issue> validate(const std::function<bool(std::string_view)>& knownClass = {}) const;
+
     bool undo();
     bool redo();
     bool canUndo() const { return !m_undo.empty(); }
@@ -92,6 +107,7 @@ private:
     doc::JsonValue m_header; ///< top-level members except "root" (fuseui version, style, ...)
     DesignNode m_root;
     std::vector<std::string> m_undo, m_redo;
+    std::string m_savedText;
     u64 m_rev = 0;
 };
 
@@ -105,6 +121,28 @@ public:
     bool open(std::string_view json, std::string* error = nullptr);
     bool openFile(const std::string& path, std::string* error = nullptr);
     bool saveFile(const std::string& path);
+    /// Save to the file last opened / saved (false when there is none).
+    bool save();
+    const std::string& filePath() const { return m_path; }
+    /// "name.fuseui* - FUSE UI Designer" ('*' while modified); onTitleChanged fires when it changes.
+    std::string windowTitle() const;
+    std::function<void(const std::string&)> onTitleChanged;
+    /// Document problems found after the last edit (also summarised in the status line).
+    const std::vector<DesignDocument::Issue>& issues() const { return m_issues; }
+
+    // clipboard (the context clipboard carries the JSON so designers in other windows / processes can paste)
+    void copySelection();
+    void cutSelection();
+    bool pasteClipboard();     ///< under / after the selection
+    void duplicateSelection(); ///< copies placed right after the originals
+    /// Preview mode: the canvas widgets operate normally (no selection, no drags).
+    void setPreviewMode(bool on);
+    bool previewMode() const { return m_preview; }
+    /// Lay the form out at a device size (0 x 0 = fill the canvas). Presets: Phone 390x844, Tablet 820x1180,
+    /// Desktop 1280x800.
+    void setDeviceSize(f32 w, f32 h);
+    /// Designer shortcuts (Ctrl+Z/Y/C/X/V/D/S/N, Ctrl+P preview, Delete, Alt+Up/Down, Escape = select parent).
+    bool handleKey(Key k, u8 mods);
     std::string text() const { return m_doc.save(); }
     DesignDocument& document() { return m_doc; }
 
@@ -148,6 +186,8 @@ public:
 
 private:
     void rebuild();
+    void touched();
+    void selectIds(const std::vector<std::string>& ids);
     void refreshOutline();
     void refreshProperties();
     void setStatus(std::string s);
@@ -168,6 +208,10 @@ private:
     bool m_syncing = false;
     std::string m_status;
     std::vector<std::string> m_propNames;
+    NodeHandle m_frame, m_previewBtn;
+    std::string m_path, m_lastTitle;
+    std::vector<DesignDocument::Issue> m_issues;
+    bool m_preview = false;
 };
 
 } // namespace fuse::ui::designer
