@@ -8,12 +8,18 @@ namespace fuse::ui::charts::simd {
 #if defined(FUSE_UI_CHARTS_LANE) && (defined(__x86_64__) || defined(_M_X64))
 void minMaxAvx2(const float*, std::size_t, float&, float&);
 #endif
+#if defined(FUSE_UI_CHARTS_LANE) && defined(__aarch64__) && defined(__ARM_NEON)
+void minMaxNeon(const float*, std::size_t, float&, float&);
+#endif
 namespace {
 using Fn = void (*)(const float*, std::size_t, float&, float&);
 Fn pick() {
 #if defined(FUSE_UI_CHARTS_LANE) && (defined(__x86_64__) || defined(_M_X64))
     const auto& f = forge::lane::detect();
     if (f.avx2 && f.fma && f.os_avx) return &minMaxAvx2;
+#endif
+#if defined(FUSE_UI_CHARTS_LANE) && defined(__aarch64__) && defined(__ARM_NEON)
+    return &minMaxNeon;
 #endif
     return &detail::minMaxScalar;
 }

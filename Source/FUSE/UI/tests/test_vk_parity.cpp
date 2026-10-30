@@ -3,6 +3,7 @@
 // clips, images, glyphs) and a scissored redraw. Gate: max channel error <= 2/255 and < 0.5 % of pixels differing at
 // all. Also: packing + upload of an unchanged frame does not allocate. Skips (77) without a Vulkan device.
 #include "fuse/ui/render/ui_vk.hpp"
+#include "fuse/ui/render/ui_vk_mesh.hpp"
 #include "test_util.hpp"
 #include "vk_headless.hpp"
 #if FUSE_PARITY_EXTRAS
@@ -37,7 +38,7 @@ using fuse::ui::render::packDrawList;
 namespace {
 struct Diff {
     int maxErr = 0;
-    std::size_t differing = 0, total = 0;
+    std::size_t differing = 0, total = 0, over2 = 0; ///< over2: pixels with an error above 2
 };
 Diff compare(const Image& a, const Image& b) {
     Diff d;
@@ -47,12 +48,21 @@ Diff compare(const Image& a, const Image& b) {
         for (int s = 0; s < 32; s += 8) m = std::max(m, std::abs(int((a.pixels[i] >> s) & 0xFF) - int((b.pixels[i] >> s) & 0xFF)));
         d.maxErr = std::max(d.maxErr, m);
         d.differing += m ? 1 : 0;
+        d.over2 += m > 2 ? 1 : 0;
     }
     return d;
 }
 void check(const char* what, const Diff& d) {
     std::printf("%-12s max err %d, differing %zu / %zu\n", what, d.maxErr, d.differing, d.total);
     UI_CHECK(d.maxErr <= 2);
+    UI_CHECK(double(d.differing) < 0.005 * double(d.total));
+}
+/// Depth-buffered meshes: as check(), except that a handful of pixels (<= 0.002 %) may differ by more where two
+/// surfaces are within float rounding of the same depth (the GPU's plane setup and rasterMesh's barycentrics tie-break
+/// differently there; coverage and shading still match).
+void checkMesh(const char* what, const Diff& d) {
+    std::printf("%-12s max err %d (%zu px > 2), differing %zu / %zu\n", what, d.maxErr, d.over2, d.differing, d.total);
+    UI_CHECK(double(d.over2) <= 2e-5 * double(d.total));
     UI_CHECK(double(d.differing) < 0.005 * double(d.total));
 }
 } // namespace
@@ -470,6 +480,40 @@ int main() {
             vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
             check("charts", compare(cpuCh, out));
         }
+        {   // charts beyond Qt: radar, treemap, sankey, gauge, waterfall, funnel, contour, filled contour (geometry only)
+            namespace ch = fuse::ui::charts;
+            DrawList cl;
+            cl.rect({0, 0, f32(W), f32(H)}, Color::rgb(0x101014));
+            auto cell = [&](int i) { return Rect{f32(i % 4) * f32(W) / 4.f, f32(i / 4) * f32(H) / 2.f, f32(W) / 4.f, f32(H) / 2.f}; };
+            const ch::SeriesType kinds[] = {ch::SeriesType::Radar, ch::SeriesType::Treemap, ch::SeriesType::Sankey, ch::SeriesType::Gauge,
+                                            ch::SeriesType::Waterfall, ch::SeriesType::Funnel, ch::SeriesType::Contour, ch::SeriesType::Contour};
+            for (int i = 0; i < 8; ++i) {
+                ch::Chart c;
+                c.animate = false;
+                c.legend = ch::LegendPos::None;
+                ch::Series& sr = c.add(kinds[i]);
+                switch (kinds[i]) {
+                case ch::SeriesType::Radar: sr.y = {4, 3, 5, 2, 4, 3}; c.add(kinds[i]).y = {2, 5, 3, 4, 2, 5}; break;
+                case ch::SeriesType::Treemap: sr.y = {6, 6, 4, 3, 2, 2, 1}; break;
+                case ch::SeriesType::Sankey: sr.links = {{0, 3, 30}, {1, 3, 20}, {1, 4, 15}, {2, 3, 10}, {3, 5, 35}, {3, 6, 25}, {4, 5, 10}, {4, 6, 5}}; break;
+                case ch::SeriesType::Gauge: sr.y = {72}, sr.colormap = {{0.f, Color::rgb(0x26A69A)}, {0.6f, Color::rgb(0xFFCA28)}, {1.f, Color::rgb(0xEF5350)}}; break;
+                case ch::SeriesType::Waterfall: sr.y = {120, -30, 45, -20, 0, 60, -15, 0}, sr.totals = {4, 7}; break;
+                case ch::SeriesType::Funnel: sr.y = {1000, 620, 380, 210, 90}; break;
+                default:
+                    sr.rows = sr.cols = 40, sr.levels = 7, sr.contourFill = i == 7;
+                    for (u32 k = 0; k < 1600; ++k) sr.y.push_back(std::sin(f32(k % 40) / 6.f) * std::cos(f32(k / 40) / 6.f));
+                }
+                ch::render(c, cl, cell(i));
+            }
+            Image cpuB;
+            cpuB.resize(int(W), int(H), 0xFF000000u);
+            CpuRasterizer rb;
+            rb.render(cl, cpuB);
+            packDrawList(cl, W, H, data);
+            UI_CHECK(gpu.upload(0, data));
+            vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+            check("charts+", compare(cpuB, out));
+        }
         {   // charts (3D): line, area ribbons, a thinned 300k-point scatter with a selection, a strided 400 x 400 surface
             namespace ch = fuse::ui::charts;
             DrawList cl;
@@ -500,6 +544,77 @@ int main() {
             vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
             UI_CHECK(cl.size() < 16000);
             check("charts3d", compare(cpu3, out));
+        }
+        // charts (3D, GPU mesh path): UiVkMesh3D (vertex / index buffers, depth buffer, per-vertex lighting) against
+        // rasterMesh, composited through external slots by the draw-list kernel. Two frames of four panels: surface
+        // (smooth normals), bars, scatter octahedra, volume slices; line ribbons, area ribbons, an orthographic
+        // surface and a 1000 x 1000 surface (strided to the mesh grid limit).
+        if (fuse::ui::render::UiVkMesh3D::available()) {
+            namespace ch = fuse::ui::charts;
+            fuse::ui::render::UiVkMesh3D meshes[4];
+            for (auto& m : meshes) UI_CHECK(m.init({.physicalDevice = (void*)vk.phys, .device = (void*)vk.device, .maxWidth = W, .maxHeight = H}));
+            for (int frame = 0; frame < 2; ++frame) {
+                DrawList ml;
+                ml.rect({0, 0, f32(W), f32(H)}, Color::rgb(0x101014));
+                Mesh3D mesh[4];
+                Image img[4];
+                const Image* imgs[4];
+                std::size_t tris = 0;
+                for (int i = 0; i < 4; ++i) {
+                    ch::Chart3D c;
+                    c.gpuMesh = true;
+                    const int k = frame * 4 + i;
+                    c.kind = k == 0 || k == 6 || k == 7 ? ch::Kind3D::Surface : k == 1 ? ch::Kind3D::Bars : k == 2 ? ch::Kind3D::Scatter
+                             : k == 3 ? ch::Kind3D::Volume : k == 4 ? ch::Kind3D::Line : ch::Kind3D::Area;
+                    if (k == 6) c.camera.perspective = false;
+                    if (c.kind == ch::Kind3D::Surface || c.kind == ch::Kind3D::Bars || c.kind == ch::Kind3D::Area) {
+                        const u32 n = k == 7 ? 1000 : k == 1 ? 8 : k == 5 ? 5 : 120;
+                        c.rows = c.kind == ch::Kind3D::Area ? 5 : n, c.cols = c.kind == ch::Kind3D::Area ? 40 : n;
+                        if (k == 7) c.maxMeshGrid = 300;
+                        for (u32 q = 0; q < c.rows * c.cols; ++q)
+                            c.values.push_back(1.5f + std::sin(f32(q % c.cols) * 6.f / f32(c.cols)) * std::cos(f32(q / c.cols) * 5.f / f32(c.rows)));
+                    } else if (c.kind == ch::Kind3D::Volume) {
+                        c.vx = c.vy = c.vz = 24;
+                        for (u32 q = 0; q < 24u * 24u * 24u; ++q) {
+                            const f32 x = f32(q % 24) - 11.5f, y = f32(q / 24 % 24) - 11.5f, z = f32(q / 576) - 11.5f;
+                            c.volume.push_back(std::sqrt(x * x + y * y + z * z));
+                        }
+                    } else
+                        for (int q = 0; q < 2000; ++q) c.points.push_back({std::cos(f32(q) * 0.05f) * (1 + f32(q % 7) * 0.05f), f32(q) / 2000.f, std::sin(f32(q) * 0.05f)});
+                    if (c.kind == ch::Kind3D::Scatter) c.pointSize = 3.f, c.selection = {100};
+                    const Rect cell{f32(i % 2) * f32(W) / 2.f, f32(i / 2) * f32(H) / 2.f, f32(W) / 2.f, f32(H) / 2.f};
+                    fuse::ui::dv3d::renderMeshed(c, ml, cell, Color::rgb(0xC0C4CC), mesh[i], img[i], u32(i));
+                    tris += mesh[i].indices.size() / 3;
+                    img[i].externalSlot = i;
+                    imgs[i] = &img[i];
+                    UI_CHECK(meshes[i].upload(mesh[i]));
+                    gpu.setExternalImage(u32(i), meshes[i].view());
+                }
+                Image cpuM;
+                cpuM.resize(int(W), int(H), 0xFF000000u);
+                CpuRasterizer rm;
+                for (const Image* im : imgs) rm.addImage(im);
+                rm.render(ml, cpuM);
+                packDrawList(ml, W, H, data, nullptr, 0, imgs, 4);
+                UI_CHECK(gpu.upload(0, data));
+                vk.run(init, out, [&](VkCommandBuffer c) {
+                    for (auto& m : meshes) m.record((void*)c);
+                    gpu.record((void*)c, (void*)vk.view, 0);
+                });
+                std::printf("mesh3d frame %d: %zu triangles\n", frame, tris);
+                checkMesh(frame ? "mesh3d b" : "mesh3d a", compare(cpuM, out));
+                if (const char* dir = std::getenv("FUSE_PARITY_OUT")) {
+                    const std::string f = std::string(dir) + (frame ? "/mesh3d_b.ppm" : "/mesh3d_a.ppm");
+                    for (int which = 0; which < 2; ++which)
+                        if (FILE* fp = std::fopen((f + (which ? ".cpu.ppm" : "")).c_str(), "wb")) {
+                            const Image& im = which ? cpuM : out;
+                            std::fprintf(fp, "P6 %d %d 255\n", im.width, im.height);
+                            for (u32 px : im.pixels) { const unsigned char rgb[3] = {u8(px), u8(px >> 8), u8(px >> 16)}; std::fwrite(rgb, 1, 3, fp); }
+                            std::fclose(fp);
+                        }
+                }
+            }
+            for (u32 e = 0; e < 4; ++e) gpu.setExternalImage(e, nullptr);
         }
         {   // layered clips: per-pixel SVG mask (gradient fade + two-tone shapes), clipPath union (overlap, opposite
             // windings, mixed clip-rule), and DrawList::pushClipLayers directly with a radial ramp

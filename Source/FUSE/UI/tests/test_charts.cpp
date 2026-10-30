@@ -72,6 +72,30 @@ ch::Chart sampleChart(ch::SeriesType t) {
         for (int i = 0; i < 2000; ++i) s.y.push_back(d(g));
         break;
     }
+    case ch::SeriesType::Waterfall:
+        s.y = {120, -30, 45, -20, 0, 60, -15, 0}, s.totals = {4, 7};
+        s.labels = {"Q1", "Q2", "Q3", "Q4", "H1", "Q5", "Q6", "Total"};
+        break;
+    case ch::SeriesType::Radar: {
+        s.y = {4, 3, 5, 2, 4, 3}, s.labels = {"speed", "power", "range", "cost", "comfort", "safety"};
+        ch::Series& b = c.add(t, "b");
+        b.y = {2, 5, 3, 4, 2, 5};
+        break;
+    }
+    case ch::SeriesType::Treemap:
+        s.y = {6, 6, 4, 3, 2, 2, 1}, s.labels = {"a", "b", "c", "d", "e", "f", "g"};
+        break;
+    case ch::SeriesType::Sankey:
+        s.labels = {"coal", "gas", "solar", "power", "heat", "homes", "industry"};
+        s.links = {{0, 3, 30}, {1, 3, 20}, {1, 4, 15}, {2, 3, 10}, {3, 5, 35}, {3, 6, 25}, {4, 5, 10}, {4, 6, 5}};
+        break;
+    case ch::SeriesType::Gauge:
+        s.y = {72}, s.colormap = {{0.f, Color::rgb(0x26A69A)}, {0.6f, Color::rgb(0xFFCA28)}, {0.85f, Color::rgb(0xEF5350)}, {1.f, Color::rgb(0xEF5350)}};
+        break;
+    case ch::SeriesType::Funnel:
+        s.y = {1000, 620, 380, 210, 90}, s.labels = {"visits", "signups", "trials", "paid", "renewed"};
+        break;
+    case ch::SeriesType::Contour:
     case ch::SeriesType::Heatmap:
         s.rows = 10, s.cols = 12;
         for (u32 i = 0; i < 120; ++i) s.y.push_back(std::sin(f32(i % 12) * 0.5f) * std::cos(f32(i / 12) * 0.4f));
@@ -91,7 +115,7 @@ ch::Chart sampleChart(ch::SeriesType t) {
 void gateSeries() {
     Screen s;
     const auto tf = fns(s.ui);
-    for (u32 t = 0; t <= u32(ch::SeriesType::Bubble); ++t) {
+    for (u32 t = 0; t <= u32(ch::SeriesType::Funnel); ++t) {
         ch::Chart c = sampleChart(ch::SeriesType(t));
         DrawList dl;
         ch::RenderStats st;
@@ -449,6 +473,221 @@ void gateDemo() {
     if (out) CHECK(ch::writePng(img, out));
     CHECK(colours(img, {0, 0, f32(W), f32(H)}) > 30);
 }
+void gateBeyondQt() {
+    Screen sc;
+    const auto tf = fns(sc.ui);
+    const Rect B{0, 0, 480, 360};
+    auto hitAll = [&](const ch::Chart& c, u32 si, std::size_t expect) { // every index is reachable by some pixel
+        std::vector<u8> seen(expect, 0);
+        for (f32 y = 0; y < B.h; y += 2)
+            for (f32 x = 0; x < B.w; x += 2) {
+                const ch::Hit h = ch::hitTest(c, B, {x, y}, 6.f, &tf);
+                if (h.series == i32(si) && h.index >= 0 && std::size_t(h.index) < expect) seen[std::size_t(h.index)] = 1;
+            }
+        std::size_t n = 0;
+        for (u8 v : seen) n += v;
+        if (n != expect) std::fprintf(stderr, "hit %zu / %zu\n", n, expect);
+        return n == expect;
+    };
+    // waterfall: floating bars on the running total; totals restart from 0; range covers the peak (165)
+    {
+        ch::Chart c = sampleChart(ch::SeriesType::Waterfall);
+        const auto rg = ch::axisRanges(c);
+        CHECK(rg[1].first <= 0.f && rg[1].second >= 175.f);
+        CHECK(ch::tooltip(c, 0, 4).find("total 115") != std::string::npos);
+        CHECK(ch::tooltip(c, 0, 1).find("-30") != std::string::npos);
+        CHECK(ch::tooltip(c, 0, 7).find("total 160") != std::string::npos);
+        CHECK(hitAll(c, 0, 8));
+    }
+    // contour: isolines cross where expected (a radial bowl gives closed rings, one per level)
+    {
+        ch::Chart c;
+        c.animate = false;
+        ch::Series& s = c.add(ch::SeriesType::Contour, "bowl");
+        s.rows = s.cols = 41, s.levels = 4;
+        for (u32 i = 0; i < 41 * 41; ++i) { const f32 x = f32(i % 41) - 20, y = f32(i / 41) - 20; s.y.push_back(std::sqrt(x * x + y * y)); }
+        DrawList dl;
+        ch::RenderStats st;
+        ch::render(c, dl, B, &tf, &st);
+        CHECK(st.drawnPoints > 4 * 40 && st.drawnPoints < 4 * 400);
+        Image img;
+        img.resize(480, 360, 0xFF000000u);
+        CpuRasterizer r;
+        r.render(dl, img);
+        const ch::Layout L = ch::layout(c, B, &tf);
+        // walking right from the centre crosses 4 isolines (colour changes from the plot fill)
+        const int yc = int(L.plot.y + L.plot.h * 0.5f);
+        int crossings = 0;
+        bool on = false;
+        const u32 bg = img.at(int(L.plot.x + L.plot.w * 0.5f) + 2, yc + 3);
+        for (int x = int(L.plot.x + L.plot.w * 0.5f) + 2; x < int(L.plot.right()) - 2; ++x) {
+            const bool line = img.at(x, yc) != bg && img.at(x, yc) != img.at(int(L.plot.right()) - 3, yc);
+            if (line && !on) ++crossings;
+            on = line;
+        }
+        if (crossings != 4) std::fprintf(stderr, "contour crossings %d\n", crossings);
+        CHECK(crossings >= 4 && crossings <= 5);
+        CHECK(ch::hitTest(c, B, {L.plot.x + L.plot.w * 0.5f, L.plot.y + L.plot.h * 0.5f}, 4.f, &tf).index == 20 * 41 + 20);
+    }
+    // radar: both series share one web; every spoke of each is hit-testable
+    {
+        ch::Chart c = sampleChart(ch::SeriesType::Radar);
+        CHECK(hitAll(c, 0, 6) && hitAll(c, 1, 6));
+        CHECK(ch::describe(c).find("radar") != std::string::npos);
+    }
+    // treemap: cell areas proportional to the values (squarified, no overlap)
+    {
+        ch::Chart c = sampleChart(ch::SeriesType::Treemap);
+        c.title.clear();
+        c.legend = ch::LegendPos::None;
+        std::vector<int> px(7, 0);
+        for (f32 y = 0.5f; y < B.h; y += 1)
+            for (f32 x = 0.5f; x < B.w; x += 1) {
+                const ch::Hit h = ch::hitTest(c, B, {x, y}, 0.f, &tf);
+                if (h.series == 0 && h.index >= 0) px[std::size_t(h.index)]++;
+            }
+        const f32 total = 24.f;
+        int all = 0;
+        for (int v : px) all += v;
+        for (u32 i = 0; i < 7; ++i) {
+            const f32 share = f32(px[i]) / f32(all), want = c.series[0].y[i] / total;
+            if (std::abs(share - want) > 0.03f) std::fprintf(stderr, "treemap %u share %.3f want %.3f\n", i, share, want);
+            CHECK(std::abs(share - want) <= 0.03f);
+        }
+    }
+    // sankey: node columns by depth, flows conserve (power node in = out = 60), every link and node hit-testable
+    {
+        ch::Chart c = sampleChart(ch::SeriesType::Sankey);
+        CHECK(hitAll(c, 0, 8 + 7));
+        CHECK(ch::tooltip(c, 0, 8 + 3) == "power: in 60, out 60");
+        CHECK(ch::tooltip(c, 0, 0) == "coal -> power: 30");
+        CHECK(ch::describe(c).find("8 flows") != std::string::npos);
+    }
+    // gauge: value clamps to the dial, tooltip reports range
+    {
+        ch::Chart c = sampleChart(ch::SeriesType::Gauge);
+        CHECK(ch::tooltip(c, 0, 0) == "a: 72 (0 to 100)");
+        CHECK(hitAll(c, 0, 1));
+        c.series[0].y = {250};
+        DrawList dl;
+        ch::render(c, dl, B, &tf);
+        CHECK(dl.size() > 10);
+    }
+    // funnel: stage widths shrink with the values; every stage hit-testable
+    {
+        ch::Chart c = sampleChart(ch::SeriesType::Funnel);
+        CHECK(hitAll(c, 0, 5));
+        const ch::Layout L = ch::layout(c, B, &tf);
+        auto width = [&](u32 st) {
+            const f32 y = L.plot.y + (f32(st) + 0.05f) * L.plot.h / 5.f;
+            int n = 0;
+            for (f32 x = L.plot.x; x < L.plot.right(); x += 1) n += ch::hitTest(c, B, {x, y}, 0.f, &tf).index == i32(st);
+            return n;
+        };
+        CHECK(width(0) > width(1) && width(1) > width(2) && width(3) > width(4));
+        CHECK(std::abs(f32(width(1)) / f32(width(0)) - 0.62f) < 0.04f);
+    }
+}
+
+void gateTransition() {
+    // blend(): values move from the old to the new data; new points grow from the last old one (0 for bars)
+    ch::Chart a = sampleChart(ch::SeriesType::Bar), b = a;
+    for (f32& y : b.series[0].y) y += 10.f;
+    b.series[0].x.push_back(30), b.series[0].y.push_back(50);
+    ch::Chart m;
+    ch::blend(a, b, 0.5f, m);
+    CHECK(std::abs(m.series[0].y[3] - (a.series[0].y[3] + 5.f)) < 1e-4f);
+    CHECK(std::abs(m.series[0].y[30] - 25.f) < 1e-4f);
+    ch::blend(a, b, 1.f, m);
+    CHECK(m.series[0].y == b.series[0].y);
+    ch::Chart sa = sampleChart(ch::SeriesType::Sankey), sb = sa;
+    sb.series[0].links[0].value = 50;
+    ch::blend(sa, sb, 0.25f, m);
+    CHECK(std::abs(m.series[0].links[0].value - 35.f) < 1e-4f);
+    // widget: chartChanged(view, true) tweens to the new values; axes follow; hover still works mid-tween
+    Screen s;
+    UiContext& ui = s.ui;
+    const NodeHandle v = ch::chartView(ui, ui.root(), "tween");
+    ui.setCss(v, "width", "600px");
+    ui.setCss(v, "height", "400px");
+    ch::Chart& c = *ch::chartOf(ui, v);
+    c = sampleChart(ch::SeriesType::Bar);
+    c.animate = true;
+    ch::chartChanged(ui, v, false);
+    step(ui), step(ui);
+    const f32 y0 = c.series[0].y[5];
+    const f32 hi0 = ch::axisRanges(c)[1].second;
+    for (f32& y : c.series[0].y) y *= 4.f;
+    ch::chartChanged(ui, v, true);
+    step(ui);
+    const ch::Chart* shown = ch::chartShown(ui, v);
+    CHECK(shown != &c && c.progress == 1.f); // a tween, not the entry animation
+    const f32 mid = shown->series[0].y[5];
+    CHECK(mid > y0 && mid < y0 * 4.f);
+    const f32 hiMid = ch::axisRanges(*shown)[1].second;
+    CHECK(hiMid >= hi0 && hiMid <= ch::axisRanges(c)[1].second);
+    for (int i = 0; i < 30; ++i) step(ui);
+    CHECK(ch::chartShown(ui, v) == &c);
+    // a change during a tween continues from the on-screen values
+    for (f32& y : c.series[0].y) y *= 0.25f;
+    ch::chartChanged(ui, v, true);
+    for (int i = 0; i < 5; ++i) step(ui);
+    const f32 m1 = ch::chartShown(ui, v)->series[0].y[5];
+    for (f32& y : c.series[0].y) y *= 2.f;
+    ch::chartChanged(ui, v, true);
+    step(ui);
+    const f32 m2 = ch::chartShown(ui, v)->series[0].y[5];
+    CHECK(std::abs(m2 - m1) < std::abs(m1) * 0.3f + 0.5f); // no jump back to an old snapshot
+    for (int i = 0; i < 30; ++i) step(ui);
+    CHECK(ch::chartShown(ui, v) == &c);
+    // a structural change (new series) replays the entry animation instead
+    c.add(ch::SeriesType::Line, "extra").y = {1, 2, 3};
+    ch::chartChanged(ui, v, true);
+    step(ui);
+    CHECK(c.progress < 1.f && ch::chartShown(ui, v) == &c);
+    for (int i = 0; i < 40; ++i) step(ui);
+    // gauge needle tween
+    c = sampleChart(ch::SeriesType::Gauge);
+    c.animate = true;
+    ch::chartChanged(ui, v, false);
+    c.series[0].y = {20};
+    ch::chartChanged(ui, v, true);
+    for (int i = 0; i < 6; ++i) step(ui);
+    const f32 g = ch::chartShown(ui, v)->series[0].y[0];
+    CHECK(g < 72.f && g > 20.f);
+    Image img;
+    ch::renderImage(ui, *ch::chartShown(ui, v), 300, 300, img);
+    CHECK(colours(img, {0, 0, 300, 300}) > 6);
+}
+
+void gateDemoBeyond() {
+    Screen s;
+    UiContext& ui = s.ui;
+    const int W = 1200, H = 600, cw = W / 4, chh = H / 2;
+    DrawList dl;
+    const auto tf = fns(ui);
+    const ch::SeriesType kinds[] = {ch::SeriesType::Radar, ch::SeriesType::Treemap, ch::SeriesType::Sankey, ch::SeriesType::Gauge,
+                                    ch::SeriesType::Waterfall, ch::SeriesType::Funnel, ch::SeriesType::Contour, ch::SeriesType::Contour};
+    const char* names[] = {"Radar", "Treemap", "Sankey", "Gauge", "Waterfall", "Funnel", "Contour", "Filled contour"};
+    for (int i = 0; i < 8; ++i) {
+        ch::Chart c = sampleChart(kinds[i]);
+        c.title = names[i];
+        if (kinds[i] == ch::SeriesType::Contour) {
+            ch::Series& q = c.series[0];
+            q.rows = q.cols = 60, q.y.clear(), q.levels = 9, q.contourFill = i == 7;
+            for (u32 k = 0; k < 3600; ++k) { const f32 x = f32(k % 60) / 9.f, y = f32(k / 60) / 9.f; q.y.push_back(std::sin(x) * std::cos(y) + 0.3f * std::sin(x * y * 0.5f)); }
+        }
+        ch::render(c, dl, {f32(i % 4 * cw), f32(i / 4 * chh), f32(cw), f32(chh)}, &tf);
+    }
+    Image img;
+    img.resize(W, H, 0xFF000000u);
+    CpuRasterizer r;
+    r.setGlyphAtlas(ui.atlas().pixels(), ui.atlas().size());
+    r.render(dl, img);
+    if (const char* out = std::getenv("FUSE_CHARTS_DEMO_BEYOND")) CHECK(ch::writePng(img, out));
+    CHECK(colours(img, {0, 0, f32(W), f32(H)}) > 30);
+}
+
 ch::Chart3D scene3d(ch::Kind3D k) {
     ch::Chart3D c;
     c.kind = k;
@@ -586,13 +825,149 @@ void gateDemo3d() {
     r.render(dl, img);
     if (const char* out = std::getenv("FUSE_CHARTS_DEMO3D")) CHECK(ch::writePng(img, out));
 }
+void gateMesh3d() {
+    Screen s;
+    UiContext& ui = s.ui;
+    // every kind builds a lit mesh; the CPU reference rasterises it with a depth buffer
+    for (u32 k = 0; k <= u32(ch::Kind3D::Volume); ++k) {
+        ch::Chart3D c = k == u32(ch::Kind3D::Volume) ? ch::Chart3D{} : scene3d(ch::Kind3D(k));
+        if (k == u32(ch::Kind3D::Volume)) {
+            c.kind = ch::Kind3D::Volume, c.vx = 10, c.vy = 8, c.vz = 6;
+            for (u32 q = 0; q < 480; ++q) c.volume.push_back(f32(q % 10) + f32(q / 80));
+        }
+        c.gpuMesh = true;
+        Mesh3D m;
+        ch::Stats3D st;
+        std::vector<fuse::ui::dv3d::ProjectedItem> items;
+        fuse::ui::dv3d::buildMesh(c, {0, 0, 320, 240}, m, &items, &st);
+        CHECK(!m.vertices.empty() && m.indices.size() % 3 == 0 && !items.empty() && st.drawn > 0);
+        CHECK(m.frame.width == 320 && m.frame.height == 240);
+        for (u32 i : m.indices) CHECK(i < m.vertices.size());
+        Image img;
+        ch::renderImage(ui, c, ch::Theme::dark(), 320, 240, img);
+        const int n = colours(img, {0, 0, 320, 240});
+        if (n < 12) std::fprintf(stderr, "mesh kind %u drew %d colours\n", k, n);
+        CHECK(n >= 12);
+        // the painter path draws the same kinds (volume slices included)
+        c.gpuMesh = false;
+        Image img2;
+        ch::renderImage(ui, c, ch::Theme::dark(), 320, 240, img2);
+        CHECK(colours(img2, {0, 0, 320, 240}) >= 6);
+    }
+    // the mesh projection matches the painter's: a scatter point's octahedron centre lands on project()
+    {
+        ch::Chart3D c = scene3d(ch::Kind3D::Scatter);
+        c.gpuMesh = true;
+        Mesh3D m;
+        fuse::ui::dv3d::buildMesh(c, {10, 20, 300, 200}, m);
+        const f32* M = m.frame.mvp;
+        for (std::size_t p = 0; p < c.points.size(); p += 17) {
+            f32 sx = 0, sy = 0;
+            for (int j = 0; j < 6; ++j) { // octahedron vertices average to the centre
+                const MeshVertex& v = m.vertices[p * 6 + std::size_t(j)];
+                sx += v.x, sy += v.y;
+            }
+            (void)sx, (void)sy;
+            const MeshVertex& a = m.vertices[p * 6], &b = m.vertices[p * 6 + 1];
+            const f32 cx = (a.x + b.x) * 0.5f, cy = (a.y + b.y) * 0.5f, cz = (a.z + b.z) * 0.5f;
+            const f32 X = M[0] * cx + M[4] * cy + M[8] * cz + M[12], Y = M[1] * cx + M[5] * cy + M[9] * cz + M[13];
+            const f32 Wc = M[3] * cx + M[7] * cy + M[11] * cz + M[15];
+            const Rect mr = fuse::ui::dv3d::meshRect({10, 20, 300, 200});
+            const Vec2 got{mr.x + (X / Wc * 0.5f + 0.5f) * mr.w, mr.y + (Y / Wc * 0.5f + 0.5f) * mr.h};
+            const Vec2 want = fuse::ui::dv3d::project(c, {10, 20, 300, 200}, c.points[p]);
+            CHECK(std::abs(got.x - want.x) < 0.05f && std::abs(got.y - want.y) < 0.05f);
+        }
+    }
+    // depth buffer: a near triangle hides a far one regardless of submission order
+    {
+        Mesh3D m;
+        m.frame.width = m.frame.height = 64;
+        auto add = [&](f32 z, u32 rgba) {
+            const u32 o = m.add({-0.8f, -0.8f, z, 0, 0, 1, rgba});
+            m.add({0.8f, -0.8f, z, 0, 0, 1, rgba});
+            m.add({0.f, 0.8f, z, 0, 0, 1, rgba});
+            m.tri(o, o + 1, o + 2);
+        };
+        m.frame.light[3] = 1.f; // unlit
+        add(0.2f, 0xFF0000FFu); // near: red
+        add(0.7f, 0xFF00FF00u); // far: green, drawn later
+        Image img;
+        rasterMesh(m, img);
+        CHECK(img.pixels[32 * 64 + 32] == 0xFF0000FFu);
+        CHECK(img.pixels[2] == 0u); // outside: clear
+        // shared edge: two triangles of a quad cover each pixel exactly once (top-left rule, no gaps / doubles)
+        Mesh3D q;
+        q.frame.width = q.frame.height = 16, q.frame.light[3] = 1.f;
+        const u32 o = q.add({-1, -1, 0.5f, 0, 0, 1, 0xFFFFFFFFu});
+        q.add({1, -1, 0.5f, 0, 0, 1, 0xFFFFFFFFu});
+        q.add({1, 1, 0.5f, 0, 0, 1, 0xFFFFFFFFu});
+        q.add({-1, 1, 0.5f, 0, 0, 1, 0xFFFFFFFFu});
+        q.quad(o, o + 1, o + 2, o + 3);
+        rasterMesh(q, img);
+        for (u32 px : img.pixels) CHECK(px == 0xFFFFFFFFu);
+    }
+    // widget on the mesh path: attached image, picking and hover still work
+    const NodeHandle v = ch::chart3dView(ui, ui.root(), ch::Kind3D::Surface, "m3");
+    ui.setCss(v, "width", "400px");
+    ui.setCss(v, "height", "300px");
+    *ch::chart3dOf(ui, v) = scene3d(ch::Kind3D::Surface);
+    CHECK(fuse::ui::widgets::dataViz3dMeshImage(ui, v) != nullptr);
+    fuse::ui::widgets::dataViz3dSetMeshImage(ui, v, 0);
+    ch::chart3dChanged(ui, v);
+    for (int i = 0; i < 2; ++i) step(ui);
+    const Mesh3D* wm = fuse::ui::widgets::dataViz3dMesh(ui, v);
+    CHECK(wm && wm->vertices.size() == 144);
+    const Image* wi = fuse::ui::widgets::dataViz3dMeshImage(ui, v);
+    CHECK(wi->width == 400 && wi->height == 300 && colours(*wi, {0, 0, 400, 300}) >= 12);
+    const ch::Chart3D& sc = *ch::chart3dOf(ui, v);
+    ui.pointerMove(fuse::ui::dv3d::project(sc, ui.rect(v), {5.f, sc.values[5 * 12 + 5], 5.f}));
+    step(ui);
+    CHECK(ch::chart3dHovered(ui, v) >= 0);
+}
+
+void gateMesh3dLarge() {
+    // 1000 x 1000 surface and 1M-point scatter on the mesh path: build + CPU raster time, bounded mesh size
+    ch::Chart3D sf;
+    sf.kind = ch::Kind3D::Surface, sf.gpuMesh = true;
+    sf.rows = sf.cols = 1000;
+    for (u32 i = 0; i < 1'000'000; ++i) sf.values.push_back(std::sin(f32(i % 1000) * 0.01f) * std::cos(f32(i / 1000) * 0.01f));
+    Mesh3D m;
+    ch::Stats3D st;
+    auto t0 = std::chrono::steady_clock::now();
+    fuse::ui::dv3d::buildMesh(sf, {0, 0, 800, 600}, m, nullptr, &st);
+    const double bms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    Image img;
+    t0 = std::chrono::steady_clock::now();
+    rasterMesh(m, img);
+    const double rms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    std::printf("bench mesh3d: 1000x1000 surface -> %zu vertices, %zu triangles, build %.1f ms, CPU raster %.1f ms\n",
+                m.vertices.size(), m.indices.size() / 3, bms, rms);
+    CHECK(m.vertices.size() == 1'000'000 && st.input == 1'000'000);
+    ch::Chart3D sc;
+    sc.kind = ch::Kind3D::Scatter, sc.gpuMesh = true, sc.pointSize = 2.f;
+    std::mt19937 g(9);
+    std::normal_distribution<f32> d(0, 1);
+    for (int i = 0; i < 1'000'000; ++i) sc.points.push_back({d(g), d(g), d(g)});
+    sc.selection = {7};
+    t0 = std::chrono::steady_clock::now();
+    fuse::ui::dv3d::buildMesh(sc, {0, 0, 800, 600}, m, nullptr, &st);
+    const double sms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    t0 = std::chrono::steady_clock::now();
+    rasterMesh(m, img);
+    const double srm = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    std::printf("bench mesh3d: 1M scatter -> %zu points meshed, %zu triangles, build %.1f ms, CPU raster %.1f ms\n",
+                st.drawn, m.indices.size() / 3, sms, srm);
+    CHECK(st.drawn >= 250000 && st.drawn <= 250002 && m.vertices.size() <= (1u << 21));
+}
 } // namespace
 
 int main(int argc, char** argv) {
     std::string gate = argc > 1 && std::strncmp(argv[1], "--gate=", 7) == 0 ? argv[1] + 7 : "all";
     struct G { const char* n; void (*f)(); } gates[] = {{"series", gateSeries}, {"axes", gateAxes}, {"decimation", gateDecimation}, {"ring", gateRing},
         {"hit", gateHit}, {"widget", gateWidget}, {"model", gateModel}, {"export", gateExport}, {"bench", gateBench}, {"demo", gateDemo},
-        {"3d", gate3d}, {"3d_large", gate3dLarge}, {"demo3d", gateDemo3d}};
+        {"3d", gate3d}, {"3d_large", gate3dLarge}, {"demo3d", gateDemo3d},
+        {"mesh3d", gateMesh3d}, {"mesh3d_large", gateMesh3dLarge},
+        {"beyond", gateBeyondQt}, {"transition", gateTransition}, {"demo_beyond", gateDemoBeyond}};
     for (const G& g : gates) if (gate == "all" || gate == g.n) g.f();
     return fuse::ui::test::finish(("charts " + gate).c_str());
 }

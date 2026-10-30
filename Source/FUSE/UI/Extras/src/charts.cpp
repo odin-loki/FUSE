@@ -75,6 +75,8 @@ bool isHBar(SeriesType t) { return t >= SeriesType::HorizontalBar && t <= Series
 bool isStackedBar(SeriesType t) { return t == SeriesType::StackedBar || t == SeriesType::HorizontalStackedBar; }
 bool isPercentBar(SeriesType t) { return t == SeriesType::PercentBar || t == SeriesType::HorizontalPercentBar; }
 bool isPie(SeriesType t) { return t == SeriesType::Pie || t == SeriesType::Donut; }
+/// Kinds drawn in their own panel without axes (pies and the beyond-Qt radar / treemap / sankey / gauge / funnel).
+bool isPanel(SeriesType t) { return isPie(t) || (t >= SeriesType::Radar && t <= SeriesType::Funnel); }
 bool isLineLike(SeriesType t) {
     return t == SeriesType::Line || t == SeriesType::Spline || t == SeriesType::StepLine || t == SeriesType::Area ||
            t == SeriesType::StackedArea || t == SeriesType::PercentArea || t == SeriesType::Scatter || t == SeriesType::Bubble;
@@ -108,7 +110,7 @@ void text(const TextFns* t, DrawList& dl, std::string_view s, Rect r, Color c, f
 bool horizontalEdge(AxisEdge e) { return e == AxisEdge::Bottom || e == AxisEdge::Top; }
 bool onlyPies(const Chart& c) {
     bool any = false;
-    for (const Series& s : c.series) { if (!isPie(s.type)) return false; any = true; }
+    for (const Series& s : c.series) { if (!isPanel(s.type)) return false; any = true; }
     return any;
 }
 
@@ -141,6 +143,22 @@ std::size_t maxCount(const Chart& c, SeriesType t) {
     return n;
 }
 f32 xAt(const Series& s, std::size_t i) { const auto xs = s.xs(); return xs.size() == s.count() ? xs[i] : f32(i); }
+struct WaterBar { f32 x, v0, v1; u8 kind; }; // kind 0 up, 1 down, 2 total
+std::vector<WaterBar> waterfall(const Series& s) {
+    std::vector<WaterBar> out;
+    f32 run = 0.f;
+    const auto y = s.ys();
+    for (std::size_t i = 0; i < y.size(); ++i) {
+        const bool tot = std::find(s.totals.begin(), s.totals.end(), u32(i)) != s.totals.end();
+        if (tot) out.push_back({xAt(s, i), 0.f, run, 2});
+        else {
+            const f32 d = std::isfinite(y[i]) ? y[i] : 0.f;
+            out.push_back({xAt(s, i), run, run + d, u8(d >= 0 ? 0 : 1)});
+            run += d;
+        }
+    }
+    return out;
+}
 f32 niceStep(f32 span, u32 count) {
     const f32 raw = span / f32(std::max(1u, count - 1));
     const f32 mag = std::pow(10.f, std::floor(std::log10(raw)));
@@ -157,10 +175,14 @@ std::vector<std::pair<f32, f32>> axisRanges(const Chart& c, bool full) {
     auto slot = [&](u32 a) { if (a < na) tight[a] = 1; };
     auto acc = [&](u32 a, f32 v) { if (a < na && std::isfinite(v)) lo[a] = std::min(lo[a], v), hi[a] = std::max(hi[a], v); };
     for (const Series& s : c.series) {
-        if (!s.visible || isPie(s.type)) continue;
+        if (!s.visible || isPanel(s.type)) continue;
         const bool h = isHBar(s.type);
         const u32 cat = h ? s.yAxis : s.xAxis, val = h ? s.xAxis : s.yAxis;
-        if (s.type == SeriesType::Heatmap) {
+        if (s.type == SeriesType::Waterfall) {
+            slot(s.xAxis);
+            acc(s.yAxis, 0.f);
+            for (const WaterBar& b : waterfall(s)) acc(s.xAxis, b.x - 0.5f), acc(s.xAxis, b.x + 0.5f), acc(s.yAxis, b.v0), acc(s.yAxis, b.v1);
+        } else if (s.type == SeriesType::Heatmap || s.type == SeriesType::Contour) {
             acc(s.xAxis, -0.5f), acc(s.xAxis, f32(s.cols) - 0.5f), acc(s.yAxis, -0.5f), acc(s.yAxis, f32(s.rows) - 0.5f);
             slot(s.xAxis), slot(s.yAxis);
         } else if (s.type == SeriesType::Candlestick || s.type == SeriesType::Ohlc) {
@@ -372,7 +394,7 @@ Layout layout(const Chart& c, Rect b, const TextFns* tf) {
     L.legendItems.assign(c.series.size(), Rect{});
     std::vector<std::pair<u32, std::string>> entries;
     for (u32 i = 0; i < c.series.size(); ++i)
-        if (!isPie(c.series[i].type)) entries.push_back({i, c.series[i].name.empty() ? "Series " + std::to_string(i + 1) : c.series[i].name});
+        if (!isPanel(c.series[i].type) || c.series[i].type == SeriesType::Radar) entries.push_back({i, c.series[i].name.empty() ? "Series " + std::to_string(i + 1) : c.series[i].name});
     if (c.legend != LegendPos::None && !entries.empty()) {
         const f32 sw = fs * 0.9f, gap = fs;
         if (c.legend == LegendPos::Top || c.legend == LegendPos::Bottom) {
@@ -831,6 +853,415 @@ void drawHeatmap(Ctx& x, u32 si) {
         }
     if (x.stats) x.stats->inputPoints += n, x.stats->drawnPoints += n;
 }
+// ---------------- beyond Qt: panel kinds (radar, treemap, sankey, gauge, funnel) ----------------
+struct PanelShape { std::vector<Vec2> poly; u32 index; };
+bool inPoly(const std::vector<Vec2>& p, Vec2 q) {
+    bool in = false;
+    for (std::size_t i = 0, j = p.size() - 1; i < p.size(); j = i++)
+        if ((p[i].y > q.y) != (p[j].y > q.y) && q.x < (p[j].x - p[i].x) * (q.y - p[i].y) / (p[j].y - p[i].y) + p[i].x) in = !in;
+    return in;
+}
+Path polyPath(const std::vector<Vec2>& p) {
+    Path out;
+    if (p.empty()) return out;
+    out.moveTo(p[0]);
+    for (std::size_t i = 1; i < p.size(); ++i) out.lineTo(p[i]);
+    out.close();
+    return out;
+}
+Color hover(const Chart& c, u32 si, u32 i, Color col) {
+    return c.hoverSeries == i32(si) && c.hoverIndex == i32(i) ? mix(col, Color::rgb(0xFFFFFF), 0.25f) : col;
+}
+f32 radarMaxOf(const Chart& c) {
+    f32 m = 0.f;
+    for (const Series& s : c.series)
+        if (s.visible && s.type == SeriesType::Radar) {
+            if (std::isfinite(s.radarMax)) return s.radarMax;
+            for (f32 v : s.ys()) if (std::isfinite(v)) m = std::max(m, v);
+        }
+    if (m <= 0.f) return 1.f;
+    const f32 st = niceStep(m, 5);
+    return std::ceil(m / st - 1e-4f) * st;
+}
+std::size_t radarSpokes(const Chart& c) {
+    std::size_t n = 0;
+    for (const Series& s : c.series) if (s.visible && s.type == SeriesType::Radar) n = std::max(n, s.count());
+    return n;
+}
+struct RadarGeo { Vec2 ctr; f32 R; std::size_t n; f32 max; };
+RadarGeo radarGeo(const Chart& c, Rect area) {
+    const f32 lh = fontPx(c) * 1.4f;
+    return {{area.x + area.w * 0.5f, area.y + area.h * 0.5f}, std::max(0.f, std::min(area.w, area.h) * 0.5f - lh * 1.6f), radarSpokes(c), radarMaxOf(c)};
+}
+Vec2 radarAt(const RadarGeo& g, std::size_t k, f32 r) {
+    const f32 a = -1.5707963f + 6.2831853f * f32(k) / f32(std::max<std::size_t>(1, g.n));
+    return {g.ctr.x + std::cos(a) * r, g.ctr.y + std::sin(a) * r};
+}
+// The web (grid rings, spokes, spoke labels) once per chart, under the first radar series.
+void drawRadarWeb(Ctx& x, Rect area) {
+    const Chart& c = x.c;
+    const RadarGeo g = radarGeo(c, area);
+    if (g.n < 3 || g.R <= 2) return;
+    DrawList& dl = *x.dl;
+    const f32 fs = fontPx(c), lh = fs * 1.4f;
+    for (int ring = 1; ring <= 5; ++ring) {
+        std::vector<Vec2> p;
+        for (std::size_t k = 0; k < g.n; ++k) p.push_back(radarAt(g, k, g.R * f32(ring) / 5.f));
+        dl.path(polyPath(p), {}, false, c.theme.grid, 1.f);
+    }
+    const Series* named = nullptr;
+    for (const Series& s : c.series) if (s.visible && s.type == SeriesType::Radar && s.labels.size() >= g.n) { named = &s; break; }
+    for (std::size_t k = 0; k < g.n; ++k) {
+        const Vec2 e = radarAt(g, k, g.R);
+        dl.line(g.ctr, e, c.theme.grid, 1.f);
+        if (named) {
+            const std::string& t = named->labels[k];
+            const f32 w = measure(x.tf, t, fs);
+            const Vec2 lp = radarAt(g, k, g.R + lh * 0.7f);
+            const f32 dx = lp.x - g.ctr.x;
+            const f32 lx = std::abs(dx) < 2.f ? lp.x - w * 0.5f : dx > 0 ? lp.x : lp.x - w;
+            text(x.tf, dl, t, {lx, lp.y - lh * 0.5f, w + 2, lh}, c.theme.text, fs, TextAlignment::Start);
+        }
+    }
+    char b[32];
+    std::snprintf(b, sizeof b, "%g", double(g.max));
+    text(x.tf, dl, b, {g.ctr.x + 3.f, g.ctr.y - g.R - lh * 0.1f, measure(x.tf, b, fs * 0.85f) + 2, lh}, c.theme.axis, fs * 0.85f, TextAlignment::Start);
+}
+void radarShapes(Ctx& x, u32 si, Rect area, std::vector<PanelShape>& out) {
+    const Chart& c = x.c;
+    const Series& s = c.series[si];
+    const RadarGeo g = radarGeo(c, area);
+    if (g.n < 3 || g.R <= 2) return;
+    const auto v = s.ys();
+    std::vector<Vec2> pts;
+    for (std::size_t k = 0; k < g.n; ++k) {
+        const f32 val = k < v.size() && std::isfinite(v[k]) ? std::clamp(v[k] / g.max, 0.f, 1.2f) : 0.f;
+        pts.push_back(radarAt(g, k, g.R * val * c.progress));
+    }
+    const Color col = seriesColor(c, si);
+    if (x.dl) {
+        x.dl->path(polyPath(pts), col.withAlpha(col.a * 0.25f), false, col, s.lineWidth);
+        for (std::size_t k = 0; k < g.n && k < v.size(); ++k) marker(*x.dl, pts[k], c.hoverSeries == i32(si) && c.hoverIndex == i32(k) ? 5.f : 3.f, col);
+    }
+    for (std::size_t k = 0; k < g.n && k < v.size(); ++k) { // hit targets: a diamond around each vertex
+        const Vec2 p = pts[k];
+        out.push_back({{{p.x, p.y - 8}, {p.x + 8, p.y}, {p.x, p.y + 8}, {p.x - 8, p.y}}, u32(k)});
+    }
+}
+// Squarified treemap (Bruls, Huizing, van Wijk): rows along the short side keep the worst aspect ratio low.
+void treemapShapes(Ctx& x, u32 si, Rect area, std::vector<PanelShape>& out) {
+    const Chart& c = x.c;
+    const Series& s = c.series[si];
+    const auto v = s.ys();
+    std::vector<u32> order;
+    f32 total = 0.f;
+    for (u32 i = 0; i < v.size(); ++i) if (std::isfinite(v[i]) && v[i] > 0) order.push_back(i), total += v[i];
+    if (order.empty() || area.w < 2 || area.h < 2) return;
+    std::stable_sort(order.begin(), order.end(), [&](u32 a, u32 b) { return v[a] > v[b]; });
+    const f32 scale = area.w * area.h / total;
+    Rect r = area;
+    std::vector<Rect> cells(v.size());
+    std::size_t i = 0;
+    auto worst = [&](std::size_t a, std::size_t e, f32 side) {
+        f32 sum = 0, mx = 0, mn = INFINITY;
+        for (std::size_t k = a; k < e; ++k) { const f32 ar = v[order[k]] * scale; sum += ar, mx = std::max(mx, ar), mn = std::min(mn, ar); }
+        const f32 s2 = side * side, sum2 = sum * sum;
+        return std::max(s2 * mx / sum2, sum2 / (s2 * mn));
+    };
+    while (i < order.size()) {
+        const bool wide = r.w >= r.h;
+        const f32 side = wide ? r.h : r.w;
+        std::size_t e = i + 1;
+        while (e < order.size() && worst(i, e + 1, side) <= worst(i, e, side)) ++e;
+        f32 sum = 0;
+        for (std::size_t k = i; k < e; ++k) sum += v[order[k]] * scale;
+        const f32 thick = side > 0 ? sum / side : 0.f;
+        f32 off = 0;
+        for (std::size_t k = i; k < e; ++k) {
+            const f32 len = thick > 0 ? v[order[k]] * scale / thick : 0.f;
+            cells[order[k]] = wide ? Rect{r.x, r.y + off, thick, len} : Rect{r.x + off, r.y, len, thick};
+            off += len;
+        }
+        if (wide) r.x += thick, r.w -= thick;
+        else r.y += thick, r.h -= thick;
+        i = e;
+    }
+    const f32 fs = fontPx(c);
+    for (u32 k : order) {
+        Rect q = cells[k];
+        // grow from the centre during the entry animation; 1 px gutters
+        const f32 p = c.progress;
+        q = {q.x + q.w * (1 - p) * 0.5f + 1.f, q.y + q.h * (1 - p) * 0.5f + 1.f, std::max(0.f, q.w * p - 2.f), std::max(0.f, q.h * p - 2.f)};
+        out.push_back({{{q.x, q.y}, {q.right(), q.y}, {q.right(), q.bottom()}, {q.x, q.bottom()}}, k});
+        if (!x.dl) continue;
+        const Color col = hover(c, si, k, sliceColor(c, k));
+        x.dl->rect(q, col, 2.f);
+        if (c.progress >= 1.f && k < s.labels.size() && q.w > 30 && q.h > fs * 1.5f) {
+            char b[32];
+            std::snprintf(b, sizeof b, "%g", double(v[k]));
+            const Color tc = (0.299f * col.r + 0.587f * col.g + 0.114f * col.b) > 0.55f ? Color::rgb(0x101010) : Color::rgb(0xF5F5F5);
+            text(x.tf, *x.dl, s.labels[k], {q.x + 4, q.y + 3, q.w - 8, fs * 1.3f}, tc, fs, TextAlignment::Start);
+            if (q.h > fs * 3.f) text(x.tf, *x.dl, b, {q.x + 4, q.y + 3 + fs * 1.3f, q.w - 8, fs * 1.3f}, tc.withAlpha(0.8f), fs * 0.9f, TextAlignment::Start);
+        }
+    }
+}
+struct SankeyNode { Rect r; f32 in = 0, out = 0; u32 col = 0; };
+struct SankeyGeo { std::vector<SankeyNode> nodes; std::vector<std::array<f32, 4>> link; }; // link: y0 top at source, y1 top at target, thickness s / t
+SankeyGeo sankeyGeo(const Chart& c, const Series& s, Rect area) {
+    SankeyGeo g;
+    u32 n = u32(s.labels.size());
+    for (const Link& l : s.links) n = std::max({n, l.source + 1, l.target + 1});
+    g.nodes.resize(n);
+    if (!n) return g;
+    for (const Link& l : s.links) if (l.value > 0 && l.source != l.target) g.nodes[l.source].out += l.value, g.nodes[l.target].in += l.value;
+    // columns: longest path from a source (relaxation capped at n rounds, so cycles stay bounded)
+    for (u32 round = 0; round < n; ++round) {
+        bool changed = false;
+        for (const Link& l : s.links)
+            if (l.value > 0 && l.source != l.target && g.nodes[l.target].col < g.nodes[l.source].col + 1 && g.nodes[l.source].col + 1 < n)
+                g.nodes[l.target].col = g.nodes[l.source].col + 1, changed = true;
+        if (!changed) break;
+    }
+    u32 cols = 1;
+    for (const SankeyNode& q : g.nodes) cols = std::max(cols, q.col + 1);
+    const f32 lh = fontPx(c) * 1.4f, gap = std::max(4.f, area.h * 0.03f), nw = 12.f;
+    std::vector<f32> sum(cols, 0.f);
+    std::vector<u32> cnt(cols, 0);
+    for (const SankeyNode& q : g.nodes) sum[q.col] += std::max(q.in, q.out), cnt[q.col]++;
+    f32 k = INFINITY;
+    const f32 H = area.h - lh * 0.5f;
+    for (u32 i = 0; i < cols; ++i) if (sum[i] > 0) k = std::min(k, (H - gap * f32(std::max(1u, cnt[i]) - 1)) / sum[i]);
+    if (!std::isfinite(k) || k <= 0) k = 0;
+    std::vector<f32> y(cols, 0.f);
+    for (u32 i = 0; i < cols; ++i) y[i] = area.y + (H - (sum[i] * k + gap * f32(std::max(1u, cnt[i]) - 1))) * 0.5f;
+    const f32 span = cols > 1 ? (area.w - nw) / f32(cols - 1) : 0.f;
+    for (SankeyNode& q : g.nodes) {
+        const f32 h = std::max(1.f, std::max(q.in, q.out) * k);
+        q.r = {area.x + (cols > 1 ? span * f32(q.col) : (area.w - nw) * 0.5f), y[q.col], nw, h};
+        y[q.col] += h + gap;
+    }
+    // link slots: outgoing ordered by target y, incoming by source y
+    std::vector<u32> idx(s.links.size());
+    for (u32 i = 0; i < idx.size(); ++i) idx[i] = i;
+    g.link.assign(s.links.size(), {0, 0, 0, 0});
+    std::vector<f32> so(n, 0.f), ti(n, 0.f);
+    std::vector<u32> bySrc = idx, byTgt = idx;
+    std::stable_sort(bySrc.begin(), bySrc.end(), [&](u32 a, u32 b) { return g.nodes[s.links[a].target].r.y < g.nodes[s.links[b].target].r.y; });
+    std::stable_sort(byTgt.begin(), byTgt.end(), [&](u32 a, u32 b) { return g.nodes[s.links[a].source].r.y < g.nodes[s.links[b].source].r.y; });
+    for (u32 i : bySrc) {
+        const Link& l = s.links[i];
+        if (l.value <= 0 || l.source == l.target) continue;
+        const SankeyNode& a = g.nodes[l.source];
+        const f32 sh = a.out > 0 ? a.r.h * l.value / std::max(a.in, a.out) : 0.f;
+        g.link[i][0] = a.r.y + so[l.source], g.link[i][2] = sh, so[l.source] += sh;
+    }
+    for (u32 i : byTgt) {
+        const Link& l = s.links[i];
+        if (l.value <= 0 || l.source == l.target) continue;
+        const SankeyNode& b = g.nodes[l.target];
+        const f32 th = b.in > 0 ? b.r.h * l.value / std::max(b.in, b.out) : 0.f;
+        g.link[i][1] = b.r.y + ti[l.target], g.link[i][3] = th, ti[l.target] += th;
+    }
+    return g;
+}
+void sankeyShapes(Ctx& x, u32 si, Rect area, std::vector<PanelShape>& out) {
+    const Chart& c = x.c;
+    const Series& s = c.series[si];
+    const SankeyGeo g = sankeyGeo(c, s, area);
+    const f32 fs = fontPx(c), lh = fs * 1.4f;
+    const u32 L = u32(s.links.size());
+    for (u32 i = 0; i < L; ++i) {
+        const Link& l = s.links[i];
+        if (l.value <= 0 || l.source == l.target || l.source >= g.nodes.size() || l.target >= g.nodes.size()) continue;
+        const Rect& a = g.nodes[l.source].r;
+        const Rect& b = g.nodes[l.target].r;
+        const f32 x0 = a.right(), x1 = b.x, ym = (x0 + x1) * 0.5f;
+        const f32 sh = g.link[i][2] * c.progress, th = g.link[i][3] * c.progress;
+        auto bez = [](f32 p0, f32 p1, f32 p2, f32 p3, f32 t) { const f32 u = 1 - t; return u * u * u * p0 + 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t * p3; };
+        std::vector<Vec2> poly;
+        constexpr int kSteps = 20;
+        for (int k = 0; k <= kSteps; ++k) {
+            const f32 t = f32(k) / kSteps;
+            poly.push_back({bez(x0, ym, ym, x1, t), bez(g.link[i][0], g.link[i][0], g.link[i][1], g.link[i][1], t)});
+        }
+        for (int k = kSteps; k >= 0; --k) {
+            const f32 t = f32(k) / kSteps;
+            poly.push_back({bez(x0, ym, ym, x1, t), bez(g.link[i][0] + sh, g.link[i][0] + sh, g.link[i][1] + th, g.link[i][1] + th, t)});
+        }
+        out.push_back({poly, i});
+        if (x.dl) {
+            const Color col = sliceColor(c, l.source);
+            const bool hov = c.hoverSeries == i32(si) && c.hoverIndex == i32(i);
+            x.dl->path(polyPath(poly), col.withAlpha(col.a * (hov ? 0.7f : 0.4f)));
+        }
+    }
+    for (u32 j = 0; j < g.nodes.size(); ++j) {
+        const Rect& r = g.nodes[j].r;
+        out.push_back({{{r.x, r.y}, {r.right(), r.y}, {r.right(), r.bottom()}, {r.x, r.bottom()}}, L + j});
+        if (!x.dl) continue;
+        x.dl->rect(r, hover(c, si, L + j, sliceColor(c, j)), 1.f);
+        if (j < s.labels.size()) {
+            const f32 w = measure(x.tf, s.labels[j], fs);
+            const bool right = r.right() + w + 6.f <= area.right();
+            text(x.tf, *x.dl, s.labels[j], {right ? r.right() + 4.f : r.x - 4.f - w, r.y + r.h * 0.5f - lh * 0.5f, w + 2, lh}, c.theme.text, fs, TextAlignment::Start);
+        }
+    }
+}
+// Gauge: 270 degree dial from the lower left, clockwise.
+void gaugeShapes(Ctx& x, u32 si, Rect area, std::vector<PanelShape>& out) {
+    const Chart& c = x.c;
+    const Series& s = c.series[si];
+    const f32 fs = fontPx(c), lh = fs * 1.4f;
+    const f32 R = std::min(area.w * 0.5f, area.h * 0.55f) - lh * 0.6f, th = R * 0.18f;
+    if (R <= 8) return;
+    const Vec2 ctr{area.x + area.w * 0.5f, area.y + area.h * 0.5f + R * 0.12f};
+    const f32 a0 = 2.3561945f, sweep = 4.712389f; // 135 deg, 270 deg
+    const f32 span = s.gaugeMax - s.gaugeMin;
+    const f32 val = s.count() ? s.ys()[0] : s.gaugeMin;
+    const f32 f = span != 0 ? std::clamp((val - s.gaugeMin) / span, 0.f, 1.f) * c.progress : 0.f;
+    auto ring = [&](f32 t0, f32 t1, f32 r0, f32 r1) {
+        std::vector<Vec2> p;
+        const int n = std::max(2, int(std::ceil((t1 - t0) * 64.f)));
+        for (int k = 0; k <= n; ++k) { const f32 a = a0 + sweep * (t0 + (t1 - t0) * f32(k) / f32(n)); p.push_back({ctr.x + std::cos(a) * r1, ctr.y + std::sin(a) * r1}); }
+        for (int k = n; k >= 0; --k) { const f32 a = a0 + sweep * (t0 + (t1 - t0) * f32(k) / f32(n)); p.push_back({ctr.x + std::cos(a) * r0, ctr.y + std::sin(a) * r0}); }
+        return p;
+    };
+    const auto track = ring(0.f, 1.f, R - th, R);
+    out.push_back({track, 0});
+    if (!x.dl) return;
+    DrawList& dl = *x.dl;
+    dl.path(polyPath(track), c.theme.grid);
+    for (std::size_t b = 0; b + 1 < s.colormap.size(); ++b) // bands: thin outer ring segments
+        if (s.colormap[b + 1].offset > s.colormap[b].offset) dl.path(polyPath(ring(s.colormap[b].offset, s.colormap[b + 1].offset, R + 3.f, R + 3.f + th * 0.3f)), s.colormap[b].color);
+    const Color col = hover(c, si, 0, s.colormap.empty() ? seriesColor(c, si) : sampleMap(s.colormap, f));
+    if (f > 0.f) dl.path(polyPath(ring(0.f, f, R - th, R)), col);
+    for (int t = 0; t <= 10; ++t) { // ticks
+        const f32 a = a0 + sweep * f32(t) / 10.f, r0 = R - th - (t % 5 == 0 ? th * 0.6f : th * 0.3f), r1 = R - th - 2.f;
+        dl.line({ctr.x + std::cos(a) * r0, ctr.y + std::sin(a) * r0}, {ctr.x + std::cos(a) * r1, ctr.y + std::sin(a) * r1}, c.theme.axis, 1.f);
+    }
+    const f32 na = a0 + sweep * f, nl = R - th * 1.6f; // needle
+    const Vec2 tip{ctr.x + std::cos(na) * nl, ctr.y + std::sin(na) * nl}, side{-std::sin(na) * th * 0.18f, std::cos(na) * th * 0.18f};
+    dl.path(polyPath({{ctr.x + side.x, ctr.y + side.y}, tip, {ctr.x - side.x, ctr.y - side.y}}), c.theme.text);
+    Path hub;
+    hub.circle(ctr, th * 0.3f);
+    dl.path(hub, c.theme.text);
+    char b[48];
+    std::snprintf(b, sizeof b, "%g", double(s.gaugeMin + (span != 0 ? f * span : 0.f)));
+    const f32 vw = measure(x.tf, b, fs * 1.6f);
+    text(x.tf, dl, b, {ctr.x - vw * 0.5f, ctr.y + R * 0.3f, vw + 2, lh * 1.6f}, c.theme.text, fs * 1.6f, TextAlignment::Start);
+    if (!s.name.empty()) { const f32 w = measure(x.tf, s.name, fs); text(x.tf, dl, s.name, {ctr.x - w * 0.5f, ctr.y + R * 0.3f + lh * 1.6f, w + 2, lh}, c.theme.axis, fs, TextAlignment::Start); }
+}
+void funnelShapes(Ctx& x, u32 si, Rect area, std::vector<PanelShape>& out) {
+    const Chart& c = x.c;
+    const Series& s = c.series[si];
+    const auto v = s.ys();
+    if (v.empty()) return;
+    f32 mx = 0.f;
+    for (f32 a : v) if (std::isfinite(a)) mx = std::max(mx, a);
+    if (mx <= 0.f) return;
+    const f32 fs = fontPx(c), gap = 2.f, h = (area.h - gap * f32(v.size() - 1)) / f32(v.size());
+    if (h < 2) return;
+    const f32 cx = area.x + area.w * 0.5f;
+    auto wOf = [&](std::size_t i) { return area.w * std::clamp(std::isfinite(v[i]) ? v[i] / mx : 0.f, 0.f, 1.f) * (0.35f + 0.65f * c.progress); };
+    for (std::size_t i = 0; i < v.size(); ++i) {
+        const f32 y0 = area.y + f32(i) * (h + gap), w0 = wOf(i), w1 = i + 1 < v.size() ? wOf(i + 1) : w0 * 0.85f;
+        std::vector<Vec2> poly{{cx - w0 * 0.5f, y0}, {cx + w0 * 0.5f, y0}, {cx + w1 * 0.5f, y0 + h}, {cx - w1 * 0.5f, y0 + h}};
+        out.push_back({poly, u32(i)});
+        if (!x.dl) continue;
+        const Color col = hover(c, si, u32(i), sliceColor(c, u32(i)));
+        x.dl->path(polyPath(poly), col);
+        if (c.progress >= 1.f && h > fs * 1.2f) {
+            char b[160];
+            std::snprintf(b, sizeof b, "%s%s%g (%.0f%%)", i < s.labels.size() ? s.labels[i].c_str() : "", i < s.labels.size() ? ": " : "", double(v[i]), double(v[i] / std::max(1e-30f, v[0]) * 100.f));
+            const f32 w = measure(x.tf, b, fs);
+            const Color tc = (0.299f * col.r + 0.587f * col.g + 0.114f * col.b) > 0.55f ? Color::rgb(0x101010) : Color::rgb(0xF5F5F5);
+            text(x.tf, *x.dl, b, {cx - w * 0.5f, y0 + (h - fs * 1.4f) * 0.5f, w + 2, fs * 1.4f}, w < std::min(w0, w1) - 6 ? tc : c.theme.text, fs, TextAlignment::Start);
+        }
+    }
+}
+void panelShapes(Ctx& x, u32 si, Rect area, std::vector<PanelShape>& out) {
+    switch (x.c.series[si].type) {
+    case SeriesType::Radar: radarShapes(x, si, area, out); break;
+    case SeriesType::Treemap: treemapShapes(x, si, area, out); break;
+    case SeriesType::Sankey: sankeyShapes(x, si, area, out); break;
+    case SeriesType::Gauge: gaugeShapes(x, si, area, out); break;
+    case SeriesType::Funnel: funnelShapes(x, si, area, out); break;
+    default: break;
+    }
+}
+
+// ---------------- beyond Qt: cartesian kinds (waterfall, contour) ----------------
+void waterfallRects(const Ctx& x, u32 si, std::vector<Rect>& out) {
+    const Series& s = x.c.series[si];
+    out.clear();
+    for (const WaterBar& b : waterfall(s)) {
+        const f32 base = b.kind == 2 ? 0.f : b.v0, top = base + (b.v1 - base) * x.c.progress;
+        out.push_back(barRect(false, x.ap(s.xAxis, b.x - s.barWidth * 0.5f), x.ap(s.xAxis, b.x + s.barWidth * 0.5f), x.ap(s.yAxis, base), x.ap(s.yAxis, top)));
+    }
+}
+void drawWaterfall(Ctx& x, u32 si) {
+    const Chart& c = x.c;
+    const Series& s = c.series[si];
+    std::vector<Rect> rects;
+    waterfallRects(x, si, rects);
+    const auto bars = waterfall(s);
+    const Color up = Color::rgb(0x26A69A), down = Color::rgb(0xEF5350), tot = seriesColor(c, si);
+    for (std::size_t i = 0; i < rects.size(); ++i) {
+        x.dl->rect(rects[i], hover(c, si, u32(i), bars[i].kind == 0 ? up : bars[i].kind == 1 ? down : tot), 1.f);
+        if (i + 1 < rects.size() && c.progress >= 1.f) { // connector at the running total
+            const f32 yv = x.ap(s.yAxis, bars[i].v1);
+            x.dl->line({rects[i].right(), std::round(yv) + 0.5f}, {rects[i + 1].x, std::round(yv) + 0.5f}, c.theme.axis, 1.f);
+        }
+    }
+    if (x.stats) x.stats->inputPoints += s.count(), x.stats->drawnPoints += rects.size();
+}
+void drawContour(Ctx& x, u32 si) {
+    const Chart& c = x.c;
+    const Series& s = c.series[si];
+    const std::size_t n = std::size_t(s.rows) * s.cols;
+    if (!n || s.y.size() < n || s.rows < 2 || s.cols < 2) return;
+    if (s.contourFill) drawHeatmap(x, si);
+    f32 lo, hi;
+    minMax(std::span<const f32>(s.y.data(), n), lo, hi);
+    if (!(hi > lo)) return;
+    const u32 levels = std::max(1u, s.levels);
+    auto V = [&](u32 r, u32 k) { return s.y[std::size_t(r) * s.cols + k]; };
+    auto P = [&](f32 col, f32 row) { return x.map(s, col, row); };
+    std::size_t segs = 0;
+    for (u32 L = 0; L < levels; ++L) {
+        const f32 iso = lo + (hi - lo) * f32(L + 1) / f32(levels + 1);
+        Path p;
+        bool any = false;
+        auto seg = [&](Vec2 a, Vec2 b) { p.moveTo(a).lineTo(b); any = true; ++segs; };
+        for (u32 r = 0; r + 1 < s.rows; ++r)
+            for (u32 k = 0; k + 1 < s.cols; ++k) {
+                const f32 v0 = V(r, k), v1 = V(r, k + 1), v2 = V(r + 1, k + 1), v3 = V(r + 1, k);
+                if (!(std::isfinite(v0) && std::isfinite(v1) && std::isfinite(v2) && std::isfinite(v3))) continue;
+                const u32 m = (v0 > iso ? 1u : 0u) | (v1 > iso ? 2u : 0u) | (v2 > iso ? 4u : 0u) | (v3 > iso ? 8u : 0u);
+                if (m == 0 || m == 15) continue;
+                auto lerp = [&](f32 a, f32 b) { return (iso - a) / (b - a); };
+                // edge points: 0 top (v0-v1), 1 right (v1-v2), 2 bottom (v3-v2), 3 left (v0-v3)
+                const Vec2 e[4] = {P(f32(k) + lerp(v0, v1), f32(r)), P(f32(k + 1), f32(r) + lerp(v1, v2)),
+                                   P(f32(k) + lerp(v3, v2), f32(r + 1)), P(f32(k), f32(r) + lerp(v0, v3))};
+                const bool centreHigh = (v0 + v1 + v2 + v3) * 0.25f > iso;
+                switch (m) {
+                case 1: case 14: seg(e[3], e[0]); break;
+                case 2: case 13: seg(e[0], e[1]); break;
+                case 3: case 12: seg(e[3], e[1]); break;
+                case 4: case 11: seg(e[1], e[2]); break;
+                case 6: case 9: seg(e[0], e[2]); break;
+                case 7: case 8: seg(e[3], e[2]); break;
+                case 5: if (centreHigh) seg(e[3], e[2]), seg(e[0], e[1]); else seg(e[3], e[0]), seg(e[1], e[2]); break;
+                case 10: if (centreHigh) seg(e[3], e[0]), seg(e[1], e[2]); else seg(e[0], e[1]), seg(e[3], e[2]); break;
+                default: break;
+                }
+            }
+        if (!any) continue;
+        const Color col = s.contourFill ? c.theme.text.withAlpha(0.75f) : sampleMap(s.colormap, f32(L + 1) / f32(levels + 1));
+        x.dl->path(p, {}, false, col.withAlpha(col.a * c.progress), s.lineWidth * 0.75f);
+    }
+    if (x.stats) x.stats->inputPoints += n, x.stats->drawnPoints += segs;
+}
 void drawLegend(Ctx& x) {
     const Chart& c = x.c;
     const f32 fs = fontPx(c), sw = fs * 0.9f;
@@ -844,13 +1275,23 @@ void drawLegend(Ctx& x) {
         text(x.tf, *x.dl, s.name.empty() ? "Series " + std::to_string(i + 1) : s.name, {r.x + sw + 4.f, r.y, r.w - sw - 4.f, r.h}, tc, fs, TextAlignment::Start);
     }
 }
+/// One panel per visible series side by side; all radar series share one panel (overlaid on one web).
 std::vector<Rect> pieAreas(const Chart& c, const Layout& L) {
     u32 n = 0;
-    for (const Series& s : c.series) n += s.visible ? 1 : 0;
+    bool radar = false;
+    for (const Series& s : c.series)
+        if (s.visible) { if (s.type == SeriesType::Radar) { n += radar ? 0 : 1; radar = true; } else ++n; }
     std::vector<Rect> out(c.series.size());
     u32 k = 0;
+    i32 radarSlot = -1;
     const f32 w = L.plot.w / f32(std::max(1u, n));
-    for (u32 i = 0; i < c.series.size(); ++i) if (c.series[i].visible) out[i] = {L.plot.x + w * f32(k++), L.plot.y, w, L.plot.h};
+    for (u32 i = 0; i < c.series.size(); ++i) {
+        if (!c.series[i].visible) continue;
+        u32 slot;
+        if (c.series[i].type == SeriesType::Radar) { if (radarSlot < 0) radarSlot = i32(k++); slot = u32(radarSlot); }
+        else slot = k++;
+        out[i] = {L.plot.x + w * f32(slot), L.plot.y, w, L.plot.h};
+    }
     return out;
 }
 } // namespace
@@ -870,6 +1311,8 @@ void render(const Chart& c, DrawList& dl, Rect b, const TextFns* tf, RenderStats
             const Series& s = c.series[i];
             if (!s.visible) continue;
             if (s.type == SeriesType::Heatmap) drawHeatmap(x, i);
+            else if (s.type == SeriesType::Contour) drawContour(x, i);
+            else if (s.type == SeriesType::Waterfall) drawWaterfall(x, i);
             else if (s.type == SeriesType::Histogram) drawHistogram(x, i);
             else if (s.type == SeriesType::Candlestick || s.type == SeriesType::Ohlc) drawFinancial(x, i);
             else if (s.type == SeriesType::BoxPlot) drawBoxes(x, i);
@@ -896,7 +1339,17 @@ void render(const Chart& c, DrawList& dl, Rect b, const TextFns* tf, RenderStats
         dl.popClip();
     } else {
         const auto areas = pieAreas(c, x.L);
-        for (u32 i = 0; i < c.series.size(); ++i) if (c.series[i].visible) drawPie(x, i, areas[i]);
+        bool web = false;
+        std::vector<PanelShape> shapes;
+        for (u32 i = 0; i < c.series.size(); ++i) {
+            const Series& s = c.series[i];
+            if (!s.visible) continue;
+            if (isPie(s.type)) { drawPie(x, i, areas[i]); continue; }
+            if (s.type == SeriesType::Radar && !web) drawRadarWeb(x, areas[i]), web = true;
+            shapes.clear();
+            panelShapes(x, i, areas[i], shapes);
+            if (stats) stats->inputPoints += s.type == SeriesType::Sankey ? s.links.size() : s.count(), stats->drawnPoints += shapes.size();
+        }
     }
     drawLegend(x);
     if (stats) stats->commands += dl.size() - cmd0;
@@ -912,7 +1365,7 @@ Hit hitTest(const Chart& c, Rect b, Vec2 pos, f32 radius, const TextFns* tf) {
         const f32 lh = fontPx(c) * 1.4f;
         for (u32 si = 0; si < c.series.size(); ++si) {
             const Series& s = c.series[si];
-            if (!s.visible) continue;
+            if (!s.visible || !isPie(s.type)) continue;
             const Rect& area = areas[si];
             const Vec2 ctr{area.x + area.w * 0.5f, area.y + area.h * 0.5f};
             const f32 R = std::min(area.w, area.h) * 0.5f - lh * 1.2f, hole = s.type == SeriesType::Donut ? R * s.holeSize : 0.f;
@@ -926,6 +1379,20 @@ Hit hitTest(const Chart& c, Rect b, Vec2 pos, f32 radius, const TextFns* tf) {
                 a += std::max(0.f, s.ys()[i]) / total * 6.2831853f;
                 if (ang <= a) { h.series = i32(si), h.index = i32(i), h.y = s.ys()[i], h.screen = pos; return h; }
             }
+        }
+        std::vector<PanelShape> shapes;
+        for (u32 si = u32(c.series.size()); si-- > 0;) {
+            const Series& s = c.series[si];
+            if (!s.visible || isPie(s.type)) continue;
+            shapes.clear();
+            panelShapes(x, si, areas[si], shapes);
+            for (std::size_t k = shapes.size(); k-- > 0;)
+                if (inPoly(shapes[k].poly, pos)) {
+                    const u32 i = shapes[k].index;
+                    h.series = i32(si), h.index = i32(i), h.screen = pos;
+                    h.y = s.type == SeriesType::Sankey ? (i < s.links.size() ? s.links[i].value : 0.f) : i < s.count() ? s.ys()[i] : 0.f;
+                    return h;
+                }
         }
         return h;
     }
@@ -950,8 +1417,9 @@ Hit hitTest(const Chart& c, Rect b, Vec2 pos, f32 radius, const TextFns* tf) {
             } else for (std::size_t i = 0; i < ys.size(); ++i) test(i);
             continue;
         }
-        if (isBar(s.type)) {
-            barRects(x, si, rects);
+        if (isBar(s.type) || s.type == SeriesType::Waterfall) {
+            if (s.type == SeriesType::Waterfall) waterfallRects(x, si, rects);
+            else barRects(x, si, rects);
             for (std::size_t i = 0; i < rects.size(); ++i)
                 if (Rect{rects[i].x - 1, rects[i].y - 1, rects[i].w + 2, rects[i].h + 2}.contains(pos)) h.series = i32(si), h.index = i32(i), h.x = xAt(s, i), h.y = s.ys()[i], h.screen = pos;
             continue;
@@ -962,7 +1430,7 @@ Hit hitTest(const Chart& c, Rect b, Vec2 pos, f32 radius, const TextFns* tf) {
             const i32 k = i32(std::floor((dx - hb.lo) / hb.w));
             if (k >= 0 && std::size_t(k) < hb.counts.size() && x.pa(s.yAxis, pos.y) <= hb.counts[std::size_t(k)])
                 h.series = i32(si), h.index = k, h.x = hb.lo + hb.w * (f32(k) + 0.5f), h.y = hb.counts[std::size_t(k)], h.screen = pos;
-        } else if (s.type == SeriesType::Heatmap) {
+        } else if (s.type == SeriesType::Heatmap || s.type == SeriesType::Contour) {
             const long col = std::lround(dx), row = std::lround(x.pa(s.yAxis, pos.y));
             if (col >= 0 && row >= 0 && u32(col) < s.cols && u32(row) < s.rows)
                 h.series = i32(si), h.index = i32(row * long(s.cols) + col), h.x = f32(col), h.y = s.y[std::size_t(h.index)], h.screen = pos;
@@ -1003,6 +1471,38 @@ std::string tooltip(const Chart& c, u32 si, u32 i) {
         std::snprintf(b, sizeof b, "%s [%g, %g): %g", name.c_str(), double(h.lo + h.w * f32(i)), double(h.lo + h.w * f32(i + 1)), double(h.counts[i]));
         return b;
     }
+    case SeriesType::Waterfall: {
+        const auto bars = waterfall(s);
+        if (i >= bars.size()) return {};
+        const WaterBar& w = bars[i];
+        const std::string lab = i < s.labels.size() ? s.labels[i] : fx(w.x);
+        if (w.kind == 2) std::snprintf(b, sizeof b, "%s %s: total %g", name.c_str(), lab.c_str(), double(w.v1));
+        else std::snprintf(b, sizeof b, "%s %s: %+g (total %g)", name.c_str(), lab.c_str(), double(w.v1 - w.v0), double(w.v1));
+        return b;
+    }
+    case SeriesType::Sankey: {
+        auto nodeName = [&](u32 k) { return k < s.labels.size() ? s.labels[k] : "Node " + std::to_string(k + 1); };
+        if (i < s.links.size()) {
+            const Link& l = s.links[i];
+            std::snprintf(b, sizeof b, "%s -> %s: %g", nodeName(l.source).c_str(), nodeName(l.target).c_str(), double(l.value));
+            return b;
+        }
+        const u32 k = i - u32(s.links.size());
+        f32 in = 0, out = 0;
+        for (const Link& l : s.links) in += l.target == k ? l.value : 0.f, out += l.source == k ? l.value : 0.f;
+        std::snprintf(b, sizeof b, "%s: in %g, out %g", nodeName(k).c_str(), double(in), double(out));
+        return b;
+    }
+    case SeriesType::Gauge:
+        std::snprintf(b, sizeof b, "%s: %g (%g to %g)", name.c_str(), double(s.count() ? s.ys()[0] : s.gaugeMin), double(s.gaugeMin), double(s.gaugeMax));
+        return b;
+    case SeriesType::Radar:
+    case SeriesType::Treemap:
+    case SeriesType::Funnel:
+        if (i >= s.count()) return {};
+        std::snprintf(b, sizeof b, "%s %s: %g", name.c_str(), i < s.labels.size() ? s.labels[i].c_str() : std::to_string(i + 1).c_str(), double(s.ys()[i]));
+        return b;
+    case SeriesType::Contour:
     case SeriesType::Heatmap:
         if (!s.cols || i >= s.y.size()) return {};
         std::snprintf(b, sizeof b, "%s row %u col %u: %g", name.c_str(), unsigned(i / s.cols), unsigned(i % s.cols), double(s.y[i]));
@@ -1031,7 +1531,8 @@ std::string tooltip(const Chart& c, u32 si, u32 i) {
 std::string describe(const Chart& c) {
     static const char* names[] = {"line", "spline", "step line", "scatter", "area", "stacked area", "percent area", "bar", "stacked bar", "percent bar",
                                   "horizontal bar", "horizontal stacked bar", "horizontal percent bar", "pie", "donut", "candlestick", "OHLC",
-                                  "box plot", "histogram", "heatmap", "bubble"};
+                                  "box plot", "histogram", "heatmap", "bubble", "waterfall", "contour", "radar", "treemap", "sankey",
+                                  "gauge", "funnel"};
     std::string d = c.title.empty() ? std::string("Chart") : c.title;
     d += c.polar ? " (polar), " : ", ";
     d += std::to_string(c.series.size()) + " series";
@@ -1039,8 +1540,9 @@ std::string describe(const Chart& c) {
         const Series& s = c.series[i];
         d += i ? "; " : ": ";
         d += (s.name.empty() ? "Series " + std::to_string(i + 1) : s.name) + " (" + names[u32(s.type)];
-        const std::size_t n = s.type == SeriesType::Candlestick || s.type == SeriesType::Ohlc ? s.candles.size() : s.type == SeriesType::BoxPlot ? s.boxes.size() : s.count();
-        d += ", " + std::to_string(n) + " points";
+        const std::size_t n = s.type == SeriesType::Candlestick || s.type == SeriesType::Ohlc ? s.candles.size() : s.type == SeriesType::BoxPlot ? s.boxes.size()
+                              : s.type == SeriesType::Sankey ? s.links.size() : s.count();
+        d += ", " + std::to_string(n) + (s.type == SeriesType::Sankey ? " flows" : " points");
         if (s.count() && s.candles.empty() && s.boxes.empty()) {
             f32 lo, hi;
             minMax(s.ys(), lo, hi);
@@ -1051,6 +1553,49 @@ std::string describe(const Chart& c) {
         d += s.visible ? ")" : ", hidden)";
     }
     return d;
+}
+
+// ---------------- data-change transitions ----------------
+namespace {
+bool barLike(SeriesType t) { return isBar(t) || t == SeriesType::Histogram || t == SeriesType::Waterfall || isPanel(t); }
+void lerpVec(const std::vector<f32>& a, std::vector<f32>& b, std::size_t aHead, std::size_t bHead, f32 t, bool fromZero) {
+    const std::size_t na = a.size() - std::min(aHead, a.size());
+    for (std::size_t i = bHead; i < b.size(); ++i) {
+        const std::size_t k = i - bHead;
+        const f32 from = k < na ? a[aHead + k] : fromZero || !na ? 0.f : a.back();
+        if (std::isfinite(from) && std::isfinite(b[i])) b[i] = from + (b[i] - from) * t;
+    }
+}
+} // namespace
+void blend(const Chart& from, const Chart& to, f32 t, Chart& out) {
+    out = to;
+    if (t >= 1.f) return;
+    t = std::max(0.f, t);
+    for (std::size_t si = 0; si < out.series.size() && si < from.series.size(); ++si) {
+        const Series& a = from.series[si];
+        Series& b = out.series[si];
+        if (a.type != b.type) continue;
+        const bool zero = barLike(b.type);
+        lerpVec(a.y, b.y, a.m_head, b.m_head, t, zero);
+        if (!a.x.empty() && !b.x.empty()) lerpVec(a.x, b.x, std::min(a.m_head, a.x.size()), std::min(b.m_head, b.x.size()), t, false);
+        if (a.size.size() == b.size.size()) lerpVec(a.size, b.size, 0, 0, t, true);
+        auto L = [t](f32 p, f32 q) { return p + (q - p) * t; };
+        for (std::size_t i = 0; i < b.candles.size() && i < a.candles.size(); ++i) {
+            Candle& k = b.candles[i];
+            const Candle& o = a.candles[i];
+            k = {L(o.x, k.x), L(o.open, k.open), L(o.high, k.high), L(o.low, k.low), L(o.close, k.close)};
+        }
+        for (std::size_t i = 0; i < b.boxes.size() && i < a.boxes.size(); ++i) {
+            BoxItem& k = b.boxes[i];
+            const BoxItem& o = a.boxes[i];
+            k.x = L(o.x, k.x), k.lower = L(o.lower, k.lower), k.q1 = L(o.q1, k.q1), k.median = L(o.median, k.median), k.q3 = L(o.q3, k.q3), k.upper = L(o.upper, k.upper);
+        }
+        for (std::size_t i = 0; i < b.links.size(); ++i) {
+            const bool same = i < a.links.size() && a.links[i].source == b.links[i].source && a.links[i].target == b.links[i].target;
+            b.links[i].value = L(same ? a.links[i].value : 0.f, b.links[i].value);
+        }
+        b.gaugeMin = L(a.gaugeMin, b.gaugeMin), b.gaugeMax = L(a.gaugeMax, b.gaugeMax);
+    }
 }
 
 // ---------------- export ----------------
@@ -1132,6 +1677,11 @@ struct ViewState {
     i32 kbSeries = 0, kbIndex = -1;
     TimerHandle anim{};
     f32 animT = 1.f;
+    // data-change tween: `from` = values at the last chartChanged, `shown` = blend(from, chart, eased t) while running
+    Chart from, shown;
+    bool haveFrom = false, tweening = false;
+    TimerHandle tween{};
+    f32 tweenT = 1.f;
 };
 struct ViewSlot { NodeHandle node; std::unique_ptr<ViewState> s; };
 std::vector<ViewSlot>& viewSlots() { static std::vector<ViewSlot> v; return v; }
@@ -1170,6 +1720,43 @@ void startAnim(UiContext& ui, NodeHandle n, ViewState& st) {
         if (s->animT >= 1.f) { u.cancelTimer(s->anim); s->anim = {}; }
     });
 }
+std::size_t totalPoints(const Chart& c) {
+    std::size_t n = 0;
+    for (const Series& s : c.series) n += s.y.size() + s.x.size() + s.candles.size() * 5 + s.boxes.size() * 6 + s.links.size();
+    return n;
+}
+bool sameStructure(const Chart& a, const Chart& b) {
+    if (a.series.size() != b.series.size() || a.axes.size() != b.axes.size()) return false;
+    for (std::size_t i = 0; i < a.series.size(); ++i) if (a.series[i].type != b.series[i].type) return false;
+    return true;
+}
+/// Snapshot for the next transition: the values currently on screen (mid-tween: the blended ones), so a change during
+/// a tween continues from where the bars are rather than jumping.
+void snapshot(ViewState& st) {
+    if (totalPoints(st.chart) > 200000) { st.haveFrom = false; return; }
+    st.from = st.tweening ? st.shown : st.chart;
+    st.haveFrom = true;
+}
+void startTween(UiContext& ui, NodeHandle n, ViewState& st, Chart prev) {
+    if (st.tween.valid()) ui.cancelTimer(st.tween);
+    st.from = std::move(prev);
+    st.tweenT = 0.f, st.tweening = true;
+    blend(st.from, st.chart, 0.f, st.shown);
+    st.tween = ui.startTimer(1.f / 60.f, true, [n](UiContext& u) {
+        ViewState* s = viewOf(u, n);
+        if (!s) return;
+        s->tweenT = std::min(1.f, s->tweenT + (1.f / 60.f) / 0.35f);
+        const f32 k = 1.f - s->tweenT;
+        blend(s->from, s->chart, 1.f - k * k * k, s->shown); // ease-out cubic
+        u.invalidate(n);
+        if (s->tweenT >= 1.f) {
+            u.cancelTimer(s->tween);
+            s->tween = {}, s->tweening = false;
+            s->from = {}, s->shown = {};
+            snapshot(*s);
+        }
+    });
+}
 struct ChartW {
     static constexpr std::string_view kName = "fuse.chart";
     static constexpr A11yRole kRole = A11yRole::Image;
@@ -1188,7 +1775,14 @@ struct ChartW {
         }
         const Theme& th = st->chart.theme;
         const TextFns tf = textFns(ui, pc.node.index);
-        render(st->chart, dl, pc.content, &tf);
+        if (st->tweening) { // hover / selection / zoom live on the target chart
+            st->shown.hoverSeries = st->chart.hoverSeries, st->shown.hoverIndex = st->chart.hoverIndex, st->shown.selection = st->chart.selection;
+            st->shown.theme = st->chart.theme, st->shown.progress = st->chart.progress;
+            for (std::size_t a = 0; a < st->shown.axes.size() && a < st->chart.axes.size(); ++a)
+                st->shown.axes[a].viewMin = st->chart.axes[a].viewMin, st->shown.axes[a].viewMax = st->chart.axes[a].viewMax;
+            for (std::size_t i = 0; i < st->shown.series.size() && i < st->chart.series.size(); ++i) st->shown.series[i].visible = st->chart.series[i].visible;
+        }
+        render(st->tweening ? st->shown : st->chart, dl, pc.content, &tf);
         if (st->banding) dl.roundedRect(st->band, th.selection.withAlpha(0.12f), {0, 0, 0, 0}, th.selection.withAlpha(0.6f), 1.f);
         if (st->inside && st->hover.series >= 0) {
             const std::string t = tooltip(st->chart, u32(st->hover.series), u32(std::max(0, st->hover.index)));
@@ -1347,8 +1941,19 @@ void chartChanged(UiContext& ui, NodeHandle v, bool animateChange) {
     ViewState* s = viewOf(ui, v);
     if (!s) return;
     ui.setA11y(v, A11yRole::Image, describe(s->chart));
-    if (animateChange) startAnim(ui, v, *s);
+    if (animateChange && s->chart.animate && s->haveFrom && sameStructure(s->from, s->chart) && totalPoints(s->chart) <= 200000) {
+        Chart prev = s->tweening ? s->shown : s->from;
+        startTween(ui, v, *s, std::move(prev));
+    } else {
+        if (animateChange) startAnim(ui, v, *s);
+        if (s->tweening) { ui.cancelTimer(s->tween); s->tween = {}, s->tweening = false; }
+        snapshot(*s);
+    }
     ui.invalidate(v);
+}
+const Chart* chartShown(const UiContext& ui, NodeHandle v) {
+    const ViewState* s = viewOf(ui, v);
+    return s ? (s->tweening ? &s->shown : &s->chart) : nullptr;
 }
 Hit chartHovered(const UiContext& ui, NodeHandle v) { const ViewState* s = viewOf(ui, v); return s ? s->hover : Hit{}; }
 std::string chartTooltip(const UiContext& ui, NodeHandle v) {
@@ -1409,10 +2014,11 @@ void applyTheme(Chart3D& c, const Theme& t) {
     c.seriesColors = t.palette;
 }
 std::string describe(const Chart3D& c) {
-    static const char* names[] = {"3D surface", "3D scatter", "3D bars", "3D line", "3D area"};
+    static const char* names[] = {"3D surface", "3D scatter", "3D bars", "3D line", "3D area", "3D volume slices"};
     std::string d = names[u32(c.kind)];
     char b[96];
     if (c.kind == Kind3D::Scatter || c.kind == Kind3D::Line) std::snprintf(b, sizeof b, ", %zu points", c.points.size());
+    else if (c.kind == Kind3D::Volume) std::snprintf(b, sizeof b, ", %u x %u x %u voxels", c.vx, c.vy, c.vz);
     else std::snprintf(b, sizeof b, ", %u x %u values", c.rows, c.cols);
     d += b;
     f32 lo[3], hi[3];
@@ -1428,10 +2034,13 @@ void render(const Chart3D& c, DrawList& dl, Rect b, const Theme& t, std::vector<
 void renderImage(UiContext& ui, const Chart3D& c, const Theme& t, int w, int h, Image& out) {
     DrawList dl;
     dl.rect({0, 0, f32(w), f32(h)}, t.background);
-    render(c, dl, {0, 0, f32(w), f32(h)}, t);
-    out.resize(w, h, 0xFF000000u);
     CpuRasterizer r;
     r.setGlyphAtlas(ui.atlas().pixels(), ui.atlas().size());
+    Mesh3D mesh;
+    Image meshImg;
+    if (c.gpuMesh) dv3d::renderMeshed(c, dl, {0, 0, f32(w), f32(h)}, t.text, mesh, meshImg, r.addImage(&meshImg));
+    else render(c, dl, {0, 0, f32(w), f32(h)}, t);
+    out.resize(w, h, 0xFF000000u);
     r.render(dl, out);
 }
 NodeHandle chart3dView(UiContext& ui, NodeHandle parent, Kind3D kind, std::string_view id) {

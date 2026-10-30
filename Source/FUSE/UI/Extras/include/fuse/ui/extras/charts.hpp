@@ -34,6 +34,14 @@ enum class SeriesType : u8 {
     Line, Spline, StepLine, Scatter, Area, StackedArea, PercentArea,
     Bar, StackedBar, PercentBar, HorizontalBar, HorizontalStackedBar, HorizontalPercentBar,
     Pie, Donut, Candlestick, Ohlc, BoxPlot, Histogram, Heatmap, Bubble,
+    // beyond Qt Charts
+    Waterfall, ///< category bars floating on the running total; `totals` lists indices drawn as the subtotal
+    Contour,   ///< isolines (marching squares) of a rows x cols grid in y, `levels` lines (contourFill: heatmap under)
+    Radar,     ///< spider chart: y = one value per spoke, labels = spoke names; all radar series share one web
+    Treemap,   ///< squarified treemap of y (leaf sizes) with labels
+    Sankey,    ///< flow diagram: labels = node names, links = (source, target, value); columns by longest path
+    Gauge,     ///< dial: y[0] in [gaugeMin, gaugeMax], colormap = coloured bands (offsets 0..1 along the dial)
+    Funnel,    ///< stages y (top to bottom) as centred trapezoids, labels = stage names
 };
 enum class AxisType : u8 { Value, Log, Category, DateTime /* pending: labelled as numbers */ };
 enum class AxisEdge : u8 { Bottom, Left, Top, Right };
@@ -54,6 +62,7 @@ struct Axis {
 };
 
 struct Candle { f32 x, open, high, low, close; };
+struct Link { u32 source, target; f32 value; };
 struct BoxItem { f32 x, lower, q1, median, q3, upper; std::vector<f32> outliers = {}; };
 
 struct Series {
@@ -74,6 +83,12 @@ struct Series {
     u32 bins = 0;              ///< histogram bins (0: Sturges)
     f32 lineWidth = 2.f, markerSize = 0.f, barWidth = 0.8f, holeSize = 0.5f, bubbleScale = 1.f;
     Decimation decimation = Decimation::Auto;
+    std::vector<Link> links;   ///< sankey flows (node indices into labels)
+    std::vector<u32> totals;   ///< waterfall: indices shown as the running total (their y is ignored)
+    u32 levels = 8;            ///< contour lines
+    bool contourFill = false;  ///< contour: paint the heatmap under the isolines
+    f32 gaugeMin = 0.f, gaugeMax = 100.f;
+    f32 radarMax = NAN;        ///< radar outer ring value (NaN: nice max of all radar series)
     /// Streaming: append() keeps at most `capacity` points (0 = unbounded), dropping the oldest (amortised O(1)).
     std::size_t capacity = 0;
     void append(f32 px, f32 py);
@@ -151,6 +166,13 @@ std::string tooltip(const Chart& c, u32 series, u32 index);
 /// Accessible summary ("Line chart, 2 series: ... ") used as the widget's a11y name.
 std::string describe(const Chart& c);
 
+/// Data-change transitions: `out` = `to` with every per-point value (x, y, size, candles, boxes, links, totals of
+/// matching series) blended from `from` at t in 0..1. Points new in `to` grow from the last old point (0 for bar-like
+/// kinds); series whose type changed, or that are new in `to`, are taken from `to` unchanged. The widget runs this on
+/// chartChanged(view, true) when the structure (series count and types) is unchanged, so axes, bars, slices, gauges
+/// and flows move to their new values instead of replaying the entry animation.
+void blend(const Chart& from, const Chart& to, f32 t, Chart& out);
+
 // ---- decimation (also usable on their own) ----
 /// Index range [first, last) of sorted `x` overlapping [lo, hi] plus one neighbour each side.
 std::pair<std::size_t, std::size_t> visibleRange(std::span<const f32> x, f32 lo, f32 hi);
@@ -175,8 +197,12 @@ bool writePng(const Image& img, const std::string& path);
 NodeHandle chartView(UiContext& ui, NodeHandle parent, std::string_view id = {});
 /// The widget's chart (call chartChanged after editing).
 Chart* chartOf(UiContext& ui, NodeHandle view);
-/// Repaints, refreshes the accessible summary and (Chart::animate) restarts the entry animation.
+/// Repaints and refreshes the accessible summary. animateChange (and Chart::animate): when the series structure is
+/// unchanged since the last chartChanged the view tweens from the previous values to the new ones (blend, 0.35 s
+/// ease-out); otherwise it replays the entry animation. Series over 200k points snap (no snapshot is kept).
 void chartChanged(UiContext& ui, NodeHandle view, bool animateChange = false);
+/// The chart as painted this frame (mid-transition: the blended values; otherwise chartOf()).
+const Chart* chartShown(const UiContext& ui, NodeHandle view);
 /// Hovered point (series, index), -1 none.
 Hit chartHovered(const UiContext& ui, NodeHandle view);
 std::string chartTooltip(const UiContext& ui, NodeHandle view);
