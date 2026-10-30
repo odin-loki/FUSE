@@ -4,6 +4,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <memory>
+#include <regex>
+#include <unordered_map>
 
 namespace fuse::ui::widgets {
 namespace {
@@ -346,6 +350,91 @@ struct ComboBox {
 };
 
 // ---- LineEdit ------------------------------------------------------------------------------------------------------
+// Per-field options live beside the context, keyed by node slot + generation (a reused slot gets defaults back).
+struct LineEditState {
+    u32 gen = 0;
+    LineEditOptions o;
+};
+struct LineEditStore {
+    std::vector<std::unique_ptr<LineEditState>> slots;
+};
+std::unordered_map<const UiContext*, LineEditStore>& lineEditStores() {
+    static std::unordered_map<const UiContext*, LineEditStore> m;
+    return m;
+}
+const LineEditOptions* leOptions(const UiContext& ui, NodeHandle n) {
+    auto& m = lineEditStores();
+    const auto it = m.find(&ui);
+    if (it == m.end() || n.index >= it->second.slots.size()) return nullptr;
+    const auto& s = it->second.slots[n.index];
+    return s && s->gen == n.generation ? &s->o : nullptr;
+}
+const LineEditOptions& leOpts(const UiContext& ui, NodeHandle n) {
+    static const LineEditOptions kDefault;
+    const LineEditOptions* o = leOptions(ui, n);
+    return o ? *o : kDefault;
+}
+std::size_t codePoints(std::string_view s) {
+    std::size_t c = 0;
+    for (unsigned char ch : s) c += (ch & 0xC0) != 0x80;
+    return c;
+}
+std::string_view clipCodePoints(std::string_view s, std::size_t n) {
+    std::size_t i = 0, c = 0;
+    while (i < s.size()) {
+        if ((static_cast<unsigned char>(s[i]) & 0xC0) != 0x80) {
+            if (c == n) break;
+            ++c;
+        }
+        ++i;
+    }
+    return s.substr(0, i);
+}
+std::string utf8Of(char32_t cp) {
+    std::string o;
+    if (cp < 0x80) o += char(cp);
+    else if (cp < 0x800) { o += char(0xC0 | (cp >> 6)); o += char(0x80 | (cp & 0x3F)); }
+    else if (cp < 0x10000) { o += char(0xE0 | (cp >> 12)); o += char(0x80 | ((cp >> 6) & 0x3F)); o += char(0x80 | (cp & 0x3F)); }
+    else { o += char(0xF0 | (cp >> 18)); o += char(0x80 | ((cp >> 12) & 0x3F)); o += char(0x80 | ((cp >> 6) & 0x3F)); o += char(0x80 | (cp & 0x3F)); }
+    return o;
+}
+/// how a field shows its text: the masked string, and a byte offset in the real text -> offset in the shown one
+struct Shown {
+    std::string text;
+    bool masked = false, hidden = false;
+    std::size_t mask = 0;
+    std::string_view real;
+    std::size_t map(std::size_t off) const {
+        if (hidden) return 0;
+        if (!masked) return off;
+        std::size_t g = 0;
+        for (std::size_t i = 0; i < off && i < real.size(); i = fuse::text::nextBoundary(real, i)) ++g;
+        return g * mask;
+    }
+};
+bool leMasked(const LineEditOptions& o, bool focused) {
+    return o.echo == EchoMode::Password || (o.echo == EchoMode::PasswordEchoOnEdit && !focused);
+}
+Shown shownText(const LineEditOptions& o, std::string_view real, bool focused) {
+    Shown s;
+    s.real = real;
+    if (o.echo == EchoMode::NoEcho) { s.hidden = true; return s; }
+    if (!leMasked(o, focused)) { s.text.assign(real); return s; }
+    s.masked = true;
+    const std::string m = utf8Of(o.maskChar);
+    s.mask = m.size();
+    for (std::size_t i = 0; i < real.size(); i = fuse::text::nextBoundary(real, i)) s.text += m;
+    return s;
+}
+/// the node text: the real text, or for masked / hidden fields what is on screen (never the secret)
+void publishText(UiContext& ui, NodeHandle n) {
+    const LineEditOptions& o = leOpts(ui, n);
+    const std::string& t = ui.editBuffer(n).text();
+    if (o.echo == EchoMode::Normal) ui.setText(n, t);
+    else ui.setText(n, shownText(o, t, false).text);
+}
+Validation leValidate(const LineEditOptions& o, std::string_view t) { return o.validator ? o.validator(t) : Validation::Acceptable; }
+
 struct LineEdit {
     static constexpr std::string_view kName = "lineedit";
     static constexpr A11yRole kRole = A11yRole::TextField;
@@ -356,56 +445,94 @@ struct LineEdit {
         UiContext& ui = pc.ui;
         const Rect c = pc.content;
         auto& eb = ui.editBuffer(pc.node);
-        const std::string_view t = eb.text();
-        const f32 px = pc.style.fontSize;
+        const LineEditOptions& o = leOpts(ui, pc.node);
         const bool focused = pc.states & kStateFocus;
+        const Shown sh = shownText(o, eb.text(), focused);
+        const std::string_view t = sh.text;
+        const std::size_t cur = sh.map(eb.cursor());
+        const f32 px = pc.style.fontSize;
         // IME pre-edit (UI1) is shown inline at the cursor, underlined, with its own caret; it is not in the buffer.
-        const std::string_view pre = focused ? ui.composition() : std::string_view{};
-        const f32 cx = ui.measureString(t.substr(0, eb.cursor()), px);
+        // A masked field shows no pre-edit (as Qt: password fields turn input methods off).
+        const std::string_view pre = focused && !sh.masked && !sh.hidden && !o.readOnly ? ui.composition() : std::string_view{};
+        const f32 cx = ui.measureString(t.substr(0, cur), px);
         const f32 preW = pre.empty() ? 0.f : ui.measureString(pre, px);
         const f32 caretX = cx + (pre.empty() ? 0.f : ui.measureString(pre.substr(0, std::size_t(ui.compositionCaret())), px));
         const f32 scrollX = std::max(0.f, caretX - c.w + 2.f);
         dl.pushClip(c);
-        if (focused && eb.hasSelection() && pre.empty()) {
-            const std::size_t a = std::min(eb.cursor(), eb.anchor()), b = std::max(eb.cursor(), eb.anchor());
+        if (focused && eb.hasSelection() && pre.empty() && !sh.hidden) {
+            const std::size_t a = std::min(cur, sh.map(eb.anchor())), b = std::max(cur, sh.map(eb.anchor()));
             const f32 x0 = ui.measureString(t.substr(0, a), px), x1 = ui.measureString(t.substr(0, b), px);
             dl.rect({c.x + x0 - scrollX, c.y, x1 - x0, c.h}, accent(pc).withAlpha(0.45f * pc.opacity));
         }
-        if (pre.empty()) {
+        if (eb.text().empty() && pre.empty() && !o.placeholder.empty()) {
+            const Color pcol = pc.tint(pc.style.color.withAlpha(pc.style.color.a * 0.5f));
+            ui.paintString(dl, o.placeholder, {c.x, c.y, c.w + 1000.f, c.h}, pcol, px, TextAlignment::Start, pc.node.index);
+        } else if (pre.empty()) {
             labelAt(pc, dl, t, {c.x - scrollX, c.y, c.w + scrollX + 1000.f, c.h}, TextAlignment::Start);
         } else {
             const f32 x = c.x - scrollX;
-            labelAt(pc, dl, t.substr(0, eb.cursor()), {x, c.y, cx + 1000.f, c.h}, TextAlignment::Start);
+            labelAt(pc, dl, t.substr(0, cur), {x, c.y, cx + 1000.f, c.h}, TextAlignment::Start);
             labelAt(pc, dl, pre, {x + cx, c.y, preW + 1000.f, c.h}, TextAlignment::Start);
-            labelAt(pc, dl, t.substr(eb.cursor()), {x + cx + preW, c.y, c.w + 1000.f, c.h}, TextAlignment::Start);
+            labelAt(pc, dl, t.substr(cur), {x + cx + preW, c.y, c.w + 1000.f, c.h}, TextAlignment::Start);
             dl.rect({std::round(x + cx), std::round(c.y + c.h - 3.f), preW, 1.f}, textCol(pc));
         }
         if (focused) {
             const Rect caret{std::round(c.x + caretX - scrollX), c.y + 2.f, 1.5f, c.h - 4.f};
-            dl.rect(caret, textCol(pc));
+            if (!o.readOnly) dl.rect(caret, textCol(pc));
             ui.setTextCaret(pc.node, caret);
         }
         dl.popClip();
     }
     static void changed(UiContext& ui, NodeHandle n) {
-        const std::string& t = ui.editBuffer(n).text();
-        ui.setText(n, t);
-        ui.emit(n, SignalKind::TextChanged, {.text = t});
+        publishText(ui, n);
+        ui.emit(n, SignalKind::TextChanged, {.text = ui.editBuffer(n).text()});
+    }
+    /// run one edit; rejected (buffer restored) when it makes the text Invalid
+    template <class F>
+    static bool guarded(UiContext& ui, NodeHandle n, F&& edit) {
+        auto& eb = ui.editBuffer(n);
+        const LineEditOptions& o = leOpts(ui, n);
+        if (o.readOnly) return false;
+        if (!o.validator) { edit(eb); return true; }
+        fuse::text::TextEditBuffer saved = eb;
+        edit(eb);
+        if (eb.text() != saved.text() && leValidate(o, eb.text()) == Validation::Invalid) {
+            eb = std::move(saved);
+            return false;
+        }
+        return true;
+    }
+    /// insert, truncated to the code points maxLength leaves (the selection is replaced, so it counts as free)
+    static bool insertText(UiContext& ui, NodeHandle n, std::string_view s) {
+        auto& eb = ui.editBuffer(n);
+        const LineEditOptions& o = leOpts(ui, n);
+        const std::size_t have = codePoints(eb.text()) - codePoints(eb.selection());
+        const std::size_t room = o.maxLength > have ? o.maxLength - have : 0;
+        const std::string_view put = clipCodePoints(s, room);
+        if (put.empty() && !s.empty() && !eb.hasSelection()) return false;
+        return guarded(ui, n, [&](fuse::text::TextEditBuffer& b) { b.insert(put); });
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
         UiContext& ui = ec.ui;
         auto& eb = ui.editBuffer(ec.node);
-        if (e.type == EventType::Text) { eb.insert(e.text); changed(ui, ec.node); return true; }
+        const LineEditOptions& o = leOpts(ui, ec.node);
+        const bool masked = o.echo != EchoMode::Normal && o.echo != EchoMode::PasswordEchoOnEdit;
+        if (e.type == EventType::Text) {
+            if (insertText(ui, ec.node, e.text)) changed(ui, ec.node);
+            return true;
+        }
         if (e.type == EventType::Composition) { ui.setValue(ec.node, ui.value(ec.node) + 1.f); return true; } // repaint
         if (e.type == EventType::PointerDown) {
             const Rect c = ui.contentRect(ec.node);
             const std::string& t = eb.text();
+            const Shown sh = shownText(o, t, true);
             eb.home(false);
             const f32 px = ui.computed(ec.node).fontSize;
+            const std::string_view st = sh.text;
             while (eb.cursor() < t.size()) {
                 const std::size_t nx = fuse::text::nextBoundary(t, eb.cursor());
-                const f32 mid = (ui.measureString(std::string_view(t).substr(0, eb.cursor()), px) + ui.measureString(std::string_view(t).substr(0, nx), px)) * 0.5f;
+                const f32 mid = (ui.measureString(st.substr(0, sh.map(eb.cursor())), px) + ui.measureString(st.substr(0, sh.map(nx)), px)) * 0.5f;
                 if (c.x + mid > e.pos.x) break;
                 eb.moveRight(false);
             }
@@ -415,20 +542,21 @@ struct LineEdit {
         if (e.type != EventType::KeyDown) return false;
         const bool sh = e.mods & kModShift, ctrl = e.mods & kModCtrl;
         bool edit = false;
+        // masked fields jump by whole fields with Ctrl (no word boundaries leak through, as Qt)
         switch (e.key) {
-        case Key::Left: ctrl ? eb.wordLeft(sh) : eb.moveLeft(sh); break;
-        case Key::Right: ctrl ? eb.wordRight(sh) : eb.moveRight(sh); break;
+        case Key::Left: ctrl ? (masked ? eb.home(sh) : eb.wordLeft(sh)) : eb.moveLeft(sh); break;
+        case Key::Right: ctrl ? (masked ? eb.end(sh) : eb.wordRight(sh)) : eb.moveRight(sh); break;
         case Key::Home: eb.home(sh); break;
         case Key::End: eb.end(sh); break;
-        case Key::Backspace: eb.backspace(); edit = true; break;
-        case Key::Delete: eb.del(); edit = true; break;
+        case Key::Backspace: edit = guarded(ui, ec.node, [](fuse::text::TextEditBuffer& b) { b.backspace(); }); break;
+        case Key::Delete: edit = guarded(ui, ec.node, [](fuse::text::TextEditBuffer& b) { b.del(); }); break;
         case Key::A: if (!ctrl) return false; eb.selectAll(); break;
         case Key::C:
         case Key::X:
             if (!ctrl) return false;
-            if (!eb.hasSelection()) return true;
+            if (!eb.hasSelection() || leMasked(o, true) || o.echo == EchoMode::NoEcho) return true; // no copying secrets
             ui.setClipboardText(eb.selection());
-            if (e.key == Key::X) { eb.insert({}); edit = true; }
+            if (e.key == Key::X) edit = guarded(ui, ec.node, [](fuse::text::TextEditBuffer& b) { b.insert({}); });
             break;
         case Key::V: {
             if (!ctrl) return false;
@@ -436,13 +564,14 @@ struct LineEdit {
             if (!ui.clipboardText(paste)) return true;
             // single line: newlines become spaces
             for (char& ch : paste) if (ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
-            eb.insert(paste);
-            edit = true;
+            edit = insertText(ui, ec.node, paste);
             break;
         }
-        case Key::Z: if (!ctrl) return false; edit = sh ? eb.redo() : eb.undo(); break;
-        case Key::Y: if (!ctrl) return false; edit = eb.redo(); break;
-        case Key::Enter: ui.emit(ec.node, SignalKind::Submitted, {.text = eb.text()}); return true;
+        case Key::Z: if (!ctrl) return false; edit = guarded(ui, ec.node, [&](fuse::text::TextEditBuffer& b) { sh ? b.redo() : b.undo(); }); break;
+        case Key::Y: if (!ctrl) return false; edit = guarded(ui, ec.node, [](fuse::text::TextEditBuffer& b) { b.redo(); }); break;
+        case Key::Enter:
+            if (leValidate(o, eb.text()) == Validation::Acceptable) ui.emit(ec.node, SignalKind::Submitted, {.text = eb.text()});
+            return true;
         default: return false;
         }
         if (edit) changed(ui, ec.node);
@@ -627,5 +756,93 @@ NodeHandle image(UiContext& ui, NodeHandle p, u32 idx, f32 w, f32 h, std::string
 NodeHandle separator(UiContext& ui, NodeHandle p, std::string_view id) { return make(ui, "separator", p, id); }
 
 std::string_view comboText(const UiContext& ui, NodeHandle n) { return item(ui.text(n), u32(ui.value(n))); }
+
+void setLineEditOptions(UiContext& ui, NodeHandle n, LineEditOptions o) {
+    if (!ui.alive(n)) return;
+    auto& st = lineEditStores()[&ui];
+    if (st.slots.size() <= n.index) st.slots.resize(n.index + 1);
+    auto& s = st.slots[n.index];
+    if (!s) s = std::make_unique<LineEditState>();
+    s->gen = n.generation;
+    s->o = std::move(o);
+    auto& eb = ui.editBuffer(n);
+    if (codePoints(eb.text()) > s->o.maxLength) { eb.setText(clipCodePoints(eb.text(), s->o.maxLength)); eb.end(false); }
+    publishText(ui, n);
+    ui.setValue(n, ui.value(n) + 1.f); // repaint
+}
+std::string_view lineEditText(UiContext& ui, NodeHandle n) { return ui.editBuffer(n).text(); }
+Validation lineEditState(UiContext& ui, NodeHandle n) { return leValidate(leOpts(ui, n), ui.editBuffer(n).text()); }
+void setLineEditText(UiContext& ui, NodeHandle n, std::string_view t) {
+    auto& eb = ui.editBuffer(n);
+    eb.setText(clipCodePoints(t, leOpts(ui, n).maxLength));
+    eb.end(false);
+    publishText(ui, n);
+    ui.emit(n, SignalKind::TextChanged, {.text = eb.text()});
+}
+
+namespace {
+/// sign + digits prefix of an integer literal: "", "-", "+" are partial
+bool intLiteral(std::string_view t, bool& partial) {
+    std::size_t i = 0;
+    if (i < t.size() && (t[i] == '-' || t[i] == '+')) ++i;
+    partial = i == t.size();
+    for (std::size_t k = i; k < t.size(); ++k)
+        if (t[k] < '0' || t[k] > '9') return false;
+    return true;
+}
+} // namespace
+Validator intValidator(long long lo, long long hi) {
+    return [lo, hi](std::string_view t) {
+        bool partial = false;
+        if (!intLiteral(t, partial)) return Validation::Invalid;
+        if (partial) return (t.empty() || (t[0] == '-' ? lo < 0 : hi >= 0)) ? Validation::Intermediate : Validation::Invalid;
+        if (t[0] == '-' && lo >= 0) return Validation::Invalid;
+        std::size_t digits = t.size() - (t[0] == '-' || t[0] == '+');
+        if (digits > 19) return Validation::Invalid;
+        const long long v = std::strtoll(std::string(t).c_str(), nullptr, 10);
+        if (v >= lo && v <= hi) return Validation::Acceptable;
+        // more digits only grow |v|: out of range for good when |v| is already past the bound on its side
+        if (v > hi && v >= 0) return Validation::Invalid;
+        if (v < lo && v < 0) return Validation::Invalid;
+        return Validation::Intermediate;
+    };
+}
+Validator doubleValidator(double lo, double hi, int decimals) {
+    return [lo, hi, decimals](std::string_view t) {
+        std::size_t i = 0;
+        if (i < t.size() && (t[i] == '-' || t[i] == '+')) ++i;
+        if (i < t.size() && t[0] == '-' && lo >= 0) return Validation::Invalid;
+        std::size_t intDigits = 0, frac = 0;
+        bool dot = false, expo = false, expDigits = false;
+        for (std::size_t k = i; k < t.size(); ++k) {
+            const char ch = t[k];
+            if (ch >= '0' && ch <= '9') {
+                if (expo) expDigits = true;
+                else if (dot) ++frac;
+                else ++intDigits;
+                continue;
+            }
+            if (ch == '.' && !dot && !expo) { dot = true; continue; }
+            if ((ch == 'e' || ch == 'E') && !expo && (intDigits || frac)) {
+                expo = true;
+                if (k + 1 < t.size() && (t[k + 1] == '-' || t[k + 1] == '+')) ++k;
+                continue;
+            }
+            return Validation::Invalid;
+        }
+        if (frac > std::size_t(std::max(decimals, 0))) return Validation::Invalid;
+        if (intDigits + frac == 0 || (expo && !expDigits)) return Validation::Intermediate;
+        const double v = std::strtod(std::string(t).c_str(), nullptr);
+        if (v >= lo && v <= hi) return Validation::Acceptable;
+        if (!expo && !dot && ((v > hi && v >= 0) || (v < lo && v < 0))) return Validation::Invalid;
+        return Validation::Intermediate;
+    };
+}
+Validator regexValidator(std::string_view pattern) {
+    auto re = std::make_shared<const std::regex>(std::string(pattern), std::regex::ECMAScript);
+    return [re](std::string_view t) {
+        return std::regex_match(t.begin(), t.end(), *re) ? Validation::Acceptable : Validation::Intermediate;
+    };
+}
 
 } // namespace fuse::ui::widgets

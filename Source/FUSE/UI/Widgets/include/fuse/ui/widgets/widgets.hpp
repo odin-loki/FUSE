@@ -6,6 +6,8 @@
 // `background2` = accent / indicator fill (when no gradient is set), `border-color` = outline.
 #pragma once
 
+#include <functional>
+#include <string>
 #include <limits>
 #include <span>
 
@@ -42,6 +44,36 @@ NodeHandle spinBox(UiContext& ui, NodeHandle parent, f32 lo, f32 hi, f32 value, 
 /// Items separated by '\n'; value() is the selected index. (Tier A: cycles in place; the popup list is Tier B.)
 NodeHandle comboBox(UiContext& ui, NodeHandle parent, std::string_view items, u32 selected = 0, std::string_view id = {});
 NodeHandle lineEdit(UiContext& ui, NodeHandle parent, std::string_view text = {}, std::string_view id = {});
+
+// ---- QLineEdit parity: echo modes, max length, placeholder, read-only, validators -----------------------------------
+/// QLineEdit::EchoMode. Password / NoEcho fields never hold the secret in the node text (UiContext::text, the a11y
+/// tree, inspectors): it holds the mask, the real text is lineEditText(). Copy / cut are disabled while masked.
+enum class EchoMode : u8 { Normal, NoEcho, Password, PasswordEchoOnEdit };
+/// QValidator::State. Invalid edits are rejected (the buffer is left as it was); Submitted (Enter) is emitted only
+/// for Acceptable text, as QLineEdit::returnPressed.
+enum class Validation : u8 { Invalid, Intermediate, Acceptable };
+using Validator = std::function<Validation(std::string_view text)>;
+struct LineEditOptions {
+    EchoMode echo = EchoMode::Normal;
+    u32 maxLength = 32767;   ///< in code points (Qt: QChars); typing / paste is truncated to fit
+    std::string placeholder; ///< drawn dimmed while the field is empty
+    bool readOnly = false;   ///< caret, selection and copy still work
+    Validator validator;     ///< null: everything Acceptable
+    char32_t maskChar = U'•';
+};
+void setLineEditOptions(UiContext& ui, NodeHandle edit, LineEditOptions options);
+/// Real text of a line edit (also for masked fields), and its validator state.
+std::string_view lineEditText(UiContext& ui, NodeHandle edit);
+Validation lineEditState(UiContext& ui, NodeHandle edit);
+/// Replace the text programmatically (not validated, truncated to maxLength; emits TextChanged). Caret to the end.
+void setLineEditText(UiContext& ui, NodeHandle edit, std::string_view text);
+/// QIntValidator / QDoubleValidator / QRegularExpressionValidator. Number validators: a partial number ("", "-",
+/// "1." or a value outside the range that more digits could still fix) is Intermediate. regexValidator: a full match
+/// is Acceptable, anything else Intermediate (std::regex has no partial matching), so it gates Submitted only.
+Validator intValidator(long long lo, long long hi);
+Validator doubleValidator(double lo, double hi, int decimals = 1000);
+Validator regexValidator(std::string_view ecmaPattern);
+
 NodeHandle progressBar(UiContext& ui, NodeHandle parent, f32 value01, std::string_view id = {});
 NodeHandle dial(UiContext& ui, NodeHandle parent, f32 lo, f32 hi, f32 value, std::string_view id = {});
 /// `imageIndex` is the CpuRasterizer / renderer image index (stored as user data).

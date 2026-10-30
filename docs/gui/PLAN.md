@@ -98,6 +98,7 @@ Headless (offscreen CPU raster) works everywhere and is what the test suite uses
 | QPainter / 2D raster, paths, gradients, blur | draw list + CPU raster + Vulkan | done |
 | High DPI, per-monitor scale | `dpiScale` plumbing | done desktop; mobile G4 |
 | QtWidgets basic (button…lineedit) | Tier A | done |
+| QLineEdit parity: echo modes (Password, NoEcho, PasswordEchoOnEdit), maxLength, placeholder, read-only, QIntValidator / QDoubleValidator / QRegularExpressionValidator, returnPressed only when Acceptable | `widgets::setLineEditOptions`, `lineEditText`, `lineEditState`, `intValidator` / `doubleValidator` / `regexValidator` | done; gate fuse_ui_lineedit. Masked fields keep the secret out of the node text, so the a11y tree, inspector and designer only see the mask; copy / cut are refused and Ctrl+arrows jump whole fields while masked; IME pre-edit is off in password fields. Left: input masks (QLineEdit::inputMask), validator fixup(), editingFinished on focus out, a platform "protected" a11y flag (UIA IsPassword / AT-SPI password-text role) |
 | Containers, MainWindow, docks, menus, toolbars, dialogs | Tier B | done |
 | Model/view, delegates, proxy sort/filter, 1M rows | Tier B/C/D | done |
 | QSS styling, themes, palettes | `StyleSheet`, themes | done |
@@ -162,7 +163,7 @@ Headless (offscreen CPU raster) works everywhere and is what the test suite uses
   open URL, PDF writer + DrawList printing + print preview pagination, system printing, undo, gestures, i18n,
   extra widgets, MDI, graphics view, system tray + global menu, rich text editor (`richtextedit`, HTML/Markdown), web view,
   a11y platform adapters, anti-aliased PDF text, designer product pass. Left: run the Apple + WebView2 paths on real hosts;
-  rich text italic is drawn upright and Justify falls back to left; reparenting WebKitGTK into a FUSE X11 window is experimental.
+  reparenting WebKitGTK into a FUSE X11 window is experimental.
   Known FORGE bug (reported, not fixed here): `spawn_wait` leaks pipe fds into children.
 
 Every phase: commits on `gui-framework`, pushed after each milestone; never to `main`; no force pushes.
