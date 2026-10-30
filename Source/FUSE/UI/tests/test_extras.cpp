@@ -11,6 +11,8 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 #include "fuse/ui/extras/extras.hpp"
+#include "fuse/ui/extras/declarative.hpp"
+#include "fuse/ui/extras/svg.hpp"
 #include "fuse/ui/os.hpp"
 
 #include <cmath>
@@ -901,12 +903,257 @@ void gateWebView() {
     CHECK(!v.valid());
     std::remove(file.c_str());
 }
+
+void gateDeclarative() {
+    namespace d = fuse::ui::decl;
+    // bindings with automatic dependency tracking
+    d::Property<int> w(10), h(20);
+    d::Property<int> area([&] { return w() * h(); });
+    int changes = 0;
+    area.onChanged([&] { ++changes; });
+    CHECK(area.peek() == 200 && area.dependencyCount() == 2);
+    w = 3;
+    CHECK(area.peek() == 60 && changes == 1);
+    h = 20; // unchanged: no notification
+    CHECK(changes == 1);
+    // conditional dependencies are re-tracked each evaluation
+    d::Property<bool> useW(true);
+    d::Property<int> pick([&] { return useW() ? w() : h(); });
+    CHECK(pick.peek() == 3 && pick.dependencyCount() == 2);
+    useW = false;
+    CHECK(pick.peek() == 20 && pick.dependencyCount() == 2);
+    w = 7; // no longer a dependency of pick
+    CHECK(pick.peek() == 20 && area.peek() == 140);
+    // chained bindings + assignment breaks a binding
+    d::Property<std::string> label([&] { return "area " + std::to_string(area()); });
+    CHECK(label.peek() == "area 140");
+    h = 2;
+    CHECK(label.peek() == "area 14");
+    area = 1;
+    CHECK(!area.hasBinding() && label.peek() == "area 1");
+    w = 100;
+    CHECK(area.peek() == 1);
+    // binding loop detected and broken
+    d::Property<int> a(1), b(1);
+    a.setBinding([&] { return b() + 1; });
+    b.setBinding([&] { return a() + 1; });
+    CHECK(a.bindingLoop() || b.bindingLoop());
+    // destruction of a dependency detaches it
+    {
+        auto tmp = std::make_unique<d::Property<int>>(5);
+        d::Property<int> dep([&] { return tmp->value() * 2; });
+        CHECK(dep.peek() == 10);
+        tmp.reset();
+        CHECK(dep.dependencyCount() == 0);
+    }
+    // UI bindings
+    Screen s;
+    UiContext& ui = s.ui;
+    const NodeHandle lbl = w::label(ui, ui.root(), "");
+    const NodeHandle le = w::lineEdit(ui, ui.root(), "");
+    const NodeHandle sl = w::slider(ui, ui.root(), 0.f, 100.f, 0.f);
+    d::Property<std::string> name("Odin");
+    d::Property<f32> vol(25.f);
+    auto t1 = d::bindText(ui, lbl, [&] { return name() + " @ " + std::to_string(int(vol())); });
+    auto t2 = d::bindTextTwoWay(ui, le, name);
+    auto t3 = d::bindValueTwoWay(ui, sl, vol);
+    step(ui);
+    CHECK(ui.text(lbl) == "Odin @ 25" && ui.editBuffer(le).text() == "Odin" && ui.value(sl) == 25.f);
+    clickNode(ui, le);
+    ui.keyDown(Key::End); ui.keyUp(Key::End);
+    ui.textInput("!");
+    step(ui);
+    CHECK(name.peek() == "Odin!" && ui.text(lbl) == "Odin! @ 25");
+    ui.setValue(sl, 60.f, true);
+    step(ui);
+    CHECK(vol.peek() == 60.f && ui.text(lbl) == "Odin! @ 60");
+    t1.reset();
+    name = "x";
+    CHECK(ui.text(lbl) == "Odin! @ 60"); // effect gone
+
+    // state machine: hierarchy, guards, history, parallel, assignProperty, eventless, done events
+    d::StateMachine sm;
+    std::vector<std::string> log;
+    const auto off = sm.addState("off");
+    const auto on = sm.addState("on");
+    const auto idle = sm.addState("idle", on);
+    const auto play = sm.addState("playing", on);
+    const auto hist = sm.addHistory(on);
+    const auto broken = sm.addState("broken");
+    const auto done = sm.addFinal("done");
+    d::Property<int> brightness(0);
+    d::Property<int> errors(0);
+    sm.assignProperty(on, brightness, 100);
+    sm.onEntry(on, [&] { log.push_back("+on"); });
+    sm.onExit(on, [&] { log.push_back("-on"); });
+    sm.onEntry(play, [&] { log.push_back("+play"); });
+    sm.addTransition(off, "power", hist);
+    sm.addTransition(on, "power", off);
+    sm.addTransition(idle, "play", play);
+    sm.addTransition(play, "stop", idle);
+    int pings = 0;
+    sm.addTransition(on, "ping", d::StateMachine::kNone, {}, [&] { ++pings; }); // targetless
+    sm.addTransition(play, "play", idle, [&] { return false; });                  // guard blocks
+    sm.addTransition(on, "", broken, [&] { return errors.peek() > 2; });          // eventless
+    sm.watch(errors);
+    sm.addTransition(broken, "reset", done);
+    bool finished = false;
+    sm.onFinished = [&] { finished = true; };
+    sm.start();
+    CHECK(sm.configuration() == std::vector<std::string>{"off"} && brightness.peek() == 0);
+    sm.postEvent("power");
+    CHECK(sm.isActive(idle) && brightness.peek() == 100);
+    sm.postEvent("play");
+    sm.postEvent("play"); // guarded: stays
+    sm.postEvent("ping");
+    CHECK(sm.isActive(play) && pings == 1);
+    sm.postEvent("power");
+    CHECK(sm.isActive(off) && brightness.peek() == 0);
+    sm.postEvent("power"); // history restores "playing"
+    CHECK(sm.isActive("playing") && sm.isActive(on));
+    CHECK(log == (std::vector<std::string>{"+on", "+play", "-on", "+on", "+play"}));
+    errors = 3; // eventless transition via watch()
+    CHECK(sm.isActive(broken) && !sm.isActive(on) && brightness.peek() == 0);
+    sm.postEvent("reset");
+    CHECK(sm.isActive(done) && finished);
+    // parallel regions + done.state
+    d::StateMachine pm;
+    const auto par = pm.addState("par", 0, d::StateMachine::Kind::Parallel);
+    const auto r1 = pm.addState("r1", par);
+    const auto a1 = pm.addState("a1", r1);
+    const auto f1 = pm.addFinal("f1", r1);
+    const auto r2 = pm.addState("r2", par);
+    pm.addState("b1", r2);
+    const auto b2 = pm.addState("b2", r2);
+    pm.addTransition(a1, "go", f1);
+    pm.addTransition(pm.find("b1"), "go", b2);
+    int doneR1 = 0;
+    pm.addTransition(par, "done.state.r1", d::StateMachine::kNone, {}, [&] { ++doneR1; });
+    pm.start();
+    CHECK(pm.configuration() == (std::vector<std::string>{"a1", "b1"}));
+    pm.postEvent("go"); // both regions move in one step
+    CHECK(pm.configuration() == (std::vector<std::string>{"f1", "b2"}) && doneR1 == 1);
+    pm.stop();
+    CHECK(pm.configuration().empty());
+}
+
+void gateVirtualKeyboard() {
+    Screen s;
+    UiContext& ui = s.ui;
+    const NodeHandle le = w::lineEdit(ui, ui.root(), "");
+    const NodeHandle kb = w::virtualKeyboard(ui, ui.root(), "vk");
+    int submitted = 0;
+    ui.connect(le, SignalKind::Submitted, [&](UiContext&, NodeHandle, const SignalArgs&) { ++submitted; });
+    step(ui);
+    clickNode(ui, le);
+    step(ui);
+    w::virtualKeyboardAutoShow(ui, kb);
+    step(ui);
+    CHECK(ui.rect(kb).h > 60.f);
+    auto press = [&](std::string_view l) {
+        const NodeHandle k = w::virtualKeyboardKey(ui, kb, l);
+        CHECK(k.valid());
+        if (k.valid()) clickNode(ui, k);
+        step(ui);
+        CHECK(ui.focused() == le); // keys never steal focus
+    };
+    press("Shift");
+    press("H"); // shift is one-shot
+    press("i");
+    press("Space");
+    press("?123");
+    press("4");
+    press("2");
+    press("?123");
+    press("x");
+    press("Backspace");
+    CHECK(ui.editBuffer(le).text() == "Hi 42");
+    press("Shift");
+    press("Shift"); // caps lock
+    press("O");
+    press("K");
+    CHECK(ui.editBuffer(le).text() == "Hi 42OK");
+    press("Enter");
+    CHECK(submitted == 1);
+    ui.setFocus({});
+    step(ui);
+    w::virtualKeyboardAutoShow(ui, kb);
+    step(ui);
+    CHECK(ui.rect(kb).h < 1.f);
+}
+
+void gateSvg() {
+    namespace sv = fuse::ui::svg;
+    // transforms
+    const sv::Affine t = sv::parseTransform("translate(10,20) scale(2)");
+    CHECK(t[0] == 2.f && t[3] == 2.f && t[4] == 10.f && t[5] == 20.f);
+    const sv::Affine r = sv::parseTransform("rotate(90 5 5)");
+    CHECK(std::abs(r[0]) < 1e-5f && std::abs(r[1] - 1.f) < 1e-5f && std::abs(r[4] - 10.f) < 1e-4f && std::abs(r[5]) < 1e-4f);
+    // arcs are real arcs now: a half circle of radius 50 reaches y = 50 below the chord
+    {
+        Path p = Path::fromSvg("M0 0 A50 50 0 0 0 100 0");
+        CHECK(std::abs(p.bounds().h - 50.f) < 1.f && std::abs(p.bounds().w - 100.f) < 0.5f);
+    }
+    const char* kDoc = R"svg(<?xml version="1.0"?>
+<!DOCTYPE svg>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="200" height="100" viewBox="0 0 100 50">
+  <!-- a comment -->
+  <defs>
+    <linearGradient id="lg" x1="0" x2="1"><stop offset="0" stop-color="#ff0000"/><stop offset="1" style="stop-color:#0000ff"/></linearGradient>
+    <circle id="dot" r="4" fill="lime"/>
+  </defs>
+  <rect x="0" y="0" width="100" height="50" fill="#202020"/>
+  <g id="grp" transform="translate(10 10)" style="fill: rgb(255, 255, 0); stroke:none">
+    <rect id="box" width="20" height="20" rx="4"/>
+    <circle cx="40" cy="10" r="10" opacity="0.5"/>
+  </g>
+  <path id="arc" d="M60 40 a10 10 0 1 1 20 0 z" fill="url(#lg)"/>
+  <polyline points="0,49 50,30 100,49" fill="none" stroke="white" stroke-width="2"/>
+  <line x1="0" y1="0" x2="100" y2="50" stroke="none"/>
+  <use xlink:href="#dot" x="90" y="10"/>
+  <text x="0" y="0">ignored</text>
+</svg>)svg";
+    sv::Document d;
+    CHECK(d.load(kDoc));
+    CHECK(d.size().w == 200.f && d.size().h == 100.f && d.viewBox().w == 100.f);
+    CHECK(d.shapes().size() == 6); // bg, box, circle, arc, polyline, use'd dot (line has no paint)
+    const Rect box = d.boundsOf("box");
+    CHECK(std::abs(box.x - 10.f) < 0.01f && std::abs(box.w - 20.f) < 0.01f);
+    const Rect grp = d.boundsOf("grp");
+    CHECK(std::abs(grp.right() - 60.f) < 0.5f && std::abs(grp.bottom() - 30.f) < 0.5f);
+    CHECK(d.shapes()[3].gradient == kGradientHorizontal);
+    CHECK(!sv::Document{}.load("<svg><g></svg>"));
+    sv::Document bad;
+    CHECK(!bad.load("<html/>") && !bad.error().empty());
+    // widget renders it
+    Screen s;
+    UiContext& ui = s.ui;
+    const NodeHandle wdg = w::svgWidget(ui, ui.root(), kDoc, "svg");
+    ui.setCss(wdg, "width", "200px");
+    for (int i = 0; i < 3; ++i) step(ui);
+    const Rect wr = ui.rect(wdg);
+    CHECK(std::abs(wr.w - 200.f) < 1.f && std::abs(wr.h - 100.f) < 1.f);
+    Image img;
+    fuse::ui::test::render(ui, img);
+    auto px = [&](f32 dx, f32 dy) {
+        const int x = int(wr.x + dx), y = int(wr.y + dy);
+        const u8* p = reinterpret_cast<const u8*>(img.pixels.data()) + (std::size_t(y) * img.width + std::size_t(x)) * 4;
+        return std::array<int, 3>{p[0], p[1], p[2]};
+    };
+    const auto yellow = px(40, 40), bg = px(190, 80), dot = px(180, 20), arcL = px(124, 74), arcR = px(156, 74);
+    CHECK(yellow[0] > 200 && yellow[1] > 200 && yellow[2] < 60);
+    CHECK(bg[0] < 60 && bg[1] < 60 && bg[2] < 60);
+    CHECK(dot[1] > 200 && dot[0] < 60);
+    CHECK(arcL[0] > arcL[2] && arcR[2] > arcR[0]); // red -> blue gradient
+    if (const std::string dir = fuse::ui::os::env("FUSE_EXTRAS_OUT"); !dir.empty())
+        stbi_write_png((dir + "/svg.png").c_str(), img.width, img.height, 4, img.pixels.data(), img.width * 4);
+}
 } // namespace
 
 int main(int argc, char** argv) {
     const std::map<std::string, std::function<void()>> gates{
         {"undo", gateUndo}, {"gesture", gateGesture}, {"i18n", gateI18n}, {"desktop", gateDesktop}, {"pdf", gatePdf}, {"containers", gateContainers}, {"dialogs", gateDialogs}, {"lcd_keyseq", gateLcdKeyseq},
-        {"mdi", gateMdi}, {"completer", gateCompleter}, {"graphics", gateGraphics}, {"widget_pdf", gateWidgetPdf}, {"tray", gateTray}, {"richtext", gateRichText}, {"webview", gateWebView}};
+        {"mdi", gateMdi}, {"completer", gateCompleter}, {"graphics", gateGraphics}, {"widget_pdf", gateWidgetPdf}, {"tray", gateTray}, {"richtext", gateRichText}, {"webview", gateWebView}, {"declarative", gateDeclarative}, {"vkeyboard", gateVirtualKeyboard}, {"svg", gateSvg}};
     std::string only;
     for (int i = 1; i < argc; ++i) if (std::strncmp(argv[i], "--gate=", 7) == 0) only = argv[i] + 7;
     for (auto& [n, f] : gates) if (only.empty() || only == n) { f(); std::printf("gate %s: %s\n", n.c_str(), g_fail ? "FAIL" : "ok"); }

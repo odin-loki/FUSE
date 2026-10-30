@@ -49,6 +49,7 @@ public:
     Path& close();
     Path& rect(const Rect& r);
     Path& circle(Vec2 c, f32 r);
+    Path& ellipse(Vec2 c, f32 rx, f32 ry);
     /// SVG path data (`d` attribute): M L H V C S Q T A Z, absolute and relative (A = true elliptical arcs). Returns false (path left with what parsed) on a syntax error.
     bool appendSvg(std::string_view d);
     static Path fromSvg(std::string_view d) {
@@ -58,6 +59,8 @@ public:
     }
     /// Maps every point: p * scale + offset (SVG viewBox placement).
     Path& transform(Vec2 scale, Vec2 offset);
+    /// Maps every point by the affine matrix [a c e; b d f] (SVG transform order): x' = a x + c y + e, y' = b x + d y + f.
+    Path& transform(const std::array<f32, 6>& m);
     const std::vector<PathEdge>& edges() const;
     Rect bounds() const;
     bool empty() const { return edges().empty(); }

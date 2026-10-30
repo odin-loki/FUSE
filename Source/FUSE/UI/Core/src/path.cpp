@@ -166,6 +166,26 @@ Path& Path::transform(Vec2 sc, Vec2 off) {
     return *this;
 }
 
+Path& Path::transform(const std::array<f32, 6>& m) {
+    (void)edges();
+    auto map = [&](f32& x, f32& y) { const f32 nx = m[0] * x + m[2] * y + m[4]; y = m[1] * x + m[3] * y + m[5]; x = nx; };
+    for (PathEdge& e : m_edges) { map(e.x0, e.y0); map(e.x1, e.y1); }
+    map(m_last.x, m_last.y);
+    map(m_start.x, m_start.y);
+    map(m_ctrl.x, m_ctrl.y);
+    return *this;
+}
+
+Path& Path::ellipse(Vec2 c, f32 rx, f32 ry) {
+    constexpr f32 k = 0.5522847498f; // 4/3 (sqrt2 - 1)
+    moveTo({c.x + rx, c.y});
+    cubicTo({c.x + rx, c.y + ry * k}, {c.x + rx * k, c.y + ry}, {c.x, c.y + ry});
+    cubicTo({c.x - rx * k, c.y + ry}, {c.x - rx, c.y + ry * k}, {c.x - rx, c.y});
+    cubicTo({c.x - rx, c.y - ry * k}, {c.x - rx * k, c.y - ry}, {c.x, c.y - ry});
+    cubicTo({c.x + rx * k, c.y - ry}, {c.x + rx, c.y - ry * k}, {c.x + rx, c.y});
+    return close();
+}
+
 bool Path::appendSvg(std::string_view d) {
     std::size_t i = 0;
     auto skip = [&] {

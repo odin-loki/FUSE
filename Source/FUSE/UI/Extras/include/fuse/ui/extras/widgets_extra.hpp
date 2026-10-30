@@ -142,6 +142,16 @@ Vec2 sceneToView(const UiContext& ui, NodeHandle view, Vec2 s);
 /// Fits the scene bounds into the view.
 void fitInView(UiContext& ui, NodeHandle view);
 
+/// On-screen keyboard (Qt Virtual Keyboard parity): QWERTY letters, one-shot shift (double press = caps lock),
+/// "?123" symbols page, backspace, space and enter. Keys never take focus; they type into the focused text node
+/// (or the last one focused outside the keyboard) through UiContext::textInput / keyDown, exactly as hardware keys.
+/// value() on the keyboard = page (0 letters, 1 symbols); Toggled {flag} reports shift.
+NodeHandle virtualKeyboard(UiContext& ui, NodeHandle parent, std::string_view id = {});
+/// The key whose label is `label` ("a", "Shift", "?123", "Backspace", "Space", "Enter", ...), for tests / automation.
+NodeHandle virtualKeyboardKey(const UiContext& ui, NodeHandle keyboard, std::string_view label);
+/// Show the keyboard while the UI wants text input (UiContext::wantsTextInput), hide it otherwise; call per frame.
+void virtualKeyboardAutoShow(UiContext& ui, NodeHandle keyboard);
+
 void registerExtraWidgets(UiContext& ui);
 
 } // namespace fuse::ui::widgets

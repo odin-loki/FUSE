@@ -1,4 +1,5 @@
 // Qt-parity extra widgets (see widgets_extra.hpp).
+#include <map>
 #include "fuse/ui/extras/widgets_extra.hpp"
 
 #include "fuse/text/text.hpp"
@@ -1011,6 +1012,150 @@ void fitInView(UiContext& ui, NodeHandle view) {
     if (b.empty() || c.empty()) return;
     const f32 z = std::min(c.w / b.w, c.h / b.h) * 0.95f;
     setViewTransform(ui, view, z, {b.x + b.w * 0.5f - c.w * 0.5f / z, b.y + b.h * 0.5f - c.h * 0.5f / z});
+}
+
+
+// ---- virtual keyboard ---------------------------------------------------------------------------------------------------
+namespace {
+struct VkState {
+    NodeHandle kb, target;
+    bool shift = false, caps = false, symbols = false;
+    std::vector<std::pair<NodeHandle, std::string>> keys; // character keys + their base label
+    std::map<std::string, NodeHandle, std::less<>> named;
+};
+bool inSubtree(const UiContext& ui, NodeHandle root, NodeHandle n) {
+    for (; ui.alive(n); n = ui.parent(n)) if (n == root) return true;
+    return false;
+}
+constexpr std::string_view kVkLetters[3] = {"qwertyuiop", "asdfghjkl", "zxcvbnm"};
+constexpr std::string_view kVkSymbols[3] = {"1234567890", "@#$%&-+()/", "*\"':;!?,."};
+std::string vkLabel(const VkState& st, std::size_t row, std::size_t col) {
+    const std::string_view r = st.symbols ? kVkSymbols[row] : kVkLetters[row];
+    if (col >= r.size()) return {};
+    char c = r[col];
+    if (!st.symbols && (st.shift || st.caps) && c >= 'a' && c <= 'z') c = char(c - 'a' + 'A');
+    return std::string(1, c);
+}
+std::map<u32, std::shared_ptr<VkState>>& vkStates() { static std::map<u32, std::shared_ptr<VkState>> m; return m; }
+void vkRelabel(UiContext& ui, VkState& st) {
+    std::size_t i = 0;
+    for (std::size_t row = 0; row < 3; ++row)
+        for (std::size_t col = 0; col < kVkLetters[row].size() || col < kVkSymbols[row].size(); ++col, ++i) {
+            if (i >= st.keys.size()) return;
+            const std::string l = vkLabel(st, row, col);
+            ui.setText(st.keys[i].first, l);
+            ui.setCss(st.keys[i].first, "display", l.empty() ? "none" : "flex");
+        }
+    ui.setText(st.named["?123"], st.symbols ? "ABC" : "?123");
+    ui.setCss(st.named["Shift"], "opacity", st.caps ? "1" : st.shift ? "0.85" : "0.6");
+}
+} // namespace
+
+NodeHandle virtualKeyboard(UiContext& ui, NodeHandle parent, std::string_view id) {
+    registerExtraWidgets(ui);
+    const NodeHandle kb = panel(ui, parent, id);
+    ui.addClass(kb, "vkeyboard");
+    ui.setCss(kb, "gap", "4px");
+    ui.setCss(kb, "padding", "6px");
+    ui.setA11y(kb, A11yRole::Group, "Keyboard");
+    auto st = std::make_shared<VkState>();
+    st->kb = kb;
+    vkStates()[kb.index] = st;
+    VkState* sp = st.get();
+    // remember the last text node focused outside the keyboard
+    auto resolveTarget = [sp](UiContext& u) {
+        const NodeHandle f = u.focused();
+        if (u.alive(f) && !inSubtree(u, sp->kb, f)) sp->target = f;
+        if (u.alive(sp->target) && u.focused() != sp->target) u.setFocus(sp->target);
+        return u.alive(sp->target);
+    };
+    auto makeRow = [&] {
+        const NodeHandle r = panel(ui, kb);
+        ui.setCss(r, "flex-direction", "row");
+        ui.setCss(r, "gap", "4px");
+        ui.setCss(r, "justify-content", "center");
+        return r;
+    };
+    auto makeKey = [&](NodeHandle row, std::string_view text) {
+        const NodeHandle k = button(ui, row, text);
+        ui.setFocusable(k, false);
+        ui.addClass(k, "vkey");
+        ui.setCss(k, "min-width", "28px");
+        return k;
+    };
+    for (std::size_t row = 0; row < 3; ++row) {
+        const NodeHandle r = makeRow();
+        if (row == 2) {
+            const NodeHandle sh = makeKey(r, "Shift");
+            st->named["Shift"] = sh;
+            ui.connect(sh, SignalKind::Clicked, [sp](UiContext& u, NodeHandle, const SignalArgs&) {
+                if (sp->caps) { sp->caps = sp->shift = false; }
+                else if (sp->shift) { sp->caps = true; }
+                else sp->shift = true;
+                vkRelabel(u, *sp);
+                u.emit(sp->kb, SignalKind::Toggled, {.flag = sp->shift || sp->caps});
+            });
+        }
+        for (std::size_t col = 0; col < kVkLetters[row].size() || col < kVkSymbols[row].size(); ++col) {
+            const NodeHandle k = makeKey(r, "");
+            st->keys.emplace_back(k, std::string{});
+            ui.connect(k, SignalKind::Clicked, [sp, resolveTarget](UiContext& u, NodeHandle n, const SignalArgs&) {
+                if (!resolveTarget(u)) return;
+                const std::string t(u.text(n));
+                u.textInput(t);
+                if (sp->shift && !sp->caps) { sp->shift = false; vkRelabel(u, *sp); u.emit(sp->kb, SignalKind::Toggled, {.flag = false}); }
+            });
+        }
+        if (row == 2) {
+            const NodeHandle bs = makeKey(r, "Backspace");
+            st->named["Backspace"] = bs;
+            ui.setText(bs, "\xE2\x8C\xAB"); // ⌫
+            ui.connect(bs, SignalKind::Clicked, [resolveTarget](UiContext& u, NodeHandle, const SignalArgs&) {
+                if (resolveTarget(u)) { u.keyDown(Key::Backspace); u.keyUp(Key::Backspace); }
+            });
+        }
+    }
+    const NodeHandle last = makeRow();
+    const NodeHandle sym = makeKey(last, "?123");
+    st->named["?123"] = sym;
+    ui.connect(sym, SignalKind::Clicked, [sp](UiContext& u, NodeHandle, const SignalArgs&) {
+        sp->symbols = !sp->symbols;
+        u.setValue(sp->kb, sp->symbols ? 1.f : 0.f, true);
+        vkRelabel(u, *sp);
+    });
+    const NodeHandle space = makeKey(last, "Space");
+    st->named["Space"] = space;
+    ui.setText(space, " ");
+    ui.setCss(space, "min-width", "160px");
+    ui.connect(space, SignalKind::Clicked, [resolveTarget](UiContext& u, NodeHandle, const SignalArgs&) {
+        if (resolveTarget(u)) u.textInput(" ");
+    });
+    const NodeHandle enter = makeKey(last, "Enter");
+    st->named["Enter"] = enter;
+    ui.setText(enter, "\xE2\x8F\x8E"); // ⏎
+    ui.connect(enter, SignalKind::Clicked, [resolveTarget](UiContext& u, NodeHandle, const SignalArgs&) {
+        if (resolveTarget(u)) { u.keyDown(Key::Enter); u.keyUp(Key::Enter); }
+    });
+    ui.setRange(kb, 0.f, 1.f, 1.f);
+    vkRelabel(ui, *st);
+    return kb;
+}
+
+NodeHandle virtualKeyboardKey(const UiContext& ui, NodeHandle keyboard, std::string_view label) {
+    auto it = vkStates().find(keyboard.index);
+    if (it == vkStates().end() || it->second->kb != keyboard) return {};
+    VkState& st = *it->second;
+    if (auto n = st.named.find(label); n != st.named.end()) return n->second;
+    for (auto& [k, base] : st.keys) if (ui.text(k) == label) return k;
+    return {};
+}
+
+void virtualKeyboardAutoShow(UiContext& ui, NodeHandle keyboard) {
+    auto it = vkStates().find(keyboard.index);
+    if (it == vkStates().end() || !ui.alive(keyboard)) return;
+    const NodeHandle f = ui.focused();
+    const bool editing = ui.wantsTextInput() || (ui.alive(f) && inSubtree(ui, keyboard, f));
+    ui.setCss(keyboard, "display", editing ? "flex" : "none");
 }
 
 } // namespace fuse::ui::widgets

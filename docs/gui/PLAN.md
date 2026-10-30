@@ -94,7 +94,7 @@ Headless (offscreen CPU raster) works everywhere and is what the test suite uses
 
 | Qt module / feature | FUSE GUI | Status |
 |---|---|---|
-| QtGui windowing, QWindow, multi-window, popups | `fuse_app_native` | done (X11, Win32) |
+| QtGui windowing, QWindow, multi-window, popups | `fuse_app_native` | done (X11, Win32); live setTitle on X11/Win32/Wayland/Cocoa with `osTitle` readback |
 | QPainter / 2D raster, paths, gradients, blur | draw list + CPU raster + Vulkan | done |
 | High DPI, per-monitor scale | `dpiScale` plumbing | done desktop; mobile G4 |
 | QtWidgets basic (button…lineedit) | Tier A | done |
@@ -108,8 +108,15 @@ Headless (offscreen CPU raster) works everywhere and is what the test suite uses
 | Drag and drop (in-app) | core | done; OS-level DnD G2 |
 | Clipboard text | window-system + FORGE fallback | done; rich MIME G2 |
 | QML / declarative, hot reload, scripting | `.fuseui`, Lua | done |
-| Designer | `fuse_ui_designer`: palette/outline/canvas/properties, drag-drop, multi-select, style sheet, undo, copy/cut/paste/duplicate (clipboard JSON, id renumbering), shortcuts, dirty title, validation, live preview mode, device-size frames | done (product pass); gate fuse_ui_designer_roundtrip |
-| Native file dialogs | `vendor/nativeFileDialogs` | G2 |
+| QProperty / QML property bindings (auto dependency tracking, binding loops, two-way UI binding) | `fuse::ui::decl::Property`, `Effect`, `bindText/Value/Css/Visible`, `bind*TwoWay` | done; gate fuse_ui_extras_declarative |
+| Qt State Machine (hierarchical, parallel, history, guards, eventless, assignProperty, done.state) | `fuse::ui::decl::StateMachine` | done; gate fuse_ui_extras_declarative |
+| Qt SVG (QSvgRenderer / QSvgWidget, static Tiny subset: shapes, paths incl. arcs, groups, transforms, use, gradients, CSS style) | `fuse::ui::svg::Document`, `widgets::svgWidget`; affine `Path::transform`, `Path::ellipse`; full CSS named colours | done; gate fuse_ui_extras_svg |
+| Qt Virtual Keyboard | `widgets::virtualKeyboard` (shift / caps / symbols, never steals focus; Qt click-focus semantics in core) | done; gate fuse_ui_extras_vkeyboard |
+| Qt Charts | `widgets::chart` (line, bar, area, scatter) | done (basic); no axes customisation / pie |
+| Qt Multimedia widgets | `fuse_ui_video` | partial |
+| Qt Data Visualization (3D) | none | gap |
+| Designer | `fuse_ui_designer`: palette/outline/canvas/properties, drag-drop, multi-select, style sheet, undo, copy/cut/paste/duplicate (clipboard JSON, id renumbering), shortcuts, dirty title (live OS window retitle), validation, live preview mode, device-size frames, Open / Save As via native or built-in file dialog | done (product pass); gate fuse_ui_designer_roundtrip |
+| Native file dialogs | `os::nativeFileDialog` (portal / zenity / kdialog, IFileDialog, NSOpenPanel) + built-in `widgets::fileDialog` fallback | done |
 | Desktop notifications, open URL | `fuse::ui::desktop` (notify-send / osascript / PowerShell toast, via FORGE process) | done (G5) |
 | System tray, global menu bar | `fuse::ui::tray` (StatusNotifierItem + com.canonical.dbusmenu over runtime-loaded libdbus, Shell_NotifyIcon, NSStatusItem/NSMenu) | done: Linux D-Bus gate + Win32 under Wine; macOS UNVERIFIED |
 | Printing / PDF output, print preview | `fuse::ui::pdf` (vector PDF writer, DrawList to PDF, `PrintPreview::paginate`) + `desktop::print` (lp / Start-Process / open) | done (G5); anti-aliased glyphs (8-bit soft mask) |

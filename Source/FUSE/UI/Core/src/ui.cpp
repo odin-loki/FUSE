@@ -1269,7 +1269,9 @@ bool UiContext::pointerDown(Vec2 p, MouseButton b) {
         setState(m_pressed, kStatePressed, true);
         u32 f = target;
         while (f != kNone && !focusableNode(f)) f = m_nodes[f].parent;
-        setFocus(handleOf(f), FocusReason::Pointer);
+        // like Qt's click focus: a press with no focus-accepting ancestor leaves focus where it is (tool buttons,
+        // on-screen keyboard keys); the background (root) still clears it above
+        if (f != kNone) setFocus(handleOf(f), FocusReason::Pointer);
     }
     Event e; e.type = EventType::PointerDown; e.pos = p; e.button = b; e.mods = m_mods;
     dispatch(target, e);
