@@ -132,7 +132,7 @@ if(FUSE_UI_ACCESSIBILITY)
 endif()
 
 if(FUSE_BUILD_UI_WIDGETS)
-    add_library(fuse_ui_widgets STATIC Widgets/src/widgets.cpp Widgets/src/line_regex.cpp Widgets/src/completer.cpp Widgets/src/widgets_tier_b.cpp Widgets/src/widgets_tier_b2.cpp Widgets/src/widgets_tier_cd.cpp Widgets/src/widgets_tier_d2.cpp Widgets/src/platform_feel.cpp Widgets/src/theme.cpp Widgets/src/inspector.cpp)
+    add_library(fuse_ui_widgets STATIC Widgets/src/widgets.cpp Widgets/src/line_regex.cpp Widgets/src/completer.cpp Widgets/src/widgets_tier_b.cpp Widgets/src/widgets_tier_b2.cpp Widgets/src/widgets_dnd.cpp Widgets/src/widgets_tier_cd.cpp Widgets/src/widgets_tier_d2.cpp Widgets/src/platform_feel.cpp Widgets/src/theme.cpp Widgets/src/inspector.cpp)
     target_include_directories(fuse_ui_widgets PUBLIC Widgets/include)
     target_link_libraries(fuse_ui_widgets PUBLIC fuse_ui_core fuse_ui_os)
 endif()

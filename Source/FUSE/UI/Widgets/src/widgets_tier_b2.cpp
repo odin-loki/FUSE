@@ -176,6 +176,7 @@ struct TableState {
     f32 grab = 0.f;
     std::string scratch;
     const CellDelegate* delegate[kMaxCols]{};
+    TableDragDrop dd;
 };
 // Process-wide pool (the UI is single-threaded); a slot is reused once its node is gone.
 std::vector<std::unique_ptr<TableState>>& pool() { static std::vector<std::unique_ptr<TableState>> p; return p; }
@@ -341,6 +342,7 @@ struct TableView {
                 x += s->colW[k];
             }
         }
+        if (Rect ind; dropIndicator(ui, pc.node, ind)) dl.rect(ind, acc);
         Rect tr, th;
         if (barGeom(ui, pc.node, *s, tr, th)) {
             dl.rect(tr, pc.tint(Color::rgb(0x000000, 0.15f)), kBar * 0.5f);
@@ -384,10 +386,29 @@ struct TableView {
                 return true;
             }
             const i64 row = i64(s->first) + i64((e.pos.y - c.y - hh) / rh);
-            if (row < i64(rows(*s))) select(ui, ec.node, *s, row);
+            if (row < i64(rows(*s))) {
+                select(ui, ec.node, *s, row);
+                if ((s->dd.drag || s->dd.internalMove) && e.button == MouseButton::Left) {
+                    const bool internal = s->dd.internalMove && !s->dd.drag;
+                    dnd::press(ui, ec.node, e.pos, [row, internal](UiContext& c2, NodeHandle self, Vec2, DragPayload& p) {
+                        TableState* t = stateOf(c2, self);
+                        if (!t || !t->model || row >= i64(rows(*t))) return false;
+                        std::string txt;
+                        for (u32 k = 0; k < cols(*t); ++k) {
+                            if (k) txt.push_back('\t');
+                            txt.append(t->model->data(t->model->user, u32(row), k, t->scratch));
+                        }
+                        p.set("text/plain", txt);
+                        p.set("application/x-fuse-table-row", std::to_string(row));
+                        p.actions = internal ? u8(DropMove) : u8(DropCopy | DropMove);
+                        return true;
+                    });
+                }
+            }
             return true;
         }
         case EventType::PointerMove:
+            if (dnd::move(ui, ec.node, e.pos, e.mods)) return true;
             if (ui.pressed() != ec.node && !s->dragScroll) return false;
             if (s->resizing >= 0) {
                 s->colW[s->resizing] = std::max(24.f, std::round(e.pos.x - s->grab));
@@ -402,6 +423,7 @@ struct TableView {
             }
             return true;
         case EventType::PointerUp:
+            if (dnd::release(ui, ec.node, e.pos, e.mods)) return true;
             if (s->dragScroll) ui.invalidate(ec.node);
             s->resizing = -1;
             s->dragScroll = false;
@@ -420,6 +442,10 @@ struct TableView {
             case Key::End: select(ui, ec.node, *s, i64(rows(*s)) - 1); return true;
             case Key::Enter:
                 if (cur >= 0) ui.emit(ec.node, SignalKind::Submitted, {.value = f32(cur)});
+                return true;
+            case Key::Escape:
+                if (!dragActive(ui)) return false;
+                cancelDrag(ui);
                 return true;
             default: return false;
             }
@@ -549,6 +575,43 @@ void StringTableModel::addRow(std::string_view cells) {
     eachTab(cells, [&](std::string_view c) { if (n++ < m_cols) m_cells.emplace_back(c); });
     for (; n < m_cols; ++n) m_cells.emplace_back();
     ++m_rows;
+}
+void setTableDragDrop(UiContext& ui, NodeHandle table, TableDragDrop opts) {
+    TableState* s = stateOf(ui, table);
+    if (!s) return;
+    const bool internal = opts.internalMove;
+    s->dd = std::move(opts);
+    if (!internal) { setDropTarget(ui, table, {}); return; }
+    setDropTarget(ui, table, [](UiContext& c, NodeHandle t, const DropEvent& e) -> u8 {
+        if (e.phase == DropPhase::Leave) { setDropIndicator(c, t, {}); return 0; }
+        TableState* st = stateOf(c, t);
+        if (!st || e.source != t || !e.payload->has("application/x-fuse-table-row")) return DropIgnore;
+        const u32 from = u32(std::stoul(std::string(e.payload->get("application/x-fuse-table-row"))));
+        const Rect r = c.contentRect(t);
+        const f32 rh = rowHeight(c, t), hh = TableView::headerH(c, t, *st);
+        const u32 nr = TableView::rows(*st);
+        // the gap nearest the pointer (QAbstractItemView AboveItem / BelowItem between rows)
+        const i64 gap = std::clamp<i64>(i64(st->first) + i64(std::lround((e.pos.y - r.y - hh) / rh)), 0, nr);
+        if (e.phase != DropPhase::Drop) {
+            const f32 y = r.y + hh + f32(gap - i64(st->first)) * rh;
+            setDropIndicator(c, t, {r.x, y - 1.f, r.w - TableView::kBar, 2.f});
+            return DropMove;
+        }
+        setDropIndicator(c, t, {});
+        const u32 to = u32(gap > i64(from) ? gap - 1 : gap);
+        if (to == from || from >= nr) return DropIgnore;
+        if (st->dd.moveRow) { auto cb = st->dd.moveRow; cb(c, t, from, to); }
+        c.invalidate(t);
+        TableView::select(c, t, *st, to);
+        return DropMove;
+    });
+}
+void StringTableModel::moveRow(u32 from, u32 to) {
+    if (from >= m_rows || to >= m_rows || from == to) return;
+    const auto b = m_cells.begin();
+    const std::size_t c = m_cols;
+    if (from < to) std::rotate(b + from * c, b + (from + 1) * c, b + (to + 1) * c);
+    else std::rotate(b + to * c, b + from * c, b + (from + 1) * c);
 }
 void StringTableModel::sortBy(u32 col, bool ascending) {
     if (col >= m_cols) return;
