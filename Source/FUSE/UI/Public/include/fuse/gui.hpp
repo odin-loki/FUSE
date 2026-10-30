@@ -29,6 +29,7 @@
 #include "fuse/ui/widgets/platform_feel.hpp"
 #include "fuse/ui/doc/document.hpp"
 #include "fuse/ui/doc/hot_reload.hpp"
+#include "fuse/ui/extras/extras.hpp"
 #include "fuse/app/app.hpp"
 #include "fuse/app/native.hpp"
 
@@ -44,6 +45,10 @@ namespace doc = fuse::ui::doc;
 namespace text = fuse::text;
 // OS seam (FORGE-backed).
 namespace os = fuse::ui::os;
+// Qt-parity extras: undo (UndoStack), gestures (GestureRecognizer), i18n, desktop (notify / openUrl / print), pdf.
+namespace i18n = fuse::ui::i18n;
+namespace desktop = fuse::ui::desktop;
+namespace pdf = fuse::ui::pdf;
 
 // Application shell.
 using fuse::app::Application;

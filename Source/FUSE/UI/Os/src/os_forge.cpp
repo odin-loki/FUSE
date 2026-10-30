@@ -388,3 +388,30 @@ void closeFd(int) {}
 #endif
 
 } // namespace fuse::ui::os
+
+// ---- desktop helpers (runProcess / findExecutable / platformName) --------------------------------------------------
+namespace fuse::ui::os {
+std::expected<ProcessResult, std::string> runProcess(std::vector<std::string> argv, std::optional<std::string> in, int timeoutMs) {
+    if (argv.empty()) return std::unexpected(std::string("empty command"));
+    forge::os::spawn_spec sp;
+    sp.argv = std::move(argv);
+    sp.stdin_data = std::move(in);
+    if (timeoutMs > 0) sp.timeout_ms = timeoutMs;
+    auto r = forge::os::spawn_wait(sp);
+    if (!r) return std::unexpected(r.err.what);
+    return ProcessResult{r->exit_code, std::move(r->out), std::move(r->err)};
+}
+std::string findExecutable(std::string_view name) { return forge::os::find_executable(std::string(name)); }
+std::string_view platformName() {
+    using P = forge::os::platform;
+    switch (forge::os::current()) {
+    case P::windows: return "windows";
+    case P::linux: return "linux";
+    case P::android: return "android";
+    case P::macos: return "macos";
+    case P::ios: return "ios";
+    case P::freebsd: return "freebsd";
+    default: return "unknown";
+    }
+}
+} // namespace fuse::ui::os

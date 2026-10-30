@@ -10,6 +10,7 @@
 #include <expected>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -127,5 +128,18 @@ NativeDialogResult nativeFileDialog(const NativeDialogSpec& spec);
 std::vector<std::string> nativeFileDialogCommand(const NativeDialogSpec& spec);
 /// {display name, "*.png;*.jpg"} pairs as IFileDialog::SetFileTypes wants them (also used by the Win32 backend).
 std::vector<std::pair<std::string, std::string>> fileDialogFilterSpec(const NativeDialogSpec& spec);
+
+/// Runs a helper program to completion (desktop integration: notifications, URL opening, printing). Backed by
+/// forge::os::spawn_wait. `timeoutMs` 0 = no limit.
+struct ProcessResult {
+    int exitCode = 0;
+    std::string out, err;
+};
+std::expected<ProcessResult, std::string> runProcess(std::vector<std::string> argv, std::optional<std::string> stdinData = {},
+                                                     int timeoutMs = 10000);
+/// Full path of `name` on PATH, empty when absent.
+std::string findExecutable(std::string_view name);
+/// "windows", "linux", "freebsd", "macos", "ios", "android", or "unknown".
+std::string_view platformName();
 
 } // namespace fuse::ui::os
