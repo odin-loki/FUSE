@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="GuiCrossHairHud_image"
-    imageFile="@assetFile=GuiCrossHairHud.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

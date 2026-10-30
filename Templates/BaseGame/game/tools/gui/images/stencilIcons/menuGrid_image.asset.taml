@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="menuGrid_image"
-    imageFile="@assetFile=menuGrid.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="dropslider_d_image"
-    imageFile="@assetFile=dropslider_d.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

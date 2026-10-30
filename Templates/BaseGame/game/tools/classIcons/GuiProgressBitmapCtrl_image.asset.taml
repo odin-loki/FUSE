@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="GuiProgressBitmapCtrl_image"
-    imageFile="@assetFile=GuiProgressBitmapCtrl.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

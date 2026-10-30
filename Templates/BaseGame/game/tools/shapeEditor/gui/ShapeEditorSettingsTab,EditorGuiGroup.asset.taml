@@ -1,7 +1,0 @@
-<GUIAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="ShapeEditorSettingsTab,EditorGuiGroup"
-    scriptFile="@assetFile=ShapeEditorSettingsTab.gui"
-    GUIFile="@assetFile=ShapeEditorSettingsTab.gui"
-    VersionId="1" />

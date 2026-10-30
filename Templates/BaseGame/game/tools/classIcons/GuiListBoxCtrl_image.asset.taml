@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="GuiListBoxCtrl_image"
-    imageFile="@assetFile=GuiListBoxCtrl.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

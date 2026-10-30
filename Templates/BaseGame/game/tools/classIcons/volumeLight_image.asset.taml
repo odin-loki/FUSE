@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="volumeLight_image"
-    imageFile="@assetFile=volumeLight.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

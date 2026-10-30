@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="fxShapeReplicator_image"
-    imageFile="@assetFile=fxShapeReplicator.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

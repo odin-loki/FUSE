@@ -1,7 +1,5 @@
 # FUSE Engine — Master Development Plan (Full Fidelity)
 
-> **Path note (2026-10):** `Engine/lib/` in this document means `vendor/`; Torque addon submodules and `third_party/` are no longer in the repo.
-
 **FUSE** = Fast Unified Simulation Engine  
 *(Meridian dropped — name already in use.)*
 
@@ -76,7 +74,7 @@ FUSE treats Torque3D as a **behavioural and asset-compat reference**, not as sac
 3. **Allocators over `new`.** Linear / Pool / FreeList–TLSF / Ring / GPUAllocator + per-domain budgets; route Torque `FrameAllocator` / `Memory::` call sites through FUSE allocators during port.
 4. **Qt owns chrome; engine owns viewport.** Qt main window + docks; Vulkan surface embedded; editor input Qt→FUSE; game path uses raw platform input.
 5. **Scripts last.** TorqueScript quarantined under `compat/`; new gameplay prefers C++23 (+ Lua in Track B7).
-6. **Vendored deps, pinned.** VMA, ENet, Lua, etc. under `vendor/<dep>` with a `VERSION` pin file (upstream, tag, commit, sha256); Qt via SDK is the documented exception.
+6. **Vendored deps, pinned.** Catch2, VMA, etc. under `third_party/`; Qt via SDK is the documented exception (pin version in `THIRD_PARTY.md`).
 
 ## A2. Language subset & banned patterns
 
@@ -309,9 +307,9 @@ Three CMake presets: `debug`, `release`, `profile`. A fourth `shipping` preset s
 
 #### Third-Party Policy
 
-No package manager (vcpkg, Conan). All dependencies vendored under `vendor/<dep>` with a `VERSION` pin file (upstream, tag, commit hash, file sha256s) checked by `fuse_lint`. This gives you reproducible builds in air-gapped environments. Permitted third-party libs at this phase:
+No package manager (vcpkg, Conan). All dependencies vendored under `third_party/` as git submodules with pinned commit hashes. This gives you reproducible builds in air-gapped environments. Permitted third-party libs at this phase:
 
-- ~~Catch2~~ — dropped: FUSE tests are plain CTest executables
+- **Catch2** — unit testing only
 - **VMA (Vulkan Memory Allocator)** — GPU heap management
 - **Tracy** (optional) — external profiler backend
 
@@ -334,10 +332,10 @@ Everything else is written from scratch.
 
 #### Gates
 
-- [x] **B1.1** implemented on FUSE APIs (not ungated Torque guts) (CMake presets incl. `fuse-werror-*`/`fuse-asan`, `cmake/FuseWarnings.cmake`, `cmake/FuseSanitizers.cmake`, vendored pins; `ctest -L lint`)
+- [ ] **B1.1** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -462,10 +460,10 @@ concept GPUResident = FuseValue<T> && (alignof(T) >= 4);
 
 #### Gates
 
-- [x] **B1.2** implemented on FUSE APIs (not ungated Torque guts) (`fuse_core_b1_math_gates, fuse_core_io_handle`)
+- [ ] **B1.2** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -589,10 +587,10 @@ void declare_memory_budgets(std::span<MemoryBudget> budgets);
 
 #### Gates
 
-- [x] **B1.3** implemented on FUSE APIs (not ungated Torque guts) (`fuse_core_b1_memory_gates`)
+- [ ] **B1.3** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -692,10 +690,10 @@ namespace Noise {
 
 #### Gates
 
-- [x] **B1.4** implemented on FUSE APIs (not ungated Torque guts) (`fuse_core_b1_math_gates`)
+- [ ] **B1.4** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -793,10 +791,10 @@ void submit_cuda(CUDAJobDesc desc);  // launches kernel on a managed stream, sig
 
 #### Gates
 
-- [x] **B1.5** implemented on FUSE APIs (not ungated Torque guts) (`fuse_core_b1_jobs_gates`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_core_b1_jobs_gates`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B1.5** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -897,10 +895,10 @@ Output formats: chrome://tracing JSON (offline analysis), or live Qt flame-graph
 
 #### Gates
 
-- [x] **B1.6** implemented on FUSE APIs (not ungated Torque guts) (`fuse_core_b1_logging_gates`)
+- [ ] **B1.6** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -975,10 +973,10 @@ struct InputState {
 
 #### Gates
 
-- [x] **B1.7** implemented on FUSE APIs (not ungated Torque guts) (`fuse_core_b1_platform_gates`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_core_b1_x11_window_gates`, `fuse_core_b1_platform_gates`, `fuse_b2_x11_swapchain_gates`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B1.7** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -1019,43 +1017,41 @@ Phase 1 is complete when every item in this checklist passes. Nothing moves to P
 
 *Carry-forward deliverable/test checklist (FUSE-adapted):*
 
-- [x] CMake builds cleanly in Debug, Release, Profile, Shipping — zero warnings with `-Wall -Wextra` (`FUSE_WARNINGS`/`FUSE_WARNINGS_AS_ERRORS`, `fuse-werror-*` presets, CI `fuse-warnings-as-errors`)
-- [x] CUDA compiles against C++23 FUSE host headers (CUDA device dialect may remain C++23) — no separate CUDA type system or duplicate definitions — compile-only (no GPU): nvcc 12.0 supports at most a C++20 dialect, so `.cu` TUs build as `CUDA_STANDARD 20` (plan header: "CUDA device dialect may remain C++20") while host TUs stay C++23; `fuse/types.hpp` owns `FUSE_HOST_DEVICE`, and `fuse/math/{vec,quat,mat,sdf}.hpp` + `fuse/gria.hpp` are annotated in place (no CUDA copies). `fuse_cuda_shared_headers_gate` (`ctest -L cuda`) includes them from a C++23 TU and a `.cu` TU whose `__global__` kernel evaluates Vec/Quat/Mat4/SDF/`Alpha`; `shared_layout_asserts.hpp` static_asserts identical size/align/offsets in the C++23 host, nvcc host and nvcc device passes, and nvcc-host results are compared with C++23-host results. `fuse_cuda_compile_gate` requires every `Source/FUSE/**/*.cu` (7 TUs) to be built with an sm_86 cubin (`cuobjdump`). CI: `.github/workflows/fuse-cuda-compile.yml` (nvidia-cuda-toolkit, host `g++-12`). Kernels are compile-verified only; ray_march/ssao/ssr/ssgi are empty stubs
-- [ ] All four build configs produce correct binaries on Windows; Linux build compiles without error — partial: MinGW-w64 cross build of all four configs with -Werror, ctest under wine64 (Debug/Release/Profile 252/252, Shipping 216/216; presets `fuse-mingw-*`, CI `fuse-windows-cross`); Linux builds clean; MSVC untested here
-- [x] Third-party dependencies (VMA) build from vendored source with pinned commits — VMA 3.4.0 @3aa92122 in `vendor/vma` (header + LICENSE + VERSION pin), `fuse_lint_vendored_pins_vma` + compile-time `VMA_VERSION` check; Catch2 dropped (tests are plain CTest executables)
+- [ ] CMake builds cleanly in Debug, Release, Profile, Shipping — zero warnings with `-Wall -Wextra`
+- [ ] CUDA compiles against C++23 FUSE host headers (CUDA device dialect may remain C++23) — no separate CUDA type system or duplicate definitions
+- [ ] All four build configs produce correct binaries on Windows; Linux build compiles without error
+- [ ] Third-party dependencies (Catch2, VMA) build from vendored source with pinned commits
 - [ ] Unity builds reduce full rebuild time below 60 seconds on ThinkStation P920
-- [x] All allocators pass 1M alloc/free stress cycles — zero leaks, alignment always correct — `fuse_core_b1_alloc_million_cycles` (exactly 1M full alloc→free cycles each for Pool/FreeList/Ring/Stack/Frame via `IAllocator`; alignment, overlap, periodic stats invariants, allocCount==freeCount==1M, LeakDetector live-record tracking + zero live/unknown frees at exit)
-- [x] LinearAllocator correctly ping-pongs between frames — no use-after-reset in debug — `fuse_core_b1_memory_gates`
-- [x] PoolAllocator correctly detects double-free via generation counter — asserts in debug — `fuse_core_b1_memory_gates`
-- [ ] GPUAllocator allocates and frees Device, Pinned, Managed memory — verified with `cuda-memcheck` — coded, pending the RTX 3090 run: `fuse::alloc::GPUAllocator` (`fuse/alloc/gpu_allocator.hpp`: Device `cudaMalloc`, Pinned `cudaMallocHost`, Managed `cudaMallocManaged`, DeviceMapped `cudaHostAlloc(Mapped)`; every live allocation tracked, double/foreign frees refused and counted; `GPUManagedMemoryResource` pmr adapter). `fuse_core_b1_gpu_allocator` (contract gate, every build; here the no-device path) passes. Device gates for the 3090: `fuse_gpu_allocator_device_gate` (kernel writes/reads of every type at 1 B..64 MiB+3, 1000-cycle random stress, double free refused, `cudaMemGetInfo` back to start) and `fuse_gpu_allocator_memcheck` (the same under `compute-sanitizer --tool memcheck --leak-check full`, must print `ERROR SUMMARY: 0 errors`); both skip without a CUDA device
-- [x] Budget system correctly asserts when a domain exceeds declared limits in debug builds — `fuse_core_b1_memory_gates`
-- [x] Zero heap allocations (`new`/`malloc`) anywhere in engine code — verified via overloaded operators — `fuse_runtime_steady_state_alloc` replaces operator new + the glibc malloc family (backtrace-capturing, per-site attribution) over a steady-state frame of input/profiler/jobs/frame memory/scene (ECS transform/camera/cull/build)/hybrid tick+render/physics/animation/audio/vfx/log **plus** script (Lua `ScriptRuntime`: `PhysicsManager` step + collision dispatch + 32 behaviours doing Entity/Physics queries every frame), net (server+client snapshot-delta compute/serialize/send/deserialize/apply/checksum + ack every frame over localhost ENet, loopback fallback) and the headless editor (`EditorHost::gameTick`, 256-entity scene, entities moved per frame); 120 warm-up + 120 measured frames. Every phase is enforced at **0 FUSE-attributed allocations** (first frame above the hook, skipping libc/libstdc++, lies in the executable: engine code or statically linked Lua/ENet). Fixes: Lua `lua_Alloc` → per-VM `fuse::alloc::SizeClassAllocator` pool (was ~468 mallocs/frame); ENet → `enet_initialize_with_callbacks` with a process-wide thread-safe size-class pool, reused rx `Packet`, recycled loopback packet queues; snapshot deltas → in-place `compute/apply/deserialize_snapshot_delta` + `SnapshotDeltaWorkspace` (net was ~2573 allocs/frame); `PhysicsManager` contact-pair maps and `PBDSolver` contact-slot map → `fuse::FlatU64Map`, warm-start lambda copies → member buffers, `ContactIslandGraph` keeps island slots. Reported only (not engine code): lavapipe-internal allocations inside `vkCmd*`/`vkQueueSubmit` from the hybrid and editor render paths (~113/frame each, Debug) and lavapipe worker threads (~80/frame). ASan builds (no malloc hook) enforce totals of the CPU-only phases.
-- [x] Scheduler initialises N worker threads — verified via thread count query — `fuse_core_b1_jobs_gates`
-- [x] 1M independent jobs complete with correct results across all workers — `fuse_core_b1_jobs_gates`
-- [x] Dependency chain test: Job C depends on B depends on A — always executes in order — `fuse_core_b1_jobs_gates`
-- [x] Fiber yield/resume: a fiber waiting on a counter correctly resumes after counter reaches zero — `fuse_core_b1_jobs_gates`
-- [x] No deadlock under any ordering of job submission — verified with 10k random submission tests — `fuse_core_b1_jobs_gates`
-- [x] `parallel_for` of 1M items produces identical result to serial loop — `fuse_core_b1_jobs_gates`
-- [x] `vec4` SIMD operations produce bit-identical results to scalar reference implementation — `fuse_core_b1_math_gates`
-- [x] All SDF primitives match reference ray marcher within 0.0001f tolerance — `fuse_core_b1_math_gates`
-- [x] SDF normals via gradient match finite-difference normals within 0.001f — `fuse_core_b1_math_gates`
-- [ ] GRIA `Alpha` evaluates correctly on both host and CUDA device kernel — partial: host path proven in `fuse_core_b1_math_gates`; `fuse_cuda_shared_headers_gate` now also runs a 4096-input sweep of every `Alpha` operation (clamp edges, NaN/inf, exact/chaos-edge/approximate thresholds, entropy ratio, blend) through `gria_alpha_gate.hpp` on the C++23 host and the nvcc host pass (passes here) and in a `__global__` kernel when a device exists (bit-exact except `blend`, which may FMA-contract: 1e-6 relative). Writing it found that the `ALPHA_*` namespace constants cannot be referenced from device code; `Alpha::exact()` / `chaos_edge()` / `approximate()` are the device-callable forms. Device run pending on the RTX 3090: `fuse_cuda_gria_alpha_device` (same executable with `--require-device`; skips without a device, so a pass always means the device kernel ran and matched)
-- [x] `mat4` multiply matches reference scalar implementation exactly — `fuse_core_b1_math_gates`
-- [x] Quaternion slerp produces unit quaternion at all interpolation points — `fuse_core_b1_math_gates`
-- [x] Logger ring buffer survives concurrent writes from all worker threads — no corruption — `fuse_core_b1_logging_gates`
-- [x] Log entries appear with correct timestamps, file, and line numbers — `fuse_core_b1_logging_gates`
-- [x] `FUSE_ASSERT` fires and breaks in debug, is a no-op in release — verified by disassembly — `fuse_core_b1_logging_gates`, `fuse_core_b1_assert_codegen`
-- [ ] Profiler scope overhead < 10ns per scope on ThinkStation hardware — partial: `fuse_core_b1_logging_gates` measures it (Release, 2.1 GHz Xeon CI VM: ~32-39 ns, was 66-85 ns — hot path is now a lock-free per-thread ring with invariant-TSC stamps, no shared RMW / allocation; floor here is two `rdtsc` at ~14 ns each; 60 ns regression ceiling with TSC); 10 ns needs the reference workstation (`FUSE_B1_REFERENCE_HARDWARE=1`)
-- [x] Profiler output writes valid chrome://tracing JSON — `fuse_core_b1_logging_gates`
-- [x] Platform opens a window, displays title, receives and dispatches events cleanly (`fuse_core_b1_x11_window_gates`)
-- [x] Input system correctly reports `key_pressed` for exactly one frame on a keydown event — `fuse_core_b1_platform_gates`
-- [x] Raw mouse delta is unaffected by OS cursor acceleration settings — `fuse_core_b1_x11_window_gates` (native X11 raw input via XInput2 `XI_RawMotion` while a window is captured: on Xvfb with `XChangePointerControl` 10/1 and a magnitude-dependent XTEST-pointer gain, XTest relative motion moves the real cursor by accelerated amounts while every `RawMouseDelta` and the `InputState` delta equal the injected device deltas exactly, per event and in sum; `FUSE_X11_NO_XI2=1` fallback to cursor deltas verified) + `fuse_core_b1_platform_gates` (synthetic accelerated cursor moves never leak into the raw delta); Win32 WM_INPUT path is the same `RawMouseDelta` contract
-- [x] Game input layer (UNI-INPUT-1): `fuse/platform/gamepad.hpp` (up to 4 pads: buttons held / pressed / released, sticks with radial deadzones and triggers with threshold deadzones, connect / disconnect), backends XInput on Win32 (`src/platform/win/gamepad_xinput.cpp`, DLL loaded at run time, Guide via XInputGetStateEx, rumble) and Linux evdev (`src/platform/gamepad_linux.cpp`: BTN_SOUTH / joystick nodes, inotify hot-plug, SYN_DROPPED re-sync, FF rumble), `fuse/platform/action_map.hpp` (named button / axis actions over keys, mouse buttons, mouse motion, pad buttons and axes; rebinding + capture; JSON persistence in the project) and `PlayerController` (per-player input + pad slot + `in.mouseSensitivity`) — `fuse_core_action_map` (synthetic key / mouse / pad events -> actions and axes, XInput snapshot diff, evdev mapping and the evdev read loop on a pipe, rebinding save/load round trip, all-or-nothing load errors). The XInput backend compiles in the MinGW cross build; a physical controller on Windows / Linux is a manual check
-- [x] Console variables and persisted config (GAP-CVAR): `fuse/config/cvar.hpp` — typed cvars (bool / int / float / string / enum) with archive / read-only / cheat / requires-restart flags, ranges, descriptions, change callbacks, lock-free atomic reads (string snapshots), precedence default < config file < command line (`-set k=v`, `+k v`) < runtime, pending values for late-registered names, user config file under the per-user config dir (`settings.cfg`, atomic write); engine cvars `r.tier`, `r.upscaler`, `r.vsync`, `r.renderScale`, `a.masterVolume`, `in.mouseSensitivity` (`fuse/config/engine_cvars.hpp`); Lua `CVar.get/set` — `fuse_core_cvar` (parse / type errors, precedence, persistence round trip saving only archive cvars, callbacks once per change, read-only / cheat / restart enforcement, concurrent reads during writes, TSan-clean in a `-fsanitize=thread` build). Consumers (runtime, console, editor settings) bind in their own packages
-- [x] `get_vulkan_surface` returns a valid `VkSurfaceKHR` — verified by Vulkan validation layers in Phase 2 (`fuse_b2_x11_swapchain_gates`)
-- [x] All unit tests pass under AddressSanitizer + UndefinedBehaviorSanitizer (`fuse-asan` preset, `FUSE_SANITIZE=address,undefined`: 296/296)
-- [x] `valgrind --leak-check=full` reports zero leaks on the test suite binary — `ctest -L valgrind` (cmake/FuseValgrind.cmake: memcheck twins of 15 fuse_core tests, ECS/scene tests and `fuse_runtime_smoke`, fail on any error or definite/indirect leak; third-party suppressions in `cmake/valgrind/fuse.supp`)
-- [x] A benchmark of the hot path (job submit → execute → complete → alloc from pool → free) shows zero heap allocations per iteration — `fuse_core_b1_memory_gates`
+- [ ] All allocators pass 1M alloc/free stress cycles — zero leaks, alignment always correct
+- [ ] LinearAllocator correctly ping-pongs between frames — no use-after-reset in debug
+- [ ] PoolAllocator correctly detects double-free via generation counter — asserts in debug
+- [ ] GPUAllocator allocates and frees Device, Pinned, Managed memory — verified with `cuda-memcheck`
+- [ ] Budget system correctly asserts when a domain exceeds declared limits in debug builds
+- [ ] Zero heap allocations (`new`/`malloc`) anywhere in engine code — verified via overloaded operators
+- [ ] Scheduler initialises N worker threads — verified via thread count query
+- [ ] 1M independent jobs complete with correct results across all workers
+- [ ] Dependency chain test: Job C depends on B depends on A — always executes in order
+- [ ] Fiber yield/resume: a fiber waiting on a counter correctly resumes after counter reaches zero
+- [ ] No deadlock under any ordering of job submission — verified with 10k random submission tests
+- [ ] `parallel_for` of 1M items produces identical result to serial loop
+- [ ] `vec4` SIMD operations produce bit-identical results to scalar reference implementation
+- [ ] All SDF primitives match reference ray marcher within 0.0001f tolerance
+- [ ] SDF normals via gradient match finite-difference normals within 0.001f
+- [ ] GRIA `Alpha` evaluates correctly on both host and CUDA device kernel
+- [ ] `mat4` multiply matches reference scalar implementation exactly
+- [ ] Quaternion slerp produces unit quaternion at all interpolation points
+- [ ] Logger ring buffer survives concurrent writes from all worker threads — no corruption
+- [ ] Log entries appear with correct timestamps, file, and line numbers
+- [ ] `FUSE_ASSERT` fires and breaks in debug, is a no-op in release — verified by disassembly
+- [ ] Profiler scope overhead < 10ns per scope on ThinkStation hardware
+- [ ] Profiler output writes valid chrome://tracing JSON
+- [ ] Platform opens a window, displays title, receives and dispatches events cleanly
+- [ ] Input system correctly reports `key_pressed` for exactly one frame on a keydown event
+- [ ] Raw mouse delta is unaffected by OS cursor acceleration settings
+- [ ] `get_vulkan_surface` returns a valid `VkSurfaceKHR` — verified by Vulkan validation layers in Phase 2
+- [ ] All unit tests pass under AddressSanitizer + UndefinedBehaviorSanitizer
+- [ ] `valgrind --leak-check=full` reports zero leaks on the test suite binary
+- [ ] A benchmark of the hot path (job submit → execute → complete → alloc from pool → free) shows zero heap allocations per iteration
 
 ---
 
@@ -1166,10 +1162,10 @@ static constexpr const char* OPTIONAL_EXTENSIONS[] = {
 
 #### Gates
 
-- [x] **B2.1** implemented on FUSE APIs (not ungated Torque guts) (`fuse_vulkan_bootstrap`)
+- [ ] **B2.1** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -1243,10 +1239,10 @@ struct FrameData {
 
 #### Gates
 
-- [x] **B2.2** implemented on FUSE APIs (not ungated Torque guts) (`fuse_vulkan_swapchain, fuse_frame_manager`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_b2_x11_swapchain_gates`, `fuse_b5_rhi_frame_timelines`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B2.2** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -1344,10 +1340,10 @@ public:
 
 #### Gates
 
-- [x] **B2.3** implemented on FUSE APIs (not ungated Torque guts) (`fuse_vulkan_resources, fuse_b2_bindless_churn`)
+- [ ] **B2.3** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -1421,10 +1417,10 @@ struct GraphicsPipelineDesc {
 
 #### Gates
 
-- [x] **B2.4** implemented on FUSE APIs (not ungated Torque guts) (`fuse_shader_pipeline`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_b5_rhi_spirv_val`, `fuse_pipeline_cache`, `fuse_b5_rhi_hot_reload`, `fuse_b5_rhi_push_constants`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B2.4** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -1473,10 +1469,10 @@ enum class RGResourceAccess : u32 {
 
 #### Gates
 
-- [x] **B2.5** implemented on FUSE APIs (not ungated Torque guts) (`fuse_render_graph`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_b2_render_graph_budget`, `fuse_b2_frame_alloc_budget`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B2.5** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -1595,8 +1591,8 @@ public:
 
 - [ ] **B2.6** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -1671,8 +1667,8 @@ __device__ f32 scene_sdf(const RayMarchParams& p, vec3 pos) {
 
 - [ ] **B2.7** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -1746,7 +1742,7 @@ struct DrawCall {
 | Action | Detail |
 |--------|--------|
 | **Replace** | Primary mesh draw path with Vulkan G-buffer / depth prepass raster |
-| **Keep** | Mesh asset pipe via cooks → GPU meshes (E06: FMSH v2 meshlets + DAG → `CookedAssetRegistry` → SceneRenderer mesh rows; `fuse_cooked_assets_*` gates) |
+| **Keep** | Mesh asset pipe via cooks → GPU meshes |
 
 #### Depends on
 
@@ -1754,10 +1750,10 @@ struct DrawCall {
 
 #### Gates
 
-- [x] **B2.8** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b2_triangle_readback`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_b2_triangle_readback`, `fuse_b5_rhi_gbuffer_pass`, `fuse_b5_rhi_draw_state`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B2.8** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -1804,10 +1800,10 @@ void main() {
 
 #### Gates
 
-- [x] **B2.9** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b2_composite_blend`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_b2_composite_blend`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B2.9** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -1876,12 +1872,10 @@ int main() {
 
 #### Gates
 
-- [x] **B2.10** implemented on FUSE APIs (not ungated Torque guts) (`fuse_renderer_bootstrap`)
-- [x] Source narrative tests/acceptance for this topic green
-  - E02 (2026-09-30): `render_scene` exists renderer-side as `scene_renderer::SceneRenderer::renderScene(registry, camera, graph)` (FrameComposer frame, `fuse_scene_renderer_*` gates on Lavapipe); the main-loop wiring (runtime / editor) is E03, so this box stays open.
-  - E03 (2026-09-30): wired. The main loop (`HybridRendererBootstrap::runFrame` -> `HybridComposer::render` -> `World3D::render` -> `SceneRenderer::renderScene`; `RhiContext::submitFrame` executes the frame graph and blits into the swapchain / headless target) and the editor viewport render the ECS scene on the GPU; gates `fuse_hybrid_frame_vk_{golden,sprite,zero_alloc,swapchain}` on Lavapipe / Xvfb (0 validation messages), demos checked by GPU readback. RTX 3090 frame timings are for the user to measure.
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B2.10** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -1918,35 +1912,35 @@ int main() {
 
 *Carry-forward deliverable/test checklist (FUSE-adapted):*
 
-- [x] Instance creates cleanly with validation layers enabled — zero validation errors on startup — `fuse_vulkan_validation_gate`
-- [ ] Physical device selection picks the RTX 3090 correctly over any integrated GPU — partial: selection policy gated by `fuse_b2_physical_device_selection` (Lavapipe registered as two drivers + spoof layer, 21 scenarios). 2026-09-25 workstation: the only adapter is the RTX 3090 and `VulkanDevice` selected it (dedicated compute family 2, transfer family 1). No integrated GPU was present
-- [x] Logical device created with graphics, compute, and transfer queues on separate families where available (`fuse_b2_device_queue_families_{split,transfer,shared}` — families emulated on Lavapipe by the split-family test layer)
-- [x] Swapchain creates at 1920×1080, triple-buffered — resize correctly rebuilds without crash (`fuse_b2_x11_swapchain_gates`)
-- [x] Frame-in-flight management holds three independent frame data sets — verified by timeline semaphore values — `fuse_b5_rhi_frame_timelines`
-- [x] All Vulkan objects named via `vkSetDebugUtilsObjectNameEXT` — visible in RenderDoc — `fuse_b5_rhi_object_names` (hooked create/name calls: 0 unnamed objects over context + frames)
-- [x] Texture and buffer creation with all VMA memory types — verified with `vkconfig` overlay — `fuse_b5_rhi_memory_types` (memory property flags + GPU round trip per usage; native allocator path, VMA not vendored)
-- [x] Bindless descriptor table registers and unregisters textures — no descriptor heap corruption — `fuse_b2_bindless_churn`
-- [x] Staging ring buffer correctly wraps — upload of 256MB in 1MB chunks with no corruption — `fuse_b2_staging_wrap`
-- [x] Async upload completes and signals fence correctly — verified with fence wait timeout test — `fuse_b2_async_upload`
-- [x] External memory allocates with a Win32 handle — `cudaImportExternalMemory` succeeded for a dedicated buffer (`0xC0DA5A5A` round-trip on the RTX 3090, `fuse_cuda_interop`)
-- [x] Shader compiler produces valid SPIR-V for all test shaders — verified with `spirv-val` — `fuse_b5_rhi_spirv_val`
-- [x] Pipeline cache serialises to disk and restores on next run — first frame pipeline stalls eliminated (`fuse_pipeline_cache`)
-- [x] Hot-reload triggers pipeline rebuild in < 200ms — verified by timing shader file write to first redrawn frame — `fuse_b5_rhi_hot_reload` (SPIR-V write -> redrawn frame < 200 ms every time; GLSL write -> glslangValidator -> redrawn frame best-of-5 < 200 ms on Lavapipe)
-- [x] Push constants correctly pass per-draw data to shaders — verified with RenderDoc capture — `fuse_b5_rhi_push_constants`
-- [ ] `SharedTimeline` semaphore correctly serialises Vulkan and CUDA execution — no race conditions under 10k frames — coded, pending the RTX 3090 run: `fuse_cuda_vk_timeline_10k` alternates a Vulkan compute lane (`tests/shaders/cuda_vk_timeline_lane.comp`) and a CUDA kernel lane over one exported 4 MiB buffer for 10 000 frames on one `SharedTimeline` (GPU-side waits/signals both ways); every frame each lane verifies all words of the other lane's previous step and logs the other lane's frame counter, and the host checks every frame's log, the final contents and the final timeline value (2F). CPU-verified here: `fuse_cuda_vk_timeline_10k_cpu_lane` runs the same protocol and shader with the host as the peer lane on Lavapipe (10 000 frames x 4096 words, 0 races, ~1.3 s), and `fuse_cuda_vk_timeline_cpu_lane_detects_fault` proves a single corrupted word is reported in the right frame
-- [ ] Vulkan-allocated external memory buffer reads back identical data when accessed via CUDA pointer — coded, pending the RTX 3090 run: `fuse_cuda_vk_buffer_roundtrip` (4 KiB, 1 MiB + 4 B, 64 MiB exportable `GpuAllocator` buffers): Vulkan writes a full-buffer pattern that a CUDA kernel and a whole-buffer `cudaMemcpy` verify word by word, CUDA writes a second full-buffer pattern that Vulkan copies back for the host to verify, ordered by the `SharedTimeline`; then the same exported handle is imported again (POSIX imports now hand CUDA a `dup()` of the fd, matching the Win32 contract where the Vulkan resource keeps its handle)
-- [ ] CUDA surface write to shared texture appears correctly in Vulkan composite pass — coded, pending the RTX 3090 run: `fuse_cuda_vk_surface_composite` imports an exportable RGBA8 `GpuAllocator` image as a CUDA mipmapped array + surface object (`import_vulkan_image`, which now keeps and releases the external memory / mipmapped array and requests `cudaArraySurfaceLoadStore`), and for 8 frames: Vulkan moves the image to GENERAL, CUDA `surf2Dwrite`s a frame-dependent pattern, Vulkan moves it to SHADER_READ_ONLY and runs the real composite pass (`CompositeGpuPath` pipeline, bindless heap, `composite.frag`) at alpha 0 / 0.5 / 1 / 0.25, all ordered by the `SharedTimeline`; every read-back pixel must equal mix(CUDA pattern, raster, alpha)
-- [ ] `cuda-memcheck` and `compute-sanitizer` report zero errors across full frame loop — partial: 2026-09-25 `compute-sanitizer --tool memcheck` reported 0 errors on `fuse_ray_march_kernel_parity`, `fuse_particle_kernel_parity`, and `fuse_b4_physics_kernel_gates`. Not a full renderer frame loop
-- [x] Triangle on screen — white triangle, black background, correct winding, no validation errors: **Week 1 gate** — `fuse_b2_triangle_readback`
-- [x] G-buffer pass populates normal, albedo, depth attachments correctly — verified with RenderDoc — `fuse_b5_rhi_gbuffer_pass`
-- [ ] CUDA ray marcher produces correct sphere SDF at all angles — verified against reference renderer — partial: 2026-09-25 `fuse_ray_march_kernel_parity` passed on the RTX 3090 (CUDA vs the CPU kernel, 173×97). Not a separate reference renderer at all angles
-- [ ] SDF normals are smooth at surface — no faceting visible at any zoom level — partial: CPU reference ray marcher uses an analytic gradient, smooth to 1000x zoom (`fuse_b2_sdf_normal_smoothness`). CUDA `sdf_ray_march` matched that CPU kernel on the RTX 3090; the 1000x zoom check is still the CPU one
-- [x] Composite pass correctly blends CUDA and raster output at all GRIA α values — `fuse_b2_composite_blend`
-- [ ] Final frame presents to screen at stable 60fps at 1920×1080 with a 10-object SDF scene: **Week 5 gate** — present not run (stays behind `FUSE_TRACK_B_UNLOCK`). The SDF march alone, 10 objects at 1920×1080, was launch 3.35 ms and host wall 15.88 ms including copies
-- [ ] GPU frame time < 8ms for a 10-object SDF scene at 1080p (target 120fps headroom) — partial: the synced launch was 3.35 ms; the copy-inclusive host call was 15.88 ms. Not a presented frame
-- [x] CUDA ray march kernel achieves > 60% occupancy — verified with Nsight Compute — 2026-09-25 RTX 3090, elevated `ncu`: 1920×1080 march with 16×8 blocks achieved 64% (theoretical 75%). A 64-thread block had achieved 56%
-- [x] Zero per-frame heap allocations — all frame memory from per-frame LinearAllocator — `fuse_b2_frame_alloc_budget`, `fuse_b2_hybrid_alloc_budget` (render thread, composer tick + render, all threads; physics-enabled worlds still allocate in the broadphase)
-- [x] Render graph compiles in < 1ms CPU time per frame — `fuse_b2_render_graph_budget`
+- [ ] Instance creates cleanly with validation layers enabled — zero validation errors on startup
+- [ ] Physical device selection picks the RTX 3090 correctly over any integrated GPU
+- [ ] Logical device created with graphics, compute, and transfer queues on separate families where available
+- [ ] Swapchain creates at 1920×1080, triple-buffered — resize correctly rebuilds without crash
+- [ ] Frame-in-flight management holds three independent frame data sets — verified by timeline semaphore values
+- [ ] All Vulkan objects named via `vkSetDebugUtilsObjectNameEXT` — visible in RenderDoc
+- [ ] Texture and buffer creation with all VMA memory types — verified with `vkconfig` overlay
+- [ ] Bindless descriptor table registers and unregisters textures — no descriptor heap corruption
+- [ ] Staging ring buffer correctly wraps — upload of 256MB in 1MB chunks with no corruption
+- [ ] Async upload completes and signals fence correctly — verified with fence wait timeout test
+- [ ] External memory textures allocate with correct Win32 handle — `cudaImportExternalMemory` succeeds
+- [ ] Shader compiler produces valid SPIR-V for all test shaders — verified with `spirv-val`
+- [ ] Pipeline cache serialises to disk and restores on next run — first frame pipeline stalls eliminated
+- [ ] Hot-reload triggers pipeline rebuild in < 200ms — verified by timing shader file write to first redrawn frame
+- [ ] Push constants correctly pass per-draw data to shaders — verified with RenderDoc capture
+- [ ] `SharedTimeline` semaphore correctly serialises Vulkan and CUDA execution — no race conditions under 10k frames
+- [ ] Vulkan-allocated external memory buffer reads back identical data when accessed via CUDA pointer
+- [ ] CUDA surface write to shared texture appears correctly in Vulkan composite pass
+- [ ] `cuda-memcheck` and `compute-sanitizer` report zero errors across full frame loop
+- [ ] Triangle on screen — white triangle, black background, correct winding, no validation errors: **Week 1 gate**
+- [ ] G-buffer pass populates normal, albedo, depth attachments correctly — verified with RenderDoc
+- [ ] CUDA ray marcher produces correct sphere SDF at all angles — verified against reference renderer
+- [ ] SDF normals are smooth at surface — no faceting visible at any zoom level
+- [ ] Composite pass correctly blends CUDA and raster output at all GRIA α values
+- [ ] Final frame presents to screen at stable 60fps at 1920×1080 with a 10-object SDF scene: **Week 5 gate**
+- [ ] GPU frame time < 8ms for a 10-object SDF scene at 1080p (target 120fps headroom)
+- [ ] CUDA ray march kernel achieves > 60% occupancy — verified with Nsight Compute
+- [ ] Zero per-frame heap allocations — all frame memory from per-frame LinearAllocator
+- [ ] Render graph compiles in < 1ms CPU time per frame
 
 ---
 
@@ -2043,10 +2037,10 @@ struct ComponentColumn {
 
 #### Gates
 
-- [x] **B3.1** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b3_ecs_gates`)
+- [ ] **B3.1** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -2216,10 +2210,10 @@ struct SpotLight {
 
 #### Gates
 
-- [x] **B3.2** implemented on FUSE APIs (not ungated Torque guts) (`fuse_ecs_components`)
+- [ ] **B3.2** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -2318,10 +2312,10 @@ class SceneBuildSystem {
 
 #### Gates
 
-- [x] **B3.3** implemented on FUSE APIs (not ungated Torque guts) (`fuse_ecs_systems`)
+- [ ] **B3.3** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -2418,10 +2412,10 @@ u32 BVH::build_recursive(std::span<BVHLeaf> leaves, u32 depth) {
 
 #### Gates
 
-- [x] **B3.4** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b3_bvh_gates`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_b3_bvh_gates`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B3.4** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -2491,10 +2485,10 @@ void SVO::carve(vec3 center, f32 radius) {
 
 #### Gates
 
-- [x] **B3.5** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b3_svo_gates`)
+- [ ] **B3.5** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -2567,10 +2561,10 @@ void Scene::update(f32 dt) {
 
 #### Gates
 
-- [x] **B3.6** implemented on FUSE APIs (not ungated Torque guts) (`fuse_scene_manager`)
+- [ ] **B3.6** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -2586,7 +2580,7 @@ Custom binary format — no JSON, no XML at runtime. Fast load, deterministic, v
 SCENE FILE FORMAT v1
 ─────────────────────────────────────────────────────
 Header (64 bytes)
-  magic:          u32    = 0x45535546  ('FUSE' on disk; pre-rename 0x454E4743 'ENGC' still loads via compat path)
+  magic:          u32    = 0x454E4743  ('ENGC')
   version:        u32    = 1
   entity_count:   u32
   archetype_count:u32
@@ -2640,10 +2634,10 @@ private:
 
 #### Gates
 
-- [x] **B3.7** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b3_serialiser`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_b3_serialiser`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B3.7** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -2688,10 +2682,10 @@ void CameraSystem::update(Registry& reg) {
 
 #### Gates
 
-- [x] **B3.8** implemented on FUSE APIs (not ungated Torque guts) (`fuse_scene_b37_b39`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_b3_free_camera_gates`, `fuse_b3_scene_gates`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B3.8** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -2725,34 +2719,34 @@ void CameraSystem::update(Registry& reg) {
 
 *Carry-forward deliverable/test checklist (FUSE-adapted):*
 
-- [x] Registry creates and destroys 1M entities — no leaks, generation counter correctly invalidates stale handles — `fuse_b3_ecs_gates`
-- [x] Archetype storage correctly groups entities by component set — verified by checking column layout after add/remove — `fuse_b3_ecs_gates`
-- [x] `each<T>` iterates exactly the correct entities — no missed entities, no spurious iterations — `fuse_b3_ecs_gates`
-- [x] `each_parallel<T>` produces identical results to `each<T>` across 100 randomised test cases — `fuse_b3_ecs_gates`
-- [x] Component add/remove triggers archetype migration correctly — entity moves to new archetype, data preserved — `fuse_b3_ecs_gates`
-- [ ] 100k entities with Transform + Mesh + RigidBody iterated at > 500M components/sec on a single thread — partial: `fuse_b3_ecs_gates` (`each_chunk` span API) enforces a 200M/s floor. 2026-09-25 dual Xeon Gold 6242 Release: `each_chunk` median 291.1 M/s (24.5 GB/s of cache-line traffic, 252 B/entity). 500M/s still needs ~42 GB/s to one core. Floor passed; target missed
-- [ ] CUDA kernel reads Transform positions from managed-memory ECS column — verified with device-side assert — coded, pending the RTX 3090 run: `Registry::set_column_memory_resource<T>` puts a component's columns in any `std::pmr::memory_resource` (columns are `std::pmr::vector` storage; copies, migrations, rebinding and serialiser loads keep the resource). CPU-verified here: `fuse_b3_ecs_managed_column` (10k entities over several archetypes with migrations / swap-removes / copies / save-load: every Transform column inside the resource, the single-source row check `ecs_managed_column_check.hpp` matches every position). Device gates: `fuse_b3_ecs_managed_column_device` (Transform columns in `cudaMallocManaged` memory via `GPUManagedMemoryResource`; a kernel reads every row in place through the `each_chunk<Transform>` pointer and `assert()`s the position and the host/device layout on the device; exact checksum) and `fuse_b3_ecs_managed_column_device_assert_fires` (one corrupted row must raise `cudaErrorAssert`, proving the assert is compiled in)
-- [x] BVH SAH build on 100k random AABBs completes in < 500ms — `fuse_b3_bvh_gates`
-- [x] BVH ray cast returns correct closest hit for 100k random rays against 10k objects — verified against brute-force — `fuse_b3_bvh_gates`
-- [x] BVH frustum query returns identical results to O(n) brute-force frustum test on 10k objects — `fuse_b3_bvh_gates`
-- [x] BVH refit after 1k transform updates is correct — no stale bounds — `fuse_b3_bvh_gates`
-- [x] SVO insert/get round-trips correctly for 1M voxels at depth 10 — `fuse_b3_svo_gates`
-- [x] SVO ray cast matches brute-force voxel traversal for 10k random rays — `fuse_b3_svo_gates`
-- [x] SVO carve produces correct surface voxel transitions — verified by re-querying carved region — `fuse_b3_svo_gates`
-- [x] SDF query on SVO returns smooth values at leaf boundaries — no discontinuities — `fuse_b3_svo_gates`
-- [x] Scene creates 1000 mesh + SDF entities and builds render data in < 1ms — `fuse_b3_scene_gates`
-- [x] Active camera frustum correctly culls out-of-view entities — verified by checking draw list count vs total entity count — `fuse_b3_scene_gates`
-- [x] Scene save/load round-trips 10k entities with zero data loss — byte-identical component arrays — `fuse_b3_serialiser`
-- [x] Async scene load completes and calls callback on the main thread — `fuse_b3_serialiser`
-- [ ] SceneData SDF object buffer uploads to GPU and ray marcher renders correct scene — partial: `fuse_b3_sdf_buffer_ray_march` uploads byte-exact on Lavapipe and renders via the CPU reference ray marcher vs analytic intersections; CUDA kernel still a stub
-- [ ] Renderer receives SceneData from scene and renders 500 SDF objects at 1080p > 60fps — partial 2026-09-29, coded and CPU-verified, 3090 timing pending: `fuse_b3_sdf_scene_500_march` builds SceneData from 500 visible SDF entities (plus culled / hidden ones), packs the SDF object buffer and ray-marches it with the tiled march (`sdf_ray_march_tiled`: each 16×8 tile culls the objects against its view pyramid into an ordered list, mean 3 of 500 per tile). It matches the full-scene march (0 depth / normal outliers; 21 of 82944 px hit only in the tiled march, where the full march ran out of its 128 steps) and CpuReference == CpuParallel bit-exact; CPU 24 ms vs 929 ms. On a device it prints the 1920×1080 CUDA-event march time (asserted with `FUSE_DEVICE_BUDGETS=1`). March only — no presented frame
-- [x] Adding and removing entities mid-frame does not corrupt the BVH or draw list — `fuse_b3_scene_gates`
-- [x] Free camera moves through the scene with correct frustum culling visible in draw call count — `fuse_b3_free_camera_gates`
-- [x] RenderDoc capture shows correct draw list ordering — sorted by material, no redundant state changes — `fuse_b5_rhi_draw_state`
-- [x] 10k entity transform update < 1ms on all cores via `each_parallel` — `fuse_b3_scene_gates`
-- [x] BVH frustum cull of 10k objects < 0.1ms — `fuse_b3_bvh_gates`
-- [x] Full scene build (cull → draw list → SDF object buffer) < 2ms for 1k entities — `fuse_b3_scene_gates`
-- [ ] SVO ray cast for 1M rays < 10ms on CUDA (RTX 3090) — verified with CUDA event timing — missed 2026-09-25: host clock around the synced launch was 130 ms, wall including copies 150 ms. CUDA matches the CPU voxel, face and hit/miss; distance differs by about 1 ulp where nvcc contracts a division (`fuse_svo_ray_kernel_parity`). 2026-09-29 reworked, 3090 re-run pending: the walk jumps empty 4³ / 2³ blocks of sparse bricks from a register cell mask (87 iterations per ray on the 1M workload), keeps only the traversal stack in local memory (144 B per thread, was 336 B), reads a linearised layout on the device (`SVO::rayLayout`: 8-byte child-mask nodes in depth-first order, 1.8 MB instead of 7.1 MB of nodes), runs 128-thread blocks at 64 registers with no spills, and is built with `-fmad=false` so the device takes the host's decisions. `benchmarkSvoRayCastCuda` times it with CUDA events on resident buffers. CPU-verified: bit-identical to the previous DDA on 100k parity rays and depth 0–10 SVOs (14 of 1M edge-grazing rays differ, 3 of them hit/miss); packed layout == SVO arrays bit-exact
+- [ ] Registry creates and destroys 1M entities — no leaks, generation counter correctly invalidates stale handles
+- [ ] Archetype storage correctly groups entities by component set — verified by checking column layout after add/remove
+- [ ] `each<T>` iterates exactly the correct entities — no missed entities, no spurious iterations
+- [ ] `each_parallel<T>` produces identical results to `each<T>` across 100 randomised test cases
+- [ ] Component add/remove triggers archetype migration correctly — entity moves to new archetype, data preserved
+- [ ] 100k entities with Transform + Mesh + RigidBody iterated at > 500M components/sec on a single thread
+- [ ] CUDA kernel reads Transform positions from managed-memory ECS column — verified with device-side assert
+- [ ] BVH SAH build on 100k random AABBs completes in < 500ms
+- [ ] BVH ray cast returns correct closest hit for 100k random rays against 10k objects — verified against brute-force
+- [ ] BVH frustum query returns identical results to O(n) brute-force frustum test on 10k objects
+- [ ] BVH refit after 1k transform updates is correct — no stale bounds
+- [ ] SVO insert/get round-trips correctly for 1M voxels at depth 10
+- [ ] SVO ray cast matches brute-force voxel traversal for 10k random rays
+- [ ] SVO carve produces correct surface voxel transitions — verified by re-querying carved region
+- [ ] SDF query on SVO returns smooth values at leaf boundaries — no discontinuities
+- [ ] Scene creates 1000 mesh + SDF entities and builds render data in < 1ms
+- [ ] Active camera frustum correctly culls out-of-view entities — verified by checking draw list count vs total entity count
+- [ ] Scene save/load round-trips 10k entities with zero data loss — byte-identical component arrays
+- [ ] Async scene load completes and calls callback on the main thread
+- [ ] SceneData SDF object buffer uploads to GPU and ray marcher renders correct scene
+- [ ] Renderer receives SceneData from scene and renders 500 SDF objects at 1080p > 60fps
+- [ ] Adding and removing entities mid-frame does not corrupt the BVH or draw list
+- [ ] Free camera moves through the scene with correct frustum culling visible in draw call count
+- [ ] RenderDoc capture shows correct draw list ordering — sorted by material, no redundant state changes
+- [ ] 10k entity transform update < 1ms on all cores via `each_parallel`
+- [ ] BVH frustum cull of 10k objects < 0.1ms
+- [ ] Full scene build (cull → draw list → SDF object buffer) < 2ms for 1k entities
+- [ ] SVO ray cast for 1M rays < 10ms on CUDA (RTX 3090) — verified with CUDA event timing
 
 ---
 
@@ -2841,10 +2835,10 @@ struct RigidBodySoA {
 
 #### Gates
 
-- [x] **B4.1** implemented on FUSE APIs (not ungated Torque guts) (`fuse_phase4_deliverables`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_b4_manager_gates`, `fuse_phase4_deliverables`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B4.1** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -2914,10 +2908,10 @@ world_to_cell(vec3 pos, f32 cell_size) {
 
 #### Gates
 
-- [x] **B4.2** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b4_broadphase_gates`)
+- [ ] **B4.2** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -2990,10 +2984,10 @@ minkowski_support(const vec3* a, u32 na, const mat4& ta,
 
 #### Gates
 
-- [x] **B4.3** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b4_narrowphase_gates`)
+- [ ] **B4.3** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -3105,10 +3099,10 @@ public:
 
 #### Gates
 
-- [x] **B4.4** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b4_solver_gates`)
+- [ ] **B4.4** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -3157,10 +3151,10 @@ struct BHParams {
 
 #### Gates
 
-- [x] **B4.5** implemented on FUSE APIs (not ungated Torque guts) (`fuse_physics_barnes_hut_tests`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_physics_barnes_hut_tests`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B4.5** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -3207,10 +3201,10 @@ swept_sphere_sphere(
 
 #### Gates
 
-- [x] **B4.6** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b4_ccd_gates`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_b4_ccd_gates`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B4.6** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -3283,10 +3277,10 @@ void DestructionSystem::apply_destruction(
 
 #### Gates
 
-- [x] **B4.7** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b4_destruction_gates`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_b4_destruction_gates`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B4.7** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -3359,10 +3353,10 @@ __global__ void cloth_solve_constraints_kernel(
 
 #### Gates
 
-- [x] **B4.8** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b4_cloth_gates`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_b4_cloth_gates`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B4.8** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -3433,10 +3427,10 @@ void PhysicsManager::step(Registry& registry, f32 dt, StreamManager& streams) {
 
 #### Gates
 
-- [x] **B4.9** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b4_manager_gates`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_b4_manager_gates`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B4.9** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -3481,10 +3475,10 @@ struct CollisionEvent {
 
 #### Gates
 
-- [x] **B4.10** implemented on FUSE APIs (not ungated Torque guts) (`fuse_collision_events`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_b4_manager_gates, fuse_collision_events`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B4.10** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -3524,50 +3518,45 @@ struct CollisionEvent {
 
 *Carry-forward deliverable/test checklist (FUSE-adapted):*
 
-- [x] Spatial hash correctly identifies all overlapping pairs for 10k random spheres — verified against brute force O(n²) — `fuse_b4_broadphase_gates`
-- [x] No missed pairs for bodies straddling multiple cells — edge case tested with grid-aligned bodies — `fuse_b4_broadphase_gates`
-- [x] GPU radix sort produces correctly sorted (key, value) pairs — verified with reference CPU sort — `fuse_gpu_radix_sort_gates` (Vulkan compute `GpuRadixSort` in fuse_rhi, 330 cases vs `std::stable_sort` on Lavapipe under sync validation; broadphase hook `SpatialHashParams::entrySorter` matches CPU pairs; CUDA variant not built — no CUDA toolchain)
-- [ ] Broad phase runs in < 2ms for 10k bodies on RTX 3090 — measured with CUDA events — coded + CPU-verified 2026-09-29; 3090 timing pending. 2026-09-25 miss (33.6 ms, copies included) was the per-call path: only the radix sort ran on the GPU (cudaMalloc + copies + sync each call), every other stage fell back to CpuParallel. New resident path (`fuse/physics/resident/`, `kernels/physics_resident.cu`): buffers allocated once (grow-only), one stream, copies only at the edges; count → scan → keys → sentinel-padded radix sort → cells → pairs → plane pairs → sort + unique, every data-dependent size read on the device (no host round trip). The same launch sequence on CpuReference / CpuParallel equals `runBroadphaseIntoBuffer` bit for bit on 8 scenes incl. the 10k-body 3090 scene (409,134 pairs) — `fuse_b4_physics_kernel_gates`. Measure: `ctest -C Release -R fuse_b4_physics_cuda_bench -V` (= `fuse_b4_physics_kernel_gates --cuda-bench`, CUDA events, target asserted)
-- [x] Sphere-sphere analytic result matches Bullet reference to within 0.001f — `fuse_b4_narrowphase_gates`
-- [x] Sphere-plane produces correct normal and penetration depth at all angles — `fuse_b4_narrowphase_gates`
-- [x] Capsule-capsule handles parallel capsules and endpoint degeneracies correctly — `fuse_b4_narrowphase_gates`
-- [x] GJK returns correct intersection result for 10k random convex hull pairs — verified against SAT reference — `fuse_b4_narrowphase_gates`
-- [x] EPA returns penetration depth within 0.01f of reference for all test cases — `fuse_b4_narrowphase_gates`
-- [x] SDF collision produces smooth contact normals — no discontinuity at surface transitions — `fuse_b4_narrowphase_gates`
-- [ ] Narrow phase runs in < 3ms for 1k contact pairs on RTX 3090 — coded + CPU-verified 2026-09-29; 3090 timing pending. 2026-09-25 numbers (1,956 contacts 2.06 ms, 20,639 contacts 20.9 ms) were the CPU fallback: the narrowphase had no device code. Now the sphere / box / capsule / plane pairs, the pair preflight and the manifold finalize are FUSE_HOST_DEVICE (`narrowphase/primitive_contacts.hpp`; the CPU functions forward to it, results unchanged — same hashes as before the move on 400k random pairs and 90-frame island / coloured runs). Resident detect → scan → compact equals the CPU narrowphase bit for bit on all 15 ordered primitive pairs, with and without a speculative margin — `fuse_b4_physics_kernel_gates`. `fuse_b4_physics_cuda_bench` times 1,000 contact pairs on resident buffers with CUDA events (convex hulls stay on the CPU path)
-- [x] Single sphere under gravity hits ground plane at correct time (analytical reference: t = √(2h/g)) — `fuse_b4_solver_gates`
-- [x] Stack of 10 spheres remains stable at rest after 5 seconds of simulation — no drift or explosion — `fuse_b4_solver_gates`
-- [x] Restitution correctly produces elastic bounce (coefficient 1.0 → equal rebound height) — `fuse_b4_solver_gates`
-- [x] Friction correctly stops a sliding box at expected distance — matches analytical result — `fuse_b4_solver_gates`
-- [x] Distance constraint holds two bodies at rest_length ± 0.01f under external force — `fuse_b4_solver_gates`
-- [ ] Constraint solver runs 10 iterations over 10k contacts in < 5ms on RTX 3090 — coded + CPU-verified 2026-09-29; 3090 timing pending. 2026-09-25 step (4 × 8 on 9,610 bodies, 42.2 ms) ran the coloured solve on the CPU (no CUDA entry). Resident coloured solve: one launch per colour plus the serial overflow list per iteration, back to back on the stream, over a device port of `solveContactConstraint` / `solveDistanceConstraint`; equals the PBDSolver colour loop bit for bit (poses and every lambda) on CpuReference / CpuParallel — `fuse_b4_physics_kernel_gates`. `fuse_b4_physics_cuda_bench` times 10 iterations over ≥ 10k contacts with CUDA events and checks the device against the CPU (bit-exact expected with `--fmad=false`, tolerance 1e-4). Contact generation, anchors and the colouring of each substep still run on the host
-- [x] Sleep detection correctly deactivates resting bodies — confirmed by zero velocity reads — `fuse_b4_solver_gates`
-- [x] High-velocity sphere (100 m/s) does not tunnel through a 0.1m wall — discrete misses, CCD catches — `fuse_b4_ccd_gates`
-- [x] TOI binary search converges in < 8 iterations for all test cases — closed-form sweeps count 1; the iterative TOI (conservative advancement for rotating boxes/capsules) is instrumented (`TOIResult::iterations`, `ccdIterationStats()`) and stays < 8 on every CCD gate case plus 2373 seeded hard sweeps (fast spin, grazing, thin posts, tumbling, capsules; worst 7), each checked against a brute-force first contact (0 missed, 0 late) — `fuse_b4_ccd_gates`
-- [x] CCD introduces < 1ms overhead per frame for 100 fast-moving bodies — `fuse_b4_ccd_gates`
-- [x] Sphere carve correctly removes voxels within radius — verified by querying carved region — `fuse_b4_destruction_gates`
-- [x] Dual contouring extracts watertight mesh from carved SVO surface — `fuse_b4_destruction_gates`
-- [x] Debris entities spawn with correct mass proportional to voxel count — `fuse_b4_destruction_gates`
-- [x] Debris rigid bodies collide correctly with scene after spawning — `fuse_b4_destruction_gates`
-- [x] 10 simultaneous impacts each spawning 5 debris pieces — no frame spike > 10ms — `fuse_b4_destruction_gates`
-- [x] Cloth 32×32 grid simulates under gravity without instability at dt=1/60 — `fuse_b4_cloth_gates`
-- [x] Pinned corners hold position exactly — `fuse_b4_cloth_gates`
-- [x] Wind force deflects cloth in correct direction — `fuse_b4_cloth_gates`
-- [x] Cloth-sphere collision resolves without interpenetration — `fuse_b4_cloth_gates`
-- [x] PhysicsManager::step completes in < 8ms for 1000 active rigid bodies at 60fps — `fuse_b4_manager_gates`
-- [x] ECS Transform components correctly reflect physics positions every frame — `fuse_b4_manager_gates`
-- [x] `apply_impulse` produces physically plausible velocity change — verified with known mass and impulse — `fuse_b4_manager_gates`
-- [x] CollisionEventSystem dispatches Enter/Exit events correctly — no missed or spurious callbacks — `fuse_b4_manager_gates`
-- [x] Kinematic body moves along programmed path, correctly pushes dynamic bodies — `fuse_b4_manager_gates`
-- [x] 1000 dynamic rigid bodies, full pipeline (broad + narrow + 10 PBD iters + integrate): < 4ms — `fuse_b4_manager_gates`
-- [x] 10k sleeping bodies: < 0.5ms (sleep check only) — `fuse_b4_manager_gates`
-- [x] 64×64 cloth simulation: < 1ms — `fuse_b4_cloth_gates`
-- [x] 5 simultaneous destruction events with 10 debris each: < 16ms total — `fuse_b4_destruction_gates`
-- [x] Convex hull collision shape (quickhull, shared shape pool, SAT + face-clipped multi-point manifolds vs sphere / box / capsule / hull / plane): SAT == brute force on random pairs, box-shaped hull == Box, hull stack settles, deterministic — `fuse_e18_hull_gates` (GAP-PHYS-HULL-MESH; CPU only, the resident CUDA path refuses pooled shapes)
-- [x] Static triangle-mesh collision (BVH, internal-edge fix, merged manifolds), trimesh ray casts == brute force, `Collider` shape asset fields, `.fusecol` cook (`fuse_cook --collision`) + loader round trip — `fuse_e18_trimesh_gates`, `fuse_asset_collision_cook`
-- [x] Shape casts (TOI == analytic) and the kinematic capsule character controller (steps, slopes, 20 m/s no tunnelling, platforms, pushing) — `fuse_e18_character_gates` (GAP-PHYS-CHARACTER)
-- [x] Voxel and SDF collision shapes on one shared SVO type (sphere on a voxel floor falls through a carved hole; box rests on an SDF) — `fuse_e18_voxel_gates` (UNI-B4-VOX-1)
-- [x] 2D rigid bodies behind `PhysicsWorld2D` (rotation, polygons, one-sided edge chains, contact + sensor events, BVH ray / AABB queries, revolute / distance / prismatic joints, sequential impulses with warm starting, deterministic): box settles on a chain, pendulum periods within 1% of analytic, events fire once, queries == brute force, bit-identical replays, 0 steady-state allocations — `fuse_g11_physics2d_gates` (GAP-WORLD2D-GAMEPLAY first half; CPU only; World2D / tilemap wiring is G12)
+- [ ] Spatial hash correctly identifies all overlapping pairs for 10k random spheres — verified against brute force O(n²)
+- [ ] No missed pairs for bodies straddling multiple cells — edge case tested with grid-aligned bodies
+- [ ] GPU radix sort produces correctly sorted (key, value) pairs — verified with reference CPU sort
+- [ ] Broad phase runs in < 2ms for 10k bodies on RTX 3090 — measured with CUDA events
+- [ ] Sphere-sphere analytic result matches Bullet reference to within 0.001f
+- [ ] Sphere-plane produces correct normal and penetration depth at all angles
+- [ ] Capsule-capsule handles parallel capsules and endpoint degeneracies correctly
+- [ ] GJK returns correct intersection result for 10k random convex hull pairs — verified against SAT reference
+- [ ] EPA returns penetration depth within 0.01f of reference for all test cases
+- [ ] SDF collision produces smooth contact normals — no discontinuity at surface transitions
+- [ ] Narrow phase runs in < 3ms for 1k contact pairs on RTX 3090
+- [ ] Single sphere under gravity hits ground plane at correct time (analytical reference: t = √(2h/g))
+- [ ] Stack of 10 spheres remains stable at rest after 5 seconds of simulation — no drift or explosion
+- [ ] Restitution correctly produces elastic bounce (coefficient 1.0 → equal rebound height)
+- [ ] Friction correctly stops a sliding box at expected distance — matches analytical result
+- [ ] Distance constraint holds two bodies at rest_length ± 0.01f under external force
+- [ ] Constraint solver runs 10 iterations over 10k contacts in < 5ms on RTX 3090
+- [ ] Sleep detection correctly deactivates resting bodies — confirmed by zero velocity reads
+- [ ] High-velocity sphere (100 m/s) does not tunnel through a 0.1m wall — discrete misses, CCD catches
+- [ ] TOI binary search converges in < 8 iterations for all test cases
+- [ ] CCD introduces < 1ms overhead per frame for 100 fast-moving bodies
+- [ ] Sphere carve correctly removes voxels within radius — verified by querying carved region
+- [ ] Dual contouring extracts watertight mesh from carved SVO surface
+- [ ] Debris entities spawn with correct mass proportional to voxel count
+- [ ] Debris rigid bodies collide correctly with scene after spawning
+- [ ] 10 simultaneous impacts each spawning 5 debris pieces — no frame spike > 10ms
+- [ ] Cloth 32×32 grid simulates under gravity without instability at dt=1/60
+- [ ] Pinned corners hold position exactly
+- [ ] Wind force deflects cloth in correct direction
+- [ ] Cloth-sphere collision resolves without interpenetration
+- [ ] PhysicsManager::step completes in < 8ms for 1000 active rigid bodies at 60fps
+- [ ] ECS Transform components correctly reflect physics positions every frame
+- [ ] `apply_impulse` produces physically plausible velocity change — verified with known mass and impulse
+- [ ] CollisionEventSystem dispatches Enter/Exit events correctly — no missed or spurious callbacks
+- [ ] Kinematic body moves along programmed path, correctly pushes dynamic bodies
+- [ ] 1000 dynamic rigid bodies, full pipeline (broad + narrow + 10 PBD iters + integrate): < 4ms
+- [ ] 10k sleeping bodies: < 0.5ms (sleep check only)
+- [ ] 64×64 cloth simulation: < 1ms
+- [ ] 5 simultaneous destruction events with 10 debris each: < 16ms total
 
 ---
 
@@ -3631,10 +3620,10 @@ Frame N:
 
 #### Gates
 
-- [x] **B5.1** implemented on FUSE APIs (not ungated Torque guts) (`fuse_deferred_pipeline`)
+- [ ] **B5.1** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -3692,10 +3681,10 @@ void write_gbuffer(
 
 #### Gates
 
-- [x] **B5.2** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b5_gbuffer_materials_gates`)
+- [ ] **B5.2** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -3785,7 +3774,7 @@ __device__ MaterialSample mat_wood(vec3 world_pos, u32 seed) {
 |--------|--------|
 | **Replace** | Torque material models with FUSE PBR (GGX/Smith/Schlick) + bindless material SSBO |
 | **Compat** | Torque material names/slots mapped into `MaterialSystem` where possible |
-| **Keep** | Texture assets via cook → bindless textures (E06: BCn `.fusetex` → `VK_FORMAT_BC*` bindless images, CPU-decode fallback; `.fusemat` → layered GpuScene rows; `fuse_cooked_assets_*` gates) |
+| **Keep** | Texture assets via cook → bindless textures |
 
 #### Depends on
 
@@ -3793,10 +3782,10 @@ __device__ MaterialSample mat_wood(vec3 world_pos, u32 seed) {
 
 #### Gates
 
-- [x] **B5.3** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b5_gbuffer_materials_gates`)
+- [ ] **B5.3** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -3893,10 +3882,10 @@ __global__ void deferred_shade_kernel(/* params */) {
 
 #### Gates
 
-- [x] **B5.4** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b5_clustered_gates`)
+- [ ] **B5.4** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -3969,10 +3958,10 @@ __device__ f32 sdf_soft_shadow(
 
 #### Gates
 
-- [x] **B5.5** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b5_shadows_gates`)
+- [ ] **B5.5** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -4045,10 +4034,10 @@ __global__ void probe_trace_kernel(
 
 #### Gates
 
-- [x] **B5.6** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b5_ddgi_gates`)
+- [ ] **B5.6** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -4119,10 +4108,10 @@ __global__ void ssr_kernel(
 
 #### Gates
 
-- [x] **B5.7** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b5_taa_ssfx_gates`)
+- [ ] **B5.7** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -4169,10 +4158,10 @@ __device__ f32 rayleigh_phase(f32 cos_theta) {
 
 #### Gates
 
-- [x] **B5.8** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b5_atmosphere_gates`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_b5_atmosphere_gates`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B5.8** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -4243,10 +4232,10 @@ __global__ void taa_resolve_kernel(
 
 #### Gates
 
-- [x] **B5.9** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b5_taa_ssfx_gates`)
+- [ ] **B5.9** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -4364,10 +4353,10 @@ struct ColorGradeParams {
 
 #### Gates
 
-- [x] **B5.10** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b5_post_gates`)
+- [ ] **B5.10** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -4438,10 +4427,10 @@ __global__ void volumetric_fog_kernel(
 
 #### Gates
 
-- [x] **B5.11** implemented on FUSE APIs (not ungated Torque guts) (`fuse_volumetric_lighting_b511`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_volumetric_lighting_b511`, `fuse_b5_atmosphere_gates`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B5.11** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -4479,51 +4468,47 @@ __global__ void volumetric_fog_kernel(
 
 *Carry-forward deliverable/test checklist (FUSE-adapted):*
 
-- [x] G-buffer octahedral normal encoding round-trips with < 0.001 angular error — `fuse_b5_gbuffer_materials_gates`
-- [x] PBR material renders smooth transition from dielectric (metallic=0) to metallic (metallic=1) — no colour discontinuity — `fuse_b5_gbuffer_materials_gates`
-- [x] Procedural wood, metal, and concrete materials evaluate correctly on SDF surfaces — no seams or tiling artifacts — `fuse_b5_gbuffer_materials_gates`
-- [ ] Material SSBO bindless lookup correct for 1000 different materials in one frame — verified with RenderDoc — partial: packed SSBO + bindless slot fetch exact for 1000 materials in `fuse_b5_gbuffer_materials_gates`; RenderDoc capture is manual
-- [x] Emissive surfaces contribute correct radiance to GI probes — `fuse_b5_gbuffer_materials_gates`, `fuse_b5_ddgi_gates`
-- [x] Clustered light culler assigns zero lights to clusters with no light overlap — verified by reading light_grid buffer — `fuse_b5_clustered_gates`
-- [x] 1000 point lights in scene — deferred shading correct, no light leaking through walls — verified visually — `fuse_b5_clustered_gates`
-- [ ] Clustered cull + deferred shade runs in < 3ms for 1000 lights at 1080p — measured with CUDA events — coded + CPU-verified, device timing pending the RTX 3090 run: resident `ClusteredDeviceFrame` (`lighting/clustered_device.hpp`, `kernels/clustered_lighting.cu`: bounds → bin → cull → `clustered_light_grid` → `deferred_shading` on one stream, CUDA events per kernel) timed by `fuse_b5_clustered_device` (1920×1080, 1000 lights, device == CPU pipeline parity; exit 77 without a GPU); CPU half `fuse_b5_clustered_device_cpu` (fixed-capacity grid shade == compacted grid shade bit for bit, `clustered_light_grid` CpuReference == CpuParallel)
-- [x] CSM renders correct shadow for directional light across all 4 cascades — no cascade seam visible — `fuse_b5_shadows_gates`
-- [x] CSM stabilisation eliminates shadow shimmer on a static scene — confirmed by frame diff — `fuse_b5_shadows_gates`
-- [x] SDF soft shadows produce correct penumbra width proportional to distance to occluder — `fuse_b5_shadows_gates`
-- [x] SDF shadow matches reference path tracer within 5% luminance error per pixel — `fuse_b5_shadows_gates`
-- [ ] DDGI probes initialise and first update completes without CUDA error — coded + CPU-verified, device run pending the RTX 3090: single-source trace + blend kernels (`gi/ddgi_probe_kernel.hpp`) with the CUDA path in `kernels/ddgi_probe_update.cu` (one-shot `Backend::Cuda` + resident `DdgiDeviceVolume`, `gi/ddgi_device.hpp`; compiles for sm_86 in build/cuda); CpuReference == CpuParallel on the timed workloads in `fuse_b5_ddgi_device_cpu` (+ `fuse_ddgi_kernel_parity`, `fuse_b5_ddgi_gates`); `fuse_b5_ddgi_device` checks init / first update without a CUDA error, device == CPU parity and resident == one-shot bit for bit (exit 77 without a GPU)
-- [ ] 2048 probes update 64 per frame at < 2ms per update cycle — coded, device timing pending the RTX 3090 run: `fuse_b5_ddgi_device` times the 2048-probe / 64-per-frame rolling update and the 64-probe × 256-ray update with CUDA events on resident atlases (upload / trace / blend / cycle; `--enforce-budgets` makes 2 ms fatal)
-- [x] Irradiance correctly responds to dynamic light changes within 64 frames (hysteresis) — `fuse_b5_ddgi_gates`
-- [x] Moving the sun rotates GI colour cast correctly — verified by recording 10-second timelapse — `fuse_b5_ddgi_gates`
-- [x] GI contribution on a white Lambertian surface matches reference Monte Carlo within 10% — `fuse_b5_ddgi_gates`
-- [x] TAA eliminates aliasing on geometry edges — subpixel detail visible without shimmering — `fuse_b5_taa_ssfx_gates`
-- [x] TAA history rejection fires on fast-moving objects — no ghost trails at > 10m/s — `fuse_b5_taa_ssfx_gates`
-- [x] HBAO produces correct occlusion in concave corners — verified against SSAO reference — `fuse_b5_taa_ssfx_gates`
-- [x] SSR reflects correct colour from reflective floor — matches ray-marched ground truth within 15% — `fuse_b5_taa_ssfx_gates`
-- [x] Sky renders correct Rayleigh scattering — blue midday, orange/red at low sun angles — `fuse_b5_atmosphere_gates`
-- [x] No banding artifacts in sky gradient — verified at 10-bit display output — `fuse_b5_atmosphere_gates`
-- [x] Sun disk correct angular size (0.5° apparent diameter) — `fuse_b5_atmosphere_gates`
-- [x] Volumetric fog density falloff matches analytic exponential reference — `fuse_b5_atmosphere_gates`
-- [x] Bloom only affects pixels above threshold — black frame with no bright pixels produces zero bloom — `fuse_b5_post_gates`
-- [x] DOF circle of confusion radius matches thin lens formula for test focal distances — `fuse_b5_post_gates`
-- [x] Motion blur samples correctly trail in direction of velocity vector — `fuse_b5_post_gates`
-- [x] ACES tonemap maps 0.18 grey to 0.18 sRGB — reference calibration check — `fuse_b5_post_gates`
-- [x] Film grain is temporally decorrelated — no fixed pattern visible on static frame — `fuse_b5_post_gates`
-*Per-pass budgets: one harness, `fuse_b5_frame_bench` (`tests/test_b5_frame_bench.cpp`), runs every pass below that the tree has on a device path at 1920×1080 and prints per-pass GPU time (CUDA events on resident buffers for the CUDA passes, GpuProfiler timestamp queries for the Vulkan passes), the total and the profiler-vs-CUDA-event cross-check. Coded; the Vulkan half runs on Lavapipe in CI (`fuse_b5_frame_bench_smoke`, 320×180, timings not asserted); the RTX 3090 numbers are pending the user's run (`fuse_b5_frame_bench`, exit 77 without a CUDA device; `--enforce` makes budgets fatal). No row below is ticked until that run.*
-
-- [ ] Depth prepass: < 0.5ms — no device implementation in the tree (the G-buffer raster pass depth-tests in-pass); the harness reports it as not measured
-- [ ] G-buffer pass (1000 objects): < 2ms — coded (`fuse_b5_frame_bench`: `GBufferRasterPass`, 1000 draws, timestamp zone); 3090 timing pending
-- [ ] SDF ray march (100 objects, 128 steps): < 3ms — coded (`fuse_b5_frame_bench`: `sdf_ray_march`, CUDA events); 3090 timing pending. Tiled march (`sdf_ray_march_tiled`, per-tile object culling: mean 2.9 of 100 objects per tile) coded and CPU-verified against the full-scene march; `fuse_ray_march_tile_cull` prints both at 1920×1080 with CUDA events
-- [ ] DDGI probe update (64 probes, 256 rays): < 2ms — coded (`fuse_b5_ddgi_device`, `fuse_b5_frame_bench`: `DdgiDeviceVolume`, CUDA events); 3090 timing pending
-- [ ] Deferred shading + clustered lights (1000 lights): < 3ms — coded (`fuse_b5_clustered_device`, `fuse_b5_frame_bench`: `ClusteredDeviceFrame`, CUDA events); 3090 timing pending
-- [ ] SDF shadows: < 2ms — coded (`fuse_b5_frame_bench`: `sdf_shadows`, CUDA events); 3090 timing pending
-- [ ] HBAO: < 1ms — coded (`fuse_b5_frame_bench`: `screen_space_ao` + blur, CUDA events); 3090 timing pending
-- [ ] SSR: < 1.5ms — coded (`fuse_b5_frame_bench`: `screen_space_reflections`, CUDA events); 3090 timing pending
-- [ ] TAA: < 0.5ms — coded (`fuse_b5_frame_bench`: WP-4.1 `TaauGpu` 1x, `taau.*` timestamp zones); 3090 timing pending
-- [ ] Bloom + DoF + Motion blur + Tonemap: < 1ms — coded (`fuse_b5_frame_bench`: WP-4.5 `PostStackGpu`, `post.*` timestamp zones); 3090 timing pending
-- [ ] **Total GPU frame time: < 16ms (60fps headroom)** — `fuse_b5_frame_bench` prints the sum of the measured passes; 3090 run pending
-
-*RTX 3090 run (the user; Release CUDA tree, e.g. `build-cuda`):* `cmake --build build-cuda --config Release --target fuse_b5_ddgi_device fuse_b5_clustered_device fuse_b5_frame_bench` then `ctest --test-dir build-cuda -C Release -R "^fuse_b5_(ddgi|clustered)_device(_cpu)?$|^fuse_b5_frame_bench$" --output-on-failure -V`. To make the budgets fail the run, execute the binaries directly: `fuse_b5_ddgi_device --enforce-budgets`, `fuse_b5_clustered_device --enforce-budgets`, `fuse_b5_frame_bench --require-cuda --enforce`.
+- [ ] G-buffer octahedral normal encoding round-trips with < 0.001 angular error
+- [ ] PBR material renders smooth transition from dielectric (metallic=0) to metallic (metallic=1) — no colour discontinuity
+- [ ] Procedural wood, metal, and concrete materials evaluate correctly on SDF surfaces — no seams or tiling artifacts
+- [ ] Material SSBO bindless lookup correct for 1000 different materials in one frame — verified with RenderDoc
+- [ ] Emissive surfaces contribute correct radiance to GI probes
+- [ ] Clustered light culler assigns zero lights to clusters with no light overlap — verified by reading light_grid buffer
+- [ ] 1000 point lights in scene — deferred shading correct, no light leaking through walls — verified visually
+- [ ] Clustered cull + deferred shade runs in < 3ms for 1000 lights at 1080p — measured with CUDA events
+- [ ] CSM renders correct shadow for directional light across all 4 cascades — no cascade seam visible
+- [ ] CSM stabilisation eliminates shadow shimmer on a static scene — confirmed by frame diff
+- [ ] SDF soft shadows produce correct penumbra width proportional to distance to occluder
+- [ ] SDF shadow matches reference path tracer within 5% luminance error per pixel
+- [ ] DDGI probes initialise and first update completes without CUDA error
+- [ ] 2048 probes update 64 per frame at < 2ms per update cycle
+- [ ] Irradiance correctly responds to dynamic light changes within 64 frames (hysteresis)
+- [ ] Moving the sun rotates GI colour cast correctly — verified by recording 10-second timelapse
+- [ ] GI contribution on a white Lambertian surface matches reference Monte Carlo within 10%
+- [ ] TAA eliminates aliasing on geometry edges — subpixel detail visible without shimmering
+- [ ] TAA history rejection fires on fast-moving objects — no ghost trails at > 10m/s
+- [ ] HBAO produces correct occlusion in concave corners — verified against SSAO reference
+- [ ] SSR reflects correct colour from reflective floor — matches ray-marched ground truth within 15%
+- [ ] Sky renders correct Rayleigh scattering — blue midday, orange/red at low sun angles
+- [ ] No banding artifacts in sky gradient — verified at 10-bit display output
+- [ ] Sun disk correct angular size (0.5° apparent diameter)
+- [ ] Volumetric fog density falloff matches analytic exponential reference
+- [ ] Bloom only affects pixels above threshold — black frame with no bright pixels produces zero bloom
+- [ ] DOF circle of confusion radius matches thin lens formula for test focal distances
+- [ ] Motion blur samples correctly trail in direction of velocity vector
+- [ ] ACES tonemap maps 0.18 grey to 0.18 sRGB — reference calibration check
+- [ ] Film grain is temporally decorrelated — no fixed pattern visible on static frame
+- [ ] Depth prepass: < 0.5ms
+- [ ] G-buffer pass (1000 objects): < 2ms
+- [ ] SDF ray march (100 objects, 128 steps): < 3ms
+- [ ] DDGI probe update (64 probes, 256 rays): < 2ms
+- [ ] Deferred shading + clustered lights (1000 lights): < 3ms
+- [ ] SDF shadows: < 2ms
+- [ ] HBAO: < 1ms
+- [ ] SSR: < 1.5ms
+- [ ] TAA: < 0.5ms
+- [ ] Bloom + DoF + Motion blur + Tonemap: < 1ms
+- [ ] **Total GPU frame time: < 16ms (60fps headroom)**
 
 ---
 
@@ -4619,11 +4604,11 @@ public:
 
 #### Gates
 
-- [x] **B6.1** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_qt_fuse_api`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_editor_qt_startup`, `fuse_editor_qt_layout`, `fuse_editor_qt_theme`, `fuse_editor_qt_ui_frame`, `fuse_editor_qt_idle_frames`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
-- [x] Qt 6 only for editor chrome — **no Dear ImGui** (`fuse_lint_b6_editor_qt6_only`: fuse_editor link closure is Qt6-only, no ImGui)
+- [ ] **B6.1** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
+- [ ] Qt 6 only for editor chrome — **no Dear ImGui**
 
 ---
 
@@ -4696,11 +4681,11 @@ struct TransformCommand : Command {
 
 #### Gates
 
-- [x] **B6.2** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_b6_command_gates`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_editor_b6_command_gates`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
-- [x] Qt 6 only for editor chrome — **no Dear ImGui** (`fuse_lint_b6_editor_qt6_only`: fuse_editor link closure is Qt6-only, no ImGui)
+- [ ] **B6.2** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
+- [ ] Qt 6 only for editor chrome — **no Dear ImGui**
 
 ---
 
@@ -4774,11 +4759,11 @@ void ViewportPanel::handle_camera_input_(EditorState& state, f32 dt) {
 
 #### Gates
 
-- [x] **B6.3** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_b6_viewport_gates`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_editor_qt_wasd`, `fuse_editor_b6_viewport_gates`, `fuse_editor_b6_viewport_resize_vk_gates`, `fuse_editor_qt_context_menu`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
-- [x] Qt 6 only for editor chrome — **no Dear ImGui** (`fuse_lint_b6_editor_qt6_only`: fuse_editor link closure is Qt6-only, no ImGui)
+- [ ] **B6.3** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
+- [ ] Qt 6 only for editor chrome — **no Dear ImGui**
 
 ---
 
@@ -4839,11 +4824,11 @@ static constexpr f32   GIZMO_ARROW_SIZE  = 0.2f;   // fraction of total length
 
 #### Gates
 
-- [x] **B6.4** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_b6_gizmo_gates`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_editor_b6_gizmo_gates`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
-- [x] Qt 6 only for editor chrome — **no Dear ImGui** (`fuse_lint_b6_editor_qt6_only`: fuse_editor link closure is Qt6-only, no ImGui)
+- [ ] **B6.4** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
+- [ ] Qt 6 only for editor chrome — **no Dear ImGui**
 
 ---
 
@@ -4888,12 +4873,11 @@ private:
 
 #### Gates
 
-- [x] **B6.5** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_b6_hierarchy_gates`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_editor_b6_hierarchy_gates`, `fuse_editor_b6_viewport_gates`)
-- [x] Hierarchy drag-and-drop reparent (MP-B6-QT-INSPECTOR, E20): internal-move drop on a row / between rows / on empty space posts `ReparentObject` with `kReparentKeepWorldPose` through the CommandQueue; the game tick re-expresses the local TRS under the new parent (world matrix unchanged, rotated + scaled parents), reparent + TRS are one UndoStack step, cycles are refused — `fuse_editor_e20_inspector_commands`, `fuse_editor_qt_e20_reparent` (offscreen; hand-built here: build/rel has `FUSE_BUILD_EDITOR=OFF`, so the Qt gates register as skips there)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
-- [x] Qt 6 only for editor chrome — **no Dear ImGui** (`fuse_lint_b6_editor_qt6_only`: fuse_editor link closure is Qt6-only, no ImGui)
+- [ ] **B6.5** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
+- [ ] Qt 6 only for editor chrome — **no Dear ImGui**
 
 ---
 
@@ -4940,12 +4924,11 @@ private:
 
 #### Gates
 
-- [x] **B6.6** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_panels`)
-- [x] Editable Qt inspector for all ECS components (MP-B6-QT-INSPECTOR / UNI-U6-INSP-1, E20): typed editors generated from `component_schema.hpp` (float, vec3, Euler degrees <-> quaternion, colour, enum, bool, integer, asset path) for Transform position / rotation / scale, Mesh, SDFObject, RigidBody, Collider, Camera, directional / point / spot lights, AudioSource (registered with `ecs::ComponentTypes` by the editor so it saves in `.fuselevel` v3), Script (E10) and SpawnMarker; each edit posts SetProperty through the CommandQueue, a spin-box drag coalesces into one CommandStack step, Edit > Undo / Redo walk the UndoStack and CommandStack in edit order; `CommandKind::AddComponent` / `RemoveComponent` (undo restores removed components byte-for-byte) from the Add Component menu / section Remove buttons; edits mark the Transform dirty and repaint the viewport — `fuse_editor_e20_inspector_commands`, `fuse_editor_qt_e20_inspector` (offscreen, hand-built here as above)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_editor_b6_viewport_gates`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
-- [x] Qt 6 only for editor chrome — **no Dear ImGui** (`fuse_lint_b6_editor_qt6_only`: fuse_editor link closure is Qt6-only, no ImGui)
+- [ ] **B6.6** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
+- [ ] Qt 6 only for editor chrome — **no Dear ImGui**
 
 ---
 
@@ -4990,11 +4973,11 @@ private:
 
 #### Gates
 
-- [x] **B6.7** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_panels`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_editor_b6_material_profiler_gates`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
-- [x] Qt 6 only for editor chrome — **no Dear ImGui** (`fuse_lint_b6_editor_qt6_only`: fuse_editor link closure is Qt6-only, no ImGui)
+- [ ] **B6.7** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
+- [ ] Qt 6 only for editor chrome — **no Dear ImGui**
 
 ---
 
@@ -5041,11 +5024,11 @@ private:
 
 #### Gates
 
-- [x] **B6.8** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_b6_panels_gates`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_editor_b6_panels_gates`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
-- [x] Qt 6 only for editor chrome — **no Dear ImGui** (`fuse_lint_b6_editor_qt6_only`: fuse_editor link closure is Qt6-only, no ImGui)
+- [ ] **B6.8** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
+- [ ] Qt 6 only for editor chrome — **no Dear ImGui**
 
 ---
 
@@ -5090,11 +5073,11 @@ private:
 
 #### Gates
 
-- [x] **B6.9** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_panels_b69_b612`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_editor_panels_b69_b612`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
-- [x] Qt 6 only for editor chrome — **no Dear ImGui** (`fuse_lint_b6_editor_qt6_only`: fuse_editor link closure is Qt6-only, no ImGui)
+- [ ] **B6.9** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
+- [ ] Qt 6 only for editor chrome — **no Dear ImGui**
 
 ---
 
@@ -5139,11 +5122,11 @@ private:
 
 #### Gates
 
-- [x] **B6.10** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_b6_panels_gates`)
+- [ ] **B6.10** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
-- [x] Qt 6 only for editor chrome — **no Dear ImGui** (`fuse_lint_b6_editor_qt6_only`: fuse_editor link closure is Qt6-only, no ImGui)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
+- [ ] Qt 6 only for editor chrome — **no Dear ImGui**
 
 ---
 
@@ -5188,12 +5171,11 @@ private:
 
 #### Gates
 
-- [x] **B6.11** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_b6_panels_gates`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_editor_b6_panels_gates`, `fuse_editor_panels_b69_b612`)
-- [x] Console runs engine commands + a Lua REPL (UNI-U6-CON-1 / MP-B6-EDITOR-SCRIPT-PIE, E15): `registerEditorConsoleCommands` (open / load / save / new / project.new / project.open / play / pause / resume / step / stop / cvar get-set-list / stat / lua) posts `EditorCommand`s through the CommandQueue; any other line runs on the game thread in the ScriptConsole (built-ins) or as Lua (editor VM with the engine API bound to the edit registry; the PIE VM while playing; bare expressions echo); output returns through `EditorHost::drainConsoleOutput`. Qt dock: level colours, level / text filters with per-level counts, "(xN)" repeat counts updated in place, Up / Down history — `fuse_editor_e15_console_pie` (CPU), `fuse_editor_qt_e15_console` (offscreen Qt gate; build/rel has FUSE_BUILD_EDITOR=OFF so ctest skips it there — it was built by hand against build/rel and passed)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
-- [x] Qt 6 only for editor chrome — **no Dear ImGui** (`fuse_lint_b6_editor_qt6_only`: fuse_editor link closure is Qt6-only, no ImGui)
+- [ ] **B6.11** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
+- [ ] Qt 6 only for editor chrome — **no Dear ImGui**
 
 ---
 
@@ -5238,15 +5220,11 @@ private:
 
 #### Gates
 
-- [x] **B6.12** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_b6_play_mode_gates`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_editor_b6_play_mode_gates`)
-- [x] Scripts in PIE (MP-B6-EDITOR-SCRIPT-PIE, E15): `PlaySession::start` creates ScriptVM + ScriptRuntime + ScriptSystem on the play registry when Script components exist (engine API incl. `Physics.*` on the session's PhysicsManager), the runtime schedule's Scripts stage runs `ScriptSystem::update`, each physics step's contacts go to `on_collision` / `on_trigger_enter`, Stop exits play and restores the edit-time registry; module files are hot-reloaded (script_hot_reload) and logged to the console; Step transport (`CommandKind::StepPlay`, one step while paused); Qt toolbar + Play menu Play / Pause / Resume / Step / Stop with state-driven enable — `fuse_editor_e15_console_pie`, `fuse_editor_qt_e15_transport` (offscreen; hand-built here as above). Shader / asset hot-reload triggers are not wired to the console (script + AI tree only)
-- [x] Project / scene files, headless part of MP-B6-QT-SCENE-FILES (UNI-U6-FILE-1, E15): project manifest writer (`project::writeManifestJson` / `saveToDirectory`, round trip through `parseManifest`), `.fuselevel` v3 = v2 + scene dimension + the `RegistrySerialiser` FECS image of the edit registry (v1 / v2 still load, as Transform-only ECS entities), `EditorHost` NewProject / OpenProject / NewScene / OpenScene / SaveScene / SaveSceneAs commands with dirty tracking (UndoStack / CommandStack baselines) for 2D and 3D scenes — `fuse_editor_e15_scene_files` (Transform / Mesh / lights / Collider / RigidBody / Script save -> load -> re-save byte-identical). Qt File menu / dialogs are E20
-- [x] Qt File menu + New Project wizard (MP-B6-QT-SCENE-FILES / UNI-U6-FILE-1 Qt half, E20): File > New Scene / Open Scene / Open Recent / Save / Save As / New Project / Quit call the E15 `EditorHost` file commands; unsaved-changes prompt (Save / Discard / Cancel, from `EditorHost::isSceneDirty`) on New / Open / Recent / New Project / window close; title shows the scene name and '*' while dirty; Project hub New Project wizard (3D / 2D / hybrid, UI layer, AI / cinematics / FX / mechanics / adventure modules) writes `project.json` through the manifest writer and opens the project — `fuse_editor_qt_e20_file_menu`, `fuse_editor_qt_e20_wizard` (offscreen, prompts / dialogs answered through test hooks; hand-built here as above)
-- [x] Level load / save + T3D conversion to components (E16: UNI-U7-WORLD-1, UNI-U7-MIS-1, UNI-U7-MAT-1, 2026-09-30): `World3D::loadWorldFromFuselevel` / `saveWorld` (level ECS block = world registry, SceneObject3D mirrors, physics from the level's Collider / RigidBody, byte-identical save after load), World2D `saveWorld2DToFuselevel` + v3 load, `scene::saveWorldForProject` / `loadWorldForProject`; T3D mission archetype table -> v3 components (new ECS components `AmbientLight`, `SkyAtmosphere`, `EnvironmentFog`; `MeshAssets` now serialisable); T3D Material -> `.fusemat` with strict BC7 / BC5 texture cooks. Gates `fuse_world3d_level_gates`, `fuse_t3d_material_mission_gates`, `fuse_u8_demo_3d_empty` (converted mission on Lavapipe, validation + sync validation: 0 messages). CPU / Lavapipe only; nothing here needs the 3090. Open: player spawn / game mode, DTS shapes (L-DTS), `.fusemat` alpha fields
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
-- [x] Qt 6 only for editor chrome — **no Dear ImGui** (`fuse_lint_b6_editor_qt6_only`: fuse_editor link closure is Qt6-only, no ImGui)
+- [ ] **B6.12** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
+- [ ] Qt 6 only for editor chrome — **no Dear ImGui**
 
 ---
 
@@ -5293,53 +5271,53 @@ private:
 
 *Carry-forward deliverable/test checklist (FUSE-adapted):*
 
-- [x] Editor initialises all panels and dockspace in < 1 second (`fuse_editor_qt_startup`: 99 ms)
-- [x] Default layout loads correctly — viewport, hierarchy, inspector, console visible (`fuse_editor_qt_layout`)
-- [x] Qt dark theme applied correctly — all colours match specification (`fuse_editor_qt_theme`: 26 spec colours by rendered pixel)
-- [x] Font loaded and rendering correctly at all DPI scales (`fuse_editor_qt_font_{1,1_25,1_5,2}`)
-- [x] TransformCommand undo/redo correctly restores exact before/after state — `fuse_editor_b6_command_gates`
-- [x] 100 commands execute and fully undo in correct LIFO order — entity state matches pre-execution — `fuse_editor_b6_command_gates`
-- [x] Consecutive transform drags merge into a single undo step — verified by undo count — `fuse_editor_b6_command_gates`
-- [x] DeleteEntity undo correctly restores all components exactly — `fuse_editor_b6_command_gates`
-- [x] Command stack respects MAX_HISTORY — oldest commands dropped correctly — `fuse_editor_b6_command_gates`
-- [x] Free camera WASD movement smooth at 60fps — no input lag or jitter (`fuse_editor_qt_wasd`)
-- [x] Mouse look angular rate matches sensitivity setting exactly (`fuse_editor_b6_viewport_gates`)
-- [x] Right-click context menu appears at correct screen position (`fuse_editor_b6_viewport_gates` headless menu model incl. DPR and edge flip/clamp; Qt `QMenu::popup` geometry matches in `fuse_editor_qt_context_menu`)
-- [x] Entity picking correctly identifies the front-most entity under cursor — verified with overlapping objects (`fuse_editor_b6_viewport_gates`)
-- [x] Viewport resizes cleanly — renderer framebuffer rebuilt, no validation errors (`fuse_editor_b6_viewport_resize_vk_gates`)
-- [x] Translation gizmo moves entity in correct world/local axis — verified numerically — `fuse_editor_b6_gizmo_gates`
-- [x] Rotation gizmo produces correct quaternion from drag — no gimbal lock in world space — `fuse_editor_b6_gizmo_gates`
-- [x] Scale gizmo scales uniformly on XYZ handle, per-axis on individual handles — `fuse_editor_b6_gizmo_gates`
-- [x] Gizmo axis highlight fires on hover, deactivates on mouse release — `fuse_editor_b6_gizmo_gates`
-- [x] Snap-to-grid correctly quantises position to snap_translate increment — `fuse_editor_b6_gizmo_gates`
-- [x] Gizmo remains correct screen size at all camera distances — `fuse_editor_b6_gizmo_gates`
-- [x] All entities displayed correctly — tree structure matches parent/child relationships — `fuse_editor_b6_hierarchy_gates`
-- [x] Drag-and-drop reparent emits ReparentCommand and updates hierarchy immediately — `fuse_editor_b6_hierarchy_gates`
-- [x] Search filter correctly shows only matching entities — case-insensitive — `fuse_editor_b6_hierarchy_gates`
-- [x] Right-click context menu creates/deletes entities correctly (`fuse_editor_b6_viewport_gates`)
-- [x] All component types render in inspector without crash (`fuse_editor_b6_viewport_gates`)
-- [x] Transform DragFloat values update renderer immediately — live preview (`fuse_editor_b6_viewport_gates`)
-- [x] SDFObject type change updates rendered shape within one frame (`fuse_editor_b6_viewport_gates`)
-- [x] GRIA alpha slider updates SDF smooth blending in real time — no frame delay (`fuse_editor_b6_viewport_gates`)
-- [x] Material ID change on mesh correctly updates rendered material (`fuse_editor_b6_viewport_gates`)
-- [x] Roughness and metallic sliders produce correct visual changes in viewport (`fuse_editor_b6_material_profiler_gates`)
-- [x] Colour picker correctly updates base colour — no colour space error (`fuse_editor_b6_material_profiler_gates`)
-- [x] Procedural material switch correctly replaces texture-based shading (`fuse_editor_b6_material_profiler_gates`)
-- [x] Material changes persist after save/load cycle (`fuse_editor_b6_material_profiler_gates`)
-- [x] Add brush creates SDF sphere at correct world position — `fuse_editor_b6_panels_gates`
-- [x] Subtract brush correctly removes volume — verified by ray marching through carved region (`fuse_editor_b6_panels_gates`)
-- [x] GRIA alpha blend produces smooth/hard transitions as expected (`fuse_editor_b6_panels_gates`)
-- [x] X symmetry correctly mirrors stroke across X=0 plane — `fuse_editor_b6_panels_gates`
-- [x] Stroke spacing prevents redundant kernel dispatches at slow cursor speeds — `fuse_editor_b6_panels_gates`
-- [ ] GPU pass breakdown times match CUDA event measurements within 0.5ms — coded, pending the RTX 3090 run: `fuse_b5_frame_bench` reruns every CUDA pass with synchronous launches and compares the profiler's per-pass time (the kernels' `kernel::LaunchRecord` durations = the `FUSE_PROFILE_SCOPE(launch.name)` spans) with the CUDA-event time of the same iterations, MATCH within 0.5 ms (`--enforce` makes a mismatch fatal); for the Vulkan passes the profiler breakdown is the GpuProfiler timestamp query itself. The editor `ProfilerPanel` is not yet fed from these numbers
-- [x] Frame history scrolls correctly — no off-by-one in ring buffer — `fuse_editor_b6_panels_gates`
-- [x] Pause correctly freezes history display without stopping engine — `fuse_editor_b6_panels_gates`
-- [x] Enter play: snapshot taken, physics initialised correctly — `fuse_editor_b6_play_mode_gates` (Play drives `PhysicsManager`)
-- [x] Stop play: scene state restored exactly — entity positions, velocities reset — `fuse_editor_b6_play_mode_gates`
-- [x] Pause/resume: simulation correctly halts and continues without state corruption — `fuse_editor_b6_play_mode_gates`
-- [x] Editor UI render time < 2ms per frame (Qt draw call submission) (`fuse_editor_qt_ui_frame`: changed-region repaint median <1 ms; full 9-dock repaint 4.1–4.4 ms reported)
-- [x] No frame spikes from editor on non-interactive frames — verified over 10,000 frames (`fuse_editor_b6_idle_frame_gates`, headless editor layer: 0 allocs/frame, no frame > 3x median; Qt editor re-verified in `fuse_editor_qt_idle_frames`)
-- [x] Memory overhead of editor layer < 256MB (`fuse_editor_b6_idle_frame_gates`, headless editor layer: +0.9 MiB RSS / +16.7 MiB heap over runtime-only; Qt editor layer +74.5 MiB in `fuse_editor_qt_idle_frames`)
+- [ ] Editor initialises all panels and dockspace in < 1 second
+- [ ] Default layout loads correctly — viewport, hierarchy, inspector, console visible
+- [ ] Qt dark theme applied correctly — all colours match specification
+- [ ] Font loaded and rendering correctly at all DPI scales
+- [ ] TransformCommand undo/redo correctly restores exact before/after state
+- [ ] 100 commands execute and fully undo in correct LIFO order — entity state matches pre-execution
+- [ ] Consecutive transform drags merge into a single undo step — verified by undo count
+- [ ] DeleteEntity undo correctly restores all components exactly
+- [ ] Command stack respects MAX_HISTORY — oldest commands dropped correctly
+- [ ] Free camera WASD movement smooth at 60fps — no input lag or jitter
+- [ ] Mouse look angular rate matches sensitivity setting exactly
+- [ ] Right-click context menu appears at correct screen position
+- [ ] Entity picking correctly identifies the front-most entity under cursor — verified with overlapping objects
+- [ ] Viewport resizes cleanly — renderer framebuffer rebuilt, no validation errors
+- [ ] Translation gizmo moves entity in correct world/local axis — verified numerically
+- [ ] Rotation gizmo produces correct quaternion from drag — no gimbal lock in world space
+- [ ] Scale gizmo scales uniformly on XYZ handle, per-axis on individual handles
+- [ ] Gizmo axis highlight fires on hover, deactivates on mouse release
+- [ ] Snap-to-grid correctly quantises position to snap_translate increment
+- [ ] Gizmo remains correct screen size at all camera distances
+- [ ] All entities displayed correctly — tree structure matches parent/child relationships
+- [ ] Drag-and-drop reparent emits ReparentCommand and updates hierarchy immediately
+- [ ] Search filter correctly shows only matching entities — case-insensitive
+- [ ] Right-click context menu creates/deletes entities correctly
+- [ ] All component types render in inspector without crash
+- [ ] Transform DragFloat values update renderer immediately — live preview
+- [ ] SDFObject type change updates rendered shape within one frame
+- [ ] GRIA alpha slider updates SDF smooth blending in real time — no frame delay
+- [ ] Material ID change on mesh correctly updates rendered material
+- [ ] Roughness and metallic sliders produce correct visual changes in viewport
+- [ ] Colour picker correctly updates base colour — no colour space error
+- [ ] Procedural material switch correctly replaces texture-based shading
+- [ ] Material changes persist after save/load cycle
+- [ ] Add brush creates SDF sphere at correct world position
+- [ ] Subtract brush correctly removes volume — verified by ray marching through carved region
+- [ ] GRIA alpha blend produces smooth/hard transitions as expected
+- [ ] X symmetry correctly mirrors stroke across X=0 plane
+- [ ] Stroke spacing prevents redundant kernel dispatches at slow cursor speeds
+- [ ] GPU pass breakdown times match CUDA event measurements within 0.5ms
+- [ ] Frame history scrolls correctly — no off-by-one in ring buffer
+- [ ] Pause correctly freezes history display without stopping engine
+- [ ] Enter play: snapshot taken, physics initialised correctly
+- [ ] Stop play: scene state restored exactly — entity positions, velocities reset
+- [ ] Pause/resume: simulation correctly halts and continues without state corruption
+- [ ] Editor UI render time < 2ms per frame (Qt draw call submission)
+- [ ] No frame spikes from editor on non-interactive frames — verified over 10,000 frames
+- [ ] Memory overhead of editor layer < 256MB
 
 ---
 
@@ -5526,10 +5504,10 @@ struct Animator {
 
 #### Gates
 
-- [x] **B7.1** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b7_animation_gates`)
+- [ ] **B7.1** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -5601,10 +5579,10 @@ struct ConvolutionReverb {
 
 #### Gates
 
-- [x] **B7.2** implemented on FUSE APIs (not ungated Torque guts) (`fuse_audio_b7_gates`)
+- [ ] **B7.2** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -5653,18 +5631,6 @@ struct Script {
 };
 ```
 
-> **Status (MP-B7.3-SCRIPT-COMPONENT, CPU-verified):** implemented as `Source/FUSE/ECS/include/fuse/ecs/components/script.hpp`
-> (`module` AssetId or `script_path[256]`, `enabled`, `started`, `lua_ref`, plus an 8-entry exposed-property table:
-> number / bool / string / vec3), registered in `register_builtin_components` and serialised by `RegistrySerialiser`
-> (runtime `started` / `lua_ref` written cleared; malformed rows rejected on load). `fuse::script::ScriptSystem`
-> (`Source/FUSE/Script`) attaches / detaches `ScriptRuntime` instances on component add / remove / disable / module
-> change, entity destroy and scene load, runs on_start / on_update / on_destroy, dispatches contacts, and exposes
-> `enterPlay` / `exitPlay` for PIE (editor inspector + PIE wiring are E17 / E19). `CookAssetKind::Script` syntax-checks
-> `.lua` with the vendored Lua and writes bytecode `.fusescript`; legacy `.cs` is tagged `t3d:` and passed through.
-> Gates: `fuse_script_component` (moves during ticks, save/load re-attach, destroy → on_destroy + detach, zero
-> steady-state allocations in `ScriptSystem::update`), `fuse_script_cook` (syntax error rejected with file:line),
-> `fuse_runtime_steady_state_alloc` (script phase now runs through Script components), `fuse_runtime_smoke`.
-
 #### Engine API Surface (Lua)
 
 ```lua
@@ -5688,17 +5654,6 @@ local hit = Physics.ray_cast({x=0,y=10,z=0}, {x=0,y=-1,z=0}, 100)
 -- Input
     // … truncated in master plan (full sketch in phase source)
 ```
-
-> **Status (MP-B7.3-LUA-API, CPU-verified):** `bind_engine_api` now also registers `Input` (key / mouse
-> state plus `Input.pressed/held/released/axis(action)` over the `fuse::platform::ActionMap`, `gamepad_connected`),
-> `Audio` (`load`, `play_at`, `play_2d` on `AudioEngine` via `fuse_script_audio`), `Scene` (`find_entity`,
-> `query_sphere` through the spatial BVH or a registry scan, `set_active_camera`, `active_camera`), `SDF`
-> (`set_radius`, `set_alpha`, `set_primitive`, `get` on the `SDFObject` component) and `CVar` (`get` / `set`),
-> each with a backend pointer in `ScriptEngineBindings` (`input`, `audio`, `scene`, `cvars`); ready-made backends
-> `InputScriptBackend`, `RegistrySceneBackend`, `AudioEngineScriptBackend`. Full list in
-> [TRACK-B-SCRIPT.md](../unification/TRACK-B-SCRIPT.md). Gate `fuse_script_lua_api`. Filling the bindings in the
-> runtime / PIE hosts belongs to those packages (SceneManager can forward `set_active_camera` through
-> `RegistrySceneBackend::set_camera_changed_callback`).
 
 #### Hot Reload
 
@@ -5734,10 +5689,10 @@ private:
 
 #### Gates
 
-- [x] **B7.3** implemented on FUSE APIs (not ungated Torque guts) (`fuse_script_b7_gates`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_script_b7_gates`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B7.3** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -5835,10 +5790,10 @@ public:
 
 #### Gates
 
-- [x] **B7.4** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b7_net_gates`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_b7_net_gates`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B7.4** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -5937,10 +5892,10 @@ void main() {
 
 #### Gates
 
-- [x] **B7.5** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b7_terrain_gates`)
+- [ ] **B7.5** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -5987,10 +5942,10 @@ struct WorldPartitionDesc {
 
 #### Gates
 
-- [x] **B7.6** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b7_streaming_gates`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_b7_streaming_gates`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B7.6** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -6061,10 +6016,10 @@ __global__ void particle_simulate_kernel(
 
 #### Gates
 
-- [x] **B7.7** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b7_vfx_gates`)
+- [ ] **B7.7** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -6179,10 +6134,10 @@ private:
 
 #### Gates
 
-- [x] **B7.8** implemented on FUSE APIs (not ungated Torque guts) (`fuse_core_b7_platform_gates`)
+- [ ] **B7.8** implemented on FUSE APIs (not ungated Torque guts)
 - [ ] Source narrative tests/acceptance for this topic green
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -6288,10 +6243,10 @@ private:
 
 #### Gates
 
-- [x] **B7.9** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b7_cook_gates`)
-- [x] Source narrative tests/acceptance for this topic green (`fuse_b7_cook_gates`)
-- [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
-- [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
+- [ ] **B7.9** implemented on FUSE APIs (not ungated Torque guts)
+- [ ] Source narrative tests/acceptance for this topic green
+- [ ] ASan/UBSan clean on subsystem smoke
+- [ ] No owning raw pointers in public FUSE APIs
 
 ---
 
@@ -6333,59 +6288,54 @@ private:
 
 *Carry-forward deliverable/test checklist (FUSE-adapted):*
 
-- [x] Skeleton loads from binary format with correct hierarchy — parent/child chain verified — `fuse_b7_animation_gates`
-- [x] ClipNode samples position and rotation channels within 0.001f of reference at all keyframes — `fuse_b7_animation_gates`
-- [x] BlendNode2 interpolates pose correctly at blend values 0.0, 0.5, and 1.0 — `fuse_b7_animation_gates`
-- [x] AnimStateMachine transitions between two states — blend completes in specified duration — `fuse_b7_animation_gates`
-- [x] FABRIK IK converges within tolerance in < 10 iterations for 95% of random target positions — `fuse_b7_animation_gates`
-- [x] TwoBoneIK produces analytically correct limb pose — verified against reference solver — `fuse_b7_animation_gates`
-- [ ] GPU skinning transforms 10k vertices in < 0.5ms — verified with CUDA events — coded, pending the RTX 3090 run: `animation::time_skinning_cuda` (kernels/skinning.cu) stages the mesh once and times the single-source `skinning_lbs` kernel with CUDA events on resident buffers (single launches, a back-to-back batch, palette upload + launch). `fuse_b7_skinning_cuda_events` checks CpuReference == CpuParallel bit-exact on the 10k-vertex / 64-bone mesh here (CpuReference 0.22 ms on this VM), then on a device checks CUDA vs CpuReference (1e-4) and gates the median launch < 0.5 ms (when timing budgets are enforced)
-- [x] Animator component updates pose and uploads bone buffer every frame without memory leak — `fuse_b7_animation_gates` (CPU pose + palette, 0 leaked allocations) + `fuse_b5_rhi_bone_buffer` (GPU BoneBuffer upload per frame, GPU readback matches, 0 GPU allocations after warm-up)
-- [x] Audio engine initialises OpenAL device and context without error — `fuse_audio_b7_openal_init` (openal-soft null driver via `ALSOFT_DRIVERS=null`; requires the OpenAL backend, a current ALC context/device and no AL/ALC error)
-- [x] Mono and stereo WAV files load and play correctly — `fuse_audio_b7_gates`
-- [x] Spatial attenuation: source at max_distance has near-zero volume — verified with gain readback — `fuse_audio_b7_gates`
-- [x] play_at correctly positions source at world position — panning matches camera orientation — `fuse_audio_b7_gates`
-- [ ] Convolution reverb CUDA FFT produces output within -60dB noise floor of reference CPU FFT — partial: CPU FFT reverb and the ReverbCuda CPU fallback are -132 dB vs direct convolution in `fuse_audio_b7_gates`; the CUDA device mirror (kernels/reverb_fft.cu) exists. `fuse_b7_reverb_cuda_device` compares ReverbCuda on the device with the CPU FFT reverb for 1 s / 0.1 s / 2.5 s IRs (steady and irregular blocks) against the -60 dB gate and times each block with CUDA events; here only its CPU part runs (reference -132 dB vs direct convolution), the device comparison is pending the RTX 3090 run
-- [x] 32 simultaneous spatial sources mix without crackling at 48kHz — `fuse_audio_b7_gates`
-- [x] The engine mix is audible on the output device (GAP-AUDIO-DEVICE-OUT): `AudioEngine::update` hands each mixed stereo block to one streaming OpenAL source (4 AL buffers, `AL_EXT_float32` else 16-bit, direct channels) through a lock-free SPSC ring drained by a feeder thread; underruns insert silence and are counted, latency is reported, `ALC_EXT_disconnect` loss re-opens the device (`ALC_SOFT_reopen_device`, else close/reopen); the per-voice AL sources (gain/position without data) are gone. openal-soft's wave driver records a WAV bit-identical to the Null-backend capture of the same scene; Null capture equals the mixer output for N ticks; 0 allocations per tick — `fuse_audio_output`, `fuse_audio_output_wave`, `fuse_audio_output_openal_null` (listening on real speakers is a manual check; hosts with a device set `AudioDesc::pacing = Device`)
-- [x] Cooked Ogg Vorbis plays in the runtime (MP-B7.2-OGG-RUNTIME / UNI-U7-AUDIO-1 / AP-W8.3 runtime half): libogg 1.3.6, libvorbis 1.3.7 and libFLAC 1.5.0 build from the pinned vendored archives (`cmake/FuseXiph.cmake`, `vendor/xiph/*/VERSION`, `fuse_lint_vendored_pins_xiph_*`); `AudioClip::load_ogg` / `load_flac` / `.fuseaudio` (FUSEAUDIO_OGG / PCM_F32 / FLAC) through the VFS, `AudioEngine::load_clip` dispatches by format; long Ogg clips stream through a bounded per-voice decode ring with loop points and seek (30 s voice: 0 underruns, 0 steady-state allocations, output equal to the full decode; looping/seeking streaming voices bit-identical to the PCM clip) — `fuse_audio_output` (the cook half is the next line)
-- [x] Audio import cook chain (MP-B7.9-AUDIO-IMPORT / AP-W8.3 / UNI-U7-AUDIO-1 cook half): `Tools/FUSE/Cook/src/audio_cook.cpp` (`fuse/cook/audio_cook.hpp`, linking the vendored `fuse_xiph_*`) decodes WAV (8/16/24/32-bit int, 32/64-bit float, WAVE_FORMAT_EXTENSIBLE), native FLAC and Ogg Vorbis; Kaiser-windowed-sinc polyphase resample to 48 kHz; trims silence; EBU R128 / BS.1770-4 integrated-loudness normalisation (beds -23 LUFS, one-shots -16 LUFS, look-ahead limiter holding -1 dBFS) or peak normalise; seamless loops (zero-crossing aligned crossfade, loop points in the header, loop-seam click check); Ogg Vorbis quality VBR (q4 beds, q5 one-shots, fixed stream serial) or PCM_F32 into `.fuseaudio`, byte-identical across runs. `tryCookAudioOgg` / `write_audio_stub` (the `AssetCooker::cook_audio` path) are thin wrappers; `fuse_cook --audio` takes `--bed/--oneshot/--loop/--rate/--mono/--lufs/--peak-normalise/--no-normalise/--no-trim/--quality/--pcm`. Gate `fuse_asset_audio_cook`: loudness vs an in-test BS.1770 reference (<= 0.02 LU) and EBU 3341 cases (+-0.1 LU), normalised cooks within +-1 LU (PCM +-0.2 LU) incl. after Vorbis decode, resample error < 1e-4 (44.1/22.05 -> 48 kHz) with the 30 kHz tone rejected on 96 -> 48 kHz, Vorbis round-trip SNR ~38 dB, loop seam ratio 1.0 (PCM) / 1.2 (Ogg) vs 19.9 for the naive wrap, byte-identical re-cooks, runtime `parse_fuseaudio` + decode of the cooked bytes. Not covered: MP3 sources (no decoder vendored; refused with a reason), and `AudioImportDesc` fields beyond rate/format (`normalise`, `trim_silence`, `ogg_quality`) are not yet forwarded by `AssetCooker::cook_audio` (Source/FUSE/Project), which cooks with the chain defaults (normalise + trim on, class-default quality)
-- [x] Lua state initialises and executes a hello-world script without error — `fuse_script_b7_gates`
-- [x] Entity.get_position / set_position round-trip correctly through Lua — `fuse_script_b7_gates`
-- [x] Physics.ray_cast returns correct hit from Lua — verified against C++ ray_cast result — `fuse_script_b7_gates`
-- [x] on_update called every frame with correct dt — verified by accumulating dt over 60 frames — `fuse_script_b7_gates`
-- [x] on_collision fires on first frame of contact — verified with controlled rigid body test — `fuse_script_b7_gates`
-- [x] Hot-reload replaces script function mid-run — new behaviour active within 1 frame — `fuse_script_b7_gates`
-- [x] ENet transport sends and receives reliable packet between two local processes — no data corruption — `fuse_b7_net_gates`
-- [x] Rollback snapshot correctly captures and restores rigid body positions — byte-identical round-trip — `fuse_b7_net_gates`
-- [x] Rollback resimulates 4 frames correctly after remote input arrives — final state matches non-rollback reference — `fuse_b7_net_gates`
-- [x] Desync detection correctly flags checksum mismatch when physics state diverges — `fuse_b7_net_gates`
-- [x] ClientInterpolator smoothly interpolates entity position over 3 received states — no discontinuity — `fuse_b7_net_gates`
-- [x] Heightfield generates without artifacts at 4096×4096 resolution — `fuse_b7_terrain_gates`
-- [x] get_height returns correct value — matches heightmap texel read within 0.01f — `fuse_b7_terrain_gates`
-- [x] LOD system loads and unloads chunks correctly as camera moves — no missing geometry — `fuse_b7_terrain_gates`
-- [ ] Terrain-SVO cave correctly renders below terrain surface — SVO ray march transitions from heightfield — partial: deterministic CPU render of the combined heightfield+SVO ray march (cave through the surface + 2 buried caves) matches an exact voxel-DDA reference per pixel (surface id, depth ≤ 2 cm, 0 gap/seam pixels, mouth rays hand off to the SVO), PPM written to the build dir — `fuse_b7_terrain_cave_render`; transition also in `fuse_b7_terrain_gates`; the GPU render remains a manual check
-- [x] Terrain deform correctly updates affected chunk mesh within 1 frame — `fuse_b7_terrain_gates`
-- [x] Cell loads correctly from disk — entity count and positions match saved state — `fuse_b7_streaming_gates`
-- [x] Stream-in fires before camera enters cell bounds — no pop-in visible at 60fps with 512m draw distance — `fuse_b7_streaming_gates`
-- [x] Stream-out correctly destroys all entities in unloaded cell — no leaked entities — `fuse_b7_streaming_gates`
-- [x] force_load completes synchronously and correctly — used for teleport test — `fuse_b7_streaming_gates`
-- [x] 4096 particles simulate under gravity and collide with SDF sphere — verified by visual inspection — `fuse_b7_vfx_gates`
-- [x] emit_rate correctly emits expected particle count per second — tested over 5 seconds — `fuse_b7_vfx_gates`
-- [x] Particle lifetime correctly ages and kills particles — alive count converges to rate × lifetime — `fuse_b7_vfx_gates`
-- [ ] CUDA particle kernel achieves > 70% occupancy — verified with Nsight Compute — partial 2026-09-25: elevated `ncu` on 262144 particles, compact achieved 73%, update achieved 69% (theoretical 83%). 5000 particles only reached ~16% because the grid does not fill the GPU. 2026-09-29 coded, `ncu` re-run pending: update and compact use `__launch_bounds__(256, 6)` (40 registers, was 42 / 46: 6 blocks per SM = 100% theoretical) and a persistent grid (SMs × resident blocks) that strides over the 256-slot workgroups, so the 2.5-wave tail that held achieved occupancy down is gone; each workgroup keeps its LaunchIndex, CPU results unchanged (`fuse_particle_kernel_parity` prints registers and theoretical occupancy on a device)
-- [x] Shipping build compiles with zero warnings, zero debug code included — verified by binary inspection (`fuse-werror-shipping` builds with -Werror; `fuse_b7_shipping_binaries` inspects all 41 shipped fuse_* libraries/programs for assert/profiler symbols and stripped strings; `fuse_core_b7_shipping_strip`)
-- [ ] Crash handler writes valid minidump on intentional null dereference — dmp opens in WinDbg — partial: Linux signal report proven in `fuse_core_b7_platform_gates`; Windows minidump proven under Wine by `fuse_core_b7_win32_crash_minidump` (MDMP header, exception 0xC0000005 at address 0 inside the probe, thread/module/system streams, dbghelp MiniDumpReadDumpStream, worker-thread and FUSE_VERIFY abort cases); opening it in WinDbg stays manual
-- [x] Leak detector correctly reports zero leaks after clean shutdown in debug build (`fuse_core_b7_platform_gates`)
-- [x] Mesh importer produces byte-identical output from same source on two machines — deterministic — `fuse_b7_cook_gates`
-- [x] Mesh importer honours `generate_lods`/`lod_count` (meshopt LOD chain) and `compress` (quantised FMSH v2 streams), and on request writes meshlets, the cluster DAG and a `.fusepages` cluster page file validated against the DAG, all part of the cook cache key — `fuse_asset_mesh_cook_complete` (CPU; `generate_lods`/`compress` default off, unlike the design sketch above, so default cooks stay lossless FMSH v1)
-- [x] Texture BC7 compression PSNR > 40dB vs original — verified with image comparison tool — `fuse_b7_cook_gates`
+- [ ] Skeleton loads from binary format with correct hierarchy — parent/child chain verified
+- [ ] ClipNode samples position and rotation channels within 0.001f of reference at all keyframes
+- [ ] BlendNode2 interpolates pose correctly at blend values 0.0, 0.5, and 1.0
+- [ ] AnimStateMachine transitions between two states — blend completes in specified duration
+- [ ] FABRIK IK converges within tolerance in < 10 iterations for 95% of random target positions
+- [ ] TwoBoneIK produces analytically correct limb pose — verified against reference solver
+- [ ] GPU skinning transforms 10k vertices in < 0.5ms — verified with CUDA events
+- [ ] Animator component updates pose and uploads bone buffer every frame without memory leak
+- [ ] Audio engine initialises OpenAL device and context without error
+- [ ] Mono and stereo WAV files load and play correctly
+- [ ] Spatial attenuation: source at max_distance has near-zero volume — verified with gain readback
+- [ ] play_at correctly positions source at world position — panning matches camera orientation
+- [ ] Convolution reverb CUDA FFT produces output within -60dB noise floor of reference CPU FFT
+- [ ] 32 simultaneous spatial sources mix without crackling at 48kHz
+- [ ] Lua state initialises and executes a hello-world script without error
+- [ ] Entity.get_position / set_position round-trip correctly through Lua
+- [ ] Physics.ray_cast returns correct hit from Lua — verified against C++ ray_cast result
+- [ ] on_update called every frame with correct dt — verified by accumulating dt over 60 frames
+- [ ] on_collision fires on first frame of contact — verified with controlled rigid body test
+- [ ] Hot-reload replaces script function mid-run — new behaviour active within 1 frame
+- [ ] ENet transport sends and receives reliable packet between two local processes — no data corruption
+- [ ] Rollback snapshot correctly captures and restores rigid body positions — byte-identical round-trip
+- [ ] Rollback resimulates 4 frames correctly after remote input arrives — final state matches non-rollback reference
+- [ ] Desync detection correctly flags checksum mismatch when physics state diverges
+- [ ] ClientInterpolator smoothly interpolates entity position over 3 received states — no discontinuity
+- [ ] Heightfield generates without artifacts at 4096×4096 resolution
+- [ ] get_height returns correct value — matches heightmap texel read within 0.01f
+- [ ] LOD system loads and unloads chunks correctly as camera moves — no missing geometry
+- [ ] Terrain-SVO cave correctly renders below terrain surface — SVO ray march transitions from heightfield
+- [ ] Terrain deform correctly updates affected chunk mesh within 1 frame
+- [ ] Cell loads correctly from disk — entity count and positions match saved state
+- [ ] Stream-in fires before camera enters cell bounds — no pop-in visible at 60fps with 512m draw distance
+- [ ] Stream-out correctly destroys all entities in unloaded cell — no leaked entities
+- [ ] force_load completes synchronously and correctly — used for teleport test
+- [ ] 4096 particles simulate under gravity and collide with SDF sphere — verified by visual inspection
+- [ ] emit_rate correctly emits expected particle count per second — tested over 5 seconds
+- [ ] Particle lifetime correctly ages and kills particles — alive count converges to rate × lifetime
+- [ ] CUDA particle kernel achieves > 70% occupancy — verified with Nsight Compute
+- [ ] Shipping build compiles with zero warnings, zero debug code included — verified by binary inspection
+- [ ] Crash handler writes valid minidump on intentional null dereference — dmp opens in WinDbg
+- [ ] Leak detector correctly reports zero leaks after clean shutdown in debug build
+- [ ] Mesh importer produces byte-identical output from same source on two machines — deterministic
+- [ ] Texture BC7 compression PSNR > 40dB vs original — verified with image comparison tool
 - [ ] Engine boots, editor opens, scene loads, physics runs, audio plays in < 3 seconds on ThinkStation P920
 - [ ] 1000 animated skinned characters in scene with physics and audio — frame time < 16ms
-  - Prerequisite coded and CPU-verified (GAP-GAME-LOOP-ECS / MP-B7.1-PARALLEL-EVAL): World3D and PIE tick physics (PhysicsManager over Transform + RigidBody + Collider), parallel animation (AnimationSystem, 1000 Animators parallel == serial, 0 allocs), AudioSource / AudioListener components, VFX emitter components and transform / camera systems from the ECS registry through one fixed-step `world3d::RuntimeSchedule` — `fuse_runtime_schedule_gates`, `fuse_animation_system_gates`. The two timing rows above are not measured here (target hardware)
-- [x] Save, close, reload cycle — scene state bit-identical after round-trip — `fuse_b7_save_reload_gates`
-- [x] Script-controlled entity destroys itself on collision — no dangling entity handles — `fuse_script_b7_self_destroy_gates`
-- [x] World partition streams 16 cells seamlessly as camera traverses 2km at 30m/s — `fuse_b7_streaming_gates`
+- [ ] Save, close, reload cycle — scene state bit-identical after round-trip
+- [ ] Script-controlled entity destroys itself on collision — no dangling entity handles
+- [ ] World partition streams 16 cells seamlessly as camera traverses 2km at 30m/s
 
 ---
 
@@ -6469,15 +6419,15 @@ Parallelism: B1 coincides with P1–P3; later B tracks overlap only where Track 
 
 ## Appendix A — Rename checklist
 
-- [x] CMake `project(FUSE …)` (root CMakeLists.txt `project(FUSE VERSION 0.1.0 …)`)
-- [x] Namespace `fuse::` (`fuse_lint_a_namespace_fuse`)
-- [x] Macros `FUSE_*` / `FUSE_ASSERT` / `FUSE_HOST_DEVICE` (`fuse_lint_a_fuse_macros`)
-- [x] Default window title “FUSE” (`fuse_lint_a_window_title`)
-- [x] Icons, installer, docs, CI badge names (`fuse_package_gate`, `fuse_branding_icons_regen`, `fuse_editor_qt_icon`, `fuse_lint_a_branding_ci_docs`)
-- [x] `TORQUE_*` only inside `compat/` (`fuse_lint_a_torque_macros_compat`)
-- [x] Log channels / memory domains renamed (`fuse_lint_a_log_mem_domains`)
-- [x] Scene file magic updated (versioned; old magic in compat loader) — `fuse_scene_magic_gates`
-- [x] No Meridian; no ImGui editor dependency in tree (`fuse_lint_a_no_meridian_imgui`)
+- [ ] CMake `project(FUSE …)`
+- [ ] Namespace `fuse::`
+- [ ] Macros `FUSE_*` / `FUSE_ASSERT` / `FUSE_HOST_DEVICE`
+- [ ] Default window title “FUSE”
+- [ ] Icons, installer, docs, CI badge names
+- [ ] `TORQUE_*` only inside `compat/`
+- [ ] Log channels / memory domains renamed
+- [ ] Scene file magic updated (versioned; old magic in compat loader)
+- [ ] No Meridian; no ImGui editor dependency in tree
 
 ## Appendix B — Legal notes
 
@@ -6492,12 +6442,12 @@ Parallelism: B1 coincides with P1–P3; later B tracks overlap only where Track 
 
 Retain Foundation deliverable gates under FUSE naming, plus:
 
-- [x] `CMAKE_CXX_STANDARD 23` on all non-CUDA host targets (`fuse_lint_c_cxx23_targets`; Legacy compat targets stay C++17 by design)
-- [x] `fuse_editor` on Qt 6 with embedded Vulkan viewport (`fuse_editor_qt_live_present`: live `MainWindow` presents through a `createWindowContainer` Vulkan child window on the adopted FUSE `VkInstance` — acquire/present counts, screen pixels, resize recreate, forwarded input, 0 validation messages, clean teardown; editor-scoped `TrackBHostFeature::EditorViewportPresent`, see `docs/editor.md`)
-- [x] No `#include <Q*>` from `fuse_core` / `fuse_renderer` / `fuse_physics` / `fuse_ecs` / `fuse_compute` (`fuse_lint_c_no_qt_in_core`)
-- [x] Golden Torque mission loads under ASan after P4 (`fuse_p4_golden_mis`, `fuse_mission_load_p4` under `fuse-asan`)
-- [x] Profiler events consumable by Qt flame-graph panel (B6) (`fuse_editor_b6_material_profiler_gates`)
-- [x] Every `### B*.*` subsection has a matching source `## N.M` (`fuse_lint_c_doc_headings`)
+- [ ] `CMAKE_CXX_STANDARD 23` on all non-CUDA host targets
+- [ ] `fuse_editor` on Qt 6 with embedded Vulkan viewport
+- [ ] No `#include <Q*>` from `fuse_core` / `fuse_renderer` / `fuse_physics` / `fuse_ecs` / `fuse_compute`
+- [ ] Golden Torque mission loads under ASan after P4
+- [ ] Profiler events consumable by Qt flame-graph panel (B6)
+- [ ] Every `### B*.*` subsection has a matching source `## N.M`
 
 ## Appendix D — Document control
 

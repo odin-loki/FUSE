@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="GuiDynamicCtrlArrayControl_image"
-    imageFile="@assetFile=GuiDynamicCtrlArrayControl.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

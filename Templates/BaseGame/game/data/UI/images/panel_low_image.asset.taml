@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="panel_low_image"
-    imageFile="@assetFile=panel_low.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

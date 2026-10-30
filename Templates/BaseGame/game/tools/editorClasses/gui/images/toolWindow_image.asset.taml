@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="toolWindow_image"
-    imageFile="@assetFile=toolWindow.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

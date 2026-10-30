@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="listMenuArray_image"
-    imageFile="@assetFile=listMenuArray.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

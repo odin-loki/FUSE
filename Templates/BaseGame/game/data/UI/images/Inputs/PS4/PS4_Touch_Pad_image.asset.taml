@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="PS4_Touch_Pad_image"
-    imageFile="@assetFile=PS4_Touch_Pad.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="serverScriptIcon_image"
-    imageFile="@assetFile=serverScriptIcon.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

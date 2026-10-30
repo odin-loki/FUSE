@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="ScreenBrightness_Dark_image"
-    imageFile="@assetFile=ScreenBrightness_Dark.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

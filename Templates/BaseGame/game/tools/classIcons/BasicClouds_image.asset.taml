@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="BasicClouds_image"
-    imageFile="@assetFile=BasicClouds.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

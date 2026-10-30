@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="shownodes_btn_n_image"
-    imageFile="@assetFile=shownodes_btn_n.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

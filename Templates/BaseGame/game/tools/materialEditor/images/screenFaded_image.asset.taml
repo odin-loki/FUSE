@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="screenFaded_image"
-    imageFile="@assetFile=screenFaded.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

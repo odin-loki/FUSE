@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="GuiWindowCollapseCtrl_image"
-    imageFile="@assetFile=GuiWindowCollapseCtrl.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

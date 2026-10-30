@@ -1,99 +1,25 @@
 # FUSE
 
-**Fast Unified Simulation Engine**
+**F**ast **U**nified **S**imulation **E**ngine
 
-One program for 2D, 3D, and hybrid worlds. ISO C++ host, handle-based ownership, a fiber job spine, Vulkan and optional CUDA, and a Qt 6 editor.
-
-*Exact where it matters. Parallel everywhere else.*
-
-[![FUSE Umbrella (Linux)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-umbrella-linux.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-umbrella-linux.yml)
-[![FUSE clang-tidy (P7)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-clang-tidy.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-clang-tidy.yml)
-[![FUSE fuse_core (Android NDK)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-core-android.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-core-android.yml)
-[![FUSE fuse_core (iOS simulator)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-core-ios.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-core-ios.yml)
-[![FUSE fuse_core (TSan nightly)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-tsan-nightly.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-tsan-nightly.yml)
-[![FUSE CUDA compile-only (Linux)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-cuda-compile.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-cuda-compile.yml)
-[![FUSE Windows x64 (MinGW-w64 cross + Wine)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-windows-cross.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-windows-cross.yml)
-[![FUSE Windows x64 (MSVC native)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-windows-native.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-windows-native.yml)
-[![FUSE Win32 fiber ASan spike](https://github.com/odin-loki/FUSE/actions/workflows/fuse-msvc-asan-spike.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-msvc-asan-spike.yml)
-[![FUSE Relight (MinGW-w64 cross + Wine/Xvfb/Lavapipe)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-relight-wine.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-relight-wine.yml)
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE.md)
-
-Optional CI (iOS simulator, TSan nightly): manual or scheduled workflows, not the default `main` gate — [build guide](docs/building.md#optional-ci-github-actions).
-
-- Product docs: [`docs/README.md`](docs/README.md)
-- Getting started: [`docs/getting-started.md`](docs/getting-started.md)
-- Architecture: [`docs/architecture.md`](docs/architecture.md)
-- Build: [`docs/building.md`](docs/building.md)
-
-Work happens on **`main`**.
-
----
-
-## What it is
-
-FUSE is a single runtime and a single editor:
-
-| Target | Role |
-|--------|------|
-| `fuse_runtime` | Game / player process — 2D, 3D, or both in one frame |
-| `fuse_editor` | Qt 6 desktop shell — project hub, viewports, inspectors |
-| `fuse_tools` | CLI cookers and importers |
-
-Gameplay, AI, FX, cinematics, mechanics, and adventure systems are **engine modules**, not bolt-on kits. 2D and 3D share object identity, assets, input, audio, and networking.
-
-Current public APIs live under `fuse::` in [`Source/FUSE/`](Source/FUSE/).
-
----
+Torque3D-lineage engine modernised to ISO C++23, memory-safe ownership (handles + allocators), Vulkan/CUDA compute, and a **Qt 6** editor.
 
 ## Status
 
-FUSE is under active construction. The product CMake graph, `fuse_core`, dimension worlds, hybrid compositor, feature modules, project format, and headless demos are in tree. The Vulkan renderer, CUDA compute path, and Qt editor are scaffolding toward Track B.
+Planning complete. Implementation starts at Track A **P0** (repo skeleton, CMake, Qt hello).
 
-See [`docs/roadmap.md`](docs/roadmap.md) for the phase map.
+See [`docs/plans/FUSE_MASTER_PLAN.md`](docs/plans/FUSE_MASTER_PLAN.md) (full fidelity) and [`docs/plans/FUSE_MASTER_PLAN_TOC.md`](docs/plans/FUSE_MASTER_PLAN_TOC.md).
 
----
-
-## Quick start
-
-```bash
-git clone https://github.com/odin-loki/FUSE.git
-cd FUSE
-# Vendored deps are under vendor/ — no extra checkout step.
-
-cmake -B build -G Ninja \
-  -DFUSE_BUILD_CORE=ON \
-  -DFUSE_BUILD_CORE_TESTS=ON
-
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
-
-Run a hybrid demo (software placeholder renderer):
-
-```bash
-./build/Source/FUSE/Apps/HybridHud/demo_hybrid_hud
-```
-
-**On Windows**, build inside **WSL2 (Ubuntu)** — not Strawberry Perl’s CMake/GCC. Full steps: [`docs/building.md`](docs/building.md#wsl2-recommended-on-windows). Native MSVC is optional for Windows-only smoke; Lavapipe renderer gates match Linux CI in WSL.
-
----
-
-## Repository map
+## Layout
 
 ```
-Source/FUSE/          Product engine (C++23) — core, worlds, renderer, modules, editor, apps
-vendor/               Pinned third-party libraries
-Samples/unification/  U8 parity demo projects (`project.json`)
-Tools/FUSE/           Importers and cookers
-Tests/                Golden and integration fixtures
-docs/                 User and engineering documentation
-cmake/                Platform, vendor, and preset helpers
+fuse/
+├── core/ platform/ renderer/ compute/ physics/ ecs/
+├── assets/ audio/ editor/ runtime_ui/ game/ compat/ tools/
+├── tests/ third_party/ docs/
+└── README.md
 ```
-
-Layout details: [`docs/repository-layout.md`](docs/repository-layout.md).
-
----
 
 ## License
 
-AGPL-3.0. See [`LICENSE.md`](LICENSE.md). Provenance notes: [`docs/heritage.md`](docs/heritage.md).
+Engine code will ship under terms documented in `THIRD_PARTY.md` / `LICENSE` (Torque3D MIT notices preserved in `compat/` and attributions).

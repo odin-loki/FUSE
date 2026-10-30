@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="iconUnlocked_image"
-    imageFile="@assetFile=iconUnlocked.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

@@ -1,6 +1,0 @@
-// put script tests here
-
-function MyTest() {
-   expectTrue(2+2 == 4, "basic math should work");
-}
-addUnitTest(MyTest);

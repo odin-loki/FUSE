@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="lowerHeight_n_image"
-    imageFile="@assetFile=lowerHeight_n.PNG"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

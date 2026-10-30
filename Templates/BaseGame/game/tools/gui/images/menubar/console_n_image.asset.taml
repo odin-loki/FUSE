@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="console_n_image"
-    imageFile="@assetFile=console_n.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

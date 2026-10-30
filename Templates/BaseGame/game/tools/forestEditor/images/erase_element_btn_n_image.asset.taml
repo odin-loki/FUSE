@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="erase_element_btn_n_image"
-    imageFile="@assetFile=erase-element-btn_n.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

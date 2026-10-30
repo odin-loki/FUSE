@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="phone_image"
-    imageFile="@assetFile=phone.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

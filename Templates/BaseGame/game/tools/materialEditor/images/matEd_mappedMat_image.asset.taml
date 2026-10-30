@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="matEd_mappedMat_image"
-    imageFile="@assetFile=matEd_mappedMat.jpg"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

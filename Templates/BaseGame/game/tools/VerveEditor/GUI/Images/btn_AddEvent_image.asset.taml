@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="btn_AddEvent_image"
-    imageFile="@assetFile=btn_AddEvent.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

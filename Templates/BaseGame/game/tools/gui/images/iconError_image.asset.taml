@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="iconError_image"
-    imageFile="@assetFile=iconError.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

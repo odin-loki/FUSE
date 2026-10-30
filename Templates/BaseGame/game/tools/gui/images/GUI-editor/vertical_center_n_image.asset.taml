@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="vertical_center_n_image"
-    imageFile="@assetFile=vertical-center_n.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

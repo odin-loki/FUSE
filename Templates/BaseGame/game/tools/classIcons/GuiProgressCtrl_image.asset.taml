@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="GuiProgressCtrl_image"
-    imageFile="@assetFile=GuiProgressCtrl.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

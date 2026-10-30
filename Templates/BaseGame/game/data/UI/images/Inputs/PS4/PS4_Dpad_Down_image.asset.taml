@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="PS4_Dpad_Down_image"
-    imageFile="@assetFile=PS4_Dpad_Down.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

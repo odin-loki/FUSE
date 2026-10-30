@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="copy_btn_n_image"
-    imageFile="@assetFile=copy-btn_n.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

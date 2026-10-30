@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="checkbox_list_image"
-    imageFile="@assetFile=checkbox-list.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

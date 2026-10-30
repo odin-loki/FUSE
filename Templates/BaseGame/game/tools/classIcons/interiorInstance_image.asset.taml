@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="interiorInstance_image"
-    imageFile="@assetFile=interiorInstance.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

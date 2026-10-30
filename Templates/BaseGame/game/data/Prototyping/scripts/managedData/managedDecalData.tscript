@@ -1,6 +1,0 @@
-
-datablock DecalData(ArrowGreenData)
-{
-   MaterialAsset = "Prototyping:ArrowGreen";
-   size = "1";
-};

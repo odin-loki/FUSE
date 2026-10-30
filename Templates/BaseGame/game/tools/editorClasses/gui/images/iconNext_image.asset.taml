@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="iconNext_image"
-    imageFile="@assetFile=iconNext.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

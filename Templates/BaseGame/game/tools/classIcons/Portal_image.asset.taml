@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="Portal_image"
-    imageFile="@assetFile=Portal.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

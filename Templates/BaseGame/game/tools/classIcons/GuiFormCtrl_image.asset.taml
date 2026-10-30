@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="GuiFormCtrl_image"
-    imageFile="@assetFile=GuiFormCtrl.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

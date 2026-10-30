@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="icon_dropdownbar_image"
-    imageFile="@assetFile=icon-dropdownbar.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

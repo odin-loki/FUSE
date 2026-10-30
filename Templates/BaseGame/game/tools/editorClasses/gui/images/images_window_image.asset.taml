@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="images_window_image"
-    imageFile="@assetFile=window.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

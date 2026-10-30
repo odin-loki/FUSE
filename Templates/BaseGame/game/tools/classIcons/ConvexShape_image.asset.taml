@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="ConvexShape_image"
-    imageFile="@assetFile=ConvexShape.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

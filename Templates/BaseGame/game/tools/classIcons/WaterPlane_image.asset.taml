@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="WaterPlane_image"
-    imageFile="@assetFile=WaterPlane.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

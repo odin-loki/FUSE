@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="GuiTreeViewCtrl_image"
-    imageFile="@assetFile=GuiTreeViewCtrl.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

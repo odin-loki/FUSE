@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="plus_image"
-    imageFile="@assetFile=plus.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

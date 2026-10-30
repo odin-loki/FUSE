@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="GuiScrollCtrl_image"
-    imageFile="@assetFile=GuiScrollCtrl.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

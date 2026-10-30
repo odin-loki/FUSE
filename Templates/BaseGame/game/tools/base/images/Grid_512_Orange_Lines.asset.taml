@@ -1,7 +1,0 @@
-<MaterialAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="Grid_512_Orange_Lines"
-    scriptFile="@assetFile=materials.tscript"
-    materialDefinitionName="Grid_512_Orange_Lines"
-    VersionId="1" />

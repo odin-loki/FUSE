@@ -1,6 +1,0 @@
-<ShapeAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="pyramidpreview"
-    fileName="@assetFile=pyramidpreview.dts"
-    constuctorFileName="@assetFile=pyramidpreview.tscript" />

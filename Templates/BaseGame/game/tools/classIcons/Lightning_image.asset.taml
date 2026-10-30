@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="Lightning_image"
-    imageFile="@assetFile=Lightning.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

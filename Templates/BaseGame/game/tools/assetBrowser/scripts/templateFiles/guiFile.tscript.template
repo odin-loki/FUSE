@@ -1,9 +1,0 @@
-function @@::onWake(%this)
-{
-    
-}
-
-function @@::onSleep(%this)
-{
-    
-}

@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="lagIcon_image"
-    imageFile="@assetFile=lagIcon.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="matEd_sphereButt_d_image"
-    imageFile="@assetFile=matEd_sphereButt_d.jpg"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="boxBrush_n_image"
-    imageFile="@assetFile=boxBrush_n.PNG"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

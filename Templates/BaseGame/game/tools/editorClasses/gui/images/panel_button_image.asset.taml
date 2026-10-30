@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="panel_button_image"
-    imageFile="@assetFile=panel_button.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

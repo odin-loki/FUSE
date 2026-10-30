@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="cube_yPos_image"
-    imageFile="@assetFile=cube_yPos.jpg"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

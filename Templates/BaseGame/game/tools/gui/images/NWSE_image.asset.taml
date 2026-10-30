@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="NWSE_image"
-    imageFile="@assetFile=NWSE.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

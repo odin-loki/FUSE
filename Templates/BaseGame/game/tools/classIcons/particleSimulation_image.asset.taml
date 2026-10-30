@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="particleSimulation_image"
-    imageFile="@assetFile=particleSimulation.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

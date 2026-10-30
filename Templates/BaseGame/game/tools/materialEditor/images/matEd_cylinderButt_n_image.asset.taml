@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="matEd_cylinderButt_n_image"
-    imageFile="@assetFile=matEd_cylinderButt_n.jpg"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

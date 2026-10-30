@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="GuiSplitContainer_image"
-    imageFile="@assetFile=GuiSplitContainer.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

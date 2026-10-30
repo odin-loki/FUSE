@@ -1,5 +1,0 @@
-<GUIAsset
-    AssetName="NuMaterialEditor"
-    ScriptFile="@assetFile=NuMaterialEditor.tscript"
-    GUIFile="@assetFile=NuMaterialEditor.gui"
-    VersionId="1"/>

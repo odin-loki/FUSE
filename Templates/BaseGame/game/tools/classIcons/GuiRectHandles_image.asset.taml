@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="GuiRectHandles_image"
-    imageFile="@assetFile=GuiRectHandles.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

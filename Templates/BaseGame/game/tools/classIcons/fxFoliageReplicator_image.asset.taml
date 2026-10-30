@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="fxFoliageReplicator_image"
-    imageFile="@assetFile=fxFoliageReplicator.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

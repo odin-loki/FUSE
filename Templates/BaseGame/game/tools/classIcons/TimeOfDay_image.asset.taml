@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="TimeOfDay_image"
-    imageFile="@assetFile=TimeOfDay.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

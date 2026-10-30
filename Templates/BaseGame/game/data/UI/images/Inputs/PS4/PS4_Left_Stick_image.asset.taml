@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="PS4_Left_Stick_image"
-    imageFile="@assetFile=PS4_Left_Stick.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="GameTSCtrl_image"
-    imageFile="@assetFile=GameTSCtrl.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

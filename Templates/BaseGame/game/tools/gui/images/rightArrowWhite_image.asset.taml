@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="rightArrowWhite_image"
-    imageFile="@assetFile=rightArrowWhite.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

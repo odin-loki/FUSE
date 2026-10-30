@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="occluderProxyImage_image"
-    imageFile="@assetFile=occluderProxyImage.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

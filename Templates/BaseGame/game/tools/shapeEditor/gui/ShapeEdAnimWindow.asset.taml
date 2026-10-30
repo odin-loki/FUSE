@@ -1,7 +1,0 @@
-<GUIAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="ShapeEdAnimWindow"
-    scriptFile="@assetFile=shapeEdAnimWindow.ed.gui"
-    GUIFile="@assetFile=shapeEdAnimWindow.ed.gui"
-    VersionId="1" />

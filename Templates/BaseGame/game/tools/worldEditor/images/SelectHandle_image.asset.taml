@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="SelectHandle_image"
-    imageFile="@assetFile=SelectHandle.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

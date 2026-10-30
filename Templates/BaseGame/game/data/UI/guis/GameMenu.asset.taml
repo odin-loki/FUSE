@@ -1,5 +1,0 @@
-<GUIAsset
-    AssetName="GameMenu"
-    scriptFile="@assetFile=GameMenu"
-    GUIFile="@assetFile=GameMenu.gui"
-    VersionId="1"/>

@@ -1,4 +1,0 @@
---name
-capture_layout
---game
-CapGame

@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="panel_dock_n_image"
-    imageFile="@assetFile=panel_dock_n.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="cubemapBtnBorder_i_image"
-    imageFile="@assetFile=cubemapBtnBorder_i.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

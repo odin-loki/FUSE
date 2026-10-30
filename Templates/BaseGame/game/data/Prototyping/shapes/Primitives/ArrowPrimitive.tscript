@@ -1,8 +1,0 @@
-
-singleton TSShapeConstructor(ArrowPrimitivefbx)
-{
-   baseShapeAsset = "Prototyping:ArrowPrimitive";
-   singleDetailSize = "0";
-   neverImportMat = "DefaultMaterial	ColorEffect*";
-   animFPS = "2";
-};

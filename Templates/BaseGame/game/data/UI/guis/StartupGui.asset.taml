@@ -1,5 +1,0 @@
-<GUIAsset
-    AssetName="StartupGui"
-    scriptFile="@assetFile=startupGui"
-    GUIFile="@assetFile=startupGui.gui"
-    VersionId="1"/>

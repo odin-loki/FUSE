@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="SimObject_image"
-    imageFile="@assetFile=SimObject.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

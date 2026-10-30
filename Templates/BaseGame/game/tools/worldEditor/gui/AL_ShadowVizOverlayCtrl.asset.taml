@@ -1,7 +1,0 @@
-<GUIAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="AL_ShadowVizOverlayCtrl"
-    scriptFile="@assetFile=shadowViz.tscript"
-    GUIFile="@assetFile=shadowViz.gui"
-    VersionId="1" />

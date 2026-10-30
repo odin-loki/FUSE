@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="defaultCursor_image"
-    imageFile="@assetFile=defaultCursor.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

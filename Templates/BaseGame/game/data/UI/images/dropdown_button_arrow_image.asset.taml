@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="dropdown_button_arrow_image"
-    imageFile="@assetFile=dropdown-button-arrow.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

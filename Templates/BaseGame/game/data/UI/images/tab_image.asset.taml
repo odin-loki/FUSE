@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="tab_image"
-    imageFile="@assetFile=tab.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

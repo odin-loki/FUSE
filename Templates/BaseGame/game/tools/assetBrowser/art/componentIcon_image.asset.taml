@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="componentIcon_image"
-    imageFile="@assetFile=componentIcon.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

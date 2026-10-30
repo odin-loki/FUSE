@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="delete_btn_n_image"
-    imageFile="@assetFile=delete-btn_n.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="navPanel_green_image"
-    imageFile="@assetFile=navPanel_green.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

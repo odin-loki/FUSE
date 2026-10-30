@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="animationIcon_image"
-    imageFile="@assetFile=animationIcon.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

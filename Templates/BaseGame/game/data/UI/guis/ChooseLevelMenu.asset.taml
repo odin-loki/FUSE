@@ -1,5 +1,0 @@
-<GUIAsset
-    AssetName="ChooseLevelMenu"
-    scriptFile="@assetFile=ChooseLevelMenu"
-    GUIFile="@assetFile=ChooseLevelMenu.gui"
-    VersionId="1"/>

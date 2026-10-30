@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="toolbar_window_image"
-    imageFile="@assetFile=toolbar-window.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

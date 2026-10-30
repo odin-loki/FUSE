@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="wetMap_image"
-    imageFile="@assetFile=wetMap.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

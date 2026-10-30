@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="Sun_image"
-    imageFile="@assetFile=Sun.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="iconRefresh_image"
-    imageFile="@assetFile=iconRefresh.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

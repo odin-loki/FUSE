@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="depthviz_image"
-    imageFile="@assetFile=depthviz.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

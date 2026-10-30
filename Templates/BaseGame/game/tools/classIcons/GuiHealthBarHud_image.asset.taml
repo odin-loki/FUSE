@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="GuiHealthBarHud_image"
-    imageFile="@assetFile=GuiHealthBarHud.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="folderIcon_image"
-    imageFile="@assetFile=folderIcon.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

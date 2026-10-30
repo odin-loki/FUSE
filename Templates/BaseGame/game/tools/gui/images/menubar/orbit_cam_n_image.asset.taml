@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="orbit_cam_n_image"
-    imageFile="@assetFile=orbit-cam_n.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

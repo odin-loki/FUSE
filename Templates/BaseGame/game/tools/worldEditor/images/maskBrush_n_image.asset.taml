@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="maskBrush_n_image"
-    imageFile="@assetFile=maskBrush_n.PNG"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

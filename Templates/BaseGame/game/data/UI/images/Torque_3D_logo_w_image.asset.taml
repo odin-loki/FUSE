@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="Torque_3D_logo_w_image"
-    imageFile="@assetFile=Torque_3D_logo_w.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

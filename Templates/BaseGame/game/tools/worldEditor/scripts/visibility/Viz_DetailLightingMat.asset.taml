@@ -1,7 +1,0 @@
-<MaterialAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="Viz_DetailLightingMat"
-    scriptFile="@assetFile=lightViz.tscript"
-    materialDefinitionName="Viz_DetailLightingMat"
-    VersionId="1" />

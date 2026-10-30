@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="iconCancel_image"
-    imageFile="@assetFile=iconCancel.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

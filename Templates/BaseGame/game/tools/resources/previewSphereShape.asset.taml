@@ -1,6 +1,0 @@
-<ShapeAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="previewSphereShape"
-    fileName="@assetFile=previewSphereShape.dae"
-    constuctorFileName="@assetFile=previewSphereShape.tscript" />

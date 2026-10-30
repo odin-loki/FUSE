@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="PS4_Circle_image"
-    imageFile="@assetFile=PS4_Circle.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

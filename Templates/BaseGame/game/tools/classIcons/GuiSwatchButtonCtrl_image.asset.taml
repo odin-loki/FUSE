@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="GuiSwatchButtonCtrl_image"
-    imageFile="@assetFile=GuiSwatchButtonCtrl.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

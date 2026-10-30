@@ -1,5 +1,0 @@
-<ShapeAsset
-    AssetName="colorCalibrationCard_shape"
-    fileName="@assetFile=colorCalibrationCard.dae"
-    constuctorFileName="@assetFile=colorCalibrationCard.tscript"
-    materialSlot0="@asset=Prototyping:ColorCalibration_mat"/>

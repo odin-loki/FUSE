@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="btn_Play_image"
-    imageFile="@assetFile=btn_Play.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

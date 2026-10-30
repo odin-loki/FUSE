@@ -1,7 +1,0 @@
-<GUIAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="NavEditorGui, EditorGuiGroup"
-    scriptFile="@assetFile=NavEditorGui.gui"
-    GUIFile="@assetFile=NavEditorGui.gui"
-    VersionId="1" />

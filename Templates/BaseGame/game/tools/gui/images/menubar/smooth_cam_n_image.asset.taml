@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="smooth_cam_n_image"
-    imageFile="@assetFile=smooth-cam_n.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

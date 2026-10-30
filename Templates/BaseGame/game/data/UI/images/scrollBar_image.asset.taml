@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="scrollBar_image"
-    imageFile="@assetFile=scrollBar.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="LevelInfo_image"
-    imageFile="@assetFile=LevelInfo.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

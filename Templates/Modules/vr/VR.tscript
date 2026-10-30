@@ -1,9 +1,0 @@
-
-function VR::onCreate(%this)
-{
-   exec("./scripts/oculusVR." @ $TorqueScriptFileExtension);
-}
-
-function VR::onDestroy(%this)
-{
-}

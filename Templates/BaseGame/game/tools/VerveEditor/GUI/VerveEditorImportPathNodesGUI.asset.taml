@@ -1,7 +1,0 @@
-<GUIAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="VerveEditorImportPathNodesGUI"
-    scriptFile="@assetFile=VerveEditorImportPathNodes.gui"
-    GUIFile="@assetFile=VerveEditorImportPathNodes.gui"
-    VersionId="1" />

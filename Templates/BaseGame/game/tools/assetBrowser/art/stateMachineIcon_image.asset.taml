@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="stateMachineIcon_image"
-    imageFile="@assetFile=stateMachineIcon.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

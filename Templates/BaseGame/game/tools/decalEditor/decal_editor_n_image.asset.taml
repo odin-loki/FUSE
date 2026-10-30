@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="decal_editor_n_image"
-    imageFile="@assetFile=decal-editor_n.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />

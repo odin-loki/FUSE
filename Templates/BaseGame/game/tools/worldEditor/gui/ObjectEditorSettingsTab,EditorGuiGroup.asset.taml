@@ -1,7 +1,0 @@
-<GUIAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="ObjectEditorSettingsTab,EditorGuiGroup"
-    scriptFile="@assetFile=ObjectEditorSettingsTab.ed.gui"
-    GUIFile="@assetFile=ObjectEditorSettingsTab.ed.gui"
-    VersionId="1" />

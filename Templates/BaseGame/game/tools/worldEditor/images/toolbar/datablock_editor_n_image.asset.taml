@@ -1,8 +1,0 @@
-<ImageAsset
-    canSave="true"
-    canSaveDynamicFields="true"
-    AssetName="datablock_editor_n_image"
-    imageFile="@assetFile=datablock-editor_n.png"
-    UseMips="true"
-    isHDRImage="false"
-    imageType="Albedo" />
