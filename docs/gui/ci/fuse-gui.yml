@@ -1,0 +1,91 @@
+# FUSE GUI CI (docs/gui/PLAN.md). STAGED HERE because the pushing token lacks the `workflow` scope:
+# `git mv docs/gui/ci/fuse-gui.yml .github/workflows/fuse-gui.yml` (with a workflow-scoped token) to enable.
+name: fuse-gui
+on:
+  push:
+    branches: [gui-framework, gui-render, gui-features]
+    paths: ["Source/FUSE/UI/**", "cmake/FuseForge.cmake", "vendor/forge", "vendor/fonts/**", "docs/gui/ci/**", "scripts/gui/**", ".github/workflows/fuse-gui.yml"]
+  pull_request:
+    paths: ["Source/FUSE/UI/**", "cmake/FuseForge.cmake", "vendor/forge"]
+  workflow_dispatch:
+
+concurrency: { group: "fuse-gui-${{ github.ref }}", cancel-in-progress: true }
+
+
+jobs:
+  # Every job runs the matching scripts/gui script, so a local run reproduces CI exactly.
+  linux:
+    name: linux (${{ matrix.mode }})
+    runs-on: ubuntu-24.04
+    strategy: { fail-fast: false, matrix: { mode: [headless, x11, wayland] } }
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: true }
+      - run: sudo apt-get update && sudo apt-get install -y clang-18
+      - run: CC=clang-18 CXX=clang++-18 bash scripts/gui/test-linux.sh ${{ matrix.mode }}
+
+  windows-msvc:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: true }
+      - run: powershell -ExecutionPolicy Bypass -File scripts\gui\test-windows.ps1
+
+  windows-mingw-wine:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: true }
+      - run: sudo dpkg --add-architecture i386 && sudo apt-get update && sudo apt-get install -y ninja-build wine64 xvfb
+      - run: bash scripts/gui/test-wine.sh
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: true }
+      - run: bash scripts/gui/test-macos.sh
+
+  ios-simulator:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: true }
+      - run: bash scripts/gui/test-ios-sim.sh
+
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: true }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: build APK
+        run: EMULATOR=0 ABIS="arm64-v8a x86_64" OUT=build-apk bash scripts/gui/test-android.sh
+      - uses: actions/upload-artifact@v4
+        with: { name: fuse_hello.apk, path: build-apk/fuse_hello.apk }
+      - name: enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - name: emulator smoke (frame, tap, IME, a11y)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: default
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          script: ADB=$ANDROID_HOME/platform-tools/adb Source/FUSE/UI/App/android/run_emulator_smoke.sh build-apk/fuse_hello.apk
+
+  freebsd:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: true }
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          release: "14.4"
+          usesh: true
+          prepare: pkg install -y bash
+          run: bash scripts/gui/test-freebsd.sh

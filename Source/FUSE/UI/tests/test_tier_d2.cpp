@@ -477,6 +477,10 @@ int video(Screen& s) {
     step(ui);
     UI_CHECK_EQ(w::videoDecodedFrames(ui, v), 1u);
     UI_CHECK(w::videoImage(ui, v)->width == 160 && w::videoImage(ui, v)->height == 90);
+    UI_CHECK_EQ(w::videoTimeText(7, 12, 25.f, true), std::string("0:00.28 / 0:00.48"));
+    UI_CHECK_EQ(w::videoTimeText(29, 0, 100.f, false), std::string("0:00.29")); // truncation used to print .28
+    UI_CHECK_EQ(w::videoTimeText(3725 * 30 + 15, 0, 30.f, false), std::string("62:05.50"));
+    UI_CHECK_EQ(w::videoTimeText(3, 0, 0.5f, false), std::string("0:06.00")); // sub-1 fps no longer clamped to 1
     const u32 px0 = w::videoImage(ui, v)->at(5, 70);
     w::videoPlay(ui, v, true);
     for (int i = 0; i < 30; ++i) ui.update(1.f / 30.f);
