@@ -135,6 +135,15 @@ if(FUSE_BUILD_UI_WIDGETS)
     target_link_libraries(fuse_ui_widgets PUBLIC fuse_ui_core fuse_ui_os)
 endif()
 
+# ---- fuse_ui_extras: Qt-parity extras (undo framework, gestures, i18n, desktop integration, PDF / printing,
+# graphics scene, extra widgets) — docs/gui/PLAN.md §5 ----
+if(FUSE_BUILD_UI_WIDGETS)
+    file(GLOB FUSE_UI_EXTRAS_SRC CONFIGURE_DEPENDS Extras/src/*.cpp)
+    add_library(fuse_ui_extras STATIC ${FUSE_UI_EXTRAS_SRC})
+    target_include_directories(fuse_ui_extras PUBLIC Extras/include)
+    target_link_libraries(fuse_ui_extras PUBLIC fuse_ui_widgets fuse_ui_os)
+endif()
+
 # ---- fuse_ui_doc: .fuseui JSON documents, binding model and expression bytecode ----
 # fuse_ui_sql: SqliteModel, an ItemModel over vendor/sqlite (lazy windowed row cache)
 option(FUSE_BUILD_UI_SQL "Build fuse_ui_sql (SQLite item model over vendor/sqlite)" ON)
@@ -321,7 +330,7 @@ if(TARGET fuse_app_native AND TARGET fuse_ui_widgets)
     add_library(fuse_gui INTERFACE)
     add_library(fuse::gui ALIAS fuse_gui)
     target_include_directories(fuse_gui INTERFACE Public/include)
-    target_link_libraries(fuse_gui INTERFACE fuse_app_native fuse_ui_widgets fuse_ui_os)
+    target_link_libraries(fuse_gui INTERFACE fuse_app_native fuse_ui_widgets fuse_ui_extras fuse_ui_os)
     option(FUSE_BUILD_GUI_EXAMPLES "Build the fuse::gui public-API examples" ON)
     if(FUSE_BUILD_GUI_EXAMPLES)
         add_executable(gui_quickstart Public/examples/gui_quickstart.cpp)
