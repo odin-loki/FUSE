@@ -17,6 +17,22 @@ int main() {
     UI_CHECK(back && *back == "hello\nfuse");
     UI_CHECK(!os::readFile(dir + "/missing.txt"));
 
+    {
+        auto list = os::listDirectory(dir);
+        bool found = false;
+        if (list)
+            for (const auto& e : *list) found = found || (e.name == "a.txt" && !e.isDir);
+        UI_CHECK(found);
+        UI_CHECK(os::exists(file) && !os::exists(dir + "/nope"));
+        UI_CHECK(os::absolutePath(dir + "/../nested") == os::absolutePath(dir));
+        auto w = os::createFileWatcher();
+        UI_CHECK(w->add(file));
+        UI_CHECK(w->poll(0).empty());
+        UI_CHECK(bool(os::writeFileAtomic(file, "changed")));
+        std::vector<std::string> changed;
+        for (int i = 0; i < 20 && changed.empty(); ++i) changed = w->poll(50);
+        UI_CHECK(!changed.empty());
+    }
     const double t0 = os::monotonicSeconds();
     os::sleepSeconds(0.01);
     UI_CHECK(os::monotonicSeconds() - t0 >= 0.009);

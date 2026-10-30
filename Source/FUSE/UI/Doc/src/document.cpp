@@ -1,3 +1,4 @@
+#include "fuse/ui/os.hpp"
 #include "fuse/ui/doc/document.hpp"
 
 #include "fuse/ui/widgets/widgets.hpp"
@@ -669,11 +670,9 @@ std::expected<void, DocError> Document::reload(std::string_view json) {
 }
 
 bool readTextFile(const char* path, std::string& out) {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) return false;
-    std::ostringstream ss;
-    ss << f.rdbuf();
-    out = ss.str();
+    auto text = fuse::ui::os::readFile(path); // fuse::ui::os seam (FORGE)
+    if (!text) return false;
+    out = std::move(*text);
     return true;
 }
 

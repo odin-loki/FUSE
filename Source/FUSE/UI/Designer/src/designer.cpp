@@ -1,3 +1,4 @@
+#include "fuse/ui/os.hpp"
 #include "fuse/ui/designer/designer.hpp"
 
 #include "fuse/ui/widgets/widgets.hpp"
@@ -670,10 +671,7 @@ bool Designer::openFile(const std::string& path, std::string* error) {
 }
 
 bool Designer::saveFile(const std::string& path) {
-    std::ofstream f(path, std::ios::binary);
-    const std::string t = m_doc.save();
-    f.write(t.data(), std::streamsize(t.size()));
-    const bool ok = bool(f);
+    const bool ok = bool(fuse::ui::os::writeFileAtomic(path, m_doc.save())); // fuse::ui::os seam (FORGE)
     setStatus(ok ? "Saved " + path : "Cannot write " + path);
     return ok;
 }

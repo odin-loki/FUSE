@@ -1,5 +1,6 @@
 // FUSE UI Tier D (2) widgets (plan §5): font picker, file dialog, node graph, curve editor, timeline, viewport,
 // code editor, date-time edit and a video widget over a pluggable decoder (stub: test pattern).
+#include "fuse/ui/os.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
 #include "widgets_internal.hpp"
 
@@ -106,16 +107,15 @@ bool globMatch(std::string_view pat, std::string_view s) {
     return p == pat.size();
 }
 std::string joinPath(std::string_view dir, std::string_view name) {
-    std::filesystem::path p{std::string(dir)};
+    std::filesystem::path p{std::string(dir)}; // std:: path algebra only; no OS access here
     p /= std::string(name);
     return p.lexically_normal().generic_string();
 }
 bool fileAccept(UiContext& ui, NodeHandle dlg, FileDlgState& s, std::string_view name) {
     if (name.empty()) return false;
     const std::string full = joinPath(s.dir, name);
-    std::error_code ec;
-    if (std::filesystem::is_directory(full, ec)) return fileDialogNavigate(ui, dlg, full);
-    if (!s.save && !std::filesystem::exists(full, ec)) return false;
+    if (fuse::ui::os::isDirectory(full)) return fileDialogNavigate(ui, dlg, full);
+    if (!s.save && !fuse::ui::os::exists(full)) return false;
     s.accepted = full;
     closeDialog(ui, dlg);
     ui.emit(dlg, SignalKind::Submitted, {.text = s.accepted});
@@ -1354,16 +1354,14 @@ NodeHandle fileDialog(UiContext& ui, std::string_view title, std::string_view di
 bool fileDialogNavigate(UiContext& ui, NodeHandle dlg, std::string_view directory) {
     FileDlgState* s = filePool().get(ui, dlg);
     if (!s) return false;
-    namespace fs = std::filesystem;
-    std::error_code ec;
-    const fs::path dir = fs::absolute(fs::path(std::string(directory)), ec).lexically_normal();
-    if (ec || !fs::is_directory(dir, ec)) return false;
+    const std::string dir = fuse::ui::os::absolutePath(std::filesystem::path(std::string(directory)).lexically_normal().generic_string());
+    auto listing = fuse::ui::os::listDirectory(dir); // OS access through the fuse::ui::os seam (FORGE)
+    if (!listing) return false;
     std::vector<std::string> folders, files;
-    for (fs::directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
-        const std::string name = it->path().filename().string();
+    for (const auto& e : *listing) {
+        const std::string& name = e.name;
         if (name.empty() || name[0] == '.') continue;
-        std::error_code e2;
-        if (it->is_directory(e2)) folders.push_back(name + "/");
+        if (e.isDir) folders.push_back(name + "/");
         else if (s->filters.empty() || std::any_of(s->filters.begin(), s->filters.end(), [&](const std::string& f) { return globMatch(f, name); }))
             files.push_back(name);
     }
@@ -1372,7 +1370,7 @@ bool fileDialogNavigate(UiContext& ui, NodeHandle dlg, std::string_view director
     };
     std::sort(folders.begin(), folders.end(), ci);
     std::sort(files.begin(), files.end(), ci);
-    s->dir = dir.generic_string();
+    s->dir = dir;
     if (s->dir.size() > 1 && s->dir.back() == '/') s->dir.pop_back();
     s->entries = std::move(folders);
     s->entries.insert(s->entries.end(), files.begin(), files.end());

@@ -2,6 +2,7 @@
 #include "fuse/ui/os.hpp"
 
 #include <forge/os/clipboard.hpp>
+#include <forge/os/file_watch.hpp>
 #include <forge/os/fs.hpp>
 #include <forge/os/os.hpp>
 
@@ -45,6 +46,24 @@ std::expected<void, std::string> writeFileAtomic(std::string_view path, std::str
 }
 
 bool isDirectory(std::string_view path) { return fo::fs::is_dir(std::string(path)); }
+bool exists(std::string_view path) { return fo::exists(std::string(path)); }
+std::string absolutePath(std::string_view path) {
+    auto r = fo::fs::absolute(std::string(path));
+    std::string a = r ? r.value : fo::absolute(std::string(path));
+    for (char& c : a)
+        if (c == '\\') c = '/';
+    if (a.size() > 1 && a.back() == '/') a.pop_back();
+    return a;
+}
+std::expected<std::vector<DirEntry>, std::string> listDirectory(std::string_view path) {
+    auto r = fo::list_dir(std::string(path));
+    if (!r) return std::unexpected(r.err.what);
+    std::vector<DirEntry> out;
+    out.reserve(r.value.size());
+    for (auto& e : r.value)
+        if (e.name != "." && e.name != "..") out.push_back({std::move(e.name), e.is_dir});
+    return out;
+}
 
 double monotonicSeconds() {
     static const std::uint64_t t0 = fo::monotonic_ns();
@@ -62,7 +81,22 @@ struct ForgeLibrary final : Library {
     fo::library lib;
     void* symbol(const char* name) const override { return lib.symbol(name); }
 };
+struct ForgeFileWatcher final : FileWatcher {
+    fo::file_watcher w;
+    bool add(std::string_view path) override { return bool(w.add(std::string(path))); }
+    std::vector<std::string> poll(int timeoutMs) override {
+        std::vector<std::string> out;
+        for (auto& e : w.poll(timeoutMs)) {
+            bool dup = false;
+            for (const auto& o : out) dup = dup || o == e.path;
+            if (!dup) out.push_back(std::move(e.path));
+        }
+        return out;
+    }
+};
 } // namespace
+
+std::unique_ptr<FileWatcher> createFileWatcher() { return std::make_unique<ForgeFileWatcher>(); }
 
 std::unique_ptr<InstanceLock> tryLockInstance(std::string_view name) {
     std::string file = runtimeDir() + "/fuse_app_" + std::string(name);

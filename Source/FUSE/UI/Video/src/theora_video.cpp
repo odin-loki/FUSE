@@ -1,3 +1,4 @@
+#include "fuse/ui/os.hpp"
 #include "fuse/ui/video/theora_video.hpp"
 
 #include <theora/theoradec.h>
@@ -174,9 +175,9 @@ bool TheoraVideo::open(std::vector<u8> file, std::string* error) {
 }
 
 bool TheoraVideo::openFile(const std::string& path, std::string* error) {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) { if (error) *error = "cannot read " + path; return false; }
-    std::vector<u8> data((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    auto bytes = fuse::ui::os::readFile(path); // fuse::ui::os seam (FORGE)
+    if (!bytes) { if (error) *error = "cannot read " + path; return false; }
+    std::vector<u8> data(bytes->begin(), bytes->end());
     return open(std::move(data), error);
 }
 

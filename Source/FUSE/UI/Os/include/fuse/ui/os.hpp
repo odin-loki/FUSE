@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace fuse::ui::os {
 
@@ -24,6 +25,27 @@ std::expected<std::string, std::string> readFile(std::string_view path);
 /// Writes through a temporary file and an atomic rename, creating missing parent directories.
 std::expected<void, std::string> writeFileAtomic(std::string_view path, std::string_view data);
 bool isDirectory(std::string_view path);
+bool exists(std::string_view path);
+/// Absolute, normalised path with forward slashes.
+std::string absolutePath(std::string_view path);
+
+struct DirEntry {
+    std::string name;
+    bool isDir = false;
+};
+/// Entries of `path` (no "." / ".."), unsorted.
+std::expected<std::vector<DirEntry>, std::string> listDirectory(std::string_view path);
+
+/// Watches files or directories for changes (hot reload of styles and .fuseui documents). Watching a file sees an
+/// atomic replace-by-rename as a modification.
+class FileWatcher {
+public:
+    virtual ~FileWatcher() = default;
+    virtual bool add(std::string_view path) = 0;
+    /// Paths that changed since the last poll; waits at most `timeoutMs` (0 = non-blocking).
+    virtual std::vector<std::string> poll(int timeoutMs = 0) = 0;
+};
+std::unique_ptr<FileWatcher> createFileWatcher();
 
 /// Seconds on a monotonic clock (arbitrary origin, fixed for the process).
 double monotonicSeconds();
