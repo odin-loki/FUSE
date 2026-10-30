@@ -6,7 +6,7 @@
 #      FREEBSD_MODE: native = build + test inside the VM (test-freebsd.sh; default with kvm),
 #                    cross  = build on this host with clang/lld + a FreeBSD sysroot (docs/gui/ci/freebsd-cross.cmake),
 #                             copy to the same absolute paths in the VM and run ctest there (default with tcg: a TCG
-#                             VM compiles ~50x slower). CC/CXX pick the host clang. PERF_SCALE (default 4 under tcg)
+#                             VM compiles ~50x slower). CC/CXX pick the host clang. PERF_SCALE (default 25 under tcg)
 #                             relaxes wall-clock gates via FUSE_UI_PERF_SCALE.
 source "$(dirname "$0")/lib.sh"
 V=${FREEBSD_VERSION:-14.4}; D=${VM_DIR:-$HOME/.cache/fuse-gui/freebsd}; PORT=${VM_PORT:-2244}
@@ -61,7 +61,7 @@ else
     mirror() { "${SSH[@]}" "sudo rm -rf '$ROOT' '$XB' && sudo mkdir -p '$ROOT' '$XB' && sudo chown -R fuse '$ROOT' '$XB'" && copy_to "$ROOT" &&
                tar -C "$XB" -czf - --exclude='*.o' . | "${SSH[@]}" "tar -xzf - -C '$XB'"; }
     step "copy build to VM" mirror
-    step "ctest (in VM)" "${SSH[@]}" "cd '$XB' && env -u DISPLAY FUSE_UI_PERF_SCALE=${PERF_SCALE:-$([ "$ACCEL" = tcg ] && echo 4 || echo 1)} ctest --output-on-failure -j4 --timeout 600"
+    step "ctest (in VM)" "${SSH[@]}" "cd '$XB' && env -u DISPLAY FUSE_UI_PERF_SCALE=${PERF_SCALE:-$([ "$ACCEL" = tcg ] && echo 25 || echo 1)} ctest --output-on-failure -j4 --timeout 600"
 fi
 [ "${KEEP_VM:-0}" = 1 ] || { "${SSH[@]}" 'sudo shutdown -p now' >/dev/null 2>&1; }
 summary freebsd-vm

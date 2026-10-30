@@ -5,6 +5,14 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
+
+// FUSE_UI_PERF_SCALE multiplies wall-clock budgets for emulated hosts (qemu TCG, software emulators); default 1.
+static double perfScale() {
+    const char* e = std::getenv("FUSE_UI_PERF_SCALE");
+    const double v = e ? std::atof(e) : 1.0;
+    return v > 0.0 ? v : 1.0;
+}
 
 using namespace fuse::ui;
 using namespace fuse::ui::test;
@@ -48,9 +56,9 @@ int main() {
     UI_CHECK(ui.stats().arranged < 20u);
 #ifdef NDEBUG
 #if FUSE_UI_TEST_TEXT_FULL
-    UI_CHECK(med <= 1.0); // FULL re-shapes through HarfBuzz each paint; shaped-run cache is follow-up work
+    UI_CHECK(med <= 1.0 * perfScale()); // FULL re-shapes through HarfBuzz each paint; shaped-run cache is follow-up work
 #else
-    UI_CHECK(med <= 0.5);
+    UI_CHECK(med <= 0.5 * perfScale());
 #endif
 #else
     std::printf("(debug build: budget not enforced)\n");
