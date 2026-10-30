@@ -21,6 +21,7 @@ struct Win {
     FuseView* view = nil;
     CAMetalLayer* metal = nil;           ///< layer-hosting backing when Vulkan presents
     fa::detail::VkWin* vk = nullptr;
+    unsigned long long titleRev = 0; ///< AppWindow::titleRevision() shown in NSWindow.title
 };
 }
 
@@ -319,6 +320,7 @@ struct fa::CocoaPlatform::Impl {
     }
     static bool present(void* user, AppWindow& aw, Rect damage) {
         Win& w = *static_cast<Win*>(user);
+        if (w.window && w.titleRev != aw.titleRevision()) { w.titleRev = aw.titleRevision(); w.window.title = str(aw.title()); }
         if (w.vk) {
             if (!detail::vkWinPresent(w.vk, aw, damage)) return false;
         } else {

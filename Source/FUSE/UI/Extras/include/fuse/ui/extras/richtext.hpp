@@ -1,6 +1,6 @@
 // Rich text (QTextDocument / QTextEdit parity): a styled document model, a headless editor (cursor, selection,
 // formatting, undo) with HTML / Markdown import-export, and the `richtextedit` retained widget that lays it out
-// with the context font. Bold is synthesised (double strike), italic has no slanted face yet (drawn upright).
+// with the context font. Bold is synthesised (double strike), italic is a synthetic oblique (rich::obliqueGlyphs shears the glyph quads).
 #pragma once
 
 #include "fuse/ui/ui.hpp"
@@ -151,6 +151,9 @@ struct RichLayout {
 RichLayout layout(const RichDocument& d, f32 width, f32 basePx, const std::function<f32(std::string_view, f32)>& measure,
                   const std::function<f32(f32)>& lineHeight);
 f32 headingScale(u8 level);
+
+/// Shears the Glyph commands dl.cmds()[first..] into a synthetic oblique about `baseline` (x shift = slope x height).
+void obliqueGlyphs(DrawList& dl, std::size_t first, f32 baseline, f32 slope = 0.2f);
 
 } // namespace fuse::ui::rich
 

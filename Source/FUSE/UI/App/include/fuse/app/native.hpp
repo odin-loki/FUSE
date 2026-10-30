@@ -99,6 +99,8 @@ public:
     /// Read back from the OS: the icon sizes (widths) the window carries now (X11 every _NET_WM_ICON entry; Win32 the
     /// big + small WM_GETICON icons). Empty when unset / not shown.
     std::vector<int> iconSizes(const AppWindow& w) const;
+    /// Read back from the OS: the title the window shows now (X11 _NET_WM_NAME / WM_NAME; Win32 GetWindowTextW).
+    std::string osTitle(const AppWindow& w) const;
 
     /// OS-window popups (NativeOptions::osPopups): how many popup windows `w` shows now, each one's native handle,
     /// its screen rect (physical px) and a read-back of its pixels.

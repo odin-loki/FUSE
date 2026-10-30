@@ -676,7 +676,7 @@ Designer::Designer(UiContext& ui, NodeHandle parent) : m_ui(ui) {
     struct Btn { const char* text; const char* id; };
     for (const Btn b : {Btn{"New", "designer.new"}, Btn{"Undo", "designer.undo"}, Btn{"Redo", "designer.redo"}, Btn{"Delete", "designer.delete"},
                         Btn{"Up", "designer.up"}, Btn{"Down", "designer.down"},
-                        Btn{"Save", "designer.save"}, Btn{"Copy", "designer.copy"}, Btn{"Cut", "designer.cut"}, Btn{"Paste", "designer.paste"},
+                        Btn{"Open", "designer.open"}, Btn{"Save", "designer.save"}, Btn{"Save As", "designer.saveas"}, Btn{"Copy", "designer.copy"}, Btn{"Cut", "designer.cut"}, Btn{"Paste", "designer.paste"},
                         Btn{"Duplicate", "designer.duplicate"}, Btn{"Preview", "designer.preview"}, Btn{"Fill", "designer.fill"},
                         Btn{"Phone", "designer.phone"}, Btn{"Tablet", "designer.tablet"}, Btn{"Desktop", "designer.desktop"}}) {
         const NodeHandle h = w::toolButton(ui, m_toolbar, b.text, b.id);
@@ -684,7 +684,9 @@ Designer::Designer(UiContext& ui, NodeHandle parent) : m_ui(ui) {
         const std::string_view id = b.id; // string literal: static storage
         ui.connect(h, SignalKind::Clicked, [this, id](UiContext&, NodeHandle, const SignalArgs&) {
             if (id == "designer.new") { m_doc.reset(); m_path.clear(); m_sel = 0; m_multi.clear(); rebuild(); setStatus("New document"); }
-            else if (id == "designer.save") { if (!save()) setStatus("No file yet: save with saveFile(path)"); }
+            else if (id == "designer.open") showOpenDialog();
+            else if (id == "designer.save") save();
+            else if (id == "designer.saveas") showSaveAsDialog();
             else if (id == "designer.copy") copySelection();
             else if (id == "designer.cut") cutSelection();
             else if (id == "designer.paste") pasteClipboard();
@@ -748,6 +750,7 @@ Designer::Designer(UiContext& ui, NodeHandle parent) : m_ui(ui) {
 }
 
 Designer::~Designer() {
+    if (m_ui.alive(m_fileDlg)) m_ui.destroy(m_fileDlg); // its Submitted handler points back here
     m_live.reset();
     if (m_ui.alive(m_root)) m_ui.destroy(m_root);
 }
@@ -1152,7 +1155,42 @@ std::string Designer::windowTitle() const {
     return name + " - FUSE UI Designer";
 }
 
-bool Designer::save() { return !m_path.empty() && saveFile(m_path); }
+bool Designer::save() {
+    if (m_path.empty()) { showSaveAsDialog(); return false; }
+    return saveFile(m_path);
+}
+
+void Designer::showOpenDialog() { showFileDialog(false); }
+void Designer::showSaveAsDialog() { showFileDialog(true); }
+
+void Designer::showFileDialog(bool saving) {
+    if (m_ui.alive(m_fileDlg)) return; // one at a time
+    const std::string dir = m_path.empty() ? std::string(".") : m_path.substr(0, std::max<std::size_t>(1, m_path.find_last_of("/\\")));
+    auto finish = [this, saving](const std::string& path) {
+        if (path.empty()) { setStatus(saving ? "Save cancelled" : "Open cancelled"); return; }
+        std::string p = path;
+        if (saving && !p.ends_with(".fuseui")) p += ".fuseui";
+        std::string err;
+        if (saving) saveFile(p);
+        else if (!openFile(p, &err)) setStatus("Open failed: " + err);
+    };
+    if (m_nativeDialogs) {
+        fuse::ui::os::NativeDialogSpec spec;
+        spec.kind = saving ? fuse::ui::os::NativeDialogSpec::Kind::Save : fuse::ui::os::NativeDialogSpec::Kind::Open;
+        spec.title = saving ? "Save form as" : "Open form";
+        spec.directory = dir;
+        if (saving) spec.fileName = m_path.empty() ? "Untitled.fuseui" : m_path.substr(m_path.find_last_of("/\\") + 1);
+        spec.filters = {{"FUSE UI forms", {"*.fuseui"}}, {"All files", {"*"}}};
+        const auto r = fuse::ui::os::nativeFileDialog(spec);
+        if (!r.unavailable) { finish(r.paths.empty() ? std::string{} : r.paths.front()); return; }
+    }
+    m_fileDlg = w::fileDialog(m_ui, saving ? "Save form as" : "Open form", dir, "*.fuseui", saving, "designer.filedialog");
+    m_ui.connect(m_fileDlg, SignalKind::Submitted, [this, finish](UiContext&, NodeHandle, const SignalArgs& a) {
+        m_fileDlg = {}; // the dialog closes itself after Submitted
+        finish(std::string(a.text));
+    });
+    setStatus(saving ? "Save as..." : "Open...");
+}
 
 void Designer::selectIds(const std::vector<std::string>& ids) {
     m_multi.clear();
@@ -1244,7 +1282,8 @@ bool Designer::handleKey(Key k, u8 mods) {
         case Key::X: cutSelection(); return true;
         case Key::V: pasteClipboard(); return true;
         case Key::D: duplicateSelection(); return true;
-        case Key::S: if (!save()) setStatus("No file yet: save with saveFile(path)"); return true;
+        case Key::S: if (shift) showSaveAsDialog(); else save(); return true;
+        case Key::O: showOpenDialog(); return true;
         case Key::N: m_doc.reset(); m_path.clear(); m_sel = 0; m_multi.clear(); rebuild(); setStatus("New document"); return true;
         default: return false;
         }

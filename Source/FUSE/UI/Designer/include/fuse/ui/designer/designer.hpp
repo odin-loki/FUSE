@@ -121,8 +121,15 @@ public:
     bool open(std::string_view json, std::string* error = nullptr);
     bool openFile(const std::string& path, std::string* error = nullptr);
     bool saveFile(const std::string& path);
-    /// Save to the file last opened / saved (false when there is none).
+    /// Save to the file last opened / saved; with none yet, shows Save As (returns false until it is saved).
     bool save();
+    /// File > Open / Save As: the system dialog (os::nativeFileDialog: IFileDialog, zenity / kdialog, NSOpenPanel via
+    /// osascript), falling back to the built-in widgets::fileDialog when there is none or setNativeDialogs(false).
+    /// The built-in dialog is modal and asynchronous; fileDialog() is its handle while it is open.
+    void showOpenDialog();
+    void showSaveAsDialog();
+    void setNativeDialogs(bool on) { m_nativeDialogs = on; }
+    NodeHandle fileDialog() const { return m_ui.alive(m_fileDlg) ? m_fileDlg : NodeHandle{}; }
     const std::string& filePath() const { return m_path; }
     /// "name.fuseui* - FUSE UI Designer" ('*' while modified); onTitleChanged fires when it changes.
     std::string windowTitle() const;
@@ -187,6 +194,7 @@ public:
 private:
     void rebuild();
     void touched();
+    void showFileDialog(bool saving);
     void selectIds(const std::vector<std::string>& ids);
     void refreshOutline();
     void refreshProperties();
@@ -211,7 +219,8 @@ private:
     NodeHandle m_frame, m_previewBtn;
     std::string m_path, m_lastTitle;
     std::vector<DesignDocument::Issue> m_issues;
-    bool m_preview = false;
+    bool m_preview = false, m_nativeDialogs = true;
+    NodeHandle m_fileDlg;
 };
 
 } // namespace fuse::ui::designer

@@ -336,6 +336,12 @@ int main(int argc, char** argv) {
         {
             std::lock_guard lk(mu);
             CHECK(g_title == "fuse wayland");
+        }
+        win.setTitle("renamed \xE2\x9C\x93"); // live retitle -> xdg_toplevel.set_title
+        for (int i = 0; i < 50; ++i) { pump(1); std::lock_guard lk(mu); if (g_title == win.title()) break; }
+        {
+            std::lock_guard lk(mu);
+            CHECK(g_title == "renamed \xE2\x9C\x93");
             CHECK(g_acked);
             CHECK(g_shown.width == 360 && g_shown.height == 240);
         }

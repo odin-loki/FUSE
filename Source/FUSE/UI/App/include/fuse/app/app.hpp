@@ -109,7 +109,15 @@ public:
     Application& app() { return m_app; }
     u32 id() const { return m_id; }
     const std::string& title() const { return m_title; }
-    void setTitle(std::string_view t) { m_title = t; }
+    /// Retitles the window; a shown OS window follows on its next frame (X11 WM_NAME + _NET_WM_NAME, SetWindowTextW,
+    /// xdg_toplevel.set_title, NSWindow.title).
+    void setTitle(std::string_view t) {
+        if (t == m_title) return;
+        m_title = t;
+        ++m_titleRev;
+        requestRedraw();
+    }
+    u64 titleRevision() const { return m_titleRev; }
     /// Loads a .fuseui document (file path) into the window root, replacing a previous one. `model` may be null.
     std::expected<void, std::string> load(std::string_view path, fuse::ui::doc::Model* model = nullptr);
     std::expected<void, std::string> loadText(std::string_view json, fuse::ui::doc::Model* model = nullptr);
@@ -215,6 +223,7 @@ private:
     fuse::ui::UiContext m_ui;
     std::unique_ptr<fuse::ui::doc::Document> m_doc;
     std::string m_title;
+    u64 m_titleRev = 0;
     Presenter m_presenter;
     f32 m_scale = 1.f;
     fuse::ui::DrawList m_scaledList;

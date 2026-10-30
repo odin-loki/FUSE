@@ -152,6 +152,7 @@ struct WaylandPlatform::Impl {
         AppWindow* win = nullptr;
         Proxy *surface = nullptr, *xsurf = nullptr, *top = nullptr, *popup = nullptr;
         bool configured = false;
+        u64 titleRev = 0; ///< AppWindow::titleRevision() sent with set_title
         int pendingW = 0, pendingH = 0;
         Buffer bufs[2];
         Image shown;
@@ -553,6 +554,10 @@ struct WaylandPlatform::Impl {
         Win& w = *static_cast<Win*>(user);
         Impl& m = *w.impl;
         if (&w == m.tiFocus) m.syncTextInput();
+        if (w.top && w.titleRev != aw.titleRevision()) { // live retitle: xdg_toplevel.set_title
+            w.titleRev = aw.titleRevision();
+            m.l.marshal(w.top, 2, nullptr, 1, 0, aw.title().c_str());
+        }
         if (w.configured) m.syncScaleState(w);
         if (w.configured) {
             if (detail::VkWin* vk = m.vulkanFor(w)) {

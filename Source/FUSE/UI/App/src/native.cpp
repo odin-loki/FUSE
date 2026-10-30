@@ -272,6 +272,7 @@ struct NativePlatform::Impl {
         unsigned long long handle = 0; ///< X11 Window / HWND
         bool mapped = false;
         bool focused = false;
+        u64 titleRev = ~0ull; ///< AppWindow::titleRevision() the OS window shows (~0: sync on the first frame)
         struct Popup {
             unsigned long long handle = 0;
             Rect screen;   ///< physical screen rect
@@ -362,6 +363,7 @@ struct NativePlatform::Impl {
     bool captureOs(const Rec& r, Image& out);
     // OS-window popups
     void syncPopups(Rec& r);
+    void syncTitle(Rec& r);
     /// An outside click (grabbed pointer outside every window of the app, or the app deactivated): close every popup.
     static void closeAllPopups(Rec& r) {
         UiContext& ui = r.win->ui();
@@ -444,6 +446,7 @@ void NativePlatform::Impl::syncPopups(Rec& r) {
 
 bool NativePlatform::Impl::present(void* user, AppWindow& w, Rect damage) {
     Rec& r = *static_cast<Rec*>(user);
+    if (r.titleRev != w.titleRevision()) r.impl->syncTitle(r);
     switch (r.kind) {
     case PresenterKind::Vulkan: {
         const bool ok = detail::vkWinPresent(r.vk, w, damage);
@@ -1476,6 +1479,24 @@ std::vector<int> NativePlatform::iconSizes(const AppWindow& w) const {
         if (const int wpx = iconWidth(reinterpret_cast<HICON>(SendMessageW(hwnd, WM_GETICON, which, 0)))) out.push_back(wpx);
     return out;
 }
+void NativePlatform::Impl::syncTitle(Rec& r) {
+    r.titleRev = r.win->titleRevision();
+    if (!r.handle) return;
+    const std::string& t = r.win->title();
+    std::wstring wt(std::size_t(MultiByteToWideChar(CP_UTF8, 0, t.data(), int(t.size()), nullptr, 0)), L'\0');
+    if (!wt.empty()) MultiByteToWideChar(CP_UTF8, 0, t.data(), int(t.size()), wt.data(), int(wt.size()));
+    SetWindowTextW(reinterpret_cast<HWND>(r.handle), wt.c_str());
+}
+std::string NativePlatform::osTitle(const AppWindow& w) const {
+    const Impl::Rec* r = m->find(w);
+    if (!r || !r->handle) return {};
+    HWND hwnd = reinterpret_cast<HWND>(r->handle);
+    std::wstring wt(std::size_t(GetWindowTextLengthW(hwnd)) + 1, L'\0');
+    wt.resize(std::size_t(GetWindowTextW(hwnd, wt.data(), int(wt.size()))));
+    std::string out(std::size_t(WideCharToMultiByte(CP_UTF8, 0, wt.data(), int(wt.size()), nullptr, 0, nullptr, nullptr)), '\0');
+    if (!out.empty()) WideCharToMultiByte(CP_UTF8, 0, wt.data(), int(wt.size()), out.data(), int(out.size()), nullptr, nullptr);
+    return out;
+}
 #else
 bool NativePlatform::setIcon(const AppWindow& w, std::span<const Image> sizes) {
     const Impl::Rec* r = m->find(w);
@@ -1523,6 +1544,35 @@ std::vector<int> NativePlatform::iconSizes(const AppWindow& w) const {
         i += 2 + iw * ih;
     }
     m->x.Free(prop);
+    return out;
+}
+void NativePlatform::Impl::syncTitle(Rec& r) {
+    r.titleRev = r.win->titleRevision();
+    if (!r.handle || !dpy) return;
+    const std::string& t = r.win->title();
+    x.StoreName(dpy, x11::Window(r.handle), t.c_str()); // WM_NAME (Latin-1 for old WMs)
+    const x11::Atom netName = x.InternAtom(dpy, "_NET_WM_NAME", 0), utf8 = x.InternAtom(dpy, "UTF8_STRING", 0);
+    x.ChangeProperty(dpy, x11::Window(r.handle), netName, utf8, 8, 0 /*Replace*/, reinterpret_cast<const unsigned char*>(t.data()), int(t.size()));
+    x.Flush(dpy);
+}
+std::string NativePlatform::osTitle(const AppWindow& w) const {
+    const Impl::Rec* r = m->find(w);
+    if (!r || !r->handle || !m->dpy) return {};
+    auto& x = m->x;
+    std::string out;
+    x.Sync(m->dpy, 0);
+    for (const char* name : {"_NET_WM_NAME", "WM_NAME"}) {
+        const x11::Atom a = x.InternAtom(m->dpy, name, 0);
+        x11::Atom type = 0;
+        int format = 0;
+        unsigned long n = 0, after = 0;
+        unsigned char* prop = nullptr;
+        if (x.GetWindowProperty(m->dpy, x11::Window(r->handle), a, 0, 1L << 16, 0, 0 /*AnyPropertyType*/, &type, &format, &n, &after, &prop) == 0 && prop) {
+            if (format == 8 && n > 0) out.assign(reinterpret_cast<const char*>(prop), n);
+            x.Free(prop);
+        }
+        if (!out.empty()) break;
+    }
     return out;
 }
 #endif

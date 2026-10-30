@@ -45,6 +45,11 @@ int main(int argc, char** argv) {
     waitFor([&] { return win.framesPresented() >= 1; });
     for (int i = 0; i < 20; ++i) a.step(0.005f);
     CHECK(ui.osPopups());
+    // live retitle reaches the OS window (UTF-8 through _NET_WM_NAME / SetWindowTextW)
+    CHECK(native.osTitle(win) == "fuse_app OS popups");
+    win.setTitle("form.fuseui* - FUSE UI Designer \xE2\x9C\x93");
+    CHECK(waitFor([&] { return native.osTitle(win) == win.title(); }));
+    std::printf("  retitled: %s\n", native.osTitle(win).c_str());
 
     f32 picked = -1.f;
     std::string pickedText;

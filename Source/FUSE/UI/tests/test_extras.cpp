@@ -796,8 +796,39 @@ void gateRichText() {
     w::richEditor(ui, te)->selectAll();
     ui.invalidate(te);
     step(ui); // paints selection, list marker, heading, decorations and caret
+    {   // justify: inner lines fill the width exactly, the paragraph's last line stays left
+        fuse::ui::rich::RichDocument jd;
+        jd.fromHtml("<p style=\"text-align:justify\">aa bb cc dd ee ff gg</p>");
+        const auto m = [](std::string_view s, f32) { return f32(s.size()) * 10.f; };
+        const auto L = fuse::ui::rich::layout(jd, 75.f, 14.f, m, [](f32) { return 16.f; });
+        CHECK(L.lines.size() >= 2);
+        if (L.lines.size() >= 2) {
+            const auto& l0 = L.lines[0];
+            CHECK(l0.frags.size() >= 2);
+            const auto& last = l0.frags.back();
+            f32 endX = last.x + last.w;
+            for (std::size_t k = last.b; k > last.a && jd.plainText()[k - 1] == ' '; --k) endX -= 10.f;
+            CHECK(std::abs(endX - (l0.x + 75.f)) < 0.5f);
+            const auto& lz = L.lines.back();
+            CHECK(lz.frags.back().x + lz.frags.back().w <= 75.f);
+            CHECK(std::abs(lz.frags.front().x - lz.x) < 0.01f);
+        }
+    }
+    {   // synthetic oblique: one strip per texel row, upper rows further right
+        DrawList dl;
+        DrawCmd g;
+        g.op = DrawOp::Glyph;
+        g.rect = {10.f, 0.f, 8.f, 10.f};
+        g.u = 0; g.v = 5; g.tw = 8; g.th = 10;
+        dl.push(g);
+        fuse::ui::rich::obliqueGlyphs(dl, 0, 10.f, 0.2f);
+        CHECK(dl.size() == 10);
+        CHECK(dl.cmds().front().v == 5 && dl.cmds().front().th == 1 && dl.cmds().back().v == 14);
+        CHECK(dl.cmds().front().rect.x == 12.f && dl.cmds().back().rect.x == 10.f);
+    }
     if (const std::string dir = fuse::ui::os::env("FUSE_EXTRAS_OUT"); !dir.empty()) {
-        w::setRichHtml(ui, te, "<h2>Rich <i>text</i></h2><p>Plain, <b>bold</b>, <u>under</u>, <s>strike</s>, "
+        w::setRichHtml(ui, te, "<p style=\"text-align:justify\">Justified text spreads the slack of every line but the last over its spaces, <i>and italic is a synthetic oblique</i> sheared from the regular face.</p>"
+                               "<h2>Rich <i>text</i></h2><p>Plain, <b>bold</b>, <u>under</u>, <s>strike</s>, "
                                "<span style=\"color:#e0703a\">colour</span>, <span style=\"font-size:22px\">big</span> and a "
                                "<a href=\"x\">link</a> wrapping across the width of the editor.</p><ol><li>first</li><li>second</li></ol>"
                                "<p style=\"text-align:center\">centred</p>");

@@ -747,7 +747,8 @@ RichLayout layout(const RichDocument& d, f32 width, f32 basePx, const std::funct
         }
         if (ls < e || ranges.empty()) ranges.push_back({ls, e});
         bool firstLine = true;
-        for (auto [ra, rb] : ranges) {
+        for (std::size_t ri = 0; ri < ranges.size(); ++ri) {
+            const auto [ra, rb] = ranges[ri];
             RichLine ln{b, ra, rb, 0.f, y, 0.f, 0.f, 0.f, {}, {}};
             f32 x = 0.f, h = lineHeight(px);
             for (std::size_t k = ra; k < rb;) {
@@ -766,6 +767,41 @@ RichLayout layout(const RichDocument& d, f32 width, f32 basePx, const std::funct
             ln.baseline = h;
             f32 off = 0.f;
             const f32 trailing = rb > ra && t[rb - 1] == ' ' ? measure(" ", px) : 0.f;
+            // Justify: every line but a paragraph's last spreads the slack over its inner spaces. Fragments are split
+            // after each space run so each word starts at its stretched position (caret / hit testing follow).
+            if (width > 0.f && bf.align == Align::Justify && ri + 1 < ranges.size()) {
+                std::size_t end = rb;
+                while (end > ra && t[end - 1] == ' ') --end;
+                std::size_t spaces = 0;
+                for (std::size_t k = ra; k < end; ++k) spaces += t[k] == ' ';
+                f32 natural = 0.f;
+                for (const auto& fr : ln.frags) natural += fr.w;
+                f32 endW = natural;
+                if (end < rb) endW -= measure(std::string_view(t).substr(end, rb - end), px);
+                const f32 slack = avail - endW;
+                if (spaces > 0 && slack > 0.f) {
+                    const f32 gap = slack / f32(spaces);
+                    std::vector<RichFragment> out;
+                    f32 nx = 0.f;
+                    std::size_t seen = 0;
+                    for (const RichFragment& fr : ln.frags) {
+                        std::size_t s0 = fr.a;
+                        for (std::size_t k = fr.a; k <= fr.b; ++k) {
+                            const bool cut = k == fr.b || (k > fr.a && t[k - 1] == ' ' && t[k] != ' ');
+                            if (!cut) continue;
+                            if (k > s0) {
+                                const f32 w = measure(std::string_view(t).substr(s0, k - s0), fr.size);
+                                out.push_back({s0, k, nx + gap * f32(seen), w, fr.size, fr.fmt});
+                                nx += w;
+                                for (std::size_t q = s0; q < k && q < end; ++q) seen += t[q] == ' ';
+                            }
+                            s0 = k;
+                        }
+                    }
+                    ln.frags = std::move(out);
+                    ln.width = x = avail + (x - endW);
+                }
+            }
             if (width > 0.f && bf.align == Align::Center) off = (avail - (x - trailing)) * 0.5f;
             else if (width > 0.f && bf.align == Align::Right) off = avail - (x - trailing);
             ln.x = x0 + std::max(0.f, off);
@@ -815,6 +851,36 @@ std::size_t RichLayout::hitTest(Vec2 p, const RichDocument& d, const std::functi
     return best;
 }
 
+} // namespace fuse::ui::rich
+
+namespace fuse::ui::rich {
+// Synthetic oblique (what FreeType / CoreText do without an italic face): glyph quads are axis aligned atlas copies,
+// so each one is cut into horizontal strips of its texel rows and every strip moves right by slope x its height above
+// the baseline. One-row strips are an exact pixel-level shear (two rows for very large glyphs).
+void obliqueGlyphs(DrawList& dl, std::size_t first, f32 baseline, f32 slope) {
+    std::vector<DrawCmd>& cmds = dl.cmds();
+    std::vector<DrawCmd> out;
+    out.reserve(cmds.size() - first);
+    for (std::size_t i = first; i < cmds.size(); ++i) {
+        const DrawCmd& c = cmds[i];
+        if (c.op != DrawOp::Glyph || c.th == 0 || c.rect.h <= 0.f) { out.push_back(c); continue; }
+        const u16 step = c.th > 64 ? 2 : 1;
+        const f32 sy = c.rect.h / f32(c.th);
+        for (u16 r = 0; r < c.th; r += step) {
+            const u16 rows = u16(std::min<int>(step, c.th - r));
+            DrawCmd s = c;
+            s.v = u16(c.v + r);
+            s.th = rows;
+            s.rect.y = c.rect.y + f32(r) * sy;
+            s.rect.h = f32(rows) * sy;
+            const f32 mid = s.rect.y + s.rect.h * 0.5f;
+            s.rect.x = c.rect.x + std::round((baseline - mid) * slope);
+            out.push_back(s);
+        }
+    }
+    cmds.resize(first);
+    cmds.insert(cmds.end(), out.begin(), out.end());
+}
 } // namespace fuse::ui::rich
 
 // ---- widget ---------------------------------------------------------------------------------------------------------------
@@ -903,8 +969,10 @@ struct RichW {
                 const Rect box{c.x + f.x, y + ln.h - lh, f.w + 2.f, lh};
                 const Color col = f.fmt.hasColor ? pc.tint(f.fmt.color) : !f.fmt.link.empty() ? linkCol : text;
                 const std::string_view str = std::string_view(t).substr(f.a, f.b - f.a);
+                const std::size_t first = dl.size();
                 pc.ui.paintString(dl, str, box, col, f.size, TextAlignment::Start, pc.node.index);
                 if (f.fmt.bold) pc.ui.paintString(dl, str, {box.x + std::max(0.6f, f.size / 24.f), box.y, box.w, box.h}, col, f.size, TextAlignment::Start, pc.node.index);
+                if (f.fmt.italic) rich::obliqueGlyphs(dl, first, box.y + lh * 0.78f);
                 const f32 th = std::max(1.f, f.size / 14.f);
                 if (f.fmt.underline || !f.fmt.link.empty()) dl.line({box.x, box.y + lh * 0.86f}, {box.x + f.w, box.y + lh * 0.86f}, col, th);
                 if (f.fmt.strike) dl.line({box.x, box.y + lh * 0.55f}, {box.x + f.w, box.y + lh * 0.55f}, col, th);
