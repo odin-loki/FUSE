@@ -139,7 +139,8 @@ using CommandFn = void (*)(UiContext&, NodeHandle, u64 a, u64 b);
 enum class A11yRole : u8 {
     None, Window, Group, Text, Button, CheckBox, RadioButton, Switch, Slider, ProgressBar, TextField, ScrollArea,
     List, ListItem, Image, Separator, Link, ComboBox, SpinBox, Dial, ScrollBar, Tab,
-    DateInput, TimeInput, DateTimeInput ///< sectioned date / time fields (AccessKit DateInput / TimeInput / DateTimeInput)
+    DateInput, TimeInput, DateTimeInput, ///< sectioned date / time fields (AccessKit DateInput / TimeInput / DateTimeInput)
+    Grid, Row, GridCell, ColumnHeader    ///< item views (table / tree / calendar grids); usually virtual parts
 };
 const char* a11yRoleName(A11yRole r);
 /// Extra accessible state set by widgets (UiContext::setA11yState): listbox / combobox semantics.
@@ -165,6 +166,11 @@ struct A11ySnapshotNode {
     f32 value = 0.f, lo = 0.f, hi = 0.f;
     A11yState state;
     std::string valueText; ///< what the widget shows for its value (spin box "$ 5 ea", a date) - read instead of the number
+    /// Virtual part of `node` (WidgetClass::a11yParts): nonzero, unique per owner. Parts have no NodeHandle of their own.
+    u32 part = 0;
+    i32 rowIndex = -1, colIndex = -1; ///< Row / GridCell / ColumnHeader position
+    u32 rowCount = 0, colCount = 0;   ///< Grid size
+    u32 level = 0;                    ///< tree row depth, 1-based (0 = not hierarchical)
 };
 
 // ---- Widget classes ------------------------------------------------------------------------------------------------
@@ -201,6 +207,10 @@ struct WidgetClass {
     bool (*onEvent)(EventContext&, const Event&) = nullptr;
     /// Optional: the shown value text for assistive tech (A11ySnapshotNode::valueText).
     std::string (*a11yValueText)(const UiContext&, NodeHandle) = nullptr;
+    /// Optional: append virtual a11y children (grid rows / cells). Set `part` (nonzero) on each; `parent` is an index into
+    /// the appended nodes or ~0u for the owner. The core fills `node` and rebases `parent`. `self` is the owner's own
+    /// snapshot entry (set its rowCount / colCount, activeDescendant-like state).
+    void (*a11yParts)(const UiContext&, NodeHandle, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>&) = nullptr;
     /// Default style (applied before style sheets).
     ComputedStyle defaults{};
 };
@@ -225,6 +235,7 @@ public:
         if constexpr (requires { &W::paint; }) c.paint = &W::paint;
         if constexpr (requires { &W::onEvent; }) c.onEvent = &W::onEvent;
         if constexpr (requires { &W::a11yValueText; }) c.a11yValueText = &W::a11yValueText;
+        if constexpr (requires { &W::a11yParts; }) c.a11yParts = &W::a11yParts;
         if constexpr (requires { W::defaults(); }) c.defaults = W::defaults();
         return add(std::move(c));
     }

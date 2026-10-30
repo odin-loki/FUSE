@@ -14,7 +14,13 @@ namespace fuse::ui::a11y {
 
 /// Stable platform id for a node: generation in the high half, slot in the low half (never 0).
 inline u64 idOf(NodeHandle n) { return (u64(n.generation) << 32) | u64(n.index + 1u); }
-inline NodeHandle nodeOf(u64 id) { return {u32(id & 0xFFFFFFFFu) - 1u, u32(id >> 32)}; }
+/// Virtual part (A11ySnapshotNode::part): top bit set, part in bits 32..62, owner slot low (generations are below 2^31).
+inline u64 idOf(NodeHandle n, u32 part) {
+    return part ? (1ull << 63) | (u64(part & 0x7FFFFFFFu) << 32) | u64(n.index + 1u) : idOf(n);
+}
+inline u64 idOf(const A11ySnapshotNode& s) { return idOf(s.node, s.part); }
+/// Parts map to no handle (invalid); use Bridge::ownerOf for them.
+inline NodeHandle nodeOf(u64 id) { return id >> 63 ? NodeHandle{} : NodeHandle{u32(id & 0xFFFFFFFFu) - 1u, u32(id >> 32)}; }
 
 enum class Action : u8 { Focus, Click, Increment, Decrement, SetValue, Expand, Collapse };
 struct ActionRequest {

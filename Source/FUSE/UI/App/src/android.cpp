@@ -391,7 +391,7 @@ JNIEXPORT jfloatArray JNICALL Java_org_fuse_ui_FuseActivity_nativeA11yInfo(JNIEn
         float active = -1.f;
         if (n.state.activeDescendant.valid())
             for (std::size_t k = 0; k < m->a11y.size(); ++k)
-                if (m->a11y[k].n.node == n.state.activeDescendant) active = float(k);
+                if (m->a11y[k].n.node == n.state.activeDescendant && !m->a11y[k].n.part) active = float(k);
         fuse::app::android::a11yStateFloats(n.state, f + 13, active);
     }
     jfloatArray a = e->NewFloatArray(16);

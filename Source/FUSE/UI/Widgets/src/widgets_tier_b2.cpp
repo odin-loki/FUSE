@@ -203,7 +203,7 @@ TableState& newState(UiContext& ui, NodeHandle n) {
 
 struct TableView {
     static constexpr std::string_view kName = "tableview";
-    static constexpr A11yRole kRole = A11yRole::List;
+    static constexpr A11yRole kRole = A11yRole::Grid;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
     static constexpr f32 kBar = 8.f;
@@ -242,6 +242,56 @@ struct TableView {
         const f32 tl = std::max(16.f, track.h * f32(vis) / f32(r));
         thumb = {track.x, track.y + (track.h - tl) * f32(s.first) / f32(r - vis), kBar, tl};
         return true;
+    }
+    /// QAccessibleTable: header row of ColumnHeaders, then the shown rows (virtualised like the paint) as Rows of
+    /// GridCells. Part ids: header row 1, header cell 2 + col; data row r: (r + 1) * (kMaxCols + 1) + 1, its cells + 1 + col.
+    static void a11yParts(const UiContext& cui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>& out) {
+        UiContext& ui = const_cast<UiContext&>(cui); // model reads use the view's scratch string
+        TableState* s = stateOf(ui, n);
+        if (!s || !s->model) return;
+        const Rect c = ui.contentRect(n);
+        const f32 rh = rowHeight(ui, n), hh = headerH(ui, n, *s);
+        const u32 nc = cols(*s), nr = rows(*s), vis = visible(ui, n, *s), h = s->header ? 1u : 0u;
+        self.rowCount = nr + h;
+        self.colCount = nc;
+        const i64 sel = i64(ui.value(n));
+        if (h) {
+            const u32 rowAt = u32(out.size());
+            A11ySnapshotNode r;
+            r.role = A11yRole::Row; r.part = 1; r.rowIndex = 0; r.bounds = {c.x, c.y, c.w, hh};
+            out.push_back(std::move(r));
+            f32 x = c.x;
+            for (u32 k = 0; k < nc; ++k) {
+                A11ySnapshotNode hc;
+                hc.role = A11yRole::ColumnHeader; hc.part = 2 + k; hc.parent = rowAt; hc.rowIndex = 0; hc.colIndex = i32(k);
+                hc.name = std::string(s->model->header ? s->model->header(s->model->user, k) : std::string_view{});
+                hc.bounds = {x, c.y, s->colW[k], hh};
+                x += s->colW[k];
+                out.push_back(std::move(hc));
+            }
+        }
+        for (u32 i = 0; i < vis + 1 && s->first + i < nr; ++i) {
+            const u32 row = s->first + i;
+            const f32 y = c.y + hh + f32(i) * rh;
+            if (y >= c.bottom()) break;
+            const u32 id = (row + 1u) * (kMaxCols + 1u) + 1u, rowAt = u32(out.size());
+            A11ySnapshotNode r;
+            r.role = A11yRole::Row; r.part = id; r.rowIndex = i32(row + h); r.bounds = {c.x, y, c.w, rh};
+            r.state.selected = i64(row) == sel;
+            out.push_back(std::move(r));
+            f32 x = c.x;
+            for (u32 k = 0; k < nc; ++k) {
+                A11ySnapshotNode gc;
+                gc.role = A11yRole::GridCell; gc.part = id + 1u + k; gc.parent = rowAt;
+                gc.rowIndex = i32(row + h); gc.colIndex = i32(k);
+                gc.name = std::string(s->model->data(s->model->user, row, k, s->scratch));
+                gc.bounds = {x, y, s->colW[k], rh};
+                gc.state.selected = i64(row) == sel;
+                gc.focused = i64(row) == sel && k == 0; // the current cell; ANDed with the view's focus
+                x += s->colW[k];
+                out.push_back(std::move(gc));
+            }
+        }
     }
     static void paint(const PaintContext& pc, DrawList& dl) {
         UiContext& ui = pc.ui;

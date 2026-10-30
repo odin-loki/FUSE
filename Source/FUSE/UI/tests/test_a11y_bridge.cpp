@@ -3,7 +3,9 @@
 // adapter stays inactive and update() is a no-op).
 #include "test_util.hpp"
 #include <cstdio>
+#include <algorithm>
 #include <cstdlib>
+#include <vector>
 
 #include "fuse/ui/a11y/a11y.hpp"
 
@@ -77,6 +79,59 @@ int main() {
     UI_CHECK(b.sync() >= 1u);
     UI_CHECK(!b.perform({a::Action::Click, gone}));
 
+    // virtual parts: table / tree views expose Grid > Row > ColumnHeader / GridCell with unique ids; AT click on a
+    // cell selects its row; the current cell follows the view's focus
+    static w::StringTableModel tm("Name\tSize");
+    tm.addRow("alpha\t1"); tm.addRow("beta\t2"); tm.addRow("gamma\t3");
+    const NodeHandle tbl = w::tableView(ui, panel, &tm.model(), "tbl");
+    const NodeHandle tree = w::treeView(ui, panel, "root\n\tleaf a\n\tleaf b\nother", "tree");
+    ui.update(1.f / 60.f);
+    b.sync();
+    {
+        std::vector<u64> ids;
+        u32 cells = 0, heads = 0, treeRows = 0;
+        u64 beta = 0, leafB = 0;
+        bool sizes = false, levels = false, expanded = false;
+        for (const auto& n : b.nodes()) {
+            ids.push_back(a::idOf(n));
+            if (n.part) UI_CHECK((n.node == tbl || n.node == tree) && !a::nodeOf(a::idOf(n)).valid());
+            if (!n.part && n.node == tbl) sizes = n.role == A11yRole::Grid && n.rowCount == 4u && n.colCount == 2u;
+            if (n.node == tbl && n.role == A11yRole::GridCell) ++cells;
+            if (n.node == tbl && n.role == A11yRole::ColumnHeader) heads += n.name == "Name" || n.name == "Size";
+            if (n.node == tbl && n.role == A11yRole::GridCell && n.name == "beta") { beta = a::idOf(n); UI_CHECK(n.rowIndex == 2 && n.colIndex == 0); }
+            if (n.node == tree && n.role == A11yRole::Row) {
+                ++treeRows;
+                if (n.name == "leaf a") levels = n.level == 2u && n.state.expanded == -1;
+                if (n.name == "root") expanded = n.level == 1u && n.state.expanded == 1;
+            }
+            if (n.node == tree && n.role == A11yRole::GridCell && n.name == "leaf b") leafB = a::idOf(n);
+        }
+        std::sort(ids.begin(), ids.end());
+        UI_CHECK(std::adjacent_find(ids.begin(), ids.end()) == ids.end());
+        UI_CHECK(sizes && cells == 6u && heads == 2u && beta != 0);
+        UI_CHECK(treeRows == 4u && levels && expanded && leafB != 0);
+        UI_CHECK(b.perform({a::Action::Click, beta}));
+        UI_CHECK(ui.value(tbl) == 1.f);
+        UI_CHECK(b.perform({a::Action::Click, leafB}));
+        UI_CHECK(ui.value(tree) == 2.f);
+        ui.setFocus(tbl);
+        ui.update(1.f / 60.f);
+        b.sync();
+        bool cellFocused = false;
+        for (const auto& n : b.nodes())
+            if (a::idOf(n) == b.focusId()) cellFocused = n.role == A11yRole::GridCell && n.name == "beta" && n.state.selected;
+        UI_CHECK(cellFocused);
+        w::setTreeExpanded(ui, tree, 0, false);
+        ui.update(1.f / 60.f);
+        b.sync();
+        treeRows = 0;
+        for (const auto& n : b.nodes()) {
+            if (n.node == tree && n.role == A11yRole::Row) ++treeRows;
+            if (n.node == tree && n.role == A11yRole::Row && n.name == "root") UI_CHECK(n.state.expanded == 0);
+        }
+        UI_CHECK(treeRows == 2u);
+    }
+
 #if FUSE_UI_HAVE_ACCESSKIT
     UI_CHECK(a::accessKitAvailable());
     void* up = a::buildAccessKitUpdate(b);
@@ -87,6 +142,9 @@ int main() {
     UI_CHECK(dbg.find("FUSE UI") != std::string::npos);
     // password field: PasswordInput role (UIA IsPassword, AT-SPI password text), secret absent from the tree
     UI_CHECK(dbg.find("PasswordInput") != std::string::npos && dbg.find("s3cr3t") == std::string::npos);
+    // table / tree grids: Grid / Row / ColumnHeader / GridCell with table indices and tree levels
+    UI_CHECK(dbg.find("Grid") != std::string::npos && dbg.find("GridCell") != std::string::npos && dbg.find("ColumnHeader") != std::string::npos);
+    UI_CHECK(dbg.find("row_index") != std::string::npos && dbg.find("column_count") != std::string::npos && dbg.find("level") != std::string::npos);
     a::freeAccessKitUpdate(up);
     { // completer: autoComplete List, expanded, controls + activeDescendant -> the highlighted ListItem (selected)
         const NodeHandle prevFocus = ui.focused();

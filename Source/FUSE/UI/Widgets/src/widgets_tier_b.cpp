@@ -386,7 +386,7 @@ void eachTreeRow(std::string_view s, u64 collapsed, F&& f) {
 }
 struct TreeView {
     static constexpr std::string_view kName = "treeview";
-    static constexpr A11yRole kRole = A11yRole::List;
+    static constexpr A11yRole kRole = A11yRole::Grid;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
     static constexpr f32 kIndent = 16.f;
@@ -413,6 +413,36 @@ struct TreeView {
             return true;
         });
         dl.popClip();
+    }
+    /// ARIA treegrid: one Row per shown line (level = depth + 1, expanded when it has children, selected) holding one
+    /// GridCell with the text. Part ids: row = 2 * line + 1, cell = 2 * line + 2 (stable while lines above toggle).
+    static void a11yParts(const UiContext& cui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>& out) {
+        UiContext& ui = const_cast<UiContext&>(cui);
+        const Rect c = ui.contentRect(n);
+        const f32 rh = rowHeight(ui, n);
+        const i64 sel = i64(ui.value(n));
+        self.rowCount = treeVisibleRows(ui, n);
+        self.colCount = 1;
+        eachTreeRow(ui.text(n), ui.userData(n), [&](u32 row, u32 line, u32 depth, bool kids, bool open, std::string_view t) {
+            const Rect b{c.x, c.y + f32(row) * rh, c.w, rh};
+            if (b.y > c.bottom()) return false;
+            const u32 rowAt = u32(out.size());
+            A11ySnapshotNode r;
+            r.role = A11yRole::Row; r.part = 2u * line + 1u; r.rowIndex = i32(row); r.level = depth + 1u; r.bounds = b;
+            r.name = std::string(t);
+            r.state.selected = i64(line) == sel;
+            r.state.expanded = kids ? (open ? 1 : 0) : -1;
+            out.push_back(std::move(r));
+            A11ySnapshotNode gc;
+            gc.role = A11yRole::GridCell; gc.part = 2u * line + 2u; gc.parent = rowAt; gc.rowIndex = i32(row); gc.colIndex = 0;
+            gc.name = std::string(t);
+            const f32 x = b.x + 18.f + f32(depth) * kIndent;
+            gc.bounds = {x, b.y, b.right() - x, rh}; // the text, not the arrow: a click selects
+            gc.state.selected = i64(line) == sel;
+            gc.focused = i64(line) == sel;
+            out.push_back(std::move(gc));
+            return true;
+        });
     }
     struct Hit { i64 line = -1; u32 depth = 0; bool kids = false, open = false; i64 row = -1; };
     static Hit rowInfo(UiContext& ui, NodeHandle n, auto pred) {

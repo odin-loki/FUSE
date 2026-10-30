@@ -88,7 +88,8 @@ inline const char* className(fuse::ui::A11yRole r) {
     case R::SpinBox: return "android.widget.NumberPicker";
     case R::DateInput: case R::DateTimeInput: return "android.widget.DatePicker";
     case R::TimeInput: return "android.widget.TimePicker";
-    case R::Text: case R::Link: return "android.widget.TextView";
+    case R::Text: case R::Link: case R::ColumnHeader: return "android.widget.TextView";
+    case R::Grid: return "android.widget.GridView";
     default: return "android.view.View";
     }
 }
@@ -113,13 +114,14 @@ inline std::uint64_t traits(fuse::ui::A11yRole r, bool disabled, bool checked, b
     using R = fuse::ui::A11yRole;
     constexpr std::uint64_t kButton = 1ull << 0, kLink = 1ull << 1, kImage = 1ull << 2, kSelected = 1ull << 3,
                             kStatic = 1ull << 6, kNotEnabled = 1ull << 8, kAdjustable = 1ull << 12, kHeader = 1ull << 16;
-    (void)kHeader;
     std::uint64_t t = 0;
     switch (r) {
     case R::Button: case R::CheckBox: case R::RadioButton: case R::Switch: case R::Tab: case R::ComboBox: t = kButton; break;
     case R::Link: t = kLink; break;
     case R::Image: t = kImage; break;
     case R::Text: t = kStatic; break;
+    case R::GridCell: t = kButton; break;
+    case R::ColumnHeader: t = kStatic | kHeader; break;
     case R::Slider: case R::Dial: case R::SpinBox: case R::DateInput: case R::TimeInput: case R::DateTimeInput: t = kAdjustable; break;
     case R::ProgressBar: t = 1ull << 10; break; // UpdatesFrequently
     default: break;

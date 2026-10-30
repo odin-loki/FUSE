@@ -19,11 +19,11 @@ u32 Bridge::sync() {
     m_ui.snapshotA11y(m_cur);
     std::unordered_map<u64, u32> prevIdx;
     prevIdx.reserve(m_prev.size());
-    for (u32 i = 0; i < m_prev.size(); ++i) prevIdx.emplace(idOf(m_prev[i].node), i);
-    auto parentId = [](const std::vector<A11ySnapshotNode>& v, u32 i) { return v[i].parent == ~0u ? 0ull : idOf(v[v[i].parent].node); };
+    for (u32 i = 0; i < m_prev.size(); ++i) prevIdx.emplace(idOf(m_prev[i]), i);
+    auto parentId = [](const std::vector<A11ySnapshotNode>& v, u32 i) { return v[i].parent == ~0u ? 0ull : idOf(v[v[i].parent]); };
     u32 changed = 0, matched = 0;
     for (u32 i = 0; i < m_cur.size(); ++i) {
-        auto it = prevIdx.find(idOf(m_cur[i].node));
+        auto it = prevIdx.find(idOf(m_cur[i]));
         if (it == prevIdx.end()) { ++changed; continue; }
         ++matched;
         if (!same(m_cur[i], m_prev[it->second], parentId(m_cur, i), parentId(m_prev, it->second))) ++changed;
@@ -33,8 +33,10 @@ u32 Bridge::sync() {
 }
 
 u64 Bridge::focusId() const {
+    u64 f = 0; // the last focused entry wins: a focused grid's current cell follows its owner
     for (const auto& n : m_cur)
-        if (n.focused) return idOf(n.node);
+        if (n.focused) f = idOf(n);
+    if (f) return f;
     return m_cur.empty() ? 0 : idOf(m_cur[0].node);
 }
 
@@ -46,12 +48,16 @@ std::vector<u32> Bridge::children(u32 i) const {
 }
 
 bool Bridge::perform(const ActionRequest& r) {
-    const NodeHandle n = nodeOf(r.target);
+    NodeHandle n = nodeOf(r.target);
+    const A11ySnapshotNode* part = nullptr; // virtual part (grid cell): act on its owner at the part's bounds
+    if (r.target >> 63)
+        for (const auto& s : m_cur)
+            if (s.part && idOf(s) == r.target) { part = &s; n = s.node; }
     if (!m_ui.alive(n)) return false;
     switch (r.action) {
     case Action::Focus: m_ui.setFocus(n, FocusReason::Keyboard); return true;
     case Action::Click: {
-        const Rect b = m_ui.rect(n);
+        const Rect b = part ? part->bounds : m_ui.rect(n);
         const Vec2 p{b.x + b.w * 0.5f, b.y + b.h * 0.5f};
         m_ui.pointerMove(p);
         m_ui.pointerDown(p);
@@ -62,7 +68,7 @@ bool Bridge::perform(const ActionRequest& r) {
     case Action::Decrement: {
         f32 lo = 0.f, hi = 0.f;
         for (const auto& s : m_cur)
-            if (s.node == n) { lo = s.lo; hi = s.hi; }
+            if (s.node == n && !s.part) { lo = s.lo; hi = s.hi; }
         f32 step = (hi - lo) * 0.01f;
         if (step <= 0.f) step = 1.f;
         const f32 v = m_ui.value(n) + (r.action == Action::Increment ? step : -step);

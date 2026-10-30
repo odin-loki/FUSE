@@ -37,6 +37,10 @@ accesskit_role roleOf(A11yRole r) {
     case A11yRole::DateInput: return ACCESSKIT_ROLE_DATE_INPUT;
     case A11yRole::TimeInput: return ACCESSKIT_ROLE_TIME_INPUT;
     case A11yRole::DateTimeInput: return ACCESSKIT_ROLE_DATE_TIME_INPUT;
+    case A11yRole::Grid: return ACCESSKIT_ROLE_GRID;
+    case A11yRole::Row: return ACCESSKIT_ROLE_ROW;
+    case A11yRole::GridCell: return ACCESSKIT_ROLE_GRID_CELL;
+    case A11yRole::ColumnHeader: return ACCESSKIT_ROLE_COLUMN_HEADER;
     case A11yRole::None: break;
     }
     return ACCESSKIT_ROLE_UNKNOWN;
@@ -64,7 +68,12 @@ void* buildAccessKitUpdate(const Bridge& b, bool includeTree) {
             accesskit_node_set_expanded(n, s.state.expanded > 0);
             accesskit_node_add_action(n, s.state.expanded > 0 ? ACCESSKIT_ACTION_COLLAPSE : ACCESSKIT_ACTION_EXPAND);
         }
-        if (s.role == A11yRole::ListItem) accesskit_node_set_selected(n, s.state.selected);
+        if (s.role == A11yRole::ListItem || s.role == A11yRole::GridCell || s.role == A11yRole::Row) accesskit_node_set_selected(n, s.state.selected);
+        if (s.rowIndex >= 0) accesskit_node_set_row_index(n, size_t(s.rowIndex));
+        if (s.colIndex >= 0) accesskit_node_set_column_index(n, size_t(s.colIndex));
+        if (s.rowCount) accesskit_node_set_row_count(n, s.rowCount);
+        if (s.colCount) accesskit_node_set_column_count(n, s.colCount);
+        if (s.level) accesskit_node_set_level(n, s.level);
         if (s.state.autoComplete != A11yAutoComplete::None)
             accesskit_node_set_auto_complete(n, s.state.autoComplete == A11yAutoComplete::Inline ? ACCESSKIT_AUTO_COMPLETE_INLINE
                                                 : s.state.autoComplete == A11yAutoComplete::List ? ACCESSKIT_AUTO_COMPLETE_LIST
@@ -84,9 +93,9 @@ void* buildAccessKitUpdate(const Bridge& b, bool includeTree) {
             }
         }
         kids.clear();
-        for (u32 c : b.children(i)) kids.push_back(idOf(v[c].node));
+        for (u32 c : b.children(i)) kids.push_back(idOf(v[c]));
         if (!kids.empty()) accesskit_node_set_children(n, kids.size(), kids.data());
-        accesskit_tree_update_push_node(u, idOf(s.node), n); // takes ownership
+        accesskit_tree_update_push_node(u, idOf(s), n); // takes ownership
     }
     if (includeTree && !v.empty()) {
         accesskit_tree* t = accesskit_tree_new(idOf(v[0].node));

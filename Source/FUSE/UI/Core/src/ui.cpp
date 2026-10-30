@@ -23,7 +23,7 @@ const char* a11yRoleName(A11yRole r) {
     static const char* names[] = {"none", "window", "group", "text", "button", "checkbox", "radio", "switch",
                                   "slider", "progressbar", "textfield", "scrollarea", "list", "listitem", "image",
                                   "separator", "link", "combobox", "spinbox", "dial", "scrollbar", "tab",
-                                  "dateinput", "timeinput", "datetimeinput"};
+                                  "dateinput", "timeinput", "datetimeinput", "grid", "row", "gridcell", "columnheader"};
     return names[u32(r)];
 }
 
@@ -2986,7 +2986,20 @@ void UiContext::snapshotA11y(std::vector<A11ySnapshotNode>& out) const {
             s.hi = n.hi;
             if (auto f = m_registry.get(n.cls).a11yValueText) s.valueText = f(*this, s.node);
             p = u32(out.size());
+            const NodeHandle owner = s.node;
+            const bool ownerFocused = s.focused;
             out.push_back(std::move(s));
+            if (auto f = m_registry.get(n.cls).a11yParts) {
+                std::vector<A11ySnapshotNode> parts;
+                f(*this, owner, out[p], parts);
+                const u32 base = u32(out.size());
+                for (auto& q : parts) {
+                    q.node = owner;
+                    q.parent = q.parent == ~0u ? p : base + q.parent;
+                    q.focused = q.focused && ownerFocused;
+                    out.push_back(std::move(q));
+                }
+            }
         }
         for (u32 k = n.first; k != kNone; k = m_nodes[k].next) self(self, k, p);
     };
