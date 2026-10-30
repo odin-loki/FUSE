@@ -22,25 +22,50 @@ struct GpuCmd {
 };
 static_assert(sizeof(GpuCmd) == 128, "GpuCmd must match the kernel's std430 layout");
 
-/// Push constants (must match `UiPush`).
+/// Push constants of ui.draw_list (must match `UiPush`). One dispatch covers origin .. origin + size (the damage
+/// region; the whole target for a full frame) and reads the tile table starting at `tileBase`.
 struct GpuPush {
     u32 extent[2];
     u32 tilesX;
     u32 atlasSize;
     u32 tileCount;
     u32 imageCount;
-    u32 pad[2];
+    u32 origin[2];
+    u32 size[2];
+    u32 tileBase;
+    u32 flags; ///< kPassClear: start from opaque black instead of the target's contents (damage clear)
 };
+static_assert(sizeof(GpuPush) == 48, "GpuPush must match the kernel's push block");
 
 inline constexpr u32 kUiTile = 16;
+inline constexpr u32 kPassClear = 1u;
+
+/// The frame is a sequence of passes: tile-binned draw segments separated by backdrop blurs (each blur reads what
+/// the previous segments drew). kind 0: draw (GpuPush.tileBase = tileBase); kind 1: backdrop blur of cmds[cmd] over
+/// the pixel box `area` (x0, y0, x1, y1), sampling `src` (x, y, w, h), box radius `radius`, 3 box passes per axis.
+struct GpuPass {
+    u32 kind = 0;
+    u32 tileBase = 0;
+    u32 cmd = 0;
+    u32 flags = 0;
+    i32 src[4] = {};
+    i32 area[4] = {};
+    u32 radius = 0;
+    f32 inv = 0.f;
+};
+inline constexpr u32 kPassDraw = 0, kPassBackdrop = 1;
 
 struct GpuDrawData {
     std::vector<GpuCmd> cmds;
-    std::vector<u32> tiles;  ///< offsets[tileCount + 1], then command ids
+    std::vector<u32> tiles;  ///< per draw pass at its tileBase: offsets[tileCount + 1], then command ids
+    std::vector<GpuPass> passes; ///< in order; passes[0] is always a draw pass
     std::vector<u32> images; ///< per image: offset (in u32 pixels into `pixels`), width, height, 0; then pixels
     GpuPush push{};
     const u8* atlas = nullptr; ///< glyph coverage atlas (atlasSize^2 bytes), uploaded as-is
     u32 atlasSize = 0;
+    /// fuse::text::GlyphAtlas::version() of `atlas`; the renderer re-uploads the atlas only when it changes.
+    /// ~0u (packDrawList's default) = unknown, upload every frame.
+    u32 atlasGeneration = ~0u;
 
     std::size_t cmdBytes() const { return cmds.size() * sizeof(GpuCmd); }
     std::size_t tileBytes() const { return tiles.size() * 4; }
@@ -49,7 +74,8 @@ struct GpuDrawData {
 };
 
 /// Packs `list` for a width x height target, restricted to `scissor` (whole target when empty). `images` are the
-/// rasteriser image views (same indices as DrawCmd::image); `atlas` / `atlasSize` the glyph atlas.
+/// rasteriser image views (same indices as DrawCmd::image); `atlas` / `atlasSize` the glyph atlas. The dispatch
+/// region (push.origin / size) is the scissor's pixel box, so a damage scissor repaints only the damaged pixels.
 void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out, const u8* atlas = nullptr,
                   u32 atlasSize = 0, const Image* const* images = nullptr, u32 imageCount = 0, Rect scissor = {});
 

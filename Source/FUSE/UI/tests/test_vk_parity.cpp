@@ -232,6 +232,62 @@ int main() {
         vkFreeMemory(vk.device, extMem, nullptr);
     }
 
+    // 6. backdrop blur on the GPU (ui.backdrop between draw segments), incl. a second blur over the first and a
+    //    scissored (damage) repaint that clears its box like presentHeadless
+    UI_CHECK(gpu.backdropOnGpu());
+    {
+        DrawList bl;
+        for (int i = 0; i < 12; ++i)
+            bl.rect({f32(i * 40), 0, 20, 400}, Color::rgb(i & 1 ? 0xff4422u : 0x22aaffu));
+        bl.gradientRect({0, 150, 488, 60}, Color::rgb(0xffffff), Color::rgb(0x000000), true);
+        bl.backdrop({60, 60, 240, 200}, 12.f, {20, 20, 20, 20}, Color::rgb(0xffffff, 0.25f));
+        bl.rect({80, 80, 40, 40}, Color::rgb(0x00ff00));
+        bl.backdrop({200, 120, 220, 220}, 6.f, {8, 8, 8, 8});
+        bl.rect({400, 300, 60, 60}, Color::rgb(0xffff00, 0.5f));
+        Image cpu6;
+        cpu6.resize(int(W), int(H), 0xFF000000u);
+        init.resize(int(W), int(H), 0xFF000000u);
+        CpuRasterizer r6;
+        r6.render(bl, cpu6);
+        packDrawList(bl, W, H, data);
+        UI_CHECK_EQ(data.passes.size(), 5u); // draw, blur, draw, blur, draw
+        UI_CHECK(gpu.upload(0, data));
+        vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+        check("backdrop", compare(cpu6, out));
+
+        // damage repaint: clear the box to opaque black (kPassClear) and redraw only inside it, over old content
+        const Rect sc6{150, 90, 180, 170};
+        Image prev = cpu2; // unrelated earlier frame as canvas history
+        Image cpu7 = prev;
+        for (int y = 90; y < 260; ++y)
+            for (int x = 150; x < 330; ++x) cpu7.pixels[std::size_t(y) * W + std::size_t(x)] = 0xFF000000u;
+        r6.render(bl, cpu7, sc6);
+        packDrawList(bl, W, H, data, nullptr, 0, nullptr, 0, sc6);
+        data.passes[0].flags |= fuse::ui::render::kPassClear;
+        UI_CHECK_EQ(data.push.origin[0], 150u);
+        UI_CHECK_EQ(data.push.size[0], 180u);
+        UI_CHECK(gpu.upload(1, data));
+        vk.run(prev, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 1); });
+        check("damage-blur", compare(cpu7, out));
+        UI_CHECK_EQ(out.at(5, 5), prev.at(5, 5)); // outside the box: untouched
+    }
+
+    // 7. glyph atlas uploads only when its generation changes
+    {
+        packDrawList(ui.drawList(), W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()));
+        data.atlasGeneration = ui.atlas().version();
+        UI_CHECK(gpu.upload(0, data));
+        const auto n0 = gpu.atlasUploads();
+        UI_CHECK(gpu.upload(0, data));
+        UI_CHECK(gpu.upload(0, data));
+        UI_CHECK_EQ(gpu.atlasUploads(), n0);
+        data.atlasGeneration += 1;
+        UI_CHECK(gpu.upload(0, data));
+        UI_CHECK_EQ(gpu.atlasUploads(), n0 + 1);
+        vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+        check("atlas-skip", compare(cpu, out));
+    }
+
     // 4. steady state: packing + uploading the same frame again does not allocate
     packDrawList(ui.drawList(), W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()));
     const auto before = g_allocs.load();

@@ -701,8 +701,13 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
     if (w->gpuDraw) {
         UiContext& ui = win.ui();
         const CpuRasterizer& raster = win.rasterizer();
+        // damage repaint: the kernel runs over the damage box only, starting it from opaque black (as presentHeadless
+        // clears it); the canvas keeps every other pixel from the previous frame
         fuse::ui::render::packDrawList(win.pixelDrawList(), W, H, w->data, ui.atlas().pixels(), u32(ui.atlas().size()),
-                                       raster.images(), raster.imageCount());
+                                       raster.images(), raster.imageCount(),
+                                       Rect{f32(x0), f32(y0), f32(x1 - x0), f32(y1 - y0)});
+        w->data.atlasGeneration = ui.atlas().version();
+        if (!w->data.passes.empty()) w->data.passes[0].flags |= fuse::ui::render::kPassClear;
         if (!w->gpu.upload(f, w->data)) return false;
     }
 #endif
@@ -731,7 +736,7 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
         VkClearColorValue black{};
         black.float32[3] = 1.f;
         const VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        vkCmdClearColorImage(cmd, w->canvas, G, &black, 1, &range);
+        if (full) vkCmdClearColorImage(cmd, w->canvas, G, &black, 1, &range); // partial: the kernel clears the box
         VkImageMemoryBarrier b1 = imageBarrier(w->canvas, VK_ACCESS_TRANSFER_WRITE_BIT,
                                                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, G, G);
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0,

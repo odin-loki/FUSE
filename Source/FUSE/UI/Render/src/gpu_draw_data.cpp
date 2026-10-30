@@ -24,11 +24,13 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     out.cmds.clear();
     out.tiles.clear();
     out.images.clear();
+    out.passes.clear();
+    out.atlasGeneration = ~0u;
     out.atlas = atlas;
     out.atlasSize = atlas ? atlasSize : 0;
     const u32 tilesX = (width + kUiTile - 1) / kUiTile, tilesY = (height + kUiTile - 1) / kUiTile;
     const u32 tileCount = tilesX * tilesY;
-    out.push = {{width, height}, tilesX, out.atlasSize, tileCount, imageCount, {0, 0}};
+    out.push = {{width, height}, tilesX, out.atlasSize, tileCount, imageCount, {0, 0}, {width, height}, 0, 0};
 
     // images: table then pixels
     out.images.resize(std::size_t(imageCount) * 4);
@@ -52,44 +54,62 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     const Rect full{0.f, 0.f, f32(width), f32(height)};
     if (scissor.empty()) scissor = full;
     scissor = scissor.intersect(full);
+    {
+        const u32 sx0 = u32(std::max(0.f, std::floor(scissor.x))), sy0 = u32(std::max(0.f, std::floor(scissor.y)));
+        const u32 sx1 = std::min(width, u32(std::max(0.f, std::ceil(scissor.right()))));
+        const u32 sy1 = std::min(height, u32(std::max(0.f, std::ceil(scissor.bottom()))));
+        out.push.origin[0] = sx0;
+        out.push.origin[1] = sy0;
+        out.push.size[0] = sx1 > sx0 ? sx1 - sx0 : 0;
+        out.push.size[1] = sy1 > sy0 ? sy1 - sy0 : 0;
+    }
     Clip stack[32];
     int depth = 0;
     stack[0] = {scissor, 0.f};
 
-    // pass 1: commands + their pixel areas (counted per tile)
-    out.tiles.assign(std::size_t(tileCount) + 1, 0u);
+    // commands + their pixel areas; a Backdrop closes the current draw segment (its tile table is built from the
+    // segment's commands) and becomes a blur pass over what was drawn so far
     struct Area {
         int x0, y0, x1, y1;
     };
     thread_local std::vector<Area> areas;
+    thread_local std::vector<u32> cursor;
     areas.clear();
-    for (const DrawCmd& c : list.cmds()) {
-        if (c.op == DrawOp::PushClip) {
-            if (depth < 31) {
-                ++depth;
-                stack[depth] = {stack[depth - 1].r.intersect(c.rect), c.radius[0]};
-                if (stack[depth - 1].radius > 0.f && c.radius[0] <= 0.f) stack[depth].radius = 0.f;
-            }
-            continue;
+    u32 segBegin = 0;
+    auto closeSegment = [&] {
+        const u32 tileBase = u32(out.tiles.size());
+        out.tiles.resize(std::size_t(tileBase) + tileCount + 1, 0u);
+        u32* off = out.tiles.data() + tileBase;
+        for (u32 i = segBegin; i < areas.size(); ++i) {
+            const Area& a = areas[i];
+            if (a.x1 <= a.x0 || a.y1 <= a.y0) continue;
+            for (int ty = a.y0 / int(kUiTile); ty <= (a.y1 - 1) / int(kUiTile); ++ty)
+                for (int tx = a.x0 / int(kUiTile); tx <= (a.x1 - 1) / int(kUiTile); ++tx) ++off[std::size_t(ty) * tilesX + tx];
         }
-        if (c.op == DrawOp::PopClip) {
-            if (depth > 0) --depth;
-            continue;
+        u32 sum = 0; // prefix sums -> offsets; then ids in draw order
+        for (u32 t = 0; t < tileCount; ++t) {
+            const u32 n = off[t];
+            off[t] = sum;
+            sum += n;
         }
-        if (c.op == DrawOp::Backdrop) continue; // single-pass tile kernel: no blur pass yet (panel drawn unblurred)
-        const Clip& clip = stack[depth];
-        Rect bounds = c.rect;
-        if (c.op == DrawOp::Shadow)
-            bounds = {c.rect.x - c.blur * 2.f, c.rect.y - c.blur * 2.f, c.rect.w + c.blur * 4.f, c.rect.h + c.blur * 4.f};
-        if (c.op == DrawOp::Line) {
-            const f32 hw = c.borderWidth * 0.5f + 1.f;
-            bounds = {std::min(c.rect.x, c.rect.w) - hw, std::min(c.rect.y, c.rect.h) - hw,
-                      std::abs(c.rect.w - c.rect.x) + 2 * hw, std::abs(c.rect.h - c.rect.y) + 2 * hw};
+        off[tileCount] = sum;
+        cursor.assign(off, off + tileCount);
+        const std::size_t base = std::size_t(tileBase) + tileCount + 1;
+        out.tiles.resize(base + sum, 0u);
+        for (u32 i = segBegin; i < areas.size(); ++i) {
+            const Area& a = areas[i];
+            if (a.x1 <= a.x0 || a.y1 <= a.y0) continue;
+            for (int ty = a.y0 / int(kUiTile); ty <= (a.y1 - 1) / int(kUiTile); ++ty)
+                for (int tx = a.x0 / int(kUiTile); tx <= (a.x1 - 1) / int(kUiTile); ++tx)
+                    out.tiles[base + cursor[std::size_t(ty) * tilesX + tx]++] = i;
         }
-        const Rect area = bounds.intersect(clip.r);
-        if (area.empty()) continue;
-        if (c.op == DrawOp::Glyph && !atlas) continue;
-        if (c.op == DrawOp::Image && c.image >= imageCount) continue;
+        GpuPass p;
+        p.kind = kPassDraw;
+        p.tileBase = tileBase;
+        out.passes.push_back(p);
+        segBegin = u32(areas.size());
+    };
+    auto pack = [&](const DrawCmd& c, const Clip& clip) {
         GpuCmd g{};
         put4(g.rect, c.rect.x, c.rect.y, c.rect.w, c.rect.h);
         put4(g.fill, c.fill.r, c.fill.g, c.fill.b, c.fill.a);
@@ -103,32 +123,76 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         g.info[2] = u32(c.tw) | (u32(c.th) << 16);
         g.info[3] = c.image;
         out.cmds.push_back(g);
-        const Area a{std::max(0, int(std::floor(area.x))), std::max(0, int(std::floor(area.y))),
-                     std::min(int(width), int(std::ceil(area.right()))), std::min(int(height), int(std::ceil(area.bottom())))};
-        areas.push_back(a);
-        if (a.x1 <= a.x0 || a.y1 <= a.y0) continue;
-        for (int ty = a.y0 / int(kUiTile); ty <= (a.y1 - 1) / int(kUiTile); ++ty)
-            for (int tx = a.x0 / int(kUiTile); tx <= (a.x1 - 1) / int(kUiTile); ++tx) ++out.tiles[std::size_t(ty) * tilesX + tx];
+    };
+    for (const DrawCmd& c : list.cmds()) {
+        if (c.op == DrawOp::PushClip) {
+            if (depth < 31) {
+                ++depth;
+                stack[depth] = {stack[depth - 1].r.intersect(c.rect), c.radius[0]};
+                if (stack[depth - 1].radius > 0.f && c.radius[0] <= 0.f) stack[depth].radius = 0.f;
+            }
+            continue;
+        }
+        if (c.op == DrawOp::PopClip) {
+            if (depth > 0) --depth;
+            continue;
+        }
+        const Clip& clip = stack[depth];
+        if (c.op == DrawOp::Backdrop) {
+            // same box as CpuRasterizer's backdropBlur: area = rect & clip & target, source = area + 3r margin
+            const Rect area = c.rect.intersect(clip.r).intersect(full);
+            if (area.empty()) continue;
+            const int r = std::max(1, int(std::lround(c.blur / 3.f)));
+            const int x0 = int(std::floor(area.x)), y0 = int(std::floor(area.y));
+            const int x1 = int(std::ceil(area.right())), y1 = int(std::ceil(area.bottom()));
+            const int m = 3 * r;
+            const int sx0 = std::max(0, x0 - m), sy0 = std::max(0, y0 - m);
+            const int sx1 = std::min(int(width), x1 + m), sy1 = std::min(int(height), y1 + m);
+            closeSegment();
+            const u32 id = u32(out.cmds.size());
+            pack(c, clip);
+            areas.push_back({0, 0, 0, 0}); // never binned
+            segBegin = u32(areas.size());
+            GpuPass p;
+            p.kind = kPassBackdrop;
+            p.cmd = id;
+            p.src[0] = sx0;
+            p.src[1] = sy0;
+            p.src[2] = sx1 - sx0;
+            p.src[3] = sy1 - sy0;
+            p.area[0] = x0;
+            p.area[1] = y0;
+            p.area[2] = x1;
+            p.area[3] = y1;
+            p.radius = u32(r);
+            p.inv = 1.f / f32(2 * r + 1);
+            out.passes.push_back(p);
+            continue;
+        }
+        Rect bounds = c.rect;
+        if (c.op == DrawOp::Shadow)
+            bounds = {c.rect.x - c.blur * 2.f, c.rect.y - c.blur * 2.f, c.rect.w + c.blur * 4.f, c.rect.h + c.blur * 4.f};
+        if (c.op == DrawOp::Line) {
+            const f32 hw = c.borderWidth * 0.5f + 1.f;
+            bounds = {std::min(c.rect.x, c.rect.w) - hw, std::min(c.rect.y, c.rect.h) - hw,
+                      std::abs(c.rect.w - c.rect.x) + 2 * hw, std::abs(c.rect.h - c.rect.y) + 2 * hw};
+        }
+        const Rect area = bounds.intersect(clip.r);
+        if (area.empty()) continue;
+        if (c.op == DrawOp::Glyph && !atlas) continue;
+        if (c.op == DrawOp::Image && c.image >= imageCount) continue;
+        pack(c, clip);
+        areas.push_back({std::max(0, int(std::floor(area.x))), std::max(0, int(std::floor(area.y))),
+                         std::min(int(width), int(std::ceil(area.right()))), std::min(int(height), int(std::ceil(area.bottom())))});
     }
-    // prefix sums -> offsets; then fill ids in draw order
-    u32 sum = 0;
-    for (u32 t = 0; t <= tileCount; ++t) {
-        const u32 n = out.tiles[t];
-        out.tiles[t] = sum;
-        sum += t < tileCount ? n : 0;
+    closeSegment();
+    // drop a trailing empty draw segment after a backdrop (nothing to draw); passes[0] always stays
+    if (out.passes.size() > 1 && out.passes.back().kind == kPassDraw &&
+        out.tiles[out.passes.back().tileBase + tileCount] == 0) {
+        out.tiles.resize(out.passes.back().tileBase);
+        out.passes.pop_back();
     }
-    out.tiles[tileCount] = sum;
-    const std::size_t base = std::size_t(tileCount) + 1;
-    out.tiles.resize(base + sum + 1, 0u); // +1: never empty
-    thread_local std::vector<u32> cursor;
-    cursor.assign(out.tiles.begin(), out.tiles.begin() + tileCount);
-    for (u32 i = 0; i < areas.size(); ++i) {
-        const Area& a = areas[i];
-        if (a.x1 <= a.x0 || a.y1 <= a.y0) continue;
-        for (int ty = a.y0 / int(kUiTile); ty <= (a.y1 - 1) / int(kUiTile); ++ty)
-            for (int tx = a.x0 / int(kUiTile); tx <= (a.x1 - 1) / int(kUiTile); ++tx)
-                out.tiles[base + cursor[std::size_t(ty) * tilesX + tx]++] = i;
-    }
+    out.tiles.push_back(0u); // never empty
     if (out.cmds.empty()) out.cmds.push_back(GpuCmd{}); // non-empty buffer; no tile references it
 }
 

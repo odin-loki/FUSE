@@ -20,6 +20,9 @@ struct UiVkDesc {
     u32 maxTileWords = 1u << 18;
     u32 maxImageWords = 1u << 20;
     u32 maxAtlasSize = 1024;
+    /// Backdrop blur scratch (device-local floats, 32 bytes per pixel of a blur's source box). A blur whose source
+    /// box exceeds it is skipped (the panel is drawn unblurred).
+    u32 maxBlurPixels = 1u << 21;
 };
 
 class UiVkRenderer {
@@ -54,6 +57,10 @@ public:
 
     /// True when the kernel SPIR-V was compiled into this build.
     static bool kernelAvailable();
+    /// True when DrawOp::Backdrop runs on the GPU (ui.backdrop kernel built in and created at init).
+    bool backdropOnGpu() const { return m_blurPipeline != nullptr; }
+    /// Glyph atlas uploads since init (stays flat while GpuDrawData::atlasGeneration does not change).
+    u64 atlasUploads() const { return m_atlasUploads; }
 
 private:
     struct Slot {
@@ -61,7 +68,12 @@ private:
         void* memory = nullptr; ///< VkDeviceMemory
         u8* mapped = nullptr;
         void* set = nullptr; ///< VkDescriptorSet
+        void* blurSet = nullptr; ///< VkDescriptorSet of ui.backdrop
         GpuPush push{};
+        std::vector<GpuPass> passes;
+        const u8* atlasPtr = nullptr;
+        u32 atlasSize = 0;
+        u32 atlasGeneration = ~0u;
     };
     UiVkDesc m_desc{};
     u64 m_offsets[5] = {};  ///< cmds, tiles, atlas, images, end
@@ -76,6 +88,12 @@ private:
     void* m_dummyMem = nullptr;
     void* m_dummyView = nullptr;
     bool m_dummyReady = false;        ///< layout transitioned (first record)
+    void* m_blurSetLayout = nullptr;
+    void* m_blurLayout = nullptr;
+    void* m_blurPipeline = nullptr;
+    void* m_scratch = nullptr; ///< VkBuffer, device-local floats
+    void* m_scratchMem = nullptr;
+    u64 m_atlasUploads = 0;
 };
 
 } // namespace fuse::ui::render

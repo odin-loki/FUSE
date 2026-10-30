@@ -5,6 +5,8 @@
 // order, 8-bit quantisation after every blend; gated with fuse_ui_vk_parity (max channel error and FLIP-style mean).
 // Commands are binned into 16x16 tiles on the CPU (each tile lists the commands that touch it, in draw order); the
 // rounded clip of each command is resolved on the CPU into the command (clip rect + radius), so there is no clip stack.
+// Backdrop blurs split the list into segments (one dispatch each, ui_backdrop.comp in between); a dispatch covers only
+// the damage box (push origin / size), so partial repaints touch only damaged pixels.
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
@@ -38,7 +40,10 @@ layout(push_constant) uniform UiPush {
     uint atlasSize;
     uint tileCount;
     uint imageCount;
-    uint pad0, pad1;
+    uvec2 origin;   // dispatch region (the damage box; the whole target for a full frame)
+    uvec2 size;
+    uint tileBase;  // this draw segment's tile table (segments are separated by backdrop blur passes)
+    uint flags;     // 1: start from opaque black (damage clear) instead of the target's contents
 } pc;
 
 const uint kRect = 0u, kShadow = 1u, kGlyph = 2u, kImage = 3u, kLine = 4u;
@@ -91,16 +96,17 @@ vec4 extFetch(uint e, ivec2 q) {
 uint atlasByte(uint idx) { return (ui_atlas.words[idx >> 2] >> ((idx & 3u) * 8u)) & 0xFFu; }
 
 void main() {
-    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (gl_GlobalInvocationID.x >= pc.size.x || gl_GlobalInvocationID.y >= pc.size.y) return;
+    const uvec2 p = gl_GlobalInvocationID.xy + pc.origin;
     if (p.x >= pc.extent.x || p.y >= pc.extent.y) return;
     const ivec2 ip = ivec2(p);
-    uvec4 dst = uvec4(floor(imageLoad(ui_target, ip) * 255.0 + 0.5));
+    uvec4 dst = (pc.flags & 1u) != 0u ? uvec4(0u, 0u, 0u, 255u) : uvec4(floor(imageLoad(ui_target, ip) * 255.0 + 0.5));
     const uint tile = (p.y / 16u) * pc.tilesX + (p.x / 16u);
-    const uint begin = ui_tiles.data[tile];
-    const uint end = ui_tiles.data[tile + 1u];
+    const uint begin = ui_tiles.data[pc.tileBase + tile];
+    const uint end = ui_tiles.data[pc.tileBase + tile + 1u];
     const float px = float(p.x) + 0.5, py = float(p.y) + 0.5;
     for (uint k = begin; k < end; ++k) {
-        const GpuCmd c = ui_cmds.cmds[ui_tiles.data[pc.tileCount + 1u + k]];
+        const GpuCmd c = ui_cmds.cmds[ui_tiles.data[pc.tileBase + pc.tileCount + 1u + k]];
         const uint op = c.info.x & 0xFFu;
         const uint gradient = (c.info.x >> 8) & 0xFFu;
         // pixel must lie in the command's clipped pixel area (same integer bounds as the CPU loop)

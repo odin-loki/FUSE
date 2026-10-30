@@ -831,6 +831,7 @@ void GlyphAtlas::clear() {
     m_shelfY = 1;
     m_shelfH = 0;
     ++m_generation;
+    ++m_version;
 }
 
 AtlasGlyph GlyphAtlas::get(const Font& font, std::uint32_t glyph, float px) {
@@ -866,6 +867,7 @@ AtlasGlyph GlyphAtlas::get(const Font& font, std::uint32_t glyph, float px) {
             clear();
             return get(font, glyph, px);
         }
+        ++m_version; // pixels change (GPU copies re-upload)
         font.rasterise(glyph, pxq, m_pixels.data() + std::size_t(m_shelfY) * std::size_t(m_size) + std::size_t(m_shelfX),
                        w, hh, m_size);
         ag.u = std::uint16_t(m_shelfX);
