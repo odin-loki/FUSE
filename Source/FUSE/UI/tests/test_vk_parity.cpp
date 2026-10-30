@@ -580,6 +580,61 @@ int main() {
             UI_CHECK(gpu.upload(0, data));
             vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
             check("backdrop_shadow", compare(cpuS, out));
+
+            // CSS-order chains (nested, inner layers chained: no double clip coverage), several drop-shadows, an SVG
+            // filter program with every supported primitive
+            FilterProgram prog;
+            UI_CHECK(parseSvgFilter(
+                "<filter id=\"p\"><feGaussianBlur in=\"SourceAlpha\" stdDeviation=\"3 2\" result=\"b\"/>"
+                "<feOffset in=\"b\" dx=\"6\" dy=\"5\" result=\"o\"/>"
+                "<feFlood flood-color=\"#3060ff\" flood-opacity=\"0.7\" result=\"f\"/>"
+                "<feComposite in=\"f\" in2=\"o\" operator=\"in\" result=\"s\"/>"
+                "<feColorMatrix in=\"SourceGraphic\" type=\"saturate\" values=\"0.3\" result=\"g\"/>"
+                "<feBlend in=\"g\" in2=\"s\" mode=\"screen\" result=\"m\"/>"
+                "<feComposite in=\"m\" in2=\"SourceGraphic\" operator=\"arithmetic\" k1=\"0.2\" k2=\"0.6\" k3=\"0.3\" k4=\"0.02\" result=\"a\"/>"
+                "<feMerge><feMergeNode in=\"s\"/><feMergeNode in=\"a\"/></feMerge></filter>", prog));
+            const auto chainList = [&](DrawList& cl, f32 big) {
+                for (int i = 0; i < 12; ++i) cl.rect({f32(i * 40), 0, 20, f32(H)}, Color::rgb(i & 1 ? 0xff4422u : 0x22aaffu));
+                cl.pushClip({20, 20, 220 * big, 200 * big}, 18.f);
+                cl.pushFilter(ColorMatrix::invert(1.f), 0.f, DropShadow{{0, 9}, 4.f, Color::rgb(0x00ff00, 0.8f)});
+                cl.pushFilter(ColorMatrix{}, 0.f, DropShadow{{8, 0}, 2.f, Color::rgb(0xff0000)}, true);
+                cl.pushFilter(ColorMatrix::sepia(1.f), 3.f, {}, true);
+                cl.rect({40, 40, 140 * big, 120 * big}, Color::rgb(0x2080ff, 0.9f), 10.f);
+                cl.popFilter();
+                cl.popFilter();
+                cl.popFilter();
+                cl.popClip();
+                cl.pushFilter(prog);
+                cl.rect({270, 60, 120 * big, 110 * big}, Color::rgb(0xffc040), 16.f);
+                cl.rect({300, 90, 40, 40}, Color::rgb(0x8020ff, 0.6f));
+                cl.popFilter();
+            };
+            DrawList cl;
+            chainList(cl, 1.f);
+            Image cpuC2;
+            cpuC2.resize(int(W), int(H), 0xFF000000u);
+            CpuRasterizer rc;
+            rc.render(cl, cpuC2);
+            packDrawList(cl, W, H, data);
+            UI_CHECK(gpu.upload(0, data));
+            vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+            check("filter_chain", compare(cpuC2, out));
+
+            // oversized layers on a small scratch: tiled (banded) layer ends match the CPU
+            UiVkRenderer small;
+            UI_CHECK(small.init({.physicalDevice = (void*)vk.phys, .device = (void*)vk.device, .framesInFlight = 2, .maxBlurPixels = 90000}));
+            if (small.valid()) {
+                DrawList tl;
+                chainList(tl, 1.4f);
+                Image cpuT;
+                cpuT.resize(int(W), int(H), 0xFF000000u);
+                CpuRasterizer rt;
+                rt.render(tl, cpuT);
+                packDrawList(tl, W, H, data);
+                UI_CHECK(small.upload(0, data));
+                vk.run(init, out, [&](VkCommandBuffer c) { small.record((void*)c, (void*)vk.view, 0); });
+                check("filter_tiled", compare(cpuT, out));
+            }
         }
         }
 #endif

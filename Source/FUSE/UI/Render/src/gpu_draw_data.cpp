@@ -464,16 +464,18 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             std::memcpy(fb, bits, 8);
             put4(g.grad2, c.gradXf[4], c.gradXf[5], fb[0], fb[1]);
         } else if ((c.op == DrawOp::Backdrop || c.op == DrawOp::PushFilter || c.op == DrawOp::PopFilter) &&
-                   (c.stopCount == 4 || c.stopCount == 6) && std::size_t(c.stops) + c.stopCount <= list.gradientStops().size()) {
+                   (c.stopCount == 4 || c.stopCount == 6 || (c.op != DrawOp::Backdrop && isFilterProgram(c))) &&
+                   std::size_t(c.stops) + c.stopCount <= list.gradientStops().size()) {
             // filter colour matrix: 4 rows x (r, g, b, a, offset) words, as the CPU's filterPixel reads them; then with
             // a drop shadow: dx, dy (whole pixels), colour r g b a (straight)
             const u32 at = vsz();
-            for (u32 i = 0; i < 4; ++i) {
+            const bool prog = isFilterProgram(c); // SVG program: header + 6 stops per op, same 5-word layout
+            for (u32 i = 0; i < (prog ? u32(c.stopCount) : 4u); ++i) {
                 const GradientStop& st = list.gradientStops()[c.stops + i];
                 const f32 w[5] = {st.color.r, st.color.g, st.color.b, st.color.a, st.offset};
                 for (f32 f : w) { u32 u; std::memcpy(&u, &f, 4); V->push_back(u); }
             }
-            if (c.stopCount == 6) {
+            if (c.stopCount == 6 && !prog) {
                 const GradientStop* sh = list.gradientStops().data() + c.stops + 4;
                 const f32 w[6] = {f32(std::lround(sh[1].color.r)), f32(std::lround(sh[1].color.g)), sh[0].color.r, sh[0].color.g,
                                   sh[0].color.b, sh[0].color.a};
@@ -482,7 +484,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             u32 bits[2] = {at, u32(c.stopCount)};
             f32 fb[2];
             std::memcpy(fb, bits, 8);
-            put4(g.grad2, 0.f, 0.f, fb[0], fb[1]);
+            put4(g.grad2, c.op != DrawOp::Backdrop && c.v ? 1.f : 0.f, 0.f, fb[0], fb[1]); // x: chained layer
         }
     };
     // full pack, direct glyphs: a record goes straight into its node's arena slot while the slot (from the last
@@ -657,7 +659,20 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     if (hasFilters) matchFilters(list, partner);
     const auto filterPass = [&](const DrawCmd& c, GpuPass& bp) {
         bp.flags = 0;
-        if ((c.stopCount != 4 && c.stopCount != 6) || std::size_t(c.stops) + c.stopCount > list.gradientStops().size()) return;
+        bp.planes = 2;
+        bp.margin = 3 * bp.radius; // radius is set before filterPass
+        if (std::size_t(c.stops) + c.stopCount > list.gradientStops().size()) return;
+        if (c.op != DrawOp::Backdrop && isFilterProgram(c)) { // SVG program: margin = its reach
+            const GradientStop* h = list.gradientStops().data() + c.stops;
+            bp.flags = 4u;
+            bp.ops = u32(h[0].offset);
+            bp.planes = u32(h[0].color.r);
+            bp.margin = u32(h[0].color.g);
+            for (u32 i = 0; i < bp.ops && i < 32; ++i)
+                if (FeOp(int(h[1 + 6 * i].offset)) == FeOp::Blur) bp.blurMask |= 1u << i;
+            return;
+        }
+        if (c.stopCount != 4 && c.stopCount != 6) return;
         bp.flags = 1u;
         if (c.stopCount == 6) {
             const f32 sb = list.gradientStops()[c.stops + 4].offset;
@@ -665,6 +680,9 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             bp.flags |= 2u;
             bp.radius2 = u32(r2);
             bp.inv2 = 1.f / f32(2 * r2 + 1);
+            bp.planes = 4;
+            const GradientStop& d = list.gradientStops()[c.stops + 5];
+            bp.margin += u32(3 * r2) + u32(std::max(std::abs(std::lround(d.color.r)), std::abs(std::lround(d.color.g))));
         }
     };
     u32 clipVer = 1;

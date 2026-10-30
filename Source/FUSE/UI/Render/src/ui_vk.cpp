@@ -88,9 +88,13 @@ struct BlurPush {
     f32 inv;
     u32 base; ///< box passes: buf at scratch[base], tmp at scratch[base + w h 4]
     u32 save; ///< layer passes: saved pixels at scratch[save]
-    u32 pad[2];
+    u32 instr;  ///< modes 7..9: program instruction
+    u32 flags;  ///< bit 0: mode 0 loads from the compact copy
+    u32 bandY0, bandY1; ///< mode 6: source-local rows to composite
+    u32 compact; ///< tiled layer end: compact layer copy at scratch[compact]
+    u32 pad;
 };
-static_assert(sizeof(BlurPush) == 64);
+static_assert(sizeof(BlurPush) == 80);
 void computeBarrier(VkCommandBuffer cmd) {
     VkMemoryBarrier mb{};
     mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
@@ -546,8 +550,21 @@ void UiVkRenderer::record(void* commandBuffer, void* targetView, u32 slotIndex) 
         const i64 aw = pass.area[2] - pass.area[0], ah = pass.area[3] - pass.area[1];
         void* const blurPipe = m_hdrTarget ? m_blurPipelineHdr : m_blurPipeline;
         const i64 cap = i64(std::max(1u, m_desc.maxBlurPixels)) * 8; // scratch floats
-        const i64 work = w * h * ((pass.flags & 2u) ? 16 : 8);
-        if (!blurPipe || w <= 0 || h <= 0 || aw <= 0 || ah <= 0 || work + i64(pass.saveTop) > cap) continue;
+        const bool layerPass = pass.kind == kPassLayerBegin || pass.kind == kPassLayerEnd;
+        const i64 planes = (pass.flags & 4u) ? i64(pass.planes) : (pass.flags & 2u) ? 4 : 2;
+        const i64 work = w * h * 4 * planes;
+        // a layer whose work does not fit is tiled: a compact copy of its box (1 word per pixel, 2 for HDR) and
+        // bands of `band` rows, each processed with `margin` rows of context around it. Begin and end decide alike.
+        const i64 margin = i64(pass.margin);
+        const i64 compactWords = w * h * (m_hdrTarget ? 2 : 1);
+        i64 band = h;
+        if (layerPass && work + i64(pass.saveTop) > cap) {
+            const i64 rows = (cap - i64(pass.saveTop) - compactWords) / std::max<i64>(1, w * 4 * planes);
+            band = std::min(h, rows - 2 * margin);
+        }
+        const bool tiled = band < h;
+        if (!blurPipe || w <= 0 || h <= 0 || aw <= 0 || ah <= 0 || (!layerPass && work + i64(pass.saveTop) > cap) || band < 1)
+            continue;
         const VkPipelineLayout bl = static_cast<VkPipelineLayout>(m_blurLayout);
         const VkDescriptorSet bs = static_cast<VkDescriptorSet>(s.blurSet);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, static_cast<VkPipeline>(blurPipe));
@@ -562,6 +579,8 @@ void UiVkRenderer::record(void* commandBuffer, void* targetView, u32 slotIndex) 
         bp.radius = pass.radius;
         bp.inv = pass.inv;
         bp.save = u32(cap - i64(pass.saveTop));
+        bp.bandY0 = 0;
+        bp.bandY1 = u32(h);
         auto run = [&](u32 mode, i64 threads) {
             bp.mode = mode;
             vkCmdPushConstants(cmd, bl, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(BlurPush), &bp);
@@ -571,32 +590,67 @@ void UiVkRenderer::record(void* commandBuffer, void* targetView, u32 slotIndex) 
             run(4, w * h);
             continue;
         }
-        const auto blur3 = [&] {
-            for (int it = 0; it < (bp.radius ? 3 : 0); ++it) { // radius 0: no blur
-                computeBarrier(cmd);
-                run(1, h * 4);
-                computeBarrier(cmd);
-                run(2, w * 4);
+        // load, filter and composite rows [b0, b1) of a source of bw x bh pixels (the whole box untiled)
+        const auto process = [&](i64 bw, i64 bh) {
+            const auto blur3 = [&] {
+                for (int it = 0; it < (bp.radius ? 3 : 0); ++it) { // radius 0: no blur
+                    computeBarrier(cmd);
+                    run(1, bh * 4);
+                    computeBarrier(cmd);
+                    run(2, bw * 4);
+                }
+            };
+            run(0, bw * bh);
+            if (pass.flags & 4u) { // SVG filter program: one dispatch per op, blurs as 3 x (H, V)
+                for (u32 i = 0; i < pass.ops; ++i) {
+                    bp.instr = i;
+                    computeBarrier(cmd);
+                    run(7, bw * bh);
+                    if (i < 32 && (pass.blurMask >> i & 1u))
+                        for (int it = 0; it < 3; ++it) {
+                            computeBarrier(cmd);
+                            run(8, bh * 4);
+                            computeBarrier(cmd);
+                            run(9, bw * 4);
+                        }
+                }
+            } else {
+                blur3();
+                if (pass.flags & 1u) { // colour matrix (+ shadow plane copy)
+                    computeBarrier(cmd);
+                    run(5, bw * bh);
+                }
+                if (pass.flags & 2u) { // drop shadow plane: its own blur at scratch[2 w h 4]
+                    bp.base = u32(bw * bh * 8);
+                    bp.radius = pass.radius2;
+                    bp.inv = pass.inv2;
+                    blur3();
+                    bp.base = 0;
+                    bp.radius = pass.radius;
+                    bp.inv = pass.inv;
+                }
             }
-        };
-        run(0, w * h);
-        blur3();
-        if (pass.flags & 1u) { // colour matrix (+ shadow plane copy)
             computeBarrier(cmd);
-            run(5, w * h);
+            if (pass.kind == kPassLayerEnd) run(6, bw * i64(bp.bandY1 - bp.bandY0));
+            else run(3, aw * ah);
+        };
+        if (!tiled) {
+            process(w, h);
+            continue;
         }
-        if (pass.flags & 2u) { // drop shadow plane: its own blur at scratch[2 w h 4]
-            bp.base = u32(w * h * 8);
-            bp.radius = pass.radius2;
-            bp.inv = pass.inv2;
-            blur3();
-            bp.base = 0;
-            bp.radius = pass.radius;
-            bp.inv = pass.inv;
+        bp.compact = u32(i64(bp.save) - compactWords);
+        run(10, w * h);
+        bp.flags = 1u;
+        for (i64 b0 = 0; b0 < h; b0 += band) {
+            const i64 b1 = std::min(h, b0 + band);
+            const i64 s0 = std::max<i64>(0, b0 - margin), s1 = std::min(h, b1 + margin);
+            bp.srcOrigin[1] = pass.src[1] + i32(s0);
+            bp.srcSize[1] = i32(s1 - s0);
+            bp.bandY0 = u32(b0 - s0);
+            bp.bandY1 = u32(b1 - s0);
+            computeBarrier(cmd);
+            process(w, s1 - s0);
         }
-        computeBarrier(cmd);
-        if (pass.kind == kPassLayerEnd) run(6, w * h);
-        else run(3, aw * ah);
     }
 }
 

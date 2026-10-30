@@ -78,6 +78,9 @@ struct GpuPass {
     /// the scratch end; backdrop passes: the enclosing layers' total. The renderer skips a backdrop, or both passes
     /// of a layer, whose work floats do not fit below it.
     u32 saveTop = 0;
+    /// filter passes: flags bit 2 = SVG filter program (`ops` instructions, bit i of `blurMask` = op i blurs);
+    /// `planes` float planes of w * h * 4 work; `margin` rows a band of the layer needs around it (tiling)
+    u32 ops = 0, blurMask = 0, planes = 2, margin = 0;
 };
 /// kPassLayerBegin: save the pixels under a PushFilter's box to scratch and clear it; kPassLayerEnd: the PopFilter
 /// composite (src = area = the layer box)

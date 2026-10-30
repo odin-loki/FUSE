@@ -2,8 +2,10 @@
 // specification is backdropBlur in Core/src/draw_list.cpp: copy the source box (area + 3r margin, clamped to the
 // target) to float, three box passes per axis (clamp-to-edge running sums, same operation order as
 // simd::boxVertical), then mix into the target under the rounded rect by coverage and blend the tint.
-// One pipeline, four modes, each its own dispatch with a barrier in between:
-//   0 load (pixel per thread), 1 horizontal (row x channel per thread), 2 vertical (column x channel), 3 composite.
+// One pipeline, several modes, each its own dispatch with a barrier in between:
+//   0 load (pixel per thread), 1 horizontal (row x channel per thread), 2 vertical (column x channel), 3 composite,
+//   4 layer save + clear, 5 colour matrix, 6 layer composite (a band of rows), 7 SVG program op, 8 / 9 program blur
+//   H / V, 10 compact copy of a layer for tiled (banded) layer ends.
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 struct GpuCmd {
@@ -39,9 +41,13 @@ layout(push_constant) uniform BlurPush {
     uint radius;
     float inv;
     uint base; // box passes: buf at v[base], tmp at v[base + n]
-    uint save; // layer passes: saved pixels at v[save]
+    uint save; // layer passes: saved pixels at v[save] (layer box = area, 4 floats per pixel)
+    uint instr; // mode 7..9: program instruction
+    uint flags; // bit 0: mode 0 loads the band from the compact copy at v[compact] instead of the target
+    uint bandY0; // mode 6: source-local rows [bandY0, bandY1) to composite
+    uint bandY1;
+    uint compact; // tiled layer end: the layer's pixels, 1 word (RGBA8) / 2 words (half) per pixel, area-indexed
     uint pad0;
-    uint pad1;
 } pc;
 
 float sdRoundRect(float px, float py, vec4 r, vec4 rad) {
@@ -107,6 +113,76 @@ float clipCoverage(GpuCmd c, float px, float py) {
     }
     return cov;
 }
+// SVG filter program (runFilterProgram in Core/src/draw_list.cpp): header words at `at` = planes, reach, 0, 0, K;
+// op i at at + 5 + 30 i = in1, in2, out, 0, op, p0..p24. Planes of n floats at v[plane * n].
+const float kInv255 = 0.003921568859368563;
+float prm(uint ob, int k) { return edgeWord(ob + 5u + uint(k)); }
+vec4 plane(uint p, uint n, uint i) { const uint b = p * n + i; return vec4(ui_scratch.v[b], ui_scratch.v[b + 1u], ui_scratch.v[b + 2u], ui_scratch.v[b + 3u]); }
+void runOp(uint ob, uint n, int x, int y, int w, int h) {
+    const uint i1 = uint(edgeWord(ob)), i2 = uint(edgeWord(ob + 1u)), io = uint(edgeWord(ob + 2u));
+    const int kind = int(edgeWord(ob + 4u));
+    const uint pi = uint(y * w + x) * 4u;
+    precise vec4 r;
+    const vec4 a = plane(i1, n, pi);
+    const vec4 b = plane(i2, n, pi);
+    if (kind == 0) { // blur: copy in1 -> out, modes 8 / 9 follow
+        if (i1 == io) return;
+        r = a;
+    } else if (kind == 1) {
+        r = applyFilter(ob + 5u, a);
+    } else if (kind == 2) {
+        const int qx = x - int(prm(ob, 2)), qy = y - int(prm(ob, 3));
+        r = (qx >= 0 && qy >= 0 && qx < w && qy < h) ? plane(i1, n, uint(qy * w + qx) * 4u) : vec4(0.0);
+    } else if (kind == 3) {
+        precise float al = prm(ob, 3);
+        r = vec4(prm(ob, 0) * al * 255.0, prm(ob, 1) * al * 255.0, prm(ob, 2) * al * 255.0, al * 255.0);
+    } else if (kind == 4) {
+        const int mode = int(prm(ob, 0));
+        precise float qa = a.w * kInv255;
+        precise float qb = b.w * kInv255;
+        for (int k = 0; k < 3; ++k) {
+            precise float ia = a[k] * (1.0 - qb);
+            precise float ib = b[k] * (1.0 - qa);
+            precise float ab = a[k] * b[k] * kInv255;
+            precise float v;
+            if (mode == 1) v = ia + ib + ab;
+            else if (mode == 2) v = a[k] + b[k] - ab;
+            else if (mode == 3) v = min(ia + b[k], ib + a[k]);
+            else if (mode == 4) v = max(ia + b[k], ib + a[k]);
+            else v = a[k] + ib;
+            r[k] = v;
+        }
+        precise float aa = a.w * b.w * kInv255;
+        r.w = a.w + b.w - aa;
+    } else if (kind == 5) {
+        const int opr = int(prm(ob, 0));
+        precise float qa = a.w * kInv255;
+        precise float qb = b.w * kInv255;
+        if (opr == 5) {
+            const float k1 = prm(ob, 1), k2 = prm(ob, 2), k3 = prm(ob, 3), k4 = prm(ob, 4);
+            for (int k = 0; k < 4; ++k) {
+                precise float v = k1 * a[k] * b[k] * kInv255 + k2 * a[k] + k3 * b[k] + k4 * 255.0;
+                r[k] = clamp(v, 0.0, 255.0);
+            }
+            for (int k = 0; k < 3; ++k) r[k] = min(r[k], r.w);
+        } else {
+            for (int k = 0; k < 4; ++k) {
+                precise float v;
+                if (opr == 1) v = a[k] * qb;
+                else if (opr == 2) v = a[k] * (1.0 - qb);
+                else if (opr == 3) v = a[k] * qb + b[k] * (1.0 - qa);
+                else if (opr == 4) v = a[k] * (1.0 - qb) + b[k] * (1.0 - qa);
+                else v = a[k] + b[k] * (1.0 - qa);
+                r[k] = v;
+            }
+        }
+    } else if (kind == 6) {
+        r = vec4(0.0, 0.0, 0.0, a.w);
+    } else {
+        r = a;
+    }
+    for (int k = 0; k < 4; ++k) ui_scratch.v[io * n + pi + uint(k)] = r[k];
+}
 uint q8(float v) { return uint(floor(clamp(v, 0.0, 1.0) * 255.0 + 0.5)); }
 
 void main() {
@@ -117,7 +193,19 @@ void main() {
     if (pc.mode == 0u) {
         if (id >= uint(w * h)) return;
         const int x = int(id) % w, y = int(id) / w;
-        const vec4 t = imageLoad(ui_target, pc.srcOrigin + ivec2(x, y));
+        vec4 t;
+        if ((pc.flags & 1u) != 0u) { // tiled layer end: from the compact copy (exactly what imageLoad gave)
+            const ivec2 g = pc.srcOrigin + ivec2(x, y) - pc.area.xy;
+            const uint ci = uint(g.y * (pc.area.z - pc.area.x) + g.x);
+#ifdef UI_HDR
+            const uint c0 = floatBitsToUint(ui_scratch.v[pc.compact + ci * 2u]), c1 = floatBitsToUint(ui_scratch.v[pc.compact + ci * 2u + 1u]);
+            t = vec4(unpackHalf2x16(c0), unpackHalf2x16(c1));
+#else
+            t = unpackUnorm4x8(floatBitsToUint(ui_scratch.v[pc.compact + ci]));
+#endif
+        } else {
+            t = imageLoad(ui_target, pc.srcOrigin + ivec2(x, y));
+        }
 #ifdef UI_HDR
         for (int k = 0; k < 4; ++k) ui_scratch.v[id * 4u + uint(k)] = t[k] * 255.0;
 #else
@@ -172,14 +260,17 @@ void main() {
             for (int k = 0; k < 4; ++k) ui_scratch.v[2u * n + i + uint(k)] = b[k];
     } else if (pc.mode == 6u) {
         // layer end: filtered layer (+ shadow) over the saved pixels, mixed by the clip coverage
-        if (id >= uint(w * h)) return;
-        const int lx = int(id) % w, ly = int(id) / w;
+        if (id >= uint(w) * (pc.bandY1 - pc.bandY0)) return;
+        const int lx = int(id) % w, ly = int(pc.bandY0) + int(id) / w;
+        const uint li = uint(ly * w + lx);
         const ivec2 ip = pc.srcOrigin + ivec2(lx, ly);
         const GpuCmd c = ui_cmds.cmds[pc.cmd];
-        const float cov = clipCoverage(c, float(ip.x) + 0.5, float(ip.y) + 0.5);
-        const uint si = pc.save + id * 4u;
+        // a chained (inner) layer of a CSS-order chain: the outermost applies the clip coverage
+        const float cov = c.grad2.x != 0.0 ? 1.0 : clipCoverage(c, float(ip.x) + 0.5, float(ip.y) + 0.5);
+        const ivec2 g = ip - pc.area.xy;
+        const uint si = pc.save + uint(g.y * (pc.area.z - pc.area.x) + g.x) * 4u;
         const vec4 u = vec4(ui_scratch.v[si], ui_scratch.v[si + 1u], ui_scratch.v[si + 2u], ui_scratch.v[si + 3u]);
-        vec4 o = vec4(ui_scratch.v[id * 4u], ui_scratch.v[id * 4u + 1u], ui_scratch.v[id * 4u + 2u], ui_scratch.v[id * 4u + 3u]);
+        vec4 o = vec4(ui_scratch.v[li * 4u], ui_scratch.v[li * 4u + 1u], ui_scratch.v[li * 4u + 2u], ui_scratch.v[li * 4u + 3u]);
         if (floatBitsToUint(c.grad2.w) == 6u) o = withShadow(floatBitsToUint(c.grad2.z), o, lx, ly, w, h, n);
         precise float inv = 1.0 - o.w / 255.0;
 #ifdef UI_HDR
@@ -202,6 +293,56 @@ void main() {
                 res[k] = uint(clamp(m >= 0.0 ? floor(m + 0.5) : ceil(m - 0.5), 0.0, 255.0)); // std::lround
             }
         imageStore(ui_target, ip, vec4(res) / 255.0);
+#endif
+    } else if (pc.mode == 7u) {
+        if (id >= uint(w * h)) return;
+        const GpuCmd c = ui_cmds.cmds[pc.cmd];
+        runOp(floatBitsToUint(c.grad2.z) + 5u + 30u * pc.instr, n, int(id) % w, int(id) / w, w, h);
+    } else if (pc.mode == 8u) {
+        // program blur, out -> plane 1 along x (as mode 1)
+        if (id >= uint(h * 4)) return;
+        const GpuCmd c = ui_cmds.cmds[pc.cmd];
+        const uint ob = floatBitsToUint(c.grad2.z) + 5u + 30u * pc.instr;
+        const uint io = uint(edgeWord(ob + 2u));
+        const int rr = int(prm(ob, 2));
+        const float iv = prm(ob, 4);
+        const int y = int(id) / 4, k = int(id) % 4;
+        const uint row = uint(y * w) * 4u + uint(k);
+        const uint src = io * n + row, dst = n + row;
+        precise float acc = 0.0;
+        for (int i = -rr; i <= rr; ++i) acc = acc + ui_scratch.v[src + uint(clamp(i, 0, w - 1)) * 4u];
+        for (int i = 0; i < w; ++i) {
+            ui_scratch.v[dst + uint(i) * 4u] = acc * iv;
+            precise float d = ui_scratch.v[src + uint(clamp(i + rr + 1, 0, w - 1)) * 4u] - ui_scratch.v[src + uint(clamp(i - rr, 0, w - 1)) * 4u];
+            acc = acc + d;
+        }
+    } else if (pc.mode == 9u) {
+        // program blur, plane 1 -> out along y (as mode 2)
+        if (id >= uint(w * 4)) return;
+        const GpuCmd c = ui_cmds.cmds[pc.cmd];
+        const uint ob = floatBitsToUint(c.grad2.z) + 5u + 30u * pc.instr;
+        const uint io = uint(edgeWord(ob + 2u));
+        const int rr = int(prm(ob, 3));
+        const float iv = prm(ob, 5);
+        const uint stride = uint(w) * 4u;
+        const uint src = n + id, dst = io * n + id;
+        precise float acc = 0.0;
+        for (int i = -rr; i <= rr; ++i) acc = acc + ui_scratch.v[src + uint(clamp(i, 0, h - 1)) * stride];
+        for (int i = 0; i < h; ++i) {
+            ui_scratch.v[dst + uint(i) * stride] = acc * iv;
+            precise float d = ui_scratch.v[src + uint(clamp(i + rr + 1, 0, h - 1)) * stride] - ui_scratch.v[src + uint(clamp(i - rr, 0, h - 1)) * stride];
+            acc = acc + d;
+        }
+    } else if (pc.mode == 10u) {
+        // tiled layer end: compact copy of the layer box (area) before any band writes the target
+        const int aw = pc.area.z - pc.area.x, ah = pc.area.w - pc.area.y;
+        if (id >= uint(aw * ah)) return;
+        const vec4 t = imageLoad(ui_target, pc.area.xy + ivec2(int(id) % aw, int(id) / aw));
+#ifdef UI_HDR
+        ui_scratch.v[pc.compact + id * 2u] = uintBitsToFloat(packHalf2x16(t.xy));
+        ui_scratch.v[pc.compact + id * 2u + 1u] = uintBitsToFloat(packHalf2x16(t.zw));
+#else
+        ui_scratch.v[pc.compact + id] = uintBitsToFloat(packUnorm4x8(t));
 #endif
     } else {
         const int aw = pc.area.z - pc.area.x, ah = pc.area.w - pc.area.y;

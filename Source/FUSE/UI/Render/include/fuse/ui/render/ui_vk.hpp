@@ -20,8 +20,9 @@ struct UiVkDesc {
     u32 maxTileWords = 1u << 19; ///< headers, tile slots (with headroom) and glyph run records
     u32 maxImageWords = 1u << 20;
     u32 maxAtlasSize = 1024;
-    /// Backdrop blur scratch (device-local floats, 32 bytes per pixel of a blur's source box). A blur whose source
-    /// box exceeds it is skipped (the panel is drawn unblurred).
+    /// Backdrop blur / filter scratch (device-local floats, 32 bytes per pixel of a blur's source box). A backdrop
+    /// whose source box exceeds it is skipped (the panel is drawn unblurred); a filter layer whose work exceeds it is
+    /// processed in bands of rows (its saved pixels plus a compact copy must still fit).
     u32 maxBlurPixels = 1u << 21;
 };
 

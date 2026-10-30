@@ -322,6 +322,6 @@ bool parseSvgFilter(std::string_view text, FilterProgram& out, std::string_view 
     }
     if (!c.ok || out.ops.empty()) return false;
     c.emit(FeOp::Copy, c.last, 0, 0); // the result to plane 0
-    return true;
+    return out.ops.size() <= 32 && out.planes <= 32; // GPU: one blur-mask bit per op
 }
 } // namespace fuse::ui
