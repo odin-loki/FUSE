@@ -52,12 +52,26 @@ bool HotReload::reloadNow(const std::string& path) {
     return any;
 }
 
+static constexpr int kSettleMs = 30;
+
 int HotReload::poll(int timeoutMs) {
     if (!m_watcher) return 0;
+    // One save is often several notifications (truncate + write, or temp file + rename; ReadDirectoryChangesW
+    // reports each step). Once something changed, keep collecting until the files are quiet for a moment, then
+    // reload each changed file once, from its final contents.
+    std::vector<std::string> changed = m_watcher->poll(timeoutMs);
+    if (changed.empty()) return 0;
+    for (int i = 0; i < 20; ++i) {
+        auto more = m_watcher->poll(kSettleMs);
+        if (more.empty()) break;
+        changed.insert(changed.end(), more.begin(), more.end());
+    }
     int n = 0;
-    for (const auto& changed : m_watcher->poll(timeoutMs))
-        for (auto& e : m_entries)
-            if (samePath(e.path, changed) && apply(e)) ++n;
+    for (auto& e : m_entries) {
+        bool hit = false;
+        for (const auto& c : changed) hit = hit || samePath(e.path, c);
+        if (hit && apply(e)) ++n;
+    }
     return n;
 }
 
