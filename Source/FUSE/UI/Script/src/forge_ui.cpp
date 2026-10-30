@@ -741,7 +741,9 @@ constexpr std::pair<const char*, SeriesType> kSeries[] = {
     {"horizontalStackedBar", SeriesType::HorizontalStackedBar}, {"horizontalPercentBar", SeriesType::HorizontalPercentBar},
     {"pie", SeriesType::Pie}, {"donut", SeriesType::Donut}, {"candlestick", SeriesType::Candlestick},
     {"ohlc", SeriesType::Ohlc}, {"boxPlot", SeriesType::BoxPlot}, {"histogram", SeriesType::Histogram},
-    {"heatmap", SeriesType::Heatmap}, {"bubble", SeriesType::Bubble}};
+    {"heatmap", SeriesType::Heatmap}, {"bubble", SeriesType::Bubble}, {"waterfall", SeriesType::Waterfall},
+    {"contour", SeriesType::Contour}, {"radar", SeriesType::Radar}, {"treemap", SeriesType::Treemap},
+    {"sankey", SeriesType::Sankey}, {"gauge", SeriesType::Gauge}, {"funnel", SeriesType::Funnel}};
 constexpr std::pair<const char*, AxisType> kAxisType[] = {
     {"value", AxisType::Value}, {"log", AxisType::Log}, {"category", AxisType::Category}, {"datetime", AxisType::DateTime}};
 constexpr std::pair<const char*, AxisEdge> kEdge[] = {
@@ -751,7 +753,7 @@ constexpr std::pair<const char*, LegendPos> kLegend[] = {
 constexpr std::pair<const char*, Decimation> kDecim[] = {
     {"auto", Decimation::Auto}, {"none", Decimation::None}, {"minmax", Decimation::MinMax}, {"lttb", Decimation::Lttb}};
 constexpr std::pair<const char*, Kind3D> kKind3D[] = {
-    {"surface", Kind3D::Surface}, {"scatter", Kind3D::Scatter}, {"bars", Kind3D::Bars}, {"line", Kind3D::Line}, {"area", Kind3D::Area}};
+    {"surface", Kind3D::Surface}, {"scatter", Kind3D::Scatter}, {"bars", Kind3D::Bars}, {"line", Kind3D::Line}, {"area", Kind3D::Area}, {"volume", Kind3D::Volume}};
 f32 numOr(const json::value& o, const char* k, f32 d) {
     const auto* v = o.find(k);
     return v && v->is_num() ? f32(v->num()) : d;
@@ -806,6 +808,28 @@ void applySeries(Series& se, const json::value& o) {
     }
     se.rows = u32(numOr(o, "rows", f32(se.rows))), se.cols = u32(numOr(o, "cols", f32(se.cols)));
     se.bins = u32(numOr(o, "bins", f32(se.bins)));
+    if (const auto* l = o.find("links"); l && l->is_arr()) { // sankey: [[source, target, value], ...]
+        se.links.clear();
+        for (const auto& r : l->arr()) {
+            const auto v = floats(&r, fn);
+            if (v.size() != 3) fail("ui::chartSet: a link is [source, target, value]");
+            se.links.push_back({u32(v[0]), u32(v[1]), v[2]});
+        }
+    }
+    if (const auto* t = o.find("totals"); t && t->is_arr()) {
+        se.totals.clear();
+        for (f32 v : floats(t, fn)) se.totals.push_back(u32(v));
+    }
+    if (const auto* cm = o.find("colormap"); cm && cm->is_arr()) { // [[offset, "colour"], ...]
+        se.colormap.clear();
+        for (const auto& r : cm->arr()) {
+            if (!r.is_arr() || r.arr().size() != 2 || !r.arr()[0].is_num()) fail("ui::chartSet: a colormap stop is [offset, colour]");
+            se.colormap.push_back({f32(r.arr()[0].num()), colorOf(&r.arr()[1], fn)});
+        }
+    }
+    se.levels = u32(numOr(o, "levels", f32(se.levels)));
+    se.contourFill = boolOr(o, "contourFill", se.contourFill);
+    se.gaugeMin = numOr(o, "gaugeMin", se.gaugeMin), se.gaugeMax = numOr(o, "gaugeMax", se.gaugeMax);
     se.lineWidth = numOr(o, "lineWidth", se.lineWidth), se.markerSize = numOr(o, "markerSize", se.markerSize);
     se.barWidth = numOr(o, "barWidth", se.barWidth), se.holeSize = numOr(o, "holeSize", se.holeSize);
     se.bubbleScale = numOr(o, "bubbleScale", se.bubbleScale);
@@ -1034,6 +1058,13 @@ void ForgeUi::Impl::installCharts() {
         c.wireframe = boolOr(o, "wireframe", c.wireframe), c.shading = boolOr(o, "shading", c.shading);
         c.grid = boolOr(o, "grid", c.grid);
         c.maxPoints = u32(numOr(o, "maxPoints", f32(c.maxPoints))), c.maxGrid = u32(numOr(o, "maxGrid", f32(c.maxGrid)));
+        c.vx = u32(numOr(o, "vx", f32(c.vx))), c.vy = u32(numOr(o, "vy", f32(c.vy))), c.vz = u32(numOr(o, "vz", f32(c.vz)));
+        if (o.find("volume")) c.volume = floats(o.find("volume"), fn);
+        if (const auto* sl = o.find("slice"); sl && sl->is_arr())
+            for (std::size_t i = 0; i < 3 && i < sl->arr().size(); ++i)
+                if (sl->arr()[i].is_num()) c.slice[i] = i32(sl->arr()[i].num());
+        c.valueMin = numOr(o, "valueMin", c.valueMin), c.valueMax = numOr(o, "valueMax", c.valueMax);
+        c.gpuMesh = boolOr(o, "gpuMesh", c.gpuMesh);
         if (const auto* ax = o.find("axes"); ax && ax->is_arr())
             for (std::size_t i = 0; i < ax->arr().size() && i < 3; ++i) {
                 const json::value x = objOf(ax->arr()[i]);

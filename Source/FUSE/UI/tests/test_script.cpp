@@ -191,6 +191,12 @@ int main() {
             auto p = ui::chart3dView(ui::root(), "scatter");
             ui::chart3dSet(p, {{"points", {{0.0, 0.0, 0.0}, {1.0, 2.0, 3.0}}}, {"pointColors", {"red", "blue"}}});
             ui::destroy(p);
+            auto k = ui::chartView(ui::root());
+            ui::chartSet(k, {{"series", {{{"type", "sankey"}, {"labels", {"a", "b", "c"}}, {"links", {{0, 1, 5.0}, {0, 2, 3.0}}}},
+                                         {{"type", "gauge"}, {"y", {40.0}}, {"gaugeMax", 80.0}, {"colormap", {{0.0, "green"}, {1.0, "red"}}}}}}});
+            assert(ui::chartSeriesCount(k) == 2, "sankey");
+            auto vol = ui::chart3dView(ui::root(), "volume");
+            ui::chart3dSet(vol, {{"vx", 2}, {"vy", 2}, {"vz", 1}, {"volume", {0.0, 1.0, 2.0, 3.0}}, {"slice", {0, -1, -2}}});
         )fs", &err);
         if (!ok) std::fprintf(stderr, "script: %s\n", err.c_str());
         UI_CHECK(ok);

@@ -30,7 +30,7 @@
 //         chartSeriesCount(c) chartPointCount(c, i) chartZoom(c, axis, factor, centre) chartPan(c, axis, d)
 //         chartZoomTo(c, axis, lo, hi) chartResetZoom(c) chartRange(c, axis[, full]) chartHovered(c) -> {series, index,
 //         x, y} chartTooltip(c[, series, index]) chartSelection(c) chartDescribe(c) chartExport(c, "a.png"[, w, h])
-//         3D: auto s = ui::chart3dView(parent, "surface" | "scatter" | "bars" | "line" | "area"[, "id"]);
+//         3D: auto s = ui::chart3dView(parent, "surface" | "scatter" | "bars" | "line" | "area" | "volume"[, "id"]);
 //         ui::chart3dSet(s, {{"rows", r}, {"cols", c}, {"values", {..}}, {"points", {{x, y, z}, ..}}, {"camera",
 //         {{"yaw", ..}, {"pitch", ..}, {"zoom", ..}}}, {"axes", ..}, ...}) chart3dCamera chart3dHovered
 //         chart3dSelection chart3dTooltip
