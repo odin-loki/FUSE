@@ -14,6 +14,7 @@
 #include "fuse/ui/extras/declarative.hpp"
 #include "fuse/ui/extras/svg.hpp"
 #include "fuse/ui/extras/datavis3d.hpp"
+#include "fuse/ui/extras/media.hpp"
 #include "fuse/ui/os.hpp"
 
 #include <cmath>
@@ -1353,6 +1354,113 @@ void gateDataViz3d() {
         stbi_write_png((dir + "/dataviz3d.png").c_str(), img.width, img.height, 4, img.pixels.data(), img.width * 4);
 }
 
+void gateMedia() {
+    Screen s;
+    UiContext& ui = s.ui;
+    ui.setCss(ui.root(), "flex-direction", "row");
+    ui.setCss(ui.root(), "align-items", "flex-start");
+    // ---- audio level meter: ballistics are exact functions of the pushed sample time
+    w::AudioMeterOptions mo;
+    const NodeHandle meter = w::audioLevelMeter(ui, ui.root(), 2, mo, "meter");
+    ui.setCss(meter, "height", "200px");
+    CHECK(w::audioLevelMeterChannels(ui, meter) == 2);
+    std::vector<f32> blk(2 * 4800); // 0.1 s at 48 kHz: L = 0.5 sine-ish square, R silent
+    for (std::size_t i = 0; i < 4800; ++i) blk[i * 2] = (i & 1) ? 0.5f : -0.5f;
+    w::audioLevelMeterPush(ui, meter, blk, 2, 48000.f);
+    w::AudioLevels L = w::audioLevelMeterLevels(ui, meter, 0), R = w::audioLevelMeterLevels(ui, meter, 1);
+    CHECK(std::abs(L.peakDb - (-6.0206f)) < 0.01f && std::abs(L.rmsDb - (-6.0206f)) < 0.01f);
+    CHECK(std::abs(L.holdDb - L.peakDb) < 1e-4f && !L.clipped);
+    CHECK(R.peakDb <= -119.f);
+    CHECK(std::abs(ui.value(meter) - L.peakDb) < 1e-3f);
+    // 1 s of silence: peak falls 24 dB, hold stays for 1.5 s then falls
+    w::audioLevelMeterAdvance(ui, meter, 1.f);
+    L = w::audioLevelMeterLevels(ui, meter, 0);
+    CHECK(std::abs(L.peakDb - (-30.0206f)) < 0.01f && std::abs(L.holdDb - (-6.0206f)) < 0.01f);
+    w::audioLevelMeterAdvance(ui, meter, 1.f); // 0.5 s more hold, then 0.5 s * 24 = 12 dB fall
+    L = w::audioLevelMeterLevels(ui, meter, 0);
+    CHECK(std::abs(L.holdDb - (-18.0206f)) < 0.01f);
+    // a full-scale sample latches the clip lamp; a click clears it
+    std::vector<f32> hot(2 * 480, 0.f);
+    hot[100] = 1.f, hot[101] = 0.25f;
+    w::audioLevelMeterPush(ui, meter, hot, 2, 48000.f);
+    CHECK(w::audioLevelMeterLevels(ui, meter, 0).clipped && !w::audioLevelMeterLevels(ui, meter, 1).clipped);
+    CHECK(std::abs(w::audioLevelMeterLevels(ui, meter, 1).peakDb - (-12.041f)) < 0.01f);
+    CHECK(std::abs(ui.value(meter)) < 1e-3f);
+    w::audioLevelMeterAdvance(ui, meter, 0.25f);
+    step(ui);
+    Image img;
+    fuse::ui::test::render(ui, img);
+    {   // the left bar's lamp is red, its lower body green; the right bar has its -12 dB peak region lit (yellow band)
+        const Rect c = ui.contentRect(meter);
+        const u32 lamp = img.at(int(c.x + 4.f), int(c.y + 3.f));
+        CHECK((lamp & 0xFF) > 200 && ((lamp >> 8) & 0xFF) < 120);
+        const u32 low = img.at(int(c.x + 4.f), int(c.bottom() - 6.f));
+        CHECK(((low >> 8) & 0xFF) > 150 && (low & 0xFF) < 120);
+    }
+    const Rect mc = ui.contentRect(meter);
+    click(ui, {mc.x + 4.f, mc.y + 40.f});
+    CHECK(!w::audioLevelMeterLevels(ui, meter, 0).clipped);
+    w::audioLevelMeterReset(ui, meter);
+    CHECK(w::audioLevelMeterLevels(ui, meter, 0).peakDb <= -119.f && ui.value(meter) <= -119.f);
+    w::audioLevelMeterPush(ui, meter, blk, 2, 48000.f);
+    // ---- system video decoder (runtime-loaded); missing files fail cleanly
+    fuse::ui::media::SystemVideo bad;
+    std::string err;
+    CHECK(!bad.openFile("/nonexistent/clip.mp4", 10, &err) && !err.empty() && !bad.valid());
+    std::printf("system video: %s\n", fuse::ui::media::SystemVideo::available() ? fuse::ui::media::SystemVideo::backendName().c_str() : "unavailable");
+    fuse::ui::media::SystemVideo sv;
+    std::vector<const Image*> images;
+    NodeHandle vid{};
+    if (fuse::ui::media::SystemVideo::available()) {
+        CHECK(!fuse::ui::media::SystemVideo::backendName().empty());
+        const bool ok = sv.openPipeline("videotestsrc num-buffers=12 pattern=smpte ! video/x-raw,width=64,height=48,framerate=25/1", 100, &err);
+        CHECK(ok);
+        if (!ok) std::printf("  %s\n", err.c_str());
+        CHECK(sv.width() == 64 && sv.height() == 48 && sv.frameCount() == 12 && std::abs(sv.fps() - 25.f) < 1e-3f);
+        if (sv.valid()) {
+            const u32 tl = sv.frame(0)[2 * 64 + 2]; // SMPTE: first bar ~75% white
+            CHECK((tl >> 24) == 0xFF && (tl & 0xFF) > 150 && ((tl >> 8) & 0xFF) > 150 && ((tl >> 16) & 0xFF) > 150);
+            const u32 bar2 = sv.frame(0)[2 * 64 + 12]; // second bar yellow: blue low
+            CHECK((bar2 & 0xFF) > 150 && ((bar2 >> 16) & 0xFF) < 60);
+            CHECK(!sv.frame(12) && sv.source().frames == 12 && sv.source().frame);
+            // max-frame cap
+            fuse::ui::media::SystemVideo cap;
+            CHECK(cap.openPipeline("videotestsrc num-buffers=30 ! video/x-raw,width=16,height=8", 5) && cap.frameCount() == 5);
+            // a real container file round-trip through decodebin (Theora/Ogg written by the system encoder when present)
+            const std::string tmp = fuse::ui::os::env("TMPDIR").empty() ? "/tmp" : fuse::ui::os::env("TMPDIR");
+            const std::string file = tmp + "/fuse_media_gate.ogv";
+            fuse::ui::media::SystemVideo enc;
+            const bool wrote = enc.openPipeline("videotestsrc num-buffers=6 ! video/x-raw,width=32,height=24 ! tee name=t t. ! queue ! theoraenc ! oggmux ! filesink location=" + file + " t. ! queue", 100);
+            if (wrote) {
+                fuse::ui::media::SystemVideo fv;
+                CHECK(fv.openFile(file, 100, &err) && fv.width() == 32 && fv.height() == 24 && fv.frameCount() == 6);
+                std::remove(file.c_str());
+            } else std::printf("  (no theoraenc: file round-trip skipped)\n");
+            vid = w::videoWidget(ui, ui.root(), &sv.source(), "sysvideo");
+            ui.setCss(vid, "width", "320px");
+            ui.setCss(vid, "height", "280px");
+            images.push_back(w::videoImage(ui, vid));
+            w::videoSetImageIndex(ui, vid, 0);
+            step(ui);
+            CHECK(w::videoImage(ui, vid)->width == 64 && w::videoImage(ui, vid)->at(2, 2) == (sv.frame(0)[2 * 64 + 2]));
+            w::videoSeek(ui, vid, 7);
+            step(ui);
+            CHECK(w::videoFrame(ui, vid) == 7 && w::videoImage(ui, vid)->at(2, 2) == sv.frame(7)[2 * 64 + 2]);
+        }
+    }
+    step(ui);
+    if (const std::string dir = fuse::ui::os::env("FUSE_EXTRAS_OUT"); !dir.empty()) {
+        ui.update();
+        Image out;
+        out.resize(int(ui.viewport().w), int(ui.viewport().h), 0xFF000000u);
+        CpuRasterizer r;
+        r.setGlyphAtlas(ui.atlas().pixels(), ui.atlas().size());
+        for (const Image* im : images) r.addImage(im);
+        r.render(ui.drawList(), out);
+        stbi_write_png((dir + "/media.png").c_str(), out.width, out.height, 4, out.pixels.data(), out.width * 4);
+    }
+}
+
 void gateCharts() {
     Screen s;
     UiContext& ui = s.ui;
@@ -1485,7 +1593,7 @@ void gateCharts() {
 int main(int argc, char** argv) {
     const std::map<std::string, std::function<void()>> gates{
         {"undo", gateUndo}, {"gesture", gateGesture}, {"i18n", gateI18n}, {"desktop", gateDesktop}, {"pdf", gatePdf}, {"containers", gateContainers}, {"dialogs", gateDialogs}, {"lcd_keyseq", gateLcdKeyseq},
-        {"mdi", gateMdi}, {"completer", gateCompleter}, {"graphics", gateGraphics}, {"widget_pdf", gateWidgetPdf}, {"tray", gateTray}, {"richtext", gateRichText}, {"webview", gateWebView}, {"declarative", gateDeclarative}, {"vkeyboard", gateVirtualKeyboard}, {"svg", gateSvg}, {"charts", gateCharts}, {"dataviz3d", gateDataViz3d}};
+        {"mdi", gateMdi}, {"completer", gateCompleter}, {"graphics", gateGraphics}, {"widget_pdf", gateWidgetPdf}, {"tray", gateTray}, {"richtext", gateRichText}, {"webview", gateWebView}, {"declarative", gateDeclarative}, {"vkeyboard", gateVirtualKeyboard}, {"svg", gateSvg}, {"charts", gateCharts}, {"dataviz3d", gateDataViz3d}, {"media", gateMedia}};
     std::string only;
     for (int i = 1; i < argc; ++i) if (std::strncmp(argv[i], "--gate=", 7) == 0) only = argv[i] + 7;
     for (auto& [n, f] : gates) if (only.empty() || only == n) { f(); std::printf("gate %s: %s\n", n.c_str(), g_fail ? "FAIL" : "ok"); }
