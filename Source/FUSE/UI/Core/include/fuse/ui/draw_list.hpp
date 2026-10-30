@@ -7,6 +7,7 @@
 #include "fuse/ui/types.hpp"
 
 #include <array>
+#include <functional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -81,9 +82,11 @@ struct DropShadow {
     bool visible() const { return color.a > 0.f; }
 };
 
-/// An SVG <filter> as a program over float planes of the layer box (premultiplied 0..255 RGBA per pixel).
+struct Image;
+/// An SVG <filter> as a program over float planes of the filter region (premultiplied 0..255 RGBA per pixel).
 /// Plane 0 = SourceGraphic (and the result: the last op writes it), plane 1 = blur scratch, 2.. = results.
-/// Ops run in order; CPU (CpuRasterizer) and GPU (ui_backdrop.glsl modes 7..9) share the arithmetic.
+/// Ops run in order; CPU (runFilterProgram) and GPU (ui_backdrop.glsl modes 7..9) share the arithmetic. Each op's
+/// output is cleared outside its primitive subregion (pixel centres). Lengths are absolute pixels once resolved.
 enum class FeOp : u8 {
     Blur,      ///< p0 / p1 = stdDeviation x / y (box radius max(1, round(sigma)), three passes); in1 -> out
     Matrix,    ///< p0..19 = 4 rows of (r g b a offset) on unpremultiplied 0..1 colour (as ColorMatrix)
@@ -93,26 +96,64 @@ enum class FeOp : u8 {
     Composite, ///< p0 = operator (0 over, 1 in, 2 out, 3 atop, 4 xor, 5 arithmetic k1..k4 = p1..p4): in1 op in2
     Alpha,     ///< out = (0, 0, 0, a of in1) (SourceAlpha)
     Copy,      ///< out = in1
+    Turbulence, ///< SVG reference Perlin noise: p0/p1 base frequency, p2 octaves, p3 type (0 turbulence, 1 fractal),
+                ///< p4 stitch, p5/p6 user-space origin, p7..p10 stitch tile; data = lattice + gradients (seed)
+    Lighting,  ///< p0 0 diffuse / 1 specular, p1 surfaceScale, p2 kd|ks, p3 specularExponent, p4..6 light colour,
+               ///< p7 light 0 distant / 1 point / 2 spot, p8..10 direction|position, p11..13 spot axis, p14 spot
+               ///< exponent, p15 cos(cone) (-2: none); normals from in1's alpha (Sobel, SVG edge factors)
+    Morphology, ///< p0 0 erode / 1 dilate, p1 / p2 radius x / y: per-channel min / max (transparent outside)
+    Image,     ///< p0..3 destination rect, p4 / p5 image size; data = premultiplied RGBA (nearest sampled)
+    Tile,      ///< p0..3 the input tile rect: in1 repeated over the subregion
+    Transfer,  ///< one feFunc: p0 channel, p1 type (0 identity, 1 table, 2 discrete, 3 linear, 4 gamma), p2 slope |
+               ///< amplitude, p3 intercept | exponent, p4 offset, p5 table size; data = table values
+    Convolve,  ///< p0 / p1 order, p2 1 / divisor, p3 bias, p4 / p5 target, p6 edge (0 duplicate, 1 wrap, 2 none),
+               ///< p7 preserveAlpha; data = kernel (row-major, as written)
+    Displace,  ///< p0 scale, p1 / p2 x / y channel (0..3): in1 sampled at the in2-displaced position (nearest)
 };
 struct FilterOpDesc {
     FeOp op = FeOp::Copy;
     u8 in1 = 0, in2 = 0, out = 0;
     std::array<f32, 25> p{};
+    std::array<f32, 4> sub{}; ///< primitive subregion x y width height (as written: see subSet / subPct)
+    u8 subSet = 0, subPct = 0; ///< bit i: sub[i] given / given as a percentage
+    std::vector<f32> data;
 };
 struct FilterProgram {
     std::vector<FilterOpDesc> ops;
     u8 planes = 2;
+    std::array<f32, 4> region{-10.f, -10.f, 120.f, 120.f}; ///< filter region as written (default -10% / 120%)
+    u8 regionSet = 0, regionPct = 0xF;
+    bool filterUnitsUser = false;  ///< filterUnits="userSpaceOnUse" (default objectBoundingBox)
+    bool primitiveUnitsBox = false; ///< primitiveUnits="objectBoundingBox" (default userSpaceOnUse)
+    bool resolved = false;
+    Rect regionPx{}; ///< resolved: the filter region in pixels
     bool empty() const { return ops.empty(); }
-    /// pixels the result can reach beyond the source ink (blur 3r, offsets), summed along the op list
+    /// Absolute pixels for the element bounding box `bbox` (user space origin = its top-left): filter region,
+    /// primitive subregions, objectBoundingBox lengths, stitch tiles.
+    FilterProgram resolve(const Rect& bbox) const;
+    /// pixels the result can reach beyond the source ink (blur 3r, offsets, ...), summed along the op list
     int reach() const;
 };
+/// Resolves an feImage href (a name given to UiContext::defineFilterImage); nullptr: unknown.
+using FilterImageResolver = std::function<const Image*(std::string_view)>;
 /// Parses an SVG `<filter>` element (feGaussianBlur, feColorMatrix, feOffset, feFlood, feBlend, feComposite, feMerge,
-/// feDropShadow; in / in2 / result with SourceGraphic, SourceAlpha and named results). `text` may hold more markup:
-/// the first <filter> (or the one with id `id` when given) is used. Colour math in sRGB (color-interpolation-filters
-/// is not honoured); the filter region is the layer box (ink + reach), not x / y / width / height. False on errors.
-bool parseSvgFilter(std::string_view text, FilterProgram& out, std::string_view id = {});
+/// feDropShadow, feTurbulence, feDiffuseLighting, feSpecularLighting, feMorphology, feImage, feTile,
+/// feComponentTransfer, feConvolveMatrix, feDisplacementMap; in / in2 / result; x / y / width / height on the filter
+/// and primitives, filterUnits, primitiveUnits). `text` may hold more markup: the first <filter> (or the one with id
+/// `id`) is used. Colour math in sRGB (color-interpolation-filters is not honoured). False on errors.
+bool parseSvgFilter(std::string_view text, FilterProgram& out, std::string_view id = {}, const FilterImageResolver& images = {});
 /// The ids of every <filter id="..."> in `text`.
 std::vector<std::string> svgFilterIds(std::string_view text);
+/// Encoded program layout in a stop table (DrawCmd::u == 1): header 2 stops {K, (planes, margin, dataStops, 0)},
+/// {0, region}; per op 7 stops {op, (in1, in2, out, dataIndex)}, {0, subregion}, 5 parameter stops; then the data
+/// floats, 5 per stop (r g b a offset). Appends to `stops`; false (nothing appended) when it does not fit.
+bool encodeFilterProgram(const FilterProgram& resolved, std::vector<GradientStop>& stops, u16& count);
+/// Recomputes derived words (box radii, whole-pixel offsets, margin) after a change; scale multiplies lengths.
+void scaleFilterProgram(GradientStop* prog, f32 scale);
+/// Kind of op `i` of an encoded program.
+FeOp filterProgramOp(const GradientStop* prog, u32 i);
+/// Runs an encoded program over `plane0` (w x h x 4 floats, the layer at pixel origin x0, y0); result in plane0.
+void runFilterProgram(const GradientStop* prog, std::vector<f32>& plane0, int w, int h, int x0, int y0, bool hdr = false);
 
 /// A multi-stop gradient at any angle / ellipse / transform. `toUnit` maps a pixel to gradient space (affine
 /// [a b c d e f]: x' = a x + c y + e, y' = b x + d y + f).
@@ -230,6 +271,7 @@ public:
         m_edges.clear();
         m_stops.clear();
         m_filterStack.clear();
+        m_pendingPrograms.clear();
     }
     void reserve(std::size_t n) { m_cmds.reserve(n); }
     void push(const DrawCmd& c) { m_cmds.push_back(c); }
@@ -254,8 +296,11 @@ public:
     /// `chained`: an inner layer of one filter chain (CSS functions in written order become nested layers, the first
     /// innermost): composited without the clip coverage, which the outermost layer applies once.
     void pushFilter(const ColorMatrix& matrix, f32 blur = 0.f, const DropShadow& shadow = {}, bool chained = false);
-    /// A filter layer running an SVG filter program (see FilterProgram; stopCount = 1 + 6 per op).
-    void pushFilter(const FilterProgram& program, bool chained = false);
+    /// A filter layer running an SVG filter program (see FilterProgram / encodeFilterProgram; DrawCmd::u = 1). The
+    /// program is resolved at popFilter against `bbox` (empty: the ink bounds); the layer box is its filter region.
+    void pushFilter(const FilterProgram& program, bool chained = false, const Rect& bbox = {});
+    /// Backdrop filter running an SVG program (resolved against `r`), then `tint` over it.
+    void backdrop(const Rect& r, const FilterProgram& program, const std::array<f32, 4>& radii, Color tint = {});
     /// Ends the innermost pushFilter: sets both commands' `rect` to the layer's pixel box (ink bounds of the commands
     /// in between, grown by the blur and shadow reach).
     void popFilter();
@@ -289,6 +334,8 @@ private:
     std::vector<PathEdge> m_edges;
     std::vector<GradientStop> m_stops;
     std::vector<u32> m_filterStack; ///< open pushFilter command indices
+    struct PendingProgram { u32 cmd; FilterProgram program; Rect bbox; };
+    std::vector<PendingProgram> m_pendingPrograms; ///< programs of open pushFilters, encoded at popFilter
     void putFilter(DrawCmd& c, const ColorMatrix& m, const DropShadow& shadow);
     void applyGradient(DrawCmd& c, const Gradient& g);
 };
@@ -296,7 +343,7 @@ private:
 /// PushFilter / PopFilter pairing: partner[i] = the matching command's index, ~0u for other commands and for an
 /// unmatched push / pop (both rasterisers ignore those).
 void matchFilters(const DrawList& list, std::vector<u32>& partner);
-/// A PushFilter / PopFilter carrying a FilterProgram (stopCount = 1 + 6 per op) rather than matrix rows (4 / 6).
+/// A PushFilter / PopFilter / Backdrop carrying a FilterProgram (DrawCmd::u == 1) rather than matrix rows (4 / 6).
 bool isFilterProgram(const DrawCmd& c);
 
 /// Multi-stop gradient colour of command `c` at pixel centre (px, py); the GPU kernel has the same arithmetic.

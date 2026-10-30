@@ -964,7 +964,7 @@ bool UiContext::defineFilter(std::string_view id, std::string_view cssFilters) {
     FilterDef d;
     const std::size_t lead = cssFilters.find_first_not_of(" \t\r\n");
     if (lead != std::string_view::npos && cssFilters[lead] == '<') {
-        if (!parseSvgFilter(cssFilters, d.program)) return false;
+        if (!parseSvgFilter(cssFilters, d.program, {}, filterImageResolver())) return false;
     } else {
         PropValue v;
         if (!parsePropValue(Prop::Filter, cssFilters, v)) return false;
@@ -981,12 +981,21 @@ int UiContext::defineSvgFilters(std::string_view svgText) {
     int n = 0;
     for (const std::string& id : svgFilterIds(svgText)) {
         FilterDef d;
-        if (!parseSvgFilter(svgText, d.program, id)) continue;
+        if (!parseSvgFilter(svgText, d.program, id, filterImageResolver())) continue;
         m_filterDefs[filterNameId(id)] = std::move(d);
         ++n;
     }
     for (Node& k : m_nodes) k.dirty |= kDirtyPaint;
     return n;
+}
+
+void UiContext::defineFilterImage(std::string_view name, Image image) { m_filterImages[std::string(name)] = std::move(image); }
+
+FilterImageResolver UiContext::filterImageResolver() const {
+    return [this](std::string_view name) -> const Image* {
+        const auto it = m_filterImages.find(std::string(name));
+        return it == m_filterImages.end() ? nullptr : &it->second;
+    };
 }
 
 f32 UiContext::FilterStage::reach() const {
@@ -1065,13 +1074,15 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
                 f32 reach = 0.f;
                 for (const FilterStage& st : stages) reach += st.reach();
                 m_damage = m_damage.unite({n.rect.x - reach, n.rect.y - reach, n.rect.w + 2.f * reach, n.rect.h + 2.f * reach});
+                for (const FilterStage& st : stages) // an SVG program draws over its filter region
+                    if (st.program) m_damage = m_damage.unite(st.program->resolve(n.rect).regionPx);
             }
             const u32 outer = m_filterNode;
             m_filterNode = i;
             // the first stage runs first, so it is the innermost layer; only the outermost applies clip coverage
             for (std::size_t k = stages.size(); k-- > 0;) {
                 const FilterStage& st = stages[k];
-                if (st.program) dl.pushFilter(*st.program, k + 1 < stages.size());
+                if (st.program) dl.pushFilter(*st.program, k + 1 < stages.size(), n.rect);
                 else dl.pushFilter(st.matrix, st.blur, st.shadow, k + 1 < stages.size());
                 dl.cmds()[dl.size() - 1].node = i;
             }
@@ -1147,7 +1158,7 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     }
     if ((s.backdropBlur > 0.f || s.backdropFilterCount) && !bg.empty()) {
         // backdrop-filter in CSS order: one backdrop pass per stage over the same box (each reads the previous one's
-        // result); SVG programs are not supported here
+        // result); an SVG program runs over its filter region (resolved against the box)
         std::vector<FilterStage> stages;
         filterStages(s.backdropFilterFns.data(), s.backdropFilterAmounts.data(), s.backdropFilterCount, s.backdropShadows.data(), stages);
         if (s.backdropBlur > 0.f) {
@@ -1156,7 +1167,8 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
             stages.insert(stages.begin(), b);
         }
         for (const FilterStage& st : stages)
-            if (!st.program) dl.backdrop(bg, st.blur, bgRad, st.matrix, st.shadow);
+            if (st.program) dl.backdrop(bg, *st.program, bgRad);
+            else dl.backdrop(bg, st.blur, bgRad, st.matrix, st.shadow);
     }
     if (s.gradient == GradientDir::Angle && s.gradientStopCount >= 2) {
         std::vector<GradientStop> st(s.gradientStopCount);

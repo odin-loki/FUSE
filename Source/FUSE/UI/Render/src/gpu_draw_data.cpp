@@ -464,12 +464,12 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             std::memcpy(fb, bits, 8);
             put4(g.grad2, c.gradXf[4], c.gradXf[5], fb[0], fb[1]);
         } else if ((c.op == DrawOp::Backdrop || c.op == DrawOp::PushFilter || c.op == DrawOp::PopFilter) &&
-                   (c.stopCount == 4 || c.stopCount == 6 || (c.op != DrawOp::Backdrop && isFilterProgram(c))) &&
+                   (c.stopCount == 4 || c.stopCount == 6 || isFilterProgram(c)) &&
                    std::size_t(c.stops) + c.stopCount <= list.gradientStops().size()) {
             // filter colour matrix: 4 rows x (r, g, b, a, offset) words, as the CPU's filterPixel reads them; then with
             // a drop shadow: dx, dy (whole pixels), colour r g b a (straight)
             const u32 at = vsz();
-            const bool prog = isFilterProgram(c); // SVG program: header + 6 stops per op, same 5-word layout
+            const bool prog = isFilterProgram(c); // SVG program (encodeFilterProgram): every stop, same 5-word layout
             for (u32 i = 0; i < (prog ? u32(c.stopCount) : 4u); ++i) {
                 const GradientStop& st = list.gradientStops()[c.stops + i];
                 const f32 w[5] = {st.color.r, st.color.g, st.color.b, st.color.a, st.offset};
@@ -662,14 +662,14 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         bp.planes = 2;
         bp.margin = 3 * bp.radius; // radius is set before filterPass
         if (std::size_t(c.stops) + c.stopCount > list.gradientStops().size()) return;
-        if (c.op != DrawOp::Backdrop && isFilterProgram(c)) { // SVG program: margin = its reach
+        if (isFilterProgram(c)) { // SVG program: margin = its reach
             const GradientStop* h = list.gradientStops().data() + c.stops;
             bp.flags = 4u;
             bp.ops = u32(h[0].offset);
             bp.planes = u32(h[0].color.r);
             bp.margin = u32(h[0].color.g);
             for (u32 i = 0; i < bp.ops && i < 32; ++i)
-                if (FeOp(int(h[1 + 6 * i].offset)) == FeOp::Blur) bp.blurMask |= 1u << i;
+                if (filterProgramOp(h, i) == FeOp::Blur) bp.blurMask |= 1u << i;
             return;
         }
         if (c.stopCount != 4 && c.stopCount != 6) return;
@@ -737,11 +737,18 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             const Rect area = c.rect.intersect(clip.r).intersect(full);
             if (area.empty()) return;
             const int r = c.blur > 0.f ? std::max(1, int(std::lround(c.blur / 3.f))) : 0; // 0: filter only
-            const int x0 = int(std::floor(area.x)), y0 = int(std::floor(area.y));
-            const int x1 = int(std::ceil(area.right())), y1 = int(std::ceil(area.bottom()));
+            int x0 = int(std::floor(area.x)), y0 = int(std::floor(area.y));
+            int x1 = int(std::ceil(area.right())), y1 = int(std::ceil(area.bottom()));
             const int mg = 3 * r;
-            const int sx0 = std::max(0, x0 - mg), sy0 = std::max(0, y0 - mg);
-            const int sx1 = std::min(int(width), x1 + mg), sy1 = std::min(int(height), y1 + mg);
+            int sx0 = std::max(0, x0 - mg), sy0 = std::max(0, y0 - mg);
+            int sx1 = std::min(int(width), x1 + mg), sy1 = std::min(int(height), y1 + mg);
+            if (isFilterProgram(c) && std::size_t(c.stops) + c.stopCount <= list.gradientStops().size()) {
+                const Color& g = list.gradientStops()[c.stops + 1].color; // SVG program: source = filter region
+                sx0 = std::max(0, int(std::floor(g.r))), sy0 = std::max(0, int(std::floor(g.g)));
+                sx1 = std::min(int(width), int(std::ceil(g.r + g.b))), sy1 = std::min(int(height), int(std::ceil(g.g + g.a)));
+                x0 = std::max(x0, sx0), y0 = std::max(y0, sy0), x1 = std::min(x1, sx1), y1 = std::min(y1, sy1);
+                if (x1 <= x0 || y1 <= y0) return;
+            }
             const u32 id = u32(out.cmdScratch.size());
             pack(c, clip, ci);
             slotOut = id;

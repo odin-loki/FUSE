@@ -43,7 +43,8 @@ layout(push_constant) uniform BlurPush {
     uint base; // box passes: buf at v[base], tmp at v[base + n]
     uint save; // layer passes: saved pixels at v[save] (layer box = area, 4 floats per pixel)
     uint instr; // mode 7..9: program instruction
-    uint flags; // bit 0: mode 0 loads the band from the compact copy at v[compact] instead of the target
+    uint flags; // bit 0: mode 0 loads the band from the compact copy at v[compact] instead of the target; bit 1:
+                // mode 9 clears outside the op's subregion
     uint bandY0; // mode 6: source-local rows [bandY0, bandY1) to composite
     uint bandY1;
     uint compact; // tiled layer end: the layer's pixels, 1 word (RGBA8) / 2 words (half) per pixel, area-indexed
@@ -113,23 +114,69 @@ float clipCoverage(GpuCmd c, float px, float py) {
     }
     return cov;
 }
-// SVG filter program (runFilterProgram in Core/src/draw_list.cpp): header words at `at` = planes, reach, 0, 0, K;
-// op i at at + 5 + 30 i = in1, in2, out, 0, op, p0..p24. Planes of n floats at v[plane * n].
+// SVG filter program (runFilterProgram in Core/src/filter_program.cpp): header words at `at` = planes, margin,
+// dataStops, 0, K, region x y w h, 0; op i at at + 10 + 35 i = in1, in2, out, dataIndex, op, subregion x y w h, 0,
+// p0..p24; data floats at at + 10 + 35 K. Planes of n floats at v[plane * n]; (x, y) + org = target pixel.
 const float kInv255 = 0.003921568859368563;
-float prm(uint ob, int k) { return edgeWord(ob + 5u + uint(k)); }
+float prm(uint ob, int k) { return edgeWord(ob + 10u + uint(k)); }
 vec4 plane(uint p, uint n, uint i) { const uint b = p * n + i; return vec4(ui_scratch.v[b], ui_scratch.v[b + 1u], ui_scratch.v[b + 2u], ui_scratch.v[b + 3u]); }
-void runOp(uint ob, uint n, int x, int y, int w, int h) {
+uint g_data; // data word base of the running op
+float dat(int i) { return edgeWord(g_data + uint(i)); }
+float ppow(float x, float y) { return x <= 0.0 ? (y == 0.0 ? 1.0 : 0.0) : pow(x, y); }
+int posMod(int a, int m) { return a >= 0 ? a % m : (m - (-a) % m) % m; }
+bool inSub(uint ob, ivec2 g) {
+    precise float px = float(g.x) + 0.5;
+    precise float py = float(g.y) + 0.5;
+    const float sx = edgeWord(ob + 5u), sy = edgeWord(ob + 6u);
+    precise float sx1 = sx + edgeWord(ob + 7u);
+    precise float sy1 = sy + edgeWord(ob + 8u);
+    return px >= sx && px < sx1 && py >= sy && py < sy1;
+}
+float alphaAt(uint p, uint n, int w, int x, int y) { return ui_scratch.v[p * n + uint(y * w + x) * 4u + 3u] * kInv255; }
+float sCurve(float t) { precise float r = t * t * (3.0 - 2.0 * t); return r; }
+float lerpT(float t, float a, float b) { precise float r = a + t * (b - a); return r; }
+float noise2(int c, float vx, float vy, bool stitch, int nw, int nh, int wx, int wy) {
+    precise float tx = vx + 4096.0;
+    int bx0 = int(tx), bx1 = bx0 + 1;
+    precise float rx0 = tx - float(int(tx));
+    precise float rx1 = rx0 - 1.0;
+    precise float ty = vy + 4096.0;
+    int by0 = int(ty), by1 = by0 + 1;
+    precise float ry0 = ty - float(int(ty));
+    precise float ry1 = ry0 - 1.0;
+    if (stitch) {
+        if (bx0 >= wx) bx0 -= nw;
+        if (bx1 >= wx) bx1 -= nw;
+        if (by0 >= wy) by0 -= nh;
+        if (by1 >= wy) by1 -= nh;
+    }
+    bx0 &= 255; bx1 &= 255; by0 &= 255; by1 &= 255;
+    const int i = int(dat(bx0)), j = int(dat(bx1));
+    const int b00 = int(dat(i + by0)), b10 = int(dat(j + by0)), b01 = int(dat(i + by1)), b11 = int(dat(j + by1));
+    const float sx = sCurve(rx0), sy = sCurve(ry0);
+    const int nn = 514;
+    precise float u = rx0 * dat(nn + (c * nn + b00) * 2) + ry0 * dat(nn + (c * nn + b00) * 2 + 1);
+    precise float v = rx1 * dat(nn + (c * nn + b10) * 2) + ry0 * dat(nn + (c * nn + b10) * 2 + 1);
+    const float a = lerpT(sx, u, v);
+    u = rx0 * dat(nn + (c * nn + b01) * 2) + ry1 * dat(nn + (c * nn + b01) * 2 + 1);
+    v = rx1 * dat(nn + (c * nn + b11) * 2) + ry1 * dat(nn + (c * nn + b11) * 2 + 1);
+    const float b = lerpT(sx, u, v);
+    return lerpT(sy, a, b);
+}
+void runOp(uint at, uint ob, uint n, int x, int y, int w, int h, ivec2 org) {
     const uint i1 = uint(edgeWord(ob)), i2 = uint(edgeWord(ob + 1u)), io = uint(edgeWord(ob + 2u));
     const int kind = int(edgeWord(ob + 4u));
+    g_data = at + 10u + 35u * uint(edgeWord(at + 4u)) + uint(edgeWord(ob + 3u));
     const uint pi = uint(y * w + x) * 4u;
+    const ivec2 g = org + ivec2(x, y);
     precise vec4 r;
     const vec4 a = plane(i1, n, pi);
     const vec4 b = plane(i2, n, pi);
-    if (kind == 0) { // blur: copy in1 -> out, modes 8 / 9 follow
+    if (kind == 0) { // blur: copy in1 -> out, modes 8 / 9 follow (9 clears outside the subregion)
         if (i1 == io) return;
         r = a;
     } else if (kind == 1) {
-        r = applyFilter(ob + 5u, a);
+        r = applyFilter(ob + 10u, a);
     } else if (kind == 2) {
         const int qx = x - int(prm(ob, 2)), qy = y - int(prm(ob, 3));
         r = (qx >= 0 && qy >= 0 && qx < w && qy < h) ? plane(i1, n, uint(qy * w + qx) * 4u) : vec4(0.0);
@@ -178,9 +225,168 @@ void runOp(uint ob, uint n, int x, int y, int w, int h) {
         }
     } else if (kind == 6) {
         r = vec4(0.0, 0.0, 0.0, a.w);
+    } else if (kind == 8) { // turbulence
+        const float fx = prm(ob, 11), fy = prm(ob, 12);
+        const int oct = clamp(int(prm(ob, 2)), 0, 10);
+        const bool fractal = prm(ob, 3) != 0.0, stitch = prm(ob, 4) != 0.0;
+        precise float bx = (float(g.x) - prm(ob, 5)) * fx;
+        precise float by = (float(g.y) - prm(ob, 6)) * fy;
+        precise vec4 res;
+        for (int c = 0; c < 4; ++c) {
+            int nw = int(prm(ob, 13)), nh = int(prm(ob, 14)), wx = int(prm(ob, 15)), wy = int(prm(ob, 16));
+            precise float sum = 0.0;
+            precise float vx = bx;
+            precise float vy = by;
+            precise float ratio = 1.0;
+            for (int o = 0; o < oct; ++o) {
+                const float nz = noise2(c, vx, vy, stitch, nw, nh, wx, wy);
+                sum = sum + (fractal ? nz : abs(nz)) / ratio;
+                vx = vx * 2.0; vy = vy * 2.0; ratio = ratio * 2.0;
+                if (stitch) { nw *= 2; wx = 2 * wx - 4096; nh *= 2; wy = 2 * wy - 4096; }
+            }
+            precise float v = fractal ? (sum * 255.0 + 255.0) * 0.5 : sum * 255.0;
+            res[c] = clamp(v, 0.0, 255.0);
+        }
+        precise float al = res.w * kInv255;
+        r = vec4(res.x * al, res.y * al, res.z * al, res.w);
+    } else if (kind == 9) { // lighting
+        const bool l = x > 0, rr = x < w - 1, u = y > 0, dn = y < h - 1;
+        const int xl = l ? x - 1 : x, xr = rr ? x + 1 : x, yu = u ? y - 1 : y, yd = dn ? y + 1 : y;
+        const float wu = u ? 1.0 : 0.0, wd = dn ? 1.0 : 0.0, wl = l ? 1.0 : 0.0, wr = rr ? 1.0 : 0.0;
+        const float fxx = (l && rr) ? 0.5 : 1.0, fyy = (u && dn) ? 0.5 : 1.0;
+        const int sw = int(wu + wd), sh = int(wl + wr);
+        const float facx = sw == 2 ? 0.5 : (sw == 1 ? 0.6666666865348816 : 1.0);
+        const float facy = sh == 2 ? 0.5 : (sh == 1 ? 0.6666666865348816 : 1.0);
+        precise float sxv = wu * (alphaAt(i1, n, w, xr, yu) - alphaAt(i1, n, w, xl, yu)) + 2.0 * (alphaAt(i1, n, w, xr, y) - alphaAt(i1, n, w, xl, y)) +
+                            wd * (alphaAt(i1, n, w, xr, yd) - alphaAt(i1, n, w, xl, yd));
+        precise float syv = wl * (alphaAt(i1, n, w, xl, yd) - alphaAt(i1, n, w, xl, yu)) + 2.0 * (alphaAt(i1, n, w, x, yd) - alphaAt(i1, n, w, x, yu)) +
+                            wr * (alphaAt(i1, n, w, xr, yd) - alphaAt(i1, n, w, xr, yu));
+        const float ss = prm(ob, 1);
+        precise float nx = -ss * facx * fxx * sxv;
+        precise float ny = -ss * facy * fyy * syv;
+        precise float nl = sqrt(nx * nx + ny * ny + 1.0);
+        precise float Nx = nx / nl;
+        precise float Ny = ny / nl;
+        precise float Nz = 1.0 / nl;
+        precise float Lx = prm(ob, 8);
+        precise float Ly = prm(ob, 9);
+        precise float Lz = prm(ob, 10);
+        const int lt = int(prm(ob, 7));
+        if (lt != 0) {
+            Lx = prm(ob, 8) - float(g.x); Ly = prm(ob, 9) - float(g.y); Lz = prm(ob, 10) - ss * alphaAt(i1, n, w, x, y);
+            precise float ll = sqrt(Lx * Lx + Ly * Ly + Lz * Lz);
+            if (ll > 0.0) { Lx = Lx / ll; Ly = Ly / ll; Lz = Lz / ll; }
+        }
+        precise vec3 lc = vec3(prm(ob, 4), prm(ob, 5), prm(ob, 6));
+        if (lt == 2) {
+            precise float d = -(Lx * prm(ob, 11) + Ly * prm(ob, 12) + Lz * prm(ob, 13));
+            const float f = d < prm(ob, 15) ? 0.0 : ppow(d, prm(ob, 14));
+            lc = vec3(lc.x * f, lc.y * f, lc.z * f);
+        }
+        if (prm(ob, 0) == 0.0) {
+            precise float f = prm(ob, 2) * max(Nx * Lx + Ny * Ly + Nz * Lz, 0.0);
+            for (int k = 0; k < 3; ++k) { precise float q = clamp(f * lc[k], 0.0, 1.0) * 255.0; r[k] = q; }
+            r.w = 255.0;
+        } else {
+            precise float Hx = Lx;
+            precise float Hy = Ly;
+            precise float Hz = Lz + 1.0;
+            precise float hl = sqrt(Hx * Hx + Hy * Hy + Hz * Hz);
+            if (hl > 0.0) { Hx = Hx / hl; Hy = Hy / hl; Hz = Hz / hl; }
+            precise float f = prm(ob, 2) * ppow(max(Nx * Hx + Ny * Hy + Nz * Hz, 0.0), prm(ob, 3));
+            precise vec3 c;
+            for (int k = 0; k < 3; ++k) c[k] = clamp(f * lc[k], 0.0, 1.0);
+            const float al = max(c.x, max(c.y, c.z));
+            r = vec4(c.x * 255.0, c.y * 255.0, c.z * 255.0, al * 255.0);
+        }
+    } else if (kind == 10) { // morphology
+        const int rx = int(prm(ob, 3)), ry = int(prm(ob, 4));
+        const bool dil = prm(ob, 0) != 0.0;
+        if (rx == 0 && ry == 0) r = a;
+        else {
+            r = vec4(dil ? 0.0 : 255.0);
+            for (int j = -ry; j <= ry; ++j)
+                for (int i = -rx; i <= rx; ++i) {
+                    const int qx = x + i, qy = y + j;
+                    const vec4 v = (qx >= 0 && qy >= 0 && qx < w && qy < h) ? plane(i1, n, uint(qy * w + qx) * 4u) : vec4(0.0);
+                    r = dil ? max(r, v) : min(r, v);
+                }
+        }
+    } else if (kind == 11) { // image
+        precise float fx = (float(g.x) + 0.5 - prm(ob, 0)) * prm(ob, 6);
+        precise float fy = (float(g.y) + 0.5 - prm(ob, 1)) * prm(ob, 7);
+        const int iw = int(prm(ob, 4)), ih = int(prm(ob, 5));
+        if (iw <= 0 || ih <= 0 || fx < 0.0 || fy < 0.0 || fx >= float(iw) || fy >= float(ih)) r = vec4(0.0);
+        else {
+            const int u = clamp(int(floor(fx)), 0, iw - 1), v = clamp(int(floor(fy)), 0, ih - 1);
+            for (int k = 0; k < 4; ++k) r[k] = dat((v * iw + u) * 4 + k);
+        }
+    } else if (kind == 12) { // tile
+        const int tx = int(prm(ob, 4)), ty = int(prm(ob, 5)), tw = int(prm(ob, 6)), th = int(prm(ob, 7));
+        const int qx = tx + posMod(g.x - tx, tw) - org.x, qy = ty + posMod(g.y - ty, th) - org.y;
+        r = (qx >= 0 && qy >= 0 && qx < w && qy < h) ? plane(i1, n, uint(qy * w + qx) * 4u) : vec4(0.0);
+    } else if (kind == 13) { // component transfer (one channel)
+        const int ch = clamp(int(prm(ob, 0)), 0, 3), type = int(prm(ob, 1)), cnt = int(prm(ob, 5));
+        const float al = a.w;
+        precise float C = ch == 3 ? al * kInv255 : (al > 0.0 ? clamp(a[ch] / al, 0.0, 1.0) : 0.0);
+        precise float f = C;
+        if (type == 1 && cnt > 0) {
+            precise float t = C * float(cnt - 1);
+            const int k = clamp(int(floor(t)), 0, cnt - 1);
+            f = k >= cnt - 1 ? dat(cnt - 1) : dat(k) + (t - float(k)) * (dat(k + 1) - dat(k));
+        } else if (type == 2 && cnt > 0) {
+            f = dat(min(int(floor(C * float(cnt))), cnt - 1));
+        } else if (type == 3) {
+            f = prm(ob, 2) * C + prm(ob, 3);
+        } else if (type == 4) {
+            f = prm(ob, 2) * ppow(C, prm(ob, 3)) + prm(ob, 4);
+        }
+        f = clamp(f, 0.0, 1.0);
+        r = a;
+        if (ch == 3) {
+            precise float na = f * 255.0;
+            for (int k = 0; k < 3; ++k) r[k] = al > 0.0 ? clamp(a[k] / al, 0.0, 1.0) * na : 0.0;
+            r.w = na;
+        } else r[ch] = f * al;
+    } else if (kind == 14) { // convolve
+        const int ox = int(prm(ob, 0)), oy = int(prm(ob, 1)), tx = int(prm(ob, 4)), ty = int(prm(ob, 5)), edge = int(prm(ob, 6));
+        const bool pa = prm(ob, 7) != 0.0;
+        precise vec4 sum = vec4(0.0);
+        for (int j = 0; j < oy; ++j)
+            for (int i = 0; i < ox; ++i) {
+                int qx = x - tx + i, qy = y - ty + j;
+                bool inb = true;
+                if (edge == 0) { qx = clamp(qx, 0, w - 1); qy = clamp(qy, 0, h - 1); }
+                else if (edge == 1) { qx = posMod(qx, w); qy = posMod(qy, h); }
+                else inb = qx >= 0 && qy >= 0 && qx < w && qy < h;
+                if (!inb) continue;
+                const vec4 s = plane(i1, n, uint(qy * w + qx) * 4u);
+                const float kv = dat(ox * oy - 1 - (j * ox + i));
+                for (int k = 0; k < 4; ++k) {
+                    precise float v = s[k];
+                    if (pa && k < 3) v = s.w > 0.0 ? s[k] / s.w * 255.0 : 0.0;
+                    sum[k] = sum[k] + kv * v;
+                }
+            }
+        for (int k = 0; k < 4; ++k) { precise float q = sum[k] * prm(ob, 2) + prm(ob, 3) * 255.0; r[k] = clamp(q, 0.0, 255.0); }
+        if (pa) {
+            precise float qa = a.w * kInv255;
+            for (int k = 0; k < 3; ++k) r[k] = r[k] * qa;
+            r.w = a.w;
+        } else
+            for (int k = 0; k < 3; ++k) r[k] = min(r[k], r.w);
+    } else if (kind == 15) { // displacement map
+        const int cx = clamp(int(prm(ob, 1)), 0, 3), cy = clamp(int(prm(ob, 2)), 0, 3);
+        const float chx = cx == 3 ? b.w * kInv255 : (b.w > 0.0 ? clamp(b[cx] / b.w, 0.0, 1.0) : 0.0);
+        const float chy = cy == 3 ? b.w * kInv255 : (b.w > 0.0 ? clamp(b[cy] / b.w, 0.0, 1.0) : 0.0);
+        precise float dx = prm(ob, 0) * (chx - 0.5);
+        precise float dy = prm(ob, 0) * (chy - 0.5);
+        const int qx = int(floor(float(x) + dx + 0.5)), qy = int(floor(float(y) + dy + 0.5));
+        r = (qx >= 0 && qy >= 0 && qx < w && qy < h) ? plane(i1, n, uint(qy * w + qx) * 4u) : vec4(0.0);
     } else {
         r = a;
     }
+    if (kind != 0 && !inSub(ob, g)) r = vec4(0.0);
     for (int k = 0; k < 4; ++k) ui_scratch.v[io * n + pi + uint(k)] = r[k];
 }
 uint q8(float v) { return uint(floor(clamp(v, 0.0, 1.0) * 255.0 + 0.5)); }
@@ -297,12 +503,13 @@ void main() {
     } else if (pc.mode == 7u) {
         if (id >= uint(w * h)) return;
         const GpuCmd c = ui_cmds.cmds[pc.cmd];
-        runOp(floatBitsToUint(c.grad2.z) + 5u + 30u * pc.instr, n, int(id) % w, int(id) / w, w, h);
+        const uint at = floatBitsToUint(c.grad2.z);
+        runOp(at, at + 10u + 35u * pc.instr, n, int(id) % w, int(id) / w, w, h, pc.srcOrigin);
     } else if (pc.mode == 8u) {
         // program blur, out -> plane 1 along x (as mode 1)
         if (id >= uint(h * 4)) return;
         const GpuCmd c = ui_cmds.cmds[pc.cmd];
-        const uint ob = floatBitsToUint(c.grad2.z) + 5u + 30u * pc.instr;
+        const uint ob = floatBitsToUint(c.grad2.z) + 10u + 35u * pc.instr;
         const uint io = uint(edgeWord(ob + 2u));
         const int rr = int(prm(ob, 2));
         const float iv = prm(ob, 4);
@@ -320,7 +527,7 @@ void main() {
         // program blur, plane 1 -> out along y (as mode 2)
         if (id >= uint(w * 4)) return;
         const GpuCmd c = ui_cmds.cmds[pc.cmd];
-        const uint ob = floatBitsToUint(c.grad2.z) + 5u + 30u * pc.instr;
+        const uint ob = floatBitsToUint(c.grad2.z) + 10u + 35u * pc.instr;
         const uint io = uint(edgeWord(ob + 2u));
         const int rr = int(prm(ob, 3));
         const float iv = prm(ob, 5);
@@ -328,8 +535,9 @@ void main() {
         const uint src = n + id, dst = io * n + id;
         precise float acc = 0.0;
         for (int i = -rr; i <= rr; ++i) acc = acc + ui_scratch.v[src + uint(clamp(i, 0, h - 1)) * stride];
+        const bool clipSub = (pc.flags & 2u) != 0u;
         for (int i = 0; i < h; ++i) {
-            ui_scratch.v[dst + uint(i) * stride] = acc * iv;
+            ui_scratch.v[dst + uint(i) * stride] = (clipSub && !inSub(ob, pc.srcOrigin + ivec2(int(id) / 4, i))) ? 0.0 : acc * iv;
             precise float d = ui_scratch.v[src + uint(clamp(i + rr + 1, 0, h - 1)) * stride] - ui_scratch.v[src + uint(clamp(i - rr, 0, h - 1)) * stride];
             acc = acc + d;
         }

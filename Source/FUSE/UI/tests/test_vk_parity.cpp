@@ -593,6 +593,13 @@ int main() {
                 "<feBlend in=\"g\" in2=\"s\" mode=\"screen\" result=\"m\"/>"
                 "<feComposite in=\"m\" in2=\"SourceGraphic\" operator=\"arithmetic\" k1=\"0.2\" k2=\"0.6\" k3=\"0.3\" k4=\"0.02\" result=\"a\"/>"
                 "<feMerge><feMergeNode in=\"s\"/><feMergeNode in=\"a\"/></feMerge></filter>", prog));
+            FilterProgram banded;
+            UI_CHECK(parseSvgFilter(
+                "<filter><feMorphology operator=\"erode\" radius=\"3\" result=\"e\"/>"
+                "<feConvolveMatrix in=\"e\" order=\"3 5\" kernelMatrix=\"1 0 -1 2 0 -2 1 0 -1 0 1 0 1 1 1\" divisor=\"3\" bias=\"0.1\" result=\"c\"/>"
+                "<feGaussianBlur in=\"SourceAlpha\" stdDeviation=\"4\" result=\"b\"/>"
+                "<feDiffuseLighting in=\"b\" surfaceScale=\"5\" result=\"l\"><feDistantLight azimuth=\"45\" elevation=\"30\"/></feDiffuseLighting>"
+                "<feComposite in=\"c\" in2=\"l\" operator=\"arithmetic\" k1=\"1\" k2=\"0.3\"/></filter>", banded));
             const auto chainList = [&](DrawList& cl, f32 big) {
                 for (int i = 0; i < 12; ++i) cl.rect({f32(i * 40), 0, 20, f32(H)}, Color::rgb(i & 1 ? 0xff4422u : 0x22aaffu));
                 cl.pushClip({20, 20, 220 * big, 200 * big}, 18.f);
@@ -608,6 +615,11 @@ int main() {
                 cl.rect({270, 60, 120 * big, 110 * big}, Color::rgb(0xffc040), 16.f);
                 cl.rect({300, 90, 40, 40}, Color::rgb(0x8020ff, 0.6f));
                 cl.popFilter();
+                if (big > 1.f) { // neighbourhood primitives across band seams
+                    cl.pushFilter(banded);
+                    cl.rect({60, 250, 200, 100}, Color::rgb(0x40c080, 0.8f), 30.f);
+                    cl.popFilter();
+                }
             };
             DrawList cl;
             chainList(cl, 1.f);
@@ -619,6 +631,56 @@ int main() {
             UI_CHECK(gpu.upload(0, data));
             vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
             check("filter_chain", compare(cpuC2, out));
+
+            // the remaining SVG primitives, filter / primitive subregions, and an SVG program as backdrop-filter
+            Image cells;
+            cells.resize(6, 4);
+            for (int i = 0; i < 24; ++i) cells.pixels[std::size_t(i)] = (i * 7) % 3 == 0 ? 0xFF2040E0u : (i % 2 ? 0xC0C0A000u : 0x80008040u);
+            const FilterImageResolver imgs = [&](std::string_view n) -> const Image* { return n == "cells" ? &cells : nullptr; };
+            FilterProgram fx, bk;
+            UI_CHECK(parseSvgFilter(
+                "<filter x=\"-20%\" y=\"-20%\" width=\"140%\" height=\"140%\">"
+                "<feTurbulence type=\"fractalNoise\" baseFrequency=\"0.04 0.06\" numOctaves=\"3\" seed=\"7\" result=\"t\"/>"
+                "<feDisplacementMap in=\"SourceGraphic\" in2=\"t\" scale=\"12\" xChannelSelector=\"R\" yChannelSelector=\"G\" result=\"d\"/>"
+                "<feMorphology in=\"d\" operator=\"dilate\" radius=\"2 1\" result=\"m\"/>"
+                "<feConvolveMatrix in=\"m\" order=\"3\" kernelMatrix=\"0 -1 0 -1 5 -1 0 -1 0\" result=\"c\"/>"
+                "<feComponentTransfer in=\"c\" result=\"ct\"><feFuncR type=\"table\" tableValues=\"0 0.5 1\"/>"
+                "<feFuncG type=\"gamma\" amplitude=\"1.2\" exponent=\"0.8\" offset=\"0.05\"/><feFuncB type=\"discrete\" tableValues=\"0 0.3 0.7 1\"/>"
+                "<feFuncA type=\"linear\" slope=\"0.9\" intercept=\"0.05\"/></feComponentTransfer>"
+                "<feGaussianBlur in=\"SourceAlpha\" stdDeviation=\"2\" result=\"ba\"/>"
+                "<feSpecularLighting in=\"ba\" surfaceScale=\"4\" specularExponent=\"12\" lighting-color=\"#ffeecc\" result=\"sp\">"
+                "<fePointLight x=\"150\" y=\"40\" z=\"80\"/></feSpecularLighting>"
+                "<feComposite in=\"sp\" in2=\"SourceAlpha\" operator=\"in\" result=\"spi\"/>"
+                "<feDiffuseLighting in=\"ba\" surfaceScale=\"3\" diffuseConstant=\"0.8\" result=\"di\">"
+                "<feSpotLight x=\"0\" y=\"0\" z=\"120\" pointsAtX=\"100\" pointsAtY=\"100\" pointsAtZ=\"0\" specularExponent=\"2\" limitingConeAngle=\"40\"/>"
+                "</feDiffuseLighting>"
+                "<feBlend in=\"ct\" in2=\"di\" mode=\"multiply\" result=\"bl\"/>"
+                "<feComposite in=\"spi\" in2=\"bl\" operator=\"arithmetic\" k2=\"1\" k3=\"1\" result=\"lit\"/>"
+                "<feOffset in=\"SourceGraphic\" x=\"0\" y=\"0\" width=\"24\" height=\"18\" result=\"cell\"/>"
+                "<feTile in=\"cell\" x=\"-10\" y=\"0\" width=\"60\" height=\"200\" result=\"tiles\"/>"
+                "<feImage href=\"cells\" x=\"30\" y=\"-12\" width=\"60\" height=\"40\" result=\"im\"/>"
+                "<feMerge><feMergeNode in=\"tiles\"/><feMergeNode in=\"im\"/><feMergeNode in=\"lit\"/></feMerge></filter>",
+                fx, {}, imgs));
+            UI_CHECK(parseSvgFilter(
+                "<filter><feTurbulence baseFrequency=\"0.03\" numOctaves=\"2\" seed=\"2\" stitchTiles=\"stitch\" result=\"t\"/>"
+                "<feDisplacementMap in=\"SourceGraphic\" in2=\"t\" scale=\"18\" xChannelSelector=\"B\" yChannelSelector=\"R\" result=\"d\"/>"
+                "<feGaussianBlur in=\"d\" stdDeviation=\"3\" x=\"10%\" width=\"80%\" result=\"b\"/>"
+                "<feColorMatrix in=\"b\" type=\"hueRotate\" values=\"90\"/></filter>", bk));
+            DrawList sv;
+            for (int i = 0; i < 12; ++i) sv.rect({f32(i * 40), 0, 20, f32(H)}, Color::rgb(i & 1 ? 0xff4422u : 0x22aaffu));
+            sv.pushFilter(fx);
+            sv.rect({40, 40, 150, 120}, Color::rgb(0x2080ff, 0.9f), 24.f);
+            sv.rect({70, 70, 50, 40}, Color::rgb(0xffc040));
+            sv.popFilter();
+            sv.backdrop({250, 50, 180, 170}, bk, {20, 20, 20, 20}, Color::rgb(0xffffff, 0.1f));
+            Image cpuV;
+            cpuV.resize(int(W), int(H), 0xFF000000u);
+            CpuRasterizer rv;
+            rv.render(sv, cpuV);
+            packDrawList(sv, W, H, data);
+            UI_CHECK(gpu.upload(0, data));
+            vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+            check("filter_svg_primitives", compare(cpuV, out));
 
             // oversized layers on a small scratch: tiled (banded) layer ends match the CPU
             UiVkRenderer small;

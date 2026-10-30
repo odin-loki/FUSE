@@ -199,6 +199,8 @@ public:
     bool defineFilter(std::string_view id, std::string_view cssFilters);
     /// Register every <filter id="..."> of an SVG document for url(#id); returns how many compiled.
     int defineSvgFilters(std::string_view svgText);
+    /// Names a premultiplied RGBA8 image for SVG feImage href="name" (or "#name") in filters defined after this.
+    void defineFilterImage(std::string_view name, Image image);
     std::expected<void, UiError> addStyleSheet(std::string_view css, std::vector<StyleDiagnostic>* diags = nullptr);
     void addStyleSheet(StyleSheet sheet); ///< an already parsed (or cooked) sheet
     void clearStyleSheets();
@@ -412,6 +414,8 @@ private:
     void filterStages(const FilterFn* fns, const f32* amounts, u8 count, const FilterShadow* shadows,
                       std::vector<FilterStage>& out, int depth = 0) const;
     std::unordered_map<u32, FilterDef> m_filterDefs;
+    std::unordered_map<std::string, Image> m_filterImages; ///< defineFilterImage
+    FilterImageResolver filterImageResolver() const;
     u32 m_filterNode = ~0u; ///< node whose filter layer paintRec is inside (its second, unwrapped visit)
     /// Overlay scrollbar geometry of a scroll container along an axis (0 = x, 1 = y); false when it does not overflow.
     bool scrollBarGeom(u32 i, u8 axis, Rect& track, Rect& thumb) const;

@@ -1,3 +1,4 @@
+#include <algorithm>
 // fuse_ui_backdrop_blur (plan UI4): DrawOp::Backdrop / `backdrop-blur` (CSS backdrop-filter: blur()).
 //   * pixels under the rounded rect are blurred: a hard stripe edge becomes a smooth ramp, its mean colour is kept
 //   * pixels outside the rect (and in its rounded corners) are untouched; a tint is blended over the blur
@@ -347,7 +348,8 @@ int main(int argc, char** argv) {
         std::printf("  svg flood: %08x %08x\n", px(g, 20, 20), px(g, 60, 20));
         UI_CHECK(is(px(g, 20, 20), 0, 255, 0) && ch(px(g, 60, 20), 1) < 80);
         const Shot o = shot("url(#o)", "o",
-                            "<filter id=\"o\"><feOffset in=\"SourceGraphic\" dx=\"50\" dy=\"0\" result=\"s\"/>"
+                            "<filter id=\"o\" x=\"-10%\" y=\"-10%\" width=\"300%\" height=\"120%\">"
+                            "<feOffset in=\"SourceGraphic\" dx=\"50\" dy=\"0\" result=\"s\"/>"
                             "<feColorMatrix in=\"s\" type=\"matrix\" values=\"0 0 0 0 1  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0\" result=\"r\"/>"
                             "<feMerge><feMergeNode in=\"r\"/><feMergeNode in=\"SourceGraphic\"/></feMerge></filter>");
         std::printf("  svg filter: %08x %08x\n", px(o, 20, 20), px(o, 70, 20));
@@ -355,7 +357,73 @@ int main(int argc, char** argv) {
         FilterProgram prog;
         UI_CHECK(parseSvgFilter("<filter id=\"b\"><feGaussianBlur stdDeviation=\"3\"/><feBlend mode=\"multiply\" in2=\"SourceGraphic\"/></filter>", prog));
         UI_CHECK(prog.ops.size() == 3 && prog.ops[0].op == FeOp::Blur && prog.ops[1].op == FeOp::Blend && prog.ops[2].op == FeOp::Copy);
-        UI_CHECK(!parseSvgFilter("<filter><feTurbulence/></filter>", prog));
+        UI_CHECK(!parseSvgFilter("<filter><feFoo/></filter>", prog));
+        // the default filter region (-10% / 120%) clips what the offset moved out
+        const Shot o2 = shot("url(#o2)", "o2", "<filter id=\"o2\"><feOffset dx=\"50\"/></filter>");
+        UI_CHECK(!is(px(o2, 70, 20), 0, 0, 255) && !is(px(o2, 20, 20), 0, 0, 255));
+        // primitiveUnits="objectBoundingBox": dx 0.5 = half the 40px box
+        const Shot pu = shot("url(#pu)", "pu", "<filter id=\"pu\" primitiveUnits=\"objectBoundingBox\" x=\"-1\" width=\"3\"><feOffset dx=\"0.5\"/></filter>");
+        std::printf("  svg units: %08x %08x\n", px(pu, 50, 20), px(pu, 10, 20));
+        UI_CHECK(is(px(pu, 50, 20), 0, 0, 255) && !is(px(pu, 10, 20), 0, 0, 255));
+        const Shot tb = shot("url(#t)", "t", "<filter id=\"t\" x=\"0\" y=\"0\" width=\"1\" height=\"1\"><feTurbulence baseFrequency=\"0.1\" numOctaves=\"2\" seed=\"3\"/></filter>");
+        {
+            std::vector<u32> seen;
+            for (int y = 0; y < 40; y += 3)
+                for (int x = 0; x < 40; x += 3) seen.push_back(px(tb, f32(x), f32(y)));
+            std::sort(seen.begin(), seen.end());
+            const auto distinct = std::unique(seen.begin(), seen.end()) - seen.begin();
+            std::printf("  turbulence: %d distinct of %zu\n", int(distinct), seen.size());
+            UI_CHECK(distinct > 100);
+        }
+        const Shot mo = shot("url(#m)", "m", "<filter id=\"m\"><feMorphology operator=\"dilate\" radius=\"5\"/></filter>");
+        UI_CHECK(is(px(mo, -3, 20), 0, 0, 255) && is(px(mo, 20, 20), 0, 0, 255));
+        const Shot ct = shot("url(#c)", "c", "<filter id=\"c\"><feComponentTransfer><feFuncB type=\"table\" tableValues=\"1 0\"/>"
+                                            "<feFuncR type=\"linear\" slope=\"0\" intercept=\"1\"/></feComponentTransfer></filter>");
+        UI_CHECK(is(px(ct, 20, 20), 255, 0, 0));
+        const Shot cv = shot("url(#v)", "v", "<filter id=\"v\"><feConvolveMatrix order=\"3\" kernelMatrix=\"1 1 1 1 1 1 1 1 1\" edgeMode=\"none\"/></filter>");
+        UI_CHECK(is(px(cv, 20, 20), 0, 0, 255) && ch(px(cv, -1, 20), 2) > 40 && ch(px(cv, -1, 20), 2) < 200);
+        const Shot dm = shot("url(#d)", "d", "<filter id=\"d\"><feFlood flood-color=\"#ff8000\" result=\"f\"/>"
+                                            "<feDisplacementMap in=\"SourceGraphic\" in2=\"f\" scale=\"20\" xChannelSelector=\"R\" yChannelSelector=\"A\"/></filter>");
+        std::printf("  displacement: %08x %08x\n", px(dm, 25, 20), px(dm, 35, 20));
+        UI_CHECK(is(px(dm, 25, 20), 0, 0, 255) && !is(px(dm, 35, 20), 0, 0, 255));
+        const Shot lt = shot("url(#l)", "l", "<filter id=\"l\"><feDiffuseLighting lighting-color=\"#ff8000\"><feDistantLight azimuth=\"0\" elevation=\"90\"/>"
+                                            "</feDiffuseLighting></filter>");
+        UI_CHECK(is(px(lt, 20, 20), 255, 128, 0));
+        const Shot tl = shot("url(#tl)", "tl", "<filter id=\"tl\" x=\"0\" y=\"0\" width=\"1\" height=\"1\">"
+                                              "<feFlood flood-color=\"#ff0000\" x=\"0\" y=\"0\" width=\"10\" height=\"10\" result=\"a\"/>"
+                                              "<feFlood flood-color=\"#00ff00\" x=\"10\" y=\"0\" width=\"10\" height=\"10\" result=\"b\"/>"
+                                              "<feMerge><feMergeNode in=\"a\"/><feMergeNode in=\"b\"/></feMerge><feTile/></filter>");
+        std::printf("  tile: %08x %08x\n", px(tl, 25, 15), px(tl, 35, 5));
+        UI_CHECK(is(px(tl, 25, 15), 255, 0, 0) && is(px(tl, 35, 5), 0, 255, 0));
+        {
+            UiContext ui({.viewport = {240, 200}, .font = &font()});
+            w::install(ui);
+            Image im;
+            im.resize(2, 2);
+            im.pixels = {0xFF0000FFu, 0xFF00FF00u, 0xFFFF0000u, 0xFFFFFFFFu};
+            ui.defineFilterImage("img", im);
+            UI_CHECK(ui.defineFilter("i", "<filter id=\"i\"><feImage href=\"#img\" x=\"0\" y=\"0\" width=\"40\" height=\"40\"/></filter>"));
+            UI_CHECK(!ui.defineFilter("i2", "<filter id=\"i2\"><feImage href=\"#nope\"/></filter>"));
+            auto sheet = StyleSheet::parse(".q { background: #0000ff; width: 40px; height: 40px; margin-left: 20px; margin-top: 20px; filter: url(#i); }"
+                                           ".k { width: 60px; height: 40px; margin-left: 10px; backdrop-filter: url(#bk); }");
+            UI_CHECK(sheet.has_value());
+            UI_CHECK(ui.defineFilter("bk", "<filter id=\"bk\"><feColorMatrix values=\"0 0 1 0 0  0 1 0 0 0  1 0 0 0 0  0 0 0 1 0\"/></filter>"));
+            if (sheet) ui.styles().addSheet(std::move(*sheet));
+            const NodeHandle q = w::label(ui, ui.root(), "");
+            ui.addClass(q, "q");
+            const NodeHandle k = w::label(ui, ui.root(), "");
+            ui.addClass(k, "k");
+            ui.update();
+            Image img;
+            img.resize(240, 200, 0xFF000000u);
+            CpuRasterizer().render(ui.drawList(), img);
+            const Rect r = ui.rect(q), kr = ui.rect(k);
+            const u32 i0 = img.at(int(r.x + 5), int(r.y + 5)), i1 = img.at(int(r.x + 30), int(r.y + 5)), i2 = img.at(int(r.x + 5), int(r.y + 30));
+            const u32 kb = img.at(int(kr.x + 30), int(kr.y + 20));
+            std::printf("  feImage: %08x %08x %08x  backdrop svg: %08x\n", i0, i1, i2, kb);
+            UI_CHECK(is(i0, 255, 0, 0) && is(i1, 0, 255, 0) && is(i2, 0, 0, 255));
+            UI_CHECK(is(kb, 0x24, 0x1f, 0x1e)); // root background 1e1f24 with red and blue swapped
+        }
         UiContext ui({.viewport = {64, 64}, .font = &font()});
         UI_CHECK(ui.defineSvgFilters("<svg><filter id=\"x\"><feFlood/></filter><filter id=\"y\"><feOffset dx=\"2\"/></filter></svg>") == 2);
     }

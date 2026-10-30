@@ -611,7 +611,9 @@ void UiVkRenderer::record(void* commandBuffer, void* targetView, u32 slotIndex) 
                             computeBarrier(cmd);
                             run(8, bh * 4);
                             computeBarrier(cmd);
+                            if (it == 2) bp.flags |= 2u; // last vertical pass clears outside the subregion
                             run(9, bw * 4);
+                            bp.flags &= ~2u;
                         }
                 }
             } else {
