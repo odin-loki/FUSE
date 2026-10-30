@@ -37,6 +37,7 @@ struct UiContext::Node {
     std::array<u32, 6> classes{};
     u8 classCount = 0;
     u8 dirty = 0;
+    u8 gridCol = 0, gridSpan = 0; ///< grid placement by the parent (subgrid tracks)
     u32 state = 0;
     u32 flags = 0;
     u32 style = 0;
@@ -1952,6 +1953,27 @@ f32 clampSize(f32 v, const Length& lo, const Length& hi, f32 base) {
     return std::max(0.f, v);
 }
 bool fixedLen(const Length& l, f32 base) { return l.unit == Unit::Px || (l.unit == Unit::Percent && std::isfinite(base)); }
+f32 rowGapOf(const ComputedStyle& s) { return s.rowGap < 0.f ? s.gap : s.rowGap; }
+f32 colGapOf(const ComputedStyle& s) { return s.columnGap < 0.f ? s.gap : s.columnGap; }
+bool outOfFlowPos(const ComputedStyle& s) { return s.position == PositionKind::Absolute || s.position == PositionKind::Fixed; }
+/// Column track sizes and offsets of a grid `width` wide (px / % fixed, fr and auto share the rest); returns the count.
+u32 gridTracks(const ComputedStyle& s, f32 width, std::array<f32, kMaxGridTracks>& w, std::array<f32, kMaxGridTracks>& x) {
+    const u32 cols = std::max<u32>(1, s.gridColumnCount);
+    const f32 gap = colGapOf(s);
+    f32 fixedSum = gap * f32(cols - 1), frSum = 0.f;
+    for (u32 k = 0; k < cols; ++k) {
+        const Length t = s.gridColumnCount ? s.gridColumns[k] : Length::fr(1.f);
+        if (t.unit == Unit::Px || t.unit == Unit::Percent) { w[k] = t.resolve(width, 0.f); fixedSum += w[k]; }
+        else frSum += t.unit == Unit::Fr ? t.value : 1.f;
+    }
+    const f32 frUnit = frSum > 0.f ? std::max(0.f, width - fixedSum) / frSum : 0.f;
+    for (u32 k = 0; k < cols; ++k) {
+        const Length t = s.gridColumnCount ? s.gridColumns[k] : Length::fr(1.f);
+        if (!(t.unit == Unit::Px || t.unit == Unit::Percent)) w[k] = frUnit * (t.unit == Unit::Fr ? t.value : 1.f);
+        x[k] = k ? x[k - 1] + w[k - 1] + gap : 0.f;
+    }
+    return cols;
+}
 } // namespace
 
 void UiContext::markArrange(u32 i) {
@@ -1982,52 +2004,76 @@ Size UiContext::measure(u32 i, Size avail) {
             const bool row = s.direction == Direction::Row;
             u32 count = 0;
             switch (s.layout) {
-            case LayoutKind::Box:
+            case LayoutKind::Box: {
+                const f32 mainGap = row ? colGapOf(s) : rowGapOf(s), crossGap = row ? rowGapOf(s) : colGapOf(s);
+                const f32 mainAvail = row ? in.w : in.h;
+                f32 lineMain = 0.f, lineCross = 0.f;
+                u32 lineCount = 0, lines = 0;
+                auto endLine = [&] {
+                    if (!lineCount) return;
+                    if (row) { c.w = std::max(c.w, lineMain); c.h += lineCross + (lines ? crossGap : 0.f); }
+                    else { c.h = std::max(c.h, lineMain); c.w += lineCross + (lines ? crossGap : 0.f); }
+                    ++lines, lineMain = lineCross = 0.f, lineCount = 0;
+                };
                 for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
                     const ComputedStyle& cs = m_styles.style(m_nodes[k].style);
-                    if (!cs.visible || m_nodes[k].cls == m_layerClass) continue;
+                    if (!cs.visible || outOfFlow(k)) continue;
                     const Size m = measure(k, {in.w - cs.margin.h(), in.h - cs.margin.v()});
                     const f32 mw = m.w + cs.margin.h(), mh = m.h + cs.margin.v();
-                    if (row) { c.w += mw; c.h = std::max(c.h, mh); }
-                    else { c.h += mh; c.w = std::max(c.w, mw); }
-                    ++count;
+                    const f32 mm = row ? mw : mh, mc = row ? mh : mw;
+                    if (s.wrap && lineCount && std::isfinite(mainAvail) && lineMain + mainGap + mm > mainAvail + 0.01f) endLine();
+                    lineMain += (lineCount ? mainGap : 0.f) + mm;
+                    lineCross = std::max(lineCross, mc);
+                    ++lineCount;
                 }
-                if (count > 1) (row ? c.w : c.h) += s.gap * f32(count - 1);
+                endLine();
                 break;
+            }
             case LayoutKind::Grid: {
-                const u32 cols = std::max<u32>(1, s.gridColumnCount);
-                std::array<f32, kMaxGridTracks> colW{};
+                std::array<f32, kMaxGridTracks> colW{}, tw{}, tx{};
+                const f32 cg = colGapOf(s), rg = rowGapOf(s);
+                const u32 cols = std::isfinite(in.w) ? gridTracks(s, in.w, tw, tx) : std::max<u32>(1, s.gridColumnCount);
                 f32 rowH = 0.f, total = 0.f;
                 u32 col = 0;
-                const f32 cw = std::isfinite(in.w) ? (in.w - s.gap * f32(cols - 1)) / f32(cols) : kInf;
+                std::array<f32, kMaxGridTracks> colY{};
                 for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
                     const ComputedStyle& cs = m_styles.style(m_nodes[k].style);
-                    if (!cs.visible || m_nodes[k].cls == m_layerClass) continue;
+                    if (!cs.visible || outOfFlow(k)) continue;
+                    const f32 cw = std::isfinite(in.w) ? tw[col] : kInf;
                     const Size m = measure(k, {cw, kInf});
+                    const f32 h = cs.aspectRatio > 0.f && std::isfinite(cw) && !fixedLen(cs.height, kInf) ? (cw - cs.margin.h()) / cs.aspectRatio : m.h;
                     colW[col] = std::max(colW[col], m.w + cs.margin.h());
-                    rowH = std::max(rowH, m.h + cs.margin.v());
-                    if (++col == cols) { total += rowH + (total > 0.f ? s.gap : 0.f); rowH = 0.f; col = 0; }
+                    if (s.masonry) {
+                        u32 best = 0;
+                        for (u32 j = 1; j < cols; ++j) if (colY[j] < colY[best] - 0.01f) best = j;
+                        colY[best] += h + cs.margin.v() + rg;
+                        continue;
+                    }
+                    rowH = std::max(rowH, h + cs.margin.v());
+                    if (++col == cols) { total += rowH + (total > 0.f ? rg : 0.f); rowH = 0.f; col = 0; }
                 }
-                if (col) total += rowH + (total > 0.f ? s.gap : 0.f);
+                if (s.masonry) for (u32 j = 0; j < cols; ++j) total = std::max(total, colY[j] > 0.f ? colY[j] - rg : 0.f);
+                else if (col) total += rowH + (total > 0.f ? rg : 0.f);
                 for (u32 k = 0; k < cols; ++k) {
                     const Length& t = s.gridColumnCount ? s.gridColumns[k] : Length{};
                     c.w += t.unit == Unit::Px ? t.value : colW[k];
                 }
-                c.w += s.gap * f32(cols - 1);
+                c.w += cg * f32(cols - 1);
                 c.h = total;
                 break;
             }
             case LayoutKind::Flow: {
+                const f32 cg = colGapOf(s), rg = rowGapOf(s);
                 f32 x = 0.f, y = 0.f, lineH = 0.f;
                 for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
                     const ComputedStyle& cs = m_styles.style(m_nodes[k].style);
-                    if (!cs.visible || m_nodes[k].cls == m_layerClass) continue;
+                    if (!cs.visible || outOfFlow(k)) continue;
                     const Size m = measure(k, {in.w, kInf});
                     const f32 mw = m.w + cs.margin.h(), mh = m.h + cs.margin.v();
-                    if (x > 0.f && x + mw > in.w) { y += lineH + s.gap; x = 0.f; lineH = 0.f; }
-                    x += mw + s.gap;
+                    if (x > 0.f && x + mw > in.w) { y += lineH + rg; x = 0.f; lineH = 0.f; }
+                    x += mw + cg;
                     lineH = std::max(lineH, mh);
-                    c.w = std::max(c.w, x - s.gap);
+                    c.w = std::max(c.w, x - cg);
                 }
                 c.h = y + lineH;
                 break;
@@ -2035,7 +2081,7 @@ Size UiContext::measure(u32 i, Size avail) {
             default: // Stack, Anchor, Absolute: union of children
                 for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
                     const ComputedStyle& cs = m_styles.style(m_nodes[k].style);
-                    if (!cs.visible || m_nodes[k].cls == m_layerClass) continue;
+                    if (!cs.visible || outOfFlow(k)) continue;
                     const Size m = measure(k, in);
                     const f32 ox = s.layout == LayoutKind::Stack ? 0.f : cs.left.resolve(in.w, 0.f);
                     const f32 oy = s.layout == LayoutKind::Stack ? 0.f : cs.top.resolve(in.h, 0.f);
@@ -2053,6 +2099,10 @@ Size UiContext::measure(u32 i, Size avail) {
         }
         out.w = fw ? bw : c.w + s.padding.h();
         out.h = fh ? bh : c.h + s.padding.v();
+        if (s.aspectRatio > 0.f && !(fw && fh)) { // aspect-ratio: the auto size from the other one
+            if (fh && !fw) out.w = out.h * s.aspectRatio;
+            else out.h = out.w / s.aspectRatio;
+        }
         out.w = clampSize(out.w, s.minWidth, s.maxWidth, avail.w);
         out.h = clampSize(out.h, s.minHeight, s.maxHeight, avail.h);
     }
@@ -2066,6 +2116,14 @@ void UiContext::arrange(u32 i, Rect box) {
     if (box == n.rect && !(n.dirty & kDirtyLayout)) return;
     ++m_stats.arranged;
     if (!(box == n.rect)) {
+        // a positioned box resized: absolute descendants placed against it re-arrange
+        const ComputedStyle& bs = m_styles.style(n.style);
+        if ((box.w != n.rect.w || box.h != n.rect.h) && m_styles.anyPositioned() && (bs.position != PositionKind::Static || bs.transformCount)) {
+            auto mark = [&](auto&& self, u32 a) -> void {
+                for (u32 k = m_nodes[a].first; k != kNone; k = m_nodes[k].next) { m_nodes[k].dirty |= kDirtyLayout; self(self, k); }
+            };
+            mark(mark, i);
+        }
         m_damage = m_damage.unite(n.rect).unite(box);
         n.prevRect = n.rect;
         n.rect = box;
@@ -2075,6 +2133,68 @@ void UiContext::arrange(u32 i, Rect box) {
     arrangeChildren(i);
 }
 
+bool UiContext::outOfFlow(u32 k) const {
+    return m_nodes[k].cls == m_layerClass || outOfFlowPos(m_styles.style(m_nodes[k].style));
+}
+
+// The containing block of an absolute (nearest positioned or transformed ancestor's padding box, as scrolled) or
+// fixed (nearest transformed ancestor, else the viewport) box, starting at the parent `i`.
+Rect UiContext::containingBlock(u32 i, PositionKind pos) const {
+    for (u32 a = i; a != kNone; a = m_nodes[a].parent) {
+        const ComputedStyle& as = m_styles.style(m_nodes[a].style);
+        if (as.transformCount || (pos != PositionKind::Fixed && as.position != PositionKind::Static)) {
+            const Node& an = m_nodes[a];
+            const f32 bw = as.borderWidth;
+            return {an.rect.x + bw - an.scroll.x, an.rect.y + bw - an.scroll.y, std::max(0.f, an.rect.w - 2.f * bw), std::max(0.f, an.rect.h - 2.f * bw)};
+        }
+    }
+    return {0.f, 0.f, m_viewport.w, m_viewport.h};
+}
+
+void UiContext::placeOutOfFlow(u32 i, u32 k, const Rect& c) {
+    const Node& kn = m_nodes[k];
+    const ComputedStyle& cs = m_styles.style(kn.style);
+    const Rect cb = containingBlock(i, cs.position);
+    const Size m = measure(k, {cb.w - cs.margin.h(), cb.h - cs.margin.v()});
+    const bool hasL = !cs.left.isAuto(), hasR = !cs.right.isAuto(), hasT = !cs.top.isAuto(), hasB = !cs.bottom.isAuto();
+    const f32 l = cs.left.resolve(cb.w, 0.f), r = cs.right.resolve(cb.w, 0.f);
+    const f32 t = cs.top.resolve(cb.h, 0.f), b = cs.bottom.resolve(cb.h, 0.f);
+    const bool fw = fixedLen(cs.width, cb.w), fh = fixedLen(cs.height, cb.h);
+    f32 w = m.w, h = m.h;
+    if (hasL && hasR && !fw && !(cs.aspectRatio > 0.f && fh)) w = clampSize(cb.w - l - r - cs.margin.h(), cs.minWidth, cs.maxWidth, cb.w);
+    if (hasT && hasB && !fh) h = clampSize(cb.h - t - b - cs.margin.v(), cs.minHeight, cs.maxHeight, cb.h);
+    else if (cs.aspectRatio > 0.f && !fh) h = w / cs.aspectRatio;
+    if (cs.aspectRatio > 0.f && fh && !fw && !(hasL && hasR)) w = h * cs.aspectRatio;
+    // auto insets: the static position (approximated by the parent's content origin)
+    const f32 x = hasL ? cb.x + l + cs.margin.l : hasR ? cb.right() - r - w - cs.margin.r : c.x + cs.margin.l;
+    const f32 y = hasT ? cb.y + t + cs.margin.t : hasB ? cb.bottom() - b - h - cs.margin.b : c.y + cs.margin.t;
+    arrange(k, {std::round(x + kn.offset.x), std::round(y + kn.offset.y), std::round(w), std::round(h)});
+}
+
+// position: sticky: the normal box `r` shifted to keep its insets inside the nearest scrollport, without leaving the
+// parent's content box `c`.
+Rect UiContext::stickyRect(u32 i, const ComputedStyle& ks, Rect r, const Rect& c) const {
+    Rect port{0.f, 0.f, m_viewport.w, m_viewport.h};
+    u32 sc = kNone;
+    for (u32 a = i; a != kNone; a = m_nodes[a].parent)
+        if (m_styles.style(m_nodes[a].style).overflow == Overflow::Scroll) { sc = a; break; }
+    if (sc != kNone) {
+        const f32 bw = m_styles.style(m_nodes[sc].style).borderWidth;
+        const Rect& sr = m_nodes[sc].rect;
+        port = {sr.x + bw, sr.y + bw, std::max(0.f, sr.w - 2.f * bw), std::max(0.f, sr.h - 2.f * bw)};
+    }
+    // the parent's content box (as scrolled); a scroller's own content is as long as its scroll extent
+    Rect lim = c;
+    if (sc == i) lim.w = std::max(lim.w, m_nodes[i].extent.w), lim.h = std::max(lim.h, m_nodes[i].extent.h);
+    const f32 mT = ks.margin.t, mB = ks.margin.b, mL = ks.margin.l, mR = ks.margin.r;
+    if (!ks.top.isAuto()) r.y = std::max(r.y, std::min(port.y + ks.top.resolve(port.h, 0.f) + 0.f, lim.bottom() - mB - r.h));
+    if (!ks.bottom.isAuto()) r.y = std::min(r.y, std::max(port.bottom() - ks.bottom.resolve(port.h, 0.f) - r.h, lim.y + mT));
+    if (!ks.left.isAuto()) r.x = std::max(r.x, std::min(port.x + ks.left.resolve(port.w, 0.f), lim.right() - mR - r.w));
+    if (!ks.right.isAuto()) r.x = std::min(r.x, std::max(port.right() - ks.right.resolve(port.w, 0.f) - r.w, lim.x + mL));
+    r.x = std::round(r.x), r.y = std::round(r.y);
+    return r;
+}
+
 void UiContext::arrangeChildren(u32 i) {
     Node& n = m_nodes[i];
     const ComputedStyle& s = m_styles.style(n.style);
@@ -2082,17 +2202,28 @@ void UiContext::arrangeChildren(u32 i) {
     if (!m_cold[i]->text.empty() && !m_registry.get(n.cls).measure) ensureText(i, c0.w);
     const Rect c{c0.x - n.scroll.x, c0.y - n.scroll.y, c0.w, c0.h};
     Size extent{0.f, 0.f};
+    const bool insetLayout = s.layout == LayoutKind::Anchor || s.layout == LayoutKind::Absolute; // insets place children
     auto place = [&](u32 k, Rect r) {
         const Node& kn = m_nodes[k];
+        const ComputedStyle& ks = m_styles.style(kn.style);
         r.x += kn.offset.x;
         r.y += kn.offset.y;
-        extent.w = std::max(extent.w, r.right() - c.x - kn.offset.x + m_styles.style(kn.style).margin.r);
-        extent.h = std::max(extent.h, r.bottom() - c.y - kn.offset.y + m_styles.style(kn.style).margin.b);
+        extent.w = std::max(extent.w, r.right() - c.x - kn.offset.x + ks.margin.r);
+        extent.h = std::max(extent.h, r.bottom() - c.y - kn.offset.y + ks.margin.b);
+        if (ks.position == PositionKind::Relative && !insetLayout) { // visual offset; the flow keeps the box
+            r.x += !ks.left.isAuto() ? ks.left.resolve(c.w, 0.f) : !ks.right.isAuto() ? -ks.right.resolve(c.w, 0.f) : 0.f;
+            r.y += !ks.top.isAuto() ? ks.top.resolve(c.h, 0.f) : !ks.bottom.isAuto() ? -ks.bottom.resolve(c.h, 0.f) : 0.f;
+        } else if (ks.position == PositionKind::Sticky && !insetLayout) r = stickyRect(i, ks, r, c);
         arrange(k, r);
     };
+    const std::size_t oofBase = m_oofStack.size(); // position: absolute / fixed, placed after the flow
     auto hidden = [&](u32 k) {
         if (m_nodes[k].cls == m_layerClass) { // overlay layer: covers the viewport, outside the flow
             arrange(k, {0.f, 0.f, m_viewport.w, m_viewport.h});
+            return true;
+        }
+        if (outOfFlowPos(m_styles.style(m_nodes[k].style)) && m_styles.style(m_nodes[k].style).visible) {
+            m_oofStack.push_back(k);
             return true;
         }
         if (m_styles.style(m_nodes[k].style).visible) return false;
@@ -2103,74 +2234,128 @@ void UiContext::arrangeChildren(u32 i) {
     case LayoutKind::Box: {
         const bool row = s.direction == Direction::Row;
         const f32 mainAvail = row ? c.w : c.h, crossAvail = row ? c.h : c.w;
-        f32 used = 0.f, growSum = 0.f, shrinkSum = 0.f;
-        u32 count = 0;
-        // pass 1: basis sizes (kept in the node's prevRect.w scratch? no: recompute; measure is cached)
-        for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
-            const ComputedStyle& cs = m_styles.style(m_nodes[k].style);
-            if (!cs.visible || m_nodes[k].cls == m_layerClass) continue;
-            const Size m = measure(k, {c.w - cs.margin.h(), c.h - cs.margin.v()});
-            const f32 basis = fixedLen(cs.basis, mainAvail) ? cs.basis.resolve(mainAvail, 0.f) : (row ? m.w : m.h);
-            used += basis + (row ? cs.margin.h() : cs.margin.v());
-            growSum += cs.grow;
-            shrinkSum += cs.shrink * basis;
-            ++count;
-        }
-        if (count > 1) used += s.gap * f32(count - 1);
-        const f32 free = mainAvail - used;
-        f32 pos = 0.f, between = s.gap;
-        if (free > 0.f && growSum <= 0.f) {
-            switch (s.justify) {
-            case Justify::Center: pos = free * 0.5f; break;
-            case Justify::End: pos = free; break;
-            case Justify::SpaceBetween: if (count > 1) between += free / f32(count - 1); break;
-            case Justify::SpaceAround: between += free / f32(count); pos = free / f32(count) * 0.5f; break;
-            default: break;
-            }
-        }
+        const f32 mainGap = row ? colGapOf(s) : rowGapOf(s), crossGap = row ? rowGapOf(s) : colGapOf(s);
+        const std::size_t ib = m_flexStack.size(), lb = m_lineStack.size(); // scratch stacks (re-entrant, no steady allocation)
         for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
             if (hidden(k)) continue;
             const ComputedStyle& cs = m_styles.style(m_nodes[k].style);
             const Size m = measure(k, {c.w - cs.margin.h(), c.h - cs.margin.v()});
-            f32 main = fixedLen(cs.basis, mainAvail) ? cs.basis.resolve(mainAvail, 0.f) : (row ? m.w : m.h);
-            if (free > 0.f && growSum > 0.f) main += free * cs.grow / growSum;
-            // a scroll container never shrinks its children: the overflow is what it scrolls
-            else if (free < 0.f && shrinkSum > 0.f && s.overflow != Overflow::Scroll) main += free * cs.shrink * main / shrinkSum;
-            main = row ? clampSize(main, cs.minWidth, cs.maxWidth, mainAvail)
-                       : clampSize(main, cs.minHeight, cs.maxHeight, mainAvail);
-            const f32 mBefore = row ? cs.margin.l : cs.margin.t, mAfter = row ? cs.margin.r : cs.margin.b;
-            const f32 cmB = row ? cs.margin.t : cs.margin.l, cmA = row ? cs.margin.b : cs.margin.r;
-            const Align al = cs.alignSelf != Align::Auto ? cs.alignSelf : s.alignItems;
-            const bool crossFixed = row ? fixedLen(cs.height, crossAvail) : fixedLen(cs.width, crossAvail);
-            const f32 crossRoom = crossAvail - cmB - cmA;
-            f32 cross = row ? m.h : m.w;
-            if (al == Align::Stretch && !crossFixed) cross = std::max(0.f, crossRoom);
-            f32 co = cmB;
-            if (al == Align::Center) co += (crossRoom - cross) * 0.5f;
-            else if (al == Align::End) co += crossRoom - cross;
-            pos += mBefore;
-            const Rect r = row ? Rect{c.x + pos, c.y + co, main, cross} : Rect{c.x + co, c.y + pos, cross, main};
-            place(k, {std::round(r.x), std::round(r.y), std::round(r.w), std::round(r.h)});
-            pos += main + mAfter + between;
+            const f32 basis = fixedLen(cs.basis, mainAvail) ? cs.basis.resolve(mainAvail, 0.f) : (row ? m.w : m.h);
+            m_flexStack.push_back({k, basis, basis + (row ? cs.margin.h() : cs.margin.v()), (row ? m.h + cs.margin.v() : m.w + cs.margin.h())});
         }
+        const std::size_t ie = m_flexStack.size();
+        auto items = [&](std::size_t q) -> FlexItem& { return m_flexStack[q]; };
+        // flex lines (flex-wrap: wrap breaks before an item that would overflow the main size)
+        {
+            std::size_t b = ib;
+            f32 used = 0.f;
+            for (std::size_t q = ib; q < ie; ++q) {
+                if (s.wrap && q > b && std::isfinite(mainAvail) && used + mainGap + items(q).outer > mainAvail + 0.01f) {
+                    m_lineStack.push_back({b, q, crossAvail, 0.f});
+                    b = q, used = 0.f;
+                }
+                used += (q > b ? mainGap : 0.f) + items(q).outer;
+            }
+            if (b < ie || m_lineStack.size() == lb) m_lineStack.push_back({b, ie, crossAvail, 0.f});
+        }
+        const std::size_t le = m_lineStack.size(), nLines = le - lb;
+        auto lines = [&](std::size_t L) -> FlexLine& { return m_lineStack[lb + L]; };
+        if (s.wrap) { // align-content over the lines
+            f32 sum = 0.f;
+            for (std::size_t L = 0; L < nLines; ++L) {
+                f32 mx = 0.f;
+                for (std::size_t q = lines(L).b; q < lines(L).e; ++q) mx = std::max(mx, items(q).cross);
+                lines(L).cross = mx;
+                sum += mx;
+            }
+            const f32 nL = f32(nLines);
+            const f32 freeC = std::isfinite(crossAvail) ? crossAvail - sum - crossGap * (nL - 1.f) : 0.f;
+            f32 start = 0.f, extra = crossGap;
+            if (freeC > 0.f) switch (s.alignContent) {
+                case AlignContent::Normal: case AlignContent::Stretch: for (std::size_t L = 0; L < nLines; ++L) lines(L).cross += freeC / nL; break;
+                case AlignContent::Center: start = freeC * 0.5f; break;
+                case AlignContent::End: start = freeC; break;
+                case AlignContent::SpaceBetween: if (nLines > 1) extra += freeC / (nL - 1.f); break;
+                case AlignContent::SpaceAround: extra += freeC / nL; start = freeC / nL * 0.5f; break;
+                case AlignContent::SpaceEvenly: extra += freeC / (nL + 1.f); start = freeC / (nL + 1.f); break;
+                default: break;
+                }
+            else if (s.alignContent == AlignContent::Center) start = freeC * 0.5f; // overflow: centred (unsafe)
+            else if (s.alignContent == AlignContent::End) start = freeC;
+            for (std::size_t L = 0; L < nLines; ++L) { lines(L).pos = start; start += lines(L).cross + extra; }
+        }
+        for (std::size_t L = 0; L < nLines; ++L) {
+            const f32 lineAvail = lines(L).cross, linePos = lines(L).pos;
+            f32 used = 0.f, growSum = 0.f, shrinkSum = 0.f;
+            const std::size_t b = lines(L).b, e = lines(L).e, count = e - b;
+            for (std::size_t q = b; q < e; ++q) {
+                const ComputedStyle& cs = m_styles.style(m_nodes[items(q).k].style);
+                used += items(q).outer;
+                growSum += cs.grow;
+                shrinkSum += cs.shrink * items(q).basis;
+            }
+            if (count > 1) used += mainGap * f32(count - 1);
+            const f32 free = mainAvail - used;
+            f32 pos = 0.f, between = mainGap;
+            if (free > 0.f && growSum <= 0.f) {
+                switch (s.justify) {
+                case Justify::Center: pos = free * 0.5f; break;
+                case Justify::End: pos = free; break;
+                case Justify::SpaceBetween: if (count > 1) between += free / f32(count - 1); break;
+                case Justify::SpaceAround: between += free / f32(count); pos = free / f32(count) * 0.5f; break;
+                case Justify::SpaceEvenly: between += free / f32(count + 1); pos = free / f32(count + 1); break;
+                default: break;
+                }
+            }
+            for (std::size_t q = b; q < e; ++q) {
+                const u32 k = items(q).k;
+                const ComputedStyle& cs = m_styles.style(m_nodes[k].style);
+                const Size m = measure(k, {c.w - cs.margin.h(), c.h - cs.margin.v()});
+                f32 main = items(q).basis;
+                if (free > 0.f && growSum > 0.f) main += free * cs.grow / growSum;
+                // a scroll container never shrinks its children: the overflow is what it scrolls
+                else if (free < 0.f && shrinkSum > 0.f && s.overflow != Overflow::Scroll) main += free * cs.shrink * main / shrinkSum;
+                main = row ? clampSize(main, cs.minWidth, cs.maxWidth, mainAvail)
+                           : clampSize(main, cs.minHeight, cs.maxHeight, mainAvail);
+                const f32 mBefore = row ? cs.margin.l : cs.margin.t, mAfter = row ? cs.margin.r : cs.margin.b;
+                const f32 cmB = row ? cs.margin.t : cs.margin.l, cmA = row ? cs.margin.b : cs.margin.r;
+                const Align al = cs.alignSelf != Align::Auto ? cs.alignSelf : s.alignItems;
+                const bool crossFixed = row ? fixedLen(cs.height, crossAvail) : fixedLen(cs.width, crossAvail);
+                const f32 crossRoom = lineAvail - cmB - cmA;
+                f32 cross = row ? m.h : m.w;
+                if (cs.aspectRatio > 0.f && row && !crossFixed) cross = main / cs.aspectRatio; // height from the flexed width
+                else if (al == Align::Stretch && !crossFixed) cross = std::max(0.f, crossRoom);
+                if (cs.aspectRatio > 0.f && !row && !fixedLen(cs.height, mainAvail) && !fixedLen(cs.basis, mainAvail) && cs.grow <= 0.f)
+                    main = cross / cs.aspectRatio; // height from the (stretched) width
+                f32 co = cmB + linePos;
+                if (al == Align::Center) co += (crossRoom - cross) * 0.5f;
+                else if (al == Align::End) co += crossRoom - cross;
+                pos += mBefore;
+                const Rect r = row ? Rect{c.x + pos, c.y + co, main, cross} : Rect{c.x + co, c.y + pos, cross, main};
+                place(k, {std::round(r.x), std::round(r.y), std::round(r.w), std::round(r.h)});
+                pos += main + mAfter + between;
+            }
+        }
+        m_flexStack.resize(ib);
+        m_lineStack.resize(lb);
         break;
     }
     case LayoutKind::Grid: {
-        const u32 cols = std::max<u32>(1, s.gridColumnCount);
         std::array<f32, kMaxGridTracks> w{}, x{};
-        f32 fixedSum = s.gap * f32(cols - 1), frSum = 0.f;
-        for (u32 k = 0; k < cols; ++k) {
-            const Length t = s.gridColumnCount ? s.gridColumns[k] : Length::fr(1.f);
-            if (t.unit == Unit::Px || t.unit == Unit::Percent) { w[k] = t.resolve(c.w, 0.f); fixedSum += w[k]; }
-            else frSum += t.unit == Unit::Fr ? t.value : 1.f;
+        const f32 rg = rowGapOf(s);
+        u32 cols = gridTracks(s, c.w, w, x);
+        if (s.subgrid && n.parent != kNone && n.gridSpan) { // the parent grid's tracks under this item
+            const Node& pn = m_nodes[n.parent];
+            const ComputedStyle& ps = m_styles.style(pn.style);
+            if (ps.layout == LayoutKind::Grid) {
+                std::array<f32, kMaxGridTracks> pw{}, px{};
+                const u32 pc = gridTracks(ps, contentRect({n.parent, pn.gen}).w, pw, px);
+                const u32 c0 = std::min<u32>(n.gridCol, pc - 1);
+                cols = std::min<u32>(n.gridSpan, pc - c0);
+                for (u32 k = 0; k < cols; ++k) w[k] = pw[c0 + k], x[k] = px[c0 + k] - px[c0];
+            }
         }
-        const f32 frUnit = frSum > 0.f ? std::max(0.f, c.w - fixedSum) / frSum : 0.f;
-        for (u32 k = 0; k < cols; ++k) {
-            const Length t = s.gridColumnCount ? s.gridColumns[k] : Length::fr(1.f);
-            if (!(t.unit == Unit::Px || t.unit == Unit::Percent)) w[k] = frUnit * (t.unit == Unit::Fr ? t.value : 1.f);
-            x[k] = k ? x[k - 1] + w[k - 1] + s.gap : 0.f;
-        }
-        // auto placement row-major; explicit column / row (1-based) honoured, spans within the column count
+        std::array<f32, kMaxGridTracks> colY{}; // masonry: next free y per column
         u32 col = 0, rowIdx = 0;
         f32 y = 0.f, rowH = 0.f;
         u32 curRow = 0;
@@ -2178,13 +2363,33 @@ void UiContext::arrangeChildren(u32 i) {
             if (hidden(k)) continue;
             const ComputedStyle& cs = m_styles.style(m_nodes[k].style);
             const u32 span = std::clamp<u32>(cs.gridColumnSpan, 1, cols);
+            if (s.masonry) { // the start column whose spanned tracks end highest (ties: the earliest)
+                u32 best = 0;
+                f32 bestY = kInf;
+                for (u32 c1 = 0; c1 + span <= cols; ++c1) {
+                    f32 top = 0.f;
+                    for (u32 j = 0; j < span; ++j) top = std::max(top, colY[c1 + j]);
+                    if (top < bestY - 0.01f) bestY = top, best = c1;
+                }
+                if (cs.gridColumn) best = std::min<u32>(cs.gridColumn - 1, cols - span), bestY = 0.f;
+                if (cs.gridColumn) for (u32 j = 0; j < span; ++j) bestY = std::max(bestY, colY[best + j]);
+                const f32 cw = x[best + span - 1] + w[best + span - 1] - x[best];
+                const Size m = measure(k, {cw - cs.margin.h(), kInf});
+                const f32 h = cs.aspectRatio > 0.f && !fixedLen(cs.height, kInf) ? (cw - cs.margin.h()) / cs.aspectRatio : m.h;
+                m_nodes[k].gridCol = u8(best), m_nodes[k].gridSpan = u8(span);
+                place(k, {std::round(c.x + x[best] + cs.margin.l), std::round(c.y + bestY + cs.margin.t), std::round(cw - cs.margin.h()), std::round(h)});
+                for (u32 j = 0; j < span; ++j) colY[best + j] = bestY + h + cs.margin.v() + rg;
+                continue;
+            }
+            // auto placement row-major; explicit column / row (1-based) honoured, spans within the column count
             if (cs.gridColumn) col = std::min<u32>(cs.gridColumn - 1, cols - 1);
             if (cs.gridRow && cs.gridRow - 1u > rowIdx) { rowIdx = cs.gridRow - 1u; col = cs.gridColumn ? col : 0; }
             if (col + span > cols) { col = 0; ++rowIdx; }
-            if (rowIdx != curRow) { y += rowH + s.gap; rowH = 0.f; curRow = rowIdx; }
+            if (rowIdx != curRow) { y += rowH + rg; rowH = 0.f; curRow = rowIdx; }
             const f32 cw = x[col + span - 1] + w[col + span - 1] - x[col];
             const Size m = measure(k, {cw - cs.margin.h(), kInf});
-            const f32 h = m.h;
+            const f32 h = cs.aspectRatio > 0.f && !fixedLen(cs.height, kInf) ? (cw - cs.margin.h()) / cs.aspectRatio : m.h;
+            m_nodes[k].gridCol = u8(col), m_nodes[k].gridSpan = u8(span);
             place(k, {std::round(c.x + x[col] + cs.margin.l), std::round(c.y + y + cs.margin.t), std::round(cw - cs.margin.h()), std::round(h)});
             rowH = std::max(rowH, h + cs.margin.v());
             col += span;
@@ -2230,20 +2435,23 @@ void UiContext::arrangeChildren(u32 i) {
         }
         break;
     case LayoutKind::Flow: {
+        const f32 cg = colGapOf(s), rg = rowGapOf(s);
         f32 x = 0.f, y = 0.f, lineH = 0.f;
         for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
             if (hidden(k)) continue;
             const ComputedStyle& cs = m_styles.style(m_nodes[k].style);
             const Size m = measure(k, {c.w, kInf});
             const f32 mw = m.w + cs.margin.h();
-            if (x > 0.f && x + mw > c.w) { y += lineH + s.gap; x = 0.f; lineH = 0.f; }
+            if (x > 0.f && x + mw > c.w) { y += lineH + rg; x = 0.f; lineH = 0.f; }
             place(k, {std::round(c.x + x + cs.margin.l), std::round(c.y + y + cs.margin.t), m.w, m.h});
-            x += mw + s.gap;
+            x += mw + cg;
             lineH = std::max(lineH, m.h + cs.margin.v());
         }
         break;
     }
     }
+    for (std::size_t q = oofBase; q < m_oofStack.size(); ++q) placeOutOfFlow(i, m_oofStack[q], c);
+    m_oofStack.resize(oofBase);
     n.extent = extent;
     if (s.overflow == Overflow::Scroll) {
         const Vec2 mx{std::max(0.f, extent.w - c.w), std::max(0.f, extent.h - c.h)};
@@ -2296,6 +2504,7 @@ void UiContext::defineClipPath(std::string_view id, std::string_view svgPathData
 }
 void UiContext::defineMaskImage(std::string_view name, Image image) {
     m_maskImages[std::string(name)] = std::move(image);
+    m_maskCache.clear();
     for (Node& k : m_nodes) k.dirty |= kDirtyPaint;
 }
 
@@ -2650,6 +2859,89 @@ bool UiContext::paintTransformed(u32 i, f32 opacity, DrawList& dl) {
 }
 
 
+bool UiContext::zItem(u32 k) const {
+    const ComputedStyle& s = m_styles.style(m_nodes[k].style);
+    return s.visible && (s.position != PositionKind::Static || !s.zAuto) && m_nodes[k].cls != m_layerClass;
+}
+bool UiContext::stackingContext(u32 i) const {
+    const ComputedStyle& s = m_styles.style(m_nodes[i].style);
+    return (!s.zAuto && (s.position != PositionKind::Static || (m_nodes[i].parent != kNone &&
+                                                                   (m_styles.style(m_nodes[m_nodes[i].parent].style).layout == LayoutKind::Box ||
+                                                                    m_styles.style(m_nodes[m_nodes[i].parent].style).layout == LayoutKind::Grid)))) ||
+           s.position == PositionKind::Fixed || s.position == PositionKind::Sticky || s.opacity < 1.f || s.transformCount ||
+           s.filterCount || s.clipPath || s.maskImage || s.perspective > 0.f || s.backdropFilterCount || s.backdropBlur > 0.f ||
+           m_nodes[i].cls == m_layerClass;
+}
+// The z-ordered descendants of stacking context `sc` under `i`: positioned (or z-indexed) boxes, not descending into
+// nested stacking contexts; sorted by z-index, tree order within a level.
+void UiContext::collectZ(u32 sc, u32 i, std::vector<ZItem>& out, std::size_t base) const {
+    for (u32 k = m_nodes[i].first; k != kNone; k = m_nodes[k].next) {
+        const ComputedStyle& ks = m_styles.style(m_nodes[k].style);
+        if (!ks.visible) continue;
+        const bool item = zItem(k);
+        if (item) out.push_back({k, ks.zAuto ? 0 : ks.zIndex});
+        if (!(stackingContext(k) || m_nodes[k].cls == m_layerClass)) collectZ(sc, k, out, base);
+    }
+    if (i == sc) // stable insertion sort by z (no allocation)
+        for (std::size_t a = base + 1; a < out.size(); ++a)
+            for (std::size_t b = a; b > base && out[b - 1].z > out[b].z; --b) std::swap(out[b - 1], out[b]);
+}
+// The overflow clips between stacking context `sc` and a hoisted descendant `k` (fixed: none; absolute: from its
+// containing block up), outermost first.
+void UiContext::zClips(u32 sc, u32 k, std::vector<u32>& out) const {
+    const std::size_t base = out.size();
+    const ComputedStyle& ks = m_styles.style(m_nodes[k].style);
+    if (ks.position == PositionKind::Fixed) return;
+    bool on = ks.position != PositionKind::Absolute;
+    for (u32 a = m_nodes[k].parent; a != kNone && a != sc; a = m_nodes[a].parent) {
+        const ComputedStyle& as = m_styles.style(m_nodes[a].style);
+        if (!on && (as.position != PositionKind::Static || as.transformCount)) on = true; // the containing block
+        if (on && as.overflow != Overflow::Visible) out.push_back(a);
+    }
+    std::reverse(out.begin() + std::ptrdiff_t(base), out.end());
+}
+void UiContext::paintZ(u32 sc, u32 k, f32 opacity, DrawList& dl) {
+    const std::size_t base = m_zClipStack.size();
+    zClips(sc, k, m_zClipStack);
+    const std::size_t n = m_zClipStack.size() - base;
+    for (std::size_t q = base; q < base + n; ++q) dl.pushClip(m_nodes[m_zClipStack[q]].rect, m_styles.style(m_nodes[m_zClipStack[q]].style).radius[0]);
+    m_zClipStack.resize(base);
+    paintRec(k, opacity, dl);
+    for (std::size_t q = 0; q < n; ++q) dl.popClip();
+}
+NodeHandle UiContext::hitZRec(u32 sc, u32 k, Vec2 q) const {
+    const std::size_t base = m_zClipStack.size();
+    zClips(sc, k, m_zClipStack);
+    bool in = true;
+    for (std::size_t a = base; a < m_zClipStack.size(); ++a) in = in && m_nodes[m_zClipStack[a]].rect.contains(q);
+    m_zClipStack.resize(base);
+    return in ? hitRec(k, q, Mat4{}) : NodeHandle{};
+}
+bool UiContext::maskClipFor(u32 i, const ComputedStyle& s, const MaskImageLookup& images, ClipLayer& out) {
+    // cached per node by the mask longhands and the box size; a move only shifts the texture
+    const Rect& r = m_nodes[i].rect;
+    const std::array<u32, 8> key{s.maskImage, s.maskMode, s.maskComposite, s.maskSize, s.maskPosition, s.maskRepeat, s.maskOrigin, s.maskClip};
+    auto it = m_maskCache.find(i);
+    if (it == m_maskCache.end() || it->second.key != key || it->second.w != r.w || it->second.h != r.h ||
+        it->second.style != m_nodes[i].style) {
+        MaskCacheEntry e{key, r.w, r.h, r.x, r.y, m_nodes[i].style, {}, false};
+        e.ok = buildMaskClip(s, r, images, e.layer);
+        if (m_maskCache.size() > 256) m_maskCache.clear();
+        it = m_maskCache.insert_or_assign(i, std::move(e)).first;
+    }
+    MaskCacheEntry& e = it->second;
+    if (!e.ok) return false;
+    if (e.x != r.x || e.y != r.y) {
+        const f32 dx = r.x - e.x, dy = r.y - e.y;
+        e.layer.path.transform(Vec2{1.f, 1.f}, Vec2{dx, dy});
+        e.layer.toUnit[4] -= e.layer.toUnit[0] * dx + e.layer.toUnit[2] * dy;
+        e.layer.toUnit[5] -= e.layer.toUnit[1] * dx + e.layer.toUnit[3] * dy;
+        e.x = r.x, e.y = r.y;
+    }
+    out = e.layer;
+    return true;
+}
+
 void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     Node& n = m_nodes[i];
     const ComputedStyle& s = m_styles.style(n.style);
@@ -2690,7 +2982,7 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
                 const auto it = m_maskImages.find(std::string(nm));
                 return it == m_maskImages.end() ? nullptr : &it->second;
             };
-            if (buildMaskClip(s, n.rect, images, layer)) {
+            if (maskClipFor(i, s, images, layer)) {
                 dl.pushClipLayers(std::span<const ClipLayer>(&layer, 1));
                 dl.cmds()[dl.size() - 1].node = i;
                 ++pushed;
@@ -2844,7 +3136,19 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     if (n.first == kNone || m_selfOnly == i) return; // a preserve-3d plane: the children are planes of their own
     const bool clip = s.overflow != Overflow::Visible;
     if (clip) dl.pushClip(n.rect, rad);
+    // stacking context (CSS 2 Appendix E, simplified): z-index < 0 descendants, the flow, then z-index auto / 0 and
+    // positive ones; positioned descendants paint with their nearest stacking context
+    const bool zOn = m_styles.anyPositioned();
+    const bool sc = zOn && (i == m_root.index || stackingContext(i));
+    const bool zOuter = m_zActive;
+    const std::size_t zb = m_zStack.size();
+    if (sc) {
+        collectZ(i, i, m_zStack, zb);
+        m_zActive = true;
+        for (std::size_t z = zb; z < m_zStack.size() && m_zStack[z].z < 0; ++z) paintZ(i, m_zStack[z].node, opacity, dl);
+    }
     for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
+        if (m_zActive && zOn && zItem(k)) continue; // painted by the stacking context
         if (clip && m_nodes[k].rect.intersect(n.rect).empty()) { // culled; still consume dirty flags
             if (m_nodes[k].dirty & kDirtyPaint) { m_damage = m_damage.unite(m_nodes[k].rect.intersect(n.rect)); m_nodes[k].dirty &= u8(~kDirtyPaint); }
             continue;
@@ -2855,6 +3159,12 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
             continue;
         }
         paintRec(k, opacity, dl);
+    }
+    if (sc) {
+        const std::size_t ze = m_zStack.size();
+        for (std::size_t z = zb; z < ze; ++z) if (m_zStack[z].z >= 0) paintZ(i, m_zStack[z].node, opacity, dl);
+        m_zStack.resize(zb);
+        m_zActive = zOuter;
     }
     if (clip) dl.popClip();
     if (s.overflow == Overflow::Scroll)
@@ -3095,7 +3405,7 @@ NodeHandle UiContext::hitRec(u32 i, Vec2 p, const Mat4& acc, f32* depth) const {
     }
     const bool inside = n.rect.contains(q);
     if (!inside && s.overflow != Overflow::Visible) return {};
-    if (s.clipPath) { // clip-path clips hit testing (subtree too); masks do not
+    if (s.clipPath) { // clip-path clips hit testing (subtree too)
         const ClipPathSpec& spec = clipPathSpec(s.clipPath);
         if (spec.kind == ClipPathSpec::Kind::Url) {
             if (const auto it = m_clipPathDefs.find(spec.url); it != m_clipPathDefs.end()) {
@@ -3111,6 +3421,14 @@ NodeHandle UiContext::hitRec(u32 i, Vec2 p, const Mat4& acc, f32* depth) const {
             }
         } else if (spec.kind != ClipPathSpec::Kind::None && !clipPathContains(spec, cssBox(s, n.rect, spec.box), q)) return {};
     }
+    if (s.maskImage) { // the mask clips hit testing where it is below one half (mask-mode / composite as painted)
+        const std::vector<MaskLayer>& layers = maskLayers(s);
+        const MaskImageLookup images = [this](std::string_view nm) -> const Image* {
+            const auto it = m_maskImages.find(std::string(nm));
+            return it == m_maskImages.end() ? nullptr : &it->second;
+        };
+        if (!layers.empty() && maskValueAt(layers, s, n.rect, images, q) < 0.5f) return {};
+    }
     const f32 selfDepth = depthAt(a, q);
     if (pres) {
         NodeHandle best;
@@ -3124,14 +3442,27 @@ NodeHandle UiContext::hitRec(u32 i, Vec2 p, const Mat4& acc, f32* depth) const {
             if (depth) *depth = bestD;
             return best;
         }
-    } else
-        for (u32 k = n.last; k != kNone; k = m_nodes[k].prev) {
-            const NodeHandle h = hitRec(k, q, Mat4{});
-            if (h.valid()) {
-                if (depth) *depth = selfDepth;
-                return h;
-            }
+    } else {
+        const bool zOn = m_styles.anyPositioned();
+        const std::size_t zb = m_zStack.size();
+        if (zOn && (i == m_root.index || stackingContext(i))) collectZ(i, i, m_zStack, zb);
+        const std::size_t ze = m_zStack.size();
+        auto hitZ = [&](bool neg) -> NodeHandle { // topmost first (nested hits push above ze and pop back)
+            for (std::size_t z = ze; z-- > zb;)
+                if ((m_zStack[z].z < 0) == neg)
+                    if (const NodeHandle h = hitZRec(i, m_zStack[z].node, q); h.valid()) return h;
+            return {};
+        };
+        NodeHandle h = hitZ(false);
+        for (u32 k = n.last; k != kNone && !h.valid(); k = m_nodes[k].prev)
+            if (!(zOn && zItem(k))) h = hitRec(k, q, Mat4{});
+        if (!h.valid()) h = hitZ(true);
+        m_zStack.resize(zb);
+        if (h.valid()) {
+            if (depth) *depth = selfDepth;
+            return h;
         }
+    }
     if (inside && !selfHidden && s.pointerEvents) {
         if (depth) *depth = selfDepth;
         return {i, n.gen};

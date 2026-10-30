@@ -63,9 +63,11 @@ bool validMaskLonghand(Prop p, std::string_view text);
 /// The layers of a computed style (empty: no mask). Cached by the longhand ids.
 const std::vector<MaskLayer>& maskLayers(const ComputedStyle& s);
 using MaskImageLookup = std::function<const Image*(std::string_view)>;
-/// Evaluates all layers into one mask texture (<= kMaxMaskTexels per side) over the union of the layers' clip boxes:
+/// Evaluates all layers into one mask texture over the union of the layers' clip boxes: one texel per pixel up to
+/// kMaxMaskTexels per side and kMaxMaskTexelArea in all (larger boxes scale down uniformly, sampled bilinearly).
 /// out.gradient = 3, out.path = that box. False when the style has no mask.
-inline constexpr int kMaxMaskTexels = 128;
+inline constexpr int kMaxMaskTexels = 1024;
+inline constexpr int kMaxMaskTexelArea = 512 * 512;
 bool buildMaskClip(const ComputedStyle& s, const Rect& border, const MaskImageLookup& images, ClipLayer& out);
 /// The mask value (0..1) at a point (the same arithmetic the texture samples at texel centres).
 f32 maskValueAt(const std::vector<MaskLayer>& layers, const ComputedStyle& s, const Rect& border, const MaskImageLookup& images, Vec2 p);

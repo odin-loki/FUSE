@@ -640,7 +640,9 @@ bool buildMaskClip(const ComputedStyle& s, const Rect& border, const MaskImageLo
     out = {};
     out.gradient = 3;
     out.path.rect(box);
-    const int tw = std::clamp(int(std::ceil(box.w)), 1, kMaxMaskTexels), th = std::clamp(int(std::ceil(box.h)), 1, kMaxMaskTexels);
+    const f32 area = std::max(1.f, std::ceil(box.w) * std::ceil(box.h));
+    const f32 k = std::min(1.f, std::sqrt(f32(kMaxMaskTexelArea) / area));
+    const int tw = std::clamp(int(std::ceil(box.w * k)), 1, kMaxMaskTexels), th = std::clamp(int(std::ceil(box.h * k)), 1, kMaxMaskTexels);
     out.texW = u16(tw), out.texH = u16(th);
     out.texels.resize(std::size_t(tw) * std::size_t(th));
     const f32 sx = box.w > 0.f ? f32(tw) / box.w : 1.f, sy = box.h > 0.f ? f32(th) / box.h : 1.f;

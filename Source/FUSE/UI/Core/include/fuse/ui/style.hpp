@@ -65,7 +65,11 @@ struct Length {
 enum class LayoutKind : u8 { Box, Grid, Stack, Anchor, Absolute, Flow };
 enum class Direction : u8 { Row, Column };
 enum class Align : u8 { Auto, Start, Center, End, Stretch };
-enum class Justify : u8 { Start, Center, End, SpaceBetween, SpaceAround };
+enum class Justify : u8 { Start, Center, End, SpaceBetween, SpaceAround, SpaceEvenly };
+/// CSS position (the node's own placement scheme; Absolute / Fixed leave the flow, see UiContext layout).
+enum class PositionKind : u8 { Static, Relative, Absolute, Fixed, Sticky };
+/// align-content: lines of a wrapping flex container / rows of a grid (Normal = stretch for flex lines).
+enum class AlignContent : u8 { Normal, Start, Center, End, SpaceBetween, SpaceAround, SpaceEvenly, Stretch };
 enum class Overflow : u8 { Visible, Clip, Scroll };
 /// CSS filter functions (backdrop-filter), in list order.
 /// DropShadow: the one shadow of the list (the last one wins); Url: url(#id), amount = filterNameId(id) bit-cast,
@@ -240,6 +244,14 @@ struct ComputedStyle {
     u8 gridColumn = 0, gridColumnSpan = 1, gridRow = 0, gridRowSpan = 1; ///< 0 = auto placement
     Length left, top, right, bottom; ///< Anchor / Absolute placement
     bool centerX = false, centerY = false;
+    PositionKind position = PositionKind::Static;
+    bool zAuto = true; ///< z-index: auto
+    i32 zIndex = 0;
+    f32 aspectRatio = 0.f; ///< width / height; 0 = auto
+    AlignContent alignContent = AlignContent::Normal;
+    f32 rowGap = -1.f, columnGap = -1.f; ///< < 0: `gap`
+    bool subgrid = false;  ///< grid-template-columns: subgrid (tracks of the parent grid's spanned columns)
+    bool masonry = false;  ///< grid-template-rows: masonry (each item into the shortest column)
     // paint
     Color background, background2, borderColor, color = Color::rgb(0xFFFFFF), shadowColor;
     GradientDir gradient = GradientDir::None;
@@ -363,7 +375,7 @@ enum class Prop : u8 {
     TransformOrigin, AnimationTimeline, ScrollTimeline, ViewTimeline, Perspective, PerspectiveOrigin,
     BackfaceVisibility, TransformStyle, ViewTimelineInset, TimelineScope, AnimationRangeStart, AnimationRangeEnd,
     ContainerType, ContainerName, ClipPath, MaskImage, MaskMode, MaskComposite, MaskSize, MaskPosition, MaskRepeat,
-    MaskOrigin, MaskClip, Count
+    MaskOrigin, MaskClip, Position, ZIndex, AspectRatio, AlignContent, RowGap, ColumnGap, GridRows, Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
 static_assert(kPropCount <= 128, "PropMask holds 128 properties");
@@ -692,7 +704,10 @@ public:
     bool isScratch(u32 index) const { return index < m_isScratch.size() && m_isScratch[index]; }
     /// Unshared table slots for per-node styles that change every frame (transitions): never deduplicated, reused.
     u32 allocScratch(const ComputedStyle& cs);
-    void setScratch(u32 index, const ComputedStyle& cs) { m_table[index] = cs; }
+    void setScratch(u32 index, const ComputedStyle& cs) { notePositioned(cs); m_table[index] = cs; }
+    /// Some style ever had position != static or a z-index (enables stacking-order painting / hit testing).
+    bool anyPositioned() const { return m_anyPositioned; }
+    void notePositioned(const ComputedStyle& cs) { m_anyPositioned |= cs.position != PositionKind::Static || !cs.zAuto; }
     void freeScratch(u32 index) { m_freeScratch.push_back(index); }
     u32 tableSize() const { return u32(m_table.size()); }
     bool matches(const StyleSubject& subject, u32 node, const StyleRule& rule) const;
@@ -705,6 +720,7 @@ private:
     bool resolveVar(std::string_view raw, Prop p, PropValue& out, int depth) const;
     u32 intern(const ComputedStyle& cs);
     void reorder();
+    bool m_anyPositioned = false;
     std::vector<StyleSheet> m_sheets;
     std::vector<const StyleRule*> m_ordered; ///< all rules, sorted by (layer, specificity, sheet, order)
     std::vector<const StyleCondition*> m_orderedCond; ///< per m_ordered rule: its condition (chained by parent) or null
@@ -715,7 +731,12 @@ private:
     bool m_hasContainer = false, m_hasCqUnits = false, m_hasVp = false, m_hasStyleQuery = false, m_hasScope = false;
     bool m_inlCq = false, m_inlVp = false;
     mutable int m_styleDepth = 0;
-    bool scopeOk(const StyleSubject& s, u32 node, u32 orderedIdx) const;
+    /// @scope: generations from the nearest scoping root (0 = the root itself), -1 when out of scope; 0 unscoped.
+    int scopeHops(const StyleSubject& s, u32 node, u32 orderedIdx) const;
+    struct ScopeKey { u32 rank; int hops; u32 at; };
+    std::vector<ScopeKey> m_scopeKeys;
+    std::vector<u32> m_scratchIdx, m_orderedRank;
+    std::vector<const StyleRule*> m_scratchSorted;
     bool styleTest(const StyleSubject& s, u32 node, u32 containerName, const StyleCondition::Test& t) const;
     void resolveUnits(const StyleSubject& s, u32 node, PropValue& v) const;
     bool condOk(const StyleSubject& s, u32 node, u32 orderedIdx) const;

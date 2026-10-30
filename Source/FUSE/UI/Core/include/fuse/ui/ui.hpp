@@ -9,6 +9,7 @@
 #pragma once
 
 #include "fuse/text/text.hpp"
+#include "fuse/ui/css_masking.hpp"
 #include "fuse/ui/draw_list.hpp"
 #include "fuse/ui/handle.hpp"
 #include "fuse/ui/inline_fn.hpp"
@@ -649,8 +650,30 @@ private:
     Size measure(u32 i, Size avail);
     void arrange(u32 i, Rect box);
     void arrangeChildren(u32 i);
+    bool outOfFlow(u32 k) const;
+    Rect containingBlock(u32 i, PositionKind pos) const;
+    void placeOutOfFlow(u32 i, u32 k, const Rect& c);
+    Rect stickyRect(u32 i, const ComputedStyle& ks, Rect r, const Rect& c) const;
     void paintPass();
     void paintRec(u32 i, f32 opacity, DrawList& dl);
+    struct ZItem { u32 node; i32 z; };
+    bool zItem(u32 k) const;
+    bool stackingContext(u32 i) const;
+    void collectZ(u32 sc, u32 i, std::vector<ZItem>& out, std::size_t base) const;
+    struct FlexItem { u32 k; f32 basis, outer, cross; };
+    struct FlexLine { std::size_t b, e; f32 cross, pos; };
+    std::vector<FlexItem> m_flexStack; ///< arrange scratch stacks (re-entrant; capacity kept)
+    std::vector<FlexLine> m_lineStack;
+    std::vector<u32> m_oofStack;
+    mutable std::vector<ZItem> m_zStack;
+    mutable std::vector<u32> m_zClipStack;
+    void zClips(u32 sc, u32 k, std::vector<u32>& out) const;
+    void paintZ(u32 sc, u32 k, f32 opacity, DrawList& dl);
+    NodeHandle hitZRec(u32 sc, u32 k, Vec2 q) const;
+    bool maskClipFor(u32 i, const ComputedStyle& s, const MaskImageLookup& images, ClipLayer& out);
+    struct MaskCacheEntry { std::array<u32, 8> key; f32 w, h, x, y; u32 style; ClipLayer layer; bool ok; };
+    std::unordered_map<u32, MaskCacheEntry> m_maskCache;
+    bool m_zActive = false;
     struct FilterDef {
         u8 count = 0; ///< CSS definition: ordered list (same encoding as ComputedStyle::filterFns)
         std::array<FilterFn, kMaxGridTracks> fns{};

@@ -1,6 +1,6 @@
 // Gate fuse_ui_css_masking: clip-path path() / url() / reference boxes / polygons past 8 points; mask-* (gradient and
 // image layers, mask-mode luminance, mask-composite, size / position / repeat, the mask shorthand; the texture clip
-// layer on the CPU rasteriser; masks leave hit testing alone); container / viewport units; @container style();
+// layer on the CPU rasteriser; masks clip hit testing); container / viewport units; @container style();
 // @media hover / pointer / resolution; @scope (root, limit, :scope); the cooked round trip of all of it.
 #include "test_util.hpp"
 #include "fuse/ui/css_masking.hpp"
@@ -125,7 +125,8 @@ int main() {
         UI_CHECK(red(img, ri.x + 20, ri.y + 50) > 245 && red(img, ri.x + 80, ri.y + 50) < 10);
         UI_CHECK(red(img, rc.x + 20, rc.y + 20) > 245 && red(img, rc.x + 80, rc.y + 20) < 10 && red(img, rc.x + 20, rc.y + 80) < 10);
         UI_CHECK(red(img, rn.x + 80, rn.y + 20) > 245 && red(img, rn.x + 20, rn.y + 20) < 10 && red(img, rn.x + 80, rn.y + 80) < 10);
-        UI_CHECK(ui.hitTest({rg.x + 80, rg.y + 50}) == g); // masks do not clip hit testing
+        UI_CHECK(ui.hitTest({rg.x + 80, rg.y + 50}) != g && ui.hitTest({rg.x + 20, rg.y + 50}) == g); // masks clip hit testing
+        UI_CHECK(ui.hitTest({rn.x + 20, rn.y + 80}) != n && ui.hitTest({rn.x + 80, rn.y + 20}) == n);
         const std::vector<MaskLayer>& layers = maskLayers(ui.computed(c));
         UI_CHECK(layers.size() == 2 && layers[0].composite == 2 && layers[1].composite == 0);
         bool tex = false;

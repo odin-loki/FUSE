@@ -121,6 +121,13 @@ constexpr PropInfo kProps[] = {
     {Prop::MaskRepeat, "mask-repeat", T::List, false, false, false},
     {Prop::MaskOrigin, "mask-origin", T::List, false, false, false},
     {Prop::MaskClip, "mask-clip", T::List, false, false, false},
+    {Prop::Position, "position", T::Enum, false, false, true},
+    {Prop::ZIndex, "z-index", T::Number, false, false, false},
+    {Prop::AspectRatio, "aspect-ratio", T::Number, false, false, true},
+    {Prop::AlignContent, "align-content", T::Enum, false, false, true},
+    {Prop::RowGap, "row-gap", T::Length, false, true, true},
+    {Prop::ColumnGap, "column-gap", T::Length, false, true, true},
+    {Prop::GridRows, "grid-template-rows", T::Enum, false, false, true},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -145,7 +152,19 @@ constexpr EnumWord kEnums[] = {
     {Prop::Justify, "start", u8(Justify::Start)},     {Prop::Justify, "flex-start", u8(Justify::Start)},
     {Prop::Justify, "center", u8(Justify::Center)},   {Prop::Justify, "end", u8(Justify::End)},
     {Prop::Justify, "flex-end", u8(Justify::End)},    {Prop::Justify, "space-between", u8(Justify::SpaceBetween)},
-    {Prop::Justify, "space-around", u8(Justify::SpaceAround)},
+    {Prop::Justify, "space-around", u8(Justify::SpaceAround)}, {Prop::Justify, "space-evenly", u8(Justify::SpaceEvenly)},
+    {Prop::Justify, "normal", u8(Justify::Start)},
+    {Prop::Position, "static", u8(PositionKind::Static)}, {Prop::Position, "relative", u8(PositionKind::Relative)},
+    {Prop::Position, "absolute", u8(PositionKind::Absolute)}, {Prop::Position, "fixed", u8(PositionKind::Fixed)},
+    {Prop::Position, "sticky", u8(PositionKind::Sticky)},
+    {Prop::AlignContent, "normal", u8(AlignContent::Normal)}, {Prop::AlignContent, "start", u8(AlignContent::Start)},
+    {Prop::AlignContent, "flex-start", u8(AlignContent::Start)}, {Prop::AlignContent, "center", u8(AlignContent::Center)},
+    {Prop::AlignContent, "end", u8(AlignContent::End)}, {Prop::AlignContent, "flex-end", u8(AlignContent::End)},
+    {Prop::AlignContent, "space-between", u8(AlignContent::SpaceBetween)},
+    {Prop::AlignContent, "space-around", u8(AlignContent::SpaceAround)},
+    {Prop::AlignContent, "space-evenly", u8(AlignContent::SpaceEvenly)},
+    {Prop::AlignContent, "stretch", u8(AlignContent::Stretch)},
+    {Prop::GridRows, "none", 0}, {Prop::GridRows, "auto", 0}, {Prop::GridRows, "masonry", 1},
     {Prop::Overflow, "visible", u8(Overflow::Visible)}, {Prop::Overflow, "hidden", u8(Overflow::Clip)},
     {Prop::Overflow, "clip", u8(Overflow::Clip)},     {Prop::Overflow, "scroll", u8(Overflow::Scroll)},
     {Prop::Overflow, "auto", u8(Overflow::Scroll)},
@@ -1168,6 +1187,23 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
         }
         return parseLength(text, out.len);
     case T::Number: {
+        if (p == Prop::ZIndex) { // auto | <integer>
+            if (text == "auto") { out.b = true; return true; }
+            std::string_view unit;
+            return parseNumber(text, out.num, unit) && unit.empty() && out.num == std::floor(out.num);
+        }
+        if (p == Prop::AspectRatio) { // auto || <ratio> (a [/ b]); num 0 = auto
+            if (text.starts_with("auto")) text = trim(text.substr(4));
+            if (text.ends_with("auto")) text = trim(text.substr(0, text.size() - 4));
+            if (text.empty()) return true;
+            const std::size_t sl = text.find('/');
+            f32 a = 0.f, b = 1.f;
+            std::string_view u1, u2;
+            if (!parseNumber(trim(text.substr(0, sl)), a, u1) || !u1.empty() || a < 0.f) return false;
+            if (sl != std::string_view::npos && (!parseNumber(trim(text.substr(sl + 1)), b, u2) || !u2.empty() || b < 0.f)) return false;
+            out.num = a > 0.f && b > 0.f ? a / b : 0.f;
+            return true;
+        }
         std::string_view unit;
         if (!parseNumber(text, out.num, unit)) return false;
         if (unit == "%") out.num /= 100.f;
@@ -1433,13 +1469,14 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
             const auto sp = text.find_first_of(" \t");
             const std::string_view tok = text.substr(0, sp);
             if (!tok.empty()) {
-                if (out.trackCount >= kMaxGridTracks || !parseLength(tok, out.tracks[out.trackCount])) return false;
-                ++out.trackCount;
+                if (tok == "subgrid" && out.trackCount == 0 && !out.b) out.b = true;
+                else if (out.b || out.trackCount >= kMaxGridTracks || !parseLength(tok, out.tracks[out.trackCount])) return false;
+                else ++out.trackCount;
             }
             if (sp == std::string_view::npos) break;
             text.remove_prefix(sp);
         }
-        return out.trackCount > 0;
+        return out.trackCount > 0 || out.b;
     }
     }
     return false;
@@ -1467,13 +1504,13 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::MarginTop: s.margin.t = v.len.value; break;
     case Prop::MarginRight: s.margin.r = v.len.value; break;
     case Prop::MarginBottom: s.margin.b = v.len.value; break;
-    case Prop::Gap: s.gap = v.len.value; break;
+    case Prop::Gap: s.gap = v.len.value; s.rowGap = s.columnGap = -1.f; break;
     case Prop::AlignItems: s.alignItems = Align(v.e); break;
     case Prop::AlignSelf: s.alignSelf = Align(v.e); break;
     case Prop::Justify: s.justify = Justify(v.e); break;
     case Prop::Wrap: s.wrap = v.b; break;
     case Prop::Overflow: s.overflow = Overflow(v.e); break;
-    case Prop::GridColumns: s.gridColumns = v.tracks; s.gridColumnCount = v.trackCount; break;
+    case Prop::GridColumns: s.gridColumns = v.tracks; s.gridColumnCount = v.trackCount; s.subgrid = v.b; break;
     case Prop::GridColumn: s.gridColumn = u8(v.num); break;
     case Prop::GridColumnSpan: s.gridColumnSpan = u8(std::max(1.f, v.num)); break;
     case Prop::GridRow: s.gridRow = u8(v.num); break;
@@ -1623,6 +1660,13 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::MaskRepeat: s.maskRepeat = v.trackCount ? v.ids[0] : 0u; break;
     case Prop::MaskOrigin: s.maskOrigin = v.trackCount ? v.ids[0] : 0u; break;
     case Prop::MaskClip: s.maskClip = v.trackCount ? v.ids[0] : 0u; break;
+    case Prop::Position: s.position = PositionKind(v.e); break;
+    case Prop::ZIndex: s.zAuto = v.b; s.zIndex = v.b ? 0 : i32(v.num); break;
+    case Prop::AspectRatio: s.aspectRatio = std::max(0.f, v.num); break;
+    case Prop::AlignContent: s.alignContent = AlignContent(v.e); break;
+    case Prop::RowGap: s.rowGap = std::max(0.f, v.len.value); break;
+    case Prop::ColumnGap: s.columnGap = std::max(0.f, v.len.value); break;
+    case Prop::GridRows: s.masonry = v.e == 1; break;
     case Prop::ContainerName:
         s.containerNameCount = v.trackCount;
         s.containerName = v.ids;
@@ -1657,6 +1701,13 @@ PropValue readProp(const ComputedStyle& s, Prop p) {
     case Prop::Height: return PropValue::ofLength(s.height);
     case Prop::Grow: return PropValue::ofNumber(s.grow);
     case Prop::Gap: return PropValue::ofLength(Length::px(s.gap));
+    case Prop::Position: return PropValue::ofEnum(u8(s.position));
+    case Prop::ZIndex: { PropValue v = PropValue::ofNumber(f32(s.zIndex)); v.b = s.zAuto; return v; }
+    case Prop::AspectRatio: return PropValue::ofNumber(s.aspectRatio);
+    case Prop::AlignContent: return PropValue::ofEnum(u8(s.alignContent));
+    case Prop::RowGap: return PropValue::ofLength(Length::px(s.rowGap < 0.f ? s.gap : s.rowGap));
+    case Prop::ColumnGap: return PropValue::ofLength(Length::px(s.columnGap < 0.f ? s.gap : s.columnGap));
+    case Prop::GridRows: return PropValue::ofEnum(s.masonry ? 1 : 0);
     case Prop::Layout: return PropValue::ofEnum(u8(s.layout));
     case Prop::Direction: return PropValue::ofEnum(u8(s.direction));
     case Prop::TextAlign: return PropValue::ofEnum(u8(s.textAlign));
@@ -2117,7 +2168,12 @@ void addShorthand(StyleRule& rule, std::string_view name, std::string_view value
     };
     if (name == "padding") four(Prop::PaddingTop, Prop::PaddingRight, Prop::PaddingBottom, Prop::PaddingLeft);
     else if (name == "margin") four(Prop::MarginTop, Prop::MarginRight, Prop::MarginBottom, Prop::MarginLeft);
-    else if (name == "border-radius") four(Prop::RadiusTL, Prop::RadiusTR, Prop::RadiusBR, Prop::RadiusBL);
+    else if (name == "inset") four(Prop::Top, Prop::Right, Prop::Bottom, Prop::Left);
+    else if (name == "gap") { // <row-gap> <column-gap>
+        splitWords(value, w, n, 3);
+        if (n == 2) { addDecl(rule, Prop::Gap, w[1], line, diags); addDecl(rule, Prop::RowGap, w[0], line, diags); addDecl(rule, Prop::ColumnGap, w[1], line, diags); }
+        else if (diags) diags->push_back({StyleError::BadValue, line, "gap"});
+    } else if (name == "border-radius") four(Prop::RadiusTL, Prop::RadiusTR, Prop::RadiusBR, Prop::RadiusBL);
     else if (name == "border") {
         splitWords(value, w, n, 4);
         for (int k = 0; k < n; ++k) {
@@ -2234,7 +2290,7 @@ void parseDecls(std::string_view body, u32 line, StyleRule& proto, std::vector<s
                         tokens->emplace_back(d.customHash, d.raw);
                         proto.decls.push_back(std::move(d));
                     }
-                } else if (!(name == "background" && value.starts_with("linear-gradient")) && findProp(name, p)) addDecl(proto, p, value, line, diags);
+                } else if (!(name == "background" && value.starts_with("linear-gradient")) && !(name == "gap" && trim(value).find_first_of(" \t") != std::string_view::npos) && findProp(name, p)) addDecl(proto, p, value, line, diags);
                 else addShorthand(proto, name, value, line, diags);
             }
         }
@@ -2274,6 +2330,8 @@ struct SheetParser {
     std::vector<StyleDiagnostic>* diags;
     u32 order = 0;
     u16 scope = StyleRule::kNone; // current @scope
+    const std::vector<std::string>* scopeRoots = nullptr; // the @scope block's own selector list (its direct rules)
+    u32 scopeRootSpec = 0, scopeDrop = 0; // root specificity; subtracted from scoped selectors (implicit root: none)
     std::vector<std::string_view> list;
     u32 lineAt(std::size_t pos) const { return 1 + u32(std::upper_bound(nl.begin(), nl.end(), pos) - nl.begin()) - (pos < text.size() && text[pos] == '\n' ? 1 : 0); }
     void diag(StyleError e, std::size_t pos, std::string msg) { if (diags) diags->push_back({e, lineAt(pos), std::move(msg)}); }
@@ -2351,6 +2409,14 @@ struct SheetParser {
             rule.layer = layer;
             rule.cond = cond;
             rule.scope = scope;
+            if (scope != StyleRule::kNone && scopeDrop) { // per component, saturating
+                u32 out = 0;
+                for (int sh = 0; sh <= 16; sh += 8) {
+                    const u32 a = (rule.specificity >> sh) & 255u, d = (scopeDrop >> sh) & 255u;
+                    out |= (a > d ? a - d : 0u) << sh;
+                }
+                rule.specificity = out;
+            }
             if (isRoot) for (auto& t : tokens) sheet.m_tokens.push_back(t);
             if (!rule.chain.empty() || isRoot) sheet.m_rules.push_back(std::move(rule));
         }
@@ -2719,21 +2785,44 @@ bool SheetParser::block(std::size_t b, std::size_t e, const std::vector<std::str
                 diag(StyleError::Syntax, n.pre, "bad @scope: " + std::string(pre));
                 continue;
             }
+            u32 rootSpec = 0xFFFFFFFFu; // the least specific root (one specificity per scope)
+            for (const std::string& one : roots) {
+                StyleRule tmp;
+                bool isRoot = false;
+                if (parseSelector(one, tmp, isRoot)) rootSpec = std::min(rootSpec, tmp.specificity);
+            }
             sheet.m_scopes.push_back(std::move(sc));
             const u16 outer = scope;
+            const auto* outerRoots = scopeRoots;
+            const u32 outerSpec = scopeRootSpec, outerDrop = scopeDrop;
             scope = u16(sheet.m_scopes.size() - 1);
+            scopeRoots = &roots, scopeRootSpec = rootSpec == 0xFFFFFFFFu ? 0u : rootSpec, scopeDrop = 0;
             const bool okBlock = block(n.open + 1, n.close, roots, layer, cond, layerName, depth + 1);
-            scope = outer;
+            scope = outer, scopeRoots = outerRoots, scopeRootSpec = outerSpec, scopeDrop = outerDrop;
             if (!okBlock) return false;
         } else if (pre.starts_with("@")) {
             diag(StyleError::Syntax, n.pre, "unsupported at-rule: " + std::string(pre));
         } else {
             std::string scoped(pre); // inside @scope (or nesting) :scope is the parent / root
+            const u32 outerDrop = scopeDrop;
+            if (scopeRoots == &sels) { // a direct rule of @scope: the implicit root adds no specificity, :scope 0-1-0
+                const bool hasScope = scoped.find(":scope") != std::string::npos, hasAmp = scoped.find('&') != std::string::npos;
+                const u32 keep = hasAmp ? scopeRootSpec : hasScope ? std::min(scopeRootSpec, 1u << 8) : 0u;
+                u32 d = 0;
+                for (int sh = 0; sh <= 16; sh += 8) {
+                    const u32 a = (scopeRootSpec >> sh) & 255u, k = (keep >> sh) & 255u;
+                    d |= (a > k ? a - k : 0u) << sh;
+                }
+                if (hasScope && !hasAmp) d = scopeRootSpec >= (1u << 8) ? scopeRootSpec - (1u << 8) : 0u; // root -> one pseudo-class
+                scopeDrop = d;
+            }
             if (!sels.empty())
                 for (std::size_t at2 = scoped.find(":scope"); at2 != std::string::npos; at2 = scoped.find(":scope", at2)) scoped.replace(at2, 6, "&");
             resolve(scoped, sels, sub);
             const std::vector<std::string> mine = sub;
-            if (!block(n.open + 1, n.close, mine, layer, cond, layerName, depth + 1)) return false;
+            const bool okB = block(n.open + 1, n.close, mine, layer, cond, layerName, depth + 1);
+            scopeDrop = outerDrop;
+            if (!okB) return false;
         }
     }
     return true;
@@ -2825,6 +2914,7 @@ void StyleEngine::clearSheets() {
     m_ordered.clear();
     m_orderedCond.clear();
     m_orderedSheet.clear();
+    m_orderedRank.clear();
     m_mediaOk.clear();
     m_condBase.clear();
     m_hasContainer = false;
@@ -2984,27 +3074,29 @@ bool StyleEngine::styleTest(const StyleSubject& s, u32 node, u32 name, const Sty
     return v == t.value;
 }
 
-bool StyleEngine::scopeOk(const StyleSubject& s, u32 node, u32 idx) const {
+int StyleEngine::scopeHops(const StyleSubject& s, u32 node, u32 idx) const {
     const StyleRule* r = m_ordered[idx];
     const StyleSheet* sh = m_orderedSheet[idx];
-    if (r->scope >= sh->m_scopes.size()) return true;
+    if (r->scope >= sh->m_scopes.size()) return 0;
     const StyleScope& sc = sh->m_scopes[r->scope];
     auto any = [&](const std::vector<std::vector<SimpleSelector>>& chains, u32 n) {
         for (const auto& ch : chains)
             if (matchChain(s, n, ch)) return true;
         return false;
     };
-    // some scoping root at or above node with no limit element between (node inclusive, root exclusive)
+    // the nearest scoping root at or above node with no limit element between (node inclusive, root exclusive);
+    // the result is the proximity (generations from that root)
     bool limited = false;
-    for (u32 n = node; n != 0xFFFFFFFFu; n = s.parent(n)) {
-        if (any(sc.roots, n) && !limited) return true;
+    int hops = 0;
+    for (u32 n = node; n != 0xFFFFFFFFu; n = s.parent(n), ++hops) {
+        if (any(sc.roots, n) && !limited) return hops;
         if (!sc.limits.empty() && any(sc.limits, n)) limited = true;
     }
-    return false;
+    return -1;
 }
 
 bool StyleEngine::condOk(const StyleSubject& s, u32 node, u32 idx) const {
-    if (m_hasScope && m_ordered[idx]->scope != StyleRule::kNone && !scopeOk(s, node, idx)) return false;
+    if (m_hasScope && m_ordered[idx]->scope != StyleRule::kNone && scopeHops(s, node, idx) < 0) return false;
     const StyleCondition* c = m_orderedCond[idx];
     if (!c) return true;
     const StyleSheet* sh = m_orderedSheet[idx];
@@ -3053,6 +3145,7 @@ void StyleEngine::reorder() {
     m_ordered.clear();
     m_orderedCond.clear();
     m_orderedSheet.clear();
+    m_orderedRank.clear();
     // @layer ranks: names merged over sheets in first-declaration order; a layer's sublayers precede its own rules
     // (post-order); unlayered rules last
     std::vector<std::string> names;
@@ -3099,6 +3192,7 @@ void StyleEngine::reorder() {
     for (auto& k : keyed) {
         m_ordered.push_back(k.r);
         m_orderedSheet.push_back(k.sh);
+        m_orderedRank.push_back(k.rank);
         m_orderedCond.push_back(k.r->cond < k.sh->m_conds.size() ? &k.sh->m_conds[k.r->cond] : nullptr);
     }
     evalMedia();
@@ -3458,6 +3552,7 @@ bool StyleEngine::resolveVar(std::string_view raw, Prop p, PropValue& out, int d
 }
 
 u32 StyleEngine::intern(const ComputedStyle& cs) {
+    notePositioned(cs);
     // FNV over the bytes of a value-initialised copy is not padding-safe; hash fields that matter most and compare.
     u64 h = 1469598103934665603ull;
     auto mix = [&](f32 f) { u32 b; std::memcpy(&b, &f, 4); h = (h ^ b) * 1099511628211ull; };
@@ -3494,6 +3589,7 @@ u32 StyleEngine::intern(const ComputedStyle& cs) {
     return u32(m_table.size() - 1);
 }
 u32 StyleEngine::allocScratch(const ComputedStyle& cs) {
+    notePositioned(cs);
     if (!m_freeScratch.empty()) {
         const u32 i = m_freeScratch.back();
         m_freeScratch.pop_back();
@@ -3526,9 +3622,29 @@ ComputedStyle StyleEngine::computeValue(const StyleSubject& s, u32 node, const C
     for (u32 oi = 0; oi < u32(m_ordered.size()); ++oi)
         if (const StyleRule* r = m_ordered[oi]; matches(s, node, *r) && condOk(s, node, oi)) {
             m_scratch.push_back(r);
+            if (m_hasScope) m_scratchIdx.push_back(oi);
             for (const auto& d : r->decls)
                 if (d.prop == Prop::Count) m_localTokens.emplace_back(d.customHash, std::string_view(d.raw));
         }
+    if (m_hasScope) { // scope proximity (Cascade 6): within a layer, the nearer scoping root wins before specificity
+        bool any = false;
+        m_scopeKeys.clear();
+        for (std::size_t q = 0; q < m_scratch.size(); ++q) {
+            const u32 oi = m_scratchIdx[q];
+            const int hops = m_scratch[q]->scope != StyleRule::kNone ? scopeHops(s, node, oi) : std::numeric_limits<int>::max();
+            any = any || m_scratch[q]->scope != StyleRule::kNone;
+            m_scopeKeys.push_back({m_orderedRank[oi], hops, u32(q)});
+        }
+        if (any) {
+            std::stable_sort(m_scopeKeys.begin(), m_scopeKeys.end(), [](const ScopeKey& a, const ScopeKey& b) {
+                return a.rank != b.rank ? a.rank < b.rank : a.hops > b.hops; // farther (weaker) first
+            });
+            m_scratchSorted.clear();
+            for (const ScopeKey& k : m_scopeKeys) m_scratchSorted.push_back(m_scratch[k.at]);
+            m_scratch.swap(m_scratchSorted);
+        }
+        m_scratchIdx.clear();
+    }
     for (const StyleRule* r : m_scratch)
         for (const auto& d : r->decls) {
             if (d.prop == Prop::Count) continue;

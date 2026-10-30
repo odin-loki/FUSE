@@ -19,7 +19,7 @@
 
 namespace fuse::ui::doc {
 
-inline constexpr u32 kCookedVersion = 9; ///< 2: Filter and Transition values; 3: list longhands, @keyframes, attribute / :nth selectors; 4: :not/:is/:where/:has, :empty; 5: transform, animate / order document keys; 6: rotate / skew / matrix, transform-origin, timeline properties; 7: 3D transforms, view insets, animation-range, timeline-scope; 8: @layer, @media / @container conditions, container-type / -name; 9: @scope, style() queries, viewport / container units, clip-path / mask-* as text
+inline constexpr u32 kCookedVersion = 10; ///< 2: Filter and Transition values; 3: list longhands, @keyframes, attribute / :nth selectors; 4: :not/:is/:where/:has, :empty; 5: transform, animate / order document keys; 6: rotate / skew / matrix, transform-origin, timeline properties; 7: 3D transforms, view insets, animation-range, timeline-scope; 8: @layer, @media / @container conditions, container-type / -name; 9: @scope, style() queries, viewport / container units, clip-path / mask-* as text; 10: position / z-index / aspect-ratio / align-content / row- and column-gap / grid-template-rows, @scope specificity without the root
 
 struct CookInfo {
     u32 nodes = 0, bindings = 0, instructions = 0;
