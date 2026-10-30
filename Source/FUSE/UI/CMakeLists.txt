@@ -109,7 +109,7 @@ if(FUSE_UI_TEXT STREQUAL "FULL")
 endif()
 
 # ---- fuse_ui_core ----
-add_library(fuse_ui_core STATIC Core/src/style.cpp Core/src/draw_list.cpp Core/src/path.cpp Core/src/ui.cpp Core/src/immediate.cpp
+add_library(fuse_ui_core STATIC Core/src/style.cpp Core/src/draw_list.cpp Core/src/filter_program.cpp Core/src/path.cpp Core/src/ui.cpp Core/src/immediate.cpp
     Core/src/simd/box_blur.cpp)
 # CPU raster SIMD on FORGE lane (docs/gui/PLAN.md G1): header-only vec + FORGE's runtime CPU detection.
 if(TARGET fuse_forge)

@@ -365,7 +365,9 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
                 }
                 if (nl < 2) return false;
                 sh.x = lens[0], sh.y = lens[1], sh.blur = std::max(0.f, lens[2]);
-                out.shadow = sh;
+                if (out.shadowCount >= kMaxFilterShadows) return false;
+                v = f32(out.shadowCount);
+                out.shadows[out.shadowCount++] = sh;
             } else {
                 v = 1.f; // CSS default amount
                 if (!arg.empty()) {
@@ -509,25 +511,20 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::PointerEvents: s.pointerEvents = v.b; break;
     case Prop::BackgroundClip: s.backgroundClip = fuse::ui::BackgroundClip(v.e); break;
     case Prop::BackdropFilter:
-        s.backdropFilterCount = 0;
-        s.backdropBlur = 0.f;
-        s.backdropShadow = {};
-        for (u8 k = 0; k < v.trackCount; ++k) {
-            if (FilterFn(v.fns[k]) == FilterFn::Blur) { s.backdropBlur = v.tracks[k].value; continue; }
-            if (FilterFn(v.fns[k]) == FilterFn::DropShadow) { s.backdropShadow = v.shadow; continue; }
-            s.backdropFilterFns[s.backdropFilterCount] = FilterFn(v.fns[k]);
-            s.backdropFilterAmounts[s.backdropFilterCount++] = v.tracks[k].value;
+        s.backdropFilterCount = v.trackCount;
+        s.backdropBlur = 0.f; // a blur() is an ordered entry of the list
+        s.backdropShadows = v.shadows;
+        for (u8 k = 0; k < kMaxGridTracks; ++k) {
+            s.backdropFilterFns[k] = k < v.trackCount ? FilterFn(v.fns[k]) : FilterFn{};
+            s.backdropFilterAmounts[k] = k < v.trackCount ? v.tracks[k].value : 0.f;
         }
         break;
     case Prop::Filter:
-        s.filterCount = 0;
-        s.filterBlur = 0.f;
-        s.filterShadow = {};
-        for (u8 k = 0; k < v.trackCount; ++k) {
-            if (FilterFn(v.fns[k]) == FilterFn::Blur) { s.filterBlur = v.tracks[k].value; continue; }
-            if (FilterFn(v.fns[k]) == FilterFn::DropShadow) { s.filterShadow = v.shadow; continue; }
-            s.filterFns[s.filterCount] = FilterFn(v.fns[k]);
-            s.filterAmounts[s.filterCount++] = v.tracks[k].value;
+        s.filterCount = v.trackCount;
+        s.filterShadows = v.shadows;
+        for (u8 k = 0; k < kMaxGridTracks; ++k) {
+            s.filterFns[k] = k < v.trackCount ? FilterFn(v.fns[k]) : FilterFn{};
+            s.filterAmounts[k] = k < v.trackCount ? v.tracks[k].value : 0.f;
         }
         break;
     case Prop::Count: break;

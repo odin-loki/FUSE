@@ -8,6 +8,7 @@
 
 #include <array>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -79,6 +80,39 @@ struct DropShadow {
     Color color{};
     bool visible() const { return color.a > 0.f; }
 };
+
+/// An SVG <filter> as a program over float planes of the layer box (premultiplied 0..255 RGBA per pixel).
+/// Plane 0 = SourceGraphic (and the result: the last op writes it), plane 1 = blur scratch, 2.. = results.
+/// Ops run in order; CPU (CpuRasterizer) and GPU (ui_backdrop.glsl modes 7..9) share the arithmetic.
+enum class FeOp : u8 {
+    Blur,      ///< p0 / p1 = stdDeviation x / y (box radius max(1, round(sigma)), three passes); in1 -> out
+    Matrix,    ///< p0..19 = 4 rows of (r g b a offset) on unpremultiplied 0..1 colour (as ColorMatrix)
+    Offset,    ///< p0 / p1 = dx / dy (rounded to whole pixels): out(x, y) = in1(x - dx, y - dy), 0 outside
+    Flood,     ///< p0..3 = straight r g b a: every pixel
+    Blend,     ///< p0 = mode (0 normal, 1 multiply, 2 screen, 3 darken, 4 lighten): in1 over in2
+    Composite, ///< p0 = operator (0 over, 1 in, 2 out, 3 atop, 4 xor, 5 arithmetic k1..k4 = p1..p4): in1 op in2
+    Alpha,     ///< out = (0, 0, 0, a of in1) (SourceAlpha)
+    Copy,      ///< out = in1
+};
+struct FilterOpDesc {
+    FeOp op = FeOp::Copy;
+    u8 in1 = 0, in2 = 0, out = 0;
+    std::array<f32, 25> p{};
+};
+struct FilterProgram {
+    std::vector<FilterOpDesc> ops;
+    u8 planes = 2;
+    bool empty() const { return ops.empty(); }
+    /// pixels the result can reach beyond the source ink (blur 3r, offsets), summed along the op list
+    int reach() const;
+};
+/// Parses an SVG `<filter>` element (feGaussianBlur, feColorMatrix, feOffset, feFlood, feBlend, feComposite, feMerge,
+/// feDropShadow; in / in2 / result with SourceGraphic, SourceAlpha and named results). `text` may hold more markup:
+/// the first <filter> (or the one with id `id` when given) is used. Colour math in sRGB (color-interpolation-filters
+/// is not honoured); the filter region is the layer box (ink + reach), not x / y / width / height. False on errors.
+bool parseSvgFilter(std::string_view text, FilterProgram& out, std::string_view id = {});
+/// The ids of every <filter id="..."> in `text`.
+std::vector<std::string> svgFilterIds(std::string_view text);
 
 /// A multi-stop gradient at any angle / ellipse / transform. `toUnit` maps a pixel to gradient space (affine
 /// [a b c d e f]: x' = a x + c y + e, y' = b x + d y + f).
@@ -217,7 +251,11 @@ public:
     /// then blurred (`blur`, as backdrop), passed through `matrix`, given `shadow`, and composited over the pixels
     /// under it (within the clip in force; clip paths and rounded clips multiply). Fixed order: blur, matrix, shadow.
     /// The layer is a backdrop root: a backdrop inside it sees only the layer. Nests.
-    void pushFilter(const ColorMatrix& matrix, f32 blur = 0.f, const DropShadow& shadow = {});
+    /// `chained`: an inner layer of one filter chain (CSS functions in written order become nested layers, the first
+    /// innermost): composited without the clip coverage, which the outermost layer applies once.
+    void pushFilter(const ColorMatrix& matrix, f32 blur = 0.f, const DropShadow& shadow = {}, bool chained = false);
+    /// A filter layer running an SVG filter program (see FilterProgram; stopCount = 1 + 6 per op).
+    void pushFilter(const FilterProgram& program, bool chained = false);
     /// Ends the innermost pushFilter: sets both commands' `rect` to the layer's pixel box (ink bounds of the commands
     /// in between, grown by the blur and shadow reach).
     void popFilter();
@@ -258,6 +296,8 @@ private:
 /// PushFilter / PopFilter pairing: partner[i] = the matching command's index, ~0u for other commands and for an
 /// unmatched push / pop (both rasterisers ignore those).
 void matchFilters(const DrawList& list, std::vector<u32>& partner);
+/// A PushFilter / PopFilter carrying a FilterProgram (stopCount = 1 + 6 per op) rather than matrix rows (4 / 6).
+bool isFilterProgram(const DrawCmd& c);
 
 /// Multi-stop gradient colour of command `c` at pixel centre (px, py); the GPU kernel has the same arithmetic.
 Color gradientStopsColor(const DrawCmd& c, const GradientStop* stops, f32 px, f32 py);

@@ -554,7 +554,7 @@ void UiContext::styleRec(u32 i, bool parentChanged) {
             // compare layout-relevant fields only
             la.background = lb.background; la.background2 = lb.background2; la.borderColor = lb.borderColor;
             la.color = lb.color; la.shadowColor = lb.shadowColor; la.opacity = lb.opacity; la.radius = lb.radius;
-            la.gradient = lb.gradient; la.gradientAngle = lb.gradientAngle; la.gradientStopCount = lb.gradientStopCount; la.gradientOffsets = lb.gradientOffsets; la.gradientColors = lb.gradientColors; la.shadowBlur = lb.shadowBlur; la.shadowX = lb.shadowX; la.shadowY = lb.shadowY; la.backdropBlur = lb.backdropBlur; la.backgroundClip = lb.backgroundClip; la.backdropFilterCount = lb.backdropFilterCount; la.backdropFilterFns = lb.backdropFilterFns; la.backdropFilterAmounts = lb.backdropFilterAmounts; la.backdropShadow = lb.backdropShadow; la.filterBlur = lb.filterBlur; la.filterCount = lb.filterCount; la.filterFns = lb.filterFns; la.filterAmounts = lb.filterAmounts; la.filterShadow = lb.filterShadow;
+            la.gradient = lb.gradient; la.gradientAngle = lb.gradientAngle; la.gradientStopCount = lb.gradientStopCount; la.gradientOffsets = lb.gradientOffsets; la.gradientColors = lb.gradientColors; la.shadowBlur = lb.shadowBlur; la.shadowX = lb.shadowX; la.shadowY = lb.shadowY; la.backdropBlur = lb.backdropBlur; la.backgroundClip = lb.backgroundClip; la.backdropFilterCount = lb.backdropFilterCount; la.backdropFilterFns = lb.backdropFilterFns; la.backdropFilterAmounts = lb.backdropFilterAmounts; la.backdropShadows = lb.backdropShadows; la.filterCount = lb.filterCount; la.filterFns = lb.filterFns; la.filterAmounts = lb.filterAmounts; la.filterShadows = lb.filterShadows;
             la.pointerEvents = lb.pointerEvents; la.borderWidth = lb.borderWidth; la.textAlign = lb.textAlign;
             if (fontChanged) {
                 m_cold[i]->layoutWidth = -1.f;
@@ -961,50 +961,95 @@ void UiContext::arrangeChildren(u32 i) {
 
 // ---- Paint ---------------------------------------------------------------------------------------------------------
 bool UiContext::defineFilter(std::string_view id, std::string_view cssFilters) {
-    PropValue v;
-    if (!parsePropValue(Prop::Filter, cssFilters, v)) return false;
-    ComputedStyle tmp;
-    applyProp(tmp, Prop::Filter, v);
     FilterDef d;
-    d.blur = tmp.filterBlur;
-    d.shadow = tmp.filterShadow;
-    for (u8 k = 0; k < tmp.filterCount; ++k)
-        if (tmp.filterFns[k] != FilterFn::Url) d.fns[d.count] = tmp.filterFns[k], d.amounts[d.count++] = tmp.filterAmounts[k];
-    m_filterDefs[filterNameId(id)] = d;
+    const std::size_t lead = cssFilters.find_first_not_of(" \t\r\n");
+    if (lead != std::string_view::npos && cssFilters[lead] == '<') {
+        if (!parseSvgFilter(cssFilters, d.program)) return false;
+    } else {
+        PropValue v;
+        if (!parsePropValue(Prop::Filter, cssFilters, v)) return false;
+        ComputedStyle tmp;
+        applyProp(tmp, Prop::Filter, v);
+        d.count = tmp.filterCount, d.fns = tmp.filterFns, d.amounts = tmp.filterAmounts, d.shadows = tmp.filterShadows;
+    }
+    m_filterDefs[filterNameId(id)] = std::move(d);
     for (Node& n : m_nodes) n.dirty |= kDirtyPaint;
     return true;
 }
 
-ColorMatrix UiContext::filterMatrix(const FilterFn* fns, const f32* amounts, u8 count, f32& blur, FilterShadow& shadow) const {
-    ColorMatrix fm;
+int UiContext::defineSvgFilters(std::string_view svgText) {
+    int n = 0;
+    for (const std::string& id : svgFilterIds(svgText)) {
+        FilterDef d;
+        if (!parseSvgFilter(svgText, d.program, id)) continue;
+        m_filterDefs[filterNameId(id)] = std::move(d);
+        ++n;
+    }
+    for (Node& k : m_nodes) k.dirty |= kDirtyPaint;
+    return n;
+}
+
+f32 UiContext::FilterStage::reach() const {
+    if (program) return f32(program->reach()) + 2.f;
+    return blur + 2.f + (shadow.color.a > 0.f ? std::max(std::abs(shadow.offset.x), std::abs(shadow.offset.y)) + shadow.blur : 0.f);
+}
+
+void UiContext::filterStages(const FilterFn* fns, const f32* amounts, u8 count, const FilterShadow* shadows,
+                             std::vector<FilterStage>& out, int depth) const {
+    // canonical stage order is blur -> matrix -> shadow; a function that would run earlier than what the open stage
+    // already holds starts a new (outer) stage, so the nested layers reproduce the CSS order exactly
+    FilterStage st;
+    bool open = false;
+    const auto close = [&] {
+        if (open) out.push_back(st);
+        st = {};
+        open = false;
+    };
     for (u8 k = 0; k < count; ++k) {
         const f32 a = amounts[k];
+        ColorMatrix m;
         switch (fns[k]) {
-        case FilterFn::Brightness: fm = fm.then(ColorMatrix::brightness(a)); break;
-        case FilterFn::Contrast: fm = fm.then(ColorMatrix::contrast(a)); break;
-        case FilterFn::Saturate: fm = fm.then(ColorMatrix::saturate(a)); break;
-        case FilterFn::Grayscale: fm = fm.then(ColorMatrix::grayscale(a)); break;
-        case FilterFn::HueRotate: fm = fm.then(ColorMatrix::hueRotate(a)); break;
-        case FilterFn::Invert: fm = fm.then(ColorMatrix::invert(a)); break;
-        case FilterFn::Sepia: fm = fm.then(ColorMatrix::sepia(a)); break;
-        case FilterFn::Opacity: fm = fm.then(ColorMatrix::opacity(a)); break;
+        case FilterFn::Blur:
+            if (open) close();
+            st.blur = std::max(0.f, a), open = true;
+            continue;
+        case FilterFn::DropShadow: {
+            if (st.shadow.color.a > 0.f) close();
+            const FilterShadow& sh = shadows[std::clamp(int(a), 0, kMaxFilterShadows - 1)];
+            if (sh.color.a <= 0.f) continue;
+            st.shadow = DropShadow{{sh.x, sh.y}, sh.blur, sh.color}, open = true;
+            continue;
+        }
         case FilterFn::Url: {
             u32 id;
             std::memcpy(&id, &a, 4);
             const auto it = m_filterDefs.find(id);
-            if (it == m_filterDefs.end()) break; // unknown reference: no effect
+            if (it == m_filterDefs.end() || depth > 4) continue; // unknown reference: no effect
             const FilterDef& d = it->second;
-            f32 b = 0.f;
-            FilterShadow sh{};
-            fm = fm.then(filterMatrix(d.fns.data(), d.amounts.data(), d.count, b, sh));
-            blur = std::max(blur, d.blur);
-            if (d.shadow.color.a > 0.f) shadow = d.shadow;
-            break;
+            close();
+            if (!d.program.empty()) {
+                FilterStage p;
+                p.program = &d.program;
+                out.push_back(p);
+            } else {
+                filterStages(d.fns.data(), d.amounts.data(), d.count, d.shadows.data(), out, depth + 1);
+            }
+            continue;
         }
-        case FilterFn::Blur: case FilterFn::DropShadow: break;
+        case FilterFn::Brightness: m = ColorMatrix::brightness(a); break;
+        case FilterFn::Contrast: m = ColorMatrix::contrast(a); break;
+        case FilterFn::Saturate: m = ColorMatrix::saturate(a); break;
+        case FilterFn::Grayscale: m = ColorMatrix::grayscale(a); break;
+        case FilterFn::HueRotate: m = ColorMatrix::hueRotate(a); break;
+        case FilterFn::Invert: m = ColorMatrix::invert(a); break;
+        case FilterFn::Sepia: m = ColorMatrix::sepia(a); break;
+        case FilterFn::Opacity: m = ColorMatrix::opacity(a); break;
         }
+        if (st.shadow.color.a > 0.f) close();
+        st.matrix = st.hasMatrix ? st.matrix.then(m) : m;
+        st.hasMatrix = open = true;
     }
-    return fm;
+    close();
 }
 
 void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
@@ -1012,21 +1057,29 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     const ComputedStyle& s = m_styles.style(n.style);
     // CSS filter: the node and its subtree go to one isolated layer (DrawList::pushFilter); this visit wraps a second
     // one that paints as usual. The damage grows by the filter's reach (blur, shadow offset + blur).
-    if (s.visible && m_filterNode != i && (s.filterCount || s.filterBlur > 0.f || s.filterShadow.color.a > 0.f)) {
-        f32 blur = s.filterBlur;
-        FilterShadow sh = s.filterShadow;
-        const ColorMatrix fm = filterMatrix(s.filterFns.data(), s.filterAmounts.data(), s.filterCount, blur, sh);
-        if (n.dirty & kDirtyPaint) {
-            const f32 reach = blur + 2.f + (sh.color.a > 0.f ? std::max(std::abs(sh.x), std::abs(sh.y)) + sh.blur : 0.f);
-            m_damage = m_damage.unite({n.rect.x - reach, n.rect.y - reach, n.rect.w + 2.f * reach, n.rect.h + 2.f * reach});
+    if (s.visible && m_filterNode != i && s.filterCount) {
+        std::vector<FilterStage> stages;
+        filterStages(s.filterFns.data(), s.filterAmounts.data(), s.filterCount, s.filterShadows.data(), stages);
+        if (!stages.empty()) {
+            if (n.dirty & kDirtyPaint) {
+                f32 reach = 0.f;
+                for (const FilterStage& st : stages) reach += st.reach();
+                m_damage = m_damage.unite({n.rect.x - reach, n.rect.y - reach, n.rect.w + 2.f * reach, n.rect.h + 2.f * reach});
+            }
+            const u32 outer = m_filterNode;
+            m_filterNode = i;
+            // the first stage runs first, so it is the innermost layer; only the outermost applies clip coverage
+            for (std::size_t k = stages.size(); k-- > 0;) {
+                const FilterStage& st = stages[k];
+                if (st.program) dl.pushFilter(*st.program, k + 1 < stages.size());
+                else dl.pushFilter(st.matrix, st.blur, st.shadow, k + 1 < stages.size());
+                dl.cmds()[dl.size() - 1].node = i;
+            }
+            paintRec(i, opacity, dl);
+            for (std::size_t k = 0; k < stages.size(); ++k) dl.popFilter();
+            m_filterNode = outer;
+            return;
         }
-        const u32 outer = m_filterNode;
-        m_filterNode = i;
-        dl.pushFilter(fm, blur, DropShadow{{sh.x, sh.y}, sh.blur, sh.color});
-        paintRec(i, opacity, dl);
-        dl.popFilter();
-        m_filterNode = outer;
-        return;
     }
     if (n.dirty & kDirtyPaint) {
         m_damage = m_damage.unite(n.rect);
@@ -1092,11 +1145,18 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
         bg = n.rect;
         bgRad = s.radius;
     }
-    if ((s.backdropBlur > 0.f || s.backdropFilterCount || s.backdropShadow.color.a > 0.f) && !bg.empty()) {
-        f32 blur = s.backdropBlur;
-        FilterShadow sh = s.backdropShadow;
-        const ColorMatrix fm = filterMatrix(s.backdropFilterFns.data(), s.backdropFilterAmounts.data(), s.backdropFilterCount, blur, sh);
-        dl.backdrop(bg, blur, bgRad, fm, DropShadow{{sh.x, sh.y}, sh.blur, sh.color});
+    if ((s.backdropBlur > 0.f || s.backdropFilterCount) && !bg.empty()) {
+        // backdrop-filter in CSS order: one backdrop pass per stage over the same box (each reads the previous one's
+        // result); SVG programs are not supported here
+        std::vector<FilterStage> stages;
+        filterStages(s.backdropFilterFns.data(), s.backdropFilterAmounts.data(), s.backdropFilterCount, s.backdropShadows.data(), stages);
+        if (s.backdropBlur > 0.f) {
+            FilterStage b;
+            b.blur = s.backdropBlur;
+            stages.insert(stages.begin(), b);
+        }
+        for (const FilterStage& st : stages)
+            if (!st.program) dl.backdrop(bg, st.blur, bgRad, st.matrix, st.shadow);
     }
     if (s.gradient == GradientDir::Angle && s.gradientStopCount >= 2) {
         std::vector<GradientStop> st(s.gradientStopCount);

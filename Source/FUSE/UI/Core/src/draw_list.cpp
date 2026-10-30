@@ -132,11 +132,63 @@ void matchFilters(const DrawList& list, std::vector<u32>& partner) {
     }
 }
 
-void DrawList::pushFilter(const ColorMatrix& matrix, f32 blur, const DropShadow& shadow) {
+void DrawList::pushFilter(const ColorMatrix& matrix, f32 blur, const DropShadow& shadow, bool chained) {
     DrawCmd c;
     c.op = DrawOp::PushFilter;
     c.blur = std::max(0.f, blur);
+    c.v = chained ? 1 : 0;
     putFilter(c, matrix, shadow);
+    m_filterStack.push_back(u32(m_cmds.size()));
+    m_cmds.push_back(c);
+}
+
+namespace {
+f32& progParam(GradientStop* op, int k) {
+    GradientStop& st = op[1 + k / 5];
+    switch (k % 5) {
+    case 0: return st.color.r;
+    case 1: return st.color.g;
+    case 2: return st.color.b;
+    case 3: return st.color.a;
+    default: return st.offset;
+    }
+}
+/// derived words of one op (6 stops): blur box radii + reciprocals, whole-pixel offsets
+void deriveProgOp(GradientStop* op) {
+    const FeOp kind = FeOp(int(op[0].offset));
+    if (kind == FeOp::Blur) {
+        for (int a = 0; a < 2; ++a) {
+            const f32 sg = progParam(op, a);
+            const int r = sg > 0.f ? std::max(1, int(std::floor(sg + 0.5f))) : 0;
+            progParam(op, 2 + a) = f32(r);
+            progParam(op, 4 + a) = 1.f / f32(2 * r + 1);
+        }
+    } else if (kind == FeOp::Offset) {
+        progParam(op, 2) = f32(std::lround(progParam(op, 0)));
+        progParam(op, 3) = f32(std::lround(progParam(op, 1)));
+    }
+}
+} // namespace
+
+bool isFilterProgram(const DrawCmd& c) { return c.stopCount >= 7 && (c.stopCount - 1) % 6 == 0; }
+
+void DrawList::pushFilter(const FilterProgram& program, bool chained) {
+    DrawCmd c;
+    c.op = DrawOp::PushFilter;
+    c.v = chained ? 1 : 0;
+    if (!program.empty()) {
+        c.stops = u32(m_stops.size());
+        c.stopCount = u16(1 + 6 * program.ops.size());
+        m_stops.push_back({f32(program.ops.size()), Color{f32(program.planes), f32(program.reach()), 0.f, 0.f}});
+        for (const FilterOpDesc& d : program.ops) {
+            const std::size_t at = m_stops.size();
+            m_stops.push_back({f32(int(d.op)), Color{f32(d.in1), f32(d.in2), f32(d.out), 0.f}});
+            for (int j = 0; j < 5; ++j)
+                m_stops.push_back({d.p[std::size_t(j * 5 + 4)], Color{d.p[std::size_t(j * 5)], d.p[std::size_t(j * 5 + 1)],
+                                                                      d.p[std::size_t(j * 5 + 2)], d.p[std::size_t(j * 5 + 3)]}});
+            deriveProgOp(m_stops.data() + at);
+        }
+    }
     m_filterStack.push_back(u32(m_cmds.size()));
     m_cmds.push_back(c);
 }
@@ -151,7 +203,8 @@ void DrawList::popFilter() {
     if (!ink.empty()) {
         const int r = c.blur > 0.f ? std::max(1, int(std::lround(c.blur / 3.f))) : 0;
         int reach = 3 * r + 1;
-        if (c.stopCount == 6 && std::size_t(c.stops) + 6 <= m_stops.size()) {
+        if (isFilterProgram(c) && std::size_t(c.stops) + c.stopCount <= m_stops.size()) reach = int(m_stops[c.stops].color.g);
+        else if (c.stopCount == 6 && std::size_t(c.stops) + 6 <= m_stops.size()) {
             const GradientStop* sh = m_stops.data() + c.stops + 4;
             const int r2 = sh[0].offset > 0.f ? std::max(1, int(std::lround(sh[0].offset / 6.f))) : 0;
             reach += 3 * r2 + int(std::max(std::abs(std::lround(sh[1].color.r)), std::abs(std::lround(sh[1].color.g))));
@@ -269,6 +322,17 @@ void scaleDrawList(const DrawList& in, f32 s, DrawList& out) {
             out.m_stops[c.stops + 4].offset *= s;
             out.m_stops[c.stops + 5].color.r *= s;
             out.m_stops[c.stops + 5].color.g *= s;
+        }
+    for (const DrawCmd& c : in.cmds()) // filter programs: blur deviations, offsets, reach (PopFilter shares the stops)
+        if (c.op == DrawOp::PushFilter && isFilterProgram(c) && std::size_t(c.stops) + c.stopCount <= out.m_stops.size()) {
+            GradientStop* h = out.m_stops.data() + c.stops;
+            h[0].color.g = std::ceil(h[0].color.g * s);
+            for (int i = 0; i < int(h[0].offset); ++i) {
+                GradientStop* op = h + 1 + 6 * i;
+                const FeOp k = FeOp(int(op[0].offset));
+                if (k == FeOp::Blur || k == FeOp::Offset) progParam(op, 0) *= s, progParam(op, 1) *= s;
+                deriveProgOp(op);
+            }
         }
     out.m_edges = in.m_edges;
     for (PathEdge& e : out.m_edges) { e.x0 *= s; e.y0 *= s; e.x1 *= s; e.y1 *= s; }
@@ -588,6 +652,131 @@ void backdropBlur(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& ta
         }
 }
 
+// SVG filter program over float planes (FilterProgram; ui_backdrop.glsl modes 7..9 do the same in the same order).
+// plane 0 holds the loaded layer and receives the result.
+constexpr f32 kInv255 = 0.003921568859368563f;
+void boxPassH(const f32* in, f32* out, int w, int h, int r, f32 inv) {
+    for (int y = 0; y < h; ++y)
+        for (int k = 0; k < 4; ++k) {
+            const std::size_t row = std::size_t(y) * std::size_t(w) * 4 + std::size_t(k);
+            f32 acc = 0.f;
+            for (int i = -r; i <= r; ++i) acc = acc + in[row + std::size_t(std::clamp(i, 0, w - 1)) * 4];
+            for (int i = 0; i < w; ++i) {
+                out[row + std::size_t(i) * 4] = acc * inv;
+                const f32 d = in[row + std::size_t(std::clamp(i + r + 1, 0, w - 1)) * 4] - in[row + std::size_t(std::clamp(i - r, 0, w - 1)) * 4];
+                acc = acc + d;
+            }
+        }
+}
+void boxPassV(const f32* in, f32* out, int w, int h, int r, f32 inv) {
+    const std::size_t stride = std::size_t(w) * 4;
+    for (std::size_t col = 0; col < stride; ++col) {
+        f32 acc = 0.f;
+        for (int i = -r; i <= r; ++i) acc = acc + in[std::size_t(std::clamp(i, 0, h - 1)) * stride + col];
+        for (int i = 0; i < h; ++i) {
+            out[std::size_t(i) * stride + col] = acc * inv;
+            const f32 d = in[std::size_t(std::clamp(i + r + 1, 0, h - 1)) * stride + col] - in[std::size_t(std::clamp(i - r, 0, h - 1)) * stride + col];
+            acc = acc + d;
+        }
+    }
+}
+void runFilterProgram(const GradientStop* prog, std::vector<f32>& plane0, int w, int h) {
+    const int K = int(prog[0].offset), P = std::clamp(int(prog[0].color.r), 2, 32);
+    const std::size_t n = std::size_t(w) * std::size_t(h) * 4;
+    std::vector<std::vector<f32>> pl;
+    pl.resize(std::size_t(P));
+    pl[0] = std::move(plane0);
+    for (int i = 1; i < P; ++i) pl[std::size_t(i)].assign(n, 0.f);
+    for (int i = 0; i < K; ++i) {
+        GradientStop* op = const_cast<GradientStop*>(prog + 1 + 6 * i);
+        const FeOp kind = FeOp(int(op[0].offset));
+        const int i1 = std::clamp(int(op[0].color.r), 0, P - 1), i2 = std::clamp(int(op[0].color.g), 0, P - 1);
+        const int io = std::clamp(int(op[0].color.b), 0, P - 1);
+        const auto prm = [&](int k) { return progParam(op, k); };
+        const f32* A = pl[std::size_t(i1)].data();
+        const f32* B = pl[std::size_t(i2)].data();
+        f32* O = pl[std::size_t(io)].data();
+        switch (kind) {
+        case FeOp::Blur: {
+            if (O != A) std::memcpy(O, A, n * 4);
+            f32* T = pl[1].data();
+            for (int it = 0; it < 3; ++it) {
+                boxPassH(O, T, w, h, int(prm(2)), prm(4));
+                boxPassV(T, O, w, h, int(prm(3)), prm(5));
+            }
+            break;
+        }
+        case FeOp::Offset: {
+            const int dx = int(prm(2)), dy = int(prm(3));
+            for (int y = 0; y < h; ++y)
+                for (int x = 0; x < w; ++x) {
+                    const int qx = x - dx, qy = y - dy;
+                    const bool in = qx >= 0 && qy >= 0 && qx < w && qy < h;
+                    for (int k = 0; k < 4; ++k)
+                        O[(std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4 + std::size_t(k)] =
+                            in ? A[(std::size_t(qy) * std::size_t(w) + std::size_t(qx)) * 4 + std::size_t(k)] : 0.f;
+                }
+            break;
+        }
+        default:
+            for (std::size_t q = 0; q < n; q += 4) {
+                const f32* a = A + q;
+                const f32* b = B + q;
+                f32 r[4];
+                if (kind == FeOp::Matrix) {
+                    filterPixel(op + 1, a, r);
+                } else if (kind == FeOp::Flood) {
+                    const f32 al = prm(3);
+                    r[0] = prm(0) * al * 255.f, r[1] = prm(1) * al * 255.f, r[2] = prm(2) * al * 255.f, r[3] = al * 255.f;
+                } else if (kind == FeOp::Alpha) {
+                    r[0] = r[1] = r[2] = 0.f, r[3] = a[3];
+                } else if (kind == FeOp::Copy) {
+                    std::memcpy(r, a, 16);
+                } else if (kind == FeOp::Blend) {
+                    const int mode = int(prm(0));
+                    const f32 qa = a[3] * kInv255, qb = b[3] * kInv255;
+                    for (int k = 0; k < 3; ++k) {
+                        const f32 ia = a[k] * (1.f - qb), ib = b[k] * (1.f - qa);
+                        const f32 ab = a[k] * b[k] * kInv255;
+                        f32 v;
+                        if (mode == 1) v = ia + ib + ab;
+                        else if (mode == 2) v = a[k] + b[k] - ab;
+                        else if (mode == 3) v = std::min(ia + b[k], ib + a[k]);
+                        else if (mode == 4) v = std::max(ia + b[k], ib + a[k]);
+                        else v = a[k] + ib;
+                        r[k] = v;
+                    }
+                    r[3] = a[3] + b[3] - a[3] * b[3] * kInv255;
+                } else { // Composite
+                    const int opr = int(prm(0));
+                    const f32 qa = a[3] * kInv255, qb = b[3] * kInv255;
+                    if (opr == 5) {
+                        const f32 k1 = prm(1), k2 = prm(2), k3 = prm(3), k4 = prm(4);
+                        for (int k = 0; k < 4; ++k) {
+                            const f32 v = k1 * a[k] * b[k] * kInv255 + k2 * a[k] + k3 * b[k] + k4 * 255.f;
+                            r[k] = std::clamp(v, 0.f, 255.f);
+                        }
+                        for (int k = 0; k < 3; ++k) r[k] = std::min(r[k], r[3]);
+                    } else {
+                        for (int k = 0; k < 4; ++k) {
+                            f32 v;
+                            if (opr == 1) v = a[k] * qb;
+                            else if (opr == 2) v = a[k] * (1.f - qb);
+                            else if (opr == 3) v = a[k] * qb + b[k] * (1.f - qa);
+                            else if (opr == 4) v = a[k] * (1.f - qb) + b[k] * (1.f - qa);
+                            else v = a[k] + b[k] * (1.f - qa);
+                            r[k] = v;
+                        }
+                    }
+                }
+                std::memcpy(O + q, r, 16);
+            }
+            break;
+        }
+    }
+    plane0 = std::move(pl[0]);
+}
+
 /// An open CSS filter layer (PushFilter): its pixel box and the pixels it covered (restored under the result).
 struct Layer {
     int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
@@ -619,17 +808,23 @@ void layerEnd(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& target
             const u32 p = target.pixels[std::size_t(L.y0 + y) * std::size_t(target.width) + std::size_t(L.x0 + x)];
             for (int k = 0; k < 4; ++k) buf[(std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4 + std::size_t(k)] = f32((p >> (8 * k)) & 0xFFu);
         }
-    const int r = c.blur > 0.f ? std::max(1, int(std::lround(c.blur / 3.f))) : 0;
-    boxBlur3(buf, tmp, w, h, r);
-    const FilterData fd = filterData(c, filterRows, filterRowCount);
-    applyFilterBox(fd, buf, plane, tmp, w, h);
+    FilterData fd{};
+    if (isFilterProgram(c) && filterRows && std::size_t(c.stops) + c.stopCount <= filterRowCount) {
+        runFilterProgram(filterRows + c.stops, buf, w, h);
+    } else {
+        const int r = c.blur > 0.f ? std::max(1, int(std::lround(c.blur / 3.f))) : 0;
+        boxBlur3(buf, tmp, w, h, r);
+        fd = filterData(c, filterRows, filterRowCount);
+        applyFilterBox(fd, buf, plane, tmp, w, h);
+    }
     const std::array<f32, 4> clipRad{clipRadius, clipRadius, clipRadius, clipRadius};
+    const bool chained = c.v != 0; // inner layer of a chain: the outermost applies the clip coverage
     for (int y = 0; y < h; ++y)
         for (int x = 0; x < w; ++x) {
             const f32 px = f32(L.x0 + x) + 0.5f, py = f32(L.y0 + y) + 0.5f;
             f32 cov = 1.f;
-            if (clipRadius > 0.f) cov *= std::clamp(0.5f - sdRoundRect(px, py, clipR, clipRad), 0.f, 1.f);
-            for (u8 q = 0; q < pathCount && cov > 0.f; ++q) cov *= clipEntryCoverage(edges + paths[q].at, paths[q].n, px, py, paths[q].evenOdd);
+            if (!chained && clipRadius > 0.f) cov *= std::clamp(0.5f - sdRoundRect(px, py, clipR, clipRad), 0.f, 1.f);
+            for (u8 q = 0; q < (chained ? 0 : pathCount) && cov > 0.f; ++q) cov *= clipEntryCoverage(edges + paths[q].at, paths[q].n, px, py, paths[q].evenOdd);
             const std::size_t i = std::size_t(y) * std::size_t(w) + std::size_t(x);
             u32& d = target.pixels[std::size_t(L.y0 + y) * std::size_t(target.width) + std::size_t(L.x0 + x)];
             const u32 u = L.under[i];

@@ -64,6 +64,7 @@ enum class GradientDir : u8 { None, Vertical, Horizontal, Angle }; ///< Angle: C
 enum class TextAlignment : u8 { Start, Center, End };
 
 inline constexpr int kMaxGridTracks = 8;
+inline constexpr int kMaxFilterShadows = 4; ///< drop-shadow() entries per filter list
 
 /// The fully resolved style of a node. Trivially copyable; deduplicated in StyleTable.
 struct ComputedStyle {
@@ -99,16 +100,17 @@ struct ComputedStyle {
     f32 opacity = 1.f;
     f32 shadowBlur = 0.f, shadowX = 0.f, shadowY = 0.f;
     f32 backdropBlur = 0.f; ///< backdrop-filter: blur(<len>) / backdrop-blur: <len> (frosted glass under the background)
-    u8 backdropFilterCount = 0; ///< backdrop-filter colour functions (blur goes to backdropBlur)
+    /// backdrop-filter: the function list in CSS order (blur amount = length; DropShadow amount = index into
+    /// backdropShadows; Url amount = the bit pattern of the filter name id)
+    u8 backdropFilterCount = 0;
     std::array<FilterFn, kMaxGridTracks> backdropFilterFns{};
     std::array<f32, kMaxGridTracks> backdropFilterAmounts{};
-    FilterShadow backdropShadow{}; ///< backdrop-filter: drop-shadow()
-    /// CSS `filter` (element): blur, colour functions (incl. url() entries), drop shadow; painted as one isolated layer
-    f32 filterBlur = 0.f;
+    std::array<FilterShadow, kMaxFilterShadows> backdropShadows{};
+    /// CSS `filter` (element), same encoding; painted as nested isolated layers in CSS order
     u8 filterCount = 0;
     std::array<FilterFn, kMaxGridTracks> filterFns{};
     std::array<f32, kMaxGridTracks> filterAmounts{};
-    FilterShadow filterShadow{};
+    std::array<FilterShadow, kMaxFilterShadows> filterShadows{};
     BackgroundClip backgroundClip = BackgroundClip::BorderBox; ///< background-clip: border-box | padding-box | content-box
     bool pointerEvents = true;
     friend bool operator==(const ComputedStyle&, const ComputedStyle&) = default;
@@ -151,7 +153,8 @@ struct PropValue {
     u8 trackCount = 0;
     std::array<fuse::ui::Color, kMaxGridTracks> stopColors{};
     std::array<u8, kMaxGridTracks> fns{}; ///< Filter: FilterFn per entry
-    FilterShadow shadow{};                ///< Filter: the drop-shadow() entry
+    std::array<FilterShadow, kMaxFilterShadows> shadows{}; ///< Filter: drop-shadow() entries (fn amount = index)
+    u8 shadowCount = 0;
     static PropValue ofBool(bool v) { PropValue p; p.type = PropType::Bool; p.b = v; return p; }
     static PropValue ofEnum(u8 v) { PropValue p; p.type = PropType::Enum; p.e = v; return p; }
     static PropValue ofLength(Length v) { PropValue p; p.type = PropType::Length; p.len = v; return p; }

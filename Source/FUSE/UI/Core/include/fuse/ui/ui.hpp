@@ -195,7 +195,10 @@ public:
     /// Names a filter list for CSS `filter` / `backdrop-filter: url(#id)` (the SVG <filter> reference, here a CSS
     /// filter list: "blur(2px) sepia(1) drop-shadow(0 2px 4px #0008)"; url() inside it is ignored). False when
     /// `cssFilters` does not parse. Redefining replaces; affects the next paint.
+    /// `cssFilters` is a CSS filter list, or SVG markup with a <filter> element (its primitives become a program).
     bool defineFilter(std::string_view id, std::string_view cssFilters);
+    /// Register every <filter id="..."> of an SVG document for url(#id); returns how many compiled.
+    int defineSvgFilters(std::string_view svgText);
     std::expected<void, UiError> addStyleSheet(std::string_view css, std::vector<StyleDiagnostic>* diags = nullptr);
     void addStyleSheet(StyleSheet sheet); ///< an already parsed (or cooked) sheet
     void clearStyleSheets();
@@ -390,14 +393,24 @@ private:
     void paintPass();
     void paintRec(u32 i, f32 opacity, DrawList& dl);
     struct FilterDef {
-        f32 blur = 0.f;
-        u8 count = 0;
+        u8 count = 0; ///< CSS definition: ordered list (same encoding as ComputedStyle::filterFns)
         std::array<FilterFn, kMaxGridTracks> fns{};
         std::array<f32, kMaxGridTracks> amounts{};
-        FilterShadow shadow{};
+        std::array<FilterShadow, kMaxFilterShadows> shadows{};
+        FilterProgram program; ///< SVG <filter> definition (non-empty instead of the list)
     };
-    /// colour matrix of a filter list (url() entries expanded from m_filterDefs; their blur / shadow fold in too)
-    ColorMatrix filterMatrix(const FilterFn* fns, const f32* amounts, u8 count, f32& blur, FilterShadow& shadow) const;
+    /// one nested filter layer / backdrop pass: blur, then the matrix, then one drop shadow (or an SVG program)
+    struct FilterStage {
+        f32 blur = 0.f;
+        ColorMatrix matrix;
+        bool hasMatrix = false;
+        DropShadow shadow{};
+        const FilterProgram* program = nullptr;
+        f32 reach() const;
+    };
+    /// split a CSS-order filter list into stages (url() expanded from m_filterDefs)
+    void filterStages(const FilterFn* fns, const f32* amounts, u8 count, const FilterShadow* shadows,
+                      std::vector<FilterStage>& out, int depth = 0) const;
     std::unordered_map<u32, FilterDef> m_filterDefs;
     u32 m_filterNode = ~0u; ///< node whose filter layer paintRec is inside (its second, unwrapped visit)
     /// Overlay scrollbar geometry of a scroll container along an axis (0 = x, 1 = y); false when it does not overflow.

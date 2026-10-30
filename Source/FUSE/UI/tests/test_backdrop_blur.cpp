@@ -210,10 +210,11 @@ int main(int argc, char** argv) {
         ui.addClass(t, "t");
         ui.update();
         const ComputedStyle& cs = ui.computed(a);
-        UI_CHECK(cs.backdropBlur == 6.f && cs.backdropFilterCount == 3);
-        UI_CHECK(cs.backdropFilterFns[0] == FilterFn::Brightness && std::abs(cs.backdropFilterAmounts[0] - 1.2f) < 1e-5f);
-        UI_CHECK(cs.backdropFilterFns[1] == FilterFn::HueRotate && std::abs(cs.backdropFilterAmounts[1] - 180.f) < 1e-3f);
-        UI_CHECK(cs.backdropFilterFns[2] == FilterFn::Invert);
+        UI_CHECK(cs.backdropBlur == 0.f && cs.backdropFilterCount == 4); // blur() stays an ordered entry
+        UI_CHECK(cs.backdropFilterFns[0] == FilterFn::Blur && cs.backdropFilterAmounts[0] == 6.f);
+        UI_CHECK(cs.backdropFilterFns[1] == FilterFn::Brightness && std::abs(cs.backdropFilterAmounts[1] - 1.2f) < 1e-5f);
+        UI_CHECK(cs.backdropFilterFns[2] == FilterFn::HueRotate && std::abs(cs.backdropFilterAmounts[2] - 180.f) < 1e-3f);
+        UI_CHECK(cs.backdropFilterFns[3] == FilterFn::Invert);
         const DrawCmd* bd = nullptr;
         for (const DrawCmd& c : ui.drawList().cmds())
             if (c.node == a.index && c.op == DrawOp::Backdrop) bd = &c;
@@ -284,23 +285,79 @@ int main(int argc, char** argv) {
         ui.addClass(b, "b");
         ui.update();
         const ComputedStyle& es = ui.computed(e);
-        UI_CHECK(es.filterBlur == 2.f && es.filterShadow.x == 4.f && es.filterShadow.y == 5.f && es.filterShadow.blur == 6.f);
-        UI_CHECK(std::abs(es.filterShadow.color.a - 0.5f) < 0.01f);
+        UI_CHECK(es.filterCount == 3 && es.filterFns[0] == FilterFn::Blur && es.filterAmounts[0] == 2.f);
+        UI_CHECK(es.filterFns[2] == FilterFn::DropShadow && es.filterAmounts[2] == 0.f);
+        UI_CHECK(es.filterShadows[0].x == 4.f && es.filterShadows[0].y == 5.f && es.filterShadows[0].blur == 6.f);
+        UI_CHECK(std::abs(es.filterShadows[0].color.a - 0.5f) < 0.01f);
         const ComputedStyle& us = ui.computed(u);
         UI_CHECK(us.filterCount == 2 && us.filterFns[0] == FilterFn::Url && us.filterFns[1] == FilterFn::Invert);
         const ComputedStyle& bs = ui.computed(b);
-        UI_CHECK(bs.backdropBlur == 3.f && bs.backdropShadow.x == 1.f && bs.backdropShadow.y == 2.f && bs.backdropShadow.color.g > 0.99f);
+        UI_CHECK(bs.backdropFilterCount == 2 && bs.backdropFilterFns[0] == FilterFn::Blur && bs.backdropFilterAmounts[0] == 3.f);
+        UI_CHECK(bs.backdropShadows[0].x == 1.f && bs.backdropShadows[0].y == 2.f && bs.backdropShadows[0].color.g > 0.99f);
         int pushE = 0, pushU = 0, pops = 0;
         const DrawCmd* bd = nullptr;
         for (const DrawCmd& c : ui.drawList().cmds()) {
             if (c.op == DrawOp::PushFilter && c.node == e.index) pushE += c.blur == 2.f && c.stopCount == 6;
-            if (c.op == DrawOp::PushFilter && c.node == u.index) pushU += c.stopCount == 6; // url's shadow folded in
+            // url(#warm) = sepia + shadow stage (inner, chained), then invert after the shadow: a second, outer layer
+            if (c.op == DrawOp::PushFilter && c.node == u.index) pushU += (c.stopCount == 6 && c.v == 1) || (c.stopCount == 4 && c.v == 0);
             pops += c.op == DrawOp::PopFilter;
             if (c.op == DrawOp::Backdrop && c.node == b.index) bd = &c;
         }
         std::printf("  css filter: push e %d u %d, pops %d\n", pushE, pushU, pops);
-        UI_CHECK(pushE == 1 && pushU == 1 && pops == 2);
+        UI_CHECK(pushE == 1 && pushU == 2 && pops == 3);
         UI_CHECK(bd && bd->stopCount == 6);
+    }
+    // filter functions apply in CSS order (nested layers); several drop-shadows; url() to SVG <filter> programs
+    {
+        struct Shot { Image img; Rect r; };
+        const auto shot = [](const char* filter, const char* defId = nullptr, const char* defText = nullptr) {
+            UiContext ui({.viewport = {240, 200}, .font = &font()});
+            w::install(ui);
+            if (defId) UI_CHECK(ui.defineFilter(defId, defText));
+            std::string css = ".q { background: #0000ff; width: 40px; height: 40px; margin-left: 20px; margin-top: 20px; filter: ";
+            css += filter;
+            css += "; }";
+            auto sheet = StyleSheet::parse(css);
+            UI_CHECK(sheet.has_value());
+            if (sheet) ui.styles().addSheet(std::move(*sheet));
+            const NodeHandle q = w::label(ui, ui.root(), "");
+            ui.addClass(q, "q");
+            ui.update();
+            Shot o;
+            o.r = ui.rect(q);
+            o.img.resize(240, 200, 0xFF000000u);
+            CpuRasterizer().render(ui.drawList(), o.img);
+            return o;
+        };
+        const auto px = [](const Shot& o, f32 dx, f32 dy) { return o.img.at(int(o.r.x + dx), int(o.r.y + dy)); };
+        const auto is = [](u32 p, int r, int g, int b) {
+            return std::abs(ch(p, 0) - r) < 8 && std::abs(ch(p, 1) - g) < 8 && std::abs(ch(p, 2) - b) < 8;
+        };
+        const Shot a = shot("invert(1) drop-shadow(50px 0 0 #ff0000)");
+        const Shot b = shot("drop-shadow(50px 0 0 #ff0000) invert(1)");
+        std::printf("  css order: a %08x %08x  b %08x %08x\n", px(a, 20, 20), px(a, 70, 20), px(b, 20, 20), px(b, 70, 20));
+        UI_CHECK(is(px(a, 20, 20), 255, 255, 0) && is(px(a, 70, 20), 255, 0, 0));   // shadow of the inverted element
+        UI_CHECK(is(px(b, 20, 20), 255, 255, 0) && is(px(b, 70, 20), 0, 255, 255)); // inverted shadow
+        const Shot m = shot("drop-shadow(50px 0 0 #ff0000) drop-shadow(0 50px 0 #00ff00)");
+        UI_CHECK(is(px(m, 20, 20), 0, 0, 255) && is(px(m, 70, 20), 255, 0, 0));
+        UI_CHECK(is(px(m, 20, 70), 0, 255, 0) && is(px(m, 70, 70), 0, 255, 0)); // second shadow of element + first
+        const Shot g = shot("url(#g)", "g",
+                            "<svg><filter id=\"g\"><feFlood flood-color=\"#00ff00\" result=\"f\"/>"
+                            "<feComposite in=\"f\" in2=\"SourceGraphic\" operator=\"in\"/></filter></svg>");
+        std::printf("  svg flood: %08x %08x\n", px(g, 20, 20), px(g, 60, 20));
+        UI_CHECK(is(px(g, 20, 20), 0, 255, 0) && ch(px(g, 60, 20), 1) < 80);
+        const Shot o = shot("url(#o)", "o",
+                            "<filter id=\"o\"><feOffset in=\"SourceGraphic\" dx=\"50\" dy=\"0\" result=\"s\"/>"
+                            "<feColorMatrix in=\"s\" type=\"matrix\" values=\"0 0 0 0 1  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0\" result=\"r\"/>"
+                            "<feMerge><feMergeNode in=\"r\"/><feMergeNode in=\"SourceGraphic\"/></feMerge></filter>");
+        std::printf("  svg filter: %08x %08x\n", px(o, 20, 20), px(o, 70, 20));
+        UI_CHECK(is(px(o, 20, 20), 0, 0, 255) && is(px(o, 70, 20), 255, 0, 0));
+        FilterProgram prog;
+        UI_CHECK(parseSvgFilter("<filter id=\"b\"><feGaussianBlur stdDeviation=\"3\"/><feBlend mode=\"multiply\" in2=\"SourceGraphic\"/></filter>", prog));
+        UI_CHECK(prog.ops.size() == 3 && prog.ops[0].op == FeOp::Blur && prog.ops[1].op == FeOp::Blend && prog.ops[2].op == FeOp::Copy);
+        UI_CHECK(!parseSvgFilter("<filter><feTurbulence/></filter>", prog));
+        UiContext ui({.viewport = {64, 64}, .font = &font()});
+        UI_CHECK(ui.defineSvgFilters("<svg><filter id=\"x\"><feFlood/></filter><filter id=\"y\"><feOffset dx=\"2\"/></filter></svg>") == 2);
     }
     return finish("fuse_ui_backdrop_blur");
 }
