@@ -4,6 +4,7 @@
 source "$(dirname "$0")/lib.sh"
 BUILD_DIR=${BUILD_DIR:-$ROOT/build-gui-wine}; WINE=${WINE:-wine}
 export WINEPREFIX=${WINEPREFIX:-$HOME/.cache/fuse-gui/wineprefix} WINEDEBUG=${WINEDEBUG:--all}
+mkdir -p "$WINEPREFIX"
 V=20261020; if [ -z "${MINGW:-}" ]; then
     MINGW=$HOME/.cache/fuse-gui/llvm-mingw-$V-ucrt-ubuntu-22.04-x86_64
     [ -d "$MINGW" ] || { want_deps && step "deps (llvm-mingw)" bash -c "mkdir -p ~/.cache/fuse-gui && curl -sfL https://github.com/mstorsjo/llvm-mingw/releases/download/$V/llvm-mingw-$V-ucrt-ubuntu-22.04-x86_64.tar.xz | tar -xJ -C ~/.cache/fuse-gui"; }

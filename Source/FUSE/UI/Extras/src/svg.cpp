@@ -1,4 +1,5 @@
 // SVG document parsing + rendering onto DrawList paths. See svg.hpp.
+#include "fuse/ui/from_chars.hpp"
 #include "fuse/ui/extras/svg.hpp"
 
 #include "fuse/ui/os.hpp"
@@ -173,7 +174,7 @@ std::vector<f32> numbers(std::string_view s) {
         const char* b = s.data() + i;
         if (*b == '+') ++b;
         f32 v = 0.f;
-        const auto r = std::from_chars(b, s.data() + s.size(), v);
+        const auto r = fuse::ui::fromChars(b, s.data() + s.size(), v);
         if (r.ec != std::errc{}) break;
         out.push_back(v);
         i = std::size_t(r.ptr - s.data());
