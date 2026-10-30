@@ -415,6 +415,8 @@ public:
     // frame
     void setViewport(Size s);
     Size viewport() const { return m_viewport; }
+    /// @media (prefers-color-scheme: dark) / (prefers-reduced-motion: reduce) inputs (the viewport feeds width / height).
+    void setMediaPreferences(bool dark, bool reducedMotion);
     void update(f32 dtSeconds = 0.f);
     bool needsUpdate() const; ///< false when an on-demand app can sleep
     /// Seconds until the context needs an update: 0 when dirty / animating / commands pending, the earliest timer
@@ -611,6 +613,8 @@ private:
     void settleScriptAnim(u32 index); ///< running past an end: finish
     bool scriptTiming(const ScriptAnim& a, f32& dp) const;
     bool sampleScriptAnim(const ScriptAnim& a, ComputedStyle& d) const;
+    bool syncContainers(); ///< @container: re-styles subtrees of containers whose content size changed; true when any did
+    std::unordered_map<u32, Size> m_containerSizes; ///< container node -> content size its subtree was styled against
     bool syncTimelines(); ///< progress-based animations follow their timelines; true when one moved
     std::vector<u32> m_timelineAnims;
     std::vector<u32> m_cssTlNodes; ///< nodes whose CSS animations follow animation-timeline (progress-based)
@@ -661,6 +665,7 @@ private:
     bool paintsSelf(u32 i, f32 opacity);
     DrawList m_scratch3d;
     bool paintTransformed(u32 i, f32 opacity, DrawList& dl);
+    u32 m_clipPathNode = ~0u; ///< node whose clip-path paintRec is inside (its second visit)
     u32 m_filterNode = ~0u; ///< node whose filter layer paintRec is inside (its second, unwrapped visit)
     /// Overlay scrollbar geometry of a scroll container along an axis (0 = x, 1 = y); false when it does not overflow.
     bool scrollBarGeom(u32 i, u8 axis, Rect& track, Rect& thumb) const;

@@ -160,6 +160,8 @@ if(TARGET fuse_ui_doc)
         set_tests_properties(${t} PROPERTIES LABELS "fuse_ui;gate")
     endforeach()
 
+    fuse_ui_test(fuse_ui_css_cascade test_css_cascade.cpp)
+    target_link_libraries(fuse_ui_css_cascade PRIVATE fuse_ui_doc)
     fuse_ui_test(fuse_ui_doc_animate test_doc_animate.cpp)
     target_link_libraries(fuse_ui_doc_animate PRIVATE fuse_ui_doc)
     fuse_ui_test(fuse_ui_doc_load test_doc.cpp)

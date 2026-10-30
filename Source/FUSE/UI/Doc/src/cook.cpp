@@ -259,6 +259,8 @@ void writeSheet(Writer& w, const StyleSheet& s) {
         w.u32_(rule.specificity);
         w.u32_(rule.order);
         w.u8_(rule.root ? 1 : 0);
+        w.u32_(rule.layer);
+        w.u32_(rule.cond);
         w.u32_(u32(rule.chain.size()));
         for (const SimpleSelector& sel : rule.chain) writeSelector(w, sel);
         w.u32_(u32(rule.decls.size()));
@@ -281,6 +283,20 @@ void writeSheet(Writer& w, const StyleSheet& s) {
             writeEasing(w, f.ease);
             w.u32_(u32(f.decls.size()));
             for (const Declaration& d : f.decls) { w.u32_(u32(d.prop)); writeValue(w, d.value); w.str(d.raw); }
+        }
+    }
+    w.u32_(u32(s.layers().size()));
+    for (const std::string& l : s.layers()) w.str(l);
+    w.u32_(u32(s.conditions().size()));
+    for (const StyleCondition& c : s.conditions()) {
+        w.u8_(u8(c.kind));
+        w.str(c.containerName ? std::string(animationName(c.containerName)) : std::string());
+        w.u32_(c.parent);
+        w.u32_(u32(c.any.size()));
+        for (const auto& q : c.any) {
+            w.u8_(q.negate ? 1 : 0);
+            w.u32_(u32(q.all.size()));
+            for (const auto& t : q.all) { w.u8_(u8(t.f)); w.u8_(u8(t.op)); w.f32_(t.v); }
         }
     }
 }
@@ -334,6 +350,10 @@ std::expected<StyleSheet, std::string> readSheet(Reader& r) {
         rule.specificity = r.u32_();
         rule.order = r.u32_();
         rule.root = r.u8_() != 0;
+        const u32 layer = r.u32_(), cond = r.u32_();
+        if (layer > StyleRule::kNone || cond > StyleRule::kNone) return std::unexpected("cooked style: bad rule layer / condition");
+        rule.layer = u16(layer);
+        rule.cond = u16(cond);
         rule.chain.resize(r.count(14));
         for (SimpleSelector& sel : rule.chain)
             if (auto e = readSelector(r, sel, 0); !e) return std::unexpected(e.error());
@@ -374,8 +394,38 @@ std::expected<StyleSheet, std::string> readSheet(Reader& r) {
         }
         if (!r.ok) break;
     }
+    std::vector<std::string> layers(r.ok ? r.count(1) : 0);
+    for (auto& l : layers) l = r.str();
+    std::vector<StyleCondition> conds(r.ok ? r.count(9) : 0);
+    for (std::size_t ci = 0; ci < conds.size() && r.ok; ++ci) {
+        StyleCondition& c = conds[ci];
+        const u8 kind = r.u8_();
+        if (kind > u8(StyleCondition::Kind::Container)) return std::unexpected("cooked style: bad condition");
+        c.kind = StyleCondition::Kind(kind);
+        const std::string cname = r.str();
+        c.containerName = cname.empty() ? 0 : animationNameId(cname);
+        const u32 par = r.u32_();
+        if (par != StyleRule::kNone && par >= ci) return std::unexpected("cooked style: bad condition parent");
+        c.parent = u16(par);
+        c.any.resize(r.count(5));
+        for (auto& q : c.any) {
+            q.negate = r.u8_() != 0;
+            q.all.resize(r.count(6));
+            for (auto& t : q.all) {
+                const u8 f = r.u8_(), op = r.u8_();
+                if (f > u8(StyleCondition::Feature::ReducedMotion) || op > u8(StyleCondition::Op::Eq)) return std::unexpected("cooked style: bad condition");
+                t.f = StyleCondition::Feature(f);
+                t.op = StyleCondition::Op(op);
+                t.v = r.f32_();
+            }
+            if (!r.ok) break;
+        }
+    }
     if (!r.ok) return std::unexpected("cooked style: truncated or corrupt");
-    return StyleSheet::fromParts(std::move(rules), std::move(tokens), std::move(kfs));
+    for (const StyleRule& rule : rules)
+        if ((rule.layer != StyleRule::kNone && rule.layer >= layers.size()) || (rule.cond != StyleRule::kNone && rule.cond >= conds.size()))
+            return std::unexpected("cooked style: bad rule layer / condition");
+    return StyleSheet::fromParts(std::move(rules), std::move(tokens), std::move(kfs), std::move(layers), std::move(conds));
 }
 } // namespace
 

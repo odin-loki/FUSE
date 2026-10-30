@@ -280,6 +280,16 @@ struct ComputedStyle {
     u8 animationRangeStartCount = 1, animationRangeEndCount = 1;
     std::array<u8, kMaxTransitions> animationRangeStartName{}, animationRangeEndName{};
     std::array<Length, kMaxTransitions> animationRangeStartOffset{}, animationRangeEndOffset{};
+    /// container-type (0 normal, 1 size, 2 inline-size) / container-name (hashId of each ident)
+    /// clip-path basic shape (border box): 0 none, 1 inset (clipArgs 0-3 t r b l, 4 round radius), 2 circle (0 r,
+    /// auto = closest-side; 1-2 centre), 3 ellipse (0-1 radii, 2-3 centre), 4 polygon (clipCount points: x, y pairs;
+    /// clipEvenOdd fill rule)
+    u8 clipShape = 0, clipCount = 0;
+    bool clipEvenOdd = false;
+    std::array<Length, 2 * kMaxTransitions> clipArgs{};
+    u8 containerType = 0;
+    u8 containerNameCount = 0;
+    std::array<u32, kMaxTransitions> containerName{};
     /// animation-timeline entries (index like the other animation-* lists): kind 0 auto (document), 1 none, 2 a named
     /// scroll / view timeline (name = animationNameId of the dashed ident), 3 scroll(), 4 view(); arg: axis (bit 0:
     /// 1 = block / y) | scroller << 1 (scroll(): 0 nearest, 1 root, 2 self)
@@ -350,7 +360,8 @@ enum class Prop : u8 {
     AnimationName, AnimationDuration, AnimationTimingFunction, AnimationDelay, AnimationIterationCount,
     AnimationDirection, AnimationFillMode, AnimationPlayState, TransitionBehavior, AnimationComposition, Transform,
     TransformOrigin, AnimationTimeline, ScrollTimeline, ViewTimeline, Perspective, PerspectiveOrigin,
-    BackfaceVisibility, TransformStyle, ViewTimelineInset, TimelineScope, AnimationRangeStart, AnimationRangeEnd, Count
+    BackfaceVisibility, TransformStyle, ViewTimelineInset, TimelineScope, AnimationRangeStart, AnimationRangeEnd,
+    ContainerType, ContainerName, ClipPath, Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
 static_assert(kPropCount <= 128, "PropMask holds 128 properties");
@@ -494,7 +505,32 @@ struct StyleRule {
     u32 order = 0;
     std::vector<Declaration> decls;
     bool root = false; ///< :root
+    static constexpr u16 kNone = 0xFFFF;
+    u16 layer = kNone; ///< cascade layer (index into the sheet's layers()); kNone = unlayered
+    u16 cond = kNone;  ///< @media / @container condition (index into the sheet's conditions()); kNone = always
 };
+
+/// A conditional group rule (@media / @container): a comma list of queries, each a conjunction of features (or
+/// `not` the conjunction). Nested groups chain through `parent`.
+struct StyleCondition {
+    enum class Kind : u8 { Media, Container };
+    enum class Feature : u8 { Always, Never, Width, Height, AspectRatio, Landscape, Dark, ReducedMotion };
+    enum class Op : u8 { Ge, Le, Gt, Lt, Eq };
+    struct Test { Feature f = Feature::Always; Op op = Op::Eq; f32 v = 0.f; };
+    struct Query { bool negate = false; std::vector<Test> all; };
+    Kind kind = Kind::Media;
+    u32 containerName = 0; ///< @container <name>: animationNameId; 0 = the nearest container
+    std::vector<Query> any;
+    u16 parent = StyleRule::kNone;
+};
+/// What @media features read (UiContext feeds the viewport; dark / reducedMotion come from the host).
+struct MediaEnv {
+    f32 width = 800.f, height = 600.f;
+    bool dark = false, reducedMotion = false;
+    bool operator==(const MediaEnv&) const = default;
+};
+/// Evaluates one query list against a size (width, height) and the env (media) or a container size.
+bool evalCondition(const StyleCondition& c, f32 width, f32 height, const MediaEnv& env);
 
 /// What the matcher needs to know about a node and its ancestors.
 struct StyleSubject {
@@ -511,6 +547,9 @@ struct StyleSubject {
     virtual u32 firstChild(u32) const { return 0xFFFFFFFFu; }
     /// :empty — no child nodes and no text
     virtual bool isEmpty(u32 node) const { return firstChild(node) == 0xFFFFFFFFu; }
+    /// @container: content-box size of node's nearest ancestor container named `nameHash` (0: any) with the
+    /// axes the query needs (`block`: container-type size). False: no such container (the query is false).
+    virtual bool containerSize(u32 /*node*/, u32 /*nameHash*/, bool /*block*/, f32& /*w*/, f32& /*h*/) const { return false; }
 };
 
 /// Parses An+B (odd, even, 3, -n+2, 2n+1, ...).
@@ -528,6 +567,7 @@ struct KeyframesRule {
     std::vector<Keyframe> frames; ///< sorted by offset (stable)
 };
 
+struct SheetParser;
 class StyleSheet {
 public:
     /// Parses CSS-subset text. Unknown properties and bad values are skipped and reported in `diagnostics`;
@@ -540,13 +580,19 @@ public:
     const std::vector<std::pair<u32, std::string>>& tokens() const { return m_tokens; }
     /// Rebuilds a parsed sheet from its parts (cooked `.fusestyle` loading; see fuse/ui/doc/cook.hpp).
     static StyleSheet fromParts(std::vector<StyleRule> rules, std::vector<std::pair<u32, std::string>> tokens,
-                                std::vector<KeyframesRule> keyframes = {}) {
+                                std::vector<KeyframesRule> keyframes = {}, std::vector<std::string> layers = {},
+                                std::vector<StyleCondition> conditions = {}) {
         StyleSheet s;
         s.m_rules = std::move(rules);
         s.m_tokens = std::move(tokens);
         s.m_keyframes = std::move(keyframes);
+        s.m_layers = std::move(layers);
+        s.m_conds = std::move(conditions);
         return s;
     }
+    /// @layer names (dotted full names, first-declaration order).
+    const std::vector<std::string>& layers() const { return m_layers; }
+    const std::vector<StyleCondition>& conditions() const { return m_conds; }
     const std::vector<KeyframesRule>& keyframes() const { return m_keyframes; }
     /// Uses structural (:nth-*, sibling) selectors: sibling changes restyle the siblings.
     bool structural() const;
@@ -555,9 +601,12 @@ public:
 
 private:
     friend class StyleEngine;
+    friend struct SheetParser;
     std::vector<StyleRule> m_rules;
     std::vector<std::pair<u32, std::string>> m_tokens;
     std::vector<KeyframesRule> m_keyframes;
+    std::vector<std::string> m_layers;
+    std::vector<StyleCondition> m_conds;
 };
 
 /// Parses one value for `p` (also used by inline setters and markup). False on a bad value.
@@ -575,6 +624,11 @@ public:
     u32 sheetCount() const { return u32(m_sheets.size()); }
     const StyleSheet& sheet(u32 i) const { return m_sheets[i]; }
     u32 sheetVersion() const { return m_version; }
+    /// @media inputs; true when some @media result changed (bumps sheetVersion: restyle everything).
+    bool setMediaEnv(const MediaEnv& env);
+    const MediaEnv& mediaEnv() const { return m_env; }
+    /// Some rule depends on @container (UiContext re-styles containers' subtrees when their size changes).
+    bool usesContainerQueries() const { return m_hasContainer; }
     /// Computes the style of `node`: defaults → inherited from `parentStyle` → matched rules → `inlineValues`.
     /// Returns an index into the table (allocates only for a never-seen combination).
     u32 compute(const StyleSubject& subject, u32 node, const ComputedStyle* parentStyle,
@@ -624,7 +678,15 @@ private:
     u32 intern(const ComputedStyle& cs);
     void reorder();
     std::vector<StyleSheet> m_sheets;
-    std::vector<const StyleRule*> m_ordered; ///< all rules, sorted by (specificity, sheet, order)
+    std::vector<const StyleRule*> m_ordered; ///< all rules, sorted by (layer, specificity, sheet, order)
+    std::vector<const StyleCondition*> m_orderedCond; ///< per m_ordered rule: its condition (chained by parent) or null
+    std::vector<const StyleSheet*> m_orderedSheet;
+    std::vector<u8> m_mediaOk; ///< per sheet condition (flattened): @media result under m_env
+    std::vector<u32> m_condBase; ///< per sheet: first index into m_mediaOk
+    MediaEnv m_env;
+    bool m_hasContainer = false;
+    bool condOk(const StyleSubject& s, u32 node, u32 orderedIdx) const;
+    void evalMedia();
     std::vector<const StyleRule*> m_scratch;
     std::vector<std::pair<u32, std::string_view>> m_localTokens;
     std::vector<ComputedStyle> m_table;

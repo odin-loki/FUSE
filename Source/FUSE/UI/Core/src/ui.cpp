@@ -154,6 +154,20 @@ struct ContextSubject final : StyleSubject {
     bool attribute(u32 n, u32 h, std::string_view& out) const override { return ui.attributeAt(n, h, out); }
     u32 firstChild(u32 n) const override { return nodes[n].first; }
     bool isEmpty(u32 n) const override { return nodes[n].first == 0xFFFFFFFFu && ui.text(ui.handleOf(n)).empty(); }
+    bool containerSize(u32 n, u32 name, bool block, f32& w, f32& h) const override {
+        for (u32 a = nodes[n].parent; a != 0xFFFFFFFFu; a = nodes[a].parent) {
+            const ComputedStyle& cs = ui.m_styles.style(nodes[a].style);
+            if (cs.containerType == 0 || (block && cs.containerType != 1)) continue;
+            bool named = name == 0;
+            for (u8 k = 0; !named && k < cs.containerNameCount; ++k) named = cs.containerName[k] == name;
+            if (!named) continue;
+            const Rect& r = nodes[a].rect;
+            w = std::max(0.f, r.w - cs.padding.h());
+            h = std::max(0.f, r.h - cs.padding.v());
+            return true;
+        }
+        return false;
+    }
 };
 
 // A Web Animations-style animation (UiContext::animate). Times in seconds on the animation's own timeline.
@@ -864,6 +878,30 @@ void UiContext::scrollTo(NodeHandle h, Vec2 o) {
         if (m_nodes[a].dirty & kDirtyLayout) break;
         m_nodes[a].dirty |= kDirtyLayout; // re-arrange path; measure caches stay valid
     }
+}
+void UiContext::setMediaPreferences(bool dark, bool reducedMotion) {
+    MediaEnv env = m_styles.mediaEnv();
+    env.dark = dark, env.reducedMotion = reducedMotion;
+    m_styles.setMediaEnv(env);
+}
+bool UiContext::syncContainers() {
+    bool any = false;
+    for (u32 i = 0; i < u32(m_nodes.size()); ++i) {
+        const Node& n = m_nodes[i];
+        if (!n.alive) continue;
+        const ComputedStyle& cs = m_styles.style(n.style);
+        if (cs.containerType == 0) {
+            if (!m_containerSizes.empty()) m_containerSizes.erase(i);
+            continue;
+        }
+        const Size sz{std::max(0.f, n.rect.w - cs.padding.h()), std::max(0.f, n.rect.h - cs.padding.v())};
+        auto [it, fresh] = m_containerSizes.try_emplace(i, sz);
+        if (!fresh && it->second == sz) continue; // fresh: its subtree was styled before the first layout
+        it->second = sz;
+        markDown(i, StyleEngine::Invalidation::kDeep);
+        any = true;
+    }
+    return any;
 }
 void UiContext::setViewport(Size s) {
     if (s == m_viewport) return;
@@ -2580,6 +2618,103 @@ bool UiContext::paintTransformed(u32 i, f32 opacity, DrawList& dl) {
     return true;
 }
 
+namespace {
+// ---- clip-path basic shapes (border box) ----------------------------------------------------------------------------
+f32 clipLen(const Length& l, f32 ref) { return l.unit == Unit::Percent ? l.value * 0.01f * ref : l.value; }
+struct ClipGeom {
+    u8 kind = 0;
+    Rect r;           // inset: the inner rect
+    f32 radius = 0.f; // inset round
+    Vec2 c, rad;      // circle / ellipse
+    std::vector<Vec2> pts;
+};
+ClipGeom clipGeom(const ComputedStyle& s, const Rect& b) {
+    ClipGeom g;
+    g.kind = s.clipShape;
+    const auto& a = s.clipArgs;
+    switch (s.clipShape) {
+    case 1: {
+        const f32 t = clipLen(a[0], b.h), r = clipLen(a[1], b.w), bo = clipLen(a[2], b.h), l = clipLen(a[3], b.w);
+        g.r = {b.x + l, b.y + t, std::max(0.f, b.w - l - r), std::max(0.f, b.h - t - bo)};
+        g.radius = std::min(clipLen(a[4], b.w), std::min(g.r.w, g.r.h) * 0.5f);
+        break;
+    }
+    case 2: case 3: {
+        const int pi = s.clipShape == 2 ? 1 : 2;
+        g.c = {b.x + clipLen(a[pi], b.w), b.y + clipLen(a[pi + 1], b.h)};
+        const f32 dl = g.c.x - b.x, dr = b.x + b.w - g.c.x, dt = g.c.y - b.y, db = b.y + b.h - g.c.y;
+        auto rr = [&](const Length& l, bool horiz, f32 ref) { // Auto: closest-side (value 0) / farthest-side (-1)
+            if (l.unit != Unit::Auto) return clipLen(l, ref);
+            const bool far = l.value < 0.f;
+            auto pick = [far](f32 x, f32 y) { return far ? std::max(x, y) : std::min(x, y); };
+            if (s.clipShape == 2) return pick(pick(dl, dr), pick(dt, db));
+            return horiz ? pick(dl, dr) : pick(dt, db);
+        };
+        if (s.clipShape == 2) {
+            const f32 r = rr(a[0], true, std::sqrt(b.w * b.w + b.h * b.h) / std::sqrt(2.f));
+            g.rad = {r, r};
+        } else g.rad = {rr(a[0], true, b.w), rr(a[1], false, b.h)};
+        break;
+    }
+    case 4:
+        for (u8 k = 0; k < s.clipCount; ++k) g.pts.push_back({b.x + clipLen(a[2 * k], b.w), b.y + clipLen(a[2 * k + 1], b.h)});
+        break;
+    default: break;
+    }
+    return g;
+}
+Path clipShapePath(const ComputedStyle& s, const Rect& b) {
+    const ClipGeom g = clipGeom(s, b);
+    Path p;
+    switch (g.kind) {
+    case 1:
+        if (g.radius > 0.f) {
+            const f32 r = g.radius, x0 = g.r.x, y0 = g.r.y, x1 = g.r.x + g.r.w, y1 = g.r.y + g.r.h;
+            p.moveTo({x0 + r, y0}).lineTo({x1 - r, y0}).arcTo({r, r}, 0.f, false, true, {x1, y0 + r}).lineTo({x1, y1 - r})
+                .arcTo({r, r}, 0.f, false, true, {x1 - r, y1}).lineTo({x0 + r, y1}).arcTo({r, r}, 0.f, false, true, {x0, y1 - r})
+                .lineTo({x0, y0 + r}).arcTo({r, r}, 0.f, false, true, {x0 + r, y0}).close();
+        } else p.rect(g.r);
+        break;
+    case 2: case 3: p.ellipse(g.c, g.rad.x, g.rad.y); break;
+    case 4:
+        p.moveTo(g.pts[0]);
+        for (std::size_t k = 1; k < g.pts.size(); ++k) p.lineTo(g.pts[k]);
+        p.close();
+        break;
+    default: break;
+    }
+    return p;
+}
+bool clipShapeContains(const ComputedStyle& s, const Rect& b, Vec2 q) {
+    const ClipGeom g = clipGeom(s, b);
+    switch (g.kind) {
+    case 1: {
+        if (!g.r.contains(q)) return false;
+        const f32 r = g.radius; // outside a rounded corner
+        const f32 cx = std::clamp(q.x, g.r.x + r, g.r.x + g.r.w - r), cy = std::clamp(q.y, g.r.y + r, g.r.y + g.r.h - r);
+        return (q.x - cx) * (q.x - cx) + (q.y - cy) * (q.y - cy) <= r * r + 1e-3f;
+    }
+    case 2: case 3: {
+        if (g.rad.x <= 0.f || g.rad.y <= 0.f) return false;
+        const f32 dx = (q.x - g.c.x) / g.rad.x, dy = (q.y - g.c.y) / g.rad.y;
+        return dx * dx + dy * dy <= 1.f;
+    }
+    case 4: {
+        int wind = 0, cross = 0;
+        for (std::size_t k = 0, j = g.pts.size() - 1; k < g.pts.size(); j = k++) {
+            const Vec2 a = g.pts[j], c = g.pts[k];
+            if ((a.y <= q.y) != (c.y <= q.y)) {
+                const f32 x = a.x + (q.y - a.y) / (c.y - a.y) * (c.x - a.x);
+                if (q.x < x) { ++cross; wind += c.y > a.y ? 1 : -1; }
+            }
+        }
+        return s.clipEvenOdd ? (cross & 1) != 0 : wind != 0;
+    }
+    default: return true;
+    }
+}
+} // namespace
+
 void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     Node& n = m_nodes[i];
     const ComputedStyle& s = m_styles.style(n.style);
@@ -2588,6 +2723,17 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     if (n.dirty & kDirtyPaint) {
         Rect& last = m_cold[i]->xfPainted;
         if (!last.empty()) m_damage = m_damage.unite(last), last = {};
+    }
+    // clip-path: the node and its subtree inside the shape (a second visit paints as usual)
+    if (s.visible && s.clipShape && m_clipPathNode != i) {
+        const u32 outer = m_clipPathNode;
+        m_clipPathNode = i;
+        dl.pushClipPath(clipShapePath(s, n.rect), s.clipEvenOdd);
+        dl.cmds()[dl.size() - 1].node = i;
+        paintRec(i, opacity, dl);
+        dl.popClip();
+        m_clipPathNode = outer;
+        return;
     }
     // CSS filter: the node and its subtree go to one isolated layer (DrawList::pushFilter); this visit wraps a second
     // one that paints as usual. The damage grows by the filter's reach (blur, shadow offset + blur).
@@ -2883,6 +3029,11 @@ void UiContext::update(f32 dt) {
         ++k;
     }
     if (!m_timelineAnims.empty() || !m_cssTlNodes.empty()) syncTimelines();
+    {
+        MediaEnv env = m_styles.mediaEnv();
+        env.width = m_viewport.w, env.height = m_viewport.h;
+        m_styles.setMediaEnv(env); // a changed @media result bumps the sheet version: full restyle
+    }
     auto styleAndLayout = [&] {
         if (m_anyStyleDirty || m_styles.sheetVersion() != m_seenSheetVersion) stylePass();
         if (m_anyLayoutDirty) {
@@ -2893,6 +3044,9 @@ void UiContext::update(f32 dt) {
         }
     };
     styleAndLayout();
+    // @container: sizes come from layout; a container whose size changed re-styles its subtree and lays out again
+    // (bounded: container-type size / inline-size contain the queried axes, so the second pass settles)
+    for (int k = 0; k < 2 && m_styles.usesContainerQueries() && syncContainers(); ++k) styleAndLayout();
     if (!m_layoutHooks.empty()) { // widgets reacting to their new geometry (tool bar overflow)
         std::erase_if(m_layoutHooks, [&](const LayoutHookEntry& h) { return !alive(NodeHandle{h.index, h.gen}); });
         const auto hooks = m_layoutHooks; // a hook may add / remove hooks
@@ -2965,6 +3119,7 @@ NodeHandle UiContext::hitRec(u32 i, Vec2 p, const Mat4& acc, f32* depth) const {
     }
     const bool inside = n.rect.contains(q);
     if (!inside && s.overflow != Overflow::Visible) return {};
+    if (s.clipShape && !clipShapeContains(s, n.rect, q)) return {}; // clip-path clips hit testing (subtree too)
     const f32 selfDepth = depthAt(a, q);
     if (pres) {
         NodeHandle best;

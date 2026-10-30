@@ -9,6 +9,9 @@
 #include <deque>
 #include <limits>
 #include <mutex>
+#include <atomic>
+#include <tuple>
+#include <string>
 #include <cstdio>
 #include <vector>
 
@@ -106,6 +109,9 @@ constexpr PropInfo kProps[] = {
     {Prop::TimelineScope, "timeline-scope", T::List, false, false, false},
     {Prop::AnimationRangeStart, "animation-range-start", T::List, false, false, false},
     {Prop::AnimationRangeEnd, "animation-range-end", T::List, false, false, false},
+    {Prop::ContainerType, "container-type", T::Enum, false, false, true},
+    {Prop::ContainerName, "container-name", T::List, false, false, false},
+    {Prop::ClipPath, "clip-path", T::List, false, false, false},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -134,6 +140,7 @@ constexpr EnumWord kEnums[] = {
     {Prop::Overflow, "visible", u8(Overflow::Visible)}, {Prop::Overflow, "hidden", u8(Overflow::Clip)},
     {Prop::Overflow, "clip", u8(Overflow::Clip)},     {Prop::Overflow, "scroll", u8(Overflow::Scroll)},
     {Prop::Overflow, "auto", u8(Overflow::Scroll)},
+    {Prop::ContainerType, "normal", 0}, {Prop::ContainerType, "size", 1}, {Prop::ContainerType, "inline-size", 2},
     {Prop::Gradient, "none", u8(GradientDir::None)},  {Prop::Gradient, "vertical", u8(GradientDir::Vertical)},
     {Prop::Gradient, "horizontal", u8(GradientDir::Horizontal)}, {Prop::Gradient, "angle", u8(GradientDir::Angle)},
     {Prop::TextAlign, "left", u8(TextAlignment::Start)}, {Prop::TextAlign, "start", u8(TextAlignment::Start)},
@@ -530,6 +537,10 @@ static bool parseListItem(Prop p, std::string_view w, PropValue& out, u8 k, bool
         return parseRangeItem(w, p == Prop::AnimationRangeEnd, out.fns[k], out.pairs[k][0]);
     case Prop::TimelineScope:
         if (!w.starts_with("--") || !isIdent(w)) return false;
+        out.ids[k] = animationNameId(w);
+        return true;
+    case Prop::ContainerName:
+        if (!isIdent(w) || w == "none" || w == "and" || w == "not" || w == "or") return false;
         out.ids[k] = animationNameId(w);
         return true;
     default: return false;
@@ -1099,11 +1110,100 @@ static bool parseTransformOrigin(std::string_view text, PropValue& out) {
     return true;
 }
 
+// clip-path: none | inset() | circle() | ellipse() | polygon() [<geometry-box>]? (the box is always the border box)
+// Encoding: e = shape; inset / circle / ellipse arguments in tracks[], polygon points in pairs[] (count: trackCount)
+static bool parseClipPath(std::string_view text, PropValue& out) {
+    out.type = PropType::List;
+    if (text == "none") return true;
+    for (std::string_view box : {"border-box", "padding-box", "content-box", "margin-box", "fill-box", "stroke-box", "view-box"}) {
+        if (text.ends_with(box)) { text = trim(text.substr(0, text.size() - box.size())); break; }
+    }
+    const auto open = text.find('(');
+    if (open == std::string_view::npos || text.back() != ')') return false;
+    const std::string_view fn = trim(text.substr(0, open)), args = trim(text.substr(open + 1, text.size() - open - 2));
+    std::vector<std::string_view> w;
+    auto len = [](std::string_view s, Length& l) { return parseLength(s, l) && l.unit != Unit::Auto && l.unit != Unit::Fr; };
+    auto position = [&](std::size_t from, Length& x, Length& y) { // "at x y" (keywords or lengths); default centre
+        x = y = Length::pct(50.f);
+        if (from >= w.size()) return true;
+        if (w[from] != "at" || w.size() - from > 3) return false;
+        auto kw = [](std::string_view s, Length& l, bool horiz) {
+            if (s == "center") l = Length::pct(50.f);
+            else if (s == (horiz ? "left" : "top")) l = Length::pct(0.f);
+            else if (s == (horiz ? "right" : "bottom")) l = Length::pct(100.f);
+            else return parseLength(s, l) && l.unit != Unit::Auto;
+            return true;
+        };
+        if (w.size() - from == 2) return kw(w[from + 1], x, true) || (kw(w[from + 1], y, false) && (x = Length::pct(50.f), true));
+        return kw(w[from + 1], x, true) && kw(w[from + 2], y, false);
+    };
+    auto radius = [&](std::string_view s, Length& l) {
+        if (s == "closest-side") { l = Length{}; return true; }
+        if (s == "farthest-side") { l = Length{-1.f, Unit::Auto}; return true; }
+        return len(s, l) && l.value >= 0.f;
+    };
+    splitTop(args, ' ', w);
+    if (fn == "inset") {
+        out.e = 1;
+        std::size_t n = 0;
+        while (n < w.size() && w[n] != "round") ++n;
+        if (n == 0 || n > 4) return false;
+        Length v[4];
+        for (std::size_t k = 0; k < n; ++k) if (!len(w[k], v[k])) return false;
+        const Length t = v[0], r = n > 1 ? v[1] : t, b = n > 2 ? v[2] : t, l = n > 3 ? v[3] : r;
+        out.tracks[0] = t, out.tracks[1] = r, out.tracks[2] = b, out.tracks[3] = l;
+        out.tracks[4] = Length::px(0.f);
+        if (n < w.size()) {
+            if (w.size() != n + 2 || !len(w[n + 1], out.tracks[4])) return false;
+        }
+        out.trackCount = 5;
+        return true;
+    }
+    if (fn == "circle") {
+        out.e = 2;
+        std::size_t k = 0;
+        out.tracks[0] = Length{};
+        if (!w.empty() && w[0] != "at") { if (!radius(w[0], out.tracks[0])) return false; k = 1; }
+        out.trackCount = 3;
+        return position(k, out.tracks[1], out.tracks[2]);
+    }
+    if (fn == "ellipse") {
+        out.e = 3;
+        std::size_t k = 0;
+        out.tracks[0] = out.tracks[1] = Length{};
+        if (!w.empty() && w[0] != "at") {
+            if (w.size() < 2 || !radius(w[0], out.tracks[0]) || !radius(w[1], out.tracks[1])) return false;
+            k = 2;
+        }
+        out.trackCount = 4;
+        return position(k, out.tracks[2], out.tracks[3]);
+    }
+    if (fn == "polygon") {
+        out.e = 4;
+        std::vector<std::string_view> pts;
+        splitTop(args, ',', pts);
+        if (!pts.empty() && (trim(pts[0]) == "evenodd" || trim(pts[0]) == "nonzero")) {
+            out.b = trim(pts[0]) == "evenodd";
+            pts.erase(pts.begin());
+        }
+        if (pts.size() < 3 || pts.size() > std::size_t(kMaxTransitions)) return false;
+        for (std::size_t k = 0; k < pts.size(); ++k) {
+            std::vector<std::string_view> xy;
+            splitTop(trim(pts[k]), ' ', xy);
+            if (xy.size() != 2 || !len(xy[0], out.pairs[k][0]) || !len(xy[1], out.pairs[k][1])) return false;
+        }
+        out.trackCount = u8(pts.size());
+        return true;
+    }
+    return false;
+}
+
 bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
     text = trim(text);
     const PropInfo& pi = propInfo(p);
     out = {};
     out.type = pi.type;
+    if (p == Prop::ClipPath) return parseClipPath(text, out);
     switch (pi.type) {
     case T::Bool:
         if (p == Prop::Display) { out.b = text != "none"; return true; }
@@ -1145,6 +1245,16 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
             }
             if (n == 1) out.pairs[0][1] = out.pairs[0][0];
             out.trackCount = 1;
+            return true;
+        }
+        if (p == Prop::ContainerName) { // none | <custom-ident>+ (space separated)
+            if (text == "none") return true;
+            std::vector<std::string_view> names;
+            splitTop(text, ' ', names);
+            if (names.empty() || names.size() > std::size_t(kMaxTransitions)) return false;
+            for (std::size_t k = 0; k < names.size(); ++k)
+                if (!parseListItem(p, names[k], out, u8(k), false)) return false;
+            out.trackCount = u8(names.size());
             return true;
         }
         if (p == Prop::TimelineScope) { // none | all | <dashed-ident>#
@@ -1559,6 +1669,19 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::BackfaceVisibility: s.backfaceHidden = v.b; break;
     case Prop::TransformStyle: s.preserve3d = v.b; break;
     case Prop::ViewTimelineInset: s.viewTimelineInset = v.trackCount ? v.pairs[0] : std::array<Length, 2>{}; break;
+    case Prop::ContainerType: s.containerType = v.e; break;
+    case Prop::ClipPath:
+        s.clipShape = v.e;
+        s.clipEvenOdd = v.b;
+        s.clipCount = v.trackCount;
+        s.clipArgs = {};
+        if (v.e == 4) for (u8 k = 0; k < v.trackCount && k < kMaxTransitions; ++k) s.clipArgs[2 * k] = v.pairs[k][0], s.clipArgs[2 * k + 1] = v.pairs[k][1];
+        else for (u8 k = 0; k < v.trackCount && k < kMaxGridTracks; ++k) s.clipArgs[k] = v.tracks[k];
+        break;
+    case Prop::ContainerName:
+        s.containerNameCount = v.trackCount;
+        s.containerName = v.ids;
+        break;
     case Prop::TimelineScope:
         s.timelineScopeAll = v.b;
         s.timelineScopeCount = v.trackCount;
@@ -1942,6 +2065,14 @@ void addShorthand(StyleRule& rule, std::string_view name, std::string_view value
         }
         return;
     }
+    if (name == "container") { // <container-name> [/ <container-type>]?
+        const auto slash = value.find('/');
+        const std::string_view nm = trim(value.substr(0, slash));
+        const std::string_view ty = slash == std::string_view::npos ? std::string_view("normal") : trim(value.substr(slash + 1));
+        addDecl(rule, Prop::ContainerName, nm, line, diags);
+        addDecl(rule, Prop::ContainerType, ty, line, diags);
+        return;
+    }
     if (name == "animation-range") { // [<start> <end>?]#
         PropValue st = listValue(PropType::List), en = listValue(PropType::List);
         std::vector<std::string_view> items, words;
@@ -2129,98 +2260,418 @@ void splitSelectors(std::string_view list, std::vector<std::string_view>& out) {
 }
 } // namespace
 
-std::expected<StyleSheet, StyleDiagnostic> StyleSheet::parse(std::string_view css, std::vector<StyleDiagnostic>* diags) {
-    StyleSheet sheet;
-    Cursor c{css};
+namespace {
+std::atomic<u32> g_anonLayer{0};
+}
+// ---- sheet parser: style rules with CSS nesting, @layer, @media, @container, @supports, @keyframes -----------------
+struct SheetParser {
+    std::string text; // comments blanked (offsets kept)
+    std::vector<std::size_t> nl;
+    StyleSheet& sheet;
+    std::vector<StyleDiagnostic>* diags;
     u32 order = 0;
     std::vector<std::string_view> list;
-    for (;;) {
-        c.skipWs();
-        if (c.i >= css.size()) break;
-        const auto brace = css.find('{', c.i);
-        if (brace == std::string_view::npos) return std::unexpected(StyleDiagnostic{StyleError::Syntax, c.line, "expected '{'"});
-        const std::string_view selectors = trim(css.substr(c.i, brace - c.i));
-        const u32 line = c.line;
-        if (selectors.starts_with("@keyframes") || selectors.starts_with("@-webkit-keyframes")) {
-            // @keyframes <name> { <selector-list> { decls } ... }
-            std::size_t close = brace + 1;
-            int depth = 1;
-            for (; close < css.size() && depth > 0; ++close) depth += css[close] == '{' ? 1 : css[close] == '}' ? -1 : 0;
-            if (depth != 0) return std::unexpected(StyleDiagnostic{StyleError::Syntax, c.line, "expected '}'"});
-            --close; // the matching '}'
-            for (std::size_t k = c.i; k < close; ++k)
-                if (css[k] == '\n') ++c.line;
-            std::string_view name = trim(selectors.substr(selectors.find(' ') == std::string_view::npos ? selectors.size() : selectors.find(' ')));
-            if (name.size() >= 2 && (name.front() == '"' || name.front() == '\'') && name.back() == name.front()) name = name.substr(1, name.size() - 2);
-            if (name.empty() || name == "none") {
-                if (diags) diags->push_back({StyleError::Syntax, line, "bad @keyframes name"});
-                c.i = close + 1;
-                continue;
-            }
-            KeyframesRule kr;
-            kr.name = animationNameId(name);
-            std::string_view inner = css.substr(brace + 1, close - brace - 1);
-            while (!trim(inner).empty()) {
-                const auto ob = inner.find('{'), cb = inner.find('}');
-                if (ob == std::string_view::npos || cb == std::string_view::npos || cb < ob) {
-                    if (diags) diags->push_back({StyleError::Syntax, line, "bad keyframe block"});
-                    break;
-                }
-                StyleRule proto;
-                parseDecls(inner.substr(ob + 1, cb - ob - 1), line, proto, nullptr, diags);
-                Keyframe kf;
-                for (auto& d : proto.decls) {
-                    if (d.prop == Prop::AnimationTimingFunction) {
-                        if (d.value.trackCount == 1) kf.hasEase = true, kf.ease = d.value.eases[0];
-                    } else if (d.prop != Prop::Count && propInfo(d.prop).animatable) kf.decls.push_back(std::move(d)); // others ignored (CSS Animations 1 §3)
-                }
-                splitSelectors(trim(inner.substr(0, ob)), list);
-                for (auto sel : list) {
-                    f32 off = -1.f;
-                    std::string_view unit;
-                    if (sel == "from") off = 0.f;
-                    else if (sel == "to") off = 1.f;
-                    else if (parseNumber(sel, off, unit) && unit == "%" && off >= 0.f && off <= 100.f) off /= 100.f;
-                    else off = -1.f;
-                    if (off < 0.f) {
-                        if (diags) diags->push_back({StyleError::Syntax, line, "bad keyframe selector: " + std::string(sel)});
-                        continue;
-                    }
-                    kf.offset = off;
-                    kr.frames.push_back(kf);
-                }
-                inner.remove_prefix(cb + 1);
-            }
-            std::stable_sort(kr.frames.begin(), kr.frames.end(), [](const Keyframe& x, const Keyframe& y) { return x.offset < y.offset; });
-            sheet.m_keyframes.push_back(std::move(kr));
-            c.i = close + 1;
-            continue;
+    u32 lineAt(std::size_t pos) const { return 1 + u32(std::upper_bound(nl.begin(), nl.end(), pos) - nl.begin()) - (pos < text.size() && text[pos] == '\n' ? 1 : 0); }
+    void diag(StyleError e, std::size_t pos, std::string msg) { if (diags) diags->push_back({e, lineAt(pos), std::move(msg)}); }
+    // the matching '}' of the '{' at open (quotes / parens respected); npos when unbalanced
+    std::size_t matchBrace(std::size_t open) const {
+        int depth = 0;
+        char quote = 0;
+        for (std::size_t k = open; k < text.size(); ++k) {
+            const char c = text[k];
+            if (quote) { if (c == '\\') ++k; else if (c == quote) quote = 0; continue; }
+            if (c == '"' || c == '\'') quote = c;
+            else if (c == '{') ++depth;
+            else if (c == '}' && --depth == 0) return k;
         }
-        const auto close = css.find('}', brace);
-        if (close == std::string_view::npos) return std::unexpected(StyleDiagnostic{StyleError::Syntax, c.line, "expected '}'"});
-        for (std::size_t k = c.i; k < close; ++k)
-            if (css[k] == '\n') ++c.line;
+        return std::string::npos;
+    }
+    // next ';', '{' or '}' at paren depth 0 from i (end: e)
+    std::size_t nextStop(std::size_t i, std::size_t e) const {
+        int paren = 0;
+        char quote = 0;
+        for (std::size_t k = i; k < e; ++k) {
+            const char c = text[k];
+            if (quote) { if (c == '\\') ++k; else if (c == quote) quote = 0; continue; }
+            if (c == '"' || c == '\'') quote = c;
+            else if (c == '(') ++paren;
+            else if (c == ')') --paren;
+            else if (paren <= 0 && (c == ';' || c == '{' || c == '}')) return k;
+        }
+        return e;
+    }
+    u16 layerIndex(const std::string& full) {
+        // declaring "a.b" declares "a" first
+        for (std::size_t dot = full.find('.'); dot != std::string::npos; dot = full.find('.', dot + 1)) layerIndex(full.substr(0, dot));
+        auto& L = sheet.m_layers;
+        for (std::size_t k = 0; k < L.size(); ++k)
+            if (L[k] == full) return u16(k);
+        L.push_back(full);
+        return u16(L.size() - 1);
+    }
+    static std::string joinLayer(const std::string& prefix, std::string_view name) { return prefix.empty() ? std::string(name) : prefix + "." + std::string(name); }
+    bool parseKeyframes(std::string_view prelude, std::string_view inner, u32 line);
+    bool parseQuery(std::string_view q, StyleCondition& c, bool container);
+    bool supports(std::string_view cond);
+    // nested selectors: `&` is the parent (textually; each parent alternative); no `&` = descendant of the parent
+    void resolve(std::string_view prelude, const std::vector<std::string>& parents, std::vector<std::string>& out) {
+        std::vector<std::string_view> parts;
+        splitSelectors(prelude, parts);
+        out.clear();
+        for (auto part : parts) {
+            if (part.empty()) continue;
+            if (parents.empty()) { out.emplace_back(part); continue; }
+            for (const std::string& par : parents) {
+                if (part.find('&') == std::string_view::npos) { out.push_back(par + " " + std::string(part)); continue; }
+                std::string r;
+                for (char c : part) c == '&' ? r += par : r += c;
+                out.push_back(std::move(r));
+            }
+        }
+    }
+    bool block(std::size_t b, std::size_t e, const std::vector<std::string>& sels, u16 layer, u16 cond, const std::string& layerName, int depth);
+    void emit(const std::vector<std::string>& sels, std::string_view decls, u32 line, u16 layer, u16 cond) {
         StyleRule proto;
         std::vector<std::pair<u32, std::string>> tokens;
-        parseDecls(css.substr(brace + 1, close - brace - 1), line, proto, &tokens, diags);
-        // one rule per selector in the list
-        splitSelectors(selectors, list);
-        for (auto one : list) {
-            if (one.empty()) continue;
+        parseDecls(decls, line, proto, &tokens, diags);
+        for (const std::string& one : sels) {
             StyleRule rule;
             bool isRoot = false;
             if (!parseSelector(one, rule, isRoot)) {
-                if (diags) diags->push_back({StyleError::Syntax, line, "bad selector: " + std::string(one)});
-            } else {
-                rule.decls = proto.decls;
-                rule.order = order++;
-                rule.root = isRoot;
-                if (isRoot) for (auto& t : tokens) sheet.m_tokens.push_back(t);
-                if (!rule.chain.empty() || isRoot) sheet.m_rules.push_back(std::move(rule));
+                if (diags) diags->push_back({StyleError::Syntax, line, "bad selector: " + one});
+                continue;
             }
+            rule.decls = proto.decls;
+            rule.order = order++;
+            rule.root = isRoot;
+            rule.layer = layer;
+            rule.cond = cond;
+            if (isRoot) for (auto& t : tokens) sheet.m_tokens.push_back(t);
+            if (!rule.chain.empty() || isRoot) sheet.m_rules.push_back(std::move(rule));
         }
-        c.i = close + 1;
     }
+};
+bool SheetParser::parseKeyframes(std::string_view selectors, std::string_view innerIn, u32 line) {
+    StyleSheet& sheet = this->sheet;
+    std::string_view name = trim(selectors.substr(selectors.find(' ') == std::string_view::npos ? selectors.size() : selectors.find(' ')));
+    if (name.size() >= 2 && (name.front() == '"' || name.front() == '\'') && name.back() == name.front()) name = name.substr(1, name.size() - 2);
+    if (name.empty() || name == "none") {
+        if (diags) diags->push_back({StyleError::Syntax, line, "bad @keyframes name"});
+        return false;
+    }
+    KeyframesRule kr;
+    kr.name = animationNameId(name);
+    std::string_view inner = innerIn;
+    while (!trim(inner).empty()) {
+        const auto ob = inner.find('{'), cb = inner.find('}');
+        if (ob == std::string_view::npos || cb == std::string_view::npos || cb < ob) {
+            if (diags) diags->push_back({StyleError::Syntax, line, "bad keyframe block"});
+            break;
+        }
+        StyleRule proto;
+        parseDecls(inner.substr(ob + 1, cb - ob - 1), line, proto, nullptr, diags);
+        Keyframe kf;
+        for (auto& d : proto.decls) {
+            if (d.prop == Prop::AnimationTimingFunction) {
+                if (d.value.trackCount == 1) kf.hasEase = true, kf.ease = d.value.eases[0];
+            } else if (d.prop != Prop::Count && propInfo(d.prop).animatable) kf.decls.push_back(std::move(d)); // others ignored (CSS Animations 1 §3)
+        }
+        splitSelectors(trim(inner.substr(0, ob)), list);
+        for (auto sel : list) {
+            f32 off = -1.f;
+            std::string_view unit;
+            if (sel == "from") off = 0.f;
+            else if (sel == "to") off = 1.f;
+            else if (parseNumber(sel, off, unit) && unit == "%" && off >= 0.f && off <= 100.f) off /= 100.f;
+            else off = -1.f;
+            if (off < 0.f) {
+                if (diags) diags->push_back({StyleError::Syntax, line, "bad keyframe selector: " + std::string(sel)});
+                continue;
+            }
+            kf.offset = off;
+            kr.frames.push_back(kf);
+        }
+        inner.remove_prefix(cb + 1);
+    }
+    std::stable_sort(kr.frames.begin(), kr.frames.end(), [](const Keyframe& x, const Keyframe& y) { return x.offset < y.offset; });
+    sheet.m_keyframes.push_back(std::move(kr));
+    return true;
+}
+// one query (no top-level commas): [not|only] [all|screen|print] [and] (feature) [and (feature)]...
+bool SheetParser::parseQuery(std::string_view q, StyleCondition& c, bool container) {
+    using F = StyleCondition::Feature;
+    using O = StyleCondition::Op;
+    StyleCondition::Query qu;
+    q = trim(q);
+    auto word = [&](std::string_view w) {
+        if (q.size() >= w.size() && q.substr(0, w.size()) == w && (q.size() == w.size() || q[w.size()] == ' ' || q[w.size()] == '(')) {
+            q = trim(q.substr(w.size()));
+            return true;
+        }
+        return false;
+    };
+    if (word("not")) qu.negate = true;
+    else word("only");
+    if (!container) {
+        if (word("print")) qu.all.push_back({F::Never});
+        else if (!word("all")) word("screen");
+        word("and");
+    }
+    auto length = [&](std::string_view v, f32& out) {
+        f32 n = 0.f;
+        std::string_view u;
+        if (!parseNumber(trim(v), n, u)) return false;
+        if (u == "px" || (u.empty() && n == 0.f)) out = n;
+        else if (u == "em" || u == "rem") out = n * 16.f;
+        else return false;
+        return true;
+    };
+    while (!q.empty()) {
+        if (q.front() != '(') return false;
+        int d = 0;
+        std::size_t close = 0;
+        for (; close < q.size(); ++close) {
+            if (q[close] == '(') ++d;
+            else if (q[close] == ')' && --d == 0) break;
+        }
+        if (close >= q.size()) return false;
+        std::string_view f = trim(q.substr(1, close - 1));
+        q = trim(q.substr(close + 1));
+        if (!q.empty() && !word("and")) return false;
+        // name: value | range syntax (width >= 600px, 400px <= width <= 700px)
+        if (const auto colon = f.find(':'); colon != std::string_view::npos) {
+            std::string_view name = trim(f.substr(0, colon)), val = trim(f.substr(colon + 1));
+            O op = O::Eq;
+            if (name.starts_with("min-")) op = O::Ge, name.remove_prefix(4);
+            else if (name.starts_with("max-")) op = O::Le, name.remove_prefix(4);
+            if (name == "inline-size") name = "width";
+            if (name == "block-size") name = "height";
+            if (name == "width" || name == "height") {
+                StyleCondition::Test t{name == "width" ? F::Width : F::Height, op, 0.f};
+                if (!length(val, t.v)) return false;
+                qu.all.push_back(t);
+            } else if (name == "aspect-ratio") {
+                const auto sl = val.find('/');
+                f32 a = 0.f, b = 1.f;
+                std::string_view u;
+                if (!parseNumber(trim(val.substr(0, sl)), a, u) || (sl != std::string_view::npos && !parseNumber(trim(val.substr(sl + 1)), b, u)) || b <= 0.f) return false;
+                qu.all.push_back({F::AspectRatio, op, a / b});
+            } else if (name == "orientation" && op == O::Eq) {
+                if (val != "landscape" && val != "portrait") return false;
+                qu.all.push_back({F::Landscape, O::Eq, val == "landscape" ? 1.f : 0.f});
+            } else if (!container && name == "prefers-color-scheme" && op == O::Eq) {
+                if (val != "dark" && val != "light") return false;
+                qu.all.push_back({F::Dark, O::Eq, val == "dark" ? 1.f : 0.f});
+            } else if (!container && name == "prefers-reduced-motion" && op == O::Eq) {
+                if (val != "reduce" && val != "no-preference") return false;
+                qu.all.push_back({F::ReducedMotion, O::Eq, val == "reduce" ? 1.f : 0.f});
+            } else return false;
+            continue;
+        }
+        // range: a op name [op b]
+        std::string_view toks[5];
+        int n = 0;
+        for (std::size_t i = 0; i < f.size() && n < 5;) {
+            while (i < f.size() && f[i] == ' ') ++i;
+            if (i >= f.size()) break;
+            std::size_t j = i;
+            if (f[i] == '<' || f[i] == '>' || f[i] == '=') { j = i + 1; if (j < f.size() && f[j] == '=') ++j; }
+            else while (j < f.size() && f[j] != ' ' && f[j] != '<' && f[j] != '>' && f[j] != '=') ++j;
+            toks[n++] = f.substr(i, j - i);
+            i = j;
+        }
+        auto opOf = [](std::string_view o, bool flip, O& out) {
+            if (o == "=") { out = O::Eq; return true; }
+            const bool lt = o[0] == '<', eq = o.size() == 2;
+            const bool less = flip ? !lt : lt; // name on the right flips the sense
+            out = less ? (eq ? O::Le : O::Lt) : (eq ? O::Ge : O::Gt);
+            return true;
+        };
+        auto feat = [&](std::string_view nm, F& out) {
+            if (nm == "width" || nm == "inline-size") out = F::Width;
+            else if (nm == "height" || nm == "block-size") out = F::Height;
+            else return false;
+            return true;
+        };
+        F ft;
+        StyleCondition::Test t;
+        if (n == 3 && feat(toks[0], ft)) { // width >= 600px
+            t.f = ft;
+            if (!opOf(toks[1], false, t.op) || !length(toks[2], t.v)) return false;
+            qu.all.push_back(t);
+        } else if ((n == 3 || n == 5) && feat(toks[2], ft)) { // 600px <= width [<= 900px]
+            t.f = ft;
+            if (!opOf(toks[1], true, t.op) || !length(toks[0], t.v)) return false;
+            qu.all.push_back(t);
+            if (n == 5) {
+                StyleCondition::Test t2{ft, O::Eq, 0.f};
+                if (!opOf(toks[3], false, t2.op) || !length(toks[4], t2.v)) return false;
+                qu.all.push_back(t2);
+            }
+        } else return false;
+    }
+    c.any.push_back(std::move(qu));
+    return true;
+}
+// @supports: (prop: value), not / and / or, selector(...)
+bool SheetParser::supports(std::string_view cond) {
+    cond = trim(cond);
+    if (cond.starts_with("not ")) return !supports(cond.substr(4));
+    // split at top-level " and " / " or "
+    int d = 0;
+    for (std::size_t k = 0; k < cond.size(); ++k) {
+        if (cond[k] == '(') ++d;
+        else if (cond[k] == ')') --d;
+        else if (d == 0 && cond[k] == ' ') {
+            const std::string_view rest = cond.substr(k + 1);
+            if (rest.starts_with("and ")) return supports(cond.substr(0, k)) && supports(rest.substr(4));
+            if (rest.starts_with("or ")) return supports(cond.substr(0, k)) || supports(rest.substr(3));
+        }
+    }
+    if (cond.starts_with("selector(") && cond.back() == ')') {
+        StyleRule r;
+        bool root = false;
+        return parseSelector(trim(cond.substr(9, cond.size() - 10)), r, root);
+    }
+    if (cond.size() < 2 || cond.front() != '(' || cond.back() != ')') return false;
+    const std::string_view in = trim(cond.substr(1, cond.size() - 2));
+    if (in.starts_with("(") || in.starts_with("not ") || in.starts_with("selector(")) return supports(in);
+    const auto colon = in.find(':');
+    if (colon == std::string_view::npos) return false;
+    const std::string_view name = trim(in.substr(0, colon)), val = trim(in.substr(colon + 1));
+    if (name.starts_with("--")) return true;
+    Prop pr;
+    if (findProp(name, pr)) {
+        PropValue v;
+        return parsePropValue(pr, val, v);
+    }
+    StyleRule probe; // shorthands: supported when they expand to something
+    addShorthand(probe, name, val, 0, nullptr);
+    return !probe.decls.empty();
+}
+bool SheetParser::block(std::size_t b, std::size_t e, const std::vector<std::string>& sels, u16 layer, u16 cond, const std::string& layerName, int depth) {
+    if (depth > 32) { diag(StyleError::Syntax, b, "nesting too deep"); return true; }
+    struct Nested { std::size_t pre, open, close; };
+    std::vector<Nested> nested;
+    std::string decls;
+    std::size_t i = b, firstDecl = std::string::npos;
+    while (i < e) {
+        while (i < e && std::isspace(static_cast<unsigned char>(text[i]))) ++i;
+        if (i >= e) break;
+        const std::size_t j = nextStop(i, e);
+        if (j >= e || text[j] != '{') {
+            const std::string_view stmt = trim(std::string_view(text).substr(i, j - i));
+            if (stmt.starts_with("@layer")) { // statement: declares the order
+                std::vector<std::string_view> names;
+                splitSelectors(trim(stmt.substr(6)), names);
+                for (auto nm : names) if (!nm.empty()) layerIndex(joinLayer(layerName, nm));
+            } else if (stmt.starts_with("@")) {
+                if (!stmt.starts_with("@import") && !stmt.starts_with("@charset") && !stmt.starts_with("@namespace"))
+                    diag(StyleError::Syntax, i, "unsupported at-rule: " + std::string(stmt));
+            } else if (!stmt.empty()) {
+                if (sels.empty()) diag(StyleError::Syntax, i, "declaration outside a rule: " + std::string(stmt));
+                else {
+                    if (firstDecl == std::string::npos) firstDecl = i;
+                    decls.append(stmt).push_back(';');
+                }
+            }
+            if (j < e && text[j] == '}') { diag(StyleError::Syntax, j, "unexpected '}'"); }
+            i = j + 1;
+            continue;
+        }
+        const std::size_t close = matchBrace(j);
+        if (close == std::string::npos || close > e) return false;
+        nested.push_back({i, j, close});
+        i = close + 1;
+    }
+    // the rule's own declarations come before its nested rules
+    if (!sels.empty()) emit(sels, decls, lineAt(firstDecl == std::string::npos ? b : firstDecl), layer, cond);
+    std::vector<std::string> sub;
+    for (const Nested& n : nested) {
+        const std::string_view pre = trim(std::string_view(text).substr(n.pre, n.open - n.pre));
+        const std::string_view inner = std::string_view(text).substr(n.open + 1, n.close - n.open - 1);
+        const u32 line = lineAt(n.pre);
+        auto at = [&](std::string_view kw) { return pre.size() >= kw.size() && pre.substr(0, kw.size()) == kw && (pre.size() == kw.size() || !std::isalnum(static_cast<unsigned char>(pre[kw.size()])) && pre[kw.size()] != '-'); };
+        if (at("@keyframes") || at("@-webkit-keyframes")) {
+            parseKeyframes(pre, inner, line);
+        } else if (at("@media") || at("@container")) {
+            const bool ctr = at("@container");
+            StyleCondition c;
+            c.kind = ctr ? StyleCondition::Kind::Container : StyleCondition::Kind::Media;
+            c.parent = cond;
+            std::string_view q = trim(pre.substr(ctr ? 10 : 6));
+            if (ctr && !q.empty() && q.front() != '(' && !q.starts_with("not ")) { // a container name
+                const auto sp = q.find_first_of(" (");
+                c.containerName = animationNameId(q.substr(0, sp));
+                q = sp == std::string_view::npos ? std::string_view{} : trim(q.substr(sp));
+            }
+            std::vector<std::string_view> qs;
+            splitSelectors(q, qs);
+            bool ok = !qs.empty() || !ctr;
+            if (qs.empty() && !ctr) c.any.push_back({});
+            for (auto one : qs) ok = ok && parseQuery(one, c, ctr);
+            if (!ok) { // an unknown query is false (Media Queries 4 §3.2): drop the block
+                diag(StyleError::BadValue, n.pre, "unsupported query: " + std::string(pre));
+                continue;
+            }
+            sheet.m_conds.push_back(std::move(c));
+            if (!block(n.open + 1, n.close, sels, layer, u16(sheet.m_conds.size() - 1), layerName, depth + 1)) return false;
+        } else if (at("@supports")) {
+            if (supports(pre.substr(9)) && !block(n.open + 1, n.close, sels, layer, cond, layerName, depth + 1)) return false;
+        } else if (at("@layer")) {
+            std::string_view nm = trim(pre.substr(6));
+            const std::string full = joinLayer(layerName, nm.empty() ? "\x01anon" + std::to_string(g_anonLayer++) : std::string(nm));
+            if (!block(n.open + 1, n.close, sels, layerIndex(full), cond, full, depth + 1)) return false;
+        } else if (pre.starts_with("@")) {
+            diag(StyleError::Syntax, n.pre, "unsupported at-rule: " + std::string(pre));
+        } else {
+            resolve(pre, sels, sub);
+            const std::vector<std::string> mine = sub;
+            if (!block(n.open + 1, n.close, mine, layer, cond, layerName, depth + 1)) return false;
+        }
+    }
+    return true;
+}
+
+std::expected<StyleSheet, StyleDiagnostic> StyleSheet::parse(std::string_view css, std::vector<StyleDiagnostic>* diags) {
+    StyleSheet sheet;
+    SheetParser p{std::string(css), {}, sheet, diags};
+    for (std::size_t k = 0; k < p.text.size(); ++k) {
+        if (p.text[k] == '\n') p.nl.push_back(k);
+        if (p.text[k] == '/' && k + 1 < p.text.size() && p.text[k + 1] == '*') { // blank comments
+            const std::size_t end = p.text.find("*/", k + 2);
+            const std::size_t stop = end == std::string::npos ? p.text.size() : end + 2;
+            for (std::size_t m = k; m < stop; ++m) if (p.text[m] == '\n') p.nl.push_back(m); else p.text[m] = ' ';
+            k = stop - 1;
+        }
+    }
+    // unbalanced braces: the old parser's errors
+    int depth = 0;
+    for (std::size_t k = 0; k < p.text.size(); ++k) {
+        if (p.text[k] == '{') ++depth;
+        else if (p.text[k] == '}') --depth;
+    }
+    if (depth > 0) return std::unexpected(StyleDiagnostic{StyleError::Syntax, p.lineAt(p.text.size()), "expected '}'"});
+    // top level: anything not ending in a block is a syntax error ("expected '{'")
+    {
+        std::size_t i = 0;
+        for (;;) {
+            while (i < p.text.size() && std::isspace(static_cast<unsigned char>(p.text[i]))) ++i;
+            if (i >= p.text.size()) break;
+            const std::size_t j = p.nextStop(i, p.text.size());
+            if (j >= p.text.size() || p.text[j] != '{') {
+                const std::string_view stmt = trim(std::string_view(p.text).substr(i, j - i));
+                if (!stmt.starts_with("@")) return std::unexpected(StyleDiagnostic{StyleError::Syntax, p.lineAt(i), "expected '{'"});
+                i = j + 1;
+                continue;
+            }
+            const std::size_t close = p.matchBrace(j);
+            if (close == std::string::npos) return std::unexpected(StyleDiagnostic{StyleError::Syntax, p.lineAt(j), "expected '}'"});
+            i = close + 1;
+        }
+    }
+    if (!p.block(0, p.text.size(), {}, StyleRule::kNone, StyleRule::kNone, {}, 0))
+        return std::unexpected(StyleDiagnostic{StyleError::Syntax, 1, "expected '}'"});
     return sheet;
 }
 
@@ -2266,6 +2717,11 @@ StyleEngine::StyleEngine() {
 void StyleEngine::clearSheets() {
     m_sheets.clear();
     m_ordered.clear();
+    m_orderedCond.clear();
+    m_orderedSheet.clear();
+    m_mediaOk.clear();
+    m_condBase.clear();
+    m_hasContainer = false;
     m_structural = m_relational = false;
     buildInvalidation();
     ++m_version;
@@ -2283,16 +2739,128 @@ bool StyleEngine::replaceSheet(u32 index, StyleSheet sheet) {
     return true;
 }
 
+bool evalCondition(const StyleCondition& c, f32 w, f32 h, const MediaEnv& env) {
+    using F = StyleCondition::Feature;
+    using O = StyleCondition::Op;
+    for (const auto& q : c.any) {
+        bool ok = true;
+        for (const auto& t : q.all) {
+            f32 v = 0.f;
+            switch (t.f) {
+            case F::Always: v = t.v; break;
+            case F::Never: ok = false; break;
+            case F::Width: v = w; break;
+            case F::Height: v = h; break;
+            case F::AspectRatio: v = h > 0.f ? w / h : 0.f; break;
+            case F::Landscape: v = w > h ? 1.f : 0.f; break; // portrait when height >= width
+            case F::Dark: v = env.dark ? 1.f : 0.f; break;
+            case F::ReducedMotion: v = env.reducedMotion ? 1.f : 0.f; break;
+            }
+            if (!ok) break;
+            switch (t.op) {
+            case O::Ge: ok = v >= t.v; break;
+            case O::Le: ok = v <= t.v; break;
+            case O::Gt: ok = v > t.v; break;
+            case O::Lt: ok = v < t.v; break;
+            case O::Eq: ok = t.f == F::AspectRatio ? std::fabs(v - t.v) < 1e-3f : v == t.v; break;
+            }
+            if (!ok) break;
+        }
+        if (ok != q.negate) return true;
+    }
+    return false;
+}
+
+void StyleEngine::evalMedia() {
+    m_mediaOk.clear();
+    m_condBase.clear();
+    for (const auto& sh : m_sheets) {
+        m_condBase.push_back(u32(m_mediaOk.size()));
+        for (const auto& c : sh.m_conds)
+            m_mediaOk.push_back(c.kind == StyleCondition::Kind::Media ? u8(evalCondition(c, m_env.width, m_env.height, m_env)) : u8(1));
+    }
+}
+
+bool StyleEngine::setMediaEnv(const MediaEnv& env) {
+    if (env == m_env) return false;
+    m_env = env;
+    const std::vector<u8> before = m_mediaOk;
+    evalMedia();
+    if (before == m_mediaOk) return false;
+    ++m_version;
+    return true;
+}
+
+bool StyleEngine::condOk(const StyleSubject& s, u32 node, u32 idx) const {
+    const StyleCondition* c = m_orderedCond[idx];
+    if (!c) return true;
+    const StyleSheet* sh = m_orderedSheet[idx];
+    const u32 base = m_condBase[u32(sh - m_sheets.data())];
+    for (;;) {
+        const u32 ci = u32(c - sh->m_conds.data());
+        if (c->kind == StyleCondition::Kind::Media) {
+            if (!m_mediaOk[base + ci]) return false;
+        } else {
+            bool block = false;
+            for (const auto& q : c->any)
+                for (const auto& t : q.all)
+                    block = block || t.f == StyleCondition::Feature::Height || t.f == StyleCondition::Feature::AspectRatio ||
+                            t.f == StyleCondition::Feature::Landscape;
+            f32 w = 0.f, h = 0.f;
+            if (!s.containerSize(node, c->containerName, block, w, h)) return false;
+            if (!evalCondition(*c, w, h, m_env)) return false;
+        }
+        if (c->parent == StyleRule::kNone) return true;
+        c = &sh->m_conds[c->parent];
+    }
+}
+
 void StyleEngine::reorder() {
     m_ordered.clear();
+    m_orderedCond.clear();
+    m_orderedSheet.clear();
+    // @layer ranks: names merged over sheets in first-declaration order; a layer's sublayers precede its own rules
+    // (post-order); unlayered rules last
+    std::vector<std::string> names;
+    for (const auto& sh : m_sheets)
+        for (const auto& n : sh.m_layers)
+            if (std::find(names.begin(), names.end(), n) == names.end()) names.push_back(n);
+    std::vector<u32> rank(names.size(), 0);
+    {
+        u32 next = 0;
+        auto parentOf = [](const std::string& n) { const auto d = n.rfind('.'); return d == std::string::npos ? std::string() : n.substr(0, d); };
+        auto visit = [&](auto&& self, const std::string& parent) -> void {
+            for (std::size_t k = 0; k < names.size(); ++k)
+                if (parentOf(names[k]) == parent) {
+                    self(self, names[k]);
+                    rank[k] = next++;
+                }
+        };
+        visit(visit, std::string());
+    }
+    const u32 unlayered = u32(names.size());
+    struct Key { u32 rank; u32 spec; u32 sheet; u32 order; const StyleRule* r; const StyleSheet* sh; };
+    std::vector<Key> keyed;
+    m_hasContainer = false;
     u32 sheetIdx = 0;
-    std::vector<std::pair<u64, const StyleRule*>> keyed;
     for (const auto& sh : m_sheets) {
-        for (const auto& r : sh.m_rules) keyed.emplace_back((u64(r.specificity) << 40) | (u64(sheetIdx) << 32) | r.order, &r);
+        std::vector<u32> local(sh.m_layers.size());
+        for (std::size_t k = 0; k < local.size(); ++k)
+            local[k] = rank[std::size_t(std::find(names.begin(), names.end(), sh.m_layers[k]) - names.begin())];
+        for (const auto& r : sh.m_rules)
+            keyed.push_back({r.layer < local.size() ? local[r.layer] : unlayered, r.specificity, sheetIdx, r.order, &r, &sh});
+        for (const auto& c : sh.m_conds) m_hasContainer = m_hasContainer || c.kind == StyleCondition::Kind::Container;
         ++sheetIdx;
     }
-    std::stable_sort(keyed.begin(), keyed.end(), [](auto& a, auto& b) { return a.first < b.first; });
-    for (auto& k : keyed) m_ordered.push_back(k.second);
+    std::stable_sort(keyed.begin(), keyed.end(), [](const Key& a, const Key& b) {
+        return std::tie(a.rank, a.spec, a.sheet, a.order) < std::tie(b.rank, b.spec, b.sheet, b.order);
+    });
+    for (auto& k : keyed) {
+        m_ordered.push_back(k.r);
+        m_orderedSheet.push_back(k.sh);
+        m_orderedCond.push_back(k.r->cond < k.sh->m_conds.size() ? &k.sh->m_conds[k.r->cond] : nullptr);
+    }
+    evalMedia();
     m_structural = m_relational = false;
     for (const auto& sh : m_sheets) {
         m_structural = m_structural || sh.structural();
@@ -2702,8 +3270,8 @@ ComputedStyle StyleEngine::computeValue(const StyleSubject& s, u32 node, const C
     if (parent) inheritFrom(cs, *parent);
     m_scratch.clear();
     m_localTokens.clear();
-    for (const StyleRule* r : m_ordered)
-        if (matches(s, node, *r)) {
+    for (u32 oi = 0; oi < u32(m_ordered.size()); ++oi)
+        if (const StyleRule* r = m_ordered[oi]; matches(s, node, *r) && condOk(s, node, oi)) {
             m_scratch.push_back(r);
             for (const auto& d : r->decls)
                 if (d.prop == Prop::Count) m_localTokens.emplace_back(d.customHash, std::string_view(d.raw));
