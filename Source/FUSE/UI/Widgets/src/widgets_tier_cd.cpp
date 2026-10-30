@@ -8,6 +8,7 @@
 #include <charconv>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <string>
@@ -415,9 +416,41 @@ struct CalendarW {
 };
 
 // ---- chart ----------------------------------------------------------------------------------------------------------------
-struct Series { std::string name; std::vector<f32> v; Color color; };
-struct ChartState { ChartKind kind = ChartKind::Line; std::vector<Series> series; };
+struct Series { std::string name; std::vector<f32> v; Color color; bool hidden = false; };
+struct ChartState {
+    ChartKind kind = ChartKind::Line;
+    std::vector<Series> series;
+    ChartAxis axis[2];
+    ChartLegend legend = ChartLegend::Top;
+    std::vector<Color> sliceColors;
+    std::vector<bool> sliceHidden;
+    f32 vx0 = std::numeric_limits<f32>::quiet_NaN(), vx1 = std::numeric_limits<f32>::quiet_NaN(); // zoomed x view
+    Vec2 pointer{};
+    bool inside = false;
+    f32 dragX = 0.f, dragV0 = 0.f, dragV1 = 0.f;
+};
 Pool<ChartState>& chartPool() { static Pool<ChartState> p; return p; }
+
+constexpr u32 kPalette[] = {0x3D8BFD, 0xFFB347, 0x4CC38A, 0xC77DFF, 0xFF6B6B, 0x2EC4B6, 0xF7D154, 0x9A9CAB};
+
+std::string fmtNum(const std::string& f, double v) {
+    // the format is programmer-supplied; only a single float conversion is honoured, anything else falls back
+    std::size_t pc = 0;
+    for (std::size_t i = 0; i < f.size(); ++i)
+        if (f[i] == '%') { if (i + 1 < f.size() && f[i + 1] == '%') ++i; else ++pc; }
+    const std::size_t conv = f.find_first_of("gfeGFE", f.find('%') == std::string::npos ? f.size() : f.find('%'));
+    char b[64];
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+#endif
+    if (pc == 1 && conv != std::string::npos && f.find_first_of("sdnpcxXuoi*", f.find('%')) > conv) std::snprintf(b, sizeof b, f.c_str(), v);
+    else std::snprintf(b, sizeof b, "%.4g", v);
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+    return b;
+}
 
 struct ChartW {
     static constexpr std::string_view kName = "chart";
@@ -425,120 +458,408 @@ struct ChartW {
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
     static Size measure(UiContext&, NodeHandle, Size) { return {360.f, 200.f}; }
+    static bool radial(const ChartState& s) { return s.kind == ChartKind::Pie || s.kind == ChartKind::Donut; }
     static u32 points(const ChartState& s) {
         u32 n = 0;
         for (const Series& se : s.series) n = std::max(n, u32(se.v.size()));
         return n;
     }
-    static Rect plot(const UiContext& ui, NodeHandle n) {
+    static f32 fontPx(const UiContext& ui, NodeHandle n) { return ui.computed(n).fontSize * 0.8f; }
+    // legend entries: series for x/y charts, slices for pie / donut
+    static u32 entries(const ChartState& s) { return radial(s) ? (s.series.empty() ? 0u : u32(s.series[0].v.size())) : u32(s.series.size()); }
+    static std::string entryName(const ChartState& s, u32 i) {
+        if (!radial(s)) return s.series[i].name;
+        const auto& cat = s.axis[0].categories;
+        return i < cat.size() ? cat[i] : "#" + std::to_string(i);
+    }
+    static Color sliceColor(const ChartState& s, u32 i) {
+        return i < s.sliceColors.size() ? s.sliceColors[i] : Color::rgb(kPalette[i % std::size(kPalette)]);
+    }
+    static Color entryColor(const ChartState& s, u32 i) { return radial(s) ? sliceColor(s, i) : s.series[i].color; }
+    static bool entryHidden(const ChartState& s, u32 i) {
+        return radial(s) ? (i < s.sliceHidden.size() && s.sliceHidden[i]) : s.series[i].hidden;
+    }
+    static std::vector<Rect> legendItems(const UiContext& cui, NodeHandle n, const ChartState& s) {
+        UiContext& ui = const_cast<UiContext&>(cui); // measureString only fills the text cache
+        std::vector<Rect> out;
+        if (s.legend == ChartLegend::None) return out;
+        const Rect c = ui.contentRect(n);
+        const f32 fs = fontPx(ui, n), lh = lineH(ui, n);
+        const u32 ne = entries(s);
+        if (s.legend == ChartLegend::Right) {
+            f32 w = 0.f;
+            for (u32 i = 0; i < ne; ++i) w = std::max(w, ui.measureString(entryName(s, i), fs) + 22.f);
+            for (u32 i = 0; i < ne; ++i) out.push_back({c.right() - w, c.y + f32(i) * lh, w, lh});
+            return out;
+        }
+        f32 total = 0.f;
+        for (u32 i = 0; i < ne; ++i) total += ui.measureString(entryName(s, i), fs) + 22.f;
+        f32 x = s.legend == ChartLegend::Top ? c.right() - total : c.x + (c.w - total) * 0.5f;
+        const f32 y = s.legend == ChartLegend::Top ? c.y : c.bottom() - lh;
+        for (u32 i = 0; i < ne; ++i) {
+            const f32 w = ui.measureString(entryName(s, i), fs) + 22.f;
+            out.push_back({x, y, w, lh});
+            x += w;
+        }
+        return out;
+    }
+    static Rect plot(const UiContext& ui, NodeHandle n, const ChartState& s) {
         const Rect c = ui.contentRect(n);
         const f32 lh = lineH(ui, n);
-        return {c.x + 40.f, c.y + lh + 6.f, c.w - 46.f, c.h - lh - 12.f};
+        f32 l = c.x + 6.f, t = c.y + 4.f, r = c.right() - 6.f, b = c.bottom() - 4.f;
+        if (s.legend == ChartLegend::Top) t += lh + 2.f;
+        if (s.legend == ChartLegend::Bottom) b -= lh + 2.f;
+        if (s.legend == ChartLegend::Right) {
+            const auto items = legendItems(ui, n, s);
+            if (!items.empty()) r = items[0].x - 8.f;
+        }
+        if (!radial(s)) {
+            const ChartAxis& ax = s.axis[0];
+            const ChartAxis& ay = s.axis[1];
+            if (ay.visible) l += 36.f;
+            if (!ay.title.empty()) t += lh;
+            else if (s.legend != ChartLegend::Top) t += lh * 0.5f;
+            if (ax.visible) b -= lh + 2.f;
+            if (!ax.title.empty()) b -= lh;
+        }
+        return {l, t, std::max(1.f, r - l), std::max(1.f, b - t)};
     }
-    static void range(const ChartState& s, f32& lo, f32& hi) {
+    // full x extent in index units (bars are centred on slots)
+    static void fullView(const ChartState& s, f32& a, f32& b) {
+        const u32 n = points(s);
+        if (s.kind == ChartKind::Bar) { a = -0.5f; b = f32(n) - 0.5f; }
+        else { a = 0.f; b = n > 1 ? f32(n - 1) : 1.f; }
+    }
+    static void view(const ChartState& s, f32& a, f32& b) {
+        if (std::isnan(s.vx0) || std::isnan(s.vx1)) fullView(s, a, b);
+        else { a = s.vx0; b = s.vx1; }
+    }
+    static void range(const ChartState& s, f32& lo, f32& hi, f32& step) {
+        const ChartAxis& ay = s.axis[1];
+        f32 a, b;
+        view(s, a, b);
         lo = 1e30f; hi = -1e30f;
-        for (const Series& se : s.series) for (f32 v : se.v) { lo = std::min(lo, v); hi = std::max(hi, v); }
+        for (const Series& se : s.series) {
+            if (se.hidden) continue;
+            for (u32 i = 0; i < se.v.size(); ++i)
+                if (f32(i) >= a - 1.f && f32(i) <= b + 1.f) { lo = std::min(lo, se.v[i]); hi = std::max(hi, se.v[i]); }
+        }
         if (lo > hi) { lo = 0.f; hi = 1.f; }
         if (s.kind == ChartKind::Bar || s.kind == ChartKind::Area) { lo = std::min(lo, 0.f); hi = std::max(hi, 0.f); }
+        const bool fixLo = !std::isnan(ay.min), fixHi = !std::isnan(ay.max);
+        if (fixLo) lo = ay.min;
+        if (fixHi) hi = ay.max;
         if (hi - lo < 1e-6f) hi = lo + 1.f;
-        // nice step: 1, 2 or 5 x 10^k for ~4 intervals
-        const f32 raw = (hi - lo) / 4.f, mag = std::pow(10.f, std::floor(std::log10(raw)));
-        const f32 st = raw / mag <= 1.f ? mag : raw / mag <= 2.f ? 2.f * mag : raw / mag <= 5.f ? 5.f * mag : 10.f * mag;
-        lo = std::floor(lo / st) * st;
-        hi = std::ceil(hi / st) * st;
+        const f32 ticks = f32(std::max(1u, ay.ticks));
+        // nice step: 1, 2 or 5 x 10^k for ~`ticks` intervals (explicit bounds are kept exactly)
+        const f32 raw = (hi - lo) / ticks, mag = std::pow(10.f, std::floor(std::log10(raw)));
+        step = raw / mag <= 1.f ? mag : raw / mag <= 2.f ? 2.f * mag : raw / mag <= 5.f ? 5.f * mag : 10.f * mag;
+        if (fixLo && fixHi) { step = (hi - lo) / ticks; return; }
+        if (!fixLo) lo = std::floor(lo / step) * step;
+        if (!fixHi) hi = std::ceil(hi / step) * step;
     }
-    static f32 xAt(const Rect& p, u32 i, u32 n, bool bars) {
-        return bars ? p.x + (f32(i) + 0.5f) * p.w / f32(std::max(1u, n)) : p.x + (n > 1 ? f32(i) * p.w / f32(n - 1) : p.w * 0.5f);
+    static f32 xOf(const Rect& p, f32 i, f32 a, f32 b) { return p.x + (i - a) / std::max(1e-6f, b - a) * p.w; }
+    // ---- pie / donut geometry
+    struct Wedge { f32 a0, a1; u32 idx; };
+    static std::vector<Wedge> wedges(const ChartState& s, f32& total) {
+        std::vector<Wedge> out;
+        total = 0.f;
+        if (s.series.empty()) return out;
+        const auto& v = s.series[0].v;
+        for (u32 i = 0; i < v.size(); ++i) if (!entryHidden(s, i)) total += std::max(0.f, v[i]);
+        if (total <= 0.f) return out;
+        f32 a = -kPi * 0.5f;
+        for (u32 i = 0; i < v.size(); ++i) {
+            if (entryHidden(s, i) || v[i] <= 0.f) continue;
+            const f32 sw = v[i] / total * 2.f * kPi;
+            out.push_back({a, a + sw, i});
+            a += sw;
+        }
+        return out;
+    }
+    static constexpr f32 kPi = 3.14159265358979f;
+    static void pieGeo(const Rect& p, Vec2& c, f32& r) {
+        c = {p.x + p.w * 0.5f, p.y + p.h * 0.5f};
+        r = std::max(4.f, std::min(p.w, p.h) * 0.5f - 8.f);
+    }
+    static Path wedgePath(Vec2 c, f32 r0, f32 r1, f32 a0, f32 a1) {
+        Path path;
+        auto at = [&](f32 r, f32 a) { return Vec2{c.x + std::cos(a) * r, c.y + std::sin(a) * r}; };
+        const u32 chunks = u32(std::ceil((a1 - a0) / (kPi * 0.5f))); // arcs in <= 90 degree pieces (full circle safe)
+        const f32 st = (a1 - a0) / f32(std::max(1u, chunks));
+        if (r0 > 0.f) path.moveTo(at(r0, a0)); else path.moveTo(c);
+        path.lineTo(at(r1, a0));
+        for (u32 k = 1; k <= chunks; ++k) path.arcTo({r1, r1}, 0.f, false, true, at(r1, a0 + st * f32(k)));
+        if (r0 > 0.f) {
+            path.lineTo(at(r0, a1));
+            for (u32 k = chunks; k-- > 0;) path.arcTo({r0, r0}, 0.f, false, false, at(r0, a0 + st * f32(k)));
+        }
+        path.close();
+        return path;
+    }
+    static i32 hitWedge(const ChartState& s, const Rect& p, Vec2 pos) {
+        Vec2 c;
+        f32 r, total;
+        pieGeo(p, c, r);
+        const f32 dx = pos.x - c.x, dy = pos.y - c.y, d = std::sqrt(dx * dx + dy * dy);
+        if (d > r + 6.f || (s.kind == ChartKind::Donut && d < r * 0.55f)) return -1;
+        f32 a = std::atan2(dy, dx);
+        if (a < -kPi * 0.5f) a += 2.f * kPi;
+        for (const Wedge& w : wedges(s, total)) if (a >= w.a0 && a < w.a1) return i32(w.idx);
+        return -1;
+    }
+    static std::vector<std::string> tooltip(const UiContext& ui, NodeHandle n, const ChartState& s) {
+        std::vector<std::string> lines;
+        const i32 hov = i32(ui.value(n));
+        if (hov < 0) return lines;
+        if (radial(s)) {
+            f32 total;
+            wedges(s, total);
+            if (s.series.empty() || u32(hov) >= s.series[0].v.size() || total <= 0.f) return lines;
+            const f32 v = s.series[0].v[u32(hov)];
+            char pct[32];
+            std::snprintf(pct, sizeof pct, " (%.1f%%)", double(v / total * 100.f));
+            lines.push_back(entryName(s, u32(hov)) + ": " + fmtNum(s.axis[1].format, v) + pct);
+            return lines;
+        }
+        const auto& cat = s.axis[0].categories;
+        lines.push_back(u32(hov) < cat.size() ? cat[u32(hov)] : (s.axis[0].title.empty() ? "#" : s.axis[0].title + " ") + std::to_string(hov));
+        for (const Series& se : s.series)
+            if (!se.hidden && u32(hov) < se.v.size()) lines.push_back(se.name + ": " + fmtNum(s.axis[1].format, se.v[u32(hov)]));
+        return lines;
+    }
+    static void paintLegend(const PaintContext& pc, DrawList& dl, const ChartState& s, f32 fs) {
+        UiContext& ui = pc.ui;
+        const auto items = legendItems(ui, pc.node, s);
+        const Color text = pc.tint(pc.style.color);
+        for (u32 i = 0; i < items.size(); ++i) {
+            const Rect& it = items[i];
+            const bool off = entryHidden(s, i);
+            const Color col = pc.tint(entryColor(s, i));
+            const f32 sy = it.y + (it.h - 10.f) * 0.5f;
+            if (off) dl.roundedRect({it.x + 2.f, sy, 10.f, 10.f}, {}, {2.f, 2.f, 2.f, 2.f}, col, 1.f);
+            else dl.rect({it.x + 2.f, sy, 10.f, 10.f}, col, 2.f);
+            ui.paintString(dl, entryName(s, i), {it.x + 16.f, it.y, it.w - 16.f, it.h}, off ? text.withAlpha(text.a * 0.4f) : text, fs,
+                           TextAlignment::Start, pc.node.index);
+        }
+    }
+    static void paintTooltip(const PaintContext& pc, DrawList& dl, const ChartState& s, f32 fs) {
+        UiContext& ui = pc.ui;
+        if (!s.inside) return;
+        const auto lines = tooltip(ui, pc.node, s);
+        if (lines.empty()) return;
+        const f32 lh = fs * 1.35f;
+        f32 w = 0.f;
+        for (const auto& l : lines) w = std::max(w, ui.measureString(l, fs));
+        w += 16.f;
+        const f32 h = lh * f32(lines.size()) + 8.f;
+        const Rect c = pc.content;
+        f32 x = s.pointer.x + 14.f, y = s.pointer.y + 14.f;
+        if (x + w > c.right()) x = s.pointer.x - 14.f - w;
+        if (y + h > c.bottom()) y = s.pointer.y - 14.f - h;
+        x = std::max(c.x, x);
+        y = std::max(c.y, y);
+        dl.rect({x, y, w, h}, pc.tint(Color::rgb(0x1B1D24, 0.94f)), 4.f);
+        dl.roundedRect({x, y, w, h}, {}, {4.f, 4.f, 4.f, 4.f}, pc.tint(Color::rgb(0xFFFFFF, 0.18f)), 1.f);
+        for (u32 i = 0; i < lines.size(); ++i)
+            ui.paintString(dl, lines[i], {x + 8.f, y + 4.f + f32(i) * lh, w - 16.f, lh}, pc.tint(Color::rgb(0xF2F3F7)), fs,
+                           TextAlignment::Start, pc.node.index);
     }
     static void paint(const PaintContext& pc, DrawList& dl) {
         UiContext& ui = pc.ui;
         ChartState* s = chartPool().get(ui, pc.node);
         if (!s) return;
-        const Rect p = plot(ui, pc.node), c = pc.content;
+        const Rect p = plot(ui, pc.node, *s), c = pc.content;
         const Color text = pc.tint(pc.style.color), dim = pc.tint(pc.style.color.withAlpha(pc.style.color.a * 0.55f));
-        const f32 fs = pc.style.fontSize * 0.8f;
-        f32 lo, hi;
-        range(*s, lo, hi);
-        auto yOf = [&](f32 v) { return p.bottom() - (v - lo) / (hi - lo) * p.h; };
-        char b[32];
-        for (int i = 0; i <= 4; ++i) {
-            const f32 v = lo + (hi - lo) * f32(i) / 4.f, y = std::round(yOf(v));
-            dl.rect({p.x, y, p.w, 1.f}, pc.tint(Color::rgb(0xFFFFFF, i == 0 ? 0.25f : 0.07f)));
-            std::snprintf(b, sizeof b, "%.4g", double(v));
-            ui.paintString(dl, b, {c.x, y - 8.f, 36.f, 16.f}, dim, fs, TextAlignment::End, pc.node.index);
+        const f32 fs = pc.style.fontSize * 0.8f, lh = lineH(ui, pc.node);
+        const i32 hov = i32(ui.value(pc.node));
+        if (radial(*s)) {
+            Vec2 ctr;
+            f32 r, total;
+            pieGeo(p, ctr, r);
+            const f32 r0 = s->kind == ChartKind::Donut ? r * 0.55f : 0.f;
+            for (const Wedge& wd : wedges(*s, total)) {
+                Vec2 o = ctr;
+                if (i32(wd.idx) == hov) { // explode the hovered slice
+                    const f32 m = (wd.a0 + wd.a1) * 0.5f;
+                    o = {ctr.x + std::cos(m) * 6.f, ctr.y + std::sin(m) * 6.f};
+                }
+                dl.path(wedgePath(o, r0, r, wd.a0, wd.a1), pc.tint(sliceColor(*s, wd.idx)), false, pc.tint(pc.style.background.a > 0.f ? pc.style.background : Color::rgb(0x15171C)), 1.5f);
+            }
+            if (s->kind == ChartKind::Donut && !s->axis[1].title.empty())
+                ui.paintString(dl, s->axis[1].title, {ctr.x - r0, ctr.y - lh * 0.5f, 2.f * r0, lh}, text, fs, TextAlignment::Center, pc.node.index);
+            paintLegend(pc, dl, *s, fs);
+            paintTooltip(pc, dl, *s, fs);
+            return;
         }
+        const ChartAxis& ax = s->axis[0];
+        const ChartAxis& ay = s->axis[1];
+        f32 lo, hi, step;
+        range(*s, lo, hi, step);
+        f32 va, vb;
+        view(*s, va, vb);
+        auto yOf = [&](f32 v) { return p.bottom() - (v - lo) / (hi - lo) * p.h; };
+        // y grid + labels
+        const u32 nt = std::min(64u, u32(std::lround((hi - lo) / step)));
+        for (u32 i = 0; i <= nt; ++i) {
+            const f32 v = lo + step * f32(i), y = std::round(yOf(v));
+            if (ay.grid || i == 0) dl.rect({p.x, y, p.w, 1.f}, pc.tint(Color::rgb(0xFFFFFF, i == 0 ? 0.25f : 0.07f)));
+            if (ay.visible) ui.paintString(dl, fmtNum(ay.format, v), {p.x - 40.f, y - 8.f, 36.f, 16.f}, dim, fs, TextAlignment::End, pc.node.index);
+        }
+        if (!ay.title.empty()) ui.paintString(dl, ay.title, {c.x, p.y - lh - 2.f, p.right() - c.x, lh}, text, fs, TextAlignment::Start, pc.node.index);
+        // x labels (skip to keep them apart) + title
         const u32 n = points(*s);
+        if (ax.visible && n) {
+            auto label = [&](u32 i) { return i < ax.categories.size() ? ax.categories[i] : fmtNum(ax.format, double(i)); };
+            f32 maxW = 8.f;
+            const u32 i0 = u32(std::max(0.f, std::ceil(va))), i1 = u32(std::clamp(std::floor(vb), 0.f, f32(n - 1)));
+            for (u32 i = i0; i <= i1; ++i) maxW = std::max(maxW, ui.measureString(label(i), fs));
+            const f32 px = p.w / std::max(1e-3f, vb - va);
+            const u32 every = std::max(1u, u32(std::ceil((maxW + 8.f) / std::max(1e-3f, px))));
+            for (u32 i = i0; i <= i1; i += every) {
+                const f32 x = xOf(p, f32(i), va, vb);
+                if (ax.grid) dl.rect({std::round(x), p.y, 1.f, p.h}, pc.tint(Color::rgb(0xFFFFFF, 0.05f)));
+                ui.paintString(dl, label(i), {x - maxW * 0.5f - 4.f, p.bottom() + 2.f, maxW + 8.f, lh}, dim, fs, TextAlignment::Center, pc.node.index);
+            }
+        }
+        if (!ax.title.empty())
+            ui.paintString(dl, ax.title, {p.x, p.bottom() + (ax.visible ? lh + 2.f : 2.f), p.w, lh}, text, fs, TextAlignment::Center, pc.node.index);
         const bool bars = s->kind == ChartKind::Bar;
-        const u32 ns = u32(s->series.size());
+        u32 nvis = 0;
+        for (const Series& se : s->series) nvis += se.hidden ? 0u : 1u;
         dl.pushClip({p.x, p.y - 4.f, p.w, p.h + 5.f});
-        for (u32 k = 0; k < ns; ++k) {
-            const Series& se = s->series[k];
+        const f32 slot = p.w / std::max(1e-3f, vb - va);
+        u32 vk = 0;
+        for (const Series& se : s->series) {
+            if (se.hidden) continue;
             const Color col = pc.tint(se.color);
+            if (s->kind == ChartKind::Area && se.v.size() > 1) {
+                Path area;
+                area.moveTo({xOf(p, 0.f, va, vb), yOf(0.f)});
+                for (u32 i = 0; i < se.v.size(); ++i) area.lineTo({xOf(p, f32(i), va, vb), yOf(se.v[i])});
+                area.lineTo({xOf(p, f32(se.v.size() - 1), va, vb), yOf(0.f)}).close();
+                dl.path(area, col.withAlpha(col.a * 0.35f));
+            }
             for (u32 i = 0; i < se.v.size(); ++i) {
-                const f32 x = xAt(p, i, n, bars), y = yOf(se.v[i]);
+                const f32 x = xOf(p, f32(i), va, vb), y = yOf(se.v[i]);
                 switch (s->kind) {
                 case ChartKind::Bar: {
-                    const f32 slot = p.w / f32(std::max(1u, n)), bw = slot * 0.8f / f32(std::max(1u, ns));
-                    const f32 bx = x - slot * 0.4f + f32(k) * bw, y0 = yOf(0.f);
-                    dl.rect({bx + 1.f, std::min(y, y0), bw - 2.f, std::max(1.f, std::abs(y0 - y))}, col, 2.f);
+                    const f32 bw = slot * 0.8f / f32(std::max(1u, nvis));
+                    const f32 bx = x - slot * 0.4f + f32(vk) * bw, y0 = yOf(std::clamp(0.f, lo, hi));
+                    Color bc = i32(i) == hov ? col.withAlpha(std::min(1.f, col.a * 1.f)) : col.withAlpha(col.a * 0.85f);
+                    dl.rect({bx + 1.f, std::min(y, y0), std::max(1.f, bw - 2.f), std::max(1.f, std::abs(y0 - y))}, bc, 2.f);
                     break;
                 }
-                case ChartKind::Scatter:
-                    dl.rect({x - 3.f, y - 3.f, 6.f, 6.f}, col, 3.f);
+                case ChartKind::Scatter: {
+                    const f32 rr = i32(i) == hov ? 4.5f : 3.f;
+                    dl.rect({x - rr, y - rr, 2.f * rr, 2.f * rr}, col, rr);
                     break;
-                case ChartKind::Area:
-                    if (i + 1 < se.v.size()) { // filled with 2 px columns under the segment
-                        const f32 x1 = xAt(p, i + 1, n, false), y1 = yOf(se.v[i + 1]), y0 = yOf(0.f);
-                        for (f32 cx = x; cx < x1; cx += 2.f) {
-                            const f32 t = (cx - x) / std::max(1.f, x1 - x), cy = y + (y1 - y) * t;
-                            dl.rect({cx, std::min(cy, y0), std::min(2.f, x1 - cx), std::abs(y0 - cy)}, col.withAlpha(col.a * 0.35f));
-                        }
-                    }
-                    [[fallthrough]];
-                case ChartKind::Line:
-                    if (i + 1 < se.v.size()) dl.line({x, y}, {xAt(p, i + 1, n, false), yOf(se.v[i + 1])}, col, 2.f);
+                }
+                default:
+                    if (i + 1 < se.v.size()) dl.line({x, y}, {xOf(p, f32(i + 1), va, vb), yOf(se.v[i + 1])}, col, 2.f);
+                    if (i32(i) == hov) dl.rect({x - 3.5f, y - 3.5f, 7.f, 7.f}, col, 3.5f);
                     break;
                 }
             }
+            ++vk;
         }
         dl.popClip();
-        // legend (top right) and hover readout (top left)
-        f32 lx = c.right();
-        for (u32 k = ns; k-- > 0;) {
-            const Series& se = s->series[k];
-            const f32 w = ui.measureString(se.name, fs) + 22.f;
-            lx -= w;
-            dl.rect({lx, c.y + 5.f, 10.f, 10.f}, pc.tint(se.color), 2.f);
-            ui.paintString(dl, se.name, {lx + 14.f, c.y, w - 14.f, 20.f}, text, fs, TextAlignment::Start, pc.node.index);
+        if (hov >= 0 && u32(hov) < n && s->inside) {
+            const f32 x = std::round(xOf(p, f32(hov), va, vb));
+            if (x >= p.x && x <= p.right()) dl.rect({x, p.y, 1.f, p.h}, pc.tint(Color::rgb(0xFFFFFF, 0.3f)));
         }
-        const i32 hov = i32(ui.value(pc.node));
-        if (hov >= 0 && u32(hov) < n) {
-            const f32 x = std::round(xAt(p, u32(hov), n, bars));
-            dl.rect({x, p.y, 1.f, p.h}, pc.tint(Color::rgb(0xFFFFFF, 0.3f)));
-            std::string r = "#" + std::to_string(hov);
-            for (const Series& se : s->series)
-                if (u32(hov) < se.v.size()) { std::snprintf(b, sizeof b, "  %s %.4g", se.name.c_str(), double(se.v[hov])); r += b; }
-            ui.paintString(dl, r, {c.x, c.y, c.w, 20.f}, text, fs, TextAlignment::Start, pc.node.index);
-        }
+        paintLegend(pc, dl, *s, fs);
+        paintTooltip(pc, dl, *s, fs);
+    }
+    static void setView(UiContext& ui, NodeHandle node, ChartState& s, f32 a, f32 b) {
+        f32 fa, fb;
+        fullView(s, fa, fb);
+        const f32 full = fb - fa, minSpan = std::min(full, s.kind == ChartKind::Bar ? 1.f : 2.f);
+        f32 span = std::clamp(b - a, minSpan, full);
+        if (span >= full - 1e-4f) { s.vx0 = s.vx1 = std::numeric_limits<f32>::quiet_NaN(); ui.invalidate(node); return; }
+        a = std::clamp(a, fa, fb - span);
+        s.vx0 = a;
+        s.vx1 = a + span;
+        ui.invalidate(node);
+    }
+    static i32 hitIndex(const UiContext& ui, NodeHandle node, const ChartState& s, Vec2 pos) {
+        const Rect p = plot(ui, node, s);
+        if (radial(s)) return hitWedge(s, p, pos);
+        const u32 n = points(s);
+        if (!n || !p.contains(pos)) return -1;
+        f32 a, b;
+        view(s, a, b);
+        const f32 t = a + (pos.x - p.x) / p.w * (b - a);
+        return std::clamp(i32(std::lround(t)), 0, i32(n) - 1);
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
         UiContext& ui = ec.ui;
         ChartState* s = chartPool().get(ui, ec.node);
         if (!s) return false;
-        if (e.type == EventType::PointerMove) {
-            const Rect p = plot(ui, ec.node);
-            const u32 n = points(*s);
-            i32 idx = -1;
-            if (n && p.contains(e.pos)) {
-                const bool bars = s->kind == ChartKind::Bar;
-                const f32 t = bars ? (e.pos.x - p.x) / p.w * f32(n) - 0.5f : (e.pos.x - p.x) / p.w * f32(n - 1);
-                idx = std::clamp(i32(std::lround(t)), 0, i32(n) - 1);
+        auto hover = [&](Vec2 pos) {
+            s->pointer = pos;
+            s->inside = true;
+            const i32 idx = hitIndex(ui, ec.node, *s, pos);
+            if (f32(idx) != ui.value(ec.node)) ui.setValue(ec.node, f32(idx), true);
+            ui.invalidate(ec.node);
+        };
+        switch (e.type) {
+        case EventType::PointerMove:
+            if (ui.pressed() == ec.node && !radial(*s) && !std::isnan(s->vx0)) { // drag pans a zoomed view
+                const Rect p = plot(ui, ec.node, *s);
+                const f32 d = (e.pos.x - s->dragX) / p.w * (s->dragV1 - s->dragV0);
+                setView(ui, ec.node, *s, s->dragV0 - d, s->dragV1 - d);
             }
-            if (f32(idx) != ui.value(ec.node)) { ui.setValue(ec.node, f32(idx), true); ui.invalidate(ec.node); }
+            hover(e.pos);
+            return false;
+        case EventType::PointerLeave:
+            s->inside = false;
+            if (ui.value(ec.node) != -1.f) ui.setValue(ec.node, -1.f, true);
+            ui.invalidate(ec.node);
+            return false;
+        case EventType::PointerDown: {
+            const auto items = legendItems(ui, ec.node, *s);
+            for (u32 i = 0; i < items.size(); ++i)
+                if (items[i].contains(e.pos)) { // legend click toggles the entry
+                    if (radial(*s)) {
+                        if (s->sliceHidden.size() <= i) s->sliceHidden.resize(i + 1, false);
+                        s->sliceHidden[i] = !s->sliceHidden[i];
+                    } else s->series[i].hidden = !s->series[i].hidden;
+                    ui.emit(ec.node, SignalKind::Toggled, SignalArgs{f32(i), !entryHidden(*s, i), {}, &e});
+                    ui.invalidate(ec.node);
+                    return true;
+                }
+            f32 a, b;
+            view(*s, a, b);
+            s->dragX = e.pos.x; s->dragV0 = a; s->dragV1 = b;
             return false;
         }
-        return false;
+        case EventType::Wheel: { // zoom the x axis around the pointer
+            if (radial(*s) || e.wheel.y == 0.f) return false;
+            const Rect p = plot(ui, ec.node, *s);
+            if (!p.contains(e.pos)) return false;
+            f32 a, b;
+            view(*s, a, b);
+            const f32 f = std::pow(0.8f, e.wheel.y), at = a + (e.pos.x - p.x) / p.w * (b - a);
+            setView(ui, ec.node, *s, at - (at - a) * f, at + (b - at) * f);
+            hover(e.pos);
+            return true;
+        }
+        case EventType::KeyDown:
+            if (e.key == Key::Home || e.key == Key::Escape) {
+                if (std::isnan(s->vx0)) return false;
+                setView(ui, ec.node, *s, -1e9f, 1e9f);
+                return true;
+            }
+            if (!radial(*s) && (e.key == Key::Left || e.key == Key::Right) && !std::isnan(s->vx0)) {
+                const f32 d = (s->vx1 - s->vx0) * 0.25f * (e.key == Key::Left ? -1.f : 1.f);
+                setView(ui, ec.node, *s, s->vx0 + d, s->vx1 + d);
+                return true;
+            }
+            return false;
+        default: return false;
+        }
     }
 };
 
@@ -827,6 +1148,54 @@ void chartSetSeries(UiContext& ui, NodeHandle c, u32 index, std::string_view nam
 u32 chartSeriesCount(const UiContext& ui, NodeHandle c) {
     const ChartState* s = chartPool().get(ui, c);
     return s ? u32(s->series.size()) : 0u;
+}
+void chartSetAxis(UiContext& ui, NodeHandle c, ChartAxisId axis, const ChartAxis& a) {
+    if (ChartState* s = chartPool().get(ui, c)) { s->axis[axis == ChartAxisId::X ? 0 : 1] = a; ui.invalidate(c); }
+}
+ChartAxis chartAxis(const UiContext& ui, NodeHandle c, ChartAxisId axis) {
+    const ChartState* s = chartPool().get(ui, c);
+    return s ? s->axis[axis == ChartAxisId::X ? 0 : 1] : ChartAxis{};
+}
+void chartSetLegend(UiContext& ui, NodeHandle c, ChartLegend where) {
+    if (ChartState* s = chartPool().get(ui, c)) { s->legend = where; ui.invalidate(c); }
+}
+void chartSetEntryVisible(UiContext& ui, NodeHandle c, u32 index, bool visible) {
+    ChartState* s = chartPool().get(ui, c);
+    if (!s) return;
+    if (ChartW::radial(*s)) {
+        if (s->sliceHidden.size() <= index) s->sliceHidden.resize(index + 1, false);
+        s->sliceHidden[index] = !visible;
+    } else if (index < s->series.size()) s->series[index].hidden = !visible;
+    ui.invalidate(c);
+}
+bool chartEntryVisible(const UiContext& ui, NodeHandle c, u32 index) {
+    const ChartState* s = chartPool().get(ui, c);
+    if (!s) return false;
+    if (!ChartW::radial(*s) && index >= s->series.size()) return false;
+    return !ChartW::entryHidden(*s, index);
+}
+void chartSetSliceColors(UiContext& ui, NodeHandle c, std::span<const Color> colors) {
+    if (ChartState* s = chartPool().get(ui, c)) { s->sliceColors.assign(colors.begin(), colors.end()); ui.invalidate(c); }
+}
+void chartSetXView(UiContext& ui, NodeHandle c, f32 from, f32 to) {
+    if (ChartState* s = chartPool().get(ui, c)) ChartW::setView(ui, c, *s, std::min(from, to), std::max(from, to));
+}
+void chartXView(const UiContext& ui, NodeHandle c, f32& from, f32& to) {
+    from = to = 0.f;
+    if (const ChartState* s = chartPool().get(ui, c)) ChartW::view(*s, from, to);
+}
+void chartResetZoom(UiContext& ui, NodeHandle c) { chartSetXView(ui, c, -1e9f, 1e9f); }
+std::vector<std::string> chartTooltip(const UiContext& ui, NodeHandle c) {
+    const ChartState* s = chartPool().get(ui, c);
+    return s && s->inside ? ChartW::tooltip(ui, c, *s) : std::vector<std::string>{};
+}
+Rect chartPlotRect(const UiContext& ui, NodeHandle c) {
+    const ChartState* s = chartPool().get(ui, c);
+    return s ? ChartW::plot(ui, c, *s) : Rect{};
+}
+std::vector<Rect> chartLegendRects(const UiContext& ui, NodeHandle c) {
+    const ChartState* s = chartPool().get(ui, c);
+    return s ? ChartW::legendItems(ui, c, *s) : std::vector<Rect>{};
 }
 
 // ---- markdown view --------------------------------------------------------------------------------------------------------

@@ -6,6 +6,7 @@
 // `background2` = accent / indicator fill (when no gradient is set), `border-color` = outline.
 #pragma once
 
+#include <limits>
 #include <span>
 
 #include <string>
@@ -239,12 +240,41 @@ void calendarDate(const UiContext& ui, NodeHandle cal, int& year, int& month, in
 i32 daysFromCivil(int y, int m, int d);
 void civilFromDays(i32 z, int& y, int& m, int& d);
 
-/// Chart: line, bar, area or scatter series over a shared x index, auto-scaled y axis with grid lines. Hovering
-/// sets value() to the nearest x index (-1 outside).
-enum class ChartKind : u8 { Line, Bar, Area, Scatter };
+/// Chart: line, bar, area or scatter series over a shared x index (auto-scaled y axis with grid lines), or pie / donut
+/// slices from series 0 (slice labels = X axis categories). Hovering sets value() to the nearest x index / the slice
+/// under the pointer (-1 outside) and shows a tooltip; clicking a legend entry toggles it (Toggled: value = entry,
+/// flag = now visible). On x/y charts the wheel zooms the x axis around the pointer, dragging pans a zoomed view,
+/// Left/Right pan and Home/Escape reset.
+enum class ChartKind : u8 { Line, Bar, Area, Scatter, Pie, Donut };
+enum class ChartAxisId : u8 { X, Y };
+struct ChartAxis {
+    std::string title;                   ///< X: under the axis; Y: above the axis; Donut: centre label (Y title)
+    f32 min = std::numeric_limits<f32>::quiet_NaN(), max = std::numeric_limits<f32>::quiet_NaN(); ///< Y bounds, NaN = auto
+    u32 ticks = 4;                       ///< Y: target number of intervals
+    std::string format = "%.4g";         ///< printf with one floating conversion, for numeric labels and tooltip values
+    std::vector<std::string> categories; ///< X: label per index (also pie slice names)
+    bool grid = true;
+    bool visible = true;                 ///< labels shown
+};
+enum class ChartLegend : u8 { None, Top, Bottom, Right };
 NodeHandle chart(UiContext& ui, NodeHandle parent, ChartKind kind, std::string_view id = {});
 void chartSetSeries(UiContext& ui, NodeHandle chart, u32 index, std::string_view name, std::span<const f32> values, Color color);
 u32 chartSeriesCount(const UiContext& ui, NodeHandle chart);
+void chartSetAxis(UiContext& ui, NodeHandle chart, ChartAxisId axis, const ChartAxis& a);
+ChartAxis chartAxis(const UiContext& ui, NodeHandle chart, ChartAxisId axis);
+void chartSetLegend(UiContext& ui, NodeHandle chart, ChartLegend where);
+/// Legend entries: series (x/y kinds) or slices (pie / donut).
+void chartSetEntryVisible(UiContext& ui, NodeHandle chart, u32 index, bool visible);
+bool chartEntryVisible(const UiContext& ui, NodeHandle chart, u32 index);
+void chartSetSliceColors(UiContext& ui, NodeHandle chart, std::span<const Color> colors);
+/// Visible x range in index units (zoom); a range covering everything resets.
+void chartSetXView(UiContext& ui, NodeHandle chart, f32 from, f32 to);
+void chartXView(const UiContext& ui, NodeHandle chart, f32& from, f32& to);
+void chartResetZoom(UiContext& ui, NodeHandle chart);
+/// Lines of the tooltip currently shown (empty when none).
+std::vector<std::string> chartTooltip(const UiContext& ui, NodeHandle chart);
+Rect chartPlotRect(const UiContext& ui, NodeHandle chart);
+std::vector<Rect> chartLegendRects(const UiContext& ui, NodeHandle chart);
 
 /// Markdown view: headings (#, ##, ###), paragraphs, '-' / '*' bullets, numbered items, ``` code blocks and '>' quotes
 /// become styled label children (classes md-h1..md-h3, md-p, md-li, md-code, md-quote). Inline ** and ` are stripped.

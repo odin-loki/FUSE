@@ -1201,12 +1201,140 @@ void gateSvg() {
     if (const std::string dir = fuse::ui::os::env("FUSE_EXTRAS_OUT"); !dir.empty())
         stbi_write_png((dir + "/svg.png").c_str(), img.width, img.height, 4, img.pixels.data(), img.width * 4);
 }
+
+void gateCharts() {
+    Screen s;
+    UiContext& ui = s.ui;
+    ui.setCss(ui.root(), "flex-direction", "column");
+    // pie: three slices, legend on the right, explicit colours
+    const NodeHandle pie = w::chart(ui, ui.root(), w::ChartKind::Pie, "pie");
+    ui.setCss(pie, "width", "360px");
+    ui.setCss(pie, "height", "220px");
+    const f32 pv[] = {1.f, 1.f, 2.f};
+    w::chartSetSeries(ui, pie, 0, "share", pv, Color::rgb(0xFFFFFF));
+    const Color sc[] = {Color::rgb(0xFF0000), Color::rgb(0x00FF00), Color::rgb(0x0000FF)};
+    w::chartSetSliceColors(ui, pie, sc);
+    w::ChartAxis cats;
+    cats.categories = {"Red", "Green", "Blue"};
+    w::chartSetAxis(ui, pie, w::ChartAxisId::X, cats);
+    w::chartSetLegend(ui, pie, w::ChartLegend::Right);
+    // donut + line chart with axis customisation
+    const NodeHandle donut = w::chart(ui, ui.root(), w::ChartKind::Donut, "donut");
+    ui.setCss(donut, "width", "300px");
+    ui.setCss(donut, "height", "200px");
+    w::chartSetSeries(ui, donut, 0, "d", pv, Color::rgb(0xFFFFFF));
+    w::ChartAxis dy;
+    dy.title = "Total";
+    w::chartSetAxis(ui, donut, w::ChartAxisId::Y, dy);
+    const NodeHandle line = w::chart(ui, ui.root(), w::ChartKind::Line, "line");
+    ui.setCss(line, "width", "500px");
+    ui.setCss(line, "height", "240px");
+    std::vector<f32> a(40), b(40);
+    for (u32 i = 0; i < 40; ++i) { a[i] = f32(i); b[i] = 40.f - f32(i); }
+    w::chartSetSeries(ui, line, 0, "Up", a, Color::rgb(0x3D8BFD));
+    w::chartSetSeries(ui, line, 1, "Down", b, Color::rgb(0xFFB347));
+    w::ChartAxis yx;
+    yx.min = 0.f; yx.max = 50.f; yx.ticks = 5; yx.format = "%.0f ms"; yx.title = "Latency";
+    w::chartSetAxis(ui, line, w::ChartAxisId::Y, yx);
+    w::ChartAxis xx;
+    xx.title = "Frame";
+    w::chartSetAxis(ui, line, w::ChartAxisId::X, xx);
+    w::chartSetLegend(ui, line, w::ChartLegend::Bottom);
+    CHECK(w::chartAxis(ui, line, w::ChartAxisId::Y).format == "%.0f ms");
+    for (int i = 0; i < 3; ++i) step(ui);
+    // pie pixels: slice 0 top-right, 1 bottom-right, 2 left
+    Image img;
+    fuse::ui::test::render(ui, img);
+    auto px = [&](f32 x, f32 y) {
+        const u8* p = reinterpret_cast<const u8*>(img.pixels.data()) + (std::size_t(int(y)) * img.width + std::size_t(int(x))) * 4;
+        return std::array<int, 3>{p[0], p[1], p[2]};
+    };
+    const Rect pp = w::chartPlotRect(ui, pie);
+    const Vec2 c{pp.x + pp.w * 0.5f, pp.y + pp.h * 0.5f};
+    const f32 r = std::min(pp.w, pp.h) * 0.25f;
+    const auto tr = px(c.x + r, c.y - r), br = px(c.x + r, c.y + r), lf = px(c.x - r, c.y);
+    CHECK(tr[0] > 200 && tr[1] < 60 && tr[2] < 60);
+    CHECK(br[1] > 200 && br[0] < 60);
+    CHECK(lf[2] > 200 && lf[0] < 60);
+    const auto legend = w::chartLegendRects(ui, pie);
+    CHECK(legend.size() == 3 && legend[0].x > pp.right());
+    // donut hole is background
+    const Rect dp = w::chartPlotRect(ui, donut);
+    const Vec2 dc{dp.x + dp.w * 0.5f, dp.y + dp.h * 0.5f};
+    const auto hole = px(dc.x + 2.f, dc.y + 14.f), ring = px(dc.x + (std::min(dp.w, dp.h) * 0.5f - 8.f) * 0.8f, dc.y - 3.f);
+    CHECK(hole[0] < 80 && hole[1] < 80 && hole[2] < 80);
+    CHECK(ring[0] > 150 || ring[1] > 150 || ring[2] > 150);
+    if (const std::string dir = fuse::ui::os::env("FUSE_EXTRAS_OUT"); !dir.empty())
+        stbi_write_png((dir + "/charts.png").c_str(), img.width, img.height, 4, img.pixels.data(), img.width * 4);
+    // pie tooltip on hover: name, value, percentage
+    ui.pointerMove({c.x - r, c.y});
+    step(ui);
+    CHECK(ui.value(pie) == 2.f);
+    auto tip = w::chartTooltip(ui, pie);
+    CHECK(tip.size() == 1 && tip[0] == "Blue: 2 (50.0%)");
+    // legend click hides a slice: the remaining two split 50/50
+    std::vector<std::pair<u32, bool>> toggles;
+    ui.connect(pie, SignalKind::Toggled, [&](UiContext&, NodeHandle, const SignalArgs& g) { toggles.push_back({u32(g.value), g.flag}); });
+    const Vec2 l2{legend[2].x + 5.f, legend[2].y + legend[2].h * 0.5f};
+    ui.pointerMove(l2);
+    ui.pointerDown(l2);
+    ui.pointerUp(l2);
+    step(ui);
+    CHECK(toggles.size() == 1 && toggles[0].first == 2 && !toggles[0].second && !w::chartEntryVisible(ui, pie, 2));
+    ui.pointerMove({c.x + r, c.y - r});
+    step(ui);
+    tip = w::chartTooltip(ui, pie);
+    CHECK(tip.size() == 1 && tip[0] == "Red: 1 (50.0%)");
+    w::chartSetEntryVisible(ui, pie, 2, true);
+    // line: hover tooltip uses the axis format; legend at the bottom
+    const Rect lp = w::chartPlotRect(ui, line);
+    const auto ll = w::chartLegendRects(ui, line);
+    CHECK(ll.size() == 2 && ll[0].y > lp.bottom());
+    ui.pointerMove({lp.x + lp.w * 10.f / 39.f, lp.y + lp.h * 0.5f});
+    step(ui);
+    CHECK(ui.value(line) == 10.f);
+    tip = w::chartTooltip(ui, line);
+    CHECK(tip.size() == 3 && tip[0] == "Frame 10" && tip[1] == "Up: 10 ms" && tip[2] == "Down: 30 ms");
+    // wheel zoom around the pointer keeps the pointed index in place
+    f32 v0, v1;
+    w::chartXView(ui, line, v0, v1);
+    CHECK(v0 == 0.f && v1 == 39.f);
+    ui.wheel({lp.x + lp.w * 10.f / 39.f, lp.y + lp.h * 0.5f}, {0.f, 2.f});
+    step(ui);
+    w::chartXView(ui, line, v0, v1);
+    CHECK(std::abs((v1 - v0) - 39.f * 0.64f) < 0.01f && std::abs(v0 + (v1 - v0) * 10.f / 39.f - 10.f) < 0.01f);
+    // drag pans; pans clamp to the data
+    const f32 span = v1 - v0;
+    ui.pointerDown({lp.x + 200.f, lp.y + 20.f});
+    ui.pointerMove({lp.right() - 1.f, lp.y + 20.f});
+    ui.pointerMove({lp.right() + 400.f, lp.y + 20.f});
+    ui.pointerUp({lp.right() + 400.f, lp.y + 20.f});
+    step(ui);
+    w::chartXView(ui, line, v0, v1);
+    CHECK(v0 == 0.f && std::abs(v1 - v0 - span) < 0.01f);
+    ui.setFocus(line);
+    ui.keyDown(Key::Right);
+    w::chartXView(ui, line, v0, v1);
+    CHECK(v0 > 0.f);
+    ui.keyDown(Key::Home);
+    w::chartXView(ui, line, v0, v1);
+    CHECK(v0 == 0.f && v1 == 39.f);
+    // hiding a series removes it from the tooltip
+    w::chartSetEntryVisible(ui, line, 1, false);
+    ui.pointerMove({lp.x + lp.w * 10.f / 39.f + 1.f, lp.y + lp.h * 0.5f});
+    step(ui);
+    tip = w::chartTooltip(ui, line);
+    CHECK(tip.size() == 2 && tip[1] == "Up: 10 ms");
+    ui.pointerMove({1190.f, 790.f});
+    step(ui);
+    CHECK(w::chartTooltip(ui, line).empty());
+}
 } // namespace
 
 int main(int argc, char** argv) {
     const std::map<std::string, std::function<void()>> gates{
         {"undo", gateUndo}, {"gesture", gateGesture}, {"i18n", gateI18n}, {"desktop", gateDesktop}, {"pdf", gatePdf}, {"containers", gateContainers}, {"dialogs", gateDialogs}, {"lcd_keyseq", gateLcdKeyseq},
-        {"mdi", gateMdi}, {"completer", gateCompleter}, {"graphics", gateGraphics}, {"widget_pdf", gateWidgetPdf}, {"tray", gateTray}, {"richtext", gateRichText}, {"webview", gateWebView}, {"declarative", gateDeclarative}, {"vkeyboard", gateVirtualKeyboard}, {"svg", gateSvg}};
+        {"mdi", gateMdi}, {"completer", gateCompleter}, {"graphics", gateGraphics}, {"widget_pdf", gateWidgetPdf}, {"tray", gateTray}, {"richtext", gateRichText}, {"webview", gateWebView}, {"declarative", gateDeclarative}, {"vkeyboard", gateVirtualKeyboard}, {"svg", gateSvg}, {"charts", gateCharts}};
     std::string only;
     for (int i = 1; i < argc; ++i) if (std::strncmp(argv[i], "--gate=", 7) == 0) only = argv[i] + 7;
     for (auto& [n, f] : gates) if (only.empty() || only == n) { f(); std::printf("gate %s: %s\n", n.c_str(), g_fail ? "FAIL" : "ok"); }
