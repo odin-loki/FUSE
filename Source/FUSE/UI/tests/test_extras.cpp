@@ -850,6 +850,58 @@ void gateRichText() {
 }
 
 // System web engine (WebKitGTK here; run under Xvfb). Skips cleanly when no engine / display is present.
+// Embedded child in a foreign X parent: map timing (parent mapped after the child), geometry in parent coordinates
+// after resizes, hide/show, explicit + click focus.
+void gateWebViewEmbedded() {
+    using fuse::ui::web::WebView;
+    auto x11 = fuse::ui::os::loadLibrary({"libX11.so.6"});
+    if (!x11 || !std::getenv("DISPLAY")) { std::printf("webview embedded: no X11, skipped\n"); return; }
+    auto openDpy = x11->get<void* (*)(const char*)>("XOpenDisplay");
+    auto closeDpy = x11->get<int (*)(void*)>("XCloseDisplay");
+    auto rootOf = x11->get<unsigned long (*)(void*, int)>("XRootWindow");
+    auto create = x11->get<unsigned long (*)(void*, unsigned long, int, int, unsigned, unsigned, unsigned, unsigned long, unsigned long)>("XCreateSimpleWindow");
+    auto mapW = x11->get<int (*)(void*, unsigned long)>("XMapWindow");
+    auto destroyW = x11->get<int (*)(void*, unsigned long)>("XDestroyWindow");
+    auto sync = x11->get<int (*)(void*, int)>("XSync");
+    void* dpy = openDpy(nullptr);
+    if (!dpy) { std::printf("webview embedded: XOpenDisplay failed, skipped\n"); return; }
+    const unsigned long parent = create(dpy, rootOf(dpy, 0), 0, 0, 800, 600, 0, 0, 0xffffff);
+    sync(dpy, 0);
+    WebView v;
+    CHECK(v.create(reinterpret_cast<void*>(parent), {20, 30, 300, 200}));
+    auto pump = [&](const std::function<bool()>& until) {
+        for (int i = 0; i < 500 && !until(); ++i) { v.poll(); std::this_thread::sleep_for(std::chrono::milliseconds(10)); }
+        return until();
+    };
+    fuse::ui::Rect g{};
+    bool viewable = true;
+    if (!v.nativeGeometry(g, viewable)) { std::printf("webview embedded: backend has no X embedding, skipped\n"); v.destroy(); destroyW(dpy, parent); closeDpy(dpy); return; }
+    CHECK(!viewable); // parent not mapped yet
+    CHECK(g.x == 20 && g.y == 30 && g.w == 300 && g.h == 200);
+    mapW(dpy, parent);
+    sync(dpy, 0);
+    CHECK(pump([&] { return v.nativeGeometry(g, viewable) && viewable; }));
+    CHECK(g.x == 20 && g.y == 30 && g.w == 300 && g.h == 200);
+    v.setBounds({50, 60, 410, 250});
+    v.poll();
+    CHECK(pump([&] { return v.nativeGeometry(g, viewable) && g.w == 410 && g.h == 250; }));
+    CHECK(g.x == 50 && g.y == 60); // parent-relative, not root coordinates
+    v.setVisible(false);
+    CHECK(v.nativeGeometry(g, viewable) && !viewable);
+    v.setVisible(true);
+    CHECK(pump([&] { return v.nativeGeometry(g, viewable) && viewable; }));
+    CHECK(g.x == 50 && g.y == 60 && g.w == 410 && g.h == 250); // geometry survives hide/show
+    v.setBounds({0, 0, 1, 1}); // degenerate sizes clamp instead of X BadValue
+    v.setBounds({5, 5, 200, 100});
+    CHECK(pump([&] { return v.nativeGeometry(g, viewable) && g.w == 200 && g.h == 100 && g.x == 5; }));
+    CHECK(v.focus());
+    CHECK(pump([&] { return v.hasFocus(); }));
+    v.destroy();
+    destroyW(dpy, parent);
+    sync(dpy, 0);
+    closeDpy(dpy);
+}
+
 void gateWebView() {
     using fuse::ui::web::WebView;
     if (!WebView::available()) { std::printf("webview: no system engine (%s), skipped\n", WebView::backendName()); return; }
@@ -902,6 +954,7 @@ void gateWebView() {
     v.destroy();
     CHECK(!v.valid());
     std::remove(file.c_str());
+    gateWebViewEmbedded();
 }
 
 void gateDeclarative() {

@@ -47,6 +47,12 @@ public:
     void setBounds(Rect r);
     void setVisible(bool v);
     void setTitle(std::string_view windowTitle); ///< top-level mode
+    /// Gives the embedded view keyboard focus (a press inside it also does). False when unsupported.
+    bool focus();
+    bool hasFocus() const;
+    /// The native child's geometry in parent pixels as the window system sees it, and whether it is viewable (mapped
+    /// with a mapped parent). False when not embedded / unsupported (tests, layout sync checks).
+    bool nativeGeometry(Rect& out, bool& viewable) const;
     /// Pumps the engine's events (call every frame on the UI thread). Returns true if anything was handled.
     bool poll();
 

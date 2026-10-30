@@ -30,6 +30,9 @@ std::string WebView::url() const { return m_b ? m_b->url() : std::string{}; }
 std::string WebView::title() const { return m_b ? m_b->title() : std::string{}; }
 void WebView::setBounds(Rect r) { if (m_b) m_b->setBounds(r); }
 void WebView::setVisible(bool v) { if (m_b) m_b->setVisible(v); }
+bool WebView::focus() { return m_b && m_b->focus(); }
+bool WebView::hasFocus() const { return m_b && m_b->hasFocus(); }
+bool WebView::nativeGeometry(Rect& out, bool& viewable) const { return m_b && m_b->nativeGeometry(out, viewable); }
 void WebView::setTitle(std::string_view t) { if (m_b) m_b->setTitle(t); }
 bool WebView::poll() { return m_b && m_b->poll(); }
 

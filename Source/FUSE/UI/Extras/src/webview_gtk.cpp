@@ -6,6 +6,7 @@
 #include "fuse/ui/os.hpp"
 
 #include <cstdint>
+#include <algorithm>
 #include <cstring>
 #include <vector>
 
@@ -37,6 +38,16 @@ struct Gtk {
     void* (*gdk_x11_display_get_xdisplay)(void*);
     int (*XReparentWindow)(void*, unsigned long, unsigned long, int, int);
     int (*XFlush)(void*);
+    int (*XSync)(void*, int);
+    int (*XMoveResizeWindow)(void*, unsigned long, int, int, unsigned, unsigned);
+    int (*XMapWindow)(void*, unsigned long);
+    int (*XUnmapWindow)(void*, unsigned long);
+    int (*XSetInputFocus)(void*, unsigned long, int, unsigned long);
+    int (*XGetInputFocus)(void*, unsigned long*, int*);
+    int (*XQueryTree)(void*, unsigned long, unsigned long*, unsigned long*, unsigned long**, unsigned*);
+    int (*XFree)(void*);
+    int (*XGetWindowAttributes)(void*, unsigned long, void*);
+    void (*gtk_widget_grab_focus)(void*);
     unsigned long (*g_signal_connect_data)(void*, const char*, GCallback, void*, void*, int);
     gboolean (*g_main_context_iteration)(void*, gboolean);
     void (*g_free)(void*);
@@ -90,7 +101,7 @@ Gtk* gtk() {
         G(gtk_init_check); G(gtk_window_new); G(gtk_window_set_default_size); G(gtk_window_set_title); G(gtk_window_move);
         G(gtk_window_resize); G(gtk_container_add); G(gtk_widget_show_all); G(gtk_widget_hide); G(gtk_widget_realize);
         G(gtk_widget_destroy); G(gtk_widget_set_size_request); G(gtk_widget_get_window); G(g_signal_connect_data);
-        G(g_main_context_iteration); G(g_free); G(g_error_free); G(g_object_unref);
+        G(g_main_context_iteration); G(g_free); G(g_error_free); G(gtk_widget_grab_focus); G(g_object_unref);
         L(*g.gtk, g.gdk_x11_window_get_xid, "gdk_x11_window_get_xid", false);
         L(*g.gtk, g.gdk_display_get_default, "gdk_display_get_default", false);
         L(*g.gtk, g.gdk_x11_display_get_xdisplay, "gdk_x11_display_get_xdisplay", false);
@@ -107,7 +118,17 @@ Gtk* gtk() {
 #undef WO
         if (!all || !(g.webkit_web_view_evaluate_javascript || g.webkit_web_view_run_javascript)) return false;
         g.x11 = os::loadLibrary({"libX11.so.6"});
-        if (g.x11) { L(*g.x11, g.XReparentWindow, "XReparentWindow", false); L(*g.x11, g.XFlush, "XFlush", false); }
+        if (g.x11) {
+            L(*g.x11, g.XReparentWindow, "XReparentWindow", false); L(*g.x11, g.XFlush, "XFlush", false);
+            L(*g.x11, g.XSync, "XSync", false); L(*g.x11, g.XMoveResizeWindow, "XMoveResizeWindow", false);
+            L(*g.x11, g.XMapWindow, "XMapWindow", false); L(*g.x11, g.XUnmapWindow, "XUnmapWindow", false);
+            L(*g.x11, g.XSetInputFocus, "XSetInputFocus", false); L(*g.x11, g.XGetInputFocus, "XGetInputFocus", false);
+            L(*g.x11, g.XQueryTree, "XQueryTree", false); L(*g.x11, g.XFree, "XFree", false);
+            L(*g.x11, g.XGetWindowAttributes, "XGetWindowAttributes", false);
+            if (!(g.XSync && g.XMoveResizeWindow && g.XMapWindow && g.XUnmapWindow && g.XSetInputFocus && g.XGetInputFocus &&
+                  g.XQueryTree && g.XFree && g.XGetWindowAttributes))
+                g.XReparentWindow = nullptr; // embedding needs the whole set
+        }
         return bool(g.gtk_init_check(nullptr, nullptr));
     }();
     g.ok = done;
@@ -148,18 +169,25 @@ public:
         g.g_signal_connect_data(m_view, "notify::title", GCallback(&onTitle), this, nullptr, 0);
         g.g_signal_connect_data(m_view, "load-changed", GCallback(&onLoadChanged), this, nullptr, 0);
         g.g_signal_connect_data(m_window, "delete-event", GCallback(&onDelete), this, nullptr, 0);
+        g.g_signal_connect_data(m_view, "button-press-event", GCallback(&onPress), this, nullptr, 0);
         if (m_popup) {
+            // Embedded child: realise unmapped, reparent while unmapped (no WM involvement: GTK_WINDOW_POPUP is
+            // override-redirect), then map. Mapping before the parent is mapped is fine: the child becomes viewable
+            // when the parent maps. Geometry is set with X calls afterwards because GTK still believes the window is
+            // a root child and would place it in root coordinates.
             g.gtk_widget_realize(m_window);
-            void* dpy = g.gdk_x11_display_get_xdisplay ? g.gdk_x11_display_get_xdisplay(g.gdk_display_get_default()) : nullptr;
-            const unsigned long xid = g.gdk_x11_window_get_xid(g.gtk_widget_get_window(m_window));
-            if (dpy && xid) {
-                g.XReparentWindow(dpy, xid, (unsigned long)(std::uintptr_t)parent, int(b.x), int(b.y));
-                g.XFlush(dpy);
-            }
+            m_dpy = g.gdk_x11_display_get_xdisplay ? g.gdk_x11_display_get_xdisplay(g.gdk_display_get_default()) : nullptr;
+            m_xid = g.gdk_x11_window_get_xid(g.gtk_widget_get_window(m_window));
+            if (!m_dpy || !m_xid) return false;
+            g.XReparentWindow(m_dpy, m_xid, (unsigned long)(std::uintptr_t)parent, int(b.x), int(b.y));
+            g.XSync(m_dpy, 0);
+            g.gtk_widget_show_all(m_window);
+            m_bounds = b;
+            applyGeometry();
         } else {
             g.gtk_window_move(m_window, int(b.x), int(b.y));
+            g.gtk_widget_show_all(m_window);
         }
-        g.gtk_widget_show_all(m_window);
         return true;
     }
     void navigate(std::string_view url) override { gtk()->webkit_web_view_load_uri(m_view, std::string(url).c_str()); }
@@ -182,11 +210,69 @@ public:
     std::string title() const override { const char* t = gtk()->webkit_web_view_get_title(m_view); return t ? t : ""; }
     void setBounds(Rect r) override {
         Gtk& g = *gtk();
+        if (m_popup) { m_bounds = r; applyGeometry(); return; }
         g.gtk_widget_set_size_request(m_view, int(r.w), int(r.h));
         g.gtk_window_resize(m_window, int(r.w), int(r.h));
         g.gtk_window_move(m_window, int(r.x), int(r.y));
     }
-    void setVisible(bool v) override { v ? gtk()->gtk_widget_show_all(m_window) : gtk()->gtk_widget_hide(m_window); }
+    void setVisible(bool v) override {
+        Gtk& g = *gtk();
+        if (v) {
+            g.gtk_widget_show_all(m_window);
+            if (m_popup) { g.XMapWindow(m_dpy, m_xid); applyGeometry(); }
+        } else {
+            g.gtk_widget_hide(m_window);
+            if (m_popup) { g.XUnmapWindow(m_dpy, m_xid); g.XSync(m_dpy, 0); }
+        }
+    }
+    bool focus() override {
+        Gtk& g = *gtk();
+        g.gtk_widget_grab_focus(m_view);
+        if (!m_popup) return true;
+        // override-redirect children never get focus from the WM: take it explicitly (RevertToParent)
+        g.XSetInputFocus(m_dpy, m_xid, 2 /*RevertToParent*/, 0 /*CurrentTime*/);
+        g.XSync(m_dpy, 0);
+        return true;
+    }
+    bool hasFocus() const override {
+        if (!m_popup) return false;
+        Gtk& g = *gtk();
+        unsigned long f = 0;
+        int revert = 0;
+        g.XGetInputFocus(m_dpy, &f, &revert);
+        for (int depth = 0; f > 1 && depth < 32; ++depth) { // focus may sit on a GDK child of ours
+            if (f == m_xid) return true;
+            unsigned long root = 0, parent = 0, *kids = nullptr;
+            unsigned n = 0;
+            if (!g.XQueryTree(m_dpy, f, &root, &parent, &kids, &n)) return false;
+            if (kids) g.XFree(kids);
+            if (parent == root) return false;
+            f = parent;
+        }
+        return false;
+    }
+    bool nativeGeometry(Rect& out, bool& viewable) const override {
+        if (!m_popup) return false;
+        struct Attrs { // XWindowAttributes
+            int x, y, width, height, border_width, depth;
+            void* visual;
+            unsigned long root;
+            int c_class, bit_gravity, win_gravity, backing_store;
+            unsigned long backing_planes, backing_pixel;
+            int save_under;
+            unsigned long colormap;
+            int map_installed, map_state;
+            long all_event_masks, your_event_mask, do_not_propagate_mask;
+            int override_redirect;
+            void* screen;
+        } a{};
+        Gtk& g = *gtk();
+        g.XSync(m_dpy, 0);
+        if (!g.XGetWindowAttributes(m_dpy, m_xid, &a)) return false;
+        out = {f32(a.x), f32(a.y), f32(a.width), f32(a.height)};
+        viewable = a.map_state == 2; // IsViewable
+        return true;
+    }
     void setTitle(std::string_view t) override { gtk()->gtk_window_set_title(m_window, std::string(t).c_str()); }
     bool poll() override {
         bool any = false;
@@ -228,10 +314,26 @@ private:
         if (event == 3 /*WEBKIT_LOAD_FINISHED*/ && self->view.onLoadFinished) self->view.onLoadFinished(self->url());
     }
     static gboolean onDelete(void* w, void*, void*) { gtk()->gtk_widget_hide(w); return 1; }
+    static gboolean onPress(void*, void*, void* user) { // click-to-focus for the embedded child
+        auto* self = static_cast<GtkWebView*>(user);
+        if (self->m_popup) self->focus();
+        return 0; // let WebKit handle the press
+    }
+    void applyGeometry() {
+        Gtk& g = *gtk();
+        const int w = std::max(1, int(m_bounds.w)), h = std::max(1, int(m_bounds.h));
+        g.gtk_widget_set_size_request(m_view, w, h);
+        g.gtk_window_resize(m_window, w, h); // GTK's allocation follows the new size
+        g.XMoveResizeWindow(m_dpy, m_xid, int(m_bounds.x), int(m_bounds.y), unsigned(w), unsigned(h));
+        g.XSync(m_dpy, 0);
+    }
 
     void* m_window = nullptr;
     void* m_view = nullptr;
     bool m_popup = false;
+    void* m_dpy = nullptr;
+    unsigned long m_xid = 0;
+    Rect m_bounds{};
     std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);
 };
 } // namespace

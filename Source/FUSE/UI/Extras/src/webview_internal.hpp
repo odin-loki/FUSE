@@ -30,6 +30,10 @@ public:
     virtual void setVisible(bool v) = 0;
     virtual void setTitle(std::string_view t) = 0;
     virtual bool poll() = 0;
+    // embedded-child helpers (default: not supported)
+    virtual bool focus() { return false; }
+    virtual bool hasFocus() const { return false; }
+    virtual bool nativeGeometry(Rect& out, bool& viewable) const { (void)out; (void)viewable; return false; }
     WebView& view;
 };
 
