@@ -7,6 +7,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <limits>
 #include <span>
@@ -41,6 +42,24 @@ NodeHandle toggleSwitch(UiContext& ui, NodeHandle parent, std::string_view text,
 NodeHandle slider(UiContext& ui, NodeHandle parent, f32 lo, f32 hi, f32 value, f32 step = 0.f, std::string_view id = {});
 NodeHandle scrollBar(UiContext& ui, NodeHandle parent, bool vertical, std::string_view id = {});
 NodeHandle spinBox(UiContext& ui, NodeHandle parent, f32 lo, f32 hi, f32 value, f32 step = 1.f, std::string_view id = {});
+/// QSpinBox / QDoubleSpinBox parity on a spinBox: typed entry (typing replaces the value; Backspace, Escape cancels,
+/// Enter / focus out commits an in-range number clamped, anything else reverts; editingFinished), prefix / suffix,
+/// decimals, wrapping, specialValueText (shown at the minimum, typing it selects the minimum), adaptive decimal
+/// stepping, keyboardTracking (valueChanged per keystroke or only on commit), textFromValue / valueFromText.
+struct SpinBoxOptions {
+    std::string prefix, suffix;
+    i32 decimals = -1; ///< -1: from the step (0 for step >= 1)
+    bool wrapping = false;
+    std::string specialValueText;
+    bool adaptiveStep = false; ///< QAbstractSpinBox::AdaptiveDecimalStepType
+    bool keyboardTracking = true;
+    std::function<std::string(double)> textFromValue;                     ///< clean text, without prefix / suffix
+    std::function<std::optional<double>(std::string_view)> valueFromText; ///< nullopt: not a value
+};
+void setSpinBoxOptions(UiContext& ui, NodeHandle spin, SpinBoxOptions options);
+std::string spinBoxText(const UiContext& ui, NodeHandle spin);      ///< QAbstractSpinBox::text (what is shown)
+std::string spinBoxCleanText(const UiContext& ui, NodeHandle spin); ///< QSpinBox::cleanText
+void spinBoxStepBy(UiContext& ui, NodeHandle spin, i32 steps);      ///< QAbstractSpinBox::stepBy
 /// Items separated by '\n'; value() is the selected index. (Tier A: cycles in place; the popup list is Tier B.)
 NodeHandle comboBox(UiContext& ui, NodeHandle parent, std::string_view items, u32 selected = 0, std::string_view id = {});
 NodeHandle lineEdit(UiContext& ui, NodeHandle parent, std::string_view text = {}, std::string_view id = {});
