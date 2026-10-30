@@ -227,7 +227,7 @@ void gatePdf() {
     CHECK(d.pageCount() == 2);
     const std::string pdf = d.finish();
     CHECK(pdf.starts_with("%PDF-1.4") && pdf.ends_with("%%EOF\n"));
-    CHECK(pdf.find("/Count 2") != std::string::npos && pdf.find("/ImageMask true") != std::string::npos);
+    CHECK(pdf.find("/Count 2") != std::string::npos && pdf.find("/SMask") != std::string::npos);
     CHECK(pdf.find("/SMask") != std::string::npos && pdf.find("(Hello PDF \\(FUSE\\) caf\xE9)") != std::string::npos);
     // xref offsets point at "N 0 obj"
     const auto sx = pdf.rfind("startxref\n");
@@ -517,7 +517,7 @@ void gateWidgetPdf() {
     const f32 k = (pdf::A4.w - pdf::mm(30)) / ui.viewport().w;
     d.renderDrawList(ui.drawList(), {pdf::mm(15), pdf::mm(15)}, k, ui.atlas().pixels(), ui.atlas().size());
     const std::string out = d.finish();
-    CHECK(out.find("/ImageMask true") != std::string::npos && out.size() > 2000);
+    CHECK(out.find("/SMask") != std::string::npos && out.size() > 2000);
     const std::string dir = fuse::ui::os::env("FUSE_EXTRAS_OUT");
     if (!dir.empty()) {
         CHECK(d.save(dir + "/extras.pdf"));

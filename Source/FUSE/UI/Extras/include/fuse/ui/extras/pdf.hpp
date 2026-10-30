@@ -54,7 +54,7 @@ public:
 
 private:
     struct Page { PageSize size; std::string content; std::vector<int> xobjects; int clipDepth = 0; bool usesAtlas = false; };
-    struct XObject { int w, h; std::string rgb, alpha; bool mask; };
+    struct XObject { int w, h; std::string rgb, alpha; bool mask; int alphaRef = -1; bool alphaOnly = false; };
     Page& cur();
     void color(Color c, bool stroke);
     void roundPath(const Rect& r, f32 rad);
@@ -62,6 +62,7 @@ private:
     std::vector<Page> m_pages;
     std::vector<XObject> m_images;
     int m_atlasXo = -1;
+    std::vector<std::pair<u32, int>> m_glyphInks; // packed colour -> xobject (1x1 ink soft-masked by the atlas)
     const u8* m_atlasPtr = nullptr;
 };
 

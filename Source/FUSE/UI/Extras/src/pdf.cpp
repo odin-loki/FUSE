@@ -198,24 +198,30 @@ void PdfDocument::renderDrawList(const DrawList& dl, Vec2 o, f32 k, const u8* at
         case DrawOp::PopClip: if (depth > 0) { popClip(); --depth; } break;
         case DrawOp::Glyph: {
             if (!atlas || atlasSize <= 0 || c.fill.a <= 0.f) break;
-            if (atlasId < 0) {
-                XObject x{atlasSize, atlasSize, {}, {}, true};
-                const int rowBytes = (atlasSize + 7) / 8;
-                x.rgb.assign(std::size_t(rowBytes) * atlasSize, 0);
-                for (int y = 0; y < atlasSize; ++y)
-                    for (int xx = 0; xx < atlasSize; ++xx)
-                        if (atlas[std::size_t(y) * atlasSize + xx] >= 110) x.rgb[std::size_t(y) * rowBytes + xx / 8] |= char(0x80 >> (xx & 7));
+            if (atlasId < 0) { // anti-aliased: the 8-bit coverage atlas becomes one shared DeviceGray soft mask
+                XObject x{atlasSize, atlasSize, {}, std::string(reinterpret_cast<const char*>(atlas), std::size_t(atlasSize) * atlasSize), false};
+                x.alphaOnly = true;
                 m_images.push_back(std::move(x));
                 atlasId = int(m_images.size()) - 1;
-                cur().xobjects.push_back(atlasId);
+                m_glyphInks.clear();
             }
+            const u32 key = u32(c.fill.r * 255.f + .5f) | u32(c.fill.g * 255.f + .5f) << 8 | u32(c.fill.b * 255.f + .5f) << 16;
+            int ink = -1;
+            for (auto& [kk, id] : m_glyphInks) if (kk == key) ink = id;
+            if (ink < 0) {
+                XObject x{1, 1, std::string{char(key & 255), char((key >> 8) & 255), char((key >> 16) & 255)}, {}, false};
+                x.alphaRef = atlasId;
+                m_images.push_back(std::move(x));
+                ink = int(m_images.size()) - 1;
+                m_glyphInks.push_back({key, ink});
+            }
+            if (std::find(cur().xobjects.begin(), cur().xobjects.end(), ink) == cur().xobjects.end()) cur().xobjects.push_back(ink);
             const Rect g = R(c.rect);
             std::string& s = cur().content;
             s += "q\n" + alphaGs(c.fill.a, false);
-            color(c.fill, false);
             s += num(g.x) + " " + num(g.y) + " " + num(g.w) + " " + num(g.h) + " re W n\n";
             const f32 S = f32(atlasSize) * k, ax = g.x - f32(c.u) * k, ay = g.y - f32(c.v) * k;
-            s += num(S) + " 0 0 " + num(-S) + " " + num(ax) + " " + num(ay + S) + " cm /Im" + std::to_string(atlasId) + " Do Q\n";
+            s += num(S) + " 0 0 " + num(-S) + " " + num(ax) + " " + num(ay + S) + " cm /Im" + std::to_string(ink) + " Do Q\n";
             break;
         }
         case DrawOp::Image:
@@ -250,8 +256,10 @@ std::string PdfDocument::finish() const {
         const XObject& x = m_images[i];
         const std::string wh = "/Width " + std::to_string(x.w) + " /Height " + std::to_string(x.h);
         if (x.mask) { imgIds[i] = add(stream("/Type /XObject /Subtype /Image " + wh + " /ImageMask true /BitsPerComponent 1 /Decode [1 0]", x.rgb)); continue; }
+        if (x.alphaOnly) { imgIds[i] = add(stream("/Type /XObject /Subtype /Image " + wh + " /ColorSpace /DeviceGray /BitsPerComponent 8", x.alpha)); continue; }
         std::string smask;
-        if (!x.alpha.empty()) smask = " /SMask " + std::to_string(add(stream("/Type /XObject /Subtype /Image " + wh + " /ColorSpace /DeviceGray /BitsPerComponent 8", x.alpha))) + " 0 R";
+        if (x.alphaRef >= 0) smask = " /SMask " + std::to_string(imgIds[std::size_t(x.alphaRef)]) + " 0 R";
+        else if (!x.alpha.empty()) smask = " /SMask " + std::to_string(add(stream("/Type /XObject /Subtype /Image " + wh + " /ColorSpace /DeviceGray /BitsPerComponent 8", x.alpha))) + " 0 R";
         imgIds[i] = add(stream("/Type /XObject /Subtype /Image " + wh + " /ColorSpace /DeviceRGB /BitsPerComponent 8" + smask, x.rgb));
     }
     std::string fontDict = "<<";
