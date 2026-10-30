@@ -64,6 +64,17 @@ void ranges(const Scene& s, f32 lo[3], f32 hi[3]);
 Vec2 project(const Scene& s, Rect target, Vec3 data, f32* depth = nullptr);
 /// Draws the scene into `dl` within `target`; `items` receives the pickable item positions.
 void render(const Scene& s, DrawList& dl, Rect target, Color gridColor, std::vector<ProjectedItem>* items = nullptr);
+/// One piece of a polygon in back-to-front paint order (bspOrder): `source` indexes the input, `pts` are the piece's
+/// camera-space vertices (the whole polygon, or a part of it after a BSP split).
+struct BspFragment {
+    u32 source;
+    std::vector<Vec3> pts;
+};
+/// Back-to-front paint order of camera-space polygons (x right, y up, z towards the viewer) by a BSP tree: polygons
+/// straddling a splitting plane are cut, so interpenetrating and cyclically overlapping faces still paint correctly
+/// (a depth sort cannot). Perspective: eye at (0, 0, eyeDist); orthographic: looking down -z. Used by render() for
+/// surface quads and bar faces.
+std::vector<BspFragment> bspOrder(const std::vector<std::vector<Vec3>>& polys, bool perspective, f32 eyeDist = 5.f);
 /// Index of the item nearest `pos` within `radius` px (nearest the camera on ties), -1 none.
 i32 pick(const std::vector<ProjectedItem>& items, Vec2 pos, f32 radius = 10.f);
 

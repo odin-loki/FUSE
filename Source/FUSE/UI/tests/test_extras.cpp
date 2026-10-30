@@ -1275,6 +1275,72 @@ void gateSvg() {
         stbi_write_png((dir + "/svg_advanced.png").c_str(), ai.width, ai.height, 4, ai.pixels.data(), ai.width * 4);
 }
 
+// BSP depth ordering: two interpenetrating quads (A: z = 0, B: z = x) cross at x = 0, so no whole-polygon order is
+// right; bspOrder splits one and the painted result shows B in front for x > 0 and A in front for x < 0, in both
+// orthographic and perspective views. A cyclic overlap of three slats also resolves.
+void gateDataViz3dBsp() {
+    namespace d3 = fuse::ui::dv3d;
+    const std::vector<std::vector<d3::Vec3>> polys = {
+        {{-1, -1, 0}, {1, -1, 0}, {1, 1, 0}, {-1, 1, 0}},     // A
+        {{-1, -0.5f, -1}, {1, -0.5f, 1}, {1, 0.5f, 1}, {-1, 0.5f, -1}}}; // B
+    for (bool persp : {false, true}) {
+        const auto frags = d3::bspOrder(polys, persp, 5.f);
+        CHECK(frags.size() == 3);
+        Image img;
+        img.resize(300, 300, 0xFF000000u);
+        DrawList dl;
+        for (const auto& f : frags) {
+            Path p;
+            for (std::size_t j = 0; j < f.pts.size(); ++j) {
+                const f32 k = persp ? 5.f / (5.f - f.pts[j].z) : 1.f;
+                const Vec2 sp{150.f + f.pts[j].x * k * 100.f, 150.f - f.pts[j].y * k * 100.f};
+                if (j == 0) p.moveTo(sp);
+                else p.lineTo(sp);
+            }
+            p.close();
+            dl.path(p, f.source == 0 ? Color::rgb(0xFF0000) : Color::rgb(0x0000FF));
+        }
+        CpuRasterizer().render(dl, img);
+        const u32 right = img.at(persp ? 215 : 210, 150), left = img.at(persp ? 92 : 90, 150);
+        CHECK((right & 0xFF) < 40 && ((right >> 16) & 0xFF) > 200); // blue in front at x > 0
+        CHECK((left & 0xFF) > 200 && ((left >> 16) & 0xFF) < 40);   // red in front at x < 0
+    }
+    // cyclic overlap: three slats each over the next (tilted in z along their length)
+    const std::vector<std::vector<d3::Vec3>> cyc = {
+        {{-1, 0.2f, 0.3f}, {1, 0.2f, -0.3f}, {1, 0.4f, -0.3f}, {-1, 0.4f, 0.3f}},
+        {{0.3f, -1, -0.3f}, {0.5f, -1, -0.3f}, {0.5f, 1, 0.3f}, {0.3f, 1, 0.3f}},
+        {{-0.5f, -1, 0.3f}, {-0.3f, -1, 0.3f}, {-0.3f, 1, -0.3f}, {-0.5f, 1, -0.3f}}};
+    const auto cf = d3::bspOrder(cyc, false);
+    CHECK(cf.size() > 3); // at least one split was needed
+    // every overlapping pair of fragments is painted far before near: sample the crossing points
+    auto zAt = [](const std::vector<d3::Vec3>& q, f32 x, f32 y, f32& z) {
+        // planar quad: barycentric over its two triangles
+        for (std::size_t t = 1; t + 1 < q.size(); ++t) {
+            const d3::Vec3 a = q[0], b = q[t], c = q[t + 1];
+            const f32 d = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
+            if (std::abs(d) < 1e-9f) continue;
+            const f32 l0 = ((b.y - c.y) * (x - c.x) + (c.x - b.x) * (y - c.y)) / d;
+            const f32 l1 = ((c.y - a.y) * (x - c.x) + (a.x - c.x) * (y - c.y)) / d;
+            const f32 l2 = 1.f - l0 - l1;
+            if (l0 >= -1e-4f && l1 >= -1e-4f && l2 >= -1e-4f) { z = l0 * a.z + l1 * b.z + l2 * c.z; return true; }
+        }
+        return false;
+    };
+    int bad = 0, pairs = 0;
+    for (f32 x = -0.95f; x < 1.f; x += 0.05f)
+        for (f32 y = -0.95f; y < 1.f; y += 0.05f) {
+            f32 lastZ = -1e9f;
+            for (const auto& f : cf) {
+                f32 z;
+                if (!zAt(f.pts, x, y, z)) continue;
+                ++pairs;
+                if (z < lastZ - 1e-3f) ++bad;
+                lastZ = z;
+            }
+        }
+    CHECK(pairs > 0 && bad == 0);
+}
+
 void gateDataViz3d() {
     namespace d3 = fuse::ui::dv3d;
     Screen s;
@@ -1694,7 +1760,7 @@ void gateCharts() {
 int main(int argc, char** argv) {
     const std::map<std::string, std::function<void()>> gates{
         {"undo", gateUndo}, {"gesture", gateGesture}, {"i18n", gateI18n}, {"desktop", gateDesktop}, {"pdf", gatePdf}, {"containers", gateContainers}, {"dialogs", gateDialogs}, {"lcd_keyseq", gateLcdKeyseq},
-        {"mdi", gateMdi}, {"completer", gateCompleter}, {"graphics", gateGraphics}, {"widget_pdf", gateWidgetPdf}, {"tray", gateTray}, {"richtext", gateRichText}, {"webview", gateWebView}, {"declarative", gateDeclarative}, {"vkeyboard", gateVirtualKeyboard}, {"svg", gateSvg}, {"charts", gateCharts}, {"dataviz3d", gateDataViz3d}, {"media", gateMedia}};
+        {"mdi", gateMdi}, {"completer", gateCompleter}, {"graphics", gateGraphics}, {"widget_pdf", gateWidgetPdf}, {"tray", gateTray}, {"richtext", gateRichText}, {"webview", gateWebView}, {"declarative", gateDeclarative}, {"vkeyboard", gateVirtualKeyboard}, {"svg", gateSvg}, {"charts", gateCharts}, {"dataviz3d", gateDataViz3d}, {"dataviz3d_bsp", gateDataViz3dBsp}, {"media", gateMedia}};
     std::string only;
     for (int i = 1; i < argc; ++i) if (std::strncmp(argv[i], "--gate=", 7) == 0) only = argv[i] + 7;
     for (auto& [n, f] : gates) if (only.empty() || only == n) { f(); std::printf("gate %s: %s\n", n.c_str(), g_fail ? "FAIL" : "ok"); }

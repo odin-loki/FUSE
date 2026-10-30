@@ -1,4 +1,4 @@
-// 3D data visualisation: CPU projection + painter's sort onto DrawList paths. See datavis3d.hpp.
+// 3D data visualisation: CPU projection + BSP depth ordering (painter's sort for points / lines) onto DrawList paths. See datavis3d.hpp.
 #include "fuse/ui/extras/datavis3d.hpp"
 
 #include <algorithm>
@@ -64,8 +64,134 @@ struct Prim {
     Color fill, stroke;
     f32 strokeW = 0.f, depth = 0.f;
     u32 order = 0; ///< stable tie-break
+    std::vector<Vec3> cam3; ///< camera-space polygon (BSP-ordered when non-empty)
+};
+
+// ---- BSP ordering ----
+struct Plane {
+    Vec3 n;
+    f32 d; ///< dot(n, p) - d: signed distance
+};
+f32 dot3(Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+/// Newell normal through the centroid: a stable plane for slightly non-planar quads (surface cells)
+bool planeOf(const std::vector<Vec3>& p, Plane& out) {
+    Vec3 n{}, c{};
+    for (std::size_t i = 0; i < p.size(); ++i) {
+        const Vec3& a = p[i];
+        const Vec3& b = p[(i + 1) % p.size()];
+        n.x += (a.y - b.y) * (a.z + b.z), n.y += (a.z - b.z) * (a.x + b.x), n.z += (a.x - b.x) * (a.y + b.y);
+        c.x += a.x, c.y += a.y, c.z += a.z;
+    }
+    const f32 l = std::sqrt(dot3(n, n));
+    if (l < 1e-9f || p.size() < 3) return false;
+    n = {n.x / l, n.y / l, n.z / l};
+    const f32 k = 1.f / f32(p.size());
+    out = {n, dot3(n, {c.x * k, c.y * k, c.z * k})};
+    return true;
+}
+struct BspBuild {
+    const std::vector<std::vector<Vec3>>& src;
+    bool persp;
+    f32 eye;
+    std::vector<BspFragment>& out;
+    static constexpr f32 kEps = 1e-4f;
+    /// split `f` by `pl` into back / front parts (vertices within kEps count as on the plane)
+    static void split(const BspFragment& f, const Plane& pl, std::vector<BspFragment>& back, std::vector<BspFragment>& front,
+                      std::vector<BspFragment>& on) {
+        int nb = 0, nf = 0;
+        std::vector<f32> d(f.pts.size());
+        for (std::size_t i = 0; i < f.pts.size(); ++i) {
+            d[i] = dot3(pl.n, f.pts[i]) - pl.d;
+            if (d[i] > kEps) ++nf;
+            else if (d[i] < -kEps) ++nb;
+        }
+        if (nb == 0 && nf == 0) { on.push_back(f); return; }
+        if (nb == 0) { front.push_back(f); return; }
+        if (nf == 0) { back.push_back(f); return; }
+        BspFragment b{f.source, {}}, fr{f.source, {}};
+        for (std::size_t i = 0; i < f.pts.size(); ++i) {
+            const std::size_t j = (i + 1) % f.pts.size();
+            const Vec3 &a = f.pts[i], &c = f.pts[j];
+            const f32 da = d[i], dc = d[j];
+            if (da >= -kEps) fr.pts.push_back(a);
+            if (da <= kEps) b.pts.push_back(a);
+            if ((da > kEps && dc < -kEps) || (da < -kEps && dc > kEps)) {
+                const f32 t = da / (da - dc);
+                const Vec3 x{a.x + (c.x - a.x) * t, a.y + (c.y - a.y) * t, a.z + (c.z - a.z) * t};
+                fr.pts.push_back(x);
+                b.pts.push_back(x);
+            }
+        }
+        if (b.pts.size() >= 3) back.push_back(std::move(b));
+        if (fr.pts.size() >= 3) front.push_back(std::move(fr));
+    }
+    /// emit `fs` back to front: (far side, polygons on the plane, near side) recursively. Iterative over an explicit
+    /// work stack so degenerate inputs cannot overflow the call stack.
+    void run(std::vector<BspFragment> fs) {
+        struct Work {
+            std::vector<BspFragment> list; ///< subtree to order, or (emit) fragments to output as they are
+            bool emit;
+        };
+        std::vector<Work> stack;
+        stack.push_back({std::move(fs), false});
+        while (!stack.empty()) {
+            Work w = std::move(stack.back());
+            stack.pop_back();
+            if (w.emit || w.list.size() <= 1) {
+                for (auto& f : w.list) out.push_back(std::move(f));
+                continue;
+            }
+            // splitter: of up to 16 candidates spread over the list, the plane that cuts the fewest others (splits
+            // leave seams and grow the tree; bar tops would otherwise slice every taller neighbour)
+            Plane pl{};
+            std::size_t k = w.list.size();
+            std::size_t bestCuts = ~std::size_t(0);
+            const std::size_t stepK = std::max<std::size_t>(1, w.list.size() / 16);
+            for (std::size_t c = 0; c < w.list.size() && bestCuts > 0; c += stepK) {
+                Plane cp{};
+                if (!planeOf(w.list[c].pts, cp)) continue;
+                std::size_t cuts = 0;
+                for (std::size_t i = 0; i < w.list.size() && cuts < bestCuts; ++i) {
+                    if (i == c) continue;
+                    bool pos = false, neg = false;
+                    for (const Vec3& q : w.list[i].pts) {
+                        const f32 d = dot3(cp.n, q) - cp.d;
+                        pos |= d > kEps, neg |= d < -kEps;
+                    }
+                    cuts += pos && neg;
+                }
+                if (cuts < bestCuts) bestCuts = cuts, k = c, pl = cp;
+            }
+            if (k == w.list.size()) { // all degenerate: nothing to order
+                for (auto& f : w.list) out.push_back(std::move(f));
+                continue;
+            }
+            std::vector<BspFragment> back, front, on;
+            on.push_back(std::move(w.list[k]));
+            for (std::size_t i = 0; i < w.list.size(); ++i)
+                if (i != k) split(w.list[i], pl, back, front, on);
+            // which side is the viewer on
+            const f32 side = persp ? dot3(pl.n, {0.f, 0.f, eye}) - pl.d : pl.n.z;
+            std::vector<BspFragment>& nearS = side >= 0.f ? front : back;
+            std::vector<BspFragment>& farS = side >= 0.f ? back : front;
+            // stack: pushed in reverse of processing order
+            stack.push_back({std::move(nearS), false});
+            stack.push_back({std::move(on), true});
+            stack.push_back({std::move(farS), false});
+        }
+    }
 };
 } // namespace
+
+std::vector<BspFragment> bspOrder(const std::vector<std::vector<Vec3>>& polys, bool perspective, f32 eyeDist) {
+    std::vector<BspFragment> out, in;
+    in.reserve(polys.size());
+    for (std::size_t i = 0; i < polys.size(); ++i)
+        if (polys[i].size() >= 3) in.push_back({u32(i), polys[i]});
+    out.reserve(in.size());
+    BspBuild{polys, perspective, eyeDist, out}.run(std::move(in));
+    return out;
+}
 
 void ranges(const Scene& s, f32 lo[3], f32 hi[3]) {
     f32 dl[3] = {0.f, 0.f, 0.f}, dh[3] = {1.f, 1.f, 1.f};
@@ -121,7 +247,7 @@ void render(const Scene& s, DrawList& dl, Rect target, Color gridColor, std::vec
     std::vector<Prim> prims;
     u32 order = 0;
     auto cam = [&](Vec3 n) { return toCam(v, n); };
-    auto poly = [&](std::initializer_list<Vec3> pts, Color fill, Color stroke, f32 sw, f32 depthBias = 0.f) {
+    auto poly = [&](std::initializer_list<Vec3> pts, Color fill, Color stroke, f32 sw, f32 depthBias = 0.f, bool bsp = false) {
         Prim p;
         f32 z = 0.f;
         bool first = true;
@@ -133,6 +259,7 @@ void render(const Scene& s, DrawList& dl, Rect target, Color gridColor, std::vec
             z += q.z;
         }
         p.path.close();
+        if (bsp) p.cam3.assign(pts.begin(), pts.end());
         p.fill = fill, p.stroke = stroke, p.strokeW = sw;
         p.depth = z / f32(pts.size()) + depthBias;
         p.order = order++;
@@ -181,7 +308,7 @@ void render(const Scene& s, DrawList& dl, Rect target, Color gridColor, std::vec
                 const f32 val = (s.values[i00] + s.values[i01] + s.values[i10] + s.values[i11]) * 0.25f;
                 Color col = colormapAt(s, (val - v.lo[1]) / v.span[1]);
                 if (s.shading) col = shade(col, lambert(c[i00], c[i01], c[i10]));
-                poly({c[i00], c[i01], c[i11], c[i10]}, col, s.wireframe ? wire : Color{}, s.wireframe ? 1.f : 0.f);
+                poly({c[i00], c[i01], c[i11], c[i10]}, col, s.wireframe ? wire : Color{}, s.wireframe ? 1.f : 0.f, 0.f, true);
             }
         if (s.highlight >= 0 && std::size_t(s.highlight) < c.size()) {
             Prim p;
@@ -235,6 +362,7 @@ void render(const Scene& s, DrawList& dl, Rect target, Color gridColor, std::vec
                         else pr.path.lineTo(sp);
                     }
                     pr.path.close();
+                    for (int j = 0; j < 4; ++j) pr.cam3.push_back(P[F[f][j]]);
                     pr.fill = shade(base, lit);
                     pr.stroke = s.wireframe ? wire : Color{};
                     pr.strokeW = s.wireframe ? 1.f : 0.f;
@@ -246,9 +374,36 @@ void render(const Scene& s, DrawList& dl, Rect target, Color gridColor, std::vec
             }
     }
 
-    std::stable_sort(prims.begin(), prims.end(), [](const Prim& a, const Prim& b) { return a.depth < b.depth; });
+    // faces (surface cells, bar faces) are ordered by a BSP tree (exact for interpenetrating / cyclic overlaps);
+    // the rest (axis walls and grid behind, points, the highlight marker) keep the painter's sort around them
+    std::vector<std::vector<Vec3>> faces;
+    std::vector<u32> faceOf;
+    std::vector<Prim> rest;
+    for (std::size_t i = 0; i < prims.size(); ++i)
+        if (!prims[i].cam3.empty()) faces.push_back(prims[i].cam3), faceOf.push_back(u32(i));
+        else rest.push_back(std::move(prims[i]));
+    std::stable_sort(rest.begin(), rest.end(), [](const Prim& a, const Prim& b) { return a.depth < b.depth; });
     dl.pushClip(target);
-    for (const Prim& p : prims) dl.path(p.path, p.fill, false, p.stroke, p.strokeW);
+    std::size_t ri = 0;
+    if (!faces.empty())
+        for (; ri < rest.size() && rest[ri].depth <= -9.f; ++ri) dl.path(rest[ri].path, rest[ri].fill, false, rest[ri].stroke, rest[ri].strokeW);
+    for (const BspFragment& f : bspOrder(faces, v.persp, v.dist)) {
+        const Prim& p = prims[faceOf[f.source]];
+        if (f.pts.size() == faces[f.source].size() && std::equal(f.pts.begin(), f.pts.end(), faces[f.source].begin(),
+                                                                [](Vec3 a, Vec3 b) { return a.x == b.x && a.y == b.y && a.z == b.z; })) {
+            dl.path(p.path, p.fill, false, p.stroke, p.strokeW); // unsplit: the original path
+            continue;
+        }
+        Path piece; // split part: fill only (the cut edge is not a real edge; the wire outline stays on whole faces)
+        for (std::size_t j = 0; j < f.pts.size(); ++j) {
+            const Vec2 sp = toScreen(v, f.pts[j]);
+            if (j == 0) piece.moveTo(sp);
+            else piece.lineTo(sp);
+        }
+        piece.close();
+        dl.path(piece, p.fill, false, {}, 0.f);
+    }
+    for (; ri < rest.size(); ++ri) dl.path(rest[ri].path, rest[ri].fill, false, rest[ri].stroke, rest[ri].strokeW);
     dl.popClip();
 }
 
