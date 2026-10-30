@@ -40,10 +40,17 @@ struct GpuPush {
 static_assert(sizeof(GpuPush) == 48, "GpuPush must match the kernel's push block");
 
 inline constexpr u32 kUiTile = 16;
-/// Tile entries with this bit set address a compact glyph record (word offset into GpuDrawData::images:
-/// rect xywh f32, u | v << 16, tw | th << 16, fill rgba f32, clip-carrier cmd index) instead of a GpuCmd.
+/// Tile entries with this bit set address a compact glyph record (word offset into GpuDrawData::images; u16 values
+/// biased by 32768): origin x|y, u|v, tw | th << 16 | flags, word offset of the fill (4 f32), clipped pixel box
+/// x0|y0 and x1|y1 (exclusive; read only when kGlyphBoxed), clip-carrier cmd index (only when kGlyphRounded).
 inline constexpr u32 kCompactGlyph = 0x80000000u;
-inline constexpr u32 kCompactGlyphWords = 11;
+inline constexpr u32 kCompactGlyphWords = 7;
+inline constexpr u32 kGlyphBoxed = 1u << 30;   ///< record flag: test the pixel box (clipped or fractional glyph)
+inline constexpr u32 kGlyphRounded = 1u << 31; ///< record flag: rounded clip, coverage from the carrier cmd
+/// Tile entries with both top bits set address a glyph run: n, y0|y1 (union), 16 per-column candidate ranges
+/// first|end<<16 (glyphs whose box can contain that tile column), n record offsets (paint order). Built from >= kMinGlyphRun consecutive compact glyphs of one tile.
+inline constexpr u32 kGlyphRun = 0xC0000000u;
+inline constexpr u32 kMinGlyphRun = 3;
 /// GpuCmd op of a clip carrier: holds clip rect / radius for compact glyphs; never binned.
 inline constexpr u32 kClipCarrier = 9;
 inline constexpr u32 kPassClear = 1u;

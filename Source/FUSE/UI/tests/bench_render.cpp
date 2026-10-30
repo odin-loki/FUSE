@@ -152,6 +152,7 @@ int main(int argc, char** argv) {
             const Scene& s = scenes[i];
             packDrawList(*s.list, W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, s.scissor);
             data.atlasGeneration = ui.atlas().version();
+            if (!data.passes.empty()) data.passes[0].flags |= render::kPassClear; // as vk_present: start from black, no load
             if (!gpu.upload(0, data)) { // over the renderer limits: report as missing, never time an empty frame
                 std::fprintf(stderr, "bench: %s exceeds GPU upload limits\n", s.name);
                 rows[i].gpu = rows[i].gpuWall = -1.0;

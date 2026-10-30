@@ -82,6 +82,8 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     u32 segBegin = 0;
     u32 clipRef = ~0u; // carrier cmd of the current glyph clip
     Clip lastClip{};
+    Color lastFill{};
+    u32 fillAt = ~0u;
     auto closeSegment = [&] {
         const u32 tileBase = u32(out.tiles.size());
         out.tiles.resize(std::size_t(tileBase) + tileCount + 1, 0u);
@@ -120,6 +122,54 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             }
             for (int ty = ty0; ty <= ty1; ++ty)
                 for (int tx = tx0; tx <= tx1; ++tx) ids[cursor[std::size_t(ty) * tilesX + tx]++] = a.id;
+        }
+        // glyph runs: consecutive compact glyphs of a tile with non-decreasing x0 become one entry, so the kernel
+        // binary-searches the few glyphs that can cover a pixel instead of testing every glyph in the tile
+        {
+            off = out.tiles.data() + tileBase; // the resize above moved the buffer
+            u32* ids = out.tiles.data() + base;
+            u32 w = 0;
+            for (u32 t = 0; t < tileCount; ++t) {
+                const u32 b = off[t], e = off[t + 1];
+                off[t] = w;
+                for (u32 k = b; k < e;) {
+                    u32 j = k;
+                    auto x0 = [&](u32 id) { return out.images[(id & ~kCompactGlyph) + 4] & 0xFFFFu; };
+                    if ((ids[k] & kGlyphRun) == kCompactGlyph)
+                        while (j + 1 < e && (ids[j + 1] & kGlyphRun) == kCompactGlyph && x0(ids[j + 1]) >= x0(ids[j])) ++j;
+                    if (j - k + 1 < kMinGlyphRun) {
+                        for (; k <= j; ++k) ids[w++] = ids[k];
+                        continue;
+                    }
+                    const u32 n = j - k + 1, at = u32(out.images.size());
+                    out.images.resize(out.images.size() + 2 + kUiTile + std::size_t(n));
+                    u32* r = out.images.data() + at;
+                    u32 y0 = 0xFFFFu, y1 = 0, maxW = 0;
+                    for (u32 q = 0; q < n; ++q) {
+                        const u32 g = ids[k + q] & ~kCompactGlyph;
+                        const u32 b0 = out.images[g + 4], b1 = out.images[g + 5];
+                        y0 = std::min(y0, b0 >> 16);
+                        y1 = std::max(y1, b1 >> 16);
+                        maxW = std::max(maxW, (b1 & 0xFFFFu) - (b0 & 0xFFFFu));
+                        r[2 + kUiTile + q] = g;
+                    }
+                    r[0] = n;
+                    r[1] = y0 | (y1 << 16);
+                    // per tile column: [first, end) of the glyphs whose x0 lies in (x - maxW, x] (keys are sorted)
+                    const u32 cx0 = (t % tilesX) * kUiTile + 32768u;
+                    u32 lo = 0, hi = 0;
+                    for (u32 col = 0; col < kUiTile; ++col) {
+                        const u32 x = cx0 + col;
+                        while (hi < n && x0(ids[k + hi]) <= x) ++hi;
+                        while (lo < hi && x0(ids[k + lo]) + maxW <= x) ++lo;
+                        r[2 + col] = lo | (hi << 16);
+                    }
+                    ids[w++] = kGlyphRun | at;
+                    k = j + 1;
+                }
+            }
+            off[tileCount] = w;
+            out.tiles.resize(base + w);
         }
         GpuPass p;
         p.kind = kPassDraw;
@@ -250,24 +300,47 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         const Area pixels{std::max(0, int(std::floor(area.x))), std::max(0, int(std::floor(area.y))),
                           std::min(int(width), int(std::ceil(area.right()))), std::min(int(height), int(std::ceil(area.bottom()))), 0u};
         if (c.op == DrawOp::Glyph && clip.pathList == 0) {
-            // compact glyph (44 bytes in the images buffer instead of a 128-byte GpuCmd): rect, uv, size, fill and a
-            // reference to a clip carrier cmd (one per distinct clip, never binned)
-            if (clipRef == ~0u || !(clip.r == lastClip.r) || clip.radius != lastClip.radius) {
-                clipRef = u32(out.cmds.size());
-                pack(c, clip);
-                out.cmds.back().info[0] = kClipCarrier;
-                lastClip = clip;
+            // compact glyph (40 bytes in the images buffer instead of a 128-byte GpuCmd): integer pixel bounds already
+            // clipped (same floor/ceil of rect & clip as the kGlyph branch), atlas origin, uv, size, fill, and a clip
+            // carrier cmd only when the clip is rounded (never binned)
+            const f32 gx0 = std::max(c.rect.x, clip.r.x), gy0 = std::max(c.rect.y, clip.r.y);
+            const f32 gx1 = std::min(c.rect.x + c.rect.w, clip.r.x + clip.r.w);
+            const f32 gy1 = std::min(c.rect.y + c.rect.h, clip.r.y + clip.r.h);
+            if (gx1 <= gx0 || gy1 <= gy0) continue;
+            u32 ref = ~0u;
+            if (clip.radius > 0.f) {
+                if (clipRef == ~0u || !(clip.r == lastClip.r) || clip.radius != lastClip.radius) {
+                    clipRef = u32(out.cmds.size());
+                    pack(c, clip);
+                    out.cmds.back().info[0] = kClipCarrier;
+                    lastClip = clip;
+                }
+                ref = clipRef;
+            }
+            const auto u16b = [](f32 v) { return u32(std::clamp(int(v), -32768, 32767) + 32768); };
+            // fast record: an unclipped glyph on integer pixels whose rect is its bitmap size; the kernel's bitmap
+            // bounds test is then exactly the kGlyph pixel-box test, so the box words are not read
+            const bool fast = gx0 == c.rect.x && gy0 == c.rect.y && gx1 == c.rect.x + c.rect.w && gy1 == c.rect.y + c.rect.h &&
+                              c.rect.x == std::floor(c.rect.x) && c.rect.y == std::floor(c.rect.y) && c.rect.w == f32(c.tw) &&
+                              c.rect.h == f32(c.th);
+            if (!(c.fill == lastFill) || fillAt == ~0u) { // fill colours are shared by consecutive glyphs
+                fillAt = u32(out.images.size());
+                const f32 col[4] = {c.fill.r, c.fill.g, c.fill.b, c.fill.a};
+                out.images.resize(out.images.size() + 4);
+                std::memcpy(out.images.data() + fillAt, col, sizeof col);
+                lastFill = c.fill;
             }
             const u32 at = u32(out.images.size());
             out.images.resize(out.images.size() + kCompactGlyphWords);
             u32* w = out.images.data() + at;
-            const f32 f[4] = {c.rect.x, c.rect.y, c.rect.w, c.rect.h};
-            std::memcpy(w, f, sizeof f);
-            w[4] = u32(c.u) | (u32(c.v) << 16);
-            w[5] = u32(c.tw) | (u32(c.th) << 16);
-            const f32 col[4] = {c.fill.r, c.fill.g, c.fill.b, c.fill.a};
-            std::memcpy(w + 6, col, sizeof col);
-            w[10] = clipRef;
+            w[0] = u16b(c.rect.x) | (u16b(c.rect.y) << 16); // int() truncation, as the kernel's int(r.x)
+            w[1] = u32(c.u) | (u32(c.v) << 16);
+            w[2] = std::min<u32>(c.tw, 0xFFFFu) | (std::min<u32>(c.th, 0x3FFFu) << 16) | (fast ? 0u : kGlyphBoxed) |
+                   (ref != ~0u ? kGlyphRounded : 0u);
+            w[3] = fillAt;
+            w[4] = u16b(std::floor(gx0)) | (u16b(std::floor(gy0)) << 16);
+            w[5] = u16b(std::ceil(gx1)) | (u16b(std::ceil(gy1)) << 16);
+            w[6] = ref;
             Area g = pixels;
             g.id = kCompactGlyph | at;
             areas.push_back(g);
