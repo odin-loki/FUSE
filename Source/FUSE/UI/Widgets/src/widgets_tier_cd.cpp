@@ -11,6 +11,7 @@
 #include <limits>
 #include <memory>
 #include <numeric>
+#include <unordered_map>
 #include <string>
 #include <vector>
 
@@ -314,15 +315,49 @@ int daysIn(int y, int m) {
     return m == 2 && leap ? 29 : d[m - 1];
 }
 
+struct CalState { u32 gen = 0; CalendarOptions o; };
+std::unordered_map<const UiContext*, std::unordered_map<u32, CalState>>& calStores() {
+    static std::unordered_map<const UiContext*, std::unordered_map<u32, CalState>> m;
+    return m;
+}
+const CalendarOptions& calOpts(const UiContext& ui, NodeHandle n) {
+    static const CalendarOptions def;
+    auto it = calStores().find(&ui);
+    if (it == calStores().end()) return def;
+    auto j = it->second.find(n.index);
+    return j != it->second.end() && j->second.gen == n.generation ? j->second.o : def;
+}
+/// ISO 8601 week number (weeks start on Monday; week 1 holds the year's first Thursday)
+int isoWeek(i32 z) {
+    const i32 thu = z - weekday(z) + 3;
+    int y, m, d;
+    civilFromDays(thu, y, m, d);
+    return (thu - daysFromCivil(y, 1, 1)) / 7 + 1;
+}
+
 struct CalendarW {
     static constexpr std::string_view kName = "calendar";
     static constexpr A11yRole kRole = A11yRole::Group;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
-    static Size measure(UiContext& ui, NodeHandle n, Size) { return {7.f * 34.f, lineH(ui, n) + 8.f + 7.f * 26.f}; }
+    static std::string a11yValueText(const UiContext& ui, NodeHandle n) {
+        int y, m, d;
+        civilFromDays(i32(ui.value(n)), y, m, d);
+        char b[64];
+        std::snprintf(b, sizeof b, "%s %d %s %d", kDayNamesFull[weekday(i32(ui.value(n)))], d, kMonths[m - 1], y);
+        return b;
+    }
+    static constexpr const char* kDayNamesFull[] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+    static int cols(const UiContext& ui, NodeHandle n) { return calOpts(ui, n).weekNumbers ? 8 : 7; }
+    static Size measure(UiContext& ui, NodeHandle n, Size) { return {f32(cols(ui, n)) * 34.f, lineH(ui, n) + 8.f + 7.f * 26.f}; }
     static i32 shownMonth(const UiContext& ui, NodeHandle n) { return i32(ui.userData(n)) - 1000000; } // y * 12 + (m - 1)
-    static void setShown(UiContext& ui, NodeHandle n, i32 ym) { ui.setUserData(n, u64(ym + 1000000)); ui.invalidate(n); }
-    struct Geo { Rect head, prev, next; f32 cellW, cellH, gridY; };
+    static void setShown(UiContext& ui, NodeHandle n, i32 ym) {
+        const bool changed = ym != shownMonth(ui, n);
+        ui.setUserData(n, u64(ym + 1000000));
+        ui.invalidate(n);
+        if (changed) ui.emit(n, SignalKind::TextChanged, {.value = f32(ym)}); // QCalendarWidget::currentPageChanged
+    }
+    struct Geo { Rect head, prev, next; f32 cellW, cellH, gridY, gridX; };
     static Geo geo(const UiContext& ui, NodeHandle n) {
         const Rect c = ui.contentRect(n);
         Geo g;
@@ -330,16 +365,24 @@ struct CalendarW {
         g.head = {c.x, c.y, c.w, hh};
         g.prev = {c.x, c.y, hh, hh};
         g.next = {c.right() - hh, c.y, hh, hh};
-        g.cellW = c.w / 7.f;
+        g.cellW = c.w / f32(cols(ui, n));
         g.cellH = (c.h - hh) / 7.f;
         g.gridY = c.y + hh + g.cellH; // first week row (below the weekday names)
+        g.gridX = c.x + (cols(ui, n) == 8 ? g.cellW : 0.f);
         return g;
     }
-    static i32 firstCellDay(i32 ym) { // day number of the grid's top-left cell
+    static int col(const UiContext& ui, NodeHandle n, i32 z) { return (weekday(z) - int(calOpts(ui, n).firstDayOfWeek) + 7) % 7; }
+    static i32 firstCellDay(const UiContext& ui, NodeHandle n, i32 ym) { // day number of the grid's top-left cell
         const i32 first = daysFromCivil(ym / 12, ym % 12 + 1, 1);
-        return first - weekday(first);
+        return first - col(ui, n, first);
+    }
+    static bool inRange(const UiContext& ui, NodeHandle n, i32 z) { return f32(z) >= ui.rangeMin(n) && f32(z) <= ui.rangeMax(n); }
+    static bool pageInRange(const UiContext& ui, NodeHandle n, i32 ym) {
+        const i32 first = daysFromCivil(ym / 12, ym % 12 + 1, 1), last = first + daysIn(ym / 12, ym % 12 + 1) - 1;
+        return f32(last) >= ui.rangeMin(n) && f32(first) <= ui.rangeMax(n);
     }
     static void select(UiContext& ui, NodeHandle n, i32 z) {
+        z = std::clamp(z, i32(ui.rangeMin(n)), i32(ui.rangeMax(n))); // QCalendarWidget: never past min / max
         int y, m, d;
         civilFromDays(z, y, m, d);
         setShown(ui, n, y * 12 + m - 1);
@@ -348,30 +391,44 @@ struct CalendarW {
     static void paint(const PaintContext& pc, DrawList& dl) {
         UiContext& ui = pc.ui;
         const Geo g = geo(ui, pc.node);
+        const CalendarOptions& o = calOpts(ui, pc.node);
         const i32 ym = shownMonth(ui, pc.node), sel = i32(ui.value(pc.node));
         const Color text = pc.tint(pc.style.color), dim = pc.tint(pc.style.color.withAlpha(pc.style.color.a * 0.38f)), acc = accentOf(pc);
+        const Color off = pc.tint(pc.style.color.withAlpha(pc.style.color.a * 0.16f));
         const f32 fs = pc.style.fontSize;
         char b[48];
         std::snprintf(b, sizeof b, "%s %d", kMonths[ym % 12], ym / 12);
         ui.paintString(dl, b, g.head, text, fs, TextAlignment::Center, pc.node.index);
-        for (int side = 0; side < 2; ++side) { // chevrons
+        for (int side = 0; side < 2; ++side) { // chevrons, dimmed when the page beyond is out of range
             const Rect r = side ? g.next : g.prev;
+            const Color cc = pageInRange(ui, pc.node, ym + (side ? 1 : -1)) ? text : off;
             const f32 cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f, d = side ? 3.f : -3.f;
-            dl.line({cx - d, cy - 5.f}, {cx + d, cy}, text, 1.5f);
-            dl.line({cx + d, cy}, {cx - d, cy + 5.f}, text, 1.5f);
+            dl.line({cx - d, cy - 5.f}, {cx + d, cy}, cc, 1.5f);
+            dl.line({cx + d, cy}, {cx - d, cy + 5.f}, cc, 1.5f);
         }
-        for (int k = 0; k < 7; ++k)
-            ui.paintString(dl, kDays[k], {g.head.x + f32(k) * g.cellW, g.head.bottom(), g.cellW, g.cellH}, k >= 5 ? dim : text,
+        for (int k = 0; k < 7; ++k) {
+            const int wd = (k + int(o.firstDayOfWeek)) % 7;
+            ui.paintString(dl, kDays[wd], {g.gridX + f32(k) * g.cellW, g.head.bottom(), g.cellW, g.cellH}, wd >= 5 ? dim : text,
                            fs * 0.85f, TextAlignment::Center, pc.node.index);
-        const i32 z0 = firstCellDay(ym);
+        }
+        const i32 z0 = firstCellDay(ui, pc.node, ym);
         for (int i = 0; i < 42; ++i) {
             const i32 z = z0 + i;
             int y, m, d;
             civilFromDays(z, y, m, d);
-            const Rect cell{g.head.x + f32(i % 7) * g.cellW, g.gridY + f32(i / 7) * g.cellH, g.cellW, g.cellH};
+            if (o.weekNumbers && i % 7 == 0) {
+                std::snprintf(b, sizeof b, "%d", isoWeek(z));
+                ui.paintString(dl, b, {g.head.x, g.gridY + f32(i / 7) * g.cellH, g.cellW, g.cellH}, dim, fs * 0.8f,
+                               TextAlignment::Center, pc.node.index);
+            }
+            const Rect cell{g.gridX + f32(i % 7) * g.cellW, g.gridY + f32(i / 7) * g.cellH, g.cellW, g.cellH};
             const bool inMonth = y * 12 + m - 1 == ym;
-            if (z == sel) dl.rect({cell.x + 2.f, cell.y + 1.f, cell.w - 4.f, cell.h - 2.f}, acc, 4.f);
             std::snprintf(b, sizeof b, "%d", d);
+            if (!inRange(ui, pc.node, z)) { // out of range: greyed, not selectable
+                ui.paintString(dl, b, cell, off, fs * 0.9f, TextAlignment::Center, pc.node.index);
+                continue;
+            }
+            if (z == sel) dl.rect({cell.x + 2.f, cell.y + 1.f, cell.w - 4.f, cell.h - 2.f}, acc, 4.f);
             ui.paintString(dl, b, cell, z == sel ? pc.tint(Color::rgb(0xFFFFFF)) : inMonth ? text : dim, fs * 0.9f, TextAlignment::Center,
                            pc.node.index);
         }
@@ -379,7 +436,7 @@ struct CalendarW {
     }
     static void pageMonth(UiContext& ui, NodeHandle n, i32 delta, bool moveSelection) {
         const i32 ym = shownMonth(ui, n) + delta;
-        if (!moveSelection) { setShown(ui, n, ym); return; }
+        if (!moveSelection) { if (pageInRange(ui, n, ym)) setShown(ui, n, ym); return; }
         int y, m, d;
         civilFromDays(i32(ui.value(n)), y, m, d);
         const int ny = ym / 12, nm = ym % 12 + 1;
@@ -392,21 +449,29 @@ struct CalendarW {
             const Geo g = geo(ui, ec.node);
             if (g.prev.contains(e.pos)) { pageMonth(ui, ec.node, -1, false); return true; }
             if (g.next.contains(e.pos)) { pageMonth(ui, ec.node, 1, false); return true; }
-            if (e.pos.y >= g.gridY) {
-                const i32 row = i32((e.pos.y - g.gridY) / g.cellH), col = i32((e.pos.x - g.head.x) / g.cellW);
-                if (row >= 0 && row < 6 && col >= 0 && col < 7) select(ui, ec.node, firstCellDay(shownMonth(ui, ec.node)) + row * 7 + col);
+            if (e.pos.y >= g.gridY && e.pos.x >= g.gridX) {
+                const i32 row = i32((e.pos.y - g.gridY) / g.cellH), c = i32((e.pos.x - g.gridX) / g.cellW);
+                if (row >= 0 && row < 6 && c >= 0 && c < 7) {
+                    const i32 z = firstCellDay(ui, ec.node, shownMonth(ui, ec.node)) + row * 7 + c;
+                    if (inRange(ui, ec.node, z)) select(ui, ec.node, z);
+                }
             }
             return true;
         }
         if (e.type == EventType::KeyDown) {
             const i32 cur = i32(ui.value(ec.node));
+            const bool ctrl = (e.mods & (kModCtrl | kModSuper)) != 0;
+            int y, m, d;
+            civilFromDays(cur, y, m, d);
             switch (e.key) {
             case Key::Left: select(ui, ec.node, cur - 1); return true;
             case Key::Right: select(ui, ec.node, cur + 1); return true;
             case Key::Up: select(ui, ec.node, cur - 7); return true;
             case Key::Down: select(ui, ec.node, cur + 7); return true;
-            case Key::PageUp: pageMonth(ui, ec.node, -1, true); return true;
-            case Key::PageDown: pageMonth(ui, ec.node, 1, true); return true;
+            case Key::Home: select(ui, ec.node, ctrl ? daysFromCivil(y, m, 1) : cur - col(ui, ec.node, cur)); return true;
+            case Key::End: select(ui, ec.node, ctrl ? daysFromCivil(y, m, daysIn(y, m)) : cur - col(ui, ec.node, cur) + 6); return true;
+            case Key::PageUp: pageMonth(ui, ec.node, ctrl ? -12 : -1, true); return true;
+            case Key::PageDown: pageMonth(ui, ec.node, ctrl ? 12 : 1, true); return true;
             case Key::Enter: ui.emit(ec.node, SignalKind::Submitted, {.value = f32(cur)}); return true;
             default: return false;
             }
@@ -1124,6 +1189,30 @@ NodeHandle calendar(UiContext& ui, NodeHandle parent, int year, int month, int d
     ui.setValue(n, f32(daysFromCivil(year, month, day)));
     return n;
 }
+void setCalendarRange(UiContext& ui, NodeHandle cal, int minYear, int minMonth, int minDay, int maxYear, int maxMonth, int maxDay) {
+    if (!ui.alive(cal)) return;
+    const i32 lo = daysFromCivil(minYear, minMonth, minDay), hi = std::max(lo, daysFromCivil(maxYear, maxMonth, maxDay));
+    ui.setRange(cal, f32(lo), f32(hi), 1.f);
+    CalendarW::select(ui, cal, i32(ui.value(cal)));
+    ui.invalidate(cal);
+}
+void setCalendarOptions(UiContext& ui, NodeHandle cal, const CalendarOptions& o) {
+    if (!ui.alive(cal)) return;
+    CalState& st = calStores()[&ui][cal.index];
+    st.gen = cal.generation;
+    st.o = o;
+    st.o.firstDayOfWeek = std::min<u8>(o.firstDayOfWeek, 6);
+    ui.markAllDirty(); // week-number column changes the size hint
+}
+void calendarShownPage(const UiContext& ui, NodeHandle cal, int& year, int& month) {
+    const i32 ym = CalendarW::shownMonth(ui, cal);
+    year = ym / 12;
+    month = ym % 12 + 1;
+}
+void setCalendarShownPage(UiContext& ui, NodeHandle cal, int year, int month) {
+    if (ui.alive(cal)) CalendarW::setShown(ui, cal, year * 12 + std::clamp(month, 1, 12) - 1);
+}
+int calendarIsoWeek(int year, int month, int day) { return isoWeek(daysFromCivil(year, month, day)); }
 void calendarDate(const UiContext& ui, NodeHandle cal, int& year, int& month, int& day) {
     civilFromDays(i32(ui.value(cal)), year, month, day);
 }

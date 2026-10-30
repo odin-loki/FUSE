@@ -353,6 +353,11 @@ void spinStep(UiContext& ui, NodeHandle n, i32 steps) {
     ui.setValue(n, f32(v), true);
     if (SpinState* m = spinFind(ui, n)) spinSelectAll(*m); // Qt selects the stepped value
 }
+bool spinCanStep(const UiContext& ui, NodeHandle n, i32 dir) {
+    const SpinState* s = spinFind(ui, n);
+    if (s && s->o.wrapping) return true;
+    return dir > 0 ? ui.value(n) < ui.rangeMax(n) : ui.value(n) > ui.rangeMin(n);
+}
 /// Enter / focus out / stepping while typing: an in-range number is taken (clamped), anything else reverts
 void spinCommit(UiContext& ui, NodeHandle n, bool finished) {
     SpinState* s = spinFind(ui, n);
@@ -361,7 +366,11 @@ void spinCommit(UiContext& ui, NodeHandle n, bool finished) {
         return;
     }
     s->editing = false;
-    if (const auto v = spinParse(ui, n, *s, s->buf)) ui.setValue(n, f32(std::clamp(*v, double(ui.rangeMin(n)), double(ui.rangeMax(n)))), true);
+    if (const auto v = spinParse(ui, n, *s, s->buf)) {
+        const bool in = *v >= ui.rangeMin(n) && *v <= ui.rangeMax(n);
+        if (in || s->o.correction == SpinCorrection::NearestValue)
+            ui.setValue(n, f32(std::clamp(*v, double(ui.rangeMin(n)), double(ui.rangeMax(n)))), true);
+    }
     s->buf.clear();
     spinSelectAll(*s);
     ui.invalidate(n);
@@ -468,11 +477,12 @@ struct SpinBox {
         }
         labelAt(pc, dl, t, {c.x, c.y, c.w - 20.f, c.h}, TextAlignment::Start);
         const f32 ax = c.right() - 10.f, my = c.y + c.h * 0.5f;
-        const Color a = textCol(pc);
-        dl.line({ax - 4.f, my - 3.f}, {ax, my - 7.f}, a, 1.5f);
-        dl.line({ax, my - 7.f}, {ax + 4.f, my - 3.f}, a, 1.5f);
-        dl.line({ax - 4.f, my + 3.f}, {ax, my + 7.f}, a, 1.5f);
-        dl.line({ax, my + 7.f}, {ax + 4.f, my + 3.f}, a, 1.5f);
+        const Color a = textCol(pc), off = a.withAlpha(a.a * 0.3f); // stepEnabled: a disabled arrow is dimmed
+        const Color au = spinCanStep(ui, pc.node, 1) ? a : off, ad = spinCanStep(ui, pc.node, -1) ? a : off;
+        dl.line({ax - 4.f, my - 3.f}, {ax, my - 7.f}, au, 1.5f);
+        dl.line({ax, my - 7.f}, {ax + 4.f, my - 3.f}, au, 1.5f);
+        dl.line({ax - 4.f, my + 3.f}, {ax, my + 7.f}, ad, 1.5f);
+        dl.line({ax, my + 7.f}, {ax + 4.f, my + 3.f}, ad, 1.5f);
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
@@ -495,7 +505,9 @@ struct SpinBox {
             if (e.pos.x >= c.right() - 20.f) { // arrow: step now, auto-repeat while held
                 spinCommit(ui, n, false);
                 spinStopRepeat(ui, s);
-                s.repeatDir = e.pos.y < c.y + c.h * 0.5f ? 1 : -1;
+                const i32 dir = e.pos.y < c.y + c.h * 0.5f ? 1 : -1;
+                if (!spinCanStep(ui, n, dir)) return true;
+                s.repeatDir = dir;
                 s.accel = 0.f;
                 s.interval = kSpinRepeatRate;
                 spinStep(ui, n, s.repeatDir);
@@ -518,7 +530,12 @@ struct SpinBox {
             if (SpinState* s = spinFind(ui, n)) { s->dragging = false; spinStopRepeat(ui, *s); }
             return false;
         }
-        if (e.type == EventType::Wheel) { spinCommit(ui, n, false); spinStep(ui, n, e.wheel.y > 0.f ? 1 : -1); return true; }
+        if (e.type == EventType::Wheel) {
+            spinCommit(ui, n, false);
+            const i32 dir = e.wheel.y > 0.f ? 1 : -1;
+            if (spinCanStep(ui, n, dir)) spinStep(ui, n, dir);
+            return true;
+        }
         if (e.type == EventType::Text) {
             SpinState& s = spinEnsure(ui, n);
             spinInsert(ui, n, s, e.text);
@@ -576,7 +593,7 @@ struct SpinBox {
         default: break;
         }
         const i32 dir = e.key == Key::Up ? 1 : e.key == Key::Down ? -1 : e.key == Key::PageUp ? 10 : e.key == Key::PageDown ? -10 : 0;
-        if (dir) { spinCommit(ui, n, false); spinStep(ui, n, dir); return true; }
+        if (dir) { spinCommit(ui, n, false); if (spinCanStep(ui, n, dir)) spinStep(ui, n, dir); return true; }
         return false;
     }
 };
@@ -1428,6 +1445,7 @@ std::string spinBoxCleanText(const UiContext& ui, NodeHandle spin) {
     const SpinState* s = spinFind(ui, spin);
     return s && s->editing ? s->buf : spinClean(ui, spin, s, double(ui.value(spin)));
 }
+bool spinBoxStepEnabled(const UiContext& ui, NodeHandle spin, bool up) { return ui.alive(spin) && spinCanStep(ui, spin, up ? 1 : -1); }
 void spinBoxSelection(const UiContext& ui, NodeHandle spin, u32& from, u32& to, u32& caret) {
     from = to = caret = 0;
     SpinState* s = ui.alive(spin) ? spinFind(ui, spin) : nullptr;

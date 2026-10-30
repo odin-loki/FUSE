@@ -46,8 +46,11 @@ NodeHandle spinBox(UiContext& ui, NodeHandle parent, f32 lo, f32 hi, f32 value, 
 /// Enter / focus out commits an in-range number clamped, anything else reverts; editingFinished), prefix / suffix,
 /// decimals, wrapping, specialValueText (shown at the minimum, typing it selects the minimum), adaptive decimal
 /// stepping, keyboardTracking (valueChanged per keystroke or only on commit), textFromValue / valueFromText.
+/// QAbstractSpinBox::CorrectionMode: what Enter / focus out do with an out-of-range number.
+enum class SpinCorrection : u8 { PreviousValue, NearestValue };
 struct SpinBoxOptions {
     std::string prefix, suffix;
+    SpinCorrection correction = SpinCorrection::PreviousValue; ///< Qt's default: revert to the last valid value
     i32 decimals = -1; ///< -1: from the step (0 for step >= 1)
     bool wrapping = false;
     std::string specialValueText;
@@ -61,6 +64,9 @@ void setSpinBoxOptions(UiContext& ui, NodeHandle spin, SpinBoxOptions options);
 std::string spinBoxText(const UiContext& ui, NodeHandle spin);      ///< QAbstractSpinBox::text (what is shown)
 std::string spinBoxCleanText(const UiContext& ui, NodeHandle spin); ///< QSpinBox::cleanText
 void spinBoxStepBy(UiContext& ui, NodeHandle spin, i32 steps);      ///< QAbstractSpinBox::stepBy
+/// QAbstractSpinBox::stepEnabled: false at max (up) / min (down) unless wrapping. Disabled arrows are dimmed and
+/// Up / Down / PageUp / PageDown / wheel / arrow clicks in that direction do nothing; stepBy still steps.
+bool spinBoxStepEnabled(const UiContext& ui, NodeHandle spin, bool up);
 /// Selection / caret in the editable text (byte offsets, without prefix / suffix). Focus selects all (as Qt);
 /// Left / Right / Home / End (Shift extends), Ctrl+A, click / drag, Ctrl+C / X / V; typing replaces the selection.
 /// Holding an arrow button repeats after 0.5 s every 0.15 s (Qt's style defaults), faster when accelerated.
@@ -413,6 +419,18 @@ void setColorPickerColor(UiContext& ui, NodeHandle picker, Color c);
 /// header arrows page months, clicking a day selects it (ValueChanged), Enter -> Submitted.
 NodeHandle calendar(UiContext& ui, NodeHandle parent, int year, int month, int day, std::string_view id = {});
 void calendarDate(const UiContext& ui, NodeHandle cal, int& year, int& month, int& day);
+/// QCalendarWidget options: the first column's weekday (0 Monday .. 6 Sunday) and an ISO week-number column.
+struct CalendarOptions { u8 firstDayOfWeek = 0; bool weekNumbers = false; };
+/// Keys (QCalendarWidget): arrows by day / week, Home / End to the week's first / last day (Ctrl: the month's),
+/// PageUp / PageDown by a month (Ctrl: a year), Enter activates (Submitted). A click emits the usual Clicked;
+/// a page change emits TextChanged {value = year * 12 + month - 1} (currentPageChanged). The chevrons dim when the
+/// page beyond is out of range. A11y value text: the selected date written out.
+void setCalendarOptions(UiContext& ui, NodeHandle cal, const CalendarOptions& o);
+void calendarShownPage(const UiContext& ui, NodeHandle cal, int& year, int& month);
+void setCalendarShownPage(UiContext& ui, NodeHandle cal, int year, int month);
+int calendarIsoWeek(int year, int month, int day);
+/// QCalendarWidget::setDateRange: days outside are greyed and cannot be picked; keys stop at the ends.
+void setCalendarRange(UiContext& ui, NodeHandle cal, int minYear, int minMonth, int minDay, int maxYear, int maxMonth, int maxDay);
 i32 daysFromCivil(int y, int m, int d);
 void civilFromDays(i32 z, int& y, int& m, int& d);
 
@@ -572,8 +590,13 @@ struct DateTime {
 struct DateTimeEditOptions {
     /// QDateTimeEdit::displayFormat letters: yy yyyy, M MM MMM MMMM, d dd ddd dddd, H HH (24 h), h hh (12 h with AP),
     /// m mm, s ss, z zzz, AP ap; '...' quotes literals. Empty = "yyyy-MM-dd HH:mm" / "yyyy-MM-dd" / "HH:mm".
-    /// Month / day names are English (no locale data).
     std::string displayFormat;
+    /// Month / weekday names: "" = English; "system" or a name such as "de_DE.UTF-8" = that locale's names from the
+    /// C++ runtime / OS (std::time_put), falling back to English when the runtime lacks it (MinGW has only "C").
+    std::string locale;
+    /// Two-digit years (yy) typed map into [twoDigitYearStart, twoDigitYearStart + 99] (QDate baseYear style);
+    /// -1 keeps the shown century.
+    int twoDigitYearStart = -1;
     bool calendarPopup = true;  ///< ignored for timeEdit
     bool wrapping = false;      ///< stepping past a section's end wraps inside the section (Qt)
     bool carry = false;         ///< stepping carries into the next unit instead (the legacy dateTimeEdit overload)
@@ -607,6 +630,9 @@ u32 dateTimeEditSectionCount(const UiContext& ui, NodeHandle ed);
 void setDateTimeEditSection(UiContext& ui, NodeHandle ed, u32 index);
 std::string dateTimeEditSectionText(const UiContext& ui, NodeHandle ed, u32 index);
 bool dateTimeEditPopupOpen(const UiContext& ui, NodeHandle ed);
+bool dateTimeEditLocalized(const UiContext& ui, NodeHandle ed); ///< names come from a runtime locale
+/// Month / year changes return to the day last set on purpose when it fits (31 Oct -> Jun 30 -> Jul 31, as Qt).
+/// The calendar popup greys days outside minimum / maximum.
 
 /// Video widget: plays a VideoSource (function table). Theora .ogv files: fuse_ui_video's `video::TheoraVideo::source()`
 /// (fuse/ui/video/theora_video.hpp); `testPatternSource()` is a built-in moving pattern. Audio sync is not done. Space toggles play, the scrubber seeks.

@@ -4,6 +4,8 @@
 
 #include "fuse/ui/widgets/widgets.hpp"
 
+#include <locale>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -93,18 +95,77 @@ int main() {
     UI_CHECK(w::dateTimeEditSectionText(ui, de, 2) == "June" && w::dateTimeEditField(ui, de) == 2);
     ui.textInput("l");
     UI_CHECK(w::dateTimeEditSectionText(ui, de, 2) == "July" && w::dateTimeEditField(ui, de) == 3);
-    UI_CHECK(w::dateTimeEditText(ui, de) == "Thursday 30 July 2026"); // June clamped the day to 30
+    UI_CHECK(w::dateTimeEditText(ui, de) == "Friday 31 July 2026"); // June showed 30; July returns to the 31st
     ui.keyDown(Key::Home);
     ui.keyDown(Key::Up); // weekday steps the date by a day
-    UI_CHECK(w::dateTimeEditText(ui, de) == "Friday 31 July 2026");
+    UI_CHECK(w::dateTimeEditText(ui, de) == "Saturday 1 August 2026");
+    // the intended day survives stepping through short months, and is replaced by a day set on purpose
+    w::setDateTimeEditOptions(ui, de, {.displayFormat = "yyyy-MM-dd"});
+    w::setDateTimeEditDateTime(ui, de, {2024, 1, 31});
+    w::setDateTimeEditSection(ui, de, 1);
+    ui.keyDown(Key::Up);
+    UI_CHECK(w::dateTimeEditText(ui, de) == "2024-02-29");
+    ui.keyDown(Key::Up);
+    UI_CHECK(w::dateTimeEditText(ui, de) == "2024-03-31");
+    ui.keyDown(Key::Home);
+    ui.keyDown(Key::Up); ui.keyDown(Key::Up); ui.keyDown(Key::Up); ui.keyDown(Key::Up); // via Feb 2025..2027 (28)
+    UI_CHECK(w::dateTimeEditText(ui, de) == "2028-03-31");
+    w::setDateTimeEditSection(ui, de, 2);
+    ui.keyDown(Key::Down); // day 30 on purpose
+    w::setDateTimeEditSection(ui, de, 1);
+    ui.keyDown(Key::Down); ui.keyDown(Key::Up);
+    UI_CHECK(w::dateTimeEditText(ui, de) == "2028-03-30");
 
-    // ---- minimum / maximum ----
+    // ---- two-digit year window ----
+    const NodeHandle yy = w::dateEdit(ui, col, 2026, 5, 1, {.displayFormat = "dd.MM.yy", .twoDigitYearStart = 1950}, "yy");
+    ui.update();
+    ui.setFocus(yy);
+    w::setDateTimeEditSection(ui, yy, 2);
+    ui.textInput("49");
+    UI_CHECK(w::dateTimeEditDateTime(ui, yy).year == 2049);
+    w::setDateTimeEditSection(ui, yy, 2);
+    ui.textInput("50");
+    UI_CHECK(w::dateTimeEditDateTime(ui, yy).year == 1950 && w::dateTimeEditText(ui, yy) == "01.05.50");
+    w::setDateTimeEditOptions(ui, yy, {.displayFormat = "dd.MM.yy"}); // default: the shown century
+    w::setDateTimeEditSection(ui, yy, 2);
+    ui.textInput("07");
+    UI_CHECK(w::dateTimeEditDateTime(ui, yy).year == 1907);
+
+    // ---- locale names: from the C++ runtime only; an unknown locale falls back to English ----
+    w::setDateTimeEditOptions(ui, yy, {.displayFormat = "MMMM", .locale = "xx_NOPE.UTF-8"});
+    UI_CHECK(!w::dateTimeEditLocalized(ui, yy) && w::dateTimeEditText(ui, yy) == "May");
+    w::setDateTimeEditOptions(ui, yy, {.displayFormat = "MMMM ddd", .locale = "C"});
+    UI_CHECK(w::dateTimeEditLocalized(ui, yy) && w::dateTimeEditText(ui, yy) == "May Wed"); // 1907-05-01
+    bool de_ok = true;
+    try { (void)std::locale("de_DE.UTF-8"); } catch (const std::exception&) { de_ok = false; }
+    if (de_ok) {
+        w::setDateTimeEditOptions(ui, yy, {.displayFormat = "MMMM", .locale = "de_DE.UTF-8"});
+        UI_CHECK(w::dateTimeEditText(ui, yy) == "Mai");
+    }
+    w::setDateTimeEditDateTime(ui, de, {2026, 8, 1});
+
+    // ---- minimum / maximum (the popup greys days outside and cannot pick them) ----
     w::setDateTimeEditOptions(ui, de, {.displayFormat = "yyyy-MM-dd", .minimum = {2026, 8, 1}, .maximum = {2026, 12, 31}});
+    ui.setFocus(de);
     ui.keyDown(Key::Home);
     ui.keyDown(Key::Up);
     UI_CHECK(w::dateTimeEditText(ui, de) == "2026-12-31"); // year +1 clamped to the maximum
     w::setDateTimeEditDateTime(ui, de, {2020, 1, 1});
     UI_CHECK(w::dateTimeEditText(ui, de) == "2026-08-01");
+    w::setDateTimeEditOptions(ui, de, {.displayFormat = "yyyy-MM-dd", .minimum = {2026, 7, 30}, .maximum = {2026, 8, 3}});
+    ui.setFocus(de);
+    ui.keyDown(Key::F4);
+    UI_CHECK(w::dateTimeEditPopupOpen(ui, de));
+    const NodeHandle rcal = ui.focused();
+    UI_CHECK(ui.rangeMin(rcal) == f32(w::daysFromCivil(2026, 7, 30)) && ui.rangeMax(rcal) == f32(w::daysFromCivil(2026, 8, 3)));
+    for (int i = 0; i < 5; ++i) ui.keyDown(Key::Right); // stops at the maximum
+    UI_CHECK(w::dateTimeEditText(ui, de) == "2026-08-03");
+    ui.keyDown(Key::Up); // a week back: 27 Jul is out of range -> clamps to the minimum
+    UI_CHECK(w::dateTimeEditText(ui, de) == "2026-07-30");
+    ui.keyDown(Key::Enter);
+    ui.update();
+    w::setDateTimeEditOptions(ui, de, {.displayFormat = "yyyy-MM-dd"});
+    w::setDateTimeEditDateTime(ui, de, {2026, 8, 1});
 
     // ---- calendar popup: Alt+Down opens, picking keeps the time; the button sits at the right ----
     ui.setFocus(dt);

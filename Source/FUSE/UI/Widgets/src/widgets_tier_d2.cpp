@@ -5,6 +5,10 @@
 #include "widgets_internal.hpp"
 
 #include <algorithm>
+#include <ctime>
+#include <iomanip>
+#include <locale>
+#include <sstream>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
@@ -1018,6 +1022,42 @@ int monthDays(int y, int m) {
 constexpr const char* kMonthNames[] = {"January", "February", "March", "April", "May", "June", "July",
                                        "August", "September", "October", "November", "December"};
 constexpr const char* kDayNames[] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+/// Month / weekday names: the C++ runtime's locale data (std::time_put %B %b %A %a over the OS locales), else the
+/// English names above. No locale tables of our own.
+struct DtNames { std::string month[12], monthShort[12], day[7], dayShort[7]; bool localized = false; };
+const DtNames& dtNames(const std::string& loc) {
+    static std::vector<std::pair<std::string, std::unique_ptr<DtNames>>> cache;
+    for (auto& [k, v] : cache) if (k == loc) return *v;
+    auto n = std::make_unique<DtNames>();
+    for (int i = 0; i < 12; ++i) { n->month[i] = kMonthNames[i]; n->monthShort[i] = n->month[i].substr(0, 3); }
+    for (int i = 0; i < 7; ++i) { n->day[i] = kDayNames[i]; n->dayShort[i] = n->day[i].substr(0, 3); }
+    if (!loc.empty()) {
+        try {
+            const std::locale L = loc == "system" ? std::locale("") : std::locale(loc);
+            auto fmt = [&](const std::tm& t, const char* f) {
+                std::ostringstream os;
+                os.imbue(L);
+                os << std::put_time(&t, f);
+                return os.str();
+            };
+            for (int i = 0; i < 12; ++i) {
+                std::tm t{}; t.tm_year = 100; t.tm_mon = i; t.tm_mday = 1;
+                const std::string a = fmt(t, "%B"), b = fmt(t, "%b");
+                if (!a.empty()) n->month[i] = a;
+                if (!b.empty()) n->monthShort[i] = b;
+            }
+            for (int i = 0; i < 7; ++i) {
+                std::tm t{}; t.tm_wday = (i + 1) % 7; // Monday first
+                const std::string a = fmt(t, "%A"), b = fmt(t, "%a");
+                if (!a.empty()) n->day[i] = a;
+                if (!b.empty()) n->dayShort[i] = b;
+            }
+            n->localized = true;
+        } catch (const std::exception&) {} // the runtime has no such locale (e.g. MinGW): English
+    }
+    cache.emplace_back(loc, std::move(n));
+    return *cache.back().second;
+}
 enum class DtKind : u8 { Literal, Year, Month, Day, Weekday, Hour24, Hour12, Minute, Second, Msec, AmPm };
 struct DtSection {
     DtKind kind = DtKind::Literal;
@@ -1088,20 +1128,19 @@ std::vector<DtSection> dtParseFormat(std::string_view f) {
     if (!ap) for (DtSection& s : out) if (s.kind == DtKind::Hour12) s.kind = DtKind::Hour24;
     return out;
 }
-std::string dtSectionText(const DtSection& s, const DtFields& f) {
+std::string dtSectionText(const DtSection& s, const DtFields& f, const DtNames& nm) {
     char b[32];
     auto num = [&](int v, int w) { std::snprintf(b, sizeof b, "%0*d", w, v); return std::string(b); };
     switch (s.kind) {
     case DtKind::Literal: return s.lit;
     case DtKind::Year: return s.count == 4 ? num(f.y, 4) : num(f.y % 100, 2);
     case DtKind::Month:
-        if (s.count >= 3) { const std::string m = kMonthNames[f.mo - 1]; return s.count == 3 ? m.substr(0, 3) : m; }
+        if (s.count >= 3) return s.count == 3 ? nm.monthShort[f.mo - 1] : nm.month[f.mo - 1];
         return num(f.mo, s.count);
     case DtKind::Day: return num(f.d, s.count);
     case DtKind::Weekday: {
         const int wd = int(((i64(daysFromCivil(f.y, f.mo, f.d)) % 7 + 7 + 3) % 7)); // 1970-01-01 was a Thursday
-        const std::string n = kDayNames[wd];
-        return s.count == 3 ? n.substr(0, 3) : n;
+        return s.count == 3 ? nm.dayShort[wd] : nm.day[wd];
     }
     case DtKind::Hour24: return num(f.h, s.count);
     case DtKind::Hour12: return num(f.h % 12 ? f.h % 12 : 12, s.count);
@@ -1122,7 +1161,10 @@ struct DtState {
     bool justAdvanced = false; ///< a full section auto-advanced: the separator typed next is swallowed
     NodeHandle popup;
     bool calendarPopup = true, wrapping = false, carry = false;
-    u8 type = 0;               ///< 0 date-time, 1 date, 2 time
+    u8 type = 0;
+    int wantDay = 0;           ///< the day last set on purpose: month / year changes return to it when it fits (Qt)
+    int yearStart = -1;        ///< two-digit years map into [yearStart, yearStart + 99]; -1 = the current century
+    const DtNames* names = nullptr;               ///< 0 date-time, 1 date, 2 time
 };
 Pool<DtState>& dtPool() { static Pool<DtState> p; return p; }
 void dtSetFormat(DtState& s, std::string_view f) {
@@ -1144,7 +1186,7 @@ std::string dtText(const DtState& s, std::vector<std::pair<u32, u32>>* spans = n
     std::string t;
     for (const DtSection& x : s.secs) {
         const u32 a = u32(t.size());
-        t += dtSectionText(x, f);
+        t += dtSectionText(x, f, *s.names);
         if (spans && x.kind != DtKind::Literal) spans->push_back({a, u32(t.size())});
     }
     return t;
@@ -1155,10 +1197,11 @@ std::string dtIso(i64 v) {
     std::snprintf(b, sizeof b, "%04d-%02d-%02dT%02d:%02d:%02d.%03d", f.y, f.mo, f.d, f.h, f.mi, f.s, f.ms);
     return b;
 }
-void dtPublish(UiContext& ui, NodeHandle n, DtState& s, i64 nv, bool emit = true) {
+void dtPublish(UiContext& ui, NodeHandle n, DtState& s, i64 nv, bool emit = true, bool keepDay = false) {
     nv = std::clamp(nv, s.lo, s.hi);
     const bool changed = nv != s.v;
     s.v = nv;
+    if (!keepDay || !s.wantDay) s.wantDay = dtSplit(nv).d;
     ui.setText(n, dtText(s));
     const i64 day = nv >= 0 ? nv / kMsDay : -((-nv + kMsDay - 1) / kMsDay);
     ui.setValue(n, f32(day)); // days since 1970: exact in f32
@@ -1197,6 +1240,7 @@ i64 dtStepped(const DtState& s, int d) {
     case DtKind::AmPm: if ((d > 0) == (f.h < 12) || s.wrapping) f.h = (f.h + 12) % 24; break;
     case DtKind::Literal: break;
     }
+    if ((sec->kind == DtKind::Year || sec->kind == DtKind::Month) && s.wantDay) f.d = s.wantDay;
     f.d = std::min(f.d, monthDays(f.y, f.mo));
     return dtJoin(f);
 }
@@ -1205,8 +1249,14 @@ i64 dtWithField(const DtState& s, const DtSection& sec, int v, bool& ok) {
     DtFields f = dtSplit(s.v);
     ok = true;
     switch (sec.kind) {
-    case DtKind::Year: f.y = sec.count == 2 ? f.y / 100 * 100 + v : v; ok = f.y >= 1; break;
-    case DtKind::Month: f.mo = v; ok = v >= 1 && v <= 12; break;
+    case DtKind::Year:
+        if (sec.count != 2) f.y = v;
+        else if (s.yearStart >= 0) f.y = s.yearStart + ((v - s.yearStart % 100) % 100 + 100) % 100; // QDate baseYear window
+        else f.y = f.y / 100 * 100 + v;
+        ok = f.y >= 1;
+        if (s.wantDay) f.d = s.wantDay;
+        break;
+    case DtKind::Month: f.mo = v; ok = v >= 1 && v <= 12; if (s.wantDay) f.d = s.wantDay; break;
     case DtKind::Day: f.d = v; ok = v >= 1 && v <= 31; break; // clamped to the month length on join
     case DtKind::Hour24: f.h = v; ok = v <= 23; break;
     case DtKind::Hour12: ok = v >= 1 && v <= 12; f.h = (v % 12) + (f.h >= 12 ? 12 : 0); break;
@@ -1287,6 +1337,8 @@ struct DateTimeW {
         if (!ui.alive(card)) return;
         const DtFields f = dtSplit(s.v);
         const NodeHandle cal = calendar(ui, card, f.y, f.mo, f.d);
+        const DtFields lo = dtSplit(s.lo), hi = dtSplit(s.hi);
+        setCalendarRange(ui, cal, lo.y, lo.mo, lo.d, hi.y, hi.mo, hi.d);
         ui.setFocus(cal, FocusReason::Keyboard);
         auto pick = [n](UiContext& u, NodeHandle c, const SignalArgs&) { // the date changes, the time is kept
             DtState* st = dtPool().get(u, n);
@@ -1329,19 +1381,19 @@ struct DateTimeW {
             const bool month = sec->kind == DtKind::Month;
             int hit = -1, hits = 0;
             for (int i = 0; i < (month ? 12 : 7); ++i) {
-                std::string nm = month ? kMonthNames[i] : kDayNames[i];
+                std::string nm = month ? s.names->month[i] : s.names->day[i];
                 for (char& c : nm) c = char(std::tolower(u8(c)));
                 if (nm.starts_with(s.typed)) { if (hit < 0) hit = i; ++hits; }
             }
             if (hit < 0) { s.typed.clear(); return true; }
             DtFields f = dtSplit(s.v);
             i64 nv;
-            if (month) { f.mo = hit + 1; nv = dtJoin(f); }
+            if (month) { f.mo = hit + 1; if (s.wantDay) f.d = s.wantDay; nv = dtJoin(f); }
             else {
                 const int wd = int(((i64(daysFromCivil(f.y, f.mo, f.d)) % 7 + 7 + 3) % 7));
                 nv = s.v + i64(hit - wd) * kMsDay; // the same week, Monday first
             }
-            dtPublish(ui, n, s, nv);
+            dtPublish(ui, n, s, nv, true, month);
             if (hits == 1) dtAdvance(s);
             return true;
         }
@@ -1353,7 +1405,7 @@ struct DateTimeW {
         if (sec->kind == DtKind::Year && !full) return true; // a partial year would jump to year 2
         bool ok = false;
         const i64 nv = dtWithField(s, *sec, v, ok);
-        if (ok) dtPublish(ui, n, s, nv);
+        if (ok) dtPublish(ui, n, s, nv, true, sec->kind == DtKind::Year || sec->kind == DtKind::Month);
         if (full) dtAdvance(s);
         return true;
     }
@@ -1365,7 +1417,13 @@ struct DateTimeW {
         const Rect c = ui.contentRect(ec.node);
         const u32 last = s->editable.empty() ? 0 : u32(s->editable.size()) - 1;
         auto go = [&](u32 f) { s->field = f; s->typed.clear(); s->justAdvanced = false; ui.invalidate(ec.node); return true; };
-        auto step = [&](int d) { s->typed.clear(); dtPublish(ui, ec.node, *s, dtStepped(*s, d)); return true; };
+        auto step = [&](int d) {
+            s->typed.clear();
+            const DtSection* c0 = dtCur(*s);
+            const bool ym = c0 && (c0->kind == DtKind::Year || c0->kind == DtKind::Month) && !s->carry;
+            dtPublish(ui, ec.node, *s, dtStepped(*s, d), true, ym);
+            return true;
+        };
         switch (e.type) {
         case EventType::FocusIn:
             if (e.focusReason == FocusReason::Keyboard) go((e.mods & kModShift) ? last : 0);
@@ -1946,6 +2004,8 @@ void setDateTimeEditOptions(UiContext& ui, NodeHandle ed, const DateTimeEditOpti
     s->calendarPopup = o.calendarPopup && s->type != 2;
     s->wrapping = o.wrapping;
     s->carry = o.carry;
+    s->yearStart = o.twoDigitYearStart;
+    s->names = &dtNames(o.locale);
     s->lo = dtJoin(o.minimum);
     s->hi = std::max(s->lo, dtJoin(o.maximum));
     if (s->type == 2) { // QTimeEdit: one day
@@ -2010,7 +2070,11 @@ void setDateTimeEditSection(UiContext& ui, NodeHandle ed, u32 index) {
 std::string dateTimeEditSectionText(const UiContext& ui, NodeHandle ed, u32 index) {
     const DtState* s = dtPool().get(ui, ed);
     if (!s || index >= s->editable.size()) return {};
-    return dtSectionText(s->secs[s->editable[index]], dtSplit(s->v));
+    return dtSectionText(s->secs[s->editable[index]], dtSplit(s->v), *s->names);
+}
+bool dateTimeEditLocalized(const UiContext& ui, NodeHandle ed) {
+    const DtState* s = dtPool().get(ui, ed);
+    return s && s->names && s->names->localized;
 }
 bool dateTimeEditPopupOpen(const UiContext& ui, NodeHandle ed) {
     const DtState* s = dtPool().get(ui, ed);

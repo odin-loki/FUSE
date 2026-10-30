@@ -43,8 +43,27 @@ int main() {
     UI_CHECK(w::spinBoxCleanText(ui, sp) == "42");
     ui.textInput("0"); // 420 is out of range: shown, value kept
     UI_CHECK(w::spinBoxCleanText(ui, sp) == "420" && ui.value(sp) == 42.f);
-    ui.keyDown(Key::Enter); // commit clamps
+    ui.keyDown(Key::Enter); // CorrectToPreviousValue (Qt default): back to the last valid value
+    UI_CHECK(ui.value(sp) == 42.f && w::spinBoxText(ui, sp) == "$ 42 ea" && finished == 1);
+    w::setSpinBoxOptions(ui, sp, {.prefix = "$ ", .suffix = " ea", .correction = w::SpinCorrection::NearestValue});
+    ui.setFocus(other);
+    ui.setFocus(sp);
+    finished = 0;
+    ui.textInput("420");
+    ui.keyDown(Key::Enter); // CorrectToNearestValue: clamps
     UI_CHECK(ui.value(sp) == 100.f && w::spinBoxText(ui, sp) == "$ 100 ea" && finished == 1);
+    // stepEnabled: at the maximum Up does nothing, Down works; the arrow half is inert too
+    UI_CHECK(!w::spinBoxStepEnabled(ui, sp, true) && w::spinBoxStepEnabled(ui, sp, false));
+    changes = 0;
+    ui.keyDown(Key::Up);
+    UI_CHECK(ui.value(sp) == 100.f && changes == 0);
+    {
+        ui.update();
+        const Rect ar = ui.contentRect(sp);
+        ui.pointerDown({ar.right() - 6.f, ar.y + 2.f}, MouseButton::Left);
+        ui.pointerUp({ar.right() - 6.f, ar.y + 2.f}, MouseButton::Left);
+        UI_CHECK(ui.value(sp) == 100.f && changes == 0);
+    }
     // Backspace / Escape
     ui.textInput("12");
     ui.keyDown(Key::Backspace);
