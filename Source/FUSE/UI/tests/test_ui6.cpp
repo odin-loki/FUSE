@@ -179,7 +179,7 @@ int dockLayoutRoundtrip() {
     // malformed blobs change nothing; unknown ids are ignored
     UI_CHECK(w::dockRestoreLayout(ui, b.area, blob));
     ui.update();
-    for (const char* bad : {"", "fusedock 2\n", "nonsense\n", "fusedock 1\nsize left -5\n", "fusedock 1\nsize middle 10\n",
+    for (const char* bad : {"", "fusedock 3\n", "nonsense\n", "fusedock 1\nsize left -5\n", "fusedock 1\nsize middle 10\n",
                             "fusedock 1\ndock B.log up 0 open\n", "fusedock 1\ndock B.log left x open\n", "fusedock 1\ndock B.log left 0 maybe\n"}) {
         UI_CHECK(!w::dockRestoreLayout(ui, b.area, bad));
         ui.update();

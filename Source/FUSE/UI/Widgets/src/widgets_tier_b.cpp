@@ -230,11 +230,42 @@ struct MenuBar {
 };
 struct ToolBar {
     static constexpr std::string_view kName = "toolbar";
-    static constexpr A11yRole kRole = A11yRole::Group;
+    static constexpr A11yRole kRole = A11yRole::ToolBar;
     static ComputedStyle defaults() {
         ComputedStyle s;
         s.direction = Direction::Row;
         return s;
+    }
+};
+} // namespace
+namespace detail {
+void toolBarGripPress(UiContext& ui, NodeHandle bar, Vec2 p);
+void toolBarGripMove(UiContext& ui, NodeHandle bar, Vec2 p);
+void toolBarGripRelease(UiContext& ui, NodeHandle bar);
+} // namespace detail
+namespace {
+struct ToolBarGrip { // QToolBar handle: drag to move the bar between tool bar areas or float it
+    static constexpr std::string_view kName = "toolbargrip";
+    static constexpr A11yRole kRole = A11yRole::None;
+    static constexpr bool kInteractive = true;
+    static Size measure(UiContext&, NodeHandle, Size) { return {8.f, 8.f}; }
+    static void paint(const PaintContext& pc, DrawList& dl) {
+        const Rect r = pc.rect;
+        const Color c = pc.tint(pc.states & (kStateHover | kStatePressed) ? Color::rgb(0x9A9AA6) : Color::rgb(0x5A5A66));
+        const bool v = r.w > r.h; // in a vertical bar the grip lies across the top
+        for (int i = -1; i <= 1; ++i) {
+            const Vec2 p = v ? Vec2{r.x + r.w * 0.5f + f32(i) * 5.f, r.y + r.h * 0.5f} : Vec2{r.x + r.w * 0.5f, r.y + r.h * 0.5f + f32(i) * 5.f};
+            dl.rect({p.x - 1.f, p.y - 1.f, 2.f, 2.f}, c, 1.f);
+        }
+    }
+    static bool onEvent(EventContext& ec, const Event& e) {
+        if (ec.phase != Phase::Target) return false;
+        UiContext& ui = ec.ui;
+        const NodeHandle bar = ui.parent(ec.node);
+        if (e.type == EventType::PointerDown && e.button == MouseButton::Left) { detail::toolBarGripPress(ui, bar, e.client); return true; }
+        if (e.type == EventType::PointerMove && ui.pressed() == ec.node) { detail::toolBarGripMove(ui, bar, e.client); return true; }
+        if (e.type == EventType::PointerUp) { detail::toolBarGripRelease(ui, bar); return true; }
+        return false;
     }
 };
 struct ToolBarSep {
@@ -907,54 +938,240 @@ struct TreeView {
 };
 
 // ---- tab bar -----------------------------------------------------------------------------------------------------
+/// QTabBar state beyond titles / current: closable / movable, disabled tabs, scroll offset, the live tab drag.
+struct TabBarState {
+    u32 gen = 0;
+    bool closable = false, movable = false;
+    std::set<u32> disabled;
+    f32 scroll = 0.f;
+    i32 lastCur = -1;
+    i32 drag = -1; ///< tab being dragged (current index)
+    f32 pressX = 0.f;
+    bool dragging = false;
+};
+std::unordered_map<const UiContext*, std::unordered_map<u32, TabBarState>>& tabBars() {
+    static std::unordered_map<const UiContext*, std::unordered_map<u32, TabBarState>> m;
+    return m;
+}
+TabBarState& tabState(const UiContext& ui, NodeHandle n) {
+    TabBarState& s = tabBars()[&ui][n.index];
+    if (s.gen != n.generation) s = TabBarState{n.generation};
+    return s;
+}
+void showPage(UiContext& ui, NodeHandle stack, u32 current);
 struct TabBar {
     static constexpr std::string_view kName = "tabbar";
     static constexpr A11yRole kRole = A11yRole::Tab;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
-    static constexpr f32 kPad = 12.f;
-    static f32 tabW(UiContext& ui, NodeHandle n, std::string_view t) { return std::ceil(ui.measureString(t, ui.computed(n).fontSize)) + 2.f * kPad; }
+    static constexpr f32 kPad = 12.f, kClose = 18.f, kArrow = 18.f;
+    static f32 tabW(UiContext& ui, NodeHandle n, std::string_view t) {
+        return std::ceil(ui.measureString(t, ui.computed(n).fontSize)) + 2.f * kPad + (tabState(ui, n).closable ? kClose : 0.f);
+    }
     static Size measure(UiContext& ui, NodeHandle n, Size) {
         f32 w = 0.f;
         eachLine(ui.text(n), [&](u32, std::string_view t) { w += tabW(ui, n, t); return true; });
         return {w, rowHeight(ui, n)};
     }
-    static void paint(const PaintContext& pc, DrawList& dl) {
-        UiContext& ui = pc.ui;
-        const Rect c = pc.content;
-        const u32 sel = u32(ui.value(pc.node));
-        f32 x = c.x;
-        eachLine(ui.text(pc.node), [&](u32 i, std::string_view t) {
-            const f32 w = tabW(ui, pc.node, t);
-            if (i == sel) {
-                dl.rect({x, c.y, w, c.h}, pc.tint(Color::rgb(0x34353E)), 4.f);
-                dl.rect({x + 4.f, c.bottom() - 2.f, w - 8.f, 2.f}, accent(pc));
-            }
-            labelAt(pc, dl, t, {x, c.y, w, c.h}, TextAlignment::Center);
+    static f32 total(UiContext& ui, NodeHandle n) { return measure(ui, n, {}).w; }
+    /// Tabs scroll when they overflow (QTabBar::usesScrollButtons): two arrow buttons take the right end.
+    static bool overflow(UiContext& ui, NodeHandle n) { return total(ui, n) > ui.contentRect(n).w + 0.5f; }
+    static f32 viewW(UiContext& ui, NodeHandle n) { return ui.contentRect(n).w - (overflow(ui, n) ? 2.f * kArrow : 0.f); }
+    static Rect tabRect(UiContext& ui, NodeHandle n, u32 index) {
+        const Rect c = ui.contentRect(n);
+        f32 x = c.x - tabState(ui, n).scroll;
+        Rect out{};
+        eachLine(ui.text(n), [&](u32 i, std::string_view t) {
+            const f32 w = tabW(ui, n, t);
+            if (i == index) { out = {x, c.y, w, c.h}; return false; }
             x += w;
             return true;
         });
+        return out;
+    }
+    static Rect closeBox(const Rect& r) { return {r.right() - kPad * 0.5f - 14.f, r.y + r.h * 0.5f - 7.f, 14.f, 14.f}; }
+    static i32 tabAt(UiContext& ui, NodeHandle n, f32 x) {
+        const Rect c = ui.contentRect(n);
+        if (x >= c.x + viewW(ui, n)) return -1;
+        for (u32 i = 0, k = count(ui.text(n)); i < k; ++i) { const Rect r = tabRect(ui, n, i); if (x >= r.x && x < r.right()) return i32(i); }
+        return -1;
+    }
+    static void setScroll(UiContext& ui, NodeHandle n, f32 v) {
+        TabBarState& s = tabState(ui, n);
+        const f32 mx = overflow(ui, n) ? std::max(0.f, total(ui, n) - viewW(ui, n)) : 0.f;
+        const f32 nv = std::clamp(v, 0.f, mx);
+        if (nv != s.scroll) { s.scroll = nv; ui.invalidate(n); }
+    }
+    static void ensureVisible(UiContext& ui, NodeHandle n, u32 i) {
+        const Rect c = ui.contentRect(n), r = tabRect(ui, n, i);
+        TabBarState& s = tabState(ui, n);
+        const f32 x0 = r.x - c.x + s.scroll, x1 = x0 + r.w, vw = viewW(ui, n);
+        if (x0 < s.scroll) setScroll(ui, n, x0);
+        else if (x1 > s.scroll + vw) setScroll(ui, n, x1 - vw);
+    }
+    static void layoutHook(UiContext& ui, NodeHandle n) { // keep the scroll in range and the current tab in view
+        TabBarState& s = tabState(ui, n);
+        setScroll(ui, n, s.scroll);
+        const i32 cur = i32(ui.value(n));
+        if (cur != s.lastCur) { s.lastCur = cur; if (cur >= 0) ensureVisible(ui, n, u32(cur)); }
+    }
+    static void paint(const PaintContext& pc, DrawList& dl) {
+        UiContext& ui = pc.ui;
+        const Rect c = pc.content;
+        const TabBarState& s = tabState(ui, pc.node);
+        const u32 sel = u32(ui.value(pc.node));
+        const bool ov = overflow(ui, pc.node);
+        const f32 vw = viewW(ui, pc.node);
+        dl.pushClip({c.x, c.y, vw, c.h});
+        eachLine(ui.text(pc.node), [&](u32 i, std::string_view t) {
+            const Rect r = tabRect(ui, pc.node, i);
+            if (r.right() < c.x || r.x > c.x + vw) return true;
+            if (i == sel) {
+                dl.rect(r, pc.tint(Color::rgb(s.dragging && i32(i) == s.drag ? 0x40414C : 0x34353E)), 4.f);
+                dl.rect({r.x + 4.f, c.bottom() - 2.f, r.w - 8.f, 2.f}, accent(pc));
+            }
+            const bool off = s.disabled.contains(i);
+            const Rect tr{r.x, r.y, r.w - (s.closable ? kClose : 0.f), r.h};
+            if (off) ui.paintString(dl, t, {tr.x + kPad, tr.y, tr.w - 2.f * kPad, tr.h}, pc.tint(pc.style.color.withAlpha(pc.style.color.a * 0.4f)),
+                                    pc.style.fontSize, TextAlignment::Center, pc.node.index);
+            else labelAt(pc, dl, t, tr, TextAlignment::Center);
+            if (s.closable) {
+                const Rect x = closeBox(r);
+                const bool hot = ui.hovered() == pc.node && x.contains(ui.pointer());
+                const Color col = pc.tint(hot ? Color::rgb(0xFF6B6B) : Color::rgb(0x9A9AA6));
+                const f32 m = 4.f;
+                dl.line({x.x + m, x.y + m}, {x.right() - m, x.bottom() - m}, col, 1.5f);
+                dl.line({x.right() - m, x.y + m}, {x.x + m, x.bottom() - m}, col, 1.5f);
+            }
+            return true;
+        });
+        dl.popClip();
+        if (ov) { // scroll buttons
+            const Color col = pc.tint(Color::rgb(0x9A9AA6));
+            for (int k = 0; k < 2; ++k) {
+                const Rect b{c.x + vw + f32(k) * kArrow, c.y, kArrow, c.h};
+                const f32 cx = b.x + b.w * 0.5f, cy = b.y + b.h * 0.5f, d = k ? 3.f : -3.f;
+                dl.line({cx - d, cy - 5.f}, {cx + d, cy}, col, 1.5f);
+                dl.line({cx + d, cy}, {cx - d, cy + 5.f}, col, 1.5f);
+            }
+        }
         dl.rect({c.x, c.bottom() - 1.f, c.w, 1.f}, pc.tint(Color::rgb(0x474955)));
+    }
+    /// next enabled tab from `from` stepping `dir` (no wrap); -1 if none
+    static i32 step(UiContext& ui, NodeHandle n, i32 from, i32 dir) {
+        const TabBarState& s = tabState(ui, n);
+        const i32 c = i32(count(ui.text(n)));
+        for (i32 i = from + dir; i >= 0 && i < c; i += dir) if (!s.disabled.contains(u32(i))) return i;
+        return -1;
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
         UiContext& ui = ec.ui;
         const NodeHandle n = ec.node;
+        TabBarState& s = tabState(ui, n);
         const u32 c = count(ui.text(n)), cur = u32(ui.value(n));
-        auto pick = [&](u32 i) { if (c && i < c && i != cur) ui.setValue(n, f32(i), true); };
-        if (e.type == EventType::PointerDown) {
-            f32 x = ui.contentRect(n).x;
-            eachLine(ui.text(n), [&](u32 i, std::string_view t) {
-                const f32 w = tabW(ui, n, t);
-                if (e.pos.x >= x && e.pos.x < x + w) { pick(i); return false; }
-                x += w;
+        auto pick = [&](i32 i) {
+            if (c && i >= 0 && u32(i) < c && u32(i) != cur && !s.disabled.contains(u32(i))) { ui.setValue(n, f32(i), true); ensureVisible(ui, n, u32(i)); }
+        };
+        const Rect cr = ui.contentRect(n);
+        switch (e.type) {
+        case EventType::PointerDown: {
+            if (overflow(ui, n) && e.pos.x >= cr.x + viewW(ui, n)) {
+                setScroll(ui, n, s.scroll + (e.pos.x >= cr.x + viewW(ui, n) + kArrow ? 80.f : -80.f));
                 return true;
-            });
+            }
+            const i32 i = tabAt(ui, n, e.pos.x);
+            if (i < 0 || s.disabled.contains(u32(i))) return true;
+            if (s.closable && closeBox(tabRect(ui, n, u32(i))).contains(e.pos)) { // QTabBar::tabCloseRequested
+                ui.emit(n, SignalKind::Event, {.value = f32(i), .text = "tabCloseRequested"});
+                return true;
+            }
+            pick(i);
+            s.drag = s.movable ? i : -1;
+            s.pressX = e.pos.x;
+            s.dragging = false;
             return true;
         }
-        if (e.type == EventType::KeyDown && e.key == Key::Right) { pick(cur + 1); return true; }
-        if (e.type == EventType::KeyDown && e.key == Key::Left) { if (cur) pick(cur - 1); return true; }
-        return false;
+        case EventType::PointerMove: {
+            if (ui.pressed() != n || s.drag < 0) { if (s.closable) ui.invalidate(n); return false; }
+            if (!s.dragging && std::abs(e.pos.x - s.pressX) < 10.f) return true;
+            s.dragging = true;
+            // live reorder (QTabBar::setMovable): swap with a neighbour once the pointer passes its middle
+            for (i32 to : {s.drag - 1, s.drag + 1}) {
+                if (to < 0 || u32(to) >= c) continue;
+                const Rect r = tabRect(ui, n, u32(to));
+                if ((to < s.drag && e.pos.x < r.x + r.w * 0.5f) || (to > s.drag && e.pos.x > r.x + r.w * 0.5f)) {
+                    moveTab(ui, n, u32(s.drag), u32(to));
+                    s.drag = to;
+                    break;
+                }
+            }
+            ui.invalidate(n);
+            return true;
+        }
+        case EventType::PointerUp:
+            if (s.dragging) ui.invalidate(n);
+            s.drag = -1;
+            s.dragging = false;
+            return false;
+        case EventType::Wheel: { // QTabBar: the wheel changes the current tab
+            const i32 t = step(ui, n, i32(cur), e.wheel.y > 0.f || e.wheel.x > 0.f ? -1 : 1);
+            if (t >= 0) pick(t);
+            return true;
+        }
+        case EventType::KeyDown:
+            switch (e.key) {
+            case Key::Right: if (const i32 t = step(ui, n, i32(cur), 1); t >= 0) pick(t); return true;
+            case Key::Left: if (const i32 t = step(ui, n, i32(cur), -1); t >= 0) pick(t); return true;
+            case Key::Home: if (const i32 t = step(ui, n, -1, 1); t >= 0) pick(t); return true;
+            case Key::End: if (const i32 t = step(ui, n, i32(c), -1); t >= 0) pick(t); return true;
+            default: return false;
+            }
+        default: return false;
+        }
+    }
+    /// Moves tab `from` to index `to` (titles, current, disabled flags and, in a tab widget, its pages).
+    static void moveTab(UiContext& ui, NodeHandle n, u32 from, u32 to) {
+        const u32 c = count(ui.text(n));
+        if (from >= c || to >= c || from == to) return;
+        std::vector<std::string> t;
+        eachLine(ui.text(n), [&](u32, std::string_view l) { t.emplace_back(l); return true; });
+        std::string moved = std::move(t[from]);
+        t.erase(t.begin() + from);
+        t.insert(t.begin() + to, std::move(moved));
+        std::string joined;
+        for (std::size_t i = 0; i < t.size(); ++i) { if (i) joined += '\n'; joined += t[i]; }
+        ui.setText(n, joined);
+        auto remap = [&](u32 i) -> u32 {
+            if (i == from) return to;
+            if (from < to && i > from && i <= to) return i - 1;
+            if (to < from && i >= to && i < from) return i + 1;
+            return i;
+        };
+        TabBarState& s = tabState(ui, n);
+        std::set<u32> dis;
+        for (u32 i : s.disabled) dis.insert(remap(i));
+        s.disabled = std::move(dis);
+        const u32 cur = remap(u32(ui.value(n)));
+        ui.setValue(n, f32(cur));
+        s.lastCur = i32(cur);
+        const NodeHandle w = ui.parent(n);
+        if (ui.alive(w) && ui.hasClass(w, "tabwidget") && ui.firstChild(w) == n) { // pages follow
+            const NodeHandle stack = ui.nextSibling(n);
+            NodeHandle pg = ui.firstChild(stack);
+            for (u32 i = 0; i < from && ui.alive(pg); ++i) pg = ui.nextSibling(pg);
+            NodeHandle ref = ui.firstChild(stack);
+            for (u32 i = 0; i < to + (from < to ? 1u : 0u) && ui.alive(ref); ++i) ref = ui.nextSibling(ref);
+            if (ui.alive(pg)) {
+                if (ui.alive(ref)) ui.insertBefore(pg, ref);
+                else ui.moveTo(pg, stack);
+            }
+            showPage(ui, stack, cur);
+        }
+        char b[48];
+        std::snprintf(b, sizeof b, "tabMoved %u %u", from, to);
+        ui.emit(n, SignalKind::Event, {.value = f32(to), .text = b});
+        ui.invalidate(n);
     }
 };
 
@@ -975,6 +1192,7 @@ void registerTierB(UiContext& ui) {
     r.registerWidget<MenuItem>();
     r.registerWidget<MenuBar>();
     r.registerWidget<ToolBar>();
+    r.registerWidget<ToolBarGrip>();
     r.registerWidget<ToolBarSep>();
     r.registerWidget<MenuButton>();
     r.registerWidget<Tooltip>();
@@ -1104,6 +1322,10 @@ struct ToolBarState {
     NodeHandle menu; ///< the open extension menu
     std::unordered_map<u32, f32> size; ///< last shown main-axis size per item (node index)
     std::vector<NodeHandle> hidden;    ///< items this bar hid (in order)
+    NodeHandle grip;                   ///< movable: the handle (first child)
+    bool floatable = true;
+    Vec2 press, grab;
+    bool dragging = false;
 };
 std::unordered_map<const UiContext*, std::unordered_map<u32, ToolBarState>>& toolBars() {
     static std::unordered_map<const UiContext*, std::unordered_map<u32, ToolBarState>> m;
@@ -1122,13 +1344,15 @@ void toolBarLayout(UiContext& ui, NodeHandle bar) {
     for (NodeHandle c = ui.nextSibling(st->ext); ui.alive(c); c = ui.nextSibling(st->ext)) ui.insertBefore(c, st->ext);
     const bool v = st->vertical;
     const Rect cr = ui.contentRect(bar);
-    const f32 avail = v ? cr.h : cr.w, gap = ui.computed(bar).gap;
+    const f32 availAll = v ? cr.h : cr.w, gap = ui.computed(bar).gap;
     bool reshrink = false; // items keep their natural size (no flex squeeze): measured on the next pass
     for (NodeHandle c = ui.firstChild(bar); ui.alive(c); c = ui.nextSibling(c))
         if (ui.computed(c).shrink != 0.f) { ui.setCss(c, "flex-shrink", "0"); reshrink = true; }
     if (reshrink) { ui.invalidate(bar); return; }
     std::vector<NodeHandle> items;
+    f32 avail = availAll;
     for (NodeHandle c = ui.firstChild(bar); ui.alive(c) && c != st->ext; c = ui.nextSibling(c)) {
+        if (c == st->grip) { const Rect r = ui.rect(c); avail -= (v ? r.h : r.w) + gap; continue; } // never overflows
         const bool ours = std::find(st->hidden.begin(), st->hidden.end(), c) != st->hidden.end();
         if (!ours && !ui.computed(c).visible) continue; // hidden by the app: not ours to show
         if (!ours) { const Rect r = ui.rect(c); st->size[c.index] = v ? r.h : r.w; }
@@ -1169,7 +1393,7 @@ void toolBarLayout(UiContext& ui, NodeHandle bar) {
 NodeHandle toolBar(UiContext& ui, NodeHandle parent, bool vertical, std::string_view id) {
     registerTierB(ui);
     const NodeHandle bar = make(ui, "toolbar", parent, id);
-    ui.setA11y(bar, A11yRole::Group, "toolbar");
+    ui.setA11y(bar, A11yRole::ToolBar, vertical ? "vertical toolbar" : "toolbar");
     if (vertical) ui.setCss(bar, "flex-direction", "column");
     ui.setCss(bar, "overflow", "hidden");
     ToolBarState& st = toolBars()[&ui][bar.index];
@@ -1215,6 +1439,123 @@ NodeHandle toolBarSeparator(UiContext& ui, NodeHandle bar) {
     ui.setCss(s, "flex-shrink", "0");
     return s;
 }
+// ---- movable / floating tool bars (QToolBar::setMovable / setFloatable, QMainWindow tool bar areas) ----------------
+namespace {
+bool barVertical(const UiContext& ui, NodeHandle bar) { const ToolBarState* st = toolBarState(ui, bar); return st && st->vertical; }
+void floatClear(UiContext& ui, NodeHandle bar) {
+    for (const char* p : {"left", "top"}) ui.setCss(bar, p, "auto");
+}
+/// Insertion point among an area's bars for a pointer at `p` (before the first bar whose middle is past it).
+NodeHandle areaBefore(const UiContext& ui, NodeHandle area, NodeHandle self, Vec2 p) {
+    const bool v = ui.hasClass(area, "vertical");
+    for (NodeHandle c = ui.firstChild(area); ui.alive(c); c = ui.nextSibling(c)) {
+        if (c == self) continue;
+        const Rect r = ui.rect(c);
+        if ((v ? p.y < r.y + r.h * 0.5f : p.x < r.x + r.w * 0.5f)) return c;
+    }
+    return {};
+}
+std::vector<NodeHandle> allAreas(const UiContext& ui) {
+    std::vector<NodeHandle> out, stack{ui.root()};
+    while (!stack.empty()) {
+        const NodeHandle n = stack.back();
+        stack.pop_back();
+        for (NodeHandle c = ui.firstChild(n); ui.alive(c); c = ui.nextSibling(c)) {
+            if (!ui.computed(c).visible) continue;
+            if (ui.hasClass(c, "toolbararea")) out.push_back(c);
+            else stack.push_back(c);
+        }
+    }
+    return out;
+}
+} // namespace
+NodeHandle toolBarArea(UiContext& ui, NodeHandle parent, bool vertical, std::string_view id) {
+    registerTierB(ui);
+    const NodeHandle a = panel(ui, parent, id);
+    ui.addClass(a, "toolbararea");
+    if (vertical) ui.addClass(a, "vertical");
+    ui.setCss(a, "flex-direction", vertical ? "column" : "row");
+    ui.setCss(a, "padding", "0px");
+    ui.setCss(a, "gap", "2px");
+    ui.setCss(a, vertical ? "min-width" : "min-height", "6px"); // an empty area stays a drop target
+    return a;
+}
+void setToolBarOrientation(UiContext& ui, NodeHandle bar, bool vertical) {
+    ToolBarState* st = toolBarState(ui, bar);
+    if (!st || st->vertical == vertical) return;
+    st->vertical = vertical;
+    st->size.clear();
+    ui.setCss(bar, "flex-direction", vertical ? "column" : "row");
+    ui.setA11y(bar, A11yRole::ToolBar, vertical ? "vertical toolbar" : "toolbar");
+    for (NodeHandle c = ui.firstChild(bar); ui.alive(c); c = ui.nextSibling(c))
+        if (isSep(ui, c)) {
+            ui.setCss(c, vertical ? "height" : "width", "1px");
+            ui.setCss(c, vertical ? "width" : "height", "auto");
+            ui.setCss(c, "margin", vertical ? "4px 2px" : "2px 4px");
+        }
+    ui.emit(bar, SignalKind::Event, {.flag = vertical, .text = "orientationChanged"});
+}
+bool toolBarIsVertical(const UiContext& ui, NodeHandle bar) { return barVertical(ui, bar); }
+void setToolBarMovable(UiContext& ui, NodeHandle bar, bool on) {
+    ToolBarState* st = toolBarState(ui, bar);
+    if (!st || on == ui.alive(st->grip)) return;
+    if (on) {
+        st->grip = make(ui, "toolbargrip", bar);
+        ui.setCss(st->grip, "flex-shrink", "0");
+        ui.setCss(st->grip, "align-self", "stretch");
+        if (const NodeHandle f = ui.firstChild(bar); f != st->grip) ui.insertBefore(st->grip, f);
+    } else {
+        ui.destroy(st->grip);
+        st->grip = {};
+    }
+}
+void setToolBarFloatable(UiContext& ui, NodeHandle bar, bool on) { if (ToolBarState* st = toolBarState(ui, bar)) st->floatable = on; }
+void toolBarAddTo(UiContext& ui, NodeHandle area, NodeHandle bar, NodeHandle before) {
+    if (!toolBarState(ui, bar) || !ui.alive(area)) return;
+    const bool wasFloating = ui.hasClass(bar, "toolbar-floating");
+    if (wasFloating) { ui.removeClass(bar, "toolbar-floating"); floatClear(ui, bar); }
+    if (ui.alive(before) && ui.parent(before) == area) ui.insertBefore(bar, before);
+    else ui.moveTo(bar, area);
+    setToolBarOrientation(ui, bar, ui.hasClass(area, "vertical"));
+    if (wasFloating) ui.emit(bar, SignalKind::Event, {.flag = false, .text = "topLevelChanged"});
+}
+void toolBarFloat(UiContext& ui, NodeHandle bar, Vec2 at) {
+    if (!toolBarState(ui, bar)) return;
+    const bool was = ui.hasClass(bar, "toolbar-floating");
+    ui.moveTo(bar, overlayLayer(ui));
+    ui.addClass(bar, "toolbar-floating");
+    char b[32];
+    std::snprintf(b, sizeof b, "%.0fpx", double(at.x));
+    ui.setCss(bar, "left", b);
+    std::snprintf(b, sizeof b, "%.0fpx", double(at.y));
+    ui.setCss(bar, "top", b);
+    if (!was) ui.emit(bar, SignalKind::Event, {.flag = true, .text = "topLevelChanged"});
+}
+bool toolBarIsFloating(const UiContext& ui, NodeHandle bar) { return ui.alive(bar) && ui.hasClass(bar, "toolbar-floating"); }
+namespace detail {
+void toolBarGripPress(UiContext& ui, NodeHandle bar, Vec2 p) {
+    ToolBarState* st = toolBarState(ui, bar);
+    if (!st) return;
+    const Rect r = ui.rect(bar);
+    st->press = p;
+    st->grab = {p.x - r.x, p.y - r.y};
+    st->dragging = false;
+}
+void toolBarGripMove(UiContext& ui, NodeHandle bar, Vec2 p) {
+    ToolBarState* st = toolBarState(ui, bar);
+    if (!st) return;
+    if (!st->dragging && std::hypot(p.x - st->press.x, p.y - st->press.y) < 10.f) return;
+    st->dragging = true;
+    for (NodeHandle a : allAreas(ui)) {
+        if (!ui.rect(a).contains(p)) continue;
+        const NodeHandle before = areaBefore(ui, a, bar, p);
+        if (ui.parent(bar) != a || ui.nextSibling(bar) != before) toolBarAddTo(ui, a, bar, before);
+        return;
+    }
+    if (st->floatable) toolBarFloat(ui, bar, {p.x - st->grab.x, p.y - st->grab.y});
+}
+void toolBarGripRelease(UiContext& ui, NodeHandle bar) { if (ToolBarState* st = toolBarState(ui, bar)) st->dragging = false; }
+} // namespace detail
 NodeHandle toolBarExtension(const UiContext& ui, NodeHandle bar) {
     const ToolBarState* st = toolBarState(ui, bar);
     return st ? st->ext : NodeHandle{};
@@ -1445,7 +1786,63 @@ NodeHandle tabBar(UiContext& ui, NodeHandle parent, std::string_view titles, u32
     ui.setText(n, titles);
     ui.setRange(n, 0.f, f32(std::max(1u, count(titles)) - 1), 1.f);
     ui.setValue(n, f32(current));
+    ui.setLayoutHook(n, &TabBar::layoutHook);
     return n;
+}
+void setTabsClosable(UiContext& ui, NodeHandle bar, bool on) { tabState(ui, bar).closable = on;
+    const std::string t(ui.text(bar)); // re-measure: tab widths include the close box
+    ui.setText(bar, t + "\n");
+    ui.setText(bar, t); }
+bool tabsClosable(const UiContext& ui, NodeHandle bar) { return tabState(ui, bar).closable; }
+void setTabsMovable(UiContext& ui, NodeHandle bar, bool on) { tabState(ui, bar).movable = on; }
+bool tabsMovable(const UiContext& ui, NodeHandle bar) { return tabState(ui, bar).movable; }
+void setTabEnabled(UiContext& ui, NodeHandle bar, u32 index, bool on) {
+    TabBarState& s = tabState(ui, bar);
+    if (on) s.disabled.erase(index); else s.disabled.insert(index);
+    if (!on && u32(ui.value(bar)) == index) { // QTabBar moves off a disabled current tab
+        i32 t = TabBar::step(ui, bar, i32(index), 1);
+        if (t < 0) t = TabBar::step(ui, bar, i32(index), -1);
+        if (t >= 0) ui.setValue(bar, f32(t), true);
+    }
+    ui.invalidate(bar);
+}
+bool tabEnabled(const UiContext& ui, NodeHandle bar, u32 index) { return !tabState(ui, bar).disabled.contains(index); }
+void tabBarMoveTab(UiContext& ui, NodeHandle bar, u32 from, u32 to) { TabBar::moveTab(ui, bar, from, to); }
+Rect tabBarTabRect(UiContext& ui, NodeHandle bar, u32 index) { return TabBar::tabRect(ui, bar, index); }
+f32 tabBarScroll(const UiContext& ui, NodeHandle bar) { return tabState(ui, bar).scroll; }
+NodeHandle tabWidgetAddPage(UiContext& ui, NodeHandle tabs, std::string_view title) {
+    const NodeHandle bar = ui.firstChild(tabs), stack = ui.nextSibling(bar);
+    std::string t(ui.text(bar));
+    if (!t.empty() || ui.alive(ui.firstChild(stack))) t += '\n';
+    t += title;
+    ui.setText(bar, t);
+    ui.setRange(bar, 0.f, f32(std::max(1u, count(t)) - 1), 1.f);
+    const NodeHandle p = panel(ui, stack);
+    ui.setA11y(p, A11yRole::Group, title);
+    showPage(ui, stack, u32(ui.value(bar)));
+    return p;
+}
+void tabWidgetRemovePage(UiContext& ui, NodeHandle tabs, u32 index) {
+    const NodeHandle bar = ui.firstChild(tabs), stack = ui.nextSibling(bar);
+    const u32 c = count(ui.text(bar));
+    if (index >= c) return;
+    std::string t;
+    bool first = true;
+    eachLine(ui.text(bar), [&](u32 i, std::string_view l) {
+        if (i != index) { if (!first) t += '\n'; t += l; first = false; }
+        return true;
+    });
+    ui.setText(bar, t);
+    ui.setRange(bar, 0.f, f32(std::max(1u, c - 1) - 1), 1.f);
+    TabBarState& s = tabState(ui, bar);
+    std::set<u32> dis;
+    for (u32 i : s.disabled) if (i != index) dis.insert(i > index ? i - 1 : i);
+    s.disabled = std::move(dis);
+    if (const NodeHandle pg = tabPage(ui, tabs, index); ui.alive(pg)) ui.destroy(pg);
+    u32 cur = u32(ui.value(bar));
+    const u32 nc = cur > index || (cur == index && cur + 1 >= c) ? (cur ? cur - 1 : 0) : cur;
+    ui.setValue(bar, f32(nc), nc != cur || cur == index);
+    showPage(ui, stack, nc);
 }
 NodeHandle tabWidget(UiContext& ui, NodeHandle parent, std::string_view titles, std::string_view id) {
     const NodeHandle w = panel(ui, parent, id);

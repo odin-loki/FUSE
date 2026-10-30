@@ -84,6 +84,8 @@ int main() {
     static w::StringTableModel tm("Name\tSize");
     tm.addRow("alpha\t1"); tm.addRow("beta\t2"); tm.addRow("gamma\t3");
     const NodeHandle tbl = w::tableView(ui, panel, &tm.model(), "tbl");
+    const NodeHandle tbar = w::toolBar(ui, panel, false, "tbar");
+    w::toolButton(ui, tbar, "Cut");
     const NodeHandle tree = w::treeView(ui, panel, "root\n\tleaf a\n\tleaf b\nother", "tree");
     ui.update(1.f / 60.f);
     b.sync();
@@ -181,6 +183,7 @@ int main() {
     UI_CHECK(dbg.find("Grid") != std::string::npos && dbg.find("GridCell") != std::string::npos && dbg.find("ColumnHeader") != std::string::npos);
     UI_CHECK(dbg.find("row_index") != std::string::npos && dbg.find("column_count") != std::string::npos && dbg.find("level") != std::string::npos);
     UI_CHECK(dbg.find("sort_direction") != std::string::npos);
+    UI_CHECK(dbg.find("Toolbar") != std::string::npos); // ACCESSKIT_ROLE_TOOLBAR
     a::freeAccessKitUpdate(up);
     { // completer: autoComplete List, expanded, controls + activeDescendant -> the highlighted ListItem (selected)
         const NodeHandle prevFocus = ui.focused();

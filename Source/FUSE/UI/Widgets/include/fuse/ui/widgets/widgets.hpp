@@ -258,6 +258,18 @@ NodeHandle toolBar(UiContext& ui, NodeHandle parent, bool vertical = false, std:
 NodeHandle toolBarSeparator(UiContext& ui, NodeHandle bar);
 NodeHandle toolBarExtension(const UiContext& ui, NodeHandle bar);           ///< the "»" button (hidden while all fit)
 std::vector<NodeHandle> toolBarOverflow(const UiContext& ui, NodeHandle bar); ///< items now in the extension menu
+/// QMainWindow tool bar areas: a row (or column) holding tool bars. A movable bar (setToolBarMovable: a grip as its
+/// first item) dragged by the grip moves live between areas, before the bar under the pointer, taking the area's
+/// orientation; outside every area a floatable bar floats in the overlay layer. Changes emit SignalKind::Event
+/// {text "topLevelChanged", flag = floating} and {text "orientationChanged", flag = vertical}.
+NodeHandle toolBarArea(UiContext& ui, NodeHandle parent, bool vertical = false, std::string_view id = {});
+void setToolBarMovable(UiContext& ui, NodeHandle bar, bool on);
+void setToolBarFloatable(UiContext& ui, NodeHandle bar, bool on); ///< default on
+void setToolBarOrientation(UiContext& ui, NodeHandle bar, bool vertical);
+bool toolBarIsVertical(const UiContext& ui, NodeHandle bar);
+void toolBarAddTo(UiContext& ui, NodeHandle area, NodeHandle bar, NodeHandle before = {}); ///< QMainWindow::insertToolBar
+void toolBarFloat(UiContext& ui, NodeHandle bar, Vec2 at);
+bool toolBarIsFloating(const UiContext& ui, NodeHandle bar);
 
 /// A horizontal menu bar; menuBarMenu adds a title button whose popup lists `items` (Submitted re-emitted on it).
 NodeHandle menuBar(UiContext& ui, NodeHandle parent, std::string_view id = {});
@@ -343,6 +355,23 @@ void setTreeDragDrop(UiContext& ui, NodeHandle tree, TreeDragDrop opts);
 NodeHandle tabBar(UiContext& ui, NodeHandle parent, std::string_view titles, u32 current = 0, std::string_view id = {});
 NodeHandle tabWidget(UiContext& ui, NodeHandle parent, std::string_view titles, std::string_view id = {});
 NodeHandle tabPage(const UiContext& ui, NodeHandle tabs, u32 index);
+/// QTabBar parity. Closable tabs draw a close box; clicking it emits SignalKind::Event text "tabCloseRequested",
+/// value = index (the app removes the tab, e.g. tabWidgetRemovePage). Movable tabs reorder live while dragged
+/// (start distance 10 px) and emit Event text "tabMoved <from> <to>", value = to; in a tab widget the pages
+/// follow. Disabled tabs are greyed and skipped by click, arrows, Home / End and the wheel (which steps the
+/// current tab). Tabs that overflow scroll, with two scroll buttons at the right; the current tab is kept visible.
+void setTabsClosable(UiContext& ui, NodeHandle bar, bool on);
+bool tabsClosable(const UiContext& ui, NodeHandle bar);
+void setTabsMovable(UiContext& ui, NodeHandle bar, bool on);
+bool tabsMovable(const UiContext& ui, NodeHandle bar);
+void setTabEnabled(UiContext& ui, NodeHandle bar, u32 index, bool on);
+bool tabEnabled(const UiContext& ui, NodeHandle bar, u32 index);
+void tabBarMoveTab(UiContext& ui, NodeHandle bar, u32 from, u32 to);
+Rect tabBarTabRect(UiContext& ui, NodeHandle bar, u32 index);
+f32 tabBarScroll(const UiContext& ui, NodeHandle bar);
+/// QTabWidget::addTab / removeTab: appends a page (returned) / removes page `index`, keeping the current sane.
+NodeHandle tabWidgetAddPage(UiContext& ui, NodeHandle tabs, std::string_view title);
+void tabWidgetRemovePage(UiContext& ui, NodeHandle tabs, u32 index);
 NodeHandle tabWidgetBar(const UiContext& ui, NodeHandle tabs);
 
 /// Scroll area: a column panel with overflow: scroll (wheel scrolls; role ScrollArea).
@@ -369,6 +398,20 @@ NodeHandle dockWidget(UiContext& ui, NodeHandle area, std::string_view title, Do
 NodeHandle dockBody(const UiContext& ui, NodeHandle dock);
 void dockTo(UiContext& ui, NodeHandle dock, DockSide side);
 void dockClose(UiContext& ui, NodeHandle dock); ///< hides (dockTo re-shows); emits Toggled {flag = false}
+/// QDockWidget floating: the dock moves to the overlay layer at `at` (context coordinates; w / h <= 0 keep its size).
+/// Dragging a title past 10 px floats it under the pointer; releasing over a docked dock's title (or a tab group's
+/// bar) tabs it there, over the area's 48 px left / right / bottom band docks it on that side, else it stays
+/// floating. dockTo re-docks. Changes emit SignalKind::Event {text "topLevelChanged", flag = floating}.
+void dockFloat(UiContext& ui, NodeHandle dock, Rect at);
+bool dockIsFloating(const UiContext& ui, NodeHandle dock);
+Rect dockFloatGeometry(const UiContext& ui, NodeHandle dock);
+void setDockMovable(UiContext& ui, NodeHandle dock, bool on); ///< QDockWidget::DockWidgetMovable (default on)
+/// QMainWindow::tabifyDockWidget: `second` joins `first`'s tab group (made on demand, where `first` is) and becomes
+/// current. A group shows a tab bar of its open members; the last member left dissolves it.
+void dockTabify(UiContext& ui, NodeHandle first, NodeHandle second);
+void dockRaise(UiContext& ui, NodeHandle dock); ///< makes a tabbed dock current (QDockWidget::raise); Event "raised"
+std::vector<NodeHandle> dockTabs(const UiContext& ui, NodeHandle dock); ///< its group's members (empty if not tabbed)
+NodeHandle dockCurrentTab(const UiContext& ui, NodeHandle dock);
 
 /// Item model: a function table over caller data (no inheritance). `data` may return a view into `scratch`.
 struct ItemModel {
@@ -436,11 +479,14 @@ u32 tableLogicalColumn(const UiContext& ui, NodeHandle table, u32 visual);
 u32 tableVisualColumn(const UiContext& ui, NodeHandle table, u32 logical);
 void setTableColumnHidden(UiContext& ui, NodeHandle table, u32 col, bool hidden);
 bool tableColumnHidden(const UiContext& ui, NodeHandle table, u32 col);
+/// While a header section is being moved: the section image under the pointer and the drop marker x (context space).
+bool tableHeaderDrag(UiContext& ui, NodeHandle table, Rect& image, f32& dropX);
 /// List view over column 0 of a model (shares the table machinery, no header).
 NodeHandle modelListView(UiContext& ui, NodeHandle parent, const ItemModel* model, std::string_view id = {});
 
 /// Dock layout persistence (plan §5 "saved layouts"): a small text blob with the side region sizes and, per dock
-/// widget with an id, its side, order in the region and open state. Restoring moves / opens / closes the named docks
+/// widget with an id, its side, order in the region and open state, tab group ("tab", "current") and float
+/// geometry ("float"); version 1 blobs still restore. Restoring moves / opens / closes the named docks
 /// and resizes the regions; docks the blob does not name keep their place, names with no dock are ignored. A malformed
 /// blob changes nothing and returns false.
 std::string dockSaveLayout(const UiContext& ui, NodeHandle area);

@@ -23,7 +23,7 @@ const char* a11yRoleName(A11yRole r) {
     static const char* names[] = {"none", "window", "group", "text", "button", "checkbox", "radio", "switch",
                                   "slider", "progressbar", "textfield", "scrollarea", "list", "listitem", "image",
                                   "separator", "link", "combobox", "spinbox", "dial", "scrollbar", "tab",
-                                  "dateinput", "timeinput", "datetimeinput", "grid", "row", "gridcell", "columnheader"};
+                                  "dateinput", "timeinput", "datetimeinput", "grid", "row", "gridcell", "columnheader", "toolbar"};
     return names[u32(r)];
 }
 

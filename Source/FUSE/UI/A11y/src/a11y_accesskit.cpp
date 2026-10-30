@@ -41,6 +41,7 @@ accesskit_role roleOf(A11yRole r) {
     case A11yRole::Row: return ACCESSKIT_ROLE_ROW;
     case A11yRole::GridCell: return ACCESSKIT_ROLE_GRID_CELL;
     case A11yRole::ColumnHeader: return ACCESSKIT_ROLE_COLUMN_HEADER;
+    case A11yRole::ToolBar: return ACCESSKIT_ROLE_TOOLBAR;
     case A11yRole::None: break;
     }
     return ACCESSKIT_ROLE_UNKNOWN;

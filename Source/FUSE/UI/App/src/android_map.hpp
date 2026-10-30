@@ -90,6 +90,7 @@ inline const char* className(fuse::ui::A11yRole r) {
     case R::TimeInput: return "android.widget.TimePicker";
     case R::Text: case R::Link: case R::ColumnHeader: return "android.widget.TextView";
     case R::Grid: return "android.widget.GridView";
+    case R::ToolBar: return "android.widget.Toolbar";
     default: return "android.view.View";
     }
 }
@@ -129,6 +130,18 @@ inline std::uint64_t traits(fuse::ui::A11yRole r, bool disabled, bool checked, b
     if (checked || selected) t |= kSelected; // list options: UIAccessibilityTraitSelected
     if (disabled) t |= kNotEnabled;
     return t;
+}
+
+/// A11yRole -> UIAccessibilityContainerType (none 0, dataTable 1, list 2, landmark 3, semanticGroup 4). UIKit has no
+/// toolbar trait: a toolbar is a semantic group, so VoiceOver announces its label when entering it.
+inline std::int64_t containerType(fuse::ui::A11yRole r) {
+    using R = fuse::ui::A11yRole;
+    switch (r) {
+    case R::Grid: return 1;
+    case R::List: return 2;
+    case R::ToolBar: return 4;
+    default: return 0;
+    }
 }
 
 /// UTF-16 code units in a UTF-8 string (UITextInput positions / NSRange are UTF-16).

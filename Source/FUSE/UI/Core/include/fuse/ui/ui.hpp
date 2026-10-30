@@ -165,7 +165,8 @@ enum class A11yRole : u8 {
     None, Window, Group, Text, Button, CheckBox, RadioButton, Switch, Slider, ProgressBar, TextField, ScrollArea,
     List, ListItem, Image, Separator, Link, ComboBox, SpinBox, Dial, ScrollBar, Tab,
     DateInput, TimeInput, DateTimeInput, ///< sectioned date / time fields (AccessKit DateInput / TimeInput / DateTimeInput)
-    Grid, Row, GridCell, ColumnHeader    ///< item views (table / tree / calendar grids); usually virtual parts
+    Grid, Row, GridCell, ColumnHeader,   ///< item views (table / tree / calendar grids); usually virtual parts
+    ToolBar                              ///< QToolBar / ARIA toolbar
 };
 const char* a11yRoleName(A11yRole r);
 /// Extra accessible state set by widgets (UiContext::setA11yState): listbox / combobox semantics.

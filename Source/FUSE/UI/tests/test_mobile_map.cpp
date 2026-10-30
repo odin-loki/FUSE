@@ -16,6 +16,10 @@ int main() {
     CHECK(!std::strcmp(an::className(A11yRole::Button), "android.widget.Button"));
     CHECK(!std::strcmp(an::className(A11yRole::TextField), "android.widget.EditText"));
     CHECK(!std::strcmp(an::className(A11yRole::Group), "android.view.View"));
+    CHECK(!std::strcmp(an::className(A11yRole::ToolBar), "android.widget.Toolbar"));
+    CHECK(fuse::app::uikit::containerType(A11yRole::ToolBar) == 4 && fuse::app::uikit::containerType(A11yRole::Grid) == 1);
+    CHECK(fuse::app::uikit::traits(A11yRole::ToolBar, false, false) == 0);
+    CHECK(!std::strcmp(a11yRoleName(A11yRole::ToolBar), "toolbar"));
     const char* s = "a\xC3\xA9\xE4\xB8\xAD\xF0\x9F\x98\x80z"; // a é 中 😀 z
     const int n = int(std::strlen(s));
     CHECK(an::utf8OffsetOfUtf16(s, n, 0) == 0 && an::utf8OffsetOfUtf16(s, n, 1) == 1 && an::utf8OffsetOfUtf16(s, n, 2) == 3);
