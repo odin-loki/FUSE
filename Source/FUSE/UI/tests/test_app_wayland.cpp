@@ -7,6 +7,12 @@
 //     to AppWindow::onExternalDrop with decoded paths
 //   * drag out: AppWindow::beginExternalDrag -> wl_data_device.start_drag; the compositor pulls the payload with
 //     wl_data_source.send and finishes -> onExternalDragEnd(true)
+//   * keyboard + client-side key repeat: an XKB keymap (built with libxkbcommon), repeat_info, one held key types
+//     several characters into a focused lineedit and stops on release
+//   * text-input-v3 IME: enter -> enable + set_cursor_rectangle + commit; preedit_string/done -> composition;
+//     commit_string/done -> committed text
+//   * xdg_popup: showPopup sends the positioner (size, anchor rect), the popup configure size wins, popup_done
+//     closes the popup window
 // Exit 77 when libwayland-server / -client are not installed.
 #include "fuse/app/wayland.hpp"
 #include "fuse/ui/os.hpp"
@@ -56,7 +62,7 @@ struct Server {
     int32_t (*shmW)(ShmBuf*) = nullptr;
     int32_t (*shmH)(ShmBuf*) = nullptr;
     int32_t (*shmStride)(ShmBuf*) = nullptr;
-    const wl::Interface *compositor, *surface, *region, *seat, *pointer, *output, *callback, *ddm, *device, *offer, *source;
+    const wl::Interface *compositor, *surface, *region, *seat, *pointer, *keyboard, *output, *callback, *ddm, *device, *offer, *source;
     wl::XdgTables xdg;
     bool load() {
         so = os::loadLibrary({"libwayland-server.so.0", "libwayland-server.so"});
@@ -72,7 +78,7 @@ struct Server {
         f(resVersion, "wl_resource_get_version"); f(shmGet, "wl_shm_buffer_get"); f(shmData, "wl_shm_buffer_get_data");
         f(shmW, "wl_shm_buffer_get_width"); f(shmH, "wl_shm_buffer_get_height"); f(shmStride, "wl_shm_buffer_get_stride");
         i(compositor, "wl_compositor_interface"); i(surface, "wl_surface_interface"); i(region, "wl_region_interface");
-        i(seat, "wl_seat_interface"); i(pointer, "wl_pointer_interface"); i(output, "wl_output_interface");
+        i(seat, "wl_seat_interface"); i(pointer, "wl_pointer_interface"); i(keyboard, "wl_keyboard_interface"); i(output, "wl_output_interface");
         i(callback, "wl_callback_interface"); i(ddm, "wl_data_device_manager_interface"); i(device, "wl_data_device_interface");
         i(offer, "wl_data_offer_interface"); i(source, "wl_data_source_interface");
         if (all) xdg.init(surface, seat, output);
@@ -88,6 +94,9 @@ std::deque<std::function<void()>> cmds;
 std::atomic<bool> stop{false};
 R *g_surface = nullptr, *g_xsurf = nullptr, *g_top = nullptr, *g_pointer = nullptr, *g_device = nullptr, *g_pending = nullptr;
 R* g_dragSource = nullptr;
+R *g_keyboard = nullptr, *g_ti = nullptr, *g_surface2 = nullptr, *g_popup = nullptr, *g_popXsurf = nullptr;
+int g_tiEnable = 0, g_tiDisable = 0, g_tiCommit = 0, g_tiCursorH = 0, g_posW = 0, g_posH = 0, g_anchorW = 0;
+bool g_popCfg = false, g_popDestroyed = false;
 std::vector<std::string> g_sourceMimes;
 bool g_configured = false, g_acked = false;
 std::string g_title, g_accepted, g_pulled;
@@ -126,6 +135,11 @@ void sCommit(C*, R* r) {
         S.post(g_pending, 0); // release
         g_pending = nullptr;
     }
+    if (g_popup && !g_popCfg && r == g_surface2) {
+        g_popCfg = true;
+        S.post(g_popup, 0, 10, 30, 100, 70);
+        S.post(g_popXsurf, 0, S.nextSerial(g_dpy));
+    }
     if (g_top && !g_configured && r == g_surface) {
         g_configured = true;
         wl::Array states{0, 0, nullptr};
@@ -134,7 +148,10 @@ void sCommit(C*, R* r) {
     }
 }
 Fn surfaceImpl[11];
-void cCreateSurface(C* c, R* r, uint32_t id) { g_surface = make(c, S.surface, S.resVersion(r), id, surfaceImpl); }
+void cCreateSurface(C* c, R* r, uint32_t id) {
+    R* s = make(c, S.surface, S.resVersion(r), id, surfaceImpl);
+    (g_surface ? g_surface2 : g_surface) = s;
+}
 void cCreateRegion(C* c, R*, uint32_t id) { make(c, S.region, 1, id, destroyFirst); }
 Fn compositorImpl[2] = {reinterpret_cast<Fn>(&cCreateSurface), reinterpret_cast<Fn>(&cCreateRegion)};
 void bindCompositor(C* c, void*, uint32_t v, uint32_t id) { make(c, S.compositor, int(v), id, compositorImpl); }
@@ -144,16 +161,60 @@ Fn topImpl[14];
 void xsGetToplevel(C* c, R*, uint32_t id) { g_top = make(c, &S.xdg.toplevel, 1, id, topImpl); }
 void xsAck(C*, R*, uint32_t) { std::lock_guard lk(mu); g_acked = true; }
 Fn xsurfImpl[5];
-void wmGetXdgSurface(C* c, R*, uint32_t id, R*) { g_xsurf = make(c, &S.xdg.surface, 1, id, xsurfImpl); }
-void wmCreatePositioner(C* c, R*, uint32_t id) { make(c, &S.xdg.positioner, 1, id, destroyFirst); }
+void wmGetXdgSurface(C* c, R*, uint32_t id, R* surf) {
+    R* x = make(c, &S.xdg.surface, 1, id, xsurfImpl);
+    (surf == g_surface ? g_xsurf : g_popXsurf) = x;
+}
+void posSize(C*, R*, int32_t w, int32_t h) { g_posW = w; g_posH = h; }
+void posAnchor(C*, R*, int32_t, int32_t, int32_t w, int32_t) { g_anchorW = w; }
+Fn posImpl[7] = {reinterpret_cast<Fn>(&destroyReq), reinterpret_cast<Fn>(&posSize), reinterpret_cast<Fn>(&posAnchor), noop, noop, noop, noop};
+void wmCreatePositioner(C* c, R*, uint32_t id) { make(c, &S.xdg.positioner, 1, id, posImpl); }
+void popDestroy(C*, R* r) { g_popDestroyed = true; g_popup = nullptr; S.resDestroy(r); }
+Fn popImpl[2] = {reinterpret_cast<Fn>(&popDestroy), noop};
+void xsGetPopup(C* c, R*, uint32_t id, R*, R*) { g_popup = make(c, &S.xdg.popup, 1, id, popImpl); }
 Fn wmImpl[4] = {reinterpret_cast<Fn>(&destroyReq), reinterpret_cast<Fn>(&wmCreatePositioner), reinterpret_cast<Fn>(&wmGetXdgSurface), noop};
 void bindWm(C* c, void*, uint32_t, uint32_t id) { make(c, &S.xdg.wmBase, 1, id, wmImpl); }
 // seat
+std::string g_keymapText; // XKB keymap (libxkbcommon "us" default), sent with wl_keyboard.keymap
 void seatGetPointer(C* c, R* r, uint32_t id) { g_pointer = make(c, S.pointer, S.resVersion(r), id, noops); }
-Fn seatImpl[4] = {reinterpret_cast<Fn>(&seatGetPointer), noop, noop, noop};
+void seatGetKeyboard(C* c, R* r, uint32_t id) {
+    g_keyboard = make(c, S.keyboard, S.resVersion(r), id, noops);
+    if (auto mem = os::createSharedBuffer(g_keymapText.size() + 1)) {
+        std::memcpy(mem->data, g_keymapText.c_str(), g_keymapText.size() + 1);
+        S.post(g_keyboard, 0, 1u, mem->fd, uint32_t(g_keymapText.size() + 1)); // xkb_v1; the fd is dup'ed
+    }
+    S.post(g_keyboard, 5, 40, 60); // repeat_info: 40 Hz after 60 ms
+}
+Fn seatImpl[4] = {reinterpret_cast<Fn>(&seatGetPointer), reinterpret_cast<Fn>(&seatGetKeyboard), noop, noop};
 void bindSeat(C* c, void*, uint32_t v, uint32_t id) {
     R* r = make(c, S.seat, int(v), id, seatImpl);
-    S.post(r, 0, 1u); // capabilities: pointer
+    S.post(r, 0, g_keymapText.empty() ? 1u : 3u); // capabilities: pointer (+ keyboard when a keymap exists)
+}
+// text-input-v3
+wl::TextInputTables TI;
+void tiEnable(C*, R*) { ++g_tiEnable; }
+void tiDisable(C*, R*) { ++g_tiDisable; }
+void tiCursor(C*, R*, int32_t, int32_t, int32_t, int32_t h) { g_tiCursorH = h; }
+void tiCommitReq(C*, R*) { ++g_tiCommit; }
+Fn tiImpl[8] = {reinterpret_cast<Fn>(&destroyReq), reinterpret_cast<Fn>(&tiEnable), reinterpret_cast<Fn>(&tiDisable),
+                noop, noop, noop, reinterpret_cast<Fn>(&tiCursor), reinterpret_cast<Fn>(&tiCommitReq)};
+void tiMgrGet(C* c, R*, uint32_t id, R*) { g_ti = make(c, &TI.input, 1, id, tiImpl); }
+Fn tiMgrImpl[2] = {reinterpret_cast<Fn>(&destroyReq), reinterpret_cast<Fn>(&tiMgrGet)};
+void bindTiMgr(C* c, void*, uint32_t, uint32_t id) { make(c, &TI.manager, 1, id, tiMgrImpl); }
+bool makeKeymap() {
+    auto so = os::loadLibrary({"libxkbcommon.so.0", "libxkbcommon.so"});
+    if (!so) return false;
+    auto ctxNew = reinterpret_cast<void* (*)(int)>(so->symbol("xkb_context_new"));
+    auto fromNames = reinterpret_cast<void* (*)(void*, const void*, int)>(so->symbol("xkb_keymap_new_from_names"));
+    auto asString = reinterpret_cast<char* (*)(void*, int)>(so->symbol("xkb_keymap_get_as_string"));
+    if (!ctxNew || !fromNames || !asString) return false;
+    void* ctx = ctxNew(0);
+    void* km = ctx ? fromNames(ctx, nullptr, 0) : nullptr;
+    char* text = km ? asString(km, 1) : nullptr;
+    if (!text) return false;
+    g_keymapText = text;
+    std::free(text); // keymap / context leak: test process
+    return true;
 }
 // data device
 void srcOffer(C*, R*, const char* mime) { std::lock_guard lk(mu); g_sourceMimes.emplace_back(mime); }
@@ -192,7 +253,11 @@ int main() {
     topImpl[0] = reinterpret_cast<Fn>(&destroyReq); topImpl[2] = reinterpret_cast<Fn>(&topTitle);
     for (auto& f : xsurfImpl) f = noop;
     xsurfImpl[0] = reinterpret_cast<Fn>(&destroyReq); xsurfImpl[1] = reinterpret_cast<Fn>(&xsGetToplevel);
+    xsurfImpl[2] = reinterpret_cast<Fn>(&xsGetPopup);
     xsurfImpl[4] = reinterpret_cast<Fn>(&xsAck);
+    TI.init(S.surface, S.seat);
+    const bool haveKeymap = makeKeymap();
+    if (!haveKeymap) std::printf("fuse_app_wayland: no libxkbcommon, keyboard checks skipped\n");
 
     const std::string runtime = os::runtimeDir();
     if (os::env("XDG_RUNTIME_DIR").empty()) ::setenv("XDG_RUNTIME_DIR", runtime.c_str(), 1);
@@ -204,6 +269,7 @@ int main() {
     S.globalCreate(g_dpy, &S.xdg.wmBase, 1, nullptr, &bindWm);
     S.globalCreate(g_dpy, S.seat, 5, nullptr, &bindSeat);
     S.globalCreate(g_dpy, S.ddm, 3, nullptr, &bindDdm);
+    S.globalCreate(g_dpy, &TI.manager, 1, nullptr, &bindTiMgr);
     std::thread th(compositorThread);
 
     {
@@ -277,6 +343,66 @@ int main() {
             CHECK(!g_sourceMimes.empty() && g_sourceMimes[0] == "text/uri-list");
         }
         CHECK(dragEnd == 1);
+
+        // ---- keyboard: client-side repeat into a focused lineedit ----
+        CHECK(win.loadText(R"({"fuseui":1,"root":{"class":"lineedit","id":"e","text":""}})").has_value());
+        UiContext& ui = win.ui();
+        const NodeHandle edit = ui.find("e");
+        ui.setFocus(edit);
+        win.requestRedraw();
+        pump(5);
+        CHECK(ui.wantsTextInput());
+        std::size_t typed = 0;
+        if (haveKeymap) {
+            run([&] {
+                wl::Array keys{0, 0, nullptr};
+                S.post(g_keyboard, 1, S.nextSerial(g_dpy), g_surface, &keys);
+                S.post(g_keyboard, 3, S.nextSerial(g_dpy), 10u, 30u, 1u); // KEY_A pressed
+            });
+            const auto t0 = std::chrono::steady_clock::now();
+            while (std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds(250)) pump(1);
+            run([&] { S.post(g_keyboard, 3, S.nextSerial(g_dpy), 300u, 30u, 0u); }); // released
+            pump(5);
+            typed = ui.text(edit).size();
+            CHECK(typed >= 4); // 1 + repeats every 25 ms after 60 ms
+            CHECK(ui.text(edit).find_first_not_of('a') == std::string_view::npos);
+            const auto t1 = std::chrono::steady_clock::now();
+            while (std::chrono::steady_clock::now() - t1 < std::chrono::milliseconds(100)) pump(1);
+            CHECK(ui.text(edit).size() == typed); // stopped on release
+        }
+
+        // ---- text-input-v3 ----
+        run([&] { S.post(g_ti, 0, g_surface); }); // enter
+        for (int i = 0; i < 50 && !g_tiCommit; ++i) { win.requestRedraw(); pump(1); }
+        { std::lock_guard lk(mu); CHECK(g_tiEnable == 1 && g_tiCommit >= 1 && g_tiCursorH > 0); }
+        run([&] { S.post(g_ti, 2, "ni", 2, 2); S.post(g_ti, 5, 1u); });
+        for (int i = 0; i < 50 && ui.composition().empty(); ++i) pump(1);
+        CHECK(ui.composition() == "ni" && ui.compositionCaret() == 2);
+        run([&] { S.post(g_ti, 3, "\xE4\xBD\xA0"); S.post(g_ti, 5, 2u); });
+        for (int i = 0; i < 50 && !ui.composition().empty(); ++i) pump(1);
+        CHECK(ui.composition().empty());
+        CHECK(ui.text(edit).ends_with("\xE4\xBD\xA0"));
+        ui.setFocus(NodeHandle{});
+        for (int i = 0; i < 50 && !g_tiDisable; ++i) { win.requestRedraw(); pump(1); }
+        { std::lock_guard lk(mu); CHECK(g_tiDisable == 1); }
+
+        // ---- xdg_popup ----
+        auto& pop = a.createWindow({.title = "menu", .width = 120, .height = 80});
+        CHECK(wlp.showPopup(pop, win, {10, 10, 40, 20}));
+        for (int i = 0; i < 50 && !wlp.configured(pop); ++i) pump(1);
+        CHECK(wlp.configured(pop));
+        { std::lock_guard lk(mu); CHECK(g_posW == 120 && g_posH == 80 && g_anchorW == 40); }
+        pump(5);
+        CHECK(u32(pop.size().w) == 100u && u32(pop.size().h) == 70u);
+        Image popShown;
+        CHECK(wlp.capture(pop, popShown) && popShown.width == 100);
+        const u32 before = a.windowCount();
+        run([&] { if (g_popup) S.post(g_popup, 1); }); // popup_done (outside click)
+        for (int i = 0; i < 50 && a.windowCount() == before; ++i) pump(1);
+        CHECK(a.windowCount() == before - 1);
+        for (int i = 0; i < 50 && !g_popDestroyed; ++i) pump(1);
+        CHECK(g_popDestroyed);
+        std::printf("fuse_app_wayland: typed=%zu ime=%d popup=%dx%d\n", typed, g_tiCommit, g_posW, g_posH);
         std::printf("fuse_app_wayland: commits=%d clicks=%d dropped=%zu dragEnd=%d %s\n", g_commits, clicks, dropped.size(),
                     dragEnd, g_fail ? "FAIL" : "OK");
     }

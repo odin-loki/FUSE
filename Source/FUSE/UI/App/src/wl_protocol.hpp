@@ -41,7 +41,7 @@ struct XdgTables {
     const Interface* tSeatSerial[1]{};     // o (seat) ...
     const Interface* tFullscreen[1]{};     // ?o (output)
     const Interface* none[8]{};
-    Message wmReq[4]{}, wmEv[1]{}, surfReq[5]{}, surfEv[1]{}, topReq[14]{}, topEv[2]{}, popReq[2]{}, popEv[2]{};
+    Message wmReq[4]{}, wmEv[1]{}, surfReq[5]{}, surfEv[1]{}, topReq[14]{}, topEv[2]{}, popReq[2]{}, popEv[2]{}, posReq[7]{};
 
     void init(const Interface* wlSurface, const Interface* wlSeat, const Interface* wlOutput) {
         tGetXdgSurface[0] = &surface; tGetXdgSurface[1] = wlSurface;
@@ -83,10 +83,47 @@ struct XdgTables {
         popEv[0] = {"configure", "iiii", none};
         popEv[1] = {"popup_done", "", none};
         wmBase = {"xdg_wm_base", 1, 4, wmReq, 1, wmEv};
-        positioner = {"xdg_positioner", 1, 0, nullptr, 0, nullptr}; // requests unused by FUSE yet
+        posReq[0] = {"destroy", "", none};
+        posReq[1] = {"set_size", "ii", none};
+        posReq[2] = {"set_anchor_rect", "iiii", none};
+        posReq[3] = {"set_anchor", "u", none};
+        posReq[4] = {"set_gravity", "u", none};
+        posReq[5] = {"set_constraint_adjustment", "u", none};
+        posReq[6] = {"set_offset", "ii", none};
+        positioner = {"xdg_positioner", 1, 7, posReq, 0, nullptr};
         surface = {"xdg_surface", 1, 5, surfReq, 1, surfEv};
         toplevel = {"xdg_toplevel", 1, 14, topReq, 2, topEv};
         popup = {"xdg_popup", 1, 2, popReq, 2, popEv};
+    }
+};
+/// zwp_text_input_manager_v3 / zwp_text_input_v3 (text-input-unstable-v3, version 1).
+struct TextInputTables {
+    Interface manager{}, input{};
+    const Interface* tGet[2]{};     // n o(seat)
+    const Interface* tSurface[1]{}; // o(surface)
+    const Interface* none[4]{};
+    Message mgrReq[2]{}, inReq[8]{}, inEv[6]{};
+    void init(const Interface* wlSurface, const Interface* wlSeat) {
+        tGet[0] = &input; tGet[1] = wlSeat;
+        tSurface[0] = wlSurface;
+        mgrReq[0] = {"destroy", "", none};
+        mgrReq[1] = {"get_text_input", "no", tGet};
+        inReq[0] = {"destroy", "", none};
+        inReq[1] = {"enable", "", none};
+        inReq[2] = {"disable", "", none};
+        inReq[3] = {"set_surrounding_text", "sii", none};
+        inReq[4] = {"set_text_change_cause", "u", none};
+        inReq[5] = {"set_content_type", "uu", none};
+        inReq[6] = {"set_cursor_rectangle", "iiii", none};
+        inReq[7] = {"commit", "", none};
+        inEv[0] = {"enter", "o", tSurface};
+        inEv[1] = {"leave", "o", tSurface};
+        inEv[2] = {"preedit_string", "?sii", none};
+        inEv[3] = {"commit_string", "?s", none};
+        inEv[4] = {"delete_surrounding_text", "uu", none};
+        inEv[5] = {"done", "u", none};
+        manager = {"zwp_text_input_manager_v3", 1, 2, mgrReq, 0, nullptr};
+        input = {"zwp_text_input_v3", 1, 8, inReq, 6, inEv};
     }
 };
 } // namespace fuse::app::wl

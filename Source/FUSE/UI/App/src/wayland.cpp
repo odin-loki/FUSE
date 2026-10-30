@@ -6,6 +6,7 @@
 #include "fuse/ui/os.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <map>
@@ -40,6 +41,7 @@ WaylandPlatform::~WaylandPlatform() = default;
 bool WaylandPlatform::available() const { return false; }
 std::string_view WaylandPlatform::lastError() const { return "Wayland is not available on this platform"; }
 bool WaylandPlatform::show(AppWindow&) { return false; }
+bool WaylandPlatform::showPopup(AppWindow&, AppWindow&, Rect, bool) { return false; }
 bool WaylandPlatform::capture(const AppWindow&, Image&) const { return false; }
 bool WaylandPlatform::configured(const AppWindow&) const { return false; }
 void* WaylandPlatform::nativeDisplay() const { return nullptr; }
@@ -125,6 +127,7 @@ struct WaylandPlatform::Impl {
     Xkb xkb;
     bool haveXkb = false;
     wl::XdgTables xdg;
+    wl::TextInputTables tiTables;
     Proxy* dpy = nullptr;
     Proxy *registry = nullptr, *compositor = nullptr, *shm = nullptr, *wmBase = nullptr, *seat = nullptr,
           *pointer = nullptr, *keyboard = nullptr, *ddm = nullptr, *dataDevice = nullptr;
@@ -140,7 +143,7 @@ struct WaylandPlatform::Impl {
     struct Win {
         Impl* impl = nullptr;
         AppWindow* win = nullptr;
-        Proxy *surface = nullptr, *xsurf = nullptr, *top = nullptr;
+        Proxy *surface = nullptr, *xsurf = nullptr, *top = nullptr, *popup = nullptr;
         bool configured = false;
         int pendingW = 0, pendingH = 0;
         Buffer bufs[2];
@@ -155,6 +158,26 @@ struct WaylandPlatform::Impl {
     u8 modsNow = 0;
     void* keymap = nullptr;
     void* xkbState = nullptr;
+
+    // key repeat (wl_keyboard.repeat_info; the client repeats, not the compositor)
+    int32_t repRate = 25, repDelay = 600;
+    uint32_t repCode = 0; // evdev code + 8 of the held key, 0 = none
+    Key repKey = Key::Other;
+    std::string repText;
+    double repNext = 0.0;
+    static double clockNow() {
+        return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
+    // text-input-v3 (IME)
+    Proxy *tiMgr = nullptr, *textInput = nullptr;
+    Win* tiFocus = nullptr;
+    bool tiEnabled = false;
+    Rect tiCaret{};
+    std::string tiPreedit, tiCommit;
+    int32_t tiPreCursor = 0;
+    bool tiHavePreedit = false, tiHaveCommit = false;
+    uint32_t tiCommits = 0; // number of zwp_text_input_v3.commit requests (done serial matching)
 
     // data device (DnD)
     std::map<Proxy*, std::vector<std::string>> offers;
@@ -194,6 +217,7 @@ struct WaylandPlatform::Impl {
             static const auto lis = listen(&onSeatCaps, &onSeatName);
             m.l.addListener(m.seat, const_cast<void (**)(void)>(lis.fns), &m);
         } else if (n == "wl_data_device_manager") m.ddm = m.bind(name, m.l.ddm, std::min(ver, 3u));
+        else if (n == "zwp_text_input_manager_v3") m.tiMgr = m.bind(name, &m.tiTables.manager, 1);
     }
     static void onGlobalRemove(void*, Proxy*, uint32_t) {}
     static void onPing(void* d, Proxy* wm, uint32_t serial) {
@@ -276,7 +300,11 @@ struct WaylandPlatform::Impl {
         Impl& m = *static_cast<Impl*>(d);
         m.keyFocus = m.find(surface);
     }
-    static void kbLeave(void* d, Proxy*, uint32_t, Proxy*) { static_cast<Impl*>(d)->keyFocus = nullptr; }
+    static void kbLeave(void* d, Proxy*, uint32_t, Proxy*) {
+        Impl& m = *static_cast<Impl*>(d);
+        m.keyFocus = nullptr;
+        m.repCode = 0;
+    }
     static void kbKey(void* d, Proxy*, uint32_t, uint32_t, uint32_t key, uint32_t state) {
         Impl& m = *static_cast<Impl*>(d);
         if (!m.keyFocus || !m.xkbState) return;
@@ -288,10 +316,22 @@ struct WaylandPlatform::Impl {
             if (state == 1) ui.keyDown(k, m.modsNow);
             else ui.keyUp(k, m.modsNow);
         }
+        std::string text;
         if (state == 1 && !(m.modsNow & (kModCtrl | kModAlt | kModSuper))) {
             char buf[64] = {};
             const int n = m.xkb.utf8(m.xkbState, code, buf, sizeof buf);
-            if (n > 0 && u8(buf[0]) >= 0x20 && buf[0] != 0x7F) ui.textInput(std::string_view(buf, std::size_t(n)));
+            if (n > 0 && u8(buf[0]) >= 0x20 && buf[0] != 0x7F) {
+                text.assign(buf, std::size_t(n));
+                ui.textInput(text);
+            }
+        }
+        if (state == 1 && m.repRate > 0 && (k != Key::Other || !text.empty())) { // modifiers map to Key::Other with no text
+            m.repCode = code;
+            m.repKey = k;
+            m.repText = std::move(text);
+            m.repNext = clockNow() + double(m.repDelay) / 1000.0;
+        } else if (state == 0 && code == m.repCode) {
+            m.repCode = 0;
         }
         m.keyFocus->win->requestRedraw();
     }
@@ -303,7 +343,92 @@ struct WaylandPlatform::Impl {
         m.modsNow = u8((on("Shift") ? kModShift : 0) | (on("Control") ? kModCtrl : 0) | (on("Mod1") ? kModAlt : 0) |
                        (on("Mod4") ? kModSuper : 0));
     }
-    static void kbRepeat(void*, Proxy*, int32_t, int32_t) {}
+    static void kbRepeat(void* d, Proxy*, int32_t rate, int32_t delay) {
+        Impl& m = *static_cast<Impl*>(d);
+        m.repRate = rate; // 0 disables repeat
+        m.repDelay = delay;
+        if (rate <= 0) m.repCode = 0;
+    }
+    /// Seconds until the next repeat (inf when no key is held).
+    f32 repeatWait() const {
+        if (!repCode || !keyFocus) return INFINITY;
+        return f32(std::max(0.0, repNext - clockNow()));
+    }
+    void fireRepeats() {
+        if (!repCode || !keyFocus) return;
+        const double now = clockNow();
+        if (now < repNext) return;
+        UiContext& ui = keyFocus->win->ui();
+        const double period = 1.0 / double(repRate);
+        for (int guard = 0; now >= repNext && guard < 64; ++guard) {
+            if (repKey != Key::Other) ui.keyDown(repKey, modsNow);
+            if (!repText.empty()) ui.textInput(repText);
+            repNext += period;
+        }
+        if (now >= repNext) repNext = now + period; // fell far behind (suspended): do not burst
+        keyFocus->win->requestRedraw();
+    }
+    // ---- text-input-v3 ----
+    static void tiEnter(void* d, Proxy*, Proxy* surface) {
+        Impl& m = *static_cast<Impl*>(d);
+        m.tiFocus = m.find(surface);
+        if (m.tiFocus) m.tiFocus->win->requestRedraw(); // present() syncs enable state
+    }
+    static void tiLeave(void* d, Proxy*, Proxy*) {
+        Impl& m = *static_cast<Impl*>(d);
+        if (m.tiFocus && m.tiEnabled) m.tiFocus->win->ui().textComposition({}, 0);
+        m.tiFocus = nullptr;
+        m.syncTextInput();
+    }
+    static void tiPreeditString(void* d, Proxy*, const char* text, int32_t begin, int32_t) {
+        Impl& m = *static_cast<Impl*>(d);
+        m.tiHavePreedit = true;
+        m.tiPreedit = text ? text : "";
+        m.tiPreCursor = begin < 0 ? int32_t(m.tiPreedit.size()) : begin; // -1: hide cursor -> end
+    }
+    static void tiCommitString(void* d, Proxy*, const char* text) {
+        Impl& m = *static_cast<Impl*>(d);
+        m.tiHaveCommit = true;
+        m.tiCommit += text ? text : "";
+    }
+    static void tiDeleteSurrounding(void*, Proxy*, uint32_t, uint32_t) {} // no surrounding text is reported
+    static void tiDone(void* d, Proxy*, uint32_t) {
+        Impl& m = *static_cast<Impl*>(d);
+        if (!m.tiFocus) { m.tiHaveCommit = m.tiHavePreedit = false; m.tiCommit.clear(); return; }
+        UiContext& ui = m.tiFocus->win->ui();
+        if (m.tiHaveCommit) {
+            ui.textComposition({}, 0);
+            if (!m.tiCommit.empty()) ui.textInput(m.tiCommit);
+        }
+        if (m.tiHavePreedit) ui.textComposition(m.tiPreedit, std::min(m.tiPreCursor, int32_t(m.tiPreedit.size())));
+        else if (!ui.composition().empty()) ui.textComposition({}, 0);
+        m.tiHaveCommit = m.tiHavePreedit = false;
+        m.tiCommit.clear();
+        m.tiPreedit.clear();
+        m.tiFocus->win->requestRedraw();
+    }
+    /// Enables / disables the IME to follow UiContext::wantsTextInput and reports the caret rectangle.
+    void syncTextInput() {
+        if (!textInput) return;
+        const bool want = tiFocus && tiFocus->win->ui().wantsTextInput();
+        auto rq = [&](uint32_t op, auto... a) { l.marshal(textInput, op, nullptr, 1, 0, a...); };
+        bool dirty = false;
+        if (want != tiEnabled) {
+            tiEnabled = want;
+            if (want) { rq(1); rq(5, 0u, 0u); tiCaret = {-1, -1, -1, -1}; } // enable; content type normal/normal
+            else rq(2);
+            dirty = true;
+        }
+        if (want) {
+            const Rect c = tiFocus->win->ui().textCaret();
+            if (c.x != tiCaret.x || c.y != tiCaret.y || c.w != tiCaret.w || c.h != tiCaret.h) {
+                tiCaret = c;
+                rq(6, int32_t(c.x), int32_t(c.y), std::max(1, int32_t(c.w)), std::max(1, int32_t(c.h)));
+                dirty = true;
+            }
+        }
+        if (dirty) { rq(7); ++tiCommits; l.flush(dpy); }
+    }
     // ---- xdg ----
     static void xsurfConfigure(void* d, Proxy* xs, uint32_t serial) {
         Win& w = *static_cast<Win*>(d);
@@ -322,6 +447,12 @@ struct WaylandPlatform::Impl {
         w.pendingH = height;
     }
     static void topClose(void* d, Proxy*) { static_cast<Win*>(d)->win->requestClose(); }
+    static void popConfigure(void* d, Proxy*, int32_t, int32_t, int32_t width, int32_t height) {
+        Win& w = *static_cast<Win*>(d);
+        w.pendingW = width;
+        w.pendingH = height;
+    }
+    static void popDone(void* d, Proxy*) { static_cast<Win*>(d)->win->requestClose(); }
     static void bufRelease(void* d, Proxy*) { static_cast<Buffer*>(d)->busy = false; }
 
     // ---- presentation (wl_shm) ----
@@ -329,6 +460,7 @@ struct WaylandPlatform::Impl {
         Win& w = *static_cast<Win*>(user);
         Impl& m = *w.impl;
         aw.rasterizeCpu(damage);
+        if (&w == m.tiFocus) m.syncTextInput();
         if (!w.configured) return true;
         const Image& img = aw.image();
         Buffer* b = !w.bufs[0].busy ? &w.bufs[0] : !w.bufs[1].busy ? &w.bufs[1] : nullptr;
@@ -368,12 +500,14 @@ struct WaylandPlatform::Impl {
         Impl& m = *w->impl;
         for (auto& b : w->bufs)
             if (b.buf) m.l.marshal(b.buf, 0, nullptr, 1, kDestroy);
+        if (w->popup) m.l.marshal(w->popup, 0, nullptr, 1, kDestroy);
         if (w->top) m.l.marshal(w->top, 0, nullptr, 1, kDestroy);
         if (w->xsurf) m.l.marshal(w->xsurf, 0, nullptr, 1, kDestroy);
         if (w->surface) m.l.marshal(w->surface, 0, nullptr, m.l.version(w->surface), kDestroy);
         m.l.flush(m.dpy);
         if (m.pointerFocus == w) m.pointerFocus = nullptr;
-        if (m.keyFocus == w) m.keyFocus = nullptr;
+        if (m.keyFocus == w) { m.keyFocus = nullptr; m.repCode = 0; }
+        if (m.tiFocus == w) m.tiFocus = nullptr;
         if (m.dndWin == w) m.dndWin = nullptr;
         if (m.source.win == w) m.source.win = nullptr;
         std::erase_if(m.wins, [&](auto& p) { return p.get() == w; });
@@ -487,11 +621,13 @@ struct WaylandPlatform::Impl {
         if (m.previous.pump) m.previous.pump(m.previous.user, app, 0.f);
         m.l.flush(m.dpy);
         while (m.l.prepareRead(m.dpy) != 0) m.l.dispatchPending(m.dpy);
+        wait = std::min(wait, m.repeatWait());
         pollfd p{m.l.getFd(m.dpy), POLLIN, 0};
         const int ms = wait <= 0.f ? 0 : std::isinf(wait) ? -1 : int(std::min(std::ceil(double(wait) * 1000.0), 2.0e9));
         if (::poll(&p, 1, ms) > 0 && (p.revents & POLLIN)) m.l.readEvents(m.dpy);
         else m.l.cancelRead(m.dpy);
         if (m.l.dispatchPending(m.dpy) < 0) { m.error = "Wayland connection lost"; return false; }
+        m.fireRepeats();
         return true;
     }
 };
@@ -501,6 +637,7 @@ WaylandPlatform::WaylandPlatform(Application& app, const char* name) : m(std::ma
     if (!m->l.load()) { m->error = "libwayland-client.so.0 not found"; return; }
     m->haveXkb = m->xkb.load();
     m->xdg.init(m->l.surface, m->l.seat, m->l.output);
+    m->tiTables.init(m->l.surface, m->l.seat);
     m->dpy = m->l.connect(name);
     if (!m->dpy) { m->error = "cannot connect to the Wayland display"; return; }
     m->registry = m->l.marshal(m->dpy, 1, m->l.registry, m->l.version(m->dpy), 0, nullptr);
@@ -512,6 +649,12 @@ WaylandPlatform::WaylandPlatform(Application& app, const char* name) : m(std::ma
         m->dataDevice = m->l.marshal(m->ddm, 1, m->l.dataDevice, m->l.version(m->ddm), 0, nullptr, m->seat);
         static const auto dl = listen(&Impl::ddDataOffer, &Impl::ddEnter, &Impl::ddLeave, &Impl::ddMotion, &Impl::ddDrop, &Impl::ddSelection);
         m->l.addListener(m->dataDevice, const_cast<void (**)(void)>(dl.fns), m.get());
+    }
+    if (m->tiMgr && m->seat) {
+        m->textInput = m->l.marshal(m->tiMgr, 1, &m->tiTables.input, 1, 0, nullptr, m->seat);
+        static const auto tl = listen(&Impl::tiEnter, &Impl::tiLeave, &Impl::tiPreeditString, &Impl::tiCommitString,
+                                      &Impl::tiDeleteSurrounding, &Impl::tiDone);
+        m->l.addListener(m->textInput, const_cast<void (**)(void)>(tl.fns), m.get());
     }
     if (!m->compositor || !m->shm || !m->wmBase) {
         m->error = "compositor lacks wl_compositor / wl_shm / xdg_wm_base";
@@ -548,6 +691,42 @@ bool WaylandPlatform::show(AppWindow& aw) {
     l.marshal(w->top, 2, nullptr, 1, 0, aw.title().c_str());
     l.marshal(w->top, 3, nullptr, 1, 0, m->app.name().c_str());
     l.marshal(w->surface, 6, nullptr, l.version(w->surface), 0); // initial commit -> configure
+    l.flush(m->dpy);
+    Impl::Win* raw = w.get();
+    m->wins.push_back(std::move(w));
+    aw.setPresenter({raw, &Impl::present, &Impl::destroyWin});
+    l.roundtrip(m->dpy);
+    return true;
+}
+bool WaylandPlatform::showPopup(AppWindow& aw, AppWindow& parent, Rect anchor, bool grab) {
+    if (!available()) return false;
+    Impl::Win* par = nullptr;
+    for (auto& w : m->wins)
+        if (w->win == &parent) par = w.get();
+    if (!par || !par->xsurf) return false;
+    auto& l = m->l;
+    auto w = std::make_unique<Impl::Win>();
+    w->impl = m.get();
+    w->win = &aw;
+    w->surface = l.marshal(m->compositor, 0, l.surface, l.version(m->compositor), 0, nullptr);
+    w->xsurf = l.marshal(m->wmBase, 2, &m->xdg.surface, 1, 0, nullptr, w->surface);
+    static const auto xl = listen(&Impl::xsurfConfigure);
+    l.addListener(w->xsurf, const_cast<void (**)(void)>(xl.fns), w.get());
+    // Below the anchor, sliding / flipping to stay on screen (the compositor knows the output; we do not).
+    Proxy* pos = l.marshal(m->wmBase, 1, &m->xdg.positioner, 1, 0, nullptr);
+    const Size sz = aw.size();
+    l.marshal(pos, 1, nullptr, 1, 0, std::max(1, int32_t(sz.w)), std::max(1, int32_t(sz.h)));
+    l.marshal(pos, 2, nullptr, 1, 0, int32_t(anchor.x), int32_t(anchor.y), std::max(1, int32_t(anchor.w)),
+              std::max(1, int32_t(anchor.h)));
+    l.marshal(pos, 3, nullptr, 1, 0, 6u);         // anchor: bottom_left
+    l.marshal(pos, 4, nullptr, 1, 0, 8u);         // gravity: bottom_right
+    l.marshal(pos, 5, nullptr, 1, 0, 1u | 2u | 8u); // slide_x | slide_y | flip_y
+    w->popup = l.marshal(w->xsurf, 2, &m->xdg.popup, 1, 0, nullptr, par->xsurf, pos);
+    l.marshal(pos, 0, nullptr, 1, kDestroy);
+    static const auto pl = listen(&Impl::popConfigure, &Impl::popDone);
+    l.addListener(w->popup, const_cast<void (**)(void)>(pl.fns), w.get());
+    if (grab && m->seat && m->lastButtonSerial) l.marshal(w->popup, 1, nullptr, 1, 0, m->seat, m->lastButtonSerial);
+    l.marshal(w->surface, 6, nullptr, l.version(w->surface), 0);
     l.flush(m->dpy);
     Impl::Win* raw = w.get();
     m->wins.push_back(std::move(w));

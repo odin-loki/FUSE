@@ -1,6 +1,8 @@
 // fuse_app Wayland backend (G2): native libwayland-client, loaded at run time through the OS seam (no build-time
 // wayland dependency, like the X11 backend). xdg-shell toplevels, wl_shm software presentation of the CPU raster,
-// wl_seat pointer + keyboard (XKB keymaps via a runtime-loaded libxkbcommon), and system drag and drop both ways
+// wl_seat pointer + keyboard (XKB keymaps via a runtime-loaded libxkbcommon, client-side key repeat from
+// wl_keyboard.repeat_info), IME through text-input-unstable-v3 (preedit -> UiContext::textComposition, commit ->
+// textInput, the caret reported with set_cursor_rectangle), xdg_popup menus / popups (showPopup), and system drag and drop both ways
 // over wl_data_device (AppWindow::onExternalDrop / beginExternalDrag).
 //
 //   fuse::app::Application app{{.name = "hello"}};
@@ -28,6 +30,11 @@ public:
     std::string_view lastError() const;
     /// xdg_toplevel for `w`, presented through wl_shm. False when unavailable.
     bool show(AppWindow& w);
+    /// xdg_popup for `w` (a menu, completion list, tooltip) positioned below `anchor` (in `parent`'s surface
+    /// coordinates), slid / flipped by the compositor to stay on screen. With `grab` (menus) it takes an explicit
+    /// grab with the last button-press serial: the compositor dismisses it on an outside click, which closes `w`
+    /// (popup_done -> AppWindow::requestClose). The compositor's configured size wins, as for toplevels.
+    bool showPopup(AppWindow& w, AppWindow& parent, fuse::ui::Rect anchor, bool grab = true);
     /// The pixels last committed for `w` (RGBA like fuse::ui::Image).
     bool capture(const AppWindow& w, fuse::ui::Image& out) const;
     /// Has the compositor configured (mapped) `w`?
