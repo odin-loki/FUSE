@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "fuse/ui/os.hpp"
 #include "fuse/text/text.hpp"
 
@@ -420,7 +421,15 @@ std::expected<Font, TextError> Font::fromFile(const std::string& path) {
     return fromBytes(data);
 }
 
+// FUSE_TEXT_FONT_DIR in the environment overrides the build-time font directory (a packaged app - an APK, a bundle -
+// ships vendor/fonts somewhere the build-time path does not exist).
+static const char* runtimeFontDir() {
+    const char* d = std::getenv("FUSE_TEXT_FONT_DIR");
+    return d && *d ? d : nullptr;
+}
+
 std::expected<Font, TextError> Font::bundled() {
+    if (const char* d = runtimeFontDir()) return fromFile(std::string(d) + "/opensans/OpenSans.ttf");
 #if defined(FUSE_TEXT_BUNDLED_FONT)
     return fromFile(FUSE_TEXT_BUNDLED_FONT);
 #else
@@ -431,12 +440,13 @@ std::expected<Font, TextError> Font::bundled() {
 std::vector<Font> Font::bundledFallbacks() {
     std::vector<Font> out;
 #if defined(FUSE_TEXT_FONT_DIR)
+    const std::string dir = runtimeFontDir() ? runtimeFontDir() : FUSE_TEXT_FONT_DIR;
     // Emoji before Symbols 2 so emoji-presentation code points (U+2764 ...) come out in colour.
     static const char* const kFiles[] = {"noto/NotoSansHebrew-Regular.ttf", "noto/NotoSansArabic-Regular.ttf",
                                          "noto/NotoSansDevanagari-Regular.ttf", "twemoji/TwemojiMozilla.ttf",
                                          "noto/NotoSansSymbols2-Regular.ttf"};
     for (const char* f : kFiles)
-        if (auto font = fromFile(std::string(FUSE_TEXT_FONT_DIR) + "/" + f)) out.push_back(std::move(*font));
+        if (auto font = fromFile(dir + "/" + f)) out.push_back(std::move(*font));
 #endif
     return out;
 }
