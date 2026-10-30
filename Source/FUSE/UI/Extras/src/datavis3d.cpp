@@ -211,7 +211,11 @@ void ranges(const Scene& s, f32 lo[3], f32 hi[3]) {
         }
         any = true;
     };
-    if (s.kind == Kind::Scatter || s.kind == Kind::Line) {
+    if (s.kind == Kind::Volume) {
+        dl[0] = -0.5f, dh[0] = f32(std::max(s.vx, 1u)) - 0.5f, dl[1] = -0.5f, dh[1] = f32(std::max(s.vy, 1u)) - 0.5f;
+        dl[2] = -0.5f, dh[2] = f32(std::max(s.vz, 1u)) - 0.5f;
+        any = true;
+    } else if (s.kind == Kind::Scatter || s.kind == Kind::Line) {
         for (const Vec3& p : s.points) if (std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z)) add(p);
     }
     else if (s.rows && s.cols) {
@@ -262,7 +266,52 @@ std::vector<f32> axisTicks(const Scene& s, int a) {
     return out;
 }
 
-void render(const Scene& s, DrawList& dl, Rect target, Color gridColorIn, std::vector<ProjectedItem>* items, Stats* stats) {
+namespace {
+/// Volume slice cells: fn(voxel index, quad corners in cube space, plane normal, colour t in 0..1). Planes with more
+/// than maxCells^2 cells are strided.
+template <class F>
+void forVolumeCells(const Scene& s, const View& v, u32 maxCells, F&& fn) {
+    const u32 d[3] = {s.vx, s.vy, s.vz};
+    if (!d[0] || !d[1] || !d[2] || s.volume.size() < std::size_t(d[0]) * d[1] * d[2]) return;
+    f32 vmin = s.valueMin, vmax = s.valueMax;
+    if (std::isnan(vmin) || std::isnan(vmax)) {
+        f32 a = 3e38f, b = -3e38f;
+        for (f32 x : s.volume) if (std::isfinite(x)) a = std::min(a, x), b = std::max(b, x);
+        if (std::isnan(vmin)) vmin = a;
+        if (std::isnan(vmax)) vmax = b;
+    }
+    const f32 vs = std::max(vmax - vmin, 1e-12f);
+    for (int ax = 0; ax < 3; ++ax) {
+        const i32 sl = s.slice[ax] == -2 ? i32(d[ax] / 2) : s.slice[ax];
+        if (sl < 0 || u32(sl) >= d[ax]) continue;
+        const int ua = (ax + 1) % 3, va = (ax + 2) % 3; // in-plane axes
+        const u32 nu = d[ua], nv = d[va];
+        const u32 st = std::size_t(nu) * nv > std::size_t(maxCells) * maxCells
+                           ? u32(std::ceil(std::sqrt(double(nu) * double(nv) / (double(maxCells) * double(maxCells))))) : 1u;
+        Vec3 nrm{0, 0, 0};
+        (ax == 0 ? nrm.x : ax == 1 ? nrm.y : nrm.z) = 1.f;
+        for (u32 j = 0; j < nv; j += st)
+            for (u32 i = 0; i < nu; i += st) {
+                u32 c[3];
+                c[ax] = u32(sl), c[ua] = i, c[va] = j;
+                const std::size_t idx = (std::size_t(c[2]) * d[1] + c[1]) * d[0] + c[0];
+                const f32 val = s.volume[idx];
+                if (!std::isfinite(val)) continue;
+                const f32 u0 = f32(i) - 0.5f, u1 = f32(std::min(i + st, nu)) - 0.5f, v0 = f32(j) - 0.5f, v1 = f32(std::min(j + st, nv)) - 0.5f;
+                Vec3 q[4];
+                const f32 uu[4] = {u0, u1, u1, u0}, vv[4] = {v0, v0, v1, v1};
+                for (int k = 0; k < 4; ++k) {
+                    f32 p[3];
+                    p[ax] = f32(sl), p[ua] = uu[k], p[va] = vv[k];
+                    q[k] = norm(v, {p[0], p[1], p[2]});
+                }
+                fn(u32(idx), q, nrm, (val - vmin) / vs);
+            }
+    }
+}
+void buildVolumeSlices(const Scene& s, const View& v, Mesh3D& m, std::vector<ProjectedItem>* items, std::size_t& drawn);
+
+void renderImpl(const Scene& s, DrawList& dl, Rect target, Color gridColorIn, std::vector<ProjectedItem>* items, Stats* stats, bool wallsOnly) {
     if (items) items->clear();
     if (target.w <= 0.f || target.h <= 0.f) return;
     const Color gridColor = s.gridColor.a > 0.f ? s.gridColor : gridColorIn;
@@ -338,7 +387,9 @@ void render(const Scene& s, DrawList& dl, Rect target, Color gridColorIn, std::v
         p.fill = Color::rgb(0xFFFFFF), p.stroke = Color::rgb(0x000000), p.strokeW = 1.5f, p.depth = 1e9f, p.order = order++;
         prims.push_back(std::move(p));
     };
-    if (s.kind == Kind::Surface && s.rows >= 2 && s.cols >= 2 && s.values.size() >= std::size_t(s.rows) * s.cols) {
+    if (wallsOnly) {
+        // mesh path: only the axis box here; the data is the depth-buffered mesh (renderMeshed)
+    } else if (s.kind == Kind::Surface && s.rows >= 2 && s.cols >= 2 && s.values.size() >= std::size_t(s.rows) * s.cols) {
         const std::vector<u32> R = sample(s.rows, gstride), C = sample(s.cols, gstride);
         // BSP depth splitting for modest grids; dense ones use the painter's order (quads are tiny, errors sub-pixel)
         const bool exactSort = R.size() * C.size() <= 32u * 32u;
@@ -453,6 +504,16 @@ void render(const Scene& s, DrawList& dl, Rect target, Color gridColorIn, std::v
                 if (lit(i)) marker(toScreen(v, q), 4.f);
             }
         }
+    } else if (s.kind == Kind::Volume) {
+        forVolumeCells(s, v, s.maxGrid, [&](u32 idx, const Vec3* q, Vec3, f32 t) {
+            const Vec3 a = cam(q[0]), b = cam(q[1]), c = cam(q[2]), d = cam(q[3]);
+            Color col = colormapAt(s, t);
+            if (s.shading) col = shade(col, lambert(a, b, d));
+            if (lit(idx)) col = Color{std::min(col.r * 1.25f + 0.1f, 1.f), std::min(col.g * 1.25f + 0.1f, 1.f), std::min(col.b * 1.25f + 0.1f, 1.f), col.a};
+            poly({a, b, c, d}, col, {}, 0.f, 0.f, true);
+            const Vec3 ctr = cam({(q[0].x + q[2].x) * 0.5f, (q[0].y + q[2].y) * 0.5f, (q[0].z + q[2].z) * 0.5f});
+            item(idx, toScreen(v, ctr), ctr.z);
+        });
     } else if (s.kind == Kind::Bars && s.rows && s.cols) {
         const f32 hw = 0.38f; // bar half width in cells
         const f32 y0n = (0.f - v.lo[1]) / v.span[1] * 2.f - 1.f;
@@ -563,9 +624,258 @@ void render(const Scene& s, DrawList& dl, Rect target, Color gridColorIn, std::v
     for (; ri < rest.size(); ++ri) dl.path(rest[ri].path, rest[ri].fill, false, rest[ri].stroke, rest[ri].strokeW);
     dl.popClip();
     if (stats) {
-        stats->input = s.kind == Kind::Scatter || s.kind == Kind::Line ? s.points.size() : std::size_t(s.rows) * s.cols;
+        stats->input = s.kind == Kind::Scatter || s.kind == Kind::Line ? s.points.size()
+                       : s.kind == Kind::Volume ? s.volume.size() : std::size_t(s.rows) * s.cols;
         stats->drawn = drawnItems;
     }
+}
+} // namespace
+
+void render(const Scene& s, DrawList& dl, Rect target, Color gridColor, std::vector<ProjectedItem>* items, Stats* stats) {
+    renderImpl(s, dl, target, gridColor, items, stats, false);
+}
+
+// ---- mesh path (depth buffer, per-vertex lighting; fuse/ui/mesh3d.hpp) ----
+namespace {
+u32 packColor(Color c) {
+    auto q = [](f32 v) { return u32(std::lround(std::clamp(v, 0.f, 1.f) * 255.f)); };
+    return q(c.r) | (q(c.g) << 8) | (q(c.b) << 16) | (q(c.a) << 24);
+}
+Color brighten(Color c, f32 k, f32 add) { return {std::min(c.r * k + add, 1.f), std::min(c.g * k + add, 1.f), std::min(c.b * k + add, 1.f), c.a}; }
+Vec3 sub3(Vec3 a, Vec3 b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
+Vec3 cross3(Vec3 a, Vec3 b) { return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x}; }
+Vec3 unit3(Vec3 a) {
+    const f32 l = std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+    return l > 1e-20f ? Vec3{a.x / l, a.y / l, a.z / l} : Vec3{0, 0, 1};
+}
+} // namespace
+
+namespace {
+void buildVolumeSlices(const Scene& s, const View& v, Mesh3D& m, std::vector<ProjectedItem>* items, std::size_t& drawn) {
+    std::vector<u32> sel(s.selection);
+    std::sort(sel.begin(), sel.end());
+    forVolumeCells(s, v, s.maxMeshGrid, [&](u32 idx, const Vec3* q, Vec3 nrm, f32 t) {
+        Color col = colormapAt(s, t);
+        if (i32(idx) == s.highlight || std::binary_search(sel.begin(), sel.end(), idx)) col = brighten(col, 1.25f, 0.1f);
+        const u32 o = u32(m.vertices.size());
+        for (int k = 0; k < 4; ++k) {
+            MeshVertex mv;
+            mv.x = q[k].x, mv.y = q[k].y, mv.z = q[k].z, mv.nx = nrm.x, mv.ny = nrm.y, mv.nz = nrm.z, mv.rgba = packColor(col);
+            m.vertices.push_back(mv);
+        }
+        m.quad(o, o + 1, o + 2, o + 3);
+        ++drawn;
+        if (items) {
+            const Vec3 c = toCam(v, {(q[0].x + q[2].x) * 0.5f, (q[0].y + q[2].y) * 0.5f, (q[0].z + q[2].z) * 0.5f});
+            items->push_back({idx, toScreen(v, c), c.z});
+        }
+    });
+}
+} // namespace
+
+Rect meshRect(Rect t) {
+    const f32 x0 = std::floor(t.x), y0 = std::floor(t.y);
+    return {x0, y0, std::max(1.f, std::ceil(t.right()) - x0), std::max(1.f, std::ceil(t.bottom()) - y0)};
+}
+
+void buildMesh(const Scene& s, Rect target, Mesh3D& m, std::vector<ProjectedItem>* items, Stats* stats) {
+    m.clear();
+    if (items) items->clear();
+    const Rect mr = meshRect(target);
+    const View v = makeView(s, target);
+    MeshFrame& f = m.frame;
+    f.width = u32(mr.w), f.height = u32(mr.h), f.clear = 0;
+    // camera rotation rows (toCam) and the screen mapping of toScreen as one clip-space matrix
+    const Vec3 rX{v.cy, 0.f, v.sy}, rY{v.sy * v.sp, v.cp, -v.cy * v.sp}, rZ{-v.sy * v.cp, v.sp, v.cy * v.cp};
+    const f32 W = mr.w, H = mr.h;
+    const f32 ax = (v.cx0 - mr.x) * 2.f / W - 1.f, kx = v.scale * 2.f / W;
+    const f32 ay = (v.cy0 - mr.y) * 2.f / H - 1.f, ky = v.scale * 2.f / H;
+    // w = 1 - Z / dist (perspective) or 1; z_ndc = A + B / w maps w in [0.4, 1.6] to [0, 1] (ortho: 0.5 - 0.2 Z)
+    const f32 wz = v.persp ? -1.f / v.dist : 0.f;
+    f32 row[4][4]; // row r: coefficients of n.x, n.y, n.z and the constant
+    auto setRow = [&](int r, Vec3 c, f32 k) { row[r][0] = c.x, row[r][1] = c.y, row[r][2] = c.z, row[r][3] = k; };
+    const Vec3 wv{rZ.x * wz, rZ.y * wz, rZ.z * wz};
+    setRow(3, wv, 1.f);
+    setRow(0, {ax * wv.x + kx * rX.x, ax * wv.y + kx * rX.y, ax * wv.z + kx * rX.z}, ax);
+    setRow(1, {ay * wv.x - ky * rY.x, ay * wv.y - ky * rY.y, ay * wv.z - ky * rY.z}, ay);
+    if (v.persp) {
+        const f32 A = 4.f / 3.f, B = -8.f / 15.f;
+        setRow(2, {A * wv.x, A * wv.y, A * wv.z}, A + B);
+    } else
+        setRow(2, {-0.2f * rZ.x, -0.2f * rZ.y, -0.2f * rZ.z}, 0.5f);
+    for (int c = 0; c < 4; ++c)
+        for (int r = 0; r < 4; ++r) f.mvp[c * 4 + r] = row[r][c];
+    const Vec3 Lc = unit3({-0.35f, 0.6f, 0.72f}); // the painter's head light (lambert), into cube space: R^T L
+    const Vec3 Lm{rX.x * Lc.x + rY.x * Lc.y + rZ.x * Lc.z, rX.y * Lc.x + rY.y * Lc.y + rZ.y * Lc.z, rX.z * Lc.x + rY.z * Lc.y + rZ.z * Lc.z};
+    f.light[0] = Lm.x, f.light[1] = Lm.y, f.light[2] = Lm.z, f.light[3] = s.shading ? 0.35f : 1.f;
+
+    std::vector<u32> sel(s.selection);
+    std::sort(sel.begin(), sel.end());
+    auto lit = [&](std::size_t i) { return i32(i) == s.highlight || std::binary_search(sel.begin(), sel.end(), u32(i)); };
+    std::size_t drawn = 0;
+    auto item = [&](u32 i, Vec3 n) {
+        ++drawn;
+        if (items) {
+            const Vec3 c = toCam(v, n);
+            items->push_back({i, toScreen(v, c), c.z});
+        }
+    };
+    auto vert = [&](Vec3 p, Vec3 nrm, Color c) {
+        MeshVertex mv;
+        mv.x = p.x, mv.y = p.y, mv.z = p.z, mv.nx = nrm.x, mv.ny = nrm.y, mv.nz = nrm.z, mv.rgba = packColor(c);
+        return m.add(mv);
+    };
+    auto sample = [&](u32 n, u32 stride) {
+        std::vector<u32> o;
+        for (u32 k = 0; k < n; k += stride) o.push_back(k);
+        if (!o.empty() && o.back() != n - 1) o.push_back(n - 1);
+        return o;
+    };
+    const u32 gstride = s.rows && s.cols && std::size_t(s.rows) * s.cols > std::size_t(s.maxMeshGrid) * s.maxMeshGrid
+                            ? u32(std::ceil(std::sqrt(double(s.rows) * double(s.cols) / (double(s.maxMeshGrid) * double(s.maxMeshGrid))))) : 1u;
+    const bool grid = s.rows && s.cols && s.values.size() >= std::size_t(s.rows) * s.cols;
+    if (s.kind == Kind::Surface && grid && s.rows >= 2 && s.cols >= 2) {
+        const std::vector<u32> R = sample(s.rows, gstride), C = sample(s.cols, gstride);
+        const std::size_t nc = C.size();
+        auto P = [&](std::size_t r, std::size_t k) { return norm(v, {f32(C[k]), s.values[std::size_t(R[r]) * s.cols + C[k]], f32(R[r])}); };
+        m.vertices.reserve(R.size() * nc);
+        for (std::size_t r = 0; r < R.size(); ++r)
+            for (std::size_t k = 0; k < nc; ++k) {
+                const std::size_t i = std::size_t(R[r]) * s.cols + C[k];
+                const Vec3 du = sub3(P(r, std::min(k + 1, nc - 1)), P(r, k > 0 ? k - 1 : 0));
+                const Vec3 dv = sub3(P(std::min(r + 1, R.size() - 1), k), P(r > 0 ? r - 1 : 0, k));
+                Color col = colormapAt(s, (s.values[i] - v.lo[1]) / v.span[1]);
+                if (lit(i)) col = brighten(col, 1.25f, 0.1f);
+                const Vec3 p = P(r, k);
+                vert(p, cross3(dv, du), col);
+                item(u32(i), p);
+            }
+        m.indices.reserve((R.size() - 1) * (nc - 1) * 6);
+        for (std::size_t r = 0; r + 1 < R.size(); ++r)
+            for (std::size_t k = 0; k + 1 < nc; ++k) {
+                const u32 a = u32(r * nc + k);
+                m.quad(a, a + 1, a + 1 + u32(nc), a + u32(nc));
+            }
+    } else if (s.kind == Kind::Area && grid && s.cols >= 2) {
+        const std::vector<u32> C = sample(s.cols, gstride);
+        const f32 y0 = std::clamp(0.f, v.lo[1], v.lo[1] + v.span[1]);
+        for (u32 r = 0; r < s.rows; ++r) {
+            const Color base = r < s.seriesColors.size() ? s.seriesColors[r] : colormapAt(s, s.rows > 1 ? f32(r) / f32(s.rows - 1) : 0.5f);
+            u32 prev = 0;
+            for (std::size_t k = 0; k < C.size(); ++k) {
+                const std::size_t i = std::size_t(r) * s.cols + C[k];
+                const Color col = lit(i) ? brighten(base, 1.25f, 0.1f) : base;
+                const Vec3 top = norm(v, {f32(C[k]), s.values[i], f32(r)});
+                const u32 lo = vert(norm(v, {f32(C[k]), y0, f32(r)}), {0, 0, 1}, col);
+                vert(top, {0, 0, 1}, col);
+                if (k) m.quad(prev, lo, lo + 1, prev + 1);
+                prev = lo;
+                item(u32(i), top);
+            }
+        }
+    } else if (s.kind == Kind::Bars && s.rows && s.cols) {
+        const f32 hw = 0.38f;
+        const f32 y0n = (0.f - v.lo[1]) / v.span[1] * 2.f - 1.f;
+        static const int F[6][4] = {{4, 5, 6, 7}, {0, 3, 2, 1}, {0, 1, 5, 4}, {2, 3, 7, 6}, {1, 2, 6, 5}, {3, 0, 4, 7}};
+        static const Vec3 N[6] = {{0, 1, 0}, {0, -1, 0}, {0, 0, -1}, {0, 0, 1}, {1, 0, 0}, {-1, 0, 0}};
+        for (u32 r = 0; r < s.rows; ++r)
+            for (u32 k = 0; k < s.cols; ++k) {
+                const std::size_t i = std::size_t(r) * s.cols + k;
+                const f32 val = i < s.values.size() ? s.values[i] : 0.f;
+                const Vec3 a = norm(v, {f32(k) - hw, 0.f, f32(r) - hw}), b = norm(v, {f32(k) + hw, val, f32(r) + hw});
+                const f32 x0 = a.x, x1 = b.x, z0 = a.z, z1 = b.z, ylo = std::min(y0n, b.y), yhi = std::max(y0n, b.y);
+                Color base = s.barColor.a > 0.f ? s.barColor : colormapAt(s, (val - v.lo[1]) / v.span[1]);
+                if (lit(i)) base = brighten(base, 1.3f, 0.15f);
+                const Vec3 Pt[8] = {{x0, ylo, z0}, {x1, ylo, z0}, {x1, ylo, z1}, {x0, ylo, z1},
+                                    {x0, yhi, z0}, {x1, yhi, z0}, {x1, yhi, z1}, {x0, yhi, z1}};
+                for (int fc = 0; fc < 6; ++fc) {
+                    const u32 o = vert(Pt[F[fc][0]], N[fc], base);
+                    for (int j = 1; j < 4; ++j) vert(Pt[F[fc][j]], N[fc], base);
+                    m.quad(o, o + 1, o + 2, o + 3);
+                }
+                item(u32(i), {(x0 + x1) * 0.5f, b.y, (z0 + z1) * 0.5f});
+            }
+    } else if (s.kind == Kind::Scatter && !s.points.empty()) {
+        // octahedra (smooth normals); above maxMeshPoints a uniform stride (selection and highlight always kept)
+        const std::size_t n = s.points.size();
+        const std::size_t stride = n > s.maxMeshPoints ? (n + s.maxMeshPoints - 1) / s.maxMeshPoints : 1;
+        const f32 rn = s.pointSize / std::max(v.scale, 1e-3f);
+        static const Vec3 O[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+        static const int T[8][3] = {{0, 2, 4}, {2, 1, 4}, {1, 3, 4}, {3, 0, 4}, {2, 0, 5}, {1, 2, 5}, {3, 1, 5}, {0, 3, 5}};
+        auto add = [&](std::size_t i) {
+            const Vec3 d = s.points[i];
+            if (!std::isfinite(d.x) || !std::isfinite(d.y) || !std::isfinite(d.z)) return;
+            const Vec3 c = norm(v, d);
+            Color col = i < s.pointColors.size() ? s.pointColors[i] : colormapAt(s, (d.y - v.lo[1]) / v.span[1]);
+            const f32 r = lit(i) ? rn * 1.6f : rn;
+            if (lit(i)) col = brighten(col, 1.2f, 0.15f);
+            const u32 o = u32(m.vertices.size());
+            for (const Vec3& q : O) vert({c.x + q.x * r, c.y + q.y * r, c.z + q.z * r}, q, col);
+            for (const auto& t : T) m.tri(o + u32(t[0]), o + u32(t[1]), o + u32(t[2]));
+            item(u32(i), c);
+        };
+        m.vertices.reserve(std::min(n, std::size_t(s.maxMeshPoints) + sel.size() + 1) * 6);
+        for (std::size_t i = 0; i < n; i += stride) add(i);
+        if (stride > 1) {
+            for (u32 i : sel) if (i < n && i % stride) add(i);
+            if (s.highlight >= 0 && std::size_t(s.highlight) < n && s.highlight % i32(stride) && !std::binary_search(sel.begin(), sel.end(), u32(s.highlight))) add(std::size_t(s.highlight));
+        }
+    } else if (s.kind == Kind::Line && s.points.size() >= 2) {
+        // camera-facing ribbons, lineWidth px wide
+        const Vec3 view{rZ.x, rZ.y, rZ.z}; // cube-space direction towards the viewer
+        const f32 hw = s.lineWidth * 0.5f / std::max(v.scale, 1e-3f);
+        const Color base = s.seriesColors.empty() ? Color{} : s.seriesColors[0];
+        for (std::size_t i = 0; i + 1 < s.points.size(); ++i) {
+            const Vec3 a = norm(v, s.points[i]), b = norm(v, s.points[i + 1]);
+            if (!std::isfinite(a.x + a.y + a.z + b.x + b.y + b.z)) continue;
+            const Vec3 side = unit3(cross3(sub3(b, a), view));
+            const Vec3 o{side.x * hw, side.y * hw, side.z * hw};
+            Color col = base.a > 0.f ? base : colormapAt(s, ((s.points[i].y + s.points[i + 1].y) * 0.5f - v.lo[1]) / v.span[1]);
+            if (lit(i) || lit(i + 1)) col = brighten(col, 1.25f, 0.1f);
+            const u32 q = vert({a.x - o.x, a.y - o.y, a.z - o.z}, view, col);
+            vert({a.x + o.x, a.y + o.y, a.z + o.z}, view, col);
+            vert({b.x + o.x, b.y + o.y, b.z + o.z}, view, col);
+            vert({b.x - o.x, b.y - o.y, b.z - o.z}, view, col);
+            m.quad(q, q + 1, q + 2, q + 3);
+            item(u32(i), a);
+        }
+        item(u32(s.points.size() - 1), norm(v, s.points.back()));
+    } else if (s.kind == Kind::Volume) {
+        buildVolumeSlices(s, v, m, items, drawn);
+    }
+    if (stats) {
+        stats->input = s.kind == Kind::Scatter || s.kind == Kind::Line ? s.points.size()
+                       : s.kind == Kind::Volume ? s.volume.size() : std::size_t(s.rows) * s.cols;
+        stats->drawn = drawn;
+    }
+}
+
+void renderMeshed(const Scene& s, DrawList& dl, Rect target, Color gridColor, Mesh3D& mesh, Image& img, u32 imageIndex,
+                  bool cpuRaster, std::vector<ProjectedItem>* items, Stats* stats) {
+    renderImpl(s, dl, target, gridColor, nullptr, nullptr, true); // background + axis box
+    buildMesh(s, target, mesh, items, stats);
+    if (cpuRaster) rasterMesh(mesh, img);
+    else img.width = int(mesh.frame.width), img.height = int(mesh.frame.height);
+    DrawCmd c;
+    c.op = DrawOp::Image;
+    c.image = imageIndex;
+    c.rect = meshRect(target);
+    c.fill = Color{1.f, 1.f, 1.f, 1.f};
+    dl.pushClip(target);
+    dl.push(c);
+    // selection / highlight markers over the mesh (as the painter path)
+    const View v = makeView(s, target);
+    auto marker = [&](Vec3 n) { Path p; p.circle(toScreen(v, toCam(v, n)), 4.f); dl.path(p, Color::rgb(0xFFFFFF), false, Color::rgb(0x000000), 1.5f); };
+    auto at = [&](u32 i, Vec3& out) {
+        if ((s.kind == Kind::Scatter || s.kind == Kind::Line) && i < s.points.size()) { out = norm(v, s.points[i]); return true; }
+        if ((s.kind == Kind::Surface || s.kind == Kind::Area) && s.cols && i < s.values.size()) { out = norm(v, {f32(i % s.cols), s.values[i], f32(i / s.cols)}); return true; }
+        return false;
+    };
+    std::vector<u32> marks(s.selection);
+    if (s.highlight >= 0) marks.push_back(u32(s.highlight));
+    Vec3 q;
+    for (u32 i : marks) if (s.kind != Kind::Scatter && at(i, q)) marker(q);
+    dl.popClip();
 }
 
 } // namespace fuse::ui::dv3d
@@ -579,6 +889,9 @@ struct Dv3dState {
     Vec2 pointer{}, dragFrom{};
     f32 dragYaw = 0.f, dragPitch = 0.f;
     bool inside = false, dragging = false, moved = false;
+    Mesh3D mesh;    ///< mesh path: last built mesh
+    Image meshImage; ///< mesh path: CPU raster or the external texture's stand-in
+    i32 meshIndex = -1;
 };
 struct Dv3dSlot {
     NodeHandle node;
@@ -604,6 +917,12 @@ std::vector<std::string> tipLines(const Dv3dState& st, i32 i) {
         const dv3d::Vec3 p = s.points[std::size_t(i)];
         return {title(0, "x") + ": " + fmt(p.x), title(1, "y") + ": " + fmt(p.y), title(2, "z") + ": " + fmt(p.z)};
     }
+    if (s.kind == dv3d::Kind::Volume) {
+        if (std::size_t(i) >= s.volume.size() || !s.vx || !s.vy) return {};
+        const u32 x = u32(i) % s.vx, y = u32(i) / s.vx % s.vy, z = u32(i) / (s.vx * s.vy);
+        return {title(0, "x") + ": " + std::to_string(x), title(1, "y") + ": " + std::to_string(y), title(2, "z") + ": " + std::to_string(z),
+                "value: " + fmt(s.volume[std::size_t(i)])};
+    }
     if (s.cols == 0 || std::size_t(i) >= s.values.size()) return {};
     return {title(2, "row") + ": " + std::to_string(u32(i) / s.cols), title(0, "column") + ": " + std::to_string(u32(i) % s.cols),
             title(1, "value") + ": " + fmt(s.values[std::size_t(i)])};
@@ -620,7 +939,10 @@ struct Dv3dW {
         UiContext& ui = pc.ui;
         const Color text = pc.tint(pc.style.color);
         st->scene.highlight = st->inside ? i32(ui.value(pc.node)) : -1;
-        dv3d::render(st->scene, dl, pc.content, text, &st->items);
+        if (st->scene.gpuMesh && st->meshIndex >= 0)
+            dv3d::renderMeshed(st->scene, dl, pc.content, text, st->mesh, st->meshImage, u32(st->meshIndex), st->meshImage.externalSlot < 0, &st->items);
+        else
+            dv3d::render(st->scene, dl, pc.content, text, &st->items);
         // axis titles at the far ends of the box edges
         const f32 fs = ui.computed(pc.node).fontSize * 0.8f;
         f32 lo[3], hi[3];
@@ -743,7 +1065,7 @@ NodeHandle dataViz3d(UiContext& ui, NodeHandle parent, dv3d::Kind kind, std::str
     slots.back().s->scene.kind = kind;
     ui.setRange(*h, 0.f, 0.f);
     ui.setValue(*h, -1.f, false);
-    static const char* names[] = {"3D surface", "3D scatter", "3D bars", "3D line", "3D area"};
+    static const char* names[] = {"3D surface", "3D scatter", "3D bars", "3D line", "3D area", "3D volume slices"};
     ui.setA11y(*h, A11yRole::Image, names[u32(kind)]);
     return *h;
 }
@@ -785,5 +1107,16 @@ i32 dataViz3dHovered(const UiContext& ui, NodeHandle w) {
 std::vector<std::string> dataViz3dTooltip(UiContext& ui, NodeHandle w) {
     const Dv3dState* s = stateOf(ui, w);
     return s && s->inside ? tipLines(*s, i32(ui.value(w))) : std::vector<std::string>{};
+}
+Image* dataViz3dMeshImage(UiContext& ui, NodeHandle w) {
+    Dv3dState* st = stateOf(ui, w);
+    return st ? &st->meshImage : nullptr;
+}
+void dataViz3dSetMeshImage(UiContext& ui, NodeHandle w, u32 imageIndex) {
+    if (Dv3dState* st = stateOf(ui, w)) st->meshIndex = i32(imageIndex), st->scene.gpuMesh = true, ui.invalidate(w);
+}
+const Mesh3D* dataViz3dMesh(const UiContext& ui, NodeHandle w) {
+    const Dv3dState* st = stateOf(ui, w);
+    return st ? &st->mesh : nullptr;
 }
 } // namespace fuse::ui::widgets

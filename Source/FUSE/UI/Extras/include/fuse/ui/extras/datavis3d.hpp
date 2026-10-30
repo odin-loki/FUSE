@@ -6,6 +6,7 @@
 #pragma once
 
 #include "fuse/ui/draw_list.hpp"
+#include "fuse/ui/mesh3d.hpp"
 #include "fuse/ui/ui.hpp"
 
 #include <cmath>
@@ -22,7 +23,7 @@ struct Vec3 {
 /// Surface / Bars / Area: a rows x cols grid. Scatter / Line: `points`. Area draws each row as a filled ribbon from 0
 /// to its values along x (one series per row, Qt Graphs-style 3D area); Line joins `points` in order (a NaN point
 /// breaks the line).
-enum class Kind : u8 { Surface, Scatter, Bars, Line, Area };
+enum class Kind : u8 { Surface, Scatter, Bars, Line, Area, Volume };
 
 /// Orbit camera: yaw around the vertical axis, pitch above the floor (degrees); zoom scales the view.
 struct Camera {
@@ -62,6 +63,18 @@ struct Scene {
     u32 maxPoints = 20000, maxGrid = 160;
     Color background{}; ///< a > 0: fills the target first (theme)
     Color gridColor{};  ///< a > 0: overrides render()'s gridColor (theme)
+    /// Volume: a vx * vy * vz scalar field (x fastest, then y, then z; axes x / y / z are all spatial, voxel i
+    /// spans [i - 0.5, i + 0.5]) drawn as three orthogonal colormapped slice planes through voxel `slice[a]` of
+    /// axis a (-1 hides that plane, -2 = the middle). Colour range: valueMin / valueMax (NaN: the field's).
+    u32 vx = 0, vy = 0, vz = 0;
+    std::vector<f32> volume;
+    i32 slice[3] = {-2, -2, -2};
+    f32 valueMin = NAN, valueMax = NAN;
+    /// GPU mesh path (renderMeshed / the widget once a mesh image is attached): the data is a depth-buffered, lit
+    /// triangle mesh (fuse/ui/mesh3d.hpp: CPU rasterMesh or fuse_ui_vk UiVkMesh3D), axes and labels stay DrawList.
+    /// Mesh limits: grids above maxMeshGrid^2 cells are strided, scatters above maxMeshPoints strided.
+    bool gpuMesh = false;
+    u32 maxMeshGrid = 1024, maxMeshPoints = 250000;
 };
 /// Render counters (large-data gates): items in the scene and items actually drawn.
 struct Stats {
@@ -81,6 +94,16 @@ void ranges(const Scene& s, f32 lo[3], f32 hi[3]);
 Vec2 project(const Scene& s, Rect target, Vec3 data, f32* depth = nullptr);
 /// Draws the scene into `dl` within `target`; `items` receives the pickable item positions.
 void render(const Scene& s, DrawList& dl, Rect target, Color gridColor, std::vector<ProjectedItem>* items = nullptr, Stats* stats = nullptr);
+/// The integer-aligned rectangle the mesh image covers for `target`.
+Rect meshRect(Rect target);
+/// Builds the scene's data as a lit triangle mesh (cube coordinates; frame.mvp reproduces render()'s projection for
+/// `target`, so axes / labels line up). `items`: pickable positions as render().
+void buildMesh(const Scene& s, Rect target, Mesh3D& out, std::vector<ProjectedItem>* items = nullptr, Stats* stats = nullptr);
+/// Mesh path: background + axis box as DrawList, then the mesh as an Image command (index `imageIndex`, at
+/// meshRect(target)), then selection markers. `cpuRaster`: fill `img` with rasterMesh (else the GPU renders the
+/// mesh into the external texture `img` stands for: img.externalSlot >= 0, UiVkMesh3D).
+void renderMeshed(const Scene& s, DrawList& dl, Rect target, Color gridColor, Mesh3D& mesh, Image& img, u32 imageIndex,
+                  bool cpuRaster = true, std::vector<ProjectedItem>* items = nullptr, Stats* stats = nullptr);
 /// Tick values of axis `a` (0 x, 1 y, 2 z) over the resolved range (nice steps, `Axis::ticks` of them at most + 1).
 std::vector<f32> axisTicks(const Scene& s, int a);
 /// One piece of a polygon in back-to-front paint order (bspOrder): `source` indexes the input, `pts` are the piece's
@@ -108,6 +131,12 @@ namespace fuse::ui::widgets {
 NodeHandle dataViz3d(UiContext& ui, NodeHandle parent, dv3d::Kind kind, std::string_view id = {});
 void dataViz3dSetGrid(UiContext& ui, NodeHandle w, u32 rows, u32 cols, std::span<const f32> values);
 void dataViz3dSetPoints(UiContext& ui, NodeHandle w, std::span<const dv3d::Vec3> points, std::span<const Color> colors = {});
+/// Mesh path for the widget (Scene::gpuMesh): the Image it draws (register it with the rasteriser / App::addImage,
+/// or set its externalSlot and render dataViz3dMesh() with UiVkMesh3D each frame) and that image's index.
+Image* dataViz3dMeshImage(UiContext& ui, NodeHandle w);
+void dataViz3dSetMeshImage(UiContext& ui, NodeHandle w, u32 imageIndex);
+/// The mesh built by the last paint (GPU hosts upload it to UiVkMesh3D).
+const Mesh3D* dataViz3dMesh(const UiContext& ui, NodeHandle w);
 /// Direct access to the scene (call ui.invalidate(w) after changing it).
 dv3d::Scene* dataViz3dScene(UiContext& ui, NodeHandle w);
 void dataViz3dSetCamera(UiContext& ui, NodeHandle w, const dv3d::Camera& c);
