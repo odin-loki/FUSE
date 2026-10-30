@@ -359,6 +359,8 @@ std::expected<SignalKind, std::string> signalOf(std::string_view s) {
     if (s == "animationIteration") return SignalKind::AnimationIteration;
     if (s == "animationEnd") return SignalKind::AnimationEnd;
     if (s == "animationCancel") return SignalKind::AnimationCancel;
+    if (s == "finish") return SignalKind::ScriptFinish;
+    if (s == "cancel") return SignalKind::ScriptCancel;
     return std::unexpected("unknown signal '" + std::string(s) + "'");
 }
 } // namespace

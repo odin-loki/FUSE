@@ -69,6 +69,7 @@ struct UiContext::Cold {
         TransitionSpec spec;
         f32 factor = 1.f; ///< reversing shortening factor
         bool started = false;
+        bool discrete = false; ///< transition-behavior: allow-discrete (flips at the midpoint)
     };
     std::vector<Running> trans;
     // CSS animations (one per animation-name entry with @keyframes)
@@ -82,6 +83,8 @@ struct UiContext::Cold {
     };
     std::vector<Anim> anims;
     std::vector<std::pair<u32, std::string>> attrs;
+    std::string classNames; ///< space-separated class list ([class~=x] and the other attribute operators)
+    std::vector<u32> scripted; ///< UiContext::animate animations (m_scriptAnims indices), creation order
     bool inMotionList = false;
     u32 transTarget = 0, transScratch = ~0u;
     u32 inhScratch = ~0u; ///< style slot while an ancestor's transition changes inherited values every frame
@@ -146,6 +149,22 @@ struct ContextSubject final : StyleSubject {
     u32 prevSibling(u32 n) const override { return nodes[n].prev; }
     u32 nextSibling(u32 n) const override { return nodes[n].next; }
     bool attribute(u32 n, u32 h, std::string_view& out) const override { return ui.attributeAt(n, h, out); }
+    u32 firstChild(u32 n) const override { return nodes[n].first; }
+    bool isEmpty(u32 n) const override { return nodes[n].first == 0xFFFFFFFFu && ui.text(ui.handleOf(n)).empty(); }
+};
+
+// A Web Animations-style animation (UiContext::animate). Times in seconds on the animation's own timeline.
+struct UiContext::ScriptAnim {
+    u32 gen = 1;
+    bool alive = false;
+    u32 node = kNone, nodeGen = 0;
+    std::vector<AnimKeyframe> frames; // offsets resolved, ascending
+    AnimationOptions o;
+    std::string_view id; // interned
+    f32 t = 0.f;
+    AnimPlayState state = AnimPlayState::Idle;
+    f32 active() const { return o.duration > 0.f && o.iterations > 0.f ? o.duration * o.iterations : 0.f; }
+    f32 end() const { return std::max(0.f, o.delay + active() + o.endDelay); }
 };
 
 // ---- Lifetime ------------------------------------------------------------------------------------------------------
@@ -205,6 +224,8 @@ u32 UiContext::alloc() {
         c.trans.clear();
         c.anims.clear();
         c.attrs.clear();
+        c.classNames.clear();
+        c.scripted.clear();
         c.inMotionList = false;
         c.transScratch = ~0u;
         c.inhScratch = ~0u;
@@ -238,10 +259,21 @@ void UiContext::linkBefore(u32 i, u32 p, u32 before) {
         b.prev = i;
     }
     markSiblings(p);
+    markRelational(i);
 }
 void UiContext::markSiblings(u32 p) {
-    if (!m_styles.structural() || p == kNone) return; // :nth-* / sibling combinators depend on positions
+    if (!m_styles.structural() || p == kNone) return; // :nth-* / sibling combinators / :empty depend on positions
+    markStyle(p);
     for (u32 k = m_nodes[p].first; k != kNone; k = m_nodes[k].next) markStyle(k);
+    markRelational(p);
+}
+// :has(): a change at i can flip the match of any ancestor, and of earlier siblings of i and of its ancestors
+void UiContext::markRelational(u32 i) {
+    if (!m_styles.relational()) return;
+    for (u32 a = i; a != kNone; a = m_nodes[a].parent) {
+        markStyle(a);
+        for (u32 p = m_nodes[a].prev; p != kNone; p = m_nodes[p].prev) markStyle(p);
+    }
 }
 
 void UiContext::unlink(u32 i) {
@@ -253,8 +285,10 @@ void UiContext::unlink(u32 i) {
     if (n.next != kNone) m_nodes[n.next].prev = n.prev;
     else p.last = n.prev;
     const u32 parent = n.parent;
+    const u32 before = n.prev; // earlier siblings may have matched :has(+ / ~ this)
     n.parent = n.prev = n.next = kNone;
     markSiblings(parent);
+    markRelational(before != kNone ? before : parent);
 }
 
 NodeHandle UiContext::create(u32 cls, NodeHandle parent, std::string_view id) {
@@ -337,6 +371,121 @@ void UiContext::moveTo(NodeHandle h, NodeHandle np, NodeHandle before) {
     markStyle(h.index);
 }
 
+NodeHandle UiContext::lastChild(NodeHandle h) const {
+    const Node* n = node(h);
+    return n ? handleOf(n->last) : NodeHandle{};
+}
+NodeHandle UiContext::prevSibling(NodeHandle h) const {
+    const Node* n = node(h);
+    return n ? handleOf(n->prev) : NodeHandle{};
+}
+NodeHandle UiContext::childAt(NodeHandle h, u32 index) const {
+    const Node* n = node(h);
+    if (!n) return {};
+    u32 k = n->first;
+    for (u32 j = 0; k != kNone && j < index; ++j) k = m_nodes[k].next;
+    return handleOf(k);
+}
+i32 UiContext::childIndex(NodeHandle h) const {
+    const Node* n = node(h);
+    if (!n || n->parent == kNone) return -1;
+    i32 c = 0;
+    for (u32 k = n->prev; k != kNone; k = m_nodes[k].prev) ++c;
+    return c;
+}
+bool UiContext::insertBefore(NodeHandle h, NodeHandle ref) {
+    const Node* r = node(ref);
+    if (!node(h) || !r || r->parent == kNone || h == ref) return false;
+    for (u32 a = r->parent; a != kNone; a = m_nodes[a].parent)
+        if (a == h.index) return false;
+    moveTo(h, handleOf(r->parent), ref);
+    return true;
+}
+bool UiContext::insertAfter(NodeHandle h, NodeHandle ref) {
+    const Node* r = node(ref);
+    if (!node(h) || !r || r->parent == kNone || h == ref) return false;
+    for (u32 a = r->parent; a != kNone; a = m_nodes[a].parent)
+        if (a == h.index) return false;
+    if (r->next == h.index) return true;
+    moveTo(h, handleOf(r->parent), handleOf(r->next));
+    return true;
+}
+bool UiContext::setChildIndex(NodeHandle h, u32 index) {
+    const Node* n = node(h);
+    if (!n || n->parent == kNone) return false;
+    const u32 p = n->parent;
+    std::vector<u32> order;
+    for (u32 k = m_nodes[p].first; k != kNone; k = m_nodes[k].next)
+        if (k != h.index) order.push_back(k);
+    order.insert(order.begin() + std::min<std::size_t>(index, order.size()), h.index);
+    relinkChildren(p, order);
+    return true;
+}
+bool UiContext::swapNodes(NodeHandle a, NodeHandle b) {
+    if (!node(a) || !node(b) || a == m_root || b == m_root) return false;
+    if (a == b) return true;
+    for (u32 x = m_nodes[a.index].parent; x != kNone; x = m_nodes[x].parent)
+        if (x == b.index) return false;
+    for (u32 x = m_nodes[b.index].parent; x != kNone; x = m_nodes[x].parent)
+        if (x == a.index) return false;
+    const u32 pa = m_nodes[a.index].parent, pb = m_nodes[b.index].parent;
+    if (pa == pb) {
+        std::vector<u32> order;
+        for (u32 k = m_nodes[pa].first; k != kNone; k = m_nodes[k].next)
+            order.push_back(k == a.index ? b.index : k == b.index ? a.index : k);
+        relinkChildren(pa, order);
+        return true;
+    }
+    const u32 na = m_nodes[a.index].next, nb = m_nodes[b.index].next;
+    moveTo(a, handleOf(pb), handleOf(nb));
+    moveTo(b, handleOf(pa), handleOf(na));
+    return true;
+}
+bool UiContext::reorderChildren(NodeHandle h, std::span<const NodeHandle> order) {
+    const Node* n = node(h);
+    if (!n || order.size() != childCount(h)) return false;
+    std::vector<u32> idx;
+    idx.reserve(order.size());
+    for (const NodeHandle& c : order) {
+        const Node* cn = node(c);
+        if (!cn || cn->parent != h.index || std::find(idx.begin(), idx.end(), c.index) != idx.end()) return false;
+        idx.push_back(c.index);
+    }
+    relinkChildren(h.index, idx);
+    return true;
+}
+void UiContext::sortChildren(NodeHandle h, const std::function<bool(NodeHandle, NodeHandle)>& less) {
+    if (!node(h) || !less) return;
+    std::vector<u32> idx;
+    for (u32 k = m_nodes[h.index].first; k != kNone; k = m_nodes[k].next) idx.push_back(k);
+    std::stable_sort(idx.begin(), idx.end(), [&](u32 x, u32 y) { return less(handleOf(x), handleOf(y)); });
+    relinkChildren(h.index, idx);
+}
+// Re-links p's children (a permutation of the current list) in one pass; one restyle / relayout.
+void UiContext::relinkChildren(u32 p, const std::vector<u32>& order) {
+    bool same = true;
+    {
+        u32 k = m_nodes[p].first;
+        for (u32 c : order) {
+            if (k != c) { same = false; break; }
+            k = m_nodes[k].next;
+        }
+    }
+    if (same) return;
+    u32 prev = kNone;
+    for (u32 c : order) {
+        m_nodes[c].prev = prev;
+        if (prev != kNone) m_nodes[prev].next = c;
+        else m_nodes[p].first = c;
+        prev = c;
+    }
+    if (prev != kNone) m_nodes[prev].next = kNone;
+    m_nodes[p].last = prev;
+    markSiblings(p);
+    for (u32 c : order) markRelational(c);
+    markLayout(p);
+    m_anyPaintDirty = true;
+}
 NodeHandle UiContext::parent(NodeHandle h) const {
     const Node* n = node(h);
     return n ? handleOf(n->parent) : NodeHandle{};
@@ -414,13 +563,37 @@ void UiContext::addClass(NodeHandle h, std::string_view cls) {
         if (n->classes[k] == c) return;
     if (n->classCount < n->classes.size()) {
         n->classes[n->classCount++] = c;
+        std::string& names = m_cold[h.index]->classNames;
+        if (!names.empty()) names += ' ';
+        names.append(cls);
         markStyle(h.index);
         for (u32 k = n->first; k != kNone; k = m_nodes[k].next) markStyle(k);
+        if (m_styles.structural()) markSiblings(n->parent);
+        markRelational(h.index);
     }
 }
 void UiContext::setAttribute(NodeHandle h, std::string_view name, std::string_view value) {
     Node* n = node(h);
     if (!n) return;
+    if (name == "class") { // the class list itself
+        const std::string list(value); // value may view classNames
+        n->classCount = 0;
+        m_cold[h.index]->classNames.clear();
+        value = list;
+        markStyle(h.index);
+        for (u32 j = n->first; j != kNone; j = m_nodes[j].next) markStyle(j);
+        if (m_styles.structural()) markSiblings(n->parent);
+        markRelational(h.index);
+        std::size_t i = 0;
+        while (i < value.size()) {
+            while (i < value.size() && std::isspace(static_cast<unsigned char>(value[i]))) ++i;
+            std::size_t e = i;
+            while (e < value.size() && !std::isspace(static_cast<unsigned char>(value[e]))) ++e;
+            if (e > i) addClass(h, value.substr(i, e - i));
+            i = e;
+        }
+        return;
+    }
     auto& at = m_cold[h.index]->attrs;
     const u32 k = hashId(name);
     auto it = std::find_if(at.begin(), at.end(), [&](auto& a) { return a.first == k; });
@@ -431,16 +604,19 @@ void UiContext::setAttribute(NodeHandle h, std::string_view name, std::string_vi
     markStyle(h.index);
     for (u32 j = n->first; j != kNone; j = m_nodes[j].next) markStyle(j);
     if (m_styles.structural()) markSiblings(n->parent);
+    markRelational(h.index);
 }
 void UiContext::removeAttribute(NodeHandle h, std::string_view name) {
     Node* n = node(h);
     if (!n) return;
+    if (name == "class") { setAttribute(h, "class", {}); return; }
     auto& at = m_cold[h.index]->attrs;
     const u32 k = hashId(name);
     if (std::erase_if(at, [&](auto& a) { return a.first == k; }) == 0) return;
     markStyle(h.index);
     for (u32 j = n->first; j != kNone; j = m_nodes[j].next) markStyle(j);
     if (m_styles.structural()) markSiblings(n->parent);
+    markRelational(h.index);
 }
 std::optional<std::string_view> UiContext::attribute(NodeHandle h, std::string_view name) const {
     std::string_view v;
@@ -451,6 +627,8 @@ bool UiContext::attributeAt(u32 i, u32 nameHash, std::string_view& out) const {
     for (const auto& [k, v] : m_cold[i]->attrs)
         if (k == nameHash) { out = v; return true; }
     if (nameHash == hashId("id") && !m_cold[i]->id.empty()) { out = m_cold[i]->id; return true; } // [id=...]
+    static const u32 kClass = hashId("class");
+    if (nameHash == kClass && m_nodes[i].classCount) { out = m_cold[i]->classNames; return true; } // [class~=x]
     return false;
 }
 void UiContext::removeClass(NodeHandle h, std::string_view cls) {
@@ -460,8 +638,20 @@ void UiContext::removeClass(NodeHandle h, std::string_view cls) {
     for (u8 k = 0; k < n->classCount; ++k)
         if (n->classes[k] == c) {
             n->classes[k] = n->classes[--n->classCount];
+            std::string& names = m_cold[h.index]->classNames;
+            for (std::size_t i = 0; i < names.size();) { // drop the word
+                std::size_t e = names.find(' ', i);
+                if (e == std::string::npos) e = names.size();
+                if (std::string_view(names).substr(i, e - i) == cls) {
+                    names.erase(i > 0 ? i - 1 : i, e - i + 1);
+                    break;
+                }
+                i = e + 1;
+            }
             markStyle(h.index);
             for (u32 j = n->first; j != kNone; j = m_nodes[j].next) markStyle(j);
+            if (m_styles.structural()) markSiblings(n->parent);
+            markRelational(h.index);
             return;
         }
 }
@@ -508,10 +698,12 @@ void UiContext::setText(NodeHandle h, std::string_view s) {
     if (!node(h)) return;
     Cold& c = *m_cold[h.index];
     if (c.text == s) return;
+    const bool wasEmpty = c.text.empty();
     c.text.assign(s);
     c.layoutWidth = -1.f;
     m_nodes[h.index].dirty |= kDirtyText;
     markLayout(h.index);
+    if (m_styles.structural() && wasEmpty != c.text.empty()) { markStyle(h.index); markRelational(h.index); } // :empty
 }
 std::string_view UiContext::text(NodeHandle h) const {
     return node(h) ? std::string_view(m_cold[h.index]->text) : std::string_view{};
@@ -549,6 +741,8 @@ void UiContext::setState(NodeHandle h, u32 bits, bool on) {
     markStyle(h.index);
     markPaint(h.index);
     for (u32 k = n->first; k != kNone; k = m_nodes[k].next) markStyle(k);
+    if (m_styles.structural()) markSiblings(n->parent); // + / ~ combinators over states
+    markRelational(h.index);
 }
 u32 UiContext::states(NodeHandle h) const { return node(h) ? node(h)->state : 0u; }
 void UiContext::setFocusable(NodeHandle h, bool on) {
@@ -655,7 +849,7 @@ void UiContext::styleRec(u32 i, bool parentChanged) {
         const bool parentTweens = ps && m_styles.isScratch(m_nodes[n.parent].style);
         ComputedStyle inhCs;
         if (parentTweens) inhCs = m_styles.computeValue(subj, i, ps, &wc.defaults, cold.inl);
-        if (parentTweens && cold.trans.empty() && cold.anims.empty() && !inhCs.hasAnimations()) {
+        if (parentTweens && cold.trans.empty() && cold.anims.empty() && cold.scripted.empty() && !inhCs.hasAnimations()) {
             // the parent tweens: inherited values change every frame; keep this node in its own slot meanwhile
             const ComputedStyle& cs = inhCs;
             if (cold.inhScratch == ~0u) cold.inhScratch = m_styles.allocScratch(cs);
@@ -669,7 +863,7 @@ void UiContext::styleRec(u32 i, bool parentChanged) {
                 cold.inhScratch = ~0u;
             }
             const ComputedStyle& ns = m_styles.style(idx);
-            if (!cold.trans.empty() || !cold.anims.empty() || ns.hasAnimations() || (cold.styled && ns.hasTransitions())) {
+            if (!cold.trans.empty() || !cold.anims.empty() || !cold.scripted.empty() || ns.hasAnimations() || (cold.styled && ns.hasTransitions())) {
                 if (!copied) shown = m_styles.style(before), copied = true;
                 idx = applyMotion(i, idx, shown, cold.styled);
             }
@@ -711,6 +905,7 @@ void UiContext::dropTransitions(u32 i) {
     }
     c.trans.clear();
     c.anims.clear();
+    dropScriptAnims(i);
     if (c.inMotionList) {
         std::erase(m_transNodes, i);
         c.inMotionList = false;
@@ -728,7 +923,7 @@ void UiContext::queueMotion(u32 i, SignalKind k, f32 elapsed, std::string_view t
 namespace {
 // The value of property p at directed progress dp of a @keyframes rule; false: the rule does not animate p.
 bool keyframeValue(const StyleEngine& se, const KeyframesRule& kr, Prop p, const ComputedStyle& base, f32 dp,
-                   const Easing& animEase, PropValue& out) {
+                   const Easing& animEase, AnimComposite comp, PropValue& out) {
     struct Stop { f32 off; PropValue v; Easing e; };
     Stop stops[16];
     int n = 0;
@@ -746,6 +941,8 @@ bool keyframeValue(const StyleEngine& se, const KeyframesRule& kr, Prop p, const
     }
     if (n == 0) return false;
     const PropValue b = readProp(base, p);
+    if (comp != AnimComposite::Replace)
+        for (int k = 0; k < n; ++k) stops[k].v = compositeProp(b, stops[k].v, comp);
     if (stops[0].off > 0.f) { // implicit 0% / 100% keyframes take the underlying value
         for (int k = n; k > 0; --k) stops[k] = stops[k - 1];
         stops[0] = {0.f, b, animEase};
@@ -757,8 +954,14 @@ bool keyframeValue(const StyleEngine& se, const KeyframesRule& kr, Prop p, const
     if (n == 1) { out = stops[0].v; return true; }
     const f32 span = stops[k + 1].off - stops[k].off;
     const f32 local = span > 0.f ? std::clamp((dp - stops[k].off) / span, 0.f, 1.f) : 1.f;
-    out = interpolateProp(stops[k].v, stops[k + 1].v, easeValue(stops[k].e, local));
+    const f32 eased = easeValue(stops[k].e, local);
+    out = propInfo(p).animatable ? interpolateProp(stops[k].v, stops[k + 1].v, eased)
+                                 : interpolateDiscrete(p, stops[k].v, stops[k + 1].v, eased);
     return true;
+}
+// Types a discrete (allow-discrete) transition can carry.
+bool discreteCapable(PropType t) {
+    return t == PropType::Bool || t == PropType::Enum || t == PropType::Length || t == PropType::Number || t == PropType::Color;
 }
 template <class T, std::size_t N> const T& cyc(const std::array<T, N>& a, u8 count, u8 k) { return a[std::size_t(count ? k % count : 0)]; }
 } // namespace
@@ -772,7 +975,8 @@ u32 UiContext::applyMotion(u32 i, u32 idx, const ComputedStyle& shown, bool styl
     if (styled && idx != prevTarget) {
         const ComputedStyle os = m_styles.style(prevTarget);
         for (int p = 0; p < kPropCount; ++p) {
-            if (!propInfo(Prop(p)).animatable) continue;
+            const PropInfo& pi = propInfo(Prop(p));
+            if (pi.type == PropType::List || (!pi.animatable && !discreteCapable(pi.type))) continue;
             const std::string_view pname = propInfo(Prop(p)).cssName;
             auto it = std::find_if(c.trans.begin(), c.trans.end(), [&](const Cold::Running& r) { return r.prop == p; });
             const PropValue to = readProp(ns, Prop(p));
@@ -781,7 +985,9 @@ u32 UiContext::applyMotion(u32 i, u32 idx, const ComputedStyle& shown, bool styl
             const bool has = ns.transitionFor(u32(p), sp);
             const PropValue from = readProp(shown, Prop(p));
             const bool lengthMismatch = from.type == PropType::Length && from.len.unit != to.len.unit;
-            if (!has || sp.duration + sp.delay <= 0.f || lengthMismatch || samePropValue(from, to)) {
+            const bool discrete = !pi.animatable || lengthMismatch;
+            if (discrete && it == c.trans.end() && !(has && sp.allowDiscrete)) continue;
+            if (!has || sp.duration + sp.delay <= 0.f || (discrete && !sp.allowDiscrete) || samePropValue(from, to)) {
                 if (it != c.trans.end()) {
                     if (!samePropValue(it->to, to) || !has) queueMotion(i, SignalKind::TransitionCancel, std::max(0.f, it->t - it->spec.delay), pname);
                     c.trans.erase(it);
@@ -789,7 +995,7 @@ u32 UiContext::applyMotion(u32 i, u32 idx, const ComputedStyle& shown, bool styl
                 continue;
             }
             if (it != c.trans.end() && samePropValue(it->to, to)) continue;
-            Cold::Running r{u8(p), from, to, from, 0.f, sp, 1.f, false};
+            Cold::Running r{u8(p), from, to, from, 0.f, sp, 1.f, false, discrete};
             if (it != c.trans.end() && samePropValue(it->revStart, to)) {
                 // reversing an unfinished transition: shorten by how far the old one got
                 const Cold::Running& o = *it;
@@ -837,6 +1043,7 @@ u32 UiContext::applyMotion(u32 i, u32 idx, const ComputedStyle& shown, bool styl
         const AnimDirection dir = cyc(ns.animationDirection, ns.animationDirectionCount, k);
         const AnimFill fill = cyc(ns.animationFill, ns.animationFillCount, k);
         const Easing& ease = cyc(ns.animationEase, ns.animationEaseCount, k);
+        const AnimComposite comp = cyc(ns.animationComposite, ns.animationCompositeCount, k);
         a.paused = cyc(ns.animationPaused, ns.animationPlayCount, k) != 0;
         const f32 active = dur > 0.f && iters > 0.f ? dur * iters : 0.f; // may be inf
         const f32 e = a.t - delay;
@@ -866,9 +1073,12 @@ u32 UiContext::applyMotion(u32 i, u32 idx, const ComputedStyle& shown, bool styl
                 if (seen.has(u8(x.prop))) continue;
                 seen.set(u8(x.prop));
                 PropValue v;
-                if (keyframeValue(m_styles, *kr, x.prop, ns, dp, ease, v)) applyProp(d, x.prop, v), applied = true;
+                if (keyframeValue(m_styles, *kr, x.prop, d, dp, ease, comp, v)) applyProp(d, x.prop, v), applied = true;
             }
     }
+    // scripted (Web Animations) effects in creation order, over CSS animations
+    for (u32 id : c.scripted)
+        if (sampleScriptAnim(*m_scriptAnims[id], d)) applied = true;
     // running transitions on top; start / end events
     for (auto it = c.trans.begin(); it != c.trans.end();) {
         Cold::Running& r = *it;
@@ -884,12 +1094,15 @@ u32 UiContext::applyMotion(u32 i, u32 idx, const ComputedStyle& shown, bool styl
             continue;
         }
         PropValue v = r.from;
-        if (e >= 0.f) v = interpolateProp(r.from, r.to, easeValue(r.spec.ease, r.spec.duration > 0.f ? e / r.spec.duration : 1.f));
+        if (e >= 0.f) {
+            const f32 k = easeValue(r.spec.ease, r.spec.duration > 0.f ? e / r.spec.duration : 1.f);
+            v = r.discrete ? interpolateDiscrete(Prop(r.prop), r.from, r.to, k) : interpolateProp(r.from, r.to, k);
+        }
         applyProp(d, Prop(r.prop), v);
         applied = true;
         ++it;
     }
-    if ((!c.trans.empty() || !c.anims.empty()) && !c.inMotionList) {
+    if ((!c.trans.empty() || !c.anims.empty() || !c.scripted.empty()) && !c.inMotionList) {
         c.inMotionList = true;
         m_transNodes.push_back(i);
     }
@@ -910,6 +1123,8 @@ bool UiContext::nodeLive(u32 i) const {
     if (!c.trans.empty()) return true;
     for (const Cold::Anim& a : c.anims)
         if (!a.paused && a.phase != 2) return true;
+    for (u32 id : c.scripted)
+        if (m_scriptAnims[id]->state == AnimPlayState::Running) return true;
     return false;
 }
 bool UiContext::motionLive() const {
@@ -918,6 +1133,328 @@ bool UiContext::motionLive() const {
         if (m_nodes[i].alive && nodeLive(i)) return true;
     return false;
 }
+// ---- Scripted animations (Web Animations 1 subset) -----------------------------------------------------------------
+UiContext::ScriptAnim* UiContext::scriptAnim(AnimationHandle h) {
+    if (h.index >= m_scriptAnims.size()) return nullptr;
+    ScriptAnim& a = *m_scriptAnims[h.index];
+    return a.alive && a.gen == h.generation ? &a : nullptr;
+}
+const UiContext::ScriptAnim* UiContext::scriptAnim(AnimationHandle h) const {
+    return const_cast<UiContext*>(this)->scriptAnim(h);
+}
+void UiContext::dropScriptAnims(u32 node) {
+    Cold& c = *m_cold[node];
+    for (u32 id : c.scripted) {
+        ScriptAnim& a = *m_scriptAnims[id];
+        a.alive = false;
+        ++a.gen;
+        a.frames.clear();
+        a.o = {};
+        m_freeScriptAnims.push_back(id);
+    }
+    c.scripted.clear();
+}
+void UiContext::scriptEvent(u32 id, SignalKind k) {
+    const ScriptAnim& a = *m_scriptAnims[id];
+    m_motionEvents.push_back({a.node, a.nodeGen, k, a.t, a.id, id, a.gen});
+}
+void UiContext::settleScriptAnim(u32 id) {
+    ScriptAnim& a = *m_scriptAnims[id];
+    if (a.state != AnimPlayState::Running) return;
+    const f32 end = a.end();
+    const f32 r = a.o.playbackRate;
+    if ((r > 0.f && a.t >= end) || (r < 0.f && a.t <= 0.f)) {
+        a.t = r > 0.f ? end : 0.f;
+        a.state = AnimPlayState::Finished;
+        scriptEvent(id, SignalKind::ScriptFinish);
+    }
+}
+void UiContext::advanceScriptAnim(u32 id, f32 dt) {
+    ScriptAnim& a = *m_scriptAnims[id];
+    if (a.state != AnimPlayState::Running) return;
+    a.t += dt * a.o.playbackRate;
+    settleScriptAnim(id);
+}
+// Directed, eased iteration progress at the animation's current time; false: no effect (idle / not filling).
+bool UiContext::scriptTiming(const ScriptAnim& a, f32& dp) const {
+    if (a.state == AnimPlayState::Idle) return false;
+    const AnimationOptions& o = a.o;
+    const f32 active = a.active();
+    const f32 e = a.t - o.delay;
+    const bool backwardsEdge = o.playbackRate < 0.f; // the boundary belongs to the phase the animation runs into
+    const int phase = (e < 0.f || (backwardsEdge && e == 0.f)) ? 0
+                      : (std::isfinite(active) && (e > active || (!backwardsEdge && e >= active))) ? 2 : 1;
+    const bool fills = phase == 1 || (phase == 0 && (o.fill == AnimFill::Backwards || o.fill == AnimFill::Both)) ||
+                       (phase == 2 && (o.fill == AnimFill::Forwards || o.fill == AnimFill::Both));
+    if (!fills) return false;
+    double overall = o.iterationStart;
+    if (phase == 1) overall += o.duration > 0.f ? double(e) / double(o.duration) : double(o.iterations);
+    else if (phase == 2) overall += double(o.iterations);
+    i64 iter = i64(std::floor(overall));
+    double prog = overall - double(iter);
+    if ((phase == 2 || (phase == 1 && o.duration <= 0.f)) && prog == 0.0 && overall > 0.0) iter -= 1, prog = 1.0;
+    const bool odd = (iter & 1) != 0;
+    const bool rev = o.direction == AnimDirection::Reverse || (o.direction == AnimDirection::Alternate && odd) ||
+                     (o.direction == AnimDirection::AlternateReverse && !odd);
+    dp = easeValue(o.easing, f32(rev ? 1.0 - prog : prog));
+    return true;
+}
+bool UiContext::sampleScriptAnim(const ScriptAnim& a, ComputedStyle& d) const {
+    f32 k;
+    if (!scriptTiming(a, k)) return false;
+    bool applied = false;
+    PropMask seen;
+    struct Stop { f32 off; PropValue v; Easing e; };
+    std::vector<Stop> stops;
+    const Easing linear{Easing::Kind::Bezier, 0.f, 0.f, 1.f, 1.f};
+    for (const AnimKeyframe& f0 : a.frames)
+        for (const auto& [p, v0] : f0.values) {
+            if (seen.has(u8(p))) continue;
+            seen.set(u8(p));
+            const PropValue b = readProp(d, p);
+            stops.clear();
+            for (const AnimKeyframe& f : a.frames)
+                for (const auto& [q, v] : f.values)
+                    if (q == p) {
+                        const AnimComposite cm = f.hasComposite ? f.composite : a.o.composite;
+                        stops.push_back({f.offset, cm == AnimComposite::Replace ? v : compositeProp(b, v, cm), f.hasEase ? f.ease : linear});
+                    }
+            if (stops.front().off > 0.f) stops.insert(stops.begin(), Stop{0.f, b, linear});
+            if (stops.back().off < 1.f) stops.push_back({1.f, b, linear});
+            std::size_t s = 0;
+            if (stops.size() == 1) { applyProp(d, p, stops[0].v); applied = true; continue; }
+            if (k >= 1.f) s = stops.size() - 2;
+            // the last stop with offset <= k starts the segment (equal offsets: the later one)
+            else if (k > 0.f) while (s + 2 < stops.size() && k >= stops[s + 1].off) ++s;
+            const f32 span = stops[s + 1].off - stops[s].off;
+            const f32 local = span > 0.f ? (k - stops[s].off) / span : 1.f;
+            const f32 eased = local >= 0.f && local <= 1.f ? easeValue(stops[s].e, local) : local; // overshoot: extrapolate
+            const PropValue v = propInfo(p).animatable ? interpolateProp(stops[s].v, stops[s + 1].v, eased)
+                                                       : interpolateDiscrete(p, stops[s].v, stops[s + 1].v, eased);
+            applyProp(d, p, v);
+            applied = true;
+        }
+    return applied;
+}
+
+AnimationHandle UiContext::animate(NodeHandle h, std::vector<AnimKeyframe> frames, AnimationOptions o) {
+    if (!node(h) || frames.empty()) return {};
+    // resolve offsets: explicit ones must ascend within [0,1]; missing ones are spaced evenly (Web Animations §4.4.3)
+    f32 prev = 0.f;
+    for (const AnimKeyframe& f : frames)
+        if (f.offset >= 0.f) {
+            if (f.offset > 1.f || f.offset < prev) return {};
+            prev = f.offset;
+        }
+    const std::size_t n = frames.size();
+    if (frames.front().offset < 0.f) frames.front().offset = n > 1 ? 0.f : 1.f;
+    if (n > 1 && frames.back().offset < 0.f) frames.back().offset = 1.f;
+    for (std::size_t i = 0; i < n;) {
+        std::size_t j = i + 1;
+        while (j < n && frames[j].offset < 0.f) ++j;
+        if (j < n)
+            for (std::size_t m = i + 1; m < j; ++m)
+                frames[m].offset = frames[i].offset + (frames[j].offset - frames[i].offset) * f32(m - i) / f32(j - i);
+        i = j;
+    }
+    for (AnimKeyframe& f : frames)
+        std::erase_if(f.values, [](const auto& pv) { return propInfo(pv.first).type == PropType::List; });
+    if (!(o.duration >= 0.f) || !(o.iterations >= 0.f) || !(o.iterationStart >= 0.f) || !std::isfinite(o.playbackRate)) return {};
+    Cold& c = *m_cold[h.index];
+    // lazily forget idle animations and finished ones without fill so a node animated repeatedly stays small
+    if (c.scripted.size() >= 16) {
+        for (std::size_t k = 0; k < c.scripted.size();) {
+            ScriptAnim& a = *m_scriptAnims[c.scripted[k]];
+            f32 dp;
+            const bool dead = a.state == AnimPlayState::Idle || (a.state == AnimPlayState::Finished && !scriptTiming(a, dp));
+            if (dead && c.scripted.size() >= 16) {
+                a.alive = false, ++a.gen, a.frames.clear(), a.o = {};
+                m_freeScriptAnims.push_back(c.scripted[k]);
+                c.scripted.erase(c.scripted.begin() + std::ptrdiff_t(k));
+            } else ++k;
+        }
+    }
+    u32 id;
+    if (!m_freeScriptAnims.empty()) id = m_freeScriptAnims.back(), m_freeScriptAnims.pop_back();
+    else id = u32(m_scriptAnims.size()), m_scriptAnims.push_back(std::make_unique<ScriptAnim>());
+    ScriptAnim& a = *m_scriptAnims[id];
+    a.alive = true;
+    a.node = h.index, a.nodeGen = h.generation;
+    a.frames = std::move(frames);
+    a.o = std::move(o);
+    a.id = a.o.id.empty() ? std::string_view{} : animationName(animationNameId(a.o.id));
+    a.t = 0.f;
+    a.state = AnimPlayState::Idle;
+    c.scripted.push_back(id);
+    const AnimationHandle ah{id, a.gen};
+    if (a.o.autoplay) animPlay(ah);
+    markStyle(h.index);
+    return ah;
+}
+AnimationHandle UiContext::animate(NodeHandle h, std::string_view css, AnimationOptions o) {
+    std::string text = "@keyframes fuse-script-anim {";
+    text.append(css);
+    text += "}";
+    auto sheet = StyleSheet::parse(text);
+    if (!sheet || sheet->keyframes().empty()) return {};
+    std::vector<AnimKeyframe> frames;
+    for (const Keyframe& f : sheet->keyframes().front().frames) {
+        AnimKeyframe k;
+        k.offset = f.offset;
+        k.hasEase = f.hasEase, k.ease = f.ease;
+        for (const Declaration& d : f.decls) {
+            PropValue v;
+            if (!m_styles.resolveDecl(d, v)) continue;
+            auto it = std::find_if(k.values.begin(), k.values.end(), [&](const auto& pv) { return pv.first == d.prop; });
+            if (it != k.values.end()) it->second = v;
+            else k.values.push_back({d.prop, v});
+        }
+        frames.push_back(std::move(k));
+    }
+    std::stable_sort(frames.begin(), frames.end(), [](const AnimKeyframe& x, const AnimKeyframe& y) { return x.offset < y.offset; });
+    return animate(h, std::move(frames), std::move(o));
+}
+
+bool UiContext::animPlay(AnimationHandle h) {
+    ScriptAnim* a = scriptAnim(h);
+    if (!a) return false;
+    const f32 end = a->end(), r = a->o.playbackRate;
+    if (r > 0.f && (a->state == AnimPlayState::Idle || a->t < 0.f || a->t >= end)) a->t = 0.f;
+    else if (r < 0.f && (a->state == AnimPlayState::Idle || a->t <= 0.f || a->t > end)) {
+        if (!std::isfinite(end)) return false;
+        a->t = end;
+    } else if (a->state == AnimPlayState::Idle) a->t = 0.f;
+    a->state = AnimPlayState::Running;
+    markStyle(a->node);
+    return true;
+}
+bool UiContext::animPause(AnimationHandle h) {
+    ScriptAnim* a = scriptAnim(h);
+    if (!a) return false;
+    if (a->state == AnimPlayState::Idle) {
+        if (a->o.playbackRate < 0.f) {
+            if (!std::isfinite(a->end())) return false;
+            a->t = a->end();
+        } else a->t = 0.f;
+    }
+    a->state = AnimPlayState::Paused;
+    markStyle(a->node);
+    return true;
+}
+bool UiContext::animReverse(AnimationHandle h) {
+    ScriptAnim* a = scriptAnim(h);
+    if (!a) return false;
+    a->o.playbackRate = -a->o.playbackRate;
+    if (!animPlay(h)) {
+        a->o.playbackRate = -a->o.playbackRate;
+        return false;
+    }
+    return true;
+}
+bool UiContext::animFinish(AnimationHandle h) {
+    ScriptAnim* a = scriptAnim(h);
+    if (!a) return false;
+    const f32 r = a->o.playbackRate, end = a->end();
+    if (r == 0.f || (r > 0.f && !std::isfinite(end))) return false;
+    a->t = r > 0.f ? end : 0.f;
+    a->state = AnimPlayState::Finished;
+    scriptEvent(h.index, SignalKind::ScriptFinish);
+    markStyle(a->node);
+    return true;
+}
+bool UiContext::animCancel(AnimationHandle h) {
+    ScriptAnim* a = scriptAnim(h);
+    if (!a) return false;
+    if (a->state != AnimPlayState::Idle) {
+        a->state = AnimPlayState::Idle;
+        scriptEvent(h.index, SignalKind::ScriptCancel);
+        a->t = 0.f;
+        markStyle(a->node);
+    }
+    return true;
+}
+bool UiContext::animSetCurrentTime(AnimationHandle h, f32 s) {
+    ScriptAnim* a = scriptAnim(h);
+    if (!a || !std::isfinite(s)) return false;
+    a->t = s;
+    if (a->state == AnimPlayState::Idle) a->state = AnimPlayState::Paused;
+    else if (a->state == AnimPlayState::Finished && s >= 0.f && s < a->end()) a->state = AnimPlayState::Running;
+    settleScriptAnim(h.index);
+    markStyle(a->node);
+    return true;
+}
+bool UiContext::animSetPlaybackRate(AnimationHandle h, f32 r) {
+    ScriptAnim* a = scriptAnim(h);
+    if (!a || !std::isfinite(r)) return false;
+    a->o.playbackRate = r;
+    if (a->state == AnimPlayState::Finished && ((r > 0.f && a->t < a->end()) || (r < 0.f && a->t > 0.f))) a->state = AnimPlayState::Running;
+    settleScriptAnim(h.index);
+    markStyle(a->node);
+    return true;
+}
+bool UiContext::animCommitStyles(AnimationHandle h) {
+    ScriptAnim* a = scriptAnim(h);
+    if (!a) return false;
+    const NodeHandle nh{a->node, a->nodeGen};
+    if (!node(nh)) return false;
+    const Cold& c = *m_cold[a->node];
+    const ComputedStyle& base = m_styles.style(c.transScratch != ~0u ? c.transTarget : m_nodes[a->node].style);
+    ComputedStyle d = base;
+    if (!sampleScriptAnim(*a, d)) return true;
+    PropMask seen;
+    std::vector<std::pair<Prop, PropValue>> out;
+    for (const AnimKeyframe& f : a->frames)
+        for (const auto& [p, v] : f.values)
+            if (!seen.has(u8(p))) seen.set(u8(p)), out.push_back({p, readProp(d, p)});
+    for (const auto& [p, v] : out) set(nh, p, v);
+    return true;
+}
+f32 UiContext::animCurrentTime(AnimationHandle h) const {
+    const ScriptAnim* a = scriptAnim(h);
+    return a && a->state != AnimPlayState::Idle ? a->t : std::numeric_limits<f32>::quiet_NaN();
+}
+f32 UiContext::animPlaybackRate(AnimationHandle h) const {
+    const ScriptAnim* a = scriptAnim(h);
+    return a ? a->o.playbackRate : 0.f;
+}
+AnimPlayState UiContext::animPlayState(AnimationHandle h) const {
+    const ScriptAnim* a = scriptAnim(h);
+    return a ? a->state : AnimPlayState::Idle;
+}
+NodeHandle UiContext::animTarget(AnimationHandle h) const {
+    const ScriptAnim* a = scriptAnim(h);
+    return a ? NodeHandle{a->node, a->nodeGen} : NodeHandle{};
+}
+std::string_view UiContext::animId(AnimationHandle h) const {
+    const ScriptAnim* a = scriptAnim(h);
+    return a ? a->id : std::string_view{};
+}
+bool UiContext::animValid(AnimationHandle h) const { return scriptAnim(h) != nullptr; }
+f32 UiContext::animProgress(AnimationHandle h) const {
+    const ScriptAnim* a = scriptAnim(h);
+    if (!a || a->state == AnimPlayState::Idle) return std::numeric_limits<f32>::quiet_NaN();
+    const f32 active = a->active();
+    if (!std::isfinite(active)) return 0.f;
+    if (active <= 0.f) return a->t >= a->o.delay ? 1.f : 0.f;
+    return std::clamp((a->t - a->o.delay) / active, 0.f, 1.f);
+}
+std::vector<AnimationHandle> UiContext::animations(NodeHandle h, bool subtree) const {
+    std::vector<AnimationHandle> out;
+    if (!node(h)) return out;
+    auto visit = [&](auto&& self, u32 i) -> void {
+        for (u32 id : m_cold[i]->scripted) {
+            const ScriptAnim& a = *m_scriptAnims[id];
+            f32 dp;
+            if (a.state == AnimPlayState::Running || a.state == AnimPlayState::Paused || scriptTiming(a, dp))
+                out.push_back({id, a.gen});
+        }
+        if (subtree)
+            for (u32 c = m_nodes[i].first; c != kNone; c = m_nodes[c].next) self(self, c);
+    };
+    visit(visit, h.index);
+    return out;
+}
+
 u32 UiContext::transitionCount() const {
     u32 n = 0;
     for (u32 i : m_transNodes) n += m_nodes[i].alive && !m_cold[i]->trans.empty();
@@ -1698,7 +2235,7 @@ void UiContext::update(f32 dt) {
     for (std::size_t k = 0; k < m_transNodes.size();) { // advance CSS transitions / animations (applied in the style pass)
         const u32 i = m_transNodes[k];
         Cold& c = *m_cold[i];
-        if (!m_nodes[i].alive || (c.trans.empty() && c.anims.empty())) {
+        if (!m_nodes[i].alive || (c.trans.empty() && c.anims.empty() && c.scripted.empty())) {
             c.inMotionList = false;
             m_transNodes[k] = m_transNodes.back();
             m_transNodes.pop_back();
@@ -1708,6 +2245,7 @@ void UiContext::update(f32 dt) {
             for (auto& r : c.trans) r.t += std::max(dt, 0.f);
             for (auto& a : c.anims)
                 if (!a.paused) a.t += std::max(dt, 0.f);
+            for (std::size_t q = 0; q < c.scripted.size(); ++q) advanceScriptAnim(c.scripted[q], std::max(dt, 0.f));
             markStyle(i);
         }
         ++k;
@@ -1726,6 +2264,12 @@ void UiContext::update(f32 dt) {
         for (const MotionEvent& e : ev) {
             const NodeHandle h{e.node, e.gen};
             if (node(h)) emit(h, e.kind, {.value = e.elapsed, .text = e.text});
+            if (e.anim == ~0u) continue;
+            const AnimationHandle ah{e.anim, e.animGen};
+            if (ScriptAnim* a = scriptAnim(ah)) {
+                auto fn = e.kind == SignalKind::ScriptFinish ? a->o.onFinish : a->o.onCancel; // copy: may free a
+                if (fn) fn(*this, ah);
+            }
         }
     }
 }

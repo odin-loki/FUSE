@@ -15,7 +15,14 @@
 //               reversing shortening; transitionrun / start / end / cancel signals (UiContext)
 //   animations  `@keyframes name { from / to / <pct>[, ...] { decls; animation-timing-function } }` and `animation`
 //               with all longhands: name, duration, timing-function, delay, iteration-count, direction, fill-mode,
-//               play-state (CSS Animations 1); animationstart / iteration / end / cancel signals
+//               play-state (CSS Animations 1); animationstart / iteration / end / cancel signals;
+//               animation-composition: replace | add | accumulate (CSS Animations 2)
+//   discrete    transition-behavior: normal | allow-discrete — discrete properties (display, enums, ...) flip at the
+//               midpoint; display keeps the shown value for the whole transition (CSS Transitions 2)
+//   logical     :not() :is() :where() (forgiving, zero specificity) :has() (relative: `:has(> a)`, `:has(+ a)`,
+//               `:has(~ a)`, `:has(a b)`), :empty; `[class~=x]` and every attribute operator also see the class list
+//   scripted    UiContext::animate (Web Animations-style keyframe effects with play / pause / reverse / finish /
+//               cancel / currentTime / playbackRate / commitStyles)
 #pragma once
 
 #include "fuse/ui/types.hpp"
@@ -99,11 +106,14 @@ struct PropMask {
 struct TransitionSpec {
     f32 duration = 0.f, delay = 0.f;
     Easing ease;
+    bool allowDiscrete = false; ///< transition-behavior: allow-discrete
 };
 /// Back-compat alias of easeValue.
 inline f32 transitionEase(const TransitionSpec& s, f32 t) { return easeValue(s.ease, t); }
 enum class AnimDirection : u8 { Normal, Reverse, Alternate, AlternateReverse };
 enum class AnimFill : u8 { None, Forwards, Backwards, Both };
+/// How an animation's value combines with the underlying value (animation-composition / KeyframeEffect.composite).
+enum class AnimComposite : u8 { Replace, Add, Accumulate };
 /// Interned animation / keyframes names (the filter-name table; stable for the process). 0 = none.
 inline u32 animationNameId(std::string_view name) { return filterNameId(name) + 1; }
 inline std::string_view animationName(u32 id) { return id ? filterName(id - 1) : std::string_view("none"); }
@@ -170,6 +180,9 @@ struct ComputedStyle {
     std::array<AnimDirection, kMaxTransitions> animationDirection{};
     std::array<AnimFill, kMaxTransitions> animationFill{};
     std::array<u8, kMaxTransitions> animationPaused{};
+    u8 transitionBehaviorCount = 1, animationCompositeCount = 1;
+    std::array<u8, kMaxTransitions> transitionDiscrete{}; ///< transition-behavior: 1 = allow-discrete
+    std::array<AnimComposite, kMaxTransitions> animationComposite{};
     /// The transition covering property `p` (the last transition-property entry naming it); false: none.
     bool transitionFor(u32 p, TransitionSpec& out) const {
         for (int k = int(transitionPropertyCount) - 1; k >= 0; --k)
@@ -177,6 +190,7 @@ struct ComputedStyle {
                 out.duration = transitionDuration[std::size_t(k % transitionDurationCount)];
                 out.delay = transitionDelay[std::size_t(k % transitionDelayCount)];
                 out.ease = transitionEase[std::size_t(k % transitionEaseCount)];
+                out.allowDiscrete = transitionDiscrete[std::size_t(k % (transitionBehaviorCount ? transitionBehaviorCount : 1))] != 0;
                 return true;
             }
         return false;
@@ -203,7 +217,7 @@ enum class Prop : u8 {
     ShadowY, PointerEvents, BackdropBlur, GradientAngle, GradientStops, BackgroundClip, BackdropFilter, Filter,
     TransitionProperty, TransitionDuration, TransitionTimingFunction, TransitionDelay,
     AnimationName, AnimationDuration, AnimationTimingFunction, AnimationDelay, AnimationIterationCount,
-    AnimationDirection, AnimationFillMode, AnimationPlayState, Count
+    AnimationDirection, AnimationFillMode, AnimationPlayState, TransitionBehavior, AnimationComposition, Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
 static_assert(kPropCount <= 128, "PropMask holds 128 properties");
@@ -253,6 +267,12 @@ PropValue readProp(const ComputedStyle& s, Prop p);
 /// colours in premultiplied sRGB as CSS does). k may leave [0, 1] (overshooting cubic-bezier).
 PropValue interpolateProp(const PropValue& a, const PropValue& b, f32 k);
 bool samePropValue(const PropValue& a, const PropValue& b);
+/// Discrete interpolation of property p (CSS Transitions 2 / Web Animations): flips at k = 0.5, except `display`,
+/// which shows the visible value over the whole (0, 1) interval.
+PropValue interpolateDiscrete(Prop p, const PropValue& a, const PropValue& b, f32 k);
+/// Combines an effect value with the underlying value: Replace keeps v; Add / Accumulate sum numbers, same-unit
+/// lengths and colour components (clamped); other types (or mismatched units) replace.
+PropValue compositeProp(const PropValue& underlying, const PropValue& v, AnimComposite c);
 /// Copies inherited properties from parent into s.
 void inheritFrom(ComputedStyle& s, const ComputedStyle& parent);
 
@@ -300,6 +320,16 @@ struct SimpleSelector {
         friend bool operator==(const Nth&, const Nth&) = default;
     };
     std::vector<Nth> nths;
+    /// :not() / :is() / :where() / :has(): each argument is a complex selector (left to right); in :has() the first
+    /// compound's combinator is the relation to the subject (Descendant by default).
+    struct Logical {
+        enum class Kind : u8 { Not, Is, Where, Has };
+        Kind kind = Kind::Is;
+        std::vector<std::vector<SimpleSelector>> args;
+    };
+    std::vector<Logical> logicals;
+    enum Flags : u8 { kEmpty = 1, kRoot = 2 }; ///< :empty, :root inside a logical argument
+    u8 flags = 0;
 };
 
 struct Declaration {
@@ -329,6 +359,9 @@ struct StyleSubject {
     virtual u32 nextSibling(u32) const { return 0xFFFFFFFFu; }
     /// Attribute value of `node` (false: absent).
     virtual bool attribute(u32, u32 /*nameHash*/, std::string_view&) const { return false; }
+    virtual u32 firstChild(u32) const { return 0xFFFFFFFFu; }
+    /// :empty — no child nodes and no text
+    virtual bool isEmpty(u32 node) const { return firstChild(node) == 0xFFFFFFFFu; }
 };
 
 /// Parses An+B (odd, even, 3, -n+2, 2n+1, ...).
@@ -368,6 +401,8 @@ public:
     const std::vector<KeyframesRule>& keyframes() const { return m_keyframes; }
     /// Uses structural (:nth-*, sibling) selectors: sibling changes restyle the siblings.
     bool structural() const;
+    /// Uses :has(): changes below or after a node can restyle it.
+    bool relational() const;
 
 private:
     friend class StyleEngine;
@@ -404,6 +439,7 @@ public:
     /// Resolves a keyframe declaration (var() against the sheets' tokens).
     bool resolveDecl(const Declaration& d, PropValue& out) const;
     bool structural() const { return m_structural; }
+    bool relational() const { return m_relational; }
     bool isScratch(u32 index) const { return index < m_isScratch.size() && m_isScratch[index]; }
     /// Unshared table slots for per-node styles that change every frame (transitions): never deduplicated, reused.
     u32 allocScratch(const ComputedStyle& cs);
@@ -412,9 +448,11 @@ public:
     u32 tableSize() const { return u32(m_table.size()); }
     bool matches(const StyleSubject& subject, u32 node, const StyleRule& rule) const;
     bool matchFrom(const StyleSubject& subject, u32 node, const StyleRule& rule, int k) const;
+    /// Matches a complex selector (left to right) ending at `node`.
+    static bool matchChain(const StyleSubject& subject, u32 node, const std::vector<SimpleSelector>& chain);
 
 private:
-    bool matchSimple(const StyleSubject& s, u32 node, const SimpleSelector& sel) const;
+    static bool matchSimple(const StyleSubject& s, u32 node, const SimpleSelector& sel);
     bool resolveVar(std::string_view raw, Prop p, PropValue& out, int depth) const;
     u32 intern(const ComputedStyle& cs);
     void reorder();
@@ -425,7 +463,7 @@ private:
     std::vector<ComputedStyle> m_table;
     std::vector<u32> m_hashIndex; ///< open addressing into m_table (+1)
     std::vector<u8> m_isScratch;  ///< per table entry
-    bool m_structural = false;
+    bool m_structural = false, m_relational = false;
     std::vector<u32> m_freeScratch;
     u32 m_version = 0;
 };

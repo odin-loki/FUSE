@@ -18,7 +18,9 @@
 #include <atomic>
 #include <concepts>
 #include <expected>
+#include <functional>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -80,8 +82,36 @@ enum class SignalKind : u8 { Clicked, Toggled, ValueChanged, TextChanged, Submit
                               Activated,       ///< completer: a completion was chosen {value = row, text} (QCompleter::activated)
                               // CSS motion events (text: property or animation name; value: elapsedTime in seconds)
                               TransitionRun, TransitionStart, TransitionEnd, TransitionCancel,
-                              AnimationStart, AnimationIteration, AnimationEnd, AnimationCancel
+                              AnimationStart, AnimationIteration, AnimationEnd, AnimationCancel,
+                              // scripted animations (UiContext::animate): text = the animation id, value = currentTime
+                              ScriptFinish, ScriptCancel
 };
+// ---- Scripted animations (Web Animations-style) -------------------------------------------------------------------
+/// One keyframe of UiContext::animate (Web Animations "Keyframe").
+struct AnimKeyframe {
+    f32 offset = -1.f;          ///< 0..1; < 0: computed (first 0, last 1, others evenly spaced between neighbours)
+    bool hasEase = false;       ///< easing from this keyframe to the next (default linear)
+    Easing ease;
+    bool hasComposite = false;  ///< overrides AnimationOptions::composite for this keyframe's values
+    AnimComposite composite = AnimComposite::Replace;
+    std::vector<std::pair<Prop, PropValue>> values;
+};
+/// KeyframeEffectOptions + Animation settings.
+struct AnimationOptions {
+    f32 duration = 0.f, delay = 0.f, endDelay = 0.f; ///< seconds
+    f32 iterations = 1.f;      ///< inf: infinite
+    f32 iterationStart = 0.f;
+    f32 playbackRate = 1.f;
+    AnimDirection direction = AnimDirection::Normal;
+    AnimFill fill = AnimFill::None;
+    Easing easing{Easing::Kind::Bezier, 0.f, 0.f, 1.f, 1.f}; ///< whole-iteration timing function (default linear)
+    AnimComposite composite = AnimComposite::Replace;
+    bool autoplay = true;
+    std::string id;
+    std::function<void(UiContext&, AnimationHandle)> onFinish, onCancel; ///< after the frame's signals
+};
+enum class AnimPlayState : u8 { Idle, Running, Paused, Finished };
+
 struct SignalArgs {
     f32 value = 0.f;
     bool flag = false;
@@ -240,7 +270,20 @@ public:
     NodeHandle parent(NodeHandle n) const;
     NodeHandle firstChild(NodeHandle n) const;
     NodeHandle nextSibling(NodeHandle n) const;
+    NodeHandle lastChild(NodeHandle n) const;
+    NodeHandle prevSibling(NodeHandle n) const;
     u32 childCount(NodeHandle n) const;
+    // reordering (restyles :nth-* / sibling / :has selectors, relayouts the parent; focus and a11y follow tree order)
+    NodeHandle childAt(NodeHandle parent, u32 index) const;
+    i32 childIndex(NodeHandle n) const; ///< -1: invalid or the root
+    bool insertBefore(NodeHandle n, NodeHandle reference); ///< moves n to just before reference (any parent)
+    bool insertAfter(NodeHandle n, NodeHandle reference);
+    bool setChildIndex(NodeHandle n, u32 index); ///< within its parent; index clamped to the last position
+    bool swapNodes(NodeHandle a, NodeHandle b);  ///< neither may contain the other
+    /// Re-links `parent`'s children in `order`, which must be a permutation of them. False (unchanged) otherwise.
+    bool reorderChildren(NodeHandle parent, std::span<const NodeHandle> order);
+    /// Stable sort of `parent`'s children by `less`.
+    void sortChildren(NodeHandle parent, const std::function<bool(NodeHandle, NodeHandle)>& less);
     u32 nodeCount() const { return m_live; }
     NodeHandle find(std::string_view id) const;
     NodeHandle handleOf(u32 index) const;
@@ -397,6 +440,30 @@ public:
     u32 transitionCount() const;
     /// Nodes with CSS animations that still advance (not finished, not paused).
     u32 animationCount() const;
+    /// Web Animations-style keyframe animation of `n` (Element.animate): composited over CSS animations in creation
+    /// order, below CSS transitions. Invalid handle: dead node, no keyframes, or keyframe offsets out of order / range.
+    AnimationHandle animate(NodeHandle n, std::vector<AnimKeyframe> keyframes, AnimationOptions options);
+    /// Keyframes as CSS (`from { opacity: 0 } 50% { width: 10px; animation-timing-function: ease-in } to { ... }`).
+    AnimationHandle animate(NodeHandle n, std::string_view keyframesCss, AnimationOptions options);
+    bool animPlay(AnimationHandle a);
+    bool animPause(AnimationHandle a);
+    bool animReverse(AnimationHandle a);
+    bool animFinish(AnimationHandle a); ///< false for a zero playback rate or an infinite end time
+    bool animCancel(AnimationHandle a);
+    bool animSetCurrentTime(AnimationHandle a, f32 seconds);
+    bool animSetPlaybackRate(AnimationHandle a, f32 rate);
+    /// Writes the animation's current values of its properties into n's inline style (Animation.commitStyles).
+    bool animCommitStyles(AnimationHandle a);
+    f32 animCurrentTime(AnimationHandle a) const;
+    f32 animPlaybackRate(AnimationHandle a) const;
+    AnimPlayState animPlayState(AnimationHandle a) const;
+    NodeHandle animTarget(AnimationHandle a) const;
+    std::string_view animId(AnimationHandle a) const;
+    bool animValid(AnimationHandle a) const;
+    /// Overall progress 0..1 of the active interval (computed timing); NaN when idle.
+    f32 animProgress(AnimationHandle a) const;
+    /// The scripted animations of n (and its descendants with subtree) that are not idle (getAnimations()).
+    std::vector<AnimationHandle> animations(NodeHandle n, bool subtree = false) const;
 
     // cross-thread commands (any thread)
     bool post(CommandFn fn, NodeHandle n, u64 a = 0, u64 b = 0);
@@ -438,6 +505,19 @@ private:
     bool motionLive() const;
     bool nodeLive(u32 i) const;
     void markSiblings(u32 parent);
+    void markRelational(u32 i);
+    void relinkChildren(u32 parent, const std::vector<u32>& order);
+    struct ScriptAnim;
+    ScriptAnim* scriptAnim(AnimationHandle a);
+    const ScriptAnim* scriptAnim(AnimationHandle a) const;
+    void dropScriptAnims(u32 node);
+    void advanceScriptAnim(u32 index, f32 dt);
+    void scriptEvent(u32 index, SignalKind k);
+    void settleScriptAnim(u32 index); ///< running past an end: finish
+    bool scriptTiming(const ScriptAnim& a, f32& dp) const;
+    bool sampleScriptAnim(const ScriptAnim& a, ComputedStyle& d) const;
+    std::vector<std::unique_ptr<ScriptAnim>> m_scriptAnims;
+    std::vector<u32> m_freeScriptAnims;
     void queueMotion(u32 i, SignalKind k, f32 elapsed, std::string_view text);
     Size measure(u32 i, Size avail);
     void arrange(u32 i, Rect box);
@@ -555,6 +635,7 @@ private:
         SignalKind kind;
         f32 elapsed;
         std::string_view text; ///< static (property css name / interned animation name)
+        u32 anim = ~0u, animGen = 0; ///< scripted animation (callbacks)
     };
     std::vector<MotionEvent> m_motionEvents; ///< dispatched at the end of update()
 

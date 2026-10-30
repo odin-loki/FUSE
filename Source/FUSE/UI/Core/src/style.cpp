@@ -91,6 +91,8 @@ constexpr PropInfo kProps[] = {
     {Prop::AnimationDirection, "animation-direction", T::List, false, false, false},
     {Prop::AnimationFillMode, "animation-fill-mode", T::List, false, false, false},
     {Prop::AnimationPlayState, "animation-play-state", T::List, false, false, false},
+    {Prop::TransitionBehavior, "transition-behavior", T::List, false, false, false},
+    {Prop::AnimationComposition, "animation-composition", T::List, false, false, false},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -289,9 +291,9 @@ std::string_view filterName(u32 id) {
 // `transition` property names: longhands, plus shorthands expanding to their longhands
 static bool transitionProps(std::string_view name, PropMask& m) {
     auto bit = [&](Prop p) { m.set(u8(p)); };
-    if (name == "all") {
+    if (name == "all") { // discrete properties are included; they only transition with allow-discrete
         for (int k = 0; k < kPropCount; ++k)
-            if (kProps[k].animatable) m.set(u32(k));
+            if (kProps[k].type != T::List) m.set(u32(k));
         return true;
     }
     if (name == "background" || name == "background-color") { bit(Prop::Background); bit(Prop::Background2); return true; }
@@ -303,7 +305,7 @@ static bool transitionProps(std::string_view name, PropMask& m) {
     if (name == "inset") { bit(Prop::Left); bit(Prop::Top); bit(Prop::Right); bit(Prop::Bottom); return true; }
     Prop p;
     if (!findProp(name, p)) return false;
-    if (propInfo(p).animatable) bit(p); // discrete properties: accepted, not animated
+    if (propInfo(p).type != T::List) bit(p); // discrete properties: animated only with allow-discrete
     return true;
 }
 static bool parseTime(std::string_view w, f32& out) {
@@ -406,6 +408,19 @@ static bool parsePlay(std::string_view w, u8& out) {
     else return false;
     return true;
 }
+static bool parseBehavior(std::string_view w, u8& out) {
+    if (w == "normal") out = 0;
+    else if (w == "allow-discrete") out = 1;
+    else return false;
+    return true;
+}
+static bool parseComposite(std::string_view w, u8& out) {
+    if (w == "replace") out = u8(AnimComposite::Replace);
+    else if (w == "add") out = u8(AnimComposite::Add);
+    else if (w == "accumulate") out = u8(AnimComposite::Accumulate);
+    else return false;
+    return true;
+}
 static bool parseIterations(std::string_view w, f32& out) {
     if (w == "infinite") { out = std::numeric_limits<f32>::infinity(); return true; }
     std::string_view unit;
@@ -431,6 +446,8 @@ static bool parseListItem(Prop p, std::string_view w, PropValue& out, u8 k, bool
     case Prop::AnimationDirection: return parseDirection(w, out.fns[k]);
     case Prop::AnimationFillMode: return parseFill(w, out.fns[k]);
     case Prop::AnimationPlayState: return parsePlay(w, out.fns[k]);
+    case Prop::TransitionBehavior: return parseBehavior(w, out.fns[k]);
+    case Prop::AnimationComposition: return parseComposite(w, out.fns[k]);
     default: return false;
     }
 }
@@ -447,7 +464,7 @@ static bool parseList(Prop p, std::string_view text, PropValue& out) {
 static PropValue listValue(PropType) { PropValue v; v.type = PropType::List; return v; }
 
 // `transition` shorthand: "none" | <single-transition>#, [<property> | all | none] || <time> || <easing> || <time>
-static bool parseTransitionShorthand(std::string_view text, PropValue (&out)[4]) {
+static bool parseTransitionShorthand(std::string_view text, PropValue (&out)[5]) {
     for (auto& v : out) v = listValue(PropType::List);
     std::vector<std::string_view> items, words;
     splitTop(text, ',', items);
@@ -455,7 +472,8 @@ static bool parseTransitionShorthand(std::string_view text, PropValue (&out)[4])
     for (std::size_t k = 0; k < items.size(); ++k) {
         splitTop(items[k], ' ', words);
         if (words.empty()) return false;
-        bool haveProp = false, haveEase = false;
+        bool haveProp = false, haveEase = false, haveBehavior = false;
+        u8 behavior = 0;
         int times = 0;
         Easing e;
         f32 dur = 0.f, delay = 0.f;
@@ -466,12 +484,14 @@ static bool parseTransitionShorthand(std::string_view text, PropValue (&out)[4])
                 if (times == 0 && v < 0.f) return false;
                 (times++ == 0 ? dur : delay) = v;
             } else if (!haveEase && parseTiming(w, e)) haveEase = true;
+            else if (!haveBehavior && parseBehavior(w, behavior)) haveBehavior = true;
             else if (!haveProp && w == "none") { if (items.size() != 1) return false; haveProp = true; }
             else if (!haveProp && isIdent(w) && transitionProps(w, m)) haveProp = true;
             else return false;
         }
         if (!haveProp) transitionProps("all", m);
         out[0].masks[k] = m, out[1].tracks[k].value = dur, out[2].eases[k] = e, out[3].tracks[k].value = delay;
+        out[4].fns[k] = behavior;
         for (auto& v : out) ++v.trackCount;
     }
     return true;
@@ -585,6 +605,33 @@ bool samePropValue(const PropValue& a, const PropValue& b) {
     case T::Enum: return a.e == b.e;
     default: return false;
     }
+}
+
+PropValue interpolateDiscrete(Prop p, const PropValue& a, const PropValue& b, f32 k) {
+    if (k <= 0.f) return a;
+    if (k >= 1.f) return b;
+    if (p == Prop::Display && a.type == T::Bool && b.type == T::Bool) return a.b ? a : b; // shown throughout
+    return k < 0.5f ? a : b;
+}
+
+PropValue compositeProp(const PropValue& u, const PropValue& v, AnimComposite c) {
+    if (c == AnimComposite::Replace || u.type != v.type) return v;
+    PropValue r = v;
+    switch (v.type) {
+    case T::Number: r.num = u.num + v.num; break;
+    case T::Length:
+        if (u.len.unit != v.len.unit || v.len.unit == Unit::Auto) return v;
+        r.len.value = u.len.value + v.len.value;
+        break;
+    case T::Color:
+        r.color.r = std::clamp(u.color.r + v.color.r, 0.f, 1.f);
+        r.color.g = std::clamp(u.color.g + v.color.g, 0.f, 1.f);
+        r.color.b = std::clamp(u.color.b + v.color.b, 0.f, 1.f);
+        r.color.a = std::clamp(u.color.a + v.color.a, 0.f, 1.f);
+        break;
+    default: return v;
+    }
+    return r;
 }
 
 bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
@@ -882,6 +929,14 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
         s.animationPlayCount = v.trackCount;
         for (u8 k = 0; k < kMaxTransitions; ++k) s.animationPaused[k] = v.fns[k];
         break;
+    case Prop::TransitionBehavior:
+        s.transitionBehaviorCount = v.trackCount ? v.trackCount : 1;
+        for (u8 k = 0; k < kMaxTransitions; ++k) s.transitionDiscrete[k] = v.fns[k];
+        break;
+    case Prop::AnimationComposition:
+        s.animationCompositeCount = v.trackCount ? v.trackCount : 1;
+        for (u8 k = 0; k < kMaxTransitions; ++k) s.animationComposite[k] = AnimComposite(v.fns[k] <= 2 ? v.fns[k] : 0);
+        break;
     case Prop::Count: break;
     }
 }
@@ -1003,13 +1058,19 @@ bool parseNthImpl(std::string_view t, i32& a, i32& b) {
     return num(bs, b);
 }
 
-bool parseSelector(std::string_view text, StyleRule& rule, bool& isRoot) {
+void splitSelectors(std::string_view list, std::vector<std::string_view>& out);
+
+// One complex selector into `chain`. isRoot == nullptr: inside :not() / :is() / :where() / :has() (`:root` becomes a
+// flag); relative: a :has() argument, which may start with a combinator (the relation to the subject).
+bool parseComplex(std::string_view text, std::vector<SimpleSelector>& chainOut, u32& ids, u32& cls, u32& types,
+                  bool* isRoot, bool relative, int depth) {
     using C = SimpleSelector::Combinator;
+    if (depth > 8) return false;
+    struct { std::vector<SimpleSelector>& chain; } rule{chainOut};
     rule.chain.clear();
-    isRoot = false;
+    if (isRoot) *isRoot = false;
     std::size_t i = 0;
     auto comb = C::None;
-    u32 ids = 0, cls = 0, types = 0;
     auto isComb = [](char c) { return c == '>' || c == '+' || c == '~'; };
     auto ident = [&](std::size_t from) {
         std::size_t k = from;
@@ -1023,13 +1084,13 @@ bool parseSelector(std::string_view text, StyleRule& rule, bool& isRoot) {
         }
         if (i >= text.size()) break;
         if (isComb(text[i])) {
-            if (rule.chain.empty()) return false;
+            if (rule.chain.empty() && (!relative || comb != C::None)) return false;
             comb = text[i] == '>' ? C::Child : text[i] == '+' ? C::Adjacent : C::Sibling;
             ++i;
             continue;
         }
         SimpleSelector sel;
-        sel.combinator = rule.chain.empty() ? C::None : comb;
+        sel.combinator = rule.chain.empty() ? (relative ? (comb == C::None ? C::Descendant : comb) : C::None) : comb;
         bool any = false;
         while (i < text.size() && !std::isspace(static_cast<unsigned char>(text[i])) && !isComb(text[i])) {
             const char c = text[i];
@@ -1092,7 +1153,47 @@ bool parseSelector(std::string_view text, StyleRule& rule, bool& isRoot) {
                 const auto e = ident(i + 1);
                 const auto name = text.substr(i + 1, e - i - 1);
                 i = e; any = true;
-                if (name == "root") { isRoot = true; continue; }
+                if (name == "root") {
+                    if (isRoot) *isRoot = true;
+                    else sel.flags |= SimpleSelector::kRoot, ++cls;
+                    continue;
+                }
+                if (name == "empty") { sel.flags |= SimpleSelector::kEmpty; ++cls; continue; }
+                if (name == "not" || name == "is" || name == "where" || name == "has" || name == "matches") {
+                    using LK = SimpleSelector::Logical::Kind;
+                    if (i >= text.size() || text[i] != '(') return false;
+                    int d = 0;
+                    std::size_t close = i;
+                    char quote = 0;
+                    for (; close < text.size(); ++close) {
+                        const char ch = text[close];
+                        if (quote) { if (ch == quote) quote = 0; continue; }
+                        if (ch == '"' || ch == '\'') quote = ch;
+                        else if (ch == '(') ++d;
+                        else if (ch == ')' && --d == 0) break;
+                    }
+                    if (close >= text.size()) return false;
+                    SimpleSelector::Logical lg;
+                    lg.kind = name == "not" ? LK::Not : name == "where" ? LK::Where : name == "has" ? LK::Has : LK::Is;
+                    std::vector<std::string_view> args;
+                    splitSelectors(text.substr(i + 1, close - i - 1), args);
+                    u32 best = 0;
+                    for (auto a : args) {
+                        std::vector<SimpleSelector> ch;
+                        u32 ai = 0, ac = 0, at = 0;
+                        if (a.empty() || !parseComplex(a, ch, ai, ac, at, nullptr, lg.kind == LK::Has, depth + 1)) {
+                            if (lg.kind == LK::Is || lg.kind == LK::Where) continue; // forgiving selector list
+                            return false;
+                        }
+                        best = std::max(best, (std::min(ai, 255u) << 16) | (std::min(ac, 255u) << 8) | std::min(at, 255u));
+                        lg.args.push_back(std::move(ch));
+                    }
+                    if (lg.args.empty() && (lg.kind == LK::Not || lg.kind == LK::Has)) return false;
+                    if (lg.kind != LK::Where) ids += best >> 16, cls += (best >> 8) & 255u, types += best & 255u;
+                    sel.logicals.push_back(std::move(lg));
+                    i = close + 1;
+                    continue;
+                }
                 using NK = SimpleSelector::Nth::Kind;
                 auto nth = [&](NK k, i32 a, i32 b) { sel.nths.push_back({k, a, b}); ++cls; };
                 if (name == "first-child") { nth(NK::Child, 0, 1); continue; }
@@ -1134,8 +1235,14 @@ bool parseSelector(std::string_view text, StyleRule& rule, bool& isRoot) {
         comb = C::None;
     }
     if (comb != C::None && comb != C::Descendant) return false; // dangling combinator
+    return !rule.chain.empty() || (isRoot && *isRoot);
+}
+
+bool parseSelector(std::string_view text, StyleRule& rule, bool& isRoot) {
+    u32 ids = 0, cls = 0, types = 0;
+    if (!parseComplex(text, rule.chain, ids, cls, types, &isRoot, false, 0)) return false;
     rule.specificity = (std::min(ids, 255u) << 16) | (std::min(cls, 255u) << 8) | std::min(types, 255u);
-    return !rule.chain.empty() || isRoot;
+    return true;
 }
 
 void addDecl(StyleRule& rule, Prop p, std::string_view value, u32 line, std::vector<StyleDiagnostic>* diags) {
@@ -1173,17 +1280,17 @@ void addShorthand(StyleRule& rule, std::string_view name, std::string_view value
                   std::vector<StyleDiagnostic>* diags) {
     if (name == "transition" || name == "animation") {
         static constexpr Prop kT[] = {Prop::TransitionProperty, Prop::TransitionDuration, Prop::TransitionTimingFunction,
-                                      Prop::TransitionDelay};
+                                      Prop::TransitionDelay, Prop::TransitionBehavior};
         static constexpr Prop kA[] = {Prop::AnimationName, Prop::AnimationDuration, Prop::AnimationTimingFunction,
                                       Prop::AnimationDelay, Prop::AnimationIterationCount, Prop::AnimationDirection,
                                       Prop::AnimationFillMode, Prop::AnimationPlayState};
-        PropValue t[4], an[8];
+        PropValue t[5], an[8];
         const bool isT = name == "transition";
         if (isT ? !parseTransitionShorthand(value, t) : !parseAnimationShorthand(value, an)) {
             if (diags) diags->push_back({StyleError::BadValue, line, std::string(name) + ": " + std::string(value)});
             return;
         }
-        for (int k = 0; k < (isT ? 4 : 8); ++k) {
+        for (int k = 0; k < (isT ? 5 : 8); ++k) {
             Declaration d;
             d.prop = isT ? kT[k] : kA[k];
             d.value = isT ? t[k] : an[k];
@@ -1446,13 +1553,28 @@ std::expected<StyleSheet, StyleDiagnostic> StyleSheet::parse(std::string_view cs
     return sheet;
 }
 
+namespace {
+void scanChain(const std::vector<SimpleSelector>& chain, bool& structural, bool& relational) {
+    for (const auto& sel : chain) {
+        if (!sel.nths.empty() || (sel.flags & SimpleSelector::kEmpty) || sel.combinator == SimpleSelector::Combinator::Adjacent ||
+            sel.combinator == SimpleSelector::Combinator::Sibling)
+            structural = true;
+        for (const auto& lg : sel.logicals) {
+            if (lg.kind == SimpleSelector::Logical::Kind::Has) relational = structural = true;
+            for (const auto& a : lg.args) scanChain(a, structural, relational);
+        }
+    }
+}
+} // namespace
 bool StyleSheet::structural() const {
-    for (const auto& r : m_rules)
-        for (const auto& sel : r.chain)
-            if (!sel.nths.empty() || sel.combinator == SimpleSelector::Combinator::Adjacent ||
-                sel.combinator == SimpleSelector::Combinator::Sibling)
-                return true;
-    return false;
+    bool st = false, rel = false;
+    for (const auto& r : m_rules) scanChain(r.chain, st, rel);
+    return st;
+}
+bool StyleSheet::relational() const {
+    bool st = false, rel = false;
+    for (const auto& r : m_rules) scanChain(r.chain, st, rel);
+    return rel;
 }
 
 bool StyleSheet::token(u32 h, std::string_view& out) const {
@@ -1473,7 +1595,7 @@ StyleEngine::StyleEngine() {
 void StyleEngine::clearSheets() {
     m_sheets.clear();
     m_ordered.clear();
-    m_structural = false;
+    m_structural = m_relational = false;
     ++m_version;
 }
 
@@ -1499,8 +1621,11 @@ void StyleEngine::reorder() {
     }
     std::stable_sort(keyed.begin(), keyed.end(), [](auto& a, auto& b) { return a.first < b.first; });
     for (auto& k : keyed) m_ordered.push_back(k.second);
-    m_structural = false;
-    for (const auto& sh : m_sheets) m_structural = m_structural || sh.structural();
+    m_structural = m_relational = false;
+    for (const auto& sh : m_sheets) {
+        m_structural = m_structural || sh.structural();
+        m_relational = m_relational || sh.relational();
+    }
     ++m_version;
 }
 
@@ -1552,7 +1677,78 @@ bool nthMatch(const StyleSubject& s, u32 node, const SimpleSelector::Nth& n) {
 }
 } // namespace
 
-bool StyleEngine::matchSimple(const StyleSubject& s, u32 node, const SimpleSelector& sel) const {
+namespace {
+constexpr u32 kNoNode = 0xFFFFFFFFu;
+bool simpleMatch(const StyleSubject& s, u32 node, const SimpleSelector& sel);
+// Right-to-left with backtracking over descendant / general-sibling combinators. anchor != kNoNode: a :has()
+// argument, whose leftmost compound must stand in its combinator's relation to the anchor.
+bool chainFrom(const StyleSubject& s, u32 node, const std::vector<SimpleSelector>& chain, int k, u32 anchor) {
+    using C = SimpleSelector::Combinator;
+    const SimpleSelector& sel = chain[std::size_t(k)];
+    if (!simpleMatch(s, node, sel)) return false;
+    if (k == 0) {
+        if (anchor == kNoNode) return true;
+        switch (sel.combinator) {
+        case C::Child: return s.parent(node) == anchor;
+        case C::Adjacent: return s.prevSibling(node) == anchor;
+        case C::Sibling:
+            for (u32 p = s.prevSibling(node); p != kNoNode; p = s.prevSibling(p))
+                if (p == anchor) return true;
+            return false;
+        default:
+            for (u32 p = s.parent(node); p != kNoNode; p = s.parent(p))
+                if (p == anchor) return true;
+            return false;
+        }
+    }
+    switch (sel.combinator) {
+    case C::Child: { const u32 p = s.parent(node); return p != kNoNode && chainFrom(s, p, chain, k - 1, anchor); }
+    case C::Adjacent: { const u32 p = s.prevSibling(node); return p != kNoNode && chainFrom(s, p, chain, k - 1, anchor); }
+    case C::Sibling:
+        for (u32 p = s.prevSibling(node); p != kNoNode; p = s.prevSibling(p))
+            if (chainFrom(s, p, chain, k - 1, anchor)) return true;
+        return false;
+    default:
+        for (u32 p = s.parent(node); p != kNoNode; p = s.parent(p)) {
+            if (p == anchor) return false; // a relative selector stays below / after its anchor
+            if (chainFrom(s, p, chain, k - 1, anchor)) return true;
+        }
+        return false;
+    }
+}
+// Pre-order walk of root's descendants (root excluded); stops when fn returns true.
+template <class F> bool anyDescendant(const StyleSubject& s, u32 root, F&& fn) {
+    u32 c = s.firstChild(root);
+    while (c != kNoNode) {
+        if (fn(c)) return true;
+        if (const u32 f = s.firstChild(c); f != kNoNode) { c = f; continue; }
+        while (c != kNoNode && c != root) {
+            if (const u32 n = s.nextSibling(c); n != kNoNode) { c = n; break; }
+            c = s.parent(c);
+        }
+        if (c == root) break;
+    }
+    return false;
+}
+bool hasMatch(const StyleSubject& s, u32 anchor, const std::vector<SimpleSelector>& rel) {
+    using C = SimpleSelector::Combinator;
+    if (rel.empty()) return false;
+    const int last = int(rel.size()) - 1;
+    auto test = [&](u32 c) { return chainFrom(s, c, rel, last, anchor); };
+    const C first = rel[0].combinator;
+    if (first == C::Adjacent || first == C::Sibling) { // subjects: later siblings and their subtrees
+        for (u32 n = s.nextSibling(anchor); n != kNoNode; n = s.nextSibling(n)) {
+            if (test(n) || anyDescendant(s, n, test)) return true;
+            if (first == C::Adjacent && last == 0) break;
+        }
+        return false;
+    }
+    return anyDescendant(s, anchor, test);
+}
+} // namespace
+
+namespace {
+bool simpleMatch(const StyleSubject& s, u32 node, const SimpleSelector& sel) {
     if (sel.typeHash && s.typeHash(node) != sel.typeHash) return false;
     if (sel.idHash && s.idHash(node) != sel.idHash) return false;
     for (u8 k = 0; k < sel.classCount; ++k)
@@ -1564,32 +1760,36 @@ bool StyleEngine::matchSimple(const StyleSubject& s, u32 node, const SimpleSelec
     }
     for (const auto& n : sel.nths)
         if (!nthMatch(s, node, n)) return false;
+    if ((sel.flags & SimpleSelector::kEmpty) && !s.isEmpty(node)) return false;
+    if ((sel.flags & SimpleSelector::kRoot) && s.parent(node) != kNoNode) return false;
+    using LK = SimpleSelector::Logical::Kind;
+    for (const auto& lg : sel.logicals) {
+        bool any = false;
+        for (const auto& a : lg.args) {
+            if (a.empty()) continue;
+            if (lg.kind == LK::Has ? hasMatch(s, node, a) : chainFrom(s, node, a, int(a.size()) - 1, kNoNode)) { any = true; break; }
+        }
+        if (lg.kind == LK::Not ? any : !any) return false;
+    }
     return true;
+}
+} // namespace
+
+bool StyleEngine::matchSimple(const StyleSubject& s, u32 node, const SimpleSelector& sel) {
+    return simpleMatch(s, node, sel);
+}
+
+bool StyleEngine::matchChain(const StyleSubject& s, u32 node, const std::vector<SimpleSelector>& chain) {
+    return !chain.empty() && chainFrom(s, node, chain, int(chain.size()) - 1, kNoNode);
 }
 
 bool StyleEngine::matches(const StyleSubject& s, u32 node, const StyleRule& rule) const {
     if (rule.root) return s.parent(node) == 0xFFFFFFFFu;
-    return matchFrom(s, node, rule, int(rule.chain.size()) - 1);
+    return matchChain(s, node, rule.chain);
 }
 
-// Right-to-left with backtracking over descendant / general-sibling combinators.
 bool StyleEngine::matchFrom(const StyleSubject& s, u32 node, const StyleRule& rule, int k) const {
-    using C = SimpleSelector::Combinator;
-    if (!matchSimple(s, node, rule.chain[std::size_t(k)])) return false;
-    if (k == 0) return true;
-    const auto comb = rule.chain[std::size_t(k)].combinator;
-    switch (comb) {
-    case C::Child: { const u32 p = s.parent(node); return p != 0xFFFFFFFFu && matchFrom(s, p, rule, k - 1); }
-    case C::Adjacent: { const u32 p = s.prevSibling(node); return p != 0xFFFFFFFFu && matchFrom(s, p, rule, k - 1); }
-    case C::Sibling:
-        for (u32 p = s.prevSibling(node); p != 0xFFFFFFFFu; p = s.prevSibling(p))
-            if (matchFrom(s, p, rule, k - 1)) return true;
-        return false;
-    default:
-        for (u32 p = s.parent(node); p != 0xFFFFFFFFu; p = s.parent(p))
-            if (matchFrom(s, p, rule, k - 1)) return true;
-        return false;
-    }
+    return k >= 0 && chainFrom(s, node, rule.chain, k, kNoNode);
 }
 
 const KeyframesRule* StyleEngine::keyframes(u32 name) const {

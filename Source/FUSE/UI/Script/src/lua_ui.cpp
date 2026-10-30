@@ -149,6 +149,8 @@ int l_on(lua_State* L) {
     else if (sig == "animationIteration") k = SignalKind::AnimationIteration;
     else if (sig == "animationEnd") k = SignalKind::AnimationEnd;
     else if (sig == "animationCancel") k = SignalKind::AnimationCancel;
+    else if (sig == "finish") k = SignalKind::ScriptFinish;
+    else if (sig == "cancel") k = SignalKind::ScriptCancel;
     else return luaL_error(L, "ui.on: unknown signal '%s'", sig.data());
     lua_pushvalue(L, 3);
     const int ref = luaL_ref(L, LUA_REGISTRYINDEX);

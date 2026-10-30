@@ -19,7 +19,7 @@
 
 namespace fuse::ui::doc {
 
-inline constexpr u32 kCookedVersion = 3; ///< 2: Filter and Transition values; 3: list longhands, @keyframes, attribute / :nth selectors
+inline constexpr u32 kCookedVersion = 4; ///< 2: Filter and Transition values; 3: list longhands, @keyframes, attribute / :nth selectors; 4: :not/:is/:where/:has, :empty
 
 struct CookInfo {
     u32 nodes = 0, bindings = 0, instructions = 0;

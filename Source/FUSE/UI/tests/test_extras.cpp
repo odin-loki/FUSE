@@ -921,7 +921,9 @@ void gateWebView() {
     v.loadHtml("<html><head><title>T1</title></head><body><script>fuse.postMessage('hello ' + (2 + 3));</script></body></html>", "https://fuse.invalid/");
     CHECK(pump([&] { return !loads.empty() && !msgs.empty(); }));
     CHECK(!msgs.empty() && msgs[0] == "hello 5");
-    CHECK(v.title() == "T1" && !titles.empty() && titles.back() == "T1");
+    // The engine reports the title on its own channel (WebKitGTK: notify::title from the page-load-state commit),
+    // which can trail load-finished and the script message under load; the title is only guaranteed eventually.
+    CHECK(pump([&] { return v.title() == "T1" && !titles.empty() && titles.back() == "T1"; }));
     CHECK(v.url() == "https://fuse.invalid/");
     int done = 0;
     std::string res;

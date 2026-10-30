@@ -45,7 +45,7 @@ int main() {
         UI_CHECK(!cs.transitionFor(u8(Prop::Width), t));
         UI_CHECK(styleOf("none", cs) && !cs.transitionFor(u8(Prop::Width), t));
         UI_CHECK(covers("2s", Prop::Width) && covers("2s", Prop::Color));
-        UI_CHECK(!covers("2s", Prop::Layout)); // discrete: not animated
+        UI_CHECK(covers("2s", Prop::Layout)); // discrete: covered, but only runs with transition-behavior: allow-discrete
         UI_CHECK(covers("padding 1s", Prop::PaddingLeft) && covers("padding 1s", Prop::PaddingBottom) && !covers("padding 1s", Prop::Width));
         UI_CHECK(spec("1s cubic-bezier(0.1, 0.7, 1.0, 0.1) width").ease.x2 == 1.f);
         const TransitionSpec st = spec("color 1s steps(4, jump-start)", Prop::Color);

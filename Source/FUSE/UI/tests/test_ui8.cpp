@@ -328,6 +328,31 @@ int styleCooked() {
             UI_CHECK_EQ(int(b.computed(nb).filterCount), 3);
         }
     }
+    { // logical selectors, :empty, transition-behavior and animation-composition survive cooking (format v4)
+        const std::string_view fx = "panel:not(.x, :is(.y, #z)):where(panel) { width: 7px; }"
+                                    "panel:has(> label:empty, + panel.s) { height: 9px; transition: all 1s allow-discrete; animation-composition: add, accumulate; }";
+        auto ck = cookStyle(fx);
+        auto ls = ck ? loadCookedStyle(bytes(*ck)) : std::expected<StyleSheet, std::string>(std::unexpected(std::string("cook")));
+        auto ps = StyleSheet::parse(fx);
+        UI_CHECK(ls && ps);
+        if (ls && ps) {
+            UI_CHECK(ls->relational() && ls->rules()[0].specificity == ps->rules()[0].specificity);
+            UiContext a({.viewport = {100, 100}}), b({.viewport = {100, 100}});
+            a.addStyleSheet(std::move(*ps));
+            b.addStyleSheet(std::move(*ls));
+            for (UiContext* u : {&a, &b}) {
+                const NodeHandle p = u->create(u->registry().find("panel"), u->root());
+                const NodeHandle q = u->create(u->registry().find("panel"), u->root());
+                u->create(u->registry().find("label"), p);
+                u->update();
+                UI_CHECK(u->computed(p).width.value == 7.f && u->computed(p).height.value == 9.f);
+                UI_CHECK(u->computed(p).transitionDiscrete[0] == 1 && u->computed(p).animationComposite[1] == AnimComposite::Accumulate);
+                u->addClass(q, "x");
+                u->update();
+                UI_CHECK(u->computed(q).width.value != 7.f);
+            }
+        }
+    }
     auto build = [](UiContext& ui) {
         const NodeHandle card = w::panel(ui, ui.root(), "settings");
         ui.addClass(card, "card");

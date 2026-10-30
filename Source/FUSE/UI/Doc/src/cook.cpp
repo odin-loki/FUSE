@@ -214,6 +214,28 @@ bool readValue(Reader& r, PropValue& v) {
         }
     return r.ok;
 }
+void writeSelector(Writer& w, const SimpleSelector& sel) {
+    w.u32_(sel.typeHash);
+    w.u32_(sel.idHash);
+    w.u8_(sel.classCount);
+    for (u8 i = 0; i < sel.classCount; ++i) w.u32_(sel.classes[i]);
+    w.u32_(sel.states);
+    w.u8_(u8(sel.combinator));
+    w.u32_(u32(sel.attrs.size()));
+    for (const auto& at : sel.attrs) { w.u32_(at.nameHash); w.u8_(u8(at.op)); w.u8_(at.ci ? 1 : 0); w.str(at.value); }
+    w.u32_(u32(sel.nths.size()));
+    for (const auto& n : sel.nths) { w.u8_(u8(n.kind)); w.i32_(n.a); w.i32_(n.b); }
+    w.u8_(sel.flags);
+    w.u32_(u32(sel.logicals.size()));
+    for (const auto& lg : sel.logicals) {
+        w.u8_(u8(lg.kind));
+        w.u32_(u32(lg.args.size()));
+        for (const auto& chain : lg.args) {
+            w.u32_(u32(chain.size()));
+            for (const SimpleSelector& x : chain) writeSelector(w, x);
+        }
+    }
+}
 void writeSheet(Writer& w, const StyleSheet& s) {
     w.raw(kStyleMagic, 4);
     w.u32_(kCookedVersion);
@@ -223,18 +245,7 @@ void writeSheet(Writer& w, const StyleSheet& s) {
         w.u32_(rule.order);
         w.u8_(rule.root ? 1 : 0);
         w.u32_(u32(rule.chain.size()));
-        for (const SimpleSelector& sel : rule.chain) {
-            w.u32_(sel.typeHash);
-            w.u32_(sel.idHash);
-            w.u8_(sel.classCount);
-            for (u8 i = 0; i < sel.classCount; ++i) w.u32_(sel.classes[i]);
-            w.u32_(sel.states);
-            w.u8_(u8(sel.combinator));
-            w.u32_(u32(sel.attrs.size()));
-            for (const auto& at : sel.attrs) { w.u32_(at.nameHash); w.u8_(u8(at.op)); w.u8_(at.ci ? 1 : 0); w.str(at.value); }
-            w.u32_(u32(sel.nths.size()));
-            for (const auto& n : sel.nths) { w.u8_(u8(n.kind)); w.i32_(n.a); w.i32_(n.b); }
-        }
+        for (const SimpleSelector& sel : rule.chain) writeSelector(w, sel);
         w.u32_(u32(rule.decls.size()));
         for (const Declaration& d : rule.decls) {
             w.u32_(u32(d.prop));
@@ -258,6 +269,49 @@ void writeSheet(Writer& w, const StyleSheet& s) {
         }
     }
 }
+std::expected<void, std::string> readSelector(Reader& r, SimpleSelector& sel, int depth) {
+    sel.typeHash = r.u32_();
+    sel.idHash = r.u32_();
+    sel.classCount = r.u8_();
+    if (sel.classCount > sel.classes.size()) return std::unexpected("cooked style: bad selector");
+    for (u8 i = 0; i < sel.classCount; ++i) sel.classes[i] = r.u32_();
+    sel.states = r.u32_();
+    const u8 c = r.u8_();
+    if (c > u8(SimpleSelector::Combinator::Sibling)) return std::unexpected("cooked style: bad combinator");
+    sel.combinator = SimpleSelector::Combinator(c);
+    sel.attrs.resize(r.count(6));
+    for (auto& at : sel.attrs) {
+        at.nameHash = r.u32_();
+        const u8 op = r.u8_();
+        if (op > u8(SimpleSelector::Attr::Op::Contains)) return std::unexpected("cooked style: bad attribute selector");
+        at.op = SimpleSelector::Attr::Op(op);
+        at.ci = r.u8_() != 0;
+        at.value = r.str();
+    }
+    sel.nths.resize(r.count(9));
+    for (auto& n : sel.nths) {
+        const u8 k = r.u8_();
+        if (k > u8(SimpleSelector::Nth::Kind::LastOfType)) return std::unexpected("cooked style: bad :nth");
+        n.kind = SimpleSelector::Nth::Kind(k);
+        n.a = r.i32_(); n.b = r.i32_();
+    }
+    sel.flags = r.u8_();
+    if (sel.flags > 3) return std::unexpected("cooked style: bad selector flags");
+    sel.logicals.resize(r.count(5));
+    if (!sel.logicals.empty() && depth >= 8) return std::unexpected("cooked style: selector nesting too deep");
+    for (auto& lg : sel.logicals) {
+        const u8 k = r.u8_();
+        if (k > u8(SimpleSelector::Logical::Kind::Has)) return std::unexpected("cooked style: bad logical selector");
+        lg.kind = SimpleSelector::Logical::Kind(k);
+        lg.args.resize(r.count(4));
+        for (auto& chain : lg.args) {
+            chain.resize(r.count(14));
+            for (SimpleSelector& x : chain)
+                if (auto e = readSelector(r, x, depth + 1); !e) return e;
+        }
+    }
+    return {};
+}
 std::expected<StyleSheet, std::string> readSheet(Reader& r) {
     if (!r.magic(kStyleMagic)) return std::unexpected("not a cooked style (bad magic / version)");
     std::vector<StyleRule> rules(r.count(13));
@@ -266,33 +320,8 @@ std::expected<StyleSheet, std::string> readSheet(Reader& r) {
         rule.order = r.u32_();
         rule.root = r.u8_() != 0;
         rule.chain.resize(r.count(14));
-        for (SimpleSelector& sel : rule.chain) {
-            sel.typeHash = r.u32_();
-            sel.idHash = r.u32_();
-            sel.classCount = r.u8_();
-            if (sel.classCount > sel.classes.size()) return std::unexpected("cooked style: bad selector");
-            for (u8 i = 0; i < sel.classCount; ++i) sel.classes[i] = r.u32_();
-            sel.states = r.u32_();
-            const u8 c = r.u8_();
-            if (c > u8(SimpleSelector::Combinator::Sibling)) return std::unexpected("cooked style: bad combinator");
-            sel.combinator = SimpleSelector::Combinator(c);
-            sel.attrs.resize(r.count(6));
-            for (auto& at : sel.attrs) {
-                at.nameHash = r.u32_();
-                const u8 op = r.u8_();
-                if (op > u8(SimpleSelector::Attr::Op::Contains)) return std::unexpected("cooked style: bad attribute selector");
-                at.op = SimpleSelector::Attr::Op(op);
-                at.ci = r.u8_() != 0;
-                at.value = r.str();
-            }
-            sel.nths.resize(r.count(9));
-            for (auto& n : sel.nths) {
-                const u8 k = r.u8_();
-                if (k > u8(SimpleSelector::Nth::Kind::LastOfType)) return std::unexpected("cooked style: bad :nth");
-                n.kind = SimpleSelector::Nth::Kind(k);
-                n.a = r.i32_(); n.b = r.i32_();
-            }
-        }
+        for (SimpleSelector& sel : rule.chain)
+            if (auto e = readSelector(r, sel, 0); !e) return std::unexpected(e.error());
         if (rule.chain.empty() && !rule.root && r.ok) return std::unexpected("cooked style: empty selector");
         rule.decls.resize(r.count(40));
         for (Declaration& d : rule.decls) {
