@@ -81,6 +81,8 @@ struct UiContext::Cold {
         signed char phase = -1;  ///< -1 idle, 0 before, 1 active, 2 after
         i64 iter = -1;
         bool paused = false;
+        bool tl = false; ///< follows a progress-based animation-timeline (time comes from tlP, not the clock)
+        f32 tlP = std::numeric_limits<f32>::quiet_NaN();
     };
     std::vector<Anim> anims;
     std::vector<std::pair<u32, std::string>> attrs;
@@ -165,6 +167,7 @@ struct UiContext::ScriptAnim {
     f32 t = 0.f;
     AnimPlayState state = AnimPlayState::Idle;
     bool tlActive = true; // progress-based timeline active
+    AnimReplaceState replace = AnimReplaceState::Active;
     bool progressBased() const { return o.timeline.kind != AnimTimeline::Kind::Document; }
     f32 active() const { return o.duration > 0.f && o.iterations > 0.f ? o.duration * o.iterations : 0.f; }
     f32 end() const { return std::max(0.f, o.delay + active() + o.endDelay); }
@@ -1059,9 +1062,20 @@ u32 UiContext::applyMotion(u32 i, u32 idx, const ComputedStyle& shown, bool styl
         const KeyframesRule* kr = m_styles.keyframes(a.name);
         if (!kr) continue;
         const u8 k = a.slot;
-        const f32 dur = cyc(ns.animationDuration, ns.animationDurationCount, k);
+        f32 dur = cyc(ns.animationDuration, ns.animationDurationCount, k);
         const f32 delay = cyc(ns.animationDelay, ns.animationDelayCount, k);
-        const f32 iters = cyc(ns.animationIterations, ns.animationIterationCount, k);
+        f32 iters = cyc(ns.animationIterations, ns.animationIterationCount, k);
+        AnimTimeline tl;
+        const int tk = cssTimeline(i, ns, k, tl);
+        a.tl = tk != 0;
+        if (a.tl) { // progress-based: the timeline's 0..1 maps onto the active interval (auto duration = 1, inf = 1)
+            const f32 p = tk == 2 ? timelineProgress({i, m_nodes[i].gen}, tl) : std::numeric_limits<f32>::quiet_NaN();
+            a.tlP = p;
+            if (!(dur > 0.f)) dur = 1.f;
+            if (!std::isfinite(iters)) iters = 1.f;
+            if (std::isnan(p)) continue; // inactive timeline: no effect
+            a.t = delay + p * dur * iters;
+        }
         const AnimDirection dir = cyc(ns.animationDirection, ns.animationDirectionCount, k);
         const AnimFill fill = cyc(ns.animationFill, ns.animationFillCount, k);
         const Easing& ease = cyc(ns.animationEase, ns.animationEaseCount, k);
@@ -1124,6 +1138,11 @@ u32 UiContext::applyMotion(u32 i, u32 idx, const ComputedStyle& shown, bool styl
         applied = true;
         ++it;
     }
+    for (const Cold::Anim& a : c.anims)
+        if (a.tl) {
+            if (std::find(m_cssTlNodes.begin(), m_cssTlNodes.end(), i) == m_cssTlNodes.end()) m_cssTlNodes.push_back(i);
+            break;
+        }
     if ((!c.trans.empty() || !c.anims.empty() || !c.scripted.empty()) && !c.inMotionList) {
         c.inMotionList = true;
         m_transNodes.push_back(i);
@@ -1144,7 +1163,7 @@ bool UiContext::nodeLive(u32 i) const {
     const Cold& c = *m_cold[i];
     if (!c.trans.empty()) return true;
     for (const Cold::Anim& a : c.anims)
-        if (!a.paused && a.phase != 2) return true;
+        if (!a.paused && !a.tl && a.phase != 2) return true;
     for (u32 id : c.scripted)
         if (m_scriptAnims[id]->state == AnimPlayState::Running && !m_scriptAnims[id]->progressBased()) return true;
     return false;
@@ -1199,7 +1218,7 @@ void UiContext::advanceScriptAnim(u32 id, f32 dt) {
 }
 // Directed, eased iteration progress at the animation's current time; false: no effect (idle / not filling).
 bool UiContext::scriptTiming(const ScriptAnim& a, f32& dp) const {
-    if (a.state == AnimPlayState::Idle || !a.tlActive) return false;
+    if (a.state == AnimPlayState::Idle || !a.tlActive || a.replace == AnimReplaceState::Removed) return false;
     const AnimationOptions& o = a.o;
     const f32 active = a.active();
     const f32 e = a.t - o.delay;
@@ -1324,16 +1343,96 @@ bool UiContext::syncTimelines() {
             moved = true;
         }
     }
+    for (std::size_t k = 0; k < m_cssTlNodes.size();) { // CSS animation-timeline
+        const u32 i = m_cssTlNodes[k];
+        bool any = false, changed = false;
+        if (m_nodes[i].alive) {
+            const ComputedStyle& ns = m_styles.style(m_cold[i]->transTarget);
+            for (const Cold::Anim& a : m_cold[i]->anims) {
+                if (!a.tl) continue;
+                any = true;
+                AnimTimeline tl;
+                const int tk = cssTimeline(i, ns, a.slot, tl);
+                const f32 p = tk == 2 ? timelineProgress({i, m_nodes[i].gen}, tl) : std::numeric_limits<f32>::quiet_NaN();
+                if (tk == 0 || (p != a.tlP && !(std::isnan(p) && std::isnan(a.tlP)))) changed = true;
+            }
+        }
+        if (!any) {
+            m_cssTlNodes[k] = m_cssTlNodes.back();
+            m_cssTlNodes.pop_back();
+            continue;
+        }
+        ++k;
+        if (changed) markStyle(i), moved = true;
+    }
     return moved;
 }
+int UiContext::cssTimeline(u32 i, const ComputedStyle& s, u8 k, AnimTimeline& t) const {
+    if (!s.animationTimelineCount) return 0;
+    const u8 kind = cyc(s.animationTimelineKind, s.animationTimelineCount, k);
+    const u8 arg = cyc(s.animationTimelineArg, s.animationTimelineCount, k);
+    t = {};
+    switch (kind) {
+    case 0: return 0;
+    case 3: // scroll(<scroller> <axis>)
+        t.kind = AnimTimeline::Kind::Scroll;
+        t.axis = arg & 1;
+        if ((arg >> 1) == 1) t.source = m_root;
+        else if ((arg >> 1) == 2) t.source = {i, m_nodes[i].gen};
+        return 2;
+    case 4: // view(<axis>): the target is the subject
+        t.kind = AnimTimeline::Kind::View;
+        t.axis = arg & 1;
+        return 2;
+    case 2: { // named: scroll-timeline / view-timeline declared on the node or an ancestor (nearest wins)
+        const u32 name = cyc(s.animationTimelineName, s.animationTimelineCount, k);
+        for (u32 a = i; a != kNone; a = m_nodes[a].parent) {
+            const ComputedStyle& as = a == i ? s : m_styles.style(m_nodes[a].style);
+            if (as.scrollTimelineName == name) {
+                t.kind = AnimTimeline::Kind::Scroll, t.axis = as.scrollTimelineAxis, t.source = {a, m_nodes[a].gen};
+                return 2;
+            }
+            if (as.viewTimelineName == name) {
+                t.kind = AnimTimeline::Kind::View, t.axis = as.viewTimelineAxis, t.source = {a, m_nodes[a].gen};
+                return 2;
+            }
+        }
+        return 1;
+    }
+    default: return 1; // none
+    }
+}
+void UiContext::removeReplaced() {
+    for (u32 i : m_transNodes) {
+        if (!m_nodes[i].alive) continue;
+        const Cold& c = *m_cold[i];
+        PropMask covered;
+        for (std::size_t k = c.scripted.size(); k-- > 0;) { // latest first
+            const u32 id = c.scripted[k];
+            ScriptAnim& a = *m_scriptAnims[id];
+            f32 dp;
+            if (a.state != AnimPlayState::Finished || a.progressBased() || !scriptTiming(a, dp)) continue;
+            PropMask mine;
+            bool all = true, none = true;
+            for (const AnimKeyframe& f : a.frames)
+                for (const auto& pv : f.values) mine.set(u8(pv.first)), none = false, all = all && covered.has(u8(pv.first));
+            if (a.replace == AnimReplaceState::Active && all && !none) {
+                a.replace = AnimReplaceState::Removed;
+                scriptEvent(id, SignalKind::ScriptRemove);
+                continue;
+            }
+            for (int w = 0; w < 2; ++w) covered.w[w] |= mine.w[w];
+        }
+    }
+}
 
-AnimationHandle UiContext::animate(NodeHandle h, std::vector<AnimKeyframe> frames, AnimationOptions o) {
-    if (!node(h) || frames.empty()) return {};
+bool UiContext::resolveKeyframes(std::vector<AnimKeyframe>& frames) {
+    if (frames.empty()) return false;
     // resolve offsets: explicit ones must ascend within [0,1]; missing ones are spaced evenly (Web Animations §4.4.3)
     f32 prev = 0.f;
     for (const AnimKeyframe& f : frames)
         if (f.offset >= 0.f) {
-            if (f.offset > 1.f || f.offset < prev) return {};
+            if (f.offset > 1.f || f.offset < prev) return false;
             prev = f.offset;
         }
     const std::size_t n = frames.size();
@@ -1349,6 +1448,10 @@ AnimationHandle UiContext::animate(NodeHandle h, std::vector<AnimKeyframe> frame
     }
     for (AnimKeyframe& f : frames)
         std::erase_if(f.values, [](const auto& pv) { return propInfo(pv.first).type == PropType::List; });
+    return true;
+}
+AnimationHandle UiContext::animate(NodeHandle h, std::vector<AnimKeyframe> frames, AnimationOptions o) {
+    if (!node(h) || !resolveKeyframes(frames)) return {};
     if (!(o.duration >= 0.f) || !(o.iterations >= 0.f) || !(o.iterationStart >= 0.f) || !std::isfinite(o.playbackRate)) return {};
     Cold& c = *m_cold[h.index];
     // lazily forget idle animations and finished ones without fill so a node animated repeatedly stays small
@@ -1356,7 +1459,7 @@ AnimationHandle UiContext::animate(NodeHandle h, std::vector<AnimKeyframe> frame
         for (std::size_t k = 0; k < c.scripted.size();) {
             ScriptAnim& a = *m_scriptAnims[c.scripted[k]];
             f32 dp;
-            const bool dead = a.state == AnimPlayState::Idle || (a.state == AnimPlayState::Finished && !scriptTiming(a, dp));
+            const bool dead = a.state == AnimPlayState::Idle || (a.state == AnimPlayState::Finished && !scriptTiming(a, dp)); // incl. removed
             if (dead && c.scripted.size() >= 16) {
                 a.alive = false, ++a.gen, a.frames.clear(), a.o = {};
                 m_freeScriptAnims.push_back(c.scripted[k]);
@@ -1376,6 +1479,7 @@ AnimationHandle UiContext::animate(NodeHandle h, std::vector<AnimKeyframe> frame
     a.t = 0.f;
     a.state = AnimPlayState::Idle;
     a.tlActive = true;
+    a.replace = AnimReplaceState::Active;
     if (a.progressBased()) {
         if (a.o.duration <= 0.f) a.o.duration = 1.f; // CSS `auto` duration: the timeline's whole range
         if (std::find(m_timelineAnims.begin(), m_timelineAnims.end(), id) == m_timelineAnims.end()) m_timelineAnims.push_back(id);
@@ -1386,7 +1490,7 @@ AnimationHandle UiContext::animate(NodeHandle h, std::vector<AnimKeyframe> frame
     markStyle(h.index);
     return ah;
 }
-AnimationHandle UiContext::animate(NodeHandle h, std::string_view css, AnimationOptions o) {
+std::vector<AnimKeyframe> UiContext::parseKeyframes(std::string_view css) const {
     std::string text = "@keyframes fuse-script-anim {";
     text.append(css);
     text += "}";
@@ -1407,7 +1511,45 @@ AnimationHandle UiContext::animate(NodeHandle h, std::string_view css, Animation
         frames.push_back(std::move(k));
     }
     std::stable_sort(frames.begin(), frames.end(), [](const AnimKeyframe& x, const AnimKeyframe& y) { return x.offset < y.offset; });
+    return frames;
+}
+AnimationHandle UiContext::animate(NodeHandle h, std::string_view css, AnimationOptions o) {
+    std::vector<AnimKeyframe> frames = parseKeyframes(css);
+    if (frames.empty()) return {};
     return animate(h, std::move(frames), std::move(o));
+}
+bool UiContext::animSetKeyframes(AnimationHandle h, std::vector<AnimKeyframe> frames) {
+    ScriptAnim* a = scriptAnim(h);
+    if (!a || !resolveKeyframes(frames)) return false;
+    a->frames = std::move(frames);
+    markStyle(a->node);
+    return true;
+}
+bool UiContext::animSetKeyframes(AnimationHandle h, std::string_view css) {
+    std::vector<AnimKeyframe> frames = parseKeyframes(css);
+    return !frames.empty() && animSetKeyframes(h, std::move(frames));
+}
+bool UiContext::animSetTarget(AnimationHandle h, NodeHandle n) {
+    ScriptAnim* a = scriptAnim(h);
+    if (!a || !node(n)) return false;
+    if (a->node == n.index && a->nodeGen == n.generation) return true;
+    std::erase(m_cold[a->node]->scripted, h.index);
+    markStyle(a->node);
+    a->node = n.index, a->nodeGen = n.generation;
+    m_cold[n.index]->scripted.push_back(h.index);
+    markStyle(n.index);
+    return true;
+}
+bool UiContext::animPersist(AnimationHandle h) {
+    ScriptAnim* a = scriptAnim(h);
+    if (!a) return false;
+    if (a->replace == AnimReplaceState::Removed) markStyle(a->node);
+    a->replace = AnimReplaceState::Persisted;
+    return true;
+}
+AnimReplaceState UiContext::animReplaceState(AnimationHandle h) const {
+    const ScriptAnim* a = scriptAnim(h);
+    return a ? a->replace : AnimReplaceState::Active;
 }
 
 bool UiContext::animPlay(AnimationHandle h) {
@@ -2063,22 +2205,38 @@ void UiContext::filterStages(const FilterFn* fns, const f32* amounts, u8 count, 
 void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     Node& n = m_nodes[i];
     const ComputedStyle& s = m_styles.style(n.style);
-    // CSS transform: paint the node and its subtree as usual, then map the commands it added (outermost, so a filter
-    // layer moves with it). Damage covers the old and new transformed boxes.
+    // CSS transform: paint the node and its subtree as usual (outermost, so a filter layer moves with it), then
+    // either map the commands it added (translate / scale: exact) or wrap them in a transform layer (rotate / skew /
+    // scale / matrix: DrawList::pushTransform, resampled by both rasterisers). Damage raised inside the subtree is in
+    // local coordinates: it is mapped through the transform; the old and new transformed boxes are damaged too.
     if (s.visible && m_xfNode != i && s.transformCount) {
         const Affine2 m = transformOf(s, n.rect);
         if (!m.identity()) {
+            Affine2 inv;
+            const bool dirty = n.dirty & kDirtyPaint;
+            Rect& last = m_cold[i]->xfPainted;
+            if (!m.inverse(inv)) { // singular: not rendered
+                if (!last.empty()) m_damage = m_damage.unite(last), last = {};
+                return;
+            }
             const std::size_t c0 = dl.size(), e0 = dl.edgeCount();
             const u32 outer = m_xfNode;
-            const bool dirty = n.dirty & kDirtyPaint;
+            const Rect outerDamage = m_damage;
+            m_damage = {};
             m_xfNode = i;
+            const bool layer = !m.axisAligned(); // translate / scale map the commands exactly
+            if (layer) dl.pushTransform(m.array());
             paintRec(i, opacity, dl);
+            if (layer) dl.popTransform();
             m_xfNode = outer;
-            dl.transformRange(c0, e0, m.scale, m.offset);
-            Rect box{n.rect.x * m.scale.x + m.offset.x, n.rect.y * m.scale.y + m.offset.y, n.rect.w * m.scale.x, n.rect.h * m.scale.y};
-            if (box.w < 0.f) box.x += box.w, box.w = -box.w;
-            if (box.h < 0.f) box.y += box.h, box.h = -box.h;
-            Rect& last = m_cold[i]->xfPainted;
+            Rect box;
+            if (!layer) {
+                dl.transformRange(c0, e0, {m.a, m.d}, {m.e, m.f});
+                box = m.mapRect(n.rect);
+            } else box = c0 < dl.size() && dl.cmds()[c0].op == DrawOp::PushFilter ? dl.cmds()[c0].rect : m.mapRect(n.rect);
+            const Rect inner = m_damage;
+            m_damage = outerDamage;
+            if (!inner.empty()) m_damage = m_damage.unite(m.mapRect(inner));
             if (dirty || !(box == last)) m_damage = m_damage.unite(box).unite(last);
             last = box;
             return;
@@ -2272,6 +2430,16 @@ void UiContext::paintPass() {
     m_draw.clear();
     m_popupPending.clear();
     paintRec(m_root.index, 1.f, m_draw);
+    // A transform layer resamples its whole box: a partial repaint (scissor = damage) touching one must cover it all,
+    // else the resampled pixels would read content clipped away by the scissor.
+    for (bool grew = !m_damage.empty(); grew;) {
+        grew = false;
+        for (const DrawCmd& c : m_draw.cmds())
+            if (c.op == DrawOp::PushFilter && isTransformLayer(c) && !c.rect.empty()) {
+                const Rect u = m_damage.unite(c.rect);
+                if (!m_damage.intersect(c.rect).empty() && !(u == m_damage)) m_damage = u, grew = true;
+            }
+    }
     std::vector<PopupSurface> next;
     for (u32 k : m_popupPending) {
         PopupSurface ps;
@@ -2365,13 +2533,13 @@ void UiContext::update(f32 dt) {
         if (nodeLive(i)) {
             for (auto& r : c.trans) r.t += std::max(dt, 0.f);
             for (auto& a : c.anims)
-                if (!a.paused) a.t += std::max(dt, 0.f);
+                if (!a.paused && !a.tl) a.t += std::max(dt, 0.f);
             for (std::size_t q = 0; q < c.scripted.size(); ++q) advanceScriptAnim(c.scripted[q], std::max(dt, 0.f));
             markStyle(i);
         }
         ++k;
     }
-    if (!m_timelineAnims.empty()) syncTimelines();
+    if (!m_timelineAnims.empty() || !m_cssTlNodes.empty()) syncTimelines();
     auto styleAndLayout = [&] {
         if (m_anyStyleDirty || m_styles.sheetVersion() != m_seenSheetVersion) stylePass();
         if (m_anyLayoutDirty) {
@@ -2383,7 +2551,8 @@ void UiContext::update(f32 dt) {
     };
     styleAndLayout();
     // scroll / view timelines read the new layout (scroll offsets, subject boxes): one more pass when they moved
-    if (!m_timelineAnims.empty() && syncTimelines()) styleAndLayout();
+    if ((!m_timelineAnims.empty() || !m_cssTlNodes.empty()) && syncTimelines()) styleAndLayout();
+    removeReplaced();
     paintPass();
     if (!m_motionEvents.empty()) { // CSS transition / animation events, after the frame is consistent
         std::vector<MotionEvent> ev;
@@ -2394,7 +2563,7 @@ void UiContext::update(f32 dt) {
             if (e.anim == ~0u) continue;
             const AnimationHandle ah{e.anim, e.animGen};
             if (ScriptAnim* a = scriptAnim(ah)) {
-                auto fn = e.kind == SignalKind::ScriptFinish ? a->o.onFinish : a->o.onCancel; // copy: may free a
+                auto fn = e.kind == SignalKind::ScriptFinish ? a->o.onFinish : e.kind == SignalKind::ScriptRemove ? a->o.onRemove : a->o.onCancel; // copy: may free a
                 if (fn) fn(*this, ah);
             }
         }
@@ -2424,6 +2593,14 @@ NodeHandle UiContext::hitRec(u32 i, Vec2 p) const {
     const Node& n = m_nodes[i];
     const ComputedStyle& s = m_styles.style(n.style);
     if (!s.visible || n.animOpacity <= 0.f) return {};
+    if (s.transformCount) { // CSS transform: test in the node's local (untransformed) space
+        const Affine2 m = transformOf(s, n.rect);
+        if (!m.identity()) {
+            Affine2 inv;
+            if (!m.inverse(inv)) return {};
+            p = inv.apply(p);
+        }
+    }
     const bool inside = n.rect.contains(p);
     if (!inside && s.overflow != Overflow::Visible) return {};
     for (u32 k = n.last; k != kNone; k = m_nodes[k].prev) {

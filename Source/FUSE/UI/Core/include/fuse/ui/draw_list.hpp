@@ -304,6 +304,14 @@ public:
     /// Ends the innermost pushFilter: sets both commands' `rect` to the layer's pixel box (ink bounds of the commands
     /// in between, grown by the blur and shadow reach).
     void popFilter();
+    /// CSS 2D `transform` of a painted subtree: commands up to popTransform() draw in local (untransformed)
+    /// coordinates into an isolated layer, which is then resampled (bilinear, premultiplied) through
+    /// m = {a, b, c, d, e, f} (x' = a x + c y + e, y' = b x + d y + f) over the pixels under it. Encoded as a
+    /// PushFilter / PopFilter pair with DrawCmd::u = 2 and gradXf = the inverse map (pixel -> local); the layer box
+    /// is the union of the local ink and its transformed bounds. A singular m drops the commands in between. Nests
+    /// with filters and other transforms. Local ink outside the clip in force (or the target) is not kept.
+    void pushTransform(const std::array<f32, 6>& m);
+    void popTransform() { popFilter(); }
     /// Fills `p` (fill.a == 0: no fill) and strokes it (`strokeWidth` > 0, centred on the outline).
     void path(const Path& p, Color fill, bool evenOdd = false, Color stroke = {}, f32 strokeWidth = 0.f);
     void gradientPath(const Path& p, Color from, Color to, GradientKind kind, bool evenOdd = false);
@@ -350,6 +358,13 @@ private:
 void matchFilters(const DrawList& list, std::vector<u32>& partner);
 /// A PushFilter / PopFilter / Backdrop carrying a FilterProgram (DrawCmd::u == 1) rather than matrix rows (4 / 6).
 bool isFilterProgram(const DrawCmd& c);
+/// A PushFilter / PopFilter of DrawList::pushTransform (DrawCmd::u == 2; gradXf = pixel -> local map).
+inline bool isTransformLayer(const DrawCmd& c) {
+    return (c.op == DrawOp::PushFilter || c.op == DrawOp::PopFilter) && c.u == 2;
+}
+/// Bilinear sample (zero outside) of a premultiplied float box `buf` (w x h, 4 floats per pixel) at box-local
+/// continuous point (fx, fy) (texel centres at i + 0.5); ui_backdrop.glsl mode 6 has the same arithmetic.
+void sampleLayerBilinear(const f32* buf, int w, int h, f32 fx, f32 fy, f32 out[4]);
 
 /// Multi-stop gradient colour of command `c` at pixel centre (px, py); the GPU kernel has the same arithmetic.
 Color gradientStopsColor(const DrawCmd& c, const GradientStop* stops, f32 px, f32 py);

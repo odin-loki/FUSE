@@ -682,6 +682,53 @@ int main() {
             vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
             check("filter_svg_primitives", compare(cpuV, out));
 
+            // 2D affine transform layers: rotate, skew, matrix, nested, inside a filter, under a rounded clip
+            const auto rot = [](f32 deg, f32 cx, f32 cy) { // rotate about (cx, cy)
+                const f32 r = deg * 3.14159265f / 180.f, c = std::cos(r), s = std::sin(r);
+                return std::array<f32, 6>{c, s, -s, c, cx - c * cx + s * cy, cy - s * cx - c * cy};
+            };
+            const auto xfList = [&](DrawList& xl, f32 big) {
+                for (int i = 0; i < 12; ++i) xl.rect({f32(i * 40), 0, 20, f32(H)}, Color::rgb(i & 1 ? 0xff4422u : 0x22aaffu));
+                xl.pushTransform(rot(30.f, 110.f, 90.f));
+                xl.rect({40, 40, 140 * big, 100 * big}, Color::rgb(0x40ff40, 0.9f), 14.f);
+                Path tri;
+                tri.moveTo({60, 60});
+                tri.lineTo({150, 70});
+                tri.lineTo({90, 130});
+                tri.close();
+                xl.path(tri, Color::rgb(0x2020c0));
+                xl.pushTransform({1.f, 0.f, 0.4f, 1.f, -30.f, 0.f}); // nested skewX
+                xl.rect({70, 80, 60, 30}, Color::rgb(0xffffff, 0.8f), 6.f);
+                xl.popTransform();
+                xl.popTransform();
+                xl.pushFilter(ColorMatrix::sepia(1.f), 2.f);
+                xl.pushTransform({0.8f, -0.3f, 0.5f, 1.2f, 250.f, 60.f}); // matrix()
+                xl.rect({0, 0, 120, 90}, Color::rgb(0xffc040), 20.f);
+                xl.line({10, 10}, {110, 80}, Color::rgb(0x000000), 3.f);
+                xl.popTransform();
+                xl.popFilter();
+                xl.pushClip({30, 220, 200, 150}, 20.f);
+                xl.pushTransform(rot(-75.f, 130.f, 300.f));
+                xl.rect({60, 250, 140, 100}, Color::rgb(0xa020ff, 0.7f), 8.f);
+                xl.popTransform();
+                xl.popClip();
+                xl.pushTransform({-1.5f, 0.f, 0.f, 0.7f, 760.f, 120.f}); // mirrored scale
+                xl.rect({300, 260, 80, 90}, Color::rgb(0x20e0e0), 30.f);
+                xl.popTransform();
+            };
+            {
+                DrawList xl;
+                xfList(xl, 1.f);
+                Image cpuXf;
+                cpuXf.resize(int(W), int(H), 0xFF000000u);
+                CpuRasterizer rx;
+                rx.render(xl, cpuXf);
+                packDrawList(xl, W, H, data);
+                UI_CHECK(gpu.upload(0, data));
+                vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+                check("transform_layer", compare(cpuXf, out));
+            }
+
             // oversized layers on a small scratch: tiled (banded) layer ends match the CPU
             UiVkRenderer small;
             UI_CHECK(small.init({.physicalDevice = (void*)vk.phys, .device = (void*)vk.device, .framesInFlight = 2, .maxBlurPixels = 90000}));
@@ -696,6 +743,19 @@ int main() {
                 UI_CHECK(small.upload(0, data));
                 vk.run(init, out, [&](VkCommandBuffer c) { small.record((void*)c, (void*)vk.view, 0); });
                 check("filter_tiled", compare(cpuT, out));
+                DrawList xt;
+                xfList(xt, 2.2f);
+                xt.pushTransform(rot(10.f, 230.f, 175.f)); // a big layer: tiled
+                xt.rect({80, 60, 300, 230}, Color::rgb(0x103050, 0.5f), 40.f);
+                xt.popTransform();
+                Image cpuXt;
+                cpuXt.resize(int(W), int(H), 0xFF000000u);
+                CpuRasterizer rxt;
+                rxt.render(xt, cpuXt);
+                packDrawList(xt, W, H, data);
+                UI_CHECK(small.upload(0, data));
+                vk.run(init, out, [&](VkCommandBuffer c) { small.record((void*)c, (void*)vk.view, 0); });
+                check("transform_tiled", compare(cpuXt, out));
             }
         }
         }

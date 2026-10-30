@@ -45,12 +45,12 @@ int main() {
         UiContext ui({.viewport = {200, 200}});
         const NodeHandle n = box(ui, ui.root(), "width: 20px; height: 10px; background: #f00; flex-shrink: 0");
         UI_CHECK(ui.setCss(n, "transform", "translate(10px, 5px) scale(2)"));
-        UI_CHECK(!ui.setCss(n, "transform", "rotate(10deg)"));
+        UI_CHECK(!ui.setCss(n, "transform", "perspective(10px)"));
         UI_CHECK(!ui.setCss(n, "transform", "translate(1em)"));
         ui.update(0.f);
         UI_CHECK_EQ(int(ui.computed(n).transformCount), 4);
         const Affine2 m = xf(ui, n);
-        UI_CHECK(near(m.scale.x, 2.f) && near(m.scale.y, 2.f) && near(m.offset.x, 10.f) && near(m.offset.y, 5.f));
+        UI_CHECK(near(m.a, 2.f) && near(m.d, 2.f) && near(m.e, 10.f) && near(m.f, 5.f));
         // painted about the centre (10, 5): x' = 10 + 2 (x - 10) + 10 -> the 0..20 box spans 0..40
         const Rect r = ui.rect(n);
         UI_CHECK_RECT(r, 0, 0, 20, 10);
@@ -79,13 +79,13 @@ int main() {
         UI_CHECK(h.valid());
         ui.update(0.f);
         ui.update(0.5f);
-        UI_CHECK(near(xf(ui, a).offset.x, 50.f));
+        UI_CHECK(near(xf(ui, a).e, 50.f));
         ui.animCancel(h);
         // mismatched lists interpolate the composed maps
         h = ui.animate(a, "from { transform: scale(1) } to { transform: translateX(100px) scaleX(3) }", o);
         ui.update(0.f);
         ui.update(0.5f);
-        UI_CHECK(near(xf(ui, a).offset.x, 50.f) && near(xf(ui, a).scale.x, 2.f) && near(xf(ui, a).scale.y, 1.f));
+        UI_CHECK(near(xf(ui, a).e, 50.f) && near(xf(ui, a).a, 2.f) && near(xf(ui, a).d, 1.f));
         ui.animCancel(h);
 
         auto composite = [&](AnimComposite cm, const char* under, const char* effect) {
@@ -103,16 +103,16 @@ int main() {
         Affine2 add = composite(AnimComposite::Add, "scale(2)", "scale(3)");
         Affine2 acc = composite(AnimComposite::Accumulate, "scale(2)", "scale(3)");
         Affine2 rep = composite(AnimComposite::Replace, "scale(2)", "scale(3)");
-        UI_CHECK(near(add.scale.x, 6.f) && near(add.scale.y, 6.f)); // scale(2) scale(3)
-        UI_CHECK(near(acc.scale.x, 4.f) && near(acc.scale.y, 4.f)); // scale(2 + 3 - 1)
-        UI_CHECK(near(rep.scale.x, 3.f));
+        UI_CHECK(near(add.a, 6.f) && near(add.d, 6.f)); // scale(2) scale(3)
+        UI_CHECK(near(acc.a, 4.f) && near(acc.d, 4.f)); // scale(2 + 3 - 1)
+        UI_CHECK(near(rep.a, 3.f));
         add = composite(AnimComposite::Add, "scale(2)", "translateX(10px)");
         acc = composite(AnimComposite::Accumulate, "scale(2)", "translateX(10px)");
-        UI_CHECK(near(add.offset.x, 20.f) && near(add.scale.x, 2.f));  // translate in the scaled space
-        UI_CHECK(near(acc.offset.x, 10.f) && near(acc.scale.x, 2.f));  // composed maps summed
+        UI_CHECK(near(add.e, 20.f) && near(add.a, 2.f));  // translate in the scaled space
+        UI_CHECK(near(acc.e, 10.f) && near(acc.a, 2.f));  // composed maps summed
         add = composite(AnimComposite::Add, "translateX(5px)", "translateX(7px)");
         acc = composite(AnimComposite::Accumulate, "translateX(5px)", "translateX(7px)");
-        UI_CHECK(near(add.offset.x, 12.f) && near(acc.offset.x, 12.f)); // translations agree either way
+        UI_CHECK(near(add.e, 12.f) && near(acc.e, 12.f)); // translations agree either way
         UI_CHECK_EQ(int(ui.computed(ui.lastChild(ui.root())).transformCount), 1); // accumulate keeps one function
         // compositeProp directly: add appends
         PropValue u, v;

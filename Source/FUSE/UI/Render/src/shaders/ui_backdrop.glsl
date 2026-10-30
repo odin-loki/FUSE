@@ -389,6 +389,19 @@ void runOp(uint at, uint ob, uint n, int x, int y, int w, int h, ivec2 org) {
     if (kind != 0 && !inSub(ob, g)) r = vec4(0.0);
     for (int k = 0; k < 4; ++k) ui_scratch.v[io * n + pi + uint(k)] = r[k];
 }
+// a transform layer's pixel at box-local (x, y) as mode 0 loaded it (0 outside the box): the whole box is in the
+// buffer untiled, in the compact copy when tiled
+vec4 layerTexel(int x, int y, int aw, int ah) {
+    if (x < 0 || y < 0 || x >= aw || y >= ah) return vec4(0.0);
+    const uint ci = uint(y * aw + x);
+    if ((pc.flags & 1u) == 0u) return vec4(ui_scratch.v[ci * 4u], ui_scratch.v[ci * 4u + 1u], ui_scratch.v[ci * 4u + 2u], ui_scratch.v[ci * 4u + 3u]);
+#ifdef UI_HDR
+    const uint c0 = floatBitsToUint(ui_scratch.v[pc.compact + ci * 2u]), c1 = floatBitsToUint(ui_scratch.v[pc.compact + ci * 2u + 1u]);
+    return vec4(unpackHalf2x16(c0), unpackHalf2x16(c1)) * 255.0;
+#else
+    return floor(unpackUnorm4x8(floatBitsToUint(ui_scratch.v[pc.compact + ci])) * 255.0 + 0.5);
+#endif
+}
 uint q8(float v) { return uint(floor(clamp(v, 0.0, 1.0) * 255.0 + 0.5)); }
 
 void main() {
@@ -476,8 +489,32 @@ void main() {
         const ivec2 g = ip - pc.area.xy;
         const uint si = pc.save + uint(g.y * (pc.area.z - pc.area.x) + g.x) * 4u;
         const vec4 u = vec4(ui_scratch.v[si], ui_scratch.v[si + 1u], ui_scratch.v[si + 2u], ui_scratch.v[si + 3u]);
-        vec4 o = vec4(ui_scratch.v[li * 4u], ui_scratch.v[li * 4u + 1u], ui_scratch.v[li * 4u + 2u], ui_scratch.v[li * 4u + 3u]);
-        if (floatBitsToUint(c.grad2.w) == 6u) o = withShadow(floatBitsToUint(c.grad2.z), o, lx, ly, w, h, n);
+        vec4 o;
+        if (c.grad2.y == 2.0) { // transform layer: bilinear resample through the pixel -> local map (sampleLayerBilinear)
+            const int aw = pc.area.z - pc.area.x, ah = pc.area.w - pc.area.y;
+            precise float px = float(ip.x) + 0.5;
+            precise float py = float(ip.y) + 0.5;
+            precise float qx = c.grad.x * px + c.grad.z * py + c.grad2.z;
+            precise float qy = c.grad.y * px + c.grad.w * py + c.grad2.w;
+            precise float fx = qx - float(pc.area.x);
+            precise float fy = qy - float(pc.area.y);
+            precise float sx = clamp(fx - 0.5, -2.0, float(aw) + 1.0);
+            precise float sy = clamp(fy - 0.5, -2.0, float(ah) + 1.0);
+            const float flx = floor(sx), fly = floor(sy);
+            const int x0 = int(flx), y0 = int(fly);
+            precise float tx = sx - flx;
+            precise float ty = sy - fly;
+            const vec4 p00 = layerTexel(x0, y0, aw, ah), p10 = layerTexel(x0 + 1, y0, aw, ah);
+            const vec4 p01 = layerTexel(x0, y0 + 1, aw, ah), p11 = layerTexel(x0 + 1, y0 + 1, aw, ah);
+            for (int k = 0; k < 4; ++k) {
+                precise float top = p00[k] + (p10[k] - p00[k]) * tx;
+                precise float bot = p01[k] + (p11[k] - p01[k]) * tx;
+                o[k] = top + (bot - top) * ty;
+            }
+        } else {
+            o = vec4(ui_scratch.v[li * 4u], ui_scratch.v[li * 4u + 1u], ui_scratch.v[li * 4u + 2u], ui_scratch.v[li * 4u + 3u]);
+            if (floatBitsToUint(c.grad2.w) == 6u) o = withShadow(floatBitsToUint(c.grad2.z), o, lx, ly, w, h, n);
+        }
         precise float inv = 1.0 - o.w / 255.0;
 #ifdef UI_HDR
         vec4 res = u / 255.0;

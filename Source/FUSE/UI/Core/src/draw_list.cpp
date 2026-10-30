@@ -43,6 +43,23 @@ void DrawList::shadow(const Rect& r, Color col, f32 blur, f32 radius) {
     m_cmds.push_back(c);
 }
 
+namespace {
+/// A transform layer's pixel -> local map `g` after both spaces go through q = p * s + o: g' = S g S^-1.
+void conjugateLayer(std::array<f32, 6>& g, Vec2 s, Vec2 o) {
+    if (g[0] == 0.f && g[1] == 0.f && g[2] == 0.f && g[3] == 0.f) return; // singular marker
+    // local' = s * (A ((p - o) / s) + t) + o
+    const f32 A0 = g[0], A1 = g[1], A2 = g[2], A3 = g[3];
+    const f32 ix = o.x / s.x, iy = o.y / s.y;
+    const f32 tx = g[4] - (A0 * ix + A2 * iy), ty = g[5] - (A1 * ix + A3 * iy);
+    g[0] = A0;
+    g[1] = A1 * s.y / s.x;
+    g[2] = A2 * s.x / s.y;
+    g[3] = A3;
+    g[4] = s.x * tx + o.x;
+    g[5] = s.y * ty + o.y;
+}
+} // namespace
+
 void DrawList::translate(Vec2 d) {
     for (DrawCmd& c : m_cmds) {
         c.rect.x += d.x;
@@ -55,7 +72,7 @@ void DrawList::translate(Vec2 d) {
             auto& m = c.gradXf;
             m[4] -= m[0] * d.x + m[2] * d.y;
             m[5] -= m[1] * d.x + m[3] * d.y;
-        }
+        } else if (isTransformLayer(c)) conjugateLayer(c.gradXf, {1.f, 1.f}, d);
 }
 
 void DrawList::transformRange(std::size_t fromCmd, std::size_t fromEdge, Vec2 sc, Vec2 o) {
@@ -82,7 +99,7 @@ void DrawList::transformRange(std::size_t fromCmd, std::size_t fromEdge, Vec2 sc
             g[0] /= sc.x, g[1] /= sc.x, g[2] /= sc.y, g[3] /= sc.y;
             g[4] -= g[0] * o.x + g[2] * o.y;
             g[5] -= g[1] * o.x + g[3] * o.y;
-        }
+        } else if (isTransformLayer(c)) conjugateLayer(c.gradXf, sc, o);
     }
     for (std::size_t i = fromEdge; i < m_edges.size(); ++i) {
         PathEdge& e = m_edges[i];
@@ -189,6 +206,36 @@ void DrawList::pushFilter(const ColorMatrix& matrix, f32 blur, const DropShadow&
 
 bool isFilterProgram(const DrawCmd& c) { return c.u == 1 && c.stopCount >= 9; }
 
+void DrawList::pushTransform(const std::array<f32, 6>& m) {
+    DrawCmd c;
+    c.op = DrawOp::PushFilter;
+    c.u = 2;
+    const double det = double(m[0]) * double(m[3]) - double(m[1]) * double(m[2]);
+    if (std::isfinite(det) && std::fabs(det) > 1e-12) { // inverse: local = A^-1 (p - t)
+        const double i0 = double(m[3]) / det, i1 = -double(m[1]) / det, i2 = -double(m[2]) / det, i3 = double(m[0]) / det;
+        c.gradXf = {f32(i0), f32(i1), f32(i2), f32(i3), f32(-(i0 * double(m[4]) + i2 * double(m[5]))), f32(-(i1 * double(m[4]) + i3 * double(m[5])))};
+    } // else all zero: singular, dropped at popFilter
+    m_filterStack.push_back(u32(m_cmds.size()));
+    m_cmds.push_back(c);
+}
+
+void sampleLayerBilinear(const f32* buf, int w, int h, f32 fx, f32 fy, f32 out[4]) {
+    const f32 sx = std::clamp(fx - 0.5f, -2.f, f32(w) + 1.f), sy = std::clamp(fy - 0.5f, -2.f, f32(h) + 1.f);
+    const f32 flx = std::floor(sx), fly = std::floor(sy);
+    const int x0 = int(flx), y0 = int(fly);
+    const f32 tx = sx - flx, ty = sy - fly;
+    const f32 zero[4] = {0.f, 0.f, 0.f, 0.f};
+    auto at = [&](int x, int y) -> const f32* {
+        return x >= 0 && y >= 0 && x < w && y < h ? buf + (std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4 : zero;
+    };
+    const f32 *p00 = at(x0, y0), *p10 = at(x0 + 1, y0), *p01 = at(x0, y0 + 1), *p11 = at(x0 + 1, y0 + 1);
+    for (int k = 0; k < 4; ++k) {
+        const f32 top = p00[k] + (p10[k] - p00[k]) * tx;
+        const f32 bot = p01[k] + (p11[k] - p01[k]) * tx;
+        out[k] = top + (bot - top) * ty;
+    }
+}
+
 void DrawList::pushFilter(const FilterProgram& program, bool chained, const Rect& bbox) {
     DrawCmd c;
     c.op = DrawOp::PushFilter;
@@ -222,7 +269,29 @@ void DrawList::popFilter() {
     Rect ink{};
     for (std::size_t i = at + 1; i < m_cmds.size(); ++i) ink = unite(ink, inkBounds(m_cmds[i]));
     DrawCmd c = m_cmds[at];
-    if (c.u == 1) { // SVG program: resolve against the bbox (ink by default); the layer box is the filter region
+    if (c.u == 2) { // transform layer: the local ink plus its image under the forward map
+        const auto& g = c.gradXf;
+        const double det = double(g[0]) * double(g[3]) - double(g[1]) * double(g[2]);
+        if (det == 0.0) { // singular (CSS: not rendered)
+            m_cmds.resize(at);
+            return;
+        }
+        if (ink.empty()) c.rect = {};
+        else {
+            const double f0 = double(g[3]) / det, f1 = -double(g[1]) / det, f2 = -double(g[2]) / det, f3 = double(g[0]) / det;
+            const double f4 = -(f0 * double(g[4]) + f2 * double(g[5])), f5 = -(f1 * double(g[4]) + f3 * double(g[5]));
+            double lx = 1e30, ly = 1e30, hx = -1e30, hy = -1e30;
+            for (int k = 0; k < 4; ++k) {
+                const double x = (k & 1) ? double(ink.right()) : double(ink.x), y = (k & 2) ? double(ink.bottom()) : double(ink.y);
+                const double X = f0 * x + f2 * y + f4, Y = f1 * x + f3 * y + f5;
+                lx = std::min(lx, X), ly = std::min(ly, Y), hx = std::max(hx, X), hy = std::max(hy, Y);
+            }
+            const Rect dst{f32(lx) - 1.f, f32(ly) - 1.f, f32(hx - lx) + 2.f, f32(hy - ly) + 2.f};
+            const Rect u = unite(ink, dst);
+            const f32 x0 = std::floor(u.x), y0 = std::floor(u.y);
+            c.rect = {x0, y0, std::ceil(u.right()) - x0, std::ceil(u.bottom()) - y0};
+        }
+    } else if (c.u == 1) { // SVG program: resolve against the bbox (ink by default); the layer box is the filter region
         c.stopCount = 0;
         c.rect = {};
         if (!m_pendingPrograms.empty() && m_pendingPrograms.back().cmd == at) {
@@ -357,6 +426,7 @@ void scaleDrawList(const DrawList& in, f32 s, DrawList& out) {
         c.blur *= s;
         if (c.op == DrawOp::Glyph) c.rect = {std::round(c.rect.x), std::round(c.rect.y), f32(c.tw), f32(c.th)};
         if ((c.gradient & 15u) >= kGradientLinearStops) for (int i = 0; i < 4; ++i) c.gradXf[std::size_t(i)] /= s; // toUnit(p / s)
+        else if (isTransformLayer(c)) conjugateLayer(c.gradXf, {s, s}, {});
         out.push(c);
     }
     out.m_stops = in.m_stops;
@@ -410,6 +480,7 @@ u64 DrawList::hash() const {
         if ((c.op == DrawOp::Backdrop || c.op == DrawOp::PushFilter || c.op == DrawOp::PopFilter) && c.stopCount &&
             std::size_t(c.stops) + c.stopCount <= m_stops.size())
             h = fnv(h, m_stops.data() + c.stops, std::size_t(c.stopCount) * sizeof(GradientStop));
+        if (isTransformLayer(c)) h = fnv(h, c.gradXf.data(), 24);
         if ((c.gradient & 15u) >= kGradientLinearStops) {
             h = fnv(h, c.gradXf.data(), 24);
             h = fnv(h, &c.stopCount, 2);
@@ -810,6 +881,16 @@ void layerEnd(const DrawCmd& c, const Rect& clipR, f32 clipRadius, T& target, co
         boxBlur3(buf, tmp, w, h, r);
         fd = filterData(c, filterRows, filterRowCount);
         applyFilterBox(fd, buf, plane, tmp, w, h, hdr);
+    }
+    if (isTransformLayer(c)) { // resample through the pixel -> local map (ui_backdrop.glsl mode 6)
+        const auto& g = c.gradXf;
+        for (int y = 0; y < h; ++y)
+            for (int x = 0; x < w; ++x) {
+                const f32 px = f32(L.x0 + x) + 0.5f, py = f32(L.y0 + y) + 0.5f;
+                const f32 qx = g[0] * px + g[2] * py + g[4], qy = g[1] * px + g[3] * py + g[5];
+                sampleLayerBilinear(buf.data(), w, h, qx - f32(L.x0), qy - f32(L.y0), &tmp[(std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4]);
+            }
+        buf.swap(tmp);
     }
     const std::array<f32, 4> clipRad{clipRadius, clipRadius, clipRadius, clipRadius};
     const bool chained = c.v != 0; // inner layer of a chain: the outermost applies the clip coverage

@@ -200,7 +200,7 @@ bool readValue(Reader& r, PropValue& v) {
         for (u8 i = 0; i < v.trackCount && r.ok; ++i) { v.stopColors[i].r = r.f32_(); v.stopColors[i].g = r.f32_(); v.stopColors[i].b = r.f32_(); v.stopColors[i].a = r.f32_(); }
     if (v.type == PropType::Transform)
         for (u8 i = 0; i < v.trackCount && r.ok; ++i)
-            if ((v.fns[i] = r.u8_()) > u8(TransformFn::ScaleY)) return r.ok = false;
+            if ((v.fns[i] = r.u8_()) > u8(TransformFn::MatF)) return r.ok = false;
     if (v.type == PropType::Filter) {
         for (u8 i = 0; i < v.trackCount && r.ok; ++i) v.fns[i] = r.u8_();
         v.shadowCount = r.u8_();

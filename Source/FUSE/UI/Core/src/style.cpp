@@ -94,6 +94,10 @@ constexpr PropInfo kProps[] = {
     {Prop::TransitionBehavior, "transition-behavior", T::List, false, false, false},
     {Prop::AnimationComposition, "animation-composition", T::List, false, false, false},
     {Prop::Transform, "transform", T::Transform, false, true, false},
+    {Prop::TransformOrigin, "transform-origin", T::List, false, false, false},
+    {Prop::AnimationTimeline, "animation-timeline", T::List, false, false, false},
+    {Prop::ScrollTimeline, "scroll-timeline", T::List, false, false, false},
+    {Prop::ViewTimeline, "view-timeline", T::List, false, false, false},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -427,6 +431,40 @@ static bool parseIterations(std::string_view w, f32& out) {
     std::string_view unit;
     return parseNumber(w, out, unit) && unit.empty() && out >= 0.f;
 }
+// axis keyword: block / y -> 1, inline / x -> 0
+static bool parseAxis(std::string_view w, u8& out) {
+    if (w == "block" || w == "y" || w == "vertical") out = 1;
+    else if (w == "inline" || w == "x" || w == "horizontal") out = 0;
+    else return false;
+    return true;
+}
+// animation-timeline entry: auto | none | <dashed-ident> | scroll([<scroller>] [<axis>]) | view([<axis>])
+// (kind in fns[k], name in ids[k], axis | scroller << 1 in tracks[k].value)
+static bool parseTimelineItem(std::string_view w, PropValue& out, u8 k) {
+    out.ids[k] = 0;
+    out.tracks[k].value = 1.f;
+    if (w == "auto") { out.fns[k] = 0; return true; }
+    if (w == "none") { out.fns[k] = 1; return true; }
+    if (w.starts_with("--") && isIdent(w)) { out.fns[k] = 2; out.ids[k] = animationNameId(w); return true; }
+    const bool scroll = w.starts_with("scroll("), view = w.starts_with("view(");
+    if ((!scroll && !view) || w.back() != ')') return false;
+    std::string_view args = trim(w.substr(scroll ? 7 : 5, w.size() - (scroll ? 8 : 6)));
+    u8 axis = 1, scroller = 0;
+    while (!args.empty()) {
+        const std::size_t sp = args.find(' ');
+        const std::string_view tok = args.substr(0, sp);
+        args = sp == std::string_view::npos ? std::string_view{} : trim(args.substr(sp + 1));
+        if (parseAxis(tok, axis)) continue;
+        if (scroll && tok == "nearest") scroller = 0;
+        else if (scroll && tok == "root") scroller = 1;
+        else if (scroll && tok == "self") scroller = 2;
+        else if (view) { std::string_view u; f32 v; if (!parseNumber(tok, v, u) && tok != "auto") return false; } // insets: ignored
+        else return false;
+    }
+    out.fns[k] = scroll ? 3 : 4;
+    out.tracks[k].value = f32(axis | scroller << 1);
+    return true;
+}
 // One entry of a transition-* / animation-* longhand list
 static bool parseListItem(Prop p, std::string_view w, PropValue& out, u8 k, bool single) {
     switch (p) {
@@ -449,6 +487,7 @@ static bool parseListItem(Prop p, std::string_view w, PropValue& out, u8 k, bool
     case Prop::AnimationPlayState: return parsePlay(w, out.fns[k]);
     case Prop::TransitionBehavior: return parseBehavior(w, out.fns[k]);
     case Prop::AnimationComposition: return parseComposite(w, out.fns[k]);
+    case Prop::AnimationTimeline: return parseTimelineItem(w, out, k);
     default: return false;
     }
 }
@@ -573,17 +612,69 @@ f32 easeValue(const Easing& s, f32 t) {
     return by(u);
 }
 
+Decomposed2 decompose(const Affine2& m) {
+    Decomposed2 r;
+    r.tx = m.e, r.ty = m.f;
+    f32 a = m.a, b = m.b, c = m.c, d = m.d;
+    r.sx = std::sqrt(a * a + b * b);
+    if (r.sx > 0.f) a /= r.sx, b /= r.sx;
+    if (a * d - b * c < 0.f) { // a reflection: carried by a negative x scale
+        a = -a, b = -b, r.sx = -r.sx;
+    }
+    r.shear = a * c + b * d;
+    c -= a * r.shear, d -= b * r.shear;
+    r.sy = std::sqrt(c * c + d * d);
+    if (r.sy > 0.f) r.shear /= r.sy;
+    if (r.sx == 0.f) a = 1.f, b = 0.f;
+    r.angle = std::atan2(b, a) * 57.29577951308232f;
+    return r;
+}
+Affine2 recompose(const Decomposed2& d) {
+    const f32 t = d.angle * 0.017453292519943295f, cs = std::cos(t), sn = std::sin(t);
+    const Affine2 rot{cs, sn, -sn, cs, 0.f, 0.f}, sk{1.f, 0.f, d.shear, 1.f, 0.f, 0.f}, sc{d.sx, 0.f, 0.f, d.sy, 0.f, 0.f};
+    Affine2 m = rot * sk * sc;
+    m.e = d.tx, m.f = d.ty;
+    return m;
+}
+
 namespace {
-f32 transformIdentity(u8 fn) { return fn >= u8(TransformFn::ScaleX) ? 1.f : 0.f; }
+bool isMatrixFn(u8 fn) { return fn >= u8(TransformFn::MatA); }
+f32 transformIdentity(u8 fn) {
+    switch (TransformFn(fn)) {
+    case TransformFn::ScaleX: case TransformFn::ScaleY: case TransformFn::MatA: case TransformFn::MatD: return 1.f;
+    default: return 0.f;
+    }
+}
 // The list as an affine map about the origin: each function applies to the already transformed space (CSS order).
 Affine2 composeTransform(const u8* fns, const f32* args, u8 n) {
     Affine2 m;
-    for (u8 k = 0; k < n; ++k) switch (TransformFn(fns[k])) {
-        case TransformFn::TranslateX: m.offset.x += m.scale.x * args[k]; break;
-        case TransformFn::TranslateY: m.offset.y += m.scale.y * args[k]; break;
-        case TransformFn::ScaleX: m.scale.x *= args[k]; break;
-        case TransformFn::ScaleY: m.scale.y *= args[k]; break;
+    f32 mat[6] = {1.f, 0.f, 0.f, 1.f, 0.f, 0.f};
+    constexpr f32 kRad = 0.017453292519943295f;
+    for (u8 k = 0; k < n; ++k) {
+        const f32 v = args[k];
+        switch (TransformFn(fns[k])) {
+        case TransformFn::TranslateX: m = m * Affine2{1.f, 0.f, 0.f, 1.f, v, 0.f}; break;
+        case TransformFn::TranslateY: m = m * Affine2{1.f, 0.f, 0.f, 1.f, 0.f, v}; break;
+        case TransformFn::ScaleX: m = m * Affine2{v, 0.f, 0.f, 1.f, 0.f, 0.f}; break;
+        case TransformFn::ScaleY: m = m * Affine2{1.f, 0.f, 0.f, v, 0.f, 0.f}; break;
+        case TransformFn::Rotate: {
+            const f32 cs = std::cos(v * kRad), sn = std::sin(v * kRad);
+            m = m * Affine2{cs, sn, -sn, cs, 0.f, 0.f};
+            break;
         }
+        case TransformFn::SkewX: m = m * Affine2{1.f, 0.f, std::tan(v * kRad), 1.f, 0.f, 0.f}; break;
+        case TransformFn::SkewY: m = m * Affine2{1.f, std::tan(v * kRad), 0.f, 1.f, 0.f, 0.f}; break;
+        default: { // matrix(): six consecutive entries, applied at MatF
+            const int at = fns[k] - u8(TransformFn::MatA);
+            mat[at] = v;
+            if (TransformFn(fns[k]) == TransformFn::MatF) {
+                m = m * Affine2{mat[0], mat[1], mat[2], mat[3], mat[4], mat[5]};
+                for (int q = 0; q < 6; ++q) mat[q] = (q == 0 || q == 3) ? 1.f : 0.f;
+            }
+            break;
+        }
+        }
+    }
     return m;
 }
 Affine2 composeTransform(const PropValue& v) {
@@ -591,21 +682,29 @@ Affine2 composeTransform(const PropValue& v) {
     for (u8 k = 0; k < v.trackCount; ++k) a[k] = v.tracks[k].value;
     return composeTransform(v.fns.data(), a, v.trackCount);
 }
-// Canonical 4-function form (scale then translate in pre-scale units cannot be expressed; translate then scale can).
-PropValue transformFromAffine(const Affine2& m) {
+// Canonical form of a map: translate(tx, ty) rotate(a) skewX(s) scale(sx, sy) from its decomposition (only the
+// functions that differ from identity, so axis-aligned maps stay translate + scale).
+PropValue transformFromDecomposed(const Decomposed2& d) {
     PropValue r;
     r.type = PropType::Transform;
-    const u8 fns[4] = {u8(TransformFn::TranslateX), u8(TransformFn::TranslateY), u8(TransformFn::ScaleX), u8(TransformFn::ScaleY)};
-    const f32 a[4] = {m.offset.x, m.offset.y, m.scale.x, m.scale.y};
-    for (u8 k = 0; k < 4; ++k) r.fns[k] = fns[k], r.tracks[k] = Length::px(a[k]);
-    r.trackCount = 4;
+    auto push = [&](TransformFn f, f32 v) { r.fns[r.trackCount] = u8(f), r.tracks[r.trackCount++] = Length::px(v); };
+    push(TransformFn::TranslateX, d.tx);
+    push(TransformFn::TranslateY, d.ty);
+    if (d.angle != 0.f) push(TransformFn::Rotate, d.angle);
+    if (d.shear != 0.f) push(TransformFn::SkewX, std::atan(d.shear) * 57.29577951308232f);
+    push(TransformFn::ScaleX, d.sx);
+    push(TransformFn::ScaleY, d.sy);
     return r;
 }
-// Lists whose functions match pairwise (the shorter padded with identity functions, CSS Transforms 1 §9).
+PropValue transformFromAffine(const Affine2& m) { return transformFromDecomposed(decompose(m)); }
+// Lists whose functions match pairwise (the shorter padded with identity functions, CSS Transforms 1 §9);
+// matrix() entries never match (they interpolate decomposed).
 bool transformsMatch(const PropValue& a, const PropValue& b) {
     const u8 n = std::min(a.trackCount, b.trackCount);
     for (u8 k = 0; k < n; ++k)
         if (a.fns[k] != b.fns[k]) return false;
+    for (u8 k = 0; k < a.trackCount; ++k) if (isMatrixFn(a.fns[k])) return false;
+    for (u8 k = 0; k < b.trackCount; ++k) if (isMatrixFn(b.fns[k])) return false;
     return true;
 }
 PropValue padTransform(const PropValue& v, const PropValue& like) {
@@ -619,11 +718,10 @@ PropValue padTransform(const PropValue& v, const PropValue& like) {
 Affine2 transformOf(const ComputedStyle& s, const Rect& box) {
     u8 fns[kMaxGridTracks];
     for (u8 k = 0; k < s.transformCount; ++k) fns[k] = u8(s.transformFns[k]);
-    Affine2 m = composeTransform(fns, s.transformArgs.data(), s.transformCount);
-    const f32 ox = box.x + box.w * 0.5f, oy = box.y + box.h * 0.5f; // p' = O + M(p - O)
-    m.offset.x += ox - m.scale.x * ox;
-    m.offset.y += oy - m.scale.y * oy;
-    return m;
+    const Affine2 m = composeTransform(fns, s.transformArgs.data(), s.transformCount);
+    const f32 ox = box.x + s.transformOrigin[0].resolve(box.w, box.w * 0.5f);
+    const f32 oy = box.y + s.transformOrigin[1].resolve(box.h, box.h * 0.5f);
+    return Affine2{1.f, 0.f, 0.f, 1.f, ox, oy} * m * Affine2{1.f, 0.f, 0.f, 1.f, -ox, -oy}; // p' = O + M(p - O)
 }
 
 PropValue interpolateProp(const PropValue& a, const PropValue& b, f32 k) {
@@ -636,11 +734,13 @@ PropValue interpolateProp(const PropValue& a, const PropValue& b, f32 k) {
                 r.tracks[i].value = pa.tracks[i].value + (pb.tracks[i].value - pa.tracks[i].value) * k;
             return r;
         }
-        const Affine2 ma = composeTransform(a), mb = composeTransform(b); // mismatched lists: the composed maps
-        Affine2 m;
-        m.scale = {ma.scale.x + (mb.scale.x - ma.scale.x) * k, ma.scale.y + (mb.scale.y - ma.scale.y) * k};
-        m.offset = {ma.offset.x + (mb.offset.x - ma.offset.x) * k, ma.offset.y + (mb.offset.y - ma.offset.y) * k};
-        return transformFromAffine(m);
+        // mismatched lists: the decomposed maps (CSS Transforms 1 §9 / 2D matrix interpolation)
+        const Decomposed2 da = decompose(composeTransform(a));
+        Decomposed2 db = decompose(composeTransform(b));
+        if (std::fabs(db.angle - da.angle) > 180.f) db.angle += db.angle > da.angle ? -360.f : 360.f; // shortest way
+        auto mix = [&](f32 x, f32 y) { return x + (y - x) * k; };
+        return transformFromDecomposed({mix(da.tx, db.tx), mix(da.ty, db.ty), mix(da.angle, db.angle), mix(da.shear, db.shear),
+                                        mix(da.sx, db.sx), mix(da.sy, db.sy)});
     }
     PropValue r = b;
     switch (a.type) {
@@ -692,13 +792,7 @@ PropValue compositeProp(const PropValue& u, const PropValue& v, AnimComposite c)
     PropValue r = v;
     if (v.type == T::Transform) {
         if (c == AnimComposite::Add) { // CSS Transforms: the lists concatenate (underlying first)
-            if (u.trackCount + v.trackCount > kMaxGridTracks) {
-                const Affine2 mu = composeTransform(u), mv = composeTransform(v);
-                Affine2 m;
-                m.scale = {mu.scale.x * mv.scale.x, mu.scale.y * mv.scale.y};
-                m.offset = {mu.offset.x + mu.scale.x * mv.offset.x, mu.offset.y + mu.scale.y * mv.offset.y};
-                return transformFromAffine(m);
-            }
+            if (u.trackCount + v.trackCount > kMaxGridTracks) return transformFromAffine(composeTransform(u) * composeTransform(v));
             r = u;
             for (u8 k = 0; k < v.trackCount; ++k) r.fns[r.trackCount] = v.fns[k], r.tracks[r.trackCount++] = v.tracks[k];
             return r;
@@ -711,11 +805,9 @@ PropValue compositeProp(const PropValue& u, const PropValue& v, AnimComposite c)
                                                                          : pu.tracks[k].value + r.tracks[k].value;
             return r;
         }
-        const Affine2 mu = composeTransform(u), mv = composeTransform(v);
-        Affine2 m;
-        m.scale = {mu.scale.x + mv.scale.x - 1.f, mu.scale.y + mv.scale.y - 1.f};
-        m.offset = {mu.offset.x + mv.offset.x, mu.offset.y + mv.offset.y};
-        return transformFromAffine(m);
+        const Decomposed2 du = decompose(composeTransform(u)), dv = decompose(composeTransform(v)); // decomposed sums
+        return transformFromDecomposed({du.tx + dv.tx, du.ty + dv.ty, du.angle + dv.angle, du.shear + dv.shear,
+                                        du.sx + dv.sx - 1.f, du.sy + dv.sy - 1.f});
     }
     switch (v.type) {
     case T::Number: r.num = u.num + v.num; break;
@@ -732,6 +824,33 @@ PropValue compositeProp(const PropValue& u, const PropValue& v, AnimComposite c)
     default: return v;
     }
     return r;
+}
+
+namespace {
+void splitWords(std::string_view v, std::string_view* out, int& n, int max);
+}
+// transform-origin: [left | center | right | top | bottom | <length> | <percentage>]{1,2} (z ignored) -> tracks[0..1]
+static bool parseTransformOrigin(std::string_view text, PropValue& out) {
+    std::string_view w[3];
+    int n = 0;
+    splitWords(text, w, n, 3);
+    if (n < 1) return false;
+    Length x = Length::pct(50.f), y = Length::pct(50.f);
+    bool hasX = false, hasY = false;
+    for (int i = 0; i < std::min(n, 2); ++i) {
+        const std::string_view t = w[i];
+        if (t == "left" || t == "right") { if (hasX) return false; x = Length::pct(t == "left" ? 0.f : 100.f); hasX = true; continue; }
+        if (t == "top" || t == "bottom") { if (hasY) return false; y = Length::pct(t == "top" ? 0.f : 100.f); hasY = true; continue; }
+        if (t == "center") continue;
+        Length l;
+        if (!parseLength(t, l) || l.unit == Unit::Auto || l.unit == Unit::Fr) return false;
+        if (i == 0 && !hasX) x = l, hasX = true;
+        else if (!hasY) y = l, hasY = true;
+        else return false;
+    }
+    out.trackCount = 2;
+    out.tracks[0] = x, out.tracks[1] = y;
+    return true;
 }
 
 bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
@@ -758,8 +877,22 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
         return unit.empty() || unit == "%";
     }
     case T::Color: return parseColor(text, out.color);
-    case T::List: return parseList(p, text, out);
-    case T::Transform: { // "none" | translate(x[, y]) translateX(x) translateY(y) scale(sx[, sy]) scaleX(s) scaleY(s)
+    case T::List:
+        if (p == Prop::TransformOrigin) return parseTransformOrigin(text, out);
+        if (p == Prop::ScrollTimeline || p == Prop::ViewTimeline) { // none | <dashed-ident> [<axis>]
+            out.trackCount = 1;
+            out.fns[0] = 1;
+            if (text == "none") return true;
+            std::string_view w[3];
+            int n = 0;
+            splitWords(text, w, n, 3);
+            if (n < 1 || n > 2 || !w[0].starts_with("--") || !isIdent(w[0])) return false;
+            out.ids[0] = animationNameId(w[0]);
+            return n == 1 || parseAxis(w[1], out.fns[0]);
+        }
+        return parseList(p, text, out);
+    case T::Transform: { // "none" | translate(x[, y]) translateX/Y scale(sx[, sy]) scaleX/Y rotate(a) skew(ax[, ay]) skewX/Y
+                         // matrix(a, b, c, d, e, f)
         if (text == "none") return true;
         std::size_t i = 0;
         auto push = [&](TransformFn f, f32 a) {
@@ -776,28 +909,51 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
             const std::string_view name = trim(text.substr(i, open - i));
             std::string_view arg = trim(text.substr(open + 1, close - open - 1));
             i = close + 1;
-            f32 a[2];
+            f32 a[6];
             int n = 0;
-            const bool scale = name.starts_with("scale");
-            while (!arg.empty() && n < 2) {
+            const bool scale = name.starts_with("scale"), angle = name.starts_with("rotate") || name.starts_with("skew"),
+                       matrix = name == "matrix";
+            while (!arg.empty() && n < 6) {
                 std::size_t sep = arg.find_first_of(", ");
                 const std::string_view tok = trim(arg.substr(0, sep));
                 arg = sep == std::string_view::npos ? std::string_view{} : trim(arg.substr(sep + 1));
                 if (!arg.empty() && arg.front() == ',') arg = trim(arg.substr(1));
                 std::string_view unit;
                 if (!parseNumber(tok, a[n], unit)) return false;
-                if (scale ? !(unit.empty() || unit == "%") : !(unit.empty() || unit == "px")) return false;
-                if (unit == "%") a[n] /= 100.f;
+                if (angle) { // <angle> (unitless 0 allowed) -> degrees
+                    if (unit == "rad") a[n] *= 57.29577951308232f;
+                    else if (unit == "turn") a[n] *= 360.f;
+                    else if (unit == "grad") a[n] *= 0.9f;
+                    else if (unit != "deg" && !(unit.empty() && a[n] == 0.f)) return false;
+                } else if (matrix) {
+                    if (!unit.empty()) return false;
+                } else if (scale ? !(unit.empty() || unit == "%") : !(unit.empty() || unit == "px")) return false;
+                if (scale && unit == "%") a[n] /= 100.f;
                 ++n;
             }
             if (n == 0 || !arg.empty()) return false;
+            auto pushMatrix = [&](const f32* m6) {
+                for (int q = 0; q < 6; ++q)
+                    if (!push(TransformFn(u8(TransformFn::MatA) + q), m6[q])) return false;
+                return true;
+            };
             bool ok;
-            if (name == "translate") ok = push(TransformFn::TranslateX, a[0]) && push(TransformFn::TranslateY, n > 1 ? a[1] : 0.f);
+            if (name == "translate" && n <= 2) ok = push(TransformFn::TranslateX, a[0]) && push(TransformFn::TranslateY, n > 1 ? a[1] : 0.f);
             else if (name == "translateX" && n == 1) ok = push(TransformFn::TranslateX, a[0]);
             else if (name == "translateY" && n == 1) ok = push(TransformFn::TranslateY, a[0]);
-            else if (name == "scale") ok = push(TransformFn::ScaleX, a[0]) && push(TransformFn::ScaleY, n > 1 ? a[1] : a[0]);
+            else if (name == "scale" && n <= 2) ok = push(TransformFn::ScaleX, a[0]) && push(TransformFn::ScaleY, n > 1 ? a[1] : a[0]);
             else if (name == "scaleX" && n == 1) ok = push(TransformFn::ScaleX, a[0]);
             else if (name == "scaleY" && n == 1) ok = push(TransformFn::ScaleY, a[0]);
+            else if (name == "rotate" && n == 1) ok = push(TransformFn::Rotate, a[0]);
+            else if (name == "skewX" && n == 1) ok = push(TransformFn::SkewX, a[0]);
+            else if (name == "skewY" && n == 1) ok = push(TransformFn::SkewY, a[0]);
+            else if (name == "skew" && n <= 2) {
+                if (n == 1 || a[1] == 0.f) ok = push(TransformFn::SkewX, a[0]);
+                else { // skew(ax, ay) is not skewX(ax) skewY(ay): its own matrix
+                    const f32 m6[6] = {1.f, std::tan(a[1] * 0.017453292519943295f), std::tan(a[0] * 0.017453292519943295f), 1.f, 0.f, 0.f};
+                    ok = pushMatrix(m6);
+                }
+            } else if (matrix && n == 6) ok = pushMatrix(a);
             else ok = false;
             if (!ok) return false;
         }
@@ -1087,6 +1243,26 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::AnimationComposition:
         s.animationCompositeCount = v.trackCount ? v.trackCount : 1;
         for (u8 k = 0; k < kMaxTransitions; ++k) s.animationComposite[k] = AnimComposite(v.fns[k] <= 2 ? v.fns[k] : 0);
+        break;
+    case Prop::TransformOrigin:
+        if (v.trackCount == 2) s.transformOrigin = {v.tracks[0], v.tracks[1]};
+        else s.transformOrigin = {Length::pct(50.f), Length::pct(50.f)};
+        break;
+    case Prop::AnimationTimeline:
+        s.animationTimelineCount = v.trackCount ? v.trackCount : 1;
+        for (u8 k = 0; k < kMaxTransitions; ++k) {
+            s.animationTimelineKind[k] = k < v.trackCount ? v.fns[k] : 0;
+            s.animationTimelineName[k] = k < v.trackCount ? v.ids[k] : 0;
+            s.animationTimelineArg[k] = k < v.trackCount ? u8(v.tracks[k].value) : 1;
+        }
+        break;
+    case Prop::ScrollTimeline:
+        s.scrollTimelineName = v.trackCount ? v.ids[0] : 0;
+        s.scrollTimelineAxis = v.trackCount ? v.fns[0] : 1;
+        break;
+    case Prop::ViewTimeline:
+        s.viewTimelineName = v.trackCount ? v.ids[0] : 0;
+        s.viewTimelineAxis = v.trackCount ? v.fns[0] : 1;
         break;
     case Prop::Count: break;
     }

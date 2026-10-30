@@ -463,6 +463,10 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             f32 fb[2];
             std::memcpy(fb, bits, 8);
             put4(g.grad2, c.gradXf[4], c.gradXf[5], fb[0], fb[1]);
+        } else if (isTransformLayer(c)) {
+            // transform layer: grad = pixel -> local linear part (a b c d), grad2 = chained, 2 (marker), e, f
+            put4(g.grad, c.gradXf[0], c.gradXf[1], c.gradXf[2], c.gradXf[3]);
+            put4(g.grad2, c.v ? 1.f : 0.f, 2.f, c.gradXf[4], c.gradXf[5]);
         } else if ((c.op == DrawOp::Backdrop || c.op == DrawOp::PushFilter || c.op == DrawOp::PopFilter) &&
                    (c.stopCount == 4 || c.stopCount == 6 || isFilterProgram(c)) &&
                    std::size_t(c.stops) + c.stopCount <= list.gradientStops().size()) {

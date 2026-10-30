@@ -29,7 +29,9 @@
 
 #include "fuse/ui/types.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <expected>
 #include <string>
 #include <string_view>
@@ -66,13 +68,45 @@ enum class Overflow : u8 { Visible, Clip, Scroll };
 /// CSS filter functions (backdrop-filter), in list order.
 /// DropShadow: the one shadow of the list (the last one wins); Url: url(#id), amount = filterNameId(id) bit-cast,
 /// resolved at paint time by UiContext::defineFilter.
-/// CSS transform functions (2D translate / scale subset), in list order; arguments: translate px, scale factor.
-enum class TransformFn : u8 { TranslateX, TranslateY, ScaleX, ScaleY };
-/// The axis-aligned 2D affine map a transform list composes to: p' = scale * p + offset (about the origin).
+/// CSS transform functions (2D), in list order; arguments: translate px, scale factor, rotate / skew degrees.
+/// matrix(a, b, c, d, e, f) is the six consecutive entries MatA..MatF; skew(ax, ay) with ay != 0 is stored as matrix.
+enum class TransformFn : u8 { TranslateX, TranslateY, ScaleX, ScaleY, Rotate, SkewX, SkewY, MatA, MatB, MatC, MatD, MatE, MatF };
+/// A 2D affine map: x' = a x + c y + e, y' = b x + d y + f (CSS matrix(a, b, c, d, e, f)).
 struct Affine2 {
-    Vec2 scale{1.f, 1.f}, offset{0.f, 0.f};
-    bool identity() const { return scale.x == 1.f && scale.y == 1.f && offset.x == 0.f && offset.y == 0.f; }
+    f32 a = 1.f, b = 0.f, c = 0.f, d = 1.f, e = 0.f, f = 0.f;
+    bool identity() const { return a == 1.f && b == 0.f && c == 0.f && d == 1.f && e == 0.f && f == 0.f; }
+    bool axisAligned() const { return b == 0.f && c == 0.f; }
+    bool translationOnly() const { return a == 1.f && b == 0.f && c == 0.f && d == 1.f; }
+    f32 det() const { return a * d - b * c; }
+    /// this * n: n applies first.
+    Affine2 operator*(const Affine2& n) const {
+        return {a * n.a + c * n.b, b * n.a + d * n.b, a * n.c + c * n.d, b * n.c + d * n.d, a * n.e + c * n.f + e, b * n.e + d * n.f + f};
+    }
+    Vec2 apply(Vec2 p) const { return {a * p.x + c * p.y + e, b * p.x + d * p.y + f}; }
+    /// false when singular (CSS: the element is not rendered and not hit)
+    bool inverse(Affine2& out) const {
+        const double dt = double(a) * double(d) - double(b) * double(c);
+        if (!(std::fabs(dt) > 1e-12)) return false;
+        const double i0 = double(d) / dt, i1 = -double(b) / dt, i2 = -double(c) / dt, i3 = double(a) / dt;
+        out = {f32(i0), f32(i1), f32(i2), f32(i3), f32(-(i0 * double(e) + i2 * double(f))), f32(-(i1 * double(e) + i3 * double(f)))};
+        return true;
+    }
+    /// Axis-aligned bounds of r under the map.
+    Rect mapRect(const Rect& r) const {
+        const Vec2 p[4] = {apply({r.x, r.y}), apply({r.right(), r.y}), apply({r.x, r.bottom()}), apply({r.right(), r.bottom()})};
+        f32 x0 = p[0].x, y0 = p[0].y, x1 = p[0].x, y1 = p[0].y;
+        for (const Vec2& q : p) x0 = std::min(x0, q.x), y0 = std::min(y0, q.y), x1 = std::max(x1, q.x), y1 = std::max(y1, q.y);
+        return {x0, y0, x1 - x0, y1 - y0};
+    }
+    std::array<f32, 6> array() const { return {a, b, c, d, e, f}; }
 };
+/// The 2D decomposition CSS Transforms 1 interpolates mismatched lists with: M = translate(tx, ty) rotate(angle)
+/// skewX(atan(shear)) scale(sx, sy) (angles in degrees).
+struct Decomposed2 {
+    f32 tx = 0.f, ty = 0.f, angle = 0.f, shear = 0.f, sx = 1.f, sy = 1.f;
+};
+Decomposed2 decompose(const Affine2& m);
+Affine2 recompose(const Decomposed2& d);
 enum class FilterFn : u8 { Blur, Brightness, Contrast, Saturate, Grayscale, HueRotate, Invert, Sepia, Opacity, DropShadow, Url };
 /// drop-shadow(<dx> <dy> [<blur>] [<color>]); color.a == 0: none
 struct FilterShadow {
@@ -169,9 +203,20 @@ struct ComputedStyle {
     std::array<f32, kMaxGridTracks> backdropFilterAmounts{};
     std::array<FilterShadow, kMaxFilterShadows> backdropShadows{};
     /// CSS `filter` (element), same encoding; painted as nested isolated layers in CSS order
-    u8 transformCount = 0; ///< transform: functions in list order (CSS: about the border-box centre)
+    u8 transformCount = 0; ///< transform: functions in list order (about transformOrigin)
     std::array<TransformFn, kMaxGridTracks> transformFns{};
     std::array<f32, kMaxGridTracks> transformArgs{};
+    std::array<Length, 2> transformOrigin{Length::pct(50.f), Length::pct(50.f)}; ///< transform-origin (border box)
+    /// animation-timeline entries (index like the other animation-* lists): kind 0 auto (document), 1 none, 2 a named
+    /// scroll / view timeline (name = animationNameId of the dashed ident), 3 scroll(), 4 view(); arg: axis (bit 0:
+    /// 1 = block / y) | scroller << 1 (scroll(): 0 nearest, 1 root, 2 self)
+    u8 animationTimelineCount = 1;
+    std::array<u8, kMaxTransitions> animationTimelineKind{};
+    std::array<u32, kMaxTransitions> animationTimelineName{};
+    std::array<u8, kMaxTransitions> animationTimelineArg{};
+    /// scroll-timeline / view-timeline: the named timeline this element defines (0: none); axis 1 = block / y
+    u32 scrollTimelineName = 0, viewTimelineName = 0;
+    u8 scrollTimelineAxis = 1, viewTimelineAxis = 1;
     u8 filterCount = 0;
     std::array<FilterFn, kMaxGridTracks> filterFns{};
     std::array<f32, kMaxGridTracks> filterAmounts{};
@@ -230,7 +275,8 @@ enum class Prop : u8 {
     ShadowY, PointerEvents, BackdropBlur, GradientAngle, GradientStops, BackgroundClip, BackdropFilter, Filter,
     TransitionProperty, TransitionDuration, TransitionTimingFunction, TransitionDelay,
     AnimationName, AnimationDuration, AnimationTimingFunction, AnimationDelay, AnimationIterationCount,
-    AnimationDirection, AnimationFillMode, AnimationPlayState, TransitionBehavior, AnimationComposition, Transform, Count
+    AnimationDirection, AnimationFillMode, AnimationPlayState, TransitionBehavior, AnimationComposition, Transform,
+    TransformOrigin, AnimationTimeline, ScrollTimeline, ViewTimeline, Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
 static_assert(kPropCount <= 128, "PropMask holds 128 properties");
@@ -288,7 +334,7 @@ PropValue interpolateDiscrete(Prop p, const PropValue& a, const PropValue& b, f3
 /// Transform lists: Add appends v's functions to the underlying list (scale(2) + scale(3) = scale(2) scale(3), x6);
 /// Accumulate sums matching functions (translate adds, scale factors add minus one: scale(2) + scale(3) = scale(4)).
 PropValue compositeProp(const PropValue& underlying, const PropValue& v, AnimComposite c);
-/// The 2D map a computed transform paints with, about the centre of `box` (CSS transform-origin: 50% 50%).
+/// The 2D map a computed transform paints with, about its transform-origin in `box` (the border box).
 Affine2 transformOf(const ComputedStyle& s, const Rect& box);
 /// Copies inherited properties from parent into s.
 void inheritFrom(ComputedStyle& s, const ComputedStyle& parent);

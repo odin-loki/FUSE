@@ -84,7 +84,8 @@ enum class SignalKind : u8 { Clicked, Toggled, ValueChanged, TextChanged, Submit
                               TransitionRun, TransitionStart, TransitionEnd, TransitionCancel,
                               AnimationStart, AnimationIteration, AnimationEnd, AnimationCancel,
                               // scripted animations (UiContext::animate): text = the animation id, value = currentTime
-                              ScriptFinish, ScriptCancel
+                              ScriptFinish, ScriptCancel,
+                              ScriptRemove ///< a finished, filling animation fully overridden by later ones was removed
 };
 // ---- Scripted animations (Web Animations-style) -------------------------------------------------------------------
 /// One keyframe of UiContext::animate (Web Animations "Keyframe").
@@ -122,9 +123,13 @@ struct AnimationOptions {
     bool autoplay = true;
     AnimTimeline timeline;
     std::string id;
-    std::function<void(UiContext&, AnimationHandle)> onFinish, onCancel; ///< after the frame's signals
+    std::function<void(UiContext&, AnimationHandle)> onFinish, onCancel, onRemove; ///< after the frame's signals
 };
 enum class AnimPlayState : u8 { Idle, Running, Paused, Finished };
+/// Web Animations "replace state": a finished, filling document-timeline animation whose every property is overridden
+/// by later finished, filling animations on the same target is Removed after the frame (no effect, ScriptRemove signal,
+/// onRemove) unless persist() made it Persisted.
+enum class AnimReplaceState : u8 { Active, Removed, Persisted };
 
 struct SignalArgs {
     f32 value = 0.f;
@@ -479,6 +484,14 @@ public:
     bool animSetPlaybackRate(AnimationHandle a, f32 rate);
     /// Writes the animation's current values of its properties into n's inline style (Animation.commitStyles).
     bool animCommitStyles(AnimationHandle a);
+    /// Animation.persist(): never auto-removed (a Removed one comes back into effect).
+    bool animPersist(AnimationHandle a);
+    AnimReplaceState animReplaceState(AnimationHandle a) const;
+    /// KeyframeEffect.setKeyframes: new keyframes (offsets resolved as in animate); timing and play state are kept.
+    bool animSetKeyframes(AnimationHandle a, std::vector<AnimKeyframe> keyframes);
+    bool animSetKeyframes(AnimationHandle a, std::string_view keyframesCss);
+    /// KeyframeEffect.target = n: the effect moves to another node (last in its composite order); both restyle.
+    bool animSetTarget(AnimationHandle a, NodeHandle n);
     f32 animCurrentTime(AnimationHandle a) const;
     f32 animPlaybackRate(AnimationHandle a) const;
     AnimPlayState animPlayState(AnimationHandle a) const;
@@ -556,6 +569,12 @@ private:
     bool sampleScriptAnim(const ScriptAnim& a, ComputedStyle& d) const;
     bool syncTimelines(); ///< progress-based animations follow their timelines; true when one moved
     std::vector<u32> m_timelineAnims;
+    std::vector<u32> m_cssTlNodes; ///< nodes whose CSS animations follow animation-timeline (progress-based)
+    /// animation-timeline of CSS animation slot k on node i: 0 document (auto), 1 none / unresolved, 2 progress (t)
+    int cssTimeline(u32 i, const ComputedStyle& s, u8 k, AnimTimeline& t) const;
+    void removeReplaced(); ///< after the frame: auto-remove fully replaced finished animations
+    static bool resolveKeyframes(std::vector<AnimKeyframe>& frames);
+    std::vector<AnimKeyframe> parseKeyframes(std::string_view css) const;
     double m_docTime = 0.0;
     std::vector<std::unique_ptr<ScriptAnim>> m_scriptAnims;
     std::vector<u32> m_freeScriptAnims;
