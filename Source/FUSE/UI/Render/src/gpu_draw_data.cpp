@@ -71,6 +71,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     // segment's commands) and becomes a blur pass over what was drawn so far
     struct Area {
         int x0, y0, x1, y1;
+        u32 id; ///< tile entry: a cmds index, or kCompactGlyph | word offset of a compact glyph record
     };
     thread_local std::vector<Area> areas;
     thread_local std::vector<u32> cursor;
@@ -78,6 +79,8 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     areas.reserve(list.cmds().size()); // one growth step per frame at most (text pages are 10^4+ glyph quads)
     out.cmds.reserve(list.cmds().size() + 1);
     u32 segBegin = 0;
+    u32 clipRef = ~0u; // carrier cmd of the current glyph clip
+    Clip lastClip{};
     auto closeSegment = [&] {
         const u32 tileBase = u32(out.tiles.size());
         out.tiles.resize(std::size_t(tileBase) + tileCount + 1, 0u);
@@ -85,8 +88,14 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         for (u32 i = segBegin; i < areas.size(); ++i) {
             const Area& a = areas[i];
             if (a.x1 <= a.x0 || a.y1 <= a.y0) continue;
-            for (int ty = a.y0 / int(kUiTile); ty <= (a.y1 - 1) / int(kUiTile); ++ty)
-                for (int tx = a.x0 / int(kUiTile); tx <= (a.x1 - 1) / int(kUiTile); ++tx) ++off[std::size_t(ty) * tilesX + tx];
+            const int tx0 = a.x0 / int(kUiTile), tx1 = (a.x1 - 1) / int(kUiTile);
+            const int ty0 = a.y0 / int(kUiTile), ty1 = (a.y1 - 1) / int(kUiTile);
+            if (tx0 == tx1 && ty0 == ty1) { // glyphs and small widgets: one tile
+                ++off[std::size_t(ty0) * tilesX + tx0];
+                continue;
+            }
+            for (int ty = ty0; ty <= ty1; ++ty)
+                for (int tx = tx0; tx <= tx1; ++tx) ++off[std::size_t(ty) * tilesX + tx];
         }
         u32 sum = 0; // prefix sums -> offsets; then ids in draw order
         for (u32 t = 0; t < tileCount; ++t) {
@@ -101,9 +110,15 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         for (u32 i = segBegin; i < areas.size(); ++i) {
             const Area& a = areas[i];
             if (a.x1 <= a.x0 || a.y1 <= a.y0) continue;
-            for (int ty = a.y0 / int(kUiTile); ty <= (a.y1 - 1) / int(kUiTile); ++ty)
-                for (int tx = a.x0 / int(kUiTile); tx <= (a.x1 - 1) / int(kUiTile); ++tx)
-                    out.tiles[base + cursor[std::size_t(ty) * tilesX + tx]++] = i;
+            const int tx0 = a.x0 / int(kUiTile), tx1 = (a.x1 - 1) / int(kUiTile);
+            const int ty0 = a.y0 / int(kUiTile), ty1 = (a.y1 - 1) / int(kUiTile);
+            u32* ids = out.tiles.data() + base;
+            if (tx0 == tx1 && ty0 == ty1) {
+                ids[cursor[std::size_t(ty0) * tilesX + tx0]++] = a.id;
+                continue;
+            }
+            for (int ty = ty0; ty <= ty1; ++ty)
+                for (int tx = tx0; tx <= tx1; ++tx) ids[cursor[std::size_t(ty) * tilesX + tx]++] = a.id;
         }
         GpuPass p;
         p.kind = kPassDraw;
@@ -112,7 +127,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         segBegin = u32(areas.size());
     };
     auto pack = [&](const DrawCmd& c, const Clip& clip) {
-        GpuCmd g{};
+        GpuCmd& g = out.cmds.emplace_back(); // built in place (every field is written below)
         put4(g.rect, c.rect.x, c.rect.y, c.rect.w, c.rect.h);
         put4(g.fill, c.fill.r, c.fill.g, c.fill.b, c.fill.a);
         put4(g.fill2, c.fill2.r, c.fill2.g, c.fill2.b, c.fill2.a);
@@ -124,7 +139,6 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         g.info[1] = u32(c.u) | (u32(c.v) << 16);
         g.info[2] = u32(c.tw) | (u32(c.th) << 16);
         g.info[3] = c.image;
-        out.cmds.push_back(g);
     };
     for (const DrawCmd& c : list.cmds()) {
         if (c.op == DrawOp::PushClip) {
@@ -153,7 +167,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             closeSegment();
             const u32 id = u32(out.cmds.size());
             pack(c, clip);
-            areas.push_back({0, 0, 0, 0}); // never binned
+            areas.push_back({0, 0, 0, 0, id}); // never binned
             segBegin = u32(areas.size());
             GpuPass p;
             p.kind = kPassBackdrop;
@@ -183,6 +197,32 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         if (area.empty()) continue;
         if (c.op == DrawOp::Glyph && !atlas) continue;
         if (c.op == DrawOp::Image && c.image >= imageCount) continue;
+        const Area pixels{std::max(0, int(std::floor(area.x))), std::max(0, int(std::floor(area.y))),
+                          std::min(int(width), int(std::ceil(area.right()))), std::min(int(height), int(std::ceil(area.bottom()))), 0u};
+        if (c.op == DrawOp::Glyph) {
+            // compact glyph (44 bytes in the images buffer instead of a 128-byte GpuCmd): rect, uv, size, fill and a
+            // reference to a clip carrier cmd (one per distinct clip, never binned)
+            if (clipRef == ~0u || !(clip.r == lastClip.r) || clip.radius != lastClip.radius) {
+                clipRef = u32(out.cmds.size());
+                pack(c, clip);
+                out.cmds.back().info[0] = kClipCarrier;
+                lastClip = clip;
+            }
+            const u32 at = u32(out.images.size());
+            out.images.resize(out.images.size() + kCompactGlyphWords);
+            u32* w = out.images.data() + at;
+            const f32 f[4] = {c.rect.x, c.rect.y, c.rect.w, c.rect.h};
+            std::memcpy(w, f, sizeof f);
+            w[4] = u32(c.u) | (u32(c.v) << 16);
+            w[5] = u32(c.tw) | (u32(c.th) << 16);
+            const f32 col[4] = {c.fill.r, c.fill.g, c.fill.b, c.fill.a};
+            std::memcpy(w + 6, col, sizeof col);
+            w[10] = clipRef;
+            Area g = pixels;
+            g.id = kCompactGlyph | at;
+            areas.push_back(g);
+            continue;
+        }
         if (c.op == DrawOp::Path) {
             // edges ride in the images buffer as float words (no extra binding): info.w = word offset
             const std::size_t n = std::size_t(c.tw) | (std::size_t(c.th) << 16);
@@ -191,13 +231,33 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             const PathEdge* e = list.pathEdges().data() + c.image;
             out.images.resize(out.images.size() + n * 5);
             std::memcpy(out.images.data() + at, e, n * sizeof(PathEdge));
+            // tile-row edge lists: edges whose y-range (grown by the stroke reach) touches the 16-px row. Dropped
+            // edges cannot change the winding sub-samples or a non-zero stroke coverage there, so results are identical
+            const f32 reach = c.borderWidth * 0.5f + 1.f;
+            const u32 r0 = u32(pixels.y0) / kUiTile, r1 = u32(std::max(pixels.y1 - 1, pixels.y0)) / kUiTile;
+            const u32 rows = r1 - r0 + 1;
+            const std::size_t tb = out.images.size();
+            out.images.resize(tb + 2 + rows + 1);
+            out.images[tb] = r0;
+            out.images[tb + 1] = rows;
+            const std::size_t lb = out.images.size();
+            for (u32 r = 0; r < rows; ++r) {
+                out.images[tb + 2 + r] = u32(out.images.size() - lb);
+                const f32 top = f32((r0 + r) * kUiTile) - reach, bottom = f32((r0 + r + 1) * kUiTile) + reach;
+                for (std::size_t k = 0; k < n; ++k) {
+                    const f32 lo = std::min(e[k].y0, e[k].y1), hi = std::max(e[k].y0, e[k].y1);
+                    if (hi >= top && lo <= bottom) out.images.push_back(u32(k));
+                }
+            }
+            out.images[tb + 2 + rows] = u32(out.images.size() - lb);
             pack(c, clip);
             out.cmds.back().info[3] = at;
         } else {
             pack(c, clip);
         }
-        areas.push_back({std::max(0, int(std::floor(area.x))), std::max(0, int(std::floor(area.y))),
-                         std::min(int(width), int(std::ceil(area.right()))), std::min(int(height), int(std::ceil(area.bottom())))});
+        Area pa = pixels;
+        pa.id = u32(out.cmds.size() - 1);
+        areas.push_back(pa);
     }
     closeSegment();
     // drop a trailing empty draw segment after a backdrop (nothing to draw); passes[0] always stays

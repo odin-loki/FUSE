@@ -54,6 +54,7 @@ template <class F> double msPer(int n, F&& f, bool cpuClock = false) {
 struct Row {
     std::string name;
     double cpu = 0, gpu = -1, gpuWall = -1, pack = 0;
+    std::size_t cmds = 0;
 };
 } // namespace
 
@@ -118,6 +119,7 @@ int main(int argc, char** argv) {
     std::vector<Row> rows;
     for (const Scene& s : scenes) {
         Row row{s.name};
+        row.cmds = s.list->cmds().size();
         row.cpu = msPer(iters, [&] { r.render(*s.list, img, s.scissor); }, true);
         GpuDrawData packed;
         row.pack = msPer(iters, [&] {
@@ -132,7 +134,7 @@ int main(int argc, char** argv) {
     VkHeadless vk;
     UiVkRenderer gpu;
     if (UiVkRenderer::kernelAvailable() && vk.init(W, H) &&
-        gpu.init({.physicalDevice = (void*)vk.phys, .device = (void*)vk.device, .framesInFlight = 1}) && gpu.valid()) {
+        gpu.init({.physicalDevice = (void*)vk.phys, .device = (void*)vk.device, .framesInFlight = 1, .maxCmds = 1u << 17, .maxTileWords = 1u << 22, .maxImageWords = 1u << 22}) && gpu.valid()) {
         device = vk.deviceName;
         Image init, res;
         init.resize(int(W), int(H), 0xFF000000u);
@@ -150,7 +152,11 @@ int main(int argc, char** argv) {
             const Scene& s = scenes[i];
             packDrawList(*s.list, W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, s.scissor);
             data.atlasGeneration = ui.atlas().version();
-            gpu.upload(0, data);
+            if (!gpu.upload(0, data)) { // over the renderer limits: report as missing, never time an empty frame
+                std::fprintf(stderr, "bench: %s exceeds GPU upload limits\n", s.name);
+                rows[i].gpu = rows[i].gpuWall = -1.0;
+                continue;
+            }
             double device = 0.0;
             const double t = msPer(iters, [&] {
                 vk.run(init, res, [&](VkCommandBuffer c) {
@@ -177,16 +183,16 @@ int main(int argc, char** argv) {
 
     std::printf("fuse_ui_bench_render %ux%u, %d iterations, GPU: %s (%s)\n", W, H, iters, device.c_str(),
                 timestamps ? "timestamp queries" : "wall time");
-    std::printf("  %-16s %10s %10s %12s %10s\n", "scene", "cpu ms", "gpu ms", "gpu wall ms", "pack ms");
+    std::printf("  %-16s %8s %10s %10s %12s %10s\n", "scene", "cmds", "cpu ms", "gpu ms", "gpu wall ms", "pack ms");
     for (const Row& row : rows)
-        std::printf("  %-16s %10.3f %10.3f %12.3f %10.3f\n", row.name.c_str(), row.cpu, row.gpu, row.gpuWall, row.pack);
+        std::printf("  %-16s %8zu %10.3f %10.3f %12.3f %10.3f\n", row.name.c_str(), row.cmds, row.cpu, row.gpu, row.gpuWall, row.pack);
     if (!out.empty()) {
         if (FILE* f = std::fopen(out.c_str(), "wb")) {
             std::fprintf(f, "{\"width\":%u,\"height\":%u,\"iterations\":%d,\"device\":\"%s\",\"timestamps\":%s,\"scenes\":[", W, H, iters,
                          device.c_str(), timestamps ? "true" : "false");
             for (std::size_t i = 0; i < rows.size(); ++i)
-                std::fprintf(f, "%s{\"name\":\"%s\",\"cpu_ms\":%.4f,\"gpu_ms\":%.4f,\"gpu_wall_ms\":%.4f,\"pack_ms\":%.4f}",
-                             i ? "," : "", rows[i].name.c_str(), rows[i].cpu, rows[i].gpu, rows[i].gpuWall, rows[i].pack);
+                std::fprintf(f, "%s{\"name\":\"%s\",\"cmds\":%zu,\"cpu_ms\":%.4f,\"gpu_ms\":%.4f,\"gpu_wall_ms\":%.4f,\"pack_ms\":%.4f}",
+                             i ? "," : "", rows[i].name.c_str(), rows[i].cmds, rows[i].cpu, rows[i].gpu, rows[i].gpuWall, rows[i].pack);
             std::fprintf(f, "]}\n");
             std::fclose(f);
         }

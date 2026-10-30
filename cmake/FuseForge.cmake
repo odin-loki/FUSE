@@ -6,6 +6,30 @@ include_guard(GLOBAL)
 get_filename_component(_fuse_forge_default "${CMAKE_CURRENT_LIST_DIR}/../vendor/forge" ABSOLUTE)
 set(FUSE_FORGE_DIR "${_fuse_forge_default}" CACHE PATH "FORGE source root (header-only core/os/lane layers are used)")
 
+# fuse_target_is_x86_64(<out>): TRUE when the C++ compiler targets x86_64 (asks the compiler, not the host).
+function(fuse_target_is_x86_64 out)
+    if(NOT DEFINED FUSE_TARGET_X86_64)
+        include(CheckCXXSourceCompiles)
+        check_cxx_source_compiles("#if !defined(__x86_64__) && !defined(_M_X64)\n#error not x86_64\n#endif\nint main() { return 0; }"
+                                  FUSE_TARGET_X86_64)
+    endif()
+    set(${out} ${FUSE_TARGET_X86_64} PARENT_SCOPE)
+endfunction()
+# fuse_simd_flags(<out> avx2|avx512): per-source ISA flags for GCC/Clang (incl. clang-cl's GNU driver) or MSVC.
+function(fuse_simd_flags out isa)
+    if(MSVC)
+        if(isa STREQUAL "avx2")
+            set(${out} "/arch:AVX2" PARENT_SCOPE)
+        else()
+            set(${out} "/arch:AVX512" PARENT_SCOPE)
+        endif()
+    elseif(isa STREQUAL "avx2")
+        set(${out} "-mavx2;-mfma;-mf16c" PARENT_SCOPE)
+    else()
+        set(${out} "-mavx512f;-mavx512bw;-mavx512dq;-mavx512vl;-mfma" PARENT_SCOPE)
+    endif()
+endfunction()
+
 function(fuse_add_forge)
     if(TARGET fuse_forge)
         return()
@@ -28,17 +52,24 @@ function(fuse_add_forge)
     target_link_libraries(fuse_forge INTERFACE Threads::Threads)
     message(STATUS "FUSE: FORGE OS layer from ${FUSE_FORGE_DIR}")
     # FORGE lane runtime (CPU feature detection + multiversioned kernels), built from FORGE's own sources so the
-    # GUI never carries its own CPUID code. x86_64 (GCC/Clang) only for now; elsewhere the header-only vec is used
-    # at the compile-time baseline (NEON on aarch64) and detection is skipped.
-    if(NOT MSVC AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64" AND NOT FUSE_FORGE_NO_LANE)
+    # GUI never carries its own CPUID code. x86_64 only (GCC/Clang incl. mingw, and MSVC); elsewhere the header-only
+    # vec is used at the compile-time baseline (NEON on aarch64) and detection is skipped. The target architecture
+    # is probed from the compiler: cross toolchains often leave CMAKE_SYSTEM_PROCESSOR empty or as the host's.
+    fuse_target_is_x86_64(_x64)
+    if(_x64 AND NOT FUSE_FORGE_NO_LANE)
         set(_l "${FUSE_FORGE_DIR}/lane/src")
         add_library(fuse_forge_lane STATIC "${_l}/kernels_scalar.cpp" "${_l}/kernels_avx2.cpp"
             "${_l}/kernels_avx512.cpp" "${_l}/dispatch.cpp" "${_l}/tile_amx.cpp" "${_l}/tile_sme.cpp")
-        set_source_files_properties("${_l}/kernels_avx2.cpp" PROPERTIES COMPILE_OPTIONS "-mavx2;-mfma;-mf16c")
-        set_source_files_properties("${_l}/kernels_avx512.cpp" PROPERTIES
-            COMPILE_OPTIONS "-mavx512f;-mavx512bw;-mavx512dq;-mavx512vl;-mfma")
+        fuse_simd_flags(_avx2 avx2)
+        fuse_simd_flags(_avx512 avx512)
+        set_source_files_properties("${_l}/kernels_avx2.cpp" PROPERTIES COMPILE_OPTIONS "${_avx2}")
+        set_source_files_properties("${_l}/kernels_avx512.cpp" PROPERTIES COMPILE_OPTIONS "${_avx512}")
         target_link_libraries(fuse_forge_lane PUBLIC fuse_forge)
         set_target_properties(fuse_forge_lane PROPERTIES POSITION_INDEPENDENT_CODE ON)
-        target_compile_options(fuse_forge_lane PRIVATE -w)
+        if(MSVC)
+            target_compile_options(fuse_forge_lane PRIVATE /w)
+        else()
+            target_compile_options(fuse_forge_lane PRIVATE -w)
+        endif()
     endif()
 endfunction()

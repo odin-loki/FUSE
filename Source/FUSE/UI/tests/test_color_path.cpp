@@ -3,6 +3,7 @@
 #include "fuse/ui/draw_list.hpp"
 #include "test_util.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -19,6 +20,24 @@ f32 area(const Path& p) { // shoelace over the flattened contours (signed; closi
 } // namespace
 
 int main() {
+    {   // Hdr10Packer matches toHdr10() to within 2 of 1023 on every channel, alpha in 2 bits
+        const C::Hdr10Packer pk;
+        int worst = 0;
+        for (u32 v = 0; v < 256; v += 3)
+            for (u32 ch = 0; ch < 3; ++ch) {
+                const u32 px = (v << (8 * ch)) | (((v * 7) & 0xFFu) << (8 * ((ch + 1) % 3))) | 0xFF000000u;
+                const u32 o = pk.pack(px);
+                const Color ref = C::toHdr10({f32(px & 0xFF) / 255.f, f32((px >> 8) & 0xFF) / 255.f,
+                                              f32((px >> 16) & 0xFF) / 255.f, 1.f});
+                const f32 want[3] = {ref.r, ref.g, ref.b};
+                for (int k = 0; k < 3; ++k)
+                    worst = std::max(worst, std::abs(int((o >> (10 * k)) & 1023u) -
+                                                     int(std::lround(std::clamp(want[k], 0.f, 1.f) * 1023.f))));
+                UI_CHECK((o >> 30) == 3u);
+            }
+        UI_CHECK(worst <= 2);
+        UI_CHECK(pk.pack(0xFF000000u) == 0xC0000000u);
+    }
     // transfer curves round-trip and hit the reference points
     for (f32 v : {0.f, 0.02f, 0.2f, 0.5f, 0.8f, 1.f}) {
         UI_CHECK(near(C::linearToSrgb(C::srgbToLinear(v)), v, 1e-5f));

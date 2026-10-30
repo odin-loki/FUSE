@@ -47,6 +47,7 @@ layout(push_constant) uniform UiPush {
 } pc;
 
 const uint kRect = 0u, kShadow = 1u, kGlyph = 2u, kImage = 3u, kLine = 4u, kPath = 8u;
+const uint kCompactGlyph = 0x80000000u; // tile entry flag: compact glyph record in ui_images
 
 float sdRoundRect(float px, float py, vec4 r, vec4 rad) {
     precise float cx = r.x + r.z * 0.5;
@@ -117,7 +118,33 @@ void main() {
     const uint end = ui_tiles.data[pc.tileBase + tile + 1u];
     const float px = float(p.x) + 0.5, py = float(p.y) + 0.5;
     for (uint k = begin; k < end; ++k) {
-        const GpuCmd c = ui_cmds.cmds[ui_tiles.data[pc.tileBase + pc.tileCount + 1u + k]];
+        const uint id = ui_tiles.data[pc.tileBase + pc.tileCount + 1u + k];
+        if ((id & kCompactGlyph) != 0u) {
+            // compact glyph record (gpu_draw_data.hpp): same bounds / clip / coverage maths as the kGlyph branch
+            const uint o = id & 0x7FFFFFFFu;
+            const vec4 r = vec4(edgeWord(o), edgeWord(o + 1u), edgeWord(o + 2u), edgeWord(o + 3u));
+            const uint uv = ui_images.data[o + 4u], twth = ui_images.data[o + 5u];
+            const vec4 fill = vec4(edgeWord(o + 6u), edgeWord(o + 7u), edgeWord(o + 8u), edgeWord(o + 9u));
+            const uint ref = ui_images.data[o + 10u];
+            const vec4 clip = ui_cmds.cmds[ref].clip;
+            const float clipRadius = ui_cmds.cmds[ref].params.z;
+            precise float gx0 = max(r.x, clip.x);
+            precise float gy0 = max(r.y, clip.y);
+            precise float gx1 = min(r.x + r.z, clip.x + clip.z);
+            precise float gy1 = min(r.y + r.w, clip.y + clip.w);
+            if (gx1 <= gx0 || gy1 <= gy0) continue;
+            if (int(p.x) < int(floor(gx0)) || int(p.x) >= int(ceil(gx1)) || int(p.y) < int(floor(gy0)) || int(p.y) >= int(ceil(gy1))) continue;
+            float gcov = 1.0;
+            if (clipRadius > 0.0) gcov = clamp(0.5 - sdRoundRect(px, py, clip, vec4(clipRadius)), 0.0, 1.0);
+            if (gcov <= 0.0) continue;
+            const int gx = int(p.x) - int(r.x), gy = int(p.y) - int(r.y);
+            const int tw = int(twth & 0xFFFFu), th = int(twth >> 16);
+            if (gx < 0 || gy < 0 || gx >= tw || gy >= th || pc.atlasSize == 0u) continue;
+            const uint a = atlasByte(((uv >> 16) + uint(gy)) * pc.atlasSize + (uv & 0xFFFFu) + uint(gx));
+            if (a != 0u) blend(dst, premul(fill, float(a) / 255.0 * gcov));
+            continue;
+        }
+        const GpuCmd c = ui_cmds.cmds[id];
         const uint op = c.info.x & 0xFFu;
         const uint gradient = (c.info.x >> 8) & 0xFFu;
         // pixel must lie in the command's clipped pixel area (same integer bounds as the CPU loop)
@@ -194,8 +221,14 @@ void main() {
             int wind[16];
             for (int k = 0; k < 16; ++k) wind[k] = 0;
             precise float s2 = 3.0e38;
-            for (uint i = 0u; i < n; ++i) {
-                const uint o = base + i * 5u;
+            // per-tile-row edge lists (packed after the edges): only edges that can reach this tile row
+            const uint tb = base + n * 5u;
+            const uint row = p.y / 16u - ui_images.data[tb];
+            if (row >= ui_images.data[tb + 1u]) continue;
+            const uint lb = tb + 2u + ui_images.data[tb + 1u] + 1u;
+            const uint i0 = ui_images.data[tb + 2u + row], i1 = ui_images.data[tb + 3u + row];
+            for (uint li = i0; li < i1; ++li) {
+                const uint o = base + ui_images.data[lb + li] * 5u;
                 const float ax = edgeWord(o), ay = edgeWord(o + 1u), bx = edgeWord(o + 2u), by = edgeWord(o + 3u);
                 precise float vx = bx - ax;
                 precise float vy = by - ay;

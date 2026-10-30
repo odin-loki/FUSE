@@ -38,6 +38,12 @@ struct GpuPush {
 static_assert(sizeof(GpuPush) == 48, "GpuPush must match the kernel's push block");
 
 inline constexpr u32 kUiTile = 16;
+/// Tile entries with this bit set address a compact glyph record (word offset into GpuDrawData::images:
+/// rect xywh f32, u | v << 16, tw | th << 16, fill rgba f32, clip-carrier cmd index) instead of a GpuCmd.
+inline constexpr u32 kCompactGlyph = 0x80000000u;
+inline constexpr u32 kCompactGlyphWords = 11;
+/// GpuCmd op of a clip carrier: holds clip rect / radius for compact glyphs; never binned.
+inline constexpr u32 kClipCarrier = 9;
 inline constexpr u32 kPassClear = 1u;
 
 /// The frame is a sequence of passes: tile-binned draw segments separated by backdrop blurs (each blur reads what

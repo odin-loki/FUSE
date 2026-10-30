@@ -192,8 +192,13 @@ Every phase: commits on `gui-framework`, pushed after each milestone; never to `
 - Done: CPU perf: per-scanline path edge lists (bit-exact), a glyph fast path, and one transpose per backdrop blur with row-major box passes. Release lavapipe box: vector_paths 252 -> 40 ms, text_page 26 -> 14 ms, backdrop_blur 28 -> 23.5 ms.
 - Done: colour management basics in `fuse/ui/color_space.hpp`: sRGB / Display P3 / Rec.2020 transfer curves and gamut matrices, PQ and HLG, `toHdr10`, luminance and WCAG contrast. `NativeOptions::colorSpace` (Srgb / DisplayP3 / Hdr10) picks a matching swapchain format through VK_EXT_swapchain_colorspace, falling back to sRGB; `NativePlatform::outputColorSpace(w)` reports what was granted. Content must be encoded by the app (the canvas stays RGBA8).
 - Done (UNVERIFIED, no macOS host): Cocoa CPU presenter paced by CVDisplayLink (vsynced presenter + `setFramePending`, cleared on the main queue each refresh).
+- Done: HDR10 output. With `colorSpace = Hdr10` granted, the canvas is A2B10G10R10 and each upload converts the sRGB raster with `color::Hdr10Packer` (Rec.2020 + PQ, SDR white = `NativeOptions::sdrWhiteNits`, default 203; LUT-driven, within 2/1023 of `toHdr10`). VK_EXT_hdr_metadata is enabled when present and the swapchain gets ST 2086 metadata (Rec.2020, D65, `hdrMaxNits`). HDR10 presents through CPU upload (the draw kernel writes RGBA8).
+- Done: Windows AVX2. `fuse_target_is_x86_64` probes the compiler, since CMAKE_SYSTEM_PROCESSOR is empty in cross builds, and `fuse_simd_flags` picks /arch:AVX2 (MSVC) or -mavx2. The lane library now builds for MSVC too. Wine backdrop_blur went from 40.8 to 24 ms; MSVC is unverified (no MSVC on the box).
+- Done: GPU path culling. Each path packs per-16px-row edge lists (an edge's y-range grown by the stroke reach), and the kernel walks only its row's list. Bit-exact.
+- Done: compact glyph records. Glyphs pack as 11-word records in the images buffer (tile id `kCompactGlyph | offset`), and clip carriers are shared per clip run. text_page went from 63k GpuCmds of 128 B to about 1 cmd plus 2.8 MB, and it now fits the default upload limits. Before this change, text_page (63k cmds) exceeded `maxCmds = 16384`, so its GPU bench numbers timed a rejected upload. The bench now flags such scenes.
 - Left:
-  - HDR: a float / 10-bit canvas and kernel-side PQ encoding (8-bit HDR10 bands); Wayland / Win32 colour-space hints.
-  - Path perf: per-pixel x culling or coverage accumulation (sparse scanline) for very large paths; GPU path tiles bin by bounding box only.
-  - Windows CPU blur is slower than Linux (no AVX2 lane dispatch in the mingw build).
+  - HDR on the GPU draw path (rgb10a2 storage plus PQ in the kernel), plus extended-range scRGB.
+  - Wayland: when the Vulkan WSI is given an HDR10 colour space, it attaches wp_color_management_v1 to the surface itself, and a second app-side object would be a protocol error. Tagging SHM (CPU) surfaces only matters for non-sRGB content, which the 8-bit raster cannot carry.
+  - Win32: hide Hdr10 unless the display's DXGI output reports HDR (IDXGIOutput6). This needs a FORGE DXGI query.
+  - GPU text: the kernel's glyph loop is the text_page cost on lavapipe; batch several glyphs per tile entry.
   - The Apple paths (CVDisplayLink, Metal surface) are unverified on hardware.

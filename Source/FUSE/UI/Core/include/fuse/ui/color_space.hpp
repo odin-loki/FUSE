@@ -5,6 +5,7 @@
 #include "fuse/ui/types.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace fuse::ui::color {
@@ -115,5 +116,42 @@ inline Color toHdr10(Color c, f32 sdrWhiteNits = 203.f) {
     return {pqEncode(std::max(l.r, 0.f) * sdrWhiteNits), pqEncode(std::max(l.g, 0.f) * sdrWhiteNits),
             pqEncode(std::max(l.b, 0.f) * sdrWhiteNits), c.a};
 }
+
+/// Packs canvas pixels (RGBA8, R in the low byte, sRGB-encoded) as A2B10G10R10 HDR10 words (Rec.2020 + PQ) for an
+/// HDR10 swapchain: table-driven equivalent of toHdr10() (within 1-2 codes of 1023), for whole-frame conversion.
+class Hdr10Packer {
+public:
+    explicit Hdr10Packer(f32 sdrWhiteNits = 203.f) {
+        for (int i = 0; i < 256; ++i) m_lin[std::size_t(i)] = srgbToLinear(f32(i) / 255.f);
+        const Mat3 &a = toXyz(Space::Srgb), &b = fromXyz(Space::Rec2020);
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c)
+                m_m.m[r * 3 + c] = b.m[r * 3] * a.m[c] + b.m[r * 3 + 1] * a.m[3 + c] + b.m[r * 3 + 2] * a.m[6 + c];
+        // PQ table on sqrt(linear): dense near black where PQ is steep
+        for (std::size_t i = 0; i < kSteps + 1; ++i) {
+            const f32 t = f32(i) / f32(kSteps);
+            m_pq[i] = u16(std::lround(std::clamp(pqEncode(t * t * sdrWhiteNits), 0.f, 1.f) * 1023.f));
+        }
+    }
+    u32 pack(u32 px) const {
+        f32 r = m_lin[px & 0xFFu], g = m_lin[(px >> 8) & 0xFFu], b = m_lin[(px >> 16) & 0xFFu];
+        m_m.apply(r, g, b);
+        const u32 a = (px >> 24) * 3u / 255u;
+        return u32(q(r)) | (u32(q(g)) << 10) | (u32(q(b)) << 20) | (a << 30);
+    }
+    void pack(const u32* src, u32* dst, std::size_t n) const {
+        for (std::size_t i = 0; i < n; ++i) dst[i] = pack(src[i]);
+    }
+
+private:
+    static constexpr std::size_t kSteps = 4096;
+    u16 q(f32 l) const {
+        const f32 t = std::sqrt(std::clamp(l, 0.f, 1.f)) * f32(kSteps);
+        return m_pq[std::size_t(t + 0.5f)];
+    }
+    std::array<f32, 256> m_lin{};
+    std::array<u16, kSteps + 1> m_pq{};
+    Mat3 m_m{};
+};
 
 } // namespace fuse::ui::color
