@@ -396,7 +396,7 @@ void NativePlatform::Impl::syncPopups(Rec& r) {
     int ox = 0, oy = 0;
     Rect work;
     if (screenInfo(r, ox, oy, work)) {
-        const f32 s = 1.f; // context px = physical / scale
+        const f32 s = r.win->scale(); // context px = physical / scale
         ui.setOsPopups(true, {(work.x - f32(ox)) / s, (work.y - f32(oy)) / s, work.w / s, work.h / s});
     }
     const auto& surf = ui.popupSurfaces();
@@ -406,7 +406,7 @@ void NativePlatform::Impl::syncPopups(Rec& r) {
         r.popups.pop_back();
     }
     if (had && r.popups.empty()) grabPointer(r, false);
-    const f32 s = 1.f;
+    const f32 s = r.win->scale();
     for (std::size_t i = 0; i < surf.size(); ++i) {
         if (i == r.popups.size()) r.popups.emplace_back();
         Rec::Popup& p = r.popups[i];
@@ -433,8 +433,8 @@ void NativePlatform::Impl::syncPopups(Rec& r) {
             if (s == 1.f) {
                 rz.render(ps.draw, p.img);
             } else {
-                DrawList scaled = ps.draw;
-                for (DrawCmd& c : scaled.cmds()) { c.rect.x *= s; c.rect.y *= s; c.rect.w *= s; c.rect.h *= s; }
+                DrawList scaled;
+                scaleDrawList(ps.draw, s, scaled); // radii / borders / blur / crisp glyphs too
                 rz.render(scaled, p.img);
             }
             blitPopupOs(p);
@@ -539,11 +539,50 @@ u8 winMods() {
 }
 Vec2 lparamPos(LPARAM lp) { return {f32(short(LOWORD(lp))), f32(short(HIWORD(lp)))}; }
 
+// ---- per-monitor DPI v2 (user32 entry points resolved at run time: Windows 10 1703+, graceful before) ----
+#ifndef WM_DPICHANGED
+#define WM_DPICHANGED 0x02E0
+#endif
+FARPROC user32Proc(const char* name) {
+    static HMODULE u = GetModuleHandleW(L"user32.dll");
+    return u ? GetProcAddress(u, name) : nullptr;
+}
+/// Per-monitor-v2 awareness (per-window DPI, scaled non-client area, WM_DPICHANGED); older systems: system DPI.
+void enablePerMonitorDpi() {
+    static bool done = false;
+    if (done) return;
+    done = true;
+    using SetCtx = BOOL(WINAPI*)(HANDLE);
+    if (auto f = reinterpret_cast<SetCtx>(reinterpret_cast<void*>(user32Proc("SetProcessDpiAwarenessContext"))))
+        if (f(reinterpret_cast<HANDLE>(LONG_PTR(-4)))) return; // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+    using SetAware = BOOL(WINAPI*)();
+    if (auto f = reinterpret_cast<SetAware>(reinterpret_cast<void*>(user32Proc("SetProcessDPIAware")))) f();
+}
+UINT dpiForWindow(HWND hwnd) {
+    using Fn = UINT(WINAPI*)(HWND);
+    static auto f = reinterpret_cast<Fn>(reinterpret_cast<void*>(user32Proc("GetDpiForWindow")));
+    if (f && hwnd) if (const UINT d = f(hwnd)) return d;
+    HDC dc = GetDC(hwnd);
+    const int d = dc ? GetDeviceCaps(dc, LOGPIXELSX) : 96;
+    if (dc) ReleaseDC(hwnd, dc);
+    return d > 0 ? UINT(d) : 96u;
+}
+/// Outer window size for a client area of `cw` x `ch` physical pixels at `dpi`.
+SIZE outerSizeForClient(int cw, int ch, DWORD style, UINT dpi) {
+    RECT rc{0, 0, cw, ch};
+    using Fn = BOOL(WINAPI*)(LPRECT, DWORD, BOOL, DWORD, UINT);
+    static auto f = reinterpret_cast<Fn>(reinterpret_cast<void*>(user32Proc("AdjustWindowRectExForDpi")));
+    if (!f || !f(&rc, style, FALSE, 0, dpi)) AdjustWindowRect(&rc, style, FALSE);
+    return {rc.right - rc.left, rc.bottom - rc.top};
+}
+
 LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto* r = reinterpret_cast<NativePlatform::Impl::Rec*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     if (!r || !r->win) return DefWindowProcW(hwnd, msg, wp, lp);
     AppWindow& w = *r->win;
     UiContext& ui = w.ui();
+    const f32 sc = w.scale(); // physical client pixels per logical unit (per-monitor DPI)
+    auto at = [sc](LPARAM l) { const Vec2 v = lparamPos(l); return Vec2{v.x / sc, v.y / sc}; };
     switch (msg) {
     case WM_CLOSE: w.requestClose(); return 0;
     case WM_ACTIVATEAPP: // another application took the pointer / focus: popups close (Qt::Popup)
@@ -559,8 +598,16 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
     case WM_ERASEBKGND: return 1;
     case WM_SIZE:
-        if (LOWORD(lp) && HIWORD(lp)) w.resize(LOWORD(lp), HIWORD(lp));
+        if (LOWORD(lp) && HIWORD(lp))
+            w.resize(u32(std::max(1l, std::lround(f32(LOWORD(lp)) / sc))), u32(std::max(1l, std::lround(f32(HIWORD(lp)) / sc))));
         return 0;
+    case WM_DPICHANGED: { // moved to a monitor with another scale: re-render at the new DPI, take the suggested rect
+        w.setScale(f32(LOWORD(wp)) / 96.f);
+        const RECT* rc = reinterpret_cast<const RECT*>(lp);
+        SetWindowPos(hwnd, nullptr, rc->left, rc->top, rc->right - rc->left, rc->bottom - rc->top, SWP_NOZORDER | SWP_NOACTIVATE);
+        w.requestRedraw();
+        return 0;
+    }
     case WM_MOUSEMOVE: case WM_LBUTTONDOWN: case WM_RBUTTONDOWN: case WM_MBUTTONDOWN: case WM_LBUTTONUP: case WM_RBUTTONUP: case WM_MBUTTONUP:
         ui.setModifiers(u8(((wp & MK_SHIFT) ? kModShift : 0) | ((wp & MK_CONTROL) ? kModCtrl : 0) | ((GetKeyState(VK_MENU) < 0) ? kModAlt : 0)));
         break;
@@ -568,24 +615,24 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
     switch (msg) {
     case WM_MOUSEMOVE:
-        ui.pointerMove(lparamPos(lp));
+        ui.pointerMove(at(lp));
         if (wp & (MK_LBUTTON | MK_RBUTTON))
             if (auto drag = w.takeExternalDrag()) {
                 ReleaseCapture();
-                ui.pointerUp(lparamPos(lp));
+                ui.pointerUp(at(lp));
                 detail::win32DoDragDrop(w, *drag); // modal OLE loop
             }
         return 0;
-    case WM_LBUTTONDOWN: SetCapture(hwnd); ui.pointerDown(lparamPos(lp), MouseButton::Left); return 0;
-    case WM_RBUTTONDOWN: ui.pointerDown(lparamPos(lp), MouseButton::Right); return 0;
-    case WM_MBUTTONDOWN: ui.pointerDown(lparamPos(lp), MouseButton::Middle); return 0;
-    case WM_LBUTTONUP: ReleaseCapture(); ui.pointerUp(lparamPos(lp)); return 0;
+    case WM_LBUTTONDOWN: SetCapture(hwnd); ui.pointerDown(at(lp), MouseButton::Left); return 0;
+    case WM_RBUTTONDOWN: ui.pointerDown(at(lp), MouseButton::Right); return 0;
+    case WM_MBUTTONDOWN: ui.pointerDown(at(lp), MouseButton::Middle); return 0;
+    case WM_LBUTTONUP: ReleaseCapture(); ui.pointerUp(at(lp)); return 0;
     case WM_RBUTTONUP:
-    case WM_MBUTTONUP: ui.pointerUp(lparamPos(lp)); return 0;
+    case WM_MBUTTONUP: ui.pointerUp(at(lp)); return 0;
     case WM_MOUSEWHEEL: {
         POINT p{short(LOWORD(lp)), short(HIWORD(lp))};
         ScreenToClient(hwnd, &p);
-        ui.wheel({f32(p.x), f32(p.y)}, {0.f, f32(GET_WHEEL_DELTA_WPARAM(wp)) / WHEEL_DELTA});
+        ui.wheel({f32(p.x) / sc, f32(p.y) / sc}, {0.f, f32(GET_WHEEL_DELTA_WPARAM(wp)) / WHEEL_DELTA});
         return 0;
     }
     case WM_KEYDOWN:
@@ -626,7 +673,7 @@ LRESULT CALLBACK popupProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (!r->impl->findPopup(reinterpret_cast<unsigned long long>(hwnd), idx)) return DefWindowProcW(hwnd, msg, wp, lp);
     NativePlatform::Impl::Rec::Popup& p = r->popups[idx];
     UiContext& ui = r->win->ui();
-    const f32 s = 1.f;
+    const f32 s = r->win->scale();
     const Vec2 lp2 = lparamPos(lp);
     const Vec2 pos{p.rect.x + lp2.x / s, p.rect.y + lp2.y / s};
     switch (msg) {
@@ -716,8 +763,13 @@ bool NativePlatform::Impl::postClickOs(unsigned long long h, Vec2 at) {
 
 bool NativePlatform::Impl::createOsWindow(Rec& r) {
     const Size sz = r.win->size();
-    RECT rc{0, 0, LONG(sz.w), LONG(sz.h)};
-    AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
+    // created at the primary monitor's DPI, then sized for the DPI of the monitor it actually landed on
+    HDC sdc = GetDC(nullptr);
+    const UINT dpi0 = sdc ? UINT(std::max(96, GetDeviceCaps(sdc, LOGPIXELSX))) : 96u;
+    if (sdc) ReleaseDC(nullptr, sdc);
+    const SIZE outer0 = outerSizeForClient(int(std::lround(sz.w * f32(dpi0) / 96.f)), int(std::lround(sz.h * f32(dpi0) / 96.f)),
+                                           WS_OVERLAPPEDWINDOW, dpi0);
+    RECT rc{0, 0, outer0.cx, outer0.cy};
     const std::string& t = r.win->title();
     std::wstring wt(std::size_t(MultiByteToWideChar(CP_UTF8, 0, t.data(), int(t.size()), nullptr, 0)), L'\0');
     if (!wt.empty()) MultiByteToWideChar(CP_UTF8, 0, t.data(), int(t.size()), wt.data(), int(wt.size()));
@@ -726,6 +778,13 @@ bool NativePlatform::Impl::createOsWindow(Rec& r) {
     if (!hwnd) {
         error = "CreateWindowExW failed";
         return false;
+    }
+    const UINT dpi = dpiForWindow(hwnd);
+    r.win->setScale(f32(dpi) / 96.f);
+    if (dpi != dpi0) {
+        const SIZE o = outerSizeForClient(int(std::lround(sz.w * r.win->scale())), int(std::lround(sz.h * r.win->scale())),
+                                          WS_OVERLAPPEDWINDOW, dpi);
+        SetWindowPos(hwnd, nullptr, 0, 0, o.cx, o.cy, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&r));
     r.handle = reinterpret_cast<unsigned long long>(hwnd);
@@ -802,6 +861,7 @@ bool NativePlatform::Impl::capturePopupOs(const Rec::Popup& p, Image& out) {
 
 NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std::make_unique<Impl>(app, o)) {
     m->hinst = GetModuleHandleW(nullptr);
+    if (o.dpiAware) enablePerMonitorDpi();
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof wc;
     wc.style = CS_HREDRAW | CS_VREDRAW;
