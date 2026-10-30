@@ -142,4 +142,16 @@ std::string findExecutable(std::string_view name);
 /// "windows", "linux", "freebsd", "macos", "ios", "android", or "unknown".
 std::string_view platformName();
 
+/// HDR state of the display showing a native window (HWND on Windows): FORGE's display_hdr (DXGI IDXGIOutput6).
+/// `known` false: this OS layer cannot tell (non-Windows, or a FORGE without display_hdr); callers then trust the
+/// swapchain colour spaces the driver offers.
+struct DisplayHdr {
+    bool known = false;
+    bool capable = false; ///< can be driven in HDR10
+    bool enabled = false; ///< the OS drives it in HDR right now (Windows "Use HDR")
+    unsigned bitsPerColor = 8;
+    float minNits = 0.f, maxNits = 0.f, maxFullFrameNits = 0.f;
+};
+DisplayHdr displayHdr(void* nativeWindow);
+
 } // namespace fuse::ui::os

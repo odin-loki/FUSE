@@ -14,6 +14,15 @@
 #define FUSE_UI_VK_HAS_BACKDROP 1
 #endif
 
+#if __has_include("ui_encode_pq_spv.h")
+#include "ui_encode_pq_spv.h" // generated: kUiEncodePqSpv
+#define FUSE_UI_VK_HAS_ENCODE_PQ 1
+#endif
+#if __has_include("ui_encode_scrgb_spv.h")
+#include "ui_encode_scrgb_spv.h" // generated: kUiEncodeScrgbSpv
+#define FUSE_UI_VK_HAS_ENCODE_SCRGB 1
+#endif
+
 namespace fuse::ui::render {
 
 bool UiVkRenderer::kernelAvailable() {
@@ -482,6 +491,149 @@ void UiVkRenderer::record(void* commandBuffer, void* targetView, u32 slotIndex) 
         computeBarrier(cmd);
         run(3, aw * ah);
     }
+}
+
+// ---- UiVkEncoder -------------------------------------------------------------------------------------------------
+namespace {
+struct EncodePush {
+    i32 area[4];
+    f32 sdrWhite;
+};
+bool encodeCode(UiVkEncoder::Mode m, const u32*& code, std::size_t& size) {
+    code = nullptr;
+    size = 0;
+#if defined(FUSE_UI_VK_HAS_ENCODE_PQ)
+    if (m == UiVkEncoder::Mode::Hdr10) code = kUiEncodePqSpv, size = sizeof(kUiEncodePqSpv);
+#endif
+#if defined(FUSE_UI_VK_HAS_ENCODE_SCRGB)
+    if (m == UiVkEncoder::Mode::ScRgb) code = kUiEncodeScrgbSpv, size = sizeof(kUiEncodeScrgbSpv);
+#endif
+    return code != nullptr;
+}
+} // namespace
+
+bool UiVkEncoder::kernelAvailable(Mode mode) {
+    const u32* c;
+    std::size_t n;
+    return encodeCode(mode, c, n);
+}
+
+u32 UiVkEncoder::outputFormat() const {
+    return m_mode == Mode::Hdr10 ? u32(VK_FORMAT_A2B10G10R10_UNORM_PACK32) : u32(VK_FORMAT_R16G16B16A16_SFLOAT);
+}
+
+bool UiVkEncoder::init(void* devicePtr, Mode mode, u32 slots) {
+    destroy();
+    const u32* code;
+    std::size_t size;
+    if (!devicePtr || !encodeCode(mode, code, size)) return false;
+    VkDevice device = static_cast<VkDevice>(devicePtr);
+    m_device = devicePtr;
+    m_mode = mode;
+    m_slots = std::clamp(slots, 1u, UiVkRenderer::kMaxSlots);
+    VkDescriptorSetLayoutBinding b[2]{};
+    for (u32 i = 0; i < 2; ++i) {
+        b[i].binding = i;
+        b[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        b[i].descriptorCount = 1;
+        b[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+    VkDescriptorSetLayoutCreateInfo li{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    li.bindingCount = 2;
+    li.pBindings = b;
+    VkDescriptorSetLayout sl{};
+    if (vkCreateDescriptorSetLayout(device, &li, nullptr, &sl) != VK_SUCCESS) return destroy(), false;
+    m_setLayout = sl;
+    const VkPushConstantRange pr{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(EncodePush)};
+    VkPipelineLayoutCreateInfo pli{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    pli.setLayoutCount = 1;
+    pli.pSetLayouts = &sl;
+    pli.pushConstantRangeCount = 1;
+    pli.pPushConstantRanges = &pr;
+    VkPipelineLayout pl{};
+    if (vkCreatePipelineLayout(device, &pli, nullptr, &pl) != VK_SUCCESS) return destroy(), false;
+    m_layout = pl;
+    VkShaderModuleCreateInfo mi{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    mi.codeSize = size;
+    mi.pCode = code;
+    VkShaderModule sm{};
+    if (vkCreateShaderModule(device, &mi, nullptr, &sm) != VK_SUCCESS) return destroy(), false;
+    VkComputePipelineCreateInfo ci{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+    ci.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    ci.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    ci.stage.module = sm;
+    ci.stage.pName = "main";
+    ci.layout = pl;
+    VkPipeline pp{};
+    const VkResult pr2 = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &ci, nullptr, &pp);
+    vkDestroyShaderModule(device, sm, nullptr);
+    if (pr2 != VK_SUCCESS) return destroy(), false;
+    const VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2 * m_slots};
+    VkDescriptorPoolCreateInfo poi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+    poi.maxSets = m_slots;
+    poi.poolSizeCount = 1;
+    poi.pPoolSizes = &ps;
+    VkDescriptorPool pool{};
+    if (vkCreateDescriptorPool(device, &poi, nullptr, &pool) != VK_SUCCESS) {
+        vkDestroyPipeline(device, pp, nullptr);
+        return destroy(), false;
+    }
+    m_pool = pool;
+    VkDescriptorSetLayout layouts[UiVkRenderer::kMaxSlots];
+    std::fill(layouts, layouts + m_slots, sl);
+    VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    ai.descriptorPool = pool;
+    ai.descriptorSetCount = m_slots;
+    ai.pSetLayouts = layouts;
+    VkDescriptorSet sets[UiVkRenderer::kMaxSlots]{};
+    if (vkAllocateDescriptorSets(device, &ai, sets) != VK_SUCCESS) {
+        vkDestroyPipeline(device, pp, nullptr);
+        return destroy(), false;
+    }
+    for (u32 i = 0; i < m_slots; ++i) m_sets[i] = sets[i];
+    m_pipeline = pp;
+    return true;
+}
+
+void UiVkEncoder::destroy() {
+    if (!m_device) return;
+    VkDevice device = static_cast<VkDevice>(m_device);
+    if (m_pipeline) vkDestroyPipeline(device, static_cast<VkPipeline>(m_pipeline), nullptr);
+    if (m_pool) vkDestroyDescriptorPool(device, static_cast<VkDescriptorPool>(m_pool), nullptr);
+    if (m_layout) vkDestroyPipelineLayout(device, static_cast<VkPipelineLayout>(m_layout), nullptr);
+    if (m_setLayout) vkDestroyDescriptorSetLayout(device, static_cast<VkDescriptorSetLayout>(m_setLayout), nullptr);
+    m_pipeline = m_pool = m_layout = m_setLayout = nullptr;
+    for (void*& s : m_sets) s = nullptr;
+    m_device = nullptr;
+}
+
+void UiVkEncoder::record(void* commandBuffer, u32 slot, void* srcView, void* dstView, int x0, int y0, int x1, int y1,
+                         f32 sdrWhiteNits) {
+    if (!valid() || slot >= m_slots || x1 <= x0 || y1 <= y0) return;
+    VkDevice device = static_cast<VkDevice>(m_device);
+    VkCommandBuffer cmd = static_cast<VkCommandBuffer>(commandBuffer);
+    VkDescriptorImageInfo ii[2]{};
+    ii[0].imageView = static_cast<VkImageView>(srcView);
+    ii[0].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    ii[1].imageView = static_cast<VkImageView>(dstView);
+    ii[1].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    VkWriteDescriptorSet wr[2]{};
+    for (u32 i = 0; i < 2; ++i) {
+        wr[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        wr[i].dstSet = static_cast<VkDescriptorSet>(m_sets[slot]);
+        wr[i].dstBinding = i;
+        wr[i].descriptorCount = 1;
+        wr[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        wr[i].pImageInfo = &ii[i];
+    }
+    vkUpdateDescriptorSets(device, 2, wr, 0, nullptr);
+    const VkDescriptorSet set = static_cast<VkDescriptorSet>(m_sets[slot]);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, static_cast<VkPipeline>(m_pipeline));
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, static_cast<VkPipelineLayout>(m_layout), 0, 1, &set, 0,
+                            nullptr);
+    const EncodePush push{{x0, y0, x1, y1}, sdrWhiteNits};
+    vkCmdPushConstants(cmd, static_cast<VkPipelineLayout>(m_layout), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof push, &push);
+    vkCmdDispatch(cmd, u32(x1 - x0 + 15) / 16, u32(y1 - y0 + 15) / 16, 1);
 }
 
 } // namespace fuse::ui::render

@@ -52,6 +52,7 @@ typedef unsigned long VisualID;
 
 #if defined(FUSE_APP_HAS_UI_VK)
 #include "fuse/ui/color_space.hpp"
+#include "fuse/ui/os.hpp"
 #include "fuse/ui/render/gpu_draw_data.hpp"
 #include "fuse/ui/render/ui_vk.hpp"
 #endif
@@ -376,6 +377,10 @@ struct VkWin {
     VkDeviceMemory canvasMem = VK_NULL_HANDLE;
     VkImageView canvasView = VK_NULL_HANDLE;
     bool canvasFresh = true; ///< UNDEFINED layout, contents invalid
+    bool outputFresh = true; ///< HDR output image: UNDEFINED layout, encode it whole
+    SurfaceSource::Kind kind = SurfaceSource::Xlib;
+    void* hwnd = nullptr;           ///< Win32 window (DXGI HDR query)
+    f32 displayPeakNits = 0.f;      ///< from the OS seam when known
     // frames
     VkCommandBuffer cmd[kFrames]{};
     VkFence fence[kFrames]{};
@@ -387,7 +392,22 @@ struct VkWin {
     u32 frame = 0;
     bool needFull = true;
     bool gpuDraw = false;
-    std::unique_ptr<fuse::ui::color::Hdr10Packer> hdr; ///< set while presenting HDR10: canvas is A2B10G10R10 PQ
+    std::unique_ptr<fuse::ui::color::Hdr10Packer> hdr; ///< HDR10 without the GPU encoder: canvas is A2B10G10R10 PQ
+    // HDR with the GPU encoder: the canvas stays RGBA8 sRGB (CPU upload or draw kernel), ui.encode_pq / _scrgb writes
+    // the damage box into `output` (A2B10G10R10 or RGBA16F), which is what gets blitted to the swapchain
+    VkImage output = VK_NULL_HANDLE;
+    VkDeviceMemory outputMem = VK_NULL_HANDLE;
+    VkImageView outputView = VK_NULL_HANDLE;
+#if defined(FUSE_APP_HAS_UI_VK)
+    fuse::ui::render::UiVkEncoder encoder;
+#endif
+    bool encodeOnGpu() const {
+#if defined(FUSE_APP_HAS_UI_VK)
+        return encoder.valid() && output;
+#else
+        return false;
+#endif
+    }
     ExternalTexture external[4]{};
 #if defined(FUSE_APP_HAS_UI_VK)
     fuse::ui::render::UiVkRenderer gpu;
@@ -406,6 +426,12 @@ struct VkWin {
         canvasView = VK_NULL_HANDLE;
         canvas = VK_NULL_HANDLE;
         canvasMem = VK_NULL_HANDLE;
+        if (outputView) vkDestroyImageView(d, outputView, nullptr);
+        if (output) vkDestroyImage(d, output, nullptr);
+        if (outputMem) vkFreeMemory(d, outputMem, nullptr);
+        outputView = VK_NULL_HANDLE;
+        output = VK_NULL_HANDLE;
+        outputMem = VK_NULL_HANDLE;
         for (u32 i = 0; i < kFrames; ++i) {
             if (upload[i]) vkDestroyBuffer(d, upload[i], nullptr);
             if (uploadMem[i]) vkFreeMemory(d, uploadMem[i], nullptr);
@@ -448,12 +474,34 @@ struct VkWin {
         space = OutputColorSpace::Srgb;
         // requested wide-gamut / HDR space: the canvas (RGBA8 UNORM) is blitted, so any blit-capable UNORM target works
         // (adopted instances may lack the extension: their formats list then has no such entries anyway)
-        if (opts.colorSpace != OutputColorSpace::Srgb) {
+        bool gpuEncode = false; // HDR encode kernel for the requested space
+#if defined(FUSE_APP_HAS_UI_VK)
+        using Enc = fuse::ui::render::UiVkEncoder;
+        const Enc::Mode encMode = opts.colorSpace == OutputColorSpace::ScRgb ? Enc::Mode::ScRgb : Enc::Mode::Hdr10;
+        gpuEncode = (opts.colorSpace == OutputColorSpace::Hdr10 || opts.colorSpace == OutputColorSpace::ScRgb) &&
+                    Enc::kernelAvailable(encMode);
+#endif
+        // Win32: drivers may list HDR colour spaces while Windows drives the monitor in SDR (the picture would come
+        // out washed out); the OS seam's DXGI query decides, and supplies the panel's peak for the HDR metadata
+        bool hdrAllowed = true;
+        if (kind == SurfaceSource::Win32 && opts.colorSpace != OutputColorSpace::Srgb &&
+            opts.colorSpace != OutputColorSpace::DisplayP3) {
+            const fuse::ui::os::DisplayHdr dh = fuse::ui::os::displayHdr(hwnd);
+            if (dh.known) {
+                hdrAllowed = dh.enabled;
+                displayPeakNits = dh.maxNits;
+            }
+        }
+        if (opts.colorSpace != OutputColorSpace::Srgb && hdrAllowed &&
+            (opts.colorSpace != OutputColorSpace::ScRgb || gpuEncode)) {
             const VkColorSpaceKHR want = opts.colorSpace == OutputColorSpace::DisplayP3 ? VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT
-                                                                                         : VK_COLOR_SPACE_HDR10_ST2084_EXT;
+                                         : opts.colorSpace == OutputColorSpace::ScRgb ? VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT
+                                                                                       : VK_COLOR_SPACE_HDR10_ST2084_EXT;
             for (const VkSurfaceFormatKHR& f : fmts) {
                 const bool fmtOk = opts.colorSpace == OutputColorSpace::DisplayP3
                                        ? (f.format == VK_FORMAT_B8G8R8A8_UNORM || f.format == VK_FORMAT_R8G8B8A8_UNORM)
+                                   : opts.colorSpace == OutputColorSpace::ScRgb
+                                       ? f.format == VK_FORMAT_R16G16B16A16_SFLOAT
                                        : (f.format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 || f.format == VK_FORMAT_A2R10G10B10_UNORM_PACK32);
                 if (f.colorSpace != want || !fmtOk) continue;
                 VkFormatProperties fp{};
@@ -465,13 +513,22 @@ struct VkWin {
             }
         }
         format = sf.format;
-        // HDR10: the canvas holds PQ-encoded Rec.2020 (A2B10G10R10), converted from the sRGB raster on upload. The
-        // draw kernel writes RGBA8 storage, so HDR10 presents through the CPU upload path.
-        if (space == OutputColorSpace::Hdr10) {
-            if (!hdr) hdr = std::make_unique<fuse::ui::color::Hdr10Packer>(opts.sdrWhiteNits);
-            gpuDraw = false;
+        // HDR: preferably the GPU encoder (canvas stays RGBA8, draw kernel allowed); else HDR10 packs on the CPU
+        // into an A2B10G10R10 canvas (the draw kernel writes RGBA8 storage, so that path is CPU upload only)
+        hdr.reset();
+#if defined(FUSE_APP_HAS_UI_VK)
+        if ((space == OutputColorSpace::Hdr10 || space == OutputColorSpace::ScRgb) && gpuEncode) {
+            if (!encoder.valid() || encoder.mode() != encMode) encoder.init(ctx->device, encMode, kFrames);
         } else {
-            hdr.reset();
+            encoder.destroy();
+        }
+        const bool encReady = encoder.valid();
+#else
+        const bool encReady = false;
+#endif
+        if (space == OutputColorSpace::Hdr10 && !encReady) {
+            hdr = std::make_unique<fuse::ui::color::Hdr10Packer>(opts.sdrWhiteNits);
+            gpuDraw = false;
         }
         VkPresentModeKHR mode = VK_PRESENT_MODE_FIFO_KHR;
         if (!opts.vsync) {
@@ -516,9 +573,9 @@ struct VkWin {
             md.displayPrimaryGreen = {0.170f, 0.797f};
             md.displayPrimaryBlue = {0.131f, 0.046f};
             md.whitePoint = {0.3127f, 0.3290f};
-            md.maxLuminance = opts.hdrMaxNits;
+            md.maxLuminance = displayPeakNits > 0.f ? std::min(opts.hdrMaxNits, displayPeakNits) : opts.hdrMaxNits;
             md.minLuminance = 0.0001f;
-            md.maxContentLightLevel = opts.hdrMaxNits;
+            md.maxContentLightLevel = md.maxLuminance;
             md.maxFrameAverageLightLevel = opts.sdrWhiteNits;
             ctx->setHdrMetadata(d, 1, &swapchain, &md);
         }
@@ -542,7 +599,12 @@ struct VkWin {
         ii.arrayLayers = 1;
         ii.samples = VK_SAMPLE_COUNT_1_BIT;
         ii.tiling = VK_IMAGE_TILING_OPTIMAL;
-        ii.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | (gpuDraw ? VkImageUsageFlags(VK_IMAGE_USAGE_STORAGE_BIT) : VkImageUsageFlags(0));
+        bool encoding = false;
+#if defined(FUSE_APP_HAS_UI_VK)
+        encoding = encoder.valid();
+#endif
+        ii.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                   (gpuDraw || encoding ? VkImageUsageFlags(VK_IMAGE_USAGE_STORAGE_BIT) : VkImageUsageFlags(0));
         ii.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         if (!ok(vkCreateImage(d, &ii, nullptr, &canvas), "vkCreateImage canvas", err)) return false;
         VkMemoryRequirements mr;
@@ -561,7 +623,26 @@ struct VkWin {
         vi.format = canvasFormat;
         vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
         if (!ok(vkCreateImageView(d, &vi, nullptr, &canvasView), "canvas view", err)) return false;
+#if defined(FUSE_APP_HAS_UI_VK)
+        if (encoding) { // HDR output image: encoder target, blit source
+            VkImageCreateInfo oi = ii;
+            oi.format = VkFormat(encoder.outputFormat());
+            oi.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+            if (!ok(vkCreateImage(d, &oi, nullptr, &output), "vkCreateImage output", err)) return false;
+            vkGetImageMemoryRequirements(d, output, &mr);
+            mai.allocationSize = mr.size;
+            mai.memoryTypeIndex = memType(ctx->phys, mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            if (mai.memoryTypeIndex == ~0u) mai.memoryTypeIndex = memType(ctx->phys, mr.memoryTypeBits, 0);
+            if (!ok(vkAllocateMemory(d, &mai, nullptr, &outputMem), "output memory", err)) return false;
+            vkBindImageMemory(d, output, outputMem, 0);
+            VkImageViewCreateInfo ov = vi;
+            ov.image = output;
+            ov.format = oi.format;
+            if (!ok(vkCreateImageView(d, &ov, nullptr, &outputView), "output view", err)) return false;
+        }
+#endif
         canvasFresh = true;
+        outputFresh = true;
         if (!gpuDraw) {
             uploadSize = VkDeviceSize(extent.width) * extent.height * 4;
             for (u32 i = 0; i < kFrames; ++i) {
@@ -595,6 +676,8 @@ VkWin* vkWinCreate(VkCtx* c, const SurfaceSource& s, const NativeOptions& o, std
     w->ctx = c;
     w->opts = o;
     VkResult sr = VK_ERROR_EXTENSION_NOT_PRESENT;
+    w->kind = s.kind;
+    if (s.kind == SurfaceSource::Win32) w->hwnd = s.hwnd;
     switch (s.kind) {
     case SurfaceSource::Win32: {
 #if defined(_WIN32)
@@ -845,6 +928,25 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
         VkImageMemoryBarrier b2 = imageBarrier(w->canvas, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT, G, G);
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b2);
     }
+    VkImage blitSrc = w->canvas;
+#if defined(FUSE_APP_HAS_UI_VK)
+    if (w->encodeOnGpu()) { // canvas (sRGB RGBA8) -> HDR output over the damage box (the output keeps the rest)
+        VkImageMemoryBarrier e0[2] = {imageBarrier(w->canvas, VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                                                   VK_ACCESS_SHADER_READ_BIT, G, G),
+                                      imageBarrier(w->output, VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+                                                   w->outputFresh ? VK_IMAGE_LAYOUT_UNDEFINED : G, G)};
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 2, e0);
+        const bool all = w->outputFresh;
+        w->encoder.record(cmd, f, w->canvasView, w->outputView, all ? 0 : x0, all ? 0 : y0, all ? int(W) : x1,
+                          all ? int(H) : y1, w->opts.sdrWhiteNits);
+        w->outputFresh = false;
+        VkImageMemoryBarrier e1 = imageBarrier(w->output, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT, G, G);
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                             nullptr, 1, &e1);
+        blitSrc = w->output;
+    }
+#endif
     VkImage sw = w->images[index];
     VkImageMemoryBarrier s0 = imageBarrier(sw, 0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
                                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
@@ -855,7 +957,7 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
     blit.dstSubresource = blit.srcSubresource;
     blit.srcOffsets[1] = {int(W), int(H), 1};
     blit.dstOffsets[1] = {int(W), int(H), 1};
-    vkCmdBlitImage(cmd, w->canvas, G, sw, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_NEAREST);
+    vkCmdBlitImage(cmd, blitSrc, G, sw, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_NEAREST);
     VkImageMemoryBarrier s1 = imageBarrier(sw, VK_ACCESS_TRANSFER_WRITE_BIT, 0, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &s1);

@@ -96,4 +96,37 @@ private:
     u64 m_atlasUploads = 0;
 };
 
+/// "ui.encode_pq" / "ui.encode_scrgb": converts an RGBA8 sRGB canvas (storage image, GENERAL) into an HDR output
+/// image over a box: HDR10 (rgb10_a2: Rec.2020 + PQ, as color::toHdr10) or scRGB (rgba16f: linear, 1.0 = 80 nits).
+/// Both images must be in GENERAL layout with STORAGE usage; barriers around the dispatch are the caller's.
+class UiVkEncoder {
+public:
+    enum class Mode : u8 { Hdr10, ScRgb };
+    UiVkEncoder() = default;
+    ~UiVkEncoder() { destroy(); }
+    UiVkEncoder(const UiVkEncoder&) = delete;
+    UiVkEncoder& operator=(const UiVkEncoder&) = delete;
+
+    static bool kernelAvailable(Mode mode);
+    /// `slots`: descriptor sets, one per frame in flight (record() into a slot whose last use has completed).
+    bool init(void* device, Mode mode, u32 slots = 2);
+    void destroy();
+    bool valid() const { return m_pipeline != nullptr; }
+    Mode mode() const { return m_mode; }
+    /// VkFormat value of the output image (VK_FORMAT_A2B10G10R10_UNORM_PACK32 or VK_FORMAT_R16G16B16A16_SFLOAT).
+    u32 outputFormat() const;
+    void record(void* commandBuffer, u32 slot, void* srcView, void* dstView, int x0, int y0, int x1, int y1,
+                f32 sdrWhiteNits);
+
+private:
+    void* m_device = nullptr;
+    void* m_setLayout = nullptr;
+    void* m_layout = nullptr;
+    void* m_pipeline = nullptr;
+    void* m_pool = nullptr;
+    void* m_sets[UiVkRenderer::kMaxSlots]{};
+    u32 m_slots = 0;
+    Mode m_mode = Mode::Hdr10;
+};
+
 } // namespace fuse::ui::render

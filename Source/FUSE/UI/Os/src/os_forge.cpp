@@ -414,4 +414,21 @@ std::string_view platformName() {
     default: return "unknown";
     }
 }
+DisplayHdr displayHdr(void* nativeWindow) {
+    DisplayHdr d;
+#if defined(FORGE_OS_HAS_DISPLAY_HDR)
+    const auto r = forge::os::display_hdr(nativeWindow);
+    if (!r) return d;
+    d.known = true;
+    d.capable = r.value.hdr_capable;
+    d.enabled = r.value.hdr_enabled;
+    d.bitsPerColor = r.value.bits_per_color;
+    d.minNits = r.value.min_nits;
+    d.maxNits = r.value.max_nits;
+    d.maxFullFrameNits = r.value.max_full_frame_nits;
+#else
+    (void)nativeWindow;
+#endif
+    return d;
+}
 } // namespace fuse::ui::os

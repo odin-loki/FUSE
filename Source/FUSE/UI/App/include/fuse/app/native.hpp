@@ -59,6 +59,7 @@ enum class OutputColorSpace : unsigned char {
     Srgb,      ///< VK_COLOR_SPACE_SRGB_NONLINEAR_KHR (always)
     DisplayP3, ///< VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT, 8-bit
     Hdr10,     ///< VK_COLOR_SPACE_HDR10_ST2084_EXT (Rec.2020 + PQ), A2B10G10R10 swapchain
+    ScRgb,     ///< VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT (linear sRGB, 1.0 = 80 nits), R16G16B16A16_SFLOAT; GPU encode only
 };
 struct NativeOptions {
     VulkanDeviceHandles adoptDevice{}; ///< instance + device set: present on that device (see VulkanDeviceHandles)
