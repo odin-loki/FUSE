@@ -617,6 +617,7 @@ int main() {
             packDrawList(ins, W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, {}, gen);
             UI_CHECK(gpu.upload(0, data));
             const u64 insWrote = gpu.uploadedBytes() - b2;
+            UI_CHECK(data.incremental); // re-emitted only the changed range
             std::fill(cpuR.pixels.begin(), cpuR.pixels.end(), 0xFF000000u);
             re.render(ins, cpuR);
             vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
@@ -629,7 +630,30 @@ int main() {
             std::fill(cpuR.pixels.begin(), cpuR.pixels.end(), 0xFF000000u);
             re.render(rem, cpuR);
             vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+            UI_CHECK(data.incremental);
             check("removed-glyph", compare(cpuR, out));
+            // a rect (GpuCmd) inserted mid-list and one removed: same incremental path through the cmd slots
+            std::size_t rm = cmds.size() / 3;
+            while (rm < cmds.size() && cmds[rm].op != DrawOp::Glyph) ++rm;
+            DrawCmd box{};
+            box.op = DrawOp::Rect;
+            box.rect = {40.f, 30.f, 90.f, 50.f};
+            box.fill = Color{0.2f, 0.6f, 0.9f, 0.7f};
+            box.radius[0] = box.radius[1] = box.radius[2] = box.radius[3] = 6.f;
+            box.node = cmds[rm].node;
+            cmds.insert(cmds.begin() + std::ptrdiff_t(rm), box);
+            for (int step = 0; step < 2; ++step) {
+                if (step == 1) cmds.erase(cmds.begin() + std::ptrdiff_t(rm) + 1); // and drop the glyph after it
+                DrawList rl;
+                for (const DrawCmd& c : cmds) rl.push(c);
+                packDrawList(rl, W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, {}, gen);
+                UI_CHECK(data.incremental);
+                UI_CHECK(gpu.upload(0, data));
+                std::fill(cpuR.pixels.begin(), cpuR.pixels.end(), 0xFF000000u);
+                re.render(rl, cpuR);
+                vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+                check(step ? "rect+removed" : "inserted-rect", compare(cpuR, out));
+            }
             std::printf("  structural: insert wrote %llu of %zu bytes\n", (unsigned long long)insWrote,
                         data.cmdBytes() + data.tileBytes() + data.imageBytes());
         }

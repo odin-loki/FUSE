@@ -76,7 +76,10 @@ inline constexpr u32 kPassDraw = 0, kPassBackdrop = 1;
 
 struct GpuDrawData {
     std::vector<GpuCmd> cmds;
-    std::vector<u32> tiles;  ///< per draw pass at its tileBase: offsets[tileCount + 1], then command ids
+    /// per draw pass at its tileBase: begin | end per tile (2 words, absolute indices into `tiles`); after all pass
+    /// headers, one slot per (pass, tile) holding its entries then its glyph run records. Slots keep their place
+    /// (headroom 1/8) while their content fits, so a change rewrites only the tiles it touches.
+    std::vector<u32> tiles;
     std::vector<GpuPass> passes; ///< in order; passes[0] is always a draw pass
     std::vector<u32> images; ///< per image: offset (in u32 pixels into `pixels`), width, height, 0; then pixels
     GpuPush push{};
@@ -129,8 +132,36 @@ struct GpuDrawData {
     std::vector<u32> glyphScratch;          ///< per glyph this pack: 7 record words + node (then absolute offset)
     std::vector<GlyphSlot*> glyphSlotOf;
     std::vector<u32> touched;
+    std::vector<u32> arenaSrc; ///< per arena word: source DrawList index of the record starting there
+
+    /// Command slots: `cmds` is a node-keyed arena like the glyph records (GpuCmd slots per DrawCmd::node).
+    std::unordered_map<u32, GlyphSlot> cmdSlots;
+    u32 cmdHoles = 0, cmdLive = 0;
+    std::vector<u32> cmdSrc;               ///< per cmds entry: source DrawList index
+    std::vector<GpuCmd> cmdScratch;        ///< packDrawList scratch: GpuCmds in pack order
+    std::vector<u32> cmdScratchNode, cmdScratchSrc, cmdMap;
+    std::vector<GlyphSlot*> cmdSlotOf;
+    /// Tile slots per (pass, tile): word offset and capacity in `tiles`
+    std::vector<u32> tileSlotOff, tileSlotCap;
+    u32 tilePasses = 0, tileCountPrev = 0, tileHoles = 0, tileLive = 0;
+
+    /// Incremental structural pack: a frame whose commands differ from the previous one in one contiguous range
+    /// of plain draw commands (no clip / backdrop / path / stop-gradient ops, single draw pass) re-emits only that
+    /// range: its records go into free spots of their node's slots, and only the tiles it touches are rebuilt.
+    bool incremental = false;
+    std::vector<u64> cmdTiles; ///< per DrawList command: tile box x0 | y0 << 16 | x1 << 32 | y1 << 48, ~0 = none
+    struct ClipRun {
+        u32 from; ///< first DrawList index under this clip
+        Rect r;
+        f32 radius;
+        u32 pathList;
+    };
+    std::vector<ClipRun> clipRuns;
+    std::vector<std::pair<u32, u32>> freeRecs, freeCmds; ///< (node, absolute record offset / cmds index)
     void resetArena() {
         arena.clear();
+        arenaSrc.clear();
+        freeRecs.clear();
         glyphSlots.clear();
         fillSlots.clear();
         arenaHoles = arenaLive = 0;

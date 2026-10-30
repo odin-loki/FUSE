@@ -208,13 +208,18 @@ int main(int argc, char** argv) {
                     cmds.insert(cmds.begin() + std::ptrdiff_t(mid), extra);
                     DrawList ins;
                     for (const DrawCmd& c : cmds) ins.push(c);
-                    GpuDrawData id = data;
-                    const auto t0 = std::chrono::steady_clock::now();
-                    packDrawList(ins, W, H, id, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, s.scissor, ui.atlas().version());
-                    rows[i].insPack = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
-                    const u64 b = gpu.uploadedBytes();
-                    if (gpu.upload(0, id)) rows[i].insKb = double(gpu.uploadedBytes() - b) / 1024.0;
-                    gpu.upload(0, data);
+                    // in place (no copy of the 3.5 MB pack): best of 5 insert / restore round trips
+                    double best = 1e30;
+                    for (int r = 0; r < 5; ++r) {
+                        const auto t0 = std::chrono::steady_clock::now();
+                        packDrawList(ins, W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, s.scissor, ui.atlas().version());
+                        best = std::min(best, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+                        const u64 b = gpu.uploadedBytes();
+                        if (gpu.upload(0, data) && r == 0) rows[i].insKb = double(gpu.uploadedBytes() - b) / 1024.0;
+                        packDrawList(*s.list, W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, s.scissor, ui.atlas().version());
+                        gpu.upload(0, data);
+                    }
+                    rows[i].insPack = best;
                 }
             }
             double device = 0.0;

@@ -17,7 +17,7 @@ struct UiVkDesc {
     void* device = nullptr;         ///< VkDevice
     u32 framesInFlight = 2;
     u32 maxCmds = 16384;
-    u32 maxTileWords = 1u << 18;
+    u32 maxTileWords = 1u << 19; ///< headers, tile slots (with headroom) and glyph run records
     u32 maxImageWords = 1u << 20;
     u32 maxAtlasSize = 1024;
     /// Backdrop blur scratch (device-local floats, 32 bytes per pixel of a blur's source box). A blur whose source

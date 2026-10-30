@@ -32,7 +32,7 @@ layout(set = 0, binding = 0, rgba8) uniform image2D ui_target;
 #define PIX uvec4
 #endif
 layout(set = 0, binding = 1, std430) readonly buffer UiCmds { GpuCmd cmds[]; } ui_cmds;
-layout(set = 0, binding = 2, std430) readonly buffer UiTiles { uint data[]; } ui_tiles; // offsets[tiles + 1], then ids
+layout(set = 0, binding = 2, std430) readonly buffer UiTiles { uint data[]; } ui_tiles; // per tile begin | end, then tile slots (entries, run records)
 layout(set = 0, binding = 3, std430) readonly buffer UiAtlas { uint words[]; } ui_atlas;
 layout(set = 0, binding = 4, std430) readonly buffer UiImages { uint data[]; } ui_images; // per image: off, w, h, ext
 // External textures (UiVkRenderer::setExternalImage): GPU images drawn by kImage commands whose image entry has
@@ -203,21 +203,22 @@ void main() {
     uvec4 dst = (pc.flags & 1u) != 0u ? uvec4(0u, 0u, 0u, 255u) : uvec4(floor(imageLoad(ui_target, ip) * 255.0 + 0.5));
 #endif
     const uint tile = (p.y / 16u) * pc.tilesX + (p.x / 16u);
-    const uint begin = ui_tiles.data[pc.tileBase + tile];
-    const uint end = ui_tiles.data[pc.tileBase + tile + 1u];
+    // per tile: begin | end (absolute word indices of its slot's entries; gpu_draw_data.hpp)
+    const uint begin = ui_tiles.data[pc.tileBase + 2u * tile];
+    const uint end = ui_tiles.data[pc.tileBase + 2u * tile + 1u];
     const float px = float(p.x) + 0.5, py = float(p.y) + 0.5;
     for (uint k = begin; k < end; ++k) {
-        const uint id = ui_tiles.data[pc.tileBase + pc.tileCount + 1u + k];
+        const uint id = ui_tiles.data[k];
         if ((id & kGlyphRun) == kGlyphRun) {
-            // glyph run (gpu_draw_data.hpp): n, y0|y1, per-column candidate ranges, record offsets; the candidates
-            // are blended in run (= paint) order
+            // glyph run (gpu_draw_data.hpp, in the tile's slot): n, y0|y1, per-column candidate ranges, record
+            // offsets; the candidates are blended in run (= paint) order
             const uint o = id & 0x3FFFFFFFu;
-            const uint n = ui_images.data[o], yb = ui_images.data[o + 1u];
+            const uint n = ui_tiles.data[o], yb = ui_tiles.data[o + 1u];
             const ivec2 pi = ivec2(p.xy) + 32768;
             if (pi.y < int(yb & 0xFFFFu) || pi.y >= int(yb >> 16)) continue;
-            const uint range = ui_images.data[o + 2u + (p.x & 15u)];
+            const uint range = ui_tiles.data[o + 2u + (p.x & 15u)];
             const uint s0 = range & 0xFFFFu, hi = range >> 16;
-            for (uint j = s0; j < hi; ++j) compactGlyph(ui_images.data[o + 18u + j], pi, px, py, dst);
+            for (uint j = s0; j < hi; ++j) compactGlyph(ui_tiles.data[o + 18u + j], pi, px, py, dst);
             continue;
         }
         if ((id & kCompactGlyph) != 0u) {

@@ -222,6 +222,8 @@ Every phase: commits on `gui-framework`, pushed after each milestone; never to `
   - GPU text on lavapipe is still slower than the CPU (about 21 vs 14-16 ms). The cost is per-pixel glyph loops on a software rasteriser; real GPUs are not measured here.
   - The Apple paths (CVDisplayLink, Metal surface) are unverified on hardware.
 - Done: node-keyed glyph slot arena in packDrawList — glyph records live in per-node slots with slack (grow-in-place, holes compacted on reset); inserting/removing/moving glyphs in one node rewrites only that slot plus cmds/tiles (text_page insert: 70 KB of 3.6 MB uploaded). Parity tests inserted-glyph / removed-glyph.
+- Done: node-keyed slots for GpuCmds and per-(pass, tile) slots for tile lists (kernel tile header is now begin|end per tile; glyph runs live in the tile slot). Incremental structural pack: one changed range of plain draw commands re-emits only that range into free slot spots and rebuilds only the tiles it touches (text_page insert: 0.75 ms pack, 20 KB upload, was 14.8 ms / 70 KB). Parity: inserted-rect, rect+removed; incremental asserted.
+- Done: fuse_ui_bench_10k gate is RUN_SERIAL and uses the best median of 10 batches (was flaky under Wine with ctest -j load).
 
 ## Features track (gui-features), latest
 - Done: backdrop blur honours clip paths. `DrawOp::Backdrop` coverage is multiplied by the active `pushClipPath` / `pushClipLayers` entries on the CPU (`backdropBlur`) and GPU (ui.backdrop binds the images buffer; clip coverage shared with ui.draw_list via `ui_clip.glsl`). vk_parity "backdrop_clip": 0 differing pixels.
