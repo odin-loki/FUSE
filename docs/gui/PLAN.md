@@ -128,6 +128,8 @@ Headless (offscreen CPU raster) works everywhere and is what the test suite uses
   bit-exact vs scalar, gated by `fuse_ui_simd_blur`).
 - **G2**: Wayland (SDL3 path per D1), OS-level drag and drop, rich clipboard MIME, native file dialogs, hot reload on
   `forge::os::file_watch`.
+  *Status:* hot reload done: `fuse::ui::doc::HotReload` (styles replaced in place via `StyleEngine::replaceSheet`,
+  documents via `Document::reload`, last-good kept on bad edits; test `fuse_ui_hot_reload`).
 - **G3**: macOS: Cocoa window, NSTextInputClient IME, MoltenVK present, NSAccessibility.
 - **G4**: iOS + Android: surfaces, touch/pen, lifecycle, virtual keyboard, mobile a11y; emulator/simulator gates.
 - **G5**: tray/notifications/global menu, printing, web view, designer to product.

@@ -606,6 +606,17 @@ void StyleEngine::clearSheets() {
 
 void StyleEngine::addSheet(StyleSheet sheet) {
     m_sheets.push_back(std::move(sheet));
+    reorder();
+}
+
+bool StyleEngine::replaceSheet(u32 index, StyleSheet sheet) {
+    if (index >= m_sheets.size()) return false;
+    m_sheets[index] = std::move(sheet);
+    reorder();
+    return true;
+}
+
+void StyleEngine::reorder() {
     m_ordered.clear();
     u32 sheetIdx = 0;
     std::vector<std::pair<u64, const StyleRule*>> keyed;

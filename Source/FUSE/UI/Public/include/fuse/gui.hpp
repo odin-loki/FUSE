@@ -28,6 +28,7 @@
 #include "fuse/ui/widgets/widgets.hpp"
 #include "fuse/ui/widgets/platform_feel.hpp"
 #include "fuse/ui/doc/document.hpp"
+#include "fuse/ui/doc/hot_reload.hpp"
 #include "fuse/app/app.hpp"
 #include "fuse/app/native.hpp"
 

@@ -166,9 +166,9 @@ endif()
 
 option(FUSE_BUILD_UI_DOC "Build fuse_ui_doc (.fuseui documents + bindings)" ON)
 if(FUSE_BUILD_UI_DOC AND FUSE_BUILD_UI_WIDGETS)
-    add_library(fuse_ui_doc STATIC Doc/src/json.cpp Doc/src/document.cpp Doc/src/cook.cpp)
+    add_library(fuse_ui_doc STATIC Doc/src/json.cpp Doc/src/document.cpp Doc/src/cook.cpp Doc/src/hot_reload.cpp)
     target_include_directories(fuse_ui_doc PUBLIC Doc/include)
-    target_link_libraries(fuse_ui_doc PUBLIC fuse_ui_widgets)
+    target_link_libraries(fuse_ui_doc PUBLIC fuse_ui_widgets PRIVATE fuse_ui_os)
     # UI8 cooker: .fuseui / .fusestyle -> cooked blobs + generated widget-registration list
     add_executable(fuse_ui_cook Doc/tools/fuse_ui_cook.cpp)
     target_link_libraries(fuse_ui_cook PRIVATE fuse_ui_doc)
