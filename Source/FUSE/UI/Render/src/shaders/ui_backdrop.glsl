@@ -26,6 +26,9 @@ layout(set = 0, binding = 0, rgba8) uniform image2D ui_target;
 #endif
 layout(set = 0, binding = 1, std430) readonly buffer UiCmds { GpuCmd cmds[]; } ui_cmds;
 layout(set = 0, binding = 2, std430) buffer UiScratch { float v[]; } ui_scratch; // buf[w*h*4], then tmp[w*h*4]
+layout(set = 0, binding = 3, std430) readonly buffer UiImages { uint data[]; } ui_images; // clip-path lists + edges
+float edgeWord(uint i) { return uintBitsToFloat(ui_images.data[i]); }
+#include "ui_clip.glsl"
 
 layout(push_constant) uniform BlurPush {
     ivec4 area; // x0, y0, x1, y1 (first: ivec4 is 16-aligned)
@@ -102,6 +105,14 @@ void main() {
         const float px = float(x) + 0.5, py = float(y) + 0.5;
         precise float cov = clamp(0.5 - sdRoundRect(px, py, c.rect, c.radius), 0.0, 1.0);
         if (c.params.z > 0.0) cov = cov * clamp(0.5 - sdRoundRect(px, py, c.clip, vec4(c.params.z)), 0.0, 1.0);
+        const uint clipList = floatBitsToUint(c.params.w); // active clip paths, as ui.draw_list
+        if (clipList != 0u) {
+            const uint cnt = ui_images.data[clipList];
+            for (uint q = 0u; q < cnt && cov > 0.0; ++q) {
+                const uint e = clipList + 1u + q * 3u;
+                cov = cov * clipPathCoverage(ui_images.data[e], ui_images.data[e + 1u], ui_images.data[e + 2u] != 0u, px, py);
+            }
+        }
         if (cov <= 0.0) return;
         const ivec2 ip = ivec2(x, y);
 #ifdef UI_HDR

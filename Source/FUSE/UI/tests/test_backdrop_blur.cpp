@@ -97,5 +97,62 @@ int main(int argc, char** argv) {
         }
         UI_CHECK(bi >= 0 && bg > bi);
     }
+    // clip paths: a backdrop under a circular clip-path blurs only inside the circle (soft edge), not the card corners
+    {
+        DrawList dl;
+        scene(dl);
+        Path circ;
+        circ.circle({160.f, 100.f}, 50.f);
+        dl.pushClipPath(circ);
+        dl.backdrop(card, 12.f, {16.f, 16.f, 16.f, 16.f});
+        dl.popClip();
+        Image c;
+        c.resize(320, 200, 0xFF000000u);
+        CpuRasterizer().render(dl, c);
+        UI_CHECK(c.at(70, 60) == ref.at(70, 60));     // in the card, outside the circle: untouched
+        UI_CHECK(c.at(140, 100) == img.at(140, 100)); // inside the circle: same blur as unclipped
+        UI_CHECK(c.at(140, 100) != ref.at(140, 100));
+    }
+    // background-clip: padding-box / content-box move the background and backdrop inside the border (and padding)
+    {
+        UiContext ui({.viewport = {320, 200}, .font = &font()});
+        w::install(ui);
+        auto sheet = StyleSheet::parse(".a { backdrop-blur: 8px; background: #ff0000; border-width: 4px; border-color: #00ff00;"
+                                       " padding-left: 10px; padding-top: 6px; border-radius: 12px; width: 120px; height: 60px; }"
+                                       ".p { background-clip: padding-box; } .c { background-clip: content-box; }");
+        UI_CHECK(sheet.has_value());
+        if (sheet) ui.styles().addSheet(std::move(*sheet));
+        const NodeHandle a = w::label(ui, ui.root(), "");
+        const NodeHandle b = w::label(ui, ui.root(), "");
+        const NodeHandle d = w::label(ui, ui.root(), "");
+        for (NodeHandle h : {a, b, d}) ui.addClass(h, "a");
+        ui.addClass(b, "p");
+        ui.addClass(d, "c");
+        ui.update();
+        UI_CHECK(ui.computed(a).backgroundClip == BackgroundClip::BorderBox);
+        UI_CHECK(ui.computed(b).backgroundClip == BackgroundClip::PaddingBox);
+        UI_CHECK(ui.computed(d).backgroundClip == BackgroundClip::ContentBox);
+        auto find = [&](NodeHandle h, DrawOp op, bool fill) -> const DrawCmd* {
+            for (const DrawCmd& c : ui.drawList().cmds())
+                if (c.node == h.index && c.op == op && (!fill || c.fill.a > 0.f)) return &c;
+            return nullptr;
+        };
+        const Rect ra = ui.rect(a), rb = ui.rect(b), rd = ui.rect(d);
+        const DrawCmd* ba = find(a, DrawOp::Backdrop, false);
+        const DrawCmd* bb = find(b, DrawOp::Backdrop, false);
+        const DrawCmd* bd = find(d, DrawOp::Backdrop, false);
+        UI_CHECK(ba && bb && bd);
+        if (ba && bb && bd) {
+            UI_CHECK(ba->rect == ra);
+            UI_CHECK(bb->rect.x == rb.x + 4.f && bb->rect.y == rb.y + 4.f && bb->rect.w == rb.w - 8.f && bb->radius[0] == 8.f);
+            UI_CHECK(bd->rect.x == rd.x + 14.f && bd->rect.y == rd.y + 10.f && bd->radius[0] == 0.f);
+        }
+        const DrawCmd* fb = find(b, DrawOp::Rect, true);
+        UI_CHECK(fb && fb->rect.x == rb.x + 4.f && fb->borderWidth == 0.f);
+        bool border = false; // the border still strokes the border box
+        for (const DrawCmd& c : ui.drawList().cmds())
+            if (c.node == b.index && c.op == DrawOp::Rect && c.borderWidth == 4.f && c.rect == rb) border = true;
+        UI_CHECK(border);
+    }
     return finish("fuse_ui_backdrop_blur");
 }

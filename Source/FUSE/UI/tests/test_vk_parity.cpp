@@ -485,6 +485,33 @@ int main() {
                     std::fclose(fp);
                 }
             }
+        {   // backdrop under clip paths (circle clip-path + layered radial mask): the blur's coverage is multiplied by
+            // the active clip paths like any other command, CPU and GPU
+            DrawList bc;
+            for (int i = 0; i < 12; ++i) bc.rect({f32(i * 40), 0, 20, f32(H)}, Color::rgb(i & 1 ? 0xff4422u : 0x22aaffu));
+            Path circ;
+            circ.circle({140, 140}, 90);
+            bc.pushClipPath(circ);
+            bc.backdrop({40, 40, 220, 220}, 12.f, {0, 0, 0, 0}, Color::rgb(0xffffff, 0.2f));
+            bc.popClip();
+            ClipLayer fade;
+            fade.path.rect({300, 60, 160, 300});
+            fade.gradient = 1;
+            fade.toUnit = {1.f / 160.f, 0, 0, 0, -300.f / 160.f, 0};
+            fade.value0 = 1.f, fade.value1 = 0.f;
+            const ClipLayer one[] = {fade};
+            bc.pushClipLayers(one);
+            bc.backdrop({290, 50, 180, 320}, 8.f, {16, 16, 16, 16});
+            bc.popClip();
+            Image cpuB;
+            cpuB.resize(int(W), int(H), 0xFF000000u);
+            CpuRasterizer rb;
+            rb.render(bc, cpuB);
+            packDrawList(bc, W, H, data);
+            UI_CHECK(gpu.upload(0, data));
+            vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+            check("backdrop_clip", compare(cpuB, out));
+        }
         }
 #endif
     }

@@ -289,7 +289,9 @@ struct ClipPathRef {
 namespace {
 // Backdrop blur, the reference: three box passes per axis (~Gaussian, sigma ~ blur / 2) over the pixels under the
 // rounded rect, sampled from a margin of `blur` around it (clamped to the target), then mixed in by coverage.
-void backdropBlur(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& target) {
+// Clip paths active at the backdrop (DrawOp::ClipPath / pushClipLayers) multiply its coverage like any other command.
+void backdropBlur(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& target, const PathEdge* edges = nullptr,
+                  const ClipPathRef* paths = nullptr, u8 pathCount = 0) {
     const Rect area = c.rect.intersect(clipR).intersect({0.f, 0.f, f32(target.width), f32(target.height)});
     if (area.empty()) return;
     const int r = std::max(1, int(std::lround(c.blur / 3.f)));
@@ -321,6 +323,7 @@ void backdropBlur(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& ta
             const f32 px = f32(x) + 0.5f, py = f32(y) + 0.5f;
             f32 cov = std::clamp(0.5f - sdRoundRect(px, py, c.rect, c.radius), 0.f, 1.f);
             if (clipRadius > 0.f) cov *= std::clamp(0.5f - sdRoundRect(px, py, clipR, clipRad), 0.f, 1.f);
+            for (u8 q = 0; q < pathCount && cov > 0.f; ++q) cov *= clipEntryCoverage(edges + paths[q].at, paths[q].n, px, py, paths[q].evenOdd);
             if (cov <= 0.f) continue;
             u32& d = target.pixels[std::size_t(y) * std::size_t(target.width) + std::size_t(x)];
             const f32* b = &buf[(std::size_t(y - sy0) * std::size_t(w) + std::size_t(x - sx0)) * 4];
@@ -372,7 +375,7 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
         case DrawOp::PopClip:
             if (depth > 0) --depth;
             continue;
-        case DrawOp::Backdrop: backdropBlur(c, clip.r, clip.radius, target); continue;
+        case DrawOp::Backdrop: backdropBlur(c, clip.r, clip.radius, target, list.pathEdges().data(), clipPaths, clip.paths); continue;
         default: break;
         }
         Rect bounds = c.rect;

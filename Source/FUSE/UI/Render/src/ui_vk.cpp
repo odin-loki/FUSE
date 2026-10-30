@@ -167,7 +167,7 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
 
     const u32 n = m_desc.framesInFlight;
     const VkDescriptorPoolSize sizes[3] = {{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2 * n},
-                                           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6 * n},
+                                           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 7 * n},
                                            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kMaxExternal * n}};
     VkDescriptorPoolCreateInfo dpi{};
     dpi.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -184,8 +184,8 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
 #if defined(FUSE_UI_VK_HAS_BACKDROP)
     // ui.backdrop: optional (a failure here keeps the draw kernel; backdrops are then drawn unblurred)
     [&] {
-        VkDescriptorSetLayoutBinding bb[3]{};
-        for (u32 i = 0; i < 3; ++i) {
+        VkDescriptorSetLayoutBinding bb[4]{}; // target, cmds, scratch, images (clip-path lists)
+        for (u32 i = 0; i < 4; ++i) {
             bb[i].binding = i;
             bb[i].descriptorType = i == 0 ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             bb[i].descriptorCount = 1;
@@ -193,7 +193,7 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
         }
         VkDescriptorSetLayoutCreateInfo bli{};
         bli.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        bli.bindingCount = 3;
+        bli.bindingCount = 4;
         bli.pBindings = bb;
         VkDescriptorSetLayout bl{};
         if (vkCreateDescriptorSetLayout(device, &bli, nullptr, &bl) != VK_SUCCESS) return;
@@ -363,10 +363,11 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
             VkDescriptorSet bs{};
             if (vkAllocateDescriptorSets(device, &bai, &bs) != VK_SUCCESS) return destroy(), false;
             slot.blurSet = bs;
-            VkDescriptorBufferInfo bi2[2] = {{buf, m_offsets[0], m_offsets[1] - m_offsets[0]},
-                                             {static_cast<VkBuffer>(m_scratch), 0, VK_WHOLE_SIZE}};
-            VkWriteDescriptorSet bw[2]{};
-            for (u32 i = 0; i < 2; ++i) {
+            VkDescriptorBufferInfo bi2[3] = {{buf, m_offsets[0], m_offsets[1] - m_offsets[0]},
+                                             {static_cast<VkBuffer>(m_scratch), 0, VK_WHOLE_SIZE},
+                                             {buf, m_offsets[3], m_offsets[4] - m_offsets[3]}};
+            VkWriteDescriptorSet bw[3]{};
+            for (u32 i = 0; i < 3; ++i) {
                 bw[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
                 bw[i].dstSet = bs;
                 bw[i].dstBinding = i + 1;
@@ -374,7 +375,7 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
                 bw[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
                 bw[i].pBufferInfo = &bi2[i];
             }
-            vkUpdateDescriptorSets(device, 2, bw, 0, nullptr);
+            vkUpdateDescriptorSets(device, 3, bw, 0, nullptr);
         }
     }
     return true;

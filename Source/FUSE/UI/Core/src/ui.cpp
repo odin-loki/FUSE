@@ -554,7 +554,7 @@ void UiContext::styleRec(u32 i, bool parentChanged) {
             // compare layout-relevant fields only
             la.background = lb.background; la.background2 = lb.background2; la.borderColor = lb.borderColor;
             la.color = lb.color; la.shadowColor = lb.shadowColor; la.opacity = lb.opacity; la.radius = lb.radius;
-            la.gradient = lb.gradient; la.gradientAngle = lb.gradientAngle; la.gradientStopCount = lb.gradientStopCount; la.gradientOffsets = lb.gradientOffsets; la.gradientColors = lb.gradientColors; la.shadowBlur = lb.shadowBlur; la.shadowX = lb.shadowX; la.shadowY = lb.shadowY; la.backdropBlur = lb.backdropBlur;
+            la.gradient = lb.gradient; la.gradientAngle = lb.gradientAngle; la.gradientStopCount = lb.gradientStopCount; la.gradientOffsets = lb.gradientOffsets; la.gradientColors = lb.gradientColors; la.shadowBlur = lb.shadowBlur; la.shadowX = lb.shadowX; la.shadowY = lb.shadowY; la.backdropBlur = lb.backdropBlur; la.backgroundClip = lb.backgroundClip;
             la.pointerEvents = lb.pointerEvents; la.borderWidth = lb.borderWidth; la.textAlign = lb.textAlign;
             if (fontChanged) {
                 m_cold[i]->layoutWidth = -1.f;
@@ -976,19 +976,36 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     const f32 rad = s.radius[0];
     if (s.shadowColor.a > 0.f && (s.shadowBlur > 0.f || s.shadowX != 0.f || s.shadowY != 0.f))
         dl.shadow({n.rect.x + s.shadowX, n.rect.y + s.shadowY, n.rect.w, n.rect.h}, tint(s.shadowColor), s.shadowBlur, rad);
-    if (s.backdropBlur > 0.f) dl.backdrop(n.rect, s.backdropBlur, s.radius);
+    // background-clip: background + backdrop painted in the border / padding / content box (inner radii shrink by
+    // the inset, as CSS); the border itself always strokes the border box
+    Rect bg = n.rect;
+    std::array<f32, 4> bgRad = s.radius;
+    if (s.backgroundClip != BackgroundClip::BorderBox) {
+        const f32 bw = std::max(0.f, s.borderWidth);
+        Edges in{bw, bw, bw, bw};
+        if (s.backgroundClip == BackgroundClip::ContentBox) in = {bw + s.padding.l, bw + s.padding.t, bw + s.padding.r, bw + s.padding.b};
+        bg = {n.rect.x + in.l, n.rect.y + in.t, std::max(0.f, n.rect.w - in.h()), std::max(0.f, n.rect.h - in.v())};
+        const f32 ins[4] = {std::max(in.l, in.t), std::max(in.r, in.t), std::max(in.r, in.b), std::max(in.l, in.b)};
+        for (int k = 0; k < 4; ++k) bgRad[std::size_t(k)] = std::max(0.f, s.radius[std::size_t(k)] - ins[k]);
+    }
+    const bool clipped = s.backgroundClip != BackgroundClip::BorderBox;
+    const bool hasBorder = s.borderWidth > 0.f && s.borderColor.a > 0.f;
+    if (s.backdropBlur > 0.f && !bg.empty()) dl.backdrop(bg, s.backdropBlur, bgRad);
     if (s.gradient == GradientDir::Angle && s.gradientStopCount >= 2) {
         std::vector<GradientStop> st(s.gradientStopCount);
         for (u8 k = 0; k < s.gradientStopCount; ++k) st[k] = {s.gradientOffsets[k], tint(s.gradientColors[k])};
-        dl.gradientRect(n.rect, Gradient::linearAngle(n.rect, s.gradientAngle, std::move(st)), s.radius);
-        if (s.borderWidth > 0.f && s.borderColor.a > 0.f) dl.roundedRect(n.rect, {}, s.radius, tint(s.borderColor), s.borderWidth);
+        dl.gradientRect(bg, Gradient::linearAngle(bg, s.gradientAngle, std::move(st)), bgRad);
+        if (hasBorder) dl.roundedRect(n.rect, {}, s.radius, tint(s.borderColor), s.borderWidth);
     } else if (s.gradient != GradientDir::None && s.gradient != GradientDir::Angle) {
-        dl.gradientRect(n.rect, tint(s.background), tint(s.background2), s.gradient == GradientDir::Vertical, s.radius);
-        if (s.borderWidth > 0.f && s.borderColor.a > 0.f) dl.roundedRect(n.rect, {}, s.radius, tint(s.borderColor), s.borderWidth);
-    } else if (s.background.a > 0.f || (s.borderWidth > 0.f && s.borderColor.a > 0.f)) {
+        dl.gradientRect(bg, tint(s.background), tint(s.background2), s.gradient == GradientDir::Vertical, bgRad);
+        if (hasBorder) dl.roundedRect(n.rect, {}, s.radius, tint(s.borderColor), s.borderWidth);
+    } else if (clipped && (s.background.a > 0.f || hasBorder)) {
+        if (s.background.a > 0.f && !bg.empty()) dl.roundedRect(bg, tint(s.background), bgRad);
+        if (hasBorder) dl.roundedRect(n.rect, {}, s.radius, tint(s.borderColor), s.borderWidth);
+    } else if (s.background.a > 0.f || hasBorder) {
         dl.roundedRect(n.rect, tint(s.background), s.radius, tint(s.borderColor), s.borderWidth);
     }
-    for (std::size_t k = dl.size() - std::min<std::size_t>(dl.size(), 3); k < dl.size(); ++k)
+    for (std::size_t k = dl.size() - std::min<std::size_t>(dl.size(), 4); k < dl.size(); ++k)
         if (dl.cmds()[k].node == 0xFFFFFFFFu) dl.cmds()[k].node = i;
     const WidgetClass& wc = m_registry.get(n.cls);
     const Rect content = contentRect(h);

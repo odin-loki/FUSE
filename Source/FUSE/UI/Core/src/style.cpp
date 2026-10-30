@@ -72,6 +72,7 @@ constexpr PropInfo kProps[] = {
     {Prop::BackdropBlur, "backdrop-blur", T::Length, false, true, false},
     {Prop::GradientAngle, "gradient-angle", T::Number, false, false, false},
     {Prop::GradientStops, "gradient-stops", T::Stops, false, false, false},
+    {Prop::BackgroundClip, "background-clip", T::Enum, false, false, false},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -105,6 +106,9 @@ constexpr EnumWord kEnums[] = {
     {Prop::TextAlign, "left", u8(TextAlignment::Start)}, {Prop::TextAlign, "start", u8(TextAlignment::Start)},
     {Prop::TextAlign, "center", u8(TextAlignment::Center)}, {Prop::TextAlign, "right", u8(TextAlignment::End)},
     {Prop::TextAlign, "end", u8(TextAlignment::End)},
+    {Prop::BackgroundClip, "border-box", u8(BackgroundClip::BorderBox)},
+    {Prop::BackgroundClip, "padding-box", u8(BackgroundClip::PaddingBox)},
+    {Prop::BackgroundClip, "content-box", u8(BackgroundClip::ContentBox)},
 };
 
 std::string_view trim(std::string_view s) {
@@ -390,6 +394,7 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::ShadowX: s.shadowX = v.len.value; break;
     case Prop::ShadowY: s.shadowY = v.len.value; break;
     case Prop::PointerEvents: s.pointerEvents = v.b; break;
+    case Prop::BackgroundClip: s.backgroundClip = fuse::ui::BackgroundClip(v.e); break;
     case Prop::Count: break;
     }
 }
@@ -409,6 +414,7 @@ PropValue readProp(const ComputedStyle& s, Prop p) {
     case Prop::Layout: return PropValue::ofEnum(u8(s.layout));
     case Prop::Direction: return PropValue::ofEnum(u8(s.direction));
     case Prop::TextAlign: return PropValue::ofEnum(u8(s.textAlign));
+    case Prop::BackgroundClip: return PropValue::ofEnum(u8(s.backgroundClip));
     default: break;
     }
     PropValue v;

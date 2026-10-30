@@ -45,6 +45,8 @@ enum class Direction : u8 { Row, Column };
 enum class Align : u8 { Auto, Start, Center, End, Stretch };
 enum class Justify : u8 { Start, Center, End, SpaceBetween, SpaceAround };
 enum class Overflow : u8 { Visible, Clip, Scroll };
+/// CSS background-clip: the box the background (and backdrop blur) is painted in; the border stays on the border box.
+enum class BackgroundClip : u8 { BorderBox, PaddingBox, ContentBox };
 enum class GradientDir : u8 { None, Vertical, Horizontal, Angle }; ///< Angle: CSS multi-stop linear-gradient
 enum class TextAlignment : u8 { Start, Center, End };
 
@@ -84,6 +86,7 @@ struct ComputedStyle {
     f32 opacity = 1.f;
     f32 shadowBlur = 0.f, shadowX = 0.f, shadowY = 0.f;
     f32 backdropBlur = 0.f; ///< backdrop-filter: blur(<len>) / backdrop-blur: <len> (frosted glass under the background)
+    BackgroundClip backgroundClip = BackgroundClip::BorderBox; ///< background-clip: border-box | padding-box | content-box
     bool pointerEvents = true;
     friend bool operator==(const ComputedStyle&, const ComputedStyle&) = default;
 };
@@ -95,7 +98,7 @@ enum class Prop : u8 {
     AlignItems, AlignSelf, Justify, Wrap, Overflow, GridColumns, GridColumn, GridColumnSpan, GridRow, GridRowSpan,
     Left, Top, Right, Bottom, CenterX, CenterY, Background, Background2, Gradient, BorderColor, BorderWidth,
     RadiusTL, RadiusTR, RadiusBR, RadiusBL, Color, FontSize, TextAlign, Opacity, ShadowColor, ShadowBlur, ShadowX,
-    ShadowY, PointerEvents, BackdropBlur, GradientAngle, GradientStops, Count
+    ShadowY, PointerEvents, BackdropBlur, GradientAngle, GradientStops, BackgroundClip, Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
 
