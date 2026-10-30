@@ -130,6 +130,10 @@ Headless (offscreen CPU raster) works everywhere and is what the test suite uses
   `forge::os::file_watch`.
   *Status:* hot reload done: `fuse::ui::doc::HotReload` (styles replaced in place via `StyleEngine::replaceSheet`,
   documents via `Document::reload`, last-good kept on bad edits; test `fuse_ui_hot_reload`).
+  Native file dialogs done on the seam: `os::nativeFileDialog` (zenity / kdialog on Linux+BSD, osascript on macOS,
+  spawned via `forge::os::spawn_wait`; `unavailable` -> in-UI FileDialog fallback; Win32 IFileDialog with G3 backend).
+  Rich clipboard done on the seam: `os::clipboardTypes/clipboardData/setClipboardData` by MIME (wl-clipboard /
+  xclip via FORGE process; text/plain falls back to `forge::os::clipboard`).
 - **G3**: macOS: Cocoa window, NSTextInputClient IME, MoltenVK present, NSAccessibility.
 - **G4**: iOS + Android: surfaces, touch/pen, lifecycle, virtual keyboard, mobile a11y; emulator/simulator gates.
 - **G5**: tray/notifications/global menu, printing, web view, designer to product.

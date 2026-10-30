@@ -72,4 +72,32 @@ std::unique_ptr<Library> loadLibrary(std::initializer_list<const char*> names);
 std::expected<std::string, std::string> clipboardText();
 bool setClipboardText(std::string_view text);
 
+/// Rich clipboard (G2): typed payloads by MIME type ("text/plain", "text/html", "image/png", "text/uri-list", ...).
+/// Default backend: wl-clipboard on Wayland, xclip on X11 (both spawned through FORGE). Unsupported -> error.
+std::expected<std::vector<std::string>, std::string> clipboardTypes();
+std::expected<std::string, std::string> clipboardData(std::string_view mime);
+/// Offers `data` under `mime`. (One type per call; the last call owns the clipboard.)
+bool setClipboardData(std::string_view mime, std::string_view data);
+
+/// Native (system) file dialog (G2). Default backend: zenity / kdialog (Linux, BSD), osascript (macOS), spawned
+/// through FORGE. Returns std::nullopt-like `unavailable` when no native dialog exists, so the caller falls back to
+/// the in-UI widgets::FileDialog; an empty list means the user cancelled.
+struct FileFilter {
+    std::string name;                  ///< "Images"
+    std::vector<std::string> patterns; ///< {"*.png", "*.jpg"}
+};
+struct NativeDialogSpec {
+    enum class Kind : std::uint8_t { Open, Save, Folder } kind = Kind::Open;
+    std::string title, directory, fileName;
+    std::vector<FileFilter> filters;
+    bool multiple = false;
+};
+struct NativeDialogResult {
+    bool unavailable = false;
+    std::vector<std::string> paths; ///< empty + !unavailable: cancelled
+};
+NativeDialogResult nativeFileDialog(const NativeDialogSpec& spec);
+/// Argument vector the default backend would run (testable without a display); empty when unavailable.
+std::vector<std::string> nativeFileDialogCommand(const NativeDialogSpec& spec);
+
 } // namespace fuse::ui::os

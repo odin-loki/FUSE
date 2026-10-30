@@ -5,10 +5,52 @@
 #include "test_util.hpp"
 
 #include <string>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 
 namespace os = fuse::ui::os;
 
+#if defined(__unix__) || defined(__APPLE__)
+// Native dialog backend with a stand-in `zenity` first on PATH: argv shape + multi-path parsing + cancel.
+static void testNativeDialog() {
+    namespace fs = std::filesystem;
+    if (fuse::ui::os::nativeFileDialogCommand({}).size() && fuse::ui::os::nativeFileDialogCommand({})[0] == "osascript")
+        return; // macOS uses osascript
+    fs::path dir = fs::temp_directory_path() / "fuse_fake_zenity";
+    fs::create_directories(dir);
+    {
+        std::ofstream f(dir / "zenity");
+        f << "#!/bin/sh\ncase \"$*\" in *--save*) exit 1;; esac\nprintf '/a/one.png\\n/b/two.png\\n'\n";
+    }
+    fs::permissions(dir / "zenity", fs::perms::owner_all);
+    std::string old = fuse::ui::os::env("PATH");
+    ::setenv("PATH", (dir.string() + ":" + old).c_str(), 1);
+    fuse::ui::os::NativeDialogSpec s;
+    s.title = "Pick";
+    s.multiple = true;
+    s.filters = {{"Images", {"*.png", "*.jpg"}}};
+    auto cmd = fuse::ui::os::nativeFileDialogCommand(s);
+    UI_CHECK(!cmd.empty() && cmd[0] == "zenity");
+    bool sawFilter = false;
+    for (auto& a : cmd) sawFilter |= a == "--file-filter=Images | *.png *.jpg";
+    UI_CHECK(sawFilter);
+    auto r = fuse::ui::os::nativeFileDialog(s);
+    UI_CHECK(!r.unavailable);
+    UI_CHECK_EQ(r.paths.size(), std::size_t(2));
+    if (r.paths.size() == 2) UI_CHECK(r.paths[1] == "/b/two.png");
+    s.kind = fuse::ui::os::NativeDialogSpec::Kind::Save;
+    auto c = fuse::ui::os::nativeFileDialog(s);
+    UI_CHECK(!c.unavailable && c.paths.empty()); // cancelled
+    ::setenv("PATH", old.c_str(), 1);
+    fs::remove_all(dir);
+}
+#else
+static void testNativeDialog() {}
+#endif
+
 int main() {
+    testNativeDialog();
     const std::string dir = os::runtimeDir() + "/fuse_ui_os_seam_test/nested";
     const std::string file = dir + "/a.txt";
     UI_CHECK(bool(os::writeFileAtomic(file, "hello\nfuse"))); // creates parents

@@ -5,6 +5,7 @@
 #include <forge/os/file_watch.hpp>
 #include <forge/os/fs.hpp>
 #include <forge/os/os.hpp>
+#include <forge/os/process.hpp>
 
 namespace fuse::ui::os {
 namespace fo = forge::os;
@@ -125,5 +126,154 @@ std::expected<std::string, std::string> clipboardText() {
     return std::move(r.value);
 }
 bool setClipboardText(std::string_view text) { return bool(fo::clipboard::set(std::string(text))); }
+
+
+// ---- rich clipboard -------------------------------------------------------------------------------------------
+namespace {
+enum class ClipTool { None, Wayland, X11 };
+ClipTool clipTool() {
+    if (!fo::getenv("WAYLAND_DISPLAY").empty() && !fo::find_executable("wl-paste").empty()) return ClipTool::Wayland;
+    if (!fo::getenv("DISPLAY").empty() && !fo::find_executable("xclip").empty()) return ClipTool::X11;
+    return ClipTool::None;
+}
+std::expected<std::string, std::string> runTool(std::vector<std::string> argv, std::optional<std::string> in = {}) {
+    fo::spawn_spec sp;
+    sp.argv = std::move(argv);
+    sp.stdin_data = std::move(in);
+    sp.timeout_ms = 5000;
+    auto r = fo::spawn_wait(sp);
+    if (!r) return std::unexpected(r.err.what);
+    if (r->exit_code != 0) return std::unexpected(r->err.empty() ? std::string("helper failed") : r->err);
+    return std::move(r->out);
+}
+} // namespace
+
+std::expected<std::vector<std::string>, std::string> clipboardTypes() {
+    std::expected<std::string, std::string> out = std::unexpected(std::string("no rich clipboard helper"));
+    switch (clipTool()) {
+    case ClipTool::Wayland: out = runTool({"wl-paste", "--list-types"}); break;
+    case ClipTool::X11: out = runTool({"xclip", "-selection", "clipboard", "-o", "-t", "TARGETS"}); break;
+    case ClipTool::None: break;
+    }
+    if (!out) return std::unexpected(out.error());
+    std::vector<std::string> types;
+    std::size_t a = 0;
+    while (a < out->size()) {
+        std::size_t b = out->find('\n', a);
+        if (b == std::string::npos) b = out->size();
+        if (b > a) types.emplace_back(out->substr(a, b - a));
+        a = b + 1;
+    }
+    return types;
+}
+
+std::expected<std::string, std::string> clipboardData(std::string_view mime) {
+    std::string m(mime);
+    switch (clipTool()) {
+    case ClipTool::Wayland: return runTool({"wl-paste", "--no-newline", "--type", m});
+    case ClipTool::X11: return runTool({"xclip", "-selection", "clipboard", "-o", "-t", m});
+    case ClipTool::None: break;
+    }
+    if (mime == "text/plain" || mime == "text/plain;charset=utf-8") return clipboardText();
+    return std::unexpected(std::string("no rich clipboard helper"));
+}
+
+bool setClipboardData(std::string_view mime, std::string_view data) {
+    std::string m(mime);
+    switch (clipTool()) {
+    case ClipTool::Wayland: return bool(runTool({"wl-copy", "--type", m}, std::string(data)));
+    case ClipTool::X11: return bool(runTool({"xclip", "-selection", "clipboard", "-i", "-t", m}, std::string(data)));
+    case ClipTool::None: break;
+    }
+    if (mime == "text/plain" || mime == "text/plain;charset=utf-8") return setClipboardText(data);
+    return false;
+}
+
+// ---- native file dialogs --------------------------------------------------------------------------------------
+namespace {
+std::string join(const std::vector<std::string>& v, const char* sep) {
+    std::string s;
+    for (std::size_t i = 0; i < v.size(); ++i) { if (i) s += sep; s += v[i]; }
+    return s;
+}
+std::string startPath(const NativeDialogSpec& s) {
+    std::string p = s.directory;
+    if (!s.fileName.empty()) { if (!p.empty() && p.back() != '/') p += '/'; p += s.fileName; }
+    return p;
+}
+std::string appleQuote(std::string_view t) {
+    std::string o = "\"";
+    for (char c : t) { if (c == '"' || c == '\\') o += '\\'; o += c; }
+    return o + "\"";
+}
+} // namespace
+
+std::vector<std::string> nativeFileDialogCommand(const NativeDialogSpec& s) {
+    using K = NativeDialogSpec::Kind;
+    std::vector<std::string> a;
+    switch (fo::current()) {
+    case fo::platform::macos: {
+        if (fo::find_executable("osascript").empty()) return {};
+        std::string verb = s.kind == K::Folder ? "choose folder" : s.kind == K::Save ? "choose file name" : "choose file";
+        std::string script = verb;
+        if (!s.title.empty()) script += " with prompt " + appleQuote(s.title);
+        if (s.kind == K::Save && !s.fileName.empty()) script += " default name " + appleQuote(s.fileName);
+        if (!s.directory.empty()) script += " default location POSIX file " + appleQuote(s.directory);
+        if (s.kind == K::Open && s.multiple) script += " with multiple selections allowed";
+        // POSIX paths, one per line.
+        script = "set r to (" + script + ")\nif class of r is list then\nset o to \"\"\nrepeat with f in r\n"
+                 "set o to o & POSIX path of f & linefeed\nend repeat\nreturn o\nend if\nreturn POSIX path of r";
+        return {"osascript", "-e", script};
+    }
+    case fo::platform::windows:
+    case fo::platform::ios:
+    case fo::platform::android: return {}; // Win32 IFileDialog lives in the window backend (G3); mobile: G4
+    default: break;
+    }
+    if (!fo::find_executable("zenity").empty()) {
+        a = {"zenity", "--file-selection"};
+        if (s.kind == K::Save) { a.push_back("--save"); a.push_back("--confirm-overwrite"); }
+        if (s.kind == K::Folder) a.push_back("--directory");
+        if (s.multiple && s.kind == K::Open) { a.push_back("--multiple"); a.push_back("--separator=\n"); }
+        if (!s.title.empty()) a.push_back("--title=" + s.title);
+        if (auto p = startPath(s); !p.empty()) a.push_back("--filename=" + p);
+        for (const auto& f : s.filters) a.push_back("--file-filter=" + f.name + " | " + join(f.patterns, " "));
+        return a;
+    }
+    if (!fo::find_executable("kdialog").empty()) {
+        a = {"kdialog"};
+        a.push_back(s.kind == K::Save ? "--getsavefilename" : s.kind == K::Folder ? "--getexistingdirectory" : "--getopenfilename");
+        a.push_back(startPath(s).empty() ? std::string(".") : startPath(s));
+        if (s.kind != K::Folder && !s.filters.empty()) {
+            std::vector<std::string> fs;
+            for (const auto& f : s.filters) fs.push_back(f.name + " (" + join(f.patterns, " ") + ")");
+            a.push_back(join(fs, "\n"));
+        }
+        if (s.multiple && s.kind == K::Open) { a.push_back("--multiple"); a.push_back("--separate-output"); }
+        if (!s.title.empty()) { a.push_back("--title"); a.push_back(s.title); }
+        return a;
+    }
+    return {};
+}
+
+NativeDialogResult nativeFileDialog(const NativeDialogSpec& s) {
+    NativeDialogResult res;
+    auto argv = nativeFileDialogCommand(s);
+    if (argv.empty()) { res.unavailable = true; return res; }
+    fo::spawn_spec sp;
+    sp.argv = std::move(argv);
+    auto r = fo::spawn_wait(sp);
+    if (!r) { res.unavailable = true; return res; }
+    if (r->exit_code != 0) return res; // cancelled
+    std::size_t a = 0;
+    const std::string& o = r->out;
+    while (a < o.size()) {
+        std::size_t b = o.find('\n', a);
+        if (b == std::string::npos) b = o.size();
+        if (b > a) res.paths.emplace_back(o.substr(a, b - a));
+        a = b + 1;
+    }
+    return res;
+}
 
 } // namespace fuse::ui::os
