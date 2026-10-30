@@ -20,4 +20,4 @@ want_deps() { [ "${FUSE_NO_DEPS:-0}" != 1 ]; }
 as_root() { if [ "$(id -u)" = 0 ]; then "$@"; elif command -v sudo >/dev/null; then sudo -n "$@"; else "$@"; fi; }
 configure() { cmake -S "$UI" -B "$BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE=${BUILD_TYPE:-RelWithDebInfo} "$@"; }
 build() { cmake --build "$BUILD_DIR" -j "$JOBS" "$@"; }
-ctest_run() { ctest --test-dir "$BUILD_DIR" --output-on-failure -j "${CTEST_JOBS:-4}" "$@"; }
+ctest_run() { ctest --test-dir "$BUILD_DIR" --output-on-failure --no-tests=error -j "${CTEST_JOBS:-4}" "$@"; }
