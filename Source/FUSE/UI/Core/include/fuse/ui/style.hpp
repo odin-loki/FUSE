@@ -217,6 +217,10 @@ public:
     StyleEngine();
     void clearSheets();
     void addSheet(StyleSheet sheet);
+    /// Swaps sheet `index` (cascade position kept) — used by style hot reload. False when out of range.
+    bool replaceSheet(u32 index, StyleSheet sheet);
+    u32 sheetCount() const { return u32(m_sheets.size()); }
+    const StyleSheet& sheet(u32 i) const { return m_sheets[i]; }
     u32 sheetVersion() const { return m_version; }
     /// Computes the style of `node`: defaults → inherited from `parentStyle` → matched rules → `inlineValues`.
     /// Returns an index into the table (allocates only for a never-seen combination).
@@ -230,6 +234,7 @@ private:
     bool matchSimple(const StyleSubject& s, u32 node, const SimpleSelector& sel) const;
     bool resolveVar(std::string_view raw, Prop p, PropValue& out, int depth) const;
     u32 intern(const ComputedStyle& cs);
+    void reorder();
     std::vector<StyleSheet> m_sheets;
     std::vector<const StyleRule*> m_ordered; ///< all rules, sorted by (specificity, sheet, order)
     std::vector<const StyleRule*> m_scratch;

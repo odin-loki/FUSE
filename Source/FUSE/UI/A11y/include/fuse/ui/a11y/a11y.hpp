@@ -77,4 +77,25 @@ private:
 };
 #endif
 
+/// Platform screen-reader adapter for one native window, driven by a Bridge (same contract as UnixAdapter):
+/// Windows: UI Automation through AccessKit's subclassing adapter (`nativeWindow` = HWND).
+/// macOS: NSAccessibility through AccessKit's subclassing adapter (`nativeWindow` = NSWindow*, or NSView* with isView).
+/// Linux/BSD: AT-SPI (nativeWindow ignored). Without AccessKit the adapter is inert (valid() == false).
+/// Android and iOS use the app layer's own providers (AccessibilityNodeProvider / UIAccessibilityElement).
+class PlatformAdapter {
+public:
+    PlatformAdapter(Bridge& b, void* nativeWindow, bool isView = false);
+    ~PlatformAdapter();
+    PlatformAdapter(const PlatformAdapter&) = delete;
+    PlatformAdapter& operator=(const PlatformAdapter&) = delete;
+    void update();
+    void setWindowFocused(bool focused);
+    bool valid() const { return m_adapter != nullptr; }
+    static const char* backendName(); ///< "uia", "nsaccessibility", "atspi" or "none"
+
+private:
+    Bridge& m_bridge;
+    void* m_adapter = nullptr;
+};
+
 } // namespace fuse::ui::a11y

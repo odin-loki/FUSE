@@ -14,6 +14,7 @@ int main(int argc, char** argv) {
     fuse::ui::UiContext& ui = win.ui();
     ui.setCss(ui.root(), "padding", "0px");
     fuse::ui::designer::Designer d(ui);
+    d.onTitleChanged = [&win](const std::string& t) { win.setTitle(t); };
     std::string file;
     for (int i = 1; i < argc; ++i)
         if (argv[i][0] != '-') file = argv[i];

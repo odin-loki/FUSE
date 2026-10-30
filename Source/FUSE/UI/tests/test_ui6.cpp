@@ -4,6 +4,7 @@
 //   tier_c                 sort / filter proxy, cell delegates, virtualised grid view
 //   tier_d                 property grid, colour picker, calendar, chart, markdown view
 // Optional --out=<dir>: PNG of the screen (tier_c.png / tier_d.png / dock_layout.png).
+#include "fuse/ui/from_chars.hpp"
 #include "test_util.hpp"
 
 #if defined(__GNUC__)
@@ -22,6 +23,14 @@
 #include <new>
 #include <string>
 #include <vector>
+#include <cstdlib>
+// FUSE_UI_PERF_SCALE multiplies wall-clock budgets for emulated hosts (qemu TCG, software emulators); default 1.
+static double perfScale() {
+    const char* e = std::getenv("FUSE_UI_PERF_SCALE");
+    const double v = e ? std::atof(e) : 1.0;
+    return v > 0.0 ? v : 1.0;
+}
+
 
 #ifndef FUSE_UI6_GATE
 #define FUSE_UI6_GATE "tier_c"
@@ -252,8 +261,8 @@ int modelView1M() {
                 "scroll; %.1f cell reads/frame; nodes %u\n", frames, med, p95, mx, allocs, bytes, double(big.reads) / frames, ui.nodeCount());
     UI_CHECK(monotonic);
     UI_CHECK(ui.stats().drawCmds > vis * 2); // the frames really painted the visible cells
-    UI_CHECK(med <= 4.0);
-    UI_CHECK(p95 <= 8.0);
+    UI_CHECK(med <= 4.0 * perfScale());
+    UI_CHECK(p95 <= 8.0 * perfScale());
     UI_CHECK(bytes <= 64 * 1024);          // flat memory: nothing grows with rows scrolled
     UI_CHECK_EQ(ui.nodeCount(), nodes);    // no per-row nodes
     UI_CHECK(double(big.reads) / frames <= double(vis * 4 + 8)); // only visible cells are read
@@ -299,7 +308,7 @@ int modelView1M() {
 struct BarDelegate { // paints the cost column as a bar plus the number
     static void paint(const void*, const PaintContext& pc, DrawList& dl, Rect cell, u32, u32, std::string_view text, bool selected) {
         double v = 0.0;
-        std::from_chars(text.data(), text.data() + text.size(), v);
+        fuse::ui::fromChars(text.data(), text.data() + text.size(), v);
         const f32 f = std::clamp(f32(v) / 250.f, 0.f, 1.f);
         dl.rect({cell.x, cell.y + 5.f, cell.w * f, cell.h - 10.f}, pc.tint(selected ? Color::rgb(0xFFFFFF, 0.6f) : Color::rgb(0x3D8BFD, 0.7f)), 2.f);
         pc.ui.paintString(dl, text, cell, pc.tint(pc.style.color), pc.style.fontSize * 0.85f, TextAlignment::End, pc.node.index);
@@ -330,7 +339,7 @@ int tierC() {
     for (u32 r = 0; r < proxy.rows(); ++r) {
         double v;
         const std::string_view d = proxy.model().data(proxy.model().user, r, 2, sc);
-        std::from_chars(d.data(), d.data() + d.size(), v);
+        fuse::ui::fromChars(d.data(), d.data() + d.size(), v);
         sorted &= v <= prev;
         prev = v;
     }
@@ -372,9 +381,9 @@ int tierC() {
         click(ui, {c.x + 240.f + 60.f, c.y + 8.f}); // third column (name 120 + kind 120)
         double first = 0, second = 0;
         const std::string_view d0 = proxy.model().data(proxy.model().user, 0, 2, sc);
-        std::from_chars(d0.data(), d0.data() + d0.size(), first);
+        fuse::ui::fromChars(d0.data(), d0.data() + d0.size(), first);
         const std::string_view d1 = proxy.model().data(proxy.model().user, 1, 2, sc);
-        std::from_chars(d1.data(), d1.data() + d1.size(), second);
+        fuse::ui::fromChars(d1.data(), d1.data() + d1.size(), second);
         UI_CHECK(first <= second);
     }
     // grid: columns from the width, 2D keyboard movement, click selection, scroll to keep selection visible

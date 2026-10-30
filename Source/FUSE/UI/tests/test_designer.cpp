@@ -1,3 +1,7 @@
+#include <functional>
+#include <unistd.h>
+#include <filesystem>
+#include <cmath>
 // UI8 designer prototype gate (fuse_ui_designer_roundtrip):
 //   - DesignDocument: load -> save -> load is a fixed point, and every member (bindings, "on" actions, items,
 //     unknown keys) survives; the saved text loads in fuse_ui_doc
@@ -252,6 +256,125 @@ int main(int argc, char** argv) {
         UI_CHECK_EQ(de.document().styleSheet(), css);
         UI_CHECK(de.text().find("#66ddff") != std::string::npos);
         UI_CHECK(ui.rect(de.canvasNode(de.document().findId("hp"))).h >= 18.f);
+    }
+    // ---- product features: clipboard, duplicate, shortcuts, dirty title, validation, preview, device size
+    {
+        std::string lastTitle;
+        de.onTitleChanged = [&](const std::string& t) { lastTitle = t; };
+        const u32 before = de.document().count();
+        de.select(de.document().findId("save"));
+        de.copySelection();
+        UI_CHECK(de.pasteClipboard());
+        UI_CHECK_EQ(de.document().count(), before + 1);
+        const fuse::ui::designer::DesignNode* pasted = de.document().node(de.selected());
+        UI_CHECK(pasted && pasted->cls() == "button" && pasted->id() != "save");
+        UI_CHECK(de.windowTitle().find('*') != std::string::npos);
+        de.undo();
+        UI_CHECK_EQ(de.document().count(), before);
+        // Ctrl+D through the key path duplicates; Delete removes it again
+        de.select(de.document().findId("save"));
+        ui.keyDown(Key::D, kModCtrl); step(ui);
+        UI_CHECK_EQ(de.document().count(), before + 1);
+        const std::string dupId(de.document().node(de.selected())->id());
+        UI_CHECK(dupId != "save" && de.document().childSlot(de.selected()) == de.document().childSlot(de.document().findId("save")) + 1);
+        ui.keyDown(Key::Delete, 0); step(ui);
+        UI_CHECK_EQ(de.document().count(), before);
+        UI_CHECK(de.document().findId(dupId) == fuse::ui::designer::DesignDocument::kNone);
+        // cut + paste moves a node; clashing ids in a pasted subtree are renumbered
+        fuse::ui::designer::DesignDocument d2;
+        d2.reset();
+        const u32 b1 = d2.insertAt(0, ~0u, "button");
+        const std::string clip = d2.copy({b1});
+        const auto two = d2.paste(clip, 0);
+        UI_CHECK_EQ(two.size(), std::size_t(1));
+        UI_CHECK(d2.node(two[0])->id() == "button2");
+        UI_CHECK(d2.validate().empty());
+        UI_CHECK(d2.isModified());
+        d2.markSaved();
+        UI_CHECK(!d2.isModified());
+        d2.undo();
+        UI_CHECK(d2.isModified());
+        // validation: duplicate id, leaf with children, unknown class
+        fuse::ui::designer::DesignDocument bad;
+        UI_CHECK(bad.load(R"({"fuseui":1,"root":{"class":"panel","id":"r","children":[{"class":"label","id":"x","children":[{"class":"label","id":"y"}]},{"class":"bogus","id":"x"}]}})"));
+        const auto issues = bad.validate([](std::string_view c) { return c != "bogus"; });
+        UI_CHECK_EQ(issues.size(), std::size_t(3));
+        // save / title
+        const std::string path = "/tmp/fuse_designer_test.fuseui";
+        UI_CHECK(de.saveFile(path));
+        UI_CHECK(!de.document().isModified());
+        UI_CHECK(de.windowTitle() == "fuse_designer_test.fuseui - FUSE UI Designer");
+        UI_CHECK(lastTitle == de.windowTitle());
+        UI_CHECK(de.save());
+        // preview: clicks reach the live widgets and do not change the selection
+        de.select(de.document().findId("hp"));
+        de.setPreviewMode(true);
+        UI_CHECK(de.previewMode());
+        const u32 selBefore = de.selected();
+        click(ui, ctr(ui.rect(de.canvasNode(de.document().findId("save")))));
+        UI_CHECK_EQ(de.selected(), selBefore);
+        ui.keyDown(Key::F5, 0); step(ui);
+        UI_CHECK(!de.previewMode());
+        // device size frame
+        de.setDeviceSize(390, 844);
+        step(ui);
+        UI_CHECK(std::abs(ui.rect(ui.find("designer.frame")).w - 390.f) < 1.f);
+        de.setDeviceSize(0, 0);
+        step(ui);
+        // Open / Save As through the built-in file dialog (native dialogs off)
+        {
+            namespace fs = std::filesystem;
+            const fs::path dir = fs::temp_directory_path() / ("fuse_designer_dlg_" + std::to_string(::getpid()));
+            fs::create_directories(dir);
+            const std::string path = (dir / "form.fuseui").generic_string();
+            UI_CHECK(de.saveFile(path));
+            de.setNativeDialogs(false);
+            de.showSaveAsDialog();
+            step(ui);
+            NodeHandle dlg = de.fileDialog();
+            UI_CHECK(dlg.valid());
+            w::fileDialogNavigate(ui, dlg, dir.generic_string());
+            step(ui);
+            UI_CHECK_EQ(w::fileDialogEntryCount(ui, dlg), 1u); // *.fuseui filter
+            UI_CHECK_EQ(w::fileDialogEntry(ui, dlg, 0), std::string("form.fuseui"));
+            const std::string chosen = w::fileDialogActivate(ui, dlg, 0); // overwrite the existing file
+            step(ui);
+            UI_CHECK_EQ(chosen, path);
+            UI_CHECK(!de.fileDialog().valid());
+            UI_CHECK(!de.document().isModified());
+            UI_CHECK(lastTitle.find("form.fuseui") != std::string::npos);
+            // Open, cancelled: nothing changes
+            de.showOpenDialog();
+            step(ui);
+            dlg = de.fileDialog();
+            UI_CHECK(dlg.valid());
+            {
+                std::function<NodeHandle(NodeHandle)> findText = [&](NodeHandle n) -> NodeHandle {
+                    if (ui.text(n) == "Cancel") return n;
+                    for (NodeHandle c = ui.firstChild(n); c.valid(); c = ui.nextSibling(c))
+                        if (const NodeHandle f = findText(c); f.valid()) return f;
+                    return {};
+                };
+                const NodeHandle cancel = findText(dlg);
+                UI_CHECK(cancel.valid());
+                ui.emit(cancel, SignalKind::Clicked, {}); // the Cancel button
+            }
+            step(ui);
+            UI_CHECK(!de.fileDialog().valid());
+            UI_CHECK_EQ(de.filePath(), path);
+            // Open, accepted
+            de.showOpenDialog();
+            step(ui);
+            dlg = de.fileDialog();
+            w::fileDialogNavigate(ui, dlg, dir.generic_string());
+            step(ui);
+            UI_CHECK_EQ(w::fileDialogActivate(ui, dlg, 0), path);
+            step(ui);
+            UI_CHECK_EQ(de.filePath(), path);
+            UI_CHECK(de.document().findId("save") != ~0u);
+            fs::remove_all(dir);
+        }
+        de.onTitleChanged = nullptr;
     }
     // select the edited button for the screenshot (plus the label, multi-select)
     de.select(de.document().findId("save"));

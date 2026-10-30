@@ -1,3 +1,5 @@
+#include <cstdlib>
+#include "fuse/ui/os.hpp"
 #include "fuse/text/text.hpp"
 
 #define STBTT_STATIC
@@ -413,20 +415,21 @@ std::expected<Font, TextError> Font::fromBytes(std::span<const std::uint8_t> byt
 }
 
 std::expected<Font, TextError> Font::fromFile(const std::string& path) {
-    std::FILE* fp = std::fopen(path.c_str(), "rb");
-    if (!fp) return std::unexpected(TextError::InvalidFont);
-    std::vector<std::uint8_t> data;
-    std::uint8_t buf[16384];
-    for (;;) {
-        const std::size_t n = std::fread(buf, 1, sizeof buf, fp);
-        data.insert(data.end(), buf, buf + n);
-        if (n < sizeof buf) break;
-    }
-    std::fclose(fp);
+    auto bytes = fuse::ui::os::readFile(path); // OS access goes through the fuse::ui::os seam (FORGE)
+    if (!bytes) return std::unexpected(TextError::InvalidFont);
+    const std::vector<std::uint8_t> data(bytes->begin(), bytes->end());
     return fromBytes(data);
 }
 
+// FUSE_TEXT_FONT_DIR in the environment overrides the build-time font directory (a packaged app - an APK, a bundle -
+// ships vendor/fonts somewhere the build-time path does not exist).
+static const char* runtimeFontDir() {
+    const char* d = std::getenv("FUSE_TEXT_FONT_DIR");
+    return d && *d ? d : nullptr;
+}
+
 std::expected<Font, TextError> Font::bundled() {
+    if (const char* d = runtimeFontDir()) return fromFile(std::string(d) + "/opensans/OpenSans.ttf");
 #if defined(FUSE_TEXT_BUNDLED_FONT)
     return fromFile(FUSE_TEXT_BUNDLED_FONT);
 #else
@@ -437,12 +440,13 @@ std::expected<Font, TextError> Font::bundled() {
 std::vector<Font> Font::bundledFallbacks() {
     std::vector<Font> out;
 #if defined(FUSE_TEXT_FONT_DIR)
+    const std::string dir = runtimeFontDir() ? runtimeFontDir() : FUSE_TEXT_FONT_DIR;
     // Emoji before Symbols 2 so emoji-presentation code points (U+2764 ...) come out in colour.
     static const char* const kFiles[] = {"noto/NotoSansHebrew-Regular.ttf", "noto/NotoSansArabic-Regular.ttf",
                                          "noto/NotoSansDevanagari-Regular.ttf", "twemoji/TwemojiMozilla.ttf",
                                          "noto/NotoSansSymbols2-Regular.ttf"};
     for (const char* f : kFiles)
-        if (auto font = fromFile(std::string(FUSE_TEXT_FONT_DIR) + "/" + f)) out.push_back(std::move(*font));
+        if (auto font = fromFile(dir + "/" + f)) out.push_back(std::move(*font));
 #endif
     return out;
 }
@@ -827,6 +831,7 @@ void GlyphAtlas::clear() {
     m_shelfY = 1;
     m_shelfH = 0;
     ++m_generation;
+    ++m_version;
 }
 
 AtlasGlyph GlyphAtlas::get(const Font& font, std::uint32_t glyph, float px) {
@@ -862,6 +867,7 @@ AtlasGlyph GlyphAtlas::get(const Font& font, std::uint32_t glyph, float px) {
             clear();
             return get(font, glyph, px);
         }
+        ++m_version; // pixels change (GPU copies re-upload)
         font.rasterise(glyph, pxq, m_pixels.data() + std::size_t(m_shelfY) * std::size_t(m_size) + std::size_t(m_shelfX),
                        w, hh, m_size);
         ag.u = std::uint16_t(m_shelfX);

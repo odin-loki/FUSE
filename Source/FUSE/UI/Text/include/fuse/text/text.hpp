@@ -237,6 +237,8 @@ public:
     int size() const { return m_size; }
     const std::uint8_t* pixels() const { return m_pixels.data(); }
     std::uint32_t generation() const { return m_generation; }
+    /// Bumped whenever pixels() changes (a glyph rasterised or a reset): GPU copies re-upload only on a change.
+    std::uint32_t version() const { return m_version; }
     std::uint32_t misses() const { return m_misses; }
     void clear();
 
@@ -251,6 +253,7 @@ private:
     std::uint32_t m_used = 0;
     int m_shelfX = 1, m_shelfY = 1, m_shelfH = 0;
     std::uint32_t m_generation = 0;
+    std::uint32_t m_version = 0;
     std::uint32_t m_misses = 0;
 };
 

@@ -9,6 +9,10 @@
 #include "ui_draw_list_spv.h" // generated: kUiDrawListSpv
 #define FUSE_UI_VK_HAS_KERNEL 1
 #endif
+#if __has_include("ui_backdrop_spv.h")
+#include "ui_backdrop_spv.h" // generated: kUiBackdropSpv
+#define FUSE_UI_VK_HAS_BACKDROP 1
+#endif
 
 namespace fuse::ui::render {
 
@@ -22,6 +26,23 @@ bool UiVkRenderer::kernelAvailable() {
 
 namespace {
 u64 alignUp(u64 v, u64 a) { return (v + a - 1) / a * a; }
+/// ui.backdrop push block (must match BlurPush in ui_backdrop.comp).
+struct BlurPush {
+    i32 area[4];
+    i32 srcOrigin[2], srcSize[2];
+    u32 mode, cmd;
+    u32 radius;
+    f32 inv;
+};
+static_assert(sizeof(BlurPush) == 48);
+void computeBarrier(VkCommandBuffer cmd) {
+    VkMemoryBarrier mb{};
+    mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    mb.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    mb.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0,
+                         nullptr, 0, nullptr);
+}
 } // namespace
 
 bool UiVkRenderer::init(const UiVkDesc& desc) {
@@ -89,12 +110,12 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
     m_pipeline = pipeline;
 
     const u32 n = m_desc.framesInFlight;
-    const VkDescriptorPoolSize sizes[3] = {{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, n},
-                                           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4 * n},
+    const VkDescriptorPoolSize sizes[3] = {{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2 * n},
+                                           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6 * n},
                                            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kMaxExternal * n}};
     VkDescriptorPoolCreateInfo dpi{};
     dpi.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    dpi.maxSets = n;
+    dpi.maxSets = 2 * n;
     dpi.poolSizeCount = 3;
     dpi.pPoolSizes = sizes;
     VkDescriptorPool pool{};
@@ -103,6 +124,77 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
 
     VkPhysicalDeviceMemoryProperties mem{};
     vkGetPhysicalDeviceMemoryProperties(phys, &mem);
+
+#if defined(FUSE_UI_VK_HAS_BACKDROP)
+    // ui.backdrop: optional (a failure here keeps the draw kernel; backdrops are then drawn unblurred)
+    [&] {
+        VkDescriptorSetLayoutBinding bb[3]{};
+        for (u32 i = 0; i < 3; ++i) {
+            bb[i].binding = i;
+            bb[i].descriptorType = i == 0 ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            bb[i].descriptorCount = 1;
+            bb[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        }
+        VkDescriptorSetLayoutCreateInfo bli{};
+        bli.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        bli.bindingCount = 3;
+        bli.pBindings = bb;
+        VkDescriptorSetLayout bl{};
+        if (vkCreateDescriptorSetLayout(device, &bli, nullptr, &bl) != VK_SUCCESS) return;
+        m_blurSetLayout = bl;
+        const VkPushConstantRange br{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(BlurPush)};
+        VkPipelineLayoutCreateInfo bpl{};
+        bpl.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        bpl.setLayoutCount = 1;
+        bpl.pSetLayouts = &bl;
+        bpl.pushConstantRangeCount = 1;
+        bpl.pPushConstantRanges = &br;
+        VkPipelineLayout blay{};
+        if (vkCreatePipelineLayout(device, &bpl, nullptr, &blay) != VK_SUCCESS) return;
+        m_blurLayout = blay;
+        VkBufferCreateInfo sbi{};
+        sbi.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        sbi.size = VkDeviceSize(std::max(1u, m_desc.maxBlurPixels)) * 32;
+        sbi.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        VkBuffer sb{};
+        if (vkCreateBuffer(device, &sbi, nullptr, &sb) != VK_SUCCESS) return;
+        m_scratch = sb;
+        VkMemoryRequirements sreq{};
+        vkGetBufferMemoryRequirements(device, sb, &sreq);
+        VkPhysicalDeviceMemoryProperties mp{};
+        vkGetPhysicalDeviceMemoryProperties(phys, &mp);
+        u32 st = ~0u;
+        for (u32 t = 0; t < mp.memoryTypeCount && st == ~0u; ++t)
+            if ((sreq.memoryTypeBits & (1u << t)) && (mp.memoryTypes[t].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) st = t;
+        for (u32 t = 0; t < mp.memoryTypeCount && st == ~0u; ++t)
+            if (sreq.memoryTypeBits & (1u << t)) st = t;
+        VkMemoryAllocateInfo sai{};
+        sai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        sai.allocationSize = sreq.size;
+        sai.memoryTypeIndex = st;
+        VkDeviceMemory sm{};
+        if (st == ~0u || vkAllocateMemory(device, &sai, nullptr, &sm) != VK_SUCCESS) return;
+        m_scratchMem = sm;
+        if (vkBindBufferMemory(device, sb, sm, 0) != VK_SUCCESS) return;
+        VkShaderModuleCreateInfo bmi{};
+        bmi.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        bmi.codeSize = sizeof(kUiBackdropSpv);
+        bmi.pCode = kUiBackdropSpv;
+        VkShaderModule bm{};
+        if (vkCreateShaderModule(device, &bmi, nullptr, &bm) != VK_SUCCESS) return;
+        VkComputePipelineCreateInfo bci{};
+        bci.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+        bci.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        bci.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+        bci.stage.module = bm;
+        bci.stage.pName = "main";
+        bci.layout = blay;
+        VkPipeline bp{};
+        const VkResult bpr = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &bci, nullptr, &bp);
+        vkDestroyShaderModule(device, bm, nullptr);
+        if (bpr == VK_SUCCESS) m_blurPipeline = bp;
+    }();
+#endif
 
     // external texture slots: nearest sampler + a 1x1 dummy image for unbound slots
     VkSamplerCreateInfo smi{};
@@ -202,6 +294,29 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
             w[i].pBufferInfo = &infos[i];
         }
         vkUpdateDescriptorSets(device, 4, w, 0, nullptr);
+        if (m_blurPipeline) {
+            VkDescriptorSetAllocateInfo bai{};
+            bai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+            bai.descriptorPool = pool;
+            bai.descriptorSetCount = 1;
+            const VkDescriptorSetLayout bl = static_cast<VkDescriptorSetLayout>(m_blurSetLayout);
+            bai.pSetLayouts = &bl;
+            VkDescriptorSet bs{};
+            if (vkAllocateDescriptorSets(device, &bai, &bs) != VK_SUCCESS) return destroy(), false;
+            slot.blurSet = bs;
+            VkDescriptorBufferInfo bi2[2] = {{buf, m_offsets[0], m_offsets[1] - m_offsets[0]},
+                                             {static_cast<VkBuffer>(m_scratch), 0, VK_WHOLE_SIZE}};
+            VkWriteDescriptorSet bw[2]{};
+            for (u32 i = 0; i < 2; ++i) {
+                bw[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                bw[i].dstSet = bs;
+                bw[i].dstBinding = i + 1;
+                bw[i].descriptorCount = 1;
+                bw[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                bw[i].pBufferInfo = &bi2[i];
+            }
+            vkUpdateDescriptorSets(device, 2, bw, 0, nullptr);
+        }
     }
     return true;
 #else
@@ -224,6 +339,13 @@ void UiVkRenderer::destroy() {
     if (m_dummyMem) vkFreeMemory(device, static_cast<VkDeviceMemory>(m_dummyMem), nullptr);
     if (m_sampler) vkDestroySampler(device, static_cast<VkSampler>(m_sampler), nullptr);
     m_dummyView = m_dummy = m_dummyMem = m_sampler = nullptr;
+    if (m_blurPipeline) vkDestroyPipeline(device, static_cast<VkPipeline>(m_blurPipeline), nullptr);
+    if (m_blurLayout) vkDestroyPipelineLayout(device, static_cast<VkPipelineLayout>(m_blurLayout), nullptr);
+    if (m_blurSetLayout) vkDestroyDescriptorSetLayout(device, static_cast<VkDescriptorSetLayout>(m_blurSetLayout), nullptr);
+    if (m_scratch) vkDestroyBuffer(device, static_cast<VkBuffer>(m_scratch), nullptr);
+    if (m_scratchMem) vkFreeMemory(device, static_cast<VkDeviceMemory>(m_scratchMem), nullptr);
+    m_blurPipeline = m_blurLayout = m_blurSetLayout = m_scratch = m_scratchMem = nullptr;
+    m_atlasUploads = 0;
     m_dummyReady = false;
     for (void*& e : m_external) e = nullptr;
     if (m_pool) vkDestroyDescriptorPool(device, static_cast<VkDescriptorPool>(m_pool), nullptr);
@@ -242,9 +364,20 @@ bool UiVkRenderer::upload(u32 slotIndex, const GpuDrawData& d) {
     Slot& s = m_slots[slotIndex];
     std::memcpy(s.mapped + m_offsets[0], d.cmds.data(), d.cmdBytes());
     std::memcpy(s.mapped + m_offsets[1], d.tiles.data(), d.tileBytes());
-    if (d.atlas && d.atlasSize) std::memcpy(s.mapped + m_offsets[2], d.atlas, d.atlasBytes());
+    // glyph atlas: only when it changed since this slot last held it (atlasGeneration ~0u = unknown: always)
+    const bool atlasSame = d.atlasGeneration != ~0u && s.atlasGeneration == d.atlasGeneration && s.atlasPtr == d.atlas &&
+                           s.atlasSize == d.atlasSize;
+    if (d.atlas && d.atlasSize && !atlasSame) {
+        std::memcpy(s.mapped + m_offsets[2], d.atlas, d.atlasBytes());
+        ++m_atlasUploads;
+    }
+    s.atlasPtr = d.atlas;
+    s.atlasSize = d.atlasSize;
+    s.atlasGeneration = d.atlasGeneration;
     std::memcpy(s.mapped + m_offsets[3], d.images.data(), d.imageBytes());
     s.push = d.push;
+    s.passes.assign(d.passes.begin(), d.passes.end());
+    if (s.passes.empty()) s.passes.push_back(GpuPass{}); // pre-pass data: one draw over tileBase 0
     return true;
 }
 
@@ -290,13 +423,65 @@ void UiVkRenderer::record(void* commandBuffer, void* targetView, u32 slotIndex) 
         w[i].pImageInfo = &ii[i];
     }
     vkUpdateDescriptorSets(device, 1 + kMaxExternal, w, 0, nullptr);
+    if (s.blurSet) {
+        VkWriteDescriptorSet bw{};
+        bw.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        bw.dstSet = static_cast<VkDescriptorSet>(s.blurSet);
+        bw.dstBinding = 0;
+        bw.descriptorCount = 1;
+        bw.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        bw.pImageInfo = &ii[0];
+        vkUpdateDescriptorSets(device, 1, &bw, 0, nullptr);
+    }
     const VkDescriptorSet set = static_cast<VkDescriptorSet>(s.set);
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, static_cast<VkPipeline>(m_pipeline));
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, static_cast<VkPipelineLayout>(m_layout), 0, 1, &set, 0,
-                            nullptr);
-    vkCmdPushConstants(cmd, static_cast<VkPipelineLayout>(m_layout), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(GpuPush),
-                       &s.push);
-    vkCmdDispatch(cmd, (s.push.extent[0] + kUiTile - 1) / kUiTile, (s.push.extent[1] + kUiTile - 1) / kUiTile, 1);
+    const VkPipelineLayout layout = static_cast<VkPipelineLayout>(m_layout);
+    if (s.push.size[0] == 0 || s.push.size[1] == 0) return; // empty damage box
+    bool first = true;
+    for (const GpuPass& pass : s.passes) {
+        if (!first) computeBarrier(cmd);
+        first = false;
+        if (pass.kind == kPassDraw) {
+            GpuPush push = s.push;
+            push.tileBase = pass.tileBase;
+            push.flags = pass.flags;
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, static_cast<VkPipeline>(m_pipeline));
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, nullptr);
+            vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(GpuPush), &push);
+            vkCmdDispatch(cmd, (push.size[0] + kUiTile - 1) / kUiTile, (push.size[1] + kUiTile - 1) / kUiTile, 1);
+            continue;
+        }
+        // backdrop blur (skipped without the kernel or beyond the scratch: the panel stays unblurred, as before)
+        const i64 w = pass.src[2], h = pass.src[3];
+        const i64 aw = pass.area[2] - pass.area[0], ah = pass.area[3] - pass.area[1];
+        if (!m_blurPipeline || w <= 0 || h <= 0 || aw <= 0 || ah <= 0 || w * h > i64(m_desc.maxBlurPixels)) continue;
+        const VkPipelineLayout bl = static_cast<VkPipelineLayout>(m_blurLayout);
+        const VkDescriptorSet bs = static_cast<VkDescriptorSet>(s.blurSet);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, static_cast<VkPipeline>(m_blurPipeline));
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, bl, 0, 1, &bs, 0, nullptr);
+        BlurPush bp{};
+        bp.cmd = pass.cmd;
+        bp.srcOrigin[0] = pass.src[0];
+        bp.srcOrigin[1] = pass.src[1];
+        bp.srcSize[0] = pass.src[2];
+        bp.srcSize[1] = pass.src[3];
+        for (int k = 0; k < 4; ++k) bp.area[k] = pass.area[k];
+        bp.radius = pass.radius;
+        bp.inv = pass.inv;
+        auto run = [&](u32 mode, i64 threads) {
+            bp.mode = mode;
+            vkCmdPushConstants(cmd, bl, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(BlurPush), &bp);
+            vkCmdDispatch(cmd, u32((threads + 63) / 64), 1, 1);
+        };
+        run(0, w * h);
+        for (int it = 0; it < 3; ++it) {
+            computeBarrier(cmd);
+            run(1, h * 4);
+            computeBarrier(cmd);
+            run(2, w * 4);
+        }
+        computeBarrier(cmd);
+        run(3, aw * ah);
+    }
 }
 
 } // namespace fuse::ui::render

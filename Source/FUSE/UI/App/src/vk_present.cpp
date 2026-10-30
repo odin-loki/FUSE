@@ -27,6 +27,19 @@ typedef unsigned long VisualID;
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_xlib.h>
 #endif
+// The other WSI headers only forward-declare their window types (struct wl_display / wl_surface / ANativeWindow;
+// CAMetalLayer is `void` outside Objective-C): no platform headers needed, every surface kind builds everywhere and
+// the entry points are resolved at run time.
+#include <vulkan/vulkan_wayland.h>
+#include <vulkan/vulkan_android.h>
+#include <vulkan/vulkan_metal.h>
+#ifndef VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
+#define VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME "VK_KHR_portability_enumeration"
+#define VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR 0x00000001
+#endif
+#ifndef VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME
+#define VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME "VK_KHR_portability_subset"
+#endif
 
 #if defined(FUSE_HAS_VULKAN_RHI)
 // In-tree with fuse_rhi every vk* name is a volk function pointer: raw instances / devices must be registered so
@@ -88,6 +101,9 @@ struct Khr {
 #if !defined(_WIN32)
     PFN_vkCreateXlibSurfaceKHR CreateXlibSurfaceKHR = nullptr;
 #endif
+    PFN_vkCreateWaylandSurfaceKHR CreateWaylandSurfaceKHR = nullptr; ///< optional (instance kind Wayland)
+    PFN_vkCreateAndroidSurfaceKHR CreateAndroidSurfaceKHR = nullptr; ///< optional (instance kind Android)
+    PFN_vkCreateMetalSurfaceEXT CreateMetalSurfaceEXT = nullptr;     ///< optional (instance kind Metal)
     bool load(VkInstance inst) {
         bool all = true;
         auto get = [&](auto& fn, const char* name) {
@@ -107,10 +123,14 @@ struct Khr {
 #if defined(_WIN32)
         get(CreateWin32SurfaceKHR, "vkCreateWin32SurfaceKHR");
 #endif
+        const bool core = all;
+        CreateWaylandSurfaceKHR = reinterpret_cast<PFN_vkCreateWaylandSurfaceKHR>(vkGetInstanceProcAddr(inst, "vkCreateWaylandSurfaceKHR"));
+        CreateAndroidSurfaceKHR = reinterpret_cast<PFN_vkCreateAndroidSurfaceKHR>(vkGetInstanceProcAddr(inst, "vkCreateAndroidSurfaceKHR"));
+        CreateMetalSurfaceEXT = reinterpret_cast<PFN_vkCreateMetalSurfaceEXT>(vkGetInstanceProcAddr(inst, "vkCreateMetalSurfaceEXT"));
 #if !defined(_WIN32)
-        get(CreateXlibSurfaceKHR, "vkCreateXlibSurfaceKHR");
+        CreateXlibSurfaceKHR = reinterpret_cast<PFN_vkCreateXlibSurfaceKHR>(vkGetInstanceProcAddr(inst, "vkCreateXlibSurfaceKHR"));
 #endif
-        return all;
+        return core;
     }
 };
 Khr K; // one Vulkan instance per process (VkCtx); its WSI functions
@@ -141,26 +161,47 @@ VkImageMemoryBarrier imageBarrier(VkImage img, VkAccessFlags src, VkAccessFlags 
     b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
     return b;
 }
+
+/// The instance extension that creates `kind` surfaces.
+const char* surfaceExtension(SurfaceSource::Kind kind) {
+    switch (kind) {
+    case SurfaceSource::Win32: return "VK_KHR_win32_surface";
+    case SurfaceSource::Xlib: return "VK_KHR_xlib_surface";
+    case SurfaceSource::Wayland: return VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME;
+    case SurfaceSource::Android: return VK_KHR_ANDROID_SURFACE_EXTENSION_NAME;
+    case SurfaceSource::Metal: return VK_EXT_METAL_SURFACE_EXTENSION_NAME;
+    }
+    return "";
+}
+bool instanceHas(const char* ext) {
+    u32 n = 0;
+    vkEnumerateInstanceExtensionProperties(nullptr, &n, nullptr);
+    std::vector<VkExtensionProperties> ep(n);
+    if (n) vkEnumerateInstanceExtensionProperties(nullptr, &n, ep.data());
+    return std::any_of(ep.begin(), ep.end(), [&](const VkExtensionProperties& e) { return std::strcmp(e.extensionName, ext) == 0; });
+}
 } // namespace
 
 VkCtx* vkCtxCreate(SurfaceSource::Kind kind, std::string& err) {
     auto* c = new VkCtx{};
     c->kind = kind;
-    const char* exts[] = {VK_KHR_SURFACE_EXTENSION_NAME,
-#if defined(_WIN32)
-                          VK_KHR_WIN32_SURFACE_EXTENSION_NAME
-#else
-                          VK_KHR_XLIB_SURFACE_EXTENSION_NAME
-#endif
-    };
+    const char* exts[3] = {VK_KHR_SURFACE_EXTENSION_NAME, surfaceExtension(kind), nullptr};
+    u32 extCount = 2;
+    VkInstanceCreateFlags flags = 0;
+    // MoltenVK is a "portability" implementation: since loader 1.3.216 it is only enumerated with this flag.
+    if (kind == SurfaceSource::Metal && instanceHas(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)) {
+        exts[extCount++] = VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME;
+        flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+    }
     VkApplicationInfo ai{};
     ai.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     ai.pApplicationName = "fuse_app";
     ai.apiVersion = VK_API_VERSION_1_1;
     VkInstanceCreateInfo ici{};
     ici.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    ici.flags = flags;
     ici.pApplicationInfo = &ai;
-    ici.enabledExtensionCount = 2;
+    ici.enabledExtensionCount = extCount;
     ici.ppEnabledExtensionNames = exts;
     if (!ok(vkCreateInstance(&ici, nullptr, &c->instance), "vkCreateInstance (surface extensions)", err)) {
         delete c;
@@ -278,12 +319,21 @@ bool pickDevice(VkCtx& c, VkSurfaceKHR surface, std::string& err) {
     qci.queueFamilyIndex = c.family;
     qci.queueCount = 1;
     qci.pQueuePriorities = &prio;
-    const char* dext[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    const char* dext[2] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, nullptr};
+    u32 dextCount = 1;
+    { // a portability implementation (MoltenVK) must have VK_KHR_portability_subset enabled when it exposes it
+        u32 en = 0;
+        vkEnumerateDeviceExtensionProperties(c.phys, nullptr, &en, nullptr);
+        std::vector<VkExtensionProperties> ep(en);
+        if (en) vkEnumerateDeviceExtensionProperties(c.phys, nullptr, &en, ep.data());
+        for (const VkExtensionProperties& e : ep)
+            if (std::strcmp(e.extensionName, VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME) == 0) dext[dextCount++] = VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME;
+    }
     VkDeviceCreateInfo dci{};
     dci.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     dci.queueCreateInfoCount = 1;
     dci.pQueueCreateInfos = &qci;
-    dci.enabledExtensionCount = 1;
+    dci.enabledExtensionCount = dextCount;
     dci.ppEnabledExtensionNames = dext;
     if (!ok(vkCreateDevice(c.phys, &dci, nullptr, &c.device), "vkCreateDevice", err)) return false;
     FUSE_APP_VOLK(fuse::renderer::vkloader::registerDevice(c.device, c.instance));
@@ -484,19 +534,51 @@ VkWin* vkWinCreate(VkCtx* c, const SurfaceSource& s, const NativeOptions& o, std
     auto* w = new VkWin{};
     w->ctx = c;
     w->opts = o;
+    VkResult sr = VK_ERROR_EXTENSION_NOT_PRESENT;
+    switch (s.kind) {
+    case SurfaceSource::Win32: {
 #if defined(_WIN32)
-    VkWin32SurfaceCreateInfoKHR si{};
-    si.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-    si.hinstance = static_cast<HINSTANCE>(s.hinstance);
-    si.hwnd = static_cast<HWND>(s.hwnd);
-    const VkResult sr = K.CreateWin32SurfaceKHR(c->instance, &si, nullptr, &w->surface);
-#else
-    VkXlibSurfaceCreateInfoKHR si{};
-    si.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
-    si.dpy = static_cast<Display*>(s.display);
-    si.window = s.xwindow;
-    const VkResult sr = K.CreateXlibSurfaceKHR(c->instance, &si, nullptr, &w->surface);
+        VkWin32SurfaceCreateInfoKHR si{};
+        si.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+        si.hinstance = static_cast<HINSTANCE>(s.hinstance);
+        si.hwnd = static_cast<HWND>(s.hwnd);
+        sr = K.CreateWin32SurfaceKHR(c->instance, &si, nullptr, &w->surface);
 #endif
+        break;
+    }
+    case SurfaceSource::Xlib: {
+#if !defined(_WIN32)
+        VkXlibSurfaceCreateInfoKHR si{};
+        si.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
+        si.dpy = static_cast<Display*>(s.display);
+        si.window = s.xwindow;
+        if (K.CreateXlibSurfaceKHR) sr = K.CreateXlibSurfaceKHR(c->instance, &si, nullptr, &w->surface);
+#endif
+        break;
+    }
+    case SurfaceSource::Wayland: {
+        VkWaylandSurfaceCreateInfoKHR si{};
+        si.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
+        si.display = static_cast<wl_display*>(s.display);
+        si.surface = static_cast<wl_surface*>(s.surface);
+        if (K.CreateWaylandSurfaceKHR) sr = K.CreateWaylandSurfaceKHR(c->instance, &si, nullptr, &w->surface);
+        break;
+    }
+    case SurfaceSource::Android: {
+        VkAndroidSurfaceCreateInfoKHR si{};
+        si.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
+        si.window = static_cast<ANativeWindow*>(s.surface);
+        if (K.CreateAndroidSurfaceKHR) sr = K.CreateAndroidSurfaceKHR(c->instance, &si, nullptr, &w->surface);
+        break;
+    }
+    case SurfaceSource::Metal: {
+        VkMetalSurfaceCreateInfoEXT si{};
+        si.sType = VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT;
+        si.pLayer = static_cast<const CAMetalLayer*>(s.surface);
+        if (K.CreateMetalSurfaceEXT) sr = K.CreateMetalSurfaceEXT(c->instance, &si, nullptr, &w->surface);
+        break;
+    }
+    }
     if (!ok(sr, "vkCreate*SurfaceKHR", err)) {
         delete w;
         return nullptr;
@@ -580,8 +662,9 @@ void vkWinDestroy(VkWin* w) {
 
 bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
     VkCtx& c = *w->ctx;
-    const Size vp = win.size();
-    const u32 vw = u32(std::max(1.f, std::round(vp.w))), vh = u32(std::max(1.f, std::round(vp.h)));
+    const Size vp = win.pixelSize(); // physical pixels (HiDPI: logical size * scale)
+    const f32 scale = win.scale();
+    const u32 vw = u32(vp.w), vh = u32(vp.h);
     std::string err;
     if (!w->swapchain || w->extent.width != vw || w->extent.height != vh) {
         if (!w->createSwapchain(vw, vh, err)) {
@@ -590,7 +673,7 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
         }
         // the surface decides the size (X11 / Win32 report the client area): follow it
         if (w->extent.width != vw || w->extent.height != vh) {
-            win.resize(w->extent.width, w->extent.height); // redraws at the new size next iteration
+            win.resize(u32(std::lround(f32(w->extent.width) / scale)), u32(std::lround(f32(w->extent.height) / scale)));
             return false;
         }
     }
@@ -608,7 +691,8 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
 
     const u32 W = w->extent.width, H = w->extent.height;
     const bool full = w->needFull || w->canvasFresh || damage.empty();
-    Rect dmg = full ? Rect{0.f, 0.f, f32(W), f32(H)} : damage;
+    Rect dmg = full ? Rect{0.f, 0.f, f32(W), f32(H)}
+                    : Rect{damage.x * scale, damage.y * scale, damage.w * scale, damage.h * scale};
     int x0 = std::max(0, int(std::floor(dmg.x))), y0 = std::max(0, int(std::floor(dmg.y)));
     int x1 = std::min(int(W), int(std::ceil(dmg.x + dmg.w))), y1 = std::min(int(H), int(std::ceil(dmg.y + dmg.h)));
     if (x1 <= x0 || y1 <= y0) { x0 = y0 = 0; x1 = int(W); y1 = int(H); }
@@ -617,13 +701,18 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
     if (w->gpuDraw) {
         UiContext& ui = win.ui();
         const CpuRasterizer& raster = win.rasterizer();
-        fuse::ui::render::packDrawList(ui.drawList(), W, H, w->data, ui.atlas().pixels(), u32(ui.atlas().size()),
-                                       raster.images(), raster.imageCount());
+        // damage repaint: the kernel runs over the damage box only, starting it from opaque black (as presentHeadless
+        // clears it); the canvas keeps every other pixel from the previous frame
+        fuse::ui::render::packDrawList(win.pixelDrawList(), W, H, w->data, ui.atlas().pixels(), u32(ui.atlas().size()),
+                                       raster.images(), raster.imageCount(),
+                                       Rect{f32(x0), f32(y0), f32(x1 - x0), f32(y1 - y0)});
+        w->data.atlasGeneration = ui.atlas().version();
+        if (!w->data.passes.empty()) w->data.passes[0].flags |= fuse::ui::render::kPassClear;
         if (!w->gpu.upload(f, w->data)) return false;
     }
 #endif
     if (!w->gpuDraw) {
-        const Image& img = win.rasterize(full ? Rect{} : dmg);
+        const Image& img = win.rasterize(full ? Rect{} : damage); // logical damage; rasterize() scales it
         if (img.width != int(W) || img.height != int(H)) return false;
         for (int y = y0; y < y1; ++y)
             std::memcpy(w->uploadPtr[f] + (std::size_t(y) * W + x0) * 4, img.pixels.data() + std::size_t(y) * W + x0,
@@ -647,7 +736,7 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
         VkClearColorValue black{};
         black.float32[3] = 1.f;
         const VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        vkCmdClearColorImage(cmd, w->canvas, G, &black, 1, &range);
+        if (full) vkCmdClearColorImage(cmd, w->canvas, G, &black, 1, &range); // partial: the kernel clears the box
         VkImageMemoryBarrier b1 = imageBarrier(w->canvas, VK_ACCESS_TRANSFER_WRITE_BIT,
                                                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, G, G);
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0,
