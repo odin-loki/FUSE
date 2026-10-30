@@ -21,6 +21,7 @@ struct Screen {
     UiContext ui{{.viewport = {1200, 800}, .font = &fuse::ui::test::font()}};
     Screen() { w::install(ui); w::registerExtraWidgets(ui); step(ui); }
 };
+std::vector<f32> dv3d_ticks(const fuse::ui::dv3d::Scene& s) { return fuse::ui::dv3d::axisTicks(s, 1); }
 std::string a11yName(const UiContext& ui, NodeHandle n) {
     std::vector<A11ySnapshotNode> v;
     ui.snapshotA11y(v);
@@ -448,12 +449,150 @@ void gateDemo() {
     if (out) CHECK(ch::writePng(img, out));
     CHECK(colours(img, {0, 0, f32(W), f32(H)}) > 30);
 }
+ch::Chart3D scene3d(ch::Kind3D k) {
+    ch::Chart3D c;
+    c.kind = k;
+    if (k == ch::Kind3D::Scatter || k == ch::Kind3D::Line)
+        for (int i = 0; i < 120; ++i) c.points.push_back({std::cos(f32(i) * 0.15f), f32(i) / 120.f, std::sin(f32(i) * 0.15f)});
+    else {
+        c.rows = k == ch::Kind3D::Area ? 4 : 12, c.cols = 12;
+        for (u32 r = 0; r < c.rows; ++r)
+            for (u32 q = 0; q < c.cols; ++q) c.values.push_back(1.2f + std::sin(f32(q) * 0.5f) * std::cos(f32(r) * 0.4f));
+    }
+    return c;
+}
+
+void gate3d() {
+    Screen s;
+    UiContext& ui = s.ui;
+    // every kind renders through the charts API, themed
+    for (u32 k = 0; k <= u32(ch::Kind3D::Area); ++k) {
+        ch::Chart3D c = scene3d(ch::Kind3D(k));
+        ch::applyTheme(c, ch::Theme::light());
+        CHECK(c.background.a > 0 && !c.colormap.empty());
+        Image img;
+        ch::renderImage(ui, c, ch::Theme::light(), 320, 240, img);
+        const int n = colours(img, {0, 0, 320, 240});
+        if (n < 6) std::fprintf(stderr, "3d kind %u drew %d colours\n", k, n);
+        CHECK(n >= 6);
+        CHECK(rgb(img, 2, 2)[0] > 200); // light theme plot background
+        CHECK(!ch::describe(c).empty());
+    }
+    // 3D axes: nice ticks over the resolved range
+    ch::Chart3D sc = scene3d(ch::Kind3D::Surface);
+    const auto t = dv3d_ticks(sc);
+    CHECK(t.size() >= 3);
+    // widget: hover, click-select, Ctrl adds, Escape clears, a11y summary
+    const NodeHandle v = ch::chart3dView(ui, ui.root(), ch::Kind3D::Line, "l3");
+    ui.setCss(v, "width", "400px");
+    ui.setCss(v, "height", "300px");
+    *ch::chart3dOf(ui, v) = scene3d(ch::Kind3D::Line);
+    ch::chart3dChanged(ui, v);
+    for (int i = 0; i < 2; ++i) step(ui);
+    CHECK(a11yName(ui, v).rfind("3D line, 120 points", 0) == 0);
+    const ch::Chart3D& lc = *ch::chart3dOf(ui, v);
+    const Vec2 p60 = fuse::ui::dv3d::project(lc, ui.rect(v), lc.points[60]);
+    ui.pointerMove(p60);
+    step(ui);
+    const i32 hv = ch::chart3dHovered(ui, v);
+    CHECK(hv >= 55 && hv <= 65);
+    CHECK(ch::chart3dTooltip(ui, v).size() == 3);
+    int toggles = 0;
+    ui.connect(v, SignalKind::Toggled, [&](UiContext&, NodeHandle, const SignalArgs&) { ++toggles; });
+    ui.pointerDown(p60); ui.pointerUp(p60); step(ui);
+    CHECK(ch::chart3dSelection(ui, v).size() == 1 && toggles == 1);
+    const Vec2 p10 = fuse::ui::dv3d::project(lc, ui.rect(v), lc.points[10]);
+    ui.setModifiers(kModCtrl);
+    ui.pointerMove(p10); ui.pointerDown(p10); ui.pointerUp(p10); step(ui);
+    ui.setModifiers(0);
+    CHECK(ch::chart3dSelection(ui, v).size() == 2);
+    ch::chart3dChanged(ui, v);
+    CHECK(a11yName(ui, v).find("2 selected") != std::string::npos);
+    // a drag orbits and does not select
+    const f32 yaw0 = lc.camera.yaw;
+    ui.pointerDown(p10); ui.pointerMove({p10.x + 50, p10.y}); ui.pointerUp({p10.x + 50, p10.y}); step(ui);
+    CHECK(std::abs(lc.camera.yaw - (yaw0 + 25.f)) < 0.01f && ch::chart3dSelection(ui, v).size() == 2);
+    ui.setFocus(v);
+    ui.keyDown(Key::Escape); step(ui);
+    CHECK(ch::chart3dSelection(ui, v).empty());
+    // the selected point is drawn highlighted: rendering changes
+    ch::Chart3D a = scene3d(ch::Kind3D::Scatter), b = a;
+    b.selection = {40};
+    Image ia, ib;
+    ch::renderImage(ui, a, ch::Theme::dark(), 300, 200, ia);
+    ch::renderImage(ui, b, ch::Theme::dark(), 300, 200, ib);
+    CHECK(diffPixels(ia, ib) > 20);
+    // export
+    const std::string path = std::string(std::getenv("TMPDIR") ? std::getenv("TMPDIR") : "/tmp") + "/fuse_chart3d.png";
+    CHECK(ch::exportImage3d(ui, v, path, 200, 150));
+    std::remove(path.c_str());
+}
+
+void gate3dLarge() {
+    Screen s;
+    // 1M-point scatter, 1M-point line and a 1000 x 1000 surface stay bounded in draw commands
+    ch::Chart3D sc;
+    sc.kind = ch::Kind3D::Scatter;
+    std::mt19937 g(5);
+    std::normal_distribution<f32> d(0, 1);
+    for (int i = 0; i < 1'000'000; ++i) sc.points.push_back({d(g), d(g), d(g)});
+    DrawList dl;
+    ch::Stats3D st;
+    auto t0 = std::chrono::steady_clock::now();
+    ch::render(sc, dl, {0, 0, 800, 600}, ch::Theme::dark(), nullptr, &st);
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    std::printf("bench3d: 1M scatter -> %zu drawn, %zu cmds, %.1f ms\n", st.drawn, dl.size(), ms);
+    CHECK(st.input == 1'000'000 && st.drawn < 60000 && st.drawn > 1000);
+    ch::Chart3D ln;
+    ln.kind = ch::Kind3D::Line;
+    for (int i = 0; i < 1'000'000; ++i) { const f32 u = f32(i) * 1e-5f; ln.points.push_back({std::cos(u * 3), u / 10, std::sin(u * 3)}); }
+    dl.clear();
+    t0 = std::chrono::steady_clock::now();
+    ch::render(ln, dl, {0, 0, 800, 600}, ch::Theme::dark(), nullptr, &st);
+    const double lms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    std::printf("bench3d: 1M line -> %zu drawn, %zu cmds, %.1f ms\n", st.drawn, dl.size(), lms);
+    CHECK(st.drawn < 20000);
+    ch::Chart3D sf;
+    sf.kind = ch::Kind3D::Surface;
+    sf.rows = sf.cols = 1000;
+    for (u32 i = 0; i < 1'000'000; ++i) sf.values.push_back(std::sin(f32(i % 1000) * 0.01f) * std::cos(f32(i / 1000) * 0.01f));
+    dl.clear();
+    t0 = std::chrono::steady_clock::now();
+    std::vector<fuse::ui::dv3d::ProjectedItem> items;
+    ch::render(sf, dl, {0, 0, 800, 600}, ch::Theme::dark(), &items, &st);
+    const double sms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    std::printf("bench3d: 1000x1000 surface -> %zu drawn vertices, %zu cmds, %.1f ms\n", st.drawn, dl.size(), sms);
+    CHECK(st.drawn <= 170 * 170 && st.drawn > 100 * 100);
+    // picking reports original grid indices: the far corner is index rows * cols - 1
+    CHECK(std::any_of(items.begin(), items.end(), [](const auto& it) { return it.index == 999'999u; }));
+}
+
+void gateDemo3d() {
+    Screen s;
+    UiContext& ui = s.ui;
+    const int W = 1200, H = 400;
+    DrawList dl;
+    const ch::Theme th = ch::Theme::dark();
+    dl.rect({0, 0, f32(W), f32(H)}, th.background);
+    for (u32 k = 0; k <= u32(ch::Kind3D::Area); ++k) {
+        ch::Chart3D c = scene3d(ch::Kind3D(k));
+        if (k == u32(ch::Kind3D::Area) || k == u32(ch::Kind3D::Line)) ch::applyTheme(c, th);
+        ch::render(c, dl, {f32(k) * W / 5.f, 0, W / 5.f, f32(H)}, th);
+    }
+    Image img;
+    img.resize(W, H, 0xFF000000u);
+    CpuRasterizer r;
+    r.setGlyphAtlas(ui.atlas().pixels(), ui.atlas().size());
+    r.render(dl, img);
+    if (const char* out = std::getenv("FUSE_CHARTS_DEMO3D")) CHECK(ch::writePng(img, out));
+}
 } // namespace
 
 int main(int argc, char** argv) {
     std::string gate = argc > 1 && std::strncmp(argv[1], "--gate=", 7) == 0 ? argv[1] + 7 : "all";
     struct G { const char* n; void (*f)(); } gates[] = {{"series", gateSeries}, {"axes", gateAxes}, {"decimation", gateDecimation}, {"ring", gateRing},
-        {"hit", gateHit}, {"widget", gateWidget}, {"model", gateModel}, {"export", gateExport}, {"bench", gateBench}, {"demo", gateDemo}};
+        {"hit", gateHit}, {"widget", gateWidget}, {"model", gateModel}, {"export", gateExport}, {"bench", gateBench}, {"demo", gateDemo},
+        {"3d", gate3d}, {"3d_large", gate3dLarge}, {"demo3d", gateDemo3d}};
     for (const G& g : gates) if (gate == "all" || gate == g.n) g.f();
     return fuse::ui::test::finish(("charts " + gate).c_str());
 }

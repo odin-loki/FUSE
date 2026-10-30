@@ -192,4 +192,31 @@ void bindModel(UiContext& ui, NodeHandle view, ModelMapping m);
 void chartModelChanged(UiContext& ui, NodeHandle view);
 bool exportImage(UiContext& ui, NodeHandle view, const std::string& pngPath, int w = 0, int h = 0);
 
+// ---- 3D graphs (Qt Graphs 3D / Data Visualization): the dv3d scene behind the charts API ----
+// Bars, scatter, surface, line and area in an orbit-camera box with 3D axes (ranges, titles, tick labels), hover
+// picking, click selection, theming from a charts::Theme, and large-data thinning (screen-cell scatter, sub-pixel
+// line steps, strided grids). Painted as BSP-ordered DrawList paths: the same GPU / CPU path as the 2D charts.
+using Vec3 = dv3d::Vec3;
+using Kind3D = dv3d::Kind;
+using Camera3D = dv3d::Camera;
+using Axis3D = dv3d::Axis;
+using Chart3D = dv3d::Scene;
+using Stats3D = dv3d::Stats;
+/// Colours a 3D chart from a 2D theme: background, grid, a palette-derived colormap and series colours.
+void applyTheme(Chart3D& c, const Theme& t);
+/// Accessible summary ("3D surface, 16 x 16 values, 0 to 1").
+std::string describe(const Chart3D& c);
+void render(const Chart3D& c, DrawList& dl, Rect bounds, const Theme& t, std::vector<dv3d::ProjectedItem>* items = nullptr, Stats3D* stats = nullptr);
+void renderImage(UiContext& ui, const Chart3D& c, const Theme& t, int w, int h, Image& out);
+/// Q3DSurface / Q3DScatter / Q3DBars / 3D line / 3D area view: drag orbits, wheel zooms, arrows rotate, Home resets
+/// the camera, hover tooltips, click / Ctrl+click selection (Toggled), Escape clears it. Themed from its computed style.
+NodeHandle chart3dView(UiContext& ui, NodeHandle parent, Kind3D kind, std::string_view id = {});
+Chart3D* chart3dOf(UiContext& ui, NodeHandle view);
+/// Repaints and refreshes the accessible summary after editing chart3dOf().
+void chart3dChanged(UiContext& ui, NodeHandle view);
+i32 chart3dHovered(const UiContext& ui, NodeHandle view);
+std::vector<std::string> chart3dTooltip(UiContext& ui, NodeHandle view);
+const std::vector<u32>& chart3dSelection(const UiContext& ui, NodeHandle view);
+bool exportImage3d(UiContext& ui, NodeHandle view, const std::string& pngPath, int w = 0, int h = 0);
+
 } // namespace fuse::ui::charts

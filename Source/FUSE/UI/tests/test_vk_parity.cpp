@@ -470,6 +470,37 @@ int main() {
             vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
             check("charts", compare(cpuCh, out));
         }
+        {   // charts (3D): line, area ribbons, a thinned 300k-point scatter with a selection, a strided 400 x 400 surface
+            namespace ch = fuse::ui::charts;
+            DrawList cl;
+            cl.rect({0, 0, f32(W), f32(H)}, Color::rgb(0x101014));
+            const ch::Kind3D kinds[] = {ch::Kind3D::Line, ch::Kind3D::Area, ch::Kind3D::Scatter, ch::Kind3D::Surface};
+            for (int i = 0; i < 4; ++i) {
+                ch::Chart3D c;
+                c.kind = kinds[i];
+                if (i == 0) for (int k = 0; k < 400; ++k) c.points.push_back({std::cos(f32(k) * 0.05f), f32(k) / 400.f, std::sin(f32(k) * 0.05f)});
+                if (i == 2) {
+                    for (int k = 0; k < 300000; ++k) { const f32 u = f32(k) * 0.37f; c.points.push_back({std::sin(u) * f32(k % 1000) * 1e-3f, std::cos(u * 1.3f), std::cos(u) * f32(k % 997) * 1e-3f}); }
+                    c.selection = {123};
+                    c.pointSize = 12.f; // ~9 px thinning cells keep the panel inside the 16k-command budget
+                }
+                if (i == 1 || i == 3) {
+                    c.rows = i == 1 ? 4 : 400, c.cols = i == 1 ? 16 : 400;
+                    c.maxGrid = 48; // strided sample, sized to the parity upload budget
+                    for (u32 k = 0; k < c.rows * c.cols; ++k) c.values.push_back(1.5f + std::sin(f32(k % c.cols) * (i == 1 ? 0.4f : 0.02f)) * std::cos(f32(k / c.cols) * 0.02f));
+                }
+                ch::render(c, cl, {f32(i) * f32(W) / 4.f, 0, f32(W) / 4.f, f32(H)}, ch::Theme::dark());
+            }
+            Image cpu3;
+            cpu3.resize(int(W), int(H), 0xFF000000u);
+            CpuRasterizer rc;
+            rc.render(cl, cpu3);
+            packDrawList(cl, W, H, data);
+            UI_CHECK(gpu.upload(0, data));
+            vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+            UI_CHECK(cl.size() < 16000);
+            check("charts3d", compare(cpu3, out));
+        }
         {   // layered clips: per-pixel SVG mask (gradient fade + two-tone shapes), clipPath union (overlap, opposite
             // windings, mixed clip-rule), and DrawList::pushClipLayers directly with a radial ramp
             DrawList ml;

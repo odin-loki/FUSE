@@ -1397,3 +1397,63 @@ bool exportImage(UiContext& ui, NodeHandle v, const std::string& path, int w, in
 }
 
 } // namespace fuse::ui::charts
+
+// ---------------- 3D ----------------
+namespace fuse::ui::charts {
+void applyTheme(Chart3D& c, const Theme& t) {
+    c.background = t.plot;
+    c.gridColor = t.text;
+    c.colormap.clear();
+    const std::size_t n = std::min<std::size_t>(t.palette.size(), 5);
+    for (std::size_t i = 0; i < n; ++i) c.colormap.push_back({n > 1 ? f32(i) / f32(n - 1) : 0.f, t.palette[i]});
+    c.seriesColors = t.palette;
+}
+std::string describe(const Chart3D& c) {
+    static const char* names[] = {"3D surface", "3D scatter", "3D bars", "3D line", "3D area"};
+    std::string d = names[u32(c.kind)];
+    char b[96];
+    if (c.kind == Kind3D::Scatter || c.kind == Kind3D::Line) std::snprintf(b, sizeof b, ", %zu points", c.points.size());
+    else std::snprintf(b, sizeof b, ", %u x %u values", c.rows, c.cols);
+    d += b;
+    f32 lo[3], hi[3];
+    dv3d::ranges(c, lo, hi);
+    std::snprintf(b, sizeof b, ", %s %g to %g", c.axis[1].title.empty() ? "values" : c.axis[1].title.c_str(), double(lo[1]), double(hi[1]));
+    d += b;
+    if (!c.selection.empty()) d += ", " + std::to_string(c.selection.size()) + " selected";
+    return d;
+}
+void render(const Chart3D& c, DrawList& dl, Rect b, const Theme& t, std::vector<dv3d::ProjectedItem>* items, Stats3D* stats) {
+    dv3d::render(c, dl, b, t.text, items, stats);
+}
+void renderImage(UiContext& ui, const Chart3D& c, const Theme& t, int w, int h, Image& out) {
+    DrawList dl;
+    dl.rect({0, 0, f32(w), f32(h)}, t.background);
+    render(c, dl, {0, 0, f32(w), f32(h)}, t);
+    out.resize(w, h, 0xFF000000u);
+    CpuRasterizer r;
+    r.setGlyphAtlas(ui.atlas().pixels(), ui.atlas().size());
+    r.render(dl, out);
+}
+NodeHandle chart3dView(UiContext& ui, NodeHandle parent, Kind3D kind, std::string_view id) {
+    const NodeHandle v = widgets::dataViz3d(ui, parent, kind, id);
+    if (Chart3D* c = widgets::dataViz3dScene(ui, v)) ui.setA11y(v, A11yRole::Image, describe(*c));
+    return v;
+}
+Chart3D* chart3dOf(UiContext& ui, NodeHandle v) { return widgets::dataViz3dScene(ui, v); }
+void chart3dChanged(UiContext& ui, NodeHandle v) {
+    if (Chart3D* c = chart3dOf(ui, v)) { ui.setA11y(v, A11yRole::Image, describe(*c)); ui.invalidate(v); }
+}
+i32 chart3dHovered(const UiContext& ui, NodeHandle v) { return widgets::dataViz3dHovered(ui, v); }
+std::vector<std::string> chart3dTooltip(UiContext& ui, NodeHandle v) { return widgets::dataViz3dTooltip(ui, v); }
+const std::vector<u32>& chart3dSelection(const UiContext& ui, NodeHandle v) { return widgets::dataViz3dSelection(ui, v); }
+bool exportImage3d(UiContext& ui, NodeHandle v, const std::string& path, int w, int h) {
+    Chart3D* c = chart3dOf(ui, v);
+    if (!c) return false;
+    const Rect r = ui.rect(v);
+    if (w <= 0) w = std::max(1, int(r.w));
+    if (h <= 0) h = std::max(1, int(r.h));
+    Image img;
+    renderImage(ui, *c, Theme::dark(), w, h, img); // the scene's own background / grid colours win
+    return writePng(img, path);
+}
+} // namespace fuse::ui::charts

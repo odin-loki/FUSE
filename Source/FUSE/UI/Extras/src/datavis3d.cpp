@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <memory>
+#include <unordered_map>
 
 namespace fuse::ui::dv3d {
 namespace {
@@ -210,13 +211,16 @@ void ranges(const Scene& s, f32 lo[3], f32 hi[3]) {
         }
         any = true;
     };
-    if (s.kind == Kind::Scatter) for (const Vec3& p : s.points) add(p);
+    if (s.kind == Kind::Scatter || s.kind == Kind::Line) {
+        for (const Vec3& p : s.points) if (std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z)) add(p);
+    }
     else if (s.rows && s.cols) {
         for (u32 r = 0; r < s.rows; ++r)
             for (u32 c = 0; c < s.cols; ++c) {
                 const std::size_t i = std::size_t(r) * s.cols + c;
                 add({f32(c), i < s.values.size() ? s.values[i] : 0.f, f32(r)});
             }
+        if (s.kind == Kind::Area) dl[1] = std::min(dl[1], 0.f), dh[1] = std::max(dh[1], 0.f); // ribbons stand on 0
         if (s.kind == Kind::Bars) { // bars stand on 0 and occupy cells [c - 0.5, c + 0.5]
             dl[1] = std::min(dl[1], 0.f), dh[1] = std::max(dh[1], 0.f);
             dl[0] -= 0.5f, dh[0] += 0.5f, dl[2] -= 0.5f, dh[2] += 0.5f;
@@ -246,10 +250,29 @@ i32 pick(const std::vector<ProjectedItem>& items, Vec2 pos, f32 radius) {
     return best;
 }
 
-void render(const Scene& s, DrawList& dl, Rect target, Color gridColor, std::vector<ProjectedItem>* items) {
+std::vector<f32> axisTicks(const Scene& s, int a) {
+    f32 lo[3], hi[3];
+    ranges(s, lo, hi);
+    const f32 span = hi[a] - lo[a];
+    const u32 n = std::max(1u, s.axis[a].ticks);
+    const f32 raw = span / f32(n), mag = std::pow(10.f, std::floor(std::log10(raw)));
+    const f32 r = raw / mag, step = (r < 1.5f ? 1.f : r < 3.f ? 2.f : r < 7.f ? 5.f : 10.f) * mag;
+    std::vector<f32> out;
+    for (f32 t = std::ceil(lo[a] / step - 1e-4f) * step; t <= hi[a] + step * 1e-4f && out.size() < 64; t += step) out.push_back(std::abs(t) < step * 1e-5f ? 0.f : t);
+    return out;
+}
+
+void render(const Scene& s, DrawList& dl, Rect target, Color gridColorIn, std::vector<ProjectedItem>* items, Stats* stats) {
     if (items) items->clear();
     if (target.w <= 0.f || target.h <= 0.f) return;
+    const Color gridColor = s.gridColor.a > 0.f ? s.gridColor : gridColorIn;
+    if (s.background.a > 0.f) dl.rect(target, s.background);
     const View v = makeView(s, target);
+    std::size_t drawnItems = 0;
+    auto item = [&](u32 i, Vec2 sp, f32 z) { ++drawnItems; if (items) items->push_back({i, sp, z}); };
+    std::vector<u32> sel(s.selection);
+    std::sort(sel.begin(), sel.end());
+    auto lit = [&](std::size_t i) { return i32(i) == s.highlight || std::binary_search(sel.begin(), sel.end(), u32(i)); };
     std::vector<Prim> prims;
     u32 order = 0;
     auto cam = [&](Vec3 n) { return toCam(v, n); };
@@ -300,42 +323,135 @@ void render(const Scene& s, DrawList& dl, Rect target, Color gridColor, std::vec
     }
 
     const Color wire = Color::rgb(0x000000, 0.35f);
+    // grid sample (large grids: strided rows / columns, always keeping the last)
+    auto sample = [&](u32 n, u32 stride) {
+        std::vector<u32> o;
+        for (u32 k = 0; k < n; k += stride) o.push_back(k);
+        if (!o.empty() && o.back() != n - 1) o.push_back(n - 1);
+        return o;
+    };
+    const u32 gstride = s.rows && s.cols && std::size_t(s.rows) * s.cols > std::size_t(s.maxGrid) * s.maxGrid
+                            ? u32(std::ceil(std::sqrt(double(s.rows) * double(s.cols) / (double(s.maxGrid) * double(s.maxGrid))))) : 1u;
+    auto marker = [&](Vec2 sp, f32 r) {
+        Prim p;
+        p.path.circle(sp, r);
+        p.fill = Color::rgb(0xFFFFFF), p.stroke = Color::rgb(0x000000), p.strokeW = 1.5f, p.depth = 1e9f, p.order = order++;
+        prims.push_back(std::move(p));
+    };
     if (s.kind == Kind::Surface && s.rows >= 2 && s.cols >= 2 && s.values.size() >= std::size_t(s.rows) * s.cols) {
-        std::vector<Vec3> c(std::size_t(s.rows) * s.cols);
-        for (u32 r = 0; r < s.rows; ++r)
-            for (u32 k = 0; k < s.cols; ++k) {
-                const std::size_t i = std::size_t(r) * s.cols + k;
-                c[i] = cam(norm(v, {f32(k), s.values[i], f32(r)}));
-                if (items) items->push_back({u32(i), toScreen(v, c[i]), c[i].z});
+        const std::vector<u32> R = sample(s.rows, gstride), C = sample(s.cols, gstride);
+        // BSP depth splitting for modest grids; dense ones use the painter's order (quads are tiny, errors sub-pixel)
+        const bool exactSort = R.size() * C.size() <= 32u * 32u;
+        std::vector<Vec3> c(R.size() * C.size());
+        for (std::size_t r = 0; r < R.size(); ++r)
+            for (std::size_t k = 0; k < C.size(); ++k) {
+                const std::size_t i = std::size_t(R[r]) * s.cols + C[k];
+                c[r * C.size() + k] = cam(norm(v, {f32(C[k]), s.values[i], f32(R[r])}));
+                item(u32(i), toScreen(v, c[r * C.size() + k]), c[r * C.size() + k].z);
             }
-        for (u32 r = 0; r + 1 < s.rows; ++r)
-            for (u32 k = 0; k + 1 < s.cols; ++k) {
-                const std::size_t i00 = std::size_t(r) * s.cols + k, i01 = i00 + 1, i10 = i00 + s.cols, i11 = i10 + 1;
-                const f32 val = (s.values[i00] + s.values[i01] + s.values[i10] + s.values[i11]) * 0.25f;
-                Color col = colormapAt(s, (val - v.lo[1]) / v.span[1]);
-                if (s.shading) col = shade(col, lambert(c[i00], c[i01], c[i10]));
-                poly({c[i00], c[i01], c[i11], c[i10]}, col, s.wireframe ? wire : Color{}, s.wireframe ? 1.f : 0.f, 0.f, true);
+        for (std::size_t r = 0; r + 1 < R.size(); ++r)
+            for (std::size_t k = 0; k + 1 < C.size(); ++k) {
+                const std::size_t j00 = r * C.size() + k, j01 = j00 + 1, j10 = j00 + C.size(), j11 = j10 + 1;
+                auto val = [&](std::size_t rr, std::size_t kk) { return s.values[std::size_t(R[rr]) * s.cols + C[kk]]; };
+                const f32 avg = (val(r, k) + val(r, k + 1) + val(r + 1, k) + val(r + 1, k + 1)) * 0.25f;
+                Color col = colormapAt(s, (avg - v.lo[1]) / v.span[1]);
+                if (s.shading) col = shade(col, lambert(c[j00], c[j01], c[j10]));
+                poly({c[j00], c[j01], c[j11], c[j10]}, col, s.wireframe ? wire : Color{}, s.wireframe ? 1.f : 0.f, 0.f, exactSort);
             }
-        if (s.highlight >= 0 && std::size_t(s.highlight) < c.size()) {
-            Prim p;
-            p.path.circle(toScreen(v, c[std::size_t(s.highlight)]), 4.f);
-            p.fill = Color::rgb(0xFFFFFF), p.stroke = Color::rgb(0x000000), p.strokeW = 1.5f, p.depth = 1e9f, p.order = order++;
-            prims.push_back(std::move(p));
-        }
+        auto mark = [&](std::size_t i) {
+            if (i >= std::size_t(s.rows) * s.cols) return;
+            marker(toScreen(v, cam(norm(v, {f32(i % s.cols), s.values[i], f32(i / s.cols)}))), 4.f);
+        };
+        if (s.highlight >= 0) mark(std::size_t(s.highlight));
+        for (u32 i : sel) if (i32(i) != s.highlight) mark(i);
     } else if (s.kind == Kind::Scatter) {
-        for (std::size_t i = 0; i < s.points.size(); ++i) {
+        // large clouds: one point per marker-sized screen cell (the nearest), so draw cost follows the pixels covered
+        std::vector<u32> keep;
+        if (s.points.size() > s.maxPoints) {
+            const f32 cell = std::max(1.f, s.pointSize * 0.75f);
+            std::unordered_map<u64, std::pair<u32, f32>> best;
+            best.reserve(std::size_t(target.w * target.h / (cell * cell)) + 16);
+            for (std::size_t i = 0; i < s.points.size(); ++i) {
+                const Vec3 q = cam(norm(v, s.points[i]));
+                const Vec2 sp = toScreen(v, q);
+                const u64 key = (u64(u32(i32(std::floor(sp.x / cell)) + (1 << 20))) << 32) | u32(i32(std::floor(sp.y / cell)) + (1 << 20));
+                auto [it, fresh] = best.try_emplace(key, u32(i), q.z);
+                if (!fresh && q.z > it->second.second) it->second = {u32(i), q.z};
+            }
+            keep.reserve(best.size());
+            for (const auto& [k, bz] : best) keep.push_back(bz.first);
+            for (u32 i : sel) keep.push_back(i);
+            if (s.highlight >= 0) keep.push_back(u32(s.highlight));
+            std::sort(keep.begin(), keep.end());
+            keep.erase(std::unique(keep.begin(), keep.end()), keep.end());
+            while (!keep.empty() && keep.back() >= s.points.size()) keep.pop_back();
+        } else {
+            keep.resize(s.points.size());
+            for (std::size_t i = 0; i < keep.size(); ++i) keep[i] = u32(i);
+        }
+        for (u32 i : keep) {
             const Vec3 q = cam(norm(v, s.points[i]));
             const Vec2 sp = toScreen(v, q);
             const f32 f = v.persp ? v.dist / std::max(v.dist - q.z, 0.5f) : 1.f;
             Color col = i < s.pointColors.size() ? s.pointColors[i] : colormapAt(s, (s.points[i].y - v.lo[1]) / v.span[1]);
             if (s.shading) col = shade(col, 0.75f + 0.25f * std::clamp(q.z, -1.f, 1.f)); // depth cue
             Prim p;
-            const f32 r = s.pointSize * f * (i32(i) == s.highlight ? 1.6f : 1.f);
+            const bool hl = lit(i);
+            const f32 r = s.pointSize * f * (hl ? 1.6f : 1.f);
             p.path.circle(sp, std::max(r, 1.f));
-            p.fill = col, p.stroke = i32(i) == s.highlight ? Color::rgb(0xFFFFFF) : Color::rgb(0x000000, 0.4f), p.strokeW = 1.f;
+            p.fill = col, p.stroke = hl ? Color::rgb(0xFFFFFF) : Color::rgb(0x000000, 0.4f), p.strokeW = 1.f;
             p.depth = q.z, p.order = order++;
             prims.push_back(std::move(p));
-            if (items) items->push_back({u32(i), sp, q.z});
+            item(i, sp, q.z);
+        }
+    } else if (s.kind == Kind::Line) {
+        // depth-sorted segments; large lines drop steps under ~0.75 px (the drawn polyline is unchanged at that scale)
+        const bool thin = s.points.size() > s.maxPoints;
+        const Color base = s.seriesColors.empty() ? Color{} : s.seriesColors[0];
+        bool have = false;
+        Vec3 pq{};
+        Vec2 ps{};
+        f32 py = 0.f;
+        for (std::size_t i = 0; i < s.points.size(); ++i) {
+            const Vec3 d = s.points[i];
+            if (!std::isfinite(d.x) || !std::isfinite(d.y) || !std::isfinite(d.z)) { have = false; continue; }
+            const Vec3 q = cam(norm(v, d));
+            const Vec2 sp = toScreen(v, q);
+            if (have && thin && i + 1 < s.points.size() && !lit(i) && std::abs(sp.x - ps.x) + std::abs(sp.y - ps.y) < 0.75f) continue;
+            if (have) {
+                Prim p;
+                p.path.moveTo(ps).lineTo(sp);
+                Color col = base.a > 0.f ? base : colormapAt(s, ((py + d.y) * 0.5f - v.lo[1]) / v.span[1]);
+                if (s.shading) col = shade(col, 0.75f + 0.25f * std::clamp((pq.z + q.z) * 0.5f, -1.f, 1.f));
+                p.stroke = col, p.strokeW = s.lineWidth;
+                p.depth = (pq.z + q.z) * 0.5f, p.order = order++;
+                prims.push_back(std::move(p));
+            }
+            item(u32(i), sp, q.z);
+            if (lit(i)) marker(sp, 4.f);
+            have = true, pq = q, ps = sp, py = d.y;
+        }
+    } else if (s.kind == Kind::Area && s.rows && s.cols >= 2 && s.values.size() >= std::size_t(s.rows) * s.cols) {
+        // one ribbon per row: quads from the 0 line up to the values, BSP-ordered with the other faces
+        const std::vector<u32> C = sample(s.cols, gstride);
+        const f32 y0 = std::clamp(0.f, v.lo[1], v.lo[1] + v.span[1]);
+        for (u32 r = 0; r < s.rows; ++r) {
+            Color base = r < s.seriesColors.size() ? s.seriesColors[r] : colormapAt(s, s.rows > 1 ? f32(r) / f32(s.rows - 1) : 0.5f);
+            for (std::size_t k = 0; k + 1 < C.size(); ++k) {
+                const std::size_t i0 = std::size_t(r) * s.cols + C[k], i1 = std::size_t(r) * s.cols + C[k + 1];
+                const Vec3 a = cam(norm(v, {f32(C[k]), y0, f32(r)})), b = cam(norm(v, {f32(C[k + 1]), y0, f32(r)}));
+                const Vec3 c2 = cam(norm(v, {f32(C[k + 1]), s.values[i1], f32(r)})), d = cam(norm(v, {f32(C[k]), s.values[i0], f32(r)}));
+                Color col = base;
+                if (s.shading) col = shade(col, lambert(a, b, d));
+                if (lit(i0) || lit(i1)) col = Color{std::min(col.r * 1.25f + 0.1f, 1.f), std::min(col.g * 1.25f + 0.1f, 1.f), std::min(col.b * 1.25f + 0.1f, 1.f), col.a};
+                poly({a, b, c2, d}, col, s.wireframe ? wire : Color{}, s.wireframe ? 1.f : 0.f, 0.f, true);
+            }
+            for (u32 k : C) {
+                const std::size_t i = std::size_t(r) * s.cols + k;
+                const Vec3 q = cam(norm(v, {f32(k), s.values[i], f32(r)}));
+                item(u32(i), toScreen(v, q), q.z);
+                if (lit(i)) marker(toScreen(v, q), 4.f);
+            }
         }
     } else if (s.kind == Kind::Bars && s.rows && s.cols) {
         const f32 hw = 0.38f; // bar half width in cells
@@ -347,7 +463,7 @@ void render(const Scene& s, DrawList& dl, Rect target, Color gridColor, std::vec
                 const Vec3 a = norm(v, {f32(k) - hw, 0.f, f32(r) - hw}), b = norm(v, {f32(k) + hw, val, f32(r) + hw});
                 const f32 x0 = a.x, x1 = b.x, z0 = a.z, z1 = b.z, ylo = std::min(y0n, b.y), yhi = std::max(y0n, b.y);
                 Color base = s.barColor.a > 0.f ? s.barColor : colormapAt(s, (val - v.lo[1]) / v.span[1]);
-                if (i32(i) == s.highlight) base = Color{std::min(base.r * 1.3f + 0.15f, 1.f), std::min(base.g * 1.3f + 0.15f, 1.f), std::min(base.b * 1.3f + 0.15f, 1.f), base.a};
+                if (lit(i)) base = Color{std::min(base.r * 1.3f + 0.15f, 1.f), std::min(base.g * 1.3f + 0.15f, 1.f), std::min(base.b * 1.3f + 0.15f, 1.f), base.a};
                 const Vec3 P[8] = {cam({x0, ylo, z0}), cam({x1, ylo, z0}), cam({x1, ylo, z1}), cam({x0, ylo, z1}),
                                    cam({x0, yhi, z0}), cam({x1, yhi, z0}), cam({x1, yhi, z1}), cam({x0, yhi, z1})};
                 const Vec3 ctr = cam({(x0 + x1) * 0.5f, (ylo + yhi) * 0.5f, (z0 + z1) * 0.5f});
@@ -376,7 +492,7 @@ void render(const Scene& s, DrawList& dl, Rect target, Color gridColor, std::vec
                     pr.order = order++;
                     prims.push_back(std::move(pr));
                 }
-                if (items) items->push_back({u32(i), toScreen(v, cam({(x0 + x1) * 0.5f, b.y, (z0 + z1) * 0.5f})), ctr.z});
+                item(u32(i), toScreen(v, cam({(x0 + x1) * 0.5f, b.y, (z0 + z1) * 0.5f})), ctr.z);
             }
     }
 
@@ -446,6 +562,10 @@ void render(const Scene& s, DrawList& dl, Rect target, Color gridColor, std::vec
     }
     for (; ri < rest.size(); ++ri) dl.path(rest[ri].path, rest[ri].fill, false, rest[ri].stroke, rest[ri].strokeW);
     dl.popClip();
+    if (stats) {
+        stats->input = s.kind == Kind::Scatter || s.kind == Kind::Line ? s.points.size() : std::size_t(s.rows) * s.cols;
+        stats->drawn = drawnItems;
+    }
 }
 
 } // namespace fuse::ui::dv3d
@@ -458,7 +578,7 @@ struct Dv3dState {
     std::vector<dv3d::ProjectedItem> items;
     Vec2 pointer{}, dragFrom{};
     f32 dragYaw = 0.f, dragPitch = 0.f;
-    bool inside = false, dragging = false;
+    bool inside = false, dragging = false, moved = false;
 };
 struct Dv3dSlot {
     NodeHandle node;
@@ -479,7 +599,7 @@ std::vector<std::string> tipLines(const Dv3dState& st, i32 i) {
     const dv3d::Scene& s = st.scene;
     if (i < 0) return {};
     auto title = [&](int a, const char* d) { return s.axis[a].title.empty() ? std::string(d) : s.axis[a].title; };
-    if (s.kind == dv3d::Kind::Scatter) {
+    if (s.kind == dv3d::Kind::Scatter || s.kind == dv3d::Kind::Line) {
         if (std::size_t(i) >= s.points.size()) return {};
         const dv3d::Vec3 p = s.points[std::size_t(i)];
         return {title(0, "x") + ": " + fmt(p.x), title(1, "y") + ": " + fmt(p.y), title(2, "z") + ": " + fmt(p.z)};
@@ -512,6 +632,22 @@ struct Dv3dW {
             const std::string t = st->scene.axis[a].title.empty() ? def[a] : st->scene.axis[a].title;
             ui.paintString(dl, t, {p.x + 4.f, p.y - fs, 160.f, fs * 1.4f}, text, fs, TextAlignment::Start, pc.node.index);
         }
+        // tick labels along the three box edges that meet at (lo, lo, lo)
+        const f32 ts = fs * 0.85f;
+        const Color tc = text.withAlpha(text.a * 0.75f);
+        for (int a = 0; a < 3; ++a) {
+            const std::vector<f32> tk = dv3d::axisTicks(st->scene, a);
+            for (f32 t : tk) {
+                dv3d::Vec3 q{lo[0], lo[1], lo[2]};
+                (a == 0 ? q.x : a == 1 ? q.y : q.z) = t;
+                const Vec2 p = dv3d::project(st->scene, pc.content, q);
+                char b[32];
+                std::snprintf(b, sizeof b, "%g", double(t));
+                const f32 w = ui.measureString(b, ts) + 2.f;
+                ui.paintString(dl, b, {a == 1 ? p.x - w - 4.f : p.x - w * 0.5f, a == 1 ? p.y - ts * 0.7f : p.y + 2.f, w, ts * 1.4f}, tc, ts,
+                               TextAlignment::Start, pc.node.index);
+            }
+        }
         if (st->inside && ui.value(pc.node) >= 0.f) {
             const auto lines = tipLines(*st, i32(ui.value(pc.node)));
             if (!lines.empty()) {
@@ -540,14 +676,30 @@ struct Dv3dW {
         dv3d::Camera& cam = st->scene.camera;
         switch (e.type) {
         case EventType::PointerDown:
-            st->dragging = true;
+            st->dragging = true, st->moved = false;
             st->dragFrom = e.pos, st->dragYaw = cam.yaw, st->dragPitch = cam.pitch;
             return false;
-        case EventType::PointerUp: st->dragging = false; return false;
+        case EventType::PointerUp: {
+            st->dragging = false;
+            if (st->moved) return false;
+            // click: toggle the item under the pointer (Ctrl adds to the selection)
+            const i32 h = dv3d::pick(st->items, e.pos, std::max(10.f, st->scene.pointSize + 4.f));
+            if (h < 0) return false;
+            auto& sel = st->scene.selection;
+            auto it = std::find(sel.begin(), sel.end(), u32(h));
+            const bool on = it == sel.end();
+            if (!(e.mods & kModCtrl)) sel.clear();
+            else if (!on) sel.erase(it);
+            if (on) sel.push_back(u32(h));
+            ui.emit(ec.node, SignalKind::Toggled, {.value = f32(h), .flag = on});
+            ui.invalidate(ec.node);
+            return false;
+        }
         case EventType::PointerMove: {
             st->pointer = e.pos;
             st->inside = true;
             if (st->dragging && ui.pressed() == ec.node) {
+                if (std::abs(e.pos.x - st->dragFrom.x) + std::abs(e.pos.y - st->dragFrom.y) > 3.f) st->moved = true;
                 cam.yaw = st->dragYaw + (e.pos.x - st->dragFrom.x) * 0.5f;
                 cam.pitch = std::clamp(st->dragPitch + (e.pos.y - st->dragFrom.y) * 0.5f, -89.f, 89.f);
             }
@@ -570,6 +722,7 @@ struct Dv3dW {
             if (e.key == Key::Left || e.key == Key::Right) cam.yaw += e.key == Key::Left ? -5.f : 5.f;
             else if (e.key == Key::Up || e.key == Key::Down) cam.pitch = std::clamp(cam.pitch + (e.key == Key::Up ? 5.f : -5.f), -89.f, 89.f);
             else if (e.key == Key::Home) cam = dv3d::Camera{};
+            else if (e.key == Key::Escape && !st->scene.selection.empty()) st->scene.selection.clear();
             else return false;
             ui.invalidate(ec.node);
             return true;
@@ -590,7 +743,8 @@ NodeHandle dataViz3d(UiContext& ui, NodeHandle parent, dv3d::Kind kind, std::str
     slots.back().s->scene.kind = kind;
     ui.setRange(*h, 0.f, 0.f);
     ui.setValue(*h, -1.f, false);
-    ui.setA11y(*h, A11yRole::Image, kind == dv3d::Kind::Surface ? "3D surface" : kind == dv3d::Kind::Scatter ? "3D scatter" : "3D bars");
+    static const char* names[] = {"3D surface", "3D scatter", "3D bars", "3D line", "3D area"};
+    ui.setA11y(*h, A11yRole::Image, names[u32(kind)]);
     return *h;
 }
 void dataViz3dSetGrid(UiContext& ui, NodeHandle w, u32 rows, u32 cols, std::span<const f32> values) {
@@ -618,6 +772,11 @@ void dataViz3dSetCamera(UiContext& ui, NodeHandle w, const dv3d::Camera& c) {
 dv3d::Camera dataViz3dCamera(const UiContext& ui, NodeHandle w) {
     const Dv3dState* s = stateOf(ui, w);
     return s ? s->scene.camera : dv3d::Camera{};
+}
+const std::vector<u32>& dataViz3dSelection(const UiContext& ui, NodeHandle w) {
+    static const std::vector<u32> none;
+    const Dv3dState* s = stateOf(ui, w);
+    return s ? s->scene.selection : none;
 }
 i32 dataViz3dHovered(const UiContext& ui, NodeHandle w) {
     const Dv3dState* s = stateOf(ui, w);
