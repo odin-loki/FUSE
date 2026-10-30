@@ -150,6 +150,9 @@ struct GpuDrawData {
     /// range: its records go into free spots of their node's slots, and only the tiles it touches are rebuilt.
     bool incremental = false;
     std::vector<u64> cmdBox;             ///< per DrawList command: pixel box (u16 x0|y0|x1|y1), ~0 = none
+    std::vector<u64> cmdVol;             ///< per DrawList command: its volatile words (offset | count << 32) in the arena tail
+    std::vector<u32> passHeader;         ///< per draw segment: tile header offset in `tiles`
+    std::vector<GpuPass> blurPasses;     ///< per backdrop: the blur pass after its segment
     std::vector<u32> backdropSrc;        ///< DrawList indices of the effective backdrops (one per segment)
     struct ClipRun {
         u32 from; ///< first DrawList index under this clip
