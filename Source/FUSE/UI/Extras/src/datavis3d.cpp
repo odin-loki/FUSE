@@ -660,6 +660,7 @@ void buildVolumeSlices(const Scene& s, const View& v, Mesh3D& m, std::vector<Pro
         const u32 o = u32(m.vertices.size());
         for (int k = 0; k < 4; ++k) {
             MeshVertex mv;
+            mv.id = idx + 1;
             mv.x = q[k].x, mv.y = q[k].y, mv.z = q[k].z, mv.nx = nrm.x, mv.ny = nrm.y, mv.nz = nrm.z, mv.rgba = packColor(col);
             m.vertices.push_back(mv);
         }
@@ -672,6 +673,20 @@ void buildVolumeSlices(const Scene& s, const View& v, Mesh3D& m, std::vector<Pro
     });
 }
 } // namespace
+
+void blend(const Scene& from, const Scene& to, f32 t, Scene& out) {
+    out = to;
+    if (from.kind != to.kind || t >= 1.f) return;
+    t = std::clamp(t, 0.f, 1.f);
+    auto mix = [t](f32 a, f32 b) { return std::isfinite(a) && std::isfinite(b) ? a + (b - a) * t : b; };
+    if (from.values.size() == to.values.size() && from.rows == to.rows && from.cols == to.cols)
+        for (std::size_t i = 0; i < out.values.size(); ++i) out.values[i] = mix(from.values[i], to.values[i]);
+    if (from.points.size() == to.points.size())
+        for (std::size_t i = 0; i < out.points.size(); ++i)
+            out.points[i] = {mix(from.points[i].x, to.points[i].x), mix(from.points[i].y, to.points[i].y), mix(from.points[i].z, to.points[i].z)};
+    if (from.volume.size() == to.volume.size() && from.vx == to.vx && from.vy == to.vy && from.vz == to.vz)
+        for (std::size_t i = 0; i < out.volume.size(); ++i) out.volume[i] = mix(from.volume[i], to.volume[i]);
+}
 
 Rect meshRect(Rect t) {
     const f32 x0 = std::floor(t.x), y0 = std::floor(t.y);
@@ -720,9 +735,10 @@ void buildMesh(const Scene& s, Rect target, Mesh3D& m, std::vector<ProjectedItem
             items->push_back({i, toScreen(v, c), c.z});
         }
     };
+    u32 curId = 0; // pick id of the vertices being emitted: item index + 1
     auto vert = [&](Vec3 p, Vec3 nrm, Color c) {
         MeshVertex mv;
-        mv.x = p.x, mv.y = p.y, mv.z = p.z, mv.nx = nrm.x, mv.ny = nrm.y, mv.nz = nrm.z, mv.rgba = packColor(c);
+        mv.x = p.x, mv.y = p.y, mv.z = p.z, mv.nx = nrm.x, mv.ny = nrm.y, mv.nz = nrm.z, mv.rgba = packColor(c), mv.id = curId;
         return m.add(mv);
     };
     auto sample = [&](u32 n, u32 stride) {
@@ -731,8 +747,12 @@ void buildMesh(const Scene& s, Rect target, Mesh3D& m, std::vector<ProjectedItem
         if (!o.empty() && o.back() != n - 1) o.push_back(n - 1);
         return o;
     };
-    const u32 gstride = s.rows && s.cols && std::size_t(s.rows) * s.cols > std::size_t(s.maxMeshGrid) * s.maxMeshGrid
-                            ? u32(std::ceil(std::sqrt(double(s.rows) * double(s.cols) / (double(s.maxMeshGrid) * double(s.maxMeshGrid))))) : 1u;
+    u32 gstride = s.rows && s.cols && std::size_t(s.rows) * s.cols > std::size_t(s.maxMeshGrid) * s.maxMeshGrid
+                      ? u32(std::ceil(std::sqrt(double(s.rows) * double(s.cols) / (double(s.maxMeshGrid) * double(s.maxMeshGrid))))) : 1u;
+    { // screen-space LOD: no finer than ~2 px per grid step along the target's longer side
+        const u32 g = std::max(2u, u32(std::ceil(std::max(W, H) * 0.5f)));
+        gstride = std::max({gstride, (s.rows + g - 1) / g, (s.cols + g - 1) / g, 1u});
+    }
     const bool grid = s.rows && s.cols && s.values.size() >= std::size_t(s.rows) * s.cols;
     if (s.kind == Kind::Surface && grid && s.rows >= 2 && s.cols >= 2) {
         const std::vector<u32> R = sample(s.rows, gstride), C = sample(s.cols, gstride);
@@ -747,6 +767,7 @@ void buildMesh(const Scene& s, Rect target, Mesh3D& m, std::vector<ProjectedItem
                 Color col = colormapAt(s, (s.values[i] - v.lo[1]) / v.span[1]);
                 if (lit(i)) col = brighten(col, 1.25f, 0.1f);
                 const Vec3 p = P(r, k);
+                curId = u32(i) + 1;
                 vert(p, cross3(dv, du), col);
                 item(u32(i), p);
             }
@@ -766,6 +787,7 @@ void buildMesh(const Scene& s, Rect target, Mesh3D& m, std::vector<ProjectedItem
                 const std::size_t i = std::size_t(r) * s.cols + C[k];
                 const Color col = lit(i) ? brighten(base, 1.25f, 0.1f) : base;
                 const Vec3 top = norm(v, {f32(C[k]), s.values[i], f32(r)});
+                curId = u32(i) + 1;
                 const u32 lo = vert(norm(v, {f32(C[k]), y0, f32(r)}), {0, 0, 1}, col);
                 vert(top, {0, 0, 1}, col);
                 if (k) m.quad(prev, lo, lo + 1, prev + 1);
@@ -786,6 +808,7 @@ void buildMesh(const Scene& s, Rect target, Mesh3D& m, std::vector<ProjectedItem
                 const f32 x0 = a.x, x1 = b.x, z0 = a.z, z1 = b.z, ylo = std::min(y0n, b.y), yhi = std::max(y0n, b.y);
                 Color base = s.barColor.a > 0.f ? s.barColor : colormapAt(s, (val - v.lo[1]) / v.span[1]);
                 if (lit(i)) base = brighten(base, 1.3f, 0.15f);
+                curId = u32(i) + 1;
                 const Vec3 Pt[8] = {{x0, ylo, z0}, {x1, ylo, z0}, {x1, ylo, z1}, {x0, ylo, z1},
                                     {x0, yhi, z0}, {x1, yhi, z0}, {x1, yhi, z1}, {x0, yhi, z1}};
                 for (int fc = 0; fc < 6; ++fc) {
@@ -810,13 +833,43 @@ void buildMesh(const Scene& s, Rect target, Mesh3D& m, std::vector<ProjectedItem
             const f32 r = lit(i) ? rn * 1.6f : rn;
             if (lit(i)) col = brighten(col, 1.2f, 0.15f);
             const u32 o = u32(m.vertices.size());
+            curId = u32(i) + 1;
             for (const Vec3& q : O) vert({c.x + q.x * r, c.y + q.y * r, c.z + q.z * r}, q, col);
             for (const auto& t : T) m.tri(o + u32(t[0]), o + u32(t[1]), o + u32(t[2]));
             item(u32(i), c);
         };
+        if (n > s.maxPoints) {
+            // screen-space LOD (as the painter path): one point per marker-sized screen cell, the nearest; a dense
+            // cell grid over the target (points outside it are clipped anyway), selection and highlight always kept
+            const f32 cell = std::max(1.f, s.pointSize * 0.75f);
+            const u32 gw = u32(std::ceil(W / cell)) + 1, gh = u32(std::ceil(H / cell)) + 1;
+            std::vector<u32> best(std::size_t(gw) * gh, ~0u);
+            std::vector<f32> bz(best.size(), 0.f);
+            for (std::size_t i = 0; i < n; ++i) {
+                const Vec3 d = s.points[i];
+                if (!std::isfinite(d.x) || !std::isfinite(d.y) || !std::isfinite(d.z)) continue;
+                const Vec3 q = toCam(v, norm(v, d));
+                const Vec2 sp = toScreen(v, q);
+                const f32 cx = std::floor((sp.x - mr.x) / cell), cy = std::floor((sp.y - mr.y) / cell);
+                if (!(cx >= 0.f && cy >= 0.f && cx < f32(gw) && cy < f32(gh))) continue;
+                const std::size_t key = std::size_t(cy) * gw + std::size_t(cx);
+                if (best[key] == ~0u || q.z > bz[key]) best[key] = u32(i), bz[key] = q.z;
+            }
+            std::vector<u32> keep;
+            for (u32 b : best) if (b != ~0u) keep.push_back(b);
+            for (u32 i : sel) if (i < n) keep.push_back(i);
+            if (s.highlight >= 0 && std::size_t(s.highlight) < n) keep.push_back(u32(s.highlight));
+            std::sort(keep.begin(), keep.end());
+            keep.erase(std::unique(keep.begin(), keep.end()), keep.end());
+            const std::size_t kstride = keep.size() > s.maxMeshPoints ? (keep.size() + s.maxMeshPoints - 1) / s.maxMeshPoints : 1;
+            m.vertices.reserve(std::min(keep.size(), std::size_t(s.maxMeshPoints) + sel.size() + 1) * 6);
+            for (std::size_t j = 0; j < keep.size(); ++j)
+                if (j % kstride == 0 || lit(keep[j])) add(keep[j]);
+        } else {
         m.vertices.reserve(std::min(n, std::size_t(s.maxMeshPoints) + sel.size() + 1) * 6);
         for (std::size_t i = 0; i < n; i += stride) add(i);
-        if (stride > 1) {
+        }
+        if (stride > 1 && n <= s.maxPoints) {
             for (u32 i : sel) if (i < n && i % stride) add(i);
             if (s.highlight >= 0 && std::size_t(s.highlight) < n && s.highlight % i32(stride) && !std::binary_search(sel.begin(), sel.end(), u32(s.highlight))) add(std::size_t(s.highlight));
         }
@@ -825,13 +878,25 @@ void buildMesh(const Scene& s, Rect target, Mesh3D& m, std::vector<ProjectedItem
         const Vec3 view{rZ.x, rZ.y, rZ.z}; // cube-space direction towards the viewer
         const f32 hw = s.lineWidth * 0.5f / std::max(v.scale, 1e-3f);
         const Color base = s.seriesColors.empty() ? Color{} : s.seriesColors[0];
-        for (std::size_t i = 0; i + 1 < s.points.size(); ++i) {
-            const Vec3 a = norm(v, s.points[i]), b = norm(v, s.points[i + 1]);
+        // screen-space LOD (large lines, as the painter path): skip vertices less than ~0.75 px from the last kept one
+        const bool thin = s.points.size() > s.maxPoints;
+        std::size_t i = 0;
+        for (std::size_t nx = 1; nx < s.points.size(); i = nx, ++nx) {
+            if (thin) {
+                const Vec2 ps = toScreen(v, toCam(v, norm(v, s.points[i])));
+                while (nx + 1 < s.points.size() && !lit(nx)) {
+                    const Vec2 sp = toScreen(v, toCam(v, norm(v, s.points[nx])));
+                    if (!(std::abs(sp.x - ps.x) + std::abs(sp.y - ps.y) < 0.75f)) break;
+                    ++nx;
+                }
+            }
+            const Vec3 a = norm(v, s.points[i]), b = norm(v, s.points[nx]);
             if (!std::isfinite(a.x + a.y + a.z + b.x + b.y + b.z)) continue;
+            curId = u32(i) + 1;
             const Vec3 side = unit3(cross3(sub3(b, a), view));
             const Vec3 o{side.x * hw, side.y * hw, side.z * hw};
-            Color col = base.a > 0.f ? base : colormapAt(s, ((s.points[i].y + s.points[i + 1].y) * 0.5f - v.lo[1]) / v.span[1]);
-            if (lit(i) || lit(i + 1)) col = brighten(col, 1.25f, 0.1f);
+            Color col = base.a > 0.f ? base : colormapAt(s, ((s.points[i].y + s.points[nx].y) * 0.5f - v.lo[1]) / v.span[1]);
+            if (lit(i) || lit(nx)) col = brighten(col, 1.25f, 0.1f);
             const u32 q = vert({a.x - o.x, a.y - o.y, a.z - o.z}, view, col);
             vert({a.x + o.x, a.y + o.y, a.z + o.z}, view, col);
             vert({b.x + o.x, b.y + o.y, b.z + o.z}, view, col);
@@ -892,7 +957,16 @@ struct Dv3dState {
     Mesh3D mesh;    ///< mesh path: last built mesh
     Image meshImage; ///< mesh path: CPU raster or the external texture's stand-in
     i32 meshIndex = -1;
+    Rect meshAt{};          ///< target pixel rect of the mesh image (last paint)
+    bool idPick = false;    ///< hover / click come from the GPU id buffer (dataViz3dSetMeshPick)
+    i32 idPicked = -1;
+    // data-change tween (dataViz3dChanged): from = data on screen at the change, shown = blend(from, scene, eased t)
+    dv3d::Scene from, shown;
+    bool haveFrom = false, tweening = false;
+    TimerHandle tween{};
+    f32 tweenT = 1.f;
 };
+std::size_t elements(const dv3d::Scene& s) { return s.values.size() + s.points.size() * 3 + s.volume.size(); }
 struct Dv3dSlot {
     NodeHandle node;
     std::unique_ptr<Dv3dState> s;
@@ -939,18 +1013,21 @@ struct Dv3dW {
         UiContext& ui = pc.ui;
         const Color text = pc.tint(pc.style.color);
         st->scene.highlight = st->inside ? i32(ui.value(pc.node)) : -1;
-        if (st->scene.gpuMesh && st->meshIndex >= 0)
-            dv3d::renderMeshed(st->scene, dl, pc.content, text, st->mesh, st->meshImage, u32(st->meshIndex), st->meshImage.externalSlot < 0, &st->items);
+        st->meshAt = dv3d::meshRect(pc.content);
+        if (st->tweening) st->shown.highlight = st->scene.highlight, st->shown.camera = st->scene.camera, st->shown.selection = st->scene.selection;
+        const dv3d::Scene& sc = st->tweening ? st->shown : st->scene;
+        if (sc.gpuMesh && st->meshIndex >= 0)
+            dv3d::renderMeshed(sc, dl, pc.content, text, st->mesh, st->meshImage, u32(st->meshIndex), st->meshImage.externalSlot < 0, &st->items);
         else
-            dv3d::render(st->scene, dl, pc.content, text, &st->items);
+            dv3d::render(sc, dl, pc.content, text, &st->items);
         // axis titles at the far ends of the box edges
         const f32 fs = ui.computed(pc.node).fontSize * 0.8f;
         f32 lo[3], hi[3];
-        dv3d::ranges(st->scene, lo, hi);
+        dv3d::ranges(sc, lo, hi);
         const dv3d::Vec3 ends[3] = {{hi[0], lo[1], lo[2]}, {lo[0], hi[1], lo[2]}, {lo[0], lo[1], hi[2]}};
         const char* def[3] = {"X", "Y", "Z"};
         for (int a = 0; a < 3; ++a) {
-            const Vec2 p = dv3d::project(st->scene, pc.content, ends[a]);
+            const Vec2 p = dv3d::project(sc, pc.content, ends[a]);
             const std::string t = st->scene.axis[a].title.empty() ? def[a] : st->scene.axis[a].title;
             ui.paintString(dl, t, {p.x + 4.f, p.y - fs, 160.f, fs * 1.4f}, text, fs, TextAlignment::Start, pc.node.index);
         }
@@ -958,11 +1035,11 @@ struct Dv3dW {
         const f32 ts = fs * 0.85f;
         const Color tc = text.withAlpha(text.a * 0.75f);
         for (int a = 0; a < 3; ++a) {
-            const std::vector<f32> tk = dv3d::axisTicks(st->scene, a);
+            const std::vector<f32> tk = dv3d::axisTicks(sc, a);
             for (f32 t : tk) {
                 dv3d::Vec3 q{lo[0], lo[1], lo[2]};
                 (a == 0 ? q.x : a == 1 ? q.y : q.z) = t;
-                const Vec2 p = dv3d::project(st->scene, pc.content, q);
+                const Vec2 p = dv3d::project(sc, pc.content, q);
                 char b[32];
                 std::snprintf(b, sizeof b, "%g", double(t));
                 const f32 w = ui.measureString(b, ts) + 2.f;
@@ -1005,7 +1082,7 @@ struct Dv3dW {
             st->dragging = false;
             if (st->moved) return false;
             // click: toggle the item under the pointer (Ctrl adds to the selection)
-            const i32 h = dv3d::pick(st->items, e.pos, std::max(10.f, st->scene.pointSize + 4.f));
+            const i32 h = st->idPick ? st->idPicked : dv3d::pick(st->items, e.pos, std::max(10.f, st->scene.pointSize + 4.f));
             if (h < 0) return false;
             auto& sel = st->scene.selection;
             auto it = std::find(sel.begin(), sel.end(), u32(h));
@@ -1025,7 +1102,7 @@ struct Dv3dW {
                 cam.yaw = st->dragYaw + (e.pos.x - st->dragFrom.x) * 0.5f;
                 cam.pitch = std::clamp(st->dragPitch + (e.pos.y - st->dragFrom.y) * 0.5f, -89.f, 89.f);
             }
-            const i32 h = st->dragging ? -1 : dv3d::pick(st->items, e.pos, std::max(10.f, st->scene.pointSize + 4.f));
+            const i32 h = st->dragging ? -1 : st->idPick ? st->idPicked : dv3d::pick(st->items, e.pos, std::max(10.f, st->scene.pointSize + 4.f));
             if (f32(h) != ui.value(ec.node)) ui.setValue(ec.node, f32(h), true);
             ui.invalidate(ec.node);
             return false;
@@ -1114,6 +1191,58 @@ Image* dataViz3dMeshImage(UiContext& ui, NodeHandle w) {
 }
 void dataViz3dSetMeshImage(UiContext& ui, NodeHandle w, u32 imageIndex) {
     if (Dv3dState* st = stateOf(ui, w)) st->meshIndex = i32(imageIndex), st->scene.gpuMesh = true, ui.invalidate(w);
+}
+bool dataViz3dMeshPickPixel(const UiContext& ui, NodeHandle w, u32& x, u32& y) {
+    const Dv3dState* st = stateOf(ui, w);
+    if (!st || !st->inside || st->meshAt.w <= 0.f) return false;
+    const f32 px = std::floor(st->pointer.x - st->meshAt.x), py = std::floor(st->pointer.y - st->meshAt.y);
+    if (!(px >= 0.f && py >= 0.f && px < st->meshAt.w && py < st->meshAt.h)) return false;
+    x = u32(px), y = u32(py);
+    return true;
+}
+void dataViz3dSetMeshPick(UiContext& ui, NodeHandle w, u32 id) {
+    Dv3dState* st = stateOf(ui, w);
+    if (!st) return;
+    st->idPick = true;
+    st->idPicked = id ? i32(id - 1) : -1;
+    const f32 h = st->inside && !st->dragging ? f32(st->idPicked) : -1.f;
+    if (h != ui.value(w)) ui.setValue(w, h, true), ui.invalidate(w);
+}
+void dataViz3dChanged(UiContext& ui, NodeHandle w, bool animate) {
+    Dv3dState* st = stateOf(ui, w);
+    if (!st) return;
+    const dv3d::Scene& s = st->scene;
+    const bool small = elements(s) <= 200000;
+    const bool same = st->haveFrom && st->from.kind == s.kind && st->from.values.size() == s.values.size() &&
+                      st->from.points.size() == s.points.size() && st->from.volume.size() == s.volume.size();
+    if (animate && s.animate && small && same) {
+        if (st->tweening) st->from = st->shown; // continue from what is on screen
+        if (st->tween.valid()) ui.cancelTimer(st->tween);
+        st->tweenT = 0.f, st->tweening = true;
+        dv3d::blend(st->from, s, 0.f, st->shown);
+        st->tween = ui.startTimer(1.f / 60.f, true, [w](UiContext& u) {
+            Dv3dState* t = stateOf(u, w);
+            if (!t) return;
+            t->tweenT = std::min(1.f, t->tweenT + (1.f / 60.f) / 0.35f);
+            const f32 k = 1.f - t->tweenT;
+            dv3d::blend(t->from, t->scene, 1.f - k * k * k, t->shown); // ease-out cubic
+            u.invalidate(w);
+            if (t->tweenT >= 1.f) {
+                u.cancelTimer(t->tween);
+                t->tween = {}, t->tweening = false, t->shown = {};
+                t->from = t->scene;
+            }
+        });
+    } else {
+        if (st->tweening) { ui.cancelTimer(st->tween); st->tween = {}, st->tweening = false, st->shown = {}; }
+        if (small) st->from = s, st->haveFrom = true;
+        else st->from = {}, st->haveFrom = false;
+    }
+    ui.invalidate(w);
+}
+const dv3d::Scene* dataViz3dShown(const UiContext& ui, NodeHandle w) {
+    const Dv3dState* st = stateOf(ui, w);
+    return st ? (st->tweening ? &st->shown : &st->scene) : nullptr;
 }
 const Mesh3D* dataViz3dMesh(const UiContext& ui, NodeHandle w) {
     const Dv3dState* st = stateOf(ui, w);

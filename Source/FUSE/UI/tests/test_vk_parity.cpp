@@ -552,7 +552,8 @@ int main() {
         if (fuse::ui::render::UiVkMesh3D::available()) {
             namespace ch = fuse::ui::charts;
             fuse::ui::render::UiVkMesh3D meshes[4];
-            for (auto& m : meshes) UI_CHECK(m.init({.physicalDevice = (void*)vk.phys, .device = (void*)vk.device, .maxWidth = W, .maxHeight = H}));
+            const bool exact = vk.geometryShader && !std::getenv("FUSE_MESH_NO_EXACT"); // the latter: timing comparison
+            for (auto& m : meshes) UI_CHECK(m.init({.physicalDevice = (void*)vk.phys, .device = (void*)vk.device, .maxWidth = W, .maxHeight = H, .exactDepth = exact}));
             for (int frame = 0; frame < 2; ++frame) {
                 DrawList ml;
                 ml.rect({0, 0, f32(W), f32(H)}, Color::rgb(0x101014));
@@ -588,6 +589,7 @@ int main() {
                     img[i].externalSlot = i;
                     imgs[i] = &img[i];
                     UI_CHECK(meshes[i].upload(mesh[i]));
+                    meshes[i].requestPick(0, 0, mesh[i].frame.width, mesh[i].frame.height);
                     gpu.setExternalImage(u32(i), meshes[i].view());
                 }
                 Image cpuM;
@@ -601,8 +603,44 @@ int main() {
                     for (auto& m : meshes) m.record((void*)c);
                     gpu.record((void*)c, (void*)vk.view, 0);
                 });
-                std::printf("mesh3d frame %d: %zu triangles\n", frame, tris);
-                checkMesh(frame ? "mesh3d b" : "mesh3d a", compare(cpuM, out));
+                std::size_t idBad = 0, idSet = 0;
+                double gms = 0;
+                for (int i = 0; i < 4; ++i) { // GPU id buffer against rasterMesh's
+                    Image tmp;
+                    std::vector<u32> ids;
+                    fuse::ui::rasterMesh(mesh[i], tmp, nullptr, &ids);
+                    const u32* g = meshes[i].pickData();
+                    UI_CHECK(g && meshes[i].pickWidth() * meshes[i].pickHeight() == ids.size());
+                    if (g)
+                        for (std::size_t q = 0; q < ids.size(); ++q) {
+                            if (g[q] != ids[q] && idBad < 4) {
+                                std::printf("  id differs: panel %d px %zu,%zu gpu %u cpu %u\n", i, q % mesh[i].frame.width, q / mesh[i].frame.width, g[q], ids[q]);
+                                if (std::getenv("FUSE_MESH_DEBUG"))
+                                    for (std::size_t t = 0; t + 2 < mesh[i].indices.size(); t += 3) {
+                                        Mesh3D one;
+                                        one.frame = mesh[i].frame;
+                                        one.vertices = mesh[i].vertices;
+                                        one.indices = {mesh[i].indices[t], mesh[i].indices[t + 1], mesh[i].indices[t + 2]};
+                                        Image ti;
+                                        std::vector<f32> dep;
+                                        std::vector<u32> oid;
+                                        fuse::ui::rasterMesh(one, ti, &dep, &oid);
+                                        if (oid[q]) std::printf("    tri %zu id %u depth %.9g\n", t / 3, oid[q], double(dep[q]));
+                                    }
+                            }
+                            idBad += g[q] != ids[q], idSet += ids[q] != 0;
+                        }
+                    gms += std::max(0.0, meshes[i].gpuMs());
+                }
+                std::printf("mesh3d frame %d: %zu triangles, exact depth %d, ids %zu set / %zu differ, gpu %.3f ms\n", frame, tris,
+                            int(exact), idSet, idBad, gms);
+                UI_CHECK(idSet > 0);
+                if (exact) {
+                    // pixel centres exactly on a shared edge: the tie owner is implementation-defined in Vulkan
+                    UI_CHECK(idBad * 20000 <= idSet);
+                    check(frame ? "mesh3d b" : "mesh3d a", compare(cpuM, out)); // strict: depth ties resolve identically
+                } else
+                    checkMesh(frame ? "mesh3d b" : "mesh3d a", compare(cpuM, out));
                 if (const char* dir = std::getenv("FUSE_PARITY_OUT")) {
                     const std::string f = std::string(dir) + (frame ? "/mesh3d_b.ppm" : "/mesh3d_a.ppm");
                     for (int which = 0; which < 2; ++which)
@@ -612,6 +650,18 @@ int main() {
                             for (u32 px : im.pixels) { const unsigned char rgb[3] = {u8(px), u8(px >> 8), u8(px >> 16)}; std::fwrite(rgb, 1, 3, fp); }
                             std::fclose(fp);
                         }
+                }
+            }
+            { // GPU draw timing (timestamp queries): the last frame's panels re-recorded alone, median of 5
+                for (int i = 0; i < 4; ++i) {
+                    std::vector<double> ms;
+                    for (int rep = 0; rep < 5; ++rep) {
+                        vk.run(init, out, [&](VkCommandBuffer c) { meshes[i].record((void*)c); });
+                        ms.push_back(meshes[i].gpuMs());
+                    }
+                    std::sort(ms.begin(), ms.end());
+                    std::printf("mesh3d gpu panel %d (%ux%u): %.3f ms median\n", i, meshes[i].width(), meshes[i].height(), ms[2]);
+                    UI_CHECK(ms[2] >= 0.0);
                 }
             }
             for (u32 e = 0; e < 4; ++e) gpu.setExternalImage(e, nullptr);

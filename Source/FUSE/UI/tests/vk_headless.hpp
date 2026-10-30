@@ -49,6 +49,7 @@ struct VkHeadless {
         return ~0u;
     }
 
+    bool geometryShader = false; ///< enabled on the device
     bool init(u32 width, u32 height, VkFormat fmt = VK_FORMAT_R8G8B8A8_UNORM, u32 bytesPerPixel = 4) {
         w = width;
         h = height;
@@ -90,6 +91,11 @@ struct VkHeadless {
         VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
         dci.queueCreateInfoCount = 1;
         dci.pQueueCreateInfos = &qci;
+        VkPhysicalDeviceFeatures have{}, want{};
+        vkGetPhysicalDeviceFeatures(phys, &have);
+        want.geometryShader = have.geometryShader; // PrimitiveId in fragment: UiVkMesh3D exact depth
+        geometryShader = have.geometryShader == VK_TRUE;
+        dci.pEnabledFeatures = &want;
         if (vkCreateDevice(phys, &dci, nullptr, &device) != VK_SUCCESS) return false;
         FUSE_UI_TEST_VOLK(fuse::renderer::vkloader::registerDevice(device, instance));
         vkGetDeviceQueue(device, family, 0, &queue);

@@ -7,7 +7,10 @@
 // y down, z_ndc in [0, 1], depth test LESS, cleared to 1). Lighting is per vertex, two-sided Lambert with ambient:
 // rgb * (ambient + (1 - ambient) * |dot(normalize(n), light)|), interpolated without perspective correction
 // (noperspective) and written opaque. Pixels are covered at their centres with 8-bit sub-pixel vertex snapping and the
-// top-left fill rule, so CPU and GPU agree on coverage.
+// top-left fill rule, so CPU and GPU agree on coverage. Depth is evaluated per pixel with one fixed sequence of float
+// operations (meshDepth below, mirrored by ui_mesh3d_exact.frag through gl_PrimitiveID), so equal / near-equal depths
+// resolve the same way on both backends: LESS keeps the first-drawn triangle on a tie. An optional R32 id buffer
+// records the winning triangle's MeshVertex::id for picking.
 #pragma once
 
 #include "fuse/ui/draw_list.hpp"
@@ -23,7 +26,7 @@ struct MeshVertex {
     f32 x = 0, y = 0, z = 0;
     f32 nx = 0, ny = 0, nz = 1;
     u32 rgba = 0xFFFFFFFFu; ///< straight RGBA8, R in the low byte
-    f32 pad = 0;
+    u32 id = 0; ///< pick id (0: none); a triangle reports its first vertex's id
 };
 static_assert(sizeof(MeshVertex) == 32);
 
@@ -48,9 +51,23 @@ namespace mesh3d_detail {
 inline u8 unorm(f32 v) { return u8(std::lround(std::clamp(v, 0.f, 1.f) * 255.f)); }
 struct Sv {
     long long x, y; ///< 24.8 fixed point
+    f32 fx, fy;     ///< the same, as floats (exact: |v| < 2^24)
     f32 z, r, g, b, a;
     bool ok;
 };
+/// Depth at the pixel centre (px, py in 1/256 px) of triangle a, b, c in index order. Every operation is a single
+/// IEEE float op in this order (the GLSL twin is `precise`), so both backends produce bit-identical depths.
+inline f32 meshDepth(const Sv& a, const Sv& b, const Sv& c, f32 px, f32 py) {
+#if defined(__clang__)
+#pragma clang fp contract(off)
+#endif
+    const f32 area = (b.fx - a.fx) * (c.fy - a.fy) - (b.fy - a.fy) * (c.fx - a.fx);
+    const f32 e0 = (c.fx - b.fx) * (py - b.fy) - (c.fy - b.fy) * (px - b.fx);
+    const f32 e1 = (a.fx - c.fx) * (py - c.fy) - (a.fy - c.fy) * (px - c.fx);
+    const f32 l0 = e0 / area, l1 = e1 / area;
+    const f32 l2 = 1.f - l0 - l1;
+    return l0 * a.z + l1 * b.z + l2 * c.z;
+}
 } // namespace mesh3d_detail
 
 /// The lit colour of a vertex (straight, 0..1), shared by both backends' specification.
@@ -64,7 +81,11 @@ inline void meshShade(const MeshVertex& v, const MeshFrame& f, f32 out[4]) {
 
 /// CPU reference: rasterises `m` into `out` (resized to frame.width x height, cleared to frame.clear). `depth` is
 /// optional scratch reused across calls. Triangles with a vertex at or behind the eye (w <= 1e-6) are skipped.
-inline void rasterMesh(const Mesh3D& m, Image& out, std::vector<f32>* depthScratch = nullptr) {
+/// `ids` (optional) receives W*H winning MeshVertex::id values (0 where nothing was drawn).
+inline void rasterMesh(const Mesh3D& m, Image& out, std::vector<f32>* depthScratch = nullptr, std::vector<u32>* ids = nullptr) {
+#if defined(__clang__)
+#pragma clang fp contract(off)
+#endif
     using namespace mesh3d_detail;
     const MeshFrame& f = m.frame;
     const int W = int(f.width), H = int(f.height);
@@ -72,6 +93,7 @@ inline void rasterMesh(const Mesh3D& m, Image& out, std::vector<f32>* depthScrat
     std::vector<f32> local;
     std::vector<f32>& depth = depthScratch ? *depthScratch : local;
     depth.assign(std::size_t(W) * std::size_t(H), 1.f);
+    if (ids) ids->assign(std::size_t(W) * std::size_t(H), 0u);
     std::vector<Sv> sv(m.vertices.size());
     const f32* M = f.mvp;
     for (std::size_t i = 0; i < m.vertices.size(); ++i) {
@@ -84,7 +106,8 @@ inline void rasterMesh(const Mesh3D& m, Image& out, std::vector<f32>* depthScrat
         s.ok = cw > 1e-6f;
         if (!s.ok) continue;
         const f32 px = (cx / cw * 0.5f + 0.5f) * f32(W), py = (cy / cw * 0.5f + 0.5f) * f32(H);
-        s.x = std::llround(double(px) * 256.0), s.y = std::llround(double(py) * 256.0);
+        s.fx = std::nearbyint(px * 256.f), s.fy = std::nearbyint(py * 256.f); // round half to even (as the rasteriser)
+        s.x = (long long)s.fx, s.y = (long long)s.fy;
         s.z = cz / cw;
         f32 c[4];
         meshShade(v, f, c);
@@ -97,6 +120,8 @@ inline void rasterMesh(const Mesh3D& m, Image& out, std::vector<f32>* depthScrat
         const Sv* b = &sv[i1];
         const Sv* c = &sv[i2];
         if (!a->ok || !b->ok || !c->ok) continue;
+        const Sv &oa = *a, &ob = *b, &oc = *c; // index order, for meshDepth
+        const u32 id = m.vertices[i0].id;
         long long area = (b->x - a->x) * (c->y - a->y) - (b->y - a->y) * (c->x - a->x);
         if (area == 0) continue;
         if (area < 0) std::swap(b, c), area = -area; // two-sided: orient so the interior is positive
@@ -124,11 +149,12 @@ inline void rasterMesh(const Mesh3D& m, Image& out, std::vector<f32>* depthScrat
                 const long long w0 = edge(b, c, px, py), w1 = edge(c, a, px, py), w2 = edge(a, b, px, py);
                 if (w0 + b0 < 0 || w1 + b1 < 0 || w2 + b2 < 0) continue;
                 const f32 l0 = f32(double(w0) * inv), l1 = f32(double(w1) * inv), l2 = 1.f - l0 - l1;
-                const f32 z = l0 * a->z + l1 * b->z + l2 * c->z;
-                if (z < 0.f || z > 1.f) continue;
+                const f32 z = meshDepth(oa, ob, oc, f32(px), f32(py));
+                if (!(z >= 0.f && z <= 1.f)) continue; // NaN too
                 f32& d = depth[std::size_t(y) * std::size_t(W) + std::size_t(x)];
                 if (!(z < d)) continue;
                 d = z;
+                if (ids) (*ids)[std::size_t(y) * std::size_t(W) + std::size_t(x)] = id;
                 const f32 al = l0 * a->a + l1 * b->a + l2 * c->a;
                 const u32 R = unorm((l0 * a->r + l1 * b->r + l2 * c->r) * al), G = unorm((l0 * a->g + l1 * b->g + l2 * c->g) * al);
                 const u32 B = unorm((l0 * a->b + l1 * b->b + l2 * c->b) * al), A = unorm(al);

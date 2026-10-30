@@ -293,7 +293,7 @@ if(FUSE_BUILD_UI_VK)
                      "ui_encode_scrgb=kUiEncodeScrgbSpv" "ui_draw_list_hdr=kUiDrawListHdrSpv"
                      "ui_backdrop_hdr=kUiBackdropHdrSpv" "ui_encode_pq_hdr=kUiEncodePqHdrSpv"
                      "ui_encode_scrgb_hdr=kUiEncodeScrgbHdrSpv"
-                     "ui_mesh3d.vert=kUiMesh3dVertSpv" "ui_mesh3d.frag=kUiMesh3dFragSpv")
+                     "ui_mesh3d.vert=kUiMesh3dVertSpv" "ui_mesh3d.frag=kUiMesh3dFragSpv" "ui_mesh3d_exact.frag=kUiMesh3dExactFragSpv")
         set(_shader_dir "${CMAKE_CURRENT_SOURCE_DIR}/Render/src/shaders")
         set(_cc "")
         if(FUSE_UI_GLSLANG)

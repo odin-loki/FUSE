@@ -563,6 +563,56 @@ void gateBeyondQt() {
         CHECK(ch::tooltip(c, 0, 0) == "coal -> power: 30");
         CHECK(ch::describe(c).find("8 flows") != std::string::npos);
     }
+    // sankey node order: crossing flows untangle (barycentric), explicit nodeOrder wins, autoOrder off = index order
+    {
+        ch::Chart c;
+        c.title.clear();
+        c.legend = ch::LegendPos::None;
+        ch::Series& s = c.add(ch::SeriesType::Sankey, "x");
+        s.labels = {"a", "b", "x", "y"};
+        s.links = {{0, 3, 10}, {1, 2, 10}};
+        const ch::Layout L = ch::layout(c, B, &tf);
+        auto topNode = [&] { // first node hit scanning down the right column
+            for (f32 y = L.plot.y; y < L.plot.bottom(); y += 1) {
+                const ch::Hit h = ch::hitTest(c, B, {L.plot.right() - 4.f, y}, 0.f, &tf);
+                if (h.series == 0 && h.index >= 2) return h.index - 2;
+            }
+            return -1;
+        };
+        CHECK(topNode() == 3); // y beside a: no crossing
+        c.series[0].sankeyAutoOrder = false;
+        CHECK(topNode() == 2);
+        c.series[0].sankeyAutoOrder = true;
+        c.series[0].nodeOrder = {1, 0, 2, 3};
+        CHECK(topNode() == 2);
+    }
+    // nested treemap: groups weigh their leaves, children tile inside their group, a header hit reports the group
+    {
+        ch::Chart c;
+        c.title.clear();
+        c.legend = ch::LegendPos::None;
+        c.animate = false;
+        ch::Series& s = c.add(ch::SeriesType::Treemap, "t");
+        s.labels = {"A", "B", "a1", "a2", "b1", "b2", "b3"};
+        s.y = {0, 99, 6, 2, 3, 3, 2};
+        s.parents = {-1, -1, 0, 0, 1, 1, 1};
+        std::vector<int> px(7, 0);
+        std::vector<Rect> box(7, Rect{1e9f, 1e9f, -1e9f, -1e9f}); // as x0, y0, x1, y1
+        for (f32 y = 0.5f; y < B.h; y += 1)
+            for (f32 x = 0.5f; x < B.w; x += 1) {
+                const ch::Hit h = ch::hitTest(c, B, {x, y}, 0.f, &tf);
+                if (h.series != 0 || h.index < 0) continue;
+                const std::size_t i = std::size_t(h.index);
+                px[i]++;
+                box[i] = {std::min(box[i].x, x), std::min(box[i].y, y), std::max(box[i].w, x), std::max(box[i].h, y)};
+            }
+        for (int i = 0; i < 7; ++i) CHECK(px[std::size_t(i)] > 0);
+        auto inside = [&](int k, int g) { return box[k].x >= box[g].x && box[k].y >= box[g].y && box[k].w <= box[g].w && box[k].h <= box[g].h; };
+        CHECK(inside(2, 0) && inside(3, 0) && inside(4, 1) && inside(5, 1) && inside(6, 1));
+        const f32 areaA = (box[0].w - box[0].x) * (box[0].h - box[0].y), areaB = (box[1].w - box[1].x) * (box[1].h - box[1].y);
+        CHECK(std::abs(areaA / (areaA + areaB) - 0.5f) < 0.05f); // A = 8, B = 8 (B's own 99 ignored)
+        CHECK(std::abs(f32(px[2]) / f32(px[2] + px[3]) - 0.75f) < 0.06f);
+    }
     // gauge: value clamps to the dial, tooltip reports range
     {
         ch::Chart c = sampleChart(ch::SeriesType::Gauge);
@@ -905,6 +955,20 @@ void gateMesh3d() {
         q.quad(o, o + 1, o + 2, o + 3);
         rasterMesh(q, img);
         for (u32 px : img.pixels) CHECK(px == 0xFFFFFFFFu);
+        // equal depths: the first-drawn triangle keeps the pixel (LESS), and the id buffer names it
+        Mesh3D t;
+        t.frame.width = t.frame.height = 32, t.frame.light[3] = 1.f;
+        for (u32 k = 0; k < 2; ++k) {
+            MeshVertex a{-0.9f, -0.9f, 0.4f, 0, 0, 1, k ? 0xFF00FF00u : 0xFF0000FFu}, b = a, cc = a;
+            b.x = 0.9f, cc.x = 0.f, cc.y = 0.9f;
+            a.id = b.id = cc.id = 10 + k;
+            const u32 o = t.add(a);
+            t.add(b), t.add(cc);
+            t.tri(o, o + 1, o + 2);
+        }
+        std::vector<u32> ids;
+        rasterMesh(t, img, nullptr, &ids);
+        CHECK(img.pixels[16 * 32 + 16] == 0xFF0000FFu && ids[16 * 32 + 16] == 10u && ids[0] == 0u);
     }
     // widget on the mesh path: attached image, picking and hover still work
     const NodeHandle v = ch::chart3dView(ui, ui.root(), ch::Kind3D::Surface, "m3");
@@ -923,6 +987,54 @@ void gateMesh3d() {
     ui.pointerMove(fuse::ui::dv3d::project(sc, ui.rect(v), {5.f, sc.values[5 * 12 + 5], 5.f}));
     step(ui);
     CHECK(ch::chart3dHovered(ui, v) >= 0);
+    // GPU-style picking: the id buffer under the pointer (CPU twin of UiVkMesh3D::requestPick) drives hover
+    {
+        std::vector<u32> ids;
+        Image tmp;
+        rasterMesh(*wm, tmp, nullptr, &ids);
+        u32 px = 0, py = 0;
+        CHECK(fuse::ui::widgets::dataViz3dMeshPickPixel(ui, v, px, py));
+        const u32 id = ids[std::size_t(py) * wm->frame.width + px];
+        CHECK(id > 0 && id <= 144);
+        fuse::ui::widgets::dataViz3dSetMeshPick(ui, v, id);
+        step(ui);
+        CHECK(ch::chart3dHovered(ui, v) == i32(id - 1));
+        fuse::ui::widgets::dataViz3dSetMeshPick(ui, v, 0);
+        step(ui);
+        CHECK(ch::chart3dHovered(ui, v) == -1);
+    }
+    // 3D transitions: a data change tweens from the shown values; a kind change snaps
+    {
+        ch::Chart3D& c3 = *ch::chart3dOf(ui, v);
+        const f32 before = c3.values[40];
+        for (f32& y : c3.values) y = y * 3.f + 1.f;
+        ch::chart3dChanged(ui, v, true);
+        step(ui);
+        const ch::Chart3D* sh = ch::chart3dShown(ui, v);
+        CHECK(sh != &c3);
+        CHECK(sh->values[40] > before && sh->values[40] < c3.values[40]);
+        for (int i = 0; i < 30; ++i) step(ui);
+        CHECK(ch::chart3dShown(ui, v) == &c3);
+        ch::Chart3D a3 = c3, m3;
+        a3.values.assign(a3.values.size(), 0.f);
+        ch::blend(a3, c3, 0.5f, m3);
+        CHECK(std::abs(m3.values[7] - c3.values[7] * 0.5f) < 1e-5f);
+        c3.kind = ch::Kind3D::Bars;
+        ch::chart3dChanged(ui, v, true);
+        step(ui);
+        CHECK(ch::chart3dShown(ui, v) == &c3);
+    }
+    // volume summary: voxel grid, the field's value range and the visible slices (no spatial y "values")
+    {
+        ch::Chart3D vol;
+        vol.kind = ch::Kind3D::Volume;
+        vol.vx = vol.vy = vol.vz = 4;
+        for (u32 q = 0; q < 64; ++q) vol.volume.push_back(f32(q) * 0.5f);
+        vol.slice[1] = -1, vol.slice[2] = 3;
+        const std::string d = ch::describe(vol);
+        CHECK(d == "3D volume slices, 4 x 4 x 4 voxels, values 0 to 31.5, x slice 2, z slice 3");
+        if (d != "3D volume slices, 4 x 4 x 4 voxels, values 0 to 31.5, x slice 2, z slice 3") std::fprintf(stderr, "%s\n", d.c_str());
+    }
 }
 
 void gateMesh3dLarge() {
@@ -942,7 +1054,8 @@ void gateMesh3dLarge() {
     const double rms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     std::printf("bench mesh3d: 1000x1000 surface -> %zu vertices, %zu triangles, build %.1f ms, CPU raster %.1f ms\n",
                 m.vertices.size(), m.indices.size() / 3, bms, rms);
-    CHECK(m.vertices.size() == 1'000'000 && st.input == 1'000'000);
+    // screen-space LOD: no finer than ~2 px per grid step on the 800 px side
+    CHECK(m.vertices.size() >= 300u * 300u && m.vertices.size() <= 402u * 402u && st.input == 1'000'000);
     ch::Chart3D sc;
     sc.kind = ch::Kind3D::Scatter, sc.gpuMesh = true, sc.pointSize = 2.f;
     std::mt19937 g(9);
@@ -957,7 +1070,11 @@ void gateMesh3dLarge() {
     const double srm = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     std::printf("bench mesh3d: 1M scatter -> %zu points meshed, %zu triangles, build %.1f ms, CPU raster %.1f ms\n",
                 st.drawn, m.indices.size() / 3, sms, srm);
-    CHECK(st.drawn >= 250000 && st.drawn <= 250002 && m.vertices.size() <= (1u << 21));
+    // one point per marker-sized screen cell (1.5 px), the selection always kept
+    CHECK(st.drawn >= 10000 && st.drawn <= 800u * 600u && m.vertices.size() <= (1u << 21));
+    bool kept = false;
+    for (const MeshVertex& mv : m.vertices) kept |= mv.id == 8;
+    CHECK(kept);
 }
 } // namespace
 

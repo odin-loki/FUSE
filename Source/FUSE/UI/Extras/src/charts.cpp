@@ -949,22 +949,18 @@ void radarShapes(Ctx& x, u32 si, Rect area, std::vector<PanelShape>& out) {
     }
 }
 // Squarified treemap (Bruls, Huizing, van Wijk): rows along the short side keep the worst aspect ratio low.
-void treemapShapes(Ctx& x, u32 si, Rect area, std::vector<PanelShape>& out) {
-    const Chart& c = x.c;
-    const Series& s = c.series[si];
-    const auto v = s.ys();
-    std::vector<u32> order;
+// `items` (weights w[item] > 0, any order) -> cells[item] tiling `area`.
+void squarify(std::vector<u32> order, const std::vector<f32>& w, Rect area, std::vector<Rect>& cells) {
     f32 total = 0.f;
-    for (u32 i = 0; i < v.size(); ++i) if (std::isfinite(v[i]) && v[i] > 0) order.push_back(i), total += v[i];
-    if (order.empty() || area.w < 2 || area.h < 2) return;
-    std::stable_sort(order.begin(), order.end(), [&](u32 a, u32 b) { return v[a] > v[b]; });
+    for (u32 i : order) total += w[i];
+    if (order.empty() || total <= 0.f || area.w <= 0.f || area.h <= 0.f) return;
+    std::stable_sort(order.begin(), order.end(), [&](u32 a, u32 b) { return w[a] > w[b]; });
     const f32 scale = area.w * area.h / total;
     Rect r = area;
-    std::vector<Rect> cells(v.size());
     std::size_t i = 0;
     auto worst = [&](std::size_t a, std::size_t e, f32 side) {
         f32 sum = 0, mx = 0, mn = INFINITY;
-        for (std::size_t k = a; k < e; ++k) { const f32 ar = v[order[k]] * scale; sum += ar, mx = std::max(mx, ar), mn = std::min(mn, ar); }
+        for (std::size_t k = a; k < e; ++k) { const f32 ar = w[order[k]] * scale; sum += ar, mx = std::max(mx, ar), mn = std::min(mn, ar); }
         const f32 s2 = side * side, sum2 = sum * sum;
         return std::max(s2 * mx / sum2, sum2 / (s2 * mn));
     };
@@ -974,11 +970,11 @@ void treemapShapes(Ctx& x, u32 si, Rect area, std::vector<PanelShape>& out) {
         std::size_t e = i + 1;
         while (e < order.size() && worst(i, e + 1, side) <= worst(i, e, side)) ++e;
         f32 sum = 0;
-        for (std::size_t k = i; k < e; ++k) sum += v[order[k]] * scale;
+        for (std::size_t k = i; k < e; ++k) sum += w[order[k]] * scale;
         const f32 thick = side > 0 ? sum / side : 0.f;
         f32 off = 0;
         for (std::size_t k = i; k < e; ++k) {
-            const f32 len = thick > 0 ? v[order[k]] * scale / thick : 0.f;
+            const f32 len = thick > 0 ? w[order[k]] * scale / thick : 0.f;
             cells[order[k]] = wide ? Rect{r.x, r.y + off, thick, len} : Rect{r.x + off, r.y, len, thick};
             off += len;
         }
@@ -986,20 +982,78 @@ void treemapShapes(Ctx& x, u32 si, Rect area, std::vector<PanelShape>& out) {
         else r.y += thick, r.h -= thick;
         i = e;
     }
+}
+/// Treemap hierarchy: parent of item i (Series::parents, -1 / out of range / a cycle: a root).
+std::vector<i32> treeParents(const Series& s, std::size_t n) {
+    std::vector<i32> par(n, -1);
+    for (std::size_t i = 0; i < n && i < s.parents.size(); ++i)
+        if (s.parents[i] >= 0 && std::size_t(s.parents[i]) < n && std::size_t(s.parents[i]) != i) par[i] = s.parents[i];
+    for (std::size_t i = 0; i < n; ++i) { // break cycles: walk up at most n steps
+        std::size_t k = i, steps = 0;
+        while (par[k] >= 0 && steps <= n) k = std::size_t(par[k]), ++steps;
+        if (steps > n) par[i] = -1;
+    }
+    return par;
+}
+// Nested (Series::parents): a group's weight is its subtree's leaf sum; groups draw a header strip with their label
+// and lay their children out inside it (squarified again); leaves draw as the flat map. Hit order: children last
+// (on top), so a click inside a group reports the leaf, a click on the header the group.
+void treemapShapes(Ctx& x, u32 si, Rect area, std::vector<PanelShape>& out) {
+    const Chart& c = x.c;
+    const Series& s = c.series[si];
+    const auto v = s.ys();
+    const std::size_t n = v.size();
+    if (!n || area.w < 2 || area.h < 2) return;
+    const std::vector<i32> par = treeParents(s, n);
+    std::vector<std::vector<u32>> kids(n);
+    std::vector<u32> roots;
+    for (u32 i = 0; i < n; ++i) (par[i] >= 0 ? kids[std::size_t(par[i])] : roots).push_back(i);
+    std::vector<f32> w(n, 0.f); // subtree weights, children before parents (post-order by depth)
+    std::vector<u32> depth(n, 0), byDepth(n);
+    for (u32 i = 0; i < n; ++i) { for (i32 k = par[i]; k >= 0; k = par[std::size_t(k)]) ++depth[i]; byDepth[i] = i; }
+    std::stable_sort(byDepth.begin(), byDepth.end(), [&](u32 a, u32 b) { return depth[a] > depth[b]; });
+    for (u32 i : byDepth) {
+        if (kids[i].empty()) w[i] = std::isfinite(v[i]) && v[i] > 0 ? v[i] : 0.f;
+        if (par[i] >= 0) w[std::size_t(par[i])] += w[i];
+    }
     const f32 fs = fontPx(c);
-    for (u32 k : order) {
+    const f32 header = fs * 1.4f;
+    std::vector<Rect> cells(n);
+    auto positive = [&](const std::vector<u32>& in) { std::vector<u32> o; for (u32 i : in) if (w[i] > 0.f) o.push_back(i); return o; };
+    squarify(positive(roots), w, area, cells);
+    std::vector<u32> stack(roots.rbegin(), roots.rend()), drawOrder;
+    while (!stack.empty()) { // pre-order: a group, then its children inside it
+        const u32 i = stack.back();
+        stack.pop_back();
+        if (w[i] <= 0.f) continue;
+        drawOrder.push_back(i);
+        if (kids[i].empty()) continue;
+        const Rect g = cells[i];
+        const bool head = g.h > header * 2.f && g.w > 24.f;
+        const Rect inner{g.x + 2.f, g.y + (head ? header : 2.f), std::max(0.f, g.w - 4.f), std::max(0.f, g.h - (head ? header : 2.f) - 2.f)};
+        squarify(positive(kids[i]), w, inner, cells);
+        for (auto it = kids[i].rbegin(); it != kids[i].rend(); ++it) stack.push_back(*it);
+    }
+    for (u32 k : drawOrder) {
         Rect q = cells[k];
+        const bool group = !kids[k].empty();
         // grow from the centre during the entry animation; 1 px gutters
         const f32 p = c.progress;
         q = {q.x + q.w * (1 - p) * 0.5f + 1.f, q.y + q.h * (1 - p) * 0.5f + 1.f, std::max(0.f, q.w * p - 2.f), std::max(0.f, q.h * p - 2.f)};
         out.push_back({{{q.x, q.y}, {q.right(), q.y}, {q.right(), q.bottom()}, {q.x, q.bottom()}}, k});
         if (!x.dl) continue;
-        const Color col = hover(c, si, k, sliceColor(c, k));
+        Color col = hover(c, si, k, sliceColor(c, k));
+        if (group) col = col.withAlpha(col.a * 0.45f);
         x.dl->rect(q, col, 2.f);
+        const Color tc = group || (0.299f * col.r + 0.587f * col.g + 0.114f * col.b) <= 0.55f ? Color::rgb(0xF5F5F5) : Color::rgb(0x101010);
+        if (group) {
+            if (c.progress >= 1.f && k < s.labels.size() && q.w > 30 && q.h > header * 2.f)
+                text(x.tf, *x.dl, s.labels[k], {q.x + 4, q.y + 2, q.w - 8, fs * 1.3f}, c.theme.text, fs, TextAlignment::Start);
+            continue;
+        }
         if (c.progress >= 1.f && k < s.labels.size() && q.w > 30 && q.h > fs * 1.5f) {
             char b[32];
             std::snprintf(b, sizeof b, "%g", double(v[k]));
-            const Color tc = (0.299f * col.r + 0.587f * col.g + 0.114f * col.b) > 0.55f ? Color::rgb(0x101010) : Color::rgb(0xF5F5F5);
             text(x.tf, *x.dl, s.labels[k], {q.x + 4, q.y + 3, q.w - 8, fs * 1.3f}, tc, fs, TextAlignment::Start);
             if (q.h > fs * 3.f) text(x.tf, *x.dl, b, {q.x + 4, q.y + 3 + fs * 1.3f, q.w - 8, fs * 1.3f}, tc.withAlpha(0.8f), fs * 0.9f, TextAlignment::Start);
         }
@@ -1035,11 +1089,44 @@ SankeyGeo sankeyGeo(const Chart& c, const Series& s, Rect area) {
     std::vector<f32> y(cols, 0.f);
     for (u32 i = 0; i < cols; ++i) y[i] = area.y + (H - (sum[i] * k + gap * f32(std::max(1u, cnt[i]) - 1))) * 0.5f;
     const f32 span = cols > 1 ? (area.w - nw) / f32(cols - 1) : 0.f;
-    for (SankeyNode& q : g.nodes) {
-        const f32 h = std::max(1.f, std::max(q.in, q.out) * k);
-        q.r = {area.x + (cols > 1 ? span * f32(q.col) : (area.w - nw) * 0.5f), y[q.col], nw, h};
-        y[q.col] += h + gap;
+    // node order within each column: Series::nodeOrder (explicit ranks), else barycentric crossing reduction
+    // (alternating sweeps: a node moves to the flow-weighted mean rank of its neighbours in the adjacent column)
+    std::vector<std::vector<u32>> colNodes(cols);
+    for (u32 i = 0; i < n; ++i) colNodes[g.nodes[i].col].push_back(i);
+    std::vector<f32> rank(n, 0.f);
+    auto reRank = [&](u32 cl) { for (u32 r = 0; r < colNodes[cl].size(); ++r) rank[colNodes[cl][r]] = f32(r); };
+    if (!s.nodeOrder.empty()) {
+        std::vector<u32> pos(n, ~0u);
+        for (u32 r = 0; r < s.nodeOrder.size(); ++r) if (s.nodeOrder[r] < n && pos[s.nodeOrder[r]] == ~0u) pos[s.nodeOrder[r]] = r;
+        for (auto& cn : colNodes) std::stable_sort(cn.begin(), cn.end(), [&](u32 a, u32 b) { return pos[a] < pos[b]; });
+    } else if (s.sankeyAutoOrder && cols > 1) {
+        for (u32 cl = 0; cl < cols; ++cl) reRank(cl);
+        std::vector<f32> bsum(n), bw(n);
+        for (int sweep = 0; sweep < 8; ++sweep) {
+            const bool fwd = sweep % 2 == 0;
+            for (u32 step = 1; step < cols; ++step) {
+                const u32 cl = fwd ? step : cols - 1 - step;
+                std::fill(bsum.begin(), bsum.end(), 0.f), std::fill(bw.begin(), bw.end(), 0.f);
+                for (const Link& l : s.links) {
+                    if (!(l.value > 0) || l.source == l.target) continue;
+                    // forward: place column cl by its sources in cl - 1; backward: by its targets in cl + 1
+                    const u32 me = fwd ? l.target : l.source, other = fwd ? l.source : l.target;
+                    if (g.nodes[me].col != cl || g.nodes[other].col != (fwd ? cl - 1 : cl + 1)) continue;
+                    bsum[me] += rank[other] * l.value, bw[me] += l.value;
+                }
+                auto key = [&](u32 i) { return bw[i] > 0.f ? bsum[i] / bw[i] : rank[i]; };
+                std::stable_sort(colNodes[cl].begin(), colNodes[cl].end(), [&](u32 a, u32 b) { return key(a) < key(b); });
+                reRank(cl);
+            }
+        }
     }
+    for (u32 cl = 0; cl < cols; ++cl)
+        for (u32 i : colNodes[cl]) {
+            SankeyNode& q = g.nodes[i];
+            const f32 h = std::max(1.f, std::max(q.in, q.out) * k);
+            q.r = {area.x + (cols > 1 ? span * f32(q.col) : (area.w - nw) * 0.5f), y[q.col], nw, h};
+            y[q.col] += h + gap;
+        }
     // link slots: outgoing ordered by target y, incoming by source y
     std::vector<u32> idx(s.links.size());
     for (u32 i = 0; i < idx.size(); ++i) idx[i] = i;
@@ -2021,10 +2108,27 @@ std::string describe(const Chart3D& c) {
     else if (c.kind == Kind3D::Volume) std::snprintf(b, sizeof b, ", %u x %u x %u voxels", c.vx, c.vy, c.vz);
     else std::snprintf(b, sizeof b, ", %u x %u values", c.rows, c.cols);
     d += b;
-    f32 lo[3], hi[3];
-    dv3d::ranges(c, lo, hi);
-    std::snprintf(b, sizeof b, ", %s %g to %g", c.axis[1].title.empty() ? "values" : c.axis[1].title.c_str(), double(lo[1]), double(hi[1]));
-    d += b;
+    if (c.kind == Kind3D::Volume) { // the y axis is spatial: report the field's colour range instead
+        f32 lo = c.valueMin, hi = c.valueMax;
+        f32 dlo = INFINITY, dhi = -INFINITY;
+        for (f32 x : c.volume) if (std::isfinite(x)) dlo = std::min(dlo, x), dhi = std::max(dhi, x);
+        if (!std::isfinite(lo)) lo = dlo;
+        if (!std::isfinite(hi)) hi = dhi;
+        if (std::isfinite(lo) && std::isfinite(hi)) std::snprintf(b, sizeof b, ", values %g to %g", double(lo), double(hi)), d += b;
+        const char* ax = "xyz";
+        for (int a = 0; a < 3; ++a) {
+            const u32 n = a == 0 ? c.vx : a == 1 ? c.vy : c.vz;
+            const i32 sl = c.slice[a] == -2 ? i32(n / 2) : c.slice[a]; // as forVolumeCells: out of range hides
+            if (sl < 0 || u32(sl) >= n) continue;
+            std::snprintf(b, sizeof b, ", %c slice %d", ax[a], sl);
+            d += b;
+        }
+    } else {
+        f32 lo[3], hi[3];
+        dv3d::ranges(c, lo, hi);
+        std::snprintf(b, sizeof b, ", %s %g to %g", c.axis[1].title.empty() ? "values" : c.axis[1].title.c_str(), double(lo[1]), double(hi[1]));
+        d += b;
+    }
     if (!c.selection.empty()) d += ", " + std::to_string(c.selection.size()) + " selected";
     return d;
 }
@@ -2049,9 +2153,13 @@ NodeHandle chart3dView(UiContext& ui, NodeHandle parent, Kind3D kind, std::strin
     return v;
 }
 Chart3D* chart3dOf(UiContext& ui, NodeHandle v) { return widgets::dataViz3dScene(ui, v); }
-void chart3dChanged(UiContext& ui, NodeHandle v) {
-    if (Chart3D* c = chart3dOf(ui, v)) { ui.setA11y(v, A11yRole::Image, describe(*c)); ui.invalidate(v); }
+void chart3dChanged(UiContext& ui, NodeHandle v, bool animateChange) {
+    if (Chart3D* c = chart3dOf(ui, v)) {
+        ui.setA11y(v, A11yRole::Image, describe(*c));
+        widgets::dataViz3dChanged(ui, v, animateChange);
+    }
 }
+const Chart3D* chart3dShown(const UiContext& ui, NodeHandle v) { return widgets::dataViz3dShown(ui, v); }
 i32 chart3dHovered(const UiContext& ui, NodeHandle v) { return widgets::dataViz3dHovered(ui, v); }
 std::vector<std::string> chart3dTooltip(UiContext& ui, NodeHandle v) { return widgets::dataViz3dTooltip(ui, v); }
 const std::vector<u32>& chart3dSelection(const UiContext& ui, NodeHandle v) { return widgets::dataViz3dSelection(ui, v); }

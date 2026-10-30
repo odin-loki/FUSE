@@ -84,6 +84,14 @@ struct Series {
     f32 lineWidth = 2.f, markerSize = 0.f, barWidth = 0.8f, holeSize = 0.5f, bubbleScale = 1.f;
     Decimation decimation = Decimation::Auto;
     std::vector<Link> links;   ///< sankey flows (node indices into labels)
+    /// Sankey node order within a column: nodeOrder lists node indices top to bottom (missing ones after, by
+    /// index); empty: sankeyAutoOrder sorts by the flow-weighted barycentre of the neighbours (fewer crossings),
+    /// else index order.
+    std::vector<u32> nodeOrder;
+    bool sankeyAutoOrder = true;
+    /// Treemap hierarchy: parents[i] = parent item of item i (-1 or missing: a root). Groups weigh their leaves'
+    /// sum (their own y is ignored), draw a header with their label and nest their children.
+    std::vector<i32> parents;
     std::vector<u32> totals;   ///< waterfall: indices shown as the running total (their y is ignored)
     u32 levels = 8;            ///< contour lines
     bool contourFill = false;  ///< contour: paint the heatmap under the isolines
@@ -238,8 +246,12 @@ void renderImage(UiContext& ui, const Chart3D& c, const Theme& t, int w, int h, 
 /// the camera, hover tooltips, click / Ctrl+click selection (Toggled), Escape clears it. Themed from its computed style.
 NodeHandle chart3dView(UiContext& ui, NodeHandle parent, Kind3D kind, std::string_view id = {});
 Chart3D* chart3dOf(UiContext& ui, NodeHandle view);
-/// Repaints and refreshes the accessible summary after editing chart3dOf().
-void chart3dChanged(UiContext& ui, NodeHandle view);
+/// Repaints and refreshes the accessible summary after editing chart3dOf(); with animateChange (and
+/// Chart3D::animate) the data tweens from what is on screen when its structure is unchanged (dv3d::blend).
+void chart3dChanged(UiContext& ui, NodeHandle view, bool animateChange = true);
+/// The scene being painted (mid-transition: the blended data).
+const Chart3D* chart3dShown(const UiContext& ui, NodeHandle view);
+inline void blend(const Chart3D& from, const Chart3D& to, f32 t, Chart3D& out) { dv3d::blend(from, to, t, out); }
 i32 chart3dHovered(const UiContext& ui, NodeHandle view);
 std::vector<std::string> chart3dTooltip(UiContext& ui, NodeHandle view);
 const std::vector<u32>& chart3dSelection(const UiContext& ui, NodeHandle view);

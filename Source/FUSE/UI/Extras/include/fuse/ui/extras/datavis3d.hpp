@@ -75,7 +75,13 @@ struct Scene {
     /// Mesh limits: grids above maxMeshGrid^2 cells are strided, scatters above maxMeshPoints strided.
     bool gpuMesh = false;
     u32 maxMeshGrid = 1024, maxMeshPoints = 250000;
+    /// Data-change transitions (dataViz3dChanged / chart3dChanged): values, points and voxels tween from the shown
+    /// state over 0.35 s when the structure (kind and sizes) is unchanged and the scene has <= 200k elements.
+    bool animate = true;
 };
+/// Interpolates the data of `from` towards `to` (values, points, voxels; t in 0..1) into `out`; everything else
+/// (camera, selection, styling) is `to`'s. A different kind or size snaps to `to`.
+void blend(const Scene& from, const Scene& to, f32 t, Scene& out);
 /// Render counters (large-data gates): items in the scene and items actually drawn.
 struct Stats {
     std::size_t input = 0, drawn = 0;
@@ -137,6 +143,15 @@ Image* dataViz3dMeshImage(UiContext& ui, NodeHandle w);
 void dataViz3dSetMeshImage(UiContext& ui, NodeHandle w, u32 imageIndex);
 /// The mesh built by the last paint (GPU hosts upload it to UiVkMesh3D).
 const Mesh3D* dataViz3dMesh(const UiContext& ui, NodeHandle w);
+/// GPU picking: the mesh-image pixel under the pointer (false when outside), to pass to UiVkMesh3D::requestPick;
+/// feed the read-back id (MeshVertex::id = item index + 1, 0 none) to dataViz3dSetMeshPick, which from then on
+/// drives hover, tooltip and click selection instead of the CPU nearest-item search.
+bool dataViz3dMeshPickPixel(const UiContext& ui, NodeHandle w, u32& x, u32& y);
+void dataViz3dSetMeshPick(UiContext& ui, NodeHandle w, u32 id);
+/// After editing dataViz3dScene(): repaint, and (animate, Scene::animate) tween the data from what is on screen.
+void dataViz3dChanged(UiContext& ui, NodeHandle w, bool animate = true);
+/// The scene being painted: mid-transition the blended one, else dataViz3dScene().
+const dv3d::Scene* dataViz3dShown(const UiContext& ui, NodeHandle w);
 /// Direct access to the scene (call ui.invalidate(w) after changing it).
 dv3d::Scene* dataViz3dScene(UiContext& ui, NodeHandle w);
 void dataViz3dSetCamera(UiContext& ui, NodeHandle w, const dv3d::Camera& c);
