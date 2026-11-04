@@ -381,6 +381,27 @@ if(TARGET fuse_app)
         set_tests_properties(fuse_ui_a11y_windows PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
             LABELS "fuse_ui;gate;a11y")
     endif()
+    # Linux AT-SPI through AccessKit on a real X11 window: libatspi client on a private session bus + Xvfb, the gate
+    # starts the accessibility bus (skips with 77 without AccessKit, libatspi, a session bus or a display)
+    if(TARGET fuse_app_a11y AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        add_executable(fuse_ui_a11y_linux test_a11y_linux.cpp)
+        target_link_libraries(fuse_ui_a11y_linux PRIVATE fuse_app_a11y ${CMAKE_DL_LIBS})
+        target_include_directories(fuse_ui_a11y_linux PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../App/src) # D-Bus loader
+        find_program(FUSE_UI_ATSPI_BUS_LAUNCHER at-spi-bus-launcher
+            PATHS /usr/libexec /usr/lib/at-spi2-core /usr/libexec/at-spi2-core /usr/lib/at-spi2)
+        if(FUSE_UI_ATSPI_BUS_LAUNCHER)
+            target_compile_definitions(fuse_ui_a11y_linux PRIVATE FUSE_ATSPI_BUS_LAUNCHER="${FUSE_UI_ATSPI_BUS_LAUNCHER}")
+        endif()
+        find_program(FUSE_UI_DBUS_RUN_SESSION dbus-run-session)
+        if(FUSE_UI_XVFB_RUN AND FUSE_UI_DBUS_RUN_SESSION)
+            add_test(NAME fuse_ui_a11y_linux COMMAND ${FUSE_UI_DBUS_RUN_SESSION} -- ${FUSE_UI_XVFB_RUN} -a -s "${FUSE_UI_XVFB_ARGS}"
+                     $<TARGET_FILE:fuse_ui_a11y_linux>)
+        else()
+            add_test(NAME fuse_ui_a11y_linux COMMAND fuse_ui_a11y_linux)
+        endif()
+        set_tests_properties(fuse_ui_a11y_linux PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 150
+            LABELS "fuse_ui;gate;a11y")
+    endif()
     # §6 budgets on the hello_app sample: launch -> first presented frame on a real OS window, and binary size
     if(TARGET hello_app)
         add_executable(fuse_app_native_startup test_app_native_startup.cpp)
