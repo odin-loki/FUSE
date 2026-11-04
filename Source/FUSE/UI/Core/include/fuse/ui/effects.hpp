@@ -60,9 +60,9 @@ struct EffectPixel {
 using CpuEffectFn = EffectColor (*)(const EffectPixel&);
 
 struct EffectDesc {
-    std::string name;
+    std::string name{};
     CpuEffectFn cpu = nullptr;
-    std::span<const u32> spirv;                   ///< compute SPIR-V from ui_effect.comp.in (empty: built-in lookup by name)
+    std::span<const u32> spirv{};                 ///< compute SPIR-V from ui_effect.comp.in (empty: built-in lookup by name)
     std::array<f32, kEffectParams> defaults{};    ///< values of parameters the style does not give
     f32 margin = 0.f;                             ///< px the effect may read beyond its own pixel (fixed part)
     i32 marginParam = -1;                         ///< parameter whose |value| is added to `margin` (e.g. an amplitude)
