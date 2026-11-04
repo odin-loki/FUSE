@@ -1,6 +1,9 @@
 // fuse_editor_fuse: the FUSE editor with FUSE UI chrome (UI9, FUSE_EDITOR_SHELL=fuse), beside fuse_editor_qt.
 //   fuse_editor_fuse [scene.fscene] [--font-scale=1.25] [--screenshot=out.png]
 #include "fuse/app/native.hpp"
+#if defined(FUSE_EDITOR_HAS_A11Y)
+#include "fuse/app/accessibility.hpp"
+#endif
 #include "fuse/editor/fui/app_icon.hpp"
 #include "fuse/editor/fui/editor_shell.hpp"
 
@@ -53,6 +56,10 @@ int main(int argc, char** argv) {
         fuse::app::NativePlatform native(app, nopt);
         native.show(win);
         native.setIcon(win, fuse::editor::fui::applicationIcon()); // window icon (Branding rasters; exe icon: .rc)
+#if defined(FUSE_EDITOR_HAS_A11Y)
+        // screen readers (UI Automation / AT-SPI through AccessKit): menus, panels and inspector fields
+        fuse::app::WindowAccessibility a11y(native, win);
+#endif
         if (scene) {
             if (native.gpuDraws(win))
                 shell.setSceneViewport(scene.get(), [&](const fuse::editor::SceneViewportFrame& f) {

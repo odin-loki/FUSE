@@ -8,12 +8,15 @@
 // right: Inspector | Material Editor | SDF Sculpt, bottom: Console | Profiler | Sequencer | Timeline; FUSE UI docks
 // stack, so each side is one dock holding a tab widget) around a software-rendered viewport / status bar.
 #include <fuse/editor/editor_controller.hpp>
+#include <fuse/editor/editor_project_tools.hpp>
 #include <fuse/editor/entity_context_menu.hpp>
 #include <fuse/editor/editor_panel_models.hpp>
 #include <fuse/editor/scene_viewport_host.hpp>
 
 #include "fuse/app/app.hpp"
+#include <fuse/ui/icons.hpp>
 
+#include <array>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -29,6 +32,9 @@ using fuse::ui::NodeHandle;
 
 struct EditorShellOptions {
     f32 fontScale = 1.f; ///< 1, 1.25, 1.5, 2 (the Qt font_* gates)
+    std::string iconPack = defaultIconPack(); ///< .fuseicons for toolbar icons ("" = text only)
+    /// The starter pack built with the editor (FUSE_UI_ICON_PACK), else fuse_ui_icons.fuseicons beside the executable.
+    static std::string defaultIconPack();
 };
 
 /// One panel of the Qt shell's dock set: its Qt objectName-style id, tab title and side.
@@ -57,8 +63,38 @@ public:
     void frame();
     /// Restores the default dock layout and tab pages (View > Reset Layout).
     void resetLayout();
-    /// Makes `panelId`'s tab current (e.g. "dock.console").
+    /// Makes `panelId`'s tab current (e.g. "dock.console"); shows it first when it was hidden.
     bool showPanel(std::string_view panelId);
+    // ---- per-panel docking (Qt QDockWidget parity: View menu toggles, float, move, saved layouts) --------------
+    /// Hides / shows one panel (View menu check). A side with no visible panel closes.
+    bool setPanelVisible(std::string_view panelId, bool on);
+    /// Floats a panel in its own frame over the window (title + Dock button); false docks it back to its home side.
+    bool setPanelFloating(std::string_view panelId, bool on);
+    /// Moves a panel to another side's tabs (and shows it).
+    bool movePanel(std::string_view panelId, fuse::ui::widgets::DockSide side);
+    [[nodiscard]] bool panelShown(std::string_view panelId) const; ///< not hidden (docked or floating)
+    [[nodiscard]] bool panelFloating(std::string_view panelId) const;
+    [[nodiscard]] std::string panelSideName(std::string_view panelId) const; ///< "left" / "right" / "bottom" / "float"
+    /// Layout text: per panel side / visibility / float position, current tabs, dock region sizes.
+    [[nodiscard]] std::string saveLayout() const;
+    bool restoreLayout(std::string_view layout);
+    /// Qt saveSettingsLayout / restoreSettingsLayout: the layout in the app settings ("layout.editor"). Saved on
+    /// close; restored at startup when Preferences > Restore layout is on.
+    void saveSettingsLayout();
+    bool restoreSettingsLayout();
+    /// File > Project Settings... (Qt ProjectSettingsDialog): name, default worlds, worker threads, dimensions and
+    /// modules from project.json. Ids "projset.*"; OK saves (empty name / no 3D+2D refused) and reopens the project.
+    void openProjectSettings();
+    [[nodiscard]] bool projectSettingsOpen() const { return m_projSettings.valid(); }
+    /// File > Build / Package... (Qt BuildPackageDialog): output, runtime, cook, clean, configuration, excludes,
+    /// archive; Build runs packageProject with a live log, Open Folder opens the result. Ids "package.*"; the options
+    /// are remembered per project in the app settings.
+    void openBuildPackage();
+    [[nodiscard]] bool buildPackageOpen() const { return m_packageDialog.valid(); }
+    [[nodiscard]] const PackageResult& lastPackage() const { return m_package; }
+    /// Runs the Build button (blocking; log lines appear in package.log).
+    bool runPackage();
+    [[nodiscard]] PackageOptions packageOptions() const;
     /// File > New Project...: the New Project wizard dialog (name, location, dimension, UI layer, modules; Qt
     /// NewProjectWizard parity). Ids "wizard.*"; Create writes project.json and opens the project.
     void openNewProjectWizard();
@@ -95,6 +131,9 @@ public:
     /// The Qt-free models behind the seven UI9 panels.
     [[nodiscard]] EditorPanels& panels() { return *m_models; }
     [[nodiscard]] NodeHandle viewportNode() const { return m_viewport; }
+    /// Toolbar icon name of an action ("file-plus", "save", ...; "" = text only) and whether the pack has it.
+    [[nodiscard]] static std::string_view toolIcon(ActionId id);
+    [[nodiscard]] bool hasToolIcon(ActionId id) const;
     [[nodiscard]] const fuse::ui::Image& viewportImage() const { return m_image; }
     [[nodiscard]] u32 viewportRenders() const { return m_renders; }
 
@@ -220,6 +259,38 @@ private:
     std::chrono::steady_clock::time_point m_playClock{};
     std::unique_ptr<EditorPanels> m_models;
     std::unique_ptr<class ShellPanelPages> m_pages;
+    std::unique_ptr<fuse::ui::IconSet> m_icons;
+    // per-panel docking
+    i32 panelIndex_(std::string_view panelId) const;
+    void relayoutPanels_();
+    void showSidePage_(u32 side);
+    bool panelTabMenu_(u32 side, fuse::ui::Vec2 at);
+    NodeHandle m_hiddenPages{};
+    std::vector<NodeHandle> m_pagesNode, m_floatFrame;
+    std::vector<u32> m_panelSide; ///< 0 left, 1 right, 2 bottom, 3 floating
+    std::vector<bool> m_panelVisible;
+    std::vector<std::array<f32, 2>> m_floatPos;
+    std::vector<u32> m_sideOrder[3]; ///< visible panels per side, in tab order
+    i32 m_floatDrag = -1;
+    fuse::ui::Vec2 m_floatDragAt{};
+    // project tools dialogs
+    NodeHandle m_projSettings{}, m_packageDialog{};
+    project::ProjectManifest m_projBase;
+    PackageResult m_package;
+    std::string m_packageRoot;
+    void closeProjectSettings_();
+    void closeBuildPackage_();
+    std::string packageKey_() const;
+    // hierarchy rename row (F2) and double-click framing
+    NodeHandle m_hierRenameRow{}, m_hierRename{};
+    EntityRef m_renaming;
+    u32 m_hierClickLine = ~0u;
+    std::chrono::steady_clock::time_point m_hierClickAt{};
+public:
+    /// Hierarchy F2 (Qt beginRename): opens the inline name row for `entity` (hierarchy.rename; Enter commits).
+    void beginRename(EntityRef entity);
+    /// Hierarchy double-click (Qt entityActivated): select + frame.
+    bool activateHierarchyRow(u32 line);
 };
 
 /// ShellServices on FUSE UI dialogs (file dialog, message boxes). Each call runs a nested Application::step loop until

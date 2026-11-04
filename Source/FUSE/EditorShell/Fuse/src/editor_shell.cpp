@@ -44,6 +44,7 @@ constexpr ShellPanel kPanels[] = {
     {"dock.sdf_sculpt", "SDF Sculpt", DockSide::Right, true},
     {"dock.navigation", "Navigation", DockSide::Right, true},
     {"dock.terrain", "Terrain", DockSide::Right, true},
+    {"dock.lighting", "Lighting", DockSide::Right, true},
     {"dock.console", "Console", DockSide::Bottom, true},
     {"dock.profiler", "Profiler", DockSide::Bottom, true},
     {"dock.sequencer", "Sequencer", DockSide::Bottom, true},
@@ -176,6 +177,12 @@ std::string editorShellCss(f32 fontScale) {
 EditorShellWindow::EditorShellWindow(fuse::app::AppWindow& window, EditorController& controller, EditorShellOptions options)
     : m_win(window), m_ui(window.ui()), m_c(controller), m_opt(options) {
     w::install(m_ui);
+    // toolbar / menu icons: the cooked starter pack (lucide; fuse_ui_icon_cook), else text only
+    if (!m_opt.iconPack.empty())
+        if (auto icons = fuse::ui::IconSet::fromFile(m_opt.iconPack); icons) {
+            m_icons = std::make_unique<fuse::ui::IconSet>(std::move(*icons));
+            m_ui.setIcons(m_icons.get());
+        }
     loadBindings_(); // menus / tooltips show the effective shortcuts
     if (m_ui.registry().find("editorshellroot") == 0xFFFFFFFFu) m_ui.registry().registerWidget<ShellRootW>();
     m_ui.addStyleSheet(editorShellCss(m_opt.fontScale));
@@ -193,6 +200,13 @@ EditorShellWindow::EditorShellWindow(fuse::app::AppWindow& window, EditorControl
             case ActionId::ViewResetLayout: self->resetLayout(); return true;
             case ActionId::FileNewProject: self->openNewProjectWizard(); return true;
             case ActionId::EditPreferences: self->openPreferences(); return true;
+            case ActionId::FileProjectSettings: self->openProjectSettings(); return true;
+            case ActionId::FileBuildPackage: self->openBuildPackage(); return true;
+            case ActionId::EditFind: // Qt focusSearch: focus + select the hierarchy filter
+                self->showPanel("dock.hierarchy");
+                self->m_ui.setFocus(self->m_hierFilter);
+                self->m_ui.keyDown(Key::A, fuse::ui::kModCtrl);
+                return true;
             case ActionId::FileQuit:
                 if (self->m_c.requestClose()) self->m_win.requestClose();
                 return true;
@@ -210,13 +224,16 @@ EditorShellWindow::EditorShellWindow(fuse::app::AppWindow& window, EditorControl
         p.restoreLayout = s.flag("prefs.restoreLayout", p.restoreLayout);
         m_c.applyPreferences(p);
     }
+    if (m_c.preferences().restoreLayout) restoreSettingsLayout(); // Qt restores the saved dock layout
     m_c.refresh();
     sync();
     // poll the controller (game thread ticks, console output); sync() touches widgets only on change
     m_ui.startTimer(1.f / 30.f, true, [this](UiContext&) { frame(); });
 }
 
-EditorShellWindow::~EditorShellWindow() = default;
+EditorShellWindow::~EditorShellWindow() {
+    saveSettingsLayout(); // Qt saves the dock layout on close
+}
 
 NodeHandle EditorShellWindow::node(std::string_view id) const { return m_ui.find(id); }
 
@@ -228,38 +245,251 @@ NodeHandle EditorShellWindow::panelPage(std::string_view panelId) const {
     return {};
 }
 
+i32 EditorShellWindow::panelIndex_(std::string_view panelId) const {
+    for (u32 i = 0; i < std::size(kPanels); ++i)
+        if (panelId == kPanels[i].id || panelId == std::string_view(kPanels[i].id).substr(5)) return i32(i);
+    return -1;
+}
+
 bool EditorShellWindow::showPanel(std::string_view panelId) {
-    for (u32 s = 0; s < 3; ++s) {
-        u32 tab = 0;
-        for (const ShellPanel& p : kPanels) {
-            if (sideIndex(p.side) != s) continue;
-            if (panelId == p.id) {
-                m_ui.setValue(w::tabWidgetBar(m_ui, m_tabs[s]), f32(tab), true);
-                return true;
-            }
-            ++tab;
-        }
-    }
-    return false;
+    const i32 i = panelIndex_(panelId);
+    if (i < 0) return false;
+    if (!m_panelVisible[u32(i)]) setPanelVisible(panelId, true);
+    const u32 side = m_panelSide[u32(i)];
+    if (side >= 3) return true; // floating: always shown
+    w::dockTo(m_ui, m_docks[side], kSides[side]);
+    const auto& order = m_sideOrder[side];
+    const auto it = std::find(order.begin(), order.end(), u32(i));
+    if (it == order.end()) return false;
+    m_ui.setValue(w::tabWidgetBar(m_ui, m_tabs[side]), f32(it - order.begin()), true);
+    return true;
 }
 
 bool EditorShellWindow::panelVisible(std::string_view panelId) const {
+    const i32 i = panelIndex_(panelId);
+    if (i < 0 || !m_panelVisible[u32(i)]) return false;
+    const u32 side = m_panelSide[u32(i)];
+    if (side >= 3) return true;
+    const auto& order = m_sideOrder[side];
+    const auto it = std::find(order.begin(), order.end(), u32(i));
+    return it != order.end() && m_ui.alive(m_tabs[side]) && u32(m_ui.value(w::tabWidgetBar(m_ui, m_tabs[side]))) == u32(it - order.begin());
+}
+
+bool EditorShellWindow::panelShown(std::string_view panelId) const {
+    const i32 i = panelIndex_(panelId);
+    return i >= 0 && m_panelVisible[u32(i)];
+}
+
+bool EditorShellWindow::panelFloating(std::string_view panelId) const {
+    const i32 i = panelIndex_(panelId);
+    return i >= 0 && m_panelSide[u32(i)] == 3u;
+}
+
+std::string EditorShellWindow::panelSideName(std::string_view panelId) const {
+    const i32 i = panelIndex_(panelId);
+    static constexpr const char* kNames[4] = {"left", "right", "bottom", "float"};
+    return i < 0 ? std::string() : kNames[std::min(m_panelSide[u32(i)], 3u)];
+}
+
+bool EditorShellWindow::setPanelVisible(std::string_view panelId, bool on) {
+    const i32 i = panelIndex_(panelId);
+    if (i < 0) return false;
+    m_panelVisible[u32(i)] = on;
+    relayoutPanels_();
+    return true;
+}
+
+bool EditorShellWindow::setPanelFloating(std::string_view panelId, bool on) {
+    const i32 i = panelIndex_(panelId);
+    if (i < 0) return false;
+    m_panelSide[u32(i)] = on ? 3u : sideIndex(kPanels[i].side);
+    m_panelVisible[u32(i)] = true;
+    relayoutPanels_();
+    return true;
+}
+
+bool EditorShellWindow::movePanel(std::string_view panelId, fuse::ui::widgets::DockSide side) {
+    const i32 i = panelIndex_(panelId);
+    if (i < 0 || side == DockSide::Center) return false;
+    m_panelSide[u32(i)] = sideIndex(side);
+    m_panelVisible[u32(i)] = true;
+    relayoutPanels_();
+    return showPanel(panelId);
+}
+
+// Puts every panel page where its side / visibility says: tab stacks, floating frames (overlay layer) or hidden.
+void EditorShellWindow::relayoutPanels_() {
+    const u32 n = u32(std::size(kPanels));
     for (u32 s = 0; s < 3; ++s) {
-        u32 tab = 0;
-        for (const ShellPanel& p : kPanels) {
-            if (sideIndex(p.side) != s) continue;
-            if (std::string_view(p.id).substr(5) == panelId || panelId == p.id)
-                return m_ui.alive(m_tabs[s]) && u32(m_ui.value(w::tabWidgetBar(m_ui, m_tabs[s]))) == tab;
-            ++tab;
+        const NodeHandle bar = w::tabWidgetBar(m_ui, m_tabs[s]);
+        const u32 prevTab = u32(std::max(0.f, m_ui.value(bar)));
+        const i32 prevPanel = prevTab < m_sideOrder[s].size() ? i32(m_sideOrder[s][prevTab]) : -1;
+        m_sideOrder[s].clear();
+        std::string titles;
+        for (u32 i = 0; i < n; ++i) {
+            if (m_panelSide[i] != s || !m_panelVisible[i]) continue;
+            m_sideOrder[s].push_back(i);
+            titles += std::string(titles.empty() ? "" : "\n") + kPanels[i].title;
         }
+        const NodeHandle stack = m_ui.nextSibling(bar);
+        for (u32 i : m_sideOrder[s])
+            if (m_ui.parent(m_pagesNode[i]) != stack) m_ui.moveTo(m_pagesNode[i], stack);
+        if (std::string_view(m_ui.text(bar)) != titles) m_ui.setText(bar, titles);
+        m_ui.setRange(bar, 0.f, f32(std::max<std::size_t>(1, m_sideOrder[s].size()) - 1), 1.f);
+        u32 cur = 0;
+        for (u32 k = 0; k < m_sideOrder[s].size(); ++k)
+            if (i32(m_sideOrder[s][k]) == prevPanel) cur = k;
+        m_ui.setValue(bar, f32(cur));
+        if (m_sideOrder[s].empty()) w::dockClose(m_ui, m_docks[s]);
+        showSidePage_(s);
     }
-    return false;
+    for (u32 i = 0; i < n; ++i) {
+        const bool floating = m_panelSide[i] == 3u && m_panelVisible[i];
+        if (floating && !m_floatFrame[i].valid()) {
+            // in-window floating frame (title + Dock button) in the overlay layer
+            const std::string base = std::string("float.") + std::string(std::string_view(kPanels[i].id).substr(5));
+            const NodeHandle f = w::panel(m_ui, w::overlayLayer(m_ui), base);
+            m_ui.addClass(f, "ed-float");
+            m_ui.setCss(f, "position", "absolute");
+            m_ui.setCss(f, "left", std::to_string(int(m_floatPos[i][0])) + "px");
+            m_ui.setCss(f, "top", std::to_string(int(m_floatPos[i][1])) + "px");
+            const NodeHandle head = w::panel(m_ui, f, base + ".title");
+            m_ui.addClass(head, "row");
+            m_ui.addClass(head, "ed-float-title");
+            const NodeHandle t = w::label(m_ui, head, kPanels[i].title);
+            m_ui.setCss(t, "flex-grow", "1");
+            const NodeHandle dock = w::toolButton(m_ui, head, "Dock", base + ".dock");
+            const char* id = kPanels[i].id;
+            m_ui.connect(dock, SignalKind::Clicked, [this, id](UiContext&, NodeHandle, const SignalArgs&) { setPanelFloating(id, false); });
+            m_floatFrame[i] = f;
+        }
+        if (floating && m_ui.parent(m_pagesNode[i]) != m_floatFrame[i]) {
+            m_ui.moveTo(m_pagesNode[i], m_floatFrame[i]);
+            m_ui.setCss(m_pagesNode[i], "display", "flex");
+        }
+        if (!floating && m_floatFrame[i].valid()) {
+            if (m_ui.parent(m_pagesNode[i]) == m_floatFrame[i]) m_ui.moveTo(m_pagesNode[i], m_hiddenPages);
+            m_ui.destroy(m_floatFrame[i]);
+            m_floatFrame[i] = {};
+        }
+        if (!m_panelVisible[i] && m_ui.parent(m_pagesNode[i]) != m_hiddenPages) m_ui.moveTo(m_pagesNode[i], m_hiddenPages);
+    }
+    m_menuKey.clear(); // View menu panel checks
+}
+
+void EditorShellWindow::showSidePage_(u32 side) {
+    const NodeHandle bar = w::tabWidgetBar(m_ui, m_tabs[side]);
+    const u32 cur = u32(std::max(0.f, m_ui.value(bar)));
+    for (u32 k = 0; k < m_sideOrder[side].size(); ++k)
+        m_ui.setCss(m_pagesNode[m_sideOrder[side][k]], "display", k == cur ? "flex" : "none");
+}
+
+bool EditorShellWindow::panelTabMenu_(u32 side, fuse::ui::Vec2 at) {
+    const NodeHandle bar = w::tabWidgetBar(m_ui, m_tabs[side]);
+    const u32 cur = u32(std::max(0.f, m_ui.value(bar)));
+    if (cur >= m_sideOrder[side].size()) return false;
+    const char* id = kPanels[m_sideOrder[side][cur]].id;
+    const NodeHandle menu = w::popupMenu(m_ui, bar, "Float\nHide\n-\nMove to Left\nMove to Right\nMove to Bottom", at, "panel.menu");
+    m_ui.connect(menu, SignalKind::Submitted, [this, id](UiContext&, NodeHandle, const SignalArgs& a) {
+        switch (int(a.value)) {
+        case 0: setPanelFloating(id, true); break;
+        case 1: setPanelVisible(id, false); break;
+        case 3: movePanel(id, DockSide::Left); break;
+        case 4: movePanel(id, DockSide::Right); break;
+        case 5: movePanel(id, DockSide::Bottom); break;
+        default: break;
+        }
+        sync();
+    });
+    return true;
+}
+
+std::string EditorShellWindow::saveLayout() const {
+    // "id:side:visible:x:y" per panel, the current tab per side, then the dock region blob (dockSaveLayout)
+    std::string out = "fuse-editor-layout 1\n";
+    for (u32 i = 0; i < std::size(kPanels); ++i)
+        out += std::string(kPanels[i].id) + ":" + std::to_string(m_panelSide[i]) + ":" + (m_panelVisible[i] ? "1" : "0") + ":" +
+               std::to_string(int(m_floatPos[i][0])) + ":" + std::to_string(int(m_floatPos[i][1])) + "\n";
+    out += "tabs";
+    for (u32 s = 0; s < 3; ++s) out += ":" + std::to_string(int(m_ui.value(w::tabWidgetBar(m_ui, m_tabs[s]))));
+    out += "\n";
+    std::string docks = w::dockSaveLayout(m_ui, m_dockArea);
+    std::replace(docks.begin(), docks.end(), '\n', '|');
+    return out + "docks:" + docks + "\n";
+}
+
+bool EditorShellWindow::restoreLayout(std::string_view blob) {
+    if (blob.rfind("fuse-editor-layout 1\n", 0) != 0) return false;
+    std::string text(blob.substr(21));
+    std::vector<u32> side(m_panelSide), tabs(3, 0);
+    std::vector<bool> visible(m_panelVisible);
+    std::vector<std::array<f32, 2>> pos(m_floatPos);
+    std::string docks;
+    std::size_t at = 0;
+    while (at < text.size()) {
+        const std::size_t nl = text.find('\n', at);
+        const std::string line = text.substr(at, nl == std::string::npos ? std::string::npos : nl - at);
+        at = nl == std::string::npos ? text.size() : nl + 1;
+        if (line.rfind("docks:", 0) == 0) {
+            docks = line.substr(6);
+            std::replace(docks.begin(), docks.end(), '|', '\n');
+            continue;
+        }
+        std::vector<std::string> f;
+        for (std::size_t b = 0;;) {
+            const std::size_t c = line.find(':', b);
+            f.push_back(line.substr(b, c == std::string::npos ? std::string::npos : c - b));
+            if (c == std::string::npos) break;
+            b = c + 1;
+        }
+        if (f[0] == "tabs" && f.size() == 4) {
+            for (u32 s = 0; s < 3; ++s) tabs[s] = u32(std::max(0, std::atoi(f[s + 1].c_str())));
+            continue;
+        }
+        const i32 i = panelIndex_(f[0]);
+        if (i < 0 || f.size() != 5) continue;
+        side[u32(i)] = std::min(3u, u32(std::max(0, std::atoi(f[1].c_str()))));
+        visible[u32(i)] = f[2] == "1";
+        pos[u32(i)] = {f32(std::atoi(f[3].c_str())), f32(std::atoi(f[4].c_str()))};
+    }
+    m_panelSide = side;
+    m_panelVisible = visible;
+    m_floatPos = pos;
+    for (u32 i = 0; i < std::size(kPanels); ++i)
+        if (m_floatFrame[i].valid()) { // re-place open frames
+            m_ui.setCss(m_floatFrame[i], "left", std::to_string(int(pos[i][0])) + "px");
+            m_ui.setCss(m_floatFrame[i], "top", std::to_string(int(pos[i][1])) + "px");
+        }
+    for (u32 s = 0; s < 3; ++s) w::dockTo(m_ui, m_docks[s], kSides[s]);
+    if (!docks.empty()) w::dockRestoreLayout(m_ui, m_dockArea, docks);
+    relayoutPanels_();
+    for (u32 s = 0; s < 3; ++s)
+        if (tabs[s] < m_sideOrder[s].size()) {
+            m_ui.setValue(w::tabWidgetBar(m_ui, m_tabs[s]), f32(tabs[s]));
+            showSidePage_(s);
+        }
+    return true;
+}
+
+void EditorShellWindow::saveSettingsLayout() {
+    m_win.app().settings().set("layout.editor", saveLayout());
+}
+
+bool EditorShellWindow::restoreSettingsLayout() {
+    const std::string_view blob = m_win.app().settings().get("layout.editor");
+    return !blob.empty() && restoreLayout(blob);
 }
 
 void EditorShellWindow::resetLayout() {
+    for (u32 i = 0; i < std::size(kPanels); ++i) {
+        m_panelSide[i] = sideIndex(kPanels[i].side);
+        m_panelVisible[i] = true;
+    }
+    for (u32 s = 0; s < 3; ++s) w::dockTo(m_ui, m_docks[s], kSides[s]);
+    relayoutPanels_();
     for (u32 s = 0; s < 3; ++s) {
-        w::dockTo(m_ui, m_docks[s], kSides[s]);
-        m_ui.setValue(w::tabWidgetBar(m_ui, m_tabs[s]), 0.f, true);
+        m_ui.setValue(w::tabWidgetBar(m_ui, m_tabs[s]), 0.f);
+        showSidePage_(s);
     }
     // dock regions are splitter panes sized by flex-basis (a splitter drag rewrites the basis; width is ignored)
     m_ui.setCss(w::dockRegion(m_ui, m_dockArea, DockSide::Left), "flex-basis", "260px");
@@ -282,26 +512,40 @@ void EditorShellWindow::build_() {
     m_dockArea = w::dockArea(m_ui, m_root, "editor.dockarea");
     m_ui.setCss(m_dockArea, "flex-grow", "1");
     const char* titles[3] = {"Scene", "Properties", "Output"};
+    // each side: a tab bar over a page stack; panel pages move between stacks, floating frames and the hidden holder
+    // (relayoutPanels_), so the View menu can hide / float / move single panels like Qt dock widgets
+    m_hiddenPages = w::panel(m_ui, m_root, "editor.hidden_panels");
+    m_ui.setCss(m_hiddenPages, "display", "none");
+    m_panelSide.assign(std::size(kPanels), 0u);
+    m_panelVisible.assign(std::size(kPanels), true);
+    m_floatPos.assign(std::size(kPanels), {});
+    m_pagesNode.assign(std::size(kPanels), NodeHandle{});
+    m_floatFrame.assign(std::size(kPanels), NodeHandle{});
+    for (u32 i = 0; i < std::size(kPanels); ++i) {
+        m_panelSide[i] = sideIndex(kPanels[i].side);
+        m_floatPos[i] = {120.f + 24.f * f32(i), 90.f + 18.f * f32(i)};
+    }
     for (u32 s = 0; s < 3; ++s) {
         m_docks[s] = w::dockWidget(m_ui, m_dockArea, titles[s], kSides[s], kSideDockIds[s]);
-        std::string tabTitles;
-        for (const ShellPanel& p : kPanels)
-            if (sideIndex(p.side) == s) tabTitles += std::string(tabTitles.empty() ? "" : "\n") + p.title;
-        m_tabs[s] = w::tabWidget(m_ui, w::dockBody(m_ui, m_docks[s]), tabTitles, kSideTabIds[s]);
+        m_tabs[s] = w::panel(m_ui, w::dockBody(m_ui, m_docks[s]), kSideTabIds[s]);
+        m_ui.addClass(m_tabs[s], "tabwidget");
         m_ui.setCss(m_tabs[s], "flex-grow", "1");
-        u32 tab = 0;
-        for (const ShellPanel& p : kPanels) {
-            if (sideIndex(p.side) != s) continue;
-            const NodeHandle holder = w::tabPage(m_ui, m_tabs[s], tab++);
-            const NodeHandle page = w::panel(m_ui, holder, p.id);
-            m_ui.addClass(page, "ed-page");
-            m_ui.setCss(holder, "padding", "0px");
-            m_ui.setCss(holder, "flex-grow", "1");
-            if (std::string_view(p.id) == "dock.hierarchy") buildHierarchy_(page);
-            else if (std::string_view(p.id) == "dock.inspector") buildInspector_(page);
-            else if (std::string_view(p.id) == "dock.console") buildConsole_(page);
-            else if (!m_pages->build(std::string_view(p.id).substr(5), page)) buildPlaceholder_(page, p);
-        }
+        const NodeHandle bar = w::tabBar(m_ui, m_tabs[s], "", 0, std::string(kSideTabIds[s]) + ".bar");
+        const NodeHandle stack = w::panel(m_ui, m_tabs[s], std::string(kSideTabIds[s]) + ".stack");
+        m_ui.setCss(stack, "flex-grow", "1");
+        m_ui.setCss(stack, "padding", "0px");
+        m_ui.connect(bar, SignalKind::ValueChanged, [this, s](UiContext&, NodeHandle, const SignalArgs&) { showSidePage_(s); });
+    }
+    for (u32 i = 0; i < std::size(kPanels); ++i) {
+        const ShellPanel& p = kPanels[i];
+        const NodeHandle page = w::panel(m_ui, m_hiddenPages, p.id);
+        m_ui.addClass(page, "ed-page");
+        m_ui.setA11y(page, fuse::ui::A11yRole::Group, p.title);
+        m_pagesNode[i] = page;
+        if (std::string_view(p.id) == "dock.hierarchy") buildHierarchy_(page);
+        else if (std::string_view(p.id) == "dock.inspector") buildInspector_(page);
+        else if (std::string_view(p.id) == "dock.console") buildConsole_(page);
+        else if (!m_pages->build(std::string_view(p.id).substr(5), page)) buildPlaceholder_(page, p);
     }
     // centre: viewport + info strip
     const NodeHandle centre = w::panel(m_ui, w::dockRegion(m_ui, m_dockArea, DockSide::Center), "editor.centre");
@@ -389,6 +633,7 @@ void EditorShellWindow::build_() {
 
     m_status = w::label(m_ui, m_root, "Ready", "editor.status");
     m_ui.addClass(m_status, "ed-status");
+    m_ui.moveTo(m_hiddenPages, m_root); // keep the status bar the last visible child
     resetLayout();
 }
 
@@ -429,6 +674,8 @@ void EditorShellWindow::syncMenus_() {
     const EditorViewState& v = m_c.viewState();
     std::string key = v.undoLabel + '\x1f' + v.redoLabel;
     for (const std::string& r : v.recentFiles) key += '\x1f' + r;
+    for (u32 i = 0; i < m_panelVisible.size(); ++i) key += (m_panelVisible[i] ? "v" : "h") + std::to_string(m_panelSide[i]);
+    key += m_c.playFromSpawn() ? "s" : "";
     key += '\x1f' + std::to_string(int(m_c.viewMode())) + (m_c.showMeshBounds() ? "b" : "") + (m_c.showAllColliders() ? "c" : "") + (m_c.maximizeOnPlay() ? "m" : "") + std::to_string(m_c.viewportLayout());
     for (const std::string& r : v.recentProjects) key += "\x1fp" + r;
     for (const std::string& b : m_bindings) key += '\x1e' + b;
@@ -456,6 +703,7 @@ void EditorShellWindow::syncMenus_() {
             if (a.id == ActionId::ViewShowMeshBounds) label = (m_c.showMeshBounds() ? "[x] " : "[ ] ") + label;
             if (a.id == ActionId::ViewShowColliders) label = (m_c.showAllColliders() ? "[x] " : "[ ] ") + label;
             if (a.id == ActionId::PlayMaximizeOnPlay) label = (m_c.maximizeOnPlay() ? "[x] " : "[ ] ") + label;
+            if (a.id == ActionId::PlayFromSpawn) label = (m_c.playFromSpawn() ? "[x] " : "[ ] ") + label;
             if (a.id >= ActionId::ViewLayoutSingle && a.id <= ActionId::ViewLayoutQuad)
                 label = (m_c.viewportLayout() == int(a.id) - int(ActionId::ViewLayoutSingle) ? "[x] " : "[ ] ") + label;
             if (!binding(a.id).empty()) label += "   (" + binding(a.id) + ")";
@@ -475,6 +723,12 @@ void EditorShellWindow::syncMenus_() {
                     add("   " + std::to_string(r + 1) + "  " + std::filesystem::path(v.recentFiles[r]).filename().string(), -2 - i32(r));
             }
         }
+        if (std::string_view(menus[m]) == "View" && m_panelVisible.size() == std::size(kPanels)) {
+            // per-panel toggles (Qt QDockWidget::toggleViewAction)
+            add("-", -1);
+            for (u32 i = 0; i < std::size(kPanels); ++i)
+                add(std::string(m_panelVisible[i] ? "[x] " : "[ ] ") + kPanels[i].title + (m_panelSide[i] == 3u ? "  (floating)" : ""), -1000 - i32(i));
+        }
         m_ui.setText(m_menus[m], std::string(menus[m]) + "\n" + items);
     }
 }
@@ -482,7 +736,10 @@ void EditorShellWindow::syncMenus_() {
 void EditorShellWindow::menuPicked_(u32 menuIndex, u32 line) {
     if (menuIndex >= m_menuMap.size() || line >= m_menuMap[menuIndex].size()) return;
     const i32 code = m_menuMap[menuIndex][line];
-    if (code <= -100) m_c.openRecentProject(u32(-100 - code));
+    if (code <= -1000) {
+        const u32 i = u32(-1000 - code);
+        if (i < std::size(kPanels)) setPanelVisible(kPanels[i].id, !m_panelVisible[i]);
+    } else if (code <= -100) m_c.openRecentProject(u32(-100 - code));
     else if (code == -99) m_c.clearRecentProjects();
     else if (code <= -2) m_c.fileOpenRecent(u32(-2 - code));
     else if (code >= 0) m_c.trigger(ActionId(code));
@@ -496,6 +753,7 @@ void EditorShellWindow::buildToolbar_(NodeHandle bar) {
         if (*lastMenu && std::string_view(lastMenu) != a.menu) m_ui.addClass(w::panel(m_ui, bar), "ed-sep");
         lastMenu = a.menu;
         const NodeHandle b = w::toolButton(m_ui, bar, a.label, std::string("tool.") + a.stableId);
+        if (const std::string_view icon = toolIcon(a.id); !icon.empty() && m_icons && m_icons->find(icon) >= 0) w::setIcon(m_ui, b, icon);
         if (!binding(a.id).empty()) w::setTooltip(m_ui, b, std::string(a.label) + "  (" + binding(a.id) + ")");
         const ActionId id = a.id;
         m_ui.connect(b, SignalKind::Clicked, [this, id](UiContext&, NodeHandle, const SignalArgs&) { m_c.trigger(id); sync(); });
@@ -549,6 +807,12 @@ void EditorShellWindow::buildHierarchy_(NodeHandle page) {
         }
         sync();
     });
+    m_hierRenameRow = w::panel(m_ui, page, "hierarchy.rename_row");
+    m_ui.addClass(m_hierRenameRow, "row");
+    m_ui.setCss(m_hierRenameRow, "display", "none");
+    w::label(m_ui, m_hierRenameRow, "Name");
+    m_hierRename = w::lineEdit(m_ui, m_hierRenameRow, "", "hierarchy.rename");
+    m_ui.setCss(m_hierRename, "flex-grow", "1");
     m_hierInfo = w::label(m_ui, page, "", "hierarchy.info");
     m_ui.addClass(m_hierInfo, "ed-dim");
 }
@@ -667,6 +931,8 @@ void EditorShellWindow::syncInspector_() {
                 break;
             }
             const NodeHandle ed = w::propertyRow(m_ui, m_inspGrid, d, value);
+            // screen readers name the editor after its field (Qt: the form label's buddy)
+            if (ed.valid() && m_ui.role(ed) != fuse::ui::A11yRole::None) m_ui.setA11y(ed, m_ui.role(ed), s.displayName + " " + f.label);
             if (f.propertyName.empty()) m_ui.setDisabled(ed, true);
             m_gridRows.push_back({f.propertyName, f.type, f.enumNames});
         }
@@ -1211,7 +1477,59 @@ bool EditorShellWindow::shortcut(Key key, u8 mods) {
 
 bool EditorShellWindow::rootEvent(const Event& e, NodeHandle target) {
     if (m_pages && m_pages->event(e, target)) return true;
+    // tab bar right click: Float / Hide / Move panel (Qt dock title bar)
+    if (e.type == EventType::PointerDown && e.button == fuse::ui::MouseButton::Right)
+        for (u32 s = 0; s < 3; ++s)
+            if (target == w::tabWidgetBar(m_ui, m_tabs[s])) return panelTabMenu_(s, e.pos);
+    // floating frame title drag
+    if (e.type == EventType::PointerDown && e.button == fuse::ui::MouseButton::Left)
+        for (u32 i = 0; i < m_floatFrame.size(); ++i)
+            if (m_floatFrame[i].valid() && (target == m_ui.firstChild(m_floatFrame[i]) || m_ui.parent(target) == m_ui.firstChild(m_floatFrame[i])) &&
+                m_ui.role(target) != fuse::ui::A11yRole::Button) {
+                m_floatDrag = i32(i);
+                m_floatDragAt = e.pos;
+                return true;
+            }
+    if (m_floatDrag >= 0 && (e.type == EventType::PointerMove || e.type == EventType::PointerUp)) {
+        auto& at = m_floatPos[u32(m_floatDrag)];
+        at[0] = std::max(0.f, at[0] + e.pos.x - m_floatDragAt.x);
+        at[1] = std::max(0.f, at[1] + e.pos.y - m_floatDragAt.y);
+        m_floatDragAt = e.pos;
+        m_ui.setCss(m_floatFrame[u32(m_floatDrag)], "left", std::to_string(int(at[0])) + "px");
+        m_ui.setCss(m_floatFrame[u32(m_floatDrag)], "top", std::to_string(int(at[1])) + "px");
+        if (e.type == EventType::PointerUp) m_floatDrag = -1;
+        return true;
+    }
+    // hierarchy double-click frames the row (Qt itemDoubleClicked -> entityActivated)
+    if (e.type == EventType::PointerUp && e.button == fuse::ui::MouseButton::Left && target == m_hierTree) {
+        const u32 line = u32(std::max(0.f, m_ui.value(m_hierTree)));
+        const auto now = std::chrono::steady_clock::now();
+        const bool dbl = line == m_hierClickLine && now - m_hierClickAt < std::chrono::milliseconds(450);
+        m_hierClickLine = dbl ? ~0u : line;
+        m_hierClickAt = now;
+        if (dbl) activateHierarchyRow(line);
+        return false;
+    }
     if (e.type != EventType::KeyDown) return false;
+    // hierarchy rename row: Enter commits, Escape cancels (Qt in-place edit)
+    if (target == m_hierRename && (e.key == Key::Enter || e.key == Key::Escape)) {
+        if (e.key == Key::Enter) m_c.renameEntity(m_renaming, m_ui.text(m_hierRename));
+        m_renaming = {};
+        m_ui.setCss(m_hierRenameRow, "display", "none");
+        m_ui.setFocus(m_hierTree);
+        sync();
+        return true;
+    }
+    if (e.key == Key::F2 && target == m_hierTree) {
+        beginRename(m_c.viewState().primary);
+        return true;
+    }
+    // clipboard / select-all combos edit text in a focused text field (Qt QLineEdit shortcut override)
+    const fuse::ui::A11yRole role = m_ui.role(target);
+    if ((role == fuse::ui::A11yRole::TextField || role == fuse::ui::A11yRole::SpinBox || role == fuse::ui::A11yRole::ComboBox) &&
+        (e.mods & fuse::ui::kModCtrl) && (e.mods & fuse::ui::kModAlt) == 0 &&
+        (e.key == Key::A || e.key == Key::C || e.key == Key::V || e.key == Key::X))
+        return false;
     // Preferences shortcut field records the pressed combination (QKeySequenceEdit)
     if (preferencesOpen() && target == m_ui.find("prefs.shortcut_edit") && e.mods != 0) {
         const std::string combo = shortcutText(e.key, e.mods);
