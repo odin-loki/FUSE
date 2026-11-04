@@ -284,6 +284,18 @@ void tierA(UiContext& ui, const Form& f) {
     UI_CHECK(ui.focused() == f.r1 && ui.checked(f.r1) && !ui.checked(f.r3));
     press(ui, Key::Up);
     UI_CHECK(ui.focused() == f.r3 && ui.checked(f.r3));
+    // a disabled radio refuses focus: Tab and the arrows skip it
+    ui.setDisabled(f.r2, true);
+    ui.update();
+    std::vector<NodeHandle> order;
+    ui.tabOrder(order);
+    UI_CHECK(std::find(order.begin(), order.end(), f.r2) == order.end());
+    press(ui, Key::Down);
+    UI_CHECK(ui.focused() == f.r1 && ui.checked(f.r1));
+    press(ui, Key::Down);
+    UI_CHECK(ui.focused() == f.r3 && ui.checked(f.r3) && !ui.checked(f.r2));
+    ui.setDisabled(f.r2, false);
+    ui.update();
     UI_CHECK(tabTo(ui, f.sw));
     press(ui, Key::Space);
     UI_CHECK(ui.checked(f.sw));
