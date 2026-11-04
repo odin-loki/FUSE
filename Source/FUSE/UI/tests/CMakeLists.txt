@@ -234,6 +234,22 @@ if(TARGET fuse_app)
         endif()
         set_tests_properties(fuse_app_os_popups PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300
             ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate;vulkan")
+        # custom window chrome (WM_NCHITTEST on a real window) and tray icon + notifications (UI10)
+        foreach(g window_chrome tray)
+            set(_src ${g})
+            if(g STREQUAL "window_chrome")
+                set(_src chrome)
+            endif()
+            add_executable(fuse_app_${g} test_app_${_src}.cpp)
+            target_link_libraries(fuse_app_${g} PRIVATE fuse_app_native)
+            if(FUSE_UI_XVFB_RUN AND NOT WIN32)
+                add_test(NAME fuse_app_${g} COMMAND ${FUSE_UI_XVFB_RUN} -a -s "-screen 0 1280x800x24"
+                         $<TARGET_FILE:fuse_app_${g}> --out=${CMAKE_CURRENT_BINARY_DIR})
+            else()
+                add_test(NAME fuse_app_${g} COMMAND fuse_app_${g} --out=${CMAKE_CURRENT_BINARY_DIR})
+            endif()
+            set_tests_properties(fuse_app_${g} PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120 LABELS "fuse_ui;gate")
+        endforeach()
     endif()
     # Windows UI Automation through AccessKit on a real window (skips with 77 when AccessKit is not linked)
     if(TARGET fuse_app_a11y AND WIN32)
@@ -242,6 +258,38 @@ if(TARGET fuse_app)
         add_test(NAME fuse_ui_a11y_windows COMMAND fuse_ui_a11y_windows)
         set_tests_properties(fuse_ui_a11y_windows PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
             LABELS "fuse_ui;gate;a11y")
+    endif()
+    # §6 budgets on the hello_app sample: launch -> first presented frame on a real OS window, and binary size
+    if(TARGET hello_app)
+        add_executable(fuse_app_native_startup test_app_native_startup.cpp)
+        add_test(NAME fuse_app_native_startup COMMAND fuse_app_native_startup $<TARGET_FILE:hello_app> --runs=5 --budget-ms=150
+                 --vulkan-budget-ms=2000)
+        set_tests_properties(fuse_app_native_startup PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
+            LABELS "fuse_ui;gate")
+        # Baseline per toolchain + text profile, +10 % (plan §6). MSVC 19.5x x64 Release, MINIMAL text, measured
+        # 2026-11-04 (MSVC Build Tools 2026): 733,184 bytes -> budget 806,500. Other toolchains: set
+        # FUSE_APP_BINARY_BUDGET after measuring (the gate then checks a stripped copy); until then it reports and skips.
+        set(_budget 0)
+        if(MSVC AND FUSE_UI_TEXT STREQUAL "MINIMAL" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+            set(_budget 806500)
+        endif()
+        if(FUSE_APP_BINARY_BUDGET) # -DFUSE_APP_BINARY_BUDGET=<bytes> overrides
+            set(_budget ${FUSE_APP_BINARY_BUDGET})
+        endif()
+        set(_bin $<TARGET_FILE:hello_app>)
+        if(NOT MSVC AND CMAKE_STRIP)
+            add_custom_command(TARGET hello_app POST_BUILD
+                COMMAND ${CMAKE_STRIP} -o $<TARGET_FILE:hello_app>.stripped $<TARGET_FILE:hello_app> VERBATIM)
+            set(_bin $<TARGET_FILE:hello_app>.stripped)
+        endif()
+        add_executable(fuse_app_binary_size test_app_binary_size.cpp)
+        add_test(NAME fuse_app_binary_size COMMAND fuse_app_binary_size --file=${_bin} --budget=${_budget}
+                 "--profile=${CMAKE_CXX_COMPILER_ID} ${CMAKE_BUILD_TYPE}, text ${FUSE_UI_TEXT}")
+        set_tests_properties(fuse_app_binary_size PROPERTIES SKIP_RETURN_CODE 77 LABELS "fuse_ui;gate")
+    endif()
+    if(TARGET game_menu)
+        add_test(NAME fuse_app_game_menu_sample COMMAND game_menu --script --screenshot=${CMAKE_CURRENT_BINARY_DIR}/game_menu.png)
+        set_tests_properties(fuse_app_game_menu_sample PROPERTIES LABELS fuse_ui)
     endif()
     if(TARGET hello_app)
         add_test(NAME fuse_app_hello_sample COMMAND hello_app --screenshot=${CMAKE_CURRENT_BINARY_DIR}/hello_app.png)

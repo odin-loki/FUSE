@@ -1,12 +1,13 @@
 # fuse_app (plan UI5): application shell for UI-only projects + samples.
-add_library(fuse_app STATIC src/app.cpp)
+add_library(fuse_app STATIC src/app.cpp src/chrome.cpp)
 target_include_directories(fuse_app PUBLIC include PRIVATE ${FUSE_UI_REPO_ROOT}/vendor/stb)
 target_link_libraries(fuse_app PUBLIC fuse_ui_doc)
 if(WIN32 OR MINGW)
     # no extra libs (CreateMutexA / MoveFileExA are kernel32)
 endif()
 
-# fuse_app_native: real OS windows (X11 via runtime-loaded libX11, Win32) + Vulkan swapchain presenter.
+# fuse_app_native: real OS windows (X11 via runtime-loaded libX11, Win32) + Vulkan swapchain presenter, custom window
+# chrome, shell services (tray icon, notifications).
 add_library(fuse_app_native STATIC src/native.cpp)
 target_link_libraries(fuse_app_native PUBLIC fuse_app)
 if(FUSE_UI_VK_LINK)
@@ -19,8 +20,10 @@ if(FUSE_UI_VK_LINK)
     endif()
 endif()
 if(WIN32 OR MINGW)
-    target_link_libraries(fuse_app_native PRIVATE user32 gdi32)
+    target_sources(fuse_app_native PRIVATE src/chrome_win32.cpp src/shell_win32.cpp)
+    target_link_libraries(fuse_app_native PRIVATE user32 gdi32 shell32)
 else()
+    target_sources(fuse_app_native PRIVATE src/shell_unix.cpp)
     target_link_libraries(fuse_app_native PRIVATE ${CMAKE_DL_LIBS})
 endif()
 
@@ -30,7 +33,7 @@ if(TARGET fuse_ui_a11y)
     target_link_libraries(fuse_app_a11y PUBLIC fuse_app_native fuse_ui_a11y)
 endif()
 
-option(FUSE_BUILD_APP_SAMPLES "Build the fuse_app samples (hello_app, notes_app)" ON)
+option(FUSE_BUILD_APP_SAMPLES "Build the fuse_app samples (hello_app, notes_app; game_menu comes with fuse_ui_game)" ON)
 if(FUSE_BUILD_APP_SAMPLES)
     foreach(s hello_app notes_app)
         add_executable(${s} samples/${s}.cpp)
@@ -42,4 +45,3 @@ if(FUSE_BUILD_APP_SAMPLES)
         endif()
     endforeach()
 endif()
-

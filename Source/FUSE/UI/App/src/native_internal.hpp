@@ -25,6 +25,8 @@ void vkCtxDestroy(VkCtx* c);
 bool vkWinSetExternal(VkWin* w, unsigned slot, const ExternalTexture& t);
 const char* vkCtxDeviceName(const VkCtx* c);
 VkWin* vkWinCreate(VkCtx* c, const SurfaceSource& s, const NativeOptions& o, std::string& err);
+/// Creates the swapchain for a `width` x `height` client area ahead of the first present (async init worker).
+bool vkWinPrepare(VkWin* w, unsigned width, unsigned height, std::string& err);
 bool vkWinPresent(VkWin* w, AppWindow& win, fuse::ui::Rect damage);
 bool vkWinGpuDraws(const VkWin* w);
 void vkWinDestroy(VkWin* w);

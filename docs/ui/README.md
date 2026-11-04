@@ -22,7 +22,7 @@ immediate-mode front-end. See the plan's status table for what is still open.
 | `Source/FUSE/UI/Doc` | `fuse_ui_doc` | `.fuseui` JSON documents, binding model, expression bytecode |
 | `Source/FUSE/UI/Script` | `fuse_ui_script` | Lua `ui` table (vendored Lua 5.2) |
 | `Source/FUSE/UI/Render` | `fuse_ui_render`, `fuse_ui_vk` | GPU draw data packing, `ui.draw_list` compute kernel, `UiLayerGpu` render-graph pass and `UiFrameSource` (in tree with the Vulkan RHI) |
-| `Source/FUSE/UI/App` | `fuse_app`, `fuse_app_native`, `fuse_app_a11y` | `Application` / `AppWindow` on-demand loop, settings, command line, single instance; native X11 / Win32 windows and the Vulkan swapchain presenter; `WindowAccessibility` (screen readers on a native window); samples `hello_app`, `notes_app` |
+| `Source/FUSE/UI/App` | `fuse_app`, `fuse_app_native`, `fuse_app_a11y` | `Application` / `AppWindow` on-demand loop, settings, command line, single instance; native X11 / Win32 windows and the Vulkan swapchain presenter; custom window chrome; tray icon / notifications; `WindowAccessibility` (screen readers on a native window); samples `hello_app`, `notes_app`, `game_menu` |
 | `Source/FUSE/UI/Game` | `fuse_ui_game` | HUD widgets, world markers, `UiSurface` world panels, gamepad navigation, input arbitration, prompts, time domains, locale table, subtitles, dialogue; samples `hud_demo`, `world_panel_demo` |
 | `Source/FUSE/UI/Sql` | `fuse_ui_sql` | `SqliteModel`: an `ItemModel` over a SQLite query (option `FUSE_BUILD_UI_SQL`) |
 | `Source/FUSE/UI/A11y` | `fuse_ui_a11y` | Accessibility bridge (snapshot diff, action queue); AccessKit adapters (`UnixAdapter` AT-SPI, `WindowsAdapter` UI Automation) when AccessKit is linked |
@@ -190,6 +190,40 @@ Without a native platform the app runs headless (tests, `--screenshot=`). `Prese
 `VkDrawMode::CpuUpload`; `Software` blits). `NativePlatform::capture` reads back what the OS shows (used by `fuse_app_native_window`).
 Under Xvfb set `VK_ICD_FILENAMES` to lavapipe; under Wine the Win32 path and the Vulkan presenter both run.
 
+Custom window chrome (`fuse/app/chrome.hpp`): `WindowDesc::frame = WindowFrame::Custom` (resizable, OS frame removed,
+snap / maximise kept) or `Borderless` (no frame, no resize edges), plus a FUSE UI title bar:
+
+```cpp
+#include <fuse/app/chrome.hpp>
+auto& w = app.createWindow({.title = "Tool", .frame = fuse::app::WindowFrame::Custom, .resizeBorder = 6.f});
+fuse::app::titleBar(w, w.ui().root(), "Tool");              // drag area + min / max / close (ids titlebar.*)
+```
+
+`chromeHitTest(w, p)` says what a point is (caption, edge / corner, min / max / close, client); interactive widgets
+inside the caption stay clickable. Win32 answers `WM_NCHITTEST` from it (so Win11 snap layouts appear on the maximise
+button) and removes the frame in `WM_NCCALCSIZE`; `AppWindow::command()` minimises / maximises / closes. X11 keeps
+its WM frame for now.
+
+Shell services (`fuse/app/shell.hpp`, UI10): `TrayIcon` (icon from an RGBA `Image`, tooltip, `onClick` /
+`onDoubleClick`, a context menu in `popupMenu` item format shown as an OS popup menu, `notify()` balloons / toasts)
+and a free `notify(title, body)`. Win32: `Shell_NotifyIconW` (re-added when Explorer restarts). X11: no tray yet;
+`notify()` uses `org.freedesktop.Notifications` over a runtime-loaded libdbus-1, else returns `Unsupported`.
+
+Samples: `hello_app` (`--startup-probe` prints launch → first presented frame), `notes_app`, `game_menu` (title,
+Play / Options / Quit over an animated background on a backdrop-blurred panel, options page with resolution, volume
+sliders and key bindings, animated page transitions, `GamepadNav`; `--script --screenshot=out.png` plays a simulated
+gamepad session and checks it).
+
+Fast first frame (`NativeOptions::asyncVulkan`, default on): the first window shows the CPU raster through the
+software presenter (Win32 GDI, X11 `XPutImage`) immediately while a worker thread creates the Vulkan instance,
+device and swapchain (X11: on its own X connection); the event pump then switches the window to Vulkan and the switch
+frame redraws the whole current UI, so nothing flickers and a resize in between is followed. `presenterPending(w)` /
+`waitForPresenter(w)` expose the handover; `asyncVulkan = false` makes `show()` block as before (adopted devices and
+later windows of the platform always start on Vulkan directly). Measured with `fuse_app_native_startup` (RTX 3090,
+Windows 11): launch → first frame ≈ 60–90 ms with the default configuration (budget 150 ms), switch to Vulkan
+≈ 0.8–0.9 s after launch (ceiling 2 s), switched frame equal to the CPU raster; synchronous Vulkan init ≈ 0.85 s to
+the first frame (instance + device ≈ 0.4–0.7 s, swapchain + first present ≈ 0.35 s).
+
 ## Game UI (UI7)
 
 ```cpp
@@ -276,11 +310,15 @@ checks it against the overlay under one scripted event stream.
 | `fuse_text_colrv1` | COLRv1 paint graphs flattened to solid layers (`tests/data/colrv1_test.ttf`) |
 
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
-| `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster (skips 77 without a display or device) |
+| `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster, async Vulkan handover (software frame, resize during the handover, first Vulkan frame) (skips 77 without a display or device) |
 | `fuse_ui_a11y_windows` | UIA client (IUIAutomation) on a real Win32 window: control types and names, screen bounds, Invoke / Toggle / Value / RangeValue / ExpandCollapse, SetFocus + focus-changed event (Windows; skips 77 without AccessKit) |
 | `fuse_ui_vk_damage` | incremental GPU redraw of `DrawList::redrawRegion(damage)` (grown around backdrops): only touched tiles dispatched, result equals a full render |
 | `fuse_ui_vk_validation_clean` | `fuse_ui_vk_parity` + `fuse_ui_vk_damage` under `VK_LAYER_KHRONOS_validation` with sync validation: no warnings / errors (77 without the layer) |
 | `fuse_ui_vk_budget` | GPU time (timestamp queries) of 1080p frames: full, backdrop blur, incremental (software devices report only) |
+| `fuse_app_native_startup` | launches `hello_app` 5× per configuration: default (async Vulkan) and software-only first frame median ≤ 150 ms; every default run switches to Vulkan (median ≤ 2 s) with the switched frame equal to the CPU raster; synchronous Vulkan init ≤ 2 s (skips 77 without a display) |
+| `fuse_app_binary_size` | `hello_app` file size ≤ measured baseline + 10 % (MSVC x64 Release, MINIMAL text: 733,184 B → 806,500 B; other toolchains report and skip until a baseline is set with `-DFUSE_APP_BINARY_BUDGET`) |
+| `fuse_app_window_chrome` | custom-chrome window: `chromeHitTest` probes, then `WM_NCHITTEST` on a real Win32 window, frame removed, max / restore / min / close through non-client clicks (77 off Win32) |
+| `fuse_app_tray` | tray icon added and found (`Shell_NotifyIconGetRect` / `NIM_MODIFY`), simulated click / double-click callbacks, a real `TrackPopupMenu` context menu picked by posted keys, a notification, removal (77 without a tray) |
 | `fuse_ui_game_hud_golden` | HUD demo scene against `tests/golden/hud.png` plus trail / marker / pool state |
 | `fuse_ui_gamepad_nav` | navigation with delay + repeat, A / B, radial menu by stick, prompt glyph swap, focus sounds |
 | `fuse_ui_world_panel_raycast` | ray → panel pixel mapping, misses and back faces, ray clicks, idle surface does not re-render |
@@ -289,7 +327,7 @@ checks it against the overlay under one scripted event stream.
 
 Extra: `fuse_ui_text_basics`, `fuse_ui_text_full`, `fuse_ui_widget_interaction`, `fuse_ui_tier_b`, `fuse_ui_tier_b2`,
 `fuse_ui_relight_equivalence`, `fuse_ui_platform_keys_v2`, `fuse_ui_text_input`, `fuse_ui_doc_load`,
-`fuse_ui_lua_bindings`, `fuse_ui_vk_parity`, the sample runs `fuse_app_hello_sample`, `fuse_app_notes_sample`,
+`fuse_ui_lua_bindings`, `fuse_ui_vk_parity`, the sample runs `fuse_app_hello_sample`, `fuse_app_notes_sample`, `fuse_app_game_menu_sample`,
 `fuse_ui_game_hud_demo`, `fuse_ui_game_world_panel_demo`; in tree also `fuse_core_ui1_text_input`,
 `fuse_scene_renderer_vk_fuse_ui_t0` and `rl_overlay_glyphs`.
 

@@ -73,10 +73,19 @@ private:
 };
 
 // ---- windows -------------------------------------------------------------------------------------------------------
+/// OS frame of a window. Borderless and Custom draw their own title bar (fuse/app/chrome.hpp: titleBar); the OS asks
+/// chromeHitTest() which parts drag (caption), resize (edges, Custom only) or act as min / max / close buttons.
+enum class WindowFrame : fuse::ui::u8 {
+    System,     ///< normal OS title bar and borders
+    Borderless, ///< no OS frame, not resizable (splash screens, launchers)
+    Custom,     ///< no OS frame, resizable from `resizeBorder` px edges; snap / maximise kept (Win32)
+};
 struct WindowDesc {
     std::string_view title = "FUSE";
     u32 width = 800, height = 600;
     f32 dpiScale = 1.f;
+    WindowFrame frame = WindowFrame::System;
+    f32 resizeBorder = 6.f; ///< Custom frame: resize edge thickness (logical px)
 };
 enum class RedrawPolicy : fuse::ui::u8 {
     OnDemand,   ///< update + present only when the UI needs it (default)
@@ -85,6 +94,18 @@ enum class RedrawPolicy : fuse::ui::u8 {
 
 class Application;
 class AppWindow;
+
+enum class WindowCommand : fuse::ui::u8 { Minimize, ToggleMaximize, Close };
+/// Client-drawn chrome of a Borderless / Custom window: the title-bar nodes (titleBar() sets them) and the backend
+/// hook that carries out min / max / close (NativePlatform installs it; without one Close calls requestClose()).
+struct WindowChrome {
+    WindowFrame frame = WindowFrame::System;
+    f32 resizeBorder = 0.f;
+    fuse::ui::NodeHandle caption, minimize, maximize, close; ///< caption = drag area (its non-interactive children too)
+    bool maximized = false;                                  ///< kept current by the backend
+    void* user = nullptr;
+    void (*command)(void* user, AppWindow& w, WindowCommand c) = nullptr;
+};
 
 /// Shows a window's frame. `damage` is the union of changed rects (whole window on the first frame / resize).
 struct Presenter {
@@ -101,6 +122,7 @@ public:
     AppWindow& operator=(const AppWindow&) = delete;
 
     fuse::ui::UiContext& ui() { return m_ui; }
+    const fuse::ui::UiContext& ui() const { return m_ui; }
     Application& app() { return m_app; }
     u32 id() const { return m_id; }
     const std::string& title() const { return m_title; }
@@ -120,6 +142,10 @@ public:
     void requestClose() { m_closing = true; }
     bool closing() const { return m_closing; }
     void requestRedraw() { m_forceRedraw = true; }
+    WindowChrome& chrome() { return m_chrome; }
+    const WindowChrome& chrome() const { return m_chrome; }
+    /// Minimise / toggle maximise / close through the backend hook (the title-bar buttons call this).
+    void command(WindowCommand c);
     /// Headless presenter target: the last CPU-rasterised frame.
     const fuse::ui::Image& image() const { return m_image; }
     bool writePng(const std::string& path) const;
@@ -152,6 +178,7 @@ private:
     std::unique_ptr<fuse::ui::doc::Document> m_doc;
     std::string m_title;
     Presenter m_presenter;
+    WindowChrome m_chrome;
     fuse::ui::Image m_image;
     fuse::ui::CpuRasterizer m_raster;
     RedrawPolicy m_policy = RedrawPolicy::OnDemand;

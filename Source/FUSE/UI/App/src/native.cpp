@@ -1,15 +1,18 @@
 // fuse_app native windows: X11 (libX11 loaded at runtime, so neither X11 headers nor libX11 are needed to build) and
 // Win32, plus the presenter selection (Vulkan swapchain -> GDI on Win32 -> headless). See native.hpp.
 #include "native_internal.hpp"
+#include "chrome_internal.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <string>
+#include <thread>
 #include <type_traits>
 #include <vector>
 
@@ -24,6 +27,12 @@
 #else
 #include <dlfcn.h>
 #include <poll.h>
+#endif
+
+#if defined(FUSE_APP_HAS_VULKAN)
+#define FUSE_APP_ASYNC_VK true // async init only when there is a Vulkan presenter to wait for
+#else
+#define FUSE_APP_ASYNC_VK false
 #endif
 
 namespace fuse::app {
@@ -41,6 +50,7 @@ void vkCtxDestroy(VkCtx*) {}
 bool vkWinSetExternal(VkWin*, unsigned, const ExternalTexture&) { return false; }
 const char* vkCtxDeviceName(const VkCtx*) { return ""; }
 VkWin* vkWinCreate(VkCtx*, const SurfaceSource&, const NativeOptions&, std::string&) { return nullptr; }
+bool vkWinPrepare(VkWin*, unsigned, unsigned, std::string&) { return false; }
 bool vkWinPresent(VkWin*, AppWindow&, Rect) { return false; }
 bool vkWinGpuDraws(const VkWin*) { return false; }
 void vkWinDestroy(VkWin*) {}
@@ -268,9 +278,19 @@ struct NativePlatform::Impl {
         };
         std::vector<Popup> popups;
         MessageHook hook{};
+        std::vector<u32> staged; ///< software presenter staging (OS pixel order)
+        // asyncVulkan: the worker creating this window's Vulkan presenter, and what it produced
+        std::thread worker;
+        std::atomic<bool> vkDone{false};
+        detail::VkCtx* vkCtxNew = nullptr;
+        detail::VkWin* vkNew = nullptr;
+        std::string vkErr;
+        bool vkPending = false; ///< worker running or result not yet taken over
+        bool vkWanted = false;  ///< waits for another window's worker, then gets Vulkan on the UI thread
 #if defined(_WIN32)
-        std::vector<u32> bgra; ///< GDI fallback staging
         wchar_t highSurrogate = 0;
+#else
+        x11::Display* vkDpy = nullptr; ///< the worker's own X connection (Xlib is not thread-safe without XInitThreads)
 #endif
     };
 
@@ -290,6 +310,24 @@ struct NativePlatform::Impl {
 #endif
 
     Impl(Application& a, const NativeOptions& o) : app(a), opts(o) {}
+
+    // Vulkan presenter creation: synchronous, or on a worker while the window shows software frames (asyncVulkan)
+    bool vkInFlight = false; ///< a worker owns instance / device creation right now
+    SurfaceSource surfaceOf(const Rec& r) const;
+    void createVkSync(Rec& r);
+    void startVkAsync(Rec& r);
+    /// UI thread: takes over finished workers (switches their windows to Vulkan) and serves vkWanted windows.
+    void pollVk();
+    /// Blocks until `r`'s worker is done (keeps answering the OS's cross-thread window messages meanwhile).
+    void waitVk(Rec& r);
+    void takeOverVk(Rec& r);
+    /// Software presenter: the window's CPU raster (AppWindow::image) to the OS window (GDI / XPutImage).
+    void blitSoftware(Rec& r);
+    bool anyVkPending() const {
+        for (const Rec* r : recs)
+            if (r->vkPending) return true;
+        return false;
+    }
 
     Rec* find(unsigned long long h) {
         for (Rec* r : recs)
@@ -405,36 +443,19 @@ void NativePlatform::Impl::syncPopups(Rec& r) {
 
 bool NativePlatform::Impl::present(void* user, AppWindow& w, Rect damage) {
     Rec& r = *static_cast<Rec*>(user);
+    // a finished async Vulkan init switches presenters here, so this frame (the whole current UI) is the first on Vulkan
+    if (r.vkPending && r.vkDone.load(std::memory_order_acquire)) r.impl->takeOverVk(r);
     switch (r.kind) {
     case PresenterKind::Vulkan: {
         const bool ok = detail::vkWinPresent(r.vk, w, damage);
         r.impl->syncPopups(r);
         return ok;
     }
-#if defined(_WIN32)
-    case PresenterKind::Software: {
-        const Image& img = w.rasterize(damage);
-        r.bgra.resize(img.pixels.size());
-        for (std::size_t i = 0; i < img.pixels.size(); ++i) {
-            const u32 p = img.pixels[i];
-            r.bgra[i] = (p & 0xFF00FF00u) | ((p & 0xFFu) << 16) | ((p >> 16) & 0xFFu);
-        }
-        BITMAPINFO bi{};
-        bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-        bi.bmiHeader.biWidth = img.width;
-        bi.bmiHeader.biHeight = -img.height;
-        bi.bmiHeader.biPlanes = 1;
-        bi.bmiHeader.biBitCount = 32;
-        bi.bmiHeader.biCompression = BI_RGB;
-        HWND hwnd = reinterpret_cast<HWND>(r.handle);
-        HDC dc = GetDC(hwnd);
-        SetDIBitsToDevice(dc, 0, 0, DWORD(img.width), DWORD(img.height), 0, 0, 0, UINT(img.height), r.bgra.data(), &bi,
-                          DIB_RGB_COLORS);
-        ReleaseDC(hwnd, dc);
+    case PresenterKind::Software:
+        w.rasterize(damage);
+        r.impl->blitSoftware(r);
         r.impl->syncPopups(r);
         return true;
-    }
-#endif
     default: w.rasterize(damage); r.impl->syncPopups(r); return true;
     }
 }
@@ -442,8 +463,23 @@ bool NativePlatform::Impl::present(void* user, AppWindow& w, Rect damage) {
 void NativePlatform::Impl::destroy(void* user) {
     Rec* r = static_cast<Rec*>(user);
     Impl& m = *r->impl;
+    if (r->vkPending) {
+        m.waitVk(*r); // the worker uses the window: let it finish, keep its device for the platform, drop its swapchain
+        if (r->vkCtxNew && !m.vk) {
+            m.vk = r->vkCtxNew;
+            m.vkTried = true;
+        }
+        detail::vkWinDestroy(r->vkNew);
+        r->vkNew = nullptr;
+        r->vkPending = false;
+        m.vkInFlight = false;
+    }
     detail::vkWinDestroy(r->vk);
     r->vk = nullptr;
+#if !defined(_WIN32)
+    if (r->vkDpy) m.x.CloseDisplay(r->vkDpy);
+    r->vkDpy = nullptr;
+#endif
     for (Rec::Popup& p : r->popups) m.destroyPopupOs(p);
     r->popups.clear();
     if (r->win) r->win->ui().setOsPopups(false);
@@ -506,6 +542,7 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (std::intptr_t res = 0; r->hook.fn && r->hook.fn(r->hook.user, msg, wp, lp, res)) return LRESULT(res);
     AppWindow& w = *r->win;
     UiContext& ui = w.ui();
+    if (std::intptr_t res = 0; detail::chromeWin32Message(hwnd, w, msg, wp, lp, res)) return res; // custom chrome
     switch (msg) {
     case WM_CLOSE: w.requestClose(); return 0;
     case WM_ACTIVATEAPP: // another application took the pointer / focus: popups close (Qt::Popup)
@@ -671,11 +708,12 @@ bool NativePlatform::Impl::postClickOs(unsigned long long h, Vec2 at) {
 bool NativePlatform::Impl::createOsWindow(Rec& r) {
     const Size sz = r.win->size();
     RECT rc{0, 0, LONG(sz.w), LONG(sz.h)};
-    AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
+    const DWORD style = detail::chromeWin32Style(r.win->chrome().frame); // custom chrome: client = whole window
+    if (r.win->chrome().frame == WindowFrame::System) AdjustWindowRect(&rc, style, FALSE);
     const std::string& t = r.win->title();
     std::wstring wt(std::size_t(MultiByteToWideChar(CP_UTF8, 0, t.data(), int(t.size()), nullptr, 0)), L'\0');
     if (!wt.empty()) MultiByteToWideChar(CP_UTF8, 0, t.data(), int(t.size()), wt.data(), int(wt.size()));
-    HWND hwnd = CreateWindowExW(0, kClass, wt.c_str(), WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
+    HWND hwnd = CreateWindowExW(0, kClass, wt.c_str(), style, CW_USEDEFAULT, CW_USEDEFAULT,
                                 rc.right - rc.left, rc.bottom - rc.top, nullptr, nullptr, hinst, nullptr);
     if (!hwnd) {
         error = "CreateWindowExW failed";
@@ -683,6 +721,7 @@ bool NativePlatform::Impl::createOsWindow(Rec& r) {
     }
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&r));
     r.handle = reinterpret_cast<unsigned long long>(hwnd);
+    detail::chromeWin32Attach(hwnd, *r.win);
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
     return true;
@@ -691,11 +730,14 @@ void NativePlatform::Impl::destroyOsWindow(Rec& r) {
     if (!r.handle) return;
     HWND hwnd = reinterpret_cast<HWND>(r.handle);
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+    if (r.win) detail::chromeWin32Detach(*r.win);
     DestroyWindow(hwnd);
     r.handle = 0;
 }
 bool NativePlatform::Impl::pump(void* user, Application&, f32 wait) {
-    (void)user;
+    Impl& m = *static_cast<Impl*>(user);
+    m.pollVk();
+    if (m.anyVkPending()) wait = std::min(wait, 0.004f); // look for the worker's result soon
     MSG msg;
     if (wait > 0.f && !PeekMessageW(&msg, nullptr, 0, 0, PM_NOREMOVE)) {
         const DWORD ms = std::isinf(wait) ? INFINITE : DWORD(std::ceil(double(wait) * 1000.0));
@@ -798,6 +840,8 @@ void NativePlatform::Impl::destroyOsWindow(Rec& r) {
 bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
     Impl& m = *static_cast<Impl*>(user);
     if (!m.dpy) return m.previous.pump ? m.previous.pump(m.previous.user, app, wait) : true;
+    m.pollVk();
+    if (m.anyVkPending()) wait = std::min(wait, 0.004f); // look for the worker's result soon
     auto& x = m.x;
     if (wait > 0.f && !x.Pending(m.dpy)) {
         pollfd p{x.ConnectionNumber(m.dpy), POLLIN, 0};
@@ -1007,6 +1051,158 @@ bool NativePlatform::available() const { return m->dpy != nullptr; }
 void* NativePlatform::nativeDisplay() const { return m->dpy; }
 #endif
 
+// ---- software presenter + Vulkan presenter creation (sync / async) -------------------------------------------------
+void NativePlatform::Impl::blitSoftware(Rec& r) {
+    const Image& img = r.win->image();
+    if (!r.handle || img.pixels.empty()) return;
+#if defined(_WIN32)
+    r.staged.resize(img.pixels.size());
+    for (std::size_t i = 0; i < img.pixels.size(); ++i) { // 0xAABBGGRR -> BGRA
+        const u32 p = img.pixels[i];
+        r.staged[i] = (p & 0xFF00FF00u) | ((p & 0xFFu) << 16) | ((p >> 16) & 0xFFu);
+    }
+    BITMAPINFO bi{};
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = img.width;
+    bi.bmiHeader.biHeight = -img.height;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+    HWND hwnd = reinterpret_cast<HWND>(r.handle);
+    HDC dc = GetDC(hwnd);
+    SetDIBitsToDevice(dc, 0, 0, DWORD(img.width), DWORD(img.height), 0, 0, 0, UINT(img.height), r.staged.data(), &bi,
+                      DIB_RGB_COLORS);
+    ReleaseDC(hwnd, dc);
+#else
+    if (!dpy) return;
+    const int scr = x.DefaultScreen(dpy);
+    if (x.DefaultDepth(dpy, scr) < 24) return;
+    r.staged.resize(img.pixels.size());
+    for (std::size_t i = 0; i < img.pixels.size(); ++i) { // 0xAABBGGRR -> TrueColor 0x00RRGGBB
+        const u32 q = img.pixels[i];
+        r.staged[i] = ((q & 0xFFu) << 16) | (q & 0xFF00u) | ((q >> 16) & 0xFFu);
+    }
+    x11::Image* xi = x.CreateImage(dpy, x.DefaultVisual(dpy, scr), unsigned(x.DefaultDepth(dpy, scr)), 2 /*ZPixmap*/, 0,
+                                   reinterpret_cast<char*>(r.staged.data()), unsigned(img.width), unsigned(img.height), 32, 0);
+    if (!xi) return;
+    x.PutImage(dpy, x11::Window(r.handle), x.DefaultGC(dpy, scr), xi, 0, 0, 0, 0, unsigned(img.width), unsigned(img.height));
+    xi->data = nullptr; // ours (XDestroyImage would free it)
+    xi->f.destroy(xi);
+    x.Flush(dpy);
+#endif
+}
+
+SurfaceSource NativePlatform::Impl::surfaceOf(const Rec& r) const {
+    SurfaceSource s;
+#if defined(_WIN32)
+    s.kind = SurfaceSource::Win32;
+    s.hinstance = hinst;
+    s.hwnd = reinterpret_cast<void*>(r.handle);
+#else
+    s.kind = SurfaceSource::Xlib;
+    s.display = dpy;
+    s.xwindow = static_cast<unsigned long>(r.handle);
+#endif
+    return s;
+}
+
+void NativePlatform::Impl::createVkSync(Rec& r) {
+    if (detail::VkCtx* c = vkContext()) r.vk = detail::vkWinCreate(c, surfaceOf(r), opts, error);
+}
+
+void NativePlatform::Impl::startVkAsync(Rec& r) {
+    SurfaceSource s = surfaceOf(r);
+#if !defined(_WIN32)
+    // the worker talks to the X server through its own connection; the swapchain keeps using it afterwards
+    r.vkDpy = x.OpenDisplay(nullptr);
+    if (!r.vkDpy) {
+        createVkSync(r);
+        return;
+    }
+    s.display = r.vkDpy;
+#endif
+    const Size sz = r.win->size();
+    const unsigned w = unsigned(std::max(1.f, std::round(sz.w))), h = unsigned(std::max(1.f, std::round(sz.h)));
+    const NativeOptions o = opts;
+    vkInFlight = true;
+    r.vkPending = true;
+    Rec* rec = &r;
+    r.worker = std::thread([rec, s, o, w, h] {
+        std::string err;
+        detail::VkCtx* c = detail::vkCtxCreate(s.kind, err);
+        detail::VkWin* vw = c ? detail::vkWinCreate(c, s, o, err) : nullptr;
+        if (vw) {
+            std::string prepErr; // a failed early swapchain is retried by the first present
+            detail::vkWinPrepare(vw, w, h, prepErr);
+        }
+        rec->vkCtxNew = c;
+        rec->vkNew = vw;
+        rec->vkErr = std::move(err);
+        rec->vkDone.store(true, std::memory_order_release);
+    });
+}
+
+void NativePlatform::Impl::waitVk(Rec& r) {
+    if (!r.worker.joinable()) return;
+#if defined(_WIN32)
+    // swapchain creation may send messages to the window (owned by this thread): keep serving them while waiting
+    while (!r.vkDone.load(std::memory_order_acquire)) {
+        MSG msg;
+        PeekMessageW(&msg, nullptr, 0, 0, PM_NOREMOVE | PM_QS_SENDMESSAGE);
+        MsgWaitForMultipleObjects(0, nullptr, FALSE, 1, QS_SENDMESSAGE);
+    }
+#endif
+    r.worker.join();
+}
+
+void NativePlatform::Impl::takeOverVk(Rec& r) {
+    waitVk(r);
+    r.vkPending = false;
+    vkInFlight = false;
+    vkTried = true;
+    vk = r.vkCtxNew;
+    r.vkCtxNew = nullptr;
+    if (r.vkNew) {
+        r.vk = r.vkNew;
+        r.vkNew = nullptr;
+        r.kind = PresenterKind::Vulkan;
+    } else {
+        error = r.vkErr; // no Vulkan here: the window keeps the software presenter
+    }
+    if (r.win) r.win->requestRedraw(); // the next present (whole window) goes through the new presenter
+}
+
+void NativePlatform::Impl::pollVk() {
+    for (Rec* r : recs)
+        if (r->vkPending && r->vkDone.load(std::memory_order_acquire)) takeOverVk(*r);
+    if (vkInFlight) return;
+    for (Rec* r : recs)
+        if (r->vkWanted) {
+            r->vkWanted = false;
+            createVkSync(*r);
+            if (r->vk) {
+                r->kind = PresenterKind::Vulkan;
+                r->win->requestRedraw();
+            }
+        }
+}
+
+bool NativePlatform::presenterPending(const AppWindow& w) const {
+    const Impl::Rec* r = m->find(w);
+    return r && (r->vkPending || r->vkWanted);
+}
+PresenterKind NativePlatform::waitForPresenter(const AppWindow& w) {
+    Impl::Rec* r = nullptr;
+    for (Impl::Rec* x : m->recs)
+        if (x->win == &w) r = x;
+    if (!r) return PresenterKind::Headless;
+    if (r->vkPending) m->takeOverVk(*r);
+    for (Impl::Rec* x : m->recs) // a window whose own worker is pending elsewhere
+        if (x->vkPending) m->takeOverVk(*x);
+    m->pollVk();
+    return r->kind;
+}
+
 NativePlatform::~NativePlatform() {
     // detach every shown window (restores its headless presenter) before the display / instance go away
     while (!m->recs.empty()) m->recs.back()->win->setPresenter({});
@@ -1033,24 +1229,15 @@ PresenterKind NativePlatform::show(AppWindow& w) {
         delete r;
         return PresenterKind::Headless;
     }
-    if (detail::VkCtx* c = m->vkContext()) {
-        SurfaceSource s;
-#if defined(_WIN32)
-        s.kind = SurfaceSource::Win32;
-        s.hinstance = m->hinst;
-        s.hwnd = reinterpret_cast<void*>(r->handle);
-#else
-        s.kind = SurfaceSource::Xlib;
-        s.display = m->dpy;
-        s.xwindow = static_cast<unsigned long>(r->handle);
-#endif
-        r->vk = detail::vkWinCreate(c, s, m->opts, m->error);
+    const bool adopt = m->opts.adoptDevice.instance && m->opts.adoptDevice.device;
+    if (m->vkInFlight) {
+        r->vkWanted = true; // another window's worker is creating the device: take Vulkan when it is done
+    } else if (m->opts.vulkan && m->opts.asyncVulkan && !adopt && !m->vkTried && FUSE_APP_ASYNC_VK) {
+        m->startVkAsync(*r); // software frames now, Vulkan when the worker is done
+    } else {
+        m->createVkSync(*r);
     }
-#if defined(_WIN32)
     r->kind = r->vk ? PresenterKind::Vulkan : PresenterKind::Software;
-#else
-    r->kind = r->vk ? PresenterKind::Vulkan : PresenterKind::Headless;
-#endif
     if (m->opts.osPopups) w.ui().setOsPopups(true); // screen bounds arrive with the first present
     w.setPresenter({r, &Impl::present, &Impl::destroy});
     return r->kind;
@@ -1177,7 +1364,7 @@ bool NativePlatform::resizeWindow(const AppWindow& w, unsigned width, unsigned h
     const Impl::Rec* r = m->find(w);
     if (!r || !r->handle) return false;
     RECT rc{0, 0, LONG(width), LONG(height)};
-    AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
+    if (w.chrome().frame == WindowFrame::System) AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
     return SetWindowPos(reinterpret_cast<HWND>(r->handle), nullptr, 0, 0, rc.right - rc.left, rc.bottom - rc.top,
                         SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE) != 0;
 }
