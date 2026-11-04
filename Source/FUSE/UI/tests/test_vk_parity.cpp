@@ -8,6 +8,9 @@
 #include "vk_headless.hpp"
 
 #include <atomic>
+#include <cstdio>
+#include <filesystem>
+#include <string>
 #include <cstdlib>
 #include <new>
 
@@ -310,5 +313,45 @@ int main() {
     }
     UI_CHECK_EQ(g_allocs.load() - before, 0ull);
     gpu.destroy();
+
+    // 6. persistent pipeline cache: miss writes the file, the next init hits it, a corrupted file is rejected and
+    //    rewritten, and every variant still renders
+    {
+        using fuse::ui::render::PipelineCacheUse;
+        const std::filesystem::path cacheFile = std::filesystem::temp_directory_path() / "fuse_ui_vk_parity.vkpipelinecache";
+        std::error_code ec;
+        std::filesystem::remove(cacheFile, ec);
+        const std::string path = cacheFile.string();
+        const auto initWith = [&](UiVkRenderer& r) {
+            return r.init({.physicalDevice = (void*)vk.phys, .device = (void*)vk.device, .framesInFlight = 1,
+                           .pipelineCachePath = path.c_str()});
+        };
+        UiVkRenderer a;
+        UI_CHECK(initWith(a) && a.pipelineCacheUse() == PipelineCacheUse::Miss);
+        a.destroy();
+        UI_CHECK(std::filesystem::file_size(cacheFile, ec) > 32u);
+        UiVkRenderer b;
+        UI_CHECK(initWith(b) && b.pipelineCacheUse() == PipelineCacheUse::Hit);
+        packDrawList(ui.drawList(), W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()));
+        UI_CHECK(b.upload(0, data));
+        vk.run(init, out, [&](VkCommandBuffer cmd) { b.record((void*)cmd, (void*)vk.view, 0); });
+        check("cached", compare(cpu, out));
+        std::printf("pipeline cache: miss then hit (%.2f ms with the cache)\n", b.pipelineMs());
+        b.destroy();
+        if (std::FILE* f = std::fopen(path.c_str(), "r+b")) { // break the driver blob's device UUID
+            std::fseek(f, 24 + 16, SEEK_SET); // our 24-byte header, then the blob's UUID at 16
+            const int byte = std::fgetc(f);
+            std::fseek(f, 24 + 16, SEEK_SET);
+            std::fputc(0x5A ^ byte, f);
+            std::fclose(f);
+        }
+        UiVkRenderer c;
+        UI_CHECK(initWith(c) && c.pipelineCacheUse() == PipelineCacheUse::Rejected);
+        c.destroy();
+        UiVkRenderer d;
+        UI_CHECK(initWith(d) && d.pipelineCacheUse() == PipelineCacheUse::Hit);
+        d.destroy();
+        std::filesystem::remove(cacheFile, ec);
+    }
     return finish("fuse_ui_vk_parity");
 }

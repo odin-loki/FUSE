@@ -3,7 +3,13 @@
 #include <vulkan/vulkan.h>
 
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <string>
+#include <system_error>
+#include <vector>
 
 #if __has_include("ui_draw_list_spv.h")
 #include "ui_draw_list_spv.h" // generated: kUiDrawListSpv
@@ -22,6 +28,63 @@ bool UiVkRenderer::kernelAvailable() {
 
 namespace {
 u64 alignUp(u64 v, u64 a) { return (v + a - 1) / a * a; }
+
+// Pipeline cache file: our header, then the driver's VkPipelineCache blob.
+struct CacheFileHeader {
+    char magic[8] = {'F', 'U', 'S', 'E', 'U', 'I', 'P', 'C'};
+    u32 version = 1;
+    u32 blobSize = 0;
+    u64 kernelHash = 0; ///< FNV-1a of the kernel SPIR-V
+};
+
+u64 fnv1a(const void* data, std::size_t n) {
+    const auto* p = static_cast<const unsigned char*>(data);
+    u64 h = 1469598103934665603ull;
+    for (std::size_t i = 0; i < n; ++i) h = (h ^ p[i]) * 1099511628211ull;
+    return h;
+}
+
+/// The driver blob's own header (VkPipelineCacheHeaderVersionOne) must name this device.
+bool blobMatches(const std::vector<unsigned char>& blob, const VkPhysicalDeviceProperties& props) {
+    if (blob.size() < 32) return false;
+    u32 headerSize, version, vendor, device;
+    std::memcpy(&headerSize, blob.data(), 4);
+    std::memcpy(&version, blob.data() + 4, 4);
+    std::memcpy(&vendor, blob.data() + 8, 4);
+    std::memcpy(&device, blob.data() + 12, 4);
+    return headerSize >= 32 && version == VK_PIPELINE_CACHE_HEADER_VERSION_ONE && vendor == props.vendorID &&
+           device == props.deviceID && std::memcmp(blob.data() + 16, props.pipelineCacheUUID, VK_UUID_SIZE) == 0;
+}
+
+std::vector<unsigned char> readCache(const char* path, u64 kernelHash, const VkPhysicalDeviceProperties& props, bool& rejected) {
+    rejected = false;
+    std::vector<unsigned char> blob;
+    std::FILE* f = std::fopen(path, "rb");
+    if (!f) return blob;
+    CacheFileHeader h, want;
+    if (std::fread(&h, sizeof h, 1, f) == 1 && std::memcmp(h.magic, want.magic, 8) == 0 && h.version == want.version &&
+        h.kernelHash == kernelHash && h.blobSize > 0 && h.blobSize < (64u << 20)) {
+        blob.resize(h.blobSize);
+        if (std::fread(blob.data(), 1, blob.size(), f) != blob.size() || !blobMatches(blob, props)) blob.clear();
+    }
+    std::fclose(f);
+    rejected = blob.empty();
+    return blob;
+}
+
+void writeCache(const char* path, u64 kernelHash, const std::vector<unsigned char>& blob) {
+    const std::string tmp = std::string(path) + ".tmp";
+    std::FILE* f = std::fopen(tmp.c_str(), "wb");
+    if (!f) return;
+    CacheFileHeader h;
+    h.blobSize = u32(blob.size());
+    h.kernelHash = kernelHash;
+    const bool ok = std::fwrite(&h, sizeof h, 1, f) == 1 && std::fwrite(blob.data(), 1, blob.size(), f) == blob.size();
+    std::fclose(f);
+    std::error_code ec;
+    if (ok) std::filesystem::rename(tmp, path, ec);
+    if (!ok || ec) std::filesystem::remove(tmp, ec);
+}
 } // namespace
 
 bool UiVkRenderer::init(const UiVkDesc& desc) {
@@ -82,9 +145,37 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
     ci.stage.module = module;
     ci.stage.pName = "main";
     ci.layout = layout;
+    // persistent pipeline cache: skips the driver compile when its own shader cache is cold
+    const u64 kernelHash = fnv1a(kUiDrawListSpv, sizeof(kUiDrawListSpv));
+    VkPipelineCache cache = VK_NULL_HANDLE;
+    m_cacheUse = PipelineCacheUse::None;
+    if (desc.pipelineCachePath && *desc.pipelineCachePath) {
+        bool rejected = false;
+        const std::vector<unsigned char> blob = readCache(desc.pipelineCachePath, kernelHash, props, rejected);
+        VkPipelineCacheCreateInfo pci{};
+        pci.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+        pci.initialDataSize = blob.size();
+        pci.pInitialData = blob.empty() ? nullptr : blob.data();
+        if (vkCreatePipelineCache(device, &pci, nullptr, &cache) == VK_SUCCESS)
+            m_cacheUse = !blob.empty() ? PipelineCacheUse::Hit : rejected ? PipelineCacheUse::Rejected : PipelineCacheUse::Miss;
+    }
     VkPipeline pipeline{};
-    const VkResult pr = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &ci, nullptr, &pipeline);
+    const auto t0 = std::chrono::steady_clock::now();
+    const VkResult pr = vkCreateComputePipelines(device, cache, 1, &ci, nullptr, &pipeline);
+    m_pipelineMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     vkDestroyShaderModule(device, module, nullptr);
+    if (cache) {
+        if (pr == VK_SUCCESS && m_cacheUse != PipelineCacheUse::Hit) {
+            std::size_t size = 0;
+            vkGetPipelineCacheData(device, cache, &size, nullptr);
+            std::vector<unsigned char> data(size);
+            if (size && vkGetPipelineCacheData(device, cache, &size, data.data()) == VK_SUCCESS) {
+                data.resize(size);
+                writeCache(desc.pipelineCachePath, kernelHash, data);
+            }
+        }
+        vkDestroyPipelineCache(device, cache, nullptr);
+    }
     if (pr != VK_SUCCESS) return destroy(), false;
     m_pipeline = pipeline;
 

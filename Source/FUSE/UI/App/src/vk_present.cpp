@@ -46,7 +46,13 @@ typedef unsigned long VisualID;
 
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <system_error>
 #include <cstring>
 #include <type_traits>
 #include <utility>
@@ -145,7 +151,22 @@ VkImageMemoryBarrier imageBarrier(VkImage img, VkAccessFlags src, VkAccessFlags 
 }
 } // namespace
 
+namespace {
+/// FUSE_APP_VK_TRACE=1: Vulkan presenter start-up phases on stderr (ms per phase).
+struct PhaseTimer {
+    const char* what;
+    std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+    ~PhaseTimer() {
+        static const bool on = std::getenv("FUSE_APP_VK_TRACE") != nullptr;
+        if (on)
+            std::fprintf(stderr, "fuse_app vk: %-22s %8.1f ms\n", what,
+                         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+    }
+};
+} // namespace
+
 VkCtx* vkCtxCreate(SurfaceSource::Kind kind, std::string& err) {
+    PhaseTimer timer{"instance"};
     auto* c = new VkCtx{};
     c->kind = kind;
     const char* exts[] = {VK_KHR_SURFACE_EXTENSION_NAME,
@@ -506,6 +527,7 @@ VkWin* vkWinCreate(VkCtx* c, const SurfaceSource& s, const NativeOptions& o, std
         return nullptr;
     }
     if (!c->device) {
+        PhaseTimer timer{"device"};
         if (!pickDevice(*c, w->surface, err)) {
             K.DestroySurfaceKHR(c->instance, w->surface, nullptr);
             delete w;
@@ -528,7 +550,21 @@ VkWin* vkWinCreate(VkCtx* c, const SurfaceSource& s, const NativeOptions& o, std
         gd.physicalDevice = c->phys;
         gd.device = c->device;
         gd.framesInFlight = kFrames;
+        std::string cachePath;
+        const std::string dir = o.pipelineCacheDir ? std::string(o.pipelineCacheDir) : defaultCacheDir();
+        if (!dir.empty()) {
+            std::error_code ec;
+            std::filesystem::create_directories(dir, ec);
+            cachePath = dir + "/ui_draw_list.vkpipelinecache";
+            gd.pipelineCachePath = cachePath.c_str();
+        }
+        PhaseTimer timer{"ui.draw_list pipeline"};
         w->gpuDraw = w->gpu.init(gd);
+        static const bool trace = std::getenv("FUSE_APP_VK_TRACE") != nullptr;
+        static const char* const kUse[] = {"none", "hit", "miss", "rejected"};
+        if (trace)
+            std::fprintf(stderr, "fuse_app vk: pipeline cache %s, vkCreateComputePipelines %.1f ms\n",
+                         kUse[int(w->gpu.pipelineCacheUse())], w->gpu.pipelineMs());
     }
 #endif
     if (o.drawMode == VkDrawMode::GpuDraw && !w->gpuDraw) err = "GPU draw requested but the ui.draw_list kernel is unavailable; using CPU upload";
@@ -556,6 +592,7 @@ VkWin* vkWinCreate(VkCtx* c, const SurfaceSource& s, const NativeOptions& o, std
 bool vkWinGpuDraws(const VkWin* w) { return w && w->gpuDraw; }
 
 bool vkWinPrepare(VkWin* w, unsigned width, unsigned height, std::string& err) {
+    PhaseTimer timer{"swapchain"};
     return w && w->createSwapchain(std::max(1u, width), std::max(1u, height), err);
 }
 
@@ -587,6 +624,10 @@ void vkWinDestroy(VkWin* w) {
 }
 
 bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
+    static bool firstPresent = true;
+    std::optional<PhaseTimer> timer;
+    if (firstPresent) timer.emplace("first present");
+    firstPresent = false;
     VkCtx& c = *w->ctx;
     const AppWindow::PixelSize vp = win.pixelSize(); // device pixels (logical size * DPI scale)
     const u32 vw = std::max(1u, vp.w), vh = std::max(1u, vp.h);

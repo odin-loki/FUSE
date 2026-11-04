@@ -78,7 +78,14 @@ struct NativeOptions {
     /// through Vulkan (the whole current UI frame, so nothing flickers). false: show() blocks until Vulkan is ready.
     /// Ignored with adoptDevice and once the platform has a Vulkan device (later windows start on Vulkan directly).
     bool asyncVulkan = true;
+    /// Directory of the persistent "ui.draw_list" VkPipelineCache. null: the per-user cache dir
+    /// (%LOCALAPPDATA%\FUSE\cache, $XDG_CACHE_HOME/fuse or ~/.cache/fuse); "": no cache file.
+    const char* pipelineCacheDir = nullptr;
 };
+
+/// Per-user cache directory for fuse_app (Vulkan pipeline cache): %LOCALAPPDATA%\FUSE\cache on Windows,
+/// $XDG_CACHE_HOME/fuse or ~/.cache/fuse elsewhere.
+std::string defaultCacheDir();
 
 /// Per-window OS message hook (Win32: runs first in the window procedure; return true to consume the message with
 /// `result` as its LRESULT). Accessibility adapters answer WM_GETOBJECT through it. Not called on X11.

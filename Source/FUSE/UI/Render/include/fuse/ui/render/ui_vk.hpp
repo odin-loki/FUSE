@@ -25,7 +25,13 @@ struct UiVkDesc {
     /// Backdrop blur scratch (device-local, 2 x 16 bytes per pixel): the largest blur source region (the backdrop
     /// rect plus 3 x its box radius, clamped to the target). A larger backdrop is drawn unblurred (tint only).
     u32 maxBackdropPixels = 1u << 20;
+    /// Persistent VkPipelineCache file for the kernel (null: no cache). Loaded only when its header matches this
+    /// device (vendor, device id, pipelineCacheUUID) and this kernel (SPIR-V hash); rewritten after a miss.
+    const char* pipelineCachePath = nullptr;
 };
+
+/// What init() did with the pipeline cache.
+enum class PipelineCacheUse : u8 { None, Hit, Miss, Rejected };
 
 class UiVkRenderer {
 public:
@@ -62,7 +68,13 @@ public:
     /// True when the kernel SPIR-V was compiled into this build.
     static bool kernelAvailable();
 
+    /// Pipeline cache outcome of the last init() and the vkCreateComputePipelines time (ms).
+    PipelineCacheUse pipelineCacheUse() const { return m_cacheUse; }
+    double pipelineMs() const { return m_pipelineMs; }
+
 private:
+    PipelineCacheUse m_cacheUse = PipelineCacheUse::None;
+    double m_pipelineMs = 0.0;
     struct Slot {
         void* buffer = nullptr; ///< VkBuffer
         void* memory = nullptr; ///< VkDeviceMemory
