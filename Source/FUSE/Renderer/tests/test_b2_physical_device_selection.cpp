@@ -31,6 +31,7 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+#include <fuse/renderer/vk/test_layer_env.hpp>
 #endif
 
 #if defined(__linux__)
@@ -176,7 +177,7 @@ int registerIcdTwice(const std::string& dir) {
             std::fprintf(stderr, "FAIL: cannot write %s\n", path.c_str());
             return 1;
         }
-        list += (i == 0 ? "" : ":") + path;
+        fuse::renderer::test::appendLoaderList(list, path);
     }
     setenv("VK_ICD_FILENAMES", list.c_str(), 1);
     unsetenv("VK_DRIVER_FILES");
@@ -431,24 +432,19 @@ int run(const char* layerDir) {
     if (const int status = registerIcdTwice(layerDir); status != 0) {
         return status;
     }
-    std::string path = layerDir;
-    const char* existing = std::getenv("VK_ADD_LAYER_PATH");
-    if (existing != nullptr && existing[0] != '\0') {
-        path += ":";
-        path += existing;
-    }
+    const std::string path = fuse::renderer::test::prependEnvList("VK_ADD_LAYER_PATH", layerDir);
     setenv("VK_ADD_LAYER_PATH", path.c_str(), 1);
     // Mesa's implicit VK_LAYER_MESA_device_select sits above the spoof layer and re-sorts the
     // devices it sees (CPU devices last, its own "default" first), which would undo the spec's
     // enumeration order: the gate is about the RHI's policy, so switch it off.
     setenv("NODEVICE_SELECT", "1", 1);
     const bool validation = layerAvailable(kValidationLayer);
-    std::string layers = validation ? std::string(kValidationLayer) + ":" : std::string();
-    layers += kSpoofLayer; // application -> driver order: validation sees the spoofed devices
+    std::string layers = validation ? std::string(kValidationLayer) : std::string();
+    // Application -> driver order: validation sees the spoofed devices.
+    fuse::renderer::test::appendLoaderList(layers, kSpoofLayer);
     setenv("VK_INSTANCE_LAYERS", layers.c_str(), 1);
     if (validation) {
-        setenv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", 1);
-        setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", 1);
+        fuse::renderer::test::enableSyncValidationEnv();
         setenv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK", 1);
     } else {
         std::printf("note: %s not installed — running without validation\n", kValidationLayer);

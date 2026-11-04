@@ -395,7 +395,12 @@ int modeSpirvVal() {
         modules.push_back(runtime.spirvPath);
     }
     for (const std::string& path : modules) {
-        const std::string command = std::string("\"") + FUSE_RP_SPIRV_VAL + "\" --target-env vulkan1.3 \"" + path + "\"";
+        std::string command = std::string("\"") + FUSE_RP_SPIRV_VAL + "\" --target-env vulkan1.3 \"" + path + "\"";
+#if defined(_WIN32)
+        // std::system runs `cmd /c <command>`; with more than two quotes cmd strips the first and
+        // the last one, mangling the quoted executable path. One outer pair keeps it intact.
+        command = "\"" + command + "\"";
+#endif
         const int rc = std::system(command.c_str());
         std::printf("spirv-val %s: %s\n", path.c_str(), rc == 0 ? "ok" : "FAILED");
         expect(rc == 0, "spirv-val accepts the Slang SPIR-V");

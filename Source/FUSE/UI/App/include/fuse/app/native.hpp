@@ -12,6 +12,15 @@
 //   return app.run();
 //
 // Declare NativePlatform after the Application (it is destroyed first and detaches its windows and event source).
+//
+// Android (NativeActivity through android_native_app_glue, fuse_app_add_android_app in CMake): the app keeps its
+// plain main(); the glue runs it on the activity's app thread with the APK assets extracted to the working directory.
+// show() waits for the activity's window and returns Vulkan (ANativeWindow -> VkSurfaceKHR, same swapchain presenter)
+// or Software (ANativeWindow_lock of the CPU raster). The window is the whole activity; the UI scale follows the
+// screen density. Lifecycle: the swapchain and surface are released when the window goes away (home, lock screen)
+// and rebuilt when it returns, the UI state stays; fuse::platform lifecycle / surface-loss callbacks fire when
+// fuse_core is linked. Touch drives the pointer (a vertical drag over a scroll container pans it); popups are
+// in-window overlays; the soft keyboard follows UiContext::wantsTextInput and delivers committed text.
 #pragma once
 
 #include "fuse/app/app.hpp"
@@ -78,9 +87,34 @@ struct NativeOptions {
     /// through Vulkan (the whole current UI frame, so nothing flickers). false: show() blocks until Vulkan is ready.
     /// Ignored with adoptDevice and once the platform has a Vulkan device (later windows start on Vulkan directly).
     bool asyncVulkan = true;
+    /// Device pixels per UI unit for shown windows; 0 = the OS value (Android: screen density / 160, desktop: 1).
+    fuse::ui::f32 scale = 0.f;
+    /// Show / hide the soft keyboard as text fields gain / lose focus (mobile).
+    bool autoSoftKeyboard = true;
     /// Directory of the persistent "ui.draw_list" VkPipelineCache. null: the per-user cache dir
     /// (%LOCALAPPDATA%\FUSE\cache, $XDG_CACHE_HOME/fuse or ~/.cache/fuse); "": no cache file.
     const char* pipelineCacheDir = nullptr;
+};
+
+/// Insets of the area the OS draws over (status / navigation bars, display cutouts), in UI units. Zero on desktop.
+struct Insets {
+    fuse::ui::f32 left = 0.f, top = 0.f, right = 0.f, bottom = 0.f;
+};
+/// Optional callbacks (function table, like Presenter / EventSource). Called on the UI thread from the event pump.
+struct NativeHooks {
+    void* user = nullptr;
+    void (*insetsChanged)(void* user, AppWindow& w, const Insets& in) = nullptr;
+    void (*visibility)(void* user, bool foreground) = nullptr;
+    void (*lowMemory)(void* user) = nullptr;
+};
+/// Mobile lifecycle counters (tests, diagnostics).
+struct LifecycleStats {
+    unsigned surfacesCreated = 0; ///< OS windows / surfaces bound to a presenter
+    unsigned surfacesLost = 0;    ///< released (window terminated)
+    unsigned pauses = 0, resumes = 0, configChanges = 0, lowMemory = 0;
+    bool foreground = true;
+    bool hasSurface = false;
+    bool softKeyboard = false;    ///< the soft keyboard was last requested shown
 };
 
 /// Per-user cache directory for fuse_app (Vulkan pipeline cache): %LOCALAPPDATA%\FUSE\cache on Windows,
@@ -134,6 +168,15 @@ public:
     /// Read back from the OS: the icon sizes (widths) the window carries now (X11 every _NET_WM_ICON entry; Win32 the
     /// big + small WM_GETICON icons). Empty when unset / not shown.
     std::vector<int> iconSizes(const AppWindow& w) const;
+
+    /// Mobile: safe-area insets of the window (UI units); zero on desktop.
+    Insets safeAreaInsets(const AppWindow& w) const;
+    /// Mobile: shows / hides the soft keyboard (NativeOptions::autoSoftKeyboard does it from focus). No-op on desktop.
+    void setSoftKeyboard(bool show);
+    void setHooks(const NativeHooks& h);
+    LifecycleStats lifecycle() const;
+    /// Android: the android_app* of the running activity (JNI, assets); null elsewhere.
+    static void* androidApp();
 
     /// OS-window popups (NativeOptions::osPopups): how many popup windows `w` shows now, each one's native handle,
     /// its screen rect (physical px) and a read-back of its pixels.

@@ -22,7 +22,7 @@ immediate-mode front-end. See the plan's status table for what is still open.
 | `Source/FUSE/UI/Doc` | `fuse_ui_doc` | `.fuseui` JSON documents, binding model, expression bytecode |
 | `Source/FUSE/UI/Script` | `fuse_ui_script` | Lua `ui` table (vendored Lua 5.2) |
 | `Source/FUSE/UI/Render` | `fuse_ui_render`, `fuse_ui_vk` | GPU draw data packing, `ui.draw_list` compute kernel, `UiLayerGpu` render-graph pass and `UiFrameSource` (in tree with the Vulkan RHI) |
-| `Source/FUSE/UI/App` | `fuse_app`, `fuse_app_native`, `fuse_app_a11y` | `Application` / `AppWindow` on-demand loop, settings, command line, single instance; native X11 / Win32 windows and the Vulkan swapchain presenter; custom window chrome; tray icon / notifications; `WindowAccessibility` (screen readers on a native window); samples `hello_app`, `notes_app`, `game_menu` |
+| `Source/FUSE/UI/App` | `fuse_app`, `fuse_app_native`, `fuse_app_a11y` | `Application` / `AppWindow` on-demand loop, settings, command line, single instance; native X11 / Win32 / Android (NativeActivity) windows and the Vulkan swapchain presenter; custom window chrome; tray icon / notifications; `WindowAccessibility` (screen readers on a native window); samples `hello_app`, `notes_app`, `game_menu`, `fuse_ui_android_demo`; `App/android/` APK packer and adb gate driver |
 | `Source/FUSE/UI/Game` | `fuse_ui_game` | HUD widgets, world markers, `UiSurface` world panels, gamepad navigation, input arbitration, prompts, time domains, locale table, subtitles, dialogue; samples `hud_demo`, `world_panel_demo` |
 | `Source/FUSE/UI/Sql` | `fuse_ui_sql` | `SqliteModel`: an `ItemModel` over a SQLite query (option `FUSE_BUILD_UI_SQL`) |
 | `Source/FUSE/UI/A11y` | `fuse_ui_a11y` | Accessibility bridge (snapshot diff, action queue); AccessKit adapters (`UnixAdapter` AT-SPI, `WindowsAdapter` UI Automation) when AccessKit is linked |
@@ -61,6 +61,46 @@ its own raster golden (`tests/golden/sample_full.png`). GPU parity runs on any V
 `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json` (lavapipe). The kernel is bit-exact with the CPU raster on
 hardware too: it rounds division / sqrt to the IEEE result (Vulkan allows 2.5 ulp), including backdrop blur.
 FULL builds natively with MSVC as well.
+
+GPU backends (`UiVkDesc`): the compute tile kernel (default, bit-exact) or SDF quads — `useSdfQuads(desc)` selects
+an instanced quad pipeline (vertex + fragment, the same coverage arithmetic, fixed-function premultiplied-over
+blending) drawing each draw-list segment in a render pass on the same GENERAL-layout image (it then needs
+`VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT`); backdrops and effects still run as compute passes between the draws. It is
+within ±2 / 255 of the reference (hardware blending rounds translucent overs differently) and on an RTX 3090
+1.3–3× faster (`fuse_ui_vk_sdf_quads`, `fuse_ui_baselines`). Compute stays the default: exact on every device (the
+parity / golden gates rely on it), no attachment usage, and every frame is already far inside the §6 budgets.
+
+### Custom shader effects
+
+An effect post-processes a node's rect (or any draw-list rect) after everything under it is drawn: a GLSL compute
+snippet plus a C++ twin with the same arithmetic (`fuse/ui/effects.hpp`). Built-ins: `desaturate(amount, r, g, b)`,
+`ripple(amplitude, wavelength, speed)` (animated), `grain(amount, fps)` (animated).
+
+```css
+.card.disabled { effect: desaturate(0.8); }
+.water { effect: ripple(6px, 24, 40); }        /* missing parameters take the registered defaults */
+```
+
+```cpp
+fuse::ui::EffectRegistry fx;
+fx.addBuiltins();
+fx.add({.name = "vignette", .cpu = &vignetteCpu, .spirv = kMyVignette, .defaults = {2.f}, .exact = false});
+ui.setEffects(&fx);           // style hookup; animated effects repaint every update (ui.elapsed() is their time)
+renderer.setEffects(fx);      // fuse_ui_vk: one compute pipeline per effect
+cpuRaster.setEffects(&fx);    // the reference path
+dl.effect(rect, id, params, time, margin, radii, imageIndex);   // draw lists directly
+```
+
+The snippet defines `vec4 fx_main(ivec2 p)` (premultiplied RGBA, 0..255) and reads `fx_src(p)` (the target before
+the effect, edge-clamped to the source region), `fx_param(i)`, `fx_time`, `fx_rect`, `fx_imageTexel` /
+`fx_imageSize` (an optional image or external texture), with CPU-identical helpers `divRn`, `sqrtRn`, `fx_sin`,
+`fx_cos`, `fx_hash`, `fx_hash01`; `fuse_ui_add_effect(<target> NAME kMyVignette SOURCE vignette.glsl)`
+(`Render/cmake/fuse_ui_effects.cmake`) splices it into `Render/src/shaders/ui_effect.comp.in` and embeds the SPIR-V.
+Effects made of add / mul / floor / `divRn` / `sqrtRn` and the `fx_*` helpers are bit-exact on the GPU; ones that
+call native `exp` / `pow` / `sin` register `exact = false` (compared within ±2). An Effect command ends a GPU segment
+like a backdrop: the source region (rect + margin) is copied to the backdrop scratch and the effect pipeline runs over
+the rect, masked by its rounded corners and the clip. `DrawList::redrawRegion` grows damage over an effect's source
+region.
 
 Text (`fuse/text/text.hpp`):
 
@@ -150,7 +190,7 @@ as a global `ui` table.
 
 ### Icons
 
-Monochrome vector icons are cooked, not parsed at run time. `fuse_ui_icon_cook --out=x.fuseicons [--sizes=16,24,...]
+Vector icons are cooked, not parsed at run time. `fuse_ui_icon_cook --out=x.fuseicons [--sizes=16,24,...]
 <svg files or dirs>` rasterises an SVG subset (paths incl. arcs, rect / circle / ellipse / line / polyline / polygon,
 `g` transforms, fill / stroke / stroke-width / opacity, fill-rule, currentColor, viewBox) into a coverage atlas at
 16 / 20 / 24 / 32 / 48 px by default plus a name index; output is deterministic. The build cooks the starter set
@@ -170,7 +210,14 @@ In style sheets and markup: `icon: save; icon-size: 20px;` (`none` clears; the s
 `.fuseui` key `"icon": "save"`. Icons are tinted with the node's `color` (SVG currentColor), so they follow theme,
 `:hover` and `:disabled` colours. They are copied into the context's glyph atlas on first use and drawn as `Glyph`
 commands, so the CPU rasteriser and the GPU kernel draw them with no new ops; sizes that were not cooked are
-area-resampled from the nearest larger cooked size. Multi-colour icons and MSDF are not supported.
+area-resampled from the nearest larger cooked size. MSDF is not supported.
+
+Multi-colour icons: an SVG with colours other than currentColor / black is cooked as a layered palette (COLR-style):
+its paints, in paint order, grouped into layers of consecutive equal colour; currentColor layers stay tintable, the
+others keep their colour (black included; gradients become their mean stop colour). Each layer is a coverage bitmap in
+the same atlas (pack format version 2; version 1 packs still load), drawn as one tinted `Glyph` per layer, so the GPU
+backends need nothing new. A fixed layer's alpha follows the tint's alpha (fades); edges shared by two layers blend
+like independently anti-aliased shapes. `fuse_ui_icon_cook --list` prints each icon's layer colours.
 
 ## Application shell (UI5)
 
@@ -242,6 +289,55 @@ Desktop platform services (UI1, `fuse/app/native.hpp`, `fuse/app/platform.hpp`):
 - `openFileDialog` / `saveFileDialog` / `pickFolderDialog` (IFileDialog; zenity on X11), `messageBox`, `openUrl`
   (http, https, mailto, file only), `revealInFileManager`.
 
+### Android
+
+The same `main()` runs as a NativeActivity (NDK `android_native_app_glue`, no Java code and no Gradle).
+`fuse_app_add_android_app(<target> SOURCES ... PACKAGE org.x.y LABEL "Name" [ASSETS prefix=dir])`
+(`App/cmake/FuseAndroidApp.cmake`) builds `lib<target>.so` with `main` renamed to `fuse_app_main`, strips it and packs
+`<build>/<target>.apk` with `App/android/fuse_apk.py`. The packer writes the binary manifest itself, stores the library
+uncompressed and 16 KB aligned (`extractNativeLibs=false`), adds `vendor/fonts` and the app's assets, and signs the APK
+with APK Signature Scheme v2 using a debug key it creates in the build dir (`fuse_debug_key.pem`, not committed). It
+needs Python 3 with `cryptography` and no SDK build-tools. At start, `android_main` copies the assets to the app's files
+dir, makes that the working directory (relative paths such as `ui/hello.fuseui` work), redirects stdout / stderr to
+logcat (tag `fuse_app`) and passes the intent extra `args` as extra argv words.
+
+```sh
+# NDK r26+ (tested with 30.0.16248370); ABI arm64-v8a or x86_64 (emulator)
+cmake -S Source/FUSE/UI -B build-android -G Ninja -DCMAKE_BUILD_TYPE=Release -DFUSE_BUILD_UI_TESTS=OFF   -DCMAKE_TOOLCHAIN_FILE=$ANDROID_HOME/ndk/<ver>/build/cmake/android.toolchain.cmake   -DANDROID_ABI=x86_64 -DANDROID_PLATFORM=android-26
+ninja -C build-android                                   # libraries + hello_app.apk + fuse_ui_android_demo.apk
+adb install -r -t build-android/fuse_ui_android_demo.apk
+adb shell am start -n org.fuse.uidemo/android.app.NativeActivity [--es args "--draw=cpu"]
+adb logcat -s fuse_app
+ANDROID_SERIAL=emulator-5554 ctest --test-dir build-android -L android   # the four gates below
+```
+
+The gates run on the host (`App/android/android_gate.py`: install, drive with `am` / `input` / `settings`, read the
+state file the demo keeps with `run-as`) and skip with 77 when adb or a device with the APK's ABI is missing.
+Emulator: an x86_64 Google APIs image (API 36 was used) with `emulator -avd <name> -no-window -gpu host` (or
+`-gpu swiftshader_indirect`) has Vulkan (`adb shell pm has-feature android.hardware.vulkan.version`).
+
+Behaviour on Android:
+- `NativePlatform::show` waits for the activity window and returns `Vulkan` (`VK_KHR_android_surface`, the same
+  swapchain presenter, GPU draw or CPU upload) or `Software` (`ANativeWindow_lock` of the CPU raster;
+  `NativeOptions::vulkan = false`). Vulkan starts synchronously (`asyncVulkan` is ignored: a window that
+  `ANativeWindow_lock` connected as a CPU producer cannot be handed to a swapchain). The window is the whole activity,
+  sized by the OS; `AppWindow::setScale` gets the screen density / 160 unless `NativeOptions::scale` is set.
+  `displays()` reports the screen with the safe area as the work area; `querySystemTheme()` follows night mode.
+- Lifecycle: `APP_CMD_TERM_WINDOW` releases the swapchain and surface (the device stays), `APP_CMD_INIT_WINDOW`
+  rebuilds them and repaints; the UI tree is never touched. Pause / resume, config changes (rotation, density;
+  the manifest keeps the activity alive) and low memory are counted (`NativePlatform::lifecycle()`) and reported
+  through `NativeHooks`; with `fuse_core` (or `Core/src/platform/platform_hardening.cpp` standalone)
+  `fuse::platform::notifyAppVisibility` and `notifySurfaceLost/Restored` fire. Back sends Escape (closes a popup or
+  dialog) and finishes the activity when nothing used it. Process death loses the UI state (no saved-state hook yet).
+- Touch: every `AMotionEvent` contact goes to `UiContext::touchDown/Move/Up` (the same path as Win32 `WM_POINTER`):
+  the first finger is the pointer (tap = click, no hover after lift), all are in `touches()` / `pinchScale()`; a
+  vertical drag past `UiContext::kTouchSlop` over a scroll container pans it (the press is released without a click).
+  Mouse wheel and hover work too. Popups are in-window overlays.
+- Safe area: `NativePlatform::safeAreaInsets` (system bars + display cutout through `WindowInsets`, UI units) and
+  `NativeHooks::insetsChanged`; pass them to `GameUi::setSafeArea` or pad the root (the demo does).
+- Text: the soft keyboard is shown / hidden as text fields gain / lose focus (`InputMethodManager` on the decor view;
+  `NativeOptions::autoSoftKeyboard`, `setSoftKeyboard`). Key events become `keyDown` / `keyUp` plus committed text
+  through `KeyCharacterMap`; there is no IME composition (pre-edit) with NativeActivity.
 ### App projects (`project.json` schema 2)
 
 A project declares that it is an application with `"schemaVersion": 2` and `"kind": "app"` (or `"hybrid"`: an app
@@ -340,7 +436,8 @@ are deferred). Inline (`setCss`) beats everything; later sheets win ties. Layout
 `grid-template-columns`, `grid-row/column(-span)`, `left/top/right/bottom/center-x/center-y`, `overflow`
 (visible/clip/scroll), `display`, `pointer-events`, `cursor`. Paint: `background` (colour or `linear-gradient`),
 `background-end` (gradient end; widgets use it as the accent), `border`, `border-width/color`, `border-*-radius`,
-`box-shadow`, `shadow-x/y/blur/color`, `opacity`, `color`, `font-size`, `text-align`, `icon`, `icon-size`. Selectors also accept
+`box-shadow`, `shadow-x/y/blur/color`, `backdrop-blur`, `effect`, `opacity`, `color`, `font-size`, `text-align`, `icon`,
+`icon-size`. Selectors also accept
 `:active`, `:selected`.
 
 ## Immediate mode
@@ -363,7 +460,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_single_thread_parity` | direct vs posted-from-threads mutations give identical layout, draw list and pixels |
 | `fuse_ui_a11y_tree_dump` | roles, names, states, values |
 | `fuse_ui_icon_cook` | icon cooker determinism (any input order; tool = library), index round trip against the rasterised SVGs, SVG subset, corrupt-pack fuzz, resampled sizes |
-| `fuse_ui_icon_render` | icons at 16 / 24 / 32 / 40 / 48 px in two tints and disabled against `tests/golden/icons.png`; hover tint, button / menu / `.fuseui` / cooked-style icons |
+| `fuse_ui_icon_render` | icons at 16 / 24 / 32 / 40 / 48 px in two tints and disabled against `tests/golden/icons.png`; hover tint, button / menu / `.fuseui` / cooked-style icons; multi-colour icons (layers, tint vs fixed colours) against `tests/golden/icons_color.png` |
 | `fuse_text_grapheme_conformance` | `GraphemeBreakTest.txt` 15.1 against fuse_text's UAX #29: 1187/1187 (both profiles) |
 | `fuse_text_linebreak_conformance` | `LineBreakTest.txt` 15.0 (trimmed) against `lineBreaks(Strict)`: 2389/2406 + 17 listed libunibreak exceptions (FULL); MINIMAL runs its letters / space / newline subset |
 | `fuse_text_bidi_conformance` | `BidiCharacterTest.txt` 15.1 (trimmed): paragraph level, levels after L1, visual order: 4726/4726 (FULL; 77 in MINIMAL) |
@@ -378,13 +475,20 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_a11y_windows` | UIA client (IUIAutomation) on a real Win32 window: control types and names, screen bounds, Invoke / Toggle / Value / RangeValue / ExpandCollapse, SetFocus + focus-changed event (Windows; skips 77 without AccessKit) |
 | `fuse_ui_vk_damage` | incremental GPU redraw of `DrawList::redrawRegion(damage)` (grown around backdrops): only touched tiles dispatched, result equals a full render |
 | `fuse_ui_vk_validation_clean` | `fuse_ui_vk_parity` + `fuse_ui_vk_damage` under `VK_LAYER_KHRONOS_validation` with sync validation: no warnings / errors (77 without the layer) |
+| `fuse_ui_vk_budget` | GPU time (timestamp queries) of 1080p frames: full, backdrop blur, incremental (software devices report only) |
+| `fuse_ui_vk_custom_effect` | built-in effects (desaturate, ripple, grain: plain, rounded, in a rounded clip, at the edge, scissored) bit-exact against their CPU twins; a user effect via `fuse_ui_add_effect` (image + native exp / sin) within ±2; `effect:` style hookup and animated repaint; validation clean; no steady-state allocation |
+| `fuse_ui_vk_sdf_quads` | SDF-quad backend vs the CPU reference (sample, primitives, blur + effects between draws, scissored redraw): max error ≤ 2, mean ≤ 0.1 / 255; validation clean; reports compute vs SDF timings at 1080p and 4K |
 | `fuse_ui_vk_budget` | GPU time (timestamp queries) of 1080p frames: full, backdrop blur, incremental, a ~270-node HUD ≤ 0.5 ms (software devices report only) |
 | `fuse_app_native_startup` | launches `hello_app` 5× per configuration: default (async Vulkan) and software-only first frame median ≤ 150 ms; every default run switches to Vulkan (median ≤ 2 s) with the switched frame equal to the CPU raster; synchronous Vulkan init ≤ 2 s (skips 77 without a display) |
-| `fuse_app_binary_size` | `hello_app` file size ≤ measured baseline + 10 % (MSVC x64 Release, MINIMAL text: 809,472 B → 890,400 B; other toolchains report and skip until a baseline is set with `-DFUSE_APP_BINARY_BUDGET`) |
+| `fuse_app_binary_size` | `hello_app` file size ≤ measured baseline + 10 % (MSVC x64 Release, MINIMAL text: 809,472 B → 890,400 B; other toolchains report and skip until a baseline is set with `-DFUSE_APP_BINARY_BUDGET`). Effect and SDF-quad SPIR-V live in their own translation units, so apps that do not use them do not carry it |
 | `fuse_app_window_chrome` | custom-chrome window: `chromeHitTest` probes, then `WM_NCHITTEST` on a real Win32 window, frame removed, max / restore / min / close through non-client clicks (77 off Win32) |
 | `fuse_app_tray` | tray icon added and found (`Shell_NotifyIconGetRect` / `NIM_MODIFY`), simulated click / double-click callbacks, a real `TrackPopupMenu` context menu picked by posted keys, a notification, removal (77 without a tray) |
 | `fuse_ui_platform_services` | headless: DPI scale (layout fixed, device-pixel draw list, re-rasterised glyphs), `cursor:` style, reduced motion, touch / pinch / pen through `platform_bridge`, dark → light theme slot |
 | `fuse_platform_dpi_change`, `fuse_platform_displays`, `fuse_platform_cursors`, `fuse_platform_system_theme`, `fuse_platform_dialogs`, `fuse_platform_touch_synthetic`, `fuse_platform_multiwindow` | real windows: `WM_DPICHANGED` re-scale and back, monitors, OS cursor per hovered widget, theme change via `WM_SETTINGCHANGE` (faked query, user settings untouched), dialogs dismissed by a helper thread, injected touch tap + pinch, two swapchain windows with input routing / close / per-window DPI |
+| `fuse_platform_present_android` | Android build tree, adb: the demo presents on Vulkan (GPU draw and CPU upload) and in software; each surface's first frame read back in-process matches the CPU raster; density scale applied |
+| `fuse_app_lifecycle_android` | HOME releases the surface, `am start` rebuilds it with a correct first frame and the same UI state; rotation resizes to landscape and back |
+| `fuse_platform_touch_android` | `input tap` clicks the button; `input swipe` over the list scrolls it both ways without clicking |
+| `fuse_platform_ime_android` | tapping the line edit focuses it and shows the soft keyboard; `input text` and backspace edit it |
 | `fuse_app_idle_native` | real idle window for 3 s: zero presents, ≤ 10 loop wakeups / s (OS messages only), CPU ≤ 2 % |
 | `fuse_project_schema2`, `fuse_project_schema2_native` | project.json schema 1 load / write / migrate, schema 2 round trip, 24 rejected files, the app template, `ProjectHost` brings up only `AppPresent` and presents the `.fuseui` (headless ≤ 150 ms; `_native` on a real window vs the CPU raster) |
 | `fuse_ui_game_hud_golden` | HUD demo scene against `tests/golden/hud.png` plus trail / marker / pool state |
@@ -396,7 +500,8 @@ checks it against the overlay under one scripted event stream.
 
 Extra: `fuse_ui_text_basics`, `fuse_ui_text_full`, `fuse_ui_widget_interaction`, `fuse_ui_tier_b`, `fuse_ui_tier_b2`,
 `fuse_ui_relight_equivalence`, `fuse_ui_platform_keys_v2`, `fuse_ui_text_input`, `fuse_ui_doc_load`,
-`fuse_ui_lua_bindings`, `fuse_ui_vk_parity`, the sample runs `fuse_app_hello_sample`, `fuse_app_notes_sample`, `fuse_app_game_menu_sample`,
+`fuse_ui_lua_bindings`, `fuse_ui_vk_parity` (also multi-colour icons), `fuse_ui_baselines` (report: §6 baselines — CPU
+raster and GPU time of the sample, 1080p cards and the 1440p HUD, atlas and GPU memory), the sample runs `fuse_app_hello_sample`, `fuse_app_notes_sample`, `fuse_app_game_menu_sample`,
 `fuse_ui_game_hud_demo`, `fuse_ui_game_world_panel_demo`; in tree also `fuse_core_ui1_text_input`,
 `fuse_scene_renderer_vk_fuse_ui_t0` and `rl_overlay_glyphs`.
 

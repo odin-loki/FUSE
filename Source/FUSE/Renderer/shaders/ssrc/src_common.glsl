@@ -92,6 +92,57 @@ layout(push_constant) uniform SrcPush {
 // The frame constants: every F.field is a load through the frame's BDA (uniform, cached).
 #define F (SrcFrameRef(pc.frame).f)
 
+// --- correctly rounded division / square root ----------------------------------------------------------
+// The oracle (SsrcCpuSolver) is IEEE f32 with correctly rounded / and sqrt; Vulkan guarantees that only for
+// add / sub / mul (OpFDiv 2.5 ulp, sqrt inherits inversesqrt) and real GPUs use the slack (RTX 3090: 1-2 ulp),
+// which moves the march positions and the pixels they truncate to. src_div / src_sqrt walk the hardware result
+// to the IEEE one with an exact residual a - q * b (Dekker product: correctly rounded mul / add only, no
+// contraction); a no-op on a correctly rounding device (Lavapipe). Same scheme as ssfx sx_div / sx_sqrt.
+float src_resid(float a, float q, float b) {
+    precise float p = q * b;
+    precise float cq = 4097.0 * q;
+    precise float qh = cq - (cq - q);
+    precise float ql = q - qh;
+    precise float cb = 4097.0 * b;
+    precise float bh = cb - (cb - b);
+    precise float bl = b - bh;
+    precise float e = ((qh * bh - p) + qh * bl + ql * bh) + ql * bl;
+    precise float r = (a - p) - e;
+    return r;
+}
+float src_next_toward(float q, bool up) {
+    const uint bits = floatBitsToUint(q);
+    return uintBitsToFloat((q > 0.0) == up ? bits + 1u : bits - 1u);
+}
+float src_round_rn(float a, float q, float b, bool root) {
+    float r = src_resid(a, q, root ? q : b);
+    for (int i = 0; i < 4 && r != 0.0; ++i) {
+        const float qn = src_next_toward(q, root ? r > 0.0 : (r > 0.0) == (b > 0.0));
+        const float rn = src_resid(a, qn, root ? qn : b);
+        if (abs(rn) < abs(r) || (abs(rn) == abs(r) && (floatBitsToUint(q) & 1u) != 0u)) {
+            q = qn;
+            r = rn;
+        } else {
+            break;
+        }
+    }
+    return q;
+}
+float src_div(float a, float b) {
+    precise float q = a / b;
+    if (q == 0.0 || isinf(q) || isnan(q)) {
+        return q;
+    }
+    return src_round_rn(a, q, b, false);
+}
+float src_sqrt(float x) {
+    precise float s = sqrt(x);
+    if (!(x > 0.0) || isinf(x)) {
+        return s;
+    }
+    return src_round_rn(x, s, s, true);
+}
+
 #ifdef SRC_MATH
 // --- f16 records (ssrc::f32ToF16 / f16ToF32) ------------------------------------------------------------
 uint src_f32_to_f16(float v) {
@@ -157,17 +208,17 @@ vec3 src_sub(vec3 a, vec3 b) {
     return r;
 }
 vec3 src_normalize(vec3 v) {
-    precise float len = sqrt(src_dot(v, v));
+    const float len = src_sqrt(src_dot(v, v));
     if (len < 1e-8) {
         return vec3(0.0);
     }
-    precise float inv = 1.0 / len;
+    const float inv = src_div(1.0, len);
     return src_scale(v, inv);
 }
 // ((p + 0.5) - c) / f: the view ray (z = 1) through a pixel centre.
 float src_ray_coord(uint p, float c, float f) {
-    precise float r = ((float(p) + 0.5) - c) / f;
-    return r;
+    precise float n = (float(p) + 0.5) - c;
+    return src_div(n, f);
 }
 
 uint src_clamp_index(int v, uint count) {
@@ -181,8 +232,10 @@ uint src_clamp_index(int v, uint count) {
 // Bilinear neighbours of p on a probe grid of `spacing`: xy = (x0, x1), zw = (y0, y1); weights in w
 // ((x0, y0), (x1, y0), (x0, y1), (x1, y1)).
 uvec4 src_bilinear(float px, float py, float spacing, uint countX, uint countY, out vec4 w) {
-    precise float u = px / spacing - 0.5;
-    precise float v = py / spacing - 0.5;
+    const float uq = src_div(px, spacing);
+    const float vq = src_div(py, spacing);
+    precise float u = uq - 0.5;
+    precise float v = vq - 0.5;
     const float fu = floor(u);
     const float fv = floor(v);
     precise float ax = u - fu;

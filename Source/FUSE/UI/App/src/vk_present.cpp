@@ -21,6 +21,9 @@
 #include <windows.h>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_win32.h>
+#elif defined(__ANDROID__)
+#include <vulkan/vulkan.h>
+#include <vulkan/vulkan_android.h>
 #else
 // vulkan_xlib.h needs only these two Xlib types; the X11 headers are not required to build.
 typedef struct _XDisplay Display;
@@ -93,7 +96,9 @@ struct Khr {
 #if defined(_WIN32)
     PFN_vkCreateWin32SurfaceKHR CreateWin32SurfaceKHR = nullptr;
 #endif
-#if !defined(_WIN32)
+#if defined(__ANDROID__)
+    PFN_vkCreateAndroidSurfaceKHR CreateAndroidSurfaceKHR = nullptr;
+#elif !defined(_WIN32)
     PFN_vkCreateXlibSurfaceKHR CreateXlibSurfaceKHR = nullptr;
 #endif
     bool load(VkInstance inst) {
@@ -115,7 +120,9 @@ struct Khr {
 #if defined(_WIN32)
         get(CreateWin32SurfaceKHR, "vkCreateWin32SurfaceKHR");
 #endif
-#if !defined(_WIN32)
+#if defined(__ANDROID__)
+        get(CreateAndroidSurfaceKHR, "vkCreateAndroidSurfaceKHR");
+#elif !defined(_WIN32)
         get(CreateXlibSurfaceKHR, "vkCreateXlibSurfaceKHR");
 #endif
         return all;
@@ -172,6 +179,8 @@ VkCtx* vkCtxCreate(SurfaceSource::Kind kind, std::string& err) {
     const char* exts[] = {VK_KHR_SURFACE_EXTENSION_NAME,
 #if defined(_WIN32)
                           VK_KHR_WIN32_SURFACE_EXTENSION_NAME
+#elif defined(__ANDROID__)
+                          VK_KHR_ANDROID_SURFACE_EXTENSION_NAME
 #else
                           VK_KHR_XLIB_SURFACE_EXTENSION_NAME
 #endif
@@ -379,7 +388,12 @@ struct VkWin {
         VkSurfaceCapabilitiesKHR caps;
         if (!ok(K.GetPhysicalDeviceSurfaceCapabilitiesKHR(ctx->phys, surface, &caps), "surface capabilities", err))
             return false;
+#if defined(__ANDROID__)
+        // identity pre-transform: the buffer has the window's (rotated) size; currentExtent may be the natural one
+        extent = VkExtent2D{wantW, wantH};
+#else
         extent = caps.currentExtent.width != 0xFFFFFFFFu ? caps.currentExtent : VkExtent2D{wantW, wantH};
+#endif
         extent.width = std::clamp(extent.width, std::max(1u, caps.minImageExtent.width), std::max(1u, caps.maxImageExtent.width));
         extent.height = std::clamp(extent.height, std::max(1u, caps.minImageExtent.height), std::max(1u, caps.maxImageExtent.height));
         if (!(caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT)) {
@@ -515,6 +529,11 @@ VkWin* vkWinCreate(VkCtx* c, const SurfaceSource& s, const NativeOptions& o, std
     si.hinstance = static_cast<HINSTANCE>(s.hinstance);
     si.hwnd = static_cast<HWND>(s.hwnd);
     const VkResult sr = K.CreateWin32SurfaceKHR(c->instance, &si, nullptr, &w->surface);
+#elif defined(__ANDROID__)
+    VkAndroidSurfaceCreateInfoKHR si{};
+    si.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
+    si.window = static_cast<ANativeWindow*>(s.nativeWindow);
+    const VkResult sr = K.CreateAndroidSurfaceKHR(c->instance, &si, nullptr, &w->surface);
 #else
     VkXlibSurfaceCreateInfoKHR si{};
     si.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;

@@ -25,6 +25,49 @@ inline const f32* lut() { return ltc::sharedBrdfLut().data(); }
 
 inline constexpr f64 kPi = 3.141592653589793;
 
+// --- portable random draws ------------------------------------------------------------------------------
+// std::uniform_real_distribution / std::normal_distribution are implementation-defined: libstdc++ and the
+// MSVC STL draw different values from the same std::mt19937 (whose output is fully specified), so the
+// gates would judge a different set of lights per toolchain. The specular budgets (file comment of
+// test_rp_ltc_cpu.cpp) were measured on libstdc++'s draws, so these spell libstdc++'s algorithms out:
+// the same configurations everywhere (up to a last-ulp logf difference in the normal draw).
+
+/// libstdc++ generate_canonical<float, 24>(mt19937): one 32-bit draw / 2^32 in float, kept below 1.
+inline f32 canonical(std::mt19937& rng) {
+    const f32 r = static_cast<f32>(rng()) / 4294967296.f;
+    return r >= 1.f ? std::nextafter(1.f, 0.f) : r;
+}
+
+/// libstdc++ uniform_real_distribution<float>(lo, hi): canonical * (hi - lo) + lo.
+struct Uniform {
+    f32 lo = 0.f;
+    f32 hi = 1.f;
+    f32 operator()(std::mt19937& rng) const { return canonical(rng) * (hi - lo) + lo; }
+};
+
+/// libstdc++ normal_distribution<float>(0, 1): Marsaglia's polar method, the second value of each pair
+/// saved for the next call.
+struct Normal {
+    f32 saved = 0.f;
+    bool savedAvailable = false;
+    f32 operator()(std::mt19937& rng) {
+        if (savedAvailable) {
+            savedAvailable = false;
+            return saved;
+        }
+        f32 x, y, r2;
+        do {
+            x = static_cast<f32>(static_cast<f64>(2.f * canonical(rng)) - 1.0);
+            y = static_cast<f32>(static_cast<f64>(2.f * canonical(rng)) - 1.0);
+            r2 = x * x + y * y;
+        } while (r2 > 1.f || r2 == 0.f);
+        const f32 mult = std::sqrt(-2.f * std::log(r2) / r2);
+        saved = x * mult;
+        savedAvailable = true;
+        return y * mult;
+    }
+};
+
 // --- f64 helpers -------------------------------------------------------------------------------------
 struct D3 {
     f64 x = 0, y = 0, z = 0;
@@ -235,7 +278,7 @@ inline f64 lobePeak(const Config& c) {
 }
 
 inline Vec3 randomUnit(std::mt19937& rng) {
-    std::normal_distribution<f32> g(0.f, 1.f);
+    Normal g;
     return Vec3{g(rng), g(rng), g(rng)}.normalized();
 }
 
@@ -252,7 +295,7 @@ inline gpu_scene::GpuLight directionalOf(D3 l) {
 
 /// Random configuration: surface at the origin-ish, light above (or straddling) its horizon.
 inline Config makeConfig(std::mt19937& rng, u32 k, u32 type, bool straddle) {
-    std::uniform_real_distribution<f32> u(0.f, 1.f);
+    const Uniform u{0.f, 1.f};
     Config c{};
     c.s.position = {u(rng) - 0.5f, u(rng) - 0.5f, u(rng) - 0.5f};
     c.s.normal = randomUnit(rng);

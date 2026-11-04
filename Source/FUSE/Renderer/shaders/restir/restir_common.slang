@@ -1,6 +1,8 @@
 // WP-7.2 ReSTIR DI and GI: Slang twin of restir_common.glsl (see there) and a line-for-line port of
 // include/fuse/renderer/restir/restir_kernel.hpp. #include after gpu_scene.slang and lt_common.slang. Compile with
-// -fp-mode precise (Slang does not honour `precise` per variable), so no multiply-add is contracted.
+// -fp-mode precise (Slang does not honour `precise` per variable), so no multiply-add is contracted. Every division
+// and square root goes through ltDivRn / ltSqrtRn (lt_common.slang: IEEE round-to-nearest, which Vulkan does not
+// guarantee for `/` and `sqrt`).
 #pragma once
 
 static const uint kRsTile = 8u;
@@ -148,13 +150,13 @@ float rsDot(float3 a, float3 b) {
     const float xy = x + y;
     return xy + z;
 }
-float rsLength(float3 a) { return sqrt(rsDot(a, a)); }
+float rsLength(float3 a) { return ltSqrtRn(rsDot(a, a)); }
 float3 rsNormalize(float3 a, float3 fallback) {
     const float l = rsLength(a);
     if (!(l > 1e-20)) {
         return fallback;
     }
-    return float3(a.x / l, a.y / l, a.z / l);
+    return float3(ltDivRn(a.x, l), ltDivRn(a.y, l), ltDivRn(a.z, l));
 }
 float3 rsCross(float3 a, float3 b) {
     const float x0 = a.y * b.z;
@@ -174,7 +176,7 @@ float rsLum(float3 c) {
 }
 void rsBasis(float3 n, out float3 t, out float3 b) {
     const float sign = n.z >= 0.0 ? 1.0 : -1.0;
-    const float a = -1.0 / (sign + n.z);
+    const float a = -ltDivRn(1.0, (sign + n.z));
     const float c = (n.x * n.y) * a;
     const float txx = ((sign * n.x) * n.x) * a;
     t = float3(1.0 + txx, sign * c, -(sign * n.x));
@@ -278,7 +280,7 @@ bool rsPrepare(RestirFrame F, uint px, uint py, float depth, float ox, float oy,
     const float y = ((F.invViewProj[1] * nx + F.invViewProj[5] * ny) + F.invViewProj[9] * depth) + F.invViewProj[13];
     const float z = ((F.invViewProj[2] * nx + F.invViewProj[6] * ny) + F.invViewProj[10] * depth) + F.invViewProj[14];
     const float w = ((F.invViewProj[3] * nx + F.invViewProj[7] * ny) + F.invViewProj[11] * depth) + F.invViewProj[15];
-    const float3 p = float3(x / w, y / w, z / w);
+    const float3 p = float3(ltDivRn(x, w), ltDivRn(y, w), ltDivRn(z, w));
     const float3 rel = p - rsLoad(F.cameraPosition);
     const float lin = rsDot(rel, rsLoad(F.cameraForward));
     if (!(lin > 0.0)) {
@@ -385,7 +387,7 @@ float rsSourcePdf(uint kind, float pmf, float pdfArea) {
 float rsSpot(float cosA, float cosInner, float cosOuter) {
     if (cosInner > cosOuter) {
         const float range = cosInner - cosOuter;
-        float t = (cosA - cosOuter) / range;
+        float t = ltDivRn((cosA - cosOuter), range);
         t = t < 0.0 ? 0.0 : t;
         t = t > 1.0 ? 1.0 : t;
         const float tt = t * t;
@@ -427,8 +429,8 @@ bool rsEvalLight(RestirFrame F, RsSurface s, uint light, float u1, float u2, out
         if (!(dist2 > 1e-12)) {
             return false;
         }
-        const float dist = sqrt(dist2);
-        const float3 wi = float3(d.x / dist, d.y / dist, d.z / dist);
+        const float dist = ltSqrtRn(dist2);
+        const float3 wi = float3(ltDivRn(d.x, dist), ltDivRn(d.y, dist), ltDivRn(d.z, dist));
         const float cosX = rsDot(s.n, wi);
         if (!(cosX > 0.0)) {
             return false;
@@ -442,9 +444,9 @@ bool rsEvalLight(RestirFrame F, RsSurface s, uint light, float u1, float u2, out
             if (!(cosL > 0.0)) {
                 return false;
             }
-            g = (cosX * cosL) / dist2;
+            g = ltDivRn((cosX * cosL), dist2);
         } else {
-            g = cosX / dist2;
+            g = ltDivRn(cosX, dist2);
             if (em.kind == kLtKindSpot) {
                 const float cosA = -rsDot(rsLoad(em.normal), wi);
                 g = g * rsSpot(cosA, L.cosInner, L.cosOuter);
@@ -454,7 +456,7 @@ bool rsEvalLight(RestirFrame F, RsSurface s, uint light, float u1, float u2, out
         const float3 toLight = pos - e.origin;
         const float dl = rsLength(toLight);
         if (dl > 1e-6) {
-            e.dir = float3(toLight.x / dl, toLight.y / dl, toLight.z / dl);
+            e.dir = float3(ltDivRn(toLight.x, dl), ltDivRn(toLight.y, dl), ltDivRn(toLight.z, dl));
             e.tMax = dl * kRsShadowShorten;
         } else {
             e.dir = s.n;
@@ -528,7 +530,7 @@ RestirDiReservoir rsDiInitial(RestirFrame F, uint px, uint py) {
         if (!rsEvalLight(F, s, ls.light, u1, u2, e)) {
             continue;
         }
-        const float w = e.phat / src;
+        const float w = ltDivRn(e.phat, src);
         wSum = wSum + w;
         const float u = rsNext(rng);
         const float uw = u * wSum;
@@ -541,8 +543,8 @@ RestirDiReservoir rsDiInitial(RestirFrame F, uint px, uint py) {
         }
     }
     if (r.light != kRsInvalid) {
-        const float mean = wSum / float(candidates);
-        r.W = mean / selPhat;
+        const float mean = ltDivRn(wSum, float(candidates));
+        r.W = ltDivRn(mean, selPhat);
         r.targetPdf = selPhat;
         if ((F.flags & kRsFlagVisibilityReuse) != 0u && sel.tMax > 0.0 && rsOccluded(F, sel.origin, sel.dir, sel.tMax)) {
             r.W = 0.0;
@@ -685,7 +687,7 @@ RestirDiReservoir rsDiReuse(RestirFrame F, uint px, uint py, uint mode, uint ite
                     num = mj;
                 }
             }
-            const float m = num / den;
+            const float m = ltDivRn(num, den);
             w = (m * pcv) * ri.W;
         } else {
             w = (pcv * ri.W) * ri.M;
@@ -704,9 +706,9 @@ RestirDiReservoir rsDiReuse(RestirFrame F, uint px, uint py, uint mode, uint ite
         }
     }
     if (outR.light != kRsInvalid) {
-        const float wu = wSum / selPhat;
+        const float wu = ltDivRn(wSum, selPhat);
         const float d = selPhat * mSum;
-        const float wb = wSum / d;
+        const float wb = ltDivRn(wSum, d);
         outR.W = unbiased ? wu : wb;
         outR.targetPdf = selPhat;
     }
@@ -753,8 +755,8 @@ bool rsGiEvaluate(RestirFrame F, RsSurface s, RestirGiReservoir r, out RsGiEval 
     if (!(dist2 > 1e-12)) {
         return false;
     }
-    const float dist = sqrt(dist2);
-    const float3 w = float3(d.x / dist, d.y / dist, d.z / dist);
+    const float dist = ltSqrtRn(dist2);
+    const float3 w = float3(ltDivRn(d.x, dist), ltDivRn(d.y, dist), ltDivRn(d.z, dist));
     const float cosV = rsDot(s.n, w);
     if (!(cosV > 0.0)) {
         return false;
@@ -769,13 +771,13 @@ bool rsGiEvaluate(RestirFrame F, RsSurface s, RestirGiReservoir r, out RsGiEval 
     }
     e.cosV = cosV;
     e.phat = phat;
-    e.area = cosS / dist2;
+    e.area = ltDivRn(cosS, dist2);
     e.origin = rsOffset(F, s.p, s.n);
     const float3 target = xs + ns * F.normalBias;
     const float3 to = target - e.origin;
     const float dl = rsLength(to);
     if (dl > 1e-6) {
-        e.dir = float3(to.x / dl, to.y / dl, to.z / dl);
+        e.dir = float3(ltDivRn(to.x, dl), ltDivRn(to.y, dl), ltDivRn(to.z, dl));
         e.tMax = dl * kRsShadowShorten;
     } else {
         e.dir = s.n;
@@ -870,9 +872,9 @@ RestirGiReservoir rsGiInitial(RestirFrame F, uint px, uint py, uint64_t dump) {
         RsLightEval e;
         if (src > 0.0 && rsEvalLight(F, hs, ls.light, u1, u2, e)) {
             if (!(e.tMax > 0.0) || !rsOccluded(F, e.origin, e.dir, e.tMax)) {
-                const float lx = ((hit.albedo.x * e.contrib.x) / kRsPi) / src;
-                const float ly = ((hit.albedo.y * e.contrib.y) / kRsPi) / src;
-                const float lz = ((hit.albedo.z * e.contrib.z) / kRsPi) / src;
+                const float lx = ltDivRn(ltDivRn(hit.albedo.x * e.contrib.x, kRsPi), src);
+                const float ly = ltDivRn(ltDivRn(hit.albedo.y * e.contrib.y, kRsPi), src);
+                const float lz = ltDivRn(ltDivRn(hit.albedo.z * e.contrib.z, kRsPi), src);
                 lo = float3(lx, ly, lz);
             }
         }
@@ -888,7 +890,7 @@ RestirGiReservoir rsGiInitial(RestirFrame F, uint px, uint py, uint64_t dump) {
     r.radiance[2] = lo.z;
     const float phat = rsLum(lo) * cosV;
     if (phat > 0.0) {
-        r.W = kRsPi / cosV;
+        r.W = ltDivRn(kRsPi, cosV);
         r.targetPdf = phat;
     }
     return r;
@@ -977,7 +979,7 @@ RestirGiReservoir rsGiReuse(RestirFrame F, uint px, uint py, uint mode, uint ite
             if (!rsGiEvaluate(F, sf[i], ri, ei)) {
                 continue;
             }
-            jacobian = ec.area / ei.area;
+            jacobian = ltDivRn(ec.area, ei.area);
             const float jc = jacobian * F.giJacobianClamp;
             if (!unbiased && F.giJacobianClamp > 0.0 && (jacobian > F.giJacobianClamp || jc < 1.0)) {
                 continue;
@@ -996,7 +998,7 @@ RestirGiReservoir rsGiReuse(RestirFrame F, uint px, uint py, uint mode, uint ite
                     num = mj;
                 }
             }
-            const float m = num / den;
+            const float m = ltDivRn(num, den);
             w = ((m * pcv) * ri.W) * jacobian;
         } else {
             w = ((pcv * ri.W) * jacobian) * ri.M;
@@ -1018,9 +1020,9 @@ RestirGiReservoir rsGiReuse(RestirFrame F, uint px, uint py, uint mode, uint ite
         }
     }
     if (selected) {
-        const float wu = wSum / selPhat;
+        const float wu = ltDivRn(wSum, selPhat);
         const float d = selPhat * mSum;
-        const float wb = wSum / d;
+        const float wb = ltDivRn(wSum, d);
         outR.W = unbiased ? wu : wb;
         outR.targetPdf = selPhat;
     }
@@ -1043,7 +1045,7 @@ void rsShade(RestirFrame F, uint px, uint py, bool hasDi, RestirDiReservoir di, 
         RsLightEval e;
         if (rsEvalLight(F, s, di.light, di.u1, di.u2, e)) {
             if (!(e.tMax > 0.0) || !rsOccluded(F, e.origin, e.dir, e.tMax)) {
-                const float k = di.W / kRsPi;
+                const float k = ltDivRn(di.W, kRsPi);
                 diOut = float4(e.contrib * k, 0.0);
             }
         }
@@ -1054,7 +1056,7 @@ void rsShade(RestirFrame F, uint px, uint py, bool hasDi, RestirDiReservoir di, 
             const bool trace = (F.flags & kRsFlagGiShadeVisibility) != 0u && e.tMax > 0.0;
             if (!trace || !rsOccluded(F, e.origin, e.dir, e.tMax)) {
                 const float cw = e.cosV * gi.W;
-                const float k = cw / kRsPi;
+                const float k = ltDivRn(cw, kRsPi);
                 giOut = float4(rsLoad(gi.radiance) * k, 0.0);
             }
         }

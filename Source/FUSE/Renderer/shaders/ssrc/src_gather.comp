@@ -78,13 +78,13 @@ vec4 src_gather(uint x, uint y, uint index, out vec4 composed) {
             precise float den = sw * cw;
             const vec4 dif = SrcTexelsRef(F.diffuse).v[index];
             const vec4 alb = SrcTexelsRef(F.albedo).v[index];
-            precise float er = sr / den;
-            precise float eg = sg / den;
-            precise float eb = sb / den;
+            const float er = src_div(sr, den);
+            const float eg = src_div(sg, den);
+            const float eb = src_div(sb, den);
             precise float r0 = dif.x * er * F.intensity;
             precise float g0 = dif.y * eg * F.intensity;
             precise float b0 = dif.z * eb * F.intensity;
-            precise float a0 = sv / den;
+            const float a0 = src_div(sv, den);
             ir = r0;
             ig = g0;
             ib = b0;

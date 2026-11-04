@@ -309,6 +309,7 @@ struct NativePlatform::Impl {
     bool vkTried = false;
     std::string error;
     EventSource previous{};
+    NativeHooks hooks{};
 #if defined(_WIN32)
     HINSTANCE hinst = nullptr;
 #else
@@ -1410,6 +1411,16 @@ Vec2 NativePlatform::screenOrigin(const AppWindow& w) const {
     if (!r || !r->handle || !m->screenInfo(*r, ox, oy, work)) return {};
     return {f32(ox), f32(oy)};
 }
+Insets NativePlatform::safeAreaInsets(const AppWindow&) const { return {}; }
+void NativePlatform::setSoftKeyboard(bool) {}
+void NativePlatform::setHooks(const NativeHooks& h) { m->hooks = h; }
+LifecycleStats NativePlatform::lifecycle() const {
+    LifecycleStats s;
+    for (const Impl::Rec* r : m->recs) s.surfacesCreated += r->handle ? 1u : 0u;
+    s.hasSurface = s.surfacesCreated > 0;
+    return s;
+}
+void* NativePlatform::androidApp() { return nullptr; }
 bool NativePlatform::postClick(unsigned long long nativeWin, Vec2 at) { return nativeWin && m->postClickOs(nativeWin, at); }
 bool NativePlatform::setMessageHook(const AppWindow& w, const MessageHook& hook) {
     for (Impl::Rec* r : m->recs)

@@ -87,6 +87,70 @@ void writeCache(const char* path, u64 kernelHash, const std::vector<unsigned cha
 }
 } // namespace
 
+void* UiVkRenderer::makeComputePipeline(std::span<const u32> spirv) {
+    if (spirv.empty() || !m_layout) return nullptr;
+    const VkDevice device = static_cast<VkDevice>(m_desc.device);
+    VkShaderModuleCreateInfo mi{};
+    mi.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    mi.codeSize = spirv.size_bytes();
+    mi.pCode = spirv.data();
+    VkShaderModule module{};
+    if (vkCreateShaderModule(device, &mi, nullptr, &module) != VK_SUCCESS) return nullptr;
+    VkComputePipelineCreateInfo ci{};
+    ci.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    ci.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    ci.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    ci.stage.module = module;
+    ci.stage.pName = "main";
+    ci.layout = static_cast<VkPipelineLayout>(m_layout);
+    VkPipeline pipeline{};
+    const VkResult r = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &ci, nullptr, &pipeline);
+    vkDestroyShaderModule(device, module, nullptr);
+    return r == VK_SUCCESS ? pipeline : nullptr;
+}
+
+bool UiVkRenderer::setEffect(u32 id, std::span<const u32> spirv) {
+    if (!valid() || id >= kMaxEffects) return false;
+    const VkDevice device = static_cast<VkDevice>(m_desc.device);
+    if (m_effects[id]) vkDestroyPipeline(device, static_cast<VkPipeline>(m_effects[id]), nullptr);
+    m_effects[id] = nullptr;
+    if (spirv.empty()) return true;
+    m_effects[id] = makeComputePipeline(spirv);
+    return m_effects[id] != nullptr;
+}
+
+void UiVkRenderer::forgetTarget(void* view) {
+    if (!m_desc.device) return;
+    for (Framebuffer& f : m_fbs)
+        if (f.view == view && f.fb) {
+            vkDestroyFramebuffer(static_cast<VkDevice>(m_desc.device), static_cast<VkFramebuffer>(f.fb), nullptr);
+            f = Framebuffer{};
+        }
+}
+
+void* UiVkRenderer::framebufferFor(void* view, u32 w, u32 h) {
+    for (const Framebuffer& f : m_fbs)
+        if (f.view == view && f.w == w && f.h == h && f.fb) return f.fb;
+    const VkDevice device = static_cast<VkDevice>(m_desc.device);
+    Framebuffer& slot = m_fbs[m_fbNext];
+    m_fbNext = (m_fbNext + 1) % kMaxFramebuffers;
+    if (slot.fb) vkDestroyFramebuffer(device, static_cast<VkFramebuffer>(slot.fb), nullptr);
+    slot = Framebuffer{};
+    const VkImageView iv = static_cast<VkImageView>(view);
+    VkFramebufferCreateInfo fi{};
+    fi.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    fi.renderPass = static_cast<VkRenderPass>(m_renderPass);
+    fi.attachmentCount = 1;
+    fi.pAttachments = &iv;
+    fi.width = w;
+    fi.height = h;
+    fi.layers = 1;
+    VkFramebuffer fb{};
+    if (vkCreateFramebuffer(device, &fi, nullptr, &fb) != VK_SUCCESS) return nullptr;
+    slot = {view, fb, w, h};
+    return fb;
+}
+
 bool UiVkRenderer::init(const UiVkDesc& desc) {
     destroy();
 #if defined(FUSE_UI_VK_HAS_KERNEL)
@@ -105,6 +169,9 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
     m_offsets[3] = alignUp(m_offsets[2] + alignUp(u64(desc.maxAtlasSize) * desc.maxAtlasSize, 4), al);
     m_offsets[4] = alignUp(m_offsets[3] + u64(desc.maxImageWords) * 4, al);
 
+    const bool sdf = desc.backend == UiVkBackend::SdfQuads;
+    if (sdf && (desc.sdfVertex.empty() || desc.sdfFragment.empty())) return destroy(), false; // see useSdfQuads
+    m_stages = VK_SHADER_STAGE_COMPUTE_BIT | (sdf ? VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT : 0u);
     constexpr u32 kBindings = 6 + kMaxExternal; // target, 4 buffers, external textures, backdrop scratch
     VkDescriptorSetLayoutBinding b[kBindings]{};
     for (u32 i = 0; i < kBindings; ++i) {
@@ -113,7 +180,7 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
                               : i < 5 || i == 5 + kMaxExternal ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
                                                                : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         b[i].descriptorCount = 1;
-        b[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        b[i].stageFlags = m_stages;
     }
     VkDescriptorSetLayoutCreateInfo sli{};
     sli.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -122,7 +189,7 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
     VkDescriptorSetLayout setLayout{};
     if (vkCreateDescriptorSetLayout(device, &sli, nullptr, &setLayout) != VK_SUCCESS) return destroy(), false;
     m_setLayout = setLayout;
-    const VkPushConstantRange range{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(GpuPush)};
+    const VkPushConstantRange range{m_stages, 0, sizeof(GpuPush)};
     VkPipelineLayoutCreateInfo pli{};
     pli.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pli.setLayoutCount = 1;
@@ -178,6 +245,102 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
     }
     if (pr != VK_SUCCESS) return destroy(), false;
     m_pipeline = pipeline;
+    if (sdf) {
+        // render pass over the GENERAL-layout target: load, blend, store; the layout never changes
+        VkAttachmentDescription at{};
+        at.format = VK_FORMAT_R8G8B8A8_UNORM;
+        at.samples = VK_SAMPLE_COUNT_1_BIT;
+        at.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        at.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        at.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        at.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        at.initialLayout = at.finalLayout = VK_IMAGE_LAYOUT_GENERAL;
+        const VkAttachmentReference ref{0, VK_IMAGE_LAYOUT_GENERAL};
+        VkSubpassDescription sp{};
+        sp.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        sp.colorAttachmentCount = 1;
+        sp.pColorAttachments = &ref;
+        VkRenderPassCreateInfo rpi{};
+        rpi.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        rpi.attachmentCount = 1;
+        rpi.pAttachments = &at;
+        rpi.subpassCount = 1;
+        rpi.pSubpasses = &sp;
+        VkRenderPass rp{};
+        if (vkCreateRenderPass(device, &rpi, nullptr, &rp) != VK_SUCCESS) return destroy(), false;
+        m_renderPass = rp;
+        VkShaderModule mods[2]{};
+        const std::span<const u32> code[2] = {desc.sdfVertex, desc.sdfFragment};
+        for (u32 i = 0; i < 2; ++i) {
+            VkShaderModuleCreateInfo smi2{};
+            smi2.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+            smi2.codeSize = code[i].size_bytes();
+            smi2.pCode = code[i].data();
+            if (vkCreateShaderModule(device, &smi2, nullptr, &mods[i]) != VK_SUCCESS) {
+                if (mods[0]) vkDestroyShaderModule(device, mods[0], nullptr);
+                return destroy(), false;
+            }
+        }
+        VkPipelineShaderStageCreateInfo st[2]{};
+        for (u32 i = 0; i < 2; ++i) {
+            st[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+            st[i].stage = i == 0 ? VK_SHADER_STAGE_VERTEX_BIT : VK_SHADER_STAGE_FRAGMENT_BIT;
+            st[i].module = mods[i];
+            st[i].pName = "main";
+        }
+        VkPipelineVertexInputStateCreateInfo vin{};
+        vin.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        VkPipelineInputAssemblyStateCreateInfo ia{};
+        ia.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        VkPipelineViewportStateCreateInfo vp{};
+        vp.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        vp.viewportCount = 1;
+        vp.scissorCount = 1;
+        VkPipelineRasterizationStateCreateInfo rs{};
+        rs.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        rs.polygonMode = VK_POLYGON_MODE_FILL;
+        rs.cullMode = VK_CULL_MODE_NONE;
+        rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        rs.lineWidth = 1.f;
+        VkPipelineMultisampleStateCreateInfo ms{};
+        ms.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+        ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        VkPipelineColorBlendAttachmentState ba{};
+        ba.blendEnable = VK_TRUE; // premultiplied over
+        ba.srcColorBlendFactor = ba.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        ba.dstColorBlendFactor = ba.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        ba.colorBlendOp = ba.alphaBlendOp = VK_BLEND_OP_ADD;
+        ba.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        VkPipelineColorBlendStateCreateInfo cb{};
+        cb.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        cb.attachmentCount = 1;
+        cb.pAttachments = &ba;
+        const VkDynamicState dyn[2] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+        VkPipelineDynamicStateCreateInfo ds{};
+        ds.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+        ds.dynamicStateCount = 2;
+        ds.pDynamicStates = dyn;
+        VkGraphicsPipelineCreateInfo gi{};
+        gi.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        gi.stageCount = 2;
+        gi.pStages = st;
+        gi.pVertexInputState = &vin;
+        gi.pInputAssemblyState = &ia;
+        gi.pViewportState = &vp;
+        gi.pRasterizationState = &rs;
+        gi.pMultisampleState = &ms;
+        gi.pColorBlendState = &cb;
+        gi.pDynamicState = &ds;
+        gi.layout = layout;
+        gi.renderPass = rp;
+        VkPipeline gp{};
+        const VkResult gr = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &gi, nullptr, &gp);
+        vkDestroyShaderModule(device, mods[0], nullptr);
+        vkDestroyShaderModule(device, mods[1], nullptr);
+        if (gr != VK_SUCCESS) return destroy(), false;
+        m_gfxPipeline = gp;
+    }
 
     const u32 n = m_desc.framesInFlight;
     const VkDescriptorPoolSize sizes[3] = {{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, n},
@@ -345,6 +508,18 @@ void UiVkRenderer::destroy() {
     if (m_scratch) vkDestroyBuffer(device, static_cast<VkBuffer>(m_scratch), nullptr);
     if (m_scratchMem) vkFreeMemory(device, static_cast<VkDeviceMemory>(m_scratchMem), nullptr);
     m_dummyView = m_dummy = m_dummyMem = m_sampler = m_scratch = m_scratchMem = nullptr;
+    for (void*& e : m_effects) {
+        if (e) vkDestroyPipeline(device, static_cast<VkPipeline>(e), nullptr);
+        e = nullptr;
+    }
+    for (Framebuffer& f : m_fbs) {
+        if (f.fb) vkDestroyFramebuffer(device, static_cast<VkFramebuffer>(f.fb), nullptr);
+        f = Framebuffer{};
+    }
+    m_fbNext = 0;
+    if (m_gfxPipeline) vkDestroyPipeline(device, static_cast<VkPipeline>(m_gfxPipeline), nullptr);
+    if (m_renderPass) vkDestroyRenderPass(device, static_cast<VkRenderPass>(m_renderPass), nullptr);
+    m_gfxPipeline = m_renderPass = nullptr;
     m_scratchPixels = 0;
     m_dummyReady = false;
     for (void*& e : m_external) e = nullptr;
@@ -392,7 +567,8 @@ void UiVkRenderer::record(void* commandBuffer, void* targetView, u32 slotIndex) 
         db.srcQueueFamilyIndex = db.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         db.image = static_cast<VkImage>(m_dummy);
         db.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0,
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0,
                              nullptr, 1, &db);
         m_dummyReady = true;
     }
@@ -415,40 +591,93 @@ void UiVkRenderer::record(void* commandBuffer, void* targetView, u32 slotIndex) 
     }
     vkUpdateDescriptorSets(device, 1 + kMaxExternal, w, 0, nullptr);
     const VkDescriptorSet set = static_cast<VkDescriptorSet>(s.set);
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, static_cast<VkPipeline>(m_pipeline));
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, static_cast<VkPipelineLayout>(m_layout), 0, 1, &set, 0,
-                            nullptr);
     const VkPipelineLayout layout = static_cast<VkPipelineLayout>(m_layout);
-    // compute -> compute on the target and the scratch (storage writes in GENERAL: a global barrier is enough)
-    auto barrier = [&] {
+    const bool sdf = m_gfxPipeline != nullptr;
+    auto bindCompute = [&](void* pipeline) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, static_cast<VkPipeline>(pipeline));
+    };
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, nullptr);
+    bindCompute(m_pipeline);
+    // storage writes in GENERAL (target and scratch): global memory barriers are enough
+    auto barrierFrom = [&](VkPipelineStageFlags src, VkAccessFlags srcAccess, VkPipelineStageFlags dst, VkAccessFlags dstAccess) {
         VkMemoryBarrier mb{};
         mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-        mb.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
-        mb.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0,
-                             nullptr, 0, nullptr);
+        mb.srcAccessMask = srcAccess;
+        mb.dstAccessMask = dstAccess;
+        vkCmdPipelineBarrier(cmd, src, dst, 0, 1, &mb, 0, nullptr, 0, nullptr);
+    };
+    constexpr VkAccessFlags kShaderRW = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+    constexpr VkAccessFlags kColorRW = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    auto barrier = [&] {
+        barrierFrom(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, kShaderRW, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, kShaderRW);
     };
     GpuPush push = s.push;
     auto dispatch = [&](u32 gx, u32 gy) {
-        vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(GpuPush), &push);
+        vkCmdPushConstants(cmd, layout, m_stages, 0, sizeof(GpuPush), &push);
         vkCmdDispatch(cmd, gx, gy, 1);
     };
+    bool graphicsBound = false;
     for (u32 i = 0; i < s.segmentCount; ++i) {
         const GpuSegment& seg = s.segments[i];
         const u32 tx0 = seg.tile0 & 0xFFFFu, ty0 = seg.tile0 >> 16, tx1 = seg.tile1 & 0xFFFFu, ty1 = seg.tile1 >> 16;
         if (tx1 > tx0 && ty1 > ty0) {
-            push.mode = 0;
-            push.tileBase = seg.tileBase;
-            push.tileOrigin = seg.tile0;
-            dispatch(tx1 - tx0, ty1 - ty0);
+            if (sdf) {
+                // the segment as one instanced draw of SDF quads, in draw order (blending keeps primitive order)
+                void* fb = framebufferFor(targetView, push.extent[0], push.extent[1]);
+                if (!fb) return;
+                barrierFrom(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, kShaderRW, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, kColorRW);
+                // render area and scissor: the segment's tile bounding box (load / store only what it draws)
+                const VkRect2D sc{{i32(tx0 * kUiTile), i32(ty0 * kUiTile)},
+                                  {std::min(tx1 * kUiTile, push.extent[0]) - tx0 * kUiTile, std::min(ty1 * kUiTile, push.extent[1]) - ty0 * kUiTile}};
+                VkRenderPassBeginInfo rb{};
+                rb.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+                rb.renderPass = static_cast<VkRenderPass>(m_renderPass);
+                rb.framebuffer = static_cast<VkFramebuffer>(fb);
+                rb.renderArea = sc;
+                vkCmdBeginRenderPass(cmd, &rb, VK_SUBPASS_CONTENTS_INLINE);
+                if (!graphicsBound) {
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, static_cast<VkPipeline>(m_gfxPipeline));
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &set, 0, nullptr);
+                    const VkViewport vp{0.f, 0.f, f32(push.extent[0]), f32(push.extent[1]), 0.f, 1.f};
+                    vkCmdSetViewport(cmd, 0, 1, &vp);
+                    graphicsBound = true;
+                }
+                vkCmdSetScissor(cmd, 0, 1, &sc);
+                vkCmdPushConstants(cmd, layout, m_stages, 0, sizeof(GpuPush), &push);
+                vkCmdDraw(cmd, 6, seg.cmdEnd - seg.cmdBegin, 0, seg.cmdBegin);
+                vkCmdEndRenderPass(cmd);
+                barrierFrom(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, kShaderRW);
+            } else {
+                push.mode = 0;
+                push.tileBase = seg.tileBase;
+                push.tileOrigin = seg.tile0;
+                dispatch(tx1 - tx0, ty1 - ty0);
+            }
         }
         if (seg.backdrop == ~0u) continue;
         const GpuCmd* bc = reinterpret_cast<const GpuCmd*>(s.mapped + m_offsets[0]) + seg.backdrop;
         const u32 x0 = bc->info[1] & 0xFFFFu, y0 = bc->info[1] >> 16, x1 = bc->info[2] & 0xFFFFu, y1 = bc->info[2] >> 16;
+        push.cmd = seg.backdrop;
+        if ((bc->info[0] & 0xFFu) == u32(DrawOp::Effect)) {
+            // custom effect: copy the source region to scratch half 0, run the effect pipeline over the pixel area
+            const u32 m = bc->info[3] & 0xFFFFu, id = bc->info[3] >> 16;
+            const u32 sw = std::min(push.extent[0], x1 + m) - (x0 > m ? x0 - m : 0);
+            const u32 sh = std::min(push.extent[1], y1 + m) - (y0 > m ? y0 - m : 0);
+            if (id >= kMaxEffects || !m_effects[id] || seg.blurPixels > m_scratchPixels) continue; // not on the GPU
+            barrier();
+            push.mode = 4;
+            dispatch((sw + kUiTile - 1) / kUiTile, (sh + kUiTile - 1) / kUiTile);
+            barrier();
+            bindCompute(m_effects[id]);
+            dispatch((x1 - x0 + kUiTile - 1) / kUiTile, (y1 - y0 + kUiTile - 1) / kUiTile);
+            barrier();
+            bindCompute(m_pipeline);
+            continue;
+        }
         const u32 r = bc->info[3], m = 3 * r;
         const u32 sw = std::min(push.extent[0], x1 + m) - (x0 > m ? x0 - m : 0);
         const u32 sh = std::min(push.extent[1], y1 + m) - (y0 > m ? y0 - m : 0);
-        push.cmd = seg.backdrop;
         barrier();
         if (seg.blurPixels <= m_scratchPixels) {
             // 3 x (horizontal, vertical) box passes over the source region: target -> 0 -> 1 -> 0 -> 1 -> 0 -> 1

@@ -78,4 +78,53 @@ uvec4 gs_projected(uint i, uint w) { return GsProjectedRef(F.projected).v[i * 4u
 
 uint gs_tiles_touched(uvec4 rect) { return (rect.z - rect.x) * (rect.w - rect.y); }
 
+// Correctly rounded division and square root. The CPU reference (gsplat_reference.cpp) divides and takes square
+// roots in IEEE f32; Vulkan only guarantees correct rounding for add / sub / mul (OpFDiv is 2.5 ulp, sqrt inherits
+// inversesqrt), and hardware uses that slack (the RTX 3090 differs from the oracle by up to ~250 ulp on the conic,
+// where det = a c - b^2 amplifies the Jacobian's division error, and the 3-sigma radius ceil(3 sqrt(lambda)) and the
+// tile rectangle floor((mx -+ r) / 16) are discrete decisions on these quotients). gs_div / gs_sqrt round the
+// hardware result to the IEEE one with an exact Dekker residual (needs only correctly rounded, uncontracted mul /
+// add), so "gsplat.preprocess" equals gs_preprocess_splat bit for bit on any conformant device. Lavapipe already
+// rounds correctly: there the walk never moves.
+float gs_resid(float a, float q, float b) { // a - q * b, accurate enough to compare neighbours
+    precise float p = q * b;
+    precise float cq = 4097.0 * q;
+    precise float qh = cq - (cq - q);
+    precise float ql = q - qh;
+    precise float cb = 4097.0 * b;
+    precise float bh = cb - (cb - b);
+    precise float bl = b - bh;
+    precise float e = ((qh * bh - p) + qh * bl + ql * bh) + ql * bl;
+    precise float r = (a - p) - e;
+    return r;
+}
+float gs_next_toward(float q, bool up) { // q != 0; up: toward +inf
+    const uint bits = floatBitsToUint(q);
+    return uintBitsToFloat((q > 0.0) == up ? bits + 1u : bits - 1u);
+}
+float gs_round_rn(float a, float q, float b, bool root) { // walk q to the nearest representable a / b (root: sqrt(a))
+    float r = gs_resid(a, q, root ? q : b);
+    for (int i = 0; i < 4 && r != 0.0; ++i) {
+        const float qn = gs_next_toward(q, root ? r > 0.0 : (r > 0.0) == (b > 0.0));
+        const float rn = gs_resid(a, qn, root ? qn : b);
+        if (abs(rn) < abs(r) || (abs(rn) == abs(r) && (floatBitsToUint(q) & 1u) != 0u)) {
+            q = qn;
+            r = rn;
+        } else {
+            break;
+        }
+    }
+    return q;
+}
+float gs_div(float a, float b) {
+    precise float q = a / b;
+    if (q == 0.0 || isinf(q) || isnan(q)) return q;
+    return gs_round_rn(a, q, b, false);
+}
+float gs_sqrt(float x) {
+    precise float s = sqrt(x);
+    if (!(x > 0.0) || isinf(x)) return s;
+    return gs_round_rn(x, s, s, true);
+}
+
 #endif

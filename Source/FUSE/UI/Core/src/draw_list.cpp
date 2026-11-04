@@ -1,5 +1,6 @@
 #include <algorithm>
 #include "fuse/ui/draw_list.hpp"
+#include "fuse/ui/effects.hpp"
 
 #include <cmath>
 #include <cstring>
@@ -55,6 +56,23 @@ void DrawList::backdrop(const Rect& r, f32 blur, const std::array<f32, 4>& radii
     c.blur = blur;
     c.radius = radii;
     c.fill = tint;
+    m_cmds.push_back(c);
+}
+
+void DrawList::effect(const Rect& r, u32 id, std::span<const f32> params, f32 time, f32 margin,
+                      const std::array<f32, 4>& radii, u32 image) {
+    DrawCmd c;
+    c.op = DrawOp::Effect;
+    c.rect = r;
+    c.u = u16(id);
+    c.image = image;
+    f32 p[kEffectParams] = {};
+    for (std::size_t i = 0; i < params.size() && i < std::size_t(kEffectParams); ++i) p[i] = params[i];
+    c.fill = {p[0], p[1], p[2], p[3]};
+    c.fill2 = {p[4], p[5], p[6], p[7]};
+    c.blur = time;
+    c.borderWidth = std::max(margin, 0.f);
+    c.radius = radii;
     m_cmds.push_back(c);
 }
 
@@ -114,12 +132,13 @@ Rect DrawList::redrawRegion(Rect damage, Rect bounds) const {
     };
     damage = align(damage);
     if (damage.empty()) return damage;
-    // grow until no backdrop's sampled region touches the damage only partly (chains of backdrops converge)
+    // grow until no backdrop's / effect's sampled region touches the damage only partly (chains of backdrops converge)
     for (bool grown = true; grown;) {
         grown = false;
         for (const DrawCmd& c : m_cmds) {
-            if (c.op != DrawOp::Backdrop) continue;
-            const f32 m = f32(3 * std::max(1, int(std::lround(c.blur / 3.f))) + 1);
+            if (c.op != DrawOp::Backdrop && c.op != DrawOp::Effect) continue;
+            const f32 m = c.op == DrawOp::Effect ? std::ceil(c.borderWidth) + 1.f
+                                                 : f32(3 * std::max(1, int(std::lround(c.blur / 3.f))) + 1);
             const Rect region = align({c.rect.x - m, c.rect.y - m, c.rect.w + 2 * m, c.rect.h + 2 * m});
             if (region.empty() || damage.intersect(region).empty()) continue;
             const Rect u = align(damage.unite(region));
@@ -250,6 +269,55 @@ void backdropBlur(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& ta
         }
     (void)tint;
 }
+
+// Custom effect, the reference (effects.hpp): snapshot of the source region (the pixel area plus the margin, clamped to
+// the target), the callback per pixel, mixed in by the mask coverage (same composite as the backdrop).
+void effectPass(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& target, const EffectRegistry* fx,
+                const std::vector<const Image*>& images) {
+    if (!fx || c.u >= fx->count() || !fx->at(c.u).cpu) return;
+    const Rect area = c.rect.intersect(clipR).intersect({0.f, 0.f, f32(target.width), f32(target.height)});
+    if (area.empty()) return;
+    const int x0 = int(std::floor(area.x)), y0 = int(std::floor(area.y));
+    const int x1 = int(std::ceil(area.right())), y1 = int(std::ceil(area.bottom()));
+    const int m = std::max(0, int(std::ceil(c.borderWidth)));
+    const int sx0 = std::max(0, x0 - m), sy0 = std::max(0, y0 - m);
+    const int w = std::min(target.width, x1 + m) - sx0, h = std::min(target.height, y1 + m) - sy0;
+    thread_local std::vector<f32> buf;
+    buf.resize(std::size_t(w) * std::size_t(h) * 4);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            const u32 p = target.pixels[std::size_t(sy0 + y) * std::size_t(target.width) + std::size_t(sx0 + x)];
+            for (int k = 0; k < 4; ++k) buf[(std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4 + std::size_t(k)] = f32((p >> (8 * k)) & 0xFFu);
+        }
+    const EffectSource src{buf.data(), sx0, sy0, w, h};
+    const f32 params[kEffectParams] = {c.fill.r, c.fill.g, c.fill.b, c.fill.a, c.fill2.r, c.fill2.g, c.fill2.b, c.fill2.a};
+    EffectPixel in;
+    in.rect = c.rect;
+    in.params = params;
+    in.time = c.blur;
+    in.src = &src;
+    in.image = c.image < images.size() ? images[c.image] : nullptr;
+    const CpuEffectFn fn = fx->at(c.u).cpu;
+    const std::array<f32, 4> clipRad{clipRadius, clipRadius, clipRadius, clipRadius};
+    for (int y = y0; y < y1; ++y)
+        for (int x = x0; x < x1; ++x) {
+            const f32 px = f32(x) + 0.5f, py = f32(y) + 0.5f;
+            f32 cov = std::clamp(0.5f - sdRoundRect(px, py, c.rect, c.radius), 0.f, 1.f);
+            if (clipRadius > 0.f) cov *= std::clamp(0.5f - sdRoundRect(px, py, clipR, clipRad), 0.f, 1.f);
+            if (cov <= 0.f) continue;
+            in.x = x;
+            in.y = y;
+            const EffectColor e = fn(in);
+            u32& d = target.pixels[std::size_t(y) * std::size_t(target.width) + std::size_t(x)];
+            u32 o = 0;
+            for (int k = 0; k < 4; ++k) {
+                const f32 dv = f32((d >> (8 * k)) & 0xFFu);
+                const f32 ev = std::clamp(e[std::size_t(k)], 0.f, 255.f);
+                o |= u32(std::clamp(std::lround(dv + (ev - dv) * cov), 0l, 255l)) << (8 * k);
+            }
+            d = o;
+        }
+}
 } // namespace
 
 void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) const {
@@ -274,6 +342,7 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
             if (depth > 0) --depth;
             continue;
         case DrawOp::Backdrop: backdropBlur(c, clip.r, clip.radius, target); continue;
+        case DrawOp::Effect: effectPass(c, clip.r, clip.radius, target, m_effects, m_images); continue;
         default: break;
         }
         Rect bounds = c.rect;

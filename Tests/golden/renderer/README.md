@@ -26,6 +26,14 @@ A check passes when **both** hold (`harness/golden.hpp`):
    more than `pixelTolerance` (default 2 of 255). Lavapipe is deterministic, so a single changed pixel
    fails even though the mean metric barely moves (the exit test checks this on every run).
 
+On a device other than Lavapipe (any device whose name lacks `llvmpipe`) both parts keep their
+thresholds, but pixels whose centre lies within one sub-pixel step of the device plus one of
+Lavapipe's (`2^-subPixelPrecisionBits + 2^-8` px) of an edge of a drawn triangle are exempt: their
+coverage depends on vertex snapping and tie rules, which Vulkan leaves implementation-defined. The
+metric sees the golden's value there, the budget does not count them, and the diff image marks them
+blue. On an RTX 3090 that excuses 7 (`instance_grid_1k`) and 59 (`instance_grid_100k`) pixels; no
+gated pixel differs by more than one code. Never regenerate the goldens on such a device.
+
 On failure the test writes `<build>/rp_harness_artifacts/<name>.actual.png`, `<name>.diff.png`
 (golden dimmed to grey, failing pixels red) and `<name>.gbuffer.exr` (albedo, depth, emissive and
 normal channels) and prints their paths.

@@ -9,6 +9,13 @@ target_sources(fuse_rhi PRIVATE
 if(FUSE_BUILD_CORE_TESTS)
     # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
     set(_fuse_rp_wp01_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
+    # Manifest library path relative to the manifest; the Windows loader rejects '/' there
+    # (LoadLibraryEx with LOAD_WITH_ALTERED_SEARCH_PATH), so ".\" (JSON-escaped) on Windows.
+    if(WIN32)
+        set(_fuse_layer_lib_prefix ".\\\\")
+    else()
+        set(_fuse_layer_lib_prefix "./")
+    endif()
 
     # Gate: tier reporting (T2 on Lavapipe; T0/T1 via FUSE_RENDER_TIER_MAX and the masking layer),
     # T0 hard-fail in device selection, feature structs that reach the driver (recorded by the
@@ -39,7 +46,7 @@ if(FUSE_BUILD_CORE_TESTS)
     \"layer\": {
         \"name\": \"VK_LAYER_FUSE_mask_features\",
         \"type\": \"GLOBAL\",
-        \"library_path\": \"./$<TARGET_FILE_NAME:VkLayer_fuse_mask_features>\",
+        \"library_path\": \"${_fuse_layer_lib_prefix}$<TARGET_FILE_NAME:VkLayer_fuse_mask_features>\",
         \"api_version\": \"1.3.0\",
         \"implementation_version\": \"1\",
         \"description\": \"FUSE test layer: hides device extensions / features and records vkCreateDevice\"
