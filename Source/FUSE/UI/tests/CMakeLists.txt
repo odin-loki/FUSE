@@ -135,6 +135,16 @@ if(TARGET fuse_ui_vk)
         set_tests_properties(fuse_ui_vk_${g} PROPERTIES SKIP_RETURN_CODE 77 ENVIRONMENT "${FUSE_UI_LVP_ENV}"
                              LABELS "fuse_ui;gate;vulkan")
     endforeach()
+    # custom shader effects (built-ins + a user effect through fuse_ui_add_effect) and the SDF-quad backend
+    foreach(g custom_effect sdf_quads)
+        fuse_ui_test(fuse_ui_vk_${g} test_vk_${g}.cpp)
+        target_link_libraries(fuse_ui_vk_${g} PRIVATE fuse_ui_vk ${FUSE_UI_VK_LINK})
+        set_tests_properties(fuse_ui_vk_${g} PROPERTIES SKIP_RETURN_CODE 77 ENVIRONMENT "${FUSE_UI_LVP_ENV}"
+                             LABELS "fuse_ui;gate;vulkan")
+    endforeach()
+    if(COMMAND fuse_ui_add_effect)
+        fuse_ui_add_effect(fuse_ui_vk_custom_effect NAME kTestFxVignette SOURCE data/fx_vignette_image.glsl)
+    endif()
     if(TARGET fuse_ui_icons) # icons case: the build-time starter pack
         add_dependencies(fuse_ui_vk_parity fuse_ui_icons)
         target_compile_definitions(fuse_ui_vk_parity PRIVATE FUSE_UI_ICON_PACK="${FUSE_UI_ICON_PACK}")

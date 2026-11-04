@@ -8,11 +8,32 @@
 // barriers between segments. The target is an RGBA8 storage image in
 // VK_IMAGE_LAYOUT_GENERAL; the kernel blends over its contents (clear it first for a fresh layer). Capacities are fixed
 // at init; upload() fails (returns false) rather than reallocating, so steady state never allocates.
+//
+// Custom effects (fuse/ui/effects.hpp): setEffects() builds one compute pipeline per registered effect (its SPIR-V from
+// fuse_ui_add_effect, or the built-in one of the same name); an Effect command ends a segment like a backdrop and runs
+// as copy-to-scratch + effect dispatch.
+//
+// Backends (UiVkDesc::backend): Compute is the tile kernel. SdfQuads draws each segment as one instanced draw of SDF
+// quads (ui_sdf_quad.vert / .frag: the same coverage arithmetic, fixed-function premultiplied-over blending) inside a
+// render pass on the same GENERAL-layout image, which then also needs VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; backdrops
+// and effects still run as compute passes between the draws. Both leave the target ready for compute-stage access.
 #pragma once
 
 #include "fuse/ui/render/gpu_draw_data.hpp"
 
+#include <span>
+#include <string_view>
+
+namespace fuse::ui {
+class EffectRegistry;
+} // namespace fuse::ui
+
 namespace fuse::ui::render {
+
+enum class UiVkBackend : u8 {
+    Compute,  ///< "ui.draw_list" tile kernel (default)
+    SdfQuads, ///< instanced SDF quads, graphics pipeline + fixed-function blending
+};
 
 struct UiVkDesc {
     void* physicalDevice = nullptr; ///< VkPhysicalDevice
@@ -25,15 +46,26 @@ struct UiVkDesc {
     /// Backdrop blur scratch (device-local, 2 x 16 bytes per pixel): the largest blur source region (the backdrop
     /// rect plus 3 x its box radius, clamped to the target). A larger backdrop is drawn unblurred (tint only).
     u32 maxBackdropPixels = 1u << 20;
+    UiVkBackend backend = UiVkBackend::Compute;
+    /// SdfQuads shaders (set by useSdfQuads; a separate translation unit, so binaries that never select the backend do
+    /// not carry its SPIR-V).
+    std::span<const u32> sdfVertex, sdfFragment;
 };
+
+/// Selects the SDF-quad backend for `desc` (backend + its shaders). False when the shaders were not compiled in.
+bool useSdfQuads(UiVkDesc& desc);
 
 class UiVkRenderer {
 public:
     static constexpr u32 kMaxSlots = 4;
     /// External texture slots (fuse::ui::Image::externalSlot 0..3).
     static constexpr u32 kMaxExternal = 4;
-    /// Draw-list segments per frame (backdrops + 1); upload() fails beyond it.
+    /// Draw-list segments per frame (backdrops + effects + 1); upload() fails beyond it.
     static constexpr u32 kMaxSegments = 32;
+    /// Effect pipelines (EffectRegistry::kMaxEffects).
+    static constexpr u32 kMaxEffects = 32;
+    /// SdfQuads: framebuffers cached per target view (oldest replaced; see forgetTarget).
+    static constexpr u32 kMaxFramebuffers = 16;
 
     UiVkRenderer() = default;
     ~UiVkRenderer() { destroy(); }
@@ -43,6 +75,8 @@ public:
     /// False without the embedded kernel or on any Vulkan failure.
     bool init(const UiVkDesc& desc);
     void destroy();
+    /// Device memory the renderer allocated: ring-slot buffers (host-visible) + backdrop / effect scratch.
+    u64 deviceMemoryBytes() const { return valid() ? u64(m_desc.framesInFlight) * m_offsets[4] + u64(m_scratchPixels) * 32u : 0u; }
     bool valid() const { return m_pipeline != nullptr; }
 
     /// Copies `data` into ring slot `slot` (host writes before the submit are visible to it). False when over capacity.
@@ -61,6 +95,21 @@ public:
 
     /// True when the kernel SPIR-V was compiled into this build.
     static bool kernelAvailable();
+    /// True when the SDF-quad shaders were compiled into this build.
+    static bool sdfQuadsAvailable();
+    UiVkBackend backend() const { return m_desc.backend; }
+
+    /// Builds the effect pipelines of `registry` (ids = registry ids): each effect's SPIR-V, or the built-in SPIR-V of
+    /// that name. Effects without either are skipped on the GPU. Not for in-flight frames (pipelines are replaced).
+    /// (ui_vk_effects.cpp: the built-in SPIR-V is linked only into binaries that call this.)
+    bool setEffects(const EffectRegistry& registry);
+    /// Sets (empty: removes) the pipeline of effect `id` from SPIR-V made by fuse_ui_add_effect.
+    bool setEffect(u32 id, std::span<const u32> spirv);
+    bool hasEffect(u32 id) const { return id < kMaxEffects && m_effects[id] != nullptr; }
+    /// SPIR-V of a built-in effect (desaturate, ripple, grain); empty when unknown or not compiled in.
+    static std::span<const u32> builtinEffectSpirv(std::string_view name);
+    /// SdfQuads: drops the cached framebuffer of `view` (call before destroying a target view that may be reused).
+    void forgetTarget(void* view);
 
 private:
     struct Slot {
@@ -88,6 +137,19 @@ private:
     void* m_scratch = nullptr;        ///< VkBuffer, backdrop ping-pong halves (shared by all slots: one queue)
     void* m_scratchMem = nullptr;
     u32 m_scratchPixels = 0;          ///< per half
+    u32 m_stages = 0;                 ///< VkShaderStageFlags of the set layout / push constants
+    void* m_effects[kMaxEffects]{};   ///< VkPipeline per effect id
+    void* m_renderPass = nullptr;     ///< SdfQuads
+    void* m_gfxPipeline = nullptr;
+    struct Framebuffer {
+        void* view = nullptr;
+        void* fb = nullptr;
+        u32 w = 0, h = 0;
+    };
+    Framebuffer m_fbs[kMaxFramebuffers]{};
+    u32 m_fbNext = 0;
+    void* framebufferFor(void* view, u32 w, u32 h);
+    void* makeComputePipeline(std::span<const u32> spirv);
 };
 
 } // namespace fuse::ui::render

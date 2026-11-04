@@ -13,6 +13,8 @@ bool UiLayerGpu::init(renderer::VulkanDevice* device, UiVkDesc limits) {
     if (device == nullptr || !device->isValid() || device->nativeHandle() == nullptr) return false;
     limits.device = device->nativeHandle();
     limits.physicalDevice = device->nativePhysicalDevice();
+    limits.backend = UiVkBackend::Compute; // the pass declares compute storage access; graph images are storage images
+    limits.sdfVertex = limits.sdfFragment = {};
     if (limits.framesInFlight == 0 || limits.framesInFlight > UiVkRenderer::kMaxSlots)
         limits.framesInFlight = UiVkRenderer::kMaxSlots;
     m_frames = limits.framesInFlight;

@@ -2,6 +2,7 @@
 // "ui.draw_list" on the render graph: the UiVkRenderer kernel as one compute pass that blends a packed UI draw list
 // onto an RGBA8 (R8G8B8A8_UNORM) graph image with StorageReadWrite access (composite over the scene / sprite layer, or
 // a cleared overlay). Mirrors hybrid::SpriteLayerGpu: per-ring-slot host-mapped buffers, no steady-state allocations.
+// Always the compute backend (UiVkBackend::SdfQuads needs colour-attachment images and a render pass).
 #if defined(FUSE_HAS_VULKAN_RHI)
 
 #include "fuse/ui/render/ui_vk.hpp"
