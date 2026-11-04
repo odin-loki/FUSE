@@ -1973,16 +1973,16 @@ int gateEditTools() {
     }
 
     // Frame Selected: a far-away entity ends up centred in front of the camera.
-    ecs::EntityID far;
+    ecs::EntityID farEntity;
     {
         std::lock_guard<std::mutex> lock(window.sceneMutex());
         ecs::Registry& reg = window.host().editorScene().registry();
-        far = reg.create();
+        farEntity = reg.create();
         ecs::Transform t{};
         t.position = {140.f, 25.f, -90.f, 1.f};
-        reg.add(far, t);
-        window.host().editorState().selectedEntities = {far};
-        window.host().editorState().primarySelection = far;
+        reg.add(farEntity, t);
+        window.host().editorState().selectedEntities = {farEntity};
+        window.host().editorState().primarySelection = farEntity;
     }
     expect(action("fuseActionFrameSelected") != nullptr, "View > Frame Selected exists");
     action("fuseActionFrameSelected")->trigger();
@@ -2004,7 +2004,7 @@ int gateEditTools() {
     // Double-clicking a hierarchy row frames that entity.
     window.refreshPanels();
     {
-        QTreeWidgetItem* row = window.hierarchy()->itemFor(far);
+        QTreeWidgetItem* row = window.hierarchy()->itemFor(farEntity);
         expect(row != nullptr, "hierarchy row for the far entity");
         if (row != nullptr) {
             {
@@ -2017,7 +2017,7 @@ int gateEditTools() {
             std::lock_guard<std::mutex> lock(window.sceneMutex());
             const auto& cam = vp->panel().camera();
             const f32 d = std::hypot(cam.positionX - 140.f, cam.positionY - 25.f, cam.positionZ + 90.f);
-            expect(d < 20.f && window.host().editorState().primarySelection == far,
+            expect(d < 20.f && window.host().editorState().primarySelection == farEntity,
                    fmt("double-clicking a hierarchy row selects and frames it (%.2f m)", d));
         }
     }
