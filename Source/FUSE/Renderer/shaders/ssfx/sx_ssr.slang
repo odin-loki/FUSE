@@ -6,7 +6,7 @@ float sxContactHardenRoughness(float rayHitDistance, float materialRoughness) {
         return sxClamp(materialRoughness, 0.0, 1.0);
     }
     const float distance = max(rayHitDistance, 0.0);
-    const float contactFactor = pow(sxClamp(1.0 - distance / F.ssrContactDistance, 0.0, 1.0), F.ssrContactExponent);
+    const float contactFactor = pow(sxClamp(1.0 - sxDiv(distance, F.ssrContactDistance), 0.0, 1.0), F.ssrContactExponent);
     const float hardened = materialRoughness + (F.ssrContactFloor - materialRoughness) * contactFactor;
     return sxClamp(hardened, F.ssrContactFloor, 1.0);
 }
