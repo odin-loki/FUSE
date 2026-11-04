@@ -328,6 +328,12 @@ std::string HeadlessFrameRunner::deviceName() const {
     return m_impl->bootstrap->device()->info().deviceName;
 }
 
+u32 HeadlessFrameRunner::subPixelPrecisionBits() const {
+    VkPhysicalDeviceProperties props{};
+    vkGetPhysicalDeviceProperties(static_cast<VkPhysicalDevice>(m_impl->bootstrap->device()->nativePhysicalDevice()), &props);
+    return props.limits.subPixelPrecisionBits;
+}
+
 ValidationReport HeadlessFrameRunner::validation() const {
     ValidationReport r;
     r.layerRequested = m_validationRequested;
@@ -545,6 +551,10 @@ HeadlessFrameRunner::~HeadlessFrameRunner() = default;
 
 std::string HeadlessFrameRunner::deviceName() const {
     return {};
+}
+
+u32 HeadlessFrameRunner::subPixelPrecisionBits() const {
+    return 0;
 }
 
 ValidationReport HeadlessFrameRunner::validation() const {
