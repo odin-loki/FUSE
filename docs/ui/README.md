@@ -19,7 +19,8 @@ immediate-mode front-end. See the plan's status table for what is still open.
 | `Source/FUSE/UI/Text` | `fuse_text` | Fonts (stb_truetype; FreeType in FULL), bundled Open Sans, UTF-8, `ITextShaper` (`MinimalShaper`, `HarfBuzzShaper` in FULL), wrap/ellipsis layout, glyph atlas, `TextEditBuffer`, UAX #29 / #14 / #9 segmentation, fallback chains, `FontCatalog` (system fonts) |
 | `Source/FUSE/UI/Core` | `fuse_ui_core` | `UiContext` (tree, style, layout, paint, input, focus, signals, timers, animation, a11y), `DrawList` + `CpuRasterizer`, `StyleEngine`, `immediate::ImmediateUi`, `platform_bridge.hpp` |
 | `Source/FUSE/UI/Widgets` | `fuse_ui_widgets` | Tier A + Tier B widgets + default dark theme (`widgets::install`) |
-| `Source/FUSE/UI/Doc` | `fuse_ui_doc` | `.fuseui` JSON documents, binding model, expression bytecode |
+| `Source/FUSE/UI/Doc` | `fuse_ui_doc`, `fuse_ui_cook`, `fuse_ui_extract_strings` | `.fuseui` JSON documents, binding model, expression bytecode; the cooker and the string-extraction CLI |
+| `Source/FUSE/UI/L10n` | `fuse_ui_l10n_lib` | CLDR plural rules, ICU-style message formatting, locale number / date formatting, string-table file format (standard library only, no ICU) |
 | `Source/FUSE/UI/Script` | `fuse_ui_script` | Lua `ui` table (vendored Lua 5.2) |
 | `Source/FUSE/UI/Render` | `fuse_ui_render`, `fuse_ui_vk` | GPU draw data packing, `ui.draw_list` compute kernel, `UiLayerGpu` render-graph pass and `UiFrameSource` (in tree with the Vulkan RHI) |
 | `Source/FUSE/UI/App` | `fuse_app`, `fuse_app_native`, `fuse_app_a11y` | `Application` / `AppWindow` on-demand loop, settings, command line, single instance; native X11 / Win32 / Android (NativeActivity) windows and the Vulkan swapchain presenter; custom window chrome; tray icon / notifications; `WindowAccessibility` (screen readers on a native window); samples `hello_app`, `notes_app`, `game_menu`, `fuse_ui_android_demo`; `App/android/` APK packer and adb gate driver |
@@ -438,9 +439,74 @@ hud.update(realDt); nav.update(padState, realDt); ui.update(realDt);
   mode takes everything). Device prompts (`GameUi::prompt`) swap glyphs on `noteDevice`.
 - `UiSurface` is a UI context placed in the world (centre, right / up axes, size). `surfaceRaycast` maps a ray to
   panel pixels, `surfacePointer` feeds it as pointer input and `surfaceRender` re-rasterises on damage.
-- `StringTable` holds per-locale `key=value` tables; bound nodes are re-texted on `setLocale` + `refresh`.
+- `StringTable` holds per-locale `key=value` tables; bound nodes are re-texted on `setLocale` + `refresh`. See
+  [Localisation](#localisation) for messages with arguments, plurals and the extraction CLI.
 - The sound hook (`setSoundHook`) receives Move / Accept / Back / Open / Close; wiring it to `fuse_audio` and theme
   sound names is the game's job for now.
+
+## Localisation
+
+`fuse_ui_l10n_lib` (`fuse/ui/l10n/l10n.hpp`, namespace `fuse::ui::l10n`) has no ICU dependency. Locale tags are
+matched case-insensitively, region first (`de-CH`, `pt_PT`, `en-IN`), then the language; digits are always Latin.
+
+```cpp
+namespace l10n = fuse::ui::l10n;
+l10n::formatMessage("en", "{n, plural, =0 {No items} one {# item} other {# items}}", {{"n", 1000}}); // "1,000 items"
+l10n::formatMessage("ru", "{n, plural, one {# файл} few {# файла} many {# файлов} other {# файла}}", {{"n", 22}});
+l10n::formatMessage("en", "{g, select, female {She} other {They}} left on {d, date, long}",
+                    {{"g", "female"}, {"d", l10n::Date{2024, 3, 5}}});                        // "She left on March 5, 2024"
+l10n::formatNumber("de", 1234.5);       // "1.234,5"     formatNumber("hi", 1234567) -> "12,34,567"
+l10n::formatPercent("tr", 0.5);         // "%50"
+l10n::formatDate("ja", {2024, 3, 5}, l10n::DateStyle::Long); // "2024年3月5日"
+l10n::pluralCardinal("ar", l10n::PluralOperands::fromDouble(3)); // Plural::Few
+```
+
+- Plural rules (CLDR 44, cardinal and ordinal) with the operands n, i, v, f, t, so `"1.0"` and `1.5` pick the decimal
+  categories: en, de, nl, sv, fi, da, nb, et, gl, fr, es, it, pt, pt-PT, ru, uk, pl, cs, sk, ar, he, tr, el, hu, bg,
+  hi, bn, fa, ja, zh, ko (and the root rule, other only, for anything else). Ordinals: en, fr, it, sv, uk, hi, bn;
+  others are other only. The compact-exponent operands (c / e) are not supported.
+- Messages follow ICU MessageFormat: `{name}`, `{n, number[, integer|percent]}`, `{d, date[, short|medium|long]}`,
+  `{n, plural, [offset:k] =0 {..} one {..} other {..}}`, `{n, selectordinal, ..}`, `{g, select, .. other {..}}`,
+  nesting, `#` (the plural number minus the offset, locale-formatted; literal inside a nested select, as in ICU),
+  ICU apostrophe quoting (`''` is `'`; `'{...}'` is literal; a lone `'` is literal). Arguments are text, numbers
+  or `Date`; a decimal string (`"1.50"`) keeps its visible fraction digits for plural selection and `#`. A missing
+  argument prints as `{name}`; a malformed pattern is an error (`formatMessageOr` returns the pattern instead).
+- Numbers: decimal / grouping separators, minimum grouping digits (es, pl, pt-PT: `1234` stays ungrouped), Indian
+  grouping (hi, en-IN), minus signs (U+2212 for sv, fi), percent placement; half-even rounding. Dates (gregorian
+  short / medium / long and month names): en, en-GB, en-IN, de, fr, es, it, pt, nl, sv, ru, pl, tr, ja, zh, ko, ar;
+  other locales use en. Time formatting, currencies, skeletons and non-Latin digits are not done.
+
+`StringTable` (in `fuse_ui_game`) on top of it:
+
+```cpp
+StringTable st;
+st.add("en", "items={n, plural, one {# item} other {# items}}\ngreet=Hello, {name}!");
+st.add("de", "items={n, plural, one {# Gegenstand} other {# Gegenstände}}");
+st.setLocale("de");
+st.tr("items", {{"n", 3}});        // "3 Gegenstände", formatted with the locale the string came from
+st.tr("greet", {{"name", "Ann"}}); // "Hello, Ann!" (fallback locale: the first added, or setFallbackLocale)
+st.tr("greet");                    // raw value, as before
+st.bind(ui, label, "items", {{"n", 3}}); // re-texted on refresh()
+```
+
+Table files are one `key=value` per line, `#` comment lines, escapes `\\ \n \t` (and `\=`, a leading `\#` in keys).
+
+### `fuse_ui_extract_strings`
+
+```
+fuse_ui_extract_strings --out=de.strings [--locale=de] [--source] [--fn=tr,...] [--no-locations] [--drop-obsolete]
+                        <files or directories>...
+```
+
+Scans `.fuseui` documents (constant `text` except line / text edits, `items`, `a11yName`; strings with a `{`
+binding are skipped) and C++ sources (`.cpp .h .hpp ...`) for `tr("...")` calls whose first argument is a string
+literal or adjacent literals (escapes, `u8` and raw literals decoded; comments and other strings ignored), and writes
+the table sorted by key with `#: file:line` (or `file:node id`) location comments. An existing output file is merged:
+translations are kept, untranslated keys are written as `#? key` (ignored by `StringTable`, so lookups fall back),
+keys new since the last run are flagged `#, new`, and translations whose key left the sources move to
+`#~ key=value` at the end (restored if the key comes back; `--drop-obsolete` removes them). `--source` writes new
+keys as `key=key` for the source-language table. A summary and the new / obsolete keys are printed; exit code 1 on
+an unreadable input or a broken document. The output is deterministic for the same inputs.
 
 ## Data and editor widgets (UI6 Tier C/D)
 
@@ -543,6 +609,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_world_panel_raycast` | ray → panel pixel mapping, misses and back faces, ray clicks, idle surface does not re-render |
 | `fuse_ui_input_arbitration` | pointer / keyboard / gamepad ownership between UI and game |
 | `fuse_ui_pause_time_domain` | pause and slow motion affect game-time HUD only; locale switching |
+| `fuse_ui_l10n` | plural categories against the CLDR sample values (cardinal + ordinal, 20+ locales), message formatting (plural, selectordinal, select, nesting, offset, quoting, number / date arguments, errors), number / percent / date formatting per locale, `StringTable::tr` with arguments and fallback, bound nodes; `fuse_ui_extract_strings` on `tests/data/l10n` (exact output, merge keeping translations, idempotent re-run, `--source`, `--fn`) |
 | `fuse_demo_hybrid_hud_ui` | `demo_hybrid_hud` HUD on a UI context in the hybrid frame (`HybridComposer::setUiOverlay` → `UiFrameSource::recordOver`, over the sprite layer): every opaque HUD pixel of the GPU readback equals the CPU raster (≤ 1/255), glyphs visible |
 
 Extra: `fuse_ui_text_basics`, `fuse_ui_text_full`, `fuse_ui_widget_interaction`, `fuse_ui_tier_b`, `fuse_ui_tier_b2`,
