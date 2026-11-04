@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 2,
+  "name": "FuseUIApp",
+  "kind": "app",
+  "dimensions": {
+    "enable3D": false,
+    "enable2D": false,
+    "enableUI": true
+  },
+  "modules": {
+    "ai": false,
+    "cinematics": false,
+    "fx": false,
+    "mechanics": false,
+    "adventure": false
+  },
+  "defaultWorld3D": "",
+  "defaultWorld2D": "",
+  "workerCap": 0,
+  "requiredFeatures": [],
+  "ui": {
+    "root": "ui/main.fuseui",
+    "styles": [],
+    "theme": "system",
+    "redraw": "onDemand",
+    "profile": "app",
+    "text": "minimal"
+  },
+  "windows": [
+    {"id": "main", "title": "FuseUIApp", "width": 800, "height": 600, "root": "", "redraw": "onDemand"}
+  ]
+}

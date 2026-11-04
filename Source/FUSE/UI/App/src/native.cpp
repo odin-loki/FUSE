@@ -1363,6 +1363,17 @@ PresenterKind NativePlatform::kind(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);
     return r ? r->kind : PresenterKind::Headless;
 }
+std::string defaultCacheDir() {
+#if defined(_WIN32)
+    const char* base = std::getenv("LOCALAPPDATA");
+    return base && *base ? std::string(base) + "\\FUSE\\cache" : std::string();
+#else
+    if (const char* x = std::getenv("XDG_CACHE_HOME"); x && *x) return std::string(x) + "/fuse";
+    const char* home = std::getenv("HOME");
+    return home && *home ? std::string(home) + "/.cache/fuse" : std::string();
+#endif
+}
+
 std::string_view NativePlatform::gpuName() const { return detail::vkCtxDeviceName(m->vk); }
 bool NativePlatform::gpuDraws(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);

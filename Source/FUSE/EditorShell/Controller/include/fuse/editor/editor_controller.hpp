@@ -164,6 +164,9 @@ public:
     /// New Project wizard: also writes the module toggles to project.json and reopens it (Qt createProject).
     bool newProject(const std::string& directory, const std::string& name, u32 dimensionFlags,
                     const project::ModuleSettings& modules);
+    /// New Project wizard "Application (FUSE UI)": project.json schema 2 kind app + ui/main.fuseui
+    /// (project::createAppProject, Templates/FuseUIApp), then opens it.
+    bool newAppProject(const std::string& directory, const std::string& name);
     bool openProject(const std::string& directory);
     /// File > Recent Projects (Qt rebuildRecentProjectsMenu): reopen by index; missing project.json fails.
     bool openRecentProject(u32 index);

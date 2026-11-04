@@ -357,6 +357,51 @@ Behaviour on Android:
 - Text: the soft keyboard is shown / hidden as text fields gain / lose focus (`InputMethodManager` on the decor view;
   `NativeOptions::autoSoftKeyboard`, `setSoftKeyboard`). Key events become `keyDown` / `keyUp` plus committed text
   through `KeyCharacterMap`; there is no IME composition (pre-edit) with NativeActivity.
+### App projects (`project.json` schema 2)
+
+A project declares that it is an application with `"schemaVersion": 2` and `"kind": "app"` (or `"hybrid"`: an app
+whose viewport widgets may create game worlds on demand; `"game"` is today's behaviour and the default):
+
+```json
+{
+  "schemaVersion": 2, "name": "my_tool", "kind": "app",
+  "dimensions": { "enable3D": false, "enable2D": false, "enableUI": true },
+  "requiredFeatures": [],
+  "ui": { "root": "ui/main.fuseui", "styles": ["ui/theme.fusestyle"], "theme": "system",
+          "redraw": "onDemand", "profile": "app", "text": "minimal" },
+  "windows": [ { "id": "main", "title": "My Tool", "width": 800, "height": 600, "root": "", "redraw": "onDemand" } ]
+}
+```
+
+- `requiredFeatures`: host features beyond what the kind implies — `AppPresent`, `GameFrame`, `Renderer3D`,
+  `Renderer2D`, `Physics`, `Audio`, `Script`, `Jobs`, `Viewport`. `app` implies `AppPresent`, `hybrid` adds `Viewport`,
+  `game` implies `GameFrame` + `Jobs` + renderers / physics per dimension (`fuse::project::impliedHostFeatures`).
+- `windows[].root` empty = `ui.root`; no `windows` = one window titled after the project. Paths stay inside the project.
+- Schema 2 is validated strictly (`fuse::project::validateManifest`): unknown keys are errors except `x-*`, errors name
+  the field (`$.windows[0].width: ...`). An `app` has no 3D / 2D worlds and no game-side features (use `hybrid`).
+- Schema 1 files load unchanged (kind `game` in memory) and are written back as schema 1. Migrate with
+  `fuse_project_tool --migrate <project> [--dry-run]` (or `fuse::project::migrateProjectFile`).
+- New app projects: the editor's New Project wizard (Type "Application (FUSE UI)"), `fuse_project_tool --new-app <dir>`
+  or `fuse::project::createAppProject`; the files match [`Templates/FuseUIApp`](../../Templates/FuseUIApp/README.md).
+
+The minimal init path: `fuse::project::planInit` says what a host brings up; `fuse::app::ProjectHost`
+(`fuse/app/project_host.hpp`, in tree) loads the project, enables `TrackBHostFeature::AppPresent` (the host-scoped
+present unlock for apps, honoured in shipping builds), starts the job scheduler only when `Jobs` is declared, opens the
+windows with their documents and style sheets and presents the first frame — no worlds, `GpuScene`, `FrameComposer` or
+physics. Run a project with `fuse_app_host <project> [--headless] [--first-frame]`. The first frame is software while
+the Vulkan presenter starts on a worker (`NativeOptions::asyncVulkan`).
+
+`ui.theme`: `system` follows the OS colour scheme live (`Application::setFollowSystemTheme`), `dark` / `light` pin the
+widget theme; other names are refused at start. A `hybrid` project's game side (job scheduler, `HybridComposer` with
+the project's dimension flags, the default worlds, physics) stays down until one of its `viewport` widgets is visible
+(polled 4× a second); then it renders into every visible viewport at 60 Hz and drops back to polling when they hide.
+`ProjectHost::ensureGameSide()` brings it up on request.
+
+The `ui.draw_list` kernel keeps a persistent `VkPipelineCache` in the per-user cache dir (`%LOCALAPPDATA%\FUSE\cache`,
+`$XDG_CACHE_HOME/fuse` or `~/.cache/fuse`; `NativeOptions::pipelineCacheDir`), validated by the kernel's SPIR-V hash and
+the driver's vendor / device / `pipelineCacheUUID`. `FUSE_APP_VK_TRACE=1` prints the Vulkan presenter start-up phases.
+
+Baseline measurements for §6 of the plan (sizes, startup, idle, memory, frame times) are in [BASELINES.md](BASELINES.md).
 
 ## Game UI (UI7)
 
@@ -455,6 +500,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_vk_budget` | GPU time (timestamp queries) of 1080p frames: full, backdrop blur, incremental (software devices report only) |
 | `fuse_ui_vk_custom_effect` | built-in effects (desaturate, ripple, grain: plain, rounded, in a rounded clip, at the edge, scissored) bit-exact against their CPU twins; a user effect via `fuse_ui_add_effect` (image + native exp / sin) within ±2; `effect:` style hookup and animated repaint; validation clean; no steady-state allocation |
 | `fuse_ui_vk_sdf_quads` | SDF-quad backend vs the CPU reference (sample, primitives, blur + effects between draws, scissored redraw): max error ≤ 2, mean ≤ 0.1 / 255; validation clean; reports compute vs SDF timings at 1080p and 4K |
+| `fuse_ui_vk_budget` | GPU time (timestamp queries) of 1080p frames: full, backdrop blur, incremental, a ~270-node HUD ≤ 0.5 ms (software devices report only) |
 | `fuse_app_native_startup` | launches `hello_app` 5× per configuration: default (async Vulkan) and software-only first frame median ≤ 150 ms; every default run switches to Vulkan (median ≤ 2 s) with the switched frame equal to the CPU raster; synchronous Vulkan init ≤ 2 s (skips 77 without a display) |
 | `fuse_app_binary_size` | `hello_app` file size ≤ measured baseline + 10 % (MSVC x64 Release, MINIMAL text: 809,472 B → 890,400 B; other toolchains report and skip until a baseline is set with `-DFUSE_APP_BINARY_BUDGET`). Effect and SDF-quad SPIR-V live in their own translation units, so apps that do not use them do not carry it |
 | `fuse_app_window_chrome` | custom-chrome window: `chromeHitTest` probes, then `WM_NCHITTEST` on a real Win32 window, frame removed, max / restore / min / close through non-client clicks (77 off Win32) |
@@ -465,6 +511,8 @@ checks it against the overlay under one scripted event stream.
 | `fuse_app_lifecycle_android` | HOME releases the surface, `am start` rebuilds it with a correct first frame and the same UI state; rotation resizes to landscape and back |
 | `fuse_platform_touch_android` | `input tap` clicks the button; `input swipe` over the list scrolls it both ways without clicking |
 | `fuse_platform_ime_android` | tapping the line edit focuses it and shows the soft keyboard; `input text` and backspace edit it |
+| `fuse_app_idle_native` | real idle window for 3 s: zero presents, ≤ 10 loop wakeups / s (OS messages only), CPU ≤ 2 % |
+| `fuse_project_schema2`, `fuse_project_schema2_native` | project.json schema 1 load / write / migrate, schema 2 round trip, 24 rejected files, the app template, `ProjectHost` brings up only `AppPresent` and presents the `.fuseui` (headless ≤ 150 ms; `_native` on a real window vs the CPU raster) |
 | `fuse_ui_game_hud_golden` | HUD demo scene against `tests/golden/hud.png` plus trail / marker / pool state |
 | `fuse_ui_gamepad_nav` | navigation with delay + repeat, A / B, radial menu by stick, prompt glyph swap, focus sounds |
 | `fuse_ui_world_panel_raycast` | ray → panel pixel mapping, misses and back faces, ray clicks, idle surface does not re-render |

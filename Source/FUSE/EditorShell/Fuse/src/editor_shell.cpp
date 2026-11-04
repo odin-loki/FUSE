@@ -1432,8 +1432,9 @@ void EditorShellWindow::openNewProjectWizard() {
         if (const auto dir = m_c.services().pickDirectory("Project Location", u.text(loc)); dir && !dir->empty()) u.setText(loc, *dir);
     });
     const NodeHandle hint = w::label(m_ui, body, "", "wizard.hint");
-    r = row("Dimension");
-    w::comboBox(m_ui, r, "3D\n2D\nHybrid (3D + 2D)", 2, "wizard.dimension");
+    r = row("Type");
+    // 0-2: game projects by dimension; 3: the Application (FUSE UI) template (Templates/FuseUIApp, schema 2 kind app)
+    w::comboBox(m_ui, r, "3D\n2D\nHybrid (3D + 2D)\nApplication (FUSE UI)", 2, "wizard.dimension");
     w::checkBox(m_ui, r, "UI layer", true, "wizard.ui");
     r = row("Modules");
     static constexpr std::pair<const char*, const char*> kModules[] = {
@@ -1458,7 +1459,13 @@ void EditorShellWindow::openNewProjectWizard() {
     m_ui.connect(cancel, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { closeNewProjectWizard_(); });
     m_ui.connect(create, SignalKind::Clicked, [this](UiContext& u, NodeHandle, const SignalArgs&) {
         const auto [n, dir] = target(u);
-        const u32 dim = u32(u.value(u.find("wizard.dimension"))); // 0 3D, 1 2D, 2 Hybrid
+        const u32 dim = u32(u.value(u.find("wizard.dimension"))); // 0 3D, 1 2D, 2 Hybrid, 3 Application (FUSE UI)
+        if (dim == 3) {
+            closeNewProjectWizard_();
+            if (!m_models->hubNewApp(dir, n) && !m_c.lastError().empty()) m_c.services().warn("New Project", m_c.lastError());
+            sync();
+            return;
+        }
         u32 flags = 0;
         if (dim != 1) flags |= kProjectEnable3D;
         if (dim != 0) flags |= kProjectEnable2D;
