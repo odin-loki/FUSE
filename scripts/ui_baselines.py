@@ -102,16 +102,22 @@ def idle_memory(cmd, settle=3.0):
 
 # ---- measurements ---------------------------------------------------------------------------------------------------
 def first_frame(exe, extra, runs):
-    """hello_app --first-frame: (median process wall ms spawn -> exit, median in-process ms main -> first present)."""
-    walls, inner = [], []
+    """hello_app --startup-probe: (median ms from process creation to the first presented frame, median ms to the
+    first Vulkan-presented frame after the async switch (None without one), first presenter)."""
+    first, switch = [], []
+    out = ""
     for _ in range(runs):
-        wall, rc, out = run([exe, "--first-frame", *extra])
-        m = re.search(r"first frame ([\d.]+) ms", out)
+        _, rc, out = run([exe, "--startup-probe", *extra])
+        m = re.search(r"first_frame_ms=([\d.]+) presenter=(\w+)", out)
         if rc == 0 and m:
-            walls.append(wall * 1e3)
-            inner.append(float(m.group(1)))
-    presenter = re.search(r"presenter ([^\n]+)", out)
-    return median_of(walls), median_of(inner), presenter.group(1).strip() if presenter else "?"
+            first.append(float(m.group(1)))
+            s = parse(r"switch_ms=([\d.]+)", out)
+            if s is not None and s > 0:
+                switch.append(s)
+    pres = re.search(r"presenter=(\w+)", out)
+    gpu = re.search(r"hello_app: presenter [^\n]*? on ([^\n(]+)", out)
+    note = (pres.group(1) if pres else "?") + (f" first, then Vulkan on {gpu.group(1).strip()}" if switch and gpu else "")
+    return median_of(first), median_of(switch), note
 
 
 def parse(pattern, text, cast=float):
@@ -144,7 +150,7 @@ def main():
 
     # sizes (stripped)
     for profile, root in (("MINIMAL", a.ui_min), ("FULL", a.ui_full), ("tree", a.tree)):
-        for name in ("hello_app", "notes_app", "hud_demo", "fuse_app_host", "fuse_runtime_smoke", "fuse_editor_fuse"):
+        for name in ("hello_app", "notes_app", "game_menu", "hud_demo", "fuse_app_host", "fuse_hybrid_host", "fuse_runtime_smoke", "fuse_editor_fuse"):
             exe = find(root, name)
             if exe:
                 r["sizes"][f"{name} ({profile})"] = stripped_size(exe)
@@ -152,10 +158,10 @@ def main():
     # startup to first presented frame
     hello = find(a.ui_min, "hello_app") or find(a.tree, "hello_app")
     if hello:
-        r["startup"]["hello_app vulkan (GPU draw)"] = first_frame(hello, [], a.runs)
-        r["startup"]["hello_app vulkan (CPU upload)"] = first_frame(hello, ["--cpu-upload"], a.runs)
-        if WINDOWS:
-            r["startup"]["hello_app software (GDI)"] = first_frame(hello, ["--software"], a.runs)
+        r["startup"]["hello_app default (software first frame, async Vulkan)"] = first_frame(hello, [], a.runs)
+        r["startup"]["hello_app synchronous Vulkan start-up (GPU draw)"] = first_frame(hello, ["--sync-vulkan"], a.runs)
+        r["startup"]["hello_app synchronous Vulkan, CPU upload"] = first_frame(hello, ["--sync-vulkan", "--cpu-upload"], a.runs)
+        r["startup"]["hello_app software only (--no-vulkan)"] = first_frame(hello, ["--no-vulkan"], a.runs)
     host = find(a.tree, "fuse_app_host")
     template = REPO / "Templates" / "FuseUIApp"
     if host:
@@ -167,7 +173,8 @@ def main():
                 if rc == 0 and v is not None:
                     walls.append(wall * 1e3)
                     inner.append(v)
-            r["startup"][f"fuse_app_host FuseUIApp ({label})"] = (median_of(walls), median_of(inner), label)
+            r["startup"][f"fuse_app_host FuseUIApp ({label}): in-process first frame / process spawn→exit"] = (
+                median_of(inner), median_of(walls), label)
     smoke = find(a.tree, "fuse_runtime_smoke")
     if smoke:
         walls = []
@@ -175,7 +182,8 @@ def main():
             wall, rc, _ = run([smoke, "--gpu-frame"], 300)
             if rc == 0:
                 walls.append(wall * 1e3)
-        r["startup"]["fuse_runtime_smoke --gpu-frame (core + renderer + 4 offscreen GPU frames)"] = (median_of(walls), None, "")
+        r["startup"]["fuse_runtime_smoke --gpu-frame: whole run (core + renderer + 4 offscreen GPU frames)"] = (
+            median_of(walls), None, "process spawn→exit")
 
     # idle: real window, nothing to do
     idle = find(a.ui_min, "fuse_app_idle_native") or find(a.tree, "fuse_app_idle_native")
@@ -190,8 +198,7 @@ def main():
     # memory of idle apps
     if hello:
         r["memory"]["hello_app (vulkan)"] = idle_memory([hello])
-        if WINDOWS:
-            r["memory"]["hello_app (GDI)"] = idle_memory([hello, "--software"])
+        r["memory"]["hello_app (software only)"] = idle_memory([hello, "--no-vulkan"])
     if host:
         r["memory"]["fuse_app_host FuseUIApp"] = idle_memory([host, template])
     shell = find(a.tree, "fuse_editor_fuse")
@@ -206,8 +213,9 @@ def main():
         budget = find(root, "fuse_ui_vk_budget")
         if budget:
             _, _, out = run([budget])
-            r["frames"][f"fuse_ui_vk_budget HUD 1440p GPU median ms ({profile})"] = parse(r"median ([\d.]+) ms", out)
-            r["frames"]["vk device"] = parse(r"fuse_ui_vk_budget: ([^(]+) \(", out, str)
+            for case, ms in re.findall(r"^\s+([\w-]+)\s+\d+ cmds,.*?median ([\d.]+) ms", out, re.M):
+                r["frames"][f"fuse_ui_vk_budget {case} GPU median ms, 1920x1080 ({profile})"] = float(ms)
+            r["frames"]["vk device"] = parse(r"device: ([^\n]+)", out, str)
     gates = find(a.tree, "fuse_editor_ui_gates")
     if gates:
         with tempfile.TemporaryDirectory() as d:
@@ -227,10 +235,10 @@ def main():
     print("| Binary | Stripped size |\n|---|---|")
     for k, v in r["sizes"].items():
         print(f"| {k} | {v / 1e6:.2f} MB |")
-    print("\n| Startup to first frame | Process (spawn→exit) | In-process | Presenter |\n|---|---|---|---|")
-    for k, (wall, inner, pres) in r["startup"].items():
+    print("\n| Startup | First presented frame | Vulkan frame / second figure | Notes |\n|---|---|---|---|")
+    for k, (first, second, note) in r["startup"].items():
         fmt = lambda x: "—" if x is None else f"{x:.0f} ms"
-        print(f"| {k} | {fmt(wall)} | {fmt(inner)} | {pres} |")
+        print(f"| {k} | {fmt(first)} | {fmt(second)} | {note} |")
     if r["idle"]:
         i = r["idle"]
         print(f"\nIdle real window: {i['seconds']:.1f} s, {i['frames']} frames, {i['wakeups']} loop wakeups, "
