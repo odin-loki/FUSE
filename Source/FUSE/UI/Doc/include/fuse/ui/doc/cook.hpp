@@ -19,7 +19,7 @@
 
 namespace fuse::ui::doc {
 
-inline constexpr u32 kCookedVersion = 2; ///< 2: PropValue::ident (icon property)
+inline constexpr u32 kCookedVersion = 3; ///< 2: PropValue::ident (icon property); 3: `effect` property (Prop::Count moved)
 
 struct CookInfo {
     u32 nodes = 0, bindings = 0, instructions = 0;

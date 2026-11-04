@@ -3,11 +3,16 @@
 //           pack), the index round-trips (every entry's atlas rect holds exactly the trimmed rasterised SVG), the SVG
 //           subset rasterises as specified (shapes, arcs, transforms, fill rules, opacity, currentColor), bad input
 //           is rejected and corrupt packs fail to load (byte-flip fuzz) without crashing; resampled sizes track a
-//           direct rasterisation; fuse_ui_doc records the icons a document uses.
+//           direct rasterisation; fuse_ui_doc records the icons a document uses. Multi-colour (layered palette,
+//           tests/data/icons_color): the build-time pack is byte-identical, each icon's layer plan (colours, order,
+//           currentColor / black-only icons stay one tintable layer) and every layer's atlas entry round-trips;
+//           version 1 packs still load.
 //   render  fuse_ui_icon_render: icons at 16 / 24 / 32 / 48 px (+ 40, resampled) in two tints and a disabled state on
 //           the CPU rasteriser against tests/golden/icons.png (FUSE_UI_UPDATE_GOLDEN=1 rewrites; no text, so one
 //           golden serves both text profiles); currentColor follows the theme, hover and disabled colours; buttons,
-//           menu items, `.fuseui` and cooked style sheets carry icons.
+//           menu items, `.fuseui` and cooked style sheets carry icons. Multi-colour icons (16 / 24 / 32 / 40 / 48 px,
+//           two tints, disabled) against tests/golden/icons_color.png: one Glyph per layer, currentColor layers take
+//           the tint, fixed layers keep their colour.
 #include "test_util.hpp"
 
 #include "fuse/ui/icons.hpp"
@@ -175,6 +180,82 @@ int cookGate() {
             }
         }
         std::printf("  fuzz: 3000 corrupted packs, %d still valid (in-range edits)\n", loaded);
+    }
+    // multi-colour packs (layered palette)
+    {
+        auto cdir = ic::loadSvgDirectory(FUSE_UI_ICON_COLOR_DIR);
+        UI_CHECK(cdir.has_value());
+        ic::CookStats cst;
+        auto cp = cdir ? ic::cookIcons(*cdir, {}, &cst) : std::unexpected(std::string("no dir"));
+        UI_CHECK(cp.has_value());
+        if (cp) {
+            UI_CHECK(readBytes(FUSE_UI_ICON_COLOR_PACK) == *cp); // the build-time pack (tool) is byte-identical
+            std::printf("  colour pack: %u icons (%u multi-colour), atlas %dx%d, %zu bytes\n", cst.icons, cst.multiColor,
+                        cst.atlasWidth, cst.atlasHeight, cst.bytes);
+            UI_CHECK_EQ(cst.multiColor, 5u);
+            auto cs = IconSet::fromBytes(*cp);
+            UI_CHECK(cs.has_value());
+            struct Want {
+                const char* name;
+                std::vector<u32> colors; // RGBA8, R low byte; 0 = currentColor
+            };
+            const Want wants[] = {
+                {"alert-color", {0xFF2DC0FBu, 0xFF000000u}},             // black kept in a multi-colour icon
+                {"badge-check", {0xFFE5881Eu, 0xFFFFFFFFu}},
+                {"flag", {0u, 0xFFFFFFFFu, 0xFF2F2FD3u, 0xFFC06515u}},   // consecutive reds merged
+                {"ink-square", {0u}},                                     // black only: monochrome ink
+                {"sunset", {0xFF49A3FFu, 0u}},                            // gradient: mean stop colour
+                {"traffic-light", {0u, 0xFF3539E5u, 0xFF35D8FDu, 0xFF47A043u}},
+            };
+            for (const Want& wnt : wants) {
+                const i32 i = cs ? cs->find(wnt.name) : -1;
+                UI_CHECK(i >= 0);
+                if (i < 0) continue;
+                UI_CHECK_EQ(cs->layerCount(u32(i)), u32(wnt.colors.size()));
+                if (cs->layerCount(u32(i)) != wnt.colors.size()) continue;
+                for (u32 l = 0; l < cs->layerCount(u32(i)); ++l) UI_CHECK_EQ(cs->layerColor(u32(i), l), wnt.colors[l]);
+                UI_CHECK_EQ(cs->multiColor(u32(i)), wnt.colors.size() > 1 || wnt.colors[0] != 0u);
+                const std::string& svg = (*cdir)[std::size_t(i)].svg;
+                for (u32 k = 0; k < u32(cs->sizes().size()); ++k) {
+                    const int size = cs->sizes()[k];
+                    auto layers = ic::rasteriseSvgLayers(svg, size);
+                    UI_CHECK(layers && layers->size() == wnt.colors.size());
+                    if (!layers || layers->size() != wnt.colors.size()) continue;
+                    for (u32 l = 0; l < u32(layers->size()); ++l) {
+                        std::vector<u8> cell;
+                        cs->render(u32(i), size, cell, l);
+                        UI_CHECK(cell == (*layers)[l].coverage);
+                        UI_CHECK_EQ((*layers)[l].color, wnt.colors[l]);
+                    }
+                    if (layers->size() == 1) { // monochrome: the whole coverage
+                        auto all = ic::rasteriseSvg(svg, size);
+                        UI_CHECK(all && *all == (*layers)[0].coverage);
+                    }
+                }
+            }
+        }
+        // version 1 pack (no layer fields): one implicit currentColor layer
+        std::vector<u8> v1;
+        auto put = [&](const void* p, std::size_t n) { v1.insert(v1.end(), static_cast<const u8*>(p), static_cast<const u8*>(p) + n); };
+        auto put16 = [&](u16 v) { put(&v, 2); };
+        auto put32 = [&](u32 v) { put(&v, 4); };
+        put("FICN", 4);
+        put32(1);
+        put16(4); put16(4);  // atlas 4 x 4
+        put16(1); put16(4);  // one size: 4
+        put32(1);
+        put32(hashId("dot"));
+        put16(3);
+        put("dot", 3);
+        for (u16 v : {u16(0), u16(0), u16(2), u16(2), u16(1), u16(1)}) put16(v);
+        for (int k = 0; k < 16; ++k) v1.push_back(k < 2 || (k >= 4 && k < 6) ? u8(255) : u8(0));
+        auto s1 = IconSet::fromBytes(v1);
+        UI_CHECK(s1.has_value());
+        if (s1) {
+            IconBitmap bm;
+            UI_CHECK(s1->layerCount(0) == 1 && s1->layerColor(0, 0) == 0u && !s1->multiColor(0));
+            UI_CHECK(s1->cooked(0, 4, bm) && bm.w == 2 && bm.ox == 1 && bm.pixels[0] == 255);
+        }
     }
 #if FUSE_UI_ICON_HAVE_DOC
     {
@@ -371,6 +452,94 @@ int renderGate(int argc, char** argv) {
         bool menuIcon = false;
         for (const DrawCmd& c : u2.drawList().cmds()) menuIcon |= c.op == DrawOp::Glyph && c.node == i0.index && c.rect.h >= 12.f;
         UI_CHECK(menuIcon);
+    }
+    // multi-colour icons against tests/golden/icons_color.png
+    {
+        auto cs = IconSet::fromFile(FUSE_UI_ICON_COLOR_PACK);
+        UI_CHECK(cs.has_value());
+        if (cs) {
+            UiContext uc({.viewport = {420, 240}, .font = &font()});
+            w::install(uc);
+            uc.setIcons(&*cs);
+            (void)uc.addStyleSheet(R"css(
+                .rows { padding: 10px; gap: 6px; background: #2a2d3a; }
+                .row { flex-direction: row; gap: 6px; align-items: center; }
+                .accent { color: #3d8bfd; }
+            )css");
+            const NodeHandle rows = w::panel(uc, uc.root(), "crows");
+            uc.addClass(rows, "rows");
+            std::vector<NodeHandle> plainIcons, accentIcons;
+            for (int size : kSizes) {
+                const NodeHandle row = w::panel(uc, rows);
+                uc.addClass(row, "row");
+                for (u32 i = 0; i < cs->count(); ++i) plainIcons.push_back(w::icon(uc, row, cs->name(i), f32(size)));
+                for (u32 i = 0; i < cs->count(); ++i) {
+                    accentIcons.push_back(w::icon(uc, row, cs->name(i), f32(size)));
+                    uc.addClass(accentIcons.back(), "accent");
+                }
+                const NodeHandle off = w::toolButton(uc, row, "", "coff" + std::to_string(size));
+                w::setIcon(uc, off, "traffic-light", f32(size));
+                uc.setDisabled(off, true);
+            }
+            uc.update();
+            Image ci;
+            render(uc, ci);
+            // one Glyph per non-empty layer; currentColor layers carry the tint, fixed layers their own colour
+            auto fills = [&](NodeHandle n) {
+                std::vector<u32> f;
+                for (const DrawCmd& c : uc.drawList().cmds())
+                    if (c.op == DrawOp::Glyph && c.node == n.index) f.push_back(packPremultiplied(c.fill));
+                return f;
+            };
+            for (std::size_t k = 0; k < plainIcons.size(); ++k) {
+                const u32 i = u32(k % cs->count());
+                const std::vector<u32> a = fills(plainIcons[k]), b = fills(accentIcons[k]);
+                UI_CHECK_EQ(a.size(), std::size_t(cs->layerCount(i)));
+                UI_CHECK_EQ(b.size(), a.size());
+                if (a.size() != cs->layerCount(i) || b.size() != a.size()) continue;
+                for (u32 l = 0; l < cs->layerCount(i); ++l) {
+                    const u32 lc = cs->layerColor(i, l);
+                    if (lc == 0u) {
+                        UI_CHECK_EQ(a[l], packPremultiplied(Color::rgb(0xE6E6EB)));
+                        UI_CHECK_EQ(b[l], packPremultiplied(Color::rgb(0x3D8BFD)));
+                    } else {
+                        UI_CHECK_EQ(a[l], lc);
+                        UI_CHECK_EQ(b[l], lc);
+                    }
+                }
+            }
+            {
+                const std::vector<u32> off = fills(uc.find("coff24"));
+                UI_CHECK(off.size() == 4 && off[0] == packPremultiplied(Color::rgb(0x9A9CAB)) && off[1] == 0xFF3539E5u);
+            }
+            const std::string cgolden = "golden/icons_color.png";
+            if (std::getenv("FUSE_UI_UPDATE_GOLDEN")) {
+                stbi_write_png(cgolden.c_str(), ci.width, ci.height, 4, ci.pixels.data(), ci.width * 4);
+                std::printf("golden written: %s\n", cgolden.c_str());
+            } else {
+                int gw = 0, gh = 0, gn = 0;
+                unsigned char* ref = stbi_load(cgolden.c_str(), &gw, &gh, &gn, 4);
+                UI_CHECK(ref != nullptr);
+                if (ref) {
+                    UI_CHECK(gw == ci.width && gh == ci.height);
+                    if (gw == ci.width && gh == ci.height) {
+                        int bad = 0, maxd = 0;
+                        for (int p = 0; p < gw * gh; ++p)
+                            for (int k = 0; k < 4; ++k) {
+                                const int d = std::abs(int(ref[p * 4 + k]) - ch(ci.pixels[std::size_t(p)], k));
+                                maxd = std::max(maxd, d);
+                                if (d > 3) { ++bad; break; }
+                            }
+                        std::printf("colour golden diff: %d pixels > 3, max channel diff %d\n", bad, maxd);
+                        UI_CHECK(bad <= gw * gh / 1000);
+                    }
+                    stbi_image_free(ref);
+                }
+            }
+            for (int i = 1; i < argc; ++i)
+                if (std::string(argv[i]).rfind("--out-color=", 0) == 0)
+                    stbi_write_png(argv[i] + 12, ci.width, ci.height, 4, ci.pixels.data(), ci.width * 4);
+        }
     }
 #if FUSE_UI_ICON_HAVE_DOC
     // .fuseui `icon` key and a cooked style sheet carrying the property
