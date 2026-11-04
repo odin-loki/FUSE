@@ -361,6 +361,7 @@ public:
 
     struct Node;
     struct Cold;
+    struct GlyphQuad;
 
 private:
     friend struct ContextSubject;
@@ -391,6 +392,8 @@ private:
     bool focusableNode(u32 i) const;
     void drainCommands();
     void ensureText(u32 i, f32 width);
+    /// paintTextLayout through the node's cached glyph quads (`src` 0: its text layout, 1: its paintString layout).
+    void paintTextQuads(DrawList& dl, u32 i, u8 src, u32 rev, const fuse::text::TextLayout& tl, Vec2 o, Color c, f32 px);
     void collectTab(std::vector<u32>& out) const;
     void markArrange(u32 i);
     bool visibleChain(u32 i) const;
@@ -400,7 +403,8 @@ private:
     const fuse::text::Font* m_font = nullptr;
     fuse::text::GlyphAtlas m_atlas;
     std::vector<Node> m_nodes;
-    std::vector<std::unique_ptr<Cold>> m_cold;
+    std::vector<Cold*> m_cold; ///< per node, into m_coldChunks
+    std::vector<std::unique_ptr<Cold[]>> m_coldChunks; ///< Cold in fixed chunks: neighbouring nodes stay adjacent in memory
     std::vector<u32> m_free;
     u32 m_live = 0;
     NodeHandle m_root;
@@ -434,6 +438,11 @@ private:
     std::vector<std::pair<u32, i32>> m_scratchTab;
     std::vector<fuse::text::ShapedGlyph> m_shapeScratch;
     fuse::text::TextLayout m_stringScratch;
+    // atlas-resolved glyphs of every painted text node in one array, in paint order (no per-glyph atlas lookups, no
+    // walks of scattered per-node layout vectors); rebuilt per node when its layout changes, wholesale on atlas reset
+    std::vector<GlyphQuad> m_quads;
+    u32 m_quadEpoch = 1, m_quadAtlasGen = 0;
+    std::size_t m_quadLive = 0;
 
     struct Connection {
         u32 node = 0xFFFFFFFFu, nodeGen = 0, gen = 0;
