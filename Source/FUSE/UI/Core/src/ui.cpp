@@ -49,6 +49,7 @@ struct UiContext::Node {
     i32 tabIndex = 0;
     A11yRole role = A11yRole::None;
     f32 animOpacity = 1.f;
+    f32 animWeight = 0.f; ///< AnimProp::FontWeight value (0: the style's font-weight)
     Vec2 offset;
     u64 user = 0;
 };
@@ -65,6 +66,8 @@ struct UiContext::Cold {
     std::string strKey;
     fuse::text::TextLayout strLayout;
     f32 strPx = -1.f, strWidth = -1.f;
+    u32 strFont = 0; ///< Font::id the layout was made with
+    const fuse::text::Font* font = nullptr; ///< setFont override (nullptr: the UI font)
     TextAlignment strAlign = TextAlignment::Start;
     u64 strMissFrame = ~0ull;
     bool strMany = false; ///< more than one string per frame: paintString uses the shared scratch layout
@@ -584,7 +587,13 @@ void UiContext::styleRec(u32 i, bool parentChanged) {
         if (idx != before) {
             ComputedStyle la = m_styles.style(before);
             const ComputedStyle& lb = m_styles.style(idx);
-            const bool fontChanged = la.fontSize != lb.fontSize || la.textAlign != lb.textAlign;
+            const bool fontChanged = la.fontSize != lb.fontSize || la.textAlign != lb.textAlign ||
+                                     la.fontWeight != lb.fontWeight || la.fontStretch != lb.fontStretch ||
+                                     la.fontVariationCount != lb.fontVariationCount ||
+                                     la.fontVariationTags != lb.fontVariationTags ||
+                                     la.fontVariationValues != lb.fontVariationValues ||
+                                     la.fontFeatureCount != lb.fontFeatureCount ||
+                                     la.fontFeatureTags != lb.fontFeatureTags || la.fontFeatureValues != lb.fontFeatureValues;
             n.style = idx;
             changed = true;
             markPaint(i);
@@ -614,6 +623,61 @@ void UiContext::stylePass() {
 }
 
 // ---- Text ----------------------------------------------------------------------------------------------------------
+namespace {
+// Sets the current text font for a measure / paint call and restores the previous one.
+struct TextFontScope {
+    const fuse::text::Font*& slot;
+    const fuse::text::Font* saved;
+    TextFontScope(const fuse::text::Font*& s, const fuse::text::Font* f) : slot(s), saved(s) { slot = f; }
+    ~TextFontScope() { slot = saved; }
+    TextFontScope(const TextFontScope&) = delete;
+    TextFontScope& operator=(const TextFontScope&) = delete;
+};
+} // namespace
+
+const fuse::text::Font& UiContext::fontFor(const fuse::text::Font& base, const ComputedStyle& s, f32 weight) {
+    const fuse::text::Font* f = &base;
+    if (base.isVariable()) {
+        using fuse::text::fontTag;
+        std::array<fuse::text::FontVariation, 3 + kMaxFontVariations> v;
+        std::size_t n = 0;
+        v[n++] = {fontTag("wght"), weight};
+        v[n++] = {fontTag("wdth"), s.fontStretch};
+        v[n++] = {fontTag("opsz"), s.fontSize}; // font-optical-sizing: auto
+        for (u8 k = 0; k < s.fontVariationCount; ++k) v[n++] = {s.fontVariationTags[k], s.fontVariationValues[k]};
+        f = &base.instance(std::span<const fuse::text::FontVariation>(v.data(), n));
+    }
+    if (s.fontFeatureCount) { // font-feature-settings (FULL: HarfBuzz)
+        std::array<fuse::text::FontFeature, kMaxFontFeatures> ft;
+        for (u8 k = 0; k < s.fontFeatureCount; ++k) ft[k] = {s.fontFeatureTags[k], s.fontFeatureValues[k]};
+        f = &f->withFeatures(std::span<const fuse::text::FontFeature>(ft.data(), s.fontFeatureCount));
+    }
+    return *f;
+}
+
+const fuse::text::Font& UiContext::fontFor(u32 i) {
+    const ComputedStyle& s = m_styles.style(m_nodes[i].style);
+    const fuse::text::Font* base = m_cold[i]->font ? m_cold[i]->font : m_font;
+    return fontFor(*base, s, m_nodes[i].animWeight > 0.f ? m_nodes[i].animWeight : s.fontWeight);
+}
+
+void UiContext::setFont(NodeHandle h, const fuse::text::Font* font) {
+    Node* n = node(h);
+    if (!n || m_cold[h.index]->font == font) return;
+    m_cold[h.index]->font = font;
+    m_cold[h.index]->layoutWidth = -1.f;
+    n->dirty |= kDirtyText;
+    markLayout(h.index);
+    markPaint(h.index);
+}
+
+const fuse::text::Font& UiContext::nodeFont(u32 i) {
+    if (i < m_nodes.size() && m_nodes[i].alive) return fontFor(i);
+    return m_textFont ? *m_textFont : *m_font;
+}
+
+const fuse::text::Font& UiContext::textFont(NodeHandle h) { return node(h) ? fontFor(h.index) : *m_font; }
+
 void UiContext::ensureText(u32 i, f32 width) {
     Cold& c = *m_cold[i];
     const ComputedStyle& s = m_styles.style(m_nodes[i].style);
@@ -623,7 +687,7 @@ void UiContext::ensureText(u32 i, f32 width) {
     d.pixelSize = s.fontSize;
     d.maxWidth = std::isfinite(width) ? width : 0.f;
     d.align = fuse::text::TextAlign(u8(s.textAlign));
-    fuse::text::layoutText(*m_font, fuse::text::defaultShaper(), c.text, d, c.layout);
+    fuse::text::layoutText(fontFor(i), fuse::text::defaultShaper(), c.text, d, c.layout);
     ++c.layoutRev;
     c.layoutWidth = width;
     c.layoutSize = s.fontSize;
@@ -632,7 +696,7 @@ void UiContext::ensureText(u32 i, f32 width) {
 
 f32 UiContext::measureString(std::string_view s, f32 px) {
     if (!m_font) return 0.f;
-    return fuse::text::measureText(*m_font, s, px, m_shapeScratch);
+    return fuse::text::measureText(m_textFont ? *m_textFont : *m_font, s, px, m_shapeScratch);
 }
 
 namespace {
@@ -710,13 +774,19 @@ void UiContext::setMsdfThreshold(f32 devicePx) {
 
 void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, Vec2 o, Color col, f32 px, u32 nodeIdx) {
     if (!m_font || col.a <= 0.f) return;
+    paintLayoutWith(dl, nodeFont(nodeIdx), tl, o, col, px, nodeIdx);
+}
+
+void UiContext::paintLayoutWith(DrawList& dl, const fuse::text::Font& font, const fuse::text::TextLayout& tl, Vec2 o, Color col,
+                                f32 px, u32 nodeIdx) {
+    if (col.a <= 0.f) return;
     const f32 dpx = px * m_scale; // glyphs are rasterised at device size; the rect is stored so that rect * s is exact
     for (const auto& ln : tl.lines) {
         for (u32 k = ln.firstGlyph; k < ln.firstGlyph + ln.glyphCount; ++k) {
             const auto& g = tl.glyphs[k];
             if (g.glyph == fuse::text::kInvisibleGlyph) continue;
-            fuse::text::forEachPaintGlyph(*m_font, g, dpx, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
-                                                                const fuse::text::ColorLayer* layer) {
+            fuse::text::forEachPaintGlyph(font, g, dpx, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
+                                                             const fuse::text::ColorLayer* layer) {
                 GlyphQuad q{};
                 q.x = g.x;
                 q.baseline = ln.baseline;
@@ -726,7 +796,8 @@ void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, 
     }
 }
 
-void UiContext::paintTextQuads(DrawList& dl, u32 i, u8 src, u32 rev, const fuse::text::TextLayout& tl, Vec2 o, Color col, f32 px) {
+void UiContext::paintTextQuads(DrawList& dl, u32 i, u8 src, u32 rev, const fuse::text::TextLayout& tl, Vec2 o, Color col, f32 px,
+                               const fuse::text::Font* layoutFont) {
     if (!m_font || col.a <= 0.f) return;
     Cold& c = *m_cold[i];
     const f32 sc = m_scale;  // quads are rasterised at device size (DPI scale): the key is the device pixel size
@@ -743,12 +814,13 @@ void UiContext::paintTextQuads(DrawList& dl, u32 i, u8 src, u32 rev, const fuse:
         }
         c.qOff = u32(m_quads.size());
         c.qColor = false;
+        const fuse::text::Font& font = layoutFont ? *layoutFont : nodeFont(i);
         for (const auto& ln : tl.lines)
             for (u32 k = ln.firstGlyph; k < ln.firstGlyph + ln.glyphCount; ++k) {
                 const auto& g = tl.glyphs[k];
                 if (g.glyph == fuse::text::kInvisibleGlyph) continue;
-                fuse::text::forEachPaintGlyph(*m_font, g, dpx, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
-                                                                    const fuse::text::ColorLayer* layer) {
+                fuse::text::forEachPaintGlyph(font, g, dpx, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
+                                                                 const fuse::text::ColorLayer* layer) {
                     GlyphQuad q{};
                     q.x = g.x;
                     q.baseline = ln.baseline;
@@ -790,33 +862,44 @@ void UiContext::paintTextQuads(DrawList& dl, u32 i, u8 src, u32 rev, const fuse:
 }
 
 void UiContext::paintString(DrawList& dl, std::string_view s, Rect box, Color col, f32 px, TextAlignment align, u32 nodeIdx) {
+    paintString(dl, s, box, col, px, align, nodeIdx, nullptr);
+}
+
+void UiContext::paintString(DrawList& dl, std::string_view s, Rect box, Color col, f32 px, TextAlignment align, u32 nodeIdx,
+                            const fuse::text::Font* base) {
     if (!m_font || s.empty()) return;
     fuse::text::TextLayoutDesc d;
     d.pixelSize = px;
     d.maxWidth = box.w;
     d.elide = true;
     d.align = fuse::text::TextAlign(u8(align));
-    if (nodeIdx < m_cold.size() && m_nodes[nodeIdx].alive && !m_cold[nodeIdx]->strMany) {
+    const bool live = nodeIdx < m_cold.size() && m_nodes[nodeIdx].alive;
+    const fuse::text::Font& font =
+        !base ? nodeFont(nodeIdx)
+              : live ? fontFor(*base, m_styles.style(m_nodes[nodeIdx].style), m_styles.style(m_nodes[nodeIdx].style).fontWeight)
+                     : *base;
+    if (live && !m_cold[nodeIdx]->strMany) {
         // one cached layout per node, keyed on everything layoutText reads
         Cold& c = *m_cold[nodeIdx];
-        if (c.strPx != px || c.strWidth != box.w || c.strAlign != align || c.strKey != s) {
+        if (c.strPx != px || c.strWidth != box.w || c.strAlign != align || c.strFont != font.id() || c.strKey != s) {
             if (c.strMissFrame == m_frame) c.strMany = true; // paints several strings per frame (lists, tables)
             c.strMissFrame = m_frame;
-            fuse::text::layoutText(*m_font, fuse::text::defaultShaper(), s, d, c.strLayout);
+            fuse::text::layoutText(font, fuse::text::defaultShaper(), s, d, c.strLayout);
             c.strKey.assign(s);
+            c.strFont = font.id();
             c.strPx = px;
             c.strWidth = box.w;
             c.strAlign = align;
             ++c.strRev;
         }
         const f32 y = box.y + std::floor((box.h - c.strLayout.height) * 0.5f);
-        if (c.strMany) paintTextLayout(dl, c.strLayout, {box.x, y}, col, px, nodeIdx);
-        else paintTextQuads(dl, nodeIdx, 1, c.strRev, c.strLayout, {box.x, y}, col, px);
+        if (c.strMany) paintLayoutWith(dl, font, c.strLayout, {box.x, y}, col, px, nodeIdx);
+        else paintTextQuads(dl, nodeIdx, 1, c.strRev, c.strLayout, {box.x, y}, col, px, &font);
         return;
     }
-    fuse::text::layoutText(*m_font, fuse::text::defaultShaper(), s, d, m_stringScratch);
+    fuse::text::layoutText(font, fuse::text::defaultShaper(), s, d, m_stringScratch);
     const f32 y = box.y + std::floor((box.h - m_stringScratch.height) * 0.5f);
-    paintTextLayout(dl, m_stringScratch, {box.x, y}, col, px, nodeIdx);
+    paintLayoutWith(dl, font, m_stringScratch, {box.x, y}, col, px, nodeIdx);
 }
 
 // ---- Icons ---------------------------------------------------------------------------------------------------------
@@ -904,7 +987,8 @@ bool UiContext::paintIcon(DrawList& dl, u32 nameHash, Vec2 at, f32 size, Color c
 
 Size UiContext::measureIconLabel(const ComputedStyle& s, std::string_view text) {
     const f32 ic = iconExtent(s);
-    const f32 lh = m_font ? std::ceil(m_font->metrics(s.fontSize).lineHeight()) : std::ceil(s.fontSize * 1.25f);
+    const fuse::text::Font* tf = m_textFont ? m_textFont : m_font;
+    const f32 lh = tf ? std::ceil(tf->metrics(s.fontSize).lineHeight()) : std::ceil(s.fontSize * 1.25f);
     const f32 tw = std::ceil(measureString(text, s.fontSize));
     if (ic <= 0.f) return {tw, lh};
     if (text.empty()) return {ic, ic};
@@ -955,6 +1039,7 @@ Size UiContext::measure(u32 i, Size avail) {
     ++m_stats.measured;
     n.dirty &= u8(~kDirtyMeasure);
     const ComputedStyle& s = m_styles.style(n.style);
+    const TextFontScope fontScope(m_textFont, m_font ? &fontFor(i) : nullptr);
     Size out{0.f, 0.f};
     if (s.visible) {
         const bool fw = fixedLen(s.width, avail.w), fh = fixedLen(s.height, avail.h);
@@ -1278,6 +1363,7 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     const Rect content = contentRect(h);
     if (wc.paint) {
         const PaintContext pc{*this, h, n.rect, content, s, n.state, opacity};
+        const TextFontScope fontScope(m_textFont, m_font ? &fontFor(i) : nullptr);
         wc.paint(pc, dl);
     } else if (!m_cold[i]->text.empty() || s.icon) {
         const f32 ic = iconExtent(s);
@@ -1545,6 +1631,12 @@ void UiContext::update(f32 dt) {
             case AnimProp::OffsetX: n->offset.x = v; if (n->parent != kNone) markArrange(n->parent); n->dirty |= kDirtyLayout; break;
             case AnimProp::OffsetY: n->offset.y = v; if (n->parent != kNone) markArrange(n->parent); n->dirty |= kDirtyLayout; break;
             case AnimProp::Value: setValue(a.node, v, true); break;
+            case AnimProp::FontWeight:
+                n->animWeight = std::clamp(v, 1.f, 1000.f);
+                m_cold[a.node.index]->layoutWidth = -1.f;
+                n->dirty |= kDirtyText;
+                markLayout(a.node.index);
+                break;
             }
             if (a.t >= a.duration) { a.active = false; --m_animCount; }
         }
@@ -2005,6 +2097,7 @@ void UiContext::animate(NodeHandle h, AnimProp p, f32 to, f32 seconds, Ease e) {
     case AnimProp::OffsetX: from = n->offset.x; break;
     case AnimProp::OffsetY: from = n->offset.y; break;
     case AnimProp::Value: from = n->value; break;
+    case AnimProp::FontWeight: from = n->animWeight > 0.f ? n->animWeight : m_styles.style(n->style).fontWeight; break;
     }
     Anim* slot = nullptr;
     for (auto& a : m_anims)

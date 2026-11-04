@@ -23,7 +23,8 @@ if(FUSE_UI_TEXT STREQUAL "COOKED")
     set(_tf_out "")
     foreach(spec "colrv1_test|--sizes=30,32,45,48,56|--msdf"
                  "bitmap_cbdt_test|--sizes=20|--color-sizes=8,12,16,20,32,40,64,100"
-                 "bitmap_sbix_test|--sizes=20|--color-sizes=8,12,16,20,32,40,64,100")
+                 "bitmap_sbix_test|--sizes=20|--color-sizes=8,12,16,20,32,40,64,100"
+                 "variable_test|--sizes=24,100|--variation=wght:700")
         string(REPLACE "|" ";" _spec "${spec}")
         list(POP_FRONT _spec _name)
         add_custom_command(OUTPUT "${_tf}/${_name}.fusefont"
@@ -66,6 +67,10 @@ foreach(g shaping_scripts system_fonts cache_zero_alloc colrv1 dpi_1 dpi_1_25 dp
                          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endforeach()
 
+# Shaping / layout throughput over a ~1 MB mixed-script document (timing budgets: run alone).
+fuse_ui_test(fuse_text_bench_layout test_text_bench_layout.cpp)
+set_tests_properties(fuse_text_bench_layout PROPERTIES LABELS "fuse_ui;gate;text" RUN_SERIAL TRUE)
+
 # COOKED profile: cooker determinism (every profile), cooked layout / renders against the MINIMAL reference (COOKED)
 fuse_ui_test(fuse_text_cooked test_text_cooked.cpp)
 string(REPLACE ";" " " _cook_args "${FUSE_TEXT_UI_COOK_ARGS}")
@@ -80,6 +85,16 @@ if(FUSE_UI_TEXT STREQUAL "COOKED")
         FUSE_TEXT_COOKED_REFERENCE="${FUSE_TEXT_COOKED_FONT_DIR}/opensans/OpenSans.reference")
 endif()
 set_tests_properties(fuse_text_cooked PROPERTIES LABELS "fuse_ui;gate;text")
+
+# Variable fonts: data/variable_test.ttf (make_variable_test_font.py) + Segoe UI Variable / Bahnschrift when installed;
+# COOKED: the pack cooked at wght 700.
+fuse_ui_test(fuse_text_variable test_text_variable.cpp)
+set_tests_properties(fuse_text_variable PROPERTIES LABELS "fuse_ui;gate;text" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+# OpenType features (font-feature-settings; FULL: HarfBuzz, other profiles skip with 77): data/features_test.ttf
+# (make_features_test_font.py).
+fuse_ui_test(fuse_text_features test_text_features.cpp)
+set_tests_properties(fuse_text_features PROPERTIES LABELS "fuse_ui;gate;text" SKIP_RETURN_CODE 77
+                     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Colour glyphs (CBDT / sbix strikes) and MSDF glyphs (quality, UI threshold, GPU parity when fuse_ui_vk is built).
 foreach(g bitmap_emoji msdf)

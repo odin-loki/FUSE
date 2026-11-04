@@ -69,8 +69,55 @@ void dot(DrawList& dl, Vec2 p, f32 r, Color fill, Color ring = {}) {
 
 // =====================================================================================================================
 // Font picker
-struct FontState { NodeHandle list, size, preview; std::string family; };
+// Each family is drawn in its own face: loaded on first paint from FontCatalog::system() and kept in a small LRU
+// (the selected family is never evicted: the preview label points at it). Families that do not resolve to an
+// installed face, files over kMaxPreviewBytes and symbol fonts without Latin letters draw in the UI font.
+struct FontState {
+    NodeHandle list, size, preview;
+    std::string family;
+    struct Face {
+        std::string family;
+        std::unique_ptr<fuse::text::Font> font; // null: the UI font
+        u64 used = 0;
+    };
+    std::vector<Face> faces;
+    u64 tick = 0;
+};
+constexpr std::size_t kMaxPreviewFaces = 24;
+constexpr std::uintmax_t kMaxPreviewBytes = 16u << 20;
 Pool<FontState>& fontPool() { static Pool<FontState> p; return p; }
+
+const fuse::text::Font* familyFace(FontState& s, std::string_view family) {
+    for (FontState::Face& f : s.faces)
+        if (f.family == family) {
+            f.used = ++s.tick;
+            return f.font.get();
+        }
+    if (s.faces.size() >= kMaxPreviewFaces) { // evict the least recently used face (never the selected family's)
+        auto victim = s.faces.end();
+        for (auto it = s.faces.begin(); it != s.faces.end(); ++it)
+            if (it->family != s.family && (victim == s.faces.end() || it->used < victim->used)) victim = it;
+        if (victim != s.faces.end()) s.faces.erase(victim);
+    }
+    FontState::Face face{std::string(family), nullptr, ++s.tick};
+    const fuse::text::FontCatalog& cat = fuse::text::FontCatalog::system();
+    if (const fuse::text::FontFaceInfo* info = cat.match(family, 400, false)) {
+        std::error_code ec;
+        const std::filesystem::path path(std::u8string(reinterpret_cast<const char8_t*>(info->path.data()), info->path.size()));
+        const std::uintmax_t bytes = std::filesystem::file_size(path, ec);
+        if (!ec && bytes <= kMaxPreviewBytes)
+            if (auto f = fuse::text::FontCatalog::load(*info); f && f->glyphIndex(U'a') && f->glyphIndex(U'A'))
+                face.font = std::make_unique<fuse::text::Font>(std::move(*f));
+    }
+    s.faces.push_back(std::move(face));
+    return s.faces.back().font.get();
+}
+
+const fuse::text::Font* fontRowFace(UiContext& ui, NodeHandle list, u32 row) {
+    FontState* s = fontPool().get(ui, ui.parent(list));
+    return s ? familyFace(*s, listItem(ui, list, row)) : nullptr;
+}
+
 void fontRefresh(UiContext& ui, NodeHandle picker, bool emit) {
     FontState* s = fontPool().get(ui, picker);
     if (!s) return;
@@ -80,6 +127,7 @@ void fontRefresh(UiContext& ui, NodeHandle picker, bool emit) {
     char b[32];
     std::snprintf(b, sizeof b, "%gpx", double(px));
     ui.setCss(s->preview, "font-size", b);
+    ui.setFont(s->preview, s->family.empty() ? nullptr : familyFace(*s, s->family));
     ui.setText(s->preview, s->family + " - The quick brown fox jumps over the lazy dog 0123");
     if (emit) ui.emit(picker, SignalKind::Submitted, {.value = px, .text = s->family});
 }
@@ -794,12 +842,13 @@ struct CodeEditW {
                 dl.rect({sx, y, std::max(0.f, ex - sx), lh}, pc.tint(Color::rgb(0x264F78)));
             }
             tokenize(s->lang, L, tok);
-            for (std::size_t i = 0; i < L.size();) {
+            f32 x = x0; // tokens are shaped on their own, so each starts where the previous one's advance ends
+            for (std::size_t i = 0; i < L.size() && x < c.right();) {
                 std::size_t j = i;
                 while (j < L.size() && tok[j] == tok[i]) ++j;
-                const f32 x = x0 + ui.measureString(std::string_view(L).substr(0, i), fs);
-                ui.paintString(dl, std::string_view(L).substr(i, j - i), {x, y, c.right() - x + 400.f, lh}, pc.tint(kTok[tok[i]]), fs,
-                               TextAlignment::Start, pc.node.index);
+                const std::string_view t = std::string_view(L).substr(i, j - i);
+                ui.paintString(dl, t, {x, y, c.right() - x + 400.f, lh}, pc.tint(kTok[tok[i]]), fs, TextAlignment::Start, pc.node.index);
+                x += ui.measureString(t, fs);
                 i = j;
             }
             if (focused && li == s->caret.line) {
@@ -1278,6 +1327,7 @@ NodeHandle fontPicker(UiContext& ui, NodeHandle parent, std::string_view familie
     s.list = listView(ui, p, families.empty() ? std::string_view("Open Sans\nSans Serif\nSerif\nMonospace\nSystem UI")
                              : !system.empty() ? std::string_view(system) : families, 0);
     ui.addClass(s.list, "fontlist");
+    detail::setListRowFont(ui, s.list, &fontRowFace);
     const NodeHandle row = hbox(ui, p);
     label(ui, row, "Size");
     s.size = spinBox(ui, row, 6.f, 96.f, size, 1.f);

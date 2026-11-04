@@ -16,7 +16,7 @@ immediate-mode front-end. See the plan's status table for what is still open.
 
 | Path | Target | What |
 |---|---|---|
-| `Source/FUSE/UI/Text` | `fuse_text` | Fonts (stb_truetype; FreeType in FULL), bundled Open Sans, UTF-8, `ITextShaper` (`MinimalShaper`, `HarfBuzzShaper` in FULL), wrap/ellipsis layout, glyph atlas, `TextEditBuffer`, UAX #29 / #14 / #9 segmentation, fallback chains, `FontCatalog` (system fonts) |
+| `Source/FUSE/UI/Text` | `fuse_text` | Fonts (stb_truetype; FreeType in FULL), bundled Open Sans, UTF-8, `ITextShaper` (`MinimalShaper`, `HarfBuzzShaper` in FULL), wrap/ellipsis layout, glyph atlas, `TextEditBuffer`, UAX #29 / #14 / #9 segmentation, fallback chains, `FontCatalog` (system fonts), variable fonts (fvar / avar / gvar / HVAR / MVAR), OpenType feature variants |
 | `Source/FUSE/UI/Core` | `fuse_ui_core` | `UiContext` (tree, style, layout, paint, input, focus, signals, timers, animation, a11y), `DrawList` + `CpuRasterizer`, `StyleEngine`, `immediate::ImmediateUi`, `platform_bridge.hpp` |
 | `Source/FUSE/UI/Widgets` | `fuse_ui_widgets` | Tier A + Tier B widgets + default dark theme (`widgets::install`) |
 | `Source/FUSE/UI/Doc` | `fuse_ui_doc` | `.fuseui` JSON documents, binding model, expression bytecode |
@@ -132,6 +132,25 @@ first drawn) and CBDT / sbix bitmap strikes (best strike for the size, scaled); 
 layers and bitmap-only glyphs draw nothing. These are `ColorLayer::image` layers: `GlyphAtlas::getColor` puts them in
 the atlas colour page (premultiplied RGBA, side `size() / 2`, after the coverage page in `pixels()`) and the UI draws
 them as `kGlyphColor` glyph commands. The rasterisers are linked only into binaries that enable them.
+
+Variable fonts: `enableVariableFonts()` (opt-in like the colour rasterisers; without it a variable font draws its
+default instance) gives `Font::axes()`, `namedInstances()`, `instance({{fontTag("wght"), 650}})`, `namedInstance(i)`
+and `setVariation(...)`. An instance is another `Font` over the same bytes (owned by the font that loaded them, cached by
+normalised coordinates, found without allocation): fvar + avar normalisation, HVAR advances (else the gvar phantom
+points), MVAR ascender / descender / line gap, gvar outlines (MINIMAL: FUSE's own glyf + gvar decoder with IUP and
+composites, rasterised exactly; FULL: FreeType at `FT_Set_Var_Blend_Coordinates`, shaped by HarfBuzz at the same
+normalised coordinates, sharing the run cache) and COLRv1 `Var*` paints from COLR's item variation store. CFF2 outlines
+vary only in FULL. `FontCatalog` lists each named instance of a variable face as its own face, named like DirectWrite
+(STAT values other than weight / width / slant join the family: "Segoe UI Variable Display" + "Semibold", weight 600);
+`FontCatalog::load` pins it. In the UI a variable font follows `font-weight`, `font-stretch` (wdth),
+`font-variation-settings: "wght" 650, "opsz" 12` (over the first two) and font-size (opsz, CSS `font-optical-sizing:
+auto`); `UiContext::animate(n, AnimProp::FontWeight, 700, 0.2f)` tweens the weight. COOKED packs are cooked at one
+instance: `fuse_text_cook --variation=wght:600,wdth:80` or `--instance="SemiBold"`.
+
+OpenType features: `font.withFeatures({{fontTag("tnum")}, {fontTag("liga"), 0}})` (CSS `font-feature-settings:
+"tnum", "liga" off, "ss01" 2`) is a variant of the font that HarfBuzz shapes with those features (FULL; MINIMAL /
+COOKED return the font itself). Variants are cached per feature list and key the run cache. `UiContext::setFont(node,
+&font)` draws one node's text in another face (the font picker previews every family in its own face).
 
 MSDF: `ui.setMsdfThreshold(48)` draws text of at least 48 device px from multi-channel signed distance fields (one per
 glyph at `GlyphAtlas::kMsdfPixelSize`, range `kMsdfRange`, `kGlyphMsdf` commands stretched to any size; for zoomed and
@@ -525,6 +544,9 @@ checks it against the overlay under one scripted event stream.
 | `fuse_text_bitmap_emoji` | `tests/data/bitmap_{cbdt,sbix}_test.ttf`: strike choice per size, placement, sbix dupe, premultiplication, the atlas colour page, colour glyphs through the UI |
 | `fuse_text_msdf` | MSDF vs coverage at 64 / 128 / 256 px (mean error < 0.06, < 0.6 % of pixels off by more than half), determinism, `setMsdfThreshold` with DPI scale, GPU parity of colour + MSDF glyphs (compute kernel exact, SDF quads within their blend tolerance) |
 | `fuse_text_cooked` | `fuse_text_cook` determinism (every profile); COOKED: build-time pack = fresh cook, `.ttf` rejected, layout of sample strings equal to the MINIMAL reference (ids, pen positions within 1e-3 px) and renders byte-identical at every cooked size, MSDF for other sizes |
+| `fuse_text_variable` | `tests/data/variable_test.ttf` (`make_variable_test_font.py`: wght with avar + wdth, IUP-optimised gvar, composite, HVAR, MVAR, variable COLR): axes / named instances, MVAR ascender, stem width and HVAR advance at wght 100 .. 900 and wdth 50 / 150 against the font's analytic values, phantom-point advances = HVAR, Var* paint colours at four weights, CSS weight / stretch / variation settings and an `AnimProp::FontWeight` tween, zero-alloc steady state; Segoe UI Variable / Bahnschrift when installed: catalog WWS faces, our glyf decoder vs stb_truetype outlines (MSDF max difference 1), HarfBuzz advances (FULL); COOKED: a pack cooked at wght 700 |
+| `fuse_text_features` | `tests/data/features_test.ttf` (`make_features_test_font.py`): `liga` / `kern` off, `tnum`, `smcp`, `ss01` through `Font::withFeatures` and CSS `font-feature-settings`, Open Sans `pnum`, zero-alloc steady state (FULL; 77 in MINIMAL / COOKED) |
+| `fuse_text_bench_layout` | 1 MB mixed-script document: paragraphs cold / warm, codeEdit frames, one-block layout, markdownView first update / resize within budgets (~4x measured), zero allocations and (FULL) zero run-cache misses relaying out a screen |
 
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
 | `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster, async Vulkan handover (software frame, resize during the handover, first Vulkan frame) (skips 77 without a display or device) |
