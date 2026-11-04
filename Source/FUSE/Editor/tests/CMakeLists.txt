@@ -11,9 +11,8 @@ add_executable(fuse_editor_host_tests
 
 target_link_libraries(fuse_editor_host_tests PRIVATE fuse_editor_api fuse_core fuse_scene fuse_project)
 if(FUSE_BUILD_VULKAN)
-    set(FUSE_VULKAN_ICD_LOCK_SCRIPT "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
-    set(FUSE_VULKAN_TEST_ENV "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
-    add_test(NAME fuse_editor_host COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_editor_host_tests>")
+    set(FUSE_VULKAN_TEST_ENV "${FUSE_VULKAN_LVP_ENV}")
+    add_test(NAME fuse_editor_host COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_editor_host_tests>")
     set_tests_properties(fuse_editor_host PROPERTIES
         ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}"
         RUN_SERIAL TRUE
@@ -30,7 +29,7 @@ target_link_libraries(fuse_editor_viewport_present_gate_tests PRIVATE fuse_edito
 if(FUSE_BUILD_VULKAN)
     target_link_libraries(fuse_editor_viewport_present_gate_tests PRIVATE fuse_rhi)
     target_compile_definitions(fuse_editor_viewport_present_gate_tests PRIVATE FUSE_TEST_HAS_RHI=1)
-    add_test(NAME fuse_editor_viewport_present_gate COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_editor_viewport_present_gate_tests>")
+    add_test(NAME fuse_editor_viewport_present_gate COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_editor_viewport_present_gate_tests>")
     set_tests_properties(fuse_editor_viewport_present_gate PROPERTIES
         ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}"
         RUN_SERIAL TRUE
@@ -46,7 +45,7 @@ add_executable(fuse_editor_runtime_embed_tests
 target_link_libraries(fuse_editor_runtime_embed_tests PRIVATE fuse_editor_api fuse_core)
 if(FUSE_BUILD_VULKAN)
     target_link_libraries(fuse_editor_runtime_embed_tests PRIVATE fuse_hybrid fuse_rhi)
-    add_test(NAME fuse_editor_runtime_embed COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_editor_runtime_embed_tests>")
+    add_test(NAME fuse_editor_runtime_embed COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_editor_runtime_embed_tests>")
     # Tests load Samples/unification/* by repo-relative path.
     set_tests_properties(fuse_editor_runtime_embed PROPERTIES
         ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}"
@@ -149,7 +148,7 @@ if(MINGW)
     target_link_options(fuse_editor_p5_slice_tests PRIVATE -Wl,--allow-multiple-definition)
 endif()
 if(FUSE_BUILD_VULKAN)
-    add_test(NAME fuse_editor_p5_slice COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_editor_p5_slice_tests>")
+    add_test(NAME fuse_editor_p5_slice COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_editor_p5_slice_tests>")
     set_tests_properties(fuse_editor_p5_slice PROPERTIES
         ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
@@ -203,7 +202,7 @@ if(FUSE_BUILD_VULKAN)
     fuse_apply_cxx23(fuse_editor_b6_viewport_resize_vk_gates)
     if(FUSE_VULKAN_BACKEND)
         add_test(NAME fuse_editor_b6_viewport_resize_vk_gates
-            COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_editor_b6_viewport_resize_vk_gates>")
+            COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_editor_b6_viewport_resize_vk_gates>")
         set_tests_properties(fuse_editor_b6_viewport_resize_vk_gates PROPERTIES
             ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}"
             RUN_SERIAL TRUE
@@ -223,7 +222,7 @@ if(FUSE_BUILD_PARITY_DEMOS)
     if(FUSE_BUILD_VULKAN)
         target_link_libraries(fuse_u8_parity_embed_pie_tests PRIVATE fuse_hybrid fuse_rhi)
         add_test(NAME fuse_u8_parity_embed_pie_smoke
-            COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_u8_parity_embed_pie_tests>")
+            COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_u8_parity_embed_pie_tests>")
         set_tests_properties(fuse_u8_parity_embed_pie_smoke PROPERTIES
             ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"

@@ -37,11 +37,9 @@ if(FUSE_BUILD_CORE_TESTS)
         target_link_libraries(fuse_hybrid_module_gates_tests PRIVATE fuse_script)
     endif()
     if(FUSE_BUILD_VULKAN)
-        set(FUSE_HYBRID_GATES_VULKAN_ICD_LOCK_SCRIPT
-            "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
-        set(FUSE_HYBRID_GATES_VULKAN_TEST_ENV "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
+        set(FUSE_HYBRID_GATES_VULKAN_TEST_ENV "${FUSE_VULKAN_LVP_ENV}")
         add_test(NAME fuse_hybrid_module_gates_tests
-            COMMAND "${FUSE_HYBRID_GATES_VULKAN_ICD_LOCK_SCRIPT}"
+            COMMAND ${FUSE_VULKAN_TEST_LAUNCHER}
                     "$<TARGET_FILE:fuse_hybrid_module_gates_tests>")
         set_tests_properties(fuse_hybrid_module_gates_tests PROPERTIES
             ENVIRONMENT "${FUSE_HYBRID_GATES_VULKAN_TEST_ENV}"

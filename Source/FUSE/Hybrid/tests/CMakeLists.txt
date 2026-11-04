@@ -12,9 +12,9 @@ add_test(NAME fuse_hybrid_cooked_bindings COMMAND fuse_hybrid_cooked_bindings)
 target_link_libraries(fuse_hybrid_tests PRIVATE fuse_hybrid fuse_core)
 
 if(FUSE_BUILD_VULKAN)
-    add_test(NAME fuse_hybrid_tests COMMAND "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh" "$<TARGET_FILE:fuse_hybrid_tests>")
+    add_test(NAME fuse_hybrid_tests COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_hybrid_tests>")
     set_tests_properties(fuse_hybrid_tests PROPERTIES
-        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
         RUN_SERIAL TRUE
     )
 else()
@@ -22,7 +22,7 @@ else()
 endif()
 
 if(FUSE_BUILD_VULKAN)
-    set(FUSE_VULKAN_TEST_ENV "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
+    set(FUSE_VULKAN_TEST_ENV "${FUSE_VULKAN_LVP_ENV}")
 
     set(_fuse_hybrid_vulkan_icd_tests
         fuse_hybrid_renderer_bootstrap
@@ -32,7 +32,7 @@ if(FUSE_BUILD_VULKAN)
 
     add_executable(fuse_render_command_list test_render_command_list.cpp)
     target_link_libraries(fuse_render_command_list PRIVATE fuse_hybrid fuse_core)
-    add_test(NAME fuse_render_command_list COMMAND "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh" "$<TARGET_FILE:fuse_render_command_list>")
+    add_test(NAME fuse_render_command_list COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_render_command_list>")
     set_tests_properties(fuse_render_command_list PROPERTIES
         ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}"
         RUN_SERIAL TRUE
@@ -40,21 +40,21 @@ if(FUSE_BUILD_VULKAN)
 
     add_executable(fuse_hybrid_renderer_bootstrap test_hybrid_renderer_bootstrap.cpp)
     target_link_libraries(fuse_hybrid_renderer_bootstrap PRIVATE fuse_hybrid fuse_core)
-    add_test(NAME fuse_hybrid_renderer_bootstrap COMMAND "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh" "$<TARGET_FILE:fuse_hybrid_renderer_bootstrap>")
+    add_test(NAME fuse_hybrid_renderer_bootstrap COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_hybrid_renderer_bootstrap>")
 
     add_executable(fuse_hybrid_vulkan_presentable test_vulkan_presentable_stub.cpp)
     target_link_libraries(fuse_hybrid_vulkan_presentable PRIVATE fuse_hybrid fuse_core)
-    add_test(NAME fuse_hybrid_vulkan_presentable COMMAND "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh" "$<TARGET_FILE:fuse_hybrid_vulkan_presentable>")
+    add_test(NAME fuse_hybrid_vulkan_presentable COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_hybrid_vulkan_presentable>")
 
     # B2.11 3.5 follow-up: HybridComposer::render steady-state heap allocations.
     add_executable(fuse_b2_hybrid_alloc_budget test_b2_hybrid_alloc_budget.cpp)
     target_link_libraries(fuse_b2_hybrid_alloc_budget PRIVATE fuse_hybrid fuse_core)
-    add_test(NAME fuse_b2_hybrid_alloc_budget COMMAND "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh" "$<TARGET_FILE:fuse_b2_hybrid_alloc_budget>")
+    add_test(NAME fuse_b2_hybrid_alloc_budget COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_b2_hybrid_alloc_budget>")
     list(APPEND _fuse_hybrid_vulkan_icd_tests fuse_b2_hybrid_alloc_budget)
 
     add_executable(fuse_placeholder_renderer_retirement test_placeholder_renderer_retirement.cpp)
     target_link_libraries(fuse_placeholder_renderer_retirement PRIVATE fuse_hybrid fuse_core)
-    add_test(NAME fuse_placeholder_renderer_retirement COMMAND "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh" "$<TARGET_FILE:fuse_placeholder_renderer_retirement>")
+    add_test(NAME fuse_placeholder_renderer_retirement COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_placeholder_renderer_retirement>")
 
     foreach(_fuse_hybrid_vulkan_test IN LISTS _fuse_hybrid_vulkan_icd_tests)
         if(TEST ${_fuse_hybrid_vulkan_test})
@@ -102,12 +102,11 @@ endif()
 add_test(NAME fuse_hybrid_sprite_layer_cpu COMMAND fuse_hybrid_frame_vk --mode cpu)
 set_tests_properties(fuse_hybrid_sprite_layer_cpu PROPERTIES LABELS "gate;hybrid" TIMEOUT 120)
 if(FUSE_BUILD_VULKAN)
-    set(_fuse_hybrid_lock "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
     set(_fuse_hybrid_frame_tests "")
     foreach(_mode golden sprite zero_alloc material)
         if(FUSE_VULKAN_BACKEND)
             add_test(NAME fuse_hybrid_frame_vk_${_mode}
-                     COMMAND "${_fuse_hybrid_lock}" "$<TARGET_FILE:fuse_hybrid_frame_vk>" --mode ${_mode})
+                     COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_hybrid_frame_vk>" --mode ${_mode})
         else()
             add_test(NAME fuse_hybrid_frame_vk_${_mode} COMMAND fuse_hybrid_frame_vk --mode ${_mode})
         endif()
@@ -115,14 +114,14 @@ if(FUSE_BUILD_VULKAN)
     endforeach()
     if(FUSE_VULKAN_BACKEND AND FUSE_PLATFORM_WINDOW_X11_ACTIVE AND FUSE_DISPLAY_TEST_WRAPPER)
         add_test(NAME fuse_hybrid_frame_vk_swapchain
-                 COMMAND "${FUSE_DISPLAY_TEST_WRAPPER}" "${_fuse_hybrid_lock}" "$<TARGET_FILE:fuse_hybrid_frame_vk>"
+                 COMMAND "${FUSE_DISPLAY_TEST_WRAPPER}" ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_hybrid_frame_vk>"
                          --mode swapchain)
     else()
         add_test(NAME fuse_hybrid_frame_vk_swapchain COMMAND fuse_hybrid_frame_vk --mode swapchain)
     endif()
     list(APPEND _fuse_hybrid_frame_tests fuse_hybrid_frame_vk_swapchain)
     set_tests_properties(${_fuse_hybrid_frame_tests} PROPERTIES
-        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
         RUN_SERIAL TRUE
         SKIP_RETURN_CODE 77
         TIMEOUT 1800
