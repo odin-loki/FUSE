@@ -565,8 +565,9 @@ int hybridScenePixels(bool native) {
     cam.valid = true;
     world.setCamera(cam);
     const u64 f0 = host.viewportFrames();
-    stepUntil([&] { return host.viewportFrames() >= f0 + 8; }, 20.0);
-    CHECK(host.viewportFrames() >= f0 + 8);
+    // the frame converges (eye adaptation): the window may show the previous frame, so compare a settled image
+    stepUntil([&] { return host.viewportFrames() >= f0 + 90; }, 30.0);
+    CHECK(host.viewportFrames() >= f0 + 90);
 
     std::vector<u32> gpu;
     u32 gw = 0, gh = 0;
@@ -614,8 +615,9 @@ int hybridScenePixels(bool native) {
             ++compared;
         }
     if (shown.width > x0 + int(gw / 2) && shown.height > y0 + int(gh / 2))
-        std::printf("  %s: shown %dx%d, image rect (%d, %d) %ux%u, centre shown 0x%08X vs GPU 0x%08X\n", tag, shown.width,
-                    shown.height, x0, y0, gw, gh, shown.at(x0 + int(gw / 2), y0 + int(gh / 2)),
+        std::printf("  %s: shown %dx%d, image rect (%.2f, %.2f) %.2fx%.2f for %ux%u, centre shown 0x%08X vs GPU 0x%08X\n",
+                    tag, shown.width, shown.height, double(r.x), double(r.y), double(r.w), double(r.h), gw, gh,
+                    shown.at(x0 + int(gw / 2), y0 + int(gh / 2)),
                     gpu[std::size_t(gh / 2) * gw + gw / 2]);
     const double meanErr = compared ? sumErr / double(compared) : 255.0;
     std::printf("  %s: viewport via %s, %llu zero-copy frames, %zu pixels vs the GPU readback: max channel error %d, "
