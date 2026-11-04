@@ -211,6 +211,25 @@ int main() {
         for (int i = 0; i < 30; ++i) k.update(1.f / 60.f);
         std::printf("  kinetic area scrolled by touch drag: %.1f\n", k.scroll(area).y);
         UI_CHECK(k.scroll(area).y > 20.f);
+        // a plain scroll area pans under a vertical touch drag; the button the finger started on is not clicked
+        UiContext q({.viewport = {200, 200}, .font = &font()});
+        w::install(q);
+        const NodeHandle sa = w::scrollArea(q, q.root(), "sa");
+        q.setCss(sa, "height", "200px");
+        int qc = 0;
+        const NodeHandle qb = w::button(q, sa, "row button", "qb");
+        q.connect(qb, SignalKind::Clicked, [&qc](UiContext&, NodeHandle, const SignalArgs&) { ++qc; });
+        for (int i = 0; i < 40; ++i) w::label(q, sa, "row " + std::to_string(i));
+        q.update();
+        const Rect qr = q.rect(qb);
+        const Vec2 q0{qr.x + qr.w * 0.5f, qr.y + qr.h * 0.5f}; // the drag starts on the button
+        q.touchDown(3, q0);
+        for (int i = 1; i <= 10; ++i) { q.touchMove(3, {q0.x, q0.y - f32(i) * 10.f}); q.update(); }
+        UI_CHECK(q.touchPanning());
+        q.touchUp(3, {q0.x, q0.y - 100.f});
+        q.update();
+        std::printf("  plain scroll area panned by touch drag: %.1f\n", q.scroll(sa).y);
+        UI_CHECK(std::abs(q.scroll(sa).y - 100.f) < 1.f && qc == 0 && !q.pressed().valid() && !q.touchPanning());
     }
 
     // ---- theme slot: dark -> light ----
