@@ -429,7 +429,8 @@ void hybridViewport() {
     auto noBackend = fuse::app::ProjectHost::start({.projectPath = dir.string(), .showWindows = false});
     CHECK(!noBackend && noBackend.error().find("hybrid") != std::string::npos);
     auto started = fuse::app::ProjectHost::start(
-        {.projectPath = dir.string(), .showWindows = false, .gameSide = fuse::app::hybridGameSide()});
+        {.projectPath = dir.string(), .showWindows = false, .gameSide = fuse::app::hybridGameSide(),
+         .gpuViewport = false}); // the deferred bring-up and frame cadence; hybridScenePixels covers the GPU path
     if (!started) {
         std::fprintf(stderr, "  hybrid start: %s\n", started.error().c_str());
         ++g_fail;
