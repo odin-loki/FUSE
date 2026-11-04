@@ -39,7 +39,9 @@ if(FUSE_UI_TEXT STREQUAL "COOKED")
 endif()
 
 # ---- fuse_text ----
-add_library(fuse_text STATIC Text/src/text.cpp Text/src/font_catalog.cpp)
+add_library(fuse_text STATIC Text/src/text.cpp Text/src/font_catalog.cpp
+    # opt-in rasterisers (enableColorGlyphs / enableMsdf): linked only into binaries that call them
+    Text/src/paint_enable.cpp Text/src/colr_paint.cpp Text/src/path_raster.cpp Text/src/color_bitmap.cpp Text/src/msdf.cpp)
 if(WIN32)
     target_link_libraries(fuse_text PRIVATE advapi32) # registry font lists
 endif()
@@ -304,8 +306,9 @@ if(FUSE_BUILD_UI_VK)
         if(FUSE_UI_GLSLANG)
             set(_spv "${_gen}/ui_draw_list.comp.spv")
             add_custom_command(OUTPUT "${_spv}"
-                COMMAND "${FUSE_UI_GLSLANG}" --target-env vulkan1.1 "${_src}" -o "${_spv}"
-                DEPENDS "${_src}" COMMENT "glslangValidator ui_draw_list.comp" VERBATIM)
+                COMMAND "${FUSE_UI_GLSLANG}" --target-env vulkan1.1 -g0 "${_src}" -o "${_spv}"
+                DEPENDS "${_src}" "${CMAKE_CURRENT_SOURCE_DIR}/Render/src/shaders/ui_glyph.glsl"
+                COMMENT "glslangValidator ui_draw_list.comp" VERBATIM)
         elseif(EXISTS "${_fixture}")
             set(_spv "${_fixture}")
         endif()
