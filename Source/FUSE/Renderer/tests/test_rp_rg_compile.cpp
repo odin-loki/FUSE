@@ -1,7 +1,9 @@
 // WP-0.3 CPU gate: render graph v2 compiler and barrier planner (no Vulkan device needed; runs in
 // the stub build too).
 //   * RAW / WAR / WAW / RAR on buffers and images produce exactly the expected sync2 barriers
-//     (stage + access masks, layouts), image subresource ranges and buffer byte ranges.
+//     (stage + access masks, layouts), image subresource ranges and buffer byte ranges; several byte
+//     ranges of one buffer in one pass (read A, write B) still order the next pass's read of B (RAW)
+//     and a write after a barrier-free read (WAR).
 //   * Culling, the removed 32-pass cap, per-queue batches with timeline waits, queue-family
 //     ownership release/acquire pairs, prologue batches, final layouts + trackers.
 //   * kStageRayTracing (WP-7.3 follow-up): compute -> RT, transfer -> RT sample, RT -> compute / transfer
@@ -238,6 +240,50 @@ void testBufferHazards() {
                waw->dstAccess == vkc::kAccessTransferWrite,
            "WAW: transfer write -> transfer write");
     expect(g.stats().queueFallbacks == 0u && g.stats().batchCount == 1u, "single graphics batch");
+}
+
+/// One buffer, several byte ranges declared by the same pass (the atmosphere LUT pattern: read range A,
+/// write range B). A buffer has one hazard state, so the second declaration takes the same-pass path:
+/// (1) its write must invalidate what the pass's earlier read barrier made visible, or the next pass's
+///     read of B finds "already visible" and runs unsynchronised (RAW; found on the RTX 3090, hidden by
+///     lavapipe's in-order execution and invisible to sync validation through buffer device addresses);
+/// (2) a write after a read that needed no barrier must still wait on earlier passes' readers (WAR).
+void testBufferMultiRangeSamePass() {
+    Graph g;
+    const BufferRef luts = g.createBuffer({4096, 0, "luts"});
+    const BufferRef out = g.importBuffer({fakeHandle(0x30), 4096, kNoQueue, nullptr, "out"});
+    constexpr u8 cs = kStageCompute;
+    // 0: W A   1: R A, W B   2: R A, R B, W C   3: R C   4: R A, W C (WAR on 3's read of C)
+    g.addPass("write_a", nullptr, nullptr).use(luts, Access::StorageWrite, {0, 1024}, cs);
+    g.addPass("a_to_b", nullptr, nullptr)
+        .use(luts, Access::StorageRead, {0, 1024}, cs)
+        .use(luts, Access::StorageWrite, {1024, 1024}, cs);
+    g.addPass("ab_to_c", nullptr, nullptr)
+        .use(luts, Access::StorageRead, {0, 1024}, cs)
+        .use(luts, Access::StorageRead, {1024, 1024}, cs)
+        .use(luts, Access::StorageWrite, {2048, 1024}, cs);
+    g.addPass("read_c", nullptr, nullptr).use(luts, Access::StorageRead, {2048, 1024}, cs).use(out, Access::StorageWrite, {0, 16}, cs);
+    g.addPass("rewrite_c", nullptr, nullptr)
+        .use(luts, Access::StorageRead, {0, 1024}, cs)
+        .use(luts, Access::StorageWrite, {2048, 1024}, cs);
+    g.addPass("read_c2", nullptr, nullptr).use(luts, Access::StorageRead, {2048, 1024}, cs).use(out, Access::StorageWrite, {16, 16}, cs);
+    expect(planAll(g), "multi-range graph compiles");
+    expect(g.stats().executedPasses == 6u, "multi-range graph: nothing culled");
+    const BufferBarrier* rawA = bufferBarrierFor(g, 1, luts.id);
+    expect(rawA != nullptr && rawA->srcAccess == vkc::kAccessShaderWrite && rawA->dstAccess == vkc::kAccessShaderRead,
+           "multi-range: RAW on A before a_to_b");
+    const BufferBarrier* rawB = bufferBarrierFor(g, 2, luts.id);
+    expect(rawB != nullptr && (rawB->srcAccess & vkc::kAccessShaderWrite) != 0u &&
+               (rawB->dstAccess & vkc::kAccessShaderRead) != 0u && rawB->offset == 0u && rawB->size >= 2048u,
+           "multi-range: a same-pass write (B) is made visible to the next pass's read (RAW)");
+    const BufferBarrier* rawC = bufferBarrierFor(g, 3, luts.id);
+    expect(rawC != nullptr && (rawC->srcAccess & vkc::kAccessShaderWrite) != 0u, "multi-range: RAW on C before read_c");
+    const BufferBarrier* war = bufferBarrierFor(g, 4, luts.id);
+    expect(war != nullptr && (war->srcStages & vkc::kStageComputeShader) != 0u &&
+               (war->dstAccess & vkc::kAccessShaderWrite) != 0u,
+           "multi-range: a write after a barrier-free read waits on the earlier pass's readers (WAR)");
+    const BufferBarrier* rawC2 = bufferBarrierFor(g, 5, luts.id);
+    expect(rawC2 != nullptr && (rawC2->srcAccess & vkc::kAccessShaderWrite) != 0u, "multi-range: RAW on C before read_c2");
 }
 
 void testImageLayoutsAndSubresources() {
@@ -532,6 +578,7 @@ int main() {
         return rgPassRc;
     }
     testBufferHazards();
+    testBufferMultiRangeSamePass();
     testImageLayoutsAndSubresources();
     testAttachmentsAndSamePassMerge();
     testCullingAndNoPassCap();

@@ -461,8 +461,9 @@ bool Graph::computePending(const Resource& resource, SubState& s, const Use& use
         }
     };
 
-    // Same subresource used twice in one pass (overlapping, differently declared ranges): widen
-    // the state; if the new access is not covered, a conservative full barrier keeps it correct.
+    // Same subresource used twice in one pass (overlapping, differently declared ranges; a buffer has
+    // one state for all its ranges, so every further range of it lands here): widen the state; if the
+    // new access is not covered, a conservative full barrier keeps it correct.
     if (s.touched && s.lastPass == orderPos) {
         if (resource.image && L != s.layout) {
             ++m_stats.layoutConflicts;
@@ -476,17 +477,31 @@ bool Graph::computePending(const Resource& resource, SubState& s, const Use& use
             out.oldLayout = s.layout;
             out.newLayout = s.layout;
             need = true;
+        } else if (W && s.passUnordered != 0u) {
+            // WAR: the pass's first declaration was a read that did not wait on earlier passes' reads.
+            out.srcStages = s.passUnordered;
+            out.srcAccess = 0;
+            out.dstStages = S;
+            out.dstAccess = A;
+            out.oldLayout = s.layout;
+            out.newLayout = s.layout;
+            need = true;
         }
         if (W) {
+            s.passUnordered = 0;
             s.writeStages |= S;
             s.writeAccess |= A & vkc::kAccessWriteMask;
             s.contents = true;
+            // The write is new data: what earlier barriers made visible no longer covers later passes'
+            // reads (a read of another range of this buffer in the next pass must barrier on it).
+            clearVisible(s.visStages, s.visAccess);
         } else {
             s.readStages |= S;
             addVisible(s.visStages, s.visAccess, S, A);
         }
         return need;
     }
+    s.passUnordered = 0; // a write / transition / queue transfer orders every earlier access
 
     // First touch of a transient that reuses the memory of an earlier (dead) transient. The
     // occupant may have covered a different byte range than this resource (and the memory held
@@ -590,6 +605,9 @@ bool Graph::computePending(const Resource& resource, SubState& s, const Use& use
             out.newLayout = s.layout;
             addVisible(s.visStages, s.visAccess, S, A);
         }
+        // Earlier readers this pass's barrier (if any) does not wait on: a later write of this pass to
+        // the same state (another range of the buffer) must (the same-pass path above).
+        s.passUnordered = s.readStages & ~(need ? out.srcStages : 0u);
         s.readStages |= S;
     }
 

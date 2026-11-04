@@ -249,6 +249,7 @@ private:
         u64 writeStages = 0; ///< last write (or the chain stage of a layout transition)
         u64 writeAccess = 0;
         u64 readStages = 0; ///< reads since the last write
+        u64 passUnordered = 0; ///< earlier passes' read stages the barrier before lastPass does not wait on
         u64 visStages[2] = {0, 0};
         u64 visAccess[2] = {0, 0};
         u64 rangeLo = 0; ///< buffers: bounding range of tracked accesses
