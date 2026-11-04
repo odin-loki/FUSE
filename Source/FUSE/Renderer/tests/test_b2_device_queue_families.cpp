@@ -34,6 +34,8 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+
+#include "vk_sync_validation_env.hpp"
 #endif
 
 namespace {
@@ -278,8 +280,7 @@ int run(const char* layerDir, Mode mode) {
     setenv("FUSE_SPLIT_LAYER_COMPUTE_FAMILY", mode == Mode::TransferCompute ? "1" : "0", 1);
     setenv("VK_INSTANCE_LAYERS", layers.c_str(), 1);
     if (validation) {
-        setenv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", 1);
-        setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", 1);
+        fuse::renderer::test::enableSyncValidationEnv();
         setenv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK", 1);
     } else {
         std::printf("note: %s not installed — running without validation\n", kValidationLayer);

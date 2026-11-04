@@ -33,6 +33,8 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+
+#include "vk_sync_validation_env.hpp"
 #endif
 
 namespace {
@@ -503,8 +505,7 @@ int run(const char* layerDir, bool expectSplit) {
         layers += kSplitLayer;
     }
     setEnv("VK_INSTANCE_LAYERS", layers, true);
-    setEnv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", true);
-    setEnv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", true);
+    fuse::renderer::test::enableSyncValidationEnv();
     // Messages reach the test's messenger only (negative controls must not print "Validation
     // Error" lines that fuse_vulkan_validation_gate would count).
     setEnv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK", true);
