@@ -3,6 +3,8 @@
 > **Path note (2026-10):** `Engine/lib/` in this document means `vendor/`; Torque addon submodules and `third_party/` are no longer in the repo.
 
 Status: plan, not started. Written 2026-09-23 on branch `claude/port-execution-plan-bi45jj`.
+
+> **Status note (2026-11-05, native Windows):** the DXVK `d3d9.dll` / `d3d8.dll` stay MinGW-only (G7). A native MSVC tree with `-DFUSE_BUILD_RELIGHT=ON` builds every CPU and Vulkan Relight module and runs its gates on the RTX 3090; the D3D9 test apps run there on the system `d3d9.dll` (`rl_app_*`, label `native`; no D3D8 twins: the Windows SDK has no `d3d8.h`). The Wine gates (`golden;wine`, incl. `rl_overlay_shown_*`) need a MinGW tree plus Wine and were not re-run.
 Product name: **FUSE Relight**, the runtime half of the FUSE Remaster stack. Remaster track A2 is now fully planned in this document.
 
 Companion documents:
