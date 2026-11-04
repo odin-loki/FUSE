@@ -310,12 +310,14 @@ if(TARGET fuse_app)
             set(_budget ${FUSE_APP_BINARY_BUDGET})
         endif()
         set(_bin $<TARGET_FILE:hello_app>)
-        if(NOT MSVC AND CMAKE_STRIP)
-            add_custom_command(TARGET hello_app POST_BUILD
-                COMMAND ${CMAKE_STRIP} -o $<TARGET_FILE:hello_app>.stripped $<TARGET_FILE:hello_app> VERBATIM)
-            set(_bin $<TARGET_FILE:hello_app>.stripped)
-        endif()
         add_executable(fuse_app_binary_size test_app_binary_size.cpp)
+        if(NOT MSVC AND CMAKE_STRIP)
+            # a custom target here: add_custom_command(TARGET hello_app) from another directory needs CMake 3.31
+            set(_bin ${CMAKE_CURRENT_BINARY_DIR}/hello_app.stripped)
+            add_custom_target(fuse_app_hello_stripped ALL
+                COMMAND ${CMAKE_STRIP} -o ${_bin} $<TARGET_FILE:hello_app> DEPENDS hello_app VERBATIM)
+            add_dependencies(fuse_app_binary_size fuse_app_hello_stripped)
+        endif()
         add_test(NAME fuse_app_binary_size COMMAND fuse_app_binary_size --file=${_bin} --budget=${_budget}
                  "--profile=${CMAKE_CXX_COMPILER_ID} ${CMAKE_BUILD_TYPE}, text ${FUSE_UI_TEXT}")
         set_tests_properties(fuse_app_binary_size PROPERTIES SKIP_RETURN_CODE 77 LABELS "fuse_ui;gate")
