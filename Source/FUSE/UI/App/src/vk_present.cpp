@@ -446,13 +446,15 @@ struct VkWin {
         if (mai.memoryTypeIndex == ~0u) mai.memoryTypeIndex = memType(ctx->phys, mr.memoryTypeBits, 0);
         if (!ok(vkAllocateMemory(d, &mai, nullptr, &canvasMem), "canvas memory", err)) return false;
         vkBindImageMemory(d, canvas, canvasMem, 0);
-        VkImageViewCreateInfo vi{};
-        vi.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        vi.image = canvas;
-        vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        vi.format = VK_FORMAT_R8G8B8A8_UNORM;
-        vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        if (!ok(vkCreateImageView(d, &vi, nullptr, &canvasView), "canvas view", err)) return false;
+        if (gpuDraw) { // the kernel's storage view (a transfer-only canvas may not have views)
+            VkImageViewCreateInfo vi{};
+            vi.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            vi.image = canvas;
+            vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            vi.format = VK_FORMAT_R8G8B8A8_UNORM;
+            vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            if (!ok(vkCreateImageView(d, &vi, nullptr, &canvasView), "canvas view", err)) return false;
+        }
         canvasFresh = true;
         if (!gpuDraw) {
             uploadSize = VkDeviceSize(extent.width) * extent.height * 4;
