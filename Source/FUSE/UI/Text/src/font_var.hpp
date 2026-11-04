@@ -58,6 +58,8 @@ struct FontAccess {
     /// Gives `f` the normalised coordinates `coords` (kept alive by f's VarState; empty: default) and the MVAR metric
     /// deltas in font units. FULL: also HarfBuzz / FreeType.
     static void setVaried(const Font& f, std::span<const std::int16_t> coords, float dAscent, float dDescent, float dLineGap);
+    /// A state over `src`'s file (sharing its owner's bytes, colour tables and fallback chain).
+    static Font::State* shareState(const Font::State* src);
     /// A new font over `from`'s file (sharing its owner's bytes, colour tables and fallback chain) that owns `v`.
     static std::unique_ptr<Font> makeInstance(const Font& from, VarState* v, std::span<const std::int16_t> coords,
                                               float dAscent, float dDescent, float dLineGap);

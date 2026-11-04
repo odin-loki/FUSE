@@ -469,20 +469,20 @@ private:
         return {c.r * c.a, c.g * c.a, c.b * c.a, c.a}; // premultiplied
     }
 
-    bool readColorLine(std::uint32_t at, bool var, ColorLine& cl) const {
+    bool readColorLine(std::uint32_t at, bool isVar, ColorLine& cl) const {
         if (!ok(at, 3)) return false;
         const std::uint8_t ext = m_d[at];
         cl.extend = ext == 1 ? Extend::Repeat : ext == 2 ? Extend::Reflect : Extend::Pad;
         const std::uint16_t count = u16(at + 1);
-        const std::uint32_t size = var ? 10 : 6;
+        const std::uint32_t size = isVar ? 10 : 6;
         if (count == 0 || !ok(std::uint64_t(at) + 3, std::uint64_t(count) * size)) return false;
         cl.stops.clear();
         cl.stops.reserve(count);
         for (std::uint32_t k = 0; k < count; ++k) {
             const std::uint32_t s = at + 3 + k * size;
-            const std::uint32_t vib = var ? u32(s + 6) : kNoVar; // VarColorStop: offset, alpha
-            cl.stops.push_back({float(f2dot14(s) + this->var(vib, 0) / 16384.0),
-                                colour(u16(s + 2), f2dot14(s + 4) + this->var(vib, 1) / 16384.0)});
+            const std::uint32_t vib = isVar ? u32(s + 6) : kNoVar; // VarColorStop: offset, alpha
+            cl.stops.push_back({float(f2dot14(s) + var(vib, 0) / 16384.0),
+                                colour(u16(s + 2), f2dot14(s + 4) + var(vib, 1) / 16384.0)});
         }
         std::stable_sort(cl.stops.begin(), cl.stops.end(), [](const Stop& a, const Stop& b) { return a.off < b.off; });
         return true;

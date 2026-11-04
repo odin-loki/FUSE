@@ -308,9 +308,18 @@ struct Font::State {
     bool varied = false;             // coordinates are not the default: metrics / advances / outlines vary
     std::span<const std::int16_t> coords; // normalised coordinates when varied (owned by `var`)
     float dAscent = 0.f, dDescent = 0.f, dLineGap = 0.f; // MVAR deltas (font units)
+    bool ownVar = true;              // false for feature variants: they borrow their source's variation state
+    const State* featureSource = nullptr; // feature variant: the state it was made from
+    struct FeatureVariant {
+        std::array<FontFeature, 8> key{};
+        std::size_t count = 0;
+        std::unique_ptr<Font> font;
+    };
+    std::vector<FeatureVariant> variants; // withFeatures (owned)
     const std::vector<const Font*>& chain() const { return owner ? owner->fallbacks : fallbacks; }
     ~State() {
-        if (var) detail::varHooks().destroy(var); // instances first: they point into this state
+        variants.clear();
+        if (var && ownVar) detail::varHooks().destroy(var); // instances first: they point into this state
 #if FUSE_TEXT_COOKED
         detail::cookedDestroy(cooked);
 #endif
@@ -750,6 +759,42 @@ void Font::setVariation(std::span<const FontVariation> settings) {
     if (const auto fn = detail::varHooks().setVariation; fn && isVariable()) fn(*this, settings);
 }
 bool variableFontsEnabled() { return detail::varHooks().instance != nullptr; }
+
+const Font& Font::withFeatures(std::span<const FontFeature> features) const {
+#if FUSE_TEXT_FULL
+    if (!m_state || !m_state->full) return *this;
+    State* src = const_cast<State*>(m_state->featureSource ? m_state->featureSource : m_state);
+    if (features.empty()) return *this;
+    const std::size_t n = std::min<std::size_t>(features.size(), 8);
+    for (const State::FeatureVariant& v : src->variants)
+        if (v.count == n && std::equal(features.begin(), features.begin() + std::ptrdiff_t(n), v.key.begin(),
+                                       [](const FontFeature& a, const FontFeature& b) { return a.tag == b.tag && a.value == b.value; }))
+            return *v.font;
+    if (src->variants.size() >= 64) return *src->variants.back().font;
+    State* st = detail::FontAccess::shareState(src);
+    st->var = src->var; // borrowed: same coordinates as the source
+    st->ownVar = false;
+    st->varied = src->varied;
+    st->coords = src->coords;
+    st->dAscent = src->dAscent;
+    st->dDescent = src->dDescent;
+    st->dLineGap = src->dLineGap;
+    st->featureSource = src;
+    detail::fullSetCoords(st->full, st->coords);
+    detail::fullSetFeatures(st->full, features.first(n));
+    State::FeatureVariant v;
+    std::copy(features.begin(), features.begin() + std::ptrdiff_t(n), v.key.begin());
+    v.count = n;
+    v.font = std::make_unique<Font>();
+    v.font->m_state = st;
+    v.font->m_id = g_fontIds.fetch_add(1);
+    src->variants.push_back(std::move(v));
+    return *src->variants.back().font;
+#else
+    (void)features; // no GSUB / GPOS shaping
+    return *this;
+#endif
+}
 #if FUSE_TEXT_COOKED
 void enableVariableFonts() {}
 #endif
@@ -901,15 +946,14 @@ void FontAccess::setVaried(const Font& f, std::span<const std::int16_t> coords, 
     fullSetCoords(st.full, st.coords);
 #endif
 }
-std::unique_ptr<Font> FontAccess::makeInstance(const Font& from, VarState* v, std::span<const std::int16_t> coords,
-                                               float dAscent, float dDescent, float dLineGap) {
-    const Font::State* o = from.m_state->owner ? from.m_state->owner : from.m_state;
+// A state over `src`'s file (the owner's bytes), colour tables and fallback chain.
+Font::State* FontAccess::shareState(const Font::State* src) {
+    const Font::State* o = src->owner ? src->owner : src;
     auto* st = new Font::State;
     st->info = o->info; // points into the owner's bytes
     st->file = o->file;
     st->owner = o;
     st->fvar = o->fvar;
-    st->var = v;
     st->unitsPerPixelScale1 = o->unitsPerPixelScale1; // pixel sizes keep the default instance's scale
     st->emPerPixelSize = o->emPerPixelSize;
     st->layers = o->layers;
@@ -926,6 +970,13 @@ std::unique_ptr<Font> FontAccess::makeInstance(const Font& from, VarState* v, st
 #if FUSE_TEXT_FULL
     st->full = fullCreateInstance(o->full);
 #endif
+    return st;
+}
+
+std::unique_ptr<Font> FontAccess::makeInstance(const Font& from, VarState* v, std::span<const std::int16_t> coords,
+                                               float dAscent, float dDescent, float dLineGap) {
+    Font::State* st = shareState(from.m_state);
+    st->var = v;
     auto f = std::make_unique<Font>();
     f->m_state = st;
     f->m_id = g_fontIds.fetch_add(1);

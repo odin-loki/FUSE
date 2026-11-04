@@ -90,6 +90,11 @@ set_tests_properties(fuse_text_cooked PROPERTIES LABELS "fuse_ui;gate;text")
 # COOKED: the pack cooked at wght 700.
 fuse_ui_test(fuse_text_variable test_text_variable.cpp)
 set_tests_properties(fuse_text_variable PROPERTIES LABELS "fuse_ui;gate;text" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+# OpenType features (font-feature-settings; FULL: HarfBuzz, other profiles skip with 77): data/features_test.ttf
+# (make_features_test_font.py).
+fuse_ui_test(fuse_text_features test_text_features.cpp)
+set_tests_properties(fuse_text_features PROPERTIES LABELS "fuse_ui;gate;text" SKIP_RETURN_CODE 77
+                     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Colour glyphs (CBDT / sbix strikes) and MSDF glyphs (quality, UI threshold, GPU parity when fuse_ui_vk is built).
 foreach(g bitmap_emoji msdf)

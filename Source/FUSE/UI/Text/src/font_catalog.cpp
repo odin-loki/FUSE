@@ -270,10 +270,6 @@ std::uint16_t widthClass(float pct) {
     return best;
 }
 
-bool wwsTag(std::uint32_t t) {
-    return t == fontTag("wght") || t == fontTag("wdth") || t == fontTag("ital") || t == fontTag("slnt");
-}
-
 bool styleKeyword(std::string_view w) {
     static constexpr std::string_view kWords[] = {
         "thin", "hairline", "extralight", "ultralight", "light", "semilight", "demilight", "regular", "normal", "book",

@@ -129,6 +129,12 @@ struct FontVariation {
     std::uint32_t tag = 0;
     float value = 0.f;
 };
+/// One OpenType feature setting over the whole text ({fontTag("tnum")}; value 0 turns a default feature such as liga
+/// or kern off, n > 1 picks alternate n).
+struct FontFeature {
+    std::uint32_t tag = 0;
+    std::uint32_t value = 1;
+};
 
 class ITextShaper;
 namespace detail {
@@ -226,6 +232,13 @@ public:
     /// Pins this font's own coordinates (call before sharing it: caches keyed by id() are not invalidated). Used by
     /// FontCatalog::load for named-instance faces and by the cooker.
     void setVariation(std::span<const FontVariation> settings);
+
+    // ---- OpenType features ----
+    /// This font shaping with `features` (CSS font-feature-settings). FULL: HarfBuzz applies them (the run cache keys
+    /// on them); MINIMAL / COOKED have no GSUB / GPOS and return *this. Variants are owned by this font (at most 64,
+    /// past that the last one is reused), keyed by the first 8 settings and found without allocation. Called on a
+    /// variant, the features replace its own.
+    const Font& withFeatures(std::span<const FontFeature> features) const;
 
 private:
     friend class HarfBuzzShaper;

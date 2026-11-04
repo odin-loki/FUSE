@@ -631,15 +631,23 @@ struct TextFontScope {
 } // namespace
 
 const fuse::text::Font& UiContext::fontFor(const fuse::text::Font& base, const ComputedStyle& s, f32 weight) {
-    if (!base.isVariable()) return base;
-    using fuse::text::fontTag;
-    std::array<fuse::text::FontVariation, 3 + kMaxFontVariations> v;
-    std::size_t n = 0;
-    v[n++] = {fontTag("wght"), weight};
-    v[n++] = {fontTag("wdth"), s.fontStretch};
-    v[n++] = {fontTag("opsz"), s.fontSize}; // font-optical-sizing: auto
-    for (u8 k = 0; k < s.fontVariationCount; ++k) v[n++] = {s.fontVariationTags[k], s.fontVariationValues[k]};
-    return base.instance(std::span<const fuse::text::FontVariation>(v.data(), n));
+    const fuse::text::Font* f = &base;
+    if (base.isVariable()) {
+        using fuse::text::fontTag;
+        std::array<fuse::text::FontVariation, 3 + kMaxFontVariations> v;
+        std::size_t n = 0;
+        v[n++] = {fontTag("wght"), weight};
+        v[n++] = {fontTag("wdth"), s.fontStretch};
+        v[n++] = {fontTag("opsz"), s.fontSize}; // font-optical-sizing: auto
+        for (u8 k = 0; k < s.fontVariationCount; ++k) v[n++] = {s.fontVariationTags[k], s.fontVariationValues[k]};
+        f = &base.instance(std::span<const fuse::text::FontVariation>(v.data(), n));
+    }
+    if (s.fontFeatureCount) { // font-feature-settings (FULL: HarfBuzz)
+        std::array<fuse::text::FontFeature, kMaxFontFeatures> ft;
+        for (u8 k = 0; k < s.fontFeatureCount; ++k) ft[k] = {s.fontFeatureTags[k], s.fontFeatureValues[k]};
+        f = &f->withFeatures(std::span<const fuse::text::FontFeature>(ft.data(), s.fontFeatureCount));
+    }
+    return *f;
 }
 
 const fuse::text::Font& UiContext::fontFor(u32 i) {

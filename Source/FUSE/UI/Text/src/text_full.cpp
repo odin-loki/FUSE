@@ -70,7 +70,9 @@ struct FullFace {
     FullFace* owner = nullptr;
     std::vector<FT_Fixed> coords;      // normalised coordinates (16.16) for FreeType; empty: default
     std::vector<int> hbCoords;         // the same as F2DOT14 for HarfBuzz
-    std::uint64_t varKey = 0;          // 0: default coordinates; else a hash of them (run cache key)
+    std::uint64_t varKey = 0;          // 0: default coordinates and no features; else their hash (run cache key)
+    std::uint64_t coordKey = 0, featureKey = 0;
+    std::vector<hb_feature_t> features; // fullSetFeatures
     std::uint64_t ftActive = 0;        // owner: varKey whose coordinates the FT_Face holds
 
     // ---- layout scratch (capacity kept) ----
@@ -146,10 +148,23 @@ void fullSetCoords(FullFace* f, std::span<const std::int16_t> norm) {
         f->coords.clear();
         f->hbCoords.clear();
     }
-    f->varKey = key;
+    f->coordKey = key;
+    f->varKey = f->coordKey ^ f->featureKey;
     hb_font_set_var_coords_normalized(f->font, f->hbCoords.data(), unsigned(f->hbCoords.size()));
     FullFace* o = f->owner ? f->owner : f;
     o->ftActive = ~std::uint64_t(0); // re-apply on the next glyph load
+}
+
+void fullSetFeatures(FullFace* f, std::span<const FontFeature> features) {
+    if (!f) return;
+    f->features.clear();
+    std::uint64_t key = features.empty() ? 0 : 0x2545F4914F6CDD1Dull;
+    for (const FontFeature& ft : features) {
+        f->features.push_back({ft.tag, ft.value, HB_FEATURE_GLOBAL_START, HB_FEATURE_GLOBAL_END});
+        key = ((key ^ ft.tag) * 0x100000001b3ull ^ ft.value) * 0x100000001b3ull;
+    }
+    f->featureKey = key;
+    f->varKey = f->coordKey ^ f->featureKey;
 }
 
 namespace {
@@ -179,7 +194,7 @@ float fullShape(FullFace* f, float unitScale, std::string_view s, std::vector<Sh
     hb_buffer_clear_contents(f->buffer);
     hb_buffer_add_utf8(f->buffer, s.data(), int(s.size()), 0, int(s.size()));
     hb_buffer_guess_segment_properties(f->buffer);
-    hb_shape(f->font, f->buffer, nullptr, 0);
+    hb_shape(f->font, f->buffer, f->features.data(), unsigned(f->features.size()));
     unsigned n = 0;
     const hb_glyph_info_t* info = hb_buffer_get_glyph_infos(f->buffer, &n);
     const hb_glyph_position_t* pos = hb_buffer_get_glyph_positions(f->buffer, &n);
@@ -260,7 +275,7 @@ void shapeRun(FullFace* f, float unitScale, std::string_view s, std::uint32_t be
         hb_buffer_add_utf8(f->buffer, run.data(), int(run.size()), 0, int(run.size()));
         hb_buffer_guess_segment_properties(f->buffer);
         hb_buffer_set_direction(f->buffer, rtl ? HB_DIRECTION_RTL : HB_DIRECTION_LTR);
-        hb_shape(f->font, f->buffer, nullptr, 0);
+        hb_shape(f->font, f->buffer, f->features.data(), unsigned(f->features.size()));
         unsigned n = 0;
         const hb_glyph_info_t* info = hb_buffer_get_glyph_infos(f->buffer, &n);
         const hb_glyph_position_t* pos = hb_buffer_get_glyph_positions(f->buffer, &n);
