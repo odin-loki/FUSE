@@ -13,6 +13,8 @@
 #include <fuse/editor/editor_console_commands.hpp>
 #include <fuse/editor/editor_host.hpp>
 #include <fuse/editor/entity_clipboard.hpp>
+#include <fuse/editor/editor_project_tools.hpp>
+#include <fuse/ecs/spawn_query.hpp>
 #include <fuse/editor/viewport_scene_view.hpp>
 #include <fuse/project/manifest.hpp>
 
@@ -106,7 +108,8 @@ EditorController::EditorController(EditorHost& host, ShellServices& services)
     : EditorController(host, services, Options{}) {}
 
 EditorController::EditorController(EditorHost& host, ShellServices& services, Options options)
-    : m_host(host), m_services(services), m_options(std::move(options)), m_sceneView(std::make_unique<ViewportSceneView>()) {
+    : m_host(host), m_services(services), m_options(std::move(options)), m_sceneView(std::make_unique<ViewportSceneView>()),
+      m_clipboard(std::make_unique<EntityClipboard>()) {
     registerEditorComponentTypes();
     registerEditorConsoleCommands(m_console, m_host);
     m_viewport.setDimensions(640, 360);
@@ -199,13 +202,21 @@ bool EditorController::refresh() {
         struct Row { ecs::EntityID id, parent; std::string label; };
         std::vector<Row> rows;
         registry.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform& t) { rows.push_back({id, t.parent, entityLabel(registry, id, &m_host.entityNames())}); });
+        const auto components = [&](ecs::EntityID id) {
+            std::vector<std::string> names;
+            const EntityComponentSet set = captureEntityComponents(registry, id);
+            std::apply([&](const auto&... c) { ((c.has_value() ? (void)names.emplace_back(std::decay_t<decltype(*c)>::component_name) : (void)0), ...); }, set);
+            return names;
+        };
         std::sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) { return a.id.index < b.id.index; });
         v.entityCount = u32(rows.size());
         const auto isSel = [&](ecs::EntityID id) { return std::find(state.selectedEntities.begin(), state.selectedEntities.end(), id) != state.selectedEntities.end(); };
         const std::string filter = trim(m_filter);
         if (!filter.empty()) {
             for (const Row& r : rows)
-                if (containsCi(r.label, filter)) v.hierarchy.push_back({toRef(r.id), toRef(r.parent), r.label, 0, isSel(r.id)});
+                // a custom name also matches its default label (Qt searchLabel)
+                if (hierarchyMatches(r.label + " " + entityLabel(registry, r.id), components(r.id), r.id.index, filter))
+                    v.hierarchy.push_back({toRef(r.id), toRef(r.parent), r.label, 0, isSel(r.id)});
         } else {
             std::map<u32, std::vector<usize>> children;
             std::vector<usize> roots;
@@ -290,7 +301,10 @@ bool EditorController::refresh() {
     for (const auto& r : v.recentFiles) key += "|r" + r;
     for (const auto& r : v.recentProjects) key += "|p" + r;
     key += "|m" + v.message;
+    const TransportState fromTransport = m_lastTransport;
+    m_lastTransport = v.transport;
     m_view = std::move(v);
+    if (fromTransport != m_view.transport) playCameraTransition_(fromTransport, m_view.transport);
     if (key == m_viewKey) return false;
     m_viewKey = std::move(key);
     ++m_version;
@@ -790,6 +804,18 @@ void EditorController::viewportPointer(const ViewportPointerEvent& e) {
         return;
     }
     if (e.button == B::Left && e.kind == K::Up) {
+        // light / camera icons win over the scene pick (Qt viewport scene icons)
+        EntityRef icon;
+        f32 best = 12.f * 12.f;
+        for (const ViewportMarker& m : viewportMarkers()) {
+            if (m.kind != 3 && m.kind != 4) continue;
+            const f32 d = (m.x - e.x) * (m.x - e.x) + (m.y - e.y) * (m.y - e.y);
+            if (d <= best) { best = d; icon = m.entity; }
+        }
+        if (icon.valid()) {
+            selectOnly(icon);
+            return;
+        }
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             m_sceneView->pickAndSelect(m_host.editorScene(), m_viewport, e.x, e.y, m_host.editorState());
@@ -1407,6 +1433,179 @@ std::vector<EditorController::ViewportMarker> EditorController::viewportMarkers(
     return out;
 }
 
+// ---- clipboard, selection, rename (Qt Edit menu / hierarchy) ---------------------------------------------------------
+
+bool EditorController::cutSelection() {
+    usize n = 0;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_host.editorState().playing) return false;
+        n = m_clipboard->cut(m_host.editorScene().registry(), m_host.undoStack(), m_host.editorState(), &m_host.entityNames());
+    }
+    refresh();
+    return n != 0;
+}
+
+bool EditorController::copySelection() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<ecs::EntityID> sel = m_host.editorState().selectedEntities;
+    if (sel.empty() && m_host.editorState().primarySelection.valid()) sel.push_back(m_host.editorState().primarySelection);
+    return m_clipboard->copy(m_host.editorScene().registry(), sel, &m_host.entityNames()) != 0;
+}
+
+bool EditorController::pasteClipboard() {
+    bool ok = false;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_host.editorState().playing || m_clipboard->empty()) return false;
+        const auto roots = m_clipboard->paste(m_host.editorScene().registry(), m_host.undoStack(), m_host.editorState(), &m_host.entityNames());
+        ok = !roots.empty();
+        if (ok) m_lastCreated = toRef(roots.front());
+    }
+    refresh();
+    return ok;
+}
+
+bool EditorController::clipboardEmpty() const { return m_clipboard->empty(); }
+
+void EditorController::selectAll() {
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        EditorState& state = m_host.editorState();
+        state.selectedEntities.clear();
+        m_host.editorScene().registry().each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform&) { state.selectedEntities.push_back(id); });
+        state.primarySelection = state.selectedEntities.empty() ? ecs::EntityID::null() : state.selectedEntities.front();
+    }
+    refresh();
+}
+
+void EditorController::deselectAll() { select({}, {}); }
+
+bool EditorController::renameEntity(EntityRef entity, std::string_view name) {
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        const ecs::EntityID id = toId(entity);
+        if (!m_host.editorScene().registry().alive(id)) return false;
+        const std::string next = trim(name);
+        if (m_host.entityNames().get(id) == next) return false;
+        m_host.undoStack().execute(std::make_unique<RenameEntityCommand>(m_host.entityNames(), id, next));
+        m_host.editorState().sceneModified = true;
+    }
+    refresh();
+    return true;
+}
+
+bool EditorController::activateEntity(EntityRef entity) {
+    if (!entity.valid()) return false;
+    selectOnly(entity);
+    return frameSelection();
+}
+
+bool EditorController::hierarchyMatches(std::string_view label, std::span<const std::string> components, u32 index, std::string_view query) {
+    std::string_view rest = query;
+    while (!rest.empty()) {
+        const usize b = rest.find_first_not_of(' ');
+        if (b == std::string_view::npos) break;
+        rest.remove_prefix(b);
+        const usize e = rest.find(' ');
+        const std::string_view term = rest.substr(0, e);
+        rest = e == std::string_view::npos ? std::string_view{} : rest.substr(e);
+        if (term.front() == '#') {
+            const std::string digits(term.substr(1));
+            char* end = nullptr;
+            const unsigned long n = std::strtoul(digits.c_str(), &end, 10);
+            if (digits.empty() || *end != '\0' || n != index) return false;
+            continue;
+        }
+        if (containsCi(label, term)) continue;
+        bool hit = false;
+        for (const std::string& c : components) hit = hit || containsCi(c, term);
+        if (!hit) return false;
+    }
+    return true;
+}
+
+// ---- prefabs ------------------------------------------------------------------------------------------------------
+bool EditorController::savePrefab(const std::string& path) {
+    if (path.empty() || !m_view.primary.valid()) return false;
+    std::string p = path;
+    if (p.size() < 7 || p.compare(p.size() - 7, 7, ".prefab") != 0) p += ".prefab";
+    m_host.postFromUi(makeSavePrefabCommand(p));
+    return true;
+}
+
+bool EditorController::instantiatePrefab(const std::string& path) {
+    if (path.empty()) return false;
+    m_host.postFromUi(makeInstantiatePrefabCommand(path));
+    return true;
+}
+
+bool EditorController::prefabLinkAction(const std::string& op, const std::string& path) {
+    if (!m_view.primary.valid()) return false;
+    m_host.postFromUi(makePrefabLinkCommand(op, path));
+    return true;
+}
+
+// ---- project tools --------------------------------------------------------------------------------------------------
+std::string EditorController::projectRoot() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_host.hasProject() ? m_host.projectManifest().projectRoot : std::string();
+}
+
+std::vector<std::string> EditorController::importAssets(const std::vector<std::string>& files) {
+    const std::string root = projectRoot();
+    if (root.empty()) {
+        m_services.warn("Import Asset", "Open a project first.");
+        return {};
+    }
+    std::string error;
+    const std::vector<std::string> written = importAssetsIntoProject(root, files, &error);
+    for (const std::string& w : written) m_console.addLog(log::Level::Info, ("Imported " + w).c_str());
+    if (!error.empty()) m_console.addLog(log::Level::Warn, ("Import: " + error).c_str());
+    // cook on import (Qt runs the same fuse_cook jobs)
+    const std::string tool = findCookTool();
+    u32 cooked = 0;
+    for (const std::string& rel : written) {
+        AssetCookJob job;
+        if (!makeAssetCookJob(root, rel, tool, job)) continue;
+        const ProcessResult p = runProcess(job.program, job.arguments);
+        const bool ok = p.finished && p.exitCode == 0;
+        cooked += ok ? 1u : 0u;
+        m_console.addLog(ok ? log::Level::Info : log::Level::Warn, ((ok ? "Cooked " : "Cook failed: ") + job.output).c_str());
+    }
+    ++m_consoleVersion;
+    showMessage("Imported " + std::to_string(written.size()) + " asset(s), cooked " + std::to_string(cooked));
+    return written;
+}
+
+bool EditorController::reopenProject() {
+    const std::string root = projectRoot();
+    return !root.empty() && openProject(root);
+}
+
+void EditorController::playCameraTransition_(TransportState from, TransportState to) {
+    // Play from Spawn Point (Qt RuntimeViewportHook::enterPlayViewportCamera on the shell's camera)
+    if (from == TransportState::Stopped && to != TransportState::Stopped && m_playFromSpawn) {
+        f32 spawn[3] = {};
+        bool found = false;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            found = ecs::findFirstActiveSpawnWorldPosition(m_host.editorScene().registry(), spawn);
+        }
+        if (found) {
+            spawn[1] += 1.7f; // eye height
+            if (!m_spawnCameraSaved) m_spawnSavedCamera = m_viewport.camera();
+            m_spawnCameraSaved = true;
+            m_viewport.setFromSpawnView(spawn);
+            ++m_gizmoVersion;
+        }
+    } else if (to == TransportState::Stopped && m_spawnCameraSaved) {
+        m_viewport.camera() = m_spawnSavedCamera;
+        m_spawnCameraSaved = false;
+        ++m_gizmoVersion;
+    }
+}
+
 // ---- actions --------------------------------------------------------------------------------------------------------
 
 bool EditorController::actionEnabled(ActionId id) const {
@@ -1429,6 +1628,19 @@ bool EditorController::actionEnabled(ActionId id) const {
     case ActionId::EntityGroup:
     case ActionId::EntityUngroup: return !playing && v.primary.valid();
     case ActionId::EntityOpenScript: return v.primary.valid();
+    case ActionId::EditCut: return !playing && v.primary.valid();
+    case ActionId::EditCopy: return v.primary.valid() || !v.selection.empty();
+    case ActionId::EditPaste: return !playing && !m_clipboard->empty();
+    case ActionId::EntitySavePrefab:
+    case ActionId::EntityRevertPrefab:
+    case ActionId::EntityApplyPrefab:
+    case ActionId::EntityPrefabVariant:
+    case ActionId::EntityReloadPrefab:
+    case ActionId::EntityUnlinkPrefab: return !playing && v.primary.valid();
+    case ActionId::EntityInstantiatePrefab: return !playing;
+    case ActionId::FileProjectSettings:
+    case ActionId::FileBuildPackage:
+    case ActionId::FileImportAsset: return v.hasProject && !playing;
     case ActionId::PlayPlay: return !playing;
     case ActionId::PlayPause: return v.transport == TransportState::Playing;
     case ActionId::PlayResume:
@@ -1457,6 +1669,42 @@ bool EditorController::trigger(ActionId id) {
     }
     case ActionId::EditUndo: undo(); return true;
     case ActionId::EditRedo: redo(); return true;
+    case ActionId::EditCut: return cutSelection();
+    case ActionId::EditCopy: return copySelection();
+    case ActionId::EditPaste: return pasteClipboard();
+    case ActionId::EditSelectAll: selectAll(); return true;
+    case ActionId::EditDeselectAll: deselectAll(); return true;
+    case ActionId::FileImportAsset: {
+        const auto file = m_services.pickOpenFile("Import Asset",
+            "Assets (*.png *.jpg *.jpeg *.tga *.hdr *.exr *.ktx2 *.gltf *.glb *.obj *.wav *.ogg *.lua *.fuselevel *.prefab)", projectRoot());
+        return file && !file->empty() && !importAssets({*file}).empty();
+    }
+    case ActionId::EntitySavePrefab: {
+        const std::string root = projectRoot();
+        std::string dir;
+        if (!root.empty()) {
+            dir = (std::filesystem::path(root) / "assets" / "prefabs").string();
+            std::error_code ec;
+            std::filesystem::create_directories(dir, ec);
+        }
+        const auto path = m_services.pickSaveFile("Save Prefab", "Prefabs (*.prefab)", dir);
+        return path && savePrefab(*path);
+    }
+    case ActionId::EntityInstantiatePrefab: {
+        const auto path = m_services.pickOpenFile("Instantiate Prefab", "Prefabs (*.prefab)", projectRoot());
+        return path && instantiatePrefab(*path);
+    }
+    case ActionId::EntityPrefabVariant: {
+        auto path = m_services.pickSaveFile("Save Prefab Variant", "Prefabs (*.prefab)", projectRoot());
+        if (!path || path->empty()) return false;
+        if (path->size() < 7 || path->compare(path->size() - 7, 7, ".prefab") != 0) *path += ".prefab";
+        return prefabLinkAction("variant", *path);
+    }
+    case ActionId::EntityRevertPrefab: return prefabLinkAction("revert");
+    case ActionId::EntityApplyPrefab: return prefabLinkAction("apply");
+    case ActionId::EntityReloadPrefab: return prefabLinkAction("reload");
+    case ActionId::EntityUnlinkPrefab: return prefabLinkAction("unlink");
+    case ActionId::PlayFromSpawn: setPlayFromSpawn(!m_playFromSpawn); return true;
     case ActionId::EntityCreateEmpty: return runEntityAction(ContextMenuAction::CreateEmpty);
     case ActionId::EntityCreateCube: return runEntityAction(ContextMenuAction::CreateCube);
     case ActionId::EntityCreateSdfSphere: return runEntityAction(ContextMenuAction::CreateSdfSphere);

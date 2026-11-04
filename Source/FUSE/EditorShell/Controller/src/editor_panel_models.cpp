@@ -12,6 +12,11 @@
 #include <fuse/editor/terrain_builder.hpp>
 #include <fuse/editor/undo_stack.hpp>
 #include <fuse/editor/viewport_scene_view.hpp>
+#include <fuse/editor/command_queue.hpp>
+#include <fuse/editor/component_schema.hpp>
+#include <fuse/editor/editor_timeline.hpp>
+#include <fuse/ecs/components/environment.hpp>
+#include <fuse/ecs/components/light.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -150,13 +155,13 @@ AssetBrowserView EditorPanels::assets() {
             const std::time_t t = std::chrono::system_clock::to_time_t(sys);
             char buf[32];
             if (std::strftime(buf, sizeof buf, "%Y-%m-%d %H:%M", std::localtime(&t)))
-                ev.tooltip += std::string(folder ? "\n" : " · ") + "modified " + buf;
+                ev.tooltip += std::string(folder ? "\n" : " Â· ") + "modified " + buf;
         }
         v.folders += folder;
         v.entries.push_back(std::move(ev));
     }
     v.status = std::to_string(v.entries.size()) + " items (" + std::to_string(v.folders) + " folders)";
-    if (sel) v.status += std::string(" · ") + sel->name + " (" + AssetBrowser::assetTypeLabel(sel->type) + ")";
+    if (sel) v.status += std::string(" Â· ") + sel->name + " (" + AssetBrowser::assetTypeLabel(sel->type) + ")";
     return v;
 }
 
@@ -487,6 +492,15 @@ TimelineView EditorPanels::timeline() const {
         v.lanes.push_back(std::move(lane));
     }
     v.status = std::to_string(v.lanes.size()) + " lanes - " + std::to_string(v.keyCount) + " keys";
+    if (m_tlSelTrack >= 0 && m_tlSelTrack < i32(tl.tracks().size()) && m_tlSelKey >= 0 &&
+        m_tlSelKey < i32(tl.tracks()[usize(m_tlSelTrack)].keyframes().size())) {
+        const cinematics::PropertyKeyframe& k = tl.tracks()[usize(m_tlSelTrack)].keyframes()[usize(m_tlSelKey)];
+        v.selTrack = m_tlSelTrack;
+        v.selKey = m_tlSelKey;
+        v.selInterp = u32(k.interp);
+        v.selIn = k.in_tangent;
+        v.selOut = k.out_tangent;
+    }
     return v;
 }
 
@@ -1213,6 +1227,277 @@ bool EditorPanels::orthoPointer(OrthoView& v, const ViewportPointerEvent& e, boo
     }
     v.drag = OrthoView::Drag::None;
     return changed;
+}
+
+// ---- Material usability (Qt MaterialEditorWidget) -------------------------------------------------------------------
+
+bool EditorPanels::materialRename(std::string_view name) {
+    std::string after(name);
+    const auto b = after.find_first_not_of(" \t");
+    const auto e = after.find_last_not_of(" \t");
+    after = b == std::string::npos ? std::string() : after.substr(b, e - b + 1);
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        MaterialCatalog& cat = m_c.m_host.materials();
+        if (after.empty() || !cat.valid(m_material) || cat.entry(m_material).name == after) return false;
+        m_c.m_host.undoStack().execute(std::make_unique<RenameMaterialCommand>(cat, m_material, cat.entry(m_material).name, after));
+    }
+    ++m_revision;
+    m_c.refresh();
+    return true;
+}
+
+std::vector<std::string> EditorPanels::materialPresetNames() {
+    std::vector<std::string> names;
+    for (const MaterialPreset& p : materialPresets()) names.emplace_back(p.name);
+    return names;
+}
+
+bool EditorPanels::materialApplyPreset(u32 index) {
+    const auto& presets = materialPresets();
+    if (index >= presets.size()) return false;
+    MaterialEditState s;
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        if (!m_c.m_host.materials().valid(m_material)) return false;
+        const MaterialEditState cur = m_c.m_host.materials().entry(m_material).state;
+        s = presets[index].state;
+        s.baseColorTexture = cur.baseColorTexture;
+        s.uvScale = cur.uvScale;
+        s.shadingModel = cur.shadingModel;
+    }
+    return applyMaterial_(s, "preset");
+}
+
+u32 EditorPanels::materialUsage() const {
+    std::lock_guard<std::mutex> lock(m_c.m_mutex);
+    ecs::Registry& reg = m_c.m_host.editorScene().registry();
+    u32 n = 0;
+    reg.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform&) {
+        u32 mat = 0;
+        if (AssignMaterialCommand::materialOf(reg, id, mat) && mat == m_material) ++n;
+    });
+    return n;
+}
+
+u32 EditorPanels::materialSelectUsers() {
+    std::vector<EntityRef> users;
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        ecs::Registry& reg = m_c.m_host.editorScene().registry();
+        reg.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform&) {
+            u32 mat = 0;
+            if (AssignMaterialCommand::materialOf(reg, id, mat) && mat == m_material) users.push_back({id.index, id.generation});
+        });
+    }
+    if (!users.empty()) m_c.select(users, users.front());
+    ++m_revision;
+    return u32(users.size());
+}
+
+// ---- Lighting (Qt LightingPanel) ------------------------------------------------------------------------------------
+
+LightingView EditorPanels::lighting() const {
+    LightingView v;
+    std::lock_guard<std::mutex> lock(m_c.m_mutex);
+    ecs::Registry& reg = m_c.m_host.editorScene().registry();
+    ecs::quat rot{0.f, 0.f, 0.f, 1.f};
+    reg.each<ecs::DirectionalLight>([&](ecs::EntityID id, ecs::DirectionalLight& l) {
+        if (v.sun.valid()) return;
+        v.sun = {id.index, id.generation};
+        v.sunIntensity = l.intensity;
+        v.sunColor[0] = l.color.x, v.sunColor[1] = l.color.y, v.sunColor[2] = l.color.z;
+        if (const ecs::Transform* t = reg.get<ecs::Transform>(id)) rot = t->rotation;
+    });
+    reg.each<ecs::AmbientLight>([&](ecs::EntityID id, ecs::AmbientLight& a) {
+        if (v.ambient.valid()) return;
+        v.ambient = {id.index, id.generation};
+        v.ambientIntensity = a.intensity;
+        v.ambientColor[0] = a.color.x, v.ambientColor[1] = a.color.y, v.ambientColor[2] = a.color.z;
+    });
+    reg.each<ecs::EnvironmentFog>([&](ecs::EntityID id, ecs::EnvironmentFog& f) {
+        if (v.fog.valid()) return;
+        v.fog = {id.index, id.generation};
+        v.fogDensity = f.density;
+        v.fogDistance = f.visible_distance;
+        v.fogColor[0] = f.color.x, v.fogColor[1] = f.color.y, v.fogColor[2] = f.color.z;
+    });
+    if (v.sun.valid()) {
+        const ecs::vec3 e = eulerDegFromQuat(rot); // x = pitch (elevation is -pitch), y = yaw
+        v.elevation = -e.x;
+        v.azimuth = e.y;
+        v.sunLabel = "Entity #" + std::to_string(v.sun.index);
+    } else {
+        v.sunLabel = "(no sun)";
+    }
+    return v;
+}
+
+bool EditorPanels::lightingPost_(EntityRef e, const char* property, const std::string& value) {
+    if (!e.valid()) return false;
+    m_c.m_host.postFromUi(makeSetPropertyCommand(Handle<Object>(e.index, e.generation), property, value));
+    ++m_revision;
+    return true;
+}
+
+EntityRef EditorPanels::lightingAddSun() {
+    const LightingView cur = lighting();
+    if (cur.sun.valid()) return cur.sun;
+    EntityRef created;
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        ecs::Registry& registry = m_c.m_host.editorScene().registry();
+        EntityComponentSet set{};
+        ecs::Transform t{};
+        t.position = ecs::vec3{0.f, 10.f, 0.f, 1.f};
+        t.rotation = quatFromEulerDeg(-45.f, 30.f, 0.f);
+        std::get<std::optional<ecs::Transform>>(set) = t;
+        std::get<std::optional<ecs::DirectionalLight>>(set) = ecs::DirectionalLight{};
+        auto cmd = std::make_unique<CreateEntityCommand>(registry, std::move(set), "Add sun");
+        CreateEntityCommand* raw = cmd.get();
+        m_c.m_host.undoStack().execute(std::move(cmd));
+        const ecs::EntityID id = raw->createdEntity();
+        created = {id.index, id.generation};
+        m_c.m_host.editorState().sceneModified = true;
+    }
+    ++m_revision;
+    m_c.refresh();
+    return created;
+}
+
+bool EditorPanels::lightingAddAmbient() {
+    if (lighting().ambient.valid()) return false;
+    const EntityRef host = lightingAddSun();
+    m_c.addComponent(host, ecs::AmbientLight::component_name);
+    ++m_revision;
+    return true;
+}
+
+bool EditorPanels::lightingAddFog() {
+    if (lighting().fog.valid()) return false;
+    const EntityRef host = lightingAddSun();
+    m_c.addComponent(host, ecs::EnvironmentFog::component_name);
+    ++m_revision;
+    return true;
+}
+
+bool EditorPanels::lightingSetSunAngles(f32 elevationDeg, f32 azimuthDeg) {
+    return lightingPost_(lighting().sun, "transform.rotation", formatPropertyQuat(quatFromEulerDeg(-elevationDeg, azimuthDeg, 0.f)));
+}
+bool EditorPanels::lightingSetSunIntensity(f32 v) { return lightingPost_(lighting().sun, "directional.intensity", formatPropertyFloat(v)); }
+bool EditorPanels::lightingSetAmbientIntensity(f32 v) { return lightingPost_(lighting().ambient, "AmbientLight.intensity", formatPropertyFloat(v)); }
+bool EditorPanels::lightingSetFogDensity(f32 v) { return lightingPost_(lighting().fog, "EnvironmentFog.density", formatPropertyFloat(v)); }
+bool EditorPanels::lightingSetFogDistance(f32 v) { return lightingPost_(lighting().fog, "EnvironmentFog.visible_distance", formatPropertyFloat(v)); }
+
+bool EditorPanels::lightingPickColour(std::string_view which) {
+    const LightingView v = lighting();
+    const EntityRef e = which == "sun" ? v.sun : which == "ambient" ? v.ambient : v.fog;
+    const f32* c = which == "sun" ? v.sunColor : which == "ambient" ? v.ambientColor : v.fogColor;
+    const char* prop = which == "sun" ? "DirectionalLight.color" : which == "ambient" ? "AmbientLight.color" : "EnvironmentFog.color";
+    if (!e.valid()) return false;
+    const auto picked = m_c.services().pickColour({c[0], c[1], c[2], 1.f});
+    if (!picked) return false;
+    return lightingPost_(e, prop, formatPropertyFloat(picked->r) + "," + formatPropertyFloat(picked->g) + "," + formatPropertyFloat(picked->b));
+}
+
+// ---- Profiler push / timeline keys / sequencer scrub ---------------------------------------------------------------
+
+void EditorPanels::profilerPush(const ProfilerPanel::FrameProfileData& frame) {
+    m_profiler->pushFrameData(frame);
+    ++m_revision;
+}
+
+i32 EditorPanels::timelineFindTrack(EntityRef entity, const std::string& channel) const {
+    std::lock_guard<std::mutex> lock(m_c.m_mutex);
+    return m_c.m_host.timeline().findTrack(entity.index, channel);
+}
+
+bool EditorPanels::timelineSelectKey(i32 track, i32 key) {
+    std::lock_guard<std::mutex> lock(m_c.m_mutex);
+    const EditorTimeline& tl = m_c.m_host.timeline();
+    const bool ok = track >= 0 && track < i32(tl.tracks().size()) && key >= 0 && key < i32(tl.tracks()[usize(track)].keyframes().size());
+    m_tlSelTrack = ok ? track : -1;
+    m_tlSelKey = ok ? key : -1;
+    ++m_revision;
+    return ok;
+}
+
+bool EditorPanels::timelineEdit_(const char* what, const std::function<bool(EditorTimeline&)>& edit) {
+    if (m_tlSelKey < 0) return false;
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        EditorTimeline& tl = m_c.m_host.timeline();
+        EditorTimeline::Tracks before = tl.tracks();
+        if (!edit(tl)) return false;
+        m_c.m_host.undoStack().execute(std::make_unique<TimelineEditCommand>(tl, std::move(before), tl.tracks(), what));
+        tl.apply(m_c.m_host.editorScene().registry(), tl.playheadMs());
+    }
+    ++m_revision;
+    m_c.refresh();
+    return true;
+}
+
+bool EditorPanels::timelineMoveSelectedKey(i32 ms) {
+    const i32 track = m_tlSelTrack;
+    i32 moved = -1;
+    const bool ok = timelineEdit_("Move key", [&](EditorTimeline& tl) {
+        if (tl.tracks()[usize(track)].keyframes()[usize(m_tlSelKey)].time_ms == ms) return false;
+        moved = tl.moveKey(track, m_tlSelKey, ms);
+        return moved >= 0;
+    });
+    if (ok) m_tlSelKey = moved;
+    return ok;
+}
+
+bool EditorPanels::timelineDeleteSelectedKey() {
+    const bool ok = timelineEdit_("Delete key", [&](EditorTimeline& tl) { return tl.deleteKey(m_tlSelTrack, m_tlSelKey); });
+    if (ok) m_tlSelTrack = m_tlSelKey = -1;
+    return ok;
+}
+
+bool EditorPanels::timelineSetSelectedKeyInterp(u32 interp, u32 tangentMode) {
+    return timelineEdit_("Key interpolation", [&](EditorTimeline& tl) {
+        return tl.setKeyInterp(m_tlSelTrack, m_tlSelKey, cinematics::KeyInterp(interp), cinematics::TangentMode(tangentMode));
+    });
+}
+
+bool EditorPanels::timelineSetSelectedKeyTangents(f32 inSlope, f32 outSlope) {
+    return timelineEdit_("Key tangents", [&](EditorTimeline& tl) { return tl.setKeyTangents(m_tlSelTrack, m_tlSelKey, inSlope, outSlope); });
+}
+
+f32 EditorPanels::timelineSampleSelected(i32 ms) const {
+    std::lock_guard<std::mutex> lock(m_c.m_mutex);
+    const EditorTimeline& tl = m_c.m_host.timeline();
+    if (m_tlSelTrack < 0 || m_tlSelTrack >= i32(tl.tracks().size())) return 0.f;
+    return tl.tracks()[usize(m_tlSelTrack)].sample_at(ms);
+}
+
+u32 EditorPanels::timelineSelectedKeyTangentMode() const {
+    std::lock_guard<std::mutex> lock(m_c.m_mutex);
+    const EditorTimeline& tl = m_c.m_host.timeline();
+    if (m_tlSelTrack < 0 || m_tlSelTrack >= i32(tl.tracks().size())) return 0;
+    const auto& keys = tl.tracks()[usize(m_tlSelTrack)].keyframes();
+    return m_tlSelKey >= 0 && m_tlSelKey < i32(keys.size()) ? u32(keys[usize(m_tlSelKey)].tangent_mode) : 0u;
+}
+
+i32 EditorPanels::timelineKeyTime(i32 track, i32 key) const {
+    std::lock_guard<std::mutex> lock(m_c.m_mutex);
+    const EditorTimeline& tl = m_c.m_host.timeline();
+    if (track < 0 || track >= i32(tl.tracks().size())) return -1;
+    const auto& keys = tl.tracks()[usize(track)].keyframes();
+    return key >= 0 && key < i32(keys.size()) ? i32(keys[usize(key)].time_ms) : -1;
+}
+
+void EditorPanels::sequencerScrubUi(i32 ms) {
+    sequencerScrub(ms);
+    if (!m_seq.linked) return;
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        EditorTimeline& tl = m_c.m_host.timeline();
+        tl.setPlayheadMs(ms);
+        tl.apply(m_c.m_host.editorScene().registry(), tl.playheadMs());
+    }
+    ++m_revision;
 }
 
 } // namespace fuse::editor

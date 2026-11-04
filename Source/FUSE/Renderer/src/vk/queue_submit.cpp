@@ -122,7 +122,7 @@ GraphicsQueueSubmitResult submitGraphicsQueue(const GraphicsQueueSubmitDesc& des
         waitSemaphores[waitCount] = static_cast<VkSemaphore>(slot.imageAvailable);
         waitStages[waitCount] = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         ++waitCount;
-        signalSemaphores[signalCount++] = static_cast<VkSemaphore>(slot.renderFinished);
+        signalSemaphores[signalCount++] = static_cast<VkSemaphore>(desc.swapchain->presentSemaphore(desc.acquiredImageIndex, slot.renderFinished));
     }
 
 #if defined(VK_VERSION_1_2) || defined(VK_KHR_timeline_semaphore)

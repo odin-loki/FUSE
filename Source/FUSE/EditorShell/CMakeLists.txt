@@ -11,6 +11,7 @@ add_library(fuse_editor_controller STATIC
     Controller/src/editor_actions.cpp
     Controller/src/editor_controller.cpp
     Controller/src/editor_panel_models.cpp
+    Controller/src/editor_project_tools.cpp
 )
 target_include_directories(fuse_editor_controller PUBLIC Controller/include)
 target_link_libraries(fuse_editor_controller PUBLIC fuse_editor_api fuse_navigation)
@@ -48,18 +49,28 @@ add_custom_command(OUTPUT "${_fuse_icons_hpp}"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Fuse/cmake/embed_icons.cmake" "${_fuse_branding}/fuse_16.png" "${_fuse_branding}/fuse_32.png"
             "${_fuse_branding}/fuse_48.png" "${_fuse_branding}/fuse_256.png"
     COMMENT "Embedding FUSE icon rasters")
-add_library(fuse_editor_fuse STATIC Fuse/src/editor_shell.cpp Fuse/src/editor_shell_panels.cpp Fuse/src/app_icon.cpp "${_fuse_icons_hpp}")
+add_library(fuse_editor_fuse STATIC Fuse/src/editor_shell.cpp Fuse/src/editor_shell_panels.cpp Fuse/src/editor_shell_tools.cpp
+    Fuse/src/app_icon.cpp "${_fuse_icons_hpp}")
 target_include_directories(fuse_editor_fuse PUBLIC Fuse/include PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 get_filename_component(_fuse_repo_root "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
 target_include_directories(fuse_editor_fuse SYSTEM PRIVATE "${_fuse_repo_root}/vendor/stb")
 target_link_libraries(fuse_editor_fuse PUBLIC fuse_editor_controller fuse_editor_scene_host fuse_app)
 fuse_apply_cxx23(fuse_editor_fuse)
+if(FUSE_UI_ICON_PACK AND TARGET fuse_ui_icons)
+    # toolbar icons: the starter pack cooked by fuse_ui_icon_cook
+    target_compile_definitions(fuse_editor_fuse PRIVATE FUSE_EDITOR_ICON_PACK="${FUSE_UI_ICON_PACK}")
+    add_dependencies(fuse_editor_fuse fuse_ui_icons)
+endif()
 
 if(TARGET fuse_app_native)
     add_executable(fuse_editor_fuse_app Fuse/app/main.cpp)
     # ARCHIVE_OUTPUT_NAME: the exe's import lib would otherwise be fuse_editor_fuse.lib, the library's own name (MSVC LNK1149).
     set_target_properties(fuse_editor_fuse_app PROPERTIES OUTPUT_NAME fuse_editor_fuse ARCHIVE_OUTPUT_NAME fuse_editor_fuse_app)
     target_link_libraries(fuse_editor_fuse_app PRIVATE fuse_editor_fuse fuse_app_native)
+    if(TARGET fuse_app_a11y)
+        target_link_libraries(fuse_editor_fuse_app PRIVATE fuse_app_a11y)
+        target_compile_definitions(fuse_editor_fuse_app PRIVATE FUSE_EDITOR_HAS_A11Y=1)
+    endif()
     if(WIN32)
         target_sources(fuse_editor_fuse_app PRIVATE "${_fuse_branding}/fuse_editor.rc") # executable icon (fuse.ico)
     endif()
@@ -77,14 +88,42 @@ if(TARGET fuse_app_native)
     target_compile_definitions(fuse_editor_ui_gates PRIVATE FUSE_EDITOR_UI_HAS_NATIVE=1)
 endif()
 fuse_apply_cxx23(fuse_editor_ui_gates)
+get_filename_component(_fuse_src_root "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
+target_compile_definitions(fuse_editor_ui_gates PRIVATE FUSE_EDITOR_UI_SOURCE_DIR="${_fuse_src_root}")
+if(TARGET fuse_cook)
+    add_dependencies(fuse_editor_ui_gates fuse_cook) # project_settings / build_package cook through fuse_cook
+endif()
+if(FUSE_BUILD_PARITY_DEMOS AND FUSE_BUILD_PROJECT)
+    # build_package: package + run the real demo_3d_empty player
+    target_compile_definitions(fuse_editor_ui_gates PRIVATE FUSE_EDITOR_UI_DEMO_RUNTIME="$<TARGET_FILE:demo_3d_empty>")
+    add_dependencies(fuse_editor_ui_gates demo_3d_empty)
+endif()
 set(FUSE_EDITOR_UI_GATES startup layout theme font_1 font_1_25 font_1_5 font_2 fuse_api wasd context_menu context_menu_dpr1_5 icon live_present view_modes preferences navigation terrain shortcut_rebind recent_projects entity_group colliders open_script ui_frame
     idle_frames e15_console e15_transport e20_inspector e20_reparent e20_file_menu e20_wizard project_open
-    project_hub asset_browser asset_browser_polish material_editor sdf_sculpt profiler sequencer timeline timeline_nav play_frame multi_viewport viewport_gizmo scene_viewport gpu_viewport)
+    project_hub asset_browser asset_browser_polish material_editor sdf_sculpt profiler sequencer timeline timeline_nav play_frame multi_viewport viewport_gizmo scene_viewport gpu_viewport
+    present_adopt project_settings build_package edit_tools lighting play_camera
+    shell_docks shell_toolbar shell_undo shell_play shell_assets shell_entity shell_gizmo shell_material shell_sculpt shell_overlay
+    shell_timeline shell_layout shell_profiler shell_project)
 set(FUSE_EDITOR_UI_SHOTS "${CMAKE_BINARY_DIR}/editor_ui_shots")
 file(MAKE_DIRECTORY "${FUSE_EDITOR_UI_SHOTS}")
 foreach(gate ${FUSE_EDITOR_UI_GATES})
     add_test(NAME fuse_editor_ui_${gate} COMMAND fuse_editor_ui_gates --gate=${gate} --out=${FUSE_EDITOR_UI_SHOTS}/${gate}.png)
     set_tests_properties(fuse_editor_ui_${gate} PROPERTIES LABELS "fuse_ui;fuse_editor_ui")
 endforeach()
+# plan §6 / UI9 name of the ui_frame gate: the full 9-dock repaint budget (2 ms) on its own, not beside other tests
+add_test(NAME fuse_editor_ui_frame COMMAND fuse_editor_ui_gates --gate=ui_frame --out=${FUSE_EDITOR_UI_SHOTS}/frame.png)
+set_tests_properties(fuse_editor_ui_frame PROPERTIES LABELS "fuse_ui;fuse_editor_ui;gate" RUN_SERIAL TRUE)
 # GPU gates: 77 = skipped (no Vulkan device / no display)
-set_tests_properties(fuse_editor_ui_scene_viewport fuse_editor_ui_gpu_viewport fuse_editor_ui_live_present PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(fuse_editor_ui_scene_viewport fuse_editor_ui_gpu_viewport fuse_editor_ui_live_present fuse_editor_ui_present_adopt
+    PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(fuse_editor_ui_build_package fuse_editor_ui_edit_tools fuse_editor_ui_shell_timeline PROPERTIES TIMEOUT 600)
+
+# Desktop accessibility (Qt-removal prerequisite): a UI Automation client reads the real editor window (menus, panel
+# pages, inspector fields) and drives it through AccessKit. Windows only; 77 without AccessKit.
+if(WIN32 AND TARGET fuse_app_a11y)
+    add_executable(fuse_editor_ui_a11y_gate tests/test_editor_ui_a11y.cpp)
+    target_link_libraries(fuse_editor_ui_a11y_gate PRIVATE fuse_editor_fuse fuse_app_a11y ole32 oleaut32)
+    fuse_apply_cxx23(fuse_editor_ui_a11y_gate)
+    add_test(NAME fuse_editor_ui_a11y COMMAND fuse_editor_ui_a11y_gate)
+    set_tests_properties(fuse_editor_ui_a11y PROPERTIES LABELS "fuse_ui;fuse_editor_ui;a11y" SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 180)
+endif()

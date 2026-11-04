@@ -677,6 +677,10 @@ unsigned long long NativePlatform::nativeWindow(const AppWindow& w) const {
 bool NativePlatform::setIcon(const AppWindow&, std::span<const Image>) { return false; } // the launcher icon is in the APK
 bool NativePlatform::resizeWindow(const AppWindow&, unsigned, unsigned) { return false; } // the activity decides
 std::vector<int> NativePlatform::iconSizes(const AppWindow&) const { return {}; }
+std::string defaultCacheDir() { // the app's private files dir (internalDataPath) + /cache
+    const char* base = g_app && g_app->activity ? g_app->activity->internalDataPath : nullptr;
+    return base && *base ? std::string(base) + "/cache" : std::string();
+}
 // popups are in-window overlays on mobile
 std::size_t NativePlatform::popupCount(const AppWindow&) const { return 0; }
 unsigned long long NativePlatform::popupWindow(const AppWindow&, std::size_t) const { return 0; }
@@ -722,6 +726,11 @@ bool NativePlatform::postClose(unsigned long long nativeWin) {
     ANativeActivity_finish(g_app->activity);
     return true;
 }
+// the soft keyboard is the text-input session here (committed text only, no pre-edit)
+bool NativePlatform::textInputActive(const AppWindow& w) const { return m->win == &w && w.ui().wantsTextInput(); }
+Rect NativePlatform::textInputArea(const AppWindow&) const { return {}; }
+bool NativePlatform::inputMethodAvailable() const { return true; }
+bool NativePlatform::inputMethodPreedit() const { return false; }
 
 } // namespace fuse::app
 

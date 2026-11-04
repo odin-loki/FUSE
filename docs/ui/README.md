@@ -348,6 +348,20 @@ Desktop platform services (UI1, `fuse/app/native.hpp`, `fuse/app/platform.hpp`):
   finger is the pointer, every contact is in `touches()`, `pinchScale()` for two fingers, `pressure()` for the pen.
 - `openFileDialog` / `saveFileDialog` / `pickFolderDialog` (IFileDialog; zenity on X11), `messageBox`, `openUrl`
   (http, https, mailto, file only), `revealInFileManager`.
+- Text input and IME: committed text (Win32 `WM_CHAR` with surrogate pairs; X11 `Xutf8LookupString` through XIM) and
+  the IME pre-edit (`WM_IME_COMPOSITION` → `UiContext::textComposition`, drawn inline by the focused field; X11 XIM
+  pre-edit callbacks when the IM offers them). The input method is on only while a text field has focus
+  (`textInputActive`: Win32 associates the IMM32 context, X11 focuses the XIM input context), and the composition /
+  candidate windows are placed at `UiContext::textCaret()` when a composition starts (`textInputArea`). X11 opens the
+  IM with a UTF-8 `LC_CTYPE` (restored afterwards): `$XMODIFIERS` (ibus, fcitx), else libX11's compose IM (dead keys).
+- Clipboard (`fuse/app/clipboard.hpp`): `setClipboardText` / `setClipboardImage` / `setClipboard({items})` with text,
+  straight-RGBA images, any MIME type and lazy items (`provide` runs once, when a paste first asks); `clipboardText`,
+  `clipboardImage`, `clipboardData(mime)`, `clipboardFormats()`, `clipboardOwned()`. Win32: `CF_UNICODETEXT`,
+  `CF_DIBV5` (reads `CF_DIB` too), `RegisterClipboardFormat(mime)`, delayed rendering for lazy items. X11: the
+  `CLIPBOARD` selection on a private connection served from the pump (`TARGETS`, `UTF8_STRING` / `STRING` /
+  `text/plain;charset=utf-8`, `image/png`, MIME atoms, INCR both ways). Shown windows route their `UiContext`
+  clipboard (line edit Ctrl+C / X / V) to it. Gates: `fuse_platform_text_input`, `fuse_platform_ime_composition`,
+  `fuse_platform_clipboard_roundtrip`.
 
 ### Android
 
@@ -373,6 +387,12 @@ ANDROID_SERIAL=emulator-5554 ctest --test-dir build-android -L android   # the f
 
 The gates run on the host (`App/android/android_gate.py`: install, drive with `am` / `input` / `settings`, read the
 state file the demo keeps with `run-as`) and skip with 77 when adb or a device with the APK's ABI is missing.
+Two §6 budget gates sit beside them: `fuse_ui_bench_hud_mobile` runs the `hud_bench` APK (the ~300-node HUD of
+`Game/samples/hud_bench_scene.hpp`, the same workload as the desktop `fuse_ui_bench_hud`) and gates the median UI CPU
+per frame at 2 ms; `fuse_app_hello_startup_android` cold-launches `hello_app --startup-probe` six times (the first is a
+warm-up) and gates the median process start → first presented frame at 400 ms. On an emulator the startup gate only
+reports and skips (77): the emulator's own process / activity start takes ~0.4–0.5 s before `main()` and its Vulkan
+is SwiftShader; `android_gate.py --strict` enforces it there too.
 Emulator: an x86_64 Google APIs image (API 36 was used) with `emulator -avd <name> -no-window -gpu host` (or
 `-gpu swiftshader_indirect`) has Vulkan (`adb shell pm has-feature android.hardware.vulkan.version`).
 
@@ -563,6 +583,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_x11_randr`, `fuse_x11_xsettings`, `fuse_x11_wake` | X11 under Xvfb against the gate's own connection: two RandR monitors + `_NET_WORKAREA` in `displays()` and a monitor removed live; an XSETTINGS manager's `Xft/DPI` / `Net/ThemeName` at start and live (every window re-scales, `onDpiChanged`, `onThemeChanged`), manager exit → `RESOURCE_MANAGER`, a new manager; `wake()` from another thread ends a blocked pump and an accessibility action queued from an AT thread runs at once |
 | `fuse_ui_platform_services` | headless: DPI scale (layout fixed, device-pixel draw list, re-rasterised glyphs), `cursor:` style, reduced motion, touch / pinch / pen through `platform_bridge`, dark → light theme slot |
 | `fuse_platform_dpi_change`, `fuse_platform_displays`, `fuse_platform_cursors`, `fuse_platform_system_theme`, `fuse_platform_dialogs`, `fuse_platform_touch_synthetic`, `fuse_platform_multiwindow` | real windows: `WM_DPICHANGED` re-scale and back, monitors, OS cursor per hovered widget, theme change via `WM_SETTINGCHANGE` (faked query, user settings untouched), dialogs dismissed by a helper thread, injected touch tap + pinch, two swapchain windows with input routing / close / per-window DPI |
+| `fuse_platform_text_input`, `fuse_platform_ime_composition`, `fuse_platform_clipboard_roundtrip` | real windows (Win32; X11 under Xvfb): typed text incl. a surrogate pair / remapped keysyms into a line edit, Ctrl+C / V / X against another clipboard client, IME off outside text fields; an IMM32 composition (`ImmSetCompositionStringW`: inline pre-edit, commit, cancel, composition / candidate window at the caret; X11: a dead-key compose through XIM, pre-edit only with a server IM); clipboard text / RGBA image / custom MIME / several formats / lazy items / INCR against another thread (Win32) or X connection |
 | `fuse_platform_present_android` | Android build tree, adb: the demo presents on Vulkan (GPU draw and CPU upload) and in software; each surface's first frame read back in-process matches the CPU raster; density scale applied |
 | `fuse_app_lifecycle_android` | HOME releases the surface, `am start` rebuilds it with a correct first frame and the same UI state; rotation resizes to landscape and back |
 | `fuse_platform_touch_android` | `input tap` clicks the button; `input swipe` over the list scrolls it both ways without clicking |
@@ -575,6 +596,14 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_input_arbitration` | pointer / keyboard / gamepad ownership between UI and game |
 | `fuse_ui_pause_time_domain` | pause and slow motion affect game-time HUD only; locale switching |
 | `fuse_demo_hybrid_hud_ui` | `demo_hybrid_hud` HUD on a UI context in the hybrid frame (`HybridComposer::setUiOverlay` → `UiFrameSource::recordOver`, over the sprite layer): every opaque HUD pixel of the GPU readback equals the CPU raster (≤ 1/255), glyphs visible |
+| `fuse_ui_vk_golden` | GPU vs CPU reference with NVIDIA FLIP (`vendor/nvidia-flip`) over the Tier A sample, the game HUD and an editor-like scene: compute kernel max channel error ≤ 2 and mean FLIP ≤ 0.001 (0 today), SDF quads ≤ 4 / ≤ 0.005; heat maps written on failure |
+| `fuse_ui_vk_tier0` | UI-T0 (§4.9): Vulkan 1.1 instance, a device with no extensions and no features, validation on; every shader's SPIR-V ≤ 1.3 without descriptor-indexing / BDA capabilities; scenes, backdrop and an external texture exact against the CPU |
+| `fuse_ui_vk_zero_alloc` | the whole steady-state GPU frame loop (update, pack, upload, record into pre-made command buffers, submit, wait), full and damage-scissored frames: 0 heap allocations over 120 frames, result equal to a full CPU raster |
+| `fuse_ui_bench_hud` | ~300-node game HUD animated as in play: UI CPU per frame (update + layout + paint) median ≤ 0.5 ms (Release; scene shared with `fuse_ui_bench_hud_mobile`) |
+| `fuse_ui_hud_binary_size` | `hud` profile: the `hud_demo` sample with cooked `.fusefont` text ≤ baseline + 10 % (MSVC x64 Release, standalone, `FUSE_UI_TEXT=COOKED`: 596,480 B → 656,200 B; other builds report and skip, `-DFUSE_UI_HUD_BINARY_BUDGET` sets one) |
+| `fuse_ui_script_bind` | the Lua `ui` table as a whole: every function known and exercised (a new binding without coverage fails), pcall-able argument errors, every signal kind with its arguments, a failing handler does not stop the next, a handler destroying its own node, handlers released with their nodes (2000 create / on / destroy cycles: handler count and Lua heap flat), no Lua garbage over steady frames |
+| `fuse_ui_widget_<class>` (36 classes) | one gate per registered widget class outside Tier D (`test_widget_gates.cpp`): node of the class with its accessibility role in the snapshot, laid out and painting, deterministic CPU raster against `tests/golden/widgets/<class>.png` (MINIMAL; `FUSE_UI_UPDATE_GOLDEN=1` rewrites), Tab reaches focusable ones, disabled ones look different and take no pointer / key / text input or focus, and the widget's own behaviour (clicks, keys, drags, wheel / fling, popups, selection, sorting, ...) |
+| `fuse_ui_widget_catalogue` | every class in the widget registry has a `fuse_ui_widget_` gate (the list above or the Tier D ones of `fuse_ui_tier_d2`) |
 
 Extra: `fuse_ui_text_basics`, `fuse_ui_text_full`, `fuse_ui_widget_interaction`, `fuse_ui_tier_b`, `fuse_ui_tier_b2`,
 `fuse_ui_relight_equivalence`, `fuse_ui_platform_keys_v2`, `fuse_ui_text_input`, `fuse_ui_doc_load`,
@@ -585,4 +614,4 @@ raster and GPU time of the sample, 1080p cards and the 1440p HUD, atlas and GPU 
 
 ## Editor shell (UI9)
 
-Configure with `-DFUSE_EDITOR_SHELL=fuse` to build `fuse_editor_fuse`, which is the editor chrome in FUSE UI on the shared Qt-free `EditorController`. Run `ctest -L fuse_editor_ui`. All ten editor panels and the New Project wizard are ported (45 gates, including the Top / Front / Side orthographic views with View > Viewport Layout single / two / quad on Ctrl+Alt+1..3 (`multi_viewport`), the play-mode frame / badge and Maximize Viewport on Play (`play_frame`), the asset browser grid / type filter / breadcrumb / context menu (`asset_browser_polish`), timeline zoom / pan / loop / snap / key jumps (`timeline_nav`), Preferences shortcut rebinding (`shortcut_rebind`), File > Recent Projects (`recent_projects`), Group / Ungroup / Duplicate subtree / Frame Selected (`entity_group`), collider wireframes and drag handles (`colliders`), Entity > Open Script (`open_script`), the Terrain panel (`terrain`), the Navigation panel (`navigation`), Edit > Preferences (`preferences`) and view modes Lit / Unlit / Wireframe / Lit Wireframe and mesh bounds: `view_modes`). `--gpu-viewport` shows the live 3D scene in the viewport, zero-copy through a `ui_vk` external-texture slot (gates `scene_viewport`, `gpu_viewport`), with a Move/Rotate/Scale gizmo drawn as a viewport overlay (`viewport_gizmo`). Status is in [FUSE_EDITOR_QT_FIRST_PLAN.md §11](../plans/FUSE_EDITOR_QT_FIRST_PLAN.md).
+Configure with `-DFUSE_EDITOR_SHELL=fuse` to build `fuse_editor_fuse`, which is the editor chrome in FUSE UI on the shared Qt-free `EditorController`. Run `ctest -L fuse_editor_ui`. All ten editor panels and the New Project wizard are ported (45 gates, including the Top / Front / Side orthographic views with View > Viewport Layout single / two / quad on Ctrl+Alt+1..3 (`multi_viewport`), the play-mode frame / badge and Maximize Viewport on Play (`play_frame`), the asset browser grid / type filter / breadcrumb / context menu (`asset_browser_polish`), timeline zoom / pan / loop / snap / key jumps (`timeline_nav`), Preferences shortcut rebinding (`shortcut_rebind`), File > Recent Projects (`recent_projects`), Group / Ungroup / Duplicate subtree / Frame Selected (`entity_group`), collider wireframes and drag handles (`colliders`), Entity > Open Script (`open_script`), the Terrain panel (`terrain`), the Navigation panel (`navigation`), Edit > Preferences (`preferences`) and view modes Lit / Unlit / Wireframe / Lit Wireframe and mesh bounds: `view_modes`). `--gpu-viewport` shows the live 3D scene in the viewport, zero-copy through a `ui_vk` external-texture slot (gates `scene_viewport`, `gpu_viewport`), with a Move/Rotate/Scale gizmo drawn as a viewport overlay (`viewport_gizmo`). Status is in [FUSE_EDITOR_QT_FIRST_PLAN.md §11](../plans/FUSE_EDITOR_QT_FIRST_PLAN.md). `fuse_editor_ui_frame` is the plan §6 name of the `ui_frame` gate, run on its own (RUN_SERIAL): the full 9-dock repaint (restyle + relayout + draw list of every node, median of 21) must stay ≤ 2 ms in optimised builds.

@@ -532,6 +532,10 @@ struct ChartW {
         UiContext& ui = ec.ui;
         ChartState* s = chartPool().get(ui, ec.node);
         if (!s) return false;
+        if (e.type == EventType::PointerLeave) { // the readout goes with the pointer (value -1 outside)
+            if (ui.value(ec.node) != -1.f) { ui.setValue(ec.node, -1.f, true); ui.invalidate(ec.node); }
+            return false;
+        }
         if (e.type == EventType::PointerMove) {
             const Rect p = plot(ui, ec.node);
             const u32 n = points(*s);

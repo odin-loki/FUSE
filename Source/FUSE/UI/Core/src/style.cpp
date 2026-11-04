@@ -765,6 +765,8 @@ u32 StyleEngine::intern(const ComputedStyle& cs) {
     mix(cs.background.r); mix(cs.background.g); mix(cs.background.a); mix(cs.color.r); mix(cs.color.a);
     mix(cs.width.value); mix(cs.height.value); mix(cs.padding.l); mix(cs.padding.t); mix(cs.gap); mix(cs.fontSize);
     mix(cs.opacity); mix(cs.borderWidth); mix(cs.radius[0]); mix(cs.grow);
+    // placement too: moving nodes (HUD blips, markers) otherwise all share one probe chain that grows per position
+    mix(cs.left.value); mix(cs.top.value); mix(cs.right.value); mix(cs.bottom.value);
     h = (h ^ (u64(cs.layout) | u64(cs.direction) << 8 | u64(cs.visible) << 16 | u64(cs.alignItems) << 24 | u64(cs.justify) << 32)) * 1099511628211ull;
     const std::size_t mask = m_hashIndex.size() - 1;
     std::size_t slot = std::size_t(h >> 20) & mask;
