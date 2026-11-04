@@ -5,6 +5,7 @@
 //   * the Application (FUSE UI) template (Templates/FuseUIApp, createAppProject) is a valid app project
 //   * ProjectHost brings up only {AppPresent} for an app project (no job scheduler, no game frame / renderer /
 //     physics), opens its window with the .fuseui and presents the first frame within 150 ms (headless)
+//   * ui.theme dark / light / system; a hybrid project brings its game side up only when a viewport widget shows
 //   --native: the same on a real OS window (Win32 / X11), presented pixels match the CPU raster; exit 77 without one
 #include "fuse/app/project_host.hpp"
 #include "fuse/ui/doc/document.hpp"
@@ -13,6 +14,7 @@
 #include <fuse/core/track_b.hpp>
 #include <fuse/project/loader.hpp>
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -291,6 +293,12 @@ int minimalInit(bool native) {
         CHECK(t.firstFrame <= 150.0);
     } else {
         Image shown;
+        // async Vulkan start-up: the first frame was software; wait for the switch, then compare the Vulkan frame
+        const bool softwareFirst = host.native()->kind(*w) == fuse::app::PresenterKind::Software;
+        const auto ts = std::chrono::steady_clock::now();
+        for (int i = 0; i < 4000 && host.native()->presenterPending(*w); ++i) host.app().step(0.005f);
+        std::printf("  native: first frame via %s, Vulkan presenter after %.0f ms more\n", softwareFirst ? "software" : "vulkan",
+                    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - ts).count());
         for (int i = 0; i < 20; ++i) host.app().step(0.005f);
         w->requestRedraw();
         const u64 f0 = w->framesPresented();
@@ -350,6 +358,123 @@ int minimalInit(bool native) {
     return 0;
 }
 
+/// Mean brightness (0..255) of an image region.
+double brightness(const Image& img, int x0, int y0, int w, int h) {
+    double sum = 0.0;
+    for (int y = y0; y < y0 + h; ++y)
+        for (int x = x0; x < x0 + w; ++x) {
+            const u32 p = img.at(x, y);
+            sum += ((p & 0xFF) + ((p >> 8) & 0xFF) + ((p >> 16) & 0xFF)) / 3.0;
+        }
+    return sum / double(w * h);
+}
+
+void themes() {
+    // ui.theme: dark / light pin the widget theme, system follows the OS, anything else is refused
+    double shade[2] = {};
+    const char* names[2] = {"dark", "light"};
+    for (int i = 0; i < 2; ++i) {
+        const fs::path dir = fs::temp_directory_path() / "fuse_project_schema2" / (std::string("Theme_") + names[i]);
+        wipe(dir);
+        CHECK(project::createAppProject(dir.string(), "T").ok);
+        project::ProjectManifest m = project::appTemplateManifest("T");
+        m.ui.theme = names[i];
+        CHECK(project::saveToDirectory(m, dir.string()).ok);
+        auto host = fuse::app::ProjectHost::start({.projectPath = dir.string(), .showWindows = false});
+        CHECK(host.has_value());
+        if (!host) continue;
+        fuse::app::AppWindow* w = (*host)->window("main");
+        CHECK(!(*host)->app().followSystemTheme());
+        const Rect b = w->ui().rect(w->ui().find("action"));
+        shade[i] = brightness(w->rasterize({}), int(b.x + 4), int(b.y + 4), int(b.w - 8), int(b.h - 8));
+    }
+    std::printf("  ui.theme: button face brightness dark %.0f, light %.0f\n", shade[0], shade[1]);
+    CHECK(shade[1] > shade[0] + 60.0);
+    const fs::path dir = fs::temp_directory_path() / "fuse_project_schema2" / "Theme_system";
+    wipe(dir);
+    CHECK(project::createAppProject(dir.string(), "T").ok); // template theme: "system"
+    {
+        auto host = fuse::app::ProjectHost::start({.projectPath = dir.string(), .showWindows = false});
+        CHECK(host && (*host)->app().followSystemTheme());
+    }
+    project::ProjectManifest bad = project::appTemplateManifest("T");
+    bad.ui.theme = "neon";
+    CHECK(project::saveToDirectory(bad, dir.string()).ok);
+    auto refused = fuse::app::ProjectHost::start({.projectPath = dir.string(), .showWindows = false});
+    CHECK(!refused && refused.error().find("ui.theme") != std::string::npos);
+}
+
+void hybridViewport() {
+    // a hybrid project starts like an app; its game side (frame, 3D world, physics, job scheduler) comes up only
+    // when a viewport widget becomes visible, then feeds the viewport every frame
+    const fs::path dir = fs::temp_directory_path() / "fuse_project_schema2" / "Hybrid";
+    wipe(dir);
+    CHECK(project::createAppProject(dir.string(), "H").ok);
+    {
+        std::ofstream ui(dir / "ui" / "main.fuseui", std::ios::binary | std::ios::trunc);
+        ui << R"({ "fuseui": 1, "root": { "class": "panel", "id": "main", "children": [
+            { "class": "label", "id": "t", "text": "Hybrid" }, { "class": "viewport", "id": "vp" } ] } })";
+    }
+    project::ProjectManifest m = project::appTemplateManifest("H");
+    m.kind = project::ProjectKind::Hybrid;
+    m.dimensions = {true, false, true};
+    CHECK(project::saveToDirectory(m, dir.string()).ok);
+    CHECK(!fuse::core::isInitialized());
+    auto started = fuse::app::ProjectHost::start({.projectPath = dir.string(), .showWindows = false});
+    if (!started) {
+        std::fprintf(stderr, "  hybrid start: %s\n", started.error().c_str());
+        ++g_fail;
+        return;
+    }
+    fuse::app::ProjectHost& host = **started;
+    fuse::app::AppWindow* w = host.window("main");
+    fuse::ui::UiContext& ui = w->ui();
+    const NodeHandle vp = ui.find("vp");
+    CHECK(host.viewportCount() == 1 && vp.valid());
+    const project::HostFeatureSet startUp = host.broughtUp();
+    CHECK(startUp == (project::hostFeatureBit(project::HostFeature::AppPresent) | project::hostFeatureBit(project::HostFeature::Viewport)));
+    CHECK(!host.gameSideUp() && !fuse::core::isInitialized());
+    // hidden viewport: the game side stays down
+    ui.setCss(vp, "display", "none");
+    const auto runFor = [&](double seconds) {
+        const auto end = std::chrono::steady_clock::now() + std::chrono::duration<double>(seconds);
+        while (std::chrono::steady_clock::now() < end) host.app().step(0.02f);
+    };
+    runFor(0.6);
+    CHECK(!host.gameSideUp() && host.viewportFrames() == 0);
+    // shown: up within one poll, then game frames reach the viewport
+    ui.setCss(vp, "display", "flex");
+    ui.setCss(vp, "width", "320px");
+    ui.setCss(vp, "height", "240px");
+    const u64 framesBefore = w->framesPresented();
+    // the first game frame creates the composer's render context (Vulkan when present): allow for it
+    const auto shownAt = std::chrono::steady_clock::now();
+    while (host.viewportFrames() < 6 && std::chrono::steady_clock::now() - shownAt < std::chrono::seconds(20))
+        host.app().step(0.02f);
+    std::printf("  hybrid: 6 game frames %.0f ms after the viewport showed\n",
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - shownAt).count());
+    runFor(0.3); // steady 60 Hz game frames, each presented
+    const project::HostFeatureSet up = host.broughtUp();
+    std::printf("  hybrid: start [%s], after the viewport showed [%s], %llu game frames, %llu window frames\n",
+                project::hostFeatureList(startUp).c_str(), project::hostFeatureList(up).c_str(),
+                static_cast<unsigned long long>(host.viewportFrames()),
+                static_cast<unsigned long long>(w->framesPresented() - framesBefore));
+    CHECK(host.gameSideUp() && host.composer() != nullptr && fuse::core::isInitialized());
+    CHECK((up & project::hostFeatureBit(project::HostFeature::GameFrame)) != 0u &&
+          (up & project::hostFeatureBit(project::HostFeature::Renderer3D)) != 0u &&
+          (up & project::hostFeatureBit(project::HostFeature::Physics)) != 0u &&
+          (up & project::hostFeatureBit(project::HostFeature::Jobs)) != 0u);
+    CHECK(host.viewportFrames() >= 5 && w->framesPresented() > framesBefore + 3);
+    // hidden again: game frames stop
+    ui.setCss(vp, "display", "none");
+    runFor(0.3);
+    const u64 stopped = host.viewportFrames();
+    runFor(0.5);
+    CHECK(host.viewportFrames() == stopped);
+    started->reset();
+    CHECK(!fuse::core::isInitialized());
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -359,6 +484,8 @@ int main(int argc, char** argv) {
         schema2RoundTrip();
         rejectsInvalid();
         templateMatches();
+        themes();
+        hybridViewport();
     }
     const int rc = minimalInit(native);
     if (rc == 77) return 77;

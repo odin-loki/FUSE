@@ -84,6 +84,7 @@ int main(int argc, char** argv) {
     // settle: first frame, map / expose / focus noise
     for (int i = 0; i < 400 && w.framesPresented() == 0; ++i) a.step(0.01f);
     CHECK(w.framesPresented() >= 1);
+    for (int i = 0; i < 4000 && native.presenterPending(w); ++i) a.step(0.005f); // async Vulkan switch
     const auto settleEnd = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
     while (std::chrono::steady_clock::now() < settleEnd) a.step(0.05f);
 

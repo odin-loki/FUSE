@@ -1,12 +1,18 @@
-// Minimal init path for schema 2 app projects (see project_host.hpp).
+// Minimal init path for schema 2 app / hybrid projects (see project_host.hpp).
 #include "fuse/app/project_host.hpp"
 #include "fuse/ui/doc/document.hpp"
 
 #include <fuse/core/init.hpp>
 #include <fuse/core/track_b.hpp>
+#include <fuse/frame/frame_ctx.hpp>
+#include <fuse/hybrid/hybrid_composer.hpp>
 #include <fuse/project/loader.hpp>
+#include <fuse/world2d/world_2d.hpp>
+#include <fuse/world3d/world_3d.hpp>
 
+#include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -17,6 +23,9 @@ namespace {
 using project::HostFeature;
 using project::hostFeatureBit;
 
+constexpr f32 kViewportPoll = 0.25f;       // while the game side is down / no viewport shows
+constexpr f32 kViewportFrame = 1.f / 60.f; // while a viewport shows
+
 std::expected<std::string, std::string> readText(const std::filesystem::path& path) {
     std::ifstream f(path, std::ios::binary);
     if (!f) return std::unexpected("cannot open " + path.string());
@@ -24,7 +33,28 @@ std::expected<std::string, std::string> readText(const std::filesystem::path& pa
     ss << f.rdbuf();
     return ss.str();
 }
+
+bool knownTheme(std::string_view t) { return t == "system" || t == "dark" || t == "light"; }
+
+/// ui.theme: "system" follows the OS colour scheme (live); "dark" / "light" pin the widget theme.
+void applyProjectTheme(Application& app, AppWindow& w, std::string_view theme) {
+    if (theme == "system") return; // Application::setFollowSystemTheme does it for every window
+    (void)w.ui().setThemeStyleSheet(fuse::ui::widgets::themeCss(theme == "light" ? fuse::ui::widgets::ThemeVariant::Light : fuse::ui::widgets::ThemeVariant::Dark));
+    (void)app;
+    w.requestRedraw();
+}
 } // namespace
+
+/// The hybrid project's game side, created on demand.
+struct ProjectHost::GameSide {
+    world3d::World3D world3D; // worlds outlive the composer that points at them
+    world2d::World2D world2D;
+    hybrid::HybridComposer composer;
+    frame::FrameCtx ctx;
+    std::chrono::steady_clock::time_point lastRender{};
+};
+
+ProjectHost::ProjectHost() = default;
 
 project::HostFeatureSet ProjectHost::supportedFeatures() {
     return hostFeatureBit(HostFeature::AppPresent) | hostFeatureBit(HostFeature::Jobs) |
@@ -47,30 +77,41 @@ std::expected<std::unique_ptr<ProjectHost>, std::string> ProjectHost::start(cons
     if (m.kind == project::ProjectKind::Game)
         return std::unexpected("project '" + m.name + "' is a game project (kind \"game\"): run it with the game runtime");
     if (std::string invalid = project::validateManifest(m); !invalid.empty()) return std::unexpected("project: " + invalid);
+    if (!knownTheme(m.ui.theme))
+        return std::unexpected("project: ui.theme \"" + m.ui.theme + "\" is not one of system, dark, light");
     host->m_plan = project::planInit(m);
-    const project::HostFeatureSet unsupported = (host->m_plan.startup | m.requiredFeatures) & ~supportedFeatures();
+    // game-side features of a hybrid project are deferred (ensureGameSide), not refused
+    const project::HostFeatureSet unsupported =
+        (host->m_plan.startup | (m.requiredFeatures & ~host->m_plan.deferred)) & ~supportedFeatures();
     if (unsupported != 0u)
         return std::unexpected("project '" + m.name + "' needs host features this app host does not provide: " +
                                project::hostFeatureList(unsupported));
     host->m_times.manifest = ms();
 
     // Subsystems: only what the plan asks for. No worlds, GpuScene, FrameComposer or physics.
-    if (host->m_plan.has(HostFeature::Jobs) && !core::isInitialized()) {
-        core::initialize();
-        host->m_startedJobs = true;
-        host->m_up |= hostFeatureBit(HostFeature::Jobs);
-    } else if (host->m_plan.has(HostFeature::Jobs)) {
+    if (host->m_plan.has(HostFeature::Jobs)) {
+        if (!core::isInitialized()) {
+            core::initialize();
+            host->m_startedJobs = true;
+        }
         host->m_up |= hostFeatureBit(HostFeature::Jobs);
     }
     if (host->m_plan.has(HostFeature::AppPresent)) {
         core::setTrackBHostFeature(core::TrackBHostFeature::AppPresent, true);
         host->m_up |= hostFeatureBit(HostFeature::AppPresent);
     }
+    if (host->m_plan.has(HostFeature::Viewport)) host->m_up |= hostFeatureBit(HostFeature::Viewport);
     host->m_times.subsystems = ms();
 
-    // Application + windows. A manifest without windows gets one "main" window titled after the project.
+    // Application + windows. A manifest without windows gets one "main" window titled after the project. The native
+    // platform comes first: its asynchronous Vulkan start-up overlaps document loading (software frames meanwhile).
     host->m_app = std::make_unique<Application>(AppDesc{.name = m.name, .argc = desc.argc, .argv = desc.argv, .loadSettings = false});
     host->m_model = std::make_unique<fuse::ui::doc::Model>();
+    if (desc.showWindows) {
+        host->m_native = std::make_unique<NativePlatform>(*host->m_app, desc.native);
+        if (!host->m_native->available()) host->m_native.reset(); // no display: headless presenters
+    }
+    host->m_app->setFollowSystemTheme(m.ui.theme == "system");
     const std::filesystem::path root = m.projectRoot.empty() ? std::filesystem::path(".") : std::filesystem::path(m.projectRoot);
     std::vector<std::string> sheets;
     for (const std::string& style : m.ui.styles) {
@@ -85,14 +126,11 @@ std::expected<std::unique_ptr<ProjectHost>, std::string> ProjectHost::start(cons
         w.redraw = m.ui.redraw;
         windows.push_back(w);
     }
-    if (desc.showWindows) {
-        host->m_native = std::make_unique<NativePlatform>(*host->m_app, desc.native);
-        if (!host->m_native->available()) host->m_native.reset(); // no display: headless presenters
-    }
     for (const project::WindowSettings& ws : windows) {
         const std::string title = ws.title.empty() ? m.name : ws.title;
         AppWindow& w = host->m_app->createWindow({.title = title, .width = ws.width, .height = ws.height});
         w.setRedrawPolicy(ws.redraw == project::RedrawMode::Continuous ? RedrawPolicy::Continuous : RedrawPolicy::OnDemand);
+        applyProjectTheme(*host->m_app, w, m.ui.theme);
         for (const std::string& css : sheets)
             if (auto added = w.ui().addStyleSheet(css); !added) return std::unexpected("ui.styles: invalid style sheet");
         const std::string& doc = ws.root.empty() ? m.ui.root : ws.root;
@@ -100,6 +138,7 @@ std::expected<std::unique_ptr<ProjectHost>, std::string> ProjectHost::start(cons
             return std::unexpected("window '" + ws.id + "': " + ok.error());
         if (host->m_native) host->m_native->show(w);
         host->m_windowIds.emplace_back(ws.id, w.id());
+        if (m.kind == project::ProjectKind::Hybrid) host->scanViewports(w);
     }
     host->m_times.windows = ms();
 
@@ -118,7 +157,9 @@ std::expected<std::unique_ptr<ProjectHost>, std::string> ProjectHost::start(cons
 
 ProjectHost::~ProjectHost() {
     m_native.reset();
-    m_app.reset();
+    m_app.reset(); // windows (and their timers) go before the game side they draw
+    m_viewports.clear();
+    m_game.reset();
     m_model.reset();
     if ((m_up & hostFeatureBit(HostFeature::AppPresent)) != 0u)
         core::setTrackBHostFeature(core::TrackBHostFeature::AppPresent, false);
@@ -126,12 +167,129 @@ ProjectHost::~ProjectHost() {
 }
 
 AppWindow* ProjectHost::window(std::string_view id) {
-    for (const auto& [name, windowId] : m_windowIds) {
-        if (name != id) continue;
-        for (u32 i = 0; i < m_app->windowCount(); ++i)
-            if (m_app->window(i)->id() == windowId) return m_app->window(i);
-    }
+    for (const auto& [name, windowId] : m_windowIds)
+        if (name == id) return windowById(windowId);
     return nullptr;
 }
+
+AppWindow* ProjectHost::windowById(u32 id) {
+    for (u32 i = 0; m_app && i < m_app->windowCount(); ++i)
+        if (m_app->window(i)->id() == id) return m_app->window(i);
+    return nullptr;
+}
+
+// ---- hybrid: deferred game side ------------------------------------------------------------------------------------
+void ProjectHost::scanViewports(AppWindow& w) {
+    fuse::ui::UiContext& ui = w.ui();
+    const u32 cls = ui.registry().find("viewport");
+    if (cls == 0xFFFFFFFFu) return;
+    std::vector<fuse::ui::NodeHandle> stack{ui.root()};
+    bool found = false;
+    while (!stack.empty()) {
+        const fuse::ui::NodeHandle n = stack.back();
+        stack.pop_back();
+        if (ui.classOf(n) == cls) {
+            Viewport v;
+            v.windowId = w.id();
+            v.node = n;
+            v.image = std::make_unique<fuse::ui::Image>();
+            v.image->resize(1, 1, 0xFF000000u);
+            v.imageIndex = w.addImage(v.image.get());
+            fuse::ui::widgets::viewportSetImage(ui, n, v.imageIndex, 1, 1);
+            m_viewports.push_back(std::move(v));
+            found = true;
+        }
+        for (fuse::ui::NodeHandle c = ui.firstChild(n); c.valid(); c = ui.nextSibling(c)) stack.push_back(c);
+    }
+    if (found) armViewportTimer(w, false);
+}
+
+void ProjectHost::armViewportTimer(AppWindow& w, bool fast) {
+    for (auto& [id, isFast] : m_viewportFast)
+        if (id == w.id()) {
+            if (isFast == fast) return;
+            isFast = fast;
+        }
+    if (std::none_of(m_viewportFast.begin(), m_viewportFast.end(), [&](const auto& p) { return p.first == w.id(); }))
+        m_viewportFast.emplace_back(w.id(), fast);
+    for (auto it = m_viewportTimers.begin(); it != m_viewportTimers.end(); ++it)
+        if (it->first == w.id()) {
+            w.ui().cancelTimer(it->second);
+            m_viewportTimers.erase(it);
+            break;
+        }
+    const u32 id = w.id();
+    m_viewportTimers.emplace_back(id, w.ui().startTimer(fast ? kViewportFrame : kViewportPoll, true,
+                                                        [this, id](fuse::ui::UiContext&) { viewportTick(id); }));
+}
+
+void ProjectHost::viewportTick(u32 windowId) {
+    AppWindow* w = windowById(windowId);
+    if (!w) return;
+    fuse::ui::UiContext& ui = w->ui();
+    bool visible = false;
+    for (const Viewport& v : m_viewports)
+        if (v.windowId == windowId && ui.alive(v.node)) {
+            const fuse::ui::Rect r = ui.rect(v.node);
+            visible = visible || (r.w > 1.f && r.h > 1.f);
+        }
+    if (!visible) {
+        armViewportTimer(*w, false);
+        return;
+    }
+    if (!ensureGameSide()) return;
+    GameSide& g = *m_game;
+    // a late update fires the repeating timer several times in a row: render once per update
+    const auto now = std::chrono::steady_clock::now();
+    if (now - g.lastRender < std::chrono::milliseconds(4)) return;
+    g.lastRender = now;
+    g.ctx.dt = kViewportFrame;
+    g.ctx.time += kViewportFrame;
+    g.composer.tick(g.ctx);
+    g.composer.render(g.ctx);
+    ++g.ctx.frameIndex;
+    const hybrid::PlaceholderRenderer& fb = g.composer.renderer();
+    for (Viewport& v : m_viewports) {
+        if (v.windowId != windowId || !ui.alive(v.node) || fb.width() == 0) continue;
+        v.image->resize(int(fb.width()), int(fb.height()));
+        std::memcpy(v.image->pixels.data(), fb.pixels(), std::size_t(fb.width()) * fb.height() * 4);
+        fuse::ui::widgets::viewportSetImage(ui, v.node, v.imageIndex, fb.width(), fb.height());
+        ui.invalidate(v.node);
+    }
+    ++m_viewportFrames;
+    armViewportTimer(*w, true);
+}
+
+bool ProjectHost::ensureGameSide() {
+    if (m_game) return true;
+    if (m_manifest.kind != project::ProjectKind::Hybrid) return false;
+    if (!core::isInitialized()) {
+        core::initialize();
+        m_startedJobs = true;
+    }
+    m_up |= hostFeatureBit(HostFeature::Jobs);
+    m_game = std::make_unique<GameSide>();
+    GameSide& g = *m_game;
+    g.composer.setProjectFlags(project::toDimensionFlags(m_manifest.dimensions));
+    const std::filesystem::path root = m_manifest.projectRoot.empty() ? std::filesystem::path(".") : std::filesystem::path(m_manifest.projectRoot);
+    std::error_code ec;
+    if (m_manifest.dimensions.enable3D) {
+        if (!m_manifest.defaultWorld3D.empty() && std::filesystem::exists(root / m_manifest.defaultWorld3D, ec))
+            (void)g.world3D.loadWorldFromFuselevel((root / m_manifest.defaultWorld3D).string());
+        g.world3D.setPhysicsEnabled(true);
+        g.composer.attachWorld3D(&g.world3D);
+        m_up |= hostFeatureBit(HostFeature::Renderer3D) | hostFeatureBit(HostFeature::Physics);
+    }
+    if (m_manifest.dimensions.enable2D) {
+        if (!m_manifest.defaultWorld2D.empty() && std::filesystem::exists(root / m_manifest.defaultWorld2D, ec))
+            (void)g.world2D.loadWorldFromFuselevel((root / m_manifest.defaultWorld2D).string());
+        g.composer.attachWorld2D(&g.world2D);
+        m_up |= hostFeatureBit(HostFeature::Renderer2D);
+    }
+    m_up |= hostFeatureBit(HostFeature::GameFrame);
+    return true;
+}
+
+hybrid::HybridComposer* ProjectHost::composer() { return m_game ? &m_game->composer : nullptr; }
 
 } // namespace fuse::app
