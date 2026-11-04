@@ -155,7 +155,7 @@ target_compile_definitions(fuse_rp_material_layers PRIVATE FUSE_RP_ML_FIXTURE_DI
 fuse_apply_cxx23(fuse_rp_material_layers)
 
 # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
-set(_fuse_w07_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+set(_fuse_w07_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
 set(_fuse_w07_vk_tests "")
 foreach(_case "parity;set" "parity;buffer" "stochastic;set" "triplanar;set" "golden;set" "zero_alloc;set")
     list(GET _case 0 _mode)
@@ -163,14 +163,14 @@ foreach(_case "parity;set" "parity;buffer" "stochastic;set" "triplanar;set" "gol
     set(_name "fuse_rp_material_layers_vk_${_mode}_${_backend}")
     if(FUSE_VULKAN_BACKEND)
         add_test(NAME ${_name}
-                 COMMAND "${_fuse_w07_lock}" "$<TARGET_FILE:fuse_rp_material_layers>" --mode ${_mode} --backend ${_backend})
+                 COMMAND ${_fuse_w07_lock} "$<TARGET_FILE:fuse_rp_material_layers>" --mode ${_mode} --backend ${_backend})
     else()
         add_test(NAME ${_name} COMMAND fuse_rp_material_layers --mode ${_mode} --backend ${_backend})
     endif()
     list(APPEND _fuse_w07_vk_tests ${_name})
 endforeach()
 set_tests_properties(${_fuse_w07_vk_tests} PROPERTIES
-    ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+    ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
     RUN_SERIAL TRUE
     SKIP_RETURN_CODE 77
     TIMEOUT 900

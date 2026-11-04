@@ -66,7 +66,8 @@ std::string stateText(fuse::app::NativePlatform& native, Demo& d) {
     const auto ls = native.lifecycle();
     const auto in = native.safeAreaInsets(*d.win);
     static const char* const kKinds[] = {"headless", "vulkan", "software"};
-    const fuse::ui::Size px = d.win->pixelSize(), lg = d.win->size();
+    const auto px = d.win->pixelSize();
+    const fuse::ui::Size lg = d.win->size();
     char buf[1024];
     std::snprintf(buf, sizeof buf,
                   "presenter=%s\ngpu=%.*s\ngpu_draw=%d\nscale=%.3f\npixels=%dx%d\nlogical=%dx%d\nframes=%llu\ntaps=%d\n"
@@ -155,7 +156,7 @@ int main(int argc, char** argv) {
     std::printf("fuse_ui_android_demo: presenter %d on %.*s, scale %.3f, %s\n", int(kind), int(native.gpuName().size()),
                 native.gpuName().data(), double(window.scale()), std::string(native.lastError()).c_str());
     {
-        const fuse::ui::Size px = window.pixelSize();
+        const auto px = window.pixelSize();
         char buf[192];
         std::snprintf(buf, sizeof buf, "%s%s%.*s, %dx%d px, scale %.2f",
                       kind == fuse::app::PresenterKind::Vulkan ? "Vulkan" : kind == fuse::app::PresenterKind::Software ? "Software" : "Headless",

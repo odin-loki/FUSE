@@ -10,9 +10,20 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
     set(CMAKE_CXX_EXTENSIONS OFF)
     enable_testing()
+    if(MSVC) # what cmake/FuseWarnings.cmake gives every target in the FUSE tree
+        add_compile_definitions(NOMINMAX _CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_WARNINGS)
+        add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/utf-8> $<$<COMPILE_LANGUAGE:C,CXX>:/bigobj>
+                            $<$<COMPILE_LANGUAGE:CXX>:/permissive-> $<$<COMPILE_LANGUAGE:CXX>:/Zc:__cplusplus>)
+    endif()
 endif()
 
 get_filename_component(FUSE_UI_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
+# Gates pin the lavapipe ICD where it exists (Linux CI). Elsewhere (native Windows) they use the system Vulkan driver.
+if(EXISTS "/usr/share/vulkan/icd.d/lvp_icd.json")
+    set(FUSE_UI_LVP_ENV "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
+else()
+    set(FUSE_UI_LVP_ENV "FUSE_UI_SYSTEM_ICD=1")
+endif()
 
 option(FUSE_BUILD_UI_WIDGETS "Build fuse_ui_widgets (Tier A widgets)" ON)
 option(FUSE_BUILD_UI_TESTS "Build FUSE UI gate tests" ON)
@@ -28,7 +39,10 @@ if(FUSE_UI_TEXT STREQUAL "COOKED")
 endif()
 
 # ---- fuse_text ----
-add_library(fuse_text STATIC Text/src/text.cpp)
+add_library(fuse_text STATIC Text/src/text.cpp Text/src/font_catalog.cpp)
+if(WIN32)
+    target_link_libraries(fuse_text PRIVATE advapi32) # registry font lists
+endif()
 target_include_directories(fuse_text PUBLIC Text/include)
 target_include_directories(fuse_text SYSTEM PRIVATE "${FUSE_UI_REPO_ROOT}/vendor/stb")
 if(ANDROID)
@@ -86,7 +100,7 @@ if(FUSE_UI_TEXT STREQUAL "FULL")
 endif()
 
 # ---- fuse_ui_core ----
-add_library(fuse_ui_core STATIC Core/src/style.cpp Core/src/draw_list.cpp Core/src/ui.cpp Core/src/immediate.cpp)
+add_library(fuse_ui_core STATIC Core/src/style.cpp Core/src/draw_list.cpp Core/src/ui.cpp Core/src/immediate.cpp Core/src/icons.cpp)
 target_include_directories(fuse_ui_core PUBLIC Core/include)
 target_link_libraries(fuse_ui_core PUBLIC fuse_text)
 if(FUSE_UI_ACCESSIBILITY)
@@ -97,6 +111,30 @@ if(FUSE_BUILD_UI_WIDGETS)
     add_library(fuse_ui_widgets STATIC Widgets/src/widgets.cpp Widgets/src/widgets_tier_b.cpp Widgets/src/widgets_tier_b2.cpp Widgets/src/widgets_tier_cd.cpp Widgets/src/widgets_tier_d2.cpp Widgets/src/platform_feel.cpp Widgets/src/theme.cpp Widgets/src/inspector.cpp)
     target_include_directories(fuse_ui_widgets PUBLIC Widgets/include)
     target_link_libraries(fuse_ui_widgets PUBLIC fuse_ui_core)
+endif()
+
+# ---- icons: SVG -> .fuseicons cooker (vendored nanosvg, tool time only) + the starter pack cooked at build time ----
+option(FUSE_BUILD_UI_ICONS "Build fuse_ui_icon_cook and cook the starter icon pack (vendor/icons/lucide)" ON)
+if(FUSE_BUILD_UI_ICONS AND EXISTS "${FUSE_UI_REPO_ROOT}/vendor/nanosvg/nanosvg.h")
+    add_library(fuse_ui_icon_cook_lib STATIC Icons/src/icon_cook.cpp)
+    target_include_directories(fuse_ui_icon_cook_lib PUBLIC Icons/include)
+    # the vendor dir, not vendor/nanosvg: its VERSION file would shadow <version> on case-insensitive file systems
+    target_include_directories(fuse_ui_icon_cook_lib SYSTEM PRIVATE "${FUSE_UI_REPO_ROOT}/vendor")
+    target_link_libraries(fuse_ui_icon_cook_lib PUBLIC fuse_ui_core)
+    add_executable(fuse_ui_icon_cook Icons/tools/fuse_ui_icon_cook.cpp)
+    target_link_libraries(fuse_ui_icon_cook PRIVATE fuse_ui_icon_cook_lib)
+    if(NOT CMAKE_CROSSCOMPILING OR CMAKE_CROSSCOMPILING_EMULATOR)
+        set(FUSE_UI_ICON_SVG_DIR "${FUSE_UI_REPO_ROOT}/vendor/icons/lucide")
+        set(FUSE_UI_ICON_PACK "${CMAKE_CURRENT_BINARY_DIR}/icons/fuse_ui_icons.fuseicons")
+        set(FUSE_UI_ICON_PACK "${FUSE_UI_ICON_PACK}" CACHE INTERNAL "starter icon pack (build output)")
+        file(GLOB _fuse_ui_svgs CONFIGURE_DEPENDS "${FUSE_UI_ICON_SVG_DIR}/*.svg")
+        add_custom_command(OUTPUT "${FUSE_UI_ICON_PACK}"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/icons"
+            COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:fuse_ui_icon_cook> "--out=${FUSE_UI_ICON_PACK}" "${FUSE_UI_ICON_SVG_DIR}"
+            DEPENDS fuse_ui_icon_cook ${_fuse_ui_svgs}
+            COMMENT "fuse_ui_icon_cook: starter icon pack" VERBATIM)
+        add_custom_target(fuse_ui_icons ALL DEPENDS "${FUSE_UI_ICON_PACK}")
+    endif()
 endif()
 
 # ---- fuse_ui_doc: .fuseui JSON documents, binding model and expression bytecode ----
@@ -117,20 +155,60 @@ if(FUSE_BUILD_UI_SQL AND FUSE_BUILD_UI_WIDGETS AND EXISTS "${FUSE_UI_REPO_ROOT}/
     set(FUSE_UI_HAVE_SQL ON)
 endif()
 
-# fuse_ui_a11y: accessibility bridge (snapshot / diff / actions); AccessKit backend when FUSE_UI_ACCESSKIT_DIR
-# points at an accesskit-c build (include/accesskit.h + lib/libaccesskit.a; needs a Rust toolchain to produce).
+# fuse_ui_a11y: accessibility bridge (snapshot / diff / actions) + AccessKit adapters (AT-SPI on Linux, UI Automation on
+# Windows). AccessKit comes from FUSE_UI_ACCESSKIT_DIR (a prebuilt accesskit-c: include/accesskit.h + lib/accesskit.lib
+# or lib/libaccesskit.a) or, with FUSE_UI_ACCESSKIT_BUILD, is fetched and built with cargo (needs Rust >= 1.85).
 if(FUSE_UI_ACCESSIBILITY)
     set(FUSE_UI_ACCESSKIT_DIR "" CACHE PATH "accesskit-c prefix (include/, lib/) for the AccessKit a11y backend; empty = none")
+    option(FUSE_UI_ACCESSKIT_BUILD "Fetch accesskit-c and build it with cargo when FUSE_UI_ACCESSKIT_DIR is empty" OFF)
+    set(FUSE_UI_ACCESSKIT_TAG "0.22.3" CACHE STRING "accesskit-c release tag for FUSE_UI_ACCESSKIT_BUILD")
     add_library(fuse_ui_a11y STATIC A11y/src/a11y.cpp A11y/src/a11y_accesskit.cpp)
     target_include_directories(fuse_ui_a11y PUBLIC A11y/include)
     target_link_libraries(fuse_ui_a11y PUBLIC fuse_ui_core)
-    find_library(FUSE_UI_ACCESSKIT_LIB NAMES accesskit PATHS "${FUSE_UI_ACCESSKIT_DIR}/lib" NO_DEFAULT_PATH)
-    if(FUSE_UI_ACCESSKIT_DIR AND FUSE_UI_ACCESSKIT_LIB AND EXISTS "${FUSE_UI_ACCESSKIT_DIR}/include/accesskit.h")
-        target_include_directories(fuse_ui_a11y PRIVATE "${FUSE_UI_ACCESSKIT_DIR}/include")
+    set(_fuse_ak_inc "")
+    set(_fuse_ak_lib "")
+    if(FUSE_UI_ACCESSKIT_DIR)
+        find_library(FUSE_UI_ACCESSKIT_LIB NAMES accesskit PATHS "${FUSE_UI_ACCESSKIT_DIR}/lib" NO_DEFAULT_PATH)
+        if(FUSE_UI_ACCESSKIT_LIB AND EXISTS "${FUSE_UI_ACCESSKIT_DIR}/include/accesskit.h")
+            set(_fuse_ak_inc "${FUSE_UI_ACCESSKIT_DIR}/include")
+            set(_fuse_ak_lib "${FUSE_UI_ACCESSKIT_LIB}")
+        endif()
+    elseif(FUSE_UI_ACCESSKIT_BUILD)
+        find_program(FUSE_UI_CARGO cargo HINTS "$ENV{CARGO_HOME}/bin" "$ENV{USERPROFILE}/.cargo/bin" "$ENV{HOME}/.cargo/bin")
+        if(FUSE_UI_CARGO)
+            include(FetchContent)
+            # SOURCE_SUBDIR without a CMakeLists.txt: only download (accesskit-c's own CMake pulls in Corrosion)
+            FetchContent_Declare(fuse_accesskit_c GIT_REPOSITORY https://github.com/AccessKit/accesskit-c.git
+                GIT_TAG ${FUSE_UI_ACCESSKIT_TAG} GIT_SHALLOW TRUE SOURCE_SUBDIR no-cmake)
+            FetchContent_MakeAvailable(fuse_accesskit_c)
+            set(_fuse_ak_target "${CMAKE_BINARY_DIR}/accesskit-cargo")
+            if(WIN32)
+                set(_fuse_ak_lib "${_fuse_ak_target}/release/accesskit.lib")
+            else()
+                set(_fuse_ak_lib "${_fuse_ak_target}/release/libaccesskit.a")
+            endif()
+            add_custom_command(OUTPUT "${_fuse_ak_lib}"
+                COMMAND "${FUSE_UI_CARGO}" build --release --lib --locked
+                        --manifest-path "${fuse_accesskit_c_SOURCE_DIR}/Cargo.toml" --target-dir "${_fuse_ak_target}"
+                COMMENT "Building accesskit-c ${FUSE_UI_ACCESSKIT_TAG} with cargo" USES_TERMINAL VERBATIM)
+            add_custom_target(fuse_ui_accesskit_cargo DEPENDS "${_fuse_ak_lib}")
+            add_dependencies(fuse_ui_a11y fuse_ui_accesskit_cargo)
+            set(_fuse_ak_inc "${fuse_accesskit_c_SOURCE_DIR}/include")
+        else()
+            message(STATUS "FUSE UI: FUSE_UI_ACCESSKIT_BUILD set but cargo not found; AccessKit backend off")
+        endif()
+    endif()
+    if(_fuse_ak_lib)
+        target_include_directories(fuse_ui_a11y PRIVATE "${_fuse_ak_inc}")
         target_compile_definitions(fuse_ui_a11y PUBLIC FUSE_UI_HAVE_ACCESSKIT=1)
-        find_package(Threads REQUIRED)
-        target_link_libraries(fuse_ui_a11y PRIVATE "${FUSE_UI_ACCESSKIT_LIB}" Threads::Threads ${CMAKE_DL_LIBS} m)
-        message(STATUS "FUSE UI: AccessKit backend from ${FUSE_UI_ACCESSKIT_DIR}")
+        if(WIN32)
+            # cargo --print native-static-libs (the windows crate binds UIA itself through raw-dylib)
+            target_link_libraries(fuse_ui_a11y PRIVATE "${_fuse_ak_lib}" ntdll userenv ws2_32 dbghelp)
+        else()
+            find_package(Threads REQUIRED)
+            target_link_libraries(fuse_ui_a11y PRIVATE "${_fuse_ak_lib}" Threads::Threads ${CMAKE_DL_LIBS} m)
+        endif()
+        message(STATUS "FUSE UI: AccessKit backend (${_fuse_ak_lib})")
     else()
         target_compile_definitions(fuse_ui_a11y PUBLIC FUSE_UI_HAVE_ACCESSKIT=0)
     endif()
@@ -144,6 +222,10 @@ if(FUSE_BUILD_UI_DOC AND FUSE_BUILD_UI_WIDGETS)
     # UI8 cooker: .fuseui / .fusestyle -> cooked blobs + generated widget-registration list
     add_executable(fuse_ui_cook Doc/tools/fuse_ui_cook.cpp)
     target_link_libraries(fuse_ui_cook PRIVATE fuse_ui_doc)
+    if(TARGET fuse_ui_icon_cook_lib) # --icons=<pack>: .svg inputs cooked into an icon pack in the same run
+        target_link_libraries(fuse_ui_cook PRIVATE fuse_ui_icon_cook_lib)
+        target_compile_definitions(fuse_ui_cook PRIVATE FUSE_UI_COOK_HAVE_ICONS=1)
+    endif()
 endif()
 
 # ---- fuse_ui_script: Lua bindings (vendored Lua 5.2, the fuse_script backend) ----
@@ -205,6 +287,20 @@ if(FUSE_BUILD_UI_VK)
     else()
         set(_fuse_ui_vk_link Vulkan::Vulkan)
     endif()
+    # In tree with the Vulkan RHI, fuse_rhi defines the vk* entry points itself (vendored volk trampolines). Linking
+    # the system loader as well gives MSVC duplicate symbols (LNK2005), so take only the headers and let fuse_rhi
+    # provide the functions.
+    if(_fuse_ui_vk_link AND TARGET fuse_rhi AND FUSE_BUILD_VULKAN)
+        add_library(fuse_ui_vulkan_headers INTERFACE)
+        if(TARGET Vulkan::Headers)
+            target_link_libraries(fuse_ui_vulkan_headers INTERFACE Vulkan::Headers)
+        else()
+            target_include_directories(fuse_ui_vulkan_headers SYSTEM INTERFACE
+                $<TARGET_PROPERTY:${_fuse_ui_vk_link},INTERFACE_INCLUDE_DIRECTORIES>)
+        endif()
+        target_link_libraries(fuse_ui_vulkan_headers INTERFACE fuse_rhi)
+        set(_fuse_ui_vk_link fuse_ui_vulkan_headers)
+    endif()
     find_program(FUSE_UI_GLSLANG NAMES glslangValidator HINTS ENV VULKAN_SDK PATH_SUFFIXES bin Bin)
     if(_fuse_ui_vk_link)
         set(_gen "${CMAKE_CURRENT_BINARY_DIR}/ui_vk_gen")
@@ -243,8 +339,9 @@ if(FUSE_BUILD_UI_VK)
                 if(TARGET fuse_scene_renderer_vk)
                     target_link_libraries(fuse_scene_renderer_vk PRIVATE fuse_ui_vk)
                     target_compile_definitions(fuse_scene_renderer_vk PRIVATE FUSE_SR_TEST_HAS_FUSE_UI=1)
+                    # The flock ICD-lock wrapper is a bash script: Linux only; native Windows runs the gate directly.
                     set(_sr_lock "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
-                    if(EXISTS "${_sr_lock}" OR FUSE_VULKAN_BACKEND)
+                    if(NOT WIN32 AND (EXISTS "${_sr_lock}" OR FUSE_VULKAN_BACKEND))
                         add_test(NAME fuse_scene_renderer_vk_fuse_ui_t0
                                  COMMAND "${_sr_lock}" "$<TARGET_FILE:fuse_scene_renderer_vk>" --mode fuse_ui --tier t0)
                     else()
@@ -252,7 +349,7 @@ if(FUSE_BUILD_UI_VK)
                                  COMMAND fuse_scene_renderer_vk --mode fuse_ui --tier t0)
                     endif()
                     # UI7 HUD-less invariant: the UI stage never changes the HUD-less image / TAAU history.
-                    if(EXISTS "${_sr_lock}" OR FUSE_VULKAN_BACKEND)
+                    if(NOT WIN32 AND (EXISTS "${_sr_lock}" OR FUSE_VULKAN_BACKEND))
                         add_test(NAME fuse_ui_hudless_history_invariant COMMAND "${_sr_lock}"
                                  "$<TARGET_FILE:fuse_scene_renderer_vk>" --mode hudless_invariant --tier t0)
                     else()
@@ -260,7 +357,7 @@ if(FUSE_BUILD_UI_VK)
                                  COMMAND fuse_scene_renderer_vk --mode hudless_invariant --tier t0)
                     endif()
                     set_tests_properties(fuse_scene_renderer_vk_fuse_ui_t0 fuse_ui_hudless_history_invariant PROPERTIES
-                        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json" RUN_SERIAL TRUE
+                        ENVIRONMENT "${FUSE_UI_LVP_ENV}" RUN_SERIAL TRUE
                         SKIP_RETURN_CODE 77 TIMEOUT 1800 LABELS "gate;vulkan;renderer;scene_renderer;ui")
                 endif()
             endif()
@@ -299,6 +396,10 @@ if(FUSE_BUILD_UI_GAME AND FUSE_BUILD_UI_WIDGETS)
             add_executable(${s} Game/samples/${s}.cpp)
             target_link_libraries(${s} PRIVATE fuse_ui_game fuse_app)
         endforeach()
+    endif()
+    if(TARGET fuse_app_native AND FUSE_BUILD_APP_SAMPLES AND NOT ANDROID) # Android apps: fuse_app_add_android_app
+        add_executable(game_menu App/samples/game_menu.cpp) # UI5 sample: game main menu + options, gamepad nav
+        target_link_libraries(game_menu PRIVATE fuse_ui_game fuse_app_native)
     endif()
 endif()
 

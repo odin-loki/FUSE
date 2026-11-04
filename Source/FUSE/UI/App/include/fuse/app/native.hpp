@@ -1,7 +1,9 @@
 // fuse_app native windows (plan UI5): real OS windows (X11 via a runtime-loaded libX11, Win32) with a Vulkan swapchain
 // presenter. The UI is drawn either by the fuse_ui_vk compute kernel straight into a storage image (GpuDraw) or by the
 // CPU rasteriser and uploaded (CpuUpload); either result is blitted into the swapchain image and presented. Without a
-// Vulkan device the Win32 backend falls back to GDI (StretchDIBits); X11 then keeps the window but cannot draw it.
+// Vulkan device the CPU raster is blitted by the OS (Win32 GDI, X11 XPutImage). By default (asyncVulkan) the first
+// window starts on that software path and switches to Vulkan once a worker thread has created instance, device and
+// swapchain, so the first frame does not wait for the driver.
 //
 //   fuse::app::Application app{{.name = "hello"}};
 //   fuse::app::NativePlatform native(app);          // installs the OS event source (blocks in poll / MsgWait)
@@ -22,7 +24,9 @@
 #pragma once
 
 #include "fuse/app/app.hpp"
+#include "fuse/app/platform.hpp"
 
+#include <cstdint>
 #include <memory>
 #include <span>
 #include <vector>
@@ -34,7 +38,7 @@ namespace fuse::app {
 enum class PresenterKind : fuse::ui::u8 {
     Headless, ///< no OS window (no display / not shown); CPU raster into AppWindow::image()
     Vulkan,   ///< swapchain presenter
-    Software, ///< GDI blit of the CPU raster (Win32 without Vulkan)
+    Software, ///< CPU raster blitted by the OS (Win32 GDI, X11 XPutImage): no Vulkan, or while Vulkan starts (asyncVulkan)
 };
 enum class VkDrawMode : fuse::ui::u8 {
     Auto,      ///< GpuDraw when the compute kernel is compiled in, else CpuUpload
@@ -68,6 +72,21 @@ struct NativeOptions {
     /// Popup menus / combo lists / submenus as their own borderless OS windows (Qt-style; may extend past the main
     /// window, clamp to the screen). X11: override-redirect windows; Win32: WS_POPUP + WS_EX_NOACTIVATE owned windows.
     bool osPopups = false;
+    /// DPI: Win32 per-monitor-v2 awareness (each window takes its monitor's scale and follows WM_DPICHANGED);
+    /// X11 Xft.dpi, overridden by $FUSE_UI_SCALE. False: every window stays at scale 1.
+    bool dpiAware = true;
+    /// Win32 WM_POINTER touch / pen: the primary finger and the pen drive the pointer, every contact reaches
+    /// UiContext::touches() (false: Windows synthesises mouse messages instead).
+    bool touch = true;
+    /// Replaces the OS theme query (kiosk apps, tests); null = the OS settings. Re-read on WM_SETTINGCHANGE /
+    /// WM_THEMECHANGED / WM_DWMCOLORIZATIONCOLORCHANGED.
+    SystemTheme (*themeQuery)(void* user) = nullptr;
+    void* themeQueryUser = nullptr;
+    /// Fast first frame: the first window shows the CPU raster through the software presenter at once while the
+    /// Vulkan instance / device / swapchain are created on a worker thread; the next frame after that finishes goes
+    /// through Vulkan (the whole current UI frame, so nothing flickers). false: show() blocks until Vulkan is ready.
+    /// Ignored with adoptDevice and once the platform has a Vulkan device (later windows start on Vulkan directly).
+    bool asyncVulkan = true;
     /// Device pixels per UI unit for shown windows; 0 = the OS value (Android: screen density / 160, desktop: 1).
     fuse::ui::f32 scale = 0.f;
     /// Show / hide the soft keyboard as text fields gain / lose focus (mobile).
@@ -78,21 +97,12 @@ struct NativeOptions {
 struct Insets {
     fuse::ui::f32 left = 0.f, top = 0.f, right = 0.f, bottom = 0.f;
 };
-/// One touch contact (UI units) for NativeHooks::touch.
-struct TouchPoint {
-    enum class Phase : fuse::ui::u8 { Down, Move, Up, Cancel };
-    unsigned id = 0;
-    fuse::ui::Vec2 pos;
-    Phase phase = Phase::Move;
-};
 /// Optional callbacks (function table, like Presenter / EventSource). Called on the UI thread from the event pump.
 struct NativeHooks {
     void* user = nullptr;
     void (*insetsChanged)(void* user, AppWindow& w, const Insets& in) = nullptr;
     void (*visibility)(void* user, bool foreground) = nullptr;
     void (*lowMemory)(void* user) = nullptr;
-    /// Every contact of a multi-touch event (the primary one also drives the pointer).
-    void (*touch)(void* user, AppWindow& w, const TouchPoint* points, unsigned count) = nullptr;
 };
 /// Mobile lifecycle counters (tests, diagnostics).
 struct LifecycleStats {
@@ -102,6 +112,13 @@ struct LifecycleStats {
     bool foreground = true;
     bool hasSurface = false;
     bool softKeyboard = false;    ///< the soft keyboard was last requested shown
+};
+
+/// Per-window OS message hook (Win32: runs first in the window procedure; return true to consume the message with
+/// `result` as its LRESULT). Accessibility adapters answer WM_GETOBJECT through it. Not called on X11.
+struct MessageHook {
+    void* user = nullptr;
+    bool (*fn)(void* user, unsigned msg, std::uintptr_t wp, std::intptr_t lp, std::intptr_t& result) = nullptr;
 };
 
 class NativePlatform {
@@ -116,6 +133,11 @@ public:
     /// Opens an OS window for `w` (title / size from its WindowDesc) and installs the best presenter.
     PresenterKind show(AppWindow& w);
     PresenterKind kind(const AppWindow& w) const;
+    /// True while the window shows the software presenter and its Vulkan presenter is still being created
+    /// (NativeOptions::asyncVulkan); the event pump switches it over as soon as it is ready.
+    bool presenterPending(const AppWindow& w) const;
+    /// Waits (pumping OS messages) until a pending Vulkan presenter is ready and switches to it; returns the kind.
+    PresenterKind waitForPresenter(const AppWindow& w);
     /// "lavapipe (LLVM ...)" etc. once a Vulkan presenter exists; empty otherwise.
     std::string_view gpuName() const;
     /// True when the GPU kernel (not the CPU upload path) draws the window.
@@ -160,6 +182,27 @@ public:
     /// Posts a real left click to a native window (XSendEvent / PostMessage) at window-local `at`; it is then
     /// delivered by the normal event pump (tests drive popup windows this way).
     bool postClick(unsigned long long nativeWin, fuse::ui::Vec2 at);
+    /// Installs (or with an empty hook removes) the message hook of a shown window. False when not shown.
+    bool setMessageHook(const AppWindow& w, const MessageHook& hook);
+
+    // ---- platform services (plan §4.13) ----
+    /// Monitors (Win32 EnumDisplayMonitors + GetDpiForMonitor + EnumDisplaySettings; X11 the default screen).
+    std::vector<DisplayInfo> displays() const;
+    /// The OS theme now (or NativeOptions::themeQuery). The Application is updated at start and on every change.
+    SystemTheme querySystemTheme() const;
+    /// Changes a window's DPI scale the way a monitor change does (the window keeps its logical size and is resized
+    /// to logical * scale device pixels). X11 has no per-monitor DPI event: this is how its scale changes at run time.
+    bool setWindowScale(const AppWindow& w, float scale);
+    /// The OS cursor shape last applied to the window (Win32 WM_SETCURSOR / SetCursor, X11 XDefineCursor).
+    fuse::ui::CursorShape appliedCursor(const AppWindow& w) const;
+    /// Win32: whether the title bar was last switched to dark (DWMWA_USE_IMMERSIVE_DARK_MODE accepted).
+    bool darkTitleBar(const AppWindow& w) const;
+    /// Re-reads the OS theme and applies it (what WM_SETTINGCHANGE does on Win32; X11 apps call it themselves).
+    void refreshSystemTheme();
+    /// Posts a pointer move (WM_MOUSEMOVE / MotionNotify) to a native window at window-local device pixels `at`.
+    bool postPointerMove(unsigned long long nativeWin, fuse::ui::Vec2 at);
+    /// Asks a native window to close the way its close button does (WM_CLOSE / WM_DELETE_WINDOW).
+    bool postClose(unsigned long long nativeWin);
 
     struct Impl;
 

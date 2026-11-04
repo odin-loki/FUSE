@@ -4,6 +4,7 @@
 include(${CMAKE_SOURCE_DIR}/cmake/FuseCxx23.cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/FuseVulkanMobile.cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/FuseFindVulkan.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/FuseVulkanTestEnv.cmake)  # Vulkan gate launcher + env for every directory
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

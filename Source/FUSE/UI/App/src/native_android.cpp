@@ -6,6 +6,7 @@
 // memory) and input (touch, keys, back). The window presents through the shared Vulkan swapchain presenter
 // (vk_present.cpp, VK_KHR_android_surface) or, without Vulkan, by copying the CPU raster into ANativeWindow_lock.
 #include "native_internal.hpp"
+#include "platform_internal.hpp"
 
 #include <android/configuration.h>
 #include <android/input.h>
@@ -49,6 +50,7 @@ void vkCtxDestroy(VkCtx*) {}
 bool vkWinSetExternal(VkWin*, unsigned, const ExternalTexture&) { return false; }
 const char* vkCtxDeviceName(const VkCtx*) { return ""; }
 VkWin* vkWinCreate(VkCtx*, const SurfaceSource&, const NativeOptions&, std::string&) { return nullptr; }
+bool vkWinPrepare(VkWin*, unsigned, unsigned, std::string&) { return false; }
 bool vkWinPresent(VkWin*, AppWindow&, Rect) { return false; }
 bool vkWinGpuDraws(const VkWin*) { return false; }
 void vkWinDestroy(VkWin*) {}
@@ -330,7 +332,6 @@ void appendUtf8(std::string& s, u32 cp) {
     else if (cp < 0x10000) { s += char(0xE0 | (cp >> 12)); s += char(0x80 | ((cp >> 6) & 0x3F)); s += char(0x80 | (cp & 0x3F)); }
     else { s += char(0xF0 | (cp >> 18)); s += char(0x80 | ((cp >> 12) & 0x3F)); s += char(0x80 | ((cp >> 6) & 0x3F)); s += char(0x80 | (cp & 0x3F)); }
 }
-constexpr Vec2 kNowhere{-1.0e6f, -1.0e6f}; // releases a press without a click; clears touch hover
 } // namespace
 
 struct NativePlatform::Impl {
@@ -348,10 +349,6 @@ struct NativePlatform::Impl {
     LifecycleStats stats;
     Insets insets;
     unsigned insetPolls = 0;           ///< presents left to re-read insets after a window / config change
-    // touch -> pointer
-    int primary = -1;
-    Vec2 downPos, lastPos;
-    bool panning = false;
 
     Impl(Application& a, const NativeOptions& o) : app(a), opts(o) {}
 
@@ -392,7 +389,7 @@ struct NativePlatform::Impl {
     void syncSize() {
         if (!win || !window) return;
         const int w = ANativeWindow_getWidth(window), h = ANativeWindow_getHeight(window);
-        const Size px = win->pixelSize();
+        const auto px = win->pixelSize();
         if (w > 0 && h > 0 && (u32(w) != u32(px.w) || u32(h) != u32(px.h))) win->resizePixels(u32(w), u32(h));
     }
     /// The activity's window appeared (start, back from background): surface + swapchain for it.
@@ -430,7 +427,7 @@ struct NativePlatform::Impl {
         window = nullptr;
         ++stats.surfacesLost;
         stats.hasSurface = false;
-        primary = -1;
+        if (win) win->ui().touchCancel();
         __android_log_print(ANDROID_LOG_INFO, kTag, "surface released (%u)", stats.surfacesLost);
 #if defined(FUSE_APP_HAS_PLATFORM_LIFECYCLE)
         fuse::platform::notifySurfaceLost();
@@ -445,6 +442,17 @@ struct NativePlatform::Impl {
         fuse::platform::notifyAppVisibility(fg ? fuse::platform::AppVisibility::Foreground : fuse::platform::AppVisibility::Background);
 #endif
         if (fg && win) win->requestRedraw();
+    }
+    /// The OS theme: night mode from the configuration (FUSE_UI_THEME / NativeOptions::themeQuery still win).
+    SystemTheme theme() const {
+        if (opts.themeQuery) return opts.themeQuery(opts.themeQueryUser);
+        SystemTheme t = detail::queryTheme(opts);
+        if (!std::getenv("FUSE_UI_THEME") && g_app && g_app->config) {
+            const int32_t night = AConfiguration_getUiModeNight(g_app->config);
+            if (night == ACONFIGURATION_UI_MODE_NIGHT_NO) t.dark = false;
+            else if (night == ACONFIGURATION_UI_MODE_NIGHT_YES) t.dark = true;
+        }
+        return t;
     }
     void softKeyboard(bool show) {
         if (!g_app || show == stats.softKeyboard) return;
@@ -463,6 +471,7 @@ struct NativePlatform::Impl {
         case APP_CMD_WINDOW_REDRAW_NEEDED: if (win) win->requestRedraw(); break;
         case APP_CMD_CONFIG_CHANGED:
             ++stats.configChanges;
+            app.setSystemTheme(theme()); // night mode is a configuration
             if (win && window) win->setScale(osScale());
             syncSize();
             insetPolls = 30;
@@ -478,12 +487,6 @@ struct NativePlatform::Impl {
         }
     }
 
-    bool canPan(Vec2 p) const {
-        UiContext& ui = win->ui();
-        for (NodeHandle n = ui.hitTest(p); ui.alive(n); n = ui.parent(n))
-            if (ui.scrollExtent(n).h > ui.contentRect(n).h + 0.5f) return true;
-        return false;
-    }
     int32_t onMotion(const AInputEvent* e) {
         UiContext& ui = win->ui();
         const f32 s = win->scale();
@@ -497,64 +500,30 @@ struct NativePlatform::Impl {
             ui.wheel(pos(0), {AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_HSCROLL, 0), AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_VSCROLL, 0)});
             return 1;
         }
-        if (masked == AMOTION_EVENT_ACTION_HOVER_MOVE) { ui.pointerMove(pos(0)); return 1; }
-        if (hooks.touch) {
-            std::vector<TouchPoint> pts(count);
-            for (std::size_t i = 0; i < count; ++i) {
-                TouchPoint& t = pts[i];
-                t.id = unsigned(AMotionEvent_getPointerId(e, i));
-                t.pos = pos(i);
-                t.phase = TouchPoint::Phase::Move;
-                if (masked == AMOTION_EVENT_ACTION_CANCEL) t.phase = TouchPoint::Phase::Cancel;
-                else if (masked == AMOTION_EVENT_ACTION_DOWN || (masked == AMOTION_EVENT_ACTION_POINTER_DOWN && i == changed)) t.phase = TouchPoint::Phase::Down;
-                else if (masked == AMOTION_EVENT_ACTION_UP || (masked == AMOTION_EVENT_ACTION_POINTER_UP && i == changed)) t.phase = TouchPoint::Phase::Up;
-            }
-            hooks.touch(hooks.user, *win, pts.data(), unsigned(count));
+        if (masked == AMOTION_EVENT_ACTION_HOVER_MOVE) {
+            ui.setPointerKind(UiContext::PointerKind::Mouse);
+            ui.pointerMove(pos(0));
+            return 1;
         }
-        // the first contact drives the pointer: tap = click; a vertical drag over a scroll container pans it
+        // every contact goes to the UiContext touch API: the primary one drives the pointer (tap = click, a vertical
+        // drag over a scroll container pans it), the others feed touches() / pinchScale()
         switch (masked) {
-        case AMOTION_EVENT_ACTION_DOWN: {
-            primary = AMotionEvent_getPointerId(e, 0);
-            downPos = lastPos = pos(0);
-            panning = false;
-            ui.pointerMove(downPos);
-            ui.pointerDown(downPos);
+        case AMOTION_EVENT_ACTION_DOWN:
+        case AMOTION_EVENT_ACTION_POINTER_DOWN: {
+            const std::size_t i = masked == AMOTION_EVENT_ACTION_DOWN ? 0 : changed;
+            ui.touchDown(u32(AMotionEvent_getPointerId(e, i)), pos(i));
             break;
         }
-        case AMOTION_EVENT_ACTION_MOVE: {
-            std::size_t i = 0;
-            while (i < count && AMotionEvent_getPointerId(e, i) != primary) ++i;
-            if (i == count) break;
-            const Vec2 p = pos(i);
-            const f32 dx = p.x - downPos.x, dy = p.y - downPos.y;
-            if (!panning && std::abs(dy) > 8.f && std::abs(dy) > std::abs(dx) && canPan(downPos)) {
-                panning = true;
-                ui.pointerUp(kNowhere); // the press becomes a pan: no click
-                lastPos = {lastPos.x, downPos.y};
-            }
-            if (panning) ui.wheel(downPos, {0.f, (p.y - lastPos.y) / UiContext::kWheelPixels});
-            else ui.pointerMove(p);
-            lastPos = p;
+        case AMOTION_EVENT_ACTION_MOVE:
+            for (std::size_t i = 0; i < count; ++i) ui.touchMove(u32(AMotionEvent_getPointerId(e, i)), pos(i));
             break;
-        }
-        case AMOTION_EVENT_ACTION_POINTER_UP:
-            if (AMotionEvent_getPointerId(e, changed) != primary) break;
-            [[fallthrough]];
         case AMOTION_EVENT_ACTION_UP:
-            if (primary >= 0 && !panning) {
-                const Vec2 p = pos(masked == AMOTION_EVENT_ACTION_UP ? 0 : changed);
-                ui.pointerMove(p);
-                ui.pointerUp(p);
-            }
-            ui.pointerMove(kNowhere); // touch has no hover
-            primary = -1;
-            panning = false;
+        case AMOTION_EVENT_ACTION_POINTER_UP: {
+            const std::size_t i = masked == AMOTION_EVENT_ACTION_UP ? 0 : changed;
+            ui.touchUp(u32(AMotionEvent_getPointerId(e, i)), pos(i));
             break;
-        case AMOTION_EVENT_ACTION_CANCEL:
-            if (primary >= 0 && !panning) ui.pointerUp(kNowhere);
-            primary = -1;
-            panning = false;
-            break;
+        }
+        case AMOTION_EVENT_ACTION_CANCEL: ui.touchCancel(); break;
         default: break;
         }
         return 1;
@@ -664,6 +633,7 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
     g_app->onAppCmd = &Impl::cmdThunk;
     g_app->onInputEvent = &Impl::inputThunk;
     app.setEventSource({m.get(), &Impl::pump});
+    app.setSystemTheme(m->theme());
 }
 NativePlatform::~NativePlatform() {
     if (m->win) m->win->setPresenter({}); // calls Impl::destroy: surface released
@@ -718,6 +688,40 @@ Insets NativePlatform::safeAreaInsets(const AppWindow& w) const { return m->win 
 void NativePlatform::setSoftKeyboard(bool show) { m->softKeyboard(show); }
 void NativePlatform::setHooks(const NativeHooks& h) { m->hooks = h; }
 LifecycleStats NativePlatform::lifecycle() const { return m->stats; }
+// Vulkan starts synchronously: a window that ANativeWindow_lock connected as a CPU producer cannot be handed to the
+// Vulkan swapchain afterwards, so there is no software first frame to switch from (asyncVulkan is ignored)
+bool NativePlatform::presenterPending(const AppWindow&) const { return false; }
+PresenterKind NativePlatform::waitForPresenter(const AppWindow& w) { return kind(w); }
+bool NativePlatform::setMessageHook(const AppWindow&, const MessageHook&) { return false; }
+std::vector<DisplayInfo> NativePlatform::displays() const {
+    DisplayInfo d;
+    d.name = "android";
+    d.primary = true;
+    if (m->window) {
+        d.bounds = {0.f, 0.f, f32(ANativeWindow_getWidth(m->window)), f32(ANativeWindow_getHeight(m->window))};
+        const Insets& in = m->insets;
+        const f32 s = m->win ? m->win->scale() : 1.f;
+        d.work = {in.left * s, in.top * s, d.bounds.w - (in.left + in.right) * s, d.bounds.h - (in.top + in.bottom) * s};
+    }
+    d.scale = m->osScale();
+    return {d};
+}
+SystemTheme NativePlatform::querySystemTheme() const { return m->theme(); }
+void NativePlatform::refreshSystemTheme() { m->app.setSystemTheme(m->theme()); }
+bool NativePlatform::setWindowScale(const AppWindow& w, float scale) {
+    if (m->win != &w || !(scale > 0.f)) return false;
+    m->win->setScale(scale);
+    m->syncSize(); // the activity keeps its pixel size: the logical size follows
+    return true;
+}
+CursorShape NativePlatform::appliedCursor(const AppWindow&) const { return CursorShape::Auto; } // no pointer icon
+bool NativePlatform::darkTitleBar(const AppWindow&) const { return false; }
+bool NativePlatform::postPointerMove(unsigned long long, Vec2) { return false; }
+bool NativePlatform::postClose(unsigned long long nativeWin) {
+    if (!m->window || nativeWin != reinterpret_cast<unsigned long long>(m->window)) return false;
+    ANativeActivity_finish(g_app->activity);
+    return true;
+}
 
 } // namespace fuse::app
 

@@ -53,9 +53,9 @@ if(NOT FUSE_BUILD_CORE_TESTS)
 endif()
 
 # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
-set(_fuse_wp05_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+set(_fuse_wp05_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
 set(_fuse_wp05_env
-    "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+    "${FUSE_VULKAN_LVP_ENV}"
     "FUSE_SHADER_CACHE_DIR=${CMAKE_CURRENT_BINARY_DIR}/rp_wp05_shader_cache")
 
 set(_fuse_wp05_twin_defs "")
@@ -86,7 +86,7 @@ foreach(_mode twin spirv-val hot-reload)
         set(_test fuse_rp_slang_${_name})
     endif()
     if(FUSE_VULKAN_BACKEND)
-        add_test(NAME ${_test} COMMAND "${_fuse_wp05_lock}" "$<TARGET_FILE:fuse_rp_slang_twin>" --mode ${_mode})
+        add_test(NAME ${_test} COMMAND ${_fuse_wp05_lock} "$<TARGET_FILE:fuse_rp_slang_twin>" --mode ${_mode})
     else()
         add_test(NAME ${_test} COMMAND fuse_rp_slang_twin --mode ${_mode})
     endif()
@@ -110,7 +110,7 @@ if(TARGET fuse_pipeline_cache)
     foreach(_mode cold warm)
         if(FUSE_VULKAN_BACKEND)
             add_test(NAME fuse_rp_pipeline_cache_${_mode}
-                     COMMAND "${_fuse_wp05_lock}" "$<TARGET_FILE:fuse_pipeline_cache>" --mode ${_mode}
+                     COMMAND ${_fuse_wp05_lock} "$<TARGET_FILE:fuse_pipeline_cache>" --mode ${_mode}
                              --dir "${_fuse_wp05_warm_dir}")
         else()
             add_test(NAME fuse_rp_pipeline_cache_${_mode}

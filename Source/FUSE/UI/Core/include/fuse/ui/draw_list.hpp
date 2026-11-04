@@ -57,8 +57,10 @@ public:
     u64 hash() const;
     /// Moves every command by `d` (Line end points included): re-bases a subtree's list to a popup window's origin.
     void translate(Vec2 d);
-    /// Multiplies every coordinate and length (rects, radii, border widths, blur) by `s`: UI units -> device pixels.
-    void scale(f32 s);
+    /// The region to redraw for `damage` (incremental present): a backdrop reads pixels around its rect before later
+    /// commands draw there, so damage touching a backdrop's sampled region (rect + 3 x box radius) grows to cover it.
+    /// Pixel-aligned, clamped to `bounds`. Empty damage stays empty.
+    Rect redrawRegion(Rect damage, Rect bounds) const;
 
 private:
     std::vector<DrawCmd> m_cmds;

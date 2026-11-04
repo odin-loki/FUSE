@@ -256,6 +256,7 @@ private:
         i32 lastBatch[kQueueClassCount] = {-1, -1, -1};
         u32 layout = 0;
         u32 lastPass = UINT32_MAX;
+        u32 writePass = UINT32_MAX; ///< order position of the last pass that wrote (its writes are visible to no one)
         u8 queue = kNoQueue;
         bool contents = false; ///< holds data an ownership transfer must preserve
         bool touched = false;

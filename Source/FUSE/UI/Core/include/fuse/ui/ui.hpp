@@ -19,6 +19,7 @@
 #include <concepts>
 #include <expected>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -26,6 +27,7 @@
 namespace fuse::ui {
 
 class UiContext;
+class IconSet;
 
 // ---- Input ---------------------------------------------------------------------------------------------------------
 /// UI key set (maps 1:1 onto fuse::platform key set v2 names; see platform/events_v2.hpp).
@@ -194,6 +196,9 @@ public:
     std::expected<void, UiError> addStyleSheet(std::string_view css, std::vector<StyleDiagnostic>* diags = nullptr);
     void addStyleSheet(StyleSheet sheet); ///< an already parsed (or cooked) sheet
     void clearStyleSheets();
+    /// The theme sheet slot: ordered before every other sheet and replaced by the next call (widgets::install puts
+    /// the default theme here; switching dark / light replaces it without touching app sheets).
+    std::expected<void, UiError> setThemeStyleSheet(std::string_view css, std::vector<StyleDiagnostic>* diags = nullptr);
 
     // tree
     NodeHandle root() const { return m_root; }
@@ -257,11 +262,6 @@ public:
     // frame
     void setViewport(Size s);
     Size viewport() const { return m_viewport; }
-    /// Device pixels per UI unit (mobile density, desktop DPI). Layout, input and hit testing stay in UI units;
-    /// drawList() and damage() come out in device pixels and glyphs are rasterised at the device size, so text stays
-    /// sharp. Popup surfaces stay in UI units. Default 1.
-    void setScale(f32 s);
-    f32 scale() const { return m_scale; }
     void update(f32 dtSeconds = 0.f);
     bool needsUpdate() const; ///< false when an on-demand app can sleep
     /// Seconds until the context needs an update: 0 when dirty / animating / commands pending, the earliest timer
@@ -285,7 +285,7 @@ public:
     /// Where popups may be placed: the screen bounds with OS popups, the viewport otherwise.
     Rect popupArea() const;
     const std::vector<PopupSurface>& popupSurfaces() const { return m_popupSurfaces; }
-    Rect damage() const; ///< device pixels (see setScale)
+    Rect damage() const { return m_damage; }
     const FrameStats& stats() const { return m_stats; }
     u64 frameIndex() const { return m_frame; }
     void markAllDirty();
@@ -297,7 +297,6 @@ public:
     bool pointerDown(Vec2 p, MouseButton b = MouseButton::Left);
     bool pointerUp(Vec2 p, MouseButton b = MouseButton::Left);
     bool wheel(Vec2 p, Vec2 notches);
-    static constexpr f32 kWheelPixels = 40.f; ///< scroll distance of one wheel notch (UI units)
     /// Modifier state (kMod*) stamped on pointer events; platform layers update it on every modifier change.
     void setModifiers(u8 mods) { m_mods = mods; }
     u8 modifiers() const { return m_mods; }
@@ -319,6 +318,38 @@ public:
     void setClipboard(const ClipboardHooks& hooks) { m_clipboard = hooks; }
     bool setClipboardText(std::string_view utf8);
     bool clipboardText(std::string& out) const;
+    // ---- platform services (UI1): DPI scale, cursor, reduced motion, touch / pen ----
+    /// Device pixels per UI unit (the window's DPI scale). Layout, hit testing, events, rect() and damage() stay in
+    /// UI units; drawList() and popupSurfaces() are emitted in device pixels and text is rasterised at
+    /// font-size * scale (crisp glyphs, not a stretched bitmap). Changing it re-lays out and repaints everything.
+    void setScale(f32 s);
+    f32 scale() const { return m_scale; }
+    /// The cursor the pointer should show: the pressed node's while it is held (a drag keeps its resize cursor), else
+    /// the hovered node's `cursor` style, inherited from ancestors; Arrow when none sets one.
+    CursorShape cursor() const;
+    /// Reduced motion (the OS accessibility setting): animate() jumps straight to the target value.
+    void setReducedMotion(bool on) { m_reducedMotion = on; }
+    bool reducedMotion() const { return m_reducedMotion; }
+    /// Touch contacts in UI units. The first finger down (while none is down) is the primary touch and drives the
+    /// pointer like a mouse (move + press / release); the others are only tracked (gestures: touches(), pinchScale()).
+    struct TouchPoint {
+        u32 id = 0;
+        Vec2 pos, start;
+    };
+    static constexpr u32 kMaxTouches = 10;
+    bool touchDown(u32 id, Vec2 p);
+    bool touchMove(u32 id, Vec2 p);
+    bool touchUp(u32 id, Vec2 p);
+    void touchCancel(); ///< drops every contact (the primary releases without a click)
+    std::span<const TouchPoint> touches() const { return {m_touches.data(), m_touchCount}; }
+    /// Two-finger pinch: current distance of the first two contacts / their distance when the second went down.
+    f32 pinchScale() const;
+    /// What produced the last pointer event (platform glue sets it; pen pressure 0..1).
+    enum class PointerKind : u8 { Mouse, Touch, Pen };
+    void setPointerKind(PointerKind k, f32 pressure = 1.f) { m_pointerKind = k; m_pressure = pressure; }
+    PointerKind pointerKind() const { return m_pointerKind; }
+    f32 pressure() const { return m_pressure; }
+
     NodeHandle hitTest(Vec2 p) const;
     NodeHandle hovered() const { return m_hover; }
     Vec2 pointer() const { return m_pointer; } ///< last pointer position
@@ -365,8 +396,26 @@ public:
     void paintString(DrawList& dl, std::string_view s, Rect box, Color c, f32 pixelSize, TextAlignment align, u32 node);
     f32 measureString(std::string_view s, f32 pixelSize);
 
+    // icons (icons.hpp): `icon` / `icon-size` style properties, widgets::icon
+    /// Attaches an icon pack (non-owning; must outlive the context or be detached). Re-lays out every node.
+    void setIcons(const IconSet* icons);
+    const IconSet* icons() const { return m_icons; }
+    static constexpr f32 kIconGap = 6.f; ///< between an icon and its label
+    /// Icon cell size for a style: 0 without an icon (or when the attached set has no such icon).
+    f32 iconExtent(const ComputedStyle& s) const;
+    /// Draws icon `nameHash` as a size x size cell with its top-left at `at`, tinted `c`. False when unknown.
+    bool paintIcon(DrawList& dl, u32 nameHash, Vec2 at, f32 size, Color c, u32 node);
+    bool paintIcon(DrawList& dl, std::string_view name, Vec2 at, f32 size, Color c, u32 node) {
+        return paintIcon(dl, hashId(name), at, size, c, node);
+    }
+    /// Content size of the style's icon followed by a one-line `text` (either may be absent).
+    Size measureIconLabel(const ComputedStyle& s, std::string_view text);
+    /// Paints the style's icon then `text` in `box` (both vertically centred; the pair aligned by `align`).
+    void paintIconLabel(DrawList& dl, const ComputedStyle& s, std::string_view text, Rect box, Color c, TextAlignment align, u32 node);
+
     struct Node;
     struct Cold;
+    struct GlyphQuad;
 
 private:
     friend struct ContextSubject;
@@ -397,16 +446,21 @@ private:
     bool focusableNode(u32 i) const;
     void drainCommands();
     void ensureText(u32 i, f32 width);
+    f32 labelIconWidth(const ComputedStyle& s, bool hasText) const;
+    /// paintTextLayout through the node's cached glyph quads (`src` 0: its text layout, 1: its paintString layout).
+    void paintTextQuads(DrawList& dl, u32 i, u8 src, u32 rev, const fuse::text::TextLayout& tl, Vec2 o, Color c, f32 px);
     void collectTab(std::vector<u32>& out) const;
     void markArrange(u32 i);
     bool visibleChain(u32 i) const;
+    void scaleDrawList(DrawList& dl) const;
 
     WidgetRegistry m_registry;
     StyleEngine m_styles;
     const fuse::text::Font* m_font = nullptr;
     fuse::text::GlyphAtlas m_atlas;
     std::vector<Node> m_nodes;
-    std::vector<std::unique_ptr<Cold>> m_cold;
+    std::vector<Cold*> m_cold; ///< per node, into m_coldChunks
+    std::vector<std::unique_ptr<Cold[]>> m_coldChunks; ///< Cold in fixed chunks: neighbouring nodes stay adjacent in memory
     std::vector<u32> m_free;
     u32 m_live = 0;
     NodeHandle m_root;
@@ -414,7 +468,6 @@ private:
     u32 m_layerClass = 0xFFFFFFFFu;
     DrawList m_draw;
     Rect m_damage;
-    f32 m_scale = 1.f;
     bool m_osPopups = false;
     Rect m_popupScreen;
     std::vector<u32> m_popupPending;
@@ -435,12 +488,27 @@ private:
     std::string m_localClipboard;
     Vec2 m_pointer{-1.f, -1.f};
     u8 m_mods = 0;
+    f32 m_scale = 1.f;
+    bool m_reducedMotion = false;
+    PointerKind m_pointerKind = PointerKind::Mouse;
+    f32 m_pressure = 1.f;
+    std::array<TouchPoint, kMaxTouches> m_touches{};
+    u32 m_touchCount = 0;
+    u32 m_primaryTouch = 0xFFFFFFFFu;
+    f32 m_pinchStart = 0.f;
     struct ScrollDrag { NodeHandle node; u8 axis = 0; f32 grab = 0.f; } m_scrollDrag;
     std::vector<u32> m_path;
     std::vector<u32> m_scratchOrder;
     std::vector<std::pair<u32, i32>> m_scratchTab;
     std::vector<fuse::text::ShapedGlyph> m_shapeScratch;
     fuse::text::TextLayout m_stringScratch;
+    const IconSet* m_icons = nullptr;
+    std::vector<u8> m_iconScratch;
+    // atlas-resolved glyphs of every painted text node in one array, in paint order (no per-glyph atlas lookups, no
+    // walks of scattered per-node layout vectors); rebuilt per node when its layout changes, wholesale on atlas reset
+    std::vector<GlyphQuad> m_quads;
+    u32 m_quadEpoch = 1, m_quadAtlasGen = 0;
+    std::size_t m_quadLive = 0;
 
     struct Connection {
         u32 node = 0xFFFFFFFFu, nodeGen = 0, gen = 0;

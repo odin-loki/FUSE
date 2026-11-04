@@ -4,9 +4,9 @@
 // fixed-capacity shaped-run cache.
 //
 // Allocation: the run cache, its pools and the layout scratch live in FullFace and keep their capacity, so relaying
-// out text already seen allocates nothing. SheenBidi allocates its paragraph objects; it only runs when the text
-// holds a right-to-left code point (U+0590..U+08FF, U+FB1D..U+FDFF, U+FE70..U+FEFF, RLE/RLO/RLI controls), so
-// left-to-right text never reaches it.
+// out text already seen allocates nothing. SheenBidi (which mallocs its paragraph objects) only runs when the text
+// holds a right-to-left code point (U+0590..U+08FF, U+FB1D..U+FDFF, U+FE70..U+FEFF, RLE/RLO/RLI controls), and its
+// resolved levels are cached per paragraph text, so steady-state RTL layout does not reach it either.
 #include "text_full.hpp"
 
 #include <hb.h>
@@ -62,17 +62,26 @@ struct FullFace {
     std::vector<std::uint8_t> breaks, levels, paraLevels, glyphLevels;
     std::vector<ShapedGlyph> lineTmp;
     std::vector<std::uint8_t> levelTmp;
+
+    // ---- resolved bidi levels of recent right-to-left paragraphs (direct-mapped; buffers keep their capacity) ----
+    struct BidiEntry {
+        std::uint64_t hash = 0;
+        std::string text;
+        std::vector<std::uint8_t> levels, paraLevels;
+    };
+    static constexpr std::size_t kBidiEntries = 64;
+    std::vector<BidiEntry> bidiCache = std::vector<BidiEntry>(kBidiEntries);
 };
 
-FullFace* fullCreate(std::span<const std::uint8_t> bytes) {
+FullFace* fullCreate(std::span<const std::uint8_t> bytes, std::uint32_t faceIndex) {
     auto* f = new FullFace;
     f->blob = hb_blob_create(reinterpret_cast<const char*>(bytes.data()), unsigned(bytes.size()),
                              HB_MEMORY_MODE_READONLY, nullptr, nullptr);
-    f->face = hb_face_create(f->blob, 0);
+    f->face = hb_face_create(f->blob, faceIndex);
     f->font = hb_font_create(f->face); // scale defaults to upem: positions come back in font units
     f->buffer = hb_buffer_create();
     FT_Library lib = ftLibrary();
-    if (!lib || FT_New_Memory_Face(lib, bytes.data(), FT_Long(bytes.size()), 0, &f->ft) != 0 ||
+    if (!lib || FT_New_Memory_Face(lib, bytes.data(), FT_Long(bytes.size()), FT_Long(faceIndex), &f->ft) != 0 ||
         !hb_buffer_allocation_successful(f->buffer)) {
         fullDestroy(f);
         return nullptr;
@@ -208,6 +217,32 @@ bool hasRtl(std::string_view s) {
 
 bool isSpaceByte(char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; }
 
+// Characters rule L1 resets when they precede a separator or end the line: whitespace, isolate controls and the
+// characters X9 removes (embedding controls, BN).
+bool l1Sequence(SBBidiType t) {
+    return t == SBBidiTypeWS || t == SBBidiTypeBN || (t >= SBBidiTypeLRI && t <= SBBidiTypePDF);
+}
+
+// Rule L1 over bytes [b, e) of one line: segment and paragraph separators, and the whitespace sequences before them
+// or at the end of the line, take the paragraph level.
+void applyL1(std::string_view s, std::size_t b, std::size_t e, std::uint8_t para, std::uint8_t* lv) {
+    constexpr std::size_t kNone = ~std::size_t(0);
+    std::size_t run = kNone;
+    for (std::size_t i = b; i < e;) {
+        const std::size_t at = i;
+        const SBBidiType t = SBCodepointGetBidiType(SBCodepoint(decodeUtf8(s, i)));
+        if (t == SBBidiTypeS || t == SBBidiTypeB) {
+            std::fill(lv + (run != kNone ? run : at), lv + i, para);
+            run = kNone;
+        } else if (l1Sequence(t)) {
+            if (run == kNone) run = at;
+        } else {
+            run = kNone;
+        }
+    }
+    if (run != kNone) std::fill(lv + run, lv + e, para);
+}
+
 } // namespace
 
 void fullLayout(FullFace* f, float unitScale, std::string_view s, float maxWidth, float lineHeight, float ascent,
@@ -222,7 +257,19 @@ void fullLayout(FullFace* f, float unitScale, std::string_view s, float maxWidth
                                reinterpret_cast<char*>(f->breaks.data()));
     f->levels.assign(n, 0);
     f->paraLevels.assign(n, 0);
-    if (n && hasRtl(s)) {
+    const bool bidi = n && hasRtl(s);
+    FullFace::BidiEntry* be = nullptr;
+    if (bidi) {
+        const std::uint64_t h = hashRun(s, false);
+        be = &f->bidiCache[h % FullFace::kBidiEntries];
+        if (be->hash == h && be->text == s) { // seen before: no SheenBidi run
+            f->levels.assign(be->levels.begin(), be->levels.end());
+            f->paraLevels.assign(be->paraLevels.begin(), be->paraLevels.end());
+        } else {
+            be->hash = h;
+        }
+    }
+    if (bidi && be->text != s) {
         SBCodepointSequence seq{SBStringEncodingUTF8, const_cast<char*>(s.data()), SBUInteger(n)};
         SBAlgorithmRef alg = SBAlgorithmCreate(&seq);
         SBUInteger off = 0;
@@ -241,6 +288,9 @@ void fullLayout(FullFace* f, float unitScale, std::string_view s, float maxWidth
             off += plen;
         }
         if (alg) SBAlgorithmRelease(alg);
+        be->text.assign(s);
+        be->levels.assign(f->levels.begin(), f->levels.end());
+        be->paraLevels.assign(f->paraLevels.begin(), f->paraLevels.end());
     }
 
     // Shape level runs (never across a newline) in logical order.
@@ -279,7 +329,11 @@ void fullLayout(FullFace* f, float unitScale, std::string_view s, float maxWidth
         if (b < e && hi >= ln.byteEnd) ln.byteEnd = std::uint32_t(n);
         const std::uint8_t para = b < e ? f->paraLevels[g[b].cluster] : 0;
         ln.rtl = (para & 1) != 0;
-        // L1: trailing whitespace takes the paragraph level and does not count toward the width.
+        if (bidi && b < e) { // L1 over the line's bytes, then glyph levels from their clusters
+            applyL1(s, ln.byteBegin, ln.byteEnd, para, f->levels.data());
+            for (std::uint32_t k = b; k < e; ++k) f->glyphLevels[k] = f->levels[g[k].cluster];
+        }
+        // Trailing whitespace (paragraph level after L1) does not count toward the width.
         std::uint32_t last = e;
         float trailing = 0.f;
         while (last > b && isSpaceByte(s[g[last - 1].cluster])) {
@@ -342,6 +396,42 @@ void fullLayout(FullFace* f, float unitScale, std::string_view s, float maxWidth
     }
     if (start < gn || lines.empty() || (gn > 0 && s[g[gn - 1].cluster] == '\n')) emit(start, gn);
     for (std::uint32_t k = 0; k < gn; ++k) if (s[g[k].cluster] == '\n' || s[g[k].cluster] == '\r') g[k].glyph = kInvisibleGlyph;
+}
+
+void fullLineBreaks(std::string_view s, std::vector<LineBreak>& out, bool strict) {
+    static const bool lbInit = [] { init_linebreak(); return true; }();
+    (void)lbInit;
+    out.resize(s.size());
+    if (s.empty()) return;
+    // LINEBREAK_MUSTBREAK / ALLOWBREAK / NOBREAK / INSIDEACHAR are LineBreak's values in order; a "-strict" language
+    // suffix resolves CJ to NS.
+    set_linebreaks_utf8(reinterpret_cast<const utf8_t*>(s.data()), s.size(), strict ? "-strict" : nullptr,
+                        reinterpret_cast<char*>(out.data()));
+    out.back() = LineBreak::Must; // LB3 (libunibreak reports "indeterminate" for the end of the input)
+}
+
+void fullBidiLevels(std::string_view s, int base, std::vector<std::uint8_t>& levels, std::uint8_t& paraLevel) {
+    const std::size_t n = s.size();
+    paraLevel = base == 1 ? 1 : 0;
+    levels.assign(n, paraLevel);
+    if (!n) return;
+    SBCodepointSequence seq{SBStringEncodingUTF8, const_cast<char*>(s.data()), SBUInteger(n)};
+    SBAlgorithmRef alg = SBAlgorithmCreate(&seq);
+    SBUInteger off = 0;
+    const SBLevel want = base == 0 ? 0 : base == 1 ? 1 : SBLevelDefaultLTR;
+    while (alg && off < n) {
+        SBParagraphRef para = SBAlgorithmCreateParagraph(alg, off, SBUInteger(n - off), want);
+        if (!para) break;
+        const SBUInteger plen = SBParagraphGetLength(para);
+        const SBLevel* lv = SBParagraphGetLevelsPtr(para);
+        paraLevel = SBParagraphGetBaseLevel(para);
+        std::copy(lv, lv + plen, levels.begin() + std::ptrdiff_t(off));
+        applyL1(s, off, off + plen, paraLevel, levels.data());
+        SBParagraphRelease(para);
+        if (plen == 0) break;
+        off += plen;
+    }
+    if (alg) SBAlgorithmRelease(alg);
 }
 
 namespace {

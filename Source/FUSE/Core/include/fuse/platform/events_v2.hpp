@@ -6,7 +6,8 @@
 //           (LeftCtrl → Ctrl, Numpad5 → Num5, NumpadEnter → Enter; keys with no v1 equivalent → Key::COUNT).
 //   events  text input (UTF-8, inline), IME composition, a real wheel event (v1 now has MouseWheel; the old
 //           MouseMove + keyCode 0xFFFF encoding is still decoded for recorded streams), scancode,
-//           repeat flag and modifier mask on keys, touch, DPI change, move, minimise / restore, theme change.
+//           repeat flag and modifier mask on keys, touch, pen (pressure), DPI change, move, minimise / restore,
+//           theme change.
 // `fromLegacy(PlatformEvent)` / `toLegacy(EventV2)` convert between the two so EventPump and InputState stay v1 until
 // the native backends emit v2 directly.
 #pragma once
@@ -143,6 +144,7 @@ enum class EventV2Type : u8 {
     TextInput, Wheel, TouchDown, TouchMove, TouchUp, DpiChanged, WindowMoved, WindowMinimized, WindowRestored,
     ThemeChanged,
     TextComposition, ///< IME pre-edit changed: `text` = its first bytes; full string from EventPump::composition()
+    PenDown, PenMove, PenUp, ///< stylus contact: x / y, pointerId, pressure (0..1), penEraser
 };
 
 struct EventV2 {
@@ -157,7 +159,9 @@ struct EventV2 {
     float x = 0.f, y = 0.f;             ///< client pixels (float for touch / high-precision pointers); raw delta
     float wheelX = 0.f, wheelY = 0.f;   ///< notches (y > 0 = away from the user)
     u8 mouseButton = 0;                 ///< 1 left, 2 right, 3 middle
-    u32 pointerId = 0;                  ///< touch
+    u32 pointerId = 0;                  ///< touch / pen contact id
+    float pressure = 1.f;               ///< pen pressure 0..1 (touch: 1)
+    bool penEraser = false;             ///< pen: the eraser end / button is in use
     float dpiScale = 1.f;               ///< DpiChanged
     bool inputCaptured = false;
     bool darkTheme = false;             ///< ThemeChanged

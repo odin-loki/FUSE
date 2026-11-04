@@ -48,15 +48,6 @@ void DrawList::translate(Vec2 d) {
     }
 }
 
-void DrawList::scale(f32 s) {
-    for (DrawCmd& c : m_cmds) {
-        c.rect = {c.rect.x * s, c.rect.y * s, c.rect.w * s, c.rect.h * s};
-        for (f32& r : c.radius) r *= s;
-        c.borderWidth *= s;
-        c.blur *= s;
-    }
-}
-
 void DrawList::backdrop(const Rect& r, f32 blur, const std::array<f32, 4>& radii, Color tint) {
     DrawCmd c;
     c.op = DrawOp::Backdrop;
@@ -112,6 +103,33 @@ u64 DrawList::hash() const {
         h = fnv(h, &c.blur, 4);
     }
     return h;
+}
+
+Rect DrawList::redrawRegion(Rect damage, Rect bounds) const {
+    auto align = [&](Rect r) {
+        r = r.intersect(bounds);
+        if (r.empty()) return Rect{};
+        const f32 x0 = std::floor(r.x), y0 = std::floor(r.y);
+        return Rect{x0, y0, std::ceil(r.right()) - x0, std::ceil(r.bottom()) - y0};
+    };
+    damage = align(damage);
+    if (damage.empty()) return damage;
+    // grow until no backdrop's sampled region touches the damage only partly (chains of backdrops converge)
+    for (bool grown = true; grown;) {
+        grown = false;
+        for (const DrawCmd& c : m_cmds) {
+            if (c.op != DrawOp::Backdrop) continue;
+            const f32 m = f32(3 * std::max(1, int(std::lround(c.blur / 3.f))) + 1);
+            const Rect region = align({c.rect.x - m, c.rect.y - m, c.rect.w + 2 * m, c.rect.h + 2 * m});
+            if (region.empty() || damage.intersect(region).empty()) continue;
+            const Rect u = align(damage.unite(region));
+            if (u.x < damage.x || u.y < damage.y || u.right() > damage.right() || u.bottom() > damage.bottom()) {
+                damage = u;
+                grown = true;
+            }
+        }
+    }
+    return damage;
 }
 
 u64 Image::hash() const { return fnv(1469598103934665603ull, pixels.data(), pixels.size() * 4); }
@@ -200,12 +218,13 @@ void backdropBlur(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& ta
                     const std::size_t px = vertical ? std::size_t(i) * std::size_t(w) + std::size_t(l) : std::size_t(l) * std::size_t(w) + std::size_t(i);
                     return buf[px * 4 + std::size_t(k)];
                 };
-                f32 acc = 0.f;
-                for (int i = -r; i <= r; ++i) acc += at(i);
+                // each output is its own window sum in a fixed order (not a running sum): order-independent per
+                // pixel, so the GPU kernel computes the same bits in parallel
                 for (int i = 0; i < n; ++i) {
+                    f32 acc = 0.f;
+                    for (int j = -r; j <= r; ++j) acc += at(i + j);
                     const std::size_t px = vertical ? std::size_t(i) * std::size_t(w) + std::size_t(l) : std::size_t(l) * std::size_t(w) + std::size_t(i);
                     tmp[px * 4 + std::size_t(k)] = acc * inv;
-                    acc += at(i + r + 1) - at(i - r);
                 }
             }
         buf.swap(tmp);

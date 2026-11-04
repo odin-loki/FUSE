@@ -57,7 +57,8 @@ fuse_apply_cxx23(fuse_editor_fuse)
 
 if(TARGET fuse_app_native)
     add_executable(fuse_editor_fuse_app Fuse/app/main.cpp)
-    set_target_properties(fuse_editor_fuse_app PROPERTIES OUTPUT_NAME fuse_editor_fuse)
+    # ARCHIVE_OUTPUT_NAME: the exe's import lib would otherwise be fuse_editor_fuse.lib, the library's own name (MSVC LNK1149).
+    set_target_properties(fuse_editor_fuse_app PROPERTIES OUTPUT_NAME fuse_editor_fuse ARCHIVE_OUTPUT_NAME fuse_editor_fuse_app)
     target_link_libraries(fuse_editor_fuse_app PRIVATE fuse_editor_fuse fuse_app_native)
     if(WIN32)
         target_sources(fuse_editor_fuse_app PRIVATE "${_fuse_branding}/fuse_editor.rc") # executable icon (fuse.ico)
