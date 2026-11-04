@@ -287,6 +287,9 @@ if(FUSE_BUILD_UI_DOC AND FUSE_BUILD_UI_WIDGETS)
     # UI8 cooker: .fuseui / .fusestyle -> cooked blobs + generated widget-registration list
     add_executable(fuse_ui_cook Doc/tools/fuse_ui_cook.cpp)
     target_link_libraries(fuse_ui_cook PRIVATE fuse_ui_doc)
+    # string extraction: tr("...") in C++ and translatable .fuseui text -> merged string-table file
+    add_executable(fuse_ui_extract_strings Doc/tools/fuse_ui_extract_strings.cpp)
+    target_link_libraries(fuse_ui_extract_strings PRIVATE fuse_ui_doc fuse_ui_l10n_lib)
     if(TARGET fuse_ui_icon_cook_lib) # --icons=<pack>: .svg inputs cooked into an icon pack in the same run
         target_link_libraries(fuse_ui_cook PRIVATE fuse_ui_icon_cook_lib)
         target_compile_definitions(fuse_ui_cook PRIVATE FUSE_UI_COOK_HAVE_ICONS=1)
