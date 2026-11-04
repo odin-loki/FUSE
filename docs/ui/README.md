@@ -188,7 +188,9 @@ return app.run();                                           // sleeps until inpu
 Without a native platform the app runs headless (tests, `--screenshot=`). `PresenterKind` reports what was picked
 (`Vulkan` draws the draw list on the GPU with `UiVkRenderer`, or uploads CPU-rasterised damage with
 `VkDrawMode::CpuUpload`; `Software` blits). `NativePlatform::capture` reads back what the OS shows (used by `fuse_app_native_window`).
-Under Xvfb set `VK_ICD_FILENAMES` to lavapipe; under Wine the Win32 path and the Vulkan presenter both run.
+Under Xvfb set `VK_ICD_FILENAMES` to lavapipe; under Wine the Win32 path and the Vulkan presenter both run. The
+real-window gates start Xvfb with `+bs` (backing store): without a window manager windows open at 0,0 and overlap,
+and `capture()` (XGetImage) reads a window's own pixels only where the server keeps them.
 
 Custom window chrome (`fuse/app/chrome.hpp`): `WindowDesc::frame = WindowFrame::Custom` (resizable, OS frame removed,
 snap / maximise kept) or `Borderless` (no frame, no resize edges), plus a FUSE UI title bar:
@@ -201,13 +203,19 @@ fuse::app::titleBar(w, w.ui().root(), "Tool");              // drag area + min /
 
 `chromeHitTest(w, p)` says what a point is (caption, edge / corner, min / max / close, client); interactive widgets
 inside the caption stay clickable. Win32 answers `WM_NCHITTEST` from it (so Win11 snap layouts appear on the maximise
-button) and removes the frame in `WM_NCCALCSIZE`; `AppWindow::command()` minimises / maximises / closes. X11 keeps
-its WM frame for now.
+button) and removes the frame in `WM_NCCALCSIZE`; `AppWindow::command()` minimises / maximises / closes. X11 asks the
+window manager for no decorations (`_MOTIF_WM_HINTS`), hands caption / edge presses to it with `_NET_WM_MOVERESIZE`
+(same hit test, resize cursors on the edges), maximises through `_NET_WM_STATE` (also on a caption double click),
+minimises with `WM_CHANGE_STATE` and follows the window's `_NET_WM_STATE` for `chrome().maximized`.
 
 Shell services (`fuse/app/shell.hpp`, UI10): `TrayIcon` (icon from an RGBA `Image`, tooltip, `onClick` /
 `onDoubleClick`, a context menu in `popupMenu` item format shown as an OS popup menu, `notify()` balloons / toasts)
-and a free `notify(title, body)`. Win32: `Shell_NotifyIconW` (re-added when Explorer restarts). X11: no tray yet;
-`notify()` uses `org.freedesktop.Notifications` over a runtime-loaded libdbus-1, else returns `Unsupported`.
+and a free `notify(title, body)`. Win32: `Shell_NotifyIconW` (re-added when Explorer restarts). Unix: a
+StatusNotifierItem over a runtime-loaded libdbus-1 (KDE, GNOME with the AppIndicator extension, waybar ...): icon
+pixmap, tooltip, `Activate` → `onClick`, the menu exported as `com.canonical.dbusmenu` (the tray host draws it, so
+`openMenu()`, double clicks and `screenRect()` do nothing there); its D-Bus connection is one of the X11 pump's watches.
+`notify()` uses `org.freedesktop.Notifications` (a tray icon's notifications report clicks via `ActionInvoked`), else
+returns `Unsupported`.
 
 Samples: `hello_app` (`--startup-probe` prints launch → first presented frame), `notes_app`, `game_menu` (title,
 Play / Options / Quit over an animated background on a backdrop-blurred panel, options page with resolution, volume
@@ -227,14 +235,17 @@ the first frame (instance + device ≈ 0.4–0.7 s, swapchain + first present �
 Desktop platform services (UI1, `fuse/app/native.hpp`, `fuse/app/platform.hpp`):
 
 - DPI: the process is per-monitor-v2 aware; each window takes its monitor's scale and follows `WM_DPICHANGED`
-  (X11: `Xft.dpi`, `$FUSE_UI_SCALE`; `NativePlatform::setWindowScale` forces one). `AppWindow::scale()` /
+  (X11: the XSETTINGS `Xft/DPI`, followed live for every window, else `RESOURCE_MANAGER` `Xft.dpi`; `$FUSE_UI_SCALE`
+  overrides; `NativePlatform::setWindowScale` forces one). `AppWindow::scale()` /
   `pixelSize()` / `onDpiChanged`; `UiContext::setScale` keeps layout and input in UI units and emits the draw list in
   device pixels with text rasterised at the new size.
-- `NativePlatform::displays()` (bounds, work area, scale, refresh rate, primary).
+- `NativePlatform::displays()` (bounds, work area, scale, refresh rate, primary). X11: RandR 1.5 monitors through a
+  runtime-loaded libXrandr (refresh from the output's CRTC mode), work area from `_NET_WORKAREA`.
 - Cursors: the `cursor:` style (`default text pointer ns-resize ew-resize nwse-resize nesw-resize move wait
   not-allowed crosshair`, inherited) picks the OS cursor; line edits, links and splitter handles set theirs.
 - Theme: `Application::systemTheme()` (dark, accent, high contrast, reduced motion, text scale), `onThemeChanged`,
-  live on `WM_SETTINGCHANGE`; `setFollowSystemTheme(true)` switches the default theme dark / light
+  live on `WM_SETTINGCHANGE` (X11: XSETTINGS `Net/ThemeName`, dark when the name says so; `$FUSE_UI_THEME` /
+  `$GTK_THEME` override); `setFollowSystemTheme(true)` switches the default theme dark / light
   (`widgets::themeCss(ThemeVariant)`, `UiContext::setThemeStyleSheet`) with the system accent. Reduced motion always
   makes `animate()` jump; the title bar follows via `DWMWA_USE_IMMERSIVE_DARK_MODE`.
 - Touch and pen (Win32 `WM_POINTER` → events_v2 `Touch*` / `Pen*` → `UiContext::touchDown/Move/Up`): the first
@@ -335,8 +346,9 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_vk_budget` | GPU time (timestamp queries) of 1080p frames: full, backdrop blur, incremental (software devices report only) |
 | `fuse_app_native_startup` | launches `hello_app` 5× per configuration: default (async Vulkan) and software-only first frame median ≤ 150 ms; every default run switches to Vulkan (median ≤ 2 s) with the switched frame equal to the CPU raster; synchronous Vulkan init ≤ 2 s (skips 77 without a display) |
 | `fuse_app_binary_size` | `hello_app` file size ≤ measured baseline + 10 % (MSVC x64 Release, MINIMAL text: 809,472 B → 890,400 B; other toolchains report and skip until a baseline is set with `-DFUSE_APP_BINARY_BUDGET`) |
-| `fuse_app_window_chrome` | custom-chrome window: `chromeHitTest` probes, then `WM_NCHITTEST` on a real Win32 window, frame removed, max / restore / min / close through non-client clicks (77 off Win32) |
-| `fuse_app_tray` | tray icon added and found (`Shell_NotifyIconGetRect` / `NIM_MODIFY`), simulated click / double-click callbacks, a real `TrackPopupMenu` context menu picked by posted keys, a notification, removal (77 without a tray) |
+| `fuse_app_window_chrome` | custom-chrome window: `chromeHitTest` probes, then `WM_NCHITTEST` on a real Win32 window, frame removed, max / restore / min / close through non-client clicks; X11 (Xvfb, the gate watching the root like a WM): `_MOTIF_WM_HINTS`, `_NET_WM_MOVERESIZE` direction / position per probe, edge cursors, `_NET_WM_STATE` maximise / restore applied by the gate, `WM_CHANGE_STATE`, close (77 without a display) |
+| `fuse_app_tray` | Win32: tray icon added and found (`Shell_NotifyIconGetRect` / `NIM_MODIFY`), simulated click / double-click callbacks, a real `TrackPopupMenu` context menu picked by posted keys, a notification, removal. Unix (under `dbus-run-session`, the gate plays watcher, notification daemon and tray host): registration, `IconPixmap` / `ToolTip` properties and change signals, `Activate`, dbusmenu layout + click, notification + `ActionInvoked`, name released on removal, `Unsupported` without a daemon (77 without a tray / private bus) |
+| `fuse_x11_randr`, `fuse_x11_xsettings`, `fuse_x11_wake` | X11 under Xvfb against the gate's own connection: two RandR monitors + `_NET_WORKAREA` in `displays()` and a monitor removed live; an XSETTINGS manager's `Xft/DPI` / `Net/ThemeName` at start and live (every window re-scales, `onDpiChanged`, `onThemeChanged`), manager exit → `RESOURCE_MANAGER`, a new manager; `wake()` from another thread ends a blocked pump and an accessibility action queued from an AT thread runs at once |
 | `fuse_ui_platform_services` | headless: DPI scale (layout fixed, device-pixel draw list, re-rasterised glyphs), `cursor:` style, reduced motion, touch / pinch / pen through `platform_bridge`, dark → light theme slot |
 | `fuse_platform_dpi_change`, `fuse_platform_displays`, `fuse_platform_cursors`, `fuse_platform_system_theme`, `fuse_platform_dialogs`, `fuse_platform_touch_synthetic`, `fuse_platform_multiwindow` | real windows: `WM_DPICHANGED` re-scale and back, monitors, OS cursor per hovered widget, theme change via `WM_SETTINGCHANGE` (faked query, user settings untouched), dialogs dismissed by a helper thread, injected touch tap + pinch, two swapchain windows with input routing / close / per-window DPI |
 | `fuse_ui_game_hud_golden` | HUD demo scene against `tests/golden/hud.png` plus trail / marker / pool state |
