@@ -43,10 +43,10 @@ struct FileFilter {
     std::string_view patterns; ///< "*.png;*.jpg"
 };
 struct FileDialogDesc {
-    std::string_view title;
-    std::string_view folder;   ///< initial folder (empty = OS default)
-    std::string_view fileName; ///< save: suggested file name
-    std::span<const FileFilter> filters;
+    std::string_view title{};
+    std::string_view folder{};   ///< initial folder (empty = OS default)
+    std::string_view fileName{}; ///< save: suggested file name
+    std::span<const FileFilter> filters{};
     bool multiple = false;     ///< open: allow several files
     unsigned long long owner = 0; ///< native window the dialog is modal to (0 = none)
 };

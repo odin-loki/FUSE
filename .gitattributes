@@ -19,6 +19,7 @@
 
 # WSL/bash entrypoints (must not get CRLF or `set -euo pipefail` breaks).
 scripts/*.sh text eol=lf
+cmake/**/*.sh text eol=lf
 
 # Vendored third-party trees pinned by sha256 (fuse_lint vendored-pins): keep upstream bytes (CRLF) as-is.
 vendor/streamline/** -text

@@ -684,7 +684,9 @@ static int gateMultiwindow(int argc, char** argv) {
     std::printf("  presenters: A %s, B %s (%.*s)\n", ka == app::PresenterKind::Vulkan ? "vulkan" : "software",
                 kb == app::PresenterKind::Vulkan ? "vulkan" : "software", int(native.gpuName().size()), native.gpuName().data());
     CHECK(ha && hb && ha != hb && ka == kb);
-    CHECK(presentError(native, wa) <= 2 && presentError(native, wb) <= 2);
+    const int ea = presentError(native, wa), eb = presentError(native, wb);
+    std::printf("  present error: A %d, B %d (kind now A %d, B %d)\n", ea, eb, int(native.kind(wa)), int(native.kind(wb)));
+    CHECK(ea <= 2 && eb <= 2);
     Image ia, ib;
     native.capture(wa, ia);
     native.capture(wb, ib);

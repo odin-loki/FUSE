@@ -534,14 +534,16 @@ void install(UiContext& ui) {
 
 u32 installClasses(UiContext& ui, std::span<const std::string_view> classes, bool theme) {
     // every library class, registered once into a scratch context and copied from there by name
-    static const WidgetRegistry& all = [] () -> const WidgetRegistry& {
+    // a pointer, not a reference: GCC 13's -Wdangling-reference misreads the lambda's returned reference
+    static const WidgetRegistry* const lib = [] {
         static UiContext scratch({.viewport = {1.f, 1.f}, .font = nullptr, .reserveNodes = 4, .atlasSize = 64});
         registerTierA(scratch);
         registerTierB(scratch);
         registerTierCD(scratch);
         registerTierD2(scratch);
-        return scratch.registry();
+        return &scratch.registry();
     }();
+    const WidgetRegistry& all = *lib;
     u32 unknown = 0;
     for (std::string_view name : classes) {
         if (ui.registry().find(name) != 0xFFFFFFFFu) continue;

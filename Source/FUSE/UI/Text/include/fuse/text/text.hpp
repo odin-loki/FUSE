@@ -290,7 +290,8 @@ public:
     /// nullptr when no family matches.
     const FontFaceInfo* match(std::string_view family, std::uint16_t weight = 400, bool italic = false) const;
     /// Regular upright faces that cover `script`, best first (platform UI fonts for the script, then any other
-    /// family whose OS/2 ranges claim it), one per family, at most `maxFaces`.
+    /// family whose OS/2 ranges claim it), one per family, at most `maxFaces`. Each face's cmap is checked for a letter
+    /// of the script (the range bits alone are unreliable).
     std::vector<const FontFaceInfo*> systemFallbackChain(Script script, std::size_t maxFaces = 4) const;
     /// Loads a face (FontFaceInfo::path / index).
     static std::expected<Font, TextError> load(const FontFaceInfo& face);

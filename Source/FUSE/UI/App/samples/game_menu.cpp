@@ -41,10 +41,10 @@ constexpr const char* kStyle = R"(
 struct Menu {
     fuse::app::Application& app;
     UiContext& ui;
-    NodeHandle bg, menu, mainPage, optionsPage, play, options, quit, resolution, master, music, bindings, back, hint;
-    NodeHandle masterValue, musicValue;
-    std::vector<NodeHandle> orbs;
-    NodeHandle current, next;
+    NodeHandle bg{}, menu{}, mainPage{}, optionsPage{}, play{}, options{}, quit{}, resolution{}, master{}, music{}, bindings{}, back{}, hint{};
+    NodeHandle masterValue{}, musicValue{};
+    std::vector<NodeHandle> orbs{};
+    NodeHandle current{}, next{};
     u32 orbStep = 0;
 
     static void setPct(UiContext& ui, NodeHandle label, f32 v) { ui.setText(label, std::to_string(int(std::lround(v * 100.f))) + "%"); }

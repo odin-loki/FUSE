@@ -421,13 +421,106 @@ const FontFaceInfo* FontCatalog::match(std::string_view family, std::uint16_t we
     return nullptr;
 }
 
+namespace {
+// A letter every font that really supports the script maps (0: no check).
+char32_t probeOf(Script s) {
+    switch (s) {
+    case Script::Common:
+    case Script::Latin: return U'A';
+    case Script::Greek: return U'Ω';
+    case Script::Cyrillic: return U'Ж';
+    case Script::Hebrew: return U'א';
+    case Script::Arabic: return U'ب';
+    case Script::Devanagari: return U'क';
+    case Script::Thai: return U'ก';
+    case Script::Han: return U'中';
+    case Script::Kana: return U'あ';
+    case Script::Hangul: return U'한';
+    case Script::Emoji:
+    case Script::Symbols: return 0;
+    }
+    return 0;
+}
+
+// Whether the face's cmap maps `cp` (format 4 or 12 Unicode subtable). Reads the table directory and cmap only.
+bool cmapMaps(const FontFaceInfo& face, char32_t cp) {
+    std::ifstream f(toPath(face.path), std::ios::binary);
+    std::vector<std::uint8_t> head, dir, cmap;
+    if (!f || !readAt(f, 0, 12, head)) return false;
+    std::uint64_t base = 0;
+    if (std::memcmp(head.data(), "ttcf", 4) == 0) {
+        std::vector<std::uint8_t> off;
+        if (!readAt(f, 12 + std::uint64_t(face.index) * 4, 4, off)) return false;
+        base = be32(off.data());
+        if (!readAt(f, base, 12, head)) return false;
+    }
+    const std::uint16_t numTables = be16(head.data() + 4);
+    if (!readAt(f, base + 12, std::size_t(numTables) * 16, dir)) return false;
+    for (std::uint32_t t = 0; t < numTables; ++t) {
+        const std::uint8_t* e = dir.data() + t * 16;
+        if (std::memcmp(e, "cmap", 4) != 0) continue;
+        const std::uint32_t len = be32(e + 12);
+        if (len < 4 || len > (64u << 20) || !readAt(f, be32(e + 8), len, cmap)) return false;
+        break;
+    }
+    if (cmap.size() < 4) return false;
+    // best subtable: full-repertoire format 12 first, then BMP format 4
+    std::uint32_t best = 0;
+    int bestScore = 0;
+    const std::uint16_t n = be16(cmap.data() + 2);
+    for (std::uint32_t i = 0; i < n && 4 + i * 8 + 8 <= cmap.size(); ++i) {
+        const std::uint8_t* r = cmap.data() + 4 + i * 8;
+        const std::uint16_t plat = be16(r), enc = be16(r + 2);
+        const std::uint32_t off = be32(r + 4);
+        if (off + 2 > cmap.size() || !(plat == 0 || (plat == 3 && (enc == 1 || enc == 10)))) continue;
+        const std::uint16_t fmt = be16(cmap.data() + off);
+        const int score = fmt == 12 ? 2 : fmt == 4 ? 1 : 0;
+        if (score > bestScore) { bestScore = score; best = off; }
+    }
+    if (!bestScore) return false;
+    const std::uint8_t* s = cmap.data() + best;
+    const std::size_t avail = cmap.size() - best;
+    if (bestScore == 2) {
+        if (avail < 16) return false;
+        const std::uint32_t groups = be32(s + 12);
+        for (std::uint32_t g = 0; g < groups && 16 + std::size_t(g) * 12 + 12 <= avail; ++g) {
+            const std::uint8_t* p = s + 16 + std::size_t(g) * 12;
+            if (cp >= be32(p) && cp <= be32(p + 4)) return be32(p + 8) + (cp - be32(p)) != 0;
+        }
+        return false;
+    }
+    if (cp > 0xFFFF || avail < 14) return false;
+    const std::size_t seg = be16(s + 6) / 2;
+    if (16 + seg * 8 > avail) return false;
+    const std::uint8_t* ends = s + 14;
+    const std::uint8_t* starts = ends + seg * 2 + 2;
+    const std::uint8_t* deltas = starts + seg * 2;
+    const std::uint8_t* ranges = deltas + seg * 2;
+    for (std::size_t i = 0; i < seg; ++i) {
+        if (cp > be16(ends + i * 2)) continue;
+        const std::uint16_t start = be16(starts + i * 2);
+        if (cp < start) return false;
+        const std::uint16_t ro = be16(ranges + i * 2), delta = be16(deltas + i * 2);
+        if (!ro) return std::uint16_t(cp + delta) != 0;
+        const std::size_t at = std::size_t(ranges + i * 2 - s) + ro + (cp - start) * 2;
+        if (at + 2 > avail) return false;
+        const std::uint16_t glyph = be16(s + at);
+        return glyph && std::uint16_t(glyph + delta) != 0;
+    }
+    return false;
+}
+} // namespace
+
 std::vector<const FontFaceInfo*> FontCatalog::systemFallbackChain(Script script, std::size_t maxFaces) const {
     std::vector<const FontFaceInfo*> out;
+    const char32_t probe = probeOf(script);
     auto addFamily = [&](std::string_view fam) {
         if (out.size() >= maxFaces) return;
         for (const FontFaceInfo* f : out)
             if (equalCi(f->family, fam)) return;
-        if (const FontFaceInfo* f = bestOfFamily(m_faces, fam, 400, false); f && f->covers(script)) out.push_back(f);
+        // OS/2 range bits are only hints (DejaVu claims Thai / CJK blocks it has no letters for): check the cmap too
+        if (const FontFaceInfo* f = bestOfFamily(m_faces, fam, 400, false); f && f->covers(script) && (!probe || cmapMaps(*f, probe)))
+            out.push_back(f);
     };
     for (const char* fam : preferredFor(script)) addFamily(fam);
     for (const FontFaceInfo& f : m_faces)
