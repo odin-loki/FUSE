@@ -17,6 +17,18 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     endif()
 endif()
 
+# Dead-strippable code on GCC / Clang (MSVC Release already links with /OPT:REF over per-function COMDATs): every
+# function and datum in its own section, and the linker drops the unreferenced ones. The opt-in text paths (variable
+# fonts, colour glyphs, MSDF) and the per-feature entry points of a library only reach a binary that calls them.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang" AND NOT MSVC)
+    add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:-ffunction-sections> $<$<COMPILE_LANGUAGE:C,CXX>:-fdata-sections>)
+    if(APPLE)
+        add_link_options($<$<NOT:$<CONFIG:Debug>>:LINKER:-dead_strip>)
+    else()
+        add_link_options($<$<NOT:$<CONFIG:Debug>>:LINKER:--gc-sections>)
+    endif()
+endif()
+
 get_filename_component(FUSE_UI_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
 # Gates pin the lavapipe ICD where it exists (Linux CI). Elsewhere (native Windows) they use the system Vulkan driver.
 if(EXISTS "/usr/share/vulkan/icd.d/lvp_icd.json")
@@ -36,7 +48,7 @@ set_property(CACHE FUSE_UI_TEXT PROPERTY STRINGS FULL MINIMAL COOKED)
 set(FUSE_UI_PROFILE "app" CACHE STRING "UI profile: hud, app, editor")
 
 # ---- fuse_text ----
-set(FUSE_UI_TEXT_CORE_SRC Text/src/text.cpp Text/src/font_catalog.cpp Text/src/paint_enable.cpp)
+set(FUSE_UI_TEXT_CORE_SRC Text/src/text.cpp Text/src/font_catalog.cpp Text/src/paint_enable.cpp Text/src/png_codec.cpp)
 # opt-in rasterisers (enableColorGlyphs / enableMsdf), font variations (Font::instance) and the font cooker: linked
 # only into binaries that call them
 set(FUSE_UI_TEXT_RASTER_SRC Text/src/colr_paint.cpp Text/src/path_raster.cpp Text/src/color_bitmap.cpp Text/src/msdf.cpp
@@ -106,6 +118,7 @@ if(WIN32)
     target_link_libraries(fuse_text PRIVATE advapi32) # registry font lists
 endif()
 target_include_directories(fuse_text PUBLIC Text/include)
+target_include_directories(fuse_text SYSTEM PRIVATE "${FUSE_UI_REPO_ROOT}/vendor/stb") # png_codec.cpp (every profile)
 target_compile_features(fuse_text PUBLIC cxx_std_23)
 
 # FULL profile (decision D2): HarfBuzz + FreeType through FetchContent (static, no optional deps), SheenBidi (UAX #9)

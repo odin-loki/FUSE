@@ -22,36 +22,7 @@
 #include <cstdlib>
 #include <poll.h>
 
-// PNG for image/png (X11 only): static encoder + decoder in this translation unit
-#define STB_IMAGE_WRITE_STATIC
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#define STB_IMAGE_STATIC
-#define STBI_ONLY_PNG
-#define STBI_NO_STDIO
-#define STBI_NO_LINEAR
-#define STBI_NO_HDR
-#define STBI_MAX_DIMENSIONS 16384
-#define STB_IMAGE_IMPLEMENTATION
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wsign-compare"
-#pragma GCC diagnostic ignored "-Wconversion"
-#pragma GCC diagnostic ignored "-Wsign-conversion"
-#pragma GCC diagnostic ignored "-Wshadow"
-#pragma GCC diagnostic ignored "-Wcast-qual"
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#pragma GCC diagnostic ignored "-Wdouble-promotion"
-#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
-#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
-#pragma GCC diagnostic ignored "-Wuseless-cast"
-#endif
-#include "stb_image.h"
-#include "stb_image_write.h"
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
+#include "fuse/text/png_codec.hpp" // image/png (X11 only)
 #endif
 
 namespace fuse::app {
@@ -451,11 +422,8 @@ bool XClip::bytesFor(x11::Atom target, std::vector<std::uint8_t>& out, x11::Atom
         if (!it || !provideOnce(*it) || it->image.width <= 0) return false;
         out.clear();
         // 0xAABBGGRR words are R, G, B, A bytes in memory
-        const int ok = stbi_write_png_to_func([](void* ctx, void* data, int size) {
-            auto* v = static_cast<std::vector<std::uint8_t>*>(ctx);
-            v->insert(v->end(), static_cast<const std::uint8_t*>(data), static_cast<const std::uint8_t*>(data) + size);
-        }, &out, it->image.width, it->image.height, 4, it->image.pixels.data(), it->image.width * 4);
-        return ok != 0;
+        return fuse::text::png::encodeRgba(reinterpret_cast<const std::uint8_t*>(it->image.pixels.data()),
+                                           it->image.width, it->image.height, it->image.width * 4, out);
     }
     char* name = x.GetAtomName(d, target);
     if (!name) return false;
@@ -621,12 +589,11 @@ bool clipboardImage(Image& out) {
     XClip& c = xc();
     std::vector<std::uint8_t> b;
     if (!c.convert(c.png, b) || b.empty()) return false;
-    int w = 0, h = 0, n = 0;
-    stbi_uc* px = stbi_load_from_memory(b.data(), int(b.size()), &w, &h, &n, 4);
-    if (!px) return false;
+    int w = 0, h = 0;
+    std::vector<std::uint8_t> px;
+    if (!fuse::text::png::decodeRgba(b, 16384, w, h, px)) return false;
     out.resize(w, h);
-    std::memcpy(out.pixels.data(), px, out.pixels.size() * 4);
-    stbi_image_free(px);
+    std::memcpy(out.pixels.data(), px.data(), out.pixels.size() * 4);
     return true;
 }
 bool clipboardData(std::string_view mime, std::vector<std::uint8_t>& out) {

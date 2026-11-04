@@ -939,6 +939,7 @@ void enableVariableFonts() {
     h.coords = &apiCoords;
     h.instance = &apiInstance;
     h.setVariation = &apiSetVariation;
+    detail::namedInstanceLister() = &detail::catalogNamedInstances;
 }
 
 } // namespace fuse::text

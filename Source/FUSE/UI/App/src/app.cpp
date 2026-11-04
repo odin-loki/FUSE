@@ -30,17 +30,7 @@
 #include <unistd.h>
 #endif
 
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
-#pragma GCC diagnostic ignored "-Wunused-function"
-#endif
-#define STB_IMAGE_WRITE_STATIC
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
+#include "fuse/text/png_codec.hpp"
 
 namespace fuse::app {
 using namespace fuse::ui;
@@ -316,11 +306,13 @@ bool AppWindow::presentHeadless(void*, AppWindow& w, Rect damage) {
 }
 bool writePng(const Image& img, const std::string& path) {
     if (img.width <= 0) return false;
-    return stbi_write_png(path.c_str(), img.width, img.height, 4, img.pixels.data(), img.width * 4) != 0;
+    return fuse::text::png::writeRgba(path, reinterpret_cast<const std::uint8_t*>(img.pixels.data()), img.width, img.height,
+                                     img.width * 4);
 }
 bool AppWindow::writePng(const std::string& path) const {
     if (m_image.width <= 0) return false;
-    return stbi_write_png(path.c_str(), m_image.width, m_image.height, 4, m_image.pixels.data(), m_image.width * 4) != 0;
+    return fuse::text::png::writeRgba(path, reinterpret_cast<const std::uint8_t*>(m_image.pixels.data()), m_image.width,
+                                     m_image.height, m_image.width * 4);
 }
 bool AppWindow::frame(f32 dt) {
     if (!m_forceRedraw && m_policy == RedrawPolicy::OnDemand && !m_ui.needsUpdate()) return false;

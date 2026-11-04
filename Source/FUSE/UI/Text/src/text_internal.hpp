@@ -6,6 +6,10 @@
 #include <string>
 #include <vector>
 
+namespace fuse::text {
+struct FontFaceInfo;
+}
+
 namespace fuse::text::detail {
 
 /// String `nameId` of a name table (Windows English, any Windows, Unicode, then Mac Roman); empty when absent.
@@ -33,5 +37,16 @@ private:
     std::size_t m_size = 0;
     void* m_handle = nullptr; // Windows: the mapping object
 };
+
+/// FontCatalog's fvar named-instance listing (font_catalog.cpp): one FontFaceInfo per named instance of `base`, read
+/// from its name / fvar / STAT tables. Reached through namedInstanceLister(), which enableVariableFonts sets, so
+/// binaries that never enable variations do not link it.
+std::size_t catalogNamedInstances(const FontFaceInfo& base, const std::vector<std::uint8_t>& name,
+                                  const std::vector<std::uint8_t>& fvar, const std::vector<std::uint8_t>& stat,
+                                  std::vector<FontFaceInfo>& out);
+using NamedInstanceLister = std::size_t (*)(const FontFaceInfo& base, const std::vector<std::uint8_t>& name,
+                                            const std::vector<std::uint8_t>& fvar, const std::vector<std::uint8_t>& stat,
+                                            std::vector<FontFaceInfo>& out);
+NamedInstanceLister& namedInstanceLister();
 
 } // namespace fuse::text::detail

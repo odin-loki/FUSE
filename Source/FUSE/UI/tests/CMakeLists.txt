@@ -506,10 +506,11 @@ if(TARGET fuse_app)
         # measured 2026-11-05 (MSVC Build Tools 2026) after the colour / MSDF glyph modes and the pipeline cache:
         # standalone UI tree 870,912 bytes -> budget 958,000; in the engine tree hello_app also links fuse_rhi's
         # volk loader: 904,192 bytes -> budget 994,600.
-        # Linux x86-64 Release, MINIMAL text, stripped copy, measured 2026-11-05: GCC 13.3 standalone 1,530,488 ->
-        # 1,683,600, engine tree 1,591,928 -> 1,751,200; Clang 23.1 standalone 1,179,616 -> 1,297,600 (the engine tree
-        # does not build with Clang yet). Other toolchains: set FUSE_APP_BINARY_BUDGET after measuring; until then
-        # the gate reports and skips.
+        # Linux x86-64 Release, MINIMAL text, stripped copy, measured 2026-11-05: GCC 13.3 engine tree 1,591,928 ->
+        # 1,751,200; Clang 23.1 standalone 1,179,616 -> 1,297,600 (the engine tree does not build with Clang yet).
+        # GCC 13.3 standalone re-measured 2026-11-05 after the UI targets link with -ffunction-sections / --gc-sections
+        # and the opt-in text code became dead-strippable (docs/ui/BASELINES.md): 1,076,352 -> 1,184,000. Other
+        # toolchains: set FUSE_APP_BINARY_BUDGET after measuring; until then the gate reports and skips.
         set(_budget 0)
         if(MSVC AND FUSE_UI_TEXT STREQUAL "MINIMAL" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
             if(TARGET fuse_rhi)
@@ -523,7 +524,7 @@ if(TARGET fuse_app)
                 if(TARGET fuse_rhi)
                     set(_budget 1751200)
                 else()
-                    set(_budget 1683600)
+                    set(_budget 1184000)
                 endif()
             elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT TARGET fuse_rhi)
                 set(_budget 1297600)

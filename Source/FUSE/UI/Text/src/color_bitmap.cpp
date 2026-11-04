@@ -2,39 +2,7 @@
 // size. Fonts are untrusted: every read is bounds-checked and anything malformed makes the glyph fail (return false).
 #include "glyph_paint.hpp"
 
-// The PNG decoder lives only in this translation unit (static functions).
-#define STB_IMAGE_STATIC
-#define STBI_ONLY_PNG
-#define STBI_NO_STDIO
-#define STBI_NO_LINEAR
-#define STBI_NO_HDR
-#define STBI_MAX_DIMENSIONS 4096
-#define STB_IMAGE_IMPLEMENTATION
-#if defined(_MSC_VER) && !defined(__clang__)
-#pragma warning(push)
-#pragma warning(disable : 4100 4127 4189 4244 4245 4267 4456 4457 4505 4701 4702 4996 6001 6011 6262 6385 6386)
-#endif
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wsign-compare"
-#pragma GCC diagnostic ignored "-Wconversion"
-#pragma GCC diagnostic ignored "-Wsign-conversion"
-#pragma GCC diagnostic ignored "-Wshadow"
-#pragma GCC diagnostic ignored "-Wcast-qual"
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#pragma GCC diagnostic ignored "-Wdouble-promotion"
-#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
-#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
-#endif
-#include "stb_image.h"
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
-#if defined(_MSC_VER) && !defined(__clang__)
-#pragma warning(pop)
-#endif
+#include "fuse/text/png_codec.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -280,23 +248,13 @@ bool sbixFind(const Reader& r, std::uint64_t s, std::uint16_t numGlyphs, std::ui
 
 // ---- decode and resample ----
 
-struct StbiFree {
-    void operator()(stbi_uc* p) const { stbi_image_free(p); }
-};
-
 /// Decodes a PNG into premultiplied float RGBA (0..1).
 bool decodePng(std::span<const std::uint8_t> png, int& w, int& h, std::vector<float>& px) {
-    if (png.size() > 0x7fffffffu) return false;
-    const int n = static_cast<int>(png.size());
-    int comp = 0;
-    if (!stbi_info_from_memory(png.data(), n, &w, &h, &comp)) return false;
-    if (w <= 0 || h <= 0 || w > kMaxImage || h > kMaxImage) return false;
-    int dw = 0, dh = 0;
-    const std::unique_ptr<stbi_uc, StbiFree> img(stbi_load_from_memory(png.data(), n, &dw, &dh, &comp, 4));
-    if (!img || dw != w || dh != h) return false;
+    std::vector<std::uint8_t> rgba;
+    if (!png::decodeRgba(png, kMaxImage, w, h, rgba)) return false;
     const std::size_t count = std::size_t(w) * std::size_t(h);
     px.resize(count * 4);
-    const stbi_uc* s = img.get();
+    const std::uint8_t* s = rgba.data();
     for (std::size_t i = 0; i < count; ++i) {
         const float a = float(s[i * 4 + 3]) * (1.f / 255.f);
         px[i * 4 + 0] = float(s[i * 4 + 0]) * (1.f / 255.f) * a;

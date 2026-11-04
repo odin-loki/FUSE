@@ -105,6 +105,7 @@ bool msdfEnabled();
 /// enableVariableFonts: the Font variation API (axes, instance, setVariation ...: fvar / avar / gvar / HVAR / MVAR,
 /// COLRv1 Var* paints). Without it variable fonts draw at their default coordinates and instance() returns the font
 /// itself (UI font-weight / font-stretch then do nothing). No-op in COOKED builds (packs are cooked at one instance).
+/// Also makes FontCatalog list fvar named instances: call it before the first FontCatalog scan (FontCatalog::system).
 void enableVariableFonts();
 bool variableFontsEnabled();
 
@@ -364,7 +365,8 @@ struct FontFaceInfo {
     bool italic = false;        ///< italic or oblique (OS/2 fsSelection, head macStyle)
     std::uint32_t unicodeRanges[4] = {}; ///< OS/2 ulUnicodeRange1..4 (script coverage hints)
     bool variable = false;        ///< the face has an fvar table (FontCatalog::load gives a Font that can instance)
-    /// Variable faces are listed once at their default coordinates (namedInstance -1) and once per named instance,
+    /// Variable faces are listed once at their default coordinates (namedInstance -1) and, with enableVariableFonts()
+    /// called before the scan, once per named instance,
     /// named like DirectWrite's WWS families: STAT axis values other than weight / width / italic / slant join the
     /// family ("Segoe UI Variable Display"), the rest is the style ("Semibold"); weight / stretch / italic come from
     /// the instance's wght / wdth / ital / slnt coordinates.

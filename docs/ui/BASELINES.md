@@ -51,6 +51,21 @@ its `fuse_app_binary_size` budget.
 standalone MINIMAL hello_app 870,912 → 904,192 B with MSVC (94.4 % of the re-baselined 958,000 B budget), 1.53 → 1.56 MB
 stripped with GCC; notes_app / game_menu / hud_demo MINIMAL are 0.86 / 0.84 / 0.66 MB on Windows.
 
+*11-05, after round 3* (clipboard / IME, variable fonts, the high-contrast / zoom polish): the GCC standalone hello_app
+had grown to 1,822,104 B stripped, over its 1,683,600 B budget. GCC linked whole objects: FontCatalog::load called
+enableVariableFonts() (the glyf / gvar decoder, ~46 KB), paint_enable.o pulled the COLRv1 / CBDT / MSDF rasterisers
+with enableMsdf, and stb_image was compiled twice (fuse_text's bitmap glyphs and fuse_app's clipboard). Fixes: the UI
+targets compile with `-ffunction-sections -fdata-sections` and link with `--gc-sections` (GCC / Clang; MSVC Release
+already has /OPT:REF); FontCatalog lists fvar named instances only through a hook enableVariableFonts() installs (and
+no longer enables variations itself); one PNG codec (`fuse/text/png_codec.hpp`, stb_image + stb_image_write) serves
+fuse_text and fuse_app.
+
+| hello_app (MINIMAL, Release) | before | after | budget |
+|---|---|---|---|
+| GCC 13.3 standalone, stripped | 1,822,104 B | 1,076,352 B | 1,683,600 → re-baselined 1,184,000 (+10 %) |
+| MSVC standalone | 944,640 B | 945,664 B | 958,000 (98.7 %) |
+| MSVC engine tree | — | 978,944 B | 994,600 (98.4 %) |
+
 ## Startup to first presented frame
 
 `hello_app --startup-probe` (median of 5): milliseconds from process creation to the first presented frame, and to
