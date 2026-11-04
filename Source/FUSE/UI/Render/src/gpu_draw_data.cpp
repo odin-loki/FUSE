@@ -72,7 +72,7 @@ void closeSegment(GpuDrawData& out, const std::vector<Area>& areas, std::size_t 
 } // namespace
 
 void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out, const u8* atlas, u32 atlasSize,
-                  const Image* const* images, u32 imageCount, Rect scissor) {
+                  const Image* const* images, u32 imageCount, Rect scissor, const Color* clear) {
     out.cmds.clear();
     out.tiles.clear();
     out.images.clear();
@@ -119,6 +119,16 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     thread_local std::vector<Area> areas;
     areas.clear();
     std::size_t segFirst = 0;
+    if (clear && !scissor.empty()) { // an opaque rect over the scissor stores the colour exactly
+        GpuCmd g{};
+        put4(g.rect, scissor.x, scissor.y, scissor.w, scissor.h);
+        put4(g.fill, clear->r, clear->g, clear->b, 1.f);
+        put4(g.clip, scissor.x, scissor.y, scissor.w, scissor.h);
+        out.cmds.push_back(g);
+        areas.push_back({std::max(0, int(std::floor(scissor.x))), std::max(0, int(std::floor(scissor.y))),
+                         std::min(int(width), int(std::ceil(scissor.right()))),
+                         std::min(int(height), int(std::ceil(scissor.bottom())))});
+    }
     for (const DrawCmd& c : list.cmds()) {
         if (c.op == DrawOp::PushClip) {
             if (depth < 31) {

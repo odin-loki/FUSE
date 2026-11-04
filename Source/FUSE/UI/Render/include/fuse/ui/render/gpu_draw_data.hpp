@@ -66,8 +66,11 @@ struct GpuDrawData {
 };
 
 /// Packs `list` for a width x height target, restricted to `scissor` (whole target when empty). `images` are the
-/// rasteriser image views (same indices as DrawCmd::image); `atlas` / `atlasSize` the glyph atlas.
+/// rasteriser image views (same indices as DrawCmd::image); `atlas` / `atlasSize` the glyph atlas. `clear`: the
+/// scissor is first filled with this opaque colour (incremental redraw of a pixel-aligned damage rect; only the tiles
+/// it touches are dispatched).
 void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out, const u8* atlas = nullptr,
-                  u32 atlasSize = 0, const Image* const* images = nullptr, u32 imageCount = 0, Rect scissor = {});
+                  u32 atlasSize = 0, const Image* const* images = nullptr, u32 imageCount = 0, Rect scissor = {},
+                  const Color* clear = nullptr);
 
 } // namespace fuse::ui::render

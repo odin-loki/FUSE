@@ -2,8 +2,10 @@
 //
 // Per window: VkSurfaceKHR + swapchain (TRANSFER_DST), one RGBA8 "canvas" image (STORAGE | TRANSFER_SRC | TRANSFER_DST)
 // kept in GENERAL layout, two frames in flight (command buffer, fence, acquire semaphore, persistently mapped upload
-// buffer), one render-done semaphore per swapchain image. A frame: wait the slot fence, acquire, then either
-//   GpuDraw:   clear canvas, fuse_ui_vk::record (the "ui.draw_list" kernel over the packed draw list), or
+// buffer), one render-done semaphore per swapchain image. The canvas keeps the last frame, so a frame redraws only the
+// damage (DrawList::redrawRegion). A frame: wait the slot fence, acquire, then either
+//   GpuDraw:   fuse_ui_vk::record over the damage (packed with that scissor; the kernel clears it and dispatches only
+//              the tiles it touches; a full frame clears the canvas first), or
 //   CpuUpload: CPU-raster the damaged rect, copy those rows into the canvas,
 // then blit canvas -> swapchain image (format conversion RGBA -> BGRA included) and present. Out-of-date / suboptimal
 // swapchains and size changes recreate the swapchain + canvas and force a full redraw.
@@ -607,18 +609,25 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
     vkResetFences(c.device, 1, &w->fence[f]);
 
     const u32 W = w->extent.width, H = w->extent.height;
-    const bool full = w->needFull || w->canvasFresh || damage.empty();
-    Rect dmg = full ? Rect{0.f, 0.f, f32(W), f32(H)} : damage;
-    int x0 = std::max(0, int(std::floor(dmg.x))), y0 = std::max(0, int(std::floor(dmg.y)));
-    int x1 = std::min(int(W), int(std::ceil(dmg.x + dmg.w))), y1 = std::min(int(H), int(std::ceil(dmg.y + dmg.h)));
-    if (x1 <= x0 || y1 <= y0) { x0 = y0 = 0; x1 = int(W); y1 = int(H); }
+    const Rect whole{0.f, 0.f, f32(W), f32(H)};
+    // the canvas keeps the previous frame: redraw only the damage (grown around backdrops), pixel-aligned
+    Rect dmg = whole;
+    bool full = w->needFull || w->canvasFresh || damage.empty();
+    if (!full) {
+        dmg = win.ui().drawList().redrawRegion(damage, whole);
+        full = dmg.empty();
+        if (full) dmg = whole;
+    }
+    const int x0 = int(dmg.x), y0 = int(dmg.y), x1 = int(dmg.right()), y1 = int(dmg.bottom());
 
 #if defined(FUSE_APP_HAS_UI_VK)
     if (w->gpuDraw) {
         UiContext& ui = win.ui();
         const CpuRasterizer& raster = win.rasterizer();
+        const Color black{0.f, 0.f, 0.f, 1.f};
         fuse::ui::render::packDrawList(ui.drawList(), W, H, w->data, ui.atlas().pixels(), u32(ui.atlas().size()),
-                                       raster.images(), raster.imageCount());
+                                       raster.images(), raster.imageCount(), full ? Rect{} : dmg,
+                                       full ? nullptr : &black);
         if (!w->gpu.upload(f, w->data)) return false;
     }
 #endif
@@ -644,10 +653,12 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
     w->canvasFresh = false;
     if (w->gpuDraw) {
 #if defined(FUSE_APP_HAS_UI_VK)
-        VkClearColorValue black{};
-        black.float32[3] = 1.f;
-        const VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        vkCmdClearColorImage(cmd, w->canvas, G, &black, 1, &range);
+        if (full) { // incremental frames clear the damage inside the kernel (packDrawList `clear`)
+            VkClearColorValue black{};
+            black.float32[3] = 1.f;
+            const VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            vkCmdClearColorImage(cmd, w->canvas, G, &black, 1, &range);
+        }
         VkImageMemoryBarrier b1 = imageBarrier(w->canvas, VK_ACCESS_TRANSFER_WRITE_BIT,
                                                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, G, G);
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0,

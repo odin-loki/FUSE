@@ -16,7 +16,12 @@
 #include <thread>
 
 #if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #else
 #include <fcntl.h>
@@ -254,7 +259,9 @@ bool AppWindow::presentHeadless(void*, AppWindow& w, Rect damage) {
     const bool full = w.m_image.width != iw || w.m_image.height != ih;
     if (full) w.m_image.resize(iw, ih, 0xFF000000u);
     w.m_raster.setGlyphAtlas(w.m_ui.atlas().pixels(), w.m_ui.atlas().size());
-    const Rect r = full || damage.empty() ? Rect{0.f, 0.f, f32(iw), f32(ih)} : damage;
+    const Rect whole{0.f, 0.f, f32(iw), f32(ih)};
+    const Rect r = full || damage.empty() ? whole : w.m_ui.drawList().redrawRegion(damage, whole);
+    if (r.empty()) return true; // damage outside the window
     // clear the damaged region, then rasterise the list clipped to it (incremental present)
     const int x0 = std::max(0, int(std::floor(r.x))), y0 = std::max(0, int(std::floor(r.y)));
     const int x1 = std::min(iw, int(std::ceil(r.x + r.w))), y1 = std::min(ih, int(std::ceil(r.y + r.h)));
