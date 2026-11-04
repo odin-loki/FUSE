@@ -1,10 +1,12 @@
 // Native startup gate (plan §6: hello-world app, launch to first presented frame, desktop <= 150 ms). Unlike
 // fuse_app_hello_startup (in-process, headless CPU present) this launches the real hello_app process several times;
 // each run opens an OS window with a real presenter and reports the time from process creation to its first
-// presented frame (hello_app --startup-probe). Two series, median of each:
-//   * software present (--no-vulkan: CPU raster + GDI blit on Win32) against the plan budget (--budget-ms, 150)
-//   * the default Vulkan swapchain presenter against a regression ceiling (--vulkan-budget-ms, 0 = report only).
-//     Vulkan instance / device / swapchain creation alone exceeds 150 ms on desktop drivers (see docs/ui/README.md).
+// presented frame (hello_app --startup-probe). Series, median of each:
+//   * default (asyncVulkan): first frame through the software presenter while Vulkan starts on a worker — within the
+//     plan budget (--budget-ms, 150); when Vulkan exists every run must then switch to the Vulkan presenter (median
+//     switch time within --vulkan-budget-ms, 2000) and the switched window must equal the CPU raster (max error 0)
+//   * --no-vulkan (software presenter only): within the plan budget
+//   * --sync-vulkan (show() blocks for instance / device / swapchain): reported, held to the Vulkan ceiling
 //   fuse_app_native_startup <path to hello_app> [--runs=5] [--budget-ms=150] [--vulkan-budget-ms=2000]
 // Exit 77 when hello_app gets no OS window at all (no display).
 #include <algorithm>
@@ -20,12 +22,30 @@
 #endif
 
 namespace {
-struct Series {
-    std::string presenter;
-    std::vector<double> ms;
-    double median = -1.0;
-    bool failed = false;
+struct Run {
+    double first = -1.0, switched = -1.0;
+    std::string presenter, final;
+    int maxErr = -1;
 };
+struct Series {
+    std::vector<Run> runs;
+    bool failed = false, headless = false;
+    double median(double Run::*f) const {
+        std::vector<double> v;
+        for (const Run& r : runs)
+            if (r.*f >= 0.0) v.push_back(r.*f);
+        if (v.empty()) return -1.0;
+        std::sort(v.begin(), v.end());
+        return v[v.size() / 2];
+    }
+};
+
+std::string word(const char* line, const char* key) {
+    const char* k = std::strstr(line, key);
+    if (!k) return {};
+    k += std::strlen(key);
+    return std::string(k, std::strcspn(k, " \r\n"));
+}
 
 Series run(const std::string& exe, const char* extra, int runs) {
     Series s;
@@ -34,28 +54,32 @@ Series run(const std::string& exe, const char* extra, int runs) {
 #else
     const std::string cmd = "'" + exe + "' --startup-probe " + extra;
 #endif
-    for (int r = 0; r < runs; ++r) {
+    for (int i = 0; i < runs; ++i) {
         std::FILE* p = popen(cmd.c_str(), "r");
         if (!p) { s.failed = true; return s; }
         char line[512];
-        double v = -1.0;
+        Run r;
         while (std::fgets(line, sizeof line, p)) {
-            if (const char* f = std::strstr(line, "first_frame_ms=")) v = std::atof(f + 15);
-            if (const char* k = std::strstr(line, "presenter=")) s.presenter.assign(k + 10, std::strcspn(k + 10, " \r\n"));
-            std::fputs(line, stdout);
+            if (std::strstr(line, "first_frame_ms=")) {
+                r.first = std::atof(word(line, "first_frame_ms=").c_str());
+                r.presenter = word(line, "presenter=");
+            }
+            if (std::strstr(line, "switch_ms=")) {
+                r.switched = std::atof(word(line, "switch_ms=").c_str());
+                r.final = word(line, "final=");
+                r.maxErr = std::atoi(word(line, "max_err=").c_str());
+            }
+            std::printf("    %s", line);
         }
         const int status = pclose(p);
-        if (s.presenter == "headless") return s;
-        if (v < 0.0 || status != 0) {
-            std::fprintf(stderr, "  run %d (%s): no first_frame_ms (status %d)\n", r, extra, status);
+        if (r.presenter == "headless") { s.headless = true; return s; }
+        if (r.first < 0.0 || r.final.empty() || status != 0) {
+            std::fprintf(stderr, "  run %d (%s): incomplete probe output (status %d)\n", i, extra, status);
             s.failed = true;
             return s;
         }
-        s.ms.push_back(v);
+        s.runs.push_back(r);
     }
-    std::vector<double> sorted = s.ms;
-    std::sort(sorted.begin(), sorted.end());
-    s.median = sorted[sorted.size() / 2];
     return s;
 }
 } // namespace
@@ -72,30 +96,46 @@ int main(int argc, char** argv) {
         if (std::strncmp(argv[i], "--budget-ms=", 12) == 0) budget = std::atof(argv[i] + 12);
         if (std::strncmp(argv[i], "--vulkan-budget-ms=", 19) == 0) vkBudget = std::atof(argv[i] + 19);
     }
-    const Series sw = run(argv[1], "--no-vulkan", runs);
-    const Series vk = run(argv[1], "", runs);
-    if (sw.failed || vk.failed) return 1;
-    int fail = 0;
-    bool any = false;
-    if (sw.presenter != "headless") {
-        any = true;
-        std::printf("fuse_app_native_startup: software present (%s): median %.1f ms, budget %.0f ms\n", sw.presenter.c_str(),
-                    sw.median, budget);
-        if (sw.median > budget) { std::fprintf(stderr, "  software present over budget\n"); ++fail; }
-    } else {
-        std::printf("fuse_app_native_startup: no software presenter on this platform (skipped that series)\n");
-    }
-    if (vk.presenter == "vulkan") {
-        any = true;
-        std::printf("fuse_app_native_startup: Vulkan swapchain present: median %.1f ms, ceiling %.0f ms (plan budget %.0f ms)\n",
-                    vk.median, vkBudget, budget);
-        if (vkBudget > 0.0 && vk.median > vkBudget) { std::fprintf(stderr, "  Vulkan present over its ceiling\n"); ++fail; }
-    } else if (vk.presenter != "headless") {
-        std::printf("fuse_app_native_startup: default presenter is %s (no Vulkan)\n", vk.presenter.c_str());
-    }
-    if (!any) {
+    const Series def = run(argv[1], "", runs);
+    if (def.headless) {
         std::printf("fuse_app_native_startup: skipped (no OS window: headless presenter)\n");
         return 77;
+    }
+    const Series sw = run(argv[1], "--no-vulkan", runs);
+    const Series sync = run(argv[1], "--sync-vulkan", runs);
+    if (def.failed || sw.failed || sync.failed) return 1;
+    int fail = 0;
+    auto check = [&](bool ok, const char* what) {
+        if (!ok) { std::fprintf(stderr, "  FAIL: %s\n", what); ++fail; }
+    };
+
+    const bool vulkan = std::any_of(def.runs.begin(), def.runs.end(), [](const Run& r) { return r.final == "vulkan"; });
+    const double first = def.median(&Run::first);
+    std::printf("fuse_app_native_startup: default presenter: first frame (%s) median %.1f ms, budget %.0f ms\n",
+                def.runs[0].presenter.c_str(), first, budget);
+    check(first <= budget, "default configuration: first frame over budget");
+    if (vulkan) {
+        const double sw2vk = def.median(&Run::switched);
+        int worst = 0, switchedRuns = 0;
+        for (const Run& r : def.runs) {
+            worst = std::max(worst, r.maxErr < 0 ? 255 : r.maxErr);
+            switchedRuns += r.final == "vulkan" ? 1 : 0;
+        }
+        std::printf("  switch to Vulkan in %d / %zu runs, median at %.1f ms (ceiling %.0f ms); switched frame vs CPU raster: "
+                    "max channel error %d\n", switchedRuns, def.runs.size(), sw2vk, vkBudget, worst);
+        check(switchedRuns == int(def.runs.size()), "a run did not switch to the Vulkan presenter");
+        check(sw2vk >= 0.0 && sw2vk <= vkBudget, "switch to Vulkan over its ceiling");
+        check(worst == 0, "the first Vulkan frame differs from the CPU raster");
+    } else {
+        std::printf("  no Vulkan presenter here (stays %s)\n", def.runs[0].final.c_str());
+    }
+    const double swFirst = sw.median(&Run::first);
+    std::printf("fuse_app_native_startup: software presenter only: median %.1f ms, budget %.0f ms\n", swFirst, budget);
+    check(swFirst <= budget, "software presenter: first frame over budget");
+    if (sync.runs[0].presenter == "vulkan") {
+        const double s = sync.median(&Run::first);
+        std::printf("fuse_app_native_startup: synchronous Vulkan init (--sync-vulkan): median %.1f ms, ceiling %.0f ms\n", s, vkBudget);
+        check(s <= vkBudget, "synchronous Vulkan init over its ceiling");
     }
     if (fail) return 1;
     std::printf("fuse_app_native_startup: OK\n");

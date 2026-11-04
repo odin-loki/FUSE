@@ -551,6 +551,10 @@ VkWin* vkWinCreate(VkCtx* c, const SurfaceSource& s, const NativeOptions& o, std
 
 bool vkWinGpuDraws(const VkWin* w) { return w && w->gpuDraw; }
 
+bool vkWinPrepare(VkWin* w, unsigned width, unsigned height, std::string& err) {
+    return w && w->createSwapchain(std::max(1u, width), std::max(1u, height), err);
+}
+
 bool vkWinSetExternal(VkWin* w, unsigned slot, const ExternalTexture& t) {
     if (!w || !w->gpuDraw || slot >= 4) return false;
     w->external[slot] = t;

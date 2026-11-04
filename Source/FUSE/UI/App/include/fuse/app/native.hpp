@@ -1,7 +1,9 @@
 // fuse_app native windows (plan UI5): real OS windows (X11 via a runtime-loaded libX11, Win32) with a Vulkan swapchain
 // presenter. The UI is drawn either by the fuse_ui_vk compute kernel straight into a storage image (GpuDraw) or by the
 // CPU rasteriser and uploaded (CpuUpload); either result is blitted into the swapchain image and presented. Without a
-// Vulkan device the Win32 backend falls back to GDI (StretchDIBits); X11 then keeps the window but cannot draw it.
+// Vulkan device the CPU raster is blitted by the OS (Win32 GDI, X11 XPutImage). By default (asyncVulkan) the first
+// window starts on that software path and switches to Vulkan once a worker thread has created instance, device and
+// swapchain, so the first frame does not wait for the driver.
 //
 //   fuse::app::Application app{{.name = "hello"}};
 //   fuse::app::NativePlatform native(app);          // installs the OS event source (blocks in poll / MsgWait)
@@ -26,7 +28,7 @@ namespace fuse::app {
 enum class PresenterKind : fuse::ui::u8 {
     Headless, ///< no OS window (no display / not shown); CPU raster into AppWindow::image()
     Vulkan,   ///< swapchain presenter
-    Software, ///< GDI blit of the CPU raster (Win32 without Vulkan)
+    Software, ///< CPU raster blitted by the OS (Win32 GDI, X11 XPutImage): no Vulkan, or while Vulkan starts (asyncVulkan)
 };
 enum class VkDrawMode : fuse::ui::u8 {
     Auto,      ///< GpuDraw when the compute kernel is compiled in, else CpuUpload
@@ -60,6 +62,11 @@ struct NativeOptions {
     /// Popup menus / combo lists / submenus as their own borderless OS windows (Qt-style; may extend past the main
     /// window, clamp to the screen). X11: override-redirect windows; Win32: WS_POPUP + WS_EX_NOACTIVATE owned windows.
     bool osPopups = false;
+    /// Fast first frame: the first window shows the CPU raster through the software presenter at once while the
+    /// Vulkan instance / device / swapchain are created on a worker thread; the next frame after that finishes goes
+    /// through Vulkan (the whole current UI frame, so nothing flickers). false: show() blocks until Vulkan is ready.
+    /// Ignored with adoptDevice and once the platform has a Vulkan device (later windows start on Vulkan directly).
+    bool asyncVulkan = true;
 };
 
 /// Per-window OS message hook (Win32: runs first in the window procedure; return true to consume the message with
@@ -81,6 +88,11 @@ public:
     /// Opens an OS window for `w` (title / size from its WindowDesc) and installs the best presenter.
     PresenterKind show(AppWindow& w);
     PresenterKind kind(const AppWindow& w) const;
+    /// True while the window shows the software presenter and its Vulkan presenter is still being created
+    /// (NativeOptions::asyncVulkan); the event pump switches it over as soon as it is ready.
+    bool presenterPending(const AppWindow& w) const;
+    /// Waits (pumping OS messages) until a pending Vulkan presenter is ready and switches to it; returns the kind.
+    PresenterKind waitForPresenter(const AppWindow& w);
     /// "lavapipe (LLVM ...)" etc. once a Vulkan presenter exists; empty otherwise.
     std::string_view gpuName() const;
     /// True when the GPU kernel (not the CPU upload path) draws the window.
