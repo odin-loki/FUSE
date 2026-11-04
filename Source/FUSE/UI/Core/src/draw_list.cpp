@@ -10,6 +10,12 @@
 #include <mutex>
 #include <thread>
 
+#if defined(_M_X64) || defined(__x86_64__) || (defined(__SSE2__) && !defined(__aarch64__))
+#include <emmintrin.h>
+#elif defined(__aarch64__) || defined(_M_ARM64)
+#include <arm_neon.h>
+#endif
+
 namespace fuse::ui {
 
 void DrawList::rect(const Rect& r, Color fill, f32 radius) { roundedRect(r, fill, {radius, radius, radius, radius}); }
@@ -444,6 +450,151 @@ void effectPass(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& targ
         }
 }
 
+// ---- 4 pixels at a time (SSE2 on x64, NEON on arm64) --------------------------------------------------------------
+// Each lane repeats the scalar code operation for operation; min / max / clamp keep std's operand order (they decide
+// which zero / NaN comes out), so a lane equals the scalar pixel bit for bit.
+#if defined(_M_X64) || defined(__x86_64__) || (defined(__SSE2__) && !defined(__aarch64__))
+#define FUSE_RASTER_SIMD 1
+struct F4 {
+    __m128 v;
+};
+struct I4 {
+    __m128i v;
+};
+inline F4 splat(f32 s) { return {_mm_set1_ps(s)}; }
+inline F4 operator+(F4 a, F4 b) { return {_mm_add_ps(a.v, b.v)}; }
+inline F4 operator-(F4 a, F4 b) { return {_mm_sub_ps(a.v, b.v)}; }
+inline F4 operator*(F4 a, F4 b) { return {_mm_mul_ps(a.v, b.v)}; }
+inline F4 operator/(F4 a, F4 b) { return {_mm_div_ps(a.v, b.v)}; }
+inline F4 vsqrt(F4 a) { return {_mm_sqrt_ps(a.v)}; }
+inline F4 vabs(F4 a) { return {_mm_andnot_ps(_mm_set1_ps(-0.f), a.v)}; }
+inline F4 vmin(F4 a, F4 b) { return {_mm_min_ps(b.v, a.v)}; } // std::min(a, b): b < a ? b : a
+inline F4 vmax(F4 a, F4 b) { return {_mm_max_ps(b.v, a.v)}; } // std::max(a, b): a < b ? b : a
+inline F4 lt(F4 a, F4 b) { return {_mm_cmplt_ps(a.v, b.v)}; } // lane masks are F4 (all bits set / clear)
+inline F4 le(F4 a, F4 b) { return {_mm_cmple_ps(a.v, b.v)}; }
+inline F4 ge(F4 a, F4 b) { return {_mm_cmpge_ps(a.v, b.v)}; }
+inline F4 mand(F4 a, F4 b) { return {_mm_and_ps(a.v, b.v)}; }
+inline F4 mor(F4 a, F4 b) { return {_mm_or_ps(a.v, b.v)}; }
+inline F4 mnot(F4 a) { return {_mm_xor_ps(a.v, _mm_castsi128_ps(_mm_set1_epi32(-1)))}; }
+inline bool any(F4 m) { return _mm_movemask_ps(m.v) != 0; }
+inline F4 sel(F4 m, F4 a, F4 b) { return {_mm_or_ps(_mm_and_ps(m.v, a.v), _mm_andnot_ps(m.v, b.v))}; }
+inline I4 seli(F4 m, I4 a, I4 b) {
+    const __m128i mi = _mm_castps_si128(m.v);
+    return {_mm_or_si128(_mm_and_si128(mi, a.v), _mm_andnot_si128(mi, b.v))};
+}
+inline F4 centres(int x) { return {_mm_add_ps(_mm_cvtepi32_ps(_mm_setr_epi32(x, x + 1, x + 2, x + 3)), _mm_set1_ps(0.5f))}; }
+inline I4 load4(const u32* p) { return {_mm_loadu_si128(reinterpret_cast<const __m128i*>(p))}; }
+inline void store4(u32* p, I4 v) { _mm_storeu_si128(reinterpret_cast<__m128i*>(p), v.v); }
+inline F4 channel(I4 p, int k) { return {_mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(p.v, 8 * k), _mm_set1_epi32(0xFF)))}; }
+inline I4 truncToInt(F4 a) { return {_mm_cvttps_epi32(a.v)}; }
+inline I4 shl(I4 a, int k) { return {_mm_sll_epi32(a.v, _mm_cvtsi32_si128(k))}; }
+inline I4 ior(I4 a, I4 b) { return {_mm_or_si128(a.v, b.v)}; }
+#elif defined(__aarch64__) || defined(_M_ARM64)
+#define FUSE_RASTER_SIMD 1
+struct F4 {
+    float32x4_t v;
+};
+struct I4 {
+    uint32x4_t v;
+};
+inline F4 splat(f32 s) { return {vdupq_n_f32(s)}; }
+inline F4 operator+(F4 a, F4 b) { return {vaddq_f32(a.v, b.v)}; }
+inline F4 operator-(F4 a, F4 b) { return {vsubq_f32(a.v, b.v)}; }
+inline F4 operator*(F4 a, F4 b) { return {vmulq_f32(a.v, b.v)}; }
+inline F4 operator/(F4 a, F4 b) { return {vdivq_f32(a.v, b.v)}; }
+inline F4 vsqrt(F4 a) { return {vsqrtq_f32(a.v)}; }
+inline F4 vabs(F4 a) { return {vabsq_f32(a.v)}; }
+inline F4 fromMask(uint32x4_t m) { return {vreinterpretq_f32_u32(m)}; }
+inline uint32x4_t toMask(F4 m) { return vreinterpretq_u32_f32(m.v); }
+inline F4 vmin(F4 a, F4 b) { return {vbslq_f32(vcltq_f32(b.v, a.v), b.v, a.v)}; } // std::min(a, b): b < a ? b : a
+inline F4 vmax(F4 a, F4 b) { return {vbslq_f32(vcltq_f32(a.v, b.v), b.v, a.v)}; } // std::max(a, b): a < b ? b : a
+inline F4 lt(F4 a, F4 b) { return fromMask(vcltq_f32(a.v, b.v)); }
+inline F4 le(F4 a, F4 b) { return fromMask(vcleq_f32(a.v, b.v)); }
+inline F4 ge(F4 a, F4 b) { return fromMask(vcgeq_f32(a.v, b.v)); }
+inline F4 mand(F4 a, F4 b) { return fromMask(vandq_u32(toMask(a), toMask(b))); }
+inline F4 mor(F4 a, F4 b) { return fromMask(vorrq_u32(toMask(a), toMask(b))); }
+inline F4 mnot(F4 a) { return fromMask(vmvnq_u32(toMask(a))); }
+inline bool any(F4 m) { return vmaxvq_u32(toMask(m)) != 0; }
+inline F4 sel(F4 m, F4 a, F4 b) { return {vbslq_f32(toMask(m), a.v, b.v)}; }
+inline I4 seli(F4 m, I4 a, I4 b) { return {vbslq_u32(toMask(m), a.v, b.v)}; }
+inline F4 centres(int x) {
+    const int32_t i[4] = {x, x + 1, x + 2, x + 3};
+    return {vaddq_f32(vcvtq_f32_s32(vld1q_s32(i)), vdupq_n_f32(0.5f))};
+}
+inline I4 load4(const u32* p) { return {vld1q_u32(p)}; }
+inline void store4(u32* p, I4 v) { vst1q_u32(p, v.v); }
+inline F4 channel(I4 p, int k) { return {vcvtq_f32_u32(vandq_u32(vshlq_u32(p.v, vdupq_n_s32(-8 * k)), vdupq_n_u32(0xFF)))}; }
+inline I4 truncToInt(F4 a) { return {vreinterpretq_u32_s32(vcvtq_s32_f32(a.v))}; }
+inline I4 shl(I4 a, int k) { return {vshlq_u32(a.v, vdupq_n_s32(k))}; }
+inline I4 ior(I4 a, I4 b) { return {vorrq_u32(a.v, b.v)}; }
+#endif
+
+#if defined(FUSE_RASTER_SIMD)
+inline F4 vclamp(F4 v, F4 lo, F4 hi) { return vmin(vmax(v, lo), hi); } // std::clamp
+
+struct Px4 {
+    F4 r, g, b, a;
+};
+struct Color4 {
+    F4 r, g, b, a;
+};
+inline Color4 splat(const Color& c) { return {splat(c.r), splat(c.g), splat(c.b), splat(c.a)}; }
+
+inline Px4 premul4(const Color4& c, F4 cov) {
+    const F4 a = vclamp(c.a, splat(0.f), splat(1.f)) * cov;
+    return {c.r * a, c.g * a, c.b * a, a};
+}
+
+inline I4 q8x4(F4 v) { return truncToInt(vclamp(v, splat(0.f), splat(1.f)) * splat(255.f) + splat(0.5f)); }
+
+/// blend() on 4 pixels; lanes outside `active` keep their value.
+inline void blend4(u32* p, const Px4& s, F4 active) {
+    const F4 zero = splat(0.f);
+    const F4 skip = mor(mnot(active), mand(mand(le(s.a, zero), le(s.r, zero)), mand(le(s.g, zero), le(s.b, zero))));
+    if (!any(mnot(skip))) return;
+    const I4 dst = load4(p);
+    const F4 opaque = ge(s.a, splat(1.f));
+    const F4 inv = splat(1.f) - s.a;
+    const F4 k255 = splat(255.f);
+    const F4 src[4] = {s.r, s.g, s.b, s.a};
+    I4 out = {};
+    for (int k = 0; k < 4; ++k) {
+        const I4 mixed = q8x4(src[k] + (channel(dst, k) / k255) * inv);
+        const I4 c = seli(opaque, q8x4(src[k]), mixed);
+        out = k == 0 ? c : ior(out, shl(c, 8 * k));
+    }
+    store4(p, seli(skip, dst, out));
+}
+
+/// sdRoundRect at 4 pixel centres of one row.
+inline F4 sdRoundRect4(F4 px, f32 py, const Rect& r, const std::array<f32, 4>& rad) {
+    const f32 cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f;
+    const f32 hx = r.w * 0.5f, hy = r.h * 0.5f;
+    const F4 dx = px - splat(cx);
+    const f32 dy = py - cy;
+    F4 rr = sel(lt(dx, splat(0.f)), splat(dy < 0 ? rad[0] : rad[3]), splat(dy < 0 ? rad[1] : rad[2]));
+    rr = vmin(rr, splat(std::min(hx, hy)));
+    const F4 qx = (vabs(dx) - splat(hx)) + rr, qy = splat(std::abs(dy) - hy) + rr;
+    const F4 ox = vmax(qx, splat(0.f)), oy = vmax(qy, splat(0.f));
+    return (vsqrt(ox * ox + oy * oy) + vmin(vmax(qx, qy), splat(0.f))) - rr;
+}
+
+/// ClipCov::at on 4 pixels.
+inline F4 clipCov4(const Clip& clip, const std::array<f32, 4>& rad, F4 px, f32 py) {
+    if (clip.radius > 0.f) return vclamp(splat(0.5f) - sdRoundRect4(px, py, clip.r, rad), splat(0.f), splat(1.f));
+    return splat(1.f);
+}
+/// gradientAt on 4 pixels of one row.
+inline Color4 gradient4(const DrawCmd& c, F4 px, f32 py) {
+    if (c.gradient == 1) return splat(gradientAt(c, 0.f, py));
+    const F4 t = vclamp((px - splat(c.rect.x)) / splat(std::max(c.rect.w, 1.f)), splat(0.f), splat(1.f));
+    const Color& f = c.fill;
+    return {splat(f.r) + splat(c.fill2.r - f.r) * t, splat(f.g) + splat(c.fill2.g - f.g) * t,
+            splat(f.b) + splat(c.fill2.b - f.b) * t, splat(f.a) + splat(c.fill2.a - f.a) * t};
+}
+inline F4 allLanes() { return lt(splat(0.f), splat(1.f)); }
+#endif
+
 struct Raster {
     Image* target;
     const u8* atlas;
@@ -544,6 +695,9 @@ void drawRect(const Raster& R, const DrawCmd& c, const Clip& clip, int x0, int x
     // coverage (and the border's inner coverage) is exactly 1 at least border + 0.5 inside, 0 from 0.5 outside; under
     // a rounded clip its coverage is 1 at least 0.5 inside the clip, 0 from 0.5 outside
     const RowShape shape(c.rect, c.radius, (hasBorder ? c.borderWidth : 0.f) + 0.5f, 0.5f);
+#if defined(FUSE_RASTER_SIMD)
+    const Color4 fill4 = splat(c.fill), border4 = splat(c.border);
+#endif
     const RowShape clipShape = clip.radius > 0.f ? RowShape(clip.r, cc.rad, 0.5f, 0.5f) : RowShape();
     for (int y = y0; y < y1; ++y) {
         u32* row = target.pixels.data() + std::size_t(y) * std::size_t(target.width);
@@ -563,7 +717,26 @@ void drawRect(const Raster& R, const DrawCmd& c, const Clip& clip, int x0, int x
             hi = std::max(hi, s1);
         }
         auto edge = [&](int xa, int xb) {
-            for (int x = xa; x < xb; ++x) {
+            int x = xa;
+#if defined(FUSE_RASTER_SIMD)
+            for (; x + 4 <= xb; x += 4) {
+                const F4 px = centres(x), zero = splat(0.f), one = splat(1.f), half = splat(0.5f);
+                const F4 clipCov = clipCov4(clip, cc.rad, px, py);
+                const F4 d = sdRoundRect4(px, py, c.rect, c.radius);
+                const F4 outer = vclamp(half - d, zero, one) * clipCov;
+                const F4 active = mand(mnot(le(clipCov, zero)), mnot(le(outer, zero)));
+                if (!any(active)) continue;
+                const Color4 fill = c.gradient ? gradient4(c, px, py) : fill4;
+                if (hasBorder) {
+                    const F4 inner = vclamp(half - (d + splat(c.borderWidth)), zero, one) * clipCov;
+                    const Px4 pf = premul4(fill, inner), pb = premul4(border4, outer - inner);
+                    blend4(row + x, {pf.r + pb.r, pf.g + pb.g, pf.b + pb.b, pf.a + pb.a}, active);
+                } else {
+                    blend4(row + x, premul4(fill, outer), active);
+                }
+            }
+#endif
+            for (; x < xb; ++x) {
                 const f32 px = f32(x) + 0.5f;
                 const f32 clipCov = cc.at(px, py);
                 if (clipCov <= 0.f) continue;
@@ -586,7 +759,11 @@ void drawRect(const Raster& R, const DrawCmd& c, const Clip& clip, int x0, int x
             if (solidFill) {
                 std::fill(row + s0, row + s1, solid);
             } else if (c.gradient == 2) { // horizontal gradient: full coverage, the colour moves per pixel
-                for (int x = s0; x < s1; ++x) blend(row[x], premul(gradientAt(c, f32(x) + 0.5f, py), 1.f));
+                int x = s0;
+#if defined(FUSE_RASTER_SIMD)
+                for (; x + 4 <= s1; x += 4) blend4(row + x, premul4(gradient4(c, centres(x), py), splat(1.f)), allLanes());
+#endif
+                for (; x < s1; ++x) blend(row[x], premul(gradientAt(c, f32(x) + 0.5f, py), 1.f));
             } else {
                 sb.run(row + s0, s1 - s0, premul(c.gradient ? gradientAt(c, 0.f, py) : c.fill, 1.f));
             }
@@ -609,13 +786,29 @@ void drawShadow(const Raster& R, const DrawCmd& c, const Clip& clip, int x0, int
     const RowShape shape(c.rect, c.radius, b, b);
     const RowShape clipShape = clip.radius > 0.f ? RowShape(clip.r, cc.rad, 0.5f, 0.5f) : RowShape();
     const Px inside = premul(c.fill, 1.f);
+#if defined(FUSE_RASTER_SIMD)
+    const Color4 fill4 = splat(c.fill);
+#endif
     for (int y = y0; y < y1; ++y) {
         u32* row = target.pixels.data() + std::size_t(y) * std::size_t(target.width);
         const f32 py = f32(y) + 0.5f;
         int lo = x0, hi = x1, s0 = x1, s1 = x1;
         rowRuns(shape, clip.radius > 0.f ? &clipShape : nullptr, py, lo, hi, s0, s1);
         auto edge = [&](int xa, int xb) {
-            for (int x = xa; x < xb; ++x) {
+            int x = xa;
+#if defined(FUSE_RASTER_SIMD)
+            for (; x + 4 <= xb; x += 4) {
+                const F4 px = centres(x), zero = splat(0.f), one = splat(1.f);
+                const F4 clipCov = clipCov4(clip, cc.rad, px, py);
+                const F4 active = mnot(le(clipCov, zero));
+                if (!any(active)) continue;
+                const F4 d = sdRoundRect4(px, py, c.rect, c.radius);
+                const F4 t = vclamp((d + splat(b)) / splat(2.f * b), zero, one);
+                const F4 cov = (one - t * t * (splat(3.f) - splat(2.f) * t)) * clipCov;
+                blend4(row + x, premul4(fill4, cov), active);
+            }
+#endif
+            for (; x < xb; ++x) {
                 const f32 px = f32(x) + 0.5f;
                 const f32 clipCov = cc.at(px, py);
                 if (clipCov <= 0.f) continue;
@@ -660,7 +853,22 @@ void drawLine(const Raster& R, const DrawCmd& c, const Clip& clip, int x0, int x
             xa = std::max(x0, int(std::floor(std::min(xl, xh) - reach)));
             xb = std::min(x1, int(std::ceil(std::max(xl, xh) + reach)) + 1);
         }
-        for (int x = xa; x < xb; ++x) {
+        int x = xa;
+#if defined(FUSE_RASTER_SIMD)
+        const f32 tyv = (py - ay) * vy;
+        const Color4 fill4 = splat(c.fill);
+        for (; x + 4 <= xb; x += 4) {
+            const F4 px = centres(x), zero = splat(0.f), one = splat(1.f);
+            const F4 clipCov = clipCov4(clip, cc.rad, px, py);
+            const F4 t = vclamp(((px - splat(ax)) * splat(vx) + splat(tyv)) / splat(len2), zero, one);
+            const F4 ex = px - (splat(ax) + splat(vx) * t), ey = splat(py) - (splat(ay) + splat(vy) * t);
+            const F4 d = vsqrt(ex * ex + ey * ey) - splat(c.borderWidth * 0.5f);
+            const F4 cov = vclamp(splat(0.5f) - d, zero, one) * clipCov;
+            const F4 active = mand(mnot(le(clipCov, zero)), lt(zero, cov));
+            if (any(active)) blend4(row + x, premul4(fill4, cov), active);
+        }
+#endif
+        for (; x < xb; ++x) {
             const f32 px = f32(x) + 0.5f;
             const f32 clipCov = cc.at(px, py);
             if (clipCov <= 0.f) continue;
