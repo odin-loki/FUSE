@@ -1355,6 +1355,8 @@ int runFuseUi(Context& ctx, SceneTier tier) {
 // path through TAAU; one composites a dense FUSE UI each frame, the other has no UI stage. Every frame's HUD-less image
 // (and so the upscaler history the next frame reads) must be bit-identical between them, while the UI rig's output
 // differs where the UI is drawn. A UI pixel leaking into history would show up from the second frame on.
+// A control pass (no UI, twice) must also be bit-identical: each rig reuses the memory the previous one freed, so a
+// read of stale memory or a missing barrier (e.g. a same-pass read-A / write-B buffer hazard) shows up here first.
 int runHudlessInvariant(Context& ctx, SceneTier tier) {
     constexpr u32 kFrames = 6u;
     std::vector<std::vector<u8>> ref(kFrames);
@@ -1425,6 +1427,7 @@ int runHudlessInvariant(Context& ctx, SceneTier tier) {
     std::printf("hudless_invariant: control (no UI twice) %u / %u frames differ\n", badCtl, kFrames);
     std::printf("hudless_invariant: %u / %u frames with a HUD-less mismatch, UI visible in %u frames\n", badHud,
                 kFrames, diffOut);
+    expect(badCtl == 0u, "renderer deterministic run to run (control: no UI in both rigs, bit-identical)");
     expect(badHud == 0u, "HUD-less image / temporal history identical with and without the UI stage");
     expect(diffOut == kFrames, "the UI is visible in every composited output");
     return 0;
