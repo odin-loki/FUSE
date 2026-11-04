@@ -31,9 +31,14 @@ endif()
 add_library(fuse_text STATIC Text/src/text.cpp)
 target_include_directories(fuse_text PUBLIC Text/include)
 target_include_directories(fuse_text SYSTEM PRIVATE "${FUSE_UI_REPO_ROOT}/vendor/stb")
-target_compile_definitions(fuse_text PRIVATE
-    FUSE_TEXT_BUNDLED_FONT="${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf"
-    FUSE_TEXT_FONT_DIR="${FUSE_UI_REPO_ROOT}/vendor/fonts")
+if(ANDROID)
+    # APK assets: fuse_app_add_android_app packs vendor/fonts as fonts/, extracted to the working directory at start
+    target_compile_definitions(fuse_text PRIVATE FUSE_TEXT_BUNDLED_FONT="fonts/opensans/OpenSans.ttf" FUSE_TEXT_FONT_DIR="fonts")
+else()
+    target_compile_definitions(fuse_text PRIVATE
+        FUSE_TEXT_BUNDLED_FONT="${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf"
+        FUSE_TEXT_FONT_DIR="${FUSE_UI_REPO_ROOT}/vendor/fonts")
+endif()
 target_compile_features(fuse_text PUBLIC cxx_std_23)
 
 # FULL profile (decision D2): HarfBuzz + FreeType through FetchContent (static, no optional deps), SheenBidi (UAX #9)
@@ -270,7 +275,7 @@ option(FUSE_BUILD_UI_APP "Build fuse_app (Application / AppWindow, on-demand loo
 if(FUSE_BUILD_UI_APP AND TARGET fuse_ui_doc)
     add_subdirectory(App)
 endif()
-if(TARGET fuse_ui_designer_lib AND TARGET fuse_app_native)
+if(TARGET fuse_ui_designer_lib AND TARGET fuse_app_native AND NOT ANDROID)
     add_executable(fuse_ui_designer Designer/app/designer_main.cpp)
     target_link_libraries(fuse_ui_designer PRIVATE fuse_ui_designer_lib fuse_app_native)
 endif()
@@ -289,7 +294,7 @@ if(FUSE_BUILD_UI_GAME AND FUSE_BUILD_UI_WIDGETS)
         add_library(fuse_ui_game_audio STATIC Game/src/ui_audio.cpp)
         target_link_libraries(fuse_ui_game_audio PUBLIC fuse_ui_game fuse_audio)
     endif()
-    if(TARGET fuse_app)
+    if(TARGET fuse_app AND NOT ANDROID)
         foreach(s hud_demo world_panel_demo)
             add_executable(${s} Game/samples/${s}.cpp)
             target_link_libraries(${s} PRIVATE fuse_ui_game fuse_app)
