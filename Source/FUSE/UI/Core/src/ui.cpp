@@ -785,38 +785,44 @@ bool UiContext::paintIcon(DrawList& dl, u32 nameHash, Vec2 at, f32 size, Color c
     if (c.a <= 0.f || size < 0.5f) return true;
     const f32 sc = m_scale; // rasterised at the device size (DPI scale)
     const int px = std::clamp(int(std::lround(size * sc)), 1, 1024);
-    // atlas key: bit 62 set, bit 63 clear (font glyph keys set bit 63)
-    const u64 key = (1ull << 62) | (u64(nameHash) << 16) | u64(px);
-    fuse::text::AtlasGlyph ag;
-    if (!m_atlas.lookup(key, ag)) {
-        IconBitmap bm;
-        if (m_icons->cooked(u32(idx), px, bm)) {
-            ag = m_atlas.insert(key, bm.pixels, bm.w, bm.h, bm.stride, bm.ox, bm.oy);
-        } else { // resample, then trim to the covered box
-            m_icons->render(u32(idx), px, m_iconScratch);
-            int x0 = px, y0 = px, x1 = -1, y1 = -1;
-            for (int y = 0; y < px; ++y)
-                for (int x = 0; x < px; ++x)
-                    if (m_iconScratch[std::size_t(y) * std::size_t(px) + std::size_t(x)]) {
-                        x0 = std::min(x0, x); y0 = std::min(y0, y); x1 = std::max(x1, x); y1 = std::max(y1, y);
-                    }
-            if (x1 < 0) ag = m_atlas.insert(key, nullptr, 0, 0, 0, 0, 0);
-            else ag = m_atlas.insert(key, m_iconScratch.data() + std::size_t(y0) * std::size_t(px) + std::size_t(x0), x1 - x0 + 1,
-                                     y1 - y0 + 1, px, x0, y0);
+    // one Glyph per colour layer, back to front: currentColor layers take the tint, the others keep their colour
+    for (u32 layer = 0, layers = m_icons->layerCount(u32(idx)); layer < layers; ++layer) {
+        // atlas key: bit 62 set, bit 63 clear (font glyph keys set bit 63); layer in bits 48..61
+        const u64 key = (1ull << 62) | (u64(layer) << 48) | (u64(nameHash) << 16) | u64(px);
+        fuse::text::AtlasGlyph ag;
+        if (!m_atlas.lookup(key, ag)) {
+            IconBitmap bm;
+            if (m_icons->cooked(u32(idx), px, bm, layer)) {
+                ag = m_atlas.insert(key, bm.pixels, bm.w, bm.h, bm.stride, bm.ox, bm.oy);
+            } else { // resample, then trim to the covered box
+                m_icons->render(u32(idx), px, m_iconScratch, layer);
+                int x0 = px, y0 = px, x1 = -1, y1 = -1;
+                for (int y = 0; y < px; ++y)
+                    for (int x = 0; x < px; ++x)
+                        if (m_iconScratch[std::size_t(y) * std::size_t(px) + std::size_t(x)]) {
+                            x0 = std::min(x0, x); y0 = std::min(y0, y); x1 = std::max(x1, x); y1 = std::max(y1, y);
+                        }
+                if (x1 < 0) ag = m_atlas.insert(key, nullptr, 0, 0, 0, 0, 0);
+                else ag = m_atlas.insert(key, m_iconScratch.data() + std::size_t(y0) * std::size_t(px) + std::size_t(x0), x1 - x0 + 1,
+                                         y1 - y0 + 1, px, x0, y0);
+            }
         }
+        if (!ag.valid || ag.w == 0) continue;
+        DrawCmd cmd;
+        cmd.op = DrawOp::Glyph;
+        if (sc == 1.f) cmd.rect = {std::round(at.x) + f32(ag.x0), std::round(at.y) + f32(ag.y0), f32(ag.w), f32(ag.h)};
+        else cmd.rect = {(std::round(at.x * sc) + f32(ag.x0)) / sc, (std::round(at.y * sc) + f32(ag.y0)) / sc, f32(ag.w) / sc, f32(ag.h) / sc};
+        cmd.u = ag.u;
+        cmd.v = ag.v;
+        cmd.tw = ag.w;
+        cmd.th = ag.h;
+        const u32 lc = m_icons->layerColor(u32(idx), layer);
+        cmd.fill = lc == 0u ? c
+                            : Color{f32(lc & 0xFFu) / 255.f, f32((lc >> 8) & 0xFFu) / 255.f, f32((lc >> 16) & 0xFFu) / 255.f,
+                                    f32(lc >> 24) / 255.f * c.a};
+        cmd.node = nodeIdx;
+        dl.push(cmd);
     }
-    if (!ag.valid || ag.w == 0) return true;
-    DrawCmd cmd;
-    cmd.op = DrawOp::Glyph;
-    if (sc == 1.f) cmd.rect = {std::round(at.x) + f32(ag.x0), std::round(at.y) + f32(ag.y0), f32(ag.w), f32(ag.h)};
-    else cmd.rect = {(std::round(at.x * sc) + f32(ag.x0)) / sc, (std::round(at.y * sc) + f32(ag.y0)) / sc, f32(ag.w) / sc, f32(ag.h) / sc};
-    cmd.u = ag.u;
-    cmd.v = ag.v;
-    cmd.tw = ag.w;
-    cmd.th = ag.h;
-    cmd.fill = c;
-    cmd.node = nodeIdx;
-    dl.push(cmd);
     return true;
 }
 

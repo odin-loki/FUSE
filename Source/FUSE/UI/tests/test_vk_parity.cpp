@@ -1,7 +1,8 @@
 // fuse_ui_vk_parity (UI4 gate): the GPU backend ("ui.draw_list" compute kernel) against the CPU reference rasteriser
 // (the specification), on the Tier A sample, a primitives sheet (gradients, borders, shadows, lines, nested rounded
-// clips, images, glyphs), a scissored redraw, an external texture and backdrop blurs (full + scissored). Gate: max channel error <= 2/255 and < 0.5 % of pixels differing at
-// all. Also: packing + upload of an unchanged frame does not allocate. Skips (77) without a Vulkan device.
+// clips, images, glyphs), a scissored redraw, an external texture, backdrop blurs (full + scissored) and icons
+// (monochrome starter pack, multi-colour layered test pack). Gate: max channel error <= 2/255 and < 0.5 % of pixels
+// differing at all. Also: packing + upload of an unchanged frame does not allocate. Skips (77) without a Vulkan device.
 #include "fuse/ui/icons.hpp"
 #include "fuse/ui/render/ui_vk.hpp"
 #include "test_util.hpp"
@@ -158,6 +159,35 @@ int main() {
         check("icons", compare(cpu6, out));
     } else {
         std::fprintf(stderr, "icon pack: %s\n", set.error().c_str());
+        UI_CHECK(false);
+    }
+#endif
+#ifdef FUSE_UI_ICON_COLOR_PACK
+    // 6b. multi-colour icons (layered palette, tests/data/icons_color): one tinted Glyph per layer
+    if (auto set = IconSet::fromFile(FUSE_UI_ICON_COLOR_PACK)) {
+        UiContext iu({.viewport = {f32(W), f32(H)}, .font = &font()});
+        widgets::install(iu);
+        iu.setIcons(&*set);
+        (void)iu.addStyleSheet(".row { flex-direction: row; gap: 4px; } .a { color: #3d8bfd; } .b { color: rgba(255, 204, 0, 0.6); }");
+        const char* tints[] = {"", "a", "b"};
+        for (int size : {16, 24, 32, 40, 48}) {
+            const NodeHandle row = widgets::panel(iu, iu.root());
+            iu.addClass(row, "row");
+            for (u32 i = 0; i < 2 * set->count(); ++i) {
+                const NodeHandle n = widgets::icon(iu, row, set->name(i % set->count()), f32(size));
+                if (*tints[i % 3]) iu.addClass(n, tints[i % 3]);
+            }
+        }
+        iu.update();
+        Image cpu6;
+        fuse::ui::test::render(iu, cpu6);
+        init.resize(int(W), int(H), 0xFF000000u);
+        packDrawList(iu.drawList(), W, H, data, iu.atlas().pixels(), u32(iu.atlas().size()));
+        UI_CHECK(gpu.upload(0, data));
+        vk.run(init, out, [&](VkCommandBuffer cmd) { gpu.record((void*)cmd, (void*)vk.view, 0); });
+        check("icons-color", compare(cpu6, out));
+    } else {
+        std::fprintf(stderr, "colour icon pack: %s\n", set.error().c_str());
         UI_CHECK(false);
     }
 #endif

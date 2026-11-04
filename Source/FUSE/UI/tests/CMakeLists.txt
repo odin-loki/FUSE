@@ -124,6 +124,18 @@ add_executable(fuse_ui_sample sample_main.cpp)
 target_link_libraries(fuse_ui_sample PRIVATE fuse_ui_widgets)
 target_include_directories(fuse_ui_sample PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
 
+# multi-colour icon test pack (tests/data/icons_color), cooked by the tool like the starter pack
+if(TARGET fuse_ui_icons)
+    set(FUSE_UI_ICON_COLOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/data/icons_color")
+    set(FUSE_UI_ICON_COLOR_PACK "${CMAKE_CURRENT_BINARY_DIR}/icons_color.fuseicons")
+    file(GLOB _fuse_ui_color_svgs CONFIGURE_DEPENDS "${FUSE_UI_ICON_COLOR_DIR}/*.svg")
+    add_custom_command(OUTPUT "${FUSE_UI_ICON_COLOR_PACK}"
+        COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:fuse_ui_icon_cook> "--out=${FUSE_UI_ICON_COLOR_PACK}" "${FUSE_UI_ICON_COLOR_DIR}"
+        DEPENDS fuse_ui_icon_cook ${_fuse_ui_color_svgs}
+        COMMENT "fuse_ui_icon_cook: multi-colour test icons" VERBATIM)
+    add_custom_target(fuse_ui_icons_color DEPENDS "${FUSE_UI_ICON_COLOR_PACK}")
+endif()
+
 # UI4 gate: GPU draw-list backend vs the CPU reference (lavapipe / any Vulkan device; 77 = skipped, no device).
 if(TARGET fuse_ui_vk)
     fuse_ui_test(fuse_ui_vk_parity test_vk_parity.cpp)
@@ -145,9 +157,10 @@ if(TARGET fuse_ui_vk)
     if(COMMAND fuse_ui_add_effect)
         fuse_ui_add_effect(fuse_ui_vk_custom_effect NAME kTestFxVignette SOURCE data/fx_vignette_image.glsl)
     endif()
-    if(TARGET fuse_ui_icons) # icons case: the build-time starter pack
-        add_dependencies(fuse_ui_vk_parity fuse_ui_icons)
-        target_compile_definitions(fuse_ui_vk_parity PRIVATE FUSE_UI_ICON_PACK="${FUSE_UI_ICON_PACK}")
+    if(TARGET fuse_ui_icons) # icons cases: the build-time starter pack and the multi-colour test pack
+        add_dependencies(fuse_ui_vk_parity fuse_ui_icons fuse_ui_icons_color)
+        target_compile_definitions(fuse_ui_vk_parity PRIVATE FUSE_UI_ICON_PACK="${FUSE_UI_ICON_PACK}"
+                                   FUSE_UI_ICON_COLOR_PACK="${FUSE_UI_ICON_COLOR_PACK}")
     endif()
 endif()
 
@@ -167,9 +180,11 @@ if(TARGET fuse_ui_icons)
         target_include_directories(${t} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
         add_test(NAME ${name} COMMAND ${t})
         target_link_libraries(${t} PRIVATE fuse_ui_widgets fuse_ui_icon_cook_lib)
-        add_dependencies(${t} fuse_ui_icons)
+        add_dependencies(${t} fuse_ui_icons fuse_ui_icons_color)
         target_compile_definitions(${t} PRIVATE FUSE_UI_ICON_GATE="${g}" FUSE_UI_ICON_PACK="${FUSE_UI_ICON_PACK}"
-                                   FUSE_UI_ICON_SVG_DIR="${FUSE_UI_ICON_SVG_DIR}")
+                                   FUSE_UI_ICON_SVG_DIR="${FUSE_UI_ICON_SVG_DIR}"
+                                   FUSE_UI_ICON_COLOR_PACK="${FUSE_UI_ICON_COLOR_PACK}"
+                                   FUSE_UI_ICON_COLOR_DIR="${FUSE_UI_ICON_COLOR_DIR}")
         if(TARGET fuse_ui_doc)
             target_link_libraries(${t} PRIVATE fuse_ui_doc)
             target_compile_definitions(${t} PRIVATE FUSE_UI_ICON_HAVE_DOC=1)
