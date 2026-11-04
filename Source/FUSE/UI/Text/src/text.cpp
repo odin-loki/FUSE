@@ -26,6 +26,8 @@
 #include <cstring>
 #include <utility>
 
+#include "text_internal.hpp"
+
 #if FUSE_TEXT_FULL
 #include "text_full.hpp"
 #endif
@@ -107,121 +109,39 @@ std::size_t nextCodepoint(std::string_view s, std::size_t i) {
 
 // ---- UAX #29 grapheme clusters -------------------------------------------------------------------------------------
 namespace {
-struct CpRange { char32_t lo, hi; };
-template <std::size_t N> bool inRanges(const CpRange (&r)[N], char32_t c) {
+using GB = GraphemeBreak;
+enum class Incb : std::uint8_t { None, Linker, Consonant, Extend };
+struct GbRange {
+    char32_t lo, hi;
+    GB v;
+};
+struct IncbRange {
+    char32_t lo, hi;
+    Incb v;
+};
+#include "unicode_tables.inc" // generated from the UCD by Text/tools/gen_unicode_tables.py
+template <class R, std::size_t N> auto lookup(const R (&r)[N], char32_t c, decltype(R::v) none) {
     std::size_t a = 0, b = N;
     while (a < b) {
         const std::size_t m = (a + b) / 2;
         if (c < r[m].lo) b = m;
         else if (c > r[m].hi) a = m + 1;
-        else return true;
+        else return r[m].v;
     }
-    return false;
+    return none;
 }
-// Grapheme_Cluster_Break=Extend (main blocks; sorted)
-constexpr CpRange kExtend[] = {
-    {0x0300, 0x036F}, {0x0483, 0x0489}, {0x0591, 0x05BD}, {0x05BF, 0x05BF}, {0x05C1, 0x05C2}, {0x05C4, 0x05C5},
-    {0x05C7, 0x05C7}, {0x0610, 0x061A}, {0x064B, 0x065F}, {0x0670, 0x0670}, {0x06D6, 0x06DC}, {0x06DF, 0x06E4},
-    {0x06E7, 0x06E8}, {0x06EA, 0x06ED}, {0x0711, 0x0711}, {0x0730, 0x074A}, {0x07A6, 0x07B0}, {0x07EB, 0x07F3},
-    {0x0816, 0x0819}, {0x081B, 0x0823}, {0x0825, 0x0827}, {0x0829, 0x082D}, {0x0859, 0x085B}, {0x0898, 0x089F},
-    {0x08CA, 0x08E1}, {0x08E3, 0x0902}, {0x093A, 0x093A}, {0x093C, 0x093C}, {0x0941, 0x0948}, {0x094D, 0x094D},
-    {0x0951, 0x0957}, {0x0962, 0x0963}, {0x0981, 0x0981}, {0x09BC, 0x09BC}, {0x09BE, 0x09BE}, {0x09C1, 0x09C4},
-    {0x09CD, 0x09CD}, {0x09D7, 0x09D7}, {0x09E2, 0x09E3}, {0x0A01, 0x0A02}, {0x0A3C, 0x0A3C}, {0x0A41, 0x0A51},
-    {0x0A70, 0x0A71}, {0x0A75, 0x0A75}, {0x0A81, 0x0A82}, {0x0ABC, 0x0ABC}, {0x0AC1, 0x0AC8}, {0x0ACD, 0x0ACD},
-    {0x0AE2, 0x0AE3}, {0x0B01, 0x0B01}, {0x0B3C, 0x0B3C}, {0x0B3E, 0x0B3F}, {0x0B41, 0x0B44}, {0x0B4D, 0x0B4D},
-    {0x0B55, 0x0B57}, {0x0B62, 0x0B63}, {0x0B82, 0x0B82}, {0x0BBE, 0x0BBE}, {0x0BC0, 0x0BC0}, {0x0BCD, 0x0BCD},
-    {0x0BD7, 0x0BD7}, {0x0C00, 0x0C00}, {0x0C04, 0x0C04}, {0x0C3C, 0x0C3C}, {0x0C3E, 0x0C40}, {0x0C46, 0x0C56},
-    {0x0C62, 0x0C63}, {0x0C81, 0x0C81}, {0x0CBC, 0x0CBC}, {0x0CBF, 0x0CBF}, {0x0CC2, 0x0CC2}, {0x0CC6, 0x0CC6},
-    {0x0CCC, 0x0CCD}, {0x0CD5, 0x0CD6}, {0x0CE2, 0x0CE3}, {0x0D00, 0x0D01}, {0x0D3B, 0x0D3C}, {0x0D3E, 0x0D3E},
-    {0x0D41, 0x0D44}, {0x0D4D, 0x0D4D}, {0x0D57, 0x0D57}, {0x0D62, 0x0D63}, {0x0D81, 0x0D81}, {0x0DCA, 0x0DCA},
-    {0x0DCF, 0x0DCF}, {0x0DD2, 0x0DD6}, {0x0DDF, 0x0DDF}, {0x0E31, 0x0E31}, {0x0E34, 0x0E3A}, {0x0E47, 0x0E4E},
-    {0x0EB1, 0x0EB1}, {0x0EB4, 0x0EBC}, {0x0EC8, 0x0ECE}, {0x0F18, 0x0F19}, {0x0F35, 0x0F35}, {0x0F37, 0x0F37},
-    {0x0F39, 0x0F39}, {0x0F71, 0x0F7E}, {0x0F80, 0x0F84}, {0x0F86, 0x0F87}, {0x0F8D, 0x0FBC}, {0x0FC6, 0x0FC6},
-    {0x102D, 0x1030}, {0x1032, 0x1037}, {0x1039, 0x103A}, {0x103D, 0x103E}, {0x1058, 0x1059}, {0x105E, 0x1060},
-    {0x1071, 0x1074}, {0x1082, 0x1082}, {0x1085, 0x1086}, {0x108D, 0x108D}, {0x109D, 0x109D}, {0x135D, 0x135F},
-    {0x1712, 0x1714}, {0x1732, 0x1733}, {0x1752, 0x1753}, {0x1772, 0x1773}, {0x17B4, 0x17B5}, {0x17B7, 0x17BD},
-    {0x17C6, 0x17C6}, {0x17C9, 0x17D3}, {0x17DD, 0x17DD}, {0x180B, 0x180D}, {0x180F, 0x180F}, {0x1885, 0x1886},
-    {0x18A9, 0x18A9}, {0x1920, 0x1922}, {0x1927, 0x1928}, {0x1932, 0x1932}, {0x1939, 0x193B}, {0x1A17, 0x1A18},
-    {0x1A1B, 0x1A1B}, {0x1A56, 0x1A56}, {0x1A58, 0x1A60}, {0x1A62, 0x1A62}, {0x1A65, 0x1A6C}, {0x1A73, 0x1A7F},
-    {0x1AB0, 0x1ACE}, {0x1B00, 0x1B03}, {0x1B34, 0x1B3D}, {0x1B42, 0x1B44}, {0x1B6B, 0x1B73}, {0x1B80, 0x1B81},
-    {0x1BA2, 0x1BA5}, {0x1BA8, 0x1BAD}, {0x1BE6, 0x1BE6}, {0x1BE8, 0x1BE9}, {0x1BED, 0x1BED}, {0x1BEF, 0x1BF3},
-    {0x1C2C, 0x1C33}, {0x1C36, 0x1C37}, {0x1CD0, 0x1CD2}, {0x1CD4, 0x1CE0}, {0x1CE2, 0x1CE8}, {0x1CED, 0x1CED},
-    {0x1CF4, 0x1CF4}, {0x1CF8, 0x1CF9}, {0x1DC0, 0x1DFF}, {0x200C, 0x200C}, {0x20D0, 0x20F0}, {0x2CEF, 0x2CF1},
-    {0x2D7F, 0x2D7F}, {0x2DE0, 0x2DFF}, {0x302A, 0x302F}, {0x3099, 0x309A}, {0xA66F, 0xA672}, {0xA674, 0xA67D},
-    {0xA69E, 0xA69F}, {0xA6F0, 0xA6F1}, {0xA802, 0xA802}, {0xA806, 0xA806}, {0xA80B, 0xA80B}, {0xA825, 0xA826},
-    {0xA82C, 0xA82C}, {0xA8C4, 0xA8C5}, {0xA8E0, 0xA8F1}, {0xA8FF, 0xA8FF}, {0xA926, 0xA92D}, {0xA947, 0xA951},
-    {0xA980, 0xA982}, {0xA9B3, 0xA9B3}, {0xA9B6, 0xA9B9}, {0xA9BC, 0xA9BD}, {0xA9E5, 0xA9E5}, {0xAA29, 0xAA2E},
-    {0xAA31, 0xAA32}, {0xAA35, 0xAA36}, {0xAA43, 0xAA43}, {0xAA4C, 0xAA4C}, {0xAA7C, 0xAA7C}, {0xAAB0, 0xAAB0},
-    {0xAAB2, 0xAAB4}, {0xAAB7, 0xAAB8}, {0xAABE, 0xAABF}, {0xAAC1, 0xAAC1}, {0xAAEC, 0xAAED}, {0xAAF6, 0xAAF6},
-    {0xABE5, 0xABE5}, {0xABE8, 0xABE8}, {0xABED, 0xABED}, {0xFB1E, 0xFB1E}, {0xFE00, 0xFE0F}, {0xFE20, 0xFE2F},
-    {0xFF9E, 0xFF9F}, {0x101FD, 0x101FD}, {0x102E0, 0x102E0}, {0x10376, 0x1037A}, {0x10A01, 0x10A0F},
-    {0x10A38, 0x10A3F}, {0x10AE5, 0x10AE6}, {0x10D24, 0x10D27}, {0x10EAB, 0x10EAC}, {0x10F46, 0x10F50},
-    {0x11001, 0x11001}, {0x11038, 0x11046}, {0x1107F, 0x11081}, {0x110B3, 0x110B6}, {0x110B9, 0x110BA},
-    {0x11100, 0x11102}, {0x11127, 0x1112B}, {0x1112D, 0x11134}, {0x1D165, 0x1D165}, {0x1D167, 0x1D169},
-    {0x1D16E, 0x1D172}, {0x1D17B, 0x1D182}, {0x1D185, 0x1D18B}, {0x1D1AA, 0x1D1AD}, {0x1E8D0, 0x1E8D6},
-    {0x1E944, 0x1E94A}, {0x1F3FB, 0x1F3FF}, {0xE0020, 0xE007F}, {0xE0100, 0xE01EF},
-};
-constexpr CpRange kSpacingMark[] = {
-    {0x0903, 0x0903}, {0x093B, 0x093B}, {0x093E, 0x0940}, {0x0949, 0x094C}, {0x094E, 0x094F}, {0x0982, 0x0983},
-    {0x09BF, 0x09C0}, {0x09C7, 0x09C8}, {0x09CB, 0x09CC}, {0x0A03, 0x0A03}, {0x0A3E, 0x0A40}, {0x0A83, 0x0A83},
-    {0x0ABE, 0x0AC0}, {0x0AC9, 0x0AC9}, {0x0ACB, 0x0ACC}, {0x0B02, 0x0B03}, {0x0B40, 0x0B40}, {0x0B47, 0x0B48},
-    {0x0B4B, 0x0B4C}, {0x0BBF, 0x0BBF}, {0x0BC1, 0x0BC2}, {0x0BC6, 0x0BC8}, {0x0BCA, 0x0BCC}, {0x0C01, 0x0C03},
-    {0x0C41, 0x0C44}, {0x0C82, 0x0C83}, {0x0CBE, 0x0CBE}, {0x0CC0, 0x0CC1}, {0x0CC3, 0x0CC4}, {0x0CC7, 0x0CC8},
-    {0x0CCA, 0x0CCB}, {0x0D02, 0x0D03}, {0x0D3F, 0x0D40}, {0x0D46, 0x0D48}, {0x0D4A, 0x0D4C}, {0x0D82, 0x0D83},
-    {0x0DD0, 0x0DD1}, {0x0DD8, 0x0DDE}, {0x0DF2, 0x0DF3}, {0x0E33, 0x0E33}, {0x0EB3, 0x0EB3}, {0x0F3E, 0x0F3F},
-    {0x0F7F, 0x0F7F}, {0x1031, 0x1031}, {0x103B, 0x103C}, {0x1056, 0x1057}, {0x1084, 0x1084}, {0x17B6, 0x17B6},
-    {0x17BE, 0x17C5}, {0x17C7, 0x17C8}, {0x1923, 0x1926}, {0x1929, 0x192B}, {0x1930, 0x1931}, {0x1933, 0x1938},
-    {0x1A19, 0x1A1A}, {0x1A55, 0x1A55}, {0x1A57, 0x1A57}, {0x1A6D, 0x1A72}, {0x1B04, 0x1B04}, {0x1B3E, 0x1B41},
-    {0x1B82, 0x1B82}, {0x1BA1, 0x1BA1}, {0x1BA6, 0x1BA7}, {0x1BE7, 0x1BE7}, {0x1BEA, 0x1BEC}, {0x1BEE, 0x1BEE},
-    {0x1C24, 0x1C2B}, {0x1C34, 0x1C35}, {0x1CE1, 0x1CE1}, {0x1CF7, 0x1CF7}, {0xA823, 0xA824}, {0xA827, 0xA827},
-    {0xA880, 0xA881}, {0xA8B4, 0xA8C3}, {0xA952, 0xA952}, {0xA983, 0xA983}, {0xA9B4, 0xA9B5}, {0xA9BA, 0xA9BB},
-    {0xA9BE, 0xA9BF}, {0xAA2F, 0xAA30}, {0xAA33, 0xAA34}, {0xAA4D, 0xAA4D}, {0xAAEB, 0xAAEB}, {0xAAEE, 0xAAEF},
-    {0xAAF5, 0xAAF5}, {0xABE3, 0xABE4}, {0xABE6, 0xABE7}, {0xABE9, 0xABEA}, {0xABEC, 0xABEC},
-};
-constexpr CpRange kPrepend[] = {
-    {0x0600, 0x0605}, {0x06DD, 0x06DD}, {0x070F, 0x070F}, {0x0890, 0x0891}, {0x08E2, 0x08E2}, {0x0D4E, 0x0D4E},
-    {0x110BD, 0x110BD}, {0x110CD, 0x110CD}, {0x111C2, 0x111C3}, {0x1193F, 0x1193F}, {0x11941, 0x11941},
-    {0x11A3A, 0x11A3A}, {0x11A84, 0x11A89}, {0x11D46, 0x11D46},
-};
-constexpr CpRange kExtPict[] = {
-    {0x00A9, 0x00A9}, {0x00AE, 0x00AE}, {0x203C, 0x203C}, {0x2049, 0x2049}, {0x2122, 0x2122}, {0x2139, 0x2139},
-    {0x2194, 0x2199}, {0x21A9, 0x21AA}, {0x231A, 0x231B}, {0x2328, 0x2328}, {0x2388, 0x2388}, {0x23CF, 0x23CF},
-    {0x23E9, 0x23F3}, {0x23F8, 0x23FA}, {0x24C2, 0x24C2}, {0x25AA, 0x25AB}, {0x25B6, 0x25B6}, {0x25C0, 0x25C0},
-    {0x25FB, 0x25FE}, {0x2600, 0x2605}, {0x2607, 0x2612}, {0x2614, 0x2685}, {0x2690, 0x2705}, {0x2708, 0x2712},
-    {0x2714, 0x2714}, {0x2716, 0x2716}, {0x271D, 0x271D}, {0x2721, 0x2721}, {0x2728, 0x2728}, {0x2733, 0x2734},
-    {0x2744, 0x2744}, {0x2747, 0x2747}, {0x274C, 0x274C}, {0x274E, 0x274E}, {0x2753, 0x2755}, {0x2757, 0x2757},
-    {0x2763, 0x2767}, {0x2795, 0x2797}, {0x27A1, 0x27A1}, {0x27B0, 0x27B0}, {0x27BF, 0x27BF}, {0x2934, 0x2935},
-    {0x2B05, 0x2B07}, {0x2B1B, 0x2B1C}, {0x2B50, 0x2B50}, {0x2B55, 0x2B55}, {0x3030, 0x3030}, {0x303D, 0x303D},
-    {0x3297, 0x3297}, {0x3299, 0x3299}, {0x1F000, 0x1F0FF}, {0x1F10D, 0x1F10F}, {0x1F12F, 0x1F12F},
-    {0x1F16C, 0x1F171}, {0x1F17E, 0x1F17F}, {0x1F18E, 0x1F18E}, {0x1F191, 0x1F19A}, {0x1F1AD, 0x1F1E5},
-    {0x1F201, 0x1F20F}, {0x1F21A, 0x1F21A}, {0x1F22F, 0x1F22F}, {0x1F232, 0x1F23A}, {0x1F23C, 0x1F23F},
-    {0x1F249, 0x1F3FA}, {0x1F400, 0x1F53D}, {0x1F546, 0x1F64F}, {0x1F680, 0x1F6FF}, {0x1F774, 0x1F77F},
-    {0x1F7D5, 0x1F7FF}, {0x1F80C, 0x1F80F}, {0x1F848, 0x1F84F}, {0x1F85A, 0x1F85F}, {0x1F888, 0x1F88F},
-    {0x1F8AE, 0x1F8FF}, {0x1F90C, 0x1F93A}, {0x1F93C, 0x1F945}, {0x1F947, 0x1FAFF}, {0x1FC00, 0x1FFFD},
-};
-using GB = GraphemeBreak;
+Incb incbProperty(char32_t c) { return c < 0x0300 ? Incb::None : lookup(kIncb, c, Incb::None); }
+
 struct ClusterState {
     GB prev = GB::Control;
     bool first = true;
-    std::uint32_t riRun = 0;        // regional indicators since the last non-RI
-    bool pictSeq = false; // ExtPict Extend* seen (GB11 left side)
-    bool pictZwj = false; // ... followed by ZWJ
-    std::uint8_t incb = 0; // GB9c: 1 after InCB=Consonant [Extend Linker]*, 2 once a Linker was seen
-};
-// Indic_Conjunct_Break (Unicode 15.1, DerivedCoreProperties): Linkers are the viramas of Devanagari, Bengali,
-// Gujarati, Oriya, Telugu and Malayalam; Consonants are those scripts' consonant letters.
-bool incbLinker(char32_t c) {
-    return c == 0x094D || c == 0x09CD || c == 0x0ACD || c == 0x0B4D || c == 0x0C4D || c == 0x0D4D;
-}
-constexpr CpRange kIncbConsonant[] = {
-    {0x0915, 0x0939}, {0x0958, 0x095F}, {0x0978, 0x097F}, {0x0995, 0x09A8}, {0x09AA, 0x09B0}, {0x09B2, 0x09B2},
-    {0x09B6, 0x09B9}, {0x09DC, 0x09DD}, {0x09DF, 0x09DF}, {0x09F0, 0x09F1}, {0x0A95, 0x0AA8}, {0x0AAA, 0x0AB0},
-    {0x0AB2, 0x0AB3}, {0x0AB5, 0x0AB9}, {0x0AF9, 0x0AF9}, {0x0B15, 0x0B28}, {0x0B2A, 0x0B30}, {0x0B32, 0x0B33},
-    {0x0B35, 0x0B39}, {0x0B5C, 0x0B5D}, {0x0B5F, 0x0B5F}, {0x0B71, 0x0B71}, {0x0C15, 0x0C28}, {0x0C2A, 0x0C39},
-    {0x0C58, 0x0C5A}, {0x0D15, 0x0D3A},
+    std::uint32_t riRun = 0; // regional indicators since the last non-RI
+    bool pictSeq = false;    // ExtPict Extend* seen (GB11 left side)
+    bool pictZwj = false;    // ... followed by ZWJ
+    std::uint8_t incb = 0;   // GB9c: 1 after InCB=Consonant [Extend Linker]*, 2 once a Linker was seen
 };
 // true when there is a boundary before `cur` given the state after the previous code point
-bool breakBefore(const ClusterState& st, GB cur, char32_t cp) {
+bool breakBefore(const ClusterState& st, GB cur, Incb incb) {
     if (st.first) return true;                                         // GB1
     const GB p = st.prev;
     if (p == GB::CR && cur == GB::LF) return false;                     // GB3
@@ -233,15 +153,15 @@ bool breakBefore(const ClusterState& st, GB cur, char32_t cp) {
     if (cur == GB::Extend || cur == GB::ZWJ) return false;             // GB9
     if (cur == GB::SpacingMark) return false;                          // GB9a
     if (p == GB::Prepend) return false;                                // GB9b
-    if (st.incb == 2 && inRanges(kIncbConsonant, cp)) return false;     // GB9c
+    if (st.incb == 2 && incb == Incb::Consonant) return false;         // GB9c
     if (p == GB::ZWJ && cur == GB::ExtPict && st.pictZwj) return false; // GB11
     if (p == GB::RegionalIndicator && cur == GB::RegionalIndicator && (st.riRun % 2) == 1) return false; // GB12/13
     return true;                                                       // GB999
 }
-void advance(ClusterState& st, GB cur, char32_t cp) {
-    if (inRanges(kIncbConsonant, cp)) st.incb = 1;
-    else if (st.incb && incbLinker(cp)) st.incb = 2;
-    else if (!(st.incb && (cur == GB::Extend || cur == GB::ZWJ))) st.incb = 0;
+void advance(ClusterState& st, GB cur, Incb incb) {
+    if (incb == Incb::Consonant) st.incb = 1;
+    else if (st.incb && incb == Incb::Linker) st.incb = 2;
+    else if (!(st.incb && incb == Incb::Extend)) st.incb = 0;
     st.riRun = cur == GB::RegionalIndicator ? st.riRun + 1 : 0;
     if (cur == GB::ExtPict) { st.pictSeq = true; st.pictZwj = false; }
     else if (cur == GB::Extend && st.pictSeq) {}
@@ -258,25 +178,10 @@ std::size_t lineStart(std::string_view s, std::size_t i) {
 } // namespace
 
 GraphemeBreak graphemeBreakProperty(char32_t c) {
-    if (c == '\r') return GB::CR;
-    if (c == '\n') return GB::LF;
-    if (c == 0x200D) return GB::ZWJ;
-    if (c < 0x20 || (c >= 0x7F && c <= 0x9F) || c == 0x00AD) return GB::Control;
-    if (c == 0x200B || c == 0x2028 || c == 0x2029 || c == 0xFEFF || (c >= 0x200E && c <= 0x200F) || (c >= 0x202A && c <= 0x202E) ||
-        (c >= 0x2060 && c <= 0x206F) || (c >= 0xFFF0 && c <= 0xFFFB) || (c >= 0xE0000 && c <= 0xE001F))
-        return GB::Control;
-    if (c < 0x0300) return (c == 0xA9 || c == 0xAE) ? GB::ExtPict : GB::Other;
-    if (c >= 0x1F1E6 && c <= 0x1F1FF) return GB::RegionalIndicator;
-    if ((c >= 0x1100 && c <= 0x115F) || (c >= 0xA960 && c <= 0xA97C)) return GB::L;
-    if ((c >= 0x1160 && c <= 0x11A7) || (c >= 0xD7B0 && c <= 0xD7C6)) return GB::V;
-    if ((c >= 0x11A8 && c <= 0x11FF) || (c >= 0xD7CB && c <= 0xD7FB)) return GB::T;
     if (c >= 0xAC00 && c <= 0xD7A3) return (c - 0xAC00) % 28 == 0 ? GB::LV : GB::LVT;
-    if (inRanges(kExtend, c)) return GB::Extend;
-    if (inRanges(kSpacingMark, c)) return GB::SpacingMark;
-    if (inRanges(kPrepend, c)) return GB::Prepend;
-    if (inRanges(kExtPict, c)) return GB::ExtPict;
-    return GB::Other;
+    return lookup(kGraphemeBreak, c, GB::Other);
 }
+const char* unicodeVersion() { return kUnicodeVersion; }
 
 std::size_t nextBoundary(std::string_view s, std::size_t i) {
     if (i >= s.size()) return s.size();
@@ -287,8 +192,9 @@ std::size_t nextBoundary(std::string_view s, std::size_t i) {
         std::size_t nx = at;
         const char32_t cp = decodeUtf8(s, nx);
         const GB g = graphemeBreakProperty(cp);
-        if (at > i && breakBefore(st, g, cp)) return at;
-        advance(st, g, cp);
+        const Incb ic = incbProperty(cp);
+        if (at > i && breakBefore(st, g, ic)) return at;
+        advance(st, g, ic);
         at = nx;
     }
     return s.size();
@@ -305,8 +211,9 @@ std::size_t prevBoundary(std::string_view s, std::size_t i) {
         std::size_t nx = at;
         const char32_t cp = decodeUtf8(s, nx);
         const GB g = graphemeBreakProperty(cp);
-        if (breakBefore(st, g, cp)) last = at;
-        advance(st, g, cp);
+        const Incb ic = incbProperty(cp);
+        if (breakBefore(st, g, ic)) last = at;
+        advance(st, g, ic);
         at = nx;
     }
     return last;
@@ -318,10 +225,60 @@ std::size_t graphemeCount(std::string_view s) {
     for (std::size_t at = 0; at < s.size();) {
         const char32_t cp = decodeUtf8(s, at);
         const GB g = graphemeBreakProperty(cp);
-        if (breakBefore(st, g, cp)) ++n;
-        advance(st, g, cp);
+        const Incb ic = incbProperty(cp);
+        if (breakBefore(st, g, ic)) ++n;
+        advance(st, g, ic);
     }
     return n;
+}
+
+// ---- Line breaking and bidi ----------------------------------------------------------------------------------------
+void lineBreaks(std::string_view s, std::vector<LineBreak>& out, LineBreakStyle style) {
+#if FUSE_TEXT_FULL
+    detail::fullLineBreaks(s, out, style == LineBreakStyle::Strict);
+#else
+    (void)style;
+    out.assign(s.size(), LineBreak::None);
+    for (std::size_t i = 0; i < s.size();) {
+        const std::size_t at = i;
+        decodeUtf8(s, i);
+        for (std::size_t k = at; k + 1 < i; ++k) out[k] = LineBreak::Inside;
+        if (s[at] == '\n') out[i - 1] = LineBreak::Must;
+        else if (s[at] == ' ' && i < s.size() && s[i] != ' ' && s[i] != '\n') out[i - 1] = LineBreak::Allow;
+    }
+    if (!s.empty()) out.back() = LineBreak::Must;
+#endif
+}
+
+bool bidiLevels(std::string_view s, BaseDirection base, std::vector<std::uint8_t>& levels, std::uint8_t& paraLevel) {
+#if FUSE_TEXT_FULL
+    detail::fullBidiLevels(s, int(base), levels, paraLevel);
+    return true;
+#else
+    paraLevel = base == BaseDirection::Rtl ? 1 : 0;
+    levels.assign(s.size(), paraLevel);
+    return false;
+#endif
+}
+
+void reorderVisual(std::span<const std::uint8_t> levels, std::vector<std::uint32_t>& out) {
+    const std::size_t n = levels.size();
+    out.resize(n);
+    for (std::size_t k = 0; k < n; ++k) out[k] = std::uint32_t(k);
+    std::uint8_t hi = 0, loOdd = 0xFF;
+    for (const std::uint8_t l : levels) {
+        hi = std::max(hi, l);
+        if (l & 1) loOdd = std::min(loOdd, l);
+    }
+    // From the highest level down to the lowest odd one, reverse every maximal run at or above that level.
+    for (int lv = hi; loOdd != 0xFF && lv >= loOdd; --lv)
+        for (std::size_t k = 0; k < n;) {
+            if (levels[out[k]] < lv) { ++k; continue; }
+            std::size_t m = k;
+            while (m < n && levels[out[m]] >= lv) ++m;
+            std::reverse(out.begin() + std::ptrdiff_t(k), out.begin() + std::ptrdiff_t(m));
+            k = m;
+        }
 }
 
 // ---- Font ----------------------------------------------------------------------------------------------------------
@@ -387,11 +344,11 @@ void loadColr(std::vector<std::uint8_t>& bytes, std::vector<ColorLayer>& layers,
 }
 } // namespace
 
-std::expected<Font, TextError> Font::fromBytes(std::span<const std::uint8_t> bytes) {
+std::expected<Font, TextError> Font::fromBytes(std::span<const std::uint8_t> bytes, std::uint32_t faceIndex) {
     if (bytes.size() < 12) return std::unexpected(TextError::InvalidFont);
     auto* st = new State;
     st->bytes.assign(bytes.begin(), bytes.end());
-    const int offset = stbtt_GetFontOffsetForIndex(st->bytes.data(), 0);
+    const int offset = stbtt_GetFontOffsetForIndex(st->bytes.data(), int(faceIndex));
     if (offset < 0 || !stbtt_InitFont(&st->info, st->bytes.data(), offset)) {
         delete st;
         return std::unexpected(TextError::InvalidFont);
@@ -400,7 +357,7 @@ std::expected<Font, TextError> Font::fromBytes(std::span<const std::uint8_t> byt
     st->emPerPixelSize = st->unitsPerPixelScale1 / stbtt_ScaleForMappingEmToPixels(&st->info, 1.f);
     loadColr(st->bytes, st->layers, st->colorBase, std::uint32_t(offset));
 #if FUSE_TEXT_FULL
-    st->full = detail::fullCreate(st->bytes);
+    st->full = detail::fullCreate(st->bytes, faceIndex);
     if (!st->full) {
         delete st;
         return std::unexpected(TextError::InvalidFont);
@@ -412,18 +369,10 @@ std::expected<Font, TextError> Font::fromBytes(std::span<const std::uint8_t> byt
     return f;
 }
 
-std::expected<Font, TextError> Font::fromFile(const std::string& path) {
-    std::FILE* fp = std::fopen(path.c_str(), "rb");
-    if (!fp) return std::unexpected(TextError::InvalidFont);
+std::expected<Font, TextError> Font::fromFile(const std::string& path, std::uint32_t faceIndex) {
     std::vector<std::uint8_t> data;
-    std::uint8_t buf[16384];
-    for (;;) {
-        const std::size_t n = std::fread(buf, 1, sizeof buf, fp);
-        data.insert(data.end(), buf, buf + n);
-        if (n < sizeof buf) break;
-    }
-    std::fclose(fp);
-    return fromBytes(data);
+    if (!detail::readFile(path, data)) return std::unexpected(TextError::InvalidFont);
+    return fromBytes(data, faceIndex);
 }
 
 std::expected<Font, TextError> Font::bundled() {
@@ -440,7 +389,8 @@ std::vector<Font> Font::bundledFallbacks() {
     // Emoji before Symbols 2 so emoji-presentation code points (U+2764 ...) come out in colour.
     static const char* const kFiles[] = {"noto/NotoSansHebrew-Regular.ttf", "noto/NotoSansArabic-Regular.ttf",
                                          "noto/NotoSansDevanagari-Regular.ttf", "twemoji/TwemojiMozilla.ttf",
-                                         "noto/NotoSansSymbols2-Regular.ttf"};
+                                         "noto/NotoSansSymbols2-Regular.ttf", "noto/NotoSansThai-Regular.ttf",
+                                         "noto/NotoSansCJKsc-Subset.otf"};
     for (const char* f : kFiles)
         if (auto font = fromFile(std::string(FUSE_TEXT_FONT_DIR) + "/" + f)) out.push_back(std::move(*font));
 #endif

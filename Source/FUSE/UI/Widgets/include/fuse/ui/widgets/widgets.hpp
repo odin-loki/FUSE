@@ -255,10 +255,13 @@ void setMarkdown(UiContext& ui, NodeHandle view, std::string_view markdown);
 void registerTierCD(UiContext& ui);
 
 // ---- Tier D (2): pro widgets (plan §5) ---------------------------------------------------------------------------------
-/// Font picker: family list + size spin box + live preview line. Families default to the bundled faces when empty
-/// ('\n'-separated otherwise). Any change emits Submitted {text = family, value = size} on the picker.
+/// Font picker: family list + size spin box + live preview line. Families default to the bundled faces when empty;
+/// "@system" lists the bundled face and then every installed family (systemFontFamilies); '\n'-separated names
+/// otherwise. Any change emits Submitted {text = family, value = size} on the picker.
 NodeHandle fontPicker(UiContext& ui, NodeHandle parent, std::string_view families = {}, f32 size = 14.f, std::string_view id = {});
 std::string fontPickerFamily(const UiContext& ui, NodeHandle picker);
+/// "Open Sans" (bundled) followed by the installed families of fuse::text::FontCatalog::system(), '\n'-separated.
+std::string systemFontFamilies();
 f32 fontPickerSize(const UiContext& ui, NodeHandle picker);
 
 /// File dialog (modal, built on dialog()): path field, "Up" button, directory listing (folders first, then files
