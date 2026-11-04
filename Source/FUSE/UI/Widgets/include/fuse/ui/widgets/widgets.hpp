@@ -266,7 +266,9 @@ void setMarkdown(UiContext& ui, NodeHandle view, std::string_view markdown);
 void registerTierCD(UiContext& ui);
 
 // ---- Tier D (2): pro widgets (plan §5) ---------------------------------------------------------------------------------
-/// Font picker: family list + size spin box + live preview line. Families default to the bundled faces when empty;
+/// Font picker: family list + size spin box + live preview line, each family (list rows and the preview) drawn in its
+/// own installed face (FontCatalog::system(); names that resolve to none draw in the UI font). Families default to
+/// generic names when empty;
 /// "@system" lists the bundled face and then every installed family (systemFontFamilies); '\n'-separated names
 /// otherwise. Any change emits Submitted {text = family, value = size} on the picker.
 NodeHandle fontPicker(UiContext& ui, NodeHandle parent, std::string_view families = {}, f32 size = 14.f, std::string_view id = {});

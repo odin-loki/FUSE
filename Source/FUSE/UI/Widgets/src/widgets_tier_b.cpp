@@ -244,6 +244,21 @@ struct Tooltip {
 };
 
 // ---- list view ---------------------------------------------------------------------------------------------------
+struct RowFontEntry {
+    const UiContext* ui;
+    NodeHandle list;
+    detail::RowFontFn fn;
+};
+std::vector<RowFontEntry>& rowFonts() {
+    static std::vector<RowFontEntry> v;
+    return v;
+}
+detail::RowFontFn rowFontOf(const UiContext& ui, NodeHandle list) {
+    for (const RowFontEntry& e : rowFonts())
+        if (e.ui == &ui && e.list == list) return e.fn;
+    return nullptr;
+}
+
 struct ListView {
     static constexpr std::string_view kName = "listview";
     static constexpr A11yRole kRole = A11yRole::List;
@@ -283,13 +298,17 @@ struct ListView {
         const u32 first = u32(ui.userData(pc.node));
         const i64 sel = i64(ui.value(pc.node));
         const u32 vis = u32(std::ceil(c.h / rh));
+        const detail::RowFontFn rowFont = rowFontOf(ui, pc.node);
         dl.pushClip(c);
         eachLine(ui.text(pc.node), [&](u32 i, std::string_view line) {
             if (i < first) return true;
             if (i >= first + vis) return false; // virtualised: rows past the view are never touched
             const Rect row{c.x, c.y + f32(i - first) * rh, c.w, rh};
             if (i64(i) == sel) dl.rect(row, accent(pc).withAlpha((pc.states & kStateFocus ? 0.55f : 0.3f) * pc.opacity), 3.f);
-            labelAt(pc, dl, line, {row.x + 6.f, row.y + 3.f, row.w - 12.f, rh - 6.f});
+            if (rowFont) // a face per row (font picker)
+                ui.paintString(dl, line, {row.x + 6.f, row.y + 3.f, row.w - 12.f, rh - 6.f}, textCol(pc), pc.style.fontSize,
+                               TextAlignment::Start, pc.node.index, rowFont(ui, pc.node, i));
+            else labelAt(pc, dl, line, {row.x + 6.f, row.y + 3.f, row.w - 12.f, rh - 6.f});
             return true;
         });
         dl.popClip();
@@ -612,6 +631,12 @@ NodeHandle popupMenuAt(UiContext& ui, NodeHandle owner, std::string_view items, 
     if (ui.alive(firstItem)) ui.setFocus(firstItem, FocusReason::Keyboard);
     return scope;
 }
+void setListRowFont(UiContext& ui, NodeHandle list, RowFontFn fn) {
+    auto& v = rowFonts();
+    std::erase_if(v, [&](const RowFontEntry& e) { return (e.ui == &ui && (e.list == list || !ui.alive(e.list))); });
+    if (fn) v.push_back({&ui, list, fn});
+}
+
 NodeHandle popupPanel(UiContext& ui, NodeHandle owner, Vec2 at) {
     registerTierB(ui);
     const NodeHandle scope = make(ui, "popup", overlayLayer(ui));
