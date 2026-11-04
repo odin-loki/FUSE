@@ -13,6 +13,7 @@
 #endif
 
 #include <string>
+#include <utility>
 
 namespace fuse::renderer {
 
@@ -38,14 +39,10 @@ std::wstring utf8ToWide(const char* path) {
 }
 #endif
 
-FileStamp queryStamp(const char* path) {
-    FileStamp stamp{};
-    if (path == nullptr) {
-        return stamp;
-    }
-
 #if defined(_WIN32)
-    const std::wstring wide = utf8ToWide(path);
+/// `wide` is the path converted once at watch(); empty (conversion failed) reads as a missing file.
+FileStamp queryStamp(const std::wstring& wide) {
+    FileStamp stamp{};
     if (wide.empty()) {
         return stamp;
     }
@@ -59,7 +56,11 @@ FileStamp queryStamp(const char* path) {
                   static_cast<u64>(attributes.ftLastWriteTime.dwLowDateTime);
     stamp.size = (static_cast<u64>(attributes.nFileSizeHigh) << 32u) |
                  static_cast<u64>(attributes.nFileSizeLow);
+    return stamp;
+}
 #else
+FileStamp queryStamp(const char* path) {
+    FileStamp stamp{};
     struct stat fileStat {};
     if (::stat(path, &fileStat) != 0) {
         return stamp;
@@ -75,9 +76,9 @@ FileStamp queryStamp(const char* path) {
 #else
     stamp.mtime = static_cast<u64>(fileStat.st_mtime);
 #endif
-#endif
     return stamp;
 }
+#endif
 
 } // namespace
 
@@ -86,8 +87,17 @@ bool ShaderFileWatch::watch(const char* path) {
         return false;
     }
 
-    const FileStamp stamp = queryStamp(path);
-    m_entries.push_back(Entry{std::string(path), stamp.mtime, stamp.size});
+    Entry entry{};
+    entry.path = path;
+#if defined(_WIN32)
+    entry.nativePath = utf8ToWide(path);
+    const FileStamp stamp = queryStamp(entry.nativePath);
+#else
+    const FileStamp stamp = queryStamp(entry.path.c_str());
+#endif
+    entry.mtime = stamp.mtime;
+    entry.size = stamp.size;
+    m_entries.push_back(std::move(entry));
     return true;
 }
 
@@ -95,7 +105,11 @@ u32 ShaderFileWatch::pollChanged() {
     m_lastChanged.clear();
     u32 changed = 0;
     for (Entry& entry : m_entries) {
+#if defined(_WIN32)
+        const FileStamp stamp = queryStamp(entry.nativePath);
+#else
         const FileStamp stamp = queryStamp(entry.path.c_str());
+#endif
         if (stamp.mtime != entry.mtime || stamp.size != entry.size) {
             m_lastChanged.push_back(entry.path);
             ++changed;
