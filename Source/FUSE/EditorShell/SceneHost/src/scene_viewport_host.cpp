@@ -3,12 +3,12 @@
 #include <fuse/editor/editor_host.hpp>
 #include <fuse/editor/runtime_viewport.hpp>
 #include <fuse/editor/terrain_builder.hpp>
-#include <fuse/renderer/geometry/meshlet_builder.hpp>
 
 #include <unordered_map>
 #include <fuse/editor/viewport_panel.hpp>
 
 #if defined(FUSE_HAS_VULKAN_RHI)
+#include <fuse/renderer/geometry/meshlet_builder.hpp> // only the GPU path builds meshlets (no renderer without Vulkan)
 #include <fuse/ecs/systems/transform_system.hpp>
 #include <fuse/frame/frame_ctx.hpp>
 #include <fuse/hybrid/hybrid_scene_renderer.hpp>

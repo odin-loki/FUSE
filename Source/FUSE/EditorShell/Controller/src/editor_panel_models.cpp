@@ -19,11 +19,16 @@
 #include <ctime>
 #include <cstdio>
 #include <filesystem>
+#include <string>
+#include <string_view>
 
 namespace fuse::editor {
 
 namespace {
 namespace fs = std::filesystem;
+
+/// UTF-8 text -> path (fs::u8path is deprecated in C++20; MinGW -Werror builds reject it).
+fs::path utf8Path(std::string_view s) { return fs::path(std::u8string(reinterpret_cast<const char8_t*>(s.data()), s.size())); }
 
 f32 toLinear(f32 c) { return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f); }
 f32 toSrgb(f32 c) {
@@ -138,7 +143,7 @@ AssetBrowserView EditorPanels::assets() {
         if (!folder && m_assetTypeFilter != 0u && u32(e.type) != m_assetTypeFilter) continue;
         AssetEntryView ev{e.name, e.path, AssetBrowser::assetTypeLabel(e.type), folder, e.name};
         std::error_code ec;
-        const fs::path abs = fs::u8path(m_assets->absolutePath(e.path));
+        const fs::path abs = utf8Path(m_assets->absolutePath(e.path));
         if (!folder) {
             const auto sz = fs::file_size(abs, ec);
             if (!ec) ev.tooltip += sz < 1024 ? "\n" + std::to_string(sz) + " B" : fmt("\n%.1f KB", double(sz) / 1024.0);
@@ -178,7 +183,7 @@ void EditorPanels::assetsSetGrid(bool on) { m_assetsGrid = on; ++m_revision; }
 
 bool EditorPanels::assetsNavigateTo(const std::string& relDir) {
     std::error_code ec;
-    if (!fs::is_directory(fs::u8path(m_assets->absolutePath(relDir)), ec)) return false;
+    if (!fs::is_directory(utf8Path(m_assets->absolutePath(relDir)), ec)) return false;
     m_assets->setSearchFilter("");
     m_assets->setCurrentDirectory(relDir.c_str());
     m_assets->refresh();
@@ -199,7 +204,7 @@ bool validAssetName(const std::string& n) {
 
 bool EditorPanels::assetsCreateFolder(const std::string& name) {
     if (!validAssetName(name) || m_assets->projectRoot().empty()) return false;
-    const fs::path dir = fs::u8path(m_assets->absolutePath(m_assets->currentDirectory())) / fs::u8path(name);
+    const fs::path dir = utf8Path(m_assets->absolutePath(m_assets->currentDirectory())) / utf8Path(name);
     std::error_code ec;
     if (fs::exists(dir, ec) || !fs::create_directory(dir, ec) || ec) return false;
     m_assets->refresh();
@@ -209,8 +214,8 @@ bool EditorPanels::assetsCreateFolder(const std::string& name) {
 
 bool EditorPanels::assetsRename(const std::string& path, const std::string& newName) {
     if (!validAssetName(newName)) return false;
-    const fs::path from = fs::u8path(m_assets->absolutePath(path));
-    const fs::path to = from.parent_path() / fs::u8path(newName);
+    const fs::path from = utf8Path(m_assets->absolutePath(path));
+    const fs::path to = from.parent_path() / utf8Path(newName);
     std::error_code ec;
     if (!fs::exists(from, ec) || fs::exists(to, ec)) return false;
     fs::rename(from, to, ec);
