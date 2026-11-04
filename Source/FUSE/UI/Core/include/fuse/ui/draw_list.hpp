@@ -26,9 +26,14 @@ enum class DrawOp : u8 {
     Effect,   ///< custom shader effect over the rounded `rect` (effects.hpp: `u` id, `fill` / `fill2` params, `blur` time)
 };
 
+/// Glyph modes (DrawCmd::gradient of a Glyph): coverage texels tinted by `fill`; premultiplied RGBA texels of the atlas
+/// colour page times fill.a (colour emoji, COLRv1); MSDF texels of the colour page stretched over `rect` (any scale),
+/// `blur` = distance range in texels, tinted by `fill`.
+inline constexpr u8 kGlyphCoverage = 0, kGlyphColor = 1, kGlyphMsdf = 2;
+
 struct DrawCmd {
     DrawOp op = DrawOp::Rect;
-    u8 gradient = 0; ///< 0 none, 1 vertical, 2 horizontal
+    u8 gradient = 0; ///< 0 none, 1 vertical, 2 horizontal (Glyph: kGlyphCoverage / kGlyphColor / kGlyphMsdf)
     u16 u = 0, v = 0, tw = 0, th = 0; ///< Glyph: atlas texels
     u32 image = 0;
     u32 node = 0xFFFFFFFFu; ///< source node index (inspector, damage)
@@ -94,7 +99,8 @@ u32 packPremultiplied(Color c);
 
 class CpuRasterizer {
 public:
-    /// Coverage atlas for Glyph commands (non-owning; must outlive render calls).
+    /// Glyph atlas for Glyph commands (fuse::text::GlyphAtlas::pixels(): the size x size coverage page, then the
+    /// size / 2 RGBA colour page; non-owning, must outlive render calls).
     void setGlyphAtlas(const u8* pixels, int size) {
         m_atlas = pixels;
         m_atlasSize = size;

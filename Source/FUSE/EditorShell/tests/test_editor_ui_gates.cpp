@@ -676,6 +676,23 @@ void gateWizard(Rig& r) {
     CHECK(hub.hasProject && hub.name == "WizWorld");
     std::printf("e20_wizard: %s 2D=%d UI=%d cinematics=%d fx=%d\n", hub.directory.c_str(), int(m.dimensions.enable2D),
                 int(m.dimensions.enableUI), int(m.modules.cinematics), int(m.modules.fx));
+    // Type "Application (FUSE UI)": the schema 2 app template (project.json kind app + ui/main.fuseui)
+    CHECK(r.c.trigger(ActionId::FileNewProject));
+    r.frames();
+    setField(r, "wizard.name", "WizApp");
+    r.ui().setValue(r.ui().find("wizard.dimension"), 3.f, true);
+    r.frames();
+    r.clickId("wizard.create");
+    r.frames(2);
+    CHECK(!r.shell.newProjectWizardOpen());
+    const auto app = fuse::project::loadFromDirectory((root / "WizApp").string());
+    CHECK(app.status == fuse::project::LoadStatus::Ok && app.manifest.schemaVersion == 2u &&
+          app.manifest.kind == fuse::project::ProjectKind::App && app.manifest.name == "WizApp" &&
+          app.manifest.ui.root == "ui/main.fuseui" && app.manifest.windows.size() == 1u);
+    CHECK(std::filesystem::exists(root / "WizApp" / "ui" / "main.fuseui"));
+    CHECK(r.shell.panels().projectHub().hasProject && r.shell.panels().projectHub().name == "WizApp");
+    std::printf("e20_wizard: application template -> %s (schema %u, kind %s)\n", (root / "WizApp").string().c_str(),
+                app.manifest.schemaVersion, std::string(fuse::project::toString(app.manifest.kind)).c_str());
     // leave the wizard open for the screenshot
     CHECK(r.c.trigger(ActionId::FileNewProject));
     setField(r, "wizard.name", "Another");

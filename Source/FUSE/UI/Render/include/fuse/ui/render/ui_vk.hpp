@@ -50,7 +50,13 @@ struct UiVkDesc {
     /// SdfQuads shaders (set by useSdfQuads; a separate translation unit, so binaries that never select the backend do
     /// not carry its SPIR-V).
     std::span<const u32> sdfVertex, sdfFragment;
+    /// Persistent VkPipelineCache file for the kernel (null: no cache). Loaded only when its header matches this
+    /// device (vendor, device id, pipelineCacheUUID) and this kernel (SPIR-V hash); rewritten after a miss.
+    const char* pipelineCachePath = nullptr;
 };
+
+/// What init() did with the pipeline cache.
+enum class PipelineCacheUse : u8 { None, Hit, Miss, Rejected };
 
 /// Selects the SDF-quad backend for `desc` (backend + its shaders). False when the shaders were not compiled in.
 bool useSdfQuads(UiVkDesc& desc);
@@ -111,7 +117,13 @@ public:
     /// SdfQuads: drops the cached framebuffer of `view` (call before destroying a target view that may be reused).
     void forgetTarget(void* view);
 
+    /// Pipeline cache outcome of the last init() and the vkCreateComputePipelines time (ms).
+    PipelineCacheUse pipelineCacheUse() const { return m_cacheUse; }
+    double pipelineMs() const { return m_pipelineMs; }
+
 private:
+    PipelineCacheUse m_cacheUse = PipelineCacheUse::None;
+    double m_pipelineMs = 0.0;
     struct Slot {
         void* buffer = nullptr; ///< VkBuffer
         void* memory = nullptr; ///< VkDeviceMemory

@@ -64,6 +64,9 @@ vec4 extFetch(uint e, ivec2 q) {
 }
 uint atlasByte(uint idx) { return (ui_atlas.words[idx >> 2] >> ((idx & 3u) * 8u)) & 0xFFu; }
 
+#define GLYPH_INV255(k) inv255(k)
+#include "ui_glyph.glsl"
+
 void main() {
     const GpuCmd c = ui_cmds.cmds[v_cmd];
     const uint op = c.info.x & 0xFFu;
@@ -101,9 +104,23 @@ void main() {
         precise float cov = (1.0 - t * t * (3.0 - 2.0 * t)) * clipCov;
         s = premul(c.fill, cov);
     } else if (op == kGlyph) {
+        if (gradient == kGlyphMsdf) {
+            if (pc.atlasSize == 0u) discard;
+            const float cov = glyphMsdfCoverage(c.rect, c.info.y, c.info.z, c.params.y, px, py) * clipCov;
+            if (cov <= 0.0) discard;
+            s = premul(c.fill, cov);
+            o_color = s;
+            return;
+        }
         const int gx = ip.x - int(c.rect.x), gy = ip.y - int(c.rect.y);
         const int tw = int(c.info.z & 0xFFFFu), th = int(c.info.z >> 16);
         if (gx < 0 || gy < 0 || gx >= tw || gy >= th || pc.atlasSize == 0u) discard;
+        if (gradient == kGlyphColor) {
+            s = glyphColorSource(c.info.y, gx, gy, c.fill.a, clipCov);
+            if (s.a <= 0.0 && s.r <= 0.0 && s.g <= 0.0 && s.b <= 0.0) discard;
+            o_color = s;
+            return;
+        }
         const uint u = c.info.y & 0xFFFFu, v = c.info.y >> 16;
         const uint a = atlasByte((v + uint(gy)) * pc.atlasSize + u + uint(gx));
         if (a == 0u) discard;

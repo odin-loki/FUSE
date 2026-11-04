@@ -9,8 +9,11 @@
 //                    atlas lookups and segmentation of already-seen strings perform no heap allocation.
 //   dpi_<scale>      bundled font + fallback chain at 14 px x scale: metrics, advances and ink scale with the DPR,
 //                    line breaks are scale-invariant, no missing glyphs (twins of fuse_editor_qt_font_*).
-//   colrv1           data/colrv1_test.ttf (make_colrv1_test_font.py): COLRv1 paint graphs flattened to solid layers
-//                    (layers, gradients as mean colour, PaintColrGlyph through a transform, v0 records win).
+//   colrv1           data/colrv1_test.ttf (make_colrv1_test_font.py): without enableColorGlyphs, COLRv1 graphs flattened
+//                    to solid layers (gradients as mean colour, PaintColrGlyph through a transform, v0 records win);
+//                    with it, exact RGBA rendering (linear / radial / sweep gradients, transforms, composite modes, clip
+//                    boxes, foreground colour) against golden/colrv1_exact.png at max channel difference 0, analytic
+//                    spot checks and colour glyph commands through the UI.
 // Optional --out=<dir> writes the rendered images.
 #include "test_util.hpp"
 
@@ -23,6 +26,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -257,6 +261,10 @@ int shapingScripts() {
 
 // ---- fuse_text_system_fonts ----------------------------------------------------------------------------------------
 int systemFonts() {
+    if (textProfile() == TextProfile::Cooked) {
+        std::printf("fuse_text_system_fonts: COOKED loads only .fusefont packs, skipped\n");
+        return 77;
+    }
     const auto t0 = std::chrono::steady_clock::now();
     const FontCatalog& cat = FontCatalog::system();
     const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
@@ -409,7 +417,7 @@ int cacheZeroAlloc() {
 
 // ---- fuse_text_colrv1 ----------------------------------------------------------------------------------------------
 int colrv1() {
-    auto loaded = Font::fromFile("data/colrv1_test.ttf");
+    auto loaded = Font::fromFile(fuse::ui::test::testFontPath("colrv1_test"));
     UI_CHECK(loaded.has_value());
     if (!loaded) return finish("fuse_text_colrv1");
     const Font& f = *loaded;
@@ -451,6 +459,72 @@ int colrv1() {
     std::printf("colrv1: red %d, green %d, purple %d pixels\n", red, green, purple);
     UI_CHECK(red > 50 && green > 50 && purple > 50);
     if (!g_out.empty()) writePng(g_out + "/colrv1.png", img);
+
+    // exact rendering (enableColorGlyphs): every v1 glyph is one RGBA image of its whole paint graph
+    enableColorGlyphs();
+    UI_CHECK(layers(U'').size() == 1 && layers(U'')[0].image);
+    UI_CHECK(both.size() == 1 && layers(U'')[0].g == 255 && !layers(U'')[0].image); // v0 still wins
+    const float px = 48.f, s = f.unitScale(px);
+    const std::uint32_t fg = 0xFF0080FFu; // orange (255, 128, 0) for palette index 0xFFFF
+    constexpr int kCell = 64, kCount = 13;
+    Image sheet;
+    sheet.resize(kCell * kCount, kCell, 0u);
+    ColorImage ci;
+    // straight RGBA of the texel under font-unit point (ux, uy) of glyph `cp` (pen at the origin)
+    auto at = [&](char32_t cp, float ux, float uy) -> std::array<int, 4> {
+        if (!f.renderColor(f.glyphIndex(cp), px, fg, ci)) return {-1, -1, -1, -1};
+        const int x = int(std::floor(ux * s)) - ci.x0, y = int(std::floor(-uy * s)) - ci.y0;
+        if (x < 0 || y < 0 || x >= ci.w || y >= ci.h) return {0, 0, 0, 0};
+        const std::uint8_t* p = ci.rgba.data() + (std::size_t(y) * std::size_t(ci.w) + std::size_t(x)) * 4;
+        return {p[0], p[1], p[2], p[3]};
+    };
+    for (int k = 0; k < kCount; ++k) {
+        const std::uint32_t g = f.glyphIndex(char32_t(0xE000 + k));
+        const bool has = f.renderColor(g, px, fg, ci);
+        UI_CHECK(has == (k != 3)); // U+E003 has a v0 record: no image
+        for (int y = 0; has && y < ci.h; ++y)
+            for (int x = 0; x < ci.w; ++x) {
+                const int dx = k * kCell + 4 + ci.x0 + x, dy = 52 + ci.y0 + y;
+                if (dx < k * kCell || dx >= (k + 1) * kCell || dy < 0 || dy >= kCell) continue;
+                const std::uint8_t* p = ci.rgba.data() + (std::size_t(y) * std::size_t(ci.w) + std::size_t(x)) * 4;
+                sheet.pixels[std::size_t(dy) * std::size_t(sheet.width) + std::size_t(dx)] =
+                    u32(p[0]) | (u32(p[1]) << 8) | (u32(p[2]) << 16) | (u32(p[3]) << 24);
+            }
+    }
+    if (!g_out.empty()) writePng(g_out + "/colrv1_exact.png", sheet);
+    // analytic spots: solid layers, gradient ends, multiply, foreground at half alpha, clip box
+    auto eq = [](std::array<int, 4> a, std::array<int, 4> b) { return std::abs(a[0] - b[0]) <= 1 && std::abs(a[1] - b[1]) <= 1 && std::abs(a[2] - b[2]) <= 1 && std::abs(a[3] - b[3]) <= 1; };
+    UI_CHECK(eq(at(U'', 500, 400), {255, 128, 128, 255}));  // white 50 % over red
+    UI_CHECK(eq(at(U'', 150, 50), {255, 0, 0, 255}));
+    const auto gl = at(U'', 120, 400), gr = at(U'', 880, 400);
+    UI_CHECK(gl[0] > 240 && gl[2] < 15 && gr[2] > 240 && gr[0] < 15); // red -> blue, left to right
+    UI_CHECK(eq(at(U'', 500, 400), {128, 64, 0, 128}));     // foreground orange, alpha 0.5, premultiplied
+    UI_CHECK(f.renderColor(f.glyphIndex(U''), px, fg, ci) && ci.w <= int(std::ceil(400 * s)) + 2);
+    compareGolden(sheet, "golden/colrv1_exact.png");
+    // exactness: the same image twice, and the golden at max channel difference 0
+    {
+        int w = 0, h = 0, n = 0;
+        if (unsigned char* ref = stbi_load("golden/colrv1_exact.png", &w, &h, &n, 4)) {
+            int maxd = 0;
+            for (int i = 0; w == sheet.width && h == sheet.height && i < w * h; ++i)
+                for (int c = 0; c < 4; ++c)
+                    maxd = std::max(maxd, std::abs(int(ref[i * 4 + c]) - int((sheet.pixels[std::size_t(i)] >> (8 * c)) & 0xFF)));
+            std::printf("colrv1 exact: golden max channel difference %d\n", maxd);
+            // COOKED rebuilds foreground-coloured glyphs from black / white renders: exact up to rounding (1 / 255)
+            UI_CHECK(w == sheet.width && h == sheet.height && maxd <= (textProfile() == TextProfile::Cooked ? 1 : 0));
+            stbi_image_free(ref);
+        }
+    }
+    // through the UI: colour glyph commands sampling the atlas colour page
+    UiContext ui2{{.viewport = {300, 60}, .font = &f}};
+    const NodeHandle l2 = w::label(ui2, ui2.root(), utf8(U""));
+    ui2.setCss(l2, "font-size", "32px");
+    ui2.update();
+    int colorCmds = 0;
+    for (const DrawCmd& c : ui2.drawList().cmds()) colorCmds += c.op == DrawOp::Glyph && c.gradient == kGlyphColor;
+    UI_CHECK(colorCmds == 4);
+    fuse::ui::test::render(ui2, img);
+    if (!g_out.empty()) writePng(g_out + "/colrv1_ui.png", img);
     return finish("fuse_text_colrv1");
 }
 

@@ -14,15 +14,15 @@ constexpr u32 hostFeatureBit(TrackBHostFeature feature) {
 
 void setTrackBHostFeature(TrackBHostFeature feature, bool enabled) {
 #if defined(FUSE_SHIPPING) && FUSE_SHIPPING
-    (void)feature;
-    (void)enabled;
-#else
+    if (feature != TrackBHostFeature::AppPresent) {
+        return;
+    }
+#endif
     if (enabled) {
         g_hostFeatures.fetch_or(hostFeatureBit(feature), std::memory_order_acq_rel);
     } else {
         g_hostFeatures.fetch_and(~hostFeatureBit(feature), std::memory_order_acq_rel);
     }
-#endif
 }
 
 bool trackBHostFeatureEnabled(TrackBHostFeature feature) {

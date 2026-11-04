@@ -1,10 +1,16 @@
-name: Noto Sans Hebrew 3.000, Noto Sans Arabic 2.005, Noto Sans Devanagari 2.001, Noto Sans Symbols 2 2.003, Noto Sans Thai 2.002, Noto Sans SC 2.004 (subset)
-upstream: https://github.com/notofonts (hebrew, arabic, devanagari, symbols, thai), https://github.com/notofonts/noto-cjk (Sans/SubsetOTF/SC)
+name: Noto Sans Hebrew 3.000, Noto Sans Arabic 2.005, Noto Sans Devanagari 2.001, Noto Sans Symbols 2 2.003, Noto Sans Thai 2.002, Noto Sans CJK SC 2.004 (subset)
+upstream: https://github.com/notofonts (hebrew, arabic, devanagari, symbols, thai), https://github.com/notofonts/noto-cjk (Sans/OTF/SimplifiedChinese)
 retrieved: Hebrew / Arabic / Devanagari / Symbols 2 copied unchanged from the Ubuntu/Noto stock font set on the build box; Thai from notofonts.github.io fonts/NotoSansThai/hinted/ttf (2026-11-04, unchanged)
-subset: NotoSansCJKsc-Subset.otf = NotoSansSC-Regular.otf (sha256 faa6c9df652116dde789d351359f3d7e5d2285a2b2a1f04a2d7244df706d5ea9) through
-        pyftsubset (fontTools 4.63) --unicodes=U+3000-303F,U+3040-309F,U+30A0-30FF,U+31F0-31FF,U+FF00-FFEF plus the Han
-        characters with Unihan 15.1 kTGH index <= 1000 or kFrequency <= 2 (1382 ideographs)
-        --layout-features=kern,palt,halt --no-hinting --drop-tables+=VORG,vhea,vmtx,BASE
+subset: NotoSansCJKsc-Subset.otf = NotoSansCJKsc-Regular.otf 2.004 (sha256 2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b,
+        https://github.com/notofonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf; the pan-CJK
+        font with SC default forms) through `python make_cjk_subset.py NotoSansCJKsc-Regular.otf NotoSansCJKsc-Subset.otf`
+        = pyftsubset (fontTools 4.63) --unicodes=U+1100-11FF,U+3000-303F,U+3040-309F,U+30A0-30FF,U+3131-318E,U+31F0-31FF,
+        U+FF00-FFEF plus the Han characters with Unihan 15.1 kTGH index <= 1000 or kFrequency <= 2 (1382 ideographs) plus
+        the 2350 KS X 1001 Hangul syllables (EUC-KR 0xB0A1-0xC8FE), --layout-features=kern,palt,halt,ljmo,vjmo,tjmo
+        --no-hinting --drop-tables+=VORG,vhea,vmtx,BASE. 4576 code points, 5493 glyphs, CFF (CID). Deterministic (head
+        dates come from the source). The Han / kana / punctuation glyphs, advances and vertical metrics are identical to the
+        previous subset of the region font NotoSansSC-Regular.otf 2.004 (sha256 faa6c9df...5ea9), which has no Hangul
+        syllables; only the name table now reads "Noto Sans CJK SC".
 use: FUSE UI font fallback chain (fuse::text::Font::bundledFallbacks)
 license: OFL-1.1
 license_file: OFL.txt
@@ -13,4 +19,4 @@ sha256: NotoSansArabic-Regular.ttf 504d7407d86875acf7d04dfaa0fd7524d0b8797723bc4
 sha256: NotoSansDevanagari-Regular.ttf 79a470365ccb210fa3c7d8d8ff2e005ef9d983cfd067f735a0caf7e15070ca9f
 sha256: NotoSansSymbols2-Regular.ttf 876598db5f1e3bef2bc77c4d94c5b0d5d2c1620be4878a06f18fb5434e331688
 sha256: NotoSansThai-Regular.ttf 61cf814eec46b294d6ea4401ac295d0cecd5207bd2331dcc5a15e7301d30ee44
-sha256: NotoSansCJKsc-Subset.otf 606a396ec7abf574dd0d8c28a89361b95db6a46fb8e8f25888031feefd007336
+sha256: NotoSansCJKsc-Subset.otf 7c9e575b4dd6edfa651cfb7a2b9d91fd8afa0be8c4cbe168f21b8c083abd323b

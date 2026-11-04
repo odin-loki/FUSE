@@ -9,6 +9,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <utility>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -18,6 +19,11 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#else
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -44,6 +50,65 @@ bool readFile(const std::string& utf8Path, std::vector<std::uint8_t>& out) {
     f.seekg(0);
     f.read(reinterpret_cast<char*>(out.data()), n);
     return bool(f);
+}
+
+// Read-only file mapping (COOKED packs: pages are read on first touch, so loading a large pack costs nothing).
+MappedFile::~MappedFile() { reset(); }
+MappedFile::MappedFile(MappedFile&& o) noexcept
+    : m_data(std::exchange(o.m_data, nullptr)), m_size(std::exchange(o.m_size, 0)), m_handle(std::exchange(o.m_handle, nullptr)) {}
+MappedFile& MappedFile::operator=(MappedFile&& o) noexcept {
+    if (this != &o) {
+        reset();
+        m_data = std::exchange(o.m_data, nullptr);
+        m_size = std::exchange(o.m_size, 0);
+        m_handle = std::exchange(o.m_handle, nullptr);
+    }
+    return *this;
+}
+void MappedFile::reset() {
+    if (!m_data) return;
+#if defined(_WIN32)
+    UnmapViewOfFile(m_data);
+    CloseHandle(static_cast<HANDLE>(m_handle));
+#else
+    munmap(const_cast<std::uint8_t*>(m_data), m_size);
+#endif
+    m_data = nullptr;
+    m_size = 0;
+    m_handle = nullptr;
+}
+bool MappedFile::open(const std::string& utf8Path) {
+    reset();
+#if defined(_WIN32)
+    const HANDLE file = CreateFileW(toPath(utf8Path).c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                                    FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) return false;
+    LARGE_INTEGER size{};
+    HANDLE mapping = nullptr;
+    if (GetFileSizeEx(file, &size) && size.QuadPart > 0)
+        mapping = CreateFileMappingW(file, nullptr, PAGE_READONLY, 0, 0, nullptr);
+    CloseHandle(file); // the mapping keeps the file open
+    if (!mapping) return false;
+    const void* view = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0);
+    if (!view) {
+        CloseHandle(mapping);
+        return false;
+    }
+    m_data = static_cast<const std::uint8_t*>(view);
+    m_size = std::size_t(size.QuadPart);
+    m_handle = mapping;
+#else
+    const int fd = ::open(utf8Path.c_str(), O_RDONLY);
+    if (fd < 0) return false;
+    struct stat st {};
+    void* view = MAP_FAILED;
+    if (fstat(fd, &st) == 0 && st.st_size > 0) view = mmap(nullptr, std::size_t(st.st_size), PROT_READ, MAP_PRIVATE, fd, 0);
+    ::close(fd);
+    if (view == MAP_FAILED) return false;
+    m_data = static_cast<const std::uint8_t*>(view);
+    m_size = std::size_t(st.st_size);
+#endif
+    return true;
 }
 } // namespace detail
 

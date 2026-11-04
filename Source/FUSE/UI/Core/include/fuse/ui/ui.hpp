@@ -325,6 +325,11 @@ public:
     /// font-size * scale (crisp glyphs, not a stretched bitmap). Changing it re-lays out and repaints everything.
     void setScale(f32 s);
     f32 scale() const { return m_scale; }
+    /// Text whose device pixel size (font-size * scale) is at least `devicePx` is drawn from multi-channel signed
+    /// distance fields (one MSDF per glyph at GlyphAtlas::kMsdfPixelSize, scaled; crisp at any size, e.g. zoomed or
+    /// world-space UI) instead of per-size coverage. 0 (default) turns it off. Calls fuse::text::enableMsdf().
+    void setMsdfThreshold(f32 devicePx);
+    f32 msdfThreshold() const { return m_msdfThreshold; }
     /// The cursor the pointer should show: the pressed node's while it is held (a drag keeps its resize cursor), else
     /// the hovered node's `cursor` style, inherited from ancestors; Arrow when none sets one.
     CursorShape cursor() const;
@@ -461,6 +466,9 @@ private:
     f32 labelIconWidth(const ComputedStyle& s, bool hasText) const;
     /// paintTextLayout through the node's cached glyph quads (`src` 0: its text layout, 1: its paintString layout).
     void paintTextQuads(DrawList& dl, u32 i, u8 src, u32 rev, const fuse::text::TextLayout& tl, Vec2 o, Color c, f32 px);
+    bool resolveGlyph(const fuse::text::Font& f, std::uint32_t glyph, f32 fpx, const fuse::text::ColorLayer* layer, Color col,
+                      GlyphQuad& q);
+    void emitGlyph(DrawList& dl, const GlyphQuad& q, Vec2 o, Color col, f32 dpx, u32 nodeIdx) const;
     void collectTab(std::vector<u32>& out) const;
     void markArrange(u32 i);
     bool visibleChain(u32 i) const;
@@ -501,6 +509,7 @@ private:
     Vec2 m_pointer{-1.f, -1.f};
     u8 m_mods = 0;
     f32 m_scale = 1.f;
+    f32 m_msdfThreshold = 0.f;
     bool m_reducedMotion = false;
     PointerKind m_pointerKind = PointerKind::Mouse;
     f32 m_pressure = 1.f;

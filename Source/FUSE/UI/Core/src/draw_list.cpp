@@ -206,6 +206,40 @@ struct Clip {
     f32 radius;
 };
 
+// ---- colour / MSDF glyphs (atlas colour page: side size / 2, RGBA8, after the coverage page) ----
+inline const u8* colorTexel(const u8* atlas, int size, int x, int y) {
+    const int cs = size / 2;
+    return atlas + std::size_t(size) * std::size_t(size) + (std::size_t(y) * std::size_t(cs) + std::size_t(x)) * 4;
+}
+
+// MSDF coverage at pixel centre (px, py): the glyph's texels (tw x th at u, v) stretched over `rect`, sampled
+// bilinearly (edge-clamped), median of RGB, scaled by the screen-space distance range (`blur` = range in texels).
+// ui_draw_list.comp and ui_sdf_quad.frag repeat this operation for operation.
+inline f32 msdfCoverage(const DrawCmd& c, const u8* atlas, int size, f32 px, f32 py) {
+    if (c.tw == 0 || c.th == 0 || c.rect.w <= 0.f || c.rect.h <= 0.f) return 0.f;
+    const f32 tw = f32(c.tw), th = f32(c.th);
+    const f32 sx = (px - c.rect.x) * tw / c.rect.w - 0.5f;
+    const f32 sy = (py - c.rect.y) * th / c.rect.h - 0.5f;
+    const f32 fx0 = std::floor(sx), fy0 = std::floor(sy);
+    const f32 fx = sx - fx0, fy = sy - fy0;
+    const int x0 = std::clamp(int(fx0), 0, c.tw - 1), x1 = std::clamp(int(fx0) + 1, 0, c.tw - 1);
+    const int y0 = std::clamp(int(fy0), 0, c.th - 1), y1 = std::clamp(int(fy0) + 1, 0, c.th - 1);
+    const u8* t00 = colorTexel(atlas, size, c.u + x0, c.v + y0);
+    const u8* t10 = colorTexel(atlas, size, c.u + x1, c.v + y0);
+    const u8* t01 = colorTexel(atlas, size, c.u + x0, c.v + y1);
+    const u8* t11 = colorTexel(atlas, size, c.u + x1, c.v + y1);
+    f32 ch[3];
+    for (int k = 0; k < 3; ++k) {
+        const f32 a00 = f32(t00[k]) / 255.f, a10 = f32(t10[k]) / 255.f, a01 = f32(t01[k]) / 255.f, a11 = f32(t11[k]) / 255.f;
+        const f32 top = a00 + (a10 - a00) * fx;
+        const f32 bot = a01 + (a11 - a01) * fx;
+        ch[k] = top + (bot - top) * fy;
+    }
+    const f32 med = std::max(std::min(ch[0], ch[1]), std::min(std::max(ch[0], ch[1]), ch[2]));
+    const f32 spr = c.blur * c.rect.w / tw;
+    return std::clamp(spr * (med - 0.5f) + 0.5f, 0.f, 1.f);
+}
+
 } // namespace
 
 namespace {
@@ -415,7 +449,19 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
                 }
                 case DrawOp::Glyph: {
                     if (!m_atlas) break;
+                    if (c.gradient == kGlyphMsdf) {
+                        const f32 cov = msdfCoverage(c, m_atlas, m_atlasSize, px, py) * clipCov;
+                        if (cov > 0.f) blend(row[x], premul(c.fill, cov));
+                        break;
+                    }
                     const int gx = x - int(c.rect.x), gy = y - int(c.rect.y);
+                    if (c.gradient == kGlyphColor) {
+                        if (gx < 0 || gy < 0 || gx >= c.tw || gy >= c.th) break;
+                        const u8* t = colorTexel(m_atlas, m_atlasSize, c.u + gx, c.v + gy);
+                        const f32 k = std::clamp(c.fill.a, 0.f, 1.f) * clipCov;
+                        blend(row[x], {f32(t[0]) / 255.f * k, f32(t[1]) / 255.f * k, f32(t[2]) / 255.f * k, f32(t[3]) / 255.f * k});
+                        break;
+                    }
                     if (gx < 0 || gy < 0 || gx >= c.tw || gy >= c.th) break;
                     const u8 a = m_atlas[std::size_t(c.v + gy) * std::size_t(m_atlasSize) + std::size_t(c.u + gx)];
                     if (a) blend(row[x], premul(c.fill, f32(a) / 255.f * clipCov));
