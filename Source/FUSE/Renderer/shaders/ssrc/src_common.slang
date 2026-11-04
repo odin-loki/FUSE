@@ -130,19 +130,64 @@ float4 srcDecode(uint2 r) {
                   srcF16ToF32(r.y >> 16));
 }
 
+// --- correctly rounded division / square root (src_common.glsl src_div / src_sqrt) ---------------------------
+float srcResid(float a, float q, float b) {
+    const float p = q * b;
+    const float cq = 4097.0 * q;
+    const float qh = cq - (cq - q);
+    const float ql = q - qh;
+    const float cb = 4097.0 * b;
+    const float bh = cb - (cb - b);
+    const float bl = b - bh;
+    const float e = ((qh * bh - p) + qh * bl + ql * bh) + ql * bl;
+    return (a - p) - e;
+}
+float srcNextToward(float q, bool up) {
+    const uint bits = asuint(q);
+    return asfloat((q > 0.0) == up ? bits + 1u : bits - 1u);
+}
+float srcRoundRn(float a, float q, float b, bool root) {
+    float r = srcResid(a, q, root ? q : b);
+    for (int i = 0; i < 4 && r != 0.0; ++i) {
+        const float qn = srcNextToward(q, root ? r > 0.0 : (r > 0.0) == (b > 0.0));
+        const float rn = srcResid(a, qn, root ? qn : b);
+        if (abs(rn) < abs(r) || (abs(rn) == abs(r) && (asuint(q) & 1u) != 0u)) {
+            q = qn;
+            r = rn;
+        } else {
+            break;
+        }
+    }
+    return q;
+}
+float srcDiv(float a, float b) {
+    const float q = a / b;
+    if (q == 0.0 || isinf(q) || isnan(q)) {
+        return q;
+    }
+    return srcRoundRn(a, q, b, false);
+}
+float srcSqrt(float x) {
+    const float s = sqrt(x);
+    if (!(x > 0.0) || isinf(x)) {
+        return s;
+    }
+    return srcRoundRn(x, s, s, true);
+}
+
 // --- vector helpers -----------------------------------------------------------------------------------------
 float srcDot(float3 a, float3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 float3 srcScale(float3 v, float s) { return float3(v.x * s, v.y * s, v.z * s); }
 float3 srcAdd(float3 a, float3 b) { return float3(a.x + b.x, a.y + b.y, a.z + b.z); }
 float3 srcSub(float3 a, float3 b) { return float3(a.x - b.x, a.y - b.y, a.z - b.z); }
 float3 srcNormalize(float3 v) {
-    const float len = sqrt(srcDot(v, v));
+    const float len = srcSqrt(srcDot(v, v));
     if (len < 1e-8) {
         return float3(0.0);
     }
-    return srcScale(v, 1.0 / len);
+    return srcScale(v, srcDiv(1.0, len));
 }
-float srcRayCoord(uint p, float c, float f) { return ((float(p) + 0.5) - c) / f; }
+float srcRayCoord(uint p, float c, float f) { return srcDiv((float(p) + 0.5) - c, f); }
 
 uint srcClampIndex(int v, uint count) {
     if (v < 0) {
@@ -153,8 +198,8 @@ uint srcClampIndex(int v, uint count) {
 }
 
 uint4 srcBilinear(float px, float py, float spacing, uint countX, uint countY, out float4 w) {
-    const float u = px / spacing - 0.5;
-    const float v = py / spacing - 0.5;
+    const float u = srcDiv(px, spacing) - 0.5;
+    const float v = srcDiv(py, spacing) - 0.5;
     const float fu = floor(u);
     const float fv = floor(v);
     const float ax = u - fu;

@@ -25,14 +25,14 @@ SrcRay srcRaySetup(float3 o, float3 d) {
     }
     float len = F.maxDistance;
     if (d.z < 0.0) {
-        len = min(len, (o.z - nearLimit) / (-d.z));
+        len = min(len, srcDiv(o.z - nearLimit, -d.z));
     }
     if (!(len > 1e-4)) {
         return r;
     }
     const float3 e = srcAdd(o, srcScale(d, len));
-    r.kO = 1.0 / o.z;
-    r.kE = 1.0 / e.z;
+    r.kO = srcDiv(1.0, o.z);
+    r.kE = srcDiv(1.0, e.z);
     r.qO = srcScale(o, r.kO);
     r.qE = srcScale(e, r.kE);
     const float ox = F.fx * r.qO.x + F.cx;
@@ -41,14 +41,14 @@ SrcRay srcRaySetup(float3 o, float3 d) {
     const float ey = F.fy * r.qE.y + F.cy;
     const float dx = ex - ox;
     const float dy = ey - oy;
-    r.len = sqrt(dx * dx + dy * dy);
+    r.len = srcSqrt(dx * dx + dy * dy);
     r.valid = true;
     return r;
 }
 
 float3 srcPointAt(SrcRay r, float f) {
     const float k = r.kO + (r.kE - r.kO) * f;
-    const float inv = 1.0 / k;
+    const float inv = srcDiv(1.0, k);
     const float qx = r.qO.x + (r.qE.x - r.qO.x) * f;
     const float qy = r.qO.y + (r.qE.y - r.qO.y) * f;
     const float qz = r.qO.z + (r.qE.z - r.qO.z) * f;
@@ -71,10 +71,10 @@ bool srcInterval(SrcRay r, uint ci, out float fA, out float fB, out bool ended) 
     if (tS > 0.0 && !(r.len > tS)) {
         return false;
     }
-    fA = tS / r.len;
+    fA = srcDiv(tS, r.len);
     ended = !(tE < r.len);
     if (!ended) {
-        fB = tE / r.len;
+        fB = srcDiv(tE, r.len);
     }
     return true;
 }
@@ -106,13 +106,13 @@ float3 srcFarField(float3 o, float3 d) {
 
 // xyz = hit radiance, w = state (0 hit, 1 continue, 2 escaped).
 float srcPatchDepth(float zc, float nd, float3 n, float x, float y) {
-    const float rx = (x - F.cx) / F.fx;
-    const float ry = (y - F.cy) / F.fy;
+    const float rx = srcDiv(x - F.cx, F.fx);
+    const float ry = srcDiv(y - F.cy, F.fy);
     const float nr = srcDot(n, float3(rx, ry, 1.0));
     if (!(abs(nr) >= 1e-6)) {
         return zc;
     }
-    float q = nd / nr;
+    float q = srcDiv(nd, nr);
     if (!(q > 0.5)) {
         q = 0.5;
     }
@@ -123,8 +123,8 @@ float srcPatchDepth(float zc, float nd, float3 n, float x, float y) {
 }
 
 float4 srcTrace(float3 a, float3 b, uint startPixel) {
-    const float ka = 1.0 / a.z;
-    const float kb = 1.0 / b.z;
+    const float ka = srcDiv(1.0, a.z);
+    const float kb = srcDiv(1.0, b.z);
     const float ax = F.fx * (a.x * ka) + F.cx;
     const float ay = F.fy * (a.y * ka) + F.cy;
     const float bx = F.fx * (b.x * kb) + F.cx;
@@ -135,9 +135,9 @@ float4 srcTrace(float3 a, float3 b, uint startPixel) {
     if (!(len >= 1e-3)) {
         return float4(0.0, 0.0, 0.0, 1.0);
     }
-    const float n = min(ceil(len / F.stride), 1048576.0);
+    const float n = min(ceil(srcDiv(len, F.stride)), 1048576.0);
     const uint steps = uint(n);
-    const float fStep = F.stride / len;
+    const float fStep = srcDiv(F.stride, len);
     const float fw = float(F.width);
     const float fh = float(F.height);
     float prevZ = a.z;
@@ -151,7 +151,7 @@ float4 srcTrace(float3 a, float3 b, uint startPixel) {
         if (!(sx >= 0.0 && sy >= 0.0 && sx < fw && sy < fh)) {
             return float4(0.0, 0.0, 0.0, 2.0);
         }
-        const float rayZ = 1.0 / (ka + (kb - ka) * f);
+        const float rayZ = srcDiv(1.0, ka + (kb - ka) * f);
         const uint hx = uint(sx);
         const uint hy = uint(sy);
         const uint pixel = hy * F.width + hx;
@@ -219,9 +219,9 @@ float4 srcChildAverage(uint ci, uint ux, uint uy, uint k, float3 n) {
         }
     }
     if (sw > 0.0) {
-        return float4(sr / sw, sg / sw, sb / sw, sv / sw);
+        return float4(srcDiv(sr, sw), srcDiv(sg, sw), srcDiv(sb, sw), srcDiv(sv, sw));
     }
-    return float4(ar / aw, ag / aw, ab / aw, av / aw);
+    return float4(srcDiv(ar, aw), srcDiv(ag, aw), srcDiv(ab, aw), srcDiv(av, aw));
 }
 
 [numthreads(64, 1, 1)]
@@ -313,7 +313,7 @@ void main(uint3 gid: SV_GroupID, uint3 lid: SV_GroupThreadID) {
                     bool toParent = false;
                     const SrcRay qr = srcRaySetup(qs[j].o, d);
                     if (qr.valid && qr.len >= 1e-3 && F.tEnd[ci] < qr.len) {
-                        target = srcPointAt(qr, F.tEnd[ci] / qr.len);
+                        target = srcPointAt(qr, srcDiv(F.tEnd[ci], qr.len));
                         toParent = true;
                     }
                     const float4 s = srcTrace(A, target, p.pixel);
@@ -332,10 +332,10 @@ void main(uint3 gid: SV_GroupID, uint3 lid: SV_GroupThreadID) {
                     sw = sw + wj;
                 }
                 if (sw > 0.0) {
-                    r = sr / sw;
-                    g = sg / sw;
-                    b = sb / sw;
-                    vis = sv / sw;
+                    r = srcDiv(sr, sw);
+                    g = srcDiv(sg, sw);
+                    b = srcDiv(sb, sw);
+                    vis = srcDiv(sv, sw);
                 } else {
                     fallback = true;
                 }
@@ -371,10 +371,10 @@ void main(uint3 gid: SV_GroupID, uint3 lid: SV_GroupThreadID) {
                         sw = sw + wj;
                     }
                     if (sw > 0.0) {
-                        r = sr / sw;
-                        g = sg / sw;
-                        b = sb / sw;
-                        vis = sv / sw;
+                        r = srcDiv(sr, sw);
+                        g = srcDiv(sg, sw);
+                        b = srcDiv(sb, sw);
+                        vis = srcDiv(sv, sw);
                     } else {
                         const float3 farRgb = srcFarField(p.o, d);
                         r = farRgb.x;
