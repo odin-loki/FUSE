@@ -24,6 +24,12 @@ else()
     target_link_libraries(fuse_app_native PRIVATE ${CMAKE_DL_LIBS})
 endif()
 
+# fuse_app_a11y: WindowAccessibility (fuse_ui_a11y bridge + AccessKit adapter wired to a native window)
+if(TARGET fuse_ui_a11y)
+    add_library(fuse_app_a11y STATIC src/accessibility.cpp)
+    target_link_libraries(fuse_app_a11y PUBLIC fuse_app_native fuse_ui_a11y)
+endif()
+
 option(FUSE_BUILD_APP_SAMPLES "Build the fuse_app samples (hello_app, notes_app)" ON)
 if(FUSE_BUILD_APP_SAMPLES)
     foreach(s hello_app notes_app)

@@ -267,6 +267,7 @@ struct NativePlatform::Impl {
             std::vector<u32> staged; ///< OS pixel order
         };
         std::vector<Popup> popups;
+        MessageHook hook{};
 #if defined(_WIN32)
         std::vector<u32> bgra; ///< GDI fallback staging
         wchar_t highSurrogate = 0;
@@ -502,6 +503,7 @@ Vec2 lparamPos(LPARAM lp) { return {f32(short(LOWORD(lp))), f32(short(HIWORD(lp)
 LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto* r = reinterpret_cast<NativePlatform::Impl::Rec*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     if (!r || !r->win) return DefWindowProcW(hwnd, msg, wp, lp);
+    if (std::intptr_t res = 0; r->hook.fn && r->hook.fn(r->hook.user, msg, wp, lp, res)) return LRESULT(res);
     AppWindow& w = *r->win;
     UiContext& ui = w.ui();
     switch (msg) {
@@ -1096,6 +1098,11 @@ Vec2 NativePlatform::screenOrigin(const AppWindow& w) const {
     return {f32(ox), f32(oy)};
 }
 bool NativePlatform::postClick(unsigned long long nativeWin, Vec2 at) { return nativeWin && m->postClickOs(nativeWin, at); }
+bool NativePlatform::setMessageHook(const AppWindow& w, const MessageHook& hook) {
+    for (Impl::Rec* r : m->recs)
+        if (r->win == &w && r->handle) { r->hook = hook; return true; }
+    return false;
+}
 unsigned long long NativePlatform::nativeWindow(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);
     return r ? r->handle : 0;

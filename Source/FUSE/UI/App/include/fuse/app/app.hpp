@@ -203,6 +203,7 @@ public:
 
     /// Replaces the event pump (an empty source restores the default sleep pump).
     void setEventSource(const EventSource& s);
+    const EventSource& eventSource() const { return m_events; } ///< the current pump (wrappers chain to it)
     void setClock(const Clock& c) { m_clock = c; }
     /// One loop iteration: pump events (waiting at most until the next UI deadline, capped by `maxWait`), then
     /// update / present every window that needs it and drop closed windows. False once the app should exit.

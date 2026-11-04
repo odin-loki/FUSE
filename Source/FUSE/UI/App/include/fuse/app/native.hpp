@@ -14,6 +14,7 @@
 
 #include "fuse/app/app.hpp"
 
+#include <cstdint>
 #include <memory>
 #include <span>
 #include <vector>
@@ -59,6 +60,13 @@ struct NativeOptions {
     /// Popup menus / combo lists / submenus as their own borderless OS windows (Qt-style; may extend past the main
     /// window, clamp to the screen). X11: override-redirect windows; Win32: WS_POPUP + WS_EX_NOACTIVATE owned windows.
     bool osPopups = false;
+};
+
+/// Per-window OS message hook (Win32: runs first in the window procedure; return true to consume the message with
+/// `result` as its LRESULT). Accessibility adapters answer WM_GETOBJECT through it. Not called on X11.
+struct MessageHook {
+    void* user = nullptr;
+    bool (*fn)(void* user, unsigned msg, std::uintptr_t wp, std::intptr_t lp, std::intptr_t& result) = nullptr;
 };
 
 class NativePlatform {
@@ -108,6 +116,8 @@ public:
     /// Posts a real left click to a native window (XSendEvent / PostMessage) at window-local `at`; it is then
     /// delivered by the normal event pump (tests drive popup windows this way).
     bool postClick(unsigned long long nativeWin, fuse::ui::Vec2 at);
+    /// Installs (or with an empty hook removes) the message hook of a shown window. False when not shown.
+    bool setMessageHook(const AppWindow& w, const MessageHook& hook);
 
     struct Impl;
 
