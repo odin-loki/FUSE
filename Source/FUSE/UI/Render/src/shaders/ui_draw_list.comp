@@ -1,4 +1,5 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 // FUSE UI GPU backend (fuse_ui_vk, plan §4.9 / UI4): "ui.draw_list" — rasterises a packed DrawList (GpuDrawData,
 // include/fuse/ui/render/gpu_draw_data.hpp) into an RGBA8 storage image, blending over what is there.
 // The specification is fuse::ui::CpuRasterizer (Core/src/draw_list.cpp): same per-pixel arithmetic, same operation
@@ -147,6 +148,9 @@ vec4 extFetch(uint e, ivec2 q) {
 }
 
 uint atlasByte(uint idx) { return (ui_atlas.words[idx >> 2] >> ((idx & 3u) * 8u)) & 0xFFu; }
+
+#define GLYPH_INV255(k) ui_inv255[k]
+#include "ui_glyph.glsl"
 
 uvec4 loadTarget(ivec2 ip) { return uvec4(floor(imageLoad(ui_target, ip) * 255.0 + 0.5)); }
 
@@ -302,9 +306,19 @@ void main() {
             precise float cov = (1.0 - t * t * (3.0 - 2.0 * t)) * clipCov;
             blend(dst, premul(c.fill, cov));
         } else if (op == kGlyph) {
+            if (gradient == kGlyphMsdf) {
+                if (pc.atlasSize == 0u) continue;
+                const float cov = glyphMsdfCoverage(c.rect, c.info.y, c.info.z, c.params.y, px, py) * clipCov;
+                if (cov > 0.0) blend(dst, premul(c.fill, cov));
+                continue;
+            }
             const int gx = int(p.x) - int(c.rect.x), gy = int(p.y) - int(c.rect.y);
             const int tw = int(c.info.z & 0xFFFFu), th = int(c.info.z >> 16);
             if (gx < 0 || gy < 0 || gx >= tw || gy >= th || pc.atlasSize == 0u) continue;
+            if (gradient == kGlyphColor) {
+                blend(dst, glyphColorSource(c.info.y, gx, gy, c.fill.a, clipCov));
+                continue;
+            }
             const uint u = c.info.y & 0xFFFFu, v = c.info.y >> 16;
             const uint a = atlasByte((v + uint(gy)) * pc.atlasSize + u + uint(gx));
             if (a != 0u) blend(dst, premul(c.fill, ui_inv255[a] * clipCov));

@@ -103,7 +103,8 @@ bool UiVkRenderer::init(const UiVkDesc& desc) {
     m_offsets[0] = 0;
     m_offsets[1] = alignUp(m_offsets[0] + u64(desc.maxCmds) * sizeof(GpuCmd), al);
     m_offsets[2] = alignUp(m_offsets[1] + u64(desc.maxTileWords) * 4, al);
-    m_offsets[3] = alignUp(m_offsets[2] + alignUp(u64(desc.maxAtlasSize) * desc.maxAtlasSize, 4), al);
+    // coverage page + colour page (GlyphAtlas: (size / 2)^2 RGBA texels = size^2 bytes)
+    m_offsets[3] = alignUp(m_offsets[2] + alignUp(u64(desc.maxAtlasSize) * desc.maxAtlasSize * 2, 4), al);
     m_offsets[4] = alignUp(m_offsets[3] + u64(desc.maxImageWords) * 4, al);
 
     const bool sdf = desc.backend == UiVkBackend::SdfQuads;

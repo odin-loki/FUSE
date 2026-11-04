@@ -61,13 +61,14 @@ struct GpuDrawData {
     std::vector<GpuSegment> segments;
     std::vector<u32> images; ///< per image: offset (in u32 pixels into `pixels`), width, height, 0; then pixels
     GpuPush push{};
-    const u8* atlas = nullptr; ///< glyph coverage atlas (atlasSize^2 bytes), uploaded as-is
+    const u8* atlas = nullptr; ///< glyph atlas (GlyphAtlas::pixels()), uploaded as-is
     u32 atlasSize = 0;
+    bool atlasColor = false; ///< a colour / MSDF glyph is drawn: the colour page after the coverage page is uploaded too
 
     std::size_t cmdBytes() const { return cmds.size() * sizeof(GpuCmd); }
     std::size_t tileBytes() const { return tiles.size() * 4; }
     std::size_t imageBytes() const { return images.size() * 4; }
-    std::size_t atlasBytes() const { return std::size_t(atlasSize) * atlasSize; }
+    std::size_t atlasBytes() const { return std::size_t(atlasSize) * atlasSize * (atlasColor ? 2u : 1u); }
 };
 
 /// Packs `list` for a width x height target, restricted to `scissor` (whole target when empty). `images` are the

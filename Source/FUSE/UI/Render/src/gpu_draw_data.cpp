@@ -81,6 +81,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     out.segments.clear();
     out.atlas = atlas;
     out.atlasSize = atlas ? atlasSize : 0;
+    out.atlasColor = false;
     const u32 tilesX = (width + kUiTile - 1) / kUiTile, tilesY = (height + kUiTile - 1) / kUiTile;
     const u32 tileCount = tilesX * tilesY;
     out.push = GpuPush{};
@@ -204,6 +205,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         const Rect area = bounds.intersect(clip.r);
         if (area.empty()) continue;
         if (c.op == DrawOp::Glyph && !atlas) continue;
+        if (c.op == DrawOp::Glyph && c.gradient != kGlyphCoverage) out.atlasColor = true;
         if (c.op == DrawOp::Image && c.image >= imageCount) continue;
         g.info[0] = u32(c.op) | (u32(c.gradient) << 8);
         g.info[1] = u32(c.u) | (u32(c.v) << 16);
