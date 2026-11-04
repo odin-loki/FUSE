@@ -343,6 +343,12 @@ ANDROID_SERIAL=emulator-5554 ctest --test-dir build-android -L android   # the f
 
 The gates run on the host (`App/android/android_gate.py`: install, drive with `am` / `input` / `settings`, read the
 state file the demo keeps with `run-as`) and skip with 77 when adb or a device with the APK's ABI is missing.
+Two §6 budget gates sit beside them: `fuse_ui_bench_hud_mobile` runs the `hud_bench` APK (the ~300-node HUD of
+`Game/samples/hud_bench_scene.hpp`, the same workload as the desktop `fuse_ui_bench_hud`) and gates the median UI CPU
+per frame at 2 ms; `fuse_app_hello_startup_android` cold-launches `hello_app --startup-probe` six times (the first is a
+warm-up) and gates the median process start → first presented frame at 400 ms. On an emulator the startup gate only
+reports and skips (77): the emulator's own process / activity start takes ~0.4–0.5 s before `main()` and its Vulkan
+is SwiftShader; `android_gate.py --strict` enforces it there too.
 Emulator: an x86_64 Google APIs image (API 36 was used) with `emulator -avd <name> -no-window -gpu host` (or
 `-gpu swiftshader_indirect`) has Vulkan (`adb shell pm has-feature android.hardware.vulkan.version`).
 

@@ -677,6 +677,10 @@ unsigned long long NativePlatform::nativeWindow(const AppWindow& w) const {
 bool NativePlatform::setIcon(const AppWindow&, std::span<const Image>) { return false; } // the launcher icon is in the APK
 bool NativePlatform::resizeWindow(const AppWindow&, unsigned, unsigned) { return false; } // the activity decides
 std::vector<int> NativePlatform::iconSizes(const AppWindow&) const { return {}; }
+std::string defaultCacheDir() { // the app's private files dir (internalDataPath) + /cache
+    const char* base = g_app && g_app->activity ? g_app->activity->internalDataPath : nullptr;
+    return base && *base ? std::string(base) + "/cache" : std::string();
+}
 // popups are in-window overlays on mobile
 std::size_t NativePlatform::popupCount(const AppWindow&) const { return 0; }
 unsigned long long NativePlatform::popupWindow(const AppWindow&, std::size_t) const { return 0; }

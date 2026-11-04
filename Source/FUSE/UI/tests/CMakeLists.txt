@@ -513,5 +513,38 @@ if(TARGET fuse_ui_game)
         add_test(NAME fuse_ui_game_hud_demo COMMAND hud_demo --screenshot=${CMAKE_CURRENT_BINARY_DIR}/hud_demo.png)
         add_test(NAME fuse_ui_game_world_panel_demo COMMAND world_panel_demo --screenshot=${CMAKE_CURRENT_BINARY_DIR}/world_panel_demo.png)
         set_tests_properties(fuse_ui_game_hud_demo fuse_ui_game_world_panel_demo PROPERTIES LABELS fuse_ui)
+        # §6 `hud` profile size: the HUD sample with cooked .fusefont text (FUSE_UI_TEXT=COOKED: no font parser,
+        # rasteriser or shaper at run time). Baseline per toolchain, +10 %. MSVC 19.5x x64 Release, standalone UI
+        # tree, measured 2026-11-05 (MSVC Build Tools 2026): 596,480 bytes (MINIMAL: 635,904) -> budget 656,200.
+        # Other builds (other toolchains, the engine tree) report and skip (77) until a baseline is set with
+        # -DFUSE_UI_HUD_BINARY_BUDGET=<bytes>.
+        set(_hud_budget 0)
+        if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT TARGET fuse_rhi)
+            set(_hud_budget 656200)
+        endif()
+        if(FUSE_UI_HUD_BINARY_BUDGET)
+            set(_hud_budget ${FUSE_UI_HUD_BINARY_BUDGET})
+        endif()
+        if(NOT FUSE_UI_TEXT STREQUAL "COOKED")
+            set(_hud_budget 0) # the gate is about the cooked-text profile
+        endif()
+        set(_hud_bin $<TARGET_FILE:hud_demo>)
+        add_executable(fuse_ui_hud_binary_size_check test_app_binary_size.cpp)
+        if(NOT MSVC AND CMAKE_STRIP)
+            set(_hud_bin ${CMAKE_CURRENT_BINARY_DIR}/hud_demo.stripped)
+            add_custom_target(fuse_ui_hud_demo_stripped ALL
+                COMMAND ${CMAKE_STRIP} -o ${_hud_bin} $<TARGET_FILE:hud_demo> DEPENDS hud_demo VERBATIM)
+            add_dependencies(fuse_ui_hud_binary_size_check fuse_ui_hud_demo_stripped)
+        endif()
+        add_test(NAME fuse_ui_hud_binary_size COMMAND fuse_ui_hud_binary_size_check --name=fuse_ui_hud_binary_size
+                 --file=${_hud_bin} --budget=${_hud_budget}
+                 "--profile=hud, ${CMAKE_CXX_COMPILER_ID} ${CMAKE_BUILD_TYPE}, text ${FUSE_UI_TEXT}")
+        set_tests_properties(fuse_ui_hud_binary_size PROPERTIES SKIP_RETURN_CODE 77 LABELS "fuse_ui;gate")
     endif()
+    # §6 HUD budget: ~300-node HUD animated as in play, UI CPU per frame median <= 0.5 ms (the scene is shared with the
+    # hud_bench Android app behind fuse_ui_bench_hud_mobile)
+    fuse_ui_test(fuse_ui_bench_hud test_bench_hud.cpp)
+    target_link_libraries(fuse_ui_bench_hud PRIVATE fuse_ui_game)
+    target_include_directories(fuse_ui_bench_hud PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../Game/samples)
+    set_tests_properties(fuse_ui_bench_hud PROPERTIES LABELS "fuse_ui;gate" RUN_SERIAL TRUE) # timing budget
 endif()
