@@ -42,6 +42,18 @@ foreach(g shaping_scripts system_fonts cache_zero_alloc colrv1 dpi_1 dpi_1_25 dp
                          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endforeach()
 
+# Colour glyphs (CBDT / sbix strikes) and MSDF glyphs (quality, UI threshold, GPU parity when fuse_ui_vk is built).
+foreach(g bitmap_emoji msdf)
+    fuse_ui_test(fuse_text_${g} test_text_color.cpp)
+    target_compile_definitions(fuse_text_${g} PRIVATE FUSE_TEXT_GATE="${g}")
+    set_tests_properties(fuse_text_${g} PROPERTIES LABELS "fuse_ui;gate;text" SKIP_RETURN_CODE 77
+                         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} ENVIRONMENT "${FUSE_UI_LVP_ENV}")
+    if(TARGET fuse_ui_vk)
+        target_link_libraries(fuse_text_${g} PRIVATE fuse_ui_vk ${FUSE_UI_VK_LINK})
+        target_compile_definitions(fuse_text_${g} PRIVATE FUSE_TEXT_COLOR_HAVE_VK=1)
+    endif()
+endforeach()
+
 find_package(Threads REQUIRED)
 target_link_libraries(fuse_ui_single_thread_parity PRIVATE Threads::Threads)
 target_link_libraries(fuse_ui_event_routing PRIVATE Threads::Threads)
