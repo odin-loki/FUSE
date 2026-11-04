@@ -1358,8 +1358,9 @@ int runFuseUi(Context& ctx, SceneTier tier) {
 int runHudlessInvariant(Context& ctx, SceneTier tier) {
     constexpr u32 kFrames = 6u;
     std::vector<std::vector<u8>> ref(kFrames);
-    u32 diffOut = 0, badHud = 0;
-    for (int pass = 0; pass < 2; ++pass) {
+    u32 diffOut = 0, badHud = 0, badCtl = 0;
+    // Pass 0: reference, no UI. Pass 1: control, no UI again (driver determinism). Pass 2: with the UI stage.
+    for (int pass = 0; pass < 3; ++pass) {
         SceneRig rig;
         if (const int rc = initRig(ctx, rig, tier); rc != 0) {
             return rc;
@@ -1370,7 +1371,7 @@ int runHudlessInvariant(Context& ctx, SceneTier tier) {
         }
         fuse::ui::render::UiFrameSource ui;
         fuse::ui::DrawList list;
-        if (pass == 1) {
+        if (pass == 2) {
             if (!ui.init(ctx.device.get())) {
                 std::printf("SKIP: ui.draw_list kernel not available\n");
                 return kSkip;
@@ -1399,16 +1400,29 @@ int runHudlessInvariant(Context& ctx, SceneTier tier) {
             std::vector<u8> hud = bytesAt(ctx, oHud, n);
             if (pass == 0) {
                 ref[f] = std::move(hud);
+            } else if (pass == 1) {
+                if (hud != ref[f]) {
+                    ++badCtl;
+                    u32 nd = 0, md = 0;
+                    for (u64 b = 0; b < n; ++b) {
+                        const u32 d = hud[b] > ref[f][b] ? hud[b] - ref[f][b] : ref[f][b] - hud[b];
+                        nd += d ? 1u : 0u;
+                        md = std::max(md, d);
+                    }
+                    std::printf("control frame %u: %u / %llu bytes differ (max byte delta %u)\n", f, nd,
+                                static_cast<unsigned long long>(n), md);
+                }
             } else {
                 badHud += hud == ref[f] ? 0u : 1u;
                 diffOut += bytesAt(ctx, oOut, n) != ref[f] ? 1u : 0u;
             }
         }
-        if (pass == 1) {
+        if (pass == 2) {
             rig.renderer.setUiSource({});
             ui.destroy();
         }
     }
+    std::printf("hudless_invariant: control (no UI twice) %u / %u frames differ\n", badCtl, kFrames);
     std::printf("hudless_invariant: %u / %u frames with a HUD-less mismatch, UI visible in %u frames\n", badHud,
                 kFrames, diffOut);
     expect(badHud == 0u, "HUD-less image / temporal history identical with and without the UI stage");
