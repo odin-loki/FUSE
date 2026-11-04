@@ -444,6 +444,10 @@ endif()
 if(TARGET fuse_ui_designer_lib AND TARGET fuse_app_native AND NOT ANDROID)
     add_executable(fuse_ui_designer Designer/app/designer_main.cpp)
     target_link_libraries(fuse_ui_designer PRIVATE fuse_ui_designer_lib fuse_app_native)
+    if(TARGET fuse_ui_icons) # the starter pack for the icon picker (--icons=<pack> overrides)
+        add_dependencies(fuse_ui_designer fuse_ui_icons)
+        target_compile_definitions(fuse_ui_designer PRIVATE FUSE_UI_DESIGNER_ICONS="${FUSE_UI_ICON_PACK}")
+    endif()
 endif()
 
 # ---- fuse_ui_game: game UI (UI7) — HUD widgets, world markers / panels, gamepad nav, input arbitration ----

@@ -279,6 +279,10 @@ endif()
 if(TARGET fuse_ui_designer_lib)
     fuse_ui_test(fuse_ui_designer_roundtrip test_designer.cpp)
     target_link_libraries(fuse_ui_designer_roundtrip PRIVATE fuse_ui_designer_lib)
+    if(TARGET fuse_ui_icons) # icon picker over the starter pack
+        add_dependencies(fuse_ui_designer_roundtrip fuse_ui_icons)
+        target_compile_definitions(fuse_ui_designer_roundtrip PRIVATE FUSE_UI_ICON_PACK="${FUSE_UI_ICON_PACK}")
+    endif()
 endif()
 
 # UI10 platform feel: kinetic scroll physics, haptics hook

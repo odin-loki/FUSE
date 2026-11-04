@@ -1,10 +1,12 @@
 #include "fuse/ui/designer/designer.hpp"
 
+#include "fuse/ui/icons.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
 
 #include <algorithm>
 #include <charconv>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 
@@ -514,7 +516,7 @@ struct RootW {
 };
 
 struct PropRow { const char* name; const char* key; };
-const PropRow kRows[] = {
+const PropRow kRows[] = { // curated rows; the registry adds the rest (allRows)
     {"Node", nullptr}, {"id", "id"}, {"text", "text"}, {"classes", "classes"}, {"min", "min"}, {"max", "max"}, {"value", "value"},
     {"Layout", nullptr}, {"width", "style.width"}, {"height", "style.height"}, {"padding", "style.padding"}, {"gap", "style.gap"},
     {"flex-grow", "style.flex-grow"}, {"flex-direction", "style.flex-direction"},
@@ -522,10 +524,42 @@ const PropRow kRows[] = {
     {"border", "style.border"}, {"radius", "style.border-radius"}, {"font-size", "style.font-size"},
     {"align-items", "style.align-items"}, {"justify-content", "style.justify-content"},
 };
-const PropRow* rowNamed(std::string_view n) {
-    for (const PropRow& r : kRows)
-        if (r.key && n == r.name) return &r;
+// Grid rows: the curated ones, the icon / effect pickers, then every other style property from the registry.
+struct Row { std::string name, key; w::PropKind kind = w::PropKind::Text; };
+constexpr std::string_view kNoneOption = "(none)";
+const std::vector<Row>& allRows() {
+    static const std::vector<Row> rows = [] {
+        std::vector<Row> v;
+        for (const PropRow& r : kRows) v.push_back({r.name, r.key ? r.key : "", r.key ? w::PropKind::Text : w::PropKind::Group});
+        v.push_back({"Icon and effect", "", w::PropKind::Group});
+        v.push_back({"icon", "style.icon", w::PropKind::Enum});
+        v.push_back({"icon-size", "style.icon-size", w::PropKind::Text});
+        v.push_back({"effect", "style.effect", w::PropKind::Enum});
+        v.push_back({"effect-params", "style.effect", w::PropKind::Text}); // the full name(p0, ...) text
+        v.push_back({"All style", "", w::PropKind::Group});
+        for (int p = 0; p < kPropCount; ++p) {
+            const PropInfo& pi = propInfo(Prop(p));
+            const std::string key = "style." + std::string(pi.cssName);
+            if (std::any_of(v.begin(), v.end(), [&](const Row& r) { return r.key == key; })) continue;
+            v.push_back({std::string(pi.cssName), key, pi.type == PropType::Color ? w::PropKind::Color : w::PropKind::Text});
+        }
+        return v;
+    }();
+    return rows;
+}
+const Row* rowNamed(std::string_view n) {
+    for (const Row& r : allRows())
+        if (!r.key.empty() && n == r.name) return &r;
     return nullptr;
+}
+std::string iconOf(const DesignDocument& d, u32 i) {
+    std::string s = d.prop(i, "icon");
+    return s.empty() ? d.prop(i, "style.icon") : s;
+}
+std::string_view effectName(std::string_view css) {
+    css = css.substr(0, css.find('('));
+    while (!css.empty() && css.back() == ' ') css.remove_suffix(1);
+    return css;
 }
 JsonValue parseValue(std::string_view key, std::string_view text) {
     if (text.empty()) return JsonValue{};
@@ -542,7 +576,10 @@ JsonValue parseValue(std::string_view key, std::string_view text) {
         }
         return a;
     }
-    if (key != "id" && key != "text") {
+    // numbers become JSON numbers (px in style objects), except where a plain number is not a length (opacity, ...)
+    Prop prop{};
+    const bool unitless = key.starts_with("style.") && findProp(key.substr(6), prop) && propInfo(prop).type != PropType::Length;
+    if (key != "id" && key != "text" && key != "icon" && !unitless) {
         double d = 0.0;
         const auto r = std::from_chars(text.data(), text.data() + text.size(), d);
         if (r.ec == std::errc{} && r.ptr == text.data() + text.size()) return num(d);
@@ -559,7 +596,7 @@ Designer::Designer(UiContext& ui, NodeHandle parent) : m_ui(ui) {
     w::install(ui);
     if (ui.registry().find("designcanvas") == 0xFFFFFFFFu) ui.registry().registerWidget<CanvasW>();
     if (ui.registry().find("designerroot") == 0xFFFFFFFFu) ui.registry().registerWidget<RootW>();
-    ui.addStyleSheet(R"(
+    (void)ui.addStyleSheet(R"(
         .designer { gap: 0px; padding: 0px; flex-grow: 1; }
         .designer-bar { gap: 4px; padding: 6px; background: var(--surface); border: 1px var(--border); }
         .designer-side { width: 220px; gap: 6px; padding: 6px; }
@@ -568,6 +605,10 @@ Designer::Designer(UiContext& ui, NodeHandle parent) : m_ui(ui) {
         .designcanvas { flex-grow: 1; padding: 16px; background: #15171c; border: 1px var(--border); }
         .dsel { border: 2px #4aa3ff; }
         .designer-style { height: 190px; }
+        .designer-iconhost { height: 96px; padding: 0px; border: 1px var(--border); }
+        .designer-icons { layout: flow; gap: 2px; padding: 2px; }
+        .designer-icontile { padding: 3px; }
+        .designer-icon-on { border: 1px #4aa3ff; }
         .designer-status { padding: 4px 8px; color: var(--text-dim); }
     )");
     if (!ui.alive(parent)) parent = ui.root();
@@ -617,9 +658,15 @@ Designer::Designer(UiContext& ui, NodeHandle parent) : m_ui(ui) {
     const NodeHandle right = w::panel(ui, body, "designer.right");
     ui.addClass(right, "designer-props");
     ui.addClass(w::label(ui, right, "Properties"), "designer-title");
-    const NodeHandle propsHost = w::panel(ui, right, "designer.propshost");
+    const NodeHandle propsHost = w::scrollArea(ui, right, "designer.propshost");
     ui.setCss(propsHost, "padding", "0px");
+    ui.setCss(propsHost, "flex-grow", "1");
     m_props = w::propertyGrid(ui, propsHost, "designer.props");
+    ui.addClass(w::label(ui, right, "Icons"), "designer-title");
+    const NodeHandle iconHost = w::scrollArea(ui, right, "designer.iconhost");
+    ui.addClass(iconHost, "designer-iconhost");
+    m_iconPanel = w::panel(ui, iconHost, "designer.icons"); // tiles wrap; the host scrolls vertically
+    ui.addClass(m_iconPanel, "designer-icons");
     const NodeHandle styleHead = w::panel(ui, right, "designer.stylehead");
     ui.addClass(styleHead, "row");
     ui.addClass(w::label(ui, styleHead, "Style sheet"), "designer-title");
@@ -630,6 +677,7 @@ Designer::Designer(UiContext& ui, NodeHandle parent) : m_ui(ui) {
     ui.connect(apply, SignalKind::Clicked, [this](UiContext& u, NodeHandle, const SignalArgs&) { setStyleSheet(w::codeEditText(u, m_styleEdit)); });
     m_statusLabel = w::label(ui, m_root, "", "designer.status");
     ui.addClass(m_statusLabel, "designer-status");
+    refreshIconPicker();
     m_doc.reset();
     rebuild();
 }
@@ -918,19 +966,107 @@ void Designer::refreshProperties() {
     if (!d) return;
     std::string title = std::string(d->cls());
     if (!m_multi.empty()) title += " (+" + std::to_string(m_multi.size()) + " selected)";
-    for (const PropRow& r : kRows) {
-        if (!r.key) {
-            w::propertyRow(m_ui, m_props, {.name = std::string_view(r.name) == "Node" ? std::string_view(title) : std::string_view(r.name), .kind = w::PropKind::Group});
+    const std::string icon = iconOf(m_doc, m_sel);
+    std::string iconOptions(kNoneOption), effectOptions(kNoneOption);
+    u32 iconIndex = 0, effectIndex = 0;
+    const std::vector<std::string> names = iconNames(), effects = effectChoices();
+    for (u32 i = 0; i < names.size(); ++i) {
+        iconOptions += '\n' + names[i];
+        if (names[i] == icon) iconIndex = i + 1;
+    }
+    const std::string effect = m_doc.prop(m_sel, "style.effect");
+    for (u32 i = 0; i < effects.size(); ++i) {
+        effectOptions += '\n' + effects[i];
+        if (!effect.empty() && effectName(effects[i]) == effectName(effect)) effectIndex = i + 1;
+    }
+    u32 allGroup = 0;
+    for (const Row& r : allRows()) {
+        if (r.kind == w::PropKind::Group) {
+            if (r.name == "All style") allGroup = u32(m_propNames.size());
+            w::propertyRow(m_ui, m_props, {.name = r.name == "Node" ? std::string_view(title) : std::string_view(r.name), .kind = w::PropKind::Group});
             m_propNames.emplace_back();
             continue;
         }
-        w::propertyRow(m_ui, m_props, {.name = r.name, .kind = w::PropKind::Text}, m_doc.prop(m_sel, r.key));
+        if (r.name == "icon")
+            w::propertyRow(m_ui, m_props, {.name = r.name, .kind = w::PropKind::Enum, .options = iconOptions}, std::to_string(iconIndex));
+        else if (r.name == "effect")
+            w::propertyRow(m_ui, m_props, {.name = r.name, .kind = w::PropKind::Enum, .options = effectOptions}, std::to_string(effectIndex));
+        else
+            w::propertyRow(m_ui, m_props, {.name = r.name, .kind = r.kind}, m_doc.prop(m_sel, r.key));
         m_propNames.emplace_back(r.name);
     }
+    w::setPropertyGroupOpen(m_ui, m_props, allGroup, false); // long: folded until asked for
     m_ui.connect(m_props, SignalKind::Submitted, [this](UiContext& u, NodeHandle g, const SignalArgs& a) {
         const u32 row = u32(a.value);
-        if (row < m_propNames.size() && !m_propNames[row].empty()) setProperty(m_propNames[row], w::propertyValue(u, g, row));
+        if (row >= m_propNames.size() || m_propNames[row].empty()) return;
+        std::string v = w::propertyValue(u, g, row);
+        if (m_propNames[row] == "icon" || m_propNames[row] == "effect") { // pickers: option index -> name
+            const std::vector<std::string> opts = m_propNames[row] == "icon" ? iconNames() : effectChoices();
+            const int i = std::atoi(v.c_str());
+            v = i >= 1 && std::size_t(i) <= opts.size() ? opts[std::size_t(i - 1)] : std::string{};
+        }
+        setProperty(m_propNames[row], v);
     });
+    // the icon palette follows the pack and marks the selection's icon
+    if (m_ui.icons() != m_pickerIcons) refreshIconPicker();
+    for (const auto& [h, n] : m_iconTiles) {
+        if (!m_ui.alive(h)) continue;
+        if (n == icon) m_ui.addClass(h, "designer-icon-on");
+        else m_ui.removeClass(h, "designer-icon-on");
+    }
+}
+
+void Designer::refreshIconPicker() {
+    while (m_ui.alive(m_ui.firstChild(m_iconPanel))) m_ui.destroy(m_ui.firstChild(m_iconPanel));
+    m_iconTiles.clear();
+    m_pickerIcons = m_ui.icons();
+    if (!m_pickerIcons) {
+        m_ui.addClass(w::label(m_ui, m_iconPanel, "No icon pack loaded"), "designer-title");
+        return;
+    }
+    const NodeHandle none = w::toolButton(m_ui, m_iconPanel, "none", "designer.icon.none");
+    m_ui.addClass(none, "designer-icontile");
+    m_ui.connect(none, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { setProperty("icon", ""); });
+    m_iconTiles.emplace_back(none, std::string{});
+    for (const std::string& name : iconNames()) {
+        const NodeHandle t = w::toolButton(m_ui, m_iconPanel, "", "designer.icon." + name);
+        m_ui.addClass(t, "designer-icontile");
+        w::setIcon(m_ui, t, name, 18.f);
+        w::setTooltip(m_ui, t, name);
+        m_ui.setA11y(t, A11yRole::Button, name);
+        m_ui.connect(t, SignalKind::Clicked, [this](UiContext&, NodeHandle h, const SignalArgs&) {
+            for (const auto& [tile, n] : m_iconTiles)
+                if (tile == h) { setProperty("icon", std::string(n)); return; }
+        });
+        m_iconTiles.emplace_back(t, name);
+    }
+}
+
+std::vector<std::string> Designer::iconNames() const {
+    std::vector<std::string> v;
+    if (const IconSet* set = m_ui.icons())
+        for (u32 i = 0; i < set->count(); ++i) v.emplace_back(set->name(i));
+    return v;
+}
+
+std::vector<std::string> Designer::effectChoices() const {
+    std::vector<std::string> v;
+    if (const EffectRegistry* reg = m_ui.effects())
+        for (u32 i = 0; i < reg->count(); ++i) v.push_back(effectCss(reg->at(i)));
+    return v;
+}
+
+std::string Designer::effectCss(const EffectDesc& e) {
+    int n = kEffectParams;
+    while (n > 0 && e.defaults[std::size_t(n - 1)] == 0.f) --n;
+    std::string s = e.name + "(";
+    for (int i = 0; i < n; ++i) {
+        char b[32];
+        const auto r = std::to_chars(b, b + sizeof b, e.defaults[std::size_t(i)]);
+        if (i) s += ", ";
+        s.append(b, r.ptr);
+    }
+    return s + ")";
 }
 
 void Designer::canvasPick(NodeHandle target, u8 mods) {
@@ -959,9 +1095,18 @@ u32 Designer::addWidget(std::string_view cls) {
 }
 
 bool Designer::setProperty(std::string_view name, std::string_view value) {
-    const PropRow* r = rowNamed(name);
+    const Row* r = rowNamed(name);
     if (!r) return false;
-    const bool isId = std::string_view(r->key) == "id";
+    if (value == kNoneOption) value = {};
+    std::string expanded;
+    if (name == "effect" && !value.empty() && value.find('(') == std::string_view::npos) { // a bare name: its defaults
+        const EffectRegistry* reg = m_ui.effects();
+        if (const i32 e = reg ? reg->find(value) : -1; e >= 0) {
+            expanded = effectCss(reg->at(u32(e)));
+            value = expanded;
+        }
+    }
+    const bool isId = r->key == "id";
     std::vector<u32> targets = isId ? std::vector<u32>{m_sel} : selection(); // ids stay unique: primary only
     std::vector<std::string> ids;
     for (u32 i : targets) ids.emplace_back(m_doc.node(i)->id());
@@ -970,8 +1115,11 @@ bool Designer::setProperty(std::string_view name, std::string_view value) {
     bool changed = false;
     for (const std::string& id : ids) {
         const u32 i = m_doc.findId(id);
-        if (i == DesignDocument::kNone || m_doc.prop(i, r->key) == value) continue;
-        changed |= m_doc.setProp(i, r->key, parseValue(r->key, value));
+        if (i == DesignDocument::kNone) continue;
+        // an icon given as the node key ("icon": "save") stays there
+        const std::string key = name == "icon" && !m_doc.prop(i, "icon").empty() ? std::string("icon") : r->key;
+        if (m_doc.prop(i, key) == value) continue;
+        changed |= m_doc.setProp(i, key, parseValue(key, value));
     }
     m_doc.endBatch();
     if (!changed) return true;
