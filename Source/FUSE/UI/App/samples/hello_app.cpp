@@ -1,14 +1,18 @@
 // hello_app (plan UI5 sample): a .fuseui document, one bound counter, on-demand loop.
-//   hello_app [--ui=path/hello.fuseui] [--screenshot=out.png] [--clicks=N]
+//   hello_app [--ui=path/hello.fuseui] [--icons=pack.fuseicons] [--screenshot=out.png] [--clicks=N]
 // With --screenshot the app clicks the button N times (default 3), writes the frame and exits (headless).
 #include "fuse/app/app.hpp"
 #include "fuse/app/native.hpp"
 #include "fuse/ui/doc/document.hpp"
+#include "fuse/ui/icons.hpp"
 
 #include <cstdio>
 
 #ifndef FUSE_APP_SAMPLE_UI_DIR
 #define FUSE_APP_SAMPLE_UI_DIR "ui"
+#endif
+#ifndef FUSE_APP_SAMPLE_ICONS
+#define FUSE_APP_SAMPLE_ICONS "fuse_ui_icons.fuseicons"
 #endif
 
 int main(int argc, char** argv) {
@@ -16,6 +20,10 @@ int main(int argc, char** argv) {
     auto& window = app.createWindow({.title = "Hello", .width = 360, .height = 220});
     fuse::ui::doc::Model model;
     model.set("clicks", 0.0);
+    // the buttons' "icon" keys come from the cooked starter pack (fuse_ui_icon_cook); without it they show text only
+    auto icons = fuse::ui::IconSet::fromFile(std::string(app.args().get("icons", FUSE_APP_SAMPLE_ICONS)));
+    if (icons) window.ui().setIcons(&*icons);
+    else std::fprintf(stderr, "hello_app: no icons (%s)\n", icons.error().c_str());
     const std::string ui(app.args().get("ui", FUSE_APP_SAMPLE_UI_DIR "/hello.fuseui"));
     if (auto loaded = window.load(ui, &model); !loaded) return app.fail(loaded.error());
     window.document()->onAction([&](std::string_view action, fuse::ui::NodeHandle, const fuse::ui::SignalArgs&) {

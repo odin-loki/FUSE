@@ -27,6 +27,7 @@ immediate-mode front-end. See the plan's status table for what is still open.
 | `Source/FUSE/UI/Sql` | `fuse_ui_sql` | `SqliteModel`: an `ItemModel` over a SQLite query (option `FUSE_BUILD_UI_SQL`) |
 | `Source/FUSE/UI/A11y` | `fuse_ui_a11y` | Accessibility bridge (snapshot diff, action queue); AccessKit adapter when `FUSE_UI_ACCESSKIT_DIR` is set |
 | `Source/FUSE/UI/Designer` | `fuse_ui_designer_lib`, `fuse_ui_designer` | `.fuseui` designer prototype (UI8) |
+| `Source/FUSE/UI/Icons` | `fuse_ui_icon_cook_lib`, `fuse_ui_icon_cook` | SVG -> `.fuseicons` cooker (vendored nanosvg); the loader `IconSet` is in `fuse_ui_core` (`fuse/ui/icons.hpp`) |
 | `Source/FUSE/Core/include/fuse/platform/text_services.hpp` | `fuse_core` | clipboard, text-input begin/end, IME candidate placement |
 | `Source/FUSE/UI/tests` | gates | `fuse_ui_*` ctest executables and `fuse_ui_sample` |
 | `Source/FUSE/Core/include/fuse/platform/events_v2.hpp` | header | `KeyV2` / `EventV2` with lossless v1 mapping |
@@ -119,6 +120,30 @@ With Tier B installed (`widgets::install` does both tiers), a combo box opens a 
 the format and `tests/data/settings.fuseui` for an example); `fuse_ui_script` exposes the same context and model to Lua
 as a global `ui` table.
 
+### Icons
+
+Monochrome vector icons are cooked, not parsed at run time. `fuse_ui_icon_cook --out=x.fuseicons [--sizes=16,24,...]
+<svg files or dirs>` rasterises an SVG subset (paths incl. arcs, rect / circle / ellipse / line / polyline / polygon,
+`g` transforms, fill / stroke / stroke-width / opacity, fill-rule, currentColor, viewBox) into a coverage atlas at
+16 / 20 / 24 / 32 / 48 px by default plus a name index; output is deterministic. The build cooks the starter set
+(43 Lucide icons, `vendor/icons/lucide`, ISC) into `<build>/icons/fuse_ui_icons.fuseicons` (target `fuse_ui_icons`);
+`fuse_ui_cook --icons=<pack> doc.fuseui <svg dir>` cooks a pack along with the documents and fails when a document
+names an icon the pack lacks.
+
+```cpp
+auto icons = fuse::ui::IconSet::fromFile("fuse_ui_icons.fuseicons");
+ui.setIcons(&*icons);                                        // non-owning
+w::icon(ui, row, "search", 24.f);                            // an icon by itself
+w::setIcon(ui, w::toolButton(ui, bar, "", "save"), "save");  // any widget: icon before its text
+w::popupMenu(ui, owner, ":file-plus: New\n:x: Close", at);   // menu items: a leading ":name: "
+```
+
+In style sheets and markup: `icon: save; icon-size: 20px;` (`none` clears; the size defaults to font-size + 2) and the
+`.fuseui` key `"icon": "save"`. Icons are tinted with the node's `color` (SVG currentColor), so they follow theme,
+`:hover` and `:disabled` colours. They are copied into the context's glyph atlas on first use and drawn as `Glyph`
+commands, so the CPU rasteriser and the GPU kernel draw them with no new ops; sizes that were not cooked are
+area-resampled from the nearest larger cooked size. Multi-colour icons and MSDF are not supported.
+
 ## Application shell (UI5)
 
 ```cpp
@@ -188,7 +213,7 @@ are deferred). Inline (`setCss`) beats everything; later sheets win ties. Layout
 `grid-template-columns`, `grid-row/column(-span)`, `left/top/right/bottom/center-x/center-y`, `overflow`
 (visible/clip/scroll), `display`, `pointer-events`. Paint: `background` (colour or `linear-gradient`),
 `background-end` (gradient end; widgets use it as the accent), `border`, `border-width/color`, `border-*-radius`,
-`box-shadow`, `shadow-x/y/blur/color`, `opacity`, `color`, `font-size`, `text-align`. Selectors also accept
+`box-shadow`, `shadow-x/y/blur/color`, `opacity`, `color`, `font-size`, `text-align`, `icon`, `icon-size`. Selectors also accept
 `:active`, `:selected`.
 
 ## Immediate mode
@@ -210,6 +235,8 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_bench_10k` | 10k nodes, one dirty label: ≤ 0.5 ms median (Release; 1.0 ms in FULL) |
 | `fuse_ui_single_thread_parity` | direct vs posted-from-threads mutations give identical layout, draw list and pixels |
 | `fuse_ui_a11y_tree_dump` | roles, names, states, values |
+| `fuse_ui_icon_cook` | icon cooker determinism (any input order; tool = library), index round trip against the rasterised SVGs, SVG subset, corrupt-pack fuzz, resampled sizes |
+| `fuse_ui_icon_render` | icons at 16 / 24 / 32 / 40 / 48 px in two tints and disabled against `tests/golden/icons.png`; hover tint, button / menu / `.fuseui` / cooked-style icons |
 
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
 | `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster (skips 77 without a display or device) |
