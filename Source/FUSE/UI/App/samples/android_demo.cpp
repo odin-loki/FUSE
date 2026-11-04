@@ -205,7 +205,9 @@ int main(int argc, char** argv) {
             d.framesAtSurface = window.framesPresented();
             window.requestRedraw();
         }
-        if (ls.hasSurface && ls.surfacesCreated != d.checkedSurface && window.framesPresented() > d.framesAtSurface) {
+        // with asyncVulkan the first frames are software: compare the first one of the final presenter
+        if (ls.hasSurface && ls.surfacesCreated != d.checkedSurface && !native.presenterPending(window) &&
+            window.framesPresented() > d.framesAtSurface) {
             d.checkedSurface = ls.surfacesCreated;
             checkPresent(native, d);
         }

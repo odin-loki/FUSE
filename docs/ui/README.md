@@ -349,8 +349,12 @@ Emulator: an x86_64 Google APIs image (API 36 was used) with `emulator -avd <nam
 Behaviour on Android:
 - `NativePlatform::show` waits for the activity window and returns `Vulkan` (`VK_KHR_android_surface`, the same
   swapchain presenter, GPU draw or CPU upload) or `Software` (`ANativeWindow_lock` of the CPU raster;
-  `NativeOptions::vulkan = false`). Vulkan starts synchronously (`asyncVulkan` is ignored: a window that
-  `ANativeWindow_lock` connected as a CPU producer cannot be handed to a swapchain). The window is the whole activity,
+  `NativeOptions::vulkan = false`). With `asyncVulkan` (default) the first frame is software; after it is posted a
+  worker creates instance and device (no surface: Android connects the window when its `VkSurfaceKHR` is created),
+  then the UI thread disconnects the CPU producer (`NATIVE_WINDOW_API_DISCONNECT` through the window's `perform`
+  hook; the NDK has no call for it), creates surface + swapchain and presents through Vulkan. Later surfaces (back
+  from background) get Vulkan directly. `FUSE_APP_VK_TRACE=1` (`am start ... --es env "FUSE_APP_VK_TRACE=1"`; the
+  `env` extra sets environment variables) logs the phases. The window is the whole activity,
   sized by the OS; `AppWindow::setScale` gets the screen density / 160 unless `NativeOptions::scale` is set.
   `displays()` reports the screen with the safe area as the work area; `querySystemTheme()` follows night mode.
 - Lifecycle: `APP_CMD_TERM_WINDOW` releases the swapchain and surface (the device stays), `APP_CMD_INIT_WINDOW`
@@ -530,6 +534,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_platform_touch_android` | `input tap` clicks the button; `input swipe` over the list scrolls it both ways without clicking |
 | `fuse_platform_ime_android` | tapping the line edit focuses it and shows the soft keyboard; `input text` and backspace edit it |
 | `fuse_app_process_death_android` | Android build tree, adb: taps (app state), a tab page, list scroll and line-edit text + focus survive `am kill` of the background process and a SIGKILL; the relaunched process (new pid) restores them |
+| `fuse_app_hello_startup_android` | Android build tree, adb: hello_app `--startup-probe` cold starts (5 per mode, interleaved): async (software first frame, then Vulkan with the same pixels), `--sync-vulkan`, `--no-vulkan`; launch / main() -> first frame medians; on a device launch -> first frame <= 400 ms (plan §6), on an emulator main() -> first frame <= 900 ms (its first window buffer alone takes 200-800 ms) |
 | `fuse_app_idle_native` | real idle window for 3 s: zero presents, ≤ 10 loop wakeups / s (OS messages only), CPU ≤ 2 % |
 | `fuse_project_schema2`, `fuse_project_schema2_native` | project.json schema 1 load / write / migrate, schema 2 round trip, 24 rejected files, the app template, `ProjectHost` brings up only `AppPresent` and presents the `.fuseui` (headless ≤ 150 ms; `_native` on a real window vs the CPU raster) |
 | `fuse_ui_game_hud_golden` | HUD demo scene against `tests/golden/hud.png` plus trail / marker / pool state |

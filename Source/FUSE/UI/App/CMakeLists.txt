@@ -80,6 +80,7 @@ if(FUSE_BUILD_APP_SAMPLES)
         fuse_app_add_android_app(hello_app SOURCES samples/hello_app.cpp PACKAGE org.fuse.hello LABEL "FUSE Hello"
                                  ASSETS "ui=${CMAKE_CURRENT_SOURCE_DIR}/samples/ui")
         target_compile_definitions(hello_app PRIVATE FUSE_APP_SAMPLE_UI_DIR="ui")
+        fuse_app_add_android_gate(fuse_app_hello_startup_android hello_app org.fuse.hello startup)
         fuse_app_add_android_app(fuse_ui_android_demo SOURCES samples/android_demo.cpp PACKAGE org.fuse.uidemo
                                  LABEL "FUSE UI")
         fuse_app_add_android_gates(fuse_ui_android_demo org.fuse.uidemo)

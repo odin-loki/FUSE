@@ -4,7 +4,7 @@
 Installs the fuse_ui_android_demo APK on a device / emulator, drives it with adb (am, input, settings) and reads
 the state file the demo keeps current (run-as <package> cat files/fuse_demo_state.txt).
 
-  android_gate.py --gate present|lifecycle|touch|ime|process_death --apk demo.apk --package org.fuse.uidemo --abi x86_64
+  android_gate.py --gate present|lifecycle|touch|ime|process_death|startup --apk demo.apk --package org.fuse.uidemo --abi x86_64
                   [--adb adb] [--serial emulator-5580] [--shot out.png]
 
 Exit 0 pass, 1 fail, 77 skip (no adb, no device with the APK's ABI, no Vulkan for the present gate).
@@ -266,16 +266,84 @@ class Gate:
             self.screenshot(self.a.shot)
         return 0
 
+    # ---- hello_app start-up (plan §6: launch to first presented frame, mid Android <= 400 ms) ------------------
+    def probe(self, args):
+        """One cold start of hello_app --startup-probe; returns its numbers (ms) from logcat."""
+        d = self.dev
+        d.sh(f"am force-stop {self.a.package}")
+        d.run("logcat", "-c")
+        d.sh(f"am start -W -n {self.activity} --es args {shlex.quote('--startup-probe ' + args)}")
+        end = time.time() + 30
+        r = {}
+        while time.time() < end:
+            log = d.run("logcat", "-d", "-s", "fuse_app")
+            for line in log.splitlines():
+                for key in ("android_main at ", "main at ", "first_frame_ms=", "switch_ms=", "max_err=", "presenter=", "final="):
+                    i = line.find(key)
+                    if i >= 0:
+                        r[key.strip(" =")] = line[i + len(key):].split()[0].rstrip(",")
+            if "switch_ms" in r:
+                break
+            time.sleep(0.3)
+        try:
+            out = {"launch": float(r["first_frame_ms"]), "main": float(r["main at"]), "first": r["presenter"],
+                   "final": r["final"], "switch": float(r["switch_ms"]), "max_err": int(r["max_err"])}
+        except (KeyError, ValueError):
+            self.log(f"FAIL no start-up numbers for '{args}' (got {r})")
+            self.failures.append("start-up probe output")
+            return None
+        out["own"] = out["launch"] - out["main"]
+        return out
+
+    def gate_startup(self):
+        emulator = self.dev.sh("getprop ro.kernel.qemu").strip() == "1" or self.dev.sh("getprop ro.boot.qemu").strip() == "1"
+        modes = {"async": "", "sync": "--sync-vulkan", "software": "--no-vulkan"}
+        runs = {m: [] for m in modes}
+        self.probe("")  # warm-up (pipeline cache, page cache); not counted
+        for _ in range(self.a.runs):  # interleaved, so device load drifts hit every mode alike
+            for m, args in modes.items():
+                r = self.probe(args)
+                if r:
+                    runs[m].append(r)
+
+        def med(m, k):
+            v = sorted(r[k] for r in runs[m] if r[k] >= 0)
+            return v[len(v) // 2] if v else float("nan")
+
+        for m in modes:
+            self.log(f"{m:8}: launch -> first frame {med(m, 'launch'):7.1f} ms, main() -> first frame {med(m, 'own'):7.1f} ms "
+                     f"(median of {len(runs[m])}; first presenter {[r['first'] for r in runs[m]]})")
+        self.log(f"async: Vulkan switch at {med('async', 'switch'):.1f} ms after launch")
+        # the first frame is software unless the device was ready before the window arrived
+        ok_async = runs["async"] and all(r["final"] == "vulkan" and r["max_err"] == 0 for r in runs["async"])
+        self.check(ok_async, "async: ends on the Vulkan presenter showing the CPU raster's pixels (max error 0)")
+        self.check(any(r["first"] == "software" for r in runs["async"]), "async: software first frames while Vulkan starts")
+        self.check(runs["sync"] and all(r["first"] == "vulkan" for r in runs["sync"]), "sync: first frame through Vulkan")
+        gain = med("sync", "own") - med("async", "own")
+        self.log(f"async first frame {gain:.1f} ms earlier than sync Vulkan start-up (main() -> first frame medians)")
+        if emulator:
+            # the emulator's first window buffer (gralloc through the host) alone costs 200-800 ms: the plan budget is for
+            # a phone; here the app's own part is held to --emulator-budget-ms
+            self.check(med("async", "own") <= self.a.emulator_budget_ms,
+                       f"emulator: main() -> first frame {med('async', 'own'):.1f} ms <= {self.a.emulator_budget_ms} ms")
+        else:
+            self.check(med("async", "launch") <= self.a.budget_ms,
+                       f"launch -> first frame {med('async', 'launch'):.1f} ms <= {self.a.budget_ms} ms (plan §6)")
+        return 0
+
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--gate", required=True, choices=["present", "lifecycle", "touch", "ime", "process_death"])
+    ap.add_argument("--gate", required=True, choices=["present", "lifecycle", "touch", "ime", "process_death", "startup"])
     ap.add_argument("--apk", required=True)
     ap.add_argument("--package", required=True)
     ap.add_argument("--abi", required=True)
     ap.add_argument("--adb", default="adb")
     ap.add_argument("--serial", default=os.environ.get("ANDROID_SERIAL"))
     ap.add_argument("--shot", help="also save adb screencap PNG(s) here")
+    ap.add_argument("--runs", type=int, default=5, help="startup: cold starts per mode")
+    ap.add_argument("--budget-ms", type=float, default=400.0, help="startup: launch -> first frame on a device")
+    ap.add_argument("--emulator-budget-ms", type=float, default=900.0, help="startup: main() -> first frame on an emulator")
     a = ap.parse_args()
     if not os.path.exists(a.apk):
         print(f"no APK at {a.apk}: skip")

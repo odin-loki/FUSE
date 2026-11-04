@@ -412,6 +412,7 @@ struct NativePlatform::Impl {
     std::thread worker;
     std::atomic<bool> vkDone{false};
     bool vkPending = false;
+    bool vkDeferred = false;           ///< pending, the worker starts after the first software frame
     detail::VkCtx* vkCtxNew = nullptr;
     std::string vkErr;
 
@@ -457,8 +458,18 @@ struct NativePlatform::Impl {
         const auto px = win->pixelSize();
         if (w > 0 && h > 0 && (u32(w) != u32(px.w) || u32(h) != u32(px.h))) win->resizePixels(u32(w), u32(h));
     }
+    bool wantsAsyncVk() const {
+        return !vkTried && !vkPending && opts.vulkan && opts.asyncVulkan && !(opts.adoptDevice.instance && opts.adoptDevice.device);
+    }
+    /// The worker starts once the first software frame is posted: on a few cores (or an emulator, where the
+    /// driver and the window buffers share the host connection) it would otherwise delay that frame.
+    void deferVkAsync() {
+        vkPending = true;
+        vkDeferred = true;
+    }
     void startVkAsync() {
         vkPending = true;
+        vkDeferred = false;
         vkDone.store(false, std::memory_order_relaxed);
         // instance + device only: Android connects the window when its VkSurfaceKHR is created, which fails while
         // ANativeWindow_lock holds it as a CPU producer
@@ -518,10 +529,8 @@ struct NativePlatform::Impl {
         cpuConnected = false;
         win->setScale(osScale());
         syncSize();
-        const bool adopt = opts.adoptDevice.instance && opts.adoptDevice.device;
-        if (!vkTried && !vkPending && opts.vulkan && opts.asyncVulkan && !adopt) {
-            startVkAsync(); // software frames now, Vulkan when the worker is done
-        } else if (detail::VkCtx* c = vkPending ? nullptr : vkContext()) {
+        if (wantsAsyncVk()) deferVkAsync(); // software frames now, Vulkan when the worker is done
+        if (detail::VkCtx* c = vkPending ? nullptr : vkContext()) {
             SurfaceSource s;
             s.kind = SurfaceSource::Android;
             s.nativeWindow = window;
@@ -546,6 +555,7 @@ struct NativePlatform::Impl {
     void detach() {
         if (!window) return;
         finishVk(false); // the next window gets the worker's device
+        if (vkDeferred) vkPending = vkDeferred = false; // never started: the next window starts it
         detail::vkWinDestroy(vkw);
         vkw = nullptr;
         window = nullptr;
@@ -724,7 +734,7 @@ struct NativePlatform::Impl {
         Impl& m = *static_cast<Impl*>(user);
         if (!g_app) return true;
         const int ms = std::isinf(wait) ? -1 : int(std::min(std::ceil(double(wait) * 1000.0), 2.0e9));
-        const bool alive = pollOnce(m.vkPending ? std::min(ms < 0 ? 4 : ms, 4) : ms); // look for the worker soon
+        const bool alive = pollOnce(m.vkPending && !m.vkDeferred ? std::min(ms < 0 ? 4 : ms, 4) : ms); // look for the worker soon
         if (m.vkPending && m.vkDone.load(std::memory_order_acquire)) m.finishVk(true);
         if (m.win && m.window) m.syncSize();
         return alive;
@@ -757,6 +767,7 @@ struct NativePlatform::Impl {
                 }
                 m.cpuConnected = true;
                 ok = true;
+                if (m.vkDeferred) m.startVkAsync();
             }
         }
         if (m.insetPolls) { --m.insetPolls; m.updateInsets(); } // insets arrive after the window, re-read for a while
@@ -856,6 +867,7 @@ LifecycleStats NativePlatform::lifecycle() const { return m->stats; }
 bool NativePlatform::presenterPending(const AppWindow& w) const { return m->win == &w && m->vkPending; }
 PresenterKind NativePlatform::waitForPresenter(const AppWindow& w) {
     if (m->win != &w) return PresenterKind::Headless;
+    if (m->vkDeferred) m->startVkAsync();
     while (m->vkPending && !m->vkDone.load(std::memory_order_acquire) && !g_app->destroyRequested) Impl::pollOnce(4);
     if (m->vkPending) m->finishVk(true);
     return m->kind;

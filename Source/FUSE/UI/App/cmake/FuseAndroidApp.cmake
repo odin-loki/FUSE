@@ -5,6 +5,7 @@
 #
 #   fuse_app_add_android_app(<target> SOURCES a.cpp ... PACKAGE org.example.app [LABEL "Name"] [ASSETS prefix=dir ...])
 #   fuse_app_add_android_gates(<target> <package>)   # host-run ctest gates (adb), skipped (77) without a device
+#   fuse_app_add_android_gate(<test name> <target> <package> <gate>)
 
 if(NOT ANDROID)
     return()
@@ -51,7 +52,8 @@ function(fuse_app_add_android_app target)
     set_property(TARGET ${target} PROPERTY FUSE_ANDROID_APK "${_apk}")
 endfunction()
 
-function(fuse_app_add_android_gates target package)
+# one host-run gate: android_gate.py --gate <gate> against <target>'s APK
+function(fuse_app_add_android_gate name target package gate)
     get_property(_apk TARGET ${target} PROPERTY FUSE_ANDROID_APK)
     if(NOT _apk OR NOT Python3_EXECUTABLE)
         return()
@@ -60,6 +62,13 @@ function(fuse_app_add_android_gates target package)
     if(NOT _adb)
         set(_adb adb)
     endif()
+    add_test(NAME ${name} COMMAND "${Python3_EXECUTABLE}" "${FUSE_APP_ANDROID_DIR}/android_gate.py" --gate ${gate}
+             --apk "${_apk}" --package ${package} --abi ${ANDROID_ABI} --adb "${_adb}")
+    set_tests_properties(${name} PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 900 LABELS "gate;android;ui")
+endfunction()
+
+# the fuse_ui_android_demo gates
+function(fuse_app_add_android_gates target package)
     foreach(g present lifecycle touch ime process_death)
         if(g STREQUAL "present")
             set(_name fuse_platform_present_android)
@@ -68,9 +77,6 @@ function(fuse_app_add_android_gates target package)
         else()
             set(_name fuse_platform_${g}_android)
         endif()
-        add_test(NAME ${_name} COMMAND "${Python3_EXECUTABLE}" "${FUSE_APP_ANDROID_DIR}/android_gate.py" --gate ${g}
-                 --apk "${_apk}" --package ${package} --abi ${ANDROID_ABI} --adb "${_adb}")
-        set_tests_properties(${_name} PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 600
-                             LABELS "gate;android;ui")
+        fuse_app_add_android_gate(${_name} ${target} ${package} ${g})
     endforeach()
 endfunction()
