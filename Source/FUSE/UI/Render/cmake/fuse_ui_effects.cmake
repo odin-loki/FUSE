@@ -3,7 +3,7 @@
 #   fuse_ui_add_effect(<target> NAME <identifier> SOURCE <snippet.glsl>)
 #
 # Splices the GLSL snippet (it defines `vec4 fx_main(ivec2 p)`) into Render/src/shaders/ui_effect.comp.in, compiles it
-# with glslangValidator (Vulkan 1.1) and embeds the SPIR-V as `static const std::uint32_t <identifier>[]` in the
+# with glslangValidator (Vulkan 1.1, -g0: no debug names, smaller binaries) and embeds the SPIR-V as `static const std::uint32_t <identifier>[]` in the
 # generated header "<identifier>_spv.h" on <target>'s include path. Register it with
 #   registry.add({.name = "...", .cpu = &cpuTwin, .spirv = <identifier>});   renderer.setEffects(registry);
 # Without glslangValidator nothing is generated (test for the header with __has_include).
@@ -34,7 +34,7 @@ function(fuse_ui_add_effect target)
                 -P "${FUSE_UI_EFFECT_CMAKE_DIR}/make_effect.cmake"
         DEPENDS "${_tpl}" "${_src}" "${FUSE_UI_EFFECT_CMAKE_DIR}/make_effect.cmake" VERBATIM)
     add_custom_command(OUTPUT "${_spv}"
-        COMMAND "${FUSE_UI_GLSLANG}" --target-env vulkan1.1 -S comp "-I${FUSE_UI_EFFECT_SHADER_DIR}" "${_comp}" -o "${_spv}"
+        COMMAND "${FUSE_UI_GLSLANG}" --target-env vulkan1.1 -g0 -S comp "-I${FUSE_UI_EFFECT_SHADER_DIR}" "${_comp}" -o "${_spv}"
         DEPENDS "${_comp}" "${FUSE_UI_EFFECT_SHADER_DIR}/ui_math.glsl" COMMENT "glslangValidator effect ${FX_NAME}" VERBATIM)
     add_custom_command(OUTPUT "${_hdr}"
         COMMAND "${CMAKE_COMMAND}" -DSPV=${_spv} -DOUT=${_hdr} -DNAME=${FX_NAME}
@@ -57,8 +57,8 @@ function(fuse_ui_embed_shader target)
     set(_spv "${_gen}/${SH_NAME}.spv")
     set(_hdr "${_gen}/${SH_NAME}_spv.h")
     add_custom_command(OUTPUT "${_spv}"
-        COMMAND "${FUSE_UI_GLSLANG}" --target-env vulkan1.1 "-I${_dir}" "${_src}" -o "${_spv}"
-        DEPENDS "${_src}" "${_dir}/ui_math.glsl" COMMENT "glslangValidator ${SH_NAME}" VERBATIM)
+        COMMAND "${FUSE_UI_GLSLANG}" --target-env vulkan1.1 -g0 "-I${_dir}" "${_src}" -o "${_spv}"
+        DEPENDS "${_src}" "${_dir}/ui_math.glsl" "${_dir}/ui_glyph.glsl" COMMENT "glslangValidator ${SH_NAME}" VERBATIM)
     add_custom_command(OUTPUT "${_hdr}"
         COMMAND "${CMAKE_COMMAND}" -DSPV=${_spv} -DOUT=${_hdr} -DNAME=${SH_NAME}
                 -P "${FUSE_UI_EFFECT_CMAKE_DIR}/embed_spv.cmake"

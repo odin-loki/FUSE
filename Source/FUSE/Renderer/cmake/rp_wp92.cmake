@@ -82,7 +82,7 @@ set(_fuse_wp92_header "${_fuse_wp92_gen}/gsplat_spv.h")
 add_custom_target(fuse_gsplat_kernels)
 set(_fuse_wp92_embed_args "")
 set(_fuse_wp92_embed_deps "")
-file(GLOB _fuse_wp92_glsl_includes "${_fuse_wp92_shd}/*.glsl")
+file(GLOB _fuse_wp92_glsl_includes "${_fuse_wp92_shd}/*.glsl" "${_fuse_wp92_root}/shaders/common/exact_math.glsl")
 
 foreach(_row IN LISTS _fuse_wp92_kernels)
     string(REPLACE "|" ";" _entry "${_row}")

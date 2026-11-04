@@ -10,8 +10,31 @@ function(fuse_ui_test name src)
     set_tests_properties(${name} PROPERTIES LABELS fuse_ui)
     if(FUSE_UI_TEXT STREQUAL "FULL")
         target_compile_definitions(${name} PRIVATE FUSE_UI_TEST_TEXT_FULL=1)
+    elseif(FUSE_UI_TEXT STREQUAL "COOKED")
+        target_compile_definitions(${name} PRIVATE FUSE_UI_TEST_TEXT_COOKED=1
+                                   FUSE_UI_TEST_COOKED_FONTS="${CMAKE_CURRENT_BINARY_DIR}/fonts")
+        add_dependencies(${name} fuse_ui_test_fonts)
     endif()
 endfunction()
+
+# COOKED: the test-data fonts cooked at the sizes their gates draw (colour images included)
+if(FUSE_UI_TEXT STREQUAL "COOKED")
+    set(_tf "${CMAKE_CURRENT_BINARY_DIR}/fonts")
+    set(_tf_out "")
+    foreach(spec "colrv1_test|--sizes=30,32,45,48,56|--msdf"
+                 "bitmap_cbdt_test|--sizes=20|--color-sizes=8,12,16,20,32,40,64,100"
+                 "bitmap_sbix_test|--sizes=20|--color-sizes=8,12,16,20,32,40,64,100")
+        string(REPLACE "|" ";" _spec "${spec}")
+        list(POP_FRONT _spec _name)
+        add_custom_command(OUTPUT "${_tf}/${_name}.fusefont"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${_tf}"
+            COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:fuse_text_cook> "--out=${_tf}/${_name}.fusefont" ${_spec}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/data/${_name}.ttf"
+            DEPENDS fuse_text_cook "${CMAKE_CURRENT_SOURCE_DIR}/data/${_name}.ttf" COMMENT "fuse_text_cook ${_name}" VERBATIM)
+        list(APPEND _tf_out "${_tf}/${_name}.fusefont")
+    endforeach()
+    add_custom_target(fuse_ui_test_fonts DEPENDS ${_tf_out})
+endif()
 
 fuse_ui_test(fuse_ui_layout_conformance test_layout_conformance.cpp)
 fuse_ui_test(fuse_ui_style_cascade test_style_cascade.cpp)
@@ -41,6 +64,33 @@ foreach(g shaping_scripts system_fonts cache_zero_alloc colrv1 dpi_1 dpi_1_25 dp
     target_compile_definitions(fuse_text_${g} PRIVATE FUSE_TEXT_GATE="${g}")
     set_tests_properties(fuse_text_${g} PROPERTIES LABELS "fuse_ui;gate;text" SKIP_RETURN_CODE 77
                          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endforeach()
+
+# COOKED profile: cooker determinism (every profile), cooked layout / renders against the MINIMAL reference (COOKED)
+fuse_ui_test(fuse_text_cooked test_text_cooked.cpp)
+string(REPLACE ";" " " _cook_args "${FUSE_TEXT_UI_COOK_ARGS}")
+target_include_directories(fuse_text_cooked PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../Text/tools)
+target_compile_definitions(fuse_text_cooked PRIVATE FUSE_TEXT_COOK_EXE="$<TARGET_FILE:fuse_text_cook>"
+    FUSE_TEXT_TEST_FONT="${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf" FUSE_TEXT_TEST_COOK_ARGS="${_cook_args}"
+    FUSE_TEXT_TEST_OUT_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+add_dependencies(fuse_text_cooked fuse_text_cook)
+if(FUSE_UI_TEXT STREQUAL "COOKED")
+    target_compile_definitions(fuse_text_cooked PRIVATE
+        FUSE_TEXT_COOKED_PACK="${FUSE_TEXT_COOKED_FONT_DIR}/opensans/OpenSans.fusefont"
+        FUSE_TEXT_COOKED_REFERENCE="${FUSE_TEXT_COOKED_FONT_DIR}/opensans/OpenSans.reference")
+endif()
+set_tests_properties(fuse_text_cooked PROPERTIES LABELS "fuse_ui;gate;text")
+
+# Colour glyphs (CBDT / sbix strikes) and MSDF glyphs (quality, UI threshold, GPU parity when fuse_ui_vk is built).
+foreach(g bitmap_emoji msdf)
+    fuse_ui_test(fuse_text_${g} test_text_color.cpp)
+    target_compile_definitions(fuse_text_${g} PRIVATE FUSE_TEXT_GATE="${g}")
+    set_tests_properties(fuse_text_${g} PROPERTIES LABELS "fuse_ui;gate;text" SKIP_RETURN_CODE 77
+                         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} ENVIRONMENT "${FUSE_UI_LVP_ENV}")
+    if(TARGET fuse_ui_vk)
+        target_link_libraries(fuse_text_${g} PRIVATE fuse_ui_vk ${FUSE_UI_VK_LINK})
+        target_compile_definitions(fuse_text_${g} PRIVATE FUSE_TEXT_COLOR_HAVE_VK=1)
+    endif()
 endforeach()
 
 find_package(Threads REQUIRED)
@@ -269,6 +319,17 @@ if(TARGET fuse_app)
         endif()
         set_tests_properties(fuse_app_os_popups PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300
             ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate;vulkan")
+        # §6 idle budget on a real window: zero presents, ~0 % CPU, a handful of loop wakeups over 3 s
+        add_executable(fuse_app_idle_native test_app_idle_native.cpp)
+        target_link_libraries(fuse_app_idle_native PRIVATE fuse_app_native)
+        if(FUSE_UI_XVFB_RUN AND NOT WIN32)
+            add_test(NAME fuse_app_idle_native COMMAND ${FUSE_UI_XVFB_RUN} -a -s "${FUSE_UI_XVFB_ARGS}"
+                     $<TARGET_FILE:fuse_app_idle_native>)
+        else()
+            add_test(NAME fuse_app_idle_native COMMAND fuse_app_idle_native)
+        endif()
+        set_tests_properties(fuse_app_idle_native PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
+            ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate;vulkan")
         # custom window chrome (WM_NCHITTEST / _NET_WM_MOVERESIZE on a real window) and tray icon + notifications (UI10).
         # Unix tray: StatusNotifierItem on a private session bus (dbus-run-session; the gate plays the desktop's side).
         find_program(FUSE_UI_DBUS_RUN_SESSION dbus-run-session)
@@ -296,6 +357,22 @@ if(TARGET fuse_app)
             endif()
         endforeach()
     endif()
+    # project.json schema 2 + AppPresent + minimal init path (in tree: needs fuse_project / fuse_core)
+    if(TARGET fuse_app_project)
+        add_executable(fuse_project_schema2 test_project_schema2.cpp)
+        target_link_libraries(fuse_project_schema2 PRIVATE fuse_app_project_hybrid fuse_core)
+        target_compile_definitions(fuse_project_schema2 PRIVATE FUSE_REPO_ROOT="${FUSE_UI_REPO_ROOT}")
+        add_test(NAME fuse_project_schema2 COMMAND fuse_project_schema2)
+        set_tests_properties(fuse_project_schema2 PROPERTIES LABELS "fuse_ui;gate;project" TIMEOUT 120)
+        if(FUSE_UI_XVFB_RUN AND NOT WIN32)
+            add_test(NAME fuse_project_schema2_native COMMAND ${FUSE_UI_XVFB_RUN} -a -s "-screen 0 1280x800x24"
+                     $<TARGET_FILE:fuse_project_schema2> --native)
+        else()
+            add_test(NAME fuse_project_schema2_native COMMAND fuse_project_schema2 --native)
+        endif()
+        set_tests_properties(fuse_project_schema2_native PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
+            ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate;project;vulkan")
+    endif()
     # Windows UI Automation through AccessKit on a real window (skips with 77 when AccessKit is not linked)
     if(TARGET fuse_app_a11y AND WIN32)
         add_executable(fuse_ui_a11y_windows test_a11y_windows.cpp)
@@ -322,14 +399,14 @@ if(TARGET fuse_app)
             set(_budget ${FUSE_APP_BINARY_BUDGET})
         endif()
         set(_bin $<TARGET_FILE:hello_app>)
-        if(NOT MSVC AND CMAKE_STRIP)
-            # POST_BUILD only works in hello_app's own directory: strip into this one instead
-            set(_bin ${CMAKE_CURRENT_BINARY_DIR}/hello_app.stripped)
-            add_custom_command(OUTPUT ${_bin} COMMAND ${CMAKE_STRIP} -o ${_bin} $<TARGET_FILE:hello_app>
-                DEPENDS hello_app VERBATIM)
-            add_custom_target(hello_app_stripped ALL DEPENDS ${_bin})
-        endif()
         add_executable(fuse_app_binary_size test_app_binary_size.cpp)
+        if(NOT MSVC AND CMAKE_STRIP)
+            # a custom target here: add_custom_command(TARGET hello_app) from another directory needs CMake 3.31
+            set(_bin ${CMAKE_CURRENT_BINARY_DIR}/hello_app.stripped)
+            add_custom_target(fuse_app_hello_stripped ALL
+                COMMAND ${CMAKE_STRIP} -o ${_bin} $<TARGET_FILE:hello_app> DEPENDS hello_app VERBATIM)
+            add_dependencies(fuse_app_binary_size fuse_app_hello_stripped)
+        endif()
         add_test(NAME fuse_app_binary_size COMMAND fuse_app_binary_size --file=${_bin} --budget=${_budget}
                  "--profile=${CMAKE_CXX_COMPILER_ID} ${CMAKE_BUILD_TYPE}, text ${FUSE_UI_TEXT}")
         set_tests_properties(fuse_app_binary_size PROPERTIES SKIP_RETURN_CODE 77 LABELS "fuse_ui;gate")

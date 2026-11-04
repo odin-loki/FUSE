@@ -1,0 +1,12 @@
+{
+  "fuseui": 1,
+  "style": ".main { gap: 10px; padding: 24px; align-items: start; } .title { font-size: 24px; }",
+  "root": {
+    "class": "panel", "id": "main", "classes": ["main"],
+    "children": [
+      { "class": "label", "id": "title", "classes": ["title"], "text": "Hello from FUSE UI" },
+      { "class": "label", "id": "hint", "text": "Edit ui/main.fuseui to build your app." },
+      { "class": "button", "id": "action", "text": "Click me", "on": { "clicked": "action" } }
+    ]
+  }
+}

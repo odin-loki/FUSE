@@ -10,6 +10,7 @@
 // decoded exactly as quantOffset + float(q) * quantStep.
 #ifndef FUSE_VIS_COMMON_GLSL
 #define FUSE_VIS_COMMON_GLSL
+#include "../common/exact_math.glsl" // fuse_div_rn: the CPU kernel's IEEE quotients
 
 #define FUSE_VIS_DECODE_EMPTY 0u      // pixel has no geometry
 #define FUSE_VIS_DECODE_OK 1u
@@ -71,12 +72,12 @@ FuseVisDecoded fuse_vis_decode_clip(vec4 c0, vec4 c1, vec4 c2, vec2 ndc) {
         r.flags = FUSE_VIS_DECODE_DEGENERATE;
         return r;
     }
-    precise float b0 = e0 / s;
-    precise float b1 = e1 / s;
-    precise float b2 = e2 / s;
+    precise float b0 = fuse_div_rn(e0, s);
+    precise float b1 = fuse_div_rn(e1, s);
+    precise float b2 = fuse_div_rn(e2, s);
     precise float z = b0 * c0.z + b1 * c1.z + b2 * c2.z;
     precise float w = b0 * c0.w + b1 * c1.w + b2 * c2.w;
-    r.depth = z / w;
+    r.depth = fuse_div_rn(z, w);
     r.b1 = b1;
     r.b2 = b2;
     r.flags = FUSE_VIS_DECODE_OK;

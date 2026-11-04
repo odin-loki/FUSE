@@ -26,7 +26,7 @@ float sx_acos_poly(float x) {
     p = p * a - 0.214598805;
     p = p * a + 1.57079625;
     precise float oneMinus = 1.0 - a;
-    precise float r = sx_sqrt(oneMinus) * p;
+    precise float r = fuse_sqrt_rn(oneMinus) * p;
     precise float rr = SX_PI - r;
     return c < 0.0 ? rr : r;
 }
@@ -71,7 +71,7 @@ float sx_gtao(uint x, uint y) {
     const vec3 viewVec = sx_normalize(sx_neg(p));
 
     precise float rn = F.aoRadius * F.fx;
-    const float rq = sx_div(rn, p.z);
+    const float rq = fuse_div_rn(rn, p.z);
     const float radiusPx = min(F.aoMaxRadiusPx, rq);
     if (radiusPx < 1.0) {
         return 1.0;
@@ -91,10 +91,10 @@ float sx_gtao(uint x, uint y) {
         precise float u = sx_hash_unit(seed) - 0.5;
         precise float v = sx_hash_unit(seed ^ 0x9e3779b9u) - 0.5;
         precise float len2 = u * u + v * v;
-        const float len = sx_sqrt(len2);
+        const float len = fuse_sqrt_rn(len2);
         if (len > 1e-4) {
-            const float qa = sx_div(u, len);
-            const float qb = sx_div(v, len);
+            const float qa = fuse_div_rn(u, len);
+            const float qb = fuse_div_rn(v, len);
             ra = qa;
             rb = qb;
         }
@@ -111,12 +111,12 @@ float sx_gtao(uint x, uint y) {
         precise float sdx = F.fx * (d.x * p.z - p.x * d.z);
         precise float sdy = F.fy * (d.y * p.z - p.y * d.z);
         precise float slen2 = sdx * sdx + sdy * sdy;
-        const float slen = sx_sqrt(slen2);
+        const float slen = fuse_sqrt_rn(slen2);
         if (slen < 1e-20) {
             continue;
         }
-        sdx = sx_div(sdx, slen);
-        sdy = sx_div(sdy, slen);
+        sdx = fuse_div_rn(sdx, slen);
+        sdy = fuse_div_rn(sdy, slen);
 
         const vec3 axis = sx_normalize(sx_cross(d, viewVec));
         const vec3 projN = sx_sub(n, sx_scale(axis, sx_dot(n, axis)));
@@ -125,11 +125,11 @@ float sx_gtao(uint x, uint y) {
             continue;
         }
         const float signN = sx_dot(d, projN) >= 0.0 ? 1.0 : -1.0;
-        const float cq = sx_div(sx_dot(projN, viewVec), projNLen);
+        const float cq = fuse_div_rn(sx_dot(projN, viewVec), projNLen);
         const float cosN = sx_saturate(cq);
         precise float gamma = signN * sx_acos_poly(cosN);
         precise float sin2 = 1.0 - cosN * cosN;
-        precise float sinG = signN * sx_sqrt(max(0.0, sin2));
+        precise float sinG = signN * fuse_sqrt_rn(max(0.0, sin2));
 
         float lowCos[2] = float[2](-sinG, sinG);
         float horizonCos[2] = float[2](lowCos[0], lowCos[1]);
@@ -140,7 +140,7 @@ float sx_gtao(uint x, uint y) {
             int lastY = int(y);
             for (uint st = 1u; st <= steps; ++st) {
                 precise float tn = radiusPx * (float(st - 1u) + offset);
-                const float t = sx_div(tn, float(steps));
+                const float t = fuse_div_rn(tn, float(steps));
                 precise float sx = cxp + dirX * t;
                 precise float sy = cyp + dirY * t;
                 if (!sx_inside(sx, sy)) {
@@ -163,7 +163,7 @@ float sx_gtao(uint x, uint y) {
                 if (dist < 1e-6 || dist > F.aoRadius) {
                     continue;
                 }
-                const float invDist = sx_div(1.0, dist);
+                const float invDist = fuse_div_rn(1.0, dist);
                 const vec3 hn = sx_scale(h, invDist);
                 if (sx_dot(hn, n) <= F.aoBias) {
                     continue;
@@ -172,7 +172,7 @@ float sx_gtao(uint x, uint y) {
                 if (F.aoFalloff > 0.0) {
                     precise float wn = F.aoRadius - dist;
                     precise float wd = F.aoFalloff * F.aoRadius;
-                    const float wq = sx_div(wn, wd);
+                    const float wq = fuse_div_rn(wn, wd);
                     const float w = sx_saturate(wq);
                     precise float lerped = lowCos[side] + (hc - lowCos[side]) * w;
                     hc = lerped;
@@ -199,7 +199,7 @@ float sx_gtao(uint x, uint y) {
     if (!(denominator > 0.0)) {
         return 1.0;
     }
-    const float q = sx_div(numerator, denominator);
+    const float q = fuse_div_rn(numerator, denominator);
     const float visibility = sx_saturate(q);
     return F.aoStrength == 1.0 ? visibility : pow(visibility, F.aoStrength);
 }

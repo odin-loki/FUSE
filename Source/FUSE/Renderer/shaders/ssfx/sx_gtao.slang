@@ -16,7 +16,7 @@ float sxAcosPoly(float x) {
     p = p * a + 0.0889789909;
     p = p * a - 0.214598805;
     p = p * a + 1.57079625;
-    const float r = sxSqrt(1.0 - a) * p;
+    const float r = fuseSqrtRn(1.0 - a) * p;
     return c < 0.0 ? kSxPi - r : r;
 }
 
@@ -57,7 +57,7 @@ float sxGtao(uint x, uint y) {
     }
     const float3 viewVec = sxNormalize(sxNeg(p));
 
-    const float radiusPx = min(F.aoMaxRadiusPx, sxDiv(F.aoRadius * F.fx, p.z));
+    const float radiusPx = min(F.aoMaxRadiusPx, fuseDivRn(F.aoRadius * F.fx, p.z));
     if (radiusPx < 1.0) {
         return 1.0;
     }
@@ -75,10 +75,10 @@ float sxGtao(uint x, uint y) {
         const uint seed = (x * 73856093u) ^ (y * 19349663u) ^ (F.aoFrame * 83492791u);
         const float u = sxHashUnit(seed) - 0.5;
         const float v = sxHashUnit(seed ^ 0x9e3779b9u) - 0.5;
-        const float len = sxSqrt(u * u + v * v);
+        const float len = fuseSqrtRn(u * u + v * v);
         if (len > 1e-4) {
-            ra = sxDiv(u, len);
-            rb = sxDiv(v, len);
+            ra = fuseDivRn(u, len);
+            rb = fuseDivRn(v, len);
         }
         offset = 1.0 - sxHashUnit(seed ^ 0x85ebca6bu);
     }
@@ -91,12 +91,12 @@ float sxGtao(uint x, uint y) {
         const float3 d = sxAdd(sxScale(viewT, c), sxScale(viewB, s));
         float sdx = F.fx * (d.x * p.z - p.x * d.z);
         float sdy = F.fy * (d.y * p.z - p.y * d.z);
-        const float slen = sxSqrt(sdx * sdx + sdy * sdy);
+        const float slen = fuseSqrtRn(sdx * sdx + sdy * sdy);
         if (slen < 1e-20) {
             continue;
         }
-        sdx = sxDiv(sdx, slen);
-        sdy = sxDiv(sdy, slen);
+        sdx = fuseDivRn(sdx, slen);
+        sdy = fuseDivRn(sdy, slen);
 
         const float3 axis = sxNormalize(sxCross(d, viewVec));
         const float3 projN = sxSub(n, sxScale(axis, sxDot(n, axis)));
@@ -105,9 +105,9 @@ float sxGtao(uint x, uint y) {
             continue;
         }
         const float signN = sxDot(d, projN) >= 0.0 ? 1.0 : -1.0;
-        const float cosN = sxSaturate(sxDiv(sxDot(projN, viewVec), projNLen));
+        const float cosN = sxSaturate(fuseDivRn(sxDot(projN, viewVec), projNLen));
         const float gamma = signN * sxAcosPoly(cosN);
-        const float sinG = signN * sxSqrt(max(0.0, 1.0 - cosN * cosN));
+        const float sinG = signN * fuseSqrtRn(max(0.0, 1.0 - cosN * cosN));
 
         float lowCos[2] = { -sinG, sinG };
         float horizonCos[2] = { lowCos[0], lowCos[1] };
@@ -117,7 +117,7 @@ float sxGtao(uint x, uint y) {
             int lastX = int(x);
             int lastY = int(y);
             for (uint st = 1u; st <= steps; ++st) {
-                const float t = sxDiv(radiusPx * (float(st - 1u) + offset), float(steps));
+                const float t = fuseDivRn(radiusPx * (float(st - 1u) + offset), float(steps));
                 const float sx = cxp + dirX * t;
                 const float sy = cyp + dirY * t;
                 if (!sxInside(sx, sy)) {
@@ -140,13 +140,13 @@ float sxGtao(uint x, uint y) {
                 if (dist < 1e-6 || dist > F.aoRadius) {
                     continue;
                 }
-                const float3 hn = sxScale(h, sxDiv(1.0, dist));
+                const float3 hn = sxScale(h, fuseDivRn(1.0, dist));
                 if (sxDot(hn, n) <= F.aoBias) {
                     continue;
                 }
                 float hc = sxDot(hn, viewVec);
                 if (F.aoFalloff > 0.0) {
-                    const float w = sxSaturate(sxDiv(F.aoRadius - dist, F.aoFalloff * F.aoRadius));
+                    const float w = sxSaturate(fuseDivRn(F.aoRadius - dist, F.aoFalloff * F.aoRadius));
                     hc = lowCos[side] + (hc - lowCos[side]) * w;
                 }
                 horizonCos[side] = max(horizonCos[side], hc);
@@ -168,7 +168,7 @@ float sxGtao(uint x, uint y) {
     if (!(denominator > 0.0)) {
         return 1.0;
     }
-    const float visibility = sxSaturate(sxDiv(numerator, denominator));
+    const float visibility = sxSaturate(fuseDivRn(numerator, denominator));
     return F.aoStrength == 1.0 ? visibility : pow(visibility, F.aoStrength);
 }
 

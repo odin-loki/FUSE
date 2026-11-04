@@ -97,7 +97,8 @@ set(_fuse_wp15_header "${_fuse_wp15_gen}/material_resolve_spv.h")
 add_custom_target(fuse_material_resolve_kernels)
 set(_fuse_wp15_embed_args "")
 set(_fuse_wp15_embed_deps "")
-file(GLOB _fuse_wp15_glsl_includes "${_fuse_wp15_shd}/*.glsl" "${_fuse_wp15_vis_shd}/*.glsl" "${_fuse_wp15_ml_shd}/*.glsl")
+file(GLOB _fuse_wp15_glsl_includes "${_fuse_wp15_shd}/*.glsl" "${_fuse_wp15_vis_shd}/*.glsl" "${_fuse_wp15_ml_shd}/*.glsl"
+    "${_fuse_wp15_root}/shaders/common/exact_math.glsl")
 
 foreach(_row IN LISTS _fuse_wp15_kernels)
     string(REPLACE "|" ";" _entry "${_row}")

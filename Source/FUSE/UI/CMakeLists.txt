@@ -31,28 +31,80 @@ option(FUSE_BUILD_UI_GAME "Build fuse_ui_game (UI7: HUD, world-space UI, gamepad
 option(FUSE_BUILD_APP "Build fuse_app (application framework; UI9, not yet)" OFF)
 option(FUSE_BUILD_UI_DESIGNER "Build fuse_ui_designer (UI8 prototype: library, gate and app)" ON)
 option(FUSE_UI_ACCESSIBILITY "Accessibility tree (AccessKit bridge later, D7)" ON)
-set(FUSE_UI_TEXT "MINIMAL" CACHE STRING "Text profile: FULL (HarfBuzz + FreeType, fetched), MINIMAL (stb_truetype), COOKED (not yet)")
+set(FUSE_UI_TEXT "MINIMAL" CACHE STRING "Text profile: FULL (HarfBuzz + FreeType, fetched), MINIMAL (stb_truetype), COOKED (.fusefont packs only)")
 set_property(CACHE FUSE_UI_TEXT PROPERTY STRINGS FULL MINIMAL COOKED)
 set(FUSE_UI_PROFILE "app" CACHE STRING "UI profile: hud, app, editor")
-if(FUSE_UI_TEXT STREQUAL "COOKED")
-    message(STATUS "FUSE UI: text profile COOKED not implemented yet — using MINIMAL")
-endif()
 
 # ---- fuse_text ----
-add_library(fuse_text STATIC Text/src/text.cpp Text/src/font_catalog.cpp)
+set(FUSE_UI_TEXT_CORE_SRC Text/src/text.cpp Text/src/font_catalog.cpp Text/src/paint_enable.cpp)
+# opt-in rasterisers (enableColorGlyphs / enableMsdf) and the font cooker: linked only into binaries that call them
+set(FUSE_UI_TEXT_RASTER_SRC Text/src/colr_paint.cpp Text/src/path_raster.cpp Text/src/color_bitmap.cpp Text/src/msdf.cpp
+    Text/src/font_cook.cpp)
+
+# fuse_text_cook (every profile): TrueType / OpenType -> .fusefont, built over a MINIMAL fuse_text so cooked glyphs are
+# byte-identical to MINIMAL at the cooked sizes.
+add_library(fuse_text_cook_lib STATIC ${FUSE_UI_TEXT_CORE_SRC} ${FUSE_UI_TEXT_RASTER_SRC})
+target_include_directories(fuse_text_cook_lib PUBLIC Text/include)
+target_include_directories(fuse_text_cook_lib SYSTEM PRIVATE "${FUSE_UI_REPO_ROOT}/vendor/stb")
+target_compile_features(fuse_text_cook_lib PUBLIC cxx_std_23)
+add_executable(fuse_text_cook Text/tools/fuse_text_cook.cpp)
+target_include_directories(fuse_text_cook PRIVATE Text/tools)
+target_link_libraries(fuse_text_cook PRIVATE fuse_text_cook_lib)
+if(WIN32)
+    target_link_libraries(fuse_text_cook_lib PRIVATE advapi32)
+endif()
+
+# options of the bundled UI font's pack (also the fuse_text_cooked gate's determinism cook)
+set(FUSE_TEXT_UI_COOK_ARGS "--sizes=8-40,17.5,21,22.5,26.25,42,45,48,56,64,72" --msdf)
+if(FUSE_UI_TEXT STREQUAL "COOKED")
+    # The bundled fonts cooked at build time (sizes the UI and its gates use; MSDFs for the Latin / RTL / Indic faces,
+    # any other size of those is drawn from them; the big emoji and CJK faces keep a few strikes, resampled otherwise).
+    set(FUSE_TEXT_COOKED_FONT_DIR "${CMAKE_CURRENT_BINARY_DIR}/fonts" CACHE INTERNAL "cooked bundled fonts (build output)")
+    set(_fuse_text_fonts_out "")
+    function(fuse_text_cook_font src out)
+        set(_out "${FUSE_TEXT_COOKED_FONT_DIR}/${out}")
+        get_filename_component(_dir "${_out}" DIRECTORY)
+        add_custom_command(OUTPUT "${_out}"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${_dir}"
+            COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:fuse_text_cook> "--out=${_out}" ${ARGN} "${src}"
+            DEPENDS fuse_text_cook "${src}" COMMENT "fuse_text_cook ${out}" VERBATIM)
+        set(_fuse_text_fonts_out ${_fuse_text_fonts_out} "${_out}" PARENT_SCOPE)
+    endfunction()
+    set(_vf "${FUSE_UI_REPO_ROOT}/vendor/fonts")
+    set(_fb_sizes "--sizes=10-32,17.5,21,22.5,26.25")
+    fuse_text_cook_font("${_vf}/opensans/OpenSans.ttf" opensans/OpenSans.fusefont ${FUSE_TEXT_UI_COOK_ARGS}
+                        "--reference=${FUSE_TEXT_COOKED_FONT_DIR}/opensans/OpenSans.reference")
+    foreach(_f NotoSansHebrew-Regular NotoSansArabic-Regular NotoSansDevanagari-Regular NotoSansSymbols2-Regular
+               NotoSansThai-Regular)
+        fuse_text_cook_font("${_vf}/noto/${_f}.ttf" noto/${_f}.fusefont ${_fb_sizes} --msdf)
+    endforeach()
+    fuse_text_cook_font("${_vf}/twemoji/TwemojiMozilla.ttf" twemoji/TwemojiMozilla.fusefont "--sizes=13,14,15,16,17.5,20,21,28")
+    fuse_text_cook_font("${_vf}/noto/NotoSansCJKsc-Subset.otf" noto/NotoSansCJKsc-Subset.fusefont
+                        "--sizes=12,13,14,15,16,17.5,20,21,28")
+    add_custom_target(fuse_text_fonts ALL DEPENDS ${_fuse_text_fonts_out})
+
+    add_library(fuse_text STATIC ${FUSE_UI_TEXT_CORE_SRC} Text/src/text_cooked.cpp)
+    target_compile_definitions(fuse_text PUBLIC FUSE_TEXT_COOKED=1)
+    target_compile_definitions(fuse_text PRIVATE
+        FUSE_TEXT_BUNDLED_FONT="${FUSE_TEXT_COOKED_FONT_DIR}/opensans/OpenSans.fusefont"
+        FUSE_TEXT_FONT_DIR="${FUSE_TEXT_COOKED_FONT_DIR}")
+    add_dependencies(fuse_text fuse_text_fonts)
+else()
+    add_library(fuse_text STATIC ${FUSE_UI_TEXT_CORE_SRC} ${FUSE_UI_TEXT_RASTER_SRC})
+    target_include_directories(fuse_text SYSTEM PRIVATE "${FUSE_UI_REPO_ROOT}/vendor/stb")
+    if(ANDROID)
+        # APK assets: fuse_app_add_android_app packs vendor/fonts as fonts/, extracted to the working directory at start
+        target_compile_definitions(fuse_text PRIVATE FUSE_TEXT_BUNDLED_FONT="fonts/opensans/OpenSans.ttf" FUSE_TEXT_FONT_DIR="fonts")
+    else()
+        target_compile_definitions(fuse_text PRIVATE
+            FUSE_TEXT_BUNDLED_FONT="${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf"
+            FUSE_TEXT_FONT_DIR="${FUSE_UI_REPO_ROOT}/vendor/fonts")
+    endif()
+endif()
 if(WIN32)
     target_link_libraries(fuse_text PRIVATE advapi32) # registry font lists
 endif()
 target_include_directories(fuse_text PUBLIC Text/include)
-target_include_directories(fuse_text SYSTEM PRIVATE "${FUSE_UI_REPO_ROOT}/vendor/stb")
-if(ANDROID)
-    # APK assets: fuse_app_add_android_app packs vendor/fonts as fonts/, extracted to the working directory at start
-    target_compile_definitions(fuse_text PRIVATE FUSE_TEXT_BUNDLED_FONT="fonts/opensans/OpenSans.ttf" FUSE_TEXT_FONT_DIR="fonts")
-else()
-    target_compile_definitions(fuse_text PRIVATE
-        FUSE_TEXT_BUNDLED_FONT="${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf"
-        FUSE_TEXT_FONT_DIR="${FUSE_UI_REPO_ROOT}/vendor/fonts")
-endif()
 target_compile_features(fuse_text PUBLIC cxx_std_23)
 
 # FULL profile (decision D2): HarfBuzz + FreeType through FetchContent (static, no optional deps), SheenBidi (UAX #9)
@@ -318,8 +370,9 @@ if(FUSE_BUILD_UI_VK)
         if(FUSE_UI_GLSLANG)
             set(_spv "${_gen}/ui_draw_list.comp.spv")
             add_custom_command(OUTPUT "${_spv}"
-                COMMAND "${FUSE_UI_GLSLANG}" --target-env vulkan1.1 "${_src}" -o "${_spv}"
-                DEPENDS "${_src}" COMMENT "glslangValidator ui_draw_list.comp" VERBATIM)
+                COMMAND "${FUSE_UI_GLSLANG}" --target-env vulkan1.1 -g0 "${_src}" -o "${_spv}"
+                DEPENDS "${_src}" "${CMAKE_CURRENT_SOURCE_DIR}/Render/src/shaders/ui_glyph.glsl"
+                COMMENT "glslangValidator ui_draw_list.comp" VERBATIM)
         elseif(EXISTS "${_fixture}")
             set(_spv "${_fixture}")
         endif()

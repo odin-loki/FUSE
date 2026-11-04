@@ -73,6 +73,8 @@ struct UiContext::Cold {
     u32 qOff = 0, qCount = 0, qEpoch = 0, qAtlasGen = 0, qRev = 0;
     u8 qSrc = 0;
     f32 qPx = -1.f;
+    u32 qFg = 0;        ///< text colour the run's colour glyphs were rendered with
+    bool qColor = false; ///< the run has colour (RGBA) glyphs
 };
 
 struct UiContext::GlyphQuad {
@@ -81,6 +83,7 @@ struct UiContext::GlyphQuad {
     u16 u, v, w, h;     ///< atlas texels
     u8 r, g, b, a;      ///< COLR layer colour (when !fg)
     bool fg;            ///< drawn in the text colour
+    u8 mode;            ///< kGlyphCoverage / kGlyphColor / kGlyphMsdf
 };
 
 // ---- Registry ------------------------------------------------------------------------------------------------------
@@ -627,33 +630,92 @@ f32 UiContext::measureString(std::string_view s, f32 px) {
     return fuse::text::measureText(*m_font, s, px, m_shapeScratch);
 }
 
+namespace {
+u32 straightRgba(Color c) {
+    auto q = [](f32 v) { return u32(std::lround(std::clamp(v, 0.f, 1.f) * 255.f)); };
+    return q(c.r) | (q(c.g) << 8) | (q(c.b) << 16) | (q(c.a) << 24);
+}
+} // namespace
+
+bool UiContext::resolveGlyph(const fuse::text::Font& f, std::uint32_t glyph, f32 fpx, const fuse::text::ColorLayer* layer,
+                             Color col, GlyphQuad& q) {
+    fuse::text::AtlasGlyph ag;
+    q.mode = kGlyphCoverage;
+    if (layer && layer->image) { // bitmap strike / COLRv1: an RGBA atlas glyph (opaque text colour for its foreground)
+        ag = m_atlas.getColor(f, glyph, fpx, straightRgba(col.withAlpha(1.f)));
+        q.mode = kGlyphColor;
+    } else if (m_msdfThreshold > 0.f && fpx >= m_msdfThreshold && fuse::text::msdfEnabled()) {
+        ag = m_atlas.getMsdf(f, glyph);
+        q.mode = kGlyphMsdf;
+    } else {
+        ag = m_atlas.get(f, glyph, fpx);
+    }
+    if (!ag.valid || ag.w == 0) return false;
+    const bool fg = !layer || layer->foreground || layer->image;
+    q.x0 = ag.x0;
+    q.y0 = ag.y0;
+    q.u = ag.u;
+    q.v = ag.v;
+    q.w = ag.w;
+    q.h = ag.h;
+    q.r = fg ? u8(0) : layer->r;
+    q.g = fg ? u8(0) : layer->g;
+    q.b = fg ? u8(0) : layer->b;
+    q.a = fg ? u8(0) : layer->a;
+    q.fg = fg;
+    return true;
+}
+
+void UiContext::emitGlyph(DrawList& dl, const GlyphQuad& q, Vec2 o, Color col, f32 dpx, u32 nodeIdx) const {
+    const f32 sc = m_scale;
+    DrawCmd cmd;
+    cmd.op = DrawOp::Glyph;
+    cmd.node = nodeIdx;
+    cmd.gradient = q.mode;
+    if (q.mode == kGlyphMsdf) { // MSDF texels at kMsdfPixelSize stretched to the device size, not snapped
+        const f32 k = dpx / fuse::text::GlyphAtlas::kMsdfPixelSize;
+        cmd.rect = {((o.x + q.x) * sc + f32(q.x0) * k) / sc, ((o.y + q.baseline) * sc + f32(q.y0) * k) / sc,
+                    f32(q.w) * k / sc, f32(q.h) * k / sc};
+        cmd.blur = fuse::text::GlyphAtlas::kMsdfRange;
+    } else if (sc == 1.f) {
+        cmd.rect = {std::round(o.x + q.x) + f32(q.x0), std::round(o.y + q.baseline) + f32(q.y0), f32(q.w), f32(q.h)};
+    } else { // stored so that rect * scale lands on whole device pixels (scaleDrawList)
+        cmd.rect = {(std::round((o.x + q.x) * sc) + f32(q.x0)) / sc, (std::round((o.y + q.baseline) * sc) + f32(q.y0)) / sc,
+                    f32(q.w) / sc, f32(q.h) / sc};
+    }
+    cmd.u = q.u;
+    cmd.v = q.v;
+    cmd.tw = q.w;
+    cmd.th = q.h;
+    if (q.mode == kGlyphColor) cmd.fill = {1.f, 1.f, 1.f, col.a};
+    else cmd.fill = q.fg ? col : Color{f32(q.r) / 255.f, f32(q.g) / 255.f, f32(q.b) / 255.f, f32(q.a) / 255.f * col.a};
+    dl.push(cmd);
+}
+
+void UiContext::setMsdfThreshold(f32 devicePx) {
+    devicePx = std::isfinite(devicePx) ? std::max(devicePx, 0.f) : 0.f;
+    if (devicePx > 0.f) fuse::text::enableMsdf();
+    if (devicePx == m_msdfThreshold) return;
+    m_msdfThreshold = devicePx;
+    m_quads.clear(); // cached quads may switch between coverage and MSDF
+    m_quadLive = 0;
+    ++m_quadEpoch;
+    markAllDirty();
+}
+
 void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, Vec2 o, Color col, f32 px, u32 nodeIdx) {
     if (!m_font || col.a <= 0.f) return;
-    const f32 s = m_scale; // glyphs are rasterised at device size; the rect is stored so that rect * s is exact
+    const f32 dpx = px * m_scale; // glyphs are rasterised at device size; the rect is stored so that rect * s is exact
     for (const auto& ln : tl.lines) {
         for (u32 k = ln.firstGlyph; k < ln.firstGlyph + ln.glyphCount; ++k) {
             const auto& g = tl.glyphs[k];
             if (g.glyph == fuse::text::kInvisibleGlyph) continue;
-            fuse::text::forEachPaintGlyph(*m_font, g, px * s, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
-                                                                   const fuse::text::ColorLayer* layer) {
-                const auto ag = m_atlas.get(f, glyph, fpx);
-                if (!ag.valid || ag.w == 0) return;
-                DrawCmd c;
-                c.op = DrawOp::Glyph;
-                if (s == 1.f)
-                    c.rect = {std::round(o.x + g.x) + f32(ag.x0), std::round(o.y + ln.baseline) + f32(ag.y0), f32(ag.w), f32(ag.h)};
-                else
-                    c.rect = {(std::round((o.x + g.x) * s) + f32(ag.x0)) / s, (std::round((o.y + ln.baseline) * s) + f32(ag.y0)) / s,
-                              f32(ag.w) / s, f32(ag.h) / s};
-                c.u = ag.u;
-                c.v = ag.v;
-                c.tw = ag.w;
-                c.th = ag.h;
-                c.fill = (!layer || layer->foreground)
-                             ? col
-                             : Color{f32(layer->r) / 255.f, f32(layer->g) / 255.f, f32(layer->b) / 255.f, f32(layer->a) / 255.f * col.a};
-                c.node = nodeIdx;
-                dl.push(c);
+            fuse::text::forEachPaintGlyph(*m_font, g, dpx, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
+                                                                const fuse::text::ColorLayer* layer) {
+                GlyphQuad q{};
+                q.x = g.x;
+                q.baseline = ln.baseline;
+                if (resolveGlyph(f, glyph, fpx, layer, col, q)) emitGlyph(dl, q, o, col, dpx, nodeIdx);
             });
         }
     }
@@ -664,7 +726,9 @@ void UiContext::paintTextQuads(DrawList& dl, u32 i, u8 src, u32 rev, const fuse:
     Cold& c = *m_cold[i];
     const f32 sc = m_scale;  // quads are rasterised at device size (DPI scale): the key is the device pixel size
     const f32 dpx = px * sc;
-    if (c.qEpoch != m_quadEpoch || c.qAtlasGen != m_atlas.generation() || c.qSrc != src || c.qRev != rev || c.qPx != dpx) {
+    // colour glyphs bake the text colour (COLRv1 foreground): only runs that have them depend on it
+    if (c.qEpoch != m_quadEpoch || c.qAtlasGen != m_atlas.generation() || c.qSrc != src || c.qRev != rev || c.qPx != dpx ||
+        (c.qColor && c.qFg != straightRgba(col.withAlpha(1.f)))) {
         if (c.qEpoch == m_quadEpoch) m_quadLive -= c.qCount;
         // full and holding stale runs: start over rather than grow (nodes painted earlier rebuild next frame)
         if (m_quads.size() + tl.glyphs.size() > m_quads.capacity() && m_quads.size() > m_quadLive) {
@@ -673,17 +737,19 @@ void UiContext::paintTextQuads(DrawList& dl, u32 i, u8 src, u32 rev, const fuse:
             ++m_quadEpoch;
         }
         c.qOff = u32(m_quads.size());
+        c.qColor = false;
         for (const auto& ln : tl.lines)
             for (u32 k = ln.firstGlyph; k < ln.firstGlyph + ln.glyphCount; ++k) {
                 const auto& g = tl.glyphs[k];
                 if (g.glyph == fuse::text::kInvisibleGlyph) continue;
                 fuse::text::forEachPaintGlyph(*m_font, g, dpx, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
                                                                     const fuse::text::ColorLayer* layer) {
-                    const auto ag = m_atlas.get(f, glyph, fpx);
-                    if (!ag.valid || ag.w == 0) return;
-                    const bool fg = !layer || layer->foreground;
-                    m_quads.push_back({g.x, ln.baseline, ag.x0, ag.y0, ag.u, ag.v, ag.w, ag.h, fg ? u8(0) : layer->r,
-                                       fg ? u8(0) : layer->g, fg ? u8(0) : layer->b, fg ? u8(0) : layer->a, fg});
+                    GlyphQuad q{};
+                    q.x = g.x;
+                    q.baseline = ln.baseline;
+                    if (!resolveGlyph(f, glyph, fpx, layer, col, q)) return;
+                    c.qColor |= q.mode == kGlyphColor;
+                    m_quads.push_back(q);
                 });
             }
         c.qCount = u32(m_quads.size()) - c.qOff;
@@ -692,13 +758,18 @@ void UiContext::paintTextQuads(DrawList& dl, u32 i, u8 src, u32 rev, const fuse:
         c.qSrc = src;
         c.qRev = rev;
         c.qPx = dpx;
+        c.qFg = c.qColor ? straightRgba(col.withAlpha(1.f)) : 0u;
         m_quadLive += c.qCount;
     }
-    DrawCmd cmd;
+    DrawCmd cmd; // the hot path (every painted label, every frame): coverage quads without per-quad setup
     cmd.op = DrawOp::Glyph;
     cmd.node = i;
     for (u32 k = c.qOff, e = c.qOff + c.qCount; k < e; ++k) {
         const GlyphQuad& q = m_quads[k];
+        if (q.mode != kGlyphCoverage) {
+            emitGlyph(dl, q, o, col, dpx, i);
+            continue;
+        }
         if (sc == 1.f)
             cmd.rect = {std::round(o.x + q.x) + f32(q.x0), std::round(o.y + q.baseline) + f32(q.y0), f32(q.w), f32(q.h)};
         else // stored so that rect * scale lands on whole device pixels (scaleDrawList)
@@ -1303,6 +1374,10 @@ void UiContext::paintPass() {
 void UiContext::scaleDrawList(DrawList& dl) const {
     const f32 s = m_scale;
     for (DrawCmd& c : dl.cmds()) {
+        if (c.op == DrawOp::Glyph && c.gradient == kGlyphMsdf) { // scaled MSDF quad (range stays in texels)
+            c.rect = {c.rect.x * s, c.rect.y * s, c.rect.w * s, c.rect.h * s};
+            continue;
+        }
         if (c.op == DrawOp::Glyph) { // placed on whole device pixels at the atlas texel size
             c.rect = {std::round(c.rect.x * s), std::round(c.rect.y * s), f32(c.tw), f32(c.th)};
             continue;

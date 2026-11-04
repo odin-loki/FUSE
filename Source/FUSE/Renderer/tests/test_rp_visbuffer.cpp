@@ -17,7 +17,8 @@
 //                 centre; >= 60% of the pixels) has exactly the reference (instance, triangle); a
 //                 corrupted copy of the read-back is caught (negative control)
 //       decode    the GPU decode == the CPU decode kernel on the read-back image (flags equal,
-//                 depth / barycentrics within 1e-5), and is consistent with the depth: raster
+//                 depth / barycentrics bit for bit: vis_common divides with fuse_div_rn), and is
+//                 consistent with the depth: raster
 //                 |decode - D32| <= 1e-4 + snap on covered pixels, depth == 1 exactly where empty; atomic
 //                 floor(q) - 1e-4 - snap <= decode <= exported depth + 1e-4 + snap. snap = the
 //                 triangle's |dz/dx| + |dz/dy| times one sub-pixel step (snapDepthSlack: the rasteriser
@@ -823,7 +824,7 @@ void analyse(Context& ctx, Scene& s, Rig& rig, const Mat4& vp, FrameReport& r) {
         const VisDecodeTexel& c = cpu[p];
         const f64 err = std::max({std::fabs(static_cast<f64>(g.depth) - c.depth), std::fabs(static_cast<f64>(g.b1) - c.b1),
                                   std::fabs(static_cast<f64>(g.b2) - c.b2)});
-        if (g.flags != c.flags || !(err <= 1e-5)) {
+        if (g.flags != c.flags || !(err == 0.0)) { // correctly rounded on every device
             ++r.decodeBad;
         } else {
             r.maxDecodeErr = std::max(r.maxDecodeErr, err);

@@ -92,6 +92,9 @@ struct NativeOptions {
     fuse::ui::f32 scale = 0.f;
     /// Show / hide the soft keyboard as text fields gain / lose focus (mobile).
     bool autoSoftKeyboard = true;
+    /// Directory of the persistent "ui.draw_list" VkPipelineCache. null: the per-user cache dir
+    /// (%LOCALAPPDATA%\FUSE\cache, $XDG_CACHE_HOME/fuse or ~/.cache/fuse); "": no cache file.
+    const char* pipelineCacheDir = nullptr;
 };
 
 /// Insets of the area the OS draws over (status / navigation bars, display cutouts), in UI units. Zero on desktop.
@@ -114,6 +117,10 @@ struct LifecycleStats {
     bool hasSurface = false;
     bool softKeyboard = false;    ///< the soft keyboard was last requested shown
 };
+
+/// Per-user cache directory for fuse_app (Vulkan pipeline cache): %LOCALAPPDATA%\FUSE\cache on Windows,
+/// $XDG_CACHE_HOME/fuse or ~/.cache/fuse elsewhere.
+std::string defaultCacheDir();
 
 /// Per-window OS message hook (Win32: runs first in the window procedure; return true to consume the message with
 /// `result` as its LRESULT). Accessibility adapters answer WM_GETOBJECT through it. Not called on X11.

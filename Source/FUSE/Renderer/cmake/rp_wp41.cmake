@@ -84,7 +84,8 @@ set(_fuse_wp41_header "${_fuse_wp41_gen}/temporal_spv.h")
 add_custom_target(fuse_temporal_kernels)
 set(_fuse_wp41_embed_args "")
 set(_fuse_wp41_embed_deps "")
-file(GLOB _fuse_wp41_glsl_includes "${_fuse_wp41_shd}/*.glsl" "${_fuse_wp41_vis_shd}/*.glsl")
+file(GLOB _fuse_wp41_glsl_includes "${_fuse_wp41_shd}/*.glsl" "${_fuse_wp41_vis_shd}/*.glsl"
+    "${_fuse_wp41_root}/shaders/common/exact_math.glsl")
 
 foreach(_row IN LISTS _fuse_wp41_kernels)
     string(REPLACE "|" ";" _entry "${_row}")

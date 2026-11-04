@@ -4,8 +4,8 @@
 //
 // #include after bindless.glsl, gpu_scene.glsl and lt_common.glsl. Every arithmetic result is held in a
 // `precise` variable so no multiply-add is contracted: the passes keep the CPU kernel's IEEE operations and
-// order and return the same bits; every division and square root goes through lt_div_rn / lt_sqrt_rn
-// (lt_common.glsl: IEEE round-to-nearest, which Vulkan does not guarantee for `/` and `sqrt`).
+// order and return the same bits; every division and square root goes through fuse_div_rn / fuse_sqrt_rn
+// (common/exact_math.glsl: IEEE round-to-nearest, which Vulkan does not guarantee for `/` and `sqrt`).
 #ifndef FUSE_RESTIR_COMMON_GLSL
 #define FUSE_RESTIR_COMMON_GLSL
 
@@ -172,7 +172,7 @@ float rs_dot(vec3 a, vec3 b) {
     return r;
 }
 float rs_length(vec3 a) {
-    precise float r = lt_sqrt_rn(rs_dot(a, a));
+    precise float r = fuse_sqrt_rn(rs_dot(a, a));
     return r;
 }
 vec3 rs_normalize(vec3 a, vec3 fallback) {
@@ -180,7 +180,7 @@ vec3 rs_normalize(vec3 a, vec3 fallback) {
     if (!(l > 1e-20)) {
         return fallback;
     }
-    precise vec3 r = vec3(lt_div_rn(a.x, l), lt_div_rn(a.y, l), lt_div_rn(a.z, l));
+    precise vec3 r = vec3(fuse_div_rn(a.x, l), fuse_div_rn(a.y, l), fuse_div_rn(a.z, l));
     return r;
 }
 vec3 rs_cross(vec3 a, vec3 b) {
@@ -203,7 +203,7 @@ float rs_lum(vec3 c) {
 }
 void rs_basis(vec3 n, out vec3 t, out vec3 b) {
     const float sign = n.z >= 0.0 ? 1.0 : -1.0;
-    precise float a = -lt_div_rn(1.0, (sign + n.z));
+    precise float a = -fuse_div_rn(1.0, (sign + n.z));
     precise float c = (n.x * n.y) * a;
     precise float txx = ((sign * n.x) * n.x) * a;
     precise vec3 tt = vec3(1.0 + txx, sign * c, -(sign * n.x));
@@ -310,7 +310,7 @@ bool rs_prepare(RestirFrame F, uint px, uint py, float depth, float ox, float oy
     precise float y = ((F.invViewProj[1] * nx + F.invViewProj[5] * ny) + F.invViewProj[9] * depth) + F.invViewProj[13];
     precise float z = ((F.invViewProj[2] * nx + F.invViewProj[6] * ny) + F.invViewProj[10] * depth) + F.invViewProj[14];
     precise float w = ((F.invViewProj[3] * nx + F.invViewProj[7] * ny) + F.invViewProj[11] * depth) + F.invViewProj[15];
-    precise vec3 p = vec3(lt_div_rn(x, w), lt_div_rn(y, w), lt_div_rn(z, w));
+    precise vec3 p = vec3(fuse_div_rn(x, w), fuse_div_rn(y, w), fuse_div_rn(z, w));
     precise vec3 rel = p - rs_load(F.cameraPosition);
     const float lin = rs_dot(rel, rs_load(F.cameraForward));
     if (!(lin > 0.0)) {
@@ -408,7 +408,7 @@ float rs_source_pdf(uint kind, float pmf, float pdfArea) {
 float rs_spot(float cosA, float cosInner, float cosOuter) {
     if (cosInner > cosOuter) {
         precise float range = cosInner - cosOuter;
-        precise float t = lt_div_rn((cosA - cosOuter), range);
+        precise float t = fuse_div_rn((cosA - cosOuter), range);
         t = t < 0.0 ? 0.0 : t;
         t = t > 1.0 ? 1.0 : t;
         precise float tt = t * t;
@@ -452,8 +452,8 @@ bool rs_eval_light(RestirFrame F, RsSurface s, uint light, float u1, float u2, o
         if (!(dist2 > 1e-12)) {
             return false;
         }
-        precise float dist = lt_sqrt_rn(dist2);
-        precise vec3 wi = vec3(lt_div_rn(d.x, dist), lt_div_rn(d.y, dist), lt_div_rn(d.z, dist));
+        precise float dist = fuse_sqrt_rn(dist2);
+        precise vec3 wi = vec3(fuse_div_rn(d.x, dist), fuse_div_rn(d.y, dist), fuse_div_rn(d.z, dist));
         const float cosX = rs_dot(s.n, wi);
         if (!(cosX > 0.0)) {
             return false;
@@ -467,9 +467,9 @@ bool rs_eval_light(RestirFrame F, RsSurface s, uint light, float u1, float u2, o
             if (!(cosL > 0.0)) {
                 return false;
             }
-            g = lt_div_rn((cosX * cosL), dist2);
+            g = fuse_div_rn((cosX * cosL), dist2);
         } else {
-            g = lt_div_rn(cosX, dist2);
+            g = fuse_div_rn(cosX, dist2);
             if (em.kind == LT_KIND_SPOT) {
                 precise float cosA = -rs_dot(rs_load(em.normal), wi);
                 g = g * rs_spot(cosA, L.cosInner, L.cosOuter);
@@ -480,7 +480,7 @@ bool rs_eval_light(RestirFrame F, RsSurface s, uint light, float u1, float u2, o
         precise vec3 toLight = pos - e.origin;
         const float dl = rs_length(toLight);
         if (dl > 1e-6) {
-            precise vec3 dir = vec3(lt_div_rn(toLight.x, dl), lt_div_rn(toLight.y, dl), lt_div_rn(toLight.z, dl));
+            precise vec3 dir = vec3(fuse_div_rn(toLight.x, dl), fuse_div_rn(toLight.y, dl), fuse_div_rn(toLight.z, dl));
             precise float tm = dl * RS_SHADOW_SHORTEN;
             e.dir = dir;
             e.tMax = tm;
@@ -552,7 +552,7 @@ RestirDiReservoir rs_di_initial(RestirFrame F, uint px, uint py) {
         if (!rs_eval_light(F, s, ls.light, u1, u2, e)) {
             continue;
         }
-        precise float w = lt_div_rn(e.phat, src);
+        precise float w = fuse_div_rn(e.phat, src);
         wSum = wSum + w;
         const float u = rs_next(rng);
         precise float uw = u * wSum;
@@ -565,8 +565,8 @@ RestirDiReservoir rs_di_initial(RestirFrame F, uint px, uint py) {
         }
     }
     if (r.light != RS_INVALID) {
-        precise float mean = lt_div_rn(wSum, float(candidates));
-        precise float W = lt_div_rn(mean, selPhat);
+        precise float mean = fuse_div_rn(wSum, float(candidates));
+        precise float W = fuse_div_rn(mean, selPhat);
         r.W = W;
         r.targetPdf = selPhat;
         if ((F.flags & RS_FLAG_VISIBILITY_REUSE) != 0u && sel.tMax > 0.0 && rs_occluded(F, sel.origin, sel.dir, sel.tMax)) {
@@ -710,7 +710,7 @@ RestirDiReservoir rs_di_reuse(RestirFrame F, uint px, uint py, uint mode, uint i
                     num = mj;
                 }
             }
-            precise float m = lt_div_rn(num, den);
+            precise float m = fuse_div_rn(num, den);
             w = (m * pcv) * ri.W;
         } else {
             w = (pcv * ri.W) * ri.M;
@@ -729,9 +729,9 @@ RestirDiReservoir rs_di_reuse(RestirFrame F, uint px, uint py, uint mode, uint i
         }
     }
     if (outR.light != RS_INVALID) {
-        precise float wu = lt_div_rn(wSum, selPhat);
+        precise float wu = fuse_div_rn(wSum, selPhat);
         precise float d = selPhat * mSum;
-        precise float wb = lt_div_rn(wSum, d);
+        precise float wb = fuse_div_rn(wSum, d);
         outR.W = unbiased ? wu : wb;
         outR.targetPdf = selPhat;
     }
@@ -778,8 +778,8 @@ bool rs_gi_evaluate(RestirFrame F, RsSurface s, RestirGiReservoir r, out RsGiEva
     if (!(dist2 > 1e-12)) {
         return false;
     }
-    precise float dist = lt_sqrt_rn(dist2);
-    precise vec3 w = vec3(lt_div_rn(d.x, dist), lt_div_rn(d.y, dist), lt_div_rn(d.z, dist));
+    precise float dist = fuse_sqrt_rn(dist2);
+    precise vec3 w = vec3(fuse_div_rn(d.x, dist), fuse_div_rn(d.y, dist), fuse_div_rn(d.z, dist));
     const float cosV = rs_dot(s.n, w);
     if (!(cosV > 0.0)) {
         return false;
@@ -794,14 +794,14 @@ bool rs_gi_evaluate(RestirFrame F, RsSurface s, RestirGiReservoir r, out RsGiEva
     }
     e.cosV = cosV;
     e.phat = phat;
-    precise float area = lt_div_rn(cosS, dist2);
+    precise float area = fuse_div_rn(cosS, dist2);
     e.area = area;
     e.origin = rs_offset(F, s.p, s.n);
     precise vec3 target = xs + ns * F.normalBias;
     precise vec3 to = target - e.origin;
     const float dl = rs_length(to);
     if (dl > 1e-6) {
-        precise vec3 dir = vec3(lt_div_rn(to.x, dl), lt_div_rn(to.y, dl), lt_div_rn(to.z, dl));
+        precise vec3 dir = vec3(fuse_div_rn(to.x, dl), fuse_div_rn(to.y, dl), fuse_div_rn(to.z, dl));
         precise float tm = dl * RS_SHADOW_SHORTEN;
         e.dir = dir;
         e.tMax = tm;
@@ -899,9 +899,9 @@ RestirGiReservoir rs_gi_initial(RestirFrame F, uint px, uint py, uint64_t dump) 
         RsLightEval e;
         if (src > 0.0 && rs_eval_light(F, hs, ls.light, u1, u2, e)) {
             if (!(e.tMax > 0.0) || !rs_occluded(F, e.origin, e.dir, e.tMax)) {
-                precise float lx = lt_div_rn(lt_div_rn(hit.albedo.x * e.contrib.x, RS_PI), src);
-                precise float ly = lt_div_rn(lt_div_rn(hit.albedo.y * e.contrib.y, RS_PI), src);
-                precise float lz = lt_div_rn(lt_div_rn(hit.albedo.z * e.contrib.z, RS_PI), src);
+                precise float lx = fuse_div_rn(fuse_div_rn(hit.albedo.x * e.contrib.x, RS_PI), src);
+                precise float ly = fuse_div_rn(fuse_div_rn(hit.albedo.y * e.contrib.y, RS_PI), src);
+                precise float lz = fuse_div_rn(fuse_div_rn(hit.albedo.z * e.contrib.z, RS_PI), src);
                 lo = vec3(lx, ly, lz);
             }
         }
@@ -917,7 +917,7 @@ RestirGiReservoir rs_gi_initial(RestirFrame F, uint px, uint py, uint64_t dump) 
     r.radiance[2] = lo.z;
     precise float phat = rs_lum(lo) * cosV;
     if (phat > 0.0) {
-        precise float W = lt_div_rn(RS_PI, cosV);
+        precise float W = fuse_div_rn(RS_PI, cosV);
         r.W = W;
         r.targetPdf = phat;
     }
@@ -1008,7 +1008,7 @@ RestirGiReservoir rs_gi_reuse(RestirFrame F, uint px, uint py, uint mode, uint i
             if (!rs_gi_evaluate(F, sf[i], ri, ei)) {
                 continue;
             }
-            jacobian = lt_div_rn(ec.area, ei.area);
+            jacobian = fuse_div_rn(ec.area, ei.area);
             precise float jc = jacobian * F.giJacobianClamp;
             if (!unbiased && F.giJacobianClamp > 0.0 && (jacobian > F.giJacobianClamp || jc < 1.0)) {
                 continue;
@@ -1027,7 +1027,7 @@ RestirGiReservoir rs_gi_reuse(RestirFrame F, uint px, uint py, uint mode, uint i
                     num = mj;
                 }
             }
-            precise float m = lt_div_rn(num, den);
+            precise float m = fuse_div_rn(num, den);
             w = ((m * pcv) * ri.W) * jacobian;
         } else {
             w = ((pcv * ri.W) * jacobian) * ri.M;
@@ -1049,9 +1049,9 @@ RestirGiReservoir rs_gi_reuse(RestirFrame F, uint px, uint py, uint mode, uint i
         }
     }
     if (selected) {
-        precise float wu = lt_div_rn(wSum, selPhat);
+        precise float wu = fuse_div_rn(wSum, selPhat);
         precise float d = selPhat * mSum;
-        precise float wb = lt_div_rn(wSum, d);
+        precise float wb = fuse_div_rn(wSum, d);
         outR.W = unbiased ? wu : wb;
         outR.targetPdf = selPhat;
     }
@@ -1074,7 +1074,7 @@ void rs_shade(RestirFrame F, uint px, uint py, bool hasDi, RestirDiReservoir di,
         RsLightEval e;
         if (rs_eval_light(F, s, di.light, di.u1, di.u2, e)) {
             if (!(e.tMax > 0.0) || !rs_occluded(F, e.origin, e.dir, e.tMax)) {
-                precise float k = lt_div_rn(di.W, RS_PI);
+                precise float k = fuse_div_rn(di.W, RS_PI);
                 precise vec3 c = e.contrib * k;
                 diOut = vec4(c, 0.0);
             }
@@ -1086,7 +1086,7 @@ void rs_shade(RestirFrame F, uint px, uint py, bool hasDi, RestirDiReservoir di,
             const bool trace = (F.flags & RS_FLAG_GI_SHADE_VISIBILITY) != 0u && e.tMax > 0.0;
             if (!trace || !rs_occluded(F, e.origin, e.dir, e.tMax)) {
                 precise float cw = e.cosV * gi.W;
-                precise float k = lt_div_rn(cw, RS_PI);
+                precise float k = fuse_div_rn(cw, RS_PI);
                 precise vec3 c = rs_load(gi.radiance) * k;
                 giOut = vec4(c, 0.0);
             }

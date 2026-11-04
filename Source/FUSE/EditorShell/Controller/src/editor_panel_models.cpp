@@ -97,6 +97,11 @@ bool EditorPanels::hubNew(const std::string& directory, const std::string& name,
     ++m_revision;
     return ok;
 }
+bool EditorPanels::hubNewApp(const std::string& directory, const std::string& name) {
+    const bool ok = m_c.newAppProject(directory, name);
+    ++m_revision;
+    return ok;
+}
 
 // ---- Asset Browser (AssetBrowserWidget) -----------------------------------------------------------------------------
 

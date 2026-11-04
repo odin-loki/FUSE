@@ -34,7 +34,7 @@ float sx_depth_nearest(float px, float py) {
 
 float sx_ray_z_at(float k0, float k1, float f) {
     precise float den = k0 + (k1 - k0) * f;
-    const float z = sx_div(1.0, den);
+    const float z = fuse_div_rn(1.0, den);
     return z;
 }
 
@@ -60,7 +60,7 @@ SxHit sx_trace_ray(uint64_t sceneColor, SxTrace P, uint x, uint y, vec3 directio
     precise float rayLength = P.maxDistance;
     if (r.z < 0.0) {
         precise float lenN = p.z - F.nearZ * 1.01;
-        const float maxLen = sx_div(lenN, -r.z);
+        const float maxLen = fuse_div_rn(lenN, -r.z);
         rayLength = min(rayLength, maxLen);
     }
     if (rayLength <= 1e-4) {
@@ -72,8 +72,8 @@ SxHit sx_trace_ray(uint64_t sceneColor, SxTrace P, uint x, uint y, vec3 directio
     if (!sx_project(p, p0x, p0y) || !sx_project(e, p1x, p1y)) {
         return result;
     }
-    const float k0 = sx_div(1.0, p.z);
-    const float k1 = sx_div(1.0, e.z);
+    const float k0 = fuse_div_rn(1.0, p.z);
+    const float k1 = fuse_div_rn(1.0, e.z);
     const vec3 q0 = sx_scale(p, k0);
     const vec3 q1 = sx_scale(e, k1);
     precise float ddx = p1x - p0x;
@@ -82,11 +82,11 @@ SxHit sx_trace_ray(uint64_t sceneColor, SxTrace P, uint x, uint y, vec3 directio
     if (pixelLength < 1e-3) {
         return result;
     }
-    const float strideQ = sx_div(pixelLength, float(P.maxSteps));
+    const float strideQ = fuse_div_rn(pixelLength, float(P.maxSteps));
     const float stride = max(P.stride, strideQ);
-    const float stepsF = sx_div(pixelLength, stride);
+    const float stepsF = fuse_div_rn(pixelLength, stride);
     const uint stepCount = uint(ceil(stepsF));
-    const float fStep = sx_div(stride, pixelLength);
+    const float fStep = fuse_div_rn(stride, pixelLength);
 
     float prevF = 0.0;
     float prevZ = p.z;
@@ -142,21 +142,21 @@ SxHit sx_trace_ray(uint64_t sceneColor, SxTrace P, uint x, uint y, vec3 directio
     result.color = sx_color_at(sceneColor, sx_index(hx, hy));
 
     precise float k = k0 + (k1 - k0) * hitF;
-    const float invK = sx_div(1.0, k);
+    const float invK = fuse_div_rn(1.0, k);
     const vec3 hitPos = sx_scale(sx_add(q0, sx_scale(sx_sub(q1, q0), hitF)), invK);
     result.distance = sx_length(sx_sub(hitPos, p));
 
     float edgeFade = 1.0;
     if (P.fadeEdge > 0.0) {
-        const float u = sx_div(hpx, float(F.width));
-        const float vv = sx_div(hpy, float(F.height));
+        const float u = fuse_div_rn(hpx, float(F.width));
+        const float vv = fuse_div_rn(hpy, float(F.height));
         precise float u1 = 1.0 - u;
         precise float v1 = 1.0 - vv;
         const float edge = min(min(u, u1), min(vv, v1));
-        const float ef = sx_div(edge, P.fadeEdge);
+        const float ef = fuse_div_rn(edge, P.fadeEdge);
         edgeFade = sx_saturate(ef);
     }
-    precise float df = 4.0 * (1.0 - sx_div(result.distance, P.maxDistance));
+    precise float df = 4.0 * (1.0 - fuse_div_rn(result.distance, P.maxDistance));
     const float distanceFade = sx_saturate(df);
     precise float conf = edgeFade * distanceFade;
     result.confidence = conf;
@@ -175,7 +175,7 @@ bool sx_sky_exit(SxTrace P, uint x, uint y, vec3 direction) {
     precise float rayLength = P.maxDistance;
     if (r.z < 0.0) {
         precise float lenN = p.z - F.nearZ * 1.01;
-        const float maxLen = sx_div(lenN, -r.z);
+        const float maxLen = fuse_div_rn(lenN, -r.z);
         rayLength = min(rayLength, maxLen);
     }
     if (rayLength <= 1e-4) {

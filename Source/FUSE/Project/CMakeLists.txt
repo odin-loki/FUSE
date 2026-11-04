@@ -1,6 +1,7 @@
 set(FUSE_PROJECT_PUBLIC_HEADERS
     include/fuse/project/manifest.hpp
     include/fuse/project/json_reader.hpp
+    include/fuse/project/json_value.hpp
     include/fuse/project/loader.hpp
     include/fuse/project/importer.hpp
     include/fuse/project/import_desc.hpp
@@ -22,6 +23,7 @@ set(FUSE_PROJECT_PUBLIC_HEADERS
 set(FUSE_PROJECT_SOURCES
     src/manifest.cpp
     src/json_reader.cpp
+    src/json_value.cpp
     src/loader.cpp
     src/importer.cpp
     src/cook_manifest.cpp
@@ -59,6 +61,10 @@ if(TARGET fuse_script_cook)
     target_link_libraries(fuse_project PRIVATE fuse_script_cook)
     target_compile_definitions(fuse_project PRIVATE FUSE_PROJECT_HAS_SCRIPT_COOK=1)
 endif()
+
+# project.json maintenance CLI (--migrate schema 1 -> 2, --validate, --new-app).
+add_executable(fuse_project_tool tools/project_tool.cpp)
+target_link_libraries(fuse_project_tool PRIVATE fuse_project)
 
 add_library(fuse_world_converter STATIC
     src/world_converter.cpp

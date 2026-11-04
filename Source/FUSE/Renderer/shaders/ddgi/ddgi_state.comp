@@ -13,6 +13,7 @@
 // Same expressions in the same order, `precise`.
 #extension GL_GOOGLE_include_directive : require
 #include "ddgi_common.glsl"
+#include "../common/exact_math.glsl" // the oracle's IEEE quotients / roots: the decisions match
 
 layout(local_size_x = FUSE_DDGI_WORKGROUP) in;
 
@@ -45,7 +46,7 @@ void main() {
     float closestFrontDistance = FUSE_DDGI_STATE_FAR;
     float farthestFrontDistance = 0.0;
     uint backfaces = 0u;
-    precise float undo = F.backfaceDistanceScale > 0.0 ? 1.0 / F.backfaceDistanceScale : 1.0;
+    precise float undo = F.backfaceDistanceScale > 0.0 ? fuse_div_rn(1.0, F.backfaceDistanceScale) : 1.0;
     for (uint r = 0u; r < rays; ++r) {
         const float d = results.v[rayBase + r].w;
         if (d < 0.0) {
@@ -63,7 +64,7 @@ void main() {
             farthestFront = r;
         }
     }
-    precise float ratio = rays > 0u ? float(backfaces) / float(rays) : 0.0;
+    precise float ratio = rays > 0u ? fuse_div_rn(float(backfaces), float(rays)) : 0.0;
     const bool inside = ratio > F.probeBackfaceThreshold;
     const float minFront = F.probeMinFrontfaceDistance;
 
@@ -88,18 +89,19 @@ void main() {
             }
         } else if (closestFrontDistance > minFront) {
             precise float len2 = offset.x * offset.x + offset.y * offset.y + offset.z * offset.z;
-            const float len = sqrt(len2);
+            const float len = fuse_sqrt_rn(len2);
             if (len > 0.0) {
                 precise float gap = closestFrontDistance - minFront;
                 const float margin = min(gap, len);
-                precise float inv = 1.0 / len;
+                precise float inv = fuse_div_rn(1.0, len);
                 precise vec3 back = vec3(-offset.x * inv, -offset.y * inv, -offset.z * inv);
                 full = vec3(offset.x + back.x * margin, offset.y + back.y * margin, offset.z + back.z * margin);
                 moved = true;
             }
         }
         if (moved) {
-            precise vec3 n = vec3(full.x / F.volume.spacing[0], full.y / F.volume.spacing[1], full.z / F.volume.spacing[2]);
+            precise vec3 n = vec3(fuse_div_rn(full.x, F.volume.spacing[0]),
+                                  fuse_div_rn(full.y, F.volume.spacing[1]), fuse_div_rn(full.z, F.volume.spacing[2]));
             precise float n2 = n.x * n.x + n.y * n.y + n.z * n.z;
             precise float limit = F.probeMaxOffset * F.probeMaxOffset;
             if (n2 < limit) {
@@ -120,9 +122,9 @@ void main() {
                 const float ax = abs(dir.x);
                 const float ay = abs(dir.y);
                 const float az = abs(dir.z);
-                precise float px = ax > 0.0 ? F.volume.spacing[0] / max(ax, 1e-6) : FUSE_DDGI_STATE_FAR;
-                precise float py = ay > 0.0 ? F.volume.spacing[1] / max(ay, 1e-6) : FUSE_DDGI_STATE_FAR;
-                precise float pz = az > 0.0 ? F.volume.spacing[2] / max(az, 1e-6) : FUSE_DDGI_STATE_FAR;
+                precise float px = ax > 0.0 ? fuse_div_rn(F.volume.spacing[0], max(ax, 1e-6)) : FUSE_DDGI_STATE_FAR;
+                precise float py = ay > 0.0 ? fuse_div_rn(F.volume.spacing[1], max(ay, 1e-6)) : FUSE_DDGI_STATE_FAR;
+                precise float pz = az > 0.0 ? fuse_div_rn(F.volume.spacing[2], max(az, 1e-6)) : FUSE_DDGI_STATE_FAR;
                 if (d <= min(px, min(py, pz))) {
                     state = 0.0; // active
                     break;

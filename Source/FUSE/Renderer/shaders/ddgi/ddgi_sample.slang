@@ -2,6 +2,7 @@
 //   float3 E = fuseDdgiSampleIrradiance(volumeAddress, position, normal);   // 0 when address == 0
 //   float3 E = fuseDdgiSampleIrradianceView(volumeAddress, position, normal, view); // + view bias
 #pragma once
+#include "../common/exact_math.slang" // fuseDivRn / fuseSqrtRn: the oracle's IEEE quotients and roots
 
 static const float kFuseDdgiPi = 3.14159265358979323846;
 
@@ -25,11 +26,11 @@ struct DdgiVolume { // DdgiVolumeView, 96 bytes
 
 float3 fuseDdgiNormalized(float3 d) {
     const float dd = d.x * d.x + d.y * d.y + d.z * d.z;
-    const float len = sqrt(dd);
+    const float len = fuseSqrtRn(dd);
     if (len < 1e-8) {
         return float3(0.0, 0.0, 0.0);
     }
-    const float inv = 1.0 / len;
+    const float inv = fuseDivRn(1.0, len);
     return float3(d.x * inv, d.y * inv, d.z * inv);
 }
 
@@ -51,14 +52,14 @@ float3 fuseDdgiResolveDirectionOr(float3 d, float3 fallback) {
 
 float fuseDdgiLength(float3 d) {
     const float dd = d.x * d.x + d.y * d.y + d.z * d.z;
-    return sqrt(dd);
+    return fuseSqrtRn(dd);
 }
 
 float2 fuseDdgiEncodeDirection(float3 direction) {
     float3 n = fuseDdgiResolveDirection(direction);
     const float sum = abs(n.x) + abs(n.y) + abs(n.z);
     if (sum > 1e-8) {
-        const float inv = 1.0 / sum;
+        const float inv = fuseDivRn(1.0, sum);
         n = float3(n.x * inv, n.y * inv, n.z * inv);
     }
     float2 o;
@@ -143,8 +144,8 @@ bool fuseDdgiProbeActive(DdgiVolume V, uint probe) {
 float3 fuseDdgiSampleVolumeBiased(DdgiVolume V, float3 position, float3 n, float3 biased) {
     float3 grid = float3(0.0, 0.0, 0.0);
     if (V.spacing[0] > 0.0 && V.spacing[1] > 0.0 && V.spacing[2] > 0.0) {
-        grid = float3((biased.x - V.origin[0]) / V.spacing[0], (biased.y - V.origin[1]) / V.spacing[1],
-                      (biased.z - V.origin[2]) / V.spacing[2]);
+        grid = float3(fuseDivRn(biased.x - V.origin[0], V.spacing[0]), fuseDivRn(biased.y - V.origin[1], V.spacing[1]),
+                      fuseDivRn(biased.z - V.origin[2], V.spacing[2]));
     }
     uint base[3];
     float alpha[3];
@@ -179,21 +180,21 @@ float3 fuseDdgiSampleVolumeBiased(DdgiVolume V, float3 position, float3 n, float
         const float toProbeLen = fuseDdgiLength(toProbe);
         if (toProbeLen > 1e-6) {
             const float d = toProbe.x * n.x + toProbe.y * n.y + toProbe.z * n.z;
-            const float wrap = (d / toProbeLen + 1.0) * 0.5;
+            const float wrap = (fuseDivRn(d, toProbeLen) + 1.0) * 0.5;
             weight *= wrap * wrap + 0.2;
         }
 
         const float3 probeToPoint = float3(biased.x - probePos.x, biased.y - probePos.y, biased.z - probePos.z);
         const float dist = fuseDdgiLength(probeToPoint);
         if (dist > 1e-6) {
-            const float inv = 1.0 / dist;
+            const float inv = fuseDivRn(1.0, dist);
             const float3 dir = float3(probeToPoint.x * inv, probeToPoint.y * inv, probeToPoint.z * inv);
             const float2 moments = fuseDdgiProbeDistance(V, probe, dir);
             const float mean = moments.x;
             if (dist > mean) {
                 const float variance = abs(moments.y - mean * mean);
                 const float delta = dist - mean;
-                float chebyshev = variance / max(variance + delta * delta, 1e-12);
+                float chebyshev = fuseDivRn(variance, max(variance + delta * delta, 1e-12));
                 chebyshev = max(chebyshev * chebyshev * chebyshev, 0.0);
                 weight *= max(chebyshev, 0.05);
             }
@@ -201,7 +202,7 @@ float3 fuseDdgiSampleVolumeBiased(DdgiVolume V, float3 position, float3 n, float
         weight = max(weight, 1e-6);
         const float crush = V.weightCrushThreshold;
         if (crush > 0.0 && weight < crush) {
-            weight *= (weight * weight) / (crush * crush);
+            weight *= fuseDivRn(weight * weight, crush * crush);
         }
         weight *= trilinear;
 
@@ -212,7 +213,7 @@ float3 fuseDdgiSampleVolumeBiased(DdgiVolume V, float3 position, float3 n, float
     if (weightSum <= 0.0) {
         return float3(0.0, 0.0, 0.0);
     }
-    const float invSum = 1.0 / weightSum;
+    const float invSum = fuseDivRn(1.0, weightSum);
     return float3(sum.x * invSum, sum.y * invSum, sum.z * invSum);
 }
 

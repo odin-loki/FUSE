@@ -3,6 +3,7 @@
 // #include after gpu_scene.slang and vis_format.slang. Compile with -fp-mode precise (Slang does not
 // honour `precise` per variable), so no multiply-add is contracted.
 #pragma once
+#include "../common/exact_math.slang" // fuseDivRn: the CPU kernel's IEEE quotients
 
 static const uint kFuseVisDecodeEmpty = 0u;
 static const uint kFuseVisDecodeOk = 1u;
@@ -54,12 +55,12 @@ VisDecoded fuseVisDecodeClip(float4 c0, float4 c1, float4 c2, float2 ndc) {
         r.flags = kFuseVisDecodeDegenerate;
         return r;
     }
-    const float b0 = e0 / s;
-    const float b1 = e1 / s;
-    const float b2 = e2 / s;
+    const float b0 = fuseDivRn(e0, s);
+    const float b1 = fuseDivRn(e1, s);
+    const float b2 = fuseDivRn(e2, s);
     const float z = b0 * c0.z + b1 * c1.z + b2 * c2.z;
     const float w = b0 * c0.w + b1 * c1.w + b2 * c2.w;
-    r.depth = z / w;
+    r.depth = fuseDivRn(z, w);
     r.b1 = b1;
     r.b2 = b2;
     r.flags = kFuseVisDecodeOk;

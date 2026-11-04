@@ -29,7 +29,7 @@
 // TAAU tolerance (GPU vs CPU kernel), per value e = |gpu - cpu| / max(1, |cpu|) over output RGB and history RGB + w:
 //   bulk      e <= 2e-5 for all but 0.1% of the values. The twins execute the same operations in the same order
 //             without contraction, and add / mul / floor round like the CPU on every device; division and sqrt
-//             go through fuse_tm_div / fuse_tm_sqrt (tm_common: correctly rounded even where OpFDiv uses its
+//             go through fuse_div_rn / fuse_sqrt_rn (common/exact_math.glsl: correctly rounded even where OpFDiv uses its
 //             2.5 ulp, e.g. NVIDIA, where a 1-ulp quotient switched floor() texels and rejection tests: history
 //             errors up to 5.7e-3 before), so the one source of difference is sin() in the Lanczos-2 weights
 //             (Vulkan allows 2^-11 absolute; llvmpipe's polynomial is ~1e-7, RTX 3090 measured worst 1.7e-4 on

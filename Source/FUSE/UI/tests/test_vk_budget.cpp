@@ -4,7 +4,9 @@
 //   * blur-only:   one 600x360 frosted panel over a full-window gradient
 //   * backdrop:    the 8 cards with two frosted-glass panels (blur passes)
 //   * incremental: one progress-bar change redrawn through DrawList::redrawRegion (the fuse_app present path)
-// Budget on GPUs: full <= 1.0 ms, backdrop <= 2.0 ms, incremental <= 0.25 ms. Software devices (lavapipe) only report.
+//   * hud:         a ~270-node game HUD (corner stat panels with bars, objective bar, hotbar) — plan §6 "HUD GPU time"
+// Budget on GPUs: full <= 1.0 ms, backdrop <= 2.0 ms, incremental <= 0.25 ms, hud <= 0.5 ms. Software devices
+// (lavapipe) only report.
 // Skips (77) without a Vulkan device or timestamp support.
 #include "fuse/ui/render/ui_vk.hpp"
 #include "test_util.hpp"
@@ -32,6 +34,37 @@ void appendShifted(DrawList& out, const DrawList& src, f32 dx, f32 dy) {
         }
         out.push(c);
     }
+}
+
+/// A game HUD: four corner panels (status rows with bars), a top bar of labels and a hotbar of tool buttons.
+void buildHud(UiContext& ui) {
+    using namespace widgets;
+    ui.setCss(ui.root(), "padding", "32px");
+    for (int c = 0; c < 4; ++c) {
+        const NodeHandle p = panel(ui, ui.root());
+        ui.addClass(p, "card");
+        ui.setCss(p, "position", "absolute");
+        ui.setCss(p, c < 2 ? "top" : "bottom", "96px");
+        ui.setCss(p, (c & 1) ? "right" : "left", "32px");
+        ui.setCss(p, "width", "420px");
+        for (int r = 0; r < 14; ++r) {
+            const NodeHandle row = panel(ui, p);
+            ui.addClass(row, "row");
+            label(ui, row, "Stat " + std::to_string(c * 14 + r));
+            const NodeHandle bar = progressBar(ui, row, 0.1f + 0.06f * float(r));
+            ui.setCss(bar, "flex-grow", "1");
+            label(ui, row, std::to_string(100 + r * 7));
+        }
+    }
+    const NodeHandle top = panel(ui, ui.root());
+    ui.addClass(top, "row");
+    for (int i = 0; i < 24; ++i) label(ui, top, "Objective " + std::to_string(i));
+    const NodeHandle hotbar = panel(ui, ui.root());
+    ui.addClass(hotbar, "row");
+    ui.setCss(hotbar, "position", "absolute");
+    ui.setCss(hotbar, "bottom", "32px");
+    ui.setCss(hotbar, "left", "640px");
+    for (int i = 0; i < 12; ++i) toolButton(ui, hotbar, std::to_string(i + 1));
 }
 } // namespace
 
@@ -84,8 +117,10 @@ int main() {
     GpuDrawData data;
     Image black, out;
     black.resize(int(W), int(H), 0xFF000000u);
-    auto measure = [&](const char* what, Rect scissor, const Color* clear, const DrawList& dl, double budgetMs) {
-        packDrawList(dl, W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()), nullptr, 0, scissor, clear);
+    auto measure = [&](const char* what, Rect scissor, const Color* clear, const DrawList& dl, double budgetMs,
+                       UiContext* atlasOf = nullptr) {
+        UiContext& a = atlasOf ? *atlasOf : ui;
+        packDrawList(dl, W, H, data, a.atlas().pixels(), u32(a.atlas().size()), nullptr, 0, scissor, clear);
         UI_CHECK(gpu.upload(0, data));
         // kReps frames back to back per submission (keeps the clocks up), barriers between them like real frames
         constexpr int kReps = 10;
@@ -133,6 +168,13 @@ int main() {
     const Color clear{0.f, 0.f, 0.f, 1.f};
     std::printf("  incremental region %.0fx%.0f\n", region.w, region.h);
     measure("incremental", region, &clear, next, 0.25);
+    // game HUD over the frame (plan §6: HUD GPU time <= 0.5 ms)
+    UiContext hud({.viewport = {f32(W), f32(H)}, .font = &font()});
+    widgets::install(hud);
+    buildHud(hud);
+    hud.update();
+    std::printf("  hud: %u nodes\n", hud.nodeCount());
+    measure("hud", {}, nullptr, hud.drawList(), 0.5, &hud);
 
     vkDestroyQueryPool(vk.device, qp, nullptr);
     gpu.destroy();

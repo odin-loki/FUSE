@@ -29,7 +29,7 @@
 // exp(-tau) with tau up to ~40 near the horizon amplifies that, so the LUT gates are relative with an absolute
 // floor tied to the LUT's peak. The transmittance texel -> (r, mu) mapping is the exception: the horizon column
 // grazes the ground, where one ulp of r (0.5 m) is ~3e-3 of transmittance, so the kernels divide and take roots
-// correctly rounded there (at_div_rn / at_sqrt_rn) and match the CPU geometry exactly on any device.
+// correctly rounded there (fuse_div_rn / fuse_sqrt_rn) and match the CPU geometry exactly on any device.
 //
 // Exit 77 = skip (stub build, no ICD / validation layer, capability missing, no kernel built).
 #include <fuse/renderer/sky_view.hpp>

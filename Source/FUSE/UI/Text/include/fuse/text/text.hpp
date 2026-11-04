@@ -2,9 +2,10 @@
 //
 // Profiles (FUSE_UI_TEXT, decision D2 adopted 2026-10-29): FULL (HarfBuzz + FreeType + bidi + UAX #14/#29),
 // MINIMAL (cmap + kerning shaping, stb_truetype grayscale rasterisation; Latin / Greek / Cyrillic / CJK, no complex
-// scripts or bidi), COOKED (pre-baked .fusefont only). MINIMAL is the default; FULL (FUSE_UI_TEXT=FULL, fetched
-// HarfBuzz + FreeType) swaps in HarfBuzzShaper and FreeType coverage behind the same interfaces. COOKED is not built
-// yet. textProfile() reports what is compiled.
+// scripts or bidi), COOKED (pre-baked .fusefont packs only, fuse/text/font_cook.hpp). MINIMAL is the default; FULL
+// (FUSE_UI_TEXT=FULL, fetched HarfBuzz + FreeType) swaps in HarfBuzzShaper and FreeType coverage behind the same
+// interfaces; COOKED reads advances, kerning and pre-rasterised glyphs from the pack (MINIMAL shaping, no font parsing).
+// textProfile() reports what is compiled.
 //
 // Engine rules: no exceptions (std::expected), no owning raw pointers, no allocation on the steady-state path: shaping
 // and layout write into caller-owned buffers that keep their capacity, and the glyph atlas only allocates on a miss.
@@ -79,9 +80,33 @@ struct ColorLayer {
     std::uint32_t glyph = 0;
     std::uint8_t r = 0, g = 0, b = 0, a = 255;
     bool foreground = false;
+    /// The whole glyph is one RGBA image (CBDT / sbix bitmap strike or an exactly rendered COLRv1 paint graph):
+    /// draw it with GlyphAtlas::getColor instead of a tinted coverage glyph.
+    bool image = false;
 };
 
+/// A premultiplied RGBA8 image of a glyph (row stride w * 4); x0 / y0 place its top-left texel relative to the pen
+/// on the baseline (y down), like AtlasGlyph.
+struct ColorImage {
+    int w = 0, h = 0;
+    int x0 = 0, y0 = 0;
+    std::vector<std::uint8_t> rgba;
+};
+
+/// Opt-in rasterisers (each links its own code only when called):
+/// enableColorGlyphs: exact COLRv1 (gradients, transforms, clip boxes, composite modes) and CBDT / sbix bitmap
+/// strikes (PNG). Without it COLRv1 glyphs fall back to flattened solid layers and bitmap-only glyphs draw nothing.
+/// Call it before loading bitmap fonts (their strike index is read at load).
+void enableColorGlyphs();
+bool colorGlyphsEnabled();
+/// enableMsdf: multi-channel signed distance fields (GlyphAtlas::getMsdf, Font::renderMsdf).
+void enableMsdf();
+bool msdfEnabled();
+
 class ITextShaper;
+namespace detail {
+struct FontAccess;
+}
 struct TextLayoutDesc;
 struct TextLayout;
 struct ShapeCacheStats;
@@ -89,15 +114,16 @@ struct ShapeCacheStats;
 /// A TrueType / OpenType font (glyf or CFF outlines). Holds a copy of the file bytes; the parsed state points into it.
 class Font {
 public:
-    /// `faceIndex` picks a face of a collection (.ttc / .otc); 0 for single-face files.
+    /// `faceIndex` picks a face of a collection (.ttc / .otc); 0 for single-face files. COOKED builds accept only
+    /// .fusefont packs (fromFile maps them instead of reading).
     static std::expected<Font, TextError> fromBytes(std::span<const std::uint8_t> bytes, std::uint32_t faceIndex = 0);
     /// `path` is UTF-8.
     static std::expected<Font, TextError> fromFile(const std::string& path, std::uint32_t faceIndex = 0);
     /// FUSE's bundled UI font (vendor/fonts/opensans) when the build knows its path; InvalidFont otherwise.
     static std::expected<Font, TextError> bundled();
     /// FUSE's bundled fallback faces in chain order: Noto Sans Hebrew, Arabic, Devanagari, Twemoji (COLRv0 colour
-    /// emoji), Symbols 2, Thai and a Noto Sans SC subset (kana, CJK punctuation, fullwidth forms and the ~1400 most
-    /// frequent Han characters, CFF outlines). Fonts whose files are missing are skipped. Attach them with
+    /// emoji), Symbols 2, Thai and a Noto Sans CJK SC subset (kana, CJK punctuation, fullwidth forms, the ~1400 most
+    /// frequent Han characters and Hangul: KS X 1001 syllables + jamo; CFF outlines). COOKED: their build-time packs. Fonts whose files are missing are skipped. Attach them with
     /// setFallbacks().
     static std::vector<Font> bundledFallbacks();
 
@@ -136,19 +162,29 @@ public:
     /// Pixel size to use for face `i` so its em matches this font's em at `pixelSize`.
     float facePixelSize(std::uint16_t i, float pixelSize) const;
 
-    // ---- Colour glyphs (COLR + CPAL, palette 0) ----
-    // COLRv0 layers are exact. COLRv1 paint graphs (glyphs without a v0 record) are flattened to the same solid
-    // layers: PaintColrLayers / PaintGlyph / PaintColrGlyph are followed, a gradient fill becomes the mean colour of
-    // its stops, transforms are ignored and composites paint backdrop then source. CBDT / sbix bitmaps are not read.
+    // ---- Colour glyphs (COLR + CPAL palette 0, CBDT / CBLC, sbix) ----
+    // COLRv0 layers are exact. With enableColorGlyphs(), COLRv1 paint graphs (glyphs without a v0 record) and bitmap
+    // strikes are one `image` layer rendered by renderColor. Without it COLRv1 graphs are flattened to solid layers
+    // (gradients become the mean colour of their stops, transforms are ignored) and bitmap glyphs have no layers.
     bool hasColorGlyphs() const;
     /// Layers of `glyph` when it is a colour glyph; empty for ordinary glyphs.
     std::span<const ColorLayer> colorLayers(std::uint32_t glyph) const;
+    /// Renders an `image` colour glyph at `pixelSize`: the best bitmap strike scaled to the em size, or the COLRv1
+    /// graph (`foreground`: text colour for palette index 0xFFFF, straight RGBA, R in the low byte). False when the
+    /// glyph has no image or the rasteriser is not enabled.
+    bool renderColor(std::uint32_t glyph, float pixelSize, std::uint32_t foreground, ColorImage& out) const;
+    /// Multi-channel signed distance field of `glyph` at `pixelSize` (needs enableMsdf()): RGB per-channel distances,
+    /// A the true distance, 255 * (0.5 + d / range) with d in pixels (inside > 127.5), padded by range / 2 + 1.
+    /// False for glyphs without an outline.
+    bool renderMsdf(std::uint32_t glyph, float pixelSize, float range, ColorImage& out) const;
 
 private:
     friend class HarfBuzzShaper;
     friend void layoutText(const Font&, const ITextShaper&, std::string_view, const TextLayoutDesc&, TextLayout&);
     friend ShapeCacheStats shapeCacheStats(const Font&);
+    friend struct detail::FontAccess;
     struct State;
+    static std::expected<Font, TextError> fromCooked(State* st, std::span<const std::uint8_t> pack); // COOKED only
     State* m_state = nullptr; // owned (pimpl); released in ~Font
     std::uint32_t m_id = 0;
 };
@@ -302,25 +338,51 @@ private:
 };
 
 // ---- Glyph atlas ---------------------------------------------------------------------------------------------------
-struct AtlasGlyph {
-    std::uint16_t u = 0, v = 0, w = 0, h = 0; ///< texels in the atlas page
-    std::int16_t x0 = 0, y0 = 0;              ///< offset from the pen on the baseline
-    bool valid = false;
+enum class AtlasKind : std::uint8_t {
+    Coverage, ///< 8-bit coverage in the coverage page, tinted when drawn
+    Color,    ///< premultiplied RGBA in the colour page
+    Msdf,     ///< MSDF texels (RGB distances, A true distance) in the colour page, drawn scaled
 };
 
-/// One 8-bit coverage page with shelf packing and an open-addressed lookup (no allocation on hit).
-/// When full, the page is reset and the generation bumps (callers re-request their glyphs: LRU by page).
+struct AtlasGlyph {
+    std::uint16_t u = 0, v = 0, w = 0, h = 0; ///< texels in the glyph's page
+    std::int16_t x0 = 0, y0 = 0;              ///< offset from the pen on the baseline
+    bool valid = false;
+    AtlasKind kind = AtlasKind::Coverage;
+};
+
+/// Two pages in one buffer: an 8-bit coverage page (size x size) followed by an RGBA8 colour page
+/// (size / 2 x size / 2, premultiplied colour glyphs and MSDF texels). Shelf packing per page and one open-addressed
+/// lookup (no allocation on hit). When a page is full, both are reset and the generation bumps (callers re-request
+/// their glyphs: LRU by page). pixels() is the whole buffer (coverage, then colour) as renderers upload it.
 class GlyphAtlas {
 public:
+    /// MSDF glyphs are generated once at this pixel size with this distance range (pixels) and drawn scaled.
+    static constexpr float kMsdfPixelSize = 32.f;
+    static constexpr float kMsdfRange = 4.f;
+
     explicit GlyphAtlas(int size = 1024);
-    /// Finds or rasterises `glyph` of `font` at `pixelSize` (sizes are bucketed to 1/4 px).
+    /// Finds or rasterises `glyph` of `font` at `pixelSize` (sizes are bucketed to 1/4 px) as coverage.
     AtlasGlyph get(const Font& font, std::uint32_t glyph, float pixelSize);
+    /// An `image` colour glyph (ColorLayer::image) as premultiplied RGBA (kind Color); w == 0 when it has no image.
+    /// `foreground` (straight RGBA, R low) is the text colour COLRv1 graphs may use; it is part of their key.
+    AtlasGlyph getColor(const Font& font, std::uint32_t glyph, float pixelSize, std::uint32_t foreground = 0xFF000000u);
+    /// The MSDF of `glyph` at kMsdfPixelSize (kind Msdf; needs enableMsdf()). Draw it scaled by pixelSize /
+    /// kMsdfPixelSize: x0 / y0 / w / h are texels at the MSDF size.
+    AtlasGlyph getMsdf(const Font& font, std::uint32_t glyph);
     /// Caller-keyed coverage (UI icons). Keys must have bit 63 clear (font glyph keys set it) and be non-zero.
     bool lookup(std::uint64_t key, AtlasGlyph& out) const;
     /// Copies a w x h coverage bitmap (row stride `stride`) under `key`; x0 / y0 are stored as the glyph offset.
     AtlasGlyph insert(std::uint64_t key, const std::uint8_t* src, int w, int h, int stride, int x0, int y0);
+    /// Copies a w x h premultiplied RGBA8 bitmap (row stride `stride` bytes) into the colour page under `key`
+    /// (0: placed but not recorded).
+    AtlasGlyph insertColor(std::uint64_t key, const std::uint8_t* rgba, int w, int h, int stride, int x0, int y0,
+                           AtlasKind kind = AtlasKind::Color);
     int size() const { return m_size; }
+    /// Side of the colour page (size() / 2); its texels start at pixels() + size() * size(), 4 bytes each.
+    int colorSize() const { return m_size / 2; }
     const std::uint8_t* pixels() const { return m_pixels.data(); }
+    const std::uint8_t* colorPixels() const { return m_pixels.data() + std::size_t(m_size) * std::size_t(m_size); }
     std::uint32_t generation() const { return m_generation; }
     std::uint32_t misses() const { return m_misses; }
     void clear();
@@ -328,13 +390,20 @@ public:
 private:
     struct Slot {
         std::uint64_t key = 0;
+        std::uint32_t aux = 0;
         AtlasGlyph g;
     };
+    struct Shelf {
+        int x = 1, y = 1, h = 0;
+    };
+    bool find(std::uint64_t key, std::uint32_t aux, std::size_t& slot) const;
+    static bool place(Shelf& s, int pageSize, int w, int h, int& u, int& v);
+    AtlasGlyph store(std::uint64_t key, std::uint32_t aux, const AtlasGlyph& g);
     int m_size;
     std::vector<std::uint8_t> m_pixels;
     std::vector<Slot> m_slots;
     std::uint32_t m_used = 0;
-    int m_shelfX = 1, m_shelfY = 1, m_shelfH = 0;
+    Shelf m_shelf, m_colorShelf;
     std::uint32_t m_generation = 0;
     std::uint32_t m_misses = 0;
 };

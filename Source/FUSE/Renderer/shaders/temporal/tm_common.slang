@@ -70,47 +70,8 @@ struct TmPush {
 };
 [[vk::push_constant]] ConstantBuffer<TmPush> pc;
 
-// Correctly rounded division / square root (tm_common.glsl fuse_tm_div / fuse_tm_sqrt, see there).
-float fuseTmResid(float a, float q, float b) {
-    const float p = q * b;
-    const float cq = 4097.0 * q;
-    const float qh = cq - (cq - q);
-    const float ql = q - qh;
-    const float cb = 4097.0 * b;
-    const float bh = cb - (cb - b);
-    const float bl = b - bh;
-    const float e = ((qh * bh - p) + qh * bl + ql * bh) + ql * bl;
-    return (a - p) - e;
-}
-float fuseTmNextToward(float q, bool up) {
-    const uint bits = asuint(q);
-    return asfloat((q > 0.0) == up ? bits + 1u : bits - 1u);
-}
-float fuseTmRoundRn(float a, float q, float b, bool root) {
-    float r = fuseTmResid(a, q, root ? q : b);
-    for (int i = 0; i < 4 && r != 0.0; ++i) {
-        const float qn = fuseTmNextToward(q, root ? r > 0.0 : (r > 0.0) == (b > 0.0));
-        const float rn = fuseTmResid(a, qn, root ? qn : b);
-        if (abs(rn) < abs(r) || (abs(rn) == abs(r) && (asuint(q) & 1u) != 0u)) {
-            q = qn;
-            r = rn;
-        } else {
-            break;
-        }
-    }
-    return q;
-}
-float fuseTmDiv(float a, float b) {
-    const float q = a / b;
-    if (q == 0.0 || isinf(q) || isnan(q)) {
-        return q;
-    }
-    return fuseTmRoundRn(a, q, b, false);
-}
-float fuseTmSqrt(float x) {
-    const float s = sqrt(x);
-    if (!(x > 0.0) || isinf(x)) {
-        return s;
-    }
-    return fuseTmRoundRn(x, s, s, true);
-}
+// Correctly rounded division / square root (fuseDivRn / fuseSqrtRn, common/exact_math.slang): Vulkan lets `/` and
+// `sqrt` be a few ulp off and NVIDIA uses that slack, but the motion pass scales the object-space point by
+// barycentric quotients and the TAAU resolve feeds quotients to floor() texel choices, rejection tests and the clip
+// box.
+#include "../common/exact_math.slang"
