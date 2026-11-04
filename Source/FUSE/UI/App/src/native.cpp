@@ -221,7 +221,11 @@ struct NativePlatform::Impl {
     x11::Lib x;
     x11::Display* dpy = nullptr;
     x11::Atom wmProtocols = 0, wmDelete = 0;
-    unsigned long cursors[std::size_t(CursorShape::Count)]{}; ///< font cursors, created on first use
+    unsigned long cursors[std::size_t(CursorShape::Count)]{}; ///< theme / font cursors, created on first use
+    x11::Xcursor xc;          ///< libXcursor (themed cursors at the DPI-scaled size); absent: font cursors
+    bool xcOk = false;
+    int cursorSize = 0;       ///< device px size the theme cursors are loaded at (0: font cursors)
+    std::string cursorTheme;  ///< theme they come from ("" = Xcursor's default)
     f32 xScale = 1.f; ///< $FUSE_UI_SCALE, XSETTINGS Xft/DPI or RESOURCE_MANAGER Xft.dpi, / 96
     x11::Randr xr;
     bool xrOk = false;
@@ -231,9 +235,12 @@ struct NativePlatform::Impl {
     x11::Window xsOwner = 0;  ///< XSETTINGS manager window (0: none)
     int xsDpi = 0;            ///< Xft/DPI * 1024 (0: not set)
     std::string xsTheme;      ///< Net/ThemeName
+    int xsCursorSize = 0;     ///< Gtk/CursorThemeSize (logical px; 0: not set)
+    std::string xsCursorTheme; ///< Gtk/CursorThemeName
     int wakeFd[2] = {-1, -1}; ///< self-pipe: wake() from other threads
     void readXSettings();     ///< (re)reads the manager's settings (and follows a new manager window)
     void settingsChanged();   ///< re-reads them and applies DPI / theme changes
+    void updateCursorTheme(); ///< cursor size / theme from XSETTINGS + DPI; reloads the cursors when they change
     void x11Event(x11::Event& ev);
     void startMoveResize(Rec& r, HitArea a, const x11::InputEv& in);
     std::vector<DisplayInfo> x11Displays() const;
@@ -1246,12 +1253,36 @@ void NativePlatform::Impl::readXSettings() {
     }
     xsDpi = 0;
     xsTheme.clear();
+    xsCursorSize = 0;
+    xsCursorTheme.clear();
     std::vector<unsigned char> v;
     if (owner && x.property(dpy, owner, xsSettings, xsSettings, v))
         for (const x11::XSetting& s : x11::parseXSettings(v.data(), v.size())) {
             if (s.name == "Xft/DPI" && s.type == 0) xsDpi = s.integer;
             else if (s.name == "Net/ThemeName" && s.type == 1) xsTheme = s.string;
+            else if (s.name == "Gtk/CursorThemeSize" && s.type == 0) xsCursorSize = s.integer;
+            else if (s.name == "Gtk/CursorThemeName" && s.type == 1) xsCursorTheme = s.string;
         }
+}
+void NativePlatform::Impl::updateCursorTheme() {
+    if (!xcOk) return;
+    // Gtk/CursorThemeSize is logical (GTK multiplies it by the window scale); else $XCURSOR_SIZE, else 24
+    int base = xsCursorSize > 0 && xsCursorSize <= 512 ? xsCursorSize : 0;
+    if (!base)
+        if (const char* e = std::getenv("XCURSOR_SIZE"); e && *e) base = std::clamp(std::atoi(e), 0, 512);
+    if (!base) base = 24;
+    const int size = std::max(8, int(std::lround(f32(base) * xScale)));
+    if (size == cursorSize && xsCursorTheme == cursorTheme) return;
+    cursorSize = size;
+    cursorTheme = xsCursorTheme;
+    xc.SetTheme(dpy, cursorTheme.empty() ? nullptr : cursorTheme.c_str());
+    xc.SetDefaultSize(dpy, size);
+    for (unsigned long& c : cursors)
+        if (c) { x.FreeCursor(dpy, c); c = 0; }
+    for (Rec* r : recs) { // re-apply at the new size
+        r->svc.cursor = CursorShape::Auto;
+        if (r->handle) syncCursor(*r);
+    }
 }
 void NativePlatform::Impl::settingsChanged() {
     const std::string oldTheme = xsTheme;
@@ -1264,6 +1295,7 @@ void NativePlatform::Impl::settingsChanged() {
                 if (r->handle && r->win->scale() != s) applyScale(*r, s, nullptr);
         }
     }
+    updateCursorTheme(); // Gtk/CursorThemeSize / Gtk/CursorThemeName or the DPI scale changed
     if (xsTheme != oldTheme) themeChanged(); // Application::setSystemTheme fires ThemeChanged only on a real change
 }
 void NativePlatform::Impl::x11Event(x11::Event& ev) {
@@ -1291,7 +1323,14 @@ void NativePlatform::Impl::syncCursor(Rec& r) {
     // X font cursor glyphs (cursorfont.h): left_ptr, xterm, hand2, sb_v/h_double_arrow, corners, fleur, watch, X, cross
     static constexpr unsigned kGlyph[] = {68, 68, 152, 60, 116, 108, 14, 12, 52, 150, 0, 34};
     static_assert(sizeof(kGlyph) / sizeof(kGlyph[0]) == std::size_t(CursorShape::Count));
+    // themed (libXcursor, freedesktop cursor-spec name, then the legacy X name): sized by updateCursorTheme()
+    static constexpr const char* kNames[][2] = {{"default", "left_ptr"}, {"default", "left_ptr"}, {"text", "xterm"},
+        {"pointer", "hand2"}, {"ns-resize", "sb_v_double_arrow"}, {"ew-resize", "sb_h_double_arrow"},
+        {"nwse-resize", "bottom_right_corner"}, {"nesw-resize", "bottom_left_corner"}, {"move", "fleur"},
+        {"wait", "watch"}, {"not-allowed", "crossed_circle"}, {"crosshair", "cross"}};
+    static_assert(sizeof(kNames) / sizeof(kNames[0]) == std::size_t(CursorShape::Count));
     unsigned long& cur = cursors[std::size_t(c)];
+    for (int k = 0; !cur && xcOk && k < 2; ++k) cur = xc.LibraryLoadCursor(dpy, kNames[std::size_t(c)][k]);
     if (!cur) cur = x.CreateFontCursor(dpy, kGlyph[std::size_t(c)]);
     x.DefineCursor(dpy, x11::Window(r.handle), cur);
     x.Flush(dpy);
@@ -1337,6 +1376,8 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
             x.SelectInput(i.dpy, i.root, x11::kStructureNotifyMask | x11::kPropertyChangeMask);
             i.readXSettings();
             i.xScale = o.dpiAware ? i.readXScale() : 1.f;
+            i.xcOk = i.xc.load();
+            i.updateCursorTheme();
             if (::pipe(i.wakeFd) == 0) {
                 for (int fd : i.wakeFd) ::fcntl(fd, F_SETFL, ::fcntl(fd, F_GETFL) | O_NONBLOCK);
                 for (int fd : i.wakeFd) ::fcntl(fd, F_SETFD, FD_CLOEXEC);

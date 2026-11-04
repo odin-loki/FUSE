@@ -108,6 +108,8 @@ struct Lib {
     Window (*GetSelectionOwner)(Display*, Atom) = nullptr;
     int (*SetSelectionOwner)(Display*, Atom, Window, Time) = nullptr;
     int (*SetInputFocus)(Display*, Window, int, Time) = nullptr;
+    int (*FreeCursor)(Display*, XID) = nullptr;
+    int (*WarpPointer)(Display*, Window, Window, int, int, unsigned, unsigned, int, int) = nullptr;
 
     bool load() {
         if (so) return true;
@@ -133,7 +135,8 @@ struct Lib {
         get(DisplayHeight, "XDisplayHeight"); get(SendEvent, "XSendEvent"); get(GrabPointer, "XGrabPointer");
         get(UngrabPointer, "XUngrabPointer"); get(CreateFontCursor, "XCreateFontCursor"); get(DefineCursor, "XDefineCursor");
         get(ResourceManagerString, "XResourceManagerString"); get(GetSelectionOwner, "XGetSelectionOwner");
-        get(SetSelectionOwner, "XSetSelectionOwner"); get(SetInputFocus, "XSetInputFocus");
+        get(SetSelectionOwner, "XSetSelectionOwner"); get(SetInputFocus, "XSetInputFocus"); get(FreeCursor, "XFreeCursor");
+        get(WarpPointer, "XWarpPointer");
         return all;
     }
 
@@ -222,6 +225,31 @@ struct Randr {
             so = nullptr;
         }
         return all;
+    }
+};
+
+// libXcursor: themed cursors at a chosen size (XSETTINGS Gtk/CursorThemeName / Gtk/CursorThemeSize)
+struct Xcursor {
+    void* so = nullptr;
+    XID (*LibraryLoadCursor)(Display*, const char*) = nullptr;
+    int (*SetDefaultSize)(Display*, int) = nullptr;
+    int (*GetDefaultSize)(Display*) = nullptr;
+    int (*SetTheme)(Display*, const char*) = nullptr;
+
+    bool load() {
+        if (so) return true;
+        so = dlopen("libXcursor.so.1", RTLD_NOW | RTLD_LOCAL);
+        if (!so) return false;
+        LibraryLoadCursor = reinterpret_cast<decltype(LibraryLoadCursor)>(dlsym(so, "XcursorLibraryLoadCursor"));
+        SetDefaultSize = reinterpret_cast<decltype(SetDefaultSize)>(dlsym(so, "XcursorSetDefaultSize"));
+        GetDefaultSize = reinterpret_cast<decltype(GetDefaultSize)>(dlsym(so, "XcursorGetDefaultSize"));
+        SetTheme = reinterpret_cast<decltype(SetTheme)>(dlsym(so, "XcursorSetTheme"));
+        if (!LibraryLoadCursor || !SetDefaultSize || !GetDefaultSize || !SetTheme) {
+            dlclose(so);
+            so = nullptr;
+            return false;
+        }
+        return true;
     }
 };
 

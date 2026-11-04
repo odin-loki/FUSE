@@ -458,9 +458,10 @@ if(TARGET fuse_app)
             set_tests_properties(fuse_platform_${g} PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 180
                 ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate;vulkan")
         endforeach()
-        # X11 parity (RandR monitors, XSETTINGS DPI / theme, pump wake) against the gate's own X connection
+        # X11 parity (RandR monitors, XSETTINGS DPI / theme, pump wake, XSETTINGS cursor size) against the gate's own
+        # X connection
         if(FUSE_UI_XVFB_RUN AND NOT WIN32)
-            foreach(g randr xsettings wake)
+            foreach(g randr xsettings wake cursor_size)
                 add_executable(fuse_x11_${g} test_platform_x11.cpp)
                 target_link_libraries(fuse_x11_${g} PRIVATE fuse_app_native)
                 target_include_directories(fuse_x11_${g} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../App/src)
