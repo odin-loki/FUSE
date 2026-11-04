@@ -1278,7 +1278,14 @@ bool UiContext::dispatch(u32 target, const Event& e) {
 void UiContext::setHover(u32 i) {
     const u32 old = node(m_hover) ? m_hover.index : kNone;
     if (old == i) return;
-    for (u32 a = old; a != kNone; a = m_nodes[a].parent) setState({a, m_nodes[a].gen}, kStateHover, false);
+    // ancestors shared with the new chain keep :hover (toggling them repaints and damages the whole window)
+    const auto onNewChain = [&](u32 a) {
+        for (u32 b = i; b != kNone; b = m_nodes[b].parent)
+            if (b == a) return true;
+        return false;
+    };
+    for (u32 a = old; a != kNone; a = m_nodes[a].parent)
+        if (!onNewChain(a)) setState({a, m_nodes[a].gen}, kStateHover, false);
     for (u32 a = i; a != kNone; a = m_nodes[a].parent) setState({a, m_nodes[a].gen}, kStateHover, true);
     m_hover = handleOf(i);
     if (old != kNone) {
