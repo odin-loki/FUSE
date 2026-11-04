@@ -12,6 +12,7 @@ struct WindowAccessibility::Impl {
     EventSource prev{};
     EventSource self{};
     fuse::ui::u64 syncedFrame = ~0ull;
+    bool focused = false; ///< last window focus told to the adapter (Linux)
 #if FUSE_UI_HAVE_ACCESSKIT && defined(_WIN32)
     std::unique_ptr<a11y::WindowsAdapter> adapter;
 #elif FUSE_UI_HAVE_ACCESSKIT && defined(__linux__)
@@ -43,6 +44,13 @@ struct WindowAccessibility::Impl {
         m->push(false);
         const bool go = m->prev.pump ? m->prev.pump(m->prev.user, a, wait) : true;
         if (m->bridge.drain()) m->win.requestRedraw(); // actions from AT threads, before this iteration's frame
+#if FUSE_UI_HAVE_ACCESSKIT && defined(__linux__)
+        // AT-SPI has no window message to watch: report the X11 focus the event pump tracked
+        if (const bool f = m->native.windowFocused(m->win); m->adapter && f != m->focused) {
+            m->focused = f;
+            m->adapter->setWindowFocused(f);
+        }
+#endif
         return go;
     }
 #if FUSE_UI_HAVE_ACCESSKIT && defined(_WIN32)
@@ -62,6 +70,8 @@ WindowAccessibility::WindowAccessibility(NativePlatform& native, AppWindow& w) :
 #elif FUSE_UI_HAVE_ACCESSKIT && defined(__linux__)
     if (native.nativeWindow(w)) m->adapter = std::make_unique<a11y::UnixAdapter>(m->bridge);
 #endif
+    // AT threads queue actions; without a wake the X11 pump would sleep until the next X event
+    m->bridge.setWakeHandler([](void* n) { static_cast<NativePlatform*>(n)->wake(); }, &native);
     m->bridge.sync();
     m->prev = m->app.eventSource();
     m->self = {m.get(), &Impl::pump};
@@ -69,6 +79,7 @@ WindowAccessibility::WindowAccessibility(NativePlatform& native, AppWindow& w) :
 }
 
 WindowAccessibility::~WindowAccessibility() {
+    m->bridge.setWakeHandler(nullptr, nullptr);
     // restore the pump only when it is still ours (a later wrapper or a destroyed NativePlatform replaced it)
     if (m->app.eventSource().user == m.get()) m->app.setEventSource(m->prev);
 #if FUSE_UI_HAVE_ACCESSKIT && defined(_WIN32)

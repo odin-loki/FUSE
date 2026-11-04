@@ -101,14 +101,28 @@ std::expected<std::vector<std::string>, PlatformError> zenityFiles(const FileDia
 } // namespace
 
 namespace detail {
-SystemTheme queryTheme(const NativeOptions& o) {
+SystemTheme posixQueryTheme(const NativeOptions& o, std::string_view gtkThemeName) {
     if (o.themeQuery) return o.themeQuery(o.themeQueryUser);
     SystemTheme t;
+    auto darkName = [](std::string_view n) { // "Adwaita-dark", "Breeze:dark", "Yaru-dark" ...
+        std::string l(n);
+        for (char& c : l) c = char(std::tolower(static_cast<unsigned char>(c)));
+        return l.find("dark") != std::string::npos;
+    };
     if (const char* e = std::getenv("FUSE_UI_THEME"); e && *e) t.dark = std::strcmp(e, "light") != 0;
-    else if (const char* g = std::getenv("GTK_THEME"); g && *g) t.dark = std::strstr(g, ":dark") || std::strstr(g, "-dark");
+    else if (const char* g = std::getenv("GTK_THEME"); g && *g) t.dark = darkName(g);
+    else if (!gtkThemeName.empty()) t.dark = darkName(gtkThemeName);
     if (const char* e = std::getenv("FUSE_UI_REDUCED_MOTION"); e && *e == '1') t.reducedMotion = true;
     return t;
 }
+SystemTheme queryTheme(const NativeOptions& o) { return posixQueryTheme(o, {}); }
+
+std::vector<PumpWatch>& pumpWatches() {
+    static std::vector<PumpWatch> w;
+    return w;
+}
+void addPumpWatch(int fd, void (*fn)(void*), void* user) { pumpWatches().push_back({fd, fn, user}); }
+void removePumpWatch(void* user) { std::erase_if(pumpWatches(), [user](const PumpWatch& w) { return w.user == user; }); }
 } // namespace detail
 
 std::expected<std::vector<std::string>, PlatformError> openFileDialog(const FileDialogDesc& d) { return zenityFiles(d, false, false); }

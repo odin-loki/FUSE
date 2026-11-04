@@ -155,8 +155,20 @@ bool Bridge::perform(const ActionRequest& r) {
 }
 
 void Bridge::enqueue(const ActionRequest& r) {
+    void (*wake)(void*) = nullptr;
+    void* user = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_queue.push_back(r);
+        wake = m_wake;
+        user = m_wakeUser;
+    }
+    if (wake) wake(user); // the UI thread may be blocked in its event pump
+}
+void Bridge::setWakeHandler(void (*fn)(void* user), void* user) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_queue.push_back(r);
+    m_wake = fn;
+    m_wakeUser = user;
 }
 
 u32 Bridge::drain() {

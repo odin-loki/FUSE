@@ -12,9 +12,10 @@
 // Callbacks run from the thread's message loop: NativePlatform's event pump, or poll() when the app has none.
 //
 // Win32: Shell_NotifyIconW (NOTIFYICON_VERSION_4, a message-only window per icon; re-added when Explorer restarts);
-// notifications are NIF_INFO balloons, shown as toasts on Windows 10 / 11. X11: no tray icon yet (XEmbed system tray
-// not done); notify() calls org.freedesktop.Notifications over D-Bus when libdbus-1 loads at runtime, else reports
-// Unsupported.
+// notifications are NIF_INFO balloons, shown as toasts on Windows 10 / 11. Unix: a StatusNotifierItem on the session
+// D-Bus (runtime-loaded libdbus-1) registered with org.kde.StatusNotifierWatcher; the menu is exported as
+// com.canonical.dbusmenu and drawn by the tray host (openMenu() does nothing there; no double click, no screenRect);
+// notify() calls org.freedesktop.Notifications, a tray icon's notifications report clicks through ActionInvoked.
 #pragma once
 
 #include "fuse/ui/ui.hpp"
@@ -38,7 +39,7 @@ public:
     TrayIcon(const TrayIcon&) = delete;
     TrayIcon& operator=(const TrayIcon&) = delete;
 
-    /// True when this platform / session has a tray (Win32 with a shell; false on X11 for now).
+    /// True when this platform / session has a tray (Win32 with a shell; Unix: a StatusNotifierWatcher on the bus).
     static bool supported();
     /// Adds the icon (square RGBA raster, e.g. 32x32; resampled by the OS). False when the shell refuses.
     bool create(const fuse::ui::Image& icon, std::string_view tooltip);

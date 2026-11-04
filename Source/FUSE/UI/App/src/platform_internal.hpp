@@ -5,6 +5,8 @@
 #include "fuse/app/native.hpp"
 
 #include <cstdint>
+#include <string_view>
+#include <vector>
 
 namespace fuse::platform {
 struct EventV2;
@@ -19,6 +21,23 @@ struct ServiceState {
 };
 
 SystemTheme queryTheme(const NativeOptions& o);
+
+#if !defined(_WIN32)
+/// POSIX theme: NativeOptions::themeQuery, else $FUSE_UI_THEME, $GTK_THEME, then the XSETTINGS Net/ThemeName
+/// (`gtkThemeName`, dark when it says so).
+SystemTheme posixQueryTheme(const NativeOptions& o, std::string_view gtkThemeName);
+
+/// Extra file descriptors the X11 event pump waits on beside the X connection (D-Bus connections of shell services).
+/// `fn` runs on the pump's thread every pump iteration (after the wait), readable or not. UI thread only.
+struct PumpWatch {
+    int fd = -1;
+    void (*fn)(void* user) = nullptr;
+    void* user = nullptr;
+};
+std::vector<PumpWatch>& pumpWatches();
+void addPumpWatch(int fd, void (*fn)(void*), void* user);
+void removePumpWatch(void* user);
+#endif
 
 #if defined(_WIN32)
 void winEnableDpiAwareness();

@@ -6,7 +6,9 @@
 //   fuse::app::titleBar(w, w.ui().root(), "Tool");   // drag area + min / max / close
 //   native.show(w);
 //
-// Not yet: X11 (the window keeps its WM frame there; _MOTIF_WM_HINTS + _NET_WM_MOVERESIZE would do it).
+// X11: _MOTIF_WM_HINTS asks the window manager for no decorations; a press on the caption / an edge (same hit test)
+// hands the drag to the WM with _NET_WM_MOVERESIZE, a caption double click and the maximise button send _NET_WM_STATE,
+// minimise sends WM_CHANGE_STATE; the maximised state follows the window's _NET_WM_STATE property.
 #pragma once
 
 #include "fuse/app/app.hpp"

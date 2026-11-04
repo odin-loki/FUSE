@@ -22,7 +22,7 @@ struct ActionRequest {
     Action action = Action::Focus;
     u64 target = 0;
     f32 value = 0.f;  ///< SetValue
-    std::string text; ///< SetText
+    std::string text{}; ///< SetText
 };
 
 /// Widget kinds the core role set folds together (menus are lists, the tree view is a list), refined from the widget
@@ -57,6 +57,8 @@ public:
     /// Thread-safe queue for adapters whose callbacks run on another thread; drain() applies them on the UI thread.
     void enqueue(const ActionRequest& r);
     u32 drain();
+    /// Called (on the enqueuing thread) after every enqueue: wakes the UI thread's event pump so it drains soon.
+    void setWakeHandler(void (*fn)(void* user), void* user);
     UiContext& ui() { return m_ui; }
     /// Logical px -> platform px for bounds (window DPI scale); a change makes the next sync report the root.
     void setScale(f32 s) { m_scale = s; }
@@ -72,6 +74,8 @@ private:
     f32 m_scale = 1.f, m_syncedScale = 1.f;
     std::mutex m_mutex, m_snapMutex;
     std::vector<ActionRequest> m_queue;
+    void (*m_wake)(void*) = nullptr;
+    void* m_wakeUser = nullptr;
 };
 
 /// True when this build links AccessKit.

@@ -4,6 +4,8 @@
 #include "platform_internal.hpp"
 #include "fuse/ui/platform_bridge.hpp"
 #include "chrome_internal.hpp"
+#include "x11_internal.hpp"
+#include "fuse/app/chrome.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
 
 #include <algorithm>
@@ -28,7 +30,9 @@
 #include <windows.h>
 #else
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <poll.h>
+#include <unistd.h>
 #endif
 
 #if defined(FUSE_APP_HAS_VULKAN)
@@ -116,112 +120,10 @@ void appendUtf8(std::string& s, u32 cp) {
 #if !defined(_WIN32)
 // ---- X11 (runtime-loaded) ----------------------------------------------------------------------------------------
 namespace x11 {
-using Display = struct _XDisplay;
-using XID = unsigned long;
-using Window = XID;
-using Atom = unsigned long;
-using KeySym = XID;
-// Event layouts (LP64 Xlib ABI); XEvent is a union padded to 24 longs.
-struct AnyEv { int type; unsigned long serial; int send_event; Display* display; Window window; };
-struct InputEv {
-    int type; unsigned long serial; int send_event; Display* display; Window window, root, subwindow;
-    unsigned long time; int x, y, x_root, y_root; unsigned state; unsigned detail; // keycode / button
-    int same_screen;
-};
-struct ConfigureEv { int type; unsigned long serial; int send_event; Display* display; Window event, window; int x, y, width, height; };
-struct ClientEv { int type; unsigned long serial; int send_event; Display* display; Window window; Atom message_type; int format; long l[5]; };
-union Event { int type; AnyEv any; InputEv input; ConfigureEv configure; ClientEv client; long pad[24]; };
-struct Image;
-struct ImageFuncs { Image* (*create)(); int (*destroy)(Image*); };
-struct Image {
-    int width, height, xoffset, format; char* data; int byte_order, bitmap_unit, bitmap_bit_order, bitmap_pad, depth,
-        bytes_per_line, bits_per_pixel; unsigned long red_mask, green_mask, blue_mask; char* obdata; ImageFuncs f;
-};
-enum { KeyPress = 2, KeyRelease = 3, ButtonPress = 4, ButtonRelease = 5, MotionNotify = 6, FocusOut = 10, Expose = 12,
-       MapNotify = 19, ConfigureNotify = 22, ClientMessage = 33 };
-constexpr long kMask = 1 | 2 | 4 | 8 | (1 << 6) | (1 << 15) | (1 << 17) | (1 << 21);
-
-struct Lib {
-    void* so = nullptr;
-    Display* (*OpenDisplay)(const char*) = nullptr;
-    int (*CloseDisplay)(Display*) = nullptr;
-    int (*DefaultScreen)(Display*) = nullptr;
-    Window (*RootWindow)(Display*, int) = nullptr;
-    Window (*CreateSimpleWindow)(Display*, Window, int, int, unsigned, unsigned, unsigned, unsigned long, unsigned long) = nullptr;
-    int (*DestroyWindow)(Display*, Window) = nullptr;
-    int (*StoreName)(Display*, Window, const char*) = nullptr;
-    int (*SelectInput)(Display*, Window, long) = nullptr;
-    int (*MapWindow)(Display*, Window) = nullptr;
-    Atom (*InternAtom)(Display*, const char*, int) = nullptr;
-    int (*SetWMProtocols)(Display*, Window, Atom*, int) = nullptr;
-    int (*Pending)(Display*) = nullptr;
-    int (*NextEvent)(Display*, Event*) = nullptr;
-    int (*ConnectionNumber)(Display*) = nullptr;
-    int (*Flush)(Display*) = nullptr;
-    int (*Sync)(Display*, int) = nullptr;
-    int (*LookupString)(InputEv*, char*, int, KeySym*, void*) = nullptr;
-    Image* (*GetImage)(Display*, XID, int, int, unsigned, unsigned, unsigned long, int) = nullptr;
-    void* (*SetErrorHandler)(int (*)(Display*, void*)) = nullptr;
-    int (*ChangeProperty)(Display*, Window, Atom, Atom, int, int, const unsigned char*, int) = nullptr;
-    int (*GetWindowProperty)(Display*, Window, Atom, long, long, int, Atom, Atom*, int*, unsigned long*, unsigned long*,
-                             unsigned char**) = nullptr;
-    int (*Free)(void*) = nullptr;
-    int (*ResizeWindow)(Display*, Window, unsigned, unsigned) = nullptr;
-    Image* (*CreateImage)(Display*, void*, unsigned, int, int, char*, unsigned, unsigned, int, int) = nullptr;
-    int (*PutImage)(Display*, XID, void*, Image*, int, int, int, int, unsigned, unsigned) = nullptr;
-    void* (*DefaultGC)(Display*, int) = nullptr;
-    void* (*DefaultVisual)(Display*, int) = nullptr;
-    int (*DefaultDepth)(Display*, int) = nullptr;
-    int (*MoveResizeWindow)(Display*, Window, int, int, unsigned, unsigned) = nullptr;
-    int (*TranslateCoordinates)(Display*, Window, Window, int, int, int*, int*, Window*) = nullptr;
-    int (*ChangeWindowAttributes)(Display*, Window, unsigned long, void*) = nullptr;
-    int (*DisplayWidth)(Display*, int) = nullptr;
-    int (*DisplayHeight)(Display*, int) = nullptr;
-    int (*SendEvent)(Display*, Window, int, long, Event*) = nullptr;
-    int (*GrabPointer)(Display*, Window, int, unsigned, int, int, Window, XID, unsigned long) = nullptr;
-    int (*UngrabPointer)(Display*, unsigned long) = nullptr;
-    XID (*CreateFontCursor)(Display*, unsigned) = nullptr;
-    int (*DefineCursor)(Display*, Window, XID) = nullptr;
-    char* (*ResourceManagerString)(Display*) = nullptr;
-
-    bool load() {
-        so = dlopen("libX11.so.6", RTLD_NOW | RTLD_LOCAL);
-        if (!so) so = dlopen("libX11.so", RTLD_NOW | RTLD_LOCAL);
-        if (!so) return false;
-        bool all = true;
-        auto get = [&](auto& fn, const char* name) {
-            fn = reinterpret_cast<std::remove_reference_t<decltype(fn)>>(dlsym(so, name));
-            all = all && fn;
-        };
-        get(OpenDisplay, "XOpenDisplay"); get(CloseDisplay, "XCloseDisplay"); get(DefaultScreen, "XDefaultScreen");
-        get(RootWindow, "XRootWindow"); get(CreateSimpleWindow, "XCreateSimpleWindow"); get(DestroyWindow, "XDestroyWindow");
-        get(StoreName, "XStoreName"); get(SelectInput, "XSelectInput"); get(MapWindow, "XMapWindow");
-        get(InternAtom, "XInternAtom"); get(SetWMProtocols, "XSetWMProtocols"); get(Pending, "XPending");
-        get(NextEvent, "XNextEvent"); get(ConnectionNumber, "XConnectionNumber"); get(Flush, "XFlush"); get(Sync, "XSync");
-        get(LookupString, "XLookupString"); get(GetImage, "XGetImage"); get(SetErrorHandler, "XSetErrorHandler");
-        get(ChangeProperty, "XChangeProperty"); get(GetWindowProperty, "XGetWindowProperty"); get(Free, "XFree"); get(ResizeWindow, "XResizeWindow");
-        get(CreateImage, "XCreateImage"); get(PutImage, "XPutImage"); get(DefaultGC, "XDefaultGC");
-        get(DefaultVisual, "XDefaultVisual"); get(DefaultDepth, "XDefaultDepth"); get(MoveResizeWindow, "XMoveResizeWindow");
-        get(TranslateCoordinates, "XTranslateCoordinates"); get(ChangeWindowAttributes, "XChangeWindowAttributes");
-        get(DisplayWidth, "XDisplayWidth"); get(DisplayHeight, "XDisplayHeight"); get(SendEvent, "XSendEvent");
-        get(GrabPointer, "XGrabPointer"); get(UngrabPointer, "XUngrabPointer");
-        get(CreateFontCursor, "XCreateFontCursor"); get(DefineCursor, "XDefineCursor");
-        get(ResourceManagerString, "XResourceManagerString");
-        return all;
-    }
-};
-// XSetWindowAttributes (LP64 Xlib ABI)
-struct SetWindowAttributes {
-    unsigned long background_pixmap, background_pixel, border_pixmap, border_pixel;
-    int bit_gravity, win_gravity, backing_store;
-    unsigned long backing_planes, backing_pixel;
-    int save_under;
-    long event_mask, do_not_propagate_mask;
-    int override_redirect;
-    unsigned long colormap, cursor;
-};
-constexpr unsigned long kCWOverrideRedirect = 1ul << 9, kCWSaveUnder = 1ul << 10;
-constexpr long kPopupMask = (1 << 2) | (1 << 3) | (1 << 6) | (1 << 15); // buttons, motion, exposure
+// main windows: keys, buttons, motion, exposure, configure / map, focus, properties (_NET_WM_STATE)
+constexpr long kMask = kKeyPressMask | kKeyReleaseMask | kButtonPressMask | kButtonReleaseMask | kPointerMotionMask |
+                       kExposureMask | kStructureNotifyMask | kFocusChangeMask | kPropertyChangeMask;
+constexpr long kPopupMask = kButtonPressMask | kButtonReleaseMask | kPointerMotionMask | kExposureMask;
 int ignoreErrors(Display*, void*) { return 0; } // a capture of an unmapped window must not abort the process
 
 Key mapKey(KeySym s, bool& ascii) {
@@ -299,6 +201,8 @@ struct NativePlatform::Impl {
         wchar_t highSurrogate = 0;
 #else
         x11::Display* vkDpy = nullptr; ///< the worker's own X connection (Xlib is not thread-safe without XInitThreads)
+        CursorShape edgeCursor = CursorShape::Auto; ///< custom chrome: resize cursor over a frame edge
+        unsigned long captionPress = 0;             ///< time of the last caption press (double click maximises)
 #endif
     };
 
@@ -311,13 +215,30 @@ struct NativePlatform::Impl {
     EventSource previous{};
 #if defined(_WIN32)
     HINSTANCE hinst = nullptr;
+    DWORD uiThread = 0; ///< wake() posts WM_NULL here
 #else
     x11::Lib x;
     x11::Display* dpy = nullptr;
     x11::Atom wmProtocols = 0, wmDelete = 0;
     unsigned long cursors[std::size_t(CursorShape::Count)]{}; ///< font cursors, created on first use
-    f32 xScale = 1.f; ///< Xft.dpi / 96 or $FUSE_UI_SCALE
+    f32 xScale = 1.f; ///< $FUSE_UI_SCALE, XSETTINGS Xft/DPI or RESOURCE_MANAGER Xft.dpi, / 96
+    x11::Randr xr;
+    bool xrOk = false;
+    x11::Window root = 0;
+    x11::Atom netWmState = 0, netMaxV = 0, netMaxH = 0, netMoveResize = 0, wmChangeState = 0, motifHints = 0, netWorkarea = 0,
+              resourceManager = 0, manager = 0, xsSelection = 0, xsSettings = 0;
+    x11::Window xsOwner = 0;  ///< XSETTINGS manager window (0: none)
+    int xsDpi = 0;            ///< Xft/DPI * 1024 (0: not set)
+    std::string xsTheme;      ///< Net/ThemeName
+    int wakeFd[2] = {-1, -1}; ///< self-pipe: wake() from other threads
+    void readXSettings();     ///< (re)reads the manager's settings (and follows a new manager window)
+    void settingsChanged();   ///< re-reads them and applies DPI / theme changes
+    void x11Event(x11::Event& ev);
+    void startMoveResize(Rec& r, HitArea a, const x11::InputEv& in);
+    std::vector<DisplayInfo> x11Displays() const;
+    static void x11Command(void* user, AppWindow& w, WindowCommand c);
 #endif
+    SystemTheme theme() const;
 
     Impl(Application& a, const NativeOptions& o) : app(a), opts(o) {}
 
@@ -392,7 +313,7 @@ struct NativePlatform::Impl {
     void syncCursor(Rec& r);           ///< shows ui.cursor() when it changed
     void applyScale(Rec& r, f32 scale, const void* suggested); ///< DPI change (Win32: suggested RECT*)
     void updateTitleBars();
-    void themeChanged() { app.setSystemTheme(detail::queryTheme(opts)); updateTitleBars(); }
+    void themeChanged() { app.setSystemTheme(theme()); updateTitleBars(); }
 #if defined(_WIN32)
     bool serviceMessage(Rec& r, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, LRESULT& res);
 #else
@@ -761,6 +682,8 @@ bool NativePlatform::Impl::serviceMessage(Rec& r, HWND hwnd, UINT msg, WPARAM wp
         res = TRUE;
         return true;
     case WM_POINTERCAPTURECHANGED: w.ui().touchCancel(); return false;
+    case WM_SETFOCUS: r.focused = true; return false;
+    case WM_KILLFOCUS: r.focused = false; return false;
     default: break;
     }
     if (detail::winIsThemeMessage(msg)) {
@@ -884,9 +807,12 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
     pc.lpszClassName = kPopupClass;
     RegisterClassExW(&pc);
     app.setEventSource({m.get(), &Impl::pump});
+    m->uiThread = GetCurrentThreadId();
 }
 bool NativePlatform::available() const { return true; }
 void* NativePlatform::nativeDisplay() const { return m->hinst; }
+SystemTheme NativePlatform::Impl::theme() const { return detail::queryTheme(opts); }
+void NativePlatform::wake() { PostThreadMessageW(m->uiThread, WM_NULL, 0, 0); }
 
 #else
 // ---- X11 platform ------------------------------------------------------------------------------------------------
@@ -900,18 +826,66 @@ bool NativePlatform::Impl::createOsWindow(Rec& r) {
         return false;
     }
     x.StoreName(dpy, w, r.win->title().c_str());
+    x11::SetWindowAttributes a{};
+    a.backing_store = 2; // Always: capture() reads the window even where another one overlaps it (servers may ignore it)
+    x.ChangeWindowAttributes(dpy, w, x11::kCWBackingStore, &a);
     x.SelectInput(dpy, w, x11::kMask);
     x.SetWMProtocols(dpy, w, &wmDelete, 1);
+    WindowChrome& c = r.win->chrome();
+    if (c.frame != WindowFrame::System) {
+        // custom chrome: _MOTIF_WM_HINTS { flags = decorations, functions, decorations = none, input mode, status }
+        const long hints[5] = {2, 0, 0, 0, 0};
+        x.ChangeProperty(dpy, w, motifHints, motifHints, 32, x11::kPropModeReplace, reinterpret_cast<const unsigned char*>(hints), 5);
+        c.user = &r;
+        c.command = &Impl::x11Command;
+    }
     x.MapWindow(dpy, w);
     x.Flush(dpy);
     r.handle = w;
     return true;
 }
 void NativePlatform::Impl::destroyOsWindow(Rec& r) {
+    if (r.win && r.win->chrome().command == &Impl::x11Command) {
+        r.win->chrome().command = nullptr;
+        r.win->chrome().user = nullptr;
+    }
     if (!r.handle || !dpy) return;
     x.DestroyWindow(dpy, x11::Window(r.handle));
     x.Flush(dpy);
     r.handle = 0;
+}
+void NativePlatform::Impl::x11Command(void* user, AppWindow& w, WindowCommand c) {
+    Rec& r = *static_cast<Rec*>(user);
+    Impl& m = *r.impl;
+    const x11::Window win = x11::Window(r.handle);
+    switch (c) {
+    case WindowCommand::Minimize: // XIconifyWindow: WM_CHANGE_STATE IconicState to the root
+        m.x.clientMessage(m.dpy, m.root, win, m.wmChangeState, 3);
+        break;
+    case WindowCommand::ToggleMaximize: // _NET_WM_STATE remove (0) / add (1) both maximised states, source: application
+        m.x.clientMessage(m.dpy, m.root, win, m.netWmState, w.chrome().maximized ? 0 : 1, long(m.netMaxV), long(m.netMaxH), 1);
+        break;
+    case WindowCommand::Close: w.requestClose(); break;
+    }
+    m.x.Flush(m.dpy);
+}
+void NativePlatform::Impl::startMoveResize(Rec& r, HitArea a, const x11::InputEv& in) {
+    // _NET_WM_MOVERESIZE directions: 0..7 = top-left, top, top-right, right, bottom-right, bottom, bottom-left, left; 8 move
+    long dir = 8;
+    switch (a) {
+    case HitArea::TopLeft: dir = 0; break;
+    case HitArea::Top: dir = 1; break;
+    case HitArea::TopRight: dir = 2; break;
+    case HitArea::Right: dir = 3; break;
+    case HitArea::BottomRight: dir = 4; break;
+    case HitArea::Bottom: dir = 5; break;
+    case HitArea::BottomLeft: dir = 6; break;
+    case HitArea::Left: dir = 7; break;
+    default: break;
+    }
+    x.UngrabPointer(dpy, in.time); // the press grabbed the pointer; the window manager takes it over
+    x.clientMessage(dpy, root, x11::Window(r.handle), netMoveResize, in.x_root, in.y_root, dir, long(in.detail), 1);
+    x.Flush(dpy);
 }
 bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
     Impl& m = *static_cast<Impl*>(user);
@@ -919,14 +893,30 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
     m.pollVk();
     if (m.anyVkPending()) wait = std::min(wait, 0.004f); // look for the worker's result soon
     auto& x = m.x;
+    std::vector<detail::PumpWatch>& watches = detail::pumpWatches();
     if (wait > 0.f && !x.Pending(m.dpy)) {
-        pollfd p{x.ConnectionNumber(m.dpy), POLLIN, 0};
+        // the X connection, the wake pipe and the registered watches (D-Bus connections)
+        pollfd fds[16];
+        nfds_t n = 0;
+        fds[n++] = {x.ConnectionNumber(m.dpy), POLLIN, 0};
+        if (m.wakeFd[0] >= 0) fds[n++] = {m.wakeFd[0], POLLIN, 0};
+        for (const detail::PumpWatch& pw : watches)
+            if (pw.fd >= 0 && n < 16) fds[n++] = {pw.fd, POLLIN, 0};
         const int ms = std::isinf(wait) ? -1 : int(std::min(std::ceil(double(wait) * 1000.0), 2.0e9));
-        ::poll(&p, 1, ms);
+        ::poll(fds, n, ms);
     }
+    if (m.wakeFd[0] >= 0) {
+        char buf[64];
+        while (::read(m.wakeFd[0], buf, sizeof buf) > 0) {}
+    }
+    for (std::size_t i = 0; i < watches.size(); ++i) watches[i].fn(watches[i].user); // may add / remove watches
     while (x.Pending(m.dpy)) {
         x11::Event ev{};
         x.NextEvent(m.dpy, &ev);
+        if (ev.any.window == m.root || (m.xsOwner && ev.any.window == m.xsOwner)) {
+            m.x11Event(ev); // XSETTINGS / RESOURCE_MANAGER
+            continue;
+        }
         std::size_t pi = 0;
         if (Rec* pr = m.findPopup(ev.any.window, pi)) { // a popup window: input in context coordinates of its owner
             Rec::Popup& p = pr->popups[pi];
@@ -959,6 +949,8 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
             if (ev.client.message_type == m.wmProtocols && x11::Atom(ev.client.l[0]) == m.wmDelete) w.requestClose();
             break;
         case x11::MapNotify: r->mapped = true; w.requestRedraw(); break;
+        case x11::FocusIn: r->focused = true; break; // keyboard focus (accessibility adapters report it)
+        case x11::FocusOut: r->focused = false; break;
         case x11::Expose: r->mapped = true; w.requestRedraw(); break;
         case x11::ConfigureNotify: {
             const AppWindow::PixelSize s = w.pixelSize();
@@ -967,9 +959,54 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
                 w.resizePixels(u32(ev.configure.width), u32(ev.configure.height));
             break;
         }
-        case x11::MotionNotify: ui.setModifiers(x11::mods(in.state)); ui.pointerMove(pos); m.syncCursor(*r); break;
+        case x11::PropertyNotify:
+            if (ev.property.atom == m.netWmState) { // the window manager (un)maximised the window
+                std::vector<unsigned char> v;
+                bool vert = false, horz = false;
+                if (x.property(m.dpy, x11::Window(r->handle), m.netWmState, x11::kXA_ATOM, v))
+                    for (std::size_t i = 0; i + sizeof(long) <= v.size(); i += sizeof(long)) {
+                        long a = 0;
+                        std::memcpy(&a, v.data() + i, sizeof a);
+                        vert |= x11::Atom(a) == m.netMaxV;
+                        horz |= x11::Atom(a) == m.netMaxH;
+                    }
+                if (w.chrome().maximized != (vert && horz)) {
+                    w.chrome().maximized = vert && horz;
+                    w.requestRedraw();
+                }
+            }
+            break;
+        case x11::MotionNotify: {
+            ui.setModifiers(x11::mods(in.state));
+            ui.pointerMove(pos);
+            // custom chrome: the resize cursor over a frame edge (the window manager draws none)
+            CursorShape edge = CursorShape::Auto;
+            if (w.chrome().frame == WindowFrame::Custom && !(in.state & (1u << 8))) switch (chromeHitTest(w, pos)) {
+                case HitArea::Left: case HitArea::Right: edge = CursorShape::ResizeEW; break;
+                case HitArea::Top: case HitArea::Bottom: edge = CursorShape::ResizeNS; break;
+                case HitArea::TopLeft: case HitArea::BottomRight: edge = CursorShape::ResizeNWSE; break;
+                case HitArea::TopRight: case HitArea::BottomLeft: edge = CursorShape::ResizeNESW; break;
+                default: break;
+                }
+            r->edgeCursor = edge;
+            m.syncCursor(*r);
+            break;
+        }
         case x11::ButtonPress:
             ui.setModifiers(x11::mods(in.state));
+            if (in.detail == 1 && w.chrome().frame != WindowFrame::System) { // custom chrome: caption / edges go to the WM
+                const HitArea a = chromeHitTest(w, pos);
+                if (a == HitArea::Caption && r->captionPress && in.time - r->captionPress < 400) {
+                    r->captionPress = 0; // double click on the caption toggles maximise
+                    w.command(WindowCommand::ToggleMaximize);
+                    break;
+                }
+                if (a != HitArea::Client && a != HitArea::Minimize && a != HitArea::Maximize && a != HitArea::Close) {
+                    r->captionPress = a == HitArea::Caption ? std::max(in.time, 1ul) : 0;
+                    m.startMoveResize(*r, a, in);
+                    break;
+                }
+            }
             if (in.detail == 4 || in.detail == 5) ui.wheel(pos, {0.f, in.detail == 4 ? 1.f : -1.f});
             else if (in.detail == 6 || in.detail == 7) ui.wheel(pos, {in.detail == 6 ? -1.f : 1.f, 0.f});
             else ui.pointerDown(pos, in.detail == 3 ? MouseButton::Right : in.detail == 2 ? MouseButton::Middle : MouseButton::Left);
@@ -1010,7 +1047,74 @@ bool NativePlatform::Impl::screenInfo(const Rec& r, int& ox, int& oy, Rect& work
     x11::Window child = 0;
     if (!x.TranslateCoordinates(dpy, x11::Window(r.handle), x.RootWindow(dpy, scr), 0, 0, &ox, &oy, &child)) return false;
     work = {0.f, 0.f, f32(x.DisplayWidth(dpy, scr)), f32(x.DisplayHeight(dpy, scr))};
+    for (const DisplayInfo& d : x11Displays()) // the work area of the monitor holding the window's origin
+        if (f32(ox) >= d.bounds.x && f32(oy) >= d.bounds.y && f32(ox) < d.bounds.x + d.bounds.w && f32(oy) < d.bounds.y + d.bounds.h) {
+            work = d.work;
+            break;
+        }
     return true;
+}
+
+std::vector<DisplayInfo> NativePlatform::Impl::x11Displays() const {
+    std::vector<DisplayInfo> out;
+    if (!dpy) return out;
+    const int scr = x.DefaultScreen(dpy);
+    const Rect screen{0.f, 0.f, f32(x.DisplayWidth(dpy, scr)), f32(x.DisplayHeight(dpy, scr))};
+    if (xrOk) { // RandR 1.5 monitors (outputs and user-defined monitors), refresh from the output's CRTC mode
+        int n = 0;
+        if (x11::MonitorInfo* mons = xr.GetMonitors(dpy, root, 1, &n)) {
+            x11::ScreenResources* res = xr.GetScreenResourcesCurrent(dpy, root);
+            for (int i = 0; i < n; ++i) {
+                const x11::MonitorInfo& mi = mons[i];
+                DisplayInfo d;
+                if (char* nm = mi.name ? x.GetAtomName(dpy, mi.name) : nullptr) {
+                    d.name = nm;
+                    x.Free(nm);
+                }
+                d.bounds = d.work = {f32(mi.x), f32(mi.y), f32(mi.width), f32(mi.height)};
+                d.primary = mi.primary != 0;
+                if (res && mi.noutput > 0)
+                    if (x11::OutputInfo* oi = xr.GetOutputInfo(dpy, res, mi.outputs[0])) {
+                        if (oi->crtc)
+                            if (x11::CrtcInfo* ci = xr.GetCrtcInfo(dpy, res, oi->crtc)) {
+                                for (int k = 0; k < res->nmode; ++k) {
+                                    const x11::ModeInfo& md = res->modes[k];
+                                    if (md.id == ci->mode && md.hTotal && md.vTotal)
+                                        d.refreshHz = f32(double(md.dotClock) / (double(md.hTotal) * double(md.vTotal)));
+                                }
+                                xr.FreeCrtcInfo(ci);
+                            }
+                        xr.FreeOutputInfo(oi);
+                    }
+                out.push_back(std::move(d));
+            }
+            if (res) xr.FreeScreenResources(res);
+            xr.FreeMonitors(mons);
+        }
+    }
+    if (out.empty()) { // core X11: the whole screen
+        DisplayInfo d;
+        d.name = "screen " + std::to_string(scr);
+        d.bounds = d.work = screen;
+        d.primary = true;
+        out.push_back(std::move(d));
+    }
+    bool primary = false;
+    for (const DisplayInfo& d : out) primary |= d.primary;
+    if (!primary) out.front().primary = true; // RandR may name none
+    // EWMH work area (desktop 0; panels / docks excluded), clipped to each monitor
+    std::vector<unsigned char> wa;
+    if (netWorkarea && x.property(dpy, root, netWorkarea, x11::kXA_CARDINAL, wa) && wa.size() >= 4 * sizeof(long)) {
+        long v[4];
+        std::memcpy(v, wa.data(), sizeof v);
+        for (DisplayInfo& d : out) {
+            const f32 x0 = std::max(d.bounds.x, f32(v[0])), y0 = std::max(d.bounds.y, f32(v[1]));
+            const f32 x1 = std::min(d.bounds.x + d.bounds.w, f32(v[0] + v[2])), y1 = std::min(d.bounds.y + d.bounds.h, f32(v[1] + v[3]));
+            if (x1 > x0 && y1 > y0) d.work = {x0, y0, x1 - x0, y1 - y0};
+        }
+    }
+    for (DisplayInfo& d : out) d.scale = xScale; // X11 has one DPI for the whole screen
+    return out;
 }
 bool NativePlatform::Impl::createPopupOs(Rec& r, Rec::Popup& p) {
     (void)r;
@@ -1064,14 +1168,19 @@ void NativePlatform::Impl::blitPopupOs(Rec::Popup& p) {
     x.Flush(dpy);
 }
 bool NativePlatform::Impl::postClickOs(unsigned long long h, Vec2 at) {
+    int rx = 0, ry = 0; // screen position, like a real press (custom chrome hands it to _NET_WM_MOVERESIZE)
+    x11::Window child = 0;
+    x.TranslateCoordinates(dpy, x11::Window(h), root, int(at.x), int(at.y), &rx, &ry, &child);
     for (int type : {int(x11::ButtonPress), int(x11::ButtonRelease)}) {
         x11::Event ev{};
         ev.input.type = type;
         ev.input.display = dpy;
         ev.input.window = x11::Window(h);
-        ev.input.root = x.RootWindow(dpy, x.DefaultScreen(dpy));
+        ev.input.root = root;
         ev.input.x = int(at.x);
         ev.input.y = int(at.y);
+        ev.input.x_root = rx;
+        ev.input.y_root = ry;
         ev.input.detail = 1;
         ev.input.same_screen = 1;
         if (!x.SendEvent(dpy, x11::Window(h), 0, 0, &ev)) return false;
@@ -1113,16 +1222,69 @@ f32 NativePlatform::Impl::readXScale() {
         const f32 v = std::strtof(e, nullptr);
         if (v > 0.f) return std::clamp(v, 0.25f, 8.f);
     }
-    if (const char* rm = x.ResourceManagerString(dpy)) { // "Xft.dpi:\t144" in the RESOURCE_MANAGER property
-        if (const char* at = std::strstr(rm, "Xft.dpi:")) {
+    if (xsDpi > 0) { // XSETTINGS Xft/DPI (dpi * 1024): what GNOME / KDE / xsettingsd announce, changes live
+        const f32 dpi = f32(xsDpi) / 1024.f;
+        if (dpi >= 48.f && dpi <= 768.f) return dpi / 96.f;
+    }
+    // "Xft.dpi:\t144" in the root's RESOURCE_MANAGER property (read live; XResourceManagerString is a startup copy)
+    std::vector<unsigned char> rm;
+    if (x.property(dpy, root, resourceManager, x11::kXA_STRING, rm)) {
+        rm.push_back(0);
+        if (const char* at = std::strstr(reinterpret_cast<const char*>(rm.data()), "Xft.dpi:")) {
             const f32 dpi = std::strtof(at + 8, nullptr);
             if (dpi >= 48.f && dpi <= 768.f) return dpi / 96.f;
         }
     }
     return 1.f;
 }
+void NativePlatform::Impl::readXSettings() {
+    const x11::Window owner = x.GetSelectionOwner(dpy, xsSelection);
+    if (owner != xsOwner) {
+        xsOwner = owner;
+        if (owner) x.SelectInput(dpy, owner, x11::kPropertyChangeMask | x11::kStructureNotifyMask); // changes, manager exit
+    }
+    xsDpi = 0;
+    xsTheme.clear();
+    std::vector<unsigned char> v;
+    if (owner && x.property(dpy, owner, xsSettings, xsSettings, v))
+        for (const x11::XSetting& s : x11::parseXSettings(v.data(), v.size())) {
+            if (s.name == "Xft/DPI" && s.type == 0) xsDpi = s.integer;
+            else if (s.name == "Net/ThemeName" && s.type == 1) xsTheme = s.string;
+        }
+}
+void NativePlatform::Impl::settingsChanged() {
+    const std::string oldTheme = xsTheme;
+    readXSettings();
+    if (opts.dpiAware) { // DPI: every window re-scales (DpiChanged), keeping its logical size
+        const f32 s = readXScale();
+        if (s != xScale) {
+            xScale = s;
+            for (Rec* r : recs)
+                if (r->handle && r->win->scale() != s) applyScale(*r, s, nullptr);
+        }
+    }
+    if (xsTheme != oldTheme) themeChanged(); // Application::setSystemTheme fires ThemeChanged only on a real change
+}
+void NativePlatform::Impl::x11Event(x11::Event& ev) {
+    switch (ev.type) {
+    case x11::ClientMessage: // a new XSETTINGS manager announces itself (MANAGER, l[1] = the selection)
+        if (ev.client.message_type == manager && x11::Atom(ev.client.l[1]) == xsSelection) settingsChanged();
+        break;
+    case x11::PropertyNotify:
+        if ((ev.any.window == xsOwner && ev.property.atom == xsSettings) || (ev.any.window == root && ev.property.atom == resourceManager))
+            settingsChanged();
+        break;
+    case x11::DestroyNotify: // the manager went away: back to RESOURCE_MANAGER / defaults
+        if (ev.any.window == xsOwner) {
+            xsOwner = 0;
+            settingsChanged();
+        }
+        break;
+    default: break;
+    }
+}
 void NativePlatform::Impl::syncCursor(Rec& r) {
-    CursorShape c = r.win->ui().cursor();
+    CursorShape c = r.edgeCursor != CursorShape::Auto ? r.edgeCursor : r.win->ui().cursor();
     if (c == CursorShape::Auto) c = CursorShape::Arrow;
     if (c == r.svc.cursor || !r.handle) return;
     // X font cursor glyphs (cursorfont.h): left_ptr, xterm, hand2, sb_v/h_double_arrow, corners, fleur, watch, X, cross
@@ -1149,10 +1311,37 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
     if (disp && *disp && m->x.load()) {
         m->dpy = m->x.OpenDisplay(nullptr);
         if (m->dpy) {
-            m->x.SetErrorHandler(&x11::ignoreErrors);
-            m->wmProtocols = m->x.InternAtom(m->dpy, "WM_PROTOCOLS", 0);
-            m->wmDelete = m->x.InternAtom(m->dpy, "WM_DELETE_WINDOW", 0);
-            m->xScale = o.dpiAware ? m->readXScale() : 1.f;
+            Impl& i = *m;
+            auto& x = i.x;
+            x.SetErrorHandler(&x11::ignoreErrors);
+            const int scr = x.DefaultScreen(i.dpy);
+            i.root = x.RootWindow(i.dpy, scr);
+            auto atom = [&](const char* n) { return x.InternAtom(i.dpy, n, 0); };
+            i.wmProtocols = atom("WM_PROTOCOLS");
+            i.wmDelete = atom("WM_DELETE_WINDOW");
+            i.netWmState = atom("_NET_WM_STATE");
+            i.netMaxV = atom("_NET_WM_STATE_MAXIMIZED_VERT");
+            i.netMaxH = atom("_NET_WM_STATE_MAXIMIZED_HORZ");
+            i.netMoveResize = atom("_NET_WM_MOVERESIZE");
+            i.wmChangeState = atom("WM_CHANGE_STATE");
+            i.motifHints = atom("_MOTIF_WM_HINTS");
+            i.netWorkarea = atom("_NET_WORKAREA");
+            i.resourceManager = atom("RESOURCE_MANAGER");
+            i.manager = atom("MANAGER");
+            i.xsSelection = atom(("_XSETTINGS_S" + std::to_string(scr)).c_str());
+            i.xsSettings = atom("_XSETTINGS_SETTINGS");
+            int evBase = 0, errBase = 0;
+            i.xrOk = i.xr.load() && i.xr.QueryExtension(i.dpy, &evBase, &errBase);
+            // root: XSETTINGS manager announcements (StructureNotify), RESOURCE_MANAGER changes (PropertyChange)
+            x.SelectInput(i.dpy, i.root, x11::kStructureNotifyMask | x11::kPropertyChangeMask);
+            i.readXSettings();
+            i.xScale = o.dpiAware ? i.readXScale() : 1.f;
+            if (::pipe(i.wakeFd) == 0) {
+                for (int fd : i.wakeFd) ::fcntl(fd, F_SETFL, ::fcntl(fd, F_GETFL) | O_NONBLOCK);
+                for (int fd : i.wakeFd) ::fcntl(fd, F_SETFD, FD_CLOEXEC);
+            } else {
+                i.wakeFd[0] = i.wakeFd[1] = -1;
+            }
         } else {
             m->error = "cannot open X display";
         }
@@ -1160,10 +1349,17 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
         m->error = disp && *disp ? "libX11.so.6 not found" : "no DISPLAY";
     }
     if (m->dpy) app.setEventSource({m.get(), &Impl::pump});
-    app.setSystemTheme(detail::queryTheme(o));
+    app.setSystemTheme(m->theme());
 }
 bool NativePlatform::available() const { return m->dpy != nullptr; }
 void* NativePlatform::nativeDisplay() const { return m->dpy; }
+SystemTheme NativePlatform::Impl::theme() const { return detail::posixQueryTheme(opts, xsTheme); }
+void NativePlatform::wake() {
+    if (m->wakeFd[1] >= 0) {
+        const char c = 1;
+        [[maybe_unused]] const ssize_t n = ::write(m->wakeFd[1], &c, 1); // full pipe: a wake is pending anyway
+    }
+}
 #endif
 
 // ---- software presenter + Vulkan presenter creation (sync / async) -------------------------------------------------
@@ -1329,6 +1525,8 @@ NativePlatform::~NativePlatform() {
         m->x.CloseDisplay(m->dpy);
         m->app.setEventSource({});
     }
+    for (int fd : m->wakeFd)
+        if (fd >= 0) ::close(fd);
 #endif
 }
 
@@ -1415,19 +1613,10 @@ std::vector<DisplayInfo> NativePlatform::displays() const {
 #if defined(_WIN32)
     return detail::winDisplays();
 #else
-    std::vector<DisplayInfo> out;
-    if (!m->dpy) return out;
-    const int scr = m->x.DefaultScreen(m->dpy);
-    DisplayInfo d; // core X11: one screen (no XRandR without loading libXrandr)
-    d.name = "screen " + std::to_string(scr);
-    d.bounds = d.work = {0.f, 0.f, f32(m->x.DisplayWidth(m->dpy, scr)), f32(m->x.DisplayHeight(m->dpy, scr))};
-    d.scale = m->xScale;
-    d.primary = true;
-    out.push_back(std::move(d));
-    return out;
+    return m->x11Displays();
 #endif
 }
-SystemTheme NativePlatform::querySystemTheme() const { return detail::queryTheme(m->opts); }
+SystemTheme NativePlatform::querySystemTheme() const { return m->theme(); }
 bool NativePlatform::setWindowScale(const AppWindow& w, float scale) {
     for (Impl::Rec* r : m->recs)
         if (r->win == &w && r->handle) {
@@ -1471,6 +1660,10 @@ bool NativePlatform::postClose(unsigned long long h) {
     m->x.Flush(m->dpy);
     return ok;
 #endif
+}
+bool NativePlatform::windowFocused(const AppWindow& w) const {
+    const Impl::Rec* r = m->find(w);
+    return r && r->focused;
 }
 CursorShape NativePlatform::appliedCursor(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);
@@ -1536,7 +1729,7 @@ bool NativePlatform::setIcon(const AppWindow& w, std::span<const Image> sizes) {
     if (!r || !r->handle) return false;
     HWND hwnd = reinterpret_cast<HWND>(r->handle);
     bool ok = false;
-    for (const auto [which, metric] : {std::pair{ICON_BIG, SM_CXICON}, std::pair{ICON_SMALL, SM_CXSMICON}}) {
+    for (const auto& [which, metric] : {std::pair{ICON_BIG, SM_CXICON}, std::pair{ICON_SMALL, SM_CXSMICON}}) {
         const Image* img = closest(sizes, GetSystemMetrics(metric));
         if (!img) continue;
         if (HICON icon = makeIcon(*img)) {
@@ -1587,7 +1780,9 @@ bool NativePlatform::setIcon(const AppWindow& w, std::span<const Image> sizes) {
 bool NativePlatform::resizeWindow(const AppWindow& w, unsigned width, unsigned height) {
     const Impl::Rec* r = m->find(w);
     if (!r || !r->handle || !m->dpy) return false;
-    m->x.ResizeWindow(m->dpy, x11::Window(r->handle), width, height);
+    const f32 sc = r->win->scale(); // logical -> device pixels
+    m->x.ResizeWindow(m->dpy, x11::Window(r->handle), std::max(1u, unsigned(std::lround(f32(width) * sc))),
+                      std::max(1u, unsigned(std::lround(f32(height) * sc))));
     m->x.Flush(m->dpy);
     return true;
 }
