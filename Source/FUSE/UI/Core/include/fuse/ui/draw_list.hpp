@@ -57,6 +57,8 @@ public:
     u64 hash() const;
     /// Moves every command by `d` (Line end points included): re-bases a subtree's list to a popup window's origin.
     void translate(Vec2 d);
+    /// Multiplies every coordinate and length (rects, radii, border widths, blur) by `s`: UI units -> device pixels.
+    void scale(f32 s);
 
 private:
     std::vector<DrawCmd> m_cmds;

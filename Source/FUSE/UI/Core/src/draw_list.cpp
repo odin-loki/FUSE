@@ -48,6 +48,15 @@ void DrawList::translate(Vec2 d) {
     }
 }
 
+void DrawList::scale(f32 s) {
+    for (DrawCmd& c : m_cmds) {
+        c.rect = {c.rect.x * s, c.rect.y * s, c.rect.w * s, c.rect.h * s};
+        for (f32& r : c.radius) r *= s;
+        c.borderWidth *= s;
+        c.blur *= s;
+    }
+}
+
 void DrawList::backdrop(const Rect& r, f32 blur, const std::array<f32, 4>& radii, Color tint) {
     DrawCmd c;
     c.op = DrawOp::Backdrop;

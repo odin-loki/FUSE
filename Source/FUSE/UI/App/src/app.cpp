@@ -17,6 +17,9 @@
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #else
 #include <fcntl.h>
@@ -249,8 +252,26 @@ std::expected<void, std::string> AppWindow::load(std::string_view path, doc::Mod
     ss << f.rdbuf();
     return loadText(ss.str(), model);
 }
+void AppWindow::setScale(f32 s) {
+    if (!(s > 0.f) || s == m_ui.scale()) return;
+    const Size px = pixelSize();
+    m_ui.setScale(s);
+    resizePixels(u32(px.w), u32(px.h)); // keep the device size, the logical size follows
+}
+Size AppWindow::pixelSize() const {
+    const Size v = m_ui.viewport();
+    const f32 s = m_ui.scale();
+    return {std::round(v.w * s), std::round(v.h * s)};
+}
+void AppWindow::resizePixels(u32 width, u32 height) {
+    const f32 s = m_ui.scale();
+    m_ui.setViewport({f32(width) / s, f32(height) / s});
+    m_ui.markAllDirty();
+    m_forceRedraw = true;
+}
 bool AppWindow::presentHeadless(void*, AppWindow& w, Rect damage) {
-    const int iw = int(w.m_ui.viewport().w), ih = int(w.m_ui.viewport().h);
+    const Size px = w.pixelSize();
+    const int iw = int(px.w), ih = int(px.h);
     const bool full = w.m_image.width != iw || w.m_image.height != ih;
     if (full) w.m_image.resize(iw, ih, 0xFF000000u);
     w.m_raster.setGlyphAtlas(w.m_ui.atlas().pixels(), w.m_ui.atlas().size());
@@ -276,7 +297,7 @@ bool AppWindow::frame(f32 dt) {
     m_ui.update(dt); // advances timers; presents only when something repainted
     if (m_doc && m_doc->refresh()) m_ui.update(0.f);
     if (!m_ui.stats().repainted && !m_forceRedraw && m_policy == RedrawPolicy::OnDemand) return false;
-    const Rect dmg = m_forceRedraw ? Rect{0.f, 0.f, m_ui.viewport().w, m_ui.viewport().h} : m_ui.damage();
+    const Rect dmg = m_forceRedraw ? Rect{0.f, 0.f, pixelSize().w, pixelSize().h} : m_ui.damage();
     m_forceRedraw = false;
     if (!m_presenter.present || !m_presenter.present(m_presenter.user, *this, dmg)) return false;
     ++m_frames;

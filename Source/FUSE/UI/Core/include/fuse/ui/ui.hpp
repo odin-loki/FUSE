@@ -257,6 +257,11 @@ public:
     // frame
     void setViewport(Size s);
     Size viewport() const { return m_viewport; }
+    /// Device pixels per UI unit (mobile density, desktop DPI). Layout, input and hit testing stay in UI units;
+    /// drawList() and damage() come out in device pixels and glyphs are rasterised at the device size, so text stays
+    /// sharp. Popup surfaces stay in UI units. Default 1.
+    void setScale(f32 s);
+    f32 scale() const { return m_scale; }
     void update(f32 dtSeconds = 0.f);
     bool needsUpdate() const; ///< false when an on-demand app can sleep
     /// Seconds until the context needs an update: 0 when dirty / animating / commands pending, the earliest timer
@@ -280,7 +285,7 @@ public:
     /// Where popups may be placed: the screen bounds with OS popups, the viewport otherwise.
     Rect popupArea() const;
     const std::vector<PopupSurface>& popupSurfaces() const { return m_popupSurfaces; }
-    Rect damage() const { return m_damage; }
+    Rect damage() const; ///< device pixels (see setScale)
     const FrameStats& stats() const { return m_stats; }
     u64 frameIndex() const { return m_frame; }
     void markAllDirty();
@@ -292,6 +297,7 @@ public:
     bool pointerDown(Vec2 p, MouseButton b = MouseButton::Left);
     bool pointerUp(Vec2 p, MouseButton b = MouseButton::Left);
     bool wheel(Vec2 p, Vec2 notches);
+    static constexpr f32 kWheelPixels = 40.f; ///< scroll distance of one wheel notch (UI units)
     /// Modifier state (kMod*) stamped on pointer events; platform layers update it on every modifier change.
     void setModifiers(u8 mods) { m_mods = mods; }
     u8 modifiers() const { return m_mods; }
@@ -408,6 +414,7 @@ private:
     u32 m_layerClass = 0xFFFFFFFFu;
     DrawList m_draw;
     Rect m_damage;
+    f32 m_scale = 1.f;
     bool m_osPopups = false;
     Rect m_popupScreen;
     std::vector<u32> m_popupPending;

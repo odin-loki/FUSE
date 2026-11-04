@@ -112,6 +112,13 @@ public:
 
     void resize(u32 width, u32 height); ///< logical units; forces a full repaint
     fuse::ui::Size size() const { return m_ui.viewport(); }
+    /// Device pixels per logical unit (mobile density / DPI; UiContext::setScale). Presenters draw pixelSize().
+    void setScale(f32 s);
+    f32 scale() const { return m_ui.scale(); }
+    /// The frame size in device pixels (size() * scale(), rounded).
+    fuse::ui::Size pixelSize() const;
+    /// Resizes to a device-pixel size (logical size = pixels / scale()).
+    void resizePixels(u32 width, u32 height);
     void setRedrawPolicy(RedrawPolicy p) { m_policy = p; }
     RedrawPolicy redrawPolicy() const { return m_policy; }
     void setPresenter(const Presenter& p);

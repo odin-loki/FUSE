@@ -605,11 +605,14 @@ void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, 
             if (g.glyph == fuse::text::kInvisibleGlyph) continue;
             fuse::text::forEachPaintGlyph(*m_font, g, px, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
                                                                const fuse::text::ColorLayer* layer) {
-                const auto ag = m_atlas.get(f, glyph, fpx);
+                // scaled contexts rasterise at the device size; the rect is divided back so paintPass's scale maps it 1:1
+                const f32 s = m_scale;
+                const auto ag = m_atlas.get(f, glyph, fpx * s);
                 if (!ag.valid || ag.w == 0) return;
                 DrawCmd c;
                 c.op = DrawOp::Glyph;
-                c.rect = {std::round(o.x + g.x) + f32(ag.x0), std::round(o.y + ln.baseline) + f32(ag.y0), f32(ag.w), f32(ag.h)};
+                c.rect = {(std::round((o.x + g.x) * s) + f32(ag.x0)) / s, (std::round((o.y + ln.baseline) * s) + f32(ag.y0)) / s,
+                          f32(ag.w) / s, f32(ag.h) / s};
                 c.u = ag.u;
                 c.v = ag.v;
                 c.tw = ag.w;
@@ -1050,6 +1053,7 @@ void UiContext::paintPass() {
     }
     if (next.size() != m_popupSurfaces.size()) m_damage = m_damage.unite({0.f, 0.f, m_viewport.w, m_viewport.h});
     m_popupSurfaces = std::move(next);
+    if (m_scale != 1.f) m_draw.scale(m_scale);
     m_anyPaintDirty = false;
     m_stats.repainted = true;
     m_stats.drawCmds = u32(m_draw.size());
@@ -1063,6 +1067,16 @@ void UiContext::setOsPopups(bool on, Rect screen) {
     m_popupScreen = screen;
     if (!on) m_popupSurfaces.clear();
     markAllDirty();
+}
+void UiContext::setScale(f32 s) {
+    if (!(s > 0.f) || s == m_scale) return;
+    m_scale = s;
+    markAllDirty();
+}
+Rect UiContext::damage() const {
+    if (m_scale == 1.f || m_damage.empty()) return m_damage;
+    const f32 x0 = std::floor(m_damage.x * m_scale), y0 = std::floor(m_damage.y * m_scale);
+    return {x0, y0, std::ceil((m_damage.x + m_damage.w) * m_scale) - x0, std::ceil((m_damage.y + m_damage.h) * m_scale) - y0};
 }
 Rect UiContext::popupArea() const {
     if (m_osPopups && !m_popupScreen.empty()) return m_popupScreen;
@@ -1308,7 +1322,7 @@ bool UiContext::wheel(Vec2 p, Vec2 notches) {
         if (m_styles.style(n.style).overflow != Overflow::Scroll) continue;
         const Rect c = contentRect({a, n.gen});
         if (n.extent.h <= c.h && n.extent.w <= c.w) continue;
-        scrollTo({a, n.gen}, {n.scroll.x - notches.x * 40.f, n.scroll.y - notches.y * 40.f});
+        scrollTo({a, n.gen}, {n.scroll.x - notches.x * kWheelPixels, n.scroll.y - notches.y * kWheelPixels});
         return true;
     }
     return h != m_root;
