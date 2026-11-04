@@ -91,6 +91,9 @@ struct ComputedStyle {
     std::array<f32, 8> effectParams{};
     bool pointerEvents = true;
     CursorShape cursor = CursorShape::Auto; ///< cursor: auto | default | text | pointer | ns-resize | ew-resize | ...
+    /// `zoom: <number>`: scales every px length and the font size of the node and its subtree (multiplies down the
+    /// tree; pinch-zoomed content). Holds the effective factor (own x ancestors').
+    f32 zoom = 1.f;
     bool rtl = false; ///< `direction: rtl` (inherited): rows, grid columns, flow lines, inline alignment and widgets mirror
     friend bool operator==(const ComputedStyle&, const ComputedStyle&) = default;
 };
@@ -102,7 +105,7 @@ enum class Prop : u8 {
     AlignItems, AlignSelf, Justify, Wrap, Overflow, GridColumns, GridColumn, GridColumnSpan, GridRow, GridRowSpan,
     Left, Top, Right, Bottom, CenterX, CenterY, Background, Background2, Gradient, BorderColor, BorderWidth,
     RadiusTL, RadiusTR, RadiusBR, RadiusBL, Color, FontSize, TextAlign, Opacity, ShadowColor, ShadowBlur, ShadowX,
-    ShadowY, PointerEvents, BackdropBlur, Icon, IconSize, Cursor, Effect, TextDirection, Count
+    ShadowY, PointerEvents, BackdropBlur, Icon, IconSize, Cursor, Effect, TextDirection, Zoom, Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
 
@@ -233,6 +236,13 @@ public:
     /// The theme sheet: always ordered first (before every addSheet sheet); replaced by the next call.
     void setThemeSheet(StyleSheet sheet);
     bool hasThemeSheet() const { return m_hasTheme; }
+    /// Multiplies every font size (the OS "make text bigger" setting). Restyles everything.
+    void setTextScale(f32 s);
+    f32 textScale() const { return m_textScale; }
+    /// Forced colours (high contrast, like CSS forced-colors): no backdrop blur, shadows, gradients or effects, and a
+    /// node with focus-visible gets at least a 2px border in `focusColor`. Restyles everything.
+    void setForcedColors(bool on, Color focusColor = Color::rgb(0xFFFF00));
+    bool forcedColors() const { return m_forced; }
     u32 sheetVersion() const { return m_version; }
     /// Computes the style of `node`: defaults → inherited from `parentStyle` → matched rules → `inlineValues`.
     /// Returns an index into the table (allocates only for a never-seen combination).
@@ -255,6 +265,9 @@ private:
     std::vector<ComputedStyle> m_table;
     std::vector<u32> m_hashIndex; ///< open addressing into m_table (+1)
     u32 m_version = 0;
+    f32 m_textScale = 1.f;
+    bool m_forced = false;
+    Color m_forcedFocus;
 };
 
 } // namespace fuse::ui
