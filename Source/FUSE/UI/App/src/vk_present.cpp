@@ -31,6 +31,7 @@ typedef unsigned long Window;
 typedef unsigned long VisualID;
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_xlib.h>
+#include <sys/stat.h>
 #endif
 
 #if defined(FUSE_HAS_VULKAN_RHI)
@@ -52,10 +53,8 @@ typedef unsigned long VisualID;
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
-#include <filesystem>
 #include <optional>
 #include <string>
-#include <system_error>
 #include <cstring>
 #include <type_traits>
 #include <utility>
@@ -159,6 +158,19 @@ VkImageMemoryBarrier imageBarrier(VkImage img, VkAccessFlags src, VkAccessFlags 
 } // namespace
 
 namespace {
+/// mkdir -p (best effort; no <filesystem>, it costs binary size)
+void makeDirs(const std::string& dir) {
+    for (std::size_t i = 1; i <= dir.size(); ++i)
+        if (i == dir.size() || dir[i] == '/' || dir[i] == '\\') {
+            const std::string part = dir.substr(0, i);
+#if defined(_WIN32)
+            CreateDirectoryA(part.c_str(), nullptr);
+#else
+            ::mkdir(part.c_str(), 0700);
+#endif
+        }
+}
+
 /// FUSE_APP_VK_TRACE=1: Vulkan presenter start-up phases on stderr (ms per phase).
 struct PhaseTimer {
     const char* what;
@@ -572,8 +584,7 @@ VkWin* vkWinCreate(VkCtx* c, const SurfaceSource& s, const NativeOptions& o, std
         std::string cachePath;
         const std::string dir = o.pipelineCacheDir ? std::string(o.pipelineCacheDir) : defaultCacheDir();
         if (!dir.empty()) {
-            std::error_code ec;
-            std::filesystem::create_directories(dir, ec);
+            makeDirs(dir);
             cachePath = dir + "/ui_draw_list.vkpipelinecache";
             gd.pipelineCachePath = cachePath.c_str();
         }

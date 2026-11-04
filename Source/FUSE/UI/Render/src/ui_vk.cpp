@@ -6,9 +6,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
-#include <filesystem>
 #include <string>
-#include <system_error>
 #include <vector>
 
 #if __has_include("ui_draw_list_spv.h")
@@ -81,9 +79,9 @@ void writeCache(const char* path, u64 kernelHash, const std::vector<unsigned cha
     h.kernelHash = kernelHash;
     const bool ok = std::fwrite(&h, sizeof h, 1, f) == 1 && std::fwrite(blob.data(), 1, blob.size(), f) == blob.size();
     std::fclose(f);
-    std::error_code ec;
-    if (ok) std::filesystem::rename(tmp, path, ec);
-    if (!ok || ec) std::filesystem::remove(tmp, ec);
+    // stdio, not <filesystem> (binary size): a cache file may briefly be missing, never half written
+    if (ok) std::remove(path);
+    if (!ok || std::rename(tmp.c_str(), path) != 0) std::remove(tmp.c_str());
 }
 } // namespace
 
