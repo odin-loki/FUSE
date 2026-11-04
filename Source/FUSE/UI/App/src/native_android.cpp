@@ -643,6 +643,14 @@ NativePlatform::~NativePlatform() {
         m->app.setEventSource({});
     }
 }
+// the app's cache dir (<data>/cache next to <data>/files): the OS may clear it, the app's uninstall does
+std::string defaultCacheDir() {
+    if (!g_app || !g_app->activity->internalDataPath) return {};
+    std::string d = g_app->activity->internalDataPath;
+    const std::size_t slash = d.rfind('/');
+    return slash == std::string::npos ? d + "/cache" : d.substr(0, slash) + "/cache";
+}
+
 bool NativePlatform::available() const { return g_app != nullptr; }
 void* NativePlatform::nativeDisplay() const { return g_app; }
 void* NativePlatform::androidApp() { return g_app; }

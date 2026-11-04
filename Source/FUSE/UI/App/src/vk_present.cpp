@@ -24,6 +24,7 @@
 #elif defined(__ANDROID__)
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_android.h>
+#include <sys/stat.h>
 #else
 // vulkan_xlib.h needs only these two Xlib types; the X11 headers are not required to build.
 typedef struct _XDisplay Display;
