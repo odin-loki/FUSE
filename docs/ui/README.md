@@ -212,6 +212,7 @@ what it does not take falls through to the core.
   the default themes (dark and light) show as an accent ring or highlight on every focusable widget, and scrolls the
   node into view inside scroll containers. Tooltips also show on keyboard focus.
 - **Activation**: Enter / Space click buttons, tool buttons, links, check boxes, switches, menu titles and items.
+- **Disabled** widgets refuse focus: Tab, radio arrows and menu bar arrows skip them.
 - **Choices and ranges**: radio buttons move and check with the arrows (wrapping within the siblings); sliders, dials,
   spin boxes and scroll bars take the arrows, PageUp / PageDown (a page) and Home / End (the ends).
 - **Combo box**: Up / Down / Home / End pick in place; Alt+Down, F4, Space or Enter open the list, arrows + Enter
