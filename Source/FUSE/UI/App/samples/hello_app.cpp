@@ -110,6 +110,8 @@ int main(int argc, char** argv) {
         // steady frames on the real window: the pointer crossing the button (small damage), then whole-window redraws
         for (int i = 0; i < 2000 && window.framesPresented() < 1; ++i) app.step(0.005f);
         const double first = msSinceProcessStart();
+        native.waitForPresenter(window); // the presenter the window keeps (Vulkan after an async start-up)
+        app.step(0.f);
         auto& ctx = window.ui();
         const fuse::ui::Rect b = ctx.rect(ctx.find("click"));
         auto timed = [&](auto&& change) {

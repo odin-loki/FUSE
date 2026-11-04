@@ -68,7 +68,7 @@ struct NativeOptions {
     VulkanDeviceHandles adoptDevice{}; ///< instance + device set: present on that device (see VulkanDeviceHandles)
     bool vulkan = true;            ///< false: never create a Vulkan presenter
     VkDrawMode drawMode = VkDrawMode::Auto;
-    bool vsync = true;             ///< FIFO (true) or MAILBOX / IMMEDIATE when available
+    bool vsync = true;             ///< display-paced, no tearing (FIFO; NVIDIA on Windows: MAILBOX + DWM pacing) or MAILBOX / IMMEDIATE
     /// Popup menus / combo lists / submenus as their own borderless OS windows (Qt-style; may extend past the main
     /// window, clamp to the screen). X11: override-redirect windows; Win32: WS_POPUP + WS_EX_NOACTIVATE owned windows.
     bool osPopups = false;
