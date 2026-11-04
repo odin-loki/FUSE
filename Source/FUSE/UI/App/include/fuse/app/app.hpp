@@ -63,6 +63,9 @@ public:
     void set(std::string_view key, double value);
     void remove(std::string_view key);
     u32 size() const { return u32(m_items.size()); }
+    const std::vector<std::pair<std::string, std::string>>& items() const { return m_items; }
+    std::string toText() const;           ///< the `key=value` lines save() writes
+    void fromText(std::string_view text); ///< replaces the store with parsed lines (left clean)
     /// Platform config directory for an app: $XDG_CONFIG_HOME/<app> (~/.config/<app>), %APPDATA%\<app>.
     static std::string defaultDir(std::string_view app);
 
@@ -192,6 +195,13 @@ public:
     void key(fuse::ui::Key k, fuse::ui::u8 mods = 0) { m_ui.keyDown(k, mods); m_ui.keyUp(k, mods); }
     void text(std::string_view utf8) { m_ui.textInput(utf8); }
 
+    /// UI state of the nodes that have an id, as `<prefix><kind>.<id>` keys: the focused node, text field text,
+    /// values (tab bars, sliders, combo and spin boxes), check states and scroll offsets. Application::saveState
+    /// uses these for every window. Restoring emits TextChanged / ValueChanged so app code follows; scroll offsets
+    /// are applied after the next layout.
+    void saveUiState(Settings& out, std::string_view prefix = {}) const;
+    void restoreUiState(const Settings& in, std::string_view prefix = {});
+
 private:
     friend class Application;
     bool frame(f32 dt); ///< update + present when needed; true when presented
@@ -208,6 +218,7 @@ private:
     RedrawPolicy m_policy = RedrawPolicy::OnDemand;
     PixelSize m_pixels;
     fuse::ui::InlineFn<void(AppWindow&, f32)> m_onDpi;
+    std::vector<std::pair<std::string, fuse::ui::Vec2>> m_pendingScroll; ///< restored, applied after layout
     u64 m_frames = 0;
     u32 m_id;
     bool m_closing = false, m_forceRedraw = true;
@@ -285,6 +296,19 @@ public:
     /// Applies the theme to one window (createWindow does this for new windows).
     void applyTheme(AppWindow& w) const;
 
+    // ---- saved state (process death) ----
+    /// The OS may end a background process and recreate the app later (Android). saveState() collects every
+    /// window's UI state (AppWindow::saveUiState, keys "w<index>.") plus what the onSaveState handler adds; the next
+    /// process passes it to restoreState(), which restores the windows and calls onRestoreState. Keep it small
+    /// (Android keeps it in the activity's saved-instance Bundle).
+    void onSaveState(fuse::ui::InlineFn<void(Application&, Settings&)> fn) { m_onSave = fn; }
+    /// Called with the restored state; at once when restoreState already ran.
+    void onRestoreState(fuse::ui::InlineFn<void(Application&, const Settings&)> fn);
+    std::string saveState();                   ///< backends: the state to keep, as bytes
+    void restoreState(std::string_view bytes); ///< backends: the bytes a previous process saved
+    bool restored() const { return m_restoredSeen; } ///< restoreState ran with state from a previous process
+    const Settings& restoredState() const { return m_restored; }
+
 private:
     std::string m_name;
     CommandLine m_args;
@@ -301,6 +325,10 @@ private:
     SystemTheme m_theme;
     bool m_themeKnown = false, m_followTheme = false;
     fuse::ui::InlineFn<void(Application&, const SystemTheme&)> m_onTheme;
+    fuse::ui::InlineFn<void(Application&, Settings&)> m_onSave;
+    fuse::ui::InlineFn<void(Application&, const Settings&)> m_onRestore;
+    Settings m_restored;
+    bool m_restoredSeen = false;
 };
 
 /// Writes an RGBA8 image as PNG.

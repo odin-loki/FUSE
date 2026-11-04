@@ -61,6 +61,7 @@ bool vkWinReadback(VkWin*, Image&) { return false; }
 namespace {
 constexpr const char* kTag = "fuse_app";
 android_app* g_app = nullptr;
+std::string g_savedState; ///< what the previous process saved (the glue frees its copy at the first resume)
 
 // ---- JNI (attached once on the app thread, detached when android_main ends) ----
 JNIEnv* g_env = nullptr;
@@ -462,6 +463,17 @@ struct NativePlatform::Impl {
         else ANativeActivity_hideSoftInput(g_app->activity, 0);
     }
 
+    /// The OS may kill the process once the activity is stopped: hand it the app's state (the glue frees it).
+    void saveState() {
+        const std::string s = app.saveState();
+        void* p = s.empty() ? nullptr : std::malloc(s.size());
+        if (p) std::memcpy(p, s.data(), s.size());
+        g_app->savedState = p;
+        g_app->savedStateSize = p ? s.size() : 0;
+        ++stats.statesSaved;
+        __android_log_print(ANDROID_LOG_INFO, kTag, "state saved (%zu bytes)", s.size());
+    }
+
     void onCmd(int32_t cmd) {
         switch (cmd) {
         case APP_CMD_INIT_WINDOW: attach(); break;
@@ -478,6 +490,7 @@ struct NativePlatform::Impl {
             break;
         case APP_CMD_PAUSE: setForeground(false); break;
         case APP_CMD_RESUME: setForeground(true); break;
+        case APP_CMD_SAVE_STATE: saveState(); break;
         case APP_CMD_LOW_MEMORY:
             ++stats.lowMemory;
             if (hooks.lowMemory) hooks.lowMemory(hooks.user);
@@ -664,6 +677,12 @@ PresenterKind NativePlatform::show(AppWindow& w) {
     const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(10);
     while (!g_app->window && !g_app->destroyRequested && std::chrono::steady_clock::now() < until) Impl::pollOnce(50);
     m->attach();
+    if (!g_savedState.empty()) { // the window is sized: scroll offsets and focus land where they were
+        __android_log_print(ANDROID_LOG_INFO, kTag, "restoring saved state (%zu bytes)", g_savedState.size());
+        m->stats.stateRestored = true;
+        m->app.restoreState(g_savedState);
+        g_savedState.clear();
+    }
     return m->kind;
 }
 PresenterKind NativePlatform::kind(const AppWindow& w) const { return m->win == &w ? m->kind : PresenterKind::Headless; }
@@ -738,6 +757,8 @@ extern "C" void android_main(android_app* app) {
     using namespace fuse::app;
     g_app = app;
     g_env = nullptr;
+    g_savedState.clear();
+    if (app->savedState) g_savedState.assign(static_cast<const char*>(app->savedState), app->savedStateSize);
     redirectStdio();
     const std::string files = app->activity->internalDataPath ? app->activity->internalDataPath : ".";
     extractAssets(app, files);

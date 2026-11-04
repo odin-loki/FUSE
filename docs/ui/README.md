@@ -338,7 +338,7 @@ ninja -C build-android                                   # libraries + hello_app
 adb install -r -t build-android/fuse_ui_android_demo.apk
 adb shell am start -n org.fuse.uidemo/android.app.NativeActivity [--es args "--draw=cpu"]
 adb logcat -s fuse_app
-ANDROID_SERIAL=emulator-5554 ctest --test-dir build-android -L android   # the four gates below
+ANDROID_SERIAL=emulator-5554 ctest --test-dir build-android -L android   # the gates below
 ```
 
 The gates run on the host (`App/android/android_gate.py`: install, drive with `am` / `input` / `settings`, read the
@@ -358,7 +358,14 @@ Behaviour on Android:
   the manifest keeps the activity alive) and low memory are counted (`NativePlatform::lifecycle()`) and reported
   through `NativeHooks`; with `fuse_core` (or `Core/src/platform/platform_hardening.cpp` standalone)
   `fuse::platform::notifyAppVisibility` and `notifySurfaceLost/Restored` fire. Back sends Escape (closes a popup or
-  dialog) and finishes the activity when nothing used it. Process death loses the UI state (no saved-state hook yet).
+  dialog) and finishes the activity when nothing used it.
+- Process death: on `APP_CMD_SAVE_STATE` (the activity is stopped; the OS may kill the process)
+  `Application::saveState()` goes into the activity's saved-instance state; when the OS recreates the activity,
+  `NativePlatform::show` passes it to `Application::restoreState()`. That restores every window's UI state
+  (`AppWindow::saveUiState` / `restoreUiState`: focus, text field text, tab bar / slider / combo / spin values, check
+  states and scroll offsets of nodes with an id; TextChanged / ValueChanged are emitted so app code follows) and calls
+  `Application::onRestoreState` with what `onSaveState` added (a `Settings` key / value set; keep it small, the
+  Bundle has a size limit). `Application::restored()` tells a recreated process from a fresh start.
 - Touch: every `AMotionEvent` contact goes to `UiContext::touchDown/Move/Up` (the same path as Win32 `WM_POINTER`):
   the first finger is the pointer (tap = click, no hover after lift), all are in `touches()` / `pinchScale()`; a
   vertical drag past `UiContext::kTouchSlop` over a scroll container pans it (the press is released without a click).
@@ -522,6 +529,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_app_lifecycle_android` | HOME releases the surface, `am start` rebuilds it with a correct first frame and the same UI state; rotation resizes to landscape and back |
 | `fuse_platform_touch_android` | `input tap` clicks the button; `input swipe` over the list scrolls it both ways without clicking |
 | `fuse_platform_ime_android` | tapping the line edit focuses it and shows the soft keyboard; `input text` and backspace edit it |
+| `fuse_app_process_death_android` | Android build tree, adb: taps (app state), a tab page, list scroll and line-edit text + focus survive `am kill` of the background process and a SIGKILL; the relaunched process (new pid) restores them |
 | `fuse_app_idle_native` | real idle window for 3 s: zero presents, ≤ 10 loop wakeups / s (OS messages only), CPU ≤ 2 % |
 | `fuse_project_schema2`, `fuse_project_schema2_native` | project.json schema 1 load / write / migrate, schema 2 round trip, 24 rejected files, the app template, `ProjectHost` brings up only `AppPresent` and presents the `.fuseui` (headless ≤ 150 ms; `_native` on a real window vs the CPU raster) |
 | `fuse_ui_game_hud_golden` | HUD demo scene against `tests/golden/hud.png` plus trail / marker / pool state |

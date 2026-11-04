@@ -4,7 +4,7 @@
 Installs the fuse_ui_android_demo APK on a device / emulator, drives it with adb (am, input, settings) and reads
 the state file the demo keeps current (run-as <package> cat files/fuse_demo_state.txt).
 
-  android_gate.py --gate present|lifecycle|touch|ime --apk demo.apk --package org.fuse.uidemo --abi x86_64
+  android_gate.py --gate present|lifecycle|touch|ime|process_death --apk demo.apk --package org.fuse.uidemo --abi x86_64
                   [--adb adb] [--serial emulator-5580] [--shot out.png]
 
 Exit 0 pass, 1 fail, 77 skip (no adb, no device with the APK's ABI, no Vulkan for the present gate).
@@ -173,6 +173,64 @@ class Gate:
         self.check(s.get("taps") == "2", f"UI state kept across rotation (taps {s.get('taps')})")
         return 0
 
+    def pid(self):
+        return self.dev.sh(f"pidof {self.a.package}").strip()
+
+    def restored(self, s0, what):
+        """Waits for a frame from a new process or main() run that restored s0's state."""
+        return self.wait(lambda s: (s["pid"] != s0["pid"] or s["runs"] != s0["runs"]) and s["restored"] == "1" and s["has_surface"] == "1" and s["present_check"] == "pass"
+                         and s["taps"] == s0["taps"] and s["text"] == s0["text"] and s["focus"] == s0["focus"]
+                         and s["page"] == s0["page"] and abs(float(s["scroll"]) - float(s0["scroll"])) < 1.0, what)
+
+    def gate_process_death(self):
+        self.start()
+        s = self.ready()
+        x, y = self.rect_center(s, "tap")
+        for _ in range(2):
+            self.dev.sh(f"input tap {x} {y}")
+        self.wait(lambda s: s["taps"] == "2", "two taps counted (app state)")
+        px, py = self.rect_center(s, "page2")
+        self.dev.sh(f"input tap {px} {py}")
+        self.wait(lambda s: s["page"] == "2", "third tab selected (current page)")
+        lx, ly, lw, lh = (int(v) for v in s["rect_list"].split(","))
+        self.dev.sh(f"input swipe {lx + lw // 2} {ly + lh * 3 // 4} {lx + lw // 2} {ly + lh // 4} 400")
+        self.wait(lambda s: float(s["scroll"]) > 20.0, "list scrolled")
+        ex, ey = self.rect_center(s, "edit")
+        self.dev.sh(f"input tap {ex} {ey}")
+        self.dev.sh("input text saved_state")
+        s0 = self.wait(lambda s: s["text"] == "saved_state" and s["focus"] == "1", "line edit focused with text")
+        time.sleep(1.0)  # let the list settle (fling) before the snapshot that is compared
+        s0 = self.state()
+        pid0 = s0["pid"]
+        self.dev.sh("input keyevent KEYCODE_HOME")
+        self.wait(lambda s: s["has_surface"] == "0" and int(s["states_saved"]) >= 1, "home: state saved, surface released")
+        # 1) process death: kill the background process, relaunch it from its task
+        killed = False
+        for _ in range(20):
+            self.dev.sh(f"am kill {self.a.package}")
+            time.sleep(0.5)
+            if not self.pid():
+                killed = True
+                break
+        self.check(killed, "am kill ended the background process")
+        self.start(fresh=False)
+        s = self.restored(s0, "relaunched process restored focus, text, page, scroll and app state")
+        self.check(s.get("pid") != pid0, f"new process (pid {pid0} -> {s.get('pid')})")
+        # 2) the low-memory killer's way: SIGKILL of the background process (run-as: the APK is debuggable)
+        x, y = self.rect_center(s, "tap")
+        self.dev.sh(f"input tap {x} {y}")
+        self.wait(lambda s: s["taps"] == "3", "tap after restore counted (the button takes focus)")
+        time.sleep(0.5)
+        s1 = self.state()
+        self.dev.sh("input keyevent KEYCODE_HOME")
+        self.wait(lambda s: s["has_surface"] == "0" and int(s["states_saved"]) >= 1, "home again: state saved")
+        self.dev.sh(f"run-as {self.a.package} kill -9 {s1['pid']}")
+        time.sleep(1.0)
+        self.check(not self.pid(), "SIGKILL ended the background process")
+        self.start(fresh=False)
+        self.restored(s1, "relaunched after SIGKILL: state restored again (taps 3, focus on the button)")
+        return 0
+
     def gate_touch(self):
         self.start()
         s = self.ready()
@@ -211,7 +269,7 @@ class Gate:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--gate", required=True, choices=["present", "lifecycle", "touch", "ime"])
+    ap.add_argument("--gate", required=True, choices=["present", "lifecycle", "touch", "ime", "process_death"])
     ap.add_argument("--apk", required=True)
     ap.add_argument("--package", required=True)
     ap.add_argument("--abi", required=True)

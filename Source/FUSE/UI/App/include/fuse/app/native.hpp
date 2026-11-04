@@ -116,6 +116,8 @@ struct LifecycleStats {
     bool foreground = true;
     bool hasSurface = false;
     bool softKeyboard = false;    ///< the soft keyboard was last requested shown
+    unsigned statesSaved = 0;     ///< saved-state snapshots handed to the OS (Android APP_CMD_SAVE_STATE)
+    bool stateRestored = false;   ///< this process started from a previous one's saved state
 };
 
 /// Per-user cache directory for fuse_app (Vulkan pipeline cache): %LOCALAPPDATA%\FUSE\cache on Windows,
