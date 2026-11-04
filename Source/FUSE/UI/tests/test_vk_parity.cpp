@@ -14,6 +14,7 @@
 #include <string>
 #include <cstdlib>
 #include <new>
+#include <random>
 
 static std::atomic<unsigned long long> g_allocs{0};
 void* operator new(std::size_t n) {
@@ -348,7 +349,9 @@ int main() {
     //    rewritten, and every variant still renders
     {
         using fuse::ui::render::PipelineCacheUse;
-        const std::filesystem::path cacheFile = std::filesystem::temp_directory_path() / "fuse_ui_vk_parity.vkpipelinecache";
+        // Unique per run: fuse_ui_vk_parity and fuse_ui_vk_validation_clean both run this case, often in parallel.
+        const std::filesystem::path cacheFile = std::filesystem::temp_directory_path() /
+            ("fuse_ui_vk_parity_" + std::to_string(std::random_device{}()) + ".vkpipelinecache");
         std::error_code ec;
         std::filesystem::remove(cacheFile, ec);
         const std::string path = cacheFile.string();
