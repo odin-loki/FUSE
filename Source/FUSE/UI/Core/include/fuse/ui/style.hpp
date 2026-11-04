@@ -85,6 +85,9 @@ struct ComputedStyle {
     f32 backdropBlur = 0.f; ///< backdrop-filter: blur(<len>) / backdrop-blur: <len> (frosted glass under the background)
     u32 icon = 0;           ///< `icon: <name>`: hashId of an icon in the context's IconSet (0 = none); see icons.hpp
     f32 iconSize = 0.f;     ///< `icon-size`: cell size in px (0 = auto: font-size + 2)
+    u32 effect = 0;         ///< `effect: name(p0, ...)`: hashId of an effect in the context's EffectRegistry (effects.hpp)
+    u8 effectParamCount = 0; ///< parameters given (the rest take the effect's defaults)
+    std::array<f32, 8> effectParams{};
     bool pointerEvents = true;
     CursorShape cursor = CursorShape::Auto; ///< cursor: auto | default | text | pointer | ns-resize | ew-resize | ...
     friend bool operator==(const ComputedStyle&, const ComputedStyle&) = default;
@@ -97,11 +100,11 @@ enum class Prop : u8 {
     AlignItems, AlignSelf, Justify, Wrap, Overflow, GridColumns, GridColumn, GridColumnSpan, GridRow, GridRowSpan,
     Left, Top, Right, Bottom, CenterX, CenterY, Background, Background2, Gradient, BorderColor, BorderWidth,
     RadiusTL, RadiusTR, RadiusBR, RadiusBL, Color, FontSize, TextAlign, Opacity, ShadowColor, ShadowBlur, ShadowX,
-    ShadowY, PointerEvents, BackdropBlur, Icon, IconSize, Cursor, Count
+    ShadowY, PointerEvents, BackdropBlur, Icon, IconSize, Cursor, Effect, Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
 
-enum class PropType : u8 { Bool, Enum, Length, Number, Color, Tracks, Ident };
+enum class PropType : u8 { Bool, Enum, Length, Number, Color, Tracks, Ident, Effect };
 struct PropInfo {
     Prop id;
     std::string_view cssName;
@@ -125,7 +128,7 @@ struct PropValue {
     fuse::ui::Color color;
     std::array<Length, kMaxGridTracks> tracks{};
     u8 trackCount = 0;
-    u32 ident = 0; ///< Ident: hashId of the name (0 = none)
+    u32 ident = 0; ///< Ident / Effect: hashId of the name (0 = none); Effect parameters in tracks[0..trackCount) (px)
     static PropValue ofBool(bool v) { PropValue p; p.type = PropType::Bool; p.b = v; return p; }
     static PropValue ofEnum(u8 v) { PropValue p; p.type = PropType::Enum; p.e = v; return p; }
     static PropValue ofLength(Length v) { PropValue p; p.type = PropType::Length; p.len = v; return p; }

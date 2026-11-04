@@ -28,6 +28,7 @@ namespace fuse::ui {
 
 class UiContext;
 class IconSet;
+class EffectRegistry;
 
 // ---- Input ---------------------------------------------------------------------------------------------------------
 /// UI key set (maps 1:1 onto fuse::platform key set v2 names; see platform/events_v2.hpp).
@@ -408,6 +409,12 @@ public:
     bool paintIcon(DrawList& dl, std::string_view name, Vec2 at, f32 size, Color c, u32 node) {
         return paintIcon(dl, hashId(name), at, size, c, node);
     }
+    // custom shader effects (effects.hpp): `effect: name(params)` style property
+    /// Attaches an effect registry (non-owning; must outlive the context or be detached). Repaints every node.
+    void setEffects(const EffectRegistry* effects);
+    const EffectRegistry* effects() const { return m_effects; }
+    /// Seconds of update(dt) so far: the time animated effects see.
+    f32 elapsed() const { return m_elapsed; }
     /// Content size of the style's icon followed by a one-line `text` (either may be absent).
     Size measureIconLabel(const ComputedStyle& s, std::string_view text);
     /// Paints the style's icon then `text` in `box` (both vertically centred; the pair aligned by `align`).
@@ -504,6 +511,10 @@ private:
     fuse::text::TextLayout m_stringScratch;
     const IconSet* m_icons = nullptr;
     std::vector<u8> m_iconScratch;
+    const EffectRegistry* m_effects = nullptr;
+    std::vector<u32> m_fxAnimated; ///< nodes painted with an animated effect last paint (repainted every update)
+    f32 m_elapsed = 0.f;
+    void paintEffect(u32 i, const ComputedStyle& s, DrawList& dl);
     // atlas-resolved glyphs of every painted text node in one array, in paint order (no per-glyph atlas lookups, no
     // walks of scattered per-node layout vectors); rebuilt per node when its layout changes, wholesale on atlas reset
     std::vector<GlyphQuad> m_quads;

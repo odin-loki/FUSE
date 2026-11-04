@@ -1,4 +1,5 @@
 #include "fuse/ui/ui.hpp"
+#include "fuse/ui/effects.hpp"
 #include "fuse/ui/icons.hpp"
 
 #include <algorithm>
@@ -150,6 +151,7 @@ UiContext::UiContext(const UiContextDesc& d) : m_font(d.font), m_atlas(d.atlasSi
     m_shapeScratch.reserve(256);
     m_connections.reserve(256);
     m_timers.reserve(64);
+    m_fxAnimated.reserve(64);
     m_anims.reserve(128);
     m_queue = std::make_unique<Command[]>(kQueueSize);
     for (u32 i = 0; i < kQueueSize; ++i) m_queue[i].seq.store(i, std::memory_order_relaxed);
@@ -748,6 +750,25 @@ void UiContext::setIcons(const IconSet* icons) {
     markAllDirty();
 }
 
+// ---- Effects -------------------------------------------------------------------------------------------------------
+void UiContext::setEffects(const EffectRegistry* effects) {
+    if (effects == m_effects) return;
+    m_effects = effects;
+    markAllDirty();
+}
+
+void UiContext::paintEffect(u32 i, const ComputedStyle& s, DrawList& dl) {
+    if (!s.effect || !m_effects) return;
+    const i32 id = m_effects->findHash(s.effect);
+    if (id < 0) return;
+    const EffectDesc& d = m_effects->at(u32(id));
+    std::array<f32, kEffectParams> p = d.defaults;
+    for (u8 k = 0; k < s.effectParamCount && k < kEffectParams; ++k) p[k] = s.effectParams[k];
+    dl.effect(m_nodes[i].rect, u32(id), p, m_elapsed, m_effects->margin(u32(id), p.data()), s.radius);
+    dl.cmds().back().node = i;
+    if (d.animated) m_fxAnimated.push_back(i);
+}
+
 f32 UiContext::iconExtent(const ComputedStyle& s) const {
     if (!s.icon || !m_icons || m_icons->findHash(s.icon) < 0) return 0.f;
     return std::round(s.iconSize > 0.f ? s.iconSize : s.fontSize + 2.f);
@@ -1186,7 +1207,10 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
                            s.fontSize);
         }
     }
-    if (n.first == kNone) return;
+    if (n.first == kNone) {
+        paintEffect(i, s, dl);
+        return;
+    }
     const bool clip = s.overflow != Overflow::Visible;
     if (clip) dl.pushClip(n.rect, rad);
     for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
@@ -1209,6 +1233,7 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
             dl.rect(tr, tint(Color::rgb(0x000000, 0.12f)), kScrollBarSize * 0.5f);
             dl.rect(th, tint(Color::rgb(hot ? 0xB4B4C0 : 0x8A8A96, 0.85f)), kScrollBarSize * 0.5f);
         }
+    paintEffect(i, s, dl); // after the subtree: the effect post-processes everything drawn under the rect
 }
 
 bool UiContext::scrollBarGeom(u32 i, u8 axis, Rect& track, Rect& thumb) const {
@@ -1231,6 +1256,7 @@ void UiContext::paintPass() {
     if (!m_anyPaintDirty) return;
     m_draw.clear();
     m_popupPending.clear();
+    m_fxAnimated.clear();
     // an atlas reset invalidates every glyph quad
     if (m_quadAtlasGen != m_atlas.generation()) {
         m_quads.clear();
@@ -1279,7 +1305,7 @@ void UiContext::scaleDrawList(DrawList& dl) const {
         if (c.op == DrawOp::Line) continue; // rect = end points
         c.borderWidth *= s;
         for (f32& r : c.radius) r *= s;
-        c.blur *= s;
+        if (c.op != DrawOp::Effect) c.blur *= s; // an effect's blur is its time
     }
 }
 
@@ -1376,6 +1402,9 @@ void UiContext::update(f32 dt) {
     m_damage = {};
     drainCommands();
     if (dt > 0.f) {
+        m_elapsed += dt;
+        for (u32 k : m_fxAnimated) // animated effects read the time: repaint
+            if (k < m_nodes.size() && m_nodes[k].alive) markPaint(k);
         for (u32 t = 0; t < m_timers.size(); ++t) {
             if (!m_timers[t].active) continue;
             m_timers[t].left -= dt;
@@ -1421,7 +1450,7 @@ void UiContext::update(f32 dt) {
 }
 
 bool UiContext::needsUpdate() const {
-    if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount) return true;
+    if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount || !m_fxAnimated.empty()) return true;
     if (m_styles.sheetVersion() != m_seenSheetVersion) return true;
     for (const auto& t : m_timers)
         if (t.active) return true;
@@ -1429,7 +1458,7 @@ bool UiContext::needsUpdate() const {
 }
 
 f32 UiContext::nextWakeSeconds() const {
-    if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount) return 0.f;
+    if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount || !m_fxAnimated.empty()) return 0.f;
     if (m_styles.sheetVersion() != m_seenSheetVersion) return 0.f;
     if (m_head.load(std::memory_order_acquire) != m_tail) return 0.f;
     f32 t = std::numeric_limits<f32>::infinity();
