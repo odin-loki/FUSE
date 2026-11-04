@@ -69,6 +69,7 @@ set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/vk/raster_path.hpp
     include/fuse/renderer/vk/render_pass.hpp
     include/fuse/renderer/vk/surface.hpp
+    include/fuse/renderer/vk/surface_android.hpp
     include/fuse/renderer/vk/swapchain.hpp
     include/fuse/renderer/vk/swapchain_util.hpp
     include/fuse/renderer/cuda/interop.hpp
@@ -142,6 +143,7 @@ set(FUSE_RHI_SOURCES
     src/vk/render_pass.cpp
     src/vk/surface.cpp
     src/vk/swapchain.cpp
+    src/vk/surface_android.cpp
     src/vk/swapchain_util.cpp
     src/cuda/interop.cpp
     src/cuda/interop_fill.cpp

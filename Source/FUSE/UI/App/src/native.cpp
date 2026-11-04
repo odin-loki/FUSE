@@ -1929,6 +1929,7 @@ Vec2 NativePlatform::screenOrigin(const AppWindow& w) const {
 }
 Insets NativePlatform::safeAreaInsets(const AppWindow&) const { return {}; }
 void NativePlatform::setSoftKeyboard(bool) {}
+bool NativePlatform::imeTestInput(std::string_view, bool) { return false; }
 void NativePlatform::setHooks(const NativeHooks& h) { m->hooks = h; }
 LifecycleStats NativePlatform::lifecycle() const {
     LifecycleStats s;

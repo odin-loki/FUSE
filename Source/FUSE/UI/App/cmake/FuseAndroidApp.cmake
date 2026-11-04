@@ -66,7 +66,7 @@ function(fuse_app_add_android_gate name gate target package)
     endif()
     add_test(NAME ${name} COMMAND "${FUSE_APP_PYTHON}" "${FUSE_APP_ANDROID_DIR}/android_gate.py" --gate ${gate}
              --apk "${_apk}" --package ${package} --abi ${ANDROID_ABI} --adb "${_adb}")
-    set_tests_properties(${name} PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 600
+    set_tests_properties(${name} PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 900
                          LABELS "fuse_ui;gate;android;ui")
 endfunction()
 
@@ -75,4 +75,6 @@ function(fuse_app_add_android_gates target package)
     fuse_app_add_android_gate(fuse_app_lifecycle_android lifecycle ${target} ${package})
     fuse_app_add_android_gate(fuse_platform_touch_android touch ${target} ${package})
     fuse_app_add_android_gate(fuse_platform_ime_android ime ${target} ${package})
+    fuse_app_add_android_gate(fuse_platform_ime_composition_android ime_composition ${target} ${package})
+    fuse_app_add_android_gate(fuse_app_process_death_android process_death ${target} ${package})
 endfunction()

@@ -405,7 +405,7 @@ ninja -C build-android                                   # libraries + hello_app
 adb install -r -t build-android/fuse_ui_android_demo.apk
 adb shell am start -n org.fuse.uidemo/android.app.NativeActivity [--es args "--draw=cpu"]
 adb logcat -s fuse_app
-ANDROID_SERIAL=emulator-5554 ctest --test-dir build-android -L android   # the four gates below
+ANDROID_SERIAL=emulator-5554 ctest --test-dir build-android -L android   # the gates below
 ```
 
 The gates run on the host (`App/android/android_gate.py`: install, drive with `am` / `input` / `settings`, read the
@@ -422,8 +422,12 @@ Emulator: an x86_64 Google APIs image (API 36 was used) with `emulator -avd <nam
 Behaviour on Android:
 - `NativePlatform::show` waits for the activity window and returns `Vulkan` (`VK_KHR_android_surface`, the same
   swapchain presenter, GPU draw or CPU upload) or `Software` (`ANativeWindow_lock` of the CPU raster;
-  `NativeOptions::vulkan = false`). Vulkan starts synchronously (`asyncVulkan` is ignored: a window that
-  `ANativeWindow_lock` connected as a CPU producer cannot be handed to a swapchain). The window is the whole activity,
+  `NativeOptions::vulkan = false`). With `asyncVulkan` (default) the first frame is software; after it is posted a
+  worker creates instance and device (no surface: Android connects the window when its `VkSurfaceKHR` is created),
+  then the UI thread disconnects the CPU producer (`NATIVE_WINDOW_API_DISCONNECT` through the window's `perform`
+  hook; the NDK has no call for it), creates surface + swapchain and presents through Vulkan. Later surfaces (back
+  from background) get Vulkan directly. `FUSE_APP_VK_TRACE=1` (`am start ... --es env "FUSE_APP_VK_TRACE=1"`; the
+  `env` extra sets environment variables) logs the phases. The window is the whole activity,
   sized by the OS; `AppWindow::setScale` gets the screen density / 160 unless `NativeOptions::scale` is set.
   `displays()` reports the screen with the safe area as the work area; `querySystemTheme()` follows night mode.
 - Lifecycle: `APP_CMD_TERM_WINDOW` releases the swapchain and surface (the device stays), `APP_CMD_INIT_WINDOW`
@@ -431,16 +435,28 @@ Behaviour on Android:
   the manifest keeps the activity alive) and low memory are counted (`NativePlatform::lifecycle()`) and reported
   through `NativeHooks`; with `fuse_core` (or `Core/src/platform/platform_hardening.cpp` standalone)
   `fuse::platform::notifyAppVisibility` and `notifySurfaceLost/Restored` fire. Back sends Escape (closes a popup or
-  dialog) and finishes the activity when nothing used it. Process death loses the UI state (no saved-state hook yet).
+  dialog) and finishes the activity when nothing used it.
+- Process death: on `APP_CMD_SAVE_STATE` (the activity is stopped; the OS may kill the process)
+  `Application::saveState()` goes into the activity's saved-instance state; when the OS recreates the activity,
+  `NativePlatform::show` passes it to `Application::restoreState()`. That restores every window's UI state
+  (`AppWindow::saveUiState` / `restoreUiState`: focus, text field text, tab bar / slider / combo / spin values, check
+  states and scroll offsets of nodes with an id; TextChanged / ValueChanged are emitted so app code follows) and calls
+  `Application::onRestoreState` with what `onSaveState` added (a `Settings` key / value set; keep it small, the
+  Bundle has a size limit). `Application::restored()` tells a recreated process from a fresh start.
 - Touch: every `AMotionEvent` contact goes to `UiContext::touchDown/Move/Up` (the same path as Win32 `WM_POINTER`):
   the first finger is the pointer (tap = click, no hover after lift), all are in `touches()` / `pinchScale()`; a
   vertical drag past `UiContext::kTouchSlop` over a scroll container pans it (the press is released without a click).
   Mouse wheel and hover work too. Popups are in-window overlays.
 - Safe area: `NativePlatform::safeAreaInsets` (system bars + display cutout through `WindowInsets`, UI units) and
   `NativeHooks::insetsChanged`; pass them to `GameUi::setSafeArea` or pad the root (the demo does).
-- Text: the soft keyboard is shown / hidden as text fields gain / lose focus (`InputMethodManager` on the decor view;
-  `NativeOptions::autoSoftKeyboard`, `setSoftKeyboard`). Key events become `keyDown` / `keyUp` plus committed text
-  through `KeyCharacterMap`; there is no IME composition (pre-edit) with NativeActivity.
+- Text: the soft keyboard is shown / hidden as text fields gain / lose focus (`NativeOptions::autoSoftKeyboard`,
+  `setSoftKeyboard`). Key events become `keyDown` / `keyUp` plus committed text through `KeyCharacterMap`. With
+  `NativeOptions::imeComposition` (default) the IME edits an invisible framework `EditText` created through JNI (no
+  Java code): the main thread (its looper is hooked in a wrapped `ANativeActivity_onCreate`) polls the `Editable`
+  at 30 Hz while the keyboard is up; the composing span goes to `UiContext::textComposition` (pre-edit), committed
+  text to `textInput`, deletions of committed text become Backspace, and the field is emptied after each commit.
+  Keys still reach the native input queue first. `NativePlatform::imeTestInput` drives the same InputConnection
+  (tests). On the API 36 emulator Gboard commits every key (no pre-edit: no suggestions there).
 ### App projects (`project.json` schema 2)
 
 A project declares that it is an application with `"schemaVersion": 2` and `"kind": "app"` (or `"hybrid"`: an app
@@ -618,6 +634,10 @@ checks it against the overlay under one scripted event stream.
 | `fuse_app_lifecycle_android` | HOME releases the surface, `am start` rebuilds it with a correct first frame and the same UI state; rotation resizes to landscape and back |
 | `fuse_platform_touch_android` | `input tap` clicks the button; `input swipe` over the list scrolls it both ways without clicking |
 | `fuse_platform_ime_android` | tapping the line edit focuses it and shows the soft keyboard; `input text` and backspace edit it |
+| `fuse_app_process_death_android` | Android build tree, adb: taps (app state), a tab page, list scroll and line-edit text + focus survive `am kill` of the background process and a SIGKILL; the relaunched process (new pid) restores them |
+| `fuse_app_hello_startup_android` | Android build tree, adb: hello_app `--startup-probe` cold starts (5 per mode, interleaved): async (software first frame, then Vulkan with the same pixels), `--sync-vulkan`, `--no-vulkan`; launch / main() -> first frame medians; on a device launch -> first frame <= 400 ms (plan §6); on an emulator (its first window buffer alone takes 200-800 ms, timings follow the host's load) async must be within 1.25x + 100 ms of software-only and faster than sync |
+| `fuse_platform_ime_composition_android` | Android build tree, adb: Gboard soft-key taps commit into the line edit and its delete key deletes; with the device IME disabled, `setComposingText` / `commitText` on the EditText's InputConnection give the pre-edit ('日本' -> '日本語') and its commit |
+| `fuse_runtime_present_android` | engine tree (`-DFUSE_BUILD_UI=ON`, Android toolchain), adb: `fuse_runtime_android` (fuse_rhi `RhiContext` + `VK_KHR_android_surface` swapchain) renders and presents 120 frames; the raster target reads back as the B2.11 triangle (coverage 0.125) |
 | `fuse_app_idle_native` | real idle window for 3 s: zero presents, ≤ 10 loop wakeups / s (OS messages only), CPU ≤ 2 % |
 | `fuse_project_schema2`, `fuse_project_schema2_native` | project.json schema 1 load / write / migrate, schema 2 round trip, 24 rejected files, the app template, `ProjectHost` brings up only `AppPresent` and presents the `.fuseui` (headless ≤ 150 ms; `_native` on a real window vs the CPU raster) |
 | `fuse_ui_game_hud_golden` | HUD demo scene against `tests/golden/hud.png` plus trail / marker / pool state |

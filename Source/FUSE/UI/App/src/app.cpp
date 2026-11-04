@@ -177,7 +177,7 @@ bool Settings::save() {
     {
         std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
         if (!f) return false;
-        for (const auto& [k, v] : m_items) f << escape(k) << '=' << escape(v) << '\n';
+        f << toText();
         if (!f) return false;
     }
 #if defined(_WIN32)
@@ -214,6 +214,24 @@ void Settings::set(std::string_view key, double value) {
 void Settings::remove(std::string_view key) {
     const auto it = std::find_if(m_items.begin(), m_items.end(), [&](const auto& kv) { return kv.first == key; });
     if (it != m_items.end()) { m_items.erase(it); m_dirty = true; }
+}
+std::string Settings::toText() const {
+    std::string o;
+    for (const auto& [k, v] : m_items) o += escape(k) + '=' + escape(v) + '\n';
+    return o;
+}
+void Settings::fromText(std::string_view text) {
+    m_items.clear();
+    m_dirty = false;
+    for (std::size_t pos = 0; pos < text.size();) {
+        const std::size_t nl = std::min(text.find('\n', pos), text.size());
+        std::string_view line = text.substr(pos, nl - pos);
+        pos = nl + 1;
+        if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+        const std::size_t eq = line.find('=');
+        if (line.empty() || line[0] == '#' || eq == std::string_view::npos) continue;
+        m_items.emplace_back(unescape(line.substr(0, eq)), unescape(line.substr(eq + 1)));
+    }
 }
 
 // ---- AppWindow -----------------------------------------------------------------------------------------------------
@@ -307,6 +325,11 @@ bool AppWindow::writePng(const std::string& path) const {
 bool AppWindow::frame(f32 dt) {
     if (!m_forceRedraw && m_policy == RedrawPolicy::OnDemand && !m_ui.needsUpdate()) return false;
     m_ui.update(dt); // advances timers; presents only when something repainted
+    if (!m_pendingScroll.empty()) { // restored offsets: the scroll extents are known after the layout above
+        for (const auto& [id, o] : m_pendingScroll) m_ui.scrollTo(m_ui.find(id), o);
+        m_pendingScroll.clear();
+        m_ui.update(0.f);
+    }
     if (m_doc && m_doc->refresh()) m_ui.update(0.f);
     if (!m_ui.stats().repainted && !m_forceRedraw && m_policy == RedrawPolicy::OnDemand) return false;
     Rect dmg = m_forceRedraw ? Rect{0.f, 0.f, m_ui.viewport().w, m_ui.viewport().h} : m_ui.damage();
@@ -318,6 +341,67 @@ bool AppWindow::frame(f32 dt) {
     if (!m_presenter.present || !m_presenter.present(m_presenter.user, *this, dmg)) return false;
     ++m_frames;
     return true;
+}
+
+void AppWindow::saveUiState(Settings& out, std::string_view prefix) const {
+    const std::string p(prefix);
+    if (const std::string_view f = m_ui.idOf(m_ui.focused()); !f.empty()) out.set(p + "focus", f);
+    std::vector<NodeHandle> stack{m_ui.root()};
+    while (!stack.empty()) {
+        const NodeHandle n = stack.back();
+        stack.pop_back();
+        for (NodeHandle c = m_ui.firstChild(n); m_ui.alive(c); c = m_ui.nextSibling(c)) stack.push_back(c);
+        const std::string_view id = m_ui.idOf(n);
+        if (id.empty()) continue;
+        switch (m_ui.role(n)) {
+        case A11yRole::TextField: out.set(p + "text." + std::string(id), m_ui.text(n)); break;
+        case A11yRole::Tab:
+        case A11yRole::Slider:
+        case A11yRole::ComboBox:
+        case A11yRole::SpinBox:
+        case A11yRole::Dial: out.set(p + "value." + std::string(id), double(m_ui.value(n))); break;
+        case A11yRole::CheckBox:
+        case A11yRole::RadioButton:
+        case A11yRole::Switch: out.set(p + "checked." + std::string(id), m_ui.checked(n) ? 1.0 : 0.0); break;
+        default: break;
+        }
+        if (const Vec2 o = m_ui.scroll(n); o.x != 0.f || o.y != 0.f) {
+            char buf[64];
+            std::snprintf(buf, sizeof buf, "%.2f,%.2f", double(o.x), double(o.y));
+            out.set(p + "scroll." + std::string(id), buf);
+        }
+    }
+}
+void AppWindow::restoreUiState(const Settings& in, std::string_view prefix) {
+    std::string focus;
+    for (const auto& [key, v] : in.items()) {
+        const std::string_view k(key);
+        if (!k.starts_with(prefix)) continue;
+        const std::string_view rest = k.substr(prefix.size());
+        if (rest == "focus") { focus = v; continue; }
+        const std::size_t dot = rest.find('.');
+        if (dot == std::string_view::npos) continue;
+        const std::string_view kind = rest.substr(0, dot);
+        const NodeHandle n = m_ui.find(rest.substr(dot + 1));
+        if (!m_ui.alive(n)) continue;
+        double d = 0.0;
+        if (kind == "text" && m_ui.text(n) != v) {
+            m_ui.setText(n, v);
+            m_ui.editBuffer(n).setText(v);
+            m_ui.editBuffer(n).end(false);
+            m_ui.emit(n, SignalKind::TextChanged, {.text = v});
+        } else if (kind == "value" && parseDouble(v, d)) {
+            m_ui.setValue(n, f32(d), true);
+        } else if (kind == "checked" && parseDouble(v, d) && m_ui.checked(n) != (d != 0.0)) {
+            m_ui.setChecked(n, d != 0.0);
+            m_ui.emit(n, SignalKind::Toggled, {.flag = d != 0.0});
+        } else if (kind == "scroll") {
+            float x = 0.f, y = 0.f;
+            if (std::sscanf(v.c_str(), "%f,%f", &x, &y) == 2) m_pendingScroll.emplace_back(std::string(rest.substr(dot + 1)), Vec2{x, y});
+        }
+    }
+    if (const NodeHandle f = m_ui.find(focus); !focus.empty() && m_ui.alive(f)) m_ui.setFocus(f);
+    m_forceRedraw = true;
 }
 
 // ---- Application ---------------------------------------------------------------------------------------------------
@@ -421,6 +505,22 @@ bool Application::step(f32 maxWait) {
     std::erase_if(m_windows, [](const auto& w) { return w->m_closing; });
     if (m_windows.empty()) m_quit = true;
     return !m_quit;
+}
+std::string Application::saveState() {
+    Settings st;
+    for (std::size_t i = 0; i < m_windows.size(); ++i) m_windows[i]->saveUiState(st, "w" + std::to_string(i) + ".");
+    if (m_onSave) m_onSave(*this, st);
+    return st.toText();
+}
+void Application::restoreState(std::string_view bytes) {
+    m_restored.fromText(bytes);
+    m_restoredSeen = true;
+    for (std::size_t i = 0; i < m_windows.size(); ++i) m_windows[i]->restoreUiState(m_restored, "w" + std::to_string(i) + ".");
+    if (m_onRestore) m_onRestore(*this, m_restored);
+}
+void Application::onRestoreState(fuse::ui::InlineFn<void(Application&, const Settings&)> fn) {
+    m_onRestore = fn;
+    if (m_restoredSeen && m_onRestore) m_onRestore(*this, m_restored);
 }
 int Application::run() {
     while (step()) {

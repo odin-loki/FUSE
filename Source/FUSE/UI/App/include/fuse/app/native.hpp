@@ -92,6 +92,9 @@ struct NativeOptions {
     fuse::ui::f32 scale = 0.f;
     /// Show / hide the soft keyboard as text fields gain / lose focus (mobile).
     bool autoSoftKeyboard = true;
+    /// Android: the IME edits an invisible EditText, so soft keyboards deliver composition (pre-edit,
+    /// UiContext::textComposition) and committed text; false: the decor view gets the keyboard (key events only).
+    bool imeComposition = true;
     /// Directory of the persistent "ui.draw_list" VkPipelineCache. null: the per-user cache dir
     /// (%LOCALAPPDATA%\FUSE\cache, $XDG_CACHE_HOME/fuse or ~/.cache/fuse); "": no cache file.
     const char* pipelineCacheDir = nullptr;
@@ -116,6 +119,8 @@ struct LifecycleStats {
     bool foreground = true;
     bool hasSurface = false;
     bool softKeyboard = false;    ///< the soft keyboard was last requested shown
+    unsigned statesSaved = 0;     ///< saved-state snapshots handed to the OS (Android APP_CMD_SAVE_STATE)
+    bool stateRestored = false;   ///< this process started from a previous one's saved state
 };
 
 /// Per-user cache directory for fuse_app (Vulkan pipeline cache): %LOCALAPPDATA%\FUSE\cache on Windows,
@@ -174,6 +179,9 @@ public:
     Insets safeAreaInsets(const AppWindow& w) const;
     /// Mobile: shows / hides the soft keyboard (NativeOptions::autoSoftKeyboard does it from focus). No-op on desktop.
     void setSoftKeyboard(bool show);
+    /// Tests (Android, NativeOptions::imeComposition): calls the IME bridge's InputConnection the way an IME does,
+    /// setComposingText(utf8) or, with `commit`, commitText(utf8). False elsewhere or without an IME session.
+    bool imeTestInput(std::string_view utf8, bool commit);
     void setHooks(const NativeHooks& h);
     LifecycleStats lifecycle() const;
     /// Android: the android_app* of the running activity (JNI, assets); null elsewhere.

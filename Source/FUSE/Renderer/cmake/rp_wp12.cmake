@@ -13,7 +13,10 @@ set(_fuse_meshopt_dir "${FUSE_VENDOR_DIR}/meshoptimizer")
 
 file(GLOB _fuse_meshopt_sources CONFIGURE_DEPENDS "${_fuse_meshopt_dir}/src/*.cpp")
 add_library(fuse_meshoptimizer STATIC ${_fuse_meshopt_sources})
-target_include_directories(fuse_meshoptimizer SYSTEM PUBLIC "${_fuse_meshopt_dir}/src" "${_fuse_meshopt_dir}")
+# the pin header is copied out: vendor/meshoptimizer/VERSION on the include path shadows <version> on case-insensitive
+# file systems (Windows hosts cross-building with clang / libc++)
+configure_file("${_fuse_meshopt_dir}/fuse_meshoptimizer_version.h" "${CMAKE_CURRENT_BINARY_DIR}/meshopt_pin/fuse_meshoptimizer_version.h" COPYONLY)
+target_include_directories(fuse_meshoptimizer SYSTEM PUBLIC "${_fuse_meshopt_dir}/src" "${CMAKE_CURRENT_BINARY_DIR}/meshopt_pin")
 fuse_apply_cxx23(fuse_meshoptimizer)
 set_target_properties(fuse_meshoptimizer PROPERTIES POSITION_INDEPENDENT_CODE ON)
 

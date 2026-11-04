@@ -25,6 +25,9 @@ VkCtx* vkCtxAdopt(SurfaceSource::Kind kind, const VulkanDeviceHandles& h, std::s
 void vkCtxDestroy(VkCtx* c);
 bool vkWinSetExternal(VkWin* w, unsigned slot, const ExternalTexture& t);
 const char* vkCtxDeviceName(const VkCtx* c);
+/// Chooses and creates the device before any window has a surface (Android async start: a window that is still a
+/// CPU producer cannot get a VkSurfaceKHR; every Android queue family can present).
+bool vkCtxCreateDevice(VkCtx* c, std::string& err);
 VkWin* vkWinCreate(VkCtx* c, const SurfaceSource& s, const NativeOptions& o, std::string& err);
 /// Creates the swapchain for a `width` x `height` client area ahead of the first present (async init worker).
 bool vkWinPrepare(VkWin* w, unsigned width, unsigned height, std::string& err);

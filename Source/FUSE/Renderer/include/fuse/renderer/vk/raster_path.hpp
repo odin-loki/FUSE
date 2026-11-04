@@ -58,6 +58,9 @@ public:
 
     /// Offscreen color image for graph-planned layout barriers.
     void* barrierImageHandle() const;
+    /// VkImageLayout the offscreen color image is in after the last recorded frame (a caller that copies it, e.g. a
+    /// present blit, transitions it back to this layout).
+    u32 colorImageLayout() const { return m_colorLayout; }
 
     /// Offscreen D32_SFLOAT depth image; null if not ready.
     void* depthImageHandle() const;
