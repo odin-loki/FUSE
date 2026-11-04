@@ -751,6 +751,7 @@ u32 nextCp(std::string_view s, u32 c) { if (c >= s.size()) return u32(s.size());
 
 struct CodeEditW {
     static constexpr std::string_view kName = "codeedit";
+    static ComputedStyle defaults() { ComputedStyle s; s.cursor = CursorShape::Text; return s; }
     static constexpr A11yRole kRole = A11yRole::TextField;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;

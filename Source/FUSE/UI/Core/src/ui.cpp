@@ -599,17 +599,22 @@ f32 UiContext::measureString(std::string_view s, f32 px) {
 
 void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, Vec2 o, Color col, f32 px, u32 nodeIdx) {
     if (!m_font || col.a <= 0.f) return;
+    const f32 s = m_scale; // glyphs are rasterised at device size; the rect is stored so that rect * s is exact
     for (const auto& ln : tl.lines) {
         for (u32 k = ln.firstGlyph; k < ln.firstGlyph + ln.glyphCount; ++k) {
             const auto& g = tl.glyphs[k];
             if (g.glyph == fuse::text::kInvisibleGlyph) continue;
-            fuse::text::forEachPaintGlyph(*m_font, g, px, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
-                                                               const fuse::text::ColorLayer* layer) {
+            fuse::text::forEachPaintGlyph(*m_font, g, px * s, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
+                                                                   const fuse::text::ColorLayer* layer) {
                 const auto ag = m_atlas.get(f, glyph, fpx);
                 if (!ag.valid || ag.w == 0) return;
                 DrawCmd c;
                 c.op = DrawOp::Glyph;
-                c.rect = {std::round(o.x + g.x) + f32(ag.x0), std::round(o.y + ln.baseline) + f32(ag.y0), f32(ag.w), f32(ag.h)};
+                if (s == 1.f)
+                    c.rect = {std::round(o.x + g.x) + f32(ag.x0), std::round(o.y + ln.baseline) + f32(ag.y0), f32(ag.w), f32(ag.h)};
+                else
+                    c.rect = {(std::round((o.x + g.x) * s) + f32(ag.x0)) / s, (std::round((o.y + ln.baseline) * s) + f32(ag.y0)) / s,
+                              f32(ag.w) / s, f32(ag.h) / s};
                 c.u = ag.u;
                 c.v = ag.v;
                 c.tw = ag.w;
@@ -1049,10 +1054,98 @@ void UiContext::paintPass() {
         next.push_back(std::move(ps));
     }
     if (next.size() != m_popupSurfaces.size()) m_damage = m_damage.unite({0.f, 0.f, m_viewport.w, m_viewport.h});
+    if (m_scale != 1.f) { // UI units -> device pixels (rects stay in UI units)
+        scaleDrawList(m_draw);
+        for (PopupSurface& ps : next) scaleDrawList(ps.draw);
+    }
     m_popupSurfaces = std::move(next);
     m_anyPaintDirty = false;
     m_stats.repainted = true;
     m_stats.drawCmds = u32(m_draw.size());
+}
+
+void UiContext::scaleDrawList(DrawList& dl) const {
+    const f32 s = m_scale;
+    for (DrawCmd& c : dl.cmds()) {
+        if (c.op == DrawOp::Glyph) { // placed on whole device pixels at the atlas texel size
+            c.rect = {std::round(c.rect.x * s), std::round(c.rect.y * s), f32(c.tw), f32(c.th)};
+            continue;
+        }
+        c.rect = {c.rect.x * s, c.rect.y * s, c.rect.w * s, c.rect.h * s};
+        if (c.op == DrawOp::Line) continue; // rect = end points
+        c.borderWidth *= s;
+        for (f32& r : c.radius) r *= s;
+        c.blur *= s;
+    }
+}
+
+void UiContext::setScale(f32 s) {
+    s = std::isfinite(s) ? std::clamp(s, 0.25f, 8.f) : 1.f;
+    if (s == m_scale) return;
+    m_scale = s;
+    markAllDirty();
+}
+
+CursorShape UiContext::cursor() const {
+    if (m_scrollDrag.node.valid()) return CursorShape::Arrow;
+    const NodeHandle from = node(m_pressed) ? m_pressed : m_hover;
+    const Node* n = node(from);
+    for (u32 i = n ? from.index : kNone; i != kNone; i = m_nodes[i].parent) {
+        const CursorShape c = m_styles.style(m_nodes[i].style).cursor;
+        if (c != CursorShape::Auto) return c;
+    }
+    return CursorShape::Arrow;
+}
+
+bool UiContext::touchDown(u32 id, Vec2 p) {
+    for (u32 k = 0; k < m_touchCount; ++k)
+        if (m_touches[k].id == id) return touchMove(id, p);
+    if (m_touchCount == kMaxTouches) return false;
+    m_touches[m_touchCount++] = {id, p, p};
+    if (m_touchCount == 2) m_pinchStart = std::hypot(m_touches[1].pos.x - m_touches[0].pos.x, m_touches[1].pos.y - m_touches[0].pos.y);
+    if (m_primaryTouch != kNone || m_touchCount != 1) return true; // secondary contacts: gestures only
+    m_primaryTouch = id;
+    m_pointerKind = PointerKind::Touch;
+    pointerMove(p);
+    return pointerDown(p);
+}
+bool UiContext::touchMove(u32 id, Vec2 p) {
+    for (u32 k = 0; k < m_touchCount; ++k)
+        if (m_touches[k].id == id) {
+            m_touches[k].pos = p;
+            if (id != m_primaryTouch) return true;
+            m_pointerKind = PointerKind::Touch;
+            return pointerMove(p);
+        }
+    return false;
+}
+bool UiContext::touchUp(u32 id, Vec2 p) {
+    for (u32 k = 0; k < m_touchCount; ++k)
+        if (m_touches[k].id == id) {
+            for (u32 j = k + 1; j < m_touchCount; ++j) m_touches[j - 1] = m_touches[j];
+            --m_touchCount;
+            if (m_touchCount < 2) m_pinchStart = 0.f;
+            if (id != m_primaryTouch) return true;
+            m_primaryTouch = kNone;
+            m_pointerKind = PointerKind::Touch;
+            pointerMove(p);
+            const bool used = pointerUp(p);
+            setHover(kNone); // a lifted finger hovers nothing
+            return used;
+        }
+    return false;
+}
+void UiContext::touchCancel() {
+    m_touchCount = 0;
+    m_pinchStart = 0.f;
+    if (m_primaryTouch == kNone) return;
+    m_primaryTouch = kNone;
+    m_pressed = {};
+    setHover(kNone);
+}
+f32 UiContext::pinchScale() const {
+    if (m_touchCount < 2 || m_pinchStart <= 0.f) return 1.f;
+    return std::hypot(m_touches[1].pos.x - m_touches[0].pos.x, m_touches[1].pos.y - m_touches[0].pos.y) / m_pinchStart;
 }
 
 void UiContext::setOsPopups(bool on, Rect screen) {
@@ -1569,7 +1662,7 @@ void UiContext::animate(NodeHandle h, AnimProp p, f32 to, f32 seconds, Ease e) {
         slot->active = true;
         ++m_animCount;
     }
-    *slot = Anim{h, p, e, from, to, 0.f, std::max(0.f, seconds), true};
+    *slot = Anim{h, p, e, from, to, 0.f, m_reducedMotion ? 0.f : std::max(0.f, seconds), true};
 }
 
 // ---- Cross-thread commands (Vyukov bounded queue; multi-producer, single consumer) -------------------------------
@@ -1623,6 +1716,17 @@ void UiContext::addStyleSheet(StyleSheet sheet) {
 void UiContext::clearStyleSheets() {
     m_styles.clearSheets();
     m_anyStyleDirty = true;
+}
+std::expected<void, UiError> UiContext::setThemeStyleSheet(std::string_view css, std::vector<StyleDiagnostic>* diags) {
+    auto sheet = StyleSheet::parse(css, diags);
+    if (!sheet) {
+        if (diags) diags->push_back(sheet.error());
+        return std::unexpected(UiError::StyleParse);
+    }
+    m_styles.setThemeSheet(std::move(*sheet));
+    m_anyStyleDirty = true;
+    markAllDirty();
+    return {};
 }
 
 // ---- Dumps ---------------------------------------------------------------------------------------------------------

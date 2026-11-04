@@ -67,6 +67,7 @@ constexpr PropInfo kProps[] = {
     {Prop::ShadowY, "shadow-y", T::Length, false, true, false},
     {Prop::PointerEvents, "pointer-events", T::Bool, false, false, false},
     {Prop::BackdropBlur, "backdrop-blur", T::Length, false, true, false},
+    {Prop::Cursor, "cursor", T::Enum, false, false, false},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -100,6 +101,15 @@ constexpr EnumWord kEnums[] = {
     {Prop::TextAlign, "left", u8(TextAlignment::Start)}, {Prop::TextAlign, "start", u8(TextAlignment::Start)},
     {Prop::TextAlign, "center", u8(TextAlignment::Center)}, {Prop::TextAlign, "right", u8(TextAlignment::End)},
     {Prop::TextAlign, "end", u8(TextAlignment::End)},
+    {Prop::Cursor, "auto", u8(CursorShape::Auto)},          {Prop::Cursor, "default", u8(CursorShape::Arrow)},
+    {Prop::Cursor, "arrow", u8(CursorShape::Arrow)},        {Prop::Cursor, "text", u8(CursorShape::Text)},
+    {Prop::Cursor, "pointer", u8(CursorShape::Hand)},       {Prop::Cursor, "hand", u8(CursorShape::Hand)},
+    {Prop::Cursor, "ns-resize", u8(CursorShape::ResizeNS)}, {Prop::Cursor, "row-resize", u8(CursorShape::ResizeNS)},
+    {Prop::Cursor, "ew-resize", u8(CursorShape::ResizeEW)}, {Prop::Cursor, "col-resize", u8(CursorShape::ResizeEW)},
+    {Prop::Cursor, "nwse-resize", u8(CursorShape::ResizeNWSE)}, {Prop::Cursor, "nesw-resize", u8(CursorShape::ResizeNESW)},
+    {Prop::Cursor, "move", u8(CursorShape::Move)},          {Prop::Cursor, "wait", u8(CursorShape::Wait)},
+    {Prop::Cursor, "progress", u8(CursorShape::Wait)},      {Prop::Cursor, "not-allowed", u8(CursorShape::NotAllowed)},
+    {Prop::Cursor, "crosshair", u8(CursorShape::Crosshair)},
 };
 
 std::string_view trim(std::string_view s) {
@@ -148,6 +158,12 @@ constexpr NamedColor kNamed[] = {{"black", 0x000000}, {"white", 0xFFFFFF}, {"red
 } // namespace
 
 const PropInfo& propInfo(Prop p) { return kProps[int(p)]; }
+const char* cursorShapeName(CursorShape c) {
+    static constexpr const char* kNames[] = {"auto", "default", "text", "pointer", "ns-resize", "ew-resize", "nwse-resize",
+                                             "nesw-resize", "move", "wait", "not-allowed", "crosshair"};
+    static_assert(sizeof(kNames) / sizeof(kNames[0]) == std::size_t(CursorShape::Count));
+    return u8(c) < u8(CursorShape::Count) ? kNames[u8(c)] : "auto";
+}
 bool findProp(std::string_view name, Prop& out) {
     for (const auto& pi : kProps)
         if (pi.cssName == name) { out = pi.id; return true; }
@@ -299,6 +315,7 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::ShadowX: s.shadowX = v.len.value; break;
     case Prop::ShadowY: s.shadowY = v.len.value; break;
     case Prop::PointerEvents: s.pointerEvents = v.b; break;
+    case Prop::Cursor: s.cursor = CursorShape(std::min<u8>(v.e, u8(CursorShape::Count) - 1)); break;
     case Prop::Count: break;
     }
 }
@@ -318,6 +335,7 @@ PropValue readProp(const ComputedStyle& s, Prop p) {
     case Prop::Layout: return PropValue::ofEnum(u8(s.layout));
     case Prop::Direction: return PropValue::ofEnum(u8(s.direction));
     case Prop::TextAlign: return PropValue::ofEnum(u8(s.textAlign));
+    case Prop::Cursor: return PropValue::ofEnum(u8(s.cursor));
     default: break;
     }
     PropValue v;
@@ -601,11 +619,23 @@ StyleEngine::StyleEngine() {
 void StyleEngine::clearSheets() {
     m_sheets.clear();
     m_ordered.clear();
+    m_hasTheme = false;
     ++m_version;
 }
 
 void StyleEngine::addSheet(StyleSheet sheet) {
     m_sheets.push_back(std::move(sheet));
+    reorder();
+}
+
+void StyleEngine::setThemeSheet(StyleSheet sheet) {
+    if (m_hasTheme) m_sheets[0] = std::move(sheet);
+    else m_sheets.insert(m_sheets.begin(), std::move(sheet));
+    m_hasTheme = true;
+    reorder();
+}
+
+void StyleEngine::reorder() {
     m_ordered.clear();
     u32 sheetIdx = 0;
     std::vector<std::pair<u64, const StyleRule*>> keyed;

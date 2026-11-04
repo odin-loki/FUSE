@@ -19,6 +19,7 @@
 #include <concepts>
 #include <expected>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -194,6 +195,9 @@ public:
     std::expected<void, UiError> addStyleSheet(std::string_view css, std::vector<StyleDiagnostic>* diags = nullptr);
     void addStyleSheet(StyleSheet sheet); ///< an already parsed (or cooked) sheet
     void clearStyleSheets();
+    /// The theme sheet slot: ordered before every other sheet and replaced by the next call (widgets::install puts
+    /// the default theme here; switching dark / light replaces it without touching app sheets).
+    std::expected<void, UiError> setThemeStyleSheet(std::string_view css, std::vector<StyleDiagnostic>* diags = nullptr);
 
     // tree
     NodeHandle root() const { return m_root; }
@@ -313,6 +317,38 @@ public:
     void setClipboard(const ClipboardHooks& hooks) { m_clipboard = hooks; }
     bool setClipboardText(std::string_view utf8);
     bool clipboardText(std::string& out) const;
+    // ---- platform services (UI1): DPI scale, cursor, reduced motion, touch / pen ----
+    /// Device pixels per UI unit (the window's DPI scale). Layout, hit testing, events, rect() and damage() stay in
+    /// UI units; drawList() and popupSurfaces() are emitted in device pixels and text is rasterised at
+    /// font-size * scale (crisp glyphs, not a stretched bitmap). Changing it re-lays out and repaints everything.
+    void setScale(f32 s);
+    f32 scale() const { return m_scale; }
+    /// The cursor the pointer should show: the pressed node's while it is held (a drag keeps its resize cursor), else
+    /// the hovered node's `cursor` style, inherited from ancestors; Arrow when none sets one.
+    CursorShape cursor() const;
+    /// Reduced motion (the OS accessibility setting): animate() jumps straight to the target value.
+    void setReducedMotion(bool on) { m_reducedMotion = on; }
+    bool reducedMotion() const { return m_reducedMotion; }
+    /// Touch contacts in UI units. The first finger down (while none is down) is the primary touch and drives the
+    /// pointer like a mouse (move + press / release); the others are only tracked (gestures: touches(), pinchScale()).
+    struct TouchPoint {
+        u32 id = 0;
+        Vec2 pos, start;
+    };
+    static constexpr u32 kMaxTouches = 10;
+    bool touchDown(u32 id, Vec2 p);
+    bool touchMove(u32 id, Vec2 p);
+    bool touchUp(u32 id, Vec2 p);
+    void touchCancel(); ///< drops every contact (the primary releases without a click)
+    std::span<const TouchPoint> touches() const { return {m_touches.data(), m_touchCount}; }
+    /// Two-finger pinch: current distance of the first two contacts / their distance when the second went down.
+    f32 pinchScale() const;
+    /// What produced the last pointer event (platform glue sets it; pen pressure 0..1).
+    enum class PointerKind : u8 { Mouse, Touch, Pen };
+    void setPointerKind(PointerKind k, f32 pressure = 1.f) { m_pointerKind = k; m_pressure = pressure; }
+    PointerKind pointerKind() const { return m_pointerKind; }
+    f32 pressure() const { return m_pressure; }
+
     NodeHandle hitTest(Vec2 p) const;
     NodeHandle hovered() const { return m_hover; }
     Vec2 pointer() const { return m_pointer; } ///< last pointer position
@@ -394,6 +430,7 @@ private:
     void collectTab(std::vector<u32>& out) const;
     void markArrange(u32 i);
     bool visibleChain(u32 i) const;
+    void scaleDrawList(DrawList& dl) const;
 
     WidgetRegistry m_registry;
     StyleEngine m_styles;
@@ -428,6 +465,14 @@ private:
     std::string m_localClipboard;
     Vec2 m_pointer{-1.f, -1.f};
     u8 m_mods = 0;
+    f32 m_scale = 1.f;
+    bool m_reducedMotion = false;
+    PointerKind m_pointerKind = PointerKind::Mouse;
+    f32 m_pressure = 1.f;
+    std::array<TouchPoint, kMaxTouches> m_touches{};
+    u32 m_touchCount = 0;
+    u32 m_primaryTouch = 0xFFFFFFFFu;
+    f32 m_pinchStart = 0.f;
     struct ScrollDrag { NodeHandle node; u8 axis = 0; f32 grab = 0.f; } m_scrollDrag;
     std::vector<u32> m_path;
     std::vector<u32> m_scratchOrder;

@@ -90,6 +90,7 @@ NodeHandle addPane(UiContext& ui, NodeHandle split, f32 size, std::string_view i
         ui.setRange(h, 0.f, 1.f, 0.f);
         ui.setValue(h, ui.hasClass(split, "stacked") ? 1.f : 0.f);
         ui.setCss(h, "flex-shrink", "0");
+        ui.setCss(h, "cursor", ui.hasClass(split, "stacked") ? "ns-resize" : "ew-resize");
     }
     const NodeHandle p = panel(ui, split, id);
     ui.addClass(p, "pane");

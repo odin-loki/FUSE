@@ -64,6 +64,7 @@ struct Button {
 struct ToolButton : Button { static constexpr std::string_view kName = "toolbutton"; };
 struct Link {
     static constexpr std::string_view kName = "link";
+    static ComputedStyle defaults() { ComputedStyle s; s.cursor = CursorShape::Hand; return s; }
     static constexpr A11yRole kRole = A11yRole::Link;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -253,6 +254,7 @@ struct ProgressBar {
 // ---- SpinBox / ComboBox --------------------------------------------------------------------------------------------
 struct SpinBox {
     static constexpr std::string_view kName = "spinbox";
+    static ComputedStyle defaults() { ComputedStyle s; s.cursor = CursorShape::Text; return s; }
     static constexpr A11yRole kRole = A11yRole::SpinBox;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -348,6 +350,7 @@ struct ComboBox {
 // ---- LineEdit ------------------------------------------------------------------------------------------------------
 struct LineEdit {
     static constexpr std::string_view kName = "lineedit";
+    static ComputedStyle defaults() { ComputedStyle s; s.cursor = CursorShape::Text; return s; }
     static constexpr A11yRole kRole = A11yRole::TextField;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -508,7 +511,7 @@ void install(UiContext& ui) {
     registerTierB(ui);
     registerTierCD(ui);
     registerTierD2(ui);
-    (void)ui.addStyleSheet(defaultThemeCss());
+    (void)ui.setThemeStyleSheet(defaultThemeCss());
 }
 
 u32 installClasses(UiContext& ui, std::span<const std::string_view> classes, bool theme) {
@@ -528,7 +531,7 @@ u32 installClasses(UiContext& ui, std::span<const std::string_view> classes, boo
         if (id == 0xFFFFFFFFu) { ++unknown; continue; }
         ui.registry().add(all.get(id));
     }
-    if (theme) (void)ui.addStyleSheet(defaultThemeCss());
+    if (theme) (void)ui.setThemeStyleSheet(defaultThemeCss());
     return unknown;
 }
 

@@ -21,6 +21,11 @@ namespace fuse::ui::widgets {
 void registerTierA(UiContext& ui);
 /// The default dark theme (theme tokens in :root). Style sheet text, lives for the program.
 std::string_view defaultThemeCss();
+/// Dark / light variants of the default theme (same rules, different :root tokens). install() puts the dark one in
+/// the context's theme slot; UiContext::setThemeStyleSheet(themeCss(ThemeVariant::Light)) switches it.
+enum class ThemeVariant : u8 { Dark, Light };
+std::string_view themeCss(ThemeVariant v);
+std::string_view lightThemeCss();
 /// Registers the Tier B classes (popup, menu, menuitem, menubar, menubutton, listview, treeview, tabbar, tooltip).
 void registerTierB(UiContext& ui);
 /// registerTierA + registerTierB + default theme. (With Tier B registered, combo boxes open a popup list on click.)
