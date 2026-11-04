@@ -43,6 +43,51 @@ layout(push_constant) uniform UiPush {
 
 const uint kRect = 0u, kShadow = 1u, kGlyph = 2u, kImage = 3u, kLine = 4u;
 
+// The CPU reference uses IEEE single precision with correctly rounded division and sqrt. Vulkan only guarantees
+// that for add / sub / mul (OpFDiv is 2.5 ulp, sqrt inherits inversesqrt), and real GPUs use the slack: an image
+// texel index computed as floor(k / h * n) flips at exact integers. divRn / sqrtRn round the hardware result to the
+// IEEE one with an exact residual (Dekker product; needs only correctly rounded mul / add and no contraction).
+float resid(float a, float q, float b) { // a - q * b, accurate enough to compare neighbours
+    precise float p = q * b;
+    precise float cq = 4097.0 * q;
+    precise float qh = cq - (cq - q);
+    precise float ql = q - qh;
+    precise float cb = 4097.0 * b;
+    precise float bh = cb - (cb - b);
+    precise float bl = b - bh;
+    precise float e = ((qh * bh - p) + qh * bl + ql * bh) + ql * bl;
+    precise float r = (a - p) - e;
+    return r;
+}
+float nextToward(float q, bool up) { // q != 0; up: toward +inf
+    const uint bits = floatBitsToUint(q);
+    return uintBitsToFloat((q > 0.0) == up ? bits + 1u : bits - 1u);
+}
+float roundRn(float a, float q, float b, bool root) { // walk q to the nearest representable a / b (root: sqrt(a), b = q)
+    float r = resid(a, q, root ? q : b);
+    for (int i = 0; i < 4 && r != 0.0; ++i) {
+        const float qn = nextToward(q, root ? r > 0.0 : (r > 0.0) == (b > 0.0));
+        const float rn = resid(a, qn, root ? qn : b);
+        if (abs(rn) < abs(r) || (abs(rn) == abs(r) && (floatBitsToUint(q) & 1u) != 0u)) {
+            q = qn;
+            r = rn;
+        } else {
+            break;
+        }
+    }
+    return q;
+}
+float divRn(float a, float b) {
+    precise float q = a / b;
+    if (q == 0.0 || isinf(q) || isnan(q)) return q;
+    return roundRn(a, q, b, false);
+}
+float sqrtRn(float x) {
+    precise float s = sqrt(x);
+    if (!(x > 0.0) || isinf(x)) return s;
+    return roundRn(x, s, s, true);
+}
+
 float sdRoundRect(float px, float py, vec4 r, vec4 rad) {
     precise float cx = r.x + r.z * 0.5;
     precise float cy = r.y + r.w * 0.5;
@@ -57,15 +102,20 @@ float sdRoundRect(float px, float py, vec4 r, vec4 rad) {
     precise float ox = max(qx, 0.0);
     precise float oy = max(qy, 0.0);
     precise float l2 = ox * ox + oy * oy;
-    return sqrt(l2) + min(max(qx, qy), 0.0) - rr;
+    return sqrtRn(l2) + min(max(qx, qy), 0.0) - rr;
 }
 
-uint q8(float v) { return uint(floor(clamp(v, 0.0, 1.0) * 255.0 + 0.5)); }
+uint q8(float v) {
+    precise float t = clamp(v, 0.0, 1.0) * 255.0 + 0.5;
+    return uint(floor(t));
+}
+
+shared float ui_inv255[256]; // k / 255, correctly rounded (the CPU's f32(k) / 255.f)
 
 void blend(inout uvec4 dst, vec4 s) {
     if (s.a <= 0.0 && s.r <= 0.0 && s.g <= 0.0 && s.b <= 0.0) return;
     precise float inv = 1.0 - s.a;
-    precise vec4 d = vec4(dst) / 255.0;
+    const vec4 d = vec4(ui_inv255[dst.r], ui_inv255[dst.g], ui_inv255[dst.b], ui_inv255[dst.a]);
     precise vec4 o = s + d * inv;
     dst = uvec4(q8(o.r), q8(o.g), q8(o.b), q8(o.a));
 }
@@ -91,6 +141,8 @@ vec4 extFetch(uint e, ivec2 q) {
 uint atlasByte(uint idx) { return (ui_atlas.words[idx >> 2] >> ((idx & 3u) * 8u)) & 0xFFu; }
 
 void main() {
+    ui_inv255[gl_LocalInvocationIndex] = divRn(float(gl_LocalInvocationIndex), 255.0);
+    barrier();
     const uvec2 p = gl_GlobalInvocationID.xy;
     if (p.x >= pc.extent.x || p.y >= pc.extent.y) return;
     const ivec2 ip = ivec2(p);
@@ -125,8 +177,8 @@ void main() {
             if (outer <= 0.0) continue;
             vec4 fill = c.fill;
             if (gradient != 0u) {
-                float t = gradient == 1u ? clamp((py - c.rect.y) / max(c.rect.w, 1.0), 0.0, 1.0)
-                                         : clamp((px - c.rect.x) / max(c.rect.z, 1.0), 0.0, 1.0);
+                float t = gradient == 1u ? clamp(divRn(py - c.rect.y, max(c.rect.w, 1.0)), 0.0, 1.0)
+                                         : clamp(divRn(px - c.rect.x, max(c.rect.z, 1.0)), 0.0, 1.0);
                 precise vec4 f = fill + (c.fill2 - fill) * t;
                 fill = f;
             }
@@ -141,7 +193,7 @@ void main() {
         } else if (op == kShadow) {
             const float d = sdRoundRect(px, py, c.rect, c.radius);
             const float bl = max(c.params.y, 0.5);
-            precise float t = clamp((d + bl) / (2.0 * bl), 0.0, 1.0);
+            precise float t = clamp(divRn(d + bl, 2.0 * bl), 0.0, 1.0);
             precise float cov = (1.0 - t * t * (3.0 - 2.0 * t)) * clipCov;
             blend(dst, premul(c.fill, cov));
         } else if (op == kGlyph) {
@@ -150,7 +202,7 @@ void main() {
             if (gx < 0 || gy < 0 || gx >= tw || gy >= th || pc.atlasSize == 0u) continue;
             const uint u = c.info.y & 0xFFFFu, v = c.info.y >> 16;
             const uint a = atlasByte((v + uint(gy)) * pc.atlasSize + u + uint(gx));
-            if (a != 0u) blend(dst, premul(c.fill, float(a) / 255.0 * clipCov));
+            if (a != 0u) blend(dst, premul(c.fill, ui_inv255[a] * clipCov));
         } else if (op == kImage) {
             const uint img = c.info.w;
             if (img >= pc.imageCount) continue;
@@ -158,28 +210,28 @@ void main() {
             if (ext != 0u) {
                 // straight RGBA texture, nearest-scaled over the rect (same mapping as the CPU image path)
                 const ivec2 es = max(extSize(ext - 1u), ivec2(1));
-                const int ex = clamp(int((px - c.rect.x) / c.rect.z * float(es.x)), 0, es.x - 1);
-                const int ey = clamp(int((py - c.rect.y) / c.rect.w * float(es.y)), 0, es.y - 1);
+                const int ex = clamp(int(divRn(px - c.rect.x, c.rect.z) * float(es.x)), 0, es.x - 1);
+                const int ey = clamp(int(divRn(py - c.rect.y, c.rect.w) * float(es.y)), 0, es.y - 1);
                 const vec4 t = clamp(extFetch(ext - 1u, ivec2(ex, ey)), 0.0, 1.0);
                 const float ek = clipCov * (c.fill.a > 0.0 ? c.fill.a : 1.0);
                 blend(dst, vec4(t.rgb * t.a * ek, t.a * ek));
                 continue;
             }
             const uint off = ui_images.data[img * 4u], w = ui_images.data[img * 4u + 1u], h = ui_images.data[img * 4u + 2u];
-            const int sx = clamp(int((px - c.rect.x) / c.rect.z * float(w)), 0, int(w) - 1);
-            const int sy = clamp(int((py - c.rect.y) / c.rect.w * float(h)), 0, int(h) - 1);
+            const int sx = clamp(int(divRn(px - c.rect.x, c.rect.z) * float(w)), 0, int(w) - 1);
+            const int sy = clamp(int(divRn(py - c.rect.y, c.rect.w) * float(h)), 0, int(h) - 1);
             const uint s = ui_images.data[off + uint(sy) * w + uint(sx)];
             const float kk = clipCov * (c.fill.a > 0.0 ? c.fill.a : 1.0);
-            blend(dst, vec4(float(s & 0xFFu) / 255.0 * kk, float((s >> 8) & 0xFFu) / 255.0 * kk,
-                            float((s >> 16) & 0xFFu) / 255.0 * kk, float(s >> 24) / 255.0 * kk));
+            blend(dst, vec4(ui_inv255[s & 0xFFu] * kk, ui_inv255[(s >> 8) & 0xFFu] * kk,
+                            ui_inv255[(s >> 16) & 0xFFu] * kk, ui_inv255[s >> 24] * kk));
         } else if (op == kLine) {
             precise float vx = c.rect.z - c.rect.x;
             precise float vy = c.rect.w - c.rect.y;
             precise float len2 = max(vx * vx + vy * vy, 1e-6);
-            precise float t = clamp(((px - c.rect.x) * vx + (py - c.rect.y) * vy) / len2, 0.0, 1.0);
+            precise float t = clamp(divRn((px - c.rect.x) * vx + (py - c.rect.y) * vy, len2), 0.0, 1.0);
             precise float ex = px - (c.rect.x + vx * t);
             precise float ey = py - (c.rect.y + vy * t);
-            precise float d = sqrt(ex * ex + ey * ey) - c.params.x * 0.5;
+            precise float d = sqrtRn(ex * ex + ey * ey) - c.params.x * 0.5;
             precise float cov = clamp(0.5 - d, 0.0, 1.0) * clipCov;
             if (cov > 0.0) blend(dst, premul(c.fill, cov));
         }
