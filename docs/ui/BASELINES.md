@@ -177,6 +177,15 @@ The Vulkan driver dominates: ~115 MB of hello_app's working set on NVIDIA, ~75 M
 | Qt editor `fuse_editor_qt_gates ui_frame`: steady frame (viewport + status bar repaint + flush) | 1.70–3.8 ms | not built | — |
 | Qt editor full-window repaint (1280×844, 10 docks) | 11.4–20.5 ms | not built | Qt baseline in §6 was 4.1–4.4 ms |
 
+*11-05, after round 3*: `fuse_ui_bench_10k` had slowed ~10 % (per-node fonts: every painted button resolved its font
+twice per frame, each time through an out-of-line `Font::isVariable()` and the node's cold `setFont` slot). Bisected
+over the integration merges (standalone MSVC builds of the bench only): the step is the per-node-font merge; RTL,
+zoom / text scale and the disabled-focus checks are within noise. Now the font a node's paint resolves is reused by
+its paintString, `isVariable()` is remembered per font id and the per-node override is read only when some node has
+one. Windows MSVC, standalone, interleaved runs on the same loaded machine, min / median of the run medians:
+77afb4125 0.361–0.390 / 0.39–0.42 ms; tip before 0.395–0.415 / 0.41–0.47 ms; after 0.383–0.389 / 0.40–0.45 ms (run to
+run noise is ±0.03 ms). Linux GCC (same machine, WSL2): 0.413 / 0.415 / 0.388 ms min.
+
 ### CPU reference rasteriser (*11-05*)
 
 `fuse_ui_cpu_raster_bench` (gate: 1080p cards ≤ 20 ms, small incremental frame ≤ 2 ms; every frame and 48 fuzzed

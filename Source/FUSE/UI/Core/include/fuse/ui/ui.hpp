@@ -515,6 +515,10 @@ private:
     StyleEngine m_styles;
     const fuse::text::Font* m_font = nullptr;
     const fuse::text::Font* m_textFont = nullptr; ///< font of the node being measured / painted (measureString)
+    u32 m_textFontNode = 0xFFFFFFFFu;             ///< the node m_textFont was resolved for (fontFor), or none
+    u32 m_fontOverrides = 0;                      ///< nodes with a setFont font
+    u32 m_varCheckedId = 0;                       ///< Font::id whose isVariable() m_varChecked holds (0: none)
+    bool m_varChecked = false;
     fuse::text::GlyphAtlas m_atlas;
     std::vector<Node> m_nodes;
     std::vector<Cold*> m_cold; ///< per node, into m_coldChunks

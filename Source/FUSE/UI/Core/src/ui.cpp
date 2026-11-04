@@ -200,6 +200,10 @@ u32 UiContext::alloc() {
         c.inl.clear();
         c.layoutWidth = c.layoutSize = -1.f;
         c.edit.reset();
+        if (c.font) { // a reused slot does not keep the destroyed node's setFont
+            c.font = nullptr;
+            --m_fontOverrides;
+        }
     } else {
         i = u32(m_nodes.size());
         m_nodes.emplace_back();
@@ -625,12 +629,22 @@ void UiContext::stylePass() {
 
 // ---- Text ----------------------------------------------------------------------------------------------------------
 namespace {
-// Sets the current text font for a measure / paint call and restores the previous one.
+// Sets the current text font (and the node it was resolved for) for a measure / paint call and restores the previous
+// one.
 struct TextFontScope {
     const fuse::text::Font*& slot;
+    u32& nodeSlot;
     const fuse::text::Font* saved;
-    TextFontScope(const fuse::text::Font*& s, const fuse::text::Font* f) : slot(s), saved(s) { slot = f; }
-    ~TextFontScope() { slot = saved; }
+    u32 savedNode;
+    TextFontScope(const fuse::text::Font*& s, u32& ns, const fuse::text::Font* f, u32 node)
+        : slot(s), nodeSlot(ns), saved(s), savedNode(ns) {
+        slot = f;
+        nodeSlot = f ? node : 0xFFFFFFFFu;
+    }
+    ~TextFontScope() {
+        slot = saved;
+        nodeSlot = savedNode;
+    }
     TextFontScope(const TextFontScope&) = delete;
     TextFontScope& operator=(const TextFontScope&) = delete;
 };
@@ -638,7 +652,12 @@ struct TextFontScope {
 
 const fuse::text::Font& UiContext::fontFor(const fuse::text::Font& base, const ComputedStyle& s, f32 weight) {
     const fuse::text::Font* f = &base;
-    if (base.isVariable()) {
+    // isVariable() is an out-of-line call into fuse_text: remembered for the last font id asked (ids are never reused)
+    if (base.id() != m_varCheckedId) {
+        m_varCheckedId = base.id();
+        m_varChecked = base.isVariable();
+    }
+    if (m_varChecked) {
         using fuse::text::fontTag;
         std::array<fuse::text::FontVariation, 3 + kMaxFontVariations> v;
         std::size_t n = 0;
@@ -658,14 +677,18 @@ const fuse::text::Font& UiContext::fontFor(const fuse::text::Font& base, const C
 
 const fuse::text::Font& UiContext::fontFor(u32 i) {
     const ComputedStyle& s = m_styles.style(m_nodes[i].style);
-    const fuse::text::Font* base = m_cold[i]->font ? m_cold[i]->font : m_font;
+    // most contexts never call setFont: skip the per-node (cold) lookup then
+    const fuse::text::Font* base = m_fontOverrides && m_cold[i]->font ? m_cold[i]->font : m_font;
     return fontFor(*base, s, m_nodes[i].animWeight > 0.f ? m_nodes[i].animWeight : s.fontWeight);
 }
 
 void UiContext::setFont(NodeHandle h, const fuse::text::Font* font) {
     Node* n = node(h);
     if (!n || m_cold[h.index]->font == font) return;
+    if (!m_cold[h.index]->font) ++m_fontOverrides;
+    else if (!font) --m_fontOverrides;
     m_cold[h.index]->font = font;
+    if (m_textFontNode == h.index) m_textFontNode = kNone; // paintString resolves it again
     m_cold[h.index]->layoutWidth = -1.f;
     n->dirty |= kDirtyText;
     markLayout(h.index);
@@ -875,12 +898,13 @@ void UiContext::paintString(DrawList& dl, std::string_view s, Rect box, Color co
     d.maxWidth = box.w;
     d.elide = true;
     d.align = fuse::text::TextAlign(u8(align));
-    d.rtl = nodeIdx < m_cold.size() && m_nodes[nodeIdx].alive && m_styles.style(m_nodes[nodeIdx].style).rtl; // start = right
     const bool live = nodeIdx < m_cold.size() && m_nodes[nodeIdx].alive;
-    const fuse::text::Font& font =
-        !base ? nodeFont(nodeIdx)
-              : live ? fontFor(*base, m_styles.style(m_nodes[nodeIdx].style), m_styles.style(m_nodes[nodeIdx].style).fontWeight)
-                     : *base;
+    const ComputedStyle* ns = live ? &m_styles.style(m_nodes[nodeIdx].style) : nullptr;
+    d.rtl = ns && ns->rtl; // start = right
+    // the node being painted already resolved its font (TextFontScope in paintRec / measure)
+    const fuse::text::Font& font = !base ? (live && nodeIdx == m_textFontNode && m_textFont ? *m_textFont : nodeFont(nodeIdx))
+                                   : ns  ? fontFor(*base, *ns, ns->fontWeight)
+                                         : *base;
     if (live && !m_cold[nodeIdx]->strMany) {
         // one cached layout per node, keyed on everything layoutText reads
         Cold& c = *m_cold[nodeIdx];
@@ -1058,7 +1082,7 @@ Size UiContext::measure(u32 i, Size avail) {
     ++m_stats.measured;
     n.dirty &= u8(~kDirtyMeasure);
     const ComputedStyle& s = m_styles.style(n.style);
-    const TextFontScope fontScope(m_textFont, m_font ? &fontFor(i) : nullptr);
+    const TextFontScope fontScope(m_textFont, m_textFontNode, m_font ? &fontFor(i) : nullptr, i);
     Size out{0.f, 0.f};
     if (s.visible) {
         const bool fw = fixedLen(s.width, avail.w), fh = fixedLen(s.height, avail.h);
@@ -1389,7 +1413,7 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     const Rect content = contentRect(h);
     if (wc.paint) {
         const PaintContext pc{*this, h, n.rect, content, s, n.state, opacity};
-        const TextFontScope fontScope(m_textFont, m_font ? &fontFor(i) : nullptr);
+        const TextFontScope fontScope(m_textFont, m_textFontNode, m_font ? &fontFor(i) : nullptr, i);
         wc.paint(pc, dl);
     } else if (!m_cold[i]->text.empty() || s.icon) {
         const f32 ic = iconExtent(s);
