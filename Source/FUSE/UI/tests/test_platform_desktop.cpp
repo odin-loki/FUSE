@@ -6,9 +6,12 @@
 //   cursors         the widget under the pointer picks the OS cursor (I-beam, hand, resize; drag keeps it)
 //   system_theme    OS theme query; a theme change (WM_SETTINGCHANGE) switches dark / light, the accent, the title
 //                   bar and reduced motion
+//   high_contrast   a high-contrast theme query: the high-contrast theme in the scheme colours, forced colours (no
+//                   blur / shadows, 2px focus border), the OS text scale on every font size; back to normal after
 //   dialogs         file open / save / folder pickers and message boxes, dismissed by a helper thread (never waits
 //                   for a human); URL / reveal argument checks
 //   touch_synthetic injected touch (InitializeTouchInjection / InjectTouchInput): tap clicks, two fingers pinch
+//   pen_synthetic   a synthetic pen (InjectSyntheticPointerInput, PT_PEN): pressure reaches the context, a tap clicks
 //   multiwindow     two windows with their own swapchains, input to the right one, close one, DPI per window
 // Exit 77 when the OS feature (display, touch injection) is missing.
 #include "fuse/app/native.hpp"
@@ -384,6 +387,84 @@ static int gateSystemTheme(int argc, char** argv) {
     return 0;
 }
 
+// ---- high contrast ---------------------------------------------------------------------------------------------------
+// A replaced theme query reports high contrast (the user's settings are never touched): following the system theme
+// switches to the high-contrast theme in the scheme's colours, forced colours drop blur / shadows and give the
+// keyboard focus a 2px border, and the OS text scale multiplies every font size; switching back restores it all.
+static int gateHighContrast(int argc, char** argv) {
+    g_fake = {};
+    g_fake.dark = true;
+    app::Application a{{.name = "gate_hc", .argc = argc, .argv = argv, .loadSettings = false}};
+    app::NativePlatform native(a, {.themeQuery = &fakeTheme});
+    if (!native.available()) return skipNoDisplay(native, "fuse_platform_high_contrast");
+    a.setFollowSystemTheme(true);
+    auto& win = a.createWindow({.title = "fuse high contrast", .width = 320, .height = 200});
+    UiContext& ui = win.ui();
+    CHECK(ui.addStyleSheet(".glass { backdrop-blur: 8px; box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.5); }"
+                           ".big { font-size: 20px; }").has_value());
+    const NodeHandle p = w::panel(ui, ui.root(), "p");
+    ui.addClass(p, "glass");
+    const NodeHandle b = w::button(ui, p, "Button", "b");
+    const NodeHandle l = w::label(ui, p, "Label", "l");
+    const NodeHandle big = w::label(ui, p, "Big", "big");
+    ui.addClass(big, "big");
+    w::lineEdit(ui, p, "text", "e");
+    native.show(win);
+    CHECK(waitFrames(a, win));
+    const f32 blur0 = ui.computed(p).backdropBlur, label0 = ui.computed(l).fontSize, big0 = ui.computed(big).fontSize;
+    CHECK(blur0 == 8.f && label0 == 14.f && big0 == 20.f);
+
+    auto broadcast = [&] {
+#if defined(_WIN32)
+        SendMessageW(reinterpret_cast<HWND>(native.nativeWindow(win)), WM_SETTINGCHANGE, 0, reinterpret_cast<LPARAM>(L"ImmersiveColorSet"));
+#else
+        native.refreshSystemTheme();
+#endif
+        CHECK(waitFrames(a, win, win.framesPresented() + 1));
+    };
+    g_fake.highContrast = true;
+    g_fake.textScale = 1.5f;
+    g_fake.contrast.window = Color::rgb(0x000020);
+    g_fake.contrast.windowText = Color::rgb(0xF0F0F0);
+    g_fake.contrast.buttonFace = Color::rgb(0x202000);
+    g_fake.contrast.highlight = Color::rgb(0x00C0FF);
+    g_fake.contrast.hotlight = Color::rgb(0xFFFF00);
+    broadcast();
+    const ComputedStyle& bs = ui.computed(b);
+    std::printf("  high contrast: button bg %.2f,%.2f,%.2f border %.0fpx, label %.0fpx, big %.0fpx, blur %.0f, shadow a %.2f\n",
+                bs.background.r, bs.background.g, bs.background.b, bs.borderWidth, ui.computed(l).fontSize,
+                ui.computed(big).fontSize, ui.computed(p).backdropBlur, ui.computed(p).shadowColor.a);
+    CHECK(bs.background == g_fake.contrast.buttonFace && bs.color == g_fake.contrast.windowText);
+    CHECK(bs.borderWidth >= 1.f && bs.borderColor == g_fake.contrast.windowText);
+    CHECK(ui.computed(ui.root()).background == g_fake.contrast.window);
+    CHECK(ui.computed(p).backdropBlur == 0.f && ui.computed(p).shadowColor.a == 0.f); // forced colours win over app sheets
+    CHECK(ui.computed(l).fontSize == 21.f && ui.computed(big).fontSize == 30.f);     // text scale everywhere
+    Image shot;
+    native.capture(win, shot);
+    const u32 px = shot.width > 0 ? shot.at(shot.width - 3, shot.height - 3) : 0;
+    CHECK((px & 0xFF) < 0x08 && ((px >> 16) & 0xFF) > 0x18 && ((px >> 16) & 0xFF) < 0x28); // the scheme's window colour
+    // keyboard focus: a 2px border in the hotlight colour
+    ui.keyDown(Key::Tab);
+    pump(a, 4);
+    CHECK(ui.focused() == b && ui.focusVisible());
+    CHECK(ui.computed(b).borderWidth >= 2.f && ui.computed(b).borderColor == g_fake.contrast.hotlight);
+    // leaving high contrast restores the normal theme (text scale stays while following)
+    g_fake.highContrast = false;
+    broadcast();
+    std::printf("  normal: blur %.0f, label %.0fpx, focus border %.0fpx\n", ui.computed(p).backdropBlur,
+                ui.computed(l).fontSize, ui.computed(b).borderWidth);
+    CHECK(ui.computed(p).backdropBlur == 8.f && ui.computed(p).shadowColor.a > 0.f);
+    CHECK(ui.computed(l).fontSize == 21.f && ui.computed(b).borderWidth < 2.f);
+    // not following: no scale, no forced colours
+    g_fake.highContrast = true;
+    broadcast();
+    CHECK(ui.computed(p).backdropBlur == 0.f);
+    a.setFollowSystemTheme(false);
+    pump(a, 4);
+    CHECK(ui.computed(p).backdropBlur == 8.f && ui.computed(l).fontSize == 14.f && ui.computed(big).fontSize == 20.f);
+    return 0;
+}
+
 // ---- dialogs ---------------------------------------------------------------------------------------------------------
 #if defined(_WIN32)
 namespace {
@@ -725,6 +806,98 @@ static int gateTouch(int argc, char** argv) {
 #endif
 }
 
+// ---- pen -------------------------------------------------------------------------------------------------------------
+// A synthetic pen (CreateSyntheticPointerDevice(PT_PEN) + InjectSyntheticPointerInput, Windows 10 1809+) presses a
+// button with half pressure, moves with rising pressure and lifts: the button clicks once, the context reports a pen
+// with the injected pressure. 77 when synthetic pointer injection is unavailable or another window covers ours.
+static int gatePen(int argc, char** argv) {
+#if !defined(_WIN32)
+    (void)argc; (void)argv;
+    std::printf("fuse_platform_pen_synthetic: skipped (pen injection is Win32 only here)\n");
+    return 77;
+#else
+    using CreateDev = HSYNTHETICPOINTERDEVICE(WINAPI*)(POINTER_INPUT_TYPE, ULONG, POINTER_FEEDBACK_MODE);
+    using InjectDev = BOOL(WINAPI*)(HSYNTHETICPOINTERDEVICE, const POINTER_TYPE_INFO*, UINT32);
+    using DestroyDev = void(WINAPI*)(HSYNTHETICPOINTERDEVICE);
+    const HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    const auto create = reinterpret_cast<CreateDev>(reinterpret_cast<void*>(GetProcAddress(user32, "CreateSyntheticPointerDevice")));
+    const auto inject = reinterpret_cast<InjectDev>(reinterpret_cast<void*>(GetProcAddress(user32, "InjectSyntheticPointerInput")));
+    const auto destroy = reinterpret_cast<DestroyDev>(reinterpret_cast<void*>(GetProcAddress(user32, "DestroySyntheticPointerDevice")));
+    HSYNTHETICPOINTERDEVICE dev = create && inject && destroy ? create(PT_PEN, 1, POINTER_FEEDBACK_NONE) : nullptr;
+    if (!dev) {
+        std::printf("fuse_platform_pen_synthetic: skipped (no synthetic pointer devices: %lu)\n", GetLastError());
+        return 77;
+    }
+    app::Application a{{.name = "gate_pen", .argc = argc, .argv = argv, .loadSettings = false}};
+    app::NativePlatform native(a);
+    auto& win = a.createWindow({.title = "fuse pen", .width = 320, .height = 180});
+    UiContext& ui = win.ui();
+    const NodeHandle row = w::panel(ui, ui.root(), "row");
+    ui.addClass(row, "row");
+    ui.setCss(row, "padding", "20px");
+    const NodeHandle b = w::button(ui, row, "Pen me", "b");
+    ui.setCss(b, "width", "140px");
+    int clicks = 0;
+    ui.connect(b, SignalKind::Clicked, [&clicks](UiContext&, NodeHandle, const SignalArgs&) { ++clicks; });
+    native.show(win);
+    const HWND hwnd = reinterpret_cast<HWND>(native.nativeWindow(win));
+    SetWindowPos(hwnd, HWND_TOPMOST, 60, 60, 0, 0, SWP_NOSIZE | SWP_SHOWWINDOW);
+    CHECK(waitFrames(a, win));
+    pump(a, 20);
+    const f32 s = win.scale();
+    const Vec2 o = native.screenOrigin(win), c = centre(ui, b, s);
+    const POINT at{LONG(o.x + c.x), LONG(o.y + c.y)};
+    if (WindowFromPoint(at) != hwnd) {
+        std::printf("fuse_platform_pen_synthetic: skipped (another window covers the test window)\n");
+        destroy(dev);
+        SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+        return 77;
+    }
+    f32 maxPressure = 0.f, downPressure = -1.f;
+    bool sawPen = false;
+    auto send = [&](POINT p, POINTER_FLAGS flags, UINT32 pressure) {
+        POINTER_TYPE_INFO t{};
+        t.type = PT_PEN;
+        t.penInfo.pointerInfo.pointerType = PT_PEN;
+        t.penInfo.pointerInfo.ptPixelLocation = p;
+        t.penInfo.pointerInfo.pointerFlags = flags;
+        t.penInfo.penMask = PEN_MASK_PRESSURE;
+        t.penInfo.pressure = pressure;
+        const BOOL ok = inject(dev, &t, 1);
+        for (int i = 0; i < 30; ++i) {
+            a.step(0.002f);
+            if (ui.pointerKind() == UiContext::PointerKind::Pen) {
+                sawPen = true;
+                maxPressure = std::max(maxPressure, ui.pressure());
+                if (downPressure < 0.f && ui.pressed() == b) downPressure = ui.pressure();
+            }
+        }
+        return ok != 0;
+    };
+    const POINTER_FLAGS hover = POINTER_FLAG_INRANGE | POINTER_FLAG_UPDATE;
+    const POINTER_FLAGS down = POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT | POINTER_FLAG_DOWN;
+    const POINTER_FLAGS move = POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT | POINTER_FLAG_UPDATE;
+    bool ok = send(at, hover, 0);
+    ok = ok && send(at, down, 512);
+    for (UINT32 k = 1; ok && k <= 4; ++k) ok = send({at.x + LONG(k), at.y}, move, 512 + k * 100);
+    ok = ok && send({at.x + 4, at.y}, POINTER_FLAG_INRANGE | POINTER_FLAG_UP, 0);
+    send({at.x + 4, at.y}, POINTER_FLAG_UPDATE, 0); // out of range
+    for (int i = 0; i < 100 && !clicks; ++i) a.step(0.01f);
+    destroy(dev);
+    SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+    if (!ok) {
+        std::printf("fuse_platform_pen_synthetic: skipped (InjectSyntheticPointerInput failed: %lu)\n", GetLastError());
+        return 77;
+    }
+    std::printf("  pen: saw pen %d, press pressure %.3f, max pressure %.3f, clicks %d\n", sawPen, downPressure, maxPressure, clicks);
+    CHECK(sawPen);
+    CHECK(std::abs(downPressure - 0.5f) < 0.01f);          // 512 / 1024
+    CHECK(std::abs(maxPressure - 912.f / 1024.f) < 0.01f); // the last contact sample
+    CHECK(clicks == 1);
+    return 0;
+#endif
+}
+
 // ---- multiwindow -----------------------------------------------------------------------------------------------------
 static int gateMultiwindow(int argc, char** argv) {
     app::Application a{{.name = "gate_multiwindow", .argc = argc, .argv = argv, .loadSettings = false}};
@@ -794,8 +967,10 @@ int main(int argc, char** argv) {
     else if (gate == "displays") rc = gateDisplays(argc, argv);
     else if (gate == "cursors") rc = gateCursors(argc, argv);
     else if (gate == "system_theme") rc = gateSystemTheme(argc, argv);
+    else if (gate == "high_contrast") rc = gateHighContrast(argc, argv);
     else if (gate == "dialogs") rc = gateDialogs(argc, argv);
     else if (gate == "touch_synthetic") rc = gateTouch(argc, argv);
+    else if (gate == "pen_synthetic") rc = gatePen(argc, argv);
     else if (gate == "multiwindow") rc = gateMultiwindow(argc, argv);
     else { std::fprintf(stderr, "unknown gate %s\n", gate.c_str()); return 2; }
     if (rc == 77) return 77;

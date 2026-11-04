@@ -2,8 +2,8 @@
 //   fuse_ui_cook --out=<dir> [--registration=<file.cpp>] [--fn=<name>] [--icons=<pack.fuseicons>] files...
 // Writes <dir>/<name>.fuseuic / <name>.fusestylec and, with --registration, the C++ registration list for the
 // widget classes all the documents use. With --icons, .svg files and directories among the inputs are cooked into
-// that icon pack (fuse_ui_icon_cook, default sizes) and every icon a document names must be in it. Exit code 1 on
-// any error (message with file and node path / line).
+// that icon pack (fuse_ui_icon_cook, default sizes) and every icon a document names must be in it; the pack is
+// only written when nothing failed. Exit code 1 on any error (message with file and node path / line).
 #include "fuse/ui/doc/cook.hpp"
 #if FUSE_UI_COOK_HAVE_ICONS
 #include "fuse/ui/icons/icon_cook.hpp"
@@ -101,7 +101,9 @@ int main(int argc, char** argv) {
             if (!have.count(n)) { std::fprintf(stderr, "icon '%s' is used by a document but not in %s\n", n.c_str(), iconPack.c_str()); ++errors; }
         fuse::ui::icons::CookStats st;
         auto pack = fuse::ui::icons::cookIcons(std::move(src), {}, &st);
+        // validate first, then write: after any error an existing pack stays untouched
         if (!pack) { std::fprintf(stderr, "%s: %s\n", iconPack.c_str(), pack.error().c_str()); ++errors; }
+        else if (errors) std::fprintf(stderr, "%s: not written (errors above)\n", iconPack.c_str());
         else if (!writeFile(iconPack, pack->data(), pack->size())) { std::fprintf(stderr, "%s: cannot write\n", iconPack.c_str()); ++errors; }
         else std::printf("%u icons -> %s (%zu bytes)\n", st.icons, iconPack.c_str(), st.bytes);
 #else

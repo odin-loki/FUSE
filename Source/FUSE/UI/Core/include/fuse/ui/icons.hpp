@@ -5,7 +5,8 @@
 // Drawing: UiContext::setIcons(set); widgets get an icon through the `icon` style property (`icon: save`,
 // `icon-size: 24px`) or widgets::icon(). Icons are copied into the context's glyph atlas on first use and drawn as
 // Glyph commands, one per layer, back to front: currentColor layers tinted with the widget's text colour (so they follow
-// theme, hover and disabled colours), the others in their own colour (alpha scaled by the tint's alpha). The GPU
+// theme, hover and disabled colours), the others in their own colour (alpha scaled by the tint's alpha; on a :disabled
+// node greyed to their luminance at kDisabledIconAlpha, so multi-colour icons dim like monochrome ones). The GPU
 // backend draws them with no extra ops. Sizes that were not cooked are area-resampled from the nearest larger cooked
 // size (or upscaled from the largest).
 //
@@ -29,6 +30,8 @@ namespace fuse::ui {
 
 inline constexpr char kIconPackMagic[4] = {'F', 'I', 'C', 'N'};
 inline constexpr u32 kIconPackVersion = 2;
+/// Alpha factor of fixed-colour icon layers on a disabled node (they are also greyed to their luminance).
+inline constexpr f32 kDisabledIconAlpha = 0.45f;
 
 /// A coverage bitmap inside a size x size icon cell (pixels point into the pack's atlas or caller scratch).
 struct IconBitmap {

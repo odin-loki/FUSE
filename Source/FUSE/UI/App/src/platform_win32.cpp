@@ -131,6 +131,15 @@ SystemTheme winQueryTheme() {
     HIGHCONTRASTW hc{};
     hc.cbSize = sizeof hc;
     t.highContrast = SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof hc, &hc, 0) && (hc.dwFlags & HCF_HIGHCONTRASTON);
+    if (t.highContrast) { // the active scheme's system colours (0x00BBGGRR)
+        const auto sys = [](int i) {
+            const DWORD c = GetSysColor(i);
+            return Color::rgb(((c & 0xFFu) << 16) | (c & 0xFF00u) | ((c >> 16) & 0xFFu));
+        };
+        t.contrast = {sys(COLOR_WINDOW), sys(COLOR_WINDOWTEXT), sys(COLOR_HIGHLIGHT), sys(COLOR_HIGHLIGHTTEXT),
+                      sys(COLOR_BTNFACE), sys(COLOR_BTNTEXT), sys(COLOR_GRAYTEXT), sys(COLOR_HOTLIGHT)};
+        t.dark = (t.contrast.window.r + t.contrast.window.g + t.contrast.window.b) < 1.5f;
+    }
     BOOL anim = TRUE;
     t.reducedMotion = SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &anim, 0) && !anim;
     DWORD ts = 100;

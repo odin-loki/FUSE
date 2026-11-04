@@ -19,7 +19,8 @@ immediate-mode front-end. See the plan's status table for what is still open.
 | `Source/FUSE/UI/Text` | `fuse_text` | Fonts (stb_truetype; FreeType in FULL), bundled Open Sans, UTF-8, `ITextShaper` (`MinimalShaper`, `HarfBuzzShaper` in FULL), wrap/ellipsis layout, glyph atlas, `TextEditBuffer`, UAX #29 / #14 / #9 segmentation, fallback chains, `FontCatalog` (system fonts), variable fonts (fvar / avar / gvar / HVAR / MVAR), OpenType feature variants |
 | `Source/FUSE/UI/Core` | `fuse_ui_core` | `UiContext` (tree, style, layout, paint, input, focus, signals, timers, animation, a11y), `DrawList` + `CpuRasterizer`, `StyleEngine`, `immediate::ImmediateUi`, `platform_bridge.hpp` |
 | `Source/FUSE/UI/Widgets` | `fuse_ui_widgets` | Tier A + Tier B widgets + default dark theme (`widgets::install`) |
-| `Source/FUSE/UI/Doc` | `fuse_ui_doc` | `.fuseui` JSON documents, binding model, expression bytecode |
+| `Source/FUSE/UI/Doc` | `fuse_ui_doc`, `fuse_ui_cook`, `fuse_ui_extract_strings` | `.fuseui` JSON documents, binding model, expression bytecode; the cooker and the string-extraction CLI |
+| `Source/FUSE/UI/L10n` | `fuse_ui_l10n_lib` | CLDR plural rules, ICU-style message formatting, locale number / date formatting, string-table file format (standard library only, no ICU) |
 | `Source/FUSE/UI/Script` | `fuse_ui_script` | Lua `ui` table (vendored Lua 5.2) |
 | `Source/FUSE/UI/Render` | `fuse_ui_render`, `fuse_ui_vk` | GPU draw data packing, `ui.draw_list` compute kernel, `UiLayerGpu` render-graph pass and `UiFrameSource` (in tree with the Vulkan RHI) |
 | `Source/FUSE/UI/App` | `fuse_app`, `fuse_app_native`, `fuse_app_a11y` | `Application` / `AppWindow` on-demand loop, settings, command line, single instance; native X11 / Win32 / Android (NativeActivity) windows and the Vulkan swapchain presenter; custom window chrome; tray icon / notifications; `WindowAccessibility` (screen readers on a native window); samples `hello_app`, `notes_app`, `game_menu`, `fuse_ui_android_demo`; `App/android/` APK packer and adb gate driver |
@@ -265,7 +266,7 @@ Vector icons are cooked, not parsed at run time. `fuse_ui_icon_cook --out=x.fuse
 16 / 20 / 24 / 32 / 48 px by default plus a name index; output is deterministic. The build cooks the starter set
 (43 Lucide icons, `vendor/icons/lucide`, ISC) into `<build>/icons/fuse_ui_icons.fuseicons` (target `fuse_ui_icons`);
 `fuse_ui_cook --icons=<pack> doc.fuseui <svg dir>` cooks a pack along with the documents and fails when a document
-names an icon the pack lacks.
+names an icon the pack lacks; the pack is only written when nothing failed (an existing pack stays untouched).
 
 ```cpp
 auto icons = fuse::ui::IconSet::fromFile("fuse_ui_icons.fuseicons");
@@ -285,7 +286,8 @@ Multi-colour icons: an SVG with colours other than currentColor / black is cooke
 its paints, in paint order, grouped into layers of consecutive equal colour; currentColor layers stay tintable, the
 others keep their colour (black included; gradients become their mean stop colour). Each layer is a coverage bitmap in
 the same atlas (pack format version 2; version 1 packs still load), drawn as one tinted `Glyph` per layer, so the GPU
-backends need nothing new. A fixed layer's alpha follows the tint's alpha (fades); edges shared by two layers blend
+backends need nothing new. A fixed layer's alpha follows the tint's alpha (fades); on a `:disabled` node fixed layers are
+greyed to their luminance at `kDisabledIconAlpha` (0.45), so multi-colour icons dim like monochrome ones; edges shared by two layers blend
 like independently anti-aliased shapes. `fuse_ui_icon_cook --list` prints each icon's layer colours.
 
 ## Application shell (UI5)
@@ -366,9 +368,15 @@ Desktop platform services (UI1, `fuse/app/native.hpp`, `fuse/app/platform.hpp`):
   live on `WM_SETTINGCHANGE` (X11: XSETTINGS `Net/ThemeName`, dark when the name says so; `$FUSE_UI_THEME` /
   `$GTK_THEME` override); `setFollowSystemTheme(true)` switches the default theme dark / light
   (`widgets::themeCss(ThemeVariant)`, `UiContext::setThemeStyleSheet`) with the system accent. Reduced motion always
-  makes `animate()` jump; the title bar follows via `DWMWA_USE_IMMERSIVE_DARK_MODE`.
+  makes `animate()` jump; the title bar follows via `DWMWA_USE_IMMERSIVE_DARK_MODE`. While following, the OS text
+  scale multiplies every font size (`StyleEngine::setTextScale`, app sheets and explicit sizes included), and high
+  contrast switches to `widgets::highContrastThemeCss(palette)` in the scheme's colours (Win32 `GetSysColor`:
+  window, text, highlight, button face, gray text, hot light; `SystemTheme::contrast`) with forced colours
+  (`StyleEngine::setForcedColors`, like CSS `forced-colors`: no backdrop blur, shadows, gradients or effects even from
+  app sheets; every control outlined; keyboard focus gets a 2px border in the hot-light colour).
 - Touch and pen (Win32 `WM_POINTER` → events_v2 `Touch*` / `Pen*` → `UiContext::touchDown/Move/Up`): the first
-  finger is the pointer, every contact is in `touches()`, `pinchScale()` for two fingers, `pressure()` for the pen.
+  finger is the pointer, every contact is in `touches()`, `pinchScale()` for two fingers (and `EventType::Pinch` to
+  the node under their midpoint), `pressure()` for the pen. Ctrl+wheel carries the modifier (`Event::mods`).
 - `openFileDialog` / `saveFileDialog` / `pickFolderDialog` (IFileDialog; zenity on X11), `messageBox`, `openUrl`
   (http, https, mailto, file only), `revealInFileManager`.
 - Text input and IME: committed text (Win32 `WM_CHAR` with surrogate pairs; X11 `Xutf8LookupString` through XIM) and
@@ -527,9 +535,74 @@ hud.update(realDt); nav.update(padState, realDt); ui.update(realDt);
   mode takes everything). Device prompts (`GameUi::prompt`) swap glyphs on `noteDevice`.
 - `UiSurface` is a UI context placed in the world (centre, right / up axes, size). `surfaceRaycast` maps a ray to
   panel pixels, `surfacePointer` feeds it as pointer input and `surfaceRender` re-rasterises on damage.
-- `StringTable` holds per-locale `key=value` tables; bound nodes are re-texted on `setLocale` + `refresh`.
+- `StringTable` holds per-locale `key=value` tables; bound nodes are re-texted on `setLocale` + `refresh`. See
+  [Localisation](#localisation) for messages with arguments, plurals and the extraction CLI.
 - The sound hook (`setSoundHook`) receives Move / Accept / Back / Open / Close; wiring it to `fuse_audio` and theme
   sound names is the game's job for now.
+
+## Localisation
+
+`fuse_ui_l10n_lib` (`fuse/ui/l10n/l10n.hpp`, namespace `fuse::ui::l10n`) has no ICU dependency. Locale tags are
+matched case-insensitively, region first (`de-CH`, `pt_PT`, `en-IN`), then the language; digits are always Latin.
+
+```cpp
+namespace l10n = fuse::ui::l10n;
+l10n::formatMessage("en", "{n, plural, =0 {No items} one {# item} other {# items}}", {{"n", 1000}}); // "1,000 items"
+l10n::formatMessage("ru", "{n, plural, one {# файл} few {# файла} many {# файлов} other {# файла}}", {{"n", 22}});
+l10n::formatMessage("en", "{g, select, female {She} other {They}} left on {d, date, long}",
+                    {{"g", "female"}, {"d", l10n::Date{2024, 3, 5}}});                        // "She left on March 5, 2024"
+l10n::formatNumber("de", 1234.5);       // "1.234,5"     formatNumber("hi", 1234567) -> "12,34,567"
+l10n::formatPercent("tr", 0.5);         // "%50"
+l10n::formatDate("ja", {2024, 3, 5}, l10n::DateStyle::Long); // "2024年3月5日"
+l10n::pluralCardinal("ar", l10n::PluralOperands::fromDouble(3)); // Plural::Few
+```
+
+- Plural rules (CLDR 44, cardinal and ordinal) with the operands n, i, v, f, t, so `"1.0"` and `1.5` pick the decimal
+  categories: en, de, nl, sv, fi, da, nb, et, gl, fr, es, it, pt, pt-PT, ru, uk, pl, cs, sk, ar, he, tr, el, hu, bg,
+  hi, bn, fa, ja, zh, ko (and the root rule, other only, for anything else). Ordinals: en, fr, it, sv, uk, hi, bn;
+  others are other only. The compact-exponent operands (c / e) are not supported.
+- Messages follow ICU MessageFormat: `{name}`, `{n, number[, integer|percent]}`, `{d, date[, short|medium|long]}`,
+  `{n, plural, [offset:k] =0 {..} one {..} other {..}}`, `{n, selectordinal, ..}`, `{g, select, .. other {..}}`,
+  nesting, `#` (the plural number minus the offset, locale-formatted; literal inside a nested select, as in ICU),
+  ICU apostrophe quoting (`''` is `'`; `'{...}'` is literal; a lone `'` is literal). Arguments are text, numbers
+  or `Date`; a decimal string (`"1.50"`) keeps its visible fraction digits for plural selection and `#`. A missing
+  argument prints as `{name}`; a malformed pattern is an error (`formatMessageOr` returns the pattern instead).
+- Numbers: decimal / grouping separators, minimum grouping digits (es, pl, pt-PT: `1234` stays ungrouped), Indian
+  grouping (hi, en-IN), minus signs (U+2212 for sv, fi), percent placement; half-even rounding. Dates (gregorian
+  short / medium / long and month names): en, en-GB, en-IN, de, fr, es, it, pt, nl, sv, ru, pl, tr, ja, zh, ko, ar;
+  other locales use en. Time formatting, currencies, skeletons and non-Latin digits are not done.
+
+`StringTable` (in `fuse_ui_game`) on top of it:
+
+```cpp
+StringTable st;
+st.add("en", "items={n, plural, one {# item} other {# items}}\ngreet=Hello, {name}!");
+st.add("de", "items={n, plural, one {# Gegenstand} other {# Gegenstände}}");
+st.setLocale("de");
+st.tr("items", {{"n", 3}});        // "3 Gegenstände", formatted with the locale the string came from
+st.tr("greet", {{"name", "Ann"}}); // "Hello, Ann!" (fallback locale: the first added, or setFallbackLocale)
+st.tr("greet");                    // raw value, as before
+st.bind(ui, label, "items", {{"n", 3}}); // re-texted on refresh()
+```
+
+Table files are one `key=value` per line, `#` comment lines, escapes `\\ \n \t` (and `\=`, a leading `\#` in keys).
+
+### `fuse_ui_extract_strings`
+
+```
+fuse_ui_extract_strings --out=de.strings [--locale=de] [--source] [--fn=tr,...] [--no-locations] [--drop-obsolete]
+                        <files or directories>...
+```
+
+Scans `.fuseui` documents (constant `text` except line / text edits, `items`, `a11yName`; strings with a `{`
+binding are skipped) and C++ sources (`.cpp .h .hpp ...`) for `tr("...")` calls whose first argument is a string
+literal or adjacent literals (escapes, `u8` and raw literals decoded; comments and other strings ignored), and writes
+the table sorted by key with `#: file:line` (or `file:node id`) location comments. An existing output file is merged:
+translations are kept, untranslated keys are written as `#? key` (ignored by `StringTable`, so lookups fall back),
+keys new since the last run are flagged `#, new`, and translations whose key left the sources move to
+`#~ key=value` at the end (restored if the key comes back; `--drop-obsolete` removes them). `--source` writes new
+keys as `key=key` for the source-language table. A summary and the new / obsolete keys are printed; exit code 1 on
+an unreadable input or a broken document. The output is deterministic for the same inputs.
 
 ## Data and editor widgets (UI6 Tier C/D)
 
@@ -539,10 +612,11 @@ hud.update(realDt); nav.update(padState, realDt); ui.update(realDt);
 - `colorPicker`, `colorPickerColor`, `setColorPickerColor`; `calendar`, `calendarDate` (`daysFromCivil`/`civilFromDays` helpers); `chart(parent, ChartKind)` + `chartSetSeries`; `markdownView` + `setMarkdown` (headings, paragraphs, lists, code, quotes).
 - Tier D editor widgets: `fontPicker`, `fileDialog`, `nodeGraph`, `curveEditor`, `timeline`, `viewportWidget` (forwards input to your callback, paints your image), `codeEdit` (line numbers, highlighting), `dateTimeEdit` (`value()` = days since 1970, `dateTimeEditMinutes`), `videoWidget` (frame-source stub).
 - `fuse_ui_sql::SqliteModel`: `open`/`attach`, `setQuery`, `sortBy`, `refresh`; pass `model()` to `tableView`. Only the visible window of rows is fetched.
-- Platform feel (`platform_feel.hpp`): `setHapticsHandler`, `ScrollProfile::desktop()/ios()/android()`, `kineticScrollArea` (drag/fling with rubber band; a drag never clicks).
+- Platform feel (`platform_feel.hpp`): `setHapticsHandler`, `ScrollProfile::desktop()/ios()/android()`, `kineticScrollArea` (drag/fling with rubber band; a drag never clicks; with `ScrollProfile::minZoom < maxZoom` a
+  pinch or Ctrl+wheel zooms the content about the gesture point — `kineticZoom` / `setKineticZoom`).
 - Accessibility (`fuse/ui/a11y/a11y.hpp`): `Bridge::sync` diffs `UiContext::snapshotA11y` (plus `extras()`: menu / menu bar / tree kinds from the widget class, text-field value, expanded, selected), `perform`/`enqueue`/`drain` run assistive-tech actions on the UI thread (focus, click, increment / decrement, set value / text, expand / collapse, scroll into view). AccessKit needs a Rust toolchain: `FUSE_UI_ACCESSKIT_BUILD=ON` builds accesskit-c 0.22.3 with cargo, or point `FUSE_UI_ACCESSKIT_DIR` at a prebuilt one; without it the bridge still builds.
 - Screen readers on a native window (`fuse/app/accessibility.hpp`, `fuse_app_a11y`): after `native.show(win)`, keep a `fuse::app::WindowAccessibility a11y(native, win);` (declared after the `NativePlatform`). On Windows it answers `WM_GETOBJECT` through `NativePlatform::setMessageHook` with AccessKit's UI Automation provider (Narrator, NVDA, Inspect); UIA actions are queued and run on the UI thread from the event pump. Bounds are client px (logical px x client width / viewport). The Rust library links the release CRT (Debug MSVC builds may warn LNK4098). On Linux it is AccessKit's AT-SPI adapter (Orca, Accerciser): the adapter registers once AT-SPI is enabled (`org.a11y.Status.IsEnabled`, which screen readers set), the window's client rect is reported in screen px each frame (AT-SPI extents are screen coordinates), text fields carry a text run (AT-SPI `Text`), and disabled widgets offer no focus / click action. AccessKit 0.22's AT-SPI side has no `EditableText` and no expanded state: an AT reads text but cannot write it. The distro cargo of Ubuntu 24.04 (1.75) is too old; a per-user rustup (`~/.cargo/bin`) is picked up first.
-- Designer: `fuse_ui_designer [file.fuseui] [--save=out] [--screenshot=png]`. `DesignDocument` saves exactly what it loaded; keys starting with `x-` are kept for tools and stripped from the live preview.
+- Designer: `fuse_ui_designer [file.fuseui] [--icons=pack.fuseicons] [--save=out] [--screenshot=png]`. `DesignDocument` saves exactly what it loaded; keys starting with `x-` are kept for tools and stripped from the live preview. The property grid has curated rows, an `icon` picker (the context's `IconSet`; the app loads the starter pack) and an `effect` picker (the `EffectRegistry`, each effect with its parameter defaults, e.g. `ripple(4, 24, 40)`; `effect-params` edits the full text), then every other style property from `propInfo()` under "All style" (folded), so new style properties (variable-font axes, font features, ...) appear without designer changes. Under the grid an icon palette shows every pack icon rendered; clicking one sets the selection's `icon` (`Designer::iconNames`, `effectChoices`, `propertyNames`).
 - `dockSaveLayout(dock)` returns a text layout (`fusedock 1`); `dockRestoreLayout(dock, text)` checks the whole text before applying it and ignores unknown panel ids.
 
 ## Styling (CSS subset, D4)
@@ -556,7 +630,8 @@ are deferred). Inline (`setCss`) beats everything; later sheets win ties. Layout
 (visible/clip/scroll), `display`, `pointer-events`, `cursor`. Paint: `background` (colour or `linear-gradient`),
 `background-end` (gradient end; widgets use it as the accent), `border`, `border-width/color`, `border-*-radius`,
 `box-shadow`, `shadow-x/y/blur/color`, `backdrop-blur`, `effect`, `opacity`, `color`, `font-size`, `text-align`, `icon`,
-`icon-size`. Selectors also accept
+`icon-size`, `zoom` (a number: scales every px length and the font size of the node and its subtree, multiplying down
+the tree; text is re-rasterised at the new size). Selectors also accept
 `:active`, `:selected`.
 
 Right-to-left: `direction: rtl` (inherited, `ltr` default; e.g. `:root { direction: rtl; }`) mirrors box rows and
@@ -593,7 +668,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_bench_10k` | 10k nodes, one dirty label: ≤ 0.5 ms median (Release; 1.0 ms in FULL) |
 | `fuse_ui_single_thread_parity` | direct vs posted-from-threads mutations give identical layout, draw list and pixels |
 | `fuse_ui_a11y_tree_dump` | roles, names, states, values |
-| `fuse_ui_icon_cook` | icon cooker determinism (any input order; tool = library), index round trip against the rasterised SVGs, SVG subset, corrupt-pack fuzz, resampled sizes |
+| `fuse_ui_icon_cook` | icon cooker determinism (any input order; tool = library), index round trip against the rasterised SVGs, SVG subset, corrupt-pack fuzz, resampled sizes; `fuse_ui_cook --icons` writes no pack when a document icon is missing |
 | `fuse_ui_icon_render` | icons at 16 / 24 / 32 / 40 / 48 px in two tints and disabled against `tests/golden/icons.png`; hover tint, button / menu / `.fuseui` / cooked-style icons; multi-colour icons (layers, tint vs fixed colours) against `tests/golden/icons_color.png` |
 | `fuse_text_grapheme_conformance` | `GraphemeBreakTest.txt` 15.1 against fuse_text's UAX #29: 1187/1187 (both profiles) |
 | `fuse_text_linebreak_conformance` | `LineBreakTest.txt` 15.0 (trimmed) against `lineBreaks(Strict)`: 2389/2406 + 17 listed libunibreak exceptions (FULL); MINIMAL runs its letters / space / newline subset |
@@ -628,7 +703,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_x11_cursor_size` | XSETTINGS `Gtk/CursorThemeName` / `Gtk/CursorThemeSize` with a private Xcursor theme (`XCURSOR_PATH`): the server shows the cursor at 24 px at 96 dpi, 48 px at 192 dpi, then 32 / 64 px as the size changes (XFixes cursor image) |
 | `fuse_x11_randr`, `fuse_x11_xsettings`, `fuse_x11_wake` | X11 under Xvfb against the gate's own connection: two RandR monitors + `_NET_WORKAREA` in `displays()` and a monitor removed live; an XSETTINGS manager's `Xft/DPI` / `Net/ThemeName` at start and live (every window re-scales, `onDpiChanged`, `onThemeChanged`), manager exit → `RESOURCE_MANAGER`, a new manager; `wake()` from another thread ends a blocked pump and an accessibility action queued from an AT thread runs at once |
 | `fuse_ui_platform_services` | headless: DPI scale (layout fixed, device-pixel draw list, re-rasterised glyphs), `cursor:` style, reduced motion, touch / pinch / pen through `platform_bridge`, dark → light theme slot |
-| `fuse_platform_dpi_change`, `fuse_platform_displays`, `fuse_platform_cursors`, `fuse_platform_system_theme`, `fuse_platform_dialogs`, `fuse_platform_touch_synthetic`, `fuse_platform_multiwindow` | real windows: `WM_DPICHANGED` re-scale and back, monitors, OS cursor per hovered widget, theme change via `WM_SETTINGCHANGE` (faked query, user settings untouched), dialogs dismissed by a helper thread, injected touch tap + pinch, two swapchain windows with input routing / close / per-window DPI |
+| `fuse_platform_dpi_change`, `fuse_platform_displays`, `fuse_platform_cursors`, `fuse_platform_system_theme`, `fuse_platform_high_contrast`, `fuse_platform_dialogs`, `fuse_platform_touch_synthetic`, `fuse_platform_pen_synthetic`, `fuse_platform_multiwindow` | real windows: `WM_DPICHANGED` re-scale and back, monitors, OS cursor per hovered widget, theme change via `WM_SETTINGCHANGE` (faked query, user settings untouched), high contrast (faked query: scheme colours, forced colours over app sheets, 2px focus border, text scale on every font size, back to normal), dialogs dismissed by a helper thread, injected touch tap + pinch, synthetic pen (`InjectSyntheticPointerInput` PT_PEN: pressure, tap; 77 without synthetic pointers or when another window covers the test window), two swapchain windows with input routing / close / per-window DPI |
 | `fuse_platform_text_input`, `fuse_platform_ime_composition`, `fuse_platform_clipboard_roundtrip` | real windows (Win32; X11 under Xvfb): typed text incl. a surrogate pair / remapped keysyms into a line edit, Ctrl+C / V / X against another clipboard client, IME off outside text fields; an IMM32 composition (`ImmSetCompositionStringW`: inline pre-edit, commit, cancel, composition / candidate window at the caret; X11: a dead-key compose through XIM, pre-edit only with a server IM); clipboard text / RGBA image / custom MIME / several formats / lazy items / INCR against another thread (Win32) or X connection |
 | `fuse_platform_present_android` | Android build tree, adb: the demo presents on Vulkan (GPU draw and CPU upload) and in software; each surface's first frame read back in-process matches the CPU raster; density scale applied |
 | `fuse_app_lifecycle_android` | HOME releases the surface, `am start` rebuilds it with a correct first frame and the same UI state; rotation resizes to landscape and back |
@@ -645,6 +720,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_world_panel_raycast` | ray → panel pixel mapping, misses and back faces, ray clicks, idle surface does not re-render |
 | `fuse_ui_input_arbitration` | pointer / keyboard / gamepad ownership between UI and game |
 | `fuse_ui_pause_time_domain` | pause and slow motion affect game-time HUD only; locale switching |
+| `fuse_ui_l10n` | plural categories against the CLDR sample values (cardinal + ordinal, 20+ locales), message formatting (plural, selectordinal, select, nesting, offset, quoting, number / date arguments, errors), number / percent / date formatting per locale, `StringTable::tr` with arguments and fallback, bound nodes; `fuse_ui_extract_strings` on `tests/data/l10n` (exact output, merge keeping translations, idempotent re-run, `--source`, `--fn`) |
 | `fuse_demo_hybrid_hud_ui` | `demo_hybrid_hud` HUD on a UI context in the hybrid frame (`HybridComposer::setUiOverlay` → `UiFrameSource::recordOver`, over the sprite layer): every opaque HUD pixel of the GPU readback equals the CPU raster (≤ 1/255), glyphs visible |
 | `fuse_ui_vk_golden` | GPU vs CPU reference with NVIDIA FLIP (`vendor/nvidia-flip`) over the Tier A sample, the game HUD and an editor-like scene: compute kernel max channel error ≤ 2 and mean FLIP ≤ 0.001 (0 today), SDF quads ≤ 4 / ≤ 0.005; heat maps written on failure |
 | `fuse_ui_vk_tier0` | UI-T0 (§4.9): Vulkan 1.1 instance, a device with no extensions and no features, validation on; every shader's SPIR-V ≤ 1.3 without descriptor-indexing / BDA capabilities; scenes, backdrop and an external texture exact against the CPU |

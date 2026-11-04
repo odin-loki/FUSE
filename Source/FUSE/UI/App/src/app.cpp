@@ -446,6 +446,13 @@ void Application::applyTheme(AppWindow& w) const {
     UiContext& ui = w.ui();
     ui.setReducedMotion(m_theme.reducedMotion);
     if (!m_followTheme) return;
+    ui.styles().setTextScale(m_theme.textScale);
+    ui.styles().setForcedColors(m_theme.highContrast, m_theme.contrast.hotlight);
+    if (m_theme.highContrast) { // the scheme's own colours; the accent does not apply
+        (void)ui.setThemeStyleSheet(widgets::highContrastThemeCss(m_theme.contrast));
+        w.requestRedraw();
+        return;
+    }
     const auto hex = [](Color c) {
         char b[8];
         const auto ch = [](f32 v) { return unsigned(std::lround(std::clamp(v, 0.f, 1.f) * 255.f)); };
@@ -458,8 +465,6 @@ void Application::applyTheme(AppWindow& w) const {
                              : Color{a.r * (1.f + k), a.g * (1.f + k), a.b * (1.f + k), 1.f};
     std::string css(widgets::themeCss(m_theme.dark ? widgets::ThemeVariant::Dark : widgets::ThemeVariant::Light));
     css += ":root { --accent: " + hex(a) + "; --accent-hi: " + hex(hi) + "; }\n";
-    if (m_theme.textScale > 1.f) // the OS "make text bigger" setting scales the inherited base font size
-        css += ":root { font-size: " + std::to_string(std::lround(14.f * m_theme.textScale)) + "px; }\n";
     (void)ui.setThemeStyleSheet(css);
     w.requestRedraw();
 }
@@ -476,7 +481,12 @@ void Application::setFollowSystemTheme(bool on) {
     m_followTheme = on;
     for (auto& w : m_windows) {
         if (on) applyTheme(*w);
-        else { (void)w->ui().setThemeStyleSheet(widgets::defaultThemeCss()); w->requestRedraw(); }
+        else {
+            (void)w->ui().setThemeStyleSheet(widgets::defaultThemeCss());
+            w->ui().styles().setTextScale(1.f);
+            w->ui().styles().setForcedColors(false);
+            w->requestRedraw();
+        }
     }
 }
 void Application::setEventSource(const EventSource& s) { m_events = s.pump ? s : EventSource{nullptr, &sleepPump}; }

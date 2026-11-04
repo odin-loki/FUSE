@@ -4,10 +4,15 @@
 //                    insert / remove / move / set-property edits with snapshot undo / redo, pretty JSON output.
 //   Designer       - the UI: toolbar, widget palette, outline tree, a live canvas (the document instantiated through
 //                    fuse_ui_doc, so what you see is what loads at runtime) and a property grid for the selection.
-//                    Canvas clicks select instead of operating the widgets.
+//                    Canvas clicks select instead of operating the widgets. The grid lists curated rows, an icon
+//                    picker row (the context's IconSet) and an effect picker row (its EffectRegistry, with each
+//                    effect's parameter defaults), then every other style property from the registry (propInfo), so
+//                    properties added to the style engine show up without designer changes. Under the grid an icon
+//                    palette shows every pack icon rendered; clicking one sets the selection's `icon`.
 #pragma once
 
 #include "fuse/ui/doc/document.hpp"
+#include "fuse/ui/effects.hpp"
 #include "fuse/ui/ui.hpp"
 
 #include <memory>
@@ -117,8 +122,19 @@ public:
     NodeHandle canvasNode(u32 index) const;
     /// Insert a palette class under the selection (or after it) and select it.
     u32 addWidget(std::string_view cls);
-    /// Edit the selection: property grid row names ("id", "text", "classes", "width", ...).
+    /// Edit the selection: property grid row names ("id", "text", "classes", "width", ..., any style property's CSS
+    /// name). "icon" takes an icon name ("" clears); "effect" takes an effect name (expanded to its parameter
+    /// defaults) or a full `name(p0, ...)`.
     bool setProperty(std::string_view name, std::string_view value);
+    /// Property grid row names in order ("" for group rows).
+    const std::vector<std::string>& propertyNames() const { return m_propNames; }
+    /// Icon palette: the pack's icons (UiContext::icons()) in pack order, one tile each ("designer.icon.<name>").
+    NodeHandle iconPicker() const { return m_iconPanel; }
+    std::vector<std::string> iconNames() const;
+    /// Effect picker options: `name(defaults)` for every registered effect (UiContext::effects()).
+    std::vector<std::string> effectChoices() const;
+    /// `name(p0, p1, ...)` with the registered defaults (trailing zeros dropped: missing ones take the defaults).
+    static std::string effectCss(const EffectDesc& e);
     /// Insert `cls` where a drop at `p` (context coordinates over the canvas) lands; selects it.
     u32 addWidgetAt(std::string_view cls, Vec2 p);
     /// Move the selection to where a drop at `p` lands (drag-to-place). Returns the primary's new index or kNone.
@@ -150,6 +166,7 @@ private:
     void rebuild();
     void refreshOutline();
     void refreshProperties();
+    void refreshIconPicker();
     void setStatus(std::string s);
     UiContext& m_ui;
     DesignDocument m_doc;
@@ -168,6 +185,10 @@ private:
     bool m_syncing = false;
     std::string m_status;
     std::vector<std::string> m_propNames;
+    std::vector<std::string> m_propKeys;
+    NodeHandle m_iconPanel;
+    const IconSet* m_pickerIcons = nullptr; ///< the pack the icon palette was built from
+    std::vector<std::pair<NodeHandle, std::string>> m_iconTiles;
 };
 
 } // namespace fuse::ui::designer

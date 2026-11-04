@@ -561,6 +561,8 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_MOUSEWHEEL: {
         POINT p{short(LOWORD(lp)), short(HIWORD(lp))};
         ScreenToClient(hwnd, &p);
+        const WORD ks = GET_KEYSTATE_WPARAM(wp);
+        ui.setModifiers(u8(((ks & MK_SHIFT) ? kModShift : 0) | ((ks & MK_CONTROL) ? kModCtrl : 0) | ((GetKeyState(VK_MENU) < 0) ? kModAlt : 0)));
         ui.wheel({f32(p.x) / s, f32(p.y) / s}, {0.f, f32(GET_WHEEL_DELTA_WPARAM(wp)) / WHEEL_DELTA});
         return 0;
     }

@@ -8,6 +8,7 @@
 // HUD allocates nothing per frame.
 #pragma once
 
+#include "fuse/ui/l10n/l10n.hpp"
 #include "fuse/ui/ui.hpp"
 
 #include <array>
@@ -126,21 +127,32 @@ private:
 };
 
 // ---- locale ----------------------------------------------------------------------------------------------------
-/// Key -> string tables per locale ("key=value" lines). Bound nodes are re-texted when the locale switches.
+/// Key -> string tables per locale ("key=value" lines, l10n::parseTable format). Lookups fall back from the current
+/// locale to the fallback locale (the first one added unless set) and then to the key itself. Values are ICU-style
+/// messages (l10n::formatMessage) when formatted with arguments. Bound nodes are re-texted when the locale switches.
 class StringTable {
 public:
-    void add(std::string_view locale, std::string_view kvLines);
+    void add(std::string_view locale, std::string_view kvLines); ///< a key added again replaces the old value
     bool setLocale(std::string_view locale);
     std::string_view locale() const { return m_locale; }
-    std::string_view tr(std::string_view key) const; ///< falls back to the key
+    void setFallbackLocale(std::string_view locale) { m_fallback = locale; }
+    std::string_view fallbackLocale() const { return m_fallback; }
+    bool has(std::string_view locale, std::string_view key) const;
+    std::string_view tr(std::string_view key) const; ///< raw value; falls back to the fallback locale, then the key
+    /// Formats the value as a message with the locale it came from (plural rules, number / date data); a missing
+    /// key formats the key itself with the fallback locale.
+    std::string tr(std::string_view key, const l10n::Args& args) const;
     void bind(UiContext& ui, NodeHandle n, std::string_view key);
+    void bind(UiContext& ui, NodeHandle n, std::string_view key, l10n::Args args);
     void refresh(UiContext& ui);
 
 private:
     struct Entry { std::string locale, key, value; };
+    struct Bound { NodeHandle node; std::string key; l10n::Args args; bool formatted = false; };
+    const Entry* lookup(std::string_view key) const;
     std::vector<Entry> m_entries;
-    std::vector<std::pair<NodeHandle, std::string>> m_bound;
-    std::string m_locale;
+    std::vector<Bound> m_bound;
+    std::string m_locale, m_fallback;
 };
 
 // ---- sounds ----------------------------------------------------------------------------------------------------

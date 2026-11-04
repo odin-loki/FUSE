@@ -112,29 +112,56 @@ struct KState {
     bool down = false, dragging = false, swallowClick = false;
     Vec2 downPos;
     TimerHandle timer;
+    f32 zoom = 1.f, pinchBase = 1.f;
+    Vec2 pinchAnchor; ///< content point (zoom 1 units) under the pinch midpoint when it began
+    Vec2 zoomScroll;          ///< scroll the last zoom asked for (applied after the next layout)
+    u64 zoomFrame = ~0ull;    ///< frame of that request
 };
-struct KPool {
-    struct Slot { NodeHandle node; std::unique_ptr<KState> s; };
+struct KPool { // slots are per context: the same handle can be alive in several contexts
+    struct Slot { const UiContext* ui; NodeHandle node; std::unique_ptr<KState> s; };
     std::vector<Slot> slots;
     KState* get(const UiContext& ui, NodeHandle n) {
         const u64 k = ui.alive(n) ? ui.userData(n) : 0;
-        if (k == 0 || k > slots.size() || slots[k - 1].node != n) return nullptr;
+        if (k == 0 || k > slots.size() || slots[k - 1].ui != &ui || slots[k - 1].node != n) return nullptr;
         return slots[k - 1].s.get();
     }
     KState& create(UiContext& ui, NodeHandle n) {
         for (std::size_t i = 0; i < slots.size(); ++i)
-            if (!ui.alive(slots[i].node) || ui.userData(slots[i].node) != i + 1) {
-                slots[i] = {n, std::make_unique<KState>()};
+            if (slots[i].ui == &ui && (!ui.alive(slots[i].node) || ui.userData(slots[i].node) != i + 1)) {
+                slots[i] = {&ui, n, std::make_unique<KState>()};
                 ui.setUserData(n, i + 1);
                 return *slots[i].s;
             }
-        slots.push_back({n, std::make_unique<KState>()});
+        slots.push_back({&ui, n, std::make_unique<KState>()});
         ui.setUserData(n, slots.size());
         return *slots.back().s;
     }
 };
 KPool& kpool() { static KPool p; return p; }
 constexpr f32 kTick = 1.f / 120.f;
+
+Vec2 currentScroll(const UiContext& ui, NodeHandle n, const KState& s) {
+    return s.zoomFrame == ui.frameIndex() ? s.zoomScroll : ui.scroll(n); // a zoom earlier this frame is not laid out yet
+}
+/// Zooms so content point `anchor` (zoom 1 units) lands at `at` (content-box coordinates).
+void zoomAbout(UiContext& ui, NodeHandle area, KState& s, f32 zoom, Vec2 anchor, Vec2 at) {
+    const ScrollProfile& p = s.k.profile();
+    zoom = std::clamp(zoom, p.minZoom, std::max(p.minZoom, p.maxZoom));
+    const Vec2 to{std::max(0.f, anchor.x * zoom - at.x), std::max(0.f, anchor.y * zoom - at.y)};
+    const bool changed = zoom != s.zoom;
+    if (!changed && to == currentScroll(ui, area, s)) return;
+    s.zoom = zoom;
+    if (changed)
+        for (NodeHandle ch = ui.firstChild(area); ui.alive(ch); ch = ui.nextSibling(ch)) ui.set(ch, Prop::Zoom, PropValue::ofNumber(zoom));
+    s.k.setOffset(to.y);
+    s.zoomScroll = to;
+    s.zoomFrame = ui.frameIndex();
+    ui.scrollToAfterLayout(area, to);
+    if (!changed) return;
+    SignalArgs a;
+    a.value = zoom;
+    ui.emit(area, SignalKind::ValueChanged, a);
+}
 
 void syncBounds(UiContext& ui, NodeHandle n, KState& s) {
     const f32 max = std::max(0.f, ui.scrollExtent(n).h - ui.contentRect(n).h);
@@ -147,6 +174,7 @@ void ensureTimer(UiContext& ui, NodeHandle n, KState& s) {
         KState* st = kpool().get(u, n);
         if (!st) return;
         st->t += kTick;
+        syncBounds(u, n, *st); // the extent changes with the zoom
         const bool moving = st->k.step(kTick);
         apply(u, n, *st);
         if (!moving && !st->down) {
@@ -194,8 +222,29 @@ struct KineticW {
             s->swallowClick = false;
             return true; // no click after a drag
         case EventType::Wheel: {
+            if ((e.mods & kModCtrl) && s->k.profile().maxZoom > s->k.profile().minZoom && e.wheel.y != 0.f) {
+                setKineticZoom(ui, ec.node, s->zoom * std::pow(1.1f, e.wheel.y), e.pos);
+                return true;
+            }
             syncBounds(ui, ec.node, *s);
             return false; // the core wheel-scroll stays (desktop feel)
+        }
+        case EventType::Pinch: {
+            if (s->k.profile().maxZoom <= s->k.profile().minZoom) return false;
+            if (s->down) { // the first finger's press / drag turns into the zoom gesture
+                s->down = s->dragging = false;
+                s->swallowClick = true;
+                s->k.setOffset(ui.scroll(ec.node).y);
+            }
+            const Rect c = ui.contentRect(ec.node);
+            if (e.scale == 1.f) { // a new pinch: remember the content point (unzoomed) under the fingers
+                const Vec2 sc = currentScroll(ui, ec.node, *s);
+                s->pinchBase = s->zoom;
+                s->pinchAnchor = {(sc.x + e.pos.x - c.x) / s->zoom, (sc.y + e.pos.y - c.y) / s->zoom};
+            }
+            // that point follows the fingers' midpoint: zoom and two-finger pan in one
+            zoomAbout(ui, ec.node, *s, s->pinchBase * e.scale, s->pinchAnchor, {e.pos.x - c.x, e.pos.y - c.y});
+            return true;
         }
         default: return false;
         }
@@ -217,6 +266,20 @@ NodeHandle kineticScrollArea(UiContext& ui, NodeHandle parent, const ScrollProfi
     KState& s = kpool().create(ui, n);
     s.k.setProfile(profile);
     return n;
+}
+
+f32 kineticZoom(const UiContext& ui, NodeHandle area) {
+    const KState* s = kpool().get(ui, area);
+    return s ? s->zoom : 1.f;
+}
+
+void setKineticZoom(UiContext& ui, NodeHandle area, f32 zoom, Vec2 focus) {
+    KState* s = kpool().get(ui, area);
+    if (!s || !std::isfinite(zoom)) return;
+    // the content point under `focus` stays under it
+    const Rect c = ui.contentRect(area);
+    const Vec2 sc = currentScroll(ui, area, *s), f{focus.x - c.x, focus.y - c.y};
+    zoomAbout(ui, area, *s, zoom, {(sc.x + f.x) / s->zoom, (sc.y + f.y) / s->zoom}, f);
 }
 
 const KineticScroller* kineticScroller(const UiContext& ui, NodeHandle area) {

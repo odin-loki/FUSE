@@ -4,10 +4,14 @@
 //   - edits: insert / set property / move / remove with undo / redo back to the identical text
 //   - Designer UI: canvas click selects (and does not operate the widget), property edits rebuild the live preview,
 //     palette inserts, outline follows the selection
+//   - property grid: a row for every style property in the registry (propInfo), so new properties appear without
+//     designer changes; icon picker: lists the loaded pack with rendered tiles, picking sets `icon` (grid row and
+//     canvas follow) and survives save / load; effect picker: the registry's effects with their parameter defaults
 // Optional --out=<dir>: designer.png.
 #include "test_util.hpp"
 
 #include "fuse/ui/designer/designer.hpp"
+#include "fuse/ui/icons.hpp"
 
 #if defined(__GNUC__)
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
@@ -16,6 +20,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
+#include <algorithm>
 #include <cstring>
 #include <string>
 
@@ -128,6 +133,14 @@ int main(int argc, char** argv) {
     // ---- designer UI
     UiContext ui{{.viewport = {1280, 720}, .font = &font()}};
     ui.setCss(ui.root(), "padding", "0px");
+#if defined(FUSE_UI_ICON_PACK)
+    auto icons = IconSet::fromFile(FUSE_UI_ICON_PACK);
+    UI_CHECK(icons.has_value());
+    if (icons) ui.setIcons(&*icons);
+#endif
+    EffectRegistry effects;
+    effects.addBuiltins();
+    ui.setEffects(&effects);
     dz::Designer de(ui);
     UI_CHECK(de.open(kDoc));
     step(ui);
@@ -252,6 +265,97 @@ int main(int argc, char** argv) {
         UI_CHECK_EQ(de.document().styleSheet(), css);
         UI_CHECK(de.text().find("#66ddff") != std::string::npos);
         UI_CHECK(ui.rect(de.canvasNode(de.document().findId("hp"))).h >= 18.f);
+    }
+    // ---- property grid: every style property of the registry has a row (data-driven), plus the pickers
+    {
+        de.select(de.document().findId("save"));
+        const std::vector<std::string>& names = de.propertyNames();
+        UI_CHECK_EQ(std::size_t(w::propertyCount(ui, de.properties())), names.size());
+        auto rowOf = [&](std::string_view n) { return u32(std::find(names.begin(), names.end(), n) - names.begin()); };
+        for (int p = 0; p < kPropCount; ++p) {
+            const std::string_view css = propInfo(Prop(p)).cssName;
+            if (rowOf(css) >= names.size()) std::printf("no grid row for %.*s\n", int(css.size()), css.data());
+            UI_CHECK(rowOf(css) < names.size());
+        }
+        UI_CHECK(rowOf("icon") < names.size() && rowOf("effect") < names.size() && rowOf("effect-params") < names.size());
+        // a registry-only row edits the style object
+        UI_CHECK(de.setProperty("opacity", "0.5"));
+        UI_CHECK_EQ(de.document().prop(de.document().findId("save"), "style.opacity"), std::string("0.5"));
+        step(ui);
+        UI_CHECK(std::abs(ui.computed(de.canvasNode(de.document().findId("save"))).opacity - 0.5f) < 1e-4f);
+        de.undo();
+    }
+    // ---- icon picker: lists the pack with rendered previews; picking sets `icon` and round-trips
+#if defined(FUSE_UI_ICON_PACK)
+    if (icons) {
+        const std::vector<std::string> names = de.iconNames();
+        UI_CHECK_EQ(names.size(), std::size_t(icons->count()));
+        UI_CHECK(names.size() >= 30u);
+        for (u32 i = 0; i < icons->count() && i < names.size(); ++i) {
+            UI_CHECK_EQ(names[i], std::string(icons->name(i)));
+            const NodeHandle tile = ui.find("designer.icon." + names[i]);
+            UI_CHECK(ui.alive(tile) && ui.computed(tile).icon == hashId(names[i]));
+        }
+        step(ui);
+        const NodeHandle first = ui.find("designer.icon." + names[0]);
+        bool drawn = false;
+        for (const DrawCmd& c : ui.drawList().cmds()) drawn |= c.op == DrawOp::Glyph && c.node == first.index;
+        UI_CHECK(drawn); // the tile shows the icon itself
+        const std::string pick = names[3];
+        const u32 save = de.document().findId("save");
+        de.select(save);
+        click(ui, ctr(ui.rect(ui.find("designer.icon." + pick))));
+        UI_CHECK_EQ(de.document().prop(de.document().findId("save"), "style.icon"), pick);
+        step(ui);
+        UI_CHECK(ui.computed(de.canvasNode(de.document().findId("save"))).icon == hashId(pick));
+        UI_CHECK(ui.hasClass(ui.find("designer.icon." + pick), "designer-icon-on"));
+        const std::vector<std::string>& rows = de.propertyNames();
+        const u32 iconRow = u32(std::find(rows.begin(), rows.end(), "icon") - rows.begin());
+        UI_CHECK_EQ(w::propertyValue(ui, de.properties(), iconRow), std::to_string(3 + 1)); // "(none)" first
+        // save -> load keeps it
+        const std::string text = de.text();
+        UI_CHECK(text.find("\"icon\": \"" + pick + "\"") != std::string::npos);
+        dz::DesignDocument d4;
+        UI_CHECK(d4.load(text));
+        UI_CHECK_EQ(d4.prop(d4.findId("save"), "style.icon"), pick);
+        UI_CHECK_EQ(d4.save(), text);
+        UI_CHECK(de.open(text));
+        step(ui);
+        UI_CHECK(ui.computed(de.canvasNode(de.document().findId("save"))).icon == hashId(pick));
+        // "none" clears; an icon given as the node key stays a node key
+        de.select(de.document().findId("save"));
+        click(ui, ctr(ui.rect(ui.find("designer.icon.none"))));
+        UI_CHECK(de.document().prop(de.document().findId("save"), "style.icon").empty());
+        UI_CHECK(de.document().setProp(de.document().findId("save"), "icon", [&] { doc::JsonValue v; v.type = doc::JsonValue::Type::String; v.string = pick; return v; }()));
+        UI_CHECK(de.setProperty("icon", names[0]));
+        UI_CHECK(de.document().prop(de.document().findId("save"), "icon") == names[0] && de.document().prop(de.document().findId("save"), "style.icon").empty());
+        de.undo(); de.undo();
+    }
+#endif
+    // ---- effect picker: the registry's effects with their parameter defaults
+    {
+        const std::vector<std::string> fx = de.effectChoices();
+        UI_CHECK_EQ(fx.size(), std::size_t(effects.count()));
+        for (const char* e : {"desaturate(1, 1, 1, 1)", "ripple(4, 24, 40)", "grain(0.08, 24)"})
+            UI_CHECK(std::find(fx.begin(), fx.end(), e) != fx.end());
+        const u32 save = de.document().findId("save");
+        de.select(save);
+        UI_CHECK(de.setProperty("effect", "ripple"));
+        UI_CHECK_EQ(de.document().prop(de.document().findId("save"), "style.effect"), std::string("ripple(4, 24, 40)"));
+        step(ui);
+        UI_CHECK(ui.computed(de.canvasNode(de.document().findId("save"))).effect == hashId("ripple"));
+        const std::vector<std::string>& rows = de.propertyNames();
+        const u32 fxRow = u32(std::find(rows.begin(), rows.end(), "effect") - rows.begin());
+        const u32 ripple = u32(std::find(fx.begin(), fx.end(), "ripple(4, 24, 40)") - fx.begin());
+        UI_CHECK_EQ(w::propertyValue(ui, de.properties(), fxRow), std::to_string(ripple + 1));
+        UI_CHECK(de.setProperty("effect-params", "ripple(8, 24, 40)"));
+        dz::DesignDocument d5;
+        UI_CHECK(d5.load(de.text()));
+        UI_CHECK_EQ(d5.prop(d5.findId("save"), "style.effect"), std::string("ripple(8, 24, 40)"));
+        UI_CHECK(de.setProperty("effect", "(none)"));
+        UI_CHECK(de.document().prop(de.document().findId("save"), "style.effect").empty());
+        de.undo(); de.undo(); de.undo();
+        UI_CHECK(de.document().prop(de.document().findId("save"), "style.effect").empty());
     }
     // select the edited button for the screenshot (plus the label, multi-select)
     de.select(de.document().findId("save"));
