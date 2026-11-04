@@ -81,7 +81,7 @@ if(FUSE_UI_TEXT STREQUAL "FULL")
 endif()
 
 # ---- fuse_ui_core ----
-add_library(fuse_ui_core STATIC Core/src/style.cpp Core/src/draw_list.cpp Core/src/ui.cpp Core/src/immediate.cpp)
+add_library(fuse_ui_core STATIC Core/src/style.cpp Core/src/draw_list.cpp Core/src/ui.cpp Core/src/immediate.cpp Core/src/icons.cpp)
 target_include_directories(fuse_ui_core PUBLIC Core/include)
 target_link_libraries(fuse_ui_core PUBLIC fuse_text)
 if(FUSE_UI_ACCESSIBILITY)
@@ -92,6 +92,29 @@ if(FUSE_BUILD_UI_WIDGETS)
     add_library(fuse_ui_widgets STATIC Widgets/src/widgets.cpp Widgets/src/widgets_tier_b.cpp Widgets/src/widgets_tier_b2.cpp Widgets/src/widgets_tier_cd.cpp Widgets/src/widgets_tier_d2.cpp Widgets/src/platform_feel.cpp Widgets/src/theme.cpp Widgets/src/inspector.cpp)
     target_include_directories(fuse_ui_widgets PUBLIC Widgets/include)
     target_link_libraries(fuse_ui_widgets PUBLIC fuse_ui_core)
+endif()
+
+# ---- icons: SVG -> .fuseicons cooker (vendored nanosvg, tool time only) + the starter pack cooked at build time ----
+option(FUSE_BUILD_UI_ICONS "Build fuse_ui_icon_cook and cook the starter icon pack (vendor/icons/lucide)" ON)
+if(FUSE_BUILD_UI_ICONS AND EXISTS "${FUSE_UI_REPO_ROOT}/vendor/nanosvg/nanosvg.h")
+    add_library(fuse_ui_icon_cook_lib STATIC Icons/src/icon_cook.cpp)
+    target_include_directories(fuse_ui_icon_cook_lib PUBLIC Icons/include)
+    target_include_directories(fuse_ui_icon_cook_lib SYSTEM PRIVATE "${FUSE_UI_REPO_ROOT}/vendor/nanosvg")
+    target_link_libraries(fuse_ui_icon_cook_lib PUBLIC fuse_ui_core)
+    add_executable(fuse_ui_icon_cook Icons/tools/fuse_ui_icon_cook.cpp)
+    target_link_libraries(fuse_ui_icon_cook PRIVATE fuse_ui_icon_cook_lib)
+    if(NOT CMAKE_CROSSCOMPILING OR CMAKE_CROSSCOMPILING_EMULATOR)
+        set(FUSE_UI_ICON_SVG_DIR "${FUSE_UI_REPO_ROOT}/vendor/icons/lucide")
+        set(FUSE_UI_ICON_PACK "${CMAKE_CURRENT_BINARY_DIR}/icons/fuse_ui_icons.fuseicons")
+        set(FUSE_UI_ICON_PACK "${FUSE_UI_ICON_PACK}" CACHE INTERNAL "starter icon pack (build output)")
+        file(GLOB _fuse_ui_svgs CONFIGURE_DEPENDS "${FUSE_UI_ICON_SVG_DIR}/*.svg")
+        add_custom_command(OUTPUT "${FUSE_UI_ICON_PACK}"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/icons"
+            COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:fuse_ui_icon_cook> "--out=${FUSE_UI_ICON_PACK}" "${FUSE_UI_ICON_SVG_DIR}"
+            DEPENDS fuse_ui_icon_cook ${_fuse_ui_svgs}
+            COMMENT "fuse_ui_icon_cook: starter icon pack" VERBATIM)
+        add_custom_target(fuse_ui_icons ALL DEPENDS "${FUSE_UI_ICON_PACK}")
+    endif()
 endif()
 
 # ---- fuse_ui_doc: .fuseui JSON documents, binding model and expression bytecode ----
@@ -139,6 +162,10 @@ if(FUSE_BUILD_UI_DOC AND FUSE_BUILD_UI_WIDGETS)
     # UI8 cooker: .fuseui / .fusestyle -> cooked blobs + generated widget-registration list
     add_executable(fuse_ui_cook Doc/tools/fuse_ui_cook.cpp)
     target_link_libraries(fuse_ui_cook PRIVATE fuse_ui_doc)
+    if(TARGET fuse_ui_icon_cook_lib) # --icons=<pack>: .svg inputs cooked into an icon pack in the same run
+        target_link_libraries(fuse_ui_cook PRIVATE fuse_ui_icon_cook_lib)
+        target_compile_definitions(fuse_ui_cook PRIVATE FUSE_UI_COOK_HAVE_ICONS=1)
+    endif()
 endif()
 
 # ---- fuse_ui_script: Lua bindings (vendored Lua 5.2, the fuse_script backend) ----

@@ -234,6 +234,10 @@ public:
     explicit GlyphAtlas(int size = 1024);
     /// Finds or rasterises `glyph` of `font` at `pixelSize` (sizes are bucketed to 1/4 px).
     AtlasGlyph get(const Font& font, std::uint32_t glyph, float pixelSize);
+    /// Caller-keyed coverage (UI icons). Keys must have bit 63 clear (font glyph keys set it) and be non-zero.
+    bool lookup(std::uint64_t key, AtlasGlyph& out) const;
+    /// Copies a w x h coverage bitmap (row stride `stride`) under `key`; x0 / y0 are stored as the glyph offset.
+    AtlasGlyph insert(std::uint64_t key, const std::uint8_t* src, int w, int h, int stride, int x0, int y0);
     int size() const { return m_size; }
     const std::uint8_t* pixels() const { return m_pixels.data(); }
     std::uint32_t generation() const { return m_generation; }

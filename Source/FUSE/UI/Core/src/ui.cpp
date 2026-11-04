@@ -1,4 +1,5 @@
 #include "fuse/ui/ui.hpp"
+#include "fuse/ui/icons.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -636,6 +637,91 @@ void UiContext::paintString(DrawList& dl, std::string_view s, Rect box, Color co
     paintTextLayout(dl, m_stringScratch, {box.x, y}, col, px, nodeIdx);
 }
 
+// ---- Icons ---------------------------------------------------------------------------------------------------------
+void UiContext::setIcons(const IconSet* icons) {
+    if (icons == m_icons) return;
+    m_icons = icons;
+    markAllDirty();
+}
+
+f32 UiContext::iconExtent(const ComputedStyle& s) const {
+    if (!s.icon || !m_icons || m_icons->findHash(s.icon) < 0) return 0.f;
+    return std::round(s.iconSize > 0.f ? s.iconSize : s.fontSize + 2.f);
+}
+
+f32 UiContext::labelIconWidth(const ComputedStyle& s, bool hasText) const {
+    const f32 ic = iconExtent(s);
+    return ic > 0.f ? ic + (hasText ? kIconGap : 0.f) : 0.f;
+}
+
+bool UiContext::paintIcon(DrawList& dl, u32 nameHash, Vec2 at, f32 size, Color c, u32 nodeIdx) {
+    const i32 idx = m_icons ? m_icons->findHash(nameHash) : -1;
+    if (idx < 0) return false;
+    if (c.a <= 0.f || size < 0.5f) return true;
+    const int px = std::clamp(int(std::lround(size)), 1, 1024);
+    // atlas key: bit 62 set, bit 63 clear (font glyph keys set bit 63)
+    const u64 key = (1ull << 62) | (u64(nameHash) << 16) | u64(px);
+    fuse::text::AtlasGlyph ag;
+    if (!m_atlas.lookup(key, ag)) {
+        IconBitmap bm;
+        if (m_icons->cooked(u32(idx), px, bm)) {
+            ag = m_atlas.insert(key, bm.pixels, bm.w, bm.h, bm.stride, bm.ox, bm.oy);
+        } else { // resample, then trim to the covered box
+            m_icons->render(u32(idx), px, m_iconScratch);
+            int x0 = px, y0 = px, x1 = -1, y1 = -1;
+            for (int y = 0; y < px; ++y)
+                for (int x = 0; x < px; ++x)
+                    if (m_iconScratch[std::size_t(y) * std::size_t(px) + std::size_t(x)]) {
+                        x0 = std::min(x0, x); y0 = std::min(y0, y); x1 = std::max(x1, x); y1 = std::max(y1, y);
+                    }
+            if (x1 < 0) ag = m_atlas.insert(key, nullptr, 0, 0, 0, 0, 0);
+            else ag = m_atlas.insert(key, m_iconScratch.data() + std::size_t(y0) * std::size_t(px) + std::size_t(x0), x1 - x0 + 1,
+                                     y1 - y0 + 1, px, x0, y0);
+        }
+    }
+    if (!ag.valid || ag.w == 0) return true;
+    DrawCmd cmd;
+    cmd.op = DrawOp::Glyph;
+    cmd.rect = {std::round(at.x) + f32(ag.x0), std::round(at.y) + f32(ag.y0), f32(ag.w), f32(ag.h)};
+    cmd.u = ag.u;
+    cmd.v = ag.v;
+    cmd.tw = ag.w;
+    cmd.th = ag.h;
+    cmd.fill = c;
+    cmd.node = nodeIdx;
+    dl.push(cmd);
+    return true;
+}
+
+Size UiContext::measureIconLabel(const ComputedStyle& s, std::string_view text) {
+    const f32 ic = iconExtent(s);
+    const f32 lh = m_font ? std::ceil(m_font->metrics(s.fontSize).lineHeight()) : std::ceil(s.fontSize * 1.25f);
+    const f32 tw = std::ceil(measureString(text, s.fontSize));
+    if (ic <= 0.f) return {tw, lh};
+    if (text.empty()) return {ic, ic};
+    return {ic + kIconGap + tw, std::max(ic, lh)};
+}
+
+void UiContext::paintIconLabel(DrawList& dl, const ComputedStyle& s, std::string_view text, Rect box, Color c, TextAlignment align,
+                               u32 nodeIdx) {
+    const f32 ic = iconExtent(s);
+    if (ic <= 0.f) {
+        paintString(dl, text, box, c, s.fontSize, align, nodeIdx);
+        return;
+    }
+    const f32 tw = text.empty() ? 0.f : std::ceil(measureString(text, s.fontSize));
+    const f32 total = ic + (tw > 0.f ? kIconGap + tw : 0.f);
+    f32 x = box.x;
+    if (align == TextAlignment::Center) x = box.x + std::floor((box.w - total) * 0.5f);
+    else if (align == TextAlignment::End) x = box.right() - total;
+    x = std::max(x, box.x);
+    paintIcon(dl, s.icon, {x, box.y + std::floor((box.h - ic) * 0.5f)}, ic, c, nodeIdx);
+    if (tw > 0.f) {
+        const f32 tx = x + ic + kIconGap;
+        paintString(dl, text, {tx, box.y, std::max(0.f, box.right() - tx), box.h}, c, s.fontSize, TextAlignment::Start, nodeIdx);
+    }
+}
+
 // ---- Layout --------------------------------------------------------------------------------------------------------
 namespace {
 f32 clampSize(f32 v, const Length& lo, const Length& hi, f32 base) {
@@ -738,10 +824,15 @@ Size UiContext::measure(u32 i, Size avail) {
             }
         }
         if (!wc.measure && !m_cold[i]->text.empty()) {
-            ensureText(i, in.w);
+            const f32 iw = labelIconWidth(s, true);
+            ensureText(i, in.w - iw);
             const auto& tl = m_cold[i]->layout;
-            c.w = std::max(c.w, std::ceil(tl.width));
-            c.h = std::max(c.h, std::ceil(tl.height));
+            c.w = std::max(c.w, std::ceil(tl.width) + iw);
+            c.h = std::max({c.h, std::ceil(tl.height), iconExtent(s)});
+        } else if (!wc.measure && s.icon) {
+            const f32 ic = iconExtent(s);
+            c.w = std::max(c.w, ic);
+            c.h = std::max(c.h, ic);
         }
         out.w = fw ? bw : c.w + s.padding.h();
         out.h = fh ? bh : c.h + s.padding.v();
@@ -771,7 +862,7 @@ void UiContext::arrangeChildren(u32 i) {
     Node& n = m_nodes[i];
     const ComputedStyle& s = m_styles.style(n.style);
     const Rect c0 = contentRect({i, n.gen});
-    if (!m_cold[i]->text.empty() && !m_registry.get(n.cls).measure) ensureText(i, c0.w);
+    if (!m_cold[i]->text.empty() && !m_registry.get(n.cls).measure) ensureText(i, c0.w - labelIconWidth(s, true));
     const Rect c{c0.x - n.scroll.x, c0.y - n.scroll.y, c0.w, c0.h};
     Size extent{0.f, 0.f};
     auto place = [&](u32 k, Rect r) {
@@ -979,10 +1070,14 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     if (wc.paint) {
         const PaintContext pc{*this, h, n.rect, content, s, n.state, opacity};
         wc.paint(pc, dl);
-    } else if (!m_cold[i]->text.empty()) {
-        const auto& tl = m_cold[i]->layout;
-        const f32 y = content.y + std::floor(std::max(0.f, content.h - tl.height) * 0.5f);
-        paintTextLayout(dl, tl, {content.x, y}, tint(s.color), s.fontSize, i);
+    } else if (!m_cold[i]->text.empty() || s.icon) {
+        const f32 ic = iconExtent(s);
+        if (ic > 0.f) paintIcon(dl, s.icon, {content.x, content.y + std::floor((content.h - ic) * 0.5f)}, ic, tint(s.color), i);
+        if (!m_cold[i]->text.empty()) {
+            const auto& tl = m_cold[i]->layout;
+            const f32 y = content.y + std::floor(std::max(0.f, content.h - tl.height) * 0.5f);
+            paintTextLayout(dl, tl, {content.x + labelIconWidth(s, true), y}, tint(s.color), s.fontSize, i);
+        }
     }
     if (n.first == kNone) return;
     const bool clip = s.overflow != Overflow::Visible;

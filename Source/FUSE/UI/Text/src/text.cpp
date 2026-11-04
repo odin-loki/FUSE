@@ -877,6 +877,49 @@ AtlasGlyph GlyphAtlas::get(const Font& font, std::uint32_t glyph, float px) {
     return ag;
 }
 
+bool GlyphAtlas::lookup(std::uint64_t key, AtlasGlyph& out) const {
+    const std::size_t mask = m_slots.size() - 1;
+    for (std::size_t h = std::size_t((key * 0x9E3779B97F4A7C15ull) >> 40) & mask;; h = (h + 1) & mask) {
+        const Slot& s = m_slots[h];
+        if (s.key == key) { out = s.g; return true; }
+        if (s.key == 0) return false;
+    }
+}
+
+AtlasGlyph GlyphAtlas::insert(std::uint64_t key, const std::uint8_t* src, int w, int hh, int stride, int x0, int y0) {
+    if (AtlasGlyph g; lookup(key, g)) return g;
+    ++m_misses;
+    if (m_used * 4 >= m_slots.size() * 3) clear();
+    AtlasGlyph ag;
+    ag.x0 = std::int16_t(x0);
+    ag.y0 = std::int16_t(y0);
+    if (w > 0 && hh > 0) {
+        if (w + 2 > m_size || hh + 2 > m_size) return {};
+        if (m_shelfX + w + 1 > m_size) {
+            m_shelfX = 1;
+            m_shelfY += m_shelfH + 1;
+            m_shelfH = 0;
+        }
+        if (m_shelfY + hh + 1 > m_size) clear(); // full: start a new generation (shelf state reset)
+        for (int y = 0; y < hh; ++y)
+            std::memcpy(m_pixels.data() + std::size_t(m_shelfY + y) * std::size_t(m_size) + std::size_t(m_shelfX),
+                        src + std::size_t(y) * std::size_t(stride), std::size_t(w));
+        ag.u = std::uint16_t(m_shelfX);
+        ag.v = std::uint16_t(m_shelfY);
+        ag.w = std::uint16_t(w);
+        ag.h = std::uint16_t(hh);
+        m_shelfX += w + 1;
+        m_shelfH = std::max(m_shelfH, hh);
+    }
+    ag.valid = true;
+    const std::size_t mask = m_slots.size() - 1;
+    std::size_t h = std::size_t((key * 0x9E3779B97F4A7C15ull) >> 40) & mask;
+    while (m_slots[h].key != 0) h = (h + 1) & mask;
+    m_slots[h] = {key, ag};
+    ++m_used;
+    return ag;
+}
+
 // ---- Editing -------------------------------------------------------------------------------------------------------
 namespace {
 bool isWordByte(char c) { return (static_cast<unsigned char>(c) >= 0x80u) || std::isalnum(static_cast<unsigned char>(c)) || c == '_'; }
