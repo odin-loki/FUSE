@@ -140,18 +140,40 @@ struct RadioButton {
         if (on) dl.rect({b.x + 4.f, b.y + 4.f, 8.f, 8.f}, accent(pc), 4.f);
         labelAt(pc, dl, pc.ui.text(pc.node), pc.flip(Rect{b0.right() + 6.f, pc.content.y, pc.content.w - 22.f, pc.content.h}), TextAlignment::Start);
     }
+    static void select(UiContext& ui, NodeHandle n) {
+        if (ui.checked(n)) return;
+        const u32 cls = ui.classOf(n);
+        for (NodeHandle s = ui.firstChild(ui.parent(n)); s.valid(); s = ui.nextSibling(s))
+            if (s != n && ui.classOf(s) == cls && ui.checked(s)) {
+                ui.setChecked(s, false);
+                ui.emit(s, SignalKind::Toggled, {.flag = false});
+            }
+        ui.setChecked(n, true);
+        ui.emit(n, SignalKind::Toggled, {.flag = true});
+    }
     static bool onEvent(EventContext& ec, const Event& e) {
-        if (e.type == EventType::Click && ec.phase == Phase::Target && !ec.ui.checked(ec.node)) {
-            const u32 cls = ec.ui.classOf(ec.node);
-            for (NodeHandle s = ec.ui.firstChild(ec.ui.parent(ec.node)); s.valid(); s = ec.ui.nextSibling(s))
-                if (s != ec.node && ec.ui.classOf(s) == cls && ec.ui.checked(s)) {
-                    ec.ui.setChecked(s, false);
-                    ec.ui.emit(s, SignalKind::Toggled, {.flag = false});
-                }
-            ec.ui.setChecked(ec.node, true);
-            ec.ui.emit(ec.node, SignalKind::Toggled, {.flag = true});
+        if (ec.phase != Phase::Target) return false;
+        UiContext& ui = ec.ui;
+        if (e.type == EventType::Click) select(ui, ec.node);
+        if (e.type != EventType::KeyDown) return false;
+        // arrows move to the previous / next enabled radio of the group (the siblings), wrapping, and check it
+        const bool rtl = ui.computed(ec.node).rtl;
+        const Key fwd = rtl ? Key::Left : Key::Right, back = rtl ? Key::Right : Key::Left;
+        if (e.key != Key::Down && e.key != Key::Up && e.key != fwd && e.key != back) return false;
+        const bool next = e.key == Key::Down || e.key == fwd;
+        const u32 cls = ui.classOf(ec.node);
+        NodeHandle group[64];
+        u32 n = 0, at = 0;
+        for (NodeHandle s = ui.firstChild(ui.parent(ec.node)); s.valid() && n < 64; s = ui.nextSibling(s)) {
+            if (ui.classOf(s) != cls || (ui.disabled(s) && s != ec.node)) continue;
+            if (s == ec.node) at = n;
+            group[n++] = s;
         }
-        return false;
+        if (n < 2) return true;
+        const NodeHandle to = group[next ? (at + 1) % n : (at + n - 1) % n];
+        ui.setFocus(to, FocusReason::Keyboard);
+        select(ui, to);
+        return true;
     }
 };
 struct Switch : CheckBox {
@@ -199,6 +221,7 @@ struct Slider {
 struct ScrollBar {
     static constexpr std::string_view kName = "scrollbar";
     static constexpr A11yRole kRole = A11yRole::ScrollBar;
+    static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
     static Size measure(UiContext&, NodeHandle, Size) { return {12.f, 12.f}; }
     static bool vertical(const Rect& r) { return r.h >= r.w; }
@@ -211,7 +234,7 @@ struct ScrollBar {
         const f32 at = (len - th) * frac(pc.ui, pc.node);
         dl.rect(c, pc.tint(Color::rgb(0x000000, 0.2f)), 4.f);
         const Rect t = v ? Rect{c.x + 2.f, c.y + at, c.w - 4.f, th} : pc.flip(Rect{c.x + at, c.y + 2.f, th, c.h - 4.f});
-        dl.rect(t, pc.states & (kStateHover | kStatePressed) ? accent(pc) : pc.tint(Color::rgb(0x8A8A96)), 3.f);
+        dl.rect(t, pc.states & (kStateHover | kStatePressed | kStateFocusVisible) ? accent(pc) : pc.tint(Color::rgb(0x8A8A96)), 3.f);
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
@@ -227,6 +250,28 @@ struct ScrollBar {
             const f32 lo = ec.ui.rangeMin(ec.node), hi = ec.ui.rangeMax(ec.node);
             const f32 n = e.wheel.y != 0.f ? e.wheel.y : e.wheel.x;
             ec.ui.setValue(ec.node, ec.ui.value(ec.node) - n * 0.1f * (hi - lo), true); // one notch = 10% of the range
+            return true;
+        }
+        if (e.type == EventType::KeyDown) {
+            // the value grows down / towards the end: Down / Right (Left in RTL) a line (5%, at least the value step),
+            // PageDown a page
+            UiContext& ui = ec.ui;
+            const f32 lo = ui.rangeMin(ec.node), hi = ui.rangeMax(ec.node);
+            const f32 line = std::max(ui.rangeStep(ec.node), 0.05f * (hi - lo)), pg = std::max(line, page(ui, ec.node) * (hi - lo));
+            const bool rtl = ui.computed(ec.node).rtl;
+            f32 d;
+            switch (e.key) {
+            case Key::Down: d = line; break;
+            case Key::Up: d = -line; break;
+            case Key::Right: d = rtl ? -line : line; break;
+            case Key::Left: d = rtl ? line : -line; break;
+            case Key::PageDown: d = pg; break;
+            case Key::PageUp: d = -pg; break;
+            case Key::Home: ui.setValue(ec.node, lo, true); return true;
+            case Key::End: ui.setValue(ec.node, hi, true); return true;
+            default: return false;
+            }
+            ui.setValue(ec.node, ui.value(ec.node) + d, true);
             return true;
         }
         return false;
@@ -361,8 +406,15 @@ struct ComboBox {
             pick((cur + 1) % count);
             return true;
         }
+        // Alt+Down / F4 open the list (Space / Enter too, through the core's keyboard click)
+        if (e.type == EventType::KeyDown && ((e.key == Key::Down && (e.mods & kModAlt)) || e.key == Key::F4)) {
+            if (!detail::openComboPopup(ui, ec.node)) pick((cur + 1) % count);
+            return true;
+        }
         if (e.type == EventType::KeyDown && e.key == Key::Down) { pick(std::min(cur + 1, count - 1)); return true; }
         if (e.type == EventType::KeyDown && e.key == Key::Up) { pick(cur ? cur - 1 : 0); return true; }
+        if (e.type == EventType::KeyDown && e.key == Key::Home) { pick(0); return true; }
+        if (e.type == EventType::KeyDown && e.key == Key::End) { pick(count - 1); return true; }
         if (e.type == EventType::Wheel) { pick(e.wheel.y < 0.f ? std::min(cur + 1, count - 1) : (cur ? cur - 1 : 0)); return true; }
         return false;
     }

@@ -108,9 +108,10 @@ NodeHandle addPane(UiContext& ui, NodeHandle split, f32 size, std::string_view i
 }
 
 // ---- dock area: column [ row [left | centre | right] | bottom ] ----------------------------------------------------
-struct DockTitle { // the title strip of a dock widget; text = title. Close box at the right end.
+struct DockTitle { // the title strip of a dock widget; text = title. Close box at the right end (keys: Enter / Space / Delete).
     static constexpr std::string_view kName = "docktitle";
     static constexpr A11yRole kRole = A11yRole::Text;
+    static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
     static Size measure(UiContext& ui, NodeHandle n, Size) { return {std::ceil(ui.measureString(ui.text(n), ui.computed(n).fontSize)) + 24.f, rowHeight(ui, n) - 2.f}; }
     static Rect closeBox(const Rect& r) { return {r.right() - r.h, r.y, r.h, r.h}; }
@@ -120,13 +121,21 @@ struct DockTitle { // the title strip of a dock widget; text = title. Close box 
         pc.ui.paintString(dl, pc.ui.text(pc.node), {pc.content.x, r.y, pc.content.w - r.h, r.h}, pc.tint(pc.style.color), pc.style.fontSize,
                           TextAlignment::Start, pc.node.index);
         const Rect x = closeBox(r);
-        const Color c = pc.tint(pc.ui.hovered() == pc.node && x.contains(pc.ui.pointer()) ? Color::rgb(0xFF6B6B) : Color::rgb(0x9A9AA6));
+        const bool kbd = pc.states & kStateFocusVisible; // keyboard focus: ring + the close box lit (Enter closes)
+        const Color c = pc.tint((pc.ui.hovered() == pc.node && x.contains(pc.ui.pointer())) || kbd ? Color::rgb(0xFF6B6B) : Color::rgb(0x9A9AA6));
         const f32 m = x.h * 0.32f;
         dl.line({x.x + m, x.y + m}, {x.right() - m, x.bottom() - m}, c, 1.5f);
         dl.line({x.right() - m, x.y + m}, {x.x + m, x.bottom() - m}, c, 1.5f);
+        if (kbd) dl.roundedRect(r, {}, {3.f, 3.f, 3.f, 3.f}, pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD)), 1.f);
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
+        if (e.type == EventType::KeyDown && (e.key == Key::Enter || e.key == Key::Space || e.key == Key::Delete)) {
+            const NodeHandle dock = ec.ui.parent(ec.node);
+            ec.ui.focusNext(false); // focus leaves before the dock hides
+            dockClose(ec.ui, dock);
+            return true;
+        }
         if (e.type == EventType::PointerMove) { ec.ui.invalidate(ec.node); return false; }
         if (e.type == EventType::Click && closeBox(ec.ui.rect(ec.node)).contains(e.pos)) { dockClose(ec.ui, ec.ui.parent(ec.node)); return true; }
         return false;
