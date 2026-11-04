@@ -9,6 +9,14 @@ target_sources(fuse_rhi PRIVATE
 if(FUSE_BUILD_CORE_TESTS)
     # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
     set(_fuse_vk_followups_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+    # Layer manifests name the library relative to the manifest. The Windows loader opens it with
+    # LoadLibraryEx(LOAD_WITH_ALTERED_SEARCH_PATH), which rejects '/' (ERROR_INVALID_PARAMETER), so
+    # the prefix is ".\" there (written JSON-escaped).
+    if(WIN32)
+        set(_fuse_layer_lib_prefix ".\\\\")
+    else()
+        set(_fuse_layer_lib_prefix "./")
+    endif()
 
     add_executable(fuse_b2_async_upload tests/test_b2_async_upload.cpp)
     target_link_libraries(fuse_b2_async_upload PRIVATE fuse_rhi)
@@ -76,7 +84,7 @@ if(FUSE_BUILD_CORE_TESTS)
     \"layer\": {
         \"name\": \"VK_LAYER_FUSE_split_transfer_family\",
         \"type\": \"GLOBAL\",
-        \"library_path\": \"./$<TARGET_FILE_NAME:VkLayer_fuse_split_transfer_family>\",
+        \"library_path\": \"${_fuse_layer_lib_prefix}$<TARGET_FILE_NAME:VkLayer_fuse_split_transfer_family>\",
         \"api_version\": \"1.3.0\",
         \"implementation_version\": \"1\",
         \"description\": \"FUSE test layer: splits a transfer-only queue family off a single-family ICD\"
@@ -152,7 +160,7 @@ if(FUSE_BUILD_CORE_TESTS)
     \"layer\": {
         \"name\": \"VK_LAYER_FUSE_spoof_multi_gpu\",
         \"type\": \"GLOBAL\",
-        \"library_path\": \"./$<TARGET_FILE_NAME:VkLayer_fuse_spoof_multi_gpu>\",
+        \"library_path\": \"${_fuse_layer_lib_prefix}$<TARGET_FILE_NAME:VkLayer_fuse_spoof_multi_gpu>\",
         \"api_version\": \"1.3.0\",
         \"implementation_version\": \"1\",
         \"description\": \"FUSE test layer: presents physical devices with spoofed type, limits and features\"
