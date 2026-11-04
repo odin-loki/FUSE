@@ -37,9 +37,10 @@ set(FUSE_UI_PROFILE "app" CACHE STRING "UI profile: hud, app, editor")
 
 # ---- fuse_text ----
 set(FUSE_UI_TEXT_CORE_SRC Text/src/text.cpp Text/src/font_catalog.cpp Text/src/paint_enable.cpp)
-# opt-in rasterisers (enableColorGlyphs / enableMsdf) and the font cooker: linked only into binaries that call them
+# opt-in rasterisers (enableColorGlyphs / enableMsdf), font variations (Font::instance) and the font cooker: linked
+# only into binaries that call them
 set(FUSE_UI_TEXT_RASTER_SRC Text/src/colr_paint.cpp Text/src/path_raster.cpp Text/src/color_bitmap.cpp Text/src/msdf.cpp
-    Text/src/font_cook.cpp)
+    Text/src/font_var.cpp Text/src/font_cook.cpp)
 
 # fuse_text_cook (every profile): TrueType / OpenType -> .fusefont, built over a MINIMAL fuse_text so cooked glyphs are
 # byte-identical to MINIMAL at the cooked sizes.
@@ -155,6 +156,16 @@ endif()
 add_library(fuse_ui_core STATIC Core/src/style.cpp Core/src/draw_list.cpp Core/src/ui.cpp Core/src/immediate.cpp Core/src/icons.cpp Core/src/effects.cpp)
 target_include_directories(fuse_ui_core PUBLIC Core/include)
 target_link_libraries(fuse_ui_core PUBLIC fuse_text)
+find_package(Threads REQUIRED) # the CPU rasteriser's band workers
+target_link_libraries(fuse_ui_core PRIVATE Threads::Threads)
+if(FUSE_JOBS_SINGLE_THREAD) # the engine's single-thread build: the rasteriser stays on the calling thread too
+    target_compile_definitions(fuse_ui_core PRIVATE FUSE_JOBS_SINGLE_THREAD=1)
+endif()
+# the CPU rasteriser is the bit-exact reference: no fused multiply-adds (clang / GCC contract by default on arm64), so
+# every platform and its SIMD paths compute the same bytes
+if(NOT MSVC)
+    set_source_files_properties(Core/src/draw_list.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
+endif()
 if(FUSE_UI_ACCESSIBILITY)
     target_compile_definitions(fuse_ui_core PUBLIC FUSE_UI_ACCESSIBILITY=1)
 endif()
@@ -226,7 +237,14 @@ if(FUSE_UI_ACCESSIBILITY)
             set(_fuse_ak_lib "${FUSE_UI_ACCESSKIT_LIB}")
         endif()
     elseif(FUSE_UI_ACCESSKIT_BUILD)
-        find_program(FUSE_UI_CARGO cargo HINTS "$ENV{CARGO_HOME}/bin" "$ENV{USERPROFILE}/.cargo/bin" "$ENV{HOME}/.cargo/bin")
+        # rustup's per-user cargo before a distro one on PATH (an unset CARGO_HOME must not turn into "/bin")
+        set(_fuse_cargo_hints "")
+        foreach(_h "$ENV{CARGO_HOME}" "$ENV{USERPROFILE}/.cargo" "$ENV{HOME}/.cargo")
+            if(_h AND NOT _h STREQUAL "/.cargo")
+                list(APPEND _fuse_cargo_hints "${_h}/bin")
+            endif()
+        endforeach()
+        find_program(FUSE_UI_CARGO cargo HINTS ${_fuse_cargo_hints})
         set(_fuse_cargo_ver "")
         if(FUSE_UI_CARGO)
             execute_process(COMMAND "${FUSE_UI_CARGO}" --version OUTPUT_VARIABLE _fuse_cargo_out ERROR_QUIET)

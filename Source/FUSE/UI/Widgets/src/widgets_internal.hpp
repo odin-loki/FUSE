@@ -12,5 +12,9 @@ void registerTierB2(UiContext& ui);
 NodeHandle popupMenuAt(UiContext& ui, NodeHandle owner, std::string_view items, Vec2 at, u32 base, std::string_view id = {});
 /// A popup scope (outside click / Escape closes it) holding an empty card at `at`; returns the card.
 NodeHandle popupPanel(UiContext& ui, NodeHandle owner, Vec2 at);
+/// Per-row font of a list view (the font picker draws each family in its own face): fn(ui, list, row) returns the
+/// row's font or nullptr (the list's font). One function per list node; nullptr removes it.
+using RowFontFn = const fuse::text::Font* (*)(UiContext& ui, NodeHandle list, u32 row);
+void setListRowFont(UiContext& ui, NodeHandle list, RowFontFn fn);
 
 } // namespace fuse::ui::widgets::detail

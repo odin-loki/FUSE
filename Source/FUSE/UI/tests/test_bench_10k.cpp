@@ -1,5 +1,6 @@
 // Gate fuse_ui_bench_10k: a 10,000-node tree (100 fixed-size panels × 99 widgets); one label in one panel changes
 // each frame. Budget (plan §4.5): re-layout + repaint ≤ 0.5 ms median in optimised builds. Debug builds report only.
+#include "test_env.hpp"
 #include "test_util.hpp"
 
 #include <algorithm>
@@ -47,11 +48,15 @@ int main() {
     UI_CHECK(ui.stats().measured < 20u);
     UI_CHECK(ui.stats().arranged < 20u);
 #ifdef NDEBUG
+    if (!fuse::ui::test::timingBudgetsEnforced()) {
+        std::printf("(FUSE_INSTRUMENTED_RUN=%s: budget reported, not enforced)\n", fuse::ui::test::instrumentedRun());
+    } else {
 #if FUSE_UI_TEST_TEXT_FULL
-    UI_CHECK(med <= 1.0); // FULL re-shapes through HarfBuzz each paint; shaped-run cache is follow-up work
+        UI_CHECK(med <= 1.0); // FULL re-shapes through HarfBuzz each paint; shaped-run cache is follow-up work
 #else
-    UI_CHECK(med <= 0.5);
+        UI_CHECK(med <= 0.5);
 #endif
+    }
 #else
     std::printf("(debug build: budget not enforced)\n");
 #endif

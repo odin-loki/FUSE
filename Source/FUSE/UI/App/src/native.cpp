@@ -241,7 +241,11 @@ struct NativePlatform::Impl {
     x11::Lib x;
     x11::Display* dpy = nullptr;
     x11::Atom wmProtocols = 0, wmDelete = 0;
-    unsigned long cursors[std::size_t(CursorShape::Count)]{}; ///< font cursors, created on first use
+    unsigned long cursors[std::size_t(CursorShape::Count)]{}; ///< theme / font cursors, created on first use
+    x11::Xcursor xc;          ///< libXcursor (themed cursors at the DPI-scaled size); absent: font cursors
+    bool xcOk = false;
+    int cursorSize = 0;       ///< device px size the theme cursors are loaded at (0: font cursors)
+    std::string cursorTheme;  ///< theme they come from ("" = Xcursor's default)
     f32 xScale = 1.f; ///< $FUSE_UI_SCALE, XSETTINGS Xft/DPI or RESOURCE_MANAGER Xft.dpi, / 96
     x11::Randr xr;
     bool xrOk = false;
@@ -251,6 +255,8 @@ struct NativePlatform::Impl {
     x11::Window xsOwner = 0;  ///< XSETTINGS manager window (0: none)
     int xsDpi = 0;            ///< Xft/DPI * 1024 (0: not set)
     std::string xsTheme;      ///< Net/ThemeName
+    int xsCursorSize = 0;     ///< Gtk/CursorThemeSize (logical px; 0: not set)
+    std::string xsCursorTheme; ///< Gtk/CursorThemeName
     int wakeFd[2] = {-1, -1}; ///< self-pipe: wake() from other threads
     void* xim = nullptr;      ///< XIM input method (XOpenIM), null without one
     x11::XimStyle ximStyle = 0;
@@ -258,6 +264,7 @@ struct NativePlatform::Impl {
     void createIc(Rec& r);
     void readXSettings();     ///< (re)reads the manager's settings (and follows a new manager window)
     void settingsChanged();   ///< re-reads them and applies DPI / theme changes
+    void updateCursorTheme(); ///< cursor size / theme from XSETTINGS + DPI; reloads the cursors when they change
     void x11Event(x11::Event& ev);
     void startMoveResize(Rec& r, HitArea a, const x11::InputEv& in);
     std::vector<DisplayInfo> x11Displays() const;
@@ -1371,12 +1378,36 @@ void NativePlatform::Impl::readXSettings() {
     }
     xsDpi = 0;
     xsTheme.clear();
+    xsCursorSize = 0;
+    xsCursorTheme.clear();
     std::vector<unsigned char> v;
     if (owner && x.property(dpy, owner, xsSettings, xsSettings, v))
         for (const x11::XSetting& s : x11::parseXSettings(v.data(), v.size())) {
             if (s.name == "Xft/DPI" && s.type == 0) xsDpi = s.integer;
             else if (s.name == "Net/ThemeName" && s.type == 1) xsTheme = s.string;
+            else if (s.name == "Gtk/CursorThemeSize" && s.type == 0) xsCursorSize = s.integer;
+            else if (s.name == "Gtk/CursorThemeName" && s.type == 1) xsCursorTheme = s.string;
         }
+}
+void NativePlatform::Impl::updateCursorTheme() {
+    if (!xcOk) return;
+    // Gtk/CursorThemeSize is logical (GTK multiplies it by the window scale); else $XCURSOR_SIZE, else 24
+    int base = xsCursorSize > 0 && xsCursorSize <= 512 ? xsCursorSize : 0;
+    if (!base)
+        if (const char* e = std::getenv("XCURSOR_SIZE"); e && *e) base = std::clamp(std::atoi(e), 0, 512);
+    if (!base) base = 24;
+    const int size = std::max(8, int(std::lround(f32(base) * xScale)));
+    if (size == cursorSize && xsCursorTheme == cursorTheme) return;
+    cursorSize = size;
+    cursorTheme = xsCursorTheme;
+    xc.SetTheme(dpy, cursorTheme.empty() ? nullptr : cursorTheme.c_str());
+    xc.SetDefaultSize(dpy, size);
+    for (unsigned long& c : cursors)
+        if (c) { x.FreeCursor(dpy, c); c = 0; }
+    for (Rec* r : recs) { // re-apply at the new size
+        r->svc.cursor = CursorShape::Auto;
+        if (r->handle) syncCursor(*r);
+    }
 }
 void NativePlatform::Impl::settingsChanged() {
     const std::string oldTheme = xsTheme;
@@ -1389,6 +1420,7 @@ void NativePlatform::Impl::settingsChanged() {
                 if (r->handle && r->win->scale() != s) applyScale(*r, s, nullptr);
         }
     }
+    updateCursorTheme(); // Gtk/CursorThemeSize / Gtk/CursorThemeName or the DPI scale changed
     if (xsTheme != oldTheme) themeChanged(); // Application::setSystemTheme fires ThemeChanged only on a real change
 }
 void NativePlatform::Impl::x11Event(x11::Event& ev) {
@@ -1416,7 +1448,14 @@ void NativePlatform::Impl::syncCursor(Rec& r) {
     // X font cursor glyphs (cursorfont.h): left_ptr, xterm, hand2, sb_v/h_double_arrow, corners, fleur, watch, X, cross
     static constexpr unsigned kGlyph[] = {68, 68, 152, 60, 116, 108, 14, 12, 52, 150, 0, 34};
     static_assert(sizeof(kGlyph) / sizeof(kGlyph[0]) == std::size_t(CursorShape::Count));
+    // themed (libXcursor, freedesktop cursor-spec name, then the legacy X name): sized by updateCursorTheme()
+    static constexpr const char* kNames[][2] = {{"default", "left_ptr"}, {"default", "left_ptr"}, {"text", "xterm"},
+        {"pointer", "hand2"}, {"ns-resize", "sb_v_double_arrow"}, {"ew-resize", "sb_h_double_arrow"},
+        {"nwse-resize", "bottom_right_corner"}, {"nesw-resize", "bottom_left_corner"}, {"move", "fleur"},
+        {"wait", "watch"}, {"not-allowed", "crossed_circle"}, {"crosshair", "cross"}};
+    static_assert(sizeof(kNames) / sizeof(kNames[0]) == std::size_t(CursorShape::Count));
     unsigned long& cur = cursors[std::size_t(c)];
+    for (int k = 0; !cur && xcOk && k < 2; ++k) cur = xc.LibraryLoadCursor(dpy, kNames[std::size_t(c)][k]);
     if (!cur) cur = x.CreateFontCursor(dpy, kGlyph[std::size_t(c)]);
     x.DefineCursor(dpy, x11::Window(r.handle), cur);
     x.Flush(dpy);
@@ -1582,6 +1621,8 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
             i.readXSettings();
             i.xScale = o.dpiAware ? i.readXScale() : 1.f;
             i.openXim();
+            i.xcOk = i.xc.load();
+            i.updateCursorTheme();
             if (::pipe(i.wakeFd) == 0) {
                 for (int fd : i.wakeFd) ::fcntl(fd, F_SETFL, ::fcntl(fd, F_GETFL) | O_NONBLOCK);
                 for (int fd : i.wakeFd) ::fcntl(fd, F_SETFD, FD_CLOEXEC);
@@ -1610,39 +1651,46 @@ void NativePlatform::wake() {
 
 // ---- software presenter + Vulkan presenter creation (sync / async) -------------------------------------------------
 void NativePlatform::Impl::blitSoftware(Rec& r) {
+    // only the rect the last rasterize() redrew: the window keeps the rest of the previous frame
     const Image& img = r.win->image();
     if (!r.handle || img.pixels.empty()) return;
+    const Rect rr = r.win->rasterized().intersect({0.f, 0.f, f32(img.width), f32(img.height)});
+    if (rr.empty()) return;
+    const int x0 = int(rr.x), y0 = int(rr.y), w = int(rr.w), h = int(rr.h);
 #if defined(_WIN32)
-    r.staged.resize(img.pixels.size());
-    for (std::size_t i = 0; i < img.pixels.size(); ++i) { // 0xAABBGGRR -> BGRA
-        const u32 p = img.pixels[i];
-        r.staged[i] = (p & 0xFF00FF00u) | ((p & 0xFFu) << 16) | ((p >> 16) & 0xFFu);
+    r.staged.resize(std::max(r.staged.size(), std::size_t(w) * std::size_t(h)));
+    for (int y = 0; y < h; ++y) { // 0xAABBGGRR -> BGRA, packed to w x h
+        const u32* src = img.pixels.data() + std::size_t(y0 + y) * std::size_t(img.width) + std::size_t(x0);
+        u32* dst = r.staged.data() + std::size_t(y) * std::size_t(w);
+        for (int x = 0; x < w; ++x) dst[x] = (src[x] & 0xFF00FF00u) | ((src[x] & 0xFFu) << 16) | ((src[x] >> 16) & 0xFFu);
     }
     BITMAPINFO bi{};
     bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bi.bmiHeader.biWidth = img.width;
-    bi.bmiHeader.biHeight = -img.height;
+    bi.bmiHeader.biWidth = w;
+    bi.bmiHeader.biHeight = -h;
     bi.bmiHeader.biPlanes = 1;
     bi.bmiHeader.biBitCount = 32;
     bi.bmiHeader.biCompression = BI_RGB;
     HWND hwnd = reinterpret_cast<HWND>(r.handle);
     HDC dc = GetDC(hwnd);
-    SetDIBitsToDevice(dc, 0, 0, DWORD(img.width), DWORD(img.height), 0, 0, 0, UINT(img.height), r.staged.data(), &bi,
-                      DIB_RGB_COLORS);
+    SetDIBitsToDevice(dc, x0, y0, DWORD(w), DWORD(h), 0, 0, 0, UINT(h), r.staged.data(), &bi, DIB_RGB_COLORS);
     ReleaseDC(hwnd, dc);
 #else
     if (!dpy) return;
     const int scr = x.DefaultScreen(dpy);
     if (x.DefaultDepth(dpy, scr) < 24) return;
     r.staged.resize(img.pixels.size());
-    for (std::size_t i = 0; i < img.pixels.size(); ++i) { // 0xAABBGGRR -> TrueColor 0x00RRGGBB
-        const u32 q = img.pixels[i];
-        r.staged[i] = ((q & 0xFFu) << 16) | (q & 0xFF00u) | ((q >> 16) & 0xFFu);
+    for (int y = y0; y < y0 + h; ++y) { // 0xAABBGGRR -> TrueColor 0x00RRGGBB
+        const std::size_t row = std::size_t(y) * std::size_t(img.width);
+        for (int i = x0; i < x0 + w; ++i) {
+            const u32 q = img.pixels[row + std::size_t(i)];
+            r.staged[row + std::size_t(i)] = ((q & 0xFFu) << 16) | (q & 0xFF00u) | ((q >> 16) & 0xFFu);
+        }
     }
     x11::Image* xi = x.CreateImage(dpy, x.DefaultVisual(dpy, scr), unsigned(x.DefaultDepth(dpy, scr)), 2 /*ZPixmap*/, 0,
                                    reinterpret_cast<char*>(r.staged.data()), unsigned(img.width), unsigned(img.height), 32, 0);
     if (!xi) return;
-    x.PutImage(dpy, x11::Window(r.handle), x.DefaultGC(dpy, scr), xi, 0, 0, 0, 0, unsigned(img.width), unsigned(img.height));
+    x.PutImage(dpy, x11::Window(r.handle), x.DefaultGC(dpy, scr), xi, x0, y0, x0, y0, unsigned(w), unsigned(h));
     xi->data = nullptr; // ours (XDestroyImage would free it)
     xi->f.destroy(xi);
     x.Flush(dpy);

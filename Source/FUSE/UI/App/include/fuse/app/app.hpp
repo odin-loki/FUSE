@@ -185,6 +185,9 @@ public:
         presentHeadless(nullptr, *this, damage);
         return m_image;
     }
+    /// The pixel rect the last rasterize() redrew (the whole window after a resize, empty when nothing): what a
+    /// software presenter has to copy to the OS window.
+    fuse::ui::Rect rasterized() const { return m_rasterized; }
 
     // input (backends call these; they forward to the UiContext and wake the loop)
     void pointerMove(fuse::ui::Vec2 p) { m_ui.pointerMove(p); }
@@ -206,6 +209,7 @@ private:
     Presenter m_presenter;
     WindowChrome m_chrome;
     fuse::ui::Image m_image;
+    fuse::ui::Rect m_rasterized;
     fuse::ui::CpuRasterizer m_raster;
     RedrawPolicy m_policy = RedrawPolicy::OnDemand;
     PixelSize m_pixels;

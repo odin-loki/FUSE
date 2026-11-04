@@ -378,6 +378,21 @@ int unixGate() {
     }
     std::printf("  menu click: picked %d \"%s\"\n", int(picked), pickedText.c_str());
     CHECK(picked == 1 && pickedText == "Settings");
+    // libdbusmenu hosts (GTK panels) send clicks as EventGroup a(isvu)
+    if (kids.size() == 5) {
+        picked = ~0u;
+        if (dbus::Message* r = host.call(a, service, menuPath.c_str(), "com.canonical.dbusmenu", "EventGroup", [&](dbus::Writer& w) {
+                w.container(dbus::TArray, "(isvu)", [&](dbus::Writer& arr) {
+                    arr.container(dbus::TStruct, nullptr, [&](dbus::Writer& e) {
+                        e.i32(kids[4].first).str("clicked").variant("i", [](dbus::Writer& v) { v.i32(0); }).u32(0);
+                    });
+                });
+            }))
+            d.unref(r);
+        host.drain(a, 5);
+        std::printf("  EventGroup click: picked %d \"%s\"\n", int(picked), pickedText.c_str());
+        CHECK(picked == 3 && pickedText == "Quit"); // separators are not counted, the disabled item is
+    }
     // setMenu again announces a new layout
     tray.setMenu("Only", [&](unsigned i, std::string_view t) { picked = i + 100; pickedText = t; });
     host.drain(a, 20);

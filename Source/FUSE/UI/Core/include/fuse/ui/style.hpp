@@ -6,7 +6,12 @@
 //   values      px / % / fr / plain numbers, #rgb #rrggbb #rrggbbaa, rgb()/rgba(), keywords, var(--token[, fallback])
 //   tokens      custom properties (`--accent: #3af`) declared in `:root` (or any rule matching the node) — theme tokens
 //   cascade     specificity (ids, classes + pseudo, types), then source order; inline (node API) values win;
-//               inherited properties: color, font-size, text-align, direction
+//               inherited properties: color, font-size, text-align, font-weight, font-stretch,
+//               font-variation-settings, font-feature-settings, direction
+//   fonts       font-weight (1..1000, normal, bold, thin .. black) and font-stretch (percent or ultra-condensed ..
+//               ultra-expanded) drive a variable UI font's wght / wdth axes; font-variation-settings ("wght" 650,
+//               "opsz" 12) sets axes directly (over weight / stretch); font-feature-settings ("tnum", "liga" 0,
+//               "ss01" on) turns OpenType features on / off (FULL text profile: HarfBuzz). Static fonts ignore them.
 // Not yet: transitions (the animation core tweens node opacity / offsets), attribute selectors, :nth-child.
 #pragma once
 
@@ -53,6 +58,8 @@ enum class CursorShape : u8 { Auto, Arrow, Text, Hand, ResizeNS, ResizeEW, Resiz
 const char* cursorShapeName(CursorShape c);
 
 inline constexpr int kMaxGridTracks = 8;
+inline constexpr int kMaxFontVariations = 4; ///< font-variation-settings entries kept
+inline constexpr int kMaxFontFeatures = 8;   ///< font-feature-settings entries kept
 
 /// The fully resolved style of a node. Trivially copyable; deduplicated in StyleTable.
 struct ComputedStyle {
@@ -80,6 +87,14 @@ struct ComputedStyle {
     f32 borderWidth = 0.f;
     std::array<f32, 4> radius{}; ///< tl, tr, br, bl
     f32 fontSize = 14.f;
+    f32 fontWeight = 400.f;  ///< font-weight (CSS 1..1000): the wght axis of a variable font
+    f32 fontStretch = 100.f; ///< font-stretch percentage: the wdth axis of a variable font
+    u8 fontVariationCount = 0; ///< font-variation-settings (tag, value), applied after weight / stretch
+    std::array<u32, kMaxFontVariations> fontVariationTags{};
+    std::array<f32, kMaxFontVariations> fontVariationValues{};
+    u8 fontFeatureCount = 0; ///< font-feature-settings (tag, value): 0 off, 1 on, n alternate n
+    std::array<u32, kMaxFontFeatures> fontFeatureTags{};
+    std::array<u32, kMaxFontFeatures> fontFeatureValues{};
     TextAlignment textAlign = TextAlignment::Start;
     f32 opacity = 1.f;
     f32 shadowBlur = 0.f, shadowX = 0.f, shadowY = 0.f;
@@ -105,11 +120,12 @@ enum class Prop : u8 {
     AlignItems, AlignSelf, Justify, Wrap, Overflow, GridColumns, GridColumn, GridColumnSpan, GridRow, GridRowSpan,
     Left, Top, Right, Bottom, CenterX, CenterY, Background, Background2, Gradient, BorderColor, BorderWidth,
     RadiusTL, RadiusTR, RadiusBR, RadiusBL, Color, FontSize, TextAlign, Opacity, ShadowColor, ShadowBlur, ShadowX,
-    ShadowY, PointerEvents, BackdropBlur, Icon, IconSize, Cursor, Effect, TextDirection, Zoom, Count
+    ShadowY, PointerEvents, BackdropBlur, Icon, IconSize, Cursor, Effect, FontWeight, FontStretch, FontVariationSettings,
+    FontFeatureSettings, TextDirection, Zoom, Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
 
-enum class PropType : u8 { Bool, Enum, Length, Number, Color, Tracks, Ident, Effect };
+enum class PropType : u8 { Bool, Enum, Length, Number, Color, Tracks, Ident, Effect, FontSettings };
 struct PropInfo {
     Prop id;
     std::string_view cssName;
@@ -134,6 +150,8 @@ struct PropValue {
     std::array<Length, kMaxGridTracks> tracks{};
     u8 trackCount = 0;
     u32 ident = 0; ///< Ident / Effect: hashId of the name (0 = none); Effect parameters in tracks[0..trackCount) (px)
+    /// FontSettings: OpenType tags; their values in tracks[0..trackCount).value
+    std::array<u32, kMaxGridTracks> tags{};
     static PropValue ofBool(bool v) { PropValue p; p.type = PropType::Bool; p.b = v; return p; }
     static PropValue ofEnum(u8 v) { PropValue p; p.type = PropType::Enum; p.e = v; return p; }
     static PropValue ofLength(Length v) { PropValue p; p.type = PropType::Length; p.len = v; return p; }

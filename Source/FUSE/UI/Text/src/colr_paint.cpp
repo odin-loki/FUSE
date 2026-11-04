@@ -1,10 +1,12 @@
 // COLRv1 renderer: walks a base glyph's paint graph (OpenType COLR v1, paint formats 1..32) and renders it into a
-// premultiplied RGBA8 bitmap. Variable formats use their default values (no deltas applied). Every table read is
-// bounds-checked against the font file; recursion depth and visited nodes are capped (cycles, huge graphs).
+// premultiplied RGBA8 bitmap. Variable formats (Var* paints, VarColorStops, variable clip boxes) add their deltas from
+// COLR's item variation store at the font's coordinates (ColrSource::coords). Every table read is bounds-checked
+// against the font file; recursion depth and visited nodes are capped (cycles, huge graphs).
 //
 // Internals: float premultiplied RGBA layers in bitmap pixel coordinates; each layer covers a sub-rectangle of the
 // bitmap (the region that can still change the result). A transform T maps font units of the current paint to bitmap
 // pixels (y down). Groups (PaintGlyph children, composites, clipped PaintColrGlyph) render into temporary layers.
+#include "font_var.hpp"
 #include "glyph_paint.hpp"
 
 #include <algorithm>
@@ -304,6 +306,10 @@ public:
             m_numClips = u32(m_clipList + 1);
             if (!ok(std::uint64_t(m_clipList) + 5, std::uint64_t(m_numClips) * 7)) m_clipList = m_numClips = 0;
         }
+        if (!m_src.coords.empty()) { // item variation store (+ optional index map) for the Var* formats
+            if (const std::uint32_t vm = u32(colr + 26); vm && ok(std::uint64_t(colr) + vm, 6)) m_varMap = colr + vm;
+            if (const std::uint32_t iv = u32(colr + 30); iv && ok(std::uint64_t(colr) + iv, 8)) m_ivs = colr + iv;
+        }
         const std::uint32_t cpal = m_src.cpal;
         if (cpal && ok(cpal, 14)) {
             const std::uint16_t numPalettes = u16(cpal + 4);
@@ -389,6 +395,19 @@ private:
                m_d[p + 3];
     }
     double f2dot14(std::uint64_t p) const { return double(i16(p)) / 16384.0; }
+    static constexpr std::uint32_t kNoVar = 0xFFFFFFFFu;
+    // Delta of field k of a variable record with varIndexBase `vib` at the font's coordinates (0 when not varied).
+    double var(std::uint32_t vib, std::uint32_t k) const {
+        if (vib == kNoVar || !m_ivs) return 0.0;
+        if (!m_scalarsReady) {
+            ivsScalars(m_src.data, m_ivs, m_src.coords, m_scalars);
+            m_scalarsReady = true;
+        }
+        const std::uint32_t idx = vib + k;
+        std::uint32_t outer = idx >> 16, inner = idx & 0xFFFFu;
+        if (m_varMap && !deltaSetIndex(m_src.data, m_varMap, idx, outer, inner)) return 0.0;
+        return ivsDelta(m_src.data, m_ivs, outer, inner, m_scalars);
+    }
     double fixed(std::uint64_t p) const { return double(std::int32_t(u32(p))) / 65536.0; }
     // Offset24 child at byte `at` of paint p (0 when null or out of range).
     std::uint32_t child(std::uint32_t p, std::uint32_t at = 1) const {
@@ -426,10 +445,11 @@ private:
             else {
                 const std::uint64_t b = std::uint64_t(m_clipList) + u24(r + 4);
                 if (!ok(b, 9) || (m_d[b] != 1 && m_d[b] != 2)) return false;
-                out[0] = i16(b + 1);
-                out[1] = i16(b + 3);
-                out[2] = i16(b + 5);
-                out[3] = i16(b + 7);
+                const std::uint32_t vib = m_d[b] == 2 && ok(b, 13) ? u32(b + 9) : kNoVar;
+                out[0] = i16(b + 1) + var(vib, 0);
+                out[1] = i16(b + 3) + var(vib, 1);
+                out[2] = i16(b + 5) + var(vib, 2);
+                out[3] = i16(b + 7) + var(vib, 3);
                 return out[2] > out[0] && out[3] > out[1];
             }
         }
@@ -449,18 +469,20 @@ private:
         return {c.r * c.a, c.g * c.a, c.b * c.a, c.a}; // premultiplied
     }
 
-    bool readColorLine(std::uint32_t at, bool var, ColorLine& cl) const {
+    bool readColorLine(std::uint32_t at, bool isVar, ColorLine& cl) const {
         if (!ok(at, 3)) return false;
         const std::uint8_t ext = m_d[at];
         cl.extend = ext == 1 ? Extend::Repeat : ext == 2 ? Extend::Reflect : Extend::Pad;
         const std::uint16_t count = u16(at + 1);
-        const std::uint32_t size = var ? 10 : 6;
+        const std::uint32_t size = isVar ? 10 : 6;
         if (count == 0 || !ok(std::uint64_t(at) + 3, std::uint64_t(count) * size)) return false;
         cl.stops.clear();
         cl.stops.reserve(count);
         for (std::uint32_t k = 0; k < count; ++k) {
             const std::uint32_t s = at + 3 + k * size;
-            cl.stops.push_back({float(f2dot14(s)), colour(u16(s + 2), f2dot14(s + 4))});
+            const std::uint32_t vib = isVar ? u32(s + 6) : kNoVar; // VarColorStop: offset, alpha
+            cl.stops.push_back({float(f2dot14(s) + var(vib, 0) / 16384.0),
+                                colour(u16(s + 2), f2dot14(s + 4) + var(vib, 1) / 16384.0)});
         }
         std::stable_sort(cl.stops.begin(), cl.stops.end(), [](const Stop& a, const Stop& b) { return a.off < b.off; });
         return true;
@@ -470,17 +492,19 @@ private:
     bool shader(std::uint32_t p, const Affine& T, Shader& sh) const {
         const std::uint8_t f = m_d[p];
         if (f == 2 || f == 3) {
-            if (!ok(p, 5)) return false;
+            if (!ok(p, f == 3 ? 9 : 5)) return false;
             sh.kind = Shader::Solid;
-            sh.solid = colour(u16(p + 1), f2dot14(p + 3));
+            sh.solid = colour(u16(p + 1), f2dot14(p + 3) + (f == 3 ? var(u32(p + 5), 0) / 16384.0 : 0.0));
             return sh.solid.a > 0.f;
         }
         if (!invert(T, sh.inv)) return false;
-        const bool var = (f & 1) != 0;
+        const bool isVar = (f & 1) != 0;
+        // varIndexBase after the fixed fields (linear / radial: 16, sweep: 12)
+        const std::uint32_t vib = isVar && ok(p, f == 9 ? 16 : 20) ? u32(std::uint64_t(p) + (f == 9 ? 12 : 16)) : kNoVar;
         if (f == 4 || f == 5) {
-            if (!ok(p, 16) || !readColorLine(child(p), var, sh.line)) return false;
-            const double x0 = i16(p + 4), y0 = i16(p + 6), x1 = i16(p + 8), y1 = i16(p + 10), x2 = i16(p + 12),
-                         y2 = i16(p + 14);
+            if (!ok(p, 16) || !readColorLine(child(p), isVar, sh.line)) return false;
+            const double x0 = i16(p + 4) + var(vib, 0), y0 = i16(p + 6) + var(vib, 1), x1 = i16(p + 8) + var(vib, 2),
+                         y1 = i16(p + 10) + var(vib, 3), x2 = i16(p + 12) + var(vib, 4), y2 = i16(p + 14) + var(vib, 5);
             // p3: p1 projected onto the line through p0 perpendicular to p0p2 (colour lines are parallel to p0p2)
             const double v02x = x2 - x0, v02y = y2 - y0, v01x = x1 - x0, v01y = y1 - y0;
             const double n02 = v02x * v02x + v02y * v02y, n01 = v01x * v01x + v01y * v01y;
@@ -498,12 +522,13 @@ private:
             return true;
         }
         if (f == 6 || f == 7) {
-            if (!ok(p, 16) || !readColorLine(child(p), var, sh.line)) return false;
+            if (!ok(p, 16) || !readColorLine(child(p), isVar, sh.line)) return false;
             sh.kind = Shader::Radial;
-            sh.x0 = i16(p + 4);
-            sh.y0 = i16(p + 6);
-            sh.r0 = u16(p + 8);
-            const double x1 = i16(p + 10), y1 = i16(p + 12), r1 = u16(p + 14);
+            sh.x0 = i16(p + 4) + var(vib, 0);
+            sh.y0 = i16(p + 6) + var(vib, 1);
+            sh.r0 = std::max(0.0, u16(p + 8) + var(vib, 2));
+            const double x1 = i16(p + 10) + var(vib, 3), y1 = i16(p + 12) + var(vib, 4),
+                         r1 = std::max(0.0, u16(p + 14) + var(vib, 5));
             if (sh.r0 == 0.0 && r1 == 0.0) return false;
             sh.cdx = x1 - sh.x0;
             sh.cdy = y1 - sh.y0;
@@ -512,12 +537,12 @@ private:
             return true;
         }
         if (f == 8 || f == 9) {
-            if (!ok(p, 12) || !readColorLine(child(p), var, sh.line)) return false;
+            if (!ok(p, 12) || !readColorLine(child(p), isVar, sh.line)) return false;
             sh.kind = Shader::Sweep;
-            sh.x0 = i16(p + 4);
-            sh.y0 = i16(p + 6);
-            sh.start = (f2dot14(p + 8) + 1.0) * 180.0; // biased angles
-            sh.end = (f2dot14(p + 10) + 1.0) * 180.0;
+            sh.x0 = i16(p + 4) + var(vib, 0);
+            sh.y0 = i16(p + 6) + var(vib, 1);
+            sh.start = (f2dot14(p + 8) + var(vib, 2) / 16384.0 + 1.0) * 180.0; // biased angles
+            sh.end = (f2dot14(p + 10) + var(vib, 3) / 16384.0 + 1.0) * 180.0;
             return true;
         }
         return false;
@@ -527,48 +552,56 @@ private:
     bool transformOf(std::uint32_t p, Affine& m) const {
         const std::uint8_t f = m_d[p];
         const auto deg = [](double v) { return v * std::numbers::pi; }; // 1.0 = 180 degrees
+        // Var* formats: varIndexBase right after the fixed fields; field k gets delta k (FWORD units / F2DOT14 / Fixed)
+        static constexpr std::uint8_t kVibAt[32] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 0, 8,
+                                                    0, 12, 0, 6, 0, 10, 0, 6, 0, 10, 0, 8, 0, 12};
+        const std::uint32_t vib = f < 32 && kVibAt[f] && ok(p, kVibAt[f] + 4u) ? u32(p + kVibAt[f]) : kNoVar;
+        const auto fw = [&](std::uint32_t at, std::uint32_t k) { return i16(p + at) + var(vib, k); };
+        const auto f2 = [&](std::uint32_t at, std::uint32_t k) { return f2dot14(p + at) + var(vib, k) / 16384.0; };
         switch (f) {
         case 12:
         case 13: {
             if (!ok(p, 7)) return false;
             const std::uint64_t t = std::uint64_t(p) + u24(std::uint64_t(p) + 4);
-            if (!ok(t, 24)) return false;
-            m = {fixed(t), fixed(t + 4), fixed(t + 8), fixed(t + 12), fixed(t + 16), fixed(t + 20)};
+            if (!ok(t, f == 13 ? 28 : 24)) return false;
+            const std::uint32_t tv = f == 13 ? u32(t + 24) : kNoVar; // VarAffine2x3
+            const auto fx = [&](std::uint32_t k) { return fixed(t + 4 * k) + var(tv, k) / 65536.0; };
+            m = {fx(0), fx(1), fx(2), fx(3), fx(4), fx(5)};
             return true;
         }
         case 14:
         case 15:
             if (!ok(p, 8)) return false;
-            m = translate(i16(p + 4), i16(p + 6));
+            m = translate(fw(4, 0), fw(6, 1));
             return true;
         case 16:
         case 17:
             if (!ok(p, 8)) return false;
-            m = scaling(f2dot14(p + 4), f2dot14(p + 6));
+            m = scaling(f2(4, 0), f2(6, 1));
             return true;
         case 18:
         case 19:
             if (!ok(p, 12)) return false;
-            m = around(scaling(f2dot14(p + 4), f2dot14(p + 6)), i16(p + 8), i16(p + 10));
+            m = around(scaling(f2(4, 0), f2(6, 1)), fw(8, 2), fw(10, 3));
             return true;
         case 20:
         case 21:
             if (!ok(p, 6)) return false;
-            m = scaling(f2dot14(p + 4), f2dot14(p + 4));
+            m = scaling(f2(4, 0), f2(4, 0));
             return true;
         case 22:
         case 23:
             if (!ok(p, 10)) return false;
-            m = around(scaling(f2dot14(p + 4), f2dot14(p + 4)), i16(p + 6), i16(p + 8));
+            m = around(scaling(f2(4, 0), f2(4, 0)), fw(6, 1), fw(8, 2));
             return true;
         case 24:
         case 25:
         case 26:
         case 27: {
             if (!ok(p, f >= 26 ? 10 : 6)) return false;
-            const double a = deg(f2dot14(p + 4)), c = std::cos(a), s = std::sin(a);
+            const double a = deg(f2(4, 0)), c = std::cos(a), s = std::sin(a);
             m = {c, s, -s, c, 0, 0};
-            if (f >= 26) m = around(m, i16(p + 6), i16(p + 8));
+            if (f >= 26) m = around(m, fw(6, 1), fw(8, 2));
             return true;
         }
         case 28:
@@ -576,8 +609,8 @@ private:
         case 30:
         case 31: {
             if (!ok(p, f >= 30 ? 12 : 8)) return false;
-            m = {1, std::tan(deg(f2dot14(p + 6))), -std::tan(deg(f2dot14(p + 4))), 1, 0, 0};
-            if (f >= 30) m = around(m, i16(p + 8), i16(p + 10));
+            m = {1, std::tan(deg(f2(6, 1))), -std::tan(deg(f2(4, 0))), 1, 0, 0};
+            if (f >= 30) m = around(m, fw(8, 2), fw(10, 3));
             return true;
         }
         default: return false;
@@ -806,6 +839,9 @@ private:
     std::uint32_t m_baseList = 0, m_numBase = 0, m_layerList = 0, m_numLayers = 0, m_clipList = 0, m_numClips = 0;
     std::uint32_t m_recOff = 0;
     std::uint16_t m_first = 0, m_numEntries = 0, m_numRecords = 0;
+    std::uint32_t m_varMap = 0, m_ivs = 0; // COLR varIndexMap / ItemVariationStore (absolute; 0: none or not varied)
+    mutable std::vector<float> m_scalars;  // region scalars at m_src.coords (computed on first Var* read)
+    mutable bool m_scalarsReady = false;
     int m_budget = kMaxNodes;
     std::int64_t m_work = 0, m_live = 0, m_liveMax = 0; // pixel-operation and live temporary-pixel budgets
     bool m_abort = false;
