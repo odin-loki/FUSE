@@ -66,6 +66,10 @@ foreach(g shaping_scripts system_fonts cache_zero_alloc colrv1 dpi_1 dpi_1_25 dp
                          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endforeach()
 
+# Shaping / layout throughput over a ~1 MB mixed-script document (timing budgets: run alone).
+fuse_ui_test(fuse_text_bench_layout test_text_bench_layout.cpp)
+set_tests_properties(fuse_text_bench_layout PROPERTIES LABELS "fuse_ui;gate;text" RUN_SERIAL TRUE)
+
 # COOKED profile: cooker determinism (every profile), cooked layout / renders against the MINIMAL reference (COOKED)
 fuse_ui_test(fuse_text_cooked test_text_cooked.cpp)
 string(REPLACE ";" " " _cook_args "${FUSE_TEXT_UI_COOK_ARGS}")
