@@ -1,0 +1,368 @@
+// fuse_project_schema2 (plan UI5): project.json schema 2 + AppPresent + the minimal init path.
+//   * schema 1 files load unchanged (every Samples/**/project.json), write back byte-identical, migrate to schema 2
+//     and reload to the same manifest; schema 2 write -> parse -> write is a fixed point
+//   * invalid schema 2 files are rejected with a field path
+//   * the Application (FUSE UI) template (Templates/FuseUIApp, createAppProject) is a valid app project
+//   * ProjectHost brings up only {AppPresent} for an app project (no job scheduler, no game frame / renderer /
+//     physics), opens its window with the .fuseui and presents the first frame within 150 ms (headless)
+//   --native: the same on a real OS window (Win32 / X11), presented pixels match the CPU raster; exit 77 without one
+#include "fuse/app/project_host.hpp"
+#include "fuse/ui/doc/document.hpp"
+
+#include <fuse/core/init.hpp>
+#include <fuse/core/track_b.hpp>
+#include <fuse/project/loader.hpp>
+
+#include <cmath>
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <string>
+
+namespace fs = std::filesystem;
+namespace project = fuse::project;
+using namespace fuse::ui;
+
+static int g_fail = 0;
+#define CHECK(c) do { if (!(c)) { std::fprintf(stderr, "%s:%d: CHECK failed: %s\n", __FILE__, __LINE__, #c); ++g_fail; } } while (0)
+
+namespace {
+
+#ifndef FUSE_REPO_ROOT
+#define FUSE_REPO_ROOT "."
+#endif
+
+std::string readFile(const fs::path& p) {
+    std::ifstream f(p, std::ios::binary);
+    std::stringstream ss;
+    ss << f.rdbuf();
+    std::string s = ss.str();
+    std::erase(s, '\r'); // CRLF checkouts
+    return s;
+}
+
+void wipe(const fs::path& p) {
+    std::error_code ec;
+    fs::remove_all(p, ec);
+}
+
+bool sameManifest(const project::ProjectManifest& a, const project::ProjectManifest& b) {
+    const auto sameWindows = [&] {
+        if (a.windows.size() != b.windows.size()) return false;
+        for (std::size_t i = 0; i < a.windows.size(); ++i) {
+            const auto &x = a.windows[i], &y = b.windows[i];
+            if (x.id != y.id || x.title != y.title || x.width != y.width || x.height != y.height || x.root != y.root ||
+                x.redraw != y.redraw)
+                return false;
+        }
+        return true;
+    };
+    return a.name == b.name && a.kind == b.kind && a.dimensions.enable3D == b.dimensions.enable3D &&
+           a.dimensions.enable2D == b.dimensions.enable2D && a.dimensions.enableUI == b.dimensions.enableUI &&
+           a.modules.ai == b.modules.ai && a.modules.cinematics == b.modules.cinematics && a.modules.fx == b.modules.fx &&
+           a.modules.mechanics == b.modules.mechanics && a.modules.adventure == b.modules.adventure &&
+           a.defaultWorld3D == b.defaultWorld3D && a.defaultWorld2D == b.defaultWorld2D && a.workerCap == b.workerCap &&
+           a.requiredFeatures == b.requiredFeatures && a.ui.root == b.ui.root && a.ui.styles == b.ui.styles &&
+           a.ui.theme == b.ui.theme && a.ui.redraw == b.ui.redraw && a.ui.profile == b.ui.profile &&
+           a.ui.text == b.ui.text && sameWindows();
+}
+
+void schema1Unchanged() {
+    // every schema 1 project in the repo loads as kind game and writes back byte-identical (modulo key order the
+    // writer always produced; files written by hand are compared through a reload instead)
+    int count = 0;
+    std::error_code ec;
+    for (const auto& entry : fs::recursive_directory_iterator(fs::path(FUSE_REPO_ROOT) / "Samples", ec)) {
+        if (!entry.is_regular_file() || entry.path().filename() != "project.json") continue;
+        const project::LoadResult r = project::loadFromFile(entry.path().string());
+        if (r.manifest.schemaVersion != 1u) continue;
+        ++count;
+        CHECK(r.status == project::LoadStatus::Ok);
+        CHECK(r.manifest.kind == project::ProjectKind::Game);
+        CHECK(r.manifest.windows.empty() && r.manifest.requiredFeatures == 0u && r.manifest.ui.root.empty());
+        CHECK(!project::planInit(r.manifest).appShell);
+        const std::string again = project::writeManifestJson(r.manifest);
+        CHECK(again.find("\"schemaVersion\": 1,") != std::string::npos && again.find("\"kind\"") == std::string::npos);
+        const project::LoadResult reread = project::parseManifest(again, r.manifest.projectRoot);
+        CHECK(reread.status == project::LoadStatus::Ok && sameManifest(reread.manifest, r.manifest));
+        // migrate in memory -> schema 2 text -> same manifest, now schema 2
+        project::ProjectManifest migrated = r.manifest;
+        CHECK(project::migrateToLatest(migrated) && !project::migrateToLatest(migrated));
+        const std::string v2 = project::writeManifestJson(migrated);
+        CHECK(v2.find("\"schemaVersion\": 2,") != std::string::npos && v2.find("\"kind\": \"game\"") != std::string::npos);
+        const project::LoadResult r2 = project::parseManifest(v2, r.manifest.projectRoot);
+        if (r2.status != project::LoadStatus::Ok) std::fprintf(stderr, "  %s: %s\n", entry.path().string().c_str(), r2.error.c_str());
+        CHECK(r2.status == project::LoadStatus::Ok && r2.manifest.schemaVersion == 2u && sameManifest(r2.manifest, r.manifest));
+        CHECK(project::writeManifestJson(r2.manifest) == v2);
+    }
+    std::printf("  schema 1: %d sample project(s) load unchanged, round trip and migrate\n", count);
+    CHECK(count >= 3);
+
+    // a schema 1 file written by the old writer is reproduced byte for byte
+    project::ProjectManifest m;
+    m.schemaVersion = 1;
+    m.name = "Legacy \"quoted\"";
+    m.dimensions = {true, false, true};
+    m.modules.fx = true;
+    m.defaultWorld3D = "worlds/a.fuselevel";
+    m.workerCap = 4;
+    const std::string text = project::writeManifestJson(m);
+    const std::string expected = "{\n  \"schemaVersion\": 1,\n  \"name\": \"Legacy \\\"quoted\\\"\",\n  \"dimensions\": {\n"
+                                 "    \"enable3D\": true,\n    \"enable2D\": false,\n    \"enableUI\": true\n  },\n"
+                                 "  \"modules\": {\n    \"ai\": false,\n    \"cinematics\": false,\n    \"fx\": true,\n"
+                                 "    \"mechanics\": false,\n    \"adventure\": false\n  },\n"
+                                 "  \"defaultWorld3D\": \"worlds/a.fuselevel\",\n  \"defaultWorld2D\": \"\",\n"
+                                 "  \"workerCap\": 4\n}\n";
+    CHECK(text == expected);
+
+    // --migrate on disk: schema 1 file -> schema 2 file, second run is a no-op
+    const fs::path dir = fs::temp_directory_path() / "fuse_project_schema2" / "migrate";
+    wipe(dir);
+    CHECK(project::saveToDirectory(m, dir.string()).ok);
+    const project::MigrateResult mr = project::migrateProjectFile(dir.string(), true);
+    CHECK(mr.ok && mr.changed && mr.fromVersion == 1u);
+    const project::LoadResult after = project::loadFromDirectory(dir.string());
+    CHECK(after.status == project::LoadStatus::Ok && after.manifest.schemaVersion == 2u && sameManifest(after.manifest, m));
+    const project::MigrateResult again = project::migrateProjectFile(dir.string(), true);
+    CHECK(again.ok && !again.changed && again.fromVersion == 2u);
+}
+
+void schema2RoundTrip() {
+    project::ProjectManifest m;
+    m.schemaVersion = 2;
+    m.name = "Tool";
+    m.kind = project::ProjectKind::Hybrid;
+    m.dimensions = {true, false, true};
+    m.ui.root = "ui/main.fuseui";
+    m.ui.styles = {"ui/theme.fusestyle", "ui/extra.fusestyle"};
+    m.ui.theme = "dark";
+    m.ui.profile = project::UiProfile::Editor;
+    m.ui.text = project::TextProfile::Full;
+    m.requiredFeatures = project::hostFeatureBit(project::HostFeature::Jobs) | project::hostFeatureBit(project::HostFeature::Script);
+    project::WindowSettings a;
+    a.title = "Main \"window\"";
+    a.width = 1280;
+    a.height = 720;
+    project::WindowSettings b;
+    b.id = "inspector";
+    b.root = "ui/inspector.fuseui";
+    b.redraw = project::RedrawMode::Continuous;
+    m.windows = {a, b};
+    CHECK(project::validateManifest(m).empty());
+    const std::string text = project::writeManifestJson(m);
+    const project::LoadResult r = project::parseManifest(text, "/root");
+    if (r.status != project::LoadStatus::Ok) std::fprintf(stderr, "  %s\n", r.error.c_str());
+    CHECK(r.status == project::LoadStatus::Ok && sameManifest(r.manifest, m) && r.manifest.projectRoot == "/root");
+    CHECK(project::writeManifestJson(r.manifest) == text);
+
+    // plans: hybrid starts the app shell and defers the game side; game starts everything; app only AppPresent
+    const project::InitPlan hp = project::planInit(m);
+    CHECK(hp.appShell && hp.has(project::HostFeature::AppPresent) && hp.has(project::HostFeature::Jobs) &&
+          hp.has(project::HostFeature::Viewport) && !hp.has(project::HostFeature::GameFrame) &&
+          !hp.has(project::HostFeature::Renderer3D) && !hp.has(project::HostFeature::Physics));
+    CHECK((hp.deferred & project::hostFeatureBit(project::HostFeature::Renderer3D)) != 0u &&
+          (hp.deferred & project::hostFeatureBit(project::HostFeature::GameFrame)) != 0u);
+    project::ProjectManifest game;
+    game.name = "G";
+    const project::InitPlan gp = project::planInit(game);
+    CHECK(!gp.appShell && gp.has(project::HostFeature::GameFrame) && gp.has(project::HostFeature::Renderer3D) &&
+          gp.has(project::HostFeature::Physics) && !gp.has(project::HostFeature::AppPresent));
+    const project::InitPlan ap = project::planInit(project::appTemplateManifest("A"));
+    CHECK(ap.appShell && ap.startup == project::hostFeatureBit(project::HostFeature::AppPresent) && ap.deferred == 0u);
+    std::printf("  plans: app [%s], hybrid [%s] deferred [%s], game [%s]\n", project::hostFeatureList(ap.startup).c_str(),
+                project::hostFeatureList(hp.startup).c_str(), project::hostFeatureList(hp.deferred).c_str(),
+                project::hostFeatureList(gp.startup).c_str());
+}
+
+void rejectsInvalid() {
+    const auto base = [](std::string_view extra) {
+        return std::string("{ \"schemaVersion\": 2, \"name\": \"X\", \"kind\": \"app\", "
+                           "\"dimensions\": { \"enable3D\": false, \"enable2D\": false, \"enableUI\": true }, "
+                           "\"ui\": { \"root\": \"ui/main.fuseui\" }") +
+               std::string(extra) + " }";
+    };
+    CHECK(project::parseManifest(base(""), "").status == project::LoadStatus::Ok);
+    CHECK(project::parseManifest(base(", \"x-editor\": { \"any\": 1 }"), "").status == project::LoadStatus::Ok);
+    struct Case {
+        std::string text;
+        project::LoadStatus status;
+        const char* error;
+    };
+    const Case cases[] = {
+        {"{ \"schemaVersion\": 3, \"name\": \"X\" }", project::LoadStatus::UnsupportedSchema, "expected 1 or 2"},
+        {"{ \"schemaVersion\": 2, \"name\": \"X\", }", project::LoadStatus::ParseError, "line 1"},
+        {"{ \"schemaVersion\": 2, \"name\": \"X\", \"name\": \"Y\" }", project::LoadStatus::ParseError, "duplicate key"},
+        {"{ \"schemaVersion\": 2 }", project::LoadStatus::Invalid, "$.name: required"},
+        {base(", \"kindd\": \"app\""), project::LoadStatus::Invalid, "$.kindd: unknown key"},
+        {"{ \"schemaVersion\": 2, \"name\": \"X\", \"kind\": \"tool\" }", project::LoadStatus::Invalid, "$.kind: expected one of"},
+        {base(", \"requiredFeatures\": [\"Teleport\"]"), project::LoadStatus::Invalid, "$.requiredFeatures[0]"},
+        {base(", \"requiredFeatures\": [\"Physics\"]"), project::LoadStatus::Invalid, "need kind \"hybrid\""},
+        {base(", \"windows\": [ { \"width\": 0 } ]"), project::LoadStatus::Invalid, "windows[0]: width / height"},
+        {base(", \"windows\": [ { \"width\": 99999 } ]"), project::LoadStatus::Invalid, "$.windows[0].width: expected an integer"},
+        {base(", \"windows\": [ {}, {} ]"), project::LoadStatus::Invalid, "duplicate window id"},
+        {base(", \"windows\": [ { \"id\": \"a b\" } ]"), project::LoadStatus::Invalid, "windows[0].id"},
+        {base(", \"windows\": [ { \"root\": \"../outside.fuseui\" } ]"), project::LoadStatus::Invalid, "inside the project"},
+        {"{ \"schemaVersion\": 2, \"name\": \"X\", \"kind\": \"hybrid\", \"ui\": { \"root\": \"main.json\" } }",
+         project::LoadStatus::Invalid, "must end with .fuseui"},
+        {"{ \"schemaVersion\": 2, \"name\": \"X\", \"kind\": \"app\" }", project::LoadStatus::Invalid, "no 3D / 2D worlds"},
+        {"{ \"schemaVersion\": 2, \"name\": \"X\", \"kind\": \"app\", \"dimensions\": { \"enable3D\": false, "
+         "\"enable2D\": false } }", project::LoadStatus::Invalid, "ui.root: app and hybrid projects need"},
+        {base(", \"ui\": { \"root\": \"ui/a.fuseui\" }"), project::LoadStatus::ParseError, "duplicate key \"ui\""},
+        {"{ \"schemaVersion\": 2, \"name\": \"X\", \"ui\": { \"redraw\": \"sometimes\" } }", project::LoadStatus::Invalid,
+         "$.ui.redraw: expected one of onDemand, continuous"},
+        {"{ \"schemaVersion\": 2, \"name\": \"X\", \"kind\": \"hybrid\", \"ui\": { \"root\": \"a.fuseui\", "
+         "\"styles\": [\"/abs.fusestyle\"] } }", project::LoadStatus::Invalid, "ui.styles[0]"},
+        {"{ \"schemaVersion\": 2, \"name\": \"X\", \"ui\": { \"text\": \"huge\" } }", project::LoadStatus::Invalid, "$.ui.text"},
+        {"{ \"schemaVersion\": 2, \"name\": \"X\", \"requiredFeatures\": [\"AppPresent\"] }", project::LoadStatus::Invalid,
+         "need kind \"app\" or \"hybrid\""},
+        {"{ \"schemaVersion\": 2, \"name\": \"X\", \"windows\": [ {} ] }", project::LoadStatus::Invalid, "only app and hybrid"},
+        {"{ \"schemaVersion\": 2, \"name\": \"X\", \"dimensions\": { \"enable3D\": 1 } }", project::LoadStatus::Invalid,
+         "$.dimensions.enable3D: expected true or false"},
+        {"{ \"schemaVersion\": 2, \"name\": \"\" }", project::LoadStatus::Invalid, "name: must not be empty"},
+    };
+    int n = 0;
+    for (const Case& c : cases) {
+        const project::LoadResult r = project::parseManifest(c.text, "");
+        const bool ok = r.status == c.status && r.error.find(c.error) != std::string::npos;
+        if (!ok) std::fprintf(stderr, "  case %d: status %d error '%s' (want '%s')\n", n, int(r.status), r.error.c_str(), c.error);
+        CHECK(ok);
+        ++n;
+    }
+    std::printf("  rejects %d invalid manifests with field paths\n", n);
+}
+
+void templateMatches() {
+    const fs::path tpl = fs::path(FUSE_REPO_ROOT) / "Templates" / "FuseUIApp";
+    const project::LoadResult r = project::loadFromDirectory(tpl.string());
+    if (r.status != project::LoadStatus::Ok) std::fprintf(stderr, "  template: %s\n", r.error.c_str());
+    CHECK(r.status == project::LoadStatus::Ok && r.manifest.kind == project::ProjectKind::App);
+    CHECK(sameManifest(r.manifest, project::appTemplateManifest("FuseUIApp")));
+    CHECK(readFile(tpl / "project.json") == project::writeManifestJson(project::appTemplateManifest("FuseUIApp")));
+    CHECK(readFile(tpl / "ui" / "main.fuseui") == project::appTemplateMainUi());
+
+    const fs::path dir = fs::temp_directory_path() / "fuse_project_schema2" / "NewApp";
+    wipe(dir);
+    CHECK(project::createAppProject(dir.string(), "").ok);
+    CHECK(!project::createAppProject(dir.string(), "").ok); // never overwrites
+    const project::LoadResult created = project::loadFromDirectory(dir.string());
+    CHECK(created.status == project::LoadStatus::Ok && created.manifest.name == "NewApp" &&
+          created.manifest.kind == project::ProjectKind::App && fs::exists(dir / "ui" / "main.fuseui"));
+}
+
+int minimalInit(bool native) {
+    const fs::path dir = fs::temp_directory_path() / "fuse_project_schema2" / (native ? "HostNative" : "Host");
+    wipe(dir);
+    CHECK(project::createAppProject(dir.string(), "Schema2 App").ok);
+    CHECK(!fuse::core::trackBHostFeatureEnabled(fuse::core::TrackBHostFeature::AppPresent));
+    CHECK(!fuse::core::isInitialized());
+    auto started = fuse::app::ProjectHost::start({.projectPath = dir.string(), .showWindows = native});
+    if (!started) {
+        std::fprintf(stderr, "  ProjectHost::start: %s\n", started.error().c_str());
+        ++g_fail;
+        return 1;
+    }
+    fuse::app::ProjectHost& host = **started;
+    if (native && !host.native()) {
+        std::printf("fuse_project_schema2_native: skipped (no display)\n");
+        return 77;
+    }
+    const auto& t = host.times();
+    std::printf("  %s: up [%s], first frame %.2f ms (manifest %.2f, subsystems %.2f, windows %.2f)\n",
+                native ? "native" : "headless", project::hostFeatureList(host.broughtUp()).c_str(), t.firstFrame,
+                t.manifest, t.subsystems, t.windows);
+    // only the app shell + AppPresent: no job scheduler, no game frame, renderer, worlds or physics
+    CHECK(host.broughtUp() == project::hostFeatureBit(project::HostFeature::AppPresent));
+    CHECK(host.plan().startup == host.broughtUp() && host.plan().deferred == 0u);
+    CHECK(fuse::core::trackBHostFeatureEnabled(fuse::core::TrackBHostFeature::AppPresent));
+    CHECK(!fuse::core::trackBHostFeatureEnabled(fuse::core::TrackBHostFeature::EditorViewportPresent));
+    CHECK(!fuse::core::isInitialized());
+    CHECK(host.app().windowCount() == 1);
+    fuse::app::AppWindow* w = host.window("main");
+    CHECK(w != nullptr);
+    if (!w) return 1;
+    CHECK(w->framesPresented() >= 1 && w->title() == "Schema2 App");
+    CHECK(w->ui().find("action").valid() && w->ui().text(w->ui().find("title")) == "Hello from FUSE UI");
+    // the .fuseui is what the window shows: the button face is not the clear colour
+    const Image& img = w->rasterize({});
+    const Rect b = w->ui().rect(w->ui().find("action"));
+    CHECK(img.width == 800 && img.height == 600 && img.at(int(b.x + b.w * 0.5f), int(b.y + 2.f)) != 0xFF000000u);
+    if (!native) {
+        CHECK(t.firstFrame <= 150.0);
+    } else {
+        Image shown;
+        for (int i = 0; i < 20; ++i) host.app().step(0.005f);
+        w->requestRedraw();
+        const u64 f0 = w->framesPresented();
+        for (int i = 0; i < 400 && w->framesPresented() <= f0; ++i) host.app().step(0.01f);
+        CHECK(host.native()->capture(*w, shown));
+        const Image& ref = w->rasterize({});
+        int maxErr = 0;
+        std::size_t differ = 0;
+        if (shown.width == ref.width && shown.height == ref.height) {
+            for (std::size_t i = 0; i < ref.pixels.size(); ++i) {
+                int e = 0;
+                for (int c = 0; c < 3; ++c)
+                    e = std::max(e, std::abs(int((shown.pixels[i] >> (8 * c)) & 0xFF) - int((ref.pixels[i] >> (8 * c)) & 0xFF)));
+                maxErr = std::max(maxErr, e);
+                differ += e != 0;
+            }
+        } else {
+            maxErr = 255;
+        }
+        const bool gpu = host.native()->gpuDraws(*w);
+        std::printf("  native window: %dx%d via %s, max channel error %d, %zu pixels differ\n", shown.width, shown.height,
+                    gpu ? "GPU draw list" : "CPU raster", maxErr, differ);
+        CHECK(maxErr <= 2 && double(differ) < 0.005 * double(ref.pixels.size()));
+        // idle: no presents while nothing changes
+        const u64 idle0 = w->framesPresented();
+        for (int i = 0; i < 40; ++i) host.app().step(0.005f);
+        CHECK(w->framesPresented() == idle0);
+    }
+    started->reset(); // tear down: AppPresent withdrawn
+    CHECK(!fuse::core::trackBHostFeatureEnabled(fuse::core::TrackBHostFeature::AppPresent));
+
+    // game projects are not run by the app host; unsupported features are refused by name
+    project::ProjectManifest game;
+    game.name = "G";
+    const fs::path gdir = dir.parent_path() / (native ? "GameN" : "Game");
+    CHECK(project::saveToDirectory(game, gdir.string()).ok);
+    auto refused = fuse::app::ProjectHost::start({.projectPath = gdir.string(), .showWindows = false});
+    CHECK(!refused && refused.error().find("game project") != std::string::npos);
+    project::ProjectManifest scripted = project::appTemplateManifest("S");
+    scripted.requiredFeatures = project::hostFeatureBit(project::HostFeature::Script);
+    const fs::path sdir = dir.parent_path() / (native ? "ScriptedN" : "Scripted");
+    wipe(sdir);
+    CHECK(project::createAppProject(sdir.string(), "S").ok && project::saveToDirectory(scripted, sdir.string()).ok);
+    auto noScript = fuse::app::ProjectHost::start({.projectPath = sdir.string(), .showWindows = false});
+    CHECK(!noScript && noScript.error().find("Script") != std::string::npos);
+    // a declared Jobs feature starts the job scheduler and only that
+    project::ProjectManifest jobs = project::appTemplateManifest("J");
+    jobs.requiredFeatures = project::hostFeatureBit(project::HostFeature::Jobs);
+    CHECK(project::saveToDirectory(jobs, sdir.string()).ok);
+    {
+        auto withJobs = fuse::app::ProjectHost::start({.projectPath = sdir.string(), .showWindows = false});
+        CHECK(withJobs && (*withJobs)->broughtUp() == (project::hostFeatureBit(project::HostFeature::AppPresent) |
+                                                       project::hostFeatureBit(project::HostFeature::Jobs)));
+        CHECK(fuse::core::isInitialized());
+    }
+    CHECK(!fuse::core::isInitialized());
+    return 0;
+}
+
+} // namespace
+
+int main(int argc, char** argv) {
+    const bool native = argc > 1 && std::string(argv[1]) == "--native";
+    if (!native) {
+        schema1Unchanged();
+        schema2RoundTrip();
+        rejectsInvalid();
+        templateMatches();
+    }
+    const int rc = minimalInit(native);
+    if (rc == 77) return 77;
+    const char* name = native ? "fuse_project_schema2_native" : "fuse_project_schema2";
+    std::printf("%s: %s\n", name, g_fail ? "FAILED" : "OK");
+    return g_fail ? 1 : 0;
+}

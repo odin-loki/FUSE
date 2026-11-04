@@ -24,6 +24,15 @@ else()
     target_link_libraries(fuse_app_native PRIVATE ${CMAKE_DL_LIBS})
 endif()
 
+# fuse_app_project (in tree): project.json schema 2 app projects through the minimal init path (ProjectHost), and the
+# fuse_app_host runner.
+if(TARGET fuse_project AND TARGET fuse_core)
+    add_library(fuse_app_project STATIC src/project_host.cpp)
+    target_link_libraries(fuse_app_project PUBLIC fuse_app_native fuse_project PRIVATE fuse_core)
+    add_executable(fuse_app_host samples/app_host.cpp)
+    target_link_libraries(fuse_app_host PRIVATE fuse_app_project)
+endif()
+
 option(FUSE_BUILD_APP_SAMPLES "Build the fuse_app samples (hello_app, notes_app)" ON)
 if(FUSE_BUILD_APP_SAMPLES)
     foreach(s hello_app notes_app)

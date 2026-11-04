@@ -109,6 +109,14 @@ if(TARGET fuse_ui_vk)
     fuse_ui_test(fuse_ui_vk_parity test_vk_parity.cpp)
     target_link_libraries(fuse_ui_vk_parity PRIVATE fuse_ui_vk ${FUSE_UI_VK_LINK})
     set_tests_properties(fuse_ui_vk_parity PROPERTIES SKIP_RETURN_CODE 77 LABELS "ui;gpu")
+    # §6 HUD GPU time at 1440p (enforced on hardware GPUs, reported on CPU devices). Not in MSVC in-tree builds: there
+    # vulkan-1.lib and the fuse_rhi volk symbols collide for vk_headless tests (fuse_ui_vk_parity fails to link the
+    # same way); use the standalone UI build on Windows.
+    if(NOT (MSVC AND TARGET fuse_rhi))
+        fuse_ui_test(fuse_ui_vk_budget test_vk_budget.cpp)
+        target_link_libraries(fuse_ui_vk_budget PRIVATE fuse_ui_vk ${FUSE_UI_VK_LINK})
+        set_tests_properties(fuse_ui_vk_budget PROPERTIES SKIP_RETURN_CODE 77 LABELS "ui;gpu;fuse_ui")
+    endif()
 endif()
 
 fuse_ui_test(fuse_ui_text_full test_text_full.cpp)
@@ -157,6 +165,13 @@ foreach(g font_picker file_dialog node_graph curve_timeline viewport code_edit d
 endforeach()
 
 # UI5 gates: fuse_app on-demand loop (virtual clock, headless presenter)
+# Real-window gates use lavapipe on Linux and under Wine (cross builds); native Windows uses the installed driver (a
+# Linux ICD path there hides every GPU and drops the presenter to GDI).
+if(WIN32 AND NOT CMAKE_CROSSCOMPILING)
+    set(FUSE_APP_TEST_VK_ENV "")
+else()
+    set(FUSE_APP_TEST_VK_ENV "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
+endif()
 if(TARGET fuse_app)
     foreach(g idle_zero_frames multiwindow hello_startup settings)
         add_executable(fuse_app_${g} test_app.cpp)
@@ -177,7 +192,7 @@ if(TARGET fuse_app)
             add_test(NAME fuse_app_native_window COMMAND fuse_app_native_window --out=${CMAKE_CURRENT_BINARY_DIR})
         endif()
         set_tests_properties(fuse_app_native_window PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300
-            ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json" LABELS "fuse_ui;gate;vulkan")
+            ENVIRONMENT "${FUSE_APP_TEST_VK_ENV}" LABELS "fuse_ui;gate;vulkan")
         add_executable(fuse_app_os_popups test_app_os_popups.cpp)
         target_link_libraries(fuse_app_os_popups PRIVATE fuse_app_native)
         if(FUSE_UI_XVFB_RUN AND NOT WIN32)
@@ -187,7 +202,34 @@ if(TARGET fuse_app)
             add_test(NAME fuse_app_os_popups COMMAND fuse_app_os_popups --out=${CMAKE_CURRENT_BINARY_DIR})
         endif()
         set_tests_properties(fuse_app_os_popups PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300
-            ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json" LABELS "fuse_ui;gate;vulkan")
+            ENVIRONMENT "${FUSE_APP_TEST_VK_ENV}" LABELS "fuse_ui;gate;vulkan")
+        # §6 idle budget on a real window: zero presents, ~0 % CPU, a handful of loop wakeups over 3 s
+        add_executable(fuse_app_idle_native test_app_idle_native.cpp)
+        target_link_libraries(fuse_app_idle_native PRIVATE fuse_app_native)
+        if(FUSE_UI_XVFB_RUN AND NOT WIN32)
+            add_test(NAME fuse_app_idle_native COMMAND ${FUSE_UI_XVFB_RUN} -a -s "-screen 0 1280x800x24"
+                     $<TARGET_FILE:fuse_app_idle_native>)
+        else()
+            add_test(NAME fuse_app_idle_native COMMAND fuse_app_idle_native)
+        endif()
+        set_tests_properties(fuse_app_idle_native PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
+            ENVIRONMENT "${FUSE_APP_TEST_VK_ENV}" LABELS "fuse_ui;gate;vulkan")
+    endif()
+    # project.json schema 2 + AppPresent + minimal init path (in tree: needs fuse_project / fuse_core)
+    if(TARGET fuse_app_project)
+        add_executable(fuse_project_schema2 test_project_schema2.cpp)
+        target_link_libraries(fuse_project_schema2 PRIVATE fuse_app_project fuse_core)
+        target_compile_definitions(fuse_project_schema2 PRIVATE FUSE_REPO_ROOT="${FUSE_UI_REPO_ROOT}")
+        add_test(NAME fuse_project_schema2 COMMAND fuse_project_schema2)
+        set_tests_properties(fuse_project_schema2 PROPERTIES LABELS "fuse_ui;gate;project" TIMEOUT 120)
+        if(FUSE_UI_XVFB_RUN AND NOT WIN32)
+            add_test(NAME fuse_project_schema2_native COMMAND ${FUSE_UI_XVFB_RUN} -a -s "-screen 0 1280x800x24"
+                     $<TARGET_FILE:fuse_project_schema2> --native)
+        else()
+            add_test(NAME fuse_project_schema2_native COMMAND fuse_project_schema2 --native)
+        endif()
+        set_tests_properties(fuse_project_schema2_native PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
+            ENVIRONMENT "${FUSE_APP_TEST_VK_ENV}" LABELS "fuse_ui;gate;project;vulkan")
     endif()
     if(TARGET hello_app)
         add_test(NAME fuse_app_hello_sample COMMAND hello_app --screenshot=${CMAKE_CURRENT_BINARY_DIR}/hello_app.png)

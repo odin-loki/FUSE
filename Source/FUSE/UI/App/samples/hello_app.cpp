@@ -1,10 +1,12 @@
 // hello_app (plan UI5 sample): a .fuseui document, one bound counter, on-demand loop.
-//   hello_app [--ui=path/hello.fuseui] [--screenshot=out.png] [--clicks=N]
+//   hello_app [--ui=path/hello.fuseui] [--screenshot=out.png] [--clicks=N] [--first-frame] [--software] [--cpu-upload]
 // With --screenshot the app clicks the button N times (default 3), writes the frame and exits (headless).
+// --first-frame exits after the OS window's first present and prints the time since main() (baselines).
 #include "fuse/app/app.hpp"
 #include "fuse/app/native.hpp"
 #include "fuse/ui/doc/document.hpp"
 
+#include <chrono>
 #include <cstdio>
 
 #ifndef FUSE_APP_SAMPLE_UI_DIR
@@ -12,6 +14,7 @@
 #endif
 
 int main(int argc, char** argv) {
+    const auto t0 = std::chrono::steady_clock::now();
     fuse::app::Application app{{.name = "hello_app", .argc = argc, .argv = argv, .loadSettings = false}};
     auto& window = app.createWindow({.title = "Hello", .width = 360, .height = 220});
     fuse::ui::doc::Model model;
@@ -37,12 +40,24 @@ int main(int argc, char** argv) {
                     int(shot.size()), shot.data());
         return 0;
     }
-    // a real OS window (X11 / Win32) with the Vulkan swapchain presenter; headless when there is no display
-    fuse::app::NativePlatform native(app);
+    // a real OS window (X11 / Win32) with the Vulkan swapchain presenter; headless when there is no display.
+    // --software: no Vulkan (GDI on Win32); --cpu-upload: Vulkan presenter fed by the CPU raster.
+    fuse::app::NativeOptions options;
+    options.vulkan = !app.args().has("software");
+    if (app.args().has("cpu-upload")) options.drawMode = fuse::app::VkDrawMode::CpuUpload;
+    fuse::app::NativePlatform native(app, options);
     const fuse::app::PresenterKind kind = native.show(window);
     static const char* const kKinds[] = {"headless", "vulkan", "gdi"};
     std::fprintf(stderr, "hello_app: presenter %s%s%.*s%s\n", kKinds[int(kind)], native.gpuName().empty() ? "" : " on ",
                  int(native.gpuName().size()), native.gpuName().data(), native.gpuDraws(window) ? " (GPU draw list)" : "");
+    if (app.args().has("first-frame")) {
+        // startup measurement: exit once the OS window presented its first frame
+        for (int i = 0; i < 1000 && window.framesPresented() == 0; ++i) app.step(i == 0 ? 0.f : 0.005f);
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        std::printf("hello_app: first frame %.2f ms after main() (%llu presented)\n", ms,
+                    static_cast<unsigned long long>(window.framesPresented()));
+        return window.framesPresented() ? 0 : 1;
+    }
     if (const std::string_view shot = app.args().get("window-shot"); !shot.empty()) {
         // smoke run: present a few frames into the OS window, read the window back, write it, exit
         for (int i = 0; i < 200 && window.framesPresented() < 3; ++i) {
