@@ -26,6 +26,7 @@ struct ScrollProfile {
     f32 rubberBand = 0.55f;     ///< iOS-style resistance coefficient
     f32 springStiffness = 180.f;///< spring-back (critically damped)
     f32 dragThreshold = 6.f;    ///< px before a press becomes a drag
+    f32 minZoom = 1.f, maxZoom = 1.f; ///< content zoom range (pinch / Ctrl+wheel); equal = zoom off
     static ScrollProfile desktop(); ///< short glide, no overscroll
     static ScrollProfile ios();     ///< long glide, rubber band + bounce
     static ScrollProfile android(); ///< medium glide, edge clamp (glow is visual only)
@@ -62,9 +63,15 @@ private:
 };
 
 /// Vertical kinetic scroll container (role ScrollArea). The physics run on a context timer only while moving, so an
-/// idle area costs nothing.
+/// idle area costs nothing. With profile.maxZoom > minZoom a two-finger pinch (EventType::Pinch) or Ctrl+wheel zooms
+/// the content: the area's children get `zoom` (every length and font scales, text re-rasterised crisp) and the point
+/// under the fingers / pointer stays put. Zooming emits ValueChanged {value = zoom} on the area.
 NodeHandle kineticScrollArea(UiContext& ui, NodeHandle parent, const ScrollProfile& profile = ScrollProfile::ios(), std::string_view id = {});
 const KineticScroller* kineticScroller(const UiContext& ui, NodeHandle area);
+f32 kineticZoom(const UiContext& ui, NodeHandle area);
+/// Sets the content zoom (clamped to the profile range), keeping the content under `focus` (context coordinates) in
+/// place. Children added later take the zoom on the next call.
+void setKineticZoom(UiContext& ui, NodeHandle area, f32 zoom, Vec2 focus);
 void registerPlatformFeel(UiContext& ui);
 
 } // namespace fuse::ui::widgets

@@ -1446,7 +1446,10 @@ bool UiContext::touchDown(u32 id, Vec2 p) {
         if (m_touches[k].id == id) return touchMove(id, p);
     if (m_touchCount == kMaxTouches) return false;
     m_touches[m_touchCount++] = {id, p, p};
-    if (m_touchCount == 2) m_pinchStart = std::hypot(m_touches[1].pos.x - m_touches[0].pos.x, m_touches[1].pos.y - m_touches[0].pos.y);
+    if (m_touchCount == 2) {
+        m_pinchStart = std::hypot(m_touches[1].pos.x - m_touches[0].pos.x, m_touches[1].pos.y - m_touches[0].pos.y);
+        dispatchPinch();
+    }
     if (m_primaryTouch != kNone || m_touchCount != 1) return true; // secondary contacts: gestures only
     m_primaryTouch = id;
     m_pointerKind = PointerKind::Touch;
@@ -1458,6 +1461,7 @@ bool UiContext::touchMove(u32 id, Vec2 p) {
         if (m_touches[k].id == id) {
             const Vec2 last = m_touches[k].pos, start = m_touches[k].start;
             m_touches[k].pos = p;
+            if (m_touchCount >= 2 && k < 2 && dispatchPinch()) return true;
             if (id != m_primaryTouch) return true;
             m_pointerKind = PointerKind::Touch;
             const f32 dx = p.x - start.x, dy = p.y - start.y;
@@ -1511,6 +1515,18 @@ void UiContext::touchCancel() {
     m_pressed = {};
     setHover(kNone);
 }
+bool UiContext::dispatchPinch() {
+    if (m_touchCount < 2 || m_pinchStart <= 0.f) return false;
+    Event e;
+    e.type = EventType::Pinch;
+    e.pos = {(m_touches[0].pos.x + m_touches[1].pos.x) * 0.5f, (m_touches[0].pos.y + m_touches[1].pos.y) * 0.5f};
+    e.scale = pinchScale();
+    e.mods = m_mods;
+    const NodeHandle h = hitTest(e.pos);
+    if (!h.valid() || (node(m_modal) && !inScope(h.index, m_modal.index))) return false;
+    return dispatch(h.index, e);
+}
+
 f32 UiContext::pinchScale() const {
     if (m_touchCount < 2 || m_pinchStart <= 0.f) return 1.f;
     return std::hypot(m_touches[1].pos.x - m_touches[0].pos.x, m_touches[1].pos.y - m_touches[0].pos.y) / m_pinchStart;
@@ -1581,7 +1597,21 @@ void UiContext::update(f32 dt) {
         arrange(m_root.index, {0.f, 0.f, m_viewport.w, m_viewport.h});
         m_anyLayoutDirty = false;
     }
+    if (!m_pendingScroll.empty()) {
+        for (const auto& [h, o] : m_pendingScroll) scrollTo(h, o);
+        m_pendingScroll.clear();
+        if (m_anyLayoutDirty) {
+            arrange(m_root.index, {0.f, 0.f, m_viewport.w, m_viewport.h});
+            m_anyLayoutDirty = false;
+        }
+    }
     paintPass();
+}
+
+void UiContext::scrollToAfterLayout(NodeHandle h, Vec2 o) {
+    if (!node(h)) return;
+    m_pendingScroll.emplace_back(h, o);
+    m_anyLayoutDirty = m_anyPaintDirty = true;
 }
 
 bool UiContext::needsUpdate() const {
