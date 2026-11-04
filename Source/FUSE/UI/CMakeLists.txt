@@ -360,6 +360,10 @@ if(FUSE_BUILD_UI_GAME AND FUSE_BUILD_UI_WIDGETS)
             target_link_libraries(${s} PRIVATE fuse_ui_game fuse_app)
         endforeach()
     endif()
+    if(TARGET fuse_app_native AND FUSE_BUILD_APP_SAMPLES)
+        add_executable(game_menu App/samples/game_menu.cpp) # UI5 sample: game main menu + options, gamepad nav
+        target_link_libraries(game_menu PRIVATE fuse_ui_game fuse_app_native)
+    endif()
 endif()
 
 if(FUSE_BUILD_UI_TESTS AND FUSE_BUILD_UI_WIDGETS)
