@@ -215,7 +215,7 @@ Vector icons are cooked, not parsed at run time. `fuse_ui_icon_cook --out=x.fuse
 16 / 20 / 24 / 32 / 48 px by default plus a name index; output is deterministic. The build cooks the starter set
 (43 Lucide icons, `vendor/icons/lucide`, ISC) into `<build>/icons/fuse_ui_icons.fuseicons` (target `fuse_ui_icons`);
 `fuse_ui_cook --icons=<pack> doc.fuseui <svg dir>` cooks a pack along with the documents and fails when a document
-names an icon the pack lacks.
+names an icon the pack lacks; the pack is only written when nothing failed (an existing pack stays untouched).
 
 ```cpp
 auto icons = fuse::ui::IconSet::fromFile("fuse_ui_icons.fuseicons");
@@ -503,7 +503,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_bench_10k` | 10k nodes, one dirty label: ≤ 0.5 ms median (Release; 1.0 ms in FULL) |
 | `fuse_ui_single_thread_parity` | direct vs posted-from-threads mutations give identical layout, draw list and pixels |
 | `fuse_ui_a11y_tree_dump` | roles, names, states, values |
-| `fuse_ui_icon_cook` | icon cooker determinism (any input order; tool = library), index round trip against the rasterised SVGs, SVG subset, corrupt-pack fuzz, resampled sizes |
+| `fuse_ui_icon_cook` | icon cooker determinism (any input order; tool = library), index round trip against the rasterised SVGs, SVG subset, corrupt-pack fuzz, resampled sizes; `fuse_ui_cook --icons` writes no pack when a document icon is missing |
 | `fuse_ui_icon_render` | icons at 16 / 24 / 32 / 40 / 48 px in two tints and disabled against `tests/golden/icons.png`; hover tint, button / menu / `.fuseui` / cooked-style icons; multi-colour icons (layers, tint vs fixed colours) against `tests/golden/icons_color.png` |
 | `fuse_text_grapheme_conformance` | `GraphemeBreakTest.txt` 15.1 against fuse_text's UAX #29: 1187/1187 (both profiles) |
 | `fuse_text_linebreak_conformance` | `LineBreakTest.txt` 15.0 (trimmed) against `lineBreaks(Strict)`: 2389/2406 + 17 listed libunibreak exceptions (FULL); MINIMAL runs its letters / space / newline subset |

@@ -6,7 +6,8 @@
 //           direct rasterisation; fuse_ui_doc records the icons a document uses. Multi-colour (layered palette,
 //           tests/data/icons_color): the build-time pack is byte-identical, each icon's layer plan (colours, order,
 //           currentColor / black-only icons stay one tintable layer) and every layer's atlas entry round-trips;
-//           version 1 packs still load.
+//           version 1 packs still load. fuse_ui_cook --icons validates before writing: a document icon missing from
+//           the SVGs leaves no pack (an existing one keeps its bytes).
 //   render  fuse_ui_icon_render: icons at 16 / 24 / 32 / 48 px (+ 40, resampled) in two tints and a disabled state on
 //           the CPU rasteriser against tests/golden/icons.png (FUSE_UI_UPDATE_GOLDEN=1 rewrites; no text, so one
 //           golden serves both text profiles); currentColor follows the theme, hover and disabled colours; buttons,
@@ -33,6 +34,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <random>
 #include <string>
@@ -265,6 +267,42 @@ int cookGate() {
             {"class": "button", "icon": "save"}]}})", &info);
         UI_CHECK(cooked.has_value());
         UI_CHECK(info.icons.size() == 2 && info.icons[0] == "save" && info.icons[1] == "search");
+    }
+#endif
+#if defined(FUSE_UI_COOK_EXE)
+    // fuse_ui_cook --icons: a document icon missing from the SVGs fails before the pack is written (no new file, an
+    // existing pack keeps its bytes); with every icon present the pack is written
+    {
+        namespace fs = std::filesystem;
+        const fs::path tmp = fs::temp_directory_path() / ("fuse_ui_icon_cook_gate_" + std::to_string(std::random_device{}()));
+        fs::create_directories(tmp);
+        auto put = [](const fs::path& p, std::string_view s) { std::ofstream(p, std::ios::binary).write(s.data(), std::streamsize(s.size())); };
+        auto slurp = [](const fs::path& p) {
+            std::ifstream f(p, std::ios::binary);
+            return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        };
+        auto cook = [&](const fs::path& pack, const char* doc) {
+            std::string cmd = "\"" FUSE_UI_COOK_EXE "\" \"--out=" + tmp.string() + "\" \"--icons=" + pack.string() + "\" \"" +
+                              (tmp / doc).string() + "\" \"" + (tmp / "ok.svg").string() + "\"";
+#if defined(_WIN32)
+            cmd = "\"" + cmd + "\""; // cmd /c strips one level of quotes
+#endif
+            return std::system(cmd.c_str());
+        };
+        put(tmp / "ok.svg", kFeatureSvg);
+        put(tmp / "bad.fuseui", R"({"fuseui": 1, "root": {"class": "panel", "children": [{"class": "button", "icon": "missing-icon"}]}})");
+        put(tmp / "good.fuseui", R"({"fuseui": 1, "root": {"class": "panel", "children": [{"class": "button", "icon": "ok"}]}})");
+        const fs::path fresh = tmp / "fresh.fuseicons", kept = tmp / "kept.fuseicons";
+        UI_CHECK(cook(fresh, "bad.fuseui") != 0);
+        UI_CHECK(!fs::exists(fresh));
+        put(kept, "previous pack");
+        UI_CHECK(cook(kept, "bad.fuseui") != 0);
+        UI_CHECK_EQ(slurp(kept), std::string("previous pack"));
+        UI_CHECK_EQ(cook(kept, "good.fuseui"), 0);
+        auto set = IconSet::fromFile(kept.string());
+        UI_CHECK(set.has_value() && set->count() == 1u && set->find("ok") == 0);
+        std::error_code ec;
+        fs::remove_all(tmp, ec);
     }
 #endif
     return finish("fuse_ui_icon_cook");
