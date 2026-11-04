@@ -6,4 +6,5 @@ endif()
 fuse_app_add_android_app(fuse_runtime_android SOURCES present_android.cpp PACKAGE org.fuse.runtime LABEL "FUSE Runtime"
                          LIBS fuse_rhi ASSETS "shaders=${CMAKE_CURRENT_SOURCE_DIR}/../shaders/fixtures")
 target_include_directories(fuse_runtime_android PRIVATE "${ANDROID_NDK}/sources/android/native_app_glue")
+enable_testing() # ctest --test-dir <build>/Source/FUSE/Renderer/android (the root enables tests only with core tests)
 fuse_app_add_android_gate(fuse_runtime_present_android runtime fuse_runtime_android org.fuse.runtime)
