@@ -544,7 +544,7 @@ int hybridScenePixels(bool native) {
         const auto end = std::chrono::steady_clock::now() + std::chrono::duration<double>(seconds);
         while (!done() && std::chrono::steady_clock::now() < end) host.app().step(0.01f);
     };
-    stepUntil([&] { return host.gameSideUp(); }, 20.0);
+    stepUntil([&] { return host.gameSideUp(); }, 120.0); // Lavapipe: the first scene frame builds every pipeline
     CHECK(host.gameSideUp());
     if (!host.gameSideUp()) return 1;
     // the probe scene
@@ -567,7 +567,7 @@ int hybridScenePixels(bool native) {
     world.setCamera(cam);
     const u64 f0 = host.viewportFrames();
     // the frame converges (eye adaptation): the window may show the previous frame, so compare a settled image
-    stepUntil([&] { return host.viewportFrames() >= f0 + 90; }, 30.0);
+    stepUntil([&] { return host.viewportFrames() >= f0 + 90; }, 120.0);
     CHECK(host.viewportFrames() >= f0 + 90);
 
     std::vector<u32> gpu;
