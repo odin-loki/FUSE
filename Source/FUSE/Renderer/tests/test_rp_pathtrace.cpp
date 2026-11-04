@@ -9,7 +9,9 @@
 //                       pixel per variant, against the CPU reference (pt_reference.hpp, 4096 spp): per pixel and
 //                       channel |gpu - cpu| / sqrt(se_gpu^2 + se_cpu^2) (standard errors from each side's own sum of
 //                       squares): <= 4 for >= 99.5 % of the tests, <= 6 for all; per-channel image z < 4. Variants
-//                       compared bit for bit (reported: RT pipeline vs ray query, Slang vs GLSL). The last graph's
+//                       compared bit for bit (reported: RT pipeline vs ray query, Slang vs GLSL); T3 == T2 (same
+//                       language) is required bit for bit on a software device (Lavapipe) and within 4 sigma per
+//                       channel on hardware (different traversal / per-stage compilation, see runConverge). The last graph's
 //                       readback copies wait on RAY_TRACING_SHADER (rg::kStageRayTracing), no barrier into ALL_COMMANDS
 //   --mode furnace      Furnace scene: albedo 1 -> every pixel 1 (1e-5); albedo 0.6 -> every sample is 0.6 or 1
 //                       (mean and mean square of each pixel consistent with one two-valued mixture, 1e-5); Russian
@@ -758,7 +760,38 @@ int runConverge(Context& ctx) {
                 "%lld, ray query %lld (of %zu)\n",
                 static_cast<long long>(bitDiff(0, 2)), static_cast<long long>(bitDiff(1, 3)), static_cast<long long>(bitDiff(0, 1)),
                 static_cast<long long>(bitDiff(2, 3)), img[0].raw.size());
-    expect(bitDiff(0, 2) <= 0 && bitDiff(1, 3) <= 0, "T3 RT pipeline == T2 ray query bit for bit (same language)");
+    // T3 vs T2. On a software device (VK_PHYSICAL_DEVICE_TYPE_CPU: Lavapipe) both variants run the same integrator code
+    // through the same sequential traversal with IEEE arithmetic, so the accumulations must be equal bit for bit. On
+    // hardware the RT pipeline and ray queries are different execution paths: the integrator is compiled once per
+    // stage (raygen + closest hit vs compute; GLSL without `precise` lets the driver contract each one differently),
+    // and the traversal order / tie-breaking between equal-t candidates is implementation-defined (RTX 3090: ~25 % of
+    // the words differ, deterministic run to run, max relative difference ~8e-7: last-bit arithmetic, no path
+    // diverged; a flipped Russian-roulette / lobe decision would legitimately move a pixel by noise). There the
+    // variants must agree statistically: every channel |rt - rq| / sqrt(se_rt^2 + se_rq^2) <= 4 (both use the same
+    // seeds, so their samples are positively correlated and this independent-error bound is conservative).
+    const bool exactDevice = ctx.device->info().deviceType == static_cast<u32>(VK_PHYSICAL_DEVICE_TYPE_CPU);
+    if (exactDevice) {
+        expect(bitDiff(0, 2) <= 0 && bitDiff(1, 3) <= 0, "T3 RT pipeline == T2 ray query bit for bit (same language)");
+    } else {
+        for (u32 lang = 0; lang < 2u; ++lang) {
+            const u32 a = lang;      // rt_pipeline/<lang>
+            const u32 b = lang + 2u; // ray_query/<lang>
+            if (!rig.built[a] || !rig.built[b]) {
+                continue;
+            }
+            f64 worst = 0.0;
+            f64 worstRel = 0.0;
+            for (usize i = 0; i < img[a].mean.size(); ++i) {
+                const f64 d = std::fabs(img[a].mean[i] - img[b].mean[i]);
+                const f64 v = img[a].variance[i] + img[b].variance[i];
+                worst = std::max(worst, v > 0.0 ? d / std::sqrt(v) : (d == 0.0 ? 0.0 : 1e9));
+                worstRel = std::max(worstRel, d / std::max(std::fabs(img[b].mean[i]), 1e-6));
+            }
+            std::printf("converge: %s vs %s (hardware device: statistical): worst %.2f sigma, max relative difference %.2e\n",
+                        rig.name[a], rig.name[b], worst, worstRel);
+            expect(worst <= 4.0, "T3 RT pipeline == T2 ray query within 4 sigma on every channel (same language, hardware device)");
+        }
+    }
     destroyRig(rig);
     return 0;
 }
