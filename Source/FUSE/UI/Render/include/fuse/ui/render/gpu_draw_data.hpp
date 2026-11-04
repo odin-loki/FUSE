@@ -18,7 +18,9 @@ struct GpuCmd {
     f32 radius[4];
     f32 clip[4];
     f32 params[4]; ///< borderWidth, blur, clipRadius, 0
-    u32 info[4];   ///< op | gradient << 8, u | v << 16, tw | th << 16, image (Backdrop: op, x0 | y0 << 16, x1 | y1 << 16, box radius)
+    /// op | gradient << 8, u | v << 16, tw | th << 16, image (Backdrop: op, x0 | y0 << 16, x1 | y1 << 16, box radius;
+    /// Effect: op, x0 | y0 << 16, x1 | y1 << 16, margin | effect id << 16, with border.x = sampled image or -1)
+    u32 info[4];
 };
 static_assert(sizeof(GpuCmd) == 128, "GpuCmd must match the kernel's std430 layout");
 
@@ -31,21 +33,24 @@ struct GpuPush {
     u32 imageCount;
     u32 tileBase = 0;   ///< word offset of the segment's tile block
     u32 tileOrigin = 0; ///< first tile of the dispatch: x | y << 16
-    u32 mode = 0;       ///< 0 tiles, 1 / 2 backdrop box pass (horizontal / vertical), 3 backdrop composite
-    u32 cmd = 0;        ///< backdrop command index
+    u32 mode = 0;       ///< 0 tiles, 1 / 2 backdrop box pass (horizontal / vertical), 3 backdrop composite, 4 effect copy
+    u32 cmd = 0;        ///< backdrop / effect command index
     u32 src = 0;        ///< box pass source: 0 target image, 1 + n scratch half n
     u32 dst = 0;        ///< scratch half written (box pass) / read (composite)
 };
 static_assert(sizeof(GpuPush) == 48, "GpuPush must match UiPush");
 
-/// A run of commands drawn by one tile dispatch over its tile bounding box, optionally followed by a backdrop blur
-/// (which reads everything drawn so far). Backdrop commands split the draw list into segments.
+/// A run of commands drawn by one tile dispatch over its tile bounding box (or one instanced SDF-quad draw), optionally
+/// followed by a backdrop blur or a custom effect (which read everything drawn so far). Backdrop and Effect commands
+/// split the draw list into segments.
 struct GpuSegment {
     u32 tileBase = 0;   ///< word offset of this segment's block in `tiles`: offsets[tileCount + 1], then ids
     u32 tile0 = 0;      ///< tile bounding box x0 | y0 << 16 (inclusive) ...
     u32 tile1 = 0;      ///< ... x1 | y1 << 16 (exclusive); empty when the segment draws nothing
-    u32 backdrop = ~0u; ///< index in `cmds` of the Backdrop run after the segment, or ~0u
-    u32 blurPixels = 0; ///< pixels in the backdrop's source region (scratch it needs per half)
+    u32 backdrop = ~0u; ///< index in `cmds` of the Backdrop / Effect run after the segment, or ~0u
+    u32 blurPixels = 0; ///< pixels in its source region (scratch it needs per half)
+    u32 cmdBegin = 0;   ///< the segment's commands in `cmds` (SDF-quad instances)
+    u32 cmdEnd = 0;
 };
 
 inline constexpr u32 kUiTile = 16;

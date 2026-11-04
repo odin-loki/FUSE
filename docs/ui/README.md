@@ -62,6 +62,46 @@ its own raster golden (`tests/golden/sample_full.png`). GPU parity runs on any V
 hardware too: it rounds division / sqrt to the IEEE result (Vulkan allows 2.5 ulp), including backdrop blur.
 FULL builds natively with MSVC as well.
 
+GPU backends (`UiVkDesc`): the compute tile kernel (default, bit-exact) or SDF quads — `useSdfQuads(desc)` selects
+an instanced quad pipeline (vertex + fragment, the same coverage arithmetic, fixed-function premultiplied-over
+blending) drawing each draw-list segment in a render pass on the same GENERAL-layout image (it then needs
+`VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT`); backdrops and effects still run as compute passes between the draws. It is
+within ±2 / 255 of the reference (hardware blending rounds translucent overs differently) and on an RTX 3090
+1.3–3× faster (`fuse_ui_vk_sdf_quads`, `fuse_ui_baselines`). Compute stays the default: exact on every device (the
+parity / golden gates rely on it), no attachment usage, and every frame is already far inside the §6 budgets.
+
+### Custom shader effects
+
+An effect post-processes a node's rect (or any draw-list rect) after everything under it is drawn: a GLSL compute
+snippet plus a C++ twin with the same arithmetic (`fuse/ui/effects.hpp`). Built-ins: `desaturate(amount, r, g, b)`,
+`ripple(amplitude, wavelength, speed)` (animated), `grain(amount, fps)` (animated).
+
+```css
+.card.disabled { effect: desaturate(0.8); }
+.water { effect: ripple(6px, 24, 40); }        /* missing parameters take the registered defaults */
+```
+
+```cpp
+fuse::ui::EffectRegistry fx;
+fx.addBuiltins();
+fx.add({.name = "vignette", .cpu = &vignetteCpu, .spirv = kMyVignette, .defaults = {2.f}, .exact = false});
+ui.setEffects(&fx);           // style hookup; animated effects repaint every update (ui.elapsed() is their time)
+renderer.setEffects(fx);      // fuse_ui_vk: one compute pipeline per effect
+cpuRaster.setEffects(&fx);    // the reference path
+dl.effect(rect, id, params, time, margin, radii, imageIndex);   // draw lists directly
+```
+
+The snippet defines `vec4 fx_main(ivec2 p)` (premultiplied RGBA, 0..255) and reads `fx_src(p)` (the target before
+the effect, edge-clamped to the source region), `fx_param(i)`, `fx_time`, `fx_rect`, `fx_imageTexel` /
+`fx_imageSize` (an optional image or external texture), with CPU-identical helpers `divRn`, `sqrtRn`, `fx_sin`,
+`fx_cos`, `fx_hash`, `fx_hash01`; `fuse_ui_add_effect(<target> NAME kMyVignette SOURCE vignette.glsl)`
+(`Render/cmake/fuse_ui_effects.cmake`) splices it into `Render/src/shaders/ui_effect.comp.in` and embeds the SPIR-V.
+Effects made of add / mul / floor / `divRn` / `sqrtRn` and the `fx_*` helpers are bit-exact on the GPU; ones that
+call native `exp` / `pow` / `sin` register `exact = false` (compared within ±2). An Effect command ends a GPU segment
+like a backdrop: the source region (rect + margin) is copied to the backdrop scratch and the effect pipeline runs over
+the rect, masked by its rounded corners and the clip. `DrawList::redrawRegion` grows damage over an effect's source
+region.
+
 Text (`fuse/text/text.hpp`):
 
 ```cpp
@@ -150,7 +190,7 @@ as a global `ui` table.
 
 ### Icons
 
-Monochrome vector icons are cooked, not parsed at run time. `fuse_ui_icon_cook --out=x.fuseicons [--sizes=16,24,...]
+Vector icons are cooked, not parsed at run time. `fuse_ui_icon_cook --out=x.fuseicons [--sizes=16,24,...]
 <svg files or dirs>` rasterises an SVG subset (paths incl. arcs, rect / circle / ellipse / line / polyline / polygon,
 `g` transforms, fill / stroke / stroke-width / opacity, fill-rule, currentColor, viewBox) into a coverage atlas at
 16 / 20 / 24 / 32 / 48 px by default plus a name index; output is deterministic. The build cooks the starter set
@@ -170,7 +210,14 @@ In style sheets and markup: `icon: save; icon-size: 20px;` (`none` clears; the s
 `.fuseui` key `"icon": "save"`. Icons are tinted with the node's `color` (SVG currentColor), so they follow theme,
 `:hover` and `:disabled` colours. They are copied into the context's glyph atlas on first use and drawn as `Glyph`
 commands, so the CPU rasteriser and the GPU kernel draw them with no new ops; sizes that were not cooked are
-area-resampled from the nearest larger cooked size. Multi-colour icons and MSDF are not supported.
+area-resampled from the nearest larger cooked size. MSDF is not supported.
+
+Multi-colour icons: an SVG with colours other than currentColor / black is cooked as a layered palette (COLR-style):
+its paints, in paint order, grouped into layers of consecutive equal colour; currentColor layers stay tintable, the
+others keep their colour (black included; gradients become their mean stop colour). Each layer is a coverage bitmap in
+the same atlas (pack format version 2; version 1 packs still load), drawn as one tinted `Glyph` per layer, so the GPU
+backends need nothing new. A fixed layer's alpha follows the tint's alpha (fades); edges shared by two layers blend
+like independently anti-aliased shapes. `fuse_ui_icon_cook --list` prints each icon's layer colours.
 
 ## Application shell (UI5)
 
@@ -294,7 +341,8 @@ are deferred). Inline (`setCss`) beats everything; later sheets win ties. Layout
 `grid-template-columns`, `grid-row/column(-span)`, `left/top/right/bottom/center-x/center-y`, `overflow`
 (visible/clip/scroll), `display`, `pointer-events`, `cursor`. Paint: `background` (colour or `linear-gradient`),
 `background-end` (gradient end; widgets use it as the accent), `border`, `border-width/color`, `border-*-radius`,
-`box-shadow`, `shadow-x/y/blur/color`, `opacity`, `color`, `font-size`, `text-align`, `icon`, `icon-size`. Selectors also accept
+`box-shadow`, `shadow-x/y/blur/color`, `backdrop-blur`, `effect`, `opacity`, `color`, `font-size`, `text-align`, `icon`,
+`icon-size`. Selectors also accept
 `:active`, `:selected`.
 
 ## Immediate mode
@@ -317,7 +365,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_single_thread_parity` | direct vs posted-from-threads mutations give identical layout, draw list and pixels |
 | `fuse_ui_a11y_tree_dump` | roles, names, states, values |
 | `fuse_ui_icon_cook` | icon cooker determinism (any input order; tool = library), index round trip against the rasterised SVGs, SVG subset, corrupt-pack fuzz, resampled sizes |
-| `fuse_ui_icon_render` | icons at 16 / 24 / 32 / 40 / 48 px in two tints and disabled against `tests/golden/icons.png`; hover tint, button / menu / `.fuseui` / cooked-style icons |
+| `fuse_ui_icon_render` | icons at 16 / 24 / 32 / 40 / 48 px in two tints and disabled against `tests/golden/icons.png`; hover tint, button / menu / `.fuseui` / cooked-style icons; multi-colour icons (layers, tint vs fixed colours) against `tests/golden/icons_color.png` |
 | `fuse_text_grapheme_conformance` | `GraphemeBreakTest.txt` 15.1 against fuse_text's UAX #29: 1187/1187 (both profiles) |
 | `fuse_text_linebreak_conformance` | `LineBreakTest.txt` 15.0 (trimmed) against `lineBreaks(Strict)`: 2389/2406 + 17 listed libunibreak exceptions (FULL); MINIMAL runs its letters / space / newline subset |
 | `fuse_text_bidi_conformance` | `BidiCharacterTest.txt` 15.1 (trimmed): paragraph level, levels after L1, visual order: 4726/4726 (FULL; 77 in MINIMAL) |
@@ -333,8 +381,10 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_vk_damage` | incremental GPU redraw of `DrawList::redrawRegion(damage)` (grown around backdrops): only touched tiles dispatched, result equals a full render |
 | `fuse_ui_vk_validation_clean` | `fuse_ui_vk_parity` + `fuse_ui_vk_damage` under `VK_LAYER_KHRONOS_validation` with sync validation: no warnings / errors (77 without the layer) |
 | `fuse_ui_vk_budget` | GPU time (timestamp queries) of 1080p frames: full, backdrop blur, incremental (software devices report only) |
+| `fuse_ui_vk_custom_effect` | built-in effects (desaturate, ripple, grain: plain, rounded, in a rounded clip, at the edge, scissored) bit-exact against their CPU twins; a user effect via `fuse_ui_add_effect` (image + native exp / sin) within ±2; `effect:` style hookup and animated repaint; validation clean; no steady-state allocation |
+| `fuse_ui_vk_sdf_quads` | SDF-quad backend vs the CPU reference (sample, primitives, blur + effects between draws, scissored redraw): max error ≤ 2, mean ≤ 0.1 / 255; validation clean; reports compute vs SDF timings at 1080p and 4K |
 | `fuse_app_native_startup` | launches `hello_app` 5× per configuration: default (async Vulkan) and software-only first frame median ≤ 150 ms; every default run switches to Vulkan (median ≤ 2 s) with the switched frame equal to the CPU raster; synchronous Vulkan init ≤ 2 s (skips 77 without a display) |
-| `fuse_app_binary_size` | `hello_app` file size ≤ measured baseline + 10 % (MSVC x64 Release, MINIMAL text: 809,472 B → 890,400 B; other toolchains report and skip until a baseline is set with `-DFUSE_APP_BINARY_BUDGET`) |
+| `fuse_app_binary_size` | `hello_app` file size ≤ measured baseline + 10 % (MSVC x64 Release, MINIMAL text: 809,472 B → 890,400 B; other toolchains report and skip until a baseline is set with `-DFUSE_APP_BINARY_BUDGET`). Effect and SDF-quad SPIR-V live in their own translation units, so apps that do not use them do not carry it |
 | `fuse_app_window_chrome` | custom-chrome window: `chromeHitTest` probes, then `WM_NCHITTEST` on a real Win32 window, frame removed, max / restore / min / close through non-client clicks (77 off Win32) |
 | `fuse_app_tray` | tray icon added and found (`Shell_NotifyIconGetRect` / `NIM_MODIFY`), simulated click / double-click callbacks, a real `TrackPopupMenu` context menu picked by posted keys, a notification, removal (77 without a tray) |
 | `fuse_ui_platform_services` | headless: DPI scale (layout fixed, device-pixel draw list, re-rasterised glyphs), `cursor:` style, reduced motion, touch / pinch / pen through `platform_bridge`, dark → light theme slot |
@@ -344,10 +394,12 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_world_panel_raycast` | ray → panel pixel mapping, misses and back faces, ray clicks, idle surface does not re-render |
 | `fuse_ui_input_arbitration` | pointer / keyboard / gamepad ownership between UI and game |
 | `fuse_ui_pause_time_domain` | pause and slow motion affect game-time HUD only; locale switching |
+| `fuse_demo_hybrid_hud_ui` | `demo_hybrid_hud` HUD on a UI context in the hybrid frame (`HybridComposer::setUiOverlay` → `UiFrameSource::recordOver`, over the sprite layer): every opaque HUD pixel of the GPU readback equals the CPU raster (≤ 1/255), glyphs visible |
 
 Extra: `fuse_ui_text_basics`, `fuse_ui_text_full`, `fuse_ui_widget_interaction`, `fuse_ui_tier_b`, `fuse_ui_tier_b2`,
 `fuse_ui_relight_equivalence`, `fuse_ui_platform_keys_v2`, `fuse_ui_text_input`, `fuse_ui_doc_load`,
-`fuse_ui_lua_bindings`, `fuse_ui_vk_parity`, the sample runs `fuse_app_hello_sample`, `fuse_app_notes_sample`, `fuse_app_game_menu_sample`,
+`fuse_ui_lua_bindings`, `fuse_ui_vk_parity` (also multi-colour icons), `fuse_ui_baselines` (report: §6 baselines — CPU
+raster and GPU time of the sample, 1080p cards and the 1440p HUD, atlas and GPU memory), the sample runs `fuse_app_hello_sample`, `fuse_app_notes_sample`, `fuse_app_game_menu_sample`,
 `fuse_ui_game_hud_demo`, `fuse_ui_game_world_panel_demo`; in tree also `fuse_core_ui1_text_input`,
 `fuse_scene_renderer_vk_fuse_ui_t0` and `rl_overlay_glyphs`.
 

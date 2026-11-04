@@ -70,6 +70,7 @@ constexpr PropInfo kProps[] = {
     {Prop::Icon, "icon", T::Ident, false, false, true},
     {Prop::IconSize, "icon-size", T::Length, false, true, true},
     {Prop::Cursor, "cursor", T::Enum, false, false, false},
+    {Prop::Effect, "effect", T::Effect, false, false, false},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -248,6 +249,26 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
         out.ident = text == "none" ? 0u : hashId(text);
         return true;
     }
+    case T::Effect: { // name, name(p0, p1 ...) or none
+        const auto open = text.find('(');
+        const std::string_view name = trim(text.substr(0, open));
+        if (name.empty()) return false;
+        for (char c : name)
+            if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_' && c != '.') return false;
+        out.ident = name == "none" ? 0u : hashId(name);
+        out.trackCount = 0;
+        if (open == std::string_view::npos) return true;
+        if (text.back() != ')') return false;
+        std::string_view args = text.substr(open + 1, text.size() - open - 2);
+        while (!(args = trim(args)).empty()) {
+            const auto sep = args.find_first_of(", 	");
+            if (out.trackCount >= kMaxGridTracks || !parseLength(args.substr(0, sep), out.tracks[out.trackCount])) return false;
+            ++out.trackCount;
+            if (sep == std::string_view::npos) break;
+            args.remove_prefix(sep + 1);
+        }
+        return true;
+    }
     case T::Tracks: {
         out.trackCount = 0;
         while (!text.empty()) {
@@ -328,6 +349,12 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::ShadowY: s.shadowY = v.len.value; break;
     case Prop::PointerEvents: s.pointerEvents = v.b; break;
     case Prop::Cursor: s.cursor = CursorShape(std::min<u8>(v.e, u8(CursorShape::Count) - 1)); break;
+    case Prop::Effect:
+        s.effect = v.ident;
+        s.effectParamCount = std::min<u8>(v.trackCount, u8(s.effectParams.size()));
+        s.effectParams = {};
+        for (u8 i = 0; i < s.effectParamCount; ++i) s.effectParams[i] = v.tracks[i].value;
+        break;
     case Prop::Count: break;
     }
 }
@@ -350,6 +377,14 @@ PropValue readProp(const ComputedStyle& s, Prop p) {
     case Prop::Icon: return PropValue::ofIdent(s.icon);
     case Prop::IconSize: return PropValue::ofLength(Length::px(s.iconSize));
     case Prop::Cursor: return PropValue::ofEnum(u8(s.cursor));
+    case Prop::Effect: {
+        PropValue v;
+        v.type = PropType::Effect;
+        v.ident = s.effect;
+        v.trackCount = s.effectParamCount;
+        for (u8 i = 0; i < s.effectParamCount; ++i) v.tracks[i] = Length::px(s.effectParams[i]);
+        return v;
+    }
     default: break;
     }
     PropValue v;
