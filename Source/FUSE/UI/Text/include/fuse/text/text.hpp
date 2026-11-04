@@ -102,6 +102,33 @@ bool colorGlyphsEnabled();
 /// enableMsdf: multi-channel signed distance fields (GlyphAtlas::getMsdf, Font::renderMsdf).
 void enableMsdf();
 bool msdfEnabled();
+/// enableVariableFonts: the Font variation API (axes, instance, setVariation ...: fvar / avar / gvar / HVAR / MVAR,
+/// COLRv1 Var* paints). Without it variable fonts draw at their default coordinates and instance() returns the font
+/// itself (UI font-weight / font-stretch then do nothing). No-op in COOKED builds (packs are cooked at one instance).
+void enableVariableFonts();
+bool variableFontsEnabled();
+
+// ---- Variable fonts (fvar / avar / gvar / HVAR / MVAR, COLRv1 Var* paints) ----------------------------------------
+/// OpenType tag from four characters: fontTag("wght").
+constexpr std::uint32_t fontTag(const char (&s)[5]) {
+    return (std::uint32_t(std::uint8_t(s[0])) << 24) | (std::uint32_t(std::uint8_t(s[1])) << 16) |
+           (std::uint32_t(std::uint8_t(s[2])) << 8) | std::uint32_t(std::uint8_t(s[3]));
+}
+struct VariationAxis {
+    std::uint32_t tag = 0;
+    float minValue = 0.f, defaultValue = 0.f, maxValue = 0.f;
+    bool hidden = false;
+    std::string name; ///< from the name table ("Weight")
+};
+struct NamedInstance {
+    std::string name;          ///< subfamily name ("Semibold Display")
+    std::vector<float> coords; ///< design value per axis (Font::axes order)
+};
+/// One axis setting in design units ({fontTag("wght"), 650}).
+struct FontVariation {
+    std::uint32_t tag = 0;
+    float value = 0.f;
+};
 
 class ITextShaper;
 namespace detail {
@@ -177,6 +204,28 @@ public:
     /// A the true distance, 255 * (0.5 + d / range) with d in pixels (inside > 127.5), padded by range / 2 + 1.
     /// False for glyphs without an outline.
     bool renderMsdf(std::uint32_t glyph, float pixelSize, float range, ColorImage& out) const;
+
+    // ---- Variations ----
+    // A variable font draws at its own coordinates (the default instance unless setVariation pinned others).
+    // instance() returns another Font over the same file bytes at other coordinates: advances (HVAR, else gvar phantom
+    // points), metrics (MVAR), outlines (MINIMAL: our glyf + gvar decoder; FULL: FreeType), shaping (FULL: HarfBuzz)
+    // and COLRv1 Var* paints all follow them. Instances are owned by the font holding the bytes (they live as long as
+    // it does), cached by normalised coordinates (at most 256; past that the nearest is returned) and found without
+    // allocation. Needs enableVariableFonts(); not available in COOKED builds (packs are cooked at one instance:
+    // fuse_text_cook --variation).
+    bool isVariable() const;
+    std::span<const VariationAxis> axes() const;
+    std::span<const NamedInstance> namedInstances() const;
+    /// Design coordinates of this font, one per axis (empty when not variable).
+    std::span<const float> variationCoords() const;
+    /// The instance with `settings` applied over this font's coordinates (unknown tags ignored, values clamped to the
+    /// axis range). *this when they change nothing or the font is not variable.
+    const Font& instance(std::span<const FontVariation> settings) const;
+    /// Named instance `i` (namedInstances()); *this when out of range.
+    const Font& namedInstance(std::size_t i) const;
+    /// Pins this font's own coordinates (call before sharing it: caches keyed by id() are not invalidated). Used by
+    /// FontCatalog::load for named-instance faces and by the cooker.
+    void setVariation(std::span<const FontVariation> settings);
 
 private:
     friend class HarfBuzzShaper;
@@ -299,6 +348,12 @@ struct FontFaceInfo {
     std::uint16_t stretch = 5;  ///< OS/2 usWidthClass (5 = normal)
     bool italic = false;        ///< italic or oblique (OS/2 fsSelection, head macStyle)
     std::uint32_t unicodeRanges[4] = {}; ///< OS/2 ulUnicodeRange1..4 (script coverage hints)
+    bool variable = false;        ///< the face has an fvar table (FontCatalog::load gives a Font that can instance)
+    /// Variable faces are listed once at their default coordinates (namedInstance -1) and once per named instance,
+    /// named like DirectWrite's WWS families: STAT axis values other than weight / width / italic / slant join the
+    /// family ("Segoe UI Variable Display"), the rest is the style ("Semibold"); weight / stretch / italic come from
+    /// the instance's wght / wdth / ital / slnt coordinates.
+    std::int32_t namedInstance = -1;
     bool covers(Script s) const;  ///< from unicodeRanges (Emoji / Symbols: by family name)
 };
 
@@ -329,7 +384,7 @@ public:
     /// family whose OS/2 ranges claim it), one per family, at most `maxFaces`. Each face's cmap is checked for a letter
     /// of the script (the range bits alone are unreliable).
     std::vector<const FontFaceInfo*> systemFallbackChain(Script script, std::size_t maxFaces = 4) const;
-    /// Loads a face (FontFaceInfo::path / index).
+    /// Loads a face (FontFaceInfo::path / index; a named instance is pinned with Font::setVariation).
     static std::expected<Font, TextError> load(const FontFaceInfo& face);
 
 private:

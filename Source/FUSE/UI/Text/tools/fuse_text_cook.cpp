@@ -1,8 +1,11 @@
 // fuse_text_cook: TrueType / OpenType -> .fusefont (COOKED text profile; see fuse/text/font_cook.hpp).
 //   fuse_text_cook --out=<pack.fusefont> [--sizes=8-40,48] [--color-sizes=...] [--msdf] [--chars=20-7E,A0-17F]
-//                  [--no-kerning] [--face=N] [--reference=<file>] <font.ttf>
+//                  [--no-kerning] [--face=N] [--variation=wght:700,wdth:80 | --instance=<name>] [--reference=<file>]
+//                  <font.ttf>
 // Sizes are pixel sizes (lists and inclusive integer ranges, decimals allowed: 17.5); chars are hex code point ranges.
 // --reference writes the MINIMAL layout / render dump of sample strings at the coverage sizes (fuse_text_cooked).
+// --variation / --instance cook a variable font at those axis values / that named instance (advances, metrics,
+// outlines and COLRv1 Var* paints of the instance; a pack holds one instance).
 #include "fuse/text/font_cook.hpp"
 
 #include "cook_reference.hpp"
@@ -56,8 +59,28 @@ bool writeFile(const std::string& path, const std::vector<std::uint8_t>& data) {
 }
 } // namespace
 
+// "wght:700,wdth:80" -> axis settings.
+bool parseVariations(std::string_view s, std::vector<fuse::text::FontVariation>& out) {
+    while (!s.empty()) {
+        const std::size_t comma = s.find(',');
+        const std::string_view item = s.substr(0, comma);
+        if (item.size() < 6 || item[4] != ':') return false;
+        std::uint32_t tag = 0;
+        for (int k = 0; k < 4; ++k) tag = (tag << 8) | std::uint8_t(item[std::size_t(k)]);
+        char* end = nullptr;
+        const std::string num(item.substr(5));
+        const float v = std::strtof(num.c_str(), &end);
+        if (end == num.c_str() || *end) return false;
+        out.push_back({tag, v});
+        if (comma == std::string_view::npos) break;
+        s.remove_prefix(comma + 1);
+    }
+    return true;
+}
+
 int main(int argc, char** argv) {
-    std::string out, input, reference;
+    std::string out, input, reference, instanceName;
+    std::vector<fuse::text::FontVariation> variation;
     fuse::text::CookOptions opt;
     std::uint32_t face = 0;
     for (int i = 1; i < argc; ++i) {
@@ -70,6 +93,8 @@ int main(int argc, char** argv) {
         else if (a.starts_with("--chars=")) ok = parseRanges(val("--chars="), opt.ranges);
         else if (a.starts_with("--face=")) face = std::uint32_t(std::atoi(std::string(val("--face=")).c_str()));
         else if (a.starts_with("--reference=")) reference = val("--reference=");
+        else if (a.starts_with("--variation=")) ok = parseVariations(val("--variation="), variation);
+        else if (a.starts_with("--instance=")) instanceName = val("--instance=");
         else if (a == "--msdf") opt.msdf = true;
         else if (a == "--no-kerning") opt.kerning = false;
         else if (!a.starts_with("--")) input = a;
@@ -81,16 +106,40 @@ int main(int argc, char** argv) {
     }
     if (out.empty() || input.empty()) {
         std::fprintf(stderr, "usage: fuse_text_cook --out=<pack.fusefont> [--sizes=..] [--color-sizes=..] [--msdf] [--chars=..] "
-                             "[--no-kerning] [--face=N] [--reference=<file>] <font>\n");
+                             "[--no-kerning] [--face=N] [--variation=tag:value,..] [--instance=name] [--reference=<file>] "
+                             "<font>\n");
         return 2;
     }
     fuse::text::enableColorGlyphs(); // before loading: bitmap strikes are indexed at load
     fuse::text::enableMsdf();
+    fuse::text::enableVariableFonts();
     const auto t0 = std::chrono::steady_clock::now();
     auto font = fuse::text::Font::fromFile(input, face);
     if (!font) {
         std::fprintf(stderr, "fuse_text_cook: cannot load %s\n", input.c_str());
         return 1;
+    }
+    if (!instanceName.empty()) { // a named instance: its coordinates as the variation
+        const auto named = font->namedInstances();
+        const auto axes = font->axes();
+        bool found = false;
+        for (const fuse::text::NamedInstance& ni : named)
+            if (ni.name == instanceName) {
+                for (std::size_t k = 0; k < axes.size() && k < ni.coords.size(); ++k) variation.push_back({axes[k].tag, ni.coords[k]});
+                found = true;
+                break;
+            }
+        if (!found) {
+            std::fprintf(stderr, "fuse_text_cook: %s has no named instance \"%s\"\n", input.c_str(), instanceName.c_str());
+            return 1;
+        }
+    }
+    if (!variation.empty()) {
+        if (!font->isVariable()) {
+            std::fprintf(stderr, "fuse_text_cook: %s is not a variable font\n", input.c_str());
+            return 1;
+        }
+        font->setVariation(variation);
     }
     auto pack = fuse::text::cookFont(*font, opt);
     if (!pack) {

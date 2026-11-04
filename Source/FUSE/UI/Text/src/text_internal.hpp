@@ -2,10 +2,14 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
 namespace fuse::text::detail {
+
+/// String `nameId` of a name table (Windows English, any Windows, Unicode, then Mac Roman); empty when absent.
+std::string fontNameString(std::span<const std::uint8_t> nameTable, std::uint16_t nameId);
 
 /// Reads a whole file; `utf8Path` is converted to the platform's path type (wide on Windows).
 bool readFile(const std::string& utf8Path, std::vector<std::uint8_t>& out);

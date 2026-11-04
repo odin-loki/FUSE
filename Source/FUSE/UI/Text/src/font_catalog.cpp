@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -206,8 +207,11 @@ void appendUtf16Be(std::string& out, const std::uint8_t* p, std::size_t n) {
     }
 }
 
+std::string nameString(const std::vector<std::uint8_t>& t, std::uint16_t nameId) { return detail::fontNameString(t, nameId); }
+} // namespace
+
 // Best record of `nameId`: Windows English, any Windows, Unicode, then Mac Roman (ASCII part).
-std::string nameString(const std::vector<std::uint8_t>& t, std::uint16_t nameId) {
+std::string detail::fontNameString(std::span<const std::uint8_t> t, std::uint16_t nameId) {
     if (t.size() < 6) return {};
     const std::uint16_t count = be16(t.data() + 2), strOff = be16(t.data() + 4);
     int bestScore = -1;
@@ -234,6 +238,8 @@ std::string nameString(const std::vector<std::uint8_t>& t, std::uint16_t nameId)
     return best;
 }
 
+namespace {
+
 bool hasFontExtension(const fs::path& p) {
     std::string e = fromPath(p.extension());
     for (char& c : e) c = char(std::tolower(static_cast<unsigned char>(c)));
@@ -251,6 +257,129 @@ std::string normalisedPath(const std::string& p) {
 #endif
     }
     return n;
+}
+} // namespace
+
+namespace {
+// CSS font-stretch percentage -> OS/2 usWidthClass.
+std::uint16_t widthClass(float pct) {
+    static constexpr float kPct[] = {50.f, 62.5f, 75.f, 87.5f, 100.f, 112.5f, 125.f, 150.f, 200.f};
+    std::uint16_t best = 5;
+    for (std::uint16_t k = 0; k < 9; ++k)
+        if (std::abs(kPct[k] - pct) < std::abs(kPct[best - 1] - pct)) best = std::uint16_t(k + 1);
+    return best;
+}
+
+bool wwsTag(std::uint32_t t) {
+    return t == fontTag("wght") || t == fontTag("wdth") || t == fontTag("ital") || t == fontTag("slnt");
+}
+
+bool styleKeyword(std::string_view w) {
+    static constexpr std::string_view kWords[] = {
+        "thin", "hairline", "extralight", "ultralight", "light", "semilight", "demilight", "regular", "normal", "book",
+        "medium", "semibold", "demibold", "bold", "extrabold", "ultrabold", "black", "heavy", "condensed", "semicondensed",
+        "extracondensed", "ultracondensed", "expanded", "semiexpanded", "extraexpanded", "wide", "narrow", "italic",
+        "oblique"};
+    for (const std::string_view k : kWords)
+        if (equalCi(k, w)) return true;
+    return false;
+}
+
+std::vector<std::string_view> words(std::string_view s) {
+    std::vector<std::string_view> out;
+    for (std::size_t i = 0; i < s.size();) {
+        while (i < s.size() && s[i] == ' ') ++i;
+        const std::size_t b = i;
+        while (i < s.size() && s[i] != ' ') ++i;
+        if (i > b) out.push_back(s.substr(b, i - b));
+    }
+    return out;
+}
+
+// One FontFaceInfo per fvar named instance of `base` (see FontFaceInfo::namedInstance).
+std::size_t addNamedInstances(const FontFaceInfo& base, const std::vector<std::uint8_t>& name,
+                              const std::vector<std::uint8_t>& fv, const std::vector<std::uint8_t>& st,
+                              std::vector<FontFaceInfo>& out) {
+    const std::size_t n = fv.size();
+    const std::uint32_t axesOff = be16(fv.data() + 4), axisCount = be16(fv.data() + 8), axisSize = be16(fv.data() + 10);
+    const std::uint32_t instCount = be16(fv.data() + 12), instSize = be16(fv.data() + 14);
+    if (!axisCount || axisSize < 20 || instSize < 4 + 4 * axisCount ||
+        std::uint64_t(axesOff) + std::uint64_t(axisCount) * axisSize + std::uint64_t(instCount) * instSize > n)
+        return 0;
+    std::vector<std::uint32_t> tags;
+    for (std::uint32_t a = 0; a < axisCount; ++a) tags.push_back(be32(fv.data() + axesOff + a * axisSize));
+    // STAT design axes and axis values (formats 1-3): (axis tag, value range, flags, name)
+    struct Value {
+        std::uint32_t tag;
+        float lo, hi;
+        std::uint16_t flags;
+        std::string name;
+    };
+    std::vector<std::uint32_t> statAxes;
+    std::vector<Value> values;
+    if (st.size() >= 18) {
+        const std::uint32_t axisRec = be16(st.data() + 4), axes = be16(st.data() + 6), axesAt = be32(st.data() + 8);
+        const std::uint32_t valueCount = be16(st.data() + 12), valuesAt = be32(st.data() + 14);
+        if (axisRec >= 8 && std::uint64_t(axesAt) + std::uint64_t(axes) * axisRec <= st.size())
+            for (std::uint32_t a = 0; a < axes; ++a) statAxes.push_back(be32(st.data() + axesAt + a * axisRec));
+        for (std::uint32_t k = 0; k < valueCount && valuesAt && std::uint64_t(valuesAt) + k * 2 + 2 <= st.size(); ++k) {
+            const std::uint64_t v = std::uint64_t(valuesAt) + be16(st.data() + valuesAt + k * 2);
+            if (v + 12 > st.size()) continue;
+            const std::uint16_t fmt = be16(st.data() + v), ai = be16(st.data() + v + 2);
+            if (fmt < 1 || fmt > 3 || ai >= statAxes.size() || (fmt == 2 && v + 20 > st.size())) continue;
+            const auto fixed = [&](std::uint64_t p) { return float(std::int32_t(be32(st.data() + p))) / 65536.f; };
+            Value val{statAxes[ai], fixed(v + 8), fixed(v + 8), be16(st.data() + v + 4), nameString(name, be16(st.data() + v + 6))};
+            if (fmt == 2) {
+                val.lo = fixed(v + 12);
+                val.hi = fixed(v + 16);
+            }
+            values.push_back(std::move(val));
+        }
+    }
+    std::size_t added = 0;
+    for (std::uint32_t k = 0; k < instCount; ++k) {
+        const std::uint8_t* rec = fv.data() + axesOff + axisCount * axisSize + k * instSize;
+        const std::string sub = nameString(name, be16(rec));
+        if (sub.empty()) continue;
+        FontFaceInfo info = base;
+        info.namedInstance = std::int32_t(k);
+        std::vector<std::string> extra; // family words from non-WWS axes
+        for (std::uint32_t a = 0; a < axisCount; ++a) {
+            const float c = float(std::int32_t(be32(rec + 4 + a * 4))) / 65536.f;
+            const std::uint32_t t = tags[a];
+            if (t == fontTag("wght")) info.weight = std::uint16_t(std::clamp(std::lround(c), 1l, 1000l));
+            else if (t == fontTag("wdth")) info.stretch = widthClass(c);
+            else if (t == fontTag("ital")) info.italic = c >= 0.5f;
+            else if (t == fontTag("slnt")) info.italic = c < 0.f;
+            else if (!values.empty())
+                for (const Value& v : values) {
+                    const bool hit = v.lo == v.hi ? std::abs(c - v.lo) < 1e-3f : (c >= v.lo && c < v.hi);
+                    if (v.tag == t && hit) {
+                        if (!(v.flags & 2u) && !v.name.empty()) extra.push_back(v.name); // not elidable
+                        break;
+                    }
+                }
+        }
+        std::string style;
+        for (const std::string_view w : words(sub)) {
+            bool family = false;
+            if (values.empty()) family = !styleKeyword(w); // no STAT: non-style words of the subfamily name
+            else
+                for (const std::string& e : extra) family |= equalCi(e, w);
+            if (family) {
+                if (values.empty()) extra.emplace_back(w);
+                continue;
+            }
+            if (!style.empty()) style += ' ';
+            style += w;
+        }
+        for (const std::string& e : extra) info.family += ' ' + e;
+        info.style = style.empty() ? "Regular" : style;
+        info.fullName = info.family + (equalCi(info.style, "Regular") ? std::string() : ' ' + info.style);
+        out.push_back(std::move(info));
+        ++added;
+    }
+    return added;
 }
 } // namespace
 
@@ -279,6 +408,7 @@ std::size_t FontCatalog::addFile(const std::string& path) {
         const std::uint16_t numTables = be16(head.data() + 4);
         if (numTables == 0 || !readAt(f, std::uint64_t(offsets[idx]) + 12, std::size_t(numTables) * 16, dir)) continue;
         std::uint32_t nameOff = 0, nameLen = 0, os2Off = 0, os2Len = 0, headOff = 0, headLen = 0;
+        std::uint32_t fvarOff = 0, fvarLen = 0, statOff = 0, statLen = 0;
         bool cmap = false, outlines = false;
         for (std::uint32_t t = 0; t < numTables; ++t) {
             const std::uint8_t* e = dir.data() + t * 16;
@@ -286,6 +416,8 @@ std::size_t FontCatalog::addFile(const std::string& path) {
             if (std::memcmp(e, "name", 4) == 0) { nameOff = off; nameLen = len; }
             else if (std::memcmp(e, "OS/2", 4) == 0) { os2Off = off; os2Len = len; }
             else if (std::memcmp(e, "head", 4) == 0) { headOff = off; headLen = len; }
+            else if (std::memcmp(e, "fvar", 4) == 0) { fvarOff = off; fvarLen = len; }
+            else if (std::memcmp(e, "STAT", 4) == 0) { statOff = off; statLen = len; }
             else if (std::memcmp(e, "cmap", 4) == 0) cmap = true;
             else if (std::memcmp(e, "glyf", 4) == 0 || std::memcmp(e, "CFF ", 4) == 0 || std::memcmp(e, "CFF2", 4) == 0)
                 outlines = true;
@@ -311,8 +443,15 @@ std::size_t FontCatalog::addFile(const std::string& path) {
         if (info.weight == 0) info.weight = 400;
         if (info.weight < 10) info.weight = std::uint16_t(info.weight * 100); // some old fonts store 1..9
         if (info.stretch == 0 || info.stretch > 9) info.stretch = 5;
+        std::vector<std::uint8_t> fvar, stat;
+        info.variable = fvarOff && fvarLen >= 16 && fvarLen < (1u << 20) && readAt(f, fvarOff, fvarLen, fvar);
+        const FontFaceInfo base = info;
         m_faces.push_back(std::move(info));
         ++added;
+        if (base.variable) {
+            if (statOff && statLen < (1u << 20) && !readAt(f, statOff, statLen, stat)) stat.clear();
+            added += addNamedInstances(base, name, fvar, stat, m_faces);
+        }
     }
     return added;
 }
@@ -593,6 +732,20 @@ std::vector<const FontFaceInfo*> FontCatalog::systemFallbackChain(Script script,
     return out;
 }
 
-std::expected<Font, TextError> FontCatalog::load(const FontFaceInfo& face) { return Font::fromFile(face.path, face.index); }
+std::expected<Font, TextError> FontCatalog::load(const FontFaceInfo& face) {
+    auto font = Font::fromFile(face.path, face.index);
+    if (font && face.namedInstance >= 0) {
+        enableVariableFonts();
+        const auto named = font->namedInstances();
+        const auto axes = font->axes();
+        if (std::size_t(face.namedInstance) < named.size()) {
+            std::vector<FontVariation> v;
+            for (std::size_t a = 0; a < axes.size() && a < named[std::size_t(face.namedInstance)].coords.size(); ++a)
+                v.push_back({axes[a].tag, named[std::size_t(face.namedInstance)].coords[a]});
+            font->setVariation(v);
+        }
+    }
+    return font;
+}
 
 } // namespace fuse::text

@@ -48,6 +48,7 @@ struct ColrSource {
     std::span<const std::uint8_t> data; ///< whole font file
     std::uint32_t colr = 0, cpal = 0;   ///< absolute table offsets (0: absent)
     float scale = 0.f;                  ///< font units -> pixels
+    std::span<const std::int16_t> coords; ///< normalised variation coordinates (F2DOT14); empty: Var* paints at defaults
 };
 
 /// What the bitmap strike reader reads.

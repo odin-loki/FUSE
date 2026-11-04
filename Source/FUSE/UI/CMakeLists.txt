@@ -37,9 +37,10 @@ set(FUSE_UI_PROFILE "app" CACHE STRING "UI profile: hud, app, editor")
 
 # ---- fuse_text ----
 set(FUSE_UI_TEXT_CORE_SRC Text/src/text.cpp Text/src/font_catalog.cpp Text/src/paint_enable.cpp)
-# opt-in rasterisers (enableColorGlyphs / enableMsdf) and the font cooker: linked only into binaries that call them
+# opt-in rasterisers (enableColorGlyphs / enableMsdf), font variations (Font::instance) and the font cooker: linked
+# only into binaries that call them
 set(FUSE_UI_TEXT_RASTER_SRC Text/src/colr_paint.cpp Text/src/path_raster.cpp Text/src/color_bitmap.cpp Text/src/msdf.cpp
-    Text/src/font_cook.cpp)
+    Text/src/font_var.cpp Text/src/font_cook.cpp)
 
 # fuse_text_cook (every profile): TrueType / OpenType -> .fusefont, built over a MINIMAL fuse_text so cooked glyphs are
 # byte-identical to MINIMAL at the cooked sizes.
