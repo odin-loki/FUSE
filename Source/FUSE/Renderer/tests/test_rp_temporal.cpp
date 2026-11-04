@@ -28,10 +28,14 @@
 //
 // TAAU tolerance (GPU vs CPU kernel), per value e = |gpu - cpu| / max(1, |cpu|) over output RGB and history RGB + w:
 //   bulk      e <= 2e-5 for all but 0.1% of the values. The twins execute the same operations in the same order
-//             without contraction and Lavapipe rounds add / mul / div / sqrt / floor like the CPU, so the one
-//             source of difference is sin() in the Lanczos-2 weights (Vulkan allows 2^-11 absolute; llvmpipe's
-//             polynomial is ~1e-7): a weight error dw moves the resolve by <= dw * colour range / sum(w), and the
+//             without contraction, and add / mul / floor round like the CPU on every device; division and sqrt
+//             go through fuse_tm_div / fuse_tm_sqrt (tm_common: correctly rounded even where OpFDiv uses its
+//             2.5 ulp, e.g. NVIDIA, where a 1-ulp quotient switched floor() texels and rejection tests: history
+//             errors up to 5.7e-3 before), so the one source of difference is sin() in the Lanczos-2 weights
+//             (Vulkan allows 2^-11 absolute; llvmpipe's polynomial is ~1e-7, RTX 3090 measured worst 1.7e-4 on
+//             0.0044% of the values): a weight error dw moves the resolve by <= dw * colour range / sum(w), and the
 //             history blend is a contraction, so values stay within a few ulps of the HDR range (measured ~2e-6).
+//             The motion pass ("reference" below) is exact on every device for the same reason.
 //   outliers  worst e <= 2e-3. clip_to_aabb divides the history offset by the YCoCg box extent, floored at 1e-6:
 //             in smooth regions the 3x3 box is almost flat, so the clip factor 1 / maxUnit amplifies a 1e-7 history
 //             difference by up to ~1 / extent. That is the kernel's own conditioning, not a twin mismatch: it touches

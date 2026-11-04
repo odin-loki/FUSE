@@ -24,8 +24,10 @@ struct FuseTmMotion {
 // UV of a clip position (Vulkan NDC y down): ndc * 0.5 + 0.5 (motion_kernel::clip_uv).
 vec2 fuse_tm_clip_uv(vec4 c) {
     precise vec2 uv;
-    uv.x = c.x / c.w * 0.5 + 0.5;
-    uv.y = c.y / c.w * 0.5 + 0.5;
+    const float qx = fuse_tm_div(c.x, c.w);
+    const float qy = fuse_tm_div(c.y, c.w);
+    uv.x = qx * 0.5 + 0.5;
+    uv.y = qy * 0.5 + 0.5;
     return uv;
 }
 
@@ -39,16 +41,20 @@ FuseTmMotion fuse_tm_sky(FuseTmMotionFrame f, uvec2 p) {
     }
     precise float sx = float(p.x) + 0.5 + f.jitterX;
     precise float sy = float(p.y) + 0.5 + f.jitterY;
-    precise float nx = sx * (2.0 / float(f.width)) - 1.0;
-    precise float ny = sy * (2.0 / float(f.height)) - 1.0;
+    const float sw = fuse_tm_div(2.0, float(f.width));
+    const float sh = fuse_tm_div(2.0, float(f.height));
+    precise float nx = sx * sw - 1.0;
+    precise float ny = sy * sh - 1.0;
     precise float px = f.skyReproj[0].x * nx + f.skyReproj[1].x * ny + f.skyReproj[2].x;
     precise float py = f.skyReproj[0].y * nx + f.skyReproj[1].y * ny + f.skyReproj[2].y;
     precise float pw = f.skyReproj[0].z * nx + f.skyReproj[1].z * ny + f.skyReproj[2].z;
     if (pw > 0.0) {
-        precise float cu = sx / float(f.width);
-        precise float cv = sy / float(f.height);
-        precise float mx = cu - (px / pw * 0.5 + 0.5);
-        precise float my = cv - (py / pw * 0.5 + 0.5);
+        const float cu = fuse_tm_div(sx, float(f.width));
+        const float cv = fuse_tm_div(sy, float(f.height));
+        const float qx = fuse_tm_div(px, pw);
+        const float qy = fuse_tm_div(py, pw);
+        precise float mx = cu - (qx * 0.5 + 0.5);
+        precise float my = cv - (qy * 0.5 + 0.5);
         r.motion = vec2(mx, my);
     }
     return r;
@@ -102,9 +108,9 @@ FuseTmMotion fuse_tm_motion(FuseGpuSceneHeaderRef scene, FuseTmMotionFrame f, uv
     if (s == 0.0) {
         return r;
     }
-    precise float b0 = e0 / s;
-    precise float b1 = e1 / s;
-    precise float b2 = e2 / s;
+    const float b0 = fuse_tm_div(e0, s);
+    const float b1 = fuse_tm_div(e1, s);
+    const float b2 = fuse_tm_div(e2, s);
     precise vec3 obj;
     obj.x = b0 * v[0].x + b1 * v[1].x + b2 * v[2].x;
     obj.y = b0 * v[0].y + b1 * v[1].y + b2 * v[2].y;
