@@ -580,8 +580,8 @@ void vkWinDestroy(VkWin* w) {
 
 bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
     VkCtx& c = *w->ctx;
-    const Size vp = win.size();
-    const u32 vw = u32(std::max(1.f, std::round(vp.w))), vh = u32(std::max(1.f, std::round(vp.h)));
+    const AppWindow::PixelSize vp = win.pixelSize(); // device pixels (logical size * DPI scale)
+    const u32 vw = std::max(1u, vp.w), vh = std::max(1u, vp.h);
     std::string err;
     if (!w->swapchain || w->extent.width != vw || w->extent.height != vh) {
         if (!w->createSwapchain(vw, vh, err)) {
@@ -590,7 +590,7 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
         }
         // the surface decides the size (X11 / Win32 report the client area): follow it
         if (w->extent.width != vw || w->extent.height != vh) {
-            win.resize(w->extent.width, w->extent.height); // redraws at the new size next iteration
+            win.resizePixels(w->extent.width, w->extent.height); // redraws at the new size next iteration
             return false;
         }
     }

@@ -13,6 +13,7 @@
 #pragma once
 
 #include "fuse/app/app.hpp"
+#include "fuse/app/platform.hpp"
 
 #include <memory>
 #include <span>
@@ -59,6 +60,16 @@ struct NativeOptions {
     /// Popup menus / combo lists / submenus as their own borderless OS windows (Qt-style; may extend past the main
     /// window, clamp to the screen). X11: override-redirect windows; Win32: WS_POPUP + WS_EX_NOACTIVATE owned windows.
     bool osPopups = false;
+    /// DPI: Win32 per-monitor-v2 awareness (each window takes its monitor's scale and follows WM_DPICHANGED);
+    /// X11 Xft.dpi, overridden by $FUSE_UI_SCALE. False: every window stays at scale 1.
+    bool dpiAware = true;
+    /// Win32 WM_POINTER touch / pen: the primary finger and the pen drive the pointer, every contact reaches
+    /// UiContext::touches() (false: Windows synthesises mouse messages instead).
+    bool touch = true;
+    /// Replaces the OS theme query (kiosk apps, tests); null = the OS settings. Re-read on WM_SETTINGCHANGE /
+    /// WM_THEMECHANGED / WM_DWMCOLORIZATIONCOLORCHANGED.
+    SystemTheme (*themeQuery)(void* user) = nullptr;
+    void* themeQueryUser = nullptr;
 };
 
 class NativePlatform {
@@ -108,6 +119,25 @@ public:
     /// Posts a real left click to a native window (XSendEvent / PostMessage) at window-local `at`; it is then
     /// delivered by the normal event pump (tests drive popup windows this way).
     bool postClick(unsigned long long nativeWin, fuse::ui::Vec2 at);
+
+    // ---- platform services (plan §4.13) ----
+    /// Monitors (Win32 EnumDisplayMonitors + GetDpiForMonitor + EnumDisplaySettings; X11 the default screen).
+    std::vector<DisplayInfo> displays() const;
+    /// The OS theme now (or NativeOptions::themeQuery). The Application is updated at start and on every change.
+    SystemTheme querySystemTheme() const;
+    /// Changes a window's DPI scale the way a monitor change does (the window keeps its logical size and is resized
+    /// to logical * scale device pixels). X11 has no per-monitor DPI event: this is how its scale changes at run time.
+    bool setWindowScale(const AppWindow& w, float scale);
+    /// The OS cursor shape last applied to the window (Win32 WM_SETCURSOR / SetCursor, X11 XDefineCursor).
+    fuse::ui::CursorShape appliedCursor(const AppWindow& w) const;
+    /// Win32: whether the title bar was last switched to dark (DWMWA_USE_IMMERSIVE_DARK_MODE accepted).
+    bool darkTitleBar(const AppWindow& w) const;
+    /// Re-reads the OS theme and applies it (what WM_SETTINGCHANGE does on Win32; X11 apps call it themselves).
+    void refreshSystemTheme();
+    /// Posts a pointer move (WM_MOUSEMOVE / MotionNotify) to a native window at window-local device pixels `at`.
+    bool postPointerMove(unsigned long long nativeWin, fuse::ui::Vec2 at);
+    /// Asks a native window to close the way its close button does (WM_CLOSE / WM_DELETE_WINDOW).
+    bool postClose(unsigned long long nativeWin);
 
     struct Impl;
 

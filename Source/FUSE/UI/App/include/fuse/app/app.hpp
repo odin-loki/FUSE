@@ -72,11 +72,23 @@ private:
     bool m_dirty = false;
 };
 
+// ---- system theme (plan §4.13 Theme) -------------------------------------------------------------------------------
+/// The OS appearance preferences. Desktop backends query it (Win32: AppsUseLightTheme, DwmGetColorizationColor,
+/// SPI_GETHIGHCONTRAST, SPI_GETCLIENTAREAANIMATION, Accessibility TextScaleFactor) and update it live.
+struct SystemTheme {
+    bool dark = true;
+    fuse::ui::Color accent = fuse::ui::Color::rgb(0x3D8BFD);
+    bool highContrast = false;
+    bool reducedMotion = false;
+    f32 textScale = 1.f; ///< the OS "make text bigger" factor (1 .. 2.25)
+    friend bool operator==(const SystemTheme&, const SystemTheme&) = default;
+};
+
 // ---- windows -------------------------------------------------------------------------------------------------------
 struct WindowDesc {
     std::string_view title = "FUSE";
-    u32 width = 800, height = 600;
-    f32 dpiScale = 1.f;
+    u32 width = 800, height = 600; ///< logical (UI units)
+    f32 dpiScale = 1.f;            ///< initial device pixels per UI unit (native windows take the monitor's)
 };
 enum class RedrawPolicy : fuse::ui::u8 {
     OnDemand,   ///< update + present only when the UI needs it (default)
@@ -112,6 +124,18 @@ public:
 
     void resize(u32 width, u32 height); ///< logical units; forces a full repaint
     fuse::ui::Size size() const { return m_ui.viewport(); }
+    /// DPI scale: device pixels per UI unit (1 = 96 dpi). The presenter renders pixelSize(); input arrives in UI
+    /// units. setScale keeps the logical size (the pixel size follows), re-lays out, re-rasterises text and calls the
+    /// onDpiChanged handler.
+    f32 scale() const { return m_ui.scale(); }
+    void setScale(f32 s);
+    struct PixelSize {
+        u32 w = 0, h = 0;
+    };
+    PixelSize pixelSize() const { return m_pixels; }
+    /// The OS resized the client area to `width` x `height` device pixels (the logical size is that / scale()).
+    void resizePixels(u32 width, u32 height);
+    void onDpiChanged(fuse::ui::InlineFn<void(AppWindow&, f32)> fn) { m_onDpi = fn; }
     void setRedrawPolicy(RedrawPolicy p) { m_policy = p; }
     RedrawPolicy redrawPolicy() const { return m_policy; }
     void setPresenter(const Presenter& p);
@@ -155,6 +179,8 @@ private:
     fuse::ui::Image m_image;
     fuse::ui::CpuRasterizer m_raster;
     RedrawPolicy m_policy = RedrawPolicy::OnDemand;
+    PixelSize m_pixels;
+    fuse::ui::InlineFn<void(AppWindow&, f32)> m_onDpi;
     u64 m_frames = 0;
     u32 m_id;
     bool m_closing = false, m_forceRedraw = true;
@@ -218,6 +244,19 @@ public:
     f32 nextWake() const;
     double now() const;
 
+    // ---- system theme ----
+    const SystemTheme& systemTheme() const { return m_theme; }
+    /// Backends call this at start and whenever the OS appearance changes. Every window (and later ones) honours
+    /// reduced motion; with followSystemTheme the default widget theme switches dark / light and takes the system
+    /// accent. Calls the onThemeChanged handler when something changed.
+    void setSystemTheme(const SystemTheme& t);
+    void onThemeChanged(fuse::ui::InlineFn<void(Application&, const SystemTheme&)> fn) { m_onTheme = fn; }
+    /// Follow the OS colour scheme (default off: windows keep the dark default theme and app style sheets).
+    void setFollowSystemTheme(bool on);
+    bool followSystemTheme() const { return m_followTheme; }
+    /// Applies the theme to one window (createWindow does this for new windows).
+    void applyTheme(AppWindow& w) const;
+
 private:
     std::string m_name;
     CommandLine m_args;
@@ -231,6 +270,9 @@ private:
     u32 m_nextId = 1;
     int m_exit = 0;
     bool m_quit = false, m_primary = true;
+    SystemTheme m_theme;
+    bool m_themeKnown = false, m_followTheme = false;
+    fuse::ui::InlineFn<void(Application&, const SystemTheme&)> m_onTheme;
 };
 
 /// Writes an RGBA8 image as PNG.
