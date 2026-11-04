@@ -347,6 +347,17 @@ if(TARGET fuse_app)
     endif()
 endif()
 
+# §6 / UI0 baselines (report only): CPU raster + GPU time of typical frames, atlas and GPU memory
+if(TARGET fuse_ui_game AND TARGET fuse_ui_vk)
+    fuse_ui_test(fuse_ui_baselines test_ui_baselines.cpp)
+    target_link_libraries(fuse_ui_baselines PRIVATE fuse_ui_game fuse_ui_vk ${FUSE_UI_VK_LINK})
+    if(TARGET fuse_ui_icons)
+        add_dependencies(fuse_ui_baselines fuse_ui_icons)
+        target_compile_definitions(fuse_ui_baselines PRIVATE FUSE_UI_ICON_PACK="${FUSE_UI_ICON_PACK}")
+    endif()
+    set_tests_properties(fuse_ui_baselines PROPERTIES ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;report")
+endif()
+
 # ---- UI7 game UI gates ----
 if(TARGET fuse_ui_game)
     foreach(pair "hud_golden=fuse_ui_game_hud_golden" "gamepad_nav=fuse_ui_gamepad_nav"
