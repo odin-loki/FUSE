@@ -57,7 +57,7 @@ fuse_apply_cxx23(fuse_editor_fuse)
 
 if(TARGET fuse_app_native)
     add_executable(fuse_editor_fuse_app Fuse/app/main.cpp)
-    # ARCHIVE_OUTPUT_NAME: MSVC writes an import library per exe; keep it off the static lib fuse_editor_fuse.lib
+    # ARCHIVE_OUTPUT_NAME: the exe's import lib would otherwise be fuse_editor_fuse.lib, the library's own name (MSVC LNK1149).
     set_target_properties(fuse_editor_fuse_app PROPERTIES OUTPUT_NAME fuse_editor_fuse ARCHIVE_OUTPUT_NAME fuse_editor_fuse_app)
     target_link_libraries(fuse_editor_fuse_app PRIVATE fuse_editor_fuse fuse_app_native)
     if(WIN32)

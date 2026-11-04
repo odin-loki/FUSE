@@ -87,6 +87,11 @@ public:
     const HybridSceneRenderer* gpuScene() const { return m_gpuScene.get(); }
     /// Why the GPU scene is not active ("not requested", the init failure, ...).
     const char* gpuSceneStatus() const { return m_gpuSceneStatus; }
+    /// The UI layer on a UI context (FUSE UI: ui::render::UiFrameSource::recordOver) instead of the placeholder UI
+    /// quad: blended over the sprites in the GPU scene's UI stage (applied when the GPU scene is created, too).
+    /// {} restores the placeholder quad.
+    void setUiOverlay(const HybridUiOverlay& overlay);
+    const HybridUiOverlay& uiOverlay() const { return m_uiOverlay; }
 
     bool hasRhiRecording() const { return true; }
     const renderer::RenderCommandList& lastCommandList() const { return m_commandList; }
@@ -133,6 +138,7 @@ private:
     bool m_gpuSceneRequested = false;
     bool m_gpuSceneFailed = false;
     const char* m_gpuSceneStatus = "not requested";
+    HybridUiOverlay m_uiOverlay{};
 #endif
 };
 

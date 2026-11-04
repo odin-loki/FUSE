@@ -3,6 +3,9 @@
 //   * GPU draw list path and CPU upload path, two windows at once, incremental (damage) frames
 //   * the presented pixels match the CPU raster: max channel error <= 2/255 and < 0.5 % of pixels differ at all
 //   * idle: no frames are presented while nothing changes (Expose / Configure noise must not cause a redraw loop)
+//   * asyncVulkan: the first window starts on the software presenter (its frame equals the CPU raster), switches to
+//     Vulkan when the worker is done, and the switch frame already shows the whole UI; the CPU-upload platform uses
+//     the synchronous init option
 // Exit 77 (skip) without a display or a Vulkan device that can present. --out=<dir> writes the captured windows.
 #include "fuse/app/native.hpp"
 #include "fuse/ui/doc/document.hpp"
@@ -60,7 +63,39 @@ int main(int argc, char** argv) {
     model.set("n", 1.0);
     auto& gpuWin = a.createWindow({.title = "fuse_app gate (GPU draw)", .width = 320, .height = 240});
     CHECK(gpuWin.loadText(kDoc, &model));
-    if (native.show(gpuWin) != app::PresenterKind::Vulkan) {
+    const app::PresenterKind firstKind = native.show(gpuWin);
+    if (native.presenterPending(gpuWin)) {
+        // asyncVulkan (default): software frames while Vulkan starts on a worker, then a seamless switch
+        CHECK(firstKind == app::PresenterKind::Software);
+        presentAtLeast(a, gpuWin, 1);
+        Image shown;
+        const bool soft = native.kind(gpuWin) == app::PresenterKind::Software && native.capture(gpuWin, shown);
+        if (soft) {
+            const Diff d = compare(shown, gpuWin.rasterize({}));
+            std::printf("  software frame while Vulkan starts: max channel error %d\n", d.maxErr);
+            CHECK(d.maxErr == 0);
+        }
+        // a resize during the handover: the swapchain the worker made for 320x240 must follow the window
+        CHECK(native.resizeWindow(gpuWin, 336, 252));
+        for (int i = 0; i < 40 && gpuWin.size().w != 336.f; ++i) a.step(0.005f);
+        CHECK(gpuWin.size().w == 336.f && gpuWin.size().h == 252.f);
+        native.waitForPresenter(gpuWin);
+        CHECK(!native.presenterPending(gpuWin));
+        if (native.kind(gpuWin) == app::PresenterKind::Vulkan) {
+            // the switch frame is presented by the next loop iteration without any new input: it must be the whole UI
+            const u64 f0 = gpuWin.framesPresented();
+            presentAtLeast(a, gpuWin, f0 + 1);
+            CHECK(gpuWin.framesPresented() == f0 + 1);
+            Image vk;
+            CHECK(native.capture(gpuWin, vk));
+            const Diff d = compare(vk, gpuWin.rasterize({}));
+            std::printf("  first Vulkan frame after the switch: %dx%d, max channel error %d, %.3f %% pixels differ\n", vk.width,
+                        vk.height, d.maxErr, d.fraction * 100.0);
+            CHECK(vk.width == 336 && vk.height == 252);
+            CHECK(d.maxErr <= 2 && d.fraction < (native.gpuDraws(gpuWin) ? 0.005 : 1e-9));
+        }
+    }
+    if (native.kind(gpuWin) != app::PresenterKind::Vulkan) {
         std::printf("fuse_app_native_window: skipped, no Vulkan presenter (%.*s)\n", int(native.lastError().size()),
                     native.lastError().data());
         return 77;
@@ -114,7 +149,7 @@ int main(int argc, char** argv) {
     // CPU upload path through its own platform object: must match the CPU raster exactly
     {
         app::Application b{{.name = "gate_native_cpu", .loadSettings = false}};
-        app::NativePlatform cpu(b, {.drawMode = app::VkDrawMode::CpuUpload});
+        app::NativePlatform cpu(b, {.drawMode = app::VkDrawMode::CpuUpload, .asyncVulkan = false}); // synchronous init
         auto& w = b.createWindow({.title = "fuse_app gate (CPU upload)", .width = 300, .height = 200});
         CHECK(w.loadText(kDoc, &model));
         CHECK(cpu.show(w) == app::PresenterKind::Vulkan && !cpu.gpuDraws(w));

@@ -28,6 +28,20 @@ fuse_ui_test(fuse_text_edit_ops test_text_edit_ops.cpp)
 fuse_ui_test(fuse_text_fallback test_text_fallback.cpp)
 fuse_ui_test(fuse_ui_widget_interaction test_widget_interaction.cpp)
 
+# UI3 text gates: Unicode conformance files (tests/data/unicode), per-script goldens, system fonts, zero-alloc, DPI.
+foreach(g grapheme linebreak bidi)
+    fuse_ui_test(fuse_text_${g}_conformance test_text_conformance.cpp)
+    target_compile_definitions(fuse_text_${g}_conformance PRIVATE FUSE_TEXT_CONFORMANCE_GATE="${g}"
+                               FUSE_UI_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data")
+    set_tests_properties(fuse_text_${g}_conformance PROPERTIES LABELS "fuse_ui;gate;text" SKIP_RETURN_CODE 77)
+endforeach()
+foreach(g shaping_scripts system_fonts cache_zero_alloc colrv1 dpi_1 dpi_1_25 dpi_1_5 dpi_2)
+    fuse_ui_test(fuse_text_${g} test_text_ui3.cpp)
+    target_compile_definitions(fuse_text_${g} PRIVATE FUSE_TEXT_GATE="${g}")
+    set_tests_properties(fuse_text_${g} PROPERTIES LABELS "fuse_ui;gate;text" SKIP_RETURN_CODE 77
+                         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endforeach()
+
 find_package(Threads REQUIRED)
 target_link_libraries(fuse_ui_single_thread_parity PRIVATE Threads::Threads)
 target_link_libraries(fuse_ui_event_routing PRIVATE Threads::Threads)
@@ -49,9 +63,15 @@ target_include_directories(fuse_ui_platform_keys_v2 PRIVATE ${FUSE_CORE_DIR}/inc
 fuse_ui_test(fuse_ui_text_input test_text_input.cpp ${FUSE_CORE_DIR}/src/platform/input.cpp
              ${FUSE_CORE_DIR}/src/platform/text_services.cpp)
 target_include_directories(fuse_ui_text_input PRIVATE ${FUSE_CORE_DIR}/include)
+# UI1 platform services, UI side: DPI scale, cursor style, reduced motion, touch / pen, theme slot.
+fuse_ui_test(fuse_ui_platform_services test_platform_services.cpp ${FUSE_CORE_DIR}/src/platform/input.cpp
+             ${FUSE_CORE_DIR}/src/platform/text_services.cpp)
+target_include_directories(fuse_ui_platform_services PRIVATE ${FUSE_CORE_DIR}/include)
+set_tests_properties(fuse_ui_platform_services PROPERTIES LABELS "fuse_ui;gate")
 if(WIN32) # text_services.cpp uses IMM32 (ImmAssociateContextEx etc.)
     target_link_libraries(fuse_ui_platform_keys_v2 PRIVATE imm32)
     target_link_libraries(fuse_ui_text_input PRIVATE imm32)
+    target_link_libraries(fuse_ui_platform_services PRIVATE imm32)
 endif()
 
 # .fuseui documents and Lua bindings.
@@ -109,13 +129,15 @@ if(TARGET fuse_ui_vk)
     fuse_ui_test(fuse_ui_vk_parity test_vk_parity.cpp)
     target_link_libraries(fuse_ui_vk_parity PRIVATE fuse_ui_vk ${FUSE_UI_VK_LINK})
     set_tests_properties(fuse_ui_vk_parity PROPERTIES SKIP_RETURN_CODE 77 LABELS "ui;gpu")
-    # §6 HUD GPU time at 1440p (enforced on hardware GPUs, reported on CPU devices). Not in MSVC in-tree builds: there
-    # vulkan-1.lib and the fuse_rhi volk symbols collide for vk_headless tests (fuse_ui_vk_parity fails to link the
-    # same way); use the standalone UI build on Windows.
-    if(NOT (MSVC AND TARGET fuse_rhi))
-        fuse_ui_test(fuse_ui_vk_budget test_vk_budget.cpp)
-        target_link_libraries(fuse_ui_vk_budget PRIVATE fuse_ui_vk ${FUSE_UI_VK_LINK})
-        set_tests_properties(fuse_ui_vk_budget PROPERTIES SKIP_RETURN_CODE 77 LABELS "ui;gpu;fuse_ui")
+    foreach(g damage validation_clean budget)
+        fuse_ui_test(fuse_ui_vk_${g} test_vk_${g}.cpp)
+        target_link_libraries(fuse_ui_vk_${g} PRIVATE fuse_ui_vk ${FUSE_UI_VK_LINK})
+        set_tests_properties(fuse_ui_vk_${g} PROPERTIES SKIP_RETURN_CODE 77 ENVIRONMENT "${FUSE_UI_LVP_ENV}"
+                             LABELS "fuse_ui;gate;vulkan")
+    endforeach()
+    if(TARGET fuse_ui_icons) # icons case: the build-time starter pack
+        add_dependencies(fuse_ui_vk_parity fuse_ui_icons)
+        target_compile_definitions(fuse_ui_vk_parity PRIVATE FUSE_UI_ICON_PACK="${FUSE_UI_ICON_PACK}")
     endif()
 endif()
 
@@ -123,6 +145,28 @@ fuse_ui_test(fuse_ui_text_full test_text_full.cpp)
 fuse_ui_test(fuse_ui_tier_b test_tier_b.cpp)
 fuse_ui_test(fuse_ui_tier_b2 test_tier_b2.cpp)
 fuse_ui_test(fuse_ui_backdrop_blur test_backdrop_blur.cpp)
+# UI4 icons: SVG cooker determinism / index round trip, CPU raster golden of icons (tests/golden/icons.png)
+if(TARGET fuse_ui_icons)
+    # test name = gate name; the cook gate's executable is fuse_ui_icon_cook_gate (fuse_ui_icon_cook is the tool)
+    foreach(pair "cook=fuse_ui_icon_cook=fuse_ui_icon_cook_gate" "render=fuse_ui_icon_render=fuse_ui_icon_render")
+        string(REPLACE "=" ";" kv ${pair})
+        list(GET kv 0 g)
+        list(GET kv 1 name)
+        list(GET kv 2 t)
+        add_executable(${t} test_icons.cpp)
+        target_include_directories(${t} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
+        add_test(NAME ${name} COMMAND ${t})
+        target_link_libraries(${t} PRIVATE fuse_ui_widgets fuse_ui_icon_cook_lib)
+        add_dependencies(${t} fuse_ui_icons)
+        target_compile_definitions(${t} PRIVATE FUSE_UI_ICON_GATE="${g}" FUSE_UI_ICON_PACK="${FUSE_UI_ICON_PACK}"
+                                   FUSE_UI_ICON_SVG_DIR="${FUSE_UI_ICON_SVG_DIR}")
+        if(TARGET fuse_ui_doc)
+            target_link_libraries(${t} PRIVATE fuse_ui_doc)
+            target_compile_definitions(${t} PRIVATE FUSE_UI_ICON_HAVE_DOC=1)
+        endif()
+        set_tests_properties(${name} PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    endforeach()
+endif()
 # UI6 gates: dock layout save / restore, 1M-row model / view, Tier C (proxy, delegates, grid), Tier D (rich widgets)
 foreach(g dock_layout_roundtrip modelview_1m_rows tier_c tier_d)
     fuse_ui_test(fuse_ui_${g} test_ui6.cpp)
@@ -165,13 +209,6 @@ foreach(g font_picker file_dialog node_graph curve_timeline viewport code_edit d
 endforeach()
 
 # UI5 gates: fuse_app on-demand loop (virtual clock, headless presenter)
-# Real-window gates use lavapipe on Linux and under Wine (cross builds); native Windows uses the installed driver (a
-# Linux ICD path there hides every GPU and drops the presenter to GDI).
-if(WIN32 AND NOT CMAKE_CROSSCOMPILING)
-    set(FUSE_APP_TEST_VK_ENV "")
-else()
-    set(FUSE_APP_TEST_VK_ENV "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
-endif()
 if(TARGET fuse_app)
     foreach(g idle_zero_frames multiwindow hello_startup settings)
         add_executable(fuse_app_${g} test_app.cpp)
@@ -192,7 +229,7 @@ if(TARGET fuse_app)
             add_test(NAME fuse_app_native_window COMMAND fuse_app_native_window --out=${CMAKE_CURRENT_BINARY_DIR})
         endif()
         set_tests_properties(fuse_app_native_window PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300
-            ENVIRONMENT "${FUSE_APP_TEST_VK_ENV}" LABELS "fuse_ui;gate;vulkan")
+            ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate;vulkan")
         add_executable(fuse_app_os_popups test_app_os_popups.cpp)
         target_link_libraries(fuse_app_os_popups PRIVATE fuse_app_native)
         if(FUSE_UI_XVFB_RUN AND NOT WIN32)
@@ -202,7 +239,7 @@ if(TARGET fuse_app)
             add_test(NAME fuse_app_os_popups COMMAND fuse_app_os_popups --out=${CMAKE_CURRENT_BINARY_DIR})
         endif()
         set_tests_properties(fuse_app_os_popups PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300
-            ENVIRONMENT "${FUSE_APP_TEST_VK_ENV}" LABELS "fuse_ui;gate;vulkan")
+            ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate;vulkan")
         # §6 idle budget on a real window: zero presents, ~0 % CPU, a handful of loop wakeups over 3 s
         add_executable(fuse_app_idle_native test_app_idle_native.cpp)
         target_link_libraries(fuse_app_idle_native PRIVATE fuse_app_native)
@@ -213,7 +250,23 @@ if(TARGET fuse_app)
             add_test(NAME fuse_app_idle_native COMMAND fuse_app_idle_native)
         endif()
         set_tests_properties(fuse_app_idle_native PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
-            ENVIRONMENT "${FUSE_APP_TEST_VK_ENV}" LABELS "fuse_ui;gate;vulkan")
+            ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate;vulkan")
+        # custom window chrome (WM_NCHITTEST on a real window) and tray icon + notifications (UI10)
+        foreach(g window_chrome tray)
+            set(_src ${g})
+            if(g STREQUAL "window_chrome")
+                set(_src chrome)
+            endif()
+            add_executable(fuse_app_${g} test_app_${_src}.cpp)
+            target_link_libraries(fuse_app_${g} PRIVATE fuse_app_native)
+            if(FUSE_UI_XVFB_RUN AND NOT WIN32)
+                add_test(NAME fuse_app_${g} COMMAND ${FUSE_UI_XVFB_RUN} -a -s "-screen 0 1280x800x24"
+                         $<TARGET_FILE:fuse_app_${g}> --out=${CMAKE_CURRENT_BINARY_DIR})
+            else()
+                add_test(NAME fuse_app_${g} COMMAND fuse_app_${g} --out=${CMAKE_CURRENT_BINARY_DIR})
+            endif()
+            set_tests_properties(fuse_app_${g} PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120 LABELS "fuse_ui;gate")
+        endforeach()
     endif()
     # project.json schema 2 + AppPresent + minimal init path (in tree: needs fuse_project / fuse_core)
     if(TARGET fuse_app_project)
@@ -229,7 +282,64 @@ if(TARGET fuse_app)
             add_test(NAME fuse_project_schema2_native COMMAND fuse_project_schema2 --native)
         endif()
         set_tests_properties(fuse_project_schema2_native PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
-            ENVIRONMENT "${FUSE_APP_TEST_VK_ENV}" LABELS "fuse_ui;gate;project;vulkan")
+            ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate;project;vulkan")
+    endif()
+    # Windows UI Automation through AccessKit on a real window (skips with 77 when AccessKit is not linked)
+    if(TARGET fuse_app_a11y AND WIN32)
+        add_executable(fuse_ui_a11y_windows test_a11y_windows.cpp)
+        target_link_libraries(fuse_ui_a11y_windows PRIVATE fuse_app_a11y ole32 oleaut32)
+        add_test(NAME fuse_ui_a11y_windows COMMAND fuse_ui_a11y_windows)
+        set_tests_properties(fuse_ui_a11y_windows PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
+            LABELS "fuse_ui;gate;a11y")
+    endif()
+    # §6 budgets on the hello_app sample: launch -> first presented frame on a real OS window, and binary size
+    if(TARGET hello_app)
+        add_executable(fuse_app_native_startup test_app_native_startup.cpp)
+        add_test(NAME fuse_app_native_startup COMMAND fuse_app_native_startup $<TARGET_FILE:hello_app> --runs=5 --budget-ms=150
+                 --vulkan-budget-ms=2000)
+        set_tests_properties(fuse_app_native_startup PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
+            LABELS "fuse_ui;gate")
+        # Baseline per toolchain + text profile, +10 % (plan §6). MSVC 19.5x x64 Release, MINIMAL text, measured
+        # 2026-11-04 (MSVC Build Tools 2026) with icons, FontCatalog and a11y merged: 809,472 bytes -> budget 890,400. Other toolchains: set
+        # FUSE_APP_BINARY_BUDGET after measuring (the gate then checks a stripped copy); until then it reports and skips.
+        set(_budget 0)
+        if(MSVC AND FUSE_UI_TEXT STREQUAL "MINIMAL" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+            set(_budget 890400)
+        endif()
+        if(FUSE_APP_BINARY_BUDGET) # -DFUSE_APP_BINARY_BUDGET=<bytes> overrides
+            set(_budget ${FUSE_APP_BINARY_BUDGET})
+        endif()
+        set(_bin $<TARGET_FILE:hello_app>)
+        if(NOT MSVC AND CMAKE_STRIP)
+            add_custom_command(TARGET hello_app POST_BUILD
+                COMMAND ${CMAKE_STRIP} -o $<TARGET_FILE:hello_app>.stripped $<TARGET_FILE:hello_app> VERBATIM)
+            set(_bin $<TARGET_FILE:hello_app>.stripped)
+        endif()
+        add_executable(fuse_app_binary_size test_app_binary_size.cpp)
+        add_test(NAME fuse_app_binary_size COMMAND fuse_app_binary_size --file=${_bin} --budget=${_budget}
+                 "--profile=${CMAKE_CXX_COMPILER_ID} ${CMAKE_BUILD_TYPE}, text ${FUSE_UI_TEXT}")
+        set_tests_properties(fuse_app_binary_size PROPERTIES SKIP_RETURN_CODE 77 LABELS "fuse_ui;gate")
+    endif()
+    if(TARGET game_menu)
+        add_test(NAME fuse_app_game_menu_sample COMMAND game_menu --script --screenshot=${CMAKE_CURRENT_BINARY_DIR}/game_menu.png)
+        set_tests_properties(fuse_app_game_menu_sample PROPERTIES LABELS fuse_ui)
+    endif()
+    if(TARGET fuse_app_native)
+        # UI1 desktop platform services on real windows: DPI change, displays, cursors, system theme, native dialogs,
+        # touch injection, multiple windows (one executable per gate; see test_platform_desktop.cpp).
+        foreach(g dpi_change displays cursors system_theme dialogs touch_synthetic multiwindow)
+            add_executable(fuse_platform_${g} test_platform_desktop.cpp)
+            target_link_libraries(fuse_platform_${g} PRIVATE fuse_app_native)
+            target_compile_definitions(fuse_platform_${g} PRIVATE FUSE_PLATFORM_GATE="${g}")
+            if(FUSE_UI_XVFB_RUN AND NOT WIN32)
+                add_test(NAME fuse_platform_${g} COMMAND ${FUSE_UI_XVFB_RUN} -a -s "-screen 0 1280x800x24"
+                         $<TARGET_FILE:fuse_platform_${g}>)
+            else()
+                add_test(NAME fuse_platform_${g} COMMAND fuse_platform_${g})
+            endif()
+            set_tests_properties(fuse_platform_${g} PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 180
+                ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate;vulkan")
+        endforeach()
     endif()
     if(TARGET hello_app)
         add_test(NAME fuse_app_hello_sample COMMAND hello_app --screenshot=${CMAKE_CURRENT_BINARY_DIR}/hello_app.png)

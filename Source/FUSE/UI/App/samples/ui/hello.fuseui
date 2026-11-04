@@ -7,8 +7,8 @@
     "children": [
       { "class": "label", "id": "title", "classes": ["big"], "text": "Hello, FUSE" },
       { "class": "label", "id": "count", "text": "Clicked {clicks} times" },
-      { "class": "button", "id": "click", "text": "Click me", "on": { "clicked": "click" } },
-      { "class": "button", "id": "quit", "text": "Quit", "on": { "clicked": "quit" } },
+      { "class": "button", "id": "click", "icon": "plus", "text": "Click me", "on": { "clicked": "click" } },
+      { "class": "button", "id": "quit", "icon": "x", "text": "Quit", "on": { "clicked": "quit" } },
     ],
   },
 }

@@ -118,7 +118,7 @@ endforeach()
 add_executable(fuse_rp_rdn ${_fuse_rl55_tests_dir}/test_rp_rdn.cpp)
 target_link_libraries(fuse_rp_rdn PRIVATE fuse_radiance_denoise)
 fuse_apply_cxx23(fuse_rp_rdn)
-set(_fuse_rl55_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+set(_fuse_rl55_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
 set(_fuse_rl55_vk_tests "")
 foreach(_case "passes;set;slang" "passes;set;glsl" "passes;buffer;slang" "zero_alloc;set;slang")
     list(GET _case 0 _mode)
@@ -126,7 +126,7 @@ foreach(_case "passes;set;slang" "passes;set;glsl" "passes;buffer;slang" "zero_a
     list(GET _case 2 _lang)
     set(_name "fuse_rp_rdn_vk_${_mode}_${_backend}_${_lang}")
     if(FUSE_VULKAN_BACKEND)
-        add_test(NAME ${_name} COMMAND "${_fuse_rl55_lock}" "$<TARGET_FILE:fuse_rp_rdn>" --mode ${_mode}
+        add_test(NAME ${_name} COMMAND ${_fuse_rl55_lock} "$<TARGET_FILE:fuse_rp_rdn>" --mode ${_mode}
                                        --backend ${_backend} --language ${_lang})
     else()
         add_test(NAME ${_name} COMMAND fuse_rp_rdn --mode ${_mode} --backend ${_backend} --language ${_lang})
@@ -134,7 +134,7 @@ foreach(_case "passes;set;slang" "passes;set;glsl" "passes;buffer;slang" "zero_a
     list(APPEND _fuse_rl55_vk_tests ${_name})
 endforeach()
 set_tests_properties(${_fuse_rl55_vk_tests} PROPERTIES
-    ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+    ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
     RUN_SERIAL TRUE
     SKIP_RETURN_CODE 77
     TIMEOUT 900

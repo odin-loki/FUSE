@@ -106,19 +106,23 @@ bool readJson(Reader& r, JsonValue& v, u32 depth) {
 // Same rule as Document::buildNode: every key except these is a property (bindings live there).
 bool structuralKey(std::string_view k) {
     return k == "class" || k == "id" || k == "children" || k == "on" || k == "classes" || k == "style" ||
-           k == "items" || k == "tabIndex" || k == "a11yName" || k == "image" || k == "step";
+           k == "items" || k == "tabIndex" || k == "a11yName" || k == "image" || k == "step" || k == "icon";
 }
 bool isBinding(const JsonValue& v) { return v.isString() && v.string.find('{') != std::string::npos; }
 
 struct Walk {
     std::vector<std::string> bindings;
     std::set<std::string> classes;
+    std::set<std::string> icons;
     u32 nodes = 0;
     bool walk(const JsonValue& n, u32 depth) {
         if (!n.isObject() || depth > kMaxDepth) return false;
         ++nodes;
         const JsonValue* c = n.get("class");
         classes.insert(c && c->isString() ? c->string : std::string("panel"));
+        if (const JsonValue* ic = n.get("icon"); ic && ic->isString()) icons.insert(ic->string);
+        if (const JsonValue* st = n.get("style"); st && st->isObject())
+            if (const JsonValue* ic = st->get("icon"); ic && ic->isString()) icons.insert(ic->string);
         for (const auto& [k, v] : n.object)
             if (!structuralKey(k) && isBinding(v) &&
                 std::find(bindings.begin(), bindings.end(), v.string) == bindings.end())
@@ -148,10 +152,11 @@ void writeValue(Writer& w, const PropValue& v) {
     w.f32_(v.color.r); w.f32_(v.color.g); w.f32_(v.color.b); w.f32_(v.color.a);
     w.u8_(v.trackCount);
     for (u8 i = 0; i < v.trackCount; ++i) writeLength(w, v.tracks[i]);
+    w.u32_(v.ident);
 }
 bool readValue(Reader& r, PropValue& v) {
     const u8 t = r.u8_();
-    if (t > u8(PropType::Tracks)) return r.ok = false;
+    if (t > u8(PropType::Ident)) return r.ok = false;
     v.type = PropType(t);
     v.b = r.u8_() != 0;
     v.e = r.u8_();
@@ -161,6 +166,7 @@ bool readValue(Reader& r, PropValue& v) {
     v.trackCount = r.u8_();
     if (v.trackCount > kMaxGridTracks) return r.ok = false;
     for (u8 i = 0; i < v.trackCount && r.ok; ++i) readLength(r, v.tracks[i]);
+    v.ident = r.u32_();
     return r.ok;
 }
 void writeSheet(Writer& w, const StyleSheet& s) {
@@ -211,7 +217,7 @@ std::expected<StyleSheet, std::string> readSheet(Reader& r) {
             sel.combinator = SimpleSelector::Combinator(c);
         }
         if (rule.chain.empty() && !rule.root && r.ok) return std::unexpected("cooked style: empty selector");
-        rule.decls.resize(r.count(40));
+        rule.decls.resize(r.count(44));
         for (Declaration& d : rule.decls) {
             const u32 p = r.u32_();
             if (p > u32(Prop::Count)) return std::unexpected("cooked style: bad property");
@@ -400,6 +406,7 @@ std::expected<std::vector<u8>, DocError> cookDocument(std::string_view json, Coo
         info->bindings = u32(walk.bindings.size());
         info->instructions = instructions;
         info->classes.assign(walk.classes.begin(), walk.classes.end());
+        info->icons.assign(walk.icons.begin(), walk.icons.end());
     }
     return std::move(w.b);
 }

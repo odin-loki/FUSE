@@ -68,8 +68,8 @@ inline bool feed(UiContext& ui, const fuse::platform::EventV2& e, float dpiScale
     const Vec2 p{e.x / dpiScale, e.y / dpiScale};
     const MouseButton b = e.mouseButton == 2 ? MouseButton::Right : (e.mouseButton == 3 ? MouseButton::Middle : MouseButton::Left);
     switch (e.type) {
-    case T::MouseMove: return ui.pointerMove(p);
-    case T::MouseButtonDown: return ui.pointerDown(p, b);
+    case T::MouseMove: ui.setPointerKind(UiContext::PointerKind::Mouse); return ui.pointerMove(p);
+    case T::MouseButtonDown: ui.setPointerKind(UiContext::PointerKind::Mouse); return ui.pointerDown(p, b);
     case T::MouseButtonUp: return ui.pointerUp(p, b);
     case T::Wheel: return ui.wheel(e.x == 0.f && e.y == 0.f ? ui.pointer() : p, {e.wheelX, e.wheelY}); // (0,0): legacy
     case T::KeyDown: return ui.keyDown(toUiKey(e.key), toUiMods(e.mods));
@@ -78,9 +78,13 @@ inline bool feed(UiContext& ui, const fuse::platform::EventV2& e, float dpiScale
     case T::TextComposition:
         if (pump != nullptr) return ui.textComposition(pump->composition(), pump->compositionCursor());
         return ui.textComposition(e.textView(), i32(e.textView().size()));
-    case T::TouchDown: return ui.pointerDown(p);
-    case T::TouchMove: return ui.pointerMove(p);
-    case T::TouchUp: return ui.pointerUp(p);
+    case T::TouchDown: return ui.touchDown(e.pointerId, p); // the primary touch drives the pointer
+    case T::TouchMove: return ui.touchMove(e.pointerId, p);
+    case T::TouchUp: return ui.touchUp(e.pointerId, p);
+    case T::PenDown: ui.setPointerKind(UiContext::PointerKind::Pen, e.pressure); ui.pointerMove(p); return ui.pointerDown(p);
+    case T::PenMove: ui.setPointerKind(UiContext::PointerKind::Pen, e.pressure); return ui.pointerMove(p);
+    case T::PenUp: ui.setPointerKind(UiContext::PointerKind::Pen, 0.f); return ui.pointerUp(p);
+    case T::DpiChanged: ui.setScale(e.dpiScale); return false; // later events: pass the new scale as `dpiScale`
     case T::WindowResized: ui.setViewport({float(e.width) / dpiScale, float(e.height) / dpiScale}); return false;
     default: return false;
     }

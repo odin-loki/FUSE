@@ -47,6 +47,9 @@ enum class Justify : u8 { Start, Center, End, SpaceBetween, SpaceAround };
 enum class Overflow : u8 { Visible, Clip, Scroll };
 enum class GradientDir : u8 { None, Vertical, Horizontal };
 enum class TextAlignment : u8 { Start, Center, End };
+/// Pointer cursor shapes (CSS `cursor:`). Auto = inherit from the parent (the root falls back to Arrow).
+enum class CursorShape : u8 { Auto, Arrow, Text, Hand, ResizeNS, ResizeEW, ResizeNWSE, ResizeNESW, Move, Wait, NotAllowed, Crosshair, Count };
+const char* cursorShapeName(CursorShape c);
 
 inline constexpr int kMaxGridTracks = 8;
 
@@ -80,7 +83,10 @@ struct ComputedStyle {
     f32 opacity = 1.f;
     f32 shadowBlur = 0.f, shadowX = 0.f, shadowY = 0.f;
     f32 backdropBlur = 0.f; ///< backdrop-filter: blur(<len>) / backdrop-blur: <len> (frosted glass under the background)
+    u32 icon = 0;           ///< `icon: <name>`: hashId of an icon in the context's IconSet (0 = none); see icons.hpp
+    f32 iconSize = 0.f;     ///< `icon-size`: cell size in px (0 = auto: font-size + 2)
     bool pointerEvents = true;
+    CursorShape cursor = CursorShape::Auto; ///< cursor: auto | default | text | pointer | ns-resize | ew-resize | ...
     friend bool operator==(const ComputedStyle&, const ComputedStyle&) = default;
 };
 
@@ -91,11 +97,11 @@ enum class Prop : u8 {
     AlignItems, AlignSelf, Justify, Wrap, Overflow, GridColumns, GridColumn, GridColumnSpan, GridRow, GridRowSpan,
     Left, Top, Right, Bottom, CenterX, CenterY, Background, Background2, Gradient, BorderColor, BorderWidth,
     RadiusTL, RadiusTR, RadiusBR, RadiusBL, Color, FontSize, TextAlign, Opacity, ShadowColor, ShadowBlur, ShadowX,
-    ShadowY, PointerEvents, BackdropBlur, Count
+    ShadowY, PointerEvents, BackdropBlur, Icon, IconSize, Cursor, Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
 
-enum class PropType : u8 { Bool, Enum, Length, Number, Color, Tracks };
+enum class PropType : u8 { Bool, Enum, Length, Number, Color, Tracks, Ident };
 struct PropInfo {
     Prop id;
     std::string_view cssName;
@@ -119,11 +125,13 @@ struct PropValue {
     fuse::ui::Color color;
     std::array<Length, kMaxGridTracks> tracks{};
     u8 trackCount = 0;
+    u32 ident = 0; ///< Ident: hashId of the name (0 = none)
     static PropValue ofBool(bool v) { PropValue p; p.type = PropType::Bool; p.b = v; return p; }
     static PropValue ofEnum(u8 v) { PropValue p; p.type = PropType::Enum; p.e = v; return p; }
     static PropValue ofLength(Length v) { PropValue p; p.type = PropType::Length; p.len = v; return p; }
     static PropValue ofNumber(f32 v) { PropValue p; p.type = PropType::Number; p.num = v; return p; }
     static PropValue ofColor(fuse::ui::Color v) { PropValue p; p.type = PropType::Color; p.color = v; return p; }
+    static PropValue ofIdent(u32 h) { PropValue p; p.type = PropType::Ident; p.ident = h; return p; }
 };
 void applyProp(ComputedStyle& s, Prop p, const PropValue& v);
 PropValue readProp(const ComputedStyle& s, Prop p);
@@ -217,6 +225,9 @@ public:
     StyleEngine();
     void clearSheets();
     void addSheet(StyleSheet sheet);
+    /// The theme sheet: always ordered first (before every addSheet sheet); replaced by the next call.
+    void setThemeSheet(StyleSheet sheet);
+    bool hasThemeSheet() const { return m_hasTheme; }
     u32 sheetVersion() const { return m_version; }
     /// Computes the style of `node`: defaults → inherited from `parentStyle` → matched rules → `inlineValues`.
     /// Returns an index into the table (allocates only for a never-seen combination).
@@ -230,7 +241,9 @@ private:
     bool matchSimple(const StyleSubject& s, u32 node, const SimpleSelector& sel) const;
     bool resolveVar(std::string_view raw, Prop p, PropValue& out, int depth) const;
     u32 intern(const ComputedStyle& cs);
-    std::vector<StyleSheet> m_sheets;
+    void reorder();
+    std::vector<StyleSheet> m_sheets; ///< [0] is the theme sheet when m_hasTheme
+    bool m_hasTheme = false;
     std::vector<const StyleRule*> m_ordered; ///< all rules, sorted by (specificity, sheet, order)
     std::vector<const StyleRule*> m_scratch;
     std::vector<std::pair<u32, std::string_view>> m_localTokens;

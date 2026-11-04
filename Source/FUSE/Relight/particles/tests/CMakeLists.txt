@@ -28,23 +28,22 @@ endif()
 add_executable(fuse_relight_particles_vk_tests test_particles_vk.cpp)
 target_link_libraries(fuse_relight_particles_vk_tests PRIVATE fuse_relight_particles_vk)
 _rl_particles_cxx23(fuse_relight_particles_vk_tests)
-set(_rl_pt_lock "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
 set(_rl_pt_vk_tests "")
 foreach(_case "parity_fif1;parity;1;" "parity_fif2;parity;2;" "parity_one_step;parity;2;--one-step" "zero_alloc;zero_alloc;2;")
     list(GET _case 0 _name)
     list(GET _case 1 _suite)
     list(GET _case 2 _fif)
     list(GET _case 3 _extra)
-    if(EXISTS "${_rl_pt_lock}")
+    if(EXISTS "${FUSE_VULKAN_ICD_LOCK_PATH}")
         add_test(NAME rl_particles_vk_${_name}
-                 COMMAND "${_rl_pt_lock}" "$<TARGET_FILE:fuse_relight_particles_vk_tests>" ${_suite} --frames-in-flight ${_fif} ${_extra})
+                 COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_relight_particles_vk_tests>" ${_suite} --frames-in-flight ${_fif} ${_extra})
     else()
         add_test(NAME rl_particles_vk_${_name} COMMAND fuse_relight_particles_vk_tests ${_suite} --frames-in-flight ${_fif} ${_extra})
     endif()
     list(APPEND _rl_pt_vk_tests rl_particles_vk_${_name})
 endforeach()
 set_tests_properties(${_rl_pt_vk_tests} PROPERTIES
-    ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+    ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
     RUN_SERIAL TRUE
     SKIP_RETURN_CODE 77
     TIMEOUT 900

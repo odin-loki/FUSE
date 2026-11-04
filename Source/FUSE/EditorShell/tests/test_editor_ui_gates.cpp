@@ -259,17 +259,33 @@ void gateUiFrame(Rig& r) {
     const Rect bar = r.rect("editor.toolbar");
     const auto t0 = std::chrono::steady_clock::now();
     int n = 0;
+    float maxDamage = 0.f;
     for (float x = bar.x + 4.f; x < bar.x + 700.f; x += 6.f, ++n) {
         r.ui().pointerMove({x, bar.y + bar.h * 0.5f});
         r.app.step(0.f);
+        // frame 0 enters the window (every ancestor gains :hover); frame 1 still carries the viewport's first repaint
+        if (n > 1) maxDamage = std::max(maxDamage, r.ui().damage().w * r.ui().damage().h);
     }
     const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / n;
     // full-window CPU raster for reference (the native presenters damage-track the same way)
     const auto t1 = std::chrono::steady_clock::now();
     r.win.rasterize({});
     const double full = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t1).count();
-    std::printf("ui_frame: %.2f ms / hover frame over %d frames; full 1600x900 CPU raster %.1f ms\n", ms, n, full);
+    // full 9-dock repaint, UI side (restyle + relayout + draw list of every node; plan budget 2 ms)
+    std::vector<double> rep;
+    for (int i = 0; i < 21; ++i) {
+        const auto a = std::chrono::steady_clock::now();
+        r.ui().markAllDirty();
+        r.ui().update(0.f);
+        rep.push_back(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - a).count());
+    }
+    std::sort(rep.begin(), rep.end());
+    std::printf("ui_frame: %.2f ms / hover frame over %d frames; full repaint (style + layout + paint, %u nodes, %u cmds) "
+                "median %.2f ms; full 1600x900 CPU raster %.1f ms\n",
+                ms, n, r.ui().nodeCount(), r.ui().stats().drawCmds, rep[rep.size() / 2], full);
     CHECK(ms < 16.7);
+    // hover only damages the buttons it enters and leaves, never the window (shared :hover ancestors stay put)
+    CHECK(maxDamage < 0.05f * r.ui().viewport().w * r.ui().viewport().h);
 }
 
 void gateIdle(Rig& r) {

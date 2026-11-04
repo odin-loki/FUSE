@@ -136,12 +136,14 @@ struct MenuItem { // text = "label" or "label\n<sub items, one tab less>" (a sub
     static bool hasSub(std::string_view t) { return t.find('\n') != std::string_view::npos; }
     static Size measure(UiContext& ui, NodeHandle n, Size) {
         const std::string_view t = ui.text(n);
-        return {std::ceil(ui.measureString(label(t), ui.computed(n).fontSize)) + (hasSub(t) ? 18.f : 0.f), rowHeight(ui, n) - 6.f};
+        const f32 ic = ui.iconExtent(ui.computed(n));
+        return {std::ceil(ui.measureString(label(t), ui.computed(n).fontSize)) + (hasSub(t) ? 18.f : 0.f) + (ic > 0.f ? ic + UiContext::kIconGap : 0.f),
+                std::max(rowHeight(ui, n) - 6.f, ic)};
     }
     static void paint(const PaintContext& pc, DrawList& dl) {
         const std::string_view t = pc.ui.text(pc.node);
         if (pc.ui.checked(pc.node)) dl.rect({pc.rect.x + 2.f, pc.rect.y + 3.f, 3.f, pc.rect.h - 6.f}, accent(pc));
-        labelAt(pc, dl, label(t), pc.content);
+        pc.ui.paintIconLabel(dl, pc.style, label(t), pc.content, textCol(pc), TextAlignment::Start, pc.node.index);
         if (hasSub(t)) { // chevron
             const Rect c = pc.content;
             const f32 x = c.right() - 8.f, y = c.y + c.h * 0.5f;
@@ -592,6 +594,13 @@ NodeHandle popupMenuAt(UiContext& ui, NodeHandle owner, std::string_view items, 
         item = {};
         if (t == "-") { separator(ui, menu); return true; }
         item = make(ui, "menuitem", menu);
+        if (t.size() > 3 && t[0] == ':') { // ":name: Label" -> icon `name`
+            const auto e = t.find(':', 1);
+            if (e != std::string_view::npos && e > 1 && e + 1 < t.size() && t[e + 1] == ' ') {
+                setIcon(ui, item, t.substr(1, e - 1));
+                t.remove_prefix(e + 2);
+            }
+        }
         ui.setText(item, t);
         ui.setRange(item, 0.f, 1e9f, 0.f);
         ui.setValue(item, f32(base + i));
