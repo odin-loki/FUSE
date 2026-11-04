@@ -1590,6 +1590,8 @@ NodeHandle viewportWidget(UiContext& ui, NodeHandle parent, u32 imageIndex, u32 
 }
 void viewportSetImage(UiContext& ui, NodeHandle vp, u32 imageIndex, u32 w, u32 h) {
     ViewportState* s = vpPool().get(ui, vp);
+    // a "viewport" node from a .fuseui document has no state until its first image
+    if (!s && ui.alive(vp) && ui.classOf(vp) == ui.registry().find(ViewportW::kName)) s = &vpPool().create(ui, vp);
     if (!s) return;
     s->image = imageIndex; s->w = std::max(1u, w); s->h = std::max(1u, h);
     ui.invalidate(vp);
