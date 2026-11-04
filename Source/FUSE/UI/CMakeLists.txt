@@ -200,6 +200,20 @@ if(FUSE_BUILD_UI_VK)
     else()
         set(_fuse_ui_vk_link Vulkan::Vulkan)
     endif()
+    # In tree with the Vulkan RHI, fuse_rhi defines the vk* entry points itself (vendored volk trampolines). Linking
+    # the system loader as well gives MSVC duplicate symbols (LNK2005), so take only the headers and let fuse_rhi
+    # provide the functions.
+    if(_fuse_ui_vk_link AND TARGET fuse_rhi AND FUSE_BUILD_VULKAN)
+        add_library(fuse_ui_vulkan_headers INTERFACE)
+        if(TARGET Vulkan::Headers)
+            target_link_libraries(fuse_ui_vulkan_headers INTERFACE Vulkan::Headers)
+        else()
+            target_include_directories(fuse_ui_vulkan_headers SYSTEM INTERFACE
+                $<TARGET_PROPERTY:${_fuse_ui_vk_link},INTERFACE_INCLUDE_DIRECTORIES>)
+        endif()
+        target_link_libraries(fuse_ui_vulkan_headers INTERFACE fuse_rhi)
+        set(_fuse_ui_vk_link fuse_ui_vulkan_headers)
+    endif()
     find_program(FUSE_UI_GLSLANG NAMES glslangValidator HINTS ENV VULKAN_SDK PATH_SUFFIXES bin Bin)
     if(_fuse_ui_vk_link)
         set(_gen "${CMAKE_CURRENT_BINARY_DIR}/ui_vk_gen")
