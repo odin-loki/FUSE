@@ -45,9 +45,14 @@ if(WIN32)
 endif()
 target_include_directories(fuse_text PUBLIC Text/include)
 target_include_directories(fuse_text SYSTEM PRIVATE "${FUSE_UI_REPO_ROOT}/vendor/stb")
-target_compile_definitions(fuse_text PRIVATE
-    FUSE_TEXT_BUNDLED_FONT="${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf"
-    FUSE_TEXT_FONT_DIR="${FUSE_UI_REPO_ROOT}/vendor/fonts")
+if(ANDROID)
+    # APK assets: fuse_app_add_android_app packs vendor/fonts as fonts/, extracted to the working directory at start
+    target_compile_definitions(fuse_text PRIVATE FUSE_TEXT_BUNDLED_FONT="fonts/opensans/OpenSans.ttf" FUSE_TEXT_FONT_DIR="fonts")
+else()
+    target_compile_definitions(fuse_text PRIVATE
+        FUSE_TEXT_BUNDLED_FONT="${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf"
+        FUSE_TEXT_FONT_DIR="${FUSE_UI_REPO_ROOT}/vendor/fonts")
+endif()
 target_compile_features(fuse_text PUBLIC cxx_std_23)
 
 # FULL profile (decision D2): HarfBuzz + FreeType through FetchContent (static, no optional deps), SheenBidi (UAX #9)
@@ -113,7 +118,8 @@ option(FUSE_BUILD_UI_ICONS "Build fuse_ui_icon_cook and cook the starter icon pa
 if(FUSE_BUILD_UI_ICONS AND EXISTS "${FUSE_UI_REPO_ROOT}/vendor/nanosvg/nanosvg.h")
     add_library(fuse_ui_icon_cook_lib STATIC Icons/src/icon_cook.cpp)
     target_include_directories(fuse_ui_icon_cook_lib PUBLIC Icons/include)
-    target_include_directories(fuse_ui_icon_cook_lib SYSTEM PRIVATE "${FUSE_UI_REPO_ROOT}/vendor/nanosvg")
+    # the vendor dir, not vendor/nanosvg: its VERSION file would shadow <version> on case-insensitive file systems
+    target_include_directories(fuse_ui_icon_cook_lib SYSTEM PRIVATE "${FUSE_UI_REPO_ROOT}/vendor")
     target_link_libraries(fuse_ui_icon_cook_lib PUBLIC fuse_ui_core)
     add_executable(fuse_ui_icon_cook Icons/tools/fuse_ui_icon_cook.cpp)
     target_link_libraries(fuse_ui_icon_cook PRIVATE fuse_ui_icon_cook_lib)
@@ -374,7 +380,7 @@ option(FUSE_BUILD_UI_APP "Build fuse_app (Application / AppWindow, on-demand loo
 if(FUSE_BUILD_UI_APP AND TARGET fuse_ui_doc)
     add_subdirectory(App)
 endif()
-if(TARGET fuse_ui_designer_lib AND TARGET fuse_app_native)
+if(TARGET fuse_ui_designer_lib AND TARGET fuse_app_native AND NOT ANDROID)
     add_executable(fuse_ui_designer Designer/app/designer_main.cpp)
     target_link_libraries(fuse_ui_designer PRIVATE fuse_ui_designer_lib fuse_app_native)
 endif()
@@ -393,13 +399,13 @@ if(FUSE_BUILD_UI_GAME AND FUSE_BUILD_UI_WIDGETS)
         add_library(fuse_ui_game_audio STATIC Game/src/ui_audio.cpp)
         target_link_libraries(fuse_ui_game_audio PUBLIC fuse_ui_game fuse_audio)
     endif()
-    if(TARGET fuse_app)
+    if(TARGET fuse_app AND NOT ANDROID)
         foreach(s hud_demo world_panel_demo)
             add_executable(${s} Game/samples/${s}.cpp)
             target_link_libraries(${s} PRIVATE fuse_ui_game fuse_app)
         endforeach()
     endif()
-    if(TARGET fuse_app_native AND FUSE_BUILD_APP_SAMPLES)
+    if(TARGET fuse_app_native AND FUSE_BUILD_APP_SAMPLES AND NOT ANDROID) # Android apps: fuse_app_add_android_app
         add_executable(game_menu App/samples/game_menu.cpp) # UI5 sample: game main menu + options, gamepad nav
         target_link_libraries(game_menu PRIVATE fuse_ui_game fuse_app_native)
     endif()

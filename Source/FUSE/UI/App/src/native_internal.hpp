@@ -1,4 +1,4 @@
-// fuse_app native backends: the Vulkan swapchain presenter shared by the X11 and Win32 window code.
+// fuse_app native backends: the Vulkan swapchain presenter shared by the X11, Win32 and Android window code.
 #pragma once
 
 #include "fuse/app/native.hpp"
@@ -8,11 +8,12 @@
 namespace fuse::app::detail {
 
 struct SurfaceSource {
-    enum Kind { Xlib, Win32 } kind = Xlib;
+    enum Kind { Xlib, Win32, Android } kind = Xlib;
     void* display = nullptr;        ///< X11 Display*
     unsigned long xwindow = 0;      ///< X11 Window
     void* hinstance = nullptr;      ///< Win32 HINSTANCE
     void* hwnd = nullptr;           ///< Win32 HWND
+    void* nativeWindow = nullptr;   ///< Android ANativeWindow*
 };
 
 struct VkCtx;

@@ -1351,10 +1351,26 @@ bool UiContext::touchDown(u32 id, Vec2 p) {
 bool UiContext::touchMove(u32 id, Vec2 p) {
     for (u32 k = 0; k < m_touchCount; ++k)
         if (m_touches[k].id == id) {
+            const Vec2 last = m_touches[k].pos, start = m_touches[k].start;
             m_touches[k].pos = p;
             if (id != m_primaryTouch) return true;
             m_pointerKind = PointerKind::Touch;
-            return pointerMove(p);
+            const f32 dx = p.x - start.x, dy = p.y - start.y;
+            if (m_touchPan) return wheel(start, {0.f, (p.y - last.y) / 40.f});
+            if (m_touchPanChecked || !(std::abs(dy) > kTouchSlop && std::abs(dy) > std::abs(dx))) return pointerMove(p);
+            // past the slop: a scroll container under the start that can move vertically and does not scroll from
+            // the drag itself (kinetic areas do) turns the drag into a pan
+            m_touchPanChecked = true;
+            NodeHandle sc;
+            for (NodeHandle n = hitTest(start); alive(n) && !sc.valid(); n = parent(n))
+                if (scrollExtent(n).h > contentRect(n).h + 0.5f) sc = n;
+            const f32 before = sc.valid() ? scroll(sc).y : 0.f;
+            const bool used = pointerMove(p);
+            if (!sc.valid() || !alive(sc) || scroll(sc).y != before) return used;
+            m_touchPan = true;
+            pointerUp({-1.0e6f, -1.0e6f}); // release the press outside everything: no click
+            setHover(kNone);
+            return wheel(start, {0.f, dy / 40.f}); // the slop distance too, so the content tracks the finger
         }
     return false;
 }
@@ -1367,6 +1383,12 @@ bool UiContext::touchUp(u32 id, Vec2 p) {
             if (id != m_primaryTouch) return true;
             m_primaryTouch = kNone;
             m_pointerKind = PointerKind::Touch;
+            m_touchPanChecked = false;
+            if (m_touchPan) { // the pan already released the press
+                m_touchPan = false;
+                setHover(kNone);
+                return true;
+            }
             pointerMove(p);
             const bool used = pointerUp(p);
             setHover(kNone); // a lifted finger hovers nothing
@@ -1377,6 +1399,8 @@ bool UiContext::touchUp(u32 id, Vec2 p) {
 void UiContext::touchCancel() {
     m_touchCount = 0;
     m_pinchStart = 0.f;
+    m_touchPan = false;
+    m_touchPanChecked = false;
     if (m_primaryTouch == kNone) return;
     m_primaryTouch = kNone;
     m_pressed = {};

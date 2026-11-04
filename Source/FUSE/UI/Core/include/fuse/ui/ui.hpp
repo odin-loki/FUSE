@@ -333,6 +333,9 @@ public:
     bool reducedMotion() const { return m_reducedMotion; }
     /// Touch contacts in UI units. The first finger down (while none is down) is the primary touch and drives the
     /// pointer like a mouse (move + press / release); the others are only tracked (gestures: touches(), pinchScale()).
+    /// A primary drag that goes mostly vertical by more than kTouchSlop over a scroll container that does not scroll
+    /// from the drag itself becomes a pan: the press is released without a click and the finger scrolls the container
+    /// (touchPanning()).
     struct TouchPoint {
         u32 id = 0;
         Vec2 pos, start;
@@ -342,6 +345,8 @@ public:
     bool touchMove(u32 id, Vec2 p);
     bool touchUp(u32 id, Vec2 p);
     void touchCancel(); ///< drops every contact (the primary releases without a click)
+    static constexpr f32 kTouchSlop = 8.f; ///< UI units a finger moves before a drag can become a pan
+    bool touchPanning() const { return m_touchPan; }
     std::span<const TouchPoint> touches() const { return {m_touches.data(), m_touchCount}; }
     /// Two-finger pinch: current distance of the first two contacts / their distance when the second went down.
     f32 pinchScale() const;
@@ -503,6 +508,7 @@ private:
     u32 m_touchCount = 0;
     u32 m_primaryTouch = 0xFFFFFFFFu;
     f32 m_pinchStart = 0.f;
+    bool m_touchPan = false, m_touchPanChecked = false;
     struct ScrollDrag { NodeHandle node; u8 axis = 0; f32 grab = 0.f; } m_scrollDrag;
     std::vector<u32> m_path;
     std::vector<u32> m_scratchOrder;

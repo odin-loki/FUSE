@@ -27,8 +27,8 @@
 #endif
 #define NANOSVG_IMPLEMENTATION
 #define NANOSVGRAST_IMPLEMENTATION
-#include "nanosvg.h"
-#include "nanosvgrast.h"
+#include "nanosvg/nanosvg.h"
+#include "nanosvg/nanosvgrast.h"
 #if defined(_MSC_VER)
 #pragma warning(pop)
 #elif defined(__GNUC__)
