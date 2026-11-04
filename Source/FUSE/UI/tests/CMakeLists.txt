@@ -365,7 +365,7 @@ if(TARGET fuse_app)
         add_test(NAME fuse_project_schema2 COMMAND fuse_project_schema2)
         set_tests_properties(fuse_project_schema2 PROPERTIES LABELS "fuse_ui;gate;project" TIMEOUT 120)
         if(FUSE_UI_XVFB_RUN AND NOT WIN32)
-            add_test(NAME fuse_project_schema2_native COMMAND ${FUSE_UI_XVFB_RUN} -a -s "-screen 0 1280x800x24"
+            add_test(NAME fuse_project_schema2_native COMMAND ${FUSE_UI_XVFB_RUN} -a -s "${FUSE_UI_XVFB_ARGS}"
                      $<TARGET_FILE:fuse_project_schema2> --native)
         else()
             add_test(NAME fuse_project_schema2_native COMMAND fuse_project_schema2 --native)
