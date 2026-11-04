@@ -303,6 +303,15 @@ struct Font::State {
     float unitsPerPixelScale1 = 0.f; // stbtt_ScaleForPixelHeight(info, 1)
     float emPerPixelSize = 1.f;      // em size in pixels for pixelSize 1 (pixel sizes are ascent-to-descent)
     std::vector<const Font*> fallbacks;
+    // Direct-mapped lookup caches (layout asks for the same code points and pairs over and over; GPOS kerning and
+    // fallback cmap probes are the MINIMAL hot spots). cmap: cp << 32 | glyph; kerning: (l << 16 | r) << 32 | units.
+    std::array<std::uint64_t, 1024> cmapCache = filledCache();
+    std::array<std::uint64_t, 2048> kernCache = filledCache<2048>();
+    template <std::size_t N = 1024> static std::array<std::uint64_t, N> filledCache() {
+        std::array<std::uint64_t, N> a;
+        a.fill(~std::uint64_t(0));
+        return a;
+    }
     std::vector<ColorLayer> layers;                       // COLRv0 layer records with CPAL palette 0 resolved
     std::vector<std::array<std::uint32_t, 3>> colorBase; // (glyph, first layer, layer count), sorted by glyph
     // image colour glyphs: COLRv1 graphs without a v0 record, bitmap strikes (sorted glyph ids, one image layer each)
@@ -714,11 +723,15 @@ FontMetrics Font::metrics(float px) const {
     return {float(a) * s, float(d) * s, float(g) * s};
 }
 std::uint32_t Font::glyphIndex(char32_t cp) const {
+    std::uint64_t& slot = m_state->cmapCache[(cp * 0x9E3779B1u) >> 22];
+    if (std::uint32_t(slot >> 32) == std::uint32_t(cp)) return std::uint32_t(slot);
 #if FUSE_TEXT_COOKED
-    return detail::cookedGlyphIndex(m_state->cooked, cp);
+    const std::uint32_t g = detail::cookedGlyphIndex(m_state->cooked, cp);
 #else
-    return std::uint32_t(stbtt_FindGlyphIndex(&m_state->info, int(cp)));
+    const std::uint32_t g = std::uint32_t(stbtt_FindGlyphIndex(&m_state->info, int(cp)));
 #endif
+    slot = (std::uint64_t(cp) << 32) | g;
+    return g;
 }
 float Font::advance(std::uint32_t glyph, float px) const {
 #if FUSE_TEXT_COOKED
@@ -730,11 +743,21 @@ float Font::advance(std::uint32_t glyph, float px) const {
     return float(adv) * m_state->unitsPerPixelScale1 * px;
 }
 float Font::kerning(std::uint32_t l, std::uint32_t r, float px) const {
+    // glyph ids are 16-bit; the all-ones key (65535, 65535) is the empty slot, so that pair is never cached
+    const std::uint32_t key = ((l & 0xFFFFu) << 16) | (r & 0xFFFFu);
+    std::uint64_t& slot = m_state->kernCache[(key * 0x9E3779B1u) >> 21];
+    int units = 0;
+    if (std::uint32_t(slot >> 32) == key && key != ~0u) {
+        units = int(std::int32_t(std::uint32_t(slot)));
+    } else {
 #if FUSE_TEXT_COOKED
-    return float(detail::cookedKern(m_state->cooked, l, r)) * m_state->unitsPerPixelScale1 * px;
+        units = detail::cookedKern(m_state->cooked, l, r);
 #else
-    return float(stbtt_GetGlyphKernAdvance(&m_state->info, int(l), int(r))) * m_state->unitsPerPixelScale1 * px;
+        units = stbtt_GetGlyphKernAdvance(&m_state->info, int(l), int(r));
 #endif
+        slot = (std::uint64_t(key) << 32) | std::uint32_t(units);
+    }
+    return float(units) * m_state->unitsPerPixelScale1 * px;
 }
 void Font::glyphBox(std::uint32_t glyph, float px, int& x0, int& y0, int& x1, int& y1) const {
 #if FUSE_TEXT_FULL
@@ -950,6 +973,7 @@ namespace {
 // Code points that belong to the cluster before them keep its face (marks, ZWJ, emoji modifiers, VS16, tags, and
 // the pictographic after a ZWJ), so a grapheme is never split across faces.
 bool inheritsFace(char32_t cp, char32_t prev) {
+    if (cp < 0x300 && prev != 0x200D) return false; // no Extend / ZWJ / SpacingMark below U+0300
     const GraphemeBreak p = graphemeBreakProperty(cp);
     return p == GraphemeBreak::Extend || p == GraphemeBreak::ZWJ || p == GraphemeBreak::SpacingMark ||
            (prev == 0x200D && p == GraphemeBreak::ExtPict);
@@ -1015,11 +1039,12 @@ void applyFallbackPerLine(const Font& font, const ITextShaper& shaper, float px,
         if (f) spans.push_back({std::uint32_t(b), std::uint32_t(e), f});
     });
     if (spans.empty()) return;
-    auto spanOf = [&](const ShapedGlyph& x) -> int {
+    auto spanOf = [&](const ShapedGlyph& x) -> int { // spans are sorted and disjoint: binary search
         if (x.glyph == kInvisibleGlyph) return -1;
-        for (std::size_t k = 0; k < spans.size(); ++k)
-            if (x.cluster >= spans[k].b && x.cluster < spans[k].e) return int(k);
-        return -1;
+        const auto it = std::upper_bound(spans.begin(), spans.end(), x.cluster,
+                                         [](std::uint32_t c, const Span& sp) { return c < sp.b; });
+        if (it == spans.begin() || x.cluster >= (it - 1)->e) return -1;
+        return int(it - spans.begin()) - 1;
     };
     thread_local std::vector<ShapedGlyph> outG, run;
     outG.clear();

@@ -52,10 +52,12 @@ struct FullFace {
         std::uint32_t glyphCount = 0, len = 0;
         bool rtl = false, used = false;
     };
-    static constexpr std::size_t kEntries = 1024, kGlyphPool = 16384, kBytePool = 65536;
-    std::vector<Entry> entries = std::vector<Entry>(kEntries);
-    std::vector<UnitGlyph> glyphPool = std::vector<UnitGlyph>(kGlyphPool);
-    std::vector<char> bytePool = std::vector<char>(kBytePool);
+    // 4-way set associative, sized for a screen of text (one codeEdit frame of tokens plus ~40 wrapped paragraphs
+    // relaid out without a miss). Allocated on first use, ~0.8 MB per font that shapes (fallbacks never used: none).
+    static constexpr std::size_t kEntries = 4096, kWays = 4, kGlyphPool = 32768, kBytePool = 131072;
+    std::vector<Entry> entries;
+    std::vector<UnitGlyph> glyphPool;
+    std::vector<char> bytePool;
     std::uint64_t glyphWrite = 0, byteWrite = 0, hits = 0, misses = 0;
 
     // ---- layout scratch (capacity kept) ----
@@ -104,8 +106,30 @@ void fullDestroy(FullFace* f) {
     delete f;
 }
 
+namespace {
+std::uint64_t hashRun(std::string_view s, bool rtl);
+FullFace::Entry& cacheEntry(FullFace* f, std::string_view run, bool rtl, std::uint64_t h);
+bool entryMatches(const FullFace* f, const FullFace::Entry& e, std::string_view s, bool rtl, std::uint64_t h);
+} // namespace
+
 float fullShape(FullFace* f, float unitScale, std::string_view s, std::vector<ShapedGlyph>& out) {
     out.clear();
+    // Cached like layout runs, under a key of its own: the direction is guessed and glyphs stay in HarfBuzz order.
+    const std::uint64_t h = hashRun(s, false) * 0x2545F4914F6CDD1Dull + 1;
+    FullFace::Entry& e = cacheEntry(f, s, false, h);
+    const bool fits = s.size() <= FullFace::kBytePool / 4;
+    if (fits && entryMatches(f, e, s, false, h)) {
+        ++f->hits;
+        float pen = 0.f;
+        for (std::uint32_t k = 0; k < e.glyphCount; ++k) {
+            const auto& u = f->glyphPool[(e.glyphStart + k) % FullFace::kGlyphPool];
+            const float adv = float(u.advance) * unitScale;
+            out.push_back({u.glyph, u.cluster, pen + float(u.xOffset) * unitScale, adv});
+            pen += adv;
+        }
+        return pen;
+    }
+    ++f->misses;
     hb_buffer_clear_contents(f->buffer);
     hb_buffer_add_utf8(f->buffer, s.data(), int(s.size()), 0, int(s.size()));
     hb_buffer_guess_segment_properties(f->buffer);
@@ -118,6 +142,19 @@ float fullShape(FullFace* f, float unitScale, std::string_view s, std::vector<Sh
         const float adv = float(pos[i].x_advance) * unitScale;
         out.push_back({info[i].codepoint, info[i].cluster, pen + float(pos[i].x_offset) * unitScale, adv});
         pen += adv;
+    }
+    if (fits && n <= FullFace::kGlyphPool / 4) {
+        e = {};
+        e.hash = h;
+        e.len = std::uint32_t(s.size());
+        e.used = true;
+        e.glyphStart = f->glyphWrite;
+        e.glyphCount = n;
+        e.byteStart = f->byteWrite;
+        for (unsigned i = 0; i < n; ++i)
+            f->glyphPool[(f->glyphWrite++) % FullFace::kGlyphPool] = {info[i].codepoint, info[i].cluster, pos[i].x_offset,
+                                                                        pos[i].x_advance};
+        for (char c : s) f->bytePool[(f->byteWrite++) % FullFace::kBytePool] = c;
     }
     return pen;
 }
@@ -137,9 +174,29 @@ bool entryValid(const FullFace* f, const FullFace::Entry& e) {
 
 bool entryMatches(const FullFace* f, const FullFace::Entry& e, std::string_view s, bool rtl, std::uint64_t h) {
     if (!entryValid(f, e) || e.hash != h || e.len != s.size() || e.rtl != rtl) return false;
-    for (std::size_t i = 0; i < s.size(); ++i)
-        if (f->bytePool[(e.byteStart + i) % FullFace::kBytePool] != s[i]) return false;
-    return true;
+    const std::size_t at = std::size_t(e.byteStart % FullFace::kBytePool);
+    const std::size_t head = std::min(s.size(), FullFace::kBytePool - at); // the run may wrap around the ring
+    return std::memcmp(f->bytePool.data() + at, s.data(), head) == 0 &&
+           std::memcmp(f->bytePool.data(), s.data() + head, s.size() - head) == 0;
+}
+
+/// The cache slot for a run: its entry when cached, else the way of its set to replace (an empty or stale one, or
+/// the oldest). Allocates the cache on first use.
+FullFace::Entry& cacheEntry(FullFace* f, std::string_view run, bool rtl, std::uint64_t h) {
+    if (f->entries.empty()) {
+        f->entries.resize(FullFace::kEntries);
+        f->glyphPool.resize(FullFace::kGlyphPool);
+        f->bytePool.resize(FullFace::kBytePool);
+    }
+    FullFace::Entry* set = f->entries.data() + std::size_t(h % (FullFace::kEntries / FullFace::kWays)) * FullFace::kWays;
+    FullFace::Entry* victim = set;
+    for (std::size_t w = 0; w < FullFace::kWays; ++w) {
+        FullFace::Entry& e = set[w];
+        if (entryMatches(f, e, run, rtl, h)) return e;
+        if (!entryValid(f, *victim)) continue;
+        if (!entryValid(f, e) || e.glyphStart < victim->glyphStart) victim = &e;
+    }
+    return *victim;
 }
 
 /// Shapes bytes [begin, begin+len) of `s` (the whole paragraph is context) in one direction; appends glyphs in logical
@@ -148,7 +205,7 @@ void shapeRun(FullFace* f, float unitScale, std::string_view s, std::uint32_t be
               std::vector<ShapedGlyph>& out) {
     const std::string_view run = s.substr(begin, len);
     const std::uint64_t h = hashRun(run, rtl);
-    FullFace::Entry& e = f->entries[h % FullFace::kEntries];
+    FullFace::Entry& e = cacheEntry(f, run, rtl, h);
     if (!entryMatches(f, e, run, rtl, h)) {
         ++f->misses;
         hb_buffer_clear_contents(f->buffer);
