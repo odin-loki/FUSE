@@ -6,6 +6,7 @@
 #include "chrome_internal.hpp"
 #include "x11_internal.hpp"
 #include "fuse/app/chrome.hpp"
+#include "fuse/app/clipboard.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
 
 #include <algorithm>
@@ -28,7 +29,9 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <imm.h>
 #else
+#include <clocale>
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -164,6 +167,17 @@ u8 mods(unsigned state) {
     return u8(((state & 1) ? kModShift : 0) | ((state & 4) ? kModCtrl : 0) | ((state & 8) ? kModAlt : 0) |
               ((state & 64) ? kModSuper : 0));
 }
+// XIM (Xlib.h): input styles, lookup status, callback structs
+using XimStyle = unsigned long;
+constexpr XimStyle kPreeditCallbacks = 0x0002, kPreeditPosition = 0x0004, kPreeditNothing = 0x0008, kPreeditNone = 0x0010,
+                   kStatusNothing = 0x0400, kStatusNone = 0x0800;
+constexpr int kLookupChars = 2, kLookupBoth = 4, kBufferOverflow = -1;
+struct XimStyles { unsigned short count; XimStyle* styles; };
+struct XimCallback { char* client; void (*fn)(void* ic, char* client, void* call); };
+struct XimText { unsigned short length; unsigned long* feedback; int isWchar; union { char* mb; wchar_t* wc; } s; };
+struct XimDraw { int caret, chgFirst, chgLength; XimText* text; };
+struct XimCaret { int position; int direction; int style; };
+struct XPoint { short x, y; };
 } // namespace x11
 #endif
 
@@ -197,9 +211,15 @@ struct NativePlatform::Impl {
         std::string vkErr;
         bool vkPending = false; ///< worker running or result not yet taken over
         bool vkWanted = false;  ///< waits for another window's worker, then gets Vulkan on the UI thread
+        // text-input session (IME): on while a text field has focus; caret area given to the IME (device pixels)
+        bool imeOn = false, imeKnown = false;
+        Rect imeArea{-1.f, -1.f, 0.f, 0.f};
 #if defined(_WIN32)
         wchar_t highSurrogate = 0;
 #else
+        void* xic = nullptr;     ///< XIM input context
+        std::u32string preedit;  ///< XIM pre-edit (preedit callbacks)
+        x11::XimCallback cbStart{}, cbDone{}, cbDraw{}, cbCaret{};
         x11::Display* vkDpy = nullptr; ///< the worker's own X connection (Xlib is not thread-safe without XInitThreads)
         CursorShape edgeCursor = CursorShape::Auto; ///< custom chrome: resize cursor over a frame edge
         unsigned long captionPress = 0;             ///< time of the last caption press (double click maximises)
@@ -232,6 +252,10 @@ struct NativePlatform::Impl {
     int xsDpi = 0;            ///< Xft/DPI * 1024 (0: not set)
     std::string xsTheme;      ///< Net/ThemeName
     int wakeFd[2] = {-1, -1}; ///< self-pipe: wake() from other threads
+    void* xim = nullptr;      ///< XIM input method (XOpenIM), null without one
+    x11::XimStyle ximStyle = 0;
+    void openXim();
+    void createIc(Rec& r);
     void readXSettings();     ///< (re)reads the manager's settings (and follows a new manager window)
     void settingsChanged();   ///< re-reads them and applies DPI / theme changes
     void x11Event(x11::Event& ev);
@@ -312,6 +336,8 @@ struct NativePlatform::Impl {
     bool postClickOs(unsigned long long h, Vec2 at);
     // platform services
     void syncCursor(Rec& r);           ///< shows ui.cursor() when it changed
+    /// Text-input session from the UI (each present): IME on / off with text-field focus, caret area for the IME.
+    void syncTextInput(Rec& r);
     void applyScale(Rec& r, f32 scale, const void* suggested); ///< DPI change (Win32: suggested RECT*)
     void updateTitleBars();
     void themeChanged() { app.setSystemTheme(theme()); updateTitleBars(); }
@@ -379,19 +405,19 @@ bool NativePlatform::Impl::present(void* user, AppWindow& w, Rect damage) {
     Rec& r = *static_cast<Rec*>(user);
     // a finished async Vulkan init switches presenters here, so this frame (the whole current UI) is the first on Vulkan
     if (r.vkPending && r.vkDone.load(std::memory_order_acquire)) r.impl->takeOverVk(r);
+    bool ok = true;
     switch (r.kind) {
-    case PresenterKind::Vulkan: {
-        const bool ok = detail::vkWinPresent(r.vk, w, damage);
-        r.impl->syncPopups(r);
-        return ok;
-    }
+    case PresenterKind::Vulkan: ok = detail::vkWinPresent(r.vk, w, damage); break;
     case PresenterKind::Software:
         w.rasterize(damage);
         r.impl->blitSoftware(r);
-        r.impl->syncPopups(r);
-        return true;
-    default: w.rasterize(damage); r.impl->syncPopups(r); return true;
+        break;
+    default: w.rasterize(damage); break;
     }
+    r.impl->syncPopups(r);
+    // after the frame: the first IME (dis)association loads the input stack, which must not delay the first frame
+    r.impl->syncTextInput(r);
+    return ok;
 }
 
 void NativePlatform::Impl::destroy(void* user) {
@@ -469,6 +495,21 @@ u8 winMods() {
               (((GetKeyState(VK_LWIN) | GetKeyState(VK_RWIN)) & 0x8000) ? kModSuper : 0));
 }
 Vec2 lparamPos(LPARAM lp, f32 s = 1.f) { return {f32(short(LOWORD(lp))) / s, f32(short(HIWORD(lp))) / s}; }
+std::string utf8Of(const wchar_t* s, std::size_t n) {
+    std::string o(std::size_t(WideCharToMultiByte(CP_UTF8, 0, s, int(n), nullptr, 0, nullptr, nullptr)), '\0');
+    if (!o.empty()) WideCharToMultiByte(CP_UTF8, 0, s, int(n), o.data(), int(o.size()), nullptr, nullptr);
+    return o;
+}
+std::wstring imeWide(HIMC imc, DWORD which) { // GCS_COMPSTR / GCS_RESULTSTR
+    const LONG bytes = ImmGetCompositionStringW(imc, which, nullptr, 0);
+    std::wstring s(std::size_t(std::max(bytes, 0L)) / sizeof(wchar_t), L'\0');
+    if (!s.empty()) ImmGetCompositionStringW(imc, which, s.data(), DWORD(s.size() * sizeof(wchar_t)));
+    return s;
+}
+std::string imeString(HIMC imc, DWORD which) {
+    const std::wstring s = imeWide(imc, which);
+    return utf8Of(s.data(), s.size());
+}
 
 LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto* r = reinterpret_cast<NativePlatform::Impl::Rec*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
@@ -541,6 +582,31 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         ui.textInput(s);
         return 0;
     }
+    // IMM32 (TSF IMEs through the compatibility layer): the pre-edit is drawn inline by the focused field
+    case WM_IME_SETCONTEXT: return DefWindowProcW(hwnd, msg, wp, lp & ~LPARAM(ISC_SHOWUICOMPOSITIONWINDOW));
+    case WM_IME_STARTCOMPOSITION: return 0; // no default composition window
+    case WM_IME_COMPOSITION: {
+        HIMC imc = ImmGetContext(hwnd);
+        if (!imc) break;
+        if (lp & GCS_RESULTSTR) { // committed: the pre-edit goes, the result is typed (no WM_IME_CHAR follows)
+            const std::string s = imeString(imc, GCS_RESULTSTR);
+            if (!ui.composition().empty()) ui.textComposition({}, 0);
+            if (!s.empty()) ui.textInput(s);
+        }
+        if (lp & GCS_COMPSTR) {
+            const std::wstring ws = imeWide(imc, GCS_COMPSTR);
+            LONG cur = (lp & GCS_CURSORPOS) ? ImmGetCompositionStringW(imc, GCS_CURSORPOS, nullptr, 0) : LONG(ws.size());
+            cur = std::clamp(cur, 0L, LONG(ws.size()));
+            ui.textComposition(utf8Of(ws.data(), ws.size()), i32(utf8Of(ws.data(), std::size_t(cur)).size()));
+        }
+        ImmReleaseContext(hwnd, imc);
+        w.requestRedraw();
+        return 0;
+    }
+    case WM_IME_ENDCOMPOSITION:
+        if (!ui.composition().empty()) ui.textComposition({}, 0);
+        w.requestRedraw();
+        return 0;
     default: break;
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
@@ -701,6 +767,35 @@ void NativePlatform::Impl::syncCursor(Rec& r) {
     const CursorShape c = r.win->ui().cursor();
     if (c != r.svc.cursor) detail::winApplyCursor(r.svc, c);
 }
+void NativePlatform::Impl::syncTextInput(Rec& r) {
+    HWND hwnd = reinterpret_cast<HWND>(r.handle);
+    UiContext& ui = r.win->ui();
+    const bool want = ui.wantsTextInput();
+    if (!r.imeKnown || want != r.imeOn) { // game keys do not open the IME outside text fields
+        ImmAssociateContextEx(hwnd, nullptr, want ? IACE_DEFAULT : 0);
+        r.imeOn = want;
+        r.imeKnown = true;
+        r.imeArea = {-1.f, -1.f, 0.f, 0.f};
+    }
+    if (!want || !ui.composition().empty()) return; // placed when the composition starts, not moved during it
+    const f32 s = r.win->scale();
+    const Rect c = ui.textCaret();
+    const Rect px{std::round(c.x * s), std::round(c.y * s), std::max(1.f, std::round(c.w * s)), std::max(1.f, std::round(c.h * s))};
+    if (px.x == r.imeArea.x && px.y == r.imeArea.y && px.w == r.imeArea.w && px.h == r.imeArea.h) return;
+    r.imeArea = px;
+    if (HIMC imc = ImmGetContext(hwnd)) { // composition window at the caret, candidates below it (never over it)
+        COMPOSITIONFORM cf{};
+        cf.dwStyle = CFS_POINT;
+        cf.ptCurrentPos = {LONG(px.x), LONG(px.y)};
+        ImmSetCompositionWindow(imc, &cf);
+        CANDIDATEFORM cand{};
+        cand.dwStyle = CFS_EXCLUDE;
+        cand.ptCurrentPos = {LONG(px.x), LONG(px.y + px.h)};
+        cand.rcArea = {LONG(px.x), LONG(px.y), LONG(px.x + px.w), LONG(px.y + px.h)};
+        ImmSetCandidateWindow(imc, &cand);
+        ImmReleaseContext(hwnd, imc);
+    }
+}
 void NativePlatform::Impl::applyScale(Rec& r, f32 scale, const void* suggested) {
     HWND hwnd = reinterpret_cast<HWND>(r.handle);
     r.win->setScale(scale); // keeps the logical size; text re-rasterises, layout re-runs
@@ -840,15 +935,20 @@ bool NativePlatform::Impl::createOsWindow(Rec& r) {
         c.user = &r;
         c.command = &Impl::x11Command;
     }
+    r.handle = w;
+    createIc(r);
     x.MapWindow(dpy, w);
     x.Flush(dpy);
-    r.handle = w;
     return true;
 }
 void NativePlatform::Impl::destroyOsWindow(Rec& r) {
     if (r.win && r.win->chrome().command == &Impl::x11Command) {
         r.win->chrome().command = nullptr;
         r.win->chrome().user = nullptr;
+    }
+    if (r.xic) {
+        x.DestroyIC(r.xic);
+        r.xic = nullptr;
     }
     if (!r.handle || !dpy) return;
     x.DestroyWindow(dpy, x11::Window(r.handle));
@@ -914,6 +1014,11 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
     while (x.Pending(m.dpy)) {
         x11::Event ev{};
         x.NextEvent(m.dpy, &ev);
+        if (ev.type == x11::MappingNotify) { // keyboard remapped: Xlib's keysym tables follow
+            x.RefreshKeyboardMapping(&ev);
+            continue;
+        }
+        if (m.xim && x.FilterEvent(&ev, 0)) continue; // the input method took it (compose, pre-edit)
         if (ev.any.window == m.root || (m.xsOwner && ev.any.window == m.xsOwner)) {
             m.x11Event(ev); // XSETTINGS / RESOURCE_MANAGER
             continue;
@@ -1030,7 +1135,25 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
                 if (ev.type == x11::KeyPress) ui.keyDown(k, md);
                 else ui.keyUp(k, md);
             }
-            if (ev.type == x11::KeyPress && n > 0 && !(md & (kModCtrl | kModAlt))) {
+            if (ev.type == x11::KeyPress && r->xic) { // through the input method: UTF-8 (composed text arrives here)
+                char tb[64];
+                x11::KeySym ts = 0;
+                int status = 0;
+                x11::InputEv c2 = in;
+                int tn = x.Utf8LookupString(r->xic, &c2, tb, int(sizeof tb), &ts, &status);
+                std::string s;
+                if (status == x11::kBufferOverflow) {
+                    s.resize(std::size_t(tn));
+                    tn = x.Utf8LookupString(r->xic, &c2, s.data(), int(s.size()), &ts, &status);
+                    s.resize(std::size_t(std::max(tn, 0)));
+                } else if (tn > 0) {
+                    s.assign(tb, std::size_t(tn));
+                }
+                if ((status == x11::kLookupChars || status == x11::kLookupBoth) && !(md & (kModCtrl | kModAlt))) {
+                    std::erase_if(s, [](char ch) { return u8(ch) < 0x20 || u8(ch) == 0x7F; });
+                    if (!s.empty()) ui.textInput(s);
+                }
+            } else if (ev.type == x11::KeyPress && n > 0 && !(md & (kModCtrl | kModAlt))) {
                 std::string s; // XLookupString yields Latin-1
                 for (int i = 0; i < n; ++i)
                     if (u8(buf[i]) >= 0x20 && u8(buf[i]) != 0x7F) appendUtf8(s, u8(buf[i]));
@@ -1297,6 +1420,125 @@ void NativePlatform::Impl::syncCursor(Rec& r) {
     x.Flush(dpy);
     r.svc.cursor = c;
 }
+// XIM: opened with a UTF-8 LC_CTYPE (restored afterwards); XMODIFIERS picks a server IM (ibus, fcitx), else libX11's
+// built-in compose IM. Pre-edit through callbacks when the IM offers them.
+void NativePlatform::Impl::openXim() {
+    if (!x.loadXim()) return;
+    const char* cur = std::setlocale(LC_CTYPE, nullptr);
+    const std::string saved = cur ? cur : "C";
+    auto utf8 = [](const char* l) { return l && (std::strstr(l, "UTF-8") || std::strstr(l, "utf8") || std::strstr(l, "UTF8")); };
+    const char* l = std::setlocale(LC_CTYPE, "");
+    if (!utf8(l)) l = std::setlocale(LC_CTYPE, "C.UTF-8");
+    if (!utf8(l)) l = std::setlocale(LC_CTYPE, "en_US.UTF-8");
+    if (utf8(l) && x.SupportsLocale()) {
+        x.SetLocaleModifiers("");
+        xim = x.OpenIM(dpy, nullptr, nullptr, nullptr);
+        if (!xim) { // $XMODIFIERS names an IM that is not running: the built-in one
+            x.SetLocaleModifiers("@im=none");
+            xim = x.OpenIM(dpy, nullptr, nullptr, nullptr);
+        }
+    }
+    if (xim) {
+        x11::XimStyles* st = nullptr;
+        x.GetIMValues(xim, "queryInputStyle", &st, static_cast<void*>(nullptr));
+        const x11::XimStyle prefer[] = {x11::kPreeditCallbacks | x11::kStatusNothing, x11::kPreeditCallbacks | x11::kStatusNone,
+                                        x11::kPreeditPosition | x11::kStatusNothing, x11::kPreeditNothing | x11::kStatusNothing,
+                                        x11::kPreeditNone | x11::kStatusNone, x11::kPreeditNothing | x11::kStatusNone};
+        for (x11::XimStyle want : prefer) {
+            for (unsigned short i = 0; st && i < st->count && !ximStyle; ++i)
+                if (st->styles[i] == want) ximStyle = want;
+            if (ximStyle) break;
+        }
+        if (st) x.Free(st);
+        if (!ximStyle) {
+            x.CloseIM(xim);
+            xim = nullptr;
+        }
+    }
+    std::setlocale(LC_CTYPE, saved.c_str());
+}
+void NativePlatform::Impl::createIc(Rec& r) {
+    if (!xim) return;
+    const x11::Window w = x11::Window(r.handle);
+    void* term = nullptr;
+    if (ximStyle & x11::kPreeditCallbacks) {
+        // the start callback returns the pre-edit length limit (-1: none)
+        r.cbStart = {reinterpret_cast<char*>(&r), reinterpret_cast<void (*)(void*, char*, void*)>(+[](void*, char*, void*) -> int { return -1; })};
+        r.cbDone = {reinterpret_cast<char*>(&r), [](void*, char* c, void*) {
+            Rec& rr = *reinterpret_cast<Rec*>(c);
+            rr.preedit.clear();
+            rr.win->ui().textComposition({}, 0);
+            rr.win->requestRedraw();
+        }};
+        r.cbDraw = {reinterpret_cast<char*>(&r), [](void*, char* c, void* call) {
+            Rec& rr = *reinterpret_cast<Rec*>(c);
+            const auto* d = static_cast<const x11::XimDraw*>(call);
+            std::u32string ins;
+            if (d->text && d->text->isWchar && d->text->s.wc) {
+                for (unsigned short i = 0; i < d->text->length; ++i) ins += char32_t(d->text->s.wc[i]);
+            } else if (d->text && d->text->s.mb) { // multi-byte in the IM's (UTF-8) locale
+                const std::string_view mb = d->text->s.mb;
+                for (std::size_t i = 0; i < mb.size();) {
+                    const u8 b = u8(mb[i]);
+                    const int len = b >= 0xF0 ? 4 : b >= 0xE0 ? 3 : b >= 0xC0 ? 2 : 1;
+                    u32 cp = len == 1 ? b : b & (0x7Fu >> len);
+                    for (int k = 1; k < len && i + std::size_t(k) < mb.size(); ++k) cp = (cp << 6) | (u8(mb[i + std::size_t(k)]) & 0x3Fu);
+                    ins += char32_t(cp);
+                    i += std::size_t(len);
+                }
+            }
+            const std::size_t first = std::min(std::size_t(std::max(d->chgFirst, 0)), rr.preedit.size());
+            const std::size_t len = std::min(std::size_t(std::max(d->chgLength, 0)), rr.preedit.size() - first);
+            rr.preedit.replace(first, len, ins);
+            std::string s; // caret in code points -> bytes
+            int caretBytes = 0;
+            for (std::size_t i = 0; i < rr.preedit.size(); ++i) {
+                if (int(i) == d->caret) caretBytes = int(s.size());
+                appendUtf8(s, u32(rr.preedit[i]));
+            }
+            if (d->caret >= int(rr.preedit.size())) caretBytes = int(s.size());
+            rr.win->ui().textComposition(s, caretBytes);
+            rr.win->requestRedraw();
+        }};
+        r.cbCaret = {reinterpret_cast<char*>(&r), [](void*, char*, void*) {}};
+        void* list = x.VaCreateNestedList(0, "preeditStartCallback", &r.cbStart, "preeditDoneCallback", &r.cbDone,
+                                          "preeditDrawCallback", &r.cbDraw, "preeditCaretCallback", &r.cbCaret, term);
+        r.xic = x.CreateIC(xim, "inputStyle", ximStyle, "clientWindow", w, "focusWindow", w, "preeditAttributes", list, term);
+        if (list) x.Free(list);
+    } else {
+        r.xic = x.CreateIC(xim, "inputStyle", ximStyle, "clientWindow", w, "focusWindow", w, term);
+    }
+    if (r.xic) {
+        long extra = 0; // events the IM wants to see as well
+        x.GetICValues(r.xic, "filterEvents", &extra, term);
+        x.SelectInput(dpy, w, x11::kMask | extra);
+        x.UnsetICFocus(r.xic); // on with the first text field (syncTextInput)
+    }
+}
+void NativePlatform::Impl::syncTextInput(Rec& r) {
+    UiContext& ui = r.win->ui();
+    const bool want = ui.wantsTextInput();
+    if (!r.imeKnown || want != r.imeOn) {
+        if (r.xic) want ? x.SetICFocus(r.xic) : x.UnsetICFocus(r.xic);
+        if (!want && !r.preedit.empty()) r.preedit.clear();
+        r.imeOn = want;
+        r.imeKnown = true;
+        r.imeArea = {-1.f, -1.f, 0.f, 0.f};
+    }
+    if (!want) return;
+    const f32 s = r.win->scale();
+    const Rect c = ui.textCaret();
+    const Rect px{std::round(c.x * s), std::round(c.y * s), std::max(1.f, std::round(c.w * s)), std::max(1.f, std::round(c.h * s))};
+    if (px.x == r.imeArea.x && px.y == r.imeArea.y && px.w == r.imeArea.w && px.h == r.imeArea.h) return;
+    r.imeArea = px;
+    if (r.xic && (ximStyle & x11::kPreeditPosition)) { // over-the-spot IMs draw the pre-edit at the caret
+        x11::XPoint spot{short(px.x), short(px.y + px.h)};
+        void* term = nullptr;
+        void* list = x.VaCreateNestedList(0, "spotLocation", &spot, term);
+        x.SetICValues(r.xic, "preeditAttributes", list, term);
+        if (list) x.Free(list);
+    }
+}
 void NativePlatform::Impl::applyScale(Rec& r, f32 scale, const void*) {
     r.win->setScale(scale); // keeps the logical size; the window grows to logical * scale device pixels
     if (r.handle) {
@@ -1337,6 +1579,7 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
             x.SelectInput(i.dpy, i.root, x11::kStructureNotifyMask | x11::kPropertyChangeMask);
             i.readXSettings();
             i.xScale = o.dpiAware ? i.readXScale() : 1.f;
+            i.openXim();
             if (::pipe(i.wakeFd) == 0) {
                 for (int fd : i.wakeFd) ::fcntl(fd, F_SETFL, ::fcntl(fd, F_GETFL) | O_NONBLOCK);
                 for (int fd : i.wakeFd) ::fcntl(fd, F_SETFD, FD_CLOEXEC);
@@ -1365,39 +1608,46 @@ void NativePlatform::wake() {
 
 // ---- software presenter + Vulkan presenter creation (sync / async) -------------------------------------------------
 void NativePlatform::Impl::blitSoftware(Rec& r) {
+    // only the rect the last rasterize() redrew: the window keeps the rest of the previous frame
     const Image& img = r.win->image();
     if (!r.handle || img.pixels.empty()) return;
+    const Rect rr = r.win->rasterized().intersect({0.f, 0.f, f32(img.width), f32(img.height)});
+    if (rr.empty()) return;
+    const int x0 = int(rr.x), y0 = int(rr.y), w = int(rr.w), h = int(rr.h);
 #if defined(_WIN32)
-    r.staged.resize(img.pixels.size());
-    for (std::size_t i = 0; i < img.pixels.size(); ++i) { // 0xAABBGGRR -> BGRA
-        const u32 p = img.pixels[i];
-        r.staged[i] = (p & 0xFF00FF00u) | ((p & 0xFFu) << 16) | ((p >> 16) & 0xFFu);
+    r.staged.resize(std::max(r.staged.size(), std::size_t(w) * std::size_t(h)));
+    for (int y = 0; y < h; ++y) { // 0xAABBGGRR -> BGRA, packed to w x h
+        const u32* src = img.pixels.data() + std::size_t(y0 + y) * std::size_t(img.width) + std::size_t(x0);
+        u32* dst = r.staged.data() + std::size_t(y) * std::size_t(w);
+        for (int x = 0; x < w; ++x) dst[x] = (src[x] & 0xFF00FF00u) | ((src[x] & 0xFFu) << 16) | ((src[x] >> 16) & 0xFFu);
     }
     BITMAPINFO bi{};
     bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bi.bmiHeader.biWidth = img.width;
-    bi.bmiHeader.biHeight = -img.height;
+    bi.bmiHeader.biWidth = w;
+    bi.bmiHeader.biHeight = -h;
     bi.bmiHeader.biPlanes = 1;
     bi.bmiHeader.biBitCount = 32;
     bi.bmiHeader.biCompression = BI_RGB;
     HWND hwnd = reinterpret_cast<HWND>(r.handle);
     HDC dc = GetDC(hwnd);
-    SetDIBitsToDevice(dc, 0, 0, DWORD(img.width), DWORD(img.height), 0, 0, 0, UINT(img.height), r.staged.data(), &bi,
-                      DIB_RGB_COLORS);
+    SetDIBitsToDevice(dc, x0, y0, DWORD(w), DWORD(h), 0, 0, 0, UINT(h), r.staged.data(), &bi, DIB_RGB_COLORS);
     ReleaseDC(hwnd, dc);
 #else
     if (!dpy) return;
     const int scr = x.DefaultScreen(dpy);
     if (x.DefaultDepth(dpy, scr) < 24) return;
     r.staged.resize(img.pixels.size());
-    for (std::size_t i = 0; i < img.pixels.size(); ++i) { // 0xAABBGGRR -> TrueColor 0x00RRGGBB
-        const u32 q = img.pixels[i];
-        r.staged[i] = ((q & 0xFFu) << 16) | (q & 0xFF00u) | ((q >> 16) & 0xFFu);
+    for (int y = y0; y < y0 + h; ++y) { // 0xAABBGGRR -> TrueColor 0x00RRGGBB
+        const std::size_t row = std::size_t(y) * std::size_t(img.width);
+        for (int i = x0; i < x0 + w; ++i) {
+            const u32 q = img.pixels[row + std::size_t(i)];
+            r.staged[row + std::size_t(i)] = ((q & 0xFFu) << 16) | (q & 0xFF00u) | ((q >> 16) & 0xFFu);
+        }
     }
     x11::Image* xi = x.CreateImage(dpy, x.DefaultVisual(dpy, scr), unsigned(x.DefaultDepth(dpy, scr)), 2 /*ZPixmap*/, 0,
                                    reinterpret_cast<char*>(r.staged.data()), unsigned(img.width), unsigned(img.height), 32, 0);
     if (!xi) return;
-    x.PutImage(dpy, x11::Window(r.handle), x.DefaultGC(dpy, scr), xi, 0, 0, 0, 0, unsigned(img.width), unsigned(img.height));
+    x.PutImage(dpy, x11::Window(r.handle), x.DefaultGC(dpy, scr), xi, x0, y0, x0, y0, unsigned(w), unsigned(h));
     xi->data = nullptr; // ours (XDestroyImage would free it)
     xi->f.destroy(xi);
     x.Flush(dpy);
@@ -1523,6 +1773,7 @@ NativePlatform::~NativePlatform() {
     m->app.setEventSource({});
 #else
     if (m->dpy) {
+        if (m->xim) m->x.CloseIM(m->xim);
         m->x.CloseDisplay(m->dpy);
         m->app.setEventSource({});
     }
@@ -1553,8 +1804,34 @@ PresenterKind NativePlatform::show(AppWindow& w) {
     }
     r->kind = r->vk ? PresenterKind::Vulkan : PresenterKind::Software;
     if (m->opts.osPopups) w.ui().setOsPopups(true); // screen bounds arrive with the first present
+    ClipboardHooks clip; // LineEdit Ctrl+C / X / V through the system clipboard
+    clip.set = [](void*, std::string_view s) { return setClipboardText(s); };
+    clip.get = [](void*, std::string& out) { return clipboardText(out); };
+    w.ui().setClipboard(clip);
     w.setPresenter({r, &Impl::present, &Impl::destroy});
     return r->kind;
+}
+bool NativePlatform::textInputActive(const AppWindow& w) const {
+    const Impl::Rec* r = m->find(w);
+    return r && r->imeOn;
+}
+Rect NativePlatform::textInputArea(const AppWindow& w) const {
+    const Impl::Rec* r = m->find(w);
+    return r && r->imeOn ? r->imeArea : Rect{};
+}
+bool NativePlatform::inputMethodAvailable() const {
+#if defined(_WIN32)
+    return true; // IMM32 (TSF IMEs through its compatibility layer)
+#else
+    return m->xim != nullptr;
+#endif
+}
+bool NativePlatform::inputMethodPreedit() const {
+#if defined(_WIN32)
+    return true;
+#else
+    return (m->ximStyle & x11::kPreeditCallbacks) != 0;
+#endif
 }
 
 PresenterKind NativePlatform::kind(const AppWindow& w) const {

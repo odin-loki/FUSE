@@ -6,6 +6,8 @@ the state file the demo keeps current (run-as <package> cat files/fuse_demo_stat
 
   android_gate.py --gate present|lifecycle|touch|ime|process_death|startup --apk demo.apk --package org.fuse.uidemo --abi x86_64
                   [--adb adb] [--serial emulator-5580] [--shot out.png]
+  android_gate.py --gate hud_bench --apk hud_bench.apk --package org.fuse.hudbench ...   (fuse_ui_bench_hud_mobile)
+  android_gate.py --gate startup --apk hello_app.apk --package org.fuse.hello ...        (fuse_app_hello_startup_android)
 
 Exit 0 pass, 1 fail, 77 skip (no adb, no device with the APK's ABI, no Vulkan for the present gate).
 ANDROID_SERIAL picks the device when several are attached.
@@ -373,6 +375,19 @@ class Gate:
             self.screenshot(self.a.shot)
         return 0
 
+    def gate_hud_bench(self):
+        # hud_bench APK: the fuse_ui_bench_hud workload; §6 budget 2 ms UI CPU per frame on a mid Android device
+        self.start()
+        s = self.wait(lambda s: s.get("bench_done") == "1", "HUD bench finished", timeout=300)
+        med, p95 = self.num(s, "bench_median_ms"), self.num(s, "bench_p95_ms")
+        self.log(f"HUD: {s.get('bench_nodes')} nodes, {s.get('bench_draw_cmds')} draw commands; UI CPU per frame "
+                 f"median {med:.3f} ms, p95 {p95:.3f} ms; CPU raster 1080p {s.get('bench_raster_ms')} ms (not gated)")
+        self.check(self.num(s, "bench_nodes") >= 250, "typical HUD size (~300 nodes)")
+        self.check(med <= self.a.budget_ms, f"median {med:.3f} ms <= {self.a.budget_ms} ms")
+        if self.a.shot:
+            self.screenshot(self.a.shot)
+        return 0
+
     # ---- hello_app start-up (plan §6: launch to first presented frame, mid Android <= 400 ms) ------------------
     def probe(self, args):
         """One cold start of hello_app --startup-probe; returns its numbers (ms) from logcat."""
@@ -428,7 +443,7 @@ class Gate:
         self.check(runs["sync"] and all(r["first"] == "vulkan" for r in runs["sync"]), "sync: first frame through Vulkan")
         gain = med("sync", "own") - med("async", "own")
         self.log(f"async first frame {gain:.1f} ms earlier than sync Vulkan start-up (main() -> first frame medians)")
-        if emulator:
+        if emulator and not self.a.strict:
             # the emulator's first window buffer (gralloc through the host) alone takes 200-800 ms and its timing follows
             # the host's load: the plan budget is for a phone. Here async start-up must cost nothing over the
             # software-only path and beat synchronous Vulkan start-up.
@@ -446,7 +461,10 @@ class Gate:
 def main():
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser()
-    ap.add_argument("--gate", required=True, choices=["present", "lifecycle", "touch", "ime", "process_death", "startup", "runtime", "ime_composition"])
+    ap.add_argument("--gate", required=True, choices=["present", "lifecycle", "touch", "ime", "ime_composition",
+                                                      "process_death", "hud_bench", "startup", "runtime"])
+    ap.add_argument("--budget-ms", type=float, help="hud_bench: 2 ms per frame; startup: 400 ms launch -> first frame (plan §6)")
+    ap.add_argument("--strict", action="store_true", help="startup: enforce the plan budget on an emulator too")
     ap.add_argument("--apk", required=True)
     ap.add_argument("--package", required=True)
     ap.add_argument("--abi", required=True)
@@ -454,9 +472,10 @@ def main():
     ap.add_argument("--serial", default=os.environ.get("ANDROID_SERIAL"))
     ap.add_argument("--shot", help="also save adb screencap PNG(s) here")
     ap.add_argument("--runs", type=int, default=5, help="startup: cold starts per mode")
-    ap.add_argument("--budget-ms", type=float, default=400.0, help="startup: launch -> first frame on a device")
     ap.add_argument("--emulator-budget-ms", type=float, default=900.0, help="startup: main() -> first frame on an emulator")
     a = ap.parse_args()
+    if a.budget_ms is None:
+        a.budget_ms = 400.0 if a.gate == "startup" else 2.0
     if not os.path.exists(a.apk):
         print(f"no APK at {a.apk}: skip")
         return SKIP

@@ -1011,14 +1011,22 @@ struct NativePlatform::Impl {
             using Clock = std::chrono::steady_clock;
             const Clock::time_point t0 = Clock::now();
             const Image& img = w.rasterize(damage);
+            // only the redrawn rect: lock() widens it to what the new buffer lacks (img holds the whole frame)
+            const Rect rr = w.rasterized();
+            ARect dirty{int32_t(rr.x), int32_t(rr.y), int32_t(rr.x + rr.w), int32_t(rr.y + rr.h)};
             const Clock::time_point t1 = Clock::now();
             ANativeWindow_Buffer buf{};
-            if (ANativeWindow_lock(m.window, &buf, nullptr) == 0) {
+            if (rr.empty()) {
+                ok = true;
+            } else if (ANativeWindow_lock(m.window, &buf, &dirty) == 0) {
                 const Clock::time_point t2 = Clock::now();
-                const int rows = std::min(buf.height, img.height), cols = std::min(buf.width, img.width);
-                for (int y = 0; y < rows; ++y)
-                    std::memcpy(static_cast<u32*>(buf.bits) + std::size_t(y) * std::size_t(buf.stride),
-                                img.pixels.data() + std::size_t(y) * std::size_t(img.width), std::size_t(cols) * 4);
+                const int x0 = std::max(0, int(dirty.left)), y0 = std::max(0, int(dirty.top));
+                const int x1 = std::min({int(dirty.right), buf.width, img.width});
+                const int y1 = std::min({int(dirty.bottom), buf.height, img.height});
+                for (int y = y0; y < y1 && x0 < x1; ++y)
+                    std::memcpy(static_cast<u32*>(buf.bits) + std::size_t(y) * std::size_t(buf.stride) + std::size_t(x0),
+                                img.pixels.data() + std::size_t(y) * std::size_t(img.width) + std::size_t(x0),
+                                std::size_t(x1 - x0) * 4);
                 ANativeWindow_unlockAndPost(m.window);
                 static const bool trace = std::getenv("FUSE_APP_VK_TRACE") != nullptr;
                 if (trace && !m.cpuConnected) { // the first buffer of a surface: connect + allocation in the lock
@@ -1064,14 +1072,6 @@ NativePlatform::~NativePlatform() {
         m->app.setEventSource({});
     }
 }
-// the app's cache dir (<data>/cache next to <data>/files): the OS may clear it, the app's uninstall does
-std::string defaultCacheDir() {
-    if (!g_app || !g_app->activity->internalDataPath) return {};
-    std::string d = g_app->activity->internalDataPath;
-    const std::size_t slash = d.rfind('/');
-    return slash == std::string::npos ? d + "/cache" : d.substr(0, slash) + "/cache";
-}
-
 bool NativePlatform::available() const { return g_app != nullptr; }
 void* NativePlatform::nativeDisplay() const { return g_app; }
 void* NativePlatform::androidApp() { return g_app; }
@@ -1112,6 +1112,10 @@ unsigned long long NativePlatform::nativeWindow(const AppWindow& w) const {
 bool NativePlatform::setIcon(const AppWindow&, std::span<const Image>) { return false; } // the launcher icon is in the APK
 bool NativePlatform::resizeWindow(const AppWindow&, unsigned, unsigned) { return false; } // the activity decides
 std::vector<int> NativePlatform::iconSizes(const AppWindow&) const { return {}; }
+std::string defaultCacheDir() { // the app's private files dir (internalDataPath) + /cache
+    const char* base = g_app && g_app->activity ? g_app->activity->internalDataPath : nullptr;
+    return base && *base ? std::string(base) + "/cache" : std::string();
+}
 // popups are in-window overlays on mobile
 std::size_t NativePlatform::popupCount(const AppWindow&) const { return 0; }
 unsigned long long NativePlatform::popupWindow(const AppWindow&, std::size_t) const { return 0; }
@@ -1167,6 +1171,11 @@ bool NativePlatform::postClose(unsigned long long nativeWin) {
     ANativeActivity_finish(g_app->activity);
     return true;
 }
+// the soft keyboard is the text-input session here (committed text only, no pre-edit)
+bool NativePlatform::textInputActive(const AppWindow& w) const { return m->win == &w && w.ui().wantsTextInput(); }
+Rect NativePlatform::textInputArea(const AppWindow&) const { return {}; }
+bool NativePlatform::inputMethodAvailable() const { return true; }
+bool NativePlatform::inputMethodPreedit() const { return false; }
 
 } // namespace fuse::app
 

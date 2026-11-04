@@ -303,13 +303,15 @@ bool AppWindow::presentHeadless(void*, AppWindow& w, Rect damage) {
     w.m_raster.setGlyphAtlas(w.m_ui.atlas().pixels(), w.m_ui.atlas().size());
     const Rect whole{0.f, 0.f, f32(iw), f32(ih)};
     const Rect r = full || damage.empty() ? whole : w.m_ui.drawList().redrawRegion(damage, whole);
+    w.m_rasterized = {};
     if (r.empty()) return true; // damage outside the window
     // clear the damaged region, then rasterise the list clipped to it (incremental present)
     const int x0 = std::max(0, int(std::floor(r.x))), y0 = std::max(0, int(std::floor(r.y)));
     const int x1 = std::min(iw, int(std::ceil(r.x + r.w))), y1 = std::min(ih, int(std::ceil(r.y + r.h)));
     for (int y = y0; y < y1; ++y)
         std::fill_n(w.m_image.pixels.begin() + std::ptrdiff_t(y) * iw + x0, std::max(0, x1 - x0), 0xFF000000u);
-    w.m_raster.render(w.m_ui.drawList(), w.m_image, {f32(x0), f32(y0), f32(x1 - x0), f32(y1 - y0)});
+    w.m_rasterized = {f32(x0), f32(y0), f32(x1 - x0), f32(y1 - y0)};
+    w.m_raster.render(w.m_ui.drawList(), w.m_image, w.m_rasterized);
     return true;
 }
 bool writePng(const Image& img, const std::string& path) {

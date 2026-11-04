@@ -155,6 +155,16 @@ endif()
 add_library(fuse_ui_core STATIC Core/src/style.cpp Core/src/draw_list.cpp Core/src/ui.cpp Core/src/immediate.cpp Core/src/icons.cpp Core/src/effects.cpp)
 target_include_directories(fuse_ui_core PUBLIC Core/include)
 target_link_libraries(fuse_ui_core PUBLIC fuse_text)
+find_package(Threads REQUIRED) # the CPU rasteriser's band workers
+target_link_libraries(fuse_ui_core PRIVATE Threads::Threads)
+if(FUSE_JOBS_SINGLE_THREAD) # the engine's single-thread build: the rasteriser stays on the calling thread too
+    target_compile_definitions(fuse_ui_core PRIVATE FUSE_JOBS_SINGLE_THREAD=1)
+endif()
+# the CPU rasteriser is the bit-exact reference: no fused multiply-adds (clang / GCC contract by default on arm64), so
+# every platform and its SIMD paths compute the same bytes
+if(NOT MSVC)
+    set_source_files_properties(Core/src/draw_list.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
+endif()
 if(FUSE_UI_ACCESSIBILITY)
     target_compile_definitions(fuse_ui_core PUBLIC FUSE_UI_ACCESSIBILITY=1)
 endif()
@@ -469,6 +479,12 @@ if(FUSE_BUILD_UI_GAME AND FUSE_BUILD_UI_WIDGETS)
     if(TARGET fuse_app_native AND FUSE_BUILD_APP_SAMPLES AND NOT ANDROID) # Android apps: fuse_app_add_android_app
         add_executable(game_menu App/samples/game_menu.cpp) # UI5 sample: game main menu + options, gamepad nav
         target_link_libraries(game_menu PRIVATE fuse_ui_game fuse_app_native)
+    endif()
+    # §6 HUD budget on a device: the fuse_ui_bench_hud workload as an APK (gate fuse_ui_bench_hud_mobile, <= 2 ms)
+    if(ANDROID AND COMMAND fuse_app_add_android_app AND FUSE_BUILD_APP_SAMPLES)
+        fuse_app_add_android_app(hud_bench SOURCES Game/samples/hud_bench.cpp PACKAGE org.fuse.hudbench
+                                 LABEL "FUSE HUD bench" LIBS fuse_ui_game)
+        fuse_app_add_android_gate(fuse_ui_bench_hud_mobile hud_bench hud_bench org.fuse.hudbench)
     endif()
 endif()
 

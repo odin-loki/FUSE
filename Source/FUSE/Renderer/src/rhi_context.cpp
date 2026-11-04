@@ -224,7 +224,7 @@ int RhiContext::submitSceneFrame(const RenderCommandList& commands, u32 frameInd
     if (useSemaphores) {
         const u32 index = m_acquiredSwapchainImage;
         submit.waitSemaphore = slot.imageAvailable;
-        submit.signalSemaphore = slot.renderFinished;
+        submit.signalSemaphore = swapchain->presentSemaphore(index, slot.renderFinished);
         submit.swapchainImage = swapchain->imageHandleForIndex(index);
         submit.swapchainView = index < swapchain->images().size() ? swapchain->images()[index].view : nullptr;
         submit.swapchainFormat = swapchain->info().format;
