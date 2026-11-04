@@ -46,7 +46,22 @@ struct FwDumpTexel {
 float4 fuseFwHalf4(float4 v) {
     return float4(fuseUnpackHalf2x16(fusePackHalf2x16(v.xy)), fuseUnpackHalf2x16(fusePackHalf2x16(v.zw)));
 }
-float4 fuseFwUnorm8(float4 v) { return floor(clamp(v, 0.0, 1.0) * 255.0 + 0.5) / 255.0; }
+// The attachment's UNORM8 -> float conversion is q / 255 correctly rounded; a float divide may be 2.5 ulp
+// off on Vulkan (NVIDIA uses the slack, which broke "forward surface == the twin's G-buffer" bit for bit),
+// so the quotient is formed in integers: with s = 31 - msb(q), N = q << s lies in [2^31, 2^32) and
+// q / 255 = (N / 255) * 2^-s, where M = round(N / 255) = (N + 127) / 255 (255 is odd: no ties) has 24 bits.
+float fuseFwUnorm8Value(uint q) {
+    if (q == 0u || q >= 255u) {
+        return q == 0u ? 0.0 : 1.0;
+    }
+    const uint sh = 31u - firstbithigh(q);
+    const uint m = ((q << sh) + 127u) / 255u;
+    return float(m) * asfloat((127u - sh) << 23u); // exact: m < 2^24, 2^-sh normal
+}
+float4 fuseFwUnorm8(float4 v) {
+    const uint4 q = uint4(floor(clamp(v, 0.0, 1.0) * 255.0 + 0.5));
+    return float4(fuseFwUnorm8Value(q.x), fuseFwUnorm8Value(q.y), fuseFwUnorm8Value(q.z), fuseFwUnorm8Value(q.w));
+}
 
 // The very loop of lc_shade.slang (fuseLcShadeLights, shared in lc_ltc.slang).
 float3 fuseFwShade(LcFrame F, LcSurface s, float3 v, uint cluster) { return fuseLcShadeLights(F, s, v, cluster); }
