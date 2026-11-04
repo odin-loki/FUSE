@@ -136,7 +136,7 @@ if(FUSE_BUILD_CORE_TESTS)
     # Row "Physical device selection picks the RTX 3090 correctly over any integrated GPU" (policy
     # half): the test registers the Lavapipe ICD twice (two real devices) and the test-only layer
     # VK_LAYER_FUSE_spoof_multi_gpu rewrites enumeration order, device type, heap size, limits and
-    # features per scenario. Exit 77 = skip (stub build, non-Linux, ICD not resolvable).
+    # features per scenario (Windows: the system ICD twice). Exit 77 = skip (stub build, ICD not resolvable).
     add_executable(fuse_b2_physical_device_selection tests/test_b2_physical_device_selection.cpp)
     target_link_libraries(fuse_b2_physical_device_selection PRIVATE fuse_rhi ${CMAKE_DL_LIBS})
     if(FUSE_VULKAN_BACKEND)
