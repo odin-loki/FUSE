@@ -235,7 +235,8 @@ Multi-colour icons: an SVG with colours other than currentColor / black is cooke
 its paints, in paint order, grouped into layers of consecutive equal colour; currentColor layers stay tintable, the
 others keep their colour (black included; gradients become their mean stop colour). Each layer is a coverage bitmap in
 the same atlas (pack format version 2; version 1 packs still load), drawn as one tinted `Glyph` per layer, so the GPU
-backends need nothing new. A fixed layer's alpha follows the tint's alpha (fades); edges shared by two layers blend
+backends need nothing new. A fixed layer's alpha follows the tint's alpha (fades); on a `:disabled` node fixed layers are
+greyed to their luminance at `kDisabledIconAlpha` (0.45), so multi-colour icons dim like monochrome ones; edges shared by two layers blend
 like independently anti-aliased shapes. `fuse_ui_icon_cook --list` prints each icon's layer colours.
 
 ## Application shell (UI5)

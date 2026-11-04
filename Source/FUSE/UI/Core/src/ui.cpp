@@ -860,6 +860,7 @@ bool UiContext::paintIcon(DrawList& dl, u32 nameHash, Vec2 at, f32 size, Color c
     if (c.a <= 0.f || size < 0.5f) return true;
     const f32 sc = m_scale; // rasterised at the device size (DPI scale)
     const int px = std::clamp(int(std::lround(size * sc)), 1, 1024);
+    const bool disabled = nodeIdx < m_nodes.size() && m_nodes[nodeIdx].alive && (m_nodes[nodeIdx].state & kStateDisabled);
     // one Glyph per colour layer, back to front: currentColor layers take the tint, the others keep their colour
     for (u32 layer = 0, layers = m_icons->layerCount(u32(idx)); layer < layers; ++layer) {
         // atlas key: bit 62 set, bit 63 clear (font glyph keys set bit 63); layer in bits 48..61
@@ -895,6 +896,10 @@ bool UiContext::paintIcon(DrawList& dl, u32 nameHash, Vec2 at, f32 size, Color c
         cmd.fill = lc == 0u ? c
                             : Color{f32(lc & 0xFFu) / 255.f, f32((lc >> 8) & 0xFFu) / 255.f, f32((lc >> 16) & 0xFFu) / 255.f,
                                     f32(lc >> 24) / 255.f * c.a};
+        if (lc != 0u && disabled) { // fixed colours go grey and faint, like the disabled tint of currentColor layers
+            const f32 l = 0.2126f * cmd.fill.r + 0.7152f * cmd.fill.g + 0.0722f * cmd.fill.b;
+            cmd.fill = Color{l, l, l, cmd.fill.a * kDisabledIconAlpha};
+        }
         cmd.node = nodeIdx;
         dl.push(cmd);
     }

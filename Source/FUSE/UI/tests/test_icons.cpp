@@ -548,7 +548,14 @@ int renderGate(int argc, char** argv) {
             }
             {
                 const std::vector<u32> off = fills(uc.find("coff24"));
-                UI_CHECK(off.size() == 4 && off[0] == packPremultiplied(Color::rgb(0x9A9CAB)) && off[1] == 0xFF3539E5u);
+                // disabled: the currentColor layer takes the dim tint, fixed layers go grey (luminance) and faint
+                const Color red = Color::rgb(0xE53935);
+                const f32 l = 0.2126f * red.r + 0.7152f * red.g + 0.0722f * red.b;
+                UI_CHECK(off.size() == 4 && off[0] == packPremultiplied(Color::rgb(0x9A9CAB)) &&
+                         off[1] == packPremultiplied(Color{l, l, l, kDisabledIconAlpha}));
+                // the same icon enabled keeps its colours
+                const std::vector<u32> on = fills(plainIcons[std::size_t(cs->find("traffic-light"))]);
+                UI_CHECK(on.size() == 4 && on[1] == 0xFF3539E5u);
             }
             const std::string cgolden = "golden/icons_color.png";
             if (std::getenv("FUSE_UI_UPDATE_GOLDEN")) {
