@@ -1521,7 +1521,12 @@ int gatePresentAdopt() {
     // WSI extensions, Qt adopts it and creates the window surface on it, and the hand-off wiring
     // accepts it and builds a real VkSwapchainKHR.
     fuse::renderer::resetVulkanValidationCounters();
-    const char* extensions[] = {"VK_KHR_surface", "VK_KHR_xcb_surface"};
+#if defined(_WIN32)
+    const char* const wsiExtension = "VK_KHR_win32_surface"; // Qt's windows QPA surface
+#else
+    const char* const wsiExtension = "VK_KHR_xcb_surface";
+#endif
+    const char* extensions[] = {"VK_KHR_surface", wsiExtension};
     fuse::renderer::RhiContext::Desc desc{};
     desc.bootstrap.instance.enableValidation = true;
     desc.bootstrap.instance.extraExtensions = extensions;
@@ -1530,7 +1535,7 @@ int gatePresentAdopt() {
     desc.enableCompositePass = false;
     desc.enableComputePipeline = false;
     std::unique_ptr<fuse::renderer::RhiContext> ctx = fuse::renderer::RhiContext::create(desc);
-    expect(ctx != nullptr && ctx->bootstrap().status().deviceReady, "FUSE RhiContext device ready (Lavapipe)");
+    expect(ctx != nullptr && ctx->bootstrap().status().deviceReady, "FUSE RhiContext device ready");
     if (ctx == nullptr || !ctx->bootstrap().status().deviceReady) {
         return 1;
     }
@@ -1538,9 +1543,9 @@ int gatePresentAdopt() {
     const bool validation = std::find_if(info.enabledLayers.begin(), info.enabledLayers.end(), [](const char* l) {
                                 return std::strcmp(l, "VK_LAYER_KHRONOS_validation") == 0;
                             }) != info.enabledLayers.end();
-    std::printf("FUSE instance: validation layer %s, xcb surface ext %s\n", validation ? "on" : "OFF",
-                info.instanceHasExtension("VK_KHR_xcb_surface") ? "on" : "OFF");
-    expect(info.instanceHasExtension("VK_KHR_xcb_surface"), "FUSE instance carries the Qt xcb WSI extension");
+    std::printf("FUSE instance: validation layer %s, %s %s\n", validation ? "on" : "OFF", wsiExtension,
+                info.instanceHasExtension(wsiExtension) ? "on" : "OFF");
+    expect(info.instanceHasExtension(wsiExtension), "FUSE instance carries the Qt WSI surface extension");
     void* fuseInstance = ctx->bootstrap().instance()->nativeHandle();
 
     int code = 0;
@@ -2315,8 +2320,9 @@ int gateLivePresent() {
     // viewport aspect, so render it without the sun (the preview sun has its own renderer test).
     fuse::editor::setEditorPreviewSun(false);
 #if defined(FUSE_VULKAN_BACKEND)
-    if (QGuiApplication::platformName() != QLatin1String("xcb")) {
-        std::printf("SKIP: embedded Vulkan viewport needs the xcb platform (have %s)\n",
+    // the embedded viewport builds its surface on xcb and windows (platformSurfaceExtensions)
+    if (QGuiApplication::platformName() != QLatin1String("xcb") && QGuiApplication::platformName() != QLatin1String("windows")) {
+        std::printf("SKIP: embedded Vulkan viewport needs the xcb or windows platform (have %s)\n",
                     qPrintable(QGuiApplication::platformName()));
         return 77;
     }
@@ -2964,7 +2970,12 @@ int main(int argc, char** argv) {
     }
     const std::string gate = argv[1];
     const QByteArray platform = qgetenv("QT_QPA_PLATFORM");
-    if (platform.isEmpty() && qgetenv("DISPLAY").isEmpty() && qgetenv("WAYLAND_DISPLAY").isEmpty()) {
+#if defined(_WIN32) || defined(__APPLE__)
+    const bool noDisplay = false; // Windows and macOS always have a desktop session
+#else
+    const bool noDisplay = platform.isEmpty() && qgetenv("DISPLAY").isEmpty() && qgetenv("WAYLAND_DISPLAY").isEmpty();
+#endif
+    if (noDisplay) {
         std::printf("SKIP: no display (run under xvfb-run or set QT_QPA_PLATFORM=offscreen)\n");
         return 77;
     }

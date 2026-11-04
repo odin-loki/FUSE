@@ -47,6 +47,9 @@ struct SwapchainImageInfo {
     void* image = nullptr;
     void* view = nullptr;
     u32 index = 0;
+    /// VkSemaphore the frame rendering into this image signals and its present waits on. One per image, not per
+    /// frame slot: a slot semaphore may still be held by an earlier present of another image (VUID-00067).
+    void* presentReady = nullptr;
 };
 
 struct SwapchainInfo {
@@ -91,6 +94,8 @@ public:
     /// Returns image index or UINT32_MAX when headless / not acquired.
     u32 acquireNextImage(void* imageAvailableSemaphore);
     bool present(void* renderFinishedSemaphore, u32 imageIndex);
+    /// The per-image present semaphore of `imageIndex`, else `fallback` (headless / out of range).
+    void* presentSemaphore(u32 imageIndex, void* fallback) const;
 
     bool rebuild(VulkanDevice& device, u32 width, u32 height);
 

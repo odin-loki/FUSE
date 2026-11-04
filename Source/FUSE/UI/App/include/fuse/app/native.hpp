@@ -212,6 +212,16 @@ public:
     void refreshSystemTheme();
     /// Whether the window has keyboard focus (Win32 WM_SETFOCUS / WM_KILLFOCUS, X11 FocusIn / FocusOut).
     bool windowFocused(const AppWindow& w) const;
+    /// Text-input session (IME): on while UiContext::wantsTextInput (a text field has focus). Win32: the IMM32
+    /// context is associated only then (game keys never open the IME) and the composition / candidate windows follow
+    /// the caret; X11: the XIM input context has focus only then. The pre-edit arrives as UiContext::textComposition,
+    /// committed text as textInput. textInputArea: the caret rectangle last given to the IME (device pixels).
+    bool textInputActive(const AppWindow& w) const;
+    fuse::ui::Rect textInputArea(const AppWindow& w) const;
+    /// An input method is open (Win32: always, IMM32; X11: XOpenIM succeeded, $XMODIFIERS or the built-in compose IM).
+    bool inputMethodAvailable() const;
+    /// The input method reports a pre-edit (Win32: yes; X11: an IM with on-the-spot pre-edit callbacks).
+    bool inputMethodPreedit() const;
     /// Thread-safe: wakes the event pump if it is waiting (Win32: a posted WM_NULL; X11: a self-pipe the pump polls).
     /// Accessibility adapters call it after queueing an action from an AT thread.
     void wake();

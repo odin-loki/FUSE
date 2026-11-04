@@ -20,6 +20,12 @@
 #include <fuse/renderer/vk/instance.hpp>
 #endif
 #include <fuse/editor/editor_theme_tokens.hpp>
+#include <fuse/editor/editor_project_tools.hpp>
+#include <fuse/editor/material_catalog.hpp>
+#include <fuse/editor/component_schema.hpp>
+#include <fuse/ecs/spawn_query.hpp>
+#include <fuse/ecs/components/environment.hpp>
+#include <fuse/cinematics/property_track.hpp>
 #include "fuse/editor/fui/app_icon.hpp"
 
 #include <chrono>
@@ -284,6 +290,9 @@ void gateUiFrame(Rig& r) {
                 "median %.2f ms; full 1600x900 CPU raster %.1f ms\n",
                 ms, n, r.ui().nodeCount(), r.ui().stats().drawCmds, rep[rep.size() / 2], full);
     CHECK(ms < 16.7);
+#if defined(NDEBUG) && !defined(__SANITIZE_ADDRESS__)
+    CHECK(rep[rep.size() / 2] <= 2.0); // plan §6: full 9-dock repaint <= 2 ms (optimised builds only)
+#endif
     // hover only damages the buttons it enters and leaves, never the window (shared :hover ancestors stay put)
     CHECK(maxDamage < 0.05f * r.ui().viewport().w * r.ui().viewport().h);
 }
@@ -995,7 +1004,7 @@ void gateProfiler(Rig& r) {
     CHECK(r.shell.panels().profiler().frames == f);
     r.clickId("profiler.pause");
     r.clickId("profiler.clear");
-    CHECK(r.shell.panels().profiler().history.size() <= 2u); // clear drops the history (the frame counter keeps counting)
+    CHECK(r.shell.panels().profiler().history.size() <= 4u); // clear drops the history; the click frame and a timer catch-up may sample again
     r.frames(6);
     std::printf("profiler: %s\n", r.shell.panels().profiler().summary.c_str());
     // hidden: no samples (the idle editor stays idle)
@@ -2131,8 +2140,1109 @@ void gateNavigation(Rig& r) {
     CHECK(overlayLines(r, 0x46C8FF) == lines);
 }
 
+// ---- Qt gate twins (fuse_editor_qt_<name> -> fuse_editor_ui_<name>) -------------------------------------------------
+namespace {
+namespace ecs = fuse::ecs;
+namespace fs = std::filesystem;
+
+ecs::EntityID idOf(EntityRef e) { return ecs::EntityID{e.index, e.generation}; }
+ecs::Transform transformOf(Rig& r, EntityRef e) {
+    ecs::Transform t{};
+    r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) {
+        if (auto* p = h.editorScene().registry().get<ecs::Transform>(idOf(e))) t = *p;
+    });
+    return t;
+}
+void setTransform(Rig& r, EntityRef e, const std::function<void(ecs::Transform&)>& fn) {
+    r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) {
+        if (auto* p = h.editorScene().registry().get<ecs::Transform>(idOf(e))) {
+            fn(*p);
+            p->dirty = true;
+        }
+    });
+    r.c.refresh();
+}
+/// Ticks the game thread work (posted commands) and the shell.
+void settle(Rig& r, int n = 2) {
+    for (int i = 0; i < n; ++i) { r.c.tick(); r.frames(); }
+}
+std::size_t undoCount(Rig& r) {
+    std::size_t n = 0;
+    r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) { n = h.undoStack().undoCount(); });
+    return n;
+}
+fs::path samplesDir() { return fs::path(FUSE_EDITOR_UI_SOURCE_DIR) / "Samples" / "unification"; }
+/// A writable copy of a sample project.
+fs::path copySample(const char* tag, const char* sample) {
+    const fs::path root = scratchDir(tag);
+    std::error_code ec;
+    fs::copy(samplesDir() / sample, root / sample, fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
+    return root / sample;
+}
+void writeText(const fs::path& p, const std::string& s) {
+    std::error_code ec;
+    fs::create_directories(p.parent_path(), ec);
+    std::FILE* f = std::fopen(p.string().c_str(), "wb");
+    if (f) { std::fwrite(s.data(), 1, s.size(), f); std::fclose(f); }
+}
+bool pickMenu(Rig& r, const char* menu, ActionId id) {
+    const i32 i = r.shell.menuItemIndex(menu, id);
+    if (i < 0) return false;
+    r.ui().emit(r.shell.menuNode(menu), fuse::ui::SignalKind::Submitted, {.value = float(i)});
+    r.frames();
+    return true;
+}
+std::string readText(const fs::path& p) {
+    std::string s;
+    if (std::FILE* f = std::fopen(p.string().c_str(), "rb")) {
+        char buf[4096];
+        for (std::size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) s.append(buf, n);
+        std::fclose(f);
+    }
+    return s;
+}
+/// Puts a fresh SDF sphere 6 units in front of the camera and selects it (Qt gates' "entity in front").
+EntityRef sphereInFront(Rig& r, float dist = 6.f) {
+    CHECK(r.c.trigger(ActionId::EntityCreateSdfSphere));
+    r.frames();
+    const EntityRef e = r.c.lastCreated();
+    const ecs::vec3 p = r.c.viewport().position(), f = r.c.viewport().forward();
+    setTransform(r, e, [&](ecs::Transform& t) {
+        t.position = {p.x + f.x * dist, p.y + f.y * dist, p.z + f.z * dist, 1.f};
+        t.rotation = ecs::quat{};
+        t.scale = {1.f, 1.f, 1.f, 0.f};
+    });
+    const EntityRef one[] = {e};
+    r.c.select(one, e);
+    r.frames();
+    return e;
+}
+} // namespace
+
+// project_settings: Project Settings dialog round-trips project.json; import copies with unique names; cook on import.
+void gateProjectSettings(Rig& r) {
+    const fs::path root = copySample("project_settings", "demo_3d_empty");
+    CHECK(r.c.openProject(root.string()));
+    r.frames();
+    CHECK(pickMenu(r, "File", ActionId::FileProjectSettings) && r.shell.projectSettingsOpen());
+    CHECK(r.ui().text(r.ui().find("projset.name")) == "demo_3d_empty");
+    setField(r, "projset.name", "renamed");
+    r.ui().setChecked(r.ui().find("projset.enable2d"), true);
+    r.ui().setChecked(r.ui().find("projset.mod_ai"), true);
+    r.ui().setValue(r.ui().find("projset.workers"), 3.f);
+    r.clickId("projset.ok");
+    settle(r);
+    CHECK(!r.shell.projectSettingsOpen());
+    const ProjectSettingsLoad saved = loadProjectSettings(root.string());
+    CHECK(saved.loaded && saved.manifest.name == "renamed" && saved.manifest.dimensions.enable2D && saved.manifest.modules.ai &&
+          saved.manifest.workerCap == 3u && saved.manifest.dimensions.enable3D);
+    CHECK(r.v().hasProject && r.v().projectName == "renamed"); // reopened with the new settings
+    // reopen: the dialog shows the saved values; an empty name is refused and the dialog stays open
+    CHECK(pickMenu(r, "File", ActionId::FileProjectSettings) && r.shell.projectSettingsOpen());
+    CHECK(r.ui().text(r.ui().find("projset.name")) == "renamed" && r.ui().checked(r.ui().find("projset.enable2d")) &&
+          r.ui().checked(r.ui().find("projset.mod_ai")) && r.ui().value(r.ui().find("projset.workers")) == 3.f);
+    setField(r, "projset.name", "");
+    r.clickId("projset.ok");
+    CHECK(r.shell.projectSettingsOpen() && !r.ui().text(r.ui().find("projset.error")).empty());
+    CHECK(loadProjectSettings(root.string()).manifest.name == "renamed");
+    shot(r);
+    r.clickId("projset.cancel");
+    CHECK(!r.shell.projectSettingsOpen());
+    // import: unique names under assets/<kind>
+    const fs::path png = root.parent_path() / "wood.png";
+    writeText(png, "png");
+    const auto a = importAssetsIntoProject(root.string(), {png.string(), png.string()});
+    CHECK(a.size() == 2 && a[0] == "assets/textures/wood.png" && a[1] == "assets/textures/wood_1.png");
+    CHECK(fs::exists(root / "assets/textures/wood_1.png"));
+    // cook on import through File > Import Asset (fuse_cook)
+    const std::string cook = findCookTool();
+    if (cook.empty()) {
+        std::printf("SKIP cook-on-import: fuse_cook not built / not found\n");
+        return;
+    }
+    const fs::path obj = root.parent_path() / "tri.obj";
+    writeText(obj, "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nf 1//1 2//1 3//1\n");
+    AssetCookJob job;
+    CHECK(makeAssetCookJob(root.string(), "assets/models/tri.obj", cook, job) && job.output == "assets/cooked/models/tri.fusemesh");
+    r.sv.files.push_back(obj.string());
+    CHECK(pickMenu(r, "File", ActionId::FileImportAsset));
+    std::error_code ec;
+    CHECK(fs::exists(root / "assets/models/tri.obj") && fs::file_size(root / "assets/cooked/models/tri.fusemesh", ec) > 0);
+    AssetCookJob none;
+    CHECK(!makeAssetCookJob(root.string(), "assets/scripts/a.lua", cook, none));
+    std::printf("project_settings: %s\n", r.v().status.c_str());
+}
+
+// build_package: packageProject stages files (no caches), cooks, copies a runtime + launchers, writes package.json;
+// Shipping excludes + archive; the dialog defaults, Build, Open Folder and remembered options.
+void gateBuildPackage(Rig& r) {
+    const fs::path tmp = scratchDir("build_package");
+    const fs::path root = tmp / "proj";
+    std::error_code ec;
+    fs::create_directories(root / "assets/models", ec);
+    fs::copy_file(samplesDir() / "demo_3d_empty/project.json", root / "project.json", ec);
+    writeText(root / "assets/models/tri.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nf 1//1 2//1 3//1\n");
+    writeText(root / ".fuse/cook_cache.json", "{}");
+    PackageOptions bad;
+    bad.projectRoot = root.string();
+    bad.outputDir = (root / "out").string();
+    CHECK(!packageProject(bad).ok);
+    PackageOptions o;
+    o.projectRoot = root.string();
+    o.outputDir = (tmp / "out").string();
+    o.runtimePath = executableDir() + "/" + fs::path(executableDir()).filename().string(); // replaced below
+#if defined(_WIN32)
+    {
+        wchar_t self[MAX_PATH] = {};
+        GetModuleFileNameW(nullptr, self, MAX_PATH);
+        o.runtimePath = fs::path(self).string(); // any executable stands in for the player
+    }
+#else
+    o.runtimePath = fs::read_symlink("/proc/self/exe", ec).string();
+#endif
+    const bool haveCook = !findCookTool().empty();
+    o.cookAssets = haveCook;
+    int lines = 0;
+    const PackageResult res = packageProject(o, [&](const std::string&) { ++lines; });
+    CHECK(res.ok);
+    const fs::path pkg(res.packageDir);
+    CHECK(pkg.filename() == "demo_3d_empty");
+    CHECK(fs::exists(pkg / "project/project.json") && fs::exists(pkg / "project/assets/models/tri.obj"));
+    CHECK(!fs::exists(pkg / "project/.fuse/cook_cache.json"));
+    CHECK(fs::exists(pkg / "run.sh") && fs::exists(pkg / "run.bat") && fs::exists(pkg / "bin" / fs::path(o.runtimePath).filename()));
+    const std::string manifest = readText(pkg / "package.json");
+    CHECK(manifest.find("\"files\": 2,") != std::string::npos && lines > 0);
+    if (haveCook) CHECK(res.cookedAssets == 1 && fs::file_size(pkg / "project/assets/cooked/models/tri.fusemesh", ec) > 0 && res.cooked.size() == 1);
+    else std::printf("SKIP package cook: fuse_cook not found\n");
+#if defined(FUSE_EDITOR_UI_DEMO_RUNTIME)
+    {
+        // end to end: package demo_3d_empty with its player and run the packaged player from the package folder
+        PackageOptions e;
+        e.projectRoot = (samplesDir() / "demo_3d_empty").string();
+        e.outputDir = (tmp / "e2e").string();
+        e.runtimePath = FUSE_EDITOR_UI_DEMO_RUNTIME;
+        e.cookAssets = haveCook;
+        const PackageResult er = packageProject(e);
+        CHECK(er.ok);
+        const fs::path exe = fs::path(er.packageDir) / "bin" / fs::path(e.runtimePath).filename();
+        CHECK(fs::exists(exe) && fs::exists(fs::path(er.packageDir) / "project/worlds/example.fuselevel"));
+        const ProcessResult run = runProcess(exe.string(), {"project"}, er.packageDir, 300000);
+        CHECK(run.finished && run.exitCode == 0 && run.output.find("demo_3d_empty: PASS") != std::string::npos);
+        if (!(run.finished && run.exitCode == 0)) std::printf("%s\n", run.output.substr(run.output.size() > 2000 ? run.output.size() - 2000 : 0).c_str());
+    }
+#else
+    std::printf("SKIP package e2e: demo_3d_empty not built\n");
+#endif
+    // Shipping + excludes + archive
+    writeText(root / "worlds/a.fuselevel.prefablinks", "fuse-prefablinks 1\n");
+    writeText(root / "assets/prefabs/x.prefab.variant", "base y\n");
+    writeText(root / "art/source.psd", "psd");
+    writeText(root / "docs/notes.txt", "n");
+    PackageOptions s;
+    s.projectRoot = root.string();
+    s.outputDir = (tmp / "ship").string();
+    s.cookAssets = false;
+    s.configuration = "Shipping";
+    s.excludePatterns = {"*.psd", "docs/*"};
+    s.archive = true;
+    const PackageResult sr = packageProject(s);
+    CHECK(sr.ok);
+    if (!sr.ok) std::printf("shipping error: %s\n", sr.error.c_str());
+    const fs::path sp(sr.packageDir);
+    CHECK(fs::exists(sp / "project/assets/models/tri.obj"));
+    CHECK(!fs::exists(sp / "project/worlds/a.fuselevel.prefablinks") && !fs::exists(sp / "project/assets/prefabs/x.prefab.variant"));
+    CHECK(!fs::exists(sp / "project/art/source.psd") && !fs::exists(sp / "project/docs/notes.txt"));
+    CHECK(sr.excludedFiles == 4 && sr.totalBytes > 0);
+    CHECK(!sr.archivePath.empty() && fs::file_size(sr.archivePath, ec) > 0);
+    const std::string sm = readText(sp / "package.json");
+    CHECK(sm.find("\"configuration\": \"Shipping\"") != std::string::npos && sm.find("\"excluded\": 4") != std::string::npos);
+    PackageOptions dev = s;
+    dev.configuration = "Development";
+    dev.excludePatterns.clear();
+    dev.archive = false;
+    dev.outputDir = (tmp / "dev").string();
+    const PackageResult dr = packageProject(dev);
+    CHECK(dr.ok && dr.excludedFiles == 0 && fs::exists(fs::path(dr.packageDir) / "project/worlds/a.fuselevel.prefablinks"));
+    // the dialog (File > Build / Package...)
+    CHECK(r.c.openProject(root.string()));
+    r.frames();
+    CHECK(pickMenu(r, "File", ActionId::FileBuildPackage) && r.shell.buildPackageOpen());
+    const PackageOptions d = r.shell.packageOptions();
+    CHECK(d.projectRoot == r.c.projectRoot() && !d.outputDir.empty() && d.cookAssets && d.runtimePath.empty());
+    CHECK(d.configuration == "Development" && std::find(d.excludePatterns.begin(), d.excludePatterns.end(), "*.psd") != d.excludePatterns.end() && !d.archive);
+    CHECK(r.ui().disabled(r.ui().find("package.open_folder")));
+    r.ui().setValue(r.ui().find("package.config"), 1.f, true);
+    setField(r, "package.output", (tmp / "dlg").string());
+    r.ui().setChecked(r.ui().find("package.cook"), false);
+    r.clickId("package.build");
+    CHECK(r.shell.lastPackage().ok && !r.ui().disabled(r.ui().find("package.open_folder")));
+    CHECK(std::string(r.ui().text(r.ui().find("package.log"))).find("Package ready") != std::string::npos);
+    shot(r);
+    r.clickId("package.open_folder");
+    CHECK(!r.sv.opened.empty() && r.sv.opened.back() == r.shell.lastPackage().packageDir);
+    r.clickId("package.close");
+    CHECK(!r.shell.buildPackageOpen());
+    CHECK(pickMenu(r, "File", ActionId::FileBuildPackage) && r.shell.buildPackageOpen());
+    const PackageOptions again = r.shell.packageOptions();
+    CHECK(again.configuration == "Shipping" && again.outputDir == (tmp / "dlg").string() && !again.cookAssets);
+    r.clickId("package.close");
+    std::printf("build_package: %d copied, %d cooked, %d excluded, archive %s\n", res.copiedFiles, res.cookedAssets, sr.excludedFiles,
+                sr.archivePath.c_str());
+}
+
+// edit_tools: Select All / Deselect All, Copy / Paste (one undo step), scene search terms, F2 rename, light icon pick,
+// Frame Selected, hierarchy double-click, Duplicate subtree, then the shared colliders / recent projects / grouping /
+// view modes / open script / navigation sub-gates (the Qt gate runs them all in one window too).
+std::string g_self; // this executable (sub-gates run as child processes)
+void gateEditTools(Rig& r) {
+    for (int i = 0; i < 4; ++i) {
+        CHECK(r.c.trigger(i % 2 ? ActionId::EntityCreateSdfSphere : ActionId::EntityCreateEmpty));
+        r.frames();
+    }
+    const u32 base = r.v().entityCount;
+    CHECK(base >= 4);
+    CHECK(pickMenu(r, "Edit", ActionId::EditSelectAll));
+    CHECK(r.v().selection.size() == base);
+    std::size_t marked = 0;
+    for (const auto& h : r.v().hierarchy) marked += h.selected;
+    CHECK(marked == base); // the hierarchy shows the multi-selection
+    CHECK(pickMenu(r, "Edit", ActionId::EditCopy) && !r.c.clipboardEmpty());
+    CHECK(r.c.actionEnabled(ActionId::EditPaste));
+    CHECK(pickMenu(r, "Edit", ActionId::EditPaste));
+    CHECK(r.v().entityCount == 2 * base);
+    r.clickId("tool.edit.undo");
+    CHECK(r.v().entityCount == base);
+    CHECK(pickMenu(r, "Edit", ActionId::EditDeselectAll) && r.v().selection.empty());
+    // keyboard: Ctrl+A in the viewport selects all; in a text field it selects the text
+    viewportKey(r, Key::A, fuse::ui::kModCtrl);
+    CHECK(r.v().selection.size() == base);
+    r.c.deselectAll();
+    // search terms: components, combined terms, #index
+    const std::string comps[] = {"Transform", "Mesh", "Collider"};
+    CHECK(EditorController::hierarchyMatches("Mesh #3", comps, 3, "collider"));
+    CHECK(EditorController::hierarchyMatches("Mesh #3", std::span(comps, 2), 3, "mesh #3"));
+    CHECK(!EditorController::hierarchyMatches("Mesh #3", std::span(comps, 2), 3, "mesh #4"));
+    CHECK(pickMenu(r, "Edit", ActionId::EditFind) && r.ui().focused() == r.ui().find("hierarchy.filter"));
+    r.ui().textInput("sdf");
+    r.frames();
+    const std::size_t sdfRows = r.v().hierarchy.size();
+    CHECK(sdfRows >= 1 && sdfRows < base);
+    setField(r, "hierarchy.filter", "");
+    r.ui().emit(r.ui().find("hierarchy.filter"), fuse::ui::SignalKind::TextChanged, {});
+    r.frames();
+    // rename: F2 on the hierarchy row -> name row -> Enter (one undo step); searchable
+    const EntityRef named = r.v().hierarchy.front().entity;
+    r.c.selectOnly(named);
+    r.frames();
+    r.ui().setFocus(r.ui().find("hierarchy.tree"));
+    r.ui().keyDown(Key::F2);
+    r.frames();
+    CHECK(r.ui().focused() == r.ui().find("hierarchy.rename"));
+    r.ui().keyDown(Key::A, fuse::ui::kModCtrl);
+    r.ui().textInput("Hero Rock");
+    r.ui().keyDown(Key::Enter);
+    r.frames();
+    CHECK(rowsLabelled(r, "Hero Rock") == 1);
+    setField(r, "hierarchy.filter", "hero");
+    r.ui().emit(r.ui().find("hierarchy.filter"), fuse::ui::SignalKind::TextChanged, {});
+    r.frames();
+    CHECK(r.v().hierarchy.size() == 1);
+    setField(r, "hierarchy.filter", "");
+    r.ui().emit(r.ui().find("hierarchy.filter"), fuse::ui::SignalKind::TextChanged, {});
+    r.frames();
+    r.c.undo();
+    r.frames();
+    CHECK(rowsLabelled(r, "Hero Rock") == 0);
+    // light icon: a point light 6 m in front of the camera; clicking its icon selects it
+    CHECK(r.c.trigger(ActionId::EntityCreatePointLight));
+    r.frames();
+    const EntityRef light = r.c.lastCreated();
+    {
+        const Rect vr = r.rect("viewport");
+        const auto ray = r.c.viewport().screenRay(r.c.viewport().width() * 0.3f, r.c.viewport().height() * 0.3f);
+        setTransform(r, light, [&](ecs::Transform& t) {
+            t.position = {ray.origin.x + ray.direction.x * 6.f, ray.origin.y + ray.direction.y * 6.f, ray.origin.z + ray.direction.z * 6.f, 1.f};
+        });
+        (void)vr;
+    }
+    r.c.deselectAll();
+    r.frames();
+    std::size_t icons = 0;
+    float ix = 0.f, iy = 0.f;
+    for (const auto& m : r.c.viewportMarkers())
+        if (m.kind == 3) { ++icons; if (m.entity == light) ix = m.x, iy = m.y; }
+    CHECK(icons >= 1);
+    using PE = ViewportPointerEvent;
+    r.c.viewportPointer({PE::Kind::Down, PE::Button::Left, ix, iy});
+    r.c.viewportPointer({PE::Kind::Up, PE::Button::Left, ix, iy});
+    r.frames();
+    CHECK(r.v().primary == light);
+    // Frame Selected centres a farEnt entity
+    const EntityRef farEnt = makeEntity(r, 140.f, 25.f, -90.f);
+    r.c.selectOnly(farEnt);
+    CHECK(pickMenu(r, "View", ActionId::ViewFrameSelected));
+    float sx = 0.f, sy = 0.f;
+    CHECK(r.c.projectPoint(140.f, 25.f, -90.f, sx, sy));
+    const float cx = r.c.viewport().width() * 0.5f, cy = r.c.viewport().height() * 0.5f;
+    std::printf("edit_tools: framed at %.1f,%.1f (centre %.1f,%.1f)\n", sx, sy, cx, cy);
+    CHECK(std::fabs(sx - cx) < 4.f && std::fabs(sy - cy) < 4.f);
+    {
+        const auto& cam = r.c.viewport().camera();
+        const float d = std::hypot(cam.positionX - 140.f, cam.positionY - 25.f, cam.positionZ + 90.f);
+        CHECK(d > 0.5f && d < 20.f);
+    }
+    r.c.deselectAll();
+    CHECK(!r.c.frameSelection()); // nothing selected: no-op
+    // hierarchy double-click selects and frames
+    r.c.viewport().camera().positionX = 0.f;
+    r.c.viewport().camera().positionY = 2.f;
+    r.c.viewport().camera().positionZ = 0.f;
+    r.frames();
+    i32 farLine = -1;
+    for (u32 i = 0; i < r.v().hierarchy.size(); ++i)
+        if (r.v().hierarchy[i].entity == farEnt) farLine = i32(i);
+    CHECK(farLine >= 0);
+    const NodeHandle tree = r.ui().find("hierarchy.tree");
+    r.ui().setValue(tree, float(farLine), true);
+    r.frames();
+    r.ui().setFocus(tree);
+    const Rect tr = r.ui().rect(tree);
+    for (int k = 0; k < 2; ++k) { // two clicks on the selected line (rootEvent sees the PointerUp)
+        r.ui().setValue(tree, float(farLine), true);
+        r.ui().pointerDown({tr.x + 20.f, tr.y + 4.f});
+        r.ui().setValue(tree, float(farLine), true);
+        r.ui().pointerUp({tr.x + 20.f, tr.y + 4.f});
+    }
+    r.frames();
+    {
+        const auto& cam = r.c.viewport().camera();
+        const float d = std::hypot(cam.positionX - 140.f, cam.positionY - 25.f, cam.positionZ + 90.f);
+        CHECK(d < 20.f && r.v().primary == farEnt);
+    }
+    // Duplicate copies the subtree and keeps the name (one undo step)
+    {
+        const EntityRef parent = makeEntity(r, 0.f, 0.f, 3.f), child = makeEntity(r, 0.f, 1.f, 3.f);
+        const EntityRef c1[] = {child};
+        r.c.reparent(c1, parent);
+        settle(r);
+        CHECK(r.c.renameEntity(parent, "Tower"));
+        r.c.selectOnly(parent);
+        const u32 before = r.v().entityCount;
+        CHECK(pickMenu(r, "Entity", ActionId::EntityDuplicate));
+        CHECK(r.v().entityCount == before + 2 && rowsLabelled(r, "Tower") == 2 && !(r.v().primary == parent));
+        r.c.undo();
+        r.frames();
+        CHECK(r.v().entityCount == before);
+    }
+    shot(r);
+    // the remaining Qt edit_tools checks are their own twins: run each in a fresh editor (child process of this gate)
+    for (const char* sub : {"colliders", "entity_group", "view_modes", "open_script", "navigation", "recent_projects"}) {
+        const ProcessResult pr = runProcess(g_self, {std::string("--gate=") + sub});
+        std::printf("edit_tools: sub-gate %s -> exit %d\n", sub, pr.exitCode);
+        CHECK(pr.finished && pr.exitCode == 0);
+        if (pr.exitCode != 0) std::printf("%s\n", pr.output.c_str());
+    }
+}
+
+// lighting: Lighting panel adds the sun / ambient / fog (undoable), edits intensity / fog / angles; a level's
+// environment shows up after opening a project.
+void gateLighting(Rig& r) {
+    CHECK(r.ui().alive(r.ui().find("dock.lighting")) && r.shell.showPanel("dock.lighting"));
+    r.frames();
+    CHECK(!r.shell.panels().lighting().sun.valid());
+    r.clickId("lighting.add_sun");
+    const EntityRef sun = r.shell.panels().lighting().sun;
+    CHECK(sun.valid());
+    r.clickId("lighting.add_ambient");
+    r.clickId("lighting.add_fog");
+    settle(r);
+    LightingView v = r.shell.panels().lighting();
+    CHECK(v.ambient == sun && v.fog == sun);
+    r.ui().setValue(r.ui().find("lighting.sun_intensity"), 3.5f, true);
+    r.ui().setValue(r.ui().find("lighting.fog_density"), 0.02f, true);
+    r.ui().setValue(r.ui().find("lighting.elevation"), 30.f, true);
+    settle(r);
+    r.ui().setValue(r.ui().find("lighting.azimuth"), 90.f, true);
+    settle(r);
+    float dot = 0.f, intensity = 0.f, density = 0.f;
+    const auto want = quatFromEulerDeg(-30.f, 90.f, 0.f);
+    r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) {
+        auto& reg = h.editorScene().registry();
+        if (auto* l = reg.get<ecs::DirectionalLight>(idOf(sun))) intensity = l->intensity;
+        if (auto* f = reg.get<ecs::EnvironmentFog>(idOf(sun))) density = f->density;
+        if (auto* t = reg.get<ecs::Transform>(idOf(sun)))
+            dot = std::fabs(t->rotation.x * want.x + t->rotation.y * want.y + t->rotation.z * want.z + t->rotation.w * want.w);
+    });
+    std::printf("lighting: intensity %.2f, fog %.3f, angle match %.5f\n", intensity, density, dot);
+    CHECK(std::fabs(intensity - 3.5f) < 1e-4f && std::fabs(density - 0.02f) < 1e-5f && dot > 0.9999f);
+    v = r.shell.panels().lighting();
+    // the panel's euler readback may be an equivalent pair; the quaternion check above is exact
+    std::printf("lighting: panel reads elevation %.2f azimuth %.2f\n", v.elevation, v.azimuth);
+    shot(r);
+    r.clickId("tool.edit.undo");
+    settle(r);
+    r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) {
+        if (auto* t = h.editorScene().registry().get<ecs::Transform>(idOf(sun)))
+            dot = std::fabs(t->rotation.x * want.x + t->rotation.y * want.y + t->rotation.z * want.z + t->rotation.w * want.w);
+    });
+    CHECK(dot < 0.9999f); // undo reverts the angle edit
+    // a real level: sun / ambient / fog come from its FECS block
+    const fs::path proj = copySample("lighting", "demo_3d_empty");
+    r.sv.answers.push_back(PromptAnswer::Discard);
+    CHECK(r.c.openProject(proj.string()));
+    settle(r);
+    v = r.shell.panels().lighting();
+    CHECK(v.sun.valid() && v.ambient.valid() && v.fog.valid());
+}
+
+// play_camera: Play keeps the editor camera (a spawned cube stays in view); Play from Spawn Point moves to the spawn
+// at eye height; Stop restores the editor camera.
+void gatePlayCamera(Rig& r) {
+    const fs::path proj = copySample("play_camera", "demo_3d_empty");
+    CHECK(r.c.openProject(proj.string()));
+    settle(r);
+    const EntityRef cube = sphereInFront(r);
+    const auto cam0 = r.c.viewport().camera();
+    auto onScreen = [&] {
+        const ecs::Transform t = transformOf(r, cube);
+        float x = 0.f, y = 0.f;
+        return r.c.projectPoint(t.position.x, t.position.y, t.position.z, x, y) && x >= 0.f && y >= 0.f &&
+               x <= float(r.c.viewport().width()) && y <= float(r.c.viewport().height());
+    };
+    CHECK(onScreen());
+    auto waitPlaying = [&](bool want) {
+        for (int i = 0; i < 100 && (r.v().transport != TransportState::Stopped) != want; ++i) settle(r, 1);
+        return (r.v().transport != TransportState::Stopped) == want;
+    };
+    r.clickId("tool.play.play");
+    CHECK(waitPlaying(true));
+    const auto camP = r.c.viewport().camera();
+    CHECK(camP.positionX == cam0.positionX && camP.positionY == cam0.positionY && camP.positionZ == cam0.positionZ && camP.yaw == cam0.yaw &&
+          camP.pitch == cam0.pitch);
+    CHECK(onScreen());
+    r.clickId("tool.play.stop");
+    CHECK(waitPlaying(false));
+    CHECK(r.shell.menuItemIndex("Play", ActionId::PlayFromSpawn) >= 0);
+    float spawn[3] = {};
+    bool hasSpawn = false;
+    r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) {
+        hasSpawn = ecs::findFirstActiveSpawnWorldPosition(h.editorScene().registry(), spawn);
+    });
+    if (!hasSpawn) {
+        std::printf("note: project has no active spawn; spawn path skipped\n");
+        return;
+    }
+    CHECK(pickMenu(r, "Play", ActionId::PlayFromSpawn) && r.c.playFromSpawn());
+    CHECK(menuText(r, "Play").find("[x] Play from Spawn Point") != std::string::npos);
+    r.clickId("tool.play.play");
+    CHECK(waitPlaying(true));
+    const auto at = r.c.viewport().camera();
+    std::printf("play_camera: spawn eye %.2f (camera y %.2f)\n", spawn[1] + 1.7f, at.positionY);
+    CHECK(std::fabs(at.positionY - (spawn[1] + 1.7f)) < 1e-3f && std::fabs(at.positionX - spawn[0]) < 1e-3f);
+    shot(r);
+    r.clickId("tool.play.stop");
+    CHECK(waitPlaying(false));
+    const auto back = r.c.viewport().camera();
+    CHECK(back.positionX == cam0.positionX && back.positionY == cam0.positionY && back.positionZ == cam0.positionZ);
+    CHECK(pickMenu(r, "Play", ActionId::PlayFromSpawn) && !r.c.playFromSpawn());
+}
+
+// ---- GUI-1 shell gates (Qt test_editor_qt_shell.cpp) -----------------------------------------------------------------
+void gateShellDocks(Rig& r) {
+    static constexpr const char* kIds[] = {"dock.hierarchy", "dock.inspector", "dock.console", "dock.project_hub", "dock.asset_browser",
+                                           "dock.material_editor", "dock.sdf_sculpt", "dock.profiler", "dock.sequencer", "dock.timeline",
+                                           "dock.navigation", "dock.terrain", "dock.lighting"};
+    int present = 0;
+    for (const char* id : kIds) {
+        const NodeHandle n = r.ui().find(id);
+        if (r.ui().alive(n) && r.ui().firstChild(n).valid()) ++present;
+        else std::printf("     missing dock %s\n", id);
+    }
+    CHECK(present == 13 && fui::shellPanels().size() == 13u);
+    // the viewport is the central widget (centre dock region)
+    const NodeHandle centre = w::dockRegion(r.ui(), r.ui().find("editor.dockarea"), w::DockSide::Center);
+    bool inCentre = false;
+    for (NodeHandle n = r.ui().find("viewport"); n.valid() && r.ui().alive(n); n = r.ui().parent(n)) inCentre |= n == centre;
+    CHECK(inCentre);
+    for (const char* id : kIds) CHECK(r.shell.showPanel(id) && r.shell.panelVisible(id));
+}
+
+void gateShellToolbar(Rig& r) {
+    const ActionId ids[] = {ActionId::FileNewScene, ActionId::FileOpenScene, ActionId::FileSave, ActionId::EditUndo, ActionId::EditRedo};
+    for (ActionId id : ids) {
+        const NodeHandle b = r.ui().find(std::string("tool.") + actionDesc(id).stableId);
+        CHECK(r.ui().alive(b) && r.ui().parent(b) == r.ui().find("editor.toolbar"));
+        CHECK(r.shell.hasToolIcon(id));
+    }
+    CHECK(r.shell.menuItemIndex("File", ActionId::FileOpenProject) >= 0);
+    r.frames();
+    CHECK(r.ui().disabled(r.ui().find("tool.edit.undo")) && r.ui().disabled(r.ui().find("tool.edit.redo")));
+}
+
+void gateShellUndo(Rig& r) {
+    const EntityRef e = makeEntity(r, 1.f, 2.f, 3.f);
+    r.c.selectOnly(e);
+    r.frames();
+    CHECK(r.shell.showPanel("dock.inspector"));
+    r.frames();
+    const NodeHandle grid = r.ui().find("inspector.grid");
+    NodeHandle editor{};
+    for (NodeHandle n = r.ui().firstChild(grid); n.valid() && r.ui().alive(n); n = r.ui().nextSibling(n))
+        if (r.ui().text(r.ui().firstChild(n)) == "Position") editor = r.ui().nextSibling(r.ui().firstChild(n));
+    CHECK(editor.valid());
+    r.ui().setFocus(editor);
+    r.ui().keyDown(Key::A, fuse::ui::kModCtrl);
+    r.ui().textInput("7.5,2,3");
+    r.ui().keyDown(Key::Enter);
+    r.ui().setFocus(r.ui().find("viewport"));
+    settle(r);
+    CHECK(std::fabs(transformOf(r, e).position.x - 7.5f) < 1e-4f);
+    CHECK(!r.ui().disabled(r.ui().find("tool.edit.undo")));
+    r.clickId("tool.edit.undo");
+    settle(r);
+    CHECK(std::fabs(transformOf(r, e).position.x - 1.f) < 1e-4f);
+    CHECK(!r.ui().disabled(r.ui().find("tool.edit.redo")));
+    r.clickId("tool.edit.redo");
+    settle(r);
+    CHECK(std::fabs(transformOf(r, e).position.x - 7.5f) < 1e-4f);
+}
+
+void gateShellPlay(Rig& r) {
+    const NodeHandle play = r.ui().find("tool.play.play"), stop = r.ui().find("tool.play.stop");
+    settle(r);
+    CHECK(!r.ui().disabled(play) && r.ui().disabled(stop));
+    const auto cam0 = r.c.viewport().camera();
+    r.click(play);
+    settle(r, 3);
+    const auto camP = r.c.viewport().camera();
+    CHECK(camP.positionX == cam0.positionX && camP.positionY == cam0.positionY && camP.positionZ == cam0.positionZ && camP.yaw == cam0.yaw &&
+          camP.pitch == cam0.pitch);
+    CHECK(r.shell.menuItemIndex("Play", ActionId::PlayFromSpawn) >= 0);
+    CHECK(r.v().transport == TransportState::Playing && r.ui().disabled(play) && !r.ui().disabled(stop));
+    r.click(stop);
+    settle(r);
+    CHECK(r.v().transport == TransportState::Stopped && !r.ui().disabled(play) && r.ui().disabled(stop));
+    CHECK(r.shell.playBannerState() == 0);
+    // play-mode polish: frame + badge, session clock, pause freezes it, Maximize on Play
+    r.c.setMaximizeOnPlay(true);
+    auto visibleDocks = [&] {
+        int n = 0;
+        for (const char* id : {"dock.left", "dock.right", "dock.bottom"}) n += r.rect(id).w > 1.f && r.rect(id).h > 1.f;
+        return n;
+    };
+    const int docks0 = visibleDocks();
+    r.click(play);
+    const auto t0 = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds(600)) settle(r, 1);
+    CHECK(r.shell.playBannerState() == 1 && r.shell.playBadge().rfind("PLAYING", 0) == 0);
+    CHECK(r.shell.playElapsedMs() >= 400.0 && r.shell.playTicks() > 0);
+    CHECK(docks0 > 0 && visibleDocks() == 0);
+    r.clickId("tool.play.pause");
+    settle(r, 3);
+    CHECK(r.shell.playBannerState() == 2);
+    const double frozen = r.shell.playElapsedMs();
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    settle(r);
+    CHECK(r.shell.playElapsedMs() == frozen);
+    r.click(stop);
+    settle(r, 3);
+    CHECK(visibleDocks() == docks0 && r.shell.playBannerState() == 0);
+    r.c.setMaximizeOnPlay(false);
+}
+
+void gateShellAssets(Rig& r) {
+    CHECK(r.shell.showPanel("dock.asset_browser"));
+    const fs::path proj = copySample("shell_assets", "demo_3d_empty");
+    r.shell.panels().setProjectsRoot(proj.string());
+    r.frames(2);
+    AssetBrowserView av = r.shell.panels().assets();
+    CHECK(r.ui().disabled(r.ui().find("assets.up")) && av.entries.size() >= 2u);
+    CHECK(r.shell.panels().assetsActivate("worlds"));
+    r.frames();
+    av = r.shell.panels().assets();
+    CHECK(!r.ui().disabled(r.ui().find("assets.up")) && av.directory.find("worlds") != std::string::npos);
+    r.sv.answers.push_back(PromptAnswer::Discard);
+    CHECK(r.shell.panels().assetsActivate("worlds/example.fuselevel"));
+    settle(r);
+    CHECK(r.v().sceneName.find("example") != std::string::npos);
+    r.clickId("assets.up");
+    CHECK(r.ui().disabled(r.ui().find("assets.up")));
+}
+
+void gateShellEntity(Rig& r) {
+    const std::string menu = menuText(r, "Entity");
+    CHECK(std::count(menu.begin(), menu.end(), '\n') >= 9);
+    const std::size_t rows0 = r.v().hierarchy.size();
+    CHECK(pickMenu(r, "Entity", ActionId::EntityCreateSdfSphere));
+    CHECK(r.v().hierarchy.size() == rows0 + 1 && r.v().primary.valid());
+    CHECK(pickMenu(r, "Entity", ActionId::EntityDuplicate) && r.v().hierarchy.size() == rows0 + 2);
+    CHECK(pickMenu(r, "Entity", ActionId::EntityDelete) && r.v().hierarchy.size() == rows0 + 1);
+    r.clickId("tool.edit.undo");
+    CHECK(r.v().hierarchy.size() == rows0 + 2);
+    r.c.deselectAll();
+    CHECK(!r.c.runEntityAction(ContextMenuAction::Delete) && !r.c.trigger(ActionId::EntityDelete));
+}
+
+/// Drags gizmo `axis` from its handle midpoint by (dx, dy) viewport pixels in four moves.
+bool dragAxis(Rig& r, int axis, float dx, float dy) {
+    const EditorController::GizmoView gv = r.c.viewportGizmo();
+    if (!gv.visible) return false;
+    const GizmoHandle2D& h = gv.handles[std::size_t(axis)];
+    const float sx = (h.x0 + h.x1) * 0.5f, sy = (h.y0 + h.y1) * 0.5f;
+    using PE = ViewportPointerEvent;
+    r.c.viewportPointer({PE::Kind::Down, PE::Button::Left, sx, sy});
+    if (!r.c.gizmoDragging()) return false;
+    for (int i = 1; i <= 4; ++i) r.c.viewportPointer({PE::Kind::Move, PE::Button::Left, sx + dx * float(i) / 4.f, sy + dy * float(i) / 4.f});
+    r.c.viewportPointer({PE::Kind::Up, PE::Button::Left, sx + dx, sy + dy});
+    r.frames();
+    return true;
+}
+
+void gateShellGizmo(Rig& r) {
+    for (const char* t : {"Select", "Move", "Rotate", "Scale"}) CHECK(r.ui().alive(r.ui().find(std::string("viewport.tool.") + t)));
+    CHECK(r.ui().alive(r.ui().find("viewport.space")) && r.ui().alive(r.ui().find("viewport.snap")));
+    CHECK(r.c.transformTool() == TransformTool::Translate);
+    const EntityRef e = sphereInFront(r);
+    const ecs::Transform t0 = transformOf(r, e);
+    EditorController::GizmoView gv = r.c.viewportGizmo();
+    CHECK(gv.visible);
+    const GizmoHandle2D hx = gv.handles[0];
+    const float sx = hx.x1 - hx.x0, sy = hx.y1 - hx.y0, sl = std::hypot(sx, sy);
+    const std::size_t undo0 = undoCount(r);
+    CHECK(dragAxis(r, 0, sx / sl * 45.f, sy / sl * 45.f));
+    ecs::Transform t1 = transformOf(r, e);
+    CHECK(t1.position.x > t0.position.x + 0.05f && std::fabs(t1.position.y - t0.position.y) < 1e-4f && std::fabs(t1.position.z - t0.position.z) < 1e-4f);
+    CHECK(undoCount(r) == undo0 + 1);
+    r.clickId("tool.edit.undo");
+    CHECK(std::fabs(transformOf(r, e).position.x - t0.position.x) < 1e-4f);
+    r.clickId("viewport.snap");
+    CHECK(r.c.transformSnap());
+    CHECK(dragAxis(r, 0, sx / sl * 37.f, sy / sl * 37.f));
+    const float snapped = transformOf(r, e).position.x - t0.position.x;
+    CHECK(std::fabs(snapped / 0.5f - std::round(snapped / 0.5f)) < 1e-3f && std::fabs(snapped) > 0.f);
+    r.clickId("viewport.snap");
+    r.clickId("viewport.tool.Rotate");
+    CHECK(r.c.transformTool() == TransformTool::Rotate);
+    gv = r.c.viewportGizmo();
+    const GizmoHandle2D hy = gv.handles[1];
+    const float ry = std::hypot(hy.x1 - hy.x0, hy.y1 - hy.y0);
+    CHECK(dragAxis(r, 1, -(hy.y1 - hy.y0) / ry * 40.f, (hy.x1 - hy.x0) / ry * 40.f));
+    const ecs::quat q = transformOf(r, e).rotation;
+    CHECK(std::fabs(q.y) > 0.05f && std::fabs(q.x) < 1e-4f && std::fabs(q.z) < 1e-4f);
+    r.clickId("viewport.space");
+    CHECK(r.c.transformSpace() == TransformSpace::Local);
+    r.clickId("viewport.space");
+    r.clickId("viewport.tool.Scale");
+    gv = r.c.viewportGizmo();
+    const GizmoHandle2D hz = gv.handles[2];
+    const float zl = std::hypot(hz.x1 - hz.x0, hz.y1 - hz.y0);
+    CHECK(dragAxis(r, 2, (hz.x1 - hz.x0) / zl * 30.f, (hz.y1 - hz.y0) / zl * 30.f));
+    const ecs::Transform ts = transformOf(r, e);
+    CHECK(ts.scale.z > 1.05f && std::fabs(ts.scale.x - 1.f) < 1e-4f);
+    shot(r);
+    r.clickId("viewport.tool.Select");
+    CHECK(!r.c.viewportGizmo().visible);
+    r.clickId("viewport.tool.Move");
+}
+
+void gateShellMaterial(Rig& r) {
+    CHECK(r.shell.showPanel("dock.material_editor"));
+    EditorPanels& p = r.shell.panels();
+    MaterialView mv = p.materials();
+    CHECK(mv.names.size() >= 5u);
+    const std::string listText(r.ui().text(r.ui().find("material.list")));
+    CHECK(std::size_t(std::count(listText.begin(), listText.end(), '\n')) + 1 == mv.names.size());
+    const EntityRef e = sphereInFront(r);
+    mv = p.materials();
+    CHECK(mv.selectionHasMaterial && mv.selectionMaterial == 0u);
+    r.ui().setValue(r.ui().find("material.list"), 2.f, true);
+    r.clickId("material.assign");
+    CHECK(p.materials().selectionMaterial == 2u);
+    const float r0 = p.materials().state.roughness;
+    const fuse::ui::Image before = r.shell.window().image();
+    r.ui().setValue(r.ui().find("material.roughness"), 0.8f, true);
+    r.ui().setValue(r.ui().find("material.metallic"), 0.25f, true);
+    r.frames();
+    mv = p.materials();
+    CHECK(std::fabs(mv.state.roughness - 0.8f) < 1e-5f && std::fabs(mv.state.metallic - 0.25f) < 1e-5f);
+    const Rect pv = r.rect("material.preview");
+    const u32 px0 = r.win.image().at(int(pv.x + pv.w * 0.4f), int(pv.y + pv.h * 0.4f));
+    CHECK(p.materialSetBaseColorSrgb(30.f / 255.f, 200.f / 255.f, 60.f / 255.f));
+    r.frames();
+    mv = p.materials();
+    CHECK(mv.state.baseColorG > mv.state.baseColorR);
+    CHECK(r.win.image().at(int(pv.x + pv.w * 0.4f), int(pv.y + pv.h * 0.4f)) != px0); // preview re-renders
+    (void)before;
+    r.clickId("tool.edit.undo"); // the merged roughness / metallic / colour step
+    CHECK(std::fabs(p.materials().state.roughness - r0) < 1e-5f);
+    const std::size_t n0 = p.materials().names.size();
+    r.clickId("material.new");
+    CHECK(p.materials().names.size() == n0 + 1 && p.materials().current == n0);
+    r.clickId("tool.edit.undo");
+    CHECK(p.materials().names.size() == n0);
+    // rename (trimmed; empty refused; undo), presets, usage + Select users
+    r.ui().setValue(r.ui().find("material.list"), 2.f, true);
+    r.frames();
+    const std::string oldName = p.materials().names[2];
+    setField(r, "material.name", "  Hero Gold ");
+    r.ui().keyDown(Key::Enter);
+    r.frames();
+    CHECK(p.materials().names[2] == "Hero Gold");
+    CHECK(std::string(r.ui().text(r.ui().find("material.list"))).find("Hero Gold") != std::string::npos);
+    CHECK(!p.materialRename("   "));
+    r.clickId("tool.edit.undo");
+    CHECK(p.materials().names[2] == oldName);
+    const auto presets = EditorPanels::materialPresetNames();
+    int rubber = -1;
+    for (std::size_t i = 0; i < presets.size(); ++i) if (presets[i] == "Rubber") rubber = int(i);
+    CHECK(rubber >= 0);
+    r.ui().setValue(r.ui().find("material.preset"), float(rubber + 1), true);
+    r.frames();
+    CHECK(std::fabs(p.materials().state.roughness - 0.9f) < 1e-5f && p.materials().state.metallic == 0.f);
+    r.clickId("tool.edit.undo");
+    CHECK(p.materials().state.roughness != 0.9f);
+    const EntityRef e2 = sphereInFront(r);
+    r.ui().setValue(r.ui().find("material.list"), 2.f, true);
+    r.clickId("material.assign");
+    r.frames();
+    CHECK(p.materialUsage() == 2u && r.ui().text(r.ui().find("material.usage")) == "Used by 2 entities");
+    r.c.deselectAll();
+    r.clickId("material.select_users");
+    const auto& sel = r.v().selection;
+    CHECK(sel.size() == 2u && std::find(sel.begin(), sel.end(), e) != sel.end() && std::find(sel.begin(), sel.end(), e2) != sel.end());
+    // shader / texture / UV reach the catalog and RenderMaterial3D; the catalog sidecar round-trips with the scene
+    r.ui().setValue(r.ui().find("material.list"), 3.f, true);
+    r.ui().setValue(r.ui().find("material.roughness"), 0.42f, true);
+    r.ui().setValue(r.ui().find("material.shader"), 2.f, true);
+    CHECK(p.materialSetTexture("textures/brick.png"));
+    r.ui().setValue(r.ui().find("material.uv_scale"), 3.f, true);
+    r.frames();
+    float rmUv = 0.f;
+    u32 rmShader = 0;
+    std::string rmTex;
+    r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) {
+        const auto rm = MaterialCatalog::toRenderMaterial(h.materials().entry(3).state);
+        rmShader = rm.shader;
+        rmTex = rm.baseColorTexture;
+        rmUv = rm.uvScale;
+    });
+    std::printf("shell_material: shader %u tex %s uv %.2f\n", rmShader, rmTex.c_str(), rmUv);
+    CHECK(rmShader == 2u && rmTex == "textures/brick.png" && std::fabs(rmUv - 3.f) < 1e-5f);
+    const std::string scene = (scratchDir("shell_material") / "mat_scene.fusescene").string();
+    r.sv.files.push_back(scene);
+    CHECK(pickMenu(r, "File", ActionId::FileSaveAs));
+    CHECK(fs::exists(MaterialCatalog::sidecarPath(scene)));
+    CHECK(r.c.fileOpenPath(scene));
+    settle(r);
+    r.ui().setValue(r.ui().find("material.list"), 3.f, true);
+    mv = p.materials();
+    CHECK(std::fabs(mv.state.roughness - 0.42f) < 1e-5f && mv.state.baseColorTexture == "textures/brick.png" && mv.state.proceduralFnId == 2u);
+    shot(r);
+}
+
+void gateShellSculpt(Rig& r) {
+    CHECK(r.shell.showPanel("dock.sdf_sculpt"));
+    const std::string mats(r.ui().text(r.ui().find("sculpt.material")));
+    CHECK(std::size_t(std::count(mats.begin(), mats.end(), '\n')) + 1 == r.shell.panels().materials().names.size());
+    const EntityRef target = sphereInFront(r);
+    const ecs::Transform t = transformOf(r, target);
+    float cx = 0.f, cy = 0.f;
+    CHECK(r.c.projectPoint(t.position.x, t.position.y, t.position.z, cx, cy));
+    r.clickId("sculpt.mode");
+    CHECK(r.shell.panels().sculptMode());
+    r.shell.panels().setBrushSpacing(0.f);
+    std::size_t count0 = 0;
+    r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) { count0 = h.editorScene().registry().count(); });
+    const std::size_t undo0 = undoCount(r);
+    using PE = ViewportPointerEvent;
+    CHECK(r.shell.panels().sculptPointer({PE::Kind::Down, PE::Button::Left, cx, cy}));
+    for (int i = 1; i <= 3; ++i) r.shell.panels().sculptPointer({PE::Kind::Move, PE::Button::Left, cx + 6.f * float(i), cy});
+    r.shell.panels().sculptPointer({PE::Kind::Up, PE::Button::Left, cx + 18.f, cy});
+    settle(r);
+    std::size_t count1 = 0;
+    r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) { count1 = h.editorScene().registry().count(); });
+    CHECK(count1 >= count0 + 2u);
+    CHECK(undoCount(r) == undo0 + 1u);
+    r.clickId("tool.edit.undo");
+    std::size_t count2 = 0;
+    r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) { count2 = h.editorScene().registry().count(); });
+    CHECK(count2 == count0);
+    r.ui().setValue(r.ui().find("sculpt.op"), 4.f, true); // Paint
+    r.ui().setValue(r.ui().find("sculpt.material"), 2.f, true);
+    r.shell.panels().sculptPointer({PE::Kind::Down, PE::Button::Left, cx, cy});
+    r.shell.panels().sculptPointer({PE::Kind::Up, PE::Button::Left, cx, cy});
+    settle(r);
+    u32 id = 0;
+    r.shell.panels().withScene([&](EditorHost& h, const ViewportPanel&) { AssignMaterialCommand::materialOf(h.editorScene().registry(), idOf(target), id); });
+    CHECK(id == 2u);
+    shot(r);
+    r.clickId("sculpt.mode");
+    CHECK(!r.shell.panels().sculptMode());
+    r.ui().setValue(r.ui().find("sculpt.op"), 0.f, true);
+}
+
+// overlay: the gizmo is a vector overlay drawn over the viewport image (CPU or zero-copy; Qt needs a native child
+// window instead); pointer input on the handle drags it (one undo step); nothing is drawn with the Select tool.
+void gateShellOverlay(Rig& r) {
+    r.clickId("viewport.tool.Move");
+    const EntityRef e = sphereInFront(r);
+    r.frames(2);
+    const NodeHandle vp = r.shell.viewportNode();
+    const auto& ov = w::viewportOverlay(r.ui(), vp);
+    CHECK(!ov.lines.empty());
+    const EditorController::GizmoView gv = r.c.viewportGizmo();
+    const GizmoHandle2D h = gv.handles[0];
+    // the overlay paints over the image: the handle midpoint differs from the Select-tool frame
+    const Rect ir = w::viewportImageRect(r.ui(), vp);
+    const float kx = ir.w / float(r.c.viewport().width()), ky = ir.h / float(r.c.viewport().height());
+    const float mx = (h.x0 + h.x1) * 0.5f, my = (h.y0 + h.y1) * 0.5f;
+    r.win.rasterize({});
+    const u32 withGizmo = r.win.image().at(int(ir.x + mx * kx), int(ir.y + my * ky));
+    const u32 corner = r.win.image().at(int(ir.x + 2.f), int(ir.y + 2.f));
+    // drag on the overlay through real pointer events on the viewport widget
+    const ecs::Transform t0 = transformOf(r, e);
+    const std::size_t undo0 = undoCount(r);
+    const float len = std::hypot(h.x1 - h.x0, h.y1 - h.y0), ux = (h.x1 - h.x0) / len, uy = (h.y1 - h.y0) / len;
+    const Vec2 a{ir.x + mx * kx, ir.y + my * ky};
+    r.ui().pointerMove(a);
+    r.ui().pointerDown(a);
+    r.frames();
+    r.ui().pointerMove({a.x + ux * 20.f * kx, a.y + uy * 20.f * ky});
+    r.frames();
+    r.ui().pointerMove({a.x + ux * 40.f * kx, a.y + uy * 40.f * ky});
+    r.ui().pointerUp({a.x + ux * 40.f * kx, a.y + uy * 40.f * ky});
+    r.frames(2);
+    CHECK(transformOf(r, e).position.x > t0.position.x + 1e-3f);
+    CHECK(undoCount(r) == undo0 + 1);
+    r.clickId("viewport.tool.Select");
+    r.frames();
+    CHECK(w::viewportOverlay(r.ui(), vp).lines.empty());
+    r.win.rasterize({});
+    const u32 without = r.win.image().at(int(ir.x + mx * kx), int(ir.y + my * ky));
+    std::printf("overlay: handle px %08X with gizmo, %08X without; corner %08X\n", withGizmo, without, corner);
+    CHECK(withGizmo != without);
+    r.clickId("viewport.tool.Move");
+}
+
+void gateShellTimeline(Rig& r) {
+    CHECK(r.shell.showPanel("dock.timeline"));
+    EditorPanels& p = r.shell.panels();
+    CHECK(r.c.trigger(ActionId::EntityCreateSdfSphere));
+    r.frames();
+    const EntityRef e = r.c.lastCreated();
+    p.timelineSetPlayhead(0);
+    r.clickId("timeline.key");
+    CHECK(p.timeline().keyCount > 0);
+    const std::size_t undo0 = undoCount(r);
+    setTransform(r, e, [](ecs::Transform& t) { t.position.x = 0.f; });
+    r.ui().setValue(r.ui().find("timeline.time"), 2000.f, true);
+    setTransform(r, e, [](ecs::Transform& t) { t.position.x = 8.f; });
+    r.clickId("timeline.key");
+    CHECK(undoCount(r) == undo0 + 1);
+    CHECK(p.timeline().keyCount == 18u);
+    p.timelineSetPlayhead(500);
+    CHECK(std::fabs(transformOf(r, e).position.x - 2.f) < 1e-3f);
+    const i32 lane = p.timelineFindTrack(e, "position.x");
+    CHECK(lane >= 0);
+    // select the 2000 ms key through the lane combo + Select Key (nearest the playhead)
+    r.ui().setValue(r.ui().find("timeline.lane"), float(lane), true);
+    p.timelineSetPlayhead(1900);
+    r.clickId("timeline.select_key");
+    CHECK(p.timeline().selTrack == lane && p.timeline().selKey == 1);
+    p.timelineSetPlayhead(4000);
+    r.clickId("timeline.retime");
+    CHECK(p.timelineKeyTime(lane, 1) == 4000);
+    p.timelineSetPlayhead(1000);
+    CHECK(std::fabs(transformOf(r, e).position.x - 2.f) < 1e-3f);
+    r.clickId("tool.edit.undo");
+    CHECK(p.timelineKeyTime(lane, 1) == 2000);
+    CHECK(p.timelineSelectKey(lane, 0));
+    r.clickId("timeline.delete_selected");
+    CHECK(p.timeline().keyCount == 17u);
+    r.clickId("tool.edit.undo");
+    CHECK(p.timeline().keyCount == 18u);
+    // curves: cubic (flat) eases, one undo step; tangents switch to User; the curve strip plots the lane
+    CHECK(p.timelineSelectKey(lane, 0));
+    r.frames(); // the key row follows the selection
+    const std::size_t undoC = undoCount(r);
+    r.ui().setValue(r.ui().find("timeline.interp"), 3.f, true); // Cubic (flat)
+    CHECK(undoCount(r) == undoC + 1);
+    CHECK(p.timelineSelectKey(lane, 1));
+    r.frames();
+    r.ui().setValue(r.ui().find("timeline.interp"), 3.f, true);
+    CHECK(p.timelineSelectKey(lane, 0));
+    p.timelineSetPlayhead(200);
+    CHECK(transformOf(r, e).position.x < 0.8f * 0.5f);
+    CHECK(std::fabs(p.timelineSampleSelected(1000) - 4.f) < 1e-3f);
+    r.ui().setValue(r.ui().find("timeline.tan_in"), 0.f);
+    r.ui().setValue(r.ui().find("timeline.tan_out"), 20.f);
+    r.ui().emit(r.ui().find("timeline.tan_out"), fuse::ui::SignalKind::Submitted, {});
+    CHECK(p.timelineSelectedKeyTangentMode() == u32(fuse::cinematics::TangentMode::User));
+    CHECK(p.timelineSampleSelected(200) > 0.8f);
+    r.frames(2);
+    r.win.rasterize({});
+    const Rect cr = r.rect("timeline.curve");
+    int green = 0;
+    for (int y = int(cr.y); y < int(cr.y + cr.h); ++y)
+        for (int x = int(cr.x); x < int(cr.x + cr.w); ++x) {
+            const u32 c = r.win.image().at(x, y);
+            green += ((c >> 8) & 255) > 150 && (c & 255) < 170 ? 1 : 0;
+        }
+    std::printf("timeline: curve strip %d green px\n", green);
+    CHECK(green > 40);
+    r.c.undo();
+    r.c.undo();
+    r.c.undo();
+    r.frames();
+    CHECK(p.timeline().selKey == 0 && p.timeline().selInterp == u32(fuse::cinematics::KeyInterp::Linear));
+    // navigation: key jumps, zoom / pan, snap, loop
+    p.timelineSetPlayhead(500);
+    CHECK(p.timelineJumpToKey(1) && p.timeline().playheadMs == 2000);
+    CHECK(p.timelineJumpToKey(-1) && p.timeline().playheadMs == 0);
+    CHECK(!p.timelineJumpToKey(-1));
+    const i32 dur = p.timeline().durationMs;
+    CHECK(p.timelineViewStartMs() == 0 && p.timelineViewSpanMs() == dur);
+    p.timelineZoomBy(4.f, 1000);
+    CHECK(p.timelineViewSpanMs() == dur / 4 && p.timelineViewStartMs() <= 1000 && p.timelineViewStartMs() + p.timelineViewSpanMs() >= 1000);
+    const i32 start = p.timelineViewStartMs();
+    p.timelinePanBy(100);
+    CHECK(p.timelineViewStartMs() > start);
+    p.timelineZoomBy(1e6f, 1000);
+    CHECK(p.timelineViewSpanMs() >= 50);
+    r.clickId("timeline.fit");
+    CHECK(p.timelineViewSpanMs() == dur);
+    p.timelineSetSnapFps(30);
+    CHECK(p.timelineSnapMs(1010) == 1000 && p.timelineSnapMs(1020) == 1033);
+    p.timelineSetSnapFps(0);
+    CHECK(p.timelineSnapMs(1014) == 1010);
+    p.timelineSetLooping(true);
+    p.timelineSetPlayhead(dur - 100);
+    r.clickId("timeline.play");
+    {
+        bool wrapped = false;
+        i32 maxSeen = dur - 100; // a wrap on the first frame counts too
+        const auto t0 = std::chrono::steady_clock::now();
+        while (!wrapped && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(2)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            r.frames();
+            const i32 ph = p.timeline().playheadMs;
+            wrapped = ph < maxSeen;
+            maxSeen = std::max(maxSeen, ph);
+        }
+        CHECK(wrapped && p.timeline().playing);
+    }
+    p.timelineSetPlaying(false);
+    p.timelineSetLooping(false);
+    p.timelineSetPlayhead(0);
+    p.timelineSetPlaying(true);
+    const auto t0 = std::chrono::steady_clock::now();
+    while (p.timeline().playing && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(20)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        r.frames();
+    }
+    CHECK(!p.timeline().playing && p.timeline().playheadMs == p.timeline().durationMs);
+    CHECK(std::fabs(transformOf(r, e).position.x - 8.f) < 1e-3f);
+    // sequencer <-> timeline: one playhead both ways while linked
+    CHECK(p.sequencer().linked);
+    const u32 posts0 = p.sequencer().scrubPosts;
+    p.timelineSetPlayhead(1500);
+    CHECK(p.sequencer().scrubMs == 1500 && p.sequencer().scrubPosts > posts0);
+    CHECK(r.shell.showPanel("dock.sequencer"));
+    r.frames();
+    const float range = float(p.sequencer().rangeMs);
+    r.ui().setValue(r.ui().find("sequencer.scrub"), 500.f / range, true);
+    CHECK(p.timeline().playheadMs == 500 && std::fabs(transformOf(r, e).position.x - 2.f) < 1e-3f);
+    r.clickId("sequencer.link");
+    CHECK(!p.sequencer().linked);
+    p.timelineSetPlayhead(1000);
+    CHECK(p.sequencer().scrubMs == 500);
+    r.ui().setValue(r.ui().find("sequencer.scrub"), 250.f / range, true);
+    CHECK(p.timeline().playheadMs == 1000);
+    r.clickId("sequencer.link");
+    CHECK(p.sequencer().linked);
+    r.shell.showPanel("dock.timeline");
+    r.frames();
+}
+
+void gateShellLayout(Rig& r) {
+    CHECK(r.shell.setPanelVisible("dock.profiler", false));
+    CHECK(r.shell.setPanelFloating("dock.sdf_sculpt", true));
+    r.frames();
+    CHECK(!r.shell.panelShown("dock.profiler") && r.shell.panelFloating("dock.sdf_sculpt"));
+    CHECK(r.ui().alive(r.ui().find("float.sdf_sculpt")) && r.rect("dock.sdf_sculpt").w > 50.f); // shown in its frame
+    CHECK(menuText(r, "View").find("[ ] Profiler") != std::string::npos);
+    r.shell.saveSettingsLayout();
+    CHECK(r.c.trigger(ActionId::ViewResetLayout));
+    r.frames();
+    CHECK(r.shell.panelShown("dock.profiler") && !r.shell.panelFloating("dock.sdf_sculpt") && !r.ui().alive(r.ui().find("float.sdf_sculpt")));
+    CHECK(r.shell.restoreSettingsLayout());
+    r.frames();
+    CHECK(!r.shell.panelShown("dock.profiler") && r.shell.panelFloating("dock.sdf_sculpt"));
+    shot(r);
+    // the UI paths: View menu toggle shows the panel again; the float frame's Dock button docks it; the tab bar menu
+    // floats / moves the current panel
+    const std::string view = menuText(r, "View");
+    i32 line = -1, at = 0;
+    for (std::size_t i = view.find('\n') + 1, n = 0; i < view.size(); ++n) {
+        const std::size_t e = view.find('\n', i);
+        if (view.compare(i, 12, "[ ] Profiler") == 0) line = i32(n);
+        i = e == std::string::npos ? view.size() : e + 1;
+        (void)at;
+    }
+    CHECK(line >= 0);
+    r.ui().emit(r.shell.menuNode("View"), fuse::ui::SignalKind::Submitted, {.value = float(line)});
+    r.frames();
+    CHECK(r.shell.panelShown("dock.profiler"));
+    r.clickId("float.sdf_sculpt.dock");
+    CHECK(!r.shell.panelFloating("dock.sdf_sculpt") && r.shell.panelSideName("dock.sdf_sculpt") == "right");
+    CHECK(r.shell.movePanel("dock.console", w::DockSide::Left) && r.shell.panelSideName("dock.console") == "left" &&
+          r.shell.panelVisible("dock.console"));
+    const std::string blob = r.shell.saveLayout();
+    r.shell.resetLayout();
+    r.frames();
+    CHECK(r.shell.panelSideName("dock.console") == "bottom");
+    CHECK(r.shell.restoreLayout(blob) && r.shell.panelSideName("dock.console") == "left");
+    CHECK(!r.shell.restoreLayout("not a layout"));
+    r.shell.resetLayout();
+    r.frames();
+}
+
+void gateShellProfiler(Rig& r) {
+    EditorPanels& p = r.shell.panels();
+    p.profilerClear();
+    for (int i = 0; i < 40; ++i) {
+        ProfilerPanel::FrameProfileData f{};
+        f.cpuMs = (i % 10 == 0) ? 25.f : 8.f;
+        p.profilerPush(f);
+    }
+    r.shell.sync();
+    const ProfilerView v = p.profiler();
+    CHECK(std::string(r.ui().text(r.ui().find("profiler.summary"))).find("max 25.00") != std::string::npos);
+    CHECK(v.stats.overBudget == 4.f);
+    CHECK(w::chartSeriesCount(r.ui(), r.ui().find("profiler.chart")) >= 1u);
+    r.ui().emit(r.ui().find("profiler.pause"), fuse::ui::SignalKind::Toggled, {.flag = true});
+    p.profilerPush(ProfilerPanel::FrameProfileData{});
+    CHECK(p.profiler().frames == 40u);
+    r.ui().emit(r.ui().find("profiler.pause"), fuse::ui::SignalKind::Toggled, {.flag = false});
+    r.ui().emit(r.ui().find("profiler.clear"), fuse::ui::SignalKind::Clicked, {});
+    CHECK(p.profiler().frames == 0u);
+}
+
+void gateShellProject(Rig& r) {
+    CHECK(r.c.openProject((samplesDir() / "demo_3d_empty").string()));
+    settle(r);
+    CHECK(!r.v().hierarchy.empty());
+    CHECK(r.win.title().find("demo_3d_empty") != std::string::npos);
+    r.win.rasterize({});
+    CHECK(r.win.image().width > 200 && r.win.image().height > 200);
+}
+
 int main(int argc, char** argv) {
     std::string gate, out;
+    {
+        std::error_code ec;
+        g_self = std::filesystem::absolute(argv[0], ec).string();
+    }
     for (int i = 1; i < argc; ++i) {
         if (!std::strncmp(argv[i], "--gate=", 7)) gate = argv[i] + 7;
         else if (!std::strncmp(argv[i], "--out=", 6)) out = argv[i] + 6;
@@ -2149,6 +3259,15 @@ int main(int argc, char** argv) {
         {"material_editor", gateMaterialEditor}, {"sdf_sculpt", gateSdfSculpt}, {"profiler", gateProfiler},
         {"sequencer", gateSequencer}, {"timeline", gateTimeline}, {"timeline_nav", gateTimelineNav},
         {"scene_viewport", gateSceneViewport}, {"viewport_gizmo", gateViewportGizmo}, {"gpu_viewport", gateGpuViewport},
+        // twins of the remaining fuse_editor_qt_* gates (same names)
+        {"present_adopt", gateGpuViewport}, // FUSE presents through the adopted engine device (no Qt instance hand-off)
+        {"project_settings", gateProjectSettings}, {"build_package", gateBuildPackage}, {"edit_tools", gateEditTools},
+        {"lighting", gateLighting}, {"play_camera", gatePlayCamera},
+        {"shell_docks", gateShellDocks}, {"shell_toolbar", gateShellToolbar}, {"shell_undo", gateShellUndo}, {"shell_play", gateShellPlay},
+        {"shell_assets", gateShellAssets}, {"shell_entity", gateShellEntity}, {"shell_gizmo", gateShellGizmo},
+        {"shell_material", gateShellMaterial}, {"shell_sculpt", gateShellSculpt}, {"shell_overlay", gateShellOverlay},
+        {"shell_timeline", gateShellTimeline}, {"shell_layout", gateShellLayout}, {"shell_profiler", gateShellProfiler},
+        {"shell_project", gateShellProject},
     };
     g_out = out;
     if (fonts.count(gate)) gateFont(r, scale);

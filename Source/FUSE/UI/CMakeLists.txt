@@ -482,6 +482,12 @@ if(FUSE_BUILD_UI_GAME AND FUSE_BUILD_UI_WIDGETS)
         add_executable(game_menu App/samples/game_menu.cpp) # UI5 sample: game main menu + options, gamepad nav
         target_link_libraries(game_menu PRIVATE fuse_ui_game fuse_app_native)
     endif()
+    # §6 HUD budget on a device: the fuse_ui_bench_hud workload as an APK (gate fuse_ui_bench_hud_mobile, <= 2 ms)
+    if(ANDROID AND COMMAND fuse_app_add_android_app AND FUSE_BUILD_APP_SAMPLES)
+        fuse_app_add_android_app(hud_bench SOURCES Game/samples/hud_bench.cpp PACKAGE org.fuse.hudbench
+                                 LABEL "FUSE HUD bench" LIBS fuse_ui_game)
+        fuse_app_add_android_gate(fuse_ui_bench_hud_mobile hud_bench hud_bench org.fuse.hudbench)
+    endif()
 endif()
 
 if(FUSE_BUILD_UI_TESTS AND FUSE_BUILD_UI_WIDGETS)

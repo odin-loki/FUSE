@@ -46,6 +46,11 @@ checkbox:focus-visible, radio:focus-visible, switch:focus-visible, dial:focus-vi
 button.primary:focus-visible { border-color: var(--heading); }
 button:disabled { color: var(--text-dim); background: var(--surface); }
 toolbutton:disabled, menuitem:disabled, icon:disabled { color: var(--text-dim); }
+checkbox:disabled, radio:disabled, switch:disabled, slider:disabled, dial:disabled, scrollbar:disabled,
+spinbox:disabled, combobox:disabled, lineedit:disabled, link:disabled, menubutton:disabled, listview:disabled,
+treeview:disabled, tabbar:disabled, tableview:disabled, gridview:disabled, colorpicker:disabled, calendar:disabled {
+  opacity: 0.45;
+}
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 button.primary:hover { background: var(--accent-hi); }
 checkbox, radio, switch, slider, dial, progressbar, scrollbar { background-end: var(--accent); }

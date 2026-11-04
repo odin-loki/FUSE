@@ -10,12 +10,14 @@
 namespace fuse::editor {
 
 enum class ActionId : u16 {
-    FileNewScene, FileOpenScene, FileSave, FileSaveAs, FileNewProject, FileOpenProject, FileQuit,
-    EditUndo, EditRedo, EditPreferences,
+    FileNewScene, FileOpenScene, FileSave, FileSaveAs, FileNewProject, FileOpenProject, FileProjectSettings,
+    FileBuildPackage, FileImportAsset, FileQuit,
+    EditUndo, EditRedo, EditCut, EditCopy, EditPaste, EditSelectAll, EditDeselectAll, EditFind, EditPreferences,
     EntityCreateEmpty, EntityCreateCube, EntityCreateSdfSphere, EntityCreateSdfBox, EntityCreatePointLight,
-    EntityCreateDirectionalLight, EntityCreateCamera, EntityDuplicate, EntityDelete, EntityGroup, EntityUngroup,
-    EntityOpenScript,
-    PlayPlay, PlayPause, PlayResume, PlayStep, PlayStop, PlayMaximizeOnPlay,
+    EntityCreateDirectionalLight, EntityCreateCamera, EntitySavePrefab, EntityInstantiatePrefab, EntityRevertPrefab,
+    EntityApplyPrefab, EntityPrefabVariant, EntityReloadPrefab, EntityUnlinkPrefab, EntityDuplicate, EntityDelete,
+    EntityGroup, EntityUngroup, EntityOpenScript,
+    PlayPlay, PlayPause, PlayResume, PlayStep, PlayStop, PlayMaximizeOnPlay, PlayFromSpawn,
     ViewResetLayout, ViewModeLit, ViewModeUnlit, ViewModeWireframe, ViewModeLitWireframe, ViewShowMeshBounds,
     ViewShowColliders, ViewFrameSelected, ViewLayoutSingle, ViewLayoutTwo, ViewLayoutQuad,
     Count

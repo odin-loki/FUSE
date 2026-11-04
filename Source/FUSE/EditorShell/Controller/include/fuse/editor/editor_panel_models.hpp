@@ -16,6 +16,8 @@
 
 namespace fuse::editor {
 
+class EditorTimeline;
+
 struct ProjectHubView {
     bool hasProject = false;
     std::string name, directory; ///< the open project
@@ -48,6 +50,19 @@ struct MaterialView {
     bool selectionHasMaterial = false;
     u32 selectionMaterial = 0;
     std::string summary;
+};
+
+/// Lighting / environment panel (Qt LightingPanel): the scene's first sun (DirectionalLight + its Transform
+/// rotation as elevation / azimuth), ambient light and fog. Edits are SetProperty / AddComponent commands.
+struct LightingView {
+    EntityRef sun, ambient, fog;
+    f32 elevation = 0.f, azimuth = 0.f, sunIntensity = 0.f;
+    f32 sunColor[3] = {1.f, 1.f, 1.f};
+    f32 ambientIntensity = 0.f;
+    f32 ambientColor[3] = {1.f, 1.f, 1.f};
+    f32 fogDensity = 0.f, fogDistance = 0.f;
+    f32 fogColor[3] = {1.f, 1.f, 1.f};
+    std::string sunLabel; ///< "Entity #3" / "(no sun)"
 };
 
 struct SculptView {
@@ -102,6 +117,9 @@ struct TimelineLaneView {
 struct TimelineView {
     i32 durationMs = 5000, playheadMs = 0;
     u32 keyCount = 0;
+    i32 selTrack = -1, selKey = -1; ///< selected key (curve strip, interpolation / tangent edits)
+    u32 selInterp = 0;              ///< cinematics::KeyInterp of the selected key
+    f32 selIn = 0.f, selOut = 0.f;  ///< its tangents
     bool playing = false;
     std::vector<TimelineLaneView> lanes;
     std::string status; ///< "2 lanes · 6 keys"
@@ -195,6 +213,13 @@ public:
     bool materialPickBaseColor();  ///< ShellServices::pickColour
     bool materialPickTexture();    ///< ShellServices::pickOpenFile
     bool materialAssignToSelection();
+    /// Qt usability: rename (trimmed, empty refused; one undo step), presets (materialPresets(); keeps texture,
+    /// UV scale and shading model), the number of entities using the current material and selecting them.
+    bool materialRename(std::string_view name);
+    bool materialApplyPreset(u32 index);
+    [[nodiscard]] static std::vector<std::string> materialPresetNames();
+    [[nodiscard]] u32 materialUsage() const;
+    u32 materialSelectUsers();
     /// 96x96 RGBA8 (R low byte) preview sphere of the current material (MaterialEditorPanel::renderPreview).
     bool materialPreview(u32 w, u32 h, u8* rgba) const;
 
@@ -229,7 +254,21 @@ public:
     /// Moves the primary selection by a view-space drag (one undo step unless a drag macro is open).
     bool orthoDrag(const OrthoView& v, f32 fx, f32 fy, f32 tx, f32 ty);
 
+    // ---- Lighting ----
+    [[nodiscard]] LightingView lighting() const;
+    EntityRef lightingAddSun();   ///< DirectionalLight + Transform (one undo step) when the scene has none
+    bool lightingAddAmbient();    ///< AmbientLight on the sun (adds a sun first when missing)
+    bool lightingAddFog();        ///< EnvironmentFog on the sun
+    bool lightingSetSunAngles(f32 elevationDeg, f32 azimuthDeg);
+    bool lightingSetSunIntensity(f32 v);
+    bool lightingSetAmbientIntensity(f32 v);
+    bool lightingSetFogDensity(f32 v);
+    bool lightingSetFogDistance(f32 v);
+    /// "sun" / "ambient" / "fog": ShellServices::pickColour, then a colour SetProperty.
+    bool lightingPickColour(std::string_view which);
+
     // ---- Profiler ----
+    void profilerPush(const ProfilerPanel::FrameProfileData& frame); ///< one sample as given (tests, external timings)
     /// One sample per shell frame: the game tick time comes from the controller, `uiMs` is the shell's own frame.
     void profilerSample(f32 uiMs);
     [[nodiscard]] ProfilerView profiler() const;
@@ -258,6 +297,16 @@ public:
     [[nodiscard]] i32 timelineSnapMs(i32 ms) const; ///< nearest frame (or 10 ms), clamped to [0, duration]
     /// Previous (-1) / next (+1) key across lanes from the playhead; recentres the view when the key is outside it.
     bool timelineJumpToKey(int dir);
+    // keys (Qt TimelineWidget): select, retime (one undo step), delete, interpolation and tangents
+    [[nodiscard]] i32 timelineFindTrack(EntityRef entity, const std::string& channel) const;
+    bool timelineSelectKey(i32 track, i32 key); ///< -1, -1 clears
+    bool timelineMoveSelectedKey(i32 ms);
+    bool timelineDeleteSelectedKey();
+    bool timelineSetSelectedKeyInterp(u32 interp, u32 tangentMode); ///< cinematics::KeyInterp / TangentMode
+    bool timelineSetSelectedKeyTangents(f32 inSlope, f32 outSlope);
+    [[nodiscard]] f32 timelineSampleSelected(i32 ms) const;
+    [[nodiscard]] u32 timelineSelectedKeyTangentMode() const;
+    [[nodiscard]] i32 timelineKeyTime(i32 track, i32 key) const;
 
     // ---- Terrain ----
     [[nodiscard]] TerrainView terrain();
@@ -290,6 +339,8 @@ public:
     [[nodiscard]] SequencerView sequencer() const { return m_seq; }
     void sequencerSetLinked(bool on) { m_seq.linked = on; ++m_revision; }
     void sequencerScrub(i32 ms);
+    /// The sequencer scrub bar: scrubs and, while linked, drives the timeline playhead (and the keyed scene).
+    void sequencerScrubUi(i32 ms);
 
 private:
     bool applyMaterial_(const MaterialEditState& s, const char* what);
@@ -315,6 +366,9 @@ private:
     bool m_sculptMode = false, m_sculptDragging = false;
     std::unique_ptr<ProfilerPanel> m_profiler;
     bool m_timelinePlaying = false;
+    i32 m_tlSelTrack = -1, m_tlSelKey = -1;
+    bool timelineEdit_(const char* what, const std::function<bool(EditorTimeline&)>& edit);
+    bool lightingPost_(EntityRef e, const char* property, const std::string& value);
     bool m_tlLoop = true;
     u32 m_tlSnapFps = 30;
     i32 m_tlViewStart = 0, m_tlViewSpan = 0; ///< span 0 = fit
