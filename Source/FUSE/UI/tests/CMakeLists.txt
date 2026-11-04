@@ -474,6 +474,23 @@ if(TARGET fuse_app)
                 set_tests_properties(fuse_x11_${g} PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
                     ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate")
             endforeach()
+            # under a real window manager started by the gate (custom chrome, OS popups, multiple windows; XTest
+            # pointer). Optional: skips with 77 without a WM. Also looks in ~/opt/<pkg>/usr/bin (a WM unpacked
+            # without root: apt-get download openbox ... && dpkg -x <deb> ~/opt/openbox); $FUSE_TEST_WM overrides.
+            file(GLOB _fuse_wm_hints LIST_DIRECTORIES true "$ENV{HOME}/opt/*/usr/bin")
+            find_program(FUSE_UI_TEST_WM NAMES openbox xfwm4 metacity marco icewm fluxbox HINTS ${_fuse_wm_hints})
+            foreach(g chrome popups multiwindow)
+                add_executable(fuse_x11_wm_${g} test_x11_wm.cpp)
+                target_link_libraries(fuse_x11_wm_${g} PRIVATE fuse_app_native)
+                target_include_directories(fuse_x11_wm_${g} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../App/src)
+                target_compile_definitions(fuse_x11_wm_${g} PRIVATE FUSE_X11_WM_GATE="${g}")
+                if(FUSE_UI_TEST_WM)
+                    target_compile_definitions(fuse_x11_wm_${g} PRIVATE FUSE_TEST_WM_PATH="${FUSE_UI_TEST_WM}")
+                endif()
+                add_test(NAME fuse_x11_wm_${g} COMMAND ${FUSE_UI_XVFB_RUN} -a -s "${FUSE_UI_XVFB_ARGS}" $<TARGET_FILE:fuse_x11_wm_${g}>)
+                set_tests_properties(fuse_x11_wm_${g} PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
+                    LABELS "fuse_ui;gate;wm")
+            endforeach()
         endif()
     endif()
     if(TARGET hello_app)
