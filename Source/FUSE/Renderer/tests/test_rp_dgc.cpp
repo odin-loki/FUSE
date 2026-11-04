@@ -62,7 +62,7 @@
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
 
-#include "vk_sync_validation_env.hpp"
+#include <fuse/renderer/vk/test_layer_env.hpp>
 #endif
 
 // --- allocation counter (operator new) -----------------------------------------------------------
