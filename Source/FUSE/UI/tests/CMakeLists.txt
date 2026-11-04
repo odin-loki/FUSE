@@ -356,6 +356,22 @@ if(TARGET fuse_app)
                 set_tests_properties(fuse_app_${g} PROPERTIES ENVIRONMENT "FUSE_TEST_PRIVATE_BUS=1")
             endif()
         endforeach()
+        # the tray icon under a real StatusNotifierItem host (xfce4-panel's status tray, started by the gate; XTest
+        # clicks / keys). Optional: skips with 77 without the panel; $FUSE_TEST_SNI_HOST overrides.
+        if(FUSE_UI_XVFB_RUN AND FUSE_UI_DBUS_RUN_SESSION AND NOT WIN32)
+            file(GLOB _fuse_opt_bins LIST_DIRECTORIES true "$ENV{HOME}/opt/*/usr/bin")
+            find_program(FUSE_UI_TEST_SNI_HOST xfce4-panel HINTS ${_fuse_opt_bins})
+            add_executable(fuse_app_tray_host test_app_tray_host.cpp)
+            target_link_libraries(fuse_app_tray_host PRIVATE fuse_app_native)
+            target_include_directories(fuse_app_tray_host PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../App/src)
+            if(FUSE_UI_TEST_SNI_HOST)
+                target_compile_definitions(fuse_app_tray_host PRIVATE FUSE_TEST_SNI_HOST_PATH="${FUSE_UI_TEST_SNI_HOST}")
+            endif()
+            add_test(NAME fuse_app_tray_host COMMAND ${FUSE_UI_DBUS_RUN_SESSION} -- ${FUSE_UI_XVFB_RUN} -a -s "${FUSE_UI_XVFB_ARGS}"
+                     $<TARGET_FILE:fuse_app_tray_host>)
+            set_tests_properties(fuse_app_tray_host PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
+                ENVIRONMENT "FUSE_TEST_PRIVATE_BUS=1" LABELS "fuse_ui;gate;wm")
+        endif()
     endif()
     # project.json schema 2 + AppPresent + minimal init path (in tree: needs fuse_project / fuse_core)
     if(TARGET fuse_app_project)
