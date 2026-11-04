@@ -1214,6 +1214,10 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
         // Optional (WP-0.5 pipeline cache: FAIL_ON_PIPELINE_COMPILE_REQUIRED probes); core 1.3 only.
         enabledSet.v13.pipelineCreationCacheControl =
             desc.enableOptionalFeatures ? supportedSet.v13.pipelineCreationCacheControl : VK_FALSE;
+        // Required by Vulkan 1.3 and needed by any shader that discards: Slang lowers `discard` to
+        // OpDemoteToHelperInvocation (SPIR-V capability DemoteToHelperInvocation), which a module
+        // may only declare with this feature enabled (VUID-VkShaderModuleCreateInfo-pCode-08740).
+        enabledSet.v13.shaderDemoteToHelperInvocation = supportedSet.v13.shaderDemoteToHelperInvocation;
     } else {
         // Legacy (FUSE_VK_ALLOW_1_2) path: the promoted extensions' own feature structs.
         if (wantSync2 && hasEnabledExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME)) {
