@@ -137,6 +137,41 @@ Without a native platform the app runs headless (tests, `--screenshot=`). `Prese
 `VkDrawMode::CpuUpload`; `Software` blits). `NativePlatform::capture` reads back what the OS shows (used by `fuse_app_native_window`).
 Under Xvfb set `VK_ICD_FILENAMES` to lavapipe; under Wine the Win32 path and the Vulkan presenter both run.
 
+### App projects (`project.json` schema 2)
+
+A project declares that it is an application with `"schemaVersion": 2` and `"kind": "app"` (or `"hybrid"`: an app
+whose viewport widgets may create game worlds on demand; `"game"` is today's behaviour and the default):
+
+```json
+{
+  "schemaVersion": 2, "name": "my_tool", "kind": "app",
+  "dimensions": { "enable3D": false, "enable2D": false, "enableUI": true },
+  "requiredFeatures": [],
+  "ui": { "root": "ui/main.fuseui", "styles": ["ui/theme.fusestyle"], "theme": "system",
+          "redraw": "onDemand", "profile": "app", "text": "minimal" },
+  "windows": [ { "id": "main", "title": "My Tool", "width": 800, "height": 600, "root": "", "redraw": "onDemand" } ]
+}
+```
+
+- `requiredFeatures`: host features beyond what the kind implies — `AppPresent`, `GameFrame`, `Renderer3D`,
+  `Renderer2D`, `Physics`, `Audio`, `Script`, `Jobs`, `Viewport`. `app` implies `AppPresent`, `hybrid` adds `Viewport`,
+  `game` implies `GameFrame` + `Jobs` + renderers / physics per dimension (`fuse::project::impliedHostFeatures`).
+- `windows[].root` empty = `ui.root`; no `windows` = one window titled after the project. Paths stay inside the project.
+- Schema 2 is validated strictly (`fuse::project::validateManifest`): unknown keys are errors except `x-*`, errors name
+  the field (`$.windows[0].width: ...`). An `app` has no 3D / 2D worlds and no game-side features (use `hybrid`).
+- Schema 1 files load unchanged (kind `game` in memory) and are written back as schema 1. Migrate with
+  `fuse_project_tool --migrate <project> [--dry-run]` (or `fuse::project::migrateProjectFile`).
+- New app projects: the editor's New Project wizard (Type "Application (FUSE UI)"), `fuse_project_tool --new-app <dir>`
+  or `fuse::project::createAppProject`; the files match [`Templates/FuseUIApp`](../../Templates/FuseUIApp/README.md).
+
+The minimal init path: `fuse::project::planInit` says what a host brings up; `fuse::app::ProjectHost`
+(`fuse/app/project_host.hpp`, in tree) loads the project, enables `TrackBHostFeature::AppPresent` (the host-scoped
+present unlock for apps, honoured in shipping builds), starts the job scheduler only when `Jobs` is declared, opens the
+windows with their documents and style sheets and presents the first frame — no worlds, `GpuScene`, `FrameComposer` or
+physics. Run a project with `fuse_app_host <project> [--headless] [--first-frame]`.
+
+Baseline measurements for §6 of the plan (sizes, startup, idle, memory, frame times) are in [BASELINES.md](BASELINES.md).
+
 ## Game UI (UI7)
 
 ```cpp
@@ -213,6 +248,9 @@ checks it against the overlay under one scripted event stream.
 
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
 | `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster (skips 77 without a display or device) |
+| `fuse_app_idle_native` | real idle window for 3 s: zero presents, ≤ 10 loop wakeups / s (OS messages only), CPU ≤ 2 % |
+| `fuse_project_schema2`, `fuse_project_schema2_native` | project.json schema 1 load / write / migrate, schema 2 round trip, 24 rejected files, the app template, `ProjectHost` brings up only `AppPresent` and presents the `.fuseui` (headless ≤ 150 ms; `_native` on a real window vs the CPU raster) |
+| `fuse_ui_vk_budget` | ~300-node HUD at 2560×1440 through the `ui.draw_list` kernel: GPU median ≤ 0.5 ms on hardware GPUs (report only on CPU devices) |
 | `fuse_ui_game_hud_golden` | HUD demo scene against `tests/golden/hud.png` plus trail / marker / pool state |
 | `fuse_ui_gamepad_nav` | navigation with delay + repeat, A / B, radial menu by stick, prompt glyph swap, focus sounds |
 | `fuse_ui_world_panel_raycast` | ray → panel pixel mapping, misses and back faces, ray clicks, idle surface does not re-render |
