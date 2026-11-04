@@ -45,6 +45,7 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+#include <fuse/renderer/vk/test_layer_env.hpp>
 #endif
 
 namespace {
@@ -194,21 +195,15 @@ int setupContext(Context& ctx, const char* layerDir, bool splitCompute) {
     ctx.validation = layerAvailable(kValidationLayer);
     std::string layers = ctx.validation ? kValidationLayer : "";
     if (layerDir != nullptr) {
-        std::string path = layerDir;
-        const char* existing = std::getenv("VK_ADD_LAYER_PATH");
-        if (existing != nullptr && existing[0] != '\0') {
-            path += ":";
-            path += existing;
-        }
+        const std::string path = fuse::renderer::test::prependEnvList("VK_ADD_LAYER_PATH", layerDir);
         setenv("VK_ADD_LAYER_PATH", path.c_str(), 1);
-        layers += layers.empty() ? "" : ":";
-        layers += kSplitLayer; // application -> driver: validation sees the split device
+        // Application -> driver: validation sees the split device. Loader lists use ';' on Windows.
+        fuse::renderer::test::appendLoaderList(layers, kSplitLayer);
     }
     setenv("FUSE_SPLIT_LAYER_COMPUTE_FAMILY", splitCompute ? "1" : "0", 1);
     setenv("VK_INSTANCE_LAYERS", layers.c_str(), 1);
     if (ctx.validation) {
-        setenv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", 1);
-        setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", 1);
+        fuse::renderer::test::enableSyncValidationEnv();
         setenv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK", 1);
     } else {
         std::printf("SKIP: %s not installed (the gate needs synchronization validation)\n", kValidationLayer);
