@@ -470,6 +470,19 @@ are deferred). Inline (`setCss`) beats everything; later sheets win ties. Layout
 `icon-size`. Selectors also accept
 `:active`, `:selected`.
 
+Right-to-left: `direction: rtl` (inherited, `ltr` default; e.g. `:root { direction: rtl; }`) mirrors box rows and
+column cross-axis alignment, `justify-content` / `align-*` start and end, grid columns and flow lines; margins and
+padding stay physical, stack / anchor / absolute placement is not mirrored. `text-align: start` / `end` follow the
+direction (`left` / `right` are physical). Overflow scrolling starts at the right (`scroll().x` counts from the start
+edge) with the vertical bar on the left. Widgets mirror: indicators of check box / radio / switch, slider / progress /
+scroll bar (minimum on the right; Left increases a slider), spin / combo arrows, line edit alignment, tab bar and menu
+bar order, tree indentation (Left expands), list scroll indicator. Popup menus of an RTL owner inherit its direction and
+take `at` as their top-right corner (aligned to the right edge of the menu button / combo box); submenus open to the
+left and Left / Right open / close them. Not mirrored yet: the Tier B2 / C / D widgets (table, splitter, dock, grid
+view, calendar, chart, colour picker, node graph, curve editor, timeline, code edit, date-time edit), `popupPanel`,
+tooltips, and the line edit caret over bidi text (paragraph direction still comes from the text's first strong
+character).
+
 ## Immediate mode
 
 `fuse::ui::immediate::ImmediateUi` has the same API and layout rules as Relight's `overlay::Ui` (`begin`, `text`,
@@ -485,6 +498,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_event_routing` | capture/target/bubble, stop, click semantics, pointer capture, hover, disabled, modal, `post()` |
 | `fuse_ui_focus_order` | tab order, tab index, skipping, wrap, focus-visible, keyboard activation, spatial nav, modal trap |
 | `fuse_ui_cpu_raster_golden` | rasteriser primitives and the sample tree against `tests/golden/sample.png` (`sample_full.png` in FULL) |
+| `fuse_ui_rtl_layout` | `direction: rtl`: mirrored box rows / justify / align / grid / flow with physical margins, inheritance, `text-align`, slider pointer + keys, tab bar, tree keys, scroll bar side and horizontal start, right-aligned menus and submenus to the left; text-free widgets render as the mirror image of LTR; RTL sample against `tests/golden/rtl_layout.png` (`rtl_layout_full.png` in FULL) |
 | `fuse_ui_zero_alloc_steady` | zero heap allocations over 50 interactive frames after warm-up |
 | `fuse_ui_bench_10k` | 10k nodes, one dirty label: ≤ 0.5 ms median (Release; 1.0 ms in FULL) |
 | `fuse_ui_single_thread_parity` | direct vs posted-from-threads mutations give identical layout, draw list and pixels |
