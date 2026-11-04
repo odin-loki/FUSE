@@ -274,6 +274,11 @@ if(FUSE_UI_ACCESSIBILITY)
     endif()
 endif()
 
+# ---- fuse_ui_l10n_lib: CLDR plural rules, ICU-style messages, locale number / date formatting (standard library only) ----
+add_library(fuse_ui_l10n_lib STATIC L10n/src/plural.cpp L10n/src/format.cpp L10n/src/message.cpp L10n/src/table.cpp)
+target_include_directories(fuse_ui_l10n_lib PUBLIC L10n/include)
+target_compile_features(fuse_ui_l10n_lib PUBLIC cxx_std_23)
+
 option(FUSE_BUILD_UI_DOC "Build fuse_ui_doc (.fuseui documents + bindings)" ON)
 if(FUSE_BUILD_UI_DOC AND FUSE_BUILD_UI_WIDGETS)
     add_library(fuse_ui_doc STATIC Doc/src/json.cpp Doc/src/document.cpp Doc/src/cook.cpp)
@@ -450,7 +455,7 @@ endif()
 if(FUSE_BUILD_UI_GAME AND FUSE_BUILD_UI_WIDGETS)
     add_library(fuse_ui_game STATIC Game/src/game_ui.cpp Game/src/game_extras.cpp)
     target_include_directories(fuse_ui_game PUBLIC Game/include)
-    target_link_libraries(fuse_ui_game PUBLIC fuse_ui_widgets)
+    target_link_libraries(fuse_ui_game PUBLIC fuse_ui_widgets fuse_ui_l10n_lib)
     # engine bridges (in tree only): UiSurface as an ECS component, theme sounds through fuse_audio
     if(TARGET fuse_ecs)
         add_library(fuse_ui_game_ecs STATIC Game/src/ecs_surface.cpp)

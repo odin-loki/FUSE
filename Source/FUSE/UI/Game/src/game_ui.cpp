@@ -430,33 +430,55 @@ InputOwner InputArbiter::key(Key k, bool down) {
 
 // ---- locale ----------------------------------------------------------------------------------------------------
 void StringTable::add(std::string_view loc, std::string_view kv) {
-    while (!kv.empty()) {
-        const auto nl = kv.find('\n');
-        std::string_view line = kv.substr(0, nl);
-        kv = nl == kv.npos ? std::string_view{} : kv.substr(nl + 1);
-        const auto eq = line.find('=');
-        if (eq == line.npos || line.empty() || line[0] == '#') continue;
-        m_entries.push_back({std::string(loc), std::string(line.substr(0, eq)), std::string(line.substr(eq + 1))});
+    for (l10n::TableEntry& t : l10n::parseTable(kv)) {
+        auto it = std::find_if(m_entries.begin(), m_entries.end(),
+                               [&](const Entry& e) { return e.locale == loc && e.key == t.key; });
+        if (it != m_entries.end()) it->value = std::move(t.value);
+        else m_entries.push_back({std::string(loc), std::move(t.key), std::move(t.value)});
     }
     if (m_locale.empty()) m_locale = loc;
+    if (m_fallback.empty()) m_fallback = loc;
 }
 bool StringTable::setLocale(std::string_view loc) {
     const bool known = std::any_of(m_entries.begin(), m_entries.end(), [&](const Entry& e) { return e.locale == loc; });
     if (known) m_locale = loc;
     return known;
 }
+bool StringTable::has(std::string_view loc, std::string_view key) const {
+    return std::any_of(m_entries.begin(), m_entries.end(), [&](const Entry& e) { return e.locale == loc && e.key == key; });
+}
+const StringTable::Entry* StringTable::lookup(std::string_view key) const {
+    const Entry* fallback = nullptr;
+    for (const Entry& e : m_entries) {
+        if (e.key != key) continue;
+        if (e.locale == m_locale) return &e;
+        if (e.locale == m_fallback) fallback = &e;
+    }
+    return fallback;
+}
 std::string_view StringTable::tr(std::string_view key) const {
-    for (const Entry& e : m_entries)
-        if (e.locale == m_locale && e.key == key) return e.value;
-    return key;
+    const Entry* e = lookup(key);
+    return e ? std::string_view(e->value) : key;
+}
+std::string StringTable::tr(std::string_view key, const l10n::Args& args) const {
+    const Entry* e = lookup(key);
+    return e ? l10n::formatMessageOr(e->locale, e->value, args)
+             : l10n::formatMessageOr(m_fallback.empty() ? m_locale : m_fallback, key, args);
 }
 void StringTable::bind(UiContext& ui, NodeHandle n, std::string_view key) {
-    m_bound.emplace_back(n, std::string(key));
+    m_bound.push_back({n, std::string(key), {}, false});
     ui.setText(n, tr(key));
 }
+void StringTable::bind(UiContext& ui, NodeHandle n, std::string_view key, l10n::Args args) {
+    m_bound.push_back({n, std::string(key), std::move(args), true});
+    ui.setText(n, tr(key, m_bound.back().args));
+}
 void StringTable::refresh(UiContext& ui) {
-    std::erase_if(m_bound, [&](const auto& b) { return !ui.alive(b.first); });
-    for (const auto& [n, k] : m_bound) ui.setText(n, tr(k));
+    std::erase_if(m_bound, [&](const Bound& b) { return !ui.alive(b.node); });
+    for (const Bound& b : m_bound) {
+        if (b.formatted) ui.setText(b.node, tr(b.key, b.args));
+        else ui.setText(b.node, tr(b.key));
+    }
 }
 
 // ---- world surfaces --------------------------------------------------------------------------------------------
