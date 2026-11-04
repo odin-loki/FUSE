@@ -104,6 +104,10 @@ struct A11ySnapshotNode {
 };
 
 // ---- Widget classes ------------------------------------------------------------------------------------------------
+/// Horizontal mirror of `r` / `x` inside `box` (right-to-left widgets compute left-to-right geometry, then mirror it).
+inline Rect mirrorX(const Rect& r, const Rect& box) { return {2.f * box.x + box.w - r.x - r.w, r.y, r.w, r.h}; }
+inline f32 mirrorX(f32 x, const Rect& box) { return 2.f * box.x + box.w - x; }
+
 struct PaintContext {
     UiContext& ui;
     NodeHandle node;
@@ -113,6 +117,9 @@ struct PaintContext {
     u32 states;
     f32 opacity;  ///< accumulated (multiply colours by it)
     Color tint(Color c) const { return c.withAlpha(c.a * opacity); }
+    /// `direction: rtl`: mirrored in the content box; unchanged left-to-right.
+    Rect flip(const Rect& r) const { return style.rtl ? mirrorX(r, content) : r; }
+    Vec2 flip(Vec2 p) const { return style.rtl ? Vec2{mirrorX(p.x, content), p.y} : p; }
 };
 
 struct EventContext {
@@ -301,6 +308,10 @@ public:
     /// Modifier state (kMod*) stamped on pointer events; platform layers update it on every modifier change.
     void setModifiers(u8 mods) { m_mods = mods; }
     u8 modifiers() const { return m_mods; }
+    /// Goes to the focused node (capture / target / bubble). Unconsumed: Enter / Space click an interactive node, Tab /
+    /// Shift+Tab move focus (Ctrl+Tab always does, before the node sees it), arrows navigate spatially when enabled,
+    /// and anything left is emitted as SignalKind::Event {value = Key, event} on the root (application shortcuts).
+    /// Keyboard focus scrolls into view inside scroll containers.
     bool keyDown(Key k, u8 mods = 0);
     bool keyUp(Key k, u8 mods = 0);
     bool textInput(std::string_view utf8);
@@ -471,6 +482,8 @@ private:
     u32 scopeOf(u32 i) const;
     bool inScope(u32 i, u32 scope) const;
     bool focusableNode(u32 i) const;
+    /// Scrolls the node's scroll-container ancestors (vertically) so keyboard focus is in view.
+    void revealFocus(u32 i);
     void drainCommands();
     void ensureText(u32 i, f32 width);
     const fuse::text::Font& fontFor(u32 i);

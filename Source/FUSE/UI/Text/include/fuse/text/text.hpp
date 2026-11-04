@@ -298,13 +298,15 @@ struct TextLine {
     bool rtl = false;     ///< paragraph base direction is right-to-left (FULL bidi); Start alignment then means right
 };
 
-enum class TextAlign : std::uint8_t { Start, Center, End };
+/// Start / End follow the line direction (or TextLayoutDesc::rtl); Left / Right are physical.
+enum class TextAlign : std::uint8_t { Start, Center, End, Left, Right };
 
 struct TextLayoutDesc {
     float pixelSize = 14.f;
     float maxWidth = 0.f; ///< <= 0: no wrapping
     TextAlign align = TextAlign::Start;
     bool elide = false; ///< single line clipped to maxWidth with an ellipsis
+    bool rtl = false;   ///< right-to-left base direction (UI `direction: rtl`): Start / End of every line follow it
 };
 
 /// A shaped, line-broken block. Reuse one object per text node: relayout keeps every buffer's capacity.

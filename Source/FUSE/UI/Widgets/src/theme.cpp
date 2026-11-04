@@ -37,6 +37,10 @@ toolbutton { padding: 4px 8px; border-radius: 4px; background: transparent; bord
 button:hover, toolbutton:hover { background: var(--hover); }
 button:pressed, toolbutton:pressed { background: var(--pressed); }
 button:focus-visible, toolbutton:focus-visible, lineedit:focus, spinbox:focus-visible, combobox:focus-visible { border-color: var(--accent); }
+toolbutton:focus-visible, checkbox:focus-visible, radio:focus-visible, switch:focus-visible, dial:focus-visible,
+tabbar:focus-visible { border: 1px var(--accent); }
+checkbox:focus-visible, radio:focus-visible, switch:focus-visible, dial:focus-visible { border-radius: 4px; }
+button.primary:focus-visible { border-color: var(--heading); }
 button:disabled { color: var(--text-dim); background: var(--surface); }
 toolbutton:disabled, menuitem:disabled, icon:disabled { color: var(--text-dim); }
 checkbox:disabled, radio:disabled, switch:disabled, slider:disabled, dial:disabled, scrollbar:disabled,

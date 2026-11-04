@@ -220,6 +220,37 @@ widgets::setTooltip(ui, someButton, "Explains the button");
 
 With Tier B installed (`widgets::install` does both tiers), a combo box opens a popup list instead of cycling.
 
+### Keyboard model
+
+Every interactive widget works without a pointer (gate `fuse_ui_keyboard_only`). Keys go to the focused node first;
+what it does not take falls through to the core.
+
+- **Focus**: Tab / Shift+Tab walk the tab order of the current scope (wrapping); Ctrl+Tab / Ctrl+Shift+Tab always move
+  focus, also out of widgets that take Tab (the code editor indents on Tab). Keyboard focus sets `:focus-visible`, which
+  the default themes (dark and light) show as an accent ring or highlight on every focusable widget, and scrolls the
+  node into view inside scroll containers. Tooltips also show on keyboard focus.
+- **Activation**: Enter / Space click buttons, tool buttons, links, check boxes, switches, menu titles and items.
+- **Disabled** widgets refuse focus: Tab, radio arrows and menu bar arrows skip them.
+- **Choices and ranges**: radio buttons move and check with the arrows (wrapping within the siblings); sliders, dials,
+  spin boxes and scroll bars take the arrows, PageUp / PageDown (a page) and Home / End (the ends).
+- **Combo box**: Up / Down / Home / End pick in place; Alt+Down, F4, Space or Enter open the list, arrows + Enter
+  pick, Escape closes it. The date-time edit opens its calendar the same way (Left / Right pick the field, Up / Down
+  step it, digits type it).
+- **Menus**: F10 (when no widget takes it) moves focus to the first menu bar and back; in the bar Left / Right / Home /
+  End move between titles, Down / Enter / Space open; in a menu Up / Down / Home / End move, Enter picks, Right / Left
+  open / close submenus or switch to the neighbouring bar menu, Escape closes (and in the bar returns to where F10
+  came from). Unconsumed keys reach the root's `SignalKind::Event` signal for app-wide shortcuts.
+- **Views**: list, tree, table and grid views take arrows, Home / End, PageUp / PageDown and Enter (Submitted); tree
+  views Left / Right collapse / expand; tab bars Left / Right / Home / End.
+- **Containers**: splitter handles are focusable (arrows resize by 16 px); a dock title closes its dock on Enter,
+  Space or Delete; dialogs trap focus and Escape closes them (a file dialog reports Submitted with an empty path).
+- **Pro widgets**: colour picker arrows (saturation / value), Shift+Left / Right (alpha), Page keys (hue); calendar
+  arrows (day / week), Page keys (month), Home / End (month start / end); chart Left / Right / Home / End step the
+  readout; node graph PageUp / PageDown select a node, arrows move it (Shift: fine) or pan with none selected, Delete
+  removes, Escape deselects; curve editor PageUp / PageDown / Home / End select a key, arrows move it (Shift: x10),
+  Delete removes; timeline arrows (a frame), Page keys (a second), Home / End; video Space plays / pauses, Left /
+  Right step a frame, Home / End; the viewport forwards keys but not Tab.
+
 ### Documents and Lua
 
 `.fuseui` files are JSON trees with `{expr}` and `{=two-way}` bindings (see `Doc/include/fuse/ui/doc/document.hpp` for
@@ -512,6 +543,19 @@ are deferred). Inline (`setCss`) beats everything; later sheets win ties. Layout
 `icon-size`. Selectors also accept
 `:active`, `:selected`.
 
+Right-to-left: `direction: rtl` (inherited, `ltr` default; e.g. `:root { direction: rtl; }`) mirrors box rows and
+column cross-axis alignment, `justify-content` / `align-*` start and end, grid columns and flow lines; margins and
+padding stay physical, stack / anchor / absolute placement is not mirrored. `text-align: start` / `end` follow the
+direction (`left` / `right` are physical). Overflow scrolling starts at the right (`scroll().x` counts from the start
+edge) with the vertical bar on the left. Widgets mirror: indicators of check box / radio / switch, slider / progress /
+scroll bar (minimum on the right; Left increases a slider), spin / combo arrows, line edit alignment, tab bar and menu
+bar order, tree indentation (Left expands), list scroll indicator. Popup menus of an RTL owner inherit its direction and
+take `at` as their top-right corner (aligned to the right edge of the menu button / combo box); submenus open to the
+left and Left / Right open / close them. Not mirrored yet: the Tier B2 / C / D widgets (table, splitter, dock, grid
+view, calendar, chart, colour picker, node graph, curve editor, timeline, code edit, date-time edit), `popupPanel`,
+tooltips, and the line edit caret over bidi text (paragraph direction still comes from the text's first strong
+character).
+
 ## Immediate mode
 
 `fuse::ui::immediate::ImmediateUi` has the same API and layout rules as Relight's `overlay::Ui` (`begin`, `text`,
@@ -527,6 +571,8 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_event_routing` | capture/target/bubble, stop, click semantics, pointer capture, hover, disabled, modal, `post()` |
 | `fuse_ui_focus_order` | tab order, tab index, skipping, wrap, focus-visible, keyboard activation, spatial nav, modal trap |
 | `fuse_ui_cpu_raster_golden` | rasteriser primitives and the sample tree against `tests/golden/sample.png` (`sample_full.png` in FULL) |
+| `fuse_ui_rtl_layout` | `direction: rtl`: mirrored box rows / justify / align / grid / flow with physical margins, inheritance, `text-align`, slider pointer + keys, tab bar, tree keys, scroll bar side and horizontal start, right-aligned menus and submenus to the left; text-free widgets render as the mirror image of LTR; RTL sample against `tests/golden/rtl_layout.png` (`rtl_layout_full.png` in FULL) |
+| `fuse_ui_keyboard_only` | a form with every interactive Tier A–D widget driven only by keyDown / keyUp / textInput: Tab and Shift+Tab reach every widget in one order, each is operated by its keys (see "Keyboard model"), menus by F10 / arrows / Escape, the file dialog traps focus and Escape cancels, keyboard focus scrolls into view; focused vs unfocused paint differs for every focusable widget in the dark and light themes |
 | `fuse_ui_zero_alloc_steady` | zero heap allocations over 50 interactive frames after warm-up |
 | `fuse_ui_bench_10k` | 10k nodes, one dirty label: ≤ 0.5 ms median (Release; 1.0 ms in FULL) |
 | `fuse_ui_single_thread_parity` | direct vs posted-from-threads mutations give identical layout, draw list and pixels |

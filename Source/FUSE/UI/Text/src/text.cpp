@@ -1391,10 +1391,12 @@ void layoutText(const Font& font, const ITextShaper& shaper, std::string_view s,
     out.width = 0.f;
     for (const auto& ln : out.lines) out.width = std::max(out.width, ln.width);
     const float alignW = desc.maxWidth > 0.f ? desc.maxWidth : out.width;
-    if (desc.align != TextAlign::Start || anyRtl) {
+    if (desc.align != TextAlign::Start || anyRtl || desc.rtl) {
         for (const auto& ln : out.lines) {
-            // Start / End follow the paragraph direction: Start is the right edge of an RTL line.
-            const bool toEnd = (desc.align == TextAlign::End) != ln.rtl;
+            // Start / End follow the paragraph (or base) direction: Start is the right edge of an RTL line.
+            const bool rtl = ln.rtl || desc.rtl;
+            const bool toEnd = desc.align == TextAlign::Right || (desc.align == TextAlign::End && !rtl) ||
+                               (desc.align == TextAlign::Start && rtl);
             if (desc.align != TextAlign::Center && !toEnd) continue;
             const float off = desc.align == TextAlign::Center ? std::floor((alignW - ln.width) * 0.5f) : alignW - ln.width;
             for (std::uint32_t k = ln.firstGlyph; k < ln.firstGlyph + ln.glyphCount; ++k) g[k].x += off;
