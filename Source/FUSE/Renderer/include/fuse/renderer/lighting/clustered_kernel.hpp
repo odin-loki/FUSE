@@ -80,6 +80,12 @@ FUSE_HOST_DEVICE inline f32 clamp01(f32 value) {
     return std::clamp(value, 0.f, 1.f);
 }
 
+/// std::isfinite for the device too: MSVC's is a host-only function (nvcc on Windows would call it from device code).
+/// Finite <=> v - v == 0 (infinities and NaN give NaN).
+FUSE_HOST_DEVICE inline bool is_finite(f32 v) {
+    return v - v == 0.f;
+}
+
 /// Orthonormal view basis (right, up, back) from a forward direction and an up hint.
 FUSE_HOST_DEVICE inline void view_basis(const math::Vec3& forward_in,
                                         const math::Vec3& up_hint,
@@ -239,7 +245,7 @@ FUSE_HOST_DEVICE inline ClusterAABB build_cluster_aabb(u32 tile_x,
 
 /// Closed sphere-vs-AABB overlap (touching counts); false for negative or non-finite radius.
 FUSE_HOST_DEVICE inline bool sphere_intersects_aabb(const math::Vec3& center, f32 radius, const ClusterAABB& aabb) {
-    if (!(radius >= 0.f) || !std::isfinite(radius)) {
+    if (!(radius >= 0.f) || !is_finite(radius)) {
         return false;
     }
     const f32 closest_x = std::clamp(center.x, aabb.minP.x, aabb.maxP.x);
@@ -372,8 +378,8 @@ struct BoundsKernel {
         }
         LightBounds bounds{};
         // A light with no range (falloff is identically zero) occupies no cluster.
-        if (!(radius > 0.f) || !std::isfinite(radius) || !std::isfinite(world_pos.x) || !std::isfinite(world_pos.y) ||
-            !std::isfinite(world_pos.z)) {
+        if (!(radius > 0.f) || !is_finite(radius) || !is_finite(world_pos.x) || !is_finite(world_pos.y) ||
+            !is_finite(world_pos.z)) {
             p.out_bounds[light] = bounds;
             return;
         }
@@ -591,7 +597,7 @@ struct ShadeKernel {
         const f32 view_depth =
             view_depth_from_device_depth(p.device_depth[pixel], c.near_plane, c.far_plane, c.reversed_z);
         u32 cluster = 0u;
-        if (!(view_depth > 0.f) || !std::isfinite(view_depth) ||
+        if (!(view_depth > 0.f) || !is_finite(view_depth) ||
             !map_screen_depth_to_cluster(screen_x, screen_y, view_depth, p.grid, c.near_plane, c.far_plane, cluster)) {
             p.out_radiance[pixel] = {};
             skipped[t] = 1u;
