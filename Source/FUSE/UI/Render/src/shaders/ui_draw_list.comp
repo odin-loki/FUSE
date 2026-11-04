@@ -31,6 +31,8 @@ layout(set = 0, binding = 5) uniform sampler2D ui_ext0;
 layout(set = 0, binding = 6) uniform sampler2D ui_ext1;
 layout(set = 0, binding = 7) uniform sampler2D ui_ext2;
 layout(set = 0, binding = 8) uniform sampler2D ui_ext3;
+// Backdrop scratch: two halves of equal size (ping-pong between the box passes), vec4 per pixel of the source region.
+layout(set = 0, binding = 9, std430) buffer UiScratch { vec4 v[]; } ui_scratch;
 
 layout(push_constant) uniform UiPush {
     uvec2 extent;
@@ -38,10 +40,16 @@ layout(push_constant) uniform UiPush {
     uint atlasSize;
     uint tileCount;
     uint imageCount;
-    uint pad0, pad1;
+    uint tileBase;   // word offset of the segment's tile block
+    uint tileOrigin; // first tile of the dispatch, x | y << 16
+    uint mode;       // 0 tiles, 1 / 2 backdrop box pass (horizontal / vertical), 3 backdrop composite
+    uint cmd;        // backdrop command
+    uint src;        // box pass source: 0 target, 1 + n scratch half n
+    uint dst;        // scratch half written (box pass) / read (composite)
 } pc;
 
 const uint kRect = 0u, kShadow = 1u, kGlyph = 2u, kImage = 3u, kLine = 4u;
+const uint kModeTiles = 0u, kModeBoxH = 1u, kModeBoxV = 2u, kModeComposite = 3u;
 
 // The CPU reference uses IEEE single precision with correctly rounded division and sqrt. Vulkan only guarantees
 // that for add / sub / mul (OpFDiv is 2.5 ulp, sqrt inherits inversesqrt), and real GPUs use the slack: an image
@@ -140,19 +148,104 @@ vec4 extFetch(uint e, ivec2 q) {
 
 uint atlasByte(uint idx) { return (ui_atlas.words[idx >> 2] >> ((idx & 3u) * 8u)) & 0xFFu; }
 
+uvec4 loadTarget(ivec2 ip) { return uvec4(floor(imageLoad(ui_target, ip) * 255.0 + 0.5)); }
+
+// Backdrop blur, the GPU version of CpuRasterizer's backdropBlur (Core/src/draw_list.cpp), with the same float
+// operation order: per line a running box sum over the source region (edge-clamped), 3 x (horizontal, vertical),
+// then the composite mixes the blur in by coverage and blends the tint.
+struct Backdrop {
+    int x0, y0, x1, y1; // composited pixel area
+    int sx0, sy0, w, h; // source region
+    int r;
+};
+Backdrop backdropOf(GpuCmd c) {
+    Backdrop b;
+    b.x0 = int(c.info.y & 0xFFFFu);
+    b.y0 = int(c.info.y >> 16);
+    b.x1 = int(c.info.z & 0xFFFFu);
+    b.y1 = int(c.info.z >> 16);
+    b.r = int(c.info.w);
+    const int m = 3 * b.r;
+    b.sx0 = max(0, b.x0 - m);
+    b.sy0 = max(0, b.y0 - m);
+    b.w = min(int(pc.extent.x), b.x1 + m) - b.sx0;
+    b.h = min(int(pc.extent.y), b.y1 + m) - b.sy0;
+    return b;
+}
+uint scratchHalf() { return uint(ui_scratch.v.length()) / 2u; }
+
+vec4 boxAt(Backdrop b, bool vertical, int line, int i, int n) {
+    i = clamp(i, 0, n - 1);
+    const int x = vertical ? line : i, y = vertical ? i : line;
+    if (pc.src == 0u) return vec4(loadTarget(ivec2(b.sx0 + x, b.sy0 + y)));
+    return ui_scratch.v[(pc.src - 1u) * scratchHalf() + uint(y * b.w + x)];
+}
+
+void boxPass(bool vertical) {
+    const GpuCmd c = ui_cmds.cmds[pc.cmd];
+    const Backdrop b = backdropOf(c);
+    const int line = int(gl_WorkGroupID.x * 256u + gl_LocalInvocationIndex);
+    const int n = vertical ? b.h : b.w, lines = vertical ? b.w : b.h;
+    if (line >= lines) return;
+    const float inv = divRn(1.0, float(2 * b.r + 1));
+    const uint base = pc.dst * scratchHalf();
+    precise vec4 acc = vec4(0.0);
+    for (int i = -b.r; i <= b.r; ++i) acc += boxAt(b, vertical, line, i, n);
+    for (int i = 0; i < n; ++i) {
+        const int x = vertical ? line : i, y = vertical ? i : line;
+        precise vec4 o = acc * inv;
+        ui_scratch.v[base + uint(y * b.w + x)] = o;
+        precise vec4 delta = boxAt(b, vertical, line, i + b.r + 1, n) - boxAt(b, vertical, line, i - b.r, n);
+        acc += delta;
+    }
+}
+
+float lroundPos(float v) { // std::lround for the composite (halves away from zero; v >= -0.5)
+    const float f = floor(v);
+    precise float frac = v - f;
+    return frac >= 0.5 ? f + 1.0 : f;
+}
+
+void backdropComposite() {
+    const GpuCmd c = ui_cmds.cmds[pc.cmd];
+    const Backdrop b = backdropOf(c);
+    const ivec2 ip = ivec2(gl_GlobalInvocationID.xy) + ivec2(b.x0, b.y0);
+    if (ip.x >= b.x1 || ip.y >= b.y1) return;
+    const float px = float(ip.x) + 0.5, py = float(ip.y) + 0.5;
+    precise float cov = clamp(0.5 - sdRoundRect(px, py, c.rect, c.radius), 0.0, 1.0);
+    if (c.params.z > 0.0) cov *= clamp(0.5 - sdRoundRect(px, py, c.clip, vec4(c.params.z)), 0.0, 1.0);
+    if (cov <= 0.0) return;
+    const vec4 dv = vec4(loadTarget(ip));
+    // src == ~0: the region did not fit the scratch, tint only
+    const vec4 bl = pc.src == 0xFFFFFFFFu ? dv : ui_scratch.v[pc.dst * scratchHalf() + uint((ip.y - b.sy0) * b.w + (ip.x - b.sx0))];
+    precise vec4 t = dv + (bl - dv) * cov;
+    uvec4 dst = uvec4(clamp(vec4(lroundPos(t.r), lroundPos(t.g), lroundPos(t.b), lroundPos(t.a)), 0.0, 255.0));
+    if (c.fill.a > 0.0) blend(dst, premul(c.fill, cov));
+    imageStore(ui_target, ip, vec4(dst) / 255.0);
+}
+
 void main() {
     ui_inv255[gl_LocalInvocationIndex] = divRn(float(gl_LocalInvocationIndex), 255.0);
     barrier();
-    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (pc.mode == kModeBoxH || pc.mode == kModeBoxV) {
+        boxPass(pc.mode == kModeBoxV);
+        return;
+    }
+    if (pc.mode == kModeComposite) {
+        backdropComposite();
+        return;
+    }
+    const uvec2 p = gl_GlobalInvocationID.xy + uvec2(pc.tileOrigin & 0xFFFFu, pc.tileOrigin >> 16) * 16u;
     if (p.x >= pc.extent.x || p.y >= pc.extent.y) return;
-    const ivec2 ip = ivec2(p);
-    uvec4 dst = uvec4(floor(imageLoad(ui_target, ip) * 255.0 + 0.5));
     const uint tile = (p.y / 16u) * pc.tilesX + (p.x / 16u);
-    const uint begin = ui_tiles.data[tile];
-    const uint end = ui_tiles.data[tile + 1u];
+    const uint begin = ui_tiles.data[pc.tileBase + tile];
+    const uint end = ui_tiles.data[pc.tileBase + tile + 1u];
+    if (begin == end) return; // nothing here: leave the pixel as it is
+    const ivec2 ip = ivec2(p);
+    uvec4 dst = loadTarget(ip);
     const float px = float(p.x) + 0.5, py = float(p.y) + 0.5;
     for (uint k = begin; k < end; ++k) {
-        const GpuCmd c = ui_cmds.cmds[ui_tiles.data[pc.tileCount + 1u + k]];
+        const GpuCmd c = ui_cmds.cmds[ui_tiles.data[pc.tileBase + pc.tileCount + 1u + k]];
         const uint op = c.info.x & 0xFFu;
         const uint gradient = (c.info.x >> 8) & 0xFFu;
         // pixel must lie in the command's clipped pixel area (same integer bounds as the CPU loop)
