@@ -1,6 +1,7 @@
 // WP-6.1 "ddgi.state", Slang twin of ddgi_state.comp (see there): probe relocation + classification, the
 // oracle's ddgi_kernel::update_probe_state. -fp-mode precise.
 #include "ddgi_common.slang"
+#include "../common/exact_math.slang" // the oracle's IEEE quotients / roots: the decisions match
 
 static const float kFuseDdgiStateFar = 1e27;
 static const uint kFuseDdgiStateNone = 0xFFFFFFFFu;
@@ -32,7 +33,7 @@ void main(uint3 tid: SV_DispatchThreadID) {
     float closestFrontDistance = kFuseDdgiStateFar;
     float farthestFrontDistance = 0.0;
     uint backfaces = 0u;
-    const float undo = F.backfaceDistanceScale > 0.0 ? 1.0 / F.backfaceDistanceScale : 1.0;
+    const float undo = F.backfaceDistanceScale > 0.0 ? fuseDivRn(1.0, F.backfaceDistanceScale) : 1.0;
     for (uint r = 0u; r < rays; ++r) {
         const float d = results[rayBase + r].w;
         if (d < 0.0) {
@@ -50,7 +51,7 @@ void main(uint3 tid: SV_DispatchThreadID) {
             farthestFront = r;
         }
     }
-    const float ratio = rays > 0u ? float(backfaces) / float(rays) : 0.0;
+    const float ratio = rays > 0u ? fuseDivRn(float(backfaces), float(rays)) : 0.0;
     const bool inside = ratio > F.probeBackfaceThreshold;
     const float minFront = F.probeMinFrontfaceDistance;
 
@@ -75,17 +76,18 @@ void main(uint3 tid: SV_DispatchThreadID) {
             }
         } else if (closestFrontDistance > minFront) {
             const float len2 = offset.x * offset.x + offset.y * offset.y + offset.z * offset.z;
-            const float len = sqrt(len2);
+            const float len = fuseSqrtRn(len2);
             if (len > 0.0) {
                 const float margin = min(closestFrontDistance - minFront, len);
-                const float inv = 1.0 / len;
+                const float inv = fuseDivRn(1.0, len);
                 const float3 back = float3(-offset.x * inv, -offset.y * inv, -offset.z * inv);
                 full = float3(offset.x + back.x * margin, offset.y + back.y * margin, offset.z + back.z * margin);
                 moved = true;
             }
         }
         if (moved) {
-            const float3 n = float3(full.x / F.volume.spacing[0], full.y / F.volume.spacing[1], full.z / F.volume.spacing[2]);
+            const float3 n = float3(fuseDivRn(full.x, F.volume.spacing[0]),
+                                    fuseDivRn(full.y, F.volume.spacing[1]), fuseDivRn(full.z, F.volume.spacing[2]));
             if (n.x * n.x + n.y * n.y + n.z * n.z < F.probeMaxOffset * F.probeMaxOffset) {
                 offset = full;
             }
@@ -104,9 +106,9 @@ void main(uint3 tid: SV_DispatchThreadID) {
                 const float ax = abs(dir.x);
                 const float ay = abs(dir.y);
                 const float az = abs(dir.z);
-                const float px = ax > 0.0 ? F.volume.spacing[0] / max(ax, 1e-6) : kFuseDdgiStateFar;
-                const float py = ay > 0.0 ? F.volume.spacing[1] / max(ay, 1e-6) : kFuseDdgiStateFar;
-                const float pz = az > 0.0 ? F.volume.spacing[2] / max(az, 1e-6) : kFuseDdgiStateFar;
+                const float px = ax > 0.0 ? fuseDivRn(F.volume.spacing[0], max(ax, 1e-6)) : kFuseDdgiStateFar;
+                const float py = ay > 0.0 ? fuseDivRn(F.volume.spacing[1], max(ay, 1e-6)) : kFuseDdgiStateFar;
+                const float pz = az > 0.0 ? fuseDivRn(F.volume.spacing[2], max(az, 1e-6)) : kFuseDdgiStateFar;
                 if (d <= min(px, min(py, pz))) {
                     state = 0.0;
                     break;
