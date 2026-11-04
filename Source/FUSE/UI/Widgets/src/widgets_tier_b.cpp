@@ -97,6 +97,7 @@ struct Popup {
             return true; // a modal scrim keeps focus inside the dialog
         }
         if (e.type == EventType::KeyDown && e.key == Key::Escape) {
+            ec.ui.emit(ec.node, SignalKind::Toggled, {.flag = false}); // dismissed (dialogs report a cancel)
             closePopup(ec.ui, ec.node);
             return true;
         }
@@ -132,6 +133,31 @@ struct Menu {
         return true;
     }
 };
+// ---- menu bar keyboard helpers -------------------------------------------------------------------------------------
+/// Opens a menu button's popup under it.
+void openMenuButton(UiContext& ui, NodeHandle b) {
+    const std::string_view t = ui.text(b);
+    const std::size_t nl = t.find('\n');
+    if (nl == std::string_view::npos) return;
+    const Rect r = ui.rect(b);
+    popupMenu(ui, b, t.substr(nl + 1), {ui.computed(b).rtl ? r.right() : r.x, r.bottom()});
+}
+/// The enabled menu button `step` places after `b` in its bar (wrapping; step 0 = the first, -0x7FFF.. = the last).
+NodeHandle menuButtonAt(const UiContext& ui, NodeHandle b, i32 step) {
+    const u32 cls = ui.registry().find("menubutton");
+    NodeHandle all[64];
+    i32 n = 0, at = 0;
+    for (NodeHandle c = ui.firstChild(ui.parent(b)); ui.alive(c) && n < 64; c = ui.nextSibling(c)) {
+        if (ui.classOf(c) != cls || (ui.disabled(c) && c != b)) continue;
+        if (c == b) at = n;
+        all[n++] = c;
+    }
+    if (!n) return {};
+    if (step == 0) return all[0];
+    if (step <= -0x7FFF) return all[n - 1];
+    return all[((at + step) % n + n) % n];
+}
+
 struct MenuItem { // text = "label" or "label\n<sub items, one tab less>" (a submenu); value = line index in the root list
     static constexpr std::string_view kName = "menuitem";
     static constexpr A11yRole kRole = A11yRole::ListItem;
@@ -186,6 +212,13 @@ struct MenuItem { // text = "label" or "label\n<sub items, one tab less>" (a sub
             const Key k = visualKey(ui, ec.node, e.key); // RTL: Left opens a submenu, Right goes back
             if (k == Key::Right && hasSub(ui.text(ec.node))) { openSub(ui, ec.node); return true; }
             if (k == Key::Left && isClass(ui, owner, "menuitem")) { closePopup(ui, ec.node); return true; }
+            // a menu bar menu: Left / Right switch to the neighbouring menu
+            if ((k == Key::Left || k == Key::Right) && isClass(ui, owner, "menubutton")) {
+                const NodeHandle to = menuButtonAt(ui, owner, k == Key::Right ? 1 : -1);
+                closePopup(ui, ec.node);
+                if (ui.alive(to)) { ui.setFocus(to, FocusReason::Keyboard); openMenuButton(ui, to); }
+                return true;
+            }
             return false;
         }
         if (e.type != EventType::Click || ec.phase != Phase::Target) return false;
@@ -232,17 +265,61 @@ struct MenuButton { // text = "Title\nitem\nitem..."
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
-        if (e.type == EventType::Click || (e.type == EventType::KeyDown && e.key == Key::Down)) {
-            const std::string_view t = ec.ui.text(ec.node);
-            const std::size_t nl = t.find('\n');
-            if (nl == std::string_view::npos) return true;
-            const Rect r = ec.ui.rect(ec.node);
-            popupMenu(ec.ui, ec.node, t.substr(nl + 1), {ec.ui.computed(ec.node).rtl ? r.right() : r.x, r.bottom()});
+        UiContext& ui = ec.ui;
+        if (e.type == EventType::Click || (e.type == EventType::KeyDown && (e.key == Key::Down || e.key == Key::Up))) {
+            openMenuButton(ui, ec.node);
             return true;
         }
-        return false;
+        if (e.type != EventType::KeyDown) return false;
+        NodeHandle to;
+        switch (visualKey(ui, ec.node, e.key)) {
+        case Key::Right: to = menuButtonAt(ui, ec.node, 1); break;
+        case Key::Left: to = menuButtonAt(ui, ec.node, -1); break;
+        case Key::Home: to = menuButtonAt(ui, ec.node, 0); break;
+        case Key::End: to = menuButtonAt(ui, ec.node, -0x7FFF); break;
+        case Key::Escape: { // back to where F10 came from
+            const NodeHandle prev = unpack(ui.userData(ui.parent(ec.node)));
+            if (!ui.alive(prev) || prev == ec.node) return false;
+            ui.setUserData(ui.parent(ec.node), 0);
+            ui.setFocus(prev, FocusReason::Keyboard);
+            return true;
+        }
+        default: return false;
+        }
+        if (ui.alive(to)) ui.setFocus(to, FocusReason::Keyboard);
+        return true;
     }
 };
+
+/// F10 (from the root's Event signal: no focused widget took it) toggles keyboard focus between the first visible
+/// menu bar and the previously focused node.
+void menuBarF10(UiContext& ui, NodeHandle root, const SignalArgs& a) {
+    if (!a.event || a.event->key != Key::F10 || a.event->mods) return;
+    const u32 barCls = ui.registry().find("menubar"), btnCls = ui.registry().find("menubutton");
+    const NodeHandle f = ui.focused();
+    if (ui.alive(f) && ui.classOf(f) == btnCls) { // in a bar: back
+        const NodeHandle prev = unpack(ui.userData(ui.parent(f)));
+        ui.setUserData(ui.parent(f), 0);
+        ui.setFocus(ui.alive(prev) ? prev : NodeHandle{}, FocusReason::Keyboard);
+        return;
+    }
+    // pre-order walk for the first displayed bar
+    std::vector<NodeHandle> stack{root};
+    while (!stack.empty()) {
+        const NodeHandle n = stack.back();
+        stack.pop_back();
+        if (!ui.computed(n).visible) continue;
+        if (ui.classOf(n) == barCls) {
+            const NodeHandle first = menuButtonAt(ui, ui.firstChild(n), 0);
+            if (!ui.alive(first) || ui.classOf(first) != btnCls) continue;
+            ui.setUserData(n, pack(f));
+            ui.setFocus(first, FocusReason::Keyboard);
+            return;
+        }
+        std::size_t at = stack.size();
+        for (NodeHandle c = ui.firstChild(n); ui.alive(c); c = ui.nextSibling(c)) stack.insert(stack.begin() + std::ptrdiff_t(at), c);
+    }
+}
 
 // ---- tooltip -----------------------------------------------------------------------------------------------------
 struct Tooltip {
@@ -454,6 +531,13 @@ struct TreeView {
             select(ui, n, rowInfo(ui, n, [&](u32 r, u32) { return i64(r) == want; }).line);
             return true;
         }
+        case Key::Home: case Key::End: case Key::PageUp: case Key::PageDown: {
+            const i64 rows = i64(treeVisibleRows(ui, n)), page = std::max<i64>(1, i64(ui.contentRect(n).h / rowHeight(ui, n)) - 1);
+            i64 want = e.key == Key::Home ? 0 : e.key == Key::End ? rows - 1 : cur.row + (e.key == Key::PageUp ? -page : page);
+            want = std::clamp<i64>(want, 0, std::max<i64>(0, rows - 1));
+            select(ui, n, rowInfo(ui, n, [&](u32 r, u32) { return i64(r) == want; }).line);
+            return true;
+        }
         case Key::Right: if (cur.kids && !cur.open) setTreeExpanded(ui, n, u32(cur.line), true); return true;
         case Key::Left:
             if (cur.kids && cur.open) setTreeExpanded(ui, n, u32(cur.line), false);
@@ -526,6 +610,8 @@ struct TabBar {
         const Key k = visualKey(ui, n, e.key);
         if (e.type == EventType::KeyDown && k == Key::Right) { pick(cur + 1); return true; }
         if (e.type == EventType::KeyDown && k == Key::Left) { if (cur) pick(cur - 1); return true; }
+        if (e.type == EventType::KeyDown && k == Key::Home) { pick(0); return true; }
+        if (e.type == EventType::KeyDown && k == Key::End) { if (c) pick(c - 1); return true; }
         return false;
     }
 };
@@ -666,7 +752,9 @@ void closePopup(UiContext& ui, NodeHandle n) {
     }
     // closing a submenu hands input back to the parent menu
     if (const NodeHandle parentScope = scopeOf(ui, owner); ui.alive(parentScope) && popupOpen(ui, parentScope)) ui.setModal(parentScope);
-    if (ui.alive(owner)) ui.setFocus(owner, FocusReason::Programmatic);
+    // a popup driven by the keyboard hands the owner a visible focus ring
+    const FocusReason why = ui.focusVisible() ? FocusReason::Keyboard : FocusReason::Programmatic;
+    if (ui.alive(owner)) ui.setFocus(owner, why);
     else ui.setFocus({}, FocusReason::Programmatic);
 }
 
@@ -674,6 +762,10 @@ bool popupOpen(const UiContext& ui, NodeHandle scope) { return ui.alive(scope) &
 
 NodeHandle menuBar(UiContext& ui, NodeHandle parent, std::string_view id) {
     registerTierB(ui);
+    if (!ui.hasClass(ui.root(), "fuse-menubar-f10")) { // one F10 hook per context
+        ui.addClass(ui.root(), "fuse-menubar-f10");
+        ui.connect(ui.root(), SignalKind::Event, &menuBarF10);
+    }
     return make(ui, "menubar", parent, id);
 }
 NodeHandle menuBarMenu(UiContext& ui, NodeHandle bar, std::string_view title, std::string_view items, std::string_view id) {
@@ -725,18 +817,24 @@ NodeHandle setTooltip(UiContext& ui, NodeHandle node, std::string_view text, f32
     const NodeHandle tip = make(ui, "tooltip", overlayLayer(ui));
     ui.setText(tip, text);
     ui.addClass(tip, "tooltip");
-    ui.connect(node, SignalKind::HoverChanged, [tip, delay](UiContext& c, NodeHandle n, const SignalArgs& a) {
+    // shown after `delay` while the node is hovered or has keyboard focus
+    auto show = [tip, delay](UiContext& c, NodeHandle n, const SignalArgs& a) {
         if (!c.alive(tip)) return;
-        if (!a.flag) { c.setCss(tip, "display", "none"); return; }
+        if (!a.flag) {
+            if (c.hovered().index != n.index && !(c.focused() == n && c.focusVisible())) c.setCss(tip, "display", "none");
+            return;
+        }
         c.startTimer(delay, false, [tip, n](UiContext& cx) {
-            if (!cx.alive(tip) || !cx.alive(n) || cx.hovered().index != n.index) return;
+            if (!cx.alive(tip) || !cx.alive(n) || (cx.hovered().index != n.index && !(cx.focused() == n && cx.focusVisible()))) return;
             const Rect r = cx.rect(n);
             setPx(cx, tip, Prop::Left, r.x);
             setPx(cx, tip, Prop::Top, r.bottom() + 4.f);
             overlayLayer(cx);
             cx.setCss(tip, "display", "flex");
         });
-    });
+    };
+    ui.connect(node, SignalKind::HoverChanged, show);
+    ui.connect(node, SignalKind::FocusChanged, show);
     return tip;
 }
 

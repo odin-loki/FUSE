@@ -1789,6 +1789,8 @@ bool UiContext::wheel(Vec2 p, Vec2 notches) {
 
 bool UiContext::keyDown(Key k, u8 mods) {
     Event e; e.type = EventType::KeyDown; e.key = k; e.mods = mods;
+    // Ctrl+Tab always moves focus: the way out of widgets that take Tab (code editor)
+    if (k == Key::Tab && (mods & kModCtrl)) return focusNext((mods & kModShift) != 0);
     if (node(m_focus)) {
         if (dispatch(m_focus.index, e)) return true;
         if ((k == Key::Enter || k == Key::Space) && node(m_focus) && m_registry.get(m_nodes[m_focus.index].cls).interactive &&
@@ -1810,6 +1812,10 @@ bool UiContext::keyDown(Key k, u8 mods) {
         default: break;
         }
     }
+    // keys nobody took go to the root's Event signal (application shortcuts; F10 focuses the menu bar)
+    const NodeHandle before = m_focus;
+    emit(m_root, SignalKind::Event, {.value = f32(u32(k)), .event = &e});
+    if (m_focus != before) return true;
     return node(m_focus) != nullptr && m_registry.get(m_nodes[m_focus.index].cls).focusable;
 }
 
@@ -1959,9 +1965,29 @@ void UiContext::setFocus(NodeHandle h, FocusReason why) {
     if (node(h)) {
         setState(h, kStateFocus, true);
         setState(h, kStateFocusVisible, vis);
+        if (vis) revealFocus(h.index);
         Event e; e.type = EventType::FocusIn; e.focusReason = why;
         dispatch(h.index, e);
         if (node(h)) emit(h, SignalKind::FocusChanged, {.flag = true});
+    }
+}
+
+void UiContext::revealFocus(u32 i) {
+    // inner to outer scroll containers; `shift` = how far the inner ones already moved the node
+    const Rect r = m_nodes[i].rect;
+    f32 shift = 0.f;
+    for (u32 a = m_nodes[i].parent; a != kNone; a = m_nodes[a].parent) {
+        const Node& n = m_nodes[a];
+        if (m_styles.style(n.style).overflow != Overflow::Scroll) continue;
+        const Rect c = contentRect({a, n.gen});
+        const f32 top = r.y + shift;
+        f32 d = 0.f;
+        if (top + r.h > c.bottom()) d = top + r.h - c.bottom();
+        if (top - d < c.y) d = top - c.y; // a node taller than the view shows its top
+        if (d == 0.f) continue;
+        const f32 was = n.scroll.y;
+        scrollTo({a, n.gen}, {n.scroll.x, n.scroll.y + d});
+        shift -= m_nodes[a].scroll.y - was;
     }
 }
 
