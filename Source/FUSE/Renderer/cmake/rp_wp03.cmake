@@ -17,7 +17,7 @@ target_sources(fuse_rhi PRIVATE
 
 if(FUSE_BUILD_CORE_TESTS)
     # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
-    set(_fuse_rp_wp03_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+    set(_fuse_rp_wp03_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
 
     # CPU gate (stub-safe): barrier derivation (RAW/WAR/WAW on images + buffers, subresource and
     # byte ranges), culling, queue batches + ownership transfers, >32 passes, zero steady-state heap
@@ -59,23 +59,23 @@ if(FUSE_BUILD_CORE_TESTS)
         target_compile_definitions(fuse_rp_rg_vulkan PRIVATE FUSE_RG_TEST_SHADER="${_fuse_rg_spv}"
                                                              FUSE_RG_TEST_RT_SHADER="${_fuse_rg_rt_spv}")
     endif()
-    set(_fuse_rg_env "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
+    set(_fuse_rg_env "${FUSE_VULKAN_LVP_ENV}")
     # (a) 12-pass synthetic graph, RAW/WAR/WAW on images + buffers, sync validation clean,
     #     readback equals the CPU expectation; negative control: barriers suppressed -> hazards.
     add_test(NAME fuse_rp_rg_hazard_sync
-             COMMAND "${_fuse_rp_wp03_lock}" "$<TARGET_FILE:fuse_rp_rg_vulkan>" --mode hazards)
+             COMMAND ${_fuse_rp_wp03_lock} "$<TARGET_FILE:fuse_rp_rg_vulkan>" --mode hazards)
     # (c) two non-overlapping transients share one VMA block; readbacks match aliasing off.
     add_test(NAME fuse_rp_rg_transient_alias
-             COMMAND "${_fuse_rp_wp03_lock}" "$<TARGET_FILE:fuse_rp_rg_vulkan>" --mode alias)
+             COMMAND ${_fuse_rp_wp03_lock} "$<TARGET_FILE:fuse_rp_rg_vulkan>" --mode alias)
     # gpu_radix_sort migrated onto RG passes: sort through the graph under sync validation.
     add_test(NAME fuse_rp_rg_radix_sort
-             COMMAND "${_fuse_rp_wp03_lock}" "$<TARGET_FILE:fuse_rp_rg_vulkan>" --mode radix)
+             COMMAND ${_fuse_rp_wp03_lock} "$<TARGET_FILE:fuse_rp_rg_vulkan>" --mode radix)
     # WP-7.3 follow-up: rg::kStageRayTracing. Compute write -> raygen storage read, transfer clear -> raygen sampled
     # read, raygen read -> compute write (WAR); barriers at RAY_TRACING_SHADER, SBT from the allocator
     # (BufferUsage::ShaderBindingTable), sync validation clean; negative control: the same reads declared at the
     # compute stage trip sync validation. Skips (77) without VK_KHR_ray_tracing_pipeline enabled.
     add_test(NAME fuse_rp_rg_rt_stage
-             COMMAND "${_fuse_rp_wp03_lock}" "$<TARGET_FILE:fuse_rp_rg_vulkan>" --mode rtstage)
+             COMMAND ${_fuse_rp_wp03_lock} "$<TARGET_FILE:fuse_rp_rg_vulkan>" --mode rtstage)
     set_tests_properties(fuse_rp_rg_hazard_sync fuse_rp_rg_transient_alias fuse_rp_rg_radix_sort fuse_rp_rg_rt_stage PROPERTIES
         ENVIRONMENT "${_fuse_rg_env}"
         RUN_SERIAL TRUE
@@ -88,7 +88,7 @@ if(FUSE_BUILD_CORE_TESTS)
     if(FUSE_VULKAN_BACKEND AND TARGET VkLayer_fuse_split_transfer_family)
         add_dependencies(fuse_rp_rg_vulkan VkLayer_fuse_split_transfer_family)
         add_test(NAME fuse_rp_rg_async_spoof
-                 COMMAND "${_fuse_rp_wp03_lock}" "$<TARGET_FILE:fuse_rp_rg_vulkan>" --mode async
+                 COMMAND ${_fuse_rp_wp03_lock} "$<TARGET_FILE:fuse_rp_rg_vulkan>" --mode async
                          --layer-dir "${CMAKE_CURRENT_BINARY_DIR}/split_transfer_family_layer")
         set_tests_properties(fuse_rp_rg_async_spoof PROPERTIES
             ENVIRONMENT "${_fuse_rg_env}"

@@ -208,7 +208,7 @@ if(TARGET fuse_upscale_refscenes AND TARGET fuse_temporal)
         FUSE_FSR3_REPORT_PATH="${CMAKE_CURRENT_BINARY_DIR}/fsr3_quality_report.json")
 
     # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
-    set(_fuse_wp42_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+    set(_fuse_wp42_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
     set(_fuse_wp42_vk_tests "")
     foreach(_case "quality;set" "determinism;set" "reset;set" "switch;set" "zero_alloc;set" "zero_alloc;buffer")
         list(GET _case 0 _mode)
@@ -216,14 +216,14 @@ if(TARGET fuse_upscale_refscenes AND TARGET fuse_temporal)
         set(_name "fuse_rp_fsr3_vk_${_mode}_${_backend}")
         if(FUSE_VULKAN_BACKEND)
             add_test(NAME ${_name}
-                     COMMAND "${_fuse_wp42_lock}" "$<TARGET_FILE:fuse_rp_fsr3>" --mode ${_mode} --backend ${_backend})
+                     COMMAND ${_fuse_wp42_lock} "$<TARGET_FILE:fuse_rp_fsr3>" --mode ${_mode} --backend ${_backend})
         else()
             add_test(NAME ${_name} COMMAND fuse_rp_fsr3 --mode ${_mode} --backend ${_backend})
         endif()
         list(APPEND _fuse_wp42_vk_tests ${_name})
     endforeach()
     set_tests_properties(${_fuse_wp42_vk_tests} PROPERTIES
-        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
         RUN_SERIAL TRUE
         SKIP_RETURN_CODE 77
         TIMEOUT 1500

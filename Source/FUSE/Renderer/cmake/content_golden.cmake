@@ -62,7 +62,7 @@ foreach(_dep fuse_rp_harness_shaders fuse_b5_rhi_shaders)
     endif()
 endforeach()
 add_test(NAME asset_golden_material_balls
-         COMMAND "${_fuse_rp_harness_lock}" "$<TARGET_FILE:fuse_content_golden>"
+         COMMAND ${_fuse_rp_harness_lock} "$<TARGET_FILE:fuse_content_golden>"
                  --golden-dir "${_fuse_cg_golden_dir}" --artifact-dir "${_fuse_cg_artifacts}")
 set_tests_properties(asset_golden_material_balls PROPERTIES
     ENVIRONMENT "${_fuse_rp_harness_validation_env}"

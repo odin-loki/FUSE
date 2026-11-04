@@ -303,8 +303,9 @@ if(FUSE_BUILD_UI_VK)
                 if(TARGET fuse_scene_renderer_vk)
                     target_link_libraries(fuse_scene_renderer_vk PRIVATE fuse_ui_vk)
                     target_compile_definitions(fuse_scene_renderer_vk PRIVATE FUSE_SR_TEST_HAS_FUSE_UI=1)
+                    # The flock ICD-lock wrapper is a bash script: Linux only; native Windows runs the gate directly.
                     set(_sr_lock "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
-                    if(EXISTS "${_sr_lock}" OR FUSE_VULKAN_BACKEND)
+                    if(NOT WIN32 AND (EXISTS "${_sr_lock}" OR FUSE_VULKAN_BACKEND))
                         add_test(NAME fuse_scene_renderer_vk_fuse_ui_t0
                                  COMMAND "${_sr_lock}" "$<TARGET_FILE:fuse_scene_renderer_vk>" --mode fuse_ui --tier t0)
                     else()
@@ -312,7 +313,7 @@ if(FUSE_BUILD_UI_VK)
                                  COMMAND fuse_scene_renderer_vk --mode fuse_ui --tier t0)
                     endif()
                     # UI7 HUD-less invariant: the UI stage never changes the HUD-less image / TAAU history.
-                    if(EXISTS "${_sr_lock}" OR FUSE_VULKAN_BACKEND)
+                    if(NOT WIN32 AND (EXISTS "${_sr_lock}" OR FUSE_VULKAN_BACKEND))
                         add_test(NAME fuse_ui_hudless_history_invariant COMMAND "${_sr_lock}"
                                  "$<TARGET_FILE:fuse_scene_renderer_vk>" --mode hudless_invariant --tier t0)
                     else()
