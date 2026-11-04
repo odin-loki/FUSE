@@ -90,7 +90,7 @@ void main(uint3 gid: SV_GroupID, uint3 lid: SV_GroupThreadID) {
             s_irr[t] = float4(0.0, 0.0, 0.0, 0.0);
             continue;
         }
-        const float inv = 1.0 / weightSum;
+        const float inv = fuseDivRn(1.0, weightSum);
         s_irr[t] = float4(sumR * inv, sumG * inv, sumB * inv, 1.0);
     }
     GroupMemoryBarrierWithGroupSync();
@@ -111,7 +111,7 @@ void main(uint3 gid: SV_GroupID, uint3 lid: SV_GroupThreadID) {
             ++valid;
         }
         if (valid > 0u) {
-            const float inv = 1.0 / float(valid);
+            const float inv = fuseDivRn(1.0, float(valid)); // feeds the probe-changed decision
             const float3 inMean = float3(inSum.x * inv, inSum.y * inv, inSum.z * inv);
             const float3 histMean = float3(histSum.x * inv, histSum.y * inv, histSum.z * inv);
             const float scale = max(max(fuseDdgiMaxComponent(inMean), fuseDdgiMaxComponent(histMean)), F.changeFloor);
@@ -178,7 +178,7 @@ void main(uint3 gid: SV_GroupID, uint3 lid: SV_GroupThreadID) {
             continue;
         }
         const float keep = 1.0 - hysteresis;
-        const float2 incoming = float2(sumD / weightSum, sumD2 / weightSum);
+        const float2 incoming = float2(fuseDivRn(sumD, weightSum), fuseDivRn(sumD2, weightSum));
         const float2 blended = float2(incoming.x * keep + texel.x * hysteresis, incoming.y * keep + texel.y * hysteresis);
         dist[o + 0u] = blended.x;
         dist[o + 1u] = blended.y;
