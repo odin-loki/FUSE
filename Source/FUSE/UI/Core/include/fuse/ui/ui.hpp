@@ -308,6 +308,10 @@ public:
     /// Modifier state (kMod*) stamped on pointer events; platform layers update it on every modifier change.
     void setModifiers(u8 mods) { m_mods = mods; }
     u8 modifiers() const { return m_mods; }
+    /// Goes to the focused node (capture / target / bubble). Unconsumed: Enter / Space click an interactive node, Tab /
+    /// Shift+Tab move focus (Ctrl+Tab always does, before the node sees it), arrows navigate spatially when enabled,
+    /// and anything left is emitted as SignalKind::Event {value = Key, event} on the root (application shortcuts).
+    /// Keyboard focus scrolls into view inside scroll containers.
     bool keyDown(Key k, u8 mods = 0);
     bool keyUp(Key k, u8 mods = 0);
     bool textInput(std::string_view utf8);
@@ -468,6 +472,8 @@ private:
     u32 scopeOf(u32 i) const;
     bool inScope(u32 i, u32 scope) const;
     bool focusableNode(u32 i) const;
+    /// Scrolls the node's scroll-container ancestors (vertically) so keyboard focus is in view.
+    void revealFocus(u32 i);
     void drainCommands();
     void ensureText(u32 i, f32 width);
     f32 labelIconWidth(const ComputedStyle& s, bool hasText) const;
