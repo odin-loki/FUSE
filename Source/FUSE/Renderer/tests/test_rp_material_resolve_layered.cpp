@@ -193,16 +193,19 @@ constexpr const char* kGoldenPng = "resolve_layered_gbuffer.png";
 // Tolerances of the layered bin (GPU: textureGrad on the mip-mapped bindless images) against the CPU reference
 // (ml_evaluate with ml_trilinear over the same chain). Justification in the Asset W0.7 row of RENDERER-EXECUTION.md;
 // a channel passes when |GPU - CPU(LOD)| <= kTol + max(|CPU(LOD +- kLodSlack) - CPU(LOD)|):
-//   kLodSlack    Lavapipe's LOD is an approximation of log2(rho) (WP-1.5 measured |dLOD| <= 0.19 mip on the
-//                scene-texture path): the CPU result is also evaluated a quarter mip either side and the larger
-//                change of each channel is added (on Lavapipe every channel already meets kTol alone, see the
-//                "max excess over the plain tolerance" column the gate prints)
+//   kLodSlack    the device's LOD is an approximation of log2(rho): Vulkan's scale-factor rule lets each of
+//                rho_x / rho_y sit anywhere between max(|du/dx|, |dv/dx|) and |du/dx| + |dv/dx|, i.e. within a
+//                factor sqrt(2) of the Euclidean length the CPU uses: +-0.5 mip (Lavapipe: WP-1.5 measured
+//                |dLOD| <= 0.19 mip; an RTX 3090 needed more than a quarter mip on 1-5 px per frame). The CPU
+//                result is also evaluated half a mip either side and the larger change of each channel is added
+//                (on Lavapipe every channel already meets kTol alone, see the "max excess over the plain
+//                tolerance" column the gate prints; the negative control stays 2 mips off)
 //   kTolUnorm8   RGBA8 G-buffer channels (albedo, roughness, metallic): 0.5 LSB output rounding + Lavapipe's
 //                fixed-point filter weights (bilinear and mip blend); measured max 0.87 LSB albedo, 2.0 LSB roughness
 //   kTolHalf     AO (RGBA16F): the same filter-weight term on the AO texels; measured max 1.6 LSB
 //   kTolNormal   RGBA16F oct normal: two quanta (encode_normal_rgba16f < 1e-3 rad each) + the filtered normal-map
 //                texels through the tangent / whiteout blends and renormalisations; measured max 0.014 rad
-constexpr f32 kLodSlack = 0.25f;
+constexpr f32 kLodSlack = 0.5f;
 constexpr f64 kTolUnorm8 = 2.5 / 255.0;
 constexpr f64 kTolHalf = 2.5 / 255.0;
 constexpr f64 kTolNormalRad = 0.02;
@@ -1414,7 +1417,17 @@ int runGolden(Context& ctx, bool update) {
             const ml_test::ImageDiff d = ml_test::compareRgba(gpuImage, ref, 2u);
             std::printf("golden: vs %s: %u px > 2 LSB, mean %.4f LSB, worst %u (bit-exact: %s); written %s\n", kGoldenPng,
                         d.over, d.mean, d.worst, gpuImage == ref ? "yes" : "no", out.c_str());
-            expect(d.over <= kPixels / 200u && d.mean <= 0.1, "golden image: <= 0.5% pixels over 2 LSB, mean <= 0.1 LSB");
+            // The golden is Lavapipe's image. A hardware device filters the textures with its own LOD approximation
+            // (Vulkan lets the scale factor sit anywhere between the max and the sum of the derivative components:
+            // +-0.5 mip, see kLodSlack) and fixed-point weights, which shifts every textured pixel slightly (RTX 3090:
+            // mean 0.18 LSB vs the golden, 0.17 vs the CPU reference). There the mean bound adds the device's own
+            // mean deviation from the CPU reference (per pixel, the parity mode bounds it); the pixel-count bound
+            // and Lavapipe's 0.1 LSB stay as they are.
+            const bool lavapipeLike = ctx.device->info().deviceType == static_cast<u32>(VK_PHYSICAL_DEVICE_TYPE_CPU);
+            const f64 meanBound = lavapipeLike ? 0.1 : 0.1 + cpuDiff.mean;
+            expect(d.over <= kPixels / 200u && d.mean <= meanBound,
+                   "golden image: <= 0.5% pixels over 2 LSB, mean <= 0.1 LSB (+ the device's mean deviation from the CPU "
+                   "reference on hardware)");
         }
     }
     s.gpu.destroy();
