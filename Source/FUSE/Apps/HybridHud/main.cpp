@@ -8,9 +8,13 @@
 #if defined(FUSE_HAS_VULKAN_RHI)
 #include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
 #endif
+#if defined(FUSE_HYBRID_HUD_HAS_UI)
+#include "hud_ui.hpp"
+#endif
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace {
 
@@ -53,6 +57,18 @@ int main(int argc, char** argv) {
     fuse::hybrid::gates::State gateState;
     fuse::hybrid::gates::setup(gateState, composer);
 
+#if defined(FUSE_HYBRID_HUD_HAS_UI)
+    // The HUD on a FUSE UI context (real text + widgets); --legacy-hud keeps the placeholder UI quad.
+    bool legacyHud = false;
+    for (int i = 1; i < argc; ++i) {
+        legacyHud = legacyHud || std::strcmp(argv[i], "--legacy-hud") == 0;
+    }
+    fuse::hybrid::hud::HudUi hudUi;
+    if (!legacyHud) {
+        (void)hudUi.init(composer, 320, 240);
+    }
+#endif
+
     fuse::frame::FrameCtx ctx;
     for (int frame = 0; frame < frameTarget; ++frame) {
         ctx.dt = fuse::hybrid::gates::kDt;
@@ -60,6 +76,9 @@ int main(int argc, char** argv) {
         ctx.frameIndex = static_cast<fuse::u32>(frame);
 
         fuse::hybrid::gates::tickFrame(gateState, composer, ctx);
+#if defined(FUSE_HYBRID_HUD_HAS_UI)
+        hudUi.update(composer, gateState, ctx);
+#endif
 
 #if defined(FUSE_HAS_VULKAN_RHI)
         if (presentGameWindow) {
@@ -75,6 +94,17 @@ int main(int argc, char** argv) {
     if (!presentGameWindow) {
         const fuse::hybrid::gates::VerifyResult result = fuse::hybrid::gates::verify(gateState, composer);
         check(result.ok, result.message != nullptr ? result.message : "outpost slice verified");
+#if defined(FUSE_HYBRID_HUD_HAS_UI)
+        if (hudUi.active() && composer.gpuSceneActive()) {
+            const fuse::hybrid::hud::HudCheck hud = hudUi.check(*composer.gpuScene());
+            fuse::log::info("demo_hybrid_hud: FUSE UI HUD: %u glyph quads, %u opaque UI pixels (%u off by > 1/255), "
+                            "%u text pixels",
+                            hud.glyphs, hud.covered, hud.mismatched, hud.textPixels);
+            check(hud.overlayRan, "FUSE UI HUD drawn in the UI stage");
+            check(hud.glyphs > 0u && hud.textPixels > 0u, "HUD text visible in the GPU readback");
+            check(hud.covered > 0u && hud.mismatched == 0u, "HUD pixels == the CPU rasteriser (<= 1/255)");
+        }
+#endif
     }
 
 #if defined(FUSE_HAS_VULKAN_RHI)
@@ -100,6 +130,9 @@ int main(int argc, char** argv) {
         );
     }
 
+#if defined(FUSE_HYBRID_HUD_HAS_UI)
+    hudUi.shutdown(composer);
+#endif
 #if defined(FUSE_HAS_VULKAN_RHI)
     runtime->shutdown();
 #endif

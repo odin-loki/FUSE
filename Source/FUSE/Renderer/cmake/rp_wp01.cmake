@@ -8,7 +8,7 @@ target_sources(fuse_rhi PRIVATE
 
 if(FUSE_BUILD_CORE_TESTS)
     # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
-    set(_fuse_rp_wp01_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+    set(_fuse_rp_wp01_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
     # Manifest library path relative to the manifest; the Windows loader rejects '/' there
     # (LoadLibraryEx with LOAD_WITH_ALTERED_SEARCH_PATH), so ".\" (JSON-escaped) on Windows.
     if(WIN32)
@@ -55,13 +55,13 @@ if(FUSE_BUILD_CORE_TESTS)
 ")
         add_dependencies(fuse_rp_device_tiers VkLayer_fuse_mask_features)
         add_test(NAME fuse_rp_device_tiers
-                 COMMAND "${_fuse_rp_wp01_lock}" "$<TARGET_FILE:fuse_rp_device_tiers>"
+                 COMMAND ${_fuse_rp_wp01_lock} "$<TARGET_FILE:fuse_rp_device_tiers>"
                          --layer-dir "${_fuse_mask_layer_dir}")
     else()
         add_test(NAME fuse_rp_device_tiers COMMAND fuse_rp_device_tiers)
     endif()
     set_tests_properties(fuse_rp_device_tiers PROPERTIES
-        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
         RUN_SERIAL TRUE
         SKIP_RETURN_CODE 77
         LABELS "gate;vulkan")

@@ -1,0 +1,11 @@
+# FUSE third-party pin: a subset of the Lucide icon set (43 SVGs, unmodified), the FUSE UI starter icons.
+# Cooked at build time into fuse_ui_icons.fuseicons by fuse_ui_icon_cook (Source/FUSE/UI/CMakeLists.txt).
+# To add an icon: copy <name>.svg from the same tag's icons/ directory.
+name=lucide
+upstream=https://github.com/lucide-icons/lucide
+version=1.67.0
+tag=1.67.0
+commit=4b203ec9b6002fd74fd5dadc8612220e64289305
+retrieved=2026-11-04 (raw.githubusercontent.com at the tag)
+license=ISC (icons derived from Feather: MIT), see LICENSE
+license_file=LICENSE

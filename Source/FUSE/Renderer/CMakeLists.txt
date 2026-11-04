@@ -258,6 +258,9 @@ if(FUSE_SHADER_GLSLANG)
     endif()
 endif()
 
+# Vulkan gate launcher + environment (FUSE_VULKAN_TEST_LAUNCHER / FUSE_VULKAN_LVP_ENV): cmake/FuseVulkanTestEnv.cmake.
+include(${CMAKE_SOURCE_DIR}/cmake/FuseVulkanTestEnv.cmake)
+
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)
 endif()

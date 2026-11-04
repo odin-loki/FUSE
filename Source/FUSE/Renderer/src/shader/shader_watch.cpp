@@ -12,8 +12,8 @@
 #include <sys/stat.h>
 #endif
 
+#include <iterator>
 #include <string>
-#include <utility>
 
 namespace fuse::renderer {
 
@@ -24,31 +24,31 @@ struct FileStamp {
     u64 size = 0;
 };
 
+FileStamp queryStamp(const char* path) {
+    FileStamp stamp{};
+    if (path == nullptr) {
+        return stamp;
+    }
+
 #if defined(_WIN32)
-std::wstring utf8ToWide(const char* path) {
+    // UTF-16 path in a stack buffer: pollChanged runs every frame and must not allocate (heap only for long paths).
+    wchar_t local[1024];
+    std::wstring longPath;
+    wchar_t* wide = local;
     const int needed = MultiByteToWideChar(CP_UTF8, 0, path, -1, nullptr, 0);
     if (needed <= 0) {
-        return {};
+        return stamp;
     }
-
-    std::wstring wide(static_cast<std::size_t>(needed), L'\0');
-    if (MultiByteToWideChar(CP_UTF8, 0, path, -1, wide.data(), needed) <= 0) {
-        return {};
+    if (needed > static_cast<int>(std::size(local))) {
+        longPath.resize(static_cast<std::size_t>(needed));
+        wide = longPath.data();
     }
-    return wide;
-}
-#endif
-
-#if defined(_WIN32)
-/// `wide` is the path converted once at watch(); empty (conversion failed) reads as a missing file.
-FileStamp queryStamp(const std::wstring& wide) {
-    FileStamp stamp{};
-    if (wide.empty()) {
+    if (MultiByteToWideChar(CP_UTF8, 0, path, -1, wide, needed) <= 0) {
         return stamp;
     }
 
     WIN32_FILE_ATTRIBUTE_DATA attributes{};
-    if (!GetFileAttributesExW(wide.c_str(), GetFileExInfoStandard, &attributes)) {
+    if (!GetFileAttributesExW(wide, GetFileExInfoStandard, &attributes)) {
         return stamp;
     }
 
@@ -56,11 +56,7 @@ FileStamp queryStamp(const std::wstring& wide) {
                   static_cast<u64>(attributes.ftLastWriteTime.dwLowDateTime);
     stamp.size = (static_cast<u64>(attributes.nFileSizeHigh) << 32u) |
                  static_cast<u64>(attributes.nFileSizeLow);
-    return stamp;
-}
 #else
-FileStamp queryStamp(const char* path) {
-    FileStamp stamp{};
     struct stat fileStat {};
     if (::stat(path, &fileStat) != 0) {
         return stamp;
@@ -76,9 +72,9 @@ FileStamp queryStamp(const char* path) {
 #else
     stamp.mtime = static_cast<u64>(fileStat.st_mtime);
 #endif
+#endif
     return stamp;
 }
-#endif
 
 } // namespace
 
@@ -87,17 +83,8 @@ bool ShaderFileWatch::watch(const char* path) {
         return false;
     }
 
-    Entry entry{};
-    entry.path = path;
-#if defined(_WIN32)
-    entry.nativePath = utf8ToWide(path);
-    const FileStamp stamp = queryStamp(entry.nativePath);
-#else
-    const FileStamp stamp = queryStamp(entry.path.c_str());
-#endif
-    entry.mtime = stamp.mtime;
-    entry.size = stamp.size;
-    m_entries.push_back(std::move(entry));
+    const FileStamp stamp = queryStamp(path);
+    m_entries.push_back(Entry{std::string(path), stamp.mtime, stamp.size});
     return true;
 }
 
@@ -105,11 +92,7 @@ u32 ShaderFileWatch::pollChanged() {
     m_lastChanged.clear();
     u32 changed = 0;
     for (Entry& entry : m_entries) {
-#if defined(_WIN32)
-        const FileStamp stamp = queryStamp(entry.nativePath);
-#else
         const FileStamp stamp = queryStamp(entry.path.c_str());
-#endif
         if (stamp.mtime != entry.mtime || stamp.size != entry.size) {
             m_lastChanged.push_back(entry.path);
             ++changed;

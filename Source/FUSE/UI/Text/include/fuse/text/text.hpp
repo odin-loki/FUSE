@@ -36,10 +36,12 @@ void appendUtf8(std::string& out, char32_t cp);
 /// Byte offset of the previous / next code point boundary.
 std::size_t prevCodepoint(std::string_view s, std::size_t i);
 std::size_t nextCodepoint(std::string_view s, std::size_t i);
-/// UAX #29 extended grapheme cluster property (compact built-in tables: combining marks, Indic spacing marks,
-/// Hangul syllable types, regional indicators, emoji modifiers / ZWJ sequences, variation selectors, tags).
+/// UAX #29 extended grapheme cluster property (tables generated from the UCD by Text/tools/gen_unicode_tables.py;
+/// Extended_Pictographic folded in as ExtPict). Gate fuse_text_grapheme_conformance runs GraphemeBreakTest.txt.
 enum class GraphemeBreak : std::uint8_t { Other, CR, LF, Control, Extend, ZWJ, RegionalIndicator, Prepend, SpacingMark, L, V, T, LV, LVT, ExtPict };
 GraphemeBreak graphemeBreakProperty(char32_t cp);
+/// Unicode version of the built-in grapheme tables ("15.1.0").
+const char* unicodeVersion();
 /// Byte offset of the previous / next extended grapheme cluster boundary (UAX #29 rules GB3-GB13): caret moves,
 /// Backspace and Delete never split "e + U+0301", a flag, a skin-toned or ZWJ emoji, CR LF or a Hangul syllable.
 std::size_t prevBoundary(std::string_view s, std::size_t i);
@@ -47,14 +49,32 @@ std::size_t nextBoundary(std::string_view s, std::size_t i);
 /// Number of extended grapheme clusters in `s` (user-perceived characters).
 std::size_t graphemeCount(std::string_view s);
 
+// ---- Line breaking and bidi (segmentation used by layoutText) ------------------------------------------------------
+enum class LineBreak : std::uint8_t { Must, Allow, None, Inside };
+/// Normal: Conditional Japanese Starters (small kana, U+30FC ...) break like ideographs (CSS line-break: normal; what
+/// layoutText uses). Strict: they resolve to NS, the UAX #14 default.
+enum class LineBreakStyle : std::uint8_t { Normal, Strict };
+/// Break opportunity after each byte of `utf8` (`out` gets one entry per byte; Inside for bytes within a code point;
+/// the last byte is Must). FULL: UAX #14 through libunibreak (gate fuse_text_linebreak_conformance). MINIMAL: Allow
+/// after a space that precedes a non-space, Must after '\n'.
+void lineBreaks(std::string_view utf8, std::vector<LineBreak>& out, LineBreakStyle style = LineBreakStyle::Normal);
+
+enum class BaseDirection : std::uint8_t { Ltr, Rtl, Auto };
+/// FULL: UAX #9 embedding levels per byte of one line (SheenBidi for X1-I2, then rule L1 over the line) and the
+/// level of its (last) paragraph; Auto applies P2/P3 with LTR as default. MINIMAL: no bidi, returns false with every
+/// level at the base level. Gate fuse_text_bidi_conformance runs BidiCharacterTest.txt.
+bool bidiLevels(std::string_view utf8, BaseDirection base, std::vector<std::uint8_t>& levels, std::uint8_t& paraLevel);
+/// Rule L2: visual order of units with `levels`; out[k] = logical index shown at visual position k.
+void reorderVisual(std::span<const std::uint8_t> levels, std::vector<std::uint32_t>& out);
+
 // ---- Font ----------------------------------------------------------------------------------------------------------
 struct FontMetrics {
     float ascent = 0.f, descent = 0.f, lineGap = 0.f; ///< pixels at the size asked for (descent is negative)
     float lineHeight() const { return ascent - descent + lineGap; }
 };
 
-/// One layer of a COLRv0 colour glyph: an ordinary outline glyph filled with a CPAL palette colour (straight RGBA),
-/// or with the text colour when `foreground` is set. Layers paint bottom to top.
+/// One layer of a colour glyph: an ordinary outline glyph filled with a CPAL palette colour (straight RGBA), or with
+/// the text colour when `foreground` is set. Layers paint bottom to top.
 struct ColorLayer {
     std::uint32_t glyph = 0;
     std::uint8_t r = 0, g = 0, b = 0, a = 255;
@@ -66,15 +86,19 @@ struct TextLayoutDesc;
 struct TextLayout;
 struct ShapeCacheStats;
 
-/// A TrueType / OpenType (glyf) font. Holds a copy of the file bytes; the parsed state points into it.
+/// A TrueType / OpenType font (glyf or CFF outlines). Holds a copy of the file bytes; the parsed state points into it.
 class Font {
 public:
-    static std::expected<Font, TextError> fromBytes(std::span<const std::uint8_t> bytes);
-    static std::expected<Font, TextError> fromFile(const std::string& path);
+    /// `faceIndex` picks a face of a collection (.ttc / .otc); 0 for single-face files.
+    static std::expected<Font, TextError> fromBytes(std::span<const std::uint8_t> bytes, std::uint32_t faceIndex = 0);
+    /// `path` is UTF-8.
+    static std::expected<Font, TextError> fromFile(const std::string& path, std::uint32_t faceIndex = 0);
     /// FUSE's bundled UI font (vendor/fonts/opensans) when the build knows its path; InvalidFont otherwise.
     static std::expected<Font, TextError> bundled();
-    /// FUSE's bundled fallback faces in chain order: Noto Sans Hebrew, Arabic, Devanagari, Symbols 2 and Twemoji
-    /// (COLRv0 colour emoji). Fonts whose files are missing are skipped. Attach them with setFallbacks().
+    /// FUSE's bundled fallback faces in chain order: Noto Sans Hebrew, Arabic, Devanagari, Twemoji (COLRv0 colour
+    /// emoji), Symbols 2, Thai and a Noto Sans SC subset (kana, CJK punctuation, fullwidth forms and the ~1400 most
+    /// frequent Han characters, CFF outlines). Fonts whose files are missing are skipped. Attach them with
+    /// setFallbacks().
     static std::vector<Font> bundledFallbacks();
 
     Font() = default;
@@ -112,7 +136,10 @@ public:
     /// Pixel size to use for face `i` so its em matches this font's em at `pixelSize`.
     float facePixelSize(std::uint16_t i, float pixelSize) const;
 
-    // ---- Colour glyphs (COLRv0 + CPAL, palette 0) ----
+    // ---- Colour glyphs (COLR + CPAL, palette 0) ----
+    // COLRv0 layers are exact. COLRv1 paint graphs (glyphs without a v0 record) are flattened to the same solid
+    // layers: PaintColrLayers / PaintGlyph / PaintColrGlyph are followed, a gradient fill becomes the mean colour of
+    // its stops, transforms are ignored and composites paint backdrop then source. CBDT / sbix bitmaps are not read.
     bool hasColorGlyphs() const;
     /// Layers of `glyph` when it is a colour glyph; empty for ordinary glyphs.
     std::span<const ColorLayer> colorLayers(std::uint32_t glyph) const;
@@ -207,7 +234,7 @@ ShapeCacheStats shapeCacheStats(const Font& font);
 float shapeText(const Font& font, std::string_view utf8, float pixelSize, std::vector<ShapedGlyph>& out);
 
 /// Calls fn(face, glyph, facePixelSize, layer) for every paint layer of a shaped glyph: once with layer == nullptr
-/// (draw in the text colour) for an ordinary glyph, or once per COLRv0 layer bottom to top for a colour glyph.
+/// (draw in the text colour) for an ordinary glyph, or once per colour layer bottom to top for a colour glyph.
 template <class Fn> void forEachPaintGlyph(const Font& font, const ShapedGlyph& g, float pixelSize, Fn&& fn) {
     const Font& f = font.face(g.face);
     const float px = g.face ? font.facePixelSize(g.face, pixelSize) : pixelSize;
@@ -219,6 +246,59 @@ template <class Fn> void forEachPaintGlyph(const Font& font, const ShapedGlyph& 
 
 /// Width of a single line without wrapping (no allocation when `scratch` has capacity).
 float measureText(const Font& font, std::string_view utf8, float pixelSize, std::vector<ShapedGlyph>& scratch);
+
+// ---- System fonts --------------------------------------------------------------------------------------------------
+/// Scripts the fallback chains know about (scriptOf maps a code point; Common for punctuation, digits, spaces).
+enum class Script : std::uint8_t { Common, Latin, Greek, Cyrillic, Arabic, Hebrew, Devanagari, Thai, Han, Kana, Hangul, Emoji, Symbols };
+Script scriptOf(char32_t cp);
+const char* scriptName(Script s);
+
+/// One face of an installed font file, read from its name / OS/2 / head tables (no outlines are loaded).
+struct FontFaceInfo {
+    std::string path;           ///< UTF-8 file path
+    std::uint32_t index = 0;    ///< face index in a collection (.ttc / .otc)
+    std::string family, style;  ///< typographic family / subfamily (name IDs 16 / 17, else 1 / 2)
+    std::string fullName;       ///< name ID 4
+    std::uint16_t weight = 400; ///< OS/2 usWeightClass
+    std::uint16_t stretch = 5;  ///< OS/2 usWidthClass (5 = normal)
+    bool italic = false;        ///< italic or oblique (OS/2 fsSelection, head macStyle)
+    std::uint32_t unicodeRanges[4] = {}; ///< OS/2 ulUnicodeRange1..4 (script coverage hints)
+    bool covers(Script s) const;  ///< from unicodeRanges (Emoji / Symbols: by family name)
+};
+
+/// Font discovery without fontconfig (Qt: QFontDatabase). Windows: %WINDIR%\Fonts, the HKLM / HKCU
+/// "...\Windows NT\CurrentVersion\Fonts" registry lists and %LOCALAPPDATA%\Microsoft\Windows\Fonts; Linux:
+/// /usr/share/fonts, /usr/local/share/fonts, ~/.local/share/fonts, ~/.fonts; macOS: /System/Library/Fonts,
+/// /Library/Fonts, ~/Library/Fonts. Only .ttf / .otf / .ttc / .otc files are read.
+class FontCatalog {
+public:
+    /// The installed fonts, scanned once on first use (thread-safe).
+    static const FontCatalog& system();
+    /// Platform font directories in scan order.
+    static std::vector<std::string> systemFontDirectories();
+
+    /// Adds every face of every font file under `dir` (recursive). Returns the number of faces added.
+    std::size_t scanDirectory(const std::string& dir);
+    /// Adds the faces of one file (duplicates of an already listed path are ignored).
+    std::size_t addFile(const std::string& path);
+
+    std::span<const FontFaceInfo> faces() const { return m_faces; }
+    /// Sorted, unique family names.
+    std::vector<std::string> families() const;
+    /// Best face of `family` (case-insensitive) for `weight` / `italic` (CSS-style: italic first, then the nearest
+    /// weight, then stretch). Generic names (sans-serif, serif, monospace, system-ui) map to platform families.
+    /// nullptr when no family matches.
+    const FontFaceInfo* match(std::string_view family, std::uint16_t weight = 400, bool italic = false) const;
+    /// Regular upright faces that cover `script`, best first (platform UI fonts for the script, then any other
+    /// family whose OS/2 ranges claim it), one per family, at most `maxFaces`.
+    std::vector<const FontFaceInfo*> systemFallbackChain(Script script, std::size_t maxFaces = 4) const;
+    /// Loads a face (FontFaceInfo::path / index).
+    static std::expected<Font, TextError> load(const FontFaceInfo& face);
+
+private:
+    std::vector<FontFaceInfo> m_faces;
+    std::vector<std::string> m_paths; // normalised paths already added
+};
 
 // ---- Glyph atlas ---------------------------------------------------------------------------------------------------
 struct AtlasGlyph {
@@ -234,6 +314,10 @@ public:
     explicit GlyphAtlas(int size = 1024);
     /// Finds or rasterises `glyph` of `font` at `pixelSize` (sizes are bucketed to 1/4 px).
     AtlasGlyph get(const Font& font, std::uint32_t glyph, float pixelSize);
+    /// Caller-keyed coverage (UI icons). Keys must have bit 63 clear (font glyph keys set it) and be non-zero.
+    bool lookup(std::uint64_t key, AtlasGlyph& out) const;
+    /// Copies a w x h coverage bitmap (row stride `stride`) under `key`; x0 / y0 are stored as the glyph offset.
+    AtlasGlyph insert(std::uint64_t key, const std::uint8_t* src, int w, int h, int stride, int x0, int y0);
     int size() const { return m_size; }
     const std::uint8_t* pixels() const { return m_pixels.data(); }
     std::uint32_t generation() const { return m_generation; }

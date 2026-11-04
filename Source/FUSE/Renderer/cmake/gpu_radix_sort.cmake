@@ -55,7 +55,7 @@ endif()
 
 if(FUSE_BUILD_CORE_TESTS)
     # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
-    set(_fuse_radix_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+    set(_fuse_radix_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
     add_executable(fuse_gpu_radix_sort_gates
         ${CMAKE_CURRENT_LIST_DIR}/../tests/test_gpu_radix_sort_gates.cpp)
     target_link_libraries(fuse_gpu_radix_sort_gates PRIVATE fuse_rhi fuse_physics fuse_core)
@@ -63,9 +63,9 @@ if(FUSE_BUILD_CORE_TESTS)
         target_compile_definitions(fuse_gpu_radix_sort_gates PRIVATE FUSE_RADIX_SORT_SHADERS_BUILT=1)
     endif()
     add_test(NAME fuse_gpu_radix_sort_gates
-             COMMAND "${_fuse_radix_lock}" "$<TARGET_FILE:fuse_gpu_radix_sort_gates>")
+             COMMAND ${_fuse_radix_lock} "$<TARGET_FILE:fuse_gpu_radix_sort_gates>")
     set_tests_properties(fuse_gpu_radix_sort_gates PROPERTIES
-        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
         RUN_SERIAL TRUE
         SKIP_RETURN_CODE 77
         TIMEOUT 1500

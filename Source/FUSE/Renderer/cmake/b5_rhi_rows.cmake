@@ -48,7 +48,7 @@ endif()
 
 if(FUSE_BUILD_CORE_TESTS)
     # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
-    set(_fuse_b5_rhi_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+    set(_fuse_b5_rhi_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
     set(_fuse_b5_rhi_tests "")
 
     # fuse_b5_rhi_add_test(<name> <source> [HOOKS] [LIBS ...])
@@ -67,9 +67,9 @@ if(FUSE_BUILD_CORE_TESTS)
             add_dependencies(${name} fuse_b5_rhi_shaders)
             target_compile_definitions(${name} PRIVATE FUSE_B5_RHI_SHADERS_BUILT=1)
         endif()
-        add_test(NAME ${name} COMMAND "${_fuse_b5_rhi_lock}" "$<TARGET_FILE:${name}>")
+        add_test(NAME ${name} COMMAND ${_fuse_b5_rhi_lock} "$<TARGET_FILE:${name}>")
         set_tests_properties(${name} PROPERTIES
-            ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+            ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
             RUN_SERIAL TRUE
             SKIP_RETURN_CODE 77
             LABELS "gate;vulkan")

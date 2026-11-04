@@ -29,10 +29,6 @@ public:
 private:
     struct Entry {
         std::string path;
-#if defined(_WIN32)
-        /// UTF-16 copy converted once in watch(): pollChanged runs every frame and must not allocate.
-        std::wstring nativePath;
-#endif
         u64 mtime = 0;
         u64 size = 0;
     };

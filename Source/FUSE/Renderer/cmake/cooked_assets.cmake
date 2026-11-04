@@ -81,7 +81,8 @@ if(FUSE_GLSLANG_VALIDATOR)
 endif()
 
 # The deferred call runs in the top-level directory scope: hand it this directory's values.
-set(FUSE_CA_VK_LOCK "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh" CACHE INTERNAL "E06 ICD lock wrapper")
+set(FUSE_CA_VK_LOCK "${FUSE_VULKAN_TEST_LAUNCHER}" CACHE INTERNAL "E06 ICD lock wrapper (empty: run directly)")
+set(FUSE_CA_VK_ENV "${FUSE_VULKAN_LVP_ENV}" CACHE INTERNAL "E06 Vulkan gate environment")
 set(FUSE_CA_VK_BACKEND "${FUSE_VULKAN_BACKEND}" CACHE INTERNAL "E06 Vulkan backend on")
 function(_fuse_cooked_assets_register_vk)
     set(_lock "${FUSE_CA_VK_LOCK}")
@@ -94,14 +95,14 @@ function(_fuse_cooked_assets_register_vk)
             list(APPEND _args --cook "$<TARGET_FILE:fuse_cook>")
         endif()
         if(FUSE_CA_VK_BACKEND)
-            add_test(NAME ${_name} COMMAND "${_lock}" "$<TARGET_FILE:fuse_cooked_assets_vk>" ${_args})
+            add_test(NAME ${_name} COMMAND ${_lock} "$<TARGET_FILE:fuse_cooked_assets_vk>" ${_args})
         else()
             add_test(NAME ${_name} COMMAND fuse_cooked_assets_vk ${_args})
         endif()
         list(APPEND _tests ${_name})
     endforeach()
     set_tests_properties(${_tests} PROPERTIES
-        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        ENVIRONMENT "${FUSE_CA_VK_ENV}"
         RUN_SERIAL TRUE
         SKIP_RETURN_CODE 77
         TIMEOUT 1800

@@ -254,19 +254,19 @@ add_executable(fuse_rp_framegen ${_fuse_wp44_tests_dir}/test_rp_framegen.cpp)
 target_link_libraries(fuse_rp_framegen PRIVATE fuse_framegen fuse_present_latency)
 fuse_apply_cxx23(fuse_rp_framegen)
 # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
-set(_fuse_wp44_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+set(_fuse_wp44_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
 set(_fuse_wp44_vk_tests "")
 foreach(_mode midpoint ui reset determinism optical_flow scene_cut zero_alloc latency_probe)
     set(_name "fuse_rp_framegen_vk_${_mode}")
     if(FUSE_VULKAN_BACKEND)
-        add_test(NAME ${_name} COMMAND "${_fuse_wp44_lock}" "$<TARGET_FILE:fuse_rp_framegen>" --mode ${_mode})
+        add_test(NAME ${_name} COMMAND ${_fuse_wp44_lock} "$<TARGET_FILE:fuse_rp_framegen>" --mode ${_mode})
     else()
         add_test(NAME ${_name} COMMAND fuse_rp_framegen --mode ${_mode})
     endif()
     list(APPEND _fuse_wp44_vk_tests ${_name})
 endforeach()
 set_tests_properties(${_fuse_wp44_vk_tests} PROPERTIES
-    ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+    ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
     RUN_SERIAL TRUE
     SKIP_RETURN_CODE 77
     TIMEOUT 1500

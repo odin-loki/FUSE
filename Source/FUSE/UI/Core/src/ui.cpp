@@ -1,4 +1,5 @@
 #include "fuse/ui/ui.hpp"
+#include "fuse/ui/icons.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -16,6 +17,7 @@ enum NodeFlags : u32 {
     kFlagFocusScope = 1u << 2,
     kFlagRoleSet = 1u << 3,
 };
+constexpr u32 kColdChunk = 256;
 enum Dirty : u8 { kDirtyStyle = 1, kDirtyLayout = 2, kDirtyPaint = 4, kDirtyText = 8, kDirtyMeasure = 16 };
 } // namespace
 
@@ -58,6 +60,26 @@ struct UiContext::Cold {
     fuse::text::TextLayout layout;
     f32 layoutWidth = -1.f, layoutSize = -1.f;
     std::unique_ptr<fuse::text::TextEditBuffer> edit;
+    // last paintString() layout of this node: widgets repaint the same label every frame, so skip re-shaping it
+    std::string strKey;
+    fuse::text::TextLayout strLayout;
+    f32 strPx = -1.f, strWidth = -1.f;
+    TextAlignment strAlign = TextAlignment::Start;
+    u64 strMissFrame = ~0ull;
+    bool strMany = false; ///< more than one string per frame: paintString uses the shared scratch layout
+    u32 layoutRev = 0, strRev = 0;
+    // this node's run in m_quads: valid while epoch, atlas generation, source layout and size match
+    u32 qOff = 0, qCount = 0, qEpoch = 0, qAtlasGen = 0, qRev = 0;
+    u8 qSrc = 0;
+    f32 qPx = -1.f;
+};
+
+struct UiContext::GlyphQuad {
+    f32 x, baseline;    ///< pen x and line baseline in the layout
+    std::int16_t x0, y0; ///< atlas glyph offset from the pen
+    u16 u, v, w, h;     ///< atlas texels
+    u8 r, g, b, a;      ///< COLR layer colour (when !fg)
+    bool fg;            ///< drawn in the text colour
 };
 
 // ---- Registry ------------------------------------------------------------------------------------------------------
@@ -172,7 +194,9 @@ u32 UiContext::alloc() {
     } else {
         i = u32(m_nodes.size());
         m_nodes.emplace_back();
-        m_cold.push_back(std::make_unique<Cold>());
+        // chunked, not one heap block per node (the Windows heap scatters same-size blocks; paint walks them in order)
+        if (i % kColdChunk == 0) m_coldChunks.push_back(std::make_unique<Cold[]>(kColdChunk));
+        m_cold.push_back(&m_coldChunks.back()[i % kColdChunk]);
     }
     m_nodes[i].alive = true;
     ++m_live;
@@ -257,6 +281,9 @@ void UiContext::destroyRec(u32 i) {
             a.active = false;
             --m_animCount;
         }
+    Cold& cold = *m_cold[i];
+    if (cold.qEpoch == m_quadEpoch) m_quadLive -= cold.qCount; // its quads become garbage
+    cold.qEpoch = 0;
     n.alive = false;
     n.first = n.last = n.parent = n.next = n.prev = kNone;
     m_free.push_back(i);
@@ -587,6 +614,7 @@ void UiContext::ensureText(u32 i, f32 width) {
     d.maxWidth = std::isfinite(width) ? width : 0.f;
     d.align = fuse::text::TextAlign(u8(s.textAlign));
     fuse::text::layoutText(*m_font, fuse::text::defaultShaper(), c.text, d, c.layout);
+    ++c.layoutRev;
     c.layoutWidth = width;
     c.layoutSize = s.fontSize;
     m_nodes[i].dirty &= u8(~kDirtyText);
@@ -599,17 +627,22 @@ f32 UiContext::measureString(std::string_view s, f32 px) {
 
 void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, Vec2 o, Color col, f32 px, u32 nodeIdx) {
     if (!m_font || col.a <= 0.f) return;
+    const f32 s = m_scale; // glyphs are rasterised at device size; the rect is stored so that rect * s is exact
     for (const auto& ln : tl.lines) {
         for (u32 k = ln.firstGlyph; k < ln.firstGlyph + ln.glyphCount; ++k) {
             const auto& g = tl.glyphs[k];
             if (g.glyph == fuse::text::kInvisibleGlyph) continue;
-            fuse::text::forEachPaintGlyph(*m_font, g, px, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
-                                                               const fuse::text::ColorLayer* layer) {
+            fuse::text::forEachPaintGlyph(*m_font, g, px * s, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
+                                                                   const fuse::text::ColorLayer* layer) {
                 const auto ag = m_atlas.get(f, glyph, fpx);
                 if (!ag.valid || ag.w == 0) return;
                 DrawCmd c;
                 c.op = DrawOp::Glyph;
-                c.rect = {std::round(o.x + g.x) + f32(ag.x0), std::round(o.y + ln.baseline) + f32(ag.y0), f32(ag.w), f32(ag.h)};
+                if (s == 1.f)
+                    c.rect = {std::round(o.x + g.x) + f32(ag.x0), std::round(o.y + ln.baseline) + f32(ag.y0), f32(ag.w), f32(ag.h)};
+                else
+                    c.rect = {(std::round((o.x + g.x) * s) + f32(ag.x0)) / s, (std::round((o.y + ln.baseline) * s) + f32(ag.y0)) / s,
+                              f32(ag.w) / s, f32(ag.h) / s};
                 c.u = ag.u;
                 c.v = ag.v;
                 c.tw = ag.w;
@@ -624,6 +657,60 @@ void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, 
     }
 }
 
+void UiContext::paintTextQuads(DrawList& dl, u32 i, u8 src, u32 rev, const fuse::text::TextLayout& tl, Vec2 o, Color col, f32 px) {
+    if (!m_font || col.a <= 0.f) return;
+    Cold& c = *m_cold[i];
+    const f32 sc = m_scale;  // quads are rasterised at device size (DPI scale): the key is the device pixel size
+    const f32 dpx = px * sc;
+    if (c.qEpoch != m_quadEpoch || c.qAtlasGen != m_atlas.generation() || c.qSrc != src || c.qRev != rev || c.qPx != dpx) {
+        if (c.qEpoch == m_quadEpoch) m_quadLive -= c.qCount;
+        // full and holding stale runs: start over rather than grow (nodes painted earlier rebuild next frame)
+        if (m_quads.size() + tl.glyphs.size() > m_quads.capacity() && m_quads.size() > m_quadLive) {
+            m_quads.clear();
+            m_quadLive = 0;
+            ++m_quadEpoch;
+        }
+        c.qOff = u32(m_quads.size());
+        for (const auto& ln : tl.lines)
+            for (u32 k = ln.firstGlyph; k < ln.firstGlyph + ln.glyphCount; ++k) {
+                const auto& g = tl.glyphs[k];
+                if (g.glyph == fuse::text::kInvisibleGlyph) continue;
+                fuse::text::forEachPaintGlyph(*m_font, g, dpx, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
+                                                                    const fuse::text::ColorLayer* layer) {
+                    const auto ag = m_atlas.get(f, glyph, fpx);
+                    if (!ag.valid || ag.w == 0) return;
+                    const bool fg = !layer || layer->foreground;
+                    m_quads.push_back({g.x, ln.baseline, ag.x0, ag.y0, ag.u, ag.v, ag.w, ag.h, fg ? u8(0) : layer->r,
+                                       fg ? u8(0) : layer->g, fg ? u8(0) : layer->b, fg ? u8(0) : layer->a, fg});
+                });
+            }
+        c.qCount = u32(m_quads.size()) - c.qOff;
+        c.qEpoch = m_quadEpoch;
+        c.qAtlasGen = m_atlas.generation(); // an atlas reset during the build leaves this stale: rebuilt next time
+        c.qSrc = src;
+        c.qRev = rev;
+        c.qPx = dpx;
+        m_quadLive += c.qCount;
+    }
+    DrawCmd cmd;
+    cmd.op = DrawOp::Glyph;
+    cmd.node = i;
+    for (u32 k = c.qOff, e = c.qOff + c.qCount; k < e; ++k) {
+        const GlyphQuad& q = m_quads[k];
+        if (sc == 1.f)
+            cmd.rect = {std::round(o.x + q.x) + f32(q.x0), std::round(o.y + q.baseline) + f32(q.y0), f32(q.w), f32(q.h)};
+        else // stored so that rect * scale lands on whole device pixels (scaleDrawList)
+            cmd.rect = {(std::round((o.x + q.x) * sc) + f32(q.x0)) / sc, (std::round((o.y + q.baseline) * sc) + f32(q.y0)) / sc,
+                        f32(q.w) / sc, f32(q.h) / sc};
+        cmd.u = q.u;
+        cmd.v = q.v;
+        cmd.tw = q.w;
+        cmd.th = q.h;
+        cmd.fill = q.fg ? col : Color{f32(q.r) / 255.f, f32(q.g) / 255.f, f32(q.b) / 255.f, f32(q.a) / 255.f * col.a};
+        dl.push(cmd);
+    }
+}
+
 void UiContext::paintString(DrawList& dl, std::string_view s, Rect box, Color col, f32 px, TextAlignment align, u32 nodeIdx) {
     if (!m_font || s.empty()) return;
     fuse::text::TextLayoutDesc d;
@@ -631,9 +718,114 @@ void UiContext::paintString(DrawList& dl, std::string_view s, Rect box, Color co
     d.maxWidth = box.w;
     d.elide = true;
     d.align = fuse::text::TextAlign(u8(align));
+    if (nodeIdx < m_cold.size() && m_nodes[nodeIdx].alive && !m_cold[nodeIdx]->strMany) {
+        // one cached layout per node, keyed on everything layoutText reads
+        Cold& c = *m_cold[nodeIdx];
+        if (c.strPx != px || c.strWidth != box.w || c.strAlign != align || c.strKey != s) {
+            if (c.strMissFrame == m_frame) c.strMany = true; // paints several strings per frame (lists, tables)
+            c.strMissFrame = m_frame;
+            fuse::text::layoutText(*m_font, fuse::text::defaultShaper(), s, d, c.strLayout);
+            c.strKey.assign(s);
+            c.strPx = px;
+            c.strWidth = box.w;
+            c.strAlign = align;
+            ++c.strRev;
+        }
+        const f32 y = box.y + std::floor((box.h - c.strLayout.height) * 0.5f);
+        if (c.strMany) paintTextLayout(dl, c.strLayout, {box.x, y}, col, px, nodeIdx);
+        else paintTextQuads(dl, nodeIdx, 1, c.strRev, c.strLayout, {box.x, y}, col, px);
+        return;
+    }
     fuse::text::layoutText(*m_font, fuse::text::defaultShaper(), s, d, m_stringScratch);
     const f32 y = box.y + std::floor((box.h - m_stringScratch.height) * 0.5f);
     paintTextLayout(dl, m_stringScratch, {box.x, y}, col, px, nodeIdx);
+}
+
+// ---- Icons ---------------------------------------------------------------------------------------------------------
+void UiContext::setIcons(const IconSet* icons) {
+    if (icons == m_icons) return;
+    m_icons = icons;
+    markAllDirty();
+}
+
+f32 UiContext::iconExtent(const ComputedStyle& s) const {
+    if (!s.icon || !m_icons || m_icons->findHash(s.icon) < 0) return 0.f;
+    return std::round(s.iconSize > 0.f ? s.iconSize : s.fontSize + 2.f);
+}
+
+f32 UiContext::labelIconWidth(const ComputedStyle& s, bool hasText) const {
+    const f32 ic = iconExtent(s);
+    return ic > 0.f ? ic + (hasText ? kIconGap : 0.f) : 0.f;
+}
+
+bool UiContext::paintIcon(DrawList& dl, u32 nameHash, Vec2 at, f32 size, Color c, u32 nodeIdx) {
+    const i32 idx = m_icons ? m_icons->findHash(nameHash) : -1;
+    if (idx < 0) return false;
+    if (c.a <= 0.f || size < 0.5f) return true;
+    const f32 sc = m_scale; // rasterised at the device size (DPI scale)
+    const int px = std::clamp(int(std::lround(size * sc)), 1, 1024);
+    // atlas key: bit 62 set, bit 63 clear (font glyph keys set bit 63)
+    const u64 key = (1ull << 62) | (u64(nameHash) << 16) | u64(px);
+    fuse::text::AtlasGlyph ag;
+    if (!m_atlas.lookup(key, ag)) {
+        IconBitmap bm;
+        if (m_icons->cooked(u32(idx), px, bm)) {
+            ag = m_atlas.insert(key, bm.pixels, bm.w, bm.h, bm.stride, bm.ox, bm.oy);
+        } else { // resample, then trim to the covered box
+            m_icons->render(u32(idx), px, m_iconScratch);
+            int x0 = px, y0 = px, x1 = -1, y1 = -1;
+            for (int y = 0; y < px; ++y)
+                for (int x = 0; x < px; ++x)
+                    if (m_iconScratch[std::size_t(y) * std::size_t(px) + std::size_t(x)]) {
+                        x0 = std::min(x0, x); y0 = std::min(y0, y); x1 = std::max(x1, x); y1 = std::max(y1, y);
+                    }
+            if (x1 < 0) ag = m_atlas.insert(key, nullptr, 0, 0, 0, 0, 0);
+            else ag = m_atlas.insert(key, m_iconScratch.data() + std::size_t(y0) * std::size_t(px) + std::size_t(x0), x1 - x0 + 1,
+                                     y1 - y0 + 1, px, x0, y0);
+        }
+    }
+    if (!ag.valid || ag.w == 0) return true;
+    DrawCmd cmd;
+    cmd.op = DrawOp::Glyph;
+    if (sc == 1.f) cmd.rect = {std::round(at.x) + f32(ag.x0), std::round(at.y) + f32(ag.y0), f32(ag.w), f32(ag.h)};
+    else cmd.rect = {(std::round(at.x * sc) + f32(ag.x0)) / sc, (std::round(at.y * sc) + f32(ag.y0)) / sc, f32(ag.w) / sc, f32(ag.h) / sc};
+    cmd.u = ag.u;
+    cmd.v = ag.v;
+    cmd.tw = ag.w;
+    cmd.th = ag.h;
+    cmd.fill = c;
+    cmd.node = nodeIdx;
+    dl.push(cmd);
+    return true;
+}
+
+Size UiContext::measureIconLabel(const ComputedStyle& s, std::string_view text) {
+    const f32 ic = iconExtent(s);
+    const f32 lh = m_font ? std::ceil(m_font->metrics(s.fontSize).lineHeight()) : std::ceil(s.fontSize * 1.25f);
+    const f32 tw = std::ceil(measureString(text, s.fontSize));
+    if (ic <= 0.f) return {tw, lh};
+    if (text.empty()) return {ic, ic};
+    return {ic + kIconGap + tw, std::max(ic, lh)};
+}
+
+void UiContext::paintIconLabel(DrawList& dl, const ComputedStyle& s, std::string_view text, Rect box, Color c, TextAlignment align,
+                               u32 nodeIdx) {
+    const f32 ic = iconExtent(s);
+    if (ic <= 0.f) {
+        paintString(dl, text, box, c, s.fontSize, align, nodeIdx);
+        return;
+    }
+    const f32 tw = text.empty() ? 0.f : std::ceil(measureString(text, s.fontSize));
+    const f32 total = ic + (tw > 0.f ? kIconGap + tw : 0.f);
+    f32 x = box.x;
+    if (align == TextAlignment::Center) x = box.x + std::floor((box.w - total) * 0.5f);
+    else if (align == TextAlignment::End) x = box.right() - total;
+    x = std::max(x, box.x);
+    paintIcon(dl, s.icon, {x, box.y + std::floor((box.h - ic) * 0.5f)}, ic, c, nodeIdx);
+    if (tw > 0.f) {
+        const f32 tx = x + ic + kIconGap;
+        paintString(dl, text, {tx, box.y, std::max(0.f, box.right() - tx), box.h}, c, s.fontSize, TextAlignment::Start, nodeIdx);
+    }
 }
 
 // ---- Layout --------------------------------------------------------------------------------------------------------
@@ -738,10 +930,15 @@ Size UiContext::measure(u32 i, Size avail) {
             }
         }
         if (!wc.measure && !m_cold[i]->text.empty()) {
-            ensureText(i, in.w);
+            const f32 iw = labelIconWidth(s, true);
+            ensureText(i, in.w - iw);
             const auto& tl = m_cold[i]->layout;
-            c.w = std::max(c.w, std::ceil(tl.width));
-            c.h = std::max(c.h, std::ceil(tl.height));
+            c.w = std::max(c.w, std::ceil(tl.width) + iw);
+            c.h = std::max({c.h, std::ceil(tl.height), iconExtent(s)});
+        } else if (!wc.measure && s.icon) {
+            const f32 ic = iconExtent(s);
+            c.w = std::max(c.w, ic);
+            c.h = std::max(c.h, ic);
         }
         out.w = fw ? bw : c.w + s.padding.h();
         out.h = fh ? bh : c.h + s.padding.v();
@@ -771,7 +968,7 @@ void UiContext::arrangeChildren(u32 i) {
     Node& n = m_nodes[i];
     const ComputedStyle& s = m_styles.style(n.style);
     const Rect c0 = contentRect({i, n.gen});
-    if (!m_cold[i]->text.empty() && !m_registry.get(n.cls).measure) ensureText(i, c0.w);
+    if (!m_cold[i]->text.empty() && !m_registry.get(n.cls).measure) ensureText(i, c0.w - labelIconWidth(s, true));
     const Rect c{c0.x - n.scroll.x, c0.y - n.scroll.y, c0.w, c0.h};
     Size extent{0.f, 0.f};
     auto place = [&](u32 k, Rect r) {
@@ -979,10 +1176,15 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     if (wc.paint) {
         const PaintContext pc{*this, h, n.rect, content, s, n.state, opacity};
         wc.paint(pc, dl);
-    } else if (!m_cold[i]->text.empty()) {
-        const auto& tl = m_cold[i]->layout;
-        const f32 y = content.y + std::floor(std::max(0.f, content.h - tl.height) * 0.5f);
-        paintTextLayout(dl, tl, {content.x, y}, tint(s.color), s.fontSize, i);
+    } else if (!m_cold[i]->text.empty() || s.icon) {
+        const f32 ic = iconExtent(s);
+        if (ic > 0.f) paintIcon(dl, s.icon, {content.x, content.y + std::floor((content.h - ic) * 0.5f)}, ic, tint(s.color), i);
+        if (!m_cold[i]->text.empty()) {
+            const auto& tl = m_cold[i]->layout;
+            const f32 y = content.y + std::floor(std::max(0.f, content.h - tl.height) * 0.5f);
+            paintTextQuads(dl, i, 0, m_cold[i]->layoutRev, tl, {content.x + labelIconWidth(s, true), y}, tint(s.color),
+                           s.fontSize);
+        }
     }
     if (n.first == kNone) return;
     const bool clip = s.overflow != Overflow::Visible;
@@ -1029,6 +1231,13 @@ void UiContext::paintPass() {
     if (!m_anyPaintDirty) return;
     m_draw.clear();
     m_popupPending.clear();
+    // an atlas reset invalidates every glyph quad
+    if (m_quadAtlasGen != m_atlas.generation()) {
+        m_quads.clear();
+        m_quadLive = 0;
+        ++m_quadEpoch;
+        m_quadAtlasGen = m_atlas.generation();
+    }
     paintRec(m_root.index, 1.f, m_draw);
     std::vector<PopupSurface> next;
     for (u32 k : m_popupPending) {
@@ -1049,10 +1258,101 @@ void UiContext::paintPass() {
         next.push_back(std::move(ps));
     }
     if (next.size() != m_popupSurfaces.size()) m_damage = m_damage.unite({0.f, 0.f, m_viewport.w, m_viewport.h});
+    if (m_scale != 1.f) { // UI units -> device pixels (rects stay in UI units)
+        scaleDrawList(m_draw);
+        for (PopupSurface& ps : next) scaleDrawList(ps.draw);
+    }
     m_popupSurfaces = std::move(next);
     m_anyPaintDirty = false;
     m_stats.repainted = true;
     m_stats.drawCmds = u32(m_draw.size());
+}
+
+void UiContext::scaleDrawList(DrawList& dl) const {
+    const f32 s = m_scale;
+    for (DrawCmd& c : dl.cmds()) {
+        if (c.op == DrawOp::Glyph) { // placed on whole device pixels at the atlas texel size
+            c.rect = {std::round(c.rect.x * s), std::round(c.rect.y * s), f32(c.tw), f32(c.th)};
+            continue;
+        }
+        c.rect = {c.rect.x * s, c.rect.y * s, c.rect.w * s, c.rect.h * s};
+        if (c.op == DrawOp::Line) continue; // rect = end points
+        c.borderWidth *= s;
+        for (f32& r : c.radius) r *= s;
+        c.blur *= s;
+    }
+}
+
+void UiContext::setScale(f32 s) {
+    s = std::isfinite(s) ? std::clamp(s, 0.25f, 8.f) : 1.f;
+    if (s == m_scale) return;
+    m_scale = s;
+    m_quads.clear(); // cached glyph quads were rasterised for the old scale
+    m_quadLive = 0;
+    ++m_quadEpoch;
+    markAllDirty();
+}
+
+CursorShape UiContext::cursor() const {
+    if (m_scrollDrag.node.valid()) return CursorShape::Arrow;
+    const NodeHandle from = node(m_pressed) ? m_pressed : m_hover;
+    const Node* n = node(from);
+    for (u32 i = n ? from.index : kNone; i != kNone; i = m_nodes[i].parent) {
+        const CursorShape c = m_styles.style(m_nodes[i].style).cursor;
+        if (c != CursorShape::Auto) return c;
+    }
+    return CursorShape::Arrow;
+}
+
+bool UiContext::touchDown(u32 id, Vec2 p) {
+    for (u32 k = 0; k < m_touchCount; ++k)
+        if (m_touches[k].id == id) return touchMove(id, p);
+    if (m_touchCount == kMaxTouches) return false;
+    m_touches[m_touchCount++] = {id, p, p};
+    if (m_touchCount == 2) m_pinchStart = std::hypot(m_touches[1].pos.x - m_touches[0].pos.x, m_touches[1].pos.y - m_touches[0].pos.y);
+    if (m_primaryTouch != kNone || m_touchCount != 1) return true; // secondary contacts: gestures only
+    m_primaryTouch = id;
+    m_pointerKind = PointerKind::Touch;
+    pointerMove(p);
+    return pointerDown(p);
+}
+bool UiContext::touchMove(u32 id, Vec2 p) {
+    for (u32 k = 0; k < m_touchCount; ++k)
+        if (m_touches[k].id == id) {
+            m_touches[k].pos = p;
+            if (id != m_primaryTouch) return true;
+            m_pointerKind = PointerKind::Touch;
+            return pointerMove(p);
+        }
+    return false;
+}
+bool UiContext::touchUp(u32 id, Vec2 p) {
+    for (u32 k = 0; k < m_touchCount; ++k)
+        if (m_touches[k].id == id) {
+            for (u32 j = k + 1; j < m_touchCount; ++j) m_touches[j - 1] = m_touches[j];
+            --m_touchCount;
+            if (m_touchCount < 2) m_pinchStart = 0.f;
+            if (id != m_primaryTouch) return true;
+            m_primaryTouch = kNone;
+            m_pointerKind = PointerKind::Touch;
+            pointerMove(p);
+            const bool used = pointerUp(p);
+            setHover(kNone); // a lifted finger hovers nothing
+            return used;
+        }
+    return false;
+}
+void UiContext::touchCancel() {
+    m_touchCount = 0;
+    m_pinchStart = 0.f;
+    if (m_primaryTouch == kNone) return;
+    m_primaryTouch = kNone;
+    m_pressed = {};
+    setHover(kNone);
+}
+f32 UiContext::pinchScale() const {
+    if (m_touchCount < 2 || m_pinchStart <= 0.f) return 1.f;
+    return std::hypot(m_touches[1].pos.x - m_touches[0].pos.x, m_touches[1].pos.y - m_touches[0].pos.y) / m_pinchStart;
 }
 
 void UiContext::setOsPopups(bool on, Rect screen) {
@@ -1178,7 +1478,14 @@ bool UiContext::dispatch(u32 target, const Event& e) {
 void UiContext::setHover(u32 i) {
     const u32 old = node(m_hover) ? m_hover.index : kNone;
     if (old == i) return;
-    for (u32 a = old; a != kNone; a = m_nodes[a].parent) setState({a, m_nodes[a].gen}, kStateHover, false);
+    // ancestors shared with the new chain keep :hover (toggling them repaints and damages the whole window)
+    const auto onNewChain = [&](u32 a) {
+        for (u32 b = i; b != kNone; b = m_nodes[b].parent)
+            if (b == a) return true;
+        return false;
+    };
+    for (u32 a = old; a != kNone; a = m_nodes[a].parent)
+        if (!onNewChain(a)) setState({a, m_nodes[a].gen}, kStateHover, false);
     for (u32 a = i; a != kNone; a = m_nodes[a].parent) setState({a, m_nodes[a].gen}, kStateHover, true);
     m_hover = handleOf(i);
     if (old != kNone) {
@@ -1569,7 +1876,7 @@ void UiContext::animate(NodeHandle h, AnimProp p, f32 to, f32 seconds, Ease e) {
         slot->active = true;
         ++m_animCount;
     }
-    *slot = Anim{h, p, e, from, to, 0.f, std::max(0.f, seconds), true};
+    *slot = Anim{h, p, e, from, to, 0.f, m_reducedMotion ? 0.f : std::max(0.f, seconds), true};
 }
 
 // ---- Cross-thread commands (Vyukov bounded queue; multi-producer, single consumer) -------------------------------
@@ -1623,6 +1930,17 @@ void UiContext::addStyleSheet(StyleSheet sheet) {
 void UiContext::clearStyleSheets() {
     m_styles.clearSheets();
     m_anyStyleDirty = true;
+}
+std::expected<void, UiError> UiContext::setThemeStyleSheet(std::string_view css, std::vector<StyleDiagnostic>* diags) {
+    auto sheet = StyleSheet::parse(css, diags);
+    if (!sheet) {
+        if (diags) diags->push_back(sheet.error());
+        return std::unexpected(UiError::StyleParse);
+    }
+    m_styles.setThemeSheet(std::move(*sheet));
+    m_anyStyleDirty = true;
+    markAllDirty();
+    return {};
 }
 
 // ---- Dumps ---------------------------------------------------------------------------------------------------------

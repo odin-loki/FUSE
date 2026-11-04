@@ -67,10 +67,10 @@ endif()
 if(FUSE_VULKAN_BACKEND AND NOT WIN32)
     # Linux CI: Lavapipe, serialised on the shared ICD lock (tests/CMakeLists.txt writes the wrapper).
     add_test(NAME fuse_b5_frame_bench_smoke
-             COMMAND "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh" "$<TARGET_FILE:fuse_b5_frame_bench>"
+             COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_b5_frame_bench>"
                      --width 320 --height 180 --iterations 3 --warmup 1 --draws 100)
     set_tests_properties(fuse_b5_frame_bench_smoke PROPERTIES
-        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
+        ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}")
 else()
     add_test(NAME fuse_b5_frame_bench_smoke COMMAND fuse_b5_frame_bench --width 320 --height 180 --iterations 3
                                                     --warmup 1 --draws 100)

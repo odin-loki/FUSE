@@ -35,19 +35,18 @@ if(RL_BSDF_GLSL_SPV)
 endif()
 add_dependencies(fuse_relight_bsdf_vk_tests fuse_relight_bsdf_shaders)
 _rl_bsdf_cxx23(fuse_relight_bsdf_vk_tests)
-set(_rl_bsdf_lock "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
 set(_rl_bsdf_vk_tests "")
 foreach(_lang slang glsl)
-    if(EXISTS "${_rl_bsdf_lock}")
+    if(EXISTS "${FUSE_VULKAN_ICD_LOCK_PATH}")
         add_test(NAME rl_bsdf_vk_parity_${_lang}
-                 COMMAND "${_rl_bsdf_lock}" "$<TARGET_FILE:fuse_relight_bsdf_vk_tests>" --language ${_lang})
+                 COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_relight_bsdf_vk_tests>" --language ${_lang})
     else()
         add_test(NAME rl_bsdf_vk_parity_${_lang} COMMAND fuse_relight_bsdf_vk_tests --language ${_lang})
     endif()
     list(APPEND _rl_bsdf_vk_tests rl_bsdf_vk_parity_${_lang})
 endforeach()
 set_tests_properties(${_rl_bsdf_vk_tests} PROPERTIES
-    ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+    ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
     RUN_SERIAL TRUE
     SKIP_RETURN_CODE 77
     TIMEOUT 900
