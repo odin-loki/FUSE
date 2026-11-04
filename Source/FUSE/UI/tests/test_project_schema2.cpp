@@ -7,7 +7,7 @@
 //     physics), opens its window with the .fuseui and presents the first frame within 150 ms (headless)
 //   * ui.theme dark / light / system; a hybrid project brings its game side up only when a viewport widget shows
 //   --native: the same on a real OS window (Win32 / X11), presented pixels match the CPU raster; exit 77 without one
-#include "fuse/app/project_host.hpp"
+#include "fuse/app/project_host_hybrid.hpp"
 #include "fuse/ui/doc/document.hpp"
 
 #include <fuse/core/init.hpp>
@@ -420,7 +420,11 @@ void hybridViewport() {
     m.dimensions = {true, false, true};
     CHECK(project::saveToDirectory(m, dir.string()).ok);
     CHECK(!fuse::core::isInitialized());
-    auto started = fuse::app::ProjectHost::start({.projectPath = dir.string(), .showWindows = false});
+    // without a game side backend a hybrid project is refused (app-only hosts do not link the engine)
+    auto noBackend = fuse::app::ProjectHost::start({.projectPath = dir.string(), .showWindows = false});
+    CHECK(!noBackend && noBackend.error().find("hybrid") != std::string::npos);
+    auto started = fuse::app::ProjectHost::start(
+        {.projectPath = dir.string(), .showWindows = false, .gameSide = fuse::app::hybridGameSide()});
     if (!started) {
         std::fprintf(stderr, "  hybrid start: %s\n", started.error().c_str());
         ++g_fail;
@@ -459,7 +463,7 @@ void hybridViewport() {
                 project::hostFeatureList(startUp).c_str(), project::hostFeatureList(up).c_str(),
                 static_cast<unsigned long long>(host.viewportFrames()),
                 static_cast<unsigned long long>(w->framesPresented() - framesBefore));
-    CHECK(host.gameSideUp() && host.composer() != nullptr && fuse::core::isInitialized());
+    CHECK(host.gameSideUp() && host.gameSideHandle() != nullptr && fuse::core::isInitialized());
     CHECK((up & project::hostFeatureBit(project::HostFeature::GameFrame)) != 0u &&
           (up & project::hostFeatureBit(project::HostFeature::Renderer3D)) != 0u &&
           (up & project::hostFeatureBit(project::HostFeature::Physics)) != 0u &&

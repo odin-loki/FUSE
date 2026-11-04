@@ -4,14 +4,11 @@
 
 #include <fuse/core/init.hpp>
 #include <fuse/core/track_b.hpp>
-#include <fuse/frame/frame_ctx.hpp>
-#include <fuse/hybrid/hybrid_composer.hpp>
 #include <fuse/project/loader.hpp>
-#include <fuse/world2d/world_2d.hpp>
-#include <fuse/world3d/world_3d.hpp>
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -45,17 +42,6 @@ void applyProjectTheme(Application& app, AppWindow& w, std::string_view theme) {
 }
 } // namespace
 
-/// The hybrid project's game side, created on demand.
-struct ProjectHost::GameSide {
-    world3d::World3D world3D; // worlds outlive the composer that points at them
-    world2d::World2D world2D;
-    hybrid::HybridComposer composer;
-    frame::FrameCtx ctx;
-    std::chrono::steady_clock::time_point lastRender{};
-};
-
-ProjectHost::ProjectHost() = default;
-
 project::HostFeatureSet ProjectHost::supportedFeatures() {
     return hostFeatureBit(HostFeature::AppPresent) | hostFeatureBit(HostFeature::Jobs) |
            hostFeatureBit(HostFeature::Viewport);
@@ -79,6 +65,10 @@ std::expected<std::unique_ptr<ProjectHost>, std::string> ProjectHost::start(cons
     if (std::string invalid = project::validateManifest(m); !invalid.empty()) return std::unexpected("project: " + invalid);
     if (!knownTheme(m.ui.theme))
         return std::unexpected("project: ui.theme \"" + m.ui.theme + "\" is not one of system, dark, light");
+    if (m.kind == project::ProjectKind::Hybrid && !(desc.gameSide.create && desc.gameSide.frame && desc.gameSide.destroy))
+        return std::unexpected("project '" + m.name + "' is a hybrid project: this host has no game side "
+                               "(ProjectHostDesc::gameSide, e.g. hybridGameSide() from fuse_app_project_hybrid)");
+    host->m_backend = desc.gameSide;
     host->m_plan = project::planInit(m);
     // game-side features of a hybrid project are deferred (ensureGameSide), not refused
     const project::HostFeatureSet unsupported =
@@ -159,7 +149,8 @@ ProjectHost::~ProjectHost() {
     m_native.reset();
     m_app.reset(); // windows (and their timers) go before the game side they draw
     m_viewports.clear();
-    m_game.reset();
+    if (m_game && m_backend.destroy) m_backend.destroy(m_game);
+    m_game = nullptr;
     m_model.reset();
     if ((m_up & hostFeatureBit(HostFeature::AppPresent)) != 0u)
         core::setTrackBHostFeature(core::TrackBHostFeature::AppPresent, false);
@@ -238,22 +229,17 @@ void ProjectHost::viewportTick(u32 windowId) {
         return;
     }
     if (!ensureGameSide()) return;
-    GameSide& g = *m_game;
-    // a late update fires the repeating timer several times in a row: render once per update
-    const auto now = std::chrono::steady_clock::now();
-    if (now - g.lastRender < std::chrono::milliseconds(4)) return;
-    g.lastRender = now;
-    g.ctx.dt = kViewportFrame;
-    g.ctx.time += kViewportFrame;
-    g.composer.tick(g.ctx);
-    g.composer.render(g.ctx);
-    ++g.ctx.frameIndex;
-    const hybrid::PlaceholderRenderer& fb = g.composer.renderer();
+    // a late update fires the repeating timer several times in a row: one game frame per update
+    const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (m_lastGameFrame >= 0.0 && now - m_lastGameFrame < 0.004) return;
+    m_lastGameFrame = now;
+    u32 fw = 0, fh = 0;
+    const unsigned char* px = m_backend.frame(m_game, kViewportFrame, fw, fh);
     for (Viewport& v : m_viewports) {
-        if (v.windowId != windowId || !ui.alive(v.node) || fb.width() == 0) continue;
-        v.image->resize(int(fb.width()), int(fb.height()));
-        std::memcpy(v.image->pixels.data(), fb.pixels(), std::size_t(fb.width()) * fb.height() * 4);
-        fuse::ui::widgets::viewportSetImage(ui, v.node, v.imageIndex, fb.width(), fb.height());
+        if (v.windowId != windowId || !ui.alive(v.node) || !px) continue;
+        v.image->resize(int(fw), int(fh));
+        std::memcpy(v.image->pixels.data(), px, std::size_t(fw) * fh * 4);
+        fuse::ui::widgets::viewportSetImage(ui, v.node, v.imageIndex, fw, fh);
         ui.invalidate(v.node);
     }
     ++m_viewportFrames;
@@ -262,34 +248,20 @@ void ProjectHost::viewportTick(u32 windowId) {
 
 bool ProjectHost::ensureGameSide() {
     if (m_game) return true;
-    if (m_manifest.kind != project::ProjectKind::Hybrid) return false;
+    if (m_manifest.kind != project::ProjectKind::Hybrid || !m_backend.create) return false;
     if (!core::isInitialized()) {
         core::initialize();
         m_startedJobs = true;
     }
     m_up |= hostFeatureBit(HostFeature::Jobs);
-    m_game = std::make_unique<GameSide>();
-    GameSide& g = *m_game;
-    g.composer.setProjectFlags(project::toDimensionFlags(m_manifest.dimensions));
-    const std::filesystem::path root = m_manifest.projectRoot.empty() ? std::filesystem::path(".") : std::filesystem::path(m_manifest.projectRoot);
-    std::error_code ec;
-    if (m_manifest.dimensions.enable3D) {
-        if (!m_manifest.defaultWorld3D.empty() && std::filesystem::exists(root / m_manifest.defaultWorld3D, ec))
-            (void)g.world3D.loadWorldFromFuselevel((root / m_manifest.defaultWorld3D).string());
-        g.world3D.setPhysicsEnabled(true);
-        g.composer.attachWorld3D(&g.world3D);
-        m_up |= hostFeatureBit(HostFeature::Renderer3D) | hostFeatureBit(HostFeature::Physics);
-    }
-    if (m_manifest.dimensions.enable2D) {
-        if (!m_manifest.defaultWorld2D.empty() && std::filesystem::exists(root / m_manifest.defaultWorld2D, ec))
-            (void)g.world2D.loadWorldFromFuselevel((root / m_manifest.defaultWorld2D).string());
-        g.composer.attachWorld2D(&g.world2D);
-        m_up |= hostFeatureBit(HostFeature::Renderer2D);
-    }
-    m_up |= hostFeatureBit(HostFeature::GameFrame);
+    std::string error;
+    m_game = m_backend.create(m_manifest, error);
+    if (!error.empty()) std::fprintf(stderr, "%s: game side: %s\n", m_manifest.name.c_str(), error.c_str());
+    if (!m_game) return false;
+    m_up |= m_plan.deferred; // GameFrame + Renderer3D / 2D + Physics per the dimensions
     return true;
 }
 
-hybrid::HybridComposer* ProjectHost::composer() { return m_game ? &m_game->composer : nullptr; }
+void* ProjectHost::gameSideHandle() const { return m_game && m_backend.handle ? m_backend.handle(m_game) : nullptr; }
 
 } // namespace fuse::app

@@ -273,7 +273,18 @@ The minimal init path: `fuse::project::planInit` says what a host brings up; `fu
 (`fuse/app/project_host.hpp`, in tree) loads the project, enables `TrackBHostFeature::AppPresent` (the host-scoped
 present unlock for apps, honoured in shipping builds), starts the job scheduler only when `Jobs` is declared, opens the
 windows with their documents and style sheets and presents the first frame — no worlds, `GpuScene`, `FrameComposer` or
-physics. Run a project with `fuse_app_host <project> [--headless] [--first-frame]`.
+physics. Run a project with `fuse_app_host <project> [--headless] [--first-frame]`. The first frame is software while
+the Vulkan presenter starts on a worker (`NativeOptions::asyncVulkan`).
+
+`ui.theme`: `system` follows the OS colour scheme live (`Application::setFollowSystemTheme`), `dark` / `light` pin the
+widget theme; other names are refused at start. A `hybrid` project's game side (job scheduler, `HybridComposer` with
+the project's dimension flags, the default worlds, physics) stays down until one of its `viewport` widgets is visible
+(polled 4× a second); then it renders into every visible viewport at 60 Hz and drops back to polling when they hide.
+`ProjectHost::ensureGameSide()` brings it up on request.
+
+The `ui.draw_list` kernel keeps a persistent `VkPipelineCache` in the per-user cache dir (`%LOCALAPPDATA%\FUSE\cache`,
+`$XDG_CACHE_HOME/fuse` or `~/.cache/fuse`; `NativeOptions::pipelineCacheDir`), validated by the kernel's SPIR-V hash and
+the driver's vendor / device / `pipelineCacheUUID`. `FUSE_APP_VK_TRACE=1` prints the Vulkan presenter start-up phases.
 
 Baseline measurements for §6 of the plan (sizes, startup, idle, memory, frame times) are in [BASELINES.md](BASELINES.md).
 

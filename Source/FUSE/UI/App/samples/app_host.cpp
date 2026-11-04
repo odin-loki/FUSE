@@ -2,7 +2,12 @@
 //   fuse_app_host <project dir | project.json> [--headless] [--first-frame] [--screenshot=out.png]
 // --first-frame prints the startup times and exits after every window presented once (startup measurements);
 // --screenshot writes the main window's CPU raster after the first frame and exits. A "quit" action closes the app.
+// fuse_hybrid_host is the same runner with the engine game side linked (hybrid projects).
+#if defined(FUSE_APP_HOST_HYBRID)
+#include "fuse/app/project_host_hybrid.hpp"
+#else
 #include "fuse/app/project_host.hpp"
+#endif
 #include "fuse/ui/doc/document.hpp"
 
 #include <cstdio>
@@ -14,8 +19,13 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "usage: fuse_app_host <project dir | project.json> [--headless] [--first-frame] [--screenshot=out.png]\n");
         return 2;
     }
+#if defined(FUSE_APP_HOST_HYBRID)
+    const fuse::app::GameSideBackend gameSide = fuse::app::hybridGameSide();
+#else
+    const fuse::app::GameSideBackend gameSide{};
+#endif
     auto host = fuse::app::ProjectHost::start({.projectPath = args.positional()[0], .argc = argc, .argv = argv,
-                                               .showWindows = !args.has("headless")});
+                                               .showWindows = !args.has("headless"), .gameSide = gameSide});
     if (!host) {
         std::fprintf(stderr, "fuse_app_host: %s\n", host.error().c_str());
         return 1;

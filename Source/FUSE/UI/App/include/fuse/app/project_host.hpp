@@ -1,7 +1,8 @@
 // fuse_app_project (plan UI5): the minimal init path for `project.json` schema 2 app projects. ProjectHost loads the
 // manifest, brings up only what InitPlan asks for (the fuse_app shell, AppPresent, optionally the job scheduler),
 // opens the declared windows with their .fuseui documents and style sheets, and runs the on-demand loop. Game worlds,
-// GpuScene, FrameComposer and physics are never created here; a hybrid project's viewport creates them on demand.
+// GpuScene, FrameComposer and physics are never created here; a hybrid project's viewport creates them on demand
+// through a GameSideBackend (fuse_app_project_hybrid: hybridGameSide()), so app-only executables do not link them.
 //
 //   auto host = fuse::app::ProjectHost::start({.projectPath = "MyTool"});
 //   if (!host) return std::fprintf(stderr, "%s\n", host.error().c_str()), 1;
@@ -23,11 +24,19 @@
 namespace fuse::ui::doc {
 class Model;
 }
-namespace fuse::hybrid {
-class HybridComposer;
-}
 
 namespace fuse::app {
+
+/// A hybrid project's deferred game side as a function table (fuse/app/project_host_hybrid.hpp has the engine one).
+struct GameSideBackend {
+    /// Brings the game side up for `m` (job scheduler already running). Null on failure (`error` says why).
+    void* (*create)(const project::ProjectManifest& m, std::string& error) = nullptr;
+    /// One game frame of `dt` seconds; returns its RGBA8 pixels (`width` x `height`), null when there is none.
+    const unsigned char* (*frame)(void* side, f32 dt, u32& width, u32& height) = nullptr;
+    void (*destroy)(void* side) = nullptr;
+    /// Engine object for the app (hybrid: fuse::hybrid::HybridComposer*).
+    void* (*handle)(void* side) = nullptr;
+};
 
 struct ProjectHostDesc {
     std::string projectPath;   ///< project directory or its project.json
@@ -35,6 +44,8 @@ struct ProjectHostDesc {
     const char* const* argv = nullptr;
     bool showWindows = true;   ///< false: headless presenters (tests, servers); true: OS windows when a display exists
     NativeOptions native{};
+    /// Required for hybrid projects (start() refuses them without one); unused by app projects.
+    GameSideBackend gameSide{};
 };
 
 /// Milliseconds from start() entry to each step (steady clock).
@@ -58,7 +69,7 @@ public:
     NativePlatform* native() { return m_native.get(); }
     const project::ProjectManifest& manifest() const { return m_manifest; }
     const project::InitPlan& plan() const { return m_plan; }
-    /// Features actually brought up (equals plan().startup on success).
+    /// Features actually brought up (plan().startup after start; plus the game side's once it is up).
     project::HostFeatureSet broughtUp() const { return m_up; }
     const StartupTimes& times() const { return m_times; }
     /// Window by manifest id (null when unknown or closed).
@@ -73,33 +84,33 @@ public:
     static project::HostFeatureSet supportedFeatures();
 
     // ---- hybrid projects: the deferred game side ----
-    /// Brings the game side up now (once): the job scheduler, a HybridComposer with the project's dimension flags, the
-    /// default 3D / 2D worlds when their .fuselevel exists, physics for 3D. ProjectHost calls it itself when a
-    /// `viewport` widget of a window becomes visible (checked 4x a second while the game side is down; 60 Hz frames
-    /// while a viewport shows). False for app projects or when bring-up failed.
+    /// Brings the game side up now (once): the job scheduler, then GameSideBackend::create. ProjectHost calls it
+    /// itself when a `viewport` widget of a window becomes visible (checked 4x a second while the game side is down;
+    /// 60 Hz frames while a viewport shows). False for app projects or when bring-up failed.
     bool ensureGameSide();
     bool gameSideUp() const { return m_game != nullptr; }
-    /// The game side's composer (null until it is up). Its software frame feeds every visible viewport widget.
-    hybrid::HybridComposer* composer();
+    /// GameSideBackend::handle of the running game side (hybridGameSide: the HybridComposer), null until it is up.
+    void* gameSideHandle() const;
     /// `viewport` widgets found in the windows' documents.
     u32 viewportCount() const { return u32(m_viewports.size()); }
     /// Game frames rendered into viewports so far.
     u64 viewportFrames() const { return m_viewportFrames; }
 
 private:
-    struct GameSide;
     struct Viewport {
         u32 windowId = 0;
         fuse::ui::NodeHandle node{};
         std::unique_ptr<fuse::ui::Image> image; ///< registered with the window's rasteriser
         u32 imageIndex = 0;
     };
-    ProjectHost();
+    ProjectHost() = default;
     void scanViewports(AppWindow& w);
     void armViewportTimer(AppWindow& w, bool fast);
     void viewportTick(u32 windowId);
     AppWindow* windowById(u32 id);
-    std::unique_ptr<GameSide> m_game;
+    GameSideBackend m_backend{};
+    void* m_game = nullptr;
+    double m_lastGameFrame = -1.0; ///< steady seconds of the last game frame
     std::vector<Viewport> m_viewports;
     std::vector<std::pair<u32, fuse::ui::TimerHandle>> m_viewportTimers; ///< window id -> poll / frame timer
     std::vector<std::pair<u32, bool>> m_viewportFast;                     ///< window id -> 60 Hz (true) or polling
