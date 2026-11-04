@@ -18,6 +18,7 @@
 #include <jni.h>
 #include <sys/stat.h>
 #include <sys/system_properties.h>
+#include <time.h>
 #include <unistd.h>
 
 #if defined(FUSE_APP_HAS_PLATFORM_LIFECYCLE)
@@ -26,12 +27,14 @@
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <thread>
 #include <vector>
 
 int fuse_app_main(int argc, char** argv); // the app's main(), renamed by fuse_app_add_android_app
@@ -49,6 +52,7 @@ VkCtx* vkCtxAdopt(SurfaceSource::Kind, const VulkanDeviceHandles&, std::string& 
 void vkCtxDestroy(VkCtx*) {}
 bool vkWinSetExternal(VkWin*, unsigned, const ExternalTexture&) { return false; }
 const char* vkCtxDeviceName(const VkCtx*) { return ""; }
+bool vkCtxCreateDevice(VkCtx*, std::string&) { return false; }
 VkWin* vkWinCreate(VkCtx*, const SurfaceSource&, const NativeOptions&, std::string&) { return nullptr; }
 bool vkWinPrepare(VkWin*, unsigned, unsigned, std::string&) { return false; }
 bool vkWinPresent(VkWin*, AppWindow&, Rect) { return false; }
@@ -197,8 +201,8 @@ bool imeShow(bool show) {
     return ok;
 }
 
-/// getIntent().getStringExtra("args"): extra command-line arguments (`am start ... --es args "--a=1 --b"`).
-std::string intentArgs() {
+/// getIntent().getStringExtra(name): `am start ... --es args "--a=1 --b"` (extra argv words), `--es env "A=1 B=2"`.
+std::string intentExtra(const char* name) {
     JNIEnv* env = jni();
     if (!env) return {};
     jobject activity = g_app->activity->clazz;
@@ -207,7 +211,7 @@ std::string intentArgs() {
     std::string out;
     if (!jniFailed(env) && intent) {
         jclass inCls = env->GetObjectClass(intent);
-        jstring key = env->NewStringUTF("args");
+        jstring key = env->NewStringUTF(name);
         auto s = static_cast<jstring>(env->CallObjectMethod(intent, env->GetMethodID(inCls, "getStringExtra",
                                                                                      "(Ljava/lang/String;)Ljava/lang/String;"), key));
         if (!jniFailed(env) && s) {
@@ -223,6 +227,28 @@ std::string intentArgs() {
     jniFailed(env);
     env->DeleteLocalRef(actCls);
     return out;
+}
+
+/// Milliseconds since the zygote forked this process (/proc/self/stat start time, CLOCK_BOOTTIME).
+double msSinceProcessStart() {
+    std::FILE* f = std::fopen("/proc/self/stat", "rb");
+    if (!f) return -1.0;
+    char buf[1024];
+    const std::size_t n = std::fread(buf, 1, sizeof buf - 1, f);
+    std::fclose(f);
+    buf[n] = 0;
+    const char* p = std::strrchr(buf, ')');
+    if (!p) return -1.0;
+    p += 2;
+    for (int field = 3; field < 22 && p; ++field) {
+        p = std::strchr(p, ' ');
+        if (p) ++p;
+    }
+    if (!p) return -1.0;
+    const double ticks = std::strtod(p, nullptr);
+    timespec ts{};
+    clock_gettime(CLOCK_BOOTTIME, &ts);
+    return (double(ts.tv_sec) + double(ts.tv_nsec) * 1e-9 - ticks / double(sysconf(_SC_CLK_TCK))) * 1000.0;
 }
 
 // ---- assets: copied to the files dir once per APK build (fuse_assets.txt lists them, its first line is a build id)
@@ -268,6 +294,36 @@ void extractAssets(android_app* a, const std::string& dir) {
     }
     writeFile(dir + "/fuse_assets.txt", manifest);
     __android_log_print(ANDROID_LOG_INFO, kTag, "extracted %zu assets to %s", files, dir.c_str());
+}
+
+/// Ends the CPU producer connection that ANativeWindow_lock made, so a Vulkan swapchain can connect to the same
+/// window. The NDK has no call for it: this is native_window_api_disconnect (NATIVE_WINDOW_API_DISCONNECT with
+/// NATIVE_WINDOW_API_CPU) through the window's `perform` hook, after checking the struct's magic.
+bool disconnectCpuProducer(ANativeWindow* w) {
+    struct Base { // android_native_base_t
+        int magic, version;
+        void* reserved[4];
+        void (*incRef)(void*);
+        void (*decRef)(void*);
+    };
+    struct Window { // the leading part of struct ANativeWindow (system/window.h)
+        Base common;
+        uint32_t flags;
+        int minSwapInterval, maxSwapInterval;
+        float xdpi, ydpi;
+        intptr_t oem[4];
+        int (*setSwapInterval)(void*, int);
+        void* dequeueBufferDeprecated;
+        void* lockBufferDeprecated;
+        void* queueBufferDeprecated;
+        int (*query)(const void*, int, int*);
+        int (*perform)(void*, int, ...);
+    };
+    constexpr int kMagic = ('_' << 24) | ('w' << 16) | ('n' << 8) | 'd';
+    constexpr int kApiDisconnect = 14, kApiCpu = 2;
+    auto* n = reinterpret_cast<Window*>(w);
+    if (!w || n->common.magic != kMagic || !n->perform) return false;
+    return n->perform(w, kApiDisconnect, kApiCpu) == 0;
 }
 
 // stdout / stderr -> logcat (no reader thread: funopen write callbacks)
@@ -350,6 +406,14 @@ struct NativePlatform::Impl {
     LifecycleStats stats;
     Insets insets;
     unsigned insetPolls = 0;           ///< presents left to re-read insets after a window / config change
+    bool cpuConnected = false;         ///< ANativeWindow_lock connected `window` as a CPU producer
+    // asyncVulkan: a worker creates instance, device and surface while the window shows software frames; the UI
+    // thread then disconnects the CPU producer and creates the swapchain
+    std::thread worker;
+    std::atomic<bool> vkDone{false};
+    bool vkPending = false;
+    detail::VkCtx* vkCtxNew = nullptr;
+    std::string vkErr;
 
     Impl(Application& a, const NativeOptions& o) : app(a), opts(o) {}
 
@@ -393,13 +457,71 @@ struct NativePlatform::Impl {
         const auto px = win->pixelSize();
         if (w > 0 && h > 0 && (u32(w) != u32(px.w) || u32(h) != u32(px.h))) win->resizePixels(u32(w), u32(h));
     }
+    void startVkAsync() {
+        vkPending = true;
+        vkDone.store(false, std::memory_order_relaxed);
+        // instance + device only: Android connects the window when its VkSurfaceKHR is created, which fails while
+        // ANativeWindow_lock holds it as a CPU producer
+        worker = std::thread([this] {
+            std::string err;
+            detail::VkCtx* c = detail::vkCtxCreate(SurfaceSource::Android, err);
+            if (c && !detail::vkCtxCreateDevice(c, err)) {
+                detail::vkCtxDestroy(c);
+                c = nullptr;
+            }
+            vkCtxNew = c;
+            vkErr = std::move(err);
+            vkDone.store(true, std::memory_order_release);
+        });
+    }
+    /// Takes over the worker's device. `use`: switch the current window to Vulkan (disconnect the CPU producer,
+    /// then surface + swapchain); otherwise (the window is going away) the next window gets it.
+    void finishVk(bool use) {
+        if (!worker.joinable()) return;
+        worker.join();
+        vkPending = false;
+        vkTried = true;
+        vk = vkCtxNew;
+        vkCtxNew = nullptr;
+        if (!vk) {
+            error = vkErr;
+            __android_log_print(ANDROID_LOG_WARN, kTag, "no Vulkan: %s", error.c_str());
+            return;
+        }
+        if (!use || !window || !win) return;
+        if (cpuConnected && !disconnectCpuProducer(window)) {
+            __android_log_print(ANDROID_LOG_WARN, kTag, "cannot disconnect the CPU producer: software until the next surface");
+            return;
+        }
+        cpuConnected = false;
+        SurfaceSource s;
+        s.kind = SurfaceSource::Android;
+        s.nativeWindow = window;
+        vkw = detail::vkWinCreate(vk, s, opts, error);
+        if (!vkw) {
+            __android_log_print(ANDROID_LOG_WARN, kTag, "Vulkan surface failed: %s", error.c_str());
+            ANativeWindow_setBuffersGeometry(window, 0, 0, WINDOW_FORMAT_RGBA_8888); // back to the CPU producer
+            return;
+        }
+        std::string e;
+        const auto px = win->pixelSize();
+        if (!detail::vkWinPrepare(vkw, std::max(1u, px.w), std::max(1u, px.h), e))
+            __android_log_print(ANDROID_LOG_WARN, kTag, "swapchain: %s", e.c_str()); // retried by the present
+        kind = PresenterKind::Vulkan;
+        win->requestRedraw();
+        __android_log_print(ANDROID_LOG_INFO, kTag, "switched to the Vulkan presenter");
+    }
     /// The activity's window appeared (start, back from background): surface + swapchain for it.
     void attach() {
         if (!win || !g_app->window || window == g_app->window) return;
         window = g_app->window;
+        cpuConnected = false;
         win->setScale(osScale());
         syncSize();
-        if (detail::VkCtx* c = vkContext()) {
+        const bool adopt = opts.adoptDevice.instance && opts.adoptDevice.device;
+        if (!vkTried && !vkPending && opts.vulkan && opts.asyncVulkan && !adopt) {
+            startVkAsync(); // software frames now, Vulkan when the worker is done
+        } else if (detail::VkCtx* c = vkPending ? nullptr : vkContext()) {
             SurfaceSource s;
             s.kind = SurfaceSource::Android;
             s.nativeWindow = window;
@@ -415,7 +537,7 @@ struct NativePlatform::Impl {
         win->requestRedraw();
         __android_log_print(ANDROID_LOG_INFO, kTag, "surface %u ready: %dx%d scale %.3f (%s)", stats.surfacesCreated,
                             ANativeWindow_getWidth(window), ANativeWindow_getHeight(window), double(win->scale()),
-                            vkw ? "vulkan" : "software");
+                            vkw ? "vulkan" : vkPending ? "software, Vulkan starting" : "software");
 #if defined(FUSE_APP_HAS_PLATFORM_LIFECYCLE)
         fuse::platform::notifySurfaceRestored();
 #endif
@@ -423,6 +545,7 @@ struct NativePlatform::Impl {
     /// The window is going away: release the swapchain and surface now (the UI state stays).
     void detach() {
         if (!window) return;
+        finishVk(false); // the next window gets the worker's device
         detail::vkWinDestroy(vkw);
         vkw = nullptr;
         window = nullptr;
@@ -601,7 +724,8 @@ struct NativePlatform::Impl {
         Impl& m = *static_cast<Impl*>(user);
         if (!g_app) return true;
         const int ms = std::isinf(wait) ? -1 : int(std::min(std::ceil(double(wait) * 1000.0), 2.0e9));
-        const bool alive = pollOnce(ms);
+        const bool alive = pollOnce(m.vkPending ? std::min(ms < 0 ? 4 : ms, 4) : ms); // look for the worker soon
+        if (m.vkPending && m.vkDone.load(std::memory_order_acquire)) m.finishVk(true);
         if (m.win && m.window) m.syncSize();
         return alive;
     }
@@ -613,14 +737,25 @@ struct NativePlatform::Impl {
         if (m.vkw) {
             ok = detail::vkWinPresent(m.vkw, w, damage);
         } else {
+            using Clock = std::chrono::steady_clock;
+            const Clock::time_point t0 = Clock::now();
             const Image& img = w.rasterize(damage);
+            const Clock::time_point t1 = Clock::now();
             ANativeWindow_Buffer buf{};
             if (ANativeWindow_lock(m.window, &buf, nullptr) == 0) {
+                const Clock::time_point t2 = Clock::now();
                 const int rows = std::min(buf.height, img.height), cols = std::min(buf.width, img.width);
                 for (int y = 0; y < rows; ++y)
                     std::memcpy(static_cast<u32*>(buf.bits) + std::size_t(y) * std::size_t(buf.stride),
                                 img.pixels.data() + std::size_t(y) * std::size_t(img.width), std::size_t(cols) * 4);
                 ANativeWindow_unlockAndPost(m.window);
+                static const bool trace = std::getenv("FUSE_APP_VK_TRACE") != nullptr;
+                if (trace && !m.cpuConnected) { // the first buffer of a surface: connect + allocation in the lock
+                    auto ms = [](Clock::time_point a, Clock::time_point b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
+                    std::fprintf(stderr, "fuse_app: software present: raster %.1f ms, lock %.1f ms, copy + post %.1f ms\n",
+                                 ms(t0, t1), ms(t1, t2), ms(t2, Clock::now()));
+                }
+                m.cpuConnected = true;
                 ok = true;
             }
         }
@@ -650,6 +785,7 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
 }
 NativePlatform::~NativePlatform() {
     if (m->win) m->win->setPresenter({}); // calls Impl::destroy: surface released
+    m->finishVk(false);
     detail::vkCtxDestroy(m->vk);
     if (Impl::current == m.get()) {
         Impl::current = nullptr;
@@ -715,10 +851,15 @@ Insets NativePlatform::safeAreaInsets(const AppWindow& w) const { return m->win 
 void NativePlatform::setSoftKeyboard(bool show) { m->softKeyboard(show); }
 void NativePlatform::setHooks(const NativeHooks& h) { m->hooks = h; }
 LifecycleStats NativePlatform::lifecycle() const { return m->stats; }
-// Vulkan starts synchronously: a window that ANativeWindow_lock connected as a CPU producer cannot be handed to the
-// Vulkan swapchain afterwards, so there is no software first frame to switch from (asyncVulkan is ignored)
-bool NativePlatform::presenterPending(const AppWindow&) const { return false; }
-PresenterKind NativePlatform::waitForPresenter(const AppWindow& w) { return kind(w); }
+// asyncVulkan: software frames (ANativeWindow_lock) until the worker has the device; the switch disconnects the CPU
+// producer and creates the swapchain on the same window
+bool NativePlatform::presenterPending(const AppWindow& w) const { return m->win == &w && m->vkPending; }
+PresenterKind NativePlatform::waitForPresenter(const AppWindow& w) {
+    if (m->win != &w) return PresenterKind::Headless;
+    while (m->vkPending && !m->vkDone.load(std::memory_order_acquire) && !g_app->destroyRequested) Impl::pollOnce(4);
+    if (m->vkPending) m->finishVk(true);
+    return m->kind;
+}
 bool NativePlatform::setMessageHook(const AppWindow&, const MessageHook&) { return false; }
 std::vector<DisplayInfo> NativePlatform::displays() const {
     DisplayInfo d;
@@ -759,6 +900,7 @@ extern "C" void android_main(android_app* app) {
     g_env = nullptr;
     g_savedState.clear();
     if (app->savedState) g_savedState.assign(static_cast<const char*>(app->savedState), app->savedStateSize);
+    const double tEntry = msSinceProcessStart();
     redirectStdio();
     const std::string files = app->activity->internalDataPath ? app->activity->internalDataPath : ".";
     extractAssets(app, files);
@@ -768,7 +910,15 @@ extern "C" void android_main(android_app* app) {
     ::setenv("XDG_RUNTIME_DIR", files.c_str(), 1);
     // argv: the library name, then the intent's "args" extra split at spaces
     std::vector<std::string> words{"fuse_app"};
-    const std::string extra = intentArgs();
+    const std::string extra = intentExtra("args");
+    const std::string envs = intentExtra("env");
+    for (std::size_t i = 0; i < envs.size();) { // NAME=value words
+        const std::size_t e = std::min(envs.find(' ', i), envs.size());
+        const std::string w = envs.substr(i, e - i);
+        if (const std::size_t eq = w.find('='); eq != std::string::npos && eq > 0)
+            ::setenv(w.substr(0, eq).c_str(), w.substr(eq + 1).c_str(), 1);
+        i = e + 1;
+    }
     for (std::size_t i = 0; i < extra.size();) {
         const std::size_t e = std::min(extra.find(' ', i), extra.size());
         if (e > i) words.push_back(extra.substr(i, e - i));
@@ -777,6 +927,8 @@ extern "C" void android_main(android_app* app) {
     std::vector<char*> argv;
     for (std::string& w : words) argv.push_back(w.data());
     argv.push_back(nullptr);
+    __android_log_print(ANDROID_LOG_INFO, kTag, "android_main at %.1f ms after process start, main at %.1f ms", tEntry,
+                        msSinceProcessStart());
     const int code = fuse_app_main(int(words.size()), argv.data());
     __android_log_print(ANDROID_LOG_INFO, kTag, "main returned %d", code);
     std::fflush(stdout);

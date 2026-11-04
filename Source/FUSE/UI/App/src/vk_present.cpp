@@ -300,8 +300,8 @@ bool pickDevice(VkCtx& c, VkSurfaceKHR surface, std::string& err) {
         std::vector<VkQueueFamilyProperties> qs(qn);
         vkGetPhysicalDeviceQueueFamilyProperties(d, &qn, qs.data());
         for (u32 q = 0; q < qn; ++q) {
-            VkBool32 present = VK_FALSE;
-            K.GetPhysicalDeviceSurfaceSupportKHR(d, q, surface, &present);
+            VkBool32 present = surface ? VK_FALSE : VK_TRUE; // no surface yet: checked when the window gets one
+            if (surface) K.GetPhysicalDeviceSurfaceSupportKHR(d, q, surface, &present);
             if (present && (qs[q].queueFlags & VK_QUEUE_COMPUTE_BIT)) {
                 c.phys = d;
                 c.family = q;
@@ -340,6 +340,12 @@ bool pickDevice(VkCtx& c, VkSurfaceKHR surface, std::string& err) {
     return ok(vkCreateCommandPool(c.device, &pci, nullptr, &c.pool), "vkCreateCommandPool", err);
 }
 } // namespace
+bool vkCtxCreateDevice(VkCtx* c, std::string& err) {
+    if (!c) return false;
+    if (c->device) return true;
+    PhaseTimer timer{"device"};
+    return pickDevice(*c, VK_NULL_HANDLE, err);
+}
 
 struct VkWin {
     VkCtx* ctx = nullptr;
