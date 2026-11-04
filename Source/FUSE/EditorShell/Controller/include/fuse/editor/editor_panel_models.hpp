@@ -162,6 +162,8 @@ public:
     bool hubNew(const std::string& directory, const std::string& name); ///< 3D + 2D + UI
     /// New Project wizard: dimension flags (kProjectEnable*) and module toggles.
     bool hubNew(const std::string& directory, const std::string& name, u32 dimensionFlags, const project::ModuleSettings& modules);
+    /// New Project wizard "Application (FUSE UI)" template (schema 2 app project).
+    bool hubNewApp(const std::string& directory, const std::string& name);
 
     // ---- Asset Browser ----
     [[nodiscard]] AssetBrowserView assets(); ///< roots at the open project (else the projects root) and rescans

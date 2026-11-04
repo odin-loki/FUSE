@@ -505,6 +505,29 @@ bool EditorController::newProject(const std::string& directory, const std::strin
     return ok;
 }
 
+bool EditorController::newAppProject(const std::string& directory, const std::string& name) {
+    if (!maybeSave_()) return false;
+    const project::SaveResult created = project::createAppProject(directory, name);
+    if (!created.ok) {
+        m_lastError = "new project: " + created.error;
+        refresh();
+        return false;
+    }
+    bool ok = false;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        ok = m_host.openProject(directory);
+        syncUndoJournal_();
+        m_lastError = ok ? std::string() : m_host.lastFileResult().error;
+    }
+    if (ok) {
+        m_viewport.setProjectLabel(name);
+        addRecentProject_(directory);
+    }
+    refresh();
+    return ok;
+}
+
 bool EditorController::openProject(const std::string& directory) {
     if (!maybeSave_()) return false;
     bool ok = false;
