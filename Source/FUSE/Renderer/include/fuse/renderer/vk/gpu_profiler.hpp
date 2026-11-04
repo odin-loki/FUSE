@@ -18,7 +18,8 @@
 // zone resetting its own query pair in the recording command buffer (no host query reset needed).
 // A frame slot is reused `framesInFlight` frames later; keep it above the executor's frames in
 // flight so its queries have retired (an unfinished frame is dropped, never waited on). Zones on a
-// queue family without timestamp support (timestampValidBits == 0) are skipped and counted.
+// queue family without timestamp support (timestampValidBits == 0), or on a transfer-only family
+// (vkCmdResetQueryPool needs graphics or compute), are skipped and counted.
 // TracyVk path (FUSE_TRACY builds): one TracyVkCtx per distinct queue, VkCtxScope per zone,
 // TracyVkCollect on the first zone of each queue per frame; with TRACY_ON_DEMAND it is inert until
 // a server connects.

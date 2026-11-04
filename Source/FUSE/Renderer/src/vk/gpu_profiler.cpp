@@ -209,7 +209,14 @@ bool GpuProfiler::initialize(VulkanDevice& device, const GpuProfilerDesc& desc) 
     for (u32 q = 0; q < rg::kQueueClassCount; ++q) {
         const u32 family = familyOf[q];
         const u32 bits = family < familyCount && queueOf[q] != VK_NULL_HANDLE ? families[family].timestampValidBits : 0u;
-        impl.supported[q] = bits > 0u;
+        // Zones (and Tracy's context setup / Collect) reset their queries in-band with
+        // vkCmdResetQueryPool, which needs a graphics or compute family
+        // (VUID-vkCmdResetQueryPool-commandBuffer-cmdpool). A dedicated transfer-only family
+        // (discrete GPUs; Lavapipe has none) is therefore treated as unsupported: its zones are
+        // skipped and counted.
+        const bool inBandReset =
+            family < familyCount && (families[family].queueFlags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT)) != 0;
+        impl.supported[q] = bits > 0u && inBandReset;
         impl.mask[q] = bits >= 64u ? ~u64{0} : ((u64{1} << bits) - 1u);
     }
     if (!impl.supported[0]) {
