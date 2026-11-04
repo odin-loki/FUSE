@@ -405,20 +405,19 @@ bool NativePlatform::Impl::present(void* user, AppWindow& w, Rect damage) {
     Rec& r = *static_cast<Rec*>(user);
     // a finished async Vulkan init switches presenters here, so this frame (the whole current UI) is the first on Vulkan
     if (r.vkPending && r.vkDone.load(std::memory_order_acquire)) r.impl->takeOverVk(r);
-    r.impl->syncTextInput(r);
+    bool ok = true;
     switch (r.kind) {
-    case PresenterKind::Vulkan: {
-        const bool ok = detail::vkWinPresent(r.vk, w, damage);
-        r.impl->syncPopups(r);
-        return ok;
-    }
+    case PresenterKind::Vulkan: ok = detail::vkWinPresent(r.vk, w, damage); break;
     case PresenterKind::Software:
         w.rasterize(damage);
         r.impl->blitSoftware(r);
-        r.impl->syncPopups(r);
-        return true;
-    default: w.rasterize(damage); r.impl->syncPopups(r); return true;
+        break;
+    default: w.rasterize(damage); break;
     }
+    r.impl->syncPopups(r);
+    // after the frame: the first IME (dis)association loads the input stack, which must not delay the first frame
+    r.impl->syncTextInput(r);
+    return ok;
 }
 
 void NativePlatform::Impl::destroy(void* user) {
