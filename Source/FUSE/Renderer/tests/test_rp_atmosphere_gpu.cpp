@@ -27,7 +27,9 @@
 // Tolerances: the kernels are the CPU reference's twins in f32, but the device's exp / acos / asin / atan / cos
 // differ from libm by a few ulp (Vulkan allows more), and the compilers may contract multiply-adds. Transmittance
 // exp(-tau) with tau up to ~40 near the horizon amplifies that, so the LUT gates are relative with an absolute
-// floor tied to the LUT's peak.
+// floor tied to the LUT's peak. The transmittance texel -> (r, mu) mapping is the exception: the horizon column
+// grazes the ground, where one ulp of r (0.5 m) is ~3e-3 of transmittance, so the kernels divide and take roots
+// correctly rounded there (at_div_rn / at_sqrt_rn) and match the CPU geometry exactly on any device.
 //
 // Exit 77 = skip (stub build, no ICD / validation layer, capability missing, no kernel built).
 #include <fuse/renderer/sky_view.hpp>

@@ -75,6 +75,7 @@ fuse_apply_cxx23(fuse_atmosphere_gpu)
 
 # Kernels, embedded into the library. Slang is the primary source (execution doc §8 decision 1a); the GLSL
 # twins keep the atmosphere available where slangc is not (FUSE_SLANG=AUTO), and the gates run both.
+# Slang: -fp-mode precise (no contraction: the exact residual of at_div_rn / at_sqrt_rn needs it); GLSL: `precise`.
 set(_fuse_wp82_gen "${CMAKE_CURRENT_BINARY_DIR}/atmosphere_gpu_gen")
 set(_fuse_wp82_spv "${CMAKE_CURRENT_BINARY_DIR}/shaders/atmosphere")
 file(MAKE_DIRECTORY "${_fuse_wp82_gen}" "${_fuse_wp82_spv}")
@@ -96,6 +97,7 @@ foreach(_row IN LISTS _fuse_wp82_kernels)
             STAGE compute
             SUFFIX ".at_${_suffix}"
             INCLUDE_DIRS "${_fuse_wp82_shd}"
+            FLAGS -fp-mode precise
             OUTPUT_DIR "${_fuse_wp82_spv}"
             OUTPUT_VAR _fuse_wp82_out)
         if(_fuse_wp82_out)
