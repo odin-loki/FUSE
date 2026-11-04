@@ -15,10 +15,14 @@
 //
 // Timestamp path (always, and the only path without Tracy): one TIMESTAMP query pool, a
 // `maxZonesPerFrame * 2` query range per frame slot, TOP_OF_PIPE / BOTTOM_OF_PIPE writes, each
-// zone resetting its own query pair in the recording command buffer (no host query reset needed).
+// zone resetting its own query pair in the recording command buffer. When the device enabled
+// hostQueryReset (VulkanDevice::create does), a reused slot is also reset from the host at
+// beginFrame, so a non-blocking resolve never mistakes the previous occupant's still-available
+// results for this frame's (zones whose in-band reset the GPU has not reached yet).
 // A frame slot is reused `framesInFlight` frames later; keep it above the executor's frames in
 // flight so its queries have retired (an unfinished frame is dropped, never waited on). Zones on a
-// queue family without timestamp support (timestampValidBits == 0) are skipped and counted.
+// queue family without timestamp support (timestampValidBits == 0), or on a transfer-only family
+// (vkCmdResetQueryPool needs graphics or compute), are skipped and counted.
 // TracyVk path (FUSE_TRACY builds): one TracyVkCtx per distinct queue, VkCtxScope per zone,
 // TracyVkCollect on the first zone of each queue per frame; with TRACY_ON_DEMAND it is inert until
 // a server connects.

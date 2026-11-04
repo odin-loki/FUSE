@@ -774,6 +774,14 @@ int runRefit(Context& ctx) {
     makeRays(ctx, 1234);
     FrameIo io;
     u32 tlasUpdates = 0, tlasBuilds = 0, blasUpdates = 0, refRefits = 0;
+    // Expected TLAS mode per frame, modelled from the policy: a BLAS compaction copy moves BLAS
+    // addresses (structural -> BUILD, update count restarts), else UPDATE until kMaxUpdates in a
+    // row, then a forced BUILD. Whether compaction copies at all is the driver's call: Lavapipe's
+    // compacted size equals the build size (no copy), NVIDIA's is smaller (frame 1 copies the
+    // static BLASes, so its TLAS is rebuilt there).
+    u32 updatesSinceBuild = 0;
+    u32 modeMismatches = 0;
+    u32 compactionFrames = 0;
     for (u32 frame = 0; frame < 8u; ++frame) {
         beginSceneFrame(ctx, s, rt.as);
         if (frame > 0u) {
@@ -792,18 +800,30 @@ int runRefit(Context& ctx) {
             tlasUpdates += io.stats.tlas == TlasBuildMode::Update ? 1u : 0u;
             tlasBuilds += io.stats.tlas == TlasBuildMode::Build ? 1u : 0u;
             blasUpdates += io.stats.blasUpdates;
+            TlasBuildMode expected = TlasBuildMode::Update;
+            if (io.stats.blasCompactions > 0u || updatesSinceBuild >= kMaxUpdates) {
+                expected = TlasBuildMode::Build;
+            }
+            compactionFrames += io.stats.blasCompactions > 0u ? 1u : 0u;
+            modeMismatches += io.stats.tlas != expected ? 1u : 0u;
+            updatesSinceBuild = io.stats.tlas == TlasBuildMode::Update ? updatesSinceBuild + 1u : 0u;
         }
-        char label[64];
-        std::snprintf(label, sizeof(label), "frame %u (TLAS %s, %u BLAS refit)", frame,
+        char label[96];
+        std::snprintf(label, sizeof(label), "frame %u (TLAS %s, %u BLAS refit, %u compaction copies)", frame,
                       io.stats.tlas == TlasBuildMode::Build ? "build" : io.stats.tlas == TlasBuildMode::Update ? "update" : "none",
-                      io.stats.blasUpdates);
+                      io.stats.blasUpdates, io.stats.blasCompactions);
         checkParity(ctx, s, label);
     }
     std::printf("refit: %u TLAS updates, %u forced TLAS rebuilds, %u BLAS refits (deformable mesh: %u refits recorded), "
                 "reference top-level refits %u\n",
                 tlasUpdates, tlasBuilds, blasUpdates, rt.as.blas(kDeformMesh).updates, refRefits);
-    // frames 1..7 move + deform: 3 updates, then a forced rebuild (maxTlasUpdates = 3), and so on.
-    expect(tlasUpdates == 6u && tlasBuilds == 1u, "TLAS refit 3x then rebuilt (maxTlasUpdates)");
+    // frames 1..7 move + deform: 3 updates, then a forced rebuild (maxTlasUpdates = 3), and so on;
+    // a compaction copy forces a rebuild and restarts the count.
+    expect(modeMismatches == 0u && tlasUpdates + tlasBuilds == 7u,
+           "TLAS refit 3x then rebuilt (maxTlasUpdates; a compaction copy rebuilds)");
+    if (compactionFrames == 0u) {
+        expect(tlasUpdates == 6u && tlasBuilds == 1u, "no compaction: 6 refits, 1 forced rebuild");
+    }
     expect(blasUpdates == 7u && rt.as.blas(kDeformMesh).updates == 7u, "deformable BLAS refit in place every frame");
     expect(rt.as.blas(kDeformMesh).deformable && rt.as.blas(kDeformMesh).state == BlasState::Built, "deformable BLAS never compacted");
     expect(refRefits == 7u, "reference refits (same slot set)");

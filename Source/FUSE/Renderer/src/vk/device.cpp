@@ -917,6 +917,7 @@ bool VulkanDevice::initializeAdopted(const VulkanDeviceAdoptDesc& desc) {
     m_info.timelineSemaphore = v12.timelineSemaphore == VK_TRUE;
     m_info.dynamicRendering = (enabledMask & renderFeatureBit(RenderFeature::DynamicRendering)) != 0;
     m_info.pipelineCreationCacheControl = present.v13 && f.v13.pipelineCreationCacheControl == VK_TRUE;
+    m_info.hostQueryReset = f.v12.hostQueryReset == VK_TRUE;
     m_info.samplerAnisotropy = f.core.features.samplerAnisotropy == VK_TRUE;
     m_info.geometryShader = f.core.features.geometryShader == VK_TRUE;
     m_info.fragmentStoresAndAtomics = f.core.features.fragmentStoresAndAtomics == VK_TRUE;
@@ -1174,6 +1175,9 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     enabled12.timelineSemaphore = supported12.timelineSemaphore;
     enabled12.drawIndirectCount = supported12.drawIndirectCount;
     enabled12.shaderBufferInt64Atomics = supported12.shaderBufferInt64Atomics;
+    // vkResetQueryPool from the host (GpuProfiler: a reused timestamp slot must read unavailable
+    // until this frame writes it).
+    enabled12.hostQueryReset = supported12.hostQueryReset;
     enabledSet.v11.shaderDrawParameters = supportedSet.v11.shaderDrawParameters;
 
     VkPhysicalDeviceFeatures& deviceFeatures = enabledSet.core.features;
@@ -1214,6 +1218,10 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
         // Optional (WP-0.5 pipeline cache: FAIL_ON_PIPELINE_COMPILE_REQUIRED probes); core 1.3 only.
         enabledSet.v13.pipelineCreationCacheControl =
             desc.enableOptionalFeatures ? supportedSet.v13.pipelineCreationCacheControl : VK_FALSE;
+        // Required by Vulkan 1.3 and needed by any shader that discards: Slang lowers `discard` to
+        // OpDemoteToHelperInvocation (SPIR-V capability DemoteToHelperInvocation), which a module
+        // may only declare with this feature enabled (VUID-VkShaderModuleCreateInfo-pCode-08740).
+        enabledSet.v13.shaderDemoteToHelperInvocation = supportedSet.v13.shaderDemoteToHelperInvocation;
     } else {
         // Legacy (FUSE_VK_ALLOW_1_2) path: the promoted extensions' own feature structs.
         if (wantSync2 && hasEnabledExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME)) {
@@ -1335,6 +1343,7 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     m_info.timelineSemaphore = enabled12.timelineSemaphore == VK_TRUE;
     m_info.dynamicRendering = enabledFeature(RenderFeature::DynamicRendering);
     m_info.pipelineCreationCacheControl = api13 && enabledSet.v13.pipelineCreationCacheControl == VK_TRUE;
+    m_info.hostQueryReset = enabledSet.v12.hostQueryReset == VK_TRUE;
     m_info.samplerAnisotropy = deviceFeatures.samplerAnisotropy == VK_TRUE;
     m_info.geometryShader = deviceFeatures.geometryShader == VK_TRUE;
     m_info.fragmentStoresAndAtomics = deviceFeatures.fragmentStoresAndAtomics == VK_TRUE;
