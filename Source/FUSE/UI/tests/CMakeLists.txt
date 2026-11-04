@@ -428,14 +428,28 @@ if(TARGET fuse_app)
         # Baseline per toolchain + text profile + build kind, +10 % (plan §6). MSVC 19.5x x64 Release, MINIMAL text,
         # measured 2026-11-05 (MSVC Build Tools 2026) after the colour / MSDF glyph modes and the pipeline cache:
         # standalone UI tree 870,912 bytes -> budget 958,000; in the engine tree hello_app also links fuse_rhi's
-        # volk loader: 904,192 bytes -> budget 994,600. Other toolchains: set FUSE_APP_BINARY_BUDGET after measuring
-        # (the gate then checks a stripped copy); until then it reports and skips.
+        # volk loader: 904,192 bytes -> budget 994,600.
+        # Linux x86-64 Release, MINIMAL text, stripped copy, measured 2026-11-05: GCC 13.3 standalone 1,530,488 ->
+        # 1,683,600, engine tree 1,591,928 -> 1,751,200; Clang 23.1 standalone 1,179,616 -> 1,297,600 (the engine tree
+        # does not build with Clang yet). Other toolchains: set FUSE_APP_BINARY_BUDGET after measuring; until then
+        # the gate reports and skips.
         set(_budget 0)
         if(MSVC AND FUSE_UI_TEXT STREQUAL "MINIMAL" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
             if(TARGET fuse_rhi)
                 set(_budget 994600)
             else()
                 set(_budget 958000)
+            endif()
+        elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64" AND
+               FUSE_UI_TEXT STREQUAL "MINIMAL" AND CMAKE_BUILD_TYPE STREQUAL "Release" AND CMAKE_STRIP)
+            if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+                if(TARGET fuse_rhi)
+                    set(_budget 1751200)
+                else()
+                    set(_budget 1683600)
+                endif()
+            elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT TARGET fuse_rhi)
+                set(_budget 1297600)
             endif()
         endif()
         if(FUSE_APP_BINARY_BUDGET) # -DFUSE_APP_BINARY_BUDGET=<bytes> overrides
