@@ -110,6 +110,9 @@ foreach(gate ${FUSE_EDITOR_UI_GATES})
     add_test(NAME fuse_editor_ui_${gate} COMMAND fuse_editor_ui_gates --gate=${gate} --out=${FUSE_EDITOR_UI_SHOTS}/${gate}.png)
     set_tests_properties(fuse_editor_ui_${gate} PROPERTIES LABELS "fuse_ui;fuse_editor_ui")
 endforeach()
+# plan §6 / UI9 name of the ui_frame gate: the full 9-dock repaint budget (2 ms) on its own, not beside other tests
+add_test(NAME fuse_editor_ui_frame COMMAND fuse_editor_ui_gates --gate=ui_frame --out=${FUSE_EDITOR_UI_SHOTS}/frame.png)
+set_tests_properties(fuse_editor_ui_frame PROPERTIES LABELS "fuse_ui;fuse_editor_ui;gate" RUN_SERIAL TRUE)
 # GPU gates: 77 = skipped (no Vulkan device / no display)
 set_tests_properties(fuse_editor_ui_scene_viewport fuse_editor_ui_gpu_viewport fuse_editor_ui_live_present fuse_editor_ui_present_adopt
     PROPERTIES SKIP_RETURN_CODE 77)

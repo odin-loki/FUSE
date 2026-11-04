@@ -6,6 +6,8 @@ the state file the demo keeps current (run-as <package> cat files/fuse_demo_stat
 
   android_gate.py --gate present|lifecycle|touch|ime --apk demo.apk --package org.fuse.uidemo --abi x86_64
                   [--adb adb] [--serial emulator-5580] [--shot out.png]
+  android_gate.py --gate hud_bench --apk hud_bench.apk --package org.fuse.hudbench ...   (fuse_ui_bench_hud_mobile)
+  android_gate.py --gate startup --apk hello_app.apk --package org.fuse.hello ...        (fuse_app_hello_startup_android)
 
 Exit 0 pass, 1 fail, 77 skip (no adb, no device with the APK's ABI, no Vulkan for the present gate).
 ANDROID_SERIAL picks the device when several are attached.
@@ -208,10 +210,67 @@ class Gate:
             self.screenshot(self.a.shot)
         return 0
 
+    def gate_hud_bench(self):
+        # hud_bench APK: the fuse_ui_bench_hud workload; §6 budget 2 ms UI CPU per frame on a mid Android device
+        self.start()
+        s = self.wait(lambda s: s.get("bench_done") == "1", "HUD bench finished", timeout=300)
+        med, p95 = self.num(s, "bench_median_ms"), self.num(s, "bench_p95_ms")
+        self.log(f"HUD: {s.get('bench_nodes')} nodes, {s.get('bench_draw_cmds')} draw commands; UI CPU per frame "
+                 f"median {med:.3f} ms, p95 {p95:.3f} ms; CPU raster 1080p {s.get('bench_raster_ms')} ms (not gated)")
+        self.check(self.num(s, "bench_nodes") >= 250, "typical HUD size (~300 nodes)")
+        self.check(med <= self.a.budget_ms, f"median {med:.3f} ms <= {self.a.budget_ms} ms")
+        if self.a.shot:
+            self.screenshot(self.a.shot)
+        return 0
+
+    def gate_startup(self):
+        # hello_app --startup-probe: process creation -> first presented frame (in-app, /proc/self/stat start time),
+        # cold process each run (force-stop); `am start -W` TotalTime reported beside it. First run (fresh install:
+        # asset extraction) is a warm-up; the gate takes the median of the others against the §6 400 ms budget.
+        runs = []
+        for i in range(self.a.runs + 1):
+            d = self.dev
+            d.sh(f"am force-stop {self.a.package}")
+            d.run("logcat", "-c")
+            out = d.sh(f"am start -W -n {self.activity} --es args --startup-probe")
+            total = next((int(l.split(":")[1]) for l in out.splitlines() if l.strip().startswith("TotalTime:")), -1)
+            line = ""
+            end = time.time() + 60
+            while time.time() < end and "first_frame_ms=" not in line:
+                log = d.run("logcat", "-d", "-v", "raw", "-s", "fuse_app")
+                line = next((l for l in log.splitlines() if "first_frame_ms=" in l), "")
+                if not line:
+                    time.sleep(0.3)
+            if not line:
+                self.check(False, f"run {i}: no first_frame_ms line in logcat")
+                continue
+            ms = float(line.split("first_frame_ms=")[1].split()[0])
+            presenter = line.split("presenter=")[1].split()[0] if "presenter=" in line else "?"
+            self.log(f"run {i}{' (warm-up)' if i == 0 else ''}: first frame {ms:.1f} ms ({presenter}), am TotalTime {total} ms")
+            if i:
+                runs.append((ms, total))
+            time.sleep(1.0)
+        if not runs:
+            return 0
+        first = sorted(r[0] for r in runs)[len(runs) // 2]
+        total = sorted(r[1] for r in runs)[len(runs) // 2]
+        self.log(f"median launch -> first presented frame {first:.1f} ms (am TotalTime median {total} ms), budget {self.a.budget_ms} ms")
+        # The budget is for a mid Android device. An emulator spends ~0.4-0.5 s in its own process / activity start
+        # before main() and creates Vulkan on SwiftShader (CPU): report there, gate only with --strict.
+        emulator = self.dev.sh("getprop ro.kernel.qemu").strip() == "1" or self.dev.sh("getprop ro.boot.qemu").strip() == "1"
+        if emulator and not self.a.strict:
+            self.log(f"emulator: not a mid Android device, budget not enforced (first frame {first:.1f} ms): skip")
+            return SKIP
+        self.check(first <= self.a.budget_ms, f"first frame {first:.1f} ms <= {self.a.budget_ms} ms")
+        return 0
+
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--gate", required=True, choices=["present", "lifecycle", "touch", "ime"])
+    ap.add_argument("--gate", required=True, choices=["present", "lifecycle", "touch", "ime", "hud_bench", "startup"])
+    ap.add_argument("--budget-ms", type=float, help="hud_bench: 2 ms per frame; startup: 400 ms (plan §6)")
+    ap.add_argument("--runs", type=int, default=5, help="startup: measured cold launches (after one warm-up)")
+    ap.add_argument("--strict", action="store_true", help="startup: enforce the budget on an emulator too")
     ap.add_argument("--apk", required=True)
     ap.add_argument("--package", required=True)
     ap.add_argument("--abi", required=True)
@@ -219,6 +278,8 @@ def main():
     ap.add_argument("--serial", default=os.environ.get("ANDROID_SERIAL"))
     ap.add_argument("--shot", help="also save adb screencap PNG(s) here")
     a = ap.parse_args()
+    if a.budget_ms is None:
+        a.budget_ms = 400.0 if a.gate == "startup" else 2.0
     if not os.path.exists(a.apk):
         print(f"no APK at {a.apk}: skip")
         return SKIP

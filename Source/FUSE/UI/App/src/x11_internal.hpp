@@ -30,8 +30,16 @@ struct ConfigureEv { int type; unsigned long serial; int send_event; Display* di
 struct ClientEv { int type; unsigned long serial; int send_event; Display* display; Window window; Atom message_type; int format; long l[5]; };
 struct PropertyEv { int type; unsigned long serial; int send_event; Display* display; Window window; Atom atom; Time time; int state; };
 struct DestroyEv { int type; unsigned long serial; int send_event; Display* display; Window event, window; };
+struct SelectionRequestEv {
+    int type; unsigned long serial; int send_event; Display* display; Window owner, requestor; Atom selection, target, property; Time time;
+};
+struct SelectionEv { int type; unsigned long serial; int send_event; Display* display; Window requestor; Atom selection, target, property; Time time; };
+struct SelectionClearEv { int type; unsigned long serial; int send_event; Display* display; Window window; Atom selection; Time time; };
 // XEvent is a union padded to 24 longs.
-union Event { int type; AnyEv any; InputEv input; ConfigureEv configure; ClientEv client; PropertyEv property; DestroyEv destroy; long pad[24]; };
+union Event {
+    int type; AnyEv any; InputEv input; ConfigureEv configure; ClientEv client; PropertyEv property; DestroyEv destroy;
+    SelectionRequestEv selectionRequest; SelectionEv selection; SelectionClearEv selectionClear; long pad[24];
+};
 struct Image;
 struct ImageFuncs { Image* (*create)(); int (*destroy)(Image*); };
 struct Image {
@@ -51,8 +59,9 @@ struct SetWindowAttributes {
 enum {
     KeyPress = 2, KeyRelease = 3, ButtonPress = 4, ButtonRelease = 5, MotionNotify = 6, FocusIn = 9, FocusOut = 10, Expose = 12,
     DestroyNotify = 17, UnmapNotify = 18, MapNotify = 19, ConfigureNotify = 22, PropertyNotify = 28, SelectionClear = 29,
-    ClientMessage = 33
+    SelectionRequest = 30, SelectionNotify = 31, ClientMessage = 33, MappingNotify = 34
 };
+constexpr int kPropertyNewValue = 0, kPropertyDelete = 1;
 // event masks
 constexpr long kKeyPressMask = 1, kKeyReleaseMask = 2, kButtonPressMask = 4, kButtonReleaseMask = 8, kPointerMotionMask = 1 << 6,
                kExposureMask = 1 << 15, kStructureNotifyMask = 1 << 17, kSubstructureNotifyMask = 1 << 19,
@@ -108,6 +117,25 @@ struct Lib {
     Window (*GetSelectionOwner)(Display*, Atom) = nullptr;
     int (*SetSelectionOwner)(Display*, Atom, Window, Time) = nullptr;
     int (*SetInputFocus)(Display*, Window, int, Time) = nullptr;
+    int (*ConvertSelection)(Display*, Atom, Atom, Atom, Window, Time) = nullptr;
+    long (*MaxRequestSize)(Display*) = nullptr;
+    int (*RefreshKeyboardMapping)(void* mappingEvent) = nullptr;
+    int (*LookupKeysym)(InputEv*, int) = nullptr;
+    // XIM (input methods): optional, see loadXim()
+    char* (*SetLocaleModifiers)(const char*) = nullptr;
+    int (*SupportsLocale)() = nullptr;
+    void* (*OpenIM)(Display*, void*, char*, char*) = nullptr;
+    int (*CloseIM)(void*) = nullptr;
+    char* (*GetIMValues)(void*, ...) = nullptr;
+    void* (*CreateIC)(void*, ...) = nullptr;
+    void (*DestroyIC)(void*) = nullptr;
+    char* (*SetICValues)(void*, ...) = nullptr;
+    char* (*GetICValues)(void*, ...) = nullptr;
+    void (*SetICFocus)(void*) = nullptr;
+    void (*UnsetICFocus)(void*) = nullptr;
+    void* (*VaCreateNestedList)(int, ...) = nullptr;
+    int (*FilterEvent)(Event*, Window) = nullptr;
+    int (*Utf8LookupString)(void*, InputEv*, char*, int, KeySym*, int*) = nullptr;
 
     bool load() {
         if (so) return true;
@@ -134,6 +162,23 @@ struct Lib {
         get(UngrabPointer, "XUngrabPointer"); get(CreateFontCursor, "XCreateFontCursor"); get(DefineCursor, "XDefineCursor");
         get(ResourceManagerString, "XResourceManagerString"); get(GetSelectionOwner, "XGetSelectionOwner");
         get(SetSelectionOwner, "XSetSelectionOwner"); get(SetInputFocus, "XSetInputFocus");
+        get(ConvertSelection, "XConvertSelection"); get(MaxRequestSize, "XMaxRequestSize");
+        get(RefreshKeyboardMapping, "XRefreshKeyboardMapping"); get(LookupKeysym, "XLookupKeysym");
+        return all;
+    }
+    /// The XIM entry points (input methods); false when libX11 lacks any of them.
+    bool loadXim() {
+        if (!so) return false;
+        bool all = true;
+        auto get = [&](auto& fn, const char* name) {
+            fn = reinterpret_cast<std::remove_reference_t<decltype(fn)>>(dlsym(so, name));
+            all = all && fn;
+        };
+        get(SetLocaleModifiers, "XSetLocaleModifiers"); get(SupportsLocale, "XSupportsLocale"); get(OpenIM, "XOpenIM");
+        get(CloseIM, "XCloseIM"); get(GetIMValues, "XGetIMValues"); get(CreateIC, "XCreateIC"); get(DestroyIC, "XDestroyIC");
+        get(SetICValues, "XSetICValues"); get(GetICValues, "XGetICValues"); get(SetICFocus, "XSetICFocus"); get(UnsetICFocus, "XUnsetICFocus");
+        get(VaCreateNestedList, "XVaCreateNestedList"); get(FilterEvent, "XFilterEvent");
+        get(Utf8LookupString, "Xutf8LookupString");
         return all;
     }
 

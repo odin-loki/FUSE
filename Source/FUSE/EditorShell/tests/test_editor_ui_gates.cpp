@@ -290,6 +290,9 @@ void gateUiFrame(Rig& r) {
                 "median %.2f ms; full 1600x900 CPU raster %.1f ms\n",
                 ms, n, r.ui().nodeCount(), r.ui().stats().drawCmds, rep[rep.size() / 2], full);
     CHECK(ms < 16.7);
+#if defined(NDEBUG) && !defined(__SANITIZE_ADDRESS__)
+    CHECK(rep[rep.size() / 2] <= 2.0); // plan §6: full 9-dock repaint <= 2 ms (optimised builds only)
+#endif
     // hover only damages the buttons it enters and leaves, never the window (shared :hover ancestors stay put)
     CHECK(maxDamage < 0.05f * r.ui().viewport().w * r.ui().viewport().h);
 }

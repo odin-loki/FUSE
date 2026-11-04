@@ -497,6 +497,11 @@ void UiContext::setState(NodeHandle h, u32 bits, bool on) {
     markStyle(h.index);
     markPaint(h.index);
     for (u32 k = n->first; k != kNone; k = m_nodes[k].next) markStyle(k);
+    if ((bits & kStateDisabled) && on && h == m_focus) { // a disabled widget takes no keys: its nearest enabled
+        NodeHandle p = parent(h);                         // ancestor does (shortcuts still bubble to the root)
+        while (node(p) && (node(p)->state & kStateDisabled)) p = parent(p);
+        setFocus(p);
+    }
 }
 u32 UiContext::states(NodeHandle h) const { return node(h) ? node(h)->state : 0u; }
 void UiContext::setFocusable(NodeHandle h, bool on) {
@@ -1906,6 +1911,7 @@ bool UiContext::navigate(NavDir d) {
 
 void UiContext::setFocus(NodeHandle h, FocusReason why) {
     if (h.valid() && !node(h)) h = {};
+    if (h.valid() && (node(h)->state & kStateDisabled)) return; // disabled widgets cannot take focus (Qt)
     if (h.valid() && node(m_modal) && !inScope(h.index, m_modal.index)) return;
     const bool vis = why == FocusReason::Keyboard;
     if (h == m_focus) {

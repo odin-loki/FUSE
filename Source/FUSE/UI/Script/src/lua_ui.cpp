@@ -122,7 +122,10 @@ int l_create(lua_State* L) {
 }
 int l_destroy(lua_State* L) {
     auto& s = self(L);
-    if (const NodeHandle h = nodeArg(L, s, 1)) s.context().destroy(h);
+    if (const NodeHandle h = nodeArg(L, s, 1)) {
+        s.context().destroy(h);
+        s.sweepHandlers(); // handlers of the node and its subtree
+    }
     return 0;
 }
 int l_on(lua_State* L) {
@@ -139,11 +142,13 @@ int l_on(lua_State* L) {
     else if (sig == "submitted") k = SignalKind::Submitted;
     else if (sig == "focusChanged") k = SignalKind::FocusChanged;
     else return luaL_error(L, "ui.on: unknown signal '%s'", sig.data());
+    s.sweepHandlers();
     lua_pushvalue(L, 3);
     const int ref = luaL_ref(L, LUA_REGISTRYINDEX);
-    s.m_refs.push_back(ref);
     LuaUi* p = &s;
-    s.context().connect(h, k, [p, ref](UiContext&, NodeHandle n, const SignalArgs& a) { p->dispatch(ref, n, a); });
+    const ConnectionHandle c =
+        s.context().connect(h, k, [p, ref](UiContext&, NodeHandle n, const SignalArgs& a) { p->dispatch(ref, n, a); });
+    s.m_handlers.push_back({ref, h, c});
     return 0;
 }
 int l_set(lua_State* L) {
@@ -217,11 +222,24 @@ LuaUi::LuaUi(lua_State* L, UiContext& ui, doc::Model& model) : m_L(L), m_ui(ui),
 
 LuaUi::~LuaUi() {
     m_docs.clear();
-    for (int r : m_refs) luaL_unref(m_L, LUA_REGISTRYINDEX, r);
+    for (const Handler& h : m_handlers) {
+        m_ui.disconnect(h.connection);
+        luaL_unref(m_L, LUA_REGISTRYINDEX, h.ref);
+    }
 }
 
 void LuaUi::update() {
+    sweepHandlers();
     for (auto& d : m_docs) d->refresh();
+}
+
+void LuaUi::sweepHandlers() {
+    std::erase_if(m_handlers, [this](const Handler& h) {
+        if (m_ui.alive(h.node)) return false;
+        m_ui.disconnect(h.connection); // frees the context's connection slot too
+        luaL_unref(m_L, LUA_REGISTRYINDEX, h.ref);
+        return true;
+    });
 }
 
 bool LuaUi::run(std::string_view chunk, std::string* err, const char* name) {

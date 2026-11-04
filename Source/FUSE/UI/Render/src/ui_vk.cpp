@@ -24,6 +24,14 @@ bool UiVkRenderer::kernelAvailable() {
 #endif
 }
 
+std::span<const u32> UiVkRenderer::kernelSpirv() {
+#if defined(FUSE_UI_VK_HAS_KERNEL)
+    return {kUiDrawListSpv, sizeof(kUiDrawListSpv) / sizeof(kUiDrawListSpv[0])};
+#else
+    return {};
+#endif
+}
+
 namespace {
 u64 alignUp(u64 v, u64 a) { return (v + a - 1) / a * a; }
 
