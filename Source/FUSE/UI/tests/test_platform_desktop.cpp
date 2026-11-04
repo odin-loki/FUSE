@@ -30,6 +30,7 @@
 #endif
 #include <windows.h>
 #endif
+#include "test_env.hpp"
 
 #ifndef FUSE_PLATFORM_GATE
 #define FUSE_PLATFORM_GATE "dpi_change"
@@ -411,6 +412,14 @@ HWND findFileNameEdit(HWND dlg) { // the "File name" box: an Edit under the cont
             if (GetDlgCtrlID(a) == 1148 || GetDlgCtrlID(a) == 1001) { s.edit = h; return FALSE; }
         return TRUE;
     }, reinterpret_cast<LPARAM>(&s));
+    if (!s.edit) // Wine's item dialog uses other ids: its file name box is the dialog's only visible Edit
+        EnumChildWindows(dlg, [](HWND h, LPARAM l) -> BOOL {
+            wchar_t cls[64]{};
+            GetClassNameW(h, cls, 63);
+            if (std::wcscmp(cls, L"Edit") != 0 || !IsWindowVisible(h)) return TRUE;
+            reinterpret_cast<S*>(l)->edit = h;
+            return FALSE;
+        }, reinterpret_cast<LPARAM>(&s));
     return s.edit;
 }
 /// Helper thread: waits for the dialog titled `title`, optionally types `text` into its file name box, then presses
@@ -587,6 +596,11 @@ static int gateTouch(int argc, char** argv) {
         }
     } else {
         std::printf("  InitializeTouchInjection unavailable (%lu)\n", GetLastError());
+    }
+    if (!injected && fuse::ui::test::runningUnderWine()) {
+        // Wine has no pointer stack: no touch injection, and GetPointerType reports every id as a mouse
+        std::printf("fuse_platform_touch_synthetic: skipped (Wine: no touch injection / pointer stack)\n");
+        return 77;
     }
     if (!injected) { // no injection here: WM_POINTER messages the decoder treats as touch (unknown pointer ids)
         const POINT p = screen(b1);
