@@ -71,6 +71,7 @@ constexpr PropInfo kProps[] = {
     {Prop::IconSize, "icon-size", T::Length, false, true, true},
     {Prop::Cursor, "cursor", T::Enum, false, false, false},
     {Prop::Effect, "effect", T::Effect, false, false, false},
+    {Prop::TextDirection, "direction", T::Enum, true, false, true},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -101,9 +102,10 @@ constexpr EnumWord kEnums[] = {
     {Prop::Overflow, "auto", u8(Overflow::Scroll)},
     {Prop::Gradient, "none", u8(GradientDir::None)},  {Prop::Gradient, "vertical", u8(GradientDir::Vertical)},
     {Prop::Gradient, "horizontal", u8(GradientDir::Horizontal)},
-    {Prop::TextAlign, "left", u8(TextAlignment::Start)}, {Prop::TextAlign, "start", u8(TextAlignment::Start)},
-    {Prop::TextAlign, "center", u8(TextAlignment::Center)}, {Prop::TextAlign, "right", u8(TextAlignment::End)},
+    {Prop::TextAlign, "left", u8(TextAlignment::Left)}, {Prop::TextAlign, "start", u8(TextAlignment::Start)},
+    {Prop::TextAlign, "center", u8(TextAlignment::Center)}, {Prop::TextAlign, "right", u8(TextAlignment::Right)},
     {Prop::TextAlign, "end", u8(TextAlignment::End)},
+    {Prop::TextDirection, "ltr", 0}, {Prop::TextDirection, "rtl", 1},
     {Prop::Cursor, "auto", u8(CursorShape::Auto)},          {Prop::Cursor, "default", u8(CursorShape::Arrow)},
     {Prop::Cursor, "arrow", u8(CursorShape::Arrow)},        {Prop::Cursor, "text", u8(CursorShape::Text)},
     {Prop::Cursor, "pointer", u8(CursorShape::Hand)},       {Prop::Cursor, "hand", u8(CursorShape::Hand)},
@@ -355,6 +357,7 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
         s.effectParams = {};
         for (u8 i = 0; i < s.effectParamCount; ++i) s.effectParams[i] = v.tracks[i].value;
         break;
+    case Prop::TextDirection: s.rtl = v.e != 0; break;
     case Prop::Count: break;
     }
 }
@@ -377,6 +380,7 @@ PropValue readProp(const ComputedStyle& s, Prop p) {
     case Prop::Icon: return PropValue::ofIdent(s.icon);
     case Prop::IconSize: return PropValue::ofLength(Length::px(s.iconSize));
     case Prop::Cursor: return PropValue::ofEnum(u8(s.cursor));
+    case Prop::TextDirection: return PropValue::ofEnum(s.rtl ? 1 : 0);
     case Prop::Effect: {
         PropValue v;
         v.type = PropType::Effect;
@@ -396,6 +400,7 @@ void inheritFrom(ComputedStyle& s, const ComputedStyle& parent) {
     s.color = parent.color;
     s.fontSize = parent.fontSize;
     s.textAlign = parent.textAlign;
+    s.rtl = parent.rtl;
 }
 
 // ---- Parser --------------------------------------------------------------------------------------------------------

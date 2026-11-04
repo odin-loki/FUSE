@@ -6,7 +6,7 @@
 //   values      px / % / fr / plain numbers, #rgb #rrggbb #rrggbbaa, rgb()/rgba(), keywords, var(--token[, fallback])
 //   tokens      custom properties (`--accent: #3af`) declared in `:root` (or any rule matching the node) — theme tokens
 //   cascade     specificity (ids, classes + pseudo, types), then source order; inline (node API) values win;
-//               inherited properties: color, font-size, text-align
+//               inherited properties: color, font-size, text-align, direction
 // Not yet: transitions (the animation core tweens node opacity / offsets), attribute selectors, :nth-child.
 #pragma once
 
@@ -46,7 +46,8 @@ enum class Align : u8 { Auto, Start, Center, End, Stretch };
 enum class Justify : u8 { Start, Center, End, SpaceBetween, SpaceAround };
 enum class Overflow : u8 { Visible, Clip, Scroll };
 enum class GradientDir : u8 { None, Vertical, Horizontal };
-enum class TextAlignment : u8 { Start, Center, End };
+/// Start / End follow the inline direction (`direction: rtl` puts Start on the right); Left / Right are physical.
+enum class TextAlignment : u8 { Start, Center, End, Left, Right };
 /// Pointer cursor shapes (CSS `cursor:`). Auto = inherit from the parent (the root falls back to Arrow).
 enum class CursorShape : u8 { Auto, Arrow, Text, Hand, ResizeNS, ResizeEW, ResizeNWSE, ResizeNESW, Move, Wait, NotAllowed, Crosshair, Count };
 const char* cursorShapeName(CursorShape c);
@@ -90,6 +91,7 @@ struct ComputedStyle {
     std::array<f32, 8> effectParams{};
     bool pointerEvents = true;
     CursorShape cursor = CursorShape::Auto; ///< cursor: auto | default | text | pointer | ns-resize | ew-resize | ...
+    bool rtl = false; ///< `direction: rtl` (inherited): rows, grid columns, flow lines, inline alignment and widgets mirror
     friend bool operator==(const ComputedStyle&, const ComputedStyle&) = default;
 };
 
@@ -100,7 +102,7 @@ enum class Prop : u8 {
     AlignItems, AlignSelf, Justify, Wrap, Overflow, GridColumns, GridColumn, GridColumnSpan, GridRow, GridRowSpan,
     Left, Top, Right, Bottom, CenterX, CenterY, Background, Background2, Gradient, BorderColor, BorderWidth,
     RadiusTL, RadiusTR, RadiusBR, RadiusBL, Color, FontSize, TextAlign, Opacity, ShadowColor, ShadowBlur, ShadowX,
-    ShadowY, PointerEvents, BackdropBlur, Icon, IconSize, Cursor, Effect, Count
+    ShadowY, PointerEvents, BackdropBlur, Icon, IconSize, Cursor, Effect, TextDirection, Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
 

@@ -104,6 +104,10 @@ struct A11ySnapshotNode {
 };
 
 // ---- Widget classes ------------------------------------------------------------------------------------------------
+/// Horizontal mirror of `r` / `x` inside `box` (right-to-left widgets compute left-to-right geometry, then mirror it).
+inline Rect mirrorX(const Rect& r, const Rect& box) { return {2.f * box.x + box.w - r.x - r.w, r.y, r.w, r.h}; }
+inline f32 mirrorX(f32 x, const Rect& box) { return 2.f * box.x + box.w - x; }
+
 struct PaintContext {
     UiContext& ui;
     NodeHandle node;
@@ -113,6 +117,9 @@ struct PaintContext {
     u32 states;
     f32 opacity;  ///< accumulated (multiply colours by it)
     Color tint(Color c) const { return c.withAlpha(c.a * opacity); }
+    /// `direction: rtl`: mirrored in the content box; unchanged left-to-right.
+    Rect flip(const Rect& r) const { return style.rtl ? mirrorX(r, content) : r; }
+    Vec2 flip(Vec2 p) const { return style.rtl ? Vec2{mirrorX(p.x, content), p.y} : p; }
 };
 
 struct EventContext {
