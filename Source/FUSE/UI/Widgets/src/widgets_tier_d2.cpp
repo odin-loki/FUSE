@@ -794,12 +794,13 @@ struct CodeEditW {
                 dl.rect({sx, y, std::max(0.f, ex - sx), lh}, pc.tint(Color::rgb(0x264F78)));
             }
             tokenize(s->lang, L, tok);
-            for (std::size_t i = 0; i < L.size();) {
+            f32 x = x0; // tokens are shaped on their own, so each starts where the previous one's advance ends
+            for (std::size_t i = 0; i < L.size() && x < c.right();) {
                 std::size_t j = i;
                 while (j < L.size() && tok[j] == tok[i]) ++j;
-                const f32 x = x0 + ui.measureString(std::string_view(L).substr(0, i), fs);
-                ui.paintString(dl, std::string_view(L).substr(i, j - i), {x, y, c.right() - x + 400.f, lh}, pc.tint(kTok[tok[i]]), fs,
-                               TextAlignment::Start, pc.node.index);
+                const std::string_view t = std::string_view(L).substr(i, j - i);
+                ui.paintString(dl, t, {x, y, c.right() - x + 400.f, lh}, pc.tint(kTok[tok[i]]), fs, TextAlignment::Start, pc.node.index);
+                x += ui.measureString(t, fs);
                 i = j;
             }
             if (focused && li == s->caret.line) {
