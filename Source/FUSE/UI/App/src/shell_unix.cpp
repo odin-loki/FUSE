@@ -224,6 +224,17 @@ struct TrayIcon::Impl {
         });
     }
 
+    /// A dbusmenu event: "clicked" on an enabled item queues the menu callback.
+    void menuEvent(int id, const std::string& ev, std::function<void()>& after) const {
+        if (ev != "clicked" || id <= 0 || id >= 1000 || !menuFn) return;
+        const std::string* it = itemOf(unsigned(id - 1));
+        if (!it || (*it)[0] == '!') return;
+        auto fn = menuFn;
+        const unsigned index = unsigned(id - 1);
+        const std::string text = *it;
+        after = [fn, index, text] { fn(index, text); };
+    }
+
     // ---- dispatch ----
     static void onPump(void* user) { static_cast<Impl*>(user)->dispatch(); }
     void dispatch() {
@@ -309,20 +320,23 @@ struct TrayIcon::Impl {
             dbus::Reader r(d, msg);
             const int id = int(r.integer());
             r.next();
-            const std::string ev = r.str();
-            if (ev == "clicked" && id > 0 && id < 1000)
-                if (const std::string* it = itemOf(unsigned(id - 1)); it && (*it)[0] != '!' && menuFn) {
-                    const std::string text = (*it)[0] == '!' ? it->substr(1) : *it;
-                    auto fn = menuFn;
-                    const unsigned index = unsigned(id - 1);
-                    after = [fn, index, text] { fn(index, text); };
-                }
+            menuEvent(id, r.str(), after);
         } else if (path == kMenuPath && member == "AboutToShow") {
             dbus::Writer(d, reply).boolean(false);
-        } else if (path == kMenuPath && (member == "EventGroup" || member == "AboutToShowGroup")) {
+        } else if (path == kMenuPath && member == "EventGroup") {
+            // a(isvu): libdbusmenu (GTK hosts such as xfce4-panel) sends clicks this way, not through Event
+            dbus::Reader r(d, msg);
+            for (dbus::Reader a = r.sub(); a.type() == dbus::TStruct; a.next()) {
+                dbus::Reader e = a.sub();
+                const int id = int(e.integer());
+                e.next();
+                menuEvent(id, e.str(), after);
+            }
+            dbus::Writer(d, reply).container(dbus::TArray, "i", [](dbus::Writer&) {}); // no id errors
+        } else if (path == kMenuPath && member == "AboutToShowGroup") {
             dbus::Writer w(d, reply);
             w.container(dbus::TArray, "i", [](dbus::Writer&) {});
-            if (member == "AboutToShowGroup") w.container(dbus::TArray, "i", [](dbus::Writer&) {});
+            w.container(dbus::TArray, "i", [](dbus::Writer&) {});
         } else if (member == "Introspect") {
             dbus::Writer(d, reply).str(path == kMenuPath ? "<node><interface name=\"com.canonical.dbusmenu\"/></node>"
                                                          : "<node><interface name=\"org.kde.StatusNotifierItem\"/></node>");

@@ -98,6 +98,9 @@ public:
     UnixAdapter& operator=(const UnixAdapter&) = delete;
     void update();                 ///< call once per frame after ui.update()
     void setWindowFocused(bool focused);
+    /// X11: the window's frame (outer) and client (inner) rects in screen px; AT-SPI screen coordinates (extents,
+    /// GetAccessibleAtPoint) are the node bounds offset by the inner origin.
+    void setRootWindowBounds(Rect outer, Rect inner);
     bool valid() const { return m_adapter != nullptr; }
 
 private:

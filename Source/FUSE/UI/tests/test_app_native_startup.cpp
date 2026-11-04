@@ -9,6 +9,8 @@
 //   * --sync-vulkan (show() blocks for instance / device / swapchain): reported, held to the Vulkan ceiling
 //   fuse_app_native_startup <path to hello_app> [--runs=5] [--budget-ms=150] [--vulkan-budget-ms=2000]
 // Exit 77 when hello_app gets no OS window at all (no display).
+#include "test_env.hpp"
+
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -105,15 +107,20 @@ int main(int argc, char** argv) {
     const Series sync = run(argv[1], "--sync-vulkan", runs);
     if (def.failed || sw.failed || sync.failed) return 1;
     int fail = 0;
+    const bool timed = fuse::ui::test::timingBudgetsEnforced();
     auto check = [&](bool ok, const char* what) {
         if (!ok) { std::fprintf(stderr, "  FAIL: %s\n", what); ++fail; }
+    };
+    auto checkTime = [&](bool ok, const char* what) { // wall-clock: reported only in emulated / instrumented runs
+        if (timed) check(ok, what);
+        else if (!ok) std::printf("  (FUSE_INSTRUMENTED_RUN=%s, not enforced) %s\n", fuse::ui::test::instrumentedRun(), what);
     };
 
     const bool vulkan = std::any_of(def.runs.begin(), def.runs.end(), [](const Run& r) { return r.final == "vulkan"; });
     const double first = def.median(&Run::first);
     std::printf("fuse_app_native_startup: default presenter: first frame (%s) median %.1f ms, budget %.0f ms\n",
                 def.runs[0].presenter.c_str(), first, budget);
-    check(first <= budget, "default configuration: first frame over budget");
+    checkTime(first <= budget, "default configuration: first frame over budget");
     if (vulkan) {
         const double sw2vk = def.median(&Run::switched);
         int worst = 0, switchedRuns = 0;
@@ -124,18 +131,18 @@ int main(int argc, char** argv) {
         std::printf("  switch to Vulkan in %d / %zu runs, median at %.1f ms (ceiling %.0f ms); switched frame vs CPU raster: "
                     "max channel error %d\n", switchedRuns, def.runs.size(), sw2vk, vkBudget, worst);
         check(switchedRuns == int(def.runs.size()), "a run did not switch to the Vulkan presenter");
-        check(sw2vk >= 0.0 && sw2vk <= vkBudget, "switch to Vulkan over its ceiling");
+        checkTime(sw2vk >= 0.0 && sw2vk <= vkBudget, "switch to Vulkan over its ceiling");
         check(worst == 0, "the first Vulkan frame differs from the CPU raster");
     } else {
         std::printf("  no Vulkan presenter here (stays %s)\n", def.runs[0].final.c_str());
     }
     const double swFirst = sw.median(&Run::first);
     std::printf("fuse_app_native_startup: software presenter only: median %.1f ms, budget %.0f ms\n", swFirst, budget);
-    check(swFirst <= budget, "software presenter: first frame over budget");
+    checkTime(swFirst <= budget, "software presenter: first frame over budget");
     if (sync.runs[0].presenter == "vulkan") {
         const double s = sync.median(&Run::first);
         std::printf("fuse_app_native_startup: synchronous Vulkan init (--sync-vulkan): median %.1f ms, ceiling %.0f ms\n", s, vkBudget);
-        check(s <= vkBudget, "synchronous Vulkan init over its ceiling");
+        checkTime(s <= vkBudget, "synchronous Vulkan init over its ceiling");
     }
     if (fail) return 1;
     std::printf("fuse_app_native_startup: OK\n");

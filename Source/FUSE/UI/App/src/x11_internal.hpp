@@ -136,6 +136,8 @@ struct Lib {
     void* (*VaCreateNestedList)(int, ...) = nullptr;
     int (*FilterEvent)(Event*, Window) = nullptr;
     int (*Utf8LookupString)(void*, InputEv*, char*, int, KeySym*, int*) = nullptr;
+    int (*FreeCursor)(Display*, XID) = nullptr;
+    int (*WarpPointer)(Display*, Window, Window, int, int, unsigned, unsigned, int, int) = nullptr;
 
     bool load() {
         if (so) return true;
@@ -164,6 +166,7 @@ struct Lib {
         get(SetSelectionOwner, "XSetSelectionOwner"); get(SetInputFocus, "XSetInputFocus");
         get(ConvertSelection, "XConvertSelection"); get(MaxRequestSize, "XMaxRequestSize");
         get(RefreshKeyboardMapping, "XRefreshKeyboardMapping"); get(LookupKeysym, "XLookupKeysym");
+        get(FreeCursor, "XFreeCursor"); get(WarpPointer, "XWarpPointer");
         return all;
     }
     /// The XIM entry points (input methods); false when libX11 lacks any of them.
@@ -267,6 +270,31 @@ struct Randr {
             so = nullptr;
         }
         return all;
+    }
+};
+
+// libXcursor: themed cursors at a chosen size (XSETTINGS Gtk/CursorThemeName / Gtk/CursorThemeSize)
+struct Xcursor {
+    void* so = nullptr;
+    XID (*LibraryLoadCursor)(Display*, const char*) = nullptr;
+    int (*SetDefaultSize)(Display*, int) = nullptr;
+    int (*GetDefaultSize)(Display*) = nullptr;
+    int (*SetTheme)(Display*, const char*) = nullptr;
+
+    bool load() {
+        if (so) return true;
+        so = dlopen("libXcursor.so.1", RTLD_NOW | RTLD_LOCAL);
+        if (!so) return false;
+        LibraryLoadCursor = reinterpret_cast<decltype(LibraryLoadCursor)>(dlsym(so, "XcursorLibraryLoadCursor"));
+        SetDefaultSize = reinterpret_cast<decltype(SetDefaultSize)>(dlsym(so, "XcursorSetDefaultSize"));
+        GetDefaultSize = reinterpret_cast<decltype(GetDefaultSize)>(dlsym(so, "XcursorGetDefaultSize"));
+        SetTheme = reinterpret_cast<decltype(SetTheme)>(dlsym(so, "XcursorSetTheme"));
+        if (!LibraryLoadCursor || !SetDefaultSize || !GetDefaultSize || !SetTheme) {
+            dlclose(so);
+            so = nullptr;
+            return false;
+        }
+        return true;
     }
 };
 
