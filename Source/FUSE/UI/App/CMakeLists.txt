@@ -13,6 +13,9 @@ if(ANDROID)
     set(_glue "${ANDROID_NDK}/sources/android/native_app_glue")
     add_library(fuse_app_native STATIC src/native_android.cpp src/platform_posix.cpp "${_glue}/android_native_app_glue.c")
     target_include_directories(fuse_app_native PRIVATE "${_glue}")
+    # native_android.cpp defines ANativeActivity_onCreate (hooks the main looper) and calls the glue's under this name
+    set_source_files_properties("${_glue}/android_native_app_glue.c" PROPERTIES
+                                COMPILE_DEFINITIONS "ANativeActivity_onCreate=fuse_glue_ANativeActivity_onCreate")
     target_link_libraries(fuse_app_native PUBLIC fuse_app android log)
     # the glue's ANativeActivity_onCreate lives in this static library: keep it in the app's shared library
     target_link_options(fuse_app_native INTERFACE "-u" "ANativeActivity_onCreate")

@@ -94,7 +94,7 @@ std::string stateText(fuse::app::NativePlatform& native, Demo& d) {
                   double(in.left), double(in.top), double(in.right), double(in.bottom), int(ui.value(d.page)),
                   processId(), g_runs, ls.statesSaved, ls.stateRestored ? 1 : 0, d.presentCheck.c_str(), d.maxErr,
                   d.badFraction, d.checkedSurface);
-    std::string out = std::string(buf) + "text=" + d.text + "\n";
+    std::string out = std::string(buf) + "text=" + d.text + "\ncomposition=" + std::string(ui.composition()) + "\n";
     for (const char* id : {"tap", "edit", "list", "title", "check"}) { // device pixels, for adb input
         const fuse::ui::Rect r = ui.rect(ui.find(id));
         const float s = d.win->scale();
@@ -197,8 +197,23 @@ int main(int argc, char** argv) {
     }
 
     const std::string statePath(app.args().get("state", "fuse_demo_state.txt"));
+    // --ime-test: the gate drives the IME bridge through files/fuse_demo_ime.txt ("compose <text>" / "commit <text>")
+    const bool imeTest = app.args().has("ime-test");
     std::string last;
-    while (app.step()) {
+    while (app.step(imeTest ? 0.1f : 1e30f)) {
+        if (imeTest) {
+            if (std::FILE* f = std::fopen("fuse_demo_ime.txt", "rb")) {
+                char line[256] = {};
+                const std::size_t n = std::fread(line, 1, sizeof line - 1, f);
+                std::fclose(f);
+                std::remove("fuse_demo_ime.txt");
+                std::string cmd(line, n);
+                while (!cmd.empty() && (cmd.back() == '\n' || cmd.back() == '\r')) cmd.pop_back();
+                const std::size_t sp = cmd.find(' ');
+                if (sp != std::string::npos)
+                    native.imeTestInput(cmd.substr(sp + 1), cmd.compare(0, sp, "commit") == 0);
+            }
+        }
         const auto ls = native.lifecycle();
         if (ls.surfacesCreated != d.seenSurface) { // a new surface: compare its next presented frame
             d.seenSurface = ls.surfacesCreated;

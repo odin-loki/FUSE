@@ -16,8 +16,10 @@
 #include <android/native_window.h>
 #include <android_native_app_glue.h>
 #include <jni.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/system_properties.h>
+#include <sys/timerfd.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -33,6 +35,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -198,6 +202,224 @@ bool imeShow(bool show) {
     if (imm) env->DeleteLocalRef(imm);
     env->DeleteLocalRef(svc);
     env->DeleteLocalRef(actCls);
+    return ok;
+}
+
+// ---- the UI (main) thread: views and the IME live there. Jobs reach it through a pipe on its looper, which
+// ANativeActivity_onCreate (wrapped below, it runs on the main thread) registers.
+ALooper* g_mainLooper = nullptr;
+ANativeActivity* g_mainActivity = nullptr;
+int g_mainPipe[2] = {-1, -1};
+std::mutex g_mainMutex;
+std::vector<std::function<void(JNIEnv*)>> g_mainJobs;
+
+int mainJobsCallback(int fd, int, void*) {
+    char buf[64];
+    while (::read(fd, buf, sizeof buf) > 0) {
+    }
+    std::vector<std::function<void(JNIEnv*)>> jobs;
+    {
+        std::lock_guard<std::mutex> lock(g_mainMutex);
+        jobs.swap(g_mainJobs);
+    }
+    JNIEnv* env = g_mainActivity ? g_mainActivity->env : nullptr;
+    for (auto& j : jobs)
+        if (env) j(env);
+    return 1;
+}
+bool runOnMain(std::function<void(JNIEnv*)> job) {
+    if (g_mainPipe[1] < 0) return false;
+    {
+        std::lock_guard<std::mutex> lock(g_mainMutex);
+        g_mainJobs.push_back(std::move(job));
+    }
+    const char c = 1;
+    return ::write(g_mainPipe[1], &c, 1) == 1;
+}
+
+void appendUtf16(std::string& out, const jchar* s, std::size_t n);
+
+// ---- IME composition without Java: an invisible EditText (a framework view, created through JNI) takes the IME's
+// InputConnection; the main thread polls its Editable (composing span = pre-edit) and hands committed text and the
+// pre-edit to the app thread. Keys still reach the native input queue first (NativeActivity takes the input queue).
+struct ImeShared {
+    std::mutex mutex;
+    std::string committed;   ///< text the IME committed since the app thread last took it
+    unsigned backspaces = 0; ///< committed characters the IME deleted again
+    std::string composing;
+    int caret = 0;           ///< byte offset into composing
+    bool composingChanged = false;
+} g_ime;
+struct ImeMain {          // main thread only
+    jobject edit = nullptr; ///< global ref
+    int timer = -1;
+    std::size_t consumed = 0; ///< UTF-16 units of the Editable already delivered as committed text
+    std::u16string lastComposing;
+    int lastCaret = -1;
+} g_imeMain;
+
+jmethodID method(JNIEnv* env, jobject o, const char* name, const char* sig) {
+    jclass c = env->GetObjectClass(o);
+    jmethodID m = env->GetMethodID(c, name, sig);
+    env->DeleteLocalRef(c);
+    return m;
+}
+
+void imePoll(JNIEnv* env) {
+    if (!g_imeMain.edit) return;
+    jobject editable = env->CallObjectMethod(g_imeMain.edit, method(env, g_imeMain.edit, "getText", "()Landroid/text/Editable;"));
+    if (jniFailed(env) || !editable) return;
+    jclass bic = env->FindClass("android/view/inputmethod/BaseInputConnection");
+    jclass sel = env->FindClass("android/text/Selection");
+    const jint cs = env->CallStaticIntMethod(bic, env->GetStaticMethodID(bic, "getComposingSpanStart", "(Landroid/text/Spannable;)I"), editable);
+    const jint ce = env->CallStaticIntMethod(bic, env->GetStaticMethodID(bic, "getComposingSpanEnd", "(Landroid/text/Spannable;)I"), editable);
+    const jint cursor = env->CallStaticIntMethod(sel, env->GetStaticMethodID(sel, "getSelectionEnd", "(Ljava/lang/CharSequence;)I"), editable);
+    auto str = static_cast<jstring>(env->CallObjectMethod(editable, method(env, editable, "toString", "()Ljava/lang/String;")));
+    if (jniFailed(env) || !str) {
+        env->DeleteLocalRef(bic);
+        env->DeleteLocalRef(sel);
+        env->DeleteLocalRef(editable);
+        return;
+    }
+    const jsize len = env->GetStringLength(str);
+    const jchar* chars = env->GetStringChars(str, nullptr);
+    std::u16string text(reinterpret_cast<const char16_t*>(chars), std::size_t(len));
+    env->ReleaseStringChars(str, chars);
+    env->DeleteLocalRef(str);
+    const bool composing = cs >= 0 && ce > cs && ce <= len;
+    const std::size_t commitEnd = composing ? std::size_t(cs) : text.size(); // committed text precedes the pre-edit
+    std::string committed;
+    unsigned deleted = 0;
+    if (commitEnd >= g_imeMain.consumed) {
+        appendUtf16(committed, reinterpret_cast<const jchar*>(text.data()) + g_imeMain.consumed, commitEnd - g_imeMain.consumed);
+    } else {
+        deleted = unsigned(g_imeMain.consumed - commitEnd); // the IME deleted delivered text
+    }
+    g_imeMain.consumed = commitEnd;
+    const std::u16string pre = composing ? text.substr(std::size_t(cs), std::size_t(ce - cs)) : std::u16string();
+    const int caret16 = composing ? std::clamp(int(cursor) - int(cs), 0, int(pre.size())) : 0;
+    std::string preUtf8, caretPrefix;
+    appendUtf16(preUtf8, reinterpret_cast<const jchar*>(pre.data()), pre.size());
+    appendUtf16(caretPrefix, reinterpret_cast<const jchar*>(pre.data()), std::size_t(caret16));
+    const bool preChanged = pre != g_imeMain.lastComposing || caret16 != g_imeMain.lastCaret;
+    g_imeMain.lastComposing = pre;
+    g_imeMain.lastCaret = caret16;
+    if (!composing && !text.empty()) { // nothing pending: empty the field so it never grows
+        env->CallVoidMethod(editable, method(env, editable, "clear", "()V"));
+        g_imeMain.consumed = 0;
+    }
+    jniFailed(env);
+    env->DeleteLocalRef(bic);
+    env->DeleteLocalRef(sel);
+    env->DeleteLocalRef(editable);
+    if (committed.empty() && !deleted && !preChanged) return;
+    {
+        std::lock_guard<std::mutex> lock(g_ime.mutex);
+        g_ime.committed += committed;
+        g_ime.backspaces += deleted;
+        if (preChanged) {
+            g_ime.composing = preUtf8;
+            g_ime.caret = int(caretPrefix.size());
+            g_ime.composingChanged = true;
+        }
+    }
+    if (g_mainActivity && g_mainActivity->instance) ALooper_wake(static_cast<android_app*>(g_mainActivity->instance)->looper);
+}
+int imeTimerCallback(int fd, int, void*) {
+    std::uint64_t n = 0;
+    while (::read(fd, &n, sizeof n) > 0) {
+    }
+    if (g_mainActivity) imePoll(g_mainActivity->env);
+    return 1;
+}
+
+/// Main thread: what an IME does through the EditText's InputConnection (imeTestInput).
+void imeInject(JNIEnv* env, const std::string& utf8, bool commit) {
+    if (!g_imeMain.edit) return;
+    jobject et = g_imeMain.edit;
+    jclass eiCls = env->FindClass("android/view/inputmethod/EditorInfo");
+    jobject ei = env->NewObject(eiCls, env->GetMethodID(eiCls, "<init>", "()V"));
+    jobject ic = env->CallObjectMethod(et, method(env, et, "onCreateInputConnection",
+                                                  "(Landroid/view/inputmethod/EditorInfo;)Landroid/view/inputmethod/InputConnection;"), ei);
+    if (!jniFailed(env) && ic) {
+        jstring s = env->NewStringUTF(utf8.c_str());
+        env->CallBooleanMethod(ic, method(env, ic, commit ? "commitText" : "setComposingText", "(Ljava/lang/CharSequence;I)Z"), s, jint(1));
+        jniFailed(env);
+        env->DeleteLocalRef(s);
+        env->DeleteLocalRef(ic);
+    }
+    jniFailed(env);
+    env->DeleteLocalRef(ei);
+    env->DeleteLocalRef(eiCls);
+    imePoll(env);
+}
+
+/// Main thread: shows (creating it on first use) or hides the IME on the invisible EditText.
+bool imeEditShow(JNIEnv* env, bool show) {
+    jobject activity = g_mainActivity->clazz;
+    if (!g_imeMain.edit && show) {
+        jclass etCls = env->FindClass("android/widget/EditText");
+        jobject et = env->NewObject(etCls, env->GetMethodID(etCls, "<init>", "(Landroid/content/Context;)V"), activity);
+        if (jniFailed(env) || !et) return false;
+        env->CallVoidMethod(et, method(env, et, "setInputType", "(I)V"), jint(0x8001)); // TYPE_CLASS_TEXT | TYPE_TEXT_FLAG_AUTO_CORRECT
+        // IME_ACTION_NONE | IME_FLAG_NO_FULLSCREEN | IME_FLAG_NO_EXTRACT_UI
+        env->CallVoidMethod(et, method(env, et, "setImeOptions", "(I)V"), jint(0x1 | 0x2000000 | 0x10000000));
+        env->CallVoidMethod(et, method(env, et, "setAlpha", "(F)V"), jfloat(0.f));
+        env->CallVoidMethod(et, method(env, et, "setFocusableInTouchMode", "(Z)V"), jboolean(true));
+        jclass lpCls = env->FindClass("android/view/ViewGroup$LayoutParams");
+        jobject lp = env->NewObject(lpCls, env->GetMethodID(lpCls, "<init>", "(II)V"), jint(1), jint(1));
+        env->CallVoidMethod(activity, method(env, activity, "addContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V"), et, lp);
+        if (jniFailed(env)) return false;
+        g_imeMain.edit = env->NewGlobalRef(et);
+        env->DeleteLocalRef(lp);
+        env->DeleteLocalRef(lpCls);
+        env->DeleteLocalRef(et);
+        env->DeleteLocalRef(etCls);
+    }
+    if (!g_imeMain.edit) return !show;
+    jobject et = g_imeMain.edit;
+    jstring svc = env->NewStringUTF("input_method");
+    jobject imm = env->CallObjectMethod(activity, method(env, activity, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;"), svc);
+    bool ok = false;
+    if (!jniFailed(env) && imm) {
+        if (show) {
+            env->CallBooleanMethod(et, method(env, et, "requestFocus", "()Z"));
+            ok = env->CallBooleanMethod(imm, method(env, imm, "showSoftInput", "(Landroid/view/View;I)Z"), et, 0);
+        } else {
+            jobject token = env->CallObjectMethod(et, method(env, et, "getWindowToken", "()Landroid/os/IBinder;"));
+            ok = env->CallBooleanMethod(imm, method(env, imm, "hideSoftInputFromWindow", "(Landroid/os/IBinder;I)Z"), token, 0);
+            if (token) env->DeleteLocalRef(token);
+            env->CallVoidMethod(et, method(env, et, "clearFocus", "()V"));
+        }
+        ok = !jniFailed(env) && ok;
+        env->DeleteLocalRef(imm);
+    }
+    jniFailed(env);
+    env->DeleteLocalRef(svc);
+    if (!show) { // drop what is left (an unfinished pre-edit ends with the session)
+        jobject editable = env->CallObjectMethod(et, method(env, et, "getText", "()Landroid/text/Editable;"));
+        if (!jniFailed(env) && editable) {
+            env->CallVoidMethod(editable, method(env, editable, "clear", "()V"));
+            env->DeleteLocalRef(editable);
+        }
+        jniFailed(env);
+        g_imeMain.consumed = 0;
+        g_imeMain.lastComposing.clear();
+    }
+    // poll the Editable at ~30 Hz while the IME is up
+    if (show && g_imeMain.timer < 0) {
+        g_imeMain.timer = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
+        if (g_imeMain.timer >= 0) {
+            itimerspec its{};
+            its.it_interval.tv_nsec = its.it_value.tv_nsec = 33 * 1000 * 1000;
+            timerfd_settime(g_imeMain.timer, 0, &its, nullptr);
+            ALooper_addFd(g_mainLooper, g_imeMain.timer, ALOOPER_POLL_CALLBACK, ALOOPER_EVENT_INPUT, &imeTimerCallback, nullptr);
+        }
+    } else if (!show && g_imeMain.timer >= 0) {
+        ALooper_removeFd(g_mainLooper, g_imeMain.timer);
+        ::close(g_imeMain.timer);
+        g_imeMain.timer = -1;
+    }
     return ok;
 }
 
@@ -388,6 +610,14 @@ void appendUtf8(std::string& s, u32 cp) {
     else if (cp < 0x800) { s += char(0xC0 | (cp >> 6)); s += char(0x80 | (cp & 0x3F)); }
     else if (cp < 0x10000) { s += char(0xE0 | (cp >> 12)); s += char(0x80 | ((cp >> 6) & 0x3F)); s += char(0x80 | (cp & 0x3F)); }
     else { s += char(0xF0 | (cp >> 18)); s += char(0x80 | ((cp >> 12) & 0x3F)); s += char(0x80 | ((cp >> 6) & 0x3F)); s += char(0x80 | (cp & 0x3F)); }
+}
+void appendUtf16(std::string& out, const jchar* s, std::size_t n) {
+    for (std::size_t i = 0; i < n; ++i) {
+        u32 c = s[i];
+        if (c >= 0xD800 && c < 0xDC00 && i + 1 < n && s[i + 1] >= 0xDC00 && s[i + 1] < 0xE000)
+            c = 0x10000 + ((c - 0xD800) << 10) + (u32(s[++i]) - 0xDC00);
+        appendUtf8(out, c);
+    }
 }
 } // namespace
 
@@ -591,9 +821,39 @@ struct NativePlatform::Impl {
     void softKeyboard(bool show) {
         if (!g_app || show == stats.softKeyboard) return;
         stats.softKeyboard = show;
+        if (opts.imeComposition && runOnMain([show](JNIEnv* env) { imeEditShow(env, show); })) return;
         if (imeShow(show)) return;
         if (show) ANativeActivity_showSoftInput(g_app->activity, ANATIVEACTIVITY_SHOW_SOFT_INPUT_FORCED);
         else ANativeActivity_hideSoftInput(g_app->activity, 0);
+    }
+
+    /// What the IME did since the last pump: backspaces, committed text, the pre-edit.
+    void takeIme() {
+        std::string text, pre;
+        unsigned back = 0;
+        int caret = 0;
+        bool preChanged = false;
+        {
+            std::lock_guard<std::mutex> lock(g_ime.mutex);
+            text.swap(g_ime.committed);
+            back = g_ime.backspaces;
+            g_ime.backspaces = 0;
+            preChanged = g_ime.composingChanged;
+            g_ime.composingChanged = false;
+            pre = g_ime.composing;
+            caret = g_ime.caret;
+        }
+        UiContext& ui = win->ui();
+        for (unsigned i = 0; i < back; ++i) {
+            ui.keyDown(Key::Backspace, 0);
+            ui.keyUp(Key::Backspace, 0);
+        }
+        if (!text.empty()) {
+            if (!ui.composition().empty()) ui.textComposition({}, 0); // the commit replaces the pre-edit
+            ui.textInput(text);
+        }
+        if (preChanged || (!text.empty() && !pre.empty())) ui.textComposition(pre, caret);
+        if (back || !text.empty() || preChanged) win->requestRedraw();
     }
 
     /// The OS may kill the process once the activity is stopped: hand it the app's state (the glue frees it).
@@ -736,6 +996,7 @@ struct NativePlatform::Impl {
         const int ms = std::isinf(wait) ? -1 : int(std::min(std::ceil(double(wait) * 1000.0), 2.0e9));
         const bool alive = pollOnce(m.vkPending && !m.vkDeferred ? std::min(ms < 0 ? 4 : ms, 4) : ms); // look for the worker soon
         if (m.vkPending && m.vkDone.load(std::memory_order_acquire)) m.finishVk(true);
+        if (m.win) m.takeIme();
         if (m.win && m.window) m.syncSize();
         return alive;
     }
@@ -860,6 +1121,10 @@ Vec2 NativePlatform::screenOrigin(const AppWindow&) const { return {}; }
 bool NativePlatform::postClick(unsigned long long, Vec2) { return false; }
 Insets NativePlatform::safeAreaInsets(const AppWindow& w) const { return m->win == &w ? m->insets : Insets{}; }
 void NativePlatform::setSoftKeyboard(bool show) { m->softKeyboard(show); }
+bool NativePlatform::imeTestInput(std::string_view utf8, bool commit) {
+    if (!m->opts.imeComposition || !m->stats.softKeyboard) return false;
+    return runOnMain([s = std::string(utf8), commit](JNIEnv* env) { imeInject(env, s, commit); });
+}
 void NativePlatform::setHooks(const NativeHooks& h) { m->hooks = h; }
 LifecycleStats NativePlatform::lifecycle() const { return m->stats; }
 // asyncVulkan: software frames (ANativeWindow_lock) until the worker has the device; the switch disconnects the CPU
@@ -906,6 +1171,24 @@ bool NativePlatform::postClose(unsigned long long nativeWin) {
 } // namespace fuse::app
 
 // ---- entry point -----------------------------------------------------------------------------------------------------
+// The glue's ANativeActivity_onCreate is compiled as fuse_glue_ANativeActivity_onCreate (CMake); this one runs first on
+// the main thread to hook the main looper for runOnMain.
+extern "C" void fuse_glue_ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t savedStateSize);
+extern "C" JNIEXPORT void ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t savedStateSize) {
+    using namespace fuse::app;
+    if (g_mainPipe[0] < 0 && ::pipe2(g_mainPipe, O_NONBLOCK | O_CLOEXEC) == 0) {
+        g_mainLooper = ALooper_forThread();
+        ALooper_acquire(g_mainLooper);
+        ALooper_addFd(g_mainLooper, g_mainPipe[0], ALOOPER_POLL_CALLBACK, ALOOPER_EVENT_INPUT, &mainJobsCallback, nullptr);
+    }
+    if (g_imeMain.edit) { // a new activity: the old one's EditText is gone with it
+        activity->env->DeleteGlobalRef(g_imeMain.edit);
+        g_imeMain.edit = nullptr;
+    }
+    g_mainActivity = activity;
+    fuse_glue_ANativeActivity_onCreate(activity, savedState, savedStateSize);
+}
+
 extern "C" void android_main(android_app* app) {
     using namespace fuse::app;
     g_app = app;

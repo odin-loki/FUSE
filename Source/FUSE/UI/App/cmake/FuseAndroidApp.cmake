@@ -69,7 +69,7 @@ endfunction()
 
 # the fuse_ui_android_demo gates
 function(fuse_app_add_android_gates target package)
-    foreach(g present lifecycle touch ime process_death)
+    foreach(g present lifecycle touch ime ime_composition process_death)
         if(g STREQUAL "present")
             set(_name fuse_platform_present_android)
         elseif(g STREQUAL "lifecycle" OR g STREQUAL "process_death")

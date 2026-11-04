@@ -376,9 +376,14 @@ Behaviour on Android:
   Mouse wheel and hover work too. Popups are in-window overlays.
 - Safe area: `NativePlatform::safeAreaInsets` (system bars + display cutout through `WindowInsets`, UI units) and
   `NativeHooks::insetsChanged`; pass them to `GameUi::setSafeArea` or pad the root (the demo does).
-- Text: the soft keyboard is shown / hidden as text fields gain / lose focus (`InputMethodManager` on the decor view;
-  `NativeOptions::autoSoftKeyboard`, `setSoftKeyboard`). Key events become `keyDown` / `keyUp` plus committed text
-  through `KeyCharacterMap`; there is no IME composition (pre-edit) with NativeActivity.
+- Text: the soft keyboard is shown / hidden as text fields gain / lose focus (`NativeOptions::autoSoftKeyboard`,
+  `setSoftKeyboard`). Key events become `keyDown` / `keyUp` plus committed text through `KeyCharacterMap`. With
+  `NativeOptions::imeComposition` (default) the IME edits an invisible framework `EditText` created through JNI (no
+  Java code): the main thread (its looper is hooked in a wrapped `ANativeActivity_onCreate`) polls the `Editable`
+  at 30 Hz while the keyboard is up; the composing span goes to `UiContext::textComposition` (pre-edit), committed
+  text to `textInput`, deletions of committed text become Backspace, and the field is emptied after each commit.
+  Keys still reach the native input queue first. `NativePlatform::imeTestInput` drives the same InputConnection
+  (tests). On the API 36 emulator Gboard commits every key (no pre-edit: no suggestions there).
 ### App projects (`project.json` schema 2)
 
 A project declares that it is an application with `"schemaVersion": 2` and `"kind": "app"` (or `"hybrid"`: an app
@@ -534,7 +539,9 @@ checks it against the overlay under one scripted event stream.
 | `fuse_platform_touch_android` | `input tap` clicks the button; `input swipe` over the list scrolls it both ways without clicking |
 | `fuse_platform_ime_android` | tapping the line edit focuses it and shows the soft keyboard; `input text` and backspace edit it |
 | `fuse_app_process_death_android` | Android build tree, adb: taps (app state), a tab page, list scroll and line-edit text + focus survive `am kill` of the background process and a SIGKILL; the relaunched process (new pid) restores them |
-| `fuse_app_hello_startup_android` | Android build tree, adb: hello_app `--startup-probe` cold starts (5 per mode, interleaved): async (software first frame, then Vulkan with the same pixels), `--sync-vulkan`, `--no-vulkan`; launch / main() -> first frame medians; on a device launch -> first frame <= 400 ms (plan §6), on an emulator main() -> first frame <= 900 ms (its first window buffer alone takes 200-800 ms) |
+| `fuse_app_hello_startup_android` | Android build tree, adb: hello_app `--startup-probe` cold starts (5 per mode, interleaved): async (software first frame, then Vulkan with the same pixels), `--sync-vulkan`, `--no-vulkan`; launch / main() -> first frame medians; on a device launch -> first frame <= 400 ms (plan §6); on an emulator (its first window buffer alone takes 200-800 ms, timings follow the host's load) async must be within 1.25x + 100 ms of software-only and faster than sync |
+| `fuse_platform_ime_composition_android` | Android build tree, adb: Gboard soft-key taps commit into the line edit and its delete key deletes; with the device IME disabled, `setComposingText` / `commitText` on the EditText's InputConnection give the pre-edit ('日本' -> '日本語') and its commit |
+| `fuse_runtime_present_android` | engine tree (`-DFUSE_BUILD_UI=ON`, Android toolchain), adb: `fuse_runtime_android` (fuse_rhi `RhiContext` + `VK_KHR_android_surface` swapchain) renders and presents 120 frames; the raster target reads back as the B2.11 triangle (coverage 0.125) |
 | `fuse_app_idle_native` | real idle window for 3 s: zero presents, ≤ 10 loop wakeups / s (OS messages only), CPU ≤ 2 % |
 | `fuse_project_schema2`, `fuse_project_schema2_native` | project.json schema 1 load / write / migrate, schema 2 round trip, 24 rejected files, the app template, `ProjectHost` brings up only `AppPresent` and presents the `.fuseui` (headless ≤ 150 ms; `_native` on a real window vs the CPU raster) |
 | `fuse_ui_game_hud_golden` | HUD demo scene against `tests/golden/hud.png` plus trail / marker / pool state |
