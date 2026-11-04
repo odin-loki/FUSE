@@ -17,6 +17,9 @@
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #else
 #include <fcntl.h>
@@ -216,6 +219,12 @@ AppWindow::AppWindow(Application& app, const WindowDesc& d, u32 id)
     : m_app(app), m_ui({.viewport = {f32(d.width), f32(d.height)}, .font = &defaultFont()}), m_title(d.title), m_id(id) {
     widgets::install(m_ui);
     m_presenter = {this, &AppWindow::presentHeadless, nullptr};
+    m_chrome.frame = d.frame;
+    m_chrome.resizeBorder = d.frame == WindowFrame::Custom ? d.resizeBorder : 0.f;
+}
+void AppWindow::command(WindowCommand c) {
+    if (m_chrome.command) m_chrome.command(m_chrome.user, *this, c);
+    else if (c == WindowCommand::Close) requestClose();
 }
 AppWindow::~AppWindow() {
     m_doc.reset();

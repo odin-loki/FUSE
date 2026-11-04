@@ -1,6 +1,7 @@
 // fuse_app native windows: X11 (libX11 loaded at runtime, so neither X11 headers nor libX11 are needed to build) and
 // Win32, plus the presenter selection (Vulkan swapchain -> GDI on Win32 -> headless). See native.hpp.
 #include "native_internal.hpp"
+#include "chrome_internal.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
 
 #include <algorithm>
@@ -506,6 +507,7 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (std::intptr_t res = 0; r->hook.fn && r->hook.fn(r->hook.user, msg, wp, lp, res)) return LRESULT(res);
     AppWindow& w = *r->win;
     UiContext& ui = w.ui();
+    if (std::intptr_t res = 0; detail::chromeWin32Message(hwnd, w, msg, wp, lp, res)) return res; // custom chrome
     switch (msg) {
     case WM_CLOSE: w.requestClose(); return 0;
     case WM_ACTIVATEAPP: // another application took the pointer / focus: popups close (Qt::Popup)
@@ -671,11 +673,12 @@ bool NativePlatform::Impl::postClickOs(unsigned long long h, Vec2 at) {
 bool NativePlatform::Impl::createOsWindow(Rec& r) {
     const Size sz = r.win->size();
     RECT rc{0, 0, LONG(sz.w), LONG(sz.h)};
-    AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
+    const DWORD style = detail::chromeWin32Style(r.win->chrome().frame); // custom chrome: client = whole window
+    if (r.win->chrome().frame == WindowFrame::System) AdjustWindowRect(&rc, style, FALSE);
     const std::string& t = r.win->title();
     std::wstring wt(std::size_t(MultiByteToWideChar(CP_UTF8, 0, t.data(), int(t.size()), nullptr, 0)), L'\0');
     if (!wt.empty()) MultiByteToWideChar(CP_UTF8, 0, t.data(), int(t.size()), wt.data(), int(wt.size()));
-    HWND hwnd = CreateWindowExW(0, kClass, wt.c_str(), WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
+    HWND hwnd = CreateWindowExW(0, kClass, wt.c_str(), style, CW_USEDEFAULT, CW_USEDEFAULT,
                                 rc.right - rc.left, rc.bottom - rc.top, nullptr, nullptr, hinst, nullptr);
     if (!hwnd) {
         error = "CreateWindowExW failed";
@@ -683,6 +686,7 @@ bool NativePlatform::Impl::createOsWindow(Rec& r) {
     }
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&r));
     r.handle = reinterpret_cast<unsigned long long>(hwnd);
+    detail::chromeWin32Attach(hwnd, *r.win);
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
     return true;
@@ -691,6 +695,7 @@ void NativePlatform::Impl::destroyOsWindow(Rec& r) {
     if (!r.handle) return;
     HWND hwnd = reinterpret_cast<HWND>(r.handle);
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+    if (r.win) detail::chromeWin32Detach(*r.win);
     DestroyWindow(hwnd);
     r.handle = 0;
 }
@@ -1177,7 +1182,7 @@ bool NativePlatform::resizeWindow(const AppWindow& w, unsigned width, unsigned h
     const Impl::Rec* r = m->find(w);
     if (!r || !r->handle) return false;
     RECT rc{0, 0, LONG(width), LONG(height)};
-    AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
+    if (w.chrome().frame == WindowFrame::System) AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
     return SetWindowPos(reinterpret_cast<HWND>(r->handle), nullptr, 0, 0, rc.right - rc.left, rc.bottom - rc.top,
                         SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE) != 0;
 }
