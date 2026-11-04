@@ -539,6 +539,14 @@ if(TARGET fuse_ui_game AND TARGET fuse_ui_vk)
     set_tests_properties(fuse_ui_baselines PROPERTIES ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;report")
 endif()
 
+# CPU rasteriser speed (1080p cards <= 20 ms, small incremental frame <= 2 ms) and bit-exactness against the frozen
+# reference copy; FUSE_UI_PERF_REPORT_ONLY=1 keeps the times report-only on slow / software CI
+if(TARGET fuse_ui_game)
+    fuse_ui_test(fuse_ui_cpu_raster_bench test_cpu_raster_bench.cpp)
+    target_link_libraries(fuse_ui_cpu_raster_bench PRIVATE fuse_ui_game)
+    set_tests_properties(fuse_ui_cpu_raster_bench PROPERTIES RUN_SERIAL TRUE LABELS "fuse_ui;gate")
+endif()
+
 # ---- UI7 game UI gates ----
 if(TARGET fuse_ui_game)
     foreach(pair "hud_golden=fuse_ui_game_hud_golden" "gamepad_nav=fuse_ui_gamepad_nav"

@@ -162,6 +162,26 @@ def main():
         r["startup"]["hello_app synchronous Vulkan start-up (GPU draw)"] = first_frame(hello, ["--sync-vulkan"], a.runs)
         r["startup"]["hello_app synchronous Vulkan, CPU upload"] = first_frame(hello, ["--sync-vulkan", "--cpu-upload"], a.runs)
         r["startup"]["hello_app software only (--no-vulkan)"] = first_frame(hello, ["--no-vulkan"], a.runs)
+        # Vulkan start-up phases (FUSE_APP_VK_TRACE=1 on stderr), median per phase over the runs
+        phases = {}
+        env = dict(os.environ, FUSE_APP_VK_TRACE="1")
+        for _ in range(a.runs):
+            p = subprocess.run([hello, "--startup-probe"], capture_output=True, text=True, timeout=120, env=env)
+            for name, ms in re.findall(r"fuse_app vk: ([\w. ]+?)\s+([\d.]+) ms$", p.stderr, re.M):
+                phases.setdefault(name.strip(), []).append(float(ms))
+        r["vk_phases"] = {k: (min(v), median_of(v)) for k, v in phases.items()}
+        # steady frames on the real window: small change (hover) and whole window, software and final presenter
+        for label, extra in (("software", ["--no-vulkan"]), ("final presenter", [])):
+            hover, full = [], []
+            for _ in range(3):
+                _, rc, out = run([hello, "--frame-probe", *extra])
+                h, f = parse(r"hover_frame_ms=([\d.]+)", out), parse(r"full_frame_ms=([\d.]+)", out)
+                if rc == 0 and h is not None:
+                    hover.append(h)
+                    full.append(f)
+            if hover:
+                r["frames"][f"hello_app frame probe, {label}: hover / whole-window frame median ms"] = (
+                    f"{median_of(hover):.3f} / {median_of(full):.3f}")
     host = find(a.tree, "fuse_app_host")
     template = REPO / "Templates" / "FuseUIApp"
     if host:
@@ -210,6 +230,17 @@ def main():
         bench = find(root, "fuse_ui_bench_10k")
         if bench:
             r["frames"][f"fuse_ui_bench_10k median ms ({profile})"] = best_of([bench], r"median ([\d.]+) ms")
+        raster = find(root, "fuse_ui_cpu_raster_bench")
+        if raster:
+            _, _, out = run([raster, "--report"], 600)
+            for case, ms, one, ref in re.findall(r"^\s+([\w-]+)\s+\d+x\d+\s+\d+ cmds\s+full\s+([\d.]+) ms.*?one thread\s+"
+                                                 r"([\d.]+) ms.*?reference\s+([\d.]+) ms", out, re.M):
+                r["frames"][f"CPU raster {case}: full / one thread / pre-change median ms ({profile})"] = (
+                    f"{float(ms):.2f} / {float(one):.2f} / {float(ref):.2f}")
+            inc = re.search(r"incremental .*?: ([\d.]+) ms .*?reference ([\d.]+) ms", out)
+            if inc:
+                r["frames"][f"CPU raster incremental (one button of cards-1080p) / pre-change median ms ({profile})"] = (
+                    f"{float(inc.group(1)):.3f} / {float(inc.group(2)):.3f}")
         budget = find(root, "fuse_ui_vk_budget")
         if budget:
             _, _, out = run([budget])
@@ -239,6 +270,10 @@ def main():
     for k, (first, second, note) in r["startup"].items():
         fmt = lambda x: "—" if x is None else f"{x:.0f} ms"
         print(f"| {k} | {fmt(first)} | {fmt(second)} | {note} |")
+    if r.get("vk_phases"):
+        print("\n| Vulkan start-up phase (FUSE_APP_VK_TRACE) | min | median |\n|---|---|---|")
+        for k, (lo, med) in r["vk_phases"].items():
+            print(f"| {k} | {lo:.1f} ms | {med:.1f} ms |")
     if r["idle"]:
         i = r["idle"]
         print(f"\nIdle real window: {i['seconds']:.1f} s, {i['frames']} frames, {i['wakeups']} loop wakeups, "

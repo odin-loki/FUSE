@@ -1608,39 +1608,46 @@ void NativePlatform::wake() {
 
 // ---- software presenter + Vulkan presenter creation (sync / async) -------------------------------------------------
 void NativePlatform::Impl::blitSoftware(Rec& r) {
+    // only the rect the last rasterize() redrew: the window keeps the rest of the previous frame
     const Image& img = r.win->image();
     if (!r.handle || img.pixels.empty()) return;
+    const Rect rr = r.win->rasterized().intersect({0.f, 0.f, f32(img.width), f32(img.height)});
+    if (rr.empty()) return;
+    const int x0 = int(rr.x), y0 = int(rr.y), w = int(rr.w), h = int(rr.h);
 #if defined(_WIN32)
-    r.staged.resize(img.pixels.size());
-    for (std::size_t i = 0; i < img.pixels.size(); ++i) { // 0xAABBGGRR -> BGRA
-        const u32 p = img.pixels[i];
-        r.staged[i] = (p & 0xFF00FF00u) | ((p & 0xFFu) << 16) | ((p >> 16) & 0xFFu);
+    r.staged.resize(std::max(r.staged.size(), std::size_t(w) * std::size_t(h)));
+    for (int y = 0; y < h; ++y) { // 0xAABBGGRR -> BGRA, packed to w x h
+        const u32* src = img.pixels.data() + std::size_t(y0 + y) * std::size_t(img.width) + std::size_t(x0);
+        u32* dst = r.staged.data() + std::size_t(y) * std::size_t(w);
+        for (int x = 0; x < w; ++x) dst[x] = (src[x] & 0xFF00FF00u) | ((src[x] & 0xFFu) << 16) | ((src[x] >> 16) & 0xFFu);
     }
     BITMAPINFO bi{};
     bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bi.bmiHeader.biWidth = img.width;
-    bi.bmiHeader.biHeight = -img.height;
+    bi.bmiHeader.biWidth = w;
+    bi.bmiHeader.biHeight = -h;
     bi.bmiHeader.biPlanes = 1;
     bi.bmiHeader.biBitCount = 32;
     bi.bmiHeader.biCompression = BI_RGB;
     HWND hwnd = reinterpret_cast<HWND>(r.handle);
     HDC dc = GetDC(hwnd);
-    SetDIBitsToDevice(dc, 0, 0, DWORD(img.width), DWORD(img.height), 0, 0, 0, UINT(img.height), r.staged.data(), &bi,
-                      DIB_RGB_COLORS);
+    SetDIBitsToDevice(dc, x0, y0, DWORD(w), DWORD(h), 0, 0, 0, UINT(h), r.staged.data(), &bi, DIB_RGB_COLORS);
     ReleaseDC(hwnd, dc);
 #else
     if (!dpy) return;
     const int scr = x.DefaultScreen(dpy);
     if (x.DefaultDepth(dpy, scr) < 24) return;
     r.staged.resize(img.pixels.size());
-    for (std::size_t i = 0; i < img.pixels.size(); ++i) { // 0xAABBGGRR -> TrueColor 0x00RRGGBB
-        const u32 q = img.pixels[i];
-        r.staged[i] = ((q & 0xFFu) << 16) | (q & 0xFF00u) | ((q >> 16) & 0xFFu);
+    for (int y = y0; y < y0 + h; ++y) { // 0xAABBGGRR -> TrueColor 0x00RRGGBB
+        const std::size_t row = std::size_t(y) * std::size_t(img.width);
+        for (int i = x0; i < x0 + w; ++i) {
+            const u32 q = img.pixels[row + std::size_t(i)];
+            r.staged[row + std::size_t(i)] = ((q & 0xFFu) << 16) | (q & 0xFF00u) | ((q >> 16) & 0xFFu);
+        }
     }
     x11::Image* xi = x.CreateImage(dpy, x.DefaultVisual(dpy, scr), unsigned(x.DefaultDepth(dpy, scr)), 2 /*ZPixmap*/, 0,
                                    reinterpret_cast<char*>(r.staged.data()), unsigned(img.width), unsigned(img.height), 32, 0);
     if (!xi) return;
-    x.PutImage(dpy, x11::Window(r.handle), x.DefaultGC(dpy, scr), xi, 0, 0, 0, 0, unsigned(img.width), unsigned(img.height));
+    x.PutImage(dpy, x11::Window(r.handle), x.DefaultGC(dpy, scr), xi, x0, y0, x0, y0, unsigned(w), unsigned(h));
     xi->data = nullptr; // ours (XDestroyImage would free it)
     xi->f.destroy(xi);
     x.Flush(dpy);
