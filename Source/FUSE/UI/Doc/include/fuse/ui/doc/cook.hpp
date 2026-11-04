@@ -19,11 +19,12 @@
 
 namespace fuse::ui::doc {
 
-inline constexpr u32 kCookedVersion = 1;
+inline constexpr u32 kCookedVersion = 2; ///< 2: PropValue::ident (icon property)
 
 struct CookInfo {
     u32 nodes = 0, bindings = 0, instructions = 0;
     std::vector<std::string> classes; ///< widget classes the document creates (sorted, unique)
+    std::vector<std::string> icons;   ///< icon names nodes set (`icon` key / style), sorted, unique
 };
 
 /// `.fuseui` text -> cooked document. Fails on JSON errors, bad bindings or a bad style sheet.

@@ -67,6 +67,8 @@ constexpr PropInfo kProps[] = {
     {Prop::ShadowY, "shadow-y", T::Length, false, true, false},
     {Prop::PointerEvents, "pointer-events", T::Bool, false, false, false},
     {Prop::BackdropBlur, "backdrop-blur", T::Length, false, true, false},
+    {Prop::Icon, "icon", T::Ident, false, false, true},
+    {Prop::IconSize, "icon-size", T::Length, false, true, true},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -222,6 +224,14 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
         return unit.empty() || unit == "%";
     }
     case T::Color: return parseColor(text, out.color);
+    case T::Ident: { // a name, optionally quoted; `none` clears
+        if (text.size() >= 2 && (text.front() == '"' || text.front() == '\'') && text.back() == text.front()) text = text.substr(1, text.size() - 2);
+        if (text.empty()) return false;
+        for (char c : text)
+            if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_' && c != '.' && c != '/') return false;
+        out.ident = text == "none" ? 0u : hashId(text);
+        return true;
+    }
     case T::Tracks: {
         out.trackCount = 0;
         while (!text.empty()) {
@@ -296,6 +306,8 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::ShadowColor: s.shadowColor = v.color; break;
     case Prop::ShadowBlur: s.shadowBlur = v.len.value; break;
     case Prop::BackdropBlur: s.backdropBlur = v.len.value; break;
+    case Prop::Icon: s.icon = v.ident; break;
+    case Prop::IconSize: s.iconSize = v.len.value; break;
     case Prop::ShadowX: s.shadowX = v.len.value; break;
     case Prop::ShadowY: s.shadowY = v.len.value; break;
     case Prop::PointerEvents: s.pointerEvents = v.b; break;
@@ -318,6 +330,8 @@ PropValue readProp(const ComputedStyle& s, Prop p) {
     case Prop::Layout: return PropValue::ofEnum(u8(s.layout));
     case Prop::Direction: return PropValue::ofEnum(u8(s.direction));
     case Prop::TextAlign: return PropValue::ofEnum(u8(s.textAlign));
+    case Prop::Icon: return PropValue::ofIdent(s.icon);
+    case Prop::IconSize: return PropValue::ofLength(Length::px(s.iconSize));
     default: break;
     }
     PropValue v;

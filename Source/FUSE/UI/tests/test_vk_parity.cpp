@@ -2,6 +2,7 @@
 // (the specification), on the Tier A sample, a primitives sheet (gradients, borders, shadows, lines, nested rounded
 // clips, images, glyphs), a scissored redraw, an external texture and backdrop blurs (full + scissored). Gate: max channel error <= 2/255 and < 0.5 % of pixels differing at
 // all. Also: packing + upload of an unchanged frame does not allocate. Skips (77) without a Vulkan device.
+#include "fuse/ui/icons.hpp"
 #include "fuse/ui/render/ui_vk.hpp"
 #include "test_util.hpp"
 #include "vk_headless.hpp"
@@ -129,6 +130,37 @@ int main() {
     UI_CHECK(gpu.upload(0, data));
     vk.run(cpu2, out, [&](VkCommandBuffer cmd) { gpu.record((void*)cmd, (void*)vk.view, 0); });
     check("scissor", compare(cpu3, out));
+
+#ifdef FUSE_UI_ICON_PACK
+    // 6. icons (cooked .fuseicons, plan UI4): Glyph commands over icon coverage in the context's glyph atlas, cooked
+    //    and resampled sizes, three tints; the kernel needs nothing new
+    if (auto set = IconSet::fromFile(FUSE_UI_ICON_PACK)) {
+        UiContext iu({.viewport = {f32(W), f32(H)}, .font = &font()});
+        widgets::install(iu);
+        iu.setIcons(&*set);
+        (void)iu.addStyleSheet(".row { flex-direction: row; gap: 4px; } .a { color: #3d8bfd; } .b { color: rgba(255, 204, 0, 0.6); }");
+        const char* tints[] = {"", "a", "b"};
+        for (int size : {16, 20, 24, 32, 40, 48}) {
+            const NodeHandle row = widgets::panel(iu, iu.root());
+            iu.addClass(row, "row");
+            for (u32 i = 0; i < 9; ++i) {
+                const NodeHandle n = widgets::icon(iu, row, set->name((u32(size) + i * 5) % set->count()), f32(size));
+                if (*tints[i % 3]) iu.addClass(n, tints[i % 3]);
+            }
+        }
+        iu.update();
+        Image cpu6;
+        fuse::ui::test::render(iu, cpu6);
+        init.resize(int(W), int(H), 0xFF000000u);
+        packDrawList(iu.drawList(), W, H, data, iu.atlas().pixels(), u32(iu.atlas().size()));
+        UI_CHECK(gpu.upload(0, data));
+        vk.run(init, out, [&](VkCommandBuffer cmd) { gpu.record((void*)cmd, (void*)vk.view, 0); });
+        check("icons", compare(cpu6, out));
+    } else {
+        std::fprintf(stderr, "icon pack: %s\n", set.error().c_str());
+        UI_CHECK(false);
+    }
+#endif
 
     // 5. external texture slot (zero-copy engine frames): an opaque checker as a sampled GPU image bound to slot 0;
     //    the Image carries externalSlot = 0 so packDrawList ships no pixels and the kernel samples the texture. The

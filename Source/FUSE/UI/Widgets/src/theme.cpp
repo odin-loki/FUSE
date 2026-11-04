@@ -22,6 +22,7 @@ button:hover, toolbutton:hover { background: #40414c; }
 button:pressed, toolbutton:pressed { background: #23242a; }
 button:focus-visible, toolbutton:focus-visible, lineedit:focus, spinbox:focus-visible, combobox:focus-visible { border-color: var(--accent); }
 button:disabled { color: var(--text-dim); background: var(--surface); }
+toolbutton:disabled, menuitem:disabled, icon:disabled { color: var(--text-dim); }
 button.primary { background: var(--accent); border-color: var(--accent); color: #ffffff; }
 button.primary:hover { background: var(--accent-hi); }
 checkbox, radio, switch, slider, dial, progressbar, scrollbar { background-end: var(--accent); }

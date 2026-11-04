@@ -436,6 +436,8 @@ std::expected<NodeHandle, DocError> Document::buildNode(const JsonValue& n, Node
             m_ui.setTabIndex(node, i32(v.number));
         } else if (key == "a11yName" && v.isString()) {
             m_ui.setA11y(node, m_ui.role(node), v.string);
+        } else if (key == "icon" && v.isString()) { // shorthand for style { "icon": name }
+            if (!m_ui.setCss(node, "icon", v.string)) return std::unexpected(DocError{path, "bad icon name: " + v.string});
         } else if (key == "image" && v.isNumber()) {
             m_ui.setUserData(node, u64(v.number));
         } else if (key == "step" && v.isNumber()) {
