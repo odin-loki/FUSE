@@ -345,9 +345,15 @@ Desktop platform services (UI1, `fuse/app/native.hpp`, `fuse/app/platform.hpp`):
   live on `WM_SETTINGCHANGE` (X11: XSETTINGS `Net/ThemeName`, dark when the name says so; `$FUSE_UI_THEME` /
   `$GTK_THEME` override); `setFollowSystemTheme(true)` switches the default theme dark / light
   (`widgets::themeCss(ThemeVariant)`, `UiContext::setThemeStyleSheet`) with the system accent. Reduced motion always
-  makes `animate()` jump; the title bar follows via `DWMWA_USE_IMMERSIVE_DARK_MODE`.
+  makes `animate()` jump; the title bar follows via `DWMWA_USE_IMMERSIVE_DARK_MODE`. While following, the OS text
+  scale multiplies every font size (`StyleEngine::setTextScale`, app sheets and explicit sizes included), and high
+  contrast switches to `widgets::highContrastThemeCss(palette)` in the scheme's colours (Win32 `GetSysColor`:
+  window, text, highlight, button face, gray text, hot light; `SystemTheme::contrast`) with forced colours
+  (`StyleEngine::setForcedColors`, like CSS `forced-colors`: no backdrop blur, shadows, gradients or effects even from
+  app sheets; every control outlined; keyboard focus gets a 2px border in the hot-light colour).
 - Touch and pen (Win32 `WM_POINTER` → events_v2 `Touch*` / `Pen*` → `UiContext::touchDown/Move/Up`): the first
-  finger is the pointer, every contact is in `touches()`, `pinchScale()` for two fingers, `pressure()` for the pen.
+  finger is the pointer, every contact is in `touches()`, `pinchScale()` for two fingers (and `EventType::Pinch` to
+  the node under their midpoint), `pressure()` for the pen. Ctrl+wheel carries the modifier (`Event::mods`).
 - `openFileDialog` / `saveFileDialog` / `pickFolderDialog` (IFileDialog; zenity on X11), `messageBox`, `openUrl`
   (http, https, mailto, file only), `revealInFileManager`.
 
@@ -547,7 +553,8 @@ an unreadable input or a broken document. The output is deterministic for the sa
 - `colorPicker`, `colorPickerColor`, `setColorPickerColor`; `calendar`, `calendarDate` (`daysFromCivil`/`civilFromDays` helpers); `chart(parent, ChartKind)` + `chartSetSeries`; `markdownView` + `setMarkdown` (headings, paragraphs, lists, code, quotes).
 - Tier D editor widgets: `fontPicker`, `fileDialog`, `nodeGraph`, `curveEditor`, `timeline`, `viewportWidget` (forwards input to your callback, paints your image), `codeEdit` (line numbers, highlighting), `dateTimeEdit` (`value()` = days since 1970, `dateTimeEditMinutes`), `videoWidget` (frame-source stub).
 - `fuse_ui_sql::SqliteModel`: `open`/`attach`, `setQuery`, `sortBy`, `refresh`; pass `model()` to `tableView`. Only the visible window of rows is fetched.
-- Platform feel (`platform_feel.hpp`): `setHapticsHandler`, `ScrollProfile::desktop()/ios()/android()`, `kineticScrollArea` (drag/fling with rubber band; a drag never clicks).
+- Platform feel (`platform_feel.hpp`): `setHapticsHandler`, `ScrollProfile::desktop()/ios()/android()`, `kineticScrollArea` (drag/fling with rubber band; a drag never clicks; with `ScrollProfile::minZoom < maxZoom` a
+  pinch or Ctrl+wheel zooms the content about the gesture point — `kineticZoom` / `setKineticZoom`).
 - Accessibility (`fuse/ui/a11y/a11y.hpp`): `Bridge::sync` diffs `UiContext::snapshotA11y` (plus `extras()`: menu / menu bar / tree kinds from the widget class, text-field value, expanded, selected), `perform`/`enqueue`/`drain` run assistive-tech actions on the UI thread (focus, click, increment / decrement, set value / text, expand / collapse, scroll into view). AccessKit needs a Rust toolchain: `FUSE_UI_ACCESSKIT_BUILD=ON` builds accesskit-c 0.22.3 with cargo, or point `FUSE_UI_ACCESSKIT_DIR` at a prebuilt one; without it the bridge still builds.
 - Screen readers on a native window (`fuse/app/accessibility.hpp`, `fuse_app_a11y`): after `native.show(win)`, keep a `fuse::app::WindowAccessibility a11y(native, win);` (declared after the `NativePlatform`). On Windows it answers `WM_GETOBJECT` through `NativePlatform::setMessageHook` with AccessKit's UI Automation provider (Narrator, NVDA, Inspect); UIA actions are queued and run on the UI thread from the event pump. Bounds are client px (logical px x client width / viewport). The Rust library links the release CRT (Debug MSVC builds may warn LNK4098).
 - Designer: `fuse_ui_designer [file.fuseui] [--icons=pack.fuseicons] [--save=out] [--screenshot=png]`. `DesignDocument` saves exactly what it loaded; keys starting with `x-` are kept for tools and stripped from the live preview. The property grid has curated rows, an `icon` picker (the context's `IconSet`; the app loads the starter pack) and an `effect` picker (the `EffectRegistry`, each effect with its parameter defaults, e.g. `ripple(4, 24, 40)`; `effect-params` edits the full text), then every other style property from `propInfo()` under "All style" (folded), so new style properties (variable-font axes, font features, ...) appear without designer changes. Under the grid an icon palette shows every pack icon rendered; clicking one sets the selection's `icon` (`Designer::iconNames`, `effectChoices`, `propertyNames`).
@@ -564,7 +571,8 @@ are deferred). Inline (`setCss`) beats everything; later sheets win ties. Layout
 (visible/clip/scroll), `display`, `pointer-events`, `cursor`. Paint: `background` (colour or `linear-gradient`),
 `background-end` (gradient end; widgets use it as the accent), `border`, `border-width/color`, `border-*-radius`,
 `box-shadow`, `shadow-x/y/blur/color`, `backdrop-blur`, `effect`, `opacity`, `color`, `font-size`, `text-align`, `icon`,
-`icon-size`. Selectors also accept
+`icon-size`, `zoom` (a number: scales every px length and the font size of the node and its subtree, multiplying down
+the tree; text is re-rasterised at the new size). Selectors also accept
 `:active`, `:selected`.
 
 Right-to-left: `direction: rtl` (inherited, `ltr` default; e.g. `:root { direction: rtl; }`) mirrors box rows and
@@ -629,7 +637,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_app_tray` | Win32: tray icon added and found (`Shell_NotifyIconGetRect` / `NIM_MODIFY`), simulated click / double-click callbacks, a real `TrackPopupMenu` context menu picked by posted keys, a notification, removal. Unix (under `dbus-run-session`, the gate plays watcher, notification daemon and tray host): registration, `IconPixmap` / `ToolTip` properties and change signals, `Activate`, dbusmenu layout + click, notification + `ActionInvoked`, name released on removal, `Unsupported` without a daemon (77 without a tray / private bus) |
 | `fuse_x11_randr`, `fuse_x11_xsettings`, `fuse_x11_wake` | X11 under Xvfb against the gate's own connection: two RandR monitors + `_NET_WORKAREA` in `displays()` and a monitor removed live; an XSETTINGS manager's `Xft/DPI` / `Net/ThemeName` at start and live (every window re-scales, `onDpiChanged`, `onThemeChanged`), manager exit → `RESOURCE_MANAGER`, a new manager; `wake()` from another thread ends a blocked pump and an accessibility action queued from an AT thread runs at once |
 | `fuse_ui_platform_services` | headless: DPI scale (layout fixed, device-pixel draw list, re-rasterised glyphs), `cursor:` style, reduced motion, touch / pinch / pen through `platform_bridge`, dark → light theme slot |
-| `fuse_platform_dpi_change`, `fuse_platform_displays`, `fuse_platform_cursors`, `fuse_platform_system_theme`, `fuse_platform_dialogs`, `fuse_platform_touch_synthetic`, `fuse_platform_multiwindow` | real windows: `WM_DPICHANGED` re-scale and back, monitors, OS cursor per hovered widget, theme change via `WM_SETTINGCHANGE` (faked query, user settings untouched), dialogs dismissed by a helper thread, injected touch tap + pinch, two swapchain windows with input routing / close / per-window DPI |
+| `fuse_platform_dpi_change`, `fuse_platform_displays`, `fuse_platform_cursors`, `fuse_platform_system_theme`, `fuse_platform_high_contrast`, `fuse_platform_dialogs`, `fuse_platform_touch_synthetic`, `fuse_platform_pen_synthetic`, `fuse_platform_multiwindow` | real windows: `WM_DPICHANGED` re-scale and back, monitors, OS cursor per hovered widget, theme change via `WM_SETTINGCHANGE` (faked query, user settings untouched), high contrast (faked query: scheme colours, forced colours over app sheets, 2px focus border, text scale on every font size, back to normal), dialogs dismissed by a helper thread, injected touch tap + pinch, synthetic pen (`InjectSyntheticPointerInput` PT_PEN: pressure, tap; 77 without synthetic pointers or when another window covers the test window), two swapchain windows with input routing / close / per-window DPI |
 | `fuse_platform_present_android` | Android build tree, adb: the demo presents on Vulkan (GPU draw and CPU upload) and in software; each surface's first frame read back in-process matches the CPU raster; density scale applied |
 | `fuse_app_lifecycle_android` | HOME releases the surface, `am start` rebuilds it with a correct first frame and the same UI state; rotation resizes to landscape and back |
 | `fuse_platform_touch_android` | `input tap` clicks the button; `input swipe` over the list scrolls it both ways without clicking |

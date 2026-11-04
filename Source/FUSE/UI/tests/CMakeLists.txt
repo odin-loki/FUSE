@@ -438,7 +438,7 @@ if(TARGET fuse_app)
     if(TARGET fuse_app_native)
         # UI1 desktop platform services on real windows: DPI change, displays, cursors, system theme, native dialogs,
         # touch injection, multiple windows (one executable per gate; see test_platform_desktop.cpp).
-        foreach(g dpi_change displays cursors system_theme dialogs touch_synthetic multiwindow)
+        foreach(g dpi_change displays cursors system_theme high_contrast dialogs touch_synthetic pen_synthetic multiwindow)
             add_executable(fuse_platform_${g} test_platform_desktop.cpp)
             target_link_libraries(fuse_platform_${g} PRIVATE fuse_app_native)
             target_compile_definitions(fuse_platform_${g} PRIVATE FUSE_PLATFORM_GATE="${g}")
