@@ -16,7 +16,7 @@ immediate-mode front-end. See the plan's status table for what is still open.
 
 | Path | Target | What |
 |---|---|---|
-| `Source/FUSE/UI/Text` | `fuse_text` | Fonts (stb_truetype; FreeType in FULL), bundled Open Sans, UTF-8, `ITextShaper` (`MinimalShaper`, `HarfBuzzShaper` in FULL), wrap/ellipsis layout, glyph atlas, `TextEditBuffer` |
+| `Source/FUSE/UI/Text` | `fuse_text` | Fonts (stb_truetype; FreeType in FULL), bundled Open Sans, UTF-8, `ITextShaper` (`MinimalShaper`, `HarfBuzzShaper` in FULL), wrap/ellipsis layout, glyph atlas, `TextEditBuffer`, UAX #29 / #14 / #9 segmentation, fallback chains, `FontCatalog` (system fonts) |
 | `Source/FUSE/UI/Core` | `fuse_ui_core` | `UiContext` (tree, style, layout, paint, input, focus, signals, timers, animation, a11y), `DrawList` + `CpuRasterizer`, `StyleEngine`, `immediate::ImmediateUi`, `platform_bridge.hpp` |
 | `Source/FUSE/UI/Widgets` | `fuse_ui_widgets` | Tier A + Tier B widgets + default dark theme (`widgets::install`) |
 | `Source/FUSE/UI/Doc` | `fuse_ui_doc` | `.fuseui` JSON documents, binding model, expression bytecode |
@@ -55,7 +55,31 @@ network or a populated `FETCHCONTENT_BASE_DIR`; `COOKED` falls back to MINIMAL),
 
 FULL text: `cmake -S Source/FUSE/UI -B build-ui-full -G Ninja -DFUSE_UI_TEXT=FULL -DCMAKE_BUILD_TYPE=Release`. It has
 its own raster golden (`tests/golden/sample_full.png`). GPU parity runs on any Vulkan 1.2 device; for software use
-`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json` (lavapipe).
+`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json` (lavapipe). FULL builds natively with MSVC as well.
+
+Text (`fuse/text/text.hpp`):
+
+```cpp
+using namespace fuse::text;
+auto font = Font::bundled().value();
+auto chain = Font::bundledFallbacks();              // Hebrew, Arabic, Devanagari, Twemoji, Symbols 2, Thai, CJK subset
+std::vector<const Font*> ptrs;
+for (const Font& f : chain) ptrs.push_back(&f);
+font.setFallbacks(ptrs);
+
+const FontCatalog& fonts = FontCatalog::system();  // installed fonts, scanned once (no fontconfig)
+if (const FontFaceInfo* f = fonts.match("Segoe UI", 600)) auto semibold = FontCatalog::load(*f);
+auto han = fonts.systemFallbackChain(Script::Han); // e.g. Microsoft YaHei UI, Yu Gothic UI, ...
+
+std::vector<LineBreak> breaks;
+lineBreaks(utf8, breaks);                           // UAX #14 (FULL), spaces / newlines (MINIMAL)
+std::vector<std::uint8_t> levels; std::uint8_t para;
+bidiLevels(utf8, BaseDirection::Auto, levels, para); // UAX #9 levels after L1 (FULL)
+```
+
+Grapheme tables come from the UCD: `python Source/FUSE/UI/Text/tools/gen_unicode_tables.py <ucd dir>` rewrites
+`Text/src/unicode_tables.inc`. Colour glyphs: COLRv0 exactly, COLRv1 flattened to solid layers (gradients as the mean
+stop colour, transforms ignored); CBDT / sbix bitmaps and MSDF are not supported.
 
 ## Retained use
 
@@ -210,6 +234,14 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_bench_10k` | 10k nodes, one dirty label: ≤ 0.5 ms median (Release; 1.0 ms in FULL) |
 | `fuse_ui_single_thread_parity` | direct vs posted-from-threads mutations give identical layout, draw list and pixels |
 | `fuse_ui_a11y_tree_dump` | roles, names, states, values |
+| `fuse_text_grapheme_conformance` | `GraphemeBreakTest.txt` 15.1 against fuse_text's UAX #29: 1187/1187 (both profiles) |
+| `fuse_text_linebreak_conformance` | `LineBreakTest.txt` 15.0 (trimmed) against `lineBreaks(Strict)`: 2389/2406 + 17 listed libunibreak exceptions (FULL); MINIMAL runs its letters / space / newline subset |
+| `fuse_text_bidi_conformance` | `BidiCharacterTest.txt` 15.1 (trimmed): paragraph level, levels after L1, visual order: 4726/4726 (FULL; 77 in MINIMAL) |
+| `fuse_text_shaping_scripts` | Latin, Cyrillic, Greek, Arabic, Hebrew, Devanagari, Thai, CJK, emoji through the bundled chain: per-script shaping checks + `tests/golden/shaping_scripts_full.png` (FULL; 77 in MINIMAL) |
+| `fuse_text_system_fonts` | `FontCatalog::system()`: Segoe UI / Arial, weight / italic / generic matching, per-script chains, `fontPicker("@system")` (77 with no installed fonts) |
+| `fuse_text_cache_zero_alloc` | layout / measure / atlas / segmentation of already-seen strings (LTR, RTL, fallback, wrapped, elided): zero allocations |
+| `fuse_text_dpi_1`, `_1_25`, `_1_5`, `_2` | bundled font + chain at 14 px × scale: metrics, widths, glyph boxes and ink scale; same line breaks; no missing glyphs |
+| `fuse_text_colrv1` | COLRv1 paint graphs flattened to solid layers (`tests/data/colrv1_test.ttf`) |
 
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
 | `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster (skips 77 without a display or device) |

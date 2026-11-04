@@ -9,6 +9,8 @@
 //                    atlas lookups and segmentation of already-seen strings perform no heap allocation.
 //   dpi_<scale>      bundled font + fallback chain at 14 px x scale: metrics, advances and ink scale with the DPR,
 //                    line breaks are scale-invariant, no missing glyphs (twins of fuse_editor_qt_font_*).
+//   colrv1           data/colrv1_test.ttf (make_colrv1_test_font.py): COLRv1 paint graphs flattened to solid layers
+//                    (layers, gradients as mean colour, PaintColrGlyph through a transform, v0 records win).
 // Optional --out=<dir> writes the rendered images.
 #include "test_util.hpp"
 
@@ -405,6 +407,53 @@ int cacheZeroAlloc() {
     return finish("fuse_text_cache_zero_alloc");
 }
 
+// ---- fuse_text_colrv1 ----------------------------------------------------------------------------------------------
+int colrv1() {
+    auto loaded = Font::fromFile("data/colrv1_test.ttf");
+    UI_CHECK(loaded.has_value());
+    if (!loaded) return finish("fuse_text_colrv1");
+    const Font& f = *loaded;
+    UI_CHECK(f.hasColorGlyphs());
+    const std::uint32_t box = f.glyphIndex(U'A');
+    auto near = [](int v, int want) { return std::abs(v - want) <= 1; };
+    auto layers = [&](char32_t cp) { return f.colorLayers(f.glyphIndex(cp)); };
+    // two PaintGlyph + PaintSolid layers: red box, half-transparent white inner square
+    const auto solid = layers(U'\uE000');
+    UI_CHECK(solid.size() == 2);
+    if (solid.size() == 2) {
+        UI_CHECK(solid[0].glyph == box && solid[0].r == 255 && solid[0].g == 0 && solid[0].b == 0 && solid[0].a == 255);
+        UI_CHECK(solid[1].glyph != box && solid[1].r == 255 && solid[1].g == 255 && near(solid[1].a, 128));
+    }
+    // linear gradient red -> blue: one layer in the mean colour
+    const auto grad = layers(U'\uE001');
+    UI_CHECK(grad.size() == 1 && grad[0].glyph == box && near(grad[0].r, 128) && grad[0].g == 0 && near(grad[0].b, 128));
+    // PaintTranslate(PaintColrGlyph(solid)): the referenced glyph's layers
+    const auto ref = layers(U'\uE002');
+    UI_CHECK(ref.size() == 2 && ref[0].r == 255 && ref[1].g == 255);
+    // a v0 record (green) wins over the v1 graph (red)
+    const auto both = layers(U'\uE003');
+    UI_CHECK(both.size() == 1 && both[0].g == 255 && both[0].r == 0);
+    UI_CHECK(f.colorLayers(box).empty());
+    // rendered through the ordinary glyph path
+    UiContext ui{{.viewport = {200, 60}, .font = &f}};
+    const NodeHandle l = w::label(ui, ui.root(), utf8(U"\uE000\uE001\uE002\uE003"));
+    ui.setCss(l, "font-size", "32px");
+    ui.update();
+    Image img;
+    fuse::ui::test::render(ui, img);
+    int red = 0, green = 0, purple = 0;
+    for (const u32 p : img.pixels) {
+        const int R = int(p & 0xFF), G = int((p >> 8) & 0xFF), B = int((p >> 16) & 0xFF);
+        red += R > 200 && G < 40 && B < 40;
+        green += G > 200 && R < 40 && B < 40;
+        purple += R > 100 && B > 100 && G < 40;
+    }
+    std::printf("colrv1: red %d, green %d, purple %d pixels\n", red, green, purple);
+    UI_CHECK(red > 50 && green > 50 && purple > 50);
+    if (!g_out.empty()) writePng(g_out + "/colrv1.png", img);
+    return finish("fuse_text_colrv1");
+}
+
 // ---- fuse_text_dpi_<scale> -----------------------------------------------------------------------------------------
 float ink(const Font& font, const TextLayout& tl, float px, GlyphAtlas& atlas) {
     double sum = 0.0;
@@ -496,6 +545,7 @@ int main(int argc, char** argv) {
     if (gate == "shaping_scripts") return shapingScripts();
     if (gate == "system_fonts") return systemFonts();
     if (gate == "cache_zero_alloc") return cacheZeroAlloc();
+    if (gate == "colrv1") return colrv1();
     if (gate == "dpi_1") return dpi(1.f, "fuse_text_dpi_1");
     if (gate == "dpi_1_25") return dpi(1.25f, "fuse_text_dpi_1_25");
     if (gate == "dpi_1_5") return dpi(1.5f, "fuse_text_dpi_1_5");

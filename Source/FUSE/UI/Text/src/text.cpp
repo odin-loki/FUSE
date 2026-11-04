@@ -302,7 +302,127 @@ std::atomic<std::uint32_t> g_fontIds{1};
 std::uint16_t be16(const std::uint8_t* p) { return std::uint16_t((p[0] << 8) | p[1]); }
 std::uint32_t be32(const std::uint8_t* p) { return (std::uint32_t(p[0]) << 24) | (std::uint32_t(p[1]) << 16) | (std::uint32_t(p[2]) << 8) | p[3]; }
 
-// COLR version 0 + CPAL palette 0. Bounds-checked: a malformed table leaves the font without colour glyphs.
+std::uint32_t be24(const std::uint8_t* p) { return (std::uint32_t(p[0]) << 16) | (std::uint32_t(p[1]) << 8) | p[2]; }
+
+// COLRv1 paint graphs flattened to solid layers (see Font::colorLayers). Every read is bounds-checked; a malformed
+// graph just yields fewer layers.
+struct ColrV1 {
+    const std::uint8_t* d;
+    std::size_t n;
+    std::uint32_t baseList = 0, layerList = 0; // absolute offsets (0: absent)
+    std::uint32_t numBase = 0, numLayers = 0;
+    // CPAL palette 0
+    std::uint32_t recOff = 0;
+    std::uint16_t first = 0, numEntries = 0, numRecords = 0;
+    std::vector<ColorLayer>* out = nullptr;
+    int budget = 4096; // paint nodes visited per glyph (cycles, huge graphs)
+
+    bool ok(std::uint64_t off, std::uint64_t len) const { return off + len <= n; }
+    ColorLayer colour(std::uint16_t pi, float alpha) const {
+        ColorLayer cl;
+        if (pi == 0xFFFFu || pi >= numEntries || std::uint32_t(first) + pi >= numRecords) {
+            cl.foreground = true;
+            cl.a = std::uint8_t(std::clamp(alpha, 0.f, 1.f) * 255.f + 0.5f);
+            return cl;
+        }
+        const std::uint8_t* c = d + recOff + (std::uint32_t(first) + pi) * 4; // B G R A
+        cl.b = c[0];
+        cl.g = c[1];
+        cl.r = c[2];
+        cl.a = std::uint8_t(float(c[3]) * std::clamp(alpha, 0.f, 1.f) + 0.5f);
+        return cl;
+    }
+    static float f2dot14(const std::uint8_t* p) { return float(std::int16_t(be16(p))) / 16384.f; }
+    // Mean colour of a (Var)ColorLine: gradients become one solid fill.
+    bool colorLine(std::uint32_t at, bool var, ColorLayer& cl) const {
+        if (!ok(at, 3)) return false;
+        const std::uint16_t stops = be16(d + at + 1);
+        const std::uint32_t size = var ? 10 : 6;
+        if (stops == 0 || !ok(at + 3, std::uint64_t(stops) * size)) return false;
+        float r = 0, g = 0, b = 0, a = 0;
+        bool fg = false;
+        for (std::uint32_t k = 0; k < stops; ++k) {
+            const std::uint8_t* s = d + at + 3 + k * size;
+            const ColorLayer c = colour(be16(s + 2), f2dot14(s + 4));
+            fg |= c.foreground;
+            r += c.r;
+            g += c.g;
+            b += c.b;
+            a += c.a;
+        }
+        cl = {};
+        cl.foreground = fg;
+        cl.r = std::uint8_t(r / stops + 0.5f);
+        cl.g = std::uint8_t(g / stops + 0.5f);
+        cl.b = std::uint8_t(b / stops + 0.5f);
+        cl.a = std::uint8_t(a / stops + 0.5f);
+        return true;
+    }
+    // Fill of the paint under a PaintGlyph: solid, or a gradient's mean colour; transforms and nested glyph clips
+    // are looked through.
+    bool fill(std::uint32_t p, ColorLayer& cl, int depth) {
+        if (depth > 16 || --budget < 0 || !ok(p, 1)) return false;
+        const std::uint8_t f = d[p];
+        switch (f) {
+        case 2:
+        case 3: return ok(p, 5) && (cl = colour(be16(d + p + 1), f2dot14(d + p + 3)), true);
+        case 4: case 5: case 6: case 7: case 8: case 9:
+            return ok(p, 4) && colorLine(p + be24(d + p + 1), (f & 1) != 0, cl);
+        case 10:
+            return ok(p, 4) && fill(p + be24(d + p + 1), cl, depth + 1);
+        case 32: // composite: the source's fill
+            return ok(p, 4) && fill(p + be24(d + p + 1), cl, depth + 1);
+        default:
+            if (f >= 12 && f <= 31) return ok(p, 4) && fill(p + be24(d + p + 1), cl, depth + 1);
+            return false;
+        }
+    }
+    // Appends the layers painted by paint `p`.
+    void paint(std::uint32_t p, int depth) {
+        if (depth > 16 || --budget < 0 || !ok(p, 1)) return;
+        const std::uint8_t f = d[p];
+        if (f == 1) { // PaintColrLayers
+            if (!ok(p, 6) || !layerList) return;
+            const std::uint32_t count = d[p + 1], firstLayer = be32(d + p + 2);
+            for (std::uint32_t k = 0; k < count; ++k) {
+                if (firstLayer + k >= numLayers) break;
+                paint(layerList + be32(d + layerList + 4 + (firstLayer + k) * 4), depth + 1);
+            }
+        } else if (f == 10) { // PaintGlyph: the glyph's outline filled by the child paint
+            if (!ok(p, 6)) return;
+            ColorLayer cl;
+            if (fill(p + be24(d + p + 1), cl, depth + 1)) {
+                cl.glyph = be16(d + p + 4);
+                out->push_back(cl);
+            }
+        } else if (f == 11) { // PaintColrGlyph: another base glyph's graph
+            if (ok(p, 3))
+                if (const std::uint32_t q = basePaint(be16(d + p + 1))) paint(q, depth + 1);
+        } else if (f == 32) { // PaintComposite: backdrop, then source (blend modes are not modelled)
+            if (!ok(p, 8)) return;
+            paint(p + be24(d + p + 5), depth + 1);
+            paint(p + be24(d + p + 1), depth + 1);
+        } else if (f >= 12 && f <= 31) { // transforms: painted untransformed
+            if (ok(p, 4)) paint(p + be24(d + p + 1), depth + 1);
+        }
+        // gradients / solids outside a PaintGlyph fill the whole clip box: not representable as glyph layers
+    }
+    std::uint32_t basePaint(std::uint16_t glyph) const {
+        std::uint32_t lo = 0, hi = numBase;
+        while (lo < hi) { // records are sorted by glyph id
+            const std::uint32_t m = (lo + hi) / 2;
+            const std::uint8_t* r = d + baseList + 4 + m * 6;
+            const std::uint16_t g = be16(r);
+            if (g == glyph) return baseList + be32(r + 2);
+            if (g < glyph) lo = m + 1;
+            else hi = m;
+        }
+        return 0;
+    }
+};
+
+// COLR (version 0 layers, plus version 1 paint graphs flattened to solid layers) + CPAL palette 0. Bounds-checked: a
+// malformed table leaves the font without colour glyphs.
 void loadColr(std::vector<std::uint8_t>& bytes, std::vector<ColorLayer>& layers,
               std::vector<std::array<std::uint32_t, 3>>& colorBase, std::uint32_t fontStart) {
     std::uint8_t* d = bytes.data();
@@ -310,6 +430,7 @@ void loadColr(std::vector<std::uint8_t>& bytes, std::vector<ColorLayer>& layers,
     const std::uint32_t colr = stbtt__find_table(d, fontStart, "COLR");
     const std::uint32_t cpal = stbtt__find_table(d, fontStart, "CPAL");
     if (!colr || !cpal || colr + 14 > n || cpal + 12 > n) return;
+    const std::uint16_t version = be16(d + colr);
     const std::uint16_t numBase = be16(d + colr + 2), numLayers = be16(d + colr + 12);
     const std::uint32_t baseOff = colr + be32(d + colr + 4), layerOff = colr + be32(d + colr + 8);
     const std::uint16_t numEntries = be16(d + cpal + 2), numPalettes = be16(d + cpal + 4), numRecords = be16(d + cpal + 6);
@@ -339,6 +460,40 @@ void loadColr(std::vector<std::uint8_t>& bytes, std::vector<ColorLayer>& layers,
         const std::uint8_t* b = d + baseOff + i * 6;
         const std::uint32_t firstLayer = be16(b + 2), count = be16(b + 4);
         if (firstLayer + count <= numLayers && count > 0) colorBase.push_back({be16(b), firstLayer, count});
+    }
+    std::sort(colorBase.begin(), colorBase.end());
+
+    // COLRv1: glyphs without a v0 record get their paint graph flattened (v0 stays exact where both exist).
+    if (version < 1 || colr + 34 > n) return;
+    ColrV1 v1{d, n};
+    const std::uint32_t bl = be32(d + colr + 14), ll = be32(d + colr + 18);
+    if (bl && colr + std::uint64_t(bl) + 4 <= n) {
+        v1.baseList = colr + bl;
+        v1.numBase = be32(d + v1.baseList);
+        if (!v1.ok(v1.baseList + 4, std::uint64_t(v1.numBase) * 6)) return;
+    }
+    if (ll && colr + std::uint64_t(ll) + 4 <= n) {
+        v1.layerList = colr + ll;
+        v1.numLayers = be32(d + v1.layerList);
+        if (!v1.ok(v1.layerList + 4, std::uint64_t(v1.numLayers) * 4)) v1.layerList = 0;
+    }
+    v1.recOff = recOff;
+    v1.first = first;
+    v1.numEntries = numEntries;
+    v1.numRecords = numRecords;
+    v1.out = &layers;
+    const std::size_t v0Count = colorBase.size();
+    for (std::uint32_t i = 0; i < v1.numBase; ++i) {
+        const std::uint8_t* r = d + v1.baseList + 4 + i * 6;
+        const std::uint32_t glyph = be16(r);
+        const auto v0End = colorBase.begin() + std::ptrdiff_t(v0Count);
+        const auto it = std::lower_bound(colorBase.begin(), v0End, glyph,
+                                         [](const std::array<std::uint32_t, 3>& e, std::uint32_t g) { return e[0] < g; });
+        if (it != v0End && (*it)[0] == glyph) continue;
+        const std::uint32_t start = std::uint32_t(layers.size());
+        v1.budget = 4096;
+        v1.paint(v1.baseList + be32(r + 2), 0);
+        if (layers.size() > start) colorBase.push_back({glyph, start, std::uint32_t(layers.size()) - start});
     }
     std::sort(colorBase.begin(), colorBase.end());
 }

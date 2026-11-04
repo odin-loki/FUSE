@@ -35,7 +35,7 @@ foreach(g grapheme linebreak bidi)
                                FUSE_UI_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data")
     set_tests_properties(fuse_text_${g}_conformance PROPERTIES LABELS "fuse_ui;gate;text" SKIP_RETURN_CODE 77)
 endforeach()
-foreach(g shaping_scripts system_fonts cache_zero_alloc dpi_1 dpi_1_25 dpi_1_5 dpi_2)
+foreach(g shaping_scripts system_fonts cache_zero_alloc colrv1 dpi_1 dpi_1_25 dpi_1_5 dpi_2)
     fuse_ui_test(fuse_text_${g} test_text_ui3.cpp)
     target_compile_definitions(fuse_text_${g} PRIVATE FUSE_TEXT_GATE="${g}")
     set_tests_properties(fuse_text_${g} PROPERTIES LABELS "fuse_ui;gate;text" SKIP_RETURN_CODE 77

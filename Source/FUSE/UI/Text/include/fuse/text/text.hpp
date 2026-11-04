@@ -73,8 +73,8 @@ struct FontMetrics {
     float lineHeight() const { return ascent - descent + lineGap; }
 };
 
-/// One layer of a COLRv0 colour glyph: an ordinary outline glyph filled with a CPAL palette colour (straight RGBA),
-/// or with the text colour when `foreground` is set. Layers paint bottom to top.
+/// One layer of a colour glyph: an ordinary outline glyph filled with a CPAL palette colour (straight RGBA), or with
+/// the text colour when `foreground` is set. Layers paint bottom to top.
 struct ColorLayer {
     std::uint32_t glyph = 0;
     std::uint8_t r = 0, g = 0, b = 0, a = 255;
@@ -136,7 +136,10 @@ public:
     /// Pixel size to use for face `i` so its em matches this font's em at `pixelSize`.
     float facePixelSize(std::uint16_t i, float pixelSize) const;
 
-    // ---- Colour glyphs (COLRv0 + CPAL, palette 0) ----
+    // ---- Colour glyphs (COLR + CPAL, palette 0) ----
+    // COLRv0 layers are exact. COLRv1 paint graphs (glyphs without a v0 record) are flattened to the same solid
+    // layers: PaintColrLayers / PaintGlyph / PaintColrGlyph are followed, a gradient fill becomes the mean colour of
+    // its stops, transforms are ignored and composites paint backdrop then source. CBDT / sbix bitmaps are not read.
     bool hasColorGlyphs() const;
     /// Layers of `glyph` when it is a colour glyph; empty for ordinary glyphs.
     std::span<const ColorLayer> colorLayers(std::uint32_t glyph) const;
@@ -231,7 +234,7 @@ ShapeCacheStats shapeCacheStats(const Font& font);
 float shapeText(const Font& font, std::string_view utf8, float pixelSize, std::vector<ShapedGlyph>& out);
 
 /// Calls fn(face, glyph, facePixelSize, layer) for every paint layer of a shaped glyph: once with layer == nullptr
-/// (draw in the text colour) for an ordinary glyph, or once per COLRv0 layer bottom to top for a colour glyph.
+/// (draw in the text colour) for an ordinary glyph, or once per colour layer bottom to top for a colour glyph.
 template <class Fn> void forEachPaintGlyph(const Font& font, const ShapedGlyph& g, float pixelSize, Fn&& fn) {
     const Font& f = font.face(g.face);
     const float px = g.face ? font.facePixelSize(g.face, pixelSize) : pixelSize;
