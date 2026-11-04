@@ -92,7 +92,7 @@ else()
                  COMMAND "${_rl_dn_runner}" "${_rl_dn_prefix}" "$<TARGET_FILE:fuse_relight_denoise_vk_tests>"
                          --external-validation)
         set_tests_properties(rl_pe.denoise_vk_validation PROPERTIES
-            ENVIRONMENT "VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation;VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT;VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true"
+            ENVIRONMENT "VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation;VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true"
             LABELS "relight;wine;renderer_pe;vulkan;gate" SKIP_RETURN_CODE 77 RESOURCE_LOCK fuse_relight_renderer_pe
             TIMEOUT 1800)
     endif()

@@ -15,13 +15,13 @@ float sx_linear_depth(float d, float nearPlane, float farPlane, bool reversedZ) 
     float z = 0.0;
     if (reversedZ) {
         if (d > 0.0) {
-            precise float q = nearPlane / d;
+            const float q = sx_div(nearPlane, d);
             z = q;
         }
     } else if (d < 1.0 && farPlane > nearPlane) {
         precise float num = nearPlane * farPlane;
         precise float den = farPlane - d * (farPlane - nearPlane);
-        precise float q = num / den;
+        const float q = sx_div(num, den);
         z = q;
     }
     return (z > 0.0 && z < 3.0e38) ? z : 0.0;

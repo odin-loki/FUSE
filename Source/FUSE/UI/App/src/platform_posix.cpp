@@ -41,6 +41,10 @@ bool onPath(const char* tool) {
 }
 /// Runs `argv` and waits; stdout into `out`. -1 when it cannot start.
 int run(std::vector<std::string> args, std::string* out) {
+#if defined(__ANDROID__) && __ANDROID_API__ < 28
+    (void)args; (void)out; // no posix_spawn before API 28 (and no zenity / xdg-open on Android anyway)
+    return -1;
+#else
     std::vector<char*> argv;
     for (auto& a : args) argv.push_back(a.data());
     argv.push_back(nullptr);
@@ -68,6 +72,7 @@ int run(std::vector<std::string> args, std::string* out) {
     int status = 0;
     ::waitpid(pid, &status, 0);
     return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+#endif
 }
 std::expected<std::vector<std::string>, PlatformError> zenityFiles(const FileDialogDesc& d, bool save, bool folder) {
     if (!onPath("zenity")) return std::unexpected(PlatformError::Unavailable);

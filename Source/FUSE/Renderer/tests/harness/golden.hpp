@@ -40,6 +40,11 @@ struct GoldenSpec {
     f64 psnrFallbackDb = 40.0;
     u8 pixelTolerance = 2;
     u32 maxDifferingPixels = 0;
+    /// Optional, one entry per pixel (non-zero = exempt): pixels whose content the device may
+    /// legitimately decide differently from the golden's rasteriser (e.g. coverage of a centre within
+    /// one sub-pixel step of a triangle edge). An exempt pixel never counts against the pixel budget,
+    /// and the metric / PSNR see the golden's value there. Null = every pixel is gated.
+    const std::vector<u8>* exempt = nullptr;
 };
 
 struct GoldenResult {
@@ -51,8 +56,9 @@ struct GoldenResult {
     f64 score = 0.0;             ///< Value of metricUsed.
     f64 threshold = 0.0;         ///< Threshold applied to metricUsed.
     f64 psnr = 0.0;              ///< Always computed (+inf when identical).
-    u32 differingPixels = 0;     ///< Pixels with any channel |diff| > pixelTolerance.
-    u32 maxChannelDiff = 0;
+    u32 differingPixels = 0;     ///< Pixels with any channel |diff| > pixelTolerance (not exempt).
+    u32 exemptDifferingPixels = 0; ///< Differing pixels excused by GoldenSpec::exempt.
+    u32 maxChannelDiff = 0;      ///< Over the gated (non-exempt) pixels.
     std::string goldenPath;
     std::string actualPath;      ///< Written on failure.
     std::string diffPath;        ///< Written on failure.

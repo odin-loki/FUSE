@@ -28,6 +28,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/renderer/golden_px.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -52,6 +53,9 @@
 namespace {
 
 using namespace fuse::renderer::harness;
+using fuse::f32;
+using fuse::f64;
+using fuse::s64;
 using fuse::u32;
 using fuse::u64;
 using fuse::u8;
@@ -141,7 +145,11 @@ bool parseArgs(int argc, char** argv, Args& args) {
 }
 
 /// Per-scene gate. Lavapipe renders are deterministic, so every scene starts with a zero-pixel
-/// budget; relax per scene (never globally) when a hardware runner is added.
+/// budget; relax per scene (never globally) if a hardware runner needs it. On other devices the
+/// thresholds stay the same and only the coverage-ambiguous pixels are exempt (main()): measured
+/// on an RTX 3090, instance_grid_1k / _100k differ from the goldens on 7 / 59 pixels, every one a
+/// centre within a sub-pixel step of an edge (box faces meeting on a pixel row; sub-pixel cubes),
+/// and on 0 gated pixels by more than 1 code.
 GoldenSpec specFor(const std::string&) {
     GoldenSpec spec{};
     spec.metric = GoldenMetric::Flip;
@@ -150,6 +158,60 @@ GoldenSpec specFor(const std::string&) {
     spec.pixelTolerance = 2;
     spec.maxDifferingPixels = 0;
     return spec;
+}
+
+/// The goldens are Lavapipe renders, and Lavapipe is deterministic: on it every pixel is gated.
+bool isGoldenRasteriser(const std::string& deviceName) {
+    return deviceName.find("llvmpipe") != std::string::npos;
+}
+
+/// Distance from (px, py) to the segment a-b.
+f64 segmentDistance(f64 px, f64 py, f64 ax, f64 ay, f64 bx, f64 by) {
+    const f64 dx = bx - ax, dy = by - ay;
+    const f64 len2 = dx * dx + dy * dy;
+    f64 t = len2 > 0.0 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0.0;
+    t = std::clamp(t, 0.0, 1.0);
+    const f64 qx = ax + t * dx - px, qy = ay + t * dy - py;
+    return std::sqrt(qx * qx + qy * qy);
+}
+
+/// Pixels whose centre lies within `band` pixels of an edge of a triangle the frame draws (the scene
+/// is projected on the CPU, exactly as the harness renders it). Their coverage is decided by the
+/// rasteriser's vertex snapping (subPixelPrecisionBits, its rounding) and tie rules, which Vulkan
+/// leaves implementation-defined: a device other than the golden's may resolve them to the
+/// neighbouring surface.
+std::vector<u8> coverageAmbiguousPixels(const Scene& scene, u32 width, u32 height, f64 band) {
+    std::vector<u8> mask(static_cast<usize>(width) * height, 0u);
+    const ProjectedScene ps = projectScene(scene, static_cast<f32>(width) / static_cast<f32>(height));
+    const usize triangles = ps.vertices.size() / 9u;
+    for (usize t = 0; t < triangles; ++t) {
+        f64 x[3], y[3];
+        for (usize k = 0; k < 3u; ++k) {
+            const f32* v = ps.vertices.data() + (t * 3u + k) * 3u;
+            x[k] = (static_cast<f64>(v[0]) * 0.5 + 0.5) * width;
+            y[k] = (static_cast<f64>(v[1]) * 0.5 + 0.5) * height;
+        }
+        const f64 x0 = std::min({x[0], x[1], x[2]}) - band, x1 = std::max({x[0], x[1], x[2]}) + band;
+        const f64 y0 = std::min({y[0], y[1], y[2]}) - band, y1 = std::max({y[0], y[1], y[2]}) + band;
+        // Centres px + 0.5 in [x0, x1].
+        const s64 pxLo = std::max<s64>(0, static_cast<s64>(std::ceil(x0 - 0.5)));
+        const s64 pxHi = std::min<s64>(static_cast<s64>(width) - 1, static_cast<s64>(std::floor(x1 - 0.5)));
+        const s64 pyLo = std::max<s64>(0, static_cast<s64>(std::ceil(y0 - 0.5)));
+        const s64 pyHi = std::min<s64>(static_cast<s64>(height) - 1, static_cast<s64>(std::floor(y1 - 0.5)));
+        for (s64 py = pyLo; py <= pyHi; ++py) {
+            for (s64 px = pxLo; px <= pxHi; ++px) {
+                const f64 cx = static_cast<f64>(px) + 0.5, cy = static_cast<f64>(py) + 0.5;
+                for (u32 e = 0; e < 3u; ++e) {
+                    const u32 f = (e + 1u) % 3u;
+                    if (segmentDistance(cx, cy, x[e], y[e], x[f], y[f]) <= band) {
+                        mask[static_cast<usize>(py) * width + static_cast<usize>(px)] = 1u;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    return mask;
 }
 
 RasterShaders shadersFor(const Scene& scene) {
@@ -252,6 +314,17 @@ int main(int argc, char** argv) {
         }
         runner->resetValidation();
 
+        // Devices other than the goldens' rasteriser: pixels whose coverage is implementation-defined
+        // are exempt (coverageAmbiguousPixels). The band is one sub-pixel step of this device plus one
+        // of Lavapipe's (8 bits): each rasteriser moved every vertex by at most its step.
+        const bool goldenRasteriser = isGoldenRasteriser(runner->deviceName());
+        const u32 subPixelBits = std::max(runner->subPixelPrecisionBits(), 4u); // Vulkan minimum 4
+        const f64 ambiguityBand = std::ldexp(1.0, -static_cast<int>(subPixelBits)) + std::ldexp(1.0, -8);
+        if (!goldenRasteriser) {
+            std::printf("not the goldens' rasteriser (Lavapipe): pixel centres within %.5f px of a triangle edge "
+                        "(subPixelPrecisionBits %u) are exempt from the golden gate\n",
+                        ambiguityBand, subPixelBits);
+        }
         GoldenStore store(args.goldenDir, args.artifactDir);
         for (const std::string& name : args.scenes) {
             Scene scene;
@@ -284,7 +357,19 @@ int main(int argc, char** argv) {
             }
 
             const std::string goldenName = name + args.suffix;
-            const GoldenResult result = store.check(goldenName, capture.lit, specFor(name));
+            GoldenSpec spec = specFor(name);
+            std::vector<u8> ambiguous;
+            if (!goldenRasteriser) {
+                ambiguous = coverageAmbiguousPixels(scene, capture.width, capture.height, ambiguityBand);
+                spec.exempt = &ambiguous;
+                u32 count = 0;
+                for (const u8 a : ambiguous) {
+                    count += a;
+                }
+                std::printf("%-20s %u of %u px coverage-ambiguous\n", name.c_str(), count,
+                            capture.width * capture.height);
+            }
+            const GoldenResult result = store.check(goldenName, capture.lit, spec);
             expect(result.passed, name + ": golden gate (" + result.message + ")");
             if (!result.passed) {
                 ensureDirectory(args.artifactDir);

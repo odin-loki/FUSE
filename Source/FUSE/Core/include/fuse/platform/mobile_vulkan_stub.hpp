@@ -18,7 +18,9 @@ struct MobileVulkanStubStatus {
     const char* message = nullptr;
 };
 
-/// Android ANativeWindow / VkSurfaceKHR bootstrap — deferred; CI keeps FUSE_BUILD_VULKAN=OFF.
+/// Android ANativeWindow / VkSurfaceKHR for the engine RHI (fuse_rhi) — still deferred; CI keeps FUSE_BUILD_VULKAN=OFF.
+/// The UI path is real: fuse_app_native creates VkSurfaceKHR from the activity's ANativeWindow and presents through
+/// its swapchain presenter (Source/FUSE/UI/App/src/native_android.cpp, gates fuse_platform_*_android).
 inline MobileVulkanStubStatus androidVulkanWsiStubStatus(bool buildVulkanEnabled) {
     MobileVulkanStubStatus status{};
     status.kind = MobileVulkanStubKind::AndroidWsi;
@@ -26,7 +28,7 @@ inline MobileVulkanStubStatus androidVulkanWsiStubStatus(bool buildVulkanEnabled
     status.buildVulkanEnabled = buildVulkanEnabled;
     status.message = buildVulkanEnabled
                          ? "Android Vulkan WSI not wired — prefer FUSE_BUILD_VULKAN=OFF in mobile CI"
-                         : "Android Vulkan WSI stub — VkSurfaceKHR via ANativeWindow deferred";
+                         : "Android Vulkan WSI stub for fuse_rhi — VkSurfaceKHR via ANativeWindow lives in fuse_app_native";
     return status;
 }
 

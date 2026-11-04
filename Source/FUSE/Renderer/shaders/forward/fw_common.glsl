@@ -57,7 +57,22 @@ layout(buffer_reference, std430, buffer_reference_align = 16) writeonly buffer F
 vec4 fuse_fw_half4(vec4 v) {
     return vec4(unpackHalf2x16(packHalf2x16(v.xy)), unpackHalf2x16(packHalf2x16(v.zw)));
 }
-vec4 fuse_fw_unorm8(vec4 v) { return floor(clamp(v, 0.0, 1.0) * 255.0 + 0.5) / 255.0; }
+// The attachment's UNORM8 -> float conversion is q / 255 correctly rounded; a float divide may be 2.5 ulp
+// off on Vulkan (NVIDIA uses the slack, which broke "forward surface == the twin's G-buffer" bit for bit),
+// so the quotient is formed in integers: with s = 31 - msb(q), N = q << s lies in [2^31, 2^32) and
+// q / 255 = (N / 255) * 2^-s, where M = round(N / 255) = (N + 127) / 255 (255 is odd: no ties) has 24 bits.
+float fuse_fw_unorm8_value(uint q) {
+    if (q == 0u || q >= 255u) {
+        return q == 0u ? 0.0 : 1.0;
+    }
+    const uint sh = 31u - uint(findMSB(q));
+    const uint m = ((q << sh) + 127u) / 255u;
+    return float(m) * uintBitsToFloat((127u - sh) << 23u); // exact: m < 2^24, 2^-sh normal
+}
+vec4 fuse_fw_unorm8(vec4 v) {
+    const uvec4 q = uvec4(floor(clamp(v, 0.0, 1.0) * 255.0 + 0.5));
+    return vec4(fuse_fw_unorm8_value(q.x), fuse_fw_unorm8_value(q.y), fuse_fw_unorm8_value(q.z), fuse_fw_unorm8_value(q.w));
+}
 
 // Radiance of a decoded surface: emissive + ambient x albedo x AO + the directional list + the
 // cluster's lights: the very loop of lc_shade.comp (fuse_lc_shade_lights, shared in lc_ltc.glsl;

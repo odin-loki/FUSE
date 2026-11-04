@@ -36,12 +36,12 @@ float3 fuseTmClipToAabb(float3 history, float3 boxMin, float3 boxMax) {
     const float3 extent = (boxMax - boxMin) * 0.5;
     const float3 offset = history - center;
     const float eps = 1e-6;
-    const float ux = abs(offset.x) / max(extent.x, eps);
-    const float uy = abs(offset.y) / max(extent.y, eps);
-    const float uz = abs(offset.z) / max(extent.z, eps);
+    const float ux = fuseTmDiv(abs(offset.x), max(extent.x, eps));
+    const float uy = fuseTmDiv(abs(offset.y), max(extent.y, eps));
+    const float uz = fuseTmDiv(abs(offset.z), max(extent.z, eps));
     const float maxUnit = max(ux, max(uy, uz));
     if (maxUnit > 1.0) {
-        return center + offset * (1.0 / maxUnit);
+        return center + offset * fuseTmDiv(1.0, maxUnit);
     }
     return history;
 }
@@ -65,7 +65,7 @@ float fuseTmLanczos2(float x) {
     }
     const float kPi = asfloat(0x40490FDBu); // 3.14159265358979f
     const float px = kPi * ax;
-    return 2.0 * sin(px) * sin(0.5 * px) / (px * px);
+    return fuseTmDiv(2.0 * sin(px) * sin(0.5 * px), px * px);
 }
 
 void fuseTmLanczos2Weights(float t, out float w[4]) {
@@ -73,7 +73,7 @@ void fuseTmLanczos2Weights(float t, out float w[4]) {
     const float w1 = fuseTmLanczos2(t);
     const float w2 = fuseTmLanczos2(1.0 - t);
     const float w3 = fuseTmLanczos2(2.0 - t);
-    const float inv = 1.0 / (w0 + w1 + w2 + w3);
+    const float inv = fuseTmDiv(1.0, w0 + w1 + w2 + w3);
     w[0] = w0 * inv;
     w[1] = w1 * inv;
     w[2] = w2 * inv;
@@ -200,12 +200,12 @@ void main(uint3 tid: SV_DispatchThreadID) {
     const float rhf = float(f.renderH);
     const float dwf = float(f.displayW);
     const float dhf = float(f.displayH);
-    const float scaleX = dwf / rwf;
-    const float scaleY = dhf / rhf;
+    const float scaleX = fuseTmDiv(dwf, rwf);
+    const float scaleY = fuseTmDiv(dhf, rhf);
     const float e = f.exposure;
 
-    const float u = (float(x) + 0.5) / dwf;
-    const float v = (float(y) + 0.5) / dhf;
+    const float u = fuseTmDiv(float(x) + 0.5, dwf);
+    const float v = fuseTmDiv(float(y) + 0.5, dhf);
     const float prx = u * rwf;
     const float pry = v * rhf;
     const float qx = prx - f.jitterX;
@@ -235,8 +235,8 @@ void main(uint3 tid: SV_DispatchThreadID) {
             const float3 c = fuseTmSanitize(fuseTmColor(f.color, tx, ty)) * e;
             const float ox = (float(cix + dx) + 0.5 + f.jitterX - prx) * scaleX;
             const float oy = (float(ciy + dy) + 0.5 + f.jitterY - pry) * scaleY;
-            const float w = fuseTmSampleWeight(sqrt(ox * ox + oy * oy) * f.sampleKernelScale);
-            const float wt = w / (1.0 + fuseTmLuma709(c));
+            const float w = fuseTmSampleWeight(fuseTmSqrt(ox * ox + oy * oy) * f.sampleKernelScale);
+            const float wt = fuseTmDiv(w, 1.0 + fuseTmLuma709(c));
             sumW += w;
             sumWt += wt;
             sumC = sumC + c * wt;
@@ -258,8 +258,8 @@ void main(uint3 tid: SV_DispatchThreadID) {
     float3 spatialY = fuseTmRgbToYcocg(fuseTmSanitize(fuseTmSpatialSample(f, qx, qy)) * e);
     spatialY = max(min(spatialY, nMax), nMin);
     const float3 spatial = fuseTmYcocgToRgb(spatialY);
-    const float spatialWt = f.spatialWeight / (1.0 + fuseTmLuma709(spatial));
-    const float3 current = (sumC + spatial * spatialWt) * (1.0 / (sumWt + spatialWt));
+    const float spatialWt = fuseTmDiv(f.spatialWeight, 1.0 + fuseTmLuma709(spatial));
+    const float3 current = (sumC + spatial * spatialWt) * fuseTmDiv(1.0, sumWt + spatialWt);
     const float confidence = sumW + f.spatialWeight;
 
     const float reactive = f.reactive == 0u ? 0.0 : fuseTmSaturate(fuseTmMask(f.reactive, cix, ciy));
@@ -273,7 +273,7 @@ void main(uint3 tid: SV_DispatchThreadID) {
     float historyW = 0.0;
     float3 history = float3(0.0, 0.0, 0.0);
     if (f.historyValid != 0u && hx >= 0.0 && hy >= 0.0 && hx < dwf && hy < dhf) {
-        const float motionCap = f.maxAccumulation / (1.0 + sqrt(mvx * mvx + mvy * mvy) * f.accumulationMotionFalloff);
+        const float motionCap = fuseTmDiv(f.maxAccumulation, 1.0 + fuseTmSqrt(mvx * mvx + mvy * mvy) * f.accumulationMotionFalloff);
         historyW = min(fuseTmSampleHistoryWeight(f, hx, hy), motionCap);
         history = fuseTmSampleHistory(f, hx, hy, f.historyFilter);
 
@@ -284,8 +284,8 @@ void main(uint3 tid: SV_DispatchThreadID) {
             const float d = depthBuf[ci];
             float expected = fuseTmEffectiveDepth(d);
             if (f.hasCamera != 0u && d > 0.0) {
-                const float su = (float(cix) + 0.5 + f.jitterX) / rwf;
-                const float sv = (float(ciy) + 0.5 + f.jitterY) / rhf;
+                const float su = fuseTmDiv(float(cix) + 0.5 + f.jitterX, rwf);
+                const float sv = fuseTmDiv(float(ciy) + 0.5 + f.jitterY, rhf);
                 const float vx = (2.0 * su - 1.0) * f.tanHalfX * d;
                 const float vy = (1.0 - 2.0 * sv) * f.tanHalfY * d;
                 const float vz = -d;
@@ -317,7 +317,7 @@ void main(uint3 tid: SV_DispatchThreadID) {
             const float2 pm = prevMotion[pi];
             const float ddx = (motion.x - pm.x) * dwf;
             const float ddy = (motion.y - pm.y) * dhf;
-            historyW *= 1.0 - fuseTmSaturate(sqrt(ddx * ddx + ddy * ddy) / f.velocityRejectionPx);
+            historyW *= 1.0 - fuseTmSaturate(fuseTmDiv(fuseTmSqrt(ddx * ddx + ddy * ddy), f.velocityRejectionPx));
         }
         // 3c. Reactive mask.
         historyW *= 1.0 - fuseTmSaturate(reactive * f.reactiveStrength);
@@ -330,25 +330,25 @@ void main(uint3 tid: SV_DispatchThreadID) {
         const float3 historyY = fuseTmRgbToYcocg(history);
         const float3 mean = m1 * (1.0 / 9.0);
         const float3 var = m2 * (1.0 / 9.0) - mean * mean;
-        const float3 sigma = float3(sqrt(max(0.0, var.x)), sqrt(max(0.0, var.y)), sqrt(max(0.0, var.z)));
+        const float3 sigma = float3(fuseTmSqrt(max(0.0, var.x)), fuseTmSqrt(max(0.0, var.y)), fuseTmSqrt(max(0.0, var.z)));
         float3 boxMin = max(nMin, mean - sigma * f.clampGamma);
         float3 boxMax = min(nMax, mean + sigma * f.clampGamma);
         boxMin = min(min(boxMin, boxMax), currentY);
         boxMax = max(max(boxMin, boxMax), currentY);
-        const float motionPx = sqrt(mvx * mvx + mvy * mvy);
-        const float clipStrength = max(max(fuseTmSaturate(f.staticClipStrength), fuseTmSaturate(motionPx / max(1e-4, f.clipFullMotionPx))),
+        const float motionPx = fuseTmSqrt(mvx * mvx + mvy * mvy);
+        const float clipStrength = max(max(fuseTmSaturate(f.staticClipStrength), fuseTmSaturate(fuseTmDiv(motionPx, max(1e-4, f.clipFullMotionPx)))),
                                        max(reactive > 0.0 ? 1.0 : 0.0, fuseTmSaturate(transparency * f.transparencyClip)));
         const float3 clipped = fuseTmClipToAabb(historyY, boxMin, boxMax);
         const float3 clippedHistory = fuseTmLerp3(historyY, clipped, clipStrength);
         // 5. Accumulate.
-        const float alpha = confidence / (historyW + confidence);
+        const float alpha = fuseTmDiv(confidence, historyW + confidence);
         resolvedY = fuseTmLerp3(clippedHistory, currentY, alpha);
     }
     const float3 resolved = fuseTmSanitize(fuseTmYcocgToRgb(resolvedY));
     const float newW = min(historyW + confidence, f.maxAccumulation);
     float4* historyOut = (float4*)f.historyOut;
     historyOut[di] = float4(resolved, newW);
-    const float3 outColor = resolved * (1.0 / e);
+    const float3 outColor = resolved * fuseTmDiv(1.0, e);
     fuse_tm_out_images[f.output_ & 0xFFFFFu][int2(int(x), int(y))] = float4(outColor, 1.0);
     if (pc.out_ != 0ull) {
         float4* dump = (float4*)pc.out_;

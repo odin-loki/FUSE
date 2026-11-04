@@ -18,8 +18,11 @@
 //                 corrupted copy of the read-back is caught (negative control)
 //       decode    the GPU decode == the CPU decode kernel on the read-back image (flags equal,
 //                 depth / barycentrics within 1e-5), and is consistent with the depth: raster
-//                 |decode - D32| <= 1e-4 on covered pixels, depth == 1 exactly where empty; atomic
-//                 floor(q) - 1e-4 <= decode <= exported depth + 1e-4
+//                 |decode - D32| <= 1e-4 + snap on covered pixels, depth == 1 exactly where empty; atomic
+//                 floor(q) - 1e-4 - snap <= decode <= exported depth + 1e-4 + snap. snap = the
+//                 triangle's |dz/dx| + |dz/dy| times one sub-pixel step (snapDepthSlack: the rasteriser
+//                 interpolates over vertices snapped to its subPixelPrecisionBits grid; only edge-on
+//                 slivers need it, counted in "dep-snap")
 //       export    (atomic) exported R32G32 / R32F == vis64_unpack / vis64_export_depth of the raw
 //                 64-bit words, bit for bit
 //       culling   the culled image == the no-culling image (0 differing pixels); phase-1 and phase-2
@@ -61,6 +64,7 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+#include <fuse/renderer/vk/test_layer_env.hpp>
 #endif
 
 // --- allocation counter (operator new) -----------------------------------------------------------
@@ -292,6 +296,7 @@ struct Context {
     Buffer readback{};
     Buffer decode{};
     u64 serial = 0;
+    f64 snapStep = 1.0 / 256.0; ///< one sub-pixel step (px): 2^-subPixelPrecisionBits
 
     ~Context() {
         if (vkDevice != VK_NULL_HANDLE) {
@@ -335,8 +340,7 @@ int setup(Context& ctx, bool descriptorBuffer, bool validation) {
             return kSkip;
         }
         setenv("VK_INSTANCE_LAYERS", kValidationLayer, 1);
-        setenv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", 1);
-        setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", 1);
+        fuse::renderer::test::enableSyncValidationEnv();
         setenv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK", 1);
     } else {
         setenv("VK_INSTANCE_LAYERS", "", 1);
@@ -382,6 +386,11 @@ int setup(Context& ctx, bool descriptorBuffer, bool validation) {
         return kSkip;
     }
     ctx.vkDevice = static_cast<VkDevice>(ctx.device->nativeHandle());
+    {
+        VkPhysicalDeviceProperties props{};
+        vkGetPhysicalDeviceProperties(static_cast<VkPhysicalDevice>(ctx.device->nativePhysicalDevice()), &props);
+        ctx.snapStep = std::ldexp(1.0, -static_cast<int>(std::max(props.limits.subPixelPrecisionBits, 4u))); // Vulkan minimum 4
+    }
     ctx.allocator = GpuAllocator::create(*ctx.device);
     if (ctx.allocator == nullptr || !ctx.allocator->isValid()) {
         std::fprintf(stderr, "FAIL: GpuAllocator\n");
@@ -719,6 +728,44 @@ u32 idMismatches(const std::vector<RasterRefPixel>& ref, const u32* vis, u32* ro
     return bad;
 }
 
+/// Depth of the plane through the clip-space triangle at NDC (nx, ny), in f64 (decode_clip's formulation:
+/// the normalised cross product of the rows of [u0 u1 u2]); NaN when degenerate.
+f64 planeDepth(const decode_kernel::Clip c[3], f64 nx, f64 ny) {
+    f64 ux[3], uy[3];
+    for (u32 k = 0; k < 3u; ++k) {
+        ux[k] = static_cast<f64>(c[k].x) - nx * c[k].w;
+        uy[k] = static_cast<f64>(c[k].y) - ny * c[k].w;
+    }
+    const f64 e0 = ux[1] * uy[2] - uy[1] * ux[2];
+    const f64 e1 = ux[2] * uy[0] - uy[2] * ux[0];
+    const f64 e2 = ux[0] * uy[1] - uy[0] * ux[1];
+    const f64 s = e0 + e1 + e2;
+    const f64 z = (e0 * c[0].z + e1 * c[1].z + e2 * c[2].z) / s;
+    const f64 w = (e0 * c[0].w + e1 * c[1].w + e2 * c[2].w) / s;
+    return s == 0.0 ? std::nan("") : z / w;
+}
+
+/// How far the rasteriser's depth may legitimately sit from the exact plane at pixel (x, y): the hardware
+/// snaps the projected vertices to its sub-pixel grid (VkPhysicalDeviceLimits::subPixelPrecisionBits)
+/// and interpolates z / w over the snapped triangle, so its plane is the exact one evaluated up to one
+/// sub-pixel step away: |dz/dx| + |dz/dy| times the step. Negligible for ordinary triangles; large for
+/// a triangle seen edge-on, whose vertices nearly coincide on screen while their depths differ (measured
+/// on an RTX 3090: a sliver with two vertices 0.003 px apart, its depth 1.2e-4 off the exact plane at a
+/// covered pixel). Lavapipe snaps too, so the bound holds there unchanged. 0 for invalid ids.
+f64 snapDepthSlack(const decode_kernel::Params& dp, u32 instance, u32 triangle, u32 x, u32 y, f64 snapStep) {
+    decode_kernel::Clip c[3];
+    if (!decode_kernel::triangle_clip(dp, instance, triangle, c)) {
+        return 0.0;
+    }
+    const f64 nx = (static_cast<f64>(x) + 0.5) * (2.0 / kWidth) - 1.0;
+    const f64 ny = (static_cast<f64>(y) + 0.5) * (2.0 / kHeight) - 1.0;
+    const f64 z = planeDepth(c, nx, ny);
+    const f64 gx = planeDepth(c, nx + 2.0 / kWidth, ny) - z;  // per pixel (z / w is affine on screen)
+    const f64 gy = planeDepth(c, nx, ny + 2.0 / kHeight) - z;
+    const f64 slack = (std::fabs(gx) + std::fabs(gy)) * snapStep;
+    return std::isfinite(slack) ? slack : 0.0;
+}
+
 struct FrameReport {
     u32 robust = 0;
     u32 robustCovered = 0;
@@ -727,6 +774,7 @@ struct FrameReport {
     u32 covered = 0;
     u32 decodeBad = 0;
     u32 depthBad = 0;
+    u32 depthSnap = 0; ///< within the bound only through the vertex-snapping slack
     u32 exportBad = 0;
     u32 cullDiff = 0;
     u32 phase1 = 0;
@@ -763,6 +811,13 @@ void analyse(Context& ctx, Scene& s, Rig& rig, const Mat4& vp, FrameReport& r) {
     // (2) GPU decode == CPU decode kernel; consistent with the depth.
     std::vector<VisDecodeTexel> cpu;
     decode_reference(view, vp.m, vis, kWidth, kHeight, cpu);
+    decode_kernel::Params dp{};
+    dp.instances = view.instances;
+    dp.transforms = view.transforms;
+    dp.meshes = view.meshes;
+    dp.indices = view.indices;
+    dp.positions = view.positions;
+    std::memcpy(dp.viewProj, vp.m, sizeof(dp.viewProj));
     for (u32 p = 0; p < kPixels; ++p) {
         const VisDecodeTexel& g = gpuDecode[p];
         const VisDecodeTexel& c = cpu[p];
@@ -783,17 +838,30 @@ void analyse(Context& ctx, Scene& s, Rig& rig, const Mat4& vp, FrameReport& r) {
             r.depthBad += depth[p] != 1.f;
             continue;
         }
+        // The rasteriser's depth is the exact plane's up to 1e-4 plus the vertex-snapping slack.
+        bool ok = false;
+        bool okStrict = false;
+        f64 slack = 0.0;
         if (atomic) {
             const u64 word = rb<u64>(ctx, ReadbackLayout::raw64)[p];
             const f64 lo = vis64_depth_floor(vis64_depth_bits(word));
-            const bool ok = g.depth >= lo - 1e-4 && g.depth <= depth[p] + 1e-4;
-            r.depthBad += ok ? 0u : 1u;
+            okStrict = g.depth >= lo - 1e-4 && g.depth <= depth[p] + 1e-4;
+            if (!okStrict) {
+                slack = snapDepthSlack(dp, vis[p * 2u], vis[p * 2u + 1u], p % kWidth, p / kWidth, ctx.snapStep);
+            }
+            ok = okStrict || (g.depth >= lo - 1e-4 - slack && g.depth <= depth[p] + 1e-4 + slack);
             r.maxDepthErr = std::max(r.maxDepthErr, std::fabs(g.depth - lo));
         } else {
             const f64 e = std::fabs(static_cast<f64>(g.depth) - depth[p]);
-            r.depthBad += e <= 1e-4 ? 0u : 1u;
+            okStrict = e <= 1e-4;
+            if (!okStrict) {
+                slack = snapDepthSlack(dp, vis[p * 2u], vis[p * 2u + 1u], p % kWidth, p / kWidth, ctx.snapStep);
+            }
+            ok = e <= 1e-4 + slack;
             r.maxDepthErr = std::max(r.maxDepthErr, e);
         }
+        r.depthBad += ok ? 0u : 1u;
+        r.depthSnap += ok && !okStrict ? 1u : 0u;
     }
     // (3) export == unpack of the raw words.
     if (atomic) {
@@ -844,7 +912,7 @@ int runIds(Context& ctx, VisMode mode, VisAtomicTarget target) {
                     mode == VisMode::Raster ? "raster" : "atomic64",
                     mode == VisMode::Raster ? "" : (rig.vb.atomicTarget() == VisAtomicTarget::Image ? " (image)" : " (buffer)"),
                     kInstances, s.gpu.indexCount());
-        std::printf("  frame  phase1 phase2 covered  robust rob-cov  id-bad dec-bad dep-bad exp-bad cull-diff  max|dec|  max|dep|\n");
+        std::printf("  frame  phase1 phase2 covered  robust rob-cov  id-bad dec-bad dep-bad dep-snap exp-bad cull-diff  max|dec|  max|dep|\n");
         rg::Graph graph;
         FrameState fs;
         u32 phase1 = 0, phase2 = 0;
@@ -864,8 +932,9 @@ int runIds(Context& ctx, VisMode mode, VisAtomicTarget target) {
             analyse(ctx, s, rig, opt.viewProj, r);
             phase1 += r.phase1;
             phase2 += r.phase2;
-            std::printf("  %5u %7u %6u %7u %7u %7u %7u %7u %7u %7u %9u %9.2g %9.2g\n", frame, r.phase1, r.phase2, r.covered,
-                        r.robust, r.robustCovered, r.idBad, r.decodeBad, r.depthBad, r.exportBad, r.cullDiff, r.maxDecodeErr, r.maxDepthErr);
+            std::printf("  %5u %7u %6u %7u %7u %7u %7u %7u %7u %8u %7u %9u %9.2g %9.2g\n", frame, r.phase1, r.phase2,
+                        r.covered, r.robust, r.robustCovered, r.idBad, r.decodeBad, r.depthBad, r.depthSnap, r.exportBad,
+                        r.cullDiff, r.maxDecodeErr, r.maxDepthErr);
             expect(r.robust >= kPixels * 6u / 10u, "at least 60% of the pixels are robust in the CPU reference");
             expect(r.covered > kPixels / 4u, "the scene covers the view");
             expect(r.robustCovered >= r.refCovered * 8u / 10u, "at least 80% of the covered pixels are robust");

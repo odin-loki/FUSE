@@ -22,7 +22,7 @@ immediate-mode front-end. See the plan's status table for what is still open.
 | `Source/FUSE/UI/Doc` | `fuse_ui_doc` | `.fuseui` JSON documents, binding model, expression bytecode |
 | `Source/FUSE/UI/Script` | `fuse_ui_script` | Lua `ui` table (vendored Lua 5.2) |
 | `Source/FUSE/UI/Render` | `fuse_ui_render`, `fuse_ui_vk` | GPU draw data packing, `ui.draw_list` compute kernel, `UiLayerGpu` render-graph pass and `UiFrameSource` (in tree with the Vulkan RHI) |
-| `Source/FUSE/UI/App` | `fuse_app`, `fuse_app_native`, `fuse_app_a11y` | `Application` / `AppWindow` on-demand loop, settings, command line, single instance; native X11 / Win32 windows and the Vulkan swapchain presenter; custom window chrome; tray icon / notifications; `WindowAccessibility` (screen readers on a native window); samples `hello_app`, `notes_app`, `game_menu` |
+| `Source/FUSE/UI/App` | `fuse_app`, `fuse_app_native`, `fuse_app_a11y` | `Application` / `AppWindow` on-demand loop, settings, command line, single instance; native X11 / Win32 / Android (NativeActivity) windows and the Vulkan swapchain presenter; custom window chrome; tray icon / notifications; `WindowAccessibility` (screen readers on a native window); samples `hello_app`, `notes_app`, `game_menu`, `fuse_ui_android_demo`; `App/android/` APK packer and adb gate driver |
 | `Source/FUSE/UI/Game` | `fuse_ui_game` | HUD widgets, world markers, `UiSurface` world panels, gamepad navigation, input arbitration, prompts, time domains, locale table, subtitles, dialogue; samples `hud_demo`, `world_panel_demo` |
 | `Source/FUSE/UI/Sql` | `fuse_ui_sql` | `SqliteModel`: an `ItemModel` over a SQLite query (option `FUSE_BUILD_UI_SQL`) |
 | `Source/FUSE/UI/A11y` | `fuse_ui_a11y` | Accessibility bridge (snapshot diff, action queue); AccessKit adapters (`UnixAdapter` AT-SPI, `WindowsAdapter` UI Automation) when AccessKit is linked |
@@ -308,6 +308,56 @@ Desktop platform services (UI1, `fuse/app/native.hpp`, `fuse/app/platform.hpp`):
 - `openFileDialog` / `saveFileDialog` / `pickFolderDialog` (IFileDialog; zenity on X11), `messageBox`, `openUrl`
   (http, https, mailto, file only), `revealInFileManager`.
 
+### Android
+
+The same `main()` runs as a NativeActivity (NDK `android_native_app_glue`, no Java code and no Gradle).
+`fuse_app_add_android_app(<target> SOURCES ... PACKAGE org.x.y LABEL "Name" [ASSETS prefix=dir])`
+(`App/cmake/FuseAndroidApp.cmake`) builds `lib<target>.so` with `main` renamed to `fuse_app_main`, strips it and packs
+`<build>/<target>.apk` with `App/android/fuse_apk.py`. The packer writes the binary manifest itself, stores the library
+uncompressed and 16 KB aligned (`extractNativeLibs=false`), adds `vendor/fonts` and the app's assets, and signs the APK
+with APK Signature Scheme v2 using a debug key it creates in the build dir (`fuse_debug_key.pem`, not committed). It
+needs Python 3 with `cryptography` and no SDK build-tools. At start, `android_main` copies the assets to the app's files
+dir, makes that the working directory (relative paths such as `ui/hello.fuseui` work), redirects stdout / stderr to
+logcat (tag `fuse_app`) and passes the intent extra `args` as extra argv words.
+
+```sh
+# NDK r26+ (tested with 30.0.16248370); ABI arm64-v8a or x86_64 (emulator)
+cmake -S Source/FUSE/UI -B build-android -G Ninja -DCMAKE_BUILD_TYPE=Release -DFUSE_BUILD_UI_TESTS=OFF   -DCMAKE_TOOLCHAIN_FILE=$ANDROID_HOME/ndk/<ver>/build/cmake/android.toolchain.cmake   -DANDROID_ABI=x86_64 -DANDROID_PLATFORM=android-26
+ninja -C build-android                                   # libraries + hello_app.apk + fuse_ui_android_demo.apk
+adb install -r -t build-android/fuse_ui_android_demo.apk
+adb shell am start -n org.fuse.uidemo/android.app.NativeActivity [--es args "--draw=cpu"]
+adb logcat -s fuse_app
+ANDROID_SERIAL=emulator-5554 ctest --test-dir build-android -L android   # the four gates below
+```
+
+The gates run on the host (`App/android/android_gate.py`: install, drive with `am` / `input` / `settings`, read the
+state file the demo keeps with `run-as`) and skip with 77 when adb or a device with the APK's ABI is missing.
+Emulator: an x86_64 Google APIs image (API 36 was used) with `emulator -avd <name> -no-window -gpu host` (or
+`-gpu swiftshader_indirect`) has Vulkan (`adb shell pm has-feature android.hardware.vulkan.version`).
+
+Behaviour on Android:
+- `NativePlatform::show` waits for the activity window and returns `Vulkan` (`VK_KHR_android_surface`, the same
+  swapchain presenter, GPU draw or CPU upload) or `Software` (`ANativeWindow_lock` of the CPU raster;
+  `NativeOptions::vulkan = false`). Vulkan starts synchronously (`asyncVulkan` is ignored: a window that
+  `ANativeWindow_lock` connected as a CPU producer cannot be handed to a swapchain). The window is the whole activity,
+  sized by the OS; `AppWindow::setScale` gets the screen density / 160 unless `NativeOptions::scale` is set.
+  `displays()` reports the screen with the safe area as the work area; `querySystemTheme()` follows night mode.
+- Lifecycle: `APP_CMD_TERM_WINDOW` releases the swapchain and surface (the device stays), `APP_CMD_INIT_WINDOW`
+  rebuilds them and repaints; the UI tree is never touched. Pause / resume, config changes (rotation, density;
+  the manifest keeps the activity alive) and low memory are counted (`NativePlatform::lifecycle()`) and reported
+  through `NativeHooks`; with `fuse_core` (or `Core/src/platform/platform_hardening.cpp` standalone)
+  `fuse::platform::notifyAppVisibility` and `notifySurfaceLost/Restored` fire. Back sends Escape (closes a popup or
+  dialog) and finishes the activity when nothing used it. Process death loses the UI state (no saved-state hook yet).
+- Touch: every `AMotionEvent` contact goes to `UiContext::touchDown/Move/Up` (the same path as Win32 `WM_POINTER`):
+  the first finger is the pointer (tap = click, no hover after lift), all are in `touches()` / `pinchScale()`; a
+  vertical drag past `UiContext::kTouchSlop` over a scroll container pans it (the press is released without a click).
+  Mouse wheel and hover work too. Popups are in-window overlays.
+- Safe area: `NativePlatform::safeAreaInsets` (system bars + display cutout through `WindowInsets`, UI units) and
+  `NativeHooks::insetsChanged`; pass them to `GameUi::setSafeArea` or pad the root (the demo does).
+- Text: the soft keyboard is shown / hidden as text fields gain / lose focus (`InputMethodManager` on the decor view;
+  `NativeOptions::autoSoftKeyboard`, `setSoftKeyboard`). Key events become `keyDown` / `keyUp` plus committed text
+  through `KeyCharacterMap`; there is no IME composition (pre-edit) with NativeActivity.
+
 ## Game UI (UI7)
 
 ```cpp
@@ -411,6 +461,10 @@ checks it against the overlay under one scripted event stream.
 | `fuse_app_tray` | tray icon added and found (`Shell_NotifyIconGetRect` / `NIM_MODIFY`), simulated click / double-click callbacks, a real `TrackPopupMenu` context menu picked by posted keys, a notification, removal (77 without a tray) |
 | `fuse_ui_platform_services` | headless: DPI scale (layout fixed, device-pixel draw list, re-rasterised glyphs), `cursor:` style, reduced motion, touch / pinch / pen through `platform_bridge`, dark → light theme slot |
 | `fuse_platform_dpi_change`, `fuse_platform_displays`, `fuse_platform_cursors`, `fuse_platform_system_theme`, `fuse_platform_dialogs`, `fuse_platform_touch_synthetic`, `fuse_platform_multiwindow` | real windows: `WM_DPICHANGED` re-scale and back, monitors, OS cursor per hovered widget, theme change via `WM_SETTINGCHANGE` (faked query, user settings untouched), dialogs dismissed by a helper thread, injected touch tap + pinch, two swapchain windows with input routing / close / per-window DPI |
+| `fuse_platform_present_android` | Android build tree, adb: the demo presents on Vulkan (GPU draw and CPU upload) and in software; each surface's first frame read back in-process matches the CPU raster; density scale applied |
+| `fuse_app_lifecycle_android` | HOME releases the surface, `am start` rebuilds it with a correct first frame and the same UI state; rotation resizes to landscape and back |
+| `fuse_platform_touch_android` | `input tap` clicks the button; `input swipe` over the list scrolls it both ways without clicking |
+| `fuse_platform_ime_android` | tapping the line edit focuses it and shows the soft keyboard; `input text` and backspace edit it |
 | `fuse_ui_game_hud_golden` | HUD demo scene against `tests/golden/hud.png` plus trail / marker / pool state |
 | `fuse_ui_gamepad_nav` | navigation with delay + repeat, A / B, radial menu by stick, prompt glyph swap, focus sounds |
 | `fuse_ui_world_panel_raycast` | ray → panel pixel mapping, misses and back faces, ray clicks, idle surface does not re-render |
