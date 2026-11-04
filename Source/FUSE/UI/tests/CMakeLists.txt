@@ -23,7 +23,8 @@ if(FUSE_UI_TEXT STREQUAL "COOKED")
     set(_tf_out "")
     foreach(spec "colrv1_test|--sizes=30,32,45,48,56|--msdf"
                  "bitmap_cbdt_test|--sizes=20|--color-sizes=8,12,16,20,32,40,64,100"
-                 "bitmap_sbix_test|--sizes=20|--color-sizes=8,12,16,20,32,40,64,100")
+                 "bitmap_sbix_test|--sizes=20|--color-sizes=8,12,16,20,32,40,64,100"
+                 "variable_test|--sizes=24,100|--variation=wght:700")
         string(REPLACE "|" ";" _spec "${spec}")
         list(POP_FRONT _spec _name)
         add_custom_command(OUTPUT "${_tf}/${_name}.fusefont"
@@ -84,6 +85,11 @@ if(FUSE_UI_TEXT STREQUAL "COOKED")
         FUSE_TEXT_COOKED_REFERENCE="${FUSE_TEXT_COOKED_FONT_DIR}/opensans/OpenSans.reference")
 endif()
 set_tests_properties(fuse_text_cooked PROPERTIES LABELS "fuse_ui;gate;text")
+
+# Variable fonts: data/variable_test.ttf (make_variable_test_font.py) + Segoe UI Variable / Bahnschrift when installed;
+# COOKED: the pack cooked at wght 700.
+fuse_ui_test(fuse_text_variable test_text_variable.cpp)
+set_tests_properties(fuse_text_variable PROPERTIES LABELS "fuse_ui;gate;text" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Colour glyphs (CBDT / sbix strikes) and MSDF glyphs (quality, UI threshold, GPU parity when fuse_ui_vk is built).
 foreach(g bitmap_emoji msdf)
