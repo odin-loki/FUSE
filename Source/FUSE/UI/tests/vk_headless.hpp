@@ -39,6 +39,10 @@ struct VkHeadless {
     u32 w = 0, h = 0;
     char deviceName[256] = {};
     VkDebugUtilsMessengerEXT messenger = VK_NULL_HANDLE;
+    /// UI-T0 (plan §4.9): a Vulkan 1.1 instance, and a device created with no features and no extensions.
+    static constexpr u32 kApiVersion = VK_API_VERSION_1_1;
+    u32 deviceExtensionCount = 0;      ///< as passed to vkCreateDevice
+    bool deviceFeaturesEnabled = true; ///< false once created without pEnabledFeatures / a features chain
 
     /// Set before init(): enable VK_LAYER_KHRONOS_validation (fuse_ui_vk_validation_clean).
     static bool& validationRequested() {
@@ -82,7 +86,7 @@ struct VkHeadless {
         w = width;
         h = height;
         VkApplicationInfo ai{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-        ai.apiVersion = VK_API_VERSION_1_1;
+        ai.apiVersion = kApiVersion;
         VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
         ici.pApplicationInfo = &ai;
         // validation (validationRequested()): Khronos layer + synchronization validation, messages counted
@@ -158,6 +162,8 @@ struct VkHeadless {
         dci.queueCreateInfoCount = 1;
         dci.pQueueCreateInfos = &qci;
         if (vkCreateDevice(phys, &dci, nullptr, &device) != VK_SUCCESS) return false;
+        deviceExtensionCount = dci.enabledExtensionCount;
+        deviceFeaturesEnabled = dci.pEnabledFeatures != nullptr || dci.pNext != nullptr;
         FUSE_UI_TEST_VOLK(fuse::renderer::vkloader::registerDevice(device, instance));
         vkGetDeviceQueue(device, family, 0, &queue);
         VkCommandPoolCreateInfo pci{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
