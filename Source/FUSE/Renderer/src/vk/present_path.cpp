@@ -217,7 +217,8 @@ bool PresentPath::presentImage() {
         ++m_status.emptyPresentCount;
     } else {
         const FrameSyncData& slot = frameManager->slot(m_acquireSlot);
-        presented = swapchain->present(slot.renderFinished, m_status.acquiredImageIndex);
+        presented = swapchain->present(swapchain->presentSemaphore(m_status.acquiredImageIndex, slot.renderFinished),
+                                       m_status.acquiredImageIndex);
         if (presented && realPresentEligibleNow) {
             ++m_status.realPresentCallCount;
         }
