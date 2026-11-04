@@ -137,6 +137,24 @@ Without a native platform the app runs headless (tests, `--screenshot=`). `Prese
 `VkDrawMode::CpuUpload`; `Software` blits). `NativePlatform::capture` reads back what the OS shows (used by `fuse_app_native_window`).
 Under Xvfb set `VK_ICD_FILENAMES` to lavapipe; under Wine the Win32 path and the Vulkan presenter both run.
 
+Desktop platform services (UI1, `fuse/app/native.hpp`, `fuse/app/platform.hpp`):
+
+- DPI: the process is per-monitor-v2 aware; each window takes its monitor's scale and follows `WM_DPICHANGED`
+  (X11: `Xft.dpi`, `$FUSE_UI_SCALE`; `NativePlatform::setWindowScale` forces one). `AppWindow::scale()` /
+  `pixelSize()` / `onDpiChanged`; `UiContext::setScale` keeps layout and input in UI units and emits the draw list in
+  device pixels with text rasterised at the new size.
+- `NativePlatform::displays()` (bounds, work area, scale, refresh rate, primary).
+- Cursors: the `cursor:` style (`default text pointer ns-resize ew-resize nwse-resize nesw-resize move wait
+  not-allowed crosshair`, inherited) picks the OS cursor; line edits, links and splitter handles set theirs.
+- Theme: `Application::systemTheme()` (dark, accent, high contrast, reduced motion, text scale), `onThemeChanged`,
+  live on `WM_SETTINGCHANGE`; `setFollowSystemTheme(true)` switches the default theme dark / light
+  (`widgets::themeCss(ThemeVariant)`, `UiContext::setThemeStyleSheet`) with the system accent. Reduced motion always
+  makes `animate()` jump; the title bar follows via `DWMWA_USE_IMMERSIVE_DARK_MODE`.
+- Touch and pen (Win32 `WM_POINTER` → events_v2 `Touch*` / `Pen*` → `UiContext::touchDown/Move/Up`): the first
+  finger is the pointer, every contact is in `touches()`, `pinchScale()` for two fingers, `pressure()` for the pen.
+- `openFileDialog` / `saveFileDialog` / `pickFolderDialog` (IFileDialog; zenity on X11), `messageBox`, `openUrl`
+  (http, https, mailto, file only), `revealInFileManager`.
+
 ## Game UI (UI7)
 
 ```cpp
@@ -186,7 +204,7 @@ are deferred). Inline (`setCss`) beats everything; later sheets win ties. Layout
 (box/grid/stack/anchor/absolute/flow), `flex-direction`, `flex-wrap`, `gap`, `padding*`, `margin*`,
 `width/height/min-*/max-*`, `flex-grow/shrink/basis`, `align-items/self`, `justify-content`,
 `grid-template-columns`, `grid-row/column(-span)`, `left/top/right/bottom/center-x/center-y`, `overflow`
-(visible/clip/scroll), `display`, `pointer-events`. Paint: `background` (colour or `linear-gradient`),
+(visible/clip/scroll), `display`, `pointer-events`, `cursor`. Paint: `background` (colour or `linear-gradient`),
 `background-end` (gradient end; widgets use it as the accent), `border`, `border-width/color`, `border-*-radius`,
 `box-shadow`, `shadow-x/y/blur/color`, `opacity`, `color`, `font-size`, `text-align`. Selectors also accept
 `:active`, `:selected`.
@@ -213,6 +231,8 @@ checks it against the overlay under one scripted event stream.
 
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
 | `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster (skips 77 without a display or device) |
+| `fuse_ui_platform_services` | headless: DPI scale (layout fixed, device-pixel draw list, re-rasterised glyphs), `cursor:` style, reduced motion, touch / pinch / pen through `platform_bridge`, dark → light theme slot |
+| `fuse_platform_dpi_change`, `fuse_platform_displays`, `fuse_platform_cursors`, `fuse_platform_system_theme`, `fuse_platform_dialogs`, `fuse_platform_touch_synthetic`, `fuse_platform_multiwindow` | real windows: `WM_DPICHANGED` re-scale and back, monitors, OS cursor per hovered widget, theme change via `WM_SETTINGCHANGE` (faked query, user settings untouched), dialogs dismissed by a helper thread, injected touch tap + pinch, two swapchain windows with input routing / close / per-window DPI |
 | `fuse_ui_game_hud_golden` | HUD demo scene against `tests/golden/hud.png` plus trail / marker / pool state |
 | `fuse_ui_gamepad_nav` | navigation with delay + repeat, A / B, radial menu by stick, prompt glyph swap, focus sounds |
 | `fuse_ui_world_panel_raycast` | ray → panel pixel mapping, misses and back faces, ray clicks, idle surface does not re-render |

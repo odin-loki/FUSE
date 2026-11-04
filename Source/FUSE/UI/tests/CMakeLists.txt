@@ -195,6 +195,23 @@ if(TARGET fuse_app)
         set_tests_properties(fuse_app_os_popups PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300
             ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate;vulkan")
     endif()
+    if(TARGET fuse_app_native)
+        # UI1 desktop platform services on real windows: DPI change, displays, cursors, system theme, native dialogs,
+        # touch injection, multiple windows (one executable per gate; see test_platform_desktop.cpp).
+        foreach(g dpi_change displays cursors system_theme dialogs touch_synthetic multiwindow)
+            add_executable(fuse_platform_${g} test_platform_desktop.cpp)
+            target_link_libraries(fuse_platform_${g} PRIVATE fuse_app_native)
+            target_compile_definitions(fuse_platform_${g} PRIVATE FUSE_PLATFORM_GATE="${g}")
+            if(FUSE_UI_XVFB_RUN AND NOT WIN32)
+                add_test(NAME fuse_platform_${g} COMMAND ${FUSE_UI_XVFB_RUN} -a -s "-screen 0 1280x800x24"
+                         $<TARGET_FILE:fuse_platform_${g}>)
+            else()
+                add_test(NAME fuse_platform_${g} COMMAND fuse_platform_${g})
+            endif()
+            set_tests_properties(fuse_platform_${g} PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 180
+                ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate;vulkan")
+        endforeach()
+    endif()
     if(TARGET hello_app)
         add_test(NAME fuse_app_hello_sample COMMAND hello_app --screenshot=${CMAKE_CURRENT_BINARY_DIR}/hello_app.png)
         add_test(NAME fuse_app_notes_sample COMMAND notes_app --settings=${CMAKE_CURRENT_BINARY_DIR}/notes_settings.ini
