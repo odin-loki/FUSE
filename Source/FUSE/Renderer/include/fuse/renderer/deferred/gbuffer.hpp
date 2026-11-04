@@ -56,7 +56,7 @@ struct GBufferQuantize {
     /// Next representable half above / below `bits` (signed zero treated as zero).
     static u16 halfNextUp(u16 bits);
     static u16 halfNextDown(u16 bits);
-    /// UNORM8 round trip (clamped to [0,1], round to nearest).
+    /// UNORM8 round trip (clamped to [0,1], round to nearest even: the shaders' write_gbuffer rule).
     static f32 toUnorm8(f32 value);
 };
 
