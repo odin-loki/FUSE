@@ -6,11 +6,16 @@
 //   * ProjectHost brings up only {AppPresent} for an app project (no job scheduler, no game frame / renderer /
 //     physics), opens its window with the .fuseui and presents the first frame within 150 ms (headless)
 //   * ui.theme dark / light / system; a hybrid project brings its game side up only when a viewport widget shows
-//   --native: the same on a real OS window (Win32 / X11), presented pixels match the CPU raster; exit 77 without one
+//   * a hybrid viewport shows the game side's GPU scene (a red cube probe): its pixels equal the GPU readback
+//   --native: the same on a real OS window (Win32 / X11), presented pixels match the CPU raster; the hybrid viewport
+//     is sampled in place on a GPU drawn window (zero-copy) and matches the readback; exit 77 without a display
 #include "fuse/app/project_host_hybrid.hpp"
 #include "fuse/ui/doc/document.hpp"
+#include "fuse/ui/widgets/widgets.hpp"
 
 #include <fuse/core/init.hpp>
+#include <fuse/hybrid/hybrid_composer.hpp>
+#include <fuse/world3d/world_3d.hpp>
 #include <fuse/core/track_b.hpp>
 #include <fuse/project/loader.hpp>
 
@@ -479,6 +484,154 @@ void hybridViewport() {
     CHECK(!fuse::core::isInitialized());
 }
 
+/// Mean colour (0..255 per channel) of a w x h region of RGBA8 words.
+struct Mean {
+    double r = 0, g = 0, b = 0;
+};
+Mean meanOf(const std::vector<u32>& px, u32 stride, int x0, int y0, int w, int h) {
+    Mean m;
+    for (int y = y0; y < y0 + h; ++y)
+        for (int x = x0; x < x0 + w; ++x) {
+            const u32 p = px[std::size_t(y) * stride + std::size_t(x)];
+            m.r += p & 0xFF;
+            m.g += (p >> 8) & 0xFF;
+            m.b += (p >> 16) & 0xFF;
+        }
+    const double n = double(w * h);
+    return {m.r / n, m.g / n, m.b / n};
+}
+
+int hybridScenePixels(bool native) {
+    // the viewport shows the game side's real GPU scene: a red cube lit by a sun in front of the camera. Headless (and
+    // CPU-presented windows) get the GPU frame's readback; a GPU drawn window samples it in place (zero-copy) and its
+    // presented pixels are compared with the readback
+    const fs::path dir = fs::temp_directory_path() / "fuse_project_schema2" / (native ? "HybridGpuN" : "HybridGpu");
+    wipe(dir);
+    CHECK(project::createAppProject(dir.string(), "HG").ok);
+    {
+        std::ofstream ui(dir / "ui" / "main.fuseui", std::ios::binary | std::ios::trunc);
+        ui << R"({ "fuseui": 1, "root": { "class": "panel", "id": "main", "children": [
+            { "class": "viewport", "id": "vp" } ] } })";
+    }
+    project::ProjectManifest m = project::appTemplateManifest("HG");
+    m.kind = project::ProjectKind::Hybrid;
+    m.dimensions = {true, false, true};
+    CHECK(project::saveToDirectory(m, dir.string()).ok);
+    auto started = fuse::app::ProjectHost::start(
+        {.projectPath = dir.string(), .showWindows = native, .gameSide = fuse::app::hybridGameSide(), .gpuValidation = true});
+    if (!started) {
+        std::fprintf(stderr, "  hybrid GPU start: %s\n", started.error().c_str());
+        ++g_fail;
+        return 1;
+    }
+    fuse::app::ProjectHost& host = **started;
+    const char* tag = native ? "hybrid GPU (native)" : "hybrid GPU (headless)";
+    if (native && !host.native()) {
+        std::printf("  %s: skipped (no display)\n", tag);
+        return 77;
+    }
+    if (!host.viewportGpu()) {
+        std::printf("  %s: no Vulkan device, software viewport (pixel checks skipped)\n", tag);
+        return 0;
+    }
+    fuse::app::AppWindow* w = host.window("main");
+    fuse::ui::UiContext& ui = w->ui();
+    const NodeHandle vp = ui.find("vp");
+    ui.setCss(vp, "width", "320px");
+    ui.setCss(vp, "height", "240px");
+    const auto stepUntil = [&](auto done, double seconds) {
+        const auto end = std::chrono::steady_clock::now() + std::chrono::duration<double>(seconds);
+        while (!done() && std::chrono::steady_clock::now() < end) host.app().step(0.01f);
+    };
+    stepUntil([&] { return host.gameSideUp(); }, 20.0);
+    CHECK(host.gameSideUp());
+    if (!host.gameSideUp()) return 1;
+    // the probe scene
+    auto* composer = static_cast<fuse::hybrid::HybridComposer*>(host.gameSideHandle());
+    fuse::world3d::World3D& world = *composer->world3D();
+    fuse::world3d::RenderMaterial3D red;
+    red.baseColor[0] = 0.9f, red.baseColor[1] = 0.05f, red.baseColor[2] = 0.05f;
+    red.emissive[0] = 1.f, red.emissiveIntensity = 1.f;
+    world.setMaterial(7, red);
+    const f32 centre[3] = {0.f, 0.f, 0.f}, half[3] = {1.f, 1.f, 1.f};
+    (void)world.spawnMesh(fuse::world3d::BuiltinMesh::Cube, 7, centre, half);
+    const f32 toSun[3] = {0.3f, 1.f, 0.6f}, white[3] = {1.f, 1.f, 1.f};
+    (void)world.spawnDirectionalLight(toSun, white, 3.f);
+    fuse::world3d::RenderCamera3D cam{};
+    cam.eye[2] = 4.f;
+    cam.fovY = 0.9f;
+    cam.nearPlane = 0.1f;
+    cam.farPlane = 100.f;
+    cam.valid = true;
+    world.setCamera(cam);
+    const u64 f0 = host.viewportFrames();
+    stepUntil([&] { return host.viewportFrames() >= f0 + 8; }, 20.0);
+    CHECK(host.viewportFrames() >= f0 + 8);
+
+    std::vector<u32> gpu;
+    u32 gw = 0, gh = 0;
+    CHECK(host.viewportReadback(gpu, gw, gh));
+    if (gpu.empty()) return 1;
+    // known probe: the cube fills the centre (red), the sky the corners
+    const Mean c = meanOf(gpu, gw, int(gw / 2 - 8), int(gh / 2 - 8), 16, 16);
+    const Mean k = meanOf(gpu, gw, 2, 2, 12, 12);
+    std::printf("  %s: %ux%u frame, centre (%.0f, %.0f, %.0f), corner (%.0f, %.0f, %.0f)\n", tag, gw, gh, c.r, c.g, c.b,
+                k.r, k.g, k.b);
+    // the frame is rendered at the viewport's content size in device pixels (shown 1:1)
+    const f32 s = w->scale();
+    const Rect content = ui.contentRect(vp);
+    CHECK(gw == u32(std::lround(content.w * s)) && gh == u32(std::lround(content.h * s)));
+    CHECK(c.r > 100.0 && c.r > c.g + 60.0 && c.r > c.b + 60.0);
+    CHECK(std::abs(k.r - c.r) + std::abs(k.g - c.g) + std::abs(k.b - c.b) > 60.0);
+
+    const fuse::app::NativePlatform* np = host.native();
+    const bool gpuDrawn = np && host.native()->gpuDraws(*w);
+    Image shown;
+    if (!native) {
+        shown = w->rasterize({}); // headless: the viewport image is the readback of the same frame
+    } else {
+        // the window's presented pixels inside the viewport
+        w->requestRedraw();
+        const u64 p0 = w->framesPresented();
+        stepUntil([&] { return w->framesPresented() > p0 + 2; }, 10.0);
+        CHECK(host.native()->capture(*w, shown));
+    }
+    const Rect r = fuse::ui::widgets::viewportImageRect(ui, vp);
+    const int x0 = int(std::lround(r.x * s)), y0 = int(std::lround(r.y * s));
+    CHECK(std::lround(r.w * s) == long(gw) && std::lround(r.h * s) == long(gh));
+    int maxErr = 0;
+    double sumErr = 0.0;
+    std::size_t compared = 0;
+    for (u32 y = 2; y + 2 < gh; ++y)
+        for (u32 x = 2; x + 2 < gw; ++x) {
+            const int sx = x0 + int(x), sy = y0 + int(y);
+            if (sx >= shown.width || sy >= shown.height) continue;
+            const u32 a = shown.at(sx, sy), b = gpu[std::size_t(y) * gw + x];
+            int e = 0;
+            for (int ch = 0; ch < 3; ++ch) e = std::max(e, std::abs(int((a >> (8 * ch)) & 0xFF) - int((b >> (8 * ch)) & 0xFF)));
+            maxErr = std::max(maxErr, e);
+            sumErr += e;
+            ++compared;
+        }
+    if (shown.width > x0 + int(gw / 2) && shown.height > y0 + int(gh / 2))
+        std::printf("  %s: shown %dx%d, image rect (%d, %d) %ux%u, centre shown 0x%08X vs GPU 0x%08X\n", tag, shown.width,
+                    shown.height, x0, y0, gw, gh, shown.at(x0 + int(gw / 2), y0 + int(gh / 2)),
+                    gpu[std::size_t(gh / 2) * gw + gw / 2]);
+    const double meanErr = compared ? sumErr / double(compared) : 255.0;
+    std::printf("  %s: viewport via %s, %llu zero-copy frames, %zu pixels vs the GPU readback: max channel error %d, "
+                "mean %.3f\n",
+                tag, gpuDrawn ? "GPU draw list" : "CPU image", static_cast<unsigned long long>(host.viewportZeroCopyFrames()),
+                compared, maxErr, meanErr);
+    CHECK(compared > std::size_t(gw) * gh / 2);
+    if (gpuDrawn) CHECK(host.viewportZeroCopyFrames() > 0);
+    else CHECK(host.viewportZeroCopyFrames() == 0);
+    // headless: the same bytes; on screen: the UI kernel's 1:1 sample + the swapchain conversion
+    CHECK(native ? (maxErr <= 2 && meanErr <= 0.25) : maxErr == 0);
+    started->reset();
+    CHECK(!fuse::core::isInitialized());
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -490,9 +643,11 @@ int main(int argc, char** argv) {
         templateMatches();
         themes();
         hybridViewport();
+        hybridScenePixels(false);
     }
     const int rc = minimalInit(native);
     if (rc == 77) return 77;
+    if (native && hybridScenePixels(true) == 77) return 77;
     const char* name = native ? "fuse_project_schema2_native" : "fuse_project_schema2";
     std::printf("%s: %s\n", name, g_fail ? "FAILED" : "OK");
     return g_fail ? 1 : 0;

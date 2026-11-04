@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -95,10 +96,26 @@ std::expected<std::unique_ptr<ProjectHost>, std::string> ProjectHost::start(cons
 
     // Application + windows. A manifest without windows gets one "main" window titled after the project. The native
     // platform comes first: its asynchronous Vulkan start-up overlaps document loading (software frames meanwhile).
+    // Hybrid GPU viewport: the game side's device exists before the windows, so their presenters adopt it and sample
+    // the game frame in place (zero-copy). Without one the viewport shows the backend's software frame.
+    NativeOptions native = desc.native;
+    const GameSideBackend& b = desc.gameSide;
+    if (m.kind == project::ProjectKind::Hybrid && desc.gpuViewport && host->m_plan.has(HostFeature::Viewport) &&
+        b.gpuCreate && b.gpuDevice && b.gpuFrame && b.gpuDestroy) {
+        std::string error;
+        host->m_gpu = b.gpuCreate(desc.gpuValidation, error);
+        if (!host->m_gpu) {
+            std::fprintf(stderr, "%s: GPU viewport unavailable (%s), software frames\n", m.name.c_str(), error.c_str());
+        } else if (native.adoptDevice.device == nullptr) {
+            native.adoptDevice = b.gpuDevice(host->m_gpu);
+            if (native.drawMode == VkDrawMode::Auto) native.drawMode = VkDrawMode::GpuDraw;
+        }
+    }
+
     host->m_app = std::make_unique<Application>(AppDesc{.name = m.name, .argc = desc.argc, .argv = desc.argv, .loadSettings = false});
     host->m_model = std::make_unique<fuse::ui::doc::Model>();
     if (desc.showWindows) {
-        host->m_native = std::make_unique<NativePlatform>(*host->m_app, desc.native);
+        host->m_native = std::make_unique<NativePlatform>(*host->m_app, native);
         if (!host->m_native->available()) host->m_native.reset(); // no display: headless presenters
     }
     host->m_app->setFollowSystemTheme(m.ui.theme == "system");
@@ -151,6 +168,8 @@ ProjectHost::~ProjectHost() {
     m_viewports.clear();
     if (m_game && m_backend.destroy) m_backend.destroy(m_game);
     m_game = nullptr;
+    if (m_gpu && m_backend.gpuDestroy) m_backend.gpuDestroy(m_gpu); // after the presenters that adopted its device
+    m_gpu = nullptr;
     m_model.reset();
     if ((m_up & hostFeatureBit(HostFeature::AppPresent)) != 0u)
         core::setTrackBHostFeature(core::TrackBHostFeature::AppPresent, false);
@@ -233,10 +252,16 @@ void ProjectHost::viewportTick(u32 windowId) {
     const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     if (m_lastGameFrame >= 0.0 && now - m_lastGameFrame < 0.004) return;
     m_lastGameFrame = now;
+    if (m_gpu && gpuViewportFrame(*w)) {
+        ++m_viewportFrames;
+        armViewportTimer(*w, true);
+        return;
+    }
     u32 fw = 0, fh = 0;
     const unsigned char* px = m_backend.frame(m_game, kViewportFrame, fw, fh);
     for (Viewport& v : m_viewports) {
         if (v.windowId != windowId || !ui.alive(v.node) || !px) continue;
+        v.image->externalSlot = -1;
         v.image->resize(int(fw), int(fh));
         std::memcpy(v.image->pixels.data(), px, std::size_t(fw) * fh * 4);
         fuse::ui::widgets::viewportSetImage(ui, v.node, v.imageIndex, fw, fh);
@@ -244,6 +269,55 @@ void ProjectHost::viewportTick(u32 windowId) {
     }
     ++m_viewportFrames;
     armViewportTimer(*w, true);
+}
+
+bool ProjectHost::gpuViewportFrame(AppWindow& w) {
+    fuse::ui::UiContext& ui = w.ui();
+    // one frame per window, at the device-pixel size of its largest viewport
+    u32 width = 0, height = 0;
+    for (const Viewport& v : m_viewports)
+        if (v.windowId == w.id() && ui.alive(v.node)) {
+            const fuse::ui::Rect r = ui.contentRect(v.node); // the image area (viewportImageRect at 1:1)
+            width = std::max(width, u32(std::lround(r.w * w.scale())));
+            height = std::max(height, u32(std::lround(r.h * w.scale())));
+        }
+    if (width < 2 || height < 2) return false;
+    const bool gpuDrawn = m_native && m_native->gpuDraws(w);
+    GameSideGpuFrame f;
+    if (!m_backend.gpuFrame(m_game, m_gpu, kViewportFrame, width, height, !gpuDrawn, f)) return false;
+    // zero-copy: the window's draw kernel samples the game frame on the shared device
+    const bool zeroCopy = gpuDrawn && f.texture.image && m_native->setExternalTexture(w, kViewportExternalSlot, f.texture);
+    const unsigned char* px = f.pixels;
+    if (!zeroCopy && !px && m_backend.gpuReadback) px = m_backend.gpuReadback(m_gpu, f.width, f.height);
+    if (!zeroCopy && !px) return false;
+    for (Viewport& v : m_viewports) {
+        if (v.windowId != w.id() || !ui.alive(v.node)) continue;
+        if (zeroCopy) {
+            // the CPU pixels are only the rasteriser's fallback: written once per size
+            v.image->externalSlot = int(kViewportExternalSlot);
+            if (v.image->width != int(f.width) || v.image->height != int(f.height))
+                v.image->resize(int(f.width), int(f.height), 0xFF000000u);
+        } else {
+            v.image->externalSlot = -1;
+            v.image->resize(int(f.width), int(f.height));
+            std::memcpy(v.image->pixels.data(), px, std::size_t(f.width) * f.height * 4);
+            for (u32& p : v.image->pixels) p |= 0xFF000000u; // the scene frame is opaque
+        }
+        fuse::ui::widgets::viewportSetImage(ui, v.node, v.imageIndex, f.width, f.height);
+        ui.invalidate(v.node);
+    }
+    if (zeroCopy) ++m_zeroCopyFrames;
+    return true;
+}
+
+bool ProjectHost::viewportReadback(std::vector<u32>& out, u32& width, u32& height) {
+    if (!m_gpu || !m_backend.gpuReadback) return false;
+    const unsigned char* px = m_backend.gpuReadback(m_gpu, width, height);
+    if (!px || width == 0 || height == 0) return false;
+    out.resize(std::size_t(width) * height);
+    std::memcpy(out.data(), px, out.size() * 4);
+    for (u32& p : out) p |= 0xFF000000u;
+    return true;
 }
 
 bool ProjectHost::ensureGameSide() {

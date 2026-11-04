@@ -363,14 +363,16 @@ if(TARGET fuse_app)
         target_link_libraries(fuse_project_schema2 PRIVATE fuse_app_project_hybrid fuse_core)
         target_compile_definitions(fuse_project_schema2 PRIVATE FUSE_REPO_ROOT="${FUSE_UI_REPO_ROOT}")
         add_test(NAME fuse_project_schema2 COMMAND fuse_project_schema2)
-        set_tests_properties(fuse_project_schema2 PROPERTIES LABELS "fuse_ui;gate;project" TIMEOUT 120)
+        # the hybrid viewport renders its GPU scene (Lavapipe on Linux CI)
+        set_tests_properties(fuse_project_schema2 PROPERTIES LABELS "fuse_ui;gate;project;vulkan" TIMEOUT 300
+            RUN_SERIAL TRUE ENVIRONMENT "${FUSE_UI_LVP_ENV}")
         if(FUSE_UI_XVFB_RUN AND NOT WIN32)
             add_test(NAME fuse_project_schema2_native COMMAND ${FUSE_UI_XVFB_RUN} -a -s "${FUSE_UI_XVFB_ARGS}"
                      $<TARGET_FILE:fuse_project_schema2> --native)
         else()
             add_test(NAME fuse_project_schema2_native COMMAND fuse_project_schema2 --native)
         endif()
-        set_tests_properties(fuse_project_schema2_native PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
+        set_tests_properties(fuse_project_schema2_native PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300
             ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate;project;vulkan")
     endif()
     # Windows UI Automation through AccessKit on a real window (skips with 77 when AccessKit is not linked)

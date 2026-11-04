@@ -9,8 +9,10 @@
 namespace fuse::app {
 
 /// HybridComposer with the project's dimension flags, World3D (default world when its .fuselevel exists, physics on)
-/// and World2D per the dimensions; each frame ticks + renders and hands out the composer's software frame. `handle`
-/// returns the fuse::hybrid::HybridComposer* (e.g. composer->enableGpuScene() for a GPU-rendered viewport).
+/// and World2D per the dimensions; each frame ticks + renders and hands out the composer's software frame. With the
+/// Vulkan RHI it also offers the GPU viewport (GameSideBackend::gpu*): a device created at start, the worlds rendered
+/// by a HybridSceneRenderer on it into its headless target, sampled in place by GPU drawn windows. `handle` returns
+/// the fuse::hybrid::HybridComposer* (its worlds: composer->world3D() / world2D()).
 GameSideBackend hybridGameSide();
 
 } // namespace fuse::app

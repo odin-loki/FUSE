@@ -27,6 +27,13 @@ class Model;
 
 namespace fuse::app {
 
+/// One game frame rendered on the game side's GPU device (GameSideBackend::gpuFrame).
+struct GameSideGpuFrame {
+    ExternalTexture texture{};             ///< RGBA8 target: sampled in place by a window presenting on that device
+    u32 width = 0, height = 0;
+    const unsigned char* pixels = nullptr; ///< RGBA8 host copy of the frame (gpuFrame with readback), else null
+};
+
 /// A hybrid project's deferred game side as a function table (fuse/app/project_host_hybrid.hpp has the engine one).
 struct GameSideBackend {
     /// Brings the game side up for `m` (job scheduler already running). Null on failure (`error` says why).
@@ -36,6 +43,19 @@ struct GameSideBackend {
     void (*destroy)(void* side) = nullptr;
     /// Engine object for the app (hybrid: fuse::hybrid::HybridComposer*).
     void* (*handle)(void* side) = nullptr;
+
+    // Optional GPU viewport (all four or none). The device is created at start, before any window opens, so a GPU
+    // drawn window presents on it and samples the game frame without a copy (NativeOptions::adoptDevice +
+    // NativePlatform::setExternalTexture); CPU-presented and headless windows get the frame's readback instead.
+    /// Creates the game side's Vulkan device. Null when there is none (`error` says why): frame() is used instead.
+    void* (*gpuCreate)(bool validation, std::string& error) = nullptr;
+    VulkanDeviceHandles (*gpuDevice)(void* gpu) = nullptr;
+    /// One game frame rendered on `gpu` at `width` x `height`; `readback`: also copied to host memory (out.pixels).
+    /// False when the GPU frame failed (the caller falls back to frame()).
+    bool (*gpuFrame)(void* side, void* gpu, f32 dt, u32 width, u32 height, bool readback, GameSideGpuFrame& out) = nullptr;
+    void (*gpuDestroy)(void* gpu) = nullptr; ///< after destroy() of every side rendered on it
+    /// Optional: RGBA8 host copy of the last GPU frame (waits for the GPU); null before the first one.
+    const unsigned char* (*gpuReadback)(void* gpu, u32& width, u32& height) = nullptr;
 };
 
 struct ProjectHostDesc {
@@ -46,6 +66,10 @@ struct ProjectHostDesc {
     NativeOptions native{};
     /// Required for hybrid projects (start() refuses them without one); unused by app projects.
     GameSideBackend gameSide{};
+    /// Hybrid: render viewports on the game side's GPU device when the backend offers one (zero-copy on GPU drawn
+    /// windows). false: always the backend's software frame().
+    bool gpuViewport = true;
+    bool gpuValidation = false; ///< Khronos validation on that device (gates)
 };
 
 /// Milliseconds from start() entry to each step (steady clock).
@@ -95,6 +119,14 @@ public:
     u32 viewportCount() const { return u32(m_viewports.size()); }
     /// Game frames rendered into viewports so far.
     u64 viewportFrames() const { return m_viewportFrames; }
+    /// True when viewports are rendered on the game side's GPU device (GameSideBackend::gpuCreate succeeded).
+    bool viewportGpu() const { return m_gpu != nullptr; }
+    /// GPU game frames shown without a copy (a GPU drawn window sampled them in place).
+    u64 viewportZeroCopyFrames() const { return m_zeroCopyFrames; }
+    /// The last GPU game frame as opaque RGBA8 words (waits for the GPU). False without one.
+    bool viewportReadback(std::vector<u32>& out, u32& width, u32& height);
+    /// External slot of the window's GPU draw kernel that samples the game frame.
+    static constexpr unsigned kViewportExternalSlot = 0;
 
 private:
     struct Viewport {
@@ -108,8 +140,11 @@ private:
     void armViewportTimer(AppWindow& w, bool fast);
     void viewportTick(u32 windowId);
     AppWindow* windowById(u32 id);
+    bool gpuViewportFrame(AppWindow& w);
     GameSideBackend m_backend{};
     void* m_game = nullptr;
+    void* m_gpu = nullptr; ///< GameSideBackend::gpuCreate: outlives m_game and the presenters adopting its device
+    u64 m_zeroCopyFrames = 0;
     double m_lastGameFrame = -1.0; ///< steady seconds of the last game frame
     std::vector<Viewport> m_viewports;
     std::vector<std::pair<u32, fuse::ui::TimerHandle>> m_viewportTimers; ///< window id -> poll / frame timer
