@@ -98,116 +98,15 @@ layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer Lt
 layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer LtEmittersRef { LtEmitter v[]; };
 layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer LtU32Ref { uint v[]; };
 
-// --- correctly rounded division and square root ------------------------------------------------------------
-// Vulkan lets OpFDiv be 2.5 ulp off and sqrt be inherited from inversesqrt; NVIDIA uses that slack, so a plain
-// `/` or `sqrt` differs from the CPU kernel's IEEE result in the last bits, and the sampler's decisions
-// (u < p0, the rescaled u) can then pick another branch. lt_div_rn / lt_sqrt_rn return the IEEE round-to-nearest
-// result: the hardware value (a few ulp off at most) is stepped to the neighbour on the right side of the
-// rounding midpoints, which are compared exactly in 64-bit integers (a midpoint has 25 significant bits, its
-// product with a 24-bit mantissa fits in 50 bits; a quotient or a square root of floats is never exactly a
-// midpoint, so there are no ties). Where IEEE division / sqrt are already exact (Lavapipe) this is the identity.
-// Zero, subnormal, infinite and NaN operands or results keep the hardware value.
-
-bool lt_is_normal(float x) {
-    const uint e = (floatBitsToUint(x) >> 23u) & 0xFFu;
-    return e != 0u && e != 0xFFu;
-}
-
-// |x| = m * 2^e (x normal): m in [2^23, 2^24).
-uint lt_mantissa(float x) { return (floatBitsToUint(x) & 0x7FFFFFu) | 0x800000u; }
-int lt_exponent(float x) { return int((floatBitsToUint(x) >> 23u) & 0xFFu) - 150; }
-
-// sign(ma * 2^ea - p * 2^ep) for ma in [2^23, 2^24), p in [2^46, 2^52).
-int lt_compare_scaled(uint ma, int ea, uint64_t p, int ep) {
-    const int k = ea - ep;
-    if (k < 0) {
-        return -1; // p * 2^-k >= p >= 2^46 > ma
-    }
-    if (k > 40) {
-        return 1; // ma * 2^k >= 2^64 > p
-    }
-    const uint64_t lhs = uint64_t(ma) << uint(k);
-    return lhs > p ? 1 : (lhs < p ? -1 : 0);
-}
-
-// The rounding midpoints next to q (normal, > 0): (m, e) with midpoint = m * 2^e, m < 2^26.
-void lt_mid_up(float q, out uint64_t m, out int e) {
-    m = uint64_t(lt_mantissa(q)) * 2ul + 1ul;
-    e = lt_exponent(q) - 1;
-}
-void lt_mid_down(float q, out uint64_t m, out int e) {
-    const uint mq = lt_mantissa(q);
-    if (mq == 0x800000u) { // power of two: the float below is half an ulp closer
-        m = uint64_t(mq) * 4ul - 1ul;
-        e = lt_exponent(q) - 2;
-    } else {
-        m = uint64_t(mq) * 2ul - 1ul;
-        e = lt_exponent(q) - 1;
-    }
-}
-
-float lt_div_rn(float a, float b) {
-    const float q0 = a / b;
-    if (!lt_is_normal(a) || !lt_is_normal(b) || !lt_is_normal(q0)) {
-        return q0;
-    }
-    const uint sign = floatBitsToUint(q0) & 0x80000000u;
-    float q = abs(q0);
-    const uint ma = lt_mantissa(a);
-    const int ea = lt_exponent(a);
-    const uint64_t mb = uint64_t(lt_mantissa(b));
-    const int eb = lt_exponent(b);
-    for (uint i = 0u; i < 8u; ++i) {
-        uint64_t m;
-        int e;
-        lt_mid_up(q, m, e);
-        if (lt_compare_scaled(ma, ea, m * mb, e + eb) > 0) { // |a| > mid * |b|: round up
-            q = uintBitsToFloat(floatBitsToUint(q) + 1u);
-        } else {
-            lt_mid_down(q, m, e);
-            if (lt_compare_scaled(ma, ea, m * mb, e + eb) < 0) {
-                q = uintBitsToFloat(floatBitsToUint(q) - 1u);
-            } else {
-                break;
-            }
-        }
-        if (!lt_is_normal(q)) {
-            return q0;
-        }
-    }
-    return uintBitsToFloat(floatBitsToUint(q) | sign);
-}
-
-float lt_sqrt_rn(float x) {
-    const float s0 = sqrt(x);
-    if (!(x > 0.0) || !lt_is_normal(x) || !lt_is_normal(s0)) {
-        return s0;
-    }
-    float s = s0;
-    const uint mx = lt_mantissa(x);
-    const int ex = lt_exponent(x);
-    for (uint i = 0u; i < 8u; ++i) {
-        uint64_t m;
-        int e;
-        lt_mid_up(s, m, e);
-        if (lt_compare_scaled(mx, ex, m * m, 2 * e) > 0) { // x > mid^2: round up
-            s = uintBitsToFloat(floatBitsToUint(s) + 1u);
-        } else {
-            lt_mid_down(s, m, e);
-            if (lt_compare_scaled(mx, ex, m * m, 2 * e) < 0) {
-                s = uintBitsToFloat(floatBitsToUint(s) - 1u);
-            } else {
-                break;
-            }
-        }
-    }
-    return s;
-}
+// Correctly rounded division / square root (fuse_div_rn / fuse_sqrt_rn, common/exact_math.glsl): Vulkan lets `/` and
+// `sqrt` be a few ulp off and NVIDIA uses that slack, but the sampler's decisions (u < p0, the rescaled u) must pick
+// the CPU kernel's branch.
+#include "../common/exact_math.glsl"
 
 float lt_min(float a, float b) { return b < a ? b : a; }
 float lt_max(float a, float b) { return a < b ? b : a; }
 float lt_safe_sqrt(float x) {
-    precise float r = lt_sqrt_rn(lt_max(x, 0.0));
+    precise float r = fuse_sqrt_rn(lt_max(x, 0.0));
     return r;
 }
 
@@ -248,10 +147,10 @@ float lt_importance(LtNode node, vec3 p, vec3 n, bool hasNormal) {
     precise float wy = 0.0;
     precise float wz = 0.0;
     if (dist2 > 0.0) {
-        precise float len = lt_sqrt_rn(dist2);
-        wx = lt_div_rn(dx, len);
-        wy = lt_div_rn(dy, len);
-        wz = lt_div_rn(dz, len);
+        precise float len = fuse_sqrt_rn(dist2);
+        wx = fuse_div_rn(dx, len);
+        wy = fuse_div_rn(dy, len);
+        wz = fuse_div_rn(dz, len);
     }
     precise float cosW = node.axis[0] * wx + node.axis[1] * wy + node.axis[2] * wz;
     if ((node.flags & LT_FLAG_TWO_SIDED) != 0u) {
@@ -262,10 +161,10 @@ float lt_importance(LtNode node, vec3 p, vec3 n, bool hasNormal) {
     precise float cosB = -1.0;
     precise float sinB = 0.0;
     if (dist2 > radius2) {
-        precise float sin2 = lt_div_rn(radius2, dist2);
+        precise float sin2 = fuse_div_rn(radius2, dist2);
         precise float oneMinusB = 1.0 - sin2;
         cosB = lt_safe_sqrt(oneMinusB);
-        sinB = lt_sqrt_rn(sin2);
+        sinB = fuse_sqrt_rn(sin2);
     }
     const float cosX = lt_cos_sub_clamped(sinW, cosW, node.sinThetaO, node.cosThetaO);
     const float sinX = lt_sin_sub_clamped(sinW, cosW, node.sinThetaO, node.cosThetaO);
@@ -273,7 +172,7 @@ float lt_importance(LtNode node, vec3 p, vec3 n, bool hasNormal) {
     if (cosP <= node.cosThetaE) {
         return 0.0;
     }
-    precise float importance = lt_div_rn(node.phi * cosP, d2);
+    precise float importance = fuse_div_rn(node.phi * cosP, d2);
     if (hasNormal) {
         precise float cosI = abs(wx * n.x + wy * n.y + wz * n.z);
         precise float oneMinusI = 1.0 - cosI * cosI;
@@ -287,8 +186,8 @@ float lt_importance(LtNode node, vec3 p, vec3 n, bool hasNormal) {
 void lt_branch(float i0, float i1, out float p0, out float p1) {
     precise float sum = i0 + i1;
     if (sum > 0.0) {
-        precise float a = lt_div_rn(i0, sum);
-        precise float b = lt_div_rn(i1, sum);
+        precise float a = fuse_div_rn(i0, sum);
+        precise float b = fuse_div_rn(i1, sum);
         p0 = a;
         p1 = b;
     } else {
@@ -304,7 +203,7 @@ float lt_directional_probability(LtHeader t) {
     if (total == 0u) {
         return 0.0;
     }
-    precise float r = lt_div_rn(float(t.directionalCount), float(total));
+    precise float r = fuse_div_rn(float(t.directionalCount), float(total));
     return r;
 }
 
@@ -338,13 +237,13 @@ void lt_concentric(float u1, float u2, out float x, out float y) {
         return;
     }
     if (abs(a) > abs(b)) {
-        precise float t = (lt_div_rn(b, a)) * 0.78539816;
+        precise float t = (fuse_div_rn(b, a)) * 0.78539816;
         precise float rx = a * lt_cos_poly(t);
         precise float ry = a * lt_sin_poly(t);
         x = rx;
         y = ry;
     } else {
-        precise float t = (lt_div_rn(a, b)) * 0.78539816;
+        precise float t = (fuse_div_rn(a, b)) * 0.78539816;
         precise float rx = b * lt_sin_poly(t);
         precise float ry = b * lt_cos_poly(t);
         x = rx;
@@ -357,7 +256,7 @@ void lt_sample_point(LtEmitter e, float u1, float u2, out vec3 position, out flo
     precise float b = 0.0;
     bool surface = true;
     if (e.kind == LT_KIND_TRIANGLE) {
-        precise float su = lt_sqrt_rn(u1);
+        precise float su = fuse_sqrt_rn(u1);
         a = su * (1.0 - u2);
         b = su * u2;
     } else if (e.kind == LT_KIND_RECT) {
@@ -382,7 +281,7 @@ void lt_sample_point(LtEmitter e, float u1, float u2, out vec3 position, out flo
     precise float py = e.p0[1] + e.e1[1] * a + e.e2[1] * b;
     precise float pz = e.p0[2] + e.e1[2] * a + e.e2[2] * b;
     position = vec3(px, py, pz);
-    precise float inv = lt_div_rn(1.0, e.area);
+    precise float inv = fuse_div_rn(1.0, e.area);
     pdfArea = e.area > 0.0 ? inv : 0.0;
 }
 
@@ -407,7 +306,7 @@ LtSampleResult lt_sample(uint64_t headerAddress, vec3 p, vec3 n, float u0, float
     uint light = LT_INVALID;
     precise float pmf = 0.0;
     if (u < pDir) {
-        precise float q = lt_div_rn(u, pDir);
+        precise float q = fuse_div_rn(u, pDir);
         u = lt_min(q, LT_ONE_MINUS_EPSILON);
         precise float scaled = u * float(t.directionalCount);
         uint k = uint(scaled);
@@ -415,10 +314,10 @@ LtSampleResult lt_sample(uint64_t headerAddress, vec3 p, vec3 n, float u0, float
             k = t.directionalCount - 1u;
         }
         light = LtU32Ref(t.directional).v[k];
-        pmf = lt_div_rn(pDir, float(t.directionalCount));
+        pmf = fuse_div_rn(pDir, float(t.directionalCount));
     } else {
         precise float pTree = 1.0 - pDir;
-        precise float q = lt_div_rn((u - pDir), pTree);
+        precise float q = fuse_div_rn((u - pDir), pTree);
         u = lt_min(q, LT_ONE_MINUS_EPSILON);
         pmf = pTree;
         uint node = 0u;
@@ -436,12 +335,12 @@ LtSampleResult lt_sample(uint64_t headerAddress, vec3 p, vec3 n, float u0, float
             float p1;
             lt_branch(i0, i1, p0, p1);
             if (u < p0) {
-                precise float r = lt_div_rn(u, p0);
+                precise float r = fuse_div_rn(u, p0);
                 u = lt_min(r, LT_ONE_MINUS_EPSILON);
                 pmf = pmf * p0;
                 node = c0;
             } else {
-                precise float r = lt_div_rn((u - p0), p1);
+                precise float r = fuse_div_rn((u - p0), p1);
                 u = lt_min(r, LT_ONE_MINUS_EPSILON);
                 pmf = pmf * p1;
                 node = c1;
@@ -473,7 +372,7 @@ float lt_pmf(uint64_t headerAddress, vec3 p, vec3 n, uint light) {
     const LtEmitter e = LtEmittersRef(t.emitters).v[light];
     const float pDir = lt_directional_probability(t);
     if (e.kind == LT_KIND_DIRECTIONAL) {
-        precise float r = lt_div_rn(pDir, float(t.directionalCount));
+        precise float r = fuse_div_rn(pDir, float(t.directionalCount));
         return t.directionalCount > 0u ? r : 0.0;
     }
     if (e.leafNode == LT_INVALID || t.nodeCount == 0u) {

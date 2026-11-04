@@ -114,63 +114,17 @@ vec4 sx_fetch(uint handle, ivec2 p) { return texelFetch(fuse_textures_2d[fuse_ha
 float sx_saturate(float v) { return max(0.0, min(1.0, v)); }
 float sx_clamp(float v, float lo, float hi) { return v < lo ? lo : (hi < v ? hi : v); }
 
-// Correctly rounded division / square root. The oracles are IEEE f32 (correctly rounded / and sqrt); Vulkan
-// guarantees that only for add / sub / mul (OpFDiv is 2.5 ulp, sqrt inherits inversesqrt) and real GPUs use the
-// slack (NVIDIA: 1-2 ulp), which moves the GTAO / SSR march positions and the integer pixels they truncate to.
-// sx_div / sx_sqrt walk the hardware result to the IEEE one with an exact residual a - q * b (Dekker product:
-// correctly rounded mul / add only, no contraction). On a correctly rounding device (Lavapipe) the walk is a
-// no-op. Same scheme as UI/Render ui_draw_list.comp divRn / sqrtRn.
-float sx_resid(float a, float q, float b) {
-    precise float p = q * b;
-    precise float cq = 4097.0 * q;
-    precise float qh = cq - (cq - q);
-    precise float ql = q - qh;
-    precise float cb = 4097.0 * b;
-    precise float bh = cb - (cb - b);
-    precise float bl = b - bh;
-    precise float e = ((qh * bh - p) + qh * bl + ql * bh) + ql * bl;
-    precise float r = (a - p) - e;
-    return r;
-}
-float sx_next_toward(float q, bool up) { // q != 0; up: toward +inf
-    const uint bits = floatBitsToUint(q);
-    return uintBitsToFloat((q > 0.0) == up ? bits + 1u : bits - 1u);
-}
-float sx_round_rn(float a, float q, float b, bool root) { // root: q ~ sqrt(a), b unused
-    float r = sx_resid(a, q, root ? q : b);
-    for (int i = 0; i < 4 && r != 0.0; ++i) {
-        const float qn = sx_next_toward(q, root ? r > 0.0 : (r > 0.0) == (b > 0.0));
-        const float rn = sx_resid(a, qn, root ? qn : b);
-        if (abs(rn) < abs(r) || (abs(rn) == abs(r) && (floatBitsToUint(q) & 1u) != 0u)) {
-            q = qn;
-            r = rn;
-        } else {
-            break;
-        }
-    }
-    return q;
-}
-float sx_div(float a, float b) {
-    precise float q = a / b;
-    if (q == 0.0 || isinf(q) || isnan(q)) {
-        return q;
-    }
-    return sx_round_rn(a, q, b, false);
-}
-float sx_sqrt(float x) {
-    precise float s = sqrt(x);
-    if (!(x > 0.0) || isinf(x)) {
-        return s;
-    }
-    return sx_round_rn(x, s, s, true);
-}
+// Correctly rounded division / square root (fuse_div_rn / fuse_sqrt_rn, common/exact_math.glsl): Vulkan lets `/` and
+// `sqrt` be a few ulp off and NVIDIA uses that slack, but the GTAO / SSR march positions and the integer pixels they
+// truncate to must be the oracle's.
+#include "../common/exact_math.glsl"
 
 float sx_dot(vec3 a, vec3 b) {
     precise float d = a.x * b.x + a.y * b.y + a.z * b.z;
     return d;
 }
 float sx_length(vec3 v) {
-    const float l = sx_sqrt(sx_dot(v, v));
+    const float l = fuse_sqrt_rn(sx_dot(v, v));
     return l;
 }
 vec3 sx_scale(vec3 v, float s) {
@@ -190,7 +144,7 @@ vec3 sx_normalize(vec3 v) {
     if (len < 1e-8) {
         return vec3(0.0);
     }
-    const float inv = sx_div(1.0, len);
+    const float inv = fuse_div_rn(1.0, len);
     return sx_scale(v, inv);
 }
 vec3 sx_cross(vec3 a, vec3 b) {
@@ -211,8 +165,8 @@ vec3 sx_color_at(uint64_t address, uint i) { return SxTexelsRef(address).v[i].xy
 vec3 sx_ray_direction(float px, float py) {
     precise float an = px - F.cx;
     precise float bn = py - F.cy;
-    const float a = sx_div(an, F.fx);
-    const float b = sx_div(bn, F.fy);
+    const float a = fuse_div_rn(an, F.fx);
+    const float b = fuse_div_rn(bn, F.fy);
     return vec3(a, b, 1.0);
 }
 vec3 sx_unproject(float px, float py, float viewZ) { return sx_scale(sx_ray_direction(px, py), viewZ); }
@@ -229,8 +183,8 @@ bool sx_project(vec3 p, out float px, out float py) {
     }
     precise float xn = F.fx * p.x;
     precise float yn = F.fy * p.y;
-    const float xq = sx_div(xn, p.z);
-    const float yq = sx_div(yn, p.z);
+    const float xq = fuse_div_rn(xn, p.z);
+    const float yq = fuse_div_rn(yn, p.z);
     precise float x = xq + F.cx;
     precise float y = yq + F.cy;
     px = x;

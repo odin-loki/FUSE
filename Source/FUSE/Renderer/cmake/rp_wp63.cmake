@@ -83,7 +83,8 @@ set(_fuse_wp63_header "${_fuse_wp63_gen}/ssfx_gpu_spv.h")
 add_custom_target(fuse_ssfx_gpu_kernels)
 set(_fuse_wp63_embed_args "")
 set(_fuse_wp63_embed_deps "")
-file(GLOB _fuse_wp63_glsl_includes "${_fuse_wp63_shd}/*.glsl" "${_fuse_wp63_root}/shaders/atmosphere/at_sample.glsl")
+file(GLOB _fuse_wp63_glsl_includes "${_fuse_wp63_shd}/*.glsl" "${_fuse_wp63_root}/shaders/atmosphere/at_sample.glsl"
+    "${_fuse_wp63_root}/shaders/common/exact_math.glsl")
 
 foreach(_row IN LISTS _fuse_wp63_kernels)
     string(REPLACE "|" ";" _entry "${_row}")

@@ -10,7 +10,7 @@
 //                       half at mid-scene depth:
 //                         preprocess  == gs_preprocess_splat (radius / tile rect / view z bit for bit, the rest
 //                                        within 2e-6 relative; the kernel's divides / square roots are
-//                                        correctly rounded (gs_div / gs_sqrt), so a conformant device is bit
+//                                        correctly rounded (fuse_div_rn / fuse_sqrt_rn), so a conformant device is bit
 //                                        exact - measured 0 on Lavapipe and the RTX 3090; the slack only
 //                                        covers a host compiler contracting the reference)
 //                         scan        offsets and counters == the reference's

@@ -5,10 +5,10 @@ float sxLinearDepth(float d) {
     float z = 0.0;
     if ((F.flags & kSxFlagReversedZ) != 0u) {
         if (d > 0.0) {
-            z = sxDiv(F.nearPlane, d);
+            z = fuseDivRn(F.nearPlane, d);
         }
     } else if (d < 1.0 && F.farPlane > F.nearPlane) {
-        z = sxDiv(F.nearPlane * F.farPlane, F.farPlane - d * (F.farPlane - F.nearPlane));
+        z = fuseDivRn(F.nearPlane * F.farPlane, F.farPlane - d * (F.farPlane - F.nearPlane));
     }
     return (z > 0.0 && z < 3.0e38) ? z : 0.0;
 }

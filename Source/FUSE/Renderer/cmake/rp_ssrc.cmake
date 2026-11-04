@@ -89,7 +89,7 @@ set(_fuse_ssrc_header "${_fuse_ssrc_gen}/ssrc_gpu_spv.h")
 add_custom_target(fuse_ssrc_gpu_kernels)
 set(_fuse_ssrc_embed_args "")
 set(_fuse_ssrc_embed_deps "")
-file(GLOB _fuse_ssrc_glsl_includes "${_fuse_ssrc_shd}/*.glsl")
+file(GLOB _fuse_ssrc_glsl_includes "${_fuse_ssrc_shd}/*.glsl" "${_fuse_ssrc_root}/shaders/common/exact_math.glsl")
 
 foreach(_row IN LISTS _fuse_ssrc_kernels)
     string(REPLACE "|" ";" _entry "${_row}")
