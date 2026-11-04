@@ -66,6 +66,7 @@ struct VulkanParticleBackend::Impl {
     VkDevice vk = VK_NULL_HANDLE;
     VkQueue queue = VK_NULL_HANDLE;
     std::uint32_t queueFamily = 0;
+    bool graphicsFamily = true; ///< the queue's family has graphics stages (vertex input), not compute-only
     ManagerConfig config;
     std::uint32_t slots = 1;
 
@@ -190,6 +191,7 @@ bool VulkanParticleBackend::init(const ManagerConfig& config) {
         m.queue = static_cast<VkQueue>(m.device.queues().graphics);
         m.queueFamily = m.device.queues().graphicsFamily;
     }
+    m.graphicsFamily = m.queueFamily == m.device.queues().graphicsFamily;
     if (m.vk == VK_NULL_HANDLE || m.queue == VK_NULL_HANDLE) {
         m_error = "no Vulkan device / queue";
         return false;
@@ -430,10 +432,13 @@ bool VulkanParticleBackend::execute(const FrameWork& work) {
                     VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
         }
     }
-    // Counters to the host; vertices to vertex input / copies.
+    // Counters to the host; vertices to vertex input / copies. A compute-only family (NVIDIA async compute) has no vertex
+    // input stage: a graphics-queue consumer synchronises through its own submission wait instead.
+    const VkPipelineStageFlags2 vertexStage = m.graphicsFamily ? VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT : 0;
+    const VkAccessFlags2 vertexAccess = m.graphicsFamily ? VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT : 0;
     barrier(cmd, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-            VK_PIPELINE_STAGE_2_HOST_BIT | VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-            VK_ACCESS_2_HOST_READ_BIT | VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_2_TRANSFER_READ_BIT);
+            VK_PIPELINE_STAGE_2_HOST_BIT | vertexStage | VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            VK_ACCESS_2_HOST_READ_BIT | vertexAccess | VK_ACCESS_2_TRANSFER_READ_BIT);
     vkEndCommandBuffer(cmd);
     vkResetFences(m.vk, 1, &s.fence);
     VkSubmitInfo si{};
