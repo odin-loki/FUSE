@@ -36,6 +36,12 @@ private:
     void buildNavigation_(NodeHandle page);
     void syncNavigation_();
     void buildTerrain_(NodeHandle page);
+    void buildLighting_(NodeHandle page);
+    void syncLighting_();
+    NodeHandle m_ltSunLabel{}, m_ltAddSun{}, m_ltElev{}, m_ltAzim{}, m_ltSunInt{}, m_ltSunColor{};
+    NodeHandle m_ltAddAmb{}, m_ltAmbInt{}, m_ltAmbColor{}, m_ltAddFog{}, m_ltFogDensity{}, m_ltFogDist{}, m_ltFogColor{};
+    std::string m_ltKey;
+    bool m_ltUpdating = false;
     void syncTerrain_();
     NodeHandle m_trCells{}, m_trSize{}, m_trHeight{}, m_trSeed{}, m_trMode{}, m_trRadius{}, m_trStrength{}, m_trSculpt{}, m_trStatus{};
     std::string m_trKey;
@@ -68,6 +74,9 @@ private:
     bool within_(NodeHandle n, NodeHandle ancestor) const;
     std::string m_assetKey;
 
+    NodeHandle m_matName{}, m_matPreset{}, m_matUsage{}, m_matUsers{};
+    NodeHandle m_tlLane{}, m_tlInterp{}, m_tlTanIn{}, m_tlTanOut{}, m_tlCurve{}, m_tlKeyInfo{};
+    std::string m_tlCurveKey;
     NodeHandle m_matList, m_matPreview, m_matColor, m_matRough, m_matMetal, m_matShader, m_matTexture, m_matUv, m_matAssign, m_matSummary;
     fuse::ui::Image m_previewImg;
     u32 m_previewIndex = 0;
