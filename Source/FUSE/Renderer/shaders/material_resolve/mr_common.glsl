@@ -10,6 +10,7 @@
 // taken in uniform control flow), so the two paths differ only in where the derivatives come from.
 #ifndef FUSE_MR_COMMON_GLSL
 #define FUSE_MR_COMMON_GLSL
+#include "../common/exact_math.glsl" // fuse_div_rn: the CPU kernel's IEEE quotients
 
 #define FUSE_MR_BIN_EMPTY 0u
 #define FUSE_MR_BIN_FLAT 1u
@@ -195,12 +196,12 @@ FuseMrBary fuse_mr_bary(vec4 c0, vec4 c1, vec4 c2, vec2 ndc, vec2 s) {
         r.flags = FUSE_MR_ATTR_DEGENERATE;
         return r;
     }
-    precise float b0 = e0 / sum;
-    precise float b1 = e1 / sum;
-    precise float b2 = e2 / sum;
+    precise float b0 = fuse_div_rn(e0, sum);
+    precise float b1 = fuse_div_rn(e1, sum);
+    precise float b2 = fuse_div_rn(e2, sum);
     precise float z = b0 * c0.z + b1 * c1.z + b2 * c2.z;
     precise float w = b0 * c0.w + b1 * c1.w + b2 * c2.w;
-    r.depth = z / w;
+    r.depth = fuse_div_rn(z, w);
     r.b = vec3(b0, b1, b2);
     precise float bx0 = c1.y * c2.w - c1.w * c2.y;
     precise float bx1 = c2.y * c0.w - c2.w * c0.y;

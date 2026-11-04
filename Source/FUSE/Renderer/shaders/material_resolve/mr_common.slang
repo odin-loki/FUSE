@@ -3,6 +3,7 @@
 // vis_format.slang, vis_common.slang and mr_gbuffer.slang. Compile with -fp-mode precise (Slang does
 // not honour `precise` per variable), so no multiply-add is contracted.
 #pragma once
+#include "../common/exact_math.slang" // fuseDivRn: the CPU kernel's IEEE quotients
 
 static const uint kFuseMrBinEmpty = 0u;
 static const uint kFuseMrBinFlat = 1u;
@@ -177,12 +178,12 @@ MrBary fuseMrBary(float4 c0, float4 c1, float4 c2, float2 ndc, float2 s) {
         r.flags = kFuseMrAttrDegenerate;
         return r;
     }
-    const float b0 = e0 / sum;
-    const float b1 = e1 / sum;
-    const float b2 = e2 / sum;
+    const float b0 = fuseDivRn(e0, sum);
+    const float b1 = fuseDivRn(e1, sum);
+    const float b2 = fuseDivRn(e2, sum);
     const float z = b0 * c0.z + b1 * c1.z + b2 * c2.z;
     const float w = b0 * c0.w + b1 * c1.w + b2 * c2.w;
-    r.depth = z / w;
+    r.depth = fuseDivRn(z, w);
     r.b = float3(b0, b1, b2);
     const float bx0 = c1.y * c2.w - c1.w * c2.y;
     const float bx1 = c2.y * c0.w - c2.w * c0.y;

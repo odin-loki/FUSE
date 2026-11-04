@@ -93,7 +93,8 @@ set(_fuse_wp61_header "${_fuse_wp61_gen}/ddgi_gpu_spv.h")
 add_custom_target(fuse_ddgi_gpu_kernels)
 set(_fuse_wp61_embed_args "")
 set(_fuse_wp61_embed_deps "")
-file(GLOB _fuse_wp61_glsl_includes "${_fuse_wp61_shd}/*.glsl" "${_fuse_wp61_root}/shaders/atmosphere/at_sample.glsl")
+file(GLOB _fuse_wp61_glsl_includes "${_fuse_wp61_shd}/*.glsl" "${_fuse_wp61_root}/shaders/atmosphere/at_sample.glsl"
+    "${_fuse_wp61_root}/shaders/common/exact_math.glsl")
 cmake_policy(PUSH)
 cmake_policy(SET CMP0007 NEW) # list(GET) keeps the empty fields
 foreach(_row IN LISTS _fuse_wp61_kernels)
