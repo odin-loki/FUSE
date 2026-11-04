@@ -258,6 +258,21 @@ if(FUSE_SHADER_GLSLANG)
     endif()
 endif()
 
+# Vulkan gate launcher + environment. Linux: serialise on the ICD lock (tests/run_vulkan_icd_locked.sh, written by
+# tests/CMakeLists.txt) and pin Lavapipe. Native Windows (no bash / flock): run the gate directly (an empty launcher
+# drops out of the unquoted `COMMAND ${lock} exe ...`) and pin Lavapipe only when it exists, else use the system driver.
+if(WIN32)
+    set(FUSE_VULKAN_TEST_LAUNCHER "")
+    if(EXISTS "/usr/share/vulkan/icd.d/lvp_icd.json")
+        set(FUSE_VULKAN_LVP_ENV "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
+    else()
+        set(FUSE_VULKAN_LVP_ENV "FUSE_VULKAN_SYSTEM_ICD=1")
+    endif()
+else()
+    set(FUSE_VULKAN_TEST_LAUNCHER "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+    set(FUSE_VULKAN_LVP_ENV "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
+endif()
+
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)
 endif()

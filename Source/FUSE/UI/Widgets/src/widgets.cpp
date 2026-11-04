@@ -58,10 +58,27 @@ struct Button {
     static constexpr A11yRole kRole = A11yRole::Button;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
-    static Size measure(UiContext& ui, NodeHandle n, Size) { return textSize(ui, n, ui.text(n)); }
-    static void paint(const PaintContext& pc, DrawList& dl) { labelAt(pc, dl, pc.ui.text(pc.node), pc.content, TextAlignment::Center); }
+    static Size measure(UiContext& ui, NodeHandle n, Size) { return ui.measureIconLabel(ui.computed(n), ui.text(n)); }
+    static void paint(const PaintContext& pc, DrawList& dl) {
+        pc.ui.paintIconLabel(dl, pc.style, pc.ui.text(pc.node), pc.content, textCol(pc), TextAlignment::Center, pc.node.index);
+    }
 };
 struct ToolButton : Button { static constexpr std::string_view kName = "toolbutton"; };
+// An icon by itself (`icon` / `icon-size` style properties; tinted with `color`).
+struct Icon {
+    static constexpr std::string_view kName = "icon";
+    static constexpr A11yRole kRole = A11yRole::Image;
+    static Size measure(UiContext& ui, NodeHandle n, Size) {
+        const f32 e = ui.iconExtent(ui.computed(n));
+        return {e, e};
+    }
+    static void paint(const PaintContext& pc, DrawList& dl) {
+        const f32 e = pc.ui.iconExtent(pc.style);
+        if (e <= 0.f) return;
+        const Rect c = pc.content;
+        pc.ui.paintIcon(dl, pc.style.icon, {c.x + std::floor((c.w - e) * 0.5f), c.y + std::floor((c.h - e) * 0.5f)}, e, textCol(pc), pc.node.index);
+    }
+};
 struct Link {
     static constexpr std::string_view kName = "link";
     static ComputedStyle defaults() { ComputedStyle s; s.cursor = CursorShape::Hand; return s; }
@@ -491,6 +508,7 @@ void registerTierA(UiContext& ui) {
     WidgetRegistry& r = ui.registry();
     r.registerWidget<Button>();
     r.registerWidget<ToolButton>();
+    r.registerWidget<Icon>();
     r.registerWidget<Link>();
     r.registerWidget<CheckBox>();
     r.registerWidget<RadioButton>();
@@ -550,6 +568,15 @@ NodeHandle toolButton(UiContext& ui, NodeHandle p, std::string_view t, std::stri
     const NodeHandle n = make(ui, "toolbutton", p, id);
     ui.setText(n, t);
     return n;
+}
+NodeHandle icon(UiContext& ui, NodeHandle p, std::string_view name, f32 size, std::string_view id) {
+    const NodeHandle n = make(ui, "icon", p, id);
+    setIcon(ui, n, name, size);
+    return n;
+}
+void setIcon(UiContext& ui, NodeHandle n, std::string_view name, f32 size) {
+    ui.set(n, Prop::Icon, PropValue::ofIdent(name.empty() ? 0u : hashId(name)));
+    if (size > 0.f) ui.set(n, Prop::IconSize, PropValue::ofLength(Length::px(size)));
 }
 NodeHandle link(UiContext& ui, NodeHandle p, std::string_view t, std::string_view id) {
     const NodeHandle n = make(ui, "link", p, id);

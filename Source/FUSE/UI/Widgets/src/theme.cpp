@@ -38,6 +38,7 @@ button:hover, toolbutton:hover { background: var(--hover); }
 button:pressed, toolbutton:pressed { background: var(--pressed); }
 button:focus-visible, toolbutton:focus-visible, lineedit:focus, spinbox:focus-visible, combobox:focus-visible { border-color: var(--accent); }
 button:disabled { color: var(--text-dim); background: var(--surface); }
+toolbutton:disabled, menuitem:disabled, icon:disabled { color: var(--text-dim); }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 button.primary:hover { background: var(--accent-hi); }
 checkbox, radio, switch, slider, dial, progressbar, scrollbar { background-end: var(--accent); }

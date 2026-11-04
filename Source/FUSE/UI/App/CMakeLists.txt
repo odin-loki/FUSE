@@ -1,12 +1,13 @@
 # fuse_app (plan UI5): application shell for UI-only projects + samples.
-add_library(fuse_app STATIC src/app.cpp)
+add_library(fuse_app STATIC src/app.cpp src/chrome.cpp)
 target_include_directories(fuse_app PUBLIC include PRIVATE ${FUSE_UI_REPO_ROOT}/vendor/stb)
 target_link_libraries(fuse_app PUBLIC fuse_ui_doc)
 if(WIN32 OR MINGW)
     # no extra libs (CreateMutexA / MoveFileExA are kernel32)
 endif()
 
-# fuse_app_native: real OS windows (X11 via runtime-loaded libX11, Win32) + Vulkan swapchain presenter.
+# fuse_app_native: real OS windows (X11 via runtime-loaded libX11, Win32) + Vulkan swapchain presenter, custom window
+# chrome, shell services (tray icon, notifications), platform services (DPI, displays, cursors, theme, dialogs).
 add_library(fuse_app_native STATIC src/native.cpp src/platform_win32.cpp src/platform_posix.cpp)
 target_link_libraries(fuse_app_native PUBLIC fuse_app)
 # platform services feed fuse::platform v2 events (header-only events_v2 / platform_bridge) into the UI
@@ -21,17 +22,28 @@ if(FUSE_UI_VK_LINK)
     endif()
 endif()
 if(WIN32 OR MINGW)
+    target_sources(fuse_app_native PRIVATE src/chrome_win32.cpp src/shell_win32.cpp)
     target_link_libraries(fuse_app_native PRIVATE user32 gdi32 dwmapi ole32 shell32 advapi32 uuid)
 else()
+    target_sources(fuse_app_native PRIVATE src/shell_unix.cpp)
     target_link_libraries(fuse_app_native PRIVATE ${CMAKE_DL_LIBS})
 endif()
 
-option(FUSE_BUILD_APP_SAMPLES "Build the fuse_app samples (hello_app, notes_app)" ON)
+# fuse_app_a11y: WindowAccessibility (fuse_ui_a11y bridge + AccessKit adapter wired to a native window)
+if(TARGET fuse_ui_a11y)
+    add_library(fuse_app_a11y STATIC src/accessibility.cpp)
+    target_link_libraries(fuse_app_a11y PUBLIC fuse_app_native fuse_ui_a11y)
+endif()
+
+option(FUSE_BUILD_APP_SAMPLES "Build the fuse_app samples (hello_app, notes_app; game_menu comes with fuse_ui_game)" ON)
 if(FUSE_BUILD_APP_SAMPLES)
     foreach(s hello_app notes_app)
         add_executable(${s} samples/${s}.cpp)
         target_link_libraries(${s} PRIVATE fuse_app_native)
         target_compile_definitions(${s} PRIVATE FUSE_APP_SAMPLE_UI_DIR="${CMAKE_CURRENT_SOURCE_DIR}/samples/ui")
+        if(TARGET fuse_ui_icons) # the starter icon pack (toolbar / menu / button icons)
+            add_dependencies(${s} fuse_ui_icons)
+            target_compile_definitions(${s} PRIVATE FUSE_APP_SAMPLE_ICONS="${FUSE_UI_ICON_PACK}")
+        endif()
     endforeach()
 endif()
-

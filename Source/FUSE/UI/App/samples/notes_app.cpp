@@ -1,11 +1,18 @@
 // notes_app (plan UI5 sample): a split view with a note list (item model) and an editor, menu bar, settings store
 // (notes persist in the app's settings.ini), autosave timer.
-//   notes_app [--settings=path] [--screenshot=out.png]
+//   notes_app [--settings=path] [--icons=pack.fuseicons] [--screenshot=out.png]
 #include "fuse/app/app.hpp"
 #include "fuse/app/native.hpp"
+#include "fuse/ui/icons.hpp"
+
+#include <cstdio>
 
 #include <string>
 #include <vector>
+
+#ifndef FUSE_APP_SAMPLE_ICONS
+#define FUSE_APP_SAMPLE_ICONS "fuse_ui_icons.fuseicons"
+#endif
 
 namespace w = fuse::ui::widgets;
 using namespace fuse::ui;
@@ -23,6 +30,10 @@ int main(int argc, char** argv) {
     auto& win = app.createWindow({.title = "Notes", .width = 640, .height = 400});
     UiContext& ui = win.ui();
     auto& st = app.settings();
+    // toolbar and menu icons from the cooked starter pack (fuse_ui_icon_cook); without it they show text only
+    auto icons = IconSet::fromFile(std::string(app.args().get("icons", FUSE_APP_SAMPLE_ICONS)));
+    if (icons) ui.setIcons(&*icons);
+    else std::fprintf(stderr, "notes_app: no icons (%s)\n", icons.error().c_str());
 
     std::vector<std::string> titles, bodies;
     const int n = int(st.number("notes.count", 0));
@@ -43,7 +54,18 @@ int main(int argc, char** argv) {
     ui.setCss(ui.root(), "padding", "0px");
     ui.setCss(ui.root(), "gap", "0px");
     const NodeHandle bar = w::menuBar(ui, ui.root(), "menubar");
-    w::menuBarMenu(ui, bar, "File", "New note\nDelete note\n-\nQuit", "file");
+    w::menuBarMenu(ui, bar, "File", ":file-plus: New note\n:x: Delete note\n-\nQuit", "file");
+    // toolbar: icon tool buttons (tinted with the theme text colour, dimmed when disabled)
+    const NodeHandle tools = w::panel(ui, ui.root(), "toolbar");
+    ui.setCss(tools, "flex-direction", "row");
+    ui.setCss(tools, "gap", "2px");
+    ui.setCss(tools, "padding", "2px 6px");
+    const NodeHandle tNew = w::toolButton(ui, tools, "", "tool.new");
+    w::setIcon(ui, tNew, "file-plus");
+    const NodeHandle tDel = w::toolButton(ui, tools, "", "tool.delete");
+    w::setIcon(ui, tDel, "x");
+    const NodeHandle tSave = w::toolButton(ui, tools, "Save", "tool.save");
+    w::setIcon(ui, tSave, "save");
     const NodeHandle split = w::splitter(ui, ui.root(), false, "split");
     ui.setCss(split, "flex-grow", "1");
     const NodeHandle left = w::splitterPane(ui, split, 180.f);
@@ -114,6 +136,12 @@ int main(int argc, char** argv) {
         if (s->current >= 0) { s->bodies[std::size_t(s->current)] = std::string(a.text); s->dirty = true; }
     });
     ui.connect(ui.find("file"), SignalKind::Submitted, [s](UiContext&, NodeHandle, const SignalArgs& a) { s->menu(int(a.value)); });
+    ui.connect(tNew, SignalKind::Clicked, [s](UiContext&, NodeHandle, const SignalArgs&) { s->menu(0); });
+    ui.connect(tDel, SignalKind::Clicked, [s](UiContext&, NodeHandle, const SignalArgs&) { s->menu(1); });
+    ui.connect(tSave, SignalKind::Clicked, [s](UiContext&, NodeHandle, const SignalArgs&) { s->save(); });
+    ui.connect(tNew, SignalKind::Clicked, [s](UiContext&, NodeHandle, const SignalArgs&) { s->menu(0); });
+    ui.connect(tDel, SignalKind::Clicked, [s](UiContext&, NodeHandle, const SignalArgs&) { s->menu(1); });
+    ui.connect(tSave, SignalKind::Clicked, [s](UiContext&, NodeHandle, const SignalArgs&) { s->save(); });
     // autosave: a 2 s repeating timer; the on-demand loop wakes only for it while idle
     ui.startTimer(2.f, true, [s](UiContext&) { if (s->dirty) s->save(); });
     S.open(0);

@@ -16,7 +16,9 @@
 #include <thread>
 
 #if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -221,6 +223,12 @@ AppWindow::AppWindow(Application& app, const WindowDesc& d, u32 id)
     m_ui.setScale(d.dpiScale);
     m_pixels = {u32(std::lround(f32(d.width) * m_ui.scale())), u32(std::lround(f32(d.height) * m_ui.scale()))};
     m_presenter = {this, &AppWindow::presentHeadless, nullptr};
+    m_chrome.frame = d.frame;
+    m_chrome.resizeBorder = d.frame == WindowFrame::Custom ? d.resizeBorder : 0.f;
+}
+void AppWindow::command(WindowCommand c) {
+    if (m_chrome.command) m_chrome.command(m_chrome.user, *this, c);
+    else if (c == WindowCommand::Close) requestClose();
 }
 AppWindow::~AppWindow() {
     m_doc.reset();
@@ -275,7 +283,9 @@ bool AppWindow::presentHeadless(void*, AppWindow& w, Rect damage) {
     const bool full = w.m_image.width != iw || w.m_image.height != ih;
     if (full) w.m_image.resize(iw, ih, 0xFF000000u);
     w.m_raster.setGlyphAtlas(w.m_ui.atlas().pixels(), w.m_ui.atlas().size());
-    const Rect r = full || damage.empty() ? Rect{0.f, 0.f, f32(iw), f32(ih)} : damage;
+    const Rect whole{0.f, 0.f, f32(iw), f32(ih)};
+    const Rect r = full || damage.empty() ? whole : w.m_ui.drawList().redrawRegion(damage, whole);
+    if (r.empty()) return true; // damage outside the window
     // clear the damaged region, then rasterise the list clipped to it (incremental present)
     const int x0 = std::max(0, int(std::floor(r.x))), y0 = std::max(0, int(std::floor(r.y)));
     const int x1 = std::min(iw, int(std::ceil(r.x + r.w))), y1 = std::min(ih, int(std::ceil(r.y + r.h)));

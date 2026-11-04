@@ -1274,7 +1274,9 @@ NodeHandle fontPicker(UiContext& ui, NodeHandle parent, std::string_view familie
     ui.addClass(p, "fontpicker");
     ui.setA11y(p, A11yRole::Group, "Font");
     FontState& s = fontPool().create(ui, p);
-    s.list = listView(ui, p, families.empty() ? std::string_view("Open Sans\nSans Serif\nSerif\nMonospace\nSystem UI") : families, 0);
+    const std::string system = families == "@system" ? systemFontFamilies() : std::string();
+    s.list = listView(ui, p, families.empty() ? std::string_view("Open Sans\nSans Serif\nSerif\nMonospace\nSystem UI")
+                             : !system.empty() ? std::string_view(system) : families, 0);
     ui.addClass(s.list, "fontlist");
     const NodeHandle row = hbox(ui, p);
     label(ui, row, "Size");
@@ -1285,6 +1287,12 @@ NodeHandle fontPicker(UiContext& ui, NodeHandle parent, std::string_view familie
     ui.connect(s.size, SignalKind::ValueChanged, [p](UiContext& u, NodeHandle, const SignalArgs&) { fontRefresh(u, p, true); });
     fontRefresh(ui, p, false);
     return p;
+}
+std::string systemFontFamilies() {
+    std::string out = "Open Sans";
+    for (const std::string& f : fuse::text::FontCatalog::system().families())
+        if (f != "Open Sans") out += "\n" + f;
+    return out;
 }
 std::string fontPickerFamily(const UiContext& ui, NodeHandle picker) {
     const FontState* s = fontPool().get(ui, picker);

@@ -27,6 +27,7 @@
 namespace fuse::ui {
 
 class UiContext;
+class IconSet;
 
 // ---- Input ---------------------------------------------------------------------------------------------------------
 /// UI key set (maps 1:1 onto fuse::platform key set v2 names; see platform/events_v2.hpp).
@@ -395,6 +396,23 @@ public:
     void paintString(DrawList& dl, std::string_view s, Rect box, Color c, f32 pixelSize, TextAlignment align, u32 node);
     f32 measureString(std::string_view s, f32 pixelSize);
 
+    // icons (icons.hpp): `icon` / `icon-size` style properties, widgets::icon
+    /// Attaches an icon pack (non-owning; must outlive the context or be detached). Re-lays out every node.
+    void setIcons(const IconSet* icons);
+    const IconSet* icons() const { return m_icons; }
+    static constexpr f32 kIconGap = 6.f; ///< between an icon and its label
+    /// Icon cell size for a style: 0 without an icon (or when the attached set has no such icon).
+    f32 iconExtent(const ComputedStyle& s) const;
+    /// Draws icon `nameHash` as a size x size cell with its top-left at `at`, tinted `c`. False when unknown.
+    bool paintIcon(DrawList& dl, u32 nameHash, Vec2 at, f32 size, Color c, u32 node);
+    bool paintIcon(DrawList& dl, std::string_view name, Vec2 at, f32 size, Color c, u32 node) {
+        return paintIcon(dl, hashId(name), at, size, c, node);
+    }
+    /// Content size of the style's icon followed by a one-line `text` (either may be absent).
+    Size measureIconLabel(const ComputedStyle& s, std::string_view text);
+    /// Paints the style's icon then `text` in `box` (both vertically centred; the pair aligned by `align`).
+    void paintIconLabel(DrawList& dl, const ComputedStyle& s, std::string_view text, Rect box, Color c, TextAlignment align, u32 node);
+
     struct Node;
     struct Cold;
 
@@ -427,6 +445,7 @@ private:
     bool focusableNode(u32 i) const;
     void drainCommands();
     void ensureText(u32 i, f32 width);
+    f32 labelIconWidth(const ComputedStyle& s, bool hasText) const;
     void collectTab(std::vector<u32>& out) const;
     void markArrange(u32 i);
     bool visibleChain(u32 i) const;
@@ -479,6 +498,8 @@ private:
     std::vector<std::pair<u32, i32>> m_scratchTab;
     std::vector<fuse::text::ShapedGlyph> m_shapeScratch;
     fuse::text::TextLayout m_stringScratch;
+    const IconSet* m_icons = nullptr;
+    std::vector<u8> m_iconScratch;
 
     struct Connection {
         u32 node = 0xFFFFFFFFu, nodeGen = 0, gen = 0;

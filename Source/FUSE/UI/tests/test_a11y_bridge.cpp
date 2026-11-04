@@ -62,6 +62,37 @@ int main() {
     ui.update(1.f / 60.f);
     b.sync();
     UI_CHECK(a::idOf(le) == b.focusId());
+    // extras: text field value, SetText; menu kinds and Expand / Collapse of a menu bar title
+    auto extra = [&](NodeHandle h) -> const a::NodeExtra* {
+        for (u32 i = 0; i < b.nodes().size(); ++i)
+            if (b.nodes()[i].node == h) return &b.extras()[i];
+        return nullptr;
+    };
+    UI_CHECK(b.extras().size() == b.nodes().size());
+    UI_CHECK(extra(le) && extra(le)->text == "hello" && !extra(le)->labelled);
+    UI_CHECK(b.perform({a::Action::SetText, a::idOf(le), 0.f, "typed"}));
+    UI_CHECK(ui.text(le) == "typed" && ui.editBuffer(le).text() == "typed");
+    const NodeHandle bar = w::menuBar(ui, ui.root());
+    const NodeHandle file = w::menuBarMenu(ui, bar, "File", "Open\nQuit");
+    ui.update(1.f / 60.f);
+    UI_CHECK(b.sync() >= 2u);
+    UI_CHECK(extra(bar) && extra(bar)->kind == a::Kind::MenuBar);
+    UI_CHECK(extra(file) && extra(file)->kind == a::Kind::MenuItem && extra(file)->expanded == 0);
+    UI_CHECK(find(file) && find(file)->name == "File");
+    UI_CHECK(b.perform({a::Action::Expand, a::idOf(file)}));
+    ui.update(1.f / 60.f);
+    b.sync();
+    UI_CHECK(extra(file) && extra(file)->expanded == 1);
+    bool menuItem = false;
+    for (u32 i = 0; i < b.nodes().size(); ++i) menuItem |= b.extras()[i].kind == a::Kind::MenuItem && b.nodes()[i].name == "Open";
+    UI_CHECK(menuItem);
+    UI_CHECK(b.perform({a::Action::Collapse, a::idOf(file)}));
+    ui.update(1.f / 60.f);
+    ui.update(1.f / 60.f);
+    b.sync();
+    UI_CHECK(extra(file) && extra(file)->expanded == 0);
+    UI_CHECK(!b.perform({a::Action::Expand, a::idOf(cb)})); // not expandable
+
     // dead nodes are rejected; removal shows up in the diff
     const u64 gone = a::idOf(ok);
     ui.destroy(ok);

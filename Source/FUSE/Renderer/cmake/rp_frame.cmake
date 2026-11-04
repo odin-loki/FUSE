@@ -168,7 +168,7 @@ if(TARGET fuse_gsplat_header)
     add_dependencies(fuse_rp_frame fuse_gsplat_header)
 endif()
 
-set(_fuse_frame_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+set(_fuse_frame_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
 set(_fuse_frame_vk_tests "")
 foreach(_case "ssrc;t0;auto" "rc_flatland;t0;auto" "rc_flatland_gbuffer;t0;auto" "full;t0;auto" "full;t2;auto" "toggles;t0;auto" "toggles;t2;auto" "determinism;t0;auto"
               "determinism;t2;auto" "zero_alloc;t0;auto" "zero_alloc;t2;auto" "golden;t0;auto" "golden;t2;auto"
@@ -181,7 +181,7 @@ foreach(_case "ssrc;t0;auto" "rc_flatland;t0;auto" "rc_flatland_gbuffer;t0;auto"
         set(_name "${_name}_${_lang}")
     endif()
     if(FUSE_VULKAN_BACKEND)
-        add_test(NAME ${_name} COMMAND "${_fuse_frame_lock}" "$<TARGET_FILE:fuse_rp_frame>" --mode ${_mode} --tier ${_tier}
+        add_test(NAME ${_name} COMMAND ${_fuse_frame_lock} "$<TARGET_FILE:fuse_rp_frame>" --mode ${_mode} --tier ${_tier}
                                        --language ${_lang})
     else()
         add_test(NAME ${_name} COMMAND fuse_rp_frame --mode ${_mode} --tier ${_tier} --language ${_lang})
@@ -189,7 +189,7 @@ foreach(_case "ssrc;t0;auto" "rc_flatland;t0;auto" "rc_flatland_gbuffer;t0;auto"
     list(APPEND _fuse_frame_vk_tests ${_name})
 endforeach()
 set_tests_properties(${_fuse_frame_vk_tests} PROPERTIES
-    ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+    ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
     RUN_SERIAL TRUE
     SKIP_RETURN_CODE 77
     TIMEOUT 1800

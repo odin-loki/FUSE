@@ -16,17 +16,18 @@ immediate-mode front-end. See the plan's status table for what is still open.
 
 | Path | Target | What |
 |---|---|---|
-| `Source/FUSE/UI/Text` | `fuse_text` | Fonts (stb_truetype; FreeType in FULL), bundled Open Sans, UTF-8, `ITextShaper` (`MinimalShaper`, `HarfBuzzShaper` in FULL), wrap/ellipsis layout, glyph atlas, `TextEditBuffer` |
+| `Source/FUSE/UI/Text` | `fuse_text` | Fonts (stb_truetype; FreeType in FULL), bundled Open Sans, UTF-8, `ITextShaper` (`MinimalShaper`, `HarfBuzzShaper` in FULL), wrap/ellipsis layout, glyph atlas, `TextEditBuffer`, UAX #29 / #14 / #9 segmentation, fallback chains, `FontCatalog` (system fonts) |
 | `Source/FUSE/UI/Core` | `fuse_ui_core` | `UiContext` (tree, style, layout, paint, input, focus, signals, timers, animation, a11y), `DrawList` + `CpuRasterizer`, `StyleEngine`, `immediate::ImmediateUi`, `platform_bridge.hpp` |
 | `Source/FUSE/UI/Widgets` | `fuse_ui_widgets` | Tier A + Tier B widgets + default dark theme (`widgets::install`) |
 | `Source/FUSE/UI/Doc` | `fuse_ui_doc` | `.fuseui` JSON documents, binding model, expression bytecode |
 | `Source/FUSE/UI/Script` | `fuse_ui_script` | Lua `ui` table (vendored Lua 5.2) |
 | `Source/FUSE/UI/Render` | `fuse_ui_render`, `fuse_ui_vk` | GPU draw data packing, `ui.draw_list` compute kernel, `UiLayerGpu` render-graph pass and `UiFrameSource` (in tree with the Vulkan RHI) |
-| `Source/FUSE/UI/App` | `fuse_app`, `fuse_app_native` | `Application` / `AppWindow` on-demand loop, settings, command line, single instance; native X11 / Win32 windows and the Vulkan swapchain presenter; samples `hello_app`, `notes_app` |
+| `Source/FUSE/UI/App` | `fuse_app`, `fuse_app_native`, `fuse_app_a11y` | `Application` / `AppWindow` on-demand loop, settings, command line, single instance; native X11 / Win32 windows and the Vulkan swapchain presenter; custom window chrome; tray icon / notifications; `WindowAccessibility` (screen readers on a native window); samples `hello_app`, `notes_app`, `game_menu` |
 | `Source/FUSE/UI/Game` | `fuse_ui_game` | HUD widgets, world markers, `UiSurface` world panels, gamepad navigation, input arbitration, prompts, time domains, locale table, subtitles, dialogue; samples `hud_demo`, `world_panel_demo` |
 | `Source/FUSE/UI/Sql` | `fuse_ui_sql` | `SqliteModel`: an `ItemModel` over a SQLite query (option `FUSE_BUILD_UI_SQL`) |
-| `Source/FUSE/UI/A11y` | `fuse_ui_a11y` | Accessibility bridge (snapshot diff, action queue); AccessKit adapter when `FUSE_UI_ACCESSKIT_DIR` is set |
+| `Source/FUSE/UI/A11y` | `fuse_ui_a11y` | Accessibility bridge (snapshot diff, action queue); AccessKit adapters (`UnixAdapter` AT-SPI, `WindowsAdapter` UI Automation) when AccessKit is linked |
 | `Source/FUSE/UI/Designer` | `fuse_ui_designer_lib`, `fuse_ui_designer` | `.fuseui` designer prototype (UI8) |
+| `Source/FUSE/UI/Icons` | `fuse_ui_icon_cook_lib`, `fuse_ui_icon_cook` | SVG -> `.fuseicons` cooker (vendored nanosvg); the loader `IconSet` is in `fuse_ui_core` (`fuse/ui/icons.hpp`) |
 | `Source/FUSE/Core/include/fuse/platform/text_services.hpp` | `fuse_core` | clipboard, text-input begin/end, IME candidate placement |
 | `Source/FUSE/UI/tests` | gates | `fuse_ui_*` ctest executables and `fuse_ui_sample` |
 | `Source/FUSE/Core/include/fuse/platform/events_v2.hpp` | header | `KeyV2` / `EventV2` with lossless v1 mapping |
@@ -48,14 +49,42 @@ Regenerate the raster golden after an intended visual change:
 
 Options: `FUSE_BUILD_UI_WIDGETS`, `FUSE_BUILD_UI_DOC`, `FUSE_BUILD_UI_SCRIPT`, `FUSE_BUILD_UI_VK`, `FUSE_BUILD_UI_TESTS`,
 `FUSE_UI_TEXT` (`MINIMAL` default; `FULL` fetches HarfBuzz 10.1.0 + FreeType 2.13.3 at configure time, so it needs
-network or a populated `FETCHCONTENT_BASE_DIR`; `COOKED` falls back to MINIMAL), `FUSE_UI_ACCESSIBILITY`,
+network or a populated `FETCHCONTENT_BASE_DIR`; `COOKED` falls back to MINIMAL), `FUSE_UI_ACCESSIBILITY`
+(`FUSE_UI_ACCESSKIT_DIR` = prebuilt accesskit-c prefix, or `FUSE_UI_ACCESSKIT_BUILD=ON` to fetch accesskit-c
+`FUSE_UI_ACCESSKIT_TAG` (0.22.3) and build it with cargo at build time; needs Rust >= 1.85 and network),
 `FUSE_UI_PROFILE`, `FUSE_BUILD_UI_APP`, `FUSE_BUILD_UI_GAME` (both ON by default); `FUSE_BUILD_APP` (UI9) and
 `FUSE_BUILD_UI_DESIGNER` are reserved. The HUD golden is regenerated the same way as the raster golden with
 `fuse_ui_game_hud_golden` (`tests/golden/hud.png`, `hud_full.png` in FULL).
 
 FULL text: `cmake -S Source/FUSE/UI -B build-ui-full -G Ninja -DFUSE_UI_TEXT=FULL -DCMAKE_BUILD_TYPE=Release`. It has
 its own raster golden (`tests/golden/sample_full.png`). GPU parity runs on any Vulkan 1.2 device; for software use
-`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json` (lavapipe).
+`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json` (lavapipe). The kernel is bit-exact with the CPU raster on
+hardware too: it rounds division / sqrt to the IEEE result (Vulkan allows 2.5 ulp), including backdrop blur.
+FULL builds natively with MSVC as well.
+
+Text (`fuse/text/text.hpp`):
+
+```cpp
+using namespace fuse::text;
+auto font = Font::bundled().value();
+auto chain = Font::bundledFallbacks();              // Hebrew, Arabic, Devanagari, Twemoji, Symbols 2, Thai, CJK subset
+std::vector<const Font*> ptrs;
+for (const Font& f : chain) ptrs.push_back(&f);
+font.setFallbacks(ptrs);
+
+const FontCatalog& fonts = FontCatalog::system();  // installed fonts, scanned once (no fontconfig)
+if (const FontFaceInfo* f = fonts.match("Segoe UI", 600)) auto semibold = FontCatalog::load(*f);
+auto han = fonts.systemFallbackChain(Script::Han); // e.g. Microsoft YaHei UI, Yu Gothic UI, ...
+
+std::vector<LineBreak> breaks;
+lineBreaks(utf8, breaks);                           // UAX #14 (FULL), spaces / newlines (MINIMAL)
+std::vector<std::uint8_t> levels; std::uint8_t para;
+bidiLevels(utf8, BaseDirection::Auto, levels, para); // UAX #9 levels after L1 (FULL)
+```
+
+Grapheme tables come from the UCD: `python Source/FUSE/UI/Text/tools/gen_unicode_tables.py <ucd dir>` rewrites
+`Text/src/unicode_tables.inc`. Colour glyphs: COLRv0 exactly, COLRv1 flattened to solid layers (gradients as the mean
+stop colour, transforms ignored); CBDT / sbix bitmaps and MSDF are not supported.
 
 ## Retained use
 
@@ -119,6 +148,30 @@ With Tier B installed (`widgets::install` does both tiers), a combo box opens a 
 the format and `tests/data/settings.fuseui` for an example); `fuse_ui_script` exposes the same context and model to Lua
 as a global `ui` table.
 
+### Icons
+
+Monochrome vector icons are cooked, not parsed at run time. `fuse_ui_icon_cook --out=x.fuseicons [--sizes=16,24,...]
+<svg files or dirs>` rasterises an SVG subset (paths incl. arcs, rect / circle / ellipse / line / polyline / polygon,
+`g` transforms, fill / stroke / stroke-width / opacity, fill-rule, currentColor, viewBox) into a coverage atlas at
+16 / 20 / 24 / 32 / 48 px by default plus a name index; output is deterministic. The build cooks the starter set
+(43 Lucide icons, `vendor/icons/lucide`, ISC) into `<build>/icons/fuse_ui_icons.fuseicons` (target `fuse_ui_icons`);
+`fuse_ui_cook --icons=<pack> doc.fuseui <svg dir>` cooks a pack along with the documents and fails when a document
+names an icon the pack lacks.
+
+```cpp
+auto icons = fuse::ui::IconSet::fromFile("fuse_ui_icons.fuseicons");
+ui.setIcons(&*icons);                                        // non-owning
+w::icon(ui, row, "search", 24.f);                            // an icon by itself
+w::setIcon(ui, w::toolButton(ui, bar, "", "save"), "save");  // any widget: icon before its text
+w::popupMenu(ui, owner, ":file-plus: New\n:x: Close", at);   // menu items: a leading ":name: "
+```
+
+In style sheets and markup: `icon: save; icon-size: 20px;` (`none` clears; the size defaults to font-size + 2) and the
+`.fuseui` key `"icon": "save"`. Icons are tinted with the node's `color` (SVG currentColor), so they follow theme,
+`:hover` and `:disabled` colours. They are copied into the context's glyph atlas on first use and drawn as `Glyph`
+commands, so the CPU rasteriser and the GPU kernel draw them with no new ops; sizes that were not cooked are
+area-resampled from the nearest larger cooked size. Multi-colour icons and MSDF are not supported.
+
 ## Application shell (UI5)
 
 ```cpp
@@ -136,6 +189,40 @@ Without a native platform the app runs headless (tests, `--screenshot=`). `Prese
 (`Vulkan` draws the draw list on the GPU with `UiVkRenderer`, or uploads CPU-rasterised damage with
 `VkDrawMode::CpuUpload`; `Software` blits). `NativePlatform::capture` reads back what the OS shows (used by `fuse_app_native_window`).
 Under Xvfb set `VK_ICD_FILENAMES` to lavapipe; under Wine the Win32 path and the Vulkan presenter both run.
+
+Custom window chrome (`fuse/app/chrome.hpp`): `WindowDesc::frame = WindowFrame::Custom` (resizable, OS frame removed,
+snap / maximise kept) or `Borderless` (no frame, no resize edges), plus a FUSE UI title bar:
+
+```cpp
+#include <fuse/app/chrome.hpp>
+auto& w = app.createWindow({.title = "Tool", .frame = fuse::app::WindowFrame::Custom, .resizeBorder = 6.f});
+fuse::app::titleBar(w, w.ui().root(), "Tool");              // drag area + min / max / close (ids titlebar.*)
+```
+
+`chromeHitTest(w, p)` says what a point is (caption, edge / corner, min / max / close, client); interactive widgets
+inside the caption stay clickable. Win32 answers `WM_NCHITTEST` from it (so Win11 snap layouts appear on the maximise
+button) and removes the frame in `WM_NCCALCSIZE`; `AppWindow::command()` minimises / maximises / closes. X11 keeps
+its WM frame for now.
+
+Shell services (`fuse/app/shell.hpp`, UI10): `TrayIcon` (icon from an RGBA `Image`, tooltip, `onClick` /
+`onDoubleClick`, a context menu in `popupMenu` item format shown as an OS popup menu, `notify()` balloons / toasts)
+and a free `notify(title, body)`. Win32: `Shell_NotifyIconW` (re-added when Explorer restarts). X11: no tray yet;
+`notify()` uses `org.freedesktop.Notifications` over a runtime-loaded libdbus-1, else returns `Unsupported`.
+
+Samples: `hello_app` (`--startup-probe` prints launch → first presented frame), `notes_app`, `game_menu` (title,
+Play / Options / Quit over an animated background on a backdrop-blurred panel, options page with resolution, volume
+sliders and key bindings, animated page transitions, `GamepadNav`; `--script --screenshot=out.png` plays a simulated
+gamepad session and checks it).
+
+Fast first frame (`NativeOptions::asyncVulkan`, default on): the first window shows the CPU raster through the
+software presenter (Win32 GDI, X11 `XPutImage`) immediately while a worker thread creates the Vulkan instance,
+device and swapchain (X11: on its own X connection); the event pump then switches the window to Vulkan and the switch
+frame redraws the whole current UI, so nothing flickers and a resize in between is followed. `presenterPending(w)` /
+`waitForPresenter(w)` expose the handover; `asyncVulkan = false` makes `show()` block as before (adopted devices and
+later windows of the platform always start on Vulkan directly). Measured with `fuse_app_native_startup` (RTX 3090,
+Windows 11): launch → first frame ≈ 60–90 ms with the default configuration (budget 150 ms), switch to Vulkan
+≈ 0.8–0.9 s after launch (ceiling 2 s), switched frame equal to the CPU raster; synchronous Vulkan init ≈ 0.85 s to
+the first frame (instance + device ≈ 0.4–0.7 s, swapchain + first present ≈ 0.35 s).
 
 Desktop platform services (UI1, `fuse/app/native.hpp`, `fuse/app/platform.hpp`):
 
@@ -192,7 +279,8 @@ hud.update(realDt); nav.update(padState, realDt); ui.update(realDt);
 - Tier D editor widgets: `fontPicker`, `fileDialog`, `nodeGraph`, `curveEditor`, `timeline`, `viewportWidget` (forwards input to your callback, paints your image), `codeEdit` (line numbers, highlighting), `dateTimeEdit` (`value()` = days since 1970, `dateTimeEditMinutes`), `videoWidget` (frame-source stub).
 - `fuse_ui_sql::SqliteModel`: `open`/`attach`, `setQuery`, `sortBy`, `refresh`; pass `model()` to `tableView`. Only the visible window of rows is fetched.
 - Platform feel (`platform_feel.hpp`): `setHapticsHandler`, `ScrollProfile::desktop()/ios()/android()`, `kineticScrollArea` (drag/fling with rubber band; a drag never clicks).
-- Accessibility (`fuse/ui/a11y/a11y.hpp`): `Bridge::sync` diffs `UiContext::snapshotA11y`, `perform`/`enqueue`/`drain` run assistive-tech actions on the UI thread. AccessKit needs a Rust toolchain and a prebuilt accesskit-c (tested with 0.22.3); without it the bridge still builds.
+- Accessibility (`fuse/ui/a11y/a11y.hpp`): `Bridge::sync` diffs `UiContext::snapshotA11y` (plus `extras()`: menu / menu bar / tree kinds from the widget class, text-field value, expanded, selected), `perform`/`enqueue`/`drain` run assistive-tech actions on the UI thread (focus, click, increment / decrement, set value / text, expand / collapse, scroll into view). AccessKit needs a Rust toolchain: `FUSE_UI_ACCESSKIT_BUILD=ON` builds accesskit-c 0.22.3 with cargo, or point `FUSE_UI_ACCESSKIT_DIR` at a prebuilt one; without it the bridge still builds.
+- Screen readers on a native window (`fuse/app/accessibility.hpp`, `fuse_app_a11y`): after `native.show(win)`, keep a `fuse::app::WindowAccessibility a11y(native, win);` (declared after the `NativePlatform`). On Windows it answers `WM_GETOBJECT` through `NativePlatform::setMessageHook` with AccessKit's UI Automation provider (Narrator, NVDA, Inspect); UIA actions are queued and run on the UI thread from the event pump. Bounds are client px (logical px x client width / viewport). The Rust library links the release CRT (Debug MSVC builds may warn LNK4098).
 - Designer: `fuse_ui_designer [file.fuseui] [--save=out] [--screenshot=png]`. `DesignDocument` saves exactly what it loaded; keys starting with `x-` are kept for tools and stripped from the live preview.
 - `dockSaveLayout(dock)` returns a text layout (`fusedock 1`); `dockRestoreLayout(dock, text)` checks the whole text before applying it and ignores unknown panel ids.
 
@@ -206,7 +294,7 @@ are deferred). Inline (`setCss`) beats everything; later sheets win ties. Layout
 `grid-template-columns`, `grid-row/column(-span)`, `left/top/right/bottom/center-x/center-y`, `overflow`
 (visible/clip/scroll), `display`, `pointer-events`, `cursor`. Paint: `background` (colour or `linear-gradient`),
 `background-end` (gradient end; widgets use it as the accent), `border`, `border-width/color`, `border-*-radius`,
-`box-shadow`, `shadow-x/y/blur/color`, `opacity`, `color`, `font-size`, `text-align`. Selectors also accept
+`box-shadow`, `shadow-x/y/blur/color`, `opacity`, `color`, `font-size`, `text-align`, `icon`, `icon-size`. Selectors also accept
 `:active`, `:selected`.
 
 ## Immediate mode
@@ -228,9 +316,27 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_bench_10k` | 10k nodes, one dirty label: ≤ 0.5 ms median (Release; 1.0 ms in FULL) |
 | `fuse_ui_single_thread_parity` | direct vs posted-from-threads mutations give identical layout, draw list and pixels |
 | `fuse_ui_a11y_tree_dump` | roles, names, states, values |
+| `fuse_ui_icon_cook` | icon cooker determinism (any input order; tool = library), index round trip against the rasterised SVGs, SVG subset, corrupt-pack fuzz, resampled sizes |
+| `fuse_ui_icon_render` | icons at 16 / 24 / 32 / 40 / 48 px in two tints and disabled against `tests/golden/icons.png`; hover tint, button / menu / `.fuseui` / cooked-style icons |
+| `fuse_text_grapheme_conformance` | `GraphemeBreakTest.txt` 15.1 against fuse_text's UAX #29: 1187/1187 (both profiles) |
+| `fuse_text_linebreak_conformance` | `LineBreakTest.txt` 15.0 (trimmed) against `lineBreaks(Strict)`: 2389/2406 + 17 listed libunibreak exceptions (FULL); MINIMAL runs its letters / space / newline subset |
+| `fuse_text_bidi_conformance` | `BidiCharacterTest.txt` 15.1 (trimmed): paragraph level, levels after L1, visual order: 4726/4726 (FULL; 77 in MINIMAL) |
+| `fuse_text_shaping_scripts` | Latin, Cyrillic, Greek, Arabic, Hebrew, Devanagari, Thai, CJK, emoji through the bundled chain: per-script shaping checks + `tests/golden/shaping_scripts_full.png` (FULL; 77 in MINIMAL) |
+| `fuse_text_system_fonts` | `FontCatalog::system()`: Segoe UI / Arial, weight / italic / generic matching, per-script chains, `fontPicker("@system")` (77 with no installed fonts) |
+| `fuse_text_cache_zero_alloc` | layout / measure / atlas / segmentation of already-seen strings (LTR, RTL, fallback, wrapped, elided): zero allocations |
+| `fuse_text_dpi_1`, `_1_25`, `_1_5`, `_2` | bundled font + chain at 14 px × scale: metrics, widths, glyph boxes and ink scale; same line breaks; no missing glyphs |
+| `fuse_text_colrv1` | COLRv1 paint graphs flattened to solid layers (`tests/data/colrv1_test.ttf`) |
 
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
-| `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster (skips 77 without a display or device) |
+| `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster, async Vulkan handover (software frame, resize during the handover, first Vulkan frame) (skips 77 without a display or device) |
+| `fuse_ui_a11y_windows` | UIA client (IUIAutomation) on a real Win32 window: control types and names, screen bounds, Invoke / Toggle / Value / RangeValue / ExpandCollapse, SetFocus + focus-changed event (Windows; skips 77 without AccessKit) |
+| `fuse_ui_vk_damage` | incremental GPU redraw of `DrawList::redrawRegion(damage)` (grown around backdrops): only touched tiles dispatched, result equals a full render |
+| `fuse_ui_vk_validation_clean` | `fuse_ui_vk_parity` + `fuse_ui_vk_damage` under `VK_LAYER_KHRONOS_validation` with sync validation: no warnings / errors (77 without the layer) |
+| `fuse_ui_vk_budget` | GPU time (timestamp queries) of 1080p frames: full, backdrop blur, incremental (software devices report only) |
+| `fuse_app_native_startup` | launches `hello_app` 5× per configuration: default (async Vulkan) and software-only first frame median ≤ 150 ms; every default run switches to Vulkan (median ≤ 2 s) with the switched frame equal to the CPU raster; synchronous Vulkan init ≤ 2 s (skips 77 without a display) |
+| `fuse_app_binary_size` | `hello_app` file size ≤ measured baseline + 10 % (MSVC x64 Release, MINIMAL text: 733,184 B → 806,500 B; other toolchains report and skip until a baseline is set with `-DFUSE_APP_BINARY_BUDGET`) |
+| `fuse_app_window_chrome` | custom-chrome window: `chromeHitTest` probes, then `WM_NCHITTEST` on a real Win32 window, frame removed, max / restore / min / close through non-client clicks (77 off Win32) |
+| `fuse_app_tray` | tray icon added and found (`Shell_NotifyIconGetRect` / `NIM_MODIFY`), simulated click / double-click callbacks, a real `TrackPopupMenu` context menu picked by posted keys, a notification, removal (77 without a tray) |
 | `fuse_ui_platform_services` | headless: DPI scale (layout fixed, device-pixel draw list, re-rasterised glyphs), `cursor:` style, reduced motion, touch / pinch / pen through `platform_bridge`, dark → light theme slot |
 | `fuse_platform_dpi_change`, `fuse_platform_displays`, `fuse_platform_cursors`, `fuse_platform_system_theme`, `fuse_platform_dialogs`, `fuse_platform_touch_synthetic`, `fuse_platform_multiwindow` | real windows: `WM_DPICHANGED` re-scale and back, monitors, OS cursor per hovered widget, theme change via `WM_SETTINGCHANGE` (faked query, user settings untouched), dialogs dismissed by a helper thread, injected touch tap + pinch, two swapchain windows with input routing / close / per-window DPI |
 | `fuse_ui_game_hud_golden` | HUD demo scene against `tests/golden/hud.png` plus trail / marker / pool state |
@@ -241,7 +347,7 @@ checks it against the overlay under one scripted event stream.
 
 Extra: `fuse_ui_text_basics`, `fuse_ui_text_full`, `fuse_ui_widget_interaction`, `fuse_ui_tier_b`, `fuse_ui_tier_b2`,
 `fuse_ui_relight_equivalence`, `fuse_ui_platform_keys_v2`, `fuse_ui_text_input`, `fuse_ui_doc_load`,
-`fuse_ui_lua_bindings`, `fuse_ui_vk_parity`, the sample runs `fuse_app_hello_sample`, `fuse_app_notes_sample`,
+`fuse_ui_lua_bindings`, `fuse_ui_vk_parity`, the sample runs `fuse_app_hello_sample`, `fuse_app_notes_sample`, `fuse_app_game_menu_sample`,
 `fuse_ui_game_hud_demo`, `fuse_ui_game_world_panel_demo`; in tree also `fuse_core_ui1_text_input`,
 `fuse_scene_renderer_vk_fuse_ui_t0` and `rl_overlay_glyphs`.
 

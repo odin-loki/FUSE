@@ -1,4 +1,4 @@
-set(FUSE_VULKAN_TEST_ENV "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
+set(FUSE_VULKAN_TEST_ENV "${FUSE_VULKAN_LVP_ENV}")
 set(FUSE_VULKAN_ICD_LOCK_FILE "${CMAKE_BINARY_DIR}/fuse_vulkan_icd.lock")
 set(FUSE_VULKAN_ICD_LOCK_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/run_vulkan_icd_locked.sh")
 file(TOUCH "${FUSE_VULKAN_ICD_LOCK_FILE}")
@@ -26,11 +26,11 @@ set(_fuse_vulkan_icd_tests
 
 add_executable(fuse_vulkan_bootstrap test_vulkan_bootstrap.cpp)
 target_link_libraries(fuse_vulkan_bootstrap PRIVATE fuse_rhi)
-add_test(NAME fuse_vulkan_bootstrap COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_vulkan_bootstrap>")
+add_test(NAME fuse_vulkan_bootstrap COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_vulkan_bootstrap>")
 
 add_executable(fuse_vulkan_swapchain test_vulkan_swapchain.cpp)
 target_link_libraries(fuse_vulkan_swapchain PRIVATE fuse_rhi)
-add_test(NAME fuse_vulkan_swapchain COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_vulkan_swapchain>")
+add_test(NAME fuse_vulkan_swapchain COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_vulkan_swapchain>")
 
 add_executable(fuse_win32_swapchain_wsi test_win32_swapchain_wsi.cpp)
 target_link_libraries(fuse_win32_swapchain_wsi PRIVATE fuse_rhi)
@@ -38,19 +38,19 @@ add_test(NAME fuse_win32_swapchain_wsi COMMAND fuse_win32_swapchain_wsi)
 
 add_executable(fuse_rhi_present_path_stub test_rhi_present_path_stub.cpp)
 target_link_libraries(fuse_rhi_present_path_stub PRIVATE fuse_rhi)
-add_test(NAME fuse_rhi_present_path_stub COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_rhi_present_path_stub>")
+add_test(NAME fuse_rhi_present_path_stub COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_rhi_present_path_stub>")
 
 add_executable(fuse_rhi_queue_submit test_rhi_queue_submit.cpp)
 target_link_libraries(fuse_rhi_queue_submit PRIVATE fuse_rhi)
-add_test(NAME fuse_rhi_queue_submit COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_rhi_queue_submit>")
+add_test(NAME fuse_rhi_queue_submit COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_rhi_queue_submit>")
 
 add_executable(fuse_rhi_resource_destroy_order test_rhi_resource_destroy_order.cpp)
 target_link_libraries(fuse_rhi_resource_destroy_order PRIVATE fuse_rhi)
-add_test(NAME fuse_rhi_resource_destroy_order COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_rhi_resource_destroy_order>")
+add_test(NAME fuse_rhi_resource_destroy_order COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_rhi_resource_destroy_order>")
 
 add_executable(fuse_vulkan_resources test_vulkan_resources.cpp)
 target_link_libraries(fuse_vulkan_resources PRIVATE fuse_rhi)
-add_test(NAME fuse_vulkan_resources COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_vulkan_resources>")
+add_test(NAME fuse_vulkan_resources COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_vulkan_resources>")
 
 add_executable(fuse_bindless_descriptors test_bindless_descriptors.cpp)
 target_link_libraries(fuse_bindless_descriptors PRIVATE fuse_rhi)
@@ -61,7 +61,7 @@ target_link_libraries(fuse_pipeline_cache PRIVATE fuse_rhi)
 target_compile_definitions(fuse_pipeline_cache PRIVATE
     FUSE_SHADER_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/Source/FUSE/Renderer/shaders/fixtures"
 )
-add_test(NAME fuse_pipeline_cache COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_pipeline_cache>")
+add_test(NAME fuse_pipeline_cache COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_pipeline_cache>")
 
 add_executable(fuse_shader_pipeline test_shader_pipeline.cpp)
 target_link_libraries(fuse_shader_pipeline PRIVATE fuse_rhi)
@@ -83,11 +83,11 @@ target_link_libraries(fuse_graphics_pipeline PRIVATE fuse_rhi)
 target_compile_definitions(fuse_graphics_pipeline PRIVATE
     FUSE_SHADER_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/Source/FUSE/Renderer/shaders/fixtures"
 )
-add_test(NAME fuse_graphics_pipeline COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_graphics_pipeline>")
+add_test(NAME fuse_graphics_pipeline COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_graphics_pipeline>")
 
 add_executable(fuse_b2_triangle_readback test_b2_triangle_readback.cpp)
 target_link_libraries(fuse_b2_triangle_readback PRIVATE fuse_rhi)
-add_test(NAME fuse_b2_triangle_readback COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_b2_triangle_readback>")
+add_test(NAME fuse_b2_triangle_readback COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_b2_triangle_readback>")
 
 add_executable(fuse_b2_render_graph_budget test_b2_render_graph_budget.cpp)
 target_link_libraries(fuse_b2_render_graph_budget PRIVATE fuse_rhi)
@@ -96,38 +96,38 @@ set_tests_properties(fuse_b2_render_graph_budget PROPERTIES RUN_SERIAL TRUE LABE
 
 add_executable(fuse_b2_staging_wrap test_b2_staging_wrap.cpp)
 target_link_libraries(fuse_b2_staging_wrap PRIVATE fuse_rhi)
-add_test(NAME fuse_b2_staging_wrap COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_b2_staging_wrap>")
+add_test(NAME fuse_b2_staging_wrap COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_b2_staging_wrap>")
 
 add_executable(fuse_b2_frame_alloc_budget test_b2_frame_alloc_budget.cpp)
 target_link_libraries(fuse_b2_frame_alloc_budget PRIVATE fuse_rhi)
-add_test(NAME fuse_b2_frame_alloc_budget COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_b2_frame_alloc_budget>")
+add_test(NAME fuse_b2_frame_alloc_budget COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_b2_frame_alloc_budget>")
 
 add_executable(fuse_b2_composite_blend test_b2_composite_blend.cpp)
 target_link_libraries(fuse_b2_composite_blend PRIVATE fuse_rhi)
-add_test(NAME fuse_b2_composite_blend COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_b2_composite_blend>")
+add_test(NAME fuse_b2_composite_blend COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_b2_composite_blend>")
 
 add_executable(fuse_b2_bindless_churn test_b2_bindless_churn.cpp)
 target_link_libraries(fuse_b2_bindless_churn PRIVATE fuse_rhi)
-add_test(NAME fuse_b2_bindless_churn COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_b2_bindless_churn>")
+add_test(NAME fuse_b2_bindless_churn COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_b2_bindless_churn>")
 
 add_executable(fuse_render_graph test_render_graph.cpp)
 target_link_libraries(fuse_render_graph PRIVATE fuse_rhi)
-add_test(NAME fuse_render_graph COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_render_graph>")
+add_test(NAME fuse_render_graph COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_render_graph>")
 
 add_executable(fuse_composite_pass test_composite_pass.cpp)
 target_link_libraries(fuse_composite_pass PRIVATE fuse_rhi)
 target_compile_definitions(fuse_composite_pass PRIVATE
     FUSE_SHADER_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/Source/FUSE/Renderer/shaders/fixtures"
 )
-add_test(NAME fuse_composite_pass COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_composite_pass>")
+add_test(NAME fuse_composite_pass COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_composite_pass>")
 
 add_executable(fuse_renderer_bootstrap test_renderer_bootstrap.cpp)
 target_link_libraries(fuse_renderer_bootstrap PRIVATE fuse_rhi)
-add_test(NAME fuse_renderer_bootstrap COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_renderer_bootstrap>")
+add_test(NAME fuse_renderer_bootstrap COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_renderer_bootstrap>")
 
 add_executable(fuse_vulkan_phase2_integration test_vulkan_phase2_integration.cpp)
 target_link_libraries(fuse_vulkan_phase2_integration PRIVATE fuse_rhi)
-add_test(NAME fuse_vulkan_phase2_integration COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_vulkan_phase2_integration>")
+add_test(NAME fuse_vulkan_phase2_integration COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_vulkan_phase2_integration>")
 
 add_executable(fuse_frame_manager test_frame_manager.cpp)
 target_link_libraries(fuse_frame_manager PRIVATE fuse_rhi)
