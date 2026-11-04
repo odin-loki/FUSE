@@ -200,7 +200,6 @@ def cmd_validation(tools, args):
     common = {
         "VK_INSTANCE_LAYERS": "VK_LAYER_KHRONOS_validation",
         "VK_KHRONOS_VALIDATION_REPORT_FLAGS": "error,warn",
-        "VK_LAYER_ENABLES": "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT",
         "VK_KHRONOS_VALIDATION_VALIDATE_SYNC": "true",
         "DXVK_LOG_LEVEL": "info",
         "FUSE_RELIGHT_VK_VALIDATION": "1",

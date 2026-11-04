@@ -16,6 +16,7 @@
 #include <fuse/renderer/vk/bootstrap.hpp>
 #include <fuse/renderer/vk/queue_submit.hpp>
 #include <vulkan/vulkan.h>
+#include <fuse/renderer/vk/test_layer_env.hpp>
 #endif
 
 namespace fuse::renderer::harness {
@@ -254,8 +255,7 @@ std::unique_ptr<HeadlessFrameRunner> HeadlessFrameRunner::create(const HarnessOp
     const bool validation = options.validation && !envDisabled("FUSE_HARNESS_VALIDATION");
     if (validation) {
         // Layer settings through the environment (VK_<LAYER>_<SETTING>); callers may override.
-        setEnvIfUnset("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true");
-        setEnvIfUnset("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT");
+        fuse::renderer::test::enableSyncValidationEnv(/*onlyIfUnset=*/true);
         setEnvIfUnset("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK");
     }
 
