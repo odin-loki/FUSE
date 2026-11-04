@@ -3,7 +3,7 @@
 //     all modes, images, backdrops, effects) and scissored (incremental) renders give the same bytes as the frozen
 //     pre-optimisation copy (cpu_raster_reference.hpp), single-threaded and banded over threads
 //   * speed (median of 10 after a warm-up): 1080p "8 cards" full frame <= 20 ms, a small-change incremental frame
-//     (one button's damage) <= 2 ms; the sample and the 1440p HUD are reported
+//     (one button's damage) <= 2 ms; the sample and the 1440p HUD are reported, all next to the pre-change reference
 // --report (or FUSE_UI_PERF_REPORT_ONLY=1, for slow / software CI): print the times, do not fail on them.
 // --ops: also time each op kind alone (where the frame time goes).
 #include "fuse/ui/effects.hpp"
@@ -173,8 +173,13 @@ int main(int argc, char** argv) {
         const Times full = timeIt([&] { r.render(*s.list, img); });
         r.setThreads(1);
         const Times one = timeIt([&] { r.render(*s.list, img); });
-        std::printf("  %-12s %4dx%-4d %5zu cmds  full %7.2f ms (min %6.2f), one thread %7.2f ms (min %6.2f)\n", s.name,
-                    s.w, s.h, s.list->size(), full.median, full.min, one.median, one.min);
+        ref::Rasterizer old;
+        old.m_atlas = s.atlas;
+        old.m_atlasSize = s.atlasSize;
+        const Times before = timeIt([&] { old.render(*s.list, img); }, 4);
+        std::printf("  %-12s %4dx%-4d %5zu cmds  full %7.2f ms (min %6.2f), one thread %7.2f ms (min %6.2f); "
+                    "pre-change reference %7.2f ms (min %6.2f)\n",
+                    s.name, s.w, s.h, s.list->size(), full.median, full.min, one.median, one.min, before.median, before.min);
         if (std::strcmp(s.name, "cards-1080p") == 0) cardsMs = full.median;
         if (ops) {
             for (DrawOp op : {DrawOp::Rect, DrawOp::Shadow, DrawOp::Glyph, DrawOp::Image, DrawOp::Line}) {
@@ -198,8 +203,13 @@ int main(int argc, char** argv) {
         r.render(cards, img);
         const Times t = timeIt([&] { r.render(cards, img, region); }, 20);
         incrMs = t.median;
-        std::printf("  incremental  %.0fx%.0f px region of cards-1080p: %.3f ms (min %.3f)\n", region.w, region.h,
-                    t.median, t.min);
+        ref::Rasterizer old;
+        old.m_atlas = card.atlas().pixels();
+        old.m_atlasSize = card.atlas().size();
+        const Times before = timeIt([&] { old.render(cards, img, region); }, 20);
+        std::printf("  incremental  %.0fx%.0f px region of cards-1080p: %.3f ms (min %.3f); pre-change reference %.3f ms "
+                    "(min %.3f)\n",
+                    region.w, region.h, t.median, t.min, before.median, before.min);
     }
     if (!report) {
         UI_CHECK(cardsMs <= 20.0);
