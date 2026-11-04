@@ -406,6 +406,40 @@ void testAttachmentsAndSamePassMerge() {
     expect(g.stats().layoutConflicts == 0u, "no layout conflicts");
 }
 
+// One buffer, disjoint sections (the atmosphere LUT layout): pass 1 reads A and writes B, pass 2 reads A and B. The
+// barrier in front of pass 1 makes A visible to compute reads; pass 1's own write of B must not inherit that
+// visibility, so pass 2 gets a compute-write -> compute-read barrier. Same with the write declared first.
+void testSamePassReadThenWriteSections() {
+    for (int writeFirst = 0; writeFirst < 2; ++writeFirst) {
+        Graph g;
+        const BufferRef luts = g.importBuffer({fakeHandle(0x50), 4096, kNoQueue, nullptr, "luts"});
+        const BufferRange a{0, 1024};
+        const BufferRange b{1024, 1024};
+        g.addPass("produce_a", nullptr, nullptr).use(luts, Access::StorageWrite, a, kStageCompute);
+        if (writeFirst != 0) {
+            g.addPass("a_to_b", nullptr, nullptr)
+                .use(luts, Access::StorageWrite, b, kStageCompute)
+                .use(luts, Access::StorageRead, a, kStageCompute);
+        } else {
+            g.addPass("a_to_b", nullptr, nullptr)
+                .use(luts, Access::StorageRead, a, kStageCompute)
+                .use(luts, Access::StorageWrite, b, kStageCompute);
+        }
+        g.addPass("read_ab", nullptr, nullptr)
+            .use(luts, Access::StorageRead, a, kStageCompute)
+            .use(luts, Access::StorageRead, b, kStageCompute)
+            .neverCull();
+        expect(planAll(g), "section graph compiles");
+        const BufferBarrier* raw = bufferBarrierFor(g, 2, luts.id);
+        expect(raw != nullptr && (raw->srcStages & vkc::kStageComputeShader) != 0u &&
+                   (raw->srcAccess & vkc::kAccessShaderWrite) != 0u && raw->dstStages == vkc::kStageComputeShader &&
+                   (raw->dstAccess & vkc::kAccessShaderRead) != 0u,
+               "read of a section written in a pass that also read another section: RAW barrier");
+        expect(raw != nullptr && raw->offset <= b.offset && raw->offset + raw->size >= b.offset + b.size,
+               "the RAW barrier covers the written section");
+    }
+}
+
 void testCullingAndNoPassCap() {
     Graph g;
     const BufferRef out = g.importBuffer({fakeHandle(0x40), 64, kNoQueue, nullptr, "out"});
@@ -581,6 +615,7 @@ int main() {
     testBufferMultiRangeSamePass();
     testImageLayoutsAndSubresources();
     testAttachmentsAndSamePassMerge();
+    testSamePassReadThenWriteSections();
     testCullingAndNoPassCap();
     testQueuesAndOwnership();
     testPrologueAndFinalLayout();

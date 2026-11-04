@@ -1,0 +1,14 @@
+# FUSE third-party pin: nanosvg (nanosvg.h SVG parser + nanosvgrast.h rasteriser, single headers). Vendored verbatim,
+# no local edits. Used only by the FUSE UI icon cooker (fuse_ui_icon_cook_lib, Source/FUSE/UI/Icons); the runtime
+# loads cooked .fuseicons packs and never parses SVG. Upstream has no release tags or version define: pinned by commit.
+# sha256 is over the file with CRLF normalized to LF.
+name=nanosvg
+upstream=https://github.com/memononen/nanosvg
+version=0
+commit=239e102ec2c691f2902e20ace2ed36ee4a35cfe6
+retrieved=2026-11-04 (raw.githubusercontent.com at the commit)
+license=Zlib
+license_file=LICENSE.txt
+sha256:nanosvg.h=e34fd5d084be106cea972d19ce5d27fd96d17ba89f8d06bdceee058420c8b2b0
+sha256:nanosvgrast.h=79a9c5f4db19debf9f3a648a1589e96d92854f245a5cb4f3d823f263785234d8
+sha256:LICENSE.txt=e82bc3dd03400aecabe12201219ba14750dbc4b36faab58663a7a6068548d372

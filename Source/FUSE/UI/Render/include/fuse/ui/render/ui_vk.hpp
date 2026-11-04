@@ -3,7 +3,9 @@
 // swapchain loop, or headless (tests). Vulkan 1.1 + storage images and buffers only (UI-T0, decision in §4.9).
 //
 // Per frame: packDrawList (gpu_draw_data.hpp) -> upload(slot, data) copies into the slot's persistently mapped
-// host-coherent buffers -> record(cmd, targetView, slot) binds and dispatches. The target is an RGBA8 storage image in
+// host-coherent buffers -> record(cmd, targetView, slot) binds and dispatches: one tile dispatch per draw-list segment,
+// with the backdrop blur passes (box passes over a device-local scratch, then a composite) and compute -> compute
+// barriers between segments. The target is an RGBA8 storage image in
 // VK_IMAGE_LAYOUT_GENERAL; the kernel blends over its contents (clear it first for a fresh layer). Capacities are fixed
 // at init; upload() fails (returns false) rather than reallocating, so steady state never allocates.
 #pragma once
@@ -20,6 +22,9 @@ struct UiVkDesc {
     u32 maxTileWords = 1u << 18;
     u32 maxImageWords = 1u << 20;
     u32 maxAtlasSize = 1024;
+    /// Backdrop blur scratch (device-local, 2 x 16 bytes per pixel): the largest blur source region (the backdrop
+    /// rect plus 3 x its box radius, clamped to the target). A larger backdrop is drawn unblurred (tint only).
+    u32 maxBackdropPixels = 1u << 20;
 };
 
 class UiVkRenderer {
@@ -27,6 +32,8 @@ public:
     static constexpr u32 kMaxSlots = 4;
     /// External texture slots (fuse::ui::Image::externalSlot 0..3).
     static constexpr u32 kMaxExternal = 4;
+    /// Draw-list segments per frame (backdrops + 1); upload() fails beyond it.
+    static constexpr u32 kMaxSegments = 32;
 
     UiVkRenderer() = default;
     ~UiVkRenderer() { destroy(); }
@@ -62,6 +69,8 @@ private:
         u8* mapped = nullptr;
         void* set = nullptr; ///< VkDescriptorSet
         GpuPush push{};
+        GpuSegment segments[kMaxSegments]{};
+        u32 segmentCount = 0;
     };
     UiVkDesc m_desc{};
     u64 m_offsets[5] = {};  ///< cmds, tiles, atlas, images, end
@@ -76,6 +85,9 @@ private:
     void* m_dummyMem = nullptr;
     void* m_dummyView = nullptr;
     bool m_dummyReady = false;        ///< layout transitioned (first record)
+    void* m_scratch = nullptr;        ///< VkBuffer, backdrop ping-pong halves (shared by all slots: one queue)
+    void* m_scratchMem = nullptr;
+    u32 m_scratchPixels = 0;          ///< per half
 };
 
 } // namespace fuse::ui::render

@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #endif
 
+#include <iterator>
 #include <string>
 
 namespace fuse::renderer {
@@ -23,21 +24,6 @@ struct FileStamp {
     u64 size = 0;
 };
 
-#if defined(_WIN32)
-std::wstring utf8ToWide(const char* path) {
-    const int needed = MultiByteToWideChar(CP_UTF8, 0, path, -1, nullptr, 0);
-    if (needed <= 0) {
-        return {};
-    }
-
-    std::wstring wide(static_cast<std::size_t>(needed), L'\0');
-    if (MultiByteToWideChar(CP_UTF8, 0, path, -1, wide.data(), needed) <= 0) {
-        return {};
-    }
-    return wide;
-}
-#endif
-
 FileStamp queryStamp(const char* path) {
     FileStamp stamp{};
     if (path == nullptr) {
@@ -45,13 +31,24 @@ FileStamp queryStamp(const char* path) {
     }
 
 #if defined(_WIN32)
-    const std::wstring wide = utf8ToWide(path);
-    if (wide.empty()) {
+    // UTF-16 path in a stack buffer: pollChanged runs every frame and must not allocate (heap only for long paths).
+    wchar_t local[1024];
+    std::wstring longPath;
+    wchar_t* wide = local;
+    const int needed = MultiByteToWideChar(CP_UTF8, 0, path, -1, nullptr, 0);
+    if (needed <= 0) {
+        return stamp;
+    }
+    if (needed > static_cast<int>(std::size(local))) {
+        longPath.resize(static_cast<std::size_t>(needed));
+        wide = longPath.data();
+    }
+    if (MultiByteToWideChar(CP_UTF8, 0, path, -1, wide, needed) <= 0) {
         return stamp;
     }
 
     WIN32_FILE_ATTRIBUTE_DATA attributes{};
-    if (!GetFileAttributesExW(wide.c_str(), GetFileExInfoStandard, &attributes)) {
+    if (!GetFileAttributesExW(wide, GetFileExInfoStandard, &attributes)) {
         return stamp;
     }
 

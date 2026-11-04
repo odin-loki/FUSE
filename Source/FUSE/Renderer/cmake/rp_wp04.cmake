@@ -10,7 +10,7 @@ target_sources(fuse_rhi PRIVATE
 
 if(FUSE_BUILD_CORE_TESTS)
     # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
-    set(_fuse_rp_wp04_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+    set(_fuse_rp_wp04_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
 
     add_executable(fuse_rp_bindless tests/test_rp_bindless.cpp)
     target_link_libraries(fuse_rp_bindless PRIVATE fuse_rhi)
@@ -42,12 +42,12 @@ if(FUSE_BUILD_CORE_TESTS)
         foreach(_backend set buffer fallback)
             set(_name "fuse_rp_bindless_${_mode}_${_backend}")
             add_test(NAME ${_name}
-                     COMMAND "${_fuse_rp_wp04_lock}" "$<TARGET_FILE:fuse_rp_bindless>" --mode ${_mode} --backend ${_backend})
+                     COMMAND ${_fuse_rp_wp04_lock} "$<TARGET_FILE:fuse_rp_bindless>" --mode ${_mode} --backend ${_backend})
             list(APPEND _fuse_bl_tests ${_name})
         endforeach()
     endforeach()
     set_tests_properties(${_fuse_bl_tests} PROPERTIES
-        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
         RUN_SERIAL TRUE
         SKIP_RETURN_CODE 77
         TIMEOUT 600

@@ -137,16 +137,15 @@ if(TARGET fuse_relight_restir_di AND TARGET fuse_rhi AND (FUSE_VULKAN_BACKEND OR
     target_link_libraries(fuse_relight_restir_di_vk_tests PRIVATE fuse_relight_restir_di fuse_relight_options fuse_rhi)
     _rl_pt_cxx23(fuse_relight_restir_di_vk_tests)
     if(NOT CMAKE_CROSSCOMPILING)
-        set(_rl_rdi_lock "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
         foreach(_lang slang glsl)
-            if(EXISTS "${_rl_rdi_lock}")
+            if(EXISTS "${FUSE_VULKAN_ICD_LOCK_PATH}")
                 add_test(NAME rl_restir_di_vk_${_lang}
-                         COMMAND "${_rl_rdi_lock}" "$<TARGET_FILE:fuse_relight_restir_di_vk_tests>" --language ${_lang})
+                         COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_relight_restir_di_vk_tests>" --language ${_lang})
             else()
                 add_test(NAME rl_restir_di_vk_${_lang} COMMAND fuse_relight_restir_di_vk_tests --language ${_lang})
             endif()
             set_tests_properties(rl_restir_di_vk_${_lang} PROPERTIES
-                ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+                ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
                 RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 1800 LABELS "gate;vulkan;relight")
         endforeach()
     else()
@@ -187,16 +186,15 @@ if(TARGET fuse_relight_restir_gi AND TARGET fuse_rhi AND (FUSE_VULKAN_BACKEND OR
     target_link_libraries(fuse_relight_restir_gi_vk_tests PRIVATE fuse_relight_restir_gi fuse_relight_options fuse_rhi)
     _rl_pt_cxx23(fuse_relight_restir_gi_vk_tests)
     if(NOT CMAKE_CROSSCOMPILING)
-        set(_rl_rgi_lock "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
         foreach(_lang slang glsl)
-            if(EXISTS "${_rl_rgi_lock}")
+            if(EXISTS "${FUSE_VULKAN_ICD_LOCK_PATH}")
                 add_test(NAME rl_restir_gi_vk_${_lang}
-                         COMMAND "${_rl_rgi_lock}" "$<TARGET_FILE:fuse_relight_restir_gi_vk_tests>" --language ${_lang})
+                         COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_relight_restir_gi_vk_tests>" --language ${_lang})
             else()
                 add_test(NAME rl_restir_gi_vk_${_lang} COMMAND fuse_relight_restir_gi_vk_tests --language ${_lang})
             endif()
             set_tests_properties(rl_restir_gi_vk_${_lang} PROPERTIES
-                ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+                ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
                 RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 1800 LABELS "gate;vulkan;relight")
         endforeach()
     else()
@@ -233,19 +231,18 @@ add_executable(fuse_relight_pt_vk_tests test_pt_vk.cpp)
 target_link_libraries(fuse_relight_pt_vk_tests PRIVATE fuse_relight_pathtrace fuse_relight_options fuse_rhi)
 _rl_pt_cxx23(fuse_relight_pt_vk_tests)
 if(NOT CMAKE_CROSSCOMPILING)
-    set(_rl_pt_lock "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
     set(_rl_pt_vk_tests "")
     foreach(_lang slang glsl)
-        if(EXISTS "${_rl_pt_lock}")
+        if(EXISTS "${FUSE_VULKAN_ICD_LOCK_PATH}")
             add_test(NAME rl_pt_vk_${_lang}
-                     COMMAND "${_rl_pt_lock}" "$<TARGET_FILE:fuse_relight_pt_vk_tests>" --language ${_lang})
+                     COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_relight_pt_vk_tests>" --language ${_lang})
         else()
             add_test(NAME rl_pt_vk_${_lang} COMMAND fuse_relight_pt_vk_tests --language ${_lang})
         endif()
         list(APPEND _rl_pt_vk_tests rl_pt_vk_${_lang})
     endforeach()
     set_tests_properties(${_rl_pt_vk_tests} PROPERTIES
-        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
         RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 1800 LABELS "gate;vulkan;relight")
     return()
 endif()

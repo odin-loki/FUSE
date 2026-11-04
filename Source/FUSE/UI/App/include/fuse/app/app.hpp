@@ -72,11 +72,32 @@ private:
     bool m_dirty = false;
 };
 
+// ---- system theme (plan §4.13 Theme) -------------------------------------------------------------------------------
+/// The OS appearance preferences. Desktop backends query it (Win32: AppsUseLightTheme, DwmGetColorizationColor,
+/// SPI_GETHIGHCONTRAST, SPI_GETCLIENTAREAANIMATION, Accessibility TextScaleFactor) and update it live.
+struct SystemTheme {
+    bool dark = true;
+    fuse::ui::Color accent = fuse::ui::Color::rgb(0x3D8BFD);
+    bool highContrast = false;
+    bool reducedMotion = false;
+    f32 textScale = 1.f; ///< the OS "make text bigger" factor (1 .. 2.25)
+    friend bool operator==(const SystemTheme&, const SystemTheme&) = default;
+};
+
 // ---- windows -------------------------------------------------------------------------------------------------------
+/// OS frame of a window. Borderless and Custom draw their own title bar (fuse/app/chrome.hpp: titleBar); the OS asks
+/// chromeHitTest() which parts drag (caption), resize (edges, Custom only) or act as min / max / close buttons.
+enum class WindowFrame : fuse::ui::u8 {
+    System,     ///< normal OS title bar and borders
+    Borderless, ///< no OS frame, not resizable (splash screens, launchers)
+    Custom,     ///< no OS frame, resizable from `resizeBorder` px edges; snap / maximise kept (Win32)
+};
 struct WindowDesc {
     std::string_view title = "FUSE";
-    u32 width = 800, height = 600;
-    f32 dpiScale = 1.f;
+    u32 width = 800, height = 600; ///< logical (UI units)
+    f32 dpiScale = 1.f;            ///< initial device pixels per UI unit (native windows take the monitor's)
+    WindowFrame frame = WindowFrame::System;
+    f32 resizeBorder = 6.f; ///< Custom frame: resize edge thickness (logical px)
 };
 enum class RedrawPolicy : fuse::ui::u8 {
     OnDemand,   ///< update + present only when the UI needs it (default)
@@ -85,6 +106,18 @@ enum class RedrawPolicy : fuse::ui::u8 {
 
 class Application;
 class AppWindow;
+
+enum class WindowCommand : fuse::ui::u8 { Minimize, ToggleMaximize, Close };
+/// Client-drawn chrome of a Borderless / Custom window: the title-bar nodes (titleBar() sets them) and the backend
+/// hook that carries out min / max / close (NativePlatform installs it; without one Close calls requestClose()).
+struct WindowChrome {
+    WindowFrame frame = WindowFrame::System;
+    f32 resizeBorder = 0.f;
+    fuse::ui::NodeHandle caption, minimize, maximize, close; ///< caption = drag area (its non-interactive children too)
+    bool maximized = false;                                  ///< kept current by the backend
+    void* user = nullptr;
+    void (*command)(void* user, AppWindow& w, WindowCommand c) = nullptr;
+};
 
 /// Shows a window's frame. `damage` is the union of changed rects (whole window on the first frame / resize).
 struct Presenter {
@@ -101,6 +134,7 @@ public:
     AppWindow& operator=(const AppWindow&) = delete;
 
     fuse::ui::UiContext& ui() { return m_ui; }
+    const fuse::ui::UiContext& ui() const { return m_ui; }
     Application& app() { return m_app; }
     u32 id() const { return m_id; }
     const std::string& title() const { return m_title; }
@@ -112,6 +146,18 @@ public:
 
     void resize(u32 width, u32 height); ///< logical units; forces a full repaint
     fuse::ui::Size size() const { return m_ui.viewport(); }
+    /// DPI scale: device pixels per UI unit (1 = 96 dpi). The presenter renders pixelSize(); input arrives in UI
+    /// units. setScale keeps the logical size (the pixel size follows), re-lays out, re-rasterises text and calls the
+    /// onDpiChanged handler.
+    f32 scale() const { return m_ui.scale(); }
+    void setScale(f32 s);
+    struct PixelSize {
+        u32 w = 0, h = 0;
+    };
+    PixelSize pixelSize() const { return m_pixels; }
+    /// The OS resized the client area to `width` x `height` device pixels (the logical size is that / scale()).
+    void resizePixels(u32 width, u32 height);
+    void onDpiChanged(fuse::ui::InlineFn<void(AppWindow&, f32)> fn) { m_onDpi = fn; }
     void setRedrawPolicy(RedrawPolicy p) { m_policy = p; }
     RedrawPolicy redrawPolicy() const { return m_policy; }
     void setPresenter(const Presenter& p);
@@ -120,6 +166,10 @@ public:
     void requestClose() { m_closing = true; }
     bool closing() const { return m_closing; }
     void requestRedraw() { m_forceRedraw = true; }
+    WindowChrome& chrome() { return m_chrome; }
+    const WindowChrome& chrome() const { return m_chrome; }
+    /// Minimise / toggle maximise / close through the backend hook (the title-bar buttons call this).
+    void command(WindowCommand c);
     /// Headless presenter target: the last CPU-rasterised frame.
     const fuse::ui::Image& image() const { return m_image; }
     bool writePng(const std::string& path) const;
@@ -152,9 +202,12 @@ private:
     std::unique_ptr<fuse::ui::doc::Document> m_doc;
     std::string m_title;
     Presenter m_presenter;
+    WindowChrome m_chrome;
     fuse::ui::Image m_image;
     fuse::ui::CpuRasterizer m_raster;
     RedrawPolicy m_policy = RedrawPolicy::OnDemand;
+    PixelSize m_pixels;
+    fuse::ui::InlineFn<void(AppWindow&, f32)> m_onDpi;
     u64 m_frames = 0;
     u32 m_id;
     bool m_closing = false, m_forceRedraw = true;
@@ -203,6 +256,7 @@ public:
 
     /// Replaces the event pump (an empty source restores the default sleep pump).
     void setEventSource(const EventSource& s);
+    const EventSource& eventSource() const { return m_events; } ///< the current pump (wrappers chain to it)
     void setClock(const Clock& c) { m_clock = c; }
     /// One loop iteration: pump events (waiting at most until the next UI deadline, capped by `maxWait`), then
     /// update / present every window that needs it and drop closed windows. False once the app should exit.
@@ -218,6 +272,19 @@ public:
     f32 nextWake() const;
     double now() const;
 
+    // ---- system theme ----
+    const SystemTheme& systemTheme() const { return m_theme; }
+    /// Backends call this at start and whenever the OS appearance changes. Every window (and later ones) honours
+    /// reduced motion; with followSystemTheme the default widget theme switches dark / light and takes the system
+    /// accent. Calls the onThemeChanged handler when something changed.
+    void setSystemTheme(const SystemTheme& t);
+    void onThemeChanged(fuse::ui::InlineFn<void(Application&, const SystemTheme&)> fn) { m_onTheme = fn; }
+    /// Follow the OS colour scheme (default off: windows keep the dark default theme and app style sheets).
+    void setFollowSystemTheme(bool on);
+    bool followSystemTheme() const { return m_followTheme; }
+    /// Applies the theme to one window (createWindow does this for new windows).
+    void applyTheme(AppWindow& w) const;
+
 private:
     std::string m_name;
     CommandLine m_args;
@@ -231,6 +298,9 @@ private:
     u32 m_nextId = 1;
     int m_exit = 0;
     bool m_quit = false, m_primary = true;
+    SystemTheme m_theme;
+    bool m_themeKnown = false, m_followTheme = false;
+    fuse::ui::InlineFn<void(Application&, const SystemTheme&)> m_onTheme;
 };
 
 /// Writes an RGBA8 image as PNG.

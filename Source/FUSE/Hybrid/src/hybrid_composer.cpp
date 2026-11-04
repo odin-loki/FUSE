@@ -100,6 +100,13 @@ void HybridComposer::releaseGpuScene() {
     }
 }
 
+void HybridComposer::setUiOverlay(const HybridUiOverlay& overlay) {
+    m_uiOverlay = overlay;
+    if (m_gpuScene != nullptr) {
+        m_gpuScene->setUiOverlay(overlay);
+    }
+}
+
 void HybridComposer::ensureGpuScene() {
     if (!m_gpuSceneRequested || m_gpuSceneFailed) {
         return;
@@ -134,6 +141,7 @@ void HybridComposer::ensureGpuScene() {
         log::warn("HybridComposer: GPU scene unavailable (%s) — PlaceholderRenderer fallback", scene->reason());
         return;
     }
+    scene->setUiOverlay(m_uiOverlay);
     m_gpuScene = std::move(scene);
     m_gpuSceneStatus = "active";
     rhi->setSceneFrameSource(m_gpuScene->frameSource());
@@ -245,7 +253,8 @@ void HybridComposer::render(frame::FrameCtx& ctx) {
                                                                gpu->height(), cmd.atlasFrame, cmd.atlasFrameCount));
             }
         }
-        if (m_flags.enableUI) {
+        // The UI layer: the UI overlay when one is set (drawn in the UI stage), else the placeholder quad.
+        if (m_flags.enableUI && m_uiOverlay.record == nullptr) {
             (void)gpu->addUi(spriteQuadFromPlaceholder(0.f, -90.f, 0.f, 255, 255, 255, gpu->width(), gpu->height()));
         }
         if (m_world3D != nullptr && m_world3D->renderer() != gpu) {

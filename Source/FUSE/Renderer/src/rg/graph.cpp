@@ -488,16 +488,21 @@ bool Graph::computePending(const Resource& resource, SubState& s, const Use& use
             need = true;
         }
         if (W) {
+            // A write of this pass (e.g. read range A, write range B of one buffer, which shares one state) is
+            // visible to no later pass: drop the visibility an earlier declaration of this pass recorded, or a
+            // later reader of B would skip its RAW barrier.
             s.passUnordered = 0;
             s.writeStages |= S;
             s.writeAccess |= A & vkc::kAccessWriteMask;
             s.contents = true;
-            // The write is new data: what earlier barriers made visible no longer covers later passes'
-            // reads (a read of another range of this buffer in the next pass must barrier on it).
+            s.writePass = orderPos;
             clearVisible(s.visStages, s.visAccess);
         } else {
             s.readStages |= S;
-            addVisible(s.visStages, s.visAccess, S, A);
+            // The barrier in front of this pass cannot cover the pass's own writes.
+            if (s.writePass != orderPos) {
+                addVisible(s.visStages, s.visAccess, S, A);
+            }
         }
         return need;
     }
@@ -617,6 +622,9 @@ bool Graph::computePending(const Resource& resource, SubState& s, const Use& use
     s.queue = q;
     s.lastBatch[q] = static_cast<i32>(batchIndex);
     s.lastPass = orderPos;
+    if (W) {
+        s.writePass = orderPos;
+    }
     s.touched = true;
     return need;
 }

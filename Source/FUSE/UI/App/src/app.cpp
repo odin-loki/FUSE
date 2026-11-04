@@ -16,7 +16,12 @@
 #include <thread>
 
 #if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #else
 #include <fcntl.h>
@@ -215,7 +220,15 @@ void Settings::remove(std::string_view key) {
 AppWindow::AppWindow(Application& app, const WindowDesc& d, u32 id)
     : m_app(app), m_ui({.viewport = {f32(d.width), f32(d.height)}, .font = &defaultFont()}), m_title(d.title), m_id(id) {
     widgets::install(m_ui);
+    m_ui.setScale(d.dpiScale);
+    m_pixels = {u32(std::lround(f32(d.width) * m_ui.scale())), u32(std::lround(f32(d.height) * m_ui.scale()))};
     m_presenter = {this, &AppWindow::presentHeadless, nullptr};
+    m_chrome.frame = d.frame;
+    m_chrome.resizeBorder = d.frame == WindowFrame::Custom ? d.resizeBorder : 0.f;
+}
+void AppWindow::command(WindowCommand c) {
+    if (m_chrome.command) m_chrome.command(m_chrome.user, *this, c);
+    else if (c == WindowCommand::Close) requestClose();
 }
 AppWindow::~AppWindow() {
     m_doc.reset();
@@ -227,9 +240,25 @@ void AppWindow::setPresenter(const Presenter& p) {
     m_forceRedraw = true;
 }
 void AppWindow::resize(u32 width, u32 height) {
+    m_pixels = {u32(std::lround(f32(width) * scale())), u32(std::lround(f32(height) * scale()))};
     m_ui.setViewport({f32(width), f32(height)});
     m_ui.markAllDirty();
     m_forceRedraw = true;
+}
+void AppWindow::resizePixels(u32 width, u32 height) {
+    m_pixels = {width, height};
+    m_ui.setViewport({f32(width) / scale(), f32(height) / scale()});
+    m_ui.markAllDirty();
+    m_forceRedraw = true;
+}
+void AppWindow::setScale(f32 s) {
+    const Size logical = size();
+    const f32 old = scale();
+    m_ui.setScale(s);
+    if (scale() == old) return;
+    m_pixels = {u32(std::lround(logical.w * scale())), u32(std::lround(logical.h * scale()))};
+    m_forceRedraw = true;
+    if (m_onDpi) m_onDpi(*this, scale());
 }
 std::expected<void, std::string> AppWindow::loadText(std::string_view json, doc::Model* model) {
     m_doc.reset();
@@ -250,11 +279,13 @@ std::expected<void, std::string> AppWindow::load(std::string_view path, doc::Mod
     return loadText(ss.str(), model);
 }
 bool AppWindow::presentHeadless(void*, AppWindow& w, Rect damage) {
-    const int iw = int(w.m_ui.viewport().w), ih = int(w.m_ui.viewport().h);
+    const int iw = int(w.m_pixels.w), ih = int(w.m_pixels.h); // device pixels; damage arrives in device pixels too
     const bool full = w.m_image.width != iw || w.m_image.height != ih;
     if (full) w.m_image.resize(iw, ih, 0xFF000000u);
     w.m_raster.setGlyphAtlas(w.m_ui.atlas().pixels(), w.m_ui.atlas().size());
-    const Rect r = full || damage.empty() ? Rect{0.f, 0.f, f32(iw), f32(ih)} : damage;
+    const Rect whole{0.f, 0.f, f32(iw), f32(ih)};
+    const Rect r = full || damage.empty() ? whole : w.m_ui.drawList().redrawRegion(damage, whole);
+    if (r.empty()) return true; // damage outside the window
     // clear the damaged region, then rasterise the list clipped to it (incremental present)
     const int x0 = std::max(0, int(std::floor(r.x))), y0 = std::max(0, int(std::floor(r.y)));
     const int x1 = std::min(iw, int(std::ceil(r.x + r.w))), y1 = std::min(ih, int(std::ceil(r.y + r.h)));
@@ -276,7 +307,11 @@ bool AppWindow::frame(f32 dt) {
     m_ui.update(dt); // advances timers; presents only when something repainted
     if (m_doc && m_doc->refresh()) m_ui.update(0.f);
     if (!m_ui.stats().repainted && !m_forceRedraw && m_policy == RedrawPolicy::OnDemand) return false;
-    const Rect dmg = m_forceRedraw ? Rect{0.f, 0.f, m_ui.viewport().w, m_ui.viewport().h} : m_ui.damage();
+    Rect dmg = m_forceRedraw ? Rect{0.f, 0.f, m_ui.viewport().w, m_ui.viewport().h} : m_ui.damage();
+    if (const f32 s = scale(); s != 1.f && !dmg.empty()) { // UI units -> device pixels, rounded outwards
+        const f32 x0 = std::floor(dmg.x * s), y0 = std::floor(dmg.y * s);
+        dmg = {x0, y0, std::ceil((dmg.x + dmg.w) * s) - x0, std::ceil((dmg.y + dmg.h) * s) - y0};
+    }
     m_forceRedraw = false;
     if (!m_presenter.present || !m_presenter.present(m_presenter.user, *this, dmg)) return false;
     ++m_frames;
@@ -318,7 +353,45 @@ Application::~Application() {
 }
 AppWindow& Application::createWindow(const WindowDesc& d) {
     m_windows.push_back(std::make_unique<AppWindow>(*this, d, m_nextId++));
+    if (m_themeKnown) applyTheme(*m_windows.back());
     return *m_windows.back();
+}
+void Application::applyTheme(AppWindow& w) const {
+    UiContext& ui = w.ui();
+    ui.setReducedMotion(m_theme.reducedMotion);
+    if (!m_followTheme) return;
+    const auto hex = [](Color c) {
+        char b[8];
+        const auto ch = [](f32 v) { return unsigned(std::lround(std::clamp(v, 0.f, 1.f) * 255.f)); };
+        std::snprintf(b, sizeof b, "#%02x%02x%02x", ch(c.r), ch(c.g), ch(c.b));
+        return std::string(b);
+    };
+    const Color a = m_theme.accent;
+    const f32 k = m_theme.dark ? 0.18f : -0.12f; // the hover / link shade of the accent
+    const Color hi = k > 0.f ? Color{a.r + (1.f - a.r) * k, a.g + (1.f - a.g) * k, a.b + (1.f - a.b) * k, 1.f}
+                             : Color{a.r * (1.f + k), a.g * (1.f + k), a.b * (1.f + k), 1.f};
+    std::string css(widgets::themeCss(m_theme.dark ? widgets::ThemeVariant::Dark : widgets::ThemeVariant::Light));
+    css += ":root { --accent: " + hex(a) + "; --accent-hi: " + hex(hi) + "; }\n";
+    if (m_theme.textScale > 1.f) // the OS "make text bigger" setting scales the inherited base font size
+        css += ":root { font-size: " + std::to_string(std::lround(14.f * m_theme.textScale)) + "px; }\n";
+    (void)ui.setThemeStyleSheet(css);
+    w.requestRedraw();
+}
+void Application::setSystemTheme(const SystemTheme& t) {
+    const bool changed = !m_themeKnown || !(t == m_theme);
+    m_theme = t;
+    m_themeKnown = true;
+    if (!changed) return;
+    for (auto& w : m_windows) applyTheme(*w);
+    if (m_onTheme) m_onTheme(*this, m_theme);
+}
+void Application::setFollowSystemTheme(bool on) {
+    if (on == m_followTheme) return;
+    m_followTheme = on;
+    for (auto& w : m_windows) {
+        if (on) applyTheme(*w);
+        else { (void)w->ui().setThemeStyleSheet(widgets::defaultThemeCss()); w->requestRedraw(); }
+    }
 }
 void Application::setEventSource(const EventSource& s) { m_events = s.pump ? s : EventSource{nullptr, &sleepPump}; }
 double Application::now() const { return m_clock.now(m_clock.user); }
