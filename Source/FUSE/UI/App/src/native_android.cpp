@@ -726,6 +726,11 @@ bool NativePlatform::postClose(unsigned long long nativeWin) {
     ANativeActivity_finish(g_app->activity);
     return true;
 }
+// the soft keyboard is the text-input session here (committed text only, no pre-edit)
+bool NativePlatform::textInputActive(const AppWindow& w) const { return m->win == &w && w.ui().wantsTextInput(); }
+Rect NativePlatform::textInputArea(const AppWindow&) const { return {}; }
+bool NativePlatform::inputMethodAvailable() const { return true; }
+bool NativePlatform::inputMethodPreedit() const { return false; }
 
 } // namespace fuse::app
 

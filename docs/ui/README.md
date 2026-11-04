@@ -318,6 +318,20 @@ Desktop platform services (UI1, `fuse/app/native.hpp`, `fuse/app/platform.hpp`):
   finger is the pointer, every contact is in `touches()`, `pinchScale()` for two fingers, `pressure()` for the pen.
 - `openFileDialog` / `saveFileDialog` / `pickFolderDialog` (IFileDialog; zenity on X11), `messageBox`, `openUrl`
   (http, https, mailto, file only), `revealInFileManager`.
+- Text input and IME: committed text (Win32 `WM_CHAR` with surrogate pairs; X11 `Xutf8LookupString` through XIM) and
+  the IME pre-edit (`WM_IME_COMPOSITION` → `UiContext::textComposition`, drawn inline by the focused field; X11 XIM
+  pre-edit callbacks when the IM offers them). The input method is on only while a text field has focus
+  (`textInputActive`: Win32 associates the IMM32 context, X11 focuses the XIM input context), and the composition /
+  candidate windows are placed at `UiContext::textCaret()` when a composition starts (`textInputArea`). X11 opens the
+  IM with a UTF-8 `LC_CTYPE` (restored afterwards): `$XMODIFIERS` (ibus, fcitx), else libX11's compose IM (dead keys).
+- Clipboard (`fuse/app/clipboard.hpp`): `setClipboardText` / `setClipboardImage` / `setClipboard({items})` with text,
+  straight-RGBA images, any MIME type and lazy items (`provide` runs once, when a paste first asks); `clipboardText`,
+  `clipboardImage`, `clipboardData(mime)`, `clipboardFormats()`, `clipboardOwned()`. Win32: `CF_UNICODETEXT`,
+  `CF_DIBV5` (reads `CF_DIB` too), `RegisterClipboardFormat(mime)`, delayed rendering for lazy items. X11: the
+  `CLIPBOARD` selection on a private connection served from the pump (`TARGETS`, `UTF8_STRING` / `STRING` /
+  `text/plain;charset=utf-8`, `image/png`, MIME atoms, INCR both ways). Shown windows route their `UiContext`
+  clipboard (line edit Ctrl+C / X / V) to it. Gates: `fuse_platform_text_input`, `fuse_platform_ime_composition`,
+  `fuse_platform_clipboard_roundtrip`.
 
 ### Android
 
@@ -524,6 +538,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_x11_randr`, `fuse_x11_xsettings`, `fuse_x11_wake` | X11 under Xvfb against the gate's own connection: two RandR monitors + `_NET_WORKAREA` in `displays()` and a monitor removed live; an XSETTINGS manager's `Xft/DPI` / `Net/ThemeName` at start and live (every window re-scales, `onDpiChanged`, `onThemeChanged`), manager exit → `RESOURCE_MANAGER`, a new manager; `wake()` from another thread ends a blocked pump and an accessibility action queued from an AT thread runs at once |
 | `fuse_ui_platform_services` | headless: DPI scale (layout fixed, device-pixel draw list, re-rasterised glyphs), `cursor:` style, reduced motion, touch / pinch / pen through `platform_bridge`, dark → light theme slot |
 | `fuse_platform_dpi_change`, `fuse_platform_displays`, `fuse_platform_cursors`, `fuse_platform_system_theme`, `fuse_platform_dialogs`, `fuse_platform_touch_synthetic`, `fuse_platform_multiwindow` | real windows: `WM_DPICHANGED` re-scale and back, monitors, OS cursor per hovered widget, theme change via `WM_SETTINGCHANGE` (faked query, user settings untouched), dialogs dismissed by a helper thread, injected touch tap + pinch, two swapchain windows with input routing / close / per-window DPI |
+| `fuse_platform_text_input`, `fuse_platform_ime_composition`, `fuse_platform_clipboard_roundtrip` | real windows (Win32; X11 under Xvfb): typed text incl. a surrogate pair / remapped keysyms into a line edit, Ctrl+C / V / X against another clipboard client, IME off outside text fields; an IMM32 composition (`ImmSetCompositionStringW`: inline pre-edit, commit, cancel, composition / candidate window at the caret; X11: a dead-key compose through XIM, pre-edit only with a server IM); clipboard text / RGBA image / custom MIME / several formats / lazy items / INCR against another thread (Win32) or X connection |
 | `fuse_platform_present_android` | Android build tree, adb: the demo presents on Vulkan (GPU draw and CPU upload) and in software; each surface's first frame read back in-process matches the CPU raster; density scale applied |
 | `fuse_app_lifecycle_android` | HOME releases the surface, `am start` rebuilds it with a correct first frame and the same UI state; rotation resizes to landscape and back |
 | `fuse_platform_touch_android` | `input tap` clicks the button; `input swipe` over the list scrolls it both ways without clicking |
