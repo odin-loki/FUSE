@@ -388,12 +388,18 @@ if(TARGET fuse_app)
                  --vulkan-budget-ms=2000)
         set_tests_properties(fuse_app_native_startup PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
             LABELS "fuse_ui;gate")
-        # Baseline per toolchain + text profile, +10 % (plan §6). MSVC 19.5x x64 Release, MINIMAL text, measured
-        # 2026-11-04 (MSVC Build Tools 2026) with icons, FontCatalog and a11y merged: 809,472 bytes -> budget 890,400. Other toolchains: set
-        # FUSE_APP_BINARY_BUDGET after measuring (the gate then checks a stripped copy); until then it reports and skips.
+        # Baseline per toolchain + text profile + build kind, +10 % (plan §6). MSVC 19.5x x64 Release, MINIMAL text,
+        # measured 2026-11-05 (MSVC Build Tools 2026) after the colour / MSDF glyph modes and the pipeline cache:
+        # standalone UI tree 870,912 bytes -> budget 958,000; in the engine tree hello_app also links fuse_rhi's
+        # volk loader: 904,192 bytes -> budget 994,600. Other toolchains: set FUSE_APP_BINARY_BUDGET after measuring
+        # (the gate then checks a stripped copy); until then it reports and skips.
         set(_budget 0)
         if(MSVC AND FUSE_UI_TEXT STREQUAL "MINIMAL" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
-            set(_budget 890400)
+            if(TARGET fuse_rhi)
+                set(_budget 994600)
+            else()
+                set(_budget 958000)
+            endif()
         endif()
         if(FUSE_APP_BINARY_BUDGET) # -DFUSE_APP_BINARY_BUDGET=<bytes> overrides
             set(_budget ${FUSE_APP_BINARY_BUDGET})

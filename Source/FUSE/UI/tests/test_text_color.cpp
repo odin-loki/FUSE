@@ -255,8 +255,8 @@ int msdf() {
     const NodeHandle big = w::label(ui, col, utf8(U"Big MSDF "));
     ui.setCss(big, "font-size", "56px");
     ui.setCss(big, "color", "#ffcc33");
-    const NodeHandle small = w::label(ui, col, "small coverage text");
-    ui.setCss(small, "font-size", "14px");
+    const NodeHandle smallText = w::label(ui, col, "small coverage text");
+    ui.setCss(smallText, "font-size", "14px");
     const NodeHandle mid = w::label(ui, col, utf8(U"Scaled 30px "));
     ui.setCss(mid, "font-size", "30px");
     ui.update();
