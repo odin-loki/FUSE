@@ -360,12 +360,12 @@ void UiVkRenderer::record(void* commandBuffer, void* targetView, u32 slotIndex) 
         push.cmd = seg.backdrop;
         barrier();
         if (seg.blurPixels <= m_scratchPixels) {
-            // 3 x (horizontal, vertical) box passes: target -> 0 -> 1 -> 0 -> 1 -> 0 -> 1
+            // 3 x (horizontal, vertical) box passes over the source region: target -> 0 -> 1 -> 0 -> 1 -> 0 -> 1
             for (u32 it = 0; it < 6; ++it) {
                 push.mode = it % 2 == 0 ? 1u : 2u;
                 push.src = it == 0 ? 0u : 1u + ((it + 1) % 2);
                 push.dst = it % 2;
-                dispatch(((it % 2 == 0 ? sh : sw) + 255) / 256, 1);
+                dispatch((sw + kUiTile - 1) / kUiTile, (sh + kUiTile - 1) / kUiTile);
                 barrier();
             }
             push.src = 1;

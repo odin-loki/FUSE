@@ -218,12 +218,13 @@ void backdropBlur(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& ta
                     const std::size_t px = vertical ? std::size_t(i) * std::size_t(w) + std::size_t(l) : std::size_t(l) * std::size_t(w) + std::size_t(i);
                     return buf[px * 4 + std::size_t(k)];
                 };
-                f32 acc = 0.f;
-                for (int i = -r; i <= r; ++i) acc += at(i);
+                // each output is its own window sum in a fixed order (not a running sum): order-independent per
+                // pixel, so the GPU kernel computes the same bits in parallel
                 for (int i = 0; i < n; ++i) {
+                    f32 acc = 0.f;
+                    for (int j = -r; j <= r; ++j) acc += at(i + j);
                     const std::size_t px = vertical ? std::size_t(i) * std::size_t(w) + std::size_t(l) : std::size_t(l) * std::size_t(w) + std::size_t(i);
                     tmp[px * 4 + std::size_t(k)] = acc * inv;
-                    acc += at(i + r + 1) - at(i - r);
                 }
             }
         buf.swap(tmp);

@@ -151,8 +151,8 @@ uint atlasByte(uint idx) { return (ui_atlas.words[idx >> 2] >> ((idx & 3u) * 8u)
 uvec4 loadTarget(ivec2 ip) { return uvec4(floor(imageLoad(ui_target, ip) * 255.0 + 0.5)); }
 
 // Backdrop blur, the GPU version of CpuRasterizer's backdropBlur (Core/src/draw_list.cpp), with the same float
-// operation order: per line a running box sum over the source region (edge-clamped), 3 x (horizontal, vertical),
-// then the composite mixes the blur in by coverage and blends the tint.
+// operation order: box sums over the source region (edge-clamped), 3 x (horizontal, vertical), then the composite
+// mixes the blur in by coverage and blends the tint.
 struct Backdrop {
     int x0, y0, x1, y1; // composited pixel area
     int sx0, sy0, w, h; // source region
@@ -181,23 +181,17 @@ vec4 boxAt(Backdrop b, bool vertical, int line, int i, int n) {
     return ui_scratch.v[(pc.src - 1u) * scratchHalf() + uint(y * b.w + x)];
 }
 
+// One invocation per output pixel: the window sum in the reference's fixed order (left to right / top to bottom).
 void boxPass(bool vertical) {
     const GpuCmd c = ui_cmds.cmds[pc.cmd];
     const Backdrop b = backdropOf(c);
-    const int line = int(gl_WorkGroupID.x * 256u + gl_LocalInvocationIndex);
-    const int n = vertical ? b.h : b.w, lines = vertical ? b.w : b.h;
-    if (line >= lines) return;
-    const float inv = divRn(1.0, float(2 * b.r + 1));
-    const uint base = pc.dst * scratchHalf();
+    const ivec2 q = ivec2(gl_GlobalInvocationID.xy);
+    if (q.x >= b.w || q.y >= b.h) return;
+    const int line = vertical ? q.x : q.y, i = vertical ? q.y : q.x, n = vertical ? b.h : b.w;
     precise vec4 acc = vec4(0.0);
-    for (int i = -b.r; i <= b.r; ++i) acc += boxAt(b, vertical, line, i, n);
-    for (int i = 0; i < n; ++i) {
-        const int x = vertical ? line : i, y = vertical ? i : line;
-        precise vec4 o = acc * inv;
-        ui_scratch.v[base + uint(y * b.w + x)] = o;
-        precise vec4 delta = boxAt(b, vertical, line, i + b.r + 1, n) - boxAt(b, vertical, line, i - b.r, n);
-        acc += delta;
-    }
+    for (int j = -b.r; j <= b.r; ++j) acc += boxAt(b, vertical, line, i + j, n);
+    precise vec4 o = acc * divRn(1.0, float(2 * b.r + 1));
+    ui_scratch.v[pc.dst * scratchHalf() + uint(q.y * b.w + q.x)] = o;
 }
 
 float lroundPos(float v) { // std::lround for the composite (halves away from zero; v >= -0.5)
