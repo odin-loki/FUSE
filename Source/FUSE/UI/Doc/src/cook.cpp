@@ -153,10 +153,11 @@ void writeValue(Writer& w, const PropValue& v) {
     w.u8_(v.trackCount);
     for (u8 i = 0; i < v.trackCount; ++i) writeLength(w, v.tracks[i]);
     w.u32_(v.ident);
+    for (u8 i = 0; i < v.trackCount; ++i) w.u32_(v.tags[i]);
 }
 bool readValue(Reader& r, PropValue& v) {
     const u8 t = r.u8_();
-    if (t > u8(PropType::Effect)) return r.ok = false;
+    if (t > u8(PropType::FontSettings)) return r.ok = false;
     v.type = PropType(t);
     v.b = r.u8_() != 0;
     v.e = r.u8_();
@@ -167,6 +168,7 @@ bool readValue(Reader& r, PropValue& v) {
     if (v.trackCount > kMaxGridTracks) return r.ok = false;
     for (u8 i = 0; i < v.trackCount && r.ok; ++i) readLength(r, v.tracks[i]);
     v.ident = r.u32_();
+    for (u8 i = 0; i < v.trackCount && r.ok; ++i) v.tags[i] = r.u32_();
     return r.ok;
 }
 void writeSheet(Writer& w, const StyleSheet& s) {
