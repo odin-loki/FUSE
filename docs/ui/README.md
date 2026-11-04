@@ -344,6 +344,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_world_panel_raycast` | ray → panel pixel mapping, misses and back faces, ray clicks, idle surface does not re-render |
 | `fuse_ui_input_arbitration` | pointer / keyboard / gamepad ownership between UI and game |
 | `fuse_ui_pause_time_domain` | pause and slow motion affect game-time HUD only; locale switching |
+| `fuse_demo_hybrid_hud_ui` | `demo_hybrid_hud` HUD on a UI context in the hybrid frame (`HybridComposer::setUiOverlay` → `UiFrameSource::recordOver`, over the sprite layer): every opaque HUD pixel of the GPU readback equals the CPU raster (≤ 1/255), glyphs visible |
 
 Extra: `fuse_ui_text_basics`, `fuse_ui_text_full`, `fuse_ui_widget_interaction`, `fuse_ui_tier_b`, `fuse_ui_tier_b2`,
 `fuse_ui_relight_equivalence`, `fuse_ui_platform_keys_v2`, `fuse_ui_text_input`, `fuse_ui_doc_load`,
