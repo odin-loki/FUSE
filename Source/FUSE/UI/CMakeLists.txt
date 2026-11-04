@@ -13,6 +13,12 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 endif()
 
 get_filename_component(FUSE_UI_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
+# Gates pin the lavapipe ICD where it exists (Linux CI). Elsewhere (native Windows) they use the system Vulkan driver.
+if(EXISTS "/usr/share/vulkan/icd.d/lvp_icd.json")
+    set(FUSE_UI_LVP_ENV "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
+else()
+    set(FUSE_UI_LVP_ENV "FUSE_UI_SYSTEM_ICD=1")
+endif()
 
 option(FUSE_BUILD_UI_WIDGETS "Build fuse_ui_widgets (Tier A widgets)" ON)
 option(FUSE_BUILD_UI_TESTS "Build FUSE UI gate tests" ON)
@@ -269,7 +275,7 @@ if(FUSE_BUILD_UI_VK)
                                  COMMAND fuse_scene_renderer_vk --mode hudless_invariant --tier t0)
                     endif()
                     set_tests_properties(fuse_scene_renderer_vk_fuse_ui_t0 fuse_ui_hudless_history_invariant PROPERTIES
-                        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json" RUN_SERIAL TRUE
+                        ENVIRONMENT "${FUSE_UI_LVP_ENV}" RUN_SERIAL TRUE
                         SKIP_RETURN_CODE 77 TIMEOUT 1800 LABELS "gate;vulkan;renderer;scene_renderer;ui")
                 endif()
             endif()
