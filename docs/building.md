@@ -231,7 +231,16 @@ ctest --test-dir build -C Release --output-on-failure
 
 ### Windows x64 from Linux (MinGW-w64 cross + Wine)
 
-See `CMakePresets.json` presets `fuse-mingw-*`.
+See `CMakePresets.json` presets `fuse-mingw-*`. ctest runs the PE binaries through `cmake/toolchains/fuse-wine-run.sh`
+(`wine64` on `PATH`, or `FUSE_WINE=<wine64>`).
+
+Without root (no `apt install wine64`), Ubuntu's Wine also runs unpacked: `apt-get download wine64 libwine` plus their
+missing dependencies, `dpkg -x` each into one prefix (e.g. `~/opt/wine`), then point `FUSE_WINE` at a small wrapper
+that sets `LD_LIBRARY_PATH=<prefix>/usr/lib/x86_64-linux-gnu`, puts `<prefix>/usr/lib/wine` first on `PATH` (with
+`wineserver` there linked to `wineserver64`; Debian's `wineserver` script hard-codes `/usr/lib/wine`) and execs
+`<prefix>/usr/lib/wine/wine64`. Debian's Wine loads `zlib1.dll` from the compiled-in `/usr/x86_64-w64-mingw32/lib`,
+so the wrapper copies `<prefix>/usr/x86_64-w64-mingw32/lib/zlib1.dll` into `$WINEPREFIX/drive_c/windows/system32`
+before the prefix is first booted (without it `user32.dll` fails to load).
 
 ## Presets
 

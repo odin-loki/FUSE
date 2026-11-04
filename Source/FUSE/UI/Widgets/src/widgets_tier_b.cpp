@@ -23,6 +23,11 @@ bool isClass(const UiContext& ui, NodeHandle n, std::string_view cls) {
     return ui.alive(n) && ui.classOf(n) == ui.registry().find(cls);
 }
 void setPx(UiContext& ui, NodeHandle n, Prop p, f32 v) { ui.set(n, p, PropValue::ofLength(Length::px(v))); }
+/// Left / Right swapped for a right-to-left node (arrow keys move visually).
+Key visualKey(const UiContext& ui, NodeHandle n, Key k) {
+    if (!ui.computed(n).rtl) return k;
+    return k == Key::Left ? Key::Right : k == Key::Right ? Key::Left : k;
+}
 
 f32 rowHeight(UiContext& ui, NodeHandle n) {
     const f32 px = ui.computed(n).fontSize;
@@ -92,6 +97,7 @@ struct Popup {
             return true; // a modal scrim keeps focus inside the dialog
         }
         if (e.type == EventType::KeyDown && e.key == Key::Escape) {
+            ec.ui.emit(ec.node, SignalKind::Toggled, {.flag = false}); // dismissed (dialogs report a cancel)
             closePopup(ec.ui, ec.node);
             return true;
         }
@@ -127,6 +133,31 @@ struct Menu {
         return true;
     }
 };
+// ---- menu bar keyboard helpers -------------------------------------------------------------------------------------
+/// Opens a menu button's popup under it.
+void openMenuButton(UiContext& ui, NodeHandle b) {
+    const std::string_view t = ui.text(b);
+    const std::size_t nl = t.find('\n');
+    if (nl == std::string_view::npos) return;
+    const Rect r = ui.rect(b);
+    popupMenu(ui, b, t.substr(nl + 1), {ui.computed(b).rtl ? r.right() : r.x, r.bottom()});
+}
+/// The enabled menu button `step` places after `b` in its bar (wrapping; step 0 = the first, -0x7FFF.. = the last).
+NodeHandle menuButtonAt(const UiContext& ui, NodeHandle b, i32 step) {
+    const u32 cls = ui.registry().find("menubutton");
+    NodeHandle all[64];
+    i32 n = 0, at = 0;
+    for (NodeHandle c = ui.firstChild(ui.parent(b)); ui.alive(c) && n < 64; c = ui.nextSibling(c)) {
+        if (ui.classOf(c) != cls || (ui.disabled(c) && c != b)) continue;
+        if (c == b) at = n;
+        all[n++] = c;
+    }
+    if (!n) return {};
+    if (step == 0) return all[0];
+    if (step <= -0x7FFF) return all[n - 1];
+    return all[((at + step) % n + n) % n];
+}
+
 struct MenuItem { // text = "label" or "label\n<sub items, one tab less>" (a submenu); value = line index in the root list
     static constexpr std::string_view kName = "menuitem";
     static constexpr A11yRole kRole = A11yRole::ListItem;
@@ -142,13 +173,16 @@ struct MenuItem { // text = "label" or "label\n<sub items, one tab less>" (a sub
     }
     static void paint(const PaintContext& pc, DrawList& dl) {
         const std::string_view t = pc.ui.text(pc.node);
-        if (pc.ui.checked(pc.node)) dl.rect({pc.rect.x + 2.f, pc.rect.y + 3.f, 3.f, pc.rect.h - 6.f}, accent(pc));
+        if (pc.ui.checked(pc.node)) {
+            const Rect bar{pc.rect.x + 2.f, pc.rect.y + 3.f, 3.f, pc.rect.h - 6.f};
+            dl.rect(pc.style.rtl ? mirrorX(bar, pc.rect) : bar, accent(pc));
+        }
         pc.ui.paintIconLabel(dl, pc.style, label(t), pc.content, textCol(pc), TextAlignment::Start, pc.node.index);
-        if (hasSub(t)) { // chevron
+        if (hasSub(t)) { // chevron (RTL: on the left, pointing left)
             const Rect c = pc.content;
             const f32 x = c.right() - 8.f, y = c.y + c.h * 0.5f;
-            dl.line({x, y - 4.f}, {x + 4.f, y}, textCol(pc), 1.5f);
-            dl.line({x + 4.f, y}, {x, y + 4.f}, textCol(pc), 1.5f);
+            dl.line(pc.flip(Vec2{x, y - 4.f}), pc.flip(Vec2{x + 4.f, y}), textCol(pc), 1.5f);
+            dl.line(pc.flip(Vec2{x + 4.f, y}), pc.flip(Vec2{x, y + 4.f}), textCol(pc), 1.5f);
         }
     }
     static void openSub(UiContext& ui, NodeHandle n) {
@@ -162,7 +196,11 @@ struct MenuItem { // text = "label" or "label\n<sub items, one tab less>" (a sub
             if (l.empty() || l[0] != '\t') w = std::max(w, ui.measureString(l, ui.computed(n).fontSize) + 66.f);
             return true;
         });
-        const f32 x = panel.right() - 2.f + w > ui.popupArea().x + ui.popupArea().w ? std::max(ui.popupArea().x, panel.x + 2.f - w) : panel.right() - 2.f;
+        const Rect area = ui.popupArea();
+        f32 x;
+        if (ui.computed(n).rtl) // opens to the left (x = the submenu's right edge), to the right when the left has no room
+            x = panel.x + 2.f - w < area.x ? std::min(area.x + area.w, panel.right() - 2.f + w) : panel.x + 2.f;
+        else x = panel.right() - 2.f + w > area.x + area.w ? std::max(area.x, panel.x + 2.f - w) : panel.right() - 2.f;
         detail::popupMenuAt(ui, n, sub, {x, r.y - 4.f}, u32(ui.value(n)) + 1u);
     }
     static bool onEvent(EventContext& ec, const Event& e) {
@@ -171,8 +209,16 @@ struct MenuItem { // text = "label" or "label\n<sub items, one tab less>" (a sub
         const NodeHandle scope = scopeOf(ui, ec.node);
         NodeHandle owner = ui.alive(scope) ? unpack(ui.userData(scope)) : NodeHandle{};
         if (e.type == EventType::KeyDown && ec.phase == Phase::Target) {
-            if (e.key == Key::Right && hasSub(ui.text(ec.node))) { openSub(ui, ec.node); return true; }
-            if (e.key == Key::Left && isClass(ui, owner, "menuitem")) { closePopup(ui, ec.node); return true; }
+            const Key k = visualKey(ui, ec.node, e.key); // RTL: Left opens a submenu, Right goes back
+            if (k == Key::Right && hasSub(ui.text(ec.node))) { openSub(ui, ec.node); return true; }
+            if (k == Key::Left && isClass(ui, owner, "menuitem")) { closePopup(ui, ec.node); return true; }
+            // a menu bar menu: Left / Right switch to the neighbouring menu
+            if ((k == Key::Left || k == Key::Right) && isClass(ui, owner, "menubutton")) {
+                const NodeHandle to = menuButtonAt(ui, owner, k == Key::Right ? 1 : -1);
+                closePopup(ui, ec.node);
+                if (ui.alive(to)) { ui.setFocus(to, FocusReason::Keyboard); openMenuButton(ui, to); }
+                return true;
+            }
             return false;
         }
         if (e.type != EventType::Click || ec.phase != Phase::Target) return false;
@@ -219,17 +265,61 @@ struct MenuButton { // text = "Title\nitem\nitem..."
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
-        if (e.type == EventType::Click || (e.type == EventType::KeyDown && e.key == Key::Down)) {
-            const std::string_view t = ec.ui.text(ec.node);
-            const std::size_t nl = t.find('\n');
-            if (nl == std::string_view::npos) return true;
-            const Rect r = ec.ui.rect(ec.node);
-            popupMenu(ec.ui, ec.node, t.substr(nl + 1), {r.x, r.bottom()});
+        UiContext& ui = ec.ui;
+        if (e.type == EventType::Click || (e.type == EventType::KeyDown && (e.key == Key::Down || e.key == Key::Up))) {
+            openMenuButton(ui, ec.node);
             return true;
         }
-        return false;
+        if (e.type != EventType::KeyDown) return false;
+        NodeHandle to;
+        switch (visualKey(ui, ec.node, e.key)) {
+        case Key::Right: to = menuButtonAt(ui, ec.node, 1); break;
+        case Key::Left: to = menuButtonAt(ui, ec.node, -1); break;
+        case Key::Home: to = menuButtonAt(ui, ec.node, 0); break;
+        case Key::End: to = menuButtonAt(ui, ec.node, -0x7FFF); break;
+        case Key::Escape: { // back to where F10 came from
+            const NodeHandle prev = unpack(ui.userData(ui.parent(ec.node)));
+            if (!ui.alive(prev) || prev == ec.node) return false;
+            ui.setUserData(ui.parent(ec.node), 0);
+            ui.setFocus(prev, FocusReason::Keyboard);
+            return true;
+        }
+        default: return false;
+        }
+        if (ui.alive(to)) ui.setFocus(to, FocusReason::Keyboard);
+        return true;
     }
 };
+
+/// F10 (from the root's Event signal: no focused widget took it) toggles keyboard focus between the first visible
+/// menu bar and the previously focused node.
+void menuBarF10(UiContext& ui, NodeHandle root, const SignalArgs& a) {
+    if (!a.event || a.event->key != Key::F10 || a.event->mods) return;
+    const u32 barCls = ui.registry().find("menubar"), btnCls = ui.registry().find("menubutton");
+    const NodeHandle f = ui.focused();
+    if (ui.alive(f) && ui.classOf(f) == btnCls) { // in a bar: back
+        const NodeHandle prev = unpack(ui.userData(ui.parent(f)));
+        ui.setUserData(ui.parent(f), 0);
+        ui.setFocus(ui.alive(prev) ? prev : NodeHandle{}, FocusReason::Keyboard);
+        return;
+    }
+    // pre-order walk for the first displayed bar
+    std::vector<NodeHandle> stack{root};
+    while (!stack.empty()) {
+        const NodeHandle n = stack.back();
+        stack.pop_back();
+        if (!ui.computed(n).visible) continue;
+        if (ui.classOf(n) == barCls) {
+            const NodeHandle first = menuButtonAt(ui, ui.firstChild(n), 0);
+            if (!ui.alive(first) || ui.classOf(first) != btnCls) continue;
+            ui.setUserData(n, pack(f));
+            ui.setFocus(first, FocusReason::Keyboard);
+            return;
+        }
+        std::size_t at = stack.size();
+        for (NodeHandle c = ui.firstChild(n); ui.alive(c); c = ui.nextSibling(c)) stack.insert(stack.begin() + std::ptrdiff_t(at), c);
+    }
+}
 
 // ---- tooltip -----------------------------------------------------------------------------------------------------
 struct Tooltip {
@@ -244,6 +334,21 @@ struct Tooltip {
 };
 
 // ---- list view ---------------------------------------------------------------------------------------------------
+struct RowFontEntry {
+    const UiContext* ui;
+    NodeHandle list;
+    detail::RowFontFn fn;
+};
+std::vector<RowFontEntry>& rowFonts() {
+    static std::vector<RowFontEntry> v;
+    return v;
+}
+detail::RowFontFn rowFontOf(const UiContext& ui, NodeHandle list) {
+    for (const RowFontEntry& e : rowFonts())
+        if (e.ui == &ui && e.list == list) return e.fn;
+    return nullptr;
+}
+
 struct ListView {
     static constexpr std::string_view kName = "listview";
     static constexpr A11yRole kRole = A11yRole::List;
@@ -283,13 +388,17 @@ struct ListView {
         const u32 first = u32(ui.userData(pc.node));
         const i64 sel = i64(ui.value(pc.node));
         const u32 vis = u32(std::ceil(c.h / rh));
+        const detail::RowFontFn rowFont = rowFontOf(ui, pc.node);
         dl.pushClip(c);
         eachLine(ui.text(pc.node), [&](u32 i, std::string_view line) {
             if (i < first) return true;
             if (i >= first + vis) return false; // virtualised: rows past the view are never touched
             const Rect row{c.x, c.y + f32(i - first) * rh, c.w, rh};
             if (i64(i) == sel) dl.rect(row, accent(pc).withAlpha((pc.states & kStateFocus ? 0.55f : 0.3f) * pc.opacity), 3.f);
-            labelAt(pc, dl, line, {row.x + 6.f, row.y + 3.f, row.w - 12.f, rh - 6.f});
+            if (rowFont) // a face per row (font picker)
+                ui.paintString(dl, line, {row.x + 6.f, row.y + 3.f, row.w - 12.f, rh - 6.f}, textCol(pc), pc.style.fontSize,
+                               TextAlignment::Start, pc.node.index, rowFont(ui, pc.node, i));
+            else labelAt(pc, dl, line, {row.x + 6.f, row.y + 3.f, row.w - 12.f, rh - 6.f});
             return true;
         });
         dl.popClip();
@@ -297,7 +406,7 @@ struct ListView {
         if (total > shown && shown) { // scroll indicator
             const f32 th = std::max(12.f, c.h * f32(shown) / f32(total));
             const f32 ty = c.y + (c.h - th) * f32(first) / f32(total - shown);
-            dl.rect({c.right() - 4.f, ty, 3.f, th}, textCol(pc).withAlpha(0.35f * pc.opacity), 1.5f);
+            dl.rect(pc.flip(Rect{c.right() - 4.f, ty, 3.f, th}), textCol(pc).withAlpha(0.35f * pc.opacity), 1.5f);
         }
     }
     static bool onEvent(EventContext& ec, const Event& e) {
@@ -387,10 +496,11 @@ struct TreeView {
             const f32 x = r.x + 4.f + f32(depth) * kIndent, my = r.y + rh * 0.5f;
             if (kids) {
                 const Color a = textCol(pc);
-                if (open) { dl.line({x + 2.f, my - 2.f}, {x + 6.f, my + 2.f}, a, 1.5f); dl.line({x + 6.f, my + 2.f}, {x + 10.f, my - 2.f}, a, 1.5f); }
-                else { dl.line({x + 4.f, my - 4.f}, {x + 8.f, my}, a, 1.5f); dl.line({x + 8.f, my}, {x + 4.f, my + 4.f}, a, 1.5f); }
+                auto seg = [&](Vec2 p, Vec2 q) { dl.line(pc.flip(p), pc.flip(q), a, 1.5f); }; // RTL: indent from the right
+                if (open) { seg({x + 2.f, my - 2.f}, {x + 6.f, my + 2.f}); seg({x + 6.f, my + 2.f}, {x + 10.f, my - 2.f}); }
+                else { seg({x + 4.f, my - 4.f}, {x + 8.f, my}); seg({x + 8.f, my}, {x + 4.f, my + 4.f}); }
             }
-            labelAt(pc, dl, t, {x + 14.f, r.y + 3.f, c.right() - x - 14.f, rh - 6.f});
+            labelAt(pc, dl, t, pc.flip(Rect{x + 14.f, r.y + 3.f, c.right() - x - 14.f, rh - 6.f}));
             return true;
         });
         dl.popClip();
@@ -422,13 +532,14 @@ struct TreeView {
             const Hit h = rowInfo(ui, n, [&](u32 r, u32) { return i64(r) == row; });
             if (h.line < 0) return true;
             const f32 ax = c.x + 4.f + f32(h.depth) * kIndent;
-            if (h.kids && e.pos.x >= ax && e.pos.x < ax + 14.f) setTreeExpanded(ui, n, u32(h.line), !h.open);
+            const f32 px = ui.computed(n).rtl ? mirrorX(e.pos.x, c) : e.pos.x;
+            if (h.kids && px >= ax && px < ax + 14.f) setTreeExpanded(ui, n, u32(h.line), !h.open);
             else select(ui, n, h.line);
             return true;
         }
         if (e.type != EventType::KeyDown) return false;
         const Hit cur = rowInfo(ui, n, [&](u32, u32 l) { return i64(l) == sel; });
-        switch (e.key) {
+        switch (visualKey(ui, n, e.key)) {
         case Key::Down: {
             const i64 want = cur.row + 1;
             select(ui, n, rowInfo(ui, n, [&](u32 r, u32) { return i64(r) == want; }).line);
@@ -436,6 +547,13 @@ struct TreeView {
         }
         case Key::Up: {
             const i64 want = cur.row < 0 ? 0 : cur.row - 1;
+            select(ui, n, rowInfo(ui, n, [&](u32 r, u32) { return i64(r) == want; }).line);
+            return true;
+        }
+        case Key::Home: case Key::End: case Key::PageUp: case Key::PageDown: {
+            const i64 rows = i64(treeVisibleRows(ui, n)), page = std::max<i64>(1, i64(ui.contentRect(n).h / rowHeight(ui, n)) - 1);
+            i64 want = e.key == Key::Home ? 0 : e.key == Key::End ? rows - 1 : cur.row + (e.key == Key::PageUp ? -page : page);
+            want = std::clamp<i64>(want, 0, std::max<i64>(0, rows - 1));
             select(ui, n, rowInfo(ui, n, [&](u32 r, u32) { return i64(r) == want; }).line);
             return true;
         }
@@ -480,11 +598,11 @@ struct TabBar {
         f32 x = c.x;
         eachLine(ui.text(pc.node), [&](u32 i, std::string_view t) {
             const f32 w = tabW(ui, pc.node, t);
-            if (i == sel) {
-                dl.rect({x, c.y, w, c.h}, pc.tint(Color::rgb(0x34353E)), 4.f);
-                dl.rect({x + 4.f, c.bottom() - 2.f, w - 8.f, 2.f}, accent(pc));
+            if (i == sel) { // RTL: the first tab on the right
+                dl.rect(pc.flip(Rect{x, c.y, w, c.h}), pc.tint(Color::rgb(0x34353E)), 4.f);
+                dl.rect(pc.flip(Rect{x + 4.f, c.bottom() - 2.f, w - 8.f, 2.f}), accent(pc));
             }
-            labelAt(pc, dl, t, {x, c.y, w, c.h}, TextAlignment::Center);
+            labelAt(pc, dl, t, pc.flip(Rect{x, c.y, w, c.h}), TextAlignment::Center);
             x += w;
             return true;
         });
@@ -497,17 +615,22 @@ struct TabBar {
         const u32 c = count(ui.text(n)), cur = u32(ui.value(n));
         auto pick = [&](u32 i) { if (c && i < c && i != cur) ui.setValue(n, f32(i), true); };
         if (e.type == EventType::PointerDown) {
-            f32 x = ui.contentRect(n).x;
+            const Rect cr = ui.contentRect(n);
+            const f32 px = ui.computed(n).rtl ? mirrorX(e.pos.x, cr) : e.pos.x;
+            f32 x = cr.x;
             eachLine(ui.text(n), [&](u32 i, std::string_view t) {
                 const f32 w = tabW(ui, n, t);
-                if (e.pos.x >= x && e.pos.x < x + w) { pick(i); return false; }
+                if (px >= x && px < x + w) { pick(i); return false; }
                 x += w;
                 return true;
             });
             return true;
         }
-        if (e.type == EventType::KeyDown && e.key == Key::Right) { pick(cur + 1); return true; }
-        if (e.type == EventType::KeyDown && e.key == Key::Left) { if (cur) pick(cur - 1); return true; }
+        const Key k = visualKey(ui, n, e.key);
+        if (e.type == EventType::KeyDown && k == Key::Right) { pick(cur + 1); return true; }
+        if (e.type == EventType::KeyDown && k == Key::Left) { if (cur) pick(cur - 1); return true; }
+        if (e.type == EventType::KeyDown && k == Key::Home) { pick(0); return true; }
+        if (e.type == EventType::KeyDown && k == Key::End) { if (c) pick(c - 1); return true; }
         return false;
     }
 };
@@ -540,7 +663,7 @@ namespace detail {
 bool openComboPopup(UiContext& ui, NodeHandle combo) {
     if (ui.registry().find("popup") == 0xFFFFFFFFu) return false;
     const Rect r = ui.rect(combo);
-    const NodeHandle scope = popupMenu(ui, combo, ui.text(combo), {r.x, r.bottom() + 2.f});
+    const NodeHandle scope = popupMenu(ui, combo, ui.text(combo), {ui.computed(combo).rtl ? r.right() : r.x, r.bottom() + 2.f});
     if (!ui.alive(scope)) return false;
     // check and focus the current item; the list is at least as wide as the box
     const NodeHandle menu = ui.firstChild(scope);
@@ -576,7 +699,10 @@ NodeHandle popupMenuAt(UiContext& ui, NodeHandle owner, std::string_view items, 
     u32 rows = 0;
     eachLine(items, [&](u32, std::string_view t) { rows += t.empty() || t[0] != '\t'; return true; });
     const f32 estH = f32(rows) * 26.f + 8.f;
-    setPx(ui, menu, Prop::Left, at.x);
+    if (ui.alive(owner) && ui.computed(owner).rtl) { // the popup inherits the owner's direction; `at` is its top-right
+        ui.set(scope, Prop::TextDirection, PropValue::ofEnum(1));
+        setPx(ui, menu, Prop::Right, ui.viewport().w - at.x);
+    } else setPx(ui, menu, Prop::Left, at.x);
     setPx(ui, menu, Prop::Top, at.y + estH > area.y + area.h && at.y - estH >= area.y ? at.y - estH : at.y);
     NodeHandle firstItem, item;
     std::string sub; // creation-time only
@@ -612,6 +738,12 @@ NodeHandle popupMenuAt(UiContext& ui, NodeHandle owner, std::string_view items, 
     if (ui.alive(firstItem)) ui.setFocus(firstItem, FocusReason::Keyboard);
     return scope;
 }
+void setListRowFont(UiContext& ui, NodeHandle list, RowFontFn fn) {
+    auto& v = rowFonts();
+    std::erase_if(v, [&](const RowFontEntry& e) { return (e.ui == &ui && (e.list == list || !ui.alive(e.list))); });
+    if (fn) v.push_back({&ui, list, fn});
+}
+
 NodeHandle popupPanel(UiContext& ui, NodeHandle owner, Vec2 at) {
     registerTierB(ui);
     const NodeHandle scope = make(ui, "popup", overlayLayer(ui));
@@ -645,7 +777,9 @@ void closePopup(UiContext& ui, NodeHandle n) {
     }
     // closing a submenu hands input back to the parent menu
     if (const NodeHandle parentScope = scopeOf(ui, owner); ui.alive(parentScope) && popupOpen(ui, parentScope)) ui.setModal(parentScope);
-    if (ui.alive(owner)) ui.setFocus(owner, FocusReason::Programmatic);
+    // a popup driven by the keyboard hands the owner a visible focus ring
+    const FocusReason why = ui.focusVisible() ? FocusReason::Keyboard : FocusReason::Programmatic;
+    if (ui.alive(owner)) ui.setFocus(owner, why);
     else ui.setFocus({}, FocusReason::Programmatic);
 }
 
@@ -653,6 +787,10 @@ bool popupOpen(const UiContext& ui, NodeHandle scope) { return ui.alive(scope) &
 
 NodeHandle menuBar(UiContext& ui, NodeHandle parent, std::string_view id) {
     registerTierB(ui);
+    if (!ui.hasClass(ui.root(), "fuse-menubar-f10")) { // one F10 hook per context
+        ui.addClass(ui.root(), "fuse-menubar-f10");
+        ui.connect(ui.root(), SignalKind::Event, &menuBarF10);
+    }
     return make(ui, "menubar", parent, id);
 }
 NodeHandle menuBarMenu(UiContext& ui, NodeHandle bar, std::string_view title, std::string_view items, std::string_view id) {
@@ -704,18 +842,24 @@ NodeHandle setTooltip(UiContext& ui, NodeHandle node, std::string_view text, f32
     const NodeHandle tip = make(ui, "tooltip", overlayLayer(ui));
     ui.setText(tip, text);
     ui.addClass(tip, "tooltip");
-    ui.connect(node, SignalKind::HoverChanged, [tip, delay](UiContext& c, NodeHandle n, const SignalArgs& a) {
+    // shown after `delay` while the node is hovered or has keyboard focus
+    auto show = [tip, delay](UiContext& c, NodeHandle n, const SignalArgs& a) {
         if (!c.alive(tip)) return;
-        if (!a.flag) { c.setCss(tip, "display", "none"); return; }
+        if (!a.flag) {
+            if (c.hovered().index != n.index && !(c.focused() == n && c.focusVisible())) c.setCss(tip, "display", "none");
+            return;
+        }
         c.startTimer(delay, false, [tip, n](UiContext& cx) {
-            if (!cx.alive(tip) || !cx.alive(n) || cx.hovered().index != n.index) return;
+            if (!cx.alive(tip) || !cx.alive(n) || (cx.hovered().index != n.index && !(cx.focused() == n && cx.focusVisible()))) return;
             const Rect r = cx.rect(n);
             setPx(cx, tip, Prop::Left, r.x);
             setPx(cx, tip, Prop::Top, r.bottom() + 4.f);
             overlayLayer(cx);
             cx.setCss(tip, "display", "flex");
         });
-    });
+    };
+    ui.connect(node, SignalKind::HoverChanged, show);
+    ui.connect(node, SignalKind::FocusChanged, show);
     return tip;
 }
 

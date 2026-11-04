@@ -15,6 +15,7 @@
 //                    boxes, foreground colour) against golden/colrv1_exact.png at max channel difference 0, analytic
 //                    spot checks and colour glyph commands through the UI.
 // Optional --out=<dir> writes the rendered images.
+#include "test_env.hpp"
 #include "test_util.hpp"
 
 #if defined(__GNUC__)
@@ -280,39 +281,46 @@ int systemFonts() {
     }
     UI_CHECK(cat.match("No Such Family 123") == nullptr);
 #if defined(_WIN32)
-    const FontFaceInfo* segoe = cat.match("Segoe UI");
-    const FontFaceInfo* arial = cat.match("arial"); // case-insensitive
-    UI_CHECK(segoe && arial);
-    if (arial) {
-        std::printf("  Arial -> %s (%s, %u)\n", arial->path.c_str(), arial->style.c_str(), arial->weight);
-        UI_CHECK(arial->weight == 400 && !arial->italic);
-        const FontFaceInfo* bold = cat.match("Arial", 700);
-        const FontFaceInfo* italic = cat.match("Arial", 400, true);
-        const FontFaceInfo* boldItalic = cat.match("Arial", 700, true);
-        UI_CHECK(bold && bold->weight == 700 && !bold->italic);
-        UI_CHECK(italic && italic->italic && italic->weight == 400);
-        UI_CHECK(boldItalic && boldItalic->italic && boldItalic->weight == 700);
-        auto f = FontCatalog::load(*arial);
-        UI_CHECK(f.has_value() && f->glyphIndex(U'A') != 0 && f->glyphIndex(U'\u0416') != 0);
-    }
-    if (segoe) {
-        std::printf("  Segoe UI -> %s (%s, %u)\n", segoe->path.c_str(), segoe->style.c_str(), segoe->weight);
-        UI_CHECK(segoe->weight == 400 && !segoe->italic);
-        const FontFaceInfo* semi = cat.match("Segoe UI", 600);
-        UI_CHECK(semi && semi->weight >= 550 && semi->weight <= 700);
-    }
-    const FontFaceInfo* sans = cat.match("sans-serif");
-    const FontFaceInfo* mono = cat.match("monospace");
-    UI_CHECK(sans && segoe && sans->family == segoe->family);
-    UI_CHECK(mono != nullptr);
-    // a collection face (.ttc) loads by index
-    for (const FontFaceInfo& f : cat.faces())
-        if (f.index > 0) {
-            auto x = FontCatalog::load(f);
-            UI_CHECK(x.has_value());
-            std::printf("  collection face %s #%u: %s\n", f.path.c_str(), f.index, x ? "loaded" : "FAILED");
-            break;
+    // Windows' own fonts; Wine ships neither Segoe UI nor Arial (its catalogue holds the host's fonts)
+    const bool winFonts = !fuse::ui::test::runningUnderWine();
+    if (!winFonts) {
+        std::printf("  under Wine: generic families only\n");
+        UI_CHECK(cat.match("sans-serif") != nullptr && cat.match("monospace") != nullptr);
+    } else {
+        const FontFaceInfo* segoe = cat.match("Segoe UI");
+        const FontFaceInfo* arial = cat.match("arial"); // case-insensitive
+        UI_CHECK(segoe && arial);
+        if (arial) {
+            std::printf("  Arial -> %s (%s, %u)\n", arial->path.c_str(), arial->style.c_str(), arial->weight);
+            UI_CHECK(arial->weight == 400 && !arial->italic);
+            const FontFaceInfo* bold = cat.match("Arial", 700);
+            const FontFaceInfo* italic = cat.match("Arial", 400, true);
+            const FontFaceInfo* boldItalic = cat.match("Arial", 700, true);
+            UI_CHECK(bold && bold->weight == 700 && !bold->italic);
+            UI_CHECK(italic && italic->italic && italic->weight == 400);
+            UI_CHECK(boldItalic && boldItalic->italic && boldItalic->weight == 700);
+            auto f = FontCatalog::load(*arial);
+            UI_CHECK(f.has_value() && f->glyphIndex(U'A') != 0 && f->glyphIndex(U'\u0416') != 0);
         }
+        if (segoe) {
+            std::printf("  Segoe UI -> %s (%s, %u)\n", segoe->path.c_str(), segoe->style.c_str(), segoe->weight);
+            UI_CHECK(segoe->weight == 400 && !segoe->italic);
+            const FontFaceInfo* semi = cat.match("Segoe UI", 600);
+            UI_CHECK(semi && semi->weight >= 550 && semi->weight <= 700);
+        }
+        const FontFaceInfo* sans = cat.match("sans-serif");
+        const FontFaceInfo* mono = cat.match("monospace");
+        UI_CHECK(sans && segoe && sans->family == segoe->family);
+        UI_CHECK(mono != nullptr);
+        // a collection face (.ttc) loads by index
+        for (const FontFaceInfo& f : cat.faces())
+            if (f.index > 0) {
+                auto x = FontCatalog::load(f);
+                UI_CHECK(x.has_value());
+                std::printf("  collection face %s #%u: %s\n", f.path.c_str(), f.index, x ? "loaded" : "FAILED");
+                break;
+            }
+    }
 #endif
     // per-script chains: the first face of a non-empty chain really has a glyph for the script
     const std::pair<Script, char32_t> probes[] = {
@@ -335,13 +343,14 @@ int systemFonts() {
     }
     UI_CHECK(!cat.systemFallbackChain(Script::Latin).empty());
 #if defined(_WIN32)
-    for (Script s : {Script::Arabic, Script::Hebrew, Script::Han, Script::Emoji}) UI_CHECK(!cat.systemFallbackChain(s).empty());
+    if (winFonts)
+        for (Script s : {Script::Arabic, Script::Hebrew, Script::Han, Script::Emoji}) UI_CHECK(!cat.systemFallbackChain(s).empty());
 #endif
     // fontPicker lists the installed families
     const std::string list = w::systemFontFamilies();
     UI_CHECK(list.starts_with("Open Sans\n"));
 #if defined(_WIN32)
-    UI_CHECK(list.find("\nSegoe UI\n") != std::string::npos && list.find("\nArial\n") != std::string::npos);
+    if (winFonts) UI_CHECK(list.find("\nSegoe UI\n") != std::string::npos && list.find("\nArial\n") != std::string::npos);
 #endif
     UiContext ui{{.viewport = {400, 300}, .font = &fuse::ui::test::font()}};
     w::install(ui);

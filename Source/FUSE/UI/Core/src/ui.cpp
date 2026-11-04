@@ -49,6 +49,7 @@ struct UiContext::Node {
     i32 tabIndex = 0;
     A11yRole role = A11yRole::None;
     f32 animOpacity = 1.f;
+    f32 animWeight = 0.f; ///< AnimProp::FontWeight value (0: the style's font-weight)
     Vec2 offset;
     u64 user = 0;
 };
@@ -65,7 +66,10 @@ struct UiContext::Cold {
     std::string strKey;
     fuse::text::TextLayout strLayout;
     f32 strPx = -1.f, strWidth = -1.f;
+    u32 strFont = 0; ///< Font::id the layout was made with
+    const fuse::text::Font* font = nullptr; ///< setFont override (nullptr: the UI font)
     TextAlignment strAlign = TextAlignment::Start;
+    bool strRtl = false;
     u64 strMissFrame = ~0ull;
     bool strMany = false; ///< more than one string per frame: paintString uses the shared scratch layout
     u32 layoutRev = 0, strRev = 0;
@@ -497,6 +501,11 @@ void UiContext::setState(NodeHandle h, u32 bits, bool on) {
     markStyle(h.index);
     markPaint(h.index);
     for (u32 k = n->first; k != kNone; k = m_nodes[k].next) markStyle(k);
+    if ((bits & kStateDisabled) && on && h == m_focus) { // a disabled widget takes no keys: its nearest enabled
+        NodeHandle p = parent(h);                         // ancestor does (shortcuts still bubble to the root)
+        while (node(p) && (node(p)->state & kStateDisabled)) p = parent(p);
+        setFocus(p);
+    }
 }
 u32 UiContext::states(NodeHandle h) const { return node(h) ? node(h)->state : 0u; }
 void UiContext::setFocusable(NodeHandle h, bool on) {
@@ -579,7 +588,13 @@ void UiContext::styleRec(u32 i, bool parentChanged) {
         if (idx != before) {
             ComputedStyle la = m_styles.style(before);
             const ComputedStyle& lb = m_styles.style(idx);
-            const bool fontChanged = la.fontSize != lb.fontSize || la.textAlign != lb.textAlign;
+            const bool fontChanged = la.fontSize != lb.fontSize || la.textAlign != lb.textAlign ||
+                                     la.fontWeight != lb.fontWeight || la.fontStretch != lb.fontStretch ||
+                                     la.fontVariationCount != lb.fontVariationCount ||
+                                     la.fontVariationTags != lb.fontVariationTags ||
+                                     la.fontVariationValues != lb.fontVariationValues ||
+                                     la.fontFeatureCount != lb.fontFeatureCount ||
+                                     la.fontFeatureTags != lb.fontFeatureTags || la.fontFeatureValues != lb.fontFeatureValues || la.rtl != lb.rtl;
             n.style = idx;
             changed = true;
             markPaint(i);
@@ -609,6 +624,61 @@ void UiContext::stylePass() {
 }
 
 // ---- Text ----------------------------------------------------------------------------------------------------------
+namespace {
+// Sets the current text font for a measure / paint call and restores the previous one.
+struct TextFontScope {
+    const fuse::text::Font*& slot;
+    const fuse::text::Font* saved;
+    TextFontScope(const fuse::text::Font*& s, const fuse::text::Font* f) : slot(s), saved(s) { slot = f; }
+    ~TextFontScope() { slot = saved; }
+    TextFontScope(const TextFontScope&) = delete;
+    TextFontScope& operator=(const TextFontScope&) = delete;
+};
+} // namespace
+
+const fuse::text::Font& UiContext::fontFor(const fuse::text::Font& base, const ComputedStyle& s, f32 weight) {
+    const fuse::text::Font* f = &base;
+    if (base.isVariable()) {
+        using fuse::text::fontTag;
+        std::array<fuse::text::FontVariation, 3 + kMaxFontVariations> v;
+        std::size_t n = 0;
+        v[n++] = {fontTag("wght"), weight};
+        v[n++] = {fontTag("wdth"), s.fontStretch};
+        v[n++] = {fontTag("opsz"), s.fontSize}; // font-optical-sizing: auto
+        for (u8 k = 0; k < s.fontVariationCount; ++k) v[n++] = {s.fontVariationTags[k], s.fontVariationValues[k]};
+        f = &base.instance(std::span<const fuse::text::FontVariation>(v.data(), n));
+    }
+    if (s.fontFeatureCount) { // font-feature-settings (FULL: HarfBuzz)
+        std::array<fuse::text::FontFeature, kMaxFontFeatures> ft;
+        for (u8 k = 0; k < s.fontFeatureCount; ++k) ft[k] = {s.fontFeatureTags[k], s.fontFeatureValues[k]};
+        f = &f->withFeatures(std::span<const fuse::text::FontFeature>(ft.data(), s.fontFeatureCount));
+    }
+    return *f;
+}
+
+const fuse::text::Font& UiContext::fontFor(u32 i) {
+    const ComputedStyle& s = m_styles.style(m_nodes[i].style);
+    const fuse::text::Font* base = m_cold[i]->font ? m_cold[i]->font : m_font;
+    return fontFor(*base, s, m_nodes[i].animWeight > 0.f ? m_nodes[i].animWeight : s.fontWeight);
+}
+
+void UiContext::setFont(NodeHandle h, const fuse::text::Font* font) {
+    Node* n = node(h);
+    if (!n || m_cold[h.index]->font == font) return;
+    m_cold[h.index]->font = font;
+    m_cold[h.index]->layoutWidth = -1.f;
+    n->dirty |= kDirtyText;
+    markLayout(h.index);
+    markPaint(h.index);
+}
+
+const fuse::text::Font& UiContext::nodeFont(u32 i) {
+    if (i < m_nodes.size() && m_nodes[i].alive) return fontFor(i);
+    return m_textFont ? *m_textFont : *m_font;
+}
+
+const fuse::text::Font& UiContext::textFont(NodeHandle h) { return node(h) ? fontFor(h.index) : *m_font; }
+
 void UiContext::ensureText(u32 i, f32 width) {
     Cold& c = *m_cold[i];
     const ComputedStyle& s = m_styles.style(m_nodes[i].style);
@@ -618,7 +688,8 @@ void UiContext::ensureText(u32 i, f32 width) {
     d.pixelSize = s.fontSize;
     d.maxWidth = std::isfinite(width) ? width : 0.f;
     d.align = fuse::text::TextAlign(u8(s.textAlign));
-    fuse::text::layoutText(*m_font, fuse::text::defaultShaper(), c.text, d, c.layout);
+    d.rtl = s.rtl;
+    fuse::text::layoutText(fontFor(i), fuse::text::defaultShaper(), c.text, d, c.layout);
     ++c.layoutRev;
     c.layoutWidth = width;
     c.layoutSize = s.fontSize;
@@ -627,7 +698,7 @@ void UiContext::ensureText(u32 i, f32 width) {
 
 f32 UiContext::measureString(std::string_view s, f32 px) {
     if (!m_font) return 0.f;
-    return fuse::text::measureText(*m_font, s, px, m_shapeScratch);
+    return fuse::text::measureText(m_textFont ? *m_textFont : *m_font, s, px, m_shapeScratch);
 }
 
 namespace {
@@ -705,13 +776,19 @@ void UiContext::setMsdfThreshold(f32 devicePx) {
 
 void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, Vec2 o, Color col, f32 px, u32 nodeIdx) {
     if (!m_font || col.a <= 0.f) return;
+    paintLayoutWith(dl, nodeFont(nodeIdx), tl, o, col, px, nodeIdx);
+}
+
+void UiContext::paintLayoutWith(DrawList& dl, const fuse::text::Font& font, const fuse::text::TextLayout& tl, Vec2 o, Color col,
+                                f32 px, u32 nodeIdx) {
+    if (col.a <= 0.f) return;
     const f32 dpx = px * m_scale; // glyphs are rasterised at device size; the rect is stored so that rect * s is exact
     for (const auto& ln : tl.lines) {
         for (u32 k = ln.firstGlyph; k < ln.firstGlyph + ln.glyphCount; ++k) {
             const auto& g = tl.glyphs[k];
             if (g.glyph == fuse::text::kInvisibleGlyph) continue;
-            fuse::text::forEachPaintGlyph(*m_font, g, dpx, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
-                                                                const fuse::text::ColorLayer* layer) {
+            fuse::text::forEachPaintGlyph(font, g, dpx, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
+                                                             const fuse::text::ColorLayer* layer) {
                 GlyphQuad q{};
                 q.x = g.x;
                 q.baseline = ln.baseline;
@@ -721,7 +798,8 @@ void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, 
     }
 }
 
-void UiContext::paintTextQuads(DrawList& dl, u32 i, u8 src, u32 rev, const fuse::text::TextLayout& tl, Vec2 o, Color col, f32 px) {
+void UiContext::paintTextQuads(DrawList& dl, u32 i, u8 src, u32 rev, const fuse::text::TextLayout& tl, Vec2 o, Color col, f32 px,
+                               const fuse::text::Font* layoutFont) {
     if (!m_font || col.a <= 0.f) return;
     Cold& c = *m_cold[i];
     const f32 sc = m_scale;  // quads are rasterised at device size (DPI scale): the key is the device pixel size
@@ -738,12 +816,13 @@ void UiContext::paintTextQuads(DrawList& dl, u32 i, u8 src, u32 rev, const fuse:
         }
         c.qOff = u32(m_quads.size());
         c.qColor = false;
+        const fuse::text::Font& font = layoutFont ? *layoutFont : nodeFont(i);
         for (const auto& ln : tl.lines)
             for (u32 k = ln.firstGlyph; k < ln.firstGlyph + ln.glyphCount; ++k) {
                 const auto& g = tl.glyphs[k];
                 if (g.glyph == fuse::text::kInvisibleGlyph) continue;
-                fuse::text::forEachPaintGlyph(*m_font, g, dpx, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
-                                                                    const fuse::text::ColorLayer* layer) {
+                fuse::text::forEachPaintGlyph(font, g, dpx, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
+                                                                 const fuse::text::ColorLayer* layer) {
                     GlyphQuad q{};
                     q.x = g.x;
                     q.baseline = ln.baseline;
@@ -785,33 +864,46 @@ void UiContext::paintTextQuads(DrawList& dl, u32 i, u8 src, u32 rev, const fuse:
 }
 
 void UiContext::paintString(DrawList& dl, std::string_view s, Rect box, Color col, f32 px, TextAlignment align, u32 nodeIdx) {
+    paintString(dl, s, box, col, px, align, nodeIdx, nullptr);
+}
+
+void UiContext::paintString(DrawList& dl, std::string_view s, Rect box, Color col, f32 px, TextAlignment align, u32 nodeIdx,
+                            const fuse::text::Font* base) {
     if (!m_font || s.empty()) return;
     fuse::text::TextLayoutDesc d;
     d.pixelSize = px;
     d.maxWidth = box.w;
     d.elide = true;
     d.align = fuse::text::TextAlign(u8(align));
-    if (nodeIdx < m_cold.size() && m_nodes[nodeIdx].alive && !m_cold[nodeIdx]->strMany) {
+    d.rtl = nodeIdx < m_cold.size() && m_nodes[nodeIdx].alive && m_styles.style(m_nodes[nodeIdx].style).rtl; // start = right
+    const bool live = nodeIdx < m_cold.size() && m_nodes[nodeIdx].alive;
+    const fuse::text::Font& font =
+        !base ? nodeFont(nodeIdx)
+              : live ? fontFor(*base, m_styles.style(m_nodes[nodeIdx].style), m_styles.style(m_nodes[nodeIdx].style).fontWeight)
+                     : *base;
+    if (live && !m_cold[nodeIdx]->strMany) {
         // one cached layout per node, keyed on everything layoutText reads
         Cold& c = *m_cold[nodeIdx];
-        if (c.strPx != px || c.strWidth != box.w || c.strAlign != align || c.strKey != s) {
+        if (c.strPx != px || c.strWidth != box.w || c.strAlign != align || c.strRtl != d.rtl || c.strFont != font.id() || c.strKey != s) {
             if (c.strMissFrame == m_frame) c.strMany = true; // paints several strings per frame (lists, tables)
             c.strMissFrame = m_frame;
-            fuse::text::layoutText(*m_font, fuse::text::defaultShaper(), s, d, c.strLayout);
+            fuse::text::layoutText(font, fuse::text::defaultShaper(), s, d, c.strLayout);
             c.strKey.assign(s);
+            c.strFont = font.id();
             c.strPx = px;
             c.strWidth = box.w;
             c.strAlign = align;
+            c.strRtl = d.rtl;
             ++c.strRev;
         }
         const f32 y = box.y + std::floor((box.h - c.strLayout.height) * 0.5f);
-        if (c.strMany) paintTextLayout(dl, c.strLayout, {box.x, y}, col, px, nodeIdx);
-        else paintTextQuads(dl, nodeIdx, 1, c.strRev, c.strLayout, {box.x, y}, col, px);
+        if (c.strMany) paintLayoutWith(dl, font, c.strLayout, {box.x, y}, col, px, nodeIdx);
+        else paintTextQuads(dl, nodeIdx, 1, c.strRev, c.strLayout, {box.x, y}, col, px, &font);
         return;
     }
-    fuse::text::layoutText(*m_font, fuse::text::defaultShaper(), s, d, m_stringScratch);
+    fuse::text::layoutText(font, fuse::text::defaultShaper(), s, d, m_stringScratch);
     const f32 y = box.y + std::floor((box.h - m_stringScratch.height) * 0.5f);
-    paintTextLayout(dl, m_stringScratch, {box.x, y}, col, px, nodeIdx);
+    paintLayoutWith(dl, font, m_stringScratch, {box.x, y}, col, px, nodeIdx);
 }
 
 // ---- Icons ---------------------------------------------------------------------------------------------------------
@@ -899,7 +991,8 @@ bool UiContext::paintIcon(DrawList& dl, u32 nameHash, Vec2 at, f32 size, Color c
 
 Size UiContext::measureIconLabel(const ComputedStyle& s, std::string_view text) {
     const f32 ic = iconExtent(s);
-    const f32 lh = m_font ? std::ceil(m_font->metrics(s.fontSize).lineHeight()) : std::ceil(s.fontSize * 1.25f);
+    const fuse::text::Font* tf = m_textFont ? m_textFont : m_font;
+    const f32 lh = tf ? std::ceil(tf->metrics(s.fontSize).lineHeight()) : std::ceil(s.fontSize * 1.25f);
     const f32 tw = std::ceil(measureString(text, s.fontSize));
     if (ic <= 0.f) return {tw, lh};
     if (text.empty()) return {ic, ic};
@@ -915,9 +1008,19 @@ void UiContext::paintIconLabel(DrawList& dl, const ComputedStyle& s, std::string
     }
     const f32 tw = text.empty() ? 0.f : std::ceil(measureString(text, s.fontSize));
     const f32 total = ic + (tw > 0.f ? kIconGap + tw : 0.f);
+    if (s.rtl) { // mirrored: the icon leads on the right, the text ends at its left
+        f32 x = box.right() - total;
+        if (align == TextAlignment::Center) x = box.x + std::floor((box.w - total) * 0.5f);
+        else if (align == TextAlignment::End || align == TextAlignment::Left) x = box.x;
+        x = std::max(x, box.x);
+        const f32 ix = std::max(box.x, x + total - ic);
+        paintIcon(dl, s.icon, {ix, box.y + std::floor((box.h - ic) * 0.5f)}, ic, c, nodeIdx);
+        if (tw > 0.f) paintString(dl, text, {box.x, box.y, std::max(0.f, ix - kIconGap - box.x), box.h}, c, s.fontSize, TextAlignment::Start, nodeIdx);
+        return;
+    }
     f32 x = box.x;
     if (align == TextAlignment::Center) x = box.x + std::floor((box.w - total) * 0.5f);
-    else if (align == TextAlignment::End) x = box.right() - total;
+    else if (align == TextAlignment::End || align == TextAlignment::Right) x = box.right() - total;
     x = std::max(x, box.x);
     paintIcon(dl, s.icon, {x, box.y + std::floor((box.h - ic) * 0.5f)}, ic, c, nodeIdx);
     if (tw > 0.f) {
@@ -950,6 +1053,7 @@ Size UiContext::measure(u32 i, Size avail) {
     ++m_stats.measured;
     n.dirty &= u8(~kDirtyMeasure);
     const ComputedStyle& s = m_styles.style(n.style);
+    const TextFontScope fontScope(m_textFont, m_font ? &fontFor(i) : nullptr);
     Size out{0.f, 0.f};
     if (s.visible) {
         const bool fw = fixedLen(s.width, avail.w), fh = fixedLen(s.height, avail.h);
@@ -1069,12 +1173,19 @@ void UiContext::arrangeChildren(u32 i) {
     if (!m_cold[i]->text.empty() && !m_registry.get(n.cls).measure) ensureText(i, c0.w - labelIconWidth(s, true));
     const Rect c{c0.x - n.scroll.x, c0.y - n.scroll.y, c0.w, c0.h};
     Size extent{0.f, 0.f};
+    // direction: rtl lays box / grid / flow children out left-to-right with the margins swapped, then mirrors each
+    // rect in the content box (scroll.x stays a distance from the start edge); stack / anchor / absolute are physical
+    const bool rtl = s.rtl && (s.layout == LayoutKind::Box || s.layout == LayoutKind::Grid || s.layout == LayoutKind::Flow);
+    auto ml = [rtl](const ComputedStyle& cs) { return rtl ? cs.margin.r : cs.margin.l; };
+    auto mr = [rtl](const ComputedStyle& cs) { return rtl ? cs.margin.l : cs.margin.r; };
     auto place = [&](u32 k, Rect r) {
         const Node& kn = m_nodes[k];
+        const f32 lx = r.x;
         r.x += kn.offset.x;
         r.y += kn.offset.y;
-        extent.w = std::max(extent.w, r.right() - c.x - kn.offset.x + m_styles.style(kn.style).margin.r);
+        extent.w = std::max(extent.w, r.right() - c.x - kn.offset.x + mr(m_styles.style(kn.style)));
         extent.h = std::max(extent.h, r.bottom() - c.y - kn.offset.y + m_styles.style(kn.style).margin.b);
+        if (rtl) r.x = 2.f * c0.x + c0.w - lx - r.w + kn.offset.x;
         arrange(k, r);
     };
     auto hidden = [&](u32 k) {
@@ -1125,8 +1236,8 @@ void UiContext::arrangeChildren(u32 i) {
             else if (free < 0.f && shrinkSum > 0.f && s.overflow != Overflow::Scroll) main += free * cs.shrink * main / shrinkSum;
             main = row ? clampSize(main, cs.minWidth, cs.maxWidth, mainAvail)
                        : clampSize(main, cs.minHeight, cs.maxHeight, mainAvail);
-            const f32 mBefore = row ? cs.margin.l : cs.margin.t, mAfter = row ? cs.margin.r : cs.margin.b;
-            const f32 cmB = row ? cs.margin.t : cs.margin.l, cmA = row ? cs.margin.b : cs.margin.r;
+            const f32 mBefore = row ? ml(cs) : cs.margin.t, mAfter = row ? mr(cs) : cs.margin.b;
+            const f32 cmB = row ? cs.margin.t : ml(cs), cmA = row ? cs.margin.b : mr(cs);
             const Align al = cs.alignSelf != Align::Auto ? cs.alignSelf : s.alignItems;
             const bool crossFixed = row ? fixedLen(cs.height, crossAvail) : fixedLen(cs.width, crossAvail);
             const f32 crossRoom = crossAvail - cmB - cmA;
@@ -1172,7 +1283,7 @@ void UiContext::arrangeChildren(u32 i) {
             const f32 cw = x[col + span - 1] + w[col + span - 1] - x[col];
             const Size m = measure(k, {cw - cs.margin.h(), kInf});
             const f32 h = m.h;
-            place(k, {std::round(c.x + x[col] + cs.margin.l), std::round(c.y + y + cs.margin.t), std::round(cw - cs.margin.h()), std::round(h)});
+            place(k, {std::round(c.x + x[col] + ml(cs)), std::round(c.y + y + cs.margin.t), std::round(cw - cs.margin.h()), std::round(h)});
             rowH = std::max(rowH, h + cs.margin.v());
             col += span;
             if (col >= cols) { col = 0; ++rowIdx; }
@@ -1224,7 +1335,7 @@ void UiContext::arrangeChildren(u32 i) {
             const Size m = measure(k, {c.w, kInf});
             const f32 mw = m.w + cs.margin.h();
             if (x > 0.f && x + mw > c.w) { y += lineH + s.gap; x = 0.f; lineH = 0.f; }
-            place(k, {std::round(c.x + x + cs.margin.l), std::round(c.y + y + cs.margin.t), m.w, m.h});
+            place(k, {std::round(c.x + x + ml(cs)), std::round(c.y + y + cs.margin.t), m.w, m.h});
             x += mw + s.gap;
             lineH = std::max(lineH, m.h + cs.margin.v());
         }
@@ -1273,15 +1384,17 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     const Rect content = contentRect(h);
     if (wc.paint) {
         const PaintContext pc{*this, h, n.rect, content, s, n.state, opacity};
+        const TextFontScope fontScope(m_textFont, m_font ? &fontFor(i) : nullptr);
         wc.paint(pc, dl);
     } else if (!m_cold[i]->text.empty() || s.icon) {
         const f32 ic = iconExtent(s);
-        if (ic > 0.f) paintIcon(dl, s.icon, {content.x, content.y + std::floor((content.h - ic) * 0.5f)}, ic, tint(s.color), i);
+        const f32 ix = s.rtl ? content.right() - ic : content.x; // RTL: the icon leads on the right
+        if (ic > 0.f) paintIcon(dl, s.icon, {ix, content.y + std::floor((content.h - ic) * 0.5f)}, ic, tint(s.color), i);
         if (!m_cold[i]->text.empty()) {
             const auto& tl = m_cold[i]->layout;
             const f32 y = content.y + std::floor(std::max(0.f, content.h - tl.height) * 0.5f);
-            paintTextQuads(dl, i, 0, m_cold[i]->layoutRev, tl, {content.x + labelIconWidth(s, true), y}, tint(s.color),
-                           s.fontSize);
+            paintTextQuads(dl, i, 0, m_cold[i]->layoutRev, tl, {s.rtl ? content.x : content.x + labelIconWidth(s, true), y},
+                           tint(s.color), s.fontSize);
         }
     }
     if (n.first == kNone) {
@@ -1321,9 +1434,12 @@ bool UiContext::scrollBarGeom(u32 i, u8 axis, Rect& track, Rect& thumb) const {
     const f32 b = kScrollBarSize;
     track = axis ? Rect{n.rect.x + n.rect.w - b - 1.f, n.rect.y + 1.f, b, n.rect.h - 2.f}
                  : Rect{n.rect.x + 1.f, n.rect.y + n.rect.h - b - 1.f, n.rect.w - 2.f - b, b};
+    const bool rtl = m_styles.style(n.style).rtl; // RTL: the vertical bar on the left, the horizontal thumb starts right
+    if (rtl) track.x = axis ? n.rect.x + 1.f : n.rect.x + 1.f + b;
     const f32 len = axis ? track.h : track.w;
     const f32 tl = std::max(16.f, len * view / ext);
-    const f32 at = (len - tl) * std::clamp((axis ? n.scroll.y : n.scroll.x) / (ext - view), 0.f, 1.f);
+    f32 at = (len - tl) * std::clamp((axis ? n.scroll.y : n.scroll.x) / (ext - view), 0.f, 1.f);
+    if (rtl && !axis) at = len - tl - at;
     thumb = axis ? Rect{track.x, track.y + at, b, tl} : Rect{track.x + at, track.y, tl, b};
     return true;
 }
@@ -1540,6 +1656,12 @@ void UiContext::update(f32 dt) {
             case AnimProp::OffsetX: n->offset.x = v; if (n->parent != kNone) markArrange(n->parent); n->dirty |= kDirtyLayout; break;
             case AnimProp::OffsetY: n->offset.y = v; if (n->parent != kNone) markArrange(n->parent); n->dirty |= kDirtyLayout; break;
             case AnimProp::Value: setValue(a.node, v, true); break;
+            case AnimProp::FontWeight:
+                n->animWeight = std::clamp(v, 1.f, 1000.f);
+                m_cold[a.node.index]->layoutWidth = -1.f;
+                n->dirty |= kDirtyText;
+                markLayout(a.node.index);
+                break;
             }
             if (a.t >= a.duration) { a.active = false; --m_animCount; }
         }
@@ -1655,7 +1777,8 @@ bool UiContext::pointerMove(Vec2 p) {
             const u8 ax = m_scrollDrag.axis;
             const Rect c = contentRect(m_scrollDrag.node);
             const f32 len = ax ? tr.h - th.h : tr.w - th.w, ext = ax ? sn->extent.h - c.h : sn->extent.w - c.w;
-            const f32 f = std::clamp(((ax ? p.y - tr.y : p.x - tr.x) - m_scrollDrag.grab) / std::max(1.f, len), 0.f, 1.f);
+            f32 f = std::clamp(((ax ? p.y - tr.y : p.x - tr.x) - m_scrollDrag.grab) / std::max(1.f, len), 0.f, 1.f);
+            if (!ax && m_styles.style(sn->style).rtl) f = 1.f - f; // the thumb runs right to left
             scrollTo(m_scrollDrag.node, ax ? Vec2{sn->scroll.x, f * ext} : Vec2{f * ext, sn->scroll.y});
         }
         return true;
@@ -1749,7 +1872,8 @@ bool UiContext::wheel(Vec2 p, Vec2 notches) {
         if (m_styles.style(n.style).overflow != Overflow::Scroll) continue;
         const Rect c = contentRect({a, n.gen});
         if (n.extent.h <= c.h && n.extent.w <= c.w) continue;
-        scrollTo({a, n.gen}, {n.scroll.x - notches.x * 40.f, n.scroll.y - notches.y * 40.f});
+        const f32 dx = m_styles.style(n.style).rtl ? -notches.x : notches.x; // scroll.x counts from the right in RTL
+        scrollTo({a, n.gen}, {n.scroll.x - dx * 40.f, n.scroll.y - notches.y * 40.f});
         return true;
     }
     return h != m_root;
@@ -1757,6 +1881,8 @@ bool UiContext::wheel(Vec2 p, Vec2 notches) {
 
 bool UiContext::keyDown(Key k, u8 mods) {
     Event e; e.type = EventType::KeyDown; e.key = k; e.mods = mods;
+    // Ctrl+Tab always moves focus: the way out of widgets that take Tab (code editor)
+    if (k == Key::Tab && (mods & kModCtrl)) return focusNext((mods & kModShift) != 0);
     if (node(m_focus)) {
         if (dispatch(m_focus.index, e)) return true;
         if ((k == Key::Enter || k == Key::Space) && node(m_focus) && m_registry.get(m_nodes[m_focus.index].cls).interactive &&
@@ -1778,6 +1904,10 @@ bool UiContext::keyDown(Key k, u8 mods) {
         default: break;
         }
     }
+    // keys nobody took go to the root's Event signal (application shortcuts; F10 focuses the menu bar)
+    const NodeHandle before = m_focus;
+    emit(m_root, SignalKind::Event, {.value = f32(u32(k)), .event = &e});
+    if (m_focus != before) return true;
     return node(m_focus) != nullptr && m_registry.get(m_nodes[m_focus.index].cls).focusable;
 }
 
@@ -1906,6 +2036,7 @@ bool UiContext::navigate(NavDir d) {
 
 void UiContext::setFocus(NodeHandle h, FocusReason why) {
     if (h.valid() && !node(h)) h = {};
+    if (h.valid() && (node(h)->state & kStateDisabled)) return; // disabled widgets cannot take focus (Qt)
     if (h.valid() && node(m_modal) && !inScope(h.index, m_modal.index)) return;
     const bool vis = why == FocusReason::Keyboard;
     if (h == m_focus) {
@@ -1927,9 +2058,29 @@ void UiContext::setFocus(NodeHandle h, FocusReason why) {
     if (node(h)) {
         setState(h, kStateFocus, true);
         setState(h, kStateFocusVisible, vis);
+        if (vis) revealFocus(h.index);
         Event e; e.type = EventType::FocusIn; e.focusReason = why;
         dispatch(h.index, e);
         if (node(h)) emit(h, SignalKind::FocusChanged, {.flag = true});
+    }
+}
+
+void UiContext::revealFocus(u32 i) {
+    // inner to outer scroll containers; `shift` = how far the inner ones already moved the node
+    const Rect r = m_nodes[i].rect;
+    f32 shift = 0.f;
+    for (u32 a = m_nodes[i].parent; a != kNone; a = m_nodes[a].parent) {
+        const Node& n = m_nodes[a];
+        if (m_styles.style(n.style).overflow != Overflow::Scroll) continue;
+        const Rect c = contentRect({a, n.gen});
+        const f32 top = r.y + shift;
+        f32 d = 0.f;
+        if (top + r.h > c.bottom()) d = top + r.h - c.bottom();
+        if (top - d < c.y) d = top - c.y; // a node taller than the view shows its top
+        if (d == 0.f) continue;
+        const f32 was = n.scroll.y;
+        scrollTo({a, n.gen}, {n.scroll.x, n.scroll.y + d});
+        shift -= m_nodes[a].scroll.y - was;
     }
 }
 
@@ -1999,6 +2150,7 @@ void UiContext::animate(NodeHandle h, AnimProp p, f32 to, f32 seconds, Ease e) {
     case AnimProp::OffsetX: from = n->offset.x; break;
     case AnimProp::OffsetY: from = n->offset.y; break;
     case AnimProp::Value: from = n->value; break;
+    case AnimProp::FontWeight: from = n->animWeight > 0.f ? n->animWeight : m_styles.style(n->style).fontWeight; break;
     }
     Anim* slot = nullptr;
     for (auto& a : m_anims)

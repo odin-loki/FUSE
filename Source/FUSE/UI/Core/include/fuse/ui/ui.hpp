@@ -104,6 +104,10 @@ struct A11ySnapshotNode {
 };
 
 // ---- Widget classes ------------------------------------------------------------------------------------------------
+/// Horizontal mirror of `r` / `x` inside `box` (right-to-left widgets compute left-to-right geometry, then mirror it).
+inline Rect mirrorX(const Rect& r, const Rect& box) { return {2.f * box.x + box.w - r.x - r.w, r.y, r.w, r.h}; }
+inline f32 mirrorX(f32 x, const Rect& box) { return 2.f * box.x + box.w - x; }
+
 struct PaintContext {
     UiContext& ui;
     NodeHandle node;
@@ -113,6 +117,9 @@ struct PaintContext {
     u32 states;
     f32 opacity;  ///< accumulated (multiply colours by it)
     Color tint(Color c) const { return c.withAlpha(c.a * opacity); }
+    /// `direction: rtl`: mirrored in the content box; unchanged left-to-right.
+    Rect flip(const Rect& r) const { return style.rtl ? mirrorX(r, content) : r; }
+    Vec2 flip(Vec2 p) const { return style.rtl ? Vec2{mirrorX(p.x, content), p.y} : p; }
 };
 
 struct EventContext {
@@ -301,6 +308,10 @@ public:
     /// Modifier state (kMod*) stamped on pointer events; platform layers update it on every modifier change.
     void setModifiers(u8 mods) { m_mods = mods; }
     u8 modifiers() const { return m_mods; }
+    /// Goes to the focused node (capture / target / bubble). Unconsumed: Enter / Space click an interactive node, Tab /
+    /// Shift+Tab move focus (Ctrl+Tab always does, before the node sees it), arrows navigate spatially when enabled,
+    /// and anything left is emitted as SignalKind::Event {value = Key, event} on the root (application shortcuts).
+    /// Keyboard focus scrolls into view inside scroll containers.
     bool keyDown(Key k, u8 mods = 0);
     bool keyUp(Key k, u8 mods = 0);
     bool textInput(std::string_view utf8);
@@ -383,7 +394,8 @@ public:
     // timers and animation (seconds in the context's time domain)
     TimerHandle startTimer(f32 seconds, bool repeat, InlineFn<void(UiContext&)> fn);
     void cancelTimer(TimerHandle t);
-    enum class AnimProp : u8 { Opacity, OffsetX, OffsetY, Value };
+    /// FontWeight tweens the node's font-weight (variable UI fonts: the wght axis) over its style value.
+    enum class AnimProp : u8 { Opacity, OffsetX, OffsetY, Value, FontWeight };
     enum class Ease : u8 { Linear, InOutCubic, OutBack };
     void animate(NodeHandle n, AnimProp p, f32 to, f32 seconds, Ease e = Ease::InOutCubic);
     bool animating() const { return m_animCount > 0; }
@@ -400,11 +412,20 @@ public:
 
     // text
     const fuse::text::Font* font() const { return m_font; }
+    /// The font text of `node` is drawn with: the UI font at the node's font-weight / font-stretch /
+    /// font-variation-settings (font-optical-sizing auto: opsz follows font-size) when it is variable.
+    const fuse::text::Font& textFont(NodeHandle node);
+    /// Draws `node`'s own text (its label text, paintString / measureString from its widget) with `font` instead of the
+    /// UI font (non-owning; nullptr restores the UI font). Style weight / stretch / variations still apply.
+    void setFont(NodeHandle node, const fuse::text::Font* font);
     fuse::text::GlyphAtlas& atlas() { return m_atlas; }
     /// Emits glyph commands for a laid-out block at `origin` (top-left).
     void paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, Vec2 origin, Color c, f32 pixelSize, u32 node);
     /// Lays out and paints a one-off string (widgets' secondary labels). Uses an internal scratch layout.
     void paintString(DrawList& dl, std::string_view s, Rect box, Color c, f32 pixelSize, TextAlignment align, u32 node);
+    /// paintString with an explicit base font (list rows previewing other faces); nullptr: the node's font.
+    void paintString(DrawList& dl, std::string_view s, Rect box, Color c, f32 pixelSize, TextAlignment align, u32 node,
+                     const fuse::text::Font* font);
     f32 measureString(std::string_view s, f32 pixelSize);
 
     // icons (icons.hpp): `icon` / `icon-size` style properties, widgets::icon
@@ -461,11 +482,19 @@ private:
     u32 scopeOf(u32 i) const;
     bool inScope(u32 i, u32 scope) const;
     bool focusableNode(u32 i) const;
+    /// Scrolls the node's scroll-container ancestors (vertically) so keyboard focus is in view.
+    void revealFocus(u32 i);
     void drainCommands();
     void ensureText(u32 i, f32 width);
+    const fuse::text::Font& fontFor(u32 i);
+    const fuse::text::Font& fontFor(const fuse::text::Font& base, const ComputedStyle& s, f32 weight);
+    const fuse::text::Font& nodeFont(u32 i); ///< fontFor(i) for a live node, else the current text font
     f32 labelIconWidth(const ComputedStyle& s, bool hasText) const;
     /// paintTextLayout through the node's cached glyph quads (`src` 0: its text layout, 1: its paintString layout).
-    void paintTextQuads(DrawList& dl, u32 i, u8 src, u32 rev, const fuse::text::TextLayout& tl, Vec2 o, Color c, f32 px);
+    void paintTextQuads(DrawList& dl, u32 i, u8 src, u32 rev, const fuse::text::TextLayout& tl, Vec2 o, Color c, f32 px,
+                        const fuse::text::Font* layoutFont = nullptr);
+    void paintLayoutWith(DrawList& dl, const fuse::text::Font& font, const fuse::text::TextLayout& tl, Vec2 o, Color c, f32 px,
+                         u32 node);
     bool resolveGlyph(const fuse::text::Font& f, std::uint32_t glyph, f32 fpx, const fuse::text::ColorLayer* layer, Color col,
                       GlyphQuad& q);
     void emitGlyph(DrawList& dl, const GlyphQuad& q, Vec2 o, Color col, f32 dpx, u32 nodeIdx) const;
@@ -477,6 +506,7 @@ private:
     WidgetRegistry m_registry;
     StyleEngine m_styles;
     const fuse::text::Font* m_font = nullptr;
+    const fuse::text::Font* m_textFont = nullptr; ///< font of the node being measured / painted (measureString)
     fuse::text::GlyphAtlas m_atlas;
     std::vector<Node> m_nodes;
     std::vector<Cold*> m_cold; ///< per node, into m_coldChunks

@@ -30,6 +30,7 @@
 #endif
 #include <windows.h>
 #endif
+#include "test_env.hpp"
 
 #ifndef FUSE_PLATFORM_GATE
 #define FUSE_PLATFORM_GATE "dpi_change"
@@ -411,6 +412,14 @@ HWND findFileNameEdit(HWND dlg) { // the "File name" box: an Edit under the cont
             if (GetDlgCtrlID(a) == 1148 || GetDlgCtrlID(a) == 1001) { s.edit = h; return FALSE; }
         return TRUE;
     }, reinterpret_cast<LPARAM>(&s));
+    if (!s.edit) // Wine's item dialog uses other ids: its file name box is the dialog's only visible Edit
+        EnumChildWindows(dlg, [](HWND h, LPARAM l) -> BOOL {
+            wchar_t cls[64]{};
+            GetClassNameW(h, cls, 63);
+            if (std::wcscmp(cls, L"Edit") != 0 || !IsWindowVisible(h)) return TRUE;
+            reinterpret_cast<S*>(l)->edit = h;
+            return FALSE;
+        }, reinterpret_cast<LPARAM>(&s));
     return s.edit;
 }
 /// Helper thread: waits for the dialog titled `title`, optionally types `text` into its file name box, then presses
@@ -553,7 +562,11 @@ static int gateTouch(int argc, char** argv) {
     ui.setCss(b1, "width", "120px");
     ui.setCss(b2, "width", "120px");
     int c1 = 0, c2 = 0;
-    ui.connect(b1, SignalKind::Clicked, [&c1](UiContext&, NodeHandle, const SignalArgs&) { ++c1; });
+    bool touchClick = true; // every click of b1 came from a touch (not a stray mouse message)
+    ui.connect(b1, SignalKind::Clicked, [&c1, &touchClick](UiContext& u, NodeHandle, const SignalArgs&) {
+        ++c1;
+        touchClick &= u.pointerKind() == UiContext::PointerKind::Touch;
+    });
     ui.connect(b2, SignalKind::Clicked, [&c2](UiContext&, NodeHandle, const SignalArgs&) { ++c2; });
     native.show(win);
     HWND hwnd = reinterpret_cast<HWND>(native.nativeWindow(win));
@@ -566,6 +579,31 @@ static int gateTouch(int argc, char** argv) {
         const Vec2 c = centre(ui, n, s);
         return POINT{LONG(o.x + c.x + dx), LONG(o.y + c.y)};
     };
+    // Injected touch goes to whatever window is under the contact at that moment, and other processes on this desktop
+    // (other gates, a user) raise their own windows over ours now and then. So: count the WM_POINTERDOWNs our window
+    // really gets, put it back on top before each injection, and repeat a gesture none of whose contacts reached it.
+    // A window we cannot get above (a system prompt such as Windows Security dims the whole desktop) means skip (77).
+    static int downs = 0;
+    native.setMessageHook(win, {nullptr, [](void*, unsigned m, std::uintptr_t, std::intptr_t, std::intptr_t&) {
+                                    if (m == WM_POINTERDOWN) ++downs;
+                                    return false;
+                                }});
+    auto ownsPoint = [&](POINT p) {
+        for (int i = 0; i < 100; ++i) {
+            if (WindowFromPoint(p) == hwnd) return true;
+            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+            pump(a, 2);
+        }
+        HWND top = WindowFromPoint(p);
+        wchar_t cls[128]{}, title[128]{};
+        DWORD pid = 0;
+        GetClassNameW(top, cls, 127);
+        GetWindowTextW(top, title, 127);
+        GetWindowThreadProcessId(top, &pid);
+        std::printf("fuse_platform_touch_synthetic: skipped (point %ld,%ld stays covered by '%ls' (%ls, pid %lu), e.g. a "
+                    "system prompt dimming the desktop: injected touch cannot reach the window)\n", p.x, p.y, title, cls, pid);
+        return false;
+    };
     const HMODULE user32 = GetModuleHandleW(L"user32.dll");
     const auto init = reinterpret_cast<InitTouch>(reinterpret_cast<void*>(GetProcAddress(user32, "InitializeTouchInjection")));
     const auto inject = reinterpret_cast<InjectTouch>(reinterpret_cast<void*>(GetProcAddress(user32, "InjectTouchInput")));
@@ -574,19 +612,35 @@ static int gateTouch(int argc, char** argv) {
     const POINTER_FLAGS move = POINTER_FLAG_UPDATE | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT;
     const POINTER_FLAGS up = POINTER_FLAG_UP;
     bool injected = false;
+    int lost = 0; // gestures that never reached the window (another process's window was hit)
     if (injection) {
-        POINTER_TOUCH_INFO t = contact(0, screen(b1), down);
-        injected = inject(1, &t) != 0;
-        if (injected) {
-            for (int i = 0; i < 200 && ui.touches().empty(); ++i) a.step(0.005f);
+        for (int attempt = 0; attempt < 5 && !c1; ++attempt) {
+            POINTER_TOUCH_INFO t = contact(0, screen(b1), down);
+            if (!ownsPoint(screen(b1))) return 77;
+            const int before = downs;
+            injected = inject(1, &t) != 0;
+            if (!injected) {
+                std::printf("  InjectTouchInput failed (%lu)\n", GetLastError());
+                break;
+            }
+            for (int i = 0; i < 200 && ui.touches().empty() && downs == before; ++i) a.step(0.005f);
             t.pointerInfo.pointerFlags = up;
             inject(1, &t);
+            if (downs == before) { // the contact went to another window: nothing arrives here
+                ++lost;
+                pump(a, 20);
+                continue;
+            }
             for (int i = 0; i < 200 && !c1; ++i) a.step(0.01f);
-        } else {
-            std::printf("  InjectTouchInput failed (%lu)\n", GetLastError());
+            break; // it arrived: whatever happened is the result
         }
     } else {
         std::printf("  InitializeTouchInjection unavailable (%lu)\n", GetLastError());
+    }
+    if (!injected && fuse::ui::test::runningUnderWine()) {
+        // Wine has no pointer stack: no touch injection, and GetPointerType reports every id as a mouse
+        std::printf("fuse_platform_touch_synthetic: skipped (Wine: no touch injection / pointer stack)\n");
+        return 77;
     }
     if (!injected) { // no injection here: WM_POINTER messages the decoder treats as touch (unknown pointer ids)
         const POINT p = screen(b1);
@@ -594,11 +648,10 @@ static int gateTouch(int argc, char** argv) {
         PostMessageW(hwnd, WM_POINTERUP, MAKEWPARAM(4242, 0), MAKELPARAM(p.x, p.y));
         for (int i = 0; i < 100 && !c1; ++i) a.step(0.01f);
     }
-    std::printf("  tap via %s: button clicks %d / %d, pointer kind %s, touches left %zu\n",
-                injected ? "InjectTouchInput" : "posted WM_POINTER", c1, c2,
-                ui.pointerKind() == UiContext::PointerKind::Touch ? "touch" : "other", ui.touches().size());
+    std::printf("  tap via %s: button clicks %d / %d (by touch %s), touches left %zu, taps lost to other windows %d\n",
+                injected ? "InjectTouchInput" : "posted WM_POINTER", c1, c2, touchClick ? "yes" : "no", ui.touches().size(), lost);
     CHECK(c1 == 1 && c2 == 0);
-    CHECK(ui.pointerKind() == UiContext::PointerKind::Touch && ui.touches().empty());
+    CHECK(touchClick && ui.touches().empty());
 
     // two fingers: the primary presses b1, the second lands on b2 (no press there) and spreads: pinch scale 2
     f32 pinch = 0.f;
@@ -622,25 +675,31 @@ static int gateTouch(int argc, char** argv) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         };
-        POINTER_TOUCH_INFO t[2] = {contact(0, screen(b1), down), contact(1, screen(b2), down)};
-        drain(150);
-        const BOOL okDown = inject(2, t);
-        if (!okDown) std::printf("  two-finger InjectTouchInput failed (%lu)\n", GetLastError());
-        CHECK(okDown);
-        drain(40);
-        t[0].pointerInfo.pointerFlags = move;
-        t[1].pointerInfo.pointerFlags = move;
-        const LONG x2 = t[1].pointerInfo.ptPixelLocation.x, dx = x2 - t[0].pointerInfo.ptPixelLocation.x;
-        for (int k = 0; k <= 8; ++k) { // spread the second finger to twice the distance
-            t[1].pointerInfo.ptPixelLocation.x = x2 + dx * k / 8;
-            CHECK(inject(2, t));
-            drain(15);
+        for (int attempt = 0; attempt < 5; ++attempt) {
+            POINTER_TOUCH_INFO t[2] = {contact(0, screen(b1), down), contact(1, screen(b2), down)};
+            drain(150);
+            if (!ownsPoint(screen(b1)) || !ownsPoint(screen(b2))) return 77;
+            const int before = downs;
+            const BOOL okDown = inject(2, t);
+            if (!okDown) std::printf("  two-finger InjectTouchInput failed (%lu)\n", GetLastError());
+            CHECK(okDown);
+            drain(40);
+            t[0].pointerInfo.pointerFlags = move;
+            t[1].pointerInfo.pointerFlags = move;
+            const LONG x2 = t[1].pointerInfo.ptPixelLocation.x, dx = x2 - t[0].pointerInfo.ptPixelLocation.x;
+            for (int k = 0; k <= 8; ++k) { // spread the second finger to twice the distance
+                t[1].pointerInfo.ptPixelLocation.x = x2 + dx * k / 8;
+                CHECK(inject(2, t));
+                drain(15);
+            }
+            t[0].pointerInfo.pointerFlags = up;
+            t[1].pointerInfo.pointerFlags = up;
+            inject(2, t);
+            drain(100);
+            pump(a, 10);
+            if (!okDown || downs != before) break;
+            ++lost; // neither finger reached the window
         }
-        t[0].pointerInfo.pointerFlags = up;
-        t[1].pointerInfo.pointerFlags = up;
-        inject(2, t);
-        drain(100);
-        pump(a, 10);
     } else {
         const POINT p1 = screen(b1), p2 = screen(b2), p3{p2.x + (p2.x - p1.x), p2.y};
         PostMessageW(hwnd, WM_POINTERDOWN, MAKEWPARAM(5001, 0), MAKELPARAM(p1.x, p1.y));
@@ -655,11 +714,12 @@ static int gateTouch(int argc, char** argv) {
         PostMessageW(hwnd, WM_POINTERUP, MAKEWPARAM(5001, 0), MAKELPARAM(p1.x, p1.y));
         pump(a, 20);
     }
-    std::printf("  two fingers: %zu contacts, primary pressed b1 %s, pinch scale %.2f, clicks %d / %d\n", contacts,
-                pressed == b1 ? "yes" : "no", pinch, c1, c2);
+    std::printf("  two fingers: %zu contacts, primary pressed b1 %s, pinch scale %.2f, clicks %d / %d, gestures lost %d\n",
+                contacts, pressed == b1 ? "yes" : "no", pinch, c1, c2, lost);
     CHECK(contacts == 2 && pressed == b1);
     CHECK(std::abs(pinch - 2.f) < 0.1f);
-    CHECK(c1 == 2 && c2 == 0 && ui.touches().empty());
+    CHECK(c1 == 2 && c2 == 0 && touchClick && ui.touches().empty());
+    native.setMessageHook(win, {});
     SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
     return 0;
 #endif

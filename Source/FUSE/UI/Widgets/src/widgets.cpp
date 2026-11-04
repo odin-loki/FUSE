@@ -37,11 +37,12 @@ f32 stepOf(UiContext& ui, NodeHandle n) {
     const f32 s = ui.rangeStep(n);
     return s > 0.f ? s : (ui.rangeMax(n) - ui.rangeMin(n)) / 20.f;
 }
-bool rangeKeys(EventContext& ec, const Event& e, bool vertical) {
+/// Arrow / page / home / end keys; `mirrored` (a right-to-left horizontal range): Left increases.
+bool rangeKeys(EventContext& ec, const Event& e, bool vertical, bool mirrored = false) {
     if (e.type != EventType::KeyDown || ec.phase != Phase::Target) return false;
     UiContext& ui = ec.ui;
     const f32 st = stepOf(ui, ec.node);
-    const Key inc = vertical ? Key::Up : Key::Right, dec = vertical ? Key::Down : Key::Left;
+    const Key inc = vertical ? Key::Up : (mirrored ? Key::Left : Key::Right), dec = vertical ? Key::Down : (mirrored ? Key::Right : Key::Left);
     if (e.key == inc || e.key == Key::PageUp) { ui.setValue(ec.node, ui.value(ec.node) + (e.key == Key::PageUp ? st * 10.f : st), true); return true; }
     if (e.key == dec || e.key == Key::PageDown) { ui.setValue(ec.node, ui.value(ec.node) - (e.key == Key::PageDown ? st * 10.f : st), true); return true; }
     if (e.key == Key::Home) { ui.setValue(ec.node, ui.rangeMin(ec.node), true); return true; }
@@ -90,7 +91,7 @@ struct Link {
         labelAt(pc, dl, pc.ui.text(pc.node), pc.content, TextAlignment::Start);
         const f32 w = pc.ui.measureString(pc.ui.text(pc.node), pc.style.fontSize);
         const f32 y = pc.content.bottom() - 1.f;
-        if (pc.states & (kStateHover | kStateFocusVisible)) dl.line({pc.content.x, y}, {pc.content.x + w, y}, textCol(pc), 1.f);
+        if (pc.states & (kStateHover | kStateFocusVisible)) dl.line(pc.flip(Vec2{pc.content.x, y}), pc.flip(Vec2{pc.content.x + w, y}), textCol(pc), 1.f);
     }
 };
 
@@ -107,7 +108,8 @@ struct CheckBox {
     static constexpr bool kInteractive = true;
     static Size measure(UiContext& ui, NodeHandle n, Size) { return indicatorMeasure(ui, n, 16.f); }
     static void paint(const PaintContext& pc, DrawList& dl) {
-        const Rect b{pc.content.x, std::round(pc.content.y + (pc.content.h - 16.f) * 0.5f), 16.f, 16.f};
+        // RTL: the indicator on the right, the label to its left (the check mark itself is not mirrored)
+        const Rect b0{pc.content.x, std::round(pc.content.y + (pc.content.h - 16.f) * 0.5f), 16.f, 16.f}, b = pc.flip(b0);
         const bool on = pc.states & kStateChecked;
         dl.roundedRect(b, on ? accent(pc) : pc.tint(Color::rgb(0x000000, 0.25f)), {3, 3, 3, 3}, pc.tint(pc.style.borderColor.a > 0 ? pc.style.borderColor : Color::rgb(0x808080)), on ? 0.f : 1.f);
         if (on) {
@@ -115,7 +117,7 @@ struct CheckBox {
             dl.line({b.x + 3.5f, b.y + 8.5f}, {b.x + 6.5f, b.y + 11.5f}, w, 2.f);
             dl.line({b.x + 6.5f, b.y + 11.5f}, {b.x + 12.5f, b.y + 4.5f}, w, 2.f);
         }
-        labelAt(pc, dl, pc.ui.text(pc.node), {b.right() + 6.f, pc.content.y, pc.content.w - 22.f, pc.content.h}, TextAlignment::Start);
+        labelAt(pc, dl, pc.ui.text(pc.node), pc.flip(Rect{b0.right() + 6.f, pc.content.y, pc.content.w - 22.f, pc.content.h}), TextAlignment::Start);
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (e.type == EventType::Click && ec.phase == Phase::Target) {
@@ -132,24 +134,46 @@ struct RadioButton {
     static constexpr bool kInteractive = true;
     static Size measure(UiContext& ui, NodeHandle n, Size) { return indicatorMeasure(ui, n, 16.f); }
     static void paint(const PaintContext& pc, DrawList& dl) {
-        const Rect b{pc.content.x, std::round(pc.content.y + (pc.content.h - 16.f) * 0.5f), 16.f, 16.f};
+        const Rect b0{pc.content.x, std::round(pc.content.y + (pc.content.h - 16.f) * 0.5f), 16.f, 16.f}, b = pc.flip(b0);
         const bool on = pc.states & kStateChecked;
         dl.roundedRect(b, pc.tint(Color::rgb(0x000000, 0.25f)), {8, 8, 8, 8}, on ? accent(pc) : pc.tint(Color::rgb(0x808080)), on ? 2.f : 1.f);
         if (on) dl.rect({b.x + 4.f, b.y + 4.f, 8.f, 8.f}, accent(pc), 4.f);
-        labelAt(pc, dl, pc.ui.text(pc.node), {b.right() + 6.f, pc.content.y, pc.content.w - 22.f, pc.content.h}, TextAlignment::Start);
+        labelAt(pc, dl, pc.ui.text(pc.node), pc.flip(Rect{b0.right() + 6.f, pc.content.y, pc.content.w - 22.f, pc.content.h}), TextAlignment::Start);
+    }
+    static void select(UiContext& ui, NodeHandle n) {
+        if (ui.checked(n)) return;
+        const u32 cls = ui.classOf(n);
+        for (NodeHandle s = ui.firstChild(ui.parent(n)); s.valid(); s = ui.nextSibling(s))
+            if (s != n && ui.classOf(s) == cls && ui.checked(s)) {
+                ui.setChecked(s, false);
+                ui.emit(s, SignalKind::Toggled, {.flag = false});
+            }
+        ui.setChecked(n, true);
+        ui.emit(n, SignalKind::Toggled, {.flag = true});
     }
     static bool onEvent(EventContext& ec, const Event& e) {
-        if (e.type == EventType::Click && ec.phase == Phase::Target && !ec.ui.checked(ec.node)) {
-            const u32 cls = ec.ui.classOf(ec.node);
-            for (NodeHandle s = ec.ui.firstChild(ec.ui.parent(ec.node)); s.valid(); s = ec.ui.nextSibling(s))
-                if (s != ec.node && ec.ui.classOf(s) == cls && ec.ui.checked(s)) {
-                    ec.ui.setChecked(s, false);
-                    ec.ui.emit(s, SignalKind::Toggled, {.flag = false});
-                }
-            ec.ui.setChecked(ec.node, true);
-            ec.ui.emit(ec.node, SignalKind::Toggled, {.flag = true});
+        if (ec.phase != Phase::Target) return false;
+        UiContext& ui = ec.ui;
+        if (e.type == EventType::Click) select(ui, ec.node);
+        if (e.type != EventType::KeyDown) return false;
+        // arrows move to the previous / next enabled radio of the group (the siblings), wrapping, and check it
+        const bool rtl = ui.computed(ec.node).rtl;
+        const Key fwd = rtl ? Key::Left : Key::Right, back = rtl ? Key::Right : Key::Left;
+        if (e.key != Key::Down && e.key != Key::Up && e.key != fwd && e.key != back) return false;
+        const bool next = e.key == Key::Down || e.key == fwd;
+        const u32 cls = ui.classOf(ec.node);
+        NodeHandle group[64];
+        u32 n = 0, at = 0;
+        for (NodeHandle s = ui.firstChild(ui.parent(ec.node)); s.valid() && n < 64; s = ui.nextSibling(s)) {
+            if (ui.classOf(s) != cls || (ui.disabled(s) && s != ec.node)) continue;
+            if (s == ec.node) at = n;
+            group[n++] = s;
         }
-        return false;
+        if (n < 2) return true;
+        const NodeHandle to = group[next ? (at + 1) % n : (at + n - 1) % n];
+        ui.setFocus(to, FocusReason::Keyboard);
+        select(ui, to);
+        return true;
     }
 };
 struct Switch : CheckBox {
@@ -159,9 +183,9 @@ struct Switch : CheckBox {
     static void paint(const PaintContext& pc, DrawList& dl) {
         const Rect t{pc.content.x, std::round(pc.content.y + (pc.content.h - 18.f) * 0.5f), 32.f, 18.f};
         const bool on = pc.states & kStateChecked;
-        dl.rect(t, on ? accent(pc) : pc.tint(Color::rgb(0x5A5A66)), 9.f);
-        dl.rect({on ? t.right() - 16.f : t.x + 2.f, t.y + 2.f, 14.f, 14.f}, pc.tint(Color::rgb(0xFFFFFF)), 7.f);
-        labelAt(pc, dl, pc.ui.text(pc.node), {t.right() + 6.f, pc.content.y, pc.content.w - 38.f, pc.content.h}, TextAlignment::Start);
+        dl.rect(pc.flip(t), on ? accent(pc) : pc.tint(Color::rgb(0x5A5A66)), 9.f);
+        dl.rect(pc.flip(Rect{on ? t.right() - 16.f : t.x + 2.f, t.y + 2.f, 14.f, 14.f}), pc.tint(Color::rgb(0xFFFFFF)), 7.f); // on = the end side
+        labelAt(pc, dl, pc.ui.text(pc.node), pc.flip(Rect{t.right() + 6.f, pc.content.y, pc.content.w - 38.f, pc.content.h}), TextAlignment::Start);
     }
 };
 
@@ -178,23 +202,26 @@ struct Slider {
         const f32 cy = std::round(c.y + c.h * 0.5f);
         const Rect track{c.x + 7.f, cy - 2.f, std::max(0.f, c.w - 14.f), 4.f};
         dl.rect(track, pc.tint(Color::rgb(0x5A5A66)), 2.f);
-        dl.rect({track.x, track.y, track.w * f, 4.f}, accent(pc), 2.f);
-        const f32 kx = std::round(track.x + track.w * f);
+        dl.rect(pc.flip(Rect{track.x, track.y, track.w * f, 4.f}), accent(pc), 2.f); // RTL: the minimum on the right
+        const f32 kx = std::round(pc.style.rtl ? mirrorX(track.x + track.w * f, c) : track.x + track.w * f);
         dl.roundedRect({kx - 7.f, cy - 7.f, 14.f, 14.f}, pc.tint(Color::rgb(0xF0F0F5)), {7, 7, 7, 7}, accent(pc), (pc.states & kStateFocusVisible) ? 2.f : 0.f);
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
+        const bool rtl = ec.ui.computed(ec.node).rtl;
         if (e.type == EventType::PointerDown || (e.type == EventType::PointerMove && ec.ui.pressed() == ec.node)) {
             const Rect c = ec.ui.contentRect(ec.node);
-            setFrac(ec.ui, ec.node, (e.pos.x - c.x - 7.f) / std::max(1.f, c.w - 14.f));
+            const f32 x = rtl ? mirrorX(e.pos.x, c) : e.pos.x;
+            setFrac(ec.ui, ec.node, (x - c.x - 7.f) / std::max(1.f, c.w - 14.f));
             return true;
         }
-        return rangeKeys(ec, e, false);
+        return rangeKeys(ec, e, false, rtl);
     }
 };
 struct ScrollBar {
     static constexpr std::string_view kName = "scrollbar";
     static constexpr A11yRole kRole = A11yRole::ScrollBar;
+    static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
     static Size measure(UiContext&, NodeHandle, Size) { return {12.f, 12.f}; }
     static bool vertical(const Rect& r) { return r.h >= r.w; }
@@ -206,8 +233,8 @@ struct ScrollBar {
         const f32 len = v ? c.h : c.w, pg = page(pc.ui, pc.node), th = std::max(16.f, len * pg);
         const f32 at = (len - th) * frac(pc.ui, pc.node);
         dl.rect(c, pc.tint(Color::rgb(0x000000, 0.2f)), 4.f);
-        const Rect t = v ? Rect{c.x + 2.f, c.y + at, c.w - 4.f, th} : Rect{c.x + at, c.y + 2.f, th, c.h - 4.f};
-        dl.rect(t, pc.states & (kStateHover | kStatePressed) ? accent(pc) : pc.tint(Color::rgb(0x8A8A96)), 3.f);
+        const Rect t = v ? Rect{c.x + 2.f, c.y + at, c.w - 4.f, th} : pc.flip(Rect{c.x + at, c.y + 2.f, th, c.h - 4.f});
+        dl.rect(t, pc.states & (kStateHover | kStatePressed | kStateFocusVisible) ? accent(pc) : pc.tint(Color::rgb(0x8A8A96)), 3.f);
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
@@ -215,7 +242,7 @@ struct ScrollBar {
             const Rect c = ec.ui.contentRect(ec.node);
             const bool v = vertical(c);
             const f32 len = v ? c.h : c.w, th = std::max(16.f, len * page(ec.ui, ec.node));
-            const f32 p = v ? e.pos.y - c.y : e.pos.x - c.x;
+            const f32 p = v ? e.pos.y - c.y : (ec.ui.computed(ec.node).rtl ? c.right() - e.pos.x : e.pos.x - c.x);
             setFrac(ec.ui, ec.node, (p - th * 0.5f) / std::max(1.f, len - th));
             return true;
         }
@@ -223,6 +250,28 @@ struct ScrollBar {
             const f32 lo = ec.ui.rangeMin(ec.node), hi = ec.ui.rangeMax(ec.node);
             const f32 n = e.wheel.y != 0.f ? e.wheel.y : e.wheel.x;
             ec.ui.setValue(ec.node, ec.ui.value(ec.node) - n * 0.1f * (hi - lo), true); // one notch = 10% of the range
+            return true;
+        }
+        if (e.type == EventType::KeyDown) {
+            // the value grows down / towards the end: Down / Right (Left in RTL) a line (5%, at least the value step),
+            // PageDown a page
+            UiContext& ui = ec.ui;
+            const f32 lo = ui.rangeMin(ec.node), hi = ui.rangeMax(ec.node);
+            const f32 line = std::max(ui.rangeStep(ec.node), 0.05f * (hi - lo)), pg = std::max(line, page(ui, ec.node) * (hi - lo));
+            const bool rtl = ui.computed(ec.node).rtl;
+            f32 d;
+            switch (e.key) {
+            case Key::Down: d = line; break;
+            case Key::Up: d = -line; break;
+            case Key::Right: d = rtl ? -line : line; break;
+            case Key::Left: d = rtl ? line : -line; break;
+            case Key::PageDown: d = pg; break;
+            case Key::PageUp: d = -pg; break;
+            case Key::Home: ui.setValue(ec.node, lo, true); return true;
+            case Key::End: ui.setValue(ec.node, hi, true); return true;
+            default: return false;
+            }
+            ui.setValue(ec.node, ui.value(ec.node) + d, true);
             return true;
         }
         return false;
@@ -264,7 +313,7 @@ struct ProgressBar {
         const f32 r = std::min(pc.content.h * 0.5f, pc.style.radius[0]);
         dl.rect(pc.content, pc.tint(Color::rgb(0x000000, 0.3f)), r);
         const f32 w = std::round(pc.content.w * frac(pc.ui, pc.node));
-        if (w > 0.f) dl.rect({pc.content.x, pc.content.y, w, pc.content.h}, accent(pc), r);
+        if (w > 0.f) dl.rect(pc.flip(Rect{pc.content.x, pc.content.y, w, pc.content.h}), accent(pc), r);
     }
 };
 
@@ -290,8 +339,8 @@ struct SpinBox {
         char buf[32];
         const int len = fmt(pc.ui, pc.node, buf, 32);
         const Rect c = pc.content;
-        labelAt(pc, dl, std::string_view(buf, std::size_t(std::max(0, len))), {c.x, c.y, c.w - 20.f, c.h}, TextAlignment::Start);
-        const f32 ax = c.right() - 10.f, my = c.y + c.h * 0.5f;
+        labelAt(pc, dl, std::string_view(buf, std::size_t(std::max(0, len))), pc.flip(Rect{c.x, c.y, c.w - 20.f, c.h}), TextAlignment::Start);
+        const f32 ax = pc.flip(Vec2{c.right() - 10.f, 0.f}).x, my = c.y + c.h * 0.5f; // RTL: the arrows on the left
         const Color a = textCol(pc);
         dl.line({ax - 4.f, my - 3.f}, {ax, my - 7.f}, a, 1.5f);
         dl.line({ax, my - 7.f}, {ax + 4.f, my - 3.f}, a, 1.5f);
@@ -304,7 +353,7 @@ struct SpinBox {
         const f32 st = ui.rangeStep(ec.node) > 0.f ? ui.rangeStep(ec.node) : 1.f;
         if (e.type == EventType::PointerDown) {
             const Rect c = ui.contentRect(ec.node);
-            if (e.pos.x >= c.right() - 20.f) ui.setValue(ec.node, ui.value(ec.node) + (e.pos.y < c.y + c.h * 0.5f ? st : -st), true);
+            if (ui.computed(ec.node).rtl ? e.pos.x < c.x + 20.f : e.pos.x >= c.right() - 20.f) ui.setValue(ec.node, ui.value(ec.node) + (e.pos.y < c.y + c.h * 0.5f ? st : -st), true);
             return true;
         }
         if (e.type == EventType::Wheel) { ui.setValue(ec.node, ui.value(ec.node) + (e.wheel.y > 0.f ? st : -st), true); return true; }
@@ -340,8 +389,8 @@ struct ComboBox {
     }
     static void paint(const PaintContext& pc, DrawList& dl) {
         const Rect c = pc.content;
-        labelAt(pc, dl, item(pc.ui.text(pc.node), u32(pc.ui.value(pc.node))), {c.x, c.y, c.w - 18.f, c.h}, TextAlignment::Start);
-        const f32 ax = c.right() - 8.f, my = c.y + c.h * 0.5f;
+        labelAt(pc, dl, item(pc.ui.text(pc.node), u32(pc.ui.value(pc.node))), pc.flip(Rect{c.x, c.y, c.w - 18.f, c.h}), TextAlignment::Start);
+        const f32 ax = pc.flip(Vec2{c.right() - 8.f, 0.f}).x, my = c.y + c.h * 0.5f;
         dl.line({ax - 4.f, my - 2.f}, {ax, my + 2.f}, textCol(pc), 1.5f);
         dl.line({ax, my + 2.f}, {ax + 4.f, my - 2.f}, textCol(pc), 1.5f);
     }
@@ -357,8 +406,15 @@ struct ComboBox {
             pick((cur + 1) % count);
             return true;
         }
+        // Alt+Down / F4 open the list (Space / Enter too, through the core's keyboard click)
+        if (e.type == EventType::KeyDown && ((e.key == Key::Down && (e.mods & kModAlt)) || e.key == Key::F4)) {
+            if (!detail::openComboPopup(ui, ec.node)) pick((cur + 1) % count);
+            return true;
+        }
         if (e.type == EventType::KeyDown && e.key == Key::Down) { pick(std::min(cur + 1, count - 1)); return true; }
         if (e.type == EventType::KeyDown && e.key == Key::Up) { pick(cur ? cur - 1 : 0); return true; }
+        if (e.type == EventType::KeyDown && e.key == Key::Home) { pick(0); return true; }
+        if (e.type == EventType::KeyDown && e.key == Key::End) { pick(count - 1); return true; }
         if (e.type == EventType::Wheel) { pick(e.wheel.y < 0.f ? std::min(cur + 1, count - 1) : (cur ? cur - 1 : 0)); return true; }
         return false;
     }
@@ -372,6 +428,11 @@ struct LineEdit {
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
     static Size measure(UiContext& ui, NodeHandle n, Size) { return {160.f, lineHeight(ui, ui.computed(n).fontSize)}; }
+    /// RTL: the text ends at the right edge (2 px for the caret) and shifts right only to keep the caret visible.
+    static f32 rtlStart(const Rect& c, f32 textW, f32 caretX) {
+        const f32 x = c.right() - 2.f - textW;
+        return x + caretX < c.x ? c.x - caretX : x;
+    }
     static void paint(const PaintContext& pc, DrawList& dl) {
         UiContext& ui = pc.ui;
         const Rect c = pc.content;
@@ -384,7 +445,8 @@ struct LineEdit {
         const f32 cx = ui.measureString(t.substr(0, eb.cursor()), px);
         const f32 preW = pre.empty() ? 0.f : ui.measureString(pre, px);
         const f32 caretX = cx + (pre.empty() ? 0.f : ui.measureString(pre.substr(0, std::size_t(ui.compositionCaret())), px));
-        const f32 scrollX = std::max(0.f, caretX - c.w + 2.f);
+        // x of the text start is c.x - scrollX (negative in RTL while the text is shorter than the field)
+        const f32 scrollX = pc.style.rtl ? c.x - rtlStart(c, ui.measureString(t, px) + preW, caretX) : std::max(0.f, caretX - c.w + 2.f);
         dl.pushClip(c);
         if (focused && eb.hasSelection() && pre.empty()) {
             const std::size_t a = std::min(eb.cursor(), eb.anchor()), b = std::max(eb.cursor(), eb.anchor());
@@ -392,12 +454,12 @@ struct LineEdit {
             dl.rect({c.x + x0 - scrollX, c.y, x1 - x0, c.h}, accent(pc).withAlpha(0.45f * pc.opacity));
         }
         if (pre.empty()) {
-            labelAt(pc, dl, t, {c.x - scrollX, c.y, c.w + scrollX + 1000.f, c.h}, TextAlignment::Start);
+            labelAt(pc, dl, t, {c.x - scrollX, c.y, c.w + scrollX + 1000.f, c.h}, TextAlignment::Left);
         } else {
             const f32 x = c.x - scrollX;
-            labelAt(pc, dl, t.substr(0, eb.cursor()), {x, c.y, cx + 1000.f, c.h}, TextAlignment::Start);
-            labelAt(pc, dl, pre, {x + cx, c.y, preW + 1000.f, c.h}, TextAlignment::Start);
-            labelAt(pc, dl, t.substr(eb.cursor()), {x + cx + preW, c.y, c.w + 1000.f, c.h}, TextAlignment::Start);
+            labelAt(pc, dl, t.substr(0, eb.cursor()), {x, c.y, cx + 1000.f, c.h}, TextAlignment::Left);
+            labelAt(pc, dl, pre, {x + cx, c.y, preW + 1000.f, c.h}, TextAlignment::Left);
+            labelAt(pc, dl, t.substr(eb.cursor()), {x + cx + preW, c.y, c.w + 1000.f, c.h}, TextAlignment::Left);
             dl.rect({std::round(x + cx), std::round(c.y + c.h - 3.f), preW, 1.f}, textCol(pc));
         }
         if (focused) {
@@ -421,12 +483,13 @@ struct LineEdit {
         if (e.type == EventType::PointerDown) {
             const Rect c = ui.contentRect(ec.node);
             const std::string& t = eb.text();
-            eb.home(false);
             const f32 px = ui.computed(ec.node).fontSize;
+            const f32 x0 = ui.computed(ec.node).rtl ? rtlStart(c, ui.measureString(t, px), ui.measureString(std::string_view(t).substr(0, eb.cursor()), px)) : c.x;
+            eb.home(false);
             while (eb.cursor() < t.size()) {
                 const std::size_t nx = fuse::text::nextBoundary(t, eb.cursor());
                 const f32 mid = (ui.measureString(std::string_view(t).substr(0, eb.cursor()), px) + ui.measureString(std::string_view(t).substr(0, nx), px)) * 0.5f;
-                if (c.x + mid > e.pos.x) break;
+                if (x0 + mid > e.pos.x) break;
                 eb.moveRight(false);
             }
             ui.setValue(ec.node, ui.value(ec.node) + 1.f); // caret moved: repaint

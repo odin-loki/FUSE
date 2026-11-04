@@ -69,8 +69,55 @@ void dot(DrawList& dl, Vec2 p, f32 r, Color fill, Color ring = {}) {
 
 // =====================================================================================================================
 // Font picker
-struct FontState { NodeHandle list, size, preview; std::string family; };
+// Each family is drawn in its own face: loaded on first paint from FontCatalog::system() and kept in a small LRU
+// (the selected family is never evicted: the preview label points at it). Families that do not resolve to an
+// installed face, files over kMaxPreviewBytes and symbol fonts without Latin letters draw in the UI font.
+struct FontState {
+    NodeHandle list, size, preview;
+    std::string family;
+    struct Face {
+        std::string family;
+        std::unique_ptr<fuse::text::Font> font; // null: the UI font
+        u64 used = 0;
+    };
+    std::vector<Face> faces;
+    u64 tick = 0;
+};
+constexpr std::size_t kMaxPreviewFaces = 24;
+constexpr std::uintmax_t kMaxPreviewBytes = 16u << 20;
 Pool<FontState>& fontPool() { static Pool<FontState> p; return p; }
+
+const fuse::text::Font* familyFace(FontState& s, std::string_view family) {
+    for (FontState::Face& f : s.faces)
+        if (f.family == family) {
+            f.used = ++s.tick;
+            return f.font.get();
+        }
+    if (s.faces.size() >= kMaxPreviewFaces) { // evict the least recently used face (never the selected family's)
+        auto victim = s.faces.end();
+        for (auto it = s.faces.begin(); it != s.faces.end(); ++it)
+            if (it->family != s.family && (victim == s.faces.end() || it->used < victim->used)) victim = it;
+        if (victim != s.faces.end()) s.faces.erase(victim);
+    }
+    FontState::Face face{std::string(family), nullptr, ++s.tick};
+    const fuse::text::FontCatalog& cat = fuse::text::FontCatalog::system();
+    if (const fuse::text::FontFaceInfo* info = cat.match(family, 400, false)) {
+        std::error_code ec;
+        const std::filesystem::path path(std::u8string(reinterpret_cast<const char8_t*>(info->path.data()), info->path.size()));
+        const std::uintmax_t bytes = std::filesystem::file_size(path, ec);
+        if (!ec && bytes <= kMaxPreviewBytes)
+            if (auto f = fuse::text::FontCatalog::load(*info); f && f->glyphIndex(U'a') && f->glyphIndex(U'A'))
+                face.font = std::make_unique<fuse::text::Font>(std::move(*f));
+    }
+    s.faces.push_back(std::move(face));
+    return s.faces.back().font.get();
+}
+
+const fuse::text::Font* fontRowFace(UiContext& ui, NodeHandle list, u32 row) {
+    FontState* s = fontPool().get(ui, ui.parent(list));
+    return s ? familyFace(*s, listItem(ui, list, row)) : nullptr;
+}
+
 void fontRefresh(UiContext& ui, NodeHandle picker, bool emit) {
     FontState* s = fontPool().get(ui, picker);
     if (!s) return;
@@ -80,6 +127,7 @@ void fontRefresh(UiContext& ui, NodeHandle picker, bool emit) {
     char b[32];
     std::snprintf(b, sizeof b, "%gpx", double(px));
     ui.setCss(s->preview, "font-size", b);
+    ui.setFont(s->preview, s->family.empty() ? nullptr : familyFace(*s, s->family));
     ui.setText(s->preview, s->family + " - The quick brown fox jumps over the lazy dog 0123");
     if (emit) ui.emit(picker, SignalKind::Submitted, {.value = px, .text = s->family});
 }
@@ -305,12 +353,38 @@ struct NodeGraphW {
             ui.invalidate(ec.node);
             return true;
         }
-        case EventType::KeyDown:
-            if (e.key == Key::Delete && ui.value(ec.node) >= 0.f) {
-                nodeGraphRemoveNode(ui, ec.node, u32(ui.value(ec.node)));
+        case EventType::KeyDown: {
+            // PageDown / PageUp select the next / previous node, arrows move it (10 units, Shift: 1) or pan the view
+            // when none is selected, Delete removes it, Escape deselects
+            const i32 sel = i32(ui.value(ec.node)), cnt = i32(s->nodes.size());
+            if (e.key == Key::Delete && sel >= 0) {
+                nodeGraphRemoveNode(ui, ec.node, u32(sel));
                 return true;
             }
-            return false;
+            if (e.key == Key::PageDown || e.key == Key::PageUp) {
+                const i32 dir = e.key == Key::PageDown ? 1 : -1;
+                for (i32 k = 1; k <= cnt; ++k) {
+                    const i32 i = ((sel < 0 ? (dir > 0 ? -1 : 0) : sel) + dir * k + 2 * cnt) % cnt;
+                    if (cnt && s->nodes[u32(i)].alive) { ui.setValue(ec.node, f32(i), true); break; }
+                }
+                ui.invalidate(ec.node);
+                return true;
+            }
+            if (e.key == Key::Escape && sel >= 0) { ui.setValue(ec.node, -1.f, true); ui.invalidate(ec.node); return true; }
+            const f32 st = (e.mods & kModShift) ? 1.f : 10.f;
+            Vec2 d{};
+            switch (e.key) {
+            case Key::Left: d.x = -st; break;
+            case Key::Right: d.x = st; break;
+            case Key::Up: d.y = -st; break;
+            case Key::Down: d.y = st; break;
+            default: return false;
+            }
+            if (sel >= 0 && sel < cnt) { s->nodes[u32(sel)].pos.x += d.x; s->nodes[u32(sel)].pos.y += d.y; }
+            else { s->pan.x -= d.x; s->pan.y -= d.y; }
+            ui.invalidate(ec.node);
+            return true;
+        }
         default: return false;
         }
     }
@@ -426,14 +500,40 @@ struct CurveW {
             return true;
         }
         case EventType::PointerUp: s->drag = -1; return true;
-        case EventType::KeyDown:
-            if ((e.key == Key::Delete || e.key == Key::Backspace) && ui.value(ec.node) >= 0.f && ui.value(ec.node) < f32(s->keys.size())) {
-                s->keys.erase(s->keys.begin() + i32(ui.value(ec.node)));
+        case EventType::KeyDown: {
+            const i32 sel = i32(ui.value(ec.node)), cnt = i32(s->keys.size());
+            if ((e.key == Key::Delete || e.key == Key::Backspace) && sel >= 0 && sel < cnt) {
+                s->keys.erase(s->keys.begin() + sel);
                 ui.setValue(ec.node, -1.f);
                 changed(ui, ec.node, *s);
                 return true;
             }
-            return false;
+            // PageDown / PageUp (or Home / End) select a key; arrows move it by 1% of the range (Shift: 10%)
+            if (cnt && (e.key == Key::PageDown || e.key == Key::PageUp || e.key == Key::Home || e.key == Key::End)) {
+                const i32 to = e.key == Key::Home ? 0 : e.key == Key::End ? cnt - 1
+                             : e.key == Key::PageDown ? (sel < 0 ? 0 : (sel + 1) % cnt) : (sel <= 0 ? cnt - 1 : sel - 1);
+                ui.setValue(ec.node, f32(to));
+                ui.invalidate(ec.node);
+                return true;
+            }
+            if (e.key == Key::Escape && sel >= 0) { ui.setValue(ec.node, -1.f); ui.invalidate(ec.node); return true; }
+            if (sel < 0 || sel >= cnt) return false;
+            const f32 f = (e.mods & kModShift) ? 0.1f : 0.01f;
+            f32 dt = 0.f, dv = 0.f;
+            switch (e.key) {
+            case Key::Left: dt = -f; break;
+            case Key::Right: dt = f; break;
+            case Key::Up: dv = f; break;
+            case Key::Down: dv = -f; break;
+            default: return false;
+            }
+            const std::size_t i = std::size_t(sel);
+            const f32 lo = i > 0 ? s->keys[i - 1].t + 1e-4f : s->t0, hi = i + 1 < s->keys.size() ? s->keys[i + 1].t - 1e-4f : s->t1;
+            s->keys[i].t = std::clamp(s->keys[i].t + dt * (s->t1 - s->t0), lo, hi);
+            s->keys[i].v = std::clamp(s->keys[i].v + dv * (s->v1 - s->v0), s->v0, s->v1);
+            changed(ui, ec.node, *s);
+            return true;
+        }
         default: return false;
         }
     }
@@ -593,6 +693,8 @@ struct TimelineW {
             if (e.key == Key::Left) { scrub(ui, ec.node, *s, ui.value(ec.node) - st); return true; }
             if (e.key == Key::Home) { scrub(ui, ec.node, *s, 0.f); return true; }
             if (e.key == Key::End) { scrub(ui, ec.node, *s, s->duration); return true; }
+            if (e.key == Key::PageDown) { scrub(ui, ec.node, *s, ui.value(ec.node) + 1.f); return true; } // a second
+            if (e.key == Key::PageUp) { scrub(ui, ec.node, *s, ui.value(ec.node) - 1.f); return true; }
             return false;
         }
         default: return false;
@@ -671,7 +773,7 @@ struct ViewportW {
         if (e.type == EventType::KeyDown || e.type == EventType::KeyUp) s->last.pos = {};
         ++s->count;
         ec.ui.emit(ec.node, SignalKind::Event, {.value = f32(u32(e.type))});
-        return true;
+        return e.key != Key::Tab; // forwarded, but Tab still moves focus on (no keyboard trap)
     }
 };
 
@@ -794,12 +896,13 @@ struct CodeEditW {
                 dl.rect({sx, y, std::max(0.f, ex - sx), lh}, pc.tint(Color::rgb(0x264F78)));
             }
             tokenize(s->lang, L, tok);
-            for (std::size_t i = 0; i < L.size();) {
+            f32 x = x0; // tokens are shaped on their own, so each starts where the previous one's advance ends
+            for (std::size_t i = 0; i < L.size() && x < c.right();) {
                 std::size_t j = i;
                 while (j < L.size() && tok[j] == tok[i]) ++j;
-                const f32 x = x0 + ui.measureString(std::string_view(L).substr(0, i), fs);
-                ui.paintString(dl, std::string_view(L).substr(i, j - i), {x, y, c.right() - x + 400.f, lh}, pc.tint(kTok[tok[i]]), fs,
-                               TextAlignment::Start, pc.node.index);
+                const std::string_view t = std::string_view(L).substr(i, j - i);
+                ui.paintString(dl, t, {x, y, c.right() - x + 400.f, lh}, pc.tint(kTok[tok[i]]), fs, TextAlignment::Start, pc.node.index);
+                x += ui.measureString(t, fs);
                 i = j;
             }
             if (focused && li == s->caret.line) {
@@ -962,7 +1065,8 @@ struct CodeEditW {
             publish(ui, ec.node, s, true);
             return true;
         }
-        case Key::Tab:
+        case Key::Tab: // plain Tab indents; Shift+Tab / Ctrl+Tab move focus (no keyboard trap)
+            if (e.mods) return false;
             snapshot(s);
             insert(s, std::string(4 - s.caret.col % 4, ' '));
             publish(ui, ec.node, s, true);
@@ -1138,8 +1242,12 @@ struct DateTimeW {
             case Key::Left: s->field = s->field ? s->field - 1 : 0; s->typed.clear(); ui.invalidate(ec.node); return true;
             case Key::Right: s->field = std::min(4u, s->field + 1); s->typed.clear(); ui.invalidate(ec.node); return true;
             case Key::Up: dtStep(*s, 1); dtPublish(ui, ec.node, *s); return true;
-            case Key::Down: dtStep(*s, -1); dtPublish(ui, ec.node, *s); return true;
-            case Key::Space: openPopup(ui, ec.node, *s); return true;
+            case Key::Down:
+                if (e.mods & kModAlt) { openPopup(ui, ec.node, *s); return true; } // Alt+Down: the calendar, like a combo box
+                dtStep(*s, -1); dtPublish(ui, ec.node, *s); return true;
+            case Key::Home: s->field = 0; s->typed.clear(); ui.invalidate(ec.node); return true;
+            case Key::End: s->field = 4; s->typed.clear(); ui.invalidate(ec.node); return true;
+            case Key::Space: case Key::F4: openPopup(ui, ec.node, *s); return true;
             default: return false;
             }
         default: return false;
@@ -1248,6 +1356,8 @@ struct VideoW {
             if (e.key == Key::Space) { videoPlay(ui, ec.node, !s->playing); return true; }
             if (e.key == Key::Right) { videoSeek(ui, ec.node, s->frame + 1); return true; }
             if (e.key == Key::Left) { videoSeek(ui, ec.node, s->frame ? s->frame - 1 : 0); return true; }
+            if (e.key == Key::Home) { videoSeek(ui, ec.node, 0); return true; }
+            if (e.key == Key::End) { videoSeek(ui, ec.node, s->src->frames ? s->src->frames - 1 : 0); return true; }
             return false;
         default: return false;
         }
@@ -1278,6 +1388,7 @@ NodeHandle fontPicker(UiContext& ui, NodeHandle parent, std::string_view familie
     s.list = listView(ui, p, families.empty() ? std::string_view("Open Sans\nSans Serif\nSerif\nMonospace\nSystem UI")
                              : !system.empty() ? std::string_view(system) : families, 0);
     ui.addClass(s.list, "fontlist");
+    detail::setListRowFont(ui, s.list, &fontRowFace);
     const NodeHandle row = hbox(ui, p);
     label(ui, row, "Size");
     s.size = spinBox(ui, row, 6.f, 96.f, size, 1.f);
@@ -1356,6 +1467,10 @@ NodeHandle fileDialog(UiContext& ui, std::string_view title, std::string_view di
     ui.connect(cancel, SignalKind::Clicked, [dlg](UiContext& u, NodeHandle, const SignalArgs&) {
         closeDialog(u, dlg);
         u.emit(dlg, SignalKind::Submitted, {.text = {}});
+    });
+    // Escape dismisses the dialog's popup scope: report it like Cancel
+    ui.connect(ui.parent(dlg), SignalKind::Toggled, [dlg](UiContext& u, NodeHandle, const SignalArgs& a) {
+        if (!a.flag) u.emit(dlg, SignalKind::Submitted, {.text = {}});
     });
     fileDialogNavigate(ui, dlg, directory);
     return dlg;

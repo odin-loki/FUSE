@@ -81,6 +81,7 @@ void closePopup(UiContext& ui, NodeHandle n);
 bool popupOpen(const UiContext& ui, NodeHandle scope);
 
 /// A horizontal menu bar; menuBarMenu adds a title button whose popup lists `items` (Submitted re-emitted on it).
+/// F10 nobody else takes focuses the first displayed bar (and returns); Left / Right move between titles.
 NodeHandle menuBar(UiContext& ui, NodeHandle parent, std::string_view id = {});
 NodeHandle menuBarMenu(UiContext& ui, NodeHandle bar, std::string_view title, std::string_view items, std::string_view id = {});
 
@@ -90,7 +91,8 @@ NodeHandle dialogBody(const UiContext& ui, NodeHandle dlg);
 void openDialog(UiContext& ui, NodeHandle dlg);
 void closeDialog(UiContext& ui, NodeHandle dlg);
 
-/// Shows `text` under `node` after `delay` seconds of hover; hides on leave. Returns the tooltip node.
+/// Shows `text` under `node` after `delay` seconds of hover or keyboard focus; hides on leave / blur. Returns the
+/// tooltip node.
 NodeHandle setTooltip(UiContext& ui, NodeHandle node, std::string_view text, f32 delay = 0.5f);
 
 /// Virtualised single-selection list (items '\n'-separated; value() = selected index, -1 = none). Only visible rows
@@ -266,7 +268,9 @@ void setMarkdown(UiContext& ui, NodeHandle view, std::string_view markdown);
 void registerTierCD(UiContext& ui);
 
 // ---- Tier D (2): pro widgets (plan §5) ---------------------------------------------------------------------------------
-/// Font picker: family list + size spin box + live preview line. Families default to the bundled faces when empty;
+/// Font picker: family list + size spin box + live preview line, each family (list rows and the preview) drawn in its
+/// own installed face (FontCatalog::system(); names that resolve to none draw in the UI font). Families default to
+/// generic names when empty;
 /// "@system" lists the bundled face and then every installed family (systemFontFamilies); '\n'-separated names
 /// otherwise. Any change emits Submitted {text = family, value = size} on the picker.
 NodeHandle fontPicker(UiContext& ui, NodeHandle parent, std::string_view families = {}, f32 size = 14.f, std::string_view id = {});
@@ -290,7 +294,8 @@ std::string fileDialogActivate(UiContext& ui, NodeHandle dlg, u32 index);
 
 /// Node graph editor: nodes with typed input / output pins, bezier links, drag nodes, drag from an output pin to an
 /// input pin to link (types must match unless either is 0 = any; an input takes one link; cycles are refused),
-/// right-drag or middle-drag pans, wheel zooms, Delete removes the selected node. value() = selected node (-1).
+/// right-drag or middle-drag pans, wheel zooms, Delete removes the selected node. Keys: PageUp / PageDown select a
+/// node, arrows move it (Shift: 1 unit) or pan when none is selected, Escape deselects. value() = selected node (-1).
 /// Link changes emit ValueChanged {value = link count}.
 struct GraphPin { std::string_view name; u32 type = 0; };
 NodeHandle nodeGraph(UiContext& ui, NodeHandle parent, std::string_view id = {});
@@ -309,7 +314,8 @@ std::vector<u32> nodeGraphTopoOrder(const UiContext& ui, NodeHandle graph);
 
 /// Curve editor: one float curve of keys (t, v) with linear / smooth (Catmull-Rom style, monotone in t) / step
 /// interpolation. Click empty space adds a key, drag moves keys (t kept between neighbours), Delete removes the
-/// selected key. Changes emit ValueChanged {value = key count}.
+/// selected key; PageUp / PageDown / Home / End select a key and arrows move it (1% of the range, Shift: 10%).
+/// Changes emit ValueChanged {value = key count}.
 enum class CurveInterp : u8 { Linear, Smooth, Step };
 NodeHandle curveEditor(UiContext& ui, NodeHandle parent, f32 tMin = 0.f, f32 tMax = 1.f, f32 vMin = 0.f, f32 vMax = 1.f,
                        std::string_view id = {});

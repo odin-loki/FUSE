@@ -7,6 +7,9 @@
 //              (onDpiChanged) and switch dark / light (onThemeChanged); manager exit falls back to RESOURCE_MANAGER
 //   wake       NativePlatform::wake() from another thread ends a blocked pump at once; an accessibility action
 //              queued from an AT thread (WindowAccessibility bridge) runs without any X event
+//   cursor_size  XSETTINGS Gtk/CursorThemeName / Gtk/CursorThemeSize pick a themed cursor (libXcursor, a private
+//              theme on XCURSOR_PATH) at size x DPI scale; the server shows it at that size (XFixes cursor image) and
+//              it follows Xft/DPI and size changes live
 // Exit 77 without a display or the X extension.
 #include "fuse/app/native.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
@@ -15,7 +18,12 @@
 #include "fuse/app/accessibility.hpp"
 #endif
 
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include <chrono>
+#include <cstdint>
+#include <vector>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -151,6 +159,8 @@ struct XSettingsManager {
     Desk& desk;
     x11::Window win = 0;
     std::uint32_t serial = 0;
+    std::string cursorTheme; ///< Gtk/CursorThemeName ("" = not announced)
+    int cursorSize = 0;      ///< Gtk/CursorThemeSize (0 = not announced)
     explicit XSettingsManager(Desk& d) : desk(d) {}
     void set(int dpi, const std::string& theme) {
         std::vector<x11::XSetting> s(2);
@@ -159,6 +169,8 @@ struct XSettingsManager {
         s[1].name = "Net/ThemeName";
         s[1].type = 1;
         s[1].string = theme;
+        if (!cursorTheme.empty()) s.push_back({.name = "Gtk/CursorThemeName", .type = 1, .string = cursorTheme});
+        if (cursorSize > 0) s.push_back({.name = "Gtk/CursorThemeSize", .type = 0, .integer = cursorSize});
         const auto bytes = x11::buildXSettings(s, ++serial);
         const x11::Atom prop = desk.atom("_XSETTINGS_SETTINGS");
         desk.x.ChangeProperty(desk.d, win, prop, prop, 8, x11::kPropModeReplace, bytes.data(), int(bytes.size()));
@@ -261,6 +273,106 @@ static int gateXSettings(int argc, char** argv) {
     return 0;
 }
 
+// ---- cursor_size -----------------------------------------------------------------------------------------------------
+namespace {
+/// Writes an Xcursor file (one image per nominal size; each image is size x size, so the shown width tells the size).
+bool writeXcursor(const std::string& path, std::initializer_list<int> sizes) {
+    std::vector<std::uint32_t> f;
+    const std::uint32_t kImage = 0xfffd0002u;
+    f.insert(f.end(), {0x72756358u /*"Xcur"*/, 16u, 0x10000u, std::uint32_t(sizes.size())});
+    std::size_t at = 4 + 3 * sizes.size(); // header + table of contents, in u32s
+    for (int s : sizes) {
+        f.insert(f.end(), {kImage, std::uint32_t(s), std::uint32_t(at * 4)});
+        at += 9 + std::size_t(s) * std::size_t(s);
+    }
+    for (int s : sizes) {
+        f.insert(f.end(), {36u, kImage, std::uint32_t(s), 1u, std::uint32_t(s), std::uint32_t(s), 0u, 0u, 0u});
+        f.insert(f.end(), std::size_t(s) * std::size_t(s), 0xFF2060C0u);
+    }
+    FILE* fp = std::fopen(path.c_str(), "wb");
+    if (!fp) return false;
+    const bool ok = std::fwrite(f.data(), 4, f.size(), fp) == f.size(); // little-endian host
+    std::fclose(fp);
+    return ok;
+}
+/// libXfixes: the cursor the server shows now (under the pointer).
+struct Xfixes {
+    struct CursorImage { short x, y; unsigned short width, height, xhot, yhot; unsigned long serial; unsigned long* pixels; };
+    void* so = nullptr;
+    CursorImage* (*GetCursorImage)(x11::Display*) = nullptr;
+    bool load() {
+        so = dlopen("libXfixes.so.3", RTLD_NOW | RTLD_LOCAL);
+        if (so) GetCursorImage = reinterpret_cast<decltype(GetCursorImage)>(dlsym(so, "XFixesGetCursorImage"));
+        return GetCursorImage != nullptr;
+    }
+};
+} // namespace
+
+static int gateCursorSize(int argc, char** argv) {
+    for (const char* v : {"FUSE_UI_SCALE", "XCURSOR_SIZE", "XCURSOR_THEME"}) ::unsetenv(v);
+    Desk desk;
+    if (!desk.open()) return skip("fuse_x11_cursor_size", "no X display");
+    Xfixes xf;
+    if (!xf.load()) return skip("fuse_x11_cursor_size", "libXfixes.so.3 not found");
+    if (!dlopen("libXcursor.so.1", RTLD_NOW | RTLD_LOCAL)) return skip("fuse_x11_cursor_size", "libXcursor.so.1 not found");
+    // a private cursor theme with 16..64 px images, found through XCURSOR_PATH (read when libXcursor first looks)
+    char dir[] = "/tmp/fuse_xcursor_XXXXXX";
+    if (!::mkdtemp(dir)) return skip("fuse_x11_cursor_size", "mkdtemp failed");
+    const std::string root = dir, cursors = root + "/fusetest/cursors";
+    ::mkdir((root + "/fusetest").c_str(), 0700);
+    ::mkdir(cursors.c_str(), 0700);
+    CHECK(writeXcursor(cursors + "/default", {16, 24, 32, 48, 64}));
+    CHECK(writeXcursor(cursors + "/left_ptr", {16, 24, 32, 48, 64}));
+    ::setenv("XCURSOR_PATH", root.c_str(), 1);
+
+    XSettingsManager mgr(desk);
+    mgr.cursorTheme = "fusetest";
+    mgr.cursorSize = 24;
+    mgr.start(96, "Adwaita");
+    app::Application a{{.name = "gate_x11_cursor_size", .argc = argc, .argv = argv, .loadSettings = false}};
+    app::NativePlatform native(a);
+    if (!native.available()) return skip("fuse_x11_cursor_size", native.lastError());
+    auto& win = a.createWindow({.title = "fuse cursor size", .width = 240, .height = 160});
+    native.show(win);
+    waitFor(a, [&] { return win.framesPresented() >= 1; });
+    const x11::Window xw = x11::Window(native.nativeWindow(win));
+    // the real pointer over the window: the app defines its cursor, the server shows it
+    desk.x.WarpPointer(desk.d, 0, xw, 0, 0, 0, 0, 60, 60);
+    desk.x.Sync(desk.d, 0);
+    native.postPointerMove(xw, {60.f, 60.f});
+    pump(a);
+    auto shown = [&] {
+        desk.x.Sync(desk.d, 0);
+        Xfixes::CursorImage* img = xf.GetCursorImage(desk.d);
+        const int wpx = img ? int(img->width) : -1;
+        if (img) desk.x.Free(img);
+        return wpx;
+    };
+    auto expect = [&](int px) { return waitFor(a, [&] { return shown() == px; }, 2000); };
+    CHECK(expect(24));
+    std::printf("  Gtk/CursorThemeSize 24 at 96 dpi: cursor %d px\n", shown());
+    // 192 dpi: scale 2, the cursor follows (48 px)
+    mgr.set(192, "Adwaita");
+    CHECK(waitFor(a, [&] { return win.scale() == 2.f; }));
+    CHECK(expect(48));
+    std::printf("  Xft/DPI 192: scale %.1f, cursor %d px\n", win.scale(), shown());
+    // a larger theme size at 1x
+    mgr.cursorSize = 32;
+    mgr.set(96, "Adwaita");
+    CHECK(expect(32));
+    std::printf("  Gtk/CursorThemeSize 32 at 96 dpi: cursor %d px\n", shown());
+    mgr.cursorSize = 64;
+    mgr.set(96, "Adwaita");
+    CHECK(expect(64));
+    std::printf("  Gtk/CursorThemeSize 64: cursor %d px\n", shown());
+    mgr.stop();
+    for (const char* f : {"/default", "/left_ptr"}) ::unlink((cursors + f).c_str());
+    ::rmdir(cursors.c_str());
+    ::rmdir((root + "/fusetest").c_str());
+    ::rmdir(root.c_str());
+    return 0;
+}
+
 // ---- wake ------------------------------------------------------------------------------------------------------------
 static int gateWake(int argc, char** argv) {
     app::Application a{{.name = "gate_x11_wake", .argc = argc, .argv = argv, .loadSettings = false}};
@@ -336,6 +448,7 @@ int main(int argc, char** argv) {
     if (g == "randr") r = gateRandr(argc, argv);
     else if (g == "xsettings") r = gateXSettings(argc, argv);
     else if (g == "wake") r = gateWake(argc, argv);
+    else if (g == "cursor_size") r = gateCursorSize(argc, argv);
     if (g_fail) {
         std::printf("fuse_x11_%s: FAILED (%d checks)\n", g.c_str(), g_fail);
         return 1;

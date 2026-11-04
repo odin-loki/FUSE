@@ -101,6 +101,9 @@ public:
 
     /// True when the kernel SPIR-V was compiled into this build.
     static bool kernelAvailable();
+    /// The kernel's SPIR-V (empty when not compiled in). UI-T0 (plan §4.9): it needs Vulkan 1.1 with no device
+    /// features or extensions and classic descriptor sets (fuse_ui_vk_tier0 checks its capabilities).
+    static std::span<const u32> kernelSpirv();
     /// True when the SDF-quad shaders were compiled into this build.
     static bool sdfQuadsAvailable();
     UiVkBackend backend() const { return m_desc.backend; }

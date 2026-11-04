@@ -16,6 +16,7 @@ extern "C" {
 }
 #include <ft2build.h>
 #include FT_FREETYPE_H
+#include FT_MULTIPLE_MASTERS_H
 
 #include <cmath>
 #include <algorithm>
@@ -49,14 +50,30 @@ struct FullFace {
     };
     struct Entry {
         std::uint64_t hash = 0, glyphStart = 0, byteStart = 0;
+        std::uint64_t var = 0; // varKey of the instance that shaped it
         std::uint32_t glyphCount = 0, len = 0;
         bool rtl = false, used = false;
     };
-    static constexpr std::size_t kEntries = 1024, kGlyphPool = 16384, kBytePool = 65536;
-    std::vector<Entry> entries = std::vector<Entry>(kEntries);
-    std::vector<UnitGlyph> glyphPool = std::vector<UnitGlyph>(kGlyphPool);
-    std::vector<char> bytePool = std::vector<char>(kBytePool);
-    std::uint64_t glyphWrite = 0, byteWrite = 0, hits = 0, misses = 0;
+    // 4-way set associative, sized for a screen of text (one codeEdit frame of tokens plus ~40 wrapped paragraphs
+    // relaid out without a miss). Allocated on first use, ~0.8 MB per font that shapes (fallbacks never used: none).
+    static constexpr std::size_t kEntries = 4096, kWays = 4, kGlyphPool = 32768, kBytePool = 131072;
+    struct RunCache {
+        std::vector<Entry> entries;
+        std::vector<UnitGlyph> glyphPool;
+        std::vector<char> bytePool;
+        std::uint64_t glyphWrite = 0, byteWrite = 0, hits = 0, misses = 0;
+    };
+    RunCache ownCache;
+    RunCache* rc = &ownCache; // variation instances share their owner's cache (entries keyed by varKey)
+
+    // ---- variation instance (fullCreateInstance): blob, face and FT_Face are the owner's ----
+    FullFace* owner = nullptr;
+    std::vector<FT_Fixed> coords;      // normalised coordinates (16.16) for FreeType; empty: default
+    std::vector<int> hbCoords;         // the same as F2DOT14 for HarfBuzz
+    std::uint64_t varKey = 0;          // 0: default coordinates and no features; else their hash (run cache key)
+    std::uint64_t coordKey = 0, featureKey = 0;
+    std::vector<hb_feature_t> features; // fullSetFeatures
+    std::uint64_t ftActive = 0;        // owner: varKey whose coordinates the FT_Face holds
 
     // ---- layout scratch (capacity kept) ----
     std::vector<std::uint8_t> breaks, levels, paraLevels, glyphLevels;
@@ -90,13 +107,13 @@ FullFace* fullCreate(std::span<const std::uint8_t> bytes, std::uint32_t faceInde
 }
 
 void fullCacheStats(const FullFace* f, std::uint64_t& hits, std::uint64_t& misses) {
-    hits = f ? f->hits : 0;
-    misses = f ? f->misses : 0;
+    hits = f ? f->rc->hits : 0;
+    misses = f ? f->rc->misses : 0;
 }
 
 void fullDestroy(FullFace* f) {
     if (!f) return;
-    if (f->ft) FT_Done_Face(f->ft);
+    if (f->ft && !f->owner) FT_Done_Face(f->ft);
     hb_buffer_destroy(f->buffer);
     hb_font_destroy(f->font);
     hb_face_destroy(f->face);
@@ -104,12 +121,80 @@ void fullDestroy(FullFace* f) {
     delete f;
 }
 
+FullFace* fullCreateInstance(FullFace* owner) {
+    if (!owner) return nullptr;
+    auto* f = new FullFace;
+    f->owner = owner;
+    f->rc = owner->rc;
+    f->blob = hb_blob_reference(owner->blob);
+    f->face = hb_face_reference(owner->face);
+    f->font = hb_font_create(f->face);
+    f->buffer = hb_buffer_create();
+    f->ft = owner->ft;
+    return f;
+}
+
+void fullSetCoords(FullFace* f, std::span<const std::int16_t> norm) {
+    if (!f) return;
+    f->coords.assign(norm.size(), 0);
+    f->hbCoords.assign(norm.size(), 0);
+    std::uint64_t key = norm.empty() ? 0 : 0x9E3779B97F4A7C15ull;
+    for (std::size_t i = 0; i < norm.size(); ++i) {
+        f->coords[i] = FT_Fixed(norm[i]) * 4; // F2DOT14 -> 16.16
+        f->hbCoords[i] = norm[i];
+        key = (key ^ std::uint16_t(norm[i])) * 0x100000001b3ull;
+    }
+    if (norm.empty()) {
+        f->coords.clear();
+        f->hbCoords.clear();
+    }
+    f->coordKey = key;
+    f->varKey = f->coordKey ^ f->featureKey;
+    hb_font_set_var_coords_normalized(f->font, f->hbCoords.data(), unsigned(f->hbCoords.size()));
+    FullFace* o = f->owner ? f->owner : f;
+    o->ftActive = ~std::uint64_t(0); // re-apply on the next glyph load
+}
+
+void fullSetFeatures(FullFace* f, std::span<const FontFeature> features) {
+    if (!f) return;
+    f->features.clear();
+    std::uint64_t key = features.empty() ? 0 : 0x2545F4914F6CDD1Dull;
+    for (const FontFeature& ft : features) {
+        f->features.push_back({ft.tag, ft.value, HB_FEATURE_GLOBAL_START, HB_FEATURE_GLOBAL_END});
+        key = ((key ^ ft.tag) * 0x100000001b3ull ^ ft.value) * 0x100000001b3ull;
+    }
+    f->featureKey = key;
+    f->varKey = f->coordKey ^ f->featureKey;
+}
+
+namespace {
+std::uint64_t hashRun(std::string_view s, bool rtl);
+FullFace::Entry& cacheEntry(FullFace* f, std::string_view run, bool rtl, std::uint64_t h);
+bool entryMatches(const FullFace* f, const FullFace::Entry& e, std::string_view s, bool rtl, std::uint64_t h);
+} // namespace
+
 float fullShape(FullFace* f, float unitScale, std::string_view s, std::vector<ShapedGlyph>& out) {
     out.clear();
+    // Cached like layout runs, under a key of its own: the direction is guessed and glyphs stay in HarfBuzz order.
+    const std::uint64_t h = (hashRun(s, false) * 0x2545F4914F6CDD1Dull + 1) ^ f->varKey;
+    FullFace::Entry& e = cacheEntry(f, s, false, h);
+    const bool fits = s.size() <= FullFace::kBytePool / 4;
+    if (fits && entryMatches(f, e, s, false, h)) {
+        ++f->rc->hits;
+        float pen = 0.f;
+        for (std::uint32_t k = 0; k < e.glyphCount; ++k) {
+            const auto& u = f->rc->glyphPool[(e.glyphStart + k) % FullFace::kGlyphPool];
+            const float adv = float(u.advance) * unitScale;
+            out.push_back({u.glyph, u.cluster, pen + float(u.xOffset) * unitScale, adv});
+            pen += adv;
+        }
+        return pen;
+    }
+    ++f->rc->misses;
     hb_buffer_clear_contents(f->buffer);
     hb_buffer_add_utf8(f->buffer, s.data(), int(s.size()), 0, int(s.size()));
     hb_buffer_guess_segment_properties(f->buffer);
-    hb_shape(f->font, f->buffer, nullptr, 0);
+    hb_shape(f->font, f->buffer, f->features.data(), unsigned(f->features.size()));
     unsigned n = 0;
     const hb_glyph_info_t* info = hb_buffer_get_glyph_infos(f->buffer, &n);
     const hb_glyph_position_t* pos = hb_buffer_get_glyph_positions(f->buffer, &n);
@@ -118,6 +203,20 @@ float fullShape(FullFace* f, float unitScale, std::string_view s, std::vector<Sh
         const float adv = float(pos[i].x_advance) * unitScale;
         out.push_back({info[i].codepoint, info[i].cluster, pen + float(pos[i].x_offset) * unitScale, adv});
         pen += adv;
+    }
+    if (fits && n <= FullFace::kGlyphPool / 4) {
+        e = {};
+        e.hash = h;
+        e.len = std::uint32_t(s.size());
+        e.used = true;
+        e.var = f->varKey;
+        e.glyphStart = f->rc->glyphWrite;
+        e.glyphCount = n;
+        e.byteStart = f->rc->byteWrite;
+        for (unsigned i = 0; i < n; ++i)
+            f->rc->glyphPool[(f->rc->glyphWrite++) % FullFace::kGlyphPool] = {info[i].codepoint, info[i].cluster, pos[i].x_offset,
+                                                                        pos[i].x_advance};
+        for (char c : s) f->rc->bytePool[(f->rc->byteWrite++) % FullFace::kBytePool] = c;
     }
     return pen;
 }
@@ -131,15 +230,35 @@ std::uint64_t hashRun(std::string_view s, bool rtl) {
 }
 
 bool entryValid(const FullFace* f, const FullFace::Entry& e) {
-    return e.used && f->glyphWrite - e.glyphStart <= FullFace::kGlyphPool &&
-           f->byteWrite - e.byteStart <= FullFace::kBytePool;
+    return e.used && f->rc->glyphWrite - e.glyphStart <= FullFace::kGlyphPool &&
+           f->rc->byteWrite - e.byteStart <= FullFace::kBytePool;
 }
 
 bool entryMatches(const FullFace* f, const FullFace::Entry& e, std::string_view s, bool rtl, std::uint64_t h) {
-    if (!entryValid(f, e) || e.hash != h || e.len != s.size() || e.rtl != rtl) return false;
-    for (std::size_t i = 0; i < s.size(); ++i)
-        if (f->bytePool[(e.byteStart + i) % FullFace::kBytePool] != s[i]) return false;
-    return true;
+    if (!entryValid(f, e) || e.hash != h || e.len != s.size() || e.rtl != rtl || e.var != f->varKey) return false;
+    const std::size_t at = std::size_t(e.byteStart % FullFace::kBytePool);
+    const std::size_t head = std::min(s.size(), FullFace::kBytePool - at); // the run may wrap around the ring
+    return std::memcmp(f->rc->bytePool.data() + at, s.data(), head) == 0 &&
+           std::memcmp(f->rc->bytePool.data(), s.data() + head, s.size() - head) == 0;
+}
+
+/// The cache slot for a run: its entry when cached, else the way of its set to replace (an empty or stale one, or
+/// the oldest). Allocates the cache on first use.
+FullFace::Entry& cacheEntry(FullFace* f, std::string_view run, bool rtl, std::uint64_t h) {
+    if (f->rc->entries.empty()) {
+        f->rc->entries.resize(FullFace::kEntries);
+        f->rc->glyphPool.resize(FullFace::kGlyphPool);
+        f->rc->bytePool.resize(FullFace::kBytePool);
+    }
+    FullFace::Entry* set = f->rc->entries.data() + std::size_t(h % (FullFace::kEntries / FullFace::kWays)) * FullFace::kWays;
+    FullFace::Entry* victim = set;
+    for (std::size_t w = 0; w < FullFace::kWays; ++w) {
+        FullFace::Entry& e = set[w];
+        if (entryMatches(f, e, run, rtl, h)) return e;
+        if (!entryValid(f, *victim)) continue;
+        if (!entryValid(f, e) || e.glyphStart < victim->glyphStart) victim = &e;
+    }
+    return *victim;
 }
 
 /// Shapes bytes [begin, begin+len) of `s` (the whole paragraph is context) in one direction; appends glyphs in logical
@@ -147,16 +266,16 @@ bool entryMatches(const FullFace* f, const FullFace::Entry& e, std::string_view 
 void shapeRun(FullFace* f, float unitScale, std::string_view s, std::uint32_t begin, std::uint32_t len, bool rtl,
               std::vector<ShapedGlyph>& out) {
     const std::string_view run = s.substr(begin, len);
-    const std::uint64_t h = hashRun(run, rtl);
-    FullFace::Entry& e = f->entries[h % FullFace::kEntries];
+    const std::uint64_t h = hashRun(run, rtl) ^ f->varKey;
+    FullFace::Entry& e = cacheEntry(f, run, rtl, h);
     if (!entryMatches(f, e, run, rtl, h)) {
-        ++f->misses;
+        ++f->rc->misses;
         hb_buffer_clear_contents(f->buffer);
         // The run alone: the cache key is the run's bytes, so shaping must not depend on the surrounding context.
         hb_buffer_add_utf8(f->buffer, run.data(), int(run.size()), 0, int(run.size()));
         hb_buffer_guess_segment_properties(f->buffer);
         hb_buffer_set_direction(f->buffer, rtl ? HB_DIRECTION_RTL : HB_DIRECTION_LTR);
-        hb_shape(f->font, f->buffer, nullptr, 0);
+        hb_shape(f->font, f->buffer, f->features.data(), unsigned(f->features.size()));
         unsigned n = 0;
         const hb_glyph_info_t* info = hb_buffer_get_glyph_infos(f->buffer, &n);
         const hb_glyph_position_t* pos = hb_buffer_get_glyph_positions(f->buffer, &n);
@@ -174,20 +293,21 @@ void shapeRun(FullFace* f, float unitScale, std::string_view s, std::uint32_t be
         e.len = std::uint32_t(run.size());
         e.rtl = rtl;
         e.used = true;
-        e.glyphStart = f->glyphWrite;
+        e.var = f->varKey;
+        e.glyphStart = f->rc->glyphWrite;
         e.glyphCount = n;
-        e.byteStart = f->byteWrite;
+        e.byteStart = f->rc->byteWrite;
         for (unsigned k = 0; k < n; ++k) { // logical order: HarfBuzz returns RTL runs in visual (reversed) order
             const unsigned i = rtl ? n - 1 - k : k;
-            f->glyphPool[(f->glyphWrite++) % FullFace::kGlyphPool] = {info[i].codepoint, info[i].cluster,
+            f->rc->glyphPool[(f->rc->glyphWrite++) % FullFace::kGlyphPool] = {info[i].codepoint, info[i].cluster,
                                                                         pos[i].x_offset, pos[i].x_advance};
         }
-        for (char c : run) f->bytePool[(f->byteWrite++) % FullFace::kBytePool] = c;
+        for (char c : run) f->rc->bytePool[(f->rc->byteWrite++) % FullFace::kBytePool] = c;
     } else {
-        ++f->hits;
+        ++f->rc->hits;
     }
     for (std::uint32_t k = 0; k < e.glyphCount; ++k) {
-        const auto& u = f->glyphPool[(e.glyphStart + k) % FullFace::kGlyphPool];
+        const auto& u = f->rc->glyphPool[(e.glyphStart + k) % FullFace::kGlyphPool];
         out.push_back({u.glyph, begin + u.cluster, float(u.xOffset) * unitScale, float(u.advance) * unitScale});
     }
 }
@@ -436,12 +556,18 @@ void fullBidiLevels(std::string_view s, int base, std::vector<std::uint8_t>& lev
 
 namespace {
 bool loadRendered(FullFace* f, std::uint32_t glyph, float emPx) {
-    const FT_F26Dot6 size = FT_F26Dot6(std::lround(emPx * 64.f));
-    if (size != f->ftSize) {
-        if (FT_Set_Char_Size(f->ft, 0, size, 72, 72) != 0) return false;
-        f->ftSize = size;
+    FullFace* o = f->owner ? f->owner : f; // instances render through the owner's FT_Face at their coordinates
+    if (o->ftActive != f->varKey) {
+        FT_Set_Var_Blend_Coordinates(o->ft, FT_UInt(f->coords.size()), f->coords.empty() ? nullptr : f->coords.data());
+        o->ftActive = f->varKey;
+        o->ftSize = -1;
     }
-    if (FT_Load_Glyph(f->ft, glyph, FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP) != 0) return false;
+    const FT_F26Dot6 size = FT_F26Dot6(std::lround(emPx * 64.f));
+    if (size != o->ftSize) {
+        if (FT_Set_Char_Size(o->ft, 0, size, 72, 72) != 0) return false;
+        o->ftSize = size;
+    }
+    if (FT_Load_Glyph(o->ft, glyph, FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP) != 0) return false;
     return FT_Render_Glyph(f->ft->glyph, FT_RENDER_MODE_NORMAL) == 0;
 }
 } // namespace

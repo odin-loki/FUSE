@@ -109,6 +109,8 @@ public:
     void setEffects(const EffectRegistry* effects) { m_effects = effects; }
     /// Registers an image for Image commands (non-owning view). Returns its index.
     u32 addImage(const Image* img);
+    /// Threads a render may use (0: automatic, 1: the calling thread only). The output does not depend on it.
+    void setThreads(int n) { m_threads = n; }
     /// Rasterises `list` over `target` (blending onto existing pixels) restricted to `scissor` (whole target when empty).
     void render(const DrawList& list, Image& target, Rect scissor = {}) const;
     /// The registered images, by index (what packDrawList needs for the GPU path).
@@ -120,6 +122,7 @@ private:
     int m_atlasSize = 0;
     std::vector<const Image*> m_images;
     const EffectRegistry* m_effects = nullptr;
+    int m_threads = 0;
 };
 
 } // namespace fuse::ui

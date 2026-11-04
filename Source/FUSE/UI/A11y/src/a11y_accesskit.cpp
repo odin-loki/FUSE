@@ -13,6 +13,9 @@
 #endif
 #include "accesskit.h"
 
+#include <cstdint>
+#include <vector>
+
 namespace fuse::ui::a11y {
 
 bool accessKitAvailable() { return true; }
@@ -54,12 +57,13 @@ accesskit_role roleOf(A11yRole r, Kind k) {
 bool ranged(A11yRole r) {
     return r == A11yRole::Slider || r == A11yRole::Dial || r == A11yRole::ProgressBar || r == A11yRole::SpinBox || r == A11yRole::ScrollBar;
 }
+constexpr u64 kTextRunBit = 1ull << 63; ///< a text field's text-run child: its id with the top generation bit set
 bool toggles(A11yRole r) { return r == A11yRole::CheckBox || r == A11yRole::RadioButton || r == A11yRole::Switch; }
 bool selectable(A11yRole r) { return r == A11yRole::ListItem || r == A11yRole::Tab; }
 
 /// AccessKit action request -> bridge request (false: unsupported). Frees `req`.
 bool toRequest(accesskit_action_request* req, ActionRequest& r) {
-    r.target = req->target_node;
+    r.target = req->target_node & ~kTextRunBit; // a text run acts for its field
     bool ok = true;
     switch (req->action) {
     case ACCESSKIT_ACTION_FOCUS: r.action = Action::Focus; break;
@@ -105,8 +109,11 @@ void* buildAccessKitUpdate(const Bridge& b, bool includeTree) {
         }
         if (i != 0) accesskit_node_add_action(n, ACCESSKIT_ACTION_SCROLL_INTO_VIEW);
         if (s.disabled) accesskit_node_set_disabled(n);
-        if (s.focusable) accesskit_node_add_action(n, ACCESSKIT_ACTION_FOCUS);
-        if (s.focusable && !ranged(s.role) && !text) accesskit_node_add_action(n, ACCESSKIT_ACTION_CLICK);
+        // a disabled widget takes no focus or clicks (AT-SPI only reports "disabled" for a few roles: the missing
+        // focusable state / click action is what tells an AT on Linux that a disabled button does nothing)
+        const bool live = s.focusable && !s.disabled;
+        if (live) accesskit_node_add_action(n, ACCESSKIT_ACTION_FOCUS);
+        if (live && !ranged(s.role) && !text) accesskit_node_add_action(n, ACCESSKIT_ACTION_CLICK);
         if (toggles(s.role)) accesskit_node_set_toggled(n, s.checked ? ACCESSKIT_TOGGLED_TRUE : ACCESSKIT_TOGGLED_FALSE);
         if (x.kind == Kind::Plain && selectable(s.role)) accesskit_node_set_selected(n, x.selected);
         if (text) {
@@ -131,6 +138,20 @@ void* buildAccessKitUpdate(const Bridge& b, bool includeTree) {
         }
         kids.clear();
         for (u32 c : b.children(i)) kids.push_back(idOf(v[c].node));
+        if (text) {
+            // the field's text as one text run: AT-SPI Text (and UIA TextPattern) need runs, the value alone is not read
+            const accesskit_node_id runId = idOf(s.node) | kTextRunBit;
+            accesskit_node* run = accesskit_node_new(ACCESSKIT_ROLE_TEXT_RUN);
+            accesskit_node_set_value_with_length(run, x.text.data(), x.text.size());
+            std::vector<std::uint8_t> lens; // UTF-8 bytes per character
+            for (std::size_t k = 0; k < x.text.size(); ++k)
+                if ((static_cast<unsigned char>(x.text[k]) & 0xC0) != 0x80) lens.push_back(1);
+                else if (!lens.empty()) ++lens.back();
+            accesskit_node_set_character_lengths(run, lens.size(), lens.data());
+            accesskit_node_set_bounds(run, {double(s.bounds.x), double(s.bounds.y), double(s.bounds.x + s.bounds.w), double(s.bounds.y + s.bounds.h)});
+            accesskit_tree_update_push_node(u, runId, run);
+            kids.push_back(runId);
+        }
         if (!kids.empty()) accesskit_node_set_children(n, kids.size(), kids.data());
         accesskit_tree_update_push_node(u, idOf(s.node), n); // takes ownership
     }
@@ -184,6 +205,10 @@ void UnixAdapter::update() {
 }
 void UnixAdapter::setWindowFocused(bool focused) {
     if (m_adapter) accesskit_unix_adapter_update_window_focus_state(static_cast<accesskit_unix_adapter*>(m_adapter), focused);
+}
+void UnixAdapter::setRootWindowBounds(Rect outer, Rect inner) {
+    auto ak = [](Rect r) { return accesskit_rect{double(r.x), double(r.y), double(r.x + r.w), double(r.y + r.h)}; };
+    if (m_adapter) accesskit_unix_adapter_set_root_window_bounds(static_cast<accesskit_unix_adapter*>(m_adapter), ak(outer), ak(inner));
 }
 #endif
 

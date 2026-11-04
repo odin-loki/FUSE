@@ -676,7 +676,7 @@ std::vector<std::uint8_t> fillMask(const std::vector<Contour>& contours, int w, 
                 const double a = e.p[1].y - e.p[0].y, b = e.p[2].y - e.p[1].y, c3 = e.p[3].y - e.p[2].y;
                 found = std::max(0, solveQuadratic(roots, a - 2 * b + c3, 2 * (b - a), a));
             }
-            std::sort(roots.begin(), roots.begin() + found);
+            sortSmall(roots.data(), std::size_t(found));
             for (int i = 0; i < found; ++i) {
                 const double t = roots[static_cast<std::size_t>(i)];
                 if (t > ts[n - 1] && t < 1) ts[n++] = t;

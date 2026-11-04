@@ -24,6 +24,7 @@
 #elif defined(__ANDROID__)
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_android.h>
+#include <sys/stat.h> // pipeline cache dir (mkdir)
 #else
 // vulkan_xlib.h needs only these two Xlib types; the X11 headers are not required to build.
 typedef struct _XDisplay Display;
@@ -73,6 +74,7 @@ struct VkCtx {
     SurfaceSource::Kind kind = SurfaceSource::Xlib;
     char name[256] = {};
     u32 windows = 0;
+    u32 vendor = 0;       ///< VkPhysicalDeviceProperties::vendorID
     bool adopted = false; ///< instance + device belong to the caller (NativeOptions::adoptDevice)
 };
 
@@ -243,6 +245,7 @@ VkCtx* vkCtxAdopt(SurfaceSource::Kind kind, const VulkanDeviceHandles& h, std::s
     VkPhysicalDeviceProperties props;
     vkGetPhysicalDeviceProperties(c->phys, &props);
     std::snprintf(c->name, sizeof c->name, "%s", props.deviceName);
+    c->vendor = props.vendorID;
     VkCommandPoolCreateInfo pci{};
     pci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     pci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -299,8 +302,8 @@ bool pickDevice(VkCtx& c, VkSurfaceKHR surface, std::string& err) {
         std::vector<VkQueueFamilyProperties> qs(qn);
         vkGetPhysicalDeviceQueueFamilyProperties(d, &qn, qs.data());
         for (u32 q = 0; q < qn; ++q) {
-            VkBool32 present = VK_FALSE;
-            K.GetPhysicalDeviceSurfaceSupportKHR(d, q, surface, &present);
+            VkBool32 present = surface ? VK_FALSE : VK_TRUE; // no surface yet: checked when the window gets one
+            if (surface) K.GetPhysicalDeviceSurfaceSupportKHR(d, q, surface, &present);
             if (present && (qs[q].queueFlags & VK_QUEUE_COMPUTE_BIT)) {
                 c.phys = d;
                 c.family = q;
@@ -316,6 +319,7 @@ bool pickDevice(VkCtx& c, VkSurfaceKHR surface, std::string& err) {
     VkPhysicalDeviceProperties props;
     vkGetPhysicalDeviceProperties(c.phys, &props);
     std::snprintf(c.name, sizeof c.name, "%s", props.deviceName);
+    c.vendor = props.vendorID;
     const float prio = 1.f;
     VkDeviceQueueCreateInfo qci{};
     qci.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -339,6 +343,12 @@ bool pickDevice(VkCtx& c, VkSurfaceKHR surface, std::string& err) {
     return ok(vkCreateCommandPool(c.device, &pci, nullptr, &c.pool), "vkCreateCommandPool", err);
 }
 } // namespace
+bool vkCtxCreateDevice(VkCtx* c, std::string& err) {
+    if (!c) return false;
+    if (c->device) return true;
+    PhaseTimer timer{"device"};
+    return pickDevice(*c, VK_NULL_HANDLE, err);
+}
 
 struct VkWin {
     VkCtx* ctx = nullptr;
@@ -365,6 +375,8 @@ struct VkWin {
     u32 frame = 0;
     bool needFull = true;
     bool gpuDraw = false;
+    bool dwmPaced = false; ///< MAILBOX in place of FIFO: presents are paced by dwmPace
+    std::chrono::steady_clock::time_point lastPresent{};
     ExternalTexture external[4]{};
 #if defined(FUSE_APP_HAS_UI_VK)
     fuse::ui::render::UiVkRenderer gpu;
@@ -428,15 +440,27 @@ struct VkWin {
             }
         format = sf.format;
         VkPresentModeKHR mode = VK_PRESENT_MODE_FIFO_KHR;
+        u32 pn = 0;
+        K.GetPhysicalDeviceSurfacePresentModesKHR(ctx->phys, surface, &pn, nullptr);
+        std::vector<VkPresentModeKHR> pms(pn);
+        if (pn) K.GetPhysicalDeviceSurfacePresentModesKHR(ctx->phys, surface, &pn, pms.data());
+        const bool mailbox = std::find(pms.begin(), pms.end(), VK_PRESENT_MODE_MAILBOX_KHR) != pms.end();
         if (!opts.vsync) {
-            u32 pn = 0;
-            K.GetPhysicalDeviceSurfacePresentModesKHR(ctx->phys, surface, &pn, nullptr);
-            std::vector<VkPresentModeKHR> pms(pn);
-            if (pn) K.GetPhysicalDeviceSurfacePresentModesKHR(ctx->phys, surface, &pn, pms.data());
             for (VkPresentModeKHR m : pms)
                 if (m == VK_PRESENT_MODE_MAILBOX_KHR || (m == VK_PRESENT_MODE_IMMEDIATE_KHR && mode == VK_PRESENT_MODE_FIFO_KHR))
                     mode = m;
         }
+#if defined(_WIN32)
+        // NVIDIA's first FIFO swapchain in a process costs ~0.4-0.6 s (in vkCreateSwapchainKHR, or in the first present
+        // when a MAILBOX swapchain is recreated as FIFO); MAILBOX takes ~40 ms. Windowed MAILBOX does not tear, and
+        // back-to-back frames wait for the next DWM composition (dwmPace) the way FIFO's queue would block them.
+        // FUSE_APP_VK_FIFO=1 keeps FIFO.
+        static const bool forceFifo = std::getenv("FUSE_APP_VK_FIFO") != nullptr;
+        dwmPaced = opts.vsync && mailbox && ctx->vendor == 0x10DEu && !forceFifo;
+        if (dwmPaced) mode = VK_PRESENT_MODE_MAILBOX_KHR;
+#else
+        (void)mailbox;
+#endif
         VkSwapchainCreateInfoKHR sci{};
         sci.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
         sci.surface = surface;
@@ -653,6 +677,31 @@ void vkWinDestroy(VkWin* w) {
     delete w;
 }
 
+#if defined(_WIN32)
+namespace {
+/// FIFO's pacing for a MAILBOX swapchain: a window presenting again within 25 ms (an animation, continuous redraw)
+/// waits for its frame on the GPU, then for the DWM composition that shows it (DwmFlush returns at once while the
+/// frame is still queued); isolated frames do not wait, and one wait serves every window that presented before it.
+void dwmPace(VkWin& w, VkFence frameDone) {
+    using clock = std::chrono::steady_clock;
+    using Flush = HRESULT(WINAPI*)();
+    static const Flush flush = [] {
+        HMODULE m = LoadLibraryW(L"dwmapi.dll");
+        return m ? reinterpret_cast<Flush>(reinterpret_cast<void*>(GetProcAddress(m, "DwmFlush"))) : nullptr;
+    }();
+    static clock::time_point lastFlush{};
+    const clock::time_point now = clock::now();
+    const bool again = w.lastPresent != clock::time_point{} && now - w.lastPresent < std::chrono::milliseconds(25);
+    if (flush && again && lastFlush <= w.lastPresent) { // no other window waited since this one's last frame
+        vkWaitForFences(w.ctx->device, 1, &frameDone, VK_TRUE, 100'000'000ull);
+        flush();
+        lastFlush = clock::now();
+    }
+    w.lastPresent = clock::now();
+}
+} // namespace
+#endif
+
 bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
     static bool firstPresent = true;
     std::optional<PhaseTimer> timer;
@@ -815,6 +864,9 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
     pi.pSwapchains = &w->swapchain;
     pi.pImageIndices = &index;
     r = K.QueuePresentKHR(c.queue, &pi);
+#if defined(_WIN32)
+    if (w->dwmPaced) dwmPace(*w, w->fence[f]);
+#endif
     w->frame = (f + 1) % kFrames;
     w->needFull = false;
     if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_SUBOPTIMAL_KHR) {

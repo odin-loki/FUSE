@@ -1,6 +1,7 @@
 #include <fuse/renderer/vk/debug_utils.hpp>
 
 #include <cstdint>
+#include <cstdlib>
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
@@ -14,6 +15,14 @@ bool setDebugObjectName(void* vkDevice, u32 vkObjectType, u64 handle, const char
     }
 
 #if defined(FUSE_VULKAN_BACKEND)
+#if defined(__ANDROID__)
+    // the emulator's Mesa driver (vk_common_SetDebugUtilsObjectNameEXT on gfxstream handles) crashes on names; they
+    // only serve debuggers, so Android names objects on request only (FUSE_VK_DEBUG_NAMES=1)
+    static const bool namesWanted = std::getenv("FUSE_VK_DEBUG_NAMES") != nullptr;
+    if (!namesWanted) {
+        return false;
+    }
+#endif
     const VkDevice device = static_cast<VkDevice>(vkDevice);
     const auto pfn = reinterpret_cast<PFN_vkSetDebugUtilsObjectNameEXT>(
         vkGetDeviceProcAddr(device, "vkSetDebugUtilsObjectNameEXT"));

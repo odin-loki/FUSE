@@ -37,7 +37,7 @@ int main() {
         "    textfield \"player_one\" focusable focused\n"
         "    progressbar value=0.7 range=[0,1]\n"
         "    text \"Scroll\"\n"
-        "    scrollbar value=0.3 range=[0,1]\n";
+        "    scrollbar focusable value=0.3 range=[0,1]\n";
     if (dump != want) std::fprintf(stderr, "--- got ---\n%s--- want ---\n%s", dump.c_str(), want.c_str());
     UI_CHECK(dump == want);
     return finish("fuse_ui_a11y_tree_dump");

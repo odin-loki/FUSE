@@ -31,6 +31,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <functional>
@@ -273,10 +274,16 @@ void gateUiFrame(Rig& r) {
         if (n > 1) maxDamage = std::max(maxDamage, r.ui().damage().w * r.ui().damage().h);
     }
     const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / n;
-    // full-window CPU raster for reference (the native presenters damage-track the same way)
-    const auto t1 = std::chrono::steady_clock::now();
-    r.win.rasterize({});
-    const double full = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t1).count();
+    // full-window CPU raster (software presenter / first frames), best of 3: <= 8 ms (FUSE_UI_PERF_REPORT_ONLY=1:
+    // report only, for slow / software CI)
+    double full = 1e9;
+    for (int i = 0; i < 3; ++i) {
+        const auto t1 = std::chrono::steady_clock::now();
+        r.win.rasterize({});
+        full = std::min(full, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t1).count());
+    }
+    const char* reportOnly = std::getenv("FUSE_UI_PERF_REPORT_ONLY");
+    if (!reportOnly || !*reportOnly || std::strcmp(reportOnly, "0") == 0) CHECK(full <= 8.0);
     // full 9-dock repaint, UI side (restyle + relayout + draw list of every node; plan budget 2 ms)
     std::vector<double> rep;
     for (int i = 0; i < 21; ++i) {
@@ -290,6 +297,9 @@ void gateUiFrame(Rig& r) {
                 "median %.2f ms; full 1600x900 CPU raster %.1f ms\n",
                 ms, n, r.ui().nodeCount(), r.ui().stats().drawCmds, rep[rep.size() / 2], full);
     CHECK(ms < 16.7);
+#if defined(NDEBUG) && !defined(__SANITIZE_ADDRESS__)
+    CHECK(rep[rep.size() / 2] <= 2.0); // plan §6: full 9-dock repaint <= 2 ms (optimised builds only)
+#endif
     // hover only damages the buttons it enters and leaves, never the window (shared :hover ancestors stay put)
     CHECK(maxDamage < 0.05f * r.ui().viewport().w * r.ui().viewport().h);
 }

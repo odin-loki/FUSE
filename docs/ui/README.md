@@ -16,7 +16,7 @@ immediate-mode front-end. See the plan's status table for what is still open.
 
 | Path | Target | What |
 |---|---|---|
-| `Source/FUSE/UI/Text` | `fuse_text` | Fonts (stb_truetype; FreeType in FULL), bundled Open Sans, UTF-8, `ITextShaper` (`MinimalShaper`, `HarfBuzzShaper` in FULL), wrap/ellipsis layout, glyph atlas, `TextEditBuffer`, UAX #29 / #14 / #9 segmentation, fallback chains, `FontCatalog` (system fonts) |
+| `Source/FUSE/UI/Text` | `fuse_text` | Fonts (stb_truetype; FreeType in FULL), bundled Open Sans, UTF-8, `ITextShaper` (`MinimalShaper`, `HarfBuzzShaper` in FULL), wrap/ellipsis layout, glyph atlas, `TextEditBuffer`, UAX #29 / #14 / #9 segmentation, fallback chains, `FontCatalog` (system fonts), variable fonts (fvar / avar / gvar / HVAR / MVAR), OpenType feature variants |
 | `Source/FUSE/UI/Core` | `fuse_ui_core` | `UiContext` (tree, style, layout, paint, input, focus, signals, timers, animation, a11y), `DrawList` + `CpuRasterizer`, `StyleEngine`, `immediate::ImmediateUi`, `platform_bridge.hpp` |
 | `Source/FUSE/UI/Widgets` | `fuse_ui_widgets` | Tier A + Tier B widgets + default dark theme (`widgets::install`) |
 | `Source/FUSE/UI/Doc` | `fuse_ui_doc` | `.fuseui` JSON documents, binding model, expression bytecode |
@@ -133,6 +133,25 @@ layers and bitmap-only glyphs draw nothing. These are `ColorLayer::image` layers
 the atlas colour page (premultiplied RGBA, side `size() / 2`, after the coverage page in `pixels()`) and the UI draws
 them as `kGlyphColor` glyph commands. The rasterisers are linked only into binaries that enable them.
 
+Variable fonts: `enableVariableFonts()` (opt-in like the colour rasterisers; without it a variable font draws its
+default instance) gives `Font::axes()`, `namedInstances()`, `instance({{fontTag("wght"), 650}})`, `namedInstance(i)`
+and `setVariation(...)`. An instance is another `Font` over the same bytes (owned by the font that loaded them, cached by
+normalised coordinates, found without allocation): fvar + avar normalisation, HVAR advances (else the gvar phantom
+points), MVAR ascender / descender / line gap, gvar outlines (MINIMAL: FUSE's own glyf + gvar decoder with IUP and
+composites, rasterised exactly; FULL: FreeType at `FT_Set_Var_Blend_Coordinates`, shaped by HarfBuzz at the same
+normalised coordinates, sharing the run cache) and COLRv1 `Var*` paints from COLR's item variation store. CFF2 outlines
+vary only in FULL. `FontCatalog` lists each named instance of a variable face as its own face, named like DirectWrite
+(STAT values other than weight / width / slant join the family: "Segoe UI Variable Display" + "Semibold", weight 600);
+`FontCatalog::load` pins it. In the UI a variable font follows `font-weight`, `font-stretch` (wdth),
+`font-variation-settings: "wght" 650, "opsz" 12` (over the first two) and font-size (opsz, CSS `font-optical-sizing:
+auto`); `UiContext::animate(n, AnimProp::FontWeight, 700, 0.2f)` tweens the weight. COOKED packs are cooked at one
+instance: `fuse_text_cook --variation=wght:600,wdth:80` or `--instance="SemiBold"`.
+
+OpenType features: `font.withFeatures({{fontTag("tnum")}, {fontTag("liga"), 0}})` (CSS `font-feature-settings:
+"tnum", "liga" off, "ss01" 2`) is a variant of the font that HarfBuzz shapes with those features (FULL; MINIMAL /
+COOKED return the font itself). Variants are cached per feature list and key the run cache. `UiContext::setFont(node,
+&font)` draws one node's text in another face (the font picker previews every family in its own face).
+
 MSDF: `ui.setMsdfThreshold(48)` draws text of at least 48 device px from multi-channel signed distance fields (one per
 glyph at `GlyphAtlas::kMsdfPixelSize`, range `kMsdfRange`, `kGlyphMsdf` commands stretched to any size; for zoomed and
 world-space UI). The CPU rasteriser, the compute kernel and the SDF-quad shader sample them identically.
@@ -200,6 +219,37 @@ widgets::setTooltip(ui, someButton, "Explains the button");
 ```
 
 With Tier B installed (`widgets::install` does both tiers), a combo box opens a popup list instead of cycling.
+
+### Keyboard model
+
+Every interactive widget works without a pointer (gate `fuse_ui_keyboard_only`). Keys go to the focused node first;
+what it does not take falls through to the core.
+
+- **Focus**: Tab / Shift+Tab walk the tab order of the current scope (wrapping); Ctrl+Tab / Ctrl+Shift+Tab always move
+  focus, also out of widgets that take Tab (the code editor indents on Tab). Keyboard focus sets `:focus-visible`, which
+  the default themes (dark and light) show as an accent ring or highlight on every focusable widget, and scrolls the
+  node into view inside scroll containers. Tooltips also show on keyboard focus.
+- **Activation**: Enter / Space click buttons, tool buttons, links, check boxes, switches, menu titles and items.
+- **Disabled** widgets refuse focus: Tab, radio arrows and menu bar arrows skip them.
+- **Choices and ranges**: radio buttons move and check with the arrows (wrapping within the siblings); sliders, dials,
+  spin boxes and scroll bars take the arrows, PageUp / PageDown (a page) and Home / End (the ends).
+- **Combo box**: Up / Down / Home / End pick in place; Alt+Down, F4, Space or Enter open the list, arrows + Enter
+  pick, Escape closes it. The date-time edit opens its calendar the same way (Left / Right pick the field, Up / Down
+  step it, digits type it).
+- **Menus**: F10 (when no widget takes it) moves focus to the first menu bar and back; in the bar Left / Right / Home /
+  End move between titles, Down / Enter / Space open; in a menu Up / Down / Home / End move, Enter picks, Right / Left
+  open / close submenus or switch to the neighbouring bar menu, Escape closes (and in the bar returns to where F10
+  came from). Unconsumed keys reach the root's `SignalKind::Event` signal for app-wide shortcuts.
+- **Views**: list, tree, table and grid views take arrows, Home / End, PageUp / PageDown and Enter (Submitted); tree
+  views Left / Right collapse / expand; tab bars Left / Right / Home / End.
+- **Containers**: splitter handles are focusable (arrows resize by 16 px); a dock title closes its dock on Enter,
+  Space or Delete; dialogs trap focus and Escape closes them (a file dialog reports Submitted with an empty path).
+- **Pro widgets**: colour picker arrows (saturation / value), Shift+Left / Right (alpha), Page keys (hue); calendar
+  arrows (day / week), Page keys (month), Home / End (month start / end); chart Left / Right / Home / End step the
+  readout; node graph PageUp / PageDown select a node, arrows move it (Shift: fine) or pan with none selected, Delete
+  removes, Escape deselects; curve editor PageUp / PageDown / Home / End select a key, arrows move it (Shift: x10),
+  Delete removes; timeline arrows (a frame), Page keys (a second), Home / End; video Space plays / pauses, Left /
+  Right step a frame, Home / End; the viewport forwards keys but not Tab.
 
 ### Documents and Lua
 
@@ -308,7 +358,10 @@ Desktop platform services (UI1, `fuse/app/native.hpp`, `fuse/app/platform.hpp`):
 - `NativePlatform::displays()` (bounds, work area, scale, refresh rate, primary). X11: RandR 1.5 monitors through a
   runtime-loaded libXrandr (refresh from the output's CRTC mode), work area from `_NET_WORKAREA`.
 - Cursors: the `cursor:` style (`default text pointer ns-resize ew-resize nwse-resize nesw-resize move wait
-  not-allowed crosshair`, inherited) picks the OS cursor; line edits, links and splitter handles set theirs.
+  not-allowed crosshair`, inherited) picks the OS cursor; line edits, links and splitter handles set theirs. X11:
+  themed cursors through a runtime-loaded libXcursor from XSETTINGS `Gtk/CursorThemeName` at `Gtk/CursorThemeSize`
+  (else `$XCURSOR_SIZE`, else 24) times the DPI scale, re-applied when either or `Xft/DPI` changes; font cursors
+  without libXcursor / a theme.
 - Theme: `Application::systemTheme()` (dark, accent, high contrast, reduced motion, text scale), `onThemeChanged`,
   live on `WM_SETTINGCHANGE` (X11: XSETTINGS `Net/ThemeName`, dark when the name says so; `$FUSE_UI_THEME` /
   `$GTK_THEME` override); `setFollowSystemTheme(true)` switches the default theme dark / light
@@ -318,6 +371,20 @@ Desktop platform services (UI1, `fuse/app/native.hpp`, `fuse/app/platform.hpp`):
   finger is the pointer, every contact is in `touches()`, `pinchScale()` for two fingers, `pressure()` for the pen.
 - `openFileDialog` / `saveFileDialog` / `pickFolderDialog` (IFileDialog; zenity on X11), `messageBox`, `openUrl`
   (http, https, mailto, file only), `revealInFileManager`.
+- Text input and IME: committed text (Win32 `WM_CHAR` with surrogate pairs; X11 `Xutf8LookupString` through XIM) and
+  the IME pre-edit (`WM_IME_COMPOSITION` → `UiContext::textComposition`, drawn inline by the focused field; X11 XIM
+  pre-edit callbacks when the IM offers them). The input method is on only while a text field has focus
+  (`textInputActive`: Win32 associates the IMM32 context, X11 focuses the XIM input context), and the composition /
+  candidate windows are placed at `UiContext::textCaret()` when a composition starts (`textInputArea`). X11 opens the
+  IM with a UTF-8 `LC_CTYPE` (restored afterwards): `$XMODIFIERS` (ibus, fcitx), else libX11's compose IM (dead keys).
+- Clipboard (`fuse/app/clipboard.hpp`): `setClipboardText` / `setClipboardImage` / `setClipboard({items})` with text,
+  straight-RGBA images, any MIME type and lazy items (`provide` runs once, when a paste first asks); `clipboardText`,
+  `clipboardImage`, `clipboardData(mime)`, `clipboardFormats()`, `clipboardOwned()`. Win32: `CF_UNICODETEXT`,
+  `CF_DIBV5` (reads `CF_DIB` too), `RegisterClipboardFormat(mime)`, delayed rendering for lazy items. X11: the
+  `CLIPBOARD` selection on a private connection served from the pump (`TARGETS`, `UTF8_STRING` / `STRING` /
+  `text/plain;charset=utf-8`, `image/png`, MIME atoms, INCR both ways). Shown windows route their `UiContext`
+  clipboard (line edit Ctrl+C / X / V) to it. Gates: `fuse_platform_text_input`, `fuse_platform_ime_composition`,
+  `fuse_platform_clipboard_roundtrip`.
 
 ### Android
 
@@ -338,19 +405,29 @@ ninja -C build-android                                   # libraries + hello_app
 adb install -r -t build-android/fuse_ui_android_demo.apk
 adb shell am start -n org.fuse.uidemo/android.app.NativeActivity [--es args "--draw=cpu"]
 adb logcat -s fuse_app
-ANDROID_SERIAL=emulator-5554 ctest --test-dir build-android -L android   # the four gates below
+ANDROID_SERIAL=emulator-5554 ctest --test-dir build-android -L android   # the gates below
 ```
 
 The gates run on the host (`App/android/android_gate.py`: install, drive with `am` / `input` / `settings`, read the
 state file the demo keeps with `run-as`) and skip with 77 when adb or a device with the APK's ABI is missing.
+Two §6 budget gates sit beside them: `fuse_ui_bench_hud_mobile` runs the `hud_bench` APK (the ~300-node HUD of
+`Game/samples/hud_bench_scene.hpp`, the same workload as the desktop `fuse_ui_bench_hud`) and gates the median UI CPU
+per frame at 2 ms; `fuse_app_hello_startup_android` cold-launches `hello_app --startup-probe` six times (the first is a
+warm-up) and gates the median process start → first presented frame at 400 ms. On an emulator the startup gate only
+reports and skips (77): the emulator's own process / activity start takes ~0.4–0.5 s before `main()` and its Vulkan
+is SwiftShader; `android_gate.py --strict` enforces it there too.
 Emulator: an x86_64 Google APIs image (API 36 was used) with `emulator -avd <name> -no-window -gpu host` (or
 `-gpu swiftshader_indirect`) has Vulkan (`adb shell pm has-feature android.hardware.vulkan.version`).
 
 Behaviour on Android:
 - `NativePlatform::show` waits for the activity window and returns `Vulkan` (`VK_KHR_android_surface`, the same
   swapchain presenter, GPU draw or CPU upload) or `Software` (`ANativeWindow_lock` of the CPU raster;
-  `NativeOptions::vulkan = false`). Vulkan starts synchronously (`asyncVulkan` is ignored: a window that
-  `ANativeWindow_lock` connected as a CPU producer cannot be handed to a swapchain). The window is the whole activity,
+  `NativeOptions::vulkan = false`). With `asyncVulkan` (default) the first frame is software; after it is posted a
+  worker creates instance and device (no surface: Android connects the window when its `VkSurfaceKHR` is created),
+  then the UI thread disconnects the CPU producer (`NATIVE_WINDOW_API_DISCONNECT` through the window's `perform`
+  hook; the NDK has no call for it), creates surface + swapchain and presents through Vulkan. Later surfaces (back
+  from background) get Vulkan directly. `FUSE_APP_VK_TRACE=1` (`am start ... --es env "FUSE_APP_VK_TRACE=1"`; the
+  `env` extra sets environment variables) logs the phases. The window is the whole activity,
   sized by the OS; `AppWindow::setScale` gets the screen density / 160 unless `NativeOptions::scale` is set.
   `displays()` reports the screen with the safe area as the work area; `querySystemTheme()` follows night mode.
 - Lifecycle: `APP_CMD_TERM_WINDOW` releases the swapchain and surface (the device stays), `APP_CMD_INIT_WINDOW`
@@ -358,16 +435,28 @@ Behaviour on Android:
   the manifest keeps the activity alive) and low memory are counted (`NativePlatform::lifecycle()`) and reported
   through `NativeHooks`; with `fuse_core` (or `Core/src/platform/platform_hardening.cpp` standalone)
   `fuse::platform::notifyAppVisibility` and `notifySurfaceLost/Restored` fire. Back sends Escape (closes a popup or
-  dialog) and finishes the activity when nothing used it. Process death loses the UI state (no saved-state hook yet).
+  dialog) and finishes the activity when nothing used it.
+- Process death: on `APP_CMD_SAVE_STATE` (the activity is stopped; the OS may kill the process)
+  `Application::saveState()` goes into the activity's saved-instance state; when the OS recreates the activity,
+  `NativePlatform::show` passes it to `Application::restoreState()`. That restores every window's UI state
+  (`AppWindow::saveUiState` / `restoreUiState`: focus, text field text, tab bar / slider / combo / spin values, check
+  states and scroll offsets of nodes with an id; TextChanged / ValueChanged are emitted so app code follows) and calls
+  `Application::onRestoreState` with what `onSaveState` added (a `Settings` key / value set; keep it small, the
+  Bundle has a size limit). `Application::restored()` tells a recreated process from a fresh start.
 - Touch: every `AMotionEvent` contact goes to `UiContext::touchDown/Move/Up` (the same path as Win32 `WM_POINTER`):
   the first finger is the pointer (tap = click, no hover after lift), all are in `touches()` / `pinchScale()`; a
   vertical drag past `UiContext::kTouchSlop` over a scroll container pans it (the press is released without a click).
   Mouse wheel and hover work too. Popups are in-window overlays.
 - Safe area: `NativePlatform::safeAreaInsets` (system bars + display cutout through `WindowInsets`, UI units) and
   `NativeHooks::insetsChanged`; pass them to `GameUi::setSafeArea` or pad the root (the demo does).
-- Text: the soft keyboard is shown / hidden as text fields gain / lose focus (`InputMethodManager` on the decor view;
-  `NativeOptions::autoSoftKeyboard`, `setSoftKeyboard`). Key events become `keyDown` / `keyUp` plus committed text
-  through `KeyCharacterMap`; there is no IME composition (pre-edit) with NativeActivity.
+- Text: the soft keyboard is shown / hidden as text fields gain / lose focus (`NativeOptions::autoSoftKeyboard`,
+  `setSoftKeyboard`). Key events become `keyDown` / `keyUp` plus committed text through `KeyCharacterMap`. With
+  `NativeOptions::imeComposition` (default) the IME edits an invisible framework `EditText` created through JNI (no
+  Java code): the main thread (its looper is hooked in a wrapped `ANativeActivity_onCreate`) polls the `Editable`
+  at 30 Hz while the keyboard is up; the composing span goes to `UiContext::textComposition` (pre-edit), committed
+  text to `textInput`, deletions of committed text become Backspace, and the field is emptied after each commit.
+  Keys still reach the native input queue first. `NativePlatform::imeTestInput` drives the same InputConnection
+  (tests). On the API 36 emulator Gboard commits every key (no pre-edit: no suggestions there).
 ### App projects (`project.json` schema 2)
 
 A project declares that it is an application with `"schemaVersion": 2` and `"kind": "app"` (or `"hybrid"`: an app
@@ -452,7 +541,7 @@ hud.update(realDt); nav.update(padState, realDt); ui.update(realDt);
 - `fuse_ui_sql::SqliteModel`: `open`/`attach`, `setQuery`, `sortBy`, `refresh`; pass `model()` to `tableView`. Only the visible window of rows is fetched.
 - Platform feel (`platform_feel.hpp`): `setHapticsHandler`, `ScrollProfile::desktop()/ios()/android()`, `kineticScrollArea` (drag/fling with rubber band; a drag never clicks).
 - Accessibility (`fuse/ui/a11y/a11y.hpp`): `Bridge::sync` diffs `UiContext::snapshotA11y` (plus `extras()`: menu / menu bar / tree kinds from the widget class, text-field value, expanded, selected), `perform`/`enqueue`/`drain` run assistive-tech actions on the UI thread (focus, click, increment / decrement, set value / text, expand / collapse, scroll into view). AccessKit needs a Rust toolchain: `FUSE_UI_ACCESSKIT_BUILD=ON` builds accesskit-c 0.22.3 with cargo, or point `FUSE_UI_ACCESSKIT_DIR` at a prebuilt one; without it the bridge still builds.
-- Screen readers on a native window (`fuse/app/accessibility.hpp`, `fuse_app_a11y`): after `native.show(win)`, keep a `fuse::app::WindowAccessibility a11y(native, win);` (declared after the `NativePlatform`). On Windows it answers `WM_GETOBJECT` through `NativePlatform::setMessageHook` with AccessKit's UI Automation provider (Narrator, NVDA, Inspect); UIA actions are queued and run on the UI thread from the event pump. Bounds are client px (logical px x client width / viewport). The Rust library links the release CRT (Debug MSVC builds may warn LNK4098).
+- Screen readers on a native window (`fuse/app/accessibility.hpp`, `fuse_app_a11y`): after `native.show(win)`, keep a `fuse::app::WindowAccessibility a11y(native, win);` (declared after the `NativePlatform`). On Windows it answers `WM_GETOBJECT` through `NativePlatform::setMessageHook` with AccessKit's UI Automation provider (Narrator, NVDA, Inspect); UIA actions are queued and run on the UI thread from the event pump. Bounds are client px (logical px x client width / viewport). The Rust library links the release CRT (Debug MSVC builds may warn LNK4098). On Linux it is AccessKit's AT-SPI adapter (Orca, Accerciser): the adapter registers once AT-SPI is enabled (`org.a11y.Status.IsEnabled`, which screen readers set), the window's client rect is reported in screen px each frame (AT-SPI extents are screen coordinates), text fields carry a text run (AT-SPI `Text`), and disabled widgets offer no focus / click action. AccessKit 0.22's AT-SPI side has no `EditableText` and no expanded state: an AT reads text but cannot write it. The distro cargo of Ubuntu 24.04 (1.75) is too old; a per-user rustup (`~/.cargo/bin`) is picked up first.
 - Designer: `fuse_ui_designer [file.fuseui] [--save=out] [--screenshot=png]`. `DesignDocument` saves exactly what it loaded; keys starting with `x-` are kept for tools and stripped from the live preview.
 - `dockSaveLayout(dock)` returns a text layout (`fusedock 1`); `dockRestoreLayout(dock, text)` checks the whole text before applying it and ignores unknown panel ids.
 
@@ -470,6 +559,19 @@ are deferred). Inline (`setCss`) beats everything; later sheets win ties. Layout
 `icon-size`. Selectors also accept
 `:active`, `:selected`.
 
+Right-to-left: `direction: rtl` (inherited, `ltr` default; e.g. `:root { direction: rtl; }`) mirrors box rows and
+column cross-axis alignment, `justify-content` / `align-*` start and end, grid columns and flow lines; margins and
+padding stay physical, stack / anchor / absolute placement is not mirrored. `text-align: start` / `end` follow the
+direction (`left` / `right` are physical). Overflow scrolling starts at the right (`scroll().x` counts from the start
+edge) with the vertical bar on the left. Widgets mirror: indicators of check box / radio / switch, slider / progress /
+scroll bar (minimum on the right; Left increases a slider), spin / combo arrows, line edit alignment, tab bar and menu
+bar order, tree indentation (Left expands), list scroll indicator. Popup menus of an RTL owner inherit its direction and
+take `at` as their top-right corner (aligned to the right edge of the menu button / combo box); submenus open to the
+left and Left / Right open / close them. Not mirrored yet: the Tier B2 / C / D widgets (table, splitter, dock, grid
+view, calendar, chart, colour picker, node graph, curve editor, timeline, code edit, date-time edit), `popupPanel`,
+tooltips, and the line edit caret over bidi text (paragraph direction still comes from the text's first strong
+character).
+
 ## Immediate mode
 
 `fuse::ui::immediate::ImmediateUi` has the same API and layout rules as Relight's `overlay::Ui` (`begin`, `text`,
@@ -485,6 +587,8 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_event_routing` | capture/target/bubble, stop, click semantics, pointer capture, hover, disabled, modal, `post()` |
 | `fuse_ui_focus_order` | tab order, tab index, skipping, wrap, focus-visible, keyboard activation, spatial nav, modal trap |
 | `fuse_ui_cpu_raster_golden` | rasteriser primitives and the sample tree against `tests/golden/sample.png` (`sample_full.png` in FULL) |
+| `fuse_ui_rtl_layout` | `direction: rtl`: mirrored box rows / justify / align / grid / flow with physical margins, inheritance, `text-align`, slider pointer + keys, tab bar, tree keys, scroll bar side and horizontal start, right-aligned menus and submenus to the left; text-free widgets render as the mirror image of LTR; RTL sample against `tests/golden/rtl_layout.png` (`rtl_layout_full.png` in FULL) |
+| `fuse_ui_keyboard_only` | a form with every interactive Tier A–D widget driven only by keyDown / keyUp / textInput: Tab and Shift+Tab reach every widget in one order, each is operated by its keys (see "Keyboard model"), menus by F10 / arrows / Escape, the file dialog traps focus and Escape cancels, keyboard focus scrolls into view; focused vs unfocused paint differs for every focusable widget in the dark and light themes |
 | `fuse_ui_zero_alloc_steady` | zero heap allocations over 50 interactive frames after warm-up |
 | `fuse_ui_bench_10k` | 10k nodes, one dirty label: ≤ 0.5 ms median (Release; 1.0 ms in FULL) |
 | `fuse_ui_single_thread_parity` | direct vs posted-from-threads mutations give identical layout, draw list and pixels |
@@ -502,6 +606,9 @@ checks it against the overlay under one scripted event stream.
 | `fuse_text_bitmap_emoji` | `tests/data/bitmap_{cbdt,sbix}_test.ttf`: strike choice per size, placement, sbix dupe, premultiplication, the atlas colour page, colour glyphs through the UI |
 | `fuse_text_msdf` | MSDF vs coverage at 64 / 128 / 256 px (mean error < 0.06, < 0.6 % of pixels off by more than half), determinism, `setMsdfThreshold` with DPI scale, GPU parity of colour + MSDF glyphs (compute kernel exact, SDF quads within their blend tolerance) |
 | `fuse_text_cooked` | `fuse_text_cook` determinism (every profile); COOKED: build-time pack = fresh cook, `.ttf` rejected, layout of sample strings equal to the MINIMAL reference (ids, pen positions within 1e-3 px) and renders byte-identical at every cooked size, MSDF for other sizes |
+| `fuse_text_variable` | `tests/data/variable_test.ttf` (`make_variable_test_font.py`: wght with avar + wdth, IUP-optimised gvar, composite, HVAR, MVAR, variable COLR): axes / named instances, MVAR ascender, stem width and HVAR advance at wght 100 .. 900 and wdth 50 / 150 against the font's analytic values, phantom-point advances = HVAR, Var* paint colours at four weights, CSS weight / stretch / variation settings and an `AnimProp::FontWeight` tween, zero-alloc steady state; Segoe UI Variable / Bahnschrift when installed: catalog WWS faces, our glyf decoder vs stb_truetype outlines (MSDF max difference 1), HarfBuzz advances (FULL); COOKED: a pack cooked at wght 700 |
+| `fuse_text_features` | `tests/data/features_test.ttf` (`make_features_test_font.py`): `liga` / `kern` off, `tnum`, `smcp`, `ss01` through `Font::withFeatures` and CSS `font-feature-settings`, Open Sans `pnum`, zero-alloc steady state (FULL; 77 in MINIMAL / COOKED) |
+| `fuse_text_bench_layout` | 1 MB mixed-script document: paragraphs cold / warm, codeEdit frames, one-block layout, markdownView first update / resize within budgets (~4x measured), zero allocations and (FULL) zero run-cache misses relaying out a screen |
 
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
 | `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster, async Vulkan handover (software frame, resize during the handover, first Vulkan frame) (skips 77 without a display or device) |
@@ -512,16 +619,25 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_vk_sdf_quads` | SDF-quad backend vs the CPU reference (sample, primitives, blur + effects between draws, scissored redraw): max error ≤ 2, mean ≤ 0.1 / 255; validation clean; reports compute vs SDF timings at 1080p and 4K |
 | `fuse_ui_vk_budget` | GPU time (timestamp queries) of 1080p frames: full, backdrop blur, incremental, a ~270-node HUD ≤ 0.5 ms (software devices report only) |
 | `fuse_app_native_startup` | launches `hello_app` 5× per configuration: default (async Vulkan) and software-only first frame median ≤ 150 ms; every default run switches to Vulkan (median ≤ 2 s) with the switched frame equal to the CPU raster; synchronous Vulkan init ≤ 2 s (skips 77 without a display) |
-| `fuse_app_binary_size` | `hello_app` file size ≤ measured baseline + 10 % (MSVC x64 Release, MINIMAL text: standalone 870,912 B → 958,000 B, in the engine tree 904,192 B → 994,600 B; other toolchains report and skip until a baseline is set with `-DFUSE_APP_BINARY_BUDGET`). Effect and SDF-quad SPIR-V live in their own translation units, so apps that do not use them do not carry it |
+| `fuse_app_binary_size` | `hello_app` file size ≤ measured baseline + 10 % (MSVC x64 Release, MINIMAL text: standalone 870,912 B → 958,000 B, in the engine tree 904,192 B → 994,600 B; Linux x86-64 Release, MINIMAL, stripped: GCC 13 standalone 1,530,488 B → 1,683,600 B, engine tree 1,591,928 B → 1,751,200 B, Clang 23 standalone 1,179,616 B → 1,297,600 B; other toolchains report and skip until a baseline is set with `-DFUSE_APP_BINARY_BUDGET`). Effect and SDF-quad SPIR-V live in their own translation units, so apps that do not use them do not carry it |
 | `fuse_app_window_chrome` | custom-chrome window: `chromeHitTest` probes, then `WM_NCHITTEST` on a real Win32 window, frame removed, max / restore / min / close through non-client clicks; X11 (Xvfb, the gate watching the root like a WM): `_MOTIF_WM_HINTS`, `_NET_WM_MOVERESIZE` direction / position per probe, edge cursors, `_NET_WM_STATE` maximise / restore applied by the gate, `WM_CHANGE_STATE`, close (77 without a display) |
 | `fuse_app_tray` | Win32: tray icon added and found (`Shell_NotifyIconGetRect` / `NIM_MODIFY`), simulated click / double-click callbacks, a real `TrackPopupMenu` context menu picked by posted keys, a notification, removal. Unix (under `dbus-run-session`, the gate plays watcher, notification daemon and tray host): registration, `IconPixmap` / `ToolTip` properties and change signals, `Activate`, dbusmenu layout + click, notification + `ActionInvoked`, name released on removal, `Unsupported` without a daemon (77 without a tray / private bus) |
+| `fuse_ui_a11y_linux` | AT-SPI client (libatspi, loaded at runtime) on a real X11 window under `dbus-run-session` + Xvfb; the gate starts the accessibility bus and enables AT-SPI: the app in the registry, roles and names (push button, check box, slider, entry, list, tree, menu bar / item), states (enabled, focusable, checked; disabled), screen extents of a button, `click` on a button / check box, `Value` on the slider, `grab_focus` + focus event, `Text` read-back and a text change, File menu opened / closed by `click` (skips 77 without AccessKit / libatspi / a session bus) |
+| `fuse_x11_wm_chrome`, `fuse_x11_wm_popups`, `fuse_x11_wm_multiwindow` | under a real window manager the gate starts on Xvfb (openbox / xfwm4 / metacity ..., also `~/opt/<pkg>/usr/bin` for one unpacked without root, `$FUSE_TEST_WM`), real pointer through XTest: custom chrome undecorated, caption drag moves and corner drag resizes (`_NET_WM_MOVERESIZE`), max button / caption double click maximise + restore, min iconifies and `_NET_ACTIVE_WINDOW` restores, close; OS popups not reparented and placed below the WM title bar, real clicks pick / dismiss; two managed windows, focus by `_NET_ACTIVE_WINDOW`, clicks to the window under the pointer, `resizeWindow` through the WM, `_NET_CLOSE_WINDOW` closes one (77 without a WM) |
+| `fuse_app_tray_host` | the tray icon under a real StatusNotifierItem host: xfce4-panel's status tray (started with xfconfd on a private bus + Xvfb, `$FUSE_TEST_SNI_HOST`), registered and shown, real left click activates, real right click opens the host's menu built from the dbusmenu export and keys pick an item (`EventGroup`), removal unregisters (77 without the panel) |
+| `fuse_x11_cursor_size` | XSETTINGS `Gtk/CursorThemeName` / `Gtk/CursorThemeSize` with a private Xcursor theme (`XCURSOR_PATH`): the server shows the cursor at 24 px at 96 dpi, 48 px at 192 dpi, then 32 / 64 px as the size changes (XFixes cursor image) |
 | `fuse_x11_randr`, `fuse_x11_xsettings`, `fuse_x11_wake` | X11 under Xvfb against the gate's own connection: two RandR monitors + `_NET_WORKAREA` in `displays()` and a monitor removed live; an XSETTINGS manager's `Xft/DPI` / `Net/ThemeName` at start and live (every window re-scales, `onDpiChanged`, `onThemeChanged`), manager exit → `RESOURCE_MANAGER`, a new manager; `wake()` from another thread ends a blocked pump and an accessibility action queued from an AT thread runs at once |
 | `fuse_ui_platform_services` | headless: DPI scale (layout fixed, device-pixel draw list, re-rasterised glyphs), `cursor:` style, reduced motion, touch / pinch / pen through `platform_bridge`, dark → light theme slot |
 | `fuse_platform_dpi_change`, `fuse_platform_displays`, `fuse_platform_cursors`, `fuse_platform_system_theme`, `fuse_platform_dialogs`, `fuse_platform_touch_synthetic`, `fuse_platform_multiwindow` | real windows: `WM_DPICHANGED` re-scale and back, monitors, OS cursor per hovered widget, theme change via `WM_SETTINGCHANGE` (faked query, user settings untouched), dialogs dismissed by a helper thread, injected touch tap + pinch, two swapchain windows with input routing / close / per-window DPI |
+| `fuse_platform_text_input`, `fuse_platform_ime_composition`, `fuse_platform_clipboard_roundtrip` | real windows (Win32; X11 under Xvfb): typed text incl. a surrogate pair / remapped keysyms into a line edit, Ctrl+C / V / X against another clipboard client, IME off outside text fields; an IMM32 composition (`ImmSetCompositionStringW`: inline pre-edit, commit, cancel, composition / candidate window at the caret; X11: a dead-key compose through XIM, pre-edit only with a server IM); clipboard text / RGBA image / custom MIME / several formats / lazy items / INCR against another thread (Win32) or X connection |
 | `fuse_platform_present_android` | Android build tree, adb: the demo presents on Vulkan (GPU draw and CPU upload) and in software; each surface's first frame read back in-process matches the CPU raster; density scale applied |
 | `fuse_app_lifecycle_android` | HOME releases the surface, `am start` rebuilds it with a correct first frame and the same UI state; rotation resizes to landscape and back |
 | `fuse_platform_touch_android` | `input tap` clicks the button; `input swipe` over the list scrolls it both ways without clicking |
 | `fuse_platform_ime_android` | tapping the line edit focuses it and shows the soft keyboard; `input text` and backspace edit it |
+| `fuse_app_process_death_android` | Android build tree, adb: taps (app state), a tab page, list scroll and line-edit text + focus survive `am kill` of the background process and a SIGKILL; the relaunched process (new pid) restores them |
+| `fuse_app_hello_startup_android` | Android build tree, adb: hello_app `--startup-probe` cold starts (5 per mode, interleaved): async (software first frame, then Vulkan with the same pixels), `--sync-vulkan`, `--no-vulkan`; launch / main() -> first frame medians; on a device launch -> first frame <= 400 ms (plan §6); on an emulator (its first window buffer alone takes 200-800 ms, timings follow the host's load) async must be within 1.25x + 100 ms of software-only and faster than sync |
+| `fuse_platform_ime_composition_android` | Android build tree, adb: Gboard soft-key taps commit into the line edit and its delete key deletes; with the device IME disabled, `setComposingText` / `commitText` on the EditText's InputConnection give the pre-edit ('日本' -> '日本語') and its commit |
+| `fuse_runtime_present_android` | engine tree (`-DFUSE_BUILD_UI=ON`, Android toolchain), adb: `fuse_runtime_android` (fuse_rhi `RhiContext` + `VK_KHR_android_surface` swapchain) renders and presents 120 frames; the raster target reads back as the B2.11 triangle (coverage 0.125) |
 | `fuse_app_idle_native` | real idle window for 3 s: zero presents, ≤ 10 loop wakeups / s (OS messages only), CPU ≤ 2 % |
 | `fuse_project_schema2`, `fuse_project_schema2_native` | project.json schema 1 load / write / migrate, schema 2 round trip, 24 rejected files, the app template, `ProjectHost` brings up only `AppPresent` and presents the `.fuseui` (headless ≤ 150 ms; `_native` on a real window vs the CPU raster) |
 | `fuse_ui_game_hud_golden` | HUD demo scene against `tests/golden/hud.png` plus trail / marker / pool state |
@@ -530,6 +646,14 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_input_arbitration` | pointer / keyboard / gamepad ownership between UI and game |
 | `fuse_ui_pause_time_domain` | pause and slow motion affect game-time HUD only; locale switching |
 | `fuse_demo_hybrid_hud_ui` | `demo_hybrid_hud` HUD on a UI context in the hybrid frame (`HybridComposer::setUiOverlay` → `UiFrameSource::recordOver`, over the sprite layer): every opaque HUD pixel of the GPU readback equals the CPU raster (≤ 1/255), glyphs visible |
+| `fuse_ui_vk_golden` | GPU vs CPU reference with NVIDIA FLIP (`vendor/nvidia-flip`) over the Tier A sample, the game HUD and an editor-like scene: compute kernel max channel error ≤ 2 and mean FLIP ≤ 0.001 (0 today), SDF quads ≤ 4 / ≤ 0.005; heat maps written on failure |
+| `fuse_ui_vk_tier0` | UI-T0 (§4.9): Vulkan 1.1 instance, a device with no extensions and no features, validation on; every shader's SPIR-V ≤ 1.3 without descriptor-indexing / BDA capabilities; scenes, backdrop and an external texture exact against the CPU |
+| `fuse_ui_vk_zero_alloc` | the whole steady-state GPU frame loop (update, pack, upload, record into pre-made command buffers, submit, wait), full and damage-scissored frames: 0 heap allocations over 120 frames, result equal to a full CPU raster |
+| `fuse_ui_bench_hud` | ~300-node game HUD animated as in play: UI CPU per frame (update + layout + paint) median ≤ 0.5 ms (Release; scene shared with `fuse_ui_bench_hud_mobile`) |
+| `fuse_ui_hud_binary_size` | `hud` profile: the `hud_demo` sample with cooked `.fusefont` text ≤ baseline + 10 % (MSVC x64 Release, standalone, `FUSE_UI_TEXT=COOKED`: 596,480 B → 656,200 B; other builds report and skip, `-DFUSE_UI_HUD_BINARY_BUDGET` sets one) |
+| `fuse_ui_script_bind` | the Lua `ui` table as a whole: every function known and exercised (a new binding without coverage fails), pcall-able argument errors, every signal kind with its arguments, a failing handler does not stop the next, a handler destroying its own node, handlers released with their nodes (2000 create / on / destroy cycles: handler count and Lua heap flat), no Lua garbage over steady frames |
+| `fuse_ui_widget_<class>` (36 classes) | one gate per registered widget class outside Tier D (`test_widget_gates.cpp`): node of the class with its accessibility role in the snapshot, laid out and painting, deterministic CPU raster against `tests/golden/widgets/<class>.png` (MINIMAL; `FUSE_UI_UPDATE_GOLDEN=1` rewrites), Tab reaches focusable ones, disabled ones look different and take no pointer / key / text input or focus, and the widget's own behaviour (clicks, keys, drags, wheel / fling, popups, selection, sorting, ...) |
+| `fuse_ui_widget_catalogue` | every class in the widget registry has a `fuse_ui_widget_` gate (the list above or the Tier D ones of `fuse_ui_tier_d2`) |
 
 Extra: `fuse_ui_text_basics`, `fuse_ui_text_full`, `fuse_ui_widget_interaction`, `fuse_ui_tier_b`, `fuse_ui_tier_b2`,
 `fuse_ui_relight_equivalence`, `fuse_ui_platform_keys_v2`, `fuse_ui_text_input`, `fuse_ui_doc_load`,
@@ -540,4 +664,4 @@ raster and GPU time of the sample, 1080p cards and the 1440p HUD, atlas and GPU 
 
 ## Editor shell (UI9)
 
-Configure with `-DFUSE_EDITOR_SHELL=fuse` to build `fuse_editor_fuse`, which is the editor chrome in FUSE UI on the shared Qt-free `EditorController`. Run `ctest -L fuse_editor_ui`. All ten editor panels and the New Project wizard are ported (45 gates, including the Top / Front / Side orthographic views with View > Viewport Layout single / two / quad on Ctrl+Alt+1..3 (`multi_viewport`), the play-mode frame / badge and Maximize Viewport on Play (`play_frame`), the asset browser grid / type filter / breadcrumb / context menu (`asset_browser_polish`), timeline zoom / pan / loop / snap / key jumps (`timeline_nav`), Preferences shortcut rebinding (`shortcut_rebind`), File > Recent Projects (`recent_projects`), Group / Ungroup / Duplicate subtree / Frame Selected (`entity_group`), collider wireframes and drag handles (`colliders`), Entity > Open Script (`open_script`), the Terrain panel (`terrain`), the Navigation panel (`navigation`), Edit > Preferences (`preferences`) and view modes Lit / Unlit / Wireframe / Lit Wireframe and mesh bounds: `view_modes`). `--gpu-viewport` shows the live 3D scene in the viewport, zero-copy through a `ui_vk` external-texture slot (gates `scene_viewport`, `gpu_viewport`), with a Move/Rotate/Scale gizmo drawn as a viewport overlay (`viewport_gizmo`). Status is in [FUSE_EDITOR_QT_FIRST_PLAN.md §11](../plans/FUSE_EDITOR_QT_FIRST_PLAN.md).
+Configure with `-DFUSE_EDITOR_SHELL=fuse` to build `fuse_editor_fuse`, which is the editor chrome in FUSE UI on the shared Qt-free `EditorController`. Run `ctest -L fuse_editor_ui`. All ten editor panels and the New Project wizard are ported (45 gates, including the Top / Front / Side orthographic views with View > Viewport Layout single / two / quad on Ctrl+Alt+1..3 (`multi_viewport`), the play-mode frame / badge and Maximize Viewport on Play (`play_frame`), the asset browser grid / type filter / breadcrumb / context menu (`asset_browser_polish`), timeline zoom / pan / loop / snap / key jumps (`timeline_nav`), Preferences shortcut rebinding (`shortcut_rebind`), File > Recent Projects (`recent_projects`), Group / Ungroup / Duplicate subtree / Frame Selected (`entity_group`), collider wireframes and drag handles (`colliders`), Entity > Open Script (`open_script`), the Terrain panel (`terrain`), the Navigation panel (`navigation`), Edit > Preferences (`preferences`) and view modes Lit / Unlit / Wireframe / Lit Wireframe and mesh bounds: `view_modes`). `--gpu-viewport` shows the live 3D scene in the viewport, zero-copy through a `ui_vk` external-texture slot (gates `scene_viewport`, `gpu_viewport`), with a Move/Rotate/Scale gizmo drawn as a viewport overlay (`viewport_gizmo`). Status is in [FUSE_EDITOR_QT_FIRST_PLAN.md §11](../plans/FUSE_EDITOR_QT_FIRST_PLAN.md). `fuse_editor_ui_frame` is the plan §6 name of the `ui_frame` gate, run on its own (RUN_SERIAL): the full 9-dock repaint (restyle + relayout + draw list of every node, median of 21) must stay ≤ 2 ms in optimised builds.

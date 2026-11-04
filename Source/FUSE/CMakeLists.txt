@@ -89,6 +89,10 @@ option(FUSE_BUILD_UI "Build FUSE UI (docs/plans/FUSE_UI_PLAN.md): fuse_text, fus
 if(FUSE_BUILD_UI)
     add_subdirectory(UI)
 endif()
+# Android: the engine renderer on a NativeActivity window (APK tooling from UI/App)
+if(ANDROID AND TARGET fuse_rhi AND TARGET fuse_app_native AND COMMAND fuse_app_add_android_app)
+    add_subdirectory(Renderer/android)
+endif()
 
 # UI9 (docs/plans/FUSE_EDITOR_QT_FIRST_PLAN.md): the Qt-free EditorController and, with FUSE_EDITOR_SHELL=fuse, the
 # FUSE UI editor shell beside the Qt one (Source/FUSE/EditorShell).

@@ -285,9 +285,10 @@ struct ColorPickerW {
         if (e.type == EventType::PointerUp) { pickZone = 0; return false; }
         if (e.type == EventType::KeyDown) {
             Hsva h = unpack(ui.userData(ec.node));
+            const bool sh = e.mods & kModShift; // Shift+Left / Right: alpha
             switch (e.key) {
-            case Key::Left: h.s = std::max(0.f, h.s - 0.05f); break;
-            case Key::Right: h.s = std::min(1.f, h.s + 0.05f); break;
+            case Key::Left: (sh ? h.a : h.s) = std::max(0.f, (sh ? h.a : h.s) - 0.05f); break;
+            case Key::Right: (sh ? h.a : h.s) = std::min(1.f, (sh ? h.a : h.s) + 0.05f); break;
             case Key::Up: h.v = std::min(1.f, h.v + 0.05f); break;
             case Key::Down: h.v = std::max(0.f, h.v - 0.05f); break;
             case Key::PageUp: h.h = std::fmod(h.h + 1.f - 1.f / 36.f, 1.f); break;
@@ -405,6 +406,12 @@ struct CalendarW {
             case Key::Down: select(ui, ec.node, cur + 7); return true;
             case Key::PageUp: pageMonth(ui, ec.node, -1, true); return true;
             case Key::PageDown: pageMonth(ui, ec.node, 1, true); return true;
+            case Key::Home: case Key::End: { // first / last day of the month
+                int y, m, d;
+                civilFromDays(cur, y, m, d);
+                select(ui, ec.node, daysFromCivil(y, m, e.key == Key::Home ? 1 : daysIn(y, m)));
+                return true;
+            }
             case Key::Enter: ui.emit(ec.node, SignalKind::Submitted, {.value = f32(cur)}); return true;
             default: return false;
             }
@@ -525,6 +532,10 @@ struct ChartW {
         UiContext& ui = ec.ui;
         ChartState* s = chartPool().get(ui, ec.node);
         if (!s) return false;
+        if (e.type == EventType::PointerLeave) { // the readout goes with the pointer (value -1 outside)
+            if (ui.value(ec.node) != -1.f) { ui.setValue(ec.node, -1.f, true); ui.invalidate(ec.node); }
+            return false;
+        }
         if (e.type == EventType::PointerMove) {
             const Rect p = plot(ui, ec.node);
             const u32 n = points(*s);
@@ -536,6 +547,20 @@ struct ChartW {
             }
             if (f32(idx) != ui.value(ec.node)) { ui.setValue(ec.node, f32(idx), true); ui.invalidate(ec.node); }
             return false;
+        }
+        if (e.type == EventType::KeyDown) { // the readout steps through the points
+            const i32 n = i32(points(*s)), cur = i32(ui.value(ec.node));
+            if (!n) return false;
+            i32 to;
+            switch (e.key) {
+            case Key::Left: to = cur < 0 ? 0 : std::max(0, cur - 1); break;
+            case Key::Right: to = std::min(n - 1, cur + 1); break;
+            case Key::Home: to = 0; break;
+            case Key::End: to = n - 1; break;
+            default: return false;
+            }
+            if (f32(to) != ui.value(ec.node)) { ui.setValue(ec.node, f32(to), true); ui.invalidate(ec.node); }
+            return true;
         }
         return false;
     }

@@ -38,7 +38,7 @@ public:
             }
         }
         ts[nt++] = 1.0;
-        std::sort(ts, ts + nt);
+        sortSmall(ts, std::size_t(nt));
         for (int i = 0; i + 1 < nt; ++i) {
             const double t0 = ts[i], t1 = ts[i + 1];
             if (t1 <= t0) continue;

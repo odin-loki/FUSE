@@ -5,6 +5,7 @@
 #
 #   fuse_app_add_android_app(<target> SOURCES a.cpp ... PACKAGE org.example.app [LABEL "Name"] [ASSETS prefix=dir ...])
 #   fuse_app_add_android_gates(<target> <package>)   # host-run ctest gates (adb), skipped (77) without a device
+#   fuse_app_add_android_gate(<test> <gate> <target> <package>)
 
 if(NOT ANDROID)
     return()
@@ -15,6 +16,8 @@ find_package(Python3 COMPONENTS Interpreter)
 if(NOT Python3_EXECUTABLE)
     find_program(Python3_EXECUTABLE NAMES python3 python py NO_CMAKE_FIND_ROOT_PATH)
 endif()
+# cached: the functions below are also called from other directories (fuse_ui_game's hud_bench)
+set(FUSE_APP_PYTHON "${Python3_EXECUTABLE}" CACHE INTERNAL "")
 find_program(FUSE_ANDROID_ADB adb HINTS "$ENV{ANDROID_HOME}/platform-tools" "$ENV{ANDROID_SDK_ROOT}/platform-tools"
              NO_CMAKE_FIND_ROOT_PATH)
 set(FUSE_ANDROID_MIN_SDK 26 CACHE STRING "minSdkVersion of fuse_app APKs")
@@ -28,7 +31,7 @@ function(fuse_app_add_android_app target)
     add_library(${target} SHARED ${A_SOURCES})
     target_link_libraries(${target} PRIVATE fuse_app_native ${A_LIBS})
     target_compile_definitions(${target} PRIVATE main=fuse_app_main)
-    if(NOT Python3_EXECUTABLE)
+    if(NOT FUSE_APP_PYTHON)
         message(STATUS "FUSE app: no Python 3, ${target}.apk not packaged")
         return()
     endif()
@@ -41,7 +44,7 @@ function(fuse_app_add_android_app target)
     add_custom_command(OUTPUT "${_apk}"
         COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/${target}_apk"
         COMMAND "${CMAKE_STRIP}" --strip-unneeded -o "${_so}" "$<TARGET_FILE:${target}>"
-        COMMAND "${Python3_EXECUTABLE}" "${FUSE_APP_ANDROID_DIR}/fuse_apk.py" --out "${_apk}" --package ${A_PACKAGE}
+        COMMAND "${FUSE_APP_PYTHON}" "${FUSE_APP_ANDROID_DIR}/fuse_apk.py" --out "${_apk}" --package ${A_PACKAGE}
                 --label "${A_LABEL}" --lib-name ${target} --lib "${ANDROID_ABI}=${_so}" ${_assets}
                 --min-sdk ${FUSE_ANDROID_MIN_SDK} --target-sdk ${FUSE_ANDROID_TARGET_SDK}
                 --key "${CMAKE_BINARY_DIR}/fuse_debug_key.pem"
@@ -51,26 +54,27 @@ function(fuse_app_add_android_app target)
     set_property(TARGET ${target} PROPERTY FUSE_ANDROID_APK "${_apk}")
 endfunction()
 
-function(fuse_app_add_android_gates target package)
+#   fuse_app_add_android_gate(<test name> <gate> <target> <package>)  # one android_gate.py --gate <gate> test
+function(fuse_app_add_android_gate name gate target package)
     get_property(_apk TARGET ${target} PROPERTY FUSE_ANDROID_APK)
-    if(NOT _apk OR NOT Python3_EXECUTABLE)
+    if(NOT _apk OR NOT FUSE_APP_PYTHON)
         return()
     endif()
     set(_adb "${FUSE_ANDROID_ADB}")
     if(NOT _adb)
         set(_adb adb)
     endif()
-    foreach(g present lifecycle touch ime)
-        if(g STREQUAL "present")
-            set(_name fuse_platform_present_android)
-        elseif(g STREQUAL "lifecycle")
-            set(_name fuse_app_lifecycle_android)
-        else()
-            set(_name fuse_platform_${g}_android)
-        endif()
-        add_test(NAME ${_name} COMMAND "${Python3_EXECUTABLE}" "${FUSE_APP_ANDROID_DIR}/android_gate.py" --gate ${g}
-                 --apk "${_apk}" --package ${package} --abi ${ANDROID_ABI} --adb "${_adb}")
-        set_tests_properties(${_name} PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 600
-                             LABELS "gate;android;ui")
-    endforeach()
+    add_test(NAME ${name} COMMAND "${FUSE_APP_PYTHON}" "${FUSE_APP_ANDROID_DIR}/android_gate.py" --gate ${gate}
+             --apk "${_apk}" --package ${package} --abi ${ANDROID_ABI} --adb "${_adb}")
+    set_tests_properties(${name} PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 900
+                         LABELS "fuse_ui;gate;android;ui")
+endfunction()
+
+function(fuse_app_add_android_gates target package)
+    fuse_app_add_android_gate(fuse_platform_present_android present ${target} ${package})
+    fuse_app_add_android_gate(fuse_app_lifecycle_android lifecycle ${target} ${package})
+    fuse_app_add_android_gate(fuse_platform_touch_android touch ${target} ${package})
+    fuse_app_add_android_gate(fuse_platform_ime_android ime ${target} ${package})
+    fuse_app_add_android_gate(fuse_platform_ime_composition_android ime_composition ${target} ${package})
+    fuse_app_add_android_gate(fuse_app_process_death_android process_death ${target} ${package})
 endfunction()

@@ -48,6 +48,7 @@ struct ColrSource {
     std::span<const std::uint8_t> data; ///< whole font file
     std::uint32_t colr = 0, cpal = 0;   ///< absolute table offsets (0: absent)
     float scale = 0.f;                  ///< font units -> pixels
+    std::span<const std::int16_t> coords; ///< normalised variation coordinates (F2DOT14); empty: Var* paints at defaults
 };
 
 /// What the bitmap strike reader reads.
@@ -108,5 +109,16 @@ void imageGlyphs(const Font& font, std::vector<std::uint32_t>& out);
 /// path_raster.cpp: non-zero winding coverage (0..1, exact area) of `path` mapped by `toPixels`, written into a w x h
 /// float buffer (pixel (x, y) covers [x, x + 1) x [y, y + 1) in mapped space). Overwrites `coverage`.
 void rasterisePath(std::span<const OutlineCmd> path, const Affine& toPixels, float* coverage, int w, int h);
+
+/// Insertion sort of a few values (curve split parameters). std::sort on these short arrays trips GCC 13's
+/// -Warray-bounds at -O2 (a false positive in its unguarded insertion step; -Werror builds such as MinGW).
+inline void sortSmall(double* v, std::size_t n) {
+    for (std::size_t i = 1; i < n; ++i) {
+        const double x = v[i];
+        std::size_t j = i;
+        for (; j > 0 && x < v[j - 1]; --j) v[j] = v[j - 1];
+        v[j] = x;
+    }
+}
 
 } // namespace fuse::text::detail

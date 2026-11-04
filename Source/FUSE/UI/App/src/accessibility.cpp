@@ -13,6 +13,7 @@ struct WindowAccessibility::Impl {
     EventSource self{};
     fuse::ui::u64 syncedFrame = ~0ull;
     bool focused = false; ///< last window focus told to the adapter (Linux)
+    fuse::ui::Rect rootBounds{-1.f, -1.f, 0.f, 0.f}; ///< last client rect told to the adapter (Linux, screen px)
 #if FUSE_UI_HAVE_ACCESSKIT && defined(_WIN32)
     std::unique_ptr<a11y::WindowsAdapter> adapter;
 #elif FUSE_UI_HAVE_ACCESSKIT && defined(__linux__)
@@ -33,6 +34,17 @@ struct WindowAccessibility::Impl {
         if (!force && win.ui().frameIndex() == syncedFrame) return;
         syncedFrame = win.ui().frameIndex();
         bridge.setScale(win.scale()); // a11y bounds in device pixels (the window's DPI scale)
+#if FUSE_UI_HAVE_ACCESSKIT && defined(__linux__)
+        // AT-SPI reports screen coordinates: tell the adapter where the client area is (moves, resizes)
+        if (adapter) {
+            const fuse::ui::Vec2 o = native.screenOrigin(win);
+            const fuse::ui::Rect r{o.x, o.y, fuse::ui::f32(win.pixelSize().w), fuse::ui::f32(win.pixelSize().h)};
+            if (r.x != rootBounds.x || r.y != rootBounds.y || r.w != rootBounds.w || r.h != rootBounds.h) {
+                rootBounds = r;
+                adapter->setRootWindowBounds(r, r); // no frame extents known here: outer = client
+            }
+        }
+#endif
 #if FUSE_UI_HAVE_ACCESSKIT && (defined(_WIN32) || defined(__linux__))
         if (adapter) { adapter->update(); return; }
 #endif

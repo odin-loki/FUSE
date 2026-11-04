@@ -95,6 +95,10 @@ int fontPicker(Screen& s) {
     const NodeHandle preview = ui.nextSibling(ui.nextSibling(list));
     UI_CHECK(ui.computed(preview).fontSize == 18.f);
     UI_CHECK(ui.text(preview).starts_with("Sans Serif - The quick"));
+#if !FUSE_UI_TEST_TEXT_COOKED
+    // the preview draws in the family's own face (when the system has one for it), not the UI font
+    if (fuse::text::FontCatalog::system().match("Sans Serif")) UI_CHECK(ui.textFont(preview).id() != font().id());
+#endif
     return 0;
 }
 

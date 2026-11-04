@@ -11,6 +11,12 @@ struct FullFace; // hb_face_t + hb_font_t + FT_Face over the Font's byte copy
 /// Creates the HarfBuzz / FreeType objects over `bytes` (which must outlive the result). nullptr on failure.
 FullFace* fullCreate(std::span<const std::uint8_t> bytes, std::uint32_t faceIndex);
 void fullDestroy(FullFace* f);
+/// A variation instance of `owner`: its own hb_font, the owner's hb_face / FT_Face / run cache (owner outlives it).
+FullFace* fullCreateInstance(FullFace* owner);
+/// Normalised (F2DOT14, after avar) coordinates for shaping (HarfBuzz) and rendering (FreeType); empty: default.
+void fullSetCoords(FullFace* f, std::span<const std::int16_t> norm);
+/// HarfBuzz features applied to every shape call of `f` (part of its run cache key).
+void fullSetFeatures(FullFace* f, std::span<const FontFeature> features);
 /// Shapes `utf8`; `unitScale` converts font units to pixels. Clears and fills `out`; returns the run width.
 float fullShape(FullFace* f, float unitScale, std::string_view utf8, std::vector<ShapedGlyph>& out);
 /// FreeType bitmap box / coverage at an em size of `emPx` pixels (unhinted, grayscale).
