@@ -978,8 +978,15 @@ void drawRange(const Raster& R, const DrawCmd* cmds, std::size_t begin, std::siz
 }
 
 // ---- bands over a small persistent thread pool -------------------------------------------------------------------
-// Workers start on the first parallel render and live until the process ends (never joined: no shutdown ordering).
+// fuse_ui_core links no engine (apps use it without fuse_core), so it cannot submit to JobScheduler: a few workers of
+// its own start on the first parallel render and live until the process ends (never joined: no shutdown ordering).
 // One render uses them at a time; a concurrent render runs on its own thread. Nothing is allocated per render.
+// FUSE_JOBS_SINGLE_THREAD builds (and Emscripten without pthreads) render on the calling thread only.
+#if (defined(FUSE_JOBS_SINGLE_THREAD) && FUSE_JOBS_SINGLE_THREAD) || (defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__))
+constexpr bool kBandThreads = false;
+#else
+constexpr bool kBandThreads = true;
+#endif
 class RasterPool {
 public:
     using Fn = void (*)(void* ctx, int band);
@@ -1089,7 +1096,7 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
     // bands when the region is large enough to pay for the hand-off (~16 rows each, a few per thread)
     const double pixels = double(scissor.w) * double(scissor.h);
     int helpers = 0, bandH = y1 - y0;
-    if (m_threads != 1 && pixels >= 128.0 * 1024.0) {
+    if (kBandThreads && m_threads != 1 && pixels >= 128.0 * 1024.0) {
         RasterPool& pool = RasterPool::get();
         helpers = m_threads > 1 ? std::min(m_threads - 1, pool.workers()) : pool.workers();
         if (helpers > 0) bandH = std::max(8, (y1 - y0 + 4 * (helpers + 1) - 1) / (4 * (helpers + 1)));

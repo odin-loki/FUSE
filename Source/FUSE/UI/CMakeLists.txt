@@ -157,6 +157,9 @@ target_include_directories(fuse_ui_core PUBLIC Core/include)
 target_link_libraries(fuse_ui_core PUBLIC fuse_text)
 find_package(Threads REQUIRED) # the CPU rasteriser's band workers
 target_link_libraries(fuse_ui_core PRIVATE Threads::Threads)
+if(FUSE_JOBS_SINGLE_THREAD) # the engine's single-thread build: the rasteriser stays on the calling thread too
+    target_compile_definitions(fuse_ui_core PRIVATE FUSE_JOBS_SINGLE_THREAD=1)
+endif()
 # the CPU rasteriser is the bit-exact reference: no fused multiply-adds (clang / GCC contract by default on arm64), so
 # every platform and its SIMD paths compute the same bytes
 if(NOT MSVC)
