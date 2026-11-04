@@ -109,6 +109,12 @@ if(TARGET fuse_ui_vk)
     fuse_ui_test(fuse_ui_vk_parity test_vk_parity.cpp)
     target_link_libraries(fuse_ui_vk_parity PRIVATE fuse_ui_vk ${FUSE_UI_VK_LINK})
     set_tests_properties(fuse_ui_vk_parity PROPERTIES SKIP_RETURN_CODE 77 LABELS "ui;gpu")
+    foreach(g damage validation_clean budget)
+        fuse_ui_test(fuse_ui_vk_${g} test_vk_${g}.cpp)
+        target_link_libraries(fuse_ui_vk_${g} PRIVATE fuse_ui_vk ${FUSE_UI_VK_LINK})
+        set_tests_properties(fuse_ui_vk_${g} PROPERTIES SKIP_RETURN_CODE 77 ENVIRONMENT "${FUSE_UI_LVP_ENV}"
+                             LABELS "fuse_ui;gate;vulkan")
+    endforeach()
 endif()
 
 fuse_ui_test(fuse_ui_text_full test_text_full.cpp)

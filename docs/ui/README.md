@@ -57,7 +57,8 @@ network or a populated `FETCHCONTENT_BASE_DIR`; `COOKED` falls back to MINIMAL),
 
 FULL text: `cmake -S Source/FUSE/UI -B build-ui-full -G Ninja -DFUSE_UI_TEXT=FULL -DCMAKE_BUILD_TYPE=Release`. It has
 its own raster golden (`tests/golden/sample_full.png`). GPU parity runs on any Vulkan 1.2 device; for software use
-`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json` (lavapipe).
+`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json` (lavapipe). The kernel is bit-exact with the CPU raster on
+hardware too: it rounds division / sqrt to the IEEE result (Vulkan allows 2.5 ulp), including backdrop blur.
 
 ## Retained use
 
@@ -217,6 +218,9 @@ checks it against the overlay under one scripted event stream.
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
 | `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster (skips 77 without a display or device) |
 | `fuse_ui_a11y_windows` | UIA client (IUIAutomation) on a real Win32 window: control types and names, screen bounds, Invoke / Toggle / Value / RangeValue / ExpandCollapse, SetFocus + focus-changed event (Windows; skips 77 without AccessKit) |
+| `fuse_ui_vk_damage` | incremental GPU redraw of `DrawList::redrawRegion(damage)` (grown around backdrops): only touched tiles dispatched, result equals a full render |
+| `fuse_ui_vk_validation_clean` | `fuse_ui_vk_parity` + `fuse_ui_vk_damage` under `VK_LAYER_KHRONOS_validation` with sync validation: no warnings / errors (77 without the layer) |
+| `fuse_ui_vk_budget` | GPU time (timestamp queries) of 1080p frames: full, backdrop blur, incremental (software devices report only) |
 | `fuse_ui_game_hud_golden` | HUD demo scene against `tests/golden/hud.png` plus trail / marker / pool state |
 | `fuse_ui_gamepad_nav` | navigation with delay + repeat, A / B, radial menu by stick, prompt glyph swap, focus sounds |
 | `fuse_ui_world_panel_raycast` | ray → panel pixel mapping, misses and back faces, ray clicks, idle surface does not re-render |

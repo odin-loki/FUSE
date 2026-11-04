@@ -38,6 +38,37 @@ struct VkHeadless {
     void* stagingPtr = nullptr;
     u32 w = 0, h = 0;
     char deviceName[256] = {};
+    VkDebugUtilsMessengerEXT messenger = VK_NULL_HANDLE;
+
+    /// Set before init(): enable VK_LAYER_KHRONOS_validation (fuse_ui_vk_validation_clean).
+    static bool& validationRequested() {
+        static bool v = false;
+        return v;
+    }
+    /// Validation warnings / errors seen so far (all instances).
+    static int& validationMessages() {
+        static int n = 0;
+        return n;
+    }
+    /// True when the Khronos validation layer is installed.
+    static bool validationAvailable() {
+        u32 n = 0;
+        vkEnumerateInstanceLayerProperties(&n, nullptr);
+        std::vector<VkLayerProperties> ls(n);
+        if (n) vkEnumerateInstanceLayerProperties(&n, ls.data());
+        for (const VkLayerProperties& l : ls)
+            if (std::strcmp(l.layerName, "VK_LAYER_KHRONOS_validation") == 0) return true;
+        return false;
+    }
+    static VKAPI_ATTR VkBool32 VKAPI_CALL onMessage(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+                                                    VkDebugUtilsMessageTypeFlagsEXT, const VkDebugUtilsMessengerCallbackDataEXT* d,
+                                                    void*) {
+        ++validationMessages();
+        if (validationMessages() <= 20)
+            std::fprintf(stderr, "[validation %s] %s\n", severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT ? "error" : "warning",
+                         d && d->pMessage ? d->pMessage : "");
+        return VK_FALSE;
+    }
 
     u32 memType(u32 bits, VkMemoryPropertyFlags want) const {
         VkPhysicalDeviceMemoryProperties mp;
@@ -54,8 +85,48 @@ struct VkHeadless {
         ai.apiVersion = VK_API_VERSION_1_1;
         VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
         ici.pApplicationInfo = &ai;
+        // validation (validationRequested()): Khronos layer + synchronization validation, messages counted
+        const char* layer = "VK_LAYER_KHRONOS_validation";
+        const char* ext = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
+        const VkValidationFeatureEnableEXT enables[] = {VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT};
+        VkValidationFeaturesEXT vf{VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT};
+        vf.enabledValidationFeatureCount = 1;
+        vf.pEnabledValidationFeatures = enables;
+        VkDebugUtilsMessengerCreateInfoEXT mci{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
+        mci.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+        mci.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                          VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+        mci.pfnUserCallback = &VkHeadless::onMessage;
+        if (validationRequested()) {
+            ici.enabledLayerCount = 1;
+            ici.ppEnabledLayerNames = &layer;
+            ici.enabledExtensionCount = 1;
+            ici.ppEnabledExtensionNames = &ext;
+            vf.pNext = &mci; // also covers vkCreateInstance / vkDestroyInstance
+            ici.pNext = &vf;
+        }
         if (vkCreateInstance(&ici, nullptr, &instance) != VK_SUCCESS) return false;
         FUSE_UI_TEST_VOLK(fuse::renderer::vkloader::registerInstance(instance));
+        if (validationRequested()) {
+            auto create = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
+                vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT"));
+            if (!create || create(instance, &mci, nullptr, &messenger) != VK_SUCCESS) return false;
+            // the messenger must see messages: inject one and take it back out of the count
+            auto submit = reinterpret_cast<PFN_vkSubmitDebugUtilsMessageEXT>(
+                vkGetInstanceProcAddr(instance, "vkSubmitDebugUtilsMessageEXT"));
+            const int before = validationMessages();
+            VkDebugUtilsMessengerCallbackDataEXT cd{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CALLBACK_DATA_EXT};
+            cd.pMessage = "fuse_ui vk_headless: messenger self-test (expected)";
+            if (submit)
+                submit(instance, VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT,
+                       VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT, &cd);
+            if (validationMessages() != before + 1) {
+                std::fprintf(stderr, "vk_headless: the debug messenger does not receive messages\n");
+                ++validationMessages(); // fail the gate
+            } else {
+                --validationMessages();
+            }
+        }
         u32 n = 0;
         vkEnumeratePhysicalDevices(instance, &n, nullptr);
         if (!n) return false;
@@ -195,6 +266,11 @@ struct VkHeadless {
             vkDestroyDevice(device, nullptr);
         }
         if (instance) {
+            if (messenger) {
+                auto destroy = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
+                    vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT"));
+                if (destroy) destroy(instance, messenger, nullptr);
+            }
             FUSE_UI_TEST_VOLK(fuse::renderer::vkloader::unregisterInstance(instance));
             vkDestroyInstance(instance, nullptr);
         }

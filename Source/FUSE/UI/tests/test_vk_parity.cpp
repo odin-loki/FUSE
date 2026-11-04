@@ -1,6 +1,6 @@
 // fuse_ui_vk_parity (UI4 gate): the GPU backend ("ui.draw_list" compute kernel) against the CPU reference rasteriser
 // (the specification), on the Tier A sample, a primitives sheet (gradients, borders, shadows, lines, nested rounded
-// clips, images, glyphs) and a scissored redraw. Gate: max channel error <= 2/255 and < 0.5 % of pixels differing at
+// clips, images, glyphs), a scissored redraw, an external texture and backdrop blurs (full + scissored). Gate: max channel error <= 2/255 and < 0.5 % of pixels differing at
 // all. Also: packing + upload of an unchanged frame does not allocate. Skips (77) without a Vulkan device.
 #include "fuse/ui/render/ui_vk.hpp"
 #include "test_util.hpp"
@@ -232,11 +232,48 @@ int main() {
         vkFreeMemory(vk.device, extMem, nullptr);
     }
 
+    // 6. backdrop blur (frosted glass): stripes + dots, then a plain backdrop, a tinted one inside a rounded clip,
+    //    one touching the target edge, and UI drawn over them (segments continue after each blur)
+    DrawList bl;
+    for (int i = 0; i < 25; ++i)
+        bl.rect({f32(i * 20), 0.f, 20.f, 400.f}, i % 2 ? Color::rgb(0x2050E0) : Color::rgb(0xE04020));
+    for (int i = 0; i < 12; ++i) bl.rect({10.f + f32(i) * 40.f, 150.f, 18.f, 18.f}, Color::rgb(0xF0F0F0), 9.f);
+    bl.line({0, 390}, {488, 210}, Color::rgb(0x33ff99), 4.f);
+    bl.backdrop({60.f, 40.f, 200.f, 120.f}, 12.f, {16.f, 16.f, 16.f, 16.f});
+    bl.rect({80.f, 60.f, 60.f, 24.f}, Color::rgb(0xffffff, 0.6f), 6.f);
+    bl.pushClip({250.f, 180.f, 200.f, 180.f}, 20.f);
+    bl.backdrop({230.5f, 170.25f, 240.f, 150.f}, 20.f, {8.f, 8.f, 8.f, 8.f}, Color::rgb(0xffffff, 0.25f));
+    bl.popClip();
+    bl.backdrop({400.f, 0.f, 88.f, 90.f}, 7.f, {0.f, 0.f, 0.f, 0.f}, Color::rgb(0x000000, 0.3f));
+    bl.rect({300.f, 300.f, 120.f, 40.f}, Color::rgb(0x112233, 0.8f), 10.f);
+    {
+        Image cpu6;
+        cpu6.resize(int(W), int(H), 0xFF000000u);
+        init.resize(int(W), int(H), 0xFF000000u);
+        CpuRasterizer().render(bl, cpu6);
+        packDrawList(bl, W, H, data);
+        UI_CHECK_EQ(data.segments.size(), std::size_t(4));
+        UI_CHECK(gpu.upload(1, data));
+        vk.run(init, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 1); });
+        check("backdrop", compare(cpu6, out));
+        // scissored redraw with a backdrop over existing content
+        const Rect bsc{120, 100, 250, 200};
+        Image cpu7 = cpu2;
+        CpuRasterizer().render(bl, cpu7, bsc);
+        packDrawList(bl, W, H, data, nullptr, 0, nullptr, 0, bsc);
+        UI_CHECK(gpu.upload(0, data));
+        vk.run(cpu2, out, [&](VkCommandBuffer c) { gpu.record((void*)c, (void*)vk.view, 0); });
+        check("backdrop-sc", compare(cpu7, out));
+    }
+
     // 4. steady state: packing + uploading the same frame again does not allocate
     packDrawList(ui.drawList(), W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()));
+    packDrawList(bl, W, H, data);
     const auto before = g_allocs.load();
     for (int i = 0; i < 10; ++i) {
         packDrawList(ui.drawList(), W, H, data, ui.atlas().pixels(), u32(ui.atlas().size()));
+        UI_CHECK(gpu.upload(u32(i & 1), data));
+        packDrawList(bl, W, H, data);
         UI_CHECK(gpu.upload(u32(i & 1), data));
     }
     UI_CHECK_EQ(g_allocs.load() - before, 0ull);
