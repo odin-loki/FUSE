@@ -601,12 +601,20 @@ struct NativePlatform::Impl {
             ok = detail::vkWinPresent(m.vkw, w, damage);
         } else {
             const Image& img = w.rasterize(damage);
+            // only the redrawn rect: lock() widens it to what the new buffer lacks (img holds the whole frame)
+            const Rect rr = w.rasterized();
+            ARect dirty{int32_t(rr.x), int32_t(rr.y), int32_t(rr.x + rr.w), int32_t(rr.y + rr.h)};
             ANativeWindow_Buffer buf{};
-            if (ANativeWindow_lock(m.window, &buf, nullptr) == 0) {
-                const int rows = std::min(buf.height, img.height), cols = std::min(buf.width, img.width);
-                for (int y = 0; y < rows; ++y)
-                    std::memcpy(static_cast<u32*>(buf.bits) + std::size_t(y) * std::size_t(buf.stride),
-                                img.pixels.data() + std::size_t(y) * std::size_t(img.width), std::size_t(cols) * 4);
+            if (rr.empty()) {
+                ok = true;
+            } else if (ANativeWindow_lock(m.window, &buf, &dirty) == 0) {
+                const int x0 = std::max(0, int(dirty.left)), y0 = std::max(0, int(dirty.top));
+                const int x1 = std::min({int(dirty.right), buf.width, img.width});
+                const int y1 = std::min({int(dirty.bottom), buf.height, img.height});
+                for (int y = y0; y < y1 && x0 < x1; ++y)
+                    std::memcpy(static_cast<u32*>(buf.bits) + std::size_t(y) * std::size_t(buf.stride) + std::size_t(x0),
+                                img.pixels.data() + std::size_t(y) * std::size_t(img.width) + std::size_t(x0),
+                                std::size_t(x1 - x0) * 4);
                 ANativeWindow_unlockAndPost(m.window);
                 ok = true;
             }

@@ -1,8 +1,9 @@
 // hello_app (plan UI5 sample): a .fuseui document, one bound counter, on-demand loop.
 //   hello_app [--ui=path/hello.fuseui] [--icons=pack.fuseicons] [--screenshot=out.png] [--clicks=N] [--startup-probe]
-//             [--window-shot=out.png]
+//             [--frame-probe] [--window-shot=out.png]
 // With --screenshot the app clicks the button N times (default 3), writes the frame and exits (headless).
 // --startup-probe opens the OS window, prints the time from process creation to the first presented frame, exits.
+// --frame-probe opens the OS window and prints median present times of small-change and whole-window frames.
 #include "fuse/app/app.hpp"
 #include "fuse/app/native.hpp"
 #include "fuse/ui/doc/document.hpp"
@@ -11,6 +12,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -104,6 +106,30 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "hello_app: presenter %s%s%s%.*s%s\n", kKinds[int(kind)], native.presenterPending(window) ? " (Vulkan starting)" : "",
                  native.gpuName().empty() ? "" : " on ", int(native.gpuName().size()), native.gpuName().data(),
                  native.gpuDraws(window) ? " (GPU draw list)" : "");
+    if (app.args().has("frame-probe")) {
+        // steady frames on the real window: the pointer crossing the button (small damage), then whole-window redraws
+        for (int i = 0; i < 2000 && window.framesPresented() < 1; ++i) app.step(0.005f);
+        const double first = msSinceProcessStart();
+        auto& ctx = window.ui();
+        const fuse::ui::Rect b = ctx.rect(ctx.find("click"));
+        auto timed = [&](auto&& change) {
+            std::vector<double> ms;
+            for (int i = 0; i < 40; ++i) {
+                change(i);
+                const unsigned long long before = window.framesPresented();
+                const double t0 = msSinceProcessStart();
+                app.step(0.f);
+                if (window.framesPresented() > before) ms.push_back(msSinceProcessStart() - t0);
+            }
+            std::sort(ms.begin(), ms.end());
+            return ms.empty() ? -1.0 : ms[ms.size() / 2];
+        };
+        const double hover = timed([&](int i) { window.ui().pointerMove(i & 1 ? fuse::ui::Vec2{1.f, 1.f} : fuse::ui::Vec2{b.x + b.w * 0.5f, b.y + b.h * 0.5f}); });
+        const double full = timed([&](int) { window.requestRedraw(); });
+        std::printf("hello_app: frame_probe presenter=%s first_frame_ms=%.1f hover_frame_ms=%.3f full_frame_ms=%.3f (%ux%u px)\n",
+                    kKinds[int(native.kind(window))], first, hover, full, window.pixelSize().w, window.pixelSize().h);
+        return 0;
+    }
     if (app.args().has("startup-probe")) {
         // launch-to-first-presented-frame on a real OS window (gate fuse_app_native_startup), from process creation
         for (int i = 0; i < 2000 && window.framesPresented() < 1; ++i) app.step(0.005f);
