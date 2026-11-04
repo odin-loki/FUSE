@@ -182,6 +182,10 @@ constexpr u32 kTargets = kResolveColorAttachments; // RT0..RT5 + material id
 constexpr u32 kTexelBytes[kTargets] = {8u, 4u, 4u, 4u, 4u, 8u, 4u};
 
 // Tolerances of resolve vs forward (see the header comment and the WP-1.5 row).
+// Depth and normal also get the forward reference's vertex-snapping slack per pixel (snapSlack): the
+// rasteriser interpolates over vertices snapped to its sub-pixel grid, so on a triangle seen edge-on
+// (barycentric derivatives of 5..100 per pixel) its attributes are the exact ones up to one sub-pixel
+// step away (measured on an RTX 3090: depth 2.7e-5, normal 0.015 rad).
 constexpr f64 kTolDepth = 1e-5;       // D32 z/w from the rasteriser vs the decoded z/w (WP-1.4: <= 4.8e-7)
 constexpr f64 kTolNormalRad = 4e-3;   // two RGBA16F oct quanta (encode_normal_rgba16f keeps each < 1e-3 rad)
 constexpr f64 kTolUnorm8 = 2.0 / 255.0;
@@ -332,6 +336,7 @@ struct Context {
     BindlessSlotHandle samplers[2]{};
     u32 samplerHandles[2] = {};
     u64 serial = 0;
+    f64 snapStep = 1.0 / 256.0; ///< one sub-pixel step (px): 2^-subPixelPrecisionBits
 
     ~Context() {
         if (vkDevice != VK_NULL_HANDLE) {
@@ -576,6 +581,11 @@ int setup(Context& ctx, bool descriptorBuffer, bool validation) {
         return kSkip;
     }
     ctx.vkDevice = static_cast<VkDevice>(ctx.device->nativeHandle());
+    {
+        VkPhysicalDeviceProperties props{};
+        vkGetPhysicalDeviceProperties(static_cast<VkPhysicalDevice>(ctx.device->nativePhysicalDevice()), &props);
+        ctx.snapStep = std::ldexp(1.0, -static_cast<int>(std::max(props.limits.subPixelPrecisionBits, 4u))); // Vulkan minimum 4
+    }
     ctx.allocator = GpuAllocator::create(*ctx.device);
     if (ctx.allocator == nullptr || !ctx.allocator->isValid()) {
         std::fprintf(stderr, "FAIL: GpuAllocator\n");
@@ -981,6 +991,7 @@ struct FrameReport {
     u32 binnedUberDiff = 0;
     u32 bad[10] = {}; ///< depth, normal, albedo, alpha, rough, metal, mask/shading, ao, emissive, velocity
     f64 maxErr[10] = {};
+    u32 snapPixels = 0; ///< within tolerance only through the vertex-snapping slack (snapSlack)
     u32 lodPixels = 0;
     f64 lodMaxDiff = 0.0;
     f64 lodSumDiff = 0.0;
@@ -1006,6 +1017,62 @@ void note(FrameReport& r, Channel c, f64 err, f64 tol) {
 
 f64 relErr(f64 a, f64 b, f64 scale) { return std::fabs(a - b) / std::max(scale, 1e-30); }
 
+/// viewProj with the image shifted by (dx, dy) pixels: the decode of a pixel centre then sees the
+/// triangle at (x - dx, y - dy), so the CPU attribute kernel evaluates the same (instance, triangle) at a
+/// displaced point (barycentrics extrapolate past the triangle's edges).
+Mat4 shiftedViewProj(const Mat4& vp, f64 dx, f64 dy) {
+    Mat4 r = vp;
+    for (u32 c = 0; c < 4u; ++c) {
+        r.m[c * 4u + 0u] = static_cast<f32>(vp.m[c * 4u + 0u] + 2.0 * dx / kWidth * vp.m[c * 4u + 3u]);
+        r.m[c * 4u + 1u] = static_cast<f32>(vp.m[c * 4u + 1u] + 2.0 * dy / kHeight * vp.m[c * 4u + 3u]);
+    }
+    return r;
+}
+
+f64 normalAngle(const f32 a[3], const f32 b[3]) {
+    const f64 la = std::sqrt(static_cast<f64>(a[0]) * a[0] + static_cast<f64>(a[1]) * a[1] + static_cast<f64>(a[2]) * a[2]);
+    const f64 lb = std::sqrt(static_cast<f64>(b[0]) * b[0] + static_cast<f64>(b[1]) * b[1] + static_cast<f64>(b[2]) * b[2]);
+    if (!(la > 0.0) || !(lb > 0.0)) {
+        return 0.0;
+    }
+    const f64 d = (static_cast<f64>(a[0]) * b[0] + static_cast<f64>(a[1]) * b[1] + static_cast<f64>(a[2]) * b[2]) / (la * lb);
+    return std::acos(std::clamp(d, -1.0, 1.0));
+}
+
+/// Vertex-snapping slack of the forward reference (kTolDepth's comment): the rasteriser interpolates
+/// over vertices snapped to its subPixelPrecisionBits grid. Through the barycentric correspondence of the
+/// exact and the snapped triangle, its value at a pixel centre is the exact triangle's (perspective-correct
+/// attributes and z / w alike) at a point displaced by sum(b_i * d_i), |d_i| <= one sub-pixel step per
+/// axis. The slack is the largest change of the CPU attribute kernel's value over the corners of that
+/// square (same ids, evaluated directly: on a sliver the attributes move far from linearly within one
+/// step). Negligible except on triangles seen edge-on.
+struct SnapSlack {
+    f64 depth = 0.0;
+    f64 normal = 0.0; ///< radians (the geometric normal; a normal map's change is the texture term's)
+};
+
+constexpr u32 kSnapCorners = 4;
+
+SnapSlack snapSlack(const std::vector<ResolveAttributeTexel>& cpu, const std::vector<ResolveAttributeTexel> (&corners)[kSnapCorners],
+                    u32 p) {
+    SnapSlack s{};
+    const ResolveAttributeTexel& c = cpu[p];
+    if (c.flags != kAttrOk) {
+        return s;
+    }
+    for (const std::vector<ResolveAttributeTexel>& k : corners) {
+        if (k[p].flags != kAttrOk) {
+            continue;
+        }
+        s.depth = std::max(s.depth, std::fabs(static_cast<f64>(k[p].depth) - c.depth));
+        s.normal = std::max(s.normal, normalAngle(k[p].normal, c.normal));
+    }
+    if (!std::isfinite(s.depth) || !std::isfinite(s.normal)) {
+        return SnapSlack{};
+    }
+    return s;
+}
+
 void analyse(Context& ctx, Scene& s, const Mat4& vp, const Mat4& prevVp, bool aniso, FrameReport& r) {
     const u32* vis = reinterpret_cast<const u32*>(rb(ctx, g_layout.vis));
     const u32* fids = reinterpret_cast<const u32*>(rb(ctx, g_layout.forwardIds));
@@ -1028,6 +1095,16 @@ void analyse(Context& ctx, Scene& s, const Mat4& vp, const Mat4& prevVp, bool an
     for (u32 t = 0; t < kTargets; ++t) {
         r.binnedCopy.insert(r.binnedCopy.end(), rb(ctx, g_layout.sets[0][t]),
                             rb(ctx, g_layout.sets[0][t]) + static_cast<usize>(kPixels) * kTexelBytes[t]);
+    }
+    // CPU attribute kernel at the pixel centres and at the corners of the snapping square (snapSlack).
+    const ResolveSceneView view = resolve_scene_view(s.gpu, s.streams);
+    std::vector<ResolveAttributeTexel> cpu;
+    std::vector<ResolveAttributeTexel> corners[kSnapCorners];
+    attributes_reference(view, vp.m, prevVp.m, vis, kWidth, kHeight, cpu);
+    for (u32 k = 0; k < kSnapCorners; ++k) {
+        const f64 dx = (k & 1u) != 0u ? ctx.snapStep : -ctx.snapStep;
+        const f64 dy = (k & 2u) != 0u ? ctx.snapStep : -ctx.snapStep;
+        attributes_reference(view, shiftedViewProj(vp, dx, dy).m, prevVp.m, vis, kWidth, kHeight, corners[k]);
     }
     // (2) resolve (binned) vs forward.
     for (u32 p = 0; p < kPixels; ++p) {
@@ -1068,11 +1145,19 @@ void analyse(Context& ctx, Scene& s, const Mat4& vp, const Mat4& prevVp, bool an
             }
             return 0.0;
         };
-        note(r, kDepth, std::fabs(static_cast<f64>(g.depth) - f.depth), kTolDepth);
+        const f64 depthErr = std::fabs(static_cast<f64>(g.depth) - f.depth);
         const f64 dotn = std::clamp(static_cast<f64>(g.n[0]) * f.n[0] + static_cast<f64>(g.n[1]) * f.n[1] +
                                         static_cast<f64>(g.n[2]) * f.n[2],
                                     -1.0, 1.0);
-        note(r, kNormal, std::acos(dotn), kTolNormalRad + 3.0 * texBound(m.normalTexIdx) * m.normalStrength);
+        const f64 normalErr = std::acos(dotn);
+        const f64 normalTol = kTolNormalRad + 3.0 * texBound(m.normalTexIdx) * m.normalStrength;
+        const SnapSlack slack = snapSlack(cpu, corners, p);
+        note(r, kDepth, depthErr, kTolDepth + slack.depth);
+        note(r, kNormal, normalErr, normalTol + slack.normal);
+        r.snapPixels += (depthErr > kTolDepth && depthErr <= kTolDepth + slack.depth) ||
+                                (normalErr > normalTol && normalErr <= normalTol + slack.normal)
+                            ? 1u
+                            : 0u;
         const bool probe = hasMat && m.baseColorTexIdx == ctx.textureHandles[mr_test::kTexLodProbe];
         f64 albedoErr = 0.0;
         for (u32 k = 0; k < 3u; ++k) {
@@ -1111,9 +1196,6 @@ void analyse(Context& ctx, Scene& s, const Mat4& vp, const Mat4& prevVp, bool an
              kTolVelocityAbs + kTolVelocityRel * vmag);
     }
     // (3) attribute dump vs the CPU kernel.
-    const ResolveSceneView view = resolve_scene_view(s.gpu, s.streams);
-    std::vector<ResolveAttributeTexel> cpu;
-    attributes_reference(view, vp.m, prevVp.m, vis, kWidth, kHeight, cpu);
     for (u32 p = 0; p < kPixels; ++p) {
         const ResolveAttributeTexel& a = gpu[p];
         const ResolveAttributeTexel& c = cpu[p];
@@ -1232,6 +1314,7 @@ int runParity(Context& ctx, VisMode mode) {
                 total.bad[c] += r.bad[c];
                 total.maxErr[c] = std::max(total.maxErr[c], r.maxErr[c]);
             }
+            std::printf(" (snap slack used: %u px)", r.snapPixels);
             std::printf("\n        attributes vs CPU: b/depth %.3g, db %.3g, uv %.3g, n/t %.3g, velocity %.3g px\n",
                         r.attrMaxErr[0], r.attrMaxErr[1], r.attrMaxErr[2], r.attrMaxErr[3], r.attrMaxErr[4]);
             expect(r.covered > kPixels / 3u, "the scene covers the view");
