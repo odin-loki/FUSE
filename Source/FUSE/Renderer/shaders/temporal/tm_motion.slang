@@ -13,8 +13,8 @@ struct TmMotion {
 
 float2 fuseTmClipUv(float4 c) {
     float2 uv;
-    uv.x = c.x / c.w * 0.5 + 0.5;
-    uv.y = c.y / c.w * 0.5 + 0.5;
+    uv.x = fuseTmDiv(c.x, c.w) * 0.5 + 0.5;
+    uv.y = fuseTmDiv(c.y, c.w) * 0.5 + 0.5;
     return uv;
 }
 
@@ -27,15 +27,15 @@ TmMotion fuseTmSky(TmMotionFrame f, uint2 p) {
     }
     const float sx = float(p.x) + 0.5 + f.jitterX;
     const float sy = float(p.y) + 0.5 + f.jitterY;
-    const float nx = sx * (2.0 / float(f.width)) - 1.0;
-    const float ny = sy * (2.0 / float(f.height)) - 1.0;
+    const float nx = sx * fuseTmDiv(2.0, float(f.width)) - 1.0;
+    const float ny = sy * fuseTmDiv(2.0, float(f.height)) - 1.0;
     const float px = f.skyReproj[0].x * nx + f.skyReproj[1].x * ny + f.skyReproj[2].x;
     const float py = f.skyReproj[0].y * nx + f.skyReproj[1].y * ny + f.skyReproj[2].y;
     const float pw = f.skyReproj[0].z * nx + f.skyReproj[1].z * ny + f.skyReproj[2].z;
     if (pw > 0.0) {
-        const float cu = sx / float(f.width);
-        const float cv = sy / float(f.height);
-        r.motion = float2(cu - (px / pw * 0.5 + 0.5), cv - (py / pw * 0.5 + 0.5));
+        const float cu = fuseTmDiv(sx, float(f.width));
+        const float cv = fuseTmDiv(sy, float(f.height));
+        r.motion = float2(cu - (fuseTmDiv(px, pw) * 0.5 + 0.5), cv - (fuseTmDiv(py, pw) * 0.5 + 0.5));
     }
     return r;
 }
@@ -87,9 +87,9 @@ TmMotion fuseTmMotion(GpuSceneHeader* scene, TmMotionFrame f, uint2 p, uint2 vis
     if (s == 0.0) {
         return r;
     }
-    const float b0 = e0 / s;
-    const float b1 = e1 / s;
-    const float b2 = e2 / s;
+    const float b0 = fuseTmDiv(e0, s);
+    const float b1 = fuseTmDiv(e1, s);
+    const float b2 = fuseTmDiv(e2, s);
     float3 obj;
     obj.x = b0 * v[0].x + b1 * v[1].x + b2 * v[2].x;
     obj.y = b0 * v[0].y + b1 * v[1].y + b2 * v[2].y;

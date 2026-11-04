@@ -61,6 +61,7 @@
 #include <fuse/renderer/lighting/gpu/clustered_gpu_reference.hpp>
 #include <fuse/renderer/lighting/gpu/clustered_lighting.hpp>
 #include <fuse/renderer/material_resolve/material_resolve.hpp>
+#include <fuse/renderer/material_resolve/resolve_reference.hpp>
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
 #include <fuse/renderer/visbuffer/visbuffer.hpp>
@@ -86,6 +87,7 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+#include <fuse/renderer/vk/test_layer_env.hpp>
 #endif
 
 // --- allocation counter (operator new) -----------------------------------------------------------
@@ -329,6 +331,17 @@ f32 halfAt(const u8* p, usize i) {
 }
 
 f32 toHalf(f32 v) { return GBufferQuantize::toHalf(v); }
+/// f32 -> half rounded toward zero (finite, |v| < 65520), returned as f32.
+f32 toHalfRtz(f32 v) {
+    const f32 a = std::fabs(v);
+    if (!(a > 0.f)) {
+        return v;
+    }
+    int e = 0;
+    std::frexp(a, &e);                             // a in [2^(e-1), 2^e)
+    const f32 q = std::ldexp(1.f, std::max(e - 11, -24)); // half quantum (subnormal below 2^-14)
+    return std::copysign(std::trunc(a / q) * q, v);  // a / q exact (power of two)
+}
 
 // --- Vulkan context -------------------------------------------------------------------------------
 struct Context {
@@ -349,6 +362,7 @@ struct Context {
     BindlessSlotHandle sampler{};
     u32 samplerHandle = 0;
     u64 serial = 0;
+    f64 snapStep = 1.0 / 256.0; ///< one sub-pixel step (px): 2^-subPixelPrecisionBits
 
     ~Context() {
         if (vkDevice != VK_NULL_HANDLE) {
@@ -388,8 +402,7 @@ int setup(Context& ctx, bool descriptorBuffer, bool validation) {
             return kSkip;
         }
         setenv("VK_INSTANCE_LAYERS", kValidationLayer, 1);
-        setenv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", 1);
-        setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", 1);
+        fuse::renderer::test::enableSyncValidationEnv();
         setenv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK", 1);
     } else {
         setenv("VK_INSTANCE_LAYERS", "", 1);
@@ -440,6 +453,11 @@ int setup(Context& ctx, bool descriptorBuffer, bool validation) {
         return kSkip;
     }
     ctx.vkDevice = static_cast<VkDevice>(ctx.device->nativeHandle());
+    {
+        VkPhysicalDeviceProperties props{};
+        vkGetPhysicalDeviceProperties(static_cast<VkPhysicalDevice>(ctx.device->nativePhysicalDevice()), &props);
+        ctx.snapStep = std::ldexp(1.0, -static_cast<int>(std::max(props.limits.subPixelPrecisionBits, 4u))); // Vulkan minimum 4
+    }
     ctx.allocator = GpuAllocator::create(*ctx.device);
     if (ctx.allocator == nullptr || !ctx.allocator->isValid()) {
         std::fprintf(stderr, "FAIL: GpuAllocator\n");
@@ -519,6 +537,8 @@ constexpr u32 kSphereObjects[kLayers] = {kSphere0, kSphere1, kSphere2};
 struct Scene {
     GpuScene gpu;
     std::vector<geometry::MeshletMesh> meshes;
+    std::vector<ResolveMeshData> data;                  ///< CPU attribute kernel streams (the snapping slack)
+    std::vector<resolve_kernel::MeshStreams> streams;
     InstanceHandle handles[kObjectCount]{};
     GpuTransform base[kObjectCount]{};
     std::vector<LightHandle> lights;
@@ -549,10 +569,13 @@ bool buildScene(Context& ctx, Scene& s) {
     s.gpu.beginFrame(ctx.serial);
     const mr_test::SourceMesh sources[3] = {mr_test::uvSphere(24, 32, 1.f), mr_test::box(), mr_test::plane(8, 40.f, 4.f)};
     s.meshes.resize(3);
+    s.data.resize(3);
     for (u32 i = 0; i < 3u; ++i) {
         if (!mr_test::build(sources[i], s.meshes[i]) || s.gpu.addMeshletMesh(s.meshes[i]) != i) {
             return false;
         }
+        make_mesh_streams(s.meshes[i], s.data[i]);
+        s.streams.push_back(s.data[i].streams);
     }
     fuse::renderer::Material::GPUMaterial materials[kMatCount] = {
         flatMaterial(0.6f, 0.6f, 0.55f, 0.f, 0.8f),   flatMaterial(0.35f, 0.45f, 0.72f, 0.f, 0.6f),
@@ -743,6 +766,7 @@ constexpr u32 kGBufferBytes[5] = {8u, 4u, 4u, 4u, 8u};
 struct ReadbackLayout {
     u64 gbuffer[5] = {};
     u64 materialId = 0;
+    u64 vis = 0;
     u64 lists = 0;
     u64 listsBytes = 0;
     u64 lit = 0;
@@ -762,6 +786,7 @@ ReadbackLayout makeLayout(u64 listsBytes) {
         l.gbuffer[i] = take(static_cast<u64>(kPixels) * kGBufferBytes[i]);
     }
     l.materialId = take(static_cast<u64>(kPixels) * 4u);
+    l.vis = take(static_cast<u64>(kPixels) * 8u);
     l.listsBytes = listsBytes;
     l.lists = take(listsBytes);
     l.lit = take(static_cast<u64>(kPixels) * 8u);
@@ -909,6 +934,7 @@ void buildGraph(Context& ctx, Scene& s, Rig& rig, rg::Graph& graph, FrameState& 
                 static_cast<u64>(kPixels) * kGBufferBytes[i]);
     }
     addCopy(CopyRecord::Image, gbuffer.materialId, {}, fs.layout.materialId, static_cast<u64>(kPixels) * 4u);
+    addCopy(CopyRecord::Image, vis.vis, {}, fs.layout.vis, static_cast<u64>(kPixels) * 8u);
     addCopy(CopyRecord::Buffer, {}, lighting.lists, fs.layout.lists, fs.layout.listsBytes);
     addCopy(CopyRecord::Image, lighting.output, {}, fs.layout.lit, static_cast<u64>(kPixels) * 8u);
     graph.addPass("readback.shade_dump", nullptr, nullptr).use(shadeDump, rg::Access::HostRead);
@@ -955,10 +981,63 @@ bool runFrame(Context& ctx, Scene& s, Rig& rig, rg::Graph& graph, const FrameCam
 // --- read-back decoding ---------------------------------------------------------------------------
 const u8* rb(Context& ctx, u64 offset) { return static_cast<const u8*>(ctx.readback.mapped) + offset; }
 
+/// viewProj with the image shifted by (dx, dy) pixels (the CPU attribute kernel then evaluates each pixel's
+/// triangle at a displaced point; barycentrics extrapolate past its edges).
+Mat4 shiftedViewProj(const Mat4& vp, f64 dx, f64 dy) {
+    Mat4 r = vp;
+    for (u32 c = 0; c < 4u; ++c) {
+        r.m[c * 4u + 0u] = static_cast<f32>(vp.m[c * 4u + 0u] + 2.0 * dx / kWidth * vp.m[c * 4u + 3u]);
+        r.m[c * 4u + 1u] = static_cast<f32>(vp.m[c * 4u + 1u] + 2.0 * dy / kHeight * vp.m[c * 4u + 3u]);
+    }
+    return r;
+}
+
+f64 angleOf(const f32 a[3], const f32 b[3]) {
+    const f64 la = std::sqrt(static_cast<f64>(a[0]) * a[0] + static_cast<f64>(a[1]) * a[1] + static_cast<f64>(a[2]) * a[2]);
+    const f64 lb = std::sqrt(static_cast<f64>(b[0]) * b[0] + static_cast<f64>(b[1]) * b[1] + static_cast<f64>(b[2]) * b[2]);
+    if (!(la > 0.0) || !(lb > 0.0)) {
+        return 0.0;
+    }
+    const f64 d = (static_cast<f64>(a[0]) * b[0] + static_cast<f64>(a[1]) * b[1] + static_cast<f64>(a[2]) * b[2]) / (la * lb);
+    return std::acos(std::clamp(d, -1.0, 1.0));
+}
+
+/// Vertex-snapping slack of the forward fragment against the resolved texel (test_rp_material_resolve.cpp
+/// snapSlack): the rasteriser interpolates over vertices snapped to its subPixelPrecisionBits grid, i.e. it
+/// evaluates the exact triangle at a point up to one sub-pixel step from the pixel centre, while the resolve
+/// decodes the exact triangle at the centre. Per pixel: the largest change of the CPU attribute kernel's
+/// depth / normal over the corners of the +-step square (same ids). Large only on near-edge-on triangles.
+struct SnapSlack {
+    std::vector<f64> depth;
+    std::vector<f64> normal; ///< radians
+};
+
+SnapSlack snapSlack(const Scene& s, const Mat4& vp, const std::vector<u32>& vis, f64 step) {
+    const ResolveSceneView view = resolve_scene_view(s.gpu, s.streams);
+    std::vector<ResolveAttributeTexel> centre, corner;
+    attributes_reference(view, vp.m, vp.m, vis.data(), kWidth, kHeight, centre);
+    SnapSlack r{std::vector<f64>(kPixels, 0.0), std::vector<f64>(kPixels, 0.0)};
+    for (u32 k = 0; k < 4u; ++k) {
+        const Mat4 shifted = shiftedViewProj(vp, (k & 1u) != 0u ? step : -step, (k & 2u) != 0u ? step : -step);
+        attributes_reference(view, shifted.m, shifted.m, vis.data(), kWidth, kHeight, corner);
+        for (u32 p = 0; p < kPixels; ++p) {
+            if (centre[p].flags != kAttrOk || corner[p].flags != kAttrOk) {
+                continue;
+            }
+            const f64 dz = std::fabs(static_cast<f64>(corner[p].depth) - centre[p].depth);
+            const f64 dn = angleOf(corner[p].normal, centre[p].normal);
+            r.depth[p] = std::isfinite(dz) ? std::max(r.depth[p], dz) : r.depth[p];
+            r.normal[p] = std::isfinite(dn) ? std::max(r.normal[p], dn) : r.normal[p];
+        }
+    }
+    return r;
+}
+
 struct Captured {
     std::vector<f32> depth;
     std::vector<Vec4> rt0, rt1, rt2, rt5;
     std::vector<u32> material;
+    std::vector<u32> vis;             ///< visibility buffer (R32G32: instance, triangle)
     std::vector<Vec4> lit;            ///< lighting output (RGBA16F)
     std::vector<Vec4> shade;          ///< light.shade f32 dump
     std::vector<Vec4> color[kLanguages]; ///< forward composite (RGBA16F)
@@ -988,6 +1067,8 @@ void capture(Context& ctx, const Rig& rig, const FrameState& fs, Captured& c) {
     const u8* rt5 = rb(ctx, fs.layout.gbuffer[4]);
     const u8* lit = rb(ctx, fs.layout.lit);
     std::memcpy(c.material.data(), rb(ctx, fs.layout.materialId), static_cast<usize>(kPixels) * 4u);
+    c.vis.resize(static_cast<usize>(kPixels) * 2u);
+    std::memcpy(c.vis.data(), rb(ctx, fs.layout.vis), static_cast<usize>(kPixels) * 8u);
     std::memcpy(c.shade.data(), ctx.shadeDump.mapped, static_cast<usize>(kPixels) * sizeof(Vec4));
     for (usize p = 0; p < kPixels; ++p) {
         std::memcpy(&c.depth[p], rt4 + p * 4u, 4u);
@@ -1192,6 +1273,7 @@ int runTwin(Context& ctx) {
         Captured b{};
         capture(ctx, rig, fs, b);
         expect(sameGrid(a.grid, b.grid) && a.directional == b.directional, "same cluster lists in both frames");
+        const SnapSlack slack = snapSlack(s, cam.viewProj, a.vis, ctx.snapStep);
         // CPU shade of frame A's G-buffer (the deferred side of the surface term).
         const std::vector<Vec4> refDeferred = cpuShade(s, rig, cam, a, a.depth, a.rt0, a.rt1, a.rt2, a.rt5);
         u32 spherePixels = 0;
@@ -1216,7 +1298,7 @@ int runTwin(Context& ctx) {
             expect(order, "draws back to front");
             const LayerShadeReport shading = checkLayerShading(s, rig, cam, b, k);
             // Visible layer per pixel = the last covering draw (alpha 1: it replaces the others).
-            u32 coverageBad = 0, surfaceBad = 0, twinBad = 0, imageBad = 0, offBad = 0, visible = 0;
+            u32 coverageBad = 0, surfaceBad = 0, twinBad = 0, imageBad = 0, offBad = 0, visible = 0, snapPixels = 0;
             f64 maxDepth = 0.0, maxNormal = 0.0, maxTwinRel = 0.0, maxSurfaceTerm = 0.0;
             for (usize p = 0; p < kPixels; ++p) {
                 i32 top = -1;
@@ -1241,7 +1323,8 @@ int runTwin(Context& ctx) {
                 const f64 dn = normalAngle(Vec4{t.rt0[0], t.rt0[1], t.rt0[2], t.rt0[3]}, a.rt0[p]);
                 maxDepth = std::max(maxDepth, dz);
                 maxNormal = std::max(maxNormal, dn);
-                bool sbad = dz > kTolDepth || dn > kTolNormal || t.rt0[3] != a.rt0[p].w;
+                bool sbad = dz > kTolDepth + slack.depth[p] || dn > kTolNormal + slack.normal[p] || t.rt0[3] != a.rt0[p].w;
+                snapPixels += (dz > kTolDepth || dn > kTolNormal) && !sbad ? 1u : 0u;
                 const Vec4 fwd[3] = {{t.rt1[0], t.rt1[1], t.rt1[2], t.rt1[3]},
                                      {t.rt2[0], t.rt2[1], t.rt2[2], t.rt2[3]},
                                      {t.rt5[0], t.rt5[1], t.rt5[2], t.rt5[3]}};
@@ -1284,10 +1367,10 @@ int runTwin(Context& ctx) {
                 twinBad += tbad ? 1u : 0u;
             }
             std::printf("    %s: layers %zu covered %u, shade-vs-kernel bad %u (max rel %.2e) | visible %u coverage-bad %u "
-                        "surface-bad %u (max depth %.2e, normal %.2e rad) twin-bad %u (max rel %.2e, surface term %.2e) "
+                        "surface-bad %u (max depth %.2e, normal %.2e rad; snap slack used on %u) twin-bad %u (max rel %.2e, surface term %.2e) "
                         "image-bad %u off-sphere-bad %u\n",
                         rig.language[k], draws.size(), shading.covered, shading.bad, shading.maxRel, visible, coverageBad,
-                        surfaceBad, maxDepth, maxNormal, twinBad, maxTwinRel, maxSurfaceTerm, imageBad, offBad);
+                        surfaceBad, maxDepth, maxNormal, snapPixels, twinBad, maxTwinRel, maxSurfaceTerm, imageBad, offBad);
             expect(shading.covered > 0u && shading.bad == 0u, "forward layers == the deferred shade kernel on their surface");
             expect(visible == spherePixels && coverageBad == 0u, "forward coverage == the opaque twin's coverage");
             expect(surfaceBad == 0u, "forward surface == the twin's G-buffer within the interpolation tolerances");
@@ -1392,10 +1475,16 @@ int runBlend(Context& ctx) {
             // half ulp of x) + the subnormal step: each blend rounds its f32 result to half once, either way
             // (Vulkan allows RTE or RTZ; Lavapipe truncates, the emulation rounds to nearest), and (1 - a) < 1
             // keeps earlier rounding differences from growing.
-            u32 compositeBad = 0, layered[kLayers + 1u] = {};
+            // The blend's inputs are implementation-defined too: Vulkan only asks for blending at no less than the
+            // attachment's precision, and an RTX 3090 converts the fragment output (premultiplied colour and
+            // alpha) to half, rounding toward zero, before blending, so ONE_MINUS_SRC_ALPHA uses the half alpha
+            // (0.6 -> 0.5996: 2 half ulp on a 0.06 result over a 0.11 background). A channel passes against either
+            // CPU composite: the f32 source (Lavapipe), or the source truncated to half first; same tolerance.
+            u32 compositeBad = 0, compositeHalfSrc = 0, layered[kLayers + 1u] = {};
             f64 maxUlps = 0.0;
             for (usize p = 0; p < kPixels; ++p) {
                 Vec4 dst = c.lit[p];
+                Vec4 dstH = c.lit[p]; // the srcHalf composite
                 u32 n = 0;
                 for (usize d = 0; d < draws.size(); ++d) {
                     const ForwardDumpTexel& t = c.layers[k][d * kPixels + p];
@@ -1405,16 +1494,26 @@ int runBlend(Context& ctx) {
                     ++n;
                     const Vec4 o = blend_over(Vec3{t.radiance[0], t.radiance[1], t.radiance[2]}, t.alpha, dst);
                     dst = {toHalf(o.x), toHalf(o.y), toHalf(o.z), toHalf(o.w)};
+                    const f32 aH = toHalfRtz(t.alpha);
+                    const f32 kH = 1.f - aH;
+                    dstH = {toHalf(toHalfRtz(t.radiance[0] * t.alpha) + dstH.x * kH),
+                            toHalf(toHalfRtz(t.radiance[1] * t.alpha) + dstH.y * kH),
+                            toHalf(toHalfRtz(t.radiance[2] * t.alpha) + dstH.z * kH), toHalf(aH + dstH.w * kH)};
                 }
                 ++layered[n];
                 const Vec4& g = c.color[k][p];
                 const f32 gv[4] = {g.x, g.y, g.z, g.w};
                 const f32 cv[4] = {dst.x, dst.y, dst.z, dst.w};
+                const f32 hv[4] = {dstH.x, dstH.y, dstH.z, dstH.w};
                 for (u32 ch = 0; ch < 4u; ++ch) {
                     const f64 ulp = std::max(std::fabs(static_cast<f64>(cv[ch])), std::fabs(static_cast<f64>(gv[ch]))) / 1024.0 + 6e-8;
+                    const f64 ulpH = std::max(std::fabs(static_cast<f64>(hv[ch])), std::fabs(static_cast<f64>(gv[ch]))) / 1024.0 + 6e-8;
                     const f64 diff = std::fabs(static_cast<f64>(gv[ch]) - cv[ch]);
-                    maxUlps = std::max(maxUlps, diff / ulp);
-                    compositeBad += diff <= std::max(1u, n) * ulp ? 0u : 1u;
+                    const f64 diffH = std::fabs(static_cast<f64>(gv[ch]) - hv[ch]);
+                    const f64 ulps = std::min(diff / ulp, diffH / ulpH);
+                    maxUlps = std::max(maxUlps, ulps);
+                    compositeBad += ulps <= std::max(1u, n) ? 0u : 1u;
+                    compositeHalfSrc += diff / ulp > std::max(1u, n) && ulps <= std::max(1u, n) ? 1u : 0u;
                 }
             }
             std::printf("  step %u (%s, opacities %.2f %.2f %.2f%s) %s: order", step, st.camera == 0u ? "front" : "left",
@@ -1422,8 +1521,10 @@ int runBlend(Context& ctx) {
             for (const SortedDraw& d : draws) {
                 std::printf(" %u", d.slot);
             }
-            std::printf(" | px with 0/1/2/3 layers %u/%u/%u/%u | shade-bad %u (max rel %.2e) | composite-bad %u (max %.2f half ulp)\n",
-                        layered[0], layered[1], layered[2], layered[3], shading.bad, shading.maxRel, compositeBad, maxUlps);
+            std::printf(" | px with 0/1/2/3 layers %u/%u/%u/%u | shade-bad %u (max rel %.2e) | composite-bad %u (max %.2f half ulp; "
+                        "%u channels only match the half-source blend)\n",
+                        layered[0], layered[1], layered[2], layered[3], shading.bad, shading.maxRel, compositeBad, maxUlps,
+                        compositeHalfSrc);
             expect(layered[2] > 0u && layered[1] > 0u, "overlapping transparent layers");
             expect(shading.bad == 0u, "every layer == the deferred shade kernel on its surface");
             expect(compositeBad == 0u, "RGBA16F composite == CPU composite of the sorted layers");

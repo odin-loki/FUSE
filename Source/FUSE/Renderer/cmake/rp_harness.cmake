@@ -61,7 +61,6 @@ set(FUSE_RP_HARNESS_ARTIFACT_DIR "${CMAKE_BINARY_DIR}/rp_harness_artifacts")
 set(_fuse_rp_harness_validation_env
     "${FUSE_VULKAN_LVP_ENV}"
     "VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true"
-    "VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT"
     "VK_KHRONOS_VALIDATION_DEBUG_ACTION=VK_DBG_LAYER_ACTION_CALLBACK")
 
 add_executable(fuse_rp_harness_image_io ${_fuse_rp_harness_dir}/test_rp_harness_image_io.cpp)

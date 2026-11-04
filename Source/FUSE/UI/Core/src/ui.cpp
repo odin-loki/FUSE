@@ -1,4 +1,5 @@
 #include "fuse/ui/ui.hpp"
+#include "fuse/ui/effects.hpp"
 #include "fuse/ui/icons.hpp"
 
 #include <algorithm>
@@ -150,6 +151,7 @@ UiContext::UiContext(const UiContextDesc& d) : m_font(d.font), m_atlas(d.atlasSi
     m_shapeScratch.reserve(256);
     m_connections.reserve(256);
     m_timers.reserve(64);
+    m_fxAnimated.reserve(64);
     m_anims.reserve(128);
     m_queue = std::make_unique<Command[]>(kQueueSize);
     for (u32 i = 0; i < kQueueSize; ++i) m_queue[i].seq.store(i, std::memory_order_relaxed);
@@ -748,6 +750,25 @@ void UiContext::setIcons(const IconSet* icons) {
     markAllDirty();
 }
 
+// ---- Effects -------------------------------------------------------------------------------------------------------
+void UiContext::setEffects(const EffectRegistry* effects) {
+    if (effects == m_effects) return;
+    m_effects = effects;
+    markAllDirty();
+}
+
+void UiContext::paintEffect(u32 i, const ComputedStyle& s, DrawList& dl) {
+    if (!s.effect || !m_effects) return;
+    const i32 id = m_effects->findHash(s.effect);
+    if (id < 0) return;
+    const EffectDesc& d = m_effects->at(u32(id));
+    std::array<f32, kEffectParams> p = d.defaults;
+    for (u8 k = 0; k < s.effectParamCount && k < kEffectParams; ++k) p[k] = s.effectParams[k];
+    dl.effect(m_nodes[i].rect, u32(id), p, m_elapsed, m_effects->margin(u32(id), p.data()), s.radius);
+    dl.cmds().back().node = i;
+    if (d.animated) m_fxAnimated.push_back(i);
+}
+
 f32 UiContext::iconExtent(const ComputedStyle& s) const {
     if (!s.icon || !m_icons || m_icons->findHash(s.icon) < 0) return 0.f;
     return std::round(s.iconSize > 0.f ? s.iconSize : s.fontSize + 2.f);
@@ -764,38 +785,44 @@ bool UiContext::paintIcon(DrawList& dl, u32 nameHash, Vec2 at, f32 size, Color c
     if (c.a <= 0.f || size < 0.5f) return true;
     const f32 sc = m_scale; // rasterised at the device size (DPI scale)
     const int px = std::clamp(int(std::lround(size * sc)), 1, 1024);
-    // atlas key: bit 62 set, bit 63 clear (font glyph keys set bit 63)
-    const u64 key = (1ull << 62) | (u64(nameHash) << 16) | u64(px);
-    fuse::text::AtlasGlyph ag;
-    if (!m_atlas.lookup(key, ag)) {
-        IconBitmap bm;
-        if (m_icons->cooked(u32(idx), px, bm)) {
-            ag = m_atlas.insert(key, bm.pixels, bm.w, bm.h, bm.stride, bm.ox, bm.oy);
-        } else { // resample, then trim to the covered box
-            m_icons->render(u32(idx), px, m_iconScratch);
-            int x0 = px, y0 = px, x1 = -1, y1 = -1;
-            for (int y = 0; y < px; ++y)
-                for (int x = 0; x < px; ++x)
-                    if (m_iconScratch[std::size_t(y) * std::size_t(px) + std::size_t(x)]) {
-                        x0 = std::min(x0, x); y0 = std::min(y0, y); x1 = std::max(x1, x); y1 = std::max(y1, y);
-                    }
-            if (x1 < 0) ag = m_atlas.insert(key, nullptr, 0, 0, 0, 0, 0);
-            else ag = m_atlas.insert(key, m_iconScratch.data() + std::size_t(y0) * std::size_t(px) + std::size_t(x0), x1 - x0 + 1,
-                                     y1 - y0 + 1, px, x0, y0);
+    // one Glyph per colour layer, back to front: currentColor layers take the tint, the others keep their colour
+    for (u32 layer = 0, layers = m_icons->layerCount(u32(idx)); layer < layers; ++layer) {
+        // atlas key: bit 62 set, bit 63 clear (font glyph keys set bit 63); layer in bits 48..61
+        const u64 key = (1ull << 62) | (u64(layer) << 48) | (u64(nameHash) << 16) | u64(px);
+        fuse::text::AtlasGlyph ag;
+        if (!m_atlas.lookup(key, ag)) {
+            IconBitmap bm;
+            if (m_icons->cooked(u32(idx), px, bm, layer)) {
+                ag = m_atlas.insert(key, bm.pixels, bm.w, bm.h, bm.stride, bm.ox, bm.oy);
+            } else { // resample, then trim to the covered box
+                m_icons->render(u32(idx), px, m_iconScratch, layer);
+                int x0 = px, y0 = px, x1 = -1, y1 = -1;
+                for (int y = 0; y < px; ++y)
+                    for (int x = 0; x < px; ++x)
+                        if (m_iconScratch[std::size_t(y) * std::size_t(px) + std::size_t(x)]) {
+                            x0 = std::min(x0, x); y0 = std::min(y0, y); x1 = std::max(x1, x); y1 = std::max(y1, y);
+                        }
+                if (x1 < 0) ag = m_atlas.insert(key, nullptr, 0, 0, 0, 0, 0);
+                else ag = m_atlas.insert(key, m_iconScratch.data() + std::size_t(y0) * std::size_t(px) + std::size_t(x0), x1 - x0 + 1,
+                                         y1 - y0 + 1, px, x0, y0);
+            }
         }
+        if (!ag.valid || ag.w == 0) continue;
+        DrawCmd cmd;
+        cmd.op = DrawOp::Glyph;
+        if (sc == 1.f) cmd.rect = {std::round(at.x) + f32(ag.x0), std::round(at.y) + f32(ag.y0), f32(ag.w), f32(ag.h)};
+        else cmd.rect = {(std::round(at.x * sc) + f32(ag.x0)) / sc, (std::round(at.y * sc) + f32(ag.y0)) / sc, f32(ag.w) / sc, f32(ag.h) / sc};
+        cmd.u = ag.u;
+        cmd.v = ag.v;
+        cmd.tw = ag.w;
+        cmd.th = ag.h;
+        const u32 lc = m_icons->layerColor(u32(idx), layer);
+        cmd.fill = lc == 0u ? c
+                            : Color{f32(lc & 0xFFu) / 255.f, f32((lc >> 8) & 0xFFu) / 255.f, f32((lc >> 16) & 0xFFu) / 255.f,
+                                    f32(lc >> 24) / 255.f * c.a};
+        cmd.node = nodeIdx;
+        dl.push(cmd);
     }
-    if (!ag.valid || ag.w == 0) return true;
-    DrawCmd cmd;
-    cmd.op = DrawOp::Glyph;
-    if (sc == 1.f) cmd.rect = {std::round(at.x) + f32(ag.x0), std::round(at.y) + f32(ag.y0), f32(ag.w), f32(ag.h)};
-    else cmd.rect = {(std::round(at.x * sc) + f32(ag.x0)) / sc, (std::round(at.y * sc) + f32(ag.y0)) / sc, f32(ag.w) / sc, f32(ag.h) / sc};
-    cmd.u = ag.u;
-    cmd.v = ag.v;
-    cmd.tw = ag.w;
-    cmd.th = ag.h;
-    cmd.fill = c;
-    cmd.node = nodeIdx;
-    dl.push(cmd);
     return true;
 }
 
@@ -1186,7 +1213,10 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
                            s.fontSize);
         }
     }
-    if (n.first == kNone) return;
+    if (n.first == kNone) {
+        paintEffect(i, s, dl);
+        return;
+    }
     const bool clip = s.overflow != Overflow::Visible;
     if (clip) dl.pushClip(n.rect, rad);
     for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
@@ -1209,6 +1239,7 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
             dl.rect(tr, tint(Color::rgb(0x000000, 0.12f)), kScrollBarSize * 0.5f);
             dl.rect(th, tint(Color::rgb(hot ? 0xB4B4C0 : 0x8A8A96, 0.85f)), kScrollBarSize * 0.5f);
         }
+    paintEffect(i, s, dl); // after the subtree: the effect post-processes everything drawn under the rect
 }
 
 bool UiContext::scrollBarGeom(u32 i, u8 axis, Rect& track, Rect& thumb) const {
@@ -1231,6 +1262,7 @@ void UiContext::paintPass() {
     if (!m_anyPaintDirty) return;
     m_draw.clear();
     m_popupPending.clear();
+    m_fxAnimated.clear();
     // an atlas reset invalidates every glyph quad
     if (m_quadAtlasGen != m_atlas.generation()) {
         m_quads.clear();
@@ -1279,7 +1311,7 @@ void UiContext::scaleDrawList(DrawList& dl) const {
         if (c.op == DrawOp::Line) continue; // rect = end points
         c.borderWidth *= s;
         for (f32& r : c.radius) r *= s;
-        c.blur *= s;
+        if (c.op != DrawOp::Effect) c.blur *= s; // an effect's blur is its time
     }
 }
 
@@ -1319,10 +1351,26 @@ bool UiContext::touchDown(u32 id, Vec2 p) {
 bool UiContext::touchMove(u32 id, Vec2 p) {
     for (u32 k = 0; k < m_touchCount; ++k)
         if (m_touches[k].id == id) {
+            const Vec2 last = m_touches[k].pos, start = m_touches[k].start;
             m_touches[k].pos = p;
             if (id != m_primaryTouch) return true;
             m_pointerKind = PointerKind::Touch;
-            return pointerMove(p);
+            const f32 dx = p.x - start.x, dy = p.y - start.y;
+            if (m_touchPan) return wheel(start, {0.f, (p.y - last.y) / 40.f});
+            if (m_touchPanChecked || !(std::abs(dy) > kTouchSlop && std::abs(dy) > std::abs(dx))) return pointerMove(p);
+            // past the slop: a scroll container under the start that can move vertically and does not scroll from
+            // the drag itself (kinetic areas do) turns the drag into a pan
+            m_touchPanChecked = true;
+            NodeHandle sc;
+            for (NodeHandle n = hitTest(start); alive(n) && !sc.valid(); n = parent(n))
+                if (scrollExtent(n).h > contentRect(n).h + 0.5f) sc = n;
+            const f32 before = sc.valid() ? scroll(sc).y : 0.f;
+            const bool used = pointerMove(p);
+            if (!sc.valid() || !alive(sc) || scroll(sc).y != before) return used;
+            m_touchPan = true;
+            pointerUp({-1.0e6f, -1.0e6f}); // release the press outside everything: no click
+            setHover(kNone);
+            return wheel(start, {0.f, dy / 40.f}); // the slop distance too, so the content tracks the finger
         }
     return false;
 }
@@ -1335,6 +1383,12 @@ bool UiContext::touchUp(u32 id, Vec2 p) {
             if (id != m_primaryTouch) return true;
             m_primaryTouch = kNone;
             m_pointerKind = PointerKind::Touch;
+            m_touchPanChecked = false;
+            if (m_touchPan) { // the pan already released the press
+                m_touchPan = false;
+                setHover(kNone);
+                return true;
+            }
             pointerMove(p);
             const bool used = pointerUp(p);
             setHover(kNone); // a lifted finger hovers nothing
@@ -1345,6 +1399,8 @@ bool UiContext::touchUp(u32 id, Vec2 p) {
 void UiContext::touchCancel() {
     m_touchCount = 0;
     m_pinchStart = 0.f;
+    m_touchPan = false;
+    m_touchPanChecked = false;
     if (m_primaryTouch == kNone) return;
     m_primaryTouch = kNone;
     m_pressed = {};
@@ -1376,6 +1432,9 @@ void UiContext::update(f32 dt) {
     m_damage = {};
     drainCommands();
     if (dt > 0.f) {
+        m_elapsed += dt;
+        for (u32 k : m_fxAnimated) // animated effects read the time: repaint
+            if (k < m_nodes.size() && m_nodes[k].alive) markPaint(k);
         for (u32 t = 0; t < m_timers.size(); ++t) {
             if (!m_timers[t].active) continue;
             m_timers[t].left -= dt;
@@ -1421,7 +1480,7 @@ void UiContext::update(f32 dt) {
 }
 
 bool UiContext::needsUpdate() const {
-    if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount) return true;
+    if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount || !m_fxAnimated.empty()) return true;
     if (m_styles.sheetVersion() != m_seenSheetVersion) return true;
     for (const auto& t : m_timers)
         if (t.active) return true;
@@ -1429,7 +1488,7 @@ bool UiContext::needsUpdate() const {
 }
 
 f32 UiContext::nextWakeSeconds() const {
-    if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount) return 0.f;
+    if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount || !m_fxAnimated.empty()) return 0.f;
     if (m_styles.sheetVersion() != m_seenSheetVersion) return 0.f;
     if (m_head.load(std::memory_order_acquire) != m_tail) return 0.f;
     f32 t = std::numeric_limits<f32>::infinity();

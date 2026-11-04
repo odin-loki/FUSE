@@ -11,12 +11,16 @@
 //   RCAS            ffx_fsr1_rcas_pass, FFX_HALF=0 (FSR_RCAS_DENOISE)    interior (texelFetch OOB is UB)   abs 2e-3
 //   CAS             ffx_cas_sharpen_pass, SHARPEN_ONLY=1, rgba16 unorm   interior, after unorm16 rounding  abs 2e-3
 //   NIS NVScaler    NIS_Main.glsl, NIS_SCALER=1, fp32, SDR               every pixel                       abs 2e-3
-//                   (power-of-two sources; non-power-of-two sources are bounded statistically because the
+//                   (power-of-two sources: luma abs 2e-3, the chroma tap within its sampler bound, see
+//                   compare_nis; non-power-of-two sources are bounded statistically because the
 //                   shader's "exact" texel loads go through a linear sampler whose sub-texel quantization
 //                   blends in up to 1/256 of a neighbour when 1 / width is inexact — see kSamplerBoundMean)
 //
 // plus mean-error bounds (the approximations the ports reproduce are bit tricks, so outputs agree to float
-// rounding; GPU FMA contraction and sampler arithmetic account for the residual). Several sizes per pass, with
+// rounding; sampler arithmetic and the device's division / sqrt precision account for the residual). The vendored
+// GLSL is not `precise`, so the harness decorates every float add / sub / mul of the loaded SPIR-V NoContraction
+// (VulkanCompute::forbid_contraction): the reference is the shader as written, as the ports evaluate it, rather
+// than whatever multiply-adds a driver chooses to fuse. Several sizes per pass, with
 // partial workgroups and ratios 1.5x / 1.7x / 2x / 3x. Results are written to FUSE_UPSCALE_GPU_REPORT_PATH.
 // Exit 77 (SKIP) when the shaders were not built, the headers / loader are missing or no device is found.
 
@@ -27,6 +31,9 @@
 #include "upscale_test_images.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -335,6 +342,7 @@ public:
     }
 
     const char* device_name() const { return m_props.deviceName; }
+    u32 sub_texel_precision_bits() const { return m_props.limits.subTexelPrecisionBits; }
 
     void shutdown() {
         if (m_device != VK_NULL_HANDLE) {
@@ -522,6 +530,7 @@ public:
             std::fprintf(stderr, "cannot read %s\n", spv_path.c_str());
             return false;
         }
+        forbid_contraction(code);
         auto smci = vk_struct<VkShaderModuleCreateInfo>(VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO);
         smci.codeSize = code.size() * sizeof(u32);
         smci.pCode = code.data();
@@ -615,6 +624,42 @@ public:
     }
 
 private:
+    /// Decorates the result of every float add / sub / multiply / dot / negate with NoContraction. The CPU ports
+    /// evaluate the vendored passes in IEEE f32 without contraction, but the GLSL is not `precise`, so a driver may
+    /// fuse a * b + c (the RTX 3090 does; Lavapipe does not): in NIS that moves getY by an ulp and flips the edge
+    /// map's exact-tie decisions (g_0_90_max == g_0, the detect thresholds): max |d| 0.2 at 1x on the 3090. With
+    /// the decoration the reference is the uncontracted shader on every device (a no-op where nothing is fused).
+    static void forbid_contraction(std::vector<u32>& code) {
+        constexpr u32 kOpDecorate = 71u;
+        constexpr u32 kNoContraction = 42u;
+        std::vector<u32> ids;
+        usize firstDecorate = 0;
+        for (usize i = 5u; i < code.size();) {
+            const u32 op = code[i] & 0xFFFFu;
+            const u32 count = code[i] >> 16u;
+            if (count == 0u || i + count > code.size()) {
+                return; // malformed: leave the module to the driver
+            }
+            if (op == kOpDecorate && firstDecorate == 0u) {
+                firstDecorate = i;
+            }
+            // OpFNegate, OpFAdd, OpFSub, OpFMul, Op{Vector,Matrix}Times{Scalar,Matrix,Vector}, OpDot: <type> <result> ...
+            if (op == 127u || op == 129u || op == 131u || op == 133u || (op >= 142u && op <= 146u) || op == 148u) {
+                ids.push_back(code[i + 2u]);
+            }
+            i += count;
+        }
+        if (firstDecorate == 0u || ids.empty()) {
+            return;
+        }
+        std::vector<u32> decorations;
+        decorations.reserve(ids.size() * 3u);
+        for (const u32 id : ids) {
+            decorations.insert(decorations.end(), {(3u << 16u) | kOpDecorate, id, kNoContraction});
+        }
+        code.insert(code.begin() + static_cast<std::ptrdiff_t>(firstDecorate), decorations.begin(), decorations.end());
+    }
+
     static bool read_spirv(const std::string& path, std::vector<u32>& out) {
         FILE* f = std::fopen(path.c_str(), "rb");
         if (f == nullptr) {
@@ -755,6 +800,83 @@ Comparison compare(const std::string& name, u32 sw, u32 sh, const std::vector<Ve
                 c.over_tolerance += e > tol ? 1u : 0u;
                 ++c.compared;
             }
+        }
+    }
+    c.mean_abs = c.compared > 0u ? sum / static_cast<f64>(c.compared) : 0.0;
+    return c;
+}
+
+/// NIS output vs the CPU port, split into the parts NIS computes differently. The output is
+/// out_c = tap_c + opY - getY(tap): opY is the filtered luma (edge map, directional filters, LTI: all of the
+/// algorithm), tap is one linear-sampler tap at (srcX + 0.5, srcY + 0.5) texels that only carries chroma. The
+/// luma weights sum to 1, so getY(out) = opY and out_c - getY(out) = tap_c - getY(tap):
+///   luma    |getY(gpu) - getY(cpu)| <= tol on every pixel, mean <= kMeanTolerance (the whole NIS filter)
+///   chroma  |chroma(gpu) - chroma(cpu)| <= tol + 4 * 2^-subTexelPrecisionBits * R, R = the largest channel range
+///           of the tap's 2x2 footprint. Vulkan only requires subTexelPrecisionBits fractional bits in the filter
+///           weights: Lavapipe computes them exactly, the RTX 3090 does not (|d| up to 4.4e-3 at 1.5x / 1.7x, 0 at
+///           1x / 2x where the phases are multiples of 1/4). A weight error <= 2^-bits per axis moves a channel of
+///           the tap by <= 2 * 2^-bits * R, and tap_c - getY(tap) by at most twice that.
+/// Power-of-two sources only (texel-exact coordinates for the luma loads). `chromaWorst`: the largest chroma
+/// error as a fraction of its bound.
+Comparison compare_nis(const std::vector<Vec4>& src, u32 sw, u32 sh, const std::vector<Vec4>& cpu,
+                       const std::vector<Vec4>& gpu, u32 dw, u32 dh, f32 scaleX, f32 scaleY, u32 subTexelBits, f64 tol,
+                       f64* chromaWorst) {
+    const auto texel = [&](std::int64_t x, std::int64_t y) {
+        x = std::clamp<std::int64_t>(x, 0, static_cast<std::int64_t>(sw) - 1);
+        y = std::clamp<std::int64_t>(y, 0, static_cast<std::int64_t>(sh) - 1);
+        return src[static_cast<usize>(y) * sw + static_cast<usize>(x)];
+    };
+    const auto lumaOf = [](f64 r, f64 g, f64 b) { return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    const f64 weightStep = std::ldexp(1.0, -static_cast<int>(std::min(subTexelBits, 23u)));
+    Comparison c{};
+    c.name = "nis";
+    c.src_w = sw;
+    c.src_h = sh;
+    c.dst_w = dw;
+    c.dst_h = dh;
+    f64 sum = 0.0;
+    *chromaWorst = 0.0;
+    for (u32 y = 0; y < dh; ++y) {
+        for (u32 x = 0; x < dw; ++x) {
+            const Vec4& a = cpu[static_cast<usize>(y) * dw + x];
+            const Vec4& b = gpu[static_cast<usize>(y) * dw + x];
+            const f64 ya = lumaOf(a.x, a.y, a.z);
+            const f64 yb = lumaOf(b.x, b.y, b.z);
+            const f64 lumaErr = std::isfinite(yb) ? std::fabs(yb - ya) : 1e30;
+            // The tap's footprint: texel-space position (srcX + 0.5) - 0.5 = srcX.
+            const f64 sx = (0.5 + x) * static_cast<f64>(scaleX) - 0.5;
+            const f64 sy = (0.5 + y) * static_cast<f64>(scaleY) - 0.5;
+            const auto x0 = static_cast<std::int64_t>(std::floor(sx));
+            const auto y0 = static_cast<std::int64_t>(std::floor(sy));
+            const Vec4 t[4] = {texel(x0, y0), texel(x0 + 1, y0), texel(x0, y0 + 1), texel(x0 + 1, y0 + 1)};
+            f64 range = 0.0;
+            for (int ch = 0; ch < 3; ++ch) {
+                f64 lo = 1e30;
+                f64 hi = -1e30;
+                for (const Vec4& v : t) {
+                    const f64 e = ch == 0 ? v.x : (ch == 1 ? v.y : v.z);
+                    lo = std::min(lo, e);
+                    hi = std::max(hi, e);
+                }
+                range = std::max(range, hi - lo);
+            }
+            const f64 allowance = 4.0 * weightStep * range;
+            const f64 ca[3] = {a.x - ya, a.y - ya, a.z - ya};
+            const f64 cb[3] = {b.x - yb, b.y - yb, b.z - yb};
+            const f64 raw[3] = {std::fabs(static_cast<f64>(b.x) - a.x), std::fabs(static_cast<f64>(b.y) - a.y),
+                                std::fabs(static_cast<f64>(b.z) - a.z)};
+            bool over = lumaErr > tol;
+            f64 chromaExcess = 0.0;
+            for (int ch = 0; ch < 3; ++ch) {
+                const f64 e = std::isfinite(cb[ch]) ? std::fabs(cb[ch] - ca[ch]) : 1e30;
+                over = over || e > tol + allowance;
+                chromaExcess = std::max(chromaExcess, std::max(0.0, e - allowance));
+                *chromaWorst = std::max(*chromaWorst, e / (tol + allowance));
+                c.max_abs = std::max(c.max_abs, std::isfinite(raw[ch]) ? raw[ch] : 1e30);
+            }
+            c.over_tolerance += over ? 1u : 0u;
+            sum += lumaErr + chromaExcess;
+            ++c.compared;
         }
     }
     c.mean_abs = c.compared > 0u ? sum / static_cast<f64>(c.compared) : 0.0;
@@ -942,8 +1064,18 @@ void run_nis_case(VulkanCompute& vk, u32 sw, u32 sh, u32 dw, u32 dh, f32 sharpne
                     vk.download(*out, gpu.data());
     expectTrue(ok, "gpu nis dispatch");
     if (ok) {
-        Comparison c = compare("nis", sw, sh, cpu, gpu, dw, dh, 0u, kTolerance);
-        c.strict = pow2(sw) && pow2(sh);
+        const bool strict = pow2(sw) && pow2(sh);
+        f64 chromaWorst = 0.0;
+        Comparison c = strict ? compare_nis(src, sw, sh, cpu, gpu, dw, dh, static_cast<f32>(sw) / static_cast<f32>(dw),
+                                            static_cast<f32>(sh) / static_cast<f32>(dh), vk.sub_texel_precision_bits(),
+                                            kTolerance, &chromaWorst)
+                              : compare("nis", sw, sh, cpu, gpu, dw, dh, 0u, kTolerance);
+        c.strict = strict;
+        if (strict) {
+            std::printf("nis    %4ux%-4u -> %4ux%-4u  luma + chroma-tap split: worst chroma error %.0f%% of its sampler "
+                        "bound (subTexelPrecisionBits %u)\n",
+                        sw, sh, dw, dh, 100.0 * chromaWorst, vk.sub_texel_precision_bits());
+        }
         check(c, all);
     }
     vk.release_resources();

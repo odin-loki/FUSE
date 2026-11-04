@@ -2,6 +2,7 @@
 // "ui.draw_list" on the render graph: the UiVkRenderer kernel as one compute pass that blends a packed UI draw list
 // onto an RGBA8 (R8G8B8A8_UNORM) graph image with StorageReadWrite access (composite over the scene / sprite layer, or
 // a cleared overlay). Mirrors hybrid::SpriteLayerGpu: per-ring-slot host-mapped buffers, no steady-state allocations.
+// Always the compute backend (UiVkBackend::SdfQuads needs colour-attachment images and a render pass).
 #if defined(FUSE_HAS_VULKAN_RHI)
 
 #include "fuse/ui/render/ui_vk.hpp"
@@ -73,12 +74,19 @@ public:
         m_atlasSize = atlasSize;
     }
     renderer::frame::FrameUiSource source() { return {&UiFrameSource::recordFrame, this}; }
+    /// Blends the draw list over `target`, an RGBA8 storage image of the context extent that earlier passes filled
+    /// (the hybrid sprite layer: hybrid::HybridUiOverlay{&UiFrameSource::recordOver, &ui}), instead of a cleared
+    /// transient. Returns `target`; invalid when there is nothing to draw. `user` is the UiFrameSource.
+    static rg::TextureRef recordOver(rg::Graph& graph, rg::TextureRef target,
+                                     const renderer::frame::FrameUiContext& context, void* user);
     u32 frames() const { return m_frames; }
     UiLayerGpu& layer() { return m_layer; }
 
 private:
     static rg::TextureRef recordFrame(rg::Graph& graph, const renderer::frame::FrameUiContext& context, void* user);
     static void clear(const rg::PassContext& context, void* user);
+    bool ready(const renderer::frame::FrameUiContext& context) const;
+    rg::TextureRef draw(rg::Graph& graph, rg::TextureRef target, const renderer::frame::FrameUiContext& context);
 
     UiLayerGpu m_layer;
     const DrawList* m_list = nullptr;

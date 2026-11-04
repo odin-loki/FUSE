@@ -35,14 +35,13 @@ if(FUSE_VULKAN_BACKEND OR (CMAKE_CROSSCOMPILING AND FUSE_RELIGHT_RENDERER))
         fuse_apply_cxx23(fuse_relight_frame_vk_tests)
     endif()
     if(NOT CMAKE_CROSSCOMPILING)
-        set(_rl_frame_lock "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
-        if(EXISTS "${_rl_frame_lock}")
-            add_test(NAME rl_frame_vk_composite COMMAND "${_rl_frame_lock}" "$<TARGET_FILE:fuse_relight_frame_vk_tests>")
+        if(EXISTS "${FUSE_VULKAN_ICD_LOCK_PATH}")
+            add_test(NAME rl_frame_vk_composite COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_relight_frame_vk_tests>")
         else()
             add_test(NAME rl_frame_vk_composite COMMAND fuse_relight_frame_vk_tests)
         endif()
         set_tests_properties(rl_frame_vk_composite PROPERTIES
-            ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+            ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
             RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 600 LABELS "gate;vulkan;relight")
     else()
         set(_rl_frame_runner "${FUSE_WINE_XVFB_RUN}")
@@ -67,7 +66,7 @@ if(FUSE_VULKAN_BACKEND OR (CMAKE_CROSSCOMPILING AND FUSE_RELIGHT_RENDERER))
                      COMMAND "${_rl_frame_runner}" "${_rl_frame_prefix}" "$<TARGET_FILE:fuse_relight_frame_vk_tests>"
                              --external-validation)
             set_tests_properties(rl_pe.frame_vk_validation PROPERTIES
-                ENVIRONMENT "VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation;VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT;VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true"
+                ENVIRONMENT "VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation;VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true"
                 LABELS "relight;wine;renderer_pe;vulkan;gate" SKIP_RETURN_CODE 77 RESOURCE_LOCK fuse_relight_renderer_pe
                 TIMEOUT 900)
         endif()

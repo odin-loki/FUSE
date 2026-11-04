@@ -70,6 +70,7 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+#include <fuse/renderer/vk/test_layer_env.hpp>
 #endif
 
 // --- allocation counter (operator new) -----------------------------------------------------------
@@ -200,6 +201,18 @@ constexpr u32 kLanguages = 2; // Slang, GLSL
 // coordinate, the edge / boundary sums), measured per light by fuse_rp_ltc_vk_probe_*.
 constexpr f64 kTolRel = 1e-4;
 constexpr f64 kTolAbs = 1e-6;
+// Spot cones are the one ill-conditioned term: the cone factor t^2, t = (cos - cosOuter) / width, has the
+// relative sensitivity 2 / (cos - cosOuter) to the cone cosine -dot(l, axis), so an error of a few 1e-7 in
+// that cosine (both unit vectors come from a sqrt and a division; Lavapipe rounds them exactly, a hardware
+// device may be several ulp off: measured 1.6e-4 relative on an RTX 3090 for a pixel lit by a spot at
+// cos - cosOuter ~ 1e-3) exceeds kTolRel near the outer edge. Each pixel's tolerance therefore adds the
+// reference's own sensitivity: the CPU shade re-run with every spot's (cosInner, cosOuter) shifted by
+// +-kSpotCosDelta (== the cone cosine shifted by -+kSpotCosDelta, width unchanged), per channel
+// max |ref(+-) - ref|. kSpotCosDelta = 2^-19 bounds the Vulkan error of the cosine: the components of l and
+// of the axis are each within ~7.5 ulp (sqrt / 1 / inversesqrt 4.5 ulp, x / y 2.5 ulp, the multiply 0.5),
+// so the dot of two unit vectors is within ~16 * 2^-24 + its own roundings < 2^-19. On an exact device the
+// GPU cosine equals the CPU's, so this term is never used there.
+constexpr f32 kSpotCosDelta = 1.f / 524288.f;
 
 u32 g_messages = 0;
 
@@ -545,8 +558,7 @@ int setup(Context& ctx, bool descriptorBuffer, bool validation) {
             return kSkip;
         }
         setenv("VK_INSTANCE_LAYERS", kValidationLayer, 1);
-        setenv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", 1);
-        setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", 1);
+        fuse::renderer::test::enableSyncValidationEnv();
         setenv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK", 1);
     } else {
         setenv("VK_INSTANCE_LAYERS", "", 1);
@@ -1151,6 +1163,7 @@ struct LanguageReport {
     u32 outputBad = 0;
     f64 maxRel = 0.0;
     f64 maxAbs = 0.0;
+    u32 coneTolUsed = 0; ///< pixels within tolerance only through the spot-cone sensitivity term
     u32 shaded = 0;
     GpuLists lists{};
     std::vector<Vec4> dump;
@@ -1224,6 +1237,26 @@ void analyse(Context& ctx, Scene& s, Rig& rig, const FrameState& fs, const Frame
     sd.skipAreaLights = g_skipAreaLights;
     std::vector<Vec4> ref;
     shadeReferenceFrame(sd, ref);
+    // Spot-cone sensitivity (see kSpotCosDelta): the reference with every spot cone cosine shifted by +-delta.
+    std::vector<Vec4> coneSens(ref.size(), Vec4{0.f, 0.f, 0.f, 0.f});
+    for (const f32 delta : {kSpotCosDelta, -kSpotCosDelta}) {
+        std::vector<GpuLight> shifted(table);
+        for (GpuLight& l : shifted) {
+            if (l.type == static_cast<u32>(GpuLightType::Spot)) {
+                l.cosInner += delta;
+                l.cosOuter += delta;
+            }
+        }
+        ShadeReferenceDesc sdShifted = sd;
+        sdShifted.lights = shifted.data();
+        std::vector<Vec4> refShifted;
+        shadeReferenceFrame(sdShifted, refShifted);
+        for (usize p = 0; p < ref.size(); ++p) {
+            coneSens[p].x = std::max(coneSens[p].x, std::fabs(refShifted[p].x - ref[p].x));
+            coneSens[p].y = std::max(coneSens[p].y, std::fabs(refShifted[p].y - ref[p].y));
+            coneSens[p].z = std::max(coneSens[p].z, std::fabs(refShifted[p].z - ref[p].z));
+        }
+    }
     for (const Vec4& v : ref) {
         r.frameMax = std::max({r.frameMax, static_cast<f64>(v.x), static_cast<f64>(v.y), static_cast<f64>(v.z)});
     }
@@ -1259,7 +1292,9 @@ void analyse(Context& ctx, Scene& s, Rig& rig, const FrameState& fs, const Frame
             }
             const f32 gc[3] = {gv.x, gv.y, gv.z};
             const f32 cc[3] = {cv.x, cv.y, cv.z};
+            const f32 sens[3] = {coneSens[p].x, coneSens[p].y, coneSens[p].z};
             bool bad = false;
+            bool coneOnly = false;
             for (u32 c = 0; c < 3u; ++c) {
                 const f64 diff = std::fabs(static_cast<f64>(gc[c]) - cc[c]);
                 const f64 mag = std::fabs(static_cast<f64>(cc[c]));
@@ -1267,7 +1302,8 @@ void analyse(Context& ctx, Scene& s, Rig& rig, const FrameState& fs, const Frame
                 if (mag > 1e-3) {
                     L.maxRel = std::max(L.maxRel, diff / mag);
                 }
-                bad = bad || !(diff <= kTolRel * mag + kTolAbs);
+                bad = bad || !(diff <= kTolRel * mag + kTolAbs + sens[c]);
+                coneOnly = coneOnly || !(diff <= kTolRel * mag + kTolAbs);
                 // RGBA16F output == the dump rounded to half (<= 1 half ulp: 2^-10 relative, or the
                 // subnormal spacing 2^-24).
                 const f64 h = halfAt(out, p * 4u + c);
@@ -1277,6 +1313,7 @@ void analyse(Context& ctx, Scene& s, Rig& rig, const FrameState& fs, const Frame
                 }
             }
             L.shadeBad += bad ? 1u : 0u;
+            L.coneTolUsed += (!bad && coneOnly) ? 1u : 0u;
         }
     }
 }
@@ -1337,7 +1374,11 @@ int runParity(Context& ctx, const ClusterDesc& clusters, const LightScene& ls, c
             expect(L.totalsEqual, "GPU list totals == the culler's stats");
             expect(L.directionalEqual, "GPU directional list == directional slots");
             expect(L.alphaBad == 0u, "GPU and CPU shade the same pixels");
-            expect(L.shadeBad == 0u, "GPU shade == CPU reference within kTolRel * |ref| + kTolAbs");
+            if (L.coneTolUsed != 0u) {
+                std::printf("        %s: %u px within tolerance only through the spot-cone sensitivity term\n", rig.language[k],
+                            L.coneTolUsed);
+            }
+            expect(L.shadeBad == 0u, "GPU shade == CPU reference within kTolRel * |ref| + kTolAbs (+ spot-cone sensitivity)");
             expect(L.outputBad == 0u, "RGBA16F output == f32 dump rounded to half");
         }
         std::printf("        frame max radiance %.3g\n", r.frameMax);

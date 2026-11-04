@@ -27,7 +27,9 @@
 // Tolerances: the kernels are the CPU reference's twins in f32, but the device's exp / acos / asin / atan / cos
 // differ from libm by a few ulp (Vulkan allows more), and the compilers may contract multiply-adds. Transmittance
 // exp(-tau) with tau up to ~40 near the horizon amplifies that, so the LUT gates are relative with an absolute
-// floor tied to the LUT's peak.
+// floor tied to the LUT's peak. The transmittance texel -> (r, mu) mapping is the exception: the horizon column
+// grazes the ground, where one ulp of r (0.5 m) is ~3e-3 of transmittance, so the kernels divide and take roots
+// correctly rounded there (at_div_rn / at_sqrt_rn) and match the CPU geometry exactly on any device.
 //
 // Exit 77 = skip (stub build, no ICD / validation layer, capability missing, no kernel built).
 #include <fuse/renderer/sky_view.hpp>
@@ -55,6 +57,7 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+#include <fuse/renderer/vk/test_layer_env.hpp>
 #endif
 
 // --- allocation counter (operator new) -----------------------------------------------------------
@@ -246,8 +249,7 @@ int setup(Context& ctx, bool descriptorBuffer, bool validation) {
             return kSkip;
         }
         setenv("VK_INSTANCE_LAYERS", kValidationLayer, 1);
-        setenv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", 1);
-        setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", 1);
+        fuse::renderer::test::enableSyncValidationEnv();
         setenv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK", 1);
     } else {
         setenv("VK_INSTANCE_LAYERS", "", 1);

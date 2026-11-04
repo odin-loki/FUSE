@@ -13,6 +13,8 @@ bool UiLayerGpu::init(renderer::VulkanDevice* device, UiVkDesc limits) {
     if (device == nullptr || !device->isValid() || device->nativeHandle() == nullptr) return false;
     limits.device = device->nativeHandle();
     limits.physicalDevice = device->nativePhysicalDevice();
+    limits.backend = UiVkBackend::Compute; // the pass declares compute storage access; graph images are storage images
+    limits.sdfVertex = limits.sdfFragment = {};
     if (limits.framesInFlight == 0 || limits.framesInFlight > UiVkRenderer::kMaxSlots)
         limits.framesInFlight = UiVkRenderer::kMaxSlots;
     m_frames = limits.framesInFlight;
@@ -42,18 +44,31 @@ void UiLayerGpu::record(const rg::PassContext& context, void* user) {
 }
 
 #if defined(FUSE_UI_HAS_FRAME)
+bool UiFrameSource::ready(const renderer::frame::FrameUiContext& context) const {
+    return valid() && m_list != nullptr && m_list->size() != 0 && context.width != 0 && context.height != 0;
+}
+
+rg::TextureRef UiFrameSource::draw(rg::Graph& graph, rg::TextureRef target, const renderer::frame::FrameUiContext& context) {
+    packDrawList(*m_list, context.width, context.height, m_data, m_atlas, m_atlasSize);
+    m_layer.beginFrame(context.serial);
+    const rg::TextureRef out = m_layer.addPass(graph, target, m_data);
+    if (out.valid()) ++m_frames;
+    return out;
+}
+
 rg::TextureRef UiFrameSource::recordFrame(rg::Graph& graph, const renderer::frame::FrameUiContext& context, void* user) {
     auto& self = *static_cast<UiFrameSource*>(user);
-    if (!self.valid() || self.m_list == nullptr || self.m_list->size() == 0 || context.width == 0 || context.height == 0)
-        return {};
-    packDrawList(*self.m_list, context.width, context.height, self.m_data, self.m_atlas, self.m_atlasSize);
-    const GpuDrawData* d = &self.m_data;
-    self.m_layer.beginFrame(context.serial);
+    if (!self.ready(context)) return {};
     self.m_target = UiLayerGpu::createTarget(graph, context.width, context.height);
     graph.addPass("ui.draw_list.clear", &UiFrameSource::clear, &self).use(self.m_target, rg::Access::TransferDst);
-    const rg::TextureRef out = self.m_layer.addPass(graph, self.m_target, *d);
-    if (out.valid()) ++self.m_frames;
-    return out;
+    return self.draw(graph, self.m_target, context);
+}
+
+rg::TextureRef UiFrameSource::recordOver(rg::Graph& graph, rg::TextureRef target,
+                                         const renderer::frame::FrameUiContext& context, void* user) {
+    auto& self = *static_cast<UiFrameSource*>(user);
+    if (!self.ready(context) || !target.valid()) return {};
+    return self.draw(graph, target, context);
 }
 
 void UiFrameSource::clear(const rg::PassContext& context, void* user) {

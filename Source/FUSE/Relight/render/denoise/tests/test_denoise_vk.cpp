@@ -49,6 +49,7 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+#include <fuse/renderer/vk/test_layer_env.hpp>
 #endif
 
 namespace {
@@ -234,8 +235,7 @@ int setup(Context& ctx, Validation validation) {
             return kSkip;
         }
         setEnv("VK_INSTANCE_LAYERS", kValidationLayer);
-        setEnv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT");
-        setEnv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true");
+        fuse::renderer::test::enableSyncValidationEnv();
         setEnv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK");
     } else if (validation == Validation::Off) {
         setEnv("VK_INSTANCE_LAYERS", "");

@@ -156,7 +156,7 @@ void writeValue(Writer& w, const PropValue& v) {
 }
 bool readValue(Reader& r, PropValue& v) {
     const u8 t = r.u8_();
-    if (t > u8(PropType::Ident)) return r.ok = false;
+    if (t > u8(PropType::Effect)) return r.ok = false;
     v.type = PropType(t);
     v.b = r.u8_() != 0;
     v.e = r.u8_();

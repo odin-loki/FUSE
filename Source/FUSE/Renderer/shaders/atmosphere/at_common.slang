@@ -17,6 +17,55 @@ static const float AT_MIN_ALTITUDE = 1.0;
 static const uint AT_PHASE_SKY = 0u;
 static const uint AT_PHASE_ISOTROPIC = 1u;
 
+// Correctly rounded division and square root for the transmittance LUT's texel -> (r, mu) mapping. Vulkan only
+// guarantees correct rounding for add / sub / mul (OpFDiv is 2.5 ulp, sqrt inherits inversesqrt) and hardware uses
+// that slack (the RTX 3090 differs from the CPU twin by an ulp in y / (height - 1), r and mu). The horizon column
+// is ill-conditioned: its ray grazes the ground (tangent height ~0), and one ulp of r ~ 6.4e6 m (0.5 m) moves the
+// tangent point by 0.5 m, i.e. the Mie optical depth by ~4e-4 relative and the transmittance by ~3e-3. at_div_rn /
+// at_sqrt_rn walk the hardware result to the IEEE one with an exact Dekker residual (needs correctly rounded,
+// uncontracted mul / add: Slang -fp-mode precise), so the LUT's geometry equals the CPU twin's bit for bit. Lavapipe
+// already rounds correctly: there the walk never moves.
+float at_resid(float a, float q, float b) { // a - q * b, exact enough to compare neighbours
+    const float p = q * b;
+    const float cq = 4097.0 * q;
+    const float qh = cq - (cq - q);
+    const float ql = q - qh;
+    const float cb = 4097.0 * b;
+    const float bh = cb - (cb - b);
+    const float bl = b - bh;
+    const float e = ((qh * bh - p) + qh * bl + ql * bh) + ql * bl;
+    return (a - p) - e;
+}
+float at_round_rn(float a, float q, float b, bool root) { // walk q to the nearest representable a / b (root: sqrt(a))
+    float r = at_resid(a, q, root ? q : b);
+    for (int i = 0; i < 4 && r != 0.0; ++i) {
+        const bool up = root ? r > 0.0 : (r > 0.0) == (b > 0.0);
+        const float qn = asfloat((q > 0.0) == up ? asuint(q) + 1u : asuint(q) - 1u);
+        const float rn = at_resid(a, qn, root ? qn : b);
+        if (abs(rn) < abs(r) || (abs(rn) == abs(r) && (asuint(q) & 1u) != 0u)) {
+            q = qn;
+            r = rn;
+        } else {
+            break;
+        }
+    }
+    return q;
+}
+float at_div_rn(float a, float b) {
+    const float q = a / b;
+    if (q == 0.0 || isinf(q) || isnan(q)) {
+        return q;
+    }
+    return at_round_rn(a, q, b, false);
+}
+float at_sqrt_rn(float x) {
+    const float s = sqrt(x);
+    if (!(x > 0.0) || isinf(x)) {
+        return s;
+    }
+    return at_round_rn(x, s, s, true);
+}
+
 float at_one_minus_exp(float x) {
     if (x < 0.02) {
         return x * (1.0 - x * (0.5 - x * (1.0 / 6.0 - x * (1.0 / 24.0))));
@@ -111,17 +160,18 @@ void at_march_quadratic(AtParams P, float r0, float mu, float nu, float muS0, fl
 
 // --- texel kernels ------------------------------------------------------------------------------------------
 float4 at_transmittance_texel(AtParams P, uint x, uint y) {
-    const float xMu = float(x) / float(P.transWidth - 1u);
-    const float xR = float(y) / float(P.transHeight - 1u);
+    // (r, mu) with correctly rounded divides / roots (at_div_rn): the CPU twin's geometry exactly.
+    const float xMu = at_div_rn(float(x), float(P.transWidth - 1u));
+    const float xR = at_div_rn(float(y), float(P.transHeight - 1u));
     const float rg = P.bottomRadius;
     const float rt = P.topRadius;
-    const float H = sqrt((rt - rg) * (rt + rg));
+    const float H = at_sqrt_rn((rt - rg) * (rt + rg));
     const float rho = H * xR;
-    const float r = sqrt(rho * rho + rg * rg);
+    const float r = at_sqrt_rn(rho * rho + rg * rg);
     const float dMin = rt - r;
     const float dMax = rho + H;
     const float d = dMin + xMu * (dMax - dMin);
-    float mu = d <= 0.0 ? 1.0 : (H * H - rho * rho - d * d) / (2.0 * r * d);
+    float mu = d <= 0.0 ? 1.0 : at_div_rn(H * H - rho * rho - d * d, 2.0 * r * d);
     mu = at_clamp(mu, -1.0, 1.0);
     const float len = at_distance_to_top(P, r, mu);
     const float dt = len / float(P.transSteps);

@@ -144,7 +144,7 @@ struct Case {
 std::vector<Case> makeCases() {
     std::vector<Case> cases;
     std::mt19937 rng(77);
-    std::uniform_real_distribution<f32> u(0.f, 1.f);
+    const Uniform u{0.f, 1.f};
     for (u32 k = 0; k < 36u; ++k) {
         for (u32 type : {ltc::kLightRect, ltc::kLightDisk}) {
             for (bool straddle : {false, true}) {

@@ -27,6 +27,8 @@ void closeSegment(GpuDrawData& out, const std::vector<Area>& areas, std::size_t 
     GpuSegment seg;
     seg.backdrop = backdrop;
     seg.blurPixels = blurPixels;
+    seg.cmdBegin = u32(first);
+    seg.cmdEnd = u32(areas.size());
     seg.tileBase = u32(out.tiles.size());
     const std::size_t base = out.tiles.size();
     out.tiles.resize(base + tileCount + 1, 0u);
@@ -165,6 +167,26 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             g.info[1] = u32(x0) | (u32(y0) << 16);
             g.info[2] = u32(x1) | (u32(y1) << 16);
             g.info[3] = u32(r);
+            out.cmds.push_back(g);
+            areas.push_back({0, 0, 0, 0}); // not binned
+            closeSegment(out, areas, segFirst, tilesX, tileCount, u32(out.cmds.size() - 1), u32(sw) * u32(sh));
+            segFirst = areas.size();
+            continue;
+        }
+        if (c.op == DrawOp::Effect) {
+            // same pixel area / source region as CpuRasterizer's effectPass
+            const Rect area = c.rect.intersect(clip.r).intersect(full);
+            if (area.empty()) continue;
+            const int x0 = int(std::floor(area.x)), y0 = int(std::floor(area.y));
+            const int x1 = int(std::ceil(area.right())), y1 = int(std::ceil(area.bottom()));
+            const int m = std::clamp(int(std::ceil(c.borderWidth)), 0, 0xFFFF);
+            const int sw = std::min(int(width), x1 + m) - std::max(0, x0 - m);
+            const int sh = std::min(int(height), y1 + m) - std::max(0, y0 - m);
+            g.info[0] = u32(c.op);
+            g.info[1] = u32(x0) | (u32(y0) << 16);
+            g.info[2] = u32(x1) | (u32(y1) << 16);
+            g.info[3] = u32(m) | (u32(c.u) << 16);
+            put4(g.border, c.image < imageCount ? f32(c.image) : -1.f, 0.f, 0.f, 0.f);
             out.cmds.push_back(g);
             areas.push_back({0, 0, 0, 0}); // not binned
             closeSegment(out, areas, segFirst, tilesX, tileCount, u32(out.cmds.size() - 1), u32(sw) * u32(sh));

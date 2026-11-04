@@ -15,6 +15,13 @@
 
 #if defined(_WIN32)
 #include <process.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #else
 #include <cerrno>
 #include <fcntl.h>
@@ -142,18 +149,103 @@ std::string readTextFile(const std::string& path, usize maxBytes) {
     return text;
 }
 
+#if defined(_WIN32)
+std::wstring widen(const std::string& text) {
+    if (text.empty()) {
+        return {};
+    }
+    const int needed = MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
+    std::wstring wide(static_cast<std::size_t>(needed > 0 ? needed : 0), L'\0');
+    if (needed > 0) {
+        MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), wide.data(), needed);
+    }
+    return wide;
+}
+
+/// Appends `arg` quoted for CommandLineToArgvW / the MSVC CRT argv parser (backslashes are
+/// literal except before a quote; quotes are escaped).
+void appendQuotedArg(std::wstring& commandLine, const std::wstring& arg) {
+    if (!commandLine.empty()) {
+        commandLine += L' ';
+    }
+    commandLine += L'"';
+    std::size_t backslashes = 0;
+    for (const wchar_t c : arg) {
+        if (c == L'\\') {
+            ++backslashes;
+            continue;
+        }
+        if (c == L'"') {
+            commandLine.append(backslashes * 2u + 1u, L'\\');
+        } else {
+            commandLine.append(backslashes, L'\\');
+        }
+        backslashes = 0;
+        commandLine += c;
+    }
+    commandLine.append(backslashes * 2u, L'\\');
+    commandLine += L'"';
+}
+#endif
+
 /// Run a tool with `args` (args[0] = executable); stdout + stderr go to `logPath` (or are
-/// discarded when empty). POSIX spawns the process directly (no shell: ~10 ms less per hot reload
-/// and no quoting pitfalls).
+/// discarded when empty). The process is spawned directly, without a shell: no quoting pitfalls,
+/// and on Windows no cmd.exe start-up on every hot reload (35-75 ms on top of the compiler).
 bool runTool(const std::vector<std::string>& args, const std::string& logPath) {
 #if defined(_WIN32)
-    std::string command;
-    for (const std::string& arg : args) {
-        command += (command.empty() ? "\"" : " \"") + arg + "\"";
+    if (args.empty()) {
+        return false;
     }
-    const std::string sink = logPath.empty() ? std::string("NUL") : "\"" + logPath + "\"";
-    command = "\"" + command + " > " + sink + " 2>&1\"";
-    return std::system(command.c_str()) == 0;
+    std::wstring commandLine;
+    for (const std::string& arg : args) {
+        appendQuotedArg(commandLine, widen(arg));
+    }
+    SECURITY_ATTRIBUTES inherit{};
+    inherit.nLength = sizeof(inherit);
+    inherit.bInheritHandle = TRUE;
+    const std::wstring sinkPath = logPath.empty() ? std::wstring(L"NUL") : widen(logPath);
+    HANDLE sink = CreateFileW(sinkPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                              &inherit, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (sink == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    // Only the sink is inherited: concurrent compiles (compileBatch) must not leak their log
+    // handles into each other's children.
+    SIZE_T attributeBytes = 0;
+    InitializeProcThreadAttributeList(nullptr, 1, 0, &attributeBytes);
+    std::vector<unsigned char> attributeStorage(attributeBytes);
+    auto* attributes = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attributeStorage.data());
+    const bool listReady = InitializeProcThreadAttributeList(attributes, 1, 0, &attributeBytes) != FALSE;
+    bool ok = listReady;
+    HANDLE inherited[1] = {sink};
+    ok = ok && UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited,
+                                         sizeof(inherited), nullptr, nullptr) != FALSE;
+    PROCESS_INFORMATION process{};
+    if (ok) {
+        STARTUPINFOEXW startup{};
+        startup.StartupInfo.cb = sizeof(startup);
+        startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+        startup.StartupInfo.hStdInput = nullptr;
+        startup.StartupInfo.hStdOutput = sink;
+        startup.StartupInfo.hStdError = sink;
+        startup.lpAttributeList = attributes;
+        ok = CreateProcessW(nullptr, commandLine.data(), nullptr, nullptr, TRUE,
+                            CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT, nullptr, nullptr, &startup.StartupInfo,
+                            &process) != FALSE;
+    }
+    if (listReady) {
+        DeleteProcThreadAttributeList(attributes);
+    }
+    CloseHandle(sink);
+    if (!ok) {
+        return false;
+    }
+    WaitForSingleObject(process.hProcess, INFINITE);
+    DWORD exitCode = 1;
+    const bool exited = GetExitCodeProcess(process.hProcess, &exitCode) != FALSE;
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return exited && exitCode == 0;
 #else
     std::vector<char*> argv;
     argv.reserve(args.size() + 1u);

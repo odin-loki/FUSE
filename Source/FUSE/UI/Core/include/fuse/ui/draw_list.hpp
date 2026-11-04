@@ -12,6 +12,8 @@
 
 namespace fuse::ui {
 
+class EffectRegistry;
+
 enum class DrawOp : u8 {
     Rect,     ///< rounded rect: per-corner radii, optional border, optional 2-stop gradient; analytic AA
     Shadow,   ///< analytic box shadow (rounded rect blurred by `blur`)
@@ -21,6 +23,7 @@ enum class DrawOp : u8 {
     PushClip, ///< intersect the clip with `rect` (rounded clips: radius[0])
     PopClip,
     Backdrop, ///< frosted glass: blurs what is already drawn under the rounded `rect` (radius `blur`), then `fill` over it
+    Effect,   ///< custom shader effect over the rounded `rect` (effects.hpp: `u` id, `fill` / `fill2` params, `blur` time)
 };
 
 struct DrawCmd {
@@ -48,6 +51,10 @@ public:
     void line(Vec2 a, Vec2 b, Color c, f32 width);
     /// Backdrop blur (CSS backdrop-filter: blur()): everything drawn before this command under `r` is blurred.
     void backdrop(const Rect& r, f32 blur, const std::array<f32, 4>& radii, Color tint = {});
+    /// Custom effect `id` (EffectRegistry) over `r`: `params` (up to kEffectParams), `time` in seconds, `margin` px the
+    /// effect reads beyond each pixel, `image` an image index it samples (~0u: none).
+    void effect(const Rect& r, u32 id, std::span<const f32> params, f32 time, f32 margin,
+                const std::array<f32, 4>& radii = {}, u32 image = ~0u);
     void pushClip(const Rect& r, f32 radius = 0.f);
     void popClip();
     const std::vector<DrawCmd>& cmds() const { return m_cmds; }
@@ -92,6 +99,8 @@ public:
         m_atlas = pixels;
         m_atlasSize = size;
     }
+    /// Effect registry for Effect commands (non-owning; null: effects are skipped).
+    void setEffects(const EffectRegistry* effects) { m_effects = effects; }
     /// Registers an image for Image commands (non-owning view). Returns its index.
     u32 addImage(const Image* img);
     /// Rasterises `list` over `target` (blending onto existing pixels) restricted to `scissor` (whole target when empty).
@@ -104,6 +113,7 @@ private:
     const u8* m_atlas = nullptr;
     int m_atlasSize = 0;
     std::vector<const Image*> m_images;
+    const EffectRegistry* m_effects = nullptr;
 };
 
 } // namespace fuse::ui

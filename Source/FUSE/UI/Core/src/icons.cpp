@@ -46,7 +46,8 @@ std::expected<IconSet, std::string> IconSet::fromBytes(std::span<const u8> bytes
     Reader r{bytes};
     char magic[4] = {};
     if (!r.take(magic, 4) || std::memcmp(magic, kIconPackMagic, 4) != 0) return std::unexpected("not an icon pack (bad magic)");
-    if (r.u32_() != kIconPackVersion) return std::unexpected("icon pack: unsupported version");
+    const u32 version = r.u32_();
+    if (version != 1 && version != kIconPackVersion) return std::unexpected("icon pack: unsupported version");
     IconSet s;
     s.m_atlasW = r.u16_();
     s.m_atlasH = r.u16_();
@@ -61,7 +62,7 @@ std::expected<IconSet, std::string> IconSet::fromBytes(std::span<const u8> bytes
     if (!r.ok || std::size_t(n) * (6 + 12 * std::size_t(nSizes)) > bytes.size() - r.at) return std::unexpected("icon pack: bad icon count");
     s.m_names.resize(n);
     s.m_hashes.resize(n);
-    s.m_entries.resize(std::size_t(n) * nSizes);
+    s.m_layerStart.assign(1, 0u);
     for (u32 i = 0; i < n && r.ok; ++i) {
         s.m_hashes[i] = r.u32_();
         const u16 len = r.u16_();
@@ -70,13 +71,21 @@ std::expected<IconSet, std::string> IconSet::fromBytes(std::span<const u8> bytes
         r.at += len;
         if (hashId(s.m_names[i]) != s.m_hashes[i]) return std::unexpected("icon pack: name hash mismatch");
         if (i && !(s.m_names[i - 1] < s.m_names[i])) return std::unexpected("icon pack: names not sorted / unique");
-        for (u16 k = 0; k < nSizes; ++k) {
-            Entry& e = s.m_entries[std::size_t(i) * nSizes + k];
-            e.u = r.u16_(); e.v = r.u16_(); e.w = r.u16_(); e.h = r.u16_(); e.ox = r.u16_(); e.oy = r.u16_();
-            const bool fits = std::size_t(e.u) + e.w <= std::size_t(s.m_atlasW) && std::size_t(e.v) + e.h <= std::size_t(s.m_atlasH) &&
-                              std::size_t(e.ox) + e.w <= s.m_sizes[k] && std::size_t(e.oy) + e.h <= s.m_sizes[k];
-            if (r.ok && !fits) return std::unexpected("icon pack: entry outside atlas / cell");
+        const u16 layers = version == 1 ? u16(1) : r.u16_();
+        if (!r.ok || layers == 0 || layers > 255 || std::size_t(layers) * (4 + 12 * std::size_t(nSizes)) > bytes.size() - r.at)
+            return std::unexpected("icon pack: bad layer count");
+        for (u16 l = 0; l < layers; ++l) {
+            s.m_layerColors.push_back(version == 1 ? 0u : r.u32_());
+            for (u16 k = 0; k < nSizes; ++k) {
+                Entry e;
+                e.u = r.u16_(); e.v = r.u16_(); e.w = r.u16_(); e.h = r.u16_(); e.ox = r.u16_(); e.oy = r.u16_();
+                const bool fits = std::size_t(e.u) + e.w <= std::size_t(s.m_atlasW) && std::size_t(e.v) + e.h <= std::size_t(s.m_atlasH) &&
+                                  std::size_t(e.ox) + e.w <= s.m_sizes[k] && std::size_t(e.oy) + e.h <= s.m_sizes[k];
+                if (r.ok && !fits) return std::unexpected("icon pack: entry outside atlas / cell");
+                s.m_entries.push_back(e);
+            }
         }
+        s.m_layerStart.push_back(s.m_layerStart.back() + layers);
     }
     const std::size_t atlasBytes = std::size_t(s.m_atlasW) * std::size_t(s.m_atlasH);
     if (!r.ok || bytes.size() - r.at != atlasBytes) return std::unexpected("icon pack: truncated or corrupt");
@@ -106,19 +115,20 @@ i32 IconSet::findHash(u32 h) const {
     return it != m_byHash.end() && m_hashes[*it] == h ? i32(*it) : -1;
 }
 
-bool IconSet::cooked(u32 icon, int size, IconBitmap& out) const {
+bool IconSet::cooked(u32 icon, int size, IconBitmap& out, u32 layer) const {
+    if (icon >= count() || layer >= layerCount(icon)) return false;
     for (std::size_t k = 0; k < m_sizes.size(); ++k) {
         if (m_sizes[k] != size) continue;
-        const Entry& e = entry(icon, u32(k));
+        const Entry& e = entry(icon, u32(k), layer);
         out = {m_atlas.data() + std::size_t(e.v) * std::size_t(m_atlasW) + e.u, e.w, e.h, m_atlasW, e.ox, e.oy};
         return true;
     }
     return false;
 }
 
-void IconSet::render(u32 icon, int size, std::vector<u8>& out) const {
+void IconSet::render(u32 icon, int size, std::vector<u8>& out, u32 layer) const {
     out.assign(std::size_t(std::max(size, 0)) * std::size_t(std::max(size, 0)), 0);
-    if (size <= 0 || icon >= count()) return;
+    if (size <= 0 || icon >= count() || layer >= layerCount(icon)) return;
     // source: the smallest cooked size >= size, else the largest
     std::size_t best = 0;
     for (std::size_t k = 0; k < m_sizes.size(); ++k) {
@@ -126,7 +136,7 @@ void IconSet::render(u32 icon, int size, std::vector<u8>& out) const {
         if ((kOk && (!bOk || m_sizes[k] < m_sizes[best])) || (!kOk && !bOk && m_sizes[k] > m_sizes[best])) best = k;
     }
     const int s = m_sizes[best];
-    const Entry& e = entry(icon, u32(best));
+    const Entry& e = entry(icon, u32(best), layer);
     if (s == size) {
         for (int y = 0; y < e.h; ++y)
             std::memcpy(&out[std::size_t(y + e.oy) * std::size_t(size) + e.ox], &m_atlas[std::size_t(e.v + y) * std::size_t(m_atlasW) + e.u], e.w);
