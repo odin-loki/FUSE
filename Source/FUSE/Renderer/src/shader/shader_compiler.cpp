@@ -255,6 +255,23 @@ bool runTool(const std::vector<std::string>& args, const std::string& logPath) {
     argv.push_back(nullptr);
 
     const char* sink = logPath.empty() ? "/dev/null" : logPath.c_str();
+#if defined(__ANDROID__) && __ANDROID_API__ < 28
+    // no posix_spawn before Android 9: fork + exec
+    const pid_t pid = fork();
+    if (pid < 0) {
+        return false;
+    }
+    if (pid == 0) {
+        const int fd = open(sink, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd >= 0) {
+            dup2(fd, STDOUT_FILENO);
+            dup2(fd, STDERR_FILENO);
+            close(fd);
+        }
+        execv(argv[0], argv.data());
+        _exit(127);
+    }
+#else
     posix_spawn_file_actions_t actions;
     posix_spawn_file_actions_init(&actions);
     posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, sink, O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -265,6 +282,7 @@ bool runTool(const std::vector<std::string>& args, const std::string& logPath) {
     if (spawned != 0) {
         return false;
     }
+#endif
     int status = 0;
     while (waitpid(pid, &status, 0) < 0) {
         if (errno != EINTR) {

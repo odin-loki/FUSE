@@ -3,6 +3,7 @@
 #include <fuse/math/quat.hpp>
 #include <fuse/math/vec.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 

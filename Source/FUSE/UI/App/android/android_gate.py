@@ -266,6 +266,33 @@ class Gate:
             self.screenshot(self.a.shot)
         return 0
 
+    # ---- engine renderer (fuse_runtime_android) --------------------------------------------------------------
+    def gate_runtime(self):
+        vk = self.dev.sh("pm has-feature android.hardware.vulkan.version").strip()
+        if vk != "true":
+            self.log("device has no Vulkan: skip")
+            return SKIP
+        self.dev.sh(f"am force-stop {self.a.package}")
+        self.dev.sh(f"run-as {self.a.package} rm -f files/fuse_runtime_state.txt")
+        self.dev.sh(f"am start -W -n {self.activity} --es args --frames=120")
+        end, s = time.time() + 90, {}
+        while time.time() < end:
+            out = self.dev.sh(f"run-as {self.a.package} cat files/fuse_runtime_state.txt 2>/dev/null")
+            s = dict(l.split("=", 1) for l in out.splitlines() if "=" in l)
+            if s.get("done") == "1":
+                break
+            time.sleep(0.5)
+        self.log(f"state: {s}")
+        self.check(s.get("done") == "1", "fuse_runtime_android finished")
+        self.check(s.get("error", "") == "", f"no error ({s.get('error')})")
+        self.check(int(s.get("frames_rendered", "0")) == 120, f"120 frames rendered by RhiContext ({s.get('frames_rendered')})")
+        self.check(int(s.get("frames_presented", "0")) >= 110,
+                   f"frames presented to the window's swapchain ({s.get('frames_presented')}, {s.get('swapchain_images')} images)")
+        self.check(s.get("readback") == "pass", f"raster read-back: black background, white triangle (coverage {s.get('coverage')})")
+        if self.a.shot:
+            self.screenshot(self.a.shot)
+        return 0
+
     # ---- hello_app start-up (plan §6: launch to first presented frame, mid Android <= 400 ms) ------------------
     def probe(self, args):
         """One cold start of hello_app --startup-probe; returns its numbers (ms) from logcat."""
@@ -334,7 +361,7 @@ class Gate:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--gate", required=True, choices=["present", "lifecycle", "touch", "ime", "process_death", "startup"])
+    ap.add_argument("--gate", required=True, choices=["present", "lifecycle", "touch", "ime", "process_death", "startup", "runtime"])
     ap.add_argument("--apk", required=True)
     ap.add_argument("--package", required=True)
     ap.add_argument("--abi", required=True)
