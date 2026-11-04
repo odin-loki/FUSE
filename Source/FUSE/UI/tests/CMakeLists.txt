@@ -311,6 +311,26 @@ foreach(g font_picker file_dialog node_graph curve_timeline viewport code_edit d
     add_test(NAME fuse_ui_widget_${g} COMMAND fuse_ui_tier_d2 --gate=${g})
     set_tests_properties(fuse_ui_widget_${g} PROPERTIES LABELS "fuse_ui;gate")
 endforeach()
+# UI6: one gate per registered widget class of the other tiers (role, layout, paint, golden, disabled state, Tab,
+# behaviour), and fuse_ui_widget_catalogue: every registered class has a gate (here or in the Tier D list above)
+set(FUSE_UI_WIDGET_GATES panel label button toolbutton icon link checkbox radio switch slider scrollbar dial progressbar
+    spinbox combobox lineedit image separator layer popup menu menuitem menubar menubutton tooltip listview treeview
+    tabbar splithandle docktitle tableview gridview colorpicker calendar chart kineticscroll)
+set(FUSE_UI_WIDGET_D2_CLASSES nodegraph curveeditor timeline viewport codeedit datetimeedit video)
+# one binary: run bare it is the catalogue gate, --gate=<class> runs that widget's gate
+fuse_ui_test(fuse_ui_widget_catalogue test_widget_gates.cpp)
+set_tests_properties(fuse_ui_widget_catalogue PROPERTIES LABELS "fuse_ui;gate")
+string(REPLACE ";" " " _gates "${FUSE_UI_WIDGET_GATES}")
+string(REPLACE ";" " " _d2 "${FUSE_UI_WIDGET_D2_CLASSES}")
+target_compile_definitions(fuse_ui_widget_catalogue PRIVATE FUSE_UI_WIDGET_GATES="${_gates}" FUSE_UI_WIDGET_D2_CLASSES="${_d2}")
+if(TARGET fuse_ui_icons) # the icon widget draws from the starter pack
+    add_dependencies(fuse_ui_widget_catalogue fuse_ui_icons)
+    target_compile_definitions(fuse_ui_widget_catalogue PRIVATE FUSE_UI_ICON_PACK="${FUSE_UI_ICON_PACK}")
+endif()
+foreach(g ${FUSE_UI_WIDGET_GATES})
+    add_test(NAME fuse_ui_widget_${g} COMMAND fuse_ui_widget_catalogue --gate=${g})
+    set_tests_properties(fuse_ui_widget_${g} PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endforeach()
 
 # UI5 gates: fuse_app on-demand loop (virtual clock, headless presenter)
 if(TARGET fuse_app)
