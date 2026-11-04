@@ -261,6 +261,10 @@ int shapingScripts() {
 
 // ---- fuse_text_system_fonts ----------------------------------------------------------------------------------------
 int systemFonts() {
+    if (textProfile() == TextProfile::Cooked) {
+        std::printf("fuse_text_system_fonts: COOKED loads only .fusefont packs, skipped\n");
+        return 77;
+    }
     const auto t0 = std::chrono::steady_clock::now();
     const FontCatalog& cat = FontCatalog::system();
     const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
@@ -413,7 +417,7 @@ int cacheZeroAlloc() {
 
 // ---- fuse_text_colrv1 ----------------------------------------------------------------------------------------------
 int colrv1() {
-    auto loaded = Font::fromFile("data/colrv1_test.ttf");
+    auto loaded = Font::fromFile(fuse::ui::test::testFontPath("colrv1_test"));
     UI_CHECK(loaded.has_value());
     if (!loaded) return finish("fuse_text_colrv1");
     const Font& f = *loaded;
@@ -506,7 +510,8 @@ int colrv1() {
                 for (int c = 0; c < 4; ++c)
                     maxd = std::max(maxd, std::abs(int(ref[i * 4 + c]) - int((sheet.pixels[std::size_t(i)] >> (8 * c)) & 0xFF)));
             std::printf("colrv1 exact: golden max channel difference %d\n", maxd);
-            UI_CHECK(w == sheet.width && h == sheet.height && maxd == 0);
+            // COOKED rebuilds foreground-coloured glyphs from black / white renders: exact up to rounding (1 / 255)
+            UI_CHECK(w == sheet.width && h == sheet.height && maxd <= (textProfile() == TextProfile::Cooked ? 1 : 0));
             stbi_image_free(ref);
         }
     }

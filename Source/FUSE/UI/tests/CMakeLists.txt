@@ -10,8 +10,31 @@ function(fuse_ui_test name src)
     set_tests_properties(${name} PROPERTIES LABELS fuse_ui)
     if(FUSE_UI_TEXT STREQUAL "FULL")
         target_compile_definitions(${name} PRIVATE FUSE_UI_TEST_TEXT_FULL=1)
+    elseif(FUSE_UI_TEXT STREQUAL "COOKED")
+        target_compile_definitions(${name} PRIVATE FUSE_UI_TEST_TEXT_COOKED=1
+                                   FUSE_UI_TEST_COOKED_FONTS="${CMAKE_CURRENT_BINARY_DIR}/fonts")
+        add_dependencies(${name} fuse_ui_test_fonts)
     endif()
 endfunction()
+
+# COOKED: the test-data fonts cooked at the sizes their gates draw (colour images included)
+if(FUSE_UI_TEXT STREQUAL "COOKED")
+    set(_tf "${CMAKE_CURRENT_BINARY_DIR}/fonts")
+    set(_tf_out "")
+    foreach(spec "colrv1_test|--sizes=30,32,45,48,56|--msdf"
+                 "bitmap_cbdt_test|--sizes=20|--color-sizes=8,12,16,20,32,40,64,100"
+                 "bitmap_sbix_test|--sizes=20|--color-sizes=8,12,16,20,32,40,64,100")
+        string(REPLACE "|" ";" _spec "${spec}")
+        list(POP_FRONT _spec _name)
+        add_custom_command(OUTPUT "${_tf}/${_name}.fusefont"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${_tf}"
+            COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:fuse_text_cook> "--out=${_tf}/${_name}.fusefont" ${_spec}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/data/${_name}.ttf"
+            DEPENDS fuse_text_cook "${CMAKE_CURRENT_SOURCE_DIR}/data/${_name}.ttf" COMMENT "fuse_text_cook ${_name}" VERBATIM)
+        list(APPEND _tf_out "${_tf}/${_name}.fusefont")
+    endforeach()
+    add_custom_target(fuse_ui_test_fonts DEPENDS ${_tf_out})
+endif()
 
 fuse_ui_test(fuse_ui_layout_conformance test_layout_conformance.cpp)
 fuse_ui_test(fuse_ui_style_cascade test_style_cascade.cpp)
@@ -41,6 +64,21 @@ foreach(g shaping_scripts system_fonts cache_zero_alloc colrv1 dpi_1 dpi_1_25 dp
     set_tests_properties(fuse_text_${g} PROPERTIES LABELS "fuse_ui;gate;text" SKIP_RETURN_CODE 77
                          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endforeach()
+
+# COOKED profile: cooker determinism (every profile), cooked layout / renders against the MINIMAL reference (COOKED)
+fuse_ui_test(fuse_text_cooked test_text_cooked.cpp)
+string(REPLACE ";" " " _cook_args "${FUSE_TEXT_UI_COOK_ARGS}")
+target_include_directories(fuse_text_cooked PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../Text/tools)
+target_compile_definitions(fuse_text_cooked PRIVATE FUSE_TEXT_COOK_EXE="$<TARGET_FILE:fuse_text_cook>"
+    FUSE_TEXT_TEST_FONT="${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf" FUSE_TEXT_TEST_COOK_ARGS="${_cook_args}"
+    FUSE_TEXT_TEST_OUT_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+add_dependencies(fuse_text_cooked fuse_text_cook)
+if(FUSE_UI_TEXT STREQUAL "COOKED")
+    target_compile_definitions(fuse_text_cooked PRIVATE
+        FUSE_TEXT_COOKED_PACK="${FUSE_TEXT_COOKED_FONT_DIR}/opensans/OpenSans.fusefont"
+        FUSE_TEXT_COOKED_REFERENCE="${FUSE_TEXT_COOKED_FONT_DIR}/opensans/OpenSans.reference")
+endif()
+set_tests_properties(fuse_text_cooked PROPERTIES LABELS "fuse_ui;gate;text")
 
 # Colour glyphs (CBDT / sbix strikes) and MSDF glyphs (quality, UI threshold, GPU parity when fuse_ui_vk is built).
 foreach(g bitmap_emoji msdf)

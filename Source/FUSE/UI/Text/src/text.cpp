@@ -1,5 +1,6 @@
 #include "fuse/text/text.hpp"
 
+#if !FUSE_TEXT_COOKED
 #define STBTT_STATIC
 #define STB_TRUETYPE_IMPLEMENTATION
 #if defined(__GNUC__)
@@ -15,6 +16,7 @@
 #include "stb_truetype.h"
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
+#endif
 #endif
 
 #include <algorithm>
@@ -32,11 +34,17 @@
 #if FUSE_TEXT_FULL
 #include "text_full.hpp"
 #endif
+#if FUSE_TEXT_COOKED
+#include "fusefont.hpp"
+#include "text_cooked.hpp"
+#endif
 
 namespace fuse::text {
 
 TextProfile textProfile() {
-#if FUSE_TEXT_FULL
+#if FUSE_TEXT_COOKED
+    return TextProfile::Cooked;
+#elif FUSE_TEXT_FULL
     return TextProfile::Full;
 #else
     return TextProfile::Minimal;
@@ -285,7 +293,13 @@ void reorderVisual(std::span<const std::uint8_t> levels, std::vector<std::uint32
 // ---- Font ----------------------------------------------------------------------------------------------------------
 struct Font::State {
     std::vector<std::uint8_t> bytes;
+#if FUSE_TEXT_COOKED
+    detail::MappedFile map;               // the pack when loaded with fromFile
+    detail::CookedFace* cooked = nullptr; // owned; a view over `bytes` or `map`
+    ~State() { detail::cookedDestroy(cooked); }
+#else
     stbtt_fontinfo info{};
+#endif
     float unitsPerPixelScale1 = 0.f; // stbtt_ScaleForPixelHeight(info, 1)
     float emPerPixelSize = 1.f;      // em size in pixels for pixelSize 1 (pixel sizes are ascent-to-descent)
     std::vector<const Font*> fallbacks;
@@ -426,6 +440,7 @@ struct ColrV1 {
     }
 };
 
+#if !FUSE_TEXT_COOKED
 // COLR (version 0 layers, plus version 1 paint graphs flattened to solid layers) + CPAL palette 0. Bounds-checked: a
 // malformed table leaves the font without colour glyphs.
 void loadColr(std::vector<std::uint8_t>& bytes, std::vector<ColorLayer>& layers,
@@ -507,12 +522,38 @@ void loadColr(std::vector<std::uint8_t>& bytes, std::vector<ColorLayer>& layers,
     }
     std::sort(colorBase.begin(), colorBase.end());
 }
+#endif
 } // namespace
+
+#if FUSE_TEXT_COOKED
+// Takes ownership of `st`; `pack` (st's bytes or mapping) holds a .fusefont.
+std::expected<Font, TextError> Font::fromCooked(State* st, std::span<const std::uint8_t> pack) {
+    st->cooked = detail::cookedCreate(pack);
+    if (!st->cooked) {
+        delete st;
+        return std::unexpected(TextError::InvalidFont);
+    }
+    const detail::CookedInfo& ci = detail::cookedInfo(st->cooked);
+    st->unitsPerPixelScale1 = ci.unitsPerPixelScale1;
+    st->emPerPixelSize = ci.emPerPixelSize;
+    st->unitsPerEm = ci.unitsPerEm;
+    st->numGlyphs = ci.numGlyphs;
+    detail::cookedColorTables(st->cooked, st->layers, st->colorBase, st->v1Images);
+    Font f;
+    f.m_state = st;
+    f.m_id = g_fontIds.fetch_add(1);
+    return f;
+}
+#endif
 
 std::expected<Font, TextError> Font::fromBytes(std::span<const std::uint8_t> bytes, std::uint32_t faceIndex) {
     if (bytes.size() < 12) return std::unexpected(TextError::InvalidFont);
     auto* st = new State;
     st->bytes.assign(bytes.begin(), bytes.end());
+#if FUSE_TEXT_COOKED
+    (void)faceIndex; // a .fusefont pack holds one face
+    return fromCooked(st, st->bytes);
+#else
     const int offset = stbtt_GetFontOffsetForIndex(st->bytes.data(), int(faceIndex));
     if (offset < 0 || !stbtt_InitFont(&st->info, st->bytes.data(), offset)) {
         delete st;
@@ -545,6 +586,7 @@ std::expected<Font, TextError> Font::fromBytes(std::span<const std::uint8_t> byt
             }
         }
     }
+#endif
 #if FUSE_TEXT_FULL
     st->full = detail::fullCreate(st->bytes, faceIndex);
     if (!st->full) {
@@ -559,9 +601,19 @@ std::expected<Font, TextError> Font::fromBytes(std::span<const std::uint8_t> byt
 }
 
 std::expected<Font, TextError> Font::fromFile(const std::string& path, std::uint32_t faceIndex) {
+#if FUSE_TEXT_COOKED
+    (void)faceIndex;
+    auto* st = new State; // packs are mapped, not read: their pages load on first use
+    if (!st->map.open(path)) {
+        delete st;
+        return std::unexpected(TextError::InvalidFont);
+    }
+    return fromCooked(st, {st->map.data(), st->map.size()});
+#else
     std::vector<std::uint8_t> data;
     if (!detail::readFile(path, data)) return std::unexpected(TextError::InvalidFont);
     return fromBytes(data, faceIndex);
+#endif
 }
 
 std::expected<Font, TextError> Font::bundled() {
@@ -576,10 +628,17 @@ std::vector<Font> Font::bundledFallbacks() {
     std::vector<Font> out;
 #if defined(FUSE_TEXT_FONT_DIR)
     // Emoji before Symbols 2 so emoji-presentation code points (U+2764 ...) come out in colour.
+#if FUSE_TEXT_COOKED // cooked at build time into the build tree (same names, .fusefont)
+    static const char* const kFiles[] = {"noto/NotoSansHebrew-Regular.fusefont", "noto/NotoSansArabic-Regular.fusefont",
+                                         "noto/NotoSansDevanagari-Regular.fusefont", "twemoji/TwemojiMozilla.fusefont",
+                                         "noto/NotoSansSymbols2-Regular.fusefont", "noto/NotoSansThai-Regular.fusefont",
+                                         "noto/NotoSansCJKsc-Subset.fusefont"};
+#else
     static const char* const kFiles[] = {"noto/NotoSansHebrew-Regular.ttf", "noto/NotoSansArabic-Regular.ttf",
                                          "noto/NotoSansDevanagari-Regular.ttf", "twemoji/TwemojiMozilla.ttf",
                                          "noto/NotoSansSymbols2-Regular.ttf", "noto/NotoSansThai-Regular.ttf",
                                          "noto/NotoSansCJKsc-Subset.otf"};
+#endif
     for (const char* f : kFiles)
         if (auto font = fromFile(std::string(FUSE_TEXT_FONT_DIR) + "/" + f)) out.push_back(std::move(*font));
 #endif
@@ -619,10 +678,10 @@ const ColorLayer* findImage(const std::vector<ColorLayer>& v, std::uint32_t glyp
 std::span<const ColorLayer> Font::colorLayers(std::uint32_t glyph) const {
     if (!m_state) return {};
     const detail::PaintHooks& hooks = detail::paintHooks();
-    if (hooks.bitmapRender)
+    if (hooks.colorEnabled) {
         if (const ColorLayer* l = findImage(m_state->bitmapImages, glyph)) return {l, 1};
-    if (hooks.colrRender)
         if (const ColorLayer* l = findImage(m_state->v1Images, glyph)) return {l, 1};
+    }
     if (m_state->colorBase.empty()) return {};
     const auto& b = m_state->colorBase;
     auto it = std::lower_bound(b.begin(), b.end(), glyph, [](const auto& e, std::uint32_t g) { return e[0] < g; });
@@ -643,34 +702,61 @@ Font::~Font() { delete m_state; }
 
 FontMetrics Font::metrics(float px) const {
     int a = 0, d = 0, g = 0;
+#if FUSE_TEXT_COOKED
+    const detail::CookedInfo& ci = detail::cookedInfo(m_state->cooked);
+    a = ci.ascent;
+    d = ci.descent;
+    g = ci.lineGap;
+#else
     stbtt_GetFontVMetrics(&m_state->info, &a, &d, &g);
+#endif
     const float s = m_state->unitsPerPixelScale1 * px;
     return {float(a) * s, float(d) * s, float(g) * s};
 }
 std::uint32_t Font::glyphIndex(char32_t cp) const {
+#if FUSE_TEXT_COOKED
+    return detail::cookedGlyphIndex(m_state->cooked, cp);
+#else
     return std::uint32_t(stbtt_FindGlyphIndex(&m_state->info, int(cp)));
+#endif
 }
 float Font::advance(std::uint32_t glyph, float px) const {
+#if FUSE_TEXT_COOKED
+    const int adv = detail::cookedAdvance(m_state->cooked, glyph);
+#else
     int adv = 0, lsb = 0;
     stbtt_GetGlyphHMetrics(&m_state->info, int(glyph), &adv, &lsb);
+#endif
     return float(adv) * m_state->unitsPerPixelScale1 * px;
 }
 float Font::kerning(std::uint32_t l, std::uint32_t r, float px) const {
+#if FUSE_TEXT_COOKED
+    return float(detail::cookedKern(m_state->cooked, l, r)) * m_state->unitsPerPixelScale1 * px;
+#else
     return float(stbtt_GetGlyphKernAdvance(&m_state->info, int(l), int(r))) * m_state->unitsPerPixelScale1 * px;
+#endif
 }
 void Font::glyphBox(std::uint32_t glyph, float px, int& x0, int& y0, int& x1, int& y1) const {
 #if FUSE_TEXT_FULL
     return detail::fullGlyphBox(m_state->full, glyph, m_state->emPerPixelSize * px, x0, y0, x1, y1);
 #endif
+#if FUSE_TEXT_COOKED
+    return detail::cookedGlyphBox(m_state->cooked, glyph, px, x0, y0, x1, y1);
+#else
     const float s = m_state->unitsPerPixelScale1 * px;
     stbtt_GetGlyphBitmapBox(&m_state->info, int(glyph), s, s, &x0, &y0, &x1, &y1);
+#endif
 }
 void Font::rasterise(std::uint32_t glyph, float px, std::uint8_t* dst, int w, int h, int stride) const {
 #if FUSE_TEXT_FULL
     return detail::fullRasterise(m_state->full, glyph, m_state->emPerPixelSize * px, dst, w, h, stride);
 #endif
+#if FUSE_TEXT_COOKED
+    return detail::cookedRasterise(m_state->cooked, glyph, px, dst, w, h, stride);
+#else
     const float s = m_state->unitsPerPixelScale1 * px;
     stbtt_MakeGlyphBitmap(&m_state->info, dst, w, h, stride, s, s, int(glyph));
+#endif
 }
 
 // ---- Shaping -------------------------------------------------------------------------------------------------------
@@ -715,6 +801,11 @@ PaintHooks& paintHooks() {
 bool glyphOutline(const Font& font, std::uint32_t glyph, std::vector<OutlineCmd>& out) {
     out.clear();
     const auto* st = FontAccess::state(font);
+#if FUSE_TEXT_COOKED
+    (void)st;
+    (void)glyph;
+    return false; // cooked packs carry no outlines
+#else
     if (!st) return false;
     stbtt_vertex* v = nullptr;
     const int n = stbtt_GetGlyphShape(&st->info, int(glyph), &v);
@@ -737,25 +828,76 @@ bool glyphOutline(const Font& font, std::uint32_t glyph, std::vector<OutlineCmd>
     }
     stbtt_FreeShape(&st->info, v);
     return !out.empty();
+#endif
 }
 } // namespace detail
+
+#if !FUSE_TEXT_COOKED
+// ---- what the font cooker (font_cook.cpp) reads ----
+namespace detail {
+CookSource cookSource(const Font& font) {
+    CookSource c;
+    const auto* st = FontAccess::state(font);
+    if (!st) return c;
+    stbtt_GetFontVMetrics(&st->info, &c.ascent, &c.descent, &c.lineGap);
+    c.unitsPerPixelScale1 = st->unitsPerPixelScale1;
+    c.emPerPixelSize = st->emPerPixelSize;
+    c.unitsPerEm = st->unitsPerEm;
+    c.numGlyphs = st->numGlyphs;
+    return c;
+}
+int advanceUnits(const Font& font, std::uint32_t glyph) {
+    int adv = 0, lsb = 0;
+    stbtt_GetGlyphHMetrics(&FontAccess::state(font)->info, int(glyph), &adv, &lsb);
+    return adv;
+}
+int kernUnits(const Font& font, std::uint32_t l, std::uint32_t r) {
+    return stbtt_GetGlyphKernAdvance(&FontAccess::state(font)->info, int(l), int(r));
+}
+bool hasKerning(const Font& font) {
+    const auto* st = FontAccess::state(font);
+    return st->info.kern != 0 || st->info.gpos != 0;
+}
+void rawColorTables(const Font& font, std::vector<ColorLayer>& layers, std::vector<std::array<std::uint32_t, 3>>& base) {
+    const auto* st = FontAccess::state(font);
+    layers = st->layers;
+    base = st->colorBase;
+}
+void imageGlyphs(const Font& font, std::vector<std::uint32_t>& out) {
+    const auto* st = FontAccess::state(font);
+    out.clear();
+    for (const ColorLayer& l : st->v1Images) out.push_back(l.glyph);
+    for (const ColorLayer& l : st->bitmapImages) out.push_back(l.glyph);
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+}
+} // namespace detail
+#endif
 
 bool Font::renderColor(std::uint32_t glyph, float px, std::uint32_t foreground, ColorImage& out) const {
     out = {};
     if (!m_state) return false;
     const detail::PaintHooks& hooks = detail::paintHooks();
     const State& st = *m_state;
+#if FUSE_TEXT_COOKED
+    (void)hooks;
+    return hooks.colorEnabled && detail::cookedColor(st.cooked, glyph, px, foreground, out);
+#else
     if (hooks.bitmapRender && findImage(st.bitmapImages, glyph))
         return hooks.bitmapRender({st.bytes, st.cblc, st.cbdt, st.sbix, st.unitsPerEm, st.numGlyphs}, glyph,
                                   unitScale(px) * float(st.unitsPerEm), out);
     if (hooks.colrRender && findImage(st.v1Images, glyph))
         return hooks.colrRender({this, st.bytes, st.colr, st.cpal, unitScale(px)}, glyph, foreground, out);
     return false;
+#endif
 }
 
 bool Font::renderMsdf(std::uint32_t glyph, float px, float range, ColorImage& out) const {
     out = {};
     const detail::PaintHooks& hooks = detail::paintHooks();
+#if FUSE_TEXT_COOKED
+    return m_state && hooks.msdfEnabled && detail::cookedMsdf(m_state->cooked, glyph, px, range, out);
+#else
     if (!m_state || !hooks.msdf || !(range > 0.f)) return false;
     thread_local std::vector<detail::OutlineCmd> path;
     if (!detail::glyphOutline(*this, glyph, path)) return false;
@@ -776,6 +918,7 @@ bool Font::renderMsdf(std::uint32_t glyph, float px, float range, ColorImage& ou
     m.dy = -out.y0;
     hooks.msdf(path, m, range, out.rgba.data(), out.w, out.h, out.w * 4);
     return true;
+#endif
 }
 
 #if FUSE_TEXT_FULL
@@ -1129,7 +1272,11 @@ AtlasGlyph GlyphAtlas::getColor(const Font& font, std::uint32_t glyph, float px,
     const std::uint64_t key = ((std::uint64_t(font.id()) << 44) ^ (std::uint64_t(q) << 24) ^ glyph ^ (1ull << 63)) | (1ull << 16);
     // bitmap strikes ignore the text colour: one entry for every colour
     const auto* st = detail::FontAccess::state(font);
+#if FUSE_TEXT_COOKED
+    const std::uint32_t aux = st && detail::cookedForeground(st->cooked, glyph) ? (foreground | 1u) : 0u;
+#else
     const std::uint32_t aux = st && findImage(st->bitmapImages, glyph) ? 0u : (foreground | 1u);
+#endif
     std::size_t slot = 0;
     if (find(key, aux, slot)) return m_slots[slot].g;
     ++m_misses;

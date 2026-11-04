@@ -726,9 +726,9 @@ void UiContext::paintTextQuads(DrawList& dl, u32 i, u8 src, u32 rev, const fuse:
     Cold& c = *m_cold[i];
     const f32 sc = m_scale;  // quads are rasterised at device size (DPI scale): the key is the device pixel size
     const f32 dpx = px * sc;
-    const u32 fg = straightRgba(col.withAlpha(1.f)); // colour glyphs bake the text colour (COLRv1 foreground)
+    // colour glyphs bake the text colour (COLRv1 foreground): only runs that have them depend on it
     if (c.qEpoch != m_quadEpoch || c.qAtlasGen != m_atlas.generation() || c.qSrc != src || c.qRev != rev || c.qPx != dpx ||
-        (c.qColor && c.qFg != fg)) {
+        (c.qColor && c.qFg != straightRgba(col.withAlpha(1.f)))) {
         if (c.qEpoch == m_quadEpoch) m_quadLive -= c.qCount;
         // full and holding stale runs: start over rather than grow (nodes painted earlier rebuild next frame)
         if (m_quads.size() + tl.glyphs.size() > m_quads.capacity() && m_quads.size() > m_quadLive) {
@@ -758,10 +758,30 @@ void UiContext::paintTextQuads(DrawList& dl, u32 i, u8 src, u32 rev, const fuse:
         c.qSrc = src;
         c.qRev = rev;
         c.qPx = dpx;
-        c.qFg = fg;
+        c.qFg = c.qColor ? straightRgba(col.withAlpha(1.f)) : 0u;
         m_quadLive += c.qCount;
     }
-    for (u32 k = c.qOff, e = c.qOff + c.qCount; k < e; ++k) emitGlyph(dl, m_quads[k], o, col, dpx, i);
+    DrawCmd cmd; // the hot path (every painted label, every frame): coverage quads without per-quad setup
+    cmd.op = DrawOp::Glyph;
+    cmd.node = i;
+    for (u32 k = c.qOff, e = c.qOff + c.qCount; k < e; ++k) {
+        const GlyphQuad& q = m_quads[k];
+        if (q.mode != kGlyphCoverage) {
+            emitGlyph(dl, q, o, col, dpx, i);
+            continue;
+        }
+        if (sc == 1.f)
+            cmd.rect = {std::round(o.x + q.x) + f32(q.x0), std::round(o.y + q.baseline) + f32(q.y0), f32(q.w), f32(q.h)};
+        else // stored so that rect * scale lands on whole device pixels (scaleDrawList)
+            cmd.rect = {(std::round((o.x + q.x) * sc) + f32(q.x0)) / sc, (std::round((o.y + q.baseline) * sc) + f32(q.y0)) / sc,
+                        f32(q.w) / sc, f32(q.h) / sc};
+        cmd.u = q.u;
+        cmd.v = q.v;
+        cmd.tw = q.w;
+        cmd.th = q.h;
+        cmd.fill = q.fg ? col : Color{f32(q.r) / 255.f, f32(q.g) / 255.f, f32(q.b) / 255.f, f32(q.a) / 255.f * col.a};
+        dl.push(cmd);
+    }
 }
 
 void UiContext::paintString(DrawList& dl, std::string_view s, Rect box, Color col, f32 px, TextAlignment align, u32 nodeIdx) {

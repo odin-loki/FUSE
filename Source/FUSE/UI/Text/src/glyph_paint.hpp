@@ -11,6 +11,7 @@
 
 #include "fuse/text/text.hpp"
 
+#include <array>
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -59,6 +60,7 @@ struct BitmapSource {
 
 /// The pluggable rasterisers (null until enabled).
 struct PaintHooks {
+    bool colorEnabled = false, msdfEnabled = false; ///< enableColorGlyphs / enableMsdf called (COOKED: only these)
     /// Renders COLRv1 base glyph `glyph` (the whole paint graph: gradients, transforms, clip box, composites).
     /// `foreground` is the text colour (straight RGBA, R in the low byte) for palette index 0xFFFF.
     bool (*colrRender)(const ColrSource& src, std::uint32_t glyph, std::uint32_t foreground, ColorBitmap& out) = nullptr;
@@ -87,6 +89,21 @@ void bitmapGlyphs(const BitmapSource& src, std::vector<std::uint32_t>& out);
 /// msdf.cpp
 void generateMsdf(std::span<const OutlineCmd> path, const Affine& toPixels, float range, std::uint8_t* rgba, int w, int h,
                   int stride);
+
+// ---- font cooker access (text.cpp, MINIMAL / FULL builds) ----
+struct CookSource {
+    int ascent = 0, descent = 0, lineGap = 0; ///< font units (hhea)
+    float unitsPerPixelScale1 = 0.f, emPerPixelSize = 1.f;
+    std::uint16_t unitsPerEm = 1000, numGlyphs = 0;
+};
+CookSource cookSource(const Font& font);
+int advanceUnits(const Font& font, std::uint32_t glyph);
+int kernUnits(const Font& font, std::uint32_t l, std::uint32_t r);
+bool hasKerning(const Font& font);
+/// COLRv0 layers + flattened COLRv1 (what colorLayers returns without colour images).
+void rawColorTables(const Font& font, std::vector<ColorLayer>& layers, std::vector<std::array<std::uint32_t, 3>>& base);
+/// Glyphs drawn as one RGBA image (COLRv1, bitmap strikes), sorted.
+void imageGlyphs(const Font& font, std::vector<std::uint32_t>& out);
 
 /// path_raster.cpp: non-zero winding coverage (0..1, exact area) of `path` mapped by `toPixels`, written into a w x h
 /// float buffer (pixel (x, y) covers [x, x + 1) x [y, y + 1) in mapped space). Overwrites `coverage`.

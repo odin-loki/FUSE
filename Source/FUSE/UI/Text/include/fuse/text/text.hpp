@@ -2,9 +2,10 @@
 //
 // Profiles (FUSE_UI_TEXT, decision D2 adopted 2026-10-29): FULL (HarfBuzz + FreeType + bidi + UAX #14/#29),
 // MINIMAL (cmap + kerning shaping, stb_truetype grayscale rasterisation; Latin / Greek / Cyrillic / CJK, no complex
-// scripts or bidi), COOKED (pre-baked .fusefont only). MINIMAL is the default; FULL (FUSE_UI_TEXT=FULL, fetched
-// HarfBuzz + FreeType) swaps in HarfBuzzShaper and FreeType coverage behind the same interfaces. COOKED is not built
-// yet. textProfile() reports what is compiled.
+// scripts or bidi), COOKED (pre-baked .fusefont packs only, fuse/text/font_cook.hpp). MINIMAL is the default; FULL
+// (FUSE_UI_TEXT=FULL, fetched HarfBuzz + FreeType) swaps in HarfBuzzShaper and FreeType coverage behind the same
+// interfaces; COOKED reads advances, kerning and pre-rasterised glyphs from the pack (MINIMAL shaping, no font parsing).
+// textProfile() reports what is compiled.
 //
 // Engine rules: no exceptions (std::expected), no owning raw pointers, no allocation on the steady-state path: shaping
 // and layout write into caller-owned buffers that keep their capacity, and the glyph atlas only allocates on a miss.
@@ -113,15 +114,16 @@ struct ShapeCacheStats;
 /// A TrueType / OpenType font (glyf or CFF outlines). Holds a copy of the file bytes; the parsed state points into it.
 class Font {
 public:
-    /// `faceIndex` picks a face of a collection (.ttc / .otc); 0 for single-face files.
+    /// `faceIndex` picks a face of a collection (.ttc / .otc); 0 for single-face files. COOKED builds accept only
+    /// .fusefont packs (fromFile maps them instead of reading).
     static std::expected<Font, TextError> fromBytes(std::span<const std::uint8_t> bytes, std::uint32_t faceIndex = 0);
     /// `path` is UTF-8.
     static std::expected<Font, TextError> fromFile(const std::string& path, std::uint32_t faceIndex = 0);
     /// FUSE's bundled UI font (vendor/fonts/opensans) when the build knows its path; InvalidFont otherwise.
     static std::expected<Font, TextError> bundled();
     /// FUSE's bundled fallback faces in chain order: Noto Sans Hebrew, Arabic, Devanagari, Twemoji (COLRv0 colour
-    /// emoji), Symbols 2, Thai and a Noto Sans SC subset (kana, CJK punctuation, fullwidth forms and the ~1400 most
-    /// frequent Han characters, CFF outlines). Fonts whose files are missing are skipped. Attach them with
+    /// emoji), Symbols 2, Thai and a Noto Sans CJK SC subset (kana, CJK punctuation, fullwidth forms, the ~1400 most
+    /// frequent Han characters and Hangul: KS X 1001 syllables + jamo; CFF outlines). COOKED: their build-time packs. Fonts whose files are missing are skipped. Attach them with
     /// setFallbacks().
     static std::vector<Font> bundledFallbacks();
 
@@ -182,6 +184,7 @@ private:
     friend ShapeCacheStats shapeCacheStats(const Font&);
     friend struct detail::FontAccess;
     struct State;
+    static std::expected<Font, TextError> fromCooked(State* st, std::span<const std::uint8_t> pack); // COOKED only
     State* m_state = nullptr; // owned (pimpl); released in ~Font
     std::uint32_t m_id = 0;
 };

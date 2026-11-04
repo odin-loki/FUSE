@@ -48,13 +48,14 @@ const std::uint8_t* px4(const ColorImage& img, int x, int y) { return img.rgba.d
 int bitmapEmoji() {
     enableColorGlyphs(); // before loading: the strike index is read at load
     UI_CHECK(colorGlyphsEnabled());
-    for (const char* file : {"data/bitmap_cbdt_test.ttf", "data/bitmap_sbix_test.ttf"}) {
-        const bool sbix = std::strstr(file, "sbix") != nullptr;
+    for (const char* name : {"bitmap_cbdt_test", "bitmap_sbix_test"}) {
+        const bool sbix = std::strstr(name, "sbix") != nullptr;
+        const std::string file = fuse::ui::test::testFontPath(name);
         auto loaded = Font::fromFile(file);
         UI_CHECK(loaded.has_value());
         if (!loaded) continue;
         const Font& f = *loaded;
-        std::printf("%s\n", file);
+        std::printf("%s\n", file.c_str());
         UI_CHECK(f.hasColorGlyphs());
         const std::uint32_t e100 = f.glyphIndex(U''), e101 = f.glyphIndex(U''), a = f.glyphIndex(U'A');
         const auto layers = f.colorLayers(e100);
@@ -240,7 +241,7 @@ int msdf() {
     }
 
     // UiContext: text at or above the threshold (device pixels) is drawn from MSDFs, smaller text from coverage
-    auto colr = Font::fromFile("data/colrv1_test.ttf");
+    auto colr = Font::fromFile(fuse::ui::test::testFontPath("colrv1_test"));
     UI_CHECK(colr.has_value());
     Font font = std::move(*Font::bundled());
     std::vector<const Font*> chain;

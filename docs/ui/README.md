@@ -49,7 +49,7 @@ Regenerate the raster golden after an intended visual change:
 
 Options: `FUSE_BUILD_UI_WIDGETS`, `FUSE_BUILD_UI_DOC`, `FUSE_BUILD_UI_SCRIPT`, `FUSE_BUILD_UI_VK`, `FUSE_BUILD_UI_TESTS`,
 `FUSE_UI_TEXT` (`MINIMAL` default; `FULL` fetches HarfBuzz 10.1.0 + FreeType 2.13.3 at configure time, so it needs
-network or a populated `FETCHCONTENT_BASE_DIR`; `COOKED` falls back to MINIMAL), `FUSE_UI_ACCESSIBILITY`
+network or a populated `FETCHCONTENT_BASE_DIR`; `COOKED` loads only `.fusefont` packs, the bundled fonts cooked at build time), `FUSE_UI_ACCESSIBILITY`
 (`FUSE_UI_ACCESSKIT_DIR` = prebuilt accesskit-c prefix, or `FUSE_UI_ACCESSKIT_BUILD=ON` to fetch accesskit-c
 `FUSE_UI_ACCESSKIT_TAG` (0.22.3) and build it with cargo at build time; needs Rust >= 1.85 and network),
 `FUSE_UI_PROFILE`, `FUSE_BUILD_UI_APP`, `FUSE_BUILD_UI_GAME` (both ON by default); `FUSE_BUILD_APP` (UI9) and
@@ -123,8 +123,27 @@ bidiLevels(utf8, BaseDirection::Auto, levels, para); // UAX #9 levels after L1 (
 ```
 
 Grapheme tables come from the UCD: `python Source/FUSE/UI/Text/tools/gen_unicode_tables.py <ucd dir>` rewrites
-`Text/src/unicode_tables.inc`. Colour glyphs: COLRv0 exactly, COLRv1 flattened to solid layers (gradients as the mean
-stop colour, transforms ignored); CBDT / sbix bitmaps and MSDF are not supported.
+`Text/src/unicode_tables.inc`. The CJK subset covers kana, CJK punctuation, fullwidth forms, ~1400 frequent Han
+characters and Hangul (the 2350 KS X 1001 syllables + jamo; `vendor/fonts/noto/make_cjk_subset.py`).
+
+Colour glyphs: COLRv0 layers always. `enableColorGlyphs()` (call it before loading bitmap fonts) adds exact COLRv1
+(linear / radial / sweep gradients, every transform, clip boxes, all composite modes, rendered to RGBA when a glyph is
+first drawn) and CBDT / sbix bitmap strikes (best strike for the size, scaled); without it COLRv1 is flattened to solid
+layers and bitmap-only glyphs draw nothing. These are `ColorLayer::image` layers: `GlyphAtlas::getColor` puts them in
+the atlas colour page (premultiplied RGBA, side `size() / 2`, after the coverage page in `pixels()`) and the UI draws
+them as `kGlyphColor` glyph commands. The rasterisers are linked only into binaries that enable them.
+
+MSDF: `ui.setMsdfThreshold(48)` draws text of at least 48 device px from multi-channel signed distance fields (one per
+glyph at `GlyphAtlas::kMsdfPixelSize`, range `kMsdfRange`, `kGlyphMsdf` commands stretched to any size; for zoomed and
+world-space UI). The CPU rasteriser, the compute kernel and the SDF-quad shader sample them identically.
+
+COOKED profile (`-DFUSE_UI_TEXT=COOKED`): fonts are `.fusefont` packs and nothing is parsed at run time (no
+stb_truetype in the binary). `fuse_text_cook --out=x.fusefont --sizes=8-40,17.5 [--color-sizes=..] [--msdf]
+[--chars=20-7E,A0-17F] font.ttf` (or `fuse::text::cookFont`, `fuse/text/font_cook.hpp`) stores the cmap subset,
+advances, kerning pairs, COLR layers and glyphs pre-rasterised by the MINIMAL code at the listed sizes (byte-identical
+to MINIMAL there), colour images, and optionally MSDFs; other sizes come from the MSDF (else the nearest strike,
+resampled). Packs are memory-mapped (`Font::fromFile`). The build cooks the bundled fonts into `<build>/fonts`; shaping
+is MINIMAL's (cmap + kerning), so complex scripts and bidi behave as in MINIMAL.
 
 ## Retained use
 
@@ -373,7 +392,10 @@ checks it against the overlay under one scripted event stream.
 | `fuse_text_system_fonts` | `FontCatalog::system()`: Segoe UI / Arial, weight / italic / generic matching, per-script chains, `fontPicker("@system")` (77 with no installed fonts) |
 | `fuse_text_cache_zero_alloc` | layout / measure / atlas / segmentation of already-seen strings (LTR, RTL, fallback, wrapped, elided): zero allocations |
 | `fuse_text_dpi_1`, `_1_25`, `_1_5`, `_2` | bundled font + chain at 14 px × scale: metrics, widths, glyph boxes and ink scale; same line breaks; no missing glyphs |
-| `fuse_text_colrv1` | COLRv1 paint graphs flattened to solid layers (`tests/data/colrv1_test.ttf`) |
+| `fuse_text_colrv1` | `tests/data/colrv1_test.ttf`: flattened solid layers without `enableColorGlyphs`; with it exact rendering against `tests/golden/colrv1_exact.png` (max channel difference 0; COOKED <= 1: foreground glyphs rebuilt from black / white renders) |
+| `fuse_text_bitmap_emoji` | `tests/data/bitmap_{cbdt,sbix}_test.ttf`: strike choice per size, placement, sbix dupe, premultiplication, the atlas colour page, colour glyphs through the UI |
+| `fuse_text_msdf` | MSDF vs coverage at 64 / 128 / 256 px (mean error < 0.06, < 0.6 % of pixels off by more than half), determinism, `setMsdfThreshold` with DPI scale, GPU parity of colour + MSDF glyphs (compute kernel exact, SDF quads within their blend tolerance) |
+| `fuse_text_cooked` | `fuse_text_cook` determinism (every profile); COOKED: build-time pack = fresh cook, `.ttf` rejected, layout of sample strings equal to the MINIMAL reference (ids, pen positions within 1e-3 px) and renders byte-identical at every cooked size, MSDF for other sizes |
 
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
 | `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster, async Vulkan handover (software frame, resize during the handover, first Vulkan frame) (skips 77 without a display or device) |
