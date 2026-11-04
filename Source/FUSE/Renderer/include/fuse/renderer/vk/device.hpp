@@ -63,6 +63,8 @@ struct VulkanDeviceInfo {
     /// VkPhysicalDeviceVulkan13Features::pipelineCreationCacheControl enabled (Vulkan 1.3 device,
     /// supported, VulkanDeviceDesc::enableOptionalFeatures). Feeds PipelineCacheDesc.
     bool pipelineCreationCacheControl = false;
+    /// VkPhysicalDeviceVulkan12Features::hostQueryReset enabled (vkResetQueryPool from the host).
+    bool hostQueryReset = false;
     bool samplerAnisotropy = false;
     float maxSamplerAnisotropy = 1.f;
     /// Core features enabled when supported (WP-1.4 visibility buffer): geometryShader carries the

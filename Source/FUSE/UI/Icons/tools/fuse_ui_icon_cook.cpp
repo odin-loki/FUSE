@@ -59,7 +59,16 @@ int main(int argc, char** argv) {
     if (list) {
         auto set = IconSet::fromBytes(*pack);
         if (!set) { std::fprintf(stderr, "reload failed: %s\n", set.error().c_str()); return 1; }
-        for (u32 i = 0; i < set->count(); ++i) std::printf("  %.*s\n", int(set->name(i).size()), set->name(i).data());
+        for (u32 i = 0; i < set->count(); ++i) {
+            std::printf("  %.*s", int(set->name(i).size()), set->name(i).data());
+            if (set->multiColor(i)) // layer colours, RGBA hex (currentColor for tintable layers)
+                for (u32 l = 0; l < set->layerCount(i); ++l) {
+                    const u32 c = set->layerColor(i, l);
+                    if (c == 0u) std::printf(" currentColor");
+                    else std::printf(" #%02x%02x%02x%02x", c & 0xFFu, (c >> 8) & 0xFFu, (c >> 16) & 0xFFu, c >> 24);
+                }
+            std::printf("\n");
+        }
     }
     return 0;
 }

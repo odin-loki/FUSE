@@ -117,6 +117,8 @@ cmake --build build-android --target fuse_core
 
 See `.github/workflows/fuse-core-android.yml` for CI.
 
+FUSE UI apps (APKs, emulator gates) build from the standalone UI tree: see [docs/ui/README.md](../ui/README.md#android).
+
 ---
 
 ## Mobile — iOS simulator (`fuse_core` stub)

@@ -43,6 +43,8 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+
+#include "vk_sync_validation_env.hpp"
 #endif
 
 namespace {
@@ -515,8 +517,7 @@ VkDevice createRawT0Device(VkPhysicalDevice physical, u32 family, VkPhysicalDevi
 }
 
 int run() {
-    setenv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", 1);
-    setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", 1);
+    fuse::renderer::test::enableSyncValidationEnv();
     if (readShader().empty()) {
         std::printf("SKIP: fuse_rp_vk_adopt: rp_vk_adopt.comp not built (glslangValidator missing)\n");
         return kSkip;

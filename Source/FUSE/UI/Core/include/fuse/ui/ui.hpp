@@ -28,6 +28,7 @@ namespace fuse::ui {
 
 class UiContext;
 class IconSet;
+class EffectRegistry;
 
 // ---- Input ---------------------------------------------------------------------------------------------------------
 /// UI key set (maps 1:1 onto fuse::platform key set v2 names; see platform/events_v2.hpp).
@@ -332,6 +333,9 @@ public:
     bool reducedMotion() const { return m_reducedMotion; }
     /// Touch contacts in UI units. The first finger down (while none is down) is the primary touch and drives the
     /// pointer like a mouse (move + press / release); the others are only tracked (gestures: touches(), pinchScale()).
+    /// A primary drag that goes mostly vertical by more than kTouchSlop over a scroll container that does not scroll
+    /// from the drag itself becomes a pan: the press is released without a click and the finger scrolls the container
+    /// (touchPanning()).
     struct TouchPoint {
         u32 id = 0;
         Vec2 pos, start;
@@ -341,6 +345,8 @@ public:
     bool touchMove(u32 id, Vec2 p);
     bool touchUp(u32 id, Vec2 p);
     void touchCancel(); ///< drops every contact (the primary releases without a click)
+    static constexpr f32 kTouchSlop = 8.f; ///< UI units a finger moves before a drag can become a pan
+    bool touchPanning() const { return m_touchPan; }
     std::span<const TouchPoint> touches() const { return {m_touches.data(), m_touchCount}; }
     /// Two-finger pinch: current distance of the first two contacts / their distance when the second went down.
     f32 pinchScale() const;
@@ -408,6 +414,12 @@ public:
     bool paintIcon(DrawList& dl, std::string_view name, Vec2 at, f32 size, Color c, u32 node) {
         return paintIcon(dl, hashId(name), at, size, c, node);
     }
+    // custom shader effects (effects.hpp): `effect: name(params)` style property
+    /// Attaches an effect registry (non-owning; must outlive the context or be detached). Repaints every node.
+    void setEffects(const EffectRegistry* effects);
+    const EffectRegistry* effects() const { return m_effects; }
+    /// Seconds of update(dt) so far: the time animated effects see.
+    f32 elapsed() const { return m_elapsed; }
     /// Content size of the style's icon followed by a one-line `text` (either may be absent).
     Size measureIconLabel(const ComputedStyle& s, std::string_view text);
     /// Paints the style's icon then `text` in `box` (both vertically centred; the pair aligned by `align`).
@@ -496,6 +508,7 @@ private:
     u32 m_touchCount = 0;
     u32 m_primaryTouch = 0xFFFFFFFFu;
     f32 m_pinchStart = 0.f;
+    bool m_touchPan = false, m_touchPanChecked = false;
     struct ScrollDrag { NodeHandle node; u8 axis = 0; f32 grab = 0.f; } m_scrollDrag;
     std::vector<u32> m_path;
     std::vector<u32> m_scratchOrder;
@@ -504,6 +517,10 @@ private:
     fuse::text::TextLayout m_stringScratch;
     const IconSet* m_icons = nullptr;
     std::vector<u8> m_iconScratch;
+    const EffectRegistry* m_effects = nullptr;
+    std::vector<u32> m_fxAnimated; ///< nodes painted with an animated effect last paint (repainted every update)
+    f32 m_elapsed = 0.f;
+    void paintEffect(u32 i, const ComputedStyle& s, DrawList& dl);
     // atlas-resolved glyphs of every painted text node in one array, in paint order (no per-glyph atlas lookups, no
     // walks of scattered per-node layout vectors); rebuilt per node when its layout changes, wholesale on atlas reset
     std::vector<GlyphQuad> m_quads;

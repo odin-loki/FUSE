@@ -17,6 +17,10 @@
 // bytes. With the Khronos validation layer installed (synchronization validation on) any validation
 // message fails the test.
 //
+// On a multi-family ICD (discrete GPUs) the layer is a pass-through, so the modes' topologies
+// cannot be built: the "where available" checks and the chain run on the native families, then the
+// two layer modes exit 77 and the shared mode passes.
+//
 // Exit 77 (skip) in the stub build or without an ICD.
 #include <fuse/renderer/family_index.hpp>
 #include <fuse/renderer/vk/device.hpp>
@@ -30,6 +34,8 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+
+#include "vk_sync_validation_env.hpp"
 #endif
 
 namespace {
@@ -70,6 +76,11 @@ using fuse::u64;
 constexpr const char* kValidationLayer = "VK_LAYER_KHRONOS_validation";
 constexpr const char* kSplitLayer = "VK_LAYER_FUSE_split_transfer_family";
 constexpr u64 kTimeoutNs = 5000000000ull;
+#if defined(_WIN32)
+constexpr const char* kListSeparator = ";"; ///< loader list variables (VK_ADD_LAYER_PATH, VK_INSTANCE_LAYERS)
+#else
+constexpr const char* kListSeparator = ":";
+#endif
 
 int g_failures = 0;
 u32 g_messages = 0;
@@ -259,18 +270,17 @@ int run(const char* layerDir, Mode mode) {
         std::string path = layerDir;
         const char* existing = std::getenv("VK_ADD_LAYER_PATH");
         if (existing != nullptr && existing[0] != '\0') {
-            path += ":";
+            path += kListSeparator;
             path += existing;
         }
         setenv("VK_ADD_LAYER_PATH", path.c_str(), 1);
-        layers += layers.empty() ? "" : ":";
+        layers += layers.empty() ? "" : kListSeparator;
         layers += kSplitLayer; // application -> driver order: validation sees the split device
     }
     setenv("FUSE_SPLIT_LAYER_COMPUTE_FAMILY", mode == Mode::TransferCompute ? "1" : "0", 1);
     setenv("VK_INSTANCE_LAYERS", layers.c_str(), 1);
     if (validation) {
-        setenv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", 1);
-        setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", 1);
+        fuse::renderer::test::enableSyncValidationEnv();
         setenv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK", 1);
     } else {
         std::printf("note: %s not installed — running without validation\n", kValidationLayer);
@@ -330,7 +340,19 @@ int run(const char* layerDir, Mode mode) {
 
     // --- topology as advertised, and the RHI's picks against the "where available" spec ---
     const u32 wantFamilies = mode == Mode::TransferCompute ? 3u : mode == Mode::Transfer ? 2u : 1u;
-    expectTrue(familyCount == wantFamilies, "queue family topology matches the mode");
+    // The modes describe Lavapipe (one family) with and without the split layer, which only rewrites
+    // single-family ICDs. A multi-family ICD (any discrete GPU) cannot be shaped into the mode's
+    // topology: the layer is a pass-through and the hardware's own families are reported. The
+    // "where available" checks and the cross-queue chain below still run on that native topology;
+    // only the mode-specific family indices are skipped (and a layer mode then exits 77).
+    const bool nativeTopology = familyCount > 1 && familyCount != wantFamilies;
+    if (nativeTopology) {
+        std::printf("note: the ICD exposes %u queue families natively; the %s topology cannot be emulated "
+                    "(the split layer only rewrites single-family ICDs) — checking the native topology\n",
+                    familyCount, mode == Mode::Shared ? "single-family" : "split-layer");
+    } else {
+        expectTrue(familyCount == wantFamilies, "queue family topology matches the mode");
+    }
     expectTrue(q.graphicsFamily < familyCount && (families[q.graphicsFamily].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0,
                "graphics queue family supports graphics");
     expectTrue(q.computeFamily < familyCount && (families[q.computeFamily].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0,
@@ -343,7 +365,15 @@ int run(const char* layerDir, Mode mode) {
     expectTrue(q.transferFamily == e.transfer, "transfer family = dedicated transfer family where available, else shared");
     expectTrue(q.dedicatedCompute == (q.computeFamily != q.graphicsFamily), "dedicatedCompute flag consistent");
     expectTrue(q.dedicatedTransfer == (q.transferFamily != q.graphicsFamily), "dedicatedTransfer flag consistent");
-    switch (mode) {
+    switch (nativeTopology ? Mode::Shared : mode) {
+    case Mode::Shared:
+        if (nativeTopology) {
+            break; // native families: covered by the "where available" checks above
+        }
+        expectTrue(q.graphicsFamily == 0 && q.transferFamily == 0 && q.computeFamily == 0,
+                   "single family: all three queues fall back to the shared family");
+        expectTrue(!q.dedicatedCompute && !q.dedicatedTransfer, "no dedicated families");
+        break;
     case Mode::TransferCompute:
         expectTrue(q.graphicsFamily == 0 && q.transferFamily == 1 && q.computeFamily == 2,
                    "three separate families: graphics 0, transfer 1 (transfer-only), compute 2 (compute-only)");
@@ -353,11 +383,6 @@ int run(const char* layerDir, Mode mode) {
         expectTrue(q.graphicsFamily == 0 && q.transferFamily == 1 && q.computeFamily == 0,
                    "transfer on its own family, compute falls back to the graphics family");
         expectTrue(!q.dedicatedCompute && q.dedicatedTransfer, "dedicated transfer only");
-        break;
-    case Mode::Shared:
-        expectTrue(q.graphicsFamily == 0 && q.transferFamily == 0 && q.computeFamily == 0,
-                   "single family: all three queues fall back to the shared family");
-        expectTrue(!q.dedicatedCompute && !q.dedicatedTransfer, "no dedicated families");
         break;
     }
 
@@ -460,7 +485,14 @@ int run(const char* layerDir, Mode mode) {
         std::fprintf(stderr, "%d failure(s)\n", g_failures);
         return 1;
     }
-    std::printf("fuse_b2_device_queue_families: OK (%s validation)\n", validation ? "with" : "without");
+    if (nativeTopology && useLayer) {
+        std::printf("SKIP: native %u-family topology passed; the split-layer mode itself needs a single-family "
+                    "ICD (Lavapipe)\n",
+                    familyCount);
+        return kSkip;
+    }
+    std::printf("fuse_b2_device_queue_families: OK (%s validation%s)\n", validation ? "with" : "without",
+                nativeTopology ? ", native topology" : "");
     return 0;
 }
 

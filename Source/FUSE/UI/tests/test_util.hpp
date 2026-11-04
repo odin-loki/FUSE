@@ -155,6 +155,7 @@ inline void render(UiContext& ui, Image& img) {
     img.resize(int(ui.viewport().w), int(ui.viewport().h), 0xFF000000u);
     CpuRasterizer r;
     r.setGlyphAtlas(ui.atlas().pixels(), ui.atlas().size());
+    r.setEffects(ui.effects());
     r.render(ui.drawList(), img);
 }
 } // namespace fuse::ui::test
