@@ -189,6 +189,14 @@ if(TARGET fuse_app)
         set_tests_properties(fuse_app_os_popups PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300
             ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate;vulkan")
     endif()
+    # Windows UI Automation through AccessKit on a real window (skips with 77 when AccessKit is not linked)
+    if(TARGET fuse_app_a11y AND WIN32)
+        add_executable(fuse_ui_a11y_windows test_a11y_windows.cpp)
+        target_link_libraries(fuse_ui_a11y_windows PRIVATE fuse_app_a11y ole32 oleaut32)
+        add_test(NAME fuse_ui_a11y_windows COMMAND fuse_ui_a11y_windows)
+        set_tests_properties(fuse_ui_a11y_windows PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
+            LABELS "fuse_ui;gate;a11y")
+    endif()
     if(TARGET hello_app)
         add_test(NAME fuse_app_hello_sample COMMAND hello_app --screenshot=${CMAKE_CURRENT_BINARY_DIR}/hello_app.png)
         add_test(NAME fuse_app_notes_sample COMMAND notes_app --settings=${CMAKE_CURRENT_BINARY_DIR}/notes_settings.ini

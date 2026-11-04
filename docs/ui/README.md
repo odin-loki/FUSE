@@ -22,10 +22,10 @@ immediate-mode front-end. See the plan's status table for what is still open.
 | `Source/FUSE/UI/Doc` | `fuse_ui_doc` | `.fuseui` JSON documents, binding model, expression bytecode |
 | `Source/FUSE/UI/Script` | `fuse_ui_script` | Lua `ui` table (vendored Lua 5.2) |
 | `Source/FUSE/UI/Render` | `fuse_ui_render`, `fuse_ui_vk` | GPU draw data packing, `ui.draw_list` compute kernel, `UiLayerGpu` render-graph pass and `UiFrameSource` (in tree with the Vulkan RHI) |
-| `Source/FUSE/UI/App` | `fuse_app`, `fuse_app_native` | `Application` / `AppWindow` on-demand loop, settings, command line, single instance; native X11 / Win32 windows and the Vulkan swapchain presenter; samples `hello_app`, `notes_app` |
+| `Source/FUSE/UI/App` | `fuse_app`, `fuse_app_native`, `fuse_app_a11y` | `Application` / `AppWindow` on-demand loop, settings, command line, single instance; native X11 / Win32 windows and the Vulkan swapchain presenter; `WindowAccessibility` (screen readers on a native window); samples `hello_app`, `notes_app` |
 | `Source/FUSE/UI/Game` | `fuse_ui_game` | HUD widgets, world markers, `UiSurface` world panels, gamepad navigation, input arbitration, prompts, time domains, locale table, subtitles, dialogue; samples `hud_demo`, `world_panel_demo` |
 | `Source/FUSE/UI/Sql` | `fuse_ui_sql` | `SqliteModel`: an `ItemModel` over a SQLite query (option `FUSE_BUILD_UI_SQL`) |
-| `Source/FUSE/UI/A11y` | `fuse_ui_a11y` | Accessibility bridge (snapshot diff, action queue); AccessKit adapter when `FUSE_UI_ACCESSKIT_DIR` is set |
+| `Source/FUSE/UI/A11y` | `fuse_ui_a11y` | Accessibility bridge (snapshot diff, action queue); AccessKit adapters (`UnixAdapter` AT-SPI, `WindowsAdapter` UI Automation) when AccessKit is linked |
 | `Source/FUSE/UI/Designer` | `fuse_ui_designer_lib`, `fuse_ui_designer` | `.fuseui` designer prototype (UI8) |
 | `Source/FUSE/Core/include/fuse/platform/text_services.hpp` | `fuse_core` | clipboard, text-input begin/end, IME candidate placement |
 | `Source/FUSE/UI/tests` | gates | `fuse_ui_*` ctest executables and `fuse_ui_sample` |
@@ -48,7 +48,9 @@ Regenerate the raster golden after an intended visual change:
 
 Options: `FUSE_BUILD_UI_WIDGETS`, `FUSE_BUILD_UI_DOC`, `FUSE_BUILD_UI_SCRIPT`, `FUSE_BUILD_UI_VK`, `FUSE_BUILD_UI_TESTS`,
 `FUSE_UI_TEXT` (`MINIMAL` default; `FULL` fetches HarfBuzz 10.1.0 + FreeType 2.13.3 at configure time, so it needs
-network or a populated `FETCHCONTENT_BASE_DIR`; `COOKED` falls back to MINIMAL), `FUSE_UI_ACCESSIBILITY`,
+network or a populated `FETCHCONTENT_BASE_DIR`; `COOKED` falls back to MINIMAL), `FUSE_UI_ACCESSIBILITY`
+(`FUSE_UI_ACCESSKIT_DIR` = prebuilt accesskit-c prefix, or `FUSE_UI_ACCESSKIT_BUILD=ON` to fetch accesskit-c
+`FUSE_UI_ACCESSKIT_TAG` (0.22.3) and build it with cargo at build time; needs Rust >= 1.85 and network),
 `FUSE_UI_PROFILE`, `FUSE_BUILD_UI_APP`, `FUSE_BUILD_UI_GAME` (both ON by default); `FUSE_BUILD_APP` (UI9) and
 `FUSE_BUILD_UI_DESIGNER` are reserved. The HUD golden is regenerated the same way as the raster golden with
 `fuse_ui_game_hud_golden` (`tests/golden/hud.png`, `hud_full.png` in FULL).
@@ -174,7 +176,8 @@ hud.update(realDt); nav.update(padState, realDt); ui.update(realDt);
 - Tier D editor widgets: `fontPicker`, `fileDialog`, `nodeGraph`, `curveEditor`, `timeline`, `viewportWidget` (forwards input to your callback, paints your image), `codeEdit` (line numbers, highlighting), `dateTimeEdit` (`value()` = days since 1970, `dateTimeEditMinutes`), `videoWidget` (frame-source stub).
 - `fuse_ui_sql::SqliteModel`: `open`/`attach`, `setQuery`, `sortBy`, `refresh`; pass `model()` to `tableView`. Only the visible window of rows is fetched.
 - Platform feel (`platform_feel.hpp`): `setHapticsHandler`, `ScrollProfile::desktop()/ios()/android()`, `kineticScrollArea` (drag/fling with rubber band; a drag never clicks).
-- Accessibility (`fuse/ui/a11y/a11y.hpp`): `Bridge::sync` diffs `UiContext::snapshotA11y`, `perform`/`enqueue`/`drain` run assistive-tech actions on the UI thread. AccessKit needs a Rust toolchain and a prebuilt accesskit-c (tested with 0.22.3); without it the bridge still builds.
+- Accessibility (`fuse/ui/a11y/a11y.hpp`): `Bridge::sync` diffs `UiContext::snapshotA11y` (plus `extras()`: menu / menu bar / tree kinds from the widget class, text-field value, expanded, selected), `perform`/`enqueue`/`drain` run assistive-tech actions on the UI thread (focus, click, increment / decrement, set value / text, expand / collapse, scroll into view). AccessKit needs a Rust toolchain: `FUSE_UI_ACCESSKIT_BUILD=ON` builds accesskit-c 0.22.3 with cargo, or point `FUSE_UI_ACCESSKIT_DIR` at a prebuilt one; without it the bridge still builds.
+- Screen readers on a native window (`fuse/app/accessibility.hpp`, `fuse_app_a11y`): after `native.show(win)`, keep a `fuse::app::WindowAccessibility a11y(native, win);` (declared after the `NativePlatform`). On Windows it answers `WM_GETOBJECT` through `NativePlatform::setMessageHook` with AccessKit's UI Automation provider (Narrator, NVDA, Inspect); UIA actions are queued and run on the UI thread from the event pump. Bounds are client px (logical px x client width / viewport). The Rust library links the release CRT (Debug MSVC builds may warn LNK4098).
 - Designer: `fuse_ui_designer [file.fuseui] [--save=out] [--screenshot=png]`. `DesignDocument` saves exactly what it loaded; keys starting with `x-` are kept for tools and stripped from the live preview.
 - `dockSaveLayout(dock)` returns a text layout (`fusedock 1`); `dockRestoreLayout(dock, text)` checks the whole text before applying it and ignores unknown panel ids.
 
@@ -213,6 +216,7 @@ checks it against the overlay under one scripted event stream.
 
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
 | `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster (skips 77 without a display or device) |
+| `fuse_ui_a11y_windows` | UIA client (IUIAutomation) on a real Win32 window: control types and names, screen bounds, Invoke / Toggle / Value / RangeValue / ExpandCollapse, SetFocus + focus-changed event (Windows; skips 77 without AccessKit) |
 | `fuse_ui_game_hud_golden` | HUD demo scene against `tests/golden/hud.png` plus trail / marker / pool state |
 | `fuse_ui_gamepad_nav` | navigation with delay + repeat, A / B, radial menu by stick, prompt glyph swap, focus sounds |
 | `fuse_ui_world_panel_raycast` | ray → panel pixel mapping, misses and back faces, ray clicks, idle surface does not re-render |
