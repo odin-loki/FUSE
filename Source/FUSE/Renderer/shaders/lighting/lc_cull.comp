@@ -1,18 +1,24 @@
 #version 460
-// WP-2.1 "light.cull": one thread per cluster walks its depth slice's candidate list in ascending slot
+// WP-2.1 "light.cull": one workgroup per cluster walks its depth slice's candidate list in ascending slot
 // order and keeps the lights whose sphere touches the cluster AABB (the oracle's exact closed test),
 // the first `capacity` of them in its fixed-capacity list, counting the rest as dropped: the
-// oracle's clustered_kernel::CullKernel. GLSL twin of lc_cull.slang.
+// oracle's clustered_kernel::CullKernel. The candidates are tested 64 at a time (one per invocation) and
+// each chunk is compacted with a workgroup prefix sum, so the kept slots keep the candidate order
+// (deterministic, no atomics; the same list as one invocation walking the slice, at 64x the parallelism:
+// with 4,096 lights one invocation per cluster was 0.8 ms on an RTX 3090). GLSL twin of lc_cull.slang.
 #extension GL_GOOGLE_include_directive : require
 #include "lc_includes.glsl"
 
 layout(local_size_x = 64) in;
 
+shared uint s_scan[64];
+
 void main() {
     const FuseLcFrame F = fuse_lc_frame();
-    const uint c = gl_GlobalInvocationID.x;
+    const uint c = gl_WorkGroupID.x;
+    const uint t = gl_LocalInvocationIndex;
     if (c >= F.clusterCount) {
-        return;
+        return; // workgroup-uniform
     }
     const uint slice = c % F.slicesZ;
     const FuseLcAabb aabb = FuseLcAabbsRef(F.aabbs).v[c];
@@ -20,21 +26,34 @@ void main() {
     FuseLcWordsRef candidates = FuseLcWordsRef(F.sliceLights + uint64_t(slice) * uint64_t(F.lightCapacity) * 4ul);
     const uint candidateCount = FuseLcWordsRef(F.sliceCounts).v[slice];
     FuseLcWordsRef slots = FuseLcWordsRef(F.clusterSlots + uint64_t(c) * uint64_t(F.capacity) * 4ul);
-    uint count = 0u;
-    uint dropped = 0u;
-    for (uint i = 0u; i < candidateCount; ++i) {
-        const uint light = candidates.v[i];
-        const FuseLcBounds b = bounds.v[light];
-        if (!fuse_lc_sphere_aabb(fuse_lc_vec3(b.center), b.radius, aabb)) {
-            continue;
+    uint running = 0u;
+    for (uint base = 0u; base < candidateCount; base += 64u) {
+        const uint i = base + t;
+        uint light = 0u;
+        uint flag = 0u;
+        if (i < candidateCount) {
+            light = candidates.v[i];
+            const FuseLcBounds b = bounds.v[light];
+            flag = fuse_lc_sphere_aabb(fuse_lc_vec3(b.center), b.radius, aabb) ? 1u : 0u;
         }
-        if (count < F.capacity) {
-            slots.v[count] = light;
-            ++count;
-        } else {
-            ++dropped;
+        s_scan[t] = flag;
+        barrier();
+        for (uint offset = 1u; offset < 64u; offset <<= 1u) {
+            const uint v = t >= offset ? s_scan[t - offset] : 0u;
+            barrier();
+            s_scan[t] += v;
+            barrier();
         }
+        const uint index = running + s_scan[t] - 1u;
+        if (flag != 0u && index < F.capacity) {
+            slots.v[index] = light;
+        }
+        const uint total = s_scan[63];
+        barrier();
+        running += total;
     }
-    FuseLcWordsRef(F.clusterCounts).v[c] = count;
-    FuseLcWordsRef(F.clusterDropped).v[c] = dropped;
+    if (t == 0u) {
+        FuseLcWordsRef(F.clusterCounts).v[c] = min(running, F.capacity);
+        FuseLcWordsRef(F.clusterDropped).v[c] = running > F.capacity ? running - F.capacity : 0u;
+    }
 }

@@ -91,8 +91,8 @@ void fuse_rn_mid_down(float q, out uint m, out int e) {
 // (sqrt), the step falls back to the 64-bit compare, so every decision is the exact one and the result is
 // unchanged bit for bit. At the IEEE result |D| <= mb (div) / 4 ms (sqrt): the fast step decides there always
 // (CPU sweep of 8.4e7 decisions at -6..+6 ulp: 0 mismatches with the 64-bit compare, 99.8 % decided fast).
-// RTX 3090: light.shade 2.57 -> 0.9 ms, taau.resolve 2.09 -> 0.7 ms (docs/unification/RENDERER-HW-RUN.md).
-const int FUSE_RN_UNDECIDED = 2;
+// RTX 3090: light.shade 2.57 -> 1.77 ms, taau.resolve 2.09 -> 1.36 ms, ssfx.gtao 2.49 -> 1.50 ms, restir.di.initial
+// 145 -> 89 ms at 1440p (docs/unification/RENDERER-HW-RUN.md section 10).
 
 float fuse_rn_pow2(int k) { return uintBitsToFloat(uint(k + 127) << 23u); }
 

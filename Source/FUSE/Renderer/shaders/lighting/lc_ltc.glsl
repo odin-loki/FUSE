@@ -506,8 +506,10 @@ vec3 fuse_lc_light_ms(FuseGpuLight light, FuseLcSurface s, vec3 v, FuseLcTerms t
 // (ascending slot); with the BRDF LUT (F.brdfLut != 0) the compensated fuse_lc_light_ms, else the
 // WP-2.1 fuse_lc_light. CPU reference: lighting_gpu::shade_pixel (clustered_gpu_kernel.hpp).
 // WP-3.2: one light's contribution scaled by its shadow visibility (unchanged without shadows).
+// A light that contributes nothing skips the shadow lookup: the visibility is in [0, 1], so c x visibility == c
+// bit for bit when c == 0 (P2: most cluster lights are out of range or outside the spot cone at a given pixel).
 vec3 fuse_lc_shadowed(uint64_t shadows, uint slot, FuseLcSurface s, vec3 c) {
-    if (shadows == 0ul) {
+    if (shadows == 0ul || (c.x == 0.0 && c.y == 0.0 && c.z == 0.0)) {
         return c;
     }
     const float visibility = fuse_vsm_shadow(shadows, slot, s.position, s.normal);
@@ -557,41 +559,157 @@ vec3 fuse_lc_shadowed_px(uint64_t shadows, uint64_t rt, uvec2 pixel, uint slot, 
     return fuse_lc_shadowed(shadows, slot, s, c);
 }
 
-// The light loop with the pixel light.shade shades (WP-6.2 ray-traced visibility); `pixel` = ~0u: none.
-vec3 fuse_lc_shade_lights_px(FuseLcFrame F, FuseLcSurface s, vec3 v, uint cluster, uvec2 pixel) {
-    FuseGpuLightsRef lights = fuse_gpu_scene_lights(fuse_gpu_scene(F.scene));
-    const uint64_t shadows = uint64_t(F.shadowsLo) | (uint64_t(F.shadowsHi) << 32u);
-    const uint64_t rt = pixel.x == 0xFFFFFFFFu ? 0ul : (uint64_t(F.rtShadowsLo) | (uint64_t(F.rtShadowsHi) << 32u));
-    precise vec3 radiance = s.emissive + fuse_lc_vec3(F.ambient) * s.albedo * s.ao;
-    const bool compensated = F.brdfLut != 0ul;
-    FuseLcLutRef lut = FuseLcLutRef(F.brdfLut);
+// The light loop in pieces: fuse_lc_shade_begin = emissive + ambient x albedo x AO + the directional list
+// (+ the per-surface BRDF terms and the pixel's RtfxShadowView, read once), fuse_lc_shade_cluster_light = one
+// entry of the cluster list (ascending slot). fuse_lc_shade_lights_px runs every entry; light.shade's tiled loop
+// (lc_shade.comp) runs only the entries its conservative tile test keeps, in the same order (the others add an
+// exact zero at every pixel of the tile), with each light's VSM lookup resolved once per tile (fuse_lc_vsm_code).
+#define FUSE_LC_VSM_SEARCH 0xFFFFFFFFu // the generic lookup (fuse_lc_shadowed)
+#define FUSE_LC_VSM_NONE 0xFFFFFFFEu   // no VSM shadow for this light: visibility 1
+
+struct FuseLcShadeState {
+    uint64_t lights;
+    uint64_t shadows;
+    uint64_t lut;
+    bool compensated;
+    bool skipArea;
     FuseLcTerms terms;
-    if (compensated) {
-        terms = fuse_lc_surface_terms(s, v, lut);
+    bool rtValid;
+    uint rtCount;
+    uint rtSlots[4];
+    uint64_t rtVisibility;
+    uint rtPlane;
+    uint rtPixel;
+};
+
+// The VSM lookup of light `slot`: FUSE_LC_VSM_SEARCH (the directional VSM), its VsmShadowConstants local index,
+// or FUSE_LC_VSM_NONE: fuse_vsmr_shadow_sample's own dispatch, so fuse_lc_shadowed_code == fuse_lc_shadowed_px.
+uint fuse_lc_vsm_code(uint64_t shadows, uint slot) {
+    if (shadows == 0ul) {
+        return FUSE_LC_VSM_NONE;
     }
+    FuseVsmShadowRef S = FuseVsmShadowRef(shadows);
+    if (slot == S.directionalSlot && S.vsm != 0ul) {
+        return FUSE_LC_VSM_SEARCH;
+    }
+    const uint count = min(S.localCount, FUSE_VSMR_MAX_LOCAL);
+    for (uint k = 0u; k < count; ++k) {
+        if (S.local[k].slot == slot) {
+            return k;
+        }
+    }
+    return FUSE_LC_VSM_NONE;
+}
+
+vec3 fuse_lc_shadowed_code(FuseLcShadeState st, uint slot, FuseLcSurface s, vec3 c, uint code) {
+    if (st.rtValid) {
+        for (uint k = 0u; k < st.rtCount; ++k) {
+            if (st.rtSlots[k] == slot) {
+                const float visibility = FuseLcRtFloatsRef(st.rtVisibility).v[k * st.rtPlane + st.rtPixel];
+                precise vec3 r = vec3(c.x * visibility, c.y * visibility, c.z * visibility);
+                return r;
+            }
+        }
+    }
+    if (code == FUSE_LC_VSM_SEARCH) {
+        return fuse_lc_shadowed(st.shadows, slot, s, c);
+    }
+    if (code == FUSE_LC_VSM_NONE || (c.x == 0.0 && c.y == 0.0 && c.z == 0.0)) {
+        return c; // c x 1 == c
+    }
+    FuseVsmShadowRef S = FuseVsmShadowRef(st.shadows);
+    const float visibility = fuse_vsmr_local_visibility(S, S.local[code], s.position, s.normal).visibility;
+    precise vec3 r = vec3(c.x * visibility, c.y * visibility, c.z * visibility);
+    return r;
+}
+
+vec3 fuse_lc_shade_begin(FuseLcFrame F, FuseLcSurface s, vec3 v, uvec2 pixel, out FuseLcShadeState st) {
+    FuseGpuLightsRef lights = fuse_gpu_scene_lights(fuse_gpu_scene(F.scene));
+    st.lights = uint64_t(lights);
+    st.shadows = uint64_t(F.shadowsLo) | (uint64_t(F.shadowsHi) << 32u);
+    const uint64_t rt = pixel.x == 0xFFFFFFFFu ? 0ul : (uint64_t(F.rtShadowsLo) | (uint64_t(F.rtShadowsHi) << 32u));
+    st.lut = F.brdfLut;
+    st.compensated = F.brdfLut != 0ul;
+    st.skipArea = pixel.x != 0xFFFFFFFFu && (F.flags & FUSE_LC_FLAG_SKIP_AREA_LIGHTS) != 0u;
+    FuseLcLutRef lut = FuseLcLutRef(F.brdfLut);
+    if (st.compensated) {
+        st.terms = fuse_lc_surface_terms(s, v, lut);
+    }
+    st.rtValid = false;
+    st.rtCount = 0u;
+    for (uint k = 0u; k < 4u; ++k) {
+        st.rtSlots[k] = 0u;
+    }
+    st.rtVisibility = 0ul;
+    st.rtPlane = 0u;
+    st.rtPixel = 0u;
+    if (rt != 0ul) {
+        const FuseLcRtView view = FuseLcRtViewRef(rt).v;
+        if (pixel.x < view.width && pixel.y < view.height) {
+            st.rtValid = true;
+            st.rtCount = min(view.count, 4u);
+            st.rtSlots = view.slots;
+            st.rtVisibility = view.visibility;
+            st.rtPlane = view.width * view.height;
+            st.rtPixel = pixel.y * view.width + pixel.x;
+        }
+    }
+    precise vec3 radiance = s.emissive + fuse_lc_vec3(F.ambient) * s.albedo * s.ao;
     FuseLcWordsRef directional = FuseLcWordsRef(F.directional);
     const uint directionalCount = FuseLcWordsRef(F.listHeader).v[FUSE_LC_HEADER_DIRECTIONAL];
     for (uint i = 0u; i < directionalCount; ++i) {
         const uint slot = directional.v[i];
         if (slot < F.lightCount) {
-            radiance = radiance + fuse_lc_shadowed_px(shadows, rt, pixel, slot, s,
-                                                      compensated ? fuse_lc_light_ms(lights.v[slot], s, v, terms, lut)
-                                                                  : fuse_lc_light(lights.v[slot], s, v));
+            radiance = radiance + fuse_lc_shadowed_code(st, slot, s,
+                                                        st.compensated ? fuse_lc_light_ms(lights.v[slot], s, v, st.terms, lut)
+                                                                       : fuse_lc_light(lights.v[slot], s, v),
+                                                        FUSE_LC_VSM_SEARCH);
         }
     }
+    return radiance;
+}
+
+// `vsmCode`: fuse_lc_vsm_code(st.shadows, slot) when the caller has it (light.shade: once per tile), else
+// FUSE_LC_VSM_SEARCH.
+vec3 fuse_lc_shade_cluster_light(FuseLcFrame F, FuseLcShadeState st, FuseLcSurface s, vec3 v, uint slot, uint vsmCode,
+                                 vec3 radiance) {
+    if (slot >= F.lightCount) {
+        return radiance;
+    }
+    FuseGpuLightsRef lights = FuseGpuLightsRef(st.lights);
+    const uint type = lights.v[slot].type;
+    if (st.skipArea && (type == FUSE_LIGHT_RECT || type == FUSE_LIGHT_DISK)) {
+        return radiance;
+    }
+    if (type == FUSE_LIGHT_POINT || type == FUSE_LIGHT_SPOT) {
+        // Range pre-test: the falloff's own test (fuse_lc_falloff: !(range > 0) || !(d < range) -> 0) on the
+        // same bits, reading only the light's position and range; out of range the light adds an exact zero
+        // without loading the rest of the GpuLight or its shadow (P2: most of a cluster's lights at a pixel).
+        precise vec3 toLight = vec3(lights.v[slot].position[0], lights.v[slot].position[1], lights.v[slot].position[2]) - s.position;
+        const float range = lights.v[slot].range;
+        if (!(range > 0.0) || !(fuse_lc_length(toLight) < range)) {
+            precise vec3 r = radiance + vec3(0.0);
+            return r;
+        }
+    }
+    FuseLcLutRef lut = FuseLcLutRef(st.lut);
+    precise vec3 r = radiance + fuse_lc_shadowed_code(st, slot, s,
+                                                      st.compensated ? fuse_lc_light_ms(lights.v[slot], s, v, st.terms, lut)
+                                                                     : fuse_lc_light(lights.v[slot], s, v),
+                                                      vsmCode);
+    return r;
+}
+
+// The light loop with the pixel light.shade shades (WP-6.2 ray-traced visibility); `pixel` = ~0u: none.
+vec3 fuse_lc_shade_lights_px(FuseLcFrame F, FuseLcSurface s, vec3 v, uint cluster, uvec2 pixel) {
+    FuseLcShadeState st;
+    vec3 radiance = fuse_lc_shade_begin(F, s, v, pixel, st);
     FuseLcWordsRef grid = FuseLcWordsRef(F.grid);
     FuseLcWordsRef list = FuseLcWordsRef(F.lightList);
     const uint offset = grid.v[cluster * 2u];
     const uint count = grid.v[cluster * 2u + 1u];
-    const bool skipArea = pixel.x != 0xFFFFFFFFu && (F.flags & FUSE_LC_FLAG_SKIP_AREA_LIGHTS) != 0u;
     for (uint i = 0u; i < count; ++i) {
-        const uint slot = list.v[offset + i];
-        if (slot < F.lightCount &&
-            !(skipArea && (lights.v[slot].type == FUSE_LIGHT_RECT || lights.v[slot].type == FUSE_LIGHT_DISK))) {
-            radiance = radiance + fuse_lc_shadowed_px(shadows, rt, pixel, slot, s,
-                                                      compensated ? fuse_lc_light_ms(lights.v[slot], s, v, terms, lut)
-                                                                  : fuse_lc_light(lights.v[slot], s, v));
-        }
+        radiance = fuse_lc_shade_cluster_light(F, st, s, v, list.v[offset + i], FUSE_LC_VSM_SEARCH, radiance);
     }
     return radiance;
 }

@@ -621,7 +621,7 @@ void ClusteredLighting::addAssignment(rg::Graph& graph, const LightingGraphRefs&
             .use(refs.lists, rg::Access::StorageReadWrite, {}, rg::kStageCompute);
     }
     {
-        PassRecord* r = record(kCull, groups(clusters, kLinearGroup));
+        PassRecord* r = record(kCull, std::max(clusters, 1u)); // one workgroup per cluster (lc_cull)
         graph.addPass("light.cull", &ClusteredLighting::recordDispatch, r)
             .use(refs.work, rg::Access::StorageReadWrite, {}, rg::kStageCompute);
     }

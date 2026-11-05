@@ -95,10 +95,11 @@ vec2 fuse_ddgi_encode_direction(vec3 direction) {
 
 // ddgi_kernel::sample_tile: bordered-tile bilinear fetch. `base` = first float of the tile, `comps` =
 // floats per texel (3 irradiance, 2 distance); returns the first `comps` components.
-vec3 fuse_ddgi_sample_tile(uint64_t atlas, uint base, uint comps, uint res, vec3 direction) {
+// The tile fetch at an already encoded direction (fuse_ddgi_encode_direction): the 8-probe irradiance loop
+// encodes the shading normal once instead of per probe (same bits, DDGI was 2.1 ms of light.shade at 1440p).
+vec3 fuse_ddgi_sample_tile_uv(uint64_t atlas, uint base, uint comps, uint res, vec2 uv) {
     FuseDdgiFloatsRef t = FuseDdgiFloatsRef(atlas);
     const uint stride = res + 2u;
-    const vec2 uv = fuse_ddgi_encode_direction(direction);
     precise float px = 1.0 + uv.x * float(res) - 0.5;
     precise float py = 1.0 + uv.y * float(res) - 0.5;
     const float fx = clamp(px, 0.0, float(res));
@@ -123,16 +124,26 @@ vec3 fuse_ddgi_sample_tile(uint64_t atlas, uint base, uint comps, uint res, vec3
     return result;
 }
 
-// ddgi_kernel::probe_irradiance (E, texel * pi) / probe_distance (moments).
-vec3 fuse_ddgi_probe_irradiance(FuseDdgiVolume V, uint probe, vec3 direction) {
+vec3 fuse_ddgi_sample_tile(uint64_t atlas, uint base, uint comps, uint res, vec3 direction) {
+    return fuse_ddgi_sample_tile_uv(atlas, base, comps, res, fuse_ddgi_encode_direction(direction));
+}
+
+// The encoded irradiance lookup direction of fuse_ddgi_probe_irradiance (independent of the probe).
+vec2 fuse_ddgi_irradiance_uv(vec3 direction) { return fuse_ddgi_encode_direction(fuse_ddgi_resolve_direction(direction)); }
+
+vec3 fuse_ddgi_probe_irradiance_uv(FuseDdgiVolume V, uint probe, vec2 uv) {
     if (probe >= V.probeCount) {
         return vec3(0.0);
     }
-    const vec3 dir = fuse_ddgi_resolve_direction(direction);
     const uint tile = (V.irradianceRes + 2u) * (V.irradianceRes + 2u);
-    const vec3 s = fuse_ddgi_sample_tile(V.irradiance, probe * tile * 3u, 3u, V.irradianceRes, dir);
+    const vec3 s = fuse_ddgi_sample_tile_uv(V.irradiance, probe * tile * 3u, 3u, V.irradianceRes, uv);
     precise vec3 e = vec3(s.x * float(FUSE_DDGI_PI), s.y * float(FUSE_DDGI_PI), s.z * float(FUSE_DDGI_PI));
     return e;
+}
+
+// ddgi_kernel::probe_irradiance (E, texel * pi) / probe_distance (moments).
+vec3 fuse_ddgi_probe_irradiance(FuseDdgiVolume V, uint probe, vec3 direction) {
+    return fuse_ddgi_probe_irradiance_uv(V, probe, fuse_ddgi_irradiance_uv(direction));
 }
 
 vec2 fuse_ddgi_probe_distance(FuseDdgiVolume V, uint probe, vec3 direction) {
@@ -192,6 +203,7 @@ vec3 fuse_ddgi_sample_volume_biased(FuseDdgiVolume V, vec3 position, vec3 n, vec
     }
     precise vec3 sum = vec3(0.0);
     precise float weightSum = 0.0;
+    const vec2 irradianceUv = fuse_ddgi_irradiance_uv(n);
     for (uint corner = 0u; corner < 8u; ++corner) {
         precise float trilinear = 1.0;
         uint c[3];
@@ -241,7 +253,7 @@ vec3 fuse_ddgi_sample_volume_biased(FuseDdgiVolume V, vec3 position, vec3 n, vec
         }
         weight *= trilinear;
 
-        const vec3 e = fuse_ddgi_probe_irradiance(V, probe, n);
+        const vec3 e = fuse_ddgi_probe_irradiance_uv(V, probe, irradianceUv);
         sum = vec3(sum.x + e.x * weight, sum.y + e.y * weight, sum.z + e.z * weight);
         weightSum += weight;
     }
