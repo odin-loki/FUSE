@@ -1,0 +1,29 @@
+0000 level.load entities=14 objects=7 unhandled=3
+0000 spawn Player at 0.00 1.00 8.00
+0000 trigger DoorTrigger box -2.00 0.00 -2.00 .. 2.00 3.00 2.00
+0000 door Door1 closed at 0.00 0.00 -2.50
+0000 item HealthKit at 0.00 1.00 -6.00
+0001 waypoint 0 0.00 1.00 8.00
+0031 trigger.enter DoorTrigger Player
+0031 script.call DoorTriggerData::onEnterTrigger(DoorTrigger, Player)
+0031 script.echo door trigger: Player entered DoorTrigger
+0031 door.open Door1
+0051 trigger.leave DoorTrigger Player
+0051 script.call DoorTriggerData::onLeaveTrigger(DoorTrigger, Player)
+0051 script.echo door trigger: Player left DoorTrigger
+0051 door.close Door1
+0066 item.pickup HealthKit Player
+0066 script.call HealthKitData::onPickup(HealthKit, Player)
+0066 player.health Player 125
+0066 item.delete HealthKit
+0073 waypoint 1 0.00 1.00 -6.50
+0096 trigger.enter DoorTrigger Player
+0096 script.call DoorTriggerData::onEnterTrigger(DoorTrigger, Player)
+0096 script.echo door trigger: Player entered DoorTrigger
+0096 door.open Door1
+0116 trigger.leave DoorTrigger Player
+0116 script.call DoorTriggerData::onLeaveTrigger(DoorTrigger, Player)
+0116 script.echo door trigger: Player left DoorTrigger
+0116 door.close Door1
+0146 waypoint 2 0.00 1.00 8.00
+0150 end health=125 Door1=closed
