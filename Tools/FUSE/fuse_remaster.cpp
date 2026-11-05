@@ -11,8 +11,13 @@
 //   fuse_remaster report [--project <dir>] [--json]
 //       Counts: original assets by kind, keys by algo, replacements by tier, recipes by status, POCO records by
 //       kind and distribution, blobs; lists records whose distribution is more permissive than the computed one.
+//   fuse_remaster dif <file.dif>
+//       W1.5: reads a Torque interior with fuse_legacy_dif (clean-room) and prints its deterministic summary JSON
+//       (version, detail levels, brushes, surfaces, triangles, area, materials). Lightmaps are skipped.
+//   fuse_remaster ingest-remix / export-remix (W2.3 / W2.4; built when FUSE Relight is): see remaster_remix_cli.cpp.
 // Exit codes: 0 ok, 1 problems found, 2 usage / IO error.
 #include <fuse/remaster/db.hpp>
+#include <fuse/remaster/dif/dif.hpp>
 #include <fuse/remaster/json.hpp>
 #include <fuse/remaster/poco.hpp>
 #include <fuse/remaster/store.hpp>
@@ -26,6 +31,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -402,7 +408,38 @@ int cmdReport(const Args& a) {
     return ok ? 0 : 1;
 }
 
+// ---- dif (W1.5) ---------------------------------------------------------------------------------------------
+
+int cmdDif(const Args& a) {
+    if (a.positional.size() != 1) {
+        return usage();
+    }
+    const auto bytes = rm::store::readFileBytes(a.positional[0]);
+    if (!bytes) {
+        std::fprintf(stderr, "fuse_remaster: cannot read %s
+", a.positional[0].c_str());
+        return 2;
+    }
+    const auto result = fuse::remaster::dif::readDif(std::span<const std::uint8_t>(bytes->data(), bytes->size()));
+    if (!result.ok) {
+        std::fprintf(stderr, "fuse_remaster: %s: %s
+", a.positional[0].c_str(), result.error.c_str());
+        return 1;
+    }
+    for (const std::string& w : result.warnings) {
+        std::fprintf(stderr, "fuse_remaster: warning: %s
+", w.c_str());
+    }
+    std::fputs(fuse::remaster::dif::summaryJson(result.resource).c_str(), stdout);
+    return 0;
+}
+
 } // namespace
+
+#if defined(FUSE_REMASTER_HAVE_REMIX)
+int fuseRemasterIngestRemix(int argc, char** argv); // remix/src/remaster_remix_cli.cpp
+int fuseRemasterExportRemix(int argc, char** argv);
+#endif
 
 int main(int argc, char** argv) {
     const Args a = parseArgs(argc, argv);
@@ -415,5 +452,16 @@ int main(int argc, char** argv) {
     if (a.command == "report") {
         return cmdReport(a);
     }
+    if (a.command == "dif") {
+        return cmdDif(a);
+    }
+#if defined(FUSE_REMASTER_HAVE_REMIX)
+    if (a.command == "ingest-remix") {
+        return fuseRemasterIngestRemix(argc, argv);
+    }
+    if (a.command == "export-remix") {
+        return fuseRemasterExportRemix(argc, argv);
+    }
+#endif
     return usage();
 }

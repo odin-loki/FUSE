@@ -66,8 +66,12 @@ endif()
 
 # ---- W0.7 the CLI -------------------------------------------------------------------------------------------
 add_executable(fuse_remaster "${FUSE_REMASTER_REPO_ROOT}/Tools/FUSE/fuse_remaster.cpp")
-target_link_libraries(fuse_remaster PRIVATE fuse_remaster_db fuse_remaster_store fuse_poco fuse_remaster_sqlite3 ${CMAKE_DL_LIBS})
+target_link_libraries(fuse_remaster PRIVATE fuse_remaster_db fuse_remaster_store fuse_poco fuse_remaster_sqlite3 fuse_legacy_dif
+                                            ${CMAKE_DL_LIBS})
 _fuse_remaster_cxx(fuse_remaster)
+
+# ---- W1.5 fuse_legacy_dif (clean-room Torque interior reader + fixture writer) ------------------------------
+add_subdirectory(dif)
 
 # ---- gates --------------------------------------------------------------------------------------------------
 if(FUSE_BUILD_CORE_TESTS OR BUILD_TESTING)
