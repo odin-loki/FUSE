@@ -29,6 +29,14 @@ target_include_directories(fuse_cook_stubs
 )
 
 target_link_libraries(fuse_cook_stubs PUBLIC fuse_core fuse_asset)  # UNI-U7-ASSET-1: readers live in fuse_asset
+# FUSE_ASSET_PLAN §5.3: the validation rules (header only) shared with the fuse_assetcheck gate tool; the
+# strict cook (fuse_project AssetCooker) refuses assets that fail them, and the audio chain's loudness /
+# seam meters are the rule header's.
+if(NOT TARGET fuse_asset_rules)
+    add_library(fuse_asset_rules INTERFACE)
+    target_include_directories(fuse_asset_rules INTERFACE "${CMAKE_SOURCE_DIR}/Tools/FUSE/AssetCheck/include")
+endif()
+target_link_libraries(fuse_cook_stubs PUBLIC fuse_asset_rules)
 # E18 collision cook (src/collision_cook.cpp): quickhull, the triangle-mesh BVH and the .fusecol writer live in
 # fuse_physics (the runtime loads the same format).
 target_link_libraries(fuse_cook_stubs PUBLIC fuse_physics)

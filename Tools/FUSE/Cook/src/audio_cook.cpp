@@ -3,6 +3,8 @@
 
 #include <fuse/cook/audio_cook.hpp>
 
+#include <fuse/assetcheck/asset_rules.hpp>
+
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -63,59 +65,8 @@ bool valid_buffer(const AudioBuffer& b) {
         && b.samples.size() == static_cast<usize>(b.frames) * b.channels;
 }
 
-// ---- K-weighting (ITU-R BS.1770-4) --------------------------------------------------------------------
-
-struct Biquad {
-    f64 b0 = 1.0, b1 = 0.0, b2 = 0.0, a1 = 0.0, a2 = 0.0;
-};
-
-/// Stage 1 (high shelf, +4 dB) and stage 2 (RLB high-pass) for an arbitrary rate; the analogue
-/// prototypes are the ones the 48 kHz coefficients of BS.1770 Table 1/2 are derived from.
-void k_weighting(u32 rate, Biquad& shelf, Biquad& highpass) {
-    const f64 fs = static_cast<f64>(rate);
-    {
-        const f64 f0 = 1681.974450955533;
-        const f64 gain_db = 3.999843853973347;
-        const f64 q = 0.7071752369554196;
-        const f64 k = std::tan(kPi * f0 / fs);
-        const f64 vh = std::pow(10.0, gain_db / 20.0);
-        const f64 vb = std::pow(vh, 0.4996667741545416);
-        const f64 a0 = 1.0 + k / q + k * k;
-        shelf.b0 = (vh + vb * k / q + k * k) / a0;
-        shelf.b1 = 2.0 * (k * k - vh) / a0;
-        shelf.b2 = (vh - vb * k / q + k * k) / a0;
-        shelf.a1 = 2.0 * (k * k - 1.0) / a0;
-        shelf.a2 = (1.0 - k / q + k * k) / a0;
-    }
-    {
-        const f64 f0 = 38.13547087602444;
-        const f64 q = 0.5003270373238773;
-        const f64 k = std::tan(kPi * f0 / fs);
-        const f64 a0 = 1.0 + k / q + k * k;
-        highpass.b0 = 1.0;
-        highpass.b1 = -2.0;
-        highpass.b2 = 1.0;
-        highpass.a1 = 2.0 * (k * k - 1.0) / a0;
-        highpass.a2 = (1.0 - k / q + k * k) / a0;
-    }
-}
-
-f64 channel_weight(u32 channel, u32 channels) {
-    // 5.1 (L R C LFE Ls Rs): LFE excluded, surrounds +1.5 dB.
-    if (channels == 6) {
-        if (channel == 3) {
-            return 0.0;
-        }
-        if (channel >= 4) {
-            return 1.41;
-        }
-    }
-    return 1.0;
-}
-
-f64 block_loudness(f64 mean_square) {
-    return mean_square > 0.0 ? -0.691 + 10.0 * std::log10(mean_square) : kAudioSilenceLufs;
-}
+// K-weighting / BS.1770 loudness, sample peak and the loop seam ratio: fuse/assetcheck/asset_rules.hpp (shared
+// with the asset_audio gate).
 
 // ---- windowed sinc ------------------------------------------------------------------------------------
 
@@ -753,96 +704,15 @@ AudioBuffer resample_audio(const AudioBuffer& in, u32 target_rate) {
 }
 
 f64 measure_integrated_loudness(const AudioBuffer& buffer) {
+    // One meter for the cook and the asset_audio gate (Tools/FUSE/AssetCheck asset_rules.hpp).
     if (!valid_buffer(buffer)) {
         return kAudioSilenceLufs;
     }
-    Biquad shelf;
-    Biquad highpass;
-    k_weighting(buffer.sample_rate, shelf, highpass);
-    const u32 channels = buffer.channels;
-    const u32 frames = buffer.frames;
-    // Weighted K-filtered energy per frame, summed over channels.
-    std::vector<f64> energy(frames, 0.0);
-    for (u32 c = 0; c < channels; ++c) {
-        const f64 w = channel_weight(c, channels);
-        if (w == 0.0) {
-            continue;
-        }
-        f64 x1 = 0.0, x2 = 0.0, y1 = 0.0, y2 = 0.0; // stage 1 state
-        f64 z1 = 0.0, z2 = 0.0, v1 = 0.0, v2 = 0.0; // stage 2 state
-        for (u32 f = 0; f < frames; ++f) {
-            const f64 x = buffer.samples[static_cast<usize>(f) * channels + c];
-            const f64 y = shelf.b0 * x + shelf.b1 * x1 + shelf.b2 * x2 - shelf.a1 * y1 - shelf.a2 * y2;
-            x2 = x1;
-            x1 = x;
-            y2 = y1;
-            y1 = y;
-            const f64 v = highpass.b0 * y + highpass.b1 * z1 + highpass.b2 * z2 - highpass.a1 * v1 - highpass.a2 * v2;
-            z2 = z1;
-            z1 = y;
-            v2 = v1;
-            v1 = v;
-            energy[f] += w * v * v;
-        }
-    }
-    const u32 step = std::max<u32>(1u, static_cast<u32>(std::lround(buffer.sample_rate * 0.1)));
-    const u32 block = step * 4u;
-    std::vector<f64> blocks;
-    if (frames < block) {
-        f64 sum = 0.0;
-        for (f64 e : energy) {
-            sum += e;
-        }
-        blocks.push_back(sum / frames);
-    } else {
-        // Sums of 100 ms segments; each 400 ms block is four consecutive segments.
-        const u32 segments = frames / step;
-        std::vector<f64> seg(segments, 0.0);
-        for (u32 s = 0; s < segments; ++s) {
-            f64 sum = 0.0;
-            for (u32 i = 0; i < step; ++i) {
-                sum += energy[static_cast<usize>(s) * step + i];
-            }
-            seg[s] = sum;
-        }
-        for (u32 s = 0; s + 4u <= segments; ++s) {
-            blocks.push_back((seg[s] + seg[s + 1u] + seg[s + 2u] + seg[s + 3u]) / block);
-        }
-    }
-    // Absolute gate (-70 LUFS), then relative gate (-10 LU below the absolute-gated loudness).
-    f64 abs_sum = 0.0;
-    usize abs_count = 0;
-    for (f64 z : blocks) {
-        if (block_loudness(z) > -70.0) {
-            abs_sum += z;
-            ++abs_count;
-        }
-    }
-    if (abs_count == 0) {
-        return kAudioSilenceLufs;
-    }
-    const f64 relative_gate = block_loudness(abs_sum / static_cast<f64>(abs_count)) - 10.0;
-    f64 rel_sum = 0.0;
-    usize rel_count = 0;
-    for (f64 z : blocks) {
-        const f64 l = block_loudness(z);
-        if (l > -70.0 && l > relative_gate) {
-            rel_sum += z;
-            ++rel_count;
-        }
-    }
-    if (rel_count == 0) {
-        return kAudioSilenceLufs;
-    }
-    return block_loudness(rel_sum / static_cast<f64>(rel_count));
+    return assetcheck::integratedLoudness(buffer.samples.data(), buffer.frames, buffer.channels, buffer.sample_rate);
 }
 
 f32 sample_peak(const AudioBuffer& buffer) {
-    f32 peak = 0.0f;
-    for (float s : buffer.samples) {
-        peak = std::max(peak, std::abs(s));
-    }
-    return peak;
+    return assetcheck::samplePeak(buffer.samples.data(), buffer.samples.size());
 }
 
 void apply_gain(AudioBuffer& buffer, f64 gain_linear) {
@@ -1058,25 +928,10 @@ bool make_seamless_loop(AudioBuffer& buffer, u32 crossfade_frames, u32* used_cro
 }
 
 f32 loop_seam_ratio(const AudioBuffer& buffer) {
-    if (!valid_buffer(buffer) || buffer.frames < 4u) {
+    if (!valid_buffer(buffer)) {
         return 0.0f;
     }
-    const u32 channels = buffer.channels;
-    const u32 window = std::min<u32>(64u, buffer.frames / 2u);
-    f64 worst = 0.0;
-    for (u32 c = 0; c < channels; ++c) {
-        auto at = [&](u32 f) { return static_cast<f64>(buffer.samples[static_cast<usize>(f) * channels + c]); };
-        const f64 jump = std::abs(at(0) - at(buffer.frames - 1u));
-        f64 local = 0.0;
-        for (u32 i = 1; i < window; ++i) {
-            local = std::max(local, std::abs(at(i) - at(i - 1u)));
-            const u32 t = buffer.frames - i;
-            local = std::max(local, std::abs(at(t) - at(t - 1u)));
-        }
-        const f64 ratio = jump <= 1e-6 ? 0.0 : jump / std::max(local, 1e-6);
-        worst = std::max(worst, ratio);
-    }
-    return static_cast<f32>(worst);
+    return assetcheck::loopSeamRatio(buffer.samples.data(), buffer.frames, buffer.channels);
 }
 
 bool encode_vorbis_stream(const AudioBuffer& buffer, f32 quality, std::vector<u8>& out, u32 serial) {

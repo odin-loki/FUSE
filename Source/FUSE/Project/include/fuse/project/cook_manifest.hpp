@@ -31,13 +31,18 @@ enum class CookStatus : u8 {
     InvalidImageDimensions, ///< texture is zero-size or exceeds the cook's maximum dimension
     ImporterUnavailable,    ///< the real importer (assimp / stb_image / Lua) is not linked into this build
     ScriptSyntaxError,      ///< Lua script failed to compile; the record note carries file:line: reason
+    /// FUSE_ASSET_PLAN §5.3: the asset imported but fails a validation gate (fuse/assetcheck/asset_rules.hpp:
+    /// geometry / skin for meshes, power-of-two / normal-map format for textures, 48 kHz / loudness / clipping
+    /// for audio). Strict cooks refuse it and remove the output; the record note lists the violations.
+    AssetGateFailed,
 };
 
 /// True for the statuses strict import validation reports for a rejected-but-present source.
 [[nodiscard]] constexpr bool isImportValidationFailure(CookStatus status) {
     return status == CookStatus::MalformedSource || status == CookStatus::InvalidGeometry ||
            status == CookStatus::CorruptImage || status == CookStatus::InvalidImageDimensions ||
-           status == CookStatus::ImporterUnavailable || status == CookStatus::ScriptSyntaxError;
+           status == CookStatus::ImporterUnavailable || status == CookStatus::ScriptSyntaxError ||
+           status == CookStatus::AssetGateFailed;
 }
 
 struct CookManifestEntry {

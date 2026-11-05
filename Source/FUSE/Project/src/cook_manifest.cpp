@@ -218,6 +218,8 @@ const char* cookStatusName(CookStatus status) {
         return "importer_unavailable";
     case CookStatus::ScriptSyntaxError:
         return "script_syntax_error";
+    case CookStatus::AssetGateFailed:
+        return "asset_gate_failed";
     }
     return "unknown";
 }

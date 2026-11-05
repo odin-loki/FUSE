@@ -15,9 +15,18 @@
 //     "material": {"metal": "none|mixed|full", "emissive": false},
 //     "textures": [{"map": "albedo|normal|orm|height|emissive", "path": "<base>_<map>.png",
 //                   "colour_space": "srgb|linear", "format": "BC1|BC4|BC5|BC6H|BC7"}],
-//     "lods": [{"path": "<base>_lod0.fusemesh", "error": 0.0}, ...] }
+//     "lods": [{"path": "<base>_lod0.fusemesh", "error": 0.0}, ...],
+//     "max_view_distance": 200,                                (metres; optional, lod_presence)
+//     "skin": {"rig": "<base>_rig.fskl", "skeleton_hash": "0x<16 hex>"},          (optional, skin)
+//     "audio": {"path": "<file>.wav", "kind": "one_shot|bed", "loop": false, "lufs": -16},  (optional)
+//     "golden": {"render": "<file>.png", "reference": "<file>.png"} }               (optional, golden)
 // Textures are source images (PNG / TGA / JPEG via stb_image); ORM packs occlusion (R), roughness (G),
-// metal (B). Meshes are .fusemesh FMSH v1 (Tools/FUSE/Cook/src/mesh_cook.cpp layout) or Wavefront OBJ.
+// metal (B). Meshes are .fusemesh FMSH v1 / v2 (Tools/FUSE/Cook/src/mesh_cook.cpp layout: float or unorm16
+// positions, uv0, joints / weights; LOD sections counted; the meshopt codec is not read) or Wavefront OBJ.
+// Audio is RIFF WAVE (PCM 8/16/24/32-bit, IEEE float 32/64, WAVE_FORMAT_EXTENSIBLE).
+//
+// The rules themselves live in include/fuse/assetcheck/asset_rules.hpp, shared with the strict cook
+// (fuse::project::AssetCooker refuses assets that fail them, FUSE_ASSET_PLAN §5.3).
 //
 // Gates (§5.3 names; the rules are §1.2 budgets, §1.3 formats and §1.6 calibration):
 //   naming          id = <class>/<biome|style>/<name>_<variant>; textures <base>_<map>.*; LODs <base>_lod<N>.*
@@ -33,8 +42,20 @@
 //   uv_bounds       UVs finite, inside [0,1] unless "tiling"; no collapsed (zero-area) UV triangles
 //   geometry        units = m; real-world height vs category range; pivot at base; up axis declared;
 //                   no degenerate / non-finite triangles
+//   lod_presence    a mesh drawn farther than 50 m ("max_view_distance") has LODs (files or FMSH LOD
+//                   sections), an impostor or a cluster DAG
+//   skin            <= 4 weights per vertex, weights in [0,1] summing to 1 (+-1e-3), weighted joints inside
+//                   the rig, "skeleton_hash" == hash of the rig (FNV-1a 64 over joint names + parents);
+//                   a skinned LOD without a declared rig (or a rig without skin streams) fails
+//   audio           48 kHz, integrated loudness (ITU-R BS.1770-4, gated) within +-1 LU of the target
+//                   ("lufs", else -16 LUFS one-shot / -23 LUFS bed), no clipping (|x| >= 0.999), no loop
+//                   seam click (seam jump <= 2x the local slope) for looping clips
+//   golden          render vs golden image (§5.4): mean LDR-FLIP <= 0.05 (vendored NVIDIA FLIP); built
+//                   without FLIP: mean absolute linear-RGB error <= 0.02
 
 #include "../Lint/fuse_json_mini.hpp"
+
+#include <fuse/assetcheck/asset_rules.hpp>
 
 #include <algorithm>
 #include <array>
@@ -61,6 +82,10 @@
 #include "stb_image.h"
 #endif
 
+#if defined(FUSE_ASSETCHECK_HAS_FLIP)
+#include <FLIP.h>
+#endif
+
 namespace fs = std::filesystem;
 using fuse::tools::JsonValue;
 
@@ -69,8 +94,9 @@ namespace {
 using Violations = std::vector<std::string>;
 
 const std::vector<std::string>& gateNames() {
-    static const std::vector<std::string> g = {"naming",       "budget_mesh", "lod_chain",   "budget_texture", "texel_density",
-                                               "normal_map",   "color_space", "pbr_sanity",  "uv_bounds",      "geometry"};
+    static const std::vector<std::string> g = {"naming",       "budget_mesh", "lod_chain",    "budget_texture", "texel_density",
+                                               "normal_map",   "color_space", "pbr_sanity",   "uv_bounds",      "geometry",
+                                               "lod_presence", "skin",        "audio",        "golden"};
     return g;
 }
 
@@ -139,6 +165,9 @@ struct Mesh {
     std::vector<double> pos; ///< xyz per vertex
     std::vector<double> uv;  ///< uv per vertex
     std::vector<std::uint32_t> idx;
+    std::vector<std::uint16_t> joints; ///< 4 per vertex (FMSH v2 Joints0), empty when unskinned
+    std::vector<float> weights;        ///< 4 per vertex (FMSH v2 Weights0, decoded, not renormalised)
+    size_t embeddedLods = 0;           ///< FMSH v2 LODT section entries (LODs 1..N inside the file)
     [[nodiscard]] size_t tris() const { return idx.size() / 3u; }
     [[nodiscard]] size_t verts() const { return pos.size() / 3u; }
 };
@@ -181,23 +210,161 @@ std::uint64_t fnv1a64(const std::uint8_t* data, size_t size) {
 constexpr size_t kFmshHeader = 4u + 5u * 4u + 6u * 4u;
 constexpr size_t kFmshSubmesh = 16u;
 
-/// .fusemesh FMSH v1 (mesh_cook.cpp): header, submeshes, positions, normals, uv0, u32 indices, FNV-1a trailer.
+std::uint16_t getU16(const std::uint8_t* d) { return std::uint16_t(d[0] | (d[1] << 8)); }
+
+constexpr std::uint32_t fourcc(char a, char b, char c, char d) {
+    return std::uint32_t(std::uint8_t(a)) | (std::uint32_t(std::uint8_t(b)) << 8) | (std::uint32_t(std::uint8_t(c)) << 16) |
+           (std::uint32_t(std::uint8_t(d)) << 24);
+}
+
+/// FMSH v2 (fuse::cook::serialize_cooked_mesh): 56-byte header (+ stream count, material slot count),
+/// submeshes, slot names, per stream {semantic, format, byte_length} + payload (padded to 4), u32 indices,
+/// optional sections. Skin weights are decoded but NOT validated here (that is the skin gate's job).
+bool loadFusemeshV2(const std::uint8_t* d, size_t size, Mesh& m, std::string& err) {
+    constexpr size_t kHeaderV2 = kFmshHeader + 8u;
+    if (size < kHeaderV2 + 8u) {
+        err = "FMSH v2 truncated";
+        return false;
+    }
+    const std::uint32_t flags = getU32(d + 8), vc = getU32(d + 12), ic = getU32(d + 16), sc = getU32(d + 20);
+    const std::uint32_t streams = getU32(d + 48), slots = getU32(d + 52);
+    if ((flags & 0x10u) != 0u) {
+        err = "FMSH v2 meshopt codec payloads are not read by fuse_assetcheck (cook without the codec to check)";
+        return false;
+    }
+    if ((flags & ~(0x1u | 0x20u)) != 0u) {
+        err = "FMSH v2 flags unsupported";
+        return false;
+    }
+    double bmin[3], bmax[3];
+    for (int k = 0; k < 3; ++k) {
+        bmin[k] = getF32(d + 24 + 4 * k);
+        bmax[k] = getF32(d + 36 + 4 * k);
+    }
+    const size_t end = size - 8u;
+    size_t c = kHeaderV2 + size_t(sc) * kFmshSubmesh;
+    auto need = [&](std::uint64_t n) { return std::uint64_t(c) + n <= end; };
+    if (!need(0)) {
+        err = "FMSH v2 size mismatch";
+        return false;
+    }
+    for (std::uint32_t i = 0; i < slots; ++i) {
+        if (!need(4)) {
+            err = "FMSH v2 size mismatch";
+            return false;
+        }
+        const std::uint64_t len = (std::uint64_t(getU32(d + c)) + 3u) & ~std::uint64_t(3u);
+        c += 4u;
+        if (!need(len)) {
+            err = "FMSH v2 slot name out of bounds";
+            return false;
+        }
+        c += size_t(len);
+    }
+    bool havePos = false;
+    for (std::uint32_t si = 0; si < streams; ++si) {
+        if (!need(12)) {
+            err = "FMSH v2 stream table truncated";
+            return false;
+        }
+        const std::uint32_t sem = getU32(d + c), format = getU32(d + c + 4), bytes = getU32(d + c + 8);
+        c += 12u;
+        const std::uint64_t padded = (std::uint64_t(bytes) + 3u) & ~std::uint64_t(3u);
+        if (!need(padded) || vc == 0u || bytes % vc != 0u) {
+            err = "FMSH v2 stream " + std::to_string(sem) + " size mismatch";
+            return false;
+        }
+        const std::uint8_t* p = d + c;
+        const std::uint32_t elem = bytes / vc;
+        if (sem == 1u) { // position: F32x3 (2) or Unorm16x3 (3)
+            havePos = true;
+            m.pos.resize(size_t(vc) * 3u);
+            for (size_t i = 0; i < m.pos.size(); ++i) {
+                if (format == 2u && elem == 12u) {
+                    m.pos[i] = getF32(p + i * 4u);
+                } else if (format == 3u && elem == 6u) {
+                    const size_t axis = i % 3u;
+                    m.pos[i] = bmin[axis] + double(getU16(p + i * 2u)) / 65535.0 * (bmax[axis] - bmin[axis]);
+                } else {
+                    err = "FMSH v2 position format unsupported";
+                    return false;
+                }
+            }
+        } else if (sem == 3u && format == 1u && elem == 8u) { // uv0 F32x2
+            m.uv.resize(size_t(vc) * 2u);
+            for (size_t i = 0; i < m.uv.size(); ++i) m.uv[i] = getF32(p + i * 4u);
+        } else if (sem == 7u) { // joints: Uint8x4 (7) or Uint16x4 (8)
+            m.joints.resize(size_t(vc) * 4u);
+            for (size_t i = 0; i < m.joints.size(); ++i) {
+                m.joints[i] = format == 7u ? std::uint16_t(p[i]) : getU16(p + i * 2u);
+            }
+        } else if (sem == 8u) { // weights: Unorm8x4 (6) or Unorm16x4 (9)
+            m.weights.resize(size_t(vc) * 4u);
+            for (size_t i = 0; i < m.weights.size(); ++i) {
+                m.weights[i] = format == 6u ? float(p[i]) / 255.0f : float(getU16(p + i * 2u)) / 65535.0f;
+            }
+        }
+        c += size_t(padded);
+    }
+    if (!havePos) {
+        err = "FMSH v2 has no position stream";
+        return false;
+    }
+    if (m.uv.empty()) m.uv.assign(size_t(vc) * 2u, 0.0);
+    if (m.joints.empty() != m.weights.empty()) {
+        err = "FMSH v2 joints and weights must both be present or both absent";
+        return false;
+    }
+    if (!need(std::uint64_t(ic) * 4u) || ic % 3u != 0u) {
+        err = "FMSH v2 index list size mismatch";
+        return false;
+    }
+    m.idx.resize(ic);
+    for (std::uint32_t& i : m.idx) {
+        i = getU32(d + c);
+        c += 4u;
+        if (i >= vc) {
+            err = "FMSH index out of range";
+            return false;
+        }
+    }
+    if ((flags & 0x20u) != 0u) { // sections: count LODT entries, skip the rest
+        if (!need(4)) {
+            err = "FMSH v2 sections truncated";
+            return false;
+        }
+        const std::uint32_t count = getU32(d + c);
+        c += 4u;
+        for (std::uint32_t k = 0; k < count; ++k) {
+            if (!need(12)) {
+                err = "FMSH v2 sections truncated";
+                return false;
+            }
+            const std::uint32_t id = getU32(d + c), eb = getU32(d + c + 4), en = getU32(d + c + 8);
+            c += 12u;
+            const std::uint64_t len = (std::uint64_t(eb) * en + 3u) & ~std::uint64_t(3u);
+            if (!need(len)) {
+                err = "FMSH v2 section out of bounds";
+                return false;
+            }
+            if (id == fourcc('L', 'O', 'D', 'T')) m.embeddedLods = en;
+            c += size_t(len);
+        }
+    }
+    if (c != end) {
+        err = "FMSH v2 size mismatch";
+        return false;
+    }
+    return true;
+}
+
+/// .fusemesh FMSH v1 (mesh_cook.cpp): header, submeshes, positions, normals, uv0, u32 indices, FNV-1a trailer;
+/// v2 through loadFusemeshV2.
 bool loadFusemesh(const fs::path& p, Mesh& m, std::string& err) {
     const std::string s = readAll(p);
     const auto* d = reinterpret_cast<const std::uint8_t*>(s.data());
     if (s.size() < kFmshHeader + 8u || std::memcmp(d, "FMSH", 4) != 0) {
         err = "not a .fusemesh (magic / size)";
-        return false;
-    }
-    const std::uint32_t version = getU32(d + 4);
-    if (version != 1u) {
-        err = "FMSH version " + std::to_string(version) + " not supported by fuse_assetcheck yet (v1 only)";
-        return false;
-    }
-    const std::uint32_t vc = getU32(d + 12), ic = getU32(d + 16), sc = getU32(d + 20);
-    const std::uint64_t expected = kFmshHeader + std::uint64_t(sc) * kFmshSubmesh + std::uint64_t(vc) * 32u + std::uint64_t(ic) * 4u + 8u;
-    if (expected != s.size()) {
-        err = "FMSH size mismatch";
         return false;
     }
     std::uint64_t trailer = 0;
@@ -206,6 +373,20 @@ bool loadFusemesh(const fs::path& p, Mesh& m, std::string& err) {
     }
     if (trailer != fnv1a64(d, s.size() - 8u)) {
         err = "FMSH checksum mismatch";
+        return false;
+    }
+    const std::uint32_t version = getU32(d + 4);
+    if (version == 2u) {
+        return loadFusemeshV2(d, s.size(), m, err);
+    }
+    if (version != 1u) {
+        err = "FMSH version " + std::to_string(version) + " not supported by fuse_assetcheck (v1 / v2)";
+        return false;
+    }
+    const std::uint32_t vc = getU32(d + 12), ic = getU32(d + 16), sc = getU32(d + 20);
+    const std::uint64_t expected = kFmshHeader + std::uint64_t(sc) * kFmshSubmesh + std::uint64_t(vc) * 32u + std::uint64_t(ic) * 4u + 8u;
+    if (expected != s.size()) {
+        err = "FMSH size mismatch";
         return false;
     }
     const std::uint8_t* c = d + kFmshHeader + size_t(sc) * kFmshSubmesh;
@@ -373,6 +554,109 @@ std::string encodeTga(const Image& img) {
     return s;
 }
 
+/// Interleaved float PCM.
+struct Pcm {
+    std::vector<float> samples;
+    std::uint32_t frames = 0, channels = 0, rate = 0;
+};
+
+/// RIFF WAVE: PCM 8/16/24/32-bit, IEEE float 32/64, WAVE_FORMAT_EXTENSIBLE (sub-format PCM / float).
+bool loadWav(const fs::path& p, Pcm& out, std::string& err) {
+    const std::string s = readAll(p);
+    const auto* d = reinterpret_cast<const std::uint8_t*>(s.data());
+    if (s.size() < 12u || std::memcmp(d, "RIFF", 4) != 0 || std::memcmp(d + 8, "WAVE", 4) != 0) {
+        err = "not a RIFF WAVE file";
+        return false;
+    }
+    std::uint32_t format = 0, bits = 0;
+    const std::uint8_t* data = nullptr;
+    size_t dataBytes = 0;
+    for (size_t c = 12u; c + 8u <= s.size();) {
+        const std::uint32_t len = getU32(d + c + 4);
+        const size_t body = c + 8u;
+        if (body + len > s.size()) {
+            err = "WAV chunk out of bounds";
+            return false;
+        }
+        if (std::memcmp(d + c, "fmt ", 4) == 0 && len >= 16u) {
+            format = getU16(d + body);
+            out.channels = getU16(d + body + 2);
+            out.rate = getU32(d + body + 4);
+            bits = getU16(d + body + 14);
+            if (format == 0xFFFEu && len >= 26u) format = getU16(d + body + 24);
+        } else if (std::memcmp(d + c, "data", 4) == 0) {
+            data = d + body;
+            dataBytes = len;
+        }
+        c = body + len + (len & 1u);
+    }
+    if (data == nullptr || out.channels == 0u || out.rate == 0u || (format != 1u && format != 3u) || bits % 8u != 0u || bits == 0u) {
+        err = "WAV format unsupported (PCM / IEEE float only)";
+        return false;
+    }
+    const size_t bytesPer = bits / 8u;
+    const size_t count = dataBytes / bytesPer;
+    out.frames = std::uint32_t(count / out.channels);
+    out.samples.resize(size_t(out.frames) * out.channels);
+    for (size_t i = 0; i < out.samples.size(); ++i) {
+        const std::uint8_t* q = data + i * bytesPer;
+        double x = 0.0;
+        if (format == 3u && bits == 32u) {
+            x = getF32(q);
+        } else if (format == 3u && bits == 64u) {
+            std::uint64_t b = 0;
+            for (int k = 7; k >= 0; --k) b = (b << 8) | q[k];
+            double v;
+            std::memcpy(&v, &b, sizeof(v));
+            x = v;
+        } else if (format == 1u && bits == 8u) {
+            x = (double(q[0]) - 128.0) / 128.0;
+        } else if (format == 1u && bits <= 32u) {
+            std::uint32_t u = 0;
+            for (size_t k = 0; k < bytesPer; ++k) u |= std::uint32_t(q[k]) << (8u * k);
+            const std::uint32_t shift = 32u - bits;
+            const std::int32_t sv = std::int32_t(u << shift) >> shift;
+            x = double(sv) / double(1ull << (bits - 1u));
+        } else {
+            err = "WAV sample format unsupported";
+            return false;
+        }
+        out.samples[i] = float(x);
+    }
+    return true;
+}
+
+/// 32-bit IEEE float WAV.
+std::string encodeWavFloat(const Pcm& pcm) {
+    std::string o;
+    auto u32 = [&](std::uint32_t x) {
+        for (int i = 0; i < 4; ++i) o.push_back(char((x >> (8 * i)) & 0xffu));
+    };
+    auto u16 = [&](std::uint32_t x) {
+        o.push_back(char(x & 0xffu));
+        o.push_back(char((x >> 8) & 0xffu));
+    };
+    const std::uint32_t dataBytes = std::uint32_t(pcm.samples.size() * 4u);
+    o += "RIFF";
+    u32(36u + dataBytes);
+    o += "WAVEfmt ";
+    u32(16u);
+    u16(3u);
+    u16(pcm.channels);
+    u32(pcm.rate);
+    u32(pcm.rate * pcm.channels * 4u);
+    u16(pcm.channels * 4u);
+    u16(32u);
+    o += "data";
+    u32(dataBytes);
+    for (float f : pcm.samples) {
+        std::uint32_t b;
+        std::memcpy(&b, &f, sizeof(b));
+        u32(b);
+    }
+    return o;
+}
+
 // ---- asset model ----------------------------------------------------------------------------------------
 
 struct Texture {
@@ -395,8 +679,29 @@ struct Asset {
     std::string id, cls, category, units, up, metal;
     bool tiling = false, dag = false, impostor = false, hero = false, emissive = false;
     double densityOverride = 0.0;
+    double maxViewDistance = 0.0; ///< metres, 0 = not declared
     std::vector<Texture> textures;
     std::vector<Lod> lods;
+    // skin
+    bool hasSkin = false;         ///< "skin" block present
+    std::string rigPath;
+    bool rigLoaded = false;
+    std::vector<std::string> rigNames;
+    std::vector<std::int32_t> rigParents;
+    std::string skeletonHashText;
+    // audio
+    bool hasAudio = false;
+    std::string audioPath, audioKind;
+    bool audioLoop = false;
+    bool audioHasLufs = false;
+    double audioLufs = 0.0;
+    Pcm audio;
+    bool audioLoaded = false;
+    // golden
+    bool hasGolden = false;
+    std::string renderPath, referencePath;
+    Image render, reference;
+    bool goldenLoaded = false;
     Violations loadErrors;
 
     [[nodiscard]] const Texture* tex(const std::string& map) const {
@@ -449,6 +754,41 @@ bool loadAsset(const fs::path& file, Asset& a, std::string& err) {
         if (!lod.loaded) a.loadErrors.push_back("mesh '" + lod.path + "': " + e);
         a.lods.push_back(std::move(lod));
     }
+    a.maxViewDistance = d["max_view_distance"].asNumber(0.0);
+    if (d["skin"].isObject()) {
+        a.hasSkin = true;
+        a.rigPath = d["skin"]["rig"].asString();
+        a.skeletonHashText = d["skin"]["skeleton_hash"].asString();
+        if (!a.rigPath.empty()) {
+            const std::string bytes = readAll(dir / a.rigPath);
+            std::string e;
+            a.rigLoaded = fuse::assetcheck::parseFskl(reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size(), a.rigNames,
+                                                      a.rigParents, e);
+            if (!a.rigLoaded) a.loadErrors.push_back("rig '" + a.rigPath + "': " + e);
+        }
+    }
+    if (d["audio"].isObject()) {
+        a.hasAudio = true;
+        a.audioPath = d["audio"]["path"].asString();
+        a.audioKind = d["audio"]["kind"].asString("one_shot");
+        a.audioLoop = d["audio"]["loop"].asBool();
+        a.audioHasLufs = d["audio"]["lufs"].isNumber();
+        a.audioLufs = d["audio"]["lufs"].asNumber();
+        std::string e;
+        a.audioLoaded = loadWav(dir / a.audioPath, a.audio, e);
+        if (!a.audioLoaded) a.loadErrors.push_back("audio '" + a.audioPath + "': " + e);
+    }
+    if (d["golden"].isObject()) {
+        a.hasGolden = true;
+        a.renderPath = d["golden"]["render"].asString();
+        a.referencePath = d["golden"]["reference"].asString();
+        std::string e1, e2;
+        const bool r1 = loadImage(dir / a.renderPath, a.render, e1);
+        const bool r2 = loadImage(dir / a.referencePath, a.reference, e2);
+        if (!r1) a.loadErrors.push_back("render '" + a.renderPath + "': " + e1);
+        if (!r2) a.loadErrors.push_back("golden '" + a.referencePath + "': " + e2);
+        a.goldenLoaded = r1 && r2;
+    }
     return true;
 }
 
@@ -463,7 +803,6 @@ std::string fmt(double v, int prec = 3) {
     return b;
 }
 
-bool isPow2(int v) { return v > 0 && (v & (v - 1)) == 0; }
 
 std::array<double, 3> vtx(const Mesh& m, std::uint32_t i) { return {m.pos[i * 3u], m.pos[i * 3u + 1u], m.pos[i * 3u + 2u]}; }
 
@@ -568,20 +907,16 @@ void gateBudgetTexture(const Asset& a, Violations& v) {
         {"albedo", {"BC7", "BC1"}}, {"normal", {"BC5"}}, {"orm", {"BC7", "BC1"}}, {"height", {"BC4"}}, {"emissive", {"BC7", "BC1", "BC6H"}}};
     for (const Texture& t : a.textures) {
         if (!t.loaded) continue;
-        if (!isPow2(t.img.w) || !isPow2(t.img.h)) {
-            v.push_back("texture '" + t.path + "' is " + std::to_string(t.img.w) + "x" + std::to_string(t.img.h) + ", not a power of two");
-        }
+        // Power of two + normal maps linear BC5: the rule shared with the strict cook (asset_rules.hpp).
+        fuse::assetcheck::checkTextureFormat(std::uint32_t(t.img.w), std::uint32_t(t.img.h), t.map == "normal",
+                                             t.map == "normal" && t.colourSpace != "linear", t.format, "texture '" + t.path + "'", v);
         if (std::uint32_t(std::max(t.img.w, t.img.h)) > maxSide) {
             v.push_back("texture '" + t.path + "' is " + std::to_string(std::max(t.img.w, t.img.h)) + " px, over the '" + a.cls +
                         "' maximum of " + std::to_string(maxSide));
         }
         const auto it = formats.find(t.map);
-        if (it != formats.end() && !it->second.count(t.format)) {
-            v.push_back("texture '" + t.path + "' (" + t.map + ") format '" + t.format + "' not allowed by §1.3" +
-                        (t.map == "normal" ? " (normal maps are BC5, never BC7/BC1)" : ""));
-        }
-        if (t.map == "normal" && t.colourSpace != "linear") {
-            v.push_back("normal map '" + t.path + "' must be linear, not '" + t.colourSpace + "'");
+        if (t.map != "normal" && it != formats.end() && !it->second.count(t.format)) {
+            v.push_back("texture '" + t.path + "' (" + t.map + ") format '" + t.format + "' not allowed by §1.3");
         }
     }
 }
@@ -863,21 +1198,13 @@ void gateGeometry(const Asset& a, Violations& v) {
         const Lod& l = a.lods[li];
         if (!l.loaded || l.mesh.verts() == 0u) continue;
         const std::string where = "LOD" + std::to_string(li) + " '" + l.path + "'";
-        size_t nonFinite = 0, degenerate = 0;
         double lo = 1e300, hi = -1e300;
         for (size_t i = 0; i < l.mesh.verts(); ++i) {
-            for (int k = 0; k < 3; ++k) {
-                if (!std::isfinite(l.mesh.pos[i * 3u + size_t(k)])) ++nonFinite;
-            }
             lo = std::min(lo, l.mesh.pos[i * 3u + size_t(up)]);
             hi = std::max(hi, l.mesh.pos[i * 3u + size_t(up)]);
         }
-        for (size_t t = 0; t < l.mesh.tris(); ++t) {
-            const std::uint32_t* tri = &l.mesh.idx[t * 3u];
-            if (tri[0] == tri[1] || tri[1] == tri[2] || tri[0] == tri[2] || !(triArea3(l.mesh, t) > 1e-10)) ++degenerate;
-        }
-        if (nonFinite > 0u) v.push_back(where + ": " + std::to_string(nonFinite) + " non-finite position components");
-        if (degenerate > 0u) v.push_back(where + ": " + std::to_string(degenerate) + " degenerate / zero-area triangles");
+        // Shared with the strict cook (asset_rules.hpp): non-finite / degenerate / zero-area triangles.
+        fuse::assetcheck::checkTriangles(l.mesh.pos.data(), l.mesh.verts(), l.mesh.idx.data(), l.mesh.idx.size(), where, v);
         if (li != 0u) continue;
         const double height = hi - lo;
         const CategoryRange* cat = findCategory(a.category);
@@ -893,6 +1220,96 @@ void gateGeometry(const Asset& a, Violations& v) {
     }
 }
 
+void gateLodPresence(const Asset& a, Violations& v) {
+    // LOD files plus LOD sections embedded in LOD0's FMSH.
+    const size_t levels = a.lods.size() + (!a.lods.empty() && a.lods[0].loaded ? a.lods[0].mesh.embeddedLods : 0u);
+    fuse::assetcheck::checkLodPresence(a.maxViewDistance, levels, a.impostor, a.dag, v);
+}
+
+void gateSkin(const Asset& a, Violations& v) {
+    bool anySkinned = false;
+    for (size_t li = 0; li < a.lods.size(); ++li) {
+        const Lod& l = a.lods[li];
+        if (!l.loaded || l.mesh.weights.empty()) continue;
+        anySkinned = true;
+        const std::string where = "LOD" + std::to_string(li) + " '" + l.path + "'";
+        if (!a.hasSkin || a.rigPath.empty()) {
+            v.push_back(where + " is skinned but the descriptor declares no rig (\"skin\": {\"rig\": ...})");
+            continue;
+        }
+        fuse::assetcheck::checkSkinWeights(l.mesh.joints.data(), l.mesh.weights.data(), l.mesh.verts(), 4u,
+                                           a.rigLoaded ? std::uint32_t(a.rigNames.size()) : 0u, where, v);
+    }
+    if (!a.hasSkin) return;
+    if (!anySkinned) {
+        v.push_back("descriptor declares a rig but no LOD has skin joints / weights");
+    }
+    if (a.rigLoaded) {
+        if (a.skeletonHashText.empty()) {
+            v.push_back("no \"skeleton_hash\" recorded for the rig");
+        } else {
+            const std::uint64_t declared = std::strtoull(a.skeletonHashText.c_str(), nullptr, 16);
+            fuse::assetcheck::checkSkeletonHash(declared, fuse::assetcheck::skeletonHash(a.rigNames, a.rigParents), v);
+        }
+    }
+}
+
+void gateAudio(const Asset& a, Violations& v) {
+    if (!a.hasAudio || !a.audioLoaded) return;
+    fuse::assetcheck::AudioFacts f;
+    f.sampleRate = a.audio.rate;
+    f.peak = fuse::assetcheck::samplePeak(a.audio.samples.data(), a.audio.samples.size());
+    f.lufs = fuse::assetcheck::integratedLoudness(a.audio.samples.data(), a.audio.frames, a.audio.channels, a.audio.rate);
+    f.hasTarget = true;
+    f.targetLufs = a.audioHasLufs ? a.audioLufs : (a.audioKind == "bed" ? fuse::assetcheck::kAudioBedLufs : fuse::assetcheck::kAudioOneShotLufs);
+    f.loop = a.audioLoop;
+    f.seamRatio = a.audioLoop ? fuse::assetcheck::loopSeamRatio(a.audio.samples.data(), a.audio.frames, a.audio.channels) : 0.0;
+    fuse::assetcheck::checkAudio(f, "audio '" + a.audioPath + "'", v);
+}
+
+/// Mean LDR-FLIP (vendored NVIDIA FLIP, FLIP's default 67 px/deg viewing setup, sRGB -> linear through FLIP's
+/// transfer function, as Samples/content_golden does) or, without FLIP, the mean absolute linear-RGB error.
+double goldenError(const Image& ref, const Image& test, bool& flip) {
+    const size_t n = size_t(ref.w) * size_t(ref.h);
+#if defined(FUSE_ASSETCHECK_HAS_FLIP)
+    flip = true;
+    std::vector<float> r(n * 3u), t(n * 3u);
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t c = 0; c < 3u; ++c) {
+            r[i * 3u + c] = FLIP::color3::sRGBToLinearRGB(float(ref.rgba[i * 4u + c]) / 255.0f);
+            t[i * 3u + c] = FLIP::color3::sRGBToLinearRGB(float(test.rgba[i * 4u + c]) / 255.0f);
+        }
+    }
+    FLIP::image<FLIP::color3> ri, ti;
+    ri.setPixels(r.data(), ref.w, ref.h);
+    ti.setPixels(t.data(), ref.w, ref.h);
+    FLIP::image<float> map(ref.w, ref.h, 0.0f);
+    FLIP::Parameters params;
+    params.PPD = FLIP::calculatePPD(0.7f, 3840.0f, 0.7f);
+    FLIP::evaluate(ri, ti, false, params, map);
+    double sum = 0.0;
+    for (size_t i = 0; i < n; ++i) sum += double(map.getHostData()[i]);
+    return sum / double(n);
+#else
+    flip = false;
+    double sum = 0.0;
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t c = 0; c < 3u; ++c) {
+            sum += std::fabs(srgbToLinear(ref.rgba[i * 4u + c] / 255.0) - srgbToLinear(test.rgba[i * 4u + c] / 255.0));
+        }
+    }
+    return sum / double(n * 3u);
+#endif
+}
+
+void gateGolden(const Asset& a, Violations& v) {
+    if (!a.hasGolden || !a.goldenLoaded) return;
+    const bool same = a.render.w == a.reference.w && a.render.h == a.reference.h && a.render.w > 0 && a.render.h > 0;
+    bool flip = false;
+    const double err = same ? goldenError(a.reference, a.render, flip) : 0.0;
+    fuse::assetcheck::checkGolden(same, err, flip, "render '" + a.renderPath + "' vs golden '" + a.referencePath + "'", v);
+}
+
 using GateFn = void (*)(const Asset&, Violations&);
 
 GateFn gateFn(const std::string& g) {
@@ -900,7 +1317,8 @@ GateFn gateFn(const std::string& g) {
         {"naming", gateNaming},         {"budget_mesh", gateBudgetMesh}, {"lod_chain", gateLodChain},
         {"budget_texture", gateBudgetTexture}, {"texel_density", gateTexelDensity}, {"normal_map", gateNormalMap},
         {"color_space", gateColorSpace}, {"pbr_sanity", gatePbrSanity}, {"uv_bounds", gateUvBounds},
-        {"geometry", gateGeometry}};
+        {"geometry", gateGeometry},     {"lod_presence", gateLodPresence}, {"skin", gateSkin},
+        {"audio", gateAudio},           {"golden", gateGolden}};
     const auto it = fns.find(g);
     return it == fns.end() ? nullptr : it->second;
 }
@@ -1012,10 +1430,17 @@ Mesh fixtureBox(double side, int n, double island) {
     return m;
 }
 
+/// FMSH v1, or FMSH v2 (position, normal, uv0, joints Uint16x4, weights Unorm16x4 streams) when the mesh is
+/// skinned. Weights are quantised per slot (round(w * 65535)) without renormalising, so a fixture can carry
+/// weights that do not sum to 1.
 std::string encodeFusemesh(const Mesh& m) {
     std::string out;
     auto u32 = [&](std::uint32_t x) {
         for (int i = 0; i < 4; ++i) out.push_back(char((x >> (8 * i)) & 0xffu));
+    };
+    auto u16 = [&](std::uint32_t x) {
+        out.push_back(char(x & 0xffu));
+        out.push_back(char((x >> 8) & 0xffu));
     };
     auto f32 = [&](double d) {
         const float f = float(d);
@@ -1023,12 +1448,45 @@ std::string encodeFusemesh(const Mesh& m) {
         std::memcpy(&b, &f, sizeof(b));
         u32(b);
     };
+    const bool v2 = !m.weights.empty();
     out += "FMSH";
-    u32(1u);
+    u32(v2 ? 2u : 1u);
     u32(0u);
     u32(std::uint32_t(m.verts()));
     u32(std::uint32_t(m.idx.size()));
     u32(1u);
+    if (v2) {
+        std::array<double, 3> lo = {1e30, 1e30, 1e30}, hi = {-1e30, -1e30, -1e30};
+        for (size_t i = 0; i < m.verts(); ++i) {
+            for (size_t k = 0; k < 3u; ++k) {
+                lo[k] = std::min(lo[k], m.pos[i * 3u + k]);
+                hi[k] = std::max(hi[k], m.pos[i * 3u + k]);
+            }
+        }
+        for (double x : lo) f32(x);
+        for (double x : hi) f32(x);
+        u32(5u); // streams
+        u32(0u); // material slots
+        u32(0u); // submesh: index offset, count, vertex offset, material
+        u32(std::uint32_t(m.idx.size()));
+        u32(0u);
+        u32(0u);
+        const std::uint32_t vc = std::uint32_t(m.verts());
+        u32(1u), u32(2u), u32(vc * 12u);
+        for (double x : m.pos) f32(x);
+        u32(2u), u32(2u), u32(vc * 12u);
+        for (size_t i = 0; i < m.verts(); ++i) f32(0.0), f32(0.0), f32(1.0);
+        u32(3u), u32(1u), u32(vc * 8u);
+        for (double x : m.uv) f32(x);
+        u32(7u), u32(8u), u32(vc * 8u);
+        for (std::uint16_t j : m.joints) u16(j);
+        u32(8u), u32(9u), u32(vc * 8u);
+        for (float w : m.weights) u16(std::uint32_t(std::lround(std::clamp(double(w), 0.0, 1.0) * 65535.0)));
+        for (std::uint32_t i : m.idx) u32(i);
+        const std::uint64_t h = fnv1a64(reinterpret_cast<const std::uint8_t*>(out.data()), out.size());
+        for (int i = 0; i < 8; ++i) out.push_back(char((h >> (8 * i)) & 0xffu));
+        return out;
+    }
     std::array<double, 3> lo = {1e30, 1e30, 1e30}, hi = {-1e30, -1e30, -1e30};
     for (size_t i = 0; i < m.verts(); ++i) {
         for (size_t k = 0; k < 3u; ++k) {
@@ -1083,6 +1541,20 @@ struct Fixture {
     };
     std::vector<Tex> textures;
     std::vector<L> lods;
+    double maxViewDistance = 200.0;
+    // skin: rig written as FSKL; skeleton_hash recorded (empty = computed from the rig as authored)
+    bool skin = true;
+    std::vector<std::string> rigNames = {"root", "spine", "head"};
+    std::vector<std::int32_t> rigParents = {-1, 0, 1};
+    std::string skeletonHash;
+    // audio clip (float WAV)
+    bool hasAudio = true;
+    Pcm audio;
+    std::string audioKind = "one_shot";
+    bool audioLoop = true;
+    // golden pair
+    bool hasGolden = true;
+    Image render, reference;
 
     Tex& tex(const std::string& map) {
         for (Tex& t : textures) {
@@ -1092,8 +1564,77 @@ struct Fixture {
     }
 };
 
-/// The passing asset: 0.5 m boulder box, 3 LODs (768 / 432 / 192 triangles, LOD2 as OBJ), 1024^2 albedo
-/// (0.25 UV islands -> 512 px/m), 256^2 OpenGL normal map, 256^2 ORM (dielectric, varied roughness).
+/// Skin LOD0 against the 3-joint fixture rig by height: bottom third joint 0, middle 0 / 1 at 0.25 / 0.75,
+/// top 1 / 2 at 0.25 / 0.75 (weights that quantise to unorm16 sums of exactly 65535).
+void skinByHeight(Mesh& m) {
+    m.joints.assign(m.verts() * 4u, 0u);
+    m.weights.assign(m.verts() * 4u, 0.0f);
+    for (size_t i = 0; i < m.verts(); ++i) {
+        const double z = m.pos[i * 3u + 2u];
+        std::uint16_t* j = &m.joints[i * 4u];
+        float* w = &m.weights[i * 4u];
+        if (z < 0.17) {
+            w[0] = 1.0f;
+        } else if (z < 0.34) {
+            j[0] = 0, j[1] = 1, w[0] = 0.25f, w[1] = 0.75f;
+        } else {
+            j[0] = 1, j[1] = 2, w[0] = 0.25f, w[1] = 0.75f;
+        }
+    }
+}
+
+/// FSKL v1 (fuse::animation::Skeleton::save layout) with identity matrices.
+std::string encodeFskl(const std::vector<std::string>& names, const std::vector<std::int32_t>& parents) {
+    std::string o = "FSKL";
+    auto u32 = [&](std::uint32_t x) {
+        for (int i = 0; i < 4; ++i) o.push_back(char((x >> (8 * i)) & 0xffu));
+    };
+    u32(1u);
+    u32(std::uint32_t(names.size()));
+    for (size_t b = 0; b < names.size(); ++b) {
+        std::string name = names[b].substr(0, 63);
+        name.resize(64, '\0');
+        o += name;
+        u32(std::uint32_t(parents[b]));
+        for (int m = 0; m < 2; ++m) {
+            for (int e = 0; e < 16; ++e) {
+                const float f = (e % 5 == 0) ? 1.0f : 0.0f;
+                std::uint32_t bits;
+                std::memcpy(&bits, &f, sizeof(bits));
+                u32(bits);
+            }
+        }
+    }
+    return o;
+}
+
+/// `seconds` of a sine at `hz` (mono, `rate`), scaled to `lufs` with the shared BS.1770 meter.
+Pcm fixtureTone(std::uint32_t rate, double hz, std::uint32_t frames, double lufs) {
+    Pcm p;
+    p.rate = rate;
+    p.channels = 1u;
+    p.frames = frames;
+    p.samples.resize(frames);
+    for (std::uint32_t i = 0; i < frames; ++i) p.samples[i] = float(0.25 * std::sin(2.0 * 3.14159265358979323846 * hz * double(i) / double(rate)));
+    const double measured = fuse::assetcheck::integratedLoudness(p.samples.data(), p.frames, 1u, rate);
+    const double gain = std::pow(10.0, (lufs - measured) / 20.0);
+    for (float& s : p.samples) s = float(double(s) * gain);
+    return p;
+}
+
+/// 64 x 64 sRGB test card (gradient + checker), the golden render pair's reference.
+Image fixtureCard(int size) {
+    return makeImage(size, size, [&](int x, int y) {
+        const double g = double(x) / double(size - 1);
+        const double c = ((x / 8 + y / 8) % 2) ? 0.15 : 0.0;
+        return std::array<double, 4>{0.2 + 0.6 * g, 0.3 + c, 0.7 - 0.5 * g, 1.0};
+    });
+}
+
+/// The passing asset: 0.5 m boulder box, 3 LODs (768 / 432 / 192 triangles, LOD2 as OBJ; LOD0 skinned FMSH v2
+/// against a 3-joint FSKL rig), 1024^2 albedo (0.25 UV islands -> 512 px/m), 256^2 OpenGL normal map, 256^2 ORM
+/// (dielectric, varied roughness), drawn to 200 m; a 1 s looping one-shot at -16 LUFS (48 kHz, 1 kHz sine with a
+/// whole number of periods); a render matching its golden up to a few 1-code pixels.
 Fixture goodFixture() {
     Fixture f;
     f.textures.push_back({"albedo", "boulder_a_albedo.tga", "srgb", "BC7", fixtureAlbedo(1024)});
@@ -1102,6 +1643,11 @@ Fixture goodFixture() {
     f.lods.push_back({"boulder_a_lod0.fusemesh", fixtureBox(0.5, 8, 0.25), 0.0});
     f.lods.push_back({"boulder_a_lod1.fusemesh", fixtureBox(0.5, 6, 0.25), 0.002});
     f.lods.push_back({"boulder_a_lod2.obj", fixtureBox(0.5, 4, 0.25), 0.01});
+    skinByHeight(f.lods[0].mesh);
+    f.audio = fixtureTone(48000u, 1000.0, 48000u, -16.0);
+    f.reference = fixtureCard(64);
+    f.render = f.reference;
+    for (int i = 0; i < 6; ++i) f.render.rgba[size_t(i * 517) * 4u] = std::uint8_t(f.render.rgba[size_t(i * 517) * 4u] + 1u);
     return f;
 }
 
@@ -1127,7 +1673,26 @@ fs::path writeFixture(const Fixture& f, const fs::path& dir) {
         if (l.hasError) d << ", \"error\": " << l.error;
         d << "}";
     }
-    d << "\n  ]\n}\n";
+    d << "\n  ],\n  \"max_view_distance\": " << f.maxViewDistance;
+    if (f.skin) {
+        writeAll(dir / "boulder_a_rig.fskl", encodeFskl(f.rigNames, f.rigParents));
+        // The mesh was skinned against the authored 3-joint rig; a fixture may change the rig afterwards.
+        const std::string hash = f.skeletonHash.empty()
+                                     ? fuse::assetcheck::hashHex(fuse::assetcheck::skeletonHash({"root", "spine", "head"}, {-1, 0, 1}))
+                                     : f.skeletonHash;
+        d << ",\n  \"skin\": {\"rig\": \"boulder_a_rig.fskl\", \"skeleton_hash\": \"" << hash << "\"}";
+    }
+    if (f.hasAudio) {
+        writeAll(dir / "boulder_a_impact.wav", encodeWavFloat(f.audio));
+        d << ",\n  \"audio\": {\"path\": \"boulder_a_impact.wav\", \"kind\": \"" << f.audioKind << "\", \"loop\": "
+          << (f.audioLoop ? "true" : "false") << "}";
+    }
+    if (f.hasGolden) {
+        writeAll(dir / "boulder_a_render.tga", encodeTga(f.render));
+        writeAll(dir / "boulder_a_golden.tga", encodeTga(f.reference));
+        d << ",\n  \"golden\": {\"render\": \"boulder_a_render.tga\", \"reference\": \"boulder_a_golden.tga\"}";
+    }
+    d << "\n}\n";
     writeAll(dir / "asset.json", d.str());
     return dir / "asset.json";
 }
@@ -1242,6 +1807,43 @@ std::vector<FailCase> failCases(const std::string& gate) {
                          m.idx.insert(m.idx.end(), {0u, 1u, 1u, 0u, 1u, 2u});
                      }});
         c.push_back({"door_too_small", "outside the 'door' range", [](Fixture& f) { f.category = "door"; }});
+    } else if (gate == "lod_presence") {
+        c.push_back({"single_lod_far", "no LOD chain, impostor or cluster DAG", [](Fixture& f) { f.lods.resize(1); }});
+        c.push_back({"single_lod_horizon", "no LOD chain, impostor or cluster DAG", [](Fixture& f) {
+                         f.lods.resize(1);
+                         f.maxViewDistance = 2000.0;
+                     }});
+    } else if (gate == "skin") {
+        c.push_back({"weights_not_normalised", "do not sum to 1", [](Fixture& f) {
+                         for (float& w : f.lods[0].mesh.weights) w *= 0.9f;
+                     }});
+        c.push_back({"joint_out_of_range", "past the rig", [](Fixture& f) {
+                         Mesh& m = f.lods[0].mesh;
+                         for (size_t i = 0; i < m.verts(); ++i) {
+                             if (m.weights[i * 4u + 1u] > 0.0f) m.joints[i * 4u + 1u] = 7u;
+                         }
+                     }});
+        c.push_back({"skeleton_hash_mismatch", "does not match the rig", [](Fixture& f) { f.rigNames[2] = "neck"; }});
+        c.push_back({"rig_missing", "declares no rig", [](Fixture& f) { f.skin = false; }});
+    } else if (gate == "audio") {
+        c.push_back({"rate_44k", "FUSE audio is 48 kHz", [](Fixture& f) { f.audio = fixtureTone(44100u, 1050.0, 44100u, -16.0); }});
+        c.push_back({"clipping", "clipping", [](Fixture& f) {
+                         for (float& s : f.audio.samples) s = std::clamp(s * 8.0f, -1.0f, 1.0f);
+                     }});
+        c.push_back({"too_quiet", "loudness", [](Fixture& f) { f.audio = fixtureTone(48000u, 1000.0, 48000u, -30.0); }});
+        c.push_back({"loop_click", "loop seam click", [](Fixture& f) {
+                         // 12 extra frames (a quarter period of 1 kHz at 48 kHz): the loop wraps from the crest to 0.
+                         f.audio = fixtureTone(48000u, 1000.0, 48012u, -16.0);
+                     }});
+    } else if (gate == "golden") {
+        c.push_back({"render_mismatch", "over the golden threshold", [](Fixture& f) {
+                         for (int y = 8; y < 40; ++y)
+                             for (int x = 8; x < 40; ++x) {
+                                 std::uint8_t* p = &f.render.rgba[(size_t(y) * 64u + size_t(x)) * 4u];
+                                 p[0] = 250u, p[1] = 20u, p[2] = 230u;
+                             }
+                     }});
+        c.push_back({"size_mismatch", "differ in size", [](Fixture& f) { f.render = fixtureCard(32); }});
     }
     return c;
 }
