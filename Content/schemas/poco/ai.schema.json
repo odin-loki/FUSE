@@ -1,0 +1,22 @@
+{
+  "$id": "fuse.poco/1/ai.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "The AI model that produced the record (plan \u00a73.3).",
+  "properties": {
+    "model": {
+      "type": "string"
+    },
+    "model_sha256": {
+      "type": "string"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "seed": {
+      "type": "integer"
+    }
+  },
+  "title": "ai",
+  "type": "object"
+}

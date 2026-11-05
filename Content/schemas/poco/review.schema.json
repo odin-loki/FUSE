@@ -1,0 +1,24 @@
+{
+  "$id": "fuse.poco/1/review.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Review state of a record.",
+  "properties": {
+    "by": {
+      "type": "string"
+    },
+    "date": {
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "draft",
+        "approved",
+        "rejected"
+      ],
+      "type": "string"
+    }
+  },
+  "title": "review",
+  "type": "object"
+}

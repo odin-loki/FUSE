@@ -1,0 +1,52 @@
+{
+  "$id": "fuse.poco/1/light.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Kind 'light' payload. intensity: lumens (point/spot), lux (directional), nits (area).",
+  "properties": {
+    "castsShadows": {
+      "type": "boolean"
+    },
+    "colorLinear": {
+      "items": {
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "innerCone": {
+      "type": "number"
+    },
+    "intensity": {
+      "type": "number"
+    },
+    "outerCone": {
+      "type": "number"
+    },
+    "range": {
+      "type": "number"
+    },
+    "size": {
+      "items": {
+        "type": "number"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "type": "array"
+    },
+    "type": {
+      "enum": [
+        "Point",
+        "Spot",
+        "Directional",
+        "Rect",
+        "Disk",
+        "Dome"
+      ],
+      "type": "string"
+    }
+  },
+  "title": "light",
+  "type": "object"
+}

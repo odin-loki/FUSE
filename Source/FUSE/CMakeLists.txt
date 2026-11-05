@@ -100,6 +100,7 @@ if(FUSE_BUILD_EDITOR_API OR FUSE_BUILD_EDITOR)
     add_subdirectory(EditorShell)
 endif()
 
+add_subdirectory(Remaster)  # FUSE Remaster W0 (docs/plans/FUSE_REMASTER_PLAN.md): fuse_poco, fuse_remaster_store/_db/_tscript; before Relight
 add_subdirectory(Relight)  # FUSE Relight (docs/plans/FUSE_REMIX_PORT_PLAN.md); FUSE_BUILD_RELIGHT inside, default ON for MinGW
 
 

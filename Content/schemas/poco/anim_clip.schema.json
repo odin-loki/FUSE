@@ -1,0 +1,38 @@
+{
+  "$id": "fuse.poco/1/anim_clip.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Kind 'anim_clip' payload.",
+  "properties": {
+    "duration": {
+      "type": "number"
+    },
+    "events": {
+      "items": {
+        "$ref": "anim_event.schema.json"
+      },
+      "type": "array"
+    },
+    "rootMotion": {
+      "type": "boolean"
+    },
+    "sampleRate": {
+      "type": "number"
+    },
+    "skeletonId": {
+      "type": "string"
+    },
+    "tracks": {
+      "oneOf": [
+        {
+          "$ref": "blob_ref.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "title": "anim_clip",
+  "type": "object"
+}
