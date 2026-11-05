@@ -1,5 +1,7 @@
 #include <fuse/cook/mesh_cook.hpp>
 
+#include <fuse/cook/dts_import.hpp>
+
 #include "mesh_cook_meshopt.hpp"
 
 #include <fuse/asset/detail/fmsh_layout.hpp>
@@ -229,6 +231,10 @@ bool import_mesh_file(const std::string& input_path, const MeshCookOptions& opti
                       std::string* error, CookFailure* failure) {
     out = CookedMesh{};
     set_failure(failure, CookFailure::None);
+    if (has_extension(input_path, ".dts")) {
+        // Asset plan 4a: Torque shapes go through the in-house reader (dts_import.hpp), not assimp.
+        return import_dts_file(input_path, options, out, error, failure);
+    }
 #if defined(FUSE_HAS_ASSIMP)
     auto reject = [&](CookFailure kind, const std::string& message) {
         set_error(error, message);

@@ -150,3 +150,16 @@ if(COMMAND fuse_apply_cxx23)
 endif()
 add_test(NAME fuse_asset_cook_kinds COMMAND fuse_asset_cook_kinds_tests)
 set_tests_properties(fuse_asset_cook_kinds PROPERTIES LABELS "asset;gate;cook" TIMEOUT 300)
+
+# 4a (L-DTS): clean-room Torque .dts reader over every template shape (Templates/: v24 / v26 / v28, bounds, pinned
+# triangle counts, winding), the template .dae through assimp, cook determinism, malformed-input refusals.
+if(FUSE_BUILD_PROJECT)
+    add_executable(fuse_asset_dts_import_tests test_dts_import.cpp)
+    target_link_libraries(fuse_asset_dts_import_tests PRIVATE fuse_project fuse_cook_stubs fuse_core)
+    target_compile_definitions(fuse_asset_dts_import_tests PRIVATE "FUSE_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
+    if(COMMAND fuse_apply_cxx23)
+        fuse_apply_cxx23(fuse_asset_dts_import_tests)
+    endif()
+    add_test(NAME fuse_asset_dts_import COMMAND fuse_asset_dts_import_tests)
+    set_tests_properties(fuse_asset_dts_import PROPERTIES LABELS "asset;gate;cook" TIMEOUT 300)
+endif()
