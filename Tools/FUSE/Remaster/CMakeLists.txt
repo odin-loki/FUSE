@@ -43,4 +43,10 @@ if(Python3_Interpreter_FOUND)
                          ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
     set_tests_properties(remaster_no_originals PROPERTIES LABELS "remaster;gate;python" TIMEOUT 600
                          SKIP_RETURN_CODE 77 ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
+    # W2.5: the remix-toolkit client against the mock Toolkit over real HTTP on 127.0.0.1 (outside the
+    # network-blocked unittest package; binds loopback only).
+    add_test(NAME remaster_remix_toolkit_loopback
+             COMMAND "${Python3_EXECUTABLE}" -B "${FUSE_REMASTER_TOOLS_DIR}/remix_toolkit_loopback_check.py")
+    set_tests_properties(remaster_remix_toolkit_loopback PROPERTIES LABELS "remaster;fuse_ai;python" TIMEOUT 120
+                         ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
 endif()
