@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <limits>
+#include <vector>
 
 namespace fuse::ui::widgets {
 namespace {
@@ -421,6 +423,81 @@ struct ComboBox {
 };
 
 // ---- LineEdit ------------------------------------------------------------------------------------------------------
+/// Caret stops of a line edit's text in visual order (FULL bidi): the text is laid out as it is drawn (the node's font,
+/// its paragraph direction) and every cluster start gets the x of its leading edge (the left edge of a left-to-right
+/// character, the right edge of a right-to-left one); the end of the text the trailing edge of the last character.
+/// Only used for text that needs the bidi pass (hasRtlText or a right-to-left paragraph) when the bidi pass exists;
+/// otherwise logical order is visual order and the line edit measures prefixes as before.
+struct BidiCaret {
+    fuse::text::TextLayout tl;
+    std::vector<u8> levels;
+    std::vector<f32> lo, hi, stop; ///< per byte: cluster extent; caret stop x (NaN: not a stop)
+    u8 para = 0;
+    f32 width = 0.f;
+    static bool wanted(const UiContext& ui, NodeHandle n, std::string_view t) {
+        const ComputedStyle& s = ui.computed(n);
+        if (t.empty() || !fuse::text::fullShaper() || &fuse::text::defaultShaper() != fuse::text::fullShaper()) return false;
+        return fuse::text::hasRtlText(t) || (s.dirSet && s.rtl);
+    }
+    void build(UiContext& ui, NodeHandle n, std::string_view t, f32 px) {
+        const ComputedStyle& s = ui.computed(n);
+        fuse::text::TextLayoutDesc d;
+        d.pixelSize = px;
+        d.align = fuse::text::TextAlign::Left;
+        d.base = baseDirection(s);
+        fuse::text::layoutText(ui.textFont(n), fuse::text::defaultShaper(), t, d, tl);
+        fuse::text::bidiLevels(t, d.base, levels, para);
+        const std::size_t len = t.size();
+        constexpr f32 kNaN = std::numeric_limits<f32>::quiet_NaN();
+        lo.assign(len + 1, kNaN);
+        hi.assign(len + 1, kNaN);
+        stop.assign(len + 1, kNaN);
+        width = tl.width;
+        for (const auto& g : tl.glyphs) {
+            if (g.cluster >= len) continue;
+            const u32 c = g.cluster;
+            lo[c] = std::isnan(lo[c]) ? g.x : std::min(lo[c], g.x);
+            hi[c] = std::isnan(hi[c]) ? g.x + g.advance : std::max(hi[c], g.x + g.advance);
+        }
+        std::size_t last = len;
+        for (std::size_t b = 0; b < len; ++b) {
+            if (std::isnan(lo[b])) continue;
+            const bool r = b < levels.size() && (levels[b] & 1u);
+            stop[b] = r ? hi[b] : lo[b];
+            last = b;
+        }
+        if (last < len) stop[len] = (last < levels.size() && (levels[last] & 1u)) ? lo[last] : hi[last];
+        else stop[len] = 0.f;
+    }
+    /// Caret x of byte offset `i` (a position inside a cluster takes the cluster's stop).
+    f32 x(std::size_t i) const {
+        i = std::min(i, stop.size() - 1);
+        while (i > 0 && std::isnan(stop[i])) --i;
+        return std::isnan(stop[i]) ? 0.f : stop[i];
+    }
+    /// The caret stop next to `from` on the screen: the nearest one strictly to the right (dir > 0) or left.
+    std::size_t step(std::size_t from, int dir) const {
+        const f32 at = x(from);
+        std::size_t best = from;
+        f32 bx = dir > 0 ? std::numeric_limits<f32>::infinity() : -std::numeric_limits<f32>::infinity();
+        for (std::size_t b = 0; b < stop.size(); ++b) {
+            const f32 v = stop[b];
+            if (std::isnan(v) || b == from) continue;
+            if (dir > 0 ? (v > at + 0.01f && v < bx) : (v < at - 0.01f && v > bx)) { bx = v; best = b; }
+        }
+        return best;
+    }
+    /// The caret stop nearest to `px` (x relative to the text start).
+    std::size_t hit(f32 px) const {
+        std::size_t best = 0;
+        f32 bd = std::numeric_limits<f32>::infinity();
+        for (std::size_t b = 0; b < stop.size(); ++b)
+            if (!std::isnan(stop[b]) && std::abs(stop[b] - px) < bd) { bd = std::abs(stop[b] - px); best = b; }
+        return best;
+    }
+};
+BidiCaret& bidiScratch() { thread_local BidiCaret b; return b; }
+
 struct LineEdit {
     static constexpr std::string_view kName = "lineedit";
     static ComputedStyle defaults() { ComputedStyle s; s.cursor = CursorShape::Text; return s; }
@@ -442,11 +519,15 @@ struct LineEdit {
         const bool focused = pc.states & kStateFocus;
         // IME pre-edit (UI1) is shown inline at the cursor, underlined, with its own caret; it is not in the buffer.
         const std::string_view pre = focused ? ui.composition() : std::string_view{};
-        const f32 cx = ui.measureString(t.substr(0, eb.cursor()), px);
+        // bidi text (FULL): caret and selection from the visual layout; IME pre-edit keeps the logical pieces
+        BidiCaret* bc = pre.empty() && BidiCaret::wanted(ui, pc.node, t) ? &bidiScratch() : nullptr;
+        if (bc) bc->build(ui, pc.node, t, px);
+        const f32 cx = bc ? bc->x(eb.cursor()) : ui.measureString(t.substr(0, eb.cursor()), px);
         const f32 preW = pre.empty() ? 0.f : ui.measureString(pre, px);
         const f32 caretX = cx + (pre.empty() ? 0.f : ui.measureString(pre.substr(0, std::size_t(ui.compositionCaret())), px));
+        const f32 textW = bc ? bc->width : ui.measureString(t, px);
         // x of the text start is c.x - scrollX (negative in RTL while the text is shorter than the field)
-        const f32 scrollX = pc.style.rtl ? c.x - rtlStart(c, ui.measureString(t, px) + preW, caretX) : std::max(0.f, caretX - c.w + 2.f);
+        const f32 scrollX = pc.style.rtl ? c.x - rtlStart(c, textW + preW, caretX) : std::max(0.f, caretX - c.w + 2.f);
         // The line box is usually taller than the content box (padding): clip vertically at the inner border edge, not
         // the content box, so ascenders, descenders and taller fallback glyphs (CJK pre-edit) are not cut.
         const f32 bw = pc.style.borderWidth;
@@ -454,8 +535,14 @@ struct LineEdit {
         dl.pushClip(clip);
         if (focused && eb.hasSelection() && pre.empty()) {
             const std::size_t a = std::min(eb.cursor(), eb.anchor()), b = std::max(eb.cursor(), eb.anchor());
-            const f32 x0 = ui.measureString(t.substr(0, a), px), x1 = ui.measureString(t.substr(0, b), px);
-            dl.rect({c.x + x0 - scrollX, c.y, x1 - x0, c.h}, accent(pc).withAlpha(0.45f * pc.opacity));
+            const Color sc = accent(pc).withAlpha(0.45f * pc.opacity);
+            if (bc) { // the selected clusters wherever they are shown (a logical range can be several visual pieces)
+                for (std::size_t k = a; k < b && k < t.size(); ++k)
+                    if (!std::isnan(bc->lo[k])) dl.rect({c.x + bc->lo[k] - scrollX, c.y, bc->hi[k] - bc->lo[k], c.h}, sc);
+            } else {
+                const f32 x0 = ui.measureString(t.substr(0, a), px), x1 = ui.measureString(t.substr(0, b), px);
+                dl.rect({c.x + x0 - scrollX, c.y, x1 - x0, c.h}, sc);
+            }
         }
         if (pre.empty()) {
             labelAt(pc, dl, t, {c.x - scrollX, c.y, c.w + scrollX + 1000.f, c.h}, TextAlignment::Left);
@@ -493,6 +580,14 @@ struct LineEdit {
             const Rect c = ui.contentRect(ec.node);
             const std::string& t = eb.text();
             const f32 px = ui.computed(ec.node).fontSize;
+            if (BidiCaret::wanted(ui, ec.node, t)) {
+                BidiCaret& bc = bidiScratch();
+                bc.build(ui, ec.node, t, px);
+                const f32 x0 = ui.computed(ec.node).rtl ? rtlStart(c, bc.width, bc.x(eb.cursor())) : c.x;
+                eb.setCursor(bc.hit(e.pos.x - x0), false);
+                ui.setValue(ec.node, ui.value(ec.node) + 1.f);
+                return true;
+            }
             const f32 x0 = ui.computed(ec.node).rtl ? rtlStart(c, ui.measureString(t, px), ui.measureString(std::string_view(t).substr(0, eb.cursor()), px)) : c.x;
             eb.home(false);
             while (eb.cursor() < t.size()) {
@@ -507,6 +602,20 @@ struct LineEdit {
         if (e.type != EventType::KeyDown) return false;
         const bool sh = e.mods & kModShift, ctrl = e.mods & kModCtrl;
         bool edit = false;
+        if ((e.key == Key::Left || e.key == Key::Right) && BidiCaret::wanted(ui, ec.node, eb.text())) {
+            // visual order: the arrow moves the caret to the next stop on the screen; Ctrl moves by words, forwards
+            // being Left in a right-to-left paragraph
+            BidiCaret& bc = bidiScratch();
+            bc.build(ui, ec.node, eb.text(), ui.computed(ec.node).fontSize);
+            const int dir = e.key == Key::Right ? 1 : -1;
+            if (ctrl) ((dir > 0) != bool(bc.para & 1u) ? eb.wordRight(sh) : eb.wordLeft(sh));
+            else if (!sh && eb.hasSelection()) { // collapse to the selection's visual edge
+                const std::size_t a = eb.cursor(), b = eb.anchor();
+                eb.setCursor((bc.x(a) > bc.x(b)) == (dir > 0) ? a : b, false);
+            } else eb.setCursor(bc.step(eb.cursor(), dir), sh);
+            ui.setValue(ec.node, ui.value(ec.node) + 1.f);
+            return true;
+        }
         switch (e.key) {
         case Key::Left: ctrl ? eb.wordLeft(sh) : eb.moveLeft(sh); break;
         case Key::Right: ctrl ? eb.wordRight(sh) : eb.moveRight(sh); break;

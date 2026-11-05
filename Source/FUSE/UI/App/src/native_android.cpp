@@ -583,6 +583,8 @@ Key mapKeycode(int code) {
     }
     switch (code) {
     case AKEYCODE_TAB: return Key::Tab;
+    case AKEYCODE_ALT_LEFT: case AKEYCODE_ALT_RIGHT: return Key::Alt;
+    case AKEYCODE_INSERT: return Key::Insert;
     case AKEYCODE_ENTER: case AKEYCODE_NUMPAD_ENTER: return Key::Enter;
     case AKEYCODE_ESCAPE: return Key::Escape;
     case AKEYCODE_SPACE: return Key::Space;

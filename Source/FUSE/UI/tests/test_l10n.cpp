@@ -1,11 +1,17 @@
 // fuse_ui_l10n gate: CLDR plural categories against the CLDR sample values, ICU-style message formatting (plural,
-// selectordinal, select, nesting, offset, quoting), locale number / date formatting, StringTable tr with arguments
-// and fallback, and fuse_ui_extract_strings on tests/data/l10n (fresh output, merge, idempotent re-run).
+// selectordinal, select, nesting, offset, quoting), locale number / date / time / currency formatting, calendar
+// month and weekday names (and the calendar widget under UiContext::locale), StringTable tr with arguments and
+// fallback, fuse_ui_extract_strings on tests/data/l10n (fresh output, merge, idempotent re-run) and .fuseui documents
+// translated at load time with the extracted keys.
 #include "test_util.hpp"
 
+#include "fuse/ui/doc/cook.hpp"
+#include "fuse/ui/doc/document.hpp"
 #include "fuse/ui/game/game_ui.hpp"
 #include "fuse/ui/l10n/l10n.hpp"
+#include "fuse/ui/l10n/ui_locale.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
@@ -304,6 +310,157 @@ void dates() {
     UI_CHECK(l::monthName("fr", 8) == "août" && l::monthName("de", 9, true) == "Sept." && l::monthName("en", 13).empty());
 }
 
+void calendarNames() {
+    using W = l::DayWidth;
+    UI_CHECK(l::weekdayName("de", 1) == "Montag" && l::weekdayName("de", 1, W::Short) == "Mo.");
+    UI_CHECK(l::weekdayName("en", 7) == "Sunday" && l::weekdayName("en-GB", 3, W::Short) == "We");
+    UI_CHECK(l::weekdayName("fr", 7) == "dimanche" && l::weekdayName("fr", 4, W::Short) == "je");
+    UI_CHECK(l::weekdayName("es", 3) == "miércoles" && l::weekdayName("pt", 6, W::Short) == "sáb.");
+    UI_CHECK(l::weekdayName("ru", 7) == "воскресенье" && l::weekdayName("ru", 2, W::Short) == "вт");
+    UI_CHECK(l::weekdayName("ja", 1, W::Short) == "月" && l::weekdayName("zh", 7) == "星期日" && l::weekdayName("ko", 5) == "금요일");
+    UI_CHECK(l::weekdayName("ar", 5) == "الجمعة" && l::weekdayName("tr", 1) == "Pazartesi" && l::weekdayName("xx", 1) == "Monday");
+    UI_CHECK(l::weekdayName("en", 0).empty() && l::weekdayName("en", 8).empty());
+    UI_CHECK(l::monthNameStandalone("ru", 3) == "март" && l::monthName("ru", 3) == "марта");
+    UI_CHECK(l::monthNameStandalone("pl", 3) == "marzec" && l::monthNameStandalone("de", 3) == "März");
+    struct Case { const char* loc; const char* want; };
+    for (const Case& c : {Case{"en", "March 2024"}, {"en-GB", "March 2024"}, {"de", "März 2024"}, {"fr", "mars 2024"},
+                          {"es", "marzo de 2024"}, {"pt", "março de 2024"}, {"it", "marzo 2024"}, {"ru", "март 2024 г."},
+                          {"pl", "marzec 2024"}, {"ja", "2024年3月"}, {"zh", "2024年3月"}, {"ko", "2024년 3월"},
+                          {"ar", "مارس 2024"}, {"xx", "March 2024"}}) {
+        const std::string got = l::formatMonthYear(c.loc, 2024, 3);
+        if (got != c.want) {
+            std::fprintf(stderr, "month-year %s: '%s', want '%s'\n", c.loc, got.c_str(), c.want);
+            ++failures();
+        }
+    }
+    UI_CHECK(l::firstDayOfWeek("en") == 7 && l::firstDayOfWeek("en-US") == 7 && l::firstDayOfWeek("en-GB") == 1);
+    UI_CHECK(l::firstDayOfWeek("de") == 1 && l::firstDayOfWeek("pt") == 7 && l::firstDayOfWeek("pt-PT") == 1);
+    UI_CHECK(l::firstDayOfWeek("ar") == 6 && l::firstDayOfWeek("ja") == 7 && l::firstDayOfWeek("fr-CA") == 1);
+
+    // the calendar widget follows the context locale (l10n::setUiLocale): first column, month header, weekday names
+    UiContext ui({.viewport = {320, 320}, .font = &font()});
+    widgets::install(ui);
+    auto topLeft = [&](std::string_view loc, bool data = true) { // clicks the first grid cell of March 2024
+        if (data) l::setUiLocale(ui, loc);
+        else ui.setLocale(loc);
+        const NodeHandle cal = widgets::calendar(ui, ui.root(), 2024, 3, 5);
+        ui.update(0.f);
+        // the measured height is header + 7 rows of 26 px; the six week rows end at the bottom
+        const Rect c = ui.contentRect(cal);
+        const Vec2 p{c.x + c.w / 14.f, c.bottom() - 5.5f * 26.f};
+        ui.pointerDown(p);
+        ui.pointerUp(p);
+        int yy = 0, mm = 0, dd = 0;
+        widgets::calendarDate(ui, cal, yy, mm, dd);
+        ui.destroy(cal);
+        return yy * 10000 + mm * 100 + dd;
+    };
+    UI_CHECK_EQ(topLeft("en-US", false), 20240226); // a tag without locale data: English, Monday first (unchanged)
+    UI_CHECK(ui.localeHooks() == nullptr);
+    UI_CHECK_EQ(topLeft(""), 20240226);    // no locale: as before
+    UI_CHECK(ui.localeHooks() == &l::uiLocaleHooks());
+    UI_CHECK_EQ(topLeft("de"), 20240226);  // Monday
+    UI_CHECK_EQ(topLeft("en-US"), 20240225); // Sunday
+    UI_CHECK_EQ(topLeft("ar"), 20240224);  // Saturday
+
+    // painted text: the header and the seven weekday names, as glyph quads, in paint order
+    auto glyphs = [](const DrawList& dl) {
+        std::vector<u64> g;
+        for (const DrawCmd& c : dl.cmds())
+            if (c.op == DrawOp::Glyph) g.push_back(u64(c.u) | u64(c.v) << 16 | u64(c.tw) << 32 | u64(c.th) << 48);
+        return g;
+    };
+    for (const char* loc : {"de", "ru", "fr"}) {
+        UiContext u2({.viewport = {320, 320}, .font = &font()});
+        widgets::install(u2);
+        l::setUiLocale(u2, loc);
+        const NodeHandle c2 = widgets::calendar(u2, u2.root(), 2024, 3, 5);
+        u2.update(0.f);
+        const std::vector<u64> painted = glyphs(u2.drawList());
+        const f32 fs = u2.computed(c2).fontSize;
+        DrawList want;
+        const Rect box{0, 0, 300, 40};
+        u2.paintString(want, l::formatMonthYear(loc, 2024, 3), box, Color::rgb(0xFFFFFF), fs, TextAlignment::Center, c2.index);
+        const int first = l::firstDayOfWeek(loc);
+        for (int k = 0; k < 7; ++k)
+            u2.paintString(want, l::weekdayName(loc, (first - 1 + k) % 7 + 1, l::DayWidth::Short), box, Color::rgb(0xFFFFFF),
+                           fs * 0.85f, TextAlignment::Center, c2.index);
+        const std::vector<u64> expect = glyphs(want);
+        UI_CHECK(!expect.empty() && painted.size() > expect.size());
+        if (painted.size() >= expect.size() && !std::equal(expect.begin(), expect.end(), painted.begin())) {
+            std::fprintf(stderr, "calendar %s: header / weekday glyphs differ from the locale names\n", loc);
+            ++failures();
+        }
+    }
+}
+
+void times() {
+    using TS = l::TimeStyle;
+    using HC = l::HourCycle;
+    const l::Time pm{15, 5, 9}, am{9, 5, 0}, midnight{0, 30, 0};
+    struct Case { const char* loc; l::Time t; TS style; const char* want; };
+    const Case cases[] = {
+        {"en", pm, TS::Short, "3:05" NNBSP "PM"},   {"en", pm, TS::Medium, "3:05:09" NNBSP "PM"},
+        {"en", midnight, TS::Short, "12:30" NNBSP "AM"}, {"en-US", am, TS::Short, "9:05" NNBSP "AM"},
+        {"en-GB", pm, TS::Short, "15:05"},          {"en-GB", am, TS::Short, "09:05"},  {"en-IN", pm, TS::Short, "3:05" NNBSP "pm"},
+        {"de", pm, TS::Short, "15:05"},             {"de", am, TS::Medium, "09:05:00"}, {"fr", am, TS::Short, "09:05"},
+        {"es", am, TS::Short, "9:05"},              {"it", pm, TS::Short, "15:05"},     {"pt", am, TS::Short, "09:05"},
+        {"nl", pm, TS::Short, "15:05"},             {"sv", am, TS::Short, "09:05"},     {"fi", pm, TS::Medium, "15.05.09"},
+        {"ru", am, TS::Short, "09:05"},             {"pl", pm, TS::Short, "15:05"},     {"tr", am, TS::Short, "09:05"},
+        {"ja", am, TS::Short, "9:05"},              {"zh", am, TS::Short, "09:05"},     {"ko", pm, TS::Short, "오후 3:05"},
+        {"ko", midnight, TS::Short, "오전 12:30"},  {"ar", pm, TS::Short, "3:05" NBSP "م"}, {"xx", pm, TS::Short, "3:05" NNBSP "PM"},
+    };
+    for (const Case& c : cases) {
+        const std::string got = l::formatTime(c.loc, c.t, c.style);
+        if (got != c.want) {
+            std::fprintf(stderr, "time %s %d: '%s', want '%s'\n", c.loc, int(c.style), got.c_str(), c.want);
+            ++failures();
+        }
+    }
+    UI_CHECK_EQ(l::formatTime("de", pm, TS::Short, HC::H12), std::string("3:05 PM"));
+    UI_CHECK_EQ(l::formatTime("en", pm, TS::Short, HC::H23), std::string("15:05"));
+    UI_CHECK_EQ(l::formatTime("en", {24 + 1, 0, 0}), std::string("1:00" NNBSP "AM")); // hours wrap
+    UI_CHECK(!l::uses24HourClock("en") && l::uses24HourClock("en-GB") && l::uses24HourClock("de") && !l::uses24HourClock("ko"));
+    UI_CHECK(l::dayPeriodName("en", true) == "PM" && l::dayPeriodName("ko", false) == "오전");
+}
+
+void currencies() {
+    struct Case { const char* loc; double v; const char* code; const char* want; };
+    const Case cases[] = {
+        {"en", 1234.5, "USD", "$1,234.50"},              {"en", 1234.5, "EUR", "€1,234.50"},
+        {"en", 1234.5, "JPY", "¥1,234"},                 {"en", -1234.5, "USD", "-$1,234.50"},
+        {"en", 1234.5, "XYZ", "XYZ" NBSP "1,234.50"},    {"en", 1.2345, "KWD", "KWD" NBSP "1.234"},
+        {"en-GB", 1234.5, "USD", "US$1,234.50"},         {"en-GB", 1234.5, "GBP", "£1,234.50"},
+        {"en-IN", 123456.5, "INR", "₹1,23,456.50"},
+        {"de", 1234.5, "EUR", "1.234,50" NBSP "€"},      {"de", 1234.5, "USD", "1.234,50" NBSP "$"},
+        {"de", -5, "EUR", "-5,00" NBSP "€"},             {"de-AT", 1234.5, "EUR", "€" NBSP "1" NBSP "234,50"},
+        {"de-CH", 1234.5, "CHF", "CHF" NBSP "1’234.50"}, {"de-CH", -1234.5, "CHF", "CHF-1’234.50"},
+        {"fr", 1234.5, "EUR", "1" NNBSP "234,50" NBSP "€"}, {"fr", 1234.5, "USD", "1" NNBSP "234,50" NBSP "$US"},
+        {"es", 1234.5, "EUR", "1234,50" NBSP "€"},       {"es", 12345, "EUR", "12.345,00" NBSP "€"},
+        {"it", 3, "USD", "3,00" NBSP "USD"},             {"nl", 1234.5, "EUR", "€" NBSP "1.234,50"},
+        {"nl", -1234.5, "EUR", "€" NBSP "-1.234,50"},    {"pt", 1234.5, "BRL", "R$" NBSP "1.234,50"},
+        {"pt-PT", 1234.5, "EUR", "1234,50" NBSP "€"},    {"sv", 1234.5, "SEK", "1" NBSP "234,50" NBSP "kr"},
+        {"sv", -1234.5, "SEK", "\xE2\x88\x92" "1" NBSP "234,50" NBSP "kr"},
+        {"ru", 1234.5, "RUB", "1" NBSP "234,50" NBSP "₽"}, {"pl", 1234.5, "PLN", "1234,50" NBSP "zł"},
+        {"tr", 1234.5, "TRY", "₺1.234,50"},              {"ja", 1234.5, "JPY", "￥1,234"},
+        {"ja", 1234.5, "USD", "$1,234.50"},              {"zh", 1234.5, "CNY", "¥1,234.50"},
+        {"zh", 1234.5, "USD", "US$1,234.50"},            {"ko", 1234.5, "KRW", "₩1,234"},
+        {"ar", 1234.5, "USD", "\xE2\x80\x8F" "1,234.50" NBSP "US$"},
+    };
+    for (const Case& c : cases) {
+        const std::string got = l::formatCurrency(c.loc, c.v, c.code);
+        if (got != c.want) {
+            std::fprintf(stderr, "currency %s %g %s: '%s', want '%s'\n", c.loc, c.v, c.code, got.c_str(), c.want);
+            ++failures();
+        }
+    }
+    UI_CHECK_EQ(l::formatCurrency("en", 2.0, "USD", 0), std::string("$2"));
+    UI_CHECK_EQ(l::formatCurrency("en", 0.125, "USD"), std::string("$0.12")); // half-even
+    UI_CHECK(l::currencyDigits("JPY") == 0 && l::currencyDigits("BHD") == 3 && l::currencyDigits("EUR") == 2);
+    UI_CHECK(l::currencySymbol("fr-CA", "USD") == "$US" && l::currencySymbol("en-AU", "JPY") == "¥" &&
+             l::currencySymbol("xx", "USD") == "US$" && l::currencySymbol("en", "ABC") == "ABC");
+}
+
 void stringTable() {
     namespace g = fuse::ui::game;
     g::StringTable st;
@@ -437,6 +594,68 @@ void extraction() {
     UI_CHECK(run("--out=\"" + src + "\" \"" + dir + "/l10n_bad.fuseui\"", log) != 0);
 }
 
+// .fuseui documents translated at load time through a StringTable, keyed like fuse_ui_extract_strings
+void docTranslation() {
+    namespace d = fuse::ui::doc;
+    const std::string json = readAll("data/l10n/sample.fuseui");
+    fuse::ui::game::StringTable st;
+    st.add("en", "Inventory=Inventory"); // the fallback locale: untranslated keys show the source string
+    st.add("de", "Back=Zur\xC3\xBC" "ck\nInventory=Inventar\nHigh=Hoch\nGo back=Zur\xC3\xBC" "ckgehen\nPlayer=Spieler\n"
+                 "key\\=with\\nnewline=Schl\xC3\xBCssel\nHP {player.health}=LP {player.health}\n");
+    UI_CHECK(st.setLocale("de"));
+    const d::Translator tr = [&st](std::string_view k) { return st.tr(k); };
+
+    UiContext ui({.viewport = {400, 300}, .font = &font()});
+    widgets::install(ui);
+    d::Model model;
+    model.set("player.health", 42.0);
+    auto doc = d::Document::load(ui, json, &model, {}, tr);
+    UI_CHECK(doc.has_value());
+    if (!doc) return;
+    auto text = [&](const char* id) { return std::string(ui.text(ui.find(id))); };
+    auto a11yNamed = [&](std::string_view name) {
+        std::vector<A11ySnapshotNode> snap;
+        ui.snapshotA11y(snap);
+        for (const A11ySnapshotNode& n : snap)
+            if (n.name == name) return true;
+        return false;
+    };
+    NodeHandle last;
+    for (NodeHandle c = ui.firstChild(ui.find("menu")); c; c = ui.nextSibling(c)) last = c;
+    const NodeHandle nested = ui.firstChild(last);
+    UI_CHECK_EQ(text("title"), std::string("Inventar"));
+    UI_CHECK_EQ(text("back"), std::string("Zur\xC3\xBC" "ck"));
+    UI_CHECK(a11yNamed("Zur\xC3\xBC" "ckgehen"));
+    UI_CHECK_EQ(text("quality"), std::string("Low\nHoch")); // per item; "Low" has no translation
+    UI_CHECK_EQ(text("nick"), std::string("Player"));        // line edit contents are not UI text
+    UI_CHECK_EQ(std::string(ui.text(nested)), std::string("Schl\xC3\xBCssel"));
+    UI_CHECK_EQ((*doc)->translatableCount(), 5u); // title, back text + a11yName, quality items, nested label
+    bool bindingKept = false;                     // "HP {player.health}" is a binding, never a key
+    for (NodeHandle c = ui.firstChild(ui.find("menu")); c; c = ui.nextSibling(c)) bindingKept |= ui.text(c) == "HP 42";
+    UI_CHECK(bindingKept);
+
+    // locale switch at run time: retranslate re-applies the table, only what changed
+    UI_CHECK(st.setLocale("en"));
+    UI_CHECK_EQ((*doc)->retranslate(), 5u);
+    UI_CHECK(text("title") == "Inventory" && text("back") == "Back" && text("quality") == "Low\nHigh" && a11yNamed("Go back"));
+    UI_CHECK_EQ((*doc)->retranslate(), 0u);
+    st.setLocale("de");
+    UI_CHECK_EQ((*doc)->reload(json).has_value(), true); // hot reload translates the new tree too
+    UI_CHECK(text("title") == "Inventar" && text("back") == "Zur\xC3\xBC" "ck");
+    (*doc)->setTranslator({});
+    UI_CHECK_EQ((*doc)->retranslate(), 5u);
+    UI_CHECK(text("title") == "Inventory" && text("quality") == "Low\nHigh");
+    doc->reset();
+
+    // cooked documents take the same translator
+    auto cooked = d::cookDocument(json);
+    UI_CHECK(cooked.has_value());
+    if (!cooked) return;
+    auto doc2 = d::Document::loadCooked(ui, *cooked, &model, {}, tr);
+    UI_CHECK(doc2.has_value());
+    if (doc2) UI_CHECK(text("title") == "Inventar" && text("quality") == "Low\nHoch" && text("nick") == "Player");
+}
+
 } // namespace
 
 int main() {
@@ -444,8 +663,12 @@ int main() {
     messages();
     numbers();
     dates();
+    calendarNames();
+    times();
+    currencies();
     stringTable();
     extraction();
+    docTranslation();
     std::printf("fuse_ui_l10n: %d plural samples checked\n", g_checks);
     return finish("fuse_ui_l10n");
 }

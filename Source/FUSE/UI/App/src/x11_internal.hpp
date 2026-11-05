@@ -136,6 +136,7 @@ struct Lib {
     void* (*VaCreateNestedList)(int, ...) = nullptr;
     int (*FilterEvent)(Event*, Window) = nullptr;
     int (*Utf8LookupString)(void*, InputEv*, char*, int, KeySym*, int*) = nullptr;
+    char* (*Utf8ResetIC)(void*) = nullptr; ///< optional (loadXim does not require it)
     int (*FreeCursor)(Display*, XID) = nullptr;
     int (*WarpPointer)(Display*, Window, Window, int, int, unsigned, unsigned, int, int) = nullptr;
 
@@ -182,6 +183,7 @@ struct Lib {
         get(SetICValues, "XSetICValues"); get(GetICValues, "XGetICValues"); get(SetICFocus, "XSetICFocus"); get(UnsetICFocus, "XUnsetICFocus");
         get(VaCreateNestedList, "XVaCreateNestedList"); get(FilterEvent, "XFilterEvent");
         get(Utf8LookupString, "Xutf8LookupString");
+        Utf8ResetIC = reinterpret_cast<char* (*)(void*)>(dlsym(so, "Xutf8ResetIC"));
         return all;
     }
 

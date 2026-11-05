@@ -313,13 +313,14 @@ struct CookAccess {
         return r.ok;
     }
     static std::expected<std::unique_ptr<Document>, DocError> load(UiContext& ui, std::span<const u8> bytes,
-                                                                   Model* model, NodeHandle parent) {
+                                                                   Model* model, NodeHandle parent, Translator translate) {
         Reader r{bytes};
         auto bad = [](std::string m) { return std::unexpected(DocError{{}, std::move(m)}); };
         if (!r.magic(kDocMagic)) return bad("not a cooked document (bad magic / version)");
         JsonValue tree;
         if (!readJson(r, tree, 0)) return bad("cooked document: corrupt tree");
         std::unique_ptr<Document> d(new Document(ui, model, parent.valid() ? parent : ui.root()));
+        d->m_translate = translate;
         // variable names -> model slots
         const u32 nNames = r.count(4);
         std::vector<std::string> names(nNames);
@@ -355,8 +356,9 @@ struct CookAccess {
 };
 
 std::expected<std::unique_ptr<Document>, DocError> Document::loadCooked(UiContext& ui, std::span<const u8> cooked,
-                                                                        Model* model, NodeHandle parent) {
-    return CookAccess::load(ui, cooked, model, parent);
+                                                                        Model* model, NodeHandle parent,
+                                                                        Translator translate) {
+    return CookAccess::load(ui, cooked, model, parent, translate);
 }
 
 std::expected<std::vector<u8>, DocError> cookDocument(std::string_view json, CookInfo* info) {

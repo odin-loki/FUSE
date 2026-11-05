@@ -351,12 +351,57 @@ std::expected<SignalKind, std::string> signalOf(std::string_view s) {
 } // namespace
 
 std::expected<std::unique_ptr<Document>, DocError> Document::load(UiContext& ui, std::string_view json, Model* model,
-                                                                  NodeHandle parent) {
+                                                                  NodeHandle parent, Translator translate) {
     auto parsed = parseJson(json);
     if (!parsed) return std::unexpected(DocError{{}, parsed.error().message, parsed.error().line, parsed.error().column});
     std::unique_ptr<Document> d(new Document(ui, model, parent.valid() ? parent : ui.root()));
+    d->m_translate = translate;
     if (auto r = d->build(*parsed); !r) return std::unexpected(r.error());
     return d;
+}
+
+std::string_view Document::translated(std::string_view source) const {
+    if (!m_translate || source.empty() || source.find('{') != std::string_view::npos) return source;
+    const std::string_view t = m_translate(source);
+    return t.empty() ? source : t;
+}
+
+bool Document::applyTranslated(TrEntry& e, bool force) {
+    std::string& s = m_trScratch;
+    s.clear();
+    if (e.kind == TrKind::Items) {
+        const std::string_view all = e.source;
+        for (std::size_t k = 0;;) {
+            const std::size_t nl = all.find('\n', k);
+            s += translated(all.substr(k, nl == all.npos ? all.npos : nl - k));
+            if (nl == all.npos) break;
+            s += '\n';
+            k = nl + 1;
+        }
+    } else {
+        s += translated(e.source);
+    }
+    if (!force && s == e.shown) return false;
+    e.shown = s;
+    switch (e.kind) {
+    case TrKind::Text: setNodeText(m_ui, e.node, s); break;
+    case TrKind::A11yName: m_ui.setA11y(e.node, m_ui.role(e.node), s); break;
+    case TrKind::Items: m_ui.setText(e.node, s); break;
+    }
+    return true;
+}
+
+void Document::addTranslatable(NodeHandle node, TrKind kind, std::string_view source) {
+    TrEntry e{node, kind, std::string(source), {}};
+    applyTranslated(e, true);
+    m_trEntries.push_back(std::move(e));
+}
+
+u32 Document::retranslate() {
+    u32 changed = 0;
+    for (TrEntry& e : m_trEntries)
+        if (m_ui.alive(e.node)) changed += applyTranslated(e, false);
+    return changed;
 }
 
 Document::~Document() {
@@ -379,6 +424,7 @@ std::expected<void, DocError> Document::build(const JsonValue& doc) {
     }
     const JsonValue* root = doc.get("root");
     if (!root || !root->isObject()) return std::unexpected(DocError{"", "missing \"root\" object"});
+    m_trEntries.clear();
     std::string path = "root";
     auto r = buildNode(*root, m_parent, path);
     if (!r) {
@@ -430,12 +476,12 @@ std::expected<NodeHandle, DocError> Document::buildNode(const JsonValue& n, Node
                 if (k) items += '\n';
                 items += v.array[k].isString() ? v.array[k].string : std::string{};
             }
-            m_ui.setText(node, items);
+            addTranslatable(node, TrKind::Items, items); // sets the (translated) items text
             m_ui.setRange(node, 0.f, f32(v.array.empty() ? 0 : v.array.size() - 1), 1.f);
         } else if (key == "tabIndex" && v.isNumber()) {
             m_ui.setTabIndex(node, i32(v.number));
         } else if (key == "a11yName" && v.isString()) {
-            m_ui.setA11y(node, m_ui.role(node), v.string);
+            addTranslatable(node, TrKind::A11yName, v.string);
         } else if (key == "icon" && v.isString()) { // shorthand for style { "icon": name }
             if (!m_ui.setCss(node, "icon", v.string)) return std::unexpected(DocError{path, "bad icon name: " + v.string});
         } else if (key == "image" && v.isNumber()) {
@@ -489,7 +535,11 @@ std::expected<void, DocError> Document::bindProp(NodeHandle node, std::string_vi
         switch (target) {
         case Target::Text:
             if (!v.isString()) return std::unexpected(DocError{path, "text must be a string"});
-            setNodeText(m_ui, node, v.string);
+            if (const std::string_view cls = m_ui.registry().get(m_ui.classOf(node)).name;
+                cls == "lineedit" || cls == "textedit") // contents, not UI text (fuse_ui_extract_strings skips them too)
+                setNodeText(m_ui, node, v.string);
+            else
+                addTranslatable(node, TrKind::Text, v.string);
             break;
         case Target::Value:
             if (!v.isNumber()) return std::unexpected(DocError{path, std::string(prop) + " must be a number"});
