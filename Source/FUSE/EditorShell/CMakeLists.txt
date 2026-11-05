@@ -35,6 +35,9 @@ set_tests_properties(fuse_editor_panel_models PROPERTIES LABELS "fuse_ui;fuse_ed
 add_library(fuse_editor_scene_host STATIC SceneHost/src/scene_viewport_host.cpp)
 target_include_directories(fuse_editor_scene_host PUBLIC SceneHost/include)
 target_link_libraries(fuse_editor_scene_host PUBLIC fuse_editor_api)
+if(TARGET fuse_rhi_profiling)
+    target_link_libraries(fuse_editor_scene_host PRIVATE fuse_rhi_profiling) # GpuProfiler: editor profiler GPU times
+endif()
 fuse_apply_cxx23(fuse_editor_scene_host)
 
 if(NOT FUSE_EDITOR_SHELL STREQUAL "fuse" OR NOT TARGET fuse_app)

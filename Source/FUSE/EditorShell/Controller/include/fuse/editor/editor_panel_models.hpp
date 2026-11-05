@@ -102,10 +102,21 @@ struct TerrainView {
     std::string status;
 };
 
+/// One GPU zone of the scene viewport's last resolved frame (a render-graph pass timed by timestamp queries).
+struct GpuPassView {
+    std::string name;
+    u32 depth = 0;
+    f32 ms = 0.f;
+};
+
 struct ProfilerView {
     ProfilerPanel::FrameStats stats{};
     ProfilerPanel::FrameProfileData latest{};
-    std::vector<f32> history; ///< CPU ms, oldest first
+    std::vector<f32> history;    ///< CPU ms, oldest first
+    std::vector<f32> gpuHistory; ///< GPU ms of the scene viewport per sample (0: no GPU frame resolved since the last)
+    std::vector<GpuPassView> gpuPasses; ///< the last resolved GPU frame, per pass
+    f32 gpuLastMs = 0.f;                ///< that frame's total
+    u64 gpuFrames = 0;                  ///< GPU frames received (profilerSetGpu)
     u32 frames = 0;
     bool paused = false;
     f32 targetFps = 60.f;
@@ -290,6 +301,10 @@ public:
     void profilerPush(const ProfilerPanel::FrameProfileData& frame); ///< one sample as given (tests, external timings)
     /// One sample per shell frame: the game tick time comes from the controller, `uiMs` is the shell's own frame.
     void profilerSample(f32 uiMs);
+    /// A newly resolved GPU frame of the scene viewport (SceneViewportHost::pollGpuTimings): the next profilerSample
+    /// carries its total as gpuMs and its passes bucketed into depthPrepassMs / gbufferMs / shadowsMs / sdfMarchMs /
+    /// ddgiMs / deferredMs (by pass name); the flame graph shows the passes under a "gpu.viewport" root.
+    void profilerSetGpu(f32 totalMs, std::vector<GpuPassView> passes);
     [[nodiscard]] ProfilerView profiler() const;
     void profilerSetPaused(bool paused);
     void profilerClear();
@@ -397,6 +412,10 @@ private:
     bool m_sculptMode = false, m_sculptDragging = false;
     std::unique_ptr<ProfilerPanel> m_profiler;
     FlameView m_flame;
+    std::vector<GpuPassView> m_gpuPasses;
+    f32 m_gpuTotalMs = 0.f;
+    bool m_gpuPending = false;
+    u64 m_gpuFrames = 0;
     std::unique_ptr<TimelineKeyDrag> m_tlDrag;
     bool m_timelinePlaying = false;
     i32 m_tlSelTrack = -1, m_tlSelKey = -1;

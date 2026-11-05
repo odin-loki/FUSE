@@ -65,6 +65,7 @@ bool vkWinPresent(VkWin*, AppWindow&, Rect) { return false; }
 bool vkWinGpuDraws(const VkWin*) { return false; }
 void vkWinDestroy(VkWin*) {}
 bool vkWinReadback(VkWin*, Image&) { return false; }
+PresentTiming vkWinTiming(VkWin*, bool) { return {}; }
 } // namespace detail
 #endif
 
@@ -2269,6 +2270,10 @@ bool NativePlatform::setMessageHook(const AppWindow& w, const MessageHook& hook)
     for (Impl::Rec* r : m->recs)
         if (r->win == &w && r->handle) { r->hook = hook; return true; }
     return false;
+}
+PresentTiming NativePlatform::presentTiming(const AppWindow& w, bool waitGpu) {
+    const Impl::Rec* r = m->find(w);
+    return r && r->vk ? detail::vkWinTiming(r->vk, waitGpu) : PresentTiming{};
 }
 unsigned long long NativePlatform::nativeWindow(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);
