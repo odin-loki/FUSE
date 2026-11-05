@@ -8,12 +8,14 @@
 namespace fuse::app::detail {
 
 struct SurfaceSource {
-    enum Kind { Xlib, Win32, Android } kind = Xlib;
+    enum Kind { Xlib, Win32, Android, Wayland } kind = Xlib;
     void* display = nullptr;        ///< X11 Display*
     unsigned long xwindow = 0;      ///< X11 Window
     void* hinstance = nullptr;      ///< Win32 HINSTANCE
     void* hwnd = nullptr;           ///< Win32 HWND
     void* nativeWindow = nullptr;   ///< Android ANativeWindow*
+    void* wlDisplay = nullptr;      ///< Wayland wl_display*
+    void* wlSurface = nullptr;      ///< Wayland wl_surface*
 };
 
 struct VkCtx;
@@ -36,5 +38,7 @@ bool vkWinGpuDraws(const VkWin* w);
 void vkWinDestroy(VkWin* w);
 /// Reads back the last presented frame (the canvas blitted into the swapchain).
 bool vkWinReadback(VkWin* w, fuse::ui::Image& out);
+/// Present timing of the window's last frame (waitGpu: waits for its fence, stamps gpuDoneAt).
+PresentTiming vkWinTiming(VkWin* w, bool waitGpu);
 
 } // namespace fuse::app::detail

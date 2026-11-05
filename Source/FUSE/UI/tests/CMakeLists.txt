@@ -397,6 +397,22 @@ if(TARGET fuse_app)
         endif()
         set_tests_properties(fuse_app_os_popups PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300
             ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate;vulkan")
+        # Wayland backend: library / protocol-table / keymap checks always; windows, input, scale 2 and the Vulkan
+        # surface under a headless weston the gate starts (a system weston, one unpacked rootless into ~/opt/*, or
+        # $FUSE_TEST_WESTON). Skips with 77 when no weston can run.
+        if(NOT WIN32 AND NOT ANDROID)
+            file(GLOB _fuse_opt_wl_bins LIST_DIRECTORIES true "$ENV{HOME}/opt/*/usr/bin")
+            find_program(FUSE_UI_TEST_WESTON weston HINTS ${_fuse_opt_wl_bins})
+            add_executable(fuse_app_wayland test_app_wayland.cpp)
+            target_link_libraries(fuse_app_wayland PRIVATE fuse_app_native)
+            target_include_directories(fuse_app_wayland PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../App/src)
+            if(FUSE_UI_TEST_WESTON)
+                target_compile_definitions(fuse_app_wayland PRIVATE FUSE_TEST_WESTON_PATH="${FUSE_UI_TEST_WESTON}")
+            endif()
+            add_test(NAME fuse_app_wayland COMMAND fuse_app_wayland)
+            set_tests_properties(fuse_app_wayland PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 180
+                ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate;vulkan")
+        endif()
         # §6 idle budget on a real window: zero presents, ~0 % CPU, a handful of loop wakeups over 3 s
         add_executable(fuse_app_idle_native test_app_idle_native.cpp)
         target_link_libraries(fuse_app_idle_native PRIVATE fuse_app_native)
@@ -407,6 +423,17 @@ if(TARGET fuse_app)
             add_test(NAME fuse_app_idle_native COMMAND fuse_app_idle_native)
         endif()
         set_tests_properties(fuse_app_idle_native PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
+            ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate;vulkan")
+        # §6 "input to presented frame <= 1 frame + present queue": a posted OS click -> the frame that shows it
+        add_executable(fuse_app_input_latency test_app_input_latency.cpp)
+        target_link_libraries(fuse_app_input_latency PRIVATE fuse_app_native)
+        if(FUSE_UI_XVFB_RUN AND NOT WIN32)
+            add_test(NAME fuse_app_input_latency COMMAND ${FUSE_UI_XVFB_RUN} -a -s "${FUSE_UI_XVFB_ARGS}"
+                     $<TARGET_FILE:fuse_app_input_latency>)
+        else()
+            add_test(NAME fuse_app_input_latency COMMAND fuse_app_input_latency)
+        endif()
+        set_tests_properties(fuse_app_input_latency PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
             ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate;vulkan")
         # custom window chrome (WM_NCHITTEST / _NET_WM_MOVERESIZE on a real window) and tray icon + notifications (UI10).
         # Unix tray: StatusNotifierItem on a private session bus (dbus-run-session; the gate plays the desktop's side).

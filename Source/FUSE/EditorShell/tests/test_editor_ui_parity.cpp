@@ -1,7 +1,7 @@
 // fuse_editor_ui_* gates for the Qt-removal blockers of docs/editor/QT_PARITY.md: floating panels as OS windows,
 // panel and hierarchy drag and drop, the hierarchy context menu, the colour dialog, OS file dialogs and the editor's
 // keyboard (Tab) order. Real pointer / key events (UiContext, or posted OS input for the native gates).
-//   fuse_editor_ui_parity_gates --gate=<float_window|dock_drag|hierarchy_dnd|hierarchy_menu|color_dialog|native_dialogs|tab_order>
+//   fuse_editor_ui_parity_gates --gate=<float_window|dock_drag|dock_split|hierarchy_dnd|hierarchy_menu|color_dialog|native_dialogs|tab_order>
 #include "fuse/editor/fui/editor_shell.hpp"
 #include "scripted_services.hpp"
 
@@ -390,6 +390,135 @@ void gateDockDrag(Rig& r) {
     r.ui().pointerUp({area.x + 20.f, area.y + area.h * 0.4f});
     settle(r);
     CHECK(r.shell.panelSideName("dock.hierarchy") == "left" && r.rect("dock.hierarchy").w > 50.f);
+}
+
+// ---- dock splits: several tab stacks per side in nested splitters (Qt splitDockWidget / tabifyDockWidget) ----------
+bool near1(f32 a, f32 b, f32 eps = 1.5f) { return std::fabs(a - b) <= eps; }
+void gateDockSplit(Rig& r) {
+    using w::DockEdge;
+    auto stackRect = [&](const char* panel) { return r.ui().rect(r.shell.panelStackNode(panel)); };
+    CHECK(r.shell.dockStackCount() == 3);
+    // 1. API: the asset browser in its own stack under the hierarchy's (a column split on the left side)
+    CHECK(r.shell.splitPanel("dock.asset_browser", "dock.hierarchy", DockEdge::Bottom));
+    settle(r);
+    CHECK(r.shell.dockStackCount() == 4 && displayed(r, "dock.split.1") && displayed(r, "tabs.split.1.bar"));
+    CHECK(r.shell.panelStackNode("dock.asset_browser") == r.find("dock.split.1") && r.shell.panelSideName("dock.asset_browser") == "left");
+    CHECK(r.shell.panelVisible("dock.asset_browser") && r.shell.panelVisible("dock.hierarchy") && displayed(r, "dock.asset_browser"));
+    const Rect hs = stackRect("dock.hierarchy"), as = stackRect("dock.asset_browser");
+    std::printf("dock_split: left stacks %.0f,%.0f %.0fx%.0f over %.0f,%.0f %.0fx%.0f\n", hs.x, hs.y, hs.w, hs.h, as.x, as.y, as.w, as.h);
+    CHECK(near1(hs.x, as.x) && near1(hs.w, as.w) && as.y >= hs.bottom() - 1.f && hs.h > 60.f && as.h > 60.f);
+    CHECK(r.ui().text(r.ui().firstChild(r.find("dock.split.1"))) == "Asset Browser"); // titled after its panel
+
+    // 2. drag: the Console tab onto the left edge zone of the right stack splits it (zone and preview while dragging)
+    {
+        const Rect bar = r.rect("tabs.bottom.bar");
+        const Rect right = r.rect("dock.right");
+        const Vec2 edge{right.x + 12.f, right.y + right.h * 0.5f};
+        r.drag({bar.x + 24.f, bar.y + bar.h * 0.5f}, edge, 6, 0, false);
+        std::printf("dock_split: drag over the right stack edge: side %d edge %d\n", r.shell.dropZone(), r.shell.dropEdge());
+        CHECK(r.shell.panelDragging() && r.shell.dropZone() == 1 && r.shell.dropEdge() == int(DockEdge::Left));
+        CHECK(r.shell.dropStackNode() == r.find("dock.right") && displayed(r, "dock.dropzone.split"));
+        const Rect zone = r.rect("dock.dropzone.split");
+        CHECK(near1(zone.x, right.x, 2.f) && near1(zone.w, right.w * 0.5f, 2.f)); // the left half previews the split
+        CHECK(r.ui().text(r.find("dock.dropzone.split.label")) == "Split Left");
+        r.ui().pointerUp(edge);
+        settle(r);
+    }
+    CHECK(!r.shell.panelDragging() && !displayed(r, "dock.dropzone.split") && !r.shell.panelFloating("dock.console"));
+    CHECK(r.shell.panelSideName("dock.console") == "right" && r.shell.dockStackCount() == 5);
+    const NodeHandle consoleStack = r.shell.panelStackNode("dock.console");
+    CHECK(consoleStack.valid() && consoleStack != r.find("dock.right") && r.shell.panelVisible("dock.console"));
+    CHECK(stackRect("dock.console").right() <= r.rect("dock.right").x + 1.f && near1(stackRect("dock.console").y, r.rect("dock.right").y));
+    CHECK(w::dockSplitOf(r.ui(), consoleStack) == w::dockSplitOf(r.ui(), r.find("dock.right")));
+
+    // 3. drag: the Profiler tab onto the middle of the console's stack tabifies it there
+    {
+        const Rect bar = r.rect("tabs.bottom.bar"); // Profiler is the bottom stack's first tab now
+        const Vec2 mid = Rig::centre(r.ui().rect(consoleStack));
+        r.drag({bar.x + 24.f, bar.y + bar.h * 0.5f}, mid, 6, 0, false);
+        CHECK(r.shell.dropEdge() == int(DockEdge::Center) && r.shell.dropStackNode() == consoleStack && r.shell.dropZone() == 1);
+        CHECK(r.ui().text(r.find("dock.dropzone.split.label")) == "Add as Tab");
+        r.ui().pointerUp(mid);
+        settle(r);
+    }
+    CHECK(r.shell.panelStackNode("dock.profiler") == consoleStack && r.shell.panelVisible("dock.profiler") && r.shell.dockStackCount() == 5);
+    CHECK(r.shell.showPanel("dock.console") && r.shell.panelVisible("dock.console") && !r.shell.panelVisible("dock.profiler"));
+
+    // 4. nested: the material editor above the console stack (a column split inside the right side's row split)
+    CHECK(r.shell.splitPanel("dock.material_editor", "dock.console", DockEdge::Top));
+    settle(r);
+    const Rect ms = stackRect("dock.material_editor"), cs = stackRect("dock.console");
+    CHECK(r.shell.dockStackCount() == 6 && near1(ms.x, cs.x) && near1(ms.w, cs.w) && ms.bottom() <= cs.y + 1.f);
+    const NodeHandle innerSplit = w::dockSplitOf(r.ui(), consoleStack);
+    CHECK(innerSplit.valid() && innerSplit != w::dockSplitOf(r.ui(), r.find("dock.right")) &&
+          innerSplit == w::dockSplitOf(r.ui(), r.shell.panelStackNode("dock.material_editor")));
+
+    // 5. the handle between two stacks resizes them (pointer drag)
+    {
+        const NodeHandle handle = r.ui().nextSibling(r.ui().parent(r.find("dock.left")));
+        const Rect h = r.ui().rect(handle);
+        const f32 before = r.rect("dock.left").h;
+        r.drag(Rig::centre(h), {h.x + h.w * 0.5f, h.y + h.h * 0.5f + 40.f}, 4);
+        std::printf("dock_split: left stack %.0f -> %.0f px tall\n", before, r.rect("dock.left").h);
+        CHECK(near1(r.rect("dock.left").h, before + 40.f, 3.f));
+    }
+
+    // 6. save, reset, restore: the same stacks, splits, tabs and sizes
+    const std::string saved = r.shell.saveLayout();
+    std::printf("dock_split: layout\n%s", saved.c_str());
+    CHECK(saved.find("stack:dock.split.") != std::string::npos && saved.find("tree left v[") != std::string::npos &&
+          saved.find("tree right h[") != std::string::npos);
+    std::map<std::string, Rect> rects;
+    const char* ids[] = {"dock.hierarchy", "dock.asset_browser", "dock.console", "dock.profiler", "dock.material_editor", "dock.inspector", "dock.timeline"};
+    for (const char* id : ids) rects[id] = stackRect(id);
+    r.shell.resetLayout();
+    settle(r);
+    CHECK(r.shell.dockStackCount() == 3 && !r.ui().alive(r.find("dock.split.1")) && r.shell.panelSideName("dock.console") == "bottom");
+    CHECK(!w::dockSplitOf(r.ui(), r.find("dock.left")).valid() && !w::dockSplitOf(r.ui(), r.find("dock.right")).valid());
+    CHECK(r.shell.restoreLayout(saved));
+    settle(r);
+    CHECK(r.shell.dockStackCount() == 6 && r.shell.saveLayout() == saved);
+    for (const char* id : ids) {
+        const Rect a = rects[id], b = stackRect(id);
+        if (!(near1(a.x, b.x) && near1(a.y, b.y) && near1(a.w, b.w) && near1(a.h, b.h)))
+            std::printf("dock_split: %s %.0f,%.0f %.0fx%.0f != %.0f,%.0f %.0fx%.0f\n", id, a.x, a.y, a.w, a.h, b.x, b.y, b.w, b.h);
+        CHECK(near1(a.x, b.x) && near1(a.y, b.y) && near1(a.w, b.w) && near1(a.h, b.h));
+    }
+    CHECK(r.shell.panelVisible("dock.console") && r.shell.panelStackNode("dock.profiler") == r.shell.panelStackNode("dock.console"));
+
+    // 7. a stack whose panels leave goes and its split collapses
+    r.shell.movePanel("dock.console", w::DockSide::Bottom);
+    r.shell.movePanel("dock.profiler", w::DockSide::Bottom);
+    settle(r);
+    CHECK(r.shell.dockStackCount() == 5);
+    const NodeHandle matStack = r.shell.panelStackNode("dock.material_editor");
+    CHECK(w::dockSplitOf(r.ui(), matStack) == w::dockSplitOf(r.ui(), r.find("dock.right")) && w::dockSplitOf(r.ui(), matStack).valid());
+    r.shell.setPanelFloating("dock.material_editor", true);
+    settle(r);
+    CHECK(r.shell.dockStackCount() == 4 && !w::dockSplitOf(r.ui(), r.find("dock.right")).valid() && r.rect("dock.right").w > 100.f);
+    r.shell.setPanelFloating("dock.material_editor", false); // home: the right side's own stack
+    settle(r);
+    CHECK(r.shell.panelStackNode("dock.material_editor") == r.find("dock.right"));
+
+    // 8. the tab context menu: Split Down puts the current panel in a stack below its own
+    CHECK(r.shell.showPanel("dock.inspector"));
+    settle(r);
+    const Vec2 tabAt{r.rect("tabs.right.bar").x + 20.f, Rig::centre(r.rect("tabs.right.bar")).y};
+    r.ui().pointerMove(tabAt);
+    r.ui().pointerDown(tabAt, fuse::ui::MouseButton::Right);
+    r.ui().pointerUp(tabAt, fuse::ui::MouseButton::Right);
+    settle(r);
+    CHECK(pickMenu(r, "panel.menu", "Split Down"));
+    settle(r);
+    const NodeHandle inspStack = r.shell.panelStackNode("dock.inspector");
+    CHECK(inspStack.valid() && inspStack != r.find("dock.right") && r.shell.panelSideName("dock.inspector") == "right");
+    CHECK(r.ui().rect(inspStack).y >= r.rect("dock.right").bottom() - 1.f && r.shell.dockStackCount() == 5);
+    // a lone panel cannot split its own stack
+    CHECK(r.shell.splitPanel("dock.inspector", "dock.inspector", DockEdge::Left) && r.shell.panelStackNode("dock.inspector") == inspStack);
+    // View > Reset Layout: one stack per side again
+    r.shell.resetLayout();
+    settle(r);
+    CHECK(r.shell.dockStackCount() == 3 && r.shell.panelStackNode("dock.inspector") == r.find("dock.right"));
 }
 
 // ---- blocker 2b: hierarchy drag and drop reparenting (undo) ---------------------------------------------------------
@@ -898,7 +1027,7 @@ int main(int argc, char** argv) {
     else if (gate == "native_dialogs") rc = gateNativeDialogs();
     else {
         const std::map<std::string, std::function<void(Rig&)>> gates{
-            {"dock_drag", gateDockDrag}, {"hierarchy_dnd", gateHierarchyDnd}, {"hierarchy_menu", gateHierarchyMenu},
+            {"dock_drag", gateDockDrag}, {"dock_split", gateDockSplit}, {"hierarchy_dnd", gateHierarchyDnd}, {"hierarchy_menu", gateHierarchyMenu},
             {"color_dialog", gateColorDialog}, {"tab_order", gateTabOrder}};
         if (!gates.count(gate)) {
             std::fprintf(stderr, "unknown gate '%s'\n", gate.c_str());

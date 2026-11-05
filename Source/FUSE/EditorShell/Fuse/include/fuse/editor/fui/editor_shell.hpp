@@ -5,8 +5,9 @@
 // fuse_editor_qt_* ones.
 //
 // Layout: menu bar / toolbar (main + transport) / dock area (left: Hierarchy | Project Hub | Asset Browser,
-// right: Inspector | Material Editor | SDF Sculpt, bottom: Console | Profiler | Sequencer | Timeline; FUSE UI docks
-// stack, so each side is one dock holding a tab widget) around a software-rendered viewport / status bar.
+// right: Inspector | Material Editor | SDF Sculpt, bottom: Console | Profiler | Sequencer | Timeline; each side starts
+// as one dock holding a tab stack, and dock splits add more stacks per side in nested splitters) around a
+// software-rendered viewport / status bar.
 #include <fuse/editor/editor_controller.hpp>
 #include <fuse/editor/editor_project_tools.hpp>
 #include <fuse/editor/entity_context_menu.hpp>
@@ -78,6 +79,16 @@ public:
     bool setPanelFloating(std::string_view panelId, bool on);
     /// Moves a panel to another side's tabs (and shows it).
     bool movePanel(std::string_view panelId, fuse::ui::widgets::DockSide side);
+    /// Dock splits (Qt QMainWindow::splitDockWidget / tabifyDockWidget): moves `panelId` into a new tab stack beside
+    /// the stack holding `targetPanelId` (Left / Right / Top / Bottom split that stack's place: nested splitters, a
+    /// handle between the stacks) or into that stack's tabs (Center). A panel dragged over a stack's edge zone splits
+    /// it on release, over its centre it tabifies. A stack whose last panel leaves goes away (its split collapses).
+    /// Split stacks are "dock.split.N" (tab widget "tabs.split.N"); the layout text keeps them.
+    bool splitPanel(std::string_view panelId, std::string_view targetPanelId, fuse::ui::widgets::DockEdge edge);
+    /// Tab stacks holding at least one shown panel.
+    [[nodiscard]] u32 dockStackCount() const;
+    /// The dock widget of the tab stack holding a docked panel (invalid when floating / hidden).
+    [[nodiscard]] NodeHandle panelStackNode(std::string_view panelId) const;
     [[nodiscard]] bool panelShown(std::string_view panelId) const; ///< not hidden (docked or floating)
     [[nodiscard]] bool panelFloating(std::string_view panelId) const;
     [[nodiscard]] std::string panelSideName(std::string_view panelId) const; ///< "left" / "right" / "bottom" / "float"
@@ -198,8 +209,15 @@ private:
     EditorShellOptions m_opt;
 
     NodeHandle m_root, m_menuBar, m_toolbar, m_dockArea, m_viewport, m_viewportInfo, m_status;
-    NodeHandle m_docks[3]{};
-    NodeHandle m_tabs[3]{};
+    /// A tab stack: a dock widget with a tab bar over its panels' pages. 0..2 are the side stacks (dock.left /
+    /// dock.right / dock.bottom, never removed); dock splits add more ("dock.split.N").
+    struct DockStack {
+        NodeHandle dock, tabs;
+        std::vector<u32> order; ///< shown panels in tab order
+    };
+    std::vector<DockStack> m_stacks;
+    std::vector<u32> m_panelStack; ///< per panel: its stack while docked
+    u32 m_nextStackId = 1;
     std::vector<NodeHandle> m_menus;
     std::vector<std::vector<i32>> m_menuMap; ///< per menu, per line: ActionId, -1 separator, -(2 + i) recent file i
     std::vector<std::pair<ActionId, NodeHandle>> m_toolButtons;
@@ -269,14 +287,17 @@ private:
     // per-panel docking
     i32 panelIndex_(std::string_view panelId) const;
     void relayoutPanels_();
-    void showSidePage_(u32 side);
-    bool panelTabMenu_(u32 side, fuse::ui::Vec2 at);
+    void showStackPage_(u32 stack);
+    bool panelTabMenu_(u32 stack, fuse::ui::Vec2 at);
+    u32 newStack_(u32 side, std::string_view title, std::string id);
+    u32 stackSide_(u32 stack) const;
+    void clearStacks_();
+    bool splitInto_(u32 panel, u32 stack, fuse::ui::widgets::DockEdge edge);
     NodeHandle m_hiddenPages{};
     std::vector<NodeHandle> m_pagesNode, m_floatFrame;
     std::vector<u32> m_panelSide; ///< 0 left, 1 right, 2 bottom, 3 floating
     std::vector<bool> m_panelVisible;
     std::vector<std::array<f32, 2>> m_floatPos;
-    std::vector<u32> m_sideOrder[3]; ///< visible panels per side, in tab order
     // project tools dialogs
     NodeHandle m_projSettings{}, m_packageDialog{};
     project::ProjectManifest m_projBase;
@@ -295,10 +316,10 @@ private:
     i32 m_floatResize = -1;
     void placeFloat_(u32 i);
     // panel drag (a tab dragged out of a dock / a floating title dragged) and the drop zones over the dock area
-    i32 m_panelDrag = -1, m_tabDragSide = -1, m_dropSide = -1;
+    i32 m_panelDrag = -1, m_tabDragStack = -1, m_dropSide = -1, m_dropStack = -1, m_dropEdge = -1;
     bool m_panelDragActive = false;
     fuse::ui::Vec2 m_panelDragStart{}, m_panelDragGrab{};
-    NodeHandle m_dropZone[3]{};
+    NodeHandle m_dropZone[3]{}, m_splitZone{};
     bool panelDragEvent_(const fuse::ui::Event& e, NodeHandle target);
     void endPanelDrag_();
     [[nodiscard]] fuse::ui::Rect dropZoneRect_(u32 side) const;
@@ -333,6 +354,10 @@ public:
     /// side (0 left, 1 right, 2 bottom, -1 none).
     [[nodiscard]] bool panelDragging() const { return m_panelDrag >= 0 && m_panelDragActive; }
     [[nodiscard]] i32 dropZone() const { return m_dropSide; }
+    /// Over a tab stack during such a drag: the zone under the pointer (DockEdge: Left / Right / Top / Bottom split,
+    /// Center tabifies; -1 none) and the stack's dock widget. The hot zone shows as "dock.dropzone.split".
+    [[nodiscard]] i32 dropEdge() const { return m_dropEdge; }
+    [[nodiscard]] NodeHandle dropStackNode() const;
     /// Floating panel frame size (logical px); setFloatSize resizes it like the frame's grip does.
     [[nodiscard]] std::array<f32, 2> floatSize(std::string_view panelId) const;
     bool setFloatSize(std::string_view panelId, f32 w, f32 h);

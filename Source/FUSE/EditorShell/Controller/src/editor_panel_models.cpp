@@ -16,6 +16,8 @@
 #include <fuse/editor/component_schema.hpp>
 #include <fuse/editor/editor_timeline.hpp>
 #include <fuse/editor/profiler_flame_graph.hpp>
+
+#include <cctype>
 #include <fuse/ecs/components/environment.hpp>
 #include <fuse/ecs/components/light.hpp>
 
@@ -466,8 +468,31 @@ void EditorPanels::profilerSample(f32 uiMs) {
         m_c.m_host.editorScene().registry().each<ecs::Transform>([&](ecs::EntityID, ecs::Transform&) { ++n; });
         d.sdfObjects = n;
     }
+    if (m_gpuPending) { // the scene viewport's newest GPU frame (one sample each)
+        m_gpuPending = false;
+        d.gpuMs = m_gpuTotalMs;
+        for (const GpuPassView& p : m_gpuPasses) {
+            if (p.depth != 0) continue;
+            std::string n = p.name;
+            for (char& ch : n) ch = char(std::tolower(static_cast<unsigned char>(ch)));
+            auto has = [&](const char* k) { return n.find(k) != std::string::npos; };
+            if (has("shadow") || n.starts_with("vsm.")) d.shadowsMs += p.ms;
+            else if (has("ddgi")) d.ddgiMs += p.ms;
+            else if (has("sdf")) d.sdfMarchMs += p.ms;
+            else if (has("depth") || has("prepass") || has("cull")) d.depthPrepassMs += p.ms;
+            else if (has("gbuffer") || n.starts_with("vis.") || has("visbuffer") || has("opaque")) d.gbufferMs += p.ms;
+            else if (has("deferred") || has("light")) d.deferredMs += p.ms;
+        }
+    }
     m_profiler->pushFrameData(d);
     ++m_revision;
+}
+
+void EditorPanels::profilerSetGpu(f32 totalMs, std::vector<GpuPassView> passes) {
+    m_gpuTotalMs = totalMs;
+    m_gpuPasses = std::move(passes);
+    m_gpuPending = true;
+    ++m_gpuFrames;
 }
 
 ProfilerView EditorPanels::profiler() const {
@@ -476,11 +501,18 @@ ProfilerView EditorPanels::profiler() const {
     v.latest = m_profiler->latestFrame();
     m_profiler->copyCpuHistory(v.history);
     v.frames = m_profiler->frameCount();
+    v.gpuHistory.reserve(v.frames);
+    for (u32 i = 0; i < v.frames; ++i) v.gpuHistory.push_back(m_profiler->frameAt(i).gpuMs);
+    v.gpuPasses = m_gpuPasses;
+    v.gpuLastMs = m_gpuTotalMs;
+    v.gpuFrames = m_gpuFrames;
     v.paused = m_profiler->isPaused();
     v.targetFps = m_profiler->targetFps();
     v.summary = fmt("Frames: %.0f   CPU: %.3f ms   min %.2f / avg %.2f / max %.2f ms   ~%.0f fps   over budget: %.0f", v.frames,
                     v.latest.cpuMs, v.stats.minMs, v.stats.avgMs, v.stats.maxMs, v.stats.avgFps, v.stats.overBudget) +
                 fmt("   Editor UI: %.3f ms   Target: %.0f fps", v.latest.postprocessMs, v.targetFps);
+    if (v.gpuFrames > 0)
+        v.summary += fmt("   GPU (viewport): %.3f ms in %.0f passes", v.gpuLastMs, f64(v.gpuPasses.size()));
     return v;
 }
 
@@ -488,6 +520,7 @@ void EditorPanels::profilerSetPaused(bool paused) { m_profiler->setPaused(paused
 void EditorPanels::profilerClear() {
     m_profiler->clearHistory();
     m_flame = {};
+    m_gpuPending = false;
     ++m_revision;
 }
 
@@ -511,8 +544,13 @@ void EditorPanels::profilerFlameFromEvents(const std::vector<profiler::ProfileEv
     v.threads = g.threadCount();
     v.slices = u32(g.slices().size());
     const auto& nodes = g.flameNodes();
-    u64 total = 0;
-    for (u32 r : g.flameRoots()) total += nodes[r].totalNs;
+    u64 cpuTotal = 0;
+    for (u32 r : g.flameRoots()) cpuTotal += nodes[r].totalNs;
+    // the scene viewport's last GPU frame: one more root ("gpu.viewport") beside the CPU scopes, its passes as children
+    u64 gpuTotal = 0;
+    for (const GpuPassView& p : m_gpuPasses)
+        if (p.depth == 0) gpuTotal += u64(f64(p.ms) * 1e6);
+    const u64 total = cpuTotal + gpuTotal;
     v.totalMs = f32(f64(total) / 1e6);
     if (total > 0) {
         // classic flame layout: roots side by side, each child inside its parent from the left, width ~ total time
@@ -540,6 +578,36 @@ void EditorPanels::profilerFlameFromEvents(const std::vector<profiler::ProfileEv
         for (u32 r : g.flameRoots()) {
             place(r, x, -1);
             x += f64(nodes[r].totalNs) / f64(total);
+        }
+        if (gpuTotal > 0) {
+            const i32 root = i32(v.bars.size());
+            FlameBarView rb;
+            rb.name = "gpu.viewport";
+            rb.x0 = f32(x);
+            rb.x1 = 1.f;
+            rb.totalMs = f32(f64(gpuTotal) / 1e6);
+            rb.calls = 1;
+            v.bars.push_back(rb);
+            // zones arrive in begin order and nest LIFO: open parents per depth (bar, next child x)
+            std::vector<std::pair<i32, f64>> open{{root, x}};
+            for (const GpuPassView& p : m_gpuPasses) {
+                const std::size_t d = std::size_t(p.depth) + 1;
+                if (d > open.size()) continue; // malformed nesting
+                open.resize(d);
+                FlameBarView b;
+                b.name = p.name;
+                b.depth = u32(d);
+                b.parent = open.back().first;
+                b.x0 = f32(open.back().second);
+                b.x1 = f32(open.back().second + f64(p.ms) * 1e6 / f64(total));
+                b.totalMs = b.selfMs = p.ms;
+                b.calls = 1;
+                open.back().second = b.x1;
+                if (d > 1) v.bars[std::size_t(b.parent)].selfMs -= p.ms;
+                v.maxDepth = std::max(v.maxDepth, b.depth);
+                open.emplace_back(i32(v.bars.size()), f64(b.x0));
+                v.bars.push_back(std::move(b));
+            }
         }
     }
     v.summary = fmt("Flame graph: %.0f scopes, %.0f slices, %.0f thread(s), depth %.0f, %.3f ms captured", f64(v.bars.size()),

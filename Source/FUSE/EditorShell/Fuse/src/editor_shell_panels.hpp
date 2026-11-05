@@ -93,6 +93,7 @@ private:
     std::string m_prFlameKey;
     i32 m_prFlameSel = -1;
     u32 m_prFlameTick = 0;
+    SceneViewportGpuTimings m_gpuTimings; ///< scratch for SceneViewportHost::pollGpuTimings
     void syncFlame_();
     void flameInfo_(i32 bar);
 

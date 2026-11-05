@@ -5,6 +5,7 @@
 #include "fuse/ui/platform_bridge.hpp"
 #include "chrome_internal.hpp"
 #include "x11_internal.hpp"
+#include "wayland_internal.hpp"
 #include "fuse/app/chrome.hpp"
 #include "fuse/app/clipboard.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
@@ -64,6 +65,7 @@ bool vkWinPresent(VkWin*, AppWindow&, Rect) { return false; }
 bool vkWinGpuDraws(const VkWin*) { return false; }
 void vkWinDestroy(VkWin*) {}
 bool vkWinReadback(VkWin*, Image&) { return false; }
+PresentTiming vkWinTiming(VkWin*, bool) { return {}; }
 } // namespace detail
 #endif
 
@@ -227,6 +229,7 @@ struct NativePlatform::Impl {
         int preeditCaret = 0;    ///< in code points
         x11::XimCallback cbStart{}, cbDone{}, cbDraw{}, cbCaret{};
         x11::Display* vkDpy = nullptr; ///< the worker's own X connection (Xlib is not thread-safe without XInitThreads)
+        wl::Window* wlWin = nullptr;   ///< Wayland toplevel (Wayland backend; handle = this pointer)
         CursorShape edgeCursor = CursorShape::Auto; ///< custom chrome: resize cursor over a frame edge
         unsigned long captionPress = 0;             ///< time of the last caption press (double click maximises)
 #endif
@@ -246,6 +249,8 @@ struct NativePlatform::Impl {
 #else
     x11::Lib x;
     x11::Display* dpy = nullptr;
+    wl::Backend* wl = nullptr; ///< Wayland backend (wayland_internal.hpp) instead of X11; dpy stays null
+    static bool wlPump(Impl& m, Application& app, f32 wait);
     x11::Atom wmProtocols = 0, wmDelete = 0;
     unsigned long cursors[std::size_t(CursorShape::Count)]{}; ///< theme / font cursors, created on first use
     x11::Xcursor xc;          ///< libXcursor (themed cursors at the DPI-scaled size); absent: font cursors
@@ -315,7 +320,7 @@ struct NativePlatform::Impl {
 #if defined(_WIN32)
             const auto kind = SurfaceSource::Win32;
 #else
-            const auto kind = SurfaceSource::Xlib;
+            const auto kind = wl ? SurfaceSource::Wayland : SurfaceSource::Xlib;
 #endif
             vk = opts.adoptDevice.instance && opts.adoptDevice.device ? detail::vkCtxAdopt(kind, opts.adoptDevice, error)
                                                                       : detail::vkCtxCreate(kind, error);
@@ -477,7 +482,12 @@ bool NativePlatform::Impl::present(void* user, AppWindow& w, Rect damage) {
     if (r.vkPending && r.vkDone.load(std::memory_order_acquire)) r.impl->takeOverVk(r);
     bool ok = true;
     switch (r.kind) {
-    case PresenterKind::Vulkan: ok = detail::vkWinPresent(r.vk, w, damage); break;
+    case PresenterKind::Vulkan:
+#if !defined(_WIN32)
+        if (r.wlWin) wl::beforeVulkanPresent(r.impl->wl, r.wlWin);
+#endif
+        ok = detail::vkWinPresent(r.vk, w, damage);
+        break;
     case PresenterKind::Software:
         w.rasterize(damage);
         r.impl->blitSoftware(r);
@@ -1059,6 +1069,13 @@ void NativePlatform::wake() { PostThreadMessageW(m->uiThread, WM_NULL, 0, 0); }
 #else
 // ---- X11 platform ------------------------------------------------------------------------------------------------
 bool NativePlatform::Impl::createOsWindow(Rec& r) {
+    if (wl) {
+        r.wlWin = wl::createWindow(wl, *r.win, &r.focused, error);
+        if (!r.wlWin) return false;
+        r.handle = reinterpret_cast<std::uintptr_t>(r.wlWin);
+        r.mapped = true;
+        return true;
+    }
     if (opts.dpiAware && xScale != r.win->scale()) r.win->setScale(xScale); // keeps the logical size
     const AppWindow::PixelSize sz = r.win->pixelSize();
     const int scr = x.DefaultScreen(dpy);
@@ -1091,6 +1108,12 @@ void NativePlatform::Impl::destroyOsWindow(Rec& r) {
     if (r.win && r.win->chrome().command == &Impl::x11Command) {
         r.win->chrome().command = nullptr;
         r.win->chrome().user = nullptr;
+    }
+    if (r.wlWin) {
+        wl::destroyWindow(wl, r.wlWin);
+        r.wlWin = nullptr;
+        r.handle = 0;
+        return;
     }
     if (r.xic) {
         x.DestroyIC(r.xic);
@@ -1134,8 +1157,31 @@ void NativePlatform::Impl::startMoveResize(Rec& r, HitArea a, const x11::InputEv
     x.clientMessage(dpy, root, x11::Window(r.handle), netMoveResize, in.x_root, in.y_root, dir, long(in.detail), 1);
     x.Flush(dpy);
 }
+bool NativePlatform::Impl::wlPump(Impl& m, Application&, f32 wait) {
+    m.pollVk();
+    if (m.anyVkPending()) wait = std::min(wait, 0.004f);
+    wait = std::min(wait, wl::nextTimeout(m.wl)); // key repeat
+    std::vector<detail::PumpWatch>& watches = detail::pumpWatches();
+    pollfd fds[16];
+    nfds_t n = 0;
+    fds[n++] = {wl::beforePoll(m.wl), POLLIN, 0};
+    if (m.wakeFd[0] >= 0) fds[n++] = {m.wakeFd[0], POLLIN, 0};
+    for (const detail::PumpWatch& pw : watches)
+        if (pw.fd >= 0 && n < 16) fds[n++] = {pw.fd, POLLIN, 0};
+    const int ms = wait <= 0.f ? 0 : std::isinf(wait) ? -1 : int(std::min(std::ceil(double(wait) * 1000.0), 2.0e9));
+    ::poll(fds, n, ms);
+    wl::afterPoll(m.wl, (fds[0].revents & POLLIN) != 0); // dispatches the listeners (input goes to the windows' UI)
+    if (m.wakeFd[0] >= 0) {
+        char buf[64];
+        while (::read(m.wakeFd[0], buf, sizeof buf) > 0) {}
+    }
+    for (std::size_t i = 0; i < watches.size(); ++i) watches[i].fn(watches[i].user);
+    for (Rec* r : m.recs) m.syncCursor(*r);
+    return true;
+}
 bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
     Impl& m = *static_cast<Impl*>(user);
+    if (m.wl) return wlPump(m, app, wait);
     if (!m.dpy) return m.previous.pump ? m.previous.pump(m.previous.user, app, wait) : true;
     m.pollVk();
     if (m.anyVkPending()) wait = std::min(wait, 0.004f); // look for the worker's result soon
@@ -1330,6 +1376,7 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
     return true;
 }
 bool NativePlatform::Impl::screenInfo(const Rec& r, int& ox, int& oy, Rect& work) const {
+    if (wl) return false; // Wayland: no global coordinates (popups / tool windows stay in-window)
     const int scr = x.DefaultScreen(dpy);
     x11::Window child = 0;
     if (!x.TranslateCoordinates(dpy, x11::Window(r.handle), x.RootWindow(dpy, scr), 0, 0, &ox, &oy, &child)) return false;
@@ -1473,6 +1520,13 @@ void NativePlatform::Impl::blitPopupOs(Rec::Popup& p) {
     x.Flush(dpy);
 }
 bool NativePlatform::Impl::postClickOs(unsigned long long h, Vec2 at) {
+    if (wl) {
+        Rec* r = find(h);
+        if (!r || !r->wlWin) return false;
+        wl::injectPointer(wl, r->wlWin, at, 1);
+        wl::injectPointer(wl, r->wlWin, at, 2);
+        return true;
+    }
     int rx = 0, ry = 0; // screen position, like a real press (custom chrome hands it to _NET_WM_MOVERESIZE)
     x11::Window child = 0;
     x.TranslateCoordinates(dpy, x11::Window(h), root, int(at.x), int(at.y), &rx, &ry, &child);
@@ -1494,6 +1548,7 @@ bool NativePlatform::Impl::postClickOs(unsigned long long h, Vec2 at) {
     return true;
 }
 bool NativePlatform::Impl::captureOs(const Rec& r, Image& out) {
+    if (r.wlWin) return wl::capture(r.wlWin, out) || (r.vk && detail::vkWinReadback(r.vk, out));
     const AppWindow::PixelSize sz = r.win->pixelSize();
     if (captureX(x11::Window(r.handle), sz.w, sz.h, out)) return true;
     // window not fully on screen (GetImage: BadMatch) or not mapped: a Vulkan window reports the frame it presented
@@ -1614,6 +1669,13 @@ void NativePlatform::Impl::x11Event(x11::Event& ev) {
     }
 }
 void NativePlatform::Impl::syncCursor(Rec& r) {
+    if (r.wlWin) {
+        CursorShape c = r.win->ui().cursor();
+        if (c == CursorShape::Auto) c = CursorShape::Arrow;
+        wl::setCursor(wl, r.wlWin, c); // shown while the pointer is over the window (needs its enter serial)
+        r.svc.cursor = c;
+        return;
+    }
     CursorShape c = r.edgeCursor != CursorShape::Auto ? r.edgeCursor : r.win->ui().cursor();
     if (c == CursorShape::Auto) c = CursorShape::Arrow;
     if (c == r.svc.cursor || !r.handle) return;
@@ -1755,6 +1817,7 @@ void NativePlatform::Impl::createIc(Rec& r) {
     }
 }
 void NativePlatform::Impl::syncTextInput(Rec& r) {
+    if (r.wlWin) return; // Wayland: no text-input-v3 yet (committed text comes from xkbcommon)
     UiContext& ui = r.win->ui();
     const bool want = ui.wantsTextInput();
     if (!r.imeKnown || want != r.imeOn) {
@@ -1786,6 +1849,10 @@ void NativePlatform::Impl::syncTextInput(Rec& r) {
     }
 }
 void NativePlatform::Impl::applyScale(Rec& r, f32 scale, const void*) {
+    if (r.wlWin) {
+        wl::setScale(wl, r.wlWin, scale); // integer buffer scale
+        return;
+    }
     r.win->setScale(scale); // keeps the logical size; the window grows to logical * scale device pixels
     if (r.handle) {
         x.ResizeWindow(dpy, x11::Window(r.handle), std::max(1u, r.win->pixelSize().w), std::max(1u, r.win->pixelSize().h));
@@ -1797,6 +1864,24 @@ void NativePlatform::Impl::updateTitleBars() {} // the window manager draws X11 
 
 NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std::make_unique<Impl>(app, o)) {
     const char* disp = std::getenv("DISPLAY");
+    if (wl::wanted()) { // $FUSE_APP_BACKEND=wayland, or no DISPLAY and a WAYLAND_DISPLAY
+        std::string err;
+        m->wl = wl::open(err, o.dpiAware, &x11::mapKey);
+        if (m->wl) {
+            m->opts.osPopups = false; // no global coordinates: popups and floating panels stay in-window overlays
+            m->opts.osWindows = false;
+            if (::pipe(m->wakeFd) == 0) {
+                for (int fd : m->wakeFd) ::fcntl(fd, F_SETFL, ::fcntl(fd, F_GETFL) | O_NONBLOCK);
+                for (int fd : m->wakeFd) ::fcntl(fd, F_SETFD, FD_CLOEXEC);
+            } else {
+                m->wakeFd[0] = m->wakeFd[1] = -1;
+            }
+            app.setEventSource({m.get(), &Impl::pump});
+            app.setSystemTheme(m->theme());
+            return;
+        }
+        m->error = err; // falls back to X11 (XWayland) when there is a DISPLAY
+    }
     if (disp && *disp && m->x.load()) {
         m->dpy = m->x.OpenDisplay(nullptr);
         if (m->dpy) {
@@ -1837,14 +1922,14 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
         } else {
             m->error = "cannot open X display";
         }
-    } else {
+    } else if (m->error.empty()) {
         m->error = disp && *disp ? "libX11.so.6 not found" : "no DISPLAY";
     }
     if (m->dpy) app.setEventSource({m.get(), &Impl::pump});
     app.setSystemTheme(m->theme());
 }
-bool NativePlatform::available() const { return m->dpy != nullptr; }
-void* NativePlatform::nativeDisplay() const { return m->dpy; }
+bool NativePlatform::available() const { return m->dpy != nullptr || m->wl != nullptr; }
+void* NativePlatform::nativeDisplay() const { return m->wl ? wl::display(m->wl) : static_cast<void*>(m->dpy); }
 SystemTheme NativePlatform::Impl::theme() const { return detail::posixQueryTheme(opts, xsTheme); }
 void NativePlatform::wake() {
     if (m->wakeFd[1] >= 0) {
@@ -1881,6 +1966,10 @@ void NativePlatform::Impl::blitSoftware(Rec& r) {
     SetDIBitsToDevice(dc, x0, y0, DWORD(w), DWORD(h), 0, 0, 0, UINT(h), r.staged.data(), &bi, DIB_RGB_COLORS);
     ReleaseDC(hwnd, dc);
 #else
+    if (r.wlWin) { // the whole raster into a wl_shm buffer (buffers rotate, so a partial copy would show stale areas)
+        wl::presentShm(wl, r.wlWin, img);
+        return;
+    }
     if (!dpy) return;
     const int scr = x.DefaultScreen(dpy);
     if (x.DefaultDepth(dpy, scr) < 24) return;
@@ -1909,6 +1998,12 @@ SurfaceSource NativePlatform::Impl::surfaceOf(const Rec& r) const {
     s.hinstance = hinst;
     s.hwnd = reinterpret_cast<void*>(r.handle);
 #else
+    if (r.wlWin) {
+        s.kind = SurfaceSource::Wayland;
+        s.wlDisplay = wl::display(wl);
+        s.wlSurface = wl::surface(r.wlWin);
+        return s;
+    }
     s.kind = SurfaceSource::Xlib;
     s.display = dpy;
     s.xwindow = static_cast<unsigned long>(r.handle);
@@ -1924,12 +2019,15 @@ void NativePlatform::Impl::startVkAsync(Rec& r) {
     SurfaceSource s = surfaceOf(r);
 #if !defined(_WIN32)
     // the worker talks to the X server through its own connection; the swapchain keeps using it afterwards
-    r.vkDpy = x.OpenDisplay(nullptr);
-    if (!r.vkDpy) {
-        createVkSync(r);
-        return;
+    // (Wayland: libwayland is thread-safe, the WSI uses its own event queue on the shared wl_display)
+    if (!r.wlWin) {
+        r.vkDpy = x.OpenDisplay(nullptr);
+        if (!r.vkDpy) {
+            createVkSync(r);
+            return;
+        }
+        s.display = r.vkDpy;
     }
-    s.display = r.vkDpy;
 #endif
     const AppWindow::PixelSize sz = r.win->pixelSize(); // swapchain in device pixels (DPI scale)
     const unsigned w = std::max(1u, sz.w), h = std::max(1u, sz.h);
@@ -2020,6 +2118,11 @@ NativePlatform::~NativePlatform() {
 #if defined(_WIN32)
     m->app.setEventSource({});
 #else
+    if (m->wl) {
+        wl::close(m->wl);
+        m->wl = nullptr;
+        m->app.setEventSource({});
+    }
     if (m->dpy) {
         if (m->xim) m->x.CloseIM(m->xim);
         m->x.CloseDisplay(m->dpy);
@@ -2168,6 +2271,10 @@ bool NativePlatform::setMessageHook(const AppWindow& w, const MessageHook& hook)
         if (r->win == &w && r->handle) { r->hook = hook; return true; }
     return false;
 }
+PresentTiming NativePlatform::presentTiming(const AppWindow& w, bool waitGpu) {
+    const Impl::Rec* r = m->find(w);
+    return r && r->vk ? detail::vkWinTiming(r->vk, waitGpu) : PresentTiming{};
+}
 unsigned long long NativePlatform::nativeWindow(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);
     return r ? r->handle : 0;
@@ -2178,7 +2285,7 @@ std::vector<DisplayInfo> NativePlatform::displays() const {
 #if defined(_WIN32)
     return detail::winDisplays();
 #else
-    return m->x11Displays();
+    return m->wl ? wl::displays(m->wl) : m->x11Displays();
 #endif
 }
 SystemTheme NativePlatform::querySystemTheme() const { return m->theme(); }
@@ -2196,6 +2303,12 @@ bool NativePlatform::postPointerMove(unsigned long long h, Vec2 at) {
 #if defined(_WIN32)
     return PostMessageW(reinterpret_cast<HWND>(h), WM_MOUSEMOVE, 0, MAKELPARAM(int(at.x), int(at.y))) != 0;
 #else
+    if (m->wl) { // Wayland cannot post to a surface: delivered as if the compositor had sent it
+        Impl::Rec* r = m->find(h);
+        if (!r || !r->wlWin) return false;
+        wl::injectPointer(m->wl, r->wlWin, at, 0);
+        return true;
+    }
     x11::Event ev{};
     ev.input.type = x11::MotionNotify;
     ev.input.display = m->dpy;
@@ -2217,6 +2330,12 @@ bool NativePlatform::postPointerButton(unsigned long long h, Vec2 at, bool down)
     return PostMessageW(reinterpret_cast<HWND>(h), down ? WM_LBUTTONDOWN : WM_LBUTTONUP, down ? MK_LBUTTON : 0,
                         MAKELPARAM(int(at.x), int(at.y))) != 0;
 #else
+    if (m->wl) {
+        Impl::Rec* r = m->find(h);
+        if (!r || !r->wlWin) return false;
+        wl::injectPointer(m->wl, r->wlWin, at, down ? 1 : 2);
+        return true;
+    }
     x11::Event ev{};
     ev.input.type = down ? x11::ButtonPress : x11::ButtonRelease;
     ev.input.display = m->dpy;
@@ -2238,6 +2357,12 @@ bool NativePlatform::postClose(unsigned long long h) {
 #if defined(_WIN32)
     return PostMessageW(reinterpret_cast<HWND>(h), WM_CLOSE, 0, 0) != 0;
 #else
+    if (m->wl) {
+        Impl::Rec* r = m->find(h);
+        if (!r || !r->wlWin) return false;
+        wl::injectClose(r->wlWin);
+        return true;
+    }
     x11::Event ev{};
     ev.client.type = x11::ClientMessage;
     ev.client.display = m->dpy;
@@ -2368,6 +2493,10 @@ bool NativePlatform::setIcon(const AppWindow& w, std::span<const Image> sizes) {
 }
 bool NativePlatform::resizeWindow(const AppWindow& w, unsigned width, unsigned height) {
     const Impl::Rec* r = m->find(w);
+    if (r && r->wlWin) { // the client sizes its toplevel on Wayland
+        wl::resize(m->wl, r->wlWin, width, height);
+        return true;
+    }
     if (!r || !r->handle || !m->dpy) return false;
     const f32 sc = r->win->scale(); // logical -> device pixels
     m->x.ResizeWindow(m->dpy, x11::Window(r->handle), std::max(1u, unsigned(std::lround(f32(width) * sc))),
