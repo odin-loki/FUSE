@@ -8,7 +8,8 @@
 // Two measurements, because the WP-5.1 mesh path does not draw DAG clusters yet (RENDERER-EXECUTION.md, P5 row):
 //   1. LOD selection on the GPU: one GeometryStreaming per instance (shared DAG links + page file, per-instance
 //      residency: budget = coarse + 192 pages), the camera in each tile's object space; after the residency settles
-//      the stream.* zones of all 128 instances are summed per frame.
+//      the stream.* zones of all 128 instances are summed per frame, timed inside the draw frame of (2) (one graph:
+//      cut, then cull + visbuffer + resolve, as a page-aware draw path would run it).
 //   2. Drawing the selected cut: the fully-resident cut of every tile (dag::select_dag_cut, same view) is decoded
 //      into a per-tile meshlet mesh and drawn through WP-1.3 cull + WP-1.4 visibility buffer + WP-1.5 resolve by a
 //      T0 FrameComposer with only its mandatory stages, native 2560 x 1440. "Culling and visibility buffer" =
@@ -213,9 +214,19 @@ struct DrawRig {
     }
 };
 
-bool drawFrame(HwContext& ctx, DrawRig& rig, u32 index, Zones* zones) {
+/// One composer frame; with `streams`, the 128 GeometryStreaming cuts are recorded into the same graph first (the
+/// frame a page-aware draw path would run: cut, then cull + draw). This also keeps the GPU clocks up: the stream passes
+/// alone are so small that the 3090 drops to idle clocks between frames (1.3 -> 10 ms swings).
+bool drawFrame(HwContext& ctx, DrawRig& rig, u32 index, Zones* zones, StreamRig* streams = nullptr) {
     ++ctx.serial;
     ctx.bindless.setFrameSerial(ctx.serial);
+    if (streams != nullptr) {
+        for (u32 t = 0; t < streams->streams.size(); ++t) {
+            if (!streams->streams[t]->beginFrame(ctx.serial, viewFor(t), ctx.serial - 1u)) {
+                return false;
+            }
+        }
+    }
     rig.scene.beginFrame(ctx.serial);
     rig.composer.beginSceneFrame(ctx.serial);
     const gpu_scene::GpuSceneCommitStats st = rig.scene.commit();
@@ -237,6 +248,12 @@ bool drawFrame(HwContext& ctx, DrawRig& rig, u32 index, Zones* zones) {
         return false;
     }
     rig.graph.reset();
+    if (streams != nullptr) {
+        for (auto& st : streams->streams) {
+            const gsm::StreamGraphRefs r = st->importInto(rig.graph);
+            st->addFrame(rig.graph, r);
+        }
+    }
     rig.composer.addFrame(rig.graph);
     ctx.profiler->beginFrame();
     const rg::ExecuteResult result = ctx.executor->execute(rig.graph);
@@ -331,8 +348,9 @@ int main(int argc, char** argv) {
     f64 cutLo = 0.0;
     f64 cutHi = 0.0;
     u32 residentPages = 0;
+    StreamRig streamRig;
     {
-        StreamRig rig;
+        StreamRig& rig = streamRig;
         gsm::StreamerDesc streamer{};
         streamer.budget_pages = asset.pages.coarse_page_count + 192u;
         streamer.reserve_slots = 16u;
@@ -372,15 +390,17 @@ int main(int argc, char** argv) {
         }
         std::printf("residency settled after %u frames: %u resident pages over %u instances (budget %u each)\n", settle, residentPages,
                     kTiles, streamer.budget_pages);
-        const bool ok = timed(
-            30u, frames, trials, [&](Zones* z) { return streamFrame(ctx, rig, z, nullptr); },
-            [](const Zones& z) { return sumPrefix(z, "stream."); }, cut, cutLo, cutHi);
-        if (!ok) {
+        // Standalone stream-only frames (diagnostic: the GPU drops to idle clocks between these tiny frames).
+        Stats alone{};
+        f64 aLo = 0.0;
+        f64 aHi = 0.0;
+        if (!timed(
+                30u, frames, 1u, [&](Zones* z) { return streamFrame(ctx, rig, z, nullptr); },
+                [](const Zones& z) { return sumPrefix(z, "stream."); }, alone, aLo, aHi)) {
             std::fprintf(stderr, "FAIL: stream frames\n");
             return 1;
         }
-        std::printf("GPU LOD cut, %u instances (stream.state + stream.cut + stream.feedback, %u passes): %.3f ms [%.3f..%.3f]\n", kTiles,
-                    3u * kTiles, cut.median, cutLo, cutHi);
+        std::printf("GPU LOD cut alone (stream-only frames, clocks may idle between them): %.3f ms\n", alone.median);
     }
 
     // --- 2. drawing the cut --------------------------------------------------------------------------------------
@@ -488,7 +508,11 @@ int main(int argc, char** argv) {
     s.upscaler = frame::FrameUpscaler::None;
     s.ui = false;
     u32 index = 0;
-    auto draw = [&](Zones* z) { return drawFrame(ctx, rig, index++, z); };
+    auto draw = [&](Zones* z) { return drawFrame(ctx, rig, index++, z, &streamRig); };
+    if (!timed(60u, frames, trials, draw, [](const Zones& z) { return sumPrefix(z, "stream."); }, cut, cutLo, cutHi)) {
+        std::fprintf(stderr, "FAIL: cut + draw frames\n");
+        return 1;
+    }
     auto cullVis = [](const Zones& z) { return sumPrefix(z, "gpu_scene.") + sumPrefix(z, "cull.") + sumPrefix(z, "vis."); };
     auto resolve = [](const Zones& z) { return sumPrefix(z, "resolve.") + sumPrefix(z, "temporal.motion"); };
     Stats cv{};
@@ -497,14 +521,14 @@ int main(int argc, char** argv) {
     f64 cvHi = 0.0;
     f64 rsLo = 0.0;
     f64 rsHi = 0.0;
-    if (!timed(60u, frames, trials, draw, cullVis, cv, cvLo, cvHi) || !timed(8u, frames, trials, draw, resolve, rs, rsLo, rsHi)) {
+    if (!timed(8u, frames, trials, draw, cullVis, cv, cvLo, cvHi) || !timed(8u, frames, trials, draw, resolve, rs, rsLo, rsHi)) {
         std::fprintf(stderr, "FAIL: draw frames\n");
         return 1;
     }
     {
         Zones z;
         draw(&z);
-        std::printf("draw passes of one frame:\n");
+        std::printf("passes of one frame (stream.* summed over the 128 instances):\n");
         for (const auto& [n, ms] : z) {
             std::printf("    %-24s %8.3f ms\n", n.c_str(), ms);
         }
