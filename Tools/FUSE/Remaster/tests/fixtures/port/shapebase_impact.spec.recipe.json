@@ -1,0 +1,37 @@
+{
+  "id": "port/shapebase_impact/spec",
+  "inputs": [
+    {
+      "media_type": "text/x-torquescript",
+      "name": "shapebase_impact.tscript",
+      "origin": "library",
+      "path": "shapebase_impact.tscript",
+      "sha256": "4887f46f9f00dea2c663254e31bfca97a42f079b292e3d155e1469fe7ff3ba8a"
+    },
+    {
+      "derived_from_original": false,
+      "media_type": "application/json",
+      "name": "shapebase_impact.callgraph.json",
+      "origin": "derived",
+      "path": "shapebase_impact.callgraph.json",
+      "sha256": "b9cb5ab6035e1b0a4db3cd4589876325aec1da2b9423b68de6da932be8a4a465"
+    }
+  ],
+  "model": {
+    "id": "gemini-3.1-pro-preview"
+  },
+  "params": {
+    "context_cache": true,
+    "prompt": "summarise_code",
+    "prompt_sha256": "e846ed98472326bfe20366b39f714efd99025f4e633db0f081c87c893340e4c8",
+    "vars": {
+      "language": "TorqueScript",
+      "module": "shapebase_impact"
+    }
+  },
+  "provider": "gemini",
+  "purpose": "behaviour spec for shapebase_impact (plan §4.5 step 3)",
+  "schema": "fuse.ai-recipe/1",
+  "seed": 0,
+  "task": "SUMMARISE_CODE"
+}

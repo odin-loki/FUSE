@@ -1,0 +1,401 @@
+{
+ "description": "SUMMARISE_CODE then PORT_SCRIPT, each with a context cache",
+ "exchanges": [
+  {
+   "request": {
+    "body": {
+     "contents": [
+      {
+       "parts": [
+        {
+         "text": "<context file=\"context/fuse_lua_api.md\">\n# FUSE Lua behaviour API (context for SUMMARISE_CODE / PORT_SCRIPT, plan §4.5)\n\nShared context for the Gemini agent (cached with context caching) and the local-llm fallback. It describes\nour engine, not any game, so it is safe to send with every request.\n\n## Behaviours\n\nA behaviour is a Lua chunk run by `ScriptRuntime` in a sandbox: no `io`, `package`, `debug`, `require`,\n`load`, `loadfile`, `dofile` or `collectgarbage`; `os` keeps only `clock`, `time`, `date` and `difftime`;\n`string.dump` is removed. The chunk defines global callbacks, each called with `self` first:\n\n- `on_start(self)`, `on_update(self, dt)`, `on_destroy(self)`\n- `on_collision(self, other, point)` - first physics step of a contact; `point` is `{x, y, z}`\n- `on_trigger_enter(self, other)`, `on_trigger_exit(self, other)`\n\n`self` is the behaviour instance table. Properties authored on the entity (legacy datablock fields are\nmapped to snake_case properties) are fields of `self`.\n\n## Bindings\n\n- `Entity.create()`, `Entity.destroy(e)`, `Entity.alive(e)`\n- `Entity.get_position(e)` / `Entity.set_position(e, {x, y, z})`, `Entity.get_rotation(e)`,\n  `Entity.set_rotation_euler(e, {x, y, z})`\n- `Physics.ray_cast(...)`, `Physics.apply_impulse(e, v)`, `Physics.set_velocity(e, v)`, `Physics.get_velocity(e)`\n- `Scene.find_entity(name)`, `Scene.query_sphere(centre, radius)`\n- `Audio.load(path)`, `Audio.play_at(sound, pos)`, `Audio.play_2d(sound)`\n- `Input.*`, `CVar.get(name)` / `CVar.set(name, value)`\n\n## Port bridge (Remaster)\n\nGameplay state that has no engine component yet goes through the port bridge, which the parity harness\nrecords as the event log:\n\n- `Remaster.get(e, field)` / `Remaster.set(e, field, value)` - per-entity gameplay fields (for example\n  `damage_state`: `Enabled`, `Disabled`, `Destroyed`)\n- `Remaster.emit(name, fields)` - a gameplay event (`damage`, `pickup`, `door`, `score`...); entity fields\n  are named `target`, `source`, `entity` or `other`\n\n## Rules for ports\n\n- Reimplement from the spec. Never paste original script text into code or comments.\n- Keep each legacy handler's guards and effects; name the callbacks after the spec's events.\n- Only the APIs above. No globals other than the callbacks; helpers are `local`.\n\n</context>"
+        }
+       ],
+       "role": "user"
+      }
+     ],
+     "displayName": "fuse-ai-summarise_code-987abe6169bf",
+     "model": "models/gemini-3.1-pro-preview",
+     "systemInstruction": {
+      "parts": [
+       {
+        "text": "You analyse legacy game scripts for a clean-room port. You read one module and its call-graph context and write a behaviour specification: state, events with their guards and effects, timers, dependencies and invariants. Describe behaviour in your own words; never copy lines of the original code. Answer only with JSON that matches the response schema."
+       }
+      ]
+     },
+     "ttl": "3600s"
+    },
+    "method": "POST",
+    "path": "/v1beta/cachedContents"
+   },
+   "response": {
+    "body": {
+     "model": "models/gemini-3.1-pro-preview",
+     "name": "cachedContents/fixture-summarise",
+     "usageMetadata": {
+      "totalTokenCount": 905
+     }
+    },
+    "status": 200
+   }
+  },
+  {
+   "request": {
+    "body": {
+     "cachedContent": "cachedContents/fixture-summarise",
+     "contents": [
+      {
+       "parts": [
+        {
+         "text": "Module: shapebase_impact\nLanguage: TorqueScript\nTarget: FUSE Lua behaviours (see the context). Map every legacy event handler to an event named after the FUSE callback it becomes."
+        },
+        {
+         "text": "<input name=\"shapebase_impact.tscript\" media_type=\"text/x-torquescript\">\n//-----------------------------------------------------------------------------\n// Copyright (c) 2012 GarageGames, LLC\n//\n// Permission is hereby granted, free of charge, to any person obtaining a copy\n// of this software and associated documentation files (the \"Software\"), to\n// deal in the Software without restriction, including without limitation the\n// rights to use, copy, modify, merge, publish, distribute, sublicense, and/or\n// sell copies of the Software, and to permit persons to whom the Software is\n// furnished to do so, subject to the following conditions:\n//\n// The above copyright notice and this permission notice shall be included in\n// all copies or substantial portions of the Software.\n//\n// THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING\n// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS\n// IN THE SOFTWARE.\n//-----------------------------------------------------------------------------\n\n// FUSE Remaster W4.3 fixture: ShapeBaseData::onCollision / ::onImpact, copied unchanged from\n// Templates/BaseGame/game/data/DamageModel/scripts/server/shapeBase.tscript (MIT, notice above).\n\nfunction ShapeBaseData::onCollision(%this, %obj, %collObj, %vec, %len )\n{\n   if (!isObject(%obj) || %obj.getDamageState() $= \"Destroyed\")\n      return;\n      \n    //echo(%this SPC %obj SPC %collObj SPC %vec SPC %len );\n    %dmgPos = VectorSub(%obj.getPosition(), %vec);\n    %dmgAmt = %len/%this.minImpactSpeed * %this.collisionMul;\n    \n    %this.damage(%obj, %collObj, %dmgPos, %dmgAmt, \"impact\");\n}\n\nfunction ShapeBaseData::onImpact(%this, %obj, %collObj, %vec, %len )\n{\n   if (!isObject(%obj) || %obj.getDamageState() $= \"Destroyed\")\n      return;\n      \n    //echo(%this SPC %obj SPC %collObj SPC %vec SPC %len );\n    %dmgPos = VectorSub(%obj.getPosition(), %vec);\n    %dmgAmt = %len/%this.minImpactSpeed * %this.impactMul;\n    \n    %this.damage(%obj, %collObj, %dmgPos, %dmgAmt, \"impact\");\n}\n\n</input>"
+        },
+        {
+         "text": "<input name=\"shapebase_impact.callgraph.json\" media_type=\"application/json\">\n{\n \"analysis\": {\n  \"calls\": [\n   {\n    \"callee\": \"isObject\",\n    \"caller\": \"ShapeBaseData::onCollision\",\n    \"col\": 9,\n    \"file\": \"shapebase_impact.tscript\",\n    \"kind\": \"plain\",\n    \"line\": 28\n   },\n   {\n    \"callee\": \".getDamageState\",\n    \"caller\": \"ShapeBaseData::onCollision\",\n    \"col\": 32,\n    \"file\": \"shapebase_impact.tscript\",\n    \"kind\": \"method\",\n    \"line\": 28\n   },\n   {\n    \"callee\": \"VectorSub\",\n    \"caller\": \"ShapeBaseData::onCollision\",\n    \"col\": 15,\n    \"file\": \"shapebase_impact.tscript\",\n    \"kind\": \"plain\",\n    \"line\": 32\n   },\n   {\n    \"callee\": \".getPosition\",\n    \"caller\": \"ShapeBaseData::onCollision\",\n    \"col\": 30,\n    \"file\": \"shapebase_impact.tscript\",\n    \"kind\": \"method\",\n    \"line\": 32\n   },\n   {\n    \"callee\": \".damage\",\n    \"caller\": \"ShapeBaseData::onCollision\",\n    \"col\": 11,\n    \"file\": \"shapebase_impact.tscript\",\n    \"kind\": \"method\",\n    \"line\": 35\n   },\n   {\n    \"callee\": \"isObject\",\n    \"caller\": \"ShapeBaseData::onImpact\",\n    \"col\": 9,\n    \"file\": \"shapebase_impact.tscript\",\n    \"kind\": \"plain\",\n    \"line\": 40\n   },\n   {\n    \"callee\": \".getDamageState\",\n    \"caller\": \"ShapeBaseData::onImpact\",\n    \"col\": 32,\n    \"file\": \"shapebase_impact.tscript\",\n    \"kind\": \"method\",\n    \"line\": 40\n   },\n   {\n    \"callee\": \"VectorSub\",\n    \"caller\": \"ShapeBaseData::onImpact\",\n    \"col\": 15,\n    \"file\": \"shapebase_impact.tscript\",\n    \"kind\": \"plain\",\n    \"line\": 44\n   },\n   {\n    \"callee\": \".getPosition\",\n    \"caller\": \"ShapeBaseData::onImpact\",\n    \"col\": 30,\n    \"file\": \"shapebase_impact.tscript\",\n    \"kind\": \"method\",\n    \"line\": 44\n   },\n   {\n    \"callee\": \".damage\",\n    \"caller\": \"ShapeBaseData::onImpact\",\n    \"col\": 11,\n    \"file\": \"shapebase_impact.tscript\",\n    \"kind\": \"method\",\n    \"line\": 47\n   }\n  ],\n  \"file\": \"shapebase_impact.tscript\",\n  \"functions\": [\n   {\n    \"file\": \"shapebase_impact.tscript\",\n    \"key\": \"ShapeBaseData::onCollision\",\n    \"line\": 26,\n    \"params\": [\n     \"%this\",\n     \"%obj\",\n     \"%collObj\",\n     \"%vec\",\n     \"%len\"\n    ]\n   },\n   {\n    \"file\": \"shapebase_impact.tscript\",\n    \"key\": \"ShapeBaseData::onImpact\",\n    \"line\": 38,\n    \"params\": [\n     \"%this\",\n     \"%obj\",\n     \"%collObj\",\n     \"%vec\",\n     \"%len\"\n    ]\n   }\n  ],\n  \"objects\": [],\n  \"packages\": []\n },\n \"diagnostics\": []\n}\n\n</input>"
+        }
+       ],
+       "role": "user"
+      }
+     ],
+     "generationConfig": {
+      "candidateCount": 1,
+      "maxOutputTokens": 4096,
+      "responseJsonSchema": {
+       "additionalProperties": false,
+       "properties": {
+        "dependencies": {
+         "items": {
+          "maxLength": 200,
+          "type": "string"
+         },
+         "type": "array"
+        },
+        "engine_api": {
+         "items": {
+          "pattern": "^(Entity|Physics|Scene|Audio|Input|CVar|Remaster)\\.[a-z_]+$",
+          "type": "string"
+         },
+         "type": "array"
+        },
+        "events": {
+         "items": {
+          "additionalProperties": false,
+          "properties": {
+           "effects": {
+            "items": {
+             "maxLength": 400,
+             "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+           },
+           "guards": {
+            "items": {
+             "maxLength": 300,
+             "type": "string"
+            },
+            "type": "array"
+           },
+           "legacy_handler": {
+            "maxLength": 128,
+            "type": "string"
+           },
+           "name": {
+            "pattern": "^on_[a-z_]+$",
+            "type": "string"
+           },
+           "params": {
+            "items": {
+             "maxLength": 200,
+             "type": "string"
+            },
+            "type": "array"
+           }
+          },
+          "required": [
+           "name",
+           "legacy_handler",
+           "params",
+           "guards",
+           "effects"
+          ],
+          "type": "object"
+         },
+         "maxItems": 64,
+         "minItems": 1,
+         "type": "array"
+        },
+        "invariants": {
+         "items": {
+          "maxLength": 300,
+          "type": "string"
+         },
+         "minItems": 1,
+         "type": "array"
+        },
+        "module": {
+         "pattern": "^[a-z][a-z0-9_]{0,63}$",
+         "type": "string"
+        },
+        "source_sha256": {
+         "pattern": "^[0-9a-f]{64}$",
+         "type": "string"
+        },
+        "state": {
+         "items": {
+          "additionalProperties": false,
+          "properties": {
+           "description": {
+            "maxLength": 300,
+            "type": "string"
+           },
+           "name": {
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+           },
+           "type": {
+            "enum": [
+             "number",
+             "string",
+             "boolean",
+             "entity",
+             "vector"
+            ],
+            "type": "string"
+           }
+          },
+          "required": [
+           "name",
+           "type",
+           "description"
+          ],
+          "type": "object"
+         },
+         "maxItems": 64,
+         "type": "array"
+        },
+        "summary": {
+         "maxLength": 800,
+         "minLength": 20,
+         "type": "string"
+        },
+        "timers": {
+         "items": {
+          "additionalProperties": false,
+          "properties": {
+           "effect": {
+            "type": "string"
+           },
+           "name": {
+            "type": "string"
+           },
+           "period_s": {
+            "minimum": 0,
+            "type": "number"
+           }
+          },
+          "required": [
+           "name",
+           "period_s",
+           "effect"
+          ],
+          "type": "object"
+         },
+         "type": "array"
+        }
+       },
+       "required": [
+        "module",
+        "summary",
+        "source_sha256",
+        "state",
+        "events",
+        "timers",
+        "dependencies",
+        "invariants",
+        "engine_api"
+       ],
+       "type": "object"
+      },
+      "responseMimeType": "application/json",
+      "seed": 0,
+      "temperature": 0
+     }
+    },
+    "method": "POST",
+    "path": "/v1beta/models/gemini-3.1-pro-preview:generateContent"
+   },
+   "response": {
+    "body": {
+     "candidates": [
+      {
+       "content": {
+        "parts": [
+         {
+          "text": "{\"module\": \"shapebase_impact\", \"summary\": \"Impact damage for shape datablocks. When an object that still exists and is not destroyed is hit (a physics collision or a scripted impact), it takes 'impact' damage proportional to the hit speed divided by the datablock's minimum impact speed, applied at the object's position offset back along the hit vector. Collisions and impacts differ only in their damage multiplier.\", \"source_sha256\": \"4887f46f9f00dea2c663254e31bfca97a42f079b292e3d155e1469fe7ff3ba8a\", \"state\": [{\"name\": \"min_impact_speed\", \"type\": \"number\", \"description\": \"datablock: hit speed that deals 1x the multiplier\"}, {\"name\": \"collision_mul\", \"type\": \"number\", \"description\": \"datablock: damage multiplier for collisions\"}, {\"name\": \"impact_mul\", \"type\": \"number\", \"description\": \"datablock: damage multiplier for impacts\"}, {\"name\": \"damage_state\", \"type\": \"string\", \"description\": \"per object, read only here: Enabled, Disabled or Destroyed\"}], \"events\": [{\"name\": \"on_collision\", \"legacy_handler\": \"ShapeBaseData::onCollision\", \"params\": [\"other: the object collided with\", \"vec: this object's velocity at contact\", \"len: the length of vec\"], \"guards\": [\"the object exists\", \"its damage_state is not Destroyed\"], \"effects\": [\"emit damage with target = this object, source = other, position = own position minus vec, amount = len / min_impact_speed * collision_mul, kind = impact\"]}, {\"name\": \"on_impact\", \"legacy_handler\": \"ShapeBaseData::onImpact\", \"params\": [\"other: the impacting object\", \"vec: the impact vector\", \"len: the impact speed\"], \"guards\": [\"the object exists\", \"its damage_state is not Destroyed\"], \"effects\": [\"emit damage with target = this object, source = other, position = own position minus vec, amount = len / min_impact_speed * impact_mul, kind = impact\"]}], \"timers\": [], \"dependencies\": [\"datablock damage dispatch (ShapeBaseData::damage)\", \"vector subtraction\", \"object existence and damage-state queries\"], \"invariants\": [\"no damage is applied to a missing or destroyed object\", \"damage grows linearly with the hit speed\", \"the damage kind is always impact\", \"collision and impact use the same formula with different multipliers\"], \"engine_api\": [\"Entity.alive\", \"Entity.get_position\", \"Physics.get_velocity\", \"Remaster.get\", \"Remaster.emit\"]}"
+         }
+        ],
+        "role": "model"
+       },
+       "finishReason": "STOP",
+       "index": 0
+      }
+     ],
+     "modelVersion": "gemini-3.1-pro-preview",
+     "responseId": "fixture",
+     "usageMetadata": {
+      "cachedContentTokenCount": 905,
+      "candidatesTokenCount": 702,
+      "promptTokenCount": 2310,
+      "totalTokenCount": 3012
+     }
+    },
+    "status": 200
+   }
+  },
+  {
+   "request": {
+    "body": {
+     "contents": [
+      {
+       "parts": [
+        {
+         "text": "<context file=\"context/fuse_lua_api.md\">\n# FUSE Lua behaviour API (context for SUMMARISE_CODE / PORT_SCRIPT, plan §4.5)\n\nShared context for the Gemini agent (cached with context caching) and the local-llm fallback. It describes\nour engine, not any game, so it is safe to send with every request.\n\n## Behaviours\n\nA behaviour is a Lua chunk run by `ScriptRuntime` in a sandbox: no `io`, `package`, `debug`, `require`,\n`load`, `loadfile`, `dofile` or `collectgarbage`; `os` keeps only `clock`, `time`, `date` and `difftime`;\n`string.dump` is removed. The chunk defines global callbacks, each called with `self` first:\n\n- `on_start(self)`, `on_update(self, dt)`, `on_destroy(self)`\n- `on_collision(self, other, point)` - first physics step of a contact; `point` is `{x, y, z}`\n- `on_trigger_enter(self, other)`, `on_trigger_exit(self, other)`\n\n`self` is the behaviour instance table. Properties authored on the entity (legacy datablock fields are\nmapped to snake_case properties) are fields of `self`.\n\n## Bindings\n\n- `Entity.create()`, `Entity.destroy(e)`, `Entity.alive(e)`\n- `Entity.get_position(e)` / `Entity.set_position(e, {x, y, z})`, `Entity.get_rotation(e)`,\n  `Entity.set_rotation_euler(e, {x, y, z})`\n- `Physics.ray_cast(...)`, `Physics.apply_impulse(e, v)`, `Physics.set_velocity(e, v)`, `Physics.get_velocity(e)`\n- `Scene.find_entity(name)`, `Scene.query_sphere(centre, radius)`\n- `Audio.load(path)`, `Audio.play_at(sound, pos)`, `Audio.play_2d(sound)`\n- `Input.*`, `CVar.get(name)` / `CVar.set(name, value)`\n\n## Port bridge (Remaster)\n\nGameplay state that has no engine component yet goes through the port bridge, which the parity harness\nrecords as the event log:\n\n- `Remaster.get(e, field)` / `Remaster.set(e, field, value)` - per-entity gameplay fields (for example\n  `damage_state`: `Enabled`, `Disabled`, `Destroyed`)\n- `Remaster.emit(name, fields)` - a gameplay event (`damage`, `pickup`, `door`, `score`...); entity fields\n  are named `target`, `source`, `entity` or `other`\n\n## Rules for ports\n\n- Reimplement from the spec. Never paste original script text into code or comments.\n- Keep each legacy handler's guards and effects; name the callbacks after the spec's events.\n- Only the APIs above. No globals other than the callbacks; helpers are `local`.\n\n</context>"
+        }
+       ],
+       "role": "user"
+      }
+     ],
+     "displayName": "fuse-ai-port_script-987abe6169bf",
+     "model": "models/gemini-3.1-pro-preview",
+     "systemInstruction": {
+      "parts": [
+       {
+        "text": "You write FUSE Lua behaviours from behaviour specifications. Use only the callbacks and bindings in the context, keep every guard and effect of the spec, keep helpers local, and do not use io, os, require, load or debug. Answer only with JSON that matches the response schema; the Lua source goes in the 'lua' string."
+       }
+      ]
+     },
+     "ttl": "3600s"
+    },
+    "method": "POST",
+    "path": "/v1beta/cachedContents"
+   },
+   "response": {
+    "body": {
+     "model": "models/gemini-3.1-pro-preview",
+     "name": "cachedContents/fixture-port",
+     "usageMetadata": {
+      "totalTokenCount": 921
+     }
+    },
+    "status": 200
+   }
+  },
+  {
+   "request": {
+    "body": {
+     "cachedContent": "cachedContents/fixture-port",
+     "contents": [
+      {
+       "parts": [
+        {
+         "text": "Behaviour name: shapebase_impact\nImplement every event of the attached spec as a FUSE callback."
+        },
+        {
+         "text": "<input name=\"shapebase_impact.spec.json\" media_type=\"application/json\">\n{\n \"dependencies\": [\n  \"datablock damage dispatch (ShapeBaseData::damage)\",\n  \"vector subtraction\",\n  \"object existence and damage-state queries\"\n ],\n \"engine_api\": [\n  \"Entity.alive\",\n  \"Entity.get_position\",\n  \"Physics.get_velocity\",\n  \"Remaster.get\",\n  \"Remaster.emit\"\n ],\n \"events\": [\n  {\n   \"effects\": [\n    \"emit damage with target = this object, source = other, position = own position minus vec, amount = len / min_impact_speed * collision_mul, kind = impact\"\n   ],\n   \"guards\": [\n    \"the object exists\",\n    \"its damage_state is not Destroyed\"\n   ],\n   \"legacy_handler\": \"ShapeBaseData::onCollision\",\n   \"name\": \"on_collision\",\n   \"params\": [\n    \"other: the object collided with\",\n    \"vec: this object's velocity at contact\",\n    \"len: the length of vec\"\n   ]\n  },\n  {\n   \"effects\": [\n    \"emit damage with target = this object, source = other, position = own position minus vec, amount = len / min_impact_speed * impact_mul, kind = impact\"\n   ],\n   \"guards\": [\n    \"the object exists\",\n    \"its damage_state is not Destroyed\"\n   ],\n   \"legacy_handler\": \"ShapeBaseData::onImpact\",\n   \"name\": \"on_impact\",\n   \"params\": [\n    \"other: the impacting object\",\n    \"vec: the impact vector\",\n    \"len: the impact speed\"\n   ]\n  }\n ],\n \"invariants\": [\n  \"no damage is applied to a missing or destroyed object\",\n  \"damage grows linearly with the hit speed\",\n  \"the damage kind is always impact\",\n  \"collision and impact use the same formula with different multipliers\"\n ],\n \"module\": \"shapebase_impact\",\n \"source_sha256\": \"4887f46f9f00dea2c663254e31bfca97a42f079b292e3d155e1469fe7ff3ba8a\",\n \"state\": [\n  {\n   \"description\": \"datablock: hit speed that deals 1x the multiplier\",\n   \"name\": \"min_impact_speed\",\n   \"type\": \"number\"\n  },\n  {\n   \"description\": \"datablock: damage multiplier for collisions\",\n   \"name\": \"collision_mul\",\n   \"type\": \"number\"\n  },\n  {\n   \"description\": \"datablock: damage multiplier for impacts\",\n   \"name\": \"impact_mul\",\n   \"type\": \"number\"\n  },\n  {\n   \"description\": \"per object, read only here: Enabled, Disabled or Destroyed\",\n   \"name\": \"damage_state\",\n   \"type\": \"string\"\n  }\n ],\n \"summary\": \"Impact damage for shape datablocks. When an object that still exists and is not destroyed is hit (a physics collision or a scripted impact), it takes 'impact' damage proportional to the hit speed divided by the datablock's minimum impact speed, applied at the object's position offset back along the hit vector. Collisions and impacts differ only in their damage multiplier.\",\n \"timers\": []\n}\n\n</input>"
+        }
+       ],
+       "role": "user"
+      }
+     ],
+     "generationConfig": {
+      "candidateCount": 1,
+      "maxOutputTokens": 8192,
+      "responseJsonSchema": {
+       "additionalProperties": false,
+       "properties": {
+        "behaviour": {
+         "pattern": "^[a-z][a-z0-9_]{0,63}$",
+         "type": "string"
+        },
+        "handlers": {
+         "items": {
+          "pattern": "^on_[a-z_]+$",
+          "type": "string"
+         },
+         "minItems": 1,
+         "type": "array",
+         "uniqueItems": true
+        },
+        "lua": {
+         "maxLength": 20000,
+         "minLength": 20,
+         "type": "string"
+        },
+        "notes": {
+         "items": {
+          "maxLength": 400,
+          "type": "string"
+         },
+         "type": "array"
+        },
+        "uses_api": {
+         "items": {
+          "pattern": "^(Entity|Physics|Scene|Audio|Input|CVar|Remaster|math|string|table)\\.[a-z_]+$",
+          "type": "string"
+         },
+         "type": "array",
+         "uniqueItems": true
+        }
+       },
+       "required": [
+        "behaviour",
+        "lua",
+        "handlers",
+        "uses_api",
+        "notes"
+       ],
+       "type": "object"
+      },
+      "responseMimeType": "application/json",
+      "seed": 0,
+      "temperature": 0
+     }
+    },
+    "method": "POST",
+    "path": "/v1beta/models/gemini-3.1-pro-preview:generateContent"
+   },
+   "response": {
+    "body": {
+     "candidates": [
+      {
+       "content": {
+        "parts": [
+         {
+          "text": "{\"behaviour\": \"shapebase_impact\", \"lua\": \"-- shapebase_impact: FUSE behaviour reimplemented from spec shapebase_impact (FUSE Remaster W4.3 fixture).\\n-- Written from the spec, not from the original script text (plan \\u00a74.5 step 4).\\n-- Properties: min_impact_speed, collision_mul, impact_mul (from the datablock).\\n\\nlocal function apply_impact(self, other, vec, len, multiplier)\\n  if not Entity.alive(self) or Remaster.get(self, \\\"damage_state\\\") == \\\"Destroyed\\\" then\\n    return\\n  end\\n  local p = Entity.get_position(self)\\n  local at = {x = p.x - vec.x, y = p.y - vec.y, z = p.z - vec.z}\\n  local amount = len / self.min_impact_speed * multiplier\\n  Remaster.emit(\\\"damage\\\", {target = self, source = other, position = at, amount = amount, kind = \\\"impact\\\"})\\nend\\n\\n-- The engine's collision callback carries no velocity: vec is this entity's velocity at contact.\\nfunction on_collision(self, other, point)\\n  local v = Physics.get_velocity(self)\\n  local len = math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)\\n  apply_impact(self, other, v, len, self.collision_mul)\\nend\\n\\nfunction on_impact(self, other, vec, len)\\n  apply_impact(self, other, vec, len, self.impact_mul)\\nend\\n\", \"handlers\": [\"on_collision\", \"on_impact\"], \"uses_api\": [\"Entity.alive\", \"Entity.get_position\", \"Physics.get_velocity\", \"Remaster.get\", \"Remaster.emit\", \"math.sqrt\"], \"notes\": [\"FUSE's collision callback has no velocity argument: vec is read with Physics.get_velocity(self).\", \"Datablock fields become behaviour properties: min_impact_speed, collision_mul, impact_mul.\", \"damage_state is read through the Remaster port bridge until a damage component exists.\"]}"
+         }
+        ],
+        "role": "model"
+       },
+       "finishReason": "STOP",
+       "index": 0
+      }
+     ],
+     "modelVersion": "gemini-3.1-pro-preview",
+     "responseId": "fixture",
+     "usageMetadata": {
+      "cachedContentTokenCount": 921,
+      "candidatesTokenCount": 640,
+      "promptTokenCount": 1890,
+      "totalTokenCount": 2530
+     }
+    },
+    "status": 200
+   }
+  }
+ ],
+ "provider": "gemini",
+ "schema": "fuse.ai-http-fixture/1"
+}

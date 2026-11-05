@@ -1,0 +1,32 @@
+{
+  "schema": "fuse.ai-prompt/1",
+  "id": "tag_image",
+  "version": 1,
+  "task": "TAG_IMAGE",
+  "description": "Plan §4.1 step 2: tag a texture thumbnail (never the full texture unless the project allows it). Same prompt and schema for gemini and local-llm.",
+  "system": "You classify game textures for a remastering pipeline. You see one thumbnail. Answer only with JSON that matches the response schema. Use lowercase tags. Do not describe people, brands or text content beyond flagging it.",
+  "user": "Texture name: {name}\nKnown context: {context}\nReturn descriptive tags, the material class, a physical category for the material library, the texture's role, whether it contains text or a logo, and your confidence.",
+  "attach": "image",
+  "max_output_tokens": 512,
+  "output_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["tags", "material_class", "physical_category", "texture_role", "is_text_or_logo", "confidence"],
+    "properties": {
+      "tags": {
+        "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true,
+        "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_/-]{0,31}$"}
+      },
+      "material_class": {
+        "type": "string",
+        "enum": ["stone", "brick", "concrete", "plaster", "tile", "wood", "metal/bare", "metal/painted", "fabric",
+                 "leather", "glass", "plastic", "ground/dirt", "ground/grass", "ground/sand", "ground/snow", "foliage",
+                 "water", "paper", "skin", "sky", "ui", "decal", "other"]
+      },
+      "physical_category": {"type": "string", "pattern": "^[a-z][a-z0-9_]*(/[a-z0-9_]+)*$", "maxLength": 64},
+      "texture_role": {"type": "string", "enum": ["albedo", "normal", "lightmap", "ui", "decal", "sky", "font", "mask", "other"]},
+      "is_text_or_logo": {"type": "boolean"},
+      "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+    }
+  }
+}

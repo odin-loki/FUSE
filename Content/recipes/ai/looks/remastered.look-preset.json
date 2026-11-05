@@ -1,0 +1,15 @@
+{
+  "schema": "fuse.ai-look-preset/1",
+  "name": "remastered",
+  "description": "Remastered: neutral physically based look. Filmic tone map with auto exposure, soft bloom, no grading LUT; the calibrated lights (light calibration solver) do the work.",
+  "needs_lut": false,
+  "base": {
+    "exposure": { "autoEnabled": true },
+    "toneMap": { "operator": "filmic", "calibrateMidGrey": true },
+    "bloom": { "intensity": 0.04, "threshold": 1.2, "knee": 0.5 },
+    "vignette": { "enabled": false },
+    "filmGrain": { "enabled": false },
+    "sharpen": { "enabled": true, "sharpness": 0.2 },
+    "colorGrade": { "lut": null }
+  }
+}

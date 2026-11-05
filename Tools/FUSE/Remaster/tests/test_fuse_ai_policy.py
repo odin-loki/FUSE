@@ -71,7 +71,8 @@ class Guard(TempDirCase):
     def test_everything_set_passes_the_guard_then_hits_the_w0_stub(self):
         with self.assertRaises(ProviderNotImplemented) as cm:
             self.run_cloud(project("opt-in", confirmed=True, tier="paid"))
-        self.assertIn("not implemented in W0", str(cm.exception))
+        # W4.1: the gemini provider is real now, but unconfigured here (no key, no fixtures).
+        self.assertIn("no GEMINI_API_KEY", str(cm.exception))
         # tearDown asserts no socket was attempted
 
     def test_derived_from_original_counts_as_original(self):

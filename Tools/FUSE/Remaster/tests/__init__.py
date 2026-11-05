@@ -36,6 +36,12 @@ def _no_net(name):
     return fn
 
 
+# No live transports (fuse_ai.transport.live_transport refuses) and no credentials, even on a machine that has a
+# key in its environment; tests that need provider answers inject recorded fixtures.
+os.environ["FUSE_AI_OFFLINE"] = "1"
+for _var in ("GEMINI_API_KEY", "FUSE_AI_GEMINI_FIXTURES", "FUSE_AI_LOCAL_LLM_FIXTURES", "FUSE_AI_LOCAL_LLM_URL"):
+    os.environ.pop(_var, None)
+
 if not getattr(socket, "_fuse_ai_tests_blocked", False):
     socket.socket = _NoNetSocket
     socket.create_connection = _no_net("create_connection")

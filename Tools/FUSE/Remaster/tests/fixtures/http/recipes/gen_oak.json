@@ -1,0 +1,16 @@
+{
+  "id": "lib/oak_planks/gen",
+  "inputs": [],
+  "model": {
+    "id": "gemini-3.1-flash-image"
+  },
+  "params": {
+    "aspect_ratio": "1:1",
+    "prompt": "Weathered oak plank floor texture, hand-painted style, top-down, even lighting, tileable.",
+    "size": "1K"
+  },
+  "provider": "gemini",
+  "schema": "fuse.ai-recipe/1",
+  "seed": 11,
+  "task": "GEN_IMAGE"
+}

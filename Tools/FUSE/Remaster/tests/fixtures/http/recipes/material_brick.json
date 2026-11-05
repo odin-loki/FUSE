@@ -1,0 +1,26 @@
+{
+  "id": "tex/brick_wall_01/infer_material",
+  "inputs": [
+    {
+      "media_type": "image/png",
+      "name": "brick_wall_01",
+      "origin": "library",
+      "path": "../inputs/brick_wall_01.png"
+    }
+  ],
+  "model": {
+    "id": "gemini-3.8-flash"
+  },
+  "params": {
+    "prompt": "infer_material",
+    "prompt_sha256": "afcdd550d4eed37557316dd0581049d33201cb72df3ea1fc6803137e90430f31",
+    "vars": {
+      "name": "brick_wall_01",
+      "tags": "brick, masonry, wall"
+    }
+  },
+  "provider": "gemini",
+  "schema": "fuse.ai-recipe/1",
+  "seed": 7,
+  "task": "INFER_MATERIAL"
+}

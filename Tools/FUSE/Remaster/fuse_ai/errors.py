@@ -55,3 +55,26 @@ class CacheCorrupt(FuseAIError):
     """A cache entry points at a missing blob or a blob whose sha256 does not match."""
 
     exit_code = 8
+
+
+class ProviderUnavailable(ProviderNotImplemented):
+    """The provider is implemented but not configured here (no API key, no recorded HTTP fixtures, no local
+    server URL). It shares the stub's exit code, so CI behaves the same with or without the provider code."""
+
+
+class SchemaViolation(FuseAIError):
+    """A model output (live or replayed) does not parse, or does not match the prompt's JSON schema (W4.2)."""
+
+    exit_code = 9
+
+
+class TransportError(FuseAIError):
+    """An HTTP exchange failed after its retries, or a replayed exchange does not match the recorded request."""
+
+    exit_code = 10
+
+
+class GateFailure(FuseAIError):
+    """A CPU quality gate failed (collision vs render, rebuild tolerance, ...)."""
+
+    exit_code = 11
