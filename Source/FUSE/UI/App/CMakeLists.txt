@@ -52,6 +52,7 @@ if(WIN32 OR MINGW)
     target_link_libraries(fuse_app_native PRIVATE user32 gdi32 dwmapi ole32 shell32 advapi32 uuid imm32)
 else()
     target_sources(fuse_app_native PRIVATE src/shell_unix.cpp) # Android: no tray, notifications unavailable
+    target_sources(fuse_app_native PRIVATE src/native_wayland.cpp) # Wayland backend (desktop Linux; empty on Android)
     target_link_libraries(fuse_app_native PRIVATE ${CMAKE_DL_LIBS})
 endif()
 

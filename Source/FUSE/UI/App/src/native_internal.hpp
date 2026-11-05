@@ -8,12 +8,14 @@
 namespace fuse::app::detail {
 
 struct SurfaceSource {
-    enum Kind { Xlib, Win32, Android } kind = Xlib;
+    enum Kind { Xlib, Win32, Android, Wayland } kind = Xlib;
     void* display = nullptr;        ///< X11 Display*
     unsigned long xwindow = 0;      ///< X11 Window
     void* hinstance = nullptr;      ///< Win32 HINSTANCE
     void* hwnd = nullptr;           ///< Win32 HWND
     void* nativeWindow = nullptr;   ///< Android ANativeWindow*
+    void* wlDisplay = nullptr;      ///< Wayland wl_display*
+    void* wlSurface = nullptr;      ///< Wayland wl_surface*
 };
 
 struct VkCtx;

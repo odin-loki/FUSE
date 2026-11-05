@@ -32,7 +32,26 @@ typedef unsigned long Window;
 typedef unsigned long VisualID;
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_xlib.h>
+#if __has_include(<vulkan/vulkan_wayland.h>)
+#include <vulkan/vulkan_wayland.h>
+#endif
 #include <sys/stat.h>
+#endif
+#if !defined(_WIN32) && !defined(__ANDROID__) && !defined(VK_KHR_wayland_surface)
+// older headers without vulkan_wayland.h: the two declarations the Wayland window path needs
+#define VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME "VK_KHR_wayland_surface"
+#define VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR VkStructureType(1000006000)
+struct wl_display;
+struct wl_surface;
+typedef VkFlags VkWaylandSurfaceCreateFlagsKHR;
+typedef struct VkWaylandSurfaceCreateInfoKHR {
+    VkStructureType sType;
+    const void* pNext;
+    VkWaylandSurfaceCreateFlagsKHR flags;
+    struct wl_display* display;
+    struct wl_surface* surface;
+} VkWaylandSurfaceCreateInfoKHR;
+typedef VkResult(VKAPI_PTR* PFN_vkCreateWaylandSurfaceKHR)(VkInstance, const VkWaylandSurfaceCreateInfoKHR*, const VkAllocationCallbacks*, VkSurfaceKHR*);
 #endif
 
 #if defined(FUSE_HAS_VULKAN_RHI)
@@ -101,6 +120,7 @@ struct Khr {
     PFN_vkCreateAndroidSurfaceKHR CreateAndroidSurfaceKHR = nullptr;
 #elif !defined(_WIN32)
     PFN_vkCreateXlibSurfaceKHR CreateXlibSurfaceKHR = nullptr;
+    PFN_vkCreateWaylandSurfaceKHR CreateWaylandSurfaceKHR = nullptr;
 #endif
     bool load(VkInstance inst) {
         bool all = true;
@@ -124,7 +144,10 @@ struct Khr {
 #if defined(__ANDROID__)
         get(CreateAndroidSurfaceKHR, "vkCreateAndroidSurfaceKHR");
 #elif !defined(_WIN32)
-        get(CreateXlibSurfaceKHR, "vkCreateXlibSurfaceKHR");
+        // one of the two, by the instance's surface extension (null for the other)
+        CreateXlibSurfaceKHR = reinterpret_cast<PFN_vkCreateXlibSurfaceKHR>(vkGetInstanceProcAddr(inst, "vkCreateXlibSurfaceKHR"));
+        CreateWaylandSurfaceKHR = reinterpret_cast<PFN_vkCreateWaylandSurfaceKHR>(vkGetInstanceProcAddr(inst, "vkCreateWaylandSurfaceKHR"));
+        all = all && (CreateXlibSurfaceKHR || CreateWaylandSurfaceKHR);
 #endif
         return all;
     }
@@ -196,7 +219,7 @@ VkCtx* vkCtxCreate(SurfaceSource::Kind kind, std::string& err) {
 #elif defined(__ANDROID__)
                           VK_KHR_ANDROID_SURFACE_EXTENSION_NAME
 #else
-                          VK_KHR_XLIB_SURFACE_EXTENSION_NAME
+                          kind == SurfaceSource::Wayland ? VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME : VK_KHR_XLIB_SURFACE_EXTENSION_NAME
 #endif
     };
     VkApplicationInfo ai{};
@@ -571,11 +594,20 @@ VkWin* vkWinCreate(VkCtx* c, const SurfaceSource& s, const NativeOptions& o, std
     si.window = static_cast<ANativeWindow*>(s.nativeWindow);
     const VkResult sr = K.CreateAndroidSurfaceKHR(c->instance, &si, nullptr, &w->surface);
 #else
-    VkXlibSurfaceCreateInfoKHR si{};
-    si.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
-    si.dpy = static_cast<Display*>(s.display);
-    si.window = s.xwindow;
-    const VkResult sr = K.CreateXlibSurfaceKHR(c->instance, &si, nullptr, &w->surface);
+    VkResult sr = VK_ERROR_EXTENSION_NOT_PRESENT;
+    if (s.kind == SurfaceSource::Wayland) {
+        VkWaylandSurfaceCreateInfoKHR si{};
+        si.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
+        si.display = static_cast<struct wl_display*>(s.wlDisplay);
+        si.surface = static_cast<struct wl_surface*>(s.wlSurface);
+        if (K.CreateWaylandSurfaceKHR) sr = K.CreateWaylandSurfaceKHR(c->instance, &si, nullptr, &w->surface);
+    } else {
+        VkXlibSurfaceCreateInfoKHR si{};
+        si.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
+        si.dpy = static_cast<Display*>(s.display);
+        si.window = s.xwindow;
+        if (K.CreateXlibSurfaceKHR) sr = K.CreateXlibSurfaceKHR(c->instance, &si, nullptr, &w->surface);
+    }
 #endif
     if (!ok(sr, "vkCreate*SurfaceKHR", err)) {
         delete w;
