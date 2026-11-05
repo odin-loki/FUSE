@@ -190,7 +190,7 @@ bool buildLevelScene(const std::string& name, const fs::path& mission, const fs:
             const std::string path = cookedPath[assets->mesh.value];
             auto mit = materialIndex.find(path);
             if (mit == materialIndex.end()) {
-                s.materials.push_back(hashedMaterial(path));
+                s.materials.push_back(hashedMaterial(fs::path(path).filename().string())); // not the absolute work dir
                 mit = materialIndex.emplace(path, u32(s.materials.size() - 1)).first;
             }
             const float dx = (!nudgeName.empty() && nameOf[assets->mesh.value] == nudgeName) ? nudge : 0.f;
@@ -327,7 +327,7 @@ int main(int argc, char** argv) {
                        std::to_string(scenes[i].scene.batches.size()) + " batches, " +
                        std::to_string(scenes[i].scene.triangleCount()) + " triangles) " + scenes[i].note);
         LevelScene again;
-        buildLevelScene(entries[i].name, entries[i].mission, work, again);
+        buildLevelScene(entries[i].name, entries[i].mission, work / "again", again); // another dir: no path dependence
         expect(again.scene.contentHash() == scenes[i].scene.contentHash(), entries[i].name + ": scene build is deterministic");
     }
     expect(scenes[0].drawnEntities == 1u, "example_level: one drawn entity (the ground plane)");

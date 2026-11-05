@@ -359,7 +359,13 @@ ExportReport exportRemix(const ExportOptions& options) {
                         continue;
                     }
                     const auto bytes = blobs.verify(**s.ref, &err) ? blobs.get((*s.ref)->sha256) : std::nullopt;
-                    const auto image = bytes ? store::decodeImage(*bytes, &err) : std::nullopt;
+                    auto image = bytes ? store::decodeImage(*bytes, &err) : std::nullopt;
+                    if (image && s.normal && set->normalConvention == poco::NormalConvention::DX) {
+                        // Remix normal maps are OpenGL (+Y) convention (remix-format-notes.md §5): flip green.
+                        for (std::size_t px = 1; px < image->pixels.size(); px += 4) {
+                            image->pixels[px] = static_cast<std::uint8_t>(255 - image->pixels[px]);
+                        }
+                    }
                     const auto dds = image ? encodeDds(*image, s.normal, s.srgb, &err) : std::vector<std::uint8_t>{};
                     if (dds.empty()) {
                         rep.errors.push_back(where + ": " + s.slot + " texture: " + err);
