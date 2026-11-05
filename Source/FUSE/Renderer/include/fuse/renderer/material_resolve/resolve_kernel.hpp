@@ -62,6 +62,10 @@ struct MeshStreams {
     const u32* tangents = nullptr; ///< VTAN oct snorm16 x 2
     const u32* uvs = nullptr;      ///< VUV0 half x 2
     u32 vertexCount = 0;
+    /// gpu_scene::kMeshFloatPositions rows (GPU skinning): f32 x 4 per vertex (xyz, w = tangent handedness +-1),
+    /// current then previous (vpos unused). kMeshFloatNormals rows: `fnormals` f32 x 4 per vertex (normals unused).
+    const f32* fpos = nullptr;
+    const f32* fnormals = nullptr;
     const GpuSubmesh* submeshes = nullptr;          ///< GpuMesh::submeshCount entries
     const u32* meshletTriangleOffsets = nullptr;    ///< GpuMeshlet::triangleOffset per meshlet (GpuMesh::meshletCount)
 };
@@ -87,9 +91,25 @@ FUSE_HOST_DEVICE inline void oct_decode(u32 packed, f32 out[3]) {
 
 FUSE_HOST_DEVICE inline Vertex fetch_vertex(const GpuMesh& mesh, const MeshStreams& s, u32 v) {
     Vertex r{};
-    visbuffer::decode_kernel::mesh_position(mesh, s.vpos, v, r.position);
-    r.sign = (s.vpos[v * 4u + 3u] & geometry::kVposTangentNegative) != 0u ? -1.f : 1.f;
-    if (s.normals != nullptr) {
+    if ((mesh.flags & gpu_scene::kMeshFloatPositions) != 0u) {
+        if (s.fpos == nullptr) {
+            return r;
+        }
+        r.position[0] = s.fpos[v * 4u + 0u];
+        r.position[1] = s.fpos[v * 4u + 1u];
+        r.position[2] = s.fpos[v * 4u + 2u];
+        r.sign = s.fpos[v * 4u + 3u] < 0.f ? -1.f : 1.f;
+    } else {
+        visbuffer::decode_kernel::mesh_position(mesh, s.vpos, v, r.position);
+        r.sign = (s.vpos[v * 4u + 3u] & geometry::kVposTangentNegative) != 0u ? -1.f : 1.f;
+    }
+    if ((mesh.flags & gpu_scene::kMeshFloatNormals) != 0u) {
+        if (s.fnormals != nullptr) {
+            r.normal[0] = s.fnormals[v * 4u + 0u];
+            r.normal[1] = s.fnormals[v * 4u + 1u];
+            r.normal[2] = s.fnormals[v * 4u + 2u];
+        }
+    } else if (s.normals != nullptr) {
         oct_decode(s.normals[v], r.normal);
     }
     if (s.tangents != nullptr) {

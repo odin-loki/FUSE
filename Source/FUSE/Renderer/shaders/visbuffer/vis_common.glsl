@@ -19,8 +19,14 @@
 
 layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer FuseVisWordsRef { uint v[]; };
 
-// Quantised VPOS of `vertex` (mesh-local), decoded bit-exactly.
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer FuseVisFloat4Ref { vec4 v[]; };
+
+// Position of `vertex` (mesh-local): quantised VPOS decoded bit-exactly, or the f32x4 current position of a
+// FUSE_MESH_FLOAT_POSITIONS row (GPU skinning, gpu_scene_types.hpp GpuMeshFlag).
 vec3 fuse_vis_mesh_position(FuseGpuMesh mesh, uint vertex) {
+    if ((mesh.flags & FUSE_MESH_FLOAT_POSITIONS) != 0u) {
+        return FuseVisFloat4Ref(mesh.positions).v[vertex].xyz;
+    }
     FuseVisWordsRef words = FuseVisWordsRef(mesh.positions);
     const uint xy = words.v[vertex * 2u];
     const uint zw = words.v[vertex * 2u + 1u];
@@ -29,6 +35,15 @@ vec3 fuse_vis_mesh_position(FuseGpuMesh mesh, uint vertex) {
     p.y = mesh.quantOffset[1] + float(xy >> 16u) * mesh.quantStep[1];
     p.z = mesh.quantOffset[2] + float(zw & 0xFFFFu) * mesh.quantStep[2];
     return p;
+}
+
+// Previous-frame position of `vertex`: the f32x4 previous stream of a FUSE_MESH_FLOAT_POSITIONS row (positions +
+// vertexCount entries), the current position otherwise (rigid meshes move through the previous transform only).
+vec3 fuse_vis_mesh_prev_position(FuseGpuMesh mesh, uint vertex) {
+    if ((mesh.flags & FUSE_MESH_FLOAT_POSITIONS) != 0u) {
+        return FuseVisFloat4Ref(mesh.positions).v[mesh.vertexCount + vertex].xyz;
+    }
+    return fuse_vis_mesh_position(mesh, vertex);
 }
 
 // Clip-space position of an object-space point (column-major viewProj columns).

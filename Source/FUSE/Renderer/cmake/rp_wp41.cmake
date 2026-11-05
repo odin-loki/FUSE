@@ -152,7 +152,7 @@ endforeach()
 
 # --- Lavapipe gates ------------------------------------------------------------------------------------
 add_executable(fuse_rp_temporal ${_fuse_wp41_tests_dir}/test_rp_temporal.cpp)
-target_link_libraries(fuse_rp_temporal PRIVATE fuse_temporal fuse_material_resolve)
+target_link_libraries(fuse_rp_temporal PRIVATE fuse_temporal fuse_material_resolve fuse_skinning_gpu)
 fuse_apply_cxx23(fuse_rp_temporal)
 
 # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.

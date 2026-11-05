@@ -40,10 +40,13 @@ struct Clip {
     f32 w = 0.f;
 };
 
-/// CPU view of one mesh's VPOS stream (u16 x 4 per vertex, the GpuMesh::positions stream).
+/// CPU view of one mesh's position stream: the VPOS stream (u16 x 4 per vertex, the GpuMesh::positions stream), or
+/// for a gpu_scene::kMeshFloatPositions row (GPU skinning) `fpos` = f32 x 4 per vertex, current positions at
+/// [0, vertexCount) followed by the previous frame's at [vertexCount, 2 vertexCount) (the GPU stream's layout).
 struct MeshPositions {
     const u16* vpos = nullptr;
     u32 vertexCount = 0;
+    const f32* fpos = nullptr;
 };
 
 /// Exact dequantisation of vertex `v` (vis_common.glsl fuse_vis_mesh_position).
@@ -51,6 +54,41 @@ FUSE_HOST_DEVICE inline void mesh_position(const GpuMesh& m, const u16* vpos, u3
     out[0] = m.quantOffset[0] + static_cast<f32>(vpos[v * 4u + 0u]) * m.quantStep[0];
     out[1] = m.quantOffset[1] + static_cast<f32>(vpos[v * 4u + 1u]) * m.quantStep[1];
     out[2] = m.quantOffset[2] + static_cast<f32>(vpos[v * 4u + 2u]) * m.quantStep[2];
+}
+
+/// Vertex `v` of either stream kind (vis_common.glsl fuse_vis_mesh_position): the f32 current position of a
+/// kMeshFloatPositions row, else the dequantised VPOS. False when the row needs a stream the view lacks.
+FUSE_HOST_DEVICE inline bool mesh_position(const GpuMesh& m, const MeshPositions& pos, u32 v, f32 out[3]) {
+    if ((m.flags & gpu_scene::kMeshFloatPositions) != 0u) {
+        if (pos.fpos == nullptr) {
+            return false;
+        }
+        out[0] = pos.fpos[v * 4u + 0u];
+        out[1] = pos.fpos[v * 4u + 1u];
+        out[2] = pos.fpos[v * 4u + 2u];
+        return true;
+    }
+    if (pos.vpos == nullptr) {
+        return false;
+    }
+    mesh_position(m, pos.vpos, v, out);
+    return true;
+}
+
+/// Previous-frame position of vertex `v` (fuse_vis_mesh_prev_position): the f32 previous stream of a
+/// kMeshFloatPositions row, the current position otherwise.
+FUSE_HOST_DEVICE inline bool mesh_prev_position(const GpuMesh& m, const MeshPositions& pos, u32 v, f32 out[3]) {
+    if ((m.flags & gpu_scene::kMeshFloatPositions) != 0u) {
+        if (pos.fpos == nullptr) {
+            return false;
+        }
+        const u32 i = pos.vertexCount + v;
+        out[0] = pos.fpos[i * 4u + 0u];
+        out[1] = pos.fpos[i * 4u + 1u];
+        out[2] = pos.fpos[i * 4u + 2u];
+        return true;
+    }
+    return mesh_position(m, pos, v, out);
 }
 
 /// Object -> clip (vis_common.glsl fuse_vis_clip): world = rows . (p, 1), clip = viewProj * world.
@@ -141,7 +179,9 @@ FUSE_HOST_DEVICE inline bool triangle_clip(const Params& p, u32 instance, u32 tr
             return false;
         }
         f32 obj[3];
-        mesh_position(mesh, pos.vpos, v, obj);
+        if (!mesh_position(mesh, pos, v, obj)) {
+            return false;
+        }
         c[k] = clip_position(p.transforms[instance], p.viewProj, obj);
     }
     return true;

@@ -60,7 +60,115 @@ struct SsfxGpuSettings {
     /// keeps the SSGI one off: it would add the sky irradiance twice.)
     bool skyFallback = false;
     bool ssgiSkyFallback = false;
+    /// Hi-Z SSR (B5 SSRParams::use_hiz): ssfx.hiz builds a min-depth pyramid (kSsfxMaxHizLevels levels at most) and the
+    /// SSR march skips sample runs inside a pyramid cell whose closest depth is beyond every ray depth of the run;
+    /// those samples cannot satisfy the hit test, so the hits are the full march's (ssr_kernel) bit for bit.
+    bool ssrHiz = false;
+    /// Cross-bilateral AO blur after GTAO (B5 SSAOParams::enable_blur + thresholds; the CPU kernel is
+    /// fuse::compute::screen_space_kernels::ao_blur).
+    bool aoBlur = false;
+    f32 aoBlurDepth = 0.001f;
+    f32 aoBlurNormal = 0.95f;
+    /// Temporal AO denoise (ao_temporal_pixel): history reprojected with SsfxFrameImages::motionAddress (the WP-4.1
+    /// motion vectors; none = a static camera), rejected on a depth mismatch, blended with weight `aoTemporalAlpha`.
+    bool aoTemporal = false;
+    f32 aoTemporalAlpha = 0.1f;
+    f32 aoTemporalDepthReject = 0.05f;
 };
+
+// --- Hi-Z pyramid (ssfx.hiz; sx_hiz.{comp,slang} are the twins of hiz_texel) -----------------------------
+
+/// Extent of pyramid level `level` (level 0 = the full extent): ceil(extent / 2^level).
+FUSE_HOST_DEVICE inline u32 hiz_extent(u32 extent, u32 level) { return (extent + (1u << level) - 1u) >> level; }
+
+/// Levels of an extent (each level halves until a 1-pixel dimension or kSsfxMaxHizLevels) and the float offset of every
+/// level in the pyramid buffer (offsets[l], l = 1..levels); returns the pyramid's float count.
+inline u64 hiz_layout(u32 width, u32 height, u32& levels, u32 (&offsets)[8]) {
+    levels = 0;
+    u64 floats = 0;
+    for (u32& o : offsets) {
+        o = 0u;
+    }
+    for (u32 l = 1u; l <= kSsfxMaxHizLevels; ++l) {
+        if ((width >> (l - 1u)) <= 1u && (height >> (l - 1u)) <= 1u) {
+            break;
+        }
+        offsets[l] = static_cast<u32>(floats);
+        floats += static_cast<u64>(hiz_extent(width, l)) * hiz_extent(height, l);
+        levels = l;
+    }
+    return floats;
+}
+
+/// Level-0 value of a linear depth: sky (<= 0) = kSsfxHizSky.
+FUSE_HOST_DEVICE inline f32 hiz_depth(f32 z) { return z > 0.f ? z : kSsfxHizSky; }
+
+/// One texel of level `level` >= 1: min of the (up to) 2 x 2 texels of level - 1 it covers. `below(x, y)` returns a
+/// level - 1 texel (level 0: hiz_depth of the prepared depth).
+template <typename Below>
+FUSE_HOST_DEVICE inline f32 hiz_texel(u32 width, u32 height, u32 level, u32 x, u32 y, const Below& below) {
+    const u32 bw = hiz_extent(width, level - 1u);
+    const u32 bh = hiz_extent(height, level - 1u);
+    const u32 x0 = x * 2u;
+    const u32 y0 = y * 2u;
+    const u32 x1 = x0 + 1u < bw ? x0 + 1u : x0;
+    const u32 y1 = y0 + 1u < bh ? y0 + 1u : y0;
+    const f32 a = below(x0, y0);
+    const f32 b = below(x1, y0);
+    const f32 c = below(x0, y1);
+    const f32 d = below(x1, y1);
+    const f32 ab = a < b ? a : b;
+    const f32 cd = c < d ? c : d;
+    return ab < cd ? ab : cd;
+}
+
+/// The whole pyramid of a prepared depth frame (levels 1..levels at their offsets).
+inline void hiz_build(u32 width, u32 height, const f32* depth, std::vector<f32>& out) {
+    u32 levels = 0;
+    u32 offsets[8];
+    out.assign(static_cast<usize>(hiz_layout(width, height, levels, offsets)), 0.f);
+    for (u32 l = 1u; l <= levels; ++l) {
+        const u32 w = hiz_extent(width, l);
+        const u32 h = hiz_extent(height, l);
+        const u32 bw = hiz_extent(width, l - 1u);
+        for (u32 y = 0; y < h; ++y) {
+            for (u32 x = 0; x < w; ++x) {
+                out[offsets[l] + static_cast<usize>(y) * w + x] = hiz_texel(width, height, l, x, y, [&](u32 bx, u32 by) {
+                    return l == 1u ? hiz_depth(depth[static_cast<usize>(by) * width + bx])
+                                   : out[offsets[l - 1u] + static_cast<usize>(by) * bw + bx];
+                });
+            }
+        }
+    }
+}
+
+// --- temporal AO denoise (ssfx.ao_temporal; sx_ao_temporal.{comp,slang} are the twins) ------------------
+
+/// Denoised AO of pixel (x, y): the history texel the pixel came from (nearest, reprojected by the UV motion
+/// `mx, my` = current - previous), blended as history + (ao - history) x alpha when the history is valid, the pixel
+/// is geometry, the reprojected centre is on screen and the history depth agrees (|z_h - z| <= reject x z); else `ao`.
+/// `history` = f32 x 2 (AO, linear depth) per pixel of the previous frame.
+FUSE_HOST_DEVICE inline f32 ao_temporal_pixel(const SsfxFrameConstants& c, u32 x, u32 y, f32 ao, f32 z, f32 mx, f32 my,
+                                              const f32* history) {
+    if (c.aoHistoryValid == 0u || !(z > 0.f)) {
+        return ao;
+    }
+    const f32 fw = static_cast<f32>(c.width);
+    const f32 fh = static_cast<f32>(c.height);
+    const f32 px = (static_cast<f32>(x) + 0.5f) - mx * fw;
+    const f32 py = (static_cast<f32>(y) + 0.5f) - my * fh;
+    if (!(px >= 0.f) || !(py >= 0.f) || !(px < fw) || !(py < fh)) {
+        return ao;
+    }
+    const u32 h = static_cast<u32>(py) * c.width + static_cast<u32>(px);
+    const f32 ha = history[h * 2u];
+    const f32 hz = history[h * 2u + 1u];
+    const f32 tolerance = c.aoTemporalDepthReject * z;
+    if (!(hz > 0.f) || std::fabs(hz - z) > tolerance) {
+        return ao;
+    }
+    return ha + (ao - ha) * c.aoTemporalAlpha;
+}
 
 /// The camera the G-buffer was rendered with. `view` / `proj` are column-major (math::lookAt /
 /// math::perspective layout, Vulkan depth range); only the projection intrinsics and the view rotation

@@ -57,6 +57,12 @@
 //                       reflection are read from the WP-6.4 SVGF outputs (FrameGraphOutputs::restirDenoised /
 //                       reflectionDenoised) when the denoisers run (default), so the gate pins frame.restir /
 //                       frame.reflect to the denoised signals.
+//   --mode pathtrace    T2: FrameSettings::pathTrace (WP-7.3 ray-query path tracer over the TLAS, GPU scene and the
+//                       WP-7.1 light tree of the ReSTIR light list -> SVGF -> frame.pathtrace as the HDR image):
+//                       validated frames (the PT stages ran, the raster-chain refinements did not, output finite and
+//                       lit, a static camera accumulates samples, a camera move restarts), then --mode determinism with
+//                       the path tracer (two independent runs bit-identical, frame generation on).
+//   --mode pathtrace_zero_alloc  --mode zero_alloc with the path tracer (64 steady-state frames, 0 operator-new calls).
 //   --tier t0 | t2      T2 skips (77) without the T2 gate.
 //   --language auto | slang | glsl   the composer kernel's language (auto = Slang when built, else GLSL).
 //
@@ -571,12 +577,23 @@ FrameComposerDesc composerDesc(Context& ctx, Scene& s, FrameTier tier) {
     return d;
 }
 
+/// --mode pathtrace / pathtrace_zero_alloc: every settings builder turns the WP-7.3 path tracer on.
+bool g_pathTrace = false;
+
 FrameSettings baseSettings() {
     FrameSettings fs{};
     applyLavapipeTier0FrameSettings(fs, kRenderW, kRenderH);
     fs.splats = true;
     fs.restir = true; // T2 only (the plan drops it at T0)
     fs.restirSettings.diCandidates = 4;
+    if (g_pathTrace) {
+        fs.pathTrace = true;
+        fs.pathTraceSettings.maxBounces = 3;
+        fs.pathTraceSettings.samplesPerFrame = 1;
+        fs.pathTraceSettings.sky[0] = 0.05f;
+        fs.pathTraceSettings.sky[1] = 0.07f;
+        fs.pathTraceSettings.sky[2] = 0.1f;
+    }
     return fs;
 }
 
@@ -992,6 +1009,16 @@ u32 plannedStages(FrameTier tier, const FrameSettings& fs) {
     p |= fs.upscaler == FrameUpscaler::Taau ? kStageTaau : (fs.upscaler == FrameUpscaler::Fsr3 ? kStageFsr3 : 0u);
     p |= fs.post ? kStagePost : 0u;
     p |= (fs.frameGen && fs.upscaler != FrameUpscaler::None) ? kStageFrameGen : 0u; // display != render extent
+    if (tier == FrameTier::T2 && fs.pathTrace) {
+        p |= kStagePathTrace | (fs.pathTraceDenoise ? kStagePathTraceDenoise : 0u);
+        p &= ~static_cast<u32>(kStageRestir | kStageRestirDenoise | kStageSky | kStageSsrc | kStageSsfx | kStageRtReflections |
+                               kStageReflectionDenoise | kStageAerial | kStageRcFlatland | kStageDdgi | kStageRtShadows |
+                               kStageDenoise);
+        // the atmosphere stays planned only for its remaining readers (clouds here)
+        if (!fs.clouds) {
+            p &= ~static_cast<u32>(kStageAtmosphere);
+        }
+    }
     return p;
 }
 
@@ -1598,8 +1625,8 @@ int runDeterminism(Context& ctx, FrameTier tier) {
     const bool scene = sameBytes(a.bytes[kRbSceneColor], b.bytes[kRbSceneColor]);
     const bool fg = a.bytes[kRbFrameGen].empty() || sameBytes(a.bytes[kRbFrameGen], b.bytes[kRbFrameGen]);
     const bool fw = sameBytes(a.bytes[kRbForward], b.bytes[kRbForward]);
-    const bool restirOk = tier != FrameTier::T2 || sameBytes(a.bytes[kRbRestir], b.bytes[kRbRestir]);
-    const bool reflectOk = tier != FrameTier::T2 || sameBytes(a.bytes[kRbReflect], b.bytes[kRbReflect]);
+    const bool restirOk = tier != FrameTier::T2 || g_pathTrace || sameBytes(a.bytes[kRbRestir], b.bytes[kRbRestir]);
+    const bool reflectOk = tier != FrameTier::T2 || g_pathTrace || sameBytes(a.bytes[kRbReflect], b.bytes[kRbReflect]);
     std::printf("determinism %s: output %s, scene colour %s, forward %s, interpolated frame %s, restir %s, reflect %s "
                 "(%zu / %zu bytes)\n",
                 tierName(tier), output ? "identical" : "DIFFERS", scene ? "identical" : "DIFFERS", fw ? "identical" : "DIFFERS",
@@ -1695,6 +1722,60 @@ int runZeroAlloc(Context& ctx, FrameTier tier, bool count) {
         std::printf("zero_alloc %s: %u validated frames ok, validation messages %u\n", tierName(tier), total, g_messages);
     }
     return 0;
+}
+
+int runPathTrace(Context& ctx, FrameTier tier) {
+    if (tier != FrameTier::T2) {
+        std::printf("SKIP: the path tracer is a T2 stage\n");
+        return kSkip;
+    }
+    {
+        Rig rig;
+        if (const int rc = initRig(ctx, rig, tier); rc != 0) {
+            return rc;
+        }
+        if ((rig.composer.available() & (kStagePathTrace | kStagePathTraceDenoise)) != (kStagePathTrace | kStagePathTraceDenoise)) {
+            std::printf("SKIP: path tracer unavailable (%s)\n", rig.composer.reason());
+            return kSkip;
+        }
+        FrameSettings fs = baseSettings();
+        fs.upscaler = FrameUpscaler::Taau;
+        fs.frameGen = false;
+        clampFrameSettingsToComposer(rig.composer, fs);
+        const u32 expected = plannedStages(tier, fs);
+        u32 samplesStatic = 0;
+        bool restarted = false;
+        f64 mean = 0.0;
+        bool lit = true;
+        for (u32 frame = 0; frame < 6u; ++frame) {
+            // Frames 0..3 hold the camera (accumulation), frame 4 moves it (restart), frame 5 holds again.
+            const u32 cameraFrame = frame < 4u ? 0u : 3u;
+            Frame f{};
+            expect(runFrame(ctx, rig.scene, rig.composer, rig.graph, frameDesc(0, cameraFrame, frame == 0u), fs, true, &f),
+                   "path-traced frame executes");
+            expect(f.ran == expected, "every planned stage ran (PT replaces the raster refinements)");
+            expect((f.ran & (kStageSsfx | kStageRestir | kStageRtReflections | kStageSky | kStageAerial)) == 0u,
+                   "the raster-chain refinements do not run with the path tracer");
+            f64 m = 0.0;
+            lit = finiteAndLit(f.bytes[kRbOutput], m) && lit;
+            mean = m;
+            const pathtrace::PathTracerGpu& pt = rig.composer.pathTracer();
+            if (frame == 3u) {
+                samplesStatic = pt.sampleCount();
+            }
+            if (frame == 4u) {
+                restarted = pt.sampleCount() == 1u;
+            }
+            std::printf("  pathtrace frame %u: ran 0x%07x, %s backend, %u spp accumulated, output mean %.4f\n", frame, f.ran,
+                        pt.backendName(), pt.sampleCount(), m);
+        }
+        expect(lit, "the path-traced output is finite and lit");
+        expect(samplesStatic == 4u, "a static camera accumulates one sample per frame (4 after 4 frames)");
+        expect(restarted, "a camera move restarts the accumulation");
+        std::printf("pathtrace %s: validated frames ok (%u spp after 4 static frames, restart on move: %s, mean %.4f)\n",
+                    tierName(tier), samplesStatic, restarted ? "yes" : "NO", mean);
+    }
+    return runDeterminism(ctx, tier);
 }
 
 f32 toUnorm(f32 v) { return std::min(1.f, std::max(0.f, v)); }
@@ -1917,12 +1998,18 @@ int main(int argc, char** argv) {
             rc = runRcFlatland(ctx, tier);
         } else if (mode == "rc_flatland_gbuffer") {
             rc = runRcFlatlandGbuffer(ctx, tier);
+        } else if (mode == "pathtrace") {
+            g_pathTrace = true;
+            rc = runPathTrace(ctx, tier);
+        } else if (mode == "pathtrace_zero_alloc") {
+            g_pathTrace = true;
+            rc = tier == FrameTier::T2 ? runZeroAlloc(ctx, tier, false) : kSkip;
         } else {
             std::fprintf(stderr, "unknown mode %s\n", mode.c_str());
             return 2;
         }
     }
-    if (rc == 0 && mode == "zero_alloc") {
+    if (rc == 0 && (mode == "zero_alloc" || mode == "pathtrace_zero_alloc")) {
         Context ctx;
         rc = setup(ctx, false, tier == FrameTier::T2);
         if (rc == 0) {

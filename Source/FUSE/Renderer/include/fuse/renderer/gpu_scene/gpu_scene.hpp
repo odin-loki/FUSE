@@ -175,6 +175,9 @@ struct GpuSceneGraphRefs {
     /// Scene index buffer (GpuMesh "Index layout"), when any meshlet mesh was added. Not part of
     /// useAll(): raster passes declare IndexRead, BDA readers StorageRead.
     rg::BufferRef indices;
+    /// Per-frame geometry written on the GPU (the GPU skinning arena, setDynamicGeometry()); useAll() declares it so
+    /// every scene reader orders after its writer ("skin.lbs").
+    rg::BufferRef dynamicGeometry;
 };
 
 /// Kernel-facing views for bulk writers (the ECS extractor): mirror rows plus dirty storage.
@@ -257,6 +260,13 @@ public:
     const u32* indexData() const { return m_indexMirror.data(); }
     u32 indexCount() const { return static_cast<u32>(m_indexMirror.size()); }
     const GpuMesh& mesh(u32 index) const { return m_meshes[index]; }
+    /// Registers a device buffer whose contents mesh rows point to and that a pass rewrites every frame (GPU
+    /// skinning output, skinning/skinning_gpu.hpp). importInto() imports it as GpuSceneGraphRefs::dynamicGeometry.
+    /// Null clears it. The scene does not own the buffer.
+    void setDynamicGeometry(void* bufferHandle, u64 bytes) {
+        m_dynamicGeometry = bufferHandle;
+        m_dynamicGeometryBytes = bytes;
+    }
     u32 meshCount() const { return m_meshes.count(); }
 
     // --- materials ------------------------------------------------------------------------------
@@ -383,6 +393,8 @@ private:
     std::vector<Retired> m_retired;
     std::vector<Geometry> m_geometry;
     std::vector<u32> m_indexMirror;
+    void* m_dynamicGeometry = nullptr;
+    u64 m_dynamicGeometryBytes = 0;
     Buffer m_indexBuffer{};
     u32 m_indexCapacity = 0; ///< u32 entries of m_indexBuffer
     std::vector<u8> m_scratch;

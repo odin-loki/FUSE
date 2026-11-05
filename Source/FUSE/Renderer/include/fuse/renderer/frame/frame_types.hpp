@@ -19,6 +19,9 @@
 //   mode Reflect      frame.reflect    geometry: colour + F x the WP-6.2 mean reflected radiance, F = Schlick
 //                                      (F0 = lerp(0.04, albedo, metallic), N.V, fifth power as multiplies: the
 //                                      SSFX compose's SSR weight); background keeps its bits
+//   mode PathTrace    frame.pathtrace  the WP-7.3 path tracer's radiance -> the frame's HDR image (every pixel; the
+//                                      raster lighting chain is replaced): the accumulated mean, or with the
+//                                      denoiser the SVGF output x the PT demodulation factor (remodulation)
 #include <fuse/types.hpp>
 
 #include <algorithm>
@@ -36,7 +39,8 @@ enum FrameKernelMode : u32 {
     kFrameModeRestir = 4,
     kFrameModeReflect = 5,
     kFrameModeRcPack = 6, ///< WP-6.5 flatland RC: G-buffer (RT0 / RT1 / RT4) -> f32x4 RcScene texels
-    kFrameModeCount = 7,
+    kFrameModePathTrace = 7, ///< WP-7.3 path tracer -> HDR image (frame_pathtrace_texel)
+    kFrameModeCount = 8,
 };
 
 /// FrameConstants::flags
@@ -46,6 +50,10 @@ enum FrameFlag : u32 {
     kFrameFlagSunDisk = 1u << 2, ///< Sky: + the transmitted sun disk
     kFrameFlagClouds = 1u << 3,  ///< Resolve: read the clouds result instead of the HDR image
     kFrameFlagSplats = 1u << 4,  ///< Resolve: composite the splats (rgb x T + c)
+    /// PathTrace: `denoised` is the SVGF output (demodulated) and `restirAlbedo` the PT demodulation factor (the
+    /// radiance = their product); clear: `denoised` is the PT mean (f32x4 rgb + samples). The PathTrace pass has its
+    /// own constants slot, so it reuses these two address fields (no layout change).
+    kFrameFlagPtRemodulate = 1u << 5,
 };
 
 /// Per-frame constants of the composer's kernel, read through BDA from a host-visible ring: 224 bytes.
@@ -149,6 +157,15 @@ inline void frame_restir_texel(const f32 (&in)[4], f32 depth, const f32 (&albedo
             out[k] = in[k] + m;
         }
     }
+}
+
+/// PathTrace: the HDR texel from the path tracer's source texel (`src`: mean or denoised signal) and the demodulation
+/// factor (`demod`, used with kFrameFlagPtRemodulate); alpha 1.
+inline void frame_pathtrace_texel(const FrameConstants& c, const f32 (&src)[4], const f32 (&demod)[4], f32 (&out)[4]) {
+    for (u32 k = 0; k < 3u; ++k) {
+        out[k] = (c.flags & kFrameFlagPtRemodulate) != 0u ? src[k] * demod[k] : src[k];
+    }
+    out[3] = 1.f;
 }
 
 /// RcPack light direction (== research::rc::kRcPackLight; normalised by frame_rc_pack_texel).

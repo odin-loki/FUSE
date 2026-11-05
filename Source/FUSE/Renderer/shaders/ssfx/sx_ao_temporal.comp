@@ -1,0 +1,46 @@
+#version 460
+// "ssfx.ao_temporal" (SsfxGpuSettings::aoTemporal): temporal AO denoise -> the aoDenoised section and this frame's
+// history (AO, linear depth). Line-for-line twin of ssfx_gpu::ao_temporal_pixel (ssfx_gpu_reference.hpp): the pixel's
+// previous position from the WP-4.1 UV motion (none = static), the nearest history texel, depth rejection, then
+// history + (ao - history) x alpha. Input: the blurred AO when ssfx.ao_blur ran, else the GTAO visibility.
+// GLSL twin of sx_ao_temporal.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "sx_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+void main() {
+    sx_begin();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= F.width || p.y >= F.height) {
+        return;
+    }
+    const uint i = sx_index(p.x, p.y);
+    const uint64_t source = (F.flags & SX_FLAG_AO_BLUR) != 0u ? F.aoBlurred : F.ao;
+    const float ao = SxFloatsRef(source).v[i];
+    const float z = sx_depth_at(p.x, p.y);
+    vec2 motion = vec2(0.0);
+    if (F.motion != 0ul) {
+        motion = SxVec2Ref(F.motion).v[i];
+    }
+    float result = ao;
+    if (F.aoHistoryValid != 0u && z > 0.0) {
+        const float fw = float(F.width);
+        const float fh = float(F.height);
+        precise float px = (float(p.x) + 0.5) - motion.x * fw;
+        precise float py = (float(p.y) + 0.5) - motion.y * fh;
+        if (px >= 0.0 && py >= 0.0 && px < fw && py < fh) {
+            const uint h = uint(py) * F.width + uint(px);
+            const vec2 hist = SxVec2Ref(F.aoHistoryIn).v[h];
+            precise float tolerance = F.aoTemporalDepthReject * z;
+            precise float dz = hist.y - z;
+            if (hist.y > 0.0 && !(abs(dz) > tolerance)) {
+                precise float d = ao - hist.x;
+                precise float blended = hist.x + d * F.aoTemporalAlpha;
+                result = blended;
+            }
+        }
+    }
+    SxFloatsRef(F.aoDenoised).v[i] = result;
+    SxVec2Ref(F.aoHistoryOut).v[i] = vec2(result, z);
+}

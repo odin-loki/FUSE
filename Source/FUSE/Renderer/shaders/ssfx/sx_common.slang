@@ -12,6 +12,10 @@ static const uint kSxFlagSsrContact = 1u << 6;
 static const uint kSxFlagAoJitter = 1u << 7;
 static const uint kSxFlagSky = 1u << 8;
 static const uint kSxFlagSkyGi = 1u << 9;
+static const uint kSxFlagHiz = 1u << 10;
+static const uint kSxFlagAoBlur = 1u << 11;
+static const uint kSxFlagAoTemporal = 1u << 12;
+static const float kSxHizSky = 3.0e38;
 
 // SsfxFrameConstants, 592 bytes.
 struct SxFrame {
@@ -75,6 +79,23 @@ struct SxFrame {
     float giThickness;
     float giMaxDistance;
     float giIntensity;
+    uint64_t hiz;
+    uint64_t aoBlurred;
+    uint64_t aoDenoised;
+    uint64_t aoHistoryIn;
+    uint64_t aoHistoryOut;
+    uint64_t motion;
+    uint64_t aoFinal;
+    uint64_t ssrSteps;
+    uint hizLevels;
+    uint aoHistoryValid;
+    float aoBlurDepth;
+    float aoBlurNormal;
+    float aoTemporalAlpha;
+    float aoTemporalDepthReject;
+    uint reserved4;
+    uint reserved5;
+    uint hizOffset[8];
 };
 
 struct SxPush {
@@ -95,6 +116,8 @@ void sxBegin() { F = ((SxFrame*)pc.frame)[0]; }
 
 float4* sxTexels(uint64_t address) { return (float4*)address; }
 float* sxFloats(uint64_t address) { return (float*)address; }
+float2* sxVec2s(uint64_t address) { return (float2*)address; }
+uint2* sxUint2s(uint64_t address) { return (uint2*)address; }
 
 float4 sxFetch(uint handle, int2 p) { return fuse_sx_textures[handle & 0xFFFFFu].Load(int3(p, 0)); }
 

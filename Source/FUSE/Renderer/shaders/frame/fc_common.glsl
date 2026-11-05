@@ -17,12 +17,14 @@
 #define FC_MODE_RESTIR 4u
 #define FC_MODE_REFLECT 5u
 #define FC_MODE_RC_PACK 6u
+#define FC_MODE_PATHTRACE 7u
 
 #define FC_FLAG_SKY (1u << 0)
 #define FC_FLAG_AERIAL (1u << 1)
 #define FC_FLAG_SUN_DISK (1u << 2)
 #define FC_FLAG_CLOUDS (1u << 3)
 #define FC_FLAG_SPLATS (1u << 4)
+#define FC_FLAG_PT_REMODULATE 32u
 
 // FrameConstants, 224 bytes.
 struct FcFrame {

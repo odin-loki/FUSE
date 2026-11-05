@@ -43,6 +43,7 @@ vec3 sx_pixel_gather(uint64_t radianceIn, uint x, uint y) {
     P.maxDistance = F.giMaxDistance;
     P.fadeEdge = 0.0;
     P.refineSteps = F.giRefineSteps;
+    P.hiz = false;
     const vec3 p = sx_position_at(x, y);
     vec3 n = sx_normalize(sx_normal_at(x, y));
     if (sx_dot(n, p) > 0.0) {

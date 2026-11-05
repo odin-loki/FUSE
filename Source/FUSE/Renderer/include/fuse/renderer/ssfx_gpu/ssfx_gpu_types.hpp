@@ -35,7 +35,21 @@ enum SsfxFlag : u32 {
     kSsfxFlagSky = 1u << 8,
     /// SSGI sky fallback (SsfxGpuSettings::ssgiSkyFallback): the same for the gather rays (every bounce).
     kSsfxFlagSkyGi = 1u << 9,
+    /// Hi-Z SSR (SsfxGpuSettings::ssrHiz, B5 SSRParams::use_hiz): ssfx.hiz builds a min-depth pyramid and the SSR march
+    /// skips runs of samples that provably cannot hit (same hits as the full march, see sx_trace.glsl).
+    kSsfxFlagHiz = 1u << 10,
+    /// Cross-bilateral AO blur (SsfxGpuSettings::aoBlur): ssfx.ao_blur, the twin of the B5 HBAO blur
+    /// (fuse::compute::screen_space_kernels::ao_blur, 5 x 5 taps).
+    kSsfxFlagAoBlur = 1u << 11,
+    /// Temporal AO denoise (SsfxGpuSettings::aoTemporal): ssfx.ao_temporal (ao_temporal_pixel, reprojection by the
+    /// WP-4.1 motion vectors, depth rejection, exponential history).
+    kSsfxFlagAoTemporal = 1u << 12,
 };
+
+/// Hi-Z pyramid depth of a sky texel (min-depth pyramid; any real depth is smaller).
+inline constexpr f32 kSsfxHizSky = 3.0e38f;
+/// Deepest Hi-Z level (cells of 2^6 = 64 pixels).
+inline constexpr u32 kSsfxMaxHizLevels = 6u;
 
 /// Per-frame constants, one host-visible ring slot per frame in flight, read through BDA.
 struct SsfxFrameConstants {
@@ -105,8 +119,26 @@ struct SsfxFrameConstants {
     f32 giThickness = 0.5f;
     f32 giMaxDistance = 10.f;
     f32 giIntensity = 1.f;
+    // --- Hi-Z SSR + AO denoise (appended) -----------------------------------------------------------
+    u64 hiz = 0;          ///< f32 min-depth pyramid: level l (1..hizLevels) texel (i, j) at float hizOffset[l] + j w_l + i
+    u64 aoBlurred = 0;    ///< f32: ssfx.ao_blur output
+    u64 aoDenoised = 0;   ///< f32: ssfx.ao_temporal output
+    u64 aoHistoryIn = 0;  ///< f32 x 2 (AO, linear depth) of the previous frame
+    u64 aoHistoryOut = 0; ///< f32 x 2 written this frame
+    u64 motion = 0;       ///< f32 x 2 UV motion (current - previous) per pixel (WP-4.1), 0 = static reprojection
+    u64 aoFinal = 0;      ///< f32: the AO ssfx.compose applies (ao, aoBlurred or aoDenoised)
+    u64 ssrSteps = 0;     ///< u32 x 2 per pixel (Hi-Z SSR): march samples skipped by the pyramid, samples tested
+    u32 hizLevels = 0;
+    u32 aoHistoryValid = 0;
+    f32 aoBlurDepth = 0.001f;  ///< ao_blur::Thresholds::depth (plane distance / depth)
+    f32 aoBlurNormal = 0.95f;  ///< ao_blur::Thresholds::normal (N . N')
+    f32 aoTemporalAlpha = 0.1f;         ///< weight of the current frame in the history blend
+    f32 aoTemporalDepthReject = 0.05f;  ///< |z_history - z| > reject x z: history dropped
+    u32 reserved4 = 0;
+    u32 reserved5 = 0;
+    u32 hizOffset[8] = {}; ///< float offset of level l in the pyramid (index = level, 0 unused)
 };
-static_assert(sizeof(SsfxFrameConstants) == 592u, "SsfxFrameConstants layout (sx_common mirrors it)");
+static_assert(sizeof(SsfxFrameConstants) == 720u, "SsfxFrameConstants layout (sx_common mirrors it)");
 
 /// Push constants (32 bytes).
 struct SsfxPush {

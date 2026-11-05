@@ -61,6 +61,23 @@ bool resolve_constants(const SsfxGpuSettings& settings, const SsfxCameraDesc& ca
     if (settings.contact.enabled) {
         c.flags |= kSsfxFlagSsrContact;
     }
+    if (settings.ssrHiz && settings.ssr) {
+        c.flags |= kSsfxFlagHiz;
+    }
+    if (settings.aoBlur && settings.ao) {
+        c.flags |= kSsfxFlagAoBlur;
+    }
+    if (settings.aoTemporal && settings.ao) {
+        c.flags |= kSsfxFlagAoTemporal;
+    }
+    c.aoBlurDepth = settings.aoBlurDepth;
+    c.aoBlurNormal = settings.aoBlurNormal;
+    c.aoTemporalAlpha = std::clamp(settings.aoTemporalAlpha, 0.f, 1.f);
+    c.aoTemporalDepthReject = std::max(settings.aoTemporalDepthReject, 0.f);
+    c.hizLevels = 0u;
+    if ((c.flags & kSsfxFlagHiz) != 0u) {
+        hiz_layout(width, height, c.hizLevels, c.hizOffset);
+    }
     c.fx = cam.fx;
     c.fy = cam.fy;
     c.cx = cam.cx;

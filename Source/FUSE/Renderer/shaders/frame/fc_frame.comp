@@ -8,6 +8,7 @@
 //   ShadowPack  denoised shadow (.x, clamped to [0, 1]) -> f32 visibility plane (RtfxShadowView layout)
 //   Restir      geometry: colour + albedo x ReSTIR DI (demodulated); background keeps its bits
 //   Reflect     geometry: colour + Schlick F(F0, N.V) x RT reflection radiance; background keeps its bits
+//   PathTrace   WP-7.3 radiance (mean, or denoised x demodulation factor) -> HDR image, alpha 1
 // GLSL twin of fc_frame.slang.
 #extension GL_GOOGLE_include_directive : require
 #include "fc_common.glsl"
@@ -49,6 +50,20 @@ void main() {
     const uint mode = pc.mode;
     if (mode == FC_MODE_SHADOW_PACK) {
         FcFloatsRef(F.visibility).v[i] = min(1.0, max(0.0, FcTexelsRef(F.denoised).v[i].x));
+        return;
+    }
+    if (mode == FC_MODE_PATHTRACE) {
+        // frame_pathtrace_texel: the PT mean, or the denoised signal x the demodulation factor.
+        const vec4 src = FcTexelsRef(F.denoised).v[i];
+        vec4 result = vec4(src.xyz, 1.0);
+        if ((F.flags & FC_FLAG_PT_REMODULATE) != 0u) {
+            const vec4 f = FcTexelsRef(F.restirAlbedo).v[i];
+            precise float r = src.x * f.x;
+            precise float g = src.y * f.y;
+            precise float b = src.z * f.z;
+            result = vec4(r, g, b, 1.0);
+        }
+        imageStore(fuse_fc_images[fuse_handle_index(F.outColor)], ivec2(p), result);
         return;
     }
     if (mode == FC_MODE_RESOLVE) {

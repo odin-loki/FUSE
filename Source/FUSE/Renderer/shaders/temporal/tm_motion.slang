@@ -64,6 +64,7 @@ TmMotion fuseTmMotion(GpuSceneHeader* scene, TmMotionFrame f, uint2 p, uint2 vis
     const GpuTransform t = fuseGpuSceneTransforms(scene)[instance];
     const uint base = mesh.firstIndex + triangle * 3u;
     float3 v[3];
+    float3 pv[3];
     float4 c[3];
     for (uint k = 0u; k < 3u; ++k) {
         const uint vi = uint(int(indices[base + k]) + mesh.vertexOffset);
@@ -71,6 +72,7 @@ TmMotion fuseTmMotion(GpuSceneHeader* scene, TmMotionFrame f, uint2 p, uint2 vis
             return r;
         }
         v[k] = fuseVisMeshPosition(mesh, vi);
+        pv[k] = fuseVisMeshPrevPosition(mesh, vi);
         c[k] = fuseVisClip(t, f.drawViewProj, v[k]);
     }
     const float2 ndc = fuseVisPixelNdc(p, f.width, f.height);
@@ -94,8 +96,12 @@ TmMotion fuseTmMotion(GpuSceneHeader* scene, TmMotionFrame f, uint2 p, uint2 vis
     obj.x = b0 * v[0].x + b1 * v[1].x + b2 * v[2].x;
     obj.y = b0 * v[0].y + b1 * v[1].y + b2 * v[2].y;
     obj.z = b0 * v[0].z + b1 * v[1].z + b2 * v[2].z;
+    float3 prevObj;
+    prevObj.x = b0 * pv[0].x + b1 * pv[1].x + b2 * pv[2].x;
+    prevObj.y = b0 * pv[0].y + b1 * pv[1].y + b2 * pv[2].y;
+    prevObj.z = b0 * pv[0].z + b1 * pv[1].z + b2 * pv[2].z;
     const float4 cc = fuseVisClip(t, f.viewProj, obj);
-    const float4 pcl = fuseVisClip(fuseGpuScenePrevTransforms(scene)[instance], f.prevViewProj, obj);
+    const float4 pcl = fuseVisClip(fuseGpuScenePrevTransforms(scene)[instance], f.prevViewProj, prevObj);
     if (cc.w > 0.0) {
         r.depth = cc.w;
         if (pcl.w > 0.0) {
