@@ -5,15 +5,12 @@
 **Sample world:** `worlds/example.mis` (hierarchy stub) → cook with `fuse_convert` / `fuse_cook --fuselevel`  
 **Binary:** `demo_3d_empty` (built when `FUSE_BUILD_PARITY_DEMOS=ON`)
 
-`worlds/example.fuselevel` is gitignored. `demo_3d_empty` cooks it on first use from the golden
-mission when present, else from the bundled stub; the ctest fixture `fuse_sample_level_demo_3d_empty` does the same
-before the gates that open this sample. By hand:
+Cook the bundled mission to the manifest path:
 
 ```bash
 ./build-fuse/Tools/FUSE/fuse_convert \
-  --mis Templates/BaseGame/game/data/ExampleModule/levels/ExampleLevel.mis \
+  --mis Samples/unification/demo_3d_empty/worlds/example.mis \
   --output Samples/unification/demo_3d_empty/worlds/example.fuselevel
-# or, without the golden mission: --mis Samples/unification/demo_3d_empty/worlds/example.mis
 ```
 
 Run from repo root:

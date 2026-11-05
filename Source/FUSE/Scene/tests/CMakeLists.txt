@@ -89,8 +89,7 @@ add_executable(fuse_scene_magic_gates test_scene_magic_gates.cpp)
 target_link_libraries(fuse_scene_magic_gates PRIVATE fuse_scene fuse_core)
 target_compile_definitions(fuse_scene_magic_gates PRIVATE FUSE_SOURCE_DIR="${FUSE_SOURCE_DIR_CMAKE}")
 add_test(NAME fuse_scene_magic_gates COMMAND fuse_scene_magic_gates)
-set_tests_properties(fuse_scene_magic_gates PROPERTIES LABELS "gate"
-    FIXTURES_REQUIRED fuse_sample_level_demo_3d_empty) # cooked sample level (Tools/FUSE/CMakeLists.txt)
+set_tests_properties(fuse_scene_magic_gates PROPERTIES LABELS "gate")
 
 # B3.9: free camera flies a path; draw counts == brute-force frustum counts every step.
 add_executable(fuse_b3_free_camera_gates test_b3_free_camera_gates.cpp)
