@@ -509,7 +509,9 @@ void FroxelFog::addPasses(rg::Graph& graph, const FogGraphRefs& refs, const FogG
     }
     const FogFrameConstants& c = m_constants;
     if (PassRecord* r = nextRecord(kInject)) {
-        r->groups[0] = groups(c.froxelCount, kFogLinearGroup);
+        // fog_inject: one workgroup per 8 x 8 froxels of one depth slice (coherent light-cluster loops)
+        r->groups[0] = groups(c.gridX, 8u) * groups(c.gridY, 8u);
+        r->groups[1] = std::max(c.gridZ, 1u);
         ++m_stats.passes;
         rg::PassBuilder inject = graph.addPass("fog.inject", &FroxelFog::recordDispatch, r);
         inject.use(refs.work, rg::Access::StorageReadWrite, {}, rg::kStageCompute);

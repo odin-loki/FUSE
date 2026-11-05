@@ -322,13 +322,13 @@ LtSampleResult lt_sample(uint64_t headerAddress, vec3 p, vec3 n, float u0, float
         pmf = pTree;
         uint node = 0u;
         for (uint level = 0u; level <= LT_MAX_DEPTH; ++level) {
-            const LtNode current = nodes.v[node];
-            if ((current.flags & LT_FLAG_LEAF) != 0u) {
-                light = current.childOrEmitter;
+            const uint currentFlags = nodes.v[node].flags; // the two words the descent reads, not the 64-byte node
+            if ((currentFlags & LT_FLAG_LEAF) != 0u) {
+                light = nodes.v[node].childOrEmitter;
                 break;
             }
             const uint c0 = node + 1u;
-            const uint c1 = current.childOrEmitter;
+            const uint c1 = nodes.v[node].childOrEmitter;
             const float i0 = lt_importance(nodes.v[c0], p, n, hasNormal);
             const float i1 = lt_importance(nodes.v[c1], p, n, hasNormal);
             float p0;
@@ -383,9 +383,9 @@ float lt_pmf(uint64_t headerAddress, vec3 p, vec3 n, uint light) {
     precise float pmf = 1.0 - pDir;
     uint node = 0u;
     for (uint level = 0u; level < e.depth; ++level) {
-        const LtNode current = nodes.v[node];
+        // (the child link only, not the 64-byte node)
         const uint c0 = node + 1u;
-        const uint c1 = current.childOrEmitter;
+        const uint c1 = nodes.v[node].childOrEmitter;
         const float i0 = lt_importance(nodes.v[c0], p, n, hasNormal);
         const float i1 = lt_importance(nodes.v[c1], p, n, hasNormal);
         float p0;

@@ -129,6 +129,20 @@ vec3 fuse_fog_in_scattering(FuseFogFrameRef R, vec3 p, vec3 v) {
         for (uint i = 0u; i < count; ++i) {
             const uint slot = list.v[offset + i];
             if (slot < F.lightCount) {
+                const uint type = lights.v[slot].type;
+                if (type == FUSE_LIGHT_POINT || type == FUSE_LIGHT_SPOT) {
+                    // Range pre-test: fuse_fog_falloff's own zero test on the same bits, reading only the position and
+                    // range (P2: most cluster lights are out of range of a froxel); the light then adds an exact zero.
+                    precise vec3 toLight = vec3(lights.v[slot].position[0] - p.x, lights.v[slot].position[1] - p.y,
+                                                lights.v[slot].position[2] - p.z);
+                    precise float distance = sqrt(fuse_fog_dot(toLight, toLight));
+                    const float range = lights.v[slot].range;
+                    if (!(range > 0.0) || !(distance < range)) {
+                        precise vec3 zero = L + vec3(0.0);
+                        L = zero;
+                        continue;
+                    }
+                }
                 L = L + fuse_fog_light_in(R, lights.v[slot], slot, p, v);
             }
         }
@@ -138,14 +152,16 @@ vec3 fuse_fog_in_scattering(FuseFogFrameRef R, vec3 p, vec3 v) {
 
 void main() {
     FuseFogFrameRef R = FuseFogFrameRef(pc.frame);
-    const uint i = gl_GlobalInvocationID.x;
-    if (i >= R.f.froxelCount) {
+    // One workgroup = 8 x 8 froxels of one depth slice (workgroup (tile, z)): its froxels share one or two light
+    // clusters, so the cluster loop is coherent (one invocation per depth column walked ~20 different clusters).
+    const uint tilesX = (R.f.gridX + 7u) / 8u;
+    const uint x = (gl_WorkGroupID.x % tilesX) * 8u + (gl_LocalInvocationIndex & 7u);
+    const uint y = (gl_WorkGroupID.x / tilesX) * 8u + (gl_LocalInvocationIndex >> 3u);
+    const uint z = gl_WorkGroupID.y;
+    if (x >= R.f.gridX || y >= R.f.gridY || z >= R.f.gridZ) {
         return;
     }
-    const uint z = i % R.f.gridZ;
-    const uint col = i / R.f.gridZ;
-    const uint x = col % R.f.gridX;
-    const uint y = col / R.f.gridX;
+    const uint i = (y * R.f.gridX + x) * R.f.gridZ + z;
     const vec3 p = fuse_fog_froxel_point(R, x, y, z, R.f.jitter[0], R.f.jitter[1], R.f.jitter[2]);
     vec3 scattering;
     const float extinction = fuse_fog_medium(R, p, scattering);

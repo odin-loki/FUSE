@@ -106,6 +106,18 @@ float3 fogInScattering(FogFrame* R, float3 p, float3 v) {
         for (uint i = 0u; i < count; ++i) {
             const uint slot = list[offset + i];
             if (slot < F.lightCount) {
+                const uint type = lights[slot].type;
+                if (type == kFuseLightPoint || type == kFuseLightSpot) {
+                    // Range pre-test (twin of fog_inject.comp): fogFalloff's zero test on the same bits.
+                    const float3 toLight = float3(lights[slot].position[0] - p.x, lights[slot].position[1] - p.y,
+                                                  lights[slot].position[2] - p.z);
+                    const float distance = sqrt(fogDot(toLight, toLight));
+                    const float range = lights[slot].range;
+                    if (!(range > 0.0) || !(distance < range)) {
+                        L = L + float3(0.0);
+                        continue;
+                    }
+                }
                 L = L + fogLightIn(R, lights[slot], slot, p, v);
             }
         }
@@ -114,16 +126,17 @@ float3 fogInScattering(FogFrame* R, float3 p, float3 v) {
 }
 
 [numthreads(64, 1, 1)]
-void main(uint3 tid: SV_DispatchThreadID) {
+void main(uint3 group: SV_GroupID, uint t: SV_GroupIndex) {
     FogFrame* R = (FogFrame*)pc.frame;
-    const uint i = tid.x;
-    if (i >= R.froxelCount) {
+    // One workgroup = 8 x 8 froxels of one depth slice (twin of fog_inject.comp).
+    const uint tilesX = (R.gridX + 7u) / 8u;
+    const uint x = (group.x % tilesX) * 8u + (t & 7u);
+    const uint y = (group.x / tilesX) * 8u + (t >> 3u);
+    const uint z = group.y;
+    if (x >= R.gridX || y >= R.gridY || z >= R.gridZ) {
         return;
     }
-    const uint z = i % R.gridZ;
-    const uint col = i / R.gridZ;
-    const uint x = col % R.gridX;
-    const uint y = col / R.gridX;
+    const uint i = (y * R.gridX + x) * R.gridZ + z;
     const float3 p = fogFroxelPoint(R, x, y, z, R.jitter[0], R.jitter[1], R.jitter[2]);
     float3 scattering;
     const float extinction = fogMedium(R, p, scattering);

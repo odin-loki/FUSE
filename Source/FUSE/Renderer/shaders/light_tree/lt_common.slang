@@ -281,13 +281,13 @@ LtSampleResult ltSample(uint64_t headerAddress, float3 p, float3 n, float u0, fl
         pmf = pTree;
         uint node = 0u;
         for (uint level = 0u; level <= kLtMaxDepth; ++level) {
-            const LtNode current = nodes[node];
-            if ((current.flags & kLtFlagLeaf) != 0u) {
-                light = current.childOrEmitter;
+            const uint currentFlags = nodes[node].flags; // the two words the descent reads, not the 64-byte node
+            if ((currentFlags & kLtFlagLeaf) != 0u) {
+                light = nodes[node].childOrEmitter;
                 break;
             }
             const uint c0 = node + 1u;
-            const uint c1 = current.childOrEmitter;
+            const uint c1 = nodes[node].childOrEmitter;
             const float i0 = ltImportance(nodes[c0], p, n, hasNormal);
             const float i1 = ltImportance(nodes[c1], p, n, hasNormal);
             float p0;
@@ -339,9 +339,9 @@ float ltPmf(uint64_t headerAddress, float3 p, float3 n, uint light) {
     float pmf = 1.0 - pDir;
     uint node = 0u;
     for (uint level = 0u; level < e.depth; ++level) {
-        const LtNode current = nodes[node];
+        // (the child link only, not the 64-byte node)
         const uint c0 = node + 1u;
-        const uint c1 = current.childOrEmitter;
+        const uint c1 = nodes[node].childOrEmitter;
         const float i0 = ltImportance(nodes[c0], p, n, hasNormal);
         const float i1 = ltImportance(nodes[c1], p, n, hasNormal);
         float p0;

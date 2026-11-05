@@ -46,11 +46,29 @@ float sxArc(float h, float gamma, float cosN, float sinG) {
     return 0.25 * (cosN + twoH * sinG - sxCosPoly(twoH - gamma));
 }
 
+// The columns' / rows' ray directions around the 8 x 8 tile, once per workgroup (twin of sx_gtao.comp).
+static const int kSxGtaoHalo = 72;
+static const int kSxGtaoLut = 152; // 8 + 2 x halo
+groupshared float s_rayX[152];
+groupshared float s_rayY[152];
+static int g_lutX0 = 0;
+static int g_lutY0 = 0;
+
+float3 sxGtaoPosition(uint x, uint y) {
+    const int ix = int(x) - g_lutX0;
+    const int iy = int(y) - g_lutY0;
+    if (ix >= 0 && ix < kSxGtaoLut && iy >= 0 && iy < kSxGtaoLut) {
+        const float z = sxDepthAt(x, y);
+        return float3(s_rayX[ix] * z, s_rayY[iy] * z, 1.0 * z); // sxScale(sxRayDirection(...), z)
+    }
+    return sxPositionAt(x, y);
+}
+
 float sxGtao(uint x, uint y) {
     if (x >= F.width || y >= F.height || sxDepthAt(x, y) <= 0.0) {
         return 1.0;
     }
-    const float3 p = sxPositionAt(x, y);
+    const float3 p = sxGtaoPosition(x, y);
     float3 n = sxNormalize(sxNormalAt(x, y));
     if (sxDot(n, p) > 0.0) {
         n = sxNeg(n);
@@ -135,7 +153,7 @@ float sxGtao(uint x, uint y) {
                 if (sxDepthAt(ux, uy) <= 0.0) {
                     continue;
                 }
-                const float3 h = sxSub(sxPositionAt(ux, uy), p);
+                const float3 h = sxSub(sxGtaoPosition(ux, uy), p);
                 const float dist = sxLength(h);
                 if (dist < 1e-6 || dist > F.aoRadius) {
                     continue;
@@ -173,9 +191,18 @@ float sxGtao(uint x, uint y) {
 }
 
 [numthreads(8, 8, 1)]
-void main(uint3 tid: SV_DispatchThreadID) {
+void main(uint3 tid: SV_DispatchThreadID, uint3 group: SV_GroupID, uint t: SV_GroupIndex) {
     sxBegin();
     const uint2 p = tid.xy;
+    g_lutX0 = int(group.x * 8u) - kSxGtaoHalo;
+    g_lutY0 = int(group.y * 8u) - kSxGtaoHalo;
+    for (uint k = t; k < uint(kSxGtaoLut); k += 64u) {
+        const float px = float(g_lutX0 + int(k)) + 0.5;
+        const float py = float(g_lutY0 + int(k)) + 0.5;
+        s_rayX[k] = fuseDivRn(px - F.cx, F.fx);
+        s_rayY[k] = fuseDivRn(py - F.cy, F.fy);
+    }
+    GroupMemoryBarrierWithGroupSync();
     if (p.x >= F.width || p.y >= F.height) {
         return;
     }
