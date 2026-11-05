@@ -164,7 +164,7 @@ private:
     Framebuffer m_fbs[kMaxFramebuffers]{};
     u32 m_fbNext = 0;
     void* framebufferFor(void* view, u32 w, u32 h);
-    void* makeComputePipeline(std::span<const u32> spirv);
+    void* makeComputePipeline(std::span<const u32> spirv); // fuse-lint-allow(ownership): a VkPipeline handle the class keeps and destroys
 };
 
 } // namespace fuse::ui::render
