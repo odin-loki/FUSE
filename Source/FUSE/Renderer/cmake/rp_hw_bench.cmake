@@ -44,7 +44,7 @@ add_executable(fuse_rp_hw_bench
     ${_fuse_hw_dir}/test_rp_hw_bench.cpp
     ${_fuse_hw_dir}/test_rp_hw_bench_common.hpp
     ${_fuse_hw_dir}/test_rp_hw_bench_scene.hpp)
-target_link_libraries(fuse_rp_hw_bench PRIVATE fuse_frame fuse_geometry)
+target_link_libraries(fuse_rp_hw_bench PRIVATE fuse_frame fuse_geometry fuse_rhi_profiling)
 target_compile_definitions(fuse_rp_hw_bench PRIVATE FUSE_RP_HW_BASELINE="${_fuse_hw_baseline}")
 fuse_apply_cxx23(fuse_rp_hw_bench)
 if(TARGET fuse_radix_sort_shaders)
@@ -65,7 +65,7 @@ _fuse_hw_test(fuse_rp_hw_p8_volumetrics COMMAND fuse_rp_hw_bench --mode volumetr
 add_executable(fuse_rp_hw_bench_dag
     ${_fuse_hw_dir}/test_rp_hw_bench_dag.cpp
     ${_fuse_hw_dir}/test_rp_hw_bench_common.hpp)
-target_link_libraries(fuse_rp_hw_bench_dag PRIVATE fuse_geometry_streaming fuse_frame fuse_geometry)
+target_link_libraries(fuse_rp_hw_bench_dag PRIVATE fuse_geometry_streaming fuse_frame fuse_geometry fuse_rhi_profiling)
 fuse_apply_cxx23(fuse_rp_hw_bench_dag)
 _fuse_hw_test(fuse_rp_hw_p5_dag_100m COMMAND fuse_rp_hw_bench_dag TIMEOUT 3600)
 
@@ -73,7 +73,7 @@ _fuse_hw_test(fuse_rp_hw_p5_dag_100m COMMAND fuse_rp_hw_bench_dag TIMEOUT 3600)
 add_executable(fuse_rp_hw_bench_restir
     ${_fuse_hw_dir}/test_rp_hw_bench_restir.cpp
     ${_fuse_hw_dir}/test_rp_hw_bench_common.hpp)
-target_link_libraries(fuse_rp_hw_bench_restir PRIVATE fuse_restir fuse_rt_reference fuse_denoise fuse_geometry)
+target_link_libraries(fuse_rp_hw_bench_restir PRIVATE fuse_restir fuse_rt_reference fuse_denoise fuse_geometry fuse_rhi_profiling)
 fuse_apply_cxx23(fuse_rp_hw_bench_restir)
 _fuse_hw_test(fuse_rp_hw_p7_restir_10k COMMAND fuse_rp_hw_bench_restir TIMEOUT 3600)
 
@@ -81,7 +81,10 @@ _fuse_hw_test(fuse_rp_hw_p7_restir_10k COMMAND fuse_rp_hw_bench_restir TIMEOUT 3
 add_executable(fuse_rp_hw_bench_p9
     ${_fuse_hw_dir}/test_rp_hw_bench_p9.cpp
     ${_fuse_hw_dir}/test_rp_hw_bench_common.hpp)
-target_link_libraries(fuse_rp_hw_bench_p9 PRIVATE fuse_neural fuse_gsplat fuse_frame fuse_geometry)
+target_link_libraries(fuse_rp_hw_bench_p9 PRIVATE fuse_neural fuse_gsplat fuse_frame fuse_geometry fuse_rhi_profiling)
+# BCn rows: the cook encoders (Tools/FUSE/Cook) compiled into the test (unity include, no assimp / physics deps).
+target_include_directories(fuse_rp_hw_bench_p9 PRIVATE "${CMAKE_SOURCE_DIR}/Tools/FUSE/Cook/include")
+target_compile_definitions(fuse_rp_hw_bench_p9 PRIVATE FUSE_P9_BC_UNITY=1)
 fuse_apply_cxx23(fuse_rp_hw_bench_p9)
 if(TARGET fuse_radix_sort_shaders)
     add_dependencies(fuse_rp_hw_bench_p9 fuse_radix_sort_shaders)
@@ -92,9 +95,11 @@ endif()
 _fuse_hw_test(fuse_rp_hw_p9_conventional COMMAND fuse_rp_hw_bench_p9)
 
 # --- §8 reference scenes (Sponza, Bistro): asset presence + pinned sha256 -------------------------------------
-# The test never downloads. tools: cmake -DDEST=<dir> -P Source/FUSE/Renderer/cmake/rp_hw_fetch_reference_scenes.cmake
+# The test never downloads; it skips (77) while an archive is absent or unpinned. Fetch (out of band, with
+# permission): cmake -DDEST=<asset root> -P Source/FUSE/Renderer/cmake/rp_hw_fetch_reference_scenes.cmake
 add_executable(fuse_rp_hw_bench_refscenes ${_fuse_hw_dir}/test_rp_hw_bench_refscenes.cpp)
-target_compile_definitions(fuse_rp_hw_bench_refscenes PRIVATE FUSE_RP_HW_ASSET_ROOT="${_fuse_hw_assets}")
+target_compile_definitions(fuse_rp_hw_bench_refscenes PRIVATE FUSE_RP_HW_ASSET_ROOT="${_fuse_hw_assets}"
+    FUSE_RP_HW_MANIFEST="${_fuse_hw_dir}/perf/reference_scenes.manifest")
 fuse_apply_cxx23(fuse_rp_hw_bench_refscenes)
 _fuse_hw_test(fuse_rp_hw_refscene_sponza COMMAND fuse_rp_hw_bench_refscenes --scene sponza TIMEOUT 600)
 _fuse_hw_test(fuse_rp_hw_refscene_bistro COMMAND fuse_rp_hw_bench_refscenes --scene bistro TIMEOUT 600)

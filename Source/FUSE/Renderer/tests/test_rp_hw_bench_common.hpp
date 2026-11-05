@@ -344,11 +344,24 @@ inline int setup(HwContext& ctx, const HwSetupDesc& desc = {}) {
     return 0;
 }
 
-/// Per-pass GPU durations (ms) of one resolved frame, by zone name (repeated names summed).
+/// Per-pass GPU durations (ms) of one resolved frame, by zone name (repeated names summed). The SVGF instances of
+/// the frame composer share pass names ("denoise.*"); they are told apart by recording order: denoise passes after
+/// "rt.reflections" are renamed "refl/denoise.*", after a "restir." pass "restir/denoise.*" (the RT-shadow
+/// denoiser runs before both).
 inline std::map<std::string, f64> zoneTimes(const fuse::renderer::GpuFrameTimings& t) {
     std::map<std::string, f64> out;
+    const char* prefix = "";
     for (const fuse::renderer::GpuZoneTiming& z : t.zones) {
-        out[z.name] += static_cast<f64>(z.durationNs()) * 1.0e-6;
+        const std::string n = z.name;
+        if (n.rfind("rt.reflections", 0) == 0) {
+            prefix = "refl/";
+        } else if (n.rfind("restir.", 0) == 0) {
+            prefix = "restir/";
+        } else if (n.rfind("denoise.", 0) != 0 && n.rfind("frame.", 0) == 0) {
+            prefix = "";
+        }
+        const std::string key = n.rfind("denoise.", 0) == 0 ? std::string(prefix) + n : n;
+        out[key] += static_cast<f64>(z.durationNs()) * 1.0e-6;
     }
     return out;
 }
