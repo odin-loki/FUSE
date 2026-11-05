@@ -78,6 +78,7 @@ Counts: 46 Qt gates, 46 twins with the same name (0 missing), plus FUSE-only gat
 | Gate | What it checks | Windows | Linux (Xvfb) |
 |---|---|---|---|
 | `float_window` | a floated panel is its own OS window (owned borderless tool window: Win32 `WS_EX_TOOLWINDOW`, X11 utility window), out of the main draw list, placed at origin + frame rect, may leave the main window; posted OS clicks / drags reach it (title drag moves it, keys type into its fields through the main window); dragged over the left dock it shows the drop zones and docks; a tab dragged out of the main window becomes a tool window; its Dock button docks it | pass | pass |
+| `dock_split` | split docking: `splitPanel` puts a panel in a new tab stack under another (column split on the left); a tab dragged onto the left edge zone of the right stack shows the zone (`dropEdge`, half-stack preview "Split Left") and splits it on release; dragged onto a stack's centre it tabifies ("Add as Tab"); a nested column split inside the row split; a splitter handle between stacks resizes by pointer; save / reset / restore gives the same stacks, tabs, layout text and stack rects (±1.5 px); stacks whose panels leave go and their splits collapse; tab menu Split Down; Reset Layout returns to one stack per side | pass | pass |
 | `dock_drag` | tab drag-out floats under the pointer; drop zones (`dock.dropzone.left/right/bottom`, hot zone highlighted) dock on release; release elsewhere stays floating; Ctrl suppresses docking; Escape cancels; resize grip; float size in the saved layout; drop strip along an emptied side | pass | pass |
 | `hierarchy_dnd` | row drag onto a row reparents (drop mark, status text), undo / redo, cycles refused, drop below the rows = top level, the multi-selection moves together, Escape cancels, a plain click only selects | pass | pass |
 | `hierarchy_menu` | right click / Shift+F10 menu: Rename, Create Empty / Cube / Point Light Child (one undo step), Duplicate, Delete (+ undo), Save Selection as Prefab, Revert / Apply / Unlink (disabled when not a prefab), Clear Parent (disabled at top level); empty space: create items | pass | pass |
@@ -113,10 +114,10 @@ console). Scroll bars only become stops when their area overflows; a floated pan
 | DPI variants | QT_SCALE_FACTOR | font scale 1–2 | parity |
 | Context menus | viewport, hierarchy, asset browser | viewport, hierarchy (rename, create child, duplicate, delete, prefab, clear parent; Shift+F10), asset browser, panel tab bar | parity |
 | Drag and drop | hierarchy reparent, dock drag | hierarchy row drag (selection, top level, undo); tab drag-out and floating title drag onto drop zones | parity |
-| Docking | QDockWidget: hide, float (top-level window), drag to any area, tabify | per-panel hide, move, float as an owned OS tool window (headless: in-window frame), Dock / Close, resize grip, drag back to dock, saved / restored layout incl. float size | parity (docks stack as tabs per side; no split of one side into several docks) |
+| Docking | QDockWidget: hide, float (top-level window), drag to any area, tabify, split a side (`splitDockWidget`) | per-panel hide, move, float as an owned OS tool window (headless: in-window frame), Dock / Close, resize grip, drag back to dock; several tab stacks per side in nested splitters: drag onto a stack's edge zone splits it, onto its centre tabifies (preview `dock.dropzone.split`), tab menu Split Right / Down; saved / restored layout incl. splits and float size | parity (`dock_split`) |
 | Undo / redo surfaces | menu, toolbar, shortcuts | same | parity |
 | Console | QPlainTextEdit + REPL | list + line edit | parity |
-| Profiler | flame graph widget | chart (CPU history vs budget) and flame graph (Chart / Flame switch, merged call paths, click info) | parity |
+| Profiler | flame graph widget | chart (CPU history vs budget, GPU ms series) and flame graph (Chart / Flame switch, merged call paths, click info, `gpu.viewport` root with one bar per render-graph pass); GPU time from the scene viewport's GpuProfiler, passes bucketed into G-buffer / depth / shadows / DDGI / SDF / deferred | parity; FUSE ahead on GPU passes (`profiler`, `gpu_viewport` need non-zero GPU history on the RTX 3090 and lavapipe) |
 | Sequencer | preview pane | scrub + link + preview text | parity with the Qt pane |
 | Timeline | canvas with key drag and curve strip | ruler scrub, key drag (snap, Shift free, Escape, one undo step), Ctrl+Left / Right retime, key buttons, interpolation and tangents, curve chart | parity |
 | Material editor | form + preview | same fields + preview, rename, presets, usage | parity |
@@ -134,10 +135,11 @@ Resolved in the blocker pass (gates above): floating panels as OS windows (1), h
 hierarchy context menu, colour dialog and native file dialogs (3), profiler flame graph and timeline key drag (4),
 Linux AT-SPI editor gate (5), Linux run of every twin (6).
 
+Resolved in round 5: split docking (several tab stacks per side, nested splitters, edge-zone split and centre-zone
+tabify by drag, saved layouts; gate `dock_split`).
+
 Remaining:
-1. Docking is per side (one tab stack per left / right / bottom); Qt can split a side into several docks and tabify
-   across them. Not covered by a Qt gate.
-2. macOS: no native window backend for the FUSE shell, so no NSAccessibility gate.
-3. The Qt reference gates `theme` (hover) and `live_present` (screen pixels) still need a dedicated, unobscured
+1. macOS: no native window backend for the FUSE shell, so no NSAccessibility gate.
+2. The Qt reference gates `theme` (hover) and `live_present` (screen pixels) still need a dedicated, unobscured
    desktop on Windows.
-4. Owner sign-off.
+3. Owner sign-off.

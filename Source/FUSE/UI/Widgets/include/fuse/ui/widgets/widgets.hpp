@@ -149,6 +149,23 @@ NodeHandle dockWidget(UiContext& ui, NodeHandle area, std::string_view title, Do
 NodeHandle dockBody(const UiContext& ui, NodeHandle dock);
 void dockTo(UiContext& ui, NodeHandle dock, DockSide side);
 void dockClose(UiContext& ui, NodeHandle dock); ///< hides (dockTo re-shows); emits Toggled {flag = false}
+/// Re-shows a closed dock where it is (dockTo also moves it to the top level of a side); emits Toggled {flag = true}.
+void dockOpen(UiContext& ui, NodeHandle dock);
+
+/// Dock splits (Qt QMainWindow::splitDockWidget): a side holds a tree of nested splitters ("docksplit": rows and
+/// columns of panes separated by draggable handles) whose leaves are docks. Left / Right split `target`'s place into
+/// a row, Top / Bottom into a column; a split of the same direction gains a pane next to target instead of nesting.
+/// Center stacks `dock` with `target` in the same pane (the editor tabifies there). `size` > 0: px of the new pane
+/// along the split axis (0: the panes share). Splits left with one pane collapse; panes and handles hide while
+/// their docks are all closed. False when the docks are not in the same area or dock == target.
+enum class DockEdge : u8 { Left, Right, Top, Bottom, Center };
+bool dockSplit(UiContext& ui, NodeHandle dock, NodeHandle target, DockEdge edge, f32 size = 0.f);
+/// Takes a dock out of the area (collapsing the split it leaves) and destroys it.
+void dockRemove(UiContext& ui, NodeHandle dock);
+/// The side region a dock sits in (Center when it is not in a dock area's side).
+DockSide dockSideOf(const UiContext& ui, NodeHandle dock);
+/// The innermost split holding a dock (invalid at the top level of its side).
+NodeHandle dockSplitOf(const UiContext& ui, NodeHandle dock);
 
 /// Item model: a function table over caller data (no inheritance). `data` may return a view into `scratch`.
 struct ItemModel {
@@ -191,7 +208,9 @@ NodeHandle modelListView(UiContext& ui, NodeHandle parent, const ItemModel* mode
 /// Dock layout persistence (plan §5 "saved layouts"): a small text blob with the side region sizes and, per dock
 /// widget with an id, its side, order in the region and open state. Restoring moves / opens / closes the named docks
 /// and resizes the regions; docks the blob does not name keep their place, names with no dock are ignored. A malformed
-/// blob changes nothing and returns false.
+/// blob changes nothing and returns false. Version 2 adds one "tree <side> <node>..." line per side with the split
+/// structure (node: "d:<id>" or "h[" / "v[" then "<px> <node>" per pane, then "]"; px 0 = shared): restoring rebuilds
+/// the splits and places the named docks in them. Version 1 blobs (no splits) still restore.
 std::string dockSaveLayout(const UiContext& ui, NodeHandle area);
 bool dockRestoreLayout(UiContext& ui, NodeHandle area, std::string_view layout);
 

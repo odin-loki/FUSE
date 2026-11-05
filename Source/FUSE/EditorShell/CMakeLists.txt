@@ -133,7 +133,7 @@ set_tests_properties(fuse_editor_ui_build_package fuse_editor_ui_edit_tools fuse
 add_executable(fuse_editor_ui_parity_gates tests/test_editor_ui_parity.cpp)
 target_link_libraries(fuse_editor_ui_parity_gates PRIVATE fuse_editor_fuse)
 fuse_apply_cxx23(fuse_editor_ui_parity_gates)
-foreach(gate dock_drag hierarchy_dnd hierarchy_menu color_dialog tab_order float_window native_dialogs)
+foreach(gate dock_drag dock_split hierarchy_dnd hierarchy_menu color_dialog tab_order float_window native_dialogs)
     if(gate MATCHES "float_window|native_dialogs" AND FUSE_UI_XVFB_RUN AND NOT WIN32)
         add_test(NAME fuse_editor_ui_${gate} COMMAND ${FUSE_UI_XVFB_RUN} -a -s "-screen 0 1920x1080x24 +bs"
                  $<TARGET_FILE:fuse_editor_ui_parity_gates> --gate=${gate})
