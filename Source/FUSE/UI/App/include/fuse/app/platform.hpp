@@ -55,6 +55,15 @@ std::expected<std::vector<std::string>, PlatformError> openFileDialog(const File
 std::expected<std::string, PlatformError> saveFileDialog(const FileDialogDesc& d);
 std::expected<std::string, PlatformError> pickFolderDialog(const FileDialogDesc& d);
 
+/// Colour picker (Win32 ChooseColor, full RGB / HSL panel and the session's custom colours; POSIX zenity
+/// --color-selection). Alpha is passed through unchanged.
+struct ColorDialogDesc {
+    std::string_view title{};
+    fuse::ui::Color initial{1.f, 1.f, 1.f, 1.f};
+    unsigned long long owner = 0; ///< native window the dialog is modal to (0 = none)
+};
+std::expected<fuse::ui::Color, PlatformError> colorDialog(const ColorDialogDesc& d);
+
 enum class MessageIcon : unsigned char { Info, Warning, Error, Question };
 enum class MessageButtons : unsigned char { Ok, OkCancel, YesNo, YesNoCancel };
 enum class MessageResult : unsigned char { Ok, Cancel, Yes, No };

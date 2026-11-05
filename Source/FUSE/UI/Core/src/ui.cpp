@@ -70,6 +70,7 @@ struct UiContext::Cold {
     const fuse::text::Font* font = nullptr; ///< setFont override (nullptr: the UI font)
     TextAlignment strAlign = TextAlignment::Start;
     bool strRtl = false;
+    fuse::text::BaseDirection strBase = fuse::text::BaseDirection::Auto;
     u64 strMissFrame = ~0ull;
     bool strMany = false; ///< more than one string per frame: paintString uses the shared scratch layout
     u32 layoutRev = 0, strRev = 0;
@@ -598,7 +599,7 @@ void UiContext::styleRec(u32 i, bool parentChanged) {
                                      la.fontVariationTags != lb.fontVariationTags ||
                                      la.fontVariationValues != lb.fontVariationValues ||
                                      la.fontFeatureCount != lb.fontFeatureCount ||
-                                     la.fontFeatureTags != lb.fontFeatureTags || la.fontFeatureValues != lb.fontFeatureValues || la.rtl != lb.rtl;
+                                     la.fontFeatureTags != lb.fontFeatureTags || la.fontFeatureValues != lb.fontFeatureValues || la.rtl != lb.rtl || la.dirSet != lb.dirSet;
             n.style = idx;
             changed = true;
             markPaint(i);
@@ -656,7 +657,9 @@ const fuse::text::Font& UiContext::fontFor(const fuse::text::Font& base, const C
     if (base.id() != m_varCheckedId) {
         m_varCheckedId = base.id();
         m_varChecked = base.isVariable();
+        m_varCheckedBold = base.weight() >= 600.f;
     }
+    if (!m_varChecked && weight >= 600.f && !m_varCheckedBold) f = &base.emboldened(); // static font: synthetic bold
     if (m_varChecked) {
         using fuse::text::fontTag;
         std::array<fuse::text::FontVariation, 3 + kMaxFontVariations> v;
@@ -712,6 +715,7 @@ void UiContext::ensureText(u32 i, f32 width) {
     d.maxWidth = std::isfinite(width) ? width : 0.f;
     d.align = fuse::text::TextAlign(u8(s.textAlign));
     d.rtl = s.rtl;
+    d.base = baseDirection(s);
     fuse::text::layoutText(fontFor(i), fuse::text::defaultShaper(), c.text, d, c.layout);
     ++c.layoutRev;
     c.layoutWidth = width;
@@ -901,6 +905,7 @@ void UiContext::paintString(DrawList& dl, std::string_view s, Rect box, Color co
     const bool live = nodeIdx < m_cold.size() && m_nodes[nodeIdx].alive;
     const ComputedStyle* ns = live ? &m_styles.style(m_nodes[nodeIdx].style) : nullptr;
     d.rtl = ns && ns->rtl; // start = right
+    d.base = ns ? baseDirection(*ns) : fuse::text::BaseDirection::Auto;
     // the node being painted already resolved its font (TextFontScope in paintRec / measure)
     const fuse::text::Font& font = !base ? (live && nodeIdx == m_textFontNode && m_textFont ? *m_textFont : nodeFont(nodeIdx))
                                    : ns  ? fontFor(*base, *ns, ns->fontWeight)
@@ -908,7 +913,7 @@ void UiContext::paintString(DrawList& dl, std::string_view s, Rect box, Color co
     if (live && !m_cold[nodeIdx]->strMany) {
         // one cached layout per node, keyed on everything layoutText reads
         Cold& c = *m_cold[nodeIdx];
-        if (c.strPx != px || c.strWidth != box.w || c.strAlign != align || c.strRtl != d.rtl || c.strFont != font.id() || c.strKey != s) {
+        if (c.strPx != px || c.strWidth != box.w || c.strAlign != align || c.strRtl != d.rtl || c.strBase != d.base || c.strFont != font.id() || c.strKey != s) {
             if (c.strMissFrame == m_frame) c.strMany = true; // paints several strings per frame (lists, tables)
             c.strMissFrame = m_frame;
             fuse::text::layoutText(font, fuse::text::defaultShaper(), s, d, c.strLayout);
@@ -918,6 +923,7 @@ void UiContext::paintString(DrawList& dl, std::string_view s, Rect box, Color co
             c.strWidth = box.w;
             c.strAlign = align;
             c.strRtl = d.rtl;
+            c.strBase = d.base;
             ++c.strRev;
         }
         const f32 y = box.y + std::floor((box.h - c.strLayout.height) * 0.5f);
@@ -1437,9 +1443,12 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
             if (m_nodes[k].dirty & kDirtyPaint) { m_damage = m_damage.unite(m_nodes[k].rect.intersect(n.rect)); m_nodes[k].dirty &= u8(~kDirtyPaint); }
             continue;
         }
-        if (m_osPopups && &dl == &m_draw && hasClass({k, m_nodes[k].gen}, "clamp")) { // own OS window
-            m_popupPending.push_back(k);
-            continue;
+        if ((m_osPopups || m_osWindows) && &dl == &m_draw) { // own OS window (popup / tool window)
+            const NodeHandle kh{k, m_nodes[k].gen};
+            if ((m_osPopups && hasClass(kh, "clamp")) || (m_osWindows && hasClass(kh, "os-window"))) {
+                m_popupPending.push_back(k);
+                continue;
+            }
         }
         paintRec(k, opacity, dl);
     }
@@ -1487,8 +1496,10 @@ void UiContext::paintPass() {
         m_quadAtlasGen = m_atlas.generation();
     }
     paintRec(m_root.index, 1.f, m_draw);
-    std::vector<PopupSurface> next;
+    std::vector<PopupSurface> next, nextWin;
     for (u32 k : m_popupPending) {
+        const bool tool = m_osWindows && hasClass({k, m_nodes[k].gen}, "os-window");
+        const std::vector<PopupSurface>& prev = tool ? m_windowSurfaces : m_popupSurfaces;
         PopupSurface ps;
         ps.node = {k, m_nodes[k].gen};
         ps.rect = m_nodes[k].rect;
@@ -1499,18 +1510,21 @@ void UiContext::paintPass() {
         if (ps.draw.size() == 0 || ps.rect.empty()) continue;
         ps.draw.translate({-ps.rect.x, -ps.rect.y});
         ps.revision = ++m_popupRevision;
-        for (const PopupSurface& old : m_popupSurfaces)
+        for (const PopupSurface& old : prev)
             if (old.node == ps.node && old.rect.x == ps.rect.x && old.rect.y == ps.rect.y && old.rect.w == ps.rect.w &&
                 old.rect.h == ps.rect.h && old.draw.hash() == ps.draw.hash())
                 ps.revision = old.revision;
-        next.push_back(std::move(ps));
+        (tool ? nextWin : next).push_back(std::move(ps));
     }
-    if (next.size() != m_popupSurfaces.size()) m_damage = m_damage.unite({0.f, 0.f, m_viewport.w, m_viewport.h});
+    if (next.size() != m_popupSurfaces.size() || nextWin.size() != m_windowSurfaces.size())
+        m_damage = m_damage.unite({0.f, 0.f, m_viewport.w, m_viewport.h});
     if (m_scale != 1.f) { // UI units -> device pixels (rects stay in UI units)
         scaleDrawList(m_draw);
         for (PopupSurface& ps : next) scaleDrawList(ps.draw);
+        for (PopupSurface& ps : nextWin) scaleDrawList(ps.draw);
     }
     m_popupSurfaces = std::move(next);
+    m_windowSurfaces = std::move(nextWin);
     m_anyPaintDirty = false;
     m_stats.repainted = true;
     m_stats.drawCmds = u32(m_draw.size());
@@ -1654,6 +1668,12 @@ void UiContext::setOsPopups(bool on, Rect screen) {
     m_osPopups = on;
     m_popupScreen = screen;
     if (!on) m_popupSurfaces.clear();
+    markAllDirty();
+}
+void UiContext::setOsWindows(bool on) {
+    if (on == m_osWindows) return;
+    m_osWindows = on;
+    if (!on) m_windowSurfaces.clear();
     markAllDirty();
 }
 Rect UiContext::popupArea() const {
@@ -1853,6 +1873,7 @@ bool UiContext::pointerMove(Vec2 p) {
 
 bool UiContext::pointerDown(Vec2 p, MouseButton b) {
     m_pointer = p;
+    m_altArmed = false; // Alt+click is not Alt alone
     const NodeHandle h = hitTest(p);
     if (node(m_modal) && (!h.valid() || !inScope(h.index, m_modal.index))) return true; // blocked by modal
     if (b == MouseButton::Left)
@@ -1940,6 +1961,8 @@ bool UiContext::wheel(Vec2 p, Vec2 notches) {
 
 bool UiContext::keyDown(Key k, u8 mods) {
     Event e; e.type = EventType::KeyDown; e.key = k; e.mods = mods;
+    // Alt alone: armed by its own press (auto-repeat keeps it), disarmed by any other key or a modifier chord
+    m_altArmed = k == Key::Alt && !(mods & ~u8(kModAlt));
     // Ctrl+Tab always moves focus: the way out of widgets that take Tab (code editor)
     if (k == Key::Tab && (mods & kModCtrl)) return focusNext((mods & kModShift) != 0);
     if (node(m_focus)) {
@@ -1971,9 +1994,14 @@ bool UiContext::keyDown(Key k, u8 mods) {
 }
 
 bool UiContext::keyUp(Key k, u8 mods) {
-    if (!node(m_focus)) return false;
     Event e; e.type = EventType::KeyUp; e.key = k; e.mods = mods;
-    return dispatch(m_focus.index, e);
+    const bool alone = k == Key::Alt && m_altArmed;
+    if (k == Key::Alt) m_altArmed = false;
+    if (node(m_focus) && dispatch(m_focus.index, e)) return true;
+    if (!alone) return false;
+    const NodeHandle before = m_focus;
+    emit(m_root, SignalKind::Event, {.value = f32(u32(k)), .event = &e});
+    return m_focus != before;
 }
 
 bool UiContext::textInput(std::string_view utf8) {
@@ -2125,9 +2153,9 @@ void UiContext::setFocus(NodeHandle h, FocusReason why) {
 }
 
 void UiContext::revealFocus(u32 i) {
-    // inner to outer scroll containers; `shift` = how far the inner ones already moved the node
+    // inner to outer scroll containers; `shift` = how far the inner ones already moved the node (both axes)
     const Rect r = m_nodes[i].rect;
-    f32 shift = 0.f;
+    f32 shift = 0.f, shiftX = 0.f;
     for (u32 a = m_nodes[i].parent; a != kNone; a = m_nodes[a].parent) {
         const Node& n = m_nodes[a];
         if (m_styles.style(n.style).overflow != Overflow::Scroll) continue;
@@ -2136,10 +2164,24 @@ void UiContext::revealFocus(u32 i) {
         f32 d = 0.f;
         if (top + r.h > c.bottom()) d = top + r.h - c.bottom();
         if (top - d < c.y) d = top - c.y; // a node taller than the view shows its top
-        if (d == 0.f) continue;
-        const f32 was = n.scroll.y;
-        scrollTo({a, n.gen}, {n.scroll.x, n.scroll.y + d});
-        shift -= m_nodes[a].scroll.y - was;
+        // horizontal: m = how far the node has to move on screen; a node wider than the view shows its start edge
+        const bool rtl = m_styles.style(n.style).rtl; // scroll.x counts from the right edge: content moves right
+        const f32 left = r.x + shiftX;
+        f32 m = 0.f;
+        if (n.extent.w > c.w) {
+            if (rtl) {
+                if (left < c.x) m = c.x - left;
+                if (left + r.w + m > c.right()) m = c.right() - left - r.w;
+            } else {
+                if (left + r.w > c.right()) m = c.right() - left - r.w;
+                if (left + m < c.x) m = c.x - left;
+            }
+        }
+        if (d == 0.f && m == 0.f) continue;
+        const Vec2 was = n.scroll;
+        scrollTo({a, n.gen}, {n.scroll.x + (rtl ? m : -m), n.scroll.y + d});
+        shift -= m_nodes[a].scroll.y - was.y;
+        shiftX += (rtl ? 1.f : -1.f) * (m_nodes[a].scroll.x - was.x);
     }
 }
 

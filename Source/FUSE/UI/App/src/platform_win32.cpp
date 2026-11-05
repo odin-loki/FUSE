@@ -14,6 +14,7 @@
 #include <shellapi.h>
 #include <shlobj.h>
 #include <shobjidl.h>
+#include <commdlg.h>
 
 #include <algorithm>
 #include <cctype>
@@ -323,6 +324,42 @@ std::expected<std::string, PlatformError> pickFolderDialog(const FileDialogDesc&
     auto r = runFileDialog(d, false, true);
     if (!r) return std::unexpected(r.error());
     return std::move(r->front());
+}
+
+namespace {
+struct ColorHookData { std::wstring title; };
+UINT_PTR CALLBACK colorHook(HWND dlg, UINT msg, WPARAM, LPARAM lp) {
+    if (msg == WM_INITDIALOG) { // ChooseColor has no title field: the hook names the dialog
+        const auto* cc = reinterpret_cast<const CHOOSECOLORW*>(lp);
+        const auto* data = reinterpret_cast<const ColorHookData*>(cc->lCustData);
+        if (data && !data->title.empty()) SetWindowTextW(dlg, data->title.c_str());
+    }
+    return 0; // default processing
+}
+} // namespace
+
+std::expected<fuse::ui::Color, PlatformError> colorDialog(const ColorDialogDesc& d) {
+    // comdlg32 loaded on first use (most apps never open it)
+    using ChooseColorFn = BOOL(WINAPI*)(CHOOSECOLORW*);
+    static HMODULE lib = LoadLibraryW(L"comdlg32.dll");
+    const auto choose = lib ? reinterpret_cast<ChooseColorFn>(reinterpret_cast<void*>(GetProcAddress(lib, "ChooseColorW"))) : nullptr;
+    if (!choose) return std::unexpected(PlatformError::Unavailable);
+    static COLORREF custom[16] = {}; // the dialog's custom colours, kept for the session (Qt QColorDialog::customColor)
+    auto byte = [](float v) { return BYTE(std::lround(std::clamp(v, 0.f, 1.f) * 255.f)); };
+    ColorHookData data{wide(d.title)};
+    CHOOSECOLORW cc{};
+    cc.lStructSize = sizeof cc;
+    cc.hwndOwner = reinterpret_cast<HWND>(d.owner);
+    cc.rgbResult = RGB(byte(d.initial.r), byte(d.initial.g), byte(d.initial.b));
+    cc.lpCustColors = custom;
+    cc.Flags = CC_RGBINIT | CC_FULLOPEN | CC_ANYCOLOR | CC_ENABLEHOOK;
+    cc.lpfnHook = &colorHook;
+    cc.lCustData = reinterpret_cast<LPARAM>(&data);
+    using ErrFn = DWORD(WINAPI*)();
+    const auto err = reinterpret_cast<ErrFn>(reinterpret_cast<void*>(GetProcAddress(lib, "CommDlgExtendedError")));
+    if (!choose(&cc)) return std::unexpected(err && err() ? PlatformError::Failed : PlatformError::Cancelled);
+    return fuse::ui::Color{GetRValue(cc.rgbResult) / 255.f, GetGValue(cc.rgbResult) / 255.f, GetBValue(cc.rgbResult) / 255.f,
+                           d.initial.a};
 }
 
 std::expected<MessageResult, PlatformError> messageBox(std::string_view title, std::string_view text, MessageIcon icon,

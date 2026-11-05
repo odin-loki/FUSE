@@ -51,6 +51,7 @@ fuse_ui_test(fuse_ui_a11y_tree_dump test_a11y_tree_dump.cpp)
 fuse_ui_test(fuse_ui_text_basics test_text_basics.cpp)
 fuse_ui_test(fuse_text_edit_ops test_text_edit_ops.cpp)
 fuse_ui_test(fuse_text_fallback test_text_fallback.cpp)
+set_tests_properties(fuse_text_fallback PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}) # data/variable_test.ttf
 fuse_ui_test(fuse_ui_widget_interaction test_widget_interaction.cpp)
 
 # UI3 text gates: Unicode conformance files (tests/data/unicode), per-script goldens, system fonts, zero-alloc, DPI.
@@ -581,6 +582,14 @@ if(TARGET fuse_app)
             target_compile_definitions(fuse_platform_${g} PRIVATE FUSE_PLATFORM_TEXT_GATE="${g}")
             if(WIN32)
                 target_link_libraries(fuse_platform_${g} PRIVATE imm32)
+            elseif(g STREQUAL "ime_composition")
+                # the server IM of the pre-edit part (uim-xim + Byeoru); also an unpacked ~/opt/<pkg>/usr/bin/uim-xim
+                # (apt-get download uim-xim ... && dpkg -x <deb> ~/opt/uim); $FUSE_TEST_UIM_XIM overrides
+                file(GLOB _fuse_im_hints LIST_DIRECTORIES true "$ENV{HOME}/opt/*/usr/bin")
+                find_program(FUSE_UI_TEST_UIM_XIM uim-xim HINTS ${_fuse_im_hints})
+                if(FUSE_UI_TEST_UIM_XIM)
+                    target_compile_definitions(fuse_platform_${g} PRIVATE FUSE_TEST_UIM_XIM_PATH="${FUSE_UI_TEST_UIM_XIM}")
+                endif()
             endif()
             if(FUSE_UI_XVFB_RUN AND NOT WIN32)
                 add_test(NAME fuse_platform_${g} COMMAND ${FUSE_UI_XVFB_RUN} -a -s "${FUSE_UI_XVFB_ARGS}"
@@ -681,7 +690,7 @@ if(TARGET fuse_ui_game)
     # localisation: plural rules, messages, number / date formatting, StringTable tr, fuse_ui_extract_strings
     if(TARGET fuse_ui_extract_strings AND NOT CMAKE_CROSSCOMPILING)
         fuse_ui_test(fuse_ui_l10n test_l10n.cpp)
-        target_link_libraries(fuse_ui_l10n PRIVATE fuse_ui_game)
+        target_link_libraries(fuse_ui_l10n PRIVATE fuse_ui_game fuse_ui_doc)
         add_dependencies(fuse_ui_l10n fuse_ui_extract_strings)
         target_compile_definitions(fuse_ui_l10n PRIVATE FUSE_UI_EXTRACT_EXE="$<TARGET_FILE:fuse_ui_extract_strings>"
                                    FUSE_UI_TEST_OUT="${CMAKE_CURRENT_BINARY_DIR}")

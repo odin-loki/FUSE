@@ -419,6 +419,49 @@ int codeEdit(Screen& s) {
     for (int i = 0; i < 6; ++i) key(ui, Key::Right, kModShift);
     UI_CHECK(ui.role(ed) == A11yRole::TextField);
     UI_CHECK(ui.text(ed) == w::codeEditText(ui, ed));
+    // The caret lands where the tokens are drawn: tokens are shaped on their own, so its x is the sum of the token
+    // advances before it (not the whole prefix shaped as one run, which adds kerning across token boundaries and
+    // drifts), snapped to device pixels like the glyph pens.
+    {
+        const std::string line = "VA.To.Ty.Yo.LT.AV.AW.Te(Wa,Vo)--To";
+        const NodeHandle ed2 = w::codeEdit(ui, s.c1, "x\n" + line, w::CodeLanguage::Lua, "code_drift");
+        ui.setCss(ed2, "height", "60px");
+        ui.setFocus(ed2);
+        step(ui);
+        const fuse::text::Font& f = ui.textFont(ed2);
+        const f32 fs = ui.computed(ed2).fontSize;
+        std::vector<fuse::text::ShapedGlyph> sg;
+        auto tokenSum = [&](u32 col) {
+            f32 x = 0.f;
+            for (u32 i = 0; i < col;) {
+                u32 j = i;
+                while (j < line.size() && w::codeEditTokenAt(ui, ed2, 1, j) == w::codeEditTokenAt(ui, ed2, 1, i)) ++j;
+                x += fuse::text::shapeText(f, std::string_view(line).substr(i, std::min(j, col) - i), fs, sg);
+                i = j;
+            }
+            return x;
+        };
+        const f32 x0 = ui.contentRect(ed2).x + fuse::text::shapeText(f, "2", fs * 0.9f, sg) + 18.f; // past the gutter
+        f32 worst = 0.f, prefixDrift = 0.f;
+        for (u32 col = 0; col <= line.size(); ++col) {
+            w::codeEditSetCaret(ui, ed2, 1, col);
+            step(ui);
+            const f32 cx = ui.textCaret().x, want = std::round(x0 + tokenSum(col));
+            worst = std::max(worst, std::abs(cx - want));
+            UI_CHECK(cx == std::round(cx));
+            prefixDrift = std::max(prefixDrift, std::abs(fuse::text::shapeText(f, std::string_view(line).substr(0, col), fs, sg) - tokenSum(col)));
+        }
+        std::printf("  code edit caret: max error %.3f px against the token pens (whole-prefix shaping drifts %.2f px)\n",
+                    double(worst), double(prefixDrift));
+        UI_CHECK(worst <= 0.01f);
+        // clicking just right of a glyph boundary puts the caret there
+        const u32 target = 9; // after "VA.To.Ty."
+        const Rect cr = ui.contentRect(ed2);
+        click(ui, {x0 + tokenSum(target) + 1.f, cr.y + std::ceil(fs * 1.35f) * 1.5f});
+        u32 l2 = 0, c2 = 0;
+        w::codeEditCaret(ui, ed2, l2, c2);
+        UI_CHECK(l2 == 1 && c2 == target);
+    }
     return 0;
 }
 

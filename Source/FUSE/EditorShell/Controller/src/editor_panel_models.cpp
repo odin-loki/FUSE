@@ -15,6 +15,7 @@
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/component_schema.hpp>
 #include <fuse/editor/editor_timeline.hpp>
+#include <fuse/editor/profiler_flame_graph.hpp>
 #include <fuse/ecs/components/environment.hpp>
 #include <fuse/ecs/components/light.hpp>
 
@@ -24,6 +25,7 @@
 #include <ctime>
 #include <cstdio>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <string_view>
 
@@ -54,6 +56,11 @@ EditorPanels::EditorPanels(EditorController& controller)
     std::error_code ec;
     m_projectsRoot = fs::current_path(ec).string();
 }
+
+struct TimelineKeyDrag {
+    EditorTimeline::Tracks before;
+    i32 track = -1, key = -1; ///< the dragged key in `before`
+};
 
 EditorPanels::~EditorPanels() = default;
 
@@ -478,7 +485,68 @@ ProfilerView EditorPanels::profiler() const {
 }
 
 void EditorPanels::profilerSetPaused(bool paused) { m_profiler->setPaused(paused); ++m_revision; }
-void EditorPanels::profilerClear() { m_profiler->clearHistory(); ++m_revision; }
+void EditorPanels::profilerClear() {
+    m_profiler->clearHistory();
+    m_flame = {};
+    ++m_revision;
+}
+
+void EditorPanels::profilerCaptureFlame() {
+    if (m_profiler->isPaused()) return;
+    std::vector<profiler::ProfileEvent> events;
+    const u32 count = profiler::eventCount();
+    events.reserve(count);
+    for (u32 i = 0; i < count; ++i) {
+        profiler::ProfileEvent e{};
+        if (profiler::tryEventAt(i, e)) events.push_back(e);
+    }
+    profilerFlameFromEvents(events);
+}
+
+void EditorPanels::profilerFlameFromEvents(const std::vector<profiler::ProfileEvent>& events) {
+    ProfilerFlameGraph g;
+    g.build(events);
+    FlameView v;
+    v.captures = m_flame.captures + 1;
+    v.threads = g.threadCount();
+    v.slices = u32(g.slices().size());
+    const auto& nodes = g.flameNodes();
+    u64 total = 0;
+    for (u32 r : g.flameRoots()) total += nodes[r].totalNs;
+    v.totalMs = f32(f64(total) / 1e6);
+    if (total > 0) {
+        // classic flame layout: roots side by side, each child inside its parent from the left, width ~ total time
+        const std::function<void(u32, f64, i32)> place = [&](u32 ni, f64 x0, i32 parent) {
+            const FlameNode& n = nodes[ni];
+            FlameBarView b;
+            b.name = n.name;
+            b.depth = n.depth;
+            b.parent = parent;
+            b.x0 = f32(x0);
+            b.x1 = f32(x0 + f64(n.totalNs) / f64(total));
+            b.totalMs = f32(f64(n.totalNs) / 1e6);
+            b.selfMs = f32(f64(n.selfNs) / 1e6);
+            b.calls = n.callCount;
+            v.maxDepth = std::max(v.maxDepth, n.depth);
+            const i32 me = i32(v.bars.size());
+            v.bars.push_back(std::move(b));
+            f64 cx = x0;
+            for (u32 c : n.children) {
+                place(c, cx, me);
+                cx += f64(nodes[c].totalNs) / f64(total);
+            }
+        };
+        f64 x = 0.0;
+        for (u32 r : g.flameRoots()) {
+            place(r, x, -1);
+            x += f64(nodes[r].totalNs) / f64(total);
+        }
+    }
+    v.summary = fmt("Flame graph: %.0f scopes, %.0f slices, %.0f thread(s), depth %.0f, %.3f ms captured", f64(v.bars.size()),
+                    f64(v.slices), f64(v.threads), f64(v.bars.empty() ? 0 : v.maxDepth + 1), v.totalMs);
+    m_flame = std::move(v);
+    ++m_revision;
+}
 
 // ---- Timeline (TimelineWidget) --------------------------------------------------------------------------------------
 
@@ -1452,6 +1520,68 @@ bool EditorPanels::timelineMoveSelectedKey(i32 ms) {
     });
     if (ok) m_tlSelKey = moved;
     return ok;
+}
+
+bool EditorPanels::timelineBeginKeyDrag(i32 track, i32 key) {
+    if (m_tlDrag) timelineEndKeyDrag(false);
+    if (!timelineSelectKey(track, key)) return false;
+    auto d = std::make_unique<TimelineKeyDrag>();
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        d->before = m_c.m_host.timeline().tracks();
+    }
+    d->track = track;
+    d->key = key;
+    m_tlDrag = std::move(d);
+    return true;
+}
+
+bool EditorPanels::timelineDragKeyTo(i32 ms) {
+    if (!m_tlDrag || m_tlSelKey < 0) return false;
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        EditorTimeline& tl = m_c.m_host.timeline();
+        ms = std::clamp(ms, 0, i32(tl.durationMs()));
+        // always from the drag-start tracks: passing over another key does not eat it (only a drop on it does)
+        tl.tracks() = m_tlDrag->before;
+        const i32 moved = tl.moveKey(m_tlDrag->track, m_tlDrag->key, ms);
+        if (moved < 0) return false;
+        m_tlSelKey = moved;
+        tl.apply(m_c.m_host.editorScene().registry(), tl.playheadMs()); // the scene follows the drag (Qt)
+    }
+    ++m_revision;
+    return true;
+}
+
+bool EditorPanels::timelineEndKeyDrag(bool commit) {
+    if (!m_tlDrag) return false;
+    std::unique_ptr<TimelineKeyDrag> d = std::move(m_tlDrag);
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        EditorTimeline& tl = m_c.m_host.timeline();
+        const auto& now = tl.tracks();
+        changed = now.size() != d->before.size();
+        for (usize t = 0; !changed && t < now.size(); ++t) {
+            const auto& a = now[t].keyframes();
+            const auto& b = d->before[t].keyframes();
+            changed = a.size() != b.size();
+            for (usize k = 0; !changed && k < a.size(); ++k) changed = a[k].time_ms != b[k].time_ms;
+        }
+        if (changed && commit) {
+            // one undo step for the whole drag (Qt endKeyDrag_)
+            m_c.m_host.undoStack().execute(std::make_unique<TimelineEditCommand>(tl, std::move(d->before), tl.tracks(), "Move key"));
+        } else if (changed) {
+            // cancelled (Escape): back to the tracks at drag start, nothing on the undo stack
+            tl.tracks() = std::move(d->before);
+            m_tlSelKey = -1;
+            m_tlSelTrack = -1;
+        }
+        tl.apply(m_c.m_host.editorScene().registry(), tl.playheadMs());
+    }
+    ++m_revision;
+    m_c.refresh();
+    return changed && commit;
 }
 
 bool EditorPanels::timelineDeleteSelectedKey() {

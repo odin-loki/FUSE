@@ -87,6 +87,24 @@ private:
 
     NodeHandle m_prSummary, m_prChart, m_prPause;
     u32 m_prSeen = ~0u;
+    // flame graph view (Qt profiler flame graph widget)
+    NodeHandle m_prView{}, m_prFlame{}, m_prFlameInfo{};
+    std::vector<NodeHandle> m_prBars; ///< bar node per FlameView::bars entry ({} when too narrow to draw)
+    std::string m_prFlameKey;
+    i32 m_prFlameSel = -1;
+    u32 m_prFlameTick = 0;
+    void syncFlame_();
+    void flameInfo_(i32 bar);
+
+public:
+    /// Profiler view: 0 chart, 1 flame graph.
+    void setProfilerView(u32 view);
+    [[nodiscard]] u32 profilerView() const;
+    /// Flame bar node of FlameView::bars[i] (gates); {} when not drawn.
+    [[nodiscard]] NodeHandle flameBar(u32 i) const { return i < m_prBars.size() ? m_prBars[i] : NodeHandle{}; }
+    [[nodiscard]] i32 flameSelected() const { return m_prFlameSel; }
+
+private:
 
     NodeHandle m_sqLink, m_sqScrub, m_sqPreview;
     std::string m_sqKey;
@@ -96,6 +114,9 @@ private:
 
     NodeHandle m_tlBox, m_tlWidget, m_tlPlay, m_tlTime, m_tlLength, m_tlStatus;
     NodeHandle m_tlLoop{}, m_tlSnap{};
+    i32 m_tlDragFromMs = -1; ///< key drag: the key's time at press (-1 = no drag)
+    void timelineDragEvent_(u32 phase);
+    void timelineKeyMoved_(); ///< Ctrl+Left / Right on the selected clip
     std::string m_tlKey;
 };
 

@@ -4,8 +4,9 @@
 //                       through the system clipboard against another client, IME session off outside text fields
 //   ime_composition     a real IME composition: Win32 ImmSetCompositionStringW / ImmNotifyIME on the window's input
 //                       context (IMM32 over TSF) -> inline pre-edit, caret, commit, cancel, candidate / composition
-//                       window at the caret; X11 XIM compose (dead key) through the open input method, pre-edit callbacks
-//                       when a server IM ($XMODIFIERS) offers them
+//                       window at the caret; X11 XIM compose (dead key) through libX11's built-in IM, then (child
+//                       process) on-the-spot pre-edit, caret, commit and cancel through a real server IM: uim-xim with
+//                       the Byeoru Hangul engine, started by the gate (skipped without uim-xim)
 //   clipboard_roundtrip fuse::app clipboard vs another client (Win32: raw clipboard API on another thread; X11: a
 //                       second X connection): text, RGBA image, custom MIME types, several formats, lazy provision,
 //                       large INCR transfers (X11)
@@ -33,7 +34,17 @@
 #else
 #include "x11_internal.hpp"
 
+#include <dirent.h>
+#include <fcntl.h>
+#include <locale.h>
 #include <poll.h>
+#include <signal.h>
+#include <spawn.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+extern char** environ;
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
@@ -411,6 +422,198 @@ void otherOwns(Other& o, const std::vector<std::pair<x11::Atom, std::vector<std:
     t.join();
 }
 std::vector<std::uint8_t> bytesOf(std::string_view s) { return {s.begin(), s.end()}; }
+
+// ---- a server IM for the pre-edit part of ime_composition ------------------------------------------------------------
+// uim-xim (uim's XIM bridge) with the Byeoru Hangul engine: an on-the-spot (XIMPreeditCallbacks) server IM that needs
+// no D-Bus session and composes from plain key events, so synthesized keys drive real compositions. Found as
+// $FUSE_TEST_UIM_XIM, else the one found at configure time (also ~/opt/<pkg>/usr/bin: `apt-get download uim-xim
+// uim-data libuim8 libuim-scm0 libuim-custom2 libuim-data libgcroots0 && dpkg -x <deb> ~/opt/uim`), else on PATH.
+// An unpacked (non-/usr) prefix gets its libraries and Scheme files through LD_LIBRARY_PATH / LIBUIM_SCM_FILES and
+// a private module registry (uim-module-manager --register byeoru, what the package's postinst does). uim-xim
+// serves named locales only (not C.UTF-8): without an installed en_US.UTF-8 one is compiled with localedef into the
+// scratch directory (LOCPATH). Everything private lives in a mkdtemp directory, removed afterwards.
+bool exists(const std::string& p) {
+    struct stat st{};
+    return ::stat(p.c_str(), &st) == 0;
+}
+std::string dirOf(const std::string& p) { return p.substr(0, p.rfind('/')); }
+/// Runs `argv` with `env`, output appended to `log`; the exit status (-1: not started, killed or over `seconds`).
+int runWait(const std::vector<std::string>& argv, const std::vector<std::string>& env, const std::string& log, int seconds = 60) {
+    std::vector<char*> av, ev;
+    for (const std::string& s : argv) av.push_back(const_cast<char*>(s.c_str()));
+    av.push_back(nullptr);
+    for (const std::string& s : env) ev.push_back(const_cast<char*>(s.c_str()));
+    ev.push_back(nullptr);
+    posix_spawn_file_actions_t fa;
+    posix_spawn_file_actions_init(&fa);
+    posix_spawn_file_actions_addopen(&fa, 1, log.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
+    posix_spawn_file_actions_adddup2(&fa, 1, 2);
+    pid_t pid = 0;
+    const int rc = posix_spawnp(&pid, av[0], &fa, nullptr, av.data(), ev.data());
+    posix_spawn_file_actions_destroy(&fa);
+    if (rc != 0) return -1;
+    int status = 0;
+    for (int i = 0; i < seconds * 50; ++i) {
+        if (::waitpid(pid, &status, WNOHANG) == pid) return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    ::kill(pid, SIGKILL);
+    ::waitpid(pid, nullptr, 0);
+    return -1;
+}
+void removeTree(const std::string& p) {
+    if (DIR* d = ::opendir(p.c_str())) {
+        while (dirent* e = ::readdir(d)) {
+            const std::string n = e->d_name;
+            if (n == "." || n == "..") continue;
+            struct stat st{};
+            const std::string c = p + "/" + n;
+            if (::lstat(c.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) removeTree(c);
+            else ::unlink(c.c_str());
+        }
+        ::closedir(d);
+    }
+    ::rmdir(p.c_str());
+}
+struct ServerIm {
+    pid_t pid = 0;
+    std::string path, dir;
+    std::vector<std::string> extra; ///< what the app needs as well: LOCPATH (a compiled en_US.UTF-8)
+    ~ServerIm() { stop(); }
+    static std::string find() {
+        if (const char* e = std::getenv("FUSE_TEST_UIM_XIM"); e && *e) return e;
+#ifdef FUSE_TEST_UIM_XIM_PATH
+        if (exists(FUSE_TEST_UIM_XIM_PATH)) return FUSE_TEST_UIM_XIM_PATH;
+#endif
+        const std::string dirs = std::getenv("PATH") ? std::getenv("PATH") : "";
+        for (std::size_t at = 0; at <= dirs.size();) {
+            const std::size_t end = std::min(dirs.find(':', at), dirs.size());
+            const std::string p = dirs.substr(at, end - at) + "/uim-xim";
+            if (end > at && ::access(p.c_str(), X_OK) == 0) return p;
+            at = end + 1;
+        }
+        return {};
+    }
+    bool start(std::string& why) {
+        path = find();
+        if (path.empty()) { why = "no uim-xim (set FUSE_TEST_UIM_XIM, or unpack uim-xim into ~/opt/uim)"; return false; }
+        char tmpl[] = "/tmp/fuse-ime-XXXXXX";
+        if (!::mkdtemp(tmpl)) { why = "mkdtemp failed"; return false; }
+        dir = tmpl;
+        std::vector<std::string> env;
+        for (char** e = environ; *e; ++e) {
+            const std::string kv = *e;
+            bool drop = false;
+            for (const char* k : {"LD_LIBRARY_PATH=", "LIBUIM_", "HOME=", "LANG=", "LANGUAGE=", "LC_", "LOCPATH=", "XMODIFIERS="})
+                drop |= kv.rfind(k, 0) == 0;
+            if (!drop) env.push_back(kv);
+        }
+        env.push_back("HOME=" + dir); // uim's ~/.uim.d: none of the user's settings
+        if (locale_t l = ::newlocale(LC_CTYPE_MASK, "en_US.UTF-8", nullptr)) {
+            ::freelocale(l);
+        } else {
+            ::mkdir((dir + "/locale").c_str(), 0755);
+            runWait({"localedef", "-i", "en_US", "-f", "UTF-8", dir + "/locale/en_US.UTF-8"}, env, dir + "/localedef.log");
+            if (!exists(dir + "/locale/en_US.UTF-8/LC_CTYPE")) { why = "no en_US.UTF-8 locale and localedef failed"; return false; }
+            extra.push_back("LOCPATH=" + dir + "/locale");
+        }
+        for (const std::string& kv : extra) env.push_back(kv);
+        const std::string usr = dirOf(dirOf(path));
+        if (usr != "/usr" && usr != "/usr/local" && exists(usr + "/share/uim")) { // an unpacked package
+            const std::string lib = usr + "/lib/x86_64-linux-gnu", scm = dir + "/scm";
+            ::mkdir(scm.c_str(), 0755);
+            if (DIR* d = ::opendir((usr + "/share/uim").c_str())) { // the Scheme files, without the registry links
+                while (dirent* e = ::readdir(d)) {
+                    const std::string n = e->d_name;
+                    if (n == "." || n == ".." || n == "installed-modules.scm" || n == "loader.scm") continue;
+                    if (::symlink((usr + "/share/uim/" + n).c_str(), (scm + "/" + n).c_str()) != 0) {
+                        ::closedir(d);
+                        why = "symlink failed";
+                        return false;
+                    }
+                }
+                ::closedir(d);
+            }
+            const char* ld = std::getenv("LD_LIBRARY_PATH");
+            env.push_back("LD_LIBRARY_PATH=" + lib + (ld && *ld ? std::string(":") + ld : ""));
+            env.push_back("LIBUIM_SCM_FILES=" + scm);
+            env.push_back("LIBUIM_SYSTEM_SCM_FILES=" + usr + "/share/uim/lib");
+            env.push_back("LIBUIM_PLUGIN_LIB_DIR=" + lib + "/uim/plugin");
+            runWait({usr + "/bin/uim-module-manager", "--register", "byeoru", "--path", scm}, env, dir + "/uim-module-manager.log");
+            if (!exists(scm + "/loader.scm")) { why = "uim-module-manager --register byeoru failed"; return false; }
+        }
+        env.push_back("LANG=en_US.UTF-8");
+        env.push_back("LC_ALL=en_US.UTF-8");
+        std::vector<char*> av{const_cast<char*>(path.c_str()), const_cast<char*>("--engine=byeoru"), nullptr}, ev;
+        for (const std::string& kv : env) ev.push_back(const_cast<char*>(kv.c_str()));
+        ev.push_back(nullptr);
+        posix_spawn_file_actions_t fa;
+        posix_spawn_file_actions_init(&fa);
+        const std::string log = dir + "/uim-xim.log";
+        posix_spawn_file_actions_addopen(&fa, 1, log.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        posix_spawn_file_actions_adddup2(&fa, 1, 2);
+        const int rc = posix_spawn(&pid, path.c_str(), &fa, nullptr, av.data(), ev.data());
+        posix_spawn_file_actions_destroy(&fa);
+        if (rc != 0) { pid = 0; why = "cannot start " + path; return false; }
+        // ready once the root window's XIM_SERVERS lists @server=uim
+        x11::Lib x;
+        x11::Display* d = x.load() ? x.OpenDisplay(nullptr) : nullptr;
+        bool ready = false;
+        for (int i = 0; d && i < 250 && !ready; ++i) {
+            std::vector<unsigned char> atoms;
+            if (x.property(d, x.RootWindow(d, x.DefaultScreen(d)), x.InternAtom(d, "XIM_SERVERS", 0), 4 /*XA_ATOM*/, atoms)) {
+                for (std::size_t k = 0; k + sizeof(long) <= atoms.size() && !ready; k += sizeof(long)) {
+                    long at = 0;
+                    std::memcpy(&at, atoms.data() + k, sizeof at);
+                    if (char* n = x.GetAtomName(d, x11::Atom(at))) {
+                        ready = std::strcmp(n, "@server=uim") == 0;
+                        x.Free(n);
+                    }
+                }
+            }
+            if (::waitpid(pid, nullptr, WNOHANG) == pid) { pid = 0; break; }
+            if (!ready) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        if (d) x.CloseDisplay(d);
+        if (!ready) { why = "uim-xim did not register @server=uim"; return false; }
+        return true;
+    }
+    /// Runs this executable again with `arg` against the server IM (XMODIFIERS=@im=uim, LOCPATH if compiled here).
+    /// The locale is left alone: the app finds en_US.UTF-8 itself when uim-xim refuses C.UTF-8.
+    int runChild(const char* arg) {
+        std::vector<std::string> env;
+        for (char** e = environ; *e; ++e)
+            if (std::strncmp(*e, "XMODIFIERS=", 11) != 0 && std::strncmp(*e, "LOCPATH=", 8) != 0) env.push_back(*e);
+        env.push_back("XMODIFIERS=@im=uim");
+        for (const std::string& kv : extra) env.push_back(kv);
+        std::vector<char*> av{const_cast<char*>("/proc/self/exe"), const_cast<char*>(arg), nullptr}, ev;
+        for (const std::string& kv : env) ev.push_back(const_cast<char*>(kv.c_str()));
+        ev.push_back(nullptr);
+        std::fflush(stdout);
+        std::fflush(stderr);
+        pid_t child = 0;
+        if (posix_spawn(&child, "/proc/self/exe", nullptr, nullptr, av.data(), ev.data()) != 0) return -1;
+        int status = 0;
+        for (int i = 0; i < 90 * 50; ++i) {
+            if (::waitpid(child, &status, WNOHANG) == child) return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        ::kill(child, SIGKILL);
+        ::waitpid(child, nullptr, 0);
+        return -1;
+    }
+    void stop() {
+        if (pid > 0) {
+            ::kill(pid, SIGTERM);
+            for (int i = 0; i < 100 && ::waitpid(pid, nullptr, WNOHANG) == 0; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            ::kill(pid, SIGKILL);
+            ::waitpid(pid, nullptr, WNOHANG);
+            pid = 0;
+        }
+        if (!dir.empty() && !std::getenv("FUSE_TEST_KEEP_IME_DIR")) removeTree(dir);
+        dir.clear();
+    }
+};
 } // namespace
 #endif
 
@@ -622,26 +825,126 @@ static int gateIme(int argc, char** argv) {
     CHECK(o.open());
     if (!o.d) return 1;
     const x11::Window target = x11::Window(hw);
-    std::printf("  XIM open, pre-edit callbacks: %s\n", native.inputMethodPreedit() ? "yes" : "no (no server IM in $XMODIFIERS)");
-    // a compose sequence through the input method: dead_acute, e -> é (XFilterEvent swallows the dead key)
-    o.tap(a, target, 0xfe51); // dead_acute
-    pump(a, 5);
-    const std::string mid(ui.text(wnd.le));
-    o.tap(a, target, 'e');
-    CHECK(until(a, [&] { return ui.text(wnd.le) == "ab\xC3\xA9"; }));
-    std::printf("  dead_acute + e: after the dead key \"%s\", then \"%s\"\n", mid.c_str(), std::string(ui.text(wnd.le)).c_str());
-    CHECK(mid == "ab");
-    if (!native.inputMethodPreedit())
-        std::printf("  pre-edit: skipped (needs an on-the-spot server IM, e.g. ibus / fcitx via $XMODIFIERS)\n");
+    const bool serverIm = native.inputMethodPreedit(); // $XMODIFIERS already names a running server IM
+    std::printf("  XIM open, pre-edit callbacks: %s\n", serverIm ? "yes ($XMODIFIERS server IM)" : "no (libX11's built-in IM)");
+    if (!serverIm) {
+        // a compose sequence through the built-in input method: dead_acute, e -> é (XFilterEvent swallows the dead key)
+        o.tap(a, target, 0xfe51); // dead_acute
+        pump(a, 5);
+        const std::string mid(ui.text(wnd.le));
+        o.tap(a, target, 'e');
+        CHECK(until(a, [&] { return ui.text(wnd.le) == "ab\xC3\xA9"; }));
+        std::printf("  dead_acute + e: after the dead key \"%s\", then \"%s\"\n", mid.c_str(), std::string(ui.text(wnd.le)).c_str());
+        CHECK(mid == "ab");
+    }
+    const std::string before(ui.text(wnd.le));
     ui.setFocus(wnd.other);
     CHECK(until(a, [&] { return !native.textInputActive(*wnd.win); }));
     o.tap(a, target, 0xfe51);
     o.tap(a, target, 'e');
-    CHECK(ui.text(wnd.le) == "ab\xC3\xA9");
+    CHECK(ui.text(wnd.le) == before);
 #endif
     std::printf("  button focused: IME session off\n");
+#if !defined(_WIN32)
+    // on-the-spot pre-edit through a real server IM (uim-xim + Byeoru), in a child process: an IM is opened once
+    // per process, and this one already has libX11's built-in IM. FUSE_TEST_REQUIRE_SERVER_IM=1 makes a missing
+    // server a failure instead of a skip.
+    if (!serverIm) {
+        ServerIm im;
+        std::string why;
+        if (im.start(why)) {
+            std::printf("  server IM: %s --engine=byeoru (XMODIFIERS=@im=uim%s)\n", im.path.c_str(), im.extra.empty() ? "" : ", en_US.UTF-8 compiled with localedef");
+            const int rc = im.runChild("--server-im");
+            if (rc != 0) std::fprintf(stderr, "  server IM part: child exit %d\n", rc);
+            CHECK(rc == 0);
+        } else {
+            const char* req = std::getenv("FUSE_TEST_REQUIRE_SERVER_IM");
+            std::printf("  server IM pre-edit: skipped (%s)\n", why.c_str());
+            CHECK(!(req && *req == '1'));
+        }
+    }
+#endif
     return 0;
 }
+
+#if !defined(_WIN32)
+// The server-IM half of ime_composition (run by gateIme as a child process with XMODIFIERS=@im=uim): Byeoru, the
+// Hangul engine of uim, on the 2-beolsik layout. Shift+Space turns it on; g k s compose 한 in the pre-edit (drawn
+// inline, nothing typed yet), r starts the next syllable and commits 한, m f make 글, Return commits it; x then
+// BackSpace cancels in the IM; a k then a focus change cancels in FUSE (the IM is reset, nothing typed); Shift+Space
+// turns it off and z types z.
+static int gateImeServer(int argc, char** argv) {
+    app::Application a{{.name = "gate_ime_server", .argc = argc, .argv = argv, .loadSettings = false}};
+    app::NativePlatform native(a);
+    if (!native.available()) { std::printf("  server IM child: no display\n"); return 1; }
+    CHECK(native.inputMethodAvailable() && native.inputMethodPreedit());
+    if (!native.inputMethodPreedit()) { std::fprintf(stderr, "  server IM child: no pre-edit callbacks from @im=uim\n"); return 1; }
+    Window1 wnd = makeWindow(a, native, "fuse IME (uim)");
+    UiContext& ui = wnd.win->ui();
+    ui.setFocus(wnd.le);
+    ui.textInput("ab");
+    CHECK(until(a, [&] { return native.textInputActive(*wnd.win); }));
+    pump(a);
+    Other o;
+    CHECK(o.open());
+    if (!o.d) return 1;
+    const x11::Window target = x11::Window(native.nativeWindow(*wnd.win));
+    auto glyphs = [&] {
+        int n = 0;
+        for (const DrawCmd& c : ui.drawList().cmds()) n += c.op == DrawOp::Glyph;
+        return n;
+    };
+    const std::string kHieut = "\xE3\x85\x8E", kHa = "\xED\x95\x98", kHan = "\xED\x95\x9C"; // ㅎ 하 한
+    const std::string kGiyeok = "\xE3\x84\xB1", kGeu = "\xEA\xB7\xB8", kGeul = "\xEA\xB8\x80"; // ㄱ 그 글
+    const std::string kTieut = "\xE3\x85\x8C", kMieum = "\xE3\x85\x81", kMa = "\xEB\xA7\x88", kA = "\xE3\x85\x8F"; // ㅌ ㅁ 마 ㅏ
+    int failedSteps = 0;
+    auto step = [&](x11::KeySym sym, unsigned state, const std::string& pre, const std::string& text, const char* what) {
+        o.tap(a, target, sym, state);
+        const bool ok = until(a, [&] { return ui.composition() == pre && ui.text(wnd.le) == text; }, 600);
+        std::printf("    %-22s pre-edit \"%s\" caret %d, text \"%s\"%s\n", what, std::string(ui.composition()).c_str(), ui.compositionCaret(),
+                    std::string(ui.text(wnd.le)).c_str(), ok ? "" : "   <- expected different");
+        if (!ok) ++failedSteps;
+        return ok;
+    };
+    const int glyphs0 = glyphs();
+    o.tap(a, target, ' ', 1 /*ShiftMask*/); // Byeoru on
+    pump(a, 10);
+    CHECK(ui.text(wnd.le) == "ab" && ui.composition().empty()); // the toggle types nothing
+    step('g', 0, kHieut, "ab", "g");
+    step('k', 0, kHa, "ab", "k");
+    CHECK(step('s', 0, kHan, "ab", "s"));
+    pump(a, 3);
+    const int glyphsDuring = glyphs();
+    CHECK(ui.compositionCaret() == i32(kHan.size())); // caret after the syllable
+    CHECK(glyphsDuring >= glyphs0 + 1);                // drawn inline
+    std::printf("    glyphs %d -> %d with the pre-edit\n", glyphs0, glyphsDuring);
+    CHECK(step('r', 0, kGiyeok, "ab" + kHan, "r (commits)"));
+    step('m', 0, kGeu, "ab" + kHan, "m");
+    CHECK(step('f', 0, kGeul, "ab" + kHan, "f"));
+    CHECK(step(0xff0d, 0, "", "ab" + kHan + kGeul, "Return (commits)"));
+    // cancel in the IM: the last jamo backspaced away, nothing typed
+    CHECK(step('x', 0, kTieut, "ab" + kHan + kGeul, "x"));
+    CHECK(step(0xff08, 0, "", "ab" + kHan + kGeul, "BackSpace (cancels)"));
+    // cancel by focus: the pre-edit is dropped (the IM is reset), nothing typed
+    step('a', 0, kMieum, "ab" + kHan + kGeul, "a");
+    CHECK(step('k', 0, kMa, "ab" + kHan + kGeul, "k"));
+    ui.setFocus(wnd.other);
+    CHECK(until(a, [&] { return !native.textInputActive(*wnd.win); }));
+    pump(a, 10);
+    std::printf("    focus to the button:   pre-edit \"%s\", text \"%s\"\n", std::string(ui.composition()).c_str(), std::string(ui.text(wnd.le)).c_str());
+    CHECK(ui.composition().empty() && ui.text(wnd.le) == "ab" + kHan + kGeul);
+    ui.setFocus(wnd.le);
+    CHECK(until(a, [&] { return native.textInputActive(*wnd.win); }));
+    pump(a, 5);
+    CHECK(step('k', 0, kA, "ab" + kHan + kGeul, "k (fresh syllable)")); // not a continuation of 마
+    CHECK(step(0xff08, 0, "", "ab" + kHan + kGeul, "BackSpace"));
+    o.tap(a, target, ' ', 1); // Byeoru off
+    pump(a, 10);
+    CHECK(step('z', 0, "", "ab" + kHan + kGeul + "z", "Shift+Space, z (direct)"));
+    CHECK(failedSteps == 0);
+    return 0;
+}
+#endif
 
 // ---- clipboard_roundtrip -----------------------------------------------------------------------------------------------
 static int gateClipboard(int argc, char** argv) {
@@ -788,6 +1091,9 @@ int main(int argc, char** argv) {
     const std::string gate = FUSE_PLATFORM_TEXT_GATE;
     int rc = 0;
     if (gate == "text_input") rc = gateTextInput(argc, argv);
+#if !defined(_WIN32)
+    else if (gate == "ime_composition" && argc > 1 && std::strcmp(argv[1], "--server-im") == 0) return gateImeServer(1, argv) || g_fail ? 1 : 0;
+#endif
     else if (gate == "ime_composition") rc = gateIme(argc, argv);
     else if (gate == "clipboard_roundtrip") rc = gateClipboard(argc, argv);
     else { std::fprintf(stderr, "unknown gate %s\n", gate.c_str()); return 2; }

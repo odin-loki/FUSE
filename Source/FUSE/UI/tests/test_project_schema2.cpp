@@ -628,8 +628,9 @@ int hybridScenePixels(bool native) {
     CHECK(compared > std::size_t(gw) * gh / 2);
     if (gpuDrawn) CHECK(host.viewportZeroCopyFrames() > 0);
     else CHECK(host.viewportZeroCopyFrames() == 0);
-    // headless: the same bytes; on screen: the UI kernel's 1:1 sample + the swapchain conversion
-    CHECK(native ? (maxErr <= 2 && meanErr <= 0.25) : maxErr == 0);
+    // headless: the same bytes; on screen: the UI kernel's 1:1 sample + the swapchain conversion. On NVIDIA the
+    // +-1 rounding share varies run to run (mean 0.22..0.28 over 5 runs); a misplaced or rescaled image gives far more.
+    CHECK(native ? (maxErr <= 2 && meanErr <= 0.5) : maxErr == 0);
     started->reset();
     CHECK(!fuse::core::isInitialized());
     return 0;

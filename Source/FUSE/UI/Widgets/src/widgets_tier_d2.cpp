@@ -4,6 +4,7 @@
 #include "widgets_internal.hpp"
 
 #include <algorithm>
+#include <tuple>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -50,8 +51,9 @@ struct Pool {
     }
 };
 
-void bezier(DrawList& dl, Vec2 a, Vec2 b, Color c, f32 w) {
-    const f32 dx = std::max(40.f, std::abs(b.x - a.x) * 0.5f);
+/// A link curve leaving `a` towards +x (dir 1; -1: towards -x, a mirrored graph) and entering `b` the same way.
+void bezier(DrawList& dl, Vec2 a, Vec2 b, Color c, f32 w, f32 dir = 1.f) {
+    const f32 dx = std::max(40.f, std::abs(b.x - a.x) * 0.5f) * dir;
     const Vec2 c1{a.x + dx, a.y}, c2{b.x - dx, b.y};
     Vec2 prev = a;
     constexpr int kSeg = 20;
@@ -186,7 +188,10 @@ struct GraphState {
     f32 zoom = 1.f;
     u8 drag = 0; // 1 node, 2 link, 3 pan
     u32 dragNode = 0, dragPin = 0;
-    Vec2 grab, cursor;
+    Vec2 grab, cursor; ///< left-to-right space (a right-to-left graph mirrors only when painting)
+    // keyboard link: 1 picking the source output (Up / Down), 2 picking the target node (Page keys) and input
+    u8 kLink = 0;
+    u32 kFrom = 0, kOut = 0, kTo = 0, kIn = 0;
 };
 Pool<GraphState>& graphPool() { static Pool<GraphState> p; return p; }
 constexpr f32 kGW = 150.f, kGHead = 22.f, kGRow = 18.f;
@@ -240,26 +245,33 @@ struct NodeGraphW {
         GraphState* s = graphPool().get(ui, pc.node);
         if (!s) return;
         const Rect c = pc.content;
+        // the graph lives in left-to-right space; `direction: rtl` mirrors it on the way out (data flows right to
+        // left: inputs on the right of a node, outputs on its left)
+        auto P = [&](Vec2 p) { return pc.flip(p); };
+        const f32 dir = pc.style.rtl ? -1.f : 1.f;
         dl.pushClip(c);
         dl.rect(c, pc.tint(Color::rgb(0x17171C)));
         const f32 step = 24.f * s->zoom;
         if (step >= 6.f) {
             const f32 ox = std::fmod(s->pan.x * s->zoom, step), oy = std::fmod(s->pan.y * s->zoom, step);
-            for (f32 x = c.x + (ox < 0 ? ox + step : ox); x < c.right(); x += step) dl.line({x, c.y}, {x, c.bottom()}, pc.tint(Color::rgb(0x23232A)), 1.f);
+            for (f32 x = c.x + (ox < 0 ? ox + step : ox); x < c.right(); x += step) dl.line(P({x, c.y}), P({x, c.bottom()}), pc.tint(Color::rgb(0x23232A)), 1.f);
             for (f32 y = c.y + (oy < 0 ? oy + step : oy); y < c.bottom(); y += step) dl.line({c.x, y}, {c.right(), y}, pc.tint(Color::rgb(0x23232A)), 1.f);
         }
         for (const GLink& l : s->links)
-            bezier(dl, gpin(ui, pc.node, *s, l.from, l.outPin, true), gpin(ui, pc.node, *s, l.to, l.inPin, false),
-                   pc.tint(pinColor(s->nodes[l.from].out[l.outPin].second)), 2.f * s->zoom);
+            bezier(dl, P(gpin(ui, pc.node, *s, l.from, l.outPin, true)), P(gpin(ui, pc.node, *s, l.to, l.inPin, false)),
+                   pc.tint(pinColor(s->nodes[l.from].out[l.outPin].second)), 2.f * s->zoom, dir);
         if (s->drag == 2)
-            bezier(dl, gpin(ui, pc.node, *s, s->dragNode, s->dragPin, true), s->cursor, pc.tint(Color::rgb(0xFFFFFF, 0.7f)), 2.f);
+            bezier(dl, P(gpin(ui, pc.node, *s, s->dragNode, s->dragPin, true)), P(s->cursor), pc.tint(Color::rgb(0xFFFFFF, 0.7f)), 2.f, dir);
         const i32 sel = i32(ui.value(pc.node));
         const Color text = pc.tint(pc.style.color), acc = accentOf(pc);
+        if (s->kLink == 2 && s->kTo < s->nodes.size()) // keyboard link being placed
+            bezier(dl, P(gpin(ui, pc.node, *s, s->kFrom, s->kOut, true)), P(gpin(ui, pc.node, *s, s->kTo, s->kIn, false)),
+                   pc.tint(Color::rgb(0xFFFFFF, 0.7f)), 2.f, dir);
         const f32 fs = pc.style.fontSize * 0.86f * s->zoom;
         for (u32 i = 0; i < s->nodes.size(); ++i) {
             const GNode& g = s->nodes[i];
             if (!g.alive) continue;
-            const Rect r = gnodeRect(ui, pc.node, *s, i);
+            const Rect rl = gnodeRect(ui, pc.node, *s, i), r = pc.flip(rl);
             const f32 rad = 6.f * s->zoom;
             dl.shadow(r, Color::rgb(0x000000, 0.5f * pc.opacity), 10.f, rad);
             dl.roundedRect(r, pc.tint(Color::rgb(0x2A2A33)), {rad, rad, rad, rad}, i32(i) == sel ? acc : pc.tint(Color::rgb(0x3A3A45)),
@@ -269,14 +281,19 @@ struct NodeGraphW {
                            TextAlignment::Start, pc.node.index);
             for (u32 k = 0; k < g.in.size(); ++k) {
                 const Vec2 p = gpin(ui, pc.node, *s, i, k, false);
-                dot(dl, p, 4.5f * s->zoom, pc.tint(pinColor(g.in[k].second)), pc.tint(Color::rgb(0x111111)));
-                ui.paintString(dl, g.in[k].first, {p.x + 9.f * s->zoom, p.y - kGRow * 0.5f * s->zoom, r.w * 0.5f, kGRow * s->zoom}, text,
-                               fs * 0.92f, TextAlignment::Start, pc.node.index);
+                const bool kh = s->kLink == 2 && s->kTo == i && s->kIn == k; // keyboard link target pin
+                if (kh) dot(dl, P(p), 7.f * s->zoom, {}, acc);
+                dot(dl, P(p), 4.5f * s->zoom, pc.tint(pinColor(g.in[k].second)), pc.tint(Color::rgb(0x111111)));
+                ui.paintString(dl, g.in[k].first, pc.flip(Rect{p.x + 9.f * s->zoom, p.y - kGRow * 0.5f * s->zoom, rl.w * 0.5f, kGRow * s->zoom}),
+                               text, fs * 0.92f, TextAlignment::Start, pc.node.index);
             }
             for (u32 k = 0; k < g.out.size(); ++k) {
                 const Vec2 p = gpin(ui, pc.node, *s, i, k, true);
-                dot(dl, p, 4.5f * s->zoom, pc.tint(pinColor(g.out[k].second)), pc.tint(Color::rgb(0x111111)));
-                ui.paintString(dl, g.out[k].first, {r.x + r.w * 0.5f, p.y - kGRow * 0.5f * s->zoom, r.w * 0.5f - 9.f * s->zoom, kGRow * s->zoom},
+                const bool kh = s->kLink && s->kFrom == i && s->kOut == k; // keyboard link source pin
+                if (kh) dot(dl, P(p), 7.f * s->zoom, {}, acc);
+                dot(dl, P(p), 4.5f * s->zoom, pc.tint(pinColor(g.out[k].second)), pc.tint(Color::rgb(0x111111)));
+                ui.paintString(dl, g.out[k].first,
+                               pc.flip(Rect{rl.x + rl.w * 0.5f, p.y - kGRow * 0.5f * s->zoom, rl.w * 0.5f - 9.f * s->zoom, kGRow * s->zoom}),
                                text, fs * 0.92f, TextAlignment::End, pc.node.index);
             }
         }
@@ -299,6 +316,66 @@ struct NodeGraphW {
         UiContext& ui = ec.ui;
         GraphState* s = graphPool().get(ui, ec.node);
         if (!s) return false;
+        if (e.type == EventType::KeyDown && keyLink(ui, ec.node, *s, e)) return true;
+        if (e.type == EventType::PointerDown && s->kLink) { s->kLink = 0; ui.invalidate(ec.node); }
+        Event le = e; // pointer positions in the graph's left-to-right space
+        le.pos = detail::ltrPoint(ui, ec.node, e.pos, ui.contentRect(ec.node));
+        return pointerOrKey(ui, ec.node, *s, le);
+    }
+    /// The keyboard link flow: Enter on a selected node starts it at its first output (Up / Down pick the output),
+    /// Enter goes on to the target (PageDown / PageUp pick the node, Up / Down its input), Enter connects,
+    /// Backspace / Delete remove the link into that input, Escape cancels.
+    static bool keyLink(UiContext& ui, NodeHandle n, GraphState& s, const Event& e) {
+        const u32 cnt = u32(s.nodes.size());
+        auto targets = [&](u32 from, int dir) { // the next alive node with inputs (not the source), cycling
+            for (u32 k = 1; k <= cnt; ++k) {
+                const u32 i = u32((i64(from) + dir * i64(k) + 2 * i64(cnt)) % i64(cnt));
+                if (i != s.kFrom && s.nodes[i].alive && !s.nodes[i].in.empty()) return i;
+            }
+            return cnt;
+        };
+        if (s.kLink == 0) {
+            const i32 sel = i32(ui.value(n));
+            if (e.key != Key::Enter || sel < 0 || u32(sel) >= cnt || s.nodes[u32(sel)].out.empty()) return false;
+            s.kLink = 1; s.kFrom = u32(sel); s.kOut = 0;
+            ui.invalidate(n);
+            return true;
+        }
+        const GNode& from = s.nodes[s.kFrom];
+        switch (e.key) {
+        case Key::Escape: s.kLink = 0; break;
+        case Key::Up: case Key::Down: {
+            const i32 d = e.key == Key::Down ? 1 : -1;
+            if (s.kLink == 1) s.kOut = u32((i64(s.kOut) + d + i64(from.out.size())) % i64(from.out.size()));
+            else if (s.kTo < cnt) s.kIn = u32((i64(s.kIn) + d + i64(s.nodes[s.kTo].in.size())) % i64(s.nodes[s.kTo].in.size()));
+            break;
+        }
+        case Key::PageDown: case Key::PageUp:
+            if (s.kLink == 2) { const u32 t = targets(s.kTo < cnt ? s.kTo : s.kFrom, e.key == Key::PageDown ? 1 : -1); if (t < cnt) { s.kTo = t; s.kIn = 0; } }
+            break;
+        case Key::Enter:
+            if (s.kLink == 1) {
+                s.kTo = targets(s.kFrom, 1);
+                if (s.kTo >= cnt) { s.kLink = 0; break; } // nothing to link to
+                s.kLink = 2; s.kIn = 0;
+            } else {
+                s.kLink = 0;
+                if (s.kTo < cnt) nodeGraphConnect(ui, n, s.kFrom, s.kOut, s.kTo, s.kIn);
+            }
+            break;
+        case Key::Backspace: case Key::Delete:
+            if (s.kLink == 2 && s.kTo < cnt) nodeGraphDisconnect(ui, n, s.kTo, s.kIn);
+            s.kLink = 0;
+            break;
+        default: return false; // Tab, arrows ... keep their meaning
+        }
+        ui.invalidate(n);
+        return true;
+    }
+    /// Pointer and editing keys, with pointer positions already in left-to-right space.
+    static bool pointerOrKey(UiContext& ui, NodeHandle node, GraphState& st, const Event& e) {
+        GraphState* s = &st;
+        const struct { NodeHandle node; } ec{node};
         switch (e.type) {
         case EventType::PointerDown: {
             u32 nd = 0, pin = 0;
@@ -373,7 +450,7 @@ struct NodeGraphW {
             if (e.key == Key::Escape && sel >= 0) { ui.setValue(ec.node, -1.f, true); ui.invalidate(ec.node); return true; }
             const f32 st = (e.mods & kModShift) ? 1.f : 10.f;
             Vec2 d{};
-            switch (e.key) {
+            switch (detail::visualArrow(ui, ec.node, e.key)) { // left-to-right space: Left moves left on the screen
             case Key::Left: d.x = -st; break;
             case Key::Right: d.x = st; break;
             case Key::Up: d.y = -st; break;
@@ -517,6 +594,16 @@ struct CurveW {
                 return true;
             }
             if (e.key == Key::Escape && sel >= 0) { ui.setValue(ec.node, -1.f); ui.invalidate(ec.node); return true; }
+            if (e.key == Key::Insert) { // a key on the curve: halfway to the next key (or the range end) from the
+                                        // selected one, else mid-range; it becomes the selection
+                f32 t = 0.5f * (s->t0 + s->t1);
+                if (sel >= 0 && sel < cnt) t = 0.5f * (s->keys[std::size_t(sel)].t + (sel + 1 < cnt ? s->keys[std::size_t(sel) + 1].t : s->t1));
+                for (const CKey& k : s->keys) // never on top of an existing key
+                    if (std::abs(k.t - t) < 1e-4f * (s->t1 - s->t0)) t = std::min(s->t1, t + 0.01f * (s->t1 - s->t0));
+                const f32 v = s->keys.empty() ? 0.5f * (s->v0 + s->v1) : std::clamp(curveEval(*s, t), s->v0, s->v1);
+                ui.setValue(ec.node, f32(curveAddKey(ui, ec.node, t, v)));
+                return true;
+            }
             if (sel < 0 || sel >= cnt) return false;
             const f32 f = (e.mods & kModShift) ? 0.1f : 0.01f;
             f32 dt = 0.f, dv = 0.f;
@@ -550,6 +637,9 @@ struct TimelineState {
     u8 drag = 0; // 1 scrub, 2 clip
     u32 dTrack = 0, dClip = 0;
     f32 grabSec = 0.f;
+    f32 downSec = 0.f, pointerSec = 0.f; ///< clip drag: pointer time at press / now (unsnapped)
+    f32 fromStart = 0.f;                 ///< clip start at press
+    i32 selTrack = -1, selClip = -1; ///< selected clip (a click, or Ctrl+Down / Ctrl+Up); Ctrl+Left / Right move it
 };
 Pool<TimelineState>& tlPool() { static Pool<TimelineState> p; return p; }
 constexpr f32 kTlHead = 96.f, kTlRuler = 22.f, kTlRow = 28.f;
@@ -603,9 +693,12 @@ struct TimelineW {
         }
         for (u32 k = 0; k < s->tracks.size(); ++k) {
             const f32 y = c.y + kTlRuler + f32(k) * kTlRow;
-            for (const Clip& cl : s->tracks[k].clips) {
+            for (u32 j = 0; j < s->tracks[k].clips.size(); ++j) {
+                const Clip& cl = s->tracks[k].clips[j];
                 const Rect r{xOf(c, *s, cl.start), y + 3.f, (cl.end - cl.start) * s->pxPerSec, kTlRow - 6.f};
                 dl.rect(r, pc.tint(cl.color), 4.f);
+                if (i32(k) == s->selTrack && i32(j) == s->selClip) // the selected clip
+                    dl.roundedRect({r.x - 1.f, r.y - 1.f, r.w + 2.f, r.h + 2.f}, {}, {5.f, 5.f, 5.f, 5.f}, pc.tint(Color::rgb(0xFFFFFF)), 2.f);
                 ui.paintString(dl, cl.label, {r.x + 6.f, r.y, std::max(0.f, r.w - 8.f), r.h}, pc.tint(Color::rgb(0x101014)), fs,
                                TextAlignment::Start, pc.node.index);
             }
@@ -623,6 +716,40 @@ struct TimelineW {
         dl.popClip();
     }
     static f32 snapT(const TimelineState& s, f32 t) { return s.snap > 0.f ? std::round(t / s.snap) * s.snap : t; }
+    /// Ctrl+Down / Ctrl+Up select the next / previous clip (track order, then start time); Ctrl+Right / Ctrl+Left move
+    /// the selected clip by a frame (the snap step), Ctrl+Shift by a second. Moves emit Event {value = 2}.
+    static bool clipKeys(UiContext& ui, NodeHandle n, TimelineState& s, const Event& e, f32 step) {
+        if (e.key == Key::Down || e.key == Key::Up) {
+            // clips ordered by (track, start, index): the nearest one after / before the selection
+            auto key = [&](u32 k, u32 j) { return std::tuple{k, s.tracks[k].clips[j].start, j}; };
+            const bool has = s.selTrack >= 0 && u32(s.selTrack) < s.tracks.size() && s.selClip >= 0 &&
+                             u32(s.selClip) < s.tracks[u32(s.selTrack)].clips.size();
+            const bool down = e.key == Key::Down;
+            i32 bt = -1, bc = -1;
+            for (u32 k = 0; k < s.tracks.size(); ++k)
+                for (u32 j = 0; j < s.tracks[k].clips.size(); ++j) {
+                    const auto c = key(k, j);
+                    if (has && (down ? !(key(u32(s.selTrack), u32(s.selClip)) < c) : !(c < key(u32(s.selTrack), u32(s.selClip))))) continue;
+                    if (bt < 0 || (down ? c < key(u32(bt), u32(bc)) : key(u32(bt), u32(bc)) < c)) { bt = i32(k); bc = i32(j); }
+                }
+            if (bt >= 0) { s.selTrack = bt; s.selClip = bc; }
+            ui.invalidate(n);
+            return true;
+        }
+        if ((e.key == Key::Left || e.key == Key::Right) && s.selTrack >= 0 && u32(s.selTrack) < s.tracks.size() &&
+            s.selClip >= 0 && u32(s.selClip) < s.tracks[u32(s.selTrack)].clips.size()) {
+            Clip& cl = s.tracks[u32(s.selTrack)].clips[u32(s.selClip)];
+            const f32 len = cl.end - cl.start, d = ((e.mods & kModShift) ? 1.f : step) * (e.key == Key::Right ? 1.f : -1.f);
+            cl.start = std::clamp(snapT(s, cl.start + d), 0.f, std::max(0.f, s.duration - len));
+            cl.end = cl.start + len;
+            s.dTrack = u32(s.selTrack); // timelineClipDrag names the moved clip
+            s.dClip = u32(s.selClip);
+            ui.invalidate(n);
+            ui.emit(n, SignalKind::Event, {.value = 2.f});
+            return true;
+        }
+        return false;
+    }
     static void scrub(UiContext& ui, NodeHandle n, const TimelineState& s, f32 t) {
         ui.setValue(n, std::clamp(t, 0.f, s.duration), true);
         ui.invalidate(n);
@@ -643,7 +770,19 @@ struct TimelineW {
                 if (k < s->tracks.size())
                     for (u32 j = 0; j < s->tracks[k].clips.size(); ++j) {
                         const Clip& cl = s->tracks[k].clips[j];
-                        if (t >= cl.start && t < cl.end) { s->drag = 2; s->dTrack = k; s->dClip = j; s->grabSec = t - cl.start; return true; }
+                        if (t >= cl.start && t < cl.end) {
+                            s->drag = 2;
+                            s->dTrack = k;
+                            s->dClip = j;
+                            s->grabSec = t - cl.start;
+                            s->downSec = s->pointerSec = t;
+                            s->fromStart = cl.start;
+                            s->selTrack = i32(k);
+                            s->selClip = i32(j);
+                            ui.invalidate(ec.node);
+                            ui.emit(ec.node, SignalKind::Event, {.value = 5.f, .event = &e}); // clip drag begins
+                            return true;
+                        }
                     }
             }
             s->drag = 1;
@@ -656,13 +795,22 @@ struct TimelineW {
             else if (s->drag == 2) {
                 Clip& cl = s->tracks[s->dTrack].clips[s->dClip];
                 const f32 len = cl.end - cl.start;
-                cl.start = std::clamp(snapT(*s, t - s->grabSec), 0.f, std::max(0.f, s->duration - len));
+                // Shift: free move (no snapping), like the Qt canvas
+                const f32 at = (e.mods & kModShift) ? t - s->grabSec : snapT(*s, t - s->grabSec);
+                cl.start = std::clamp(at, 0.f, std::max(0.f, s->duration - len));
                 cl.end = cl.start + len;
+                s->pointerSec = t;
                 ui.invalidate(ec.node);
+                ui.emit(ec.node, SignalKind::Event, {.value = 6.f, .event = &e}); // clip moved
             } else return false;
             return true;
         }
-        case EventType::PointerUp: s->drag = 0; return true;
+        case EventType::PointerUp: {
+            const bool clip = s->drag == 2;
+            s->drag = 0;
+            if (clip) ui.emit(ec.node, SignalKind::Event, {.value = 7.f, .event = &e}); // clip dropped
+            return true;
+        }
         case EventType::Wheel: {
             const f32 anchor = tOf(c, *s, e.pos.x);
             if (s->viewSpan > 0.f) {
@@ -689,6 +837,8 @@ struct TimelineW {
         }
         case EventType::KeyDown: {
             const f32 st = s->snap > 0.f ? s->snap : 1.f / 30.f;
+            if ((e.mods & kModCtrl) && clipKeys(ui, ec.node, *s, e, st)) return true;
+            if (e.key == Key::Escape && s->selClip >= 0) { s->selTrack = s->selClip = -1; ui.invalidate(ec.node); return true; }
             if (e.key == Key::Right) { scrub(ui, ec.node, *s, ui.value(ec.node) + st); return true; }
             if (e.key == Key::Left) { scrub(ui, ec.node, *s, ui.value(ec.node) - st); return true; }
             if (e.key == Key::Home) { scrub(ui, ec.node, *s, 0.f); return true; }
@@ -866,6 +1016,24 @@ struct CodeEditW {
         return ui.measureString(b, ui.computed(n).fontSize * 0.9f) + 18.f;
     }
     static u32 visible(UiContext& ui, NodeHandle n) { return std::max(1u, u32(ui.contentRect(n).h / lineH(ui, n))); }
+    // x of byte `col` of line L from the text start, summed per token the way paint() places them (each token shaped
+    // on its own), so the caret, the selection and hit testing land on the glyphs instead of drifting by the kerning
+    // across token boundaries that shaping the whole prefix would add.
+    static f32 colX(UiContext& ui, CodeLanguage lang, const std::string& L, u32 col, f32 fs) {
+        thread_local std::vector<u8> tok;
+        tokenize(lang, L, tok);
+        f32 x = 0.f;
+        col = std::min(col, u32(L.size()));
+        for (std::size_t i = 0; i < col;) {
+            std::size_t j = i;
+            while (j < L.size() && tok[j] == tok[i]) ++j;
+            x += ui.measureString(std::string_view(L).substr(i, std::min<std::size_t>(j, col) - i), fs);
+            i = j;
+        }
+        return x;
+    }
+    // glyph pen positions are snapped to device pixels when drawn: the caret snaps the same way
+    static f32 snap(UiContext& ui, f32 x) { const f32 sc = ui.scale() > 0.f ? ui.scale() : 1.f; return std::round(x * sc) / sc; }
     static void paint(const PaintContext& pc, DrawList& dl) {
         UiContext& ui = pc.ui;
         CodeState* s = codePool().get(ui, pc.node);
@@ -891,8 +1059,8 @@ struct CodeEditW {
                            fs * 0.9f, TextAlignment::End, pc.node.index);
             if (!(a == b) && li >= a.line && li <= b.line) { // selection
                 const u32 sc = li == a.line ? a.col : 0, ecl = li == b.line ? b.col : u32(L.size());
-                const f32 sx = x0 + ui.measureString(std::string_view(L).substr(0, sc), fs);
-                const f32 ex = x0 + ui.measureString(std::string_view(L).substr(0, ecl), fs) + (li != b.line ? 6.f : 0.f);
+                const f32 sx = snap(ui, x0 + colX(ui, s->lang, L, sc, fs));
+                const f32 ex = snap(ui, x0 + colX(ui, s->lang, L, ecl, fs)) + (li != b.line ? 6.f : 0.f);
                 dl.rect({sx, y, std::max(0.f, ex - sx), lh}, pc.tint(Color::rgb(0x264F78)));
             }
             tokenize(s->lang, L, tok);
@@ -906,7 +1074,7 @@ struct CodeEditW {
                 i = j;
             }
             if (focused && li == s->caret.line) {
-                const f32 cx = x0 + ui.measureString(std::string_view(L).substr(0, s->caret.col), fs);
+                const f32 cx = snap(ui, x0 + colX(ui, s->lang, L, s->caret.col, fs));
                 dl.rect({cx, y + 2.f, 2.f, lh - 4.f}, pc.tint(Color::rgb(0xFFFFFF)));
                 ui.setTextCaret(pc.node, {cx, y + 2.f, 2.f, lh - 4.f});
             }
@@ -972,7 +1140,7 @@ struct CodeEditW {
         u32 col = 0;
         while (col < L.size()) {
             const u32 nx = nextCp(L, col);
-            const f32 mid = (ui.measureString(std::string_view(L).substr(0, col), fs) + ui.measureString(std::string_view(L).substr(0, nx), fs)) * 0.5f;
+            const f32 mid = (colX(ui, s.lang, L, col, fs) + colX(ui, s.lang, L, nx, fs)) * 0.5f;
             if (x < mid) break;
             col = nx;
         }
@@ -1190,7 +1358,8 @@ struct DateTimeW {
     }
     static void openPopup(UiContext& ui, NodeHandle n, DtState& s) {
         const Rect r = ui.rect(n);
-        const NodeHandle card = detail::popupPanel(ui, n, {r.x, r.bottom() + 2.f});
+        const bool rtl = detail::isRtl(ui, ui.parent(n)); // the field is an LTR island; its calendar is not
+        const NodeHandle card = detail::popupPanel(ui, n, {rtl ? r.right() : r.x, r.bottom() + 2.f}, rtl ? 1 : 0);
         if (!ui.alive(card)) return;
         const NodeHandle cal = calendar(ui, card, s.f[0], s.f[1], s.f[2]);
         ui.setFocus(cal, FocusReason::Keyboard);
@@ -1595,7 +1764,9 @@ Vec2 nodeGraphNodePos(const UiContext& ui, NodeHandle g, u32 k) {
 }
 Vec2 nodeGraphPinPos(const UiContext& ui, NodeHandle g, u32 k, u32 pin, bool output) {
     const GraphState* s = graphPool().get(ui, g);
-    return s && k < s->nodes.size() ? gpin(ui, g, *s, k, pin, output) : Vec2{};
+    if (!s || k >= s->nodes.size()) return {};
+    const Vec2 q = gpin(ui, g, *s, k, pin, output);
+    return ui.computed(g).rtl ? Vec2{mirrorX(q.x, ui.contentRect(g)), q.y} : q; // on the screen (mirrored graph)
 }
 std::vector<u32> nodeGraphTopoOrder(const UiContext& ui, NodeHandle g) {
     std::vector<u32> order;
@@ -1620,6 +1791,7 @@ NodeHandle curveEditor(UiContext& ui, NodeHandle parent, f32 t0, f32 t1, f32 v0,
     registerTierD2(ui);
     const NodeHandle n = make(ui, "curveeditor", parent, id);
     if (!ui.alive(n)) return n;
+    ui.setCss(n, "direction", "ltr"); // stays left-to-right in a right-to-left UI (its time axis runs left to right)
     CurveState& s = curvePool().create(ui, n);
     s.t0 = t0; s.t1 = t1 > t0 ? t1 : t0 + 1.f; s.v0 = v0; s.v1 = v1 > v0 ? v1 : v0 + 1.f;
     ui.setRange(n, -1.f, 1e9f, 1.f);
@@ -1648,6 +1820,7 @@ NodeHandle timeline(UiContext& ui, NodeHandle parent, f32 duration, std::string_
     registerTierD2(ui);
     const NodeHandle n = make(ui, "timeline", parent, id);
     if (!ui.alive(n)) return n;
+    ui.setCss(n, "direction", "ltr"); // stays left-to-right in a right-to-left UI (its time axis runs left to right)
     tlPool().create(ui, n).duration = std::max(0.1f, duration);
     ui.setRange(n, 0.f, std::max(0.1f, duration), 0.f);
     ui.setValue(n, 0.f);
@@ -1679,6 +1852,18 @@ void timelineSetView(UiContext& ui, NodeHandle tl, f32 startSec, f32 spanSec) {
 Vec2 timelineView(const UiContext& ui, NodeHandle tl) {
     const TimelineState* s = tlPool().get(ui, tl);
     return s ? Vec2{s->viewStart, s->viewSpan} : Vec2{};
+}
+TimelineClipDrag timelineClipDrag(const UiContext& ui, NodeHandle tl) {
+    const TimelineState* s = tlPool().get(ui, tl);
+    if (!s) return {};
+    return {s->dTrack, s->dClip, s->downSec, s->pointerSec, s->fromStart, s->drag == 2};
+}
+void timelineSelectClip(UiContext& ui, NodeHandle tl, i32 track, i32 clip) {
+    if (TimelineState* s = tlPool().get(ui, tl)) {
+        s->selTrack = track;
+        s->selClip = clip;
+        ui.invalidate(tl);
+    }
 }
 void timelineSetSnap(UiContext& ui, NodeHandle tl, f32 sec) { if (TimelineState* s = tlPool().get(ui, tl)) s->snap = std::max(0.f, sec); }
 Vec2 timelineClip(const UiContext& ui, NodeHandle tl, u32 track, u32 clip) {
@@ -1738,6 +1923,7 @@ NodeHandle codeEdit(UiContext& ui, NodeHandle parent, std::string_view text, Cod
     registerTierD2(ui);
     const NodeHandle n = make(ui, "codeedit", parent, id);
     if (!ui.alive(n)) return n;
+    ui.setCss(n, "direction", "ltr"); // stays left-to-right in a right-to-left UI (code)
     codePool().create(ui, n).lang = lang;
     ui.setA11y(n, A11yRole::TextField, "Code");
     codeEditSetText(ui, n, text);
@@ -1783,6 +1969,7 @@ NodeHandle dateTimeEdit(UiContext& ui, NodeHandle parent, int y, int m, int d, i
     registerTierD2(ui);
     const NodeHandle n = make(ui, "datetimeedit", parent, id);
     if (!ui.alive(n)) return n;
+    ui.setCss(n, "direction", "ltr"); // stays left-to-right in a right-to-left UI (ISO date and time digits; its calendar follows the surroundings)
     dtPool().create(ui, n);
     ui.setA11y(n, A11yRole::SpinBox, "Date and time");
     ui.setRange(n, -1.0e7f, 1.0e7f);
@@ -1813,6 +2000,7 @@ NodeHandle videoWidget(UiContext& ui, NodeHandle parent, const VideoSource* sour
     registerTierD2(ui);
     const NodeHandle n = make(ui, "video", parent, id);
     if (!ui.alive(n)) return n;
+    ui.setCss(n, "direction", "ltr"); // stays left-to-right in a right-to-left UI (media time runs left to right)
     VideoState& s = videoPool().create(ui, n);
     s.src = source;
     if (source) s.img.resize(int(source->width), int(source->height), 0xFF000000u);

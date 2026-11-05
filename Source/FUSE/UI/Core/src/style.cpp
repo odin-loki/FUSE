@@ -448,7 +448,7 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
             s.fontFeatureValues[i] = u32(std::max(0.f, v.tracks[i].value));
         }
         break;
-    case Prop::TextDirection: s.rtl = v.e != 0; break;
+    case Prop::TextDirection: s.rtl = v.e != 0; s.dirSet = true; break;
     case Prop::Zoom: s.zoom = std::clamp(v.num, 0.05f, 20.f); break;
     case Prop::Count: break;
     }
@@ -516,6 +516,7 @@ void inheritFrom(ComputedStyle& s, const ComputedStyle& parent) {
     s.fontFeatureTags = parent.fontFeatureTags;
     s.fontFeatureValues = parent.fontFeatureValues;
     s.rtl = parent.rtl;
+    s.dirSet = parent.dirSet;
 }
 
 // ---- Parser --------------------------------------------------------------------------------------------------------

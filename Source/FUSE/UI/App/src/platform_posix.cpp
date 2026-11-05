@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <spawn.h>
@@ -140,6 +141,28 @@ std::expected<std::string, PlatformError> pickFolderDialog(const FileDialogDesc&
     auto r = zenityFiles(d, false, true);
     if (!r) return std::unexpected(r.error());
     return std::move(r->front());
+}
+std::expected<fuse::ui::Color, PlatformError> colorDialog(const ColorDialogDesc& d) {
+    if (!onPath("zenity")) return std::unexpected(PlatformError::Unavailable);
+    auto byte = [](float v) { return int(std::clamp(v, 0.f, 1.f) * 255.f + 0.5f); };
+    std::vector<std::string> a{"zenity", "--color-selection"};
+    if (!d.title.empty()) a.push_back("--title=" + std::string(d.title));
+    a.push_back("--color=rgb(" + std::to_string(byte(d.initial.r)) + "," + std::to_string(byte(d.initial.g)) + "," +
+                std::to_string(byte(d.initial.b)) + ")");
+    std::string out;
+    const int rc = run(std::move(a), &out);
+    if (rc < 0) return std::unexpected(PlatformError::Unavailable);
+    if (rc != 0) return std::unexpected(PlatformError::Cancelled);
+    // "rgb(r,g,b)", "rgba(r,g,b,a)" or "#rrggbb"
+    int c[3] = {0, 0, 0};
+    if (out.rfind("#", 0) == 0 && out.size() >= 7) {
+        const unsigned v = unsigned(std::strtoul(out.substr(1, 6).c_str(), nullptr, 16));
+        c[0] = int(v >> 16 & 255u), c[1] = int(v >> 8 & 255u), c[2] = int(v & 255u);
+    } else if (const std::size_t p = out.find('('); p == std::string::npos ||
+               std::sscanf(out.c_str() + p + 1, "%d,%d,%d", &c[0], &c[1], &c[2]) != 3) {
+        return std::unexpected(PlatformError::Failed);
+    }
+    return fuse::ui::Color{c[0] / 255.f, c[1] / 255.f, c[2] / 255.f, d.initial.a};
 }
 std::expected<MessageResult, PlatformError> messageBox(std::string_view title, std::string_view text, MessageIcon icon,
                                                        MessageButtons buttons, unsigned long long) {

@@ -141,6 +141,7 @@ struct VarFile {
     std::vector<VariationAxis> axes;
     std::vector<NamedInstance> named;
     std::vector<std::vector<std::array<std::int16_t, 2>>> avar; // per axis: (from, to) segment maps
+    std::uint32_t avar2Map = 0, avar2Ivs = 0;                    // avar 2: axisIndexMap, ItemVariationStore (absolute)
     std::uint16_t gAxes = 0, gShared = 0, gGlyphs = 0;            // gvar header
     std::uint32_t gSharedOff = 0, gData = 0, gOffsets = 0;
     bool gLong = false;
@@ -181,8 +182,8 @@ bool parseFile(VarFile& f, std::span<const std::uint8_t> d, std::uint32_t start)
             for (std::uint32_t a = 0; a < axisCount; ++a) ni.coords.push_back(r.fixed(p + 4 + a * 4));
             f.named.push_back(std::move(ni));
         }
-    if (const std::uint32_t avar = findTable(r, start, "avar"); avar && r.ok(avar, 8) && r.u16(avar) == 1 &&
-                                                                 r.u16(avar + 6) == axisCount) {
+    if (const std::uint32_t avar = findTable(r, start, "avar");
+        avar && r.ok(avar, 8) && (r.u16(avar) == 1 || r.u16(avar) == 2) && r.u16(avar + 6) == axisCount) {
         std::uint64_t p = avar + 8;
         for (std::uint32_t a = 0; a < axisCount; ++a) {
             if (!r.ok(p, 2)) break;
@@ -194,6 +195,12 @@ bool parseFile(VarFile& f, std::span<const std::uint8_t> d, std::uint32_t start)
             p += 2 + std::uint64_t(n) * 4;
         }
         if (f.avar.size() != axisCount) f.avar.clear();
+        // avar 2 (OpenType 1.9.1): after the segment maps, Offset32 axisIndexMap and Offset32 varStore (from avar)
+        else if (r.u16(avar) == 2 && r.ok(p, 8)) {
+            const std::uint32_t map = r.u32(p), ivs = r.u32(p + 4);
+            f.avar2Map = map ? avar + map : 0;
+            f.avar2Ivs = ivs ? avar + ivs : 0;
+        }
     }
     f.hvar = findTable(r, start, "HVAR");
     f.mvar = findTable(r, start, "MVAR");
@@ -247,6 +254,23 @@ std::int16_t normalise(const VarFile& f, std::size_t a, float v) {
 struct Pt {
     float x = 0.f, y = 0.f;
 };
+
+// avar 2: every axis adds the delta of its item (axisIndexMap, else (0, axis)) evaluated at the coordinates after the
+// segment maps, rounded, as HarfBuzz and FreeType do; so one axis can move another.
+void applyAvar2(const VarFile& f, std::span<std::int16_t> norm) {
+    if (!f.avar2Ivs) return;
+    thread_local std::vector<float> scalars;
+    ivsScalars(f.d, f.avar2Ivs, norm, scalars);
+    if (scalars.empty()) return;
+    std::array<std::int16_t, kMaxAxes> out{};
+    for (std::size_t a = 0; a < norm.size(); ++a) {
+        std::uint32_t outer = 0, inner = std::uint32_t(a);
+        if (f.avar2Map && !deltaSetIndex(f.d, f.avar2Map, std::uint32_t(a), outer, inner)) outer = inner = 0xFFFFu;
+        const float d = (outer == 0xFFFFu && inner == 0xFFFFu) ? 0.f : ivsDelta(f.d, f.avar2Ivs, outer, inner, scalars);
+        out[a] = std::int16_t(std::clamp(int(norm[a]) + int(std::lround(d)), -16384, 16384));
+    }
+    std::copy(out.begin(), out.begin() + std::ptrdiff_t(norm.size()), norm.begin());
+}
 
 } // namespace
 
@@ -844,6 +868,7 @@ void resolve(const VarState* v, std::span<const FontVariation> settings, std::ar
             if (v->file->axes[a].tag == s.tag)
                 design[a] = std::clamp(s.value, v->file->axes[a].minValue, v->file->axes[a].maxValue);
     for (std::size_t a = 0; a < v->axisCount; ++a) key[a] = normalise(*v->file, a, design[a]);
+    applyAvar2(*v->file, std::span<std::int16_t>(key.data(), v->axisCount));
 }
 
 const Font& instanceAt(const Font& from, VarState* v, const std::array<float, kMaxAxes>& design,

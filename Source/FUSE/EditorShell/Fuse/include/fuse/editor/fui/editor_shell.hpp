@@ -26,6 +26,10 @@
 #include <string_view>
 #include <vector>
 
+namespace fuse::app {
+class NativePlatform;
+}
+
 namespace fuse::editor::fui {
 
 using fuse::ui::NodeHandle;
@@ -68,7 +72,9 @@ public:
     // ---- per-panel docking (Qt QDockWidget parity: View menu toggles, float, move, saved layouts) --------------
     /// Hides / shows one panel (View menu check). A side with no visible panel closes.
     bool setPanelVisible(std::string_view panelId, bool on);
-    /// Floats a panel in its own frame over the window (title + Dock button); false docks it back to its home side.
+    /// Floats a panel in its own frame (title with Dock / Close, resize grip); false docks it back to its home side.
+    /// On a NativePlatform with tool windows (NativeOptions::osWindows) the frame is its own top-level OS window
+    /// owned by the editor window (Qt floating QDockWidget); headless it is drawn over the main window.
     bool setPanelFloating(std::string_view panelId, bool on);
     /// Moves a panel to another side's tabs (and shows it).
     bool movePanel(std::string_view panelId, fuse::ui::widgets::DockSide side);
@@ -271,8 +277,6 @@ private:
     std::vector<bool> m_panelVisible;
     std::vector<std::array<f32, 2>> m_floatPos;
     std::vector<u32> m_sideOrder[3]; ///< visible panels per side, in tab order
-    i32 m_floatDrag = -1;
-    fuse::ui::Vec2 m_floatDragAt{};
     // project tools dialogs
     NodeHandle m_projSettings{}, m_packageDialog{};
     project::ProjectManifest m_projBase;
@@ -286,18 +290,75 @@ private:
     EntityRef m_renaming;
     u32 m_hierClickLine = ~0u;
     std::chrono::steady_clock::time_point m_hierClickAt{};
+    // floating frames: size per panel, resize grip
+    std::vector<std::array<f32, 2>> m_floatSize;
+    i32 m_floatResize = -1;
+    void placeFloat_(u32 i);
+    // panel drag (a tab dragged out of a dock / a floating title dragged) and the drop zones over the dock area
+    i32 m_panelDrag = -1, m_tabDragSide = -1, m_dropSide = -1;
+    bool m_panelDragActive = false;
+    fuse::ui::Vec2 m_panelDragStart{}, m_panelDragGrab{};
+    NodeHandle m_dropZone[3]{};
+    bool panelDragEvent_(const fuse::ui::Event& e, NodeHandle target);
+    void endPanelDrag_();
+    [[nodiscard]] fuse::ui::Rect dropZoneRect_(u32 side) const;
+    void showDropZones_(bool on);
+    // hierarchy drag and drop (Qt QTreeWidget InternalMove -> reparent commands)
+    i32 m_hierDragLine = -1, m_hierDropLine = -2;
+    bool m_hierDragActive = false;
+    fuse::ui::Vec2 m_hierDragStart{};
+    NodeHandle m_hierDropMark{};
+    bool hierarchyDragEvent_(const fuse::ui::Event& e, NodeHandle target);
+    void endHierarchyDrag_();
+    // hierarchy context menu
+    std::vector<i32> m_hierMenuCodes;
+    std::vector<std::string> m_hierMenuItems;
+    EntityRef m_hierMenuEntity;
+    void hierarchyMenuPicked_(u32 line);
+
 public:
     /// Hierarchy F2 (Qt beginRename): opens the inline name row for `entity` (hierarchy.rename; Enter commits).
     void beginRename(EntityRef entity);
     /// Hierarchy double-click (Qt entityActivated): select + frame.
     bool activateHierarchyRow(u32 line);
+    /// Hierarchy right click (Qt customContextMenuRequested): selects the row under `at` (context coordinates) and
+    /// opens "hierarchy.context" with Rename / Create Child / Duplicate / Delete / prefab actions / Clear Parent; on
+    /// empty space the create items only. Returns false when `at` is outside the tree.
+    bool openHierarchyContextMenu(fuse::ui::Vec2 at);
+    /// The last hierarchy context menu's lines ("-" = separator; a leading '!' marks a disabled item).
+    [[nodiscard]] const std::vector<std::string>& hierarchyContextMenuItems() const { return m_hierMenuItems; }
+    /// Panel drag and drop (Qt QDockWidget): a tab dragged out of its dock floats the panel under the pointer; a
+    /// floating panel dragged by its title shows drop zones ("dock.dropzone.left|right|bottom") over the dock area and
+    /// docks on release over one (Ctrl held: no docking). True while such a drag runs; dropZone() is the hot zone's
+    /// side (0 left, 1 right, 2 bottom, -1 none).
+    [[nodiscard]] bool panelDragging() const { return m_panelDrag >= 0 && m_panelDragActive; }
+    [[nodiscard]] i32 dropZone() const { return m_dropSide; }
+    /// Floating panel frame size (logical px); setFloatSize resizes it like the frame's grip does.
+    [[nodiscard]] std::array<f32, 2> floatSize(std::string_view panelId) const;
+    bool setFloatSize(std::string_view panelId, f32 w, f32 h);
+    /// Hierarchy drag and drop: true while rows are dragged; the drop target line (-1 = top level, -2 = none).
+    [[nodiscard]] bool hierarchyDragging() const { return m_hierDragActive; }
+    [[nodiscard]] i32 hierarchyDropLine() const { return m_hierDropLine; }
 };
 
-/// ShellServices on FUSE UI dialogs (file dialog, message boxes). Each call runs a nested Application::step loop until
-/// the dialog closes, like QFileDialog::getOpenFileName.
+/// Which dialogs DialogServices takes from the OS (fuse_app platform dialogs) instead of FUSE UI.
+struct DialogOptions {
+    bool nativeFileDialogs = true;  ///< Win32 IFileDialog / zenity (Qt QFileDialog's native dialogs); FUSE UI fallback
+    bool nativeColorDialog = false; ///< Win32 ChooseColor / zenity; default the FUSE colour dialog (alpha, Qt QColorDialog look)
+};
+
+/// ShellServices on dialogs. File pickers are the OS dialogs when a NativePlatform shows the window (FUSE UI's file
+/// dialog otherwise, or when the OS has none); colours come from a modal FUSE UI colour dialog (colorPicker + hex
+/// field) or ChooseColor; message boxes are FUSE UI. FUSE UI dialogs run a nested Application::step loop until they
+/// close, like QFileDialog::getOpenFileName.
 class DialogServices final : public ShellServices {
 public:
-    DialogServices(fuse::app::Application& app, fuse::app::AppWindow& window);
+    DialogServices(fuse::app::Application& app, fuse::app::AppWindow& window, fuse::app::NativePlatform* native = nullptr,
+                   DialogOptions options = {});
+    void setNative(fuse::app::NativePlatform* native) { m_native = native; }
+    [[nodiscard]] DialogOptions& options() { return m_opt; }
+    /// "native" or "fuse": which dialog the last pick used (tests).
+    [[nodiscard]] const char* lastBackend() const { return m_lastBackend; }
     std::optional<std::string> pickOpenFile(std::string_view title, std::string_view filter, std::string_view directory) override;
     std::optional<std::string> pickSaveFile(std::string_view title, std::string_view filter, std::string_view directory) override;
     std::optional<std::string> pickDirectory(std::string_view title, std::string_view directory) override;
@@ -308,9 +369,14 @@ public:
 
 private:
     std::optional<std::string> file_(std::string_view title, std::string_view filter, std::string_view directory, bool save);
+    std::optional<std::string> nativeFile_(std::string_view title, std::string_view filter, std::string_view directory, int kind,
+                                           bool& handled);
     i32 buttons_(std::string_view title, std::string_view text, std::string_view buttons);
     fuse::app::Application& m_app;
     fuse::app::AppWindow& m_win;
+    fuse::app::NativePlatform* m_native = nullptr;
+    DialogOptions m_opt;
+    const char* m_lastBackend = "";
 };
 
 } // namespace fuse::editor::fui

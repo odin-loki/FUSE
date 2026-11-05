@@ -292,9 +292,12 @@ struct MenuButton { // text = "Title\nitem\nitem..."
 };
 
 /// F10 (from the root's Event signal: no focused widget took it) toggles keyboard focus between the first visible
-/// menu bar and the previously focused node.
+/// menu bar and the previously focused node; so does Alt pressed and released alone (UiContext::keyUp).
 void menuBarF10(UiContext& ui, NodeHandle root, const SignalArgs& a) {
-    if (!a.event || a.event->key != Key::F10 || a.event->mods) return;
+    if (!a.event) return;
+    const bool f10 = a.event->type == EventType::KeyDown && a.event->key == Key::F10 && !a.event->mods;
+    const bool alt = a.event->type == EventType::KeyUp && a.event->key == Key::Alt;
+    if (!f10 && !alt) return;
     const u32 barCls = ui.registry().find("menubar"), btnCls = ui.registry().find("menubutton");
     const NodeHandle f = ui.focused();
     if (ui.alive(f) && ui.classOf(f) == btnCls) { // in a bar: back
@@ -744,7 +747,7 @@ void setListRowFont(UiContext& ui, NodeHandle list, RowFontFn fn) {
     if (fn) v.push_back({&ui, list, fn});
 }
 
-NodeHandle popupPanel(UiContext& ui, NodeHandle owner, Vec2 at) {
+NodeHandle popupPanel(UiContext& ui, NodeHandle owner, Vec2 at, int dir) {
     registerTierB(ui);
     const NodeHandle scope = make(ui, "popup", overlayLayer(ui));
     if (!ui.alive(scope)) return {};
@@ -753,7 +756,11 @@ NodeHandle popupPanel(UiContext& ui, NodeHandle owner, Vec2 at) {
     const NodeHandle card = panel(ui, scope);
     ui.addClass(card, "card");
     ui.addClass(card, "clamp");
-    setPx(ui, card, Prop::Left, at.x);
+    // the panel takes its owner's direction (as popup menus do); right-to-left: `at` is its top-right corner
+    const bool rtl = dir < 0 ? ui.alive(owner) && ui.computed(owner).rtl : dir == 1;
+    if (rtl || dir >= 0 || (ui.alive(owner) && ui.computed(owner).dirSet)) ui.set(scope, Prop::TextDirection, PropValue::ofEnum(rtl ? 1 : 0));
+    if (rtl) setPx(ui, card, Prop::Right, ui.viewport().w - at.x);
+    else setPx(ui, card, Prop::Left, at.x);
     setPx(ui, card, Prop::Top, at.y);
     ui.setModal(scope);
     return card;
@@ -852,7 +859,16 @@ NodeHandle setTooltip(UiContext& ui, NodeHandle node, std::string_view text, f32
         c.startTimer(delay, false, [tip, n](UiContext& cx) {
             if (!cx.alive(tip) || !cx.alive(n) || (cx.hovered().index != n.index && !(cx.focused() == n && cx.focusVisible()))) return;
             const Rect r = cx.rect(n);
-            setPx(cx, tip, Prop::Left, r.x);
+            // right-to-left nodes: the tip takes their direction and hangs from their right edge
+            const bool rtl = cx.computed(n).rtl;
+            if (rtl || cx.computed(n).dirSet) cx.set(tip, Prop::TextDirection, PropValue::ofEnum(rtl ? 1 : 0));
+            if (rtl) {
+                cx.setCss(tip, "left", "auto");
+                setPx(cx, tip, Prop::Right, cx.viewport().w - r.right());
+            } else {
+                cx.setCss(tip, "right", "auto");
+                setPx(cx, tip, Prop::Left, r.x);
+            }
             setPx(cx, tip, Prop::Top, r.bottom() + 4.f);
             overlayLayer(cx);
             cx.setCss(tip, "display", "flex");
@@ -895,6 +911,20 @@ u32 treeVisibleRows(const UiContext& ui, NodeHandle tree) {
     u32 rows = 0;
     eachTreeRow(ui.text(tree), ui.userData(tree), [&](u32, u32, u32, bool, bool, std::string_view) { ++rows; return true; });
     return rows;
+}
+
+i32 treeLineAt(UiContext& ui, NodeHandle tree, Vec2 at) {
+    const Rect c = ui.contentRect(tree);
+    if (!c.contains(at)) return -1;
+    const i64 row = i64((at.y - c.y) / rowHeight(ui, tree));
+    return i32(TreeView::rowInfo(ui, tree, [&](u32 r, u32) { return i64(r) == row; }).line);
+}
+Rect treeLineRect(UiContext& ui, NodeHandle tree, u32 line) {
+    const TreeView::Hit h = TreeView::rowInfo(ui, tree, [&](u32, u32 l) { return l == line; });
+    if (h.row < 0) return {};
+    const Rect c = ui.contentRect(tree);
+    const f32 rh = rowHeight(ui, tree);
+    return {c.x, c.y + f32(h.row) * rh, c.w, rh};
 }
 
 NodeHandle tabBar(UiContext& ui, NodeHandle parent, std::string_view titles, u32 current, std::string_view id) {

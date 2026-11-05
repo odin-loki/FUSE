@@ -119,6 +119,10 @@ bool treeExpanded(const UiContext& ui, NodeHandle tree, u32 line);
 void setTreeExpanded(UiContext& ui, NodeHandle tree, u32 line, bool open);
 /// Number of rows currently shown (collapsed subtrees skipped).
 u32 treeVisibleRows(const UiContext& ui, NodeHandle tree);
+/// The line under `at` (context coordinates; -1 outside the rows) and a shown line's row rectangle (empty when hidden):
+/// drag-and-drop targets.
+i32 treeLineAt(UiContext& ui, NodeHandle tree, Vec2 at);
+Rect treeLineRect(UiContext& ui, NodeHandle tree, u32 line);
 
 /// Tab bar (titles '\n'-separated; value() = current tab) and a tab widget (tab bar + one page per title; only the
 /// current page is displayed).
@@ -336,8 +340,10 @@ Vec2 curveKey(const UiContext& ui, NodeHandle curve, u32 index); ///< (t, v)
 f32 curveEvaluate(const UiContext& ui, NodeHandle curve, f32 t);
 
 /// Timeline: named tracks with clips [start, end), a time ruler and a playhead. Dragging the ruler scrubs
-/// (ValueChanged {value = time}); dragging a clip moves it (snapped to `snap` seconds when > 0); wheel zooms.
-/// value() = playhead time in seconds.
+/// (ValueChanged {value = time}); dragging a clip moves it (snapped to `snap` seconds when > 0, free with Shift) and
+/// emits Event {value = 5} on press, {value = 6} per move and {value = 7} on release (timelineClipDrag tells which
+/// clip and where the pointer is); Ctrl+Left / Right moving the selected clip emits Event {value = 2} (timelineClipDrag
+/// names the clip, inactive); wheel zooms. value() = playhead time in seconds.
 NodeHandle timeline(UiContext& ui, NodeHandle parent, f32 duration, std::string_view id = {});
 u32 timelineAddTrack(UiContext& ui, NodeHandle tl, std::string_view name);
 u32 timelineAddClip(UiContext& ui, NodeHandle tl, u32 track, f32 start, f32 end, std::string_view label, Color color);
@@ -347,6 +353,16 @@ void timelineSetSnap(UiContext& ui, NodeHandle tl, f32 seconds);
 void timelineSetView(UiContext& ui, NodeHandle tl, f32 startSec, f32 spanSec);
 Vec2 timelineView(const UiContext& ui, NodeHandle tl); ///< (start, span) seconds
 Vec2 timelineClip(const UiContext& ui, NodeHandle tl, u32 track, u32 clip); ///< (start, end)
+/// The current / last clip drag: track, clip, pointer time (seconds, unsnapped) at press and now, the clip start at
+/// press, and whether the drag is still in progress.
+struct TimelineClipDrag {
+    u32 track = 0, clip = 0;
+    f32 downSec = 0.f, pointerSec = 0.f, fromStart = 0.f;
+    bool active = false;
+};
+TimelineClipDrag timelineClipDrag(const UiContext& ui, NodeHandle tl);
+/// Selects a clip (the one Ctrl+Left / Right move; -1 clears), as a click on it does.
+void timelineSelectClip(UiContext& ui, NodeHandle tl, i32 track, i32 clip);
 /// Clips under time `t` on every track (sequencer queries).
 u32 timelineActiveClips(const UiContext& ui, NodeHandle tl, f32 t);
 

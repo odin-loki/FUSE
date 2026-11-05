@@ -105,6 +105,7 @@ struct Lib {
     int (*DefaultDepth)(Display*, int) = nullptr;
     int (*MoveResizeWindow)(Display*, Window, int, int, unsigned, unsigned) = nullptr;
     int (*TranslateCoordinates)(Display*, Window, Window, int, int, int*, int*, Window*) = nullptr;
+    int (*RaiseWindow)(Display*, Window) = nullptr;
     int (*ChangeWindowAttributes)(Display*, Window, unsigned long, void*) = nullptr;
     int (*DisplayWidth)(Display*, int) = nullptr;
     int (*DisplayHeight)(Display*, int) = nullptr;
@@ -136,6 +137,7 @@ struct Lib {
     void* (*VaCreateNestedList)(int, ...) = nullptr;
     int (*FilterEvent)(Event*, Window) = nullptr;
     int (*Utf8LookupString)(void*, InputEv*, char*, int, KeySym*, int*) = nullptr;
+    char* (*Utf8ResetIC)(void*) = nullptr; ///< optional (loadXim does not require it)
     int (*FreeCursor)(Display*, XID) = nullptr;
     int (*WarpPointer)(Display*, Window, Window, int, int, unsigned, unsigned, int, int) = nullptr;
 
@@ -158,7 +160,7 @@ struct Lib {
         get(ChangeProperty, "XChangeProperty"); get(DeleteProperty, "XDeleteProperty"); get(GetWindowProperty, "XGetWindowProperty");
         get(Free, "XFree"); get(ResizeWindow, "XResizeWindow"); get(CreateImage, "XCreateImage"); get(PutImage, "XPutImage");
         get(DefaultGC, "XDefaultGC"); get(DefaultVisual, "XDefaultVisual"); get(DefaultDepth, "XDefaultDepth");
-        get(MoveResizeWindow, "XMoveResizeWindow"); get(TranslateCoordinates, "XTranslateCoordinates");
+        get(MoveResizeWindow, "XMoveResizeWindow"); get(TranslateCoordinates, "XTranslateCoordinates"); get(RaiseWindow, "XRaiseWindow");
         get(ChangeWindowAttributes, "XChangeWindowAttributes"); get(DisplayWidth, "XDisplayWidth");
         get(DisplayHeight, "XDisplayHeight"); get(SendEvent, "XSendEvent"); get(GrabPointer, "XGrabPointer");
         get(UngrabPointer, "XUngrabPointer"); get(CreateFontCursor, "XCreateFontCursor"); get(DefineCursor, "XDefineCursor");
@@ -182,6 +184,7 @@ struct Lib {
         get(SetICValues, "XSetICValues"); get(GetICValues, "XGetICValues"); get(SetICFocus, "XSetICFocus"); get(UnsetICFocus, "XUnsetICFocus");
         get(VaCreateNestedList, "XVaCreateNestedList"); get(FilterEvent, "XFilterEvent");
         get(Utf8LookupString, "Xutf8LookupString");
+        Utf8ResetIC = reinterpret_cast<char* (*)(void*)>(dlsym(so, "Xutf8ResetIC"));
         return all;
     }
 

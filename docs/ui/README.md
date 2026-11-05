@@ -123,6 +123,19 @@ std::vector<std::uint8_t> levels; std::uint8_t para;
 bidiLevels(utf8, BaseDirection::Auto, levels, para); // UAX #9 levels after L1 (FULL)
 ```
 
+Fallbacks follow the primary's weight: when `font.weight()` (the wght coordinate of a variable font, else OS/2
+`usWeightClass`) is 600 or more, `face(i)` is the fallback's bold form: the face given with `fallback.setBoldFace(&bold)`
+(e.g. loaded from `FontCatalog::match(family, 700)`), else a variable fallback's instance at the primary's weight, else
+`fallback.emboldened()`, a synthetic bold (FreeType's strength, em / 24: spacing advances widen by it and the glyph is
+smeared to the right by it; MSDF distances are biased outward). Colour fonts are never emboldened. The UI does the same
+for its own font: `font-weight` >= 600 on a static font draws it `emboldened()` (CSS font-synthesis), so a bold label's
+Hebrew or Thai is bold too. COOKED packs are not emboldened (they are cooked at one instance). FULL layout splits each
+bidi run where the face changes and shapes every piece once, with its own face and run cache, so line breaking sees the
+fallback faces' real advances.
+
+The code editor places its caret, selection and click hits at the sum of its token advances (each token is shaped on its
+own when drawn), snapped to device pixels like the glyph pens, so the caret sits exactly on the glyph boundaries.
+
 Grapheme tables come from the UCD: `python Source/FUSE/UI/Text/tools/gen_unicode_tables.py <ucd dir>` rewrites
 `Text/src/unicode_tables.inc`. The CJK subset covers kana, CJK punctuation, fullwidth forms, ~1400 frequent Han
 characters and Hangul (the 2350 KS X 1001 syllables + jamo; `vendor/fonts/noto/make_cjk_subset.py`).
@@ -137,7 +150,9 @@ them as `kGlyphColor` glyph commands. The rasterisers are linked only into binar
 Variable fonts: `enableVariableFonts()` (opt-in like the colour rasterisers; without it a variable font draws its
 default instance) gives `Font::axes()`, `namedInstances()`, `instance({{fontTag("wght"), 650}})`, `namedInstance(i)`
 and `setVariation(...)`. An instance is another `Font` over the same bytes (owned by the font that loaded them, cached by
-normalised coordinates, found without allocation): fvar + avar normalisation, HVAR advances (else the gvar phantom
+normalised coordinates, found without allocation): fvar + avar normalisation (avar 2 too: its item variation store,
+through the axisIndexMap or the implicit (0, axis) items, adds deltas evaluated at the segment-mapped coordinates, so one
+axis can move another, as in HarfBuzz / FreeType), HVAR advances (else the gvar phantom
 points), MVAR ascender / descender / line gap, gvar outlines (MINIMAL: FUSE's own glyf + gvar decoder with IUP and
 composites, rasterised exactly; FULL: FreeType at `FT_Set_Var_Blend_Coordinates`, shaped by HarfBuzz at the same
 normalised coordinates, sharing the run cache) and COLRv1 `Var*` paints from COLR's item variation store. CFF2 outlines
@@ -229,7 +244,8 @@ what it does not take falls through to the core.
 - **Focus**: Tab / Shift+Tab walk the tab order of the current scope (wrapping); Ctrl+Tab / Ctrl+Shift+Tab always move
   focus, also out of widgets that take Tab (the code editor indents on Tab). Keyboard focus sets `:focus-visible`, which
   the default themes (dark and light) show as an accent ring or highlight on every focusable widget, and scrolls the
-  node into view inside scroll containers. Tooltips also show on keyboard focus.
+  node into view inside scroll containers, vertically and horizontally (a right-to-left container from its right
+  edge; a node wider than the view shows its start edge). Tooltips also show on keyboard focus.
 - **Activation**: Enter / Space click buttons, tool buttons, links, check boxes, switches, menu titles and items.
 - **Disabled** widgets refuse focus: Tab, radio arrows and menu bar arrows skip them.
 - **Choices and ranges**: radio buttons move and check with the arrows (wrapping within the siblings); sliders, dials,
@@ -237,20 +253,32 @@ what it does not take falls through to the core.
 - **Combo box**: Up / Down / Home / End pick in place; Alt+Down, F4, Space or Enter open the list, arrows + Enter
   pick, Escape closes it. The date-time edit opens its calendar the same way (Left / Right pick the field, Up / Down
   step it, digits type it).
-- **Menus**: F10 (when no widget takes it) moves focus to the first menu bar and back; in the bar Left / Right / Home /
+- **Menus**: F10 (when no widget takes it), or Alt pressed and released on its own (Windows convention: not after
+  another key, a click or with Ctrl / Shift, so AltGr and Alt+key shortcuts never toggle; `Key::Alt` comes from Win32
+  `VK_MENU`, which then skips the window-menu mode, X11 `Alt_L` / `Alt_R` and Android), moves focus to the first
+  menu bar and back; in the bar Left / Right / Home /
   End move between titles, Down / Enter / Space open; in a menu Up / Down / Home / End move, Enter picks, Right / Left
   open / close submenus or switch to the neighbouring bar menu, Escape closes (and in the bar returns to where F10
   came from). Unconsumed keys reach the root's `SignalKind::Event` signal for app-wide shortcuts.
 - **Views**: list, tree, table and grid views take arrows, Home / End, PageUp / PageDown and Enter (Submitted); tree
-  views Left / Right collapse / expand; tab bars Left / Right / Home / End.
+  views Left / Right collapse / expand; tab bars Left / Right / Home / End. Table headers: Left / Right pick the
+  keyboard column (outlined while focus is visible), Ctrl+Enter sorts by it (again: reverses; `Toggled` as a header
+  click), Ctrl+Left / Ctrl+Right move its end edge by 8 px (Shift: 1 px; `Event {value = column}`).
 - **Containers**: splitter handles are focusable (arrows resize by 16 px); a dock title closes its dock on Enter,
   Space or Delete; dialogs trap focus and Escape closes them (a file dialog reports Submitted with an empty path).
 - **Pro widgets**: colour picker arrows (saturation / value), Shift+Left / Right (alpha), Page keys (hue); calendar
   arrows (day / week), Page keys (month), Home / End (month start / end); chart Left / Right / Home / End step the
   readout; node graph PageUp / PageDown select a node, arrows move it (Shift: fine) or pan with none selected, Delete
-  removes, Escape deselects; curve editor PageUp / PageDown / Home / End select a key, arrows move it (Shift: x10),
-  Delete removes; timeline arrows (a frame), Page keys (a second), Home / End; video Space plays / pauses, Left /
-  Right step a frame, Home / End; the viewport forwards keys but not Tab.
+  removes, Escape deselects; links: Enter on the selected node starts one at its first output (Up / Down pick the
+  output), Enter moves to the target (the next node with inputs; PageDown / PageUp pick another, Up / Down its
+  input; the pins are ringed and the pending link drawn), Enter connects (the usual type / cycle rules),
+  Backspace / Delete remove the link into the picked input, Escape cancels; curve editor PageUp / PageDown / Home /
+  End select a key, arrows move it (Shift: x10), Delete removes, Insert adds a key on the curve (halfway to the next
+  key from the selected one, else mid-range) and selects it; timeline arrows (a frame), Page keys (a second), Home /
+  End move the playhead, Ctrl+Down / Ctrl+Up select the next / previous clip (outlined; track order, then start
+  time), Ctrl+Right / Ctrl+Left move it by a frame (the snap step; Ctrl+Shift: a second; `Event {value = 2}`),
+  Escape deselects; video Space plays / pauses, Left / Right step a frame, Home / End; the viewport forwards keys but
+  not Tab.
 
 ### Documents and Lua
 
@@ -381,10 +409,13 @@ Desktop platform services (UI1, `fuse/app/native.hpp`, `fuse/app/platform.hpp`):
   (http, https, mailto, file only), `revealInFileManager`.
 - Text input and IME: committed text (Win32 `WM_CHAR` with surrogate pairs; X11 `Xutf8LookupString` through XIM) and
   the IME pre-edit (`WM_IME_COMPOSITION` → `UiContext::textComposition`, drawn inline by the focused field; X11 XIM
-  pre-edit callbacks when the IM offers them). The input method is on only while a text field has focus
+  on-the-spot pre-edit callbacks when the IM offers them: draw, caret moves, done). The input method is on only while a text field has focus
   (`textInputActive`: Win32 associates the IMM32 context, X11 focuses the XIM input context), and the composition /
   candidate windows are placed at `UiContext::textCaret()` when a composition starts (`textInputArea`). X11 opens the
-  IM with a UTF-8 `LC_CTYPE` (restored afterwards): `$XMODIFIERS` (ibus, fcitx), else libX11's compose IM (dead keys).
+  IM with a UTF-8 `LC_CTYPE` (restored afterwards): `$XMODIFIERS` (ibus, fcitx, uim), else libX11's compose IM (dead
+  keys). Server IMs that list named locales only (uim-xim, kinput2) refuse `C.UTF-8`, so when the server IM does not
+  open in the environment's locale `en_US.UTF-8` is tried before the built-in IM. A focus change away from the text
+  field drops the pending pre-edit (`Xutf8ResetIC`; nothing is committed, while IMM32 on Windows commits it).
 - Clipboard (`fuse/app/clipboard.hpp`): `setClipboardText` / `setClipboardImage` / `setClipboard({items})` with text,
   straight-RGBA images, any MIME type and lazy items (`provide` runs once, when a paste first asks); `clipboardText`,
   `clipboardImage`, `clipboardData(mime)`, `clipboardFormats()`, `clipboardOwned()`. Win32: `CF_UNICODETEXT`,
@@ -555,6 +586,10 @@ l10n::formatNumber("de", 1234.5);       // "1.234,5"     formatNumber("hi", 1234
 l10n::formatPercent("tr", 0.5);         // "%50"
 l10n::formatDate("ja", {2024, 3, 5}, l10n::DateStyle::Long); // "2024年3月5日"
 l10n::pluralCardinal("ar", l10n::PluralOperands::fromDouble(3)); // Plural::Few
+l10n::formatTime("en", {15, 5});        // "3:05 PM"     de "15:05", ko "오후 3:05"; HourCycle::H12 / H23 force a clock
+l10n::formatCurrency("de", 1234.5, "EUR"); // "1.234,50 €"  en "€1,234.50", nl "€ 1.234,50", ja JPY "￥1,234"
+l10n::formatMonthYear("ru", 2024, 3);   // "март 2024 г."   weekdayName("de", 1, DayWidth::Short) -> "Mo."
+l10n::setUiLocale(ui, "de");            // fuse/ui/l10n/ui_locale.hpp: widgets (the calendar) format for "de"
 ```
 
 - Plural rules (CLDR 44, cardinal and ordinal) with the operands n, i, v, f, t, so `"1.0"` and `1.5` pick the decimal
@@ -570,7 +605,28 @@ l10n::pluralCardinal("ar", l10n::PluralOperands::fromDouble(3)); // Plural::Few
 - Numbers: decimal / grouping separators, minimum grouping digits (es, pl, pt-PT: `1234` stays ungrouped), Indian
   grouping (hi, en-IN), minus signs (U+2212 for sv, fi), percent placement; half-even rounding. Dates (gregorian
   short / medium / long and month names): en, en-GB, en-IN, de, fr, es, it, pt, nl, sv, ru, pl, tr, ja, zh, ko, ar;
-  other locales use en. Time formatting, currencies, skeletons and non-Latin digits are not done.
+  other locales use en. Calendar names (same locales, plus pt-PT): wide and short (column-header) weekday names,
+  stand-alone month names (ru, pl nominative), the month-year header (CLDR yMMMM: es "marzo de 2024", ru
+  "март 2024 г.", ko "2024년 3월") and the first day of the week by region (Sunday: en / en-US / en-IN, pt (BR), ja,
+  zh, ko; Saturday: ar; Monday elsewhere, including en-GB and pt-PT). Skeletons and non-Latin digits are not done.
+- Time of day (CLDR short / medium time patterns): 12-hour with the locale's day period for en, en-IN, hi
+  (`3:05 PM` / `3:05 pm`, narrow no-break space), ko (`오후 3:05`), ar (`3:05 م`); 24-hour elsewhere, zero-padded
+  (`09:05`: en-GB, de, fr, it, pt, nl, sv, ru, pl, tr, zh) or not (`9:05`: es, ja, cs, he; fi `15.05`).
+  `HourCycle::H12` / `H23` override the clock; `uses24HourClock`, `dayPeriodName`.
+- Currencies (`formatCurrency(locale, amount, "EUR")`): the locale's pattern (symbol first: en, en-GB, en-IN, hi,
+  tr, ja, zh, ko, and with a no-break space pt, nl, de-AT, de-CH; after the number with a no-break space: de, fr, es,
+  it, pt-PT, sv, fi, ru, uk, pl, cs, ar, he), its separators and grouping, the negative form (`-$1.00`; nl
+  `€ -1,00`; de-CH `CHF-1.00`), the symbol as the locale writes it (en `$` / `¥`, en-GB `US$`, fr `$US`, it `USD`,
+  ja `￥`, zh `¥` for CNY, sv `kr`, pl `zł`, ru `₽`, ...; CLDR root symbols otherwise, an unknown code prints itself)
+  with CLDR currency spacing (a letter beside the digits gets a no-break space: `CHF 1’234.50`, `XYZ 1.00`), and the
+  currency's fraction digits (JPY / KRW 0, KWD / BHD 3, else 2), rounded half-even. Accounting formats and
+  compact / plural currency names are not done.
+- Widgets: `UiContext::setLocale(tag, &hooks)` gives widgets a locale and its data through `LocaleHooks` (function
+  pointers), so core and widgets link no locale tables; `l10n::setUiLocale(ui, tag)` (header-only
+  `fuse/ui/l10n/ui_locale.hpp`) installs the fuse_ui_l10n ones. The calendar then shows the localised month header and
+  weekday names and starts its weeks on the locale's first day. Without hooks (or with an empty tag) it stays English,
+  Monday first. The date-time edit shows ISO numbers (`2024-03-05 15:05`), so it has no names to localise; its
+  calendar popup follows the locale.
 
 `StringTable` (in `fuse_ui_game`) on top of it:
 
@@ -603,6 +659,19 @@ keys new since the last run are flagged `#, new`, and translations whose key lef
 `#~ key=value` at the end (restored if the key comes back; `--drop-obsolete` removes them). `--source` writes new
 keys as `key=key` for the source-language table. A summary and the new / obsolete keys are printed; exit code 1 on
 an unreadable input or a broken document. The output is deterministic for the same inputs.
+
+Documents are translated at load time with the same keys: pass a `doc::Translator` (source string -> translation;
+empty keeps the source) to `Document::load` / `loadCooked`, e.g. the active `StringTable`:
+
+```cpp
+auto doc = doc::Document::load(ui, json, &model, {}, [&st](std::string_view k) { return st.tr(k); });
+st.setLocale("fr");
+doc->retranslate();   // re-applies the table to every translatable string; returns how many nodes changed
+```
+
+Exactly what the extractor collects is translated (constant `text` except line / text edit contents, each `items`
+entry, `a11yName`; strings with a `{` binding are not). `reload()` translates the new tree with the same translator;
+`setTranslator({})` + `retranslate()` shows the source strings again.
 
 ## Data and editor widgets (UI6 Tier C/D)
 
@@ -642,10 +711,27 @@ edge) with the vertical bar on the left. Widgets mirror: indicators of check box
 scroll bar (minimum on the right; Left increases a slider), spin / combo arrows, line edit alignment, tab bar and menu
 bar order, tree indentation (Left expands), list scroll indicator. Popup menus of an RTL owner inherit its direction and
 take `at` as their top-right corner (aligned to the right edge of the menu button / combo box); submenus open to the
-left and Left / Right open / close them. Not mirrored yet: the Tier B2 / C / D widgets (table, splitter, dock, grid
-view, calendar, chart, colour picker, node graph, curve editor, timeline, code edit, date-time edit), `popupPanel`,
-tooltips, and the line edit caret over bidi text (paragraph direction still comes from the text's first strong
-character).
+left and Left / Right open / close them. Tier B2 / C / D: splitters put the first pane on the right (drags and arrows
+move the handle on the screen), dock areas mirror (the Left region on the right, as in Qt) with the dock title's close
+box at its left end, tables lay columns out from the right (header sort / resize grips mirrored, the vertical bar on
+the left, Left / Right pick the next / previous column visually), grid views fill from the right, the calendar's
+first weekday column and previous-month chevron are on the right, charts put the first point on the right and the
+value axis on the right, the colour picker is its mirror image (hue bar on the left, saturation and alpha growing to
+the left), and a node graph mirrors on screen (inputs on a node's right, outputs on its left, links leaving to the
+left; stored positions and `nodeGraphNodePos` stay left-to-right, `nodeGraphPinPos` is on the screen). Arrow keys
+move visually in all of them. Tooltips take their node's direction and hang from its right edge; `popupPanel` takes
+its owner's direction like popup menus (`at` = top-right corner). Left-to-right islands by design: the code editor
+(code), the date-time edit's ISO field (its calendar popup follows the surroundings), and the time axes of the curve
+editor, timeline and video widget (media time runs left to right); they set `direction: ltr` inline when created.
+
+The paragraph direction of text follows `direction` when it is set on the node or an ancestor (`ComputedStyle::dirSet`;
+`baseDirection(style)`, `TextLayoutDesc::base`), so "abc!" in an RTL label reads "!abc"; without it the first strong
+character decides (UAX #9 P2 / P3). FULL only (MINIMAL has no bidi). The line edit then moves its caret in visual
+order over bidi text (FULL): the text is laid out as drawn, each cluster start is a caret stop at its leading edge,
+Left / Right go to the nearest stop on the screen (inside a Hebrew run the logical position goes down while the caret
+goes right), Ctrl+arrows move by words (forwards = Left in an RTL paragraph), a click lands on the nearest stop and
+the selection highlights the selected clusters wherever they are drawn. During IME pre-edit, and for text without
+right-to-left characters in an LTR paragraph, it measures logical prefixes as before.
 
 ## Immediate mode
 
@@ -662,8 +748,8 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_event_routing` | capture/target/bubble, stop, click semantics, pointer capture, hover, disabled, modal, `post()` |
 | `fuse_ui_focus_order` | tab order, tab index, skipping, wrap, focus-visible, keyboard activation, spatial nav, modal trap |
 | `fuse_ui_cpu_raster_golden` | rasteriser primitives and the sample tree against `tests/golden/sample.png` (`sample_full.png` in FULL) |
-| `fuse_ui_rtl_layout` | `direction: rtl`: mirrored box rows / justify / align / grid / flow with physical margins, inheritance, `text-align`, slider pointer + keys, tab bar, tree keys, scroll bar side and horizontal start, right-aligned menus and submenus to the left; text-free widgets render as the mirror image of LTR; RTL sample against `tests/golden/rtl_layout.png` (`rtl_layout_full.png` in FULL) |
-| `fuse_ui_keyboard_only` | a form with every interactive Tier A–D widget driven only by keyDown / keyUp / textInput: Tab and Shift+Tab reach every widget in one order, each is operated by its keys (see "Keyboard model"), menus by F10 / arrows / Escape, the file dialog traps focus and Escape cancels, keyboard focus scrolls into view; focused vs unfocused paint differs for every focusable widget in the dark and light themes |
+| `fuse_ui_rtl_layout` | `direction: rtl`: mirrored box rows / justify / align / grid / flow with physical margins, inheritance, `text-align`, slider pointer + keys, tab bar, tree keys, scroll bar side and horizontal start, right-aligned menus and submenus to the left; Tier B2 / C / D: splitter pane side + arrows + drag, dock region side + title close box, table header sort / resize grip / keyboard column / Ctrl+arrow resize / bar side, grid view tiles + keys, calendar columns + chevron + keys, chart point order + keys, colour picker keys + pointer, node graph pin sides + link drag + keys; tooltip and `popupPanel` placement and direction, left-to-right islands (code, date-time, curve, timeline); FULL: paragraph direction from `direction` (set / unset / RTL), line edit caret in visual order over mixed text (LTR and RTL fields), click to the nearest stop; text-free widgets (Tier A and a colour picker / splitter / node graph / grid view set) render as the mirror image of LTR; RTL sample against `tests/golden/rtl_layout.png` (`rtl_layout_full.png` in FULL) |
+| `fuse_ui_keyboard_only` | a form with every interactive Tier A–D widget driven only by keyDown / keyUp / textInput: Tab and Shift+Tab reach every widget in one order, each is operated by its keys (see "Keyboard model"), menus by F10 / arrows / Escape and by Alt alone (not after a key, a click or with Ctrl; a repeating Alt counts), table header sort / resize keys, node graph keyboard links (connect, cancel, remove), curve Insert, timeline clip select / move (snap step, a second, clamped), the file dialog traps focus and Escape cancels, keyboard focus scrolls into view vertically and horizontally (LTR and RTL rows); focused vs unfocused paint differs for every focusable widget in the dark and light themes |
 | `fuse_ui_zero_alloc_steady` | zero heap allocations over 50 interactive frames after warm-up |
 | `fuse_ui_bench_10k` | 10k nodes, one dirty label: ≤ 0.5 ms median (Release; 1.0 ms in FULL) |
 | `fuse_ui_single_thread_parity` | direct vs posted-from-threads mutations give identical layout, draw list and pixels |
@@ -675,13 +761,14 @@ checks it against the overlay under one scripted event stream.
 | `fuse_text_bidi_conformance` | `BidiCharacterTest.txt` 15.1 (trimmed): paragraph level, levels after L1, visual order: 4726/4726 (FULL; 77 in MINIMAL) |
 | `fuse_text_shaping_scripts` | Latin, Cyrillic, Greek, Arabic, Hebrew, Devanagari, Thai, CJK, emoji through the bundled chain: per-script shaping checks + `tests/golden/shaping_scripts_full.png` (FULL; 77 in MINIMAL) |
 | `fuse_text_system_fonts` | `FontCatalog::system()`: Segoe UI / Arial, weight / italic / generic matching, per-script chains, `fontPicker("@system")` (77 with no installed fonts) |
+| `fuse_text_fallback` | bundled chain: face per code point, cluster-granular runs, colour emoji layers, no .notdef in mixed text, wrapping inside maxWidth; FULL: a new mixed string costs the primary one run-cache miss per Latin run and the Hebrew face one (fallback text shaped once), a relayout none; bold primary (`emboldened()` Open Sans, a `font-weight: 700` label): Hebrew from the emboldened Noto face (advance + em / 24, box + ceil, ink +36 %), emoji unchanged, `setBoldFace` wins, a variable fallback instanced at the primary's weight |
 | `fuse_text_cache_zero_alloc` | layout / measure / atlas / segmentation of already-seen strings (LTR, RTL, fallback, wrapped, elided): zero allocations |
 | `fuse_text_dpi_1`, `_1_25`, `_1_5`, `_2` | bundled font + chain at 14 px × scale: metrics, widths, glyph boxes and ink scale; same line breaks; no missing glyphs |
 | `fuse_text_colrv1` | `tests/data/colrv1_test.ttf`: flattened solid layers without `enableColorGlyphs`; with it exact rendering against `tests/golden/colrv1_exact.png` (max channel difference 0; COOKED <= 1: foreground glyphs rebuilt from black / white renders) |
 | `fuse_text_bitmap_emoji` | `tests/data/bitmap_{cbdt,sbix}_test.ttf`: strike choice per size, placement, sbix dupe, premultiplication, the atlas colour page, colour glyphs through the UI |
 | `fuse_text_msdf` | MSDF vs coverage at 64 / 128 / 256 px (mean error < 0.06, < 0.6 % of pixels off by more than half), determinism, `setMsdfThreshold` with DPI scale, GPU parity of colour + MSDF glyphs (compute kernel exact, SDF quads within their blend tolerance) |
 | `fuse_text_cooked` | `fuse_text_cook` determinism (every profile); COOKED: build-time pack = fresh cook, `.ttf` rejected, layout of sample strings equal to the MINIMAL reference (ids, pen positions within 1e-3 px) and renders byte-identical at every cooked size, MSDF for other sizes |
-| `fuse_text_variable` | `tests/data/variable_test.ttf` (`make_variable_test_font.py`: wght with avar + wdth, IUP-optimised gvar, composite, HVAR, MVAR, variable COLR): axes / named instances, MVAR ascender, stem width and HVAR advance at wght 100 .. 900 and wdth 50 / 150 against the font's analytic values, phantom-point advances = HVAR, Var* paint colours at four weights, CSS weight / stretch / variation settings and an `AnimProp::FontWeight` tween, zero-alloc steady state; Segoe UI Variable / Bahnschrift when installed: catalog WWS faces, our glyf decoder vs stb_truetype outlines (MSDF max difference 1), HarfBuzz advances (FULL); COOKED: a pack cooked at wght 700 |
+| `fuse_text_variable` | `tests/data/variable_test.ttf` (`make_variable_test_font.py`: wght with avar + wdth, IUP-optimised gvar, composite, HVAR, MVAR, variable COLR): axes / named instances, MVAR ascender, stem width and HVAR advance at wght 100 .. 900 and wdth 50 / 150 against the font's analytic values, phantom-point advances = HVAR, Var* paint colours at four weights, CSS weight / stretch / variation settings and an `AnimProp::FontWeight` tween, zero-alloc steady state; avar 2 (`tests/data/variable_avar2_test.ttf`, `make_avar2_test_font.py`: wdth += 0.5 * wght): five weights draw (advances, rasters, layout widths) as variable_test.ttf at the implied wdth; Segoe UI Variable / Bahnschrift when installed: catalog WWS faces, our glyf decoder vs stb_truetype outlines (MSDF max difference 1), HarfBuzz advances (FULL); COOKED: a pack cooked at wght 700 |
 | `fuse_text_features` | `tests/data/features_test.ttf` (`make_features_test_font.py`): `liga` / `kern` off, `tnum`, `smcp`, `ss01` through `Font::withFeatures` and CSS `font-feature-settings`, Open Sans `pnum`, zero-alloc steady state (FULL; 77 in MINIMAL / COOKED) |
 | `fuse_text_bench_layout` | 1 MB mixed-script document: paragraphs cold / warm, codeEdit frames, one-block layout, markdownView first update / resize within budgets (~4x measured), zero allocations and (FULL) zero run-cache misses relaying out a screen |
 
@@ -694,7 +781,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_vk_sdf_quads` | SDF-quad backend vs the CPU reference (sample, primitives, blur + effects between draws, scissored redraw): max error ≤ 2, mean ≤ 0.1 / 255; validation clean; reports compute vs SDF timings at 1080p and 4K |
 | `fuse_ui_vk_budget` | GPU time (timestamp queries) of 1080p frames: full, backdrop blur, incremental, a ~270-node HUD ≤ 0.5 ms (software devices report only) |
 | `fuse_app_native_startup` | launches `hello_app` 5× per configuration: default (async Vulkan) and software-only first frame median ≤ 150 ms; every default run switches to Vulkan (median ≤ 2 s) with the switched frame equal to the CPU raster; synchronous Vulkan init ≤ 2 s (skips 77 without a display) |
-| `fuse_app_binary_size` | `hello_app` file size ≤ measured baseline + 10 % (MSVC x64 Release, MINIMAL text: standalone 870,912 B → 958,000 B, in the engine tree 904,192 B → 994,600 B; Linux x86-64 Release, MINIMAL, stripped: GCC 13 standalone 1,530,488 B → 1,683,600 B, engine tree 1,591,928 B → 1,751,200 B, Clang 23 standalone 1,179,616 B → 1,297,600 B; other toolchains report and skip until a baseline is set with `-DFUSE_APP_BINARY_BUDGET`). Effect and SDF-quad SPIR-V live in their own translation units, so apps that do not use them do not carry it |
+| `fuse_app_binary_size` | `hello_app` file size ≤ measured baseline + 10 % (MSVC x64 Release, MINIMAL text: standalone 870,912 B → 958,000 B, in the engine tree 904,192 B → 994,600 B; Linux x86-64 Release, MINIMAL, stripped: GCC 13 standalone 1,530,488 B → 1,683,600 B, engine tree 1,591,928 B → 1,751,200 B, Clang 23 standalone 1,179,616 B → 1,297,600 B; other toolchains report and skip until a baseline is set with `-DFUSE_APP_BINARY_BUDGET`). Effect and SDF-quad SPIR-V live in their own translation units, so apps that do not use them do not carry it; with MSVC the Tier B / B2 / C / D widget sources are compiled with `/Os` (favour size: event- and paint-bound editor widgets, not the 10k-node path), which keeps the standalone binary at about 954 KB |
 | `fuse_app_window_chrome` | custom-chrome window: `chromeHitTest` probes, then `WM_NCHITTEST` on a real Win32 window, frame removed, max / restore / min / close through non-client clicks; X11 (Xvfb, the gate watching the root like a WM): `_MOTIF_WM_HINTS`, `_NET_WM_MOVERESIZE` direction / position per probe, edge cursors, `_NET_WM_STATE` maximise / restore applied by the gate, `WM_CHANGE_STATE`, close (77 without a display) |
 | `fuse_app_tray` | Win32: tray icon added and found (`Shell_NotifyIconGetRect` / `NIM_MODIFY`), simulated click / double-click callbacks, a real `TrackPopupMenu` context menu picked by posted keys, a notification, removal. Unix (under `dbus-run-session`, the gate plays watcher, notification daemon and tray host): registration, `IconPixmap` / `ToolTip` properties and change signals, `Activate`, dbusmenu layout + click, notification + `ActionInvoked`, name released on removal, `Unsupported` without a daemon (77 without a tray / private bus) |
 | `fuse_ui_a11y_linux` | AT-SPI client (libatspi, loaded at runtime) on a real X11 window under `dbus-run-session` + Xvfb; the gate starts the accessibility bus and enables AT-SPI: the app in the registry, roles and names (push button, check box, slider, entry, list, tree, menu bar / item), states (enabled, focusable, checked; disabled), screen extents of a button, `click` on a button / check box, `Value` on the slider, `grab_focus` + focus event, `Text` read-back and a text change, File menu opened / closed by `click` (skips 77 without AccessKit / libatspi / a session bus) |
@@ -704,7 +791,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_x11_randr`, `fuse_x11_xsettings`, `fuse_x11_wake` | X11 under Xvfb against the gate's own connection: two RandR monitors + `_NET_WORKAREA` in `displays()` and a monitor removed live; an XSETTINGS manager's `Xft/DPI` / `Net/ThemeName` at start and live (every window re-scales, `onDpiChanged`, `onThemeChanged`), manager exit → `RESOURCE_MANAGER`, a new manager; `wake()` from another thread ends a blocked pump and an accessibility action queued from an AT thread runs at once |
 | `fuse_ui_platform_services` | headless: DPI scale (layout fixed, device-pixel draw list, re-rasterised glyphs), `cursor:` style, reduced motion, touch / pinch / pen through `platform_bridge`, dark → light theme slot |
 | `fuse_platform_dpi_change`, `fuse_platform_displays`, `fuse_platform_cursors`, `fuse_platform_system_theme`, `fuse_platform_high_contrast`, `fuse_platform_dialogs`, `fuse_platform_touch_synthetic`, `fuse_platform_pen_synthetic`, `fuse_platform_multiwindow` | real windows: `WM_DPICHANGED` re-scale and back, monitors, OS cursor per hovered widget, theme change via `WM_SETTINGCHANGE` (faked query, user settings untouched), high contrast (faked query: scheme colours, forced colours over app sheets, 2px focus border, text scale on every font size, back to normal), dialogs dismissed by a helper thread, injected touch tap + pinch, synthetic pen (`InjectSyntheticPointerInput` PT_PEN: pressure, tap; 77 without synthetic pointers or when another window covers the test window), two swapchain windows with input routing / close / per-window DPI |
-| `fuse_platform_text_input`, `fuse_platform_ime_composition`, `fuse_platform_clipboard_roundtrip` | real windows (Win32; X11 under Xvfb): typed text incl. a surrogate pair / remapped keysyms into a line edit, Ctrl+C / V / X against another clipboard client, IME off outside text fields; an IMM32 composition (`ImmSetCompositionStringW`: inline pre-edit, commit, cancel, composition / candidate window at the caret; X11: a dead-key compose through XIM, pre-edit only with a server IM); clipboard text / RGBA image / custom MIME / several formats / lazy items / INCR against another thread (Win32) or X connection |
+| `fuse_platform_text_input`, `fuse_platform_ime_composition`, `fuse_platform_clipboard_roundtrip` | real windows (Win32; X11 under Xvfb): typed text incl. a surrogate pair / remapped keysyms into a line edit, Ctrl+C / V / X against another clipboard client, IME off outside text fields; an IMM32 composition (`ImmSetCompositionStringW`: inline pre-edit, commit, cancel, composition / candidate window at the caret; X11: a dead-key compose through libX11's IM, then a real server IM started by the gate: uim-xim with the Byeoru Hangul engine, synthesized keys g k s → pre-edit 한 drawn inline, r commits it, Return commits 글, BackSpace cancels in the IM, a focus change cancels and resets the IM, Shift+Space toggles; skipped without uim-xim (`$FUSE_TEST_UIM_XIM`, configure-time `uim-xim` on PATH or `~/opt/*/usr/bin`, e.g. `apt-get download uim-xim uim-data libuim8 libuim-scm0 libuim-custom2 libuim-data libgcroots0` + `dpkg -x` into `~/opt/uim`, no root; the gate registers Byeoru in a private uim module registry and compiles `en_US.UTF-8` with `localedef` when it is not installed); `FUSE_TEST_REQUIRE_SERVER_IM=1` fails instead of skipping); clipboard text / RGBA image / custom MIME / several formats / lazy items / INCR against another thread (Win32) or X connection |
 | `fuse_platform_present_android` | Android build tree, adb: the demo presents on Vulkan (GPU draw and CPU upload) and in software; each surface's first frame read back in-process matches the CPU raster; density scale applied |
 | `fuse_app_lifecycle_android` | HOME releases the surface, `am start` rebuilds it with a correct first frame and the same UI state; rotation resizes to landscape and back |
 | `fuse_platform_touch_android` | `input tap` clicks the button; `input swipe` over the list scrolls it both ways without clicking |
@@ -720,7 +807,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_world_panel_raycast` | ray → panel pixel mapping, misses and back faces, ray clicks, idle surface does not re-render |
 | `fuse_ui_input_arbitration` | pointer / keyboard / gamepad ownership between UI and game |
 | `fuse_ui_pause_time_domain` | pause and slow motion affect game-time HUD only; locale switching |
-| `fuse_ui_l10n` | plural categories against the CLDR sample values (cardinal + ordinal, 20+ locales), message formatting (plural, selectordinal, select, nesting, offset, quoting, number / date arguments, errors), number / percent / date formatting per locale, `StringTable::tr` with arguments and fallback, bound nodes; `fuse_ui_extract_strings` on `tests/data/l10n` (exact output, merge keeping translations, idempotent re-run, `--source`, `--fn`) |
+| `fuse_ui_l10n` | plural categories against the CLDR sample values (cardinal + ordinal, 20+ locales), message formatting (plural, selectordinal, select, nesting, offset, quoting, number / date arguments, errors), number / percent / date formatting per locale, time of day (12 / 24-hour, day periods, forced hour cycles) and currencies (patterns, symbols, spacing, negatives, fraction digits incl. JPY / KWD) per locale, weekday / stand-alone month names, month-year headers and first day of the week, the calendar widget under `l10n::setUiLocale` (first grid cell per locale; header and weekday glyphs = the locale strings; no hooks = English, Monday first), `StringTable::tr` with arguments and fallback, bound nodes; `fuse_ui_extract_strings` on `tests/data/l10n` (exact output, merge keeping translations, idempotent re-run, `--source`, `--fn`); `tests/data/l10n/sample.fuseui` loaded with a StringTable translator (text, items, a11yName translated by their extracted keys, line edit contents and bindings untouched), `retranslate` after a locale switch, `reload`, cleared translator, cooked load |
 | `fuse_demo_hybrid_hud_ui` | `demo_hybrid_hud` HUD on a UI context in the hybrid frame (`HybridComposer::setUiOverlay` → `UiFrameSource::recordOver`, over the sprite layer): every opaque HUD pixel of the GPU readback equals the CPU raster (≤ 1/255), glyphs visible |
 | `fuse_ui_vk_golden` | GPU vs CPU reference with NVIDIA FLIP (`vendor/nvidia-flip`) over the Tier A sample, the game HUD and an editor-like scene: compute kernel max channel error ≤ 2 and mean FLIP ≤ 0.001 (0 today), SDF quads ≤ 4 / ≤ 0.005; heat maps written on failure |
 | `fuse_ui_vk_tier0` | UI-T0 (§4.9): Vulkan 1.1 instance, a device with no extensions and no features, validation on; every shader's SPIR-V ≤ 1.3 without descriptor-indexing / BDA capabilities; scenes, backdrop and an external texture exact against the CPU |

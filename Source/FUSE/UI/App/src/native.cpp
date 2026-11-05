@@ -148,6 +148,8 @@ Key mapKey(KeySym s, bool& ascii) {
     case 0xffbf: return Key::F2;
     case 0xffc2: return Key::F5;
     case 0xffc7: return Key::F10;
+    case 0xffe9: case 0xffea: return Key::Alt; // Alt_L / Alt_R (not ISO_Level3_Shift: AltGr)
+    case 0xff63: return Key::Insert;
     case 0xffbe: return Key::F1;
     case 0xffc0: return Key::F3;
     case 0xffc1: return Key::F4;
@@ -198,8 +200,11 @@ struct NativePlatform::Impl {
             u64 revision = ~0ull;
             Image img;
             std::vector<u32> staged; ///< OS pixel order
+            NodeHandle node{};       ///< tool windows: the "os-window" node shown (matched by node, not index)
         };
         std::vector<Popup> popups;
+        std::vector<Popup> tools; ///< OS tool windows (UiContext::windowSurfaces: floating dock panels)
+        int originX = 0, originY = 0; ///< client origin on screen when the tool windows were last placed
         detail::ServiceState svc; ///< cursor / title bar (platform services)
         MessageHook hook{};
         std::vector<u32> staged; ///< software presenter staging (OS pixel order)
@@ -219,6 +224,7 @@ struct NativePlatform::Impl {
 #else
         void* xic = nullptr;     ///< XIM input context
         std::u32string preedit;  ///< XIM pre-edit (preedit callbacks)
+        int preeditCaret = 0;    ///< in code points
         x11::XimCallback cbStart{}, cbDone{}, cbDraw{}, cbCaret{};
         x11::Display* vkDpy = nullptr; ///< the worker's own X connection (Xlib is not thread-safe without XInitThreads)
         CursorShape edgeCursor = CursorShape::Auto; ///< custom chrome: resize cursor over a frame edge
@@ -262,6 +268,7 @@ struct NativePlatform::Impl {
     x11::XimStyle ximStyle = 0;
     void openXim();
     void createIc(Rec& r);
+    static void publishPreedit(Rec& r);
     void readXSettings();     ///< (re)reads the manager's settings (and follows a new manager window)
     void settingsChanged();   ///< re-reads them and applies DPI / theme changes
     void updateCursorTheme(); ///< cursor size / theme from XSETTINGS + DPI; reloads the cursors when they change
@@ -324,6 +331,17 @@ struct NativePlatform::Impl {
     bool captureOs(const Rec& r, Image& out);
     // OS-window popups
     void syncPopups(Rec& r);
+    /// OS tool windows (UiContext::setOsWindows): one borderless owned window per "os-window" surface.
+    void syncTools(Rec& r);
+    bool createToolOs(Rec& r, Rec::Popup& p);
+    /// Renders a surface's draw list into its window's image and shows it.
+    void renderSurface(Rec& r, Rec::Popup& p, const UiContext::PopupSurface& ps);
+    Rec* findTool(unsigned long long h, std::size_t& idx) {
+        for (Rec* r : recs)
+            for (std::size_t i = 0; i < r->tools.size(); ++i)
+                if (r->tools[i].handle == h) { idx = i; return r; }
+        return nullptr;
+    }
     /// An outside click (grabbed pointer outside every window of the app, or the app deactivated): close every popup.
     static void closeAllPopups(Rec& r) {
         UiContext& ui = r.win->ui();
@@ -394,17 +412,62 @@ void NativePlatform::Impl::syncPopups(Rec& r) {
         } else if (moved) {
             movePopupOs(p);
         }
-        if (moved || p.revision != ps.revision) {
-            p.revision = ps.revision;
-            u32 clear = 0xFF000000u; // the panel's own fill shows in the corners its radius leaves
-            for (const DrawCmd& c : ps.draw.cmds())
-                if (c.op != DrawOp::Shadow && c.fill.a > 0.9f) { clear = packPremultiplied(c.fill) | 0xFF000000u; break; }
-            p.img.resize(int(scr.w), int(scr.h), clear);
-            CpuRasterizer rz = r.win->rasterizer(); // the window's images + the current glyph atlas
-            rz.setGlyphAtlas(ui.atlas().pixels(), ui.atlas().size());
-            rz.render(ps.draw, p.img); // popup lists are already in device pixels (UiContext::scale)
-            blitPopupOs(p);
+        if (moved || p.revision != ps.revision) renderSurface(r, p, ps);
+    }
+}
+
+void NativePlatform::Impl::renderSurface(Rec& r, Rec::Popup& p, const UiContext::PopupSurface& ps) {
+    UiContext& ui = r.win->ui();
+    p.revision = ps.revision;
+    u32 clear = 0xFF000000u; // the panel's own fill shows in the corners its radius leaves
+    for (const DrawCmd& c : ps.draw.cmds())
+        if (c.op != DrawOp::Shadow && c.fill.a > 0.9f) { clear = packPremultiplied(c.fill) | 0xFF000000u; break; }
+    p.img.resize(int(p.screen.w), int(p.screen.h), clear);
+    CpuRasterizer rz = r.win->rasterizer(); // the window's images + the current glyph atlas
+    rz.setGlyphAtlas(ui.atlas().pixels(), ui.atlas().size());
+    rz.render(ps.draw, p.img); // surface lists are already in device pixels (UiContext::scale)
+    blitPopupOs(p);
+}
+
+void NativePlatform::Impl::syncTools(Rec& r) {
+    if (!opts.osWindows || !r.handle) return;
+    const auto& surf = r.win->ui().windowSurfaces();
+    for (std::size_t i = r.tools.size(); i-- > 0;) { // closed / docked: the node's surface is gone
+        bool keep = false;
+        for (const auto& ps : surf) keep = keep || ps.node == r.tools[i].node;
+        if (keep) continue;
+        destroyPopupOs(r.tools[i]);
+        r.tools.erase(r.tools.begin() + std::ptrdiff_t(i));
+    }
+    if (surf.empty()) return;
+    int ox = 0, oy = 0;
+    Rect work;
+    if (!screenInfo(r, ox, oy, work)) return;
+    r.originX = ox;
+    r.originY = oy;
+    const f32 s = r.win->scale();
+    for (const auto& ps : surf) {
+        std::size_t k = 0;
+        while (k < r.tools.size() && r.tools[k].node != ps.node) ++k;
+        if (k == r.tools.size()) {
+            r.tools.emplace_back();
+            r.tools.back().node = ps.node;
         }
+        Rec::Popup& p = r.tools[k];
+        const Rect scr{std::round(f32(ox) + ps.rect.x * s), std::round(f32(oy) + ps.rect.y * s), std::max(1.f, std::ceil(ps.rect.w * s)),
+                       std::max(1.f, std::ceil(ps.rect.h * s))};
+        const bool moved = scr.x != p.screen.x || scr.y != p.screen.y || scr.w != p.screen.w || scr.h != p.screen.h;
+        p.rect = ps.rect;
+        p.screen = scr;
+        if (!p.handle) {
+            if (!createToolOs(r, p)) {
+                r.tools.erase(r.tools.begin() + std::ptrdiff_t(k));
+                continue;
+            }
+        } else if (moved) {
+            movePopupOs(p);
+        }
+        if (moved || p.revision != ps.revision) renderSurface(r, p, ps);
     }
 }
 
@@ -422,6 +485,7 @@ bool NativePlatform::Impl::present(void* user, AppWindow& w, Rect damage) {
     default: w.rasterize(damage); break;
     }
     r.impl->syncPopups(r);
+    r.impl->syncTools(r);
     // after the frame: the first IME (dis)association loads the input stack, which must not delay the first frame
     r.impl->syncTextInput(r);
     return ok;
@@ -449,7 +513,12 @@ void NativePlatform::Impl::destroy(void* user) {
 #endif
     for (Rec::Popup& p : r->popups) m.destroyPopupOs(p);
     r->popups.clear();
-    if (r->win) r->win->ui().setOsPopups(false);
+    for (Rec::Popup& p : r->tools) m.destroyPopupOs(p);
+    r->tools.clear();
+    if (r->win) {
+        r->win->ui().setOsPopups(false);
+        r->win->ui().setOsWindows(false);
+    }
     m.destroyOsWindow(*r);
     std::erase(m.recs, r);
     delete r;
@@ -479,6 +548,8 @@ Key mapVk(WPARAM vk, bool& ascii) {
     case VK_F2: return Key::F2;
     case VK_F5: return Key::F5;
     case VK_F10: return Key::F10;
+    case VK_MENU: case VK_LMENU: case VK_RMENU: return Key::Alt;
+    case VK_INSERT: return Key::Insert;
     case VK_F1: return Key::F1;
     case VK_F3: return Key::F3;
     case VK_F4: return Key::F4;
@@ -575,7 +646,7 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         const u8 md = winMods();
         if (k != Key::Other) { // printable keys too: viewport WASD / 1-4; text arrives separately
             if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) ui.keyDown(k, md);
-            else ui.keyUp(k, md);
+            else if (ui.keyUp(k, md) && k == Key::Alt) return 0; // the UI's menu bar took Alt: no window-menu mode
         }
         break;
     }
@@ -656,7 +727,68 @@ LRESULT CALLBACK popupProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
 }
+constexpr const wchar_t* kToolClass = L"FuseAppToolWindow";
+LRESULT CALLBACK toolProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    auto* r = reinterpret_cast<NativePlatform::Impl::Rec*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+    // keyboard input stays with the main window: the panel is part of its UI context (one focus); a click on the tool
+    // window brings the application forward instead of activating the tool window itself
+    if (msg == WM_MOUSEACTIVATE) {
+        if (r && r->handle && GetForegroundWindow() != reinterpret_cast<HWND>(r->handle))
+            SetForegroundWindow(reinterpret_cast<HWND>(r->handle));
+        return MA_NOACTIVATE;
+    }
+    if (!r || !r->win) return DefWindowProcW(hwnd, msg, wp, lp);
+    std::size_t idx = 0;
+    if (!r->impl->findTool(reinterpret_cast<unsigned long long>(hwnd), idx)) return DefWindowProcW(hwnd, msg, wp, lp);
+    NativePlatform::Impl::Rec::Popup& p = r->tools[idx];
+    UiContext& ui = r->win->ui();
+    const f32 s = r->win->scale();
+    // context coordinates from the screen position (the window may move under the pointer while its title is dragged)
+    POINT origin{0, 0};
+    ClientToScreen(reinterpret_cast<HWND>(r->handle), &origin);
+    POINT pt{short(LOWORD(lp)), short(HIWORD(lp))};
+    if (msg != WM_MOUSEWHEEL) ClientToScreen(hwnd, &pt); // the wheel's position is already on screen
+    const Vec2 pos{f32(pt.x - origin.x) / s, f32(pt.y - origin.y) / s};
+    switch (msg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        BeginPaint(hwnd, &ps);
+        EndPaint(hwnd, &ps);
+        r->impl->blitPopupOs(p);
+        return 0;
+    }
+    case WM_ERASEBKGND: return 1;
+    case WM_MOUSEMOVE: case WM_LBUTTONDOWN: case WM_RBUTTONDOWN: case WM_MBUTTONDOWN: case WM_LBUTTONUP: case WM_RBUTTONUP: case WM_MBUTTONUP:
+        ui.setPointerKind(UiContext::PointerKind::Mouse);
+        ui.setModifiers(u8(((wp & MK_SHIFT) ? kModShift : 0) | ((wp & MK_CONTROL) ? kModCtrl : 0) | ((GetKeyState(VK_MENU) < 0) ? kModAlt : 0)));
+        break;
+    default: break;
+    }
+    switch (msg) {
+    case WM_MOUSEMOVE: ui.pointerMove(pos); break;
+    case WM_LBUTTONDOWN: SetCapture(hwnd); ui.pointerDown(pos, MouseButton::Left); break;
+    case WM_RBUTTONDOWN: ui.pointerDown(pos, MouseButton::Right); break;
+    case WM_MBUTTONDOWN: ui.pointerDown(pos, MouseButton::Middle); break;
+    case WM_LBUTTONUP: ReleaseCapture(); ui.pointerUp(pos); break;
+    case WM_RBUTTONUP: case WM_MBUTTONUP: ui.pointerUp(pos); break;
+    case WM_MOUSEWHEEL: ui.wheel(pos, {0.f, f32(GET_WHEEL_DELTA_WPARAM(wp)) / WHEEL_DELTA}); break;
+    default: return DefWindowProcW(hwnd, msg, wp, lp);
+    }
+    r->win->requestRedraw();
+    return 0;
+}
 } // namespace
+
+bool NativePlatform::Impl::createToolOs(Rec& r, Rec::Popup& p) {
+    // owned by the main window: stays above it (Qt::Tool), no task bar button, never activated (keys stay in the main one)
+    HWND hwnd = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kToolClass, L"", WS_POPUP, int(p.screen.x), int(p.screen.y),
+                                int(p.screen.w), int(p.screen.h), reinterpret_cast<HWND>(r.handle), nullptr, hinst, nullptr);
+    if (!hwnd) return false;
+    p.handle = reinterpret_cast<unsigned long long>(hwnd);
+    SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&r));
+    ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+    return true;
+}
 
 bool NativePlatform::Impl::screenInfo(const Rec& r, int& ox, int& oy, Rect& work) const {
     HWND hwnd = reinterpret_cast<HWND>(r.handle);
@@ -911,6 +1043,11 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
     pc.lpfnWndProc = &popupProc;
     pc.lpszClassName = kPopupClass;
     RegisterClassExW(&pc);
+    WNDCLASSEXW tc = wc;
+    tc.style = 0;
+    tc.lpfnWndProc = &toolProc;
+    tc.lpszClassName = kToolClass;
+    RegisterClassExW(&tc);
     app.setEventSource({m.get(), &Impl::pump});
     m->uiThread = GetCurrentThreadId();
 }
@@ -1052,6 +1189,22 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
             pr->win->requestRedraw();
             continue;
         }
+        if (Rec* tr = m.findTool(ev.any.window, pi)) { // a tool window (floating panel): no grab, nothing closes
+            Rec::Popup& p = tr->tools[pi];
+            UiContext& ui = tr->win->ui();
+            const f32 s = tr->win->scale();
+            // context coordinates from the root position: the window may move under the pointer while dragged
+            const Vec2 pos{f32(ev.input.x_root - tr->originX) / s, f32(ev.input.y_root - tr->originY) / s};
+            if (ev.type == x11::Expose) m.blitPopupOs(p);
+            else if (ev.type == x11::MotionNotify) { ui.setModifiers(x11::mods(ev.input.state)); ui.pointerMove(pos); }
+            else if (ev.type == x11::ButtonPress) {
+                ui.setModifiers(x11::mods(ev.input.state));
+                if (ev.input.detail == 4 || ev.input.detail == 5) ui.wheel(pos, {0.f, ev.input.detail == 4 ? 1.f : -1.f});
+                else ui.pointerDown(pos, ev.input.detail == 3 ? MouseButton::Right : ev.input.detail == 2 ? MouseButton::Middle : MouseButton::Left);
+            } else if (ev.type == x11::ButtonRelease && ev.input.detail <= 3) ui.pointerUp(pos);
+            tr->win->requestRedraw();
+            continue;
+        }
         Rec* r = m.find(ev.any.window);
         if (ev.type == x11::ConfigureNotify) r = m.find(ev.configure.window);
         if (!r || !r->win) continue;
@@ -1109,6 +1262,7 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
         }
         case x11::ButtonPress:
             ui.setModifiers(x11::mods(in.state));
+            for (const Rec::Popup& t : r->tools) m.x.RaiseWindow(m.dpy, x11::Window(t.handle)); // tool windows stay above
             if (in.detail == 1 && w.chrome().frame != WindowFrame::System) { // custom chrome: caption / edges go to the WM
                 const HitArea a = chromeHitTest(w, pos);
                 if (a == HitArea::Caption && r->captionPress && in.time - r->captionPress < 400) {
@@ -1263,6 +1417,24 @@ bool NativePlatform::Impl::createPopupOs(Rec& r, Rec::Popup& p) {
     x.ChangeProperty(dpy, w, type, 4 /*XA_ATOM*/, 32, 0, reinterpret_cast<const unsigned char*>(&menu), 1);
     x.SelectInput(dpy, w, x11::kPopupMask);
     x.MapWindow(dpy, w);
+    p.handle = w;
+    return true;
+}
+bool NativePlatform::Impl::createToolOs(Rec& r, Rec::Popup& p) {
+    const int scr = x.DefaultScreen(dpy);
+    const x11::Window w = x.CreateSimpleWindow(dpy, x.RootWindow(dpy, scr), int(p.screen.x), int(p.screen.y), unsigned(p.screen.w),
+                                               unsigned(p.screen.h), 0, 0, 0);
+    if (!w) return false;
+    x11::SetWindowAttributes a{};
+    a.override_redirect = 1; // placed by the app (the panel's own title bar drags it); raised with the main window
+    x.ChangeWindowAttributes(dpy, w, x11::kCWOverrideRedirect, &a);
+    const x11::Atom type = x.InternAtom(dpy, "_NET_WM_WINDOW_TYPE", 0), utility = x.InternAtom(dpy, "_NET_WM_WINDOW_TYPE_UTILITY", 0);
+    x.ChangeProperty(dpy, w, type, 4 /*XA_ATOM*/, 32, 0, reinterpret_cast<const unsigned char*>(&utility), 1);
+    const long owner = long(r.handle);
+    x.ChangeProperty(dpy, w, 68 /*XA_WM_TRANSIENT_FOR*/, 33 /*XA_WINDOW*/, 32, 0, reinterpret_cast<const unsigned char*>(&owner), 1);
+    x.SelectInput(dpy, w, x11::kPopupMask);
+    x.MapWindow(dpy, w);
+    x.Flush(dpy);
     p.handle = w;
     return true;
 }
@@ -1468,16 +1640,21 @@ void NativePlatform::Impl::openXim() {
     const char* cur = std::setlocale(LC_CTYPE, nullptr);
     const std::string saved = cur ? cur : "C";
     auto utf8 = [](const char* l) { return l && (std::strstr(l, "UTF-8") || std::strstr(l, "utf8") || std::strstr(l, "UTF8")); };
-    const char* l = std::setlocale(LC_CTYPE, "");
-    if (!utf8(l)) l = std::setlocale(LC_CTYPE, "C.UTF-8");
-    if (!utf8(l)) l = std::setlocale(LC_CTYPE, "en_US.UTF-8");
-    if (utf8(l) && x.SupportsLocale()) {
+    // The environment's UTF-8 locale, else C.UTF-8 / en_US.UTF-8. A server IM ($XMODIFIERS) lists the locales it
+    // serves and many (uim-xim, kinput2, older ibus / fcitx XIM front ends) list named locales only, not C.UTF-8:
+    // when the first locale's server IM does not open, the next one is tried before libX11's built-in IM.
+    std::string first;
+    for (const char* want : {"", "C.UTF-8", "en_US.UTF-8"}) {
+        const char* l = std::setlocale(LC_CTYPE, want);
+        if (!utf8(l) || !x.SupportsLocale()) continue;
+        if (first.empty()) first = l;
         x.SetLocaleModifiers("");
         xim = x.OpenIM(dpy, nullptr, nullptr, nullptr);
-        if (!xim) { // $XMODIFIERS names an IM that is not running: the built-in one
-            x.SetLocaleModifiers("@im=none");
-            xim = x.OpenIM(dpy, nullptr, nullptr, nullptr);
-        }
+        if (xim) break;
+    }
+    if (!xim && !first.empty() && std::setlocale(LC_CTYPE, first.c_str())) { // $XMODIFIERS names no running IM
+        x.SetLocaleModifiers("@im=none");
+        xim = x.OpenIM(dpy, nullptr, nullptr, nullptr);
     }
     if (xim) {
         x11::XimStyles* st = nullptr;
@@ -1498,6 +1675,18 @@ void NativePlatform::Impl::openXim() {
     }
     std::setlocale(LC_CTYPE, saved.c_str());
 }
+// the XIM pre-edit (code points, caret in code points) -> UiContext::textComposition (UTF-8, caret in bytes)
+void NativePlatform::Impl::publishPreedit(Rec& r) {
+    std::string s;
+    int caretBytes = 0;
+    for (std::size_t i = 0; i < r.preedit.size(); ++i) {
+        if (int(i) == r.preeditCaret) caretBytes = int(s.size());
+        appendUtf8(s, u32(r.preedit[i]));
+    }
+    if (r.preeditCaret >= int(r.preedit.size())) caretBytes = int(s.size());
+    r.win->ui().textComposition(s, caretBytes);
+    r.win->requestRedraw();
+}
 void NativePlatform::Impl::createIc(Rec& r) {
     if (!xim) return;
     const x11::Window w = x11::Window(r.handle);
@@ -1508,6 +1697,7 @@ void NativePlatform::Impl::createIc(Rec& r) {
         r.cbDone = {reinterpret_cast<char*>(&r), [](void*, char* c, void*) {
             Rec& rr = *reinterpret_cast<Rec*>(c);
             rr.preedit.clear();
+            rr.preeditCaret = 0;
             rr.win->ui().textComposition({}, 0);
             rr.win->requestRedraw();
         }};
@@ -1531,17 +1721,25 @@ void NativePlatform::Impl::createIc(Rec& r) {
             const std::size_t first = std::min(std::size_t(std::max(d->chgFirst, 0)), rr.preedit.size());
             const std::size_t len = std::min(std::size_t(std::max(d->chgLength, 0)), rr.preedit.size() - first);
             rr.preedit.replace(first, len, ins);
-            std::string s; // caret in code points -> bytes
-            int caretBytes = 0;
-            for (std::size_t i = 0; i < rr.preedit.size(); ++i) {
-                if (int(i) == d->caret) caretBytes = int(s.size());
-                appendUtf8(s, u32(rr.preedit[i]));
-            }
-            if (d->caret >= int(rr.preedit.size())) caretBytes = int(s.size());
-            rr.win->ui().textComposition(s, caretBytes);
-            rr.win->requestRedraw();
+            rr.preeditCaret = d->caret;
+            publishPreedit(rr);
         }};
-        r.cbCaret = {reinterpret_cast<char*>(&r), [](void*, char*, void*) {}};
+        r.cbCaret = {reinterpret_cast<char*>(&r), [](void*, char* c, void* call) {
+            Rec& rr = *reinterpret_cast<Rec*>(c);
+            auto* d = static_cast<x11::XimCaret*>(call);
+            const int n = int(rr.preedit.size());
+            switch (d->direction) { // XIMCaretDirection
+            case 0: ++rr.preeditCaret; break;                    // XIMForwardChar
+            case 1: --rr.preeditCaret; break;                    // XIMBackwardChar
+            case 8: rr.preeditCaret = 0; break;                  // XIMLineStart
+            case 9: rr.preeditCaret = n; break;                  // XIMLineEnd
+            case 10: rr.preeditCaret = d->position; break;       // XIMAbsolutePosition
+            default: break;                                      // word / line moves: not used by single-line pre-edits
+            }
+            rr.preeditCaret = std::clamp(rr.preeditCaret, 0, n);
+            d->position = rr.preeditCaret;
+            publishPreedit(rr);
+        }};
         void* list = x.VaCreateNestedList(0, "preeditStartCallback", &r.cbStart, "preeditDoneCallback", &r.cbDone,
                                           "preeditDrawCallback", &r.cbDraw, "preeditCaretCallback", &r.cbCaret, term);
         r.xic = x.CreateIC(xim, "inputStyle", ximStyle, "clientWindow", w, "focusWindow", w, "preeditAttributes", list, term);
@@ -1560,8 +1758,15 @@ void NativePlatform::Impl::syncTextInput(Rec& r) {
     UiContext& ui = r.win->ui();
     const bool want = ui.wantsTextInput();
     if (!r.imeKnown || want != r.imeOn) {
+        if (!want && !r.preedit.empty()) { // focus left the field: the IM drops its pre-edit (nothing is committed)
+            if (r.xic && x.Utf8ResetIC) {
+                if (char* left = x.Utf8ResetIC(r.xic)) x.Free(left);
+            }
+            r.preedit.clear();
+            r.preeditCaret = 0;
+            ui.textComposition({}, 0);
+        }
         if (r.xic) want ? x.SetICFocus(r.xic) : x.UnsetICFocus(r.xic);
-        if (!want && !r.preedit.empty()) r.preedit.clear();
         r.imeOn = want;
         r.imeKnown = true;
         r.imeArea = {-1.f, -1.f, 0.f, 0.f};
@@ -1847,6 +2052,7 @@ PresenterKind NativePlatform::show(AppWindow& w) {
     }
     r->kind = r->vk ? PresenterKind::Vulkan : PresenterKind::Software;
     if (m->opts.osPopups) w.ui().setOsPopups(true); // screen bounds arrive with the first present
+    if (m->opts.osWindows) w.ui().setOsWindows(true);
     ClipboardHooks clip; // LineEdit Ctrl+C / X / V through the system clipboard
     clip.set = [](void*, std::string_view s) { return setClipboardText(s); };
     clip.get = [](void*, std::string& out) { return clipboardText(out); };
@@ -1922,6 +2128,22 @@ bool NativePlatform::capturePopup(const AppWindow& w, std::size_t i, Image& out)
     const Impl::Rec* r = m->find(w);
     return r && i < r->popups.size() && m->capturePopupOs(r->popups[i], out);
 }
+std::size_t NativePlatform::toolWindowCount(const AppWindow& w) const {
+    const Impl::Rec* r = m->find(w);
+    return r ? r->tools.size() : 0;
+}
+unsigned long long NativePlatform::toolWindow(const AppWindow& w, std::size_t i) const {
+    const Impl::Rec* r = m->find(w);
+    return r && i < r->tools.size() ? r->tools[i].handle : 0;
+}
+Rect NativePlatform::toolWindowScreenRect(const AppWindow& w, std::size_t i) const {
+    const Impl::Rec* r = m->find(w);
+    return r && i < r->tools.size() ? r->tools[i].screen : Rect{};
+}
+bool NativePlatform::captureToolWindow(const AppWindow& w, std::size_t i, Image& out) {
+    const Impl::Rec* r = m->find(w);
+    return r && i < r->tools.size() && m->capturePopupOs(r->tools[i], out);
+}
 Vec2 NativePlatform::screenOrigin(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);
     int ox = 0, oy = 0;
@@ -1981,6 +2203,30 @@ bool NativePlatform::postPointerMove(unsigned long long h, Vec2 at) {
     ev.input.root = m->x.RootWindow(m->dpy, m->x.DefaultScreen(m->dpy));
     ev.input.x = int(at.x);
     ev.input.y = int(at.y);
+    x11::Window child = 0;
+    m->x.TranslateCoordinates(m->dpy, x11::Window(h), ev.input.root, int(at.x), int(at.y), &ev.input.x_root, &ev.input.y_root, &child);
+    ev.input.same_screen = 1;
+    const bool ok = m->x.SendEvent(m->dpy, x11::Window(h), 0, 0, &ev) != 0;
+    m->x.Flush(m->dpy);
+    return ok;
+#endif
+}
+bool NativePlatform::postPointerButton(unsigned long long h, Vec2 at, bool down) {
+    if (!h) return false;
+#if defined(_WIN32)
+    return PostMessageW(reinterpret_cast<HWND>(h), down ? WM_LBUTTONDOWN : WM_LBUTTONUP, down ? MK_LBUTTON : 0,
+                        MAKELPARAM(int(at.x), int(at.y))) != 0;
+#else
+    x11::Event ev{};
+    ev.input.type = down ? x11::ButtonPress : x11::ButtonRelease;
+    ev.input.display = m->dpy;
+    ev.input.window = x11::Window(h);
+    ev.input.root = m->x.RootWindow(m->dpy, m->x.DefaultScreen(m->dpy));
+    ev.input.x = int(at.x);
+    ev.input.y = int(at.y);
+    x11::Window child = 0;
+    m->x.TranslateCoordinates(m->dpy, x11::Window(h), ev.input.root, int(at.x), int(at.y), &ev.input.x_root, &ev.input.y_root, &child);
+    ev.input.detail = 1;
     ev.input.same_screen = 1;
     const bool ok = m->x.SendEvent(m->dpy, x11::Window(h), 0, 0, &ev) != 0;
     m->x.Flush(m->dpy);

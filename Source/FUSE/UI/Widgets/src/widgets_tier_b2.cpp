@@ -47,15 +47,15 @@ struct SplitHandle { // between two panes; value() = 1 when the splitter is stac
         if (stacked(pc.ui, pc.node)) dl.rect({r.x + r.w * 0.5f - 12.f, r.y + r.h * 0.5f - 1.f, 24.f, 2.f}, c, 1.f);
         else dl.rect({r.x + r.w * 0.5f - 1.f, r.y + r.h * 0.5f - 12.f, 2.f, 24.f}, c, 1.f);
     }
-    /// Moves the handle so the previous pane ends at `pos` (context coordinate along the split axis).
-    static void moveTo(UiContext& ui, NodeHandle h, f32 pos) {
+    /// Gives the previous pane `size` px along the split axis (clamped so both panes keep kMinPane).
+    static void resize(UiContext& ui, NodeHandle h, f32 size) {
         const NodeHandle a = prevSibling(ui, h), b = ui.nextSibling(h);
         if (!ui.alive(a) || !ui.alive(b)) return;
         const bool v = stacked(ui, h);
         const Rect ra = ui.rect(a), rb = ui.rect(b);
-        const f32 start = v ? ra.y : ra.x, total = v ? ra.h + rb.h : ra.w + rb.w;
+        const f32 total = v ? ra.h + rb.h : ra.w + rb.w;
         if (total < 2.f * kMinPane) return;
-        const f32 na = std::clamp(pos - start, kMinPane, total - kMinPane);
+        const f32 na = std::clamp(size, kMinPane, total - kMinPane);
         const bool fa = ui.hasClass(a, "fixed"), fb = ui.hasClass(b, "fixed");
         if (fa || !fb) { // the fixed pane follows the handle; with none fixed the first pane becomes fixed
             if (!fa) { ui.addClass(a, "fixed"); ui.setCss(a, "flex-grow", "0"); ui.setCss(a, "flex-shrink", "0"); }
@@ -69,15 +69,17 @@ struct SplitHandle { // between two panes; value() = 1 when the splitter is stac
         UiContext& ui = ec.ui;
         const bool v = stacked(ui, ec.node);
         if (e.type == EventType::PointerDown) return true;
+        // right-to-left rows put the previous pane on the right: it ends at the handle's right edge
+        const bool rtl = !v && ui.computed(ec.node).rtl;
+        const Rect ra = ui.rect(prevSibling(ui, ec.node));
         if (e.type == EventType::PointerMove && ui.pressed() == ec.node) {
-            moveTo(ui, ec.node, (v ? e.pos.y : e.pos.x) - 3.f);
+            resize(ui, ec.node, v ? e.pos.y - 3.f - ra.y : rtl ? ra.right() - (e.pos.x + 3.f) : e.pos.x - 3.f - ra.x);
             return true;
         }
-        if (e.type == EventType::KeyDown) {
+        if (e.type == EventType::KeyDown) { // the arrows move the handle on the screen
             const f32 d = (v ? (e.key == Key::Down) - (e.key == Key::Up) : (e.key == Key::Right) - (e.key == Key::Left)) * 16.f;
             if (d == 0.f) return false;
-            const Rect ra = ui.rect(prevSibling(ui, ec.node));
-            moveTo(ui, ec.node, (v ? ra.bottom() : ra.right()) + d);
+            resize(ui, ec.node, (v ? ra.h : ra.w) + (rtl ? -d : d));
             return true;
         }
         return false;
@@ -114,13 +116,15 @@ struct DockTitle { // the title strip of a dock widget; text = title. Close box 
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
     static Size measure(UiContext& ui, NodeHandle n, Size) { return {std::ceil(ui.measureString(ui.text(n), ui.computed(n).fontSize)) + 24.f, rowHeight(ui, n) - 2.f}; }
-    static Rect closeBox(const Rect& r) { return {r.right() - r.h, r.y, r.h, r.h}; }
+    /// The close box: at the end of the strip (the left end right-to-left).
+    static Rect closeBox(const Rect& r, bool rtl) { return {rtl ? r.x : r.right() - r.h, r.y, r.h, r.h}; }
     static void paint(const PaintContext& pc, DrawList& dl) {
         const Rect r = pc.rect;
+        const bool rtl = pc.style.rtl;
         dl.rect(r, pc.tint(Color::rgb(0x2A2A33)), 3.f);
-        pc.ui.paintString(dl, pc.ui.text(pc.node), {pc.content.x, r.y, pc.content.w - r.h, r.h}, pc.tint(pc.style.color), pc.style.fontSize,
-                          TextAlignment::Start, pc.node.index);
-        const Rect x = closeBox(r);
+        pc.ui.paintString(dl, pc.ui.text(pc.node), {rtl ? pc.content.x + r.h : pc.content.x, r.y, pc.content.w - r.h, r.h},
+                          pc.tint(pc.style.color), pc.style.fontSize, TextAlignment::Start, pc.node.index);
+        const Rect x = closeBox(r, rtl);
         const bool kbd = pc.states & kStateFocusVisible; // keyboard focus: ring + the close box lit (Enter closes)
         const Color c = pc.tint((pc.ui.hovered() == pc.node && x.contains(pc.ui.pointer())) || kbd ? Color::rgb(0xFF6B6B) : Color::rgb(0x9A9AA6));
         const f32 m = x.h * 0.32f;
@@ -137,7 +141,7 @@ struct DockTitle { // the title strip of a dock widget; text = title. Close box 
             return true;
         }
         if (e.type == EventType::PointerMove) { ec.ui.invalidate(ec.node); return false; }
-        if (e.type == EventType::Click && closeBox(ec.ui.rect(ec.node)).contains(e.pos)) { dockClose(ec.ui, ec.ui.parent(ec.node)); return true; }
+        if (e.type == EventType::Click && closeBox(ec.ui.rect(ec.node), ec.ui.computed(ec.node).rtl).contains(e.pos)) { dockClose(ec.ui, ec.ui.parent(ec.node)); return true; }
         return false;
     }
 };
@@ -181,6 +185,7 @@ struct TableState {
     bool asc = true;
     bool header = true;
     i32 resizing = -1;
+    i32 curCol = 0; ///< keyboard column (Left / Right; Ctrl+Enter sorts by it, Ctrl+Left / Right resize it)
     bool dragScroll = false;
     f32 grab = 0.f;
     std::string scratch;
@@ -247,7 +252,7 @@ struct TableView {
         if (r <= vis) return false;
         const Rect c = ui.contentRect(n);
         const f32 hh = headerH(ui, n, s);
-        track = {c.right() - kBar, c.y + hh, kBar, c.h - hh};
+        track = {ui.computed(n).rtl ? c.x : c.right() - kBar, c.y + hh, kBar, c.h - hh}; // RTL: the bar on the left
         const f32 tl = std::max(16.f, track.h * f32(vis) / f32(r));
         thumb = {track.x, track.y + (track.h - tl) * f32(s.first) / f32(r - vis), kBar, tl};
         return true;
@@ -262,22 +267,26 @@ struct TableView {
         const Color text = pc.tint(pc.style.color), dim = pc.tint(pc.style.color.withAlpha(pc.style.color.a * 0.65f));
         const Color acc = pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD));
         dl.pushClip(c);
+        // geometry is left-to-right; pc.flip mirrors it for `direction: rtl` (first column on the right)
         if (s->header) {
             dl.rect({c.x, c.y, c.w, hh}, pc.tint(Color::rgb(0x2A2A33)));
+            const bool kbd = (pc.states & kStateFocusVisible) != 0;
             f32 x = c.x;
             for (u32 k = 0; k < nc; ++k) {
                 const Rect cell{x + 6.f, c.y, s->colW[k] - 12.f, hh};
                 const std::string_view h = s->model->header ? s->model->header(s->model->user, k) : std::string_view{};
-                dl.pushClip({x, c.y, s->colW[k], hh});
-                ui.paintString(dl, h, cell, text, fs, TextAlignment::Start, pc.node.index);
-                if (i32(k) == s->sortCol) { // sort arrow
+                dl.pushClip(pc.flip(Rect{x, c.y, s->colW[k], hh}));
+                if (kbd && i32(k) == s->curCol) // the keyboard column
+                    dl.roundedRect(pc.flip(Rect{x + 1.f, c.y + 1.f, s->colW[k] - 2.f, hh - 2.f}), {}, {3.f, 3.f, 3.f, 3.f}, acc, 1.f);
+                ui.paintString(dl, h, pc.flip(cell), text, fs, TextAlignment::Start, pc.node.index);
+                if (i32(k) == s->sortCol) { // sort arrow at the column's end
                     const f32 ax = x + s->colW[k] - 12.f, ay = c.y + hh * 0.5f, d = s->asc ? -3.f : 3.f;
-                    dl.line({ax - 4.f, ay - d}, {ax, ay + d}, acc, 1.5f);
-                    dl.line({ax, ay + d}, {ax + 4.f, ay - d}, acc, 1.5f);
+                    dl.line(pc.flip(Vec2{ax - 4.f, ay - d}), pc.flip(Vec2{ax, ay + d}), acc, 1.5f);
+                    dl.line(pc.flip(Vec2{ax, ay + d}), pc.flip(Vec2{ax + 4.f, ay - d}), acc, 1.5f);
                 }
                 dl.popClip();
                 x += s->colW[k];
-                dl.rect({x - 1.f, c.y + 4.f, 1.f, hh - 8.f}, pc.tint(Color::rgb(0x55555F)));
+                dl.rect(pc.flip(Rect{x - 1.f, c.y + 4.f, 1.f, hh - 8.f}), pc.tint(Color::rgb(0x55555F)));
             }
         }
         const i32 sel = i32(ui.value(pc.node));
@@ -291,11 +300,12 @@ struct TableView {
             for (u32 k = 0; k < nc; ++k) {
                 if (s->colW[k] <= 0.f) continue;
                 const std::string_view d = s->model->data(s->model->user, row, k, s->scratch);
-                dl.pushClip({x, y, s->colW[k] - 2.f, rh});
+                dl.pushClip(pc.flip(Rect{x, y, s->colW[k] - 2.f, rh}));
+                const Rect cr = pc.flip(Rect{x + 6.f, y, s->colW[k] - 12.f, rh});
                 if (const CellDelegate* dg = s->delegate[k]; dg && dg->paint)
-                    dg->paint(dg->user, pc, dl, {x + 6.f, y, s->colW[k] - 12.f, rh}, row, k, d, i32(row) == sel);
+                    dg->paint(dg->user, pc, dl, cr, row, k, d, i32(row) == sel);
                 else
-                    ui.paintString(dl, d, {x + 6.f, y, s->colW[k] - 12.f, rh}, k ? dim : text, fs, TextAlignment::Start, pc.node.index);
+                    ui.paintString(dl, d, cr, k ? dim : text, fs, TextAlignment::Start, pc.node.index);
                 dl.popClip();
                 x += s->colW[k];
             }
@@ -328,15 +338,14 @@ struct TableView {
                 return onEvent(ec, mv);
             }
             if (e.pos.y < c.y + hh) {
+                const f32 px = detail::ltrPoint(ui, ec.node, e.pos, c).x; // header hits in left-to-right space
                 f32 x = c.x;
                 for (u32 k = 0; k < cols(*s); ++k) {
                     x += s->colW[k];
-                    if (std::abs(e.pos.x - x) <= 4.f) { s->resizing = i32(k); s->grab = x - s->colW[k]; return true; }
-                    if (e.pos.x < x) { // sort
-                        s->asc = s->sortCol == i32(k) ? !s->asc : true;
-                        s->sortCol = i32(k);
-                        ui.emit(ec.node, SignalKind::Toggled, {.value = f32(k), .flag = s->asc});
-                        ui.invalidate(ec.node);
+                    if (std::abs(px - x) <= 4.f) { s->resizing = i32(k); s->grab = x - s->colW[k]; s->curCol = i32(k); return true; }
+                    if (px < x) { // sort
+                        s->curCol = i32(k);
+                        sortBy(ui, ec.node, *s, k);
                         return true;
                     }
                 }
@@ -349,7 +358,7 @@ struct TableView {
         case EventType::PointerMove:
             if (ui.pressed() != ec.node && !s->dragScroll) return false;
             if (s->resizing >= 0) {
-                s->colW[s->resizing] = std::max(24.f, std::round(e.pos.x - s->grab));
+                s->colW[s->resizing] = std::max(24.f, std::round(detail::ltrPoint(ui, ec.node, e.pos, c).x - s->grab));
                 ui.invalidate(ec.node);
             } else if (s->dragScroll) {
                 Rect tr, th;
@@ -370,6 +379,26 @@ struct TableView {
             return true;
         case EventType::KeyDown: {
             const i64 cur = i64(ui.value(ec.node)), vis = visible(ui, ec.node, *s);
+            const i32 nc = i32(cols(*s));
+            if (nc > 0) s->curCol = std::clamp(s->curCol, 0, nc - 1);
+            const bool ctrl = (e.mods & kModCtrl) != 0;
+            switch (detail::visualArrow(ui, ec.node, e.key)) { // Left / Right in left-to-right column order
+            case Key::Left:
+            case Key::Right: {
+                if (nc <= 0) return false;
+                const bool fwd = detail::visualArrow(ui, ec.node, e.key) == Key::Right;
+                if (ctrl) { // resize the keyboard column: its end edge moves with the arrow (Shift: 1 px)
+                    const f32 st = (e.mods & kModShift) ? 1.f : 8.f;
+                    s->colW[s->curCol] = std::max(24.f, s->colW[s->curCol] + (fwd ? st : -st));
+                    ui.emit(ec.node, SignalKind::Event, {.value = f32(s->curCol)});
+                } else {
+                    s->curCol = std::clamp(s->curCol + (fwd ? 1 : -1), 0, nc - 1);
+                }
+                ui.invalidate(ec.node);
+                return true;
+            }
+            default: break;
+            }
             switch (e.key) {
             case Key::Down: select(ui, ec.node, *s, cur + 1); return true;
             case Key::Up: select(ui, ec.node, *s, cur < 0 ? 0 : cur - 1); return true;
@@ -378,6 +407,10 @@ struct TableView {
             case Key::Home: select(ui, ec.node, *s, 0); return true;
             case Key::End: select(ui, ec.node, *s, i64(rows(*s)) - 1); return true;
             case Key::Enter:
+                if (ctrl) { // sort by the keyboard column (again: reverse), like a header click
+                    if (nc > 0) sortBy(ui, ec.node, *s, u32(s->curCol));
+                    return true;
+                }
                 if (cur >= 0) ui.emit(ec.node, SignalKind::Submitted, {.value = f32(cur)});
                 return true;
             default: return false;
@@ -385,6 +418,12 @@ struct TableView {
         }
         default: return false;
         }
+    }
+    static void sortBy(UiContext& ui, NodeHandle n, TableState& s, u32 k) {
+        s.asc = s.sortCol == i32(k) ? !s.asc : true;
+        s.sortCol = i32(k);
+        ui.emit(n, SignalKind::Toggled, {.value = f32(k), .flag = s.asc});
+        ui.invalidate(n);
     }
 };
 

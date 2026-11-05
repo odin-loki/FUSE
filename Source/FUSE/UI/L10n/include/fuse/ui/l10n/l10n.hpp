@@ -1,5 +1,6 @@
 // fuse_ui_l10n: localisation without ICU. CLDR plural rules (cardinal + ordinal) with the CLDR operands, ICU-style
-// message formatting ({name}, plural / selectordinal / select, number, date), locale number and date formatting, and
+// message formatting ({name}, plural / selectordinal / select, number, date), locale number, date, calendar-name,
+// time-of-day and currency formatting, and
 // the "key=value" string-table file format shared by StringTable and fuse_ui_extract_strings.
 //
 // Locale tags are BCP 47-ish ("de", "de-CH", "pt_PT", "en-IN"); matching is case-insensitive, region first, then the
@@ -60,6 +61,45 @@ enum class DateStyle : std::uint8_t { Short, Medium, Long };
 /// CLDR gregorian date patterns: en Long "March 5, 2024", de Long "5. März 2024", ja Long "2024年3月5日".
 std::string formatDate(std::string_view locale, Date d, DateStyle style = DateStyle::Medium);
 std::string_view monthName(std::string_view locale, int month, bool abbreviated = false); ///< format context
+/// Stand-alone wide month name (nominative where it differs: ru "март", pl "marzec"; else the format-context name).
+std::string_view monthNameStandalone(std::string_view locale, int month);
+/// Month and year as a calendar header shows it (CLDR yMMMM): en "March 2024", es "marzo de 2024", ru "март 2024 г.",
+/// ja "2024年3月", ko "2024년 3월".
+std::string formatMonthYear(std::string_view locale, int year, int month);
+
+/// Day of week, ISO numbering: 1 = Monday .. 7 = Sunday.
+enum class DayWidth : std::uint8_t {
+    Wide,  ///< "Monday", "Montag", "понедельник", "月曜日"
+    Short, ///< CLDR short (calendar column headers): "Mo", "Mo.", "lu", "пн", "月"
+};
+std::string_view weekdayName(std::string_view locale, int isoWeekday, DayWidth width = DayWidth::Wide);
+/// First day of the week (CLDR weekData, by region): 7 (Sunday) for en / en-IN / pt (BR) / ja / zh / ko / he / hi,
+/// 6 (Saturday) for ar, 1 (Monday) elsewhere (en-GB, de, fr, ...).
+int firstDayOfWeek(std::string_view locale);
+
+// ---- time of day -----------------------------------------------------------------------------------------------
+struct Time {
+    int hour = 0, minute = 0, second = 0; ///< 0..23, 0..59, 0..59
+};
+enum class TimeStyle : std::uint8_t { Short, Medium }; ///< without / with seconds
+enum class HourCycle : std::uint8_t { Locale, H12, H23 };
+/// CLDR gregorian time patterns: en "3:05 PM" (narrow no-break space before the day period), en-GB / de / fr ...
+/// "15:05", es / ja "15:05" with an unpadded hour ("9:05"), ko "오후 3:05", ar "3:05 م". `cycle` forces a 12- or 24-hour
+/// clock (the locale's day period names; "h:mm a" / "HH:mm" when the locale has no such pattern).
+std::string formatTime(std::string_view locale, Time t, TimeStyle style = TimeStyle::Short,
+                       HourCycle cycle = HourCycle::Locale);
+bool uses24HourClock(std::string_view locale);
+std::string_view dayPeriodName(std::string_view locale, bool pm); ///< "AM" / "PM", ko "오전" / "오후", ar "ص" / "م"
+
+// ---- currency --------------------------------------------------------------------------------------------------
+/// Locale currency amount for an ISO 4217 code: en "$1,234.56" / "€1,234.56" / "¥1,235", de "1.234,56 €", fr
+/// "1 234,56 €", nl "€ 1.234,56", de-CH "CHF 1’234.56", ja "￥1,235", sv "1 234,56 kr", pt "R$ 1.234,56". Symbols
+/// follow the locale (en "$", en-GB "US$", fr "$US", it "USD"); an unknown code prints itself, separated from the
+/// digits by a no-break space. Fraction digits follow the currency (JPY / KRW 0, KWD / BHD 3, else 2; `fraction` >= 0
+/// overrides), rounded half-even.
+std::string formatCurrency(std::string_view locale, double amount, std::string_view isoCode, int fraction = -1);
+std::string_view currencySymbol(std::string_view locale, std::string_view isoCode);
+int currencyDigits(std::string_view isoCode);
 
 // ---- messages --------------------------------------------------------------------------------------------------
 /// A message argument: text, number or date.

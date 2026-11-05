@@ -7,6 +7,7 @@
 #include <fuse/editor/editor_controller.hpp>
 #include <fuse/editor/material_editor_panel.hpp>
 #include <fuse/editor/profiler_panel.hpp>
+#include <fuse/profiler/profiler.hpp>
 #include <fuse/editor/sdf_sculpt_panel.hpp>
 
 #include <functional>
@@ -17,6 +18,7 @@
 namespace fuse::editor {
 
 class EditorTimeline;
+struct TimelineKeyDrag;
 
 struct ProjectHubView {
     bool hasProject = false;
@@ -107,6 +109,23 @@ struct ProfilerView {
     u32 frames = 0;
     bool paused = false;
     f32 targetFps = 60.f;
+    std::string summary;
+};
+
+/// One bar of the profiler flame graph (Qt ProfilerFlameGraph view): a merged call path laid out in [x0, x1) of the
+/// capture (fractions of the summed root time), stacked by depth (0 = root, drawn at the bottom like a flame).
+struct FlameBarView {
+    std::string name;
+    u32 depth = 0;
+    i32 parent = -1;      ///< index into FlameView::bars (-1 for roots)
+    f32 x0 = 0.f, x1 = 0.f;
+    f32 totalMs = 0.f, selfMs = 0.f;
+    u32 calls = 0;
+};
+struct FlameView {
+    std::vector<FlameBarView> bars; ///< depth-first, parents before children
+    u32 maxDepth = 0, threads = 0, captures = 0, slices = 0;
+    f32 totalMs = 0.f;
     std::string summary;
 };
 
@@ -274,6 +293,12 @@ public:
     [[nodiscard]] ProfilerView profiler() const;
     void profilerSetPaused(bool paused);
     void profilerClear();
+    /// Flame graph: rebuilds the merged call-path view from the fuse::profiler event ring (every ProfileScope recorded
+    /// recently, all threads). Ignored while paused.
+    void profilerCaptureFlame();
+    /// Same from an explicit chronological event list (saved captures, tests).
+    void profilerFlameFromEvents(const std::vector<profiler::ProfileEvent>& events);
+    [[nodiscard]] const FlameView& profilerFlame() const { return m_flame; }
 
     // ---- Timeline ----
     [[nodiscard]] TimelineView timeline() const;
@@ -301,6 +326,12 @@ public:
     [[nodiscard]] i32 timelineFindTrack(EntityRef entity, const std::string& channel) const;
     bool timelineSelectKey(i32 track, i32 key); ///< -1, -1 clears
     bool timelineMoveSelectedKey(i32 ms);
+    /// Key drag (Qt TimelineCanvas): begin selects the key and snapshots the tracks, dragTo moves it live (the scene
+    /// follows), end commits one "Move key" undo step when the time changed, or with commit = false restores it.
+    bool timelineBeginKeyDrag(i32 track, i32 key);
+    bool timelineDragKeyTo(i32 ms);
+    bool timelineEndKeyDrag(bool commit = true);
+    [[nodiscard]] bool timelineKeyDragging() const { return m_tlDrag != nullptr; }
     bool timelineDeleteSelectedKey();
     bool timelineSetSelectedKeyInterp(u32 interp, u32 tangentMode); ///< cinematics::KeyInterp / TangentMode
     bool timelineSetSelectedKeyTangents(f32 inSlope, f32 outSlope);
@@ -365,6 +396,8 @@ private:
     std::unique_ptr<SdfSculptPanel> m_sculpt;
     bool m_sculptMode = false, m_sculptDragging = false;
     std::unique_ptr<ProfilerPanel> m_profiler;
+    FlameView m_flame;
+    std::unique_ptr<TimelineKeyDrag> m_tlDrag;
     bool m_timelinePlaying = false;
     i32 m_tlSelTrack = -1, m_tlSelKey = -1;
     bool timelineEdit_(const char* what, const std::function<bool(EditorTimeline&)>& edit);
