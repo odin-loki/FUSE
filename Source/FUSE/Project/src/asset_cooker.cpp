@@ -4,6 +4,9 @@
 #include <fuse/cook/mesh_cook.hpp>
 #include <fuse/cook/texture_cook.hpp>
 #include <fuse/project/cook_content_hash.hpp>
+#include <fuse/project/cook_kinds.hpp>
+#include <fuse/animation/cooked_anim.hpp>
+#include <fuse/asset/cooked_material.hpp>
 #include <fuse/log/logger.hpp>
 
 #if defined(FUSE_PROJECT_HAS_SCRIPT_COOK) && FUSE_PROJECT_HAS_SCRIPT_COOK
@@ -143,6 +146,14 @@ bool AssetCooker::lookup_live_entry_(u64 cache_key, CookCacheEntry* out_entry) {
             live = fuse::cook::load_cooked_texture(cached.output_path, texture);
         } else if (cached.kind == CookAssetKind::Script) {
             live = cooked_script_loads(cached.output_path);
+        } else if (cached.kind == CookAssetKind::Material) {
+            asset::CookedMaterial material;
+            live = asset::read_cooked_material_file(cached.output_path, material);
+        } else if (cached.kind == CookAssetKind::Anim) {
+            fuse::animation::CookedAnim anim;
+            live = fuse::animation::read_cooked_anim_file(cached.output_path, anim);
+        } else if (cached.kind == CookAssetKind::Look) {
+            live = cookedLookLoads(cached.output_path);
         }
     }
     if (!live) {
@@ -246,6 +257,11 @@ bool AssetCooker::probe_cook_cache_hit(const CookManifestEntry& entry, const Coo
     }
     case CookAssetKind::Script:
         content_hash = hashScriptCookInput(entry.source_path, entry.output_path);
+        break;
+    case CookAssetKind::Material:
+    case CookAssetKind::Anim:
+    case CookAssetKind::Look:
+        content_hash = hashCookKindInput(entry.kind, entry.source_path, entry.output_path);
         break;
     }
 
@@ -467,6 +483,23 @@ CookRecord AssetCooker::cook_shader(const ShaderImportDesc& desc) {
                             });
 }
 
+CookRecord AssetCooker::cook_material(const std::string& source_path, const std::string& output_path) {
+    return cook_with_cache_(CookAssetKind::Material, source_path, output_path,
+                            hashCookKindInput(CookAssetKind::Material, source_path, output_path), 0, "material cook",
+                            [&source_path, &output_path]() { return cookMaterialFile(source_path, output_path); });
+}
+
+CookRecord AssetCooker::cook_anim(const AnimImportDesc& desc) {
+    return cook_with_cache_(CookAssetKind::Anim, desc.input_path, desc.output_path, hash_anim_import(desc), 0,
+                            "anim cook", [&desc]() { return cookAnimFile(desc); });
+}
+
+CookRecord AssetCooker::cook_look(const std::string& source_path, const std::string& output_path) {
+    return cook_with_cache_(CookAssetKind::Look, source_path, output_path,
+                            hashCookKindInput(CookAssetKind::Look, source_path, output_path), 0, "look cook",
+                            [&source_path, &output_path]() { return cookLookFile(source_path, output_path); });
+}
+
 CookRecord AssetCooker::cook_entry(const CookManifestEntry& entry) {
     return cook_entry(entry, CookManifest{});
 }
@@ -532,6 +565,24 @@ CookRecord AssetCooker::cook_entry(const CookManifestEntry& entry, const CookMan
                                 hashScriptCookInput(entry.source_path, entry.output_path), upstream_hash,
                                 "script cook from manifest entry",
                                 [&entry]() { return cook_script_outcome(entry.source_path, entry.output_path); });
+    case CookAssetKind::Material:
+        return cook_with_cache_(CookAssetKind::Material, entry.source_path, entry.output_path,
+                                hashCookKindInput(entry.kind, entry.source_path, entry.output_path), upstream_hash,
+                                "material cook from manifest entry",
+                                [&entry]() { return cookMaterialFile(entry.source_path, entry.output_path); });
+    case CookAssetKind::Anim: {
+        AnimImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        return cook_with_cache_(CookAssetKind::Anim, entry.source_path, entry.output_path, hash_anim_import(desc),
+                                upstream_hash, "anim cook from manifest entry",
+                                [&desc]() { return cookAnimFile(desc); });
+    }
+    case CookAssetKind::Look:
+        return cook_with_cache_(CookAssetKind::Look, entry.source_path, entry.output_path,
+                                hashCookKindInput(entry.kind, entry.source_path, entry.output_path), upstream_hash,
+                                "look cook from manifest entry",
+                                [&entry]() { return cookLookFile(entry.source_path, entry.output_path); });
     }
     return {};
 }

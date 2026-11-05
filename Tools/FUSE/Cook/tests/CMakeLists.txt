@@ -111,3 +111,24 @@ else()
     add_test(NAME fuse_asset_collision_cook COMMAND fuse_asset_collision_cook_tests)
 endif()
 set_tests_properties(fuse_asset_collision_cook PROPERTIES LABELS "asset;gate;physics" TIMEOUT 300)
+
+# 4b (asset plan §5.1 `.fuseanim`): assimp clip -> quantised .fuseanim -> read_cooked_anim -> AnimationClip, against
+# an analytic glTF fixture written at test time (anim_fixture.hpp); byte-identical re-cook. Skips (77) without assimp.
+add_executable(fuse_asset_anim_cook_tests test_anim_cook.cpp anim_fixture.hpp)
+target_link_libraries(fuse_asset_anim_cook_tests PRIVATE fuse_cook_stubs fuse_animation fuse_core)
+if(COMMAND fuse_apply_cxx23)
+    fuse_apply_cxx23(fuse_asset_anim_cook_tests)
+endif()
+add_test(NAME fuse_asset_anim_cook COMMAND fuse_asset_anim_cook_tests)
+set_tests_properties(fuse_asset_anim_cook PROPERTIES LABELS "asset;gate;cook" TIMEOUT 300 SKIP_RETURN_CODE 77)
+
+# 4d: CookAssetKind Material / Anim / Look through AssetCooker (fuse_project, defined after this directory):
+# cook, cache hit, re-cook on source / sidecar edits, strict refusals, cache persistence of the kinds.
+add_executable(fuse_asset_cook_kinds_tests test_cook_kinds.cpp anim_fixture.hpp)
+target_link_libraries(fuse_asset_cook_kinds_tests PRIVATE fuse_project fuse_cook_stubs fuse_animation fuse_core)
+target_compile_definitions(fuse_asset_cook_kinds_tests PRIVATE "FUSE_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
+if(COMMAND fuse_apply_cxx23)
+    fuse_apply_cxx23(fuse_asset_cook_kinds_tests)
+endif()
+add_test(NAME fuse_asset_cook_kinds COMMAND fuse_asset_cook_kinds_tests)
+set_tests_properties(fuse_asset_cook_kinds PROPERTIES LABELS "asset;gate;cook" TIMEOUT 300)

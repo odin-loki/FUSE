@@ -1,5 +1,7 @@
 #include <fuse/project/cook_content_hash.hpp>
 
+#include <cstring>
+
 #include <fuse/io/file_time.hpp>
 #include <fuse/project/cook_cache.hpp>
 
@@ -203,6 +205,35 @@ u64 hash_shader_import(const ShaderImportDesc& desc) {
     hash = fnv1a64_combine(hash, hash_u64(static_cast<u64>(desc.stage)));
     hash = fnv1a64_combine(hash, hash_u64(desc.target_version));
     hash = fnv1a64_combine(hash, hash_bool(desc.debug_info));
+    hash = fnv1a64_combine(hash, hash_u64(kCookFormatVersion));
+    return hash;
+}
+
+u64 hash_anim_import(const AnimImportDesc& desc) {
+    if (desc.input_path.empty() || desc.output_path.empty()) {
+        return 0;
+    }
+    const u64 file_hash = hash_file_content(desc.input_path);
+    if (file_hash == 0) {
+        return 0;
+    }
+    static constexpr char kTag[] = "fuse.cook.anim.v1";
+    u64 hash = fnv1a64_bytes(reinterpret_cast<const u8*>(kTag), sizeof(kTag) - 1u);
+    hash = fnv1a64_combine(hash, hash_string(desc.input_path));
+    hash = fnv1a64_combine(hash, hash_string(desc.output_path));
+    hash = fnv1a64_combine(hash, file_hash);
+    u32 rate_bits = 0;
+    std::memcpy(&rate_bits, &desc.sample_rate, sizeof(rate_bits));
+    hash = fnv1a64_combine(hash, hash_u64(rate_bits));
+    hash = fnv1a64_combine(hash, hash_u64(desc.clip_index));
+    hash = fnv1a64_combine(hash, hash_string(desc.clip_name));
+    hash = fnv1a64_combine(hash, hash_bool(desc.looping));
+    hash = fnv1a64_combine(hash, hash_bool(desc.root_motion));
+    hash = fnv1a64_combine(hash, hash_string(desc.root_joint));
+    // The events sidecar is an input too: editing it re-cooks.
+    const std::string sidecar = desc.events_path.empty() ? desc.input_path + ".events.json" : desc.events_path;
+    hash = fnv1a64_combine(hash, hash_string(desc.events_path));
+    hash = fnv1a64_combine(hash, hash_file_content(sidecar));
     hash = fnv1a64_combine(hash, hash_u64(kCookFormatVersion));
     return hash;
 }
