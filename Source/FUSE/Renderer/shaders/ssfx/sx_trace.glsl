@@ -14,6 +14,7 @@ struct SxTrace {
     float maxDistance;
     float fadeEdge;
     uint refineSteps;
+    bool hiz; // Hi-Z skipping (SSR with kSsfxFlagHiz)
 };
 
 struct SxHit {
@@ -36,6 +37,65 @@ float sx_ray_z_at(float k0, float k1, float f) {
     precise float den = k0 + (k1 - k0) * f;
     const float z = fuse_div_rn(1.0, den);
     return z;
+}
+
+
+// --- Hi-Z march (kSsfxFlagHiz; SsfxGpuSettings::ssrHiz) -------------------------------------------------------
+// The march tests samples f_i = min(1, i fStep), i = 1..stepCount; sample i hits when the scene depth under it
+// (nearest pixel, > 0) satisfies max(z_{i-1}, z_i) >= sceneZ (and the thickness test). The Hi-Z pyramid stores per cell
+// the minimum depth of its pixels (sky = SX_HIZ_SKY), so when every sample i..b of a run lies inside ONE cell and
+// max(z_{i-1}, z_i, z_b) < cellMin, no sample of the run can hit (the ray depth 1 / (k0 + (k1 - k0) f) is monotonic in
+// f, so its maximum over the run is at an end; every sceneZ of the cell is >= cellMin) and the run is skipped. The
+// samples after it see exactly the state (f_b, z_b) the full march would have, so the hits are the full march's bit
+// for bit. Sample positions are monotonic in i (rounding is monotonic), so the run is inside the cell when its two
+// ends are. Counters: samples skipped / tested (written by ssfx.ssr into the ssrSteps section).
+uint g_sx_hiz_skipped = 0u;
+uint g_sx_tested = 0u;
+
+float sx_hiz_at(uint level, uint cx, uint cy) {
+    const uint w = (F.width + (1u << level) - 1u) >> level;
+    return SxFloatsRef(F.hiz).v[F.hizOffset[level] + cy * w + cx];
+}
+
+// Last sample index b in [i, stepCount] of the run starting at sample i (pixel (px, py)) that stays in the level-L
+// cell of (px, py); the estimate is verified on the exact sample positions (only a speed choice: the hits do not
+// depend on it). Returns b and f_b.
+uint sx_hiz_run(uint i, uint stepCount, float fStep, float p0x, float p0y, float ddx, float ddy, uint px, uint py,
+                uint level, out float fb) {
+    const uint x0 = (px >> level) << level;
+    const uint y0 = (py >> level) << level;
+    const uint x1 = min(F.width, x0 + (1u << level));
+    const uint y1 = min(F.height, y0 + (1u << level));
+    float fLim = 1.0;
+    if (ddx > 0.0) {
+        fLim = min(fLim, (float(x1) - p0x) / ddx);
+    } else if (ddx < 0.0) {
+        fLim = min(fLim, (float(x0) - p0x) / ddx);
+    }
+    if (ddy > 0.0) {
+        fLim = min(fLim, (float(y1) - p0y) / ddy);
+    } else if (ddy < 0.0) {
+        fLim = min(fLim, (float(y0) - p0y) / ddy);
+    }
+    uint b = uint(max(0.0, fLim / fStep));
+    b = clamp(b, i, stepCount);
+    for (uint tries = 0u; tries < 8u; ++tries) {
+        precise float fj = float(b) * fStep;
+        const float f = min(1.0, fj);
+        precise float sx = p0x + ddx * f;
+        precise float sy = p0y + ddy * f;
+        if (sx >= float(x0) && sx < float(x1) && sy >= float(y0) && sy < float(y1)) {
+            fb = f;
+            return b;
+        }
+        if (b == i) {
+            break;
+        }
+        b = i + (b - i) / 2u;
+    }
+    precise float fi = float(i) * fStep;
+    fb = min(1.0, fi);
+    return i;
 }
 
 vec3 sx_reflect(vec3 incident, vec3 n) {
@@ -92,6 +152,8 @@ SxHit sx_trace_ray(uint64_t sceneColor, SxTrace P, uint x, uint y, vec3 directio
     float prevZ = p.z;
     bool hit = false;
     float hitF = 0.0;
+    const bool useHiz = P.hiz && F.hizLevels > 0u;
+    uint level = 1u;
     for (uint i = 1u; i <= stepCount; ++i) {
         precise float fi = float(i) * fStep;
         const float f = min(1.0, fi);
@@ -101,6 +163,29 @@ SxHit sx_trace_ray(uint64_t sceneColor, SxTrace P, uint x, uint y, vec3 directio
             break;
         }
         const float rayZ = sx_ray_z_at(k0, k1, f);
+        if (useHiz) {
+            bool skipped = false;
+            for (uint L = min(level, F.hizLevels); L > 0u; --L) {
+                float fb;
+                const uint b = sx_hiz_run(i, stepCount, fStep, p0x, p0y, ddx, ddy, uint(sx), uint(sy), L, fb);
+                const float zb = sx_ray_z_at(k0, k1, fb);
+                const float runMax = max(prevZ, max(rayZ, zb));
+                if (runMax < sx_hiz_at(L, uint(sx) >> L, uint(sy) >> L)) {
+                    g_sx_hiz_skipped += b - i + 1u;
+                    prevF = fb;
+                    prevZ = zb;
+                    i = b; // the loop's ++i continues after the run
+                    level = min(L + 1u, F.hizLevels);
+                    skipped = true;
+                    break;
+                }
+            }
+            if (skipped) {
+                continue;
+            }
+            level = 1u;
+        }
+        ++g_sx_tested;
         const float sceneZ = sx_depth_nearest(sx, sy);
         if (sceneZ > 0.0 && !(uint(sx) == x && uint(sy) == y)) {
             const float zMin = min(prevZ, rayZ);

@@ -32,6 +32,7 @@ void main(uint3 tid: SV_DispatchThreadID) {
     P.maxDistance = F.ssrMaxDistance;
     P.fadeEdge = F.ssrFadeEdge;
     P.refineSteps = F.ssrRefineSteps;
+    P.hiz = (F.flags & kSxFlagHiz) != 0u;
     const bool useRoughness = (F.flags & kSxFlagSsrRoughness) != 0u;
     const float r = useRoughness ? sxTexels(F.prepared)[i].y : 0.0;
     float4 result = float4(0.0);
@@ -51,4 +52,7 @@ void main(uint3 tid: SV_DispatchThreadID) {
         }
     }
     sxTexels(F.ssr)[i] = result;
+    if (P.hiz) {
+        sxUint2s(F.ssrSteps)[i] = uint2(g_sxHizSkipped, g_sxTested);
+    }
 }

@@ -15,7 +15,10 @@ set(_fuse_wp63_kernels
     "GTAO|Gtao|sx_gtao.comp|sx_gtao.slang"
     "SSR|Ssr|sx_ssr.comp|sx_ssr.slang"
     "SSGI|Ssgi|sx_ssgi.comp|sx_ssgi.slang"
-    "COMPOSE|Compose|sx_compose.comp|sx_compose.slang")
+    "COMPOSE|Compose|sx_compose.comp|sx_compose.slang"
+    "HIZ|Hiz|sx_hiz.comp|sx_hiz.slang"
+    "AOBLUR|AoBlur|sx_ao_blur.comp|sx_ao_blur.slang"
+    "AOTEMPORAL|AoTemporal|sx_ao_temporal.comp|sx_ao_temporal.slang")
 
 # Script mode (build step): embed the kernels' SPIR-V into a C++ header.
 #   cmake -DOUT=<header> [-D<KEY>_SLANG=<spv> ...] [-D<KEY>_GLSL=<spv> ...] -P rp_wp63.cmake
@@ -150,13 +153,14 @@ endforeach()
 
 # --- Lavapipe gates ------------------------------------------------------------------------------
 add_executable(fuse_rp_ssfx_gpu ${_fuse_wp63_tests_dir}/test_rp_ssfx_gpu.cpp)
-target_link_libraries(fuse_rp_ssfx_gpu PRIVATE fuse_ssfx_gpu fuse_atmosphere_gpu)
+# fuse_compute: the B5 HBAO blur kernel (compute::screen_space_kernels::ao_blur), the oracle of ssfx.ao_blur.
+target_link_libraries(fuse_rp_ssfx_gpu PRIVATE fuse_ssfx_gpu fuse_atmosphere_gpu fuse_compute fuse_ssfx)
 fuse_apply_cxx23(fuse_rp_ssfx_gpu)
 
 # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
 set(_fuse_wp63_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
 set(_fuse_wp63_vk_tests "")
-foreach(_case "passes;set" "passes;buffer" "analytic;set" "zero_alloc;set" "sky;set")
+foreach(_case "passes;set" "passes;buffer" "analytic;set" "zero_alloc;set" "sky;set" "hiz;set" "ao_denoise;set")
     list(GET _case 0 _mode)
     list(GET _case 1 _backend)
     set(_name "fuse_rp_ssfx_gpu_vk_${_mode}_${_backend}")

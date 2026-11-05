@@ -41,6 +41,7 @@ void main() {
     P.maxDistance = F.ssrMaxDistance;
     P.fadeEdge = F.ssrFadeEdge;
     P.refineSteps = F.ssrRefineSteps;
+    P.hiz = (F.flags & SX_FLAG_HIZ) != 0u;
     const bool useRoughness = (F.flags & SX_FLAG_SSR_ROUGHNESS) != 0u;
     const float r = useRoughness ? SxTexelsRef(F.prepared).v[i].y : 0.0;
     vec4 result = vec4(0.0);
@@ -62,4 +63,7 @@ void main() {
         }
     }
     SxTexelsRef(F.ssr).v[i] = result;
+    if (P.hiz) {
+        SxUvec2Ref(F.ssrSteps).v[i] = uvec2(g_sx_hiz_skipped, g_sx_tested);
+    }
 }

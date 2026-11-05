@@ -11,6 +11,10 @@
 //   -> clustered lighting (WP-2.1 / 2.2: VSM visibility, RT visibility, DDGI indirect)
 //   -> T2: WP-7.1 light tree -> ReSTIR DI (WP-7.2) -> SVGF (WP-6.4 IDenoiser, Gi preset) -> frame.restir
 //      [restir (+ restirDenoise): replaces light.shade's area lights]
+//   -> T2: WP-7.3 path tracer (ray query; T3 RT pipeline when enabled) over the TLAS + GPU scene + WP-7.1 light tree
+//      -> SVGF (WP-6.4 IDenoiser, Gi preset, PT guides) -> frame.pathtrace: REPLACES the raster lighting chain as the
+//      frame's HDR image (ReSTIR, sky, SSRC / SSFX, RT reflections and aerial perspective are not planned; fog,
+//      clouds, splats, forward, upscaler, post and frame generation run on it)   [pathTrace (+ pathTraceDenoise)]
 //   -> frame.sky (WP-8.2 sky radiance + sun disk on the background, before SSFX so SSR / SSGI see it)  [sky]
 //   -> GTAO / SSR / SSGI (WP-6.3; the jittered projection when an upscaler runs; rays that leave the screen or
 //      reach the sky take the WP-8.2 sky radiance: ssfxSkyFallback)                      [ssfx]
@@ -57,6 +61,7 @@
 #include <fuse/renderer/light_tree/light_tree_gpu.hpp>
 #include <fuse/renderer/lighting/gpu/clustered_lighting.hpp>
 #include <fuse/renderer/material_resolve/material_resolve.hpp>
+#include <fuse/renderer/pathtrace/pt_gpu.hpp>
 #include <fuse/renderer/postprocess/gpu/post_stack_gpu.hpp>
 #include <fuse/renderer/restir/restir_gpu.hpp>
 #include <fuse/renderer/rt/acceleration_structures.hpp>
@@ -129,6 +134,8 @@ enum FrameStage : u32 {
     kStageUi = 1u << 24,                ///< E02 UI / HUD composite after post (FrameUiSource set, FrameSettings::ui)
     kStageSsrc = 1u << 25,              ///< WP-6.5b screen-space radiance cascades (near-field GI + AO)
     kStageRcFlatland = 1u << 26,        ///< WP-6.5 flatland RC (diagnostic CPU G-buffer packed into RcScene)
+    kStagePathTrace = 1u << 27,         ///< T2 / T3: WP-7.3 path tracer -> frame.pathtrace (replaces the lighting chain)
+    kStagePathTraceDenoise = 1u << 28,  ///< T2: the PT signal through SVGF (IDenoiser, PT guides) before frame.pathtrace
 };
 
 /// What the UI callback records into (E02).
@@ -278,6 +285,14 @@ struct FrameSettings {
     post_gpu::PostGpuSettings postSettings{};
     bool ui = true;         ///< E02: run the FrameUiSource (when one is set) after post
     f32 ambient[3] = {0.03f, 0.035f, 0.045f};
+    /// T2 / T3: the WP-7.3 path tracer renders the frame's HDR image (frame.pathtrace) instead of the raster lighting
+    /// chain; NEE / emitter MIS over the setRestirLights() list (no list: escaping rays only). Accumulates while the
+    /// camera and settings hold still (FrameDesc::resetHistory restarts).
+    bool pathTrace = false;
+    pathtrace::PtSettings pathTraceSettings{};
+    /// The PT signal (demodulated) through the WP-6.4 SVGF (Gi preset) and remodulated; off: the accumulated mean.
+    bool pathTraceDenoise = true;
+    denoise::DenoiserSettings pathTraceDenoiser = frameDenoiserPreset(denoise::DenoiseSignal::Gi);
 };
 
 struct FrameDesc {
@@ -329,6 +344,9 @@ struct FrameGraphOutputs {
     /// (present second; == output). Invalid when frame generation did not run.
     rg::TextureRef presentInterpolated;
     rg::TextureRef presentReal;
+    rg::TextureRef pathTrace;          ///< frame.pathtrace output (the PT HDR image)
+    rg::BufferRef pathTraceOutput;     ///< WP-7.3 output buffer (mean at FrameComposer::pathTraceMeanOffset())
+    rg::BufferRef pathTraceDenoised;   ///< SVGF output of the PT signal (f32x4 (rgb, variance) per pixel)
 };
 
 struct FrameStats {
@@ -414,6 +432,11 @@ public:
     u64 restirDiOffset() const;
     u64 restirAlbedoOffset() const;
     u64 reflectionOffset() const;
+    /// Byte offsets of the PT mean / demodulation factor inside FrameGraphOutputs::pathTraceOutput.
+    u64 pathTraceMeanOffset() const { return m_pt.layout().output; }
+    u64 pathTraceDemodOffset() const { return m_pt.layout().albedo; }
+    const pathtrace::PathTracerGpu& pathTracer() const { return m_pt; }
+    const denoise::SvgfDenoiserAdapter& pathTraceDenoiser() const { return m_ptDenoiser; }
     const forward::ForwardTransparency& forwardPass() const { return m_forward; }
     const framegen::FrameGenGpu& frameGenerator() const { return m_framegen; }
     /// The IDenoiser instances of the ReSTIR DI / RT reflection signals (T2).
@@ -453,9 +476,18 @@ private:
         u32 groups[2] = {1u, 1u};
     };
     static constexpr u32 kSampledSlots = 24u;
-    static constexpr u32 kMaxRecords = 12u;
+    static constexpr u32 kMaxRecords = 16u;
     /// Ring slots per frame: one FrameConstants per composer pass flavour.
-    enum ConstantSlot : u32 { kSlotMain = 0, kSlotSky, kSlotAerial, kSlotRestir, kSlotReflect, kSlotRcPack, kSlotCount };
+    enum ConstantSlot : u32 {
+        kSlotMain = 0,
+        kSlotSky,
+        kSlotAerial,
+        kSlotRestir,
+        kSlotReflect,
+        kSlotRcPack,
+        kSlotPathTrace,
+        kSlotCount
+    };
 
     bool createPipeline();
     bool createTargets();
@@ -506,6 +538,10 @@ private:
     std::vector<restir::RestirLight> m_restirTable;
     forward::ForwardTransparency m_forward;
     framegen::FrameGenGpu m_framegen;
+    pathtrace::PathTracerGpu m_pt;
+    denoise::SvgfDenoiserAdapter m_ptDenoiser;  ///< WP-6.4 IDenoiser over SVGF: the PT signal
+    pathtrace::PtSettings m_ptApplied{};        ///< settings last handed to m_pt (setSettings restarts the accumulation)
+    bool m_ptConfigured = false;
     FrameUiComposite m_ui;          ///< E02 "frame.ui_composite"
     FrameUiSource m_uiSource{};
 
@@ -524,6 +560,7 @@ private:
     OwnedImage m_aerialImage{};
     OwnedImage m_restirImage{};
     OwnedImage m_reflectImage{};
+    OwnedImage m_ptImage{};
     OwnedImage m_resolveImage{};
     OwnedImage m_uiImage{};         ///< E02: output + UI (display extent; created by setUiSource)
     OwnedBuffer m_background{};     ///< f32x4 (clouds background)

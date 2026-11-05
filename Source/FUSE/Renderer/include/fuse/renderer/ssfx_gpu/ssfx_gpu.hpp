@@ -18,6 +18,10 @@
 //   ssfx.gtao      GTAO visibility (fuse::ssfx::gtao_kernel, new; HBAO stays the independent oracle)
 //   ssfx.ssr       mirror reflections of the lit image, roughness gate, gloss fade (fuse::ssfx::ssr_kernel)
 //   ssfx.ssgi      one pass per bounce, radiance ping-pong (fuse::ssfx::ssgi_kernel / computeSsgiCpu)
+//   ssfx.ao_blur   (aoBlur) cross-bilateral 5 x 5 AO blur, the B5 HBAO blur (compute::screen_space_kernels::ao_blur)
+//   ssfx.ao_temporal (aoTemporal) AO history reprojected by the WP-4.1 motion vectors (ao_temporal_pixel)
+//   ssfx.hiz       (ssrHiz) min-depth pyramid, one pass per level (hiz_texel); ssfx.ssr then skips sample runs that
+//                  provably cannot hit (same hits as the full march)
 //   ssfx.compose   AO re-weights the ambient term, + SSR x confidence x Fresnel, + SSGI (compose_pixel)
 // Disabled effects add no pass. Kernels: Slang primary (-fp-mode precise) with GLSL twins (`precise`),
 // embedded by cmake/rp_wp63.cmake. Steady-state frames make no heap allocation (the work buffer and the output
@@ -63,6 +67,12 @@ struct SsfxBufferLayout {
     u64 ssr = 0;      ///< f32x4
     u64 gi = 0;       ///< f32x4
     u64 bounce[2] = {0, 0}; ///< f32x4
+    u64 hiz = 0;            ///< f32 Hi-Z pyramid (hiz_layout), hizBytes
+    u64 hizBytes = 0;
+    u64 aoBlurred = 0;      ///< f32
+    u64 aoDenoised = 0;     ///< f32
+    u64 aoHistory[2] = {0, 0}; ///< f32 x 2 (AO, depth) ping-pong
+    u64 ssrSteps = 0;       ///< u32 x 2
     u64 workBytes = 0;
 
     static SsfxBufferLayout compute(u32 width, u32 height);
@@ -90,6 +100,9 @@ struct SsfxFrameImages {
     /// AtmosphereGpu::frameAddress() of this frame (AtParams + LUTs); declare it with SsfxGraphInputs::sky. 0 = no
     /// fallback (misses stay 0 as without the setting).
     u64 skyAddress = 0;
+    /// Optional WP-4.1 motion vectors (TemporalMotion::motionAddress(): f32 x 2 UV motion, current - previous, at
+    /// this extent) for the temporal AO denoise; declare with SsfxGraphInputs::motion. 0 = static camera.
+    u64 motionAddress = 0;
 };
 
 /// The graph refs of the images of SsfxFrameImages (as imported by their owners, e.g.
@@ -102,6 +115,7 @@ struct SsfxGraphInputs {
     rg::TextureRef lit;
     rg::BufferRef dump;
     rg::BufferRef sky; ///< the buffer behind SsfxFrameImages::skyAddress (AtmosphereGraphRefs::luts): ssfx.ssr / .ssgi read it
+    rg::BufferRef motion; ///< the buffer behind SsfxFrameImages::motionAddress (ssfx.ao_temporal reads it)
 };
 
 struct SsfxGraphRefs {
@@ -119,6 +133,11 @@ enum class SsfxCopySource : u8 {
     Ao,           ///< f32
     Ssr,          ///< f32x4
     Gi,           ///< f32x4
+    Hiz,          ///< f32 pyramid (SsfxBufferLayout::hizBytes)
+    AoBlurred,    ///< f32
+    AoDenoised,   ///< f32
+    AoHistoryIn,  ///< f32x2: the history ssfx.ao_temporal read this frame
+    SsrSteps,     ///< u32x2
 };
 
 struct SsfxStats {
@@ -130,6 +149,10 @@ struct SsfxStats {
     bool aoRan = false;
     bool ssrRan = false;
     u32 ssgiBounces = 0;
+    u32 hizLevels = 0;       ///< ssfx.hiz passes this frame
+    bool aoBlurRan = false;
+    bool aoTemporalRan = false;
+    bool aoHistoryUsed = false; ///< ssfx.ao_temporal had a valid history this frame
 };
 
 class SsfxGpu {
@@ -175,7 +198,7 @@ public:
     const Buffer& workBuffer() const { return m_work; }
     /// BDA of the GTAO visibility section (f32 per pixel, valid after the gtao pass of this frame) for
     /// consumers that apply AO themselves (declare a StorageRead of SsfxGraphRefs::work).
-    u64 aoAddress() const { return m_work.deviceAddress != 0u ? m_work.deviceAddress + m_layout.ao : 0u; }
+    u64 aoAddress() const { return m_constants.aoFinal; }
 
 private:
     struct Output {
@@ -202,8 +225,8 @@ private:
         rg::BufferRef copyFrom{};
         rg::BufferRef copyTo{};
     };
-    enum Kernel : u32 { kPrepare = 0, kGtao, kSsr, kSsgi, kCompose, kKernelCount };
-    static constexpr u32 kMaxPasses = 32u;
+    enum Kernel : u32 { kPrepare = 0, kGtao, kSsr, kSsgi, kCompose, kHiz, kAoBlur, kAoTemporal, kKernelCount };
+    static constexpr u32 kMaxPasses = 48u;
 
     bool createPipelines();
     bool createWork(u32 width, u32 height);
@@ -230,6 +253,9 @@ private:
     u64 m_frameAddress = 0;
     SsfxFrameConstants m_constants{};
     bool m_hasDump = false;
+    bool m_hasMotion = false;
+    u32 m_historyWrite = 0;      ///< aoHistory section ssfx.ao_temporal writes next
+    bool m_historyValid = false; ///< the other section holds last frame's history at this extent
 
     void* m_inputImages[kInputCount] = {};
     BindlessSlotHandle m_inputSlots[kInputCount]{};

@@ -23,10 +23,14 @@
 #define SX_FLAG_AO_JITTER (1u << 7)
 #define SX_FLAG_SKY (1u << 8)
 #define SX_FLAG_SKY_GI (1u << 9)
+#define SX_FLAG_HIZ (1u << 10)
+#define SX_FLAG_AO_BLUR (1u << 11)
+#define SX_FLAG_AO_TEMPORAL (1u << 12)
+#define SX_HIZ_SKY 3.0e38
 
 #define SX_MAX_SLICES 32
 
-// SsfxFrameConstants, 592 bytes.
+// SsfxFrameConstants, 720 bytes.
 struct SxFrame {
     uint64_t prepared;
     uint64_t normals;
@@ -88,11 +92,30 @@ struct SxFrame {
     float giThickness;
     float giMaxDistance;
     float giIntensity;
+    uint64_t hiz;
+    uint64_t aoBlurred;
+    uint64_t aoDenoised;
+    uint64_t aoHistoryIn;
+    uint64_t aoHistoryOut;
+    uint64_t motion;
+    uint64_t aoFinal;
+    uint64_t ssrSteps;
+    uint hizLevels;
+    uint aoHistoryValid;
+    float aoBlurDepth;
+    float aoBlurNormal;
+    float aoTemporalAlpha;
+    float aoTemporalDepthReject;
+    uint reserved4;
+    uint reserved5;
+    uint hizOffset[8];
 };
 
 layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer SxFrameRef { SxFrame f; };
 layout(buffer_reference, std430, buffer_reference_align = 16) buffer SxTexelsRef { vec4 v[]; };
 layout(buffer_reference, std430, buffer_reference_align = 4) buffer SxFloatsRef { float v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 8) buffer SxVec2Ref { vec2 v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 8) buffer SxUvec2Ref { uvec2 v[]; };
 
 layout(push_constant) uniform SxPush {
     uint64_t frame;

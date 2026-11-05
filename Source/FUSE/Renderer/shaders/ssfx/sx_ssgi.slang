@@ -28,6 +28,7 @@ float3 sxPixelGather(uint64_t radianceIn, uint x, uint y) {
     P.maxDistance = F.giMaxDistance;
     P.fadeEdge = 0.0;
     P.refineSteps = F.giRefineSteps;
+    P.hiz = false;
     const float3 p = sxPositionAt(x, y);
     float3 n = sxNormalize(sxNormalAt(x, y));
     if (sxDot(n, p) > 0.0) {
