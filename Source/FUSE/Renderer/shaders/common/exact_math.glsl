@@ -78,6 +78,73 @@ void fuse_rn_mid_down(float q, out uint m, out int e) {
     }
 }
 
+// One stepping decision of fuse_div_rn / fuse_sqrt_rn: +1 = round up, -1 = round down, 0 = q is the IEEE result.
+// The exact decisions compare |a| (x) with the midpoints next to q (s) as 64-bit integers (fuse_rn_mul +
+// fuse_rn_compare_scaled, ~60 integer operations per step). The fast step decides from the residual
+//   div:  D = ma 2^k - 2 mq mb,  k = ea - eq - eb + 1   (up: D - mb > 0; down: D + mb < 0, power of two 2D + mb < 0)
+//   sqrt: D = mx 2^k - (2 ms)^2, k = ex - 2 es + 2       (up: D - 4 ms - 1 > 0; down: D + 4 ms - 1 < 0)
+// which is the same sign test term for term (the midpoint products expanded), held in 32 bits: D is computed
+// modulo 2^32 (wrapping shift / multiply) and is exact whenever |D| < 2^30. That is proven per call by a float
+// estimate of D: the only rounded operation is the product (exact value < 2^50, error <= 2^25; a contracted FMA
+// is closer), so |estimate| < 2^29 (div) / 2^30 (sqrt) bounds |D| below 2^30 + 2^26 and none of the int32 sums
+// overflow. When the estimate is out of range (q many ulp off, or k outside [0, 31]) or q is a power of two
+// (sqrt), the step falls back to the 64-bit compare, so every decision is the exact one and the result is
+// unchanged bit for bit. At the IEEE result |D| <= mb (div) / 4 ms (sqrt): the fast step decides there always
+// (CPU sweep of 8.4e7 decisions at -6..+6 ulp: 0 mismatches with the 64-bit compare, 99.8 % decided fast).
+// RTX 3090: light.shade 2.57 -> 0.9 ms, taau.resolve 2.09 -> 0.7 ms (docs/unification/RENDERER-HW-RUN.md).
+const int FUSE_RN_UNDECIDED = 2;
+
+float fuse_rn_pow2(int k) { return uintBitsToFloat(uint(k + 127) << 23u); }
+
+int fuse_rn_div_step(uint ma, int ea, uint mb, int eb, float q) {
+    const uint mq = fuse_rn_mantissa(q);
+    const int k = ea - fuse_rn_exponent(q) - eb + 1;
+    if (k >= 0 && k <= 31) {
+        const float estimate = float(ma) * fuse_rn_pow2(k) - float(2u * mq) * float(mb);
+        if (abs(estimate) < 536870912.0) { // 2^29
+            const int d = int((ma << uint(k)) - (2u * mq) * mb);
+            const int b = int(mb);
+            if (d - b > 0) {
+                return 1;
+            }
+            return (mq == 0x800000u ? (2 * d + b < 0) : (d + b < 0)) ? -1 : 0;
+        }
+    }
+    uint m;
+    int e;
+    fuse_rn_mid_up(q, m, e);
+    if (fuse_rn_compare_scaled(ma, ea, fuse_rn_mul(m, mb), e + eb) > 0) { // |a| > mid * |b|: round up
+        return 1;
+    }
+    fuse_rn_mid_down(q, m, e);
+    return fuse_rn_compare_scaled(ma, ea, fuse_rn_mul(m, mb), e + eb) < 0 ? -1 : 0;
+}
+
+int fuse_rn_sqrt_step(uint mx, int ex, float s) {
+    const uint ms = fuse_rn_mantissa(s);
+    const int k = ex - 2 * fuse_rn_exponent(s) + 2;
+    if (ms != 0x800000u && k >= 0 && k <= 31) {
+        const float t = float(2u * ms);
+        const float estimate = float(mx) * fuse_rn_pow2(k) - t * t;
+        if (abs(estimate) < 1073741824.0) { // 2^30
+            const int d = int((mx << uint(k)) - (2u * ms) * (2u * ms));
+            const int m4 = int(4u * ms);
+            if (d - m4 - 1 > 0) {
+                return 1;
+            }
+            return d + m4 - 1 < 0 ? -1 : 0;
+        }
+    }
+    uint m;
+    int e;
+    fuse_rn_mid_up(s, m, e);
+    if (fuse_rn_compare_scaled(mx, ex, fuse_rn_mul(m, m), 2 * e) > 0) { // x > mid^2: round up
+        return 1;
+    }
+    fuse_rn_mid_down(s, m, e);
+    return fuse_rn_compare_scaled(mx, ex, fuse_rn_mul(m, m), 2 * e) < 0 ? -1 : 0;
+}
+
 float fuse_div_rn(float a, float b) {
     const float q0 = a / b;
     if (!fuse_rn_is_normal(a) || !fuse_rn_is_normal(b) || !fuse_rn_is_normal(q0)) {
@@ -90,19 +157,11 @@ float fuse_div_rn(float a, float b) {
     const uint mb = fuse_rn_mantissa(b);
     const int eb = fuse_rn_exponent(b);
     for (uint i = 0u; i < 8u; ++i) {
-        uint m;
-        int e;
-        fuse_rn_mid_up(q, m, e);
-        if (fuse_rn_compare_scaled(ma, ea, fuse_rn_mul(m, mb), e + eb) > 0) { // |a| > mid * |b|: round up
-            q = uintBitsToFloat(floatBitsToUint(q) + 1u);
-        } else {
-            fuse_rn_mid_down(q, m, e);
-            if (fuse_rn_compare_scaled(ma, ea, fuse_rn_mul(m, mb), e + eb) < 0) {
-                q = uintBitsToFloat(floatBitsToUint(q) - 1u);
-            } else {
-                break;
-            }
+        const int step = fuse_rn_div_step(ma, ea, mb, eb, q);
+        if (step == 0) {
+            break;
         }
+        q = uintBitsToFloat(uint(int(floatBitsToUint(q)) + step));
         if (!fuse_rn_is_normal(q)) {
             return q0;
         }
@@ -119,19 +178,11 @@ float fuse_sqrt_rn(float x) {
     const uint mx = fuse_rn_mantissa(x);
     const int ex = fuse_rn_exponent(x);
     for (uint i = 0u; i < 8u; ++i) {
-        uint m;
-        int e;
-        fuse_rn_mid_up(s, m, e);
-        if (fuse_rn_compare_scaled(mx, ex, fuse_rn_mul(m, m), 2 * e) > 0) { // x > mid^2: round up
-            s = uintBitsToFloat(floatBitsToUint(s) + 1u);
-        } else {
-            fuse_rn_mid_down(s, m, e);
-            if (fuse_rn_compare_scaled(mx, ex, fuse_rn_mul(m, m), 2 * e) < 0) {
-                s = uintBitsToFloat(floatBitsToUint(s) - 1u);
-            } else {
-                break;
-            }
+        const int step = fuse_rn_sqrt_step(mx, ex, s);
+        if (step == 0) {
+            break;
         }
+        s = uintBitsToFloat(uint(int(floatBitsToUint(s)) + step));
     }
     return s;
 }
