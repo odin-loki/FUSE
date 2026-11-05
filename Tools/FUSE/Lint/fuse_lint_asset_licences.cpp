@@ -170,9 +170,11 @@ bool isRootManifestFile(const std::string& rel) {
     return rel == "licences.lock.json" || rel == "CREDITS.md" || rel == "sources.lock.json";
 }
 
-/// Rule-1 exceptions: tooling data licensed with the repository (JSON schemas, the licence policy), not content.
+/// Rule-1 exceptions: tooling data licensed with the repository (JSON schemas, the licence policy, the fuse_ai
+/// recipes: prompts, prompt context and look presets), not content.
 bool isToolingDataFile(const std::string& rel) {
-    return (startsWith(rel, "schemas/") && rel.ends_with(".schema.json")) || rel == "models/licence-policy.json";
+    return (startsWith(rel, "schemas/") && rel.ends_with(".schema.json")) || rel == "models/licence-policy.json" ||
+           startsWith(rel, "recipes/ai/");
 }
 
 // ---- FUSE_REMASTER_PLAN §2.6 checks 8-12 (W0.4) -------------------------------------------------------------
