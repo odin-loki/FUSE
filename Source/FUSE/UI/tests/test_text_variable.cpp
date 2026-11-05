@@ -438,6 +438,38 @@ void systemFont(const std::string& path, const char* family, float bold) {
 #endif
 }
 
+// ---- avar 2 ----------------------------------------------------------------------------------------------------
+// data/variable_avar2_test.ttf (make_avar2_test_font.py): variable_test.ttf whose avar 2 store adds 0.5 * normalised
+// wght (above its default) to normalised wdth. Each weight must draw exactly as variable_test.ttf at the wdth that
+// mapping implies, while the design coordinates stay as asked.
+void avar2(const Font& v1) {
+    const auto bytes = readAll("data/variable_avar2_test.ttf");
+    auto f = Font::fromBytes(bytes);
+    UI_CHECK(f && f->isVariable());
+    if (!f) return;
+    const std::uint32_t A = f->glyphIndex(U'A'), B = f->glyphIndex(U'B');
+    struct Case {
+        float wght, wdth; // wdth the avar 2 mapping gives at the default design wdth (100)
+    };
+    for (const Case c : {Case{400.f, 100.f}, Case{250.f, 100.f}, Case{600.f, 115.f}, Case{750.f, 100.f + 50.f * 0.5f * normWeight(750.f)},
+                         Case{900.f, 125.f}}) {
+        const Font& a = at(*f, c.wght);
+        const Font& b = at(v1, c.wght, c.wdth);
+        UI_CHECK(a.variationCoords().size() == 2 && a.variationCoords()[0] == c.wght && a.variationCoords()[1] == 100.f);
+        UI_CHECK(near(advanceUnits(a, A), 300.f + stemOf(c.wght) + 400.f * (c.wdth - 100.f) / 100.f, 0.6f)); // deltas add up
+        UI_CHECK(near(a.advance(A, kPx), b.advance(A, kPx), 0.02f) && near(a.advance(B, kPx), b.advance(B, kPx), 0.02f));
+        const Raster ra = render(a, A, kPx), rb = render(b, A, kPx);
+        UI_CHECK(ra.x0 == rb.x0 && ra.w == rb.w && std::abs(ra.ink() - rb.ink()) <= 255);
+        TextLayout la, lb; // FULL: HarfBuzz shapes at the same normalised coordinates
+        TextLayoutDesc d;
+        d.pixelSize = kPx;
+        layoutText(a, defaultShaper(), "ABCA", d, la);
+        layoutText(b, defaultShaper(), "ABCA", d, lb);
+        UI_CHECK(near(la.width, lb.width, 0.05f));
+    }
+    std::printf("  avar 2: wght 900 draws at wdth 125 (A advance %.1f units)\n", double(advanceUnits(at(*f, 900.f), A)));
+}
+
 void system() {
     const std::string seg = windowsFont("SegUIVar.ttf"), bahn = windowsFont("bahnschrift.ttf");
     if (seg.empty() && bahn.empty()) {
@@ -526,6 +558,7 @@ int main() {
     outlines(*font, bytes);
     paints(*font);
     css(*font);
+    avar2(*font);
     system();
     return finish("fuse_text_variable");
 #endif

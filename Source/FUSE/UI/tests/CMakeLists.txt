@@ -51,6 +51,7 @@ fuse_ui_test(fuse_ui_a11y_tree_dump test_a11y_tree_dump.cpp)
 fuse_ui_test(fuse_ui_text_basics test_text_basics.cpp)
 fuse_ui_test(fuse_text_edit_ops test_text_edit_ops.cpp)
 fuse_ui_test(fuse_text_fallback test_text_fallback.cpp)
+set_tests_properties(fuse_text_fallback PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}) # data/variable_test.ttf
 fuse_ui_test(fuse_ui_widget_interaction test_widget_interaction.cpp)
 
 # UI3 text gates: Unicode conformance files (tests/data/unicode), per-script goldens, system fonts, zero-alloc, DPI.

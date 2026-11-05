@@ -21,11 +21,24 @@ void fullSetFeatures(FullFace* f, std::span<const FontFeature> features);
 float fullShape(FullFace* f, float unitScale, std::string_view utf8, std::vector<ShapedGlyph>& out);
 /// FreeType bitmap box / coverage at an em size of `emPx` pixels (unhinted, grayscale).
 void fullGlyphBox(FullFace* f, std::uint32_t glyph, float emPx, int& x0, int& y0, int& x1, int& y1);
-/// FULL layout: bidi runs (SheenBidi) shaped per direction through the run cache, UAX #14 line breaking
-/// (libunibreak), rule L1 trailing whitespace and L2 reordering per line. Fills `glyphs` (visual order per line, x from
-/// the line start) and `lines` (baseline, width, rtl). `maxWidth` <= 0: no wrapping.
-void fullLayout(FullFace* f, float unitScale, std::string_view utf8, float maxWidth, float lineHeight, float ascent,
-                std::vector<ShapedGlyph>& glyphs, std::vector<TextLine>& lines);
+/// A face of the layout font's fallback chain as fullLayout shapes it: its HarfBuzz face, font units to pixels at its
+/// pixel size, and the synthetic bold widening of its spacing glyphs (pixels).
+struct FullRunFace {
+    FullFace* face = nullptr;
+    float unitScale = 0.f, bold = 0.f;
+};
+/// Bytes [b, e) of the text drawn with fallback face `face` (sorted, disjoint; face 0 everywhere else).
+struct FullFaceSpan {
+    std::uint32_t b = 0, e = 0;
+    std::uint16_t face = 0;
+};
+/// FULL layout: bidi runs (SheenBidi) split at face spans and each piece shaped once, with its face, through that
+/// face's run cache; UAX #14 line breaking (libunibreak) over the real advances, rule L1 trailing whitespace and L2
+/// reordering per line. Fills `glyphs` (visual order per line, x from the line start, `face` set) and `lines`
+/// (baseline, width, rtl). `faces[0]` is the layout font. `maxWidth` <= 0: no wrapping.
+void fullLayout(std::span<const FullRunFace> faces, std::span<const FullFaceSpan> spans, std::string_view utf8,
+                float maxWidth, float lineHeight, float ascent, std::vector<ShapedGlyph>& glyphs,
+                std::vector<TextLine>& lines);
 /// libunibreak breaks per byte (LINEBREAK_* values).
 void fullLineBreaks(std::string_view utf8, std::vector<LineBreak>& out, bool strict);
 /// SheenBidi levels per byte + rule L1 per paragraph; `base`: 0 LTR, 1 RTL, 2 auto.

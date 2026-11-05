@@ -195,6 +195,21 @@ public:
     std::uint16_t faceFor(char32_t cp) const;
     /// Pixel size to use for face `i` so its em matches this font's em at `pixelSize`.
     float facePixelSize(std::uint16_t i, float pixelSize) const;
+    /// Fallbacks follow this font's weight: when weight() >= 600, face(i) is the fallback's bold form: the face given
+    /// to it with setBoldFace (e.g. FontCatalog::match(family, 700)), else a variable fallback's instance at this
+    /// weight, else the fallback emboldened(). Colour fonts are never emboldened.
+    /// This font's weight: the wght coordinate of a variable font, else OS/2 usWeightClass (400 when absent; COOKED
+    /// packs: 400).
+    float weight() const;
+    /// The face to use for this font when it is the fallback of a bold primary (non-owning; nullptr: none).
+    void setBoldFace(const Font* bold);
+    const Font* boldFace() const;
+    /// This font with synthetic bold (owned by this font): advances of spacing glyphs widen and glyphs are smeared to
+    /// the right by em / 24 (FreeType's FT_GlyphSlot_Embolden strength; MSDF: distances biased outward). *this for
+    /// colour fonts, fonts already at weight >= 600 and in COOKED builds.
+    const Font& emboldened() const;
+    /// The synthetic bold strength in pixels at `pixelSize` (0 unless this is an emboldened() font).
+    float syntheticBold(float pixelSize) const;
 
     // ---- Colour glyphs (COLR + CPAL palette 0, CBDT / CBLC, sbix) ----
     // COLRv0 layers are exact. With enableColorGlyphs(), COLRv1 paint graphs (glyphs without a v0 record) and bitmap
@@ -247,6 +262,9 @@ private:
     friend ShapeCacheStats shapeCacheStats(const Font&);
     friend struct detail::FontAccess;
     struct State;
+    float baseAdvance(std::uint32_t glyph, float pixelSize) const;
+    void baseGlyphBox(std::uint32_t glyph, float pixelSize, int& x0, int& y0, int& x1, int& y1) const;
+    void baseRasterise(std::uint32_t glyph, float pixelSize, std::uint8_t* dst, int w, int h, int stride) const;
     static std::expected<Font, TextError> fromCooked(State* st, std::span<const std::uint8_t> pack); // COOKED only
     State* m_state = nullptr; // owned (pimpl); released in ~Font
     std::uint32_t m_id = 0;

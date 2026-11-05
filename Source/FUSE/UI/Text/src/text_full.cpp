@@ -365,8 +365,9 @@ void applyL1(std::string_view s, std::size_t b, std::size_t e, std::uint8_t para
 
 } // namespace
 
-void fullLayout(FullFace* f, float unitScale, std::string_view s, float maxWidth, float lineHeight, float ascent,
-                std::vector<ShapedGlyph>& g, std::vector<TextLine>& lines) {
+void fullLayout(std::span<const FullRunFace> faces, std::span<const FullFaceSpan> spans, std::string_view s,
+                float maxWidth, float lineHeight, float ascent, std::vector<ShapedGlyph>& g, std::vector<TextLine>& lines) {
+    FullFace* const f = faces[0].face; // the layout font: its scratch and bidi cache
     g.clear();
     lines.clear();
     const std::size_t n = s.size();
@@ -413,17 +414,35 @@ void fullLayout(FullFace* f, float unitScale, std::string_view s, float maxWidth
         be->paraLevels.assign(f->paraLevels.begin(), f->paraLevels.end());
     }
 
-    // Shape level runs (never across a newline) in logical order.
+    // Shape level runs (never across a newline) in logical order, split where the face changes: every piece is
+    // shaped once, by the face that draws it, so line breaking sees the real advances.
     f->glyphLevels.clear();
     std::uint32_t i = 0;
+    std::size_t sp = 0;
     while (i < n) {
         std::uint32_t j = i + 1;
         if (s[i] != '\n')
             while (j < n && s[j] != '\n' && f->levels[j] == f->levels[i]) ++j;
-        const std::size_t before = g.size();
-        shapeRun(f, unitScale, s, i, j - i, (f->levels[i] & 1) != 0, g);
+        for (std::uint32_t a = i; a < j;) {
+            while (sp < spans.size() && spans[sp].e <= a) ++sp;
+            std::uint16_t face = 0;
+            std::uint32_t b = j;
+            if (sp < spans.size() && spans[sp].b <= a) {
+                face = spans[sp].face;
+                b = std::min(j, spans[sp].e);
+            } else if (sp < spans.size()) {
+                b = std::min(j, spans[sp].b);
+            }
+            const FullRunFace& rf = faces[face];
+            const std::size_t before = g.size();
+            shapeRun(rf.face, rf.unitScale, s, a, b - a, (f->levels[i] & 1) != 0, g);
+            for (std::size_t k = before; k < g.size(); ++k) {
+                g[k].face = face;
+                if (rf.bold > 0.f && g[k].advance > 0.f) g[k].advance += rf.bold;
+            }
+            a = b;
+        }
         f->glyphLevels.resize(g.size(), f->levels[i]);
-        (void)before;
         i = j;
     }
 
