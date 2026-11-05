@@ -4,10 +4,16 @@
 //
 // What it does: xdg_toplevel windows, wl_shm software present (the CPU raster), the wl_surface handed to the Vulkan
 // presenter (VK_KHR_wayland_surface), wl_pointer / wl_keyboard input (xkbcommon keymaps, client-side key repeat),
-// integer output scale (wl_output.scale -> wl_surface.set_buffer_scale), xdg-decoration server-side frames when the
-// compositor offers them, libwayland-cursor theme cursors, custom-chrome move / resize / maximise / minimise through
-// xdg_toplevel. Not here (yet): popups / tool windows as xdg_popup / subsurfaces (they stay in-window overlays),
-// fractional scale, text-input-v3 (IME pre-edit), the Wayland clipboard (wl_data_device), window icons.
+// output scale (wp_fractional_scale_v1 preferred scale + wp_viewporter destination when offered, else the integer
+// wl_output.scale -> wl_surface.set_buffer_scale), xdg-decoration server-side frames when the compositor offers them,
+// cursors (wp_cursor_shape_v1 when offered, else libwayland-cursor theme cursors), custom-chrome move / resize /
+// maximise / minimise / fullscreen through xdg_toplevel, title changes, window icons (xdg_toplevel_icon_v1 when
+// offered). OS popups (NativeOptions::osPopups) are xdg_popups (nested for submenus) placed by an xdg_positioner
+// relative to their parent, grabbed with the serial of the input that opened them (popup_done closes them); tool
+// windows (NativeOptions::osWindows) are child xdg_toplevels (set_parent) the compositor places (a title drag hands
+// the move to the compositor: xdg_toplevel.move). The clipboard (wl_data_device; zwp_primary_selection_v1 for the
+// primary selection) serves fuse/app/clipboard.hpp; drops from other clients (wl_data_device enter / drop) reach
+// NativeHooks::dropped. IME: zwp_text_input_v3 pre-edit / commit into UiContext::textComposition / textInput.
 //
 // Selection (NativePlatform): Wayland when $FUSE_APP_BACKEND=wayland, or when $DISPLAY is unset and a compositor
 // answers on $WAYLAND_DISPLAY; X11 otherwise ($FUSE_APP_BACKEND=x11 forces X11).
@@ -68,12 +74,83 @@ std::vector<DisplayInfo> displays(const Backend* b);
 int bufferScale(const Window* win);
 unsigned long long serialOf(const Window* win); ///< configures acknowledged (tests)
 
+/// Window scale as the compositor reports it (fractional preferred scale, else the integer output scale).
+fuse::ui::f32 windowScale(const Window* win);
+/// True when the window follows wp_fractional_scale_v1 (buffer through a wp_viewport destination).
+bool fractional(const Window* win);
+void setTitle(Backend* b, Window* win, const std::string& title);
+/// xdg_toplevel set / unset_fullscreen; `fullscreen()` is the state the compositor last configured.
+void setFullscreen(Backend* b, Window* win, bool on);
+bool fullscreen(const Window* win);
+bool activated(const Window* win); ///< xdg_toplevel "activated" state
+/// xdg_toplevel_icon_v1 (square RGBA rasters): false when the compositor has no icon manager.
+bool setIcon(Backend* b, Window* win, const std::vector<const fuse::ui::Image*>& sizes);
+std::vector<int> iconSizes(const Window* win);
+/// The cursor last sent: wp_cursor_shape_v1 shape (> 0) or 0 when it came from the cursor theme / nothing.
+unsigned cursorShapeSent(const Window* win);
+
+// ---- child surfaces: OS popups (xdg_popup) and tool windows (child xdg_toplevel) ----
+struct Child;
+/// Input on a child surface reaches the owner window's UI at `origin` + surface-local position (UI units).
+/// Popups: `anchor` is the popup's top-left relative to `parent`'s (or the owner window's) top-left, `size` its logical
+/// size; grabbed with the serial of the last button / key press when there is one. Waits for the first configure.
+Child* createPopup(Backend* b, Window* owner, Child* parent, fuse::ui::Vec2 anchor, fuse::ui::Size size, fuse::ui::Vec2 origin,
+                   std::string& err);
+/// A tool window: xdg_toplevel with set_parent(owner), its own size (min = max = size, so tiling shells float it).
+Child* createTool(Backend* b, Window* owner, fuse::ui::Size size, fuse::ui::Vec2 origin, const std::string& title, std::string& err);
+void destroyChild(Backend* b, Child* c);
+void setChildOrigin(Child* c, fuse::ui::Vec2 origin);
+/// Tool windows: new logical size (the next present has it).
+void resizeChild(Backend* b, Child* c, fuse::ui::Size size);
+/// `img` is device pixels (size * the owner's scale).
+void presentChild(Backend* b, Child* c, const fuse::ui::Image& img);
+bool captureChild(const Child* c, fuse::ui::Image& out);
+/// Popups: where the compositor placed it, logical, relative to the owner window (nested popups accumulated).
+fuse::ui::Rect childPlacement(const Child* c);
+bool childGrabbed(const Child* c);
+/// The compositor dismissed the popup (popup_done: an outside click, or the grab could not be taken).
+bool childDismissed(const Child* c);
+/// Tool windows: a press on the surface is in progress (its serial can start xdg_toplevel.move).
+bool childPressed(const Child* c);
+/// Hands an in-progress press-drag on a tool window to the compositor (xdg_toplevel.move with the press serial).
+bool moveChild(Backend* b, Child* c);
+/// Called from the event dispatch when a popup is dismissed by the compositor.
+void setDismissHandler(Backend* b, void (*fn)(void* user, Window* owner), void* user);
+
+// ---- clipboard (wl_data_device) and primary selection (zwp_primary_selection_v1) ----
+/// Provides the bytes of `mime` for a paste (called on the UI thread when another client asks).
+using SelectionProvider = bool (*)(void* user, const std::string& mime, std::vector<unsigned char>& out);
+bool hasDataDevice(const Backend* b, bool primary);
+/// Offers `mimes` as the selection (serial: the last input event). False without a data device / seat.
+bool setSelection(Backend* b, bool primary, const std::vector<std::string>& mimes, SelectionProvider fn, void* user);
+/// True while our source is the selection (no cancelled event since).
+bool ownsSelection(const Backend* b, bool primary);
+/// MIME types of the current selection offer (another client's, or ours).
+std::vector<std::string> selectionMimes(Backend* b, bool primary);
+/// Reads the selection in `mime` (receive + pipe, up to `ms` milliseconds).
+bool receiveSelection(Backend* b, bool primary, const std::string& mime, std::vector<unsigned char>& out, int ms = 2000);
+
+// ---- drag and drop from other clients (wl_data_device enter / motion / drop) ----
+using DropHandler = void (*)(void* user, Window* win, fuse::ui::Vec2 at, const std::string& mime, const std::string& data);
+void setDropHandler(Backend* b, DropHandler fn, void* user);
+/// Window under the drag, if any (tests).
+bool dragOver(const Window* win);
+
+// ---- IME (zwp_text_input_v3) ----
+bool hasTextInput(const Backend* b);
+/// enable (caret rect in logical units) / disable the text-input for the focused window; pre-edit / commit arrive in
+/// the window's UI. Returns whether the text-input is enabled for `win`.
+bool syncTextInput(Backend* b, Window* win, bool want, fuse::ui::Rect caret);
+
 /// Input injection for tests (Wayland has no way to post events to another client's surface): delivered as if the
 /// compositor had sent them. `at` in device pixels; kind 0 move, 1 left down, 2 left up.
 void injectPointer(Backend* b, Window* win, fuse::ui::Vec2 at, int kind);
+void injectChildPointer(Backend* b, Child* c, fuse::ui::Vec2 at, int kind);
 /// Delivers a key press + release by Linux evdev code (KEY_A = 30 ...) through the keymap path.
 void injectKey(Backend* b, Window* win, unsigned evdevCode);
 void injectClose(Window* win); ///< xdg_toplevel.close
+/// The bound globals (tests): "wp_fractional_scale_manager_v1", "zwp_text_input_manager_v3", ...
+bool hasGlobal(const Backend* b, const char* iface);
 
 /// No-compositor checks for the fuse_app_wayland gate: libraries resolve, protocol tables are consistent,
 /// xkbcommon turns evdev codes into the expected keysyms / text. Empty string = pass, else what failed.

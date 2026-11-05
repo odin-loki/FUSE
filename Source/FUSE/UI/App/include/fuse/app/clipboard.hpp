@@ -10,6 +10,10 @@
 //   X11:   the CLIPBOARD selection on a private connection: TARGETS, UTF8_STRING / STRING / text/plain;charset=utf-8,
 //          image/png, custom MIME atoms, INCR for large transfers. Requests are served from the NativePlatform event
 //          pump, so other clients can paste only while it runs.
+//   Wayland (a NativePlatform on the Wayland backend): wl_data_device on its connection; the selection offers
+//          text/plain;charset=utf-8 / UTF8_STRING / text/plain / TEXT / STRING, image/png and custom MIME types; a
+//          paste of ours is answered from the pump (lazy items made then), the bytes written off the UI thread.
+//          Other clients' selections reach this client while one of its windows has keyboard focus.
 //   Elsewhere (Android, no display): a process-local store with the same API.
 //
 // UI thread only. NativePlatform::show() routes the window's UiContext clipboard (LineEdit Ctrl+C / X / V) here.
@@ -52,5 +56,10 @@ bool clipboardData(std::string_view mime, std::vector<std::uint8_t>& out);
 std::vector<std::string> clipboardFormats();
 /// True while this process owns the clipboard (it has not been replaced by another application since).
 bool clipboardOwned();
+
+/// The primary selection (select to copy, middle click to paste), text only: X11 PRIMARY, Wayland
+/// zwp_primary_selection_v1. False where there is none (Win32, a compositor without it).
+bool setPrimarySelectionText(std::string_view utf8);
+bool primarySelectionText(std::string& out);
 
 } // namespace fuse::app

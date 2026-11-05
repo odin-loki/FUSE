@@ -341,9 +341,24 @@ and `capture()` (XGetImage) reads a window's own pixels only where the server ke
 Linux backends: X11 (default) or Wayland (`FUSE_APP_BACKEND=wayland`, or when `DISPLAY` is unset and
 `WAYLAND_DISPLAY` is set). Both load their libraries at run time (no headers or libraries at build time). Wayland:
 xdg-shell toplevels, wl_shm software present or a Vulkan swapchain through `VK_KHR_wayland_surface`, xkbcommon keys
-with repeat, integer output scale, server-side decorations when the compositor offers xdg-decoration. Popups and
-floating panels stay in-window overlays there (no global coordinates), and there is no fractional scale, IME
-pre-edit, Wayland clipboard or window icon yet. `NativePlatform::presentTiming(win)` reports the swapchain (image
+with repeat, server-side decorations when the compositor offers xdg-decoration. Scale: `wp_fractional_scale_v1`
+preferred scale with a `wp_viewport` destination when offered (live per-output changes), else the integer
+`wl_output.scale`. OS popups (`NativeOptions::osPopups`) are xdg_popups placed by an xdg_positioner relative to the
+window (submenus nest on the menu's popup), grabbed with the serial of the press that opened them, so an outside
+click ends them (`popup_done`); keys go to the menu while the popup holds the keyboard. Wayland has no global
+coordinates: `screenOrigin()` is 0,0 and `popupScreenRect()` reports where the compositor placed the popup relative to
+the window (it may slide it to keep it on the output). Tool windows (`NativeOptions::osWindows`) are child
+xdg_toplevels (`set_parent`) the compositor places; dragging a floating panel by its title hands the move to the
+compositor (`xdg_toplevel.move`), so re-docking by dragging the OS window back is X11 / Win32 only. The clipboard
+(`fuse/app/clipboard.hpp`: text, image/png, custom MIME types, lazy items) goes through `wl_data_device`, the primary
+selection (`setPrimarySelectionText` / `primarySelectionText`, also X11 PRIMARY) through `zwp_primary_selection_v1`;
+another client's selection arrives while one of our windows has the keyboard focus. Drops from other clients
+(`text/uri-list` or text) reach `NativeHooks::dropped`. IME: `zwp_text_input_v3` is enabled while a text field has
+focus, its pre-edit lands in `UiContext::textComposition` and commits as text input (weston 13 has only
+text-input-v1, so there the IME path is unused). Title changes (`AppWindow::setTitle`, also X11), fullscreen
+(`NativePlatform::setFullscreen`, also X11), custom-chrome move / resize / maximise / minimise through xdg_toplevel,
+cursors through `wp_cursor_shape_v1` or the cursor theme, window icons through `xdg_toplevel_icon_v1` when the
+compositor has it (neither weston 13 nor sway 1.9 does: `setIcon` returns false there). `NativePlatform::presentTiming(win)` reports the swapchain (image
 count, present mode, DWM pacing) and when the last frame was acquired, queued and finished on the GPU.
 
 Custom window chrome (`fuse/app/chrome.hpp`): `WindowDesc::frame = WindowFrame::Custom` (resizable, OS frame removed,
@@ -784,6 +799,8 @@ checks it against the overlay under one scripted event stream.
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
 | `fuse_app_input_latency` | §6 input latency on the Vulkan presenter: a posted OS click recolours a swatch; the first present after the input shows it (no extra frames, colour read back from the OS window); median input → frame queued and GPU-finished ≤ 1 refresh, every sample ≤ (1 + swapchain images − 1) refreshes (`NativePlatform::presentTiming`). RTX 3090 median 1.4 ms, Xvfb + lavapipe 5.9 ms (77 without a display / Vulkan) |
 | `fuse_app_wayland` | Wayland backend: libwayland-client / xkbcommon / wayland-cursor resolve, hand-written xdg-shell / xdg-decoration tables match libwayland's, keymaps (xkbcommon and the fallback); under a headless weston the gate starts (`$FUSE_TEST_WESTON`, or `~/opt/*/usr/bin`): scale 1 and 2 shm buffers equal to the CPU raster, click / typing (injected), resize, close, Vulkan on lavapipe synchronous and async (77 without weston) |
+| `fuse_app_wayland_popups` | X11 parity under headless weston 13 (desktop shell; no seat there, input injected): an OS popup is an xdg_popup outside the window's draw list, placed where the UI put it, buffer = CPU raster; a submenu is a nested xdg_popup and picking in it closes the cascade; a click on an item below the window picks it; an `os-window` node is a child xdg_toplevel (pixels, click into it); fullscreen and custom-chrome maximise configure states; icon support reported (77 without weston) |
+| `fuse_app_wayland_seat` | under headless sway 1.9 (`~/opt/sway` or `$FUSE_TEST_SWAY`), with real seat input from a second client (virtual pointer / keyboard, `tests/wayland_peer.hpp`): fractional scale 1.5 and live output scale 2 / 1.25 (buffers = logical × scale, pixels = CPU raster); a click opens a grabbed xdg_popup, a click on empty desktop dismisses it, keys drive it; typing, `wp_cursor_shape_v1`; the peer as input method (pre-edit → `UiContext::composition`, commit → text); clipboard round trip (text, PNG, custom MIME, lazy item made once; the peer's selection read back), primary selection both ways; a drag of `text/uri-list` from the peer → `NativeHooks::dropped`; the title as sway reports it (77 without sway). Open: the IME commit and drag-and-drop checks still fail |
 | `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster, async Vulkan handover (software frame, resize during the handover, first Vulkan frame) (skips 77 without a display or device) |
 | `fuse_ui_a11y_windows` | UIA client (IUIAutomation) on a real Win32 window: control types and names, screen bounds, Invoke / Toggle / Value / RangeValue / ExpandCollapse, SetFocus + focus-changed event (Windows; skips 77 without AccessKit) |
 | `fuse_ui_vk_damage` | incremental GPU redraw of `DrawList::redrawRegion(damage)` (grown around backdrops): only touched tiles dispatched, result equals a full render |
