@@ -9,6 +9,10 @@ Measured on native Windows 11 (MSVC Release, RTX 3090, Qt 6.11 msvc2022_64), 202
 The Windows desktop was shared with other build agents, so the Qt gates that sample real screen pixels or wall-clock
 budgets varied between runs (noted per row).
 
+Totals (round 5, 2026-11-05, split docking + profiler GPU feed): `ctest -L fuse_editor_ui` 79 / 79 pass on Windows
+(RTX 3090) and on Linux (WSL2, GCC 13, Xvfb + lavapipe; `ui_frame` needed a rerun once the shared machine was idle).
+The new gate is `dock_split`.
+
 Totals (blocker pass, 2026-11-05, after merging the round-4 UI tip):
 - Windows: FUSE `ctest -L fuse_editor_ui` 78 / 78 pass (twins, FUSE-only gates, the blocker gates below and
   `fuse_editor_ui_a11y`).
