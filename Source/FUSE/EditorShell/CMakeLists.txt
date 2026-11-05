@@ -117,6 +117,11 @@ set_tests_properties(fuse_editor_ui_frame PROPERTIES LABELS "fuse_ui;fuse_editor
 set_tests_properties(fuse_editor_ui_scene_viewport fuse_editor_ui_gpu_viewport fuse_editor_ui_live_present fuse_editor_ui_present_adopt
     PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(fuse_editor_ui_build_package fuse_editor_ui_edit_tools fuse_editor_ui_shell_timeline PROPERTIES TIMEOUT 600)
+# Gates that open Samples/unification/demo_3d_empty: its worlds/example.fuselevel is gitignored and cooked by the
+# fuse_sample_level_demo_3d_empty fixture (Tools/FUSE/CMakeLists.txt).
+set_tests_properties(fuse_editor_ui_project_settings fuse_editor_ui_build_package fuse_editor_ui_lighting
+    fuse_editor_ui_play_camera fuse_editor_ui_shell_assets fuse_editor_ui_shell_project
+    PROPERTIES FIXTURES_REQUIRED fuse_sample_level_demo_3d_empty)
 
 # Desktop accessibility (Qt-removal prerequisite): a UI Automation client reads the real editor window (menus, panel
 # pages, inspector fields) and drives it through AccessKit. Windows only; 77 without AccessKit.
