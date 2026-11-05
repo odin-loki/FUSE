@@ -112,7 +112,7 @@ struct GridView {
             for (u32 k = 0; k < nc; ++k) {
                 const u32 idx = (s->first + r) * nc + k;
                 if (idx >= total) break;
-                const Rect t{c.x + f32(k) * s->tileW, c.y + f32(r) * s->tileH, s->tileW, s->tileH};
+                const Rect t = pc.flip(Rect{c.x + f32(k) * s->tileW, c.y + f32(r) * s->tileH, s->tileW, s->tileH}); // RTL: from the right
                 if (t.y >= c.bottom()) break;
                 if (i32(idx) == sel) dl.rect({t.x + 2.f, t.y + 2.f, t.w - 4.f, t.h - 4.f}, acc.withAlpha(acc.a * 0.45f), 5.f);
                 // icon: a rounded tile tinted by index
@@ -129,7 +129,7 @@ struct GridView {
             }
         const u32 rt = rowsTotal(ui, pc.node, *s);
         if (rt > vis) {
-            const Rect tr{c.right() - kBar, c.y, kBar, c.h};
+            const Rect tr = pc.flip(Rect{c.right() - kBar, c.y, kBar, c.h});
             const f32 tl = std::max(16.f, tr.h * f32(vis) / f32(rt));
             dl.rect(tr, pc.tint(Color::rgb(0x000000, 0.15f)), kBar * 0.5f);
             dl.rect({tr.x, tr.y + (tr.h - tl) * f32(s->first) / f32(rt - vis), kBar, tl}, pc.tint(Color::rgb(0x8A8A96, 0.85f)), kBar * 0.5f);
@@ -145,8 +145,9 @@ struct GridView {
         const i64 nc = cols(ui, ec.node, *s);
         switch (e.type) {
         case EventType::PointerDown: {
-            if (e.pos.x >= c.right() - kBar) return true;
-            const i64 k = i64((e.pos.x - c.x) / s->tileW), r = i64((e.pos.y - c.y) / s->tileH) + s->first;
+            const Vec2 p = detail::ltrPoint(ui, ec.node, e.pos, c);
+            if (p.x >= c.right() - kBar) return true;
+            const i64 k = i64((p.x - c.x) / s->tileW), r = i64((p.y - c.y) / s->tileH) + s->first;
             if (k < nc && k >= 0 && r >= 0) {
                 const i64 idx = r * nc + k;
                 if (idx < i64(count(*s))) select(ui, ec.node, *s, idx);
@@ -156,7 +157,7 @@ struct GridView {
         case EventType::Wheel: setFirst(ui, ec.node, *s, i64(s->first) - i64(std::lround(e.wheel.y))); return true;
         case EventType::KeyDown: {
             const i64 cur = i64(ui.value(ec.node));
-            switch (e.key) {
+            switch (detail::visualArrow(ui, ec.node, e.key)) {
             case Key::Right: select(ui, ec.node, *s, cur + 1); return true;
             case Key::Left: select(ui, ec.node, *s, cur < 0 ? 0 : cur - 1); return true;
             case Key::Down: select(ui, ec.node, *s, cur < 0 ? 0 : cur + nc); return true;
@@ -241,25 +242,31 @@ struct ColorPickerW {
     static void paint(const PaintContext& pc, DrawList& dl) {
         const Hsva h = unpack(pc.ui.userData(pc.node));
         const Geo g = geo(pc.content);
+        // left-to-right geometry, mirrored for `direction: rtl` (hue bar on the left, saturation / alpha growing
+        // leftwards): F mirrors rects and points, horizontal ramps swap their ends
+        const bool m = pc.style.rtl;
+        auto F = [&](Rect r) { return pc.flip(r); };
+        auto hRamp = [&](Rect r, Color a, Color b, const std::array<f32, 4>& rad) { dl.gradientRect(F(r), m ? b : a, m ? a : b, false, rad); };
         const Color hueCol = hsvToRgb(h.h, 1.f, 1.f);
-        dl.gradientRect(g.sq, pc.tint(Color::rgb(0xFFFFFF)), pc.tint(hueCol), false, {3.f, 3.f, 3.f, 3.f});
-        dl.gradientRect(g.sq, pc.tint(Color::rgb(0x000000, 0.f)), pc.tint(Color::rgb(0x000000)), true, {3.f, 3.f, 3.f, 3.f});
+        hRamp(g.sq, pc.tint(Color::rgb(0xFFFFFF)), pc.tint(hueCol), {3.f, 3.f, 3.f, 3.f});
+        dl.gradientRect(F(g.sq), pc.tint(Color::rgb(0x000000, 0.f)), pc.tint(Color::rgb(0x000000)), true, {3.f, 3.f, 3.f, 3.f});
         for (int i = 0; i < 6; ++i) {
             const Rect seg{g.hue.x, g.hue.y + g.hue.h * f32(i) / 6.f, g.hue.w, g.hue.h / 6.f + 0.5f};
-            dl.gradientRect(seg, pc.tint(hsvToRgb(f32(i) / 6.f, 1.f, 1.f)), pc.tint(hsvToRgb(f32(i + 1) / 6.f, 1.f, 1.f)), true);
+            dl.gradientRect(F(seg), pc.tint(hsvToRgb(f32(i) / 6.f, 1.f, 1.f)), pc.tint(hsvToRgb(f32(i + 1) / 6.f, 1.f, 1.f)), true);
         }
         const Color rgb = hsvToRgb(h.h, h.s, h.v);
         for (int i = 0; i < int(g.alpha.w / 7.f); ++i) // checker under the alpha ramp
-            dl.rect({g.alpha.x + f32(i) * 7.f, g.alpha.y + ((i & 1) ? 0.f : 7.f), 7.f, 7.f}, pc.tint(Color::rgb(0x55555F)));
-        dl.gradientRect(g.alpha, pc.tint(rgb.withAlpha(0.f)), pc.tint(rgb), false, {3.f, 3.f, 3.f, 3.f});
-        dl.rect(g.swatch, pc.tint(hsvToRgb(h.h, h.s, h.v, h.a)), 3.f);
+            dl.rect(F({g.alpha.x + f32(i) * 7.f, g.alpha.y + ((i & 1) ? 0.f : 7.f), 7.f, 7.f}), pc.tint(Color::rgb(0x55555F)));
+        hRamp(g.alpha, pc.tint(rgb.withAlpha(0.f)), pc.tint(rgb), {3.f, 3.f, 3.f, 3.f});
+        dl.rect(F(g.swatch), pc.tint(hsvToRgb(h.h, h.s, h.v, h.a)), 3.f);
         auto ring = [&](Vec2 p) {
+            p = pc.flip(p);
             dl.roundedRect({p.x - 6.f, p.y - 6.f, 12.f, 12.f}, {}, {6.f, 6.f, 6.f, 6.f}, pc.tint(Color::rgb(0x000000, 0.8f)), 3.f);
             dl.roundedRect({p.x - 5.f, p.y - 5.f, 10.f, 10.f}, {}, {5.f, 5.f, 5.f, 5.f}, pc.tint(Color::rgb(0xFFFFFF)), 1.5f);
         };
         ring({g.sq.x + h.s * g.sq.w, g.sq.y + (1.f - h.v) * g.sq.h});
-        dl.roundedRect({g.hue.x - 2.f, g.hue.y + h.h * g.hue.h - 3.f, g.hue.w + 4.f, 6.f}, {}, {2.f, 2.f, 2.f, 2.f}, pc.tint(Color::rgb(0xFFFFFF)), 1.5f);
-        dl.roundedRect({g.alpha.x + h.a * g.alpha.w - 3.f, g.alpha.y - 2.f, 6.f, g.alpha.h + 4.f}, {}, {2.f, 2.f, 2.f, 2.f}, pc.tint(Color::rgb(0xFFFFFF)), 1.5f);
+        dl.roundedRect(F({g.hue.x - 2.f, g.hue.y + h.h * g.hue.h - 3.f, g.hue.w + 4.f, 6.f}), {}, {2.f, 2.f, 2.f, 2.f}, pc.tint(Color::rgb(0xFFFFFF)), 1.5f);
+        dl.roundedRect(F({g.alpha.x + h.a * g.alpha.w - 3.f, g.alpha.y - 2.f, 6.f, g.alpha.h + 4.f}), {}, {2.f, 2.f, 2.f, 2.f}, pc.tint(Color::rgb(0xFFFFFF)), 1.5f);
         if (pc.states & kStateFocus) dl.roundedRect(pc.rect, {}, {5.f, 5.f, 5.f, 5.f}, accentOf(pc), 1.f);
     }
     static void apply(UiContext& ui, NodeHandle n, Vec2 p) {
@@ -275,18 +282,19 @@ struct ColorPickerW {
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
         UiContext& ui = ec.ui;
+        const Vec2 lp = detail::ltrPoint(ui, ec.node, e.pos, ui.contentRect(ec.node)); // left-to-right space
         if (e.type == EventType::PointerDown) {
             const Geo g = geo(ui.contentRect(ec.node));
-            pickZone = g.sq.contains(e.pos) ? 1 : g.hue.contains(e.pos) ? 2 : g.alpha.contains(e.pos) ? 3 : 0;
-            apply(ui, ec.node, e.pos);
+            pickZone = g.sq.contains(lp) ? 1 : g.hue.contains(lp) ? 2 : g.alpha.contains(lp) ? 3 : 0;
+            apply(ui, ec.node, lp);
             return true;
         }
-        if (e.type == EventType::PointerMove && ui.pressed() == ec.node) { apply(ui, ec.node, e.pos); return true; }
+        if (e.type == EventType::PointerMove && ui.pressed() == ec.node) { apply(ui, ec.node, lp); return true; }
         if (e.type == EventType::PointerUp) { pickZone = 0; return false; }
         if (e.type == EventType::KeyDown) {
             Hsva h = unpack(ui.userData(ec.node));
             const bool sh = e.mods & kModShift; // Shift+Left / Right: alpha
-            switch (e.key) {
+            switch (detail::visualArrow(ui, ec.node, e.key)) {
             case Key::Left: (sh ? h.a : h.s) = std::max(0.f, (sh ? h.a : h.s) - 0.05f); break;
             case Key::Right: (sh ? h.a : h.s) = std::min(1.f, (sh ? h.a : h.s) + 0.05f); break;
             case Key::Up: h.v = std::min(1.f, h.v + 0.05f); break;
@@ -368,17 +376,19 @@ struct CalendarW {
         else std::snprintf(b, sizeof b, "%s %d", kMonths[ym % 12], ym / 12);
         ui.paintString(dl, lh && lh->monthYear ? std::string_view(head) : std::string_view(b), g.head, text, fs,
                        TextAlignment::Center, pc.node.index);
+        // left-to-right geometry; pc.flip mirrors it for `direction: rtl` (the first weekday column and the previous-
+        // month chevron on the right, pointing right)
         for (int side = 0; side < 2; ++side) { // chevrons
             const Rect r = side ? g.next : g.prev;
             const f32 cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f, d = side ? 3.f : -3.f;
-            dl.line({cx - d, cy - 5.f}, {cx + d, cy}, text, 1.5f);
-            dl.line({cx + d, cy}, {cx - d, cy + 5.f}, text, 1.5f);
+            dl.line(pc.flip(Vec2{cx - d, cy - 5.f}), pc.flip(Vec2{cx + d, cy}), text, 1.5f);
+            dl.line(pc.flip(Vec2{cx + d, cy}), pc.flip(Vec2{cx - d, cy + 5.f}), text, 1.5f);
         }
         for (int k = 0; k < 7; ++k) {
             const int iso = (firstDay(ui) - 1 + k) % 7 + 1;
             const std::string_view name =
                 lh && lh->weekdayShort ? lh->weekdayShort(ui.locale(), iso) : std::string_view(kDays[iso - 1]);
-            ui.paintString(dl, name, {g.head.x + f32(k) * g.cellW, g.head.bottom(), g.cellW, g.cellH}, iso >= 6 ? dim : text,
+            ui.paintString(dl, name, pc.flip(Rect{g.head.x + f32(k) * g.cellW, g.head.bottom(), g.cellW, g.cellH}), iso >= 6 ? dim : text,
                            fs * 0.85f, TextAlignment::Center, pc.node.index);
         }
         const i32 z0 = firstCellDay(ui, ym);
@@ -386,7 +396,7 @@ struct CalendarW {
             const i32 z = z0 + i;
             int y, m, d;
             civilFromDays(z, y, m, d);
-            const Rect cell{g.head.x + f32(i % 7) * g.cellW, g.gridY + f32(i / 7) * g.cellH, g.cellW, g.cellH};
+            const Rect cell = pc.flip(Rect{g.head.x + f32(i % 7) * g.cellW, g.gridY + f32(i / 7) * g.cellH, g.cellW, g.cellH});
             const bool inMonth = y * 12 + m - 1 == ym;
             if (z == sel) dl.rect({cell.x + 2.f, cell.y + 1.f, cell.w - 4.f, cell.h - 2.f}, acc, 4.f);
             std::snprintf(b, sizeof b, "%d", d);
@@ -408,17 +418,18 @@ struct CalendarW {
         UiContext& ui = ec.ui;
         if (e.type == EventType::PointerDown) {
             const Geo g = geo(ui, ec.node);
-            if (g.prev.contains(e.pos)) { pageMonth(ui, ec.node, -1, false); return true; }
-            if (g.next.contains(e.pos)) { pageMonth(ui, ec.node, 1, false); return true; }
-            if (e.pos.y >= g.gridY) {
-                const i32 row = i32((e.pos.y - g.gridY) / g.cellH), col = i32((e.pos.x - g.head.x) / g.cellW);
+            const Vec2 p = detail::ltrPoint(ui, ec.node, e.pos, ui.contentRect(ec.node));
+            if (g.prev.contains(p)) { pageMonth(ui, ec.node, -1, false); return true; }
+            if (g.next.contains(p)) { pageMonth(ui, ec.node, 1, false); return true; }
+            if (p.y >= g.gridY) {
+                const i32 row = i32((p.y - g.gridY) / g.cellH), col = i32((p.x - g.head.x) / g.cellW);
                 if (row >= 0 && row < 6 && col >= 0 && col < 7) select(ui, ec.node, firstCellDay(ui, shownMonth(ui, ec.node)) + row * 7 + col);
             }
             return true;
         }
         if (e.type == EventType::KeyDown) {
             const i32 cur = i32(ui.value(ec.node));
-            switch (e.key) {
+            switch (detail::visualArrow(ui, ec.node, e.key)) {
             case Key::Left: select(ui, ec.node, cur - 1); return true;
             case Key::Right: select(ui, ec.node, cur + 1); return true;
             case Key::Up: select(ui, ec.node, cur - 7); return true;
@@ -488,14 +499,15 @@ struct ChartW {
         char b[32];
         for (int i = 0; i <= 4; ++i) {
             const f32 v = lo + (hi - lo) * f32(i) / 4.f, y = std::round(yOf(v));
-            dl.rect({p.x, y, p.w, 1.f}, pc.tint(Color::rgb(0xFFFFFF, i == 0 ? 0.25f : 0.07f)));
+            dl.rect(pc.flip(Rect{p.x, y, p.w, 1.f}), pc.tint(Color::rgb(0xFFFFFF, i == 0 ? 0.25f : 0.07f)));
             std::snprintf(b, sizeof b, "%.4g", double(v));
-            ui.paintString(dl, b, {c.x, y - 8.f, 36.f, 16.f}, dim, fs, TextAlignment::End, pc.node.index);
+            // the value axis on the start side (right in RTL), its labels against the plot (End)
+            ui.paintString(dl, b, pc.flip(Rect{c.x, y - 8.f, 36.f, 16.f}), dim, fs, TextAlignment::End, pc.node.index);
         }
         const u32 n = points(*s);
         const bool bars = s->kind == ChartKind::Bar;
         const u32 ns = u32(s->series.size());
-        dl.pushClip({p.x, p.y - 4.f, p.w, p.h + 5.f});
+        dl.pushClip(pc.flip(Rect{p.x, p.y - 4.f, p.w, p.h + 5.f})); // RTL: the first point on the right
         for (u32 k = 0; k < ns; ++k) {
             const Series& se = s->series[k];
             const Color col = pc.tint(se.color);
@@ -505,23 +517,23 @@ struct ChartW {
                 case ChartKind::Bar: {
                     const f32 slot = p.w / f32(std::max(1u, n)), bw = slot * 0.8f / f32(std::max(1u, ns));
                     const f32 bx = x - slot * 0.4f + f32(k) * bw, y0 = yOf(0.f);
-                    dl.rect({bx + 1.f, std::min(y, y0), bw - 2.f, std::max(1.f, std::abs(y0 - y))}, col, 2.f);
+                    dl.rect(pc.flip(Rect{bx + 1.f, std::min(y, y0), bw - 2.f, std::max(1.f, std::abs(y0 - y))}), col, 2.f);
                     break;
                 }
                 case ChartKind::Scatter:
-                    dl.rect({x - 3.f, y - 3.f, 6.f, 6.f}, col, 3.f);
+                    dl.rect(pc.flip(Rect{x - 3.f, y - 3.f, 6.f, 6.f}), col, 3.f);
                     break;
                 case ChartKind::Area:
                     if (i + 1 < se.v.size()) { // filled with 2 px columns under the segment
                         const f32 x1 = xAt(p, i + 1, n, false), y1 = yOf(se.v[i + 1]), y0 = yOf(0.f);
                         for (f32 cx = x; cx < x1; cx += 2.f) {
                             const f32 t = (cx - x) / std::max(1.f, x1 - x), cy = y + (y1 - y) * t;
-                            dl.rect({cx, std::min(cy, y0), std::min(2.f, x1 - cx), std::abs(y0 - cy)}, col.withAlpha(col.a * 0.35f));
+                            dl.rect(pc.flip(Rect{cx, std::min(cy, y0), std::min(2.f, x1 - cx), std::abs(y0 - cy)}), col.withAlpha(col.a * 0.35f));
                         }
                     }
                     [[fallthrough]];
                 case ChartKind::Line:
-                    if (i + 1 < se.v.size()) dl.line({x, y}, {xAt(p, i + 1, n, false), yOf(se.v[i + 1])}, col, 2.f);
+                    if (i + 1 < se.v.size()) dl.line(pc.flip(Vec2{x, y}), pc.flip(Vec2{xAt(p, i + 1, n, false), yOf(se.v[i + 1])}), col, 2.f);
                     break;
                 }
             }
@@ -533,13 +545,13 @@ struct ChartW {
             const Series& se = s->series[k];
             const f32 w = ui.measureString(se.name, fs) + 22.f;
             lx -= w;
-            dl.rect({lx, c.y + 5.f, 10.f, 10.f}, pc.tint(se.color), 2.f);
-            ui.paintString(dl, se.name, {lx + 14.f, c.y, w - 14.f, 20.f}, text, fs, TextAlignment::Start, pc.node.index);
+            dl.rect(pc.flip(Rect{lx, c.y + 5.f, 10.f, 10.f}), pc.tint(se.color), 2.f);
+            ui.paintString(dl, se.name, pc.flip(Rect{lx + 14.f, c.y, w - 14.f, 20.f}), text, fs, TextAlignment::Start, pc.node.index);
         }
         const i32 hov = i32(ui.value(pc.node));
         if (hov >= 0 && u32(hov) < n) {
             const f32 x = std::round(xAt(p, u32(hov), n, bars));
-            dl.rect({x, p.y, 1.f, p.h}, pc.tint(Color::rgb(0xFFFFFF, 0.3f)));
+            dl.rect(pc.flip(Rect{x, p.y, 1.f, p.h}), pc.tint(Color::rgb(0xFFFFFF, 0.3f)));
             std::string r = "#" + std::to_string(hov);
             for (const Series& se : s->series)
                 if (u32(hov) < se.v.size()) { std::snprintf(b, sizeof b, "  %s %.4g", se.name.c_str(), double(se.v[hov])); r += b; }
@@ -557,11 +569,12 @@ struct ChartW {
         }
         if (e.type == EventType::PointerMove) {
             const Rect p = plot(ui, ec.node);
+            const Vec2 q = detail::ltrPoint(ui, ec.node, e.pos, ui.contentRect(ec.node));
             const u32 n = points(*s);
             i32 idx = -1;
-            if (n && p.contains(e.pos)) {
+            if (n && p.contains(q)) {
                 const bool bars = s->kind == ChartKind::Bar;
-                const f32 t = bars ? (e.pos.x - p.x) / p.w * f32(n) - 0.5f : (e.pos.x - p.x) / p.w * f32(n - 1);
+                const f32 t = bars ? (q.x - p.x) / p.w * f32(n) - 0.5f : (q.x - p.x) / p.w * f32(n - 1);
                 idx = std::clamp(i32(std::lround(t)), 0, i32(n) - 1);
             }
             if (f32(idx) != ui.value(ec.node)) { ui.setValue(ec.node, f32(idx), true); ui.invalidate(ec.node); }
@@ -571,7 +584,7 @@ struct ChartW {
             const i32 n = i32(points(*s)), cur = i32(ui.value(ec.node));
             if (!n) return false;
             i32 to;
-            switch (e.key) {
+            switch (detail::visualArrow(ui, ec.node, e.key)) {
             case Key::Left: to = cur < 0 ? 0 : std::max(0, cur - 1); break;
             case Key::Right: to = std::min(n - 1, cur + 1); break;
             case Key::Home: to = 0; break;

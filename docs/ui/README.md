@@ -244,7 +244,8 @@ what it does not take falls through to the core.
 - **Focus**: Tab / Shift+Tab walk the tab order of the current scope (wrapping); Ctrl+Tab / Ctrl+Shift+Tab always move
   focus, also out of widgets that take Tab (the code editor indents on Tab). Keyboard focus sets `:focus-visible`, which
   the default themes (dark and light) show as an accent ring or highlight on every focusable widget, and scrolls the
-  node into view inside scroll containers. Tooltips also show on keyboard focus.
+  node into view inside scroll containers, vertically and horizontally (a right-to-left container from its right
+  edge; a node wider than the view shows its start edge). Tooltips also show on keyboard focus.
 - **Activation**: Enter / Space click buttons, tool buttons, links, check boxes, switches, menu titles and items.
 - **Disabled** widgets refuse focus: Tab, radio arrows and menu bar arrows skip them.
 - **Choices and ranges**: radio buttons move and check with the arrows (wrapping within the siblings); sliders, dials,
@@ -252,20 +253,32 @@ what it does not take falls through to the core.
 - **Combo box**: Up / Down / Home / End pick in place; Alt+Down, F4, Space or Enter open the list, arrows + Enter
   pick, Escape closes it. The date-time edit opens its calendar the same way (Left / Right pick the field, Up / Down
   step it, digits type it).
-- **Menus**: F10 (when no widget takes it) moves focus to the first menu bar and back; in the bar Left / Right / Home /
+- **Menus**: F10 (when no widget takes it), or Alt pressed and released on its own (Windows convention: not after
+  another key, a click or with Ctrl / Shift, so AltGr and Alt+key shortcuts never toggle; `Key::Alt` comes from Win32
+  `VK_MENU`, which then skips the window-menu mode, X11 `Alt_L` / `Alt_R` and Android), moves focus to the first
+  menu bar and back; in the bar Left / Right / Home /
   End move between titles, Down / Enter / Space open; in a menu Up / Down / Home / End move, Enter picks, Right / Left
   open / close submenus or switch to the neighbouring bar menu, Escape closes (and in the bar returns to where F10
   came from). Unconsumed keys reach the root's `SignalKind::Event` signal for app-wide shortcuts.
 - **Views**: list, tree, table and grid views take arrows, Home / End, PageUp / PageDown and Enter (Submitted); tree
-  views Left / Right collapse / expand; tab bars Left / Right / Home / End.
+  views Left / Right collapse / expand; tab bars Left / Right / Home / End. Table headers: Left / Right pick the
+  keyboard column (outlined while focus is visible), Ctrl+Enter sorts by it (again: reverses; `Toggled` as a header
+  click), Ctrl+Left / Ctrl+Right move its end edge by 8 px (Shift: 1 px; `Event {value = column}`).
 - **Containers**: splitter handles are focusable (arrows resize by 16 px); a dock title closes its dock on Enter,
   Space or Delete; dialogs trap focus and Escape closes them (a file dialog reports Submitted with an empty path).
 - **Pro widgets**: colour picker arrows (saturation / value), Shift+Left / Right (alpha), Page keys (hue); calendar
   arrows (day / week), Page keys (month), Home / End (month start / end); chart Left / Right / Home / End step the
   readout; node graph PageUp / PageDown select a node, arrows move it (Shift: fine) or pan with none selected, Delete
-  removes, Escape deselects; curve editor PageUp / PageDown / Home / End select a key, arrows move it (Shift: x10),
-  Delete removes; timeline arrows (a frame), Page keys (a second), Home / End; video Space plays / pauses, Left /
-  Right step a frame, Home / End; the viewport forwards keys but not Tab.
+  removes, Escape deselects; links: Enter on the selected node starts one at its first output (Up / Down pick the
+  output), Enter moves to the target (the next node with inputs; PageDown / PageUp pick another, Up / Down its
+  input; the pins are ringed and the pending link drawn), Enter connects (the usual type / cycle rules),
+  Backspace / Delete remove the link into the picked input, Escape cancels; curve editor PageUp / PageDown / Home /
+  End select a key, arrows move it (Shift: x10), Delete removes, Insert adds a key on the curve (halfway to the next
+  key from the selected one, else mid-range) and selects it; timeline arrows (a frame), Page keys (a second), Home /
+  End move the playhead, Ctrl+Down / Ctrl+Up select the next / previous clip (outlined; track order, then start
+  time), Ctrl+Right / Ctrl+Left move it by a frame (the snap step; Ctrl+Shift: a second; `Event {value = 2}`),
+  Escape deselects; video Space plays / pauses, Left / Right step a frame, Home / End; the viewport forwards keys but
+  not Tab.
 
 ### Documents and Lua
 
@@ -698,10 +711,27 @@ edge) with the vertical bar on the left. Widgets mirror: indicators of check box
 scroll bar (minimum on the right; Left increases a slider), spin / combo arrows, line edit alignment, tab bar and menu
 bar order, tree indentation (Left expands), list scroll indicator. Popup menus of an RTL owner inherit its direction and
 take `at` as their top-right corner (aligned to the right edge of the menu button / combo box); submenus open to the
-left and Left / Right open / close them. Not mirrored yet: the Tier B2 / C / D widgets (table, splitter, dock, grid
-view, calendar, chart, colour picker, node graph, curve editor, timeline, code edit, date-time edit), `popupPanel`,
-tooltips, and the line edit caret over bidi text (paragraph direction still comes from the text's first strong
-character).
+left and Left / Right open / close them. Tier B2 / C / D: splitters put the first pane on the right (drags and arrows
+move the handle on the screen), dock areas mirror (the Left region on the right, as in Qt) with the dock title's close
+box at its left end, tables lay columns out from the right (header sort / resize grips mirrored, the vertical bar on
+the left, Left / Right pick the next / previous column visually), grid views fill from the right, the calendar's
+first weekday column and previous-month chevron are on the right, charts put the first point on the right and the
+value axis on the right, the colour picker is its mirror image (hue bar on the left, saturation and alpha growing to
+the left), and a node graph mirrors on screen (inputs on a node's right, outputs on its left, links leaving to the
+left; stored positions and `nodeGraphNodePos` stay left-to-right, `nodeGraphPinPos` is on the screen). Arrow keys
+move visually in all of them. Tooltips take their node's direction and hang from its right edge; `popupPanel` takes
+its owner's direction like popup menus (`at` = top-right corner). Left-to-right islands by design: the code editor
+(code), the date-time edit's ISO field (its calendar popup follows the surroundings), and the time axes of the curve
+editor, timeline and video widget (media time runs left to right); they set `direction: ltr` inline when created.
+
+The paragraph direction of text follows `direction` when it is set on the node or an ancestor (`ComputedStyle::dirSet`;
+`baseDirection(style)`, `TextLayoutDesc::base`), so "abc!" in an RTL label reads "!abc"; without it the first strong
+character decides (UAX #9 P2 / P3). FULL only (MINIMAL has no bidi). The line edit then moves its caret in visual
+order over bidi text (FULL): the text is laid out as drawn, each cluster start is a caret stop at its leading edge,
+Left / Right go to the nearest stop on the screen (inside a Hebrew run the logical position goes down while the caret
+goes right), Ctrl+arrows move by words (forwards = Left in an RTL paragraph), a click lands on the nearest stop and
+the selection highlights the selected clusters wherever they are drawn. During IME pre-edit, and for text without
+right-to-left characters in an LTR paragraph, it measures logical prefixes as before.
 
 ## Immediate mode
 
@@ -718,8 +748,8 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_event_routing` | capture/target/bubble, stop, click semantics, pointer capture, hover, disabled, modal, `post()` |
 | `fuse_ui_focus_order` | tab order, tab index, skipping, wrap, focus-visible, keyboard activation, spatial nav, modal trap |
 | `fuse_ui_cpu_raster_golden` | rasteriser primitives and the sample tree against `tests/golden/sample.png` (`sample_full.png` in FULL) |
-| `fuse_ui_rtl_layout` | `direction: rtl`: mirrored box rows / justify / align / grid / flow with physical margins, inheritance, `text-align`, slider pointer + keys, tab bar, tree keys, scroll bar side and horizontal start, right-aligned menus and submenus to the left; text-free widgets render as the mirror image of LTR; RTL sample against `tests/golden/rtl_layout.png` (`rtl_layout_full.png` in FULL) |
-| `fuse_ui_keyboard_only` | a form with every interactive Tier A–D widget driven only by keyDown / keyUp / textInput: Tab and Shift+Tab reach every widget in one order, each is operated by its keys (see "Keyboard model"), menus by F10 / arrows / Escape, the file dialog traps focus and Escape cancels, keyboard focus scrolls into view; focused vs unfocused paint differs for every focusable widget in the dark and light themes |
+| `fuse_ui_rtl_layout` | `direction: rtl`: mirrored box rows / justify / align / grid / flow with physical margins, inheritance, `text-align`, slider pointer + keys, tab bar, tree keys, scroll bar side and horizontal start, right-aligned menus and submenus to the left; Tier B2 / C / D: splitter pane side + arrows + drag, dock region side + title close box, table header sort / resize grip / keyboard column / Ctrl+arrow resize / bar side, grid view tiles + keys, calendar columns + chevron + keys, chart point order + keys, colour picker keys + pointer, node graph pin sides + link drag + keys; tooltip and `popupPanel` placement and direction, left-to-right islands (code, date-time, curve, timeline); FULL: paragraph direction from `direction` (set / unset / RTL), line edit caret in visual order over mixed text (LTR and RTL fields), click to the nearest stop; text-free widgets (Tier A and a colour picker / splitter / node graph / grid view set) render as the mirror image of LTR; RTL sample against `tests/golden/rtl_layout.png` (`rtl_layout_full.png` in FULL) |
+| `fuse_ui_keyboard_only` | a form with every interactive Tier A–D widget driven only by keyDown / keyUp / textInput: Tab and Shift+Tab reach every widget in one order, each is operated by its keys (see "Keyboard model"), menus by F10 / arrows / Escape and by Alt alone (not after a key, a click or with Ctrl; a repeating Alt counts), table header sort / resize keys, node graph keyboard links (connect, cancel, remove), curve Insert, timeline clip select / move (snap step, a second, clamped), the file dialog traps focus and Escape cancels, keyboard focus scrolls into view vertically and horizontally (LTR and RTL rows); focused vs unfocused paint differs for every focusable widget in the dark and light themes |
 | `fuse_ui_zero_alloc_steady` | zero heap allocations over 50 interactive frames after warm-up |
 | `fuse_ui_bench_10k` | 10k nodes, one dirty label: ≤ 0.5 ms median (Release; 1.0 ms in FULL) |
 | `fuse_ui_single_thread_parity` | direct vs posted-from-threads mutations give identical layout, draw list and pixels |
@@ -751,7 +781,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_vk_sdf_quads` | SDF-quad backend vs the CPU reference (sample, primitives, blur + effects between draws, scissored redraw): max error ≤ 2, mean ≤ 0.1 / 255; validation clean; reports compute vs SDF timings at 1080p and 4K |
 | `fuse_ui_vk_budget` | GPU time (timestamp queries) of 1080p frames: full, backdrop blur, incremental, a ~270-node HUD ≤ 0.5 ms (software devices report only) |
 | `fuse_app_native_startup` | launches `hello_app` 5× per configuration: default (async Vulkan) and software-only first frame median ≤ 150 ms; every default run switches to Vulkan (median ≤ 2 s) with the switched frame equal to the CPU raster; synchronous Vulkan init ≤ 2 s (skips 77 without a display) |
-| `fuse_app_binary_size` | `hello_app` file size ≤ measured baseline + 10 % (MSVC x64 Release, MINIMAL text: standalone 870,912 B → 958,000 B, in the engine tree 904,192 B → 994,600 B; Linux x86-64 Release, MINIMAL, stripped: GCC 13 standalone 1,530,488 B → 1,683,600 B, engine tree 1,591,928 B → 1,751,200 B, Clang 23 standalone 1,179,616 B → 1,297,600 B; other toolchains report and skip until a baseline is set with `-DFUSE_APP_BINARY_BUDGET`). Effect and SDF-quad SPIR-V live in their own translation units, so apps that do not use them do not carry it |
+| `fuse_app_binary_size` | `hello_app` file size ≤ measured baseline + 10 % (MSVC x64 Release, MINIMAL text: standalone 870,912 B → 958,000 B, in the engine tree 904,192 B → 994,600 B; Linux x86-64 Release, MINIMAL, stripped: GCC 13 standalone 1,530,488 B → 1,683,600 B, engine tree 1,591,928 B → 1,751,200 B, Clang 23 standalone 1,179,616 B → 1,297,600 B; other toolchains report and skip until a baseline is set with `-DFUSE_APP_BINARY_BUDGET`). Effect and SDF-quad SPIR-V live in their own translation units, so apps that do not use them do not carry it; with MSVC the Tier B / B2 / C / D widget sources are compiled with `/Os` (favour size: event- and paint-bound editor widgets, not the 10k-node path), which keeps the standalone binary at about 954 KB |
 | `fuse_app_window_chrome` | custom-chrome window: `chromeHitTest` probes, then `WM_NCHITTEST` on a real Win32 window, frame removed, max / restore / min / close through non-client clicks; X11 (Xvfb, the gate watching the root like a WM): `_MOTIF_WM_HINTS`, `_NET_WM_MOVERESIZE` direction / position per probe, edge cursors, `_NET_WM_STATE` maximise / restore applied by the gate, `WM_CHANGE_STATE`, close (77 without a display) |
 | `fuse_app_tray` | Win32: tray icon added and found (`Shell_NotifyIconGetRect` / `NIM_MODIFY`), simulated click / double-click callbacks, a real `TrackPopupMenu` context menu picked by posted keys, a notification, removal. Unix (under `dbus-run-session`, the gate plays watcher, notification daemon and tray host): registration, `IconPixmap` / `ToolTip` properties and change signals, `Activate`, dbusmenu layout + click, notification + `ActionInvoked`, name released on removal, `Unsupported` without a daemon (77 without a tray / private bus) |
 | `fuse_ui_a11y_linux` | AT-SPI client (libatspi, loaded at runtime) on a real X11 window under `dbus-run-session` + Xvfb; the gate starts the accessibility bus and enables AT-SPI: the app in the registry, roles and names (push button, check box, slider, entry, list, tree, menu bar / item), states (enabled, focusable, checked; disabled), screen extents of a button, `click` on a button / check box, `Value` on the slider, `grab_focus` + focus event, `Text` read-back and a text change, File menu opened / closed by `click` (skips 77 without AccessKit / libatspi / a session bus) |

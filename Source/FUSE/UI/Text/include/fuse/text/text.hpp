@@ -65,6 +65,9 @@ enum class BaseDirection : std::uint8_t { Ltr, Rtl, Auto };
 /// level of its (last) paragraph; Auto applies P2/P3 with LTR as default. MINIMAL: no bidi, returns false with every
 /// level at the base level. Gate fuse_text_bidi_conformance runs BidiCharacterTest.txt.
 bool bidiLevels(std::string_view utf8, BaseDirection base, std::vector<std::uint8_t>& levels, std::uint8_t& paraLevel);
+/// True when `utf8` holds a right-to-left character or an RLM / RLE / RLO mark (Hebrew, Arabic, Syriac, Thaana, NKo,
+/// presentation forms): text that needs the bidi pass. Pure left-to-right text is shown in logical order.
+bool hasRtlText(std::string_view utf8);
 /// Rule L2: visual order of units with `levels`; out[k] = logical index shown at visual position k.
 void reorderVisual(std::span<const std::uint8_t> levels, std::vector<std::uint32_t>& out);
 
@@ -326,6 +329,9 @@ struct TextLayoutDesc {
     TextAlign align = TextAlign::Start;
     bool elide = false; ///< single line clipped to maxWidth with an ellipsis
     bool rtl = false;   ///< right-to-left base direction (UI `direction: rtl`): Start / End of every line follow it
+    /// Paragraph base direction for bidi (FULL): Auto = the first strong character (P2 / P3), Ltr / Rtl = given (the UI
+    /// passes the `direction` property when it is set). MINIMAL has no bidi and ignores it.
+    BaseDirection base = BaseDirection::Auto;
 };
 
 /// A shaped, line-broken block. Reuse one object per text node: relayout keeps every buffer's capacity.
@@ -515,6 +521,8 @@ public:
     void backspace();
     void del();
     void moveLeft(bool select);
+    /// Puts the cursor at byte `pos` (clamped to the text; widgets moving the caret in visual order over bidi text).
+    void setCursor(std::size_t pos, bool select);
     void moveRight(bool select);
     void wordLeft(bool select);
     void wordRight(bool select);

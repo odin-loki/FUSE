@@ -366,7 +366,8 @@ void applyL1(std::string_view s, std::size_t b, std::size_t e, std::uint8_t para
 } // namespace
 
 void fullLayout(std::span<const FullRunFace> faces, std::span<const FullFaceSpan> spans, std::string_view s,
-                float maxWidth, float lineHeight, float ascent, std::vector<ShapedGlyph>& g, std::vector<TextLine>& lines) {
+                float maxWidth, float lineHeight, float ascent, std::vector<ShapedGlyph>& g, std::vector<TextLine>& lines,
+                int base) {
     FullFace* const f = faces[0].face; // the layout font: its scratch and bidi cache
     g.clear();
     lines.clear();
@@ -378,24 +379,28 @@ void fullLayout(std::span<const FullRunFace> faces, std::span<const FullFaceSpan
                                reinterpret_cast<char*>(f->breaks.data()));
     f->levels.assign(n, 0);
     f->paraLevels.assign(n, 0);
-    const bool bidi = n && hasRtl(s);
+    // a given RTL base direction needs the bidi pass for any text (neutrals at the ends take the paragraph's level)
+    const bool bidi = n && (base == 1 || hasRtl(s));
     FullFace::BidiEntry* be = nullptr;
+    bool cached = false;
+    std::uint64_t h = 0;
     if (bidi) {
-        const std::uint64_t h = hashRun(s, false);
+        h = hashRun(s, false) ^ (0x9E3779B97F4A7C15ull * std::uint64_t(base + 1)); // keyed on the base direction too
         be = &f->bidiCache[h % FullFace::kBidiEntries];
         if (be->hash == h && be->text == s) { // seen before: no SheenBidi run
             f->levels.assign(be->levels.begin(), be->levels.end());
             f->paraLevels.assign(be->paraLevels.begin(), be->paraLevels.end());
-        } else {
-            be->hash = h;
+            cached = true;
         }
     }
-    if (bidi && be->text != s) {
+    if (bidi && !cached) {
+        be->hash = h;
+        const SBLevel want = base == 0 ? 0 : base == 1 ? 1 : SBLevelDefaultLTR;
         SBCodepointSequence seq{SBStringEncodingUTF8, const_cast<char*>(s.data()), SBUInteger(n)};
         SBAlgorithmRef alg = SBAlgorithmCreate(&seq);
         SBUInteger off = 0;
         while (alg && off < n) {
-            SBParagraphRef para = SBAlgorithmCreateParagraph(alg, off, SBUInteger(n - off), SBLevelDefaultLTR);
+            SBParagraphRef para = SBAlgorithmCreateParagraph(alg, off, SBUInteger(n - off), want);
             if (!para) break;
             const SBUInteger plen = SBParagraphGetLength(para);
             const SBLevel* lv = SBParagraphGetLevelsPtr(para);

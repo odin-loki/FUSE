@@ -40,6 +40,8 @@ enum class Key : u16 {
     B, F, G, H, I, J, K, L, M, P, R, T, U, Num0, Num5, Num6, Num7, Num8, Num9, ///< rebindable editor shortcuts
     F1, F3, F4, F6, F7, F8, F9, F11, F12,
     BracketLeft, BracketRight, ///< timeline previous / next key
+    Insert, ///< curve editor: add a key
+    Alt,    ///< either Alt key on its own (pressed and released alone: the menu bar, as F10)
     Other
 };
 enum Mods : u8 { kModShift = 1, kModCtrl = 2, kModAlt = 4, kModSuper = 8 };
@@ -118,6 +120,11 @@ struct A11ySnapshotNode {
 /// Horizontal mirror of `r` / `x` inside `box` (right-to-left widgets compute left-to-right geometry, then mirror it).
 inline Rect mirrorX(const Rect& r, const Rect& box) { return {2.f * box.x + box.w - r.x - r.w, r.y, r.w, r.h}; }
 inline f32 mirrorX(f32 x, const Rect& box) { return 2.f * box.x + box.w - x; }
+/// Paragraph base direction of a node's text: the `direction` property when it is set (on the node or an ancestor),
+/// else Auto (the first strong character).
+inline fuse::text::BaseDirection baseDirection(const ComputedStyle& s) {
+    return !s.dirSet ? fuse::text::BaseDirection::Auto : s.rtl ? fuse::text::BaseDirection::Rtl : fuse::text::BaseDirection::Ltr;
+}
 
 struct PaintContext {
     UiContext& ui;
@@ -334,8 +341,11 @@ public:
     /// Goes to the focused node (capture / target / bubble). Unconsumed: Enter / Space click an interactive node, Tab /
     /// Shift+Tab move focus (Ctrl+Tab always does, before the node sees it), arrows navigate spatially when enabled,
     /// and anything left is emitted as SignalKind::Event {value = Key, event} on the root (application shortcuts).
-    /// Keyboard focus scrolls into view inside scroll containers.
+    /// Keyboard focus scrolls into view inside scroll containers (both axes; RTL containers from their right edge).
     bool keyDown(Key k, u8 mods = 0);
+    /// Goes to the focused node. Alt pressed and released with no other key, button or modifier in between (Windows
+    /// convention) is emitted as SignalKind::Event {value = Key::Alt, event (KeyUp)} on the root when the focused node
+    /// does not take the release: the widgets toggle the menu bar on it, as on F10. Returns true when consumed.
     bool keyUp(Key k, u8 mods = 0);
     bool textInput(std::string_view utf8);
     /// IME pre-edit for the focused node (empty `utf8` ends it); `caret` is a byte offset into it. The pre-edit is
@@ -561,6 +571,7 @@ private:
     u32 m_seenSheetVersion = 0;
     NodeHandle m_hover, m_pressed, m_focus, m_modal;
     bool m_focusVisible = false;
+    bool m_altArmed = false; ///< Alt went down alone and nothing else happened since (keyUp(Alt) toggles the menu bar)
     bool m_spatialNav = false;
     std::string m_composition;
     i32 m_compositionCaret = 0;

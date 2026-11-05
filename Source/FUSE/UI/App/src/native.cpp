@@ -148,6 +148,8 @@ Key mapKey(KeySym s, bool& ascii) {
     case 0xffbf: return Key::F2;
     case 0xffc2: return Key::F5;
     case 0xffc7: return Key::F10;
+    case 0xffe9: case 0xffea: return Key::Alt; // Alt_L / Alt_R (not ISO_Level3_Shift: AltGr)
+    case 0xff63: return Key::Insert;
     case 0xffbe: return Key::F1;
     case 0xffc0: return Key::F3;
     case 0xffc1: return Key::F4;
@@ -481,6 +483,8 @@ Key mapVk(WPARAM vk, bool& ascii) {
     case VK_F2: return Key::F2;
     case VK_F5: return Key::F5;
     case VK_F10: return Key::F10;
+    case VK_MENU: case VK_LMENU: case VK_RMENU: return Key::Alt;
+    case VK_INSERT: return Key::Insert;
     case VK_F1: return Key::F1;
     case VK_F3: return Key::F3;
     case VK_F4: return Key::F4;
@@ -577,7 +581,7 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         const u8 md = winMods();
         if (k != Key::Other) { // printable keys too: viewport WASD / 1-4; text arrives separately
             if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) ui.keyDown(k, md);
-            else ui.keyUp(k, md);
+            else if (ui.keyUp(k, md) && k == Key::Alt) return 0; // the UI's menu bar took Alt: no window-menu mode
         }
         break;
     }

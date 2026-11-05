@@ -260,6 +260,24 @@ void lineBreaks(std::string_view s, std::vector<LineBreak>& out, LineBreakStyle 
 #endif
 }
 
+bool hasRtlText(std::string_view s) {
+    for (std::size_t i = 0; i + 1 < s.size(); ++i) {
+        const unsigned char c = static_cast<unsigned char>(s[i]), d = static_cast<unsigned char>(s[i + 1]);
+        if (c >= 0xD6 && c <= 0xDF) return true;               // U+0580..U+07FF
+        if (c == 0xE0 && d >= 0xA0 && d <= 0xA3) return true;  // U+0800..U+08FF
+        if (c == 0xEF && d >= 0xAC && d <= 0xBB) return true;  // U+FB00..U+FEFF
+        if (c == 0xE2 && d == 0x80 && i + 2 < s.size()) {
+            const unsigned char e = static_cast<unsigned char>(s[i + 2]);
+            if (e == 0x8F || e == 0xAB || e == 0xAE) return true; // RLM, RLE, RLO
+        }
+        if (c == 0xF0 && d >= 0x90 && d <= 0x9E && i + 2 < s.size()) { // U+10800..U+10FFF, U+1E800..U+1EFFF
+            const unsigned char e = static_cast<unsigned char>(s[i + 2]);
+            if ((d == 0x90 && e >= 0xA0) || (d == 0x9E && e >= 0xA0)) return true;
+        }
+    }
+    return false;
+}
+
 bool bidiLevels(std::string_view s, BaseDirection base, std::vector<std::uint8_t>& levels, std::uint8_t& paraLevel) {
 #if FUSE_TEXT_FULL
     detail::fullBidiLevels(s, int(base), levels, paraLevel);
@@ -1403,7 +1421,8 @@ void layoutText(const Font& font, const ITextShaper& shaper, std::string_view s,
                 }
             std::erase_if(spans, [](const detail::FullFaceSpan& sp) { return !faces[sp.face].face; });
         }
-        detail::fullLayout(faces, spans, s, wrap ? desc.maxWidth : 0.f, lh, out.metrics.ascent, g, out.lines);
+        detail::fullLayout(faces, spans, s, wrap ? desc.maxWidth : 0.f, lh, out.metrics.ascent, g, out.lines,
+                           desc.base == BaseDirection::Ltr ? 0 : desc.base == BaseDirection::Rtl ? 1 : 2);
 #endif
     } else {
     shapeWithFallback(font, shaper, desc.pixelSize, s, out.glyphs);
@@ -1725,6 +1744,10 @@ void TextEditBuffer::del() {
 void TextEditBuffer::moveLeft(bool sel) {
     if (!sel && hasSelection()) m_cursor = std::min(m_cursor, m_anchor);
     else m_cursor = prevBoundary(m_text, m_cursor);
+    if (!sel) m_anchor = m_cursor;
+}
+void TextEditBuffer::setCursor(std::size_t pos, bool sel) {
+    m_cursor = std::min(pos, m_text.size());
     if (!sel) m_anchor = m_cursor;
 }
 void TextEditBuffer::moveRight(bool sel) {

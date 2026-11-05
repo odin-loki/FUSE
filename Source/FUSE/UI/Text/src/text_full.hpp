@@ -38,7 +38,7 @@ struct FullFaceSpan {
 /// (baseline, width, rtl). `faces[0]` is the layout font. `maxWidth` <= 0: no wrapping.
 void fullLayout(std::span<const FullRunFace> faces, std::span<const FullFaceSpan> spans, std::string_view utf8,
                 float maxWidth, float lineHeight, float ascent, std::vector<ShapedGlyph>& glyphs,
-                std::vector<TextLine>& lines);
+                std::vector<TextLine>& lines, int base = 2); ///< base: 0 LTR, 1 RTL, 2 auto (first strong)
 /// libunibreak breaks per byte (LINEBREAK_* values).
 void fullLineBreaks(std::string_view utf8, std::vector<LineBreak>& out, bool strict);
 /// SheenBidi levels per byte + rule L1 per paragraph; `base`: 0 LTR, 1 RTL, 2 auto.

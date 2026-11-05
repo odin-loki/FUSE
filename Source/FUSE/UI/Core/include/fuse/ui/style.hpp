@@ -110,6 +110,9 @@ struct ComputedStyle {
     /// tree; pinch-zoomed content). Holds the effective factor (own x ancestors').
     f32 zoom = 1.f;
     bool rtl = false; ///< `direction: rtl` (inherited): rows, grid columns, flow lines, inline alignment and widgets mirror
+    /// `direction` was given on the node or an ancestor (inherited): text paragraphs then take it as their base
+    /// direction (FULL bidi); otherwise the first strong character decides (UAX #9 P2 / P3).
+    bool dirSet = false;
     friend bool operator==(const ComputedStyle&, const ComputedStyle&) = default;
 };
 
