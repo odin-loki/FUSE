@@ -182,6 +182,8 @@ struct Bench {
     std::vector<std::uint32_t> cuts;
     std::size_t sink = 0;
 
+    explicit Bench(const Font& f) : font(f) {} // not an aggregate: Bench b{font} (-Wmissing-field-initializers)
+
     void layoutParas(std::size_t first, std::size_t count, float width) {
         TextLayoutDesc d;
         d.pixelSize = 15.f;

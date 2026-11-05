@@ -290,7 +290,7 @@ std::string findCookTool() {
     const char sep = ':';
 #endif
     const fs::path app(executableDir());
-    for (const std::string rel : {exe, "../../../Tools/FUSE/" + exe, "../../../../Tools/FUSE/" + exe, "../../../../../Tools/FUSE/" + exe,
+    for (const std::string& rel : {exe, "../../../Tools/FUSE/" + exe, "../../../../Tools/FUSE/" + exe, "../../../../../Tools/FUSE/" + exe,
                                   "../Tools/FUSE/" + exe}) {
         const fs::path p = app / rel;
         std::error_code ec;

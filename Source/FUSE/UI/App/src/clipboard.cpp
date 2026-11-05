@@ -40,7 +40,7 @@ bool provideOnce(ClipboardItem& it) {
     it.provide = nullptr;
     return fn(it);
 }
-ClipboardItem* findItem(std::vector<ClipboardItem>& items, std::string_view mime) {
+[[maybe_unused]] ClipboardItem* findItem(std::vector<ClipboardItem>& items, std::string_view mime) {
     for (ClipboardItem& it : items)
         if (it.mime == mime) return &it;
     return nullptr;
@@ -105,7 +105,7 @@ HGLOBAL render(ClipboardItem& it) {
         h.bV5GreenMask = 0x0000FF00u;
         h.bV5BlueMask = 0x000000FFu;
         h.bV5AlphaMask = 0xFF000000u;
-        h.bV5CSType = LCS_sRGB;
+        h.bV5CSType = 0x73524742; // LCS_sRGB (MinGW spells it as the multi-character constant 'sRGB')
         h.bV5Intent = LCS_GM_IMAGES;
         std::memcpy(b.data(), &h, sizeof h);
         u32* px = reinterpret_cast<u32*>(b.data() + sizeof h);

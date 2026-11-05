@@ -649,6 +649,7 @@ static int gateClipboard(int argc, char** argv) {
     app::NativePlatform native(a);
     if (!native.available()) { std::printf("fuse_platform_clipboard_roundtrip: skipped (%.*s)\n", int(native.lastError().size()), native.lastError().data()); return 77; }
     Window1 wnd = makeWindow(a, native, "fuse clipboard"); // the pump serves the clipboard while the window lives
+    (void)wnd;                                            // held only for its lifetime
     const std::string text = "Clipboard \xC3\xA9\xE2\x82\xAC \xF0\x9F\x98\x80 line\nline 2";
     const Image img = testImage(37, 23, false);
     const std::string mime = "application/x-fuse-gate";

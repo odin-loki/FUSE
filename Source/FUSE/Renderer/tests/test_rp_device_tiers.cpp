@@ -341,7 +341,7 @@ DeviceCreateRecord lastDeviceCreate() {
     if (module == nullptr) {
         return record;
     }
-    if (auto fn = reinterpret_cast<Fn>(GetProcAddress(module, "fuseMaskFeaturesLastDeviceCreate")); fn != nullptr) {
+    if (auto fn = reinterpret_cast<Fn>(reinterpret_cast<void*>(GetProcAddress(module, "fuseMaskFeaturesLastDeviceCreate"))); fn != nullptr) {
         parseRecord(fn(), record);
     }
 #endif

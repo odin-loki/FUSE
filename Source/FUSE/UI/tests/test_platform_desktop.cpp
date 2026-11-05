@@ -816,14 +816,17 @@ static int gatePen(int argc, char** argv) {
     std::printf("fuse_platform_pen_synthetic: skipped (pen injection is Win32 only here)\n");
     return 77;
 #else
-    using CreateDev = HSYNTHETICPOINTERDEVICE(WINAPI*)(POINTER_INPUT_TYPE, ULONG, POINTER_FEEDBACK_MODE);
-    using InjectDev = BOOL(WINAPI*)(HSYNTHETICPOINTERDEVICE, const POINTER_TYPE_INFO*, UINT32);
-    using DestroyDev = void(WINAPI*)(HSYNTHETICPOINTERDEVICE);
+    // HSYNTHETICPOINTERDEVICE is a DECLARE_HANDLE type that MinGW-w64 only declares for NTDDI_VERSION >= RS5; the
+    // functions are resolved at run time, so an opaque handle of the same size does.
+    using SynthDev = HANDLE;
+    using CreateDev = SynthDev(WINAPI*)(POINTER_INPUT_TYPE, ULONG, POINTER_FEEDBACK_MODE);
+    using InjectDev = BOOL(WINAPI*)(SynthDev, const POINTER_TYPE_INFO*, UINT32);
+    using DestroyDev = void(WINAPI*)(SynthDev);
     const HMODULE user32 = GetModuleHandleW(L"user32.dll");
     const auto create = reinterpret_cast<CreateDev>(reinterpret_cast<void*>(GetProcAddress(user32, "CreateSyntheticPointerDevice")));
     const auto inject = reinterpret_cast<InjectDev>(reinterpret_cast<void*>(GetProcAddress(user32, "InjectSyntheticPointerInput")));
     const auto destroy = reinterpret_cast<DestroyDev>(reinterpret_cast<void*>(GetProcAddress(user32, "DestroySyntheticPointerDevice")));
-    HSYNTHETICPOINTERDEVICE dev = create && inject && destroy ? create(PT_PEN, 1, POINTER_FEEDBACK_NONE) : nullptr;
+    SynthDev dev = create && inject && destroy ? create(PT_PEN, 1, POINTER_FEEDBACK_NONE) : nullptr;
     if (!dev) {
         std::printf("fuse_platform_pen_synthetic: skipped (no synthetic pointer devices: %lu)\n", GetLastError());
         return 77;
