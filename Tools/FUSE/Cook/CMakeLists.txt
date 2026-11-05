@@ -5,6 +5,7 @@ add_library(fuse_cook_stubs STATIC
     src/cook_stub_writer.cpp
     src/mesh_cook.cpp
     src/dts_import.cpp
+    src/dts_write.cpp
     src/mesh_cook_meshopt.cpp
     src/mesh_cook_meshopt.hpp
     src/texture_cook.cpp
@@ -21,6 +22,7 @@ add_library(fuse_cook_stubs STATIC
     include/fuse/cook/cook_stub_writer.hpp
     include/fuse/cook/mesh_cook.hpp
     include/fuse/cook/dts_import.hpp
+    include/fuse/cook/dts_write.hpp
     include/fuse/cook/texture_cook.hpp
     include/fuse/cook/ispc_texcomp_hook.hpp
 )

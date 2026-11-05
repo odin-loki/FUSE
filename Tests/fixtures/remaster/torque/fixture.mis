@@ -1,0 +1,40 @@
+//--- OBJECT WRITE BEGIN ---
+new Scene(RemasterFixtureLevel) {
+   new LevelInfo(theLevelInfo) {
+      FogColor = "0.6 0.6 0.7 1";
+      fogDensityOffset = "700";
+      canvasClearColor = "0 0 0 255";
+   };
+   new Sun(theSun) {
+      azimuth = "230";
+      elevation = "45";
+      color = "0.97 0.9 0.9 1";
+      ambient = "0.34 0.53 0.62 1";
+   };
+   new SimGroup(PlayerDropPoints) {
+      new SpawnSphere(SpawnA) {
+         position = "0 -4 0";
+         dataBlock = "SpawnSphereMarker";
+      };
+   };
+   new SimGroup(Props) {
+      new TSStatic(CrateA) {
+         shapeName = "shapes/crate.dts";
+         position = "2 0 0";
+         rotation = "0 0 1 45";
+         scale = "1 1 1";
+      };
+      new TSStatic(CrateB) {
+         shapeName = "shapes/crate.dts";
+         position = "-2 1 0";
+         rotation = "1 0 0 0";
+         scale = "1.5 1.5 1.5";
+      };
+      new TSStatic(ArmA) {
+         shapeName = "shapes/arm.dts";
+         position = "0 3 0";
+         rotation = "0 0 1 90";
+      };
+   };
+};
+//--- OBJECT WRITE END ---

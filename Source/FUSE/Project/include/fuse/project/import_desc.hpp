@@ -35,6 +35,10 @@ struct MeshImportDesc {
     bool cluster_dag = false;
     bool cluster_pages = false;
     u32 page_bytes = 64u * 1024u; ///< `.fusepages` page payload capacity (multiple of 16, >= 1024)
+    /// fuse::cook::MeshCookOptions::repair_degenerate: drop zero-area / repeated-index triangles after import
+    /// instead of refusing them at the asset_geometry gate. Off by default (the strict cook never repairs on its
+    /// own); folded into the cache key only when set.
+    bool repair_degenerate = false;
 };
 
 /// Texture import descriptor (B7.9 stub).

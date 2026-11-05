@@ -132,6 +132,10 @@ u64 hash_mesh_import(const MeshImportDesc& desc) {
         hash = fnv1a64_combine(hash, hash_bool(desc.fmsh_v2_streams));
         hash = fnv1a64_combine(hash, hash_bool(desc.quantize_vertices));
     }
+    if (desc.repair_degenerate) {
+        // Only folded in when set, so cooks without the repair keep their cache keys.
+        hash = fnv1a64_combine(hash, hash_bool(desc.repair_degenerate));
+    }
     if (desc.meshlets || desc.cluster_dag || desc.cluster_pages) {
         // RE-P1-7: only folded in when set, so cooks without renderer sections keep their cache keys.
         hash = fnv1a64_combine(hash, hash_bool(desc.meshlets));

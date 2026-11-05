@@ -1,8 +1,10 @@
 #include <fuse/cook/anim_cook.hpp>
 
 #include <fuse/animation/math.hpp>
+#include <fuse/cook/dts_import.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -28,6 +30,71 @@ bool fail(std::string* error, CookFailure* failure, CookFailure cls, const std::
         *failure = cls;
     }
     return false;
+}
+
+bool has_ext(const std::string& path, const char* ext) {
+    std::string e = std::filesystem::path(path).extension().string();
+    std::transform(e.begin(), e.end(), e.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return e == ext;
+}
+
+/// Asset plan 4a: `.dts` / `.dsq` sequences through the clean-room reader (dts_import.hpp).
+bool import_torque_anim(const std::string& input_path, const AnimCookOptions& options, an::CookedAnim& out,
+                        std::string* error, CookFailure* failure) {
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(input_path, ec)) {
+        return fail(error, failure, CookFailure::InvalidArgument, "source not found: " + input_path);
+    }
+    const bool dsq = has_ext(input_path, ".dsq");
+    DtsShape shape;
+    DsqFile sequences;
+    std::string why;
+    if (dsq ? !read_dsq_file(input_path, sequences, &why) : !read_dts_file(input_path, shape, &why)) {
+        return fail(error, failure, CookFailure::MalformedSource, std::string(dsq ? "dsq" : "dts") + " read failed: " + why);
+    }
+    DtsShape skeleton;
+    if (dsq && !options.skeleton_path.empty() && !read_dts_file(options.skeleton_path, skeleton, &why)) {
+        return fail(error, failure, CookFailure::InvalidArgument, "skeleton shape unreadable: " + why);
+    }
+    const std::vector<DtsSequence>& list = dsq ? sequences.sequences : shape.sequences;
+    if (list.empty()) {
+        return fail(error, failure, CookFailure::MalformedSource, "source has no animation sequence");
+    }
+    u32 index = options.clip_index;
+    if (!options.clip_name.empty()) {
+        index = static_cast<u32>(list.size());
+        for (u32 i = 0; i < list.size(); ++i) {
+            if (list[i].name == options.clip_name) {
+                index = i;
+                break;
+            }
+        }
+        if (index == list.size()) {
+            return fail(error, failure, CookFailure::MalformedSource, "no sequence named '" + options.clip_name + "'");
+        }
+    } else if (index >= list.size()) {
+        return fail(error, failure, CookFailure::MalformedSource,
+                    "clip index " + std::to_string(index) + " out of range (" + std::to_string(list.size()) + " sequences)");
+    }
+    DtsAnimOptions animOptions;
+    animOptions.sample_rate = options.sample_rate;
+    animOptions.root_motion = options.root_motion;
+    const bool ok = dsq ? dsq_sequence_to_cooked_anim(sequences, index, options.skeleton_path.empty() ? nullptr : &skeleton,
+                                                      animOptions, out, &why)
+                        : dts_sequence_to_cooked_anim(shape, index, animOptions, out, &why);
+    if (!ok) {
+        return fail(error, failure, CookFailure::MalformedSource, "sequence conversion failed: " + why);
+    }
+    for (const AnimCookEvent& event : options.events) {
+        if (!std::isfinite(event.time) || event.time < 0.f || event.time > out.duration || event.name.empty()) {
+            return fail(error, failure, CookFailure::InvalidArgument, "event '" + event.name + "' outside the clip");
+        }
+        out.events.push_back(an::CookedAnimEvent{event.name, event.time});
+    }
+    std::sort(out.events.begin(), out.events.end(), [](const an::CookedAnimEvent& a, const an::CookedAnimEvent& b) {
+        return a.time != b.time ? a.time < b.time : a.name < b.name;
+    });
+    return true;
 }
 
 #if defined(FUSE_HAS_ASSIMP)
@@ -148,6 +215,14 @@ f32 yaw_of(const an::quat& q) {
 } // namespace
 
 u32 count_anim_clips(const std::string& input_path) {
+    if (has_ext(input_path, ".dts")) {
+        DtsShape shape;
+        return read_dts_file(input_path, shape) ? static_cast<u32>(shape.sequences.size()) : 0u;
+    }
+    if (has_ext(input_path, ".dsq")) {
+        DsqFile dsq;
+        return read_dsq_file(input_path, dsq) ? static_cast<u32>(dsq.sequences.size()) : 0u;
+    }
 #if defined(FUSE_HAS_ASSIMP)
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(input_path, 0u);
@@ -166,6 +241,9 @@ bool import_anim_file(const std::string& input_path, const AnimCookOptions& opti
     }
     if (!(options.sample_rate > 0.f) || options.sample_rate > 1000.f) {
         return fail(error, failure, CookFailure::InvalidArgument, "sample_rate must be in (0, 1000] Hz");
+    }
+    if (has_ext(input_path, ".dts") || has_ext(input_path, ".dsq")) {
+        return import_torque_anim(input_path, options, out, error, failure);
     }
 #if !defined(FUSE_HAS_ASSIMP)
     return fail(error, failure, CookFailure::ImporterUnavailable, "anim cook needs assimp (not linked in this build)");

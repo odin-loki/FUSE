@@ -156,6 +156,10 @@ set_tests_properties(fuse_asset_cook_kinds PROPERTIES LABELS "asset;gate;cook" T
 if(FUSE_BUILD_PROJECT)
     add_executable(fuse_asset_dts_import_tests test_dts_import.cpp)
     target_link_libraries(fuse_asset_dts_import_tests PRIVATE fuse_project fuse_cook_stubs fuse_core)
+    # The sequence gate reads the Remaster W1.1 fixture shapes (written by the clean-room writer).
+    if(TARGET fuse_legacy_ts OR EXISTS "${CMAKE_SOURCE_DIR}/Source/FUSE/Remaster/legacy_ts/CMakeLists.txt")
+        target_link_libraries(fuse_asset_dts_import_tests PRIVATE fuse_legacy_ts)
+    endif()
     target_compile_definitions(fuse_asset_dts_import_tests PRIVATE "FUSE_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
     if(COMMAND fuse_apply_cxx23)
         fuse_apply_cxx23(fuse_asset_dts_import_tests)

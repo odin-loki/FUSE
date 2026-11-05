@@ -4,7 +4,8 @@
 //              skipped), 31 frames at 30 Hz, every sample equal to the analytic curve (|dT| <= 1e-5, angle <= 1e-5 rad)
 //   round trip cook -> read_cooked_anim: positions / scales within half a unorm16 step of the track range
 //              (+1e-6), rotations within 1e-5 rad (smallest-three 20-bit), constant tracks exact, events sorted,
-//              root motion = (3, 0, 1.5, pi/2) at the end, skeleton hash = hash of ("root", "arm")
+//              root motion = (3, 0, 1.5, pi/2) at the end, skeleton hash = hash of ("root", "arm" <- root), the
+//              same value as fuse_assetcheck's skin-gate rig hash
 //   clip       cooked_anim_to_clip without and with a skeleton (non-identity bind pose + an extra bone): world
 //              matrices of root / arm at frame and mid-frame times match the analytic pose within 2e-4
 //   determinism re-cooking (same and different output path) gives byte-identical files
@@ -16,6 +17,7 @@
 
 #include <fuse/animation/cooked_anim.hpp>
 #include <fuse/animation/math.hpp>
+#include <fuse/assetcheck/asset_rules.hpp>
 #include <fuse/cook/anim_cook.hpp>
 
 #include <cmath>
@@ -180,7 +182,11 @@ int main() {
     if (loaded.joints.size() != 2u) {
         return 1;
     }
-    check(loaded.skeleton_hash == an::skeleton_hash_of_names({"root", "arm"}), "skeleton hash of (root, arm)");
+    check(loaded.skeleton_hash == an::skeleton_hash_of_joints({"root", "arm"}, {-1, 0}),
+          "skeleton hash of (root, arm <- root)");
+    // One identity for clips and rigs: the .fuseanim hash is fuse_assetcheck's skin-gate rig hash.
+    check(loaded.skeleton_hash == fuse::assetcheck::skeletonHash({"root", "arm"}, {-1, 0}),
+          "skeleton hash equals the assetcheck skin-gate hash (names + parents)");
     check(loaded.joints[1].translation_mode == an::CookedTrackMode::Constant &&
               loaded.joints[0].translation_mode == an::CookedTrackMode::Quantized &&
               loaded.joints[0].rotation_mode == an::CookedTrackMode::Quantized &&

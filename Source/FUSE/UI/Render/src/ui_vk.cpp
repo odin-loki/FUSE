@@ -93,15 +93,16 @@ void writeCache(const char* path, u64 kernelHash, const std::vector<unsigned cha
 }
 } // namespace
 
-void* UiVkRenderer::makeComputePipeline(std::span<const u32> spirv) {
-    if (spirv.empty() || !m_layout) return nullptr;
+bool UiVkRenderer::makeComputePipeline(std::span<const u32> spirv, void*& slot) {
+    slot = nullptr;
+    if (spirv.empty() || !m_layout) return false;
     const VkDevice device = static_cast<VkDevice>(m_desc.device);
     VkShaderModuleCreateInfo mi{};
     mi.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     mi.codeSize = spirv.size_bytes();
     mi.pCode = spirv.data();
     VkShaderModule module{};
-    if (vkCreateShaderModule(device, &mi, nullptr, &module) != VK_SUCCESS) return nullptr;
+    if (vkCreateShaderModule(device, &mi, nullptr, &module) != VK_SUCCESS) return false;
     VkComputePipelineCreateInfo ci{};
     ci.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
     ci.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -112,7 +113,9 @@ void* UiVkRenderer::makeComputePipeline(std::span<const u32> spirv) {
     VkPipeline pipeline{};
     const VkResult r = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &ci, nullptr, &pipeline);
     vkDestroyShaderModule(device, module, nullptr);
-    return r == VK_SUCCESS ? pipeline : nullptr;
+    if (r != VK_SUCCESS) return false;
+    slot = pipeline;
+    return true;
 }
 
 bool UiVkRenderer::setEffect(u32 id, std::span<const u32> spirv) {
@@ -121,8 +124,7 @@ bool UiVkRenderer::setEffect(u32 id, std::span<const u32> spirv) {
     if (m_effects[id]) vkDestroyPipeline(device, static_cast<VkPipeline>(m_effects[id]), nullptr);
     m_effects[id] = nullptr;
     if (spirv.empty()) return true;
-    m_effects[id] = makeComputePipeline(spirv);
-    return m_effects[id] != nullptr;
+    return makeComputePipeline(spirv, m_effects[id]);
 }
 
 void UiVkRenderer::forgetTarget(void* view) {
