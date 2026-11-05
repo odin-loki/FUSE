@@ -1,6 +1,6 @@
 // B3 gate row (master plan): "SceneData SDF object buffer uploads to GPU and ray marcher renders
-// correct scene" — upload half on the Vulkan RHI, render half on the CPU reference ray marcher
-// (the CUDA ray-march kernel is still a stub, so the row is only partially proven by this test).
+// correct scene" — upload half on the Vulkan RHI, render half on the CPU reference ray marcher and,
+// when a CUDA device is present, on the CUDA `sdf_ray_march` kernel (step 4b).
 //
 // 1. An ECS scene (SceneManager) holds spheres, boxes (incl. a floor slab) and a capsule in view, a
 //    hidden (visible = false) object in view, and objects behind the camera / outside the frustum.
@@ -9,6 +9,11 @@
 // 3. The buffer is uploaded into a device-local storage buffer through the renderer's
 //    ResourceManager (staging ring + upload queue) on Lavapipe and read back: byte-exact.
 // 4. launch_ray_march_cpu renders the scene from the *read-back* buffer (depth + normal surfaces).
+// 4b. With a CUDA device (FUSE_HAS_CUDA build + device): the same read-back buffer is ray-marched by
+//    the CUDA `sdf_ray_march` kernel (launch_ray_march_on(Backend::Cuda); the launch record must
+//    say Cuda ran, not a CPU fallback). The CUDA image must match the CPU reference image (same
+//    hit mask except a few silhouette pixels, depth within 1e-3, normals dot >= 0.999) and pass
+//    the same analytic comparison as the CPU image. Without a device this step prints a skip line.
 // 5. An independent reference — closed-form ray/sphere, ray/box (slab) and ray/capsule
 //    intersections over the ECS components themselves (every visible SDF entity, culled or not) —
 //    gives the exact hit mask, hit distance and surface normal per pixel. Pixels whose outcome
@@ -21,6 +26,7 @@
 //
 // Exit 77 (skip) without a Vulkan device (stub build / no ICD).
 #include <fuse/compute/ray_march.hpp>
+#include <fuse/compute_kernel/stats.hpp>
 #include <fuse/ecs/components/camera.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/transform.hpp>
@@ -58,6 +64,7 @@ constexpr f32 kNormalDot = 0.999f;
 constexpr f32 kMaxAmbiguousFraction = 0.06f;
 
 int g_failures = 0;
+int g_cudaFrames = 0;
 
 void expectTrue(bool condition, const std::string& message) {
     if (!condition) {
@@ -424,6 +431,56 @@ bool runFrame(const char* label, fuse::scene::SceneManager& scene, const Camera&
     const std::vector<RefPrimitive> prims = referencePrimitives(scene.registry());
     const Comparison c = compareFrame(prims, cam, depth, normals);
     const u32 pixels = kWidth * kHeight;
+
+    // --- CUDA device path: the same read-back buffer on the CUDA sdf_ray_march kernel ---
+    if (fuse::kernel::backend_available(fuse::kernel::Backend::Cuda)) {
+        std::vector<f32> cudaDepth(kWidth * kHeight, -2.f);
+        std::vector<Vec4> cudaNormals(kWidth * kHeight);
+        fuse::compute::RayMarchParams cudaParams = params;
+        cudaParams.depth_surface = cudaDepth.data();
+        cudaParams.output_surface = cudaNormals.data();
+        const bool launched = fuse::compute::launch_ray_march_on(fuse::kernel::Backend::Cuda, cudaParams);
+        const fuse::kernel::LaunchRecord record = fuse::kernel::last_launch();
+        expectTrue(launched && record.ok && record.backend == fuse::kernel::Backend::Cuda,
+                   std::string(label) + ": CUDA sdf_ray_march ran on the device (no CPU fallback)");
+        u32 maskDiff = 0;
+        u32 depthDiff = 0;
+        u32 normalDiff = 0;
+        f32 maxDepthDiff = 0.f;
+        for (u32 i = 0; i < pixels; ++i) {
+            const bool cpuHit = depth[i] >= 0.f;
+            const bool gpuHit = cudaDepth[i] >= 0.f;
+            if (cpuHit != gpuHit) {
+                ++maskDiff;
+                continue;
+            }
+            if (!cpuHit) {
+                continue;
+            }
+            const f32 e = std::abs(depth[i] - cudaDepth[i]);
+            maxDepthDiff = std::max(maxDepthDiff, e);
+            depthDiff += e > 1e-3f * std::max(1.f, depth[i]) ? 1u : 0u;
+            const f32 nd = normals[i].x * cudaNormals[i].x + normals[i].y * cudaNormals[i].y +
+                           normals[i].z * cudaNormals[i].z;
+            normalDiff += (nd < kNormalDot || cudaNormals[i].w != 1.f) ? 1u : 0u;
+        }
+        const Comparison g = compareFrame(prims, cam, cudaDepth, cudaNormals);
+        std::printf("[%s] CUDA vs CPU: mask diffs %u, depth diffs %u (max %.2e), normal diffs %u; CUDA vs analytic: "
+                    "%u hit px, mask %u, depth %u (max err %.2e), normal %u, objects seen %zu\n",
+                    label, maskDiff, depthDiff, static_cast<double>(maxDepthDiff), normalDiff, g.hits,
+                    g.maskMismatch, g.depthMismatch, static_cast<double>(g.maxDepthError), g.normalMismatch,
+                    g.objectsSeen.size());
+        // Silhouette pixels may flip between CPU and CUDA (transcendental ulps); bound them tightly.
+        expectTrue(maskDiff <= pixels / 1000u, std::string(label) + ": CUDA hit mask == CPU reference (<= 0.1% edge px)");
+        expectTrue(depthDiff == 0, std::string(label) + ": CUDA depth within 1e-3 of the CPU reference");
+        expectTrue(normalDiff == 0, std::string(label) + ": CUDA normals match the CPU reference");
+        expectTrue(g.maskMismatch == 0 && g.depthMismatch == 0 && g.normalMismatch == 0 &&
+                       g.objectsSeen.size() == c.objectsSeen.size(),
+                   std::string(label) + ": CUDA image matches the analytic scene");
+        ++g_cudaFrames;
+    } else {
+        std::printf("[%s] CUDA device path: no CUDA device (CPU reference only)\n", label);
+    }
     std::printf("[%s] %ux%u: %u hit px, %u ambiguous px (%.2f%%), mask mismatches %u, depth mismatches %u "
                 "(max err %.2e), normal mismatches %u (min dot %.6f), objects seen %zu\n",
                 label, kWidth, kHeight, c.hits, c.ambiguous, 100.0 * c.ambiguous / pixels, c.maskMismatch,
@@ -560,6 +617,7 @@ int main() {
         std::fprintf(stderr, "fuse_b3_sdf_buffer_ray_march: %d failure(s)\n", g_failures);
         return EXIT_FAILURE;
     }
-    std::printf("fuse_b3_sdf_buffer_ray_march: all checks passed (CPU reference ray marcher; CUDA kernel is a stub)\n");
+    std::printf("fuse_b3_sdf_buffer_ray_march: all checks passed (CPU reference ray marcher%s)\n",
+                g_cudaFrames > 0 ? " + CUDA sdf_ray_march on the device" : "; no CUDA device, device path not run");
     return EXIT_SUCCESS;
 }
