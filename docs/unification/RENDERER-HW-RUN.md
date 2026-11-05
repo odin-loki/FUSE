@@ -527,4 +527,8 @@ Goldens: `Tests/golden/renderer/frame_composer_t{0,2}.png` were regenerated (`FU
   - That is the stricter test for the exact-math change, because NVIDIA's `/` and `sqrt` are not correctly rounded.
   - Still owed: a real Lavapipe `ctest -L renderer` on Linux, and the GCC/Clang `-Werror` build of the changed C++ (`clustered_lighting.cpp`, `froxel_fog.cpp`, `gsplat.cpp`, `denoiser.cpp`, `frame_composer.cpp`).
 - **Baseline.** `tests/perf/rp_hw_bench_baseline.json` was re-recorded after this pass (`FUSE_UPDATE_PERF_BASELINE=1`, both scenes): total 12.90 ms (Sponza) and 13.48 ms (Bistro). The gate then passes without the flag.
+- **Final `ctest -L renderer`** (native, RTX 3090, `-j 16`): 532 / 535 pass, plus the two `fuse_rp_hw_refscene_*` skips (no assets).
+  - `fuse_rp_hw_p2_lights_4096` fails: the miss above.
+  - `fuse_rp_skinning_vk_bench` fails in the parallel run. It asserts a single-threaded CPU pose evaluation + upload + GPU skinning < 16 ms, and passes alone.
+  - `fuse_rp_hw_p5_dag_100m` fails in the parallel run: 670 ms cut, after a 1.29 ms stream-only diagnostic in the same process, so the GPU was taken. It passes alone (12 s).
 - **Goldens across devices.** The regenerated `frame_composer_t{0,2}` goldens come from the RTX 3090. Whether they pass a Lavapipe run on Linux (FLIP ≤ 0.02) is still owed.
