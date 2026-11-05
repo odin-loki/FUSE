@@ -70,11 +70,13 @@ struct NativeOptions {
     VkDrawMode drawMode = VkDrawMode::Auto;
     bool vsync = true;             ///< display-paced, no tearing (FIFO; NVIDIA on Windows: MAILBOX + DWM pacing) or MAILBOX / IMMEDIATE
     /// Popup menus / combo lists / submenus as their own borderless OS windows (Qt-style; may extend past the main
-    /// window, clamp to the screen). X11: override-redirect windows; Win32: WS_POPUP + WS_EX_NOACTIVATE owned windows.
+    /// window, clamp to the screen). X11: override-redirect windows; Win32: WS_POPUP + WS_EX_NOACTIVATE owned windows;
+    /// Wayland: xdg_popups positioned relative to the window (the compositor keeps them on screen), grabbed.
     bool osPopups = false;
     /// OS tool windows (UiContext::setOsWindows): overlay nodes with the class "os-window" (floating dock panels) each
     /// get their own borderless OS window owned by the main one (Win32 WS_EX_TOOLWINDOW, X11 utility window), placed at
     /// window origin + node rect; pointer input comes back in context coordinates, keys keep going to the main window.
+    /// Wayland: child xdg_toplevels (set_parent) the compositor places; a title drag becomes xdg_toplevel.move.
     bool osWindows = true;
     /// DPI: Win32 per-monitor-v2 awareness (each window takes its monitor's scale and follows WM_DPICHANGED);
     /// X11 XSETTINGS Xft/DPI (followed live), else RESOURCE_MANAGER Xft.dpi, overridden by $FUSE_UI_SCALE. False:
@@ -114,6 +116,9 @@ struct NativeHooks {
     void (*insetsChanged)(void* user, AppWindow& w, const Insets& in) = nullptr;
     void (*visibility)(void* user, bool foreground) = nullptr;
     void (*lowMemory)(void* user) = nullptr;
+    /// Wayland: another application dropped data on the window (wl_data_device drag and drop). `mime` is
+    /// "text/uri-list" (file URIs, one per line) or a text type, `at` in UI units. X11 / Win32 have no drop target yet.
+    void (*dropped)(void* user, AppWindow& w, fuse::ui::Vec2 at, std::string_view mime, std::string_view data) = nullptr;
 };
 /// Mobile lifecycle counters (tests, diagnostics).
 struct LifecycleStats {
@@ -242,6 +247,11 @@ public:
     fuse::ui::CursorShape appliedCursor(const AppWindow& w) const;
     /// Win32: whether the title bar was last switched to dark (DWMWA_USE_IMMERSIVE_DARK_MODE accepted).
     bool darkTitleBar(const AppWindow& w) const;
+    /// Asks for fullscreen on / off (Wayland xdg_toplevel set / unset_fullscreen, X11 _NET_WM_STATE_FULLSCREEN). The
+    /// resize arrives like a user resize. False when not shown, and on Win32 (not implemented there yet).
+    bool setFullscreen(const AppWindow& w, bool on);
+    /// The fullscreen state the window system last reported (Wayland configure, X11 _NET_WM_STATE).
+    bool fullscreen(const AppWindow& w) const;
     /// Re-reads the OS theme and applies it (what WM_SETTINGCHANGE on Win32 and an XSETTINGS Net/ThemeName change on
     /// X11 do by themselves).
     void refreshSystemTheme();

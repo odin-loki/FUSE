@@ -203,6 +203,7 @@ struct NativePlatform::Impl {
             Image img;
             std::vector<u32> staged; ///< OS pixel order
             NodeHandle node{};       ///< tool windows: the "os-window" node shown (matched by node, not index)
+            void* wlChild = nullptr; ///< Wayland: the xdg_popup / child xdg_toplevel (wl::Child*; handle = this pointer)
         };
         std::vector<Popup> popups;
         std::vector<Popup> tools; ///< OS tool windows (UiContext::windowSurfaces: floating dock panels)
@@ -221,6 +222,8 @@ struct NativePlatform::Impl {
         // text-input session (IME): on while a text field has focus; caret area given to the IME (device pixels)
         bool imeOn = false, imeKnown = false;
         Rect imeArea{-1.f, -1.f, 0.f, 0.f};
+        std::string sentTitle;   ///< the title the window system has (AppWindow::setTitle changes are sent each present)
+        bool fullscreen = false; ///< as last reported by the window system
 #if defined(_WIN32)
         wchar_t highSurrogate = 0;
 #else
@@ -261,8 +264,16 @@ struct NativePlatform::Impl {
     x11::Randr xr;
     bool xrOk = false;
     x11::Window root = 0;
-    x11::Atom netWmState = 0, netMaxV = 0, netMaxH = 0, netMoveResize = 0, wmChangeState = 0, motifHints = 0, netWorkarea = 0,
-              resourceManager = 0, manager = 0, xsSelection = 0, xsSettings = 0;
+    x11::Atom netWmState = 0, netMaxV = 0, netMaxH = 0, netFull = 0, netMoveResize = 0, wmChangeState = 0, motifHints = 0,
+              netWorkarea = 0, resourceManager = 0, manager = 0, xsSelection = 0, xsSettings = 0;
+    void syncTitle(Rec& r); ///< AppWindow::setTitle -> XStoreName / xdg_toplevel.set_title
+    /// Wayland: the popup / tool window record of a native handle (null when `h` is not one).
+    wl::Child* wlChildOf(unsigned long long h) {
+        std::size_t i = 0;
+        if (Rec* r = findPopup(h, i)) return static_cast<wl::Child*>(r->popups[i].wlChild);
+        if (Rec* r = findTool(h, i)) return static_cast<wl::Child*>(r->tools[i].wlChild);
+        return nullptr;
+    }
     x11::Window xsOwner = 0;  ///< XSETTINGS manager window (0: none)
     int xsDpi = 0;            ///< Xft/DPI * 1024 (0: not set)
     std::string xsTheme;      ///< Net/ThemeName
@@ -411,9 +422,14 @@ void NativePlatform::Impl::syncPopups(Rec& r) {
         const bool moved = scr.x != p.screen.x || scr.y != p.screen.y || scr.w != p.screen.w || scr.h != p.screen.h;
         p.rect = ps.rect;
         p.screen = scr;
+#if !defined(_WIN32)
+        if (wl && moved && p.handle) // xdg_popup v1 cannot be moved: it and the popups above it are made again
+            for (std::size_t k = r.popups.size(); k-- > i;) destroyPopupOs(r.popups[k]);
+#endif
         if (!p.handle) {
-            if (!createPopupOs(r, p)) { r.popups.pop_back(); return; }
+            if (!createPopupOs(r, p)) { r.popups.erase(r.popups.begin() + std::ptrdiff_t(i), r.popups.end()); return; }
             if (i == 0) grabPointer(r, true); // Qt::Popup: clicks anywhere else on screen close the menu
+            p.revision = ~0ull;
         } else if (moved) {
             movePopupOs(p);
         }
@@ -462,6 +478,12 @@ void NativePlatform::Impl::syncTools(Rec& r) {
         const Rect scr{std::round(f32(ox) + ps.rect.x * s), std::round(f32(oy) + ps.rect.y * s), std::max(1.f, std::ceil(ps.rect.w * s)),
                        std::max(1.f, std::ceil(ps.rect.h * s))};
         const bool moved = scr.x != p.screen.x || scr.y != p.screen.y || scr.w != p.screen.w || scr.h != p.screen.h;
+#if !defined(_WIN32)
+        // Wayland: the client cannot place a toplevel; a drag of the panel (its frame moves while a press on the tool
+        // window is in progress) is handed to the compositor (xdg_toplevel.move)
+        if (wl && p.handle && (scr.x != p.screen.x || scr.y != p.screen.y) && wl::childPressed(static_cast<wl::Child*>(p.wlChild)))
+            wl::moveChild(wl, static_cast<wl::Child*>(p.wlChild));
+#endif
         p.rect = ps.rect;
         p.screen = scr;
         if (!p.handle) {
@@ -498,6 +520,9 @@ bool NativePlatform::Impl::present(void* user, AppWindow& w, Rect damage) {
     r.impl->syncTools(r);
     // after the frame: the first IME (dis)association loads the input stack, which must not delay the first frame
     r.impl->syncTextInput(r);
+#if !defined(_WIN32)
+    r.impl->syncTitle(r);
+#endif
     return ok;
 }
 
@@ -521,7 +546,7 @@ void NativePlatform::Impl::destroy(void* user) {
     if (r->vkDpy) m.x.CloseDisplay(r->vkDpy);
     r->vkDpy = nullptr;
 #endif
-    for (Rec::Popup& p : r->popups) m.destroyPopupOs(p);
+    for (std::size_t i = r->popups.size(); i-- > 0;) m.destroyPopupOs(r->popups[i]); // nested popups first
     r->popups.clear();
     for (Rec::Popup& p : r->tools) m.destroyPopupOs(p);
     r->tools.clear();
@@ -1074,8 +1099,10 @@ bool NativePlatform::Impl::createOsWindow(Rec& r) {
         if (!r.wlWin) return false;
         r.handle = reinterpret_cast<std::uintptr_t>(r.wlWin);
         r.mapped = true;
+        r.sentTitle = r.win->title();
         return true;
     }
+    r.sentTitle = r.win->title();
     if (opts.dpiAware && xScale != r.win->scale()) r.win->setScale(xScale); // keeps the logical size
     const AppWindow::PixelSize sz = r.win->pixelSize();
     const int scr = x.DefaultScreen(dpy);
@@ -1284,6 +1311,13 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
                         vert |= x11::Atom(a) == m.netMaxV;
                         horz |= x11::Atom(a) == m.netMaxH;
                     }
+                bool full = false;
+                for (std::size_t i = 0; i + sizeof(long) <= v.size(); i += sizeof(long)) {
+                    long a = 0;
+                    std::memcpy(&a, v.data() + i, sizeof a);
+                    full |= x11::Atom(a) == m.netFull;
+                }
+                r->fullscreen = full;
                 if (w.chrome().maximized != (vert && horz)) {
                     w.chrome().maximized = vert && horz;
                     w.requestRedraw();
@@ -1376,7 +1410,11 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
     return true;
 }
 bool NativePlatform::Impl::screenInfo(const Rec& r, int& ox, int& oy, Rect& work) const {
-    if (wl) return false; // Wayland: no global coordinates (popups / tool windows stay in-window)
+    if (wl) { // Wayland: no global coordinates; popups are placed relative to the window (the compositor keeps them on
+        ox = oy = 0; // screen: xdg_positioner slide), so the UI does not clamp them
+        work = {-16384.f, -16384.f, 32768.f, 32768.f};
+        return true;
+    }
     const int scr = x.DefaultScreen(dpy);
     x11::Window child = 0;
     if (!x.TranslateCoordinates(dpy, x11::Window(r.handle), x.RootWindow(dpy, scr), 0, 0, &ox, &oy, &child)) return false;
@@ -1451,7 +1489,17 @@ std::vector<DisplayInfo> NativePlatform::Impl::x11Displays() const {
     return out;
 }
 bool NativePlatform::Impl::createPopupOs(Rec& r, Rec::Popup& p) {
-    (void)r;
+    if (wl) { // xdg_popup on the window (or on the popup below it: submenus), at the context rect
+        const std::size_t i = std::size_t(&p - r.popups.data());
+        const Rec::Popup* below = i > 0 ? &r.popups[i - 1] : nullptr;
+        const Vec2 base = below ? Vec2{below->rect.x, below->rect.y} : Vec2{};
+        wl::Child* c = wl::createPopup(wl, r.wlWin, below ? static_cast<wl::Child*>(below->wlChild) : nullptr,
+                                       {p.rect.x - base.x, p.rect.y - base.y}, {p.rect.w, p.rect.h}, {p.rect.x, p.rect.y}, error);
+        if (!c) return false;
+        p.wlChild = c;
+        p.handle = reinterpret_cast<std::uintptr_t>(c);
+        return true;
+    }
     const int scr = x.DefaultScreen(dpy);
     const x11::Window w = x.CreateSimpleWindow(dpy, x.RootWindow(dpy, scr), int(p.screen.x), int(p.screen.y), unsigned(p.screen.w),
                                                unsigned(p.screen.h), 0, 0, 0);
@@ -1468,6 +1516,15 @@ bool NativePlatform::Impl::createPopupOs(Rec& r, Rec::Popup& p) {
     return true;
 }
 bool NativePlatform::Impl::createToolOs(Rec& r, Rec::Popup& p) {
+    if (wl) { // a child xdg_toplevel (set_parent): the compositor places it
+        const std::string_view id = r.win->ui().idOf(p.node);
+        const std::string title = r.win->title() + (id.empty() ? std::string(" tool") : " - " + std::string(id));
+        wl::Child* c = wl::createTool(wl, r.wlWin, {p.rect.w, p.rect.h}, {p.rect.x, p.rect.y}, title, error);
+        if (!c) return false;
+        p.wlChild = c;
+        p.handle = reinterpret_cast<std::uintptr_t>(c);
+        return true;
+    }
     const int scr = x.DefaultScreen(dpy);
     const x11::Window w = x.CreateSimpleWindow(dpy, x.RootWindow(dpy, scr), int(p.screen.x), int(p.screen.y), unsigned(p.screen.w),
                                                unsigned(p.screen.h), 0, 0, 0);
@@ -1486,6 +1543,7 @@ bool NativePlatform::Impl::createToolOs(Rec& r, Rec::Popup& p) {
     return true;
 }
 void NativePlatform::Impl::grabPointer(Rec& r, bool on) {
+    if (wl) return; // xdg_popup.grab at creation
     if (!on) { x.UngrabPointer(dpy, 0); x.Flush(dpy); return; }
     if (r.popups.empty() || !r.popups[0].handle) return;
     x.Sync(dpy, 0); // the override-redirect window must be viewable before it can grab
@@ -1494,9 +1552,21 @@ void NativePlatform::Impl::grabPointer(Rec& r, bool on) {
     x.Flush(dpy);
 }
 void NativePlatform::Impl::movePopupOs(Rec::Popup& p) {
+    if (wl) { // tool windows: input maps through the new rect; the size follows (popups are made again instead)
+        wl::setChildOrigin(static_cast<wl::Child*>(p.wlChild), {p.rect.x, p.rect.y});
+        wl::resizeChild(wl, static_cast<wl::Child*>(p.wlChild), {p.rect.w, p.rect.h});
+        return;
+    }
     x.MoveResizeWindow(dpy, x11::Window(p.handle), int(p.screen.x), int(p.screen.y), unsigned(p.screen.w), unsigned(p.screen.h));
 }
 void NativePlatform::Impl::destroyPopupOs(Rec::Popup& p) {
+    p.revision = ~0ull;
+    if (wl) {
+        wl::destroyChild(wl, static_cast<wl::Child*>(p.wlChild));
+        p.wlChild = nullptr;
+        p.handle = 0;
+        return;
+    }
     if (!p.handle || !dpy) return;
     x.DestroyWindow(dpy, x11::Window(p.handle));
     x.Flush(dpy);
@@ -1504,6 +1574,10 @@ void NativePlatform::Impl::destroyPopupOs(Rec::Popup& p) {
 }
 void NativePlatform::Impl::blitPopupOs(Rec::Popup& p) {
     if (!p.handle || p.img.pixels.empty()) return;
+    if (wl) {
+        wl::presentChild(wl, static_cast<wl::Child*>(p.wlChild), p.img);
+        return;
+    }
     const int scr = x.DefaultScreen(dpy);
     if (x.DefaultDepth(dpy, scr) < 24) return;
     p.staged.resize(p.img.pixels.size());
@@ -1521,6 +1595,12 @@ void NativePlatform::Impl::blitPopupOs(Rec::Popup& p) {
 }
 bool NativePlatform::Impl::postClickOs(unsigned long long h, Vec2 at) {
     if (wl) {
+        if (wl::Child* c = wlChildOf(h)) { // a popup / tool window: its input path (context coordinates via its rect)
+            wl::injectChildPointer(wl, c, at, 0);
+            wl::injectChildPointer(wl, c, at, 1);
+            wl::injectChildPointer(wl, c, at, 2);
+            return true;
+        }
         Rec* r = find(h);
         if (!r || !r->wlWin) return false;
         wl::injectPointer(wl, r->wlWin, at, 1);
@@ -1555,7 +1635,17 @@ bool NativePlatform::Impl::captureOs(const Rec& r, Image& out) {
     return r.vk && detail::vkWinReadback(r.vk, out);
 }
 bool NativePlatform::Impl::capturePopupOs(const Rec::Popup& p, Image& out) {
+    if (wl) return wl::captureChild(static_cast<const wl::Child*>(p.wlChild), out);
     return p.handle && captureX(x11::Window(p.handle), unsigned(p.screen.w), unsigned(p.screen.h), out);
+}
+void NativePlatform::Impl::syncTitle(Rec& r) {
+    if (!r.handle || r.win->title() == r.sentTitle) return;
+    r.sentTitle = r.win->title();
+    if (r.wlWin) wl::setTitle(wl, r.wlWin, r.sentTitle);
+    else if (dpy) {
+        x.StoreName(dpy, x11::Window(r.handle), r.sentTitle.c_str());
+        x.Flush(dpy);
+    }
 }
 bool NativePlatform::Impl::captureX(unsigned long win, unsigned w, unsigned h, Image& out) {
     x.Sync(dpy, 0);
@@ -1817,9 +1907,18 @@ void NativePlatform::Impl::createIc(Rec& r) {
     }
 }
 void NativePlatform::Impl::syncTextInput(Rec& r) {
-    if (r.wlWin) return; // Wayland: no text-input-v3 yet (committed text comes from xkbcommon)
     UiContext& ui = r.win->ui();
     const bool want = ui.wantsTextInput();
+    if (r.wlWin) { // zwp_text_input_v3: enabled while a text field has focus, the caret rect in surface coordinates
+        const Rect c = ui.textCaret();
+        wl::syncTextInput(wl, r.wlWin, want, c);
+        r.imeOn = want;
+        r.imeKnown = true;
+        const f32 s = r.win->scale();
+        r.imeArea = want ? Rect{std::round(c.x * s), std::round(c.y * s), std::max(1.f, std::round(c.w * s)), std::max(1.f, std::round(c.h * s))}
+                         : Rect{-1.f, -1.f, 0.f, 0.f};
+        return;
+    }
     if (!r.imeKnown || want != r.imeOn) {
         if (!want && !r.preedit.empty()) { // focus left the field: the IM drops its pre-edit (nothing is committed)
             if (r.xic && x.Utf8ResetIC) {
@@ -1850,7 +1949,7 @@ void NativePlatform::Impl::syncTextInput(Rec& r) {
 }
 void NativePlatform::Impl::applyScale(Rec& r, f32 scale, const void*) {
     if (r.wlWin) {
-        wl::setScale(wl, r.wlWin, scale); // integer buffer scale
+        wl::setScale(wl, r.wlWin, scale); // fractional (wp_fractional_scale_v1) or an integer buffer scale
         return;
     }
     r.win->setScale(scale); // keeps the logical size; the window grows to logical * scale device pixels
@@ -1868,8 +1967,16 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
         std::string err;
         m->wl = wl::open(err, o.dpiAware, &x11::mapKey);
         if (m->wl) {
-            m->opts.osPopups = false; // no global coordinates: popups and floating panels stay in-window overlays
-            m->opts.osWindows = false;
+            // OS popups are xdg_popups (their grab ends in popup_done on an outside click: close the window's popups)
+            wl::setDismissHandler(m->wl, [](void* user, wl::Window* owner) {
+                for (Impl::Rec* r : static_cast<Impl*>(user)->recs)
+                    if (r->wlWin == owner) Impl::closeAllPopups(*r);
+            }, m.get());
+            wl::setDropHandler(m->wl, [](void* user, wl::Window* win, Vec2 at, const std::string& mime, const std::string& data) {
+                Impl& im = *static_cast<Impl*>(user);
+                for (Impl::Rec* r : im.recs)
+                    if (r->wlWin == win && im.hooks.dropped) im.hooks.dropped(im.hooks.user, *r->win, at, mime, data);
+            }, m.get());
             if (::pipe(m->wakeFd) == 0) {
                 for (int fd : m->wakeFd) ::fcntl(fd, F_SETFL, ::fcntl(fd, F_GETFL) | O_NONBLOCK);
                 for (int fd : m->wakeFd) ::fcntl(fd, F_SETFD, FD_CLOEXEC);
@@ -1896,6 +2003,7 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
             i.netWmState = atom("_NET_WM_STATE");
             i.netMaxV = atom("_NET_WM_STATE_MAXIMIZED_VERT");
             i.netMaxH = atom("_NET_WM_STATE_MAXIMIZED_HORZ");
+            i.netFull = atom("_NET_WM_STATE_FULLSCREEN");
             i.netMoveResize = atom("_NET_WM_MOVERESIZE");
             i.wmChangeState = atom("WM_CHANGE_STATE");
             i.motifHints = atom("_MOTIF_WM_HINTS");
@@ -2175,6 +2283,7 @@ bool NativePlatform::inputMethodAvailable() const {
 #if defined(_WIN32)
     return true; // IMM32 (TSF IMEs through its compatibility layer)
 #else
+    if (m->wl) return wl::hasTextInput(m->wl); // zwp_text_input_v3 (the compositor routes it to its input method)
     return m->xim != nullptr;
 #endif
 }
@@ -2182,6 +2291,7 @@ bool NativePlatform::inputMethodPreedit() const {
 #if defined(_WIN32)
     return true;
 #else
+    if (m->wl) return wl::hasTextInput(m->wl);
     return (m->ximStyle & x11::kPreeditCallbacks) != 0;
 #endif
 }
@@ -2225,7 +2335,15 @@ unsigned long long NativePlatform::popupWindow(const AppWindow& w, std::size_t i
 }
 Rect NativePlatform::popupScreenRect(const AppWindow& w, std::size_t i) const {
     const Impl::Rec* r = m->find(w);
-    return r && i < r->popups.size() ? r->popups[i].screen : Rect{};
+    if (!r || i >= r->popups.size()) return {};
+#if !defined(_WIN32)
+    if (const auto* c = static_cast<const wl::Child*>(r->popups[i].wlChild)) { // where the compositor put it, window-relative
+        const Rect pl = wl::childPlacement(c);
+        const f32 s = r->win->scale();
+        return {std::round(pl.x * s), std::round(pl.y * s), r->popups[i].screen.w, r->popups[i].screen.h};
+    }
+#endif
+    return r->popups[i].screen;
 }
 bool NativePlatform::capturePopup(const AppWindow& w, std::size_t i, Image& out) {
     const Impl::Rec* r = m->find(w);
@@ -2304,6 +2422,10 @@ bool NativePlatform::postPointerMove(unsigned long long h, Vec2 at) {
     return PostMessageW(reinterpret_cast<HWND>(h), WM_MOUSEMOVE, 0, MAKELPARAM(int(at.x), int(at.y))) != 0;
 #else
     if (m->wl) { // Wayland cannot post to a surface: delivered as if the compositor had sent it
+        if (wl::Child* c = m->wlChildOf(h)) {
+            wl::injectChildPointer(m->wl, c, at, 0);
+            return true;
+        }
         Impl::Rec* r = m->find(h);
         if (!r || !r->wlWin) return false;
         wl::injectPointer(m->wl, r->wlWin, at, 0);
@@ -2331,6 +2453,10 @@ bool NativePlatform::postPointerButton(unsigned long long h, Vec2 at, bool down)
                         MAKELPARAM(int(at.x), int(at.y))) != 0;
 #else
     if (m->wl) {
+        if (wl::Child* c = m->wlChildOf(h)) {
+            wl::injectChildPointer(m->wl, c, at, down ? 1 : 2);
+            return true;
+        }
         Impl::Rec* r = m->find(h);
         if (!r || !r->wlWin) return false;
         wl::injectPointer(m->wl, r->wlWin, at, down ? 1 : 2);
@@ -2386,6 +2512,32 @@ CursorShape NativePlatform::appliedCursor(const AppWindow& w) const {
 bool NativePlatform::darkTitleBar(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);
     return r && r->svc.darkTitle;
+}
+bool NativePlatform::setFullscreen(const AppWindow& w, bool on) {
+    Impl::Rec* r = nullptr;
+    for (Impl::Rec* x : m->recs)
+        if (x->win == &w && x->handle) r = x;
+    if (!r) return false;
+#if defined(_WIN32)
+    (void)on;
+    return false;
+#else
+    if (r->wlWin) {
+        wl::setFullscreen(m->wl, r->wlWin, on);
+        return true;
+    }
+    if (!m->dpy) return false;
+    m->x.clientMessage(m->dpy, m->root, x11::Window(r->handle), m->netWmState, on ? 1 : 0, long(m->netFull), 0, 1);
+    m->x.Flush(m->dpy);
+    return true;
+#endif
+}
+bool NativePlatform::fullscreen(const AppWindow& w) const {
+    const Impl::Rec* r = m->find(w);
+#if !defined(_WIN32)
+    if (r && r->wlWin) return wl::fullscreen(r->wlWin);
+#endif
+    return r && r->fullscreen;
 }
 
 namespace {
@@ -2475,6 +2627,11 @@ std::vector<int> NativePlatform::iconSizes(const AppWindow& w) const {
 #else
 bool NativePlatform::setIcon(const AppWindow& w, std::span<const Image> sizes) {
     const Impl::Rec* r = m->find(w);
+    if (r && r->wlWin) { // xdg_toplevel_icon_v1 (false when the compositor has no icon manager)
+        std::vector<const Image*> v;
+        for (const Image& i : sizes) v.push_back(&i);
+        return wl::setIcon(m->wl, r->wlWin, v);
+    }
     if (!r || !r->handle || !m->dpy) return false;
     std::vector<unsigned long> data; // format-32 X properties are arrays of C long
     for (const Image& img : sizes) {
@@ -2507,6 +2664,7 @@ bool NativePlatform::resizeWindow(const AppWindow& w, unsigned width, unsigned h
 std::vector<int> NativePlatform::iconSizes(const AppWindow& w) const {
     std::vector<int> out;
     const Impl::Rec* r = m->find(w);
+    if (r && r->wlWin) return wl::iconSizes(r->wlWin); // what was handed to xdg_toplevel_icon_v1 (no read-back on Wayland)
     if (!r || !r->handle || !m->dpy) return out;
     const x11::Atom netIcon = m->x.InternAtom(m->dpy, "_NET_WM_ICON", 0);
     x11::Atom type = 0;

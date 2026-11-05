@@ -412,6 +412,26 @@ if(TARGET fuse_app)
             add_test(NAME fuse_app_wayland COMMAND fuse_app_wayland)
             set_tests_properties(fuse_app_wayland PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 180
                 ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate;vulkan")
+            # X11 parity on Wayland: popups (xdg_popup, nested), tool windows (child xdg_toplevel), fullscreen / maximise /
+            # title under headless weston (no seat there); real seat input (a second client's virtual pointer /
+            # keyboard), grabbed popups, the clipboard / primary selection round trip with that client, drag and drop,
+            # zwp_text_input_v3 with the client as input method, fractional scale and live output scale changes under
+            # headless sway (unpacked rootless into ~/opt/sway, or $FUSE_TEST_SWAY). Each skips with 77 without its compositor.
+            find_program(FUSE_UI_TEST_SWAY sway HINTS ${_fuse_opt_wl_bins})
+            add_executable(fuse_app_wayland_parity test_app_wayland_parity.cpp)
+            target_link_libraries(fuse_app_wayland_parity PRIVATE fuse_app_native ${CMAKE_DL_LIBS})
+            target_include_directories(fuse_app_wayland_parity PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../App/src)
+            if(FUSE_UI_TEST_WESTON)
+                target_compile_definitions(fuse_app_wayland_parity PRIVATE FUSE_TEST_WESTON_PATH="${FUSE_UI_TEST_WESTON}")
+            endif()
+            if(FUSE_UI_TEST_SWAY)
+                target_compile_definitions(fuse_app_wayland_parity PRIVATE FUSE_TEST_SWAY_PATH="${FUSE_UI_TEST_SWAY}")
+            endif()
+            foreach(g popups seat)
+                add_test(NAME fuse_app_wayland_${g} COMMAND fuse_app_wayland_parity --gate=${g})
+                set_tests_properties(fuse_app_wayland_${g} PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 180
+                    LABELS "fuse_ui;gate")
+            endforeach()
         endif()
         # §6 idle budget on a real window: zero presents, ~0 % CPU, a handful of loop wakeups over 3 s
         add_executable(fuse_app_idle_native test_app_idle_native.cpp)

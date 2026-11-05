@@ -16,6 +16,7 @@
 #include <windows.h>
 #else
 #include "platform_internal.hpp"
+#include "wayland_internal.hpp"
 #include "x11_internal.hpp"
 
 #include <chrono>
@@ -303,6 +304,11 @@ std::vector<std::string> clipboardFormats() {
     return out;
 }
 bool clipboardOwned() { return wc().hwnd && GetClipboardOwner() == wc().hwnd; }
+bool setPrimarySelectionText(std::string_view) { return false; } // Windows has no primary selection
+bool primarySelectionText(std::string& out) {
+    out.clear();
+    return false;
+}
 
 #else
 // ---- X11 CLIPBOARD selection (+ process-local fallback) -------------------------------------------------------------
@@ -313,9 +319,11 @@ struct XClip {
     x11::Window w = 0;
     bool tried = false;
     x11::Atom clipboard = 0, targets = 0, utf8 = 0, text = 0, textPlain = 0, textPlainUtf8 = 0, png = 0, incr = 0,
-              timestamp = 0, prop = 0;
+              timestamp = 0, prop = 0, primary = 1 /*XA_PRIMARY*/;
     std::vector<ClipboardItem> items;
     bool owned = false;
+    std::string primaryText; ///< PRIMARY (text only) while primaryOwned
+    bool primaryOwned = false;
     std::size_t chunk = 65536;
     struct Send { x11::Window req = 0; x11::Atom prop = 0, type = 0; std::vector<std::uint8_t> data; std::size_t at = 0; };
     std::vector<Send> sends; ///< INCR transfers in progress
@@ -326,7 +334,7 @@ struct XClip {
     void serve(const x11::SelectionRequestEv& rq);
     bool bytesFor(x11::Atom target, std::vector<std::uint8_t>& out, x11::Atom& type);
     bool waitEvent(x11::Event& ev, bool (*match)(const x11::Event&, const XClip&), int ms);
-    bool convert(x11::Atom target, std::vector<std::uint8_t>& out, x11::Atom* typeOut = nullptr);
+    bool convert(x11::Atom target, std::vector<std::uint8_t>& out, x11::Atom* typeOut = nullptr, x11::Atom selection = 0);
     bool ownsNow() { return owned && d && x.GetSelectionOwner(d, clipboard) == w; }
 };
 XClip& xc() {
@@ -374,6 +382,7 @@ void XClip::handle(x11::Event& ev) {
     case x11::SelectionRequest: serve(ev.selectionRequest); break;
     case x11::SelectionClear:
         if (ev.selectionClear.selection == clipboard) { owned = false; items.clear(); }
+        if (ev.selectionClear.selection == primary) { primaryOwned = false; primaryText.clear(); }
         break;
     case x11::PropertyNotify: // INCR: the requestor deleted the last chunk, send the next one
         if (ev.property.state != x11::kPropertyDelete) break;
@@ -443,7 +452,18 @@ void XClip::serve(const x11::SelectionRequestEv& rq) {
     reply.selection.time = rq.time;
     const x11::Atom property = rq.property ? rq.property : rq.target; // obsolete clients pass None
     bool ok = false;
-    if (rq.selection == clipboard && owned) {
+    if (rq.selection == primary && primaryOwned) { // PRIMARY: UTF-8 text
+        if (rq.target == targets) {
+            const long list[] = {long(targets), long(utf8), long(textPlainUtf8), long(x11::kXA_STRING)};
+            x.ChangeProperty(d, rq.requestor, property, x11::kXA_ATOM, 32, x11::kPropModeReplace,
+                             reinterpret_cast<const unsigned char*>(list), 4);
+            ok = true;
+        } else if (rq.target == utf8 || rq.target == textPlainUtf8 || rq.target == x11::kXA_STRING) {
+            x.ChangeProperty(d, rq.requestor, property, rq.target, 8, x11::kPropModeReplace,
+                             reinterpret_cast<const unsigned char*>(primaryText.data()), int(primaryText.size()));
+            ok = true;
+        }
+    } else if (rq.selection == clipboard && owned) {
         if (rq.target == targets) {
             std::vector<long> list = {long(targets), long(timestamp)};
             for (const ClipboardItem& it : items) {
@@ -494,10 +514,10 @@ bool XClip::waitEvent(x11::Event& ev, bool (*match)(const x11::Event&, const XCl
         ::poll(&p, 1, int(std::min<long long>(left, 50)));
     }
 }
-bool XClip::convert(x11::Atom target, std::vector<std::uint8_t>& out, x11::Atom* typeOut) {
+bool XClip::convert(x11::Atom target, std::vector<std::uint8_t>& out, x11::Atom* typeOut, x11::Atom selection) {
     out.clear();
     x.DeleteProperty(d, w, prop);
-    x.ConvertSelection(d, clipboard, target, prop, w, 0);
+    x.ConvertSelection(d, selection ? selection : clipboard, target, prop, w, 0);
     x.Flush(d);
     x11::Event ev{};
     if (!waitEvent(ev, [](const x11::Event& e, const XClip& c) {
@@ -536,9 +556,77 @@ bool XClip::convert(x11::Atom target, std::vector<std::uint8_t>& out, x11::Atom*
     return true;
 }
 std::vector<ClipboardItem> g_local; ///< no display: process-local store
+std::string g_localPrimary;
+
+#if !defined(__ANDROID__)
+// ---- Wayland: wl_data_device / zwp_primary_selection_v1 of the NativePlatform's connection --------------------------
+struct WlClip {
+    std::vector<ClipboardItem> items; ///< offered while we own the selection
+    std::string primary;              ///< primary selection text
+};
+WlClip& wlc() {
+    static WlClip c;
+    return c;
+}
+/// The Wayland backend when a NativePlatform runs on Wayland with a data device (seat), else null.
+wl::Backend* wlb(bool primary = false) {
+    wl::Backend* b = wl::current();
+    return b && wl::hasDataDevice(b, primary) ? b : nullptr;
+}
+constexpr const char* kWlTextMimes[] = {"text/plain;charset=utf-8", "UTF8_STRING", "text/plain", "TEXT", "STRING"};
+bool wlIsText(std::string_view m) {
+    for (const char* t : kWlTextMimes)
+        if (m == t) return true;
+    return false;
+}
+std::vector<std::string> wlMimes(const std::vector<ClipboardItem>& items) {
+    std::vector<std::string> out;
+    for (const ClipboardItem& it : items) {
+        if (isText(it.mime)) out.insert(out.end(), std::begin(kWlTextMimes), std::end(kWlTextMimes));
+        else out.push_back(it.mime); // image/png is its own MIME type
+    }
+    return out;
+}
+/// Another client pastes: the bytes of `mime` from our items (lazy ones are made now, on the UI thread).
+bool wlProvide(void* user, const std::string& mime, std::vector<unsigned char>& out) {
+    std::vector<ClipboardItem>& items = static_cast<WlClip*>(user)->items;
+    if (wlIsText(mime)) {
+        ClipboardItem* it = findItem(items, kClipboardText);
+        if (!it || !provideOnce(*it)) return false;
+        out.assign(it->text.begin(), it->text.end());
+        return true;
+    }
+    ClipboardItem* it = findItem(items, mime);
+    if (!it || !provideOnce(*it)) return false;
+    if (isImage(mime))
+        return it->image.width > 0 && fuse::text::png::encodeRgba(reinterpret_cast<const std::uint8_t*>(it->image.pixels.data()),
+                                                                 it->image.width, it->image.height, it->image.width * 4, out);
+    out = it->bytes;
+    return true;
+}
+bool wlProvidePrimary(void* user, const std::string& mime, std::vector<unsigned char>& out) {
+    if (!wlIsText(mime)) return false;
+    const std::string& s = static_cast<WlClip*>(user)->primary;
+    out.assign(s.begin(), s.end());
+    return true;
+}
+/// Reads the first of `mimes` the current selection offers.
+bool wlReceive(wl::Backend* b, bool primary, std::initializer_list<std::string_view> mimes, std::vector<std::uint8_t>& out) {
+    const std::vector<std::string> offered = wl::selectionMimes(b, primary);
+    for (std::string_view m : mimes)
+        if (std::find(offered.begin(), offered.end(), m) != offered.end()) return wl::receiveSelection(b, primary, std::string(m), out);
+    return false;
+}
+#endif
 } // namespace
 
 bool setClipboard(std::vector<ClipboardItem> items) {
+#if !defined(__ANDROID__)
+    if (wl::Backend* b = wlb()) {
+        wlc().items = std::move(items);
+        return wl::setSelection(b, false, wlMimes(wlc().items), &wlProvide, &wlc());
+    }
+#endif
     XClip& c = xc();
     if (!c.init()) {
         g_local = std::move(items);
@@ -553,6 +641,9 @@ bool setClipboard(std::vector<ClipboardItem> items) {
 namespace {
 /// Our own items when this process owns the clipboard (no round trip), else null.
 std::vector<ClipboardItem>* localItems() {
+#if !defined(__ANDROID__)
+    if (wl::Backend* b = wlb()) return wl::ownsSelection(b, false) ? &wlc().items : nullptr;
+#endif
     XClip& c = xc();
     if (!c.init()) return &g_local;
     return c.ownsNow() ? &c.items : nullptr;
@@ -566,8 +657,15 @@ bool clipboardText(std::string& out) {
         out = it->text;
         return true;
     }
-    XClip& c = xc();
     std::vector<std::uint8_t> b;
+#if !defined(__ANDROID__)
+    if (wl::Backend* wb = wlb()) {
+        if (!wlReceive(wb, false, {"text/plain;charset=utf-8", "UTF8_STRING", "text/plain", "TEXT", "STRING"}, b)) return false;
+        out.assign(b.begin(), b.end());
+        return true;
+    }
+#endif
+    XClip& c = xc();
     if (c.convert(c.utf8, b) || c.convert(c.textPlainUtf8, b)) {
         out.assign(b.begin(), b.end());
         return true;
@@ -586,9 +684,17 @@ bool clipboardImage(Image& out) {
         out = it->image;
         return true;
     }
-    XClip& c = xc();
     std::vector<std::uint8_t> b;
-    if (!c.convert(c.png, b) || b.empty()) return false;
+#if !defined(__ANDROID__)
+    if (wl::Backend* wb = wlb()) {
+        if (!wlReceive(wb, false, {kClipboardImage}, b)) return false;
+    } else
+#endif
+    {
+        XClip& c = xc();
+        if (!c.convert(c.png, b)) return false;
+    }
+    if (b.empty()) return false;
     int w = 0, h = 0;
     std::vector<std::uint8_t> px;
     if (!fuse::text::png::decodeRgba(b, 16384, w, h, px)) return false;
@@ -610,6 +716,9 @@ bool clipboardData(std::string_view mime, std::vector<std::uint8_t>& out) {
         out = it->bytes;
         return true;
     }
+#if !defined(__ANDROID__)
+    if (wl::Backend* wb = wlb()) return wlReceive(wb, false, {mime}, out);
+#endif
     XClip& c = xc();
     return c.convert(c.x.InternAtom(c.d, std::string(mime).c_str(), 0), out);
 }
@@ -619,10 +728,19 @@ std::vector<std::string> clipboardFormats() {
         for (const ClipboardItem& it : *items) out.push_back(it.mime);
         return out;
     }
+    auto add = [&](std::string s) { if (std::find(out.begin(), out.end(), s) == out.end()) out.push_back(std::move(s)); };
+#if !defined(__ANDROID__)
+    if (wl::Backend* wb = wlb()) {
+        for (const std::string& m : wl::selectionMimes(wb, false)) {
+            if (wlIsText(m)) add(std::string(kClipboardText));
+            else if (m.find('/') != std::string::npos) add(m); // image/png is kClipboardImage already
+        }
+        return out;
+    }
+#endif
     XClip& c = xc();
     std::vector<std::uint8_t> b;
     if (!c.convert(c.targets, b)) return out;
-    auto add = [&](std::string s) { if (std::find(out.begin(), out.end(), s) == out.end()) out.push_back(std::move(s)); };
     for (std::size_t i = 0; i + sizeof(long) <= b.size(); i += sizeof(long)) {
         long a = 0;
         std::memcpy(&a, b.data() + i, sizeof a);
@@ -638,8 +756,59 @@ std::vector<std::string> clipboardFormats() {
     return out;
 }
 bool clipboardOwned() {
+#if !defined(__ANDROID__)
+    if (wl::Backend* b = wlb()) return wl::ownsSelection(b, false);
+#endif
     XClip& c = xc();
     return c.init() ? c.ownsNow() : !g_local.empty();
+}
+bool setPrimarySelectionText(std::string_view utf8) {
+#if !defined(__ANDROID__)
+    if (wl::Backend* b = wlb(true)) {
+        wlc().primary = std::string(utf8);
+        std::vector<std::string> mimes(std::begin(kWlTextMimes), std::end(kWlTextMimes));
+        return wl::setSelection(b, true, mimes, &wlProvidePrimary, &wlc());
+    }
+    if (wl::current()) return false; // Wayland without zwp_primary_selection_v1
+#endif
+    XClip& c = xc();
+    if (!c.init()) {
+        g_localPrimary = std::string(utf8);
+        return true;
+    }
+    c.primaryText = std::string(utf8);
+    c.x.SetSelectionOwner(c.d, c.primary, c.w, 0);
+    c.primaryOwned = c.x.GetSelectionOwner(c.d, c.primary) == c.w;
+    c.x.Flush(c.d);
+    return c.primaryOwned;
+}
+bool primarySelectionText(std::string& out) {
+    out.clear();
+    std::vector<std::uint8_t> b;
+#if !defined(__ANDROID__)
+    if (wl::Backend* wb = wlb(true)) {
+        if (wl::ownsSelection(wb, true)) {
+            out = wlc().primary;
+            return true;
+        }
+        if (!wlReceive(wb, true, {"text/plain;charset=utf-8", "UTF8_STRING", "text/plain", "TEXT", "STRING"}, b)) return false;
+        out.assign(b.begin(), b.end());
+        return true;
+    }
+    if (wl::current()) return false;
+#endif
+    XClip& c = xc();
+    if (!c.init()) {
+        out = g_localPrimary;
+        return !out.empty();
+    }
+    if (c.primaryOwned && c.x.GetSelectionOwner(c.d, c.primary) == c.w) {
+        out = c.primaryText;
+        return true;
+    }
+    if (!c.convert(c.utf8, b, nullptr, c.primary)) return false;
+    out.assign(b.begin(), b.end());
+    return true;
 }
 #endif
 
