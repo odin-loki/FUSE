@@ -228,7 +228,8 @@ PROVIDER_TABLE: Dict[str, ProviderInfo] = {
         ProviderInfo("comfyui", _ts("UPSCALE", "PBR_MAPS", "GEN_IMAGE"), "the 3090, user-run (GPL: HTTP API only)",
                      False, frozenset(), "Separate process over its local HTTP API; pinned workflow JSON."),
         ProviderInfo("remix-toolkit", frozenset(), "Windows + Omniverse Toolkit (local REST)", False, frozenset(),
-                     "Optional live link for users who already run the Toolkit; not FOSS at the Kit layer."),
+                     "Optional live link for users who already run the Toolkit; not FOSS at the Kit layer.",
+                     implemented=True),  # W2.5: fuse_ai/remix_toolkit.py (a link, no AI tasks)
         ProviderInfo("reference", frozenset(), "human", True, frozenset(),
                      "Project Genie / World Labs Marble outputs logged by hand; never given originals.",
                      human=True),
@@ -394,7 +395,10 @@ def _ensure_builtin() -> None:
     _BUILTIN_DONE = True
     from .mock import MockProvider
 
-    factories: Dict[str, Callable[[ProviderInfo], Provider]] = {"gemini": GeminiStub}
+    from .remix_toolkit import RemixToolkitProvider  # W2.5
+
+    factories: Dict[str, Callable[[ProviderInfo], Provider]] = {"gemini": GeminiStub,
+                                                                "remix-toolkit": RemixToolkitProvider}
     for pid, row in PROVIDER_TABLE.items():
         if pid in _REGISTRY:
             continue

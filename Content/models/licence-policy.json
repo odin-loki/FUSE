@@ -1,0 +1,75 @@
+{
+  "schema": "fuse.licence-policy/1",
+  "source": "docs/plans/FUSE_REMASTER_PLAN.md §0.1.0 (allow / deny lists), §3.4.1 (FOSS models), §3.4.2 (checked, not FOSS); licences checked 2026-09-23",
+  "checked": "2026-09-23",
+  "allow": {
+    "code_and_weights": [
+      "Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Zlib", "MPL-2.0",
+      "LGPL-2.1-only", "LGPL-2.1-or-later", "LGPL-3.0-only", "LGPL-3.0-or-later"
+    ],
+    "weights_and_data": ["CC0-1.0", "Unlicense"],
+    "separate_process_only": [
+      "GPL-2.0-only", "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later", "AGPL-3.0-only", "AGPL-3.0-or-later"
+    ]
+  },
+  "deny": {
+    "ids": [
+      "LicenseRef-Tencent-Hunyuan-Community", "LicenseRef-Tencent-HY-World-Community", "LicenseRef-Gemma",
+      "LicenseRef-Llama-Community", "LicenseRef-Llama-3.1-Community", "LicenseRef-Stability-AI-Community",
+      "LicenseRef-NVIDIA-Open-Model", "LicenseRef-NVIDIA-Source-Code", "LicenseRef-LTX-Video-Open-Weights",
+      "LicenseRef-LTX-2-Community", "LicenseRef-Skywork-Community", "LicenseRef-DINOv3", "LicenseRef-Bria-RMBG",
+      "LicenseRef-Microsoft-Research", "LicenseRef-FLUX.1-dev-Non-Commercial", "LicenseRef-SAM",
+      "OpenRAIL", "OpenRAIL-M", "CreativeML-OpenRAIL-M", "NOASSERTION", "NONE"
+    ],
+    "prefixes": [
+      "LicenseRef-Tencent-", "LicenseRef-Llama", "LicenseRef-Gemma", "LicenseRef-Stability-", "LicenseRef-NVIDIA-",
+      "LicenseRef-LTX-", "LicenseRef-Skywork-", "LicenseRef-Bria-", "LicenseRef-Research", "LicenseRef-Unknown",
+      "CC-BY-NC", "CC-BY-ND"
+    ],
+    "substrings_ci": ["-nc", "-nd", "noncommercial", "non-commercial", "openrail", "rail-m", "research-only", "research only", "community"],
+    "reason": "§0.1.0 deny-list: open-weights licences that are not FOSS (community / research / NC / ND / RAIL), and undetermined licences"
+  },
+  "default_providers": ["gemini", "mock"],
+  "cloud_providers": ["gemini"],
+  "exceptions": [
+    {"provider": "gemini", "reason": "§0.1.0: the user-approved proprietary cloud agent; outputs are licensed as LicenseRef-AI-Gemini*, models are not FOSS-checked"}
+  ],
+  "foss_models": [
+    "pbrify_remix", "fuse-sr", "real-esrgan-code", "matrix-game-2.0", "matrix-game-3.0", "lingbot-world-v1",
+    "lingbot-world-v1-base-cam-nf4", "open-oasis-500m", "diamond", "mineworld", "triposr", "triposg",
+    "trellis-v1-image-large", "instant-meshes", "quadriflow", "meshoptimizer", "gsplat", "flux.1-schnell",
+    "qwen-image-2512", "qwen-image-edit-2511", "wan2.2-ti2v-5b", "wan2.1-t2v-1.3b", "demucs-v4", "audiosr",
+    "kokoro-82m", "piper", "whisper-large-v3-turbo", "qwen3-coder-30b-a3b-instruct", "qwen3-vl-8b-instruct",
+    "devstral-small-2-24b", "gpt-oss-20b", "qwen3-vl-30b-a3b", "olmo-2", "molmo", "siglip", "siglip2-so400m",
+    "birefnet", "dinov2"
+  ],
+  "non_foss_models": [
+    {"id": "pbrfusion", "licence": "CC-BY-NC-SA-4.0", "reason": "NC-SA weights; forbidden in recipes"},
+    {"id": "lingbot-world-v2", "licence": "CC-BY-NC-SA-4.0", "reason": "v2 changed licence; stay on v1"},
+    {"id": "hunyuan-gamecraft", "licence": "LicenseRef-Tencent-Hunyuan-Community", "reason": "Tencent community licence"},
+    {"id": "hunyuanworld", "licence": "LicenseRef-Tencent-HY-World-Community", "reason": "Tencent community licence"},
+    {"id": "hunyuan3d", "licence": "LicenseRef-Tencent-Hunyuan-Community", "reason": "Tencent community licence"},
+    {"id": "muse-wham", "licence": "LicenseRef-Microsoft-Research", "reason": "academic research only"},
+    {"id": "cosmos-predict-2.5", "licence": "LicenseRef-NVIDIA-Open-Model", "reason": "NVIDIA Open Model License"},
+    {"id": "trellis.2-4b", "licence": "MIT", "reason": "fails the sub-model rule: loads DINOv3, RMBG-2.0 and nvdiffrast"},
+    {"id": "stable-fast-3d", "licence": "LicenseRef-Stability-AI-Community", "reason": "Stability AI community licence"},
+    {"id": "stable-diffusion", "licence": "LicenseRef-Stability-AI-Community", "reason": "Stability AI community licence"},
+    {"id": "sam-3d-objects", "licence": "LicenseRef-SAM", "reason": "SAM licence, not FOSS pending review"},
+    {"id": "flux.1-dev", "licence": "LicenseRef-FLUX.1-dev-Non-Commercial", "reason": "non-commercial"},
+    {"id": "flux.1-kontext-dev", "licence": "LicenseRef-FLUX.1-dev-Non-Commercial", "reason": "non-commercial"},
+    {"id": "hidream-i1", "licence": "MIT", "reason": "fails the sub-model rule: loads Llama-3.1-8B-Instruct"},
+    {"id": "hidream-e1", "licence": "MIT", "reason": "fails the sub-model rule: loads Llama-3.1-8B-Instruct"},
+    {"id": "ltx-video", "licence": "LicenseRef-LTX-Video-Open-Weights", "reason": "open-weights licence, not FOSS"},
+    {"id": "ltx-2", "licence": "LicenseRef-LTX-2-Community", "reason": "community licence with a revenue cap"},
+    {"id": "real-esrgan-official-weights", "licence": "BSD-3-Clause", "reason": "trained on DIV2K (academic only); adopted decision A9"},
+    {"id": "rmbg-1.4", "licence": "LicenseRef-Bria-RMBG", "reason": "Bria licence; use BiRefNet"},
+    {"id": "rmbg-2.0", "licence": "LicenseRef-Bria-RMBG", "reason": "Bria licence; use BiRefNet"},
+    {"id": "dinov3", "licence": "LicenseRef-DINOv3", "reason": "DINOv3 licence"},
+    {"id": "nvdiffrast", "licence": "LicenseRef-NVIDIA-Source-Code", "reason": "NVIDIA Source Code License (non-commercial)"},
+    {"id": "gemma", "licence": "LicenseRef-Gemma", "reason": "Gemma terms"},
+    {"id": "llama", "licence": "LicenseRef-Llama-Community", "reason": "Llama community licences"},
+    {"id": "inria-3dgs", "licence": "LicenseRef-Research-INRIA", "reason": "non-commercial research code"}
+  ],
+  "research_only_training_data": ["DIV2K", "MUSDB18", "MUSDB18-HQ", "Objaverse"],
+  "third_party_game_footage": ["Unreal Engine footage", "GTA V", "Minecraft", "CS:GO", "Xbox"]
+}

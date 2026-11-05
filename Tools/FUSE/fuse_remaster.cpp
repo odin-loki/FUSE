@@ -11,8 +11,17 @@
 //   fuse_remaster report [--project <dir>] [--json]
 //       Counts: original assets by kind, keys by algo, replacements by tier, recipes by status, POCO records by
 //       kind and distribution, blobs; lists records whose distribution is more permissive than the computed one.
+//   fuse_remaster replace --project <dir> --oaid <uuid> --with <kind>/<poco id> [--tier remix] [--variant default]
+//       §2.7: adds (or replaces) a replacement row pointing an original asset at a POCO record of the store (a
+//       library asset, a generated asset, or an upgraded original). Refuses unknown oaids, missing records and
+//       records of originals (origin original / distribution never). Rewrites the lock canonically.
+//   fuse_remaster dif <file.dif>
+//       W1.5: reads a Torque interior with fuse_legacy_dif (clean-room) and prints its deterministic summary JSON
+//       (version, detail levels, brushes, surfaces, triangles, area, materials). Lightmaps are skipped.
+//   fuse_remaster ingest-remix / export-remix (W2.3 / W2.4; built when FUSE Relight is): see remaster_remix_cli.cpp.
 // Exit codes: 0 ok, 1 problems found, 2 usage / IO error.
 #include <fuse/remaster/db.hpp>
+#include <fuse/remaster/dif/dif.hpp>
 #include <fuse/remaster/json.hpp>
 #include <fuse/remaster/poco.hpp>
 #include <fuse/remaster/store.hpp>
@@ -26,6 +35,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -60,7 +70,7 @@ Args parseArgs(int argc, char** argv) {
         std::string s = argv[i];
         if (s.starts_with("--")) {
             const std::string key = s.substr(2);
-            const bool isFlag = key == "json" || key == "force";
+            const bool isFlag = key == "json" || key == "force" || key == "local";
             if (!isFlag && i + 1 < argc) {
                 a.options[key] = argv[++i];
             } else {
@@ -80,7 +90,15 @@ int usage() {
                  "usage:\n"
                  "  fuse_remaster init <dir> --game <id> [--name <title>] [--force]\n"
                  "  fuse_remaster doctor [--project <dir>] [--json]\n"
-                 "  fuse_remaster report [--project <dir>] [--json]\n");
+                 "  fuse_remaster report [--project <dir>] [--json]\n"
+                 "  fuse_remaster replace --project <dir> --oaid <uuid> --with <poco kind>/<poco id> [--tier remix]\n"
+                 "                        [--variant default] [--source <name>]\n"
+                 "  fuse_remaster dif <file.dif>\n"
+#if defined(FUSE_REMASTER_HAVE_REMIX)
+                 "  fuse_remaster ingest-remix <capture dir> --project <dir> [--rule <asset hash rule>] [--json]\n"
+                 "  fuse_remaster export-remix --project <dir> --out <mod dir> [--mod-name <name>] [--local] [--json]\n"
+#endif
+                 );
     return 2;
 }
 
@@ -402,7 +420,89 @@ int cmdReport(const Args& a) {
     return ok ? 0 : 1;
 }
 
+// ---- replace (§2.7) ------------------------------------------------------------------------------------------
+
+int cmdReplace(const Args& a) {
+    if (!a.options.contains("project") || !a.options.contains("oaid") || !a.options.contains("with")) {
+        return usage();
+    }
+    std::string err;
+    auto p = loadProject(a.options.at("project"), &err);
+    if (!p || !p->db) {
+        std::fprintf(stderr, "fuse_remaster: %s\n", p ? "the project lock does not load" : err.c_str());
+        return 2;
+    }
+    const std::string with = a.options.at("with");
+    const auto slash = with.find('/');
+    if (slash == std::string::npos) {
+        std::fprintf(stderr, "fuse_remaster: --with takes <kind>/<poco id> (e.g. mesh/lib/crate)\n");
+        return 2;
+    }
+    const std::string kind = with.substr(0, slash), id = with.substr(slash + 1);
+    const std::string oaid = a.options.at("oaid");
+    if (!p->db->asset(oaid)) {
+        std::fprintf(stderr, "fuse_remaster: no original asset %s in the lock\n", oaid.c_str());
+        return 1;
+    }
+    const rm::store::BlobStore store(storeDir(*p));
+    const auto rec = store.readRecord(kind, id, &err);
+    if (!rec) {
+        std::fprintf(stderr, "fuse_remaster: no record %s: %s\n", with.c_str(), err.c_str());
+        return 1;
+    }
+    if (rec->provenance.origin == rm::poco::Origin::Original || rec->distribution == rm::poco::Distribution::Never ||
+        rm::poco::computeDistribution(*rec) == rm::poco::Distribution::Never) {
+        std::fprintf(stderr, "fuse_remaster: %s is an original (or never distributed): it cannot be a replacement\n", with.c_str());
+        return 1;
+    }
+    rm::db::Replacement r;
+    r.oaid = oaid;
+    r.variant = a.options.contains("variant") ? a.options.at("variant") : "default";
+    r.tier = a.options.contains("tier") ? a.options.at("tier") : "remix";
+    r.source = a.options.contains("source") ? a.options.at("source") : "";
+    r.pocoId = id;
+    r.kind = kind;
+    if (!p->db->setReplacement(r, &err)) {
+        std::fprintf(stderr, "fuse_remaster: %s\n", err.c_str());
+        return 1;
+    }
+    const std::string lockName = p->doc.get("lock") ? p->doc.get("lock")->asString() : "remaster.lock.json";
+    if (!writeText(p->dir / lockName, p->db->exportLockText())) {
+        return 2;
+    }
+    std::printf("replacement %s -> %s (%s, %s)\n", oaid.c_str(), with.c_str(), r.tier.c_str(), r.variant.c_str());
+    return 0;
+}
+
+// ---- dif (W1.5) ---------------------------------------------------------------------------------------------
+
+int cmdDif(const Args& a) {
+    if (a.positional.size() != 1) {
+        return usage();
+    }
+    const auto bytes = rm::store::readFileBytes(a.positional[0]);
+    if (!bytes) {
+        std::fprintf(stderr, "fuse_remaster: cannot read %s\n", a.positional[0].c_str());
+        return 2;
+    }
+    const auto result = fuse::remaster::dif::readDif(std::span<const std::uint8_t>(bytes->data(), bytes->size()));
+    if (!result.ok) {
+        std::fprintf(stderr, "fuse_remaster: %s: %s\n", a.positional[0].c_str(), result.error.c_str());
+        return 1;
+    }
+    for (const std::string& w : result.warnings) {
+        std::fprintf(stderr, "fuse_remaster: warning: %s\n", w.c_str());
+    }
+    std::fputs(fuse::remaster::dif::summaryJson(result.resource).c_str(), stdout);
+    return 0;
+}
+
 } // namespace
+
+#if defined(FUSE_REMASTER_HAVE_REMIX)
+int fuseRemasterIngestRemix(int argc, char** argv); // remix/src/remaster_remix_cli.cpp
+int fuseRemasterExportRemix(int argc, char** argv);
+#endif
 
 int main(int argc, char** argv) {
     const Args a = parseArgs(argc, argv);
@@ -415,5 +515,19 @@ int main(int argc, char** argv) {
     if (a.command == "report") {
         return cmdReport(a);
     }
+    if (a.command == "replace") {
+        return cmdReplace(a);
+    }
+    if (a.command == "dif") {
+        return cmdDif(a);
+    }
+#if defined(FUSE_REMASTER_HAVE_REMIX)
+    if (a.command == "ingest-remix") {
+        return fuseRemasterIngestRemix(argc, argv);
+    }
+    if (a.command == "export-remix") {
+        return fuseRemasterExportRemix(argc, argv);
+    }
+#endif
     return usage();
 }

@@ -102,6 +102,7 @@ endif()
 
 add_subdirectory(Remaster)  # FUSE Remaster W0 (docs/plans/FUSE_REMASTER_PLAN.md): fuse_poco, fuse_remaster_store/_db/_tscript; before Relight
 add_subdirectory(Relight)  # FUSE Relight (docs/plans/FUSE_REMIX_PORT_PLAN.md); FUSE_BUILD_RELIGHT inside, default ON for MinGW
+add_subdirectory(Remaster/remix)  # Remaster W2.3 / W2.4 ingest-remix / export-remix (needs Relight's importer; returns early without it)
 
 
 if(TARGET fuse_script AND TARGET fuse_compat_ts)

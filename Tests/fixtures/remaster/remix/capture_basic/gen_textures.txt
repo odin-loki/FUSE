@@ -1,0 +1,3 @@
+# kind path format width height seed (staged by fuse_relight_mods_import_tests stage; nothing binary is committed)
+dds9 textures/7E7E000000000001.dds a8r8g8b8 4 4 21
+dds9 textures/7E7E000000000002.dds a8r8g8b8 8 4 22

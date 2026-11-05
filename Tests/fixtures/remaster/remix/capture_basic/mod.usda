@@ -1,0 +1,86 @@
+#usda 1.0
+(
+    customLayerData = {
+        dictionary cameraSettings = {
+            string boundCamera = "/RootNode/cameras/Camera"
+        }
+        string lightspeed_exe_name = "fixture.exe"
+        string lightspeed_game_icon = ""
+        string lightspeed_game_name = "Remaster Remix Fixture"
+        string lightspeed_geometry_hash_rules = "positions,indices,geometrydescriptor"
+        string lightspeed_layer_type = "capture"
+    }
+    defaultPrim = "RootNode"
+    metersPerUnit = 0.0254
+    upAxis = "Y"
+)
+
+# FUSE Remaster W2.1 / W2.3 fixture (handcrafted, synthetic: no game content). A capture in the Remix capture layout
+# (docs/remaster/remix-format-notes.md section 2): two captured meshes bound to two captured materials (their DDS
+# textures are generated at test time from gen_textures.txt), one captured sphere light and the instance section.
+# Ingest gives five original assets: 2 mesh (remix.geom.asset + fuse.capture.sha256), 2 texture (remix.tex +
+# fuse.capture.sha256) and 1 light (remix.light).
+def Xform "RootNode"
+{
+    def Scope "lights"
+    {
+        def SphereLight "light_11CE000000000001" (
+            prepend references = @./lights/light_11CE000000000001.usda@
+        )
+        {
+        }
+    }
+
+    def Scope "meshes"
+    {
+        def Xform "mesh_5EED000000000001" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+            prepend references = @./meshes/mesh_5EED000000000001.usda@</mesh_5EED000000000001>
+        )
+        {
+            rel material:binding = </RootNode/Looks/mat_7E7E000000000001>
+            token visibility = "invisible"
+        }
+
+        def Xform "mesh_5EED000000000002" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+            prepend references = @./meshes/mesh_5EED000000000002.usda@</mesh_5EED000000000002>
+        )
+        {
+            rel material:binding = </RootNode/Looks/mat_7E7E000000000002>
+            token visibility = "invisible"
+        }
+    }
+
+    def Scope "Looks"
+    {
+        def Material "mat_7E7E000000000001" (
+            prepend references = @./materials/mat_7E7E000000000001.usda@</Looks/mat_7E7E000000000001>
+        )
+        {
+        }
+
+        def Material "mat_7E7E000000000002" (
+            prepend references = @./materials/mat_7E7E000000000002.usda@</Looks/mat_7E7E000000000002>
+        )
+        {
+        }
+    }
+
+    def Scope "instances"
+    {
+        def Xform "inst_5EED000000000001_0" (
+            prepend references = </RootNode/meshes/mesh_5EED000000000001>
+        )
+        {
+            token visibility = "inherited"
+        }
+
+        def Xform "inst_5EED000000000002_0" (
+            prepend references = </RootNode/meshes/mesh_5EED000000000002>
+        )
+        {
+            token visibility = "inherited"
+        }
+    }
+}

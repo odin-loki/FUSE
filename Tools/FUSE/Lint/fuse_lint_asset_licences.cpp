@@ -170,6 +170,354 @@ bool isRootManifestFile(const std::string& rel) {
     return rel == "licences.lock.json" || rel == "CREDITS.md" || rel == "sources.lock.json";
 }
 
+/// Rule-1 exceptions: tooling data licensed with the repository (JSON schemas, the licence policy), not content.
+bool isToolingDataFile(const std::string& rel) {
+    return (startsWith(rel, "schemas/") && rel.ends_with(".schema.json")) || rel == "models/licence-policy.json";
+}
+
+// ---- FUSE_REMASTER_PLAN §2.6 checks 8-12 (W0.4) -------------------------------------------------------------
+
+/// Content/models/licence-policy.json (fuse.licence-policy/1): the §0.1.0 allow / deny lists as data.
+struct LicencePolicy {
+    std::set<std::string> allowCode;      ///< code_and_weights
+    std::set<std::string> allowData;      ///< weights_and_data (weights / data only)
+    std::set<std::string> separateProcess;///< GPL / AGPL: only as separate processes
+    std::set<std::string> denyIds;
+    std::vector<std::string> denyPrefixes;
+    std::vector<std::string> denySubstrings; ///< lower case
+    std::set<std::string> defaultProviders;
+    std::set<std::string> cloudProviders;
+    std::set<std::string> exceptionProviders;
+    std::set<std::string> fossModels;
+    std::map<std::string, std::string> nonFossModels; ///< id -> reason
+    std::vector<std::string> researchData;            ///< lower case names
+    std::vector<std::string> footageData;             ///< lower case names
+};
+
+const char* kPolicyRel = "models/licence-policy.json";
+
+bool loadPolicy(const fs::path& file, LicencePolicy& p, Violations& v) {
+    const std::string where = file.generic_string();
+    JsonValue doc;
+    std::string err;
+    if (!fs::is_regular_file(file)) {
+        return false;
+    }
+    if (!parseJson(readAll(file), doc, err)) {
+        v.push_back(where + ": JSON parse error: " + err);
+        return false;
+    }
+    if (doc["schema"].asString() != "fuse.licence-policy/1") {
+        v.push_back(where + ": 'schema' must be \"fuse.licence-policy/1\"");
+        return false;
+    }
+    auto strings = [&](const JsonValue& arr, const std::string& key, bool lower) {
+        std::vector<std::string> out;
+        if (!arr.isArray()) {
+            v.push_back(where + ": '" + key + "' must be an array of strings");
+            return out;
+        }
+        for (const JsonValue& s : arr.arr) {
+            if (!s.isString() || s.str.empty()) {
+                v.push_back(where + ": '" + key + "' holds a non-string or empty entry");
+                continue;
+            }
+            out.push_back(lower ? lowerStr(s.str) : s.str);
+        }
+        return out;
+    };
+    auto toSet = [](const std::vector<std::string>& xs) { return std::set<std::string>(xs.begin(), xs.end()); };
+    p.allowCode = toSet(strings(doc["allow"]["code_and_weights"], "allow.code_and_weights", false));
+    p.allowData = toSet(strings(doc["allow"]["weights_and_data"], "allow.weights_and_data", false));
+    p.separateProcess = toSet(strings(doc["allow"]["separate_process_only"], "allow.separate_process_only", false));
+    p.denyIds = toSet(strings(doc["deny"]["ids"], "deny.ids", false));
+    p.denyPrefixes = strings(doc["deny"]["prefixes"], "deny.prefixes", false);
+    p.denySubstrings = strings(doc["deny"]["substrings_ci"], "deny.substrings_ci", true);
+    p.defaultProviders = toSet(strings(doc["default_providers"], "default_providers", false));
+    p.cloudProviders = toSet(strings(doc["cloud_providers"], "cloud_providers", false));
+    p.fossModels = toSet(strings(doc["foss_models"], "foss_models", true));
+    p.researchData = strings(doc["research_only_training_data"], "research_only_training_data", true);
+    p.footageData = strings(doc["third_party_game_footage"], "third_party_game_footage", true);
+    for (const JsonValue& e : doc["exceptions"].arr) {
+        if (e["provider"].asString().empty() || e["reason"].asString().empty()) {
+            v.push_back(where + ": every exceptions[] entry needs 'provider' and 'reason'");
+        } else {
+            p.exceptionProviders.insert(e["provider"].asString());
+        }
+    }
+    for (const JsonValue& m : doc["non_foss_models"].arr) {
+        const std::string id = lowerStr(m["id"].asString());
+        if (id.empty() || m["reason"].asString().empty()) {
+            v.push_back(where + ": every non_foss_models[] entry needs 'id' and 'reason'");
+            continue;
+        }
+        p.nonFossModels[id] = m["reason"].asString();
+        if (p.fossModels.count(id)) {
+            v.push_back(where + ": model '" + id + "' is on both foss_models and non_foss_models");
+        }
+    }
+    for (const auto& id : p.allowCode) {
+        if (p.denyIds.count(id)) {
+            v.push_back(where + ": licence '" + id + "' is on both the allow and the deny list");
+        }
+    }
+    if (p.allowCode.empty() || p.denyIds.empty() || p.defaultProviders.empty()) {
+        v.push_back(where + ": allow.code_and_weights, deny.ids and default_providers must not be empty");
+    }
+    return true;
+}
+
+enum class ModelLic { Allowed, SeparateProcess, Denied, NotListed };
+
+ModelLic classifyModelLicence(const LicencePolicy& p, const std::string& id) {
+    if (id.empty() || p.denyIds.count(id)) {
+        return ModelLic::Denied;
+    }
+    for (const std::string& pre : p.denyPrefixes) {
+        if (startsWith(id, pre)) {
+            return ModelLic::Denied;
+        }
+    }
+    const std::string low = lowerStr(id);
+    for (const std::string& sub : p.denySubstrings) {
+        if (low.find(sub) != std::string::npos) {
+            return ModelLic::Denied;
+        }
+    }
+    if (p.allowCode.count(id) || p.allowData.count(id)) {
+        return ModelLic::Allowed;
+    }
+    if (p.separateProcess.count(id)) {
+        return ModelLic::SeparateProcess;
+    }
+    return ModelLic::NotListed;
+}
+
+bool mentionsAny(const std::string& textLower, const std::vector<std::string>& names) {
+    for (const std::string& n : names) {
+        if (!n.empty() && textLower.find(n) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Checks 8-12 over the parsed records. `policy` is null when the policy file is missing.
+void checkRemasterRules(const std::string& lockName, const std::map<std::string, Record>& recs, const fs::path& manifest,
+                        const LicencePolicy* policy, const std::string& policyName, Violations& v) {
+    static const std::regex shaRe(R"([0-9a-f]{64})");
+    static const std::regex dateRe(R"([0-9]{4}-[0-9]{2}-[0-9]{2})");
+    auto isOriginalClass = [](const Record& r) {
+        const std::string origin = (*r.json)["origin"].asString();
+        return startsWith(r.licence, "LicenseRef-Original-") || origin == "original" || origin == "derived-original" ||
+               r.distribution == "recipe-only";
+    };
+    auto isOriginal = [](const Record& r) {
+        const std::string origin = (*r.json)["origin"].asString();
+        return startsWith(r.licence, "LicenseRef-Original-") || origin == "original" || origin == "derived-original";
+    };
+    // Transitive derivation closure (cycles are reported by rule 4 already).
+    std::map<std::string, std::set<std::string>> chainMemo;
+    std::function<const std::set<std::string>&(const std::string&, std::set<std::string>&)> chain =
+        [&](const std::string& id, std::set<std::string>& stack) -> const std::set<std::string>& {
+        if (auto it = chainMemo.find(id); it != chainMemo.end()) {
+            return it->second;
+        }
+        std::set<std::string> out;
+        const auto rit = recs.find(id);
+        if (rit != recs.end() && stack.insert(id).second) {
+            for (const JsonValue& in : (*rit->second.json)["derived_from"].arr) {
+                const std::string inId = in.asString();
+                if (!recs.count(inId) || out.count(inId)) {
+                    continue;
+                }
+                out.insert(inId);
+                const std::set<std::string> sub = chain(inId, stack);
+                out.insert(sub.begin(), sub.end());
+            }
+            stack.erase(id);
+        }
+        return chainMemo[id] = std::move(out);
+    };
+
+    bool anyAi = false;
+    for (const auto& [id, rec] : recs) {
+        const JsonValue& r = *rec.json;
+        const std::string where = lockName + ": asset '" + id + "'";
+        std::set<std::string> stack;
+        const std::set<std::string>& ancestors = chain(id, stack);
+
+        // ---- check 8: originals / recipe-only never tracked or packed ----
+        if (isOriginalClass(rec)) {
+            for (const JsonValue& f : r["files"].arr) {
+                if (f["location"].asString("content") == "content") {
+                    v.push_back(where + ": check 8: original / recipe-only record tracks '" + f["path"].asString() +
+                                "' under Content/ (originals and recipe-only derivatives live in build/remaster-cache/ only)");
+                }
+            }
+            if (!r["pack"].asString().empty()) {
+                v.push_back(where + ": check 8: original / recipe-only record is marked for pack '" + r["pack"].asString() + "'");
+            }
+        }
+        if (!r["pack"].asString().empty() && !isOriginalClass(rec)) {
+            for (const std::string& a : ancestors) {
+                if (isOriginalClass(recs.at(a))) {
+                    v.push_back(where + ": check 8: packed for '" + r["pack"].asString() + "' but derived from original / recipe-only '" +
+                                a + "' (ship the recipe, not the output)");
+                    break;
+                }
+            }
+        }
+
+        // ---- check 10: original in the chain + cloud uploads -> opt-in record ----
+        bool originalInChain = isOriginal(rec);
+        for (const std::string& a : ancestors) {
+            originalInChain = originalInChain || isOriginal(recs.at(a));
+        }
+        const JsonValue& uploads = r["cloud_uploads"];
+        if (!uploads.isNull() && !uploads.isArray()) {
+            v.push_back(where + ": 'cloud_uploads' must be an array of upload-log ids");
+        }
+        if (originalInChain && !uploads.arr.empty()) {
+            const JsonValue& opt = r["opt_in"];
+            const std::string tier = r["tier"].asString(opt["tier"].asString());
+            if (!opt.isObject() || opt["cloud_upload"].asString() != "opt-in" || opt["confirmed_by"].asString().empty() ||
+                !std::regex_match(opt["confirmed"].asString(), dateRe)) {
+                v.push_back(where + ": check 10: an original is in its derivation chain and it lists cloud_uploads, but it has no "
+                                    "opt_in record (cloud_upload \"opt-in\", confirmed_by, confirmed YYYY-MM-DD; §0.1.5)");
+            } else if (tier != "paid") {
+                v.push_back(where + ": check 10: originals went to a cloud API on tier '" + tier + "' (only the paid tier is allowed, §0.1.5)");
+            }
+        }
+
+        if (r["origin"].asString() != "ai") {
+            continue;
+        }
+        anyAi = true;
+        // ---- check 9: the recipe block ----
+        const JsonValue& recipe = r["recipe"];
+        const std::string modelId = lowerStr(r["model"]["id"].asString(recipe["model"].asString()));
+        if (!recipe.isObject()) {
+            v.push_back(where + ": check 9: ai record without a 'recipe' block (model, model_version or date, seed, output_sha256)");
+        } else {
+            if (recipe["model"].asString().empty()) {
+                v.push_back(where + ": check 9: recipe needs the model id ('recipe.model')");
+            }
+            if (recipe["model_version"].asString().empty() && !std::regex_match(recipe["date"].asString(), dateRe)) {
+                v.push_back(where + ": check 9: recipe needs 'model_version' or a 'date' (YYYY-MM-DD)");
+            }
+            if (!recipe["seed"].isNumber()) {
+                v.push_back(where + ": check 9: recipe needs a numeric 'seed'");
+            }
+            if (!std::regex_match(recipe["output_sha256"].asString(), shaRe)) {
+                v.push_back(where + ": check 9: recipe needs the 'output_sha256' (64-hex) of the reviewed output");
+            }
+        }
+        if (!policy) {
+            continue;
+        }
+        const std::string provider = r["provider"].asString();
+        if (provider.empty()) {
+            v.push_back(where + ": check 12: ai record without a 'provider'");
+            continue;
+        }
+        const bool exempt = policy->exceptionProviders.count(provider) != 0;
+        const bool mock = provider == "mock";
+        // ---- check 11: model / sub-model licences, training data ----
+        if (!exempt && !mock) {
+            const JsonValue& m = r["model"];
+            if (!m.isObject() || m["id"].asString().empty()) {
+                v.push_back(where + ": check 11: ai record needs a 'model' block (id, code_licence, weights_licence, submodels, foss)");
+            } else {
+                bool computedFoss = true;
+                auto judge = [&](const std::string& what, const std::string& lic, bool code) {
+                    const ModelLic c = classifyModelLicence(*policy, lic);
+                    if (c == ModelLic::Denied) {
+                        v.push_back(where + ": check 11: " + what + " licence '" + (lic.empty() ? "(none)" : lic) +
+                                    "' is deny-listed (§0.1.0: not FOSS, or undetermined)");
+                        computedFoss = false;
+                    } else if (c == ModelLic::NotListed) {
+                        v.push_back(where + ": check 11: " + what + " licence '" + lic + "' is not on the §0.1.0 allow-list (" +
+                                    policyName + ")");
+                        computedFoss = false;
+                    } else if (c == ModelLic::SeparateProcess && (!code || m["process"].asString() != "external")) {
+                        v.push_back(where + ": check 11: " + what + " licence '" + lic +
+                                    "' is allowed only for code run as a separate process (model.process = \"external\")");
+                        computedFoss = false;
+                    }
+                };
+                judge("model '" + m["id"].asString() + "' code", m["code_licence"].asString(), true);
+                judge("model '" + m["id"].asString() + "' weights", m["weights_licence"].asString(), false);
+                if (!m["submodels"].isArray()) {
+                    v.push_back(where + ": check 11: model needs a 'submodels' array (empty when it loads none)");
+                    computedFoss = false;
+                }
+                for (const JsonValue& sm : m["submodels"].arr) {
+                    const std::string smId = sm["id"].asString();
+                    judge("sub-model '" + smId + "'", sm["licence"].asString(), false);
+                    if (const auto it = policy->nonFossModels.find(lowerStr(smId)); it != policy->nonFossModels.end()) {
+                        v.push_back(where + ": check 11: sub-model '" + smId + "' is a §3.4.2 non-FOSS model (" + it->second + ")");
+                        computedFoss = false;
+                    }
+                }
+                if (const auto it = policy->nonFossModels.find(modelId); it != policy->nonFossModels.end()) {
+                    v.push_back(where + ": check 11: model '" + m["id"].asString() + "' is a §3.4.2 non-FOSS model (" + it->second + ")");
+                    computedFoss = false;
+                }
+                if (!m["foss"].isBool()) {
+                    v.push_back(where + ": check 11: model needs 'foss' (true|false), computed from the §0.1.0 lists");
+                } else if (m["foss"].asBool() != computedFoss) {
+                    v.push_back(where + ": check 11: model says foss: " + std::string(m["foss"].asBool() ? "true" : "false") +
+                                " but the §0.1.0 lists give " + (computedFoss ? "true" : "false"));
+                }
+                const std::string data = lowerStr(m["training_data"].asString());
+                const bool reviewed = !m["training_data_review"]["by"].asString().empty();
+                if (mentionsAny(data, policy->researchData) && !reviewed) {
+                    v.push_back(where + ": check 11: research-only training data ('" + m["training_data"].asString() +
+                                "') without a training_data_review");
+                }
+                if (mentionsAny(data, policy->footageData) && rec.distribution == "ship" && !reviewed) {
+                    v.push_back(where + ": check 11: trained on third-party game footage ('" + m["training_data"].asString() +
+                                "'): outputs default to distribution never (§4.7) unless reviewed");
+                }
+            }
+        }
+        // ---- check 12: non-default providers ----
+        const bool defaultProvider = policy->defaultProviders.count(provider) != 0;
+        if (!defaultProvider && !policy->fossModels.count(modelId)) {
+            if (rec.distribution == "ship") {
+                v.push_back(where + ": check 12: provider '" + provider + "' / model '" + modelId +
+                            "' is not a default (gemini, mock or a §3.4.1 FOSS model): its output cannot ship");
+            } else if (!r["non_default"].asBool()) {
+                v.push_back(where + ": check 12: provider '" + provider + "' / model '" + modelId +
+                            "' is non-default: flag the record with non_default: true");
+            }
+        }
+        if (policy->cloudProviders.count(provider) && r["tier"].asString().empty()) {
+            v.push_back(where + ": check 12: cloud provider '" + provider + "' needs 'tier' (paid | free)");
+        }
+    }
+    if (anyAi && !policy) {
+        v.push_back(lockName + ": ai records present but " + policyName +
+                    " is missing: checks 11 and 12 need the §0.1.0 allow / deny lists");
+    }
+
+    // check 8 (cook manifest): no cooked output resolves to an original / recipe-only record.
+    if (!manifest.empty() && fs::is_regular_file(manifest)) {
+        JsonValue m;
+        std::string perr;
+        if (parseJson(readAll(manifest), m, perr)) {
+            for (const JsonValue& a : m["assets"].arr) {
+                const std::string lid = a["licence_id"].asString(a["licenceId"].asString());
+                if (const auto it = recs.find(lid); it != recs.end() && isOriginalClass(it->second)) {
+                    v.push_back(manifest.generic_string() + ": check 8: cooked output '" + a["outputPath"].asString(a["output_path"].asString()) +
+                                "' comes from original / recipe-only record '" + lid + "' (reachable from a pack)");
+                }
+            }
+        }
+    }
+}
+
 } // namespace
 
 bool renderAssetCredits(const fs::path& lockFile, std::string& out, std::string& error) {
@@ -432,6 +780,13 @@ Violations checkAssetLicences(const fs::path& content, const fs::path& manifest,
             v.push_back(where + ": derived from reference-only '" + via + "' but has distribution 'ship'");
         }
     }
+    // FUSE_REMASTER_PLAN §2.6 checks 8-12 (W0.4), with the §0.1.0 lists from models/licence-policy.json.
+    {
+        const fs::path policyFile = content / kPolicyRel;
+        LicencePolicy policy;
+        const bool havePolicy = loadPolicy(policyFile, policy, v);
+        checkRemasterRules(lockName, recs, manifest, havePolicy ? &policy : nullptr, policyFile.generic_string(), v);
+    }
     for (const auto& [id, rec] : recs) {
         if (rec.json->operator[]("pack").asString() == "permissive" && int(effective[id]) >= int(LicClass::Copyleft)) {
             v.push_back(lockName + ": asset '" + id + "': marked for the permissive pack but its effective licence is " +
@@ -447,7 +802,7 @@ Violations checkAssetLicences(const fs::path& content, const fs::path& manifest,
         }
         const std::string relp = fs::relative(it->path(), content).generic_string();
         const std::string name = it->path().filename().string();
-        if (isRootManifestFile(relp) || name == ".gitkeep" || name == ".gitignore") {
+        if (isRootManifestFile(relp) || isToolingDataFile(relp) || name == ".gitkeep" || name == ".gitignore") {
             continue;
         }
         if (!fileOwner.count(relp)) {
@@ -490,7 +845,7 @@ Violations checkAssetLicences(const fs::path& content, const fs::path& manifest,
     return v;
 }
 
-bool selfTestAssetLicences(const fs::path& scratch, const Sha256Fn& sha256) {
+bool selfTestAssetLicences(const fs::path& scratch, const Sha256Fn& sha256, const fs::path& policyFile) {
     bool ok = true;
     auto expect = [&](bool cond, const std::string& what) {
         if (!cond) {
@@ -615,6 +970,201 @@ bool selfTestAssetLicences(const fs::path& scratch, const Sha256Fn& sha256) {
     expect(count(vb, "requires an 'attribution'") == 0u && count(vb, ": no licence record in") == 1u,
            "asset-licences: no spurious attribution / coverage findings");
     expect(!checkAssetLicences(bad / "nonexistent", {}, {}, sha256).empty(), "asset-licences: missing lock flagged");
+
+    // ---- FUSE_REMASTER_PLAN §2.6 checks 8-12: a clean tree and one seeded failure (or more) per check ----
+    {
+        const fs::path rg = scratch / "asset_licences_remaster_good";
+        const fs::path rb = scratch / "asset_licences_remaster_bad";
+        fs::remove_all(rg, ec);
+        fs::remove_all(rb, ec);
+        // The embedded policy: the §0.1.0 entries these trees use (the real Content/models/licence-policy.json must
+        // judge them the same way; checked below when the caller passes it).
+        const std::string miniPolicy =
+            "{\"schema\": \"fuse.licence-policy/1\","
+            " \"allow\": {\"code_and_weights\": [\"Apache-2.0\", \"MIT\", \"BSD-3-Clause\"], \"weights_and_data\": [\"CC0-1.0\"],"
+            " \"separate_process_only\": [\"GPL-3.0-only\"]},"
+            " \"deny\": {\"ids\": [\"LicenseRef-DINOv3\", \"LicenseRef-Bria-RMBG\", \"LicenseRef-NVIDIA-Source-Code\", \"NOASSERTION\"],"
+            " \"prefixes\": [\"CC-BY-NC\", \"CC-BY-ND\", \"LicenseRef-Tencent-\"], \"substrings_ci\": [\"-nc\", \"-nd\", \"community\", \"research-only\"]},"
+            " \"default_providers\": [\"gemini\", \"mock\"], \"cloud_providers\": [\"gemini\"],"
+            " \"exceptions\": [{\"provider\": \"gemini\", \"reason\": \"user-approved agent\"}],"
+            " \"foss_models\": [\"pbrify_remix\", \"triposr\", \"birefnet\", \"demucs-v4\"],"
+            " \"non_foss_models\": [{\"id\": \"pbrfusion\", \"reason\": \"CC-BY-NC-SA-4.0\"}, {\"id\": \"dinov3\", \"reason\": \"DINOv3 licence\"},"
+            " {\"id\": \"trellis.2-4b\", \"reason\": \"sub-model rule\"}],"
+            " \"research_only_training_data\": [\"DIV2K\", \"MUSDB18\", \"Objaverse\"], \"third_party_game_footage\": [\"GTA V\", \"Minecraft\"]}\n";
+        const std::string sha0 = std::string(64, '0');
+        const std::string recipeOk = "\"recipe\": {\"path\": \"recipes/x.json\", \"model\": \"m\", \"date\": \"2026-11-05\", \"seed\": 7,"
+                                     " \"output_sha256\": \"" + std::string(64, 'b') + "\"}";
+        const std::string signedReview = "\"review\": {\"required\": true, \"by\": \"reviewer\", \"date\": \"2026-11-05\"}";
+        const std::string gen = "\"generator\": \"Tools/FUSE/Remaster/fuse_ai@0123abc\", \"seed\": 7";
+        auto original = [&](const std::string& id, const std::string& extra) {
+            return "{\"id\": \"" + id + "\", \"origin\": \"original\", \"source\": \"user-owned game g\", \"author\": \"game authors\","
+                   " \"licence\": \"LicenseRef-Original-g\", \"distribution\": \"never\", \"game_id\": \"g\", " + signedReview +
+                   ", \"files\": [{\"path\": \"g/" + id.substr(id.rfind('/') + 1) + ".dds\", \"sha256\": \"" + sha0 +
+                   "\", \"location\": \"cache\"}]" + extra + "}";
+        };
+        auto ai = [&](const std::string& id, const std::string& body) {
+            return "{\"id\": \"" + id + "\", \"origin\": \"ai\", \"source\": \"FUSE\", \"author\": \"FUSE contributors\", " + gen + ", " +
+                   body + "}";
+        };
+        const std::string blockout = "blockout";
+        writeAll(rg / "golden/rock_blockout.glb", blockout);
+        const std::string goodRm = std::string("{\"schema\": 1, \"assets\": [\n") + original("orig/g/wall_tex", "") + ",\n" +
+            // a local FOSS upscale of an original: recipe-only, its output stays in the cache
+            ai("ai/g/wall_tex_up", "\"provider\": \"local-onnx\", \"licence\": \"LicenseRef-Original-g\", \"distribution\": \"recipe-only\", " +
+                                       signedReview + ", \"derived_from\": [\"orig/g/wall_tex\"], \"model\": {\"id\": \"pbrify_remix\","
+                                       " \"code_licence\": \"MIT\", \"weights_licence\": \"CC0-1.0\", \"submodels\": [], \"foss\": true,"
+                                       " \"training_data\": \"ambientCG CC0\"}, " + recipeOk) + ",\n" +
+            // Gemini tags of an original, uploaded with the per-game opt-in on the paid tier
+            ai("ai/g/door_tags", "\"provider\": \"gemini\", \"tier\": \"paid\", \"licence\": \"LicenseRef-AI-Gemini\", \"distribution\": \"never\", " +
+                                     signedReview + ", \"derived_from\": [\"orig/g/wall_tex\"], \"model\": {\"id\": \"gemini-3.8-flash\"},"
+                                     " \"cloud_uploads\": [\"upload-0001\"], \"opt_in\": {\"cloud_upload\": \"opt-in\", \"confirmed_by\": \"owner\","
+                                     " \"confirmed\": \"2026-11-01\"}, " + recipeOk) + ",\n" +
+            // a shippable blockout from our own prompt: FOSS model + FOSS sub-model, reviewed research-ish training data
+            ai("ai/lib/rock_blockout", "\"provider\": \"local-torch\", \"licence\": \"LicenseRef-FUSE-Generated\", \"pack\": \"permissive\","
+                                           " \"model\": {\"id\": \"TripoSR\", \"code_licence\": \"MIT\", \"weights_licence\": \"MIT\","
+                                           " \"submodels\": [{\"id\": \"birefnet\", \"licence\": \"MIT\"}], \"foss\": true,"
+                                           " \"training_data\": \"Objaverse renders\", \"training_data_review\": {\"by\": \"reviewer\", \"date\": \"2026-11-05\"}},"
+                                           " \"files\": [{\"path\": \"golden/rock_blockout.glb\", \"sha256\": \"" + sha256(blockout) + "\"}], " + recipeOk) + ",\n" +
+            ai("ai/lib/mock_tags", "\"provider\": \"mock\", \"licence\": \"LicenseRef-FUSE-Generated\", \"model\": {\"id\": \"mock-tagger\"}, " + recipeOk) + ",\n" +
+            // a non-default provider, flagged and not shipped
+            ai("ai/lib/comfy_variant", "\"provider\": \"comfyui\", \"licence\": \"LicenseRef-FUSE-Generated\", \"distribution\": \"never\","
+                                           " \"non_default\": true, \"model\": {\"id\": \"own-upscaler\", \"code_licence\": \"GPL-3.0-only\","
+                                           " \"process\": \"external\", \"weights_licence\": \"CC0-1.0\", \"submodels\": [], \"foss\": true}, " + recipeOk) +
+            "\n]}\n";
+        writeAll(rg / "licences.lock.json", goodRm);
+        writeAll(rg / "models/licence-policy.json", miniPolicy);
+        std::string rcredits;
+        expect(renderAssetCredits(rg / "licences.lock.json", rcredits, err), "remaster checks: good lock renders CREDITS (" + err + ")");
+        writeAll(rg / "CREDITS.md", rcredits);
+        const Violations vrg = checkAssetLicences(rg, {}, {}, sha256);
+        for (const auto& s : vrg) {
+            std::fprintf(stderr, "  unexpected (remaster good): %s\n", s.c_str());
+        }
+        expect(vrg.empty(), "remaster checks 8-12: originals in the cache, opt-in Gemini upload, FOSS model + sub-model, mock, "
+                            "flagged non-default provider pass");
+
+        writeAll(rb / "remaster/leak.dds", "original pixels");
+        const std::string badRm = std::string("{\"schema\": 1, \"assets\": [\n") + original("orig/g/wall_tex", "") + ",\n" +
+            // check 8: an original tracked under Content/, a recipe-only record packed, a packed derivative of an original
+            "{\"id\": \"orig/g/leak\", \"origin\": \"original\", \"source\": \"g\", \"author\": \"a\", \"licence\": \"LicenseRef-Original-g\","
+            " \"distribution\": \"never\", " + signedReview + ", \"files\": [{\"path\": \"remaster/leak.dds\", \"sha256\": \"" +
+            sha256("original pixels") + "\"}]},\n" +
+            "{\"id\": \"der/g/packed_up\", \"origin\": \"derived-original\", \"source\": \"FUSE\", \"author\": \"a\", \"licence\": \"LicenseRef-Original-g\","
+            " \"distribution\": \"recipe-only\", \"pack\": \"remaster-g\", " + signedReview + ", \"derived_from\": [\"orig/g/wall_tex\"]},\n" +
+            "{\"id\": \"lib/x/packed_child\", \"origin\": \"generated\", \"source\": \"FUSE\", \"author\": \"a\", " + gen +
+            ", \"licence\": \"LicenseRef-FUSE-Generated\", \"distribution\": \"never\", \"pack\": \"remaster-g\", \"derived_from\": [\"der/g/packed_up\"]},\n" +
+            // check 9: no recipe; recipe without seed and output hash
+            ai("ai/x/no_recipe", "\"provider\": \"mock\", \"licence\": \"LicenseRef-FUSE-Generated\", \"model\": {\"id\": \"mock-tagger\"}") + ",\n" +
+            ai("ai/x/bad_recipe", "\"provider\": \"mock\", \"licence\": \"LicenseRef-FUSE-Generated\", \"model\": {\"id\": \"mock-tagger\"},"
+                                  " \"recipe\": {\"model\": \"mock-tagger\", \"model_version\": \"1\"}") + ",\n" +
+            // check 10: original uploaded without an opt-in record; with an opt-in on the free tier
+            ai("ai/g/no_opt_in", "\"provider\": \"gemini\", \"tier\": \"paid\", \"licence\": \"LicenseRef-AI-Gemini\", \"distribution\": \"never\", " +
+                                     signedReview + ", \"derived_from\": [\"orig/g/wall_tex\"], \"model\": {\"id\": \"gemini-3.8-flash\"},"
+                                     " \"cloud_uploads\": [\"upload-0002\"], " + recipeOk) + ",\n" +
+            ai("ai/g/free_tier", "\"provider\": \"gemini\", \"tier\": \"free\", \"licence\": \"LicenseRef-AI-Gemini\", \"distribution\": \"never\", " +
+                                     signedReview + ", \"derived_from\": [\"orig/g/wall_tex\"], \"model\": {\"id\": \"gemini-3.8-flash\"},"
+                                     " \"cloud_uploads\": [\"upload-0003\"], \"opt_in\": {\"cloud_upload\": \"opt-in\", \"confirmed_by\": \"owner\","
+                                     " \"confirmed\": \"2026-11-01\"}, " + recipeOk) + ",\n" +
+            // check 11: NC weights (PBRFusion), a deny-listed sub-model (DINOv3 inside a TRELLIS.2-like pipeline),
+            // research-only training data without review, GPL code linked in-process
+            ai("ai/x/pbrfusion", "\"provider\": \"local-onnx\", \"licence\": \"LicenseRef-FUSE-Generated\", \"distribution\": \"never\","
+                                 " \"non_default\": true, \"model\": {\"id\": \"PBRFusion\", \"code_licence\": \"MIT\", \"weights_licence\": \"CC-BY-NC-SA-4.0\","
+                                 " \"submodels\": [], \"foss\": true}, " + recipeOk) + ",\n" +
+            ai("ai/x/submodel", "\"provider\": \"local-torch\", \"licence\": \"LicenseRef-FUSE-Generated\", \"distribution\": \"never\","
+                                " \"non_default\": true, \"model\": {\"id\": \"pipeline-3d\", \"code_licence\": \"MIT\", \"weights_licence\": \"MIT\","
+                                " \"submodels\": [{\"id\": \"DINOv3\", \"licence\": \"LicenseRef-DINOv3\"}], \"foss\": false}, " + recipeOk) + ",\n" +
+            ai("ai/x/div2k", "\"provider\": \"local-onnx\", \"licence\": \"LicenseRef-FUSE-Generated\", \"distribution\": \"never\","
+                             " \"model\": {\"id\": \"demucs-v4\", \"code_licence\": \"MIT\", \"weights_licence\": \"MIT\", \"submodels\": [],"
+                             " \"foss\": true, \"training_data\": \"DIV2K (academic only)\"}, " + recipeOk) + ",\n" +
+            ai("ai/x/gpl_linked", "\"provider\": \"local-torch\", \"licence\": \"LicenseRef-FUSE-Generated\", \"distribution\": \"never\","
+                                  " \"model\": {\"id\": \"triposr\", \"code_licence\": \"GPL-3.0-only\", \"weights_licence\": \"MIT\", \"submodels\": [],"
+                                  " \"foss\": false}, " + recipeOk) + ",\n" +
+            // check 12: a non-default provider / model whose output ships; one that is not flagged
+            ai("ai/x/ships", "\"provider\": \"comfyui\", \"licence\": \"LicenseRef-FUSE-Generated\", \"model\": {\"id\": \"mystery-upscaler\","
+                             " \"code_licence\": \"MIT\", \"weights_licence\": \"MIT\", \"submodels\": [], \"foss\": true}, " + recipeOk) + ",\n" +
+            ai("ai/x/unflagged", "\"provider\": \"comfyui\", \"licence\": \"LicenseRef-FUSE-Generated\", \"distribution\": \"never\","
+                                 " \"model\": {\"id\": \"mystery-upscaler\", \"code_licence\": \"MIT\", \"weights_licence\": \"MIT\", \"submodels\": [],"
+                                 " \"foss\": true}, " + recipeOk) +
+            "\n]}\n";
+        writeAll(rb / "licences.lock.json", badRm);
+        writeAll(rb / "models/licence-policy.json", miniPolicy);
+        std::string bcredits;
+        expect(renderAssetCredits(rb / "licences.lock.json", bcredits, err), "remaster checks: bad lock renders CREDITS (" + err + ")");
+        writeAll(rb / "CREDITS.md", bcredits);
+        writeAll(scratch / "asset_licences_remaster_manifest.json",
+                 "{\"assets\": [{\"kind\": \"texture\", \"sourcePath\": \"x.png\", \"outputPath\": \"cooked/up.fusetex\", \"licence_id\": \"der/g/packed_up\"}]}");
+        auto checkLines = [](const Violations& vs) {
+            Violations out;
+            for (const auto& s : vs) {
+                if (s.find(": check ") != std::string::npos) {
+                    // The policies' free-text reasons differ; the finding itself must not.
+                    std::string t = s;
+                    if (const size_t at = t.find("non-FOSS model ("); at != std::string::npos) {
+                        t = t.substr(0, at + 14);
+                    }
+                    out.push_back(t);
+                }
+            }
+            return out;
+        };
+        const Violations vrb = checkAssetLicences(rb, scratch / "asset_licences_remaster_manifest.json", {}, sha256);
+        const Violations crb = checkLines(vrb);
+        for (const auto& s : crb) {
+            std::fprintf(stderr, "  seeded: %s\n", s.c_str());
+        }
+        expect(count(crb, "check 8: original / recipe-only record tracks 'remaster/leak.dds'") == 1u, "check 8: original tracked under Content/ flagged");
+        expect(count(crb, "check 8: original / recipe-only record is marked for pack") == 1u, "check 8: packed recipe-only record flagged");
+        expect(count(crb, "check 8: packed for 'remaster-g' but derived from original") == 1u, "check 8: packed derivative of an original flagged");
+        expect(count(crb, "check 8: cooked output 'cooked/up.fusetex'") == 1u, "check 8: cooked output of a recipe-only record flagged");
+        expect(count(crb, "check 9: ai record without a 'recipe'") == 1u, "check 9: ai record without a recipe flagged");
+        expect(count(crb, "check 9: recipe needs a numeric 'seed'") == 1u && count(crb, "check 9: recipe needs the 'output_sha256'") == 1u,
+               "check 9: recipe without seed / output hash flagged");
+        expect(count(crb, "check 10: an original is in its derivation chain") == 1u, "check 10: upload of an original without opt-in flagged");
+        expect(count(crb, "check 10: originals went to a cloud API on tier 'free'") == 1u, "check 10: opt-in on the free tier flagged");
+        expect(count(crb, "check 11: model 'PBRFusion' weights licence 'CC-BY-NC-SA-4.0' is deny-listed") == 1u &&
+                   count(crb, "check 11: model 'PBRFusion' is a §3.4.2 non-FOSS model") == 1u &&
+                   count(crb, "says foss: true but the §0.1.0 lists give false") == 1u,
+               "check 11: NC weights (PBRFusion) flagged, also as a non-FOSS model with a wrong foss flag");
+        expect(count(crb, "check 11: sub-model 'DINOv3' licence 'LicenseRef-DINOv3' is deny-listed") == 1u &&
+                   count(crb, "check 11: sub-model 'DINOv3' is a §3.4.2 non-FOSS model") == 1u,
+               "check 11: deny-listed sub-model (DINOv3) flagged");
+        expect(count(crb, "check 11: research-only training data ('DIV2K") == 1u, "check 11: research-only training data without review flagged");
+        expect(count(crb, "check 11: model 'triposr' code licence 'GPL-3.0-only' is allowed only for code run as a separate process") == 1u,
+               "check 11: GPL code linked in-process flagged");
+        expect(count(crb, "check 12: provider 'comfyui' / model 'mystery-upscaler' is not a default") == 1u,
+               "check 12: shippable output of a non-default provider flagged");
+        expect(count(crb, "check 12: provider 'comfyui' / model 'mystery-upscaler' is non-default: flag") == 1u,
+               "check 12: unflagged non-default provider flagged");
+        expect(crb.size() == 18u, "remaster checks: exactly the seeded findings (got " + std::to_string(crb.size()) + ")");
+        // Missing policy with ai records is itself a finding; a broken policy is reported.
+        fs::remove(rb / "models/licence-policy.json", ec);
+        expect(count(checkAssetLicences(rb, {}, {}, sha256), "is missing: checks 11 and 12 need") == 1u, "missing licence policy flagged");
+        writeAll(rb / "models/licence-policy.json", "{\"schema\": \"fuse.licence-policy/1\", \"allow\": {\"code_and_weights\": [\"MIT\"]},"
+                                                    " \"deny\": {\"ids\": [\"MIT\"]}, \"default_providers\": [\"mock\"]}");
+        expect(count(checkAssetLicences(rb, {}, {}, sha256), "is on both the allow and the deny list") == 1u, "contradictory policy flagged");
+        // The real policy (Content/models/licence-policy.json) judges both trees exactly like the embedded one.
+        if (!policyFile.empty() && fs::is_regular_file(policyFile)) {
+            const std::string real = readAll(policyFile);
+            writeAll(rb / "models/licence-policy.json", real);
+            writeAll(rg / "models/licence-policy.json", real);
+            const Violations realBad = checkLines(checkAssetLicences(rb, scratch / "asset_licences_remaster_manifest.json", {}, sha256));
+            const Violations realGood = checkAssetLicences(rg, {}, {}, sha256);
+            for (const auto& s : realGood) {
+                std::fprintf(stderr, "  unexpected (real policy, good): %s\n", s.c_str());
+            }
+            expect(realGood.empty(), "remaster checks with " + policyFile.generic_string() + ": the clean tree passes");
+            expect(realBad == crb, "remaster checks with " + policyFile.generic_string() +
+                                       ": the same 18 findings as the embedded policy (deny-listed sub-model included)");
+            if (realBad != crb) {
+                for (const auto& s : realBad) {
+                    std::fprintf(stderr, "  real policy: %s\n", s.c_str());
+                }
+            }
+        }
+        fs::remove_all(rg, ec);
+        fs::remove_all(rb, ec);
+        fs::remove(scratch / "asset_licences_remaster_manifest.json", ec);
+    }
 
     fs::remove_all(good, ec);
     fs::remove_all(bad, ec);
