@@ -293,6 +293,23 @@ void gateTimelineDrag(Rig& r) {
     CHECK(r.c.trigger(ActionId::EditUndo));
     r.frames();
     CHECK(r.shell.panels().timeline().lanes[0].keysMs[1] == 2500);
+
+    // keyboard (widget Ctrl+Left / Right on the selected clip) retimes the key by a frame: one undo step each
+    g = geom(r);
+    r.ui().pointerMove({g.x(2.5f), g.y(0)});
+    r.ui().pointerDown({g.x(2.5f), g.y(0)}); // selects the clip (a click, no move)
+    r.ui().pointerUp({g.x(2.5f), g.y(0)});
+    r.frames();
+    r.ui().setFocus(r.find("timeline.track"));
+    r.ui().keyDown(Key::Right, fuse::ui::kModCtrl);
+    r.ui().keyUp(Key::Right, fuse::ui::kModCtrl);
+    r.frames();
+    const i32 kb = r.shell.panels().timeline().lanes[0].keysMs[1];
+    std::printf("timeline_drag: Ctrl+Right -> %d ms, undo '%s'\n", kb, r.host.undoStack().peekUndoDescription().c_str());
+    CHECK(kb == 2533 && r.host.undoStack().peekUndoDescription() == "Move key");
+    CHECK(r.c.trigger(ActionId::EditUndo));
+    r.frames();
+    CHECK(r.shell.panels().timeline().lanes[0].keysMs[1] == 2500);
 }
 } // namespace
 

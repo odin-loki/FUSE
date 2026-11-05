@@ -4,7 +4,10 @@
 // its keyboard model says: buttons Enter / Space, radio arrows, ranges arrows / Home / End / Page keys, combo box
 // Alt+Down + arrows + Enter / Escape, menu bar F10 / arrows / Escape, views, editors, pro widgets, dialogs trap focus
 // and Escape cancels); the focused node paints differently from the unfocused one (a visible focus ring) in the
-// dark and the light theme (CPU raster pixels of the node's rect).
+// dark and the light theme (CPU raster pixels of the node's rect). Also: Alt pressed and released alone toggles the
+// menu bar (not Alt+key or Alt+click), table header sort (Ctrl+Enter) and resize (Ctrl+Left / Right) on the keyboard
+// column, node graph links made / removed with the keyboard, curve keys added with Insert, timeline clips selected
+// (Ctrl+Down / Up) and moved (Ctrl+Left / Right), and keyboard focus scrolled into view horizontally (LTR and RTL).
 #include "test_util.hpp"
 
 #include <algorithm>
@@ -412,6 +415,38 @@ void menus(UiContext& ui, const Form& f) {
     press(ui, Key::Escape);
     press(ui, Key::Escape);
     UI_CHECK(ui.focused() == f.line);
+    // Alt alone (Windows): pressed and released with nothing in between toggles the bar like F10
+    press(ui, Key::Alt, kModAlt);
+    UI_CHECK(ui.focused() == f.file && ui.focusVisible());
+    press(ui, Key::Alt, kModAlt);
+    UI_CHECK(ui.focused() == f.line);
+    // not when a key or a click came in between, nor with another modifier (AltGr arrives as Ctrl+Alt)
+    ui.keyDown(Key::Alt, kModAlt);
+    ui.keyDown(Key::Down, kModAlt);
+    ui.keyUp(Key::Down, kModAlt);
+    ui.keyUp(Key::Alt, 0);
+    ui.update(1.f / 60.f);
+    UI_CHECK(ui.focused() == f.line);
+    ui.keyDown(Key::Alt, kModAlt | kModCtrl);
+    ui.keyUp(Key::Alt, kModCtrl);
+    ui.update(1.f / 60.f);
+    UI_CHECK(ui.focused() == f.line);
+    ui.keyDown(Key::Alt, kModAlt);
+    const Rect lr = ui.rect(f.line);
+    ui.pointerDown({lr.x + 4.f, lr.y + 4.f});
+    ui.pointerUp({lr.x + 4.f, lr.y + 4.f});
+    ui.keyUp(Key::Alt, 0);
+    ui.update(1.f / 60.f);
+    UI_CHECK(ui.focused() == f.line);
+    // Alt from inside the bar goes back; a held (repeating) Alt still counts as alone
+    ui.setFocus(f.line, FocusReason::Keyboard);
+    ui.keyDown(Key::Alt, kModAlt);
+    ui.keyDown(Key::Alt, kModAlt);
+    ui.keyUp(Key::Alt, 0);
+    ui.update(1.f / 60.f);
+    UI_CHECK(ui.focused() == f.file);
+    press(ui, Key::Alt, kModAlt);
+    UI_CHECK(ui.focused() == f.line);
 }
 
 void tierB(UiContext& ui, const Form& f) {
@@ -479,6 +514,25 @@ void tierB(UiContext& ui, const Form& f) {
     UI_CHECK_EQ(ui.value(f.table), 0.f);
     press(ui, Key::Enter);
     UI_CHECK_EQ(tableSub.n, 1);
+    // header on the keyboard: Left / Right pick the column, Ctrl+Enter sorts (again: reverses), Ctrl+Right widens
+    Counter sorted;
+    count(ui, f.table, SignalKind::Toggled, sorted);
+    press(ui, Key::Right);
+    press(ui, Key::Enter, kModCtrl);
+    UI_CHECK_EQ(sorted.n, 1);
+    UI_CHECK_EQ(sorted.value, 1.f); // column 1 ("Size")
+    press(ui, Key::Enter, kModCtrl);
+    UI_CHECK_EQ(sorted.n, 2);
+    press(ui, Key::Left);
+    press(ui, Key::Enter, kModCtrl);
+    UI_CHECK_EQ(sorted.value, 0.f);
+    const f32 cw = tableColumnWidth(ui, f.table, 0);
+    press(ui, Key::Right, kModCtrl);
+    press(ui, Key::Right, kModCtrl);
+    UI_CHECK_EQ(tableColumnWidth(ui, f.table, 0), cw + 16.f);
+    press(ui, Key::Left, kModCtrl | kModShift);
+    UI_CHECK_EQ(tableColumnWidth(ui, f.table, 0), cw + 15.f);
+    UI_CHECK_EQ(ui.value(f.table), 0.f); // the row selection did not move
     UI_CHECK(tabTo(ui, f.grid));
     press(ui, Key::Right);
     UI_CHECK_EQ(ui.value(f.grid), 0.f);
@@ -583,6 +637,38 @@ void tierD(UiContext& ui, const Form& f) {
     UI_CHECK_EQ(ui.value(f.graph), 0.f); // the dead node is skipped
     press(ui, Key::Escape);
     UI_CHECK_EQ(ui.value(f.graph), -1.f);
+    // links on the keyboard: two more nodes; Enter on the source starts a link at its first output, Down picks the
+    // second output, Enter goes to the target (the next node with inputs), PageDown picks another, Down its second
+    // input, Enter connects; Backspace in the flow removes the link into the picked input; Escape cancels
+    {
+        const GraphPin outs[] = {{"a", 0}, {"b", 0}}, ins[] = {{"x", 0}, {"y", 0}};
+        const u32 mid = nodeGraphAddNode(ui, f.graph, "Mid", {20.f, 90.f}, ins, outs);
+        const u32 end = nodeGraphAddNode(ui, f.graph, "End", {200.f, 100.f}, ins, {});
+        ui.update(1.f / 60.f);
+        ui.setValue(f.graph, f32(mid));
+        press(ui, Key::Enter);
+        press(ui, Key::Down);
+        press(ui, Key::Enter); // target: End (the only other node with inputs)
+        press(ui, Key::Down);
+        press(ui, Key::Enter);
+        UI_CHECK_EQ(nodeGraphLinkCount(ui, f.graph), 1u);
+        UI_CHECK_EQ(nodeGraphTopoOrder(ui, f.graph).size(), 3u);
+        const std::vector<u32> order = nodeGraphTopoOrder(ui, f.graph);
+        UI_CHECK(std::find(order.begin(), order.end(), mid) < std::find(order.begin(), order.end(), end));
+        // Escape cancels the flow (the node stays selected)
+        press(ui, Key::Enter);
+        press(ui, Key::Escape);
+        UI_CHECK_EQ(ui.value(f.graph), f32(mid)); // Escape ended the flow, the selection stays
+        UI_CHECK_EQ(nodeGraphLinkCount(ui, f.graph), 1u);
+        // remove it: Enter, Enter (target End), Down (input y), Backspace
+        press(ui, Key::Enter);
+        press(ui, Key::Enter);
+        press(ui, Key::Down);
+        press(ui, Key::Backspace);
+        UI_CHECK_EQ(nodeGraphLinkCount(ui, f.graph), 0u);
+        press(ui, Key::Escape);
+        UI_CHECK_EQ(ui.value(f.graph), -1.f);
+    }
     // curve editor: select a key, move it, delete it
     UI_CHECK(tabTo(ui, f.curve));
     press(ui, Key::PageDown);
@@ -594,6 +680,16 @@ void tierD(UiContext& ui, const Form& f) {
     UI_CHECK(std::abs(k.x - 0.6f) < 1e-4f && std::abs(k.y - 0.51f) < 1e-4f);
     press(ui, Key::Delete);
     UI_CHECK_EQ(curveKeyCount(ui, f.curve), 2u);
+    // Insert adds a key on the curve: mid-range with nothing selected, then halfway to the next key
+    press(ui, Key::Insert);
+    UI_CHECK_EQ(curveKeyCount(ui, f.curve), 3u);
+    UI_CHECK_EQ(ui.value(f.curve), 1.f);
+    const Vec2 ins = curveKey(ui, f.curve, 1);
+    UI_CHECK(std::abs(ins.x - 0.5f) < 1e-4f && std::abs(ins.y - curveEvaluate(ui, f.curve, 0.5f)) < 1e-4f);
+    press(ui, Key::Insert);
+    UI_CHECK_EQ(curveKeyCount(ui, f.curve), 4u);
+    UI_CHECK_EQ(ui.value(f.curve), 2.f);
+    UI_CHECK(std::abs(curveKey(ui, f.curve, 2).x - 0.75f) < 1e-4f);
     // timeline: the playhead
     UI_CHECK(tabTo(ui, f.tl));
     press(ui, Key::PageDown);
@@ -604,6 +700,32 @@ void tierD(UiContext& ui, const Form& f) {
     UI_CHECK(ui.value(f.tl) < 10.f);
     press(ui, Key::Home);
     UI_CHECK_EQ(ui.value(f.tl), 0.f);
+    // clips: Ctrl+Down selects the first clip, Ctrl+Right moves it a frame, Ctrl+Shift+Right a second, Ctrl+Left back
+    {
+        int moved = 0; // Event {value = 2} without an event: a clip moved (every unconsumed event is an Event too)
+        ui.connect(f.tl, SignalKind::Event, [&moved](UiContext&, NodeHandle, const SignalArgs& a) { moved += !a.event && a.value == 2.f; });
+        const u32 c2 = timelineAddClip(ui, f.tl, 0, 5.f, 6.f, "two", Color::rgb(0x6BCB77));
+        timelineSetSnap(ui, f.tl, 0.5f);
+        press(ui, Key::Down, kModCtrl);
+        press(ui, Key::Right, kModCtrl);
+        Vec2 c = timelineClip(ui, f.tl, 0, 0);
+        UI_CHECK(c.x == 1.5f && c.y == 3.5f);
+        press(ui, Key::Right, kModCtrl | kModShift);
+        c = timelineClip(ui, f.tl, 0, 0);
+        UI_CHECK(c.x == 2.5f && c.y == 4.5f);
+        press(ui, Key::Down, kModCtrl); // the next clip (by start time)
+        press(ui, Key::Left, kModCtrl);
+        UI_CHECK_EQ(timelineClip(ui, f.tl, 0, c2).x, 4.5f);
+        press(ui, Key::Up, kModCtrl);
+        for (int i = 0; i < 8; ++i) press(ui, Key::Left, kModCtrl); // clamped at 0
+        UI_CHECK_EQ(timelineClip(ui, f.tl, 0, 0).x, 0.f);
+        UI_CHECK_EQ(moved, 11);
+        UI_CHECK_EQ(ui.value(f.tl), 0.f); // the playhead did not move
+        press(ui, Key::Escape);
+        press(ui, Key::Right, kModCtrl); // nothing selected: no move
+        UI_CHECK_EQ(timelineClip(ui, f.tl, 0, 0).x, 0.f);
+        timelineSetSnap(ui, f.tl, 0.f);
+    }
     // viewport: keys are forwarded, Tab is not swallowed
     UI_CHECK(tabTo(ui, f.vp));
     const u32 before = viewportInputCount(ui, f.vp);
@@ -724,6 +846,37 @@ void scrollIntoView() {
     press(ui, Key::Tab); // wraps to the first
     ui.update();
     UI_CHECK_EQ(ui.scroll(area).y, 0.f);
+    // horizontally: a row of buttons wider than the area (LTR: scroll.x grows to the right; RTL: from the right edge)
+    for (const bool rtl : {false, true}) {
+        UiContext h({.viewport = {300, 200}, .font = &font()});
+        install(h);
+        if (rtl) h.setCss(h.root(), "direction", "rtl");
+        const NodeHandle sa = scrollArea(h, h.root(), "row");
+        h.setCss(sa, "width", "200px");
+        h.setCss(sa, "height", "60px");
+        h.setCss(sa, "flex-direction", "row");
+        std::vector<NodeHandle> bs;
+        for (int i = 0; i < 8; ++i) {
+            bs.push_back(button(h, sa, "B" + std::to_string(i)));
+            h.setCss(bs.back(), "width", "70px");
+            h.setCss(bs.back(), "flex-shrink", "0");
+        }
+        h.update();
+        bool allVisible = true;
+        for (int i = 0; i < 8; ++i) {
+            press(h, Key::Tab);
+            h.update();
+            const Rect hc = h.contentRect(sa), br = h.rect(h.focused());
+            allVisible = allVisible && h.focused() == bs[std::size_t(i)] && br.x >= hc.x - 0.5f && br.right() <= hc.right() + 0.5f;
+        }
+        UI_CHECK(allVisible);
+        UI_CHECK(h.scroll(sa).x > 300.f); // the last button is at the far end
+        press(h, Key::Tab); // wraps to the first: back to the start edge
+        h.update();
+        UI_CHECK_EQ(h.scroll(sa).x, 0.f);
+        const Rect hc = h.contentRect(sa), br = h.rect(bs[0]);
+        UI_CHECK(std::abs(rtl ? br.right() - hc.right() : br.x - hc.x) < 0.5f); // flush with the start edge
+    }
 }
 
 } // namespace

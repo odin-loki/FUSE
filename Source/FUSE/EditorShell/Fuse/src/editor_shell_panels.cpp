@@ -810,8 +810,10 @@ void ShellPanelPages::syncTimeline_() {
     // not while a key is dragged: the widget's own clip follows the pointer, the model moves underneath
     if ((tracks != m_tlKey || !m_tlWidget) && !m_m.timelineKeyDragging()) {
         m_tlKey = std::move(tracks);
+        const bool hadFocus = m_tlWidget && m_ui.focused() == m_tlWidget;
         if (m_tlWidget) m_ui.destroy(m_tlWidget);
         m_tlWidget = w::timeline(m_ui, m_tlBox, f32(v.durationMs) / 1000.f, "timeline.track");
+        if (hadFocus) m_ui.setFocus(m_tlWidget); // a rebuild keeps the keyboard on the timeline
         m_ui.setCss(m_tlWidget, "flex-grow", "1");
         if (v.lanes.empty()) w::timelineAddTrack(m_ui, m_tlWidget, "(no keys: select an entity, Key Selection)");
         for (const auto& l : v.lanes) {
@@ -821,13 +823,18 @@ void ShellPanelPages::syncTimeline_() {
                 w::timelineAddClip(m_ui, m_tlWidget, t, std::max(0.f, s - 0.04f), s + 0.04f, "", Color::rgb(0xFFD54F));
             }
         }
+        if (v.selTrack >= 0 && v.selKey >= 0) w::timelineSelectClip(m_ui, m_tlWidget, v.selTrack, v.selKey); // the model's key
         m_ui.connect(m_tlWidget, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) {
             m_m.timelineSetPlayhead(m_m.timelineSnapMs(i32(a.value * 1000.f + .5f)));
             m_shell.sync();
         });
         m_ui.connect(m_tlWidget, SignalKind::Event, [this](UiContext&, NodeHandle, const SignalArgs& a) {
-            if (a.value >= 2.f) { // key (clip) drag: 2 press, 3 move, 4 release
-                timelineDragEvent_(u32(a.value));
+            if (a.value >= 5.f) { // key (clip) drag: 5 press, 6 move, 7 release
+                timelineDragEvent_(u32(a.value) - 3u);
+                return;
+            }
+            if (a.value == 2.f) { // Ctrl+Left / Right moved the selected key's clip: one "Move key" step
+                timelineKeyMoved_();
                 return;
             }
             const auto view = w::timelineView(m_ui, m_tlWidget); // Ctrl / Shift + wheel
@@ -890,6 +897,20 @@ void ShellPanelPages::timelineDragEvent_(u32 phase) {
         m_m.timelineEndKeyDrag(true);
         m_tlKey.clear(); // rebuild the lanes from the model
     }
+    m_shell.sync();
+}
+
+// Keyboard retime (timeline widget Ctrl+Left / Right on the selected clip): the key is the clip's centre (clips are
+// key -/+ 40 ms, clamped at 0, so key = end - 40 ms); the move is one "Move key" undo step like a drag.
+void ShellPanelPages::timelineKeyMoved_() {
+    const w::TimelineClipDrag d = w::timelineClipDrag(m_ui, m_tlWidget);
+    const TimelineView v = m_m.timeline();
+    if (d.track >= v.lanes.size() || d.clip >= v.lanes[d.track].keysMs.size()) return;
+    const i32 ms = m_m.timelineSnapMs(i32(std::lround((w::timelineClip(m_ui, m_tlWidget, d.track, d.clip).y - 0.04f) * 1000.f)));
+    if (!m_m.timelineBeginKeyDrag(i32(d.track), i32(d.clip))) return;
+    m_m.timelineDragKeyTo(std::clamp(ms, 0, v.durationMs));
+    m_m.timelineEndKeyDrag(true);
+    m_tlKey.clear();
     m_shell.sync();
 }
 

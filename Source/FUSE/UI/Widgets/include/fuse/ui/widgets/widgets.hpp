@@ -341,8 +341,9 @@ f32 curveEvaluate(const UiContext& ui, NodeHandle curve, f32 t);
 
 /// Timeline: named tracks with clips [start, end), a time ruler and a playhead. Dragging the ruler scrubs
 /// (ValueChanged {value = time}); dragging a clip moves it (snapped to `snap` seconds when > 0, free with Shift) and
-/// emits Event {value = 2} on press, {value = 3} per move and {value = 4} on release (timelineClipDrag tells which
-/// clip and where the pointer is); wheel zooms. value() = playhead time in seconds.
+/// emits Event {value = 5} on press, {value = 6} per move and {value = 7} on release (timelineClipDrag tells which
+/// clip and where the pointer is); Ctrl+Left / Right moving the selected clip emits Event {value = 2} (timelineClipDrag
+/// names the clip, inactive); wheel zooms. value() = playhead time in seconds.
 NodeHandle timeline(UiContext& ui, NodeHandle parent, f32 duration, std::string_view id = {});
 u32 timelineAddTrack(UiContext& ui, NodeHandle tl, std::string_view name);
 u32 timelineAddClip(UiContext& ui, NodeHandle tl, u32 track, f32 start, f32 end, std::string_view label, Color color);
@@ -360,6 +361,8 @@ struct TimelineClipDrag {
     bool active = false;
 };
 TimelineClipDrag timelineClipDrag(const UiContext& ui, NodeHandle tl);
+/// Selects a clip (the one Ctrl+Left / Right move; -1 clears), as a click on it does.
+void timelineSelectClip(UiContext& ui, NodeHandle tl, i32 track, i32 clip);
 /// Clips under time `t` on every track (sequencer queries).
 u32 timelineActiveClips(const UiContext& ui, NodeHandle tl, f32 t);
 

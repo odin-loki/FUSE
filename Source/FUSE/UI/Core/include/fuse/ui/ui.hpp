@@ -40,6 +40,8 @@ enum class Key : u16 {
     B, F, G, H, I, J, K, L, M, P, R, T, U, Num0, Num5, Num6, Num7, Num8, Num9, ///< rebindable editor shortcuts
     F1, F3, F4, F6, F7, F8, F9, F11, F12,
     BracketLeft, BracketRight, ///< timeline previous / next key
+    Insert, ///< curve editor: add a key
+    Alt,    ///< either Alt key on its own (pressed and released alone: the menu bar, as F10)
     Other
 };
 enum Mods : u8 { kModShift = 1, kModCtrl = 2, kModAlt = 4, kModSuper = 8 };
@@ -76,6 +78,15 @@ struct ClipboardHooks {
     void* user = nullptr;
 };
 
+/// Locale data widgets format with (the calendar's month header, weekday names and first column). Core and widgets
+/// carry no locale tables: fuse_ui_l10n fills these in (`fuse::ui::l10n::setUiLocale(ui, tag)`, header-only
+/// fuse/ui/l10n/ui_locale.hpp), so binaries that never localise do not link them. Null hooks: English, Monday first.
+struct LocaleHooks {
+    std::string (*monthYear)(std::string_view locale, int year, int month) = nullptr; ///< "März 2024"
+    std::string_view (*weekdayShort)(std::string_view locale, int isoWeekday) = nullptr; ///< 1 = Monday: "Mo."
+    int (*firstDayOfWeek)(std::string_view locale) = nullptr; ///< ISO 1 (Monday) .. 7 (Sunday)
+};
+
 // ---- Signals -------------------------------------------------------------------------------------------------------
 enum class SignalKind : u8 { Clicked, Toggled, ValueChanged, TextChanged, Submitted, FocusChanged, HoverChanged, Event };
 struct SignalArgs {
@@ -109,6 +120,11 @@ struct A11ySnapshotNode {
 /// Horizontal mirror of `r` / `x` inside `box` (right-to-left widgets compute left-to-right geometry, then mirror it).
 inline Rect mirrorX(const Rect& r, const Rect& box) { return {2.f * box.x + box.w - r.x - r.w, r.y, r.w, r.h}; }
 inline f32 mirrorX(f32 x, const Rect& box) { return 2.f * box.x + box.w - x; }
+/// Paragraph base direction of a node's text: the `direction` property when it is set (on the node or an ancestor),
+/// else Auto (the first strong character).
+inline fuse::text::BaseDirection baseDirection(const ComputedStyle& s) {
+    return !s.dirSet ? fuse::text::BaseDirection::Auto : s.rtl ? fuse::text::BaseDirection::Rtl : fuse::text::BaseDirection::Ltr;
+}
 
 struct PaintContext {
     UiContext& ui;
@@ -309,6 +325,16 @@ public:
     const FrameStats& stats() const { return m_stats; }
     u64 frameIndex() const { return m_frame; }
     void markAllDirty();
+    /// BCP 47 locale tag widgets format with, and its data (LocaleHooks; must outlive the context, null = keep the
+    /// current hooks). A change repaints everything.
+    void setLocale(std::string_view tag, const LocaleHooks* hooks = nullptr) {
+        if (tag == m_locale && (!hooks || hooks == m_localeHooks)) return;
+        m_locale = tag;
+        if (hooks) m_localeHooks = hooks;
+        markAllDirty();
+    }
+    std::string_view locale() const { return m_locale; }
+    const LocaleHooks* localeHooks() const { return m_localeHooks; }
     /// Repaints `n` next update (widgets whose paint reads external state, e.g. item models).
     void invalidate(NodeHandle n) { if (node(n)) markPaint(n.index); }
 
@@ -323,8 +349,11 @@ public:
     /// Goes to the focused node (capture / target / bubble). Unconsumed: Enter / Space click an interactive node, Tab /
     /// Shift+Tab move focus (Ctrl+Tab always does, before the node sees it), arrows navigate spatially when enabled,
     /// and anything left is emitted as SignalKind::Event {value = Key, event} on the root (application shortcuts).
-    /// Keyboard focus scrolls into view inside scroll containers.
+    /// Keyboard focus scrolls into view inside scroll containers (both axes; RTL containers from their right edge).
     bool keyDown(Key k, u8 mods = 0);
+    /// Goes to the focused node. Alt pressed and released with no other key, button or modifier in between (Windows
+    /// convention) is emitted as SignalKind::Event {value = Key::Alt, event (KeyUp)} on the root when the focused node
+    /// does not take the release: the widgets toggle the menu bar on it, as on F10. Returns true when consumed.
     bool keyUp(Key k, u8 mods = 0);
     bool textInput(std::string_view utf8);
     /// IME pre-edit for the focused node (empty `utf8` ends it); `caret` is a byte offset into it. The pre-edit is
@@ -527,6 +556,7 @@ private:
     u32 m_fontOverrides = 0;                      ///< nodes with a setFont font
     u32 m_varCheckedId = 0;                       ///< Font::id whose isVariable() m_varChecked holds (0: none)
     bool m_varChecked = false;
+    bool m_varCheckedBold = false;                ///< that font's own weight is >= 600 (no synthetic bold for it)
     fuse::text::GlyphAtlas m_atlas;
     std::vector<Node> m_nodes;
     std::vector<Cold*> m_cold; ///< per node, into m_coldChunks
@@ -551,6 +581,7 @@ private:
     u32 m_seenSheetVersion = 0;
     NodeHandle m_hover, m_pressed, m_focus, m_modal;
     bool m_focusVisible = false;
+    bool m_altArmed = false; ///< Alt went down alone and nothing else happened since (keyUp(Alt) toggles the menu bar)
     bool m_spatialNav = false;
     std::string m_composition;
     i32 m_compositionCaret = 0;
@@ -558,6 +589,8 @@ private:
     Rect m_caret;
     ClipboardHooks m_clipboard;
     std::string m_localClipboard;
+    std::string m_locale;
+    const LocaleHooks* m_localeHooks = nullptr;
     Vec2 m_pointer{-1.f, -1.f};
     u8 m_mods = 0;
     f32 m_scale = 1.f;

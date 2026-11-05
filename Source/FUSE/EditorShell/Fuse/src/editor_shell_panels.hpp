@@ -116,6 +116,7 @@ private:
     NodeHandle m_tlLoop{}, m_tlSnap{};
     i32 m_tlDragFromMs = -1; ///< key drag: the key's time at press (-1 = no drag)
     void timelineDragEvent_(u32 phase);
+    void timelineKeyMoved_(); ///< Ctrl+Left / Right on the selected clip
     std::string m_tlKey;
 };
 

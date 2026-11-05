@@ -148,6 +148,8 @@ Key mapKey(KeySym s, bool& ascii) {
     case 0xffbf: return Key::F2;
     case 0xffc2: return Key::F5;
     case 0xffc7: return Key::F10;
+    case 0xffe9: case 0xffea: return Key::Alt; // Alt_L / Alt_R (not ISO_Level3_Shift: AltGr)
+    case 0xff63: return Key::Insert;
     case 0xffbe: return Key::F1;
     case 0xffc0: return Key::F3;
     case 0xffc1: return Key::F4;
@@ -222,6 +224,7 @@ struct NativePlatform::Impl {
 #else
         void* xic = nullptr;     ///< XIM input context
         std::u32string preedit;  ///< XIM pre-edit (preedit callbacks)
+        int preeditCaret = 0;    ///< in code points
         x11::XimCallback cbStart{}, cbDone{}, cbDraw{}, cbCaret{};
         x11::Display* vkDpy = nullptr; ///< the worker's own X connection (Xlib is not thread-safe without XInitThreads)
         CursorShape edgeCursor = CursorShape::Auto; ///< custom chrome: resize cursor over a frame edge
@@ -265,6 +268,7 @@ struct NativePlatform::Impl {
     x11::XimStyle ximStyle = 0;
     void openXim();
     void createIc(Rec& r);
+    static void publishPreedit(Rec& r);
     void readXSettings();     ///< (re)reads the manager's settings (and follows a new manager window)
     void settingsChanged();   ///< re-reads them and applies DPI / theme changes
     void updateCursorTheme(); ///< cursor size / theme from XSETTINGS + DPI; reloads the cursors when they change
@@ -544,6 +548,8 @@ Key mapVk(WPARAM vk, bool& ascii) {
     case VK_F2: return Key::F2;
     case VK_F5: return Key::F5;
     case VK_F10: return Key::F10;
+    case VK_MENU: case VK_LMENU: case VK_RMENU: return Key::Alt;
+    case VK_INSERT: return Key::Insert;
     case VK_F1: return Key::F1;
     case VK_F3: return Key::F3;
     case VK_F4: return Key::F4;
@@ -640,7 +646,7 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         const u8 md = winMods();
         if (k != Key::Other) { // printable keys too: viewport WASD / 1-4; text arrives separately
             if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) ui.keyDown(k, md);
-            else ui.keyUp(k, md);
+            else if (ui.keyUp(k, md) && k == Key::Alt) return 0; // the UI's menu bar took Alt: no window-menu mode
         }
         break;
     }
@@ -1634,16 +1640,21 @@ void NativePlatform::Impl::openXim() {
     const char* cur = std::setlocale(LC_CTYPE, nullptr);
     const std::string saved = cur ? cur : "C";
     auto utf8 = [](const char* l) { return l && (std::strstr(l, "UTF-8") || std::strstr(l, "utf8") || std::strstr(l, "UTF8")); };
-    const char* l = std::setlocale(LC_CTYPE, "");
-    if (!utf8(l)) l = std::setlocale(LC_CTYPE, "C.UTF-8");
-    if (!utf8(l)) l = std::setlocale(LC_CTYPE, "en_US.UTF-8");
-    if (utf8(l) && x.SupportsLocale()) {
+    // The environment's UTF-8 locale, else C.UTF-8 / en_US.UTF-8. A server IM ($XMODIFIERS) lists the locales it
+    // serves and many (uim-xim, kinput2, older ibus / fcitx XIM front ends) list named locales only, not C.UTF-8:
+    // when the first locale's server IM does not open, the next one is tried before libX11's built-in IM.
+    std::string first;
+    for (const char* want : {"", "C.UTF-8", "en_US.UTF-8"}) {
+        const char* l = std::setlocale(LC_CTYPE, want);
+        if (!utf8(l) || !x.SupportsLocale()) continue;
+        if (first.empty()) first = l;
         x.SetLocaleModifiers("");
         xim = x.OpenIM(dpy, nullptr, nullptr, nullptr);
-        if (!xim) { // $XMODIFIERS names an IM that is not running: the built-in one
-            x.SetLocaleModifiers("@im=none");
-            xim = x.OpenIM(dpy, nullptr, nullptr, nullptr);
-        }
+        if (xim) break;
+    }
+    if (!xim && !first.empty() && std::setlocale(LC_CTYPE, first.c_str())) { // $XMODIFIERS names no running IM
+        x.SetLocaleModifiers("@im=none");
+        xim = x.OpenIM(dpy, nullptr, nullptr, nullptr);
     }
     if (xim) {
         x11::XimStyles* st = nullptr;
@@ -1664,6 +1675,18 @@ void NativePlatform::Impl::openXim() {
     }
     std::setlocale(LC_CTYPE, saved.c_str());
 }
+// the XIM pre-edit (code points, caret in code points) -> UiContext::textComposition (UTF-8, caret in bytes)
+void NativePlatform::Impl::publishPreedit(Rec& r) {
+    std::string s;
+    int caretBytes = 0;
+    for (std::size_t i = 0; i < r.preedit.size(); ++i) {
+        if (int(i) == r.preeditCaret) caretBytes = int(s.size());
+        appendUtf8(s, u32(r.preedit[i]));
+    }
+    if (r.preeditCaret >= int(r.preedit.size())) caretBytes = int(s.size());
+    r.win->ui().textComposition(s, caretBytes);
+    r.win->requestRedraw();
+}
 void NativePlatform::Impl::createIc(Rec& r) {
     if (!xim) return;
     const x11::Window w = x11::Window(r.handle);
@@ -1674,6 +1697,7 @@ void NativePlatform::Impl::createIc(Rec& r) {
         r.cbDone = {reinterpret_cast<char*>(&r), [](void*, char* c, void*) {
             Rec& rr = *reinterpret_cast<Rec*>(c);
             rr.preedit.clear();
+            rr.preeditCaret = 0;
             rr.win->ui().textComposition({}, 0);
             rr.win->requestRedraw();
         }};
@@ -1697,17 +1721,25 @@ void NativePlatform::Impl::createIc(Rec& r) {
             const std::size_t first = std::min(std::size_t(std::max(d->chgFirst, 0)), rr.preedit.size());
             const std::size_t len = std::min(std::size_t(std::max(d->chgLength, 0)), rr.preedit.size() - first);
             rr.preedit.replace(first, len, ins);
-            std::string s; // caret in code points -> bytes
-            int caretBytes = 0;
-            for (std::size_t i = 0; i < rr.preedit.size(); ++i) {
-                if (int(i) == d->caret) caretBytes = int(s.size());
-                appendUtf8(s, u32(rr.preedit[i]));
-            }
-            if (d->caret >= int(rr.preedit.size())) caretBytes = int(s.size());
-            rr.win->ui().textComposition(s, caretBytes);
-            rr.win->requestRedraw();
+            rr.preeditCaret = d->caret;
+            publishPreedit(rr);
         }};
-        r.cbCaret = {reinterpret_cast<char*>(&r), [](void*, char*, void*) {}};
+        r.cbCaret = {reinterpret_cast<char*>(&r), [](void*, char* c, void* call) {
+            Rec& rr = *reinterpret_cast<Rec*>(c);
+            auto* d = static_cast<x11::XimCaret*>(call);
+            const int n = int(rr.preedit.size());
+            switch (d->direction) { // XIMCaretDirection
+            case 0: ++rr.preeditCaret; break;                    // XIMForwardChar
+            case 1: --rr.preeditCaret; break;                    // XIMBackwardChar
+            case 8: rr.preeditCaret = 0; break;                  // XIMLineStart
+            case 9: rr.preeditCaret = n; break;                  // XIMLineEnd
+            case 10: rr.preeditCaret = d->position; break;       // XIMAbsolutePosition
+            default: break;                                      // word / line moves: not used by single-line pre-edits
+            }
+            rr.preeditCaret = std::clamp(rr.preeditCaret, 0, n);
+            d->position = rr.preeditCaret;
+            publishPreedit(rr);
+        }};
         void* list = x.VaCreateNestedList(0, "preeditStartCallback", &r.cbStart, "preeditDoneCallback", &r.cbDone,
                                           "preeditDrawCallback", &r.cbDraw, "preeditCaretCallback", &r.cbCaret, term);
         r.xic = x.CreateIC(xim, "inputStyle", ximStyle, "clientWindow", w, "focusWindow", w, "preeditAttributes", list, term);
@@ -1726,8 +1758,15 @@ void NativePlatform::Impl::syncTextInput(Rec& r) {
     UiContext& ui = r.win->ui();
     const bool want = ui.wantsTextInput();
     if (!r.imeKnown || want != r.imeOn) {
+        if (!want && !r.preedit.empty()) { // focus left the field: the IM drops its pre-edit (nothing is committed)
+            if (r.xic && x.Utf8ResetIC) {
+                if (char* left = x.Utf8ResetIC(r.xic)) x.Free(left);
+            }
+            r.preedit.clear();
+            r.preeditCaret = 0;
+            ui.textComposition({}, 0);
+        }
         if (r.xic) want ? x.SetICFocus(r.xic) : x.UnsetICFocus(r.xic);
-        if (!want && !r.preedit.empty()) r.preedit.clear();
         r.imeOn = want;
         r.imeKnown = true;
         r.imeArea = {-1.f, -1.f, 0.f, 0.f};
