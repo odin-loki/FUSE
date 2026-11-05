@@ -489,12 +489,12 @@ All shutdown steps are idempotent. GPU init and submit require the registered re
 | Item | Status | Notes |
 |------|--------|-------|
 | GPU frame time < 8 ms @ 1080p | **Partial** | SDF march launch 3.35 ms (under 8 ms). Copy-inclusive wall 15.88 ms. Not a presented frame |
-| CUDA kernel > 60% occupancy | **Measured** | Elevated `ncu` after `RmProfilingAdminOnly=0`. SDF march at 1920×1080, 16×8 blocks: achieved **64%** (theoretical 75%). Particle update at 262144 slots: achieved **69%** (theoretical 83%); compact **73%** |
+| CUDA kernel > 60% occupancy | **Measured** | Elevated `ncu` after `RmProfilingAdminOnly=0`. SDF march at 1920×1080, 16×8 blocks: achieved **64%** (theoretical 75%). Particle update at 262144 slots: achieved **69%** (theoretical 83%); compact **73%**. 2026-11-05: not re-measured (counters admin-only again, see the 2026-11-05 run) |
 | Zero per-frame heap allocs | **Done (scaffold)** | Fixed `kMaxPassesPerFrame` storage; not profiled under load |
 | Render graph compile < 1 ms CPU | **Done** | Release, this workstation: hybrid graph median 0.90 µs, 32-pass chain median 16.20 µs (`fuse_b2_render_graph_budget`) |
-| B5 DDGI update: 2048 probes, 64 × 256 rays per frame < 2 ms | **Coded, 3090 run pending** | `fuse_b5_ddgi_device`: resident `DdgiDeviceVolume` (`kernels/ddgi_probe_update.cu`), CUDA events around upload / `ddgi_probe_trace` / `ddgi_probe_update`; first update without a CUDA error, device == CpuReference, resident == one-shot bit for bit. CPU half `fuse_b5_ddgi_device_cpu` passes here. Exit 77 without a GPU |
-| B5 clustered cull + deferred shade, 1000 lights @ 1080p < 3 ms | **Coded, 3090 run pending** | `fuse_b5_clustered_device`: resident `ClusteredDeviceFrame` (`kernels/clustered_lighting.cu`), CUDA events per kernel, device == CPU pipeline parity. CPU half `fuse_b5_clustered_device_cpu` passes here. Exit 77 without a GPU |
-| B5 per-pass GPU budgets + total < 16 ms @ 1080p; profiler breakdown vs CUDA events ≤ 0.5 ms | **Coded, 3090 run pending** | `fuse_b5_frame_bench --require-cuda` (ctest `fuse_b5_frame_bench`): CUDA passes (SDF march, DDGI, clustered + deferred, SDF shadows, HBAO, SSR) on resident buffers with CUDA events and a synchronous-launch profiler cross-check; Vulkan passes (G-buffer raster, TAAU, GPU post stack) with GpuProfiler timestamps; total. Depth prepass has no device pass. The Vulkan half runs on Lavapipe in CI (`fuse_b5_frame_bench_smoke`); nothing is asserted unless `--enforce` |
+| B5 DDGI update: 2048 probes, 64 × 256 rays per frame < 2 ms | **Done 2026-11-05: 0.32 ms per cycle** | `fuse_b5_ddgi_device`: resident `DdgiDeviceVolume` (`kernels/ddgi_probe_update.cu`), CUDA events around upload / `ddgi_probe_trace` / `ddgi_probe_update`; first update without a CUDA error, device == CpuReference, resident == one-shot bit for bit. CPU half `fuse_b5_ddgi_device_cpu` passes here. Exit 77 without a GPU |
+| B5 clustered cull + deferred shade, 1000 lights @ 1080p < 3 ms | **Done 2026-11-05: 1.00 ms** | `fuse_b5_clustered_device`: resident `ClusteredDeviceFrame` (`kernels/clustered_lighting.cu`), CUDA events per kernel, device == CPU pipeline parity. CPU half `fuse_b5_clustered_device_cpu` passes here. Exit 77 without a GPU |
+| B5 per-pass GPU budgets + total < 16 ms @ 1080p; profiler breakdown vs CUDA events ≤ 0.5 ms | **Measured 2026-11-05: total 30.5 ms (over); profiler cross-check MATCH on every CUDA pass** | `fuse_b5_frame_bench --require-cuda` (ctest `fuse_b5_frame_bench`): CUDA passes (SDF march, DDGI, clustered + deferred, SDF shadows, HBAO, SSR) on resident buffers with CUDA events and a synchronous-launch profiler cross-check; Vulkan passes (G-buffer raster, TAAU, GPU post stack) with GpuProfiler timestamps; total. Depth prepass has no device pass. The Vulkan half runs on Lavapipe in CI (`fuse_b5_frame_bench_smoke`); nothing is asserted unless `--enforce` |
 
 ### Hardware run (2026-09-25, this workstation)
 
@@ -518,7 +518,47 @@ Dual Intel Xeon Gold 6242, NVIDIA GeForce RTX 3090 (24576 MiB, driver 595.79), C
 | GPU radix + sync validation | Passed on the 3090. 330 cases match `std::stable_sort`. 1M u32 keys: GPU **5.2 ms** (201 Mpairs/s). Validation messages: 0 |
 | G-buffer / RenderDoc | `fuse_b5_rhi_gbuffer_pass` passed (near/far/overlap readback). RenderDoc 1.46 wrote `%TEMP%\fuse-gbuffer_capture.rdc` (577334 bytes) around that submit. On-screen present was not run |
 
-### Scene / VFX / SDF CUDA follow-up (2026-09-29 — coded and CPU-verified here, re-run on the 3090)
+### Hardware run (2026-11-05, this workstation)
+
+Lenovo ThinkStation P920 (model 30BDS5NR00): 2 × Intel Xeon Gold 6242 (16 cores each, 2.8 GHz), 64 GB, NVIDIA GeForce RTX 3090 (24576 MiB, driver 610.88), Windows 11 Pro for Workstations. Native MSVC 19.51 (Build Tools 2026) Release tree, Ninja, CUDA 13.2 (`sm_86`), Vulkan SDK 1.4.357.0. Six other agents shared the PC: every timing below was started only after the GPU had been idle (< 10 % utilisation) for 4 s; the CPU was 40–95 % busy with their builds throughout. Every device gate printed its device line, so none of them skipped (exit 77).
+
+| Gate | Result |
+|------|--------|
+| `fuse_gpu_allocator_device_gate` | Passed. Device 250 / Pinned 261 / Managed 258 / DeviceMapped 257 allocations, as many frees, 0 failed, peak 64 MiB each; `cudaMemGetInfo` back to start (delta 0 bytes) |
+| `fuse_gpu_allocator_memcheck` | Passed. `compute-sanitizer --tool memcheck --leak-check full`: ERROR SUMMARY 0 errors, LEAK SUMMARY 0 bytes |
+| `fuse_cuda_gria_alpha_device` | Passed. The device kernel ran the 4096-input `Alpha` sweep: 0 mismatches vs the C++23 host |
+| `fuse_cuda_vk_timeline_10k` | Passed. 10 000 frames × 1 048 576 words in 11.4 s (1.14 ms/frame), 0 frames with a race, 0 bad final words, timeline value 20 000 |
+| `fuse_cuda_vk_buffer_roundtrip` | Passed (4 KiB, 1 MiB + 4 B, 64 MiB, both directions, re-import) |
+| `fuse_cuda_vk_surface_composite` | Passed. 8 frames at alpha 0 / 0.5 / 1 / 0.25: 0 of 40 960 composite pixels off mix(CUDA, raster, alpha), worst channel difference 1 |
+| `fuse_b3_ecs_managed_column_device` (+ `_assert_fires`) | Passed. 9091 managed-memory Transform rows read in place by the kernel, all matched, checksum equal. The corrupted row raised the device assert |
+| `fuse_b3_sdf_buffer_ray_march` | Passed, with the new CUDA step: the uploaded SceneData buffer (read back byte-exact from the 3090) marched by CUDA `sdf_ray_march`: 0 mask / depth / normal differences vs the CPU reference and vs the closed-form intersections, both frames. 0 validation errors |
+| `fuse_b3_sdf_scene_500_march` (`FUSE_DEVICE_BUDGETS=1`) | Passed. 500 objects at 1920×1080: tiled **1.22 ms** min (1.24 avg), full scene 112 ms. CUDA == CPU at 384×216 |
+| `fuse_svo_ray_kernel_parity` (`FUSE_DEVICE_BUDGETS=1`) | Passed. 1M rays: kernel min **7.15 ms** in the full gate (`--device-bench` runs 6.9–7.3 ms min, 7.4–9.0 ms avg), 72 registers, 0 B local, 7 × 128 threads per SM. CUDA == CpuReference on all 1 048 576 rays, 272 002 distances bit-exact. Was 40 ms at the start of this run: fixes below |
+| `fuse_b4_physics_cuda_bench` | Passed. Broadphase 10k bodies **1.08 ms** median (409 134 pairs == legacy). Narrowphase 1k pairs **0.116 ms** (1000/1000 bit-exact). Solver 10 iterations × 11 407 contacts **0.74 ms** (bit-exact vs CPU) |
+| `fuse_b5_clustered_device --enforce-budgets` | Passed. 1000 lights at 1080p: **1.00 ms** median (bounds 0.06, bin 0.20, cull 0.21, grid 0.005, shade 0.53) |
+| `fuse_b5_ddgi_device --enforce-budgets` | Passed. First update without a CUDA error; rolling 2048 probes at 64/frame **0.32 ms** per cycle; 64 × 256 rays 0.32 ms; resident == one-shot, device == CPU |
+| `fuse_b5_frame_bench --require-cuda` (1920×1080, 50 iterations) | Ran. G-buffer 0.43, SDF march (full scene) **15.0 (over 3)**, DDGI 0.39, clustered + deferred 0.91, SDF shadows **9.28 (over 2)**, HBAO **1.21 (over 1)**, SSR 0.53, TAAU **0.73 (over 0.5)**, post stack **2.01 (over 1)** ms; total **30.5 ms (over 16)**. Profiler vs CUDA events: every CUDA pass MATCH (largest difference 0.20 ms). Depth prepass: no device pass |
+| `fuse_ray_march_tile_cull` | Passed. 100 objects / 128 steps at 1080p: tiled **1.06 ms**, full 15–36 ms (the larger figure ran next to another agent's GPU job). 500 objects tiled 3.3 ms |
+| `fuse_b7_skinning_cuda_events` | Passed. 10k vertices × 64 bones: **0.020 ms** median kernel, 0.035 ms with palette upload; max error 2.4e-7 |
+| `fuse_b7_reverb_cuda_device` | Passed. CUDA vs CPU FFT reverb **-131.0 / -133.2 / -132.2 dB** (1 s, 0.1 s, 2.5 s IRs; gate -60 dB) |
+| `fuse_particle_kernel_parity` | Passed. Update and compact: 40 registers, 0 B local, 6 × 256 threads per SM = 100 % theoretical, persistent grid 492 blocks |
+| Sanitizers, full frame loop | `fuse_b5_frame_bench --require-cuda` under `compute-sanitizer`: memcheck `--leak-check full` 0 errors / 0 bytes leaked (CUDA + Vulkan passes); racecheck 0 hazards, synccheck 0 errors, initcheck 0 errors (CUDA passes). SVO kernel (`--device-bench`): memcheck, racecheck, synccheck 0 errors |
+| Nsight Compute occupancy | **Not measured.** `ncu` stops with `ERR_NVGPUCTRPERM`: GPU performance counters are admin-only again on this PC (the 2026-09-25 run had them allowed). To re-measure: NVIDIA Control Panel → Developer → Manage GPU Performance Counters → allow all users (or an elevated prompt), then the `ncu` lines in the block below |
+| Profiler scope, `FUSE_B1_REFERENCE_HARDWARE=1` | Fails: 52.7 ns per enabled scope (disabled 6.1 ns); one `rdtsc` read is 9.7 ns on this CPU, so the two stamps alone are ~19.5 ns. CPU 100 % busy during the run |
+| Boot (`fuse_runtime_boot_time`, new) | 3.10 / 2.93 / 2.67 s (budget 3 s; CPU 76–100 % busy). RendererBootstrap 1.4–1.6 s + hybrid renderer with 4 GPU frames 1.0–1.1 s = 90 % (Vulkan loader / driver; `vulkaninfo --summary` alone ~4 s under load with the Steam overlay / Fossilize and RenderDoc implicit layers). Level load + physics + audio 17–36 ms. The editor is not in this process |
+| Unity full rebuild | Not met: no unity-build support. `-DCMAKE_UNITY_BUILD=ON` fails in 59 unity TUs of 32 targets (anonymous-namespace helpers clash); `ninja -k 0` stopped at 1276 / 2446 steps after 533 s (incl. a 123 s re-configure; CPU 100 % busy) |
+
+**SVO 1M rays: 40 ms → ~7 ms.** The 2026-09-29 rework measured 40 ms here (CUDA events): the walk was memory bound, not compute bound, and ran out of L1. Each change below was timed alone on the idle GPU (`fuse_svo_ray_kernel_parity --device-bench`, a new quick mode):
+
+1. The traversal stack's node path moved from per-thread local memory (144 B per thread, interleaved through L1, where it evicted the tree) to a strided column of dynamic shared memory, `brick_depth` words per thread (`TraversalStackT<Path>`): 41 → 17 ms.
+2. `std::clamp` / `std::max` return references, and nvcc kept those temporaries in local memory inside the loop; by-value `clamp_s32` / `max_s32` remove the last local memory: → 12 ms.
+3. `__launch_bounds__(128, 6)`: 72 registers instead of a 64-register cap, no spills: → 8–9 ms.
+4. `fuse_svo` builds `svo_ray_cast.cu` without `-rdc`: with relocatable device code the device-link register allocation gave the kernel 80 registers and 56 B of local memory: 9.2 → 7.0 ms.
+5. `ray_cast` is now `ray_begin` + `ray_step` (same operations, so the CPU hits are unchanged bit for bit) and the CUDA kernel is persistent: a lane whose ray ended takes the next ray from a counter (one warp-aggregated atomic). A one-ray-per-thread launch keeps 34 % of its lanes busy on this workload (mean 87 steps, p99 271, max 380); on its own this change was neutral because of the memory bound above, but it is kept.
+
+Parity is unchanged: CUDA == CpuReference on all 1 048 576 rays (voxel, face, hit/miss and every one of the 272 002 hit distances bit-exact).
+
+### Scene / VFX / SDF CUDA follow-up (2026-09-29 — coded and CPU-verified here; 3090 results in the 2026-11-05 run above)
 
 No GPU in the container: every change below compiles clean in `build/cuda` (nvcc 12.0, `sm_86`) and its CPU gate passes in `build/rel`; the device timings are for the RTX 3090. Device gates print a "no device" skip line without one.
 

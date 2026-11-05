@@ -16,6 +16,14 @@
 #include <bit>
 #include <cmath>
 
+/// The walk's hot helpers are forced inline on the device: an out-of-line call would put the per-ray
+/// walk state (RayWalk) behind a pointer in local memory.
+#if defined(__CUDACC__)
+#define FUSE_SVO_FORCE_INLINE __host__ __device__ __forceinline__
+#else
+#define FUSE_SVO_FORCE_INLINE inline
+#endif
+
 namespace fuse::scene {
 
 /// Interior octree node (B3.5). Each covers a cubic region; a child slot holds the index of the
@@ -238,19 +246,29 @@ FUSE_HOST_DEVICE inline bool solid_mask(const SvoView& v, u32 brick, u64* mask) 
     return any;
 }
 
-/// Fixed-size per-ray traversal stack: the interior nodes of the last walked root-to-brick path.
-/// A later walk restarts from the deepest node whose cube still contains the new voxel instead of
-/// from the root (no recursion, no heap; ~128 bytes of registers / local memory per ray).
-/// `node` has no default initializer: a walk only reads entries it wrote (node[0] = root is set by the
-/// caller), so a GPU ray does not zero 30 words of local memory up front. `TraversalStack s{}` zeroes all.
-struct TraversalStack {
-    u32 node[kMaxDepth];
+/// Node path storage of a TraversalStack held by the ray itself (registers / local memory): entries
+/// 0 .. brick_depth - 1 are used. No default initializer: a walk only reads entries it wrote (node[0] =
+/// root is set by ray_begin), so a GPU ray does not zero 30 words of local memory up front.
+struct LocalNodePath {
+    u32 entry[kMaxDepth];
+    FUSE_HOST_DEVICE u32& operator[](u32 depth) { return entry[depth]; }
+};
+
+/// Per-ray traversal stack: the interior nodes of the last walked root-to-brick path. A later walk
+/// restarts from the deepest node whose cube still contains the new voxel instead of from the root
+/// (no recursion, no heap). `Path` stores the node indices: LocalNodePath on the CPU; the CUDA kernel
+/// keeps them in shared memory (one strided column per thread) so the per-thread local-memory
+/// footprint does not evict the tree from L1.
+template <class Path>
+struct TraversalStackT {
+    Path node;
     s32 coord[3] = {0, 0, 0}; ///< voxel the stored path was walked for
     u32 depth = 0;            ///< node[0..depth] are valid (node[0] is the root)
     /// Packed views: the record of node[brick_depth - 1] (valid whenever depth == brick_depth - 1),
     /// so moving to a sibling brick cell reads no memory at all.
     PackedNode leaf{};
 };
+using TraversalStack = TraversalStackT<LocalNodePath>;
 
 FUSE_HOST_DEVICE inline u32 popcount32(u32 x) {
 #if defined(__CUDA_ARCH__)
@@ -282,7 +300,8 @@ FUSE_HOST_DEVICE inline u32 child_of(const SvoView& v, u32 node, u32 octant) {
 
 /// Walks towards voxel `c` from the deepest still-valid stack entry; returns the brick index or kNoNode
 /// plus the voxel-space size of the empty cell that stopped the walk (for ray skipping).
-FUSE_HOST_DEVICE inline u32 locate(const SvoView& v, const s32* c, TraversalStack& stack, u32& emptyCellSize) {
+template <class Stack>
+FUSE_SVO_FORCE_INLINE u32 locate(const SvoView& v, const s32* c, Stack& stack, u32& emptyCellSize) {
     emptyCellSize = 1u;
     if (v.brick_depth == 0u) {
         return 0u;
@@ -339,6 +358,15 @@ FUSE_HOST_DEVICE inline u32 locate(const SvoView& v, const s32* c, TraversalStac
     return nodeIndex;
 }
 
+/// std::max / std::clamp by value: the std forms return references, and nvcc puts such address-taken
+/// temporaries in local memory inside the walk loop. Same results (`std::clamp(v, lo, hi)` order).
+FUSE_HOST_DEVICE inline s32 max_s32(s32 a, s32 b) {
+    return a < b ? b : a;
+}
+FUSE_HOST_DEVICE inline s32 clamp_s32(s32 v, s32 lo, s32 hi) {
+    return v < lo ? lo : (hi < v ? hi : v);
+}
+
 FUSE_HOST_DEVICE inline int min_axis(const f32* t) {
     return t[0] < t[1] ? (t[0] < t[2] ? 0 : 2) : (t[1] < t[2] ? 1 : 2);
 }
@@ -367,7 +395,7 @@ FUSE_HOST_DEVICE inline u64 cell4_bits(u32 lx, u32 ly, u32 lz) {
 
 /// Decodes brick `brick` for the traversal; false when it holds no solid voxel (same emptiness rule as
 /// solid_mask: sparse / dense materials != 0, masked written bits, uniform payload != 0).
-FUSE_HOST_DEVICE inline bool decode_brick(const SvoView& v, u32 brick, BrickState& s) {
+FUSE_SVO_FORCE_INLINE bool decode_brick(const SvoView& v, u32 brick, BrickState& s) {
     const SVOBrick b = v.bricks[brick];
     s.mode = b.mode;
     s.words = b.payload;
@@ -400,7 +428,7 @@ FUSE_HOST_DEVICE inline bool decode_brick(const SvoView& v, u32 brick, BrickStat
 }
 
 /// Solid test of brick-local voxel `local` of a decoded (non-empty) brick.
-FUSE_HOST_DEVICE inline bool brick_voxel_solid(const SvoView& v, const BrickState& s, u32 local) {
+FUSE_SVO_FORCE_INLINE bool brick_voxel_solid(const SvoView& v, const BrickState& s, u32 local) {
     if (s.mode == kModeUniform) {
         return true;
     }
@@ -415,8 +443,223 @@ FUSE_HOST_DEVICE inline bool brick_voxel_solid(const SvoView& v, const BrickStat
     return words[local] != 0u;
 }
 
+/// Per-ray walk state of `ray_cast`, split out so a GPU backend can run the walk one step at a time and
+/// hand a lane that finished its ray a new one (persistent threads) without changing a single float
+/// decision: `ray_begin` + `ray_step` until it stops == `ray_cast`, operation for operation.
+/// The small per-axis arrays are only ever indexed by unrolled loop counters (never by `axis`), so nvcc
+/// keeps them in registers. The traversal stack is passed separately (its node path is the only
+/// dynamically indexed state: local memory on the CPU path, shared memory in the CUDA kernel).
+struct RayWalk {
+    BrickState brick{};
+    f32 dir[3];
+    f32 org[3];
+    f32 ov[3];
+    f32 inv[3];
+    s32 cell[3];
+    s32 step[3];
+    s32 brickCoord[3];
+    f32 tEnter;
+    f32 maxDistance;
+    f32 tvLimit;
+    int axis;
+    bool moved;
+};
+
+/// `ray_step` result.
+enum class RayStep : u32 { Continue = 0, Hit = 1, Miss = 2 };
+
+/// Sets up the walk of `ray` (grid slab test, entry voxel). False = the ray misses without a walk.
+template <class Stack>
+FUSE_SVO_FORCE_INLINE bool ray_begin(const SvoView& v, const SvoRay& ray, RayWalk& w, Stack& stack) {
+    if (v.initialized == 0u || v.has_voxels == 0u) {
+        return false;
+    }
+    const f32 length = std::sqrt(ray.dir[0] * ray.dir[0] + ray.dir[1] * ray.dir[1] + ray.dir[2] * ray.dir[2]);
+    if (length < 1e-8f) {
+        return false;
+    }
+    const f32 invLength = 1.f / length;
+    const f32 size = v.leaf_size;
+    const s32 resolution = static_cast<s32>(1u << v.max_depth);
+    for (int a = 0; a < 3; ++a) {
+        w.dir[a] = ray.dir[a] * invLength;
+        w.org[a] = ray.origin[a] - v.origin[a];
+    }
+    const f32 extent = size * static_cast<f32>(resolution);
+    w.maxDistance = ray.max_distance;
+    constexpr f32 kInf = 3.40282347e+38f; // FLT_MAX
+
+    // Slab test against the grid bounds; remember which face the ray enters through.
+    f32 tEnter = 0.f;
+    f32 tExit = kInf;
+    int enterAxis = -1;
+    for (int a = 0; a < 3; ++a) {
+        if (std::fabs(w.dir[a]) < 1e-12f) {
+            if (w.org[a] < 0.f || w.org[a] > extent) {
+                return false;
+            }
+            continue;
+        }
+        f32 t0 = (0.f - w.org[a]) / w.dir[a];
+        f32 t1 = (extent - w.org[a]) / w.dir[a];
+        if (t0 > t1) {
+            const f32 swap = t0;
+            t0 = t1;
+            t1 = swap;
+        }
+        if (t0 > tEnter) {
+            tEnter = t0;
+            enterAxis = a;
+        }
+        tExit = t1 < tExit ? t1 : tExit; // std::min by value (see max_s32)
+    }
+    if (tEnter > tExit || !(tEnter <= w.maxDistance)) {
+        return false;
+    }
+    w.tEnter = tEnter;
+
+    // Entry voxel; from here on the walk runs in voxel units: position(tv) = ov + dir * tv.
+    for (int a = 0; a < 3; ++a) {
+        const f32 p = w.org[a] + w.dir[a] * tEnter;
+        w.cell[a] = clamp_s32(static_cast<s32>(std::floor(p / size)), 0, resolution - 1);
+        w.step[a] = w.dir[a] > 0.f ? 1 : (w.dir[a] < 0.f ? -1 : 0);
+        w.ov[a] = w.org[a] / size;
+        w.inv[a] = 0.f;
+        if (w.step[a] != 0) {
+            w.inv[a] = 1.f / w.dir[a];
+            if (!(std::fabs(w.inv[a]) <= kInf)) {
+                w.inv[a] = w.step[a] > 0 ? kInf : -kInf; // denormal direction: never NaN in (plane - ov) * inv
+            }
+        }
+        w.brickCoord[a] = -1;
+    }
+    // Walk-time limit with slack: the exact `distance <= max_distance` test is made on the hit itself.
+    w.tvLimit = w.maxDistance / size * 1.0001f + 1.f;
+
+    stack.node[0] = 0u; // root
+    stack.coord[0] = 0;
+    stack.coord[1] = 0;
+    stack.coord[2] = 0;
+    stack.depth = 0u;
+    stack.leaf = PackedNode{};
+    if (v.packed.size != 0u) {
+        stack.leaf = v.packed[0]; // node[depth] when depth == brick_depth - 1 == 0
+    }
+    w.brick = BrickState{};
+    w.axis = enterAxis;
+    w.moved = false;
+    return true;
+}
+
+/// One iteration of the walk: tests the empty aligned cube around the current voxel and either reports
+/// the hit (fills `out`), leaves the cube (Continue) or stops on a miss (`out` untouched).
+template <class Stack>
+FUSE_SVO_FORCE_INLINE RayStep ray_step(const SvoView& v, RayWalk& w, Stack& stack, SvoRayHit& out) {
+    constexpr f32 kInf = 3.40282347e+38f; // FLT_MAX
+    const f32 size = v.leaf_size;
+    const s32 resolution = static_cast<s32>(1u << v.max_depth);
+    const u32 log = v.brick_log;
+    const s32 edge = 1 << log;
+    const u32 localMask = static_cast<u32>(edge) - 1u;
+
+    // Size of the empty aligned cube around `cell` (0 = the voxel is solid).
+    s32 empty = 0;
+    if ((w.cell[0] >> log) != w.brickCoord[0] || (w.cell[1] >> log) != w.brickCoord[1] ||
+        (w.cell[2] >> log) != w.brickCoord[2]) {
+        u32 cellSize = 1u;
+        const u32 index = locate(v, w.cell, stack, cellSize);
+        if (index == kNoNode) {
+            empty = static_cast<s32>(cellSize);
+            w.brickCoord[0] = -1;
+        } else if (!decode_brick(v, index, w.brick)) {
+            empty = edge;
+            w.brickCoord[0] = -1;
+        } else {
+            w.brickCoord[0] = w.cell[0] >> log;
+            w.brickCoord[1] = w.cell[1] >> log;
+            w.brickCoord[2] = w.cell[2] >> log;
+        }
+    }
+    if (empty == 0 && w.brick.mode != kModeUniform) {
+        const u32 lx = static_cast<u32>(w.cell[0]) & localMask;
+        const u32 ly = static_cast<u32>(w.cell[1]) & localMask;
+        const u32 lz = static_cast<u32>(w.cell[2]) & localMask;
+        if (edge >= 8 && (w.brick.cells & cell4_bits(lx, ly, lz)) == 0ull) {
+            empty = 4;
+        } else if (edge >= 2 && ((w.brick.cells >> cell2_bit(lx, ly, lz)) & 1ull) == 0ull) {
+            empty = 2;
+        } else if (!brick_voxel_solid(v, w.brick, lx | (ly << log) | (lz << (2u * log)))) {
+            empty = 1;
+        }
+    }
+
+    if (empty == 0) {
+        // Entry plane of the hit voxel in closed form (bit-identical to a voxel-by-voxel DDA).
+        f32 distance = w.tEnter;
+        if (w.moved) {
+            const int axis = w.axis;
+            const s32 c = axis == 0 ? w.cell[0] : (axis == 1 ? w.cell[1] : w.cell[2]);
+            const s32 s = axis == 0 ? w.step[0] : (axis == 1 ? w.step[1] : w.step[2]);
+            const f32 o = axis == 0 ? w.org[0] : (axis == 1 ? w.org[1] : w.org[2]);
+            const f32 d = axis == 0 ? w.dir[0] : (axis == 1 ? w.dir[1] : w.dir[2]);
+            distance = (static_cast<f32>(s > 0 ? c : c + 1) * size - o) / d;
+        }
+        if (!(distance <= w.maxDistance)) {
+            return RayStep::Miss;
+        }
+        out.voxel[0] = w.cell[0];
+        out.voxel[1] = w.cell[1];
+        out.voxel[2] = w.cell[2];
+        out.distance = distance;
+        // Face the ray entered through (none when it starts inside a solid voxel).
+        out.normal[0] = w.axis == 0 ? (w.dir[0] > 0.f ? -1.f : 1.f) : 0.f;
+        out.normal[1] = w.axis == 1 ? (w.dir[1] > 0.f ? -1.f : 1.f) : 0.f;
+        out.normal[2] = w.axis == 2 ? (w.dir[2] > 0.f ? -1.f : 1.f) : 0.f;
+        out.hit = 1u;
+        return RayStep::Hit;
+    }
+
+    // Leave the empty aligned cube through its nearest exit face: the exit axis moves to the
+    // neighbouring cube, the others to the voxel the ray is in at the exit time (clamped to the
+    // cube, never backwards). Every axis is computed and then selected, so no array is indexed by
+    // `axis` (that would put the state in local memory on the GPU).
+    s32 cubeMin[3];
+    f32 exitT[3];
+    for (int a = 0; a < 3; ++a) {
+        cubeMin[a] = w.cell[a] & ~(empty - 1);
+        exitT[a] = w.step[a] == 0
+                       ? kInf
+                       : (static_cast<f32>(w.step[a] > 0 ? cubeMin[a] + empty : cubeMin[a]) - w.ov[a]) * w.inv[a];
+    }
+    const int axis = min_axis(exitT);
+    w.axis = axis;
+    const f32 tv = axis == 0 ? exitT[0] : (axis == 1 ? exitT[1] : exitT[2]);
+    if (!(tv <= w.tvLimit)) {
+        return RayStep::Miss;
+    }
+    for (int a = 0; a < 3; ++a) {
+        s32 across = w.cell[a];
+        if (empty > 1 && w.step[a] != 0) {
+            const s32 inside = static_cast<s32>(std::floor(w.ov[a] + w.dir[a] * tv));
+            across = max_s32(w.cell[a] * w.step[a],
+                              clamp_s32(inside, cubeMin[a], cubeMin[a] + empty - 1) * w.step[a]) *
+                     w.step[a]; // never step backwards
+        }
+        const s32 beyond = w.step[a] > 0 ? cubeMin[a] + empty : cubeMin[a] - 1;
+        w.cell[a] = a == axis ? beyond : across;
+    }
+    if (w.cell[0] < 0 || w.cell[0] >= resolution || w.cell[1] < 0 || w.cell[1] >= resolution || w.cell[2] < 0 ||
+        w.cell[2] >= resolution) {
+        return RayStep::Miss;
+    }
+    w.moved = true;
+    return RayStep::Continue;
+}
+
 /// Exact voxel 3D-DDA of one ray over the SVO (B3.5), written for the GPU as much as for the CPU:
-///  - one loop, no recursion, no heap: the state is the current voxel, the ray time and the entry axis;
+///  - one loop, no recursion, no heap: the state (RayWalk) is the current voxel, the ray time and the
+///    entry axis; `ray_begin` sets it up and each `ray_step` is one iteration (the CUDA backend runs the
+///    steps from a persistent loop that refills lanes whose ray finished, kernels/svo_ray_cast.cu);
 ///  - every iteration finds the largest empty aligned cube around the current voxel -- a missing octree
 ///    child (16^3 .. root), an empty brick (8^3), an empty 4^3 sub-block or 2^3 cell of a sparse brick
 ///    (from the register-resident cell mask), or a single empty voxel -- and leaves it in one step:
@@ -429,173 +672,16 @@ FUSE_HOST_DEVICE inline bool brick_voxel_solid(const SvoView& v, const BrickStat
 /// the result depends only on which voxel is hit and through which face.
 /// Returns true and fills `out` on a hit; `out` is left untouched on a miss.
 FUSE_HOST_DEVICE inline bool ray_cast(const SvoView& v, const SvoRay& ray, SvoRayHit& out) {
-    if (v.initialized == 0u || v.has_voxels == 0u) {
-        return false;
-    }
-    const f32 length = std::sqrt(ray.dir[0] * ray.dir[0] + ray.dir[1] * ray.dir[1] + ray.dir[2] * ray.dir[2]);
-    if (length < 1e-8f) {
-        return false;
-    }
-    const f32 invLength = 1.f / length;
-    const f32 size = v.leaf_size;
-    const s32 resolution = static_cast<s32>(1u << v.max_depth);
-    const f32 dir[3] = {ray.dir[0] * invLength, ray.dir[1] * invLength, ray.dir[2] * invLength};
-    const f32 org[3] = {ray.origin[0] - v.origin[0], ray.origin[1] - v.origin[1], ray.origin[2] - v.origin[2]};
-    const f32 extent = size * static_cast<f32>(resolution);
-    const f32 maxDistance = ray.max_distance;
-    constexpr f32 kInf = 3.40282347e+38f; // FLT_MAX
-
-    // Slab test against the grid bounds; remember which face the ray enters through.
-    f32 tEnter = 0.f;
-    f32 tExit = kInf;
-    int enterAxis = -1;
-    for (int a = 0; a < 3; ++a) {
-        if (std::fabs(dir[a]) < 1e-12f) {
-            if (org[a] < 0.f || org[a] > extent) {
-                return false;
-            }
-            continue;
-        }
-        f32 t0 = (0.f - org[a]) / dir[a];
-        f32 t1 = (extent - org[a]) / dir[a];
-        if (t0 > t1) {
-            const f32 swap = t0;
-            t0 = t1;
-            t1 = swap;
-        }
-        if (t0 > tEnter) {
-            tEnter = t0;
-            enterAxis = a;
-        }
-        tExit = std::min(tExit, t1);
-    }
-    if (tEnter > tExit || !(tEnter <= maxDistance)) {
-        return false;
-    }
-
-    // Entry voxel; from here on the walk runs in voxel units: position(tv) = ov + dir * tv. The small
-    // per-axis arrays are only ever indexed by unrolled loop counters (never by `axis`), so nvcc keeps
-    // them in registers; the traversal stack is the only per-ray local memory.
-    s32 cell[3] = {0, 0, 0};
-    s32 step[3] = {0, 0, 0};
-    f32 ov[3] = {0.f, 0.f, 0.f};
-    f32 inv[3] = {0.f, 0.f, 0.f};
-    for (int a = 0; a < 3; ++a) {
-        const f32 p = org[a] + dir[a] * tEnter;
-        cell[a] = std::clamp(static_cast<s32>(std::floor(p / size)), 0, resolution - 1);
-        step[a] = dir[a] > 0.f ? 1 : (dir[a] < 0.f ? -1 : 0);
-        ov[a] = org[a] / size;
-        if (step[a] != 0) {
-            inv[a] = 1.f / dir[a];
-            if (!(std::fabs(inv[a]) <= kInf)) {
-                inv[a] = step[a] > 0 ? kInf : -kInf; // denormal direction: never NaN in (plane - ov) * inv
-            }
-        }
-    }
-    // Walk-time limit with slack: the exact `distance <= max_distance` test is made on the hit itself.
-    const f32 tvLimit = maxDistance / size * 1.0001f + 1.f;
-
-    const u32 log = v.brick_log;
-    const s32 edge = 1 << log;
-    const u32 localMask = static_cast<u32>(edge) - 1u;
+    RayWalk w;
     TraversalStack stack;
-    stack.node[0] = 0u; // root; depth 0 and coord are default-initialised
-    if (v.packed.size != 0u) {
-        stack.leaf = v.packed[0]; // node[depth] when depth == brick_depth - 1 == 0
+    if (!ray_begin(v, ray, w, stack)) {
+        return false;
     }
-    BrickState brick{};
-    s32 brickCoord[3] = {-1, -1, -1};
-    int axis = enterAxis;
-    bool moved = false;
-
     for (;;) {
-        // Size of the empty aligned cube around `cell` (0 = the voxel is solid).
-        s32 empty = 0;
-        if ((cell[0] >> log) != brickCoord[0] || (cell[1] >> log) != brickCoord[1] ||
-            (cell[2] >> log) != brickCoord[2]) {
-            u32 cellSize = 1u;
-            const u32 index = locate(v, cell, stack, cellSize);
-            if (index == kNoNode) {
-                empty = static_cast<s32>(cellSize);
-                brickCoord[0] = -1;
-            } else if (!decode_brick(v, index, brick)) {
-                empty = edge;
-                brickCoord[0] = -1;
-            } else {
-                brickCoord[0] = cell[0] >> log;
-                brickCoord[1] = cell[1] >> log;
-                brickCoord[2] = cell[2] >> log;
-            }
+        const RayStep r = ray_step(v, w, stack, out);
+        if (r != RayStep::Continue) {
+            return r == RayStep::Hit;
         }
-        if (empty == 0 && brick.mode != kModeUniform) {
-            const u32 lx = static_cast<u32>(cell[0]) & localMask;
-            const u32 ly = static_cast<u32>(cell[1]) & localMask;
-            const u32 lz = static_cast<u32>(cell[2]) & localMask;
-            if (edge >= 8 && (brick.cells & cell4_bits(lx, ly, lz)) == 0ull) {
-                empty = 4;
-            } else if (edge >= 2 && ((brick.cells >> cell2_bit(lx, ly, lz)) & 1ull) == 0ull) {
-                empty = 2;
-            } else if (!brick_voxel_solid(v, brick, lx | (ly << log) | (lz << (2u * log)))) {
-                empty = 1;
-            }
-        }
-
-        if (empty == 0) {
-            // Entry plane of the hit voxel in closed form (bit-identical to a voxel-by-voxel DDA).
-            f32 distance = tEnter;
-            if (moved) {
-                const s32 c = axis == 0 ? cell[0] : (axis == 1 ? cell[1] : cell[2]);
-                const s32 s = axis == 0 ? step[0] : (axis == 1 ? step[1] : step[2]);
-                const f32 o = axis == 0 ? org[0] : (axis == 1 ? org[1] : org[2]);
-                const f32 d = axis == 0 ? dir[0] : (axis == 1 ? dir[1] : dir[2]);
-                distance = (static_cast<f32>(s > 0 ? c : c + 1) * size - o) / d;
-            }
-            if (!(distance <= maxDistance)) {
-                return false;
-            }
-            out.voxel[0] = cell[0];
-            out.voxel[1] = cell[1];
-            out.voxel[2] = cell[2];
-            out.distance = distance;
-            // Face the ray entered through (none when it starts inside a solid voxel).
-            out.normal[0] = axis == 0 ? (dir[0] > 0.f ? -1.f : 1.f) : 0.f;
-            out.normal[1] = axis == 1 ? (dir[1] > 0.f ? -1.f : 1.f) : 0.f;
-            out.normal[2] = axis == 2 ? (dir[2] > 0.f ? -1.f : 1.f) : 0.f;
-            out.hit = 1u;
-            return true;
-        }
-
-        // Leave the empty aligned cube through its nearest exit face: the exit axis moves to the
-        // neighbouring cube, the others to the voxel the ray is in at the exit time (clamped to the
-        // cube, never backwards). Every axis is computed and then selected, so no array is indexed by
-        // `axis` (that would put the state in local memory on the GPU).
-        s32 cubeMin[3];
-        f32 exitT[3];
-        for (int a = 0; a < 3; ++a) {
-            cubeMin[a] = cell[a] & ~(empty - 1);
-            exitT[a] = step[a] == 0 ? kInf
-                                    : (static_cast<f32>(step[a] > 0 ? cubeMin[a] + empty : cubeMin[a]) - ov[a]) * inv[a];
-        }
-        axis = min_axis(exitT);
-        const f32 tv = axis == 0 ? exitT[0] : (axis == 1 ? exitT[1] : exitT[2]);
-        if (!(tv <= tvLimit)) {
-            return false;
-        }
-        for (int a = 0; a < 3; ++a) {
-            s32 across = cell[a];
-            if (empty > 1 && step[a] != 0) {
-                const s32 inside = static_cast<s32>(std::floor(ov[a] + dir[a] * tv));
-                across = std::max(cell[a] * step[a], std::clamp(inside, cubeMin[a], cubeMin[a] + empty - 1) * step[a]) *
-                         step[a]; // never step backwards
-            }
-            const s32 beyond = step[a] > 0 ? cubeMin[a] + empty : cubeMin[a] - 1;
-            cell[a] = a == axis ? beyond : across;
-        }
-        if (cell[0] < 0 || cell[0] >= resolution || cell[1] < 0 || cell[1] >= resolution || cell[2] < 0 ||
-            cell[2] >= resolution) {
-            return false;
-        }
-        moved = true;
     }
 }
 

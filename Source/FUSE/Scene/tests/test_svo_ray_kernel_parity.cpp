@@ -16,6 +16,8 @@
 //   - With a CUDA device: CUDA == CpuReference (voxel, face, hit/miss exact; distance within 1e-5
 //     relative, bit-exact count printed) and the resident-buffer CUDA-event benchmark of the 1M rays
 //     (< 10 ms target; asserted only with FUSE_DEVICE_BUDGETS=1). Without a device it prints a skip line.
+//   - `--device-bench`: only the 1M-ray CUDA half, checked against CpuParallel (a ~2 s run for timing on a
+//     shared GPU: start it when the GPU is idle).
 
 #include <fuse/compute_kernel/launch.hpp>
 #include <fuse/compute_kernel/stats.hpp>
@@ -52,6 +54,8 @@ using fuse::scene::SvoRayHit;
 using fuse::scene::vec3;
 
 int g_failures = 0;
+/// --device-bench: skip the serial CPU passes of the 1M-ray row (quick CUDA timing runs).
+bool g_deviceBenchOnly = false;
 
 // ---- the previous traversal, verbatim (voxel by voxel inside every non-empty brick) ----------------
 namespace legacy {
@@ -549,6 +553,48 @@ void testStatsFallbackAndInvalid() {
     scheduler.shutdown();
 }
 
+/// CUDA half of the 1M-ray row: convenience path + resident CUDA-event benchmark, checked against `a`.
+void timeMillionRaysCuda(SVO& svo, const std::vector<SvoRay>& rays, const std::vector<SvoRayHit>& a) {
+    using clock = std::chrono::steady_clock;
+    const u32 n = static_cast<u32>(rays.size());
+    if (!kernel::backend_available(kernel::Backend::Cuda)) {
+        std::printf("svo_ray_cast 1M rays CUDA: no device (device gate skipped)\n");
+        return;
+    }
+    // Convenience path (per-call staging, host clock) — then the plan measurement: resident buffers,
+    // CUDA events around each launch.
+    std::vector<SvoRayHit> gpu(rays.size());
+    expectTrue(svo.rayCastBatch(kernel::Backend::Cuda, rays.data(), gpu.data(), n), "1M cuda warmup");
+    const auto c0 = clock::now();
+    expectTrue(svo.rayCastBatch(kernel::Backend::Cuda, rays.data(), gpu.data(), n), "1M cuda");
+    const auto c1 = clock::now();
+    std::printf("svo_ray_cast 1M rays CUDA rayCastBatch: wall %.2f ms (alloc + upload + launch + download)\n",
+                std::chrono::duration<double, std::milli>(c1 - c0).count());
+    expectTrue(cudaMatchesCpu(gpu, a, "svo_ray_cast 1M rays (rayCastBatch)"),
+               "1M rays: CUDA == CpuReference (voxel/face/hit exact, distance within 1e-5 relative)");
+
+    fuse::scene::SvoRayDeviceTiming timing{};
+    std::vector<SvoRayHit> resident(rays.size());
+    const bool ran = fuse::scene::benchmarkSvoRayCastCuda(svo, rays.data(), resident.data(), n, 20u, timing);
+    expectTrue(ran, "1M rays: resident-buffer CUDA benchmark ran");
+    if (ran) {
+        std::printf("svo_ray_cast 1M rays CUDA events (resident buffers, %u launches): kernel min %.3f ms, avg %.3f ms "
+                    "[target < 10 ms]; upload %.2f ms, download %.2f ms; %d regs/thread, %d B local, %u threads x %d "
+                    "blocks/SM = %.0f%% theoretical occupancy\n",
+                    timing.iterations, static_cast<double>(timing.kernel_ms_min),
+                    static_cast<double>(timing.kernel_ms_avg), static_cast<double>(timing.upload_ms),
+                    static_cast<double>(timing.download_ms), timing.registers_per_thread, timing.local_bytes_per_thread,
+                    timing.threads_per_block, timing.blocks_per_sm,
+                    100.0 * static_cast<double>(timing.theoretical_occupancy));
+        expectTrue(cudaMatchesCpu(resident, a, "svo_ray_cast 1M rays (resident benchmark)"),
+                   "1M rays: resident CUDA benchmark == CpuReference");
+        const char* enforce = std::getenv("FUSE_DEVICE_BUDGETS");
+        if (enforce != nullptr && enforce[0] == '1' && fuse::core::timingBudgetsEnforcedNoted()) {
+            expectTrue(timing.kernel_ms_min < 10.f, "SVO 1M rays < 10 ms on CUDA (CUDA events)");
+        }
+    }
+}
+
 /// "SVO 1M rays" row: CPU timing of the same kernel (the < 10 ms target is for CUDA on an RTX 3090).
 void timeMillionRays() {
     SVO svo;
@@ -576,6 +622,13 @@ void timeMillionRays() {
     const u32 workers = std::max(1u, std::thread::hardware_concurrency()) - 1u;
     scheduler.initialize(workers);
     using clock = std::chrono::steady_clock;
+    if (g_deviceBenchOnly) {
+        // --device-bench: only the CUDA half, against CpuParallel (== CpuReference bit for bit in the full run).
+        expectTrue(svo.rayCastBatch(kernel::Backend::CpuParallel, rays.data(), a.data(), n), "1M parallel");
+        scheduler.shutdown();
+        timeMillionRaysCuda(svo, rays, a);
+        return;
+    }
     const auto l0 = clock::now();
     const std::vector<SvoRayHit> previous = legacyCast(svo, rays);
     const auto t0 = clock::now();
@@ -618,42 +671,7 @@ void timeMillionRays() {
                 std::chrono::duration<double, std::milli>(p1 - p0).count(), layout.nodes.size(), layout.bricks.size(),
                 layout.pool.size(), std::chrono::duration<double, std::milli>(p2 - p1).count());
 
-    if (!kernel::backend_available(kernel::Backend::Cuda)) {
-        std::printf("svo_ray_cast 1M rays CUDA: no device (device gate skipped)\n");
-        return;
-    }
-    // Convenience path (per-call staging, host clock) — then the plan measurement: resident buffers,
-    // CUDA events around each launch.
-    std::vector<SvoRayHit> gpu(rays.size());
-    expectTrue(svo.rayCastBatch(kernel::Backend::Cuda, rays.data(), gpu.data(), n), "1M cuda warmup");
-    const auto c0 = clock::now();
-    expectTrue(svo.rayCastBatch(kernel::Backend::Cuda, rays.data(), gpu.data(), n), "1M cuda");
-    const auto c1 = clock::now();
-    std::printf("svo_ray_cast 1M rays CUDA rayCastBatch: wall %.2f ms (alloc + upload + launch + download)\n",
-                std::chrono::duration<double, std::milli>(c1 - c0).count());
-    expectTrue(cudaMatchesCpu(gpu, a, "svo_ray_cast 1M rays (rayCastBatch)"),
-               "1M rays: CUDA == CpuReference (voxel/face/hit exact, distance within 1e-5 relative)");
-
-    fuse::scene::SvoRayDeviceTiming timing{};
-    std::vector<SvoRayHit> resident(rays.size());
-    const bool ran = fuse::scene::benchmarkSvoRayCastCuda(svo, rays.data(), resident.data(), n, 20u, timing);
-    expectTrue(ran, "1M rays: resident-buffer CUDA benchmark ran");
-    if (ran) {
-        std::printf("svo_ray_cast 1M rays CUDA events (resident buffers, %u launches): kernel min %.3f ms, avg %.3f ms "
-                    "[target < 10 ms]; upload %.2f ms, download %.2f ms; %d regs/thread, %d B local, %u threads x %d "
-                    "blocks/SM = %.0f%% theoretical occupancy\n",
-                    timing.iterations, static_cast<double>(timing.kernel_ms_min),
-                    static_cast<double>(timing.kernel_ms_avg), static_cast<double>(timing.upload_ms),
-                    static_cast<double>(timing.download_ms), timing.registers_per_thread, timing.local_bytes_per_thread,
-                    timing.threads_per_block, timing.blocks_per_sm,
-                    100.0 * static_cast<double>(timing.theoretical_occupancy));
-        expectTrue(cudaMatchesCpu(resident, a, "svo_ray_cast 1M rays (resident benchmark)"),
-                   "1M rays: resident CUDA benchmark == CpuReference");
-        const char* enforce = std::getenv("FUSE_DEVICE_BUDGETS");
-        if (enforce != nullptr && enforce[0] == '1' && fuse::core::timingBudgetsEnforcedNoted()) {
-            expectTrue(timing.kernel_ms_min < 10.f, "SVO 1M rays < 10 ms on CUDA (CUDA events)");
-        }
-    }
+    timeMillionRaysCuda(svo, rays, a);
 }
 
 /// CPU gate. Must run before any GPU skip; a failure exits the process.
@@ -667,17 +685,22 @@ void testSvoRayBudgetOk() {
 
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    for (int i = 1; i < argc; ++i) {
+        g_deviceBenchOnly = g_deviceBenchOnly || std::strcmp(argv[i], "--device-bench") == 0;
+    }
     testSvoRayBudgetOk();
     if (g_failures != 0) {
         std::fprintf(stderr, "FAIL: testSvoRayBudgetOk\n");
         return EXIT_FAILURE;
     }
     fuse::core::initialize();
-    testBackendParity();
-    testPackedLayoutShapes();
-    testBruteForce();
-    testStatsFallbackAndInvalid();
+    if (!g_deviceBenchOnly) {
+        testBackendParity();
+        testPackedLayoutShapes();
+        testBruteForce();
+        testStatsFallbackAndInvalid();
+    }
     timeMillionRays();
     fuse::core::shutdown();
     if (g_failures != 0) {
