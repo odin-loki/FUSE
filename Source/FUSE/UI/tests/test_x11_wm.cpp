@@ -246,6 +246,9 @@ int startWm(Desk& desk, WindowManager& wm) {
     if (!wm.start(why)) return skip(why);
     for (int i = 0; i < 500 && !desk.wmRunning(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(20));
     if (!desk.wmRunning()) return skip(wm.path + " did not start (no _NET_SUPPORTING_WM_CHECK within 10 s)");
+    // the WM sets _NET_SUPPORTING_WM_CHECK before it finishes its start-up scan; a window mapped in that gap can be
+    // left unmanaged on a loaded machine, so give it a moment to settle
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
     std::printf("  window manager: %s\n", wm.path.c_str());
     return 0;
 }
@@ -270,7 +273,7 @@ int gateChrome(int argc, char** argv) {
     waitFor(a, [&] { return win.framesPresented() >= 1; });
     const x11::Window xw = x11::Window(np.nativeWindow(win));
     // managed (reparented into the WM's frame) and undecorated
-    CHECK(waitFor(a, [&] { return desk.parent(xw) != desk.root && desk.longs(xw, "_NET_FRAME_EXTENTS").size() == 4; }));
+    CHECK(waitFor(a, [&] { return desk.parent(xw) != desk.root && desk.longs(xw, "_NET_FRAME_EXTENTS").size() == 4; }, 10000));
     const auto ext = desk.longs(xw, "_NET_FRAME_EXTENTS");
     std::printf("  _NET_FRAME_EXTENTS %ld %ld %ld %ld\n", ext.size() == 4 ? ext[0] : -1, ext.size() == 4 ? ext[1] : -1,
                 ext.size() == 4 ? ext[2] : -1, ext.size() == 4 ? ext[3] : -1);
