@@ -1,0 +1,27 @@
+{
+  "_comment": "fuse_rp_hw_bench --mode gate baselines (ms, median of 5 trial medians x 48 frames at 2560x1440 / 1706x960 TAAU). Sections: '<device> | <scene>'. Rewrite: FUSE_UPDATE_PERF_BASELINE=1 ctest -L hw -R budget",
+  "NVIDIA GeForce RTX 3090 | bistro": {
+    "culling_visbuffer": 0.6062,
+    "direct_lighting_shadows": 4.8452,
+    "global_illumination": 6.3914,
+    "material_resolve": 1.0321,
+    "other": 0.0000,
+    "post_upscale": 2.4029,
+    "span": 17.1555,
+    "total": 16.8680,
+    "ui": 0.0000,
+    "volumetrics_transparency": 1.5909
+  },
+  "NVIDIA GeForce RTX 3090 | sponza": {
+    "culling_visbuffer": 0.2426,
+    "direct_lighting_shadows": 4.7185,
+    "global_illumination": 6.3561,
+    "material_resolve": 1.0884,
+    "other": 0.0000,
+    "post_upscale": 2.3892,
+    "span": 16.3973,
+    "total": 16.1142,
+    "ui": 0.0000,
+    "volumetrics_transparency": 1.3508
+  }
+}

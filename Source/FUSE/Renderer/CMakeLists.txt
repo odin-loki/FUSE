@@ -332,3 +332,4 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp73.cmake") # WP-7.3 path-tracing
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_rl55.cmake") # RL-5.5 radiance denoiser, extends WP-6.4 (denoise/radiance_*, shaders/denoise/rdn*)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_ssrc.cmake")  # WP-6.5 follow-up: screen-space radiance cascades (ssrc/, shaders/ssrc/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/b5_device_bench.cmake") # B5 device gates (DDGI / clustered CUDA-event timing) + per-pass frame benchmark
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_hw_bench.cmake") # HW exit criteria: §5.3 budgets, P2/P3/P5/P7/P8/P9, reference scenes (docs/unification/RENDERER-HW-RUN.md)
