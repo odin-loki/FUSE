@@ -33,6 +33,9 @@
 //                  resolves to a record with a matching sha256 and an allowed (or reviewed) licence, no NC /
 //                  ND / editorial / research-only / unknown-provenance entries, no share-alike leakage over
 //                  derived_from, generator records carry path@revision + seed, CREDITS.md is current.
+//                  FUSE_REMASTER_PLAN §2.6 checks 8-12 (originals / recipe-only never tracked or packed, AI
+//                  recipes, cloud opt-in, forbidden model and sub-model licences, non-default providers) read
+//                  the §0.1.0 allow / deny lists from --root/models/licence-policy.json.
 //                  Optional --manifest <cook_manifest.json> (cooked outputs need a record) and --cache DIR.
 //                  (fuse_lint_asset_licences.cpp)
 //   asset-credits  Regenerates --root Content/CREDITS.md from the lock file (not a gate; exit 0 on success).
@@ -1257,7 +1260,7 @@ std::string padHeaders(const fs::path& base, int n) {
     return {};
 }
 
-bool selfTest(const std::string& check, const fs::path& scratch) {
+bool selfTest(const std::string& check, const fs::path& scratch, const fs::path& root) {
     SelfTest t;
     const fs::path bad = scratch / "selftest_bad";
     const fs::path good = scratch / "selftest_good";
@@ -1566,7 +1569,9 @@ bool selfTest(const std::string& check, const fs::path& scratch) {
                  "branding: seeded workflow/README/docs naming violations flagged (got " + std::to_string(vb.size()) + ")");
         t.expect(checkBranding(bad / "nonexistent").size() >= 2u, "branding: missing repo flagged");
     } else if (check == "asset-licences" || check == "asset-credits") {
-        t.expect(fuse::tools::lint::selfTestAssetLicences(scratch, sha256Hex),
+        // The Remaster checks 8-12 also run against the real Content/models/licence-policy.json when --root has one.
+        const fs::path policy = root.empty() ? fs::path() : root / "models" / "licence-policy.json";
+        t.expect(fuse::tools::lint::selfTestAssetLicences(scratch, sha256Hex, policy),
                  "asset-licences: seeded licence / sha / provenance / credits violations flagged, clean lock passes");
     } else {
         std::fprintf(stderr, "unknown check '%s'\n", check.c_str());
@@ -1610,7 +1615,7 @@ int main(int argc, char** argv) {
     if (a.scratch.empty()) {
         a.scratch = fs::temp_directory_path() / ("fuse_lint_" + a.check);
     }
-    if (!selfTest(a.check, a.scratch)) {
+    if (!selfTest(a.check, a.scratch, a.root)) {
         std::fprintf(stderr, "fuse_lint %s: self-test FAILED (the check cannot detect its seeded violation)\n", a.check.c_str());
         return 2;
     }
