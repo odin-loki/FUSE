@@ -9,6 +9,8 @@
 #include <fuse/ecs/components/collider.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/project/loader.hpp>
+#include <fuse/project/parity_legacy_sources.hpp>
+#include <fuse/project/world_converter.hpp>
 #include <fuse/editor/editor_host.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/transform.hpp>
@@ -2184,6 +2186,17 @@ fs::path copySample(const char* tag, const char* sample) {
     const fs::path root = scratchDir(tag);
     std::error_code ec;
     fs::copy(samplesDir() / sample, root / sample, fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
+    // the default world: Samples ship only the legacy mission. Convert it from the source resolved for the in-repo
+    // sample (the golden reference level when present, else the bundled .mis), as opening the sample in place does;
+    // the copy lies outside the repository, where only the bundled mission would be found.
+    const fuse::project::LoadResult src = fuse::project::loadFromDirectory((samplesDir() / sample).string());
+    if (src.status == fuse::project::LoadStatus::Ok && !src.manifest.defaultWorld3D.empty()) {
+        const fs::path level = root / sample / src.manifest.defaultWorld3D;
+        const auto mission = fuse::project::resolveParityLegacySource(
+            src.manifest, (samplesDir() / sample / src.manifest.defaultWorld3D).string(), ".mis");
+        if (!fs::exists(level, ec) && mission.origin != fuse::project::LegacySourceOrigin::Missing)
+            (void)fuse::project::convertT3DMissionToFuselevel(mission.path, level.string());
+    }
     return root / sample;
 }
 void writeText(const fs::path& p, const std::string& s) {
@@ -3236,7 +3249,7 @@ void gateShellProfiler(Rig& r) {
 }
 
 void gateShellProject(Rig& r) {
-    CHECK(r.c.openProject((samplesDir() / "demo_3d_empty").string()));
+    CHECK(r.c.openProject(copySample("shell_project", "demo_3d_empty").string())); // a copy: opening converts the world
     settle(r);
     CHECK(!r.v().hierarchy.empty());
     CHECK(r.win.title().find("demo_3d_empty") != std::string::npos);

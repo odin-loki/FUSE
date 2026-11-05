@@ -136,3 +136,26 @@ if(WIN32 AND TARGET fuse_app_a11y)
     add_test(NAME fuse_editor_ui_a11y COMMAND fuse_editor_ui_a11y_gate)
     set_tests_properties(fuse_editor_ui_a11y PROPERTIES LABELS "fuse_ui;fuse_editor_ui;a11y" SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 180)
 endif()
+# Linux twin: an AT-SPI client (libatspi) reads and drives the editor's X11 window through AccessKit, on a private
+# session bus under Xvfb (as fuse_ui_a11y_linux). 77 without AccessKit, libatspi, a session bus or a display.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND TARGET fuse_app_a11y AND TARGET fuse_app_native)
+    add_executable(fuse_editor_ui_a11y_linux_gate tests/test_editor_ui_a11y_linux.cpp)
+    target_link_libraries(fuse_editor_ui_a11y_linux_gate PRIVATE fuse_editor_fuse fuse_app_native fuse_app_a11y ${CMAKE_DL_LIBS})
+    target_include_directories(fuse_editor_ui_a11y_linux_gate PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../UI/App/src") # D-Bus loader
+    find_program(FUSE_UI_ATSPI_BUS_LAUNCHER at-spi-bus-launcher
+        PATHS /usr/libexec /usr/lib/at-spi2-core /usr/libexec/at-spi2-core /usr/lib/at-spi2)
+    if(FUSE_UI_ATSPI_BUS_LAUNCHER)
+        target_compile_definitions(fuse_editor_ui_a11y_linux_gate PRIVATE FUSE_ATSPI_BUS_LAUNCHER="${FUSE_UI_ATSPI_BUS_LAUNCHER}")
+    endif()
+    fuse_apply_cxx23(fuse_editor_ui_a11y_linux_gate)
+    find_program(FUSE_UI_XVFB_RUN xvfb-run)
+    find_program(FUSE_UI_DBUS_RUN_SESSION dbus-run-session)
+    if(FUSE_UI_XVFB_RUN AND FUSE_UI_DBUS_RUN_SESSION)
+        add_test(NAME fuse_editor_ui_a11y_linux COMMAND ${FUSE_UI_DBUS_RUN_SESSION} -- ${FUSE_UI_XVFB_RUN} -a
+                 -s "-screen 0 1920x1080x24 +bs" $<TARGET_FILE:fuse_editor_ui_a11y_linux_gate>)
+    else()
+        add_test(NAME fuse_editor_ui_a11y_linux COMMAND fuse_editor_ui_a11y_linux_gate)
+    endif()
+    set_tests_properties(fuse_editor_ui_a11y_linux PROPERTIES LABELS "fuse_ui;fuse_editor_ui;a11y" SKIP_RETURN_CODE 77
+        RUN_SERIAL TRUE TIMEOUT 180)
+endif()

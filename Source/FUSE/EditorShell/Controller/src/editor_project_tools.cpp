@@ -2,6 +2,7 @@
 #include <fuse/editor/editor_project_tools.hpp>
 
 #include <fuse/project/loader.hpp>
+#include <fuse/project/world_converter.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -442,6 +443,17 @@ PackageResult packageProject(const PackageOptions& opts, const std::function<voi
     }
     say("Copied " + std::to_string(r.copiedFiles) + " file(s), " + humanBytes(r.totalBytes) + " (" + (shipping ? "Shipping" : "Development") +
         " configuration" + (r.excludedFiles > 0 ? ", " + std::to_string(r.excludedFiles) + " excluded" : std::string()) + ")");
+
+    // the default 3D world: a project that ships only the legacy .mis (Samples) gets its .fuselevel in the package
+    // (converted from the staged copy, as the editor and runtime do on open)
+    if (const project::LoadResult staged = project::loadFromDirectory(data.string());
+        staged.status == project::LoadStatus::Ok && !staged.manifest.defaultWorld3D.empty()) {
+        const fs::path level = data / staged.manifest.defaultWorld3D;
+        const fs::path mission = fs::path(level).replace_extension(".mis");
+        if (!fs::exists(level, ec) && fs::exists(mission, ec) &&
+            project::convertT3DMissionToFuselevel(mission.string(), level.string()).status == project::ConvertStatus::Ok)
+            say("Converted " + generic(fs::relative(mission, data, ec)) + " to " + staged.manifest.defaultWorld3D);
+    }
 
     // 2. cook (project-wide fuse_cook over the staged copy)
     if (opts.cookAssets) {
