@@ -506,7 +506,7 @@ def main():
         s = sub.add_parser(name)
         s.add_argument("--out", required=True)
     args = p.parse_args()
-    if not shutil.which("wine") and not shutil.which("wine64"):
+    if not os.environ.get("FUSE_WINE") and not shutil.which("wine") and not shutil.which("wine64"):
         print("SKIP: wine not installed")
         return SKIP
     tools = load_tap_tools(args.tap_tools)

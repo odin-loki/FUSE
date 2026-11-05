@@ -183,7 +183,7 @@ def cmd_capture(args):
     if args.from_run:
         run_dir = args.from_run
     else:
-        if not shutil.which("wine") and not shutil.which("wine64"):
+        if not os.environ.get("FUSE_WINE") and not shutil.which("wine") and not shutil.which("wine64"):
             print("SKIP: wine not installed")
             return SKIP
         tap_run = load_module("rl_tap_run", os.path.join(HERE, "..", "tap", "rl_tap_run.py"))

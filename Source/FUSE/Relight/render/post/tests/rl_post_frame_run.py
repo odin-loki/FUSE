@@ -234,7 +234,7 @@ def main():
     p.add_argument("cmd", choices=["frame", "determinism", "validation"])
     p.add_argument("--out", required=True)
     args = p.parse_args()
-    if not shutil.which("wine") and not shutil.which("wine64"):
+    if not os.environ.get("FUSE_WINE") and not shutil.which("wine") and not shutil.which("wine64"):
         print("SKIP: wine not installed")
         return SKIP
     raster = base.load(args.raster_tools, "rl_raster_run")

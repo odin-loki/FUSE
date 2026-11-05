@@ -269,7 +269,7 @@ def main():
         return cmd_selftest(args)
     if not args.from_run:
         import shutil
-        if not shutil.which("wine") and not shutil.which("wine64"):
+        if not os.environ.get("FUSE_WINE") and not shutil.which("wine") and not shutil.which("wine64"):
             print("SKIP: wine not installed")
             return SKIP
     return cmd_capture(args)
