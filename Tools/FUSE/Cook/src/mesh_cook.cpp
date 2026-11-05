@@ -5,6 +5,7 @@
 #include "mesh_cook_meshopt.hpp"
 
 #include <fuse/asset/detail/fmsh_layout.hpp>
+#include <fuse/assetcheck/asset_rules.hpp>
 
 #include <algorithm>
 #include <cstring>
@@ -227,7 +228,7 @@ void compute_bounds(CookedMesh& mesh) {
 
 } // namespace
 
-bool import_mesh_file(const std::string& input_path, const MeshCookOptions& options, CookedMesh& out,
+static bool import_mesh_file_as_is(const std::string& input_path, const MeshCookOptions& options, CookedMesh& out,
                       std::string* error, CookFailure* failure) {
     out = CookedMesh{};
     set_failure(failure, CookFailure::None);
@@ -763,6 +764,84 @@ std::vector<u8> serialize_cooked_mesh(const CookedMesh& mesh, const MeshEncoding
 
 // deserialize_cooked_mesh moved to the runtime asset library (Source/FUSE/Asset/src/cooked_mesh_reader.cpp).
 
+u32 drop_degenerate_triangles(CookedMesh& mesh) {
+    const u32 vertexCount = mesh.vertex_count();
+    auto degenerate = [&](u32 a, u32 b, u32 c) {
+        if (a == b || b == c || a == c || a >= vertexCount || b >= vertexCount || c >= vertexCount) {
+            return a == b || b == c || a == c; // out-of-range corners are left for the gates to refuse
+        }
+        // The asset_geometry rule (asset_rules.hpp checkTriangles), in double.
+        const f32* A = &mesh.positions[a * 3u];
+        const f32* B = &mesh.positions[b * 3u];
+        const f32* C = &mesh.positions[c * 3u];
+        const double ux = double(B[0]) - A[0], uy = double(B[1]) - A[1], uz = double(B[2]) - A[2];
+        const double vx = double(C[0]) - A[0], vy = double(C[1]) - A[1], vz = double(C[2]) - A[2];
+        const double cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+        return !(0.5 * std::sqrt(cx * cx + cy * cy + cz * cz) > fuse::assetcheck::kMinTriangleArea);
+    };
+    std::vector<CookedMesh::Submesh> submeshes = mesh.submeshes;
+    if (submeshes.empty()) {
+        submeshes.push_back(CookedMesh::Submesh{0u, static_cast<u32>(mesh.indices.size()), 0u, 0u});
+    }
+    std::vector<u32> indices;
+    indices.reserve(mesh.indices.size());
+    std::vector<CookedMesh::Submesh> kept;
+    std::vector<std::string> keptSlots;
+    u32 dropped = 0;
+    for (usize s = 0; s < submeshes.size(); ++s) {
+        CookedMesh::Submesh sub = submeshes[s];
+        const u32 begin = static_cast<u32>(indices.size());
+        const u32 end = std::min<u32>(sub.index_offset + sub.index_count, static_cast<u32>(mesh.indices.size()));
+        for (u32 t = sub.index_offset; t + 3u <= end; t += 3u) {
+            const u32 a = mesh.indices[t]; // global vertex indices
+            const u32 b = mesh.indices[t + 1u];
+            const u32 c = mesh.indices[t + 2u];
+            if (degenerate(a, b, c)) {
+                ++dropped;
+                continue;
+            }
+            indices.insert(indices.end(), {mesh.indices[t], mesh.indices[t + 1u], mesh.indices[t + 2u]});
+        }
+        sub.index_offset = begin;
+        sub.index_count = static_cast<u32>(indices.size()) - begin;
+        if (sub.index_count == 0u && !mesh.submeshes.empty()) {
+            continue;
+        }
+        kept.push_back(sub);
+        if (s < mesh.material_slots.size()) {
+            keptSlots.push_back(mesh.material_slots[s]);
+        }
+    }
+    if (dropped == 0u) {
+        return 0u;
+    }
+    mesh.indices = std::move(indices);
+    if (!mesh.submeshes.empty()) {
+        mesh.submeshes = std::move(kept);
+        if (!mesh.material_slots.empty()) {
+            mesh.material_slots = std::move(keptSlots);
+        }
+    }
+    return dropped;
+}
+
+bool import_mesh_file(const std::string& input_path, const MeshCookOptions& options, CookedMesh& out,
+                      std::string* error, CookFailure* failure) {
+    if (!import_mesh_file_as_is(input_path, options, out, error, failure)) {
+        return false;
+    }
+    if (options.repair_degenerate) {
+        (void)drop_degenerate_triangles(out);
+        if (out.indices.empty()) {
+            set_error(error, "mesh import rejected: every triangle is degenerate (repair_degenerate)");
+            set_failure(failure, CookFailure::InvalidGeometry);
+            out = CookedMesh{};
+            return false;
+        }
+    }
+    return true;
+}
+
 CookStubWriteResult cook_mesh_file(const std::string& input_path, const std::string& output_path,
                                    const MeshCookOptions& options) {
     CookStubWriteResult result;
@@ -774,9 +853,15 @@ CookStubWriteResult cook_mesh_file(const std::string& input_path, const std::str
     CookedMesh mesh;
     std::string error;
     CookFailure failure = CookFailure::None;
-    if (!import_mesh_file(input_path, options, mesh, &error, &failure)) {
+    if (!import_mesh_file_as_is(input_path, options, mesh, &error, &failure)) {
         result.note = error;
         result.failure = failure;
+        return result;
+    }
+    const u32 repaired = options.repair_degenerate ? drop_degenerate_triangles(mesh) : 0u;
+    if (options.repair_degenerate && mesh.indices.empty()) {
+        result.note = "mesh import rejected: every triangle is degenerate (repair_degenerate)";
+        result.failure = CookFailure::InvalidGeometry;
         return result;
     }
     const MeshOptimizeOptions& optimize = options.optimize;
@@ -819,6 +904,9 @@ CookStubWriteResult cook_mesh_file(const std::string& input_path, const std::str
     result.note = result.ok ? ("mesh cooked, vertices=" + std::to_string(mesh.vertex_count()) +
                                " triangles=" + std::to_string(mesh.indices.size() / 3u))
                             : "cooked mesh write failed";
+    if (result.ok && options.repair_degenerate) {
+        result.note += " repair_degenerate=" + std::to_string(repaired);
+    }
     if (result.ok && !mesh.lods.empty()) {
         result.note += " lods=" + std::to_string(mesh.lods.size() + 1u);
     }

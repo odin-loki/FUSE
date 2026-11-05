@@ -33,7 +33,14 @@ struct AnimCookOptions {
     bool root_motion = true;
     std::string root_joint;  ///< empty: the first joint (a root of the joint hierarchy)
     std::vector<AnimCookEvent> events; ///< sorted by (time, name) by the cook
+    /// `.dsq` sources: the `.dts` whose skeleton the sequence binds to (empty: the dsq's nodes, all roots).
+    std::string skeleton_path;
 };
+
+// Torque sources (asset plan 4a, dts_import.hpp): `.dts` / `.dsq` go through the clean-room reader, not assimp.
+// Clips are the shape's (file's) sequences: clip_index / clip_name select one; the joints are the shape's whole
+// skeleton (dts_joint_order), `looping` comes from the sequence's cyclic flag, root motion from its ground frames
+// (`root_motion` off drops it, `root_joint` is ignored), triggers become events (merged with `events`).
 
 /// Number of animation clips in a source (0 when it has none or cannot be read / assimp is absent).
 [[nodiscard]] u32 count_anim_clips(const std::string& input_path);

@@ -486,6 +486,7 @@ fuse::cook::MeshCookOptions mesh_cook_options(const MeshImportDesc& desc) {
     options.optimize.cluster_dag = desc.cluster_dag || desc.cluster_pages;
     options.optimize.cluster_pages = desc.cluster_pages;
     options.optimize.page_bytes = desc.page_bytes;
+    options.repair_degenerate = desc.repair_degenerate;
     return options;
 }
 

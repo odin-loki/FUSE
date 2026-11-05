@@ -7,7 +7,7 @@
 //
 // Byte layout (little endian, every section 4-byte aligned):
 //
-//   u32 magic "FANM" | u32 version (1) | u32 flags (bit 0 looping, bit 1 root motion)
+//   u32 magic "FANM" | u32 version (2; 1 still read) | u32 flags (bit 0 looping, bit 1 root motion)
 //   u32 frame_count  | f32 sample_rate (Hz) | f32 duration (s) | u64 skeleton_hash
 //   u32 joint_count  | u32 event_count | str clip name
 //   joint_count x { str name | s32 parent (earlier joint or -1) | u8 t_mode, r_mode, s_mode, 0
@@ -27,7 +27,10 @@
 //
 // Frames are uniform: frame i is at min(i / sample_rate, duration); frame_count = ceil(duration * rate) + 1 (1 for a
 // zero-length clip). Tracks hold the joint's *local* TRS as authored (absolute, not relative to the bind pose).
-// skeleton_hash = FNV-1a 64 over the joint names in file order, each followed by a 0 byte (skeleton_hash_of_names).
+// skeleton_hash (v2) = FNV-1a 64 over, per joint in file order, the name bytes, a 0 byte and the parent index as s32
+// little endian (skeleton_hash_of_joints): the same identity fuse_assetcheck's `skin` gate computes for an FSKL rig
+// (asset_rules.hpp skeletonHash), so a clip and a rig can be matched by hash. v1 files (names only,
+// skeleton_hash_of_names) still read; their hash is checked with the v1 rule and restated with the v2 one.
 // Output depends only on the CookedAnim contents (no paths, time or host).
 
 #include <fuse/animation/clip.hpp>
@@ -40,7 +43,8 @@
 namespace fuse::animation {
 
 inline constexpr u32 kCookedAnimMagic = 0x4D4E4146u; ///< "FANM" little endian
-inline constexpr u32 kCookedAnimVersion = 1u;
+inline constexpr u32 kCookedAnimVersion = 2u;   ///< written (skeleton hash over names + parents)
+inline constexpr u32 kCookedAnimVersionV1 = 1u; ///< still read (skeleton hash over names only)
 inline constexpr u32 kCookedAnimFlagLooping = 1u << 0;
 inline constexpr u32 kCookedAnimFlagRootMotion = 1u << 1;
 
@@ -75,7 +79,7 @@ struct CookedAnim {
     f32 duration = 0.f;
     u32 frame_count = 1;
     bool looping = true;
-    u64 skeleton_hash = 0; ///< filled by encode / read (skeleton_hash_of_names of the joints)
+    u64 skeleton_hash = 0; ///< filled by encode / read (skeleton_hash_of_joints of the joints)
     std::vector<CookedAnimJoint> joints;
     std::vector<CookedAnimEvent> events;
     bool has_root_motion = false;
@@ -85,8 +89,11 @@ struct CookedAnim {
     [[nodiscard]] f32 frame_time(u32 frame) const;
 };
 
-/// FNV-1a 64 over the names in order, each followed by a 0 byte.
+/// v1 rule: FNV-1a 64 over the names in order, each followed by a 0 byte.
 [[nodiscard]] u64 skeleton_hash_of_names(const std::vector<std::string>& names);
+/// v2 rule (written): FNV-1a 64 over, per joint, the name bytes, a 0 byte and the parent as s32 little endian
+/// (a missing parent counts as -1). Equal to fuse_assetcheck's skeletonHash(names, parents).
+[[nodiscard]] u64 skeleton_hash_of_joints(const std::vector<std::string>& names, const std::vector<s32>& parents);
 [[nodiscard]] u64 skeleton_hash_of(const CookedAnim& anim);
 [[nodiscard]] u64 skeleton_hash_of(const Skeleton& skeleton);
 

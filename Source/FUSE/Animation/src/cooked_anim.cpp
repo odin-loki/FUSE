@@ -492,17 +492,47 @@ u64 skeleton_hash_of_names(const std::vector<std::string>& names) {
     return hash;
 }
 
-u64 skeleton_hash_of(const CookedAnim& anim) {
-    std::vector<std::string> names;
+u64 skeleton_hash_of_joints(const std::vector<std::string>& names, const std::vector<s32>& parents) {
+    u64 hash = 0xCBF29CE484222325ull;
+    for (usize i = 0; i < names.size(); ++i) {
+        for (const char ch : names[i]) {
+            hash ^= static_cast<u8>(ch);
+            hash *= 0x100000001B3ull;
+        }
+        hash ^= 0u;
+        hash *= 0x100000001B3ull;
+        const u32 parent = static_cast<u32>(i < parents.size() ? parents[i] : -1);
+        for (u32 shift = 0; shift < 32u; shift += 8u) {
+            hash ^= static_cast<u8>((parent >> shift) & 0xFFu);
+            hash *= 0x100000001B3ull;
+        }
+    }
+    return hash;
+}
+
+namespace {
+
+void joints_of(const CookedAnim& anim, std::vector<std::string>& names, std::vector<s32>& parents) {
     names.reserve(anim.joints.size());
+    parents.reserve(anim.joints.size());
     for (const CookedAnimJoint& joint : anim.joints) {
         names.push_back(joint.name);
+        parents.push_back(joint.parent);
     }
-    return skeleton_hash_of_names(names);
+}
+
+} // namespace
+
+u64 skeleton_hash_of(const CookedAnim& anim) {
+    std::vector<std::string> names;
+    std::vector<s32> parents;
+    joints_of(anim, names, parents);
+    return skeleton_hash_of_joints(names, parents);
 }
 
 u64 skeleton_hash_of(const Skeleton& skeleton) {
     std::vector<std::string> names;
+    std::vector<s32> parents;
     names.reserve(skeleton.bones.size());
     for (const Bone& bone : skeleton.bones) {
         usize len = 0;
@@ -510,8 +540,9 @@ u64 skeleton_hash_of(const Skeleton& skeleton) {
             ++len;
         }
         names.emplace_back(bone.name, len);
+        parents.push_back(bone.parent_index);
     }
-    return skeleton_hash_of_names(names);
+    return skeleton_hash_of_joints(names, parents);
 }
 
 u32 cooked_anim_frame_count(f32 duration, f32 sample_rate) {
@@ -586,7 +617,7 @@ bool read_cooked_anim(const u8* data, usize size, CookedAnim& out, std::string* 
         return fail(error, "bad magic (not FANM)");
     }
     const u32 version = r.u32v();
-    if (version != kCookedAnimVersion) {
+    if (version != kCookedAnimVersion && version != kCookedAnimVersionV1) {
         return fail(error, "unsupported .fuseanim version " + std::to_string(version));
     }
     const u32 flags = r.u32v();
@@ -652,8 +683,17 @@ bool read_cooked_anim(const u8* data, usize size, CookedAnim& out, std::string* 
     if (!validate(anim, error)) {
         return false;
     }
-    if (anim.skeleton_hash != skeleton_hash_of(anim)) {
-        return fail(error, "skeleton hash does not match the joint names");
+    if (version == kCookedAnimVersionV1) {
+        // v1 hashed the joint names only; the clip is read and its hash restated with the v2 rule.
+        std::vector<std::string> names;
+        std::vector<s32> parents;
+        joints_of(anim, names, parents);
+        if (anim.skeleton_hash != skeleton_hash_of_names(names)) {
+            return fail(error, "skeleton hash does not match the joint names (v1)");
+        }
+        anim.skeleton_hash = skeleton_hash_of(anim);
+    } else if (anim.skeleton_hash != skeleton_hash_of(anim)) {
+        return fail(error, "skeleton hash does not match the joint names + parents");
     }
     out = std::move(anim);
     return true;

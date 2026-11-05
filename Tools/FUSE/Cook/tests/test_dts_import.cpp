@@ -10,14 +10,30 @@
 //           cooks a DTS (the §5.3 cook gates accept it).
 //   reject  truncations at every 7th byte, a flipped guard, a bad version and a mesh index out of range are
 //           refused with MalformedSource / InvalidGeometry and never crash.
+//   repair  the five template DAEs with zero-area triangles (Playerbot, car, flier, hoverboat, DemoRoomLrg) are
+//           refused by the strict cook by default and cook with MeshImportDesc::repair_degenerate.
+//   seq     sequences + `.dsq`: no template shape carries sequences (counted, all 0; no .dsq), so the decoding is
+//           gated on shapes from the clean-room writer (Remaster W1.1 arm fixture: embedded cyclic "wave" with
+//           rotations, translations, ground frames and triggers; "walk" / "idle" in a .dsq with reversed node order
+//           and aligned / uniform scales) and on a .dsq animating every node of the Verve soldier's real skeleton:
+//           sane durations / frame counts / joint counts, keys land on their frames, root motion and events,
+//           .fuseanim cooks byte-identically, skeleton hash = names + parents = fuse_assetcheck's rig hash; truncated
+//           .dsq files and out-of-pool indices are refused.
 
+#include <fuse/animation/cooked_anim.hpp>
+#include <fuse/animation/math.hpp>
+#include <fuse/assetcheck/asset_rules.hpp>
+#include <fuse/cook/anim_cook.hpp>
 #include <fuse/cook/dts_import.hpp>
+#include <fuse/cook/dts_write.hpp>
 #include <fuse/cook/mesh_cook.hpp>
 #include <fuse/project/asset_cooker.hpp>
+#include <fuse/remaster/legacy_ts/torque_fixtures.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -37,6 +53,7 @@ using namespace fuse;
 using namespace fuse::cook;
 
 int g_failures = 0;
+u32 g_repairShapes = 0;
 
 void expect(bool condition, const std::string& message) {
     if (!condition) {
@@ -246,17 +263,40 @@ void test_dae_fixtures(const fs::path& templates) {
                     mesh.vertex_count(), triangles, mesh.bounds_min[0], mesh.bounds_min[1], mesh.bounds_min[2],
                     mesh.bounds_max[0], mesh.bounds_max[1], mesh.bounds_max[2]);
         expect(triangles > 0u && finite_bounds(mesh), name + ": triangles + finite bounds");
-        // Informational: whether the strict cook's §5.3 gates accept the shape (some template DAEs carry
-        // zero-area triangles, which the strict cook refuses by design).
+        // The strict cook's §5.3 gates: five template DAEs carry a few zero-area triangles from their exporter and
+        // are refused by default; with the opt-in repair_degenerate they cook (and every other one cooks either way).
         fuse::project::MeshImportDesc desc;
         desc.input_path = file.string();
         desc.output_path = (fs::temp_directory_path() / "fuse_asset_dts_import_dae.fusemesh").string();
         fuse::project::AssetCooker cooker;
         const fuse::project::CookRecord record = cooker.cook_mesh(desc);
-        std::printf("      strict cook: %s%s%s\n", record.ok ? "ok" : "refused", record.ok ? "" : " - ",
-                    record.ok ? "" : record.note.c_str());
+        desc.repair_degenerate = true;
+        fuse::project::AssetCooker repairCooker;
+        const fuse::project::CookRecord repaired = repairCooker.cook_mesh(desc);
+        u32 dropped = 0;
+        const std::size_t at = repaired.note.find("repair_degenerate=");
+        if (at != std::string::npos) {
+            dropped = static_cast<u32>(std::strtoul(repaired.note.c_str() + at + 18u, nullptr, 10));
+        }
+        std::printf("      strict cook: %s%s%s | repair_degenerate: %s (%u dropped)\n", record.ok ? "ok" : "refused",
+                    record.ok ? "" : " - ", record.ok ? "" : record.note.c_str(), repaired.ok ? "ok" : "refused", dropped);
+        const std::string stem = file.stem().string();
+        const bool degenerateSource = stem == "Playerbot" || stem == "car" || stem == "flier" || stem == "hoverboat" ||
+                                      stem == "DemoRoomLrg";
+        if (degenerateSource) {
+            ++g_repairShapes;
+            expect(!record.ok && record.status == fuse::project::CookStatus::AssetGateFailed,
+                   name + ": refused by the strict cook without repair_degenerate (zero-area triangles)");
+            expect(repaired.ok && dropped >= 1u && dropped <= 8u,
+                   name + ": cooks with repair_degenerate (" + std::to_string(dropped) + " triangles dropped; " +
+                       repaired.note + ")");
+        } else {
+            expect(record.ok && repaired.ok, name + ": strict cook ok with and without repair_degenerate");
+        }
     }
     std::printf("dae: %u of %zu shapes imported\n", imported, files.size());
+    expect(imported == 0u || g_repairShapes == 5u,
+           "the five degenerate-triangle DAEs were found (" + std::to_string(g_repairShapes) + ")");
 }
 
 void test_cook(const fs::path& templates, const fs::path& scratch) {
@@ -330,6 +370,185 @@ void test_rejects(const fs::path& templates) {
     }
 }
 
+namespace an = fuse::animation;
+
+f32 quatAngle(const an::quat& a, const an::quat& b) {
+    const f32 d = std::fabs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w);
+    return 2.f * std::acos(std::min(d, 1.f));
+}
+
+/// Sequences + DSQ (asset plan 4a): every template shape's sequence table; the writer's arm fixture and dsq (W1.1)
+/// decode to the authored keys; a dsq on the Verve soldier's real skeleton cooks to .fuseanim byte-identically
+/// with the soldier's joint count and skeleton hash.
+void test_sequences(const fs::path& templates, const fs::path& scratch) {
+    // 1. Template shapes: none carries a sequence (all 20 non-empty .dts have a count of 0; there is no .dsq), and
+    //    the material lists now parse through the (empty) sequence table.
+    u32 withSequences = 0;
+    for (const fs::path& file : find_files(templates, ".dts")) {
+        const std::vector<u8> bytes = read_bytes(file);
+        DtsShape shape;
+        if (bytes.empty() || !parse_dts(bytes.data(), bytes.size(), shape)) {
+            continue;
+        }
+        withSequences += shape.sequences.empty() ? 0u : 1u;
+        if (file.stem() == "soldier_rigged") {
+            expect(shape.materials.size() == 3u && shape.materials[1] == "base_Soldier_Main",
+                   "soldier_rigged: material list after the sequence table");
+        }
+    }
+    expect(find_files(templates, ".dsq").empty(), "no .dsq under Templates/");
+    std::printf("sequences: %u template .dts with sequences, %zu .dsq\n", withSequences, find_files(templates, ".dsq").size());
+    expect(withSequences == 0u, "no template .dts carries sequences (the gate uses written shapes)");
+
+    // 2. Written arm (embedded "wave") -> parse -> CookedAnim.
+    const DtsShape arm = fuse::remaster::legacy_ts::fixtureArmShape();
+    std::string error;
+    const std::vector<u8> armBytes = write_dts(arm, DtsWriteOptions{26u, 0u}, &error);
+    DtsShape parsed;
+    expect(!armBytes.empty() && parse_dts(armBytes.data(), armBytes.size(), parsed, &error), "arm.dts parses (" + error + ")");
+    expect(parsed.sequences.size() == 1u && parsed.sequences[0] == arm.sequences[0] && parsed.triggers == arm.triggers &&
+               parsed.keyframes == arm.keyframes && parsed.materials == arm.materials,
+           "arm.dts: sequence record, triggers, keyframe pools and materials round-trip exactly");
+    an::CookedAnim wave;
+    expect(dts_sequence_to_cooked_anim(parsed, 0u, DtsAnimOptions{}, wave, &error), "wave converts (" + error + ")");
+    expect(wave.joints.size() == 4u && wave.duration == 1.f && wave.frame_count == 31u && wave.looping,
+           "wave: 4 joints, 1 s, 31 frames, cyclic");
+    // Keys at k / 8 s (cyclic spacing); rotations about Torque +X = FUSE +X.
+    f32 worst = 0.f;
+    for (u32 k = 0; k < 8u; ++k) {
+        const f32 t = static_cast<f32>(k) / 8.f;
+        const u32 frame = static_cast<u32>(std::lround(t * 30.f));
+        if (std::fabs(static_cast<f32>(frame) / 30.f - t) > 1e-6f) {
+            continue; // only frames that land on a key (k = 0, 4)
+        }
+        const DtsQuat16& q = arm.keyframes.node_rotations[k];
+        const an::quat key{q[0] / 32767.f, q[2] / 32767.f, -q[1] / 32767.f, q[3] / 32767.f};
+        worst = std::max(worst, quatAngle(an::quat_normalize(key), wave.joints[1].rotation[frame]));
+    }
+    expect(worst < 1e-4f, "wave: upper rotation at key frames = the key (FUSE space)");
+    expect(wave.has_root_motion && std::fabs(wave.root_motion.back().dz + 1.f) < 1e-5f &&
+               std::fabs(wave.root_motion.back().dx) < 1e-5f &&
+               std::fabs(wave.root_motion.back().dyaw - 1.5707963f) < 1e-3f,
+           "wave: root motion = 4 ground frames (Torque +Y 1 m -> FUSE -Z, 90 deg yaw)");
+    expect(wave.events.size() == 2u && wave.events[0].name == "trigger1" && wave.events[0].time == 0.25f &&
+               wave.events[1].name == "trigger1_off" && wave.events[1].time == 0.75f,
+           "wave: triggers -> events");
+    std::vector<std::string> names;
+    std::vector<s32> parents;
+    dts_skeleton(parsed, names, parents);
+    const fs::path armPath = scratch / "arm.dts";
+    expect(write_binary_file(armPath.string(), armBytes, &error), "write arm.dts");
+    expect(count_anim_clips(armPath.string()) == 1u, "count_anim_clips(.dts)");
+    const fs::path animA = scratch / "wave_a.fuseanim";
+    const fs::path animB = scratch / "wave_b.fuseanim";
+    AnimCookOptions animOptions;
+    animOptions.clip_name = "wave";
+    const CookStubWriteResult ca = cook_anim_file(armPath.string(), animA.string(), animOptions);
+    const CookStubWriteResult cb = cook_anim_file(armPath.string(), animB.string(), animOptions);
+    expect(ca.ok && cb.ok && read_bytes(animA) == read_bytes(animB), "wave cooks to .fuseanim byte-identically (" + ca.note + ")");
+    an::CookedAnim loaded;
+    expect(an::read_cooked_anim_file(animA.string(), loaded, &error) &&
+               loaded.skeleton_hash == an::skeleton_hash_of_joints(names, parents) &&
+               loaded.skeleton_hash == fuse::assetcheck::skeletonHash(names, parents),
+           "wave .fuseanim: skeleton hash = names + parents = the assetcheck rig hash");
+
+    // 3. DSQ (nodes in reversed order) bound to the arm by name.
+    const DsqFile dsq = fuse::remaster::legacy_ts::fixtureArmDsq();
+    const std::vector<u8> dsqBytes = write_dsq(dsq, &error);
+    DsqFile dsqParsed;
+    expect(parse_dsq(dsqBytes.data(), dsqBytes.size(), dsqParsed, &error) && dsqParsed.nodes == dsq.nodes &&
+               dsqParsed.sequences == dsq.sequences && dsqParsed.keyframes == dsq.keyframes && dsqParsed.triggers == dsq.triggers,
+           "arm_anims.dsq round-trips (" + error + ")");
+    an::CookedAnim walk, idle;
+    u32 unmatched = 99;
+    expect(dsq_sequence_to_cooked_anim(dsqParsed, 0u, &parsed, DtsAnimOptions{}, walk, &error, &unmatched) && unmatched == 0u,
+           "walk binds to the arm skeleton by name");
+    expect(dsq_sequence_to_cooked_anim(dsqParsed, 1u, &parsed, DtsAnimOptions{}, idle, &error), "idle converts");
+    expect(walk.duration == 0.8f && !walk.looping && walk.frame_count == 25u && idle.duration == 2.f && idle.looping &&
+               walk.joints.size() == 4u && idle.joints.size() == 4u,
+           "walk 0.8 s one-shot, idle 2 s cyclic, 4 joints each");
+    // walk: tip (joint 3) aligned scale ends at the last key (1.4, 1, 0.8) Torque -> FUSE (1.4, 0.8, 1).
+    expect(walk.joints[3].scale.size() == walk.frame_count && std::fabs(walk.joints[3].scale.back().x - 1.4f) < 1e-5f &&
+               std::fabs(walk.joints[3].scale.back().y - 0.8f) < 1e-5f && std::fabs(walk.joints[3].scale.back().z - 1.f) < 1e-5f,
+           "walk: tip aligned scale (y / z swapped into FUSE space)");
+    expect(idle.joints[0].scale.size() == idle.frame_count && walk.joints[2].rotation.size() == walk.frame_count &&
+               walk.joints[1].rotation.empty() && walk.joints[0].translation.empty(),
+           "dsq tracks land on the named joints only");
+    const fs::path dsqPath = scratch / "arm_anims.dsq";
+    expect(write_binary_file(dsqPath.string(), dsqBytes, &error), "write arm_anims.dsq");
+    AnimCookOptions dsqOptions;
+    dsqOptions.clip_name = "idle";
+    dsqOptions.skeleton_path = armPath.string();
+    const fs::path idleA = scratch / "idle_a.fuseanim";
+    const fs::path idleB = scratch / "idle_b.fuseanim";
+    expect(cook_anim_file(dsqPath.string(), idleA.string(), dsqOptions).ok &&
+               cook_anim_file(dsqPath.string(), idleB.string(), dsqOptions).ok && read_bytes(idleA) == read_bytes(idleB),
+           "idle (.dsq + skeleton) cooks byte-identically");
+
+    // 4. A dsq on the Verve soldier's own skeleton (the only template shape with a rig): every node rotates.
+    const fs::path soldierPath = templates / "Modules/Verve/art/shapes/actors/Soldier/soldier_rigged.dts";
+    DtsShape soldier;
+    if (!read_dts_file(soldierPath.string(), soldier, &error)) {
+        expect(false, "soldier_rigged.dts reads (" + error + ")");
+        return;
+    }
+    DsqFile soldierDsq;
+    soldierDsq.version = 26;
+    soldierDsq.shape_object_count = static_cast<s32>(soldier.objects.size());
+    DtsSequence sway;
+    sway.name = "sway";
+    sway.flags = kDtsSeqCyclic;
+    sway.keyframes = 10;
+    sway.duration = 1.5f;
+    for (u32 n = 0; n < soldier.nodes.size(); ++n) {
+        soldierDsq.nodes.push_back(soldier.nodes[n].name);
+        sway.rotation_matters.set(n);
+        for (s32 k = 0; k < sway.keyframes; ++k) {
+            const f64 a = 0.1 * std::sin(6.283185307179586 * k / sway.keyframes);
+            soldierDsq.keyframes.node_rotations.push_back(
+                dts_quat16(0.f, static_cast<f32>(std::sin(a * 0.5)), 0.f, static_cast<f32>(std::cos(a * 0.5))));
+        }
+    }
+    soldierDsq.sequences = {sway};
+    const fs::path soldierDsqPath = scratch / "soldier_sway.dsq";
+    expect(write_binary_file(soldierDsqPath.string(), write_dsq(soldierDsq, &error), &error), "write soldier_sway.dsq");
+    AnimCookOptions soldierOptions;
+    soldierOptions.skeleton_path = soldierPath.string();
+    const fs::path swayA = scratch / "sway_a.fuseanim";
+    const fs::path swayB = scratch / "sway_b.fuseanim";
+    const CookStubWriteResult sa = cook_anim_file(soldierDsqPath.string(), swayA.string(), soldierOptions);
+    const CookStubWriteResult sb = cook_anim_file(soldierDsqPath.string(), swayB.string(), soldierOptions);
+    expect(sa.ok && sb.ok && read_bytes(swayA) == read_bytes(swayB), "soldier sway cooks byte-identically (" + sa.note + ")");
+    an::CookedAnim swayAnim;
+    dts_skeleton(soldier, names, parents);
+    expect(an::read_cooked_anim_file(swayA.string(), swayAnim, &error) && swayAnim.joints.size() == soldier.nodes.size() &&
+               swayAnim.duration == 1.5f && swayAnim.frame_count == 46u &&
+               swayAnim.skeleton_hash == fuse::assetcheck::skeletonHash(names, parents),
+           "soldier sway: " + std::to_string(swayAnim.joints.size()) + " joints (= nodes), 1.5 s, rig hash");
+    std::printf("sequences: soldier skeleton %zu joints, sway %u frames, %u bytes\n", swayAnim.joints.size(),
+                swayAnim.frame_count, sa.byteCount);
+
+    // 5. Refusals: truncated dsq, keys past the pool.
+    u32 refused = 0, tried = 0;
+    for (usize cut = 0; cut < dsqBytes.size(); cut += 5u) {
+        DsqFile d;
+        ++tried;
+        refused += parse_dsq(dsqBytes.data(), cut, d) ? 0u : 1u;
+    }
+    expect(refused == tried, "every truncated .dsq refused (" + std::to_string(refused) + "/" + std::to_string(tried) + ")");
+    DsqFile overrun = dsq;
+    overrun.sequences[1].base_rotation = 7;
+    const std::vector<u8> overrunBytes = write_dsq(overrun, &error);
+    DsqFile d;
+    expect(!parse_dsq(overrunBytes.data(), overrunBytes.size(), d, &error) && error.find("outside") != std::string::npos,
+           "sequence keys past the rotation pool refused (" + error + ")");
+    DtsShape badShape = arm;
+    badShape.sequences[0].trigger_count = 3;
+    const std::vector<u8> badBytes = write_dts(badShape, DtsWriteOptions{}, &error);
+    DtsShape bad;
+    expect(!parse_dts(badBytes.data(), badBytes.size(), bad, &error), "triggers past the trigger table refused");
+}
+
 } // namespace
 
 int main() {
@@ -346,6 +565,7 @@ int main() {
     test_dae_fixtures(templates);
     test_cook(templates, scratch);
     test_rejects(templates);
+    test_sequences(templates, scratch);
     fs::remove_all(scratch, ec);
     if (g_failures != 0) {
         std::fprintf(stderr, "fuse_asset_dts_import: %d failure(s)\n", g_failures);

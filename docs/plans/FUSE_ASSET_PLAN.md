@@ -743,8 +743,10 @@ AssetGen ctest, the other twelve (plus `lod_chain` and `uv_bounds`) are `fuse_as
 failing fixtures. The strict cook applies the rules it can check without a descriptor (mesh geometry + skin
 weights, normal maps linear BC5, audio rate / clipping / loudness / loop seam) and refuses with
 `CookStatus::AssetGateFailed`; descriptor-level rules (naming, class budgets, texel density, golden, skeleton hash,
-view distance) run in `fuse_assetcheck check`. Open: the assetcheck `skin` gate hashes the FSKL rig (names + parent
-indices) while `.fuseanim` hashes joint names only; align the two before rig / clip matching is enforced.
+view distance) run in `fuse_assetcheck check`. Skeleton hash (aligned 2026-11-05): `.fuseanim` v2 hashes joint names
++ parent indices with the assetcheck `skin` gate's rule (FNV-1a 64 over name bytes, a 0 byte and the parent as s32
+little endian), so a clip and an FSKL rig match by hash; v1 files (names only) still read and are restated with the
+v2 hash (`fuse_asset_anim_cook`, `fuse_asset_dts_import` and `remaster_legacy_ts_import` check the equality).
 
 ### 5.4 Golden renders on reference scenes
 

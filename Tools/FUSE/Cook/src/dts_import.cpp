@@ -2,7 +2,11 @@
 
 #include <fuse/cook/dts_import.hpp>
 
+#include <fuse/animation/math.hpp>
+
 #include <algorithm>
+#include <bit>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -93,6 +97,30 @@ public:
             return 0u;
         }
         return static_cast<u32>(n);
+    }
+    /// True when `halves` 16-bit values remain (fails the stream otherwise): checked before sizing a vector.
+    bool has16(usize halves) {
+        return need(m_pos16, m_end16, halves * 2u, "16-bit");
+    }
+    void quats(std::vector<DtsQuat16>& out, usize n) {
+        out.clear();
+        if (!has16(n * 4u)) {
+            return;
+        }
+        out.resize(n);
+        for (DtsQuat16& q : out) {
+            for (std::int16_t& c : q) {
+                c = i16();
+            }
+        }
+    }
+    void floats(std::vector<f32>& out, usize n) {
+        out.clear();
+        if (!need(m_pos32, m_end32, n * 4u, "32-bit")) {
+            return;
+        }
+        out.resize(n);
+        f(out.data(), n);
     }
     void skip32(usize words) {
         if (need(m_pos32, m_end32, words * 4u, "32-bit")) {
@@ -318,7 +346,7 @@ bool parse_mesh(Streams& s, u32 version, const u8* vertexData, usize vertexBytes
         }
         const u32 transforms = s.count("skin transform", own ? 16u : 0u);
         if (own) {
-            s.skip32(static_cast<usize>(transforms) * 16u);
+            s.floats(mesh.skin_initial_transforms, static_cast<usize>(transforms) * 16u);
         }
         const u32 influences = s.count("skin influence", own ? 3u : 0u);
         if (own) {
@@ -351,8 +379,188 @@ bool parse_mesh(Streams& s, u32 version, const u8* vertexData, usize vertexBytes
     return true;
 }
 
-/// Material list after the sequences (only reached when there are none): u8 version, u32 count, count x
-/// (u8 length + bytes). The per-material flag / map tables that follow are not needed.
+/// Plain little-endian reader for the parts outside the memory buffer (sequences, material list, `.dsq`).
+class ByteReader {
+public:
+    ByteReader(const u8* data, usize size, usize pos = 0) : m_data(data), m_size(size), m_pos(pos) {}
+    bool ok() const { return m_ok; }
+    usize pos() const { return m_pos; }
+    usize remaining() const { return m_pos <= m_size ? m_size - m_pos : 0u; }
+    bool has(usize bytes) {
+        if (!m_ok || bytes > remaining()) {
+            m_ok = false;
+            return false;
+        }
+        return true;
+    }
+    s32 i32() {
+        s32 v = 0;
+        if (has(4u)) {
+            std::memcpy(&v, m_data + m_pos, 4u);
+            m_pos += 4u;
+        }
+        return v;
+    }
+    f32 f() {
+        const s32 bits = i32();
+        f32 v = 0.f;
+        std::memcpy(&v, &bits, 4u);
+        return v;
+    }
+    std::int16_t i16() {
+        std::int16_t v = 0;
+        if (has(2u)) {
+            std::memcpy(&v, m_data + m_pos, 2u);
+            m_pos += 2u;
+        }
+        return v;
+    }
+    u8 byte() {
+        if (!has(1u)) {
+            return 0u;
+        }
+        return m_data[m_pos++];
+    }
+    std::string bytes(usize n) {
+        if (!has(n)) {
+            return std::string();
+        }
+        std::string s(reinterpret_cast<const char*>(m_data + m_pos), n);
+        m_pos += n;
+        return s;
+    }
+    /// A count whose elements take at least `minBytes` each.
+    u32 count(usize minBytes) {
+        const s32 n = i32();
+        if (!m_ok || n < 0 || static_cast<u32>(n) > kMaxElements ||
+            (minBytes != 0u && static_cast<usize>(n) * minBytes > remaining())) {
+            m_ok = false;
+            return 0u;
+        }
+        return static_cast<u32>(n);
+    }
+    void quats(std::vector<DtsQuat16>& out, u32 n) {
+        out.clear();
+        if (!has(static_cast<usize>(n) * 8u)) {
+            return;
+        }
+        out.resize(n);
+        for (DtsQuat16& q : out) {
+            for (std::int16_t& c : q) {
+                c = i16();
+            }
+        }
+    }
+    void floats(std::vector<f32>& out, usize n) {
+        out.clear();
+        if (!has(n * 4u)) {
+            return;
+        }
+        out.resize(n);
+        for (f32& v : out) {
+            v = f();
+        }
+    }
+
+private:
+    const u8* m_data;
+    usize m_size;
+    usize m_pos;
+    bool m_ok = true;
+};
+
+void read_integer_set(ByteReader& r, DtsIntegerSet& set) {
+    (void)r.i32(); // legacy element count, written as 0
+    const u32 words = r.count(4u);
+    set.words.resize(words);
+    for (u32& w : set.words) {
+        w = static_cast<u32>(r.i32());
+    }
+    while (!set.words.empty() && set.words.back() == 0u) {
+        set.words.pop_back(); // trailing zero words carry no members
+    }
+}
+
+/// One sequence record (the name index, when present, is read by the caller).
+void read_sequence(ByteReader& r, DtsSequence& seq) {
+    seq.flags = static_cast<u32>(r.i32());
+    seq.keyframes = r.i32();
+    seq.duration = r.f();
+    seq.priority = r.i32();
+    seq.first_ground_frame = r.i32();
+    seq.ground_frames = r.i32();
+    seq.base_rotation = r.i32();
+    seq.base_translation = r.i32();
+    seq.base_scale = r.i32();
+    seq.base_object_state = r.i32();
+    seq.base_decal_state = r.i32();
+    seq.first_trigger = r.i32();
+    seq.trigger_count = r.i32();
+    seq.tool_begin = r.f();
+    for (DtsIntegerSet* set : {&seq.rotation_matters, &seq.translation_matters, &seq.scale_matters, &seq.decal_matters,
+                               &seq.ifl_matters, &seq.vis_matters, &seq.frame_matters, &seq.mat_frame_matters}) {
+        read_integer_set(r, *set);
+    }
+}
+
+/// Smallest byte size of a sequence record without its name (15 words + 8 empty sets of 2 words).
+constexpr usize kMinSequenceBytes = 15u * 4u + 8u * 8u;
+
+/// Index checks of every sequence against the node count and the pools.
+bool validate_sequences(usize nodes, const DtsKeyframes& keys, const std::vector<DtsSequence>& sequences,
+                        usize triggers, std::string* error) {
+    auto within = [](s64 base, s64 count, usize size) {
+        return base >= 0 && count >= 0 && static_cast<u64>(base) + static_cast<u64>(count) <= size;
+    };
+    for (const DtsSequence& seq : sequences) {
+        const std::string where = "sequence '" + seq.name + "': ";
+        if (seq.keyframes < 0 || !std::isfinite(seq.duration) || seq.duration < 0.f) {
+            set_error(error, where + "bad keyframe count / duration");
+            return false;
+        }
+        const s64 k = seq.keyframes;
+        const bool animates = seq.rotation_matters.count() + seq.translation_matters.count() + seq.scale_matters.count() > 0u;
+        if (animates && k == 0) {
+            set_error(error, where + "animates nodes but has no keyframes");
+            return false;
+        }
+        if (seq.rotation_matters.extent() > nodes || seq.translation_matters.extent() > nodes ||
+            seq.scale_matters.extent() > nodes) {
+            set_error(error, where + "node set past the node count");
+            return false;
+        }
+        if (!within(seq.base_rotation, k * seq.rotation_matters.count(), keys.node_rotations.size()) ||
+            !within(seq.base_translation, k * seq.translation_matters.count(), keys.node_translations.size() / 3u)) {
+            set_error(error, where + "rotation / translation keys outside the pools");
+            return false;
+        }
+        if (seq.scale_matters.count() > 0u) {
+            usize pool = keys.node_uniform_scales.size();
+            if ((seq.flags & kDtsSeqArbitraryScale) != 0u) {
+                pool = std::min(keys.node_arbitrary_scale_factors.size() / 3u, keys.node_arbitrary_scale_rotations.size());
+            } else if ((seq.flags & kDtsSeqAlignedScale) != 0u) {
+                pool = keys.node_aligned_scales.size() / 3u;
+            } else if ((seq.flags & kDtsSeqUniformScale) == 0u) {
+                set_error(error, where + "scale set without a scale type flag");
+                return false;
+            }
+            if (!within(seq.base_scale, k * seq.scale_matters.count(), pool)) {
+                set_error(error, where + "scale keys outside the pool");
+                return false;
+            }
+        }
+        if (!within(seq.first_ground_frame, seq.ground_frames,
+                    std::min(keys.ground_translations.size() / 3u, keys.ground_rotations.size())) ||
+            !within(seq.first_trigger, seq.trigger_count, triggers)) {
+            set_error(error, where + "ground frames / triggers outside the pools");
+            return false;
+        }
+    }
+    return true;
+}
+
+/// Material list after the sequences: u8 version, u32 count, count x (u8 length + bytes). The per-material flag /
+/// map tables that follow are not needed.
 void read_material_list(const u8* data, usize size, usize pos, std::vector<std::string>& out) {
     if (pos + 5u > size) {
         return;
@@ -555,22 +763,27 @@ bool parse_dts(const u8* data, usize size, DtsShape& out, std::string* error) {
     for (u32 n = 0; n < nodes; ++n) {
         s.f(out.nodes[n].translation, 3);
     }
-    s.skip32(static_cast<usize>(nodeTrans) * 3u);
-    s.skip16(static_cast<usize>(nodeRots) * 4u);
+    DtsKeyframes& keys = out.keyframes;
+    s.floats(keys.node_translations, static_cast<usize>(nodeTrans) * 3u);
+    s.quats(keys.node_rotations, nodeRots);
     s.guard("node keys");
-    s.skip32(uniformScales);
-    s.skip32(static_cast<usize>(alignedScales) * 3u);
-    s.skip32(static_cast<usize>(arbitraryScales) * 3u);
-    s.skip16(static_cast<usize>(arbitraryScales) * 4u);
+    s.floats(keys.node_uniform_scales, uniformScales);
+    s.floats(keys.node_aligned_scales, static_cast<usize>(alignedScales) * 3u);
+    s.floats(keys.node_arbitrary_scale_factors, static_cast<usize>(arbitraryScales) * 3u);
+    s.quats(keys.node_arbitrary_scale_rotations, arbitraryScales);
     s.guard("node scale keys");
-    s.skip32(static_cast<usize>(groundFrames) * 3u);
-    s.skip16(static_cast<usize>(groundFrames) * 4u);
+    s.floats(keys.ground_translations, static_cast<usize>(groundFrames) * 3u);
+    s.quats(keys.ground_rotations, groundFrames);
     s.guard("ground frames");
     s.skip32(static_cast<usize>(objectStates) * 3u);
     s.guard("object states");
     s.skip32(decalStates);
     s.guard("decal states");
-    s.skip32(static_cast<usize>(triggers) * 2u);
+    out.triggers.resize(triggers);
+    for (DtsTrigger& trigger : out.triggers) {
+        trigger.state = static_cast<u32>(s.i32());
+        trigger.pos = s.f();
+    }
     s.guard("triggers");
     const u32 detailWords = version >= 26 ? 13u : 7u;
     std::vector<s32> detailName(details, -1);
@@ -655,15 +868,30 @@ bool parse_dts(const u8* data, usize size, DtsShape& out, std::string* error) {
         }
     }
 
-    // Sequences, then the material list (names only when there are no sequences to step over).
+    // Sequences, then the material list. A shape image that ends with its memory buffer has neither.
     const usize tail = 16u + static_cast<usize>(words) * 4u;
     if (tail + 4u <= size) {
-        s32 sequences = 0;
-        std::memcpy(&sequences, data + tail, 4u);
-        out.sequence_count = sequences > 0 ? static_cast<u32>(sequences) : 0u;
-        if (sequences == 0) {
-            read_material_list(data, size, tail + 4u, out.materials);
+        ByteReader r(data, size, tail);
+        const u32 sequences = r.count(kMinSequenceBytes + 4u);
+        if (!r.ok()) {
+            set_error(error, "bad sequence count");
+            return false;
         }
+        out.sequences.resize(sequences);
+        for (DtsSequence& seq : out.sequences) {
+            const s32 nameIndex = r.i32();
+            read_sequence(r, seq);
+            if (!r.ok()) {
+                set_error(error, "truncated sequence record");
+                return false;
+            }
+            seq.name = nameOf(nameIndex);
+        }
+        out.sequence_count = sequences;
+        if (!validate_sequences(nodes, out.keyframes, out.sequences, out.triggers.size(), error)) {
+            return false;
+        }
+        read_material_list(data, size, r.pos(), out.materials);
     }
     return true;
 }
@@ -678,11 +906,8 @@ bool read_dts_file(const std::string& path, DtsShape& out, std::string* error) {
     return parse_dts(bytes.data(), bytes.size(), out, error);
 }
 
-bool dts_to_cooked_mesh(const DtsShape& shape, const MeshCookOptions& options, CookedMesh& out, std::string* error,
-                        DtsImportStats* stats) {
-    out = CookedMesh{};
-    DtsImportStats local;
-    // Highest visible detail: largest non-negative size (ties: the first).
+s32 dts_highest_visible_detail(const DtsShape& shape) {
+    // Largest non-negative size (ties: the first).
     s32 best = -1;
     for (usize d = 0; d < shape.details.size(); ++d) {
         const DtsDetail& detail = shape.details[d];
@@ -690,12 +915,30 @@ bool dts_to_cooked_mesh(const DtsShape& shape, const MeshCookOptions& options, C
             best = static_cast<s32>(d);
         }
     }
+    return best;
+}
+
+bool dts_to_cooked_mesh(const DtsShape& shape, const MeshCookOptions& options, CookedMesh& out, std::string* error,
+                        DtsImportStats* stats) {
+    out = CookedMesh{};
+    const s32 best = dts_highest_visible_detail(shape);
     if (best < 0) {
         set_error(error, "shape has no visible detail level");
         return false;
     }
-    local.detail = best;
-    const DtsDetail& detail = shape.details[static_cast<usize>(best)];
+    return dts_detail_to_cooked_mesh(shape, static_cast<u32>(best), options, out, error, stats);
+}
+
+bool dts_detail_to_cooked_mesh(const DtsShape& shape, u32 detailIndex, const MeshCookOptions& options, CookedMesh& out,
+                               std::string* error, DtsImportStats* stats) {
+    out = CookedMesh{};
+    DtsImportStats local;
+    if (detailIndex >= shape.details.size()) {
+        set_error(error, "detail index out of range");
+        return false;
+    }
+    local.detail = static_cast<s32>(detailIndex);
+    const DtsDetail& detail = shape.details[detailIndex];
 
     struct Pick {
         u32 mesh;
@@ -985,6 +1228,448 @@ bool import_dts_file(const std::string& path, const MeshCookOptions& options, Co
         return fail(CookFailure::InvalidGeometry, "dts import rejected: " + why);
     }
     return true;
+}
+
+// ---- integer sets ---------------------------------------------------------------------------------------
+
+u32 DtsIntegerSet::rank(u32 i) const {
+    u32 n = 0;
+    for (u32 w = 0; w < words.size() && w * 32u < i; ++w) {
+        u32 bits = words[w];
+        if ((w + 1u) * 32u > i) {
+            bits &= (1u << (i % 32u)) - 1u;
+        }
+        n += static_cast<u32>(std::popcount(bits));
+    }
+    return n;
+}
+
+u32 DtsIntegerSet::count() const {
+    u32 n = 0;
+    for (u32 w : words) {
+        n += static_cast<u32>(std::popcount(w));
+    }
+    return n;
+}
+
+u32 DtsIntegerSet::extent() const {
+    for (usize w = words.size(); w > 0u; --w) {
+        if (words[w - 1u] != 0u) {
+            return static_cast<u32>((w - 1u) * 32u + 32u - static_cast<u32>(std::countl_zero(words[w - 1u])));
+        }
+    }
+    return 0u;
+}
+
+// ---- .dsq ----------------------------------------------------------------------------------------------
+
+bool parse_dsq(const u8* data, usize size, DsqFile& out, std::string* error) {
+    out = DsqFile{};
+    if (data == nullptr || size == 0u) {
+        set_error(error, "empty .dsq file");
+        return false;
+    }
+    ByteReader r(data, size);
+    const s32 versionWord = r.i32();
+    out.version = static_cast<u32>(versionWord) & 0xFFu;
+    if (!r.ok() || out.version < kDsqMinVersion || out.version > kDsqMaxVersion) {
+        set_error(error, "unsupported .dsq version " + std::to_string(out.version) + " (supported " +
+                             std::to_string(kDsqMinVersion) + ".." + std::to_string(kDsqMaxVersion) + ")");
+        return false;
+    }
+    auto name = [&r]() {
+        const u32 length = r.count(1u);
+        return r.bytes(length);
+    };
+    const u32 nodes = r.count(4u);
+    out.nodes.reserve(nodes);
+    for (u32 n = 0; n < nodes && r.ok(); ++n) {
+        out.nodes.push_back(name());
+    }
+    const u32 legacyObjects = r.count(4u);
+    for (u32 o = 0; o < legacyObjects && r.ok(); ++o) {
+        (void)name();
+    }
+    out.shape_object_count = r.i32();
+    DtsKeyframes& keys = out.keyframes;
+    r.quats(keys.node_rotations, r.count(8u));
+    r.floats(keys.node_translations, static_cast<usize>(r.count(12u)) * 3u);
+    r.floats(keys.node_uniform_scales, r.count(4u));
+    r.floats(keys.node_aligned_scales, static_cast<usize>(r.count(12u)) * 3u);
+    const u32 arbitrary = r.count(20u);
+    r.quats(keys.node_arbitrary_scale_rotations, arbitrary);
+    r.floats(keys.node_arbitrary_scale_factors, static_cast<usize>(arbitrary) * 3u);
+    const u32 ground = r.count(20u);
+    r.floats(keys.ground_translations, static_cast<usize>(ground) * 3u);
+    r.quats(keys.ground_rotations, ground);
+    const u32 objectStates = r.count(12u);
+    if (r.has(static_cast<usize>(objectStates) * 12u)) {
+        (void)r.bytes(static_cast<usize>(objectStates) * 12u);
+    }
+    if (!r.ok()) {
+        set_error(error, "truncated .dsq header / keyframe pools");
+        return false;
+    }
+    const u32 sequences = r.count(kMinSequenceBytes + 4u);
+    out.sequences.resize(sequences);
+    for (DtsSequence& seq : out.sequences) {
+        seq.name = name();
+        read_sequence(r, seq);
+        if (!r.ok()) {
+            set_error(error, "truncated .dsq sequence record");
+            return false;
+        }
+    }
+    const u32 triggers = r.count(8u);
+    out.triggers.resize(triggers);
+    for (DtsTrigger& trigger : out.triggers) {
+        trigger.state = static_cast<u32>(r.i32());
+        trigger.pos = r.f();
+    }
+    if (!r.ok()) {
+        set_error(error, "truncated .dsq triggers");
+        return false;
+    }
+    if (r.remaining() != 0u) {
+        set_error(error, std::to_string(r.remaining()) + " trailing bytes after the .dsq triggers");
+        return false;
+    }
+    return validate_sequences(out.nodes.size(), out.keyframes, out.sequences, out.triggers.size(), error);
+}
+
+bool read_dsq_file(const std::string& path, DsqFile& out, std::string* error) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        set_error(error, "cannot open '" + path + "'");
+        return false;
+    }
+    const std::vector<u8> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    return parse_dsq(bytes.data(), bytes.size(), out, error);
+}
+
+// ---- skeleton + sequences -> .fuseanim -----------------------------------------------------------------
+
+std::vector<u32> dts_joint_order(const DtsShape& shape) {
+    const u32 count = static_cast<u32>(shape.nodes.size());
+    std::vector<u32> order(count);
+    bool parentsFirst = true;
+    for (u32 n = 0; n < count; ++n) {
+        order[n] = n;
+        const s32 parent = shape.nodes[n].parent;
+        parentsFirst = parentsFirst && parent < static_cast<s32>(n);
+    }
+    if (parentsFirst) {
+        return order;
+    }
+    order.clear();
+    std::vector<u8> placed(count, 0u);
+    // Depth-first pre-order: roots in node order, children in node order (explicit stack, cycle-safe).
+    std::vector<u32> stack;
+    for (u32 root = 0; root < count; ++root) {
+        if (shape.nodes[root].parent >= 0 && static_cast<u32>(shape.nodes[root].parent) < count) {
+            continue;
+        }
+        stack.push_back(root);
+        while (!stack.empty()) {
+            const u32 n = stack.back();
+            stack.pop_back();
+            if (placed[n] != 0u) {
+                continue;
+            }
+            placed[n] = 1u;
+            order.push_back(n);
+            for (u32 c = count; c > 0u; --c) {
+                if (shape.nodes[c - 1u].parent == static_cast<s32>(n) && placed[c - 1u] == 0u) {
+                    stack.push_back(c - 1u);
+                }
+            }
+        }
+    }
+    for (u32 n = 0; n < count; ++n) {
+        if (placed[n] == 0u) {
+            order.push_back(n); // part of a parent cycle (parse_dts does not reject those): appended as is
+        }
+    }
+    return order;
+}
+
+void dts_skeleton(const DtsShape& shape, std::vector<std::string>& names, std::vector<s32>& parents) {
+    const std::vector<u32> order = dts_joint_order(shape);
+    std::vector<s32> jointOf(shape.nodes.size(), -1);
+    for (u32 j = 0; j < order.size(); ++j) {
+        jointOf[order[j]] = static_cast<s32>(j);
+    }
+    names.clear();
+    parents.clear();
+    for (u32 j = 0; j < order.size(); ++j) {
+        const DtsNode& node = shape.nodes[order[j]];
+        names.push_back(node.name);
+        const s32 parent = node.parent >= 0 && static_cast<usize>(node.parent) < jointOf.size() ? jointOf[node.parent] : -1;
+        parents.push_back(parent < static_cast<s32>(j) ? parent : -1);
+    }
+}
+
+namespace {
+
+namespace an = fuse::animation;
+
+an::quat decode_quat(const DtsQuat16& q) {
+    an::quat out{static_cast<f32>(q[0]) / 32767.f, static_cast<f32>(q[1]) / 32767.f, static_cast<f32>(q[2]) / 32767.f,
+                 static_cast<f32>(q[3]) / 32767.f};
+    const f32 len = std::sqrt(out.x * out.x + out.y * out.y + out.z * out.z + out.w * out.w);
+    if (!(len > 1e-6f)) {
+        return an::quat{0.f, 0.f, 0.f, 1.f};
+    }
+    return an::quat{out.x / len, out.y / len, out.z / len, out.w / len};
+}
+
+/// Torque Z-up -> FUSE Y-up for a rotation: the axis maps like a vector (proper rotation, so the angle is kept).
+an::quat quat_to_fuse(const an::quat& q) { return an::quat{q.x, q.z, -q.y, q.w}; }
+an::vec3 vec_to_fuse(f32 x, f32 y, f32 z) { return an::vec3{x, z, -y, 0.f}; }
+
+/// Keyframe bracket at sequence position `pos` (0..1): Torque's spacing (cyclic sequences wrap to key 0).
+void key_bracket(f32 pos, s32 keyframes, bool cyclic, u32& k0, u32& k1, f32& frac) {
+    k0 = k1 = 0u;
+    frac = 0.f;
+    if (keyframes <= 1) {
+        return;
+    }
+    const u32 n = static_cast<u32>(keyframes);
+    const f64 kf = static_cast<f64>(pos) * static_cast<f64>(cyclic ? n : n - 1u);
+    const f64 base = std::floor(kf);
+    frac = static_cast<f32>(kf - base);
+    if (cyclic) {
+        k0 = static_cast<u32>(base) % n;
+        k1 = (k0 + 1u) % n;
+    } else {
+        k0 = std::min(static_cast<u32>(base), n - 1u);
+        k1 = std::min(k0 + 1u, n - 1u);
+        if (k0 == n - 1u) {
+            frac = 0.f;
+        }
+    }
+}
+
+/// The keyframe pools + sequence -> tracks for `jointOfSetNode` (set element -> joint, -1 = skipped).
+bool sequence_to_anim(const DtsKeyframes& keys, const std::vector<DtsTrigger>& triggers, const DtsSequence& seq,
+                      const std::vector<s32>& jointOfSetNode, const std::vector<std::string>& jointNames,
+                      const std::vector<s32>& jointParents, const DtsAnimOptions& options, an::CookedAnim& out,
+                      std::string* error) {
+    out = an::CookedAnim{};
+    if (!(options.sample_rate > 0.f) || options.sample_rate > 1000.f) {
+        set_error(error, "sample_rate must be in (0, 1000] Hz");
+        return false;
+    }
+    out.name = seq.name;
+    out.sample_rate = options.sample_rate;
+    out.duration = seq.duration;
+    out.looping = seq.cyclic();
+    out.frame_count = an::cooked_anim_frame_count(seq.duration, options.sample_rate);
+    out.joints.resize(jointNames.size());
+    for (usize j = 0; j < jointNames.size(); ++j) {
+        out.joints[j].name = jointNames[j];
+        out.joints[j].parent = jointParents[j];
+    }
+    auto posOf = [&](u32 frame) {
+        const f32 t = out.frame_time(frame);
+        return seq.duration > 0.f ? std::clamp(t / seq.duration, 0.f, 1.f) : 0.f;
+    };
+    const u32 k = static_cast<u32>(std::max(seq.keyframes, 0));
+    const u32 extent = std::max({seq.rotation_matters.extent(), seq.translation_matters.extent(), seq.scale_matters.extent()});
+    for (u32 node = 0; node < extent; ++node) {
+        const s32 joint = node < jointOfSetNode.size() ? jointOfSetNode[node] : -1;
+        if (joint < 0) {
+            continue;
+        }
+        an::CookedAnimJoint& target = out.joints[static_cast<usize>(joint)];
+        if (seq.rotation_matters.test(node)) {
+            const usize base = static_cast<usize>(seq.base_rotation) + seq.rotation_matters.rank(node) * static_cast<usize>(k);
+            target.rotation.resize(out.frame_count);
+            for (u32 f = 0; f < out.frame_count; ++f) {
+                u32 k0 = 0, k1 = 0;
+                f32 a = 0.f;
+                key_bracket(posOf(f), seq.keyframes, seq.cyclic(), k0, k1, a);
+                const an::quat q0 = decode_quat(keys.node_rotations[base + k0]);
+                const an::quat q = a > 0.f ? an::quat_normalize(an::lerp(q0, decode_quat(keys.node_rotations[base + k1]), a)) : q0;
+                target.rotation[f] = quat_to_fuse(q);
+            }
+        }
+        if (seq.translation_matters.test(node)) {
+            const usize base =
+                static_cast<usize>(seq.base_translation) + seq.translation_matters.rank(node) * static_cast<usize>(k);
+            target.translation.resize(out.frame_count);
+            for (u32 f = 0; f < out.frame_count; ++f) {
+                u32 k0 = 0, k1 = 0;
+                f32 a = 0.f;
+                key_bracket(posOf(f), seq.keyframes, seq.cyclic(), k0, k1, a);
+                const f32* p0 = &keys.node_translations[(base + k0) * 3u];
+                const f32* p1 = &keys.node_translations[(base + k1) * 3u];
+                target.translation[f] = vec_to_fuse(p0[0] + (p1[0] - p0[0]) * a, p0[1] + (p1[1] - p0[1]) * a,
+                                                    p0[2] + (p1[2] - p0[2]) * a);
+            }
+        }
+        if (seq.scale_matters.test(node)) {
+            const usize base = static_cast<usize>(seq.base_scale) + seq.scale_matters.rank(node) * static_cast<usize>(k);
+            target.scale.resize(out.frame_count);
+            for (u32 f = 0; f < out.frame_count; ++f) {
+                u32 k0 = 0, k1 = 0;
+                f32 a = 0.f;
+                key_bracket(posOf(f), seq.keyframes, seq.cyclic(), k0, k1, a);
+                f32 s0[3];
+                f32 s1[3];
+                if ((seq.flags & kDtsSeqArbitraryScale) != 0u) {
+                    std::memcpy(s0, &keys.node_arbitrary_scale_factors[(base + k0) * 3u], sizeof(s0));
+                    std::memcpy(s1, &keys.node_arbitrary_scale_factors[(base + k1) * 3u], sizeof(s1));
+                } else if ((seq.flags & kDtsSeqAlignedScale) != 0u) {
+                    std::memcpy(s0, &keys.node_aligned_scales[(base + k0) * 3u], sizeof(s0));
+                    std::memcpy(s1, &keys.node_aligned_scales[(base + k1) * 3u], sizeof(s1));
+                } else {
+                    s0[0] = s0[1] = s0[2] = keys.node_uniform_scales[base + k0];
+                    s1[0] = s1[1] = s1[2] = keys.node_uniform_scales[base + k1];
+                }
+                // Scales are magnitudes along the axes: y / z swap (no sign).
+                target.scale[f] = an::vec3{s0[0] + (s1[0] - s0[0]) * a, s0[2] + (s1[2] - s0[2]) * a,
+                                           s0[1] + (s1[1] - s0[1]) * a, 0.f};
+            }
+        }
+    }
+    // Ground frames -> root motion of joint 0 (identity at pos 0, frame g at pos g / n).
+    if (options.root_motion && seq.ground_frames > 0 && !out.joints.empty()) {
+        const u32 n = static_cast<u32>(seq.ground_frames);
+        const usize first = static_cast<usize>(seq.first_ground_frame);
+        auto groundAt = [&](u32 g, an::vec3& t, an::quat& q) {
+            if (g == 0u) {
+                t = an::vec3{0.f, 0.f, 0.f, 0.f};
+                q = an::quat{0.f, 0.f, 0.f, 1.f};
+                return;
+            }
+            const f32* p = &keys.ground_translations[(first + g - 1u) * 3u];
+            t = vec_to_fuse(p[0], p[1], p[2]);
+            q = quat_to_fuse(decode_quat(keys.ground_rotations[first + g - 1u]));
+        };
+        out.has_root_motion = true;
+        out.root_joint = 0u;
+        out.root_motion.resize(out.frame_count);
+        f64 yawAccum = 0.0;
+        f32 prevYaw = 0.f;
+        for (u32 f = 0; f < out.frame_count; ++f) {
+            const f64 g = static_cast<f64>(posOf(f)) * n;
+            const u32 g0 = std::min(static_cast<u32>(std::floor(g)), n);
+            const u32 g1 = std::min(g0 + 1u, n);
+            const f32 a = g0 == n ? 0.f : static_cast<f32>(g - g0);
+            an::vec3 t0, t1;
+            an::quat q0, q1;
+            groundAt(g0, t0, q0);
+            groundAt(g1, t1, q1);
+            const an::vec3 t = an::lerp(t0, t1, a);
+            const an::quat q = an::quat_normalize(an::lerp(q0, q1, a));
+            const an::vec3 fwd = an::quat_rotate(q, an::vec3{0.f, 0.f, 1.f, 0.f});
+            const f32 yaw = static_cast<f32>(std::atan2(static_cast<f64>(fwd.x), static_cast<f64>(fwd.z)));
+            f64 d = static_cast<f64>(yaw) - prevYaw;
+            while (d > 3.14159265358979) {
+                d -= 6.28318530717959;
+            }
+            while (d < -3.14159265358979) {
+                d += 6.28318530717959;
+            }
+            yawAccum += f == 0u ? static_cast<f64>(yaw) : d;
+            prevYaw = yaw;
+            out.root_motion[f] = an::CookedAnimRootSample{t.x, t.y, t.z, static_cast<f32>(yawAccum)};
+        }
+    }
+    // Triggers -> events.
+    for (s32 i = 0; i < seq.trigger_count; ++i) {
+        const DtsTrigger& trigger = triggers[static_cast<usize>(seq.first_trigger + i)];
+        const u32 bits = trigger.state & kDtsTriggerStateMask;
+        const u32 number = bits == 0u ? 0u : static_cast<u32>(std::countr_zero(bits)) + 1u;
+        an::CookedAnimEvent event;
+        event.name = "trigger" + std::to_string(number) + ((trigger.state & kDtsTriggerOn) != 0u ? "" : "_off");
+        event.time = std::clamp(trigger.pos, 0.f, 1.f) * seq.duration;
+        out.events.push_back(event);
+    }
+    std::sort(out.events.begin(), out.events.end(), [](const an::CookedAnimEvent& a, const an::CookedAnimEvent& b) {
+        return a.time != b.time ? a.time < b.time : a.name < b.name;
+    });
+    return true;
+}
+
+bool iequals_ascii(const std::string& a, const std::string& b) {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    for (usize i = 0; i < a.size(); ++i) {
+        if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i]))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+bool dts_sequence_to_cooked_anim(const DtsShape& shape, u32 sequence, const DtsAnimOptions& options,
+                                 animation::CookedAnim& out, std::string* error) {
+    out = animation::CookedAnim{};
+    if (sequence >= shape.sequences.size()) {
+        set_error(error, "sequence index " + std::to_string(sequence) + " out of range (" +
+                             std::to_string(shape.sequences.size()) + " sequences)");
+        return false;
+    }
+    std::vector<std::string> names;
+    std::vector<s32> parents;
+    dts_skeleton(shape, names, parents);
+    const std::vector<u32> order = dts_joint_order(shape);
+    std::vector<s32> jointOfNode(shape.nodes.size(), -1);
+    for (u32 j = 0; j < order.size(); ++j) {
+        jointOfNode[order[j]] = static_cast<s32>(j);
+    }
+    return sequence_to_anim(shape.keyframes, shape.triggers, shape.sequences[sequence], jointOfNode, names, parents, options,
+                            out, error);
+}
+
+bool dsq_sequence_to_cooked_anim(const DsqFile& dsq, u32 sequence, const DtsShape* shape, const DtsAnimOptions& options,
+                                 animation::CookedAnim& out, std::string* error, u32* unmatched) {
+    out = animation::CookedAnim{};
+    if (unmatched != nullptr) {
+        *unmatched = 0u;
+    }
+    if (sequence >= dsq.sequences.size()) {
+        set_error(error, "sequence index " + std::to_string(sequence) + " out of range (" +
+                             std::to_string(dsq.sequences.size()) + " sequences)");
+        return false;
+    }
+    std::vector<std::string> names;
+    std::vector<s32> parents;
+    std::vector<s32> jointOfDsqNode(dsq.nodes.size(), -1);
+    if (shape == nullptr) {
+        names = dsq.nodes;
+        parents.assign(names.size(), -1);
+        for (usize n = 0; n < dsq.nodes.size(); ++n) {
+            jointOfDsqNode[n] = static_cast<s32>(n);
+        }
+    } else {
+        dts_skeleton(*shape, names, parents);
+        u32 missing = 0;
+        for (usize n = 0; n < dsq.nodes.size(); ++n) {
+            for (usize j = 0; j < names.size(); ++j) {
+                if (iequals_ascii(dsq.nodes[n], names[j])) {
+                    jointOfDsqNode[n] = static_cast<s32>(j);
+                    break;
+                }
+            }
+            const DtsSequence& seq = dsq.sequences[sequence];
+            const u32 node = static_cast<u32>(n);
+            if (jointOfDsqNode[n] < 0 &&
+                (seq.rotation_matters.test(node) || seq.translation_matters.test(node) || seq.scale_matters.test(node))) {
+                ++missing;
+            }
+        }
+        if (unmatched != nullptr) {
+            *unmatched = missing;
+        }
+    }
+    return sequence_to_anim(dsq.keyframes, dsq.triggers, dsq.sequences[sequence], jointOfDsqNode, names, parents, options,
+                            out, error);
 }
 
 } // namespace fuse::cook
