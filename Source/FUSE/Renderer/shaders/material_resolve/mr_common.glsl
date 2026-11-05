@@ -107,12 +107,20 @@ vec3 fuse_mr_oct_decode(uint packed) {
 FuseMrVertex fuse_mr_vertex(FuseGpuMesh mesh, uint v) {
     FuseMrVertex r;
     r.position = fuse_vis_mesh_position(mesh, v);
-    FuseGpuSceneWordsRef vpos = FuseGpuSceneWordsRef(mesh.positions);
-    r.sign_ = ((vpos.v[v * 2u + 1u] >> 16u) & 1u) != 0u ? -1.0 : 1.0;
+    if ((mesh.flags & FUSE_MESH_FLOAT_POSITIONS) != 0u) {
+        r.sign_ = FuseVisFloat4Ref(mesh.positions).v[v].w < 0.0 ? -1.0 : 1.0; // skinned row: w = handedness
+    } else {
+        FuseGpuSceneWordsRef vpos = FuseGpuSceneWordsRef(mesh.positions);
+        r.sign_ = ((vpos.v[v * 2u + 1u] >> 16u) & 1u) != 0u ? -1.0 : 1.0;
+    }
     r.normal = vec3(0.0, 0.0, 1.0);
     r.tangent = vec3(1.0, 0.0, 0.0);
     r.uv = vec2(0.0);
-    if (mesh.normals != 0ul) {
+    if ((mesh.flags & FUSE_MESH_FLOAT_NORMALS) != 0u) {
+        if (mesh.normals != 0ul) {
+            r.normal = FuseVisFloat4Ref(mesh.normals).v[v].xyz; // skinned row: unit f32 normal
+        }
+    } else if (mesh.normals != 0ul) {
         r.normal = fuse_mr_oct_decode(FuseGpuSceneWordsRef(mesh.normals).v[v]);
     }
     if (mesh.tangents != 0ul) {

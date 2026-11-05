@@ -11,6 +11,10 @@ static const uint kFuseVisDecodeBadId = 2u;
 static const uint kFuseVisDecodeDegenerate = 3u;
 
 float3 fuseVisMeshPosition(GpuMesh mesh, uint vertex) {
+    if ((mesh.flags & kFuseMeshFloatPositions) != 0u) {
+        float4* fp = (float4*)mesh.positions;
+        return fp[vertex].xyz;
+    }
     uint* words = (uint*)mesh.positions;
     const uint xy = words[vertex * 2u];
     const uint zw = words[vertex * 2u + 1u];
@@ -19,6 +23,15 @@ float3 fuseVisMeshPosition(GpuMesh mesh, uint vertex) {
     p.y = mesh.quantOffset[1] + float(xy >> 16u) * mesh.quantStep[1];
     p.z = mesh.quantOffset[2] + float(zw & 0xFFFFu) * mesh.quantStep[2];
     return p;
+}
+
+// Previous-frame position (fuse_vis_mesh_prev_position).
+float3 fuseVisMeshPrevPosition(GpuMesh mesh, uint vertex) {
+    if ((mesh.flags & kFuseMeshFloatPositions) != 0u) {
+        float4* fp = (float4*)mesh.positions;
+        return fp[mesh.vertexCount + vertex].xyz;
+    }
+    return fuseVisMeshPosition(mesh, vertex);
 }
 
 float4 fuseVisClip(GpuTransform t, float4 viewProj[4], float3 p) {

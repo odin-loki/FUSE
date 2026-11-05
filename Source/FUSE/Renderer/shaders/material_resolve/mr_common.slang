@@ -92,12 +92,20 @@ float3 fuseMrOctDecode(uint packed) {
 MrVertex fuseMrVertex(GpuMesh mesh, uint v) {
     MrVertex r;
     r.position = fuseVisMeshPosition(mesh, v);
-    uint* vpos = (uint*)mesh.positions;
-    r.sign_ = ((vpos[v * 2u + 1u] >> 16u) & 1u) != 0u ? -1.0 : 1.0;
+    if ((mesh.flags & kFuseMeshFloatPositions) != 0u) {
+        r.sign_ = ((float4*)mesh.positions)[v].w < 0.0 ? -1.0 : 1.0; // skinned row: w = handedness
+    } else {
+        uint* vpos = (uint*)mesh.positions;
+        r.sign_ = ((vpos[v * 2u + 1u] >> 16u) & 1u) != 0u ? -1.0 : 1.0;
+    }
     r.normal = float3(0.0, 0.0, 1.0);
     r.tangent = float3(1.0, 0.0, 0.0);
     r.uv = float2(0.0);
-    if (mesh.normals != 0ull) {
+    if ((mesh.flags & kFuseMeshFloatNormals) != 0u) {
+        if (mesh.normals != 0ull) {
+            r.normal = ((float4*)mesh.normals)[v].xyz; // skinned row: unit f32 normal
+        }
+    } else if (mesh.normals != 0ull) {
         r.normal = fuseMrOctDecode(((uint*)mesh.normals)[v]);
     }
     if (mesh.tangents != 0ull) {

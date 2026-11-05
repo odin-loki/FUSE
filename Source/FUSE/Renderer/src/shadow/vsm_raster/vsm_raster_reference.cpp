@@ -23,7 +23,7 @@ void VsmRasterReference::prepare(const visbuffer::VisSceneView& scene, const Vsm
         const gpu_scene::GpuMesh& mesh = scene.meshes[inst.mesh];
         const visbuffer::decode_kernel::MeshPositions& pos = scene.positions[inst.mesh];
         CasterInstance ci{};
-        if (pos.vpos == nullptr || !caster_bounds(inst, mesh, scene.transforms[i], ci.center, ci.extent)) {
+        if ((pos.vpos == nullptr && pos.fpos == nullptr) || !caster_bounds(inst, mesh, scene.transforms[i], ci.center, ci.extent)) {
             continue;
         }
         ci.first = static_cast<u32>(m_tris.size());
@@ -38,12 +38,11 @@ void VsmRasterReference::prepare(const visbuffer::VisSceneView& scene, const Vsm
             bool ok = true;
             for (u32 k = 0; k < 3u; ++k) {
                 const u32 v = static_cast<u32>(static_cast<s32>(scene.indices[base + k]) + mesh.vertexOffset);
-                if (v >= pos.vertexCount) {
+                f32 obj[3];
+                if (v >= pos.vertexCount || !visbuffer::decode_kernel::mesh_position(mesh, pos, v, obj)) {
                     ok = false;
                     break;
                 }
-                f32 obj[3];
-                visbuffer::decode_kernel::mesh_position(mesh, pos.vpos, v, obj);
                 world_point(scene.transforms[i], obj, tri.w[k]);
                 if (c != nullptr) {
                     light_point(*c, tri.w[k], tri.l[k]);

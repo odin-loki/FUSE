@@ -15,10 +15,11 @@
 // Why the object-space point: rigid motion is exact whatever the transform (rotation, scale, mirroring), and
 // the jitter only decides WHICH surface point the pixel sees, never its motion.
 //
-// Skinned meshes: the GPU scene / visibility buffer draw static VPOS streams only and the renderer's
-// BoneBuffer keeps no previous palette, so there is no skinned path to take motion from (execution doc
-// WP-4.1 row, open issue). A skinned path needs per-vertex previous positions (or the previous palette);
-// P would then be interpolated from prev-skinned positions exactly like the current ones here.
+// Skinned meshes (gpu_scene::kMeshFloatPositions rows written by the GPU skinning pass, skinning/skinning_gpu.hpp):
+// the row's position stream holds the current AND the previous skinned positions (the previous ones from the
+// previous bone palette), so the previous point is P_prev = b0 v0' + b1 v1' + b2 v2' with the SAME barycentrics
+// (the pixel's surface point is a fixed affine combination of the triangle's vertices, LBS is per vertex), then
+// reprojected with the previous transform exactly like a rigid point. Rigid rows: P_prev = P.
 
 #include <fuse/compute_kernel/kernel.hpp>
 #include <fuse/math/vec.hpp>
@@ -127,13 +128,14 @@ FUSE_HOST_DEVICE inline Result pixel(const Params& p, u32 x, u32 y, u32 instance
     const MeshPositions& pos = p.positions[inst.mesh];
     const GpuTransform& t = p.transforms[instance];
     f32 v[3][3];
+    f32 pv[3][3];
     Clip c[3];
     for (u32 k = 0; k < 3u; ++k) {
         const u32 vi = static_cast<u32>(static_cast<s32>(p.indices[base + k]) + mesh.vertexOffset);
-        if (vi >= pos.vertexCount) {
+        if (vi >= pos.vertexCount || !visbuffer::decode_kernel::mesh_position(mesh, pos, vi, v[k]) ||
+            !visbuffer::decode_kernel::mesh_prev_position(mesh, pos, vi, pv[k])) {
             return r;
         }
-        visbuffer::decode_kernel::mesh_position(mesh, pos.vpos, vi, v[k]);
         c[k] = clip_of(t, f.drawViewProj, v[k]);
     }
     f32 nx = 0.f;
@@ -157,11 +159,13 @@ FUSE_HOST_DEVICE inline Result pixel(const Params& p, u32 x, u32 y, u32 instance
     const f32 b1 = e1 / s;
     const f32 b2 = e2 / s;
     f32 obj[3];
+    f32 prevObj[3];
     for (u32 a = 0; a < 3u; ++a) {
         obj[a] = b0 * v[0][a] + b1 * v[1][a] + b2 * v[2][a];
+        prevObj[a] = b0 * pv[0][a] + b1 * pv[1][a] + b2 * pv[2][a];
     }
     const Clip cc = clip_of(t, f.viewProj, obj);
-    const Clip pc = clip_of(p.prevTransforms[instance], f.prevViewProj, obj);
+    const Clip pc = clip_of(p.prevTransforms[instance], f.prevViewProj, prevObj);
     r.status = kStatusBehind;
     if (cc.w > 0.f) {
         r.depth = cc.w;

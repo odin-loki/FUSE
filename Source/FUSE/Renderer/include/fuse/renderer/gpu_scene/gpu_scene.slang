@@ -35,6 +35,11 @@ static const uint kFuseInstanceReceiveShadow = 8u;
 static const uint kFuseInstanceStatic = 16u;
 static const uint kFuseInstanceTransparent = 32u;
 
+// GpuMesh::flags (GpuMeshFlag): f32x4 current + previous positions / f32x4 normals (GPU skinning rows).
+static const uint kFuseMeshFloatPositions = 1u;
+static const uint kFuseMeshFloatNormals = 2u;
+static const uint kFuseMeshSkinned = 4u;
+
 // GpuMaterial::flags bit: layered material, GpuMaterial::padding = its layered-table index (kGpuMaterialLayered).
 static const uint kFuseGpuMaterialLayered = 0x80000u;
 

@@ -4,7 +4,7 @@
 // reference "temporal_motion"; conventions in temporal_types.hpp): the visibility sample's triangle under
 // drawViewProj gives the barycentrics at the pixel centre (the WP-1.4 decode operations), the object-space
 // point is reprojected with the unjittered current / previous view-projections and the instance's current /
-// previous transforms; the sky gets the rotation-only reprojection. GLSL twin of tm_motion.slang.
+// previous transforms (skinned rows: the previous point from the previous skinned positions); the sky gets the rotation-only reprojection. GLSL twin of tm_motion.slang.
 #extension GL_GOOGLE_include_directive : require
 #include "bindless.glsl"
 #include "gpu_scene.glsl"
@@ -85,6 +85,7 @@ FuseTmMotion fuse_tm_motion(FuseGpuSceneHeaderRef scene, FuseTmMotionFrame f, uv
     const FuseGpuTransform t = fuse_gpu_scene_transforms(scene).v[instance];
     const uint base = mesh.firstIndex + triangle * 3u;
     vec3 v[3];
+    vec3 pv[3];
     vec4 c[3];
     for (uint k = 0u; k < 3u; ++k) {
         const uint vi = uint(int(indices.v[base + k]) + mesh.vertexOffset);
@@ -92,6 +93,7 @@ FuseTmMotion fuse_tm_motion(FuseGpuSceneHeaderRef scene, FuseTmMotionFrame f, uv
             return r;
         }
         v[k] = fuse_vis_mesh_position(mesh, vi);
+        pv[k] = fuse_vis_mesh_prev_position(mesh, vi);
         c[k] = fuse_vis_clip(t, f.drawViewProj, v[k]);
     }
     const vec2 ndc = fuse_vis_pixel_ndc(p, f.width, f.height);
@@ -115,8 +117,12 @@ FuseTmMotion fuse_tm_motion(FuseGpuSceneHeaderRef scene, FuseTmMotionFrame f, uv
     obj.x = b0 * v[0].x + b1 * v[1].x + b2 * v[2].x;
     obj.y = b0 * v[0].y + b1 * v[1].y + b2 * v[2].y;
     obj.z = b0 * v[0].z + b1 * v[1].z + b2 * v[2].z;
+    precise vec3 prevObj;
+    prevObj.x = b0 * pv[0].x + b1 * pv[1].x + b2 * pv[2].x;
+    prevObj.y = b0 * pv[0].y + b1 * pv[1].y + b2 * pv[2].y;
+    prevObj.z = b0 * pv[0].z + b1 * pv[1].z + b2 * pv[2].z;
     const vec4 cc = fuse_vis_clip(t, f.viewProj, obj);
-    const vec4 pcl = fuse_vis_clip(fuse_gpu_scene_prev_transforms(scene).v[instance], f.prevViewProj, obj);
+    const vec4 pcl = fuse_vis_clip(fuse_gpu_scene_prev_transforms(scene).v[instance], f.prevViewProj, prevObj);
     if (cc.w > 0.0) {
         r.depth = cc.w;
         if (pcl.w > 0.0) {

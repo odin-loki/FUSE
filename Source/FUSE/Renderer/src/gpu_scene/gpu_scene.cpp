@@ -848,6 +848,11 @@ GpuSceneGraphRefs GpuScene::importInto(rg::Graph& graph) {
                                                              static_cast<u8>(rg::QueueClass::Graphics), nullptr,
                                                              "gpu_scene.indices"});
     }
+    if (m_dynamicGeometry != nullptr && m_dynamicGeometryBytes > 0u) {
+        refs.dynamicGeometry = graph.importBuffer(rg::ImportedBuffer{m_dynamicGeometry, m_dynamicGeometryBytes,
+                                                                     static_cast<u8>(rg::QueueClass::Graphics), nullptr,
+                                                                     "gpu_scene.dynamic_geometry"});
+    }
     if (m_jobCount > 0u && m_scatterBuffer.handle != nullptr) {
         // Hand the frame's jobs to the pass (the callback runs at execute time) and start a new batch.
         std::memcpy(m_recordJobs, m_jobs, sizeof(ScatterJob) * m_jobCount);
@@ -878,6 +883,9 @@ void GpuScene::useAll(rg::PassBuilder& pass, const GpuSceneGraphRefs& refs, rg::
         if (ref.valid()) {
             pass.use(ref, access, {}, shaderStages);
         }
+    }
+    if (refs.dynamicGeometry.valid()) {
+        pass.use(refs.dynamicGeometry, access, {}, shaderStages);
     }
 }
 
