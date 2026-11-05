@@ -221,7 +221,14 @@ int gateFloatWindow() {
     }
     CHECK(r.shell.panelFloating("dock.console") && native.toolWindowCount(r.win) == 1);
     CHECK(sr.x + sr.w > origin.x + mainW); // a real top-level window: not clipped to the editor window
-    CHECK(native.captureToolWindow(r.win, 0, shot) && shot.width == int(sr.w));
+    { // read back when the window is fully on a monitor (X11 cannot read off-screen parts)
+        bool onScreen = false;
+        for (const fuse::app::DisplayInfo& d : native.displays())
+            onScreen = onScreen || (sr.x >= d.bounds.x && sr.y >= d.bounds.y && sr.x + sr.w <= d.bounds.x + d.bounds.w &&
+                                    sr.y + sr.h <= d.bounds.y + d.bounds.h);
+        if (onScreen) CHECK(native.captureToolWindow(r.win, 0, shot) && shot.width == int(sr.w));
+        else std::printf("float_window: dragged window extends past the screen, no read-back\n");
+    }
 
     // OS click into the tool window focuses the console input; keys (through the main window) type into it
     {
