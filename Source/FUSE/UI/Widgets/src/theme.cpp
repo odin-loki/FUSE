@@ -1,5 +1,8 @@
 #include "fuse/ui/widgets/widgets.hpp"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <string>
 
 namespace fuse::ui::widgets {
@@ -120,7 +123,40 @@ datetimeedit:focus { border-color: var(--accent); }
 .grow { flex-grow: 1; }
 .buttons { justify-content: end; }
 )css";
+// High contrast: everything outlined in the text colour, hover / selection in the highlight colours.
+constexpr std::string_view kHighContrastRules = R"css(
+button, toolbutton, lineedit, spinbox, combobox, listview, treeview, tabbar, menu, tooltip, .card, gridview, calendar,
+chart, colorpicker, datetimeedit, nodegraph, curveeditor, timeline, viewport, codeedit, video, .propgrid {
+  border-width: 1px; border-color: var(--text);
+}
+button:hover, toolbutton:hover, menubutton:hover, menuitem:hover, menuitem:focus, .propgroup:hover {
+  background: var(--accent); color: var(--on-accent);
+}
+button:disabled, toolbutton:disabled, menuitem:disabled, icon:disabled { color: var(--text-dim); border-color: var(--text-dim); }
+link { color: var(--accent-hi); }
+popup.modal { background: transparent; }
+)css";
 } // namespace
+
+std::string highContrastThemeCss(const HighContrastPalette& p) {
+    const auto hex = [](Color c) {
+        const auto ch = [](f32 v) { return unsigned(std::lround(std::clamp(v, 0.f, 1.f) * 255.f)); };
+        char b[8];
+        std::snprintf(b, sizeof b, "#%02x%02x%02x", ch(c.r), ch(c.g), ch(c.b));
+        return std::string(b);
+    };
+    const std::string win = hex(p.window), text = hex(p.windowText), face = hex(p.buttonFace);
+    std::string css = ":root {\n  --bg: " + win + "; --surface: " + win + "; --surface-hi: " + face + "; --border: " + text +
+                      ";\n  --text: " + text + "; --text-dim: " + hex(p.grayText) + "; --accent: " + hex(p.highlight) +
+                      "; --accent-hi: " + hex(p.hotlight) + "; --danger: " + text + ";\n  --hover: " + face +
+                      "; --pressed: " + face + "; --on-accent: " + hex(p.highlightText) + "; --heading: " + text +
+                      "; --field: " + win + ";\n  --tooltip-bg: " + win + "; --code-bg: " + win + "; --code-text: " + text +
+                      "; --quote-bg: " + win + "; --canvas: " + win + "; --field-alt: " + win +
+                      ";\n  background: var(--bg); color: var(--text); font-size: 14px;\n}\n";
+    css += kBody;
+    css += kHighContrastRules;
+    return css;
+}
 
 std::string_view defaultThemeCss() { return themeCss(ThemeVariant::Dark); }
 std::string_view lightThemeCss() { return themeCss(ThemeVariant::Light); }

@@ -1,0 +1,6 @@
+# fuse_ui_l10n gate: an older German table to merge into
+Back=Zurück
+menu.title=Inventar
+#? Low
+old.key=Alt
+#~ High=Hoch

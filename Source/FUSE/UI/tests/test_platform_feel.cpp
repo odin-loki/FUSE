@@ -1,5 +1,6 @@
 // UI10 platform feel gate: kinetic scroll physics per profile (fling, decay, rubber band, spring back, edge clamp),
-// the haptics hook, and kineticScrollArea (drag to scroll, fling after release, clicks below the threshold).
+// the haptics hook, and kineticScrollArea (drag to scroll, fling after release, clicks below the threshold, pinch /
+// Ctrl+wheel zoom about the gesture point).
 #include "test_util.hpp"
 
 #include "fuse/ui/widgets/platform_feel.hpp"
@@ -132,5 +133,65 @@ int main() {
     UI_CHECK(!w::kineticScroller(ui, area)->active());
     std::printf("platform feel: swipe released at %.0f px, settled at %.0f px\n", double(atRelease), double(settled));
     w::setHapticsHandler(nullptr, nullptr);
+
+    // zoom: pinch (two touches) and Ctrl+wheel scale the content, the point under the gesture stays put
+    {
+        UiContext z{{.viewport = {400, 300}, .font = &font()}};
+        w::install(z);
+        w::ScrollProfile prof = w::ScrollProfile::ios();
+        prof.minZoom = 0.5f;
+        prof.maxZoom = 4.f;
+        const NodeHandle za = w::kineticScrollArea(z, z.root(), prof, "zoom");
+        z.setCss(za, "height", "300px");
+        NodeHandle row10;
+        int zclicks = 0;
+        for (int i = 0; i < 30; ++i) {
+            const NodeHandle b = w::button(z, za, "Row " + std::to_string(i));
+            z.setCss(b, "height", "40px");
+            if (i == 10) row10 = b;
+            z.connect(b, SignalKind::Clicked, [&zclicks](UiContext&, NodeHandle, const SignalArgs&) { ++zclicks; });
+        }
+        z.update(1.f / 60.f);
+        const f32 ext0 = z.scrollExtent(za).h, font0 = z.computed(row10).fontSize;
+        // two fingers at y 100 / 140 spread to 60 / 180 (3x apart): zoom 3 about y 120
+        const Vec2 f0{200.f, 100.f}, f1{200.f, 140.f};
+        const f32 contentY = z.scroll(za).y + 120.f - z.contentRect(za).y; // content point under the midpoint
+        z.touchDown(1, f0); z.update(1.f / 60.f);
+        z.touchDown(2, f1); z.update(1.f / 60.f);
+        for (int k = 1; k <= 4; ++k) {
+            z.touchMove(1, {200.f, 100.f - 10.f * f32(k)});
+            z.touchMove(2, {200.f, 140.f + 10.f * f32(k)});
+            z.update(1.f / 60.f);
+        }
+        z.touchUp(2, {200.f, 180.f}); z.touchUp(1, {200.f, 60.f});
+        for (int i = 0; i < 4; ++i) z.update(1.f / 60.f);
+        const f32 zoom = w::kineticZoom(z, za);
+        const f32 contentY1 = (z.scroll(za).y + 120.f - z.contentRect(za).y) / zoom;
+        std::printf("platform feel: pinch zoom %.2f, extent %.0f -> %.0f, font %.0f -> %.0f, anchor %.1f -> %.1f, clicks %d\n",
+                    double(zoom), double(ext0), double(z.scrollExtent(za).h), double(font0),
+                    double(z.computed(row10).fontSize), double(contentY), double(contentY1), zclicks);
+        UI_CHECK(std::abs(zoom - 3.f) < 0.01f);
+        UI_CHECK(std::abs(z.scrollExtent(za).h - ext0 * 3.f) < 2.f);
+        UI_CHECK(std::abs(z.computed(row10).fontSize - font0 * 3.f) < 0.01f);
+        UI_CHECK(std::abs(z.rect(row10).h - 120.f) < 0.5f);
+        UI_CHECK(std::abs(contentY1 - contentY) < 1.f); // the pinch centre stayed on the same content
+        UI_CHECK_EQ(zclicks, 0);                         // a pinch is not a tap
+        // Ctrl+wheel down zooms out about the pointer; clamped to the profile range
+        z.setModifiers(kModCtrl);
+        for (int i = 0; i < 40; ++i) { z.wheel({200.f, 150.f}, {0.f, -1.f}); z.update(1.f / 60.f); }
+        UI_CHECK(std::abs(w::kineticZoom(z, za) - 0.5f) < 1e-4f);
+        UI_CHECK(std::abs(z.computed(row10).fontSize - font0 * 0.5f) < 0.01f);
+        z.setModifiers(0);
+        const f32 before = z.scroll(za).y;
+        z.wheel({200.f, 150.f}, {0.f, -1.f}); // plain wheel still scrolls (or stays at the end)
+        z.update(1.f / 60.f);
+        UI_CHECK(w::kineticZoom(z, za) == 0.5f && z.scroll(za).y >= before);
+        // zoom off by default: the iOS profile ignores Ctrl+wheel
+        ui.setModifiers(kModCtrl);
+        ui.wheel({200.f, 150.f}, {0.f, 1.f});
+        ui.update(1.f / 60.f);
+        ui.setModifiers(0);
+        UI_CHECK(w::kineticZoom(ui, area) == 1.f && ui.computed(first).zoom == 1.f);
+    }
     return finish("fuse_ui_platform_feel");
 }

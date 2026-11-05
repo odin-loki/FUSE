@@ -1,0 +1,15 @@
+// fuse_ui_l10n gate: string-extraction input
+{
+  "fuseui": 1,
+  "root": {
+    "class": "panel", "id": "menu",
+    "children": [
+      { "class": "label", "id": "title", "text": "Inventory" },
+      { "class": "label", "text": "HP {player.health}" },
+      { "class": "button", "id": "back", "text": "Back", "a11yName": "Go back" },
+      { "class": "combobox", "id": "quality", "items": ["Low", "High"] },
+      { "class": "lineedit", "id": "nick", "text": "Player" },
+      { "class": "panel", "children": [ { "class": "label", "text": "key=with\nnewline" } ] },
+    ],
+  },
+}

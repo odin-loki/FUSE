@@ -111,6 +111,95 @@ struct Spec {
     bool disables = false; ///< interactive: the disabled-state check applies
 };
 
+/// Rows [y0, y1) of the ink (pixels differing from `bg`) in columns [x0, x1); false when there is none.
+[[maybe_unused]] bool inkRows(const Image& img, int x0, int x1, int ya, int yb, u32 bg, int& y0, int& y1) {
+    y0 = 1 << 30;
+    y1 = -1;
+    for (int y = std::max(0, ya); y < std::min(img.height, yb); ++y)
+        for (int x = std::max(0, x0); x < std::min(img.width, x1); ++x)
+            if (img.pixels[std::size_t(y) * std::size_t(img.width) + std::size_t(x)] != bg) {
+                y0 = std::min(y0, y);
+                y1 = std::max(y1, y + 1);
+            }
+    return y1 > y0;
+}
+
+/// IME pre-edit drawn by a fallback face (CJK, taller than the UI font): the line edit shows it whole, on the same
+/// baseline as a label of the same text, not clipped at the top of the field. At 1x and at a phone's DPI scale.
+[[maybe_unused]] void checkCjkPreedit(f32 scale, f32 fontPx) {
+    static auto base = fuse::text::Font::bundled();
+    static std::vector<fuse::text::Font> chain = fuse::text::Font::bundledFallbacks();
+    UI_CHECK(base.has_value());
+    if (!base) return;
+    std::vector<const fuse::text::Font*> ptrs;
+    for (const auto& f : chain) ptrs.push_back(&f);
+    base->setFallbacks(ptrs);
+    const std::string kNihon = "\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E"; // 日本語
+    if (base->faceFor(U'日') == 0) {
+        std::printf("  CJK pre-edit: no CJK fallback face (skipped)\n");
+        return;
+    }
+    UiContext ui({.viewport = {320.f, 120.f}, .font = &*base});
+    w::install(ui);
+    ui.setScale(scale);
+    ui.setCss(ui.root(), "padding", "16px");
+    ui.setCss(ui.root(), "gap", "16px");
+    char fs[32];
+    std::snprintf(fs, sizeof fs, "%gpx", double(fontPx));
+    const NodeHandle e = w::lineEdit(ui, ui.root(), "ab", "le");
+    ui.setCss(e, "width", "240px");
+    ui.setCss(e, "font-size", fs);
+    const NodeHandle ref = w::label(ui, ui.root(), "ab" + kNihon, "ref"); // the same text, unclipped
+    ui.setCss(ref, "font-size", fs);
+    ui.update(1.f / 60.f);
+    ui.setFocus(e);
+    ui.textComposition(kNihon, i32(kNihon.size()));
+    ui.update(1.f / 60.f);
+    Image img;
+    img.resize(int(std::ceil(ui.viewport().w * scale)), int(std::ceil(ui.viewport().h * scale)), 0xFF000000u);
+    CpuRasterizer rast;
+    rast.setGlyphAtlas(ui.atlas().pixels(), ui.atlas().size());
+    rast.render(ui.drawList(), img);
+    if (const char* out = std::getenv("FUSE_UI_CJK_PREEDIT_PNG"))
+        stbi_write_png(out, img.width, img.height, 4, img.pixels.data(), img.width * 4);
+    auto dev = [&](f32 v) { return int(std::lround(v * scale)); };
+    const Rect c = ui.contentRect(e), rr = ui.contentRect(ref);
+    const f32 px = ui.computed(e).fontSize;
+    const f32 abW = ui.measureString("ab", px), preW = ui.measureString(kNihon, px);
+    const u32 bg = img.pixels[std::size_t(dev(c.y + 1.f)) * std::size_t(img.width) + std::size_t(dev(c.right() - 4.f))];
+    const u32 bgRef = img.pixels[std::size_t(dev(rr.y)) * std::size_t(img.width) + std::size_t(dev(rr.right()) - 1)];
+    // the pre-edit underline: the lowest row inked across the whole pre-edit span inside the border
+    const Rect br = ui.rect(e);
+    const f32 bw = ui.computed(e).borderWidth;
+    const int top = dev(br.y + bw) + 1, bottom = dev(br.bottom() - bw) - 1;
+    const int px0 = dev(c.x + abW) + 1, px1 = dev(c.x + abW + preW) - 2;
+    auto fullRow = [&](int y) {
+        for (int x = px0; x < px1; ++x)
+            if (img.pixels[std::size_t(y) * std::size_t(img.width) + std::size_t(x)] == bg) return false;
+        return true;
+    };
+    int under = -1; // top row of the bar (a 1 px rect covers several device rows when scaled)
+    for (int y = bottom - 1; y >= top && under < 0; --y)
+        if (fullRow(y)) under = y;
+    while (under > top && fullRow(under - 1)) --under;
+    // ink rows of "ab" and of the pre-edit glyphs (above the underline) in the field, and of the same glyphs in the label
+    int fa0 = 0, fa1 = 0, fp0 = 0, fp1 = 0, ra0 = 0, ra1 = 0, rp0 = 0, rp1 = 0;
+    const int m = dev(6.f);
+    const bool ok = under > top && inkRows(img, dev(c.x), dev(c.x + abW), top, under, bg, fa0, fa1) &&
+                    inkRows(img, px0, px1, top, under, bg, fp0, fp1) &&
+                    inkRows(img, dev(rr.x), dev(rr.x + abW), dev(rr.y) - m, dev(rr.bottom()) + m, bgRef, ra0, ra1) &&
+                    inkRows(img, px0 - dev(c.x) + dev(rr.x), px1 - dev(c.x) + dev(rr.x), dev(rr.y) - m, dev(rr.bottom()) + m,
+                            bgRef, rp0, rp1);
+    std::printf("  CJK pre-edit at %.2fx, %gpx: field rows %d..%d, 'ab' %d..%d, pre-edit %d..%d, underline %d; label 'ab' "
+                "%d..%d, CJK %d..%d\n",
+                double(scale), double(fontPx), top, bottom, fa0, fa1, fp0, fp1, under, ra0, ra1, rp0, rp1);
+    UI_CHECK(ok);
+    if (!ok) return;
+    UI_CHECK(fp0 > top);                             // not cut at the top of the field
+    UI_CHECK(fp0 - fa0 == rp0 - ra0);                // on the committed text's baseline, as in the label
+    UI_CHECK(fp1 - fp0 == rp1 - rp0 && fp1 < under); // whole glyphs, clear of the underline
+}
+
 // ---- models shared by the model / view builders ----
 w::StringTableModel& tableModel() {
     static w::StringTableModel m("Name\tKind\tSize");
@@ -299,6 +388,10 @@ const Spec kSpecs[] = {
          UI_CHECK(g.ui.text(g.subject) == "hell!" && s.text >= 3 && s.submitted == 1);
          g.drv.hover("subject");
          UI_CHECK(g.ui.cursor() == CursorShape::Text);
+#if !FUSE_UI_TEST_TEXT_COOKED // cooked CJK strikes are resampled: ink heights differ from the label's by a pixel
+         for (const f32 sc : {1.f, 2.75f})
+             for (const f32 fpx : {14.f, 20.f}) checkCjkPreedit(sc, fpx);
+#endif
      }, true, true},
     {"image", [](UiContext& ui, NodeHandle h) { return w::image(ui, h, 0, 64.f, 48.f, "subject"); }, nullptr},
     {"separator", [](UiContext& ui, NodeHandle h) {

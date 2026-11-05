@@ -51,6 +51,7 @@ enum class EventType : u8 {
     PointerMove, PointerDown, PointerUp, PointerEnter, PointerLeave, Click, Wheel, KeyDown, KeyUp, Text, FocusIn,
     FocusOut,
     Composition, ///< IME pre-edit changed: `text` = pre-edit (empty ends it), `caret` = byte offset in it
+    Pinch,       ///< two-finger pinch at `pos` (midpoint): `scale` = pinchScale() (1 when the second finger lands)
 };
 enum class Phase : u8 { Capture, Target, Bubble };
 
@@ -64,6 +65,7 @@ struct Event {
     std::string_view text; ///< Text: UTF-8 (valid during dispatch only)
     FocusReason focusReason = FocusReason::Programmatic;
     i32 caret = 0;         ///< Composition: caret byte offset into `text`
+    f32 scale = 1.f;       ///< Pinch: current finger distance / distance when the pinch began
 };
 
 /// Clipboard backend of a context (UI1). Default: a context-local buffer; apps install the platform clipboard
@@ -264,6 +266,8 @@ public:
     Vec2 scroll(NodeHandle n) const;
     Size scrollExtent(NodeHandle n) const;
     void scrollTo(NodeHandle n, Vec2 offset);
+    /// scrollTo once the next update has laid out (the offset is clamped to the new extent, e.g. after a zoom).
+    void scrollToAfterLayout(NodeHandle n, Vec2 offset);
     static constexpr f32 kScrollBarSize = 8.f; ///< overlay scrollbar thickness (drawn and draggable on scroll containers)
     bool scrollDragging() const { return m_scrollDrag.node.valid(); }
 
@@ -365,6 +369,8 @@ public:
     bool touchPanning() const { return m_touchPan; }
     std::span<const TouchPoint> touches() const { return {m_touches.data(), m_touchCount}; }
     /// Two-finger pinch: current distance of the first two contacts / their distance when the second went down.
+    /// While two fingers are down, moving either dispatches EventType::Pinch to the node under their midpoint; when it
+    /// is consumed the primary finger does not move the pointer (no drag under a zoom gesture).
     f32 pinchScale() const;
     /// What produced the last pointer event (platform glue sets it; pen pressure 0..1).
     enum class PointerKind : u8 { Mouse, Touch, Pen };
@@ -502,11 +508,17 @@ private:
     void markArrange(u32 i);
     bool visibleChain(u32 i) const;
     void scaleDrawList(DrawList& dl) const;
+    bool dispatchPinch();
+    std::vector<std::pair<NodeHandle, Vec2>> m_pendingScroll;
 
     WidgetRegistry m_registry;
     StyleEngine m_styles;
     const fuse::text::Font* m_font = nullptr;
     const fuse::text::Font* m_textFont = nullptr; ///< font of the node being measured / painted (measureString)
+    u32 m_textFontNode = 0xFFFFFFFFu;             ///< the node m_textFont was resolved for (fontFor), or none
+    u32 m_fontOverrides = 0;                      ///< nodes with a setFont font
+    u32 m_varCheckedId = 0;                       ///< Font::id whose isVariable() m_varChecked holds (0: none)
+    bool m_varChecked = false;
     fuse::text::GlyphAtlas m_atlas;
     std::vector<Node> m_nodes;
     std::vector<Cold*> m_cold; ///< per node, into m_coldChunks

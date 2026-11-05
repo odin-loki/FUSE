@@ -379,6 +379,16 @@ std::size_t addNamedInstances(const FontFaceInfo& base, const std::vector<std::u
 }
 } // namespace
 
+std::size_t detail::catalogNamedInstances(const FontFaceInfo& base, const std::vector<std::uint8_t>& name,
+                                          const std::vector<std::uint8_t>& fvar, const std::vector<std::uint8_t>& stat,
+                                          std::vector<FontFaceInfo>& out) {
+    return addNamedInstances(base, name, fvar, stat, out);
+}
+detail::NamedInstanceLister& detail::namedInstanceLister() {
+    static NamedInstanceLister fn = nullptr;
+    return fn;
+}
+
 std::size_t FontCatalog::addFile(const std::string& path) {
     const std::string key = normalisedPath(path);
     if (std::find(m_paths.begin(), m_paths.end(), key) != m_paths.end()) return 0;
@@ -444,9 +454,10 @@ std::size_t FontCatalog::addFile(const std::string& path) {
         const FontFaceInfo base = info;
         m_faces.push_back(std::move(info));
         ++added;
-        if (base.variable) {
+        // named instances only with enableVariableFonts (FontCatalog::load instances them through the variation API)
+        if (const detail::NamedInstanceLister lister = detail::namedInstanceLister(); base.variable && lister) {
             if (statOff && statLen < (1u << 20) && !readAt(f, statOff, statLen, stat)) stat.clear();
-            added += addNamedInstances(base, name, fvar, stat, m_faces);
+            added += lister(base, name, fvar, stat, m_faces);
         }
     }
     return added;
@@ -730,8 +741,7 @@ std::vector<const FontFaceInfo*> FontCatalog::systemFallbackChain(Script script,
 
 std::expected<Font, TextError> FontCatalog::load(const FontFaceInfo& face) {
     auto font = Font::fromFile(face.path, face.index);
-    if (font && face.namedInstance >= 0) {
-        enableVariableFonts();
+    if (font && face.namedInstance >= 0) { // listed only once enableVariableFonts was called
         const auto named = font->namedInstances();
         const auto axes = font->axes();
         if (std::size_t(face.namedInstance) < named.size()) {

@@ -17,6 +17,18 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     endif()
 endif()
 
+# Dead-strippable code on GCC / Clang (MSVC Release already links with /OPT:REF over per-function COMDATs): every
+# function and datum in its own section, and the linker drops the unreferenced ones. The opt-in text paths (variable
+# fonts, colour glyphs, MSDF) and the per-feature entry points of a library only reach a binary that calls them.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang" AND NOT MSVC)
+    add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:-ffunction-sections> $<$<COMPILE_LANGUAGE:C,CXX>:-fdata-sections>)
+    if(APPLE)
+        add_link_options($<$<NOT:$<CONFIG:Debug>>:LINKER:-dead_strip>)
+    else()
+        add_link_options($<$<NOT:$<CONFIG:Debug>>:LINKER:--gc-sections>)
+    endif()
+endif()
+
 get_filename_component(FUSE_UI_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
 # Gates pin the lavapipe ICD where it exists (Linux CI). Elsewhere (native Windows) they use the system Vulkan driver.
 if(EXISTS "/usr/share/vulkan/icd.d/lvp_icd.json")
@@ -36,7 +48,7 @@ set_property(CACHE FUSE_UI_TEXT PROPERTY STRINGS FULL MINIMAL COOKED)
 set(FUSE_UI_PROFILE "app" CACHE STRING "UI profile: hud, app, editor")
 
 # ---- fuse_text ----
-set(FUSE_UI_TEXT_CORE_SRC Text/src/text.cpp Text/src/font_catalog.cpp Text/src/paint_enable.cpp)
+set(FUSE_UI_TEXT_CORE_SRC Text/src/text.cpp Text/src/font_catalog.cpp Text/src/paint_enable.cpp Text/src/png_codec.cpp)
 # opt-in rasterisers (enableColorGlyphs / enableMsdf), font variations (Font::instance) and the font cooker: linked
 # only into binaries that call them
 set(FUSE_UI_TEXT_RASTER_SRC Text/src/colr_paint.cpp Text/src/path_raster.cpp Text/src/color_bitmap.cpp Text/src/msdf.cpp
@@ -106,6 +118,7 @@ if(WIN32)
     target_link_libraries(fuse_text PRIVATE advapi32) # registry font lists
 endif()
 target_include_directories(fuse_text PUBLIC Text/include)
+target_include_directories(fuse_text SYSTEM PRIVATE "${FUSE_UI_REPO_ROOT}/vendor/stb") # png_codec.cpp (every profile)
 target_compile_features(fuse_text PUBLIC cxx_std_23)
 
 # FULL profile (decision D2): HarfBuzz + FreeType through FetchContent (static, no optional deps), SheenBidi (UAX #9)
@@ -292,6 +305,11 @@ if(FUSE_UI_ACCESSIBILITY)
     endif()
 endif()
 
+# ---- fuse_ui_l10n_lib: CLDR plural rules, ICU-style messages, locale number / date formatting (standard library only) ----
+add_library(fuse_ui_l10n_lib STATIC L10n/src/plural.cpp L10n/src/format.cpp L10n/src/message.cpp L10n/src/table.cpp)
+target_include_directories(fuse_ui_l10n_lib PUBLIC L10n/include)
+target_compile_features(fuse_ui_l10n_lib PUBLIC cxx_std_23)
+
 option(FUSE_BUILD_UI_DOC "Build fuse_ui_doc (.fuseui documents + bindings)" ON)
 if(FUSE_BUILD_UI_DOC AND FUSE_BUILD_UI_WIDGETS)
     add_library(fuse_ui_doc STATIC Doc/src/json.cpp Doc/src/document.cpp Doc/src/cook.cpp)
@@ -300,6 +318,9 @@ if(FUSE_BUILD_UI_DOC AND FUSE_BUILD_UI_WIDGETS)
     # UI8 cooker: .fuseui / .fusestyle -> cooked blobs + generated widget-registration list
     add_executable(fuse_ui_cook Doc/tools/fuse_ui_cook.cpp)
     target_link_libraries(fuse_ui_cook PRIVATE fuse_ui_doc)
+    # string extraction: tr("...") in C++ and translatable .fuseui text -> merged string-table file
+    add_executable(fuse_ui_extract_strings Doc/tools/fuse_ui_extract_strings.cpp)
+    target_link_libraries(fuse_ui_extract_strings PRIVATE fuse_ui_doc fuse_ui_l10n_lib)
     if(TARGET fuse_ui_icon_cook_lib) # --icons=<pack>: .svg inputs cooked into an icon pack in the same run
         target_link_libraries(fuse_ui_cook PRIVATE fuse_ui_icon_cook_lib)
         target_compile_definitions(fuse_ui_cook PRIVATE FUSE_UI_COOK_HAVE_ICONS=1)
@@ -462,13 +483,17 @@ endif()
 if(TARGET fuse_ui_designer_lib AND TARGET fuse_app_native AND NOT ANDROID)
     add_executable(fuse_ui_designer Designer/app/designer_main.cpp)
     target_link_libraries(fuse_ui_designer PRIVATE fuse_ui_designer_lib fuse_app_native)
+    if(TARGET fuse_ui_icons) # the starter pack for the icon picker (--icons=<pack> overrides)
+        add_dependencies(fuse_ui_designer fuse_ui_icons)
+        target_compile_definitions(fuse_ui_designer PRIVATE FUSE_UI_DESIGNER_ICONS="${FUSE_UI_ICON_PACK}")
+    endif()
 endif()
 
 # ---- fuse_ui_game: game UI (UI7) — HUD widgets, world markers / panels, gamepad nav, input arbitration ----
 if(FUSE_BUILD_UI_GAME AND FUSE_BUILD_UI_WIDGETS)
     add_library(fuse_ui_game STATIC Game/src/game_ui.cpp Game/src/game_extras.cpp)
     target_include_directories(fuse_ui_game PUBLIC Game/include)
-    target_link_libraries(fuse_ui_game PUBLIC fuse_ui_widgets)
+    target_link_libraries(fuse_ui_game PUBLIC fuse_ui_widgets fuse_ui_l10n_lib)
     # engine bridges (in tree only): UiSurface as an ECS component, theme sounds through fuse_audio
     if(TARGET fuse_ecs)
         add_library(fuse_ui_game_ecs STATIC Game/src/ecs_surface.cpp)

@@ -84,6 +84,8 @@ struct SystemTheme {
     bool highContrast = false;
     bool reducedMotion = false;
     f32 textScale = 1.f; ///< the OS "make text bigger" factor (1 .. 2.25)
+    /// The high-contrast scheme's colours (Win32: GetSysColor while high contrast is on; defaults otherwise).
+    fuse::ui::widgets::HighContrastPalette contrast{};
     friend bool operator==(const SystemTheme&, const SystemTheme&) = default;
 };
 
@@ -291,6 +293,8 @@ public:
     const SystemTheme& systemTheme() const { return m_theme; }
     /// Backends call this at start and whenever the OS appearance changes. Every window (and later ones) honours
     /// reduced motion; with followSystemTheme the default widget theme switches dark / light and takes the system
+    /// accent, high contrast switches to widgets::highContrastThemeCss with forced colours, and every font size is
+    /// multiplied by textScale.
     /// accent. Calls the onThemeChanged handler when something changed.
     void setSystemTheme(const SystemTheme& t);
     void onThemeChanged(fuse::ui::InlineFn<void(Application&, const SystemTheme&)> fn) { m_onTheme = fn; }

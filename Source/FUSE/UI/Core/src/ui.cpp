@@ -200,6 +200,10 @@ u32 UiContext::alloc() {
         c.inl.clear();
         c.layoutWidth = c.layoutSize = -1.f;
         c.edit.reset();
+        if (c.font) { // a reused slot does not keep the destroyed node's setFont
+            c.font = nullptr;
+            --m_fontOverrides;
+        }
     } else {
         i = u32(m_nodes.size());
         m_nodes.emplace_back();
@@ -625,12 +629,22 @@ void UiContext::stylePass() {
 
 // ---- Text ----------------------------------------------------------------------------------------------------------
 namespace {
-// Sets the current text font for a measure / paint call and restores the previous one.
+// Sets the current text font (and the node it was resolved for) for a measure / paint call and restores the previous
+// one.
 struct TextFontScope {
     const fuse::text::Font*& slot;
+    u32& nodeSlot;
     const fuse::text::Font* saved;
-    TextFontScope(const fuse::text::Font*& s, const fuse::text::Font* f) : slot(s), saved(s) { slot = f; }
-    ~TextFontScope() { slot = saved; }
+    u32 savedNode;
+    TextFontScope(const fuse::text::Font*& s, u32& ns, const fuse::text::Font* f, u32 node)
+        : slot(s), nodeSlot(ns), saved(s), savedNode(ns) {
+        slot = f;
+        nodeSlot = f ? node : 0xFFFFFFFFu;
+    }
+    ~TextFontScope() {
+        slot = saved;
+        nodeSlot = savedNode;
+    }
     TextFontScope(const TextFontScope&) = delete;
     TextFontScope& operator=(const TextFontScope&) = delete;
 };
@@ -638,7 +652,12 @@ struct TextFontScope {
 
 const fuse::text::Font& UiContext::fontFor(const fuse::text::Font& base, const ComputedStyle& s, f32 weight) {
     const fuse::text::Font* f = &base;
-    if (base.isVariable()) {
+    // isVariable() is an out-of-line call into fuse_text: remembered for the last font id asked (ids are never reused)
+    if (base.id() != m_varCheckedId) {
+        m_varCheckedId = base.id();
+        m_varChecked = base.isVariable();
+    }
+    if (m_varChecked) {
         using fuse::text::fontTag;
         std::array<fuse::text::FontVariation, 3 + kMaxFontVariations> v;
         std::size_t n = 0;
@@ -658,14 +677,18 @@ const fuse::text::Font& UiContext::fontFor(const fuse::text::Font& base, const C
 
 const fuse::text::Font& UiContext::fontFor(u32 i) {
     const ComputedStyle& s = m_styles.style(m_nodes[i].style);
-    const fuse::text::Font* base = m_cold[i]->font ? m_cold[i]->font : m_font;
+    // most contexts never call setFont: skip the per-node (cold) lookup then
+    const fuse::text::Font* base = m_fontOverrides && m_cold[i]->font ? m_cold[i]->font : m_font;
     return fontFor(*base, s, m_nodes[i].animWeight > 0.f ? m_nodes[i].animWeight : s.fontWeight);
 }
 
 void UiContext::setFont(NodeHandle h, const fuse::text::Font* font) {
     Node* n = node(h);
     if (!n || m_cold[h.index]->font == font) return;
+    if (!m_cold[h.index]->font) ++m_fontOverrides;
+    else if (!font) --m_fontOverrides;
     m_cold[h.index]->font = font;
+    if (m_textFontNode == h.index) m_textFontNode = kNone; // paintString resolves it again
     m_cold[h.index]->layoutWidth = -1.f;
     n->dirty |= kDirtyText;
     markLayout(h.index);
@@ -875,12 +898,13 @@ void UiContext::paintString(DrawList& dl, std::string_view s, Rect box, Color co
     d.maxWidth = box.w;
     d.elide = true;
     d.align = fuse::text::TextAlign(u8(align));
-    d.rtl = nodeIdx < m_cold.size() && m_nodes[nodeIdx].alive && m_styles.style(m_nodes[nodeIdx].style).rtl; // start = right
     const bool live = nodeIdx < m_cold.size() && m_nodes[nodeIdx].alive;
-    const fuse::text::Font& font =
-        !base ? nodeFont(nodeIdx)
-              : live ? fontFor(*base, m_styles.style(m_nodes[nodeIdx].style), m_styles.style(m_nodes[nodeIdx].style).fontWeight)
-                     : *base;
+    const ComputedStyle* ns = live ? &m_styles.style(m_nodes[nodeIdx].style) : nullptr;
+    d.rtl = ns && ns->rtl; // start = right
+    // the node being painted already resolved its font (TextFontScope in paintRec / measure)
+    const fuse::text::Font& font = !base ? (live && nodeIdx == m_textFontNode && m_textFont ? *m_textFont : nodeFont(nodeIdx))
+                                   : ns  ? fontFor(*base, *ns, ns->fontWeight)
+                                         : *base;
     if (live && !m_cold[nodeIdx]->strMany) {
         // one cached layout per node, keyed on everything layoutText reads
         Cold& c = *m_cold[nodeIdx];
@@ -948,6 +972,7 @@ bool UiContext::paintIcon(DrawList& dl, u32 nameHash, Vec2 at, f32 size, Color c
     if (c.a <= 0.f || size < 0.5f) return true;
     const f32 sc = m_scale; // rasterised at the device size (DPI scale)
     const int px = std::clamp(int(std::lround(size * sc)), 1, 1024);
+    const bool disabled = nodeIdx < m_nodes.size() && m_nodes[nodeIdx].alive && (m_nodes[nodeIdx].state & kStateDisabled);
     // one Glyph per colour layer, back to front: currentColor layers take the tint, the others keep their colour
     for (u32 layer = 0, layers = m_icons->layerCount(u32(idx)); layer < layers; ++layer) {
         // atlas key: bit 62 set, bit 63 clear (font glyph keys set bit 63); layer in bits 48..61
@@ -983,6 +1008,10 @@ bool UiContext::paintIcon(DrawList& dl, u32 nameHash, Vec2 at, f32 size, Color c
         cmd.fill = lc == 0u ? c
                             : Color{f32(lc & 0xFFu) / 255.f, f32((lc >> 8) & 0xFFu) / 255.f, f32((lc >> 16) & 0xFFu) / 255.f,
                                     f32(lc >> 24) / 255.f * c.a};
+        if (lc != 0u && disabled) { // fixed colours go grey and faint, like the disabled tint of currentColor layers
+            const f32 l = 0.2126f * cmd.fill.r + 0.7152f * cmd.fill.g + 0.0722f * cmd.fill.b;
+            cmd.fill = Color{l, l, l, cmd.fill.a * kDisabledIconAlpha};
+        }
         cmd.node = nodeIdx;
         dl.push(cmd);
     }
@@ -1053,7 +1082,7 @@ Size UiContext::measure(u32 i, Size avail) {
     ++m_stats.measured;
     n.dirty &= u8(~kDirtyMeasure);
     const ComputedStyle& s = m_styles.style(n.style);
-    const TextFontScope fontScope(m_textFont, m_font ? &fontFor(i) : nullptr);
+    const TextFontScope fontScope(m_textFont, m_textFontNode, m_font ? &fontFor(i) : nullptr, i);
     Size out{0.f, 0.f};
     if (s.visible) {
         const bool fw = fixedLen(s.width, avail.w), fh = fixedLen(s.height, avail.h);
@@ -1384,7 +1413,7 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     const Rect content = contentRect(h);
     if (wc.paint) {
         const PaintContext pc{*this, h, n.rect, content, s, n.state, opacity};
-        const TextFontScope fontScope(m_textFont, m_font ? &fontFor(i) : nullptr);
+        const TextFontScope fontScope(m_textFont, m_textFontNode, m_font ? &fontFor(i) : nullptr, i);
         wc.paint(pc, dl);
     } else if (!m_cold[i]->text.empty() || s.icon) {
         const f32 ic = iconExtent(s);
@@ -1532,7 +1561,10 @@ bool UiContext::touchDown(u32 id, Vec2 p) {
         if (m_touches[k].id == id) return touchMove(id, p);
     if (m_touchCount == kMaxTouches) return false;
     m_touches[m_touchCount++] = {id, p, p};
-    if (m_touchCount == 2) m_pinchStart = std::hypot(m_touches[1].pos.x - m_touches[0].pos.x, m_touches[1].pos.y - m_touches[0].pos.y);
+    if (m_touchCount == 2) {
+        m_pinchStart = std::hypot(m_touches[1].pos.x - m_touches[0].pos.x, m_touches[1].pos.y - m_touches[0].pos.y);
+        dispatchPinch();
+    }
     if (m_primaryTouch != kNone || m_touchCount != 1) return true; // secondary contacts: gestures only
     m_primaryTouch = id;
     m_pointerKind = PointerKind::Touch;
@@ -1544,6 +1576,7 @@ bool UiContext::touchMove(u32 id, Vec2 p) {
         if (m_touches[k].id == id) {
             const Vec2 last = m_touches[k].pos, start = m_touches[k].start;
             m_touches[k].pos = p;
+            if (m_touchCount >= 2 && k < 2 && dispatchPinch()) return true;
             if (id != m_primaryTouch) return true;
             m_pointerKind = PointerKind::Touch;
             const f32 dx = p.x - start.x, dy = p.y - start.y;
@@ -1597,6 +1630,18 @@ void UiContext::touchCancel() {
     m_pressed = {};
     setHover(kNone);
 }
+bool UiContext::dispatchPinch() {
+    if (m_touchCount < 2 || m_pinchStart <= 0.f) return false;
+    Event e;
+    e.type = EventType::Pinch;
+    e.pos = {(m_touches[0].pos.x + m_touches[1].pos.x) * 0.5f, (m_touches[0].pos.y + m_touches[1].pos.y) * 0.5f};
+    e.scale = pinchScale();
+    e.mods = m_mods;
+    const NodeHandle h = hitTest(e.pos);
+    if (!h.valid() || (node(m_modal) && !inScope(h.index, m_modal.index))) return false;
+    return dispatch(h.index, e);
+}
+
 f32 UiContext::pinchScale() const {
     if (m_touchCount < 2 || m_pinchStart <= 0.f) return 1.f;
     return std::hypot(m_touches[1].pos.x - m_touches[0].pos.x, m_touches[1].pos.y - m_touches[0].pos.y) / m_pinchStart;
@@ -1673,7 +1718,21 @@ void UiContext::update(f32 dt) {
         arrange(m_root.index, {0.f, 0.f, m_viewport.w, m_viewport.h});
         m_anyLayoutDirty = false;
     }
+    if (!m_pendingScroll.empty()) {
+        for (const auto& [h, o] : m_pendingScroll) scrollTo(h, o);
+        m_pendingScroll.clear();
+        if (m_anyLayoutDirty) {
+            arrange(m_root.index, {0.f, 0.f, m_viewport.w, m_viewport.h});
+            m_anyLayoutDirty = false;
+        }
+    }
     paintPass();
+}
+
+void UiContext::scrollToAfterLayout(NodeHandle h, Vec2 o) {
+    if (!node(h)) return;
+    m_pendingScroll.emplace_back(h, o);
+    m_anyLayoutDirty = m_anyPaintDirty = true;
 }
 
 bool UiContext::needsUpdate() const {

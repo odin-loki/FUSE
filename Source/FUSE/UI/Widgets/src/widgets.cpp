@@ -447,7 +447,11 @@ struct LineEdit {
         const f32 caretX = cx + (pre.empty() ? 0.f : ui.measureString(pre.substr(0, std::size_t(ui.compositionCaret())), px));
         // x of the text start is c.x - scrollX (negative in RTL while the text is shorter than the field)
         const f32 scrollX = pc.style.rtl ? c.x - rtlStart(c, ui.measureString(t, px) + preW, caretX) : std::max(0.f, caretX - c.w + 2.f);
-        dl.pushClip(c);
+        // The line box is usually taller than the content box (padding): clip vertically at the inner border edge, not
+        // the content box, so ascenders, descenders and taller fallback glyphs (CJK pre-edit) are not cut.
+        const f32 bw = pc.style.borderWidth;
+        const Rect clip{c.x, pc.rect.y + bw, c.w, std::max(0.f, pc.rect.h - 2.f * bw)};
+        dl.pushClip(clip);
         if (focused && eb.hasSelection() && pre.empty()) {
             const std::size_t a = std::min(eb.cursor(), eb.anchor()), b = std::max(eb.cursor(), eb.anchor());
             const f32 x0 = ui.measureString(t.substr(0, a), px), x1 = ui.measureString(t.substr(0, b), px);
@@ -460,7 +464,12 @@ struct LineEdit {
             labelAt(pc, dl, t.substr(0, eb.cursor()), {x, c.y, cx + 1000.f, c.h}, TextAlignment::Left);
             labelAt(pc, dl, pre, {x + cx, c.y, preW + 1000.f, c.h}, TextAlignment::Left);
             labelAt(pc, dl, t.substr(eb.cursor()), {x + cx + preW, c.y, c.w + 1000.f, c.h}, TextAlignment::Left);
-            dl.rect({std::round(x + cx), std::round(c.y + c.h - 3.f), preW, 1.f}, textCol(pc));
+            // underline below the baseline paintString centres the line on (under ideographs, which reach below the
+            // baseline, rather than through them), kept inside the clip
+            const fuse::text::FontMetrics m = ui.textFont(pc.node).metrics(px);
+            const f32 baseline = c.y + std::floor((c.h - std::ceil(m.lineHeight())) * 0.5f) + std::ceil(m.ascent);
+            const f32 uy = std::min(baseline + std::max(1.f, std::ceil(-m.descent * 0.6f)), clip.bottom() - 1.f);
+            dl.rect({std::round(x + cx), std::round(uy), preW, 1.f}, textCol(pc));
         }
         if (focused) {
             const Rect caret{std::round(c.x + caretX - scrollX), c.y + 2.f, 1.5f, c.h - 4.f};

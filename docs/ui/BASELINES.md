@@ -51,6 +51,21 @@ its `fuse_app_binary_size` budget.
 standalone MINIMAL hello_app 870,912 → 904,192 B with MSVC (94.4 % of the re-baselined 958,000 B budget), 1.53 → 1.56 MB
 stripped with GCC; notes_app / game_menu / hud_demo MINIMAL are 0.86 / 0.84 / 0.66 MB on Windows.
 
+*11-05, after round 3* (clipboard / IME, variable fonts, the high-contrast / zoom polish): the GCC standalone hello_app
+had grown to 1,822,104 B stripped, over its 1,683,600 B budget. GCC linked whole objects: FontCatalog::load called
+enableVariableFonts() (the glyf / gvar decoder, ~46 KB), paint_enable.o pulled the COLRv1 / CBDT / MSDF rasterisers
+with enableMsdf, and stb_image was compiled twice (fuse_text's bitmap glyphs and fuse_app's clipboard). Fixes: the UI
+targets compile with `-ffunction-sections -fdata-sections` and link with `--gc-sections` (GCC / Clang; MSVC Release
+already has /OPT:REF); FontCatalog lists fvar named instances only through a hook enableVariableFonts() installs (and
+no longer enables variations itself); one PNG codec (`fuse/text/png_codec.hpp`, stb_image + stb_image_write) serves
+fuse_text and fuse_app.
+
+| hello_app (MINIMAL, Release) | before | after | budget |
+|---|---|---|---|
+| GCC 13.3 standalone, stripped | 1,822,104 B | 1,076,352 B | 1,683,600 → re-baselined 1,184,000 (+10 %) |
+| MSVC standalone | 944,640 B | 945,664 B | 958,000 (98.7 %) |
+| MSVC engine tree | — | 978,944 B | 994,600 (98.4 %) |
+
 ## Startup to first presented frame
 
 `hello_app --startup-probe` (median of 5): milliseconds from process creation to the first presented frame, and to
@@ -161,6 +176,15 @@ The Vulkan driver dominates: ~115 MB of hello_app's working set on NVIDIA, ~75 M
 | FUSE editor shell full 1600×900 CPU raster | 17.3–29.7 ms; *11-05* 42–47 → 1.4–2.9 ms (best of 3; gate ≤ 8 ms) | 29.9 ms (not re-measured) | ≤ 2 ms full repaint (GPU path) |
 | Qt editor `fuse_editor_qt_gates ui_frame`: steady frame (viewport + status bar repaint + flush) | 1.70–3.8 ms | not built | — |
 | Qt editor full-window repaint (1280×844, 10 docks) | 11.4–20.5 ms | not built | Qt baseline in §6 was 4.1–4.4 ms |
+
+*11-05, after round 3*: `fuse_ui_bench_10k` had slowed ~10 % (per-node fonts: every painted button resolved its font
+twice per frame, each time through an out-of-line `Font::isVariable()` and the node's cold `setFont` slot). Bisected
+over the integration merges (standalone MSVC builds of the bench only): the step is the per-node-font merge; RTL,
+zoom / text scale and the disabled-focus checks are within noise. Now the font a node's paint resolves is reused by
+its paintString, `isVariable()` is remembered per font id and the per-node override is read only when some node has
+one. Windows MSVC, standalone, interleaved runs on the same loaded machine, min / median of the run medians:
+77afb4125 0.361–0.390 / 0.39–0.42 ms; tip before 0.395–0.415 / 0.41–0.47 ms; after 0.383–0.389 / 0.40–0.45 ms (run to
+run noise is ±0.03 ms). Linux GCC (same machine, WSL2): 0.413 / 0.415 / 0.388 ms min.
 
 ### CPU reference rasteriser (*11-05*)
 

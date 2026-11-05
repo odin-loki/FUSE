@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <cmath>
 #include <cstring>
 #include <span>
 
@@ -77,6 +78,7 @@ constexpr PropInfo kProps[] = {
     {Prop::FontVariationSettings, "font-variation-settings", T::FontSettings, true, false, true},
     {Prop::FontFeatureSettings, "font-feature-settings", T::FontSettings, true, false, true},
     {Prop::TextDirection, "direction", T::Enum, true, false, true},
+    {Prop::Zoom, "zoom", T::Number, false, false, true},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -447,6 +449,7 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
         }
         break;
     case Prop::TextDirection: s.rtl = v.e != 0; break;
+    case Prop::Zoom: s.zoom = std::clamp(v.num, 0.05f, 20.f); break;
     case Prop::Count: break;
     }
 }
@@ -484,6 +487,7 @@ PropValue readProp(const ComputedStyle& s, Prop p) {
         return v;
     }
     case Prop::TextDirection: return PropValue::ofEnum(s.rtl ? 1 : 0);
+    case Prop::Zoom: return PropValue::ofNumber(s.zoom);
     case Prop::Effect: {
         PropValue v;
         v.type = PropType::Effect;
@@ -800,6 +804,20 @@ void StyleEngine::setThemeSheet(StyleSheet sheet) {
     reorder();
 }
 
+void StyleEngine::setTextScale(f32 s) {
+    s = std::isfinite(s) ? std::clamp(s, 0.25f, 4.f) : 1.f;
+    if (s == m_textScale) return;
+    m_textScale = s;
+    ++m_version;
+}
+
+void StyleEngine::setForcedColors(bool on, Color focusColor) {
+    if (on == m_forced && (!on || focusColor == m_forcedFocus)) return;
+    m_forced = on;
+    m_forcedFocus = focusColor;
+    ++m_version;
+}
+
 void StyleEngine::reorder() {
     m_ordered.clear();
     u32 sheetIdx = 0;
@@ -905,7 +923,13 @@ u32 StyleEngine::intern(const ComputedStyle& cs) {
 u32 StyleEngine::compute(const StyleSubject& s, u32 node, const ComputedStyle* parent, const ComputedStyle* defaults,
                          const std::vector<std::pair<Prop, PropValue>>& inl) {
     ComputedStyle cs = defaults ? *defaults : ComputedStyle{};
-    if (parent) inheritFrom(cs, *parent);
+    cs.zoom = 1.f;
+    // the inherited font size carries the parent's zoom and the text scale: undo them, re-apply below
+    const f32 parentZoom = parent ? parent->zoom : 1.f;
+    if (parent) {
+        inheritFrom(cs, *parent);
+        cs.fontSize /= parentZoom * m_textScale;
+    }
     m_scratch.clear();
     m_localTokens.clear();
     for (const StyleRule* r : m_ordered)
@@ -924,6 +948,34 @@ u32 StyleEngine::compute(const StyleSubject& s, u32 node, const ComputedStyle* p
             }
         }
     for (const auto& [p, v] : inl) applyProp(cs, p, v);
+    cs.zoom *= parentZoom;
+    if (cs.zoom != 1.f) {
+        const f32 z = cs.zoom;
+        for (Length* l : {&cs.width, &cs.height, &cs.minWidth, &cs.minHeight, &cs.maxWidth, &cs.maxHeight, &cs.basis,
+                          &cs.left, &cs.top, &cs.right, &cs.bottom})
+            if (l->unit == Unit::Px) l->value *= z;
+        for (u8 k = 0; k < cs.gridColumnCount; ++k)
+            if (cs.gridColumns[k].unit == Unit::Px) cs.gridColumns[k].value *= z;
+        for (f32* f : {&cs.padding.l, &cs.padding.t, &cs.padding.r, &cs.padding.b, &cs.margin.l, &cs.margin.t,
+                       &cs.margin.r, &cs.margin.b, &cs.gap, &cs.borderWidth, &cs.shadowBlur, &cs.shadowX, &cs.shadowY,
+                       &cs.backdropBlur, &cs.iconSize})
+            *f *= z;
+        for (f32& r : cs.radius) r *= z;
+    }
+    cs.fontSize *= cs.zoom * m_textScale;
+    if (m_forced) { // forced colours: solid surfaces, a strong focus border
+        cs.backdropBlur = 0.f;
+        cs.shadowColor = {};
+        cs.shadowBlur = cs.shadowX = cs.shadowY = 0.f;
+        cs.gradient = GradientDir::None;
+        cs.effect = 0;
+        cs.effectParamCount = 0;
+        cs.effectParams = {};
+        if (s.states(node) & kStateFocusVisible) {
+            cs.borderWidth = std::max(cs.borderWidth, 2.f);
+            cs.borderColor = m_forcedFocus;
+        }
+    }
     return intern(cs);
 }
 

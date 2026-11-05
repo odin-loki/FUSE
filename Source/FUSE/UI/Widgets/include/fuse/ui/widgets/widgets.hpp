@@ -26,6 +26,17 @@ std::string_view defaultThemeCss();
 enum class ThemeVariant : u8 { Dark, Light };
 std::string_view themeCss(ThemeVariant v);
 std::string_view lightThemeCss();
+/// High-contrast system colours (Win32 GetSysColor of the active high-contrast scheme; CSS system colours).
+struct HighContrastPalette {
+    Color window = Color::rgb(0x000000), windowText = Color::rgb(0xFFFFFF);
+    Color highlight = Color::rgb(0x1AEBFF), highlightText = Color::rgb(0x000000);
+    Color buttonFace = Color::rgb(0x000000), buttonText = Color::rgb(0xFFFFFF);
+    Color grayText = Color::rgb(0x3FF23F), hotlight = Color::rgb(0xFFFF00);
+    friend bool operator==(const HighContrastPalette&, const HighContrastPalette&) = default;
+};
+/// The high-contrast theme: the default rules over the palette's solid colours, every control outlined. Pair it with
+/// StyleEngine::setForcedColors (no blur / shadows / gradients / effects, 2px focus borders in `hotlight`).
+std::string highContrastThemeCss(const HighContrastPalette& p);
 /// Registers the Tier B classes (popup, menu, menuitem, menubar, menubutton, listview, treeview, tabbar, tooltip).
 void registerTierB(UiContext& ui);
 /// registerTierA + registerTierB + default theme. (With Tier B registered, combo boxes open a popup list on click.)

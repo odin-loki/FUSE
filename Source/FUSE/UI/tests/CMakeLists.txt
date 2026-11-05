@@ -289,6 +289,10 @@ if(TARGET fuse_ui_icons)
             target_link_libraries(${t} PRIVATE fuse_ui_doc)
             target_compile_definitions(${t} PRIVATE FUSE_UI_ICON_HAVE_DOC=1)
         endif()
+        if(g STREQUAL "cook" AND TARGET fuse_ui_cook AND NOT CMAKE_CROSSCOMPILING) # fuse_ui_cook --icons checks
+            add_dependencies(${t} fuse_ui_cook)
+            target_compile_definitions(${t} PRIVATE FUSE_UI_COOK_EXE="$<TARGET_FILE:fuse_ui_cook>")
+        endif()
         set_tests_properties(${name} PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     endforeach()
 endif()
@@ -321,6 +325,10 @@ endif()
 if(TARGET fuse_ui_designer_lib)
     fuse_ui_test(fuse_ui_designer_roundtrip test_designer.cpp)
     target_link_libraries(fuse_ui_designer_roundtrip PRIVATE fuse_ui_designer_lib)
+    if(TARGET fuse_ui_icons) # icon picker over the starter pack
+        add_dependencies(fuse_ui_designer_roundtrip fuse_ui_icons)
+        target_compile_definitions(fuse_ui_designer_roundtrip PRIVATE FUSE_UI_ICON_PACK="${FUSE_UI_ICON_PACK}")
+    endif()
 endif()
 
 # UI10 platform feel: kinetic scroll physics, haptics hook
@@ -500,10 +508,11 @@ if(TARGET fuse_app)
         # measured 2026-11-05 (MSVC Build Tools 2026) after the colour / MSDF glyph modes and the pipeline cache:
         # standalone UI tree 870,912 bytes -> budget 958,000; in the engine tree hello_app also links fuse_rhi's
         # volk loader: 904,192 bytes -> budget 994,600.
-        # Linux x86-64 Release, MINIMAL text, stripped copy, measured 2026-11-05: GCC 13.3 standalone 1,530,488 ->
-        # 1,683,600, engine tree 1,591,928 -> 1,751,200; Clang 23.1 standalone 1,179,616 -> 1,297,600 (the engine tree
-        # does not build with Clang yet). Other toolchains: set FUSE_APP_BINARY_BUDGET after measuring; until then
-        # the gate reports and skips.
+        # Linux x86-64 Release, MINIMAL text, stripped copy, measured 2026-11-05: GCC 13.3 engine tree 1,591,928 ->
+        # 1,751,200; Clang 23.1 standalone 1,179,616 -> 1,297,600 (the engine tree does not build with Clang yet).
+        # GCC 13.3 standalone re-measured 2026-11-05 after the UI targets link with -ffunction-sections / --gc-sections
+        # and the opt-in text code became dead-strippable (docs/ui/BASELINES.md): 1,076,352 -> 1,184,000. Other
+        # toolchains: set FUSE_APP_BINARY_BUDGET after measuring; until then the gate reports and skips.
         set(_budget 0)
         if(MSVC AND FUSE_UI_TEXT STREQUAL "MINIMAL" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
             if(TARGET fuse_rhi)
@@ -517,7 +526,7 @@ if(TARGET fuse_app)
                 if(TARGET fuse_rhi)
                     set(_budget 1751200)
                 else()
-                    set(_budget 1683600)
+                    set(_budget 1184000)
                 endif()
             elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT TARGET fuse_rhi)
                 set(_budget 1297600)
@@ -546,7 +555,7 @@ if(TARGET fuse_app)
     if(TARGET fuse_app_native)
         # UI1 desktop platform services on real windows: DPI change, displays, cursors, system theme, native dialogs,
         # touch injection, multiple windows (one executable per gate; see test_platform_desktop.cpp).
-        foreach(g dpi_change displays cursors system_theme dialogs touch_synthetic multiwindow)
+        foreach(g dpi_change displays cursors system_theme high_contrast dialogs touch_synthetic pen_synthetic multiwindow)
             add_executable(fuse_platform_${g} test_platform_desktop.cpp)
             target_link_libraries(fuse_platform_${g} PRIVATE fuse_app_native)
             target_compile_definitions(fuse_platform_${g} PRIVATE FUSE_PLATFORM_GATE="${g}")
@@ -664,6 +673,15 @@ if(TARGET fuse_ui_game)
         target_compile_definitions(${t} PRIVATE FUSE_UI_GAME_GATE="${g}")
         set_tests_properties(${t} PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     endforeach()
+    # localisation: plural rules, messages, number / date formatting, StringTable tr, fuse_ui_extract_strings
+    if(TARGET fuse_ui_extract_strings AND NOT CMAKE_CROSSCOMPILING)
+        fuse_ui_test(fuse_ui_l10n test_l10n.cpp)
+        target_link_libraries(fuse_ui_l10n PRIVATE fuse_ui_game)
+        add_dependencies(fuse_ui_l10n fuse_ui_extract_strings)
+        target_compile_definitions(fuse_ui_l10n PRIVATE FUSE_UI_EXTRACT_EXE="$<TARGET_FILE:fuse_ui_extract_strings>"
+                                   FUSE_UI_TEST_OUT="${CMAKE_CURRENT_BINARY_DIR}")
+        set_tests_properties(fuse_ui_l10n PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    endif()
     if(TARGET fuse_ui_game_ecs)
         fuse_ui_test(fuse_ui_ecs_surface test_game_bridges.cpp)
         target_link_libraries(fuse_ui_ecs_surface PRIVATE fuse_ui_game_ecs)

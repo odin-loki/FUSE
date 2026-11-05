@@ -30,17 +30,7 @@
 #include <unistd.h>
 #endif
 
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
-#pragma GCC diagnostic ignored "-Wunused-function"
-#endif
-#define STB_IMAGE_WRITE_STATIC
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
+#include "fuse/text/png_codec.hpp"
 
 namespace fuse::app {
 using namespace fuse::ui;
@@ -316,11 +306,13 @@ bool AppWindow::presentHeadless(void*, AppWindow& w, Rect damage) {
 }
 bool writePng(const Image& img, const std::string& path) {
     if (img.width <= 0) return false;
-    return stbi_write_png(path.c_str(), img.width, img.height, 4, img.pixels.data(), img.width * 4) != 0;
+    return fuse::text::png::writeRgba(path, reinterpret_cast<const std::uint8_t*>(img.pixels.data()), img.width, img.height,
+                                     img.width * 4);
 }
 bool AppWindow::writePng(const std::string& path) const {
     if (m_image.width <= 0) return false;
-    return stbi_write_png(path.c_str(), m_image.width, m_image.height, 4, m_image.pixels.data(), m_image.width * 4) != 0;
+    return fuse::text::png::writeRgba(path, reinterpret_cast<const std::uint8_t*>(m_image.pixels.data()), m_image.width,
+                                     m_image.height, m_image.width * 4);
 }
 bool AppWindow::frame(f32 dt) {
     if (!m_forceRedraw && m_policy == RedrawPolicy::OnDemand && !m_ui.needsUpdate()) return false;
@@ -446,6 +438,13 @@ void Application::applyTheme(AppWindow& w) const {
     UiContext& ui = w.ui();
     ui.setReducedMotion(m_theme.reducedMotion);
     if (!m_followTheme) return;
+    ui.styles().setTextScale(m_theme.textScale);
+    ui.styles().setForcedColors(m_theme.highContrast, m_theme.contrast.hotlight);
+    if (m_theme.highContrast) { // the scheme's own colours; the accent does not apply
+        (void)ui.setThemeStyleSheet(widgets::highContrastThemeCss(m_theme.contrast));
+        w.requestRedraw();
+        return;
+    }
     const auto hex = [](Color c) {
         char b[8];
         const auto ch = [](f32 v) { return unsigned(std::lround(std::clamp(v, 0.f, 1.f) * 255.f)); };
@@ -458,8 +457,6 @@ void Application::applyTheme(AppWindow& w) const {
                              : Color{a.r * (1.f + k), a.g * (1.f + k), a.b * (1.f + k), 1.f};
     std::string css(widgets::themeCss(m_theme.dark ? widgets::ThemeVariant::Dark : widgets::ThemeVariant::Light));
     css += ":root { --accent: " + hex(a) + "; --accent-hi: " + hex(hi) + "; }\n";
-    if (m_theme.textScale > 1.f) // the OS "make text bigger" setting scales the inherited base font size
-        css += ":root { font-size: " + std::to_string(std::lround(14.f * m_theme.textScale)) + "px; }\n";
     (void)ui.setThemeStyleSheet(css);
     w.requestRedraw();
 }
@@ -476,7 +473,12 @@ void Application::setFollowSystemTheme(bool on) {
     m_followTheme = on;
     for (auto& w : m_windows) {
         if (on) applyTheme(*w);
-        else { (void)w->ui().setThemeStyleSheet(widgets::defaultThemeCss()); w->requestRedraw(); }
+        else {
+            (void)w->ui().setThemeStyleSheet(widgets::defaultThemeCss());
+            w->ui().styles().setTextScale(1.f);
+            w->ui().styles().setForcedColors(false);
+            w->requestRedraw();
+        }
     }
 }
 void Application::setEventSource(const EventSource& s) { m_events = s.pump ? s : EventSource{nullptr, &sleepPump}; }
