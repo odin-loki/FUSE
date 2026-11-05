@@ -19,10 +19,10 @@ endif()
 string(JSON _schema GET "${_out}" schema)
 string(JSON _brushes GET "${_out}" detail_levels 0 brushes)
 string(JSON _tris GET "${_out}" detail_levels 0 triangles)
-string(JSON _area GET "${_out}" detail_levels 0 area)
+string(FIND "${_out}" "\"area\": 307.000000," _area)
 string(JSON _lm GET "${_out}" detail_levels 0 lightmaps_skipped)
 if(NOT _schema STREQUAL "fuse.remaster.dif-summary/1" OR NOT _brushes EQUAL 3 OR NOT _tris EQUAL 36 OR
-   NOT _area STREQUAL "307.000000" OR NOT _lm EQUAL 3)
+   _area LESS 0 OR NOT _lm EQUAL 3)
     message(FATAL_ERROR "remaster_dif_cli_gate: unexpected summary\n${_out}")
 endif()
 # An empty file is refused.

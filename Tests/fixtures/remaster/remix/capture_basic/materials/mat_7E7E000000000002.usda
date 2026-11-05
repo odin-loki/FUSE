@@ -1,0 +1,31 @@
+#usda 1.0
+(
+    defaultPrim = "Looks"
+    metersPerUnit = 0.0254
+    upAxis = "Y"
+)
+
+def Scope "Looks"
+{
+    def Material "mat_7E7E000000000002"
+    {
+        token outputs:mdl:surface.connect = </Looks/mat_7E7E000000000002/Shader.outputs:out>
+
+        def Shader "Shader" (
+            kind = "Material"
+        )
+        {
+            uniform bool enable_opacity = 0
+            uniform uint filter_mode = 1
+            uniform token info:implementationSource = "sourceAsset"
+            uniform asset info:mdl:sourceAsset = @./AperturePBR_Opacity.mdl@
+            uniform token info:mdl:sourceAsset:subIdentifier = "AperturePBR_Opacity"
+            asset inputs:diffuse_texture = @../textures/7E7E000000000002.dds@ (
+                colorSpace = "auto"
+            )
+            token outputs:out
+            uniform uint wrap_mode_u = 0
+            uniform uint wrap_mode_v = 0
+        }
+    }
+}
