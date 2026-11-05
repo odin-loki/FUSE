@@ -55,6 +55,10 @@ SvgfSettings SvgfDenoiserAdapter::to_svgf_settings(const DenoiserSettings& setti
     if (settings.disocclusion_depth > 0.f) {
         s.reprojDepth = settings.disocclusion_depth;
     }
+    if (settings.spatial_iterations != 0u) {
+        s.atrousIterations = settings.spatial_iterations;
+        s.historyTap = std::min(s.historyTap, settings.spatial_iterations - 1u);
+    }
     return s;
 }
 

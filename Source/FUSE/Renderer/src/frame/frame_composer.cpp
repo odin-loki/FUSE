@@ -1379,6 +1379,9 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         if ((plan & kStageSsrc) != 0u) {
             ss.ssgi = false; // near-field diffuse comes from SSRC
         }
+        if ((plan & kStageDdgi) != 0u && !settings.ssgiWithDdgi) {
+            ss.ssgi = false; // T2: DDGI is the indirect diffuse (FrameSettings::ssgiWithDdgi)
+        }
         ok = m_ssfx.beginFrame(serial, ss, screenCam, settings.ambient, si) && ok;
         chain = &m_ssfx.outputImage();
     }

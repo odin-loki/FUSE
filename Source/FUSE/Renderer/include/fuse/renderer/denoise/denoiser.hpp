@@ -66,6 +66,8 @@ struct DenoiserSettings {
     u32 max_history_frames = 32u;   ///< SVGF maxHistory / NRD maxAccumulatedFrameNum
     f32 disocclusion_depth = 0.05f; ///< relative depth tolerance of a history tap (SVGF reprojDepth, NRD disocclusionThreshold)
     bool anti_firefly = false;      ///< NRD enableAntiFirefly (ignored by SVGF)
+    /// SVGF a-trous iterations (steps 1, 2, 4, ...; 0 = the signal preset's, 5). Ignored by NRD.
+    u32 spatial_iterations = 0u;
 };
 
 class IDenoiser {
