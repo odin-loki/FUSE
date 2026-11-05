@@ -644,6 +644,53 @@ fuse::asset::AssetId t3dMaterialRefAssetId(const std::string& materialRef) {
     return cooked.empty() ? fuse::asset::AssetId{} : fuse::asset::asset_id_of("game:/" + cooked);
 }
 
+namespace {
+
+/// The scene transform of a mission object (FUSE space): defaults for missing rotation / scale, the GroundPlane's
+/// visual scale and the Sun's direction (shared by the converter and inventoryT3DMission).
+fuse::scene::SceneEntityTransform missionObjectTransform(const MisObject& object) {
+    fuse::scene::SceneEntityTransform transform = object.transform;
+    if (!object.hasRotation) {
+        transform.rotationX = 0.f;
+        transform.rotationY = 0.f;
+        transform.rotationZ = 0.f;
+        transform.rotationW = 1.f;
+    }
+    if (!object.hasScale) {
+        transform.scaleX = 1.f;
+        transform.scaleY = 1.f;
+        transform.scaleZ = 1.f;
+    }
+    if (iequalsAscii(object.type, "GroundPlane")) {
+        // The unit builtin plane (2 x 2) scaled to kGroundPlaneHalfExtent (scene table and ECS agree).
+        transform.scaleX *= kGroundPlaneHalfExtent;
+        transform.scaleZ *= kGroundPlaneHalfExtent;
+    }
+    if (iequalsAscii(object.type, "Sun")) {
+        // Direction from azimuth (degrees clockwise from +Y / north) and elevation (T3D Sun::_conformLights).
+        const f32 az = fieldFloat(object, "azimuth", 0.f) * 3.14159265358979323846f / 180.f;
+        const f32 el = fieldFloat(object, "elevation", 35.f) * 3.14159265358979323846f / 180.f;
+        const f32 toSunTorque[3] = {std::sin(az) * std::cos(el), std::cos(az) * std::cos(el), std::sin(el)};
+        f32 toSun[3];
+        torqueToFusePosition(toSunTorque, toSun);
+        f32 q[4];
+        quatLookingAlongPositiveZ(toSun, q);
+        transform.rotationX = q[0];
+        transform.rotationY = q[1];
+        transform.rotationZ = q[2];
+        transform.rotationW = q[3];
+        transform.scaleX = 1.f;
+        transform.scaleY = 1.f;
+        transform.scaleZ = 1.f;
+        if (!object.hasPosition) {
+            transform.positionY = 10.f;
+        }
+    }
+    return transform;
+}
+
+} // namespace
+
 ConvertResult convertT3DMissionToFuselevel(const std::string& missionPath,
                                            const std::string& outputPath) {
     ConvertResult result;
@@ -704,43 +751,7 @@ ConvertResult convertT3DMissionToFuselevel(const std::string& missionPath,
             continue;
         }
 
-        fuse::scene::SceneEntityTransform transform = object.transform;
-        if (!object.hasRotation) {
-            transform.rotationX = 0.f;
-            transform.rotationY = 0.f;
-            transform.rotationZ = 0.f;
-            transform.rotationW = 1.f;
-        }
-        if (!object.hasScale) {
-            transform.scaleX = 1.f;
-            transform.scaleY = 1.f;
-            transform.scaleZ = 1.f;
-        }
-        if (iequalsAscii(object.type, "GroundPlane")) {
-            // The unit builtin plane (2 x 2) scaled to kGroundPlaneHalfExtent (scene table and ECS agree).
-            transform.scaleX *= kGroundPlaneHalfExtent;
-            transform.scaleZ *= kGroundPlaneHalfExtent;
-        }
-        if (iequalsAscii(object.type, "Sun")) {
-            // Direction from azimuth (degrees clockwise from +Y / north) and elevation (T3D Sun::_conformLights).
-            const f32 az = fieldFloat(object, "azimuth", 0.f) * 3.14159265358979323846f / 180.f;
-            const f32 el = fieldFloat(object, "elevation", 35.f) * 3.14159265358979323846f / 180.f;
-            const f32 toSunTorque[3] = {std::sin(az) * std::cos(el), std::cos(az) * std::cos(el), std::sin(el)};
-            f32 toSun[3];
-            torqueToFusePosition(toSunTorque, toSun);
-            f32 q[4];
-            quatLookingAlongPositiveZ(toSun, q);
-            transform.rotationX = q[0];
-            transform.rotationY = q[1];
-            transform.rotationZ = q[2];
-            transform.rotationW = q[3];
-            transform.scaleX = 1.f;
-            transform.scaleY = 1.f;
-            transform.scaleZ = 1.f;
-            if (!object.hasPosition) {
-                transform.positionY = 10.f;
-            }
-        }
+        const fuse::scene::SceneEntityTransform transform = missionObjectTransform(object);
 
         s32 parentIndex = -1;
         if (object.parentIndex >= 0 &&
@@ -1073,26 +1084,26 @@ std::string resolveShapeAsset(const std::filesystem::path& root, const std::stri
 
 } // namespace
 
-T3DShapeCookResult cookT3DMissionShapes(const std::string& missionPath, const std::string& cookedRoot,
-                                        const std::vector<std::string>& searchRoots) {
+namespace {
+
+/// Search roots for TSStatic shapes: the caller's, the mission directory and its ancestors, then
+/// Templates/BaseGame/game.
+struct ShapeSearchRoots {
+    std::vector<std::filesystem::path> roots;       // direct `shapeName` lookups
+    std::vector<std::filesystem::path> moduleRoots; // `Module:Name` scans (game roots only: never a recursive walk of ancestors)
+};
+
+ShapeSearchRoots shapeSearchRoots(const std::string& missionPath, const std::vector<std::string>& searchRoots) {
     namespace fs = std::filesystem;
-    T3DShapeCookResult result;
-    const std::string text = readFileToString(missionPath);
-    if (text.empty()) {
-        result.note = "unable to read mission file";
-        return result;
-    }
-    // Search roots: the caller's, the mission directory and its ancestors, then Templates/BaseGame/game.
-    std::vector<fs::path> roots;       // direct `shapeName` lookups
-    std::vector<fs::path> moduleRoots; // `Module:Name` scans (game roots only: never a recursive walk of ancestors)
+    ShapeSearchRoots out;
     for (const std::string& r : searchRoots) {
-        roots.emplace_back(r);
-        moduleRoots.emplace_back(r);
+        out.roots.emplace_back(r);
+        out.moduleRoots.emplace_back(r);
     }
     std::error_code ec;
     fs::path dir = fs::absolute(fs::path(missionPath), ec).parent_path();
     for (u32 depth = 0; depth < 8u && !dir.empty(); ++depth) {
-        roots.push_back(dir);
+        out.roots.push_back(dir);
         if (dir == dir.root_path() || fs::exists(dir / ".git", ec)) {
             break;
         }
@@ -1103,9 +1114,115 @@ T3DShapeCookResult cookT3DMissionShapes(const std::string& missionPath, const st
         repo = findRepositoryRoot(fs::current_path(ec).string()); // a mission outside the tree (temp copies)
     }
     if (!repo.empty()) {
-        roots.push_back(fs::path(repo) / "Templates/BaseGame/game");
-        moduleRoots.push_back(fs::path(repo) / "Templates/BaseGame/game");
+        out.roots.push_back(fs::path(repo) / "Templates/BaseGame/game");
+        out.moduleRoots.push_back(fs::path(repo) / "Templates/BaseGame/game");
     }
+    return out;
+}
+
+/// The `shapeAsset` / `shapeName` of a TSStatic and the source file it resolves to (empty when unresolved).
+void resolveTsStaticShape(const MisObject& object, const ShapeSearchRoots& search, std::string& shapeRef,
+                          std::string& sourcePath) {
+    namespace fs = std::filesystem;
+    shapeRef.clear();
+    sourcePath.clear();
+    std::error_code ec;
+    const std::string* asset = findField(object, "shapeasset");
+    const std::string* shape = findField(object, "shapename");
+    if (asset != nullptr && !asset->empty()) {
+        shapeRef = *asset;
+        const std::size_t colon = asset->find(':');
+        if (colon != std::string::npos) {
+            for (const fs::path& r : search.moduleRoots) {
+                sourcePath = resolveShapeAsset(r, asset->substr(0, colon), asset->substr(colon + 1u));
+                if (!sourcePath.empty()) {
+                    break;
+                }
+            }
+        }
+    } else if (shape != nullptr) {
+        shapeRef = *shape;
+        std::string path = *shape;
+        std::replace(path.begin(), path.end(), '\\', '/');
+        while (!path.empty() && path.front() == '/') {
+            path.erase(0, 1);
+        }
+        for (const fs::path& r : search.roots) {
+            if (fs::is_regular_file(r / path, ec)) {
+                sourcePath = (r / path).string();
+                break;
+            }
+        }
+    }
+}
+
+} // namespace
+
+std::string t3dArchetypeName(const std::string& className) {
+    // The UNI-U7-MIS-1 archetype table of convertT3DMissionToFuselevel, by name.
+    static const std::pair<const char*, const char*> table[] = {
+        {"SimGroup", "group"},          {"SimSet", "group"},           {"Sun", "directional_light"},
+        {"PointLight", "point_light"},  {"SpotLight", "spot_light"},   {"Skylight", "ambient_light"},
+        {"SkyBox", "sky_atmosphere"},   {"ScatterSky", "sky_atmosphere"}, {"LevelInfo", "environment_fog"},
+        {"GroundPlane", "ground_plane"}, {"SpawnSphere", "spawn_marker"}, {"TSStatic", "static_mesh"},
+    };
+    for (const auto& [cls, archetype] : table) {
+        if (iequalsAscii(className, cls)) {
+            return archetype;
+        }
+    }
+    return std::string();
+}
+
+T3DMissionInventory inventoryT3DMission(const std::string& missionPath, const std::vector<std::string>& searchRoots) {
+    T3DMissionInventory result;
+    const std::string text = readFileToString(missionPath);
+    if (text.empty()) {
+        result.note = "unable to read mission file";
+        return result;
+    }
+    result.sceneName = extractMissionSceneName(text);
+    const std::vector<MisObject> objects = extractMisHierarchy(text);
+    const ShapeSearchRoots search = shapeSearchRoots(missionPath, searchRoots);
+    std::vector<s32> objectToIndex(objects.size(), -1);
+    for (std::size_t i = 0; i < objects.size(); ++i) {
+        const MisObject& object = objects[i];
+        if (object.type == "Scene") {
+            continue;
+        }
+        objectToIndex[i] = static_cast<s32>(result.objects.size());
+        T3DMissionObject entry;
+        entry.className = object.type;
+        entry.name = object.name;
+        entry.archetype = t3dArchetypeName(object.type);
+        entry.parent = object.parentIndex >= 0 && static_cast<std::size_t>(object.parentIndex) < objectToIndex.size()
+                           ? objectToIndex[static_cast<std::size_t>(object.parentIndex)]
+                           : -1;
+        entry.transform = missionObjectTransform(object);
+        entry.datablock = object.datablockRef;
+        entry.materialAsset = object.materialAsset;
+        if (iequalsAscii(object.type, "TSStatic")) {
+            resolveTsStaticShape(object, search, entry.shapeRef, entry.shapeSourcePath);
+            entry.shapeCookedRelPath = tsStaticShapeCookedRelPath(object);
+            entry.shapeAssetId = tsStaticShapeAssetId(object);
+        }
+        result.objects.push_back(std::move(entry));
+    }
+    result.ok = true;
+    return result;
+}
+
+T3DShapeCookResult cookT3DMissionShapes(const std::string& missionPath, const std::string& cookedRoot,
+                                        const std::vector<std::string>& searchRoots) {
+    namespace fs = std::filesystem;
+    T3DShapeCookResult result;
+    const std::string text = readFileToString(missionPath);
+    if (text.empty()) {
+        result.note = "unable to read mission file";
+        return result;
+    }
+    const ShapeSearchRoots search = shapeSearchRoots(missionPath, searchRoots);
+    std::error_code ec;
 
     std::vector<std::string> seen;
     for (const MisObject& object : extractMisHierarchy(text)) {
@@ -1121,33 +1238,7 @@ T3DShapeCookResult cookT3DMissionShapes(const std::string& missionPath, const st
         entry.objectName = object.name;
         entry.id = fuse::asset::asset_id_of("game:/cooked/" + rel);
         entry.outputPath = (fs::path(cookedRoot) / rel).generic_string();
-        const std::string* asset = findField(object, "shapeasset");
-        const std::string* shape = findField(object, "shapename");
-        if (asset != nullptr && !asset->empty()) {
-            entry.shapeRef = *asset;
-            const std::size_t colon = asset->find(':');
-            if (colon != std::string::npos) {
-                for (const fs::path& r : moduleRoots) {
-                    entry.sourcePath = resolveShapeAsset(r, asset->substr(0, colon), asset->substr(colon + 1u));
-                    if (!entry.sourcePath.empty()) {
-                        break;
-                    }
-                }
-            }
-        } else if (shape != nullptr) {
-            entry.shapeRef = *shape;
-            std::string path = *shape;
-            std::replace(path.begin(), path.end(), '\\', '/');
-            while (!path.empty() && path.front() == '/') {
-                path.erase(0, 1);
-            }
-            for (const fs::path& r : roots) {
-                if (fs::is_regular_file(r / path, ec)) {
-                    entry.sourcePath = (r / path).string();
-                    break;
-                }
-            }
-        }
+        resolveTsStaticShape(object, search, entry.shapeRef, entry.sourcePath);
         ++result.shapes;
         if (entry.sourcePath.empty()) {
             entry.note = "shape source not found";

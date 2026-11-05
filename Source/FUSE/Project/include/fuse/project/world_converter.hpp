@@ -4,6 +4,7 @@
 #include <fuse/project/loader.hpp>
 #include <fuse/project/manifest.hpp>
 #include <fuse/project/parity_legacy_sources.hpp>
+#include <fuse/scene/scene_snapshot.hpp>
 #include <fuse/types.hpp>
 
 #include <string>
@@ -98,6 +99,39 @@ struct T3DShapeCookResult {
 ///   shapeAsset "Module:Name"            -> <module dir>/**/Name.asset.taml fileName="@assetFile=..."
 ///                                          (module dir = the directory of <Module>.module) -> shapes/Module/Name.fusemesh
 [[nodiscard]] T3DShapeCookResult cookT3DMissionShapes(const std::string& missionPath, const std::string& cookedRoot,
+                                                      const std::vector<std::string>& searchRoots = {});
+
+/// Remaster W1.4: the archetype convertT3DMissionToFuselevel gives a T3D class (the UNI-U7-MIS-1 table, by name):
+/// group, directional_light, point_light, spot_light, ambient_light, sky_atmosphere, environment_fog, ground_plane,
+/// spawn_marker, static_mesh. Empty: no archetype (the converter keeps the node and adds an `archetype` wire stub).
+[[nodiscard]] std::string t3dArchetypeName(const std::string& className);
+
+/// Remaster W1.4: one mission object as the converter sees it (the `.fuselevel` scene entity it becomes).
+struct T3DMissionObject {
+    std::string className;
+    std::string name;
+    std::string archetype;            ///< t3dArchetypeName (empty = wiring stub)
+    s32 parent = -1;                  ///< index into T3DMissionInventory::objects (-1 = top level)
+    fuse::scene::SceneEntityTransform transform{}; ///< local, FUSE space (as written to the scene table)
+    std::string datablock;
+    std::string materialAsset;
+    // TSStatic only:
+    std::string shapeRef;             ///< `shapeAsset` or `shapeName`
+    std::string shapeSourcePath;      ///< resolved like cookT3DMissionShapes (empty when unresolved)
+    std::string shapeCookedRelPath;   ///< below game:/cooked/ (e.g. "shapes/crate.fusemesh")
+    fuse::asset::AssetId shapeAssetId{}; ///< = the entity's ecs::MeshAssets::mesh in the converted level
+};
+
+struct T3DMissionInventory {
+    bool ok = false;
+    std::string sceneName;
+    std::vector<T3DMissionObject> objects; ///< scene order (the `.fuselevel` scene entity order)
+    std::string note;
+};
+
+/// Remaster W1.4: the objects of a T3D mission with their archetype, transform and (TSStatic) shape binding, without
+/// converting or cooking anything. `searchRoots` as cookT3DMissionShapes.
+[[nodiscard]] T3DMissionInventory inventoryT3DMission(const std::string& missionPath,
                                                       const std::vector<std::string>& searchRoots = {});
 
 /// Convert a T2D module script into a minimal `.fuselevel` scene file (U7).

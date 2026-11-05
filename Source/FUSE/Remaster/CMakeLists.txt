@@ -64,6 +64,11 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tscript/CMakeLists.txt")
     add_subdirectory(tscript)
 endif()
 
+# ---- W1.1-W1.4 fuse_legacy_ts (Torque DTS / DSQ adapter; needs the cook and the world converter) ------------
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/legacy_ts/CMakeLists.txt" AND TARGET fuse_cook_stubs AND TARGET fuse_world_converter)
+    add_subdirectory(legacy_ts)
+endif()
+
 # ---- W0.7 the CLI -------------------------------------------------------------------------------------------
 add_executable(fuse_remaster "${FUSE_REMASTER_REPO_ROOT}/Tools/FUSE/fuse_remaster.cpp")
 target_link_libraries(fuse_remaster PRIVATE fuse_remaster_db fuse_remaster_store fuse_poco fuse_remaster_sqlite3 ${CMAKE_DL_LIBS})
