@@ -1166,6 +1166,11 @@ bool NativePlatform::setWindowScale(const AppWindow& w, float scale) {
 CursorShape NativePlatform::appliedCursor(const AppWindow&) const { return CursorShape::Auto; } // no pointer icon
 bool NativePlatform::darkTitleBar(const AppWindow&) const { return false; }
 bool NativePlatform::postPointerMove(unsigned long long, Vec2) { return false; }
+bool NativePlatform::postPointerButton(unsigned long long, Vec2, bool) { return false; }
+std::size_t NativePlatform::toolWindowCount(const AppWindow&) const { return 0; }
+unsigned long long NativePlatform::toolWindow(const AppWindow&, std::size_t) const { return 0; }
+Rect NativePlatform::toolWindowScreenRect(const AppWindow&, std::size_t) const { return {}; }
+bool NativePlatform::captureToolWindow(const AppWindow&, std::size_t, Image&) { return false; }
 bool NativePlatform::postClose(unsigned long long nativeWin) {
     if (!m->window || nativeWin != reinterpret_cast<unsigned long long>(m->window)) return false;
     ANativeActivity_finish(g_app->activity);

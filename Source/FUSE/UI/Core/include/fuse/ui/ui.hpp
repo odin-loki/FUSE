@@ -297,6 +297,14 @@ public:
     /// Where popups may be placed: the screen bounds with OS popups, the viewport otherwise.
     Rect popupArea() const;
     const std::vector<PopupSurface>& popupSurfaces() const { return m_popupSurfaces; }
+    /// OS tool windows (Qt: a floated QDockWidget is its own top-level window). When on, overlay-layer nodes with the
+    /// class "os-window" are left out of drawList() and painted into windowSurfaces() (same form as popup surfaces);
+    /// the host shows each in its own borderless OS window owned by the main one, at window origin + rect, and feeds
+    /// its pointer input back in context coordinates. Unlike popups they stay open (no outside-click close, no grab)
+    /// and keyboard input keeps arriving through the main window (one focus for the whole context).
+    void setOsWindows(bool on);
+    bool osWindows() const { return m_osWindows; }
+    const std::vector<PopupSurface>& windowSurfaces() const { return m_windowSurfaces; }
     Rect damage() const { return m_damage; }
     const FrameStats& stats() const { return m_stats; }
     u64 frameIndex() const { return m_frame; }
@@ -534,6 +542,8 @@ private:
     Rect m_popupScreen;
     std::vector<u32> m_popupPending;
     std::vector<PopupSurface> m_popupSurfaces;
+    bool m_osWindows = false;
+    std::vector<PopupSurface> m_windowSurfaces;
     u64 m_popupRevision = 0;
     FrameStats m_stats;
     u64 m_frame = 0;

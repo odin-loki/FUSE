@@ -110,7 +110,7 @@ void EditorShellWindow::closeProjectSettings_() {
     const NodeHandle d = m_projSettings;
     m_projSettings = {};
     w::closeDialog(m_ui, d);
-    m_ui.destroy(d);
+    m_ui.destroy(m_ui.parent(d)); // the popup scope (it carries the id) and the card
 }
 
 // ---- Build / Package ------------------------------------------------------------------------------------------------
@@ -242,7 +242,7 @@ void EditorShellWindow::closeBuildPackage_() {
     const NodeHandle d = m_packageDialog;
     m_packageDialog = {};
     w::closeDialog(m_ui, d);
-    m_ui.destroy(d);
+    m_ui.destroy(m_ui.parent(d)); // the popup scope (it carries the id) and the card
 }
 
 // ---- hierarchy rename / activate ------------------------------------------------------------------------------------

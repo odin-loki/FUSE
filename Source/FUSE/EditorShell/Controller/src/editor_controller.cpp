@@ -734,6 +734,35 @@ bool EditorController::runEntityAction(ContextMenuAction action) {
     return changed;
 }
 
+bool EditorController::createChild(ContextMenuAction action, EntityRef parent) {
+    if (action == ContextMenuAction::Duplicate || action == ContextMenuAction::Delete) return false;
+    if (!parent.valid()) return runEntityAction(action);
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        EditorState& state = m_host.editorState();
+        ecs::Registry& registry = m_host.editorScene().registry();
+        if (!registry.alive(toId(parent))) return false;
+        UndoStack& undo = m_host.undoStack();
+        // one step: the create and the parent link (Qt createEntityUnder)
+        undo.beginMacro("Create child entity");
+        m_entityMenu.openAt(toId(parent), ecs::vec3{0.f, 0.f, 0.f}, state);
+        changed = m_entityMenu.activate(action, m_host.editorScene(), state, undo);
+        const ecs::EntityID created = m_entityMenu.lastCreated();
+        m_entityMenu.close();
+        if (changed && created.valid() && registry.has<ecs::Transform>(created))
+            undo.execute(std::make_unique<ReparentEntityCommand>(registry, created, toId(parent), ecs::EntityID::null()));
+        undo.endMacro();
+        m_lastCreated = toRef(created);
+        if (changed && created.valid()) {
+            state.selectedEntities = {created};
+            state.primarySelection = created;
+        }
+    }
+    if (changed) refresh();
+    return changed;
+}
+
 void EditorController::openContextMenu(f32 x, f32 y) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_entityMenu.openInViewport(m_host.editorScene(), *m_sceneView, m_viewport, x, y, m_host.editorState());

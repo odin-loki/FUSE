@@ -1437,9 +1437,12 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
             if (m_nodes[k].dirty & kDirtyPaint) { m_damage = m_damage.unite(m_nodes[k].rect.intersect(n.rect)); m_nodes[k].dirty &= u8(~kDirtyPaint); }
             continue;
         }
-        if (m_osPopups && &dl == &m_draw && hasClass({k, m_nodes[k].gen}, "clamp")) { // own OS window
-            m_popupPending.push_back(k);
-            continue;
+        if ((m_osPopups || m_osWindows) && &dl == &m_draw) { // own OS window (popup / tool window)
+            const NodeHandle kh{k, m_nodes[k].gen};
+            if ((m_osPopups && hasClass(kh, "clamp")) || (m_osWindows && hasClass(kh, "os-window"))) {
+                m_popupPending.push_back(k);
+                continue;
+            }
         }
         paintRec(k, opacity, dl);
     }
@@ -1487,8 +1490,10 @@ void UiContext::paintPass() {
         m_quadAtlasGen = m_atlas.generation();
     }
     paintRec(m_root.index, 1.f, m_draw);
-    std::vector<PopupSurface> next;
+    std::vector<PopupSurface> next, nextWin;
     for (u32 k : m_popupPending) {
+        const bool tool = m_osWindows && hasClass({k, m_nodes[k].gen}, "os-window");
+        const std::vector<PopupSurface>& prev = tool ? m_windowSurfaces : m_popupSurfaces;
         PopupSurface ps;
         ps.node = {k, m_nodes[k].gen};
         ps.rect = m_nodes[k].rect;
@@ -1499,18 +1504,21 @@ void UiContext::paintPass() {
         if (ps.draw.size() == 0 || ps.rect.empty()) continue;
         ps.draw.translate({-ps.rect.x, -ps.rect.y});
         ps.revision = ++m_popupRevision;
-        for (const PopupSurface& old : m_popupSurfaces)
+        for (const PopupSurface& old : prev)
             if (old.node == ps.node && old.rect.x == ps.rect.x && old.rect.y == ps.rect.y && old.rect.w == ps.rect.w &&
                 old.rect.h == ps.rect.h && old.draw.hash() == ps.draw.hash())
                 ps.revision = old.revision;
-        next.push_back(std::move(ps));
+        (tool ? nextWin : next).push_back(std::move(ps));
     }
-    if (next.size() != m_popupSurfaces.size()) m_damage = m_damage.unite({0.f, 0.f, m_viewport.w, m_viewport.h});
+    if (next.size() != m_popupSurfaces.size() || nextWin.size() != m_windowSurfaces.size())
+        m_damage = m_damage.unite({0.f, 0.f, m_viewport.w, m_viewport.h});
     if (m_scale != 1.f) { // UI units -> device pixels (rects stay in UI units)
         scaleDrawList(m_draw);
         for (PopupSurface& ps : next) scaleDrawList(ps.draw);
+        for (PopupSurface& ps : nextWin) scaleDrawList(ps.draw);
     }
     m_popupSurfaces = std::move(next);
+    m_windowSurfaces = std::move(nextWin);
     m_anyPaintDirty = false;
     m_stats.repainted = true;
     m_stats.drawCmds = u32(m_draw.size());
@@ -1654,6 +1662,12 @@ void UiContext::setOsPopups(bool on, Rect screen) {
     m_osPopups = on;
     m_popupScreen = screen;
     if (!on) m_popupSurfaces.clear();
+    markAllDirty();
+}
+void UiContext::setOsWindows(bool on) {
+    if (on == m_osWindows) return;
+    m_osWindows = on;
+    if (!on) m_windowSurfaces.clear();
     markAllDirty();
 }
 Rect UiContext::popupArea() const {

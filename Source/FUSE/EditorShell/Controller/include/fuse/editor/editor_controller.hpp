@@ -194,6 +194,9 @@ public:
     /// Entity menu / context-menu action on the current selection (create spawns at the origin). True on change.
     bool runEntityAction(ContextMenuAction action);
     [[nodiscard]] EntityRef lastCreated() const { return m_lastCreated; }
+    /// Hierarchy context menu "Create Child": a create action (CreateEmpty, CreateCube, ...) whose new entity is
+    /// parented under `parent` (at the parent's origin), selected, one undo step. Null parent: a top-level create.
+    bool createChild(ContextMenuAction action, EntityRef parent);
     /// Entity > Duplicate (Qt): whole subtrees with their display names, one undo step; the copies are selected.
     bool duplicateSelection();
     /// Entity > Group Selection / Ungroup (Qt, shared groupSelection / ungroupSelection; one undo step each).

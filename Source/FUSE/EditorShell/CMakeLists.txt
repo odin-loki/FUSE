@@ -55,6 +55,11 @@ target_include_directories(fuse_editor_fuse PUBLIC Fuse/include PRIVATE "${CMAKE
 get_filename_component(_fuse_repo_root "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
 target_include_directories(fuse_editor_fuse SYSTEM PRIVATE "${_fuse_repo_root}/vendor/stb")
 target_link_libraries(fuse_editor_fuse PUBLIC fuse_editor_controller fuse_editor_scene_host fuse_app)
+if(TARGET fuse_app_native)
+    # OS file / colour dialogs (DialogServices) through the fuse_app platform layer
+    target_link_libraries(fuse_editor_fuse PUBLIC fuse_app_native)
+    target_compile_definitions(fuse_editor_fuse PRIVATE FUSE_EDITOR_FUSE_NATIVE=1)
+endif()
 fuse_apply_cxx23(fuse_editor_fuse)
 if(FUSE_UI_ICON_PACK AND TARGET fuse_ui_icons)
     # toolbar icons: the starter pack cooked by fuse_ui_icon_cook
@@ -119,6 +124,23 @@ set_tests_properties(fuse_editor_ui_scene_viewport fuse_editor_ui_gpu_viewport f
 set_tests_properties(fuse_editor_ui_build_package fuse_editor_ui_edit_tools fuse_editor_ui_shell_timeline PROPERTIES TIMEOUT 600)
 
 # Qt-removal blockers on the panel pages (docs/editor/QT_PARITY.md): Profiler flame graph, timeline key drag retime.
+# Qt-removal blockers (docs/editor/QT_PARITY.md): floating panels as OS windows, drag to dock, hierarchy drag and drop
+# and context menu, colour dialog, OS file dialogs (FUSE UI fallback), Tab order. float_window / native_dialogs need a
+# display (77 without one; Linux: under Xvfb).
+add_executable(fuse_editor_ui_parity_gates tests/test_editor_ui_parity.cpp)
+target_link_libraries(fuse_editor_ui_parity_gates PRIVATE fuse_editor_fuse)
+fuse_apply_cxx23(fuse_editor_ui_parity_gates)
+foreach(gate dock_drag hierarchy_dnd hierarchy_menu color_dialog tab_order float_window native_dialogs)
+    if(gate MATCHES "float_window|native_dialogs" AND FUSE_UI_XVFB_RUN AND NOT WIN32)
+        add_test(NAME fuse_editor_ui_${gate} COMMAND ${FUSE_UI_XVFB_RUN} -a -s "${FUSE_UI_XVFB_ARGS}"
+                 $<TARGET_FILE:fuse_editor_ui_parity_gates> --gate=${gate})
+    else()
+        add_test(NAME fuse_editor_ui_${gate} COMMAND fuse_editor_ui_parity_gates --gate=${gate} --out=${FUSE_EDITOR_UI_SHOTS}/${gate}.png)
+    endif()
+    set_tests_properties(fuse_editor_ui_${gate} PROPERTIES LABELS "fuse_ui;fuse_editor_ui" SKIP_RETURN_CODE 77 TIMEOUT 300)
+endforeach()
+set_tests_properties(fuse_editor_ui_float_window fuse_editor_ui_native_dialogs PROPERTIES RUN_SERIAL TRUE)
+
 add_executable(fuse_editor_ui_panels2_gates tests/test_editor_ui_panels2.cpp)
 target_link_libraries(fuse_editor_ui_panels2_gates PRIVATE fuse_editor_fuse)
 fuse_apply_cxx23(fuse_editor_ui_panels2_gates)

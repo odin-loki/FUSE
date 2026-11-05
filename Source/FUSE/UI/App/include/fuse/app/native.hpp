@@ -72,6 +72,10 @@ struct NativeOptions {
     /// Popup menus / combo lists / submenus as their own borderless OS windows (Qt-style; may extend past the main
     /// window, clamp to the screen). X11: override-redirect windows; Win32: WS_POPUP + WS_EX_NOACTIVATE owned windows.
     bool osPopups = false;
+    /// OS tool windows (UiContext::setOsWindows): overlay nodes with the class "os-window" (floating dock panels) each
+    /// get their own borderless OS window owned by the main one (Win32 WS_EX_TOOLWINDOW, X11 utility window), placed at
+    /// window origin + node rect; pointer input comes back in context coordinates, keys keep going to the main window.
+    bool osWindows = true;
     /// DPI: Win32 per-monitor-v2 awareness (each window takes its monitor's scale and follows WM_DPICHANGED);
     /// X11 XSETTINGS Xft/DPI (followed live), else RESOURCE_MANAGER Xft.dpi, overridden by $FUSE_UI_SCALE. False:
     /// every window stays at scale 1.
@@ -193,6 +197,12 @@ public:
     unsigned long long popupWindow(const AppWindow& w, std::size_t i) const;
     fuse::ui::Rect popupScreenRect(const AppWindow& w, std::size_t i) const;
     bool capturePopup(const AppWindow& w, std::size_t i, fuse::ui::Image& out);
+    /// OS tool windows (NativeOptions::osWindows): how many `w` shows now, each one's native handle, its screen rect
+    /// (physical px) and a read-back of its pixels.
+    std::size_t toolWindowCount(const AppWindow& w) const;
+    unsigned long long toolWindow(const AppWindow& w, std::size_t i) const;
+    fuse::ui::Rect toolWindowScreenRect(const AppWindow& w, std::size_t i) const;
+    bool captureToolWindow(const AppWindow& w, std::size_t i, fuse::ui::Image& out);
     /// The window's top-left on screen (client area).
     fuse::ui::Vec2 screenOrigin(const AppWindow& w) const;
     /// Posts a real left click to a native window (XSendEvent / PostMessage) at window-local `at`; it is then
@@ -235,6 +245,8 @@ public:
     void wake();
     /// Posts a pointer move (WM_MOUSEMOVE / MotionNotify) to a native window at window-local device pixels `at`.
     bool postPointerMove(unsigned long long nativeWin, fuse::ui::Vec2 at);
+    /// Posts a left button press / release (WM_LBUTTONDOWN / UP, ButtonPress / Release) at window-local device pixels.
+    bool postPointerButton(unsigned long long nativeWin, fuse::ui::Vec2 at, bool down);
     /// Asks a native window to close the way its close button does (WM_CLOSE / WM_DELETE_WINDOW).
     bool postClose(unsigned long long nativeWin);
 

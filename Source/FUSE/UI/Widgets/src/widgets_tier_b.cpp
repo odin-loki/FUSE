@@ -897,6 +897,20 @@ u32 treeVisibleRows(const UiContext& ui, NodeHandle tree) {
     return rows;
 }
 
+i32 treeLineAt(UiContext& ui, NodeHandle tree, Vec2 at) {
+    const Rect c = ui.contentRect(tree);
+    if (!c.contains(at)) return -1;
+    const i64 row = i64((at.y - c.y) / rowHeight(ui, tree));
+    return i32(TreeView::rowInfo(ui, tree, [&](u32 r, u32) { return i64(r) == row; }).line);
+}
+Rect treeLineRect(UiContext& ui, NodeHandle tree, u32 line) {
+    const TreeView::Hit h = TreeView::rowInfo(ui, tree, [&](u32, u32 l) { return l == line; });
+    if (h.row < 0) return {};
+    const Rect c = ui.contentRect(tree);
+    const f32 rh = rowHeight(ui, tree);
+    return {c.x, c.y + f32(h.row) * rh, c.w, rh};
+}
+
 NodeHandle tabBar(UiContext& ui, NodeHandle parent, std::string_view titles, u32 current, std::string_view id) {
     registerTierB(ui);
     const NodeHandle n = make(ui, "tabbar", parent, id);

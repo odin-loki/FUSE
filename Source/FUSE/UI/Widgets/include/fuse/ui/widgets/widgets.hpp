@@ -119,6 +119,10 @@ bool treeExpanded(const UiContext& ui, NodeHandle tree, u32 line);
 void setTreeExpanded(UiContext& ui, NodeHandle tree, u32 line, bool open);
 /// Number of rows currently shown (collapsed subtrees skipped).
 u32 treeVisibleRows(const UiContext& ui, NodeHandle tree);
+/// The line under `at` (context coordinates; -1 outside the rows) and a shown line's row rectangle (empty when hidden):
+/// drag-and-drop targets.
+i32 treeLineAt(UiContext& ui, NodeHandle tree, Vec2 at);
+Rect treeLineRect(UiContext& ui, NodeHandle tree, u32 line);
 
 /// Tab bar (titles '\n'-separated; value() = current tab) and a tab widget (tab bar + one page per title; only the
 /// current page is displayed).
