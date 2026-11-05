@@ -25,6 +25,8 @@
 // FUSE Relight RL-1.8: capture model helpers and the key set (see capture_model.hpp).
 #include <fuse/relight/capture/export/capture_model.hpp>
 
+#include <fuse/remaster/store.hpp>
+
 #include <fuse/relight/capture/export/dds.hpp>
 #include <fuse/relight/capture/export/digest.hpp>
 #include <fuse/relight/hash/hash_string.hpp>
@@ -91,7 +93,29 @@ void putF32(std::vector<std::uint8_t>& out, float f) {
 }
 } // namespace
 
-std::vector<std::uint8_t> canonicalMeshStream(const CaptureMesh& mesh) {
+namespace {
+/// The capture mesh as Remaster canonical-mesh input: positions and indices only (the capture key ignores the
+/// other attributes, so a mesh keeps its key when only its normals or uvs differ).
+fuse::remaster::store::MeshData canonicalMeshInput(const CaptureMesh& mesh) {
+    fuse::remaster::store::MeshData m;
+    m.vertexCount = static_cast<std::uint32_t>(mesh.points.size());
+    fuse::remaster::store::MeshAttribute pos{fuse::remaster::poco::Semantic::Position, fuse::remaster::poco::Format::F32x3, {}};
+    pos.data.reserve(mesh.points.size() * 12);
+    for (const Vec3f& p : mesh.points) {
+        putF32(pos.data, p[0]);
+        putF32(pos.data, p[1]);
+        putF32(pos.data, p[2]);
+    }
+    m.attributes.push_back(std::move(pos));
+    m.indices.reserve(mesh.indices.size());
+    for (const std::int32_t i : mesh.indices) {
+        m.indices.push_back(static_cast<std::uint32_t>(i));
+    }
+    return m;
+}
+
+/// The stream without Remaster's range check (a capture may hold an out-of-range index; it still gets a key).
+std::vector<std::uint8_t> rawMeshStream(const CaptureMesh& mesh) {
     std::vector<std::uint8_t> out;
     out.reserve(8 + mesh.points.size() * 12 + mesh.indices.size() * 4);
     putU32(out, static_cast<std::uint32_t>(mesh.points.size()));
@@ -106,6 +130,14 @@ std::vector<std::uint8_t> canonicalMeshStream(const CaptureMesh& mesh) {
     }
     return out;
 }
+} // namespace
+
+std::vector<std::uint8_t> canonicalMeshStream(const CaptureMesh& mesh) {
+    if (auto s = fuse::remaster::store::canonicalMeshStream(canonicalMeshInput(mesh))) {
+        return std::move(*s);
+    }
+    return rawMeshStream(mesh);
+}
 
 std::string canonicalMeshSha256(const CaptureMesh& mesh) {
     const std::vector<std::uint8_t> s = canonicalMeshStream(mesh);
@@ -117,7 +149,7 @@ std::string canonicalTextureSha256(const CaptureTexture& texture) {
         return {};
     }
     const auto rgba = decodeRgba8(static_cast<hash::D3DFormat>(texture.d3dFormat), texture.width, texture.height, texture.mip0);
-    return rgba ? sha256Hex(rgba->data(), rgba->size()) : std::string();
+    return rgba ? fuse::remaster::store::canonicalTextureSha256(*rgba) : std::string();
 }
 
 std::vector<CaptureKey> captureKeys(const CaptureData& capture, hash::HashRule assetRule) {

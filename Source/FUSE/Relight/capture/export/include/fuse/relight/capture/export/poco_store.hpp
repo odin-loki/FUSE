@@ -1,16 +1,19 @@
 // FUSE Relight RL-1.8: the FUSE capture as POCO records + hash_key rows (plan §4.1.5, §4.8; Remaster
 // plan §1.3, §2.1-§2.3).
 //
-// Remaster W0.1-W0.3 (fuse_poco, fuse_remaster_store, fuse_remaster_db) are not in the tree yet, so this is
-// the JSON store shim the plan allows inside this package. It follows the Remaster on-disk layout, so W0.x
-// can take the files over unchanged:
+// The store uses the Remaster W0 libraries (docs/plans/FUSE_REMASTER_PLAN.md §1.3, §2.1): blobs go through
+// fuse_remaster_store's BlobStore, the replacement DB through fuse_remaster_db, and every record reads back
+// through fuse_poco on re-ingest. Layout:
 //
 //   <store>/poco/<kind>/<poco_id>.poco.json   header (schema fuse.poco/1, kind, id, name, units, payload,
 //                                             provenance, licence_id, distribution, replaces, tags, review)
 //   <store>/blobs/sha256/<ab>/<sha256>        content-addressed payloads
-//   <store>/db/remaster_db.json               the replacement DB tables as JSON (instead of SQLite):
-//                                             original_asset (oaid, kind, game_id) and hash_key
-//                                             (algo, value, oaid, rule_id), sorted; replacement empty
+//   <store>/db/remaster.db                    the replacement DB (SQLite, fuse_remaster_db; deterministic bytes)
+//   <store>/db/remaster.lock.json             its canonical export (fuse.remaster.lock/1)
+//   <store>/db/remaster_db.json               the same original_asset (oaid, kind, game_id, first_key) and
+//                                             hash_key (algo, value, oaid, rule_id, kind) rows as the JSON view
+//                                             the Relight readers (mods/import, replace) consume; replacement
+//                                             empty. Re-ingest checks the three agree.
 //
 // Records written per capture (poco_id "cap/<game>/<prim name>"): mesh (Position / Normal / Uv0 / Color0 /
 // Joints0 / Weights0 streams, indices32, one submesh), texture_set (albedo = the DDS blob), material and its
@@ -31,7 +34,9 @@
 namespace fuse::relight::capture::exporter {
 
 inline constexpr const char* kPocoSchema = "fuse.poco/1";
-inline constexpr const char* kDbSchema = "fuse.remaster.db-shim/1";
+inline constexpr const char* kDbSchema = "fuse.remaster.db-shim/1"; ///< db/remaster_db.json (the reader view)
+inline constexpr const char* kLockFile = "remaster.lock.json";     ///< under <store>/db/
+inline constexpr const char* kSqliteFile = "remaster.db";          ///< under <store>/db/
 
 /// The Remaster oaid of an original asset keyed by (algo, value) in game `gameId`.
 std::string originalAssetId(const std::string& gameId, const std::string& algo, const std::string& value);
