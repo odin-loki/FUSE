@@ -1,0 +1,16 @@
+{
+  "$id": "fuse.poco/1/entity_component.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "A component, opaque to the POCO layer (json is a JSON text).",
+  "properties": {
+    "json": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "title": "entity_component",
+  "type": "object"
+}

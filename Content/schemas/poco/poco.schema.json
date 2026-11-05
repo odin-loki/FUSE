@@ -1,0 +1,212 @@
+{
+  "$id": "fuse.poco/1/poco.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "mesh"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "mesh.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "texture_set"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "texture_set.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "material"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "material.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "light"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "light.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "skeleton"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "skeleton.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "anim_clip"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "anim_clip.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "sound"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "sound.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "entity"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "entity.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "level"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "level.schema.json"
+          }
+        }
+      }
+    }
+  ],
+  "description": "A POCO record header (plan \u00a72.2); <store>/poco/<kind>/<id>.poco.json.",
+  "properties": {
+    "distribution": {
+      "enum": [
+        "ship",
+        "recipe-only",
+        "never"
+      ],
+      "type": "string"
+    },
+    "id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "kind": {
+      "description": "One of the plan kinds (mesh, texture_set, material, light, skeleton, anim_clip, sound, entity, level) or another [a-z0-9_] kind whose payload is opaque.",
+      "pattern": "^[a-z0-9_]+$",
+      "type": "string"
+    },
+    "licence_id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "payload": {
+      "description": "Kind payload: <kind>.schema.json for the plan kinds.",
+      "type": "object"
+    },
+    "provenance": {
+      "$ref": "provenance.schema.json"
+    },
+    "replaces": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "review": {
+      "$ref": "review.schema.json"
+    },
+    "schema": {
+      "const": "fuse.poco/1"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "units": {
+      "$ref": "units.schema.json"
+    }
+  },
+  "required": [
+    "schema",
+    "kind",
+    "id"
+  ],
+  "title": "poco",
+  "type": "object"
+}

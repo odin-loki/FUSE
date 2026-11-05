@@ -2,7 +2,12 @@
 
 > **Path note (2026-10):** `Engine/lib/` in this document means `vendor/`; Torque addon submodules and `third_party/` are no longer in the repo.
 
-Status: plan, not yet started. Author date 2026-09-23, revised 2026-09-23 for the FOSS-first rule
+Status (2026-11-05): **Wave 0 is done except W0.4** (still partial: origin / distribution / NeverShip
+classes are in `fuse_lint asset-licences`, checks 8–12 and `licence-policy.json` are not), and **W1.6 is
+done**. W1.4 is done in part, and W2.2 (TinyUSDZ in `vendor/tinyusdz`) is done. The per-task status
+is in the §7 tables and in [§7.5](#75-implementation-status). The rest of the plan is not started.
+
+Author date 2026-09-23, revised 2026-09-23 for the FOSS-first rule
 (§0.1.0), the local RTX 3090 profile (§3.5) and the FUSE Remix port. Companion to
 [`FUSE_ASSET_PLAN.md`](FUSE_ASSET_PLAN.md) (formats, licence lock, budgets, gates),
 [`FUSE_REMIX_PORT_PLAN.md`](FUSE_REMIX_PORT_PLAN.md) (the port of dxvk-remix into FUSE's own stack;
@@ -1117,14 +1122,14 @@ Each task is about one PR in one agent session. **Gates are CPU/Lavapipe-testabl
 
 | Task | Output | Exit criteria (ctest) |
 |---|---|---|
-| W0.1 POCO schema + `fuse_poco` header-only C++ library + JSON (de)serialisers | `Source/FUSE/Remaster/include/fuse/remaster/poco.hpp`, `Content/schemas/poco/*.schema.json` | round-trip every kind; schema-vs-struct parity test; fuzz JSON reader (1k cases) |
-| W0.2 Content-addressed blob store + canonical hashing (texture RGBA8 mip0, mesh streams, PCM) | `fuse_remaster_store` lib | identical content under different encodings (PNG vs TGA, reordered vertex attribs) → same canonical hash; different content → different hash |
-| W0.3 Replacement DB (SQLite) + `remaster.lock.json` export/import | `fuse_remaster_db` | deterministic export (byte-identical twice); multi-key → one `oaid` test |
-| W0.4 Licence lock extensions (§2.6) + `fuse_lint asset-licences` checks 8–12 + the §0.1.0 allow/deny lists as data (`Content/models/licence-policy.json`) | lint mode | a failing fixture per new check, including a deny-listed sub-model; the existing asset-licence tests still pass |
-| W0.5 `fuse_ai` package skeleton: Provider protocol, recipe schema, cache (replay/record/mock), budgets, audit log | `Tools/FUSE/Remaster/fuse_ai/` | `pytest` in ctest: replay miss fails; budget refusal; mock providers deterministic |
-| W0.6 Binary/original-asset gates | extend `nvidia_binary_gate.cmake` patterns (`d3d8.dll`, `d3d9.dll`, `dxvk*.dll`, `NvRemix*.exe`, `.trex/`, `remixapi.dll`, `*.rtex.dds` [VERIFY]) + new `remaster_no_originals` gate (tracked files vs the local original-hash index when present; `.gitignore` covers `build/remaster-cache/`, `build/ai-cache/`) | self-test with seeded bad and good paths; skip cleanly without git |
-| W0.7 `fuse_remaster` CLI skeleton: `init`, `doctor`, `report` | `Tools/FUSE/fuse_remaster.cpp` | `init` writes a project with `cloud_upload: none`; `doctor` reports "fuse-remix: unavailable (Windows only)" on Linux and "gpu: none" without CUDA |
-| W0.8 Cloud opt-in guard | `fuse_ai` policy module | a request whose input is an `origin: original` blob, to a cloud provider, without opt-in → hard error (test) |
+| W0.1 POCO schema + `fuse_poco` header-only C++ library + JSON (de)serialisers **[DONE 2026-11-05]** | `Source/FUSE/Remaster/include/fuse/remaster/poco.hpp`, `Content/schemas/poco/*.schema.json` | round-trip every kind; schema-vs-struct parity test; fuzz JSON reader (1k cases) |
+| W0.2 Content-addressed blob store + canonical hashing (texture RGBA8 mip0, mesh streams, PCM) **[DONE 2026-11-05]** | `fuse_remaster_store` lib | identical content under different encodings (PNG vs TGA, reordered vertex attribs) → same canonical hash; different content → different hash |
+| W0.3 Replacement DB (SQLite) + `remaster.lock.json` export/import **[DONE 2026-11-05]** | `fuse_remaster_db` | deterministic export (byte-identical twice); multi-key → one `oaid` test |
+| W0.4 Licence lock extensions (§2.6) **[PARTIAL]** (origin / distribution / NeverShip classes in `fuse_lint_asset_licences.cpp`; checks 8–12 and `licence-policy.json` open) + `fuse_lint asset-licences` checks 8–12 + the §0.1.0 allow/deny lists as data (`Content/models/licence-policy.json`) | lint mode | a failing fixture per new check, including a deny-listed sub-model; the existing asset-licence tests still pass |
+| W0.5 `fuse_ai` package skeleton **[DONE 2026-11-05]**: Provider protocol, recipe schema, cache (replay/record/mock), budgets, audit log | `Tools/FUSE/Remaster/fuse_ai/` | `pytest` in ctest: replay miss fails; budget refusal; mock providers deterministic |
+| W0.6 Binary/original-asset gates **[DONE 2026-11-05]** | extend `nvidia_binary_gate.cmake` patterns (`d3d8.dll`, `d3d9.dll`, `dxvk*.dll`, `NvRemix*.exe`, `.trex/`, `remixapi.dll`, `*.rtex.dds` [VERIFY]) + new `remaster_no_originals` gate (tracked files vs the local original-hash index when present; `.gitignore` covers `build/remaster-cache/`, `build/ai-cache/`) | self-test with seeded bad and good paths; skip cleanly without git |
+| W0.7 `fuse_remaster` CLI skeleton **[DONE 2026-11-05]**: `init`, `doctor`, `report` | `Tools/FUSE/fuse_remaster.cpp` | `init` writes a project with `cloud_upload: none`; `doctor` reports "fuse-remix: unavailable (Windows only)" on Linux and "gpu: none" without CUDA |
+| W0.8 Cloud opt-in guard **[DONE 2026-11-05]** | `fuse_ai` policy module | a request whose input is an `origin: original` blob, to a cloud provider, without opt-in → hard error (test) |
 
 ### Wave 1: Torque track B vertical slice (≈ 8 tasks) [P0]
 
@@ -1135,7 +1140,7 @@ Each task is about one PR in one agent session. **Gates are CPU/Lavapipe-testabl
 | W1.3 POCO → FMSH v2/.fusetex/.fusemat cook route (depends on asset plan W0.1/W0.3) | cook integration | cooked output passes the asset plan's `asset_*` gates |
 | W1.4 Archetype table + `world_converter` extension (entities reference POCO assets) | converter — archetype table coded (UNI-U7-MIS-1, E16, 2026-09-30): `.fuselevel` v3 components per T3D class, TSStatic keeps its shape asset id; POCO asset references wait for W1.2 / W1.3 | fixture `.mis` → `.fuselevel` with zero unexpected wiring stubs — met for Templates/BaseGame ExampleLevel.mis and demo_3d_empty/example.mis (`fuse_world3d_level_gates`) |
 | W1.5 DIF reader (HiGuy Dif port/vendor after licence check) + synthetic DIF fixture (written by the same library) | `fuse_legacy_dif` | brush count and triangle area match; lightmaps ignored |
-| W1.6 TorqueScript parser → AST + call graph + datablock tree | `fuse_remaster_tscript` | parses the Torque3D template scripts in-tree (MIT) without error |
+| W1.6 TorqueScript parser → AST + call graph + datablock tree **[DONE 2026-11-05]** | `fuse_remaster_tscript` | parses the Torque3D template scripts in-tree (MIT) without error |
 | W1.7 Parity harness (headless run + event log compare) | ctest harness | fixture door/trigger/pickup scenario matches its expected log |
 | W1.8 Golden render of the converted fixture level on Lavapipe | golden scene | deterministic re-render FLIP = 0; regression gate active |
 
@@ -1147,7 +1152,7 @@ with that plan's format tasks, and neither plan duplicates the other's code.
 | Task | Output | Exit criteria |
 |---|---|---|
 | W2.1 Research spike: pin Remix hash rules, capture layout, mod layer layout, material inputs and DDS conventions from dxvk-remix/toolkit-remix source | `docs/remaster/remix-format-notes.md` + handcrafted `.usda` fixtures (ours) | every [VERIFY] in §2.5 resolved or turned into a documented open question |
-| W2.2 Vendor TinyUSDZ/LightUSD with a `VERSION` pin (or enable Assimp USD) | `vendor/tinyusdz` | `fuse_lint_vendored_pins_tinyusdz`; parse the fixture capture |
+| W2.2 Vendor TinyUSDZ/LightUSD with a `VERSION` pin (or enable Assimp USD) **[DONE]** (`vendor/tinyusdz`) | `vendor/tinyusdz` | `fuse_lint_vendored_pins_tinyusdz`; parse the fixture capture |
 | W2.3 `ingest-remix`: capture USD → POCO + hash keys | CLI | fixture capture → the expected `oaid` set; remix64 ↔ sha256 links |
 | W2.4 `export-remix`: POCO replacements → `mod.usda` + DDS | CLI | output validates against our schema; re-ingest of the mod layer finds every replacement; no original blobs referenced (lint) |
 | W2.5 Remix Toolkit REST client (optional live link for users who run the Omniverse Toolkit) with a mock server | `fuse_ai` provider `remix-toolkit` | mock server contract tests |
@@ -1310,6 +1315,38 @@ audio and 40 levels.
 
 Budget defaults in `ai-budget.json`: US$50 per run and US$300 per month per game for Gemini, and
 24 GPU-hours per run for local providers, all overridable.
+
+### 7.5 Implementation status
+
+Updated 2026-11-05. Gates: `ctest -L remaster` (11 tests) natively on Windows (MSVC) and, for the C++ libraries
+and the CLI, with GCC 13 on Linux (WSL). The `relight` label still passes after the Relight capture store moved
+onto the W0 libraries.
+
+| Task | What is in the tree | Gates |
+|---|---|---|
+| W0.1 | `Source/FUSE/Remaster/include/fuse/remaster/{poco,json,digest}.hpp` (`fuse_poco`, header-only): every §2.3 kind plus the header (§2.2) as aggregates, each listing its fields once in a static `fields()` that the JSON reader, the writer and the parity gate all walk. The writer is canonical (sorted keys, shortest round-trip floats). The reader is lenient in the same way as the Relight shim (missing fields keep defaults, unknown members are kept in `extra`, other kinds stay raw JSON), strict on types and ranges, and never throws. `computeDistribution` / `validate` implement §2.2 (distribution is computed, never more permissive). Schemas: `Content/schemas/poco/*.schema.json` (19 files). Python mirror: `Tools/FUSE/Remaster/poco_codegen.py` generates `fuse_ai/poco_types.py` from the schemas. | `remaster_poco_roundtrip` (all 9 kinds, an other kind, unknown members, 13 rejections, policy), `remaster_poco_schema_parity` (field names, JSON types, enum values, `$ref`, nullability, kind → payload schema), `remaster_poco_fuzz` (1,000 byte- and tree-level mutations; every accepted document round-trips stably), `remaster_poco_python` (generated module up to date; round-trips) |
+| W0.2 | `fuse_remaster_store`: `BlobStore` (`<store>/blobs/sha256/<ab>/<sha256>`, atomic writes, verify, records), canonical hashes. Texture: sha256 of decoded RGBA8 mip 0, decoded with stb_image (PNG, TGA, BMP, JPEG and more). Mesh: positions + u32 indices, then the other attributes in semantic order. Interleaved buffers are de-interleaved, 16-bit indices are widened, ±0 and NaN are canonicalised. Sound: WAV PCM 8/16/24/32-bit, float and extensible formats, as f32. | `remaster_store_canonical`: PNG, TGA RLE, bottom-up TGA and BMP give one hash; reordered attributes, two interleaved layouts and 16-bit indices give one hash; 16-bit, 24-bit, float and extensible WAV with extra chunks give one hash; different content gives a different hash; a corrupted blob is caught |
+| W0.3 | `fuse_remaster_db` on `vendor/sqlite`: the §1.3 tables plus `meta`. The oaid rule is the Relight one (UUIDv5, pinned against Python's `uuid5`). One key maps to one original. `remaster.lock.json` (`fuse.remaster.lock/1`) is the sorted canonical export. Import is all-or-nothing, and `saveAs` writes byte-deterministic `.db` files. **Relight switched:** `capture/export/poco_store.cpp` writes blobs through `BlobStore` and builds the DB in `fuse_remaster_db`. It writes `db/remaster.db` and `db/remaster.lock.json`, plus `db/remaster_db.json` generated from the same rows for the Relight readers. The Relight canonical texture and mesh keys are now the W0.2 functions. Re-ingest checks that the three DB files agree and that every record reads through `fuse_poco`. | `remaster_db` (multi-key → one oaid, conflicts refused, export byte-identical twice, independent of insertion order, after a lock round trip and after a .db round trip, `.db` files byte-identical); the existing `ctest -L relight` gates |
+| W0.4 | Not done here (see the §7 row). | — |
+| W0.5 | `Tools/FUSE/Remaster/fuse_ai/` (stdlib only): the Provider protocol and §3.1 table, a mock for every task (integer-only, pinned hashes), recipe `fuse.ai-recipe/1` with its canonical hash, a cache (replay / record / mock), budgets with a ledger, a JSONL audit log, and the CLI `python -m fuse_ai run/providers/hash/validate`. Cloud and local model providers are W0 stubs that refuse to run, so there are no network calls. | `remaster_fuse_ai` (66 tests; the network is blocked during the run) |
+| W0.6 | `nvidia_binary_gate.cmake` now also flags `d3d8/d3d9.dll`, `dxvk*.dll`, `NvRemix*.exe`, `.trex/`, `remixapi.dll` and `*.rtex.dds` [VERIFY suffix]. `Tools/FUSE/Remaster/remaster_no_originals.py` checks tracked files against these rules: cache paths and Remix ingest output; tracked POCO records of originals, outside the synthetic `Tests/**/fixtures/`; tracked blobs of recipe-only or never records; content hashes in the local index (`build/remaster-cache/<game>/originals.sha256` and the caches' records). It also checks that `.gitignore` covers the caches. | `fuse_nvidia_no_committed_binaries` (extended self-test), `remaster_no_originals` (self-test on seeded paths and a throw-away git repo; exit 77 without git) |
+| W0.7 | `Tools/FUSE/fuse_remaster.cpp`. `init` writes `remaster.project.json` (`cloud_upload: none`, the shape `fuse_ai/policy.py` reads), an empty lock, `ai-budget.json` (§7.4 defaults, the `fuse_ai` format), the store and a `.gitignore`. `doctor` reports platform, FUSE Remix, GPU (CUDA driver probe), SQLite and, for a project, its lock, blobs and cloud state. `report` gives counts and distribution violations. | `remaster_cli` (cloud_upload none, no overwrite, `gpu: none` without CUDA, `fuse-remix: unavailable (Windows only)` off Windows, corrupted blob and non-canonical lock fail) |
+| W0.8 | `fuse_ai/policy.py`: originals (or derived-from-original inputs; a missing origin counts as original) sent to a cloud provider need `cloud_upload: opt-in`, a recorded per-game confirmation and a paid tier. Uploads are logged before the call. The guard runs before the cache and provider calls and is HMAC-stamped so the provider can verify it ran. | in `remaster_fuse_ai` |
+| W1.6 | `Source/FUSE/Remaster/tscript/` (`fuse_remaster_tscript`, std only): lexer, recovering parser to a typed AST, call graph and datablock / singleton / named-object tree, deterministic JSON. Tool: `fuse_remaster_tscript_dump`. Built as a new library; `Compat/src/ts_vm.cpp` was not touched. | `remaster_tscript_unit` (178 checks), `remaster_tscript_templates`: all 507 `Templates/**/*.tscript` files (102,718 lines) parse with 0 diagnostics, giving 4,063 functions, 23,503 call edges, 36 datablocks, 504 singletons and 0 missing parents |
+
+Deviations from the §2.3 sketch:
+- `AnimClip.events` are `{time, name}` objects, not `std::pair`.
+- Optional maps are `std::optional<BlobRef>` (JSON `null`).
+- `Units` has `metersPerUnit` for legacy game units.
+- `Entity` is a record kind as well as a level element.
+- `hash_key` gained `rule_id`; `replacement` is keyed by `(oaid, variant, tier, source)` and has a `fit` JSON column (§2.7).
+- The canonical texture hash covers the pixels only, so it equals the Relight capture key. Width and height are recorded in the record, not in the hash.
+
+Not done:
+- W0.4 checks 8–12. `remaster_no_originals` covers check 8's git half.
+- The Python mirror's defaults are the type defaults, because the schemas carry no `default` values yet.
+- FLAC decode for the PCM hash (WAV only).
+- W2.6, W7.2 and W9.x need user-owned games, API keys or model downloads (§7.3).
 
 ---
 

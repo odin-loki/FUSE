@@ -1,0 +1,39 @@
+{
+  "$id": "fuse.poco/1/sound.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Kind 'sound' payload.",
+  "properties": {
+    "category": {
+      "type": "string"
+    },
+    "channels": {
+      "maximum": 255,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "loop": {
+      "type": "boolean"
+    },
+    "loudnessLufs": {
+      "type": "number"
+    },
+    "pcm": {
+      "oneOf": [
+        {
+          "$ref": "blob_ref.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sampleRate": {
+      "maximum": 4294967295,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "title": "sound",
+  "type": "object"
+}

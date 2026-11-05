@@ -288,13 +288,14 @@ struct CaptureKey {
     friend auto operator<=>(const CaptureKey&, const CaptureKey&) = default;
 };
 
-/// The canonical mesh stream the "fuse.capture.sha256" mesh key hashes (Remaster W0.2 is not in the tree
-/// yet; this is the shim's definition): u32 point count, u32 index count, points (3 x f32 each), indices
-/// (u32 each), all little-endian.
+/// The canonical mesh stream the "fuse.capture.sha256" mesh key hashes: Remaster W0.2's canonical mesh stream
+/// (fuse_remaster_store) of the positions and indices: u32 point count, u32 index count, points (3 x f32 each,
+/// -0 as +0, one NaN), indices (u32 each), all little-endian.
 std::vector<std::uint8_t> canonicalMeshStream(const CaptureMesh& mesh);
 /// sha256 of canonicalMeshStream.
 std::string canonicalMeshSha256(const CaptureMesh& mesh);
-/// sha256 of decodeRgba8(mip 0); empty when the format has no RGBA8 decode or no bytes were captured.
+/// Remaster W0.2 canonical texture hash: sha256 of decodeRgba8(mip 0); empty when the format has no RGBA8
+/// decode or no bytes were captured.
 std::string canonicalTextureSha256(const CaptureTexture& texture);
 
 /// Every hash_key row the capture yields, sorted and unique: remix.geom.asset (+ legacy keys) and

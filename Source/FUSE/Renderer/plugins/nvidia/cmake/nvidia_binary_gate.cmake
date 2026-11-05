@@ -26,6 +26,14 @@ set(_patterns
     "(^|/)nvperf_grfx_target[^/]*\\.(dll|so)$"     # Nsight Perf (sl.nvperf dependency)
     "(^|/)libfuse_nvplugin_ngx[^/]*\\.so$"         # FUSE NGX bridge: statically links NVIDIA's NGX loader
     "(^|/)fuse_nvplugin_ngx[^/]*\\.dll$"
+    # Remaster W0.6 (docs/plans/FUSE_REMASTER_PLAN.md §0.1.7): stock dxvk-remix / RTX Remix runtime files. FUSE
+    # Remix builds its own d3d8/d3d9.dll into the build tree; a committed one is always a stock binary.
+    "(^|/)d3d[89]\\.dll$"                          # dxvk-remix release d3d9.dll, d3d8to9 d3d8.dll
+    "(^|/)dxvk[^/]*\\.dll$"                        # dxvk_d3d9.dll, dxvk-remix side DLLs
+    "(^|/)nvremix[^/]*\\.exe$"                     # NvRemixLauncher32.exe, NvRemixBridge.exe
+    "(^|/)\\.trex/"                                # the bridge's .trex/ runtime folder
+    "(^|/)remixapi\\.dll$"                         # the Remix API runtime (remixapi_compat.* sources are FUSE's)
+    "\\.rtex\\.dds$"                               # Remix-ingested texture output [VERIFY suffix, plan W0.6]
 )
 
 function(_nv_match path out)
@@ -44,12 +52,16 @@ set(_bad
     "bin/nvngx_dlss.dll" "legacy/torque3d/bin/NVNGX_DLSSD.DLL" "nvngx_dlssg.dll" "x/nvngx_dlss_310.bin"
     "lib/Linux_x86_64/rel/libnvidia-ngx-dlss.so.310.9.1" "libnvidia-ngx-dlssg.so" "lib/libnvsdk_ngx.a"
     "lib/Windows_x86_64/nvsdk_ngx_d.lib" "sdk/sl.interposer.dll" "plugins/sl.dlss_g.dll" "sl.common.pdb"
-    "tools/nvperf_grfx_target.dll" "out/libfuse_nvplugin_ngx.so")
+    "tools/nvperf_grfx_target.dll" "out/libfuse_nvplugin_ngx.so"
+    "game/d3d9.dll" "D3D8.DLL" "bin/dxvk_d3d9.dll" ".trex/NvRemixLauncher32.exe" "game/.trex/bridge.conf"
+    "remixapi.dll" "rtx-remix/mods/m/textures/wall.a.rtex.dds")
 set(_good
     "vendor/streamline/include/sl.h" "vendor/streamline/include/sl_dlss.h" "vendor/streamline/VERSION"
     "Source/FUSE/Renderer/plugins/nvidia/mock/fuse_nvplugin_mock.cpp" "docs/nvidia-plugin.md"
     "vendor/nvidia-nis/NIS/NIS_Scaler.h" "slides/sl.dlss.txt" "libfuse_nvplugin_mock.so" "d3dcompiler_47.dll"
-    "Source/FUSE/Renderer/plugins/nvidia/providers/ngx/fuse_nvplugin_ngx.cpp")
+    "Source/FUSE/Renderer/plugins/nvidia/providers/ngx/fuse_nvplugin_ngx.cpp"
+    "Source/FUSE/Relight/api/src/remixapi_compat.cpp" "Source/FUSE/Relight/d3d9_device.cpp" "vendor/dxvk/src/d3d9/d3d9.def"
+    "textures/wall.dds" "d3d9.dll.manifest.txt")
 set(_selftest_errors 0)
 foreach(_p IN LISTS _bad)
     _nv_match("${_p}" _hit)

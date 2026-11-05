@@ -1,5 +1,11 @@
-// FUSE Relight RL-1.8: the POCO + hash_key store shim (see poco_store.hpp).
+// FUSE Relight RL-1.8: the POCO + hash_key capture store (see poco_store.hpp). Blobs go through Remaster's
+// fuse_remaster_store and the replacement DB through fuse_remaster_db (remaster.db + remaster.lock.json); the
+// db/remaster_db.json view the Relight readers consume is generated from the same DB.
 #include <fuse/relight/capture/export/poco_store.hpp>
+
+#include <fuse/remaster/db.hpp>
+#include <fuse/remaster/poco.hpp>
+#include <fuse/remaster/store.hpp>
 
 #include <fuse/relight/capture/export/dds.hpp>
 #include <fuse/relight/capture/export/digest.hpp>
@@ -21,19 +27,9 @@ using json::Value;
 
 namespace {
 
-const Uuid& oaidNamespace() {
-    static const Uuid ns = uuidV5(uuidNamespaceUrl(), "https://fuse.invalid/remaster/oaid");
-    return ns;
-}
+namespace rdb = fuse::remaster::db;
 
-std::string sanitizeId(const std::string& s) {
-    std::string out;
-    for (const char c : s) {
-        const char l = static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c);
-        out += (l >= 'a' && l <= 'z') || (l >= '0' && l <= '9') || l == '_' || l == '-' ? l : '_';
-    }
-    return out.empty() ? "game" : out;
-}
+std::string sanitizeId(const std::string& s) { return rdb::sanitizeGameId(s); }
 
 Value str(const std::string& s) { return Value::string(s); }
 Value num(double d) { return Value::number(d); }
@@ -54,18 +50,17 @@ Value matrixValue(const Mat4d& m) {
     return a;
 }
 
-/// Content-addressed blob writer.
+/// Content-addressed blob writer over Remaster's BlobStore (<store>/blobs/sha256/<ab>/<sha256>).
 class Blobs {
 public:
-    explicit Blobs(fs::path root) : m_root(std::move(root)) {}
+    explicit Blobs(fs::path root) : m_store(std::move(root)) {}
     Value put(const std::vector<std::uint8_t>& bytes, const std::string& media) {
         const std::string sha = sha256Hex(bytes.data(), bytes.size());
         if (m_written.insert(sha).second) {
-            const fs::path p = m_root / "blobs" / "sha256" / sha.substr(0, 2) / sha;
-            std::error_code ec;
-            fs::create_directories(p.parent_path(), ec);
-            if (!writeFile(p, bytes, &m_error) && m_ok) {
+            std::string err;
+            if (!m_store.put(bytes, media, &err) && m_ok) {
                 m_ok = false;
+                m_error = err;
             }
         }
         Value ref = Value::object();
@@ -79,7 +74,7 @@ public:
     const std::string& error() const { return m_error; }
 
 private:
-    fs::path m_root;
+    fuse::remaster::store::BlobStore m_store;
     std::set<std::string> m_written;
     bool m_ok = true;
     std::string m_error;
@@ -131,7 +126,7 @@ std::string recordPath(const std::string& kind, const std::string& id) { return 
 } // namespace
 
 std::string originalAssetId(const std::string& gameId, const std::string& algo, const std::string& value) {
-    return uuidString(uuidV5(oaidNamespace(), sanitizeId(gameId) + "/" + algo + ":" + value));
+    return rdb::originalAssetId(gameId, algo, value);
 }
 
 bool writeFile(const fs::path& path, const std::string& bytes, std::string* error) {
@@ -436,21 +431,33 @@ bool writePocoStore(const fs::path& storeDir, const CaptureData& c, hash::HashRu
         emit("level", id, r);
     }
 
-    // The DB tables.
-    Value db = Value::object();
-    db["schema"] = str(kDbSchema);
-    db["game_id"] = str(game);
-    std::sort(assetRows.begin(), assetRows.end());
-    Value oa = Value::array();
-    for (const auto& [oaid, kind, first] : assetRows) {
-        Value row = Value::object();
-        row["oaid"] = str(oaid);
-        row["kind"] = str(kind);
-        row["game_id"] = str(game);
-        row["first_key"] = str(first);
-        oa.push(std::move(row));
+    // The replacement DB (Remaster W0.3): original_asset + hash_key rows in fuse_remaster_db, written as
+    // db/remaster.db (SQLite) and db/remaster.lock.json (its canonical export), plus the db/remaster_db.json view.
+    std::string err;
+    auto rdbase = rdb::Database::openMemory(&err);
+    if (!rdbase) {
+        if (error) {
+            *error = err;
+        }
+        return false;
     }
-    db["original_asset"] = std::move(oa);
+    std::sort(assetRows.begin(), assetRows.end());
+    auto ruleOf = [&](const std::string& algo, const std::string& value) {
+        for (const CaptureKey& k : keys) {
+            if (k.algo == algo && k.value == value) {
+                return k.ruleId;
+            }
+        }
+        return std::string();
+    };
+    for (const auto& [oaid, kind, first] : assetRows) {
+        const std::size_t colon = first.find(':');
+        const std::string algo = first.substr(0, colon), value = first.substr(colon + 1);
+        const auto added = rdbase->addOriginalAsset(game, kind, algo, value, ruleOf(algo, value), &err);
+        if ((!added || *added != oaid) && firstError.empty()) {
+            firstError = "remaster db: " + (added ? "oaid mismatch for " + first : err);
+        }
+    }
     // Canonical keys belong to the asset of their Remix key: find it through the capture again.
     std::map<std::string, std::string> shaOwner; // sha -> oaid
     for (const auto& [h, mesh] : c.meshes) {
@@ -462,11 +469,7 @@ bool writePocoStore(const fs::path& storeDir, const CaptureData& c, hash::HashRu
             shaOwner.try_emplace(sha, oaidOf[{"texture", hash::hashToString(h)}]);
         }
     }
-    Value hk = Value::array();
     for (const CaptureKey& k : keys) {
-        Value row = Value::object();
-        row["algo"] = str(k.algo);
-        row["value"] = str(k.value);
         std::string oaid;
         if (k.algo == key_algo::kCaptureSha256) {
             oaid = shaOwner[k.value];
@@ -488,15 +491,43 @@ bool writePocoStore(const fs::path& storeDir, const CaptureData& c, hash::HashRu
                 }
             }
         }
-        row["oaid"] = str(oaid);
+        if (!rdbase->addHashKey(k.algo, k.value, oaid, k.ruleId, &err) && firstError.empty()) {
+            firstError = "remaster db: " + err;
+        }
+    }
+    // db/remaster_db.json: the Relight readers' view (mods/import, replace), generated from the DB rows.
+    Value db = Value::object();
+    db["schema"] = str(kDbSchema);
+    db["game_id"] = str(game);
+    Value oa = Value::array();
+    for (const rdb::OriginalAsset& a : rdbase->assets()) {
+        Value row = Value::object();
+        row["oaid"] = str(a.oaid);
+        row["kind"] = str(a.kind);
+        row["game_id"] = str(a.gameId);
+        row["first_key"] = str(a.firstKey);
+        oa.push(std::move(row));
+    }
+    db["original_asset"] = std::move(oa);
+    Value hk = Value::array();
+    for (const rdb::HashKey& k : rdbase->hashKeys()) {
+        Value row = Value::object();
+        row["algo"] = str(k.algo);
+        row["value"] = str(k.value);
+        row["oaid"] = str(k.oaid);
         row["rule_id"] = k.ruleId.empty() ? Value() : str(k.ruleId);
         row["kind"] = str(k.kind);
         hk.push(std::move(row));
     }
     db["hash_key"] = std::move(hk);
     db["replacement"] = Value::array();
-    std::string err;
     if (!writeFile(storeDir / "db" / "remaster_db.json", json::writePretty(db), &err) && firstError.empty()) {
+        firstError = err;
+    }
+    if (!writeFile(storeDir / "db" / kLockFile, rdbase->exportLockText(), &err) && firstError.empty()) {
+        firstError = err;
+    }
+    if (!rdbase->saveAs(storeDir / "db" / kSqliteFile, &err) && firstError.empty()) {
         firstError = err;
     }
     if (!blobs.ok() && firstError.empty()) {
@@ -578,6 +609,48 @@ IngestResult ingestPocoStore(const fs::path& storeDir) {
     }
     std::sort(res.keys.begin(), res.keys.end());
 
+    // The Remaster DB files (written by writePocoStore; stores from other writers may only have the JSON view):
+    // the lock loads and verifies, holds the same rows as remaster_db.json, and remaster.db exports to it.
+    if (std::string lockText; readFile(storeDir / "db" / kLockFile, lockText)) {
+        std::string lerr;
+        const auto lock = rdb::loadLock(lockText, &lerr);
+        if (!lock) {
+            err(std::string("db/") + kLockFile + ": " + lerr);
+        } else {
+            for (const std::string& e : lock->verify()) {
+                err(std::string("db/") + kLockFile + ": " + e);
+            }
+            if (lock->exportLockText() != lockText) {
+                err(std::string("db/") + kLockFile + ": not in canonical form");
+            }
+            std::set<std::tuple<std::string, std::string, std::string>> fromJson, fromLock;
+            if (const Value* hk = db->get("hash_key")) {
+                for (const Value& row : hk->a) {
+                    fromJson.emplace(row.str("algo"), row.str("value"), row.str("oaid"));
+                }
+            }
+            for (const rdb::HashKey& k : lock->hashKeys()) {
+                fromLock.emplace(k.algo, k.value, k.oaid);
+            }
+            std::set<std::pair<std::string, std::string>> assetsJson, assetsLock;
+            for (const auto& [oaid, kind] : assetKind) {
+                assetsJson.emplace(oaid, kind);
+            }
+            for (const rdb::OriginalAsset& a : lock->assets()) {
+                assetsLock.emplace(a.oaid, a.kind);
+            }
+            if (fromJson != fromLock || assetsJson != assetsLock) {
+                err(std::string("db/remaster_db.json and db/") + kLockFile + " disagree");
+            }
+            std::error_code ec;
+            if (!fs::is_regular_file(storeDir / "db" / kSqliteFile, ec)) {
+                err(std::string("missing db/") + kSqliteFile);
+            } else if (auto sq = rdb::Database::open(storeDir / "db" / kSqliteFile, &lerr); !sq || sq->exportLockText() != lockText) {
+                err(std::string("db/") + kSqliteFile + " does not export to db/" + kLockFile + (sq ? "" : ": " + lerr));
+            }
+        }
+    }
+
     // POCO records and their blobs.
     std::set<std::string> blobsChecked;
     std::error_code ec;
@@ -600,6 +673,9 @@ IngestResult ingestPocoStore(const fs::path& storeDir) {
             continue;
         }
         ++res.records;
+        if (std::string perr2; !fuse::remaster::poco::fromJsonText(text, &perr2)) {
+            err(rel + ": not a valid fuse_poco record: " + perr2);
+        }
         const std::string kind = rec->str("kind");
         if (rel != recordPath(kind, rec->str("id"))) {
             err(rel + ": path does not match kind '" + kind + "' and id '" + rec->str("id") + "'");

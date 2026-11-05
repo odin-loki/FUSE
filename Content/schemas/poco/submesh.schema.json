@@ -1,0 +1,23 @@
+{
+  "$id": "fuse.poco/1/submesh.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "A range of indices32 drawn with one material slot.",
+  "properties": {
+    "indexCount": {
+      "maximum": 4294967295,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "indexOffset": {
+      "maximum": 4294967295,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "materialSlot": {
+      "type": "string"
+    }
+  },
+  "title": "submesh",
+  "type": "object"
+}
