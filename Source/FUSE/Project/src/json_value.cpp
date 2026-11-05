@@ -6,6 +6,13 @@
 
 namespace fuse::project::json {
 
+Value::Value() = default;
+Value::Value(const Value&) = default;
+Value::Value(Value&&) noexcept = default;
+Value& Value::operator=(const Value&) = default;
+Value& Value::operator=(Value&&) noexcept = default;
+Value::~Value() = default;
+
 const Value* Value::get(std::string_view key) const {
     if (type != Type::Object) {
         return nullptr;

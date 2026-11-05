@@ -508,10 +508,11 @@ if(TARGET fuse_app)
         # measured 2026-11-05 (MSVC Build Tools 2026) after the colour / MSDF glyph modes and the pipeline cache:
         # standalone UI tree 870,912 bytes -> budget 958,000; in the engine tree hello_app also links fuse_rhi's
         # volk loader: 904,192 bytes -> budget 994,600.
-        # Linux x86-64 Release, MINIMAL text, stripped copy, measured 2026-11-05: GCC 13.3 engine tree 1,591,928 ->
-        # 1,751,200; Clang 23.1 standalone 1,179,616 -> 1,297,600 (the engine tree does not build with Clang yet).
-        # GCC 13.3 standalone re-measured 2026-11-05 after the UI targets link with -ffunction-sections / --gc-sections
-        # and the opt-in text code became dead-strippable (docs/ui/BASELINES.md): 1,076,352 -> 1,184,000. Other
+        # Linux x86-64 Release, MINIMAL text, stripped copy, measured 2026-11-05: Clang 23.1 standalone 1,179,616 ->
+        # 1,297,600. GCC 13.3 standalone re-measured 2026-11-05 after the UI targets link with -ffunction-sections /
+        # --gc-sections and the opt-in text code became dead-strippable (docs/ui/BASELINES.md): 1,076,352 -> 1,184,000.
+        # Engine tree (Vulkan on, fuse_rhi linked), re-measured 2026-11-05 with --gc-sections: GCC 13.3 1,141,888 ->
+        # 1,256,100 (was 1,591,928 before --gc-sections); Clang 23.1 (libstdc++ 14) 945,928 -> 1,040,600. Other
         # toolchains: set FUSE_APP_BINARY_BUDGET after measuring; until then the gate reports and skips.
         set(_budget 0)
         if(MSVC AND FUSE_UI_TEXT STREQUAL "MINIMAL" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -524,12 +525,16 @@ if(TARGET fuse_app)
                FUSE_UI_TEXT STREQUAL "MINIMAL" AND CMAKE_BUILD_TYPE STREQUAL "Release" AND CMAKE_STRIP)
             if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
                 if(TARGET fuse_rhi)
-                    set(_budget 1751200)
+                    set(_budget 1256100)
                 else()
                     set(_budget 1184000)
                 endif()
-            elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT TARGET fuse_rhi)
-                set(_budget 1297600)
+            elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+                if(TARGET fuse_rhi)
+                    set(_budget 1040600)
+                else()
+                    set(_budget 1297600)
+                endif()
             endif()
         endif()
         if(FUSE_APP_BINARY_BUDGET) # -DFUSE_APP_BINARY_BUDGET=<bytes> overrides

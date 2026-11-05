@@ -1437,12 +1437,10 @@ int runTod(Context& ctx) {
     }
     auto flicker = [&](const std::vector<std::vector<f64>>& e) {
         f64 second = 0.0, mean = 0.0;
-        u32 n = 0;
         for (usize t = 1; t + 1 < e.size(); ++t) {
             for (usize i = 0; i < e[t].size(); ++i) {
                 second += std::fabs(e[t][i] - 0.5 * (e[t - 1][i] + e[t + 1][i]));
                 mean += e[t][i];
-                ++n;
             }
         }
         return second / std::max(mean, 1e-9);

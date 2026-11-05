@@ -65,6 +65,8 @@ fuse_text and fuse_app.
 | GCC 13.3 standalone, stripped | 1,822,104 B | 1,076,352 B | 1,683,600 → re-baselined 1,184,000 (+10 %) |
 | MSVC standalone | 944,640 B | 945,664 B | 958,000 (98.7 %) |
 | MSVC engine tree | — | 978,944 B | 994,600 (98.4 %) |
+| GCC 13.3 engine tree, stripped | 1,591,928 B | 1,141,888 B | 1,751,200 → re-baselined 1,256,100 (+10 %) |
+| Clang 23.1 engine tree (libstdc++ 14), stripped | — (did not build) | 945,928 B | 1,040,600 (+10 %) |
 
 ## Startup to first presented frame
 

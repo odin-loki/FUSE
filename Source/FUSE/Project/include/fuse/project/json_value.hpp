@@ -21,6 +21,15 @@ struct Value {
     std::vector<Value> array;
     std::vector<std::pair<std::string, Value>> object;
 
+    // defined in json_value.cpp: Clang (libstdc++ 14) instantiates the constexpr vector destructor of an implicit
+    // special member while Value is still incomplete (std::pair<std::string, Value> needs a complete Value)
+    Value();
+    Value(const Value&);
+    Value(Value&&) noexcept;
+    Value& operator=(const Value&);
+    Value& operator=(Value&&) noexcept;
+    ~Value();
+
     [[nodiscard]] bool isBool() const { return type == Type::Bool; }
     [[nodiscard]] bool isNumber() const { return type == Type::Number; }
     [[nodiscard]] bool isString() const { return type == Type::String; }
