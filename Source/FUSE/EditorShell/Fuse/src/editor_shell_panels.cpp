@@ -67,6 +67,13 @@ void ShellPanelPages::sync(f32 uiMs, bool frame) {
     if (frame) {
         if (m_shell.panelVisible("profiler")) {
             fuse::profiler::ProfileScope sample("editor.profiler_sample");
+            // GPU time of the scene viewport: GpuProfiler zones per render-graph pass, resolved without blocking
+            if (SceneViewportHost* host = m_shell.sceneViewport(); host && host->pollGpuTimings(m_gpuTimings)) {
+                std::vector<GpuPassView> passes;
+                passes.reserve(m_gpuTimings.passes.size());
+                for (const SceneViewportGpuPass& p : m_gpuTimings.passes) passes.push_back({p.name, p.depth, p.ms});
+                m_m.profilerSetGpu(m_gpuTimings.totalMs, std::move(passes));
+            }
             m_m.profilerSample(uiMs);
             // the flame view re-captures the profiler ring twice a second (30 Hz UI timer)
             if (profilerView() == 1 && ++m_prFlameTick % 15 == 1) m_m.profilerCaptureFlame();
@@ -676,6 +683,11 @@ void ShellPanelPages::syncProfiler_() {
     w::chartSetSeries(m_ui, m_prChart, 0, "CPU ms", tail, Color::rgb(0x4FC3F7));
     const std::vector<f32> budget(tail.size(), 1000.f / std::max(1.f, v.targetFps));
     w::chartSetSeries(m_ui, m_prChart, 1, "budget", budget, Color::rgb(0xFF8A65));
+    if (v.gpuFrames > 0 && v.gpuHistory.size() == v.history.size()) { // scene viewport GPU time (timestamp queries)
+        std::vector<f32> gpu(v.gpuHistory.end() - std::ptrdiff_t(n), v.gpuHistory.end());
+        if (gpu.empty()) gpu.push_back(0.f);
+        w::chartSetSeries(m_ui, m_prChart, 2, "GPU ms", gpu, Color::rgb(0x81C784));
+    }
 }
 
 // ---- Sequencer ------------------------------------------------------------------------------------------------------

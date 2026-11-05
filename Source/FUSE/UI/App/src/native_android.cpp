@@ -63,6 +63,7 @@ bool vkWinPresent(VkWin*, AppWindow&, Rect) { return false; }
 bool vkWinGpuDraws(const VkWin*) { return false; }
 void vkWinDestroy(VkWin*) {}
 bool vkWinReadback(VkWin*, Image&) { return false; }
+PresentTiming vkWinTiming(VkWin*, bool) { return {}; }
 } // namespace detail
 #endif
 
@@ -1107,6 +1108,9 @@ bool NativePlatform::capture(const AppWindow& w, Image& out) {
     if (m->vkw) return detail::vkWinReadback(m->vkw, out);
     out = w.image(); // software: the CPU raster that was posted
     return out.width > 0;
+}
+PresentTiming NativePlatform::presentTiming(const AppWindow& w, bool waitGpu) {
+    return m->win == &w && m->vkw ? detail::vkWinTiming(m->vkw, waitGpu) : PresentTiming{};
 }
 unsigned long long NativePlatform::nativeWindow(const AppWindow& w) const {
     return m->win == &w ? reinterpret_cast<unsigned long long>(m->window) : 0;

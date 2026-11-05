@@ -36,5 +36,7 @@ bool vkWinGpuDraws(const VkWin* w);
 void vkWinDestroy(VkWin* w);
 /// Reads back the last presented frame (the canvas blitted into the swapchain).
 bool vkWinReadback(VkWin* w, fuse::ui::Image& out);
+/// Present timing of the window's last frame (waitGpu: waits for its fence, stamps gpuDoneAt).
+PresentTiming vkWinTiming(VkWin* w, bool waitGpu);
 
 } // namespace fuse::app::detail

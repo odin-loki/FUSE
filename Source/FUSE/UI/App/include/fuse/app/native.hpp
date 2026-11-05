@@ -127,6 +127,20 @@ struct LifecycleStats {
     bool stateRestored = false;   ///< this process started from a previous one's saved state
 };
 
+/// Swapchain presenter timing of one window (input-latency probe, plan §6 "input to presented frame"). Times are
+/// std::chrono::steady_clock seconds since its epoch, comparable with a steady_clock reading taken by the caller.
+struct PresentTiming {
+    unsigned long long presents = 0; ///< Vulkan presents queued so far
+    unsigned images = 0;             ///< swapchain images (0 = no Vulkan presenter)
+    int presentMode = -1;            ///< VkPresentModeKHR (0 IMMEDIATE, 1 MAILBOX, 2 FIFO, 3 FIFO_RELAXED)
+    bool dwmPaced = false;           ///< MAILBOX paced by DwmFlush in place of FIFO (NVIDIA on Windows)
+    double acquireAt = 0.0;          ///< last frame: its swapchain image acquired (frame work starts)
+    double queuedAt = 0.0;           ///< last frame: vkQueuePresentKHR returned (before any DWM pacing)
+    double gpuDoneAt = 0.0;          ///< last frame: its GPU work seen complete (presentTiming(w, true) waits for it)
+    /// Frames a presented image can wait in the present queue before scan-out (images - 1; 0 without Vulkan).
+    unsigned queueDepth() const { return images > 1 ? images - 1 : 0; }
+};
+
 /// Per-user cache directory for fuse_app (Vulkan pipeline cache): %LOCALAPPDATA%\FUSE\cache on Windows,
 /// $XDG_CACHE_HOME/fuse or ~/.cache/fuse elsewhere.
 std::string defaultCacheDir();
@@ -169,6 +183,9 @@ public:
     /// window is not GPU drawn (the CPU pixels of the Image are shown instead).
     bool setExternalTexture(const AppWindow& w, unsigned slot, const ExternalTexture& tex);
     unsigned long long nativeWindow(const AppWindow& w) const;
+    /// Timing of the window's last Vulkan present; `waitGpu` blocks until that frame's GPU work completes and stamps
+    /// gpuDoneAt (an upper bound of the completion time). Zeros without a Vulkan presenter.
+    PresentTiming presentTiming(const AppWindow& w, bool waitGpu = false);
     /// Sets the OS window icon from square RGBA rasters (e.g. 16 / 32 / 48 / 256). X11: _NET_WM_ICON with every size;
     /// Win32: WM_SETICON big (SM_CXICON) and small (SM_CXSMICON), the closest raster each. False when not shown.
     bool setIcon(const AppWindow& w, std::span<const fuse::ui::Image> sizes);

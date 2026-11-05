@@ -408,6 +408,17 @@ if(TARGET fuse_app)
         endif()
         set_tests_properties(fuse_app_idle_native PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
             ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate;vulkan")
+        # §6 "input to presented frame <= 1 frame + present queue": a posted OS click -> the frame that shows it
+        add_executable(fuse_app_input_latency test_app_input_latency.cpp)
+        target_link_libraries(fuse_app_input_latency PRIVATE fuse_app_native)
+        if(FUSE_UI_XVFB_RUN AND NOT WIN32)
+            add_test(NAME fuse_app_input_latency COMMAND ${FUSE_UI_XVFB_RUN} -a -s "${FUSE_UI_XVFB_ARGS}"
+                     $<TARGET_FILE:fuse_app_input_latency>)
+        else()
+            add_test(NAME fuse_app_input_latency COMMAND fuse_app_input_latency)
+        endif()
+        set_tests_properties(fuse_app_input_latency PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
+            ENVIRONMENT "${FUSE_UI_LVP_ENV}" LABELS "fuse_ui;gate;vulkan")
         # custom window chrome (WM_NCHITTEST / _NET_WM_MOVERESIZE on a real window) and tray icon + notifications (UI10).
         # Unix tray: StatusNotifierItem on a private session bus (dbus-run-session; the gate plays the desktop's side).
         find_program(FUSE_UI_DBUS_RUN_SESSION dbus-run-session)

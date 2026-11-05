@@ -378,6 +378,9 @@ struct VkWin {
     bool dwmPaced = false; ///< MAILBOX in place of FIFO: presents are paced by dwmPace
     std::chrono::steady_clock::time_point lastPresent{};
     ExternalTexture external[4]{};
+    PresentTiming timing;     ///< input-latency probe (NativePlatform::presentTiming)
+    int lastFence = -1;       ///< frame slot of the last present
+    int swapMode = -1;        ///< VkPresentModeKHR of the swapchain
 #if defined(FUSE_APP_HAS_UI_VK)
     fuse::ui::render::UiVkRenderer gpu;
     fuse::ui::render::GpuDrawData data;
@@ -478,6 +481,7 @@ struct VkWin {
                                  ? VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
                                  : VkCompositeAlphaFlagBitsKHR(caps.supportedCompositeAlpha & -caps.supportedCompositeAlpha);
         sci.presentMode = mode;
+        swapMode = int(mode);
         sci.clipped = VK_TRUE;
         sci.oldSwapchain = old;
         VkResult r = K.CreateSwapchainKHR(d, &sci, nullptr, &swapchain);
@@ -733,6 +737,8 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
     }
     if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) return false;
     vkResetFences(c.device, 1, &w->fence[f]);
+    const auto secs = [] { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); };
+    w->timing.acquireAt = secs();
 
     const u32 W = w->extent.width, H = w->extent.height;
     const Rect whole{0.f, 0.f, f32(W), f32(H)};
@@ -864,6 +870,10 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
     pi.pSwapchains = &w->swapchain;
     pi.pImageIndices = &index;
     r = K.QueuePresentKHR(c.queue, &pi);
+    w->timing.queuedAt = secs();
+    w->timing.gpuDoneAt = 0.0;
+    ++w->timing.presents;
+    w->lastFence = int(f);
 #if defined(_WIN32)
     if (w->dwmPaced) dwmPace(*w, w->fence[f]);
 #endif
@@ -874,6 +884,19 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
         win.requestRedraw();
     }
     return r == VK_SUCCESS || r == VK_SUBOPTIMAL_KHR || r == VK_ERROR_OUT_OF_DATE_KHR;
+}
+
+PresentTiming vkWinTiming(VkWin* w, bool waitGpu) {
+    if (!w) return {};
+    PresentTiming t = w->timing;
+    t.images = u32(w->images.size());
+    t.presentMode = w->swapMode;
+    t.dwmPaced = w->dwmPaced;
+    if (waitGpu && w->lastFence >= 0 && t.gpuDoneAt == 0.0) {
+        vkWaitForFences(w->ctx->device, 1, &w->fence[w->lastFence], VK_TRUE, 1'000'000'000ull);
+        w->timing.gpuDoneAt = t.gpuDoneAt = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+    return t;
 }
 
 bool vkWinReadback(VkWin* w, Image& out) {

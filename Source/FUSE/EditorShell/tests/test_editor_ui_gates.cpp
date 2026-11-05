@@ -1001,7 +1001,7 @@ void gateSdfSculpt(Rig& r) {
     CHECK(r.v().entityCount > base);
 }
 
-void gateProfiler(Rig& r) {
+void gateProfilerCpu(Rig& r) {
     CHECK(r.shell.showPanel("dock.profiler"));
     r.frames(12);
     ProfilerView pv = r.shell.panels().profiler();
@@ -1270,6 +1270,75 @@ void gateSceneViewport(Rig& r) {
     r.shell.setSceneViewport(nullptr); // the host dies with this gate
 }
 
+/// Profiler GPU feed: with a scene viewport host, every rendered viewport frame's GpuProfiler zones (one per
+/// render-graph pass) reach the Profiler tab: GPU history non-zero, the per-pass list, the "GPU ms" chart series and a
+/// gpu.viewport root with the passes in the flame graph. `host` null: CPU-only shell (no Vulkan device).
+void checkProfilerGpu(Rig& r, SceneViewportHost* host, const char* tag) {
+    CHECK(host->gpuTimingsSupported());
+    CHECK(r.shell.showPanel("dock.profiler"));
+    r.shell.panels().profilerClear();
+    for (int i = 0; i < 120 && r.shell.panels().profiler().gpuFrames < 4; ++i) {
+        r.c.viewportWheel(i % 2 ? 0.5f : -0.5f); // a camera move renders a new viewport frame
+        r.frames();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    r.frames(3); // the last frame resolves without blocking
+    const ProfilerView pv = r.shell.panels().profiler();
+    u32 nonZero = 0;
+    float maxGpu = 0.f;
+    for (float g : pv.gpuHistory) nonZero += g > 0.f, maxGpu = std::max(maxGpu, g);
+    std::string names;
+    for (const GpuPassView& p : pv.gpuPasses) {
+        char ms[32];
+        std::snprintf(ms, sizeof ms, " %.3f", double(p.ms));
+        names += (names.empty() ? "" : ", ") + p.name + ms;
+    }
+    std::printf("%s: %llu GPU frames, %u/%zu samples with GPU time (max %.3f ms), last %.3f ms: %s\n", tag,
+                (unsigned long long)pv.gpuFrames, nonZero, pv.gpuHistory.size(), double(maxGpu), double(pv.gpuLastMs), names.c_str());
+    std::printf("%s: latest gbuffer %.3f depth %.3f deferred %.3f shadows %.3f ms\n", tag, double(pv.latest.gbufferMs),
+                double(pv.latest.depthPrepassMs), double(pv.latest.deferredMs), double(pv.latest.shadowsMs));
+    CHECK(pv.gpuFrames >= 4);
+    CHECK(pv.gpuHistory.size() == pv.history.size());
+    CHECK(nonZero >= 3 && maxGpu > 0.f);
+    CHECK(pv.gpuLastMs > 0.f && !pv.gpuPasses.empty());
+    CHECK(pv.summary.find("GPU (viewport)") != std::string::npos);
+    CHECK(std::string(r.ui().text(r.ui().find("profiler.summary"))).find("GPU (viewport)") != std::string::npos);
+    // flame view: the viewport's passes under a gpu.viewport root, drawn as bars
+    r.ui().setValue(r.ui().find("profiler.view"), 1.f, true);
+    r.frames(2);
+    const FlameView& fv = r.shell.panels().profilerFlame();
+    i32 root = -1;
+    u32 children = 0;
+    for (std::size_t i = 0; i < fv.bars.size(); ++i) {
+        if (fv.bars[i].name == "gpu.viewport" && fv.bars[i].depth == 0) root = i32(i);
+        if (root >= 0 && fv.bars[i].parent == root) ++children;
+    }
+    std::printf("%s: flame %zu bars, gpu.viewport root %d with %u passes\n", tag, fv.bars.size(), root, children);
+    CHECK(root >= 0 && children >= 1);
+    if (root >= 0) {
+        CHECK(fv.bars[std::size_t(root)].totalMs > 0.f && fv.bars[std::size_t(root)].x1 > fv.bars[std::size_t(root)].x0);
+        CHECK(r.ui().alive(r.ui().find("profiler.flame.bar" + std::to_string(root))));
+    }
+    r.ui().setValue(r.ui().find("profiler.view"), 0.f, true);
+    r.frames();
+}
+
+void gateProfiler(Rig& r) {
+    gateProfilerCpu(r);
+    // GPU part: the scene viewport host's per-pass timestamp zones (RTX 3090 natively, lavapipe on Linux)
+    auto host = SceneViewportHost::create({.validation = true});
+    if (!host->valid()) {
+        std::printf("profiler: GPU feed not checked (scene renderer host: %s)\n", host->reason().c_str());
+        return;
+    }
+    std::printf("profiler: GPU feed on %s\n", host->deviceName().c_str());
+    buildScene(r);
+    r.shell.setSceneViewport(host.get());
+    checkProfilerGpu(r, host.get(), "profiler");
+    CHECK(validationErrors() == 0);
+    r.shell.setSceneViewport(nullptr);
+}
+
 void gateGpuViewport(Rig& r) {
     // Zero-copy: the shell window is presented by fuse_app's Vulkan presenter ON the scene host's device; the viewport
     // Image is external slot 0, so the UI kernel samples the engine frame directly (no readback, no upload).
@@ -1392,6 +1461,8 @@ void gateGpuViewport(Rig& r) {
         r.c.viewportWheel(2.f);
         r.frames(2);
         CHECK(host->framesRendered() > n);
+        // the profiler's GPU history comes from the same engine frames (zero-copy path, presenter on the device)
+        checkProfilerGpu(r, host.get(), "gpu_viewport");
         CHECK(validationErrors() == 0);
         if (!g_out.empty() && cap.width > 0) {
             CHECK(fuse::app::writePng(cap, g_out));
