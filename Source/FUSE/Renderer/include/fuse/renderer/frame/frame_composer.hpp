@@ -169,6 +169,25 @@ inline denoise::DenoiserSettings frameDenoiserPreset(denoise::DenoiseSignal sign
     return s;
 }
 
+/// The T2 1440p preset's SSFX settings (docs/unification/RENDERER-HW-RUN.md section 3.1): GTAO at 2 slices x 6 steps
+/// (ScreenSpace GtaoParams default 4 x 8: 6.0 ms at 1706 x 960 on an RTX 3090; the AO blur / temporal passes and the
+/// reflection / DDGI chain carry the rest of the noise). SSGI is switched off by the composer while DDGI runs
+/// (FrameSettings::ssgiWithDdgi).
+inline ssfx_gpu::SsfxGpuSettings frameSsfxPreset() {
+    ssfx_gpu::SsfxGpuSettings s{};
+    s.gtao.slices = 2u;
+    s.gtao.steps = 6u;
+    return s;
+}
+
+/// The T2 preset's RT-shadow SVGF: 3 a-trous iterations (steps 1, 2, 4) instead of 5. A 1-spp shadow visibility
+/// after temporal accumulation needs no 16-pixel footprint; 5 iterations cost 1.9 ms at 1706 x 960 on an RTX 3090.
+inline denoise::SvgfSettings frameShadowDenoiserPreset() {
+    denoise::SvgfSettings s{}; // the composer forces the signal to Shadow
+    s.atrousIterations = 3u;
+    return s;
+}
+
 struct FrameComposerDesc {
     VulkanDevice* device = nullptr;
     GpuAllocator* allocator = nullptr;
@@ -231,9 +250,13 @@ struct FrameSettings {
     bool ddgiAtmosphereSky = true; ///< DDGI misses take the WP-8.2 sky radiance (plans the atmosphere LUTs)
     bool rtShadows = true; ///< T2 only
     bool denoise = true;   ///< T2 RT shadows through SVGF (else light.shade reads the raw 1-spp visibility)
-    denoise::SvgfSettings denoiser{};  ///< the signal is forced to Shadow
+    denoise::SvgfSettings denoiser = frameShadowDenoiserPreset(); ///< the signal is forced to Shadow
     bool ssfx = true;
-    ssfx_gpu::SsfxGpuSettings ssfxSettings{};
+    ssfx_gpu::SsfxGpuSettings ssfxSettings = frameSsfxPreset();
+    /// SSFX SSGI next to DDGI (off: the composer drops SSGI whenever DDGI runs). At T2 ray-query DDGI is the
+    /// indirect diffuse; plan 6c names SSR + GTAO, not SSGI, as the screen-space supplement, and 16-ray SSGI cost
+    /// 55 ms of a 75.7 ms frame on an RTX 3090 (RENDERER-HW-RUN.md section 3.1).
+    bool ssgiWithDdgi = false;
     /// WP-6.5b near-field diffuse GI + AO over the depth buffer (optional; replaces SSFX SSGI when both run).
     bool ssrc = false;
     ssrc::SsrcSettings ssrcSettings{};

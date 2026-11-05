@@ -63,6 +63,60 @@ void fuseRnMidDown(float q, out uint m, out int e) {
     }
 }
 
+// One stepping decision (+1 up, -1 down, 0 = q is the IEEE result): the 32-bit residual fast step, proven exact
+// per call by a float estimate, else the 64-bit midpoint compare. Twin of fuse_rn_div_step / fuse_rn_sqrt_step
+// (exact_math.glsl, where the derivation and the bounds are written out).
+float fuseRnPow2(int k) { return asfloat(uint(k + 127) << 23u); }
+
+int fuseRnDivStep(uint ma, int ea, uint mb, int eb, float q) {
+    const uint mq = fuseRnMantissa(q);
+    const int k = ea - fuseRnExponent(q) - eb + 1;
+    if (k >= 0 && k <= 31) {
+        const float estimate = float(ma) * fuseRnPow2(k) - float(2u * mq) * float(mb);
+        if (abs(estimate) < 536870912.0) { // 2^29
+            const int d = int((ma << uint(k)) - (2u * mq) * mb);
+            const int b = int(mb);
+            if (d - b > 0) {
+                return 1;
+            }
+            return (mq == 0x800000u ? (2 * d + b < 0) : (d + b < 0)) ? -1 : 0;
+        }
+    }
+    uint m;
+    int e;
+    fuseRnMidUp(q, m, e);
+    if (fuseRnCompareScaled(ma, ea, fuseRnMul(m, mb), e + eb) > 0) { // |a| > mid * |b|: round up
+        return 1;
+    }
+    fuseRnMidDown(q, m, e);
+    return fuseRnCompareScaled(ma, ea, fuseRnMul(m, mb), e + eb) < 0 ? -1 : 0;
+}
+
+int fuseRnSqrtStep(uint mx, int ex, float s) {
+    const uint ms = fuseRnMantissa(s);
+    const int k = ex - 2 * fuseRnExponent(s) + 2;
+    if (ms != 0x800000u && k >= 0 && k <= 31) {
+        const float t = float(2u * ms);
+        const float estimate = float(mx) * fuseRnPow2(k) - t * t;
+        if (abs(estimate) < 1073741824.0) { // 2^30
+            const int d = int((mx << uint(k)) - (2u * ms) * (2u * ms));
+            const int m4 = int(4u * ms);
+            if (d - m4 - 1 > 0) {
+                return 1;
+            }
+            return d + m4 - 1 < 0 ? -1 : 0;
+        }
+    }
+    uint m;
+    int e;
+    fuseRnMidUp(s, m, e);
+    if (fuseRnCompareScaled(mx, ex, fuseRnMul(m, m), 2 * e) > 0) { // x > mid^2: round up
+        return 1;
+    }
+    fuseRnMidDown(s, m, e);
+    return fuseRnCompareScaled(mx, ex, fuseRnMul(m, m), 2 * e) < 0 ? -1 : 0;
+}
+
 float fuseDivRn(float a, float b) {
     const float q0 = a / b;
     if (!fuseRnIsNormal(a) || !fuseRnIsNormal(b) || !fuseRnIsNormal(q0)) {
@@ -75,19 +129,11 @@ float fuseDivRn(float a, float b) {
     const uint mb = fuseRnMantissa(b);
     const int eb = fuseRnExponent(b);
     for (uint i = 0u; i < 8u; ++i) {
-        uint m;
-        int e;
-        fuseRnMidUp(q, m, e);
-        if (fuseRnCompareScaled(ma, ea, fuseRnMul(m, mb), e + eb) > 0) { // |a| > mid * |b|: round up
-            q = asfloat(asuint(q) + 1u);
-        } else {
-            fuseRnMidDown(q, m, e);
-            if (fuseRnCompareScaled(ma, ea, fuseRnMul(m, mb), e + eb) < 0) {
-                q = asfloat(asuint(q) - 1u);
-            } else {
-                break;
-            }
+        const int step = fuseRnDivStep(ma, ea, mb, eb, q);
+        if (step == 0) {
+            break;
         }
+        q = asfloat(uint(int(asuint(q)) + step));
         if (!fuseRnIsNormal(q)) {
             return q0;
         }
@@ -104,19 +150,11 @@ float fuseSqrtRn(float x) {
     const uint mx = fuseRnMantissa(x);
     const int ex = fuseRnExponent(x);
     for (uint i = 0u; i < 8u; ++i) {
-        uint m;
-        int e;
-        fuseRnMidUp(s, m, e);
-        if (fuseRnCompareScaled(mx, ex, fuseRnMul(m, m), 2 * e) > 0) { // x > mid^2: round up
-            s = asfloat(asuint(s) + 1u);
-        } else {
-            fuseRnMidDown(s, m, e);
-            if (fuseRnCompareScaled(mx, ex, fuseRnMul(m, m), 2 * e) < 0) {
-                s = asfloat(asuint(s) - 1u);
-            } else {
-                break;
-            }
+        const int step = fuseRnSqrtStep(mx, ex, s);
+        if (step == 0) {
+            break;
         }
+        s = asfloat(uint(int(asuint(s)) + step));
     }
     return s;
 }

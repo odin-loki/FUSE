@@ -13,17 +13,19 @@ RENDERER-EXECUTION.md is owned by other agents, so this run does not edit it. It
 
 The P2, P5 and P8 timings come from one run of each ctest after the GPU went idle. Their trial spread is given in the sections below. The P7 and P9 rows come from separate runs of their own benches (§6 and §7).
 
+**Kernel cost pass (§10).** Where a row shows "before → after", the second number is from the §10 pass: same harness, same idle-GPU rule, all GPU == CPU parity gates green. Sections 3 to 8 keep the first run's numbers and analysis.
+
 | Exit criterion | Plan number | Measured on the RTX 3090 | Verdict |
 |---|---|---|---|
-| §5.3 frame at 1440p (Sponza stand-in, T2 preset) | 16.6 ms total | **15.7 ms** in sum of passes (16.0 ms span) | total **within**. Per stage: 3 within, 3 over (§3) |
-| §5.3 frame at 1440p (Bistro stand-in, 3.9M tris, 256 lights) | 16.6 ms total | **16.5 ms** (16.8 ms span) | total at the limit. Per stage: 2 within, 4 over |
-| §5.3 frame, `FrameSettings{}` as shipped (Sponza) | 16.6 ms | **75.7 ms**, of which SSGI is 55 ms | **over** (fixed by the preset, §3.1) |
-| P2: 4,096 lights within the lighting budget | 3.0 ms direct lighting + shadows | **8.97 ms**, of which `light.shade` is 5.9 ms and `light.cull` 0.8 ms. With 256 lights: 4.76 ms | **miss** (§4) |
+| §5.3 frame at 1440p (Sponza stand-in, T2 preset) | 16.6 ms total | **15.7 → 13.06 ms** in sum of passes (16.0 → 13.33 ms span) | total **within**. Per stage: 3 → 4 within, 3 → 2 over (§3, §10) |
+| §5.3 frame at 1440p (Bistro stand-in, 3.9M tris, 256 lights) | 16.6 ms total | **16.5 → 13.64 ms** (16.8 → 13.91 ms span) | total **within**. Per stage: 2 → 3 within, 4 → 3 over (volumetrics + transparency 0.01 ms over) |
+| §5.3 frame, `FrameSettings{}` as shipped (Sponza) | 16.6 ms | **75.7 → 13.06 ms**: the T2 preset is now the default (§10.3) | **within** |
+| P2: 4,096 lights within the lighting budget | 3.0 ms direct lighting + shadows | **8.97 → 6.21 ms**: `light.shade` 5.9 → 3.84 ms, `light.cull` 0.8 → 0.10 ms. With 256 lights: 4.76 → 3.92 ms | **miss** (§4, §10.2): ~100 lights in range per pixel at this density |
 | P3: VSM cached frame | < 1 ms | **0.25 ms** (Sponza), **0.22 ms** (Bistro). With a moving camera: 0.28 / 0.26 ms | **pass** |
 | P5: > 100M source triangles within budget | 2.0 ms culling + visibility | **104.9M** source triangles: GPU LOD cut 1.27 ms + cull / visbuffer of the 0.34M-triangle cut 0.57 ms = **1.85 ms** (3 runs: 1.844–1.852) | **pass**, with a caveat (§5) |
-| P7: 10k+ emissive lights, stable and low noise | qualitative | 10,000 emissive triangles. relMSE against a 4096-spp f64 reference: RIS 0.176, ReSTIR (unbiased) 0.0144, + SVGF **8.1e-4**. Frame-to-frame change 0.35 % | quality **pass**. Cost **miss**: `restir.di.initial` takes 145 ms at 1440p (§6) |
-| P8: volumetrics ≤ 1.5 ms | 1.5 ms | fog + clouds **1.20 ms** (Sponza), **1.31 ms** (Bistro). The volumetrics + transparency stage is 1.42 / 1.64 ms | **pass**. The stage including transparency is 0.14 ms over on Bistro. With 4,096 lights, `fog.inject` reaches 2.97 ms |
-| P9: measured against the conventional path | win or do not ship | NTC loses on quality and cost. Gaussian splats lose on memory and quality, and tie or lose on cost (§7) | **neither ships** as a replacement |
+| P7: 10k+ emissive lights, stable and low noise | qualitative | 10,000 emissive triangles. relMSE against a 4096-spp f64 reference: RIS 0.176, ReSTIR (unbiased, now the default) 0.0144, + SVGF **8.1e-4**. Frame-to-frame change 0.35 % (bit-identical after §10) | quality **pass**. Cost **miss**: `restir.di.initial` 145 → 88 ms at 1440p (§6, §10.4) |
+| P8: volumetrics ≤ 1.5 ms | 1.5 ms | fog + clouds **1.20 → 1.13 ms** (Sponza), **1.31 → 1.19 ms** (Bistro). The volumetrics + transparency stage is 1.42 → 1.33 / 1.64 → 1.50 ms | **pass**. With 4,096 lights, `fog.inject` 2.97 → 1.67 ms |
+| P9: measured against the conventional path | win or do not ship | NTC loses on quality and cost. Gaussian splats lose on memory and quality. On cost, 1M splats went 29.0 → 4.3 ms and 100k now beat the mesh path, 1.42 vs 1.61 ms (§7, §10.4) | **neither ships** as a replacement |
 | §8 Sponza / Bistro | reference scenes | harness, pinned-hash manifest and fetch script are in place. **Not downloaded** (needs the user's permission) | pending the fetch (§8) |
 
 ## 2. Harness and noise strategy
@@ -79,6 +81,8 @@ The harness therefore measures a **T2 1440p preset** (`applyPreset`):
 Together these remove 59.6 ms. `--preset defaults` measures the shipped settings.
 
 **Recommendation for the composer owners:** make this the default T2 preset. In particular, do not run 16-ray SSGI next to DDGI.
+
+**Done (§10.3).** This preset is now `FrameSettings{}`: `frameSsfxPreset()` (GTAO 2 × 6), `frameShadowDenoiserPreset()` (3 à-trous iterations) and `FrameSettings::ssgiWithDdgi = false` (the composer drops SSGI while DDGI runs). The harness measures `FrameSettings{}` as shipped. `--preset reference` measures the former reference-quality settings.
 
 ### 3.2 Results with the preset
 
@@ -371,7 +375,7 @@ FUSE_REFSCENE_PIN_ON_FIRST_FETCH=1 cmake -DDEST=... -DSCENE=sponza -P ...   # ex
 |---|---|---|
 | `fuse_rp_hw_budget_1440p_sponza` | perf;hw | pass (against the committed baseline) |
 | `fuse_rp_hw_budget_1440p_bistro` | perf;hw | pass |
-| `fuse_rp_hw_p2_lights_4096` | perf;hw | **fails**: a real miss, 8.97 ms against 3.0 ms |
+| `fuse_rp_hw_p2_lights_4096` | perf;hw | **fails**: a real miss, 8.97 ms against 3.0 ms (6.21 ms after §10; still a miss, see §10.2) |
 | `fuse_rp_hw_p3_vsm_cached` | perf;hw | pass |
 | `fuse_rp_hw_p5_dag_100m` | perf;hw | pass (1.85 ms; three consecutive runs after the idle-clock fix) |
 | `fuse_rp_hw_p7_restir_10k` | perf;hw | pass (quality gates; no timing gate) |
@@ -392,3 +396,139 @@ ctest -L hw --output-on-failure
 ```
 FUSE_UPDATE_PERF_BASELINE=1 ctest -R fuse_rp_hw_budget
 ```
+
+## 10. Kernel cost pass (2026-11-05, second run)
+
+The kernel misses that sections 3 to 7 found were worked on in one pass. The rule was to change cost, not results: every GPU == CPU parity gate that held before still holds, and the exact-math kernels still return the CPU references' bits. The defaults changed separately (§10.3), and that is the only reason any image changed.
+
+Same device, driver, harness and noise rule as §2: `nvidia-smi` at 0–2 % before and after each block, 5 trials × 48 frames after 90 warm-up frames. The "before" column is the first run (§3–§7, re-measured where marked).
+
+### 10.1 Before / after
+
+Bistro stand-in, 256 and 4,096 local lights (`--mode lights4096`, both runs on this pass's harness), T2 preset:
+
+| Pass / stage | Before, 256 lights | After, 256 lights | Before, 4,096 lights | After, 4,096 lights | Change |
+|---|---|---|---|---|---|
+| `light.shade` | 2.58 | **1.71** | 5.94 | **3.84** | exact-math step, DDGI hoist, tiled light loop (§10.2) |
+| `light.cull` | 0.05 | 0.01 | 0.79 | **0.10** | one workgroup per cluster |
+| `fog.inject` | 0.39 | **0.34** | 2.91 | **1.67** | 8 × 8 froxel tiles, range pre-test |
+| `ssfx.gtao` (2 × 6) | 2.49 | **1.32** | 2.48 | 1.32 | exact-math step, ray-direction table |
+| `taau.resolve` | 2.09 | **1.43** | 2.07 | 1.42 | exact-math step |
+| `resolve.gbuffer` | 0.76 | **0.55** | 0.76 | 0.55 | exact-math step |
+| `denoise.atrous` (shadow, 3 it.) | 1.16 | 1.19 | 1.15 | 1.18 | unchanged (see "not kept") |
+| `refl/denoise.atrous` (5 it.) | 2.23 | 2.28 | 2.21 | 2.27 | unchanged; iterations now settable |
+| **Direct lighting and shadows** | 4.79 | **3.92** | 9.10 | **6.21** | budget 3.0 |
+| **Global illumination** | 6.35 | **5.16** | 6.31 | **5.13** | budget 3.0 |
+| **Volumetrics and transparency** | 1.59 | **1.51** | 4.39 | **3.07** | budget 1.5 |
+| **Post-process and upscale** | 2.38 | **1.70** | 2.34 | **1.69** | budget 2.0: **within** |
+| **Material resolve** | 1.04 | **0.77** | 1.03 | **0.77** | budget 1.5 |
+| **Total (sum of passes)** | 16.96 | **13.70** | 23.84 | **17.49** | budget 16.6 |
+
+§5.3 frame (`--mode report`, `FrameSettings{}` as shipped, which is now the T2 preset):
+
+| Scene | Total before | Total after | Span after | Stages over budget after |
+|---|---|---|---|---|
+| Sponza stand-in | 15.74 | **13.06** | 13.33 | direct 3.86, GI 5.13 |
+| Bistro stand-in | 16.55 | **13.64** | 13.91 | direct 3.90, GI 5.13, volumetrics + transparency 1.51 (0.01 over) |
+
+P3 and P8 are unchanged in verdict: VSM cached 0.249 / 0.223 ms; volumetrics (fog + clouds) 1.125 / 1.188 ms; the Bistro volumetrics + transparency stage is now 1.497 ms, within its 1.5 ms.
+
+### 10.2 What changed
+
+**Exact math (`shaders/common/exact_math.{glsl,slang}`), the largest single cost.** A fast-math experiment (plain `/` and `sqrt`) showed that the correctly rounded `fuseDivRn` / `fuseSqrtRn` were most of the "fixed per-pixel cost":
+- `light.shade` 2.57 → 0.63 ms, `taau.resolve` 2.09 → 0.52 ms, `ssfx.gtao` 2.49 → 0.46 ms, `resolve.gbuffer` 0.76 → 0.24 ms.
+- Each stepping decision compared |a| with the midpoints next to q as 64-bit products in 32-bit pairs (~60 integer ops, twice per call).
+
+The new fast step evaluates the same sign tests on the residual `D = ma·2^k − 2·mq·mb` (sqrt: `mx·2^k − (2·ms)²`) in wrapping 32-bit integers:
+- A float estimate of D proves |D| < 2^30 per call. It has one rounded product, error ≤ 2^25.
+- If the estimate is out of range, the 64-bit compare decides. The same happens for a power-of-two s in sqrt.
+- Every decision is therefore the exact one. A CPU sweep of 8.4e7 decisions at −6..+6 ulp found 0 mismatches, and 99.8 % were decided by the fast step (100 % at the IEEE result).
+- The result does not depend on `-fp-mode` or contraction.
+
+**`light.shade` / `light.cull` (P2).**
+- **`light.cull`.** One workgroup per cluster. The candidates go 64 at a time with an ordered compaction (workgroup prefix sum), so it builds the same list, at 64× the parallelism.
+- **`light.shade`, tiled light loop.** Each 8 × 8 tile walks the distinct clusters of its pixels. It loads each cluster's list 64 entries at a time and keeps, in list order, the point and spot lights whose sphere touches the world AABB of those pixels. The sphere uses range × (1 + 1e-4) + 1e-6, conservative against float rounding. Every other kind of entry is kept too.
+- **Dropped entries change nothing.** A dropped entry is out of range at every pixel of the tile, where it added an exact zero. Each kept light's VSM local slot is resolved once per tile, not by a 16-entry search per pixel and light.
+- **Per light, exact early-outs:**
+  - a range pre-test, which is the falloff's own zero test on position and range, before the 64-byte `GpuLight` load;
+  - no shadow lookup for a zero contribution (visibility is in [0, 1], so c·v == c);
+  - the pixel's `RtfxShadowView` read once per pixel, not once per light.
+- **DDGI.** The irradiance lookup direction is encoded once per pixel instead of once per probe (8×).
+- **Why P2 still misses: real lights, not overhead.** The stand-in hangs 4,096 lights of 3–7 m range over a 160 m × 10 m street, about 25 per metre, so a pixel has on the order of 100 lights in range. The cluster cap of 256 is reached.
+  - What is left: the multi-scatter BRDF for each of them, and the local VSM lookups of the 16 shadowed lights.
+  - With 256 lights the direct stage is 3.92 ms. 1.93 ms of that is the RT-shadow chain (`rt.shadows` 0.18 + SVGF 1.66 + pack), so even light.* = 0 would leave 2.15 ms.
+- **Closing P2 needs a quality decision.** Options are a per-light importance cut-off (lights whose `intensity × falloff` is below a threshold), stochastic light selection, or a cheaper shadow denoiser. Each changes the image, so none was done here.
+
+**`fog.inject`.**
+- One workgroup per 8 × 8 froxels of one depth slice. Before, one ran per 64-froxel depth column, and a wave walked about 20 different light clusters.
+- The falloff's zero test runs on position and range before the full light load.
+- Same results.
+
+**`ssfx.gtao`.** The per-column and per-row ray directions (two correctly rounded divisions per horizon sample) go into shared memory once per workgroup, for a 72-pixel halo (`max_radius_px` is 64). A sample beyond the halo takes `sx_position_at`. Same bits.
+
+**Light tree (`ltSample` / `ltPmf`).** It reads the current node's flags and child link, not the whole 64-byte node.
+
+**gsplat (P9).**
+- **Device-local splats.** The splat buffer is device-local. `setSplats` fills a host-visible staging copy and records a `gsplat.upload` copy pass, which runs once per change. Before, `gsplat.preprocess` read a 229 MiB host-visible buffer over PCIe every frame.
+- **Multi-workgroup scan.** `gsplat.scan.reduce` → `gsplat.scan` → `gsplat.scan.apply` replaces the single workgroup. The block sums use the sort's values-temp buffer, and the u32 sums are order-independent, so the offsets are unchanged.
+- Numbers: §10.4.
+
+**Not kept: strided à-trous tiles.** A shared-memory à-trous variant loaded the 12 × 12 tap lattice once per workgroup, with workgroups striding by the step. It was slower: reflection SVGF 2.23 → 2.85 ms, shadow 1.15 → 1.35 ms. The strided pixel mapping breaks the coalescing of the per-pixel writes and of the 3 × 3 variance reads, so it was reverted.
+
+The reflection SVGF à-trous count is now settable through the backend-neutral `DenoiserSettings::spatial_iterations` (0 = the preset's 5). The T2 default keeps 5: no quality measurement backs fewer iterations for the 1-spp reflection signal yet. With 3 iterations the GI stage would drop by about 0.9 ms. That is the next lever for the GI budget, after a reflection VRF / bias run (`fuse_rp_denoise_quality_reflection` at 3 or 4 iterations).
+
+### 10.3 Default changes (the T2 preset is `FrameSettings{}`)
+
+| Default | Before | After | Why |
+|---|---|---|---|
+| SSGI while DDGI runs | on (16 rays × 64 steps) | **off** (`FrameSettings::ssgiWithDdgi = false`; the composer drops SSGI when the DDGI stage runs) | At T2, ray-query DDGI is the indirect diffuse. Plan 6c lists SSR + GTAO as the screen-space supplement, and SSGI cost 55 ms of a 75.7 ms frame (§3.1) |
+| GTAO slices × steps | 4 × 8 (`GtaoParams`) | **2 × 6** (`frameSsfxPreset()`; the ScreenSpace `GtaoParams` CPU default is untouched) | 6.0 → 1.3 ms. The AO is a low-frequency term next to DDGI |
+| RT-shadow SVGF à-trous | 5 | **3** (`frameShadowDenoiserPreset()`) | 1.9 → 1.2 ms. A temporally accumulated 1-spp visibility does not need the 16-pixel step |
+| ReSTIR mode | biased | **unbiased** (`RestirSettings::unbiased = true`) | Biased loses 6.4 % of the energy (5.5 % after SVGF). Unbiased stays within 0.6 % with 4× lower relMSE (§6) |
+
+Goldens: `Tests/golden/renderer/frame_composer_t{0,2}.png` were regenerated (`FUSE_UPDATE_GOLDENS=1`):
+- **Cause.** T0 differs through GTAO 2 × 6. T2 also differs through SSGI off, shadow SVGF 3 and unbiased ReSTIR.
+- **Proof that the kernels did not move them.** Before regenerating, `fuse_rp_frame_vk_golden_t{0,2}` were run with the old defaults forced in the test, and they passed against the old goldens. The kernel changes moved neither image.
+- **The changed gate.** The only other gate that changed is the harness's `applyPreset`: `--preset reference` measures the former defaults, and `defaults` / `realtime` are `FrameSettings{}`.
+
+### 10.4 P7 and P9
+
+**P7: ReSTIR DI at 2560 × 1440** (`fuse_rp_hw_bench_restir`, production reference at 320 × 240 and 4096 spp, 3 trials × 100 frames):
+
+| | Before | After |
+|---|---|---|
+| `restir.di.initial` | 145–148 ms | **88.1 ms** |
+| RIS-only, `restir.*` | 146.1 ms | **88.0 ms** |
+| Biased + SVGF, `restir.*` | 155.7 ms | **94.7 ms** |
+| Unbiased + SVGF, `restir.*` (now the default) | 166.1 ms | **100.4 ms** |
+
+- **The quality numbers are bit-identical to §6.** RIS relMSE 0.17595, biased −6.439 %, unbiased relMSE 0.014444 (+0.565 %), unbiased + SVGF 8.0748e-4 (+0.355 %), frame-to-frame change 0.349 %. That is the hardware check that the exact-math step changes nothing. `PASS P7`.
+- **Not real time.** The target this pass reaches is **88 ms** for initial sampling at 1440p, a 1.65× speed-up. Two measurements locate the rest:
+  - Even with plain `/` and `sqrt` (a fast-math experiment, not shipped), `restir.di.initial` is still **27 ms**. The cost is the per-candidate light-tree descent itself: 8 candidates × about 14 levels × 2 node importances per pixel, each step a dependent node load.
+  - A cache of the shared top levels would save about 17 %.
+- **Real time needs a different initial-sampling scheme.** Examples are presampled light tiles or ReGIR (RTXDI-style), or fewer tree candidates feeding the temporal / spatial reuse. Each is a new estimator that needs its own CPU reference and parity gate.
+
+**P9: gaussian splats at 2560 × 1440** (`fuse_rp_hw_bench_p9`, `PASS`):
+
+| Splats | Before | After | Passes after |
+|---|---|---|---|
+| 100k | 1.92 ms | **1.42 ms** | sort 0.73, raster 0.45, scan 0.14 over three passes, preprocess 0.05 |
+| 300k | 4.11 ms | **2.56 ms** | |
+| 1M | 29.0 ms (27.2–30.4; another run 40.0) | **4.32 ms** | sort 1.90, raster 1.55, preprocess **0.38** (was 20–31), scan **0.35** over three passes (was 5.5) |
+
+- **Quality is unchanged.** PSNR is the same: 32.75 / 32.36 / 33.59 dB.
+- **The cost verdict narrows.** 100k splats now cost less than the 65k-triangle mesh path (1.42 vs 1.61 ms). 1M splats are 2.7× its cost instead of about 15×.
+- **The §7 verdict stands.** Memory loses: 228.9 MiB vs 6.6 MiB. Object PSNR loses: 33.6 vs 36.2 dB.
+
+### 10.5 Not done, and checks still owed
+
+- **P5 instanced DAG cut** (optional item): not done. The caveat in §5 stands: 384 small `stream.*` passes, one streamer per instance.
+- **Linux / Lavapipe.** WSL was down for this pass, so every gate ran natively on Windows. There, `FUSE_VULKAN_LVP_ENV` resolves to the system ICD, because no Lavapipe ICD exists on Windows, so the "lavapipe" ctests ran on the RTX 3090.
+  - That is the stricter test for the exact-math change, because NVIDIA's `/` and `sqrt` are not correctly rounded.
+  - Still owed: a real Lavapipe `ctest -L renderer` on Linux, and the GCC/Clang `-Werror` build of the changed C++ (`clustered_lighting.cpp`, `froxel_fog.cpp`, `gsplat.cpp`, `denoiser.cpp`, `frame_composer.cpp`).
+- **Baseline.** `tests/perf/rp_hw_bench_baseline.json` was re-recorded after this pass (`FUSE_UPDATE_PERF_BASELINE=1`, both scenes): total 12.90 ms (Sponza) and 13.48 ms (Bistro). The gate then passes without the flag.
+- **Final `ctest -L renderer`** (native, RTX 3090, `-j 16`): 532 / 535 pass, plus the two `fuse_rp_hw_refscene_*` skips (no assets).
+  - `fuse_rp_hw_p2_lights_4096` fails: the miss above.
+  - `fuse_rp_skinning_vk_bench` fails in the parallel run. It asserts a single-threaded CPU pose evaluation + upload + GPU skinning < 16 ms, and passes alone.
+  - `fuse_rp_hw_p5_dag_100m` fails in the parallel run: 670 ms cut, after a 1.29 ms stream-only diagnostic in the same process, so the GPU was taken. It passes alone (12 s).
+- **Goldens across devices.** The regenerated `frame_composer_t{0,2}` goldens come from the RTX 3090. Whether they pass a Lavapipe run on Linux (FLIP ≤ 0.02) is still owed.

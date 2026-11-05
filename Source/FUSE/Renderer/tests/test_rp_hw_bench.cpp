@@ -17,7 +17,7 @@
 //   --mode volumetrics   P8: froxel fog + clouds (+ frame.gather) <= 1.5 ms
 //   --scene sponza | bistro    (passes / gate; default sponza)
 //   --frames N --trials K --warmup W
-//   --preset realtime | defaults   (applyPreset; knobs --ssgi 0|1 --gtao-slices N --gtao-steps N --atrous N)
+//   --preset realtime | defaults | reference   (applyPreset; knobs --ssgi 0|1 --gtao-slices N --gtao-steps N --atrous N --refl-atrous N)
 //
 // Exit 77 = skip (stub build, no discrete GPU, below the T2 gate, no baseline entry for this device).
 //
@@ -109,28 +109,30 @@ bool isVolumetric(const std::string& n) { return starts(n, "fog.") || starts(n, 
 bool isAtmosphere(const std::string& n) { return starts(n, "atmos.") || starts(n, "frame.sky") || starts(n, "frame.aerial"); }
 
 // --- 1440p T2 preset ---------------------------------------------------------------------------------------
-/// The frame settings the harness measures. `defaults`: FrameSettings{} as shipped (reference-quality SSGI: 16 rays x
-/// 64 steps per pixel). `realtime` (default): the T2 1440p configuration of RENDERER-HW-RUN.md, "Preset": SSGI off
-/// (T2 indirect diffuse = ray-query DDGI; plan 6c lists SSR + GTAO, not SSGI, as the screen-space supplement; RT
-/// reflections already replace SSR), GTAO 2 slices x 6 steps, RT-shadow SVGF 3 a-trous iterations.
+/// The frame settings the harness measures. `realtime` / `defaults` (default): FrameSettings{} as shipped, which is
+/// the T2 1440p configuration of RENDERER-HW-RUN.md, "Preset" (SSGI off while DDGI runs, GTAO 2 slices x 6 steps,
+/// RT-shadow SVGF 3 a-trous iterations; frameSsfxPreset / frameShadowDenoiserPreset / ssgiWithDdgi). `reference`:
+/// the former reference-quality defaults (16-ray x 64-step SSGI next to DDGI, GTAO 4 x 8, shadow SVGF 5 iterations).
 struct Preset {
-    bool defaults = false;
+    bool reference = false;
     int ssgi = -1;        ///< -1: preset value
     int gtaoSlices = -1;
     int gtaoSteps = -1;
     int atrous = -1;
+    int reflAtrous = -1; ///< reflection SVGF a-trous iterations (DenoiserSettings::spatial_iterations)
 };
 Preset g_preset{};
 
 void applyPreset(FrameSettings& fs) {
-    if (!g_preset.defaults) {
-        fs.ssfxSettings.ssgi = false;
-        fs.ssfxSettings.gtao.slices = 2;
-        fs.ssfxSettings.gtao.steps = 6;
-        fs.denoiser.atrousIterations = 3;
+    if (g_preset.reference) {
+        fs.ssgiWithDdgi = true;
+        fs.ssfxSettings.gtao.slices = 4;
+        fs.ssfxSettings.gtao.steps = 8;
+        fs.denoiser.atrousIterations = 5;
     }
     if (g_preset.ssgi >= 0) {
         fs.ssfxSettings.ssgi = g_preset.ssgi != 0;
+        fs.ssgiWithDdgi = g_preset.ssgi != 0;
     }
     if (g_preset.gtaoSlices > 0) {
         fs.ssfxSettings.gtao.slices = static_cast<u32>(g_preset.gtaoSlices);
@@ -140,6 +142,9 @@ void applyPreset(FrameSettings& fs) {
     }
     if (g_preset.atrous > 0) {
         fs.denoiser.atrousIterations = static_cast<u32>(g_preset.atrous);
+    }
+    if (g_preset.reflAtrous > 0) {
+        fs.reflectionDenoiser.spatial_iterations = static_cast<u32>(g_preset.reflAtrous);
     }
 }
 
@@ -719,13 +724,15 @@ int main(int argc, char** argv) {
         } else if (k == "--warmup") {
             a.warmup = static_cast<u32>(std::stoul(v));
         } else if (k == "--preset") {
-            g_preset.defaults = v == "defaults";
+            g_preset.reference = v == "reference";
         } else if (k == "--ssgi") {
             g_preset.ssgi = std::stoi(v);
         } else if (k == "--gtao-slices") {
             g_preset.gtaoSlices = std::stoi(v);
         } else if (k == "--gtao-steps") {
             g_preset.gtaoSteps = std::stoi(v);
+        } else if (k == "--refl-atrous") {
+            g_preset.reflAtrous = std::stoi(v);
         } else if (k == "--atrous") {
             g_preset.atrous = std::stoi(v);
         }

@@ -73,6 +73,7 @@ struct GsGraphRefs {
     rg::BufferRef valuesTemp;
     rg::BufferRef scratch;
     rg::BufferRef image;  ///< ranges, output
+    rg::BufferRef staging; ///< host-visible splat upload source (valid while a setSplats upload is pending)
 };
 
 enum class GsCopySource : u8 {
@@ -178,7 +179,9 @@ private:
     u32 m_height = 0;
     u32 m_tileCount = 0;
 
-    Buffer m_splats{};
+    Buffer m_splats{};        ///< device-local (gsplat.preprocess reads it every frame)
+    Buffer m_splatStaging{};  ///< host-visible copy source of setSplats (gsplat.upload)
+    u64 m_uploadBytes = 0;    ///< pending setSplats bytes (0: none)
     Buffer m_work{};
     Buffer m_keys{};
     Buffer m_values{};
@@ -187,7 +190,7 @@ private:
     Buffer m_scratch{};
     Buffer m_image{};
     Buffer m_frameRing{};
-    u8 m_queues[8] = {rg::kNoQueue, rg::kNoQueue, rg::kNoQueue, rg::kNoQueue,
+    u8 m_queues[9] = {rg::kNoQueue, rg::kNoQueue, rg::kNoQueue, rg::kNoQueue, rg::kNoQueue,
                       rg::kNoQueue, rg::kNoQueue, rg::kNoQueue, rg::kNoQueue};
     u64 m_projectedOffset = 0;
     u64 m_offsetsOffset = 0;

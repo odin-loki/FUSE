@@ -59,11 +59,32 @@ float sx_arc(float h, float gamma, float cosN, float sinG) {
     return r;
 }
 
+// The ray directions (sx_ray_direction: two correctly rounded divisions per sample) of the columns / rows around
+// the 8 x 8 tile, computed once per workgroup: a sample within the halo reads them (the same bits), one beyond it
+// (max_radius_px above the default 64) takes sx_position_at.
+#define SX_GTAO_HALO 72
+#define SX_GTAO_LUT 152 // 8 + 2 x halo
+shared float s_rayX[SX_GTAO_LUT];
+shared float s_rayY[SX_GTAO_LUT];
+int g_lutX0 = 0;
+int g_lutY0 = 0;
+
+vec3 sx_gtao_position(uint x, uint y) {
+    const int ix = int(x) - g_lutX0;
+    const int iy = int(y) - g_lutY0;
+    if (ix >= 0 && ix < SX_GTAO_LUT && iy >= 0 && iy < SX_GTAO_LUT) {
+        const float z = sx_depth_at(x, y);
+        precise vec3 r = vec3(s_rayX[ix] * z, s_rayY[iy] * z, 1.0 * z); // sx_scale(sx_ray_direction(...), z)
+        return r;
+    }
+    return sx_position_at(x, y);
+}
+
 float sx_gtao(uint x, uint y) {
     if (x >= F.width || y >= F.height || sx_depth_at(x, y) <= 0.0) {
         return 1.0;
     }
-    const vec3 p = sx_position_at(x, y);
+    const vec3 p = sx_gtao_position(x, y);
     vec3 n = sx_normalize(sx_normal_at(x, y));
     if (sx_dot(n, p) > 0.0) {
         n = sx_neg(n);
@@ -158,7 +179,7 @@ float sx_gtao(uint x, uint y) {
                 if (sx_depth_at(ux, uy) <= 0.0) {
                     continue;
                 }
-                const vec3 h = sx_sub(sx_position_at(ux, uy), p);
+                const vec3 h = sx_sub(sx_gtao_position(ux, uy), p);
                 const float dist = sx_length(h);
                 if (dist < 1e-6 || dist > F.aoRadius) {
                     continue;
@@ -207,6 +228,17 @@ float sx_gtao(uint x, uint y) {
 void main() {
     sx_begin();
     const uvec2 p = gl_GlobalInvocationID.xy;
+    g_lutX0 = int(gl_WorkGroupID.x * 8u) - SX_GTAO_HALO;
+    g_lutY0 = int(gl_WorkGroupID.y * 8u) - SX_GTAO_HALO;
+    for (uint k = gl_LocalInvocationIndex; k < uint(SX_GTAO_LUT); k += 64u) {
+        precise float px = float(g_lutX0 + int(k)) + 0.5;
+        precise float py = float(g_lutY0 + int(k)) + 0.5;
+        precise float an = px - F.cx;
+        precise float bn = py - F.cy;
+        s_rayX[k] = fuse_div_rn(an, F.fx);
+        s_rayY[k] = fuse_div_rn(bn, F.fy);
+    }
+    barrier();
     if (p.x >= F.width || p.y >= F.height) {
         return;
     }
