@@ -30,6 +30,8 @@
 #include <fuse/world3d/spawn_yaw.hpp>
 #include <fuse/world3d/world_3d.hpp>
 
+#include <fuse/asset/cooked_mesh.hpp>
+
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -403,6 +405,80 @@ void testLevelNameOk() {
     expectTrue(!w3::level_name_ok("City Block"), "level name with a space is invalid");
 }
 
+/// Asset plan 4a: TSStatic shapes (DTS via the in-house reader, DAE via assimp) cook to game:/cooked/ and World3D
+/// resolves the entities' MeshAssets ids against the cooked root (the GPU half, vertex buffer + pixels, is
+/// fuse_u8_demo_3d_empty).
+void testTsStaticShapes(const fs::path& dir) {
+    const fs::path mission = dir / "shapes" / "worlds" / "shapes.mis";
+    fs::create_directories(mission.parent_path());
+    {
+        std::ofstream out(mission, std::ios::binary);
+        out << "new Scene(ShapeLevel) {\n"
+               "   new GroundPlane(Floor) { position = \"0 0 0\"; };\n"
+               "   new TSStatic(Cube) { position = \"0 5 1\"; shapeAsset = \"Core_GameObjects:unit_cube\"; };\n"
+               "   new TSStatic(Sphere) { position = \"2 5 1\"; scale = \"1 2 3\"; shapeName = \"core/gameObjects/shapes/unit_sphere.dts\"; };\n"
+               "   new TSStatic(Wheel) { position = \"-3 8 0\"; shapeAsset = \"Prototyping:carwheel_shape\"; };\n"
+               "   new TSStatic(Car) { position = \"-6 8 0\"; shapeAsset = \"Prototyping:car_shape\"; };\n"
+               "   new TSStatic(Ghost) { position = \"0 9 0\"; shapeName = \"art/shapes/missing.dts\"; };\n"
+               "};\n";
+    }
+    const fs::path cooked = dir / "shapes" / "cooked";
+    const std::string level = (mission.parent_path() / "shapes.fuselevel").generic_string();
+    const fuse::project::ConvertResult converted = fuse::project::convertT3DMissionToFuselevel(mission.string(), level);
+    expectTrue(converted.status == fuse::project::ConvertStatus::Ok && converted.components.meshes == 6u,
+               "shapes.mis converts (ground plane + 5 TSStatic meshes)");
+    const fuse::project::T3DShapeCookResult shapes = fuse::project::cookT3DMissionShapes(
+        mission.string(), cooked.string(), {(kSource / "Templates/BaseGame/game").string()});
+    // car.dae carries zero-area triangles: the strict cook's §5.3 gates refuse it (it stays undrawn).
+#if defined(FUSE_HAS_ASSIMP)
+    const u32 expectedCooked = 3u;
+#else
+    const u32 expectedCooked = 2u; // the wheel and the car are .dae (assimp)
+#endif
+    expectTrue(shapes.shapes == 5u && shapes.cooked == expectedCooked && shapes.unresolved == 1u &&
+                   shapes.failed == 4u - expectedCooked && !shapes.ok,
+               "cookT3DMissionShapes: " + shapes.note);
+    for (const fuse::project::T3DShapeCookEntry& entry : shapes.entries) {
+        std::printf("  shape %-8s %-40s -> %s (%s)\n", entry.objectName.c_str(), entry.shapeRef.c_str(),
+                    entry.outputPath.c_str(), entry.ok ? "cooked" : entry.note.c_str());
+        if (entry.ok) {
+            expectTrue(fs::is_regular_file(entry.outputPath), entry.objectName + ": .fusemesh written");
+        }
+    }
+
+    // Default cooked root: <level dir>/../cooked (the project layout) -- here dir/shapes/cooked.
+    w3::World3D world;
+    const w3::World3DLevelLoadResult loaded = world.loadWorldFromFuselevel(level);
+    expectTrue(loaded.ok && loaded.meshes == 6u, "shapes level loads (6 meshes)");
+    expectTrue(loaded.cookedMeshes == expectedCooked && loaded.unresolvedMeshes == 5u - expectedCooked,
+               "TSStatic mesh refs resolved against the cooked root: " + loaded.note);
+    expectTrue(world.cookedMeshes().size() == expectedCooked && world.cookedMeshVersion() != 0u,
+               "World3D keeps the cooked meshes for the renderer");
+    const fuse::u64 cubeId = shapes.entries.empty() ? 0u : shapes.entries[0].id.value;
+    u32 cubes = 0;
+    world.registry().each<fuse::ecs::MeshAssets, fuse::ecs::Mesh>(
+        [&](fuse::ecs::EntityID, fuse::ecs::MeshAssets& assets, fuse::ecs::Mesh& mesh) {
+            if (assets.mesh.value != cubeId) {
+                return;
+            }
+            ++cubes;
+            expectTrue(nearly(mesh.aabb_min.x, -0.5f) && nearly(mesh.aabb_max.y, 0.5f) && nearly(mesh.aabb_max.z, 0.5f),
+                       "TSStatic cube: Mesh box = the cooked unit-cube bounds");
+            expectTrue(!mesh.vertex_buffer.isValid(), "no vertex buffer before a renderer uploads the mesh");
+        });
+    expectTrue(cubes == 1u, "one entity references the cube's cooked mesh id");
+    for (const w3::World3DCookedMesh& m : world.cookedMeshes()) {
+        expectTrue(m.mesh != nullptr && !m.mesh->indices.empty(), "cooked mesh " + m.path + " has triangles");
+    }
+
+    // Explicit root; a reload drops the previous level's meshes.
+    w3::World3D other;
+    other.setCookedAssetRoot((dir / "nowhere").string());
+    const w3::World3DLevelLoadResult none = other.loadWorldFromFuselevel(level);
+    expectTrue(none.ok && none.cookedMeshes == 0u && none.unresolvedMeshes == 5u && other.cookedMeshes().empty(),
+               "an empty cooked root resolves nothing");
+}
+
 void testChunkOrigin() {
     expectTrue(w3::chunk_origin(2, 64) == 128, "chunk_origin(2, 64) is 128");
     expectTrue(w3::chunk_origin(-1, 64) == -64, "chunk_origin(-1, 64) is -64");
@@ -431,6 +507,7 @@ int main() {
     testLegacyLevel(dir);
     testWorld2DRoundTrip(dir);
     testWorld2DSpawnPlayMode(dir);
+    testTsStaticShapes(dir);
     fuse::core::shutdown();
     if (g_failures == 0) {
         std::printf("fuse_world3d_level_gates: all checks passed\n");

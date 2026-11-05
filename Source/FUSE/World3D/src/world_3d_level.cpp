@@ -7,6 +7,8 @@
 
 #include <fuse/world3d/world_3d.hpp>
 
+#include <fuse/asset/cooked_mesh.hpp>
+
 #include <fuse/ecs/components/collider.hpp>
 #include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/mesh.hpp>
@@ -20,6 +22,8 @@
 #include <fuse/scene/wire_stub.hpp>
 #include <fuse/world2d/scene_transform.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <memory>
 #include <system_error>
@@ -59,6 +63,10 @@ void World3D::clearLevel_() {
         m_objects.erase(m_objects.begin() + static_cast<std::ptrdiff_t>(i));
     }
     m_level.reset();
+    if (!m_cookedMeshes.empty()) {
+        m_cookedMeshes.clear();
+        ++m_cookedMeshVersion;
+    }
 }
 
 namespace {
@@ -67,6 +75,28 @@ namespace {
 std::unordered_map<u32, ecs::EntityID> transformEntitiesByIndex(ecs::Registry& registry) {
     std::unordered_map<u32, ecs::EntityID> out;
     registry.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform&) { out.emplace(id.index, id); });
+    return out;
+}
+
+/// Asset plan 4a: `.fusemesh` files under `root`, by the asset id of their `game:/cooked/<relative path>`.
+std::unordered_map<u64, std::string> indexCookedMeshes(const std::filesystem::path& root) {
+    std::unordered_map<u64, std::string> out;
+    std::error_code ec;
+    if (!std::filesystem::is_directory(root, ec)) {
+        return out;
+    }
+    for (std::filesystem::recursive_directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
+        if (!it->is_regular_file(ec)) {
+            continue;
+        }
+        std::string ext = it->path().extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (ext != ".fusemesh") {
+            continue;
+        }
+        const std::string rel = it->path().lexically_relative(root).generic_string();
+        out.emplace(asset::asset_id_of("game:/cooked/" + rel).value, it->path().string());
+    }
     return out;
 }
 
@@ -210,11 +240,67 @@ World3DLevelLoadResult World3D::loadWorldFromFuselevel(const std::string& fusele
     }
     result.ecsEntities = static_cast<u32>(m_registry.count());
 
+    // Asset plan 4a: cooked meshes (TSStatic shapes) the level references by ecs::MeshAssets::mesh id.
+    {
+        std::filesystem::path root = m_cookedRoot;
+        if (root.empty()) {
+            root = std::filesystem::path(fuselevelPath).parent_path().parent_path() / "cooked";
+        }
+        std::unordered_map<u64, std::string> files;
+        bool indexed = false;
+        std::unordered_map<u64, usize> loadedById;
+        m_registry.each<ecs::MeshAssets, ecs::Mesh>([&](ecs::EntityID, ecs::MeshAssets& assets, ecs::Mesh& mesh) {
+            if (!assets.mesh.valid()) {
+                return;
+            }
+            if (!indexed) {
+                files = indexCookedMeshes(root);
+                indexed = true;
+            }
+            auto known = loadedById.find(assets.mesh.value);
+            if (known == loadedById.end()) {
+                const auto file = files.find(assets.mesh.value);
+                std::shared_ptr<asset::CookedMesh> cooked;
+                if (file != files.end()) {
+                    cooked = std::make_shared<asset::CookedMesh>();
+                    std::string error;
+                    if (!asset::read_cooked_mesh_file(file->second, *cooked, &error)) {
+                        log::warn("World3D: cooked mesh %s unreadable: %s", file->second.c_str(), error.c_str());
+                        cooked.reset();
+                    }
+                }
+                if (cooked == nullptr) {
+                    loadedById.emplace(assets.mesh.value, ~usize{0});
+                    ++result.unresolvedMeshes;
+                    return;
+                }
+                known = loadedById.emplace(assets.mesh.value, m_cookedMeshes.size()).first;
+                m_cookedMeshes.push_back(World3DCookedMesh{assets.mesh, file->second, std::move(cooked)});
+            }
+            if (known->second == ~usize{0}) {
+                ++result.unresolvedMeshes;
+                return;
+            }
+            ++result.cookedMeshes;
+            const asset::CookedMesh& cooked = *m_cookedMeshes[known->second].mesh;
+            const bool empty = !(mesh.aabb_max.x > mesh.aabb_min.x || mesh.aabb_max.y > mesh.aabb_min.y ||
+                                 mesh.aabb_max.z > mesh.aabb_min.z);
+            if (empty) {
+                mesh.aabb_min = ecs::vec3{cooked.bounds_min[0], cooked.bounds_min[1], cooked.bounds_min[2], 0.f};
+                mesh.aabb_max = ecs::vec3{cooked.bounds_max[0], cooked.bounds_max[1], cooked.bounds_max[2], 0.f};
+            }
+        });
+        if (!m_cookedMeshes.empty()) {
+            ++m_cookedMeshVersion;
+        }
+    }
+
     m_level = std::move(level);
     result.ok = true;
     result.note = "level loaded (v" + std::to_string(result.fileVersion) + ", " + std::to_string(result.objects) +
                   " objects, " + std::to_string(result.ecsEntities) + " ECS entities, " +
-                  std::to_string(result.physicsLinked) + " physics bodies)";
+                  std::to_string(result.physicsLinked) + " physics bodies, " + std::to_string(result.cookedMeshes) +
+                  " cooked / " + std::to_string(result.unresolvedMeshes) + " unresolved mesh refs)";
     log::info("World3D: %s: %s", fuselevelPath.c_str(), result.note.c_str());
     m_lastLevelLoad = result;
     return result;

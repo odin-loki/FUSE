@@ -246,6 +246,15 @@ void test_dae_fixtures(const fs::path& templates) {
                     mesh.vertex_count(), triangles, mesh.bounds_min[0], mesh.bounds_min[1], mesh.bounds_min[2],
                     mesh.bounds_max[0], mesh.bounds_max[1], mesh.bounds_max[2]);
         expect(triangles > 0u && finite_bounds(mesh), name + ": triangles + finite bounds");
+        // Informational: whether the strict cook's §5.3 gates accept the shape (some template DAEs carry
+        // zero-area triangles, which the strict cook refuses by design).
+        fuse::project::MeshImportDesc desc;
+        desc.input_path = file.string();
+        desc.output_path = (fs::temp_directory_path() / "fuse_asset_dts_import_dae.fusemesh").string();
+        fuse::project::AssetCooker cooker;
+        const fuse::project::CookRecord record = cooker.cook_mesh(desc);
+        std::printf("      strict cook: %s%s%s\n", record.ok ? "ok" : "refused", record.ok ? "" : " - ",
+                    record.ok ? "" : record.note.c_str());
     }
     std::printf("dae: %u of %zu shapes imported\n", imported, files.size());
 }
