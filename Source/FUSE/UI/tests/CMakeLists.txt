@@ -576,6 +576,14 @@ if(TARGET fuse_app)
             target_compile_definitions(fuse_platform_${g} PRIVATE FUSE_PLATFORM_TEXT_GATE="${g}")
             if(WIN32)
                 target_link_libraries(fuse_platform_${g} PRIVATE imm32)
+            elseif(g STREQUAL "ime_composition")
+                # the server IM of the pre-edit part (uim-xim + Byeoru); also an unpacked ~/opt/<pkg>/usr/bin/uim-xim
+                # (apt-get download uim-xim ... && dpkg -x <deb> ~/opt/uim); $FUSE_TEST_UIM_XIM overrides
+                file(GLOB _fuse_im_hints LIST_DIRECTORIES true "$ENV{HOME}/opt/*/usr/bin")
+                find_program(FUSE_UI_TEST_UIM_XIM uim-xim HINTS ${_fuse_im_hints})
+                if(FUSE_UI_TEST_UIM_XIM)
+                    target_compile_definitions(fuse_platform_${g} PRIVATE FUSE_TEST_UIM_XIM_PATH="${FUSE_UI_TEST_UIM_XIM}")
+                endif()
             endif()
             if(FUSE_UI_XVFB_RUN AND NOT WIN32)
                 add_test(NAME fuse_platform_${g} COMMAND ${FUSE_UI_XVFB_RUN} -a -s "${FUSE_UI_XVFB_ARGS}"
