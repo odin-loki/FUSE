@@ -1,0 +1,116 @@
+{
+ "analysis": {
+  "calls": [
+   {
+    "callee": "isObject",
+    "caller": "ShapeBaseData::onCollision",
+    "col": 9,
+    "file": "shapebase_impact.tscript",
+    "kind": "plain",
+    "line": 28
+   },
+   {
+    "callee": ".getDamageState",
+    "caller": "ShapeBaseData::onCollision",
+    "col": 32,
+    "file": "shapebase_impact.tscript",
+    "kind": "method",
+    "line": 28
+   },
+   {
+    "callee": "VectorSub",
+    "caller": "ShapeBaseData::onCollision",
+    "col": 15,
+    "file": "shapebase_impact.tscript",
+    "kind": "plain",
+    "line": 32
+   },
+   {
+    "callee": ".getPosition",
+    "caller": "ShapeBaseData::onCollision",
+    "col": 30,
+    "file": "shapebase_impact.tscript",
+    "kind": "method",
+    "line": 32
+   },
+   {
+    "callee": ".damage",
+    "caller": "ShapeBaseData::onCollision",
+    "col": 11,
+    "file": "shapebase_impact.tscript",
+    "kind": "method",
+    "line": 35
+   },
+   {
+    "callee": "isObject",
+    "caller": "ShapeBaseData::onImpact",
+    "col": 9,
+    "file": "shapebase_impact.tscript",
+    "kind": "plain",
+    "line": 40
+   },
+   {
+    "callee": ".getDamageState",
+    "caller": "ShapeBaseData::onImpact",
+    "col": 32,
+    "file": "shapebase_impact.tscript",
+    "kind": "method",
+    "line": 40
+   },
+   {
+    "callee": "VectorSub",
+    "caller": "ShapeBaseData::onImpact",
+    "col": 15,
+    "file": "shapebase_impact.tscript",
+    "kind": "plain",
+    "line": 44
+   },
+   {
+    "callee": ".getPosition",
+    "caller": "ShapeBaseData::onImpact",
+    "col": 30,
+    "file": "shapebase_impact.tscript",
+    "kind": "method",
+    "line": 44
+   },
+   {
+    "callee": ".damage",
+    "caller": "ShapeBaseData::onImpact",
+    "col": 11,
+    "file": "shapebase_impact.tscript",
+    "kind": "method",
+    "line": 47
+   }
+  ],
+  "file": "shapebase_impact.tscript",
+  "functions": [
+   {
+    "file": "shapebase_impact.tscript",
+    "key": "ShapeBaseData::onCollision",
+    "line": 26,
+    "params": [
+     "%this",
+     "%obj",
+     "%collObj",
+     "%vec",
+     "%len"
+    ]
+   },
+   {
+    "file": "shapebase_impact.tscript",
+    "key": "ShapeBaseData::onImpact",
+    "line": 38,
+    "params": [
+     "%this",
+     "%obj",
+     "%collObj",
+     "%vec",
+     "%len"
+    ]
+   }
+  ],
+  "objects": [],
+  "packages": []
+ },
+ "diagnostics": []
+}

@@ -1,0 +1,27 @@
+{
+  "id": "tex/plank_floor_02/tag_image",
+  "inputs": [
+    {
+      "media_type": "image/png",
+      "name": "plank_floor_02",
+      "origin": "library",
+      "path": "../inputs/plank_floor_02.png"
+    }
+  ],
+  "model": {
+    "id": "gemini-3.8-flash"
+  },
+  "params": {
+    "batch": true,
+    "prompt": "tag_image",
+    "prompt_sha256": "48a68c980136ab0225bd051e4b09d0fc02a836d6d05e56194e29055a4e588c65",
+    "vars": {
+      "context": "legacy texture, medieval town",
+      "name": "plank_floor_02"
+    }
+  },
+  "provider": "gemini",
+  "schema": "fuse.ai-recipe/1",
+  "seed": 7,
+  "task": "TAG_IMAGE"
+}

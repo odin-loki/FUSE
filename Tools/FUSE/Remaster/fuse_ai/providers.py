@@ -221,10 +221,11 @@ PROVIDER_TABLE: Dict[str, ProviderInfo] = {
                      "cloud, paid key", True,
                      _ts("TAG_IMAGE", "INFER_MATERIAL", "SUMMARISE_CODE", "PORT_SCRIPT", "EDIT_IMAGE", "GEN_IMAGE",
                          "GEN_VIDEO"),
-                     "The user-approved exception to §0.1.0; originals only with the per-game opt-in (§0.1.5)."),
+                     "The user-approved exception to §0.1.0; originals only with the per-game opt-in (§0.1.5).",
+                     implemented=True),
         ProviderInfo("local-llm", _ts("TAG_IMAGE", "INFER_MATERIAL", "SUMMARISE_CODE", "PORT_SCRIPT"),
                      "the 3090, llama.cpp llama-server on 127.0.0.1", False, frozenset(),
-                     "Offline fallback (Qwen3-Coder-30B-A3B, Qwen3-VL-8B GGUF)."),
+                     "Offline fallback (Qwen3-Coder-30B-A3B, Qwen3-VL-8B GGUF).", implemented=True),
         ProviderInfo("comfyui", _ts("UPSCALE", "PBR_MAPS", "GEN_IMAGE"), "the 3090, user-run (GPL: HTTP API only)",
                      False, frozenset(), "Separate process over its local HTTP API; pinned workflow JSON."),
         ProviderInfo("remix-toolkit", frozenset(), "Windows + Omniverse Toolkit (local REST)", False, frozenset(),
@@ -393,11 +394,15 @@ def _ensure_builtin() -> None:
     if _BUILTIN_DONE:
         return
     _BUILTIN_DONE = True
+    from .gemini import GeminiProvider
+    from .local_llm import LocalLLMProvider
     from .mock import MockProvider
 
     from .remix_toolkit import RemixToolkitProvider  # W2.5
 
-    factories: Dict[str, Callable[[ProviderInfo], Provider]] = {"gemini": GeminiStub,
+    # W4.1 / W4.6: real REST clients; unconfigured (no key, no fixtures) they refuse like the W0 stubs did.
+    factories: Dict[str, Callable[[ProviderInfo], Provider]] = {"gemini": lambda _row: GeminiProvider(),
+                                                                "local-llm": lambda _row: LocalLLMProvider(),
                                                                 "remix-toolkit": RemixToolkitProvider}
     for pid, row in PROVIDER_TABLE.items():
         if pid in _REGISTRY:

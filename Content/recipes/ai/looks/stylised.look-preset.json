@@ -1,0 +1,19 @@
+{
+  "schema": "fuse.ai-look-preset/1",
+  "name": "stylised",
+  "description": "Stylised: a creative grade on top of the remastered lighting. ACES tone map, warmer and more saturated, lifted shadows, vignette and light grain; an optional fitted LUT (for example from a concept-art paint-over) can be added.",
+  "needs_lut": false,
+  "lut_strength": 0.8,
+  "base": {
+    "exposure": { "autoEnabled": true },
+    "toneMap": { "operator": "aces", "calibrateMidGrey": true },
+    "bloom": { "intensity": 0.07, "threshold": 1.1, "knee": 0.6 },
+    "colorGrade": {
+      "temperatureK": 7400, "tint": 0.03, "contrast": 1.1, "saturation": 1.15,
+      "lift": [0.02, 0.01, 0.0], "gain": [1.03, 1.0, 0.96], "lut": null
+    },
+    "vignette": { "intensity": 0.3, "falloff": 2.5, "roundness": 0.6 },
+    "filmGrain": { "intensity": 0.02, "response": 0.6 },
+    "sharpen": { "enabled": true, "sharpness": 0.3 }
+  }
+}

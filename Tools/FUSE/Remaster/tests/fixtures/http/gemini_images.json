@@ -1,0 +1,127 @@
+{
+ "description": "GEN_IMAGE and EDIT_IMAGE (Nano Banana 2)",
+ "exchanges": [
+  {
+   "request": {
+    "body": {
+     "contents": [
+      {
+       "parts": [
+        {
+         "text": "Weathered oak plank floor texture, hand-painted style, top-down, even lighting, tileable."
+        }
+       ],
+       "role": "user"
+      }
+     ],
+     "generationConfig": {
+      "candidateCount": 1,
+      "imageConfig": {
+       "aspectRatio": "1:1",
+       "imageSize": "1K"
+      },
+      "responseModalities": [
+       "IMAGE"
+      ],
+      "seed": 11
+     }
+    },
+    "method": "POST",
+    "path": "/v1beta/models/gemini-3.1-flash-image:generateContent"
+   },
+   "response": {
+    "body": {
+     "candidates": [
+      {
+       "content": {
+        "parts": [
+         {
+          "inlineData": {
+           "data": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAABE0lEQVR4AQEIAff+ACkm8P8+J97/VCjM/zUVXP9AFVP/SxZK/6sug//CMHH/ACkm8P8+J97/VCjM/zUVXP9AFVP/SxZK/6sug//CMHH/ACkm8P8+J97/VCjM/zUVXP9AFVP/SxZK/6sug//CMHH/ABQTeP8fE2//KhRm/2oquf+AK6f/li2V/1UXQf9hGDj/ABQTeP8fE2//KhRm/2oquf+AK6f/li2V/1UXQf9hGDj/ABQTeP8fE2//KhRm/2oquf+AK6f/li2V/1UXQf9hGDj/ACkm8P8+J97/VCjM/zUVXP9AFVP/SxZK/6sug//CMHH/ACkm8P8+J97/VCjM/zUVXP9AFVP/SxZK/6sug//CMHH/5iZ/9j8J3tEAAAAASUVORK5CYII=",
+           "mimeType": "image/png"
+          }
+         }
+        ],
+        "role": "model"
+       },
+       "finishReason": "STOP",
+       "index": 0
+      }
+     ],
+     "modelVersion": "gemini-3.1-flash-image",
+     "usageMetadata": {
+      "candidatesTokenCount": 1290,
+      "promptTokenCount": 40,
+      "totalTokenCount": 1330
+     }
+    },
+    "status": 200
+   }
+  },
+  {
+   "request": {
+    "body": {
+     "contents": [
+      {
+       "parts": [
+        {
+         "text": "Repaint this sign in a clean hand-painted style; keep the layout, remove the grime."
+        },
+        {
+         "inlineData": {
+          "data": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAABE0lEQVR4AQEIAff+ABBJ2P8TRNb/F0DU/xs80v8PHGj/ERpn/xMYZv8WFmX/ABBJ2P8TRNb/F0DU/xs80v8PHGj/ERpn/xMYZv8WFmX/ABBJ2P8TRNb/F0DU/xs80v8PHGj/ERpn/xMYZv8WFmX/ABBJ2P8TRNb/F0DU/xs80v8PHGj/ERpn/xMYZv8WFmX/AAgkbP8JImv/CyBq/w0eaf8fOND/IzTO/ycwzP8sLMv/AAgkbP8JImv/CyBq/w0eaf8fOND/IzTO/ycwzP8sLMv/AAgkbP8JImv/CyBq/w0eaf8fOND/IzTO/ycwzP8sLMv/AAgkbP8JImv/CyBq/w0eaf8fOND/IzTO/ycwzP8sLMv/OHt3SeIxImoAAAAASUVORK5CYII=",
+          "mimeType": "image/png"
+         }
+        }
+       ],
+       "role": "user"
+      }
+     ],
+     "generationConfig": {
+      "candidateCount": 1,
+      "imageConfig": {
+       "aspectRatio": "1:1",
+       "imageSize": "1K"
+      },
+      "responseModalities": [
+       "IMAGE"
+      ],
+      "seed": 12
+     }
+    },
+    "method": "POST",
+    "path": "/v1beta/models/gemini-3.1-flash-image:generateContent"
+   },
+   "response": {
+    "body": {
+     "candidates": [
+      {
+       "content": {
+        "parts": [
+         {
+          "inlineData": {
+           "data": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAABE0lEQVR4AQEIAff+APiSev/Vi2n/soVY/49/Rv82PBr/JDkS/xM2Cf8BMwH/APiSev/Vi2n/soVY/49/Rv82PBr/JDkS/xM2Cf8BMwH/APiSev/Vi2n/soVY/49/Rv82PBr/JDkS/xM2Cf8BMwH/APiSev/Vi2n/soVY/49/Rv82PBr/JDkS/xM2Cf8BMwH/AHxJPf9qRTT/WUIs/0c/I/9seDX/SXIk/yZsE/8DZgL/AHxJPf9qRTT/WUIs/0c/I/9seDX/SXIk/yZsE/8DZgL/AHxJPf9qRTT/WUIs/0c/I/9seDX/SXIk/yZsE/8DZgL/AHxJPf9qRTT/WUIs/0c/I/9seDX/SXIk/yZsE/8DZgL/ffF5/QnYy9YAAAAASUVORK5CYII=",
+           "mimeType": "image/png"
+          }
+         }
+        ],
+        "role": "model"
+       },
+       "finishReason": "STOP",
+       "index": 0
+      }
+     ],
+     "modelVersion": "gemini-3.1-flash-image",
+     "usageMetadata": {
+      "candidatesTokenCount": 1290,
+      "promptTokenCount": 40,
+      "totalTokenCount": 1330
+     }
+    },
+    "status": 200
+   }
+  }
+ ],
+ "provider": "gemini",
+ "schema": "fuse.ai-http-fixture/1"
+}

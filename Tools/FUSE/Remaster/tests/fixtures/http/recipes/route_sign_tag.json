@@ -1,0 +1,22 @@
+{
+  "id": "tex/shop_sign_03/tag_image",
+  "inputs": [
+    {
+      "media_type": "image/png",
+      "name": "shop_sign_03",
+      "origin": "original",
+      "path": "../inputs/shop_sign_03.png"
+    }
+  ],
+  "params": {
+    "prompt": "tag_image",
+    "prompt_sha256": "48a68c980136ab0225bd051e4b09d0fc02a836d6d05e56194e29055a4e588c65",
+    "vars": {
+      "context": "legacy texture, medieval town",
+      "name": "shop_sign_03"
+    }
+  },
+  "schema": "fuse.ai-recipe/1",
+  "seed": 7,
+  "task": "TAG_IMAGE"
+}

@@ -24,7 +24,7 @@ import datetime as _dt
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from . import BUDGET_SCHEMA
 from .cache import _atomic_write
@@ -188,6 +188,46 @@ class Budget:
             problems.append(f"{pid} is at its rate limit of {lim.rpm} requests per minute")
         if problems:
             raise BudgetExceeded(f"budget refused {pid}: " + "; ".join(problems))
+
+    def check_plan(self, items: List[Tuple[ProviderInfo, Cost]]) -> Dict[str, Any]:
+        """W4.5 preflight: the *sum* of the estimates of every pending call against the per-run cap, each
+        provider's per-run and monthly caps and its GPU-hour cap, before any call is made. The request rate is
+        not checked here (it throttles calls; :meth:`check` refuses them one by one). Returns the totals."""
+        per_usd: Dict[str, float] = {}
+        per_gpu_s: Dict[str, float] = {}
+        infos: Dict[str, ProviderInfo] = {}
+        for info, est in items:
+            infos[info.id] = info
+            per_usd[info.id] = per_usd.get(info.id, 0.0) + est.usd
+            if est.gpu:
+                per_gpu_s[info.id] = per_gpu_s.get(info.id, 0.0) + est.seconds
+        total = sum(per_usd.values())
+        problems = []
+        remaining = self.config.per_run_usd - self.run_usd_total
+        if total > remaining + 1e-9:
+            problems.append(f"the plan's estimate US${total:.4f} exceeds the per-run cap (US${remaining:.4f} of "
+                            f"US${self.config.per_run_usd:.2f} left)")
+        for pid, info in sorted(infos.items()):
+            lim = self.config.limits_for(info)
+            usd = per_usd.get(pid, 0.0)
+            if lim.per_run_usd is not None and usd > lim.per_run_usd - self.run_usd.get(pid, 0.0) + 1e-9:
+                problems.append(f"{pid}: plan US${usd:.4f} exceeds its per-run cap US${lim.per_run_usd:.2f}")
+            if lim.monthly_usd is not None and usd > 0:
+                left = lim.monthly_usd - self.month_spent_usd(pid)
+                if usd > left + 1e-9:
+                    problems.append(f"{pid}: plan US${usd:.4f} exceeds the monthly cap for {self._month()} "
+                                    f"(US${left:.4f} of US${lim.monthly_usd:.2f} left)")
+            gpu_s = per_gpu_s.get(pid, 0.0)
+            if lim.gpu_hours_per_run is not None and gpu_s > 0:
+                left_s = lim.gpu_hours_per_run * 3600.0 - self.run_gpu_seconds.get(pid, 0.0)
+                if gpu_s > left_s + 1e-9:
+                    problems.append(f"{pid}: plan {gpu_s / 3600.0:.3f} GPU-hours exceeds its per-run cap "
+                                    f"({left_s / 3600.0:.3f} of {lim.gpu_hours_per_run:g} left)")
+        if problems:
+            raise BudgetExceeded(f"budget refused the plan of {len(items)} call(s) before any call: "
+                                 + "; ".join(problems))
+        return {"calls": len(items), "usd": round(total, 6), "per_provider_usd": per_usd,
+                "per_provider_gpu_hours": {k: v / 3600.0 for k, v in per_gpu_s.items()}}
 
     def record(self, info: ProviderInfo, actual: Cost) -> None:
         pid = info.id

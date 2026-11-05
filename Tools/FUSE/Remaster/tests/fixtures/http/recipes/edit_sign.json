@@ -1,0 +1,22 @@
+{
+  "id": "tex/shop_sign_03/edit",
+  "inputs": [
+    {
+      "media_type": "image/png",
+      "name": "shop_sign_03",
+      "origin": "original",
+      "path": "../inputs/shop_sign_03.png"
+    }
+  ],
+  "model": {
+    "id": "gemini-3.1-flash-image"
+  },
+  "params": {
+    "prompt": "Repaint this sign in a clean hand-painted style; keep the layout, remove the grime.",
+    "size": "1K"
+  },
+  "provider": "gemini",
+  "schema": "fuse.ai-recipe/1",
+  "seed": 12,
+  "task": "EDIT_IMAGE"
+}

@@ -50,3 +50,49 @@ if(Python3_Interpreter_FOUND)
     set_tests_properties(remaster_remix_toolkit_loopback PROPERTIES LABELS "remaster;fuse_ai;python" TIMEOUT 120
                          ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
 endif()
+
+# ---- Waves 3-5: CPU tools, the gemini / local-llm providers and the port flow -------------------------------
+#   fuse_remaster_lua_parity   W4.3 harness: runs a ported Lua behaviour in the engine's Lua (vendor/lua 5.2.3)
+#                              under ScriptVM's sandbox, replays an event trace, compares the event log.
+#   remaster_lua_parity        the harness on the fixture port (must match) and on a broken port (must differ).
+#   remaster_ai_textures       W3.1 classifiers (>= 90 % on the labelled synthetic set), W3.4 library matcher
+#                              (top-3 >= 80 %), W3.5 rebuild within tolerance + fingerprint attack PSNR < 15 dB.
+#   remaster_ai_gemini         W4.1 gemini REST contract tests (replayed hand-written HTTP fixtures, no network),
+#                              W4.2 prompts + JSON schemas, W4.4 SynthID lock records, W4.5 cost report + budget
+#                              preflight, W4.6 local-llm + routing of originals without the cloud opt-in.
+#   remaster_ai_port           W4.3 TorqueScript (MIT template) -> tscript dump -> spec -> Lua in replay mode; the
+#                              Lua runs through fuse_remaster_lua_parity when it is built (structural checks always).
+#   remaster_ai_world          W5.2 collision vs render, W5.3 light calibration, W5.4 look LUT (.fuselook + .cube),
+#                              W5.6 emissive -> proxy light.
+if(NOT TARGET fuse_lua AND EXISTS "${FUSE_REMASTER_REPO_ROOT}/vendor/lua/CMakeLists.txt")
+    # Same binary dir and guard as Source/FUSE/Script, which then reuses this target.
+    add_subdirectory("${FUSE_REMASTER_REPO_ROOT}/vendor/lua" "${CMAKE_BINARY_DIR}/fuse_vendor/lua" EXCLUDE_FROM_ALL)
+endif()
+if(TARGET fuse_lua)
+    add_executable(fuse_remaster_lua_parity "${FUSE_REMASTER_TOOLS_DIR}/lua_parity/lua_parity.cpp")
+    target_link_libraries(fuse_remaster_lua_parity PRIVATE fuse_lua fuse_poco)
+    _fuse_remaster_cxx(fuse_remaster_lua_parity)
+    set(_fx "${FUSE_REMASTER_TOOLS_DIR}/tests/fixtures/port")
+    add_test(NAME remaster_lua_parity
+             COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:fuse_remaster_lua_parity> -DFX=${_fx}
+                     -P "${FUSE_REMASTER_TOOLS_DIR}/lua_parity/lua_parity_gate.cmake")
+    set_tests_properties(remaster_lua_parity PROPERTIES LABELS "remaster;port" TIMEOUT 60)
+endif()
+
+if(Python3_Interpreter_FOUND)
+    set(_ai_env "PYTHONDONTWRITEBYTECODE=1;FUSE_AI_OFFLINE=1;FUSE_AI_CACHE=${_fuse_ai_work}/ai-cache")
+    if(TARGET fuse_remaster_tscript_dump)
+        list(APPEND _ai_env "FUSE_REMASTER_TSCRIPT_DUMP=$<TARGET_FILE:fuse_remaster_tscript_dump>")
+    endif()
+    if(TARGET fuse_remaster_lua_parity)
+        list(APPEND _ai_env "FUSE_REMASTER_LUA_PARITY=$<TARGET_FILE:fuse_remaster_lua_parity>")
+    endif()
+    foreach(_area textures gemini port world)
+        add_test(NAME remaster_ai_${_area}
+                 COMMAND "${Python3_EXECUTABLE}" -B -m unittest discover
+                         -s "${FUSE_REMASTER_TOOLS_DIR}/tests" -p "test_ai_${_area}.py" -t "${FUSE_REMASTER_TOOLS_DIR}" -v
+                 WORKING_DIRECTORY "${_fuse_ai_work}")
+        set_tests_properties(remaster_ai_${_area} PROPERTIES LABELS "remaster;fuse_ai;python;ai_${_area}"
+                             TIMEOUT 600 ENVIRONMENT "${_ai_env}")
+    endforeach()
+endif()

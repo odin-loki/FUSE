@@ -1,0 +1,559 @@
+{
+ "description": "TAG_IMAGE (429 and 503 first, then 200) and INFER_MATERIAL",
+ "exchanges": [
+  {
+   "request": {
+    "body": {
+     "contents": [
+      {
+       "parts": [
+        {
+         "text": "Texture name: brick_wall_01\nKnown context: legacy texture, medieval town\nReturn descriptive tags, the material class, a physical category for the material library, the texture's role, whether it contains text or a logo, and your confidence."
+        },
+        {
+         "inlineData": {
+          "data": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAABE0lEQVR4AQEIAff+AMAKYf+4G2P/sCxl/1QfM/9QJzT/TDA1/5Bzbf+IhXD/AMAKYf+4G2P/sCxl/1QfM/9QJzT/TDA1/5Bzbf+IhXD/AMAKYf+4G2P/sCxl/1QfM/9QJzT/TDA1/5Bzbf+IhXD/AGAFMP9cDTH/WBYy/6g+Z/+gT2n/mGFr/0g5Nv9EQjj/AGAFMP9cDTH/WBYy/6g+Z/+gT2n/mGFr/0g5Nv9EQjj/AGAFMP9cDTH/WBYy/6g+Z/+gT2n/mGFr/0g5Nv9EQjj/AMAKYf+4G2P/sCxl/1QfM/9QJzT/TDA1/5Bzbf+IhXD/AMAKYf+4G2P/sCxl/1QfM/9QJzT/TDA1/5Bzbf+IhXD/JpCAff6VQZMAAAAASUVORK5CYII=",
+          "mimeType": "image/png"
+         }
+        }
+       ],
+       "role": "user"
+      }
+     ],
+     "generationConfig": {
+      "candidateCount": 1,
+      "maxOutputTokens": 512,
+      "responseJsonSchema": {
+       "additionalProperties": false,
+       "properties": {
+        "confidence": {
+         "maximum": 1,
+         "minimum": 0,
+         "type": "number"
+        },
+        "is_text_or_logo": {
+         "type": "boolean"
+        },
+        "material_class": {
+         "enum": [
+          "stone",
+          "brick",
+          "concrete",
+          "plaster",
+          "tile",
+          "wood",
+          "metal/bare",
+          "metal/painted",
+          "fabric",
+          "leather",
+          "glass",
+          "plastic",
+          "ground/dirt",
+          "ground/grass",
+          "ground/sand",
+          "ground/snow",
+          "foliage",
+          "water",
+          "paper",
+          "skin",
+          "sky",
+          "ui",
+          "decal",
+          "other"
+         ],
+         "type": "string"
+        },
+        "physical_category": {
+         "maxLength": 64,
+         "pattern": "^[a-z][a-z0-9_]*(/[a-z0-9_]+)*$",
+         "type": "string"
+        },
+        "tags": {
+         "items": {
+          "pattern": "^[a-z0-9][a-z0-9_/-]{0,31}$",
+          "type": "string"
+         },
+         "maxItems": 16,
+         "minItems": 1,
+         "type": "array",
+         "uniqueItems": true
+        },
+        "texture_role": {
+         "enum": [
+          "albedo",
+          "normal",
+          "lightmap",
+          "ui",
+          "decal",
+          "sky",
+          "font",
+          "mask",
+          "other"
+         ],
+         "type": "string"
+        }
+       },
+       "required": [
+        "tags",
+        "material_class",
+        "physical_category",
+        "texture_role",
+        "is_text_or_logo",
+        "confidence"
+       ],
+       "type": "object"
+      },
+      "responseMimeType": "application/json",
+      "seed": 7,
+      "temperature": 0
+     },
+     "systemInstruction": {
+      "parts": [
+       {
+        "text": "You classify game textures for a remastering pipeline. You see one thumbnail. Answer only with JSON that matches the response schema. Use lowercase tags. Do not describe people, brands or text content beyond flagging it."
+       }
+      ]
+     }
+    },
+    "method": "POST",
+    "path": "/v1beta/models/gemini-3.8-flash:generateContent"
+   },
+   "response": {
+    "body": {
+     "error": {
+      "code": 429,
+      "message": "Quota exceeded; retry later.",
+      "status": "RESOURCE_EXHAUSTED"
+     }
+    },
+    "headers": {
+     "retry-after": "2"
+    },
+    "status": 429
+   }
+  },
+  {
+   "request": {
+    "body": {
+     "contents": [
+      {
+       "parts": [
+        {
+         "text": "Texture name: brick_wall_01\nKnown context: legacy texture, medieval town\nReturn descriptive tags, the material class, a physical category for the material library, the texture's role, whether it contains text or a logo, and your confidence."
+        },
+        {
+         "inlineData": {
+          "data": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAABE0lEQVR4AQEIAff+AMAKYf+4G2P/sCxl/1QfM/9QJzT/TDA1/5Bzbf+IhXD/AMAKYf+4G2P/sCxl/1QfM/9QJzT/TDA1/5Bzbf+IhXD/AMAKYf+4G2P/sCxl/1QfM/9QJzT/TDA1/5Bzbf+IhXD/AGAFMP9cDTH/WBYy/6g+Z/+gT2n/mGFr/0g5Nv9EQjj/AGAFMP9cDTH/WBYy/6g+Z/+gT2n/mGFr/0g5Nv9EQjj/AGAFMP9cDTH/WBYy/6g+Z/+gT2n/mGFr/0g5Nv9EQjj/AMAKYf+4G2P/sCxl/1QfM/9QJzT/TDA1/5Bzbf+IhXD/AMAKYf+4G2P/sCxl/1QfM/9QJzT/TDA1/5Bzbf+IhXD/JpCAff6VQZMAAAAASUVORK5CYII=",
+          "mimeType": "image/png"
+         }
+        }
+       ],
+       "role": "user"
+      }
+     ],
+     "generationConfig": {
+      "candidateCount": 1,
+      "maxOutputTokens": 512,
+      "responseJsonSchema": {
+       "additionalProperties": false,
+       "properties": {
+        "confidence": {
+         "maximum": 1,
+         "minimum": 0,
+         "type": "number"
+        },
+        "is_text_or_logo": {
+         "type": "boolean"
+        },
+        "material_class": {
+         "enum": [
+          "stone",
+          "brick",
+          "concrete",
+          "plaster",
+          "tile",
+          "wood",
+          "metal/bare",
+          "metal/painted",
+          "fabric",
+          "leather",
+          "glass",
+          "plastic",
+          "ground/dirt",
+          "ground/grass",
+          "ground/sand",
+          "ground/snow",
+          "foliage",
+          "water",
+          "paper",
+          "skin",
+          "sky",
+          "ui",
+          "decal",
+          "other"
+         ],
+         "type": "string"
+        },
+        "physical_category": {
+         "maxLength": 64,
+         "pattern": "^[a-z][a-z0-9_]*(/[a-z0-9_]+)*$",
+         "type": "string"
+        },
+        "tags": {
+         "items": {
+          "pattern": "^[a-z0-9][a-z0-9_/-]{0,31}$",
+          "type": "string"
+         },
+         "maxItems": 16,
+         "minItems": 1,
+         "type": "array",
+         "uniqueItems": true
+        },
+        "texture_role": {
+         "enum": [
+          "albedo",
+          "normal",
+          "lightmap",
+          "ui",
+          "decal",
+          "sky",
+          "font",
+          "mask",
+          "other"
+         ],
+         "type": "string"
+        }
+       },
+       "required": [
+        "tags",
+        "material_class",
+        "physical_category",
+        "texture_role",
+        "is_text_or_logo",
+        "confidence"
+       ],
+       "type": "object"
+      },
+      "responseMimeType": "application/json",
+      "seed": 7,
+      "temperature": 0
+     },
+     "systemInstruction": {
+      "parts": [
+       {
+        "text": "You classify game textures for a remastering pipeline. You see one thumbnail. Answer only with JSON that matches the response schema. Use lowercase tags. Do not describe people, brands or text content beyond flagging it."
+       }
+      ]
+     }
+    },
+    "method": "POST",
+    "path": "/v1beta/models/gemini-3.8-flash:generateContent"
+   },
+   "response": {
+    "body": {
+     "error": {
+      "code": 503,
+      "message": "The model is overloaded.",
+      "status": "UNAVAILABLE"
+     }
+    },
+    "status": 503
+   }
+  },
+  {
+   "request": {
+    "body": {
+     "contents": [
+      {
+       "parts": [
+        {
+         "text": "Texture name: brick_wall_01\nKnown context: legacy texture, medieval town\nReturn descriptive tags, the material class, a physical category for the material library, the texture's role, whether it contains text or a logo, and your confidence."
+        },
+        {
+         "inlineData": {
+          "data": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAABE0lEQVR4AQEIAff+AMAKYf+4G2P/sCxl/1QfM/9QJzT/TDA1/5Bzbf+IhXD/AMAKYf+4G2P/sCxl/1QfM/9QJzT/TDA1/5Bzbf+IhXD/AMAKYf+4G2P/sCxl/1QfM/9QJzT/TDA1/5Bzbf+IhXD/AGAFMP9cDTH/WBYy/6g+Z/+gT2n/mGFr/0g5Nv9EQjj/AGAFMP9cDTH/WBYy/6g+Z/+gT2n/mGFr/0g5Nv9EQjj/AGAFMP9cDTH/WBYy/6g+Z/+gT2n/mGFr/0g5Nv9EQjj/AMAKYf+4G2P/sCxl/1QfM/9QJzT/TDA1/5Bzbf+IhXD/AMAKYf+4G2P/sCxl/1QfM/9QJzT/TDA1/5Bzbf+IhXD/JpCAff6VQZMAAAAASUVORK5CYII=",
+          "mimeType": "image/png"
+         }
+        }
+       ],
+       "role": "user"
+      }
+     ],
+     "generationConfig": {
+      "candidateCount": 1,
+      "maxOutputTokens": 512,
+      "responseJsonSchema": {
+       "additionalProperties": false,
+       "properties": {
+        "confidence": {
+         "maximum": 1,
+         "minimum": 0,
+         "type": "number"
+        },
+        "is_text_or_logo": {
+         "type": "boolean"
+        },
+        "material_class": {
+         "enum": [
+          "stone",
+          "brick",
+          "concrete",
+          "plaster",
+          "tile",
+          "wood",
+          "metal/bare",
+          "metal/painted",
+          "fabric",
+          "leather",
+          "glass",
+          "plastic",
+          "ground/dirt",
+          "ground/grass",
+          "ground/sand",
+          "ground/snow",
+          "foliage",
+          "water",
+          "paper",
+          "skin",
+          "sky",
+          "ui",
+          "decal",
+          "other"
+         ],
+         "type": "string"
+        },
+        "physical_category": {
+         "maxLength": 64,
+         "pattern": "^[a-z][a-z0-9_]*(/[a-z0-9_]+)*$",
+         "type": "string"
+        },
+        "tags": {
+         "items": {
+          "pattern": "^[a-z0-9][a-z0-9_/-]{0,31}$",
+          "type": "string"
+         },
+         "maxItems": 16,
+         "minItems": 1,
+         "type": "array",
+         "uniqueItems": true
+        },
+        "texture_role": {
+         "enum": [
+          "albedo",
+          "normal",
+          "lightmap",
+          "ui",
+          "decal",
+          "sky",
+          "font",
+          "mask",
+          "other"
+         ],
+         "type": "string"
+        }
+       },
+       "required": [
+        "tags",
+        "material_class",
+        "physical_category",
+        "texture_role",
+        "is_text_or_logo",
+        "confidence"
+       ],
+       "type": "object"
+      },
+      "responseMimeType": "application/json",
+      "seed": 7,
+      "temperature": 0
+     },
+     "systemInstruction": {
+      "parts": [
+       {
+        "text": "You classify game textures for a remastering pipeline. You see one thumbnail. Answer only with JSON that matches the response schema. Use lowercase tags. Do not describe people, brands or text content beyond flagging it."
+       }
+      ]
+     }
+    },
+    "method": "POST",
+    "path": "/v1beta/models/gemini-3.8-flash:generateContent"
+   },
+   "response": {
+    "body": {
+     "candidates": [
+      {
+       "content": {
+        "parts": [
+         {
+          "text": "{\"tags\": [\"brick\", \"masonry\", \"wall\", \"red\", \"weathered\", \"mortar\"], \"material_class\": \"brick\", \"physical_category\": \"masonry/brick\", \"texture_role\": \"albedo\", \"is_text_or_logo\": false, \"confidence\": 0.86}"
+         }
+        ],
+        "role": "model"
+       },
+       "finishReason": "STOP",
+       "index": 0
+      }
+     ],
+     "modelVersion": "gemini-3.8-flash",
+     "responseId": "fixture",
+     "usageMetadata": {
+      "candidatesTokenCount": 61,
+      "promptTokenCount": 1290,
+      "totalTokenCount": 1351
+     }
+    },
+    "status": 200
+   }
+  },
+  {
+   "request": {
+    "body": {
+     "contents": [
+      {
+       "parts": [
+        {
+         "text": "Texture name: brick_wall_01\nKnown tags: brick, masonry, wall\nEstimate the unlit base colour, metallic (0 or 1), roughness, normal strength and height scale, the material class and a physical category."
+        },
+        {
+         "inlineData": {
+          "data": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAABE0lEQVR4AQEIAff+AMAKYf+4G2P/sCxl/1QfM/9QJzT/TDA1/5Bzbf+IhXD/AMAKYf+4G2P/sCxl/1QfM/9QJzT/TDA1/5Bzbf+IhXD/AMAKYf+4G2P/sCxl/1QfM/9QJzT/TDA1/5Bzbf+IhXD/AGAFMP9cDTH/WBYy/6g+Z/+gT2n/mGFr/0g5Nv9EQjj/AGAFMP9cDTH/WBYy/6g+Z/+gT2n/mGFr/0g5Nv9EQjj/AGAFMP9cDTH/WBYy/6g+Z/+gT2n/mGFr/0g5Nv9EQjj/AMAKYf+4G2P/sCxl/1QfM/9QJzT/TDA1/5Bzbf+IhXD/AMAKYf+4G2P/sCxl/1QfM/9QJzT/TDA1/5Bzbf+IhXD/JpCAff6VQZMAAAAASUVORK5CYII=",
+          "mimeType": "image/png"
+         }
+        }
+       ],
+       "role": "user"
+      }
+     ],
+     "generationConfig": {
+      "candidateCount": 1,
+      "maxOutputTokens": 512,
+      "responseJsonSchema": {
+       "additionalProperties": false,
+       "properties": {
+        "base_color_srgb": {
+         "items": {
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+         },
+         "maxItems": 3,
+         "minItems": 3,
+         "type": "array"
+        },
+        "height_scale_m": {
+         "maximum": 0.1,
+         "minimum": 0,
+         "type": "number"
+        },
+        "material_class": {
+         "enum": [
+          "stone",
+          "brick",
+          "concrete",
+          "plaster",
+          "tile",
+          "wood",
+          "metal/bare",
+          "metal/painted",
+          "fabric",
+          "leather",
+          "glass",
+          "plastic",
+          "ground/dirt",
+          "ground/grass",
+          "ground/sand",
+          "ground/snow",
+          "foliage",
+          "water",
+          "paper",
+          "skin",
+          "sky",
+          "ui",
+          "decal",
+          "other"
+         ],
+         "type": "string"
+        },
+        "metallic": {
+         "enum": [
+          0,
+          1
+         ],
+         "type": "number"
+        },
+        "normal_strength": {
+         "maximum": 2,
+         "minimum": 0,
+         "type": "number"
+        },
+        "notes": {
+         "maxLength": 200,
+         "type": "string"
+        },
+        "physical_category": {
+         "maxLength": 64,
+         "pattern": "^[a-z][a-z0-9_]*(/[a-z0-9_]+)*$",
+         "type": "string"
+        },
+        "roughness": {
+         "maximum": 1,
+         "minimum": 0,
+         "type": "number"
+        }
+       },
+       "required": [
+        "material_class",
+        "physical_category",
+        "base_color_srgb",
+        "metallic",
+        "roughness",
+        "normal_strength",
+        "height_scale_m"
+       ],
+       "type": "object"
+      },
+      "responseMimeType": "application/json",
+      "seed": 7,
+      "temperature": 0
+     },
+     "systemInstruction": {
+      "parts": [
+       {
+        "text": "You estimate physically based material parameters for game textures. You see one thumbnail. Answer only with JSON that matches the response schema. Base colour is the albedo without lighting, in sRGB 0-255."
+       }
+      ]
+     }
+    },
+    "method": "POST",
+    "path": "/v1beta/models/gemini-3.8-flash:generateContent"
+   },
+   "response": {
+    "body": {
+     "candidates": [
+      {
+       "content": {
+        "parts": [
+         {
+          "text": "{\"material_class\": \"brick\", \"physical_category\": \"masonry/brick\", \"base_color_srgb\": [148, 74, 58], \"metallic\": 0, \"roughness\": 0.82, \"normal_strength\": 1.1, \"height_scale_m\": 0.012, \"notes\": \"Mortar lines read as height; no baked lighting visible.\"}"
+         }
+        ],
+        "role": "model"
+       },
+       "finishReason": "STOP",
+       "index": 0
+      }
+     ],
+     "modelVersion": "gemini-3.8-flash",
+     "responseId": "fixture",
+     "usageMetadata": {
+      "candidatesTokenCount": 88,
+      "promptTokenCount": 1302,
+      "totalTokenCount": 1390
+     }
+    },
+    "status": 200
+   }
+  }
+ ],
+ "provider": "gemini",
+ "schema": "fuse.ai-http-fixture/1"
+}

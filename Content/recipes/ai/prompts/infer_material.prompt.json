@@ -1,0 +1,31 @@
+{
+  "schema": "fuse.ai-prompt/1",
+  "id": "infer_material",
+  "version": 1,
+  "task": "INFER_MATERIAL",
+  "description": "Plan §4.2 step 3: PBR material parameters for a texture thumbnail. Metallic is a class decision (0 or 1 mask), not a guess per pixel. Same prompt and schema for gemini and local-llm.",
+  "system": "You estimate physically based material parameters for game textures. You see one thumbnail. Answer only with JSON that matches the response schema. Base colour is the albedo without lighting, in sRGB 0-255.",
+  "user": "Texture name: {name}\nKnown tags: {tags}\nEstimate the unlit base colour, metallic (0 or 1), roughness, normal strength and height scale, the material class and a physical category.",
+  "attach": "image",
+  "max_output_tokens": 512,
+  "output_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["material_class", "physical_category", "base_color_srgb", "metallic", "roughness", "normal_strength", "height_scale_m"],
+    "properties": {
+      "material_class": {
+        "type": "string",
+        "enum": ["stone", "brick", "concrete", "plaster", "tile", "wood", "metal/bare", "metal/painted", "fabric",
+                 "leather", "glass", "plastic", "ground/dirt", "ground/grass", "ground/sand", "ground/snow", "foliage",
+                 "water", "paper", "skin", "sky", "ui", "decal", "other"]
+      },
+      "physical_category": {"type": "string", "pattern": "^[a-z][a-z0-9_]*(/[a-z0-9_]+)*$", "maxLength": 64},
+      "base_color_srgb": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "integer", "minimum": 0, "maximum": 255}},
+      "metallic": {"type": "number", "enum": [0, 1]},
+      "roughness": {"type": "number", "minimum": 0, "maximum": 1},
+      "normal_strength": {"type": "number", "minimum": 0, "maximum": 2},
+      "height_scale_m": {"type": "number", "minimum": 0, "maximum": 0.1},
+      "notes": {"type": "string", "maxLength": 200}
+    }
+  }
+}

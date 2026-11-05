@@ -1,0 +1,25 @@
+{
+  "id": "port/original/shapebase_impact/lua",
+  "inputs": [
+    {
+      "derived_from_original": true,
+      "media_type": "application/json",
+      "name": "shapebase_impact.spec.json",
+      "origin": "derived",
+      "path": "shapebase_impact.spec.json",
+      "sha256": "e21bef121236283cb9efd2707e901db26748b7ccfb12e81705f2a391fa63664e"
+    }
+  ],
+  "params": {
+    "context_cache": true,
+    "prompt": "port_script",
+    "prompt_sha256": "464b309790dd044838850f21db23f889170d0066d4291de18d620198bb6d8145",
+    "vars": {
+      "behaviour": "shapebase_impact"
+    }
+  },
+  "purpose": "FUSE Lua port of shapebase_impact from its spec (plan §4.5 step 4)",
+  "schema": "fuse.ai-recipe/1",
+  "seed": 0,
+  "task": "PORT_SCRIPT"
+}

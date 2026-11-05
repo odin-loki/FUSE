@@ -1,0 +1,24 @@
+{
+  "schema": "fuse.ai-prompt/1",
+  "id": "port_script",
+  "version": 1,
+  "task": "PORT_SCRIPT",
+  "description": "Plan §4.5 step 4: behaviour spec (our own text) -> FUSE Lua behaviour. Spec-first: the original script is not an input, so the port is a reimplementation. The Lua must pass the sandbox and the parity harness; a human reviews it before it is committed.",
+  "system": "You write FUSE Lua behaviours from behaviour specifications. Use only the callbacks and bindings in the context, keep every guard and effect of the spec, keep helpers local, and do not use io, os, require, load or debug. Answer only with JSON that matches the response schema; the Lua source goes in the 'lua' string.",
+  "user": "Behaviour name: {behaviour}\nImplement every event of the attached spec as a FUSE callback.",
+  "attach": "text",
+  "context": ["context/fuse_lua_api.md"],
+  "max_output_tokens": 8192,
+  "output_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["behaviour", "lua", "handlers", "uses_api", "notes"],
+    "properties": {
+      "behaviour": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"},
+      "lua": {"type": "string", "minLength": 20, "maxLength": 20000},
+      "handlers": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^on_[a-z_]+$"}},
+      "uses_api": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^(Entity|Physics|Scene|Audio|Input|CVar|Remaster|math|string|table)\\.[a-z_]+$"}},
+      "notes": {"type": "array", "items": {"type": "string", "maxLength": 400}}
+    }
+  }
+}
