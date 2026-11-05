@@ -23,7 +23,7 @@ constexpr u32 kPushBytes = sizeof(GsPush);
 constexpr u32 kFrameStride = 256u;
 static_assert(sizeof(GsFrameConstants) <= kFrameStride, "frame ring slot");
 
-enum BufferIndex : u32 { kBufSplats = 0, kBufWork, kBufKeys, kBufValues, kBufKeysTemp, kBufValuesTemp, kBufScratch, kBufImage };
+enum BufferIndex : u32 { kBufSplats = 0, kBufWork, kBufKeys, kBufValues, kBufKeysTemp, kBufValuesTemp, kBufScratch, kBufImage, kBufStaging };
 
 u64 align256(u64 v) { return (v + 255u) & ~u64{255u}; }
 u32 groupsOf(u32 items, u32 size) { return items == 0u ? 1u : (items + size - 1u) / size; }
@@ -117,7 +117,10 @@ bool GsplatRenderer::init(const GsplatDesc& desc) {
     m_countersOffset = align256(m_offsetsOffset + n * 4u);
     const u64 workBytes = m_countersOffset + 16u;
     bool ok = createBuffer(m_frameRing, u64{desc.framesInFlight} * kFrameStride, true, false, "gsplat.frame") &&
-              createBuffer(m_splats, n * sizeof(GsSplat), true, false, "gsplat.splats") &&
+              // device-local splats + a host-visible staging copy: gsplat.preprocess read the host-visible buffer
+              // over PCIe every frame (20-31 ms at 1M splats on an RTX 3090, RENDERER-HW-RUN.md section 7)
+              createBuffer(m_splats, n * sizeof(GsSplat), false, true, "gsplat.splats") &&
+              createBuffer(m_splatStaging, n * sizeof(GsSplat), true, true, "gsplat.splats_staging") &&
               createBuffer(m_work, workBytes, false, true, "gsplat.work") &&
               createBuffer(m_keys, cap * 8u, false, true, "gsplat.keys") &&
               createBuffer(m_values, cap * 4u, false, true, "gsplat.values") &&
@@ -155,7 +158,7 @@ void GsplatRenderer::destroy() {
     if (m_depthSlot.isValid()) {
         m_desc.bindless->unregisterSlot(m_depthSlot);
     }
-    for (Buffer* b : {&m_splats, &m_work, &m_keys, &m_values, &m_keysTemp, &m_valuesTemp, &m_scratch, &m_image, &m_frameRing}) {
+    for (Buffer* b : {&m_splats, &m_splatStaging, &m_work, &m_keys, &m_values, &m_keysTemp, &m_valuesTemp, &m_scratch, &m_image, &m_frameRing}) {
         if (b->handle != nullptr) {
             m_desc.allocator->destroyBuffer(*b);
         }
@@ -269,8 +272,9 @@ bool GsplatRenderer::setSplats(const GsSplat* splats, u32 count, u32 shDegree) {
         return false;
     }
     if (count > 0u) {
-        std::memcpy(m_splats.mapped, splats, static_cast<usize>(count) * sizeof(GsSplat));
+        std::memcpy(m_splatStaging.mapped, splats, static_cast<usize>(count) * sizeof(GsSplat));
     }
+    m_uploadBytes = u64{count} * sizeof(GsSplat); // gsplat.upload copies it to the device-local buffer
     m_splatCount = count;
     m_shDegree = std::min(shDegree, kGsMaxShDegree);
     return true;
@@ -381,6 +385,9 @@ bool GsplatRenderer::beginFrame(u64 frameSerial, const GsCamera& camera, const G
         return false;
     }
     c.splats = m_splats.deviceAddress;
+    // gsplat.scan's block sums (reserved0 | reserved1 << 32): the sort's values-temp buffer, unused before the sort
+    c.reserved0 = static_cast<u32>(m_valuesTemp.deviceAddress & 0xFFFFFFFFull);
+    c.reserved1 = static_cast<u32>(m_valuesTemp.deviceAddress >> 32);
     c.projected = m_work.deviceAddress + m_projectedOffset;
     c.offsets = m_work.deviceAddress + m_offsetsOffset;
     c.counters = m_work.deviceAddress + m_countersOffset;
@@ -416,6 +423,9 @@ GsGraphRefs GsplatRenderer::importInto(rg::Graph& graph) {
     refs.valuesTemp = imp(m_valuesTemp, kBufValuesTemp, "gsplat.values_temp");
     refs.scratch = imp(m_scratch, kBufScratch, "gsplat.sort_scratch");
     refs.image = imp(m_image, kBufImage, "gsplat.image");
+    if (m_uploadBytes != 0u) {
+        refs.staging = imp(m_splatStaging, kBufStaging, "gsplat.splats_staging");
+    }
     return refs;
 }
 
@@ -441,17 +451,55 @@ void GsplatRenderer::addPasses(rg::Graph& graph, const GsGraphRefs& refs, rg::Te
     constexpr u8 kCs = rg::kStageCompute;
     const u32 n = m_splatCount;
     const u32 cap = m_desc.maxEntries;
+    if (m_uploadBytes != 0u && refs.staging.valid() && refs.splats.valid()) {
+        if (PassRecord* r = nextRecord(kKernelCount, 0u)) {
+            --m_stats.passes; // stats().passes counts the six splat passes (the upload runs after setSplats only)
+            r->copyFrom = refs.staging;
+            r->copyTo = refs.splats;
+            r->copyBytes = m_uploadBytes;
+            graph.addPass("gsplat.upload", &GsplatRenderer::recordCopy, r)
+                .use(refs.staging, rg::Access::TransferSrc, rg::BufferRange{0, m_uploadBytes})
+                .use(refs.splats, rg::Access::TransferDst, rg::BufferRange{0, m_uploadBytes});
+            m_uploadBytes = 0u;
+        }
+    }
     if (PassRecord* r = nextRecord(kPreprocess, groupsOf(n, kGsGroup))) {
         graph.addPass("gsplat.preprocess", &GsplatRenderer::recordDispatch, r)
             .use(refs.splats, rg::Access::StorageRead, {}, kCs)
             .use(refs.work, rg::Access::StorageReadWrite, {}, kCs);
     }
+    // gs_scan: a multi-workgroup scan (reduce -> block scan -> apply) once there is more than one block, the block
+    // sums in valuesTemp (one u32 per 256 splats); stats().passes counts the trio as the one scan pass.
+    const u32 blocks = groupsOf(n, kGsGroup);
+    const bool multi = n > kGsGroup && u64{blocks} <= cap && refs.valuesTemp.valid();
+    if (multi) {
+        if (PassRecord* r = nextRecord(kScan, blocks)) {
+            --m_stats.passes;
+            r->push.reserved = 1u;
+            graph.addPass("gsplat.scan.reduce", &GsplatRenderer::recordDispatch, r)
+                .use(refs.work, rg::Access::StorageRead, {}, kCs)
+                .use(refs.valuesTemp, rg::Access::StorageWrite, rg::BufferRange{0, u64{blocks} * 4u}, kCs);
+        }
+    }
     if (PassRecord* r = nextRecord(kScan, 1u)) {
-        graph.addPass("gsplat.scan", &GsplatRenderer::recordDispatch, r)
-            .use(refs.work, rg::Access::StorageReadWrite, {}, kCs)
+        r->push.reserved = multi ? 2u : 0u;
+        rg::PassBuilder scan = graph.addPass("gsplat.scan", &GsplatRenderer::recordDispatch, r);
+        scan.use(refs.work, rg::Access::StorageReadWrite, {}, kCs)
             .use(refs.keys, rg::Access::StorageWrite, {}, kCs)
             .use(refs.values, rg::Access::StorageWrite, {}, kCs)
             .use(refs.image, rg::Access::StorageWrite, rg::BufferRange{0, m_outputOffset}, kCs);
+        if (multi) {
+            scan.use(refs.valuesTemp, rg::Access::StorageReadWrite, rg::BufferRange{0, u64{blocks} * 4u}, kCs);
+        }
+    }
+    if (multi) {
+        if (PassRecord* r = nextRecord(kScan, blocks)) {
+            --m_stats.passes;
+            r->push.reserved = 3u;
+            graph.addPass("gsplat.scan.apply", &GsplatRenderer::recordDispatch, r)
+                .use(refs.work, rg::Access::StorageReadWrite, {}, kCs)
+                .use(refs.valuesTemp, rg::Access::StorageRead, rg::BufferRange{0, u64{blocks} * 4u}, kCs);
+        }
     }
     if (PassRecord* r = nextRecord(kEmit, groupsOf(n, kGsGroup))) {
         graph.addPass("gsplat.emit", &GsplatRenderer::recordDispatch, r)
