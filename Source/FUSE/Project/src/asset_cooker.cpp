@@ -1,18 +1,25 @@
 #include <fuse/project/asset_cooker.hpp>
 
+#include <fuse/assetcheck/asset_rules.hpp>
+#include <fuse/cook/audio_cook.hpp>
 #include <fuse/cook/cook_stub_writer.hpp>
 #include <fuse/cook/mesh_cook.hpp>
 #include <fuse/cook/texture_cook.hpp>
 #include <fuse/project/cook_content_hash.hpp>
+#include <fuse/project/cook_kinds.hpp>
+#include <fuse/animation/cooked_anim.hpp>
+#include <fuse/asset/cooked_material.hpp>
 #include <fuse/log/logger.hpp>
 
 #if defined(FUSE_PROJECT_HAS_SCRIPT_COOK) && FUSE_PROJECT_HAS_SCRIPT_COOK
 #include <fuse/script/script_cook.hpp>
 #endif
 
-#include <sstream>
-
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 
 namespace fuse::project {
 
@@ -143,6 +150,21 @@ bool AssetCooker::lookup_live_entry_(u64 cache_key, CookCacheEntry* out_entry) {
             live = fuse::cook::load_cooked_texture(cached.output_path, texture);
         } else if (cached.kind == CookAssetKind::Script) {
             live = cooked_script_loads(cached.output_path);
+        } else if (cached.kind == CookAssetKind::Material) {
+            asset::CookedMaterial material;
+            live = asset::read_cooked_material_file(cached.output_path, material);
+        } else if (cached.kind == CookAssetKind::Anim) {
+            fuse::animation::CookedAnim anim;
+            live = fuse::animation::read_cooked_anim_file(cached.output_path, anim);
+        } else if (cached.kind == CookAssetKind::Look) {
+            live = cookedLookLoads(cached.output_path);
+        } else if (cached.kind == CookAssetKind::Audio) {
+            // A real `.fuseaudio` (FUSEAUDIO_OGG / FUSEAUDIO_PCM_F32), not a lenient FUSEAUDIO_STUB placeholder.
+            std::ifstream in(cached.output_path, std::ios::binary);
+            std::string magic(14, '\0');
+            in.read(magic.data(), static_cast<std::streamsize>(magic.size()));
+            live = in.gcount() == static_cast<std::streamsize>(magic.size()) && magic.rfind("FUSEAUDIO_", 0) == 0 &&
+                   magic != "FUSEAUDIO_STUB";
         }
     }
     if (!live) {
@@ -247,6 +269,11 @@ bool AssetCooker::probe_cook_cache_hit(const CookManifestEntry& entry, const Coo
     case CookAssetKind::Script:
         content_hash = hashScriptCookInput(entry.source_path, entry.output_path);
         break;
+    case CookAssetKind::Material:
+    case CookAssetKind::Anim:
+    case CookAssetKind::Look:
+        content_hash = hashCookKindInput(entry.kind, entry.source_path, entry.output_path);
+        break;
     }
 
     const u64 cache_key = effective_cache_key_(content_hash, upstream_hash);
@@ -298,6 +325,139 @@ CookStatus status_for_failure(fuse::cook::CookFailure failure) {
 CookWriteOutcome to_outcome(const fuse::cook::CookStubWriteResult& written) {
     return {written.ok, written.byteCount, written.note,
             written.ok ? CookStatus::Ok : status_for_failure(written.failure)};
+}
+
+// ---- FUSE_ASSET_PLAN §5.3: validation gates on cooked output ------------------------------------------------
+// The rules are fuse_assetcheck's (fuse/assetcheck/asset_rules.hpp); the gates that can be decided from the
+// cooked asset alone run here. Descriptor-only gates (naming, class budgets, texel density, golden renders,
+// skeleton hash against a rig, lod_presence's view distance) stay in `fuse_assetcheck check`.
+
+/// asset_geometry (non-finite / degenerate / zero-area triangles, every LOD) + asset_skin (<= 4 influences,
+/// weights in [0,1] summing to 1) on a cooked `.fusemesh`.
+assetcheck::Violations mesh_gate_violations(const std::string& output_path) {
+    assetcheck::Violations v;
+    fuse::cook::CookedMesh mesh;
+    std::string error;
+    if (!fuse::cook::load_cooked_mesh(output_path, mesh, &error)) {
+        v.push_back("cooked mesh does not load: " + error);
+        return v;
+    }
+    assetcheck::checkTriangles(mesh.positions.data(), mesh.vertex_count(), mesh.indices.data(), mesh.indices.size(),
+                               "mesh LOD0", v);
+    if (!mesh.lod_indices.empty()) {
+        assetcheck::checkTriangles(mesh.positions.data(), mesh.vertex_count(), mesh.lod_indices.data(),
+                                   mesh.lod_indices.size(), "mesh LOD1+", v);
+    }
+    if (!mesh.weights.empty()) {
+        assetcheck::checkSkinWeights(mesh.joints.data(), mesh.weights.data(), mesh.vertex_count(), 4u, 0u, "mesh skin", v);
+    }
+    return v;
+}
+
+/// asset_budget_texture subset: normal maps linear BC5 (§1.3). Power-of-two / class budgets are descriptor-level
+/// (fuse_assetcheck): the cook also serves UI, logo and sample images of any size.
+assetcheck::Violations texture_gate_violations(const std::string& output_path) {
+    assetcheck::Violations v;
+    fuse::cook::CookedTexture texture;
+    std::string error;
+    if (!fuse::cook::load_cooked_texture(output_path, texture, &error)) {
+        v.push_back("cooked texture does not load: " + error);
+        return v;
+    }
+    assetcheck::checkNormalMapEncoding(texture.normal_map, texture.normal_map && texture.srgb, texture.compression,
+                                       "texture", v);
+    return v;
+}
+
+/// asset_audio on the PCM the chain handed to the encoder (the report's meters are the rule header's): 48 kHz,
+/// no clipping, loudness within +-1 LU of the target when loudness-normalised, no loop seam click.
+assetcheck::Violations audio_gate_violations(const fuse::cook::AudioCookReport& report, bool loudnessTarget) {
+    assetcheck::AudioFacts facts;
+    facts.sampleRate = report.output_rate;
+    facts.peak = std::pow(10.0, static_cast<double>(report.output_peak_dbfs) / 20.0);
+    facts.lufs = report.output_lufs;
+    facts.hasTarget = loudnessTarget && report.source_lufs > fuse::cook::kAudioSilenceLufs;
+    facts.targetLufs = report.target_lufs;
+    facts.loop = report.looped;
+    facts.seamRatio = report.loop_seam_ratio;
+    assetcheck::Violations v;
+    assetcheck::checkAudio(facts, "audio", v);
+    return v;
+}
+
+/// Strict: a gate failure refuses the asset (output removed, `AssetGateFailed`, violations in the note). Lenient:
+/// the output is kept and the violations are logged and appended to the note.
+CookWriteOutcome apply_asset_gates(CookWriteOutcome outcome, const std::string& output_path,
+                                   const assetcheck::Violations& violations, bool strict) {
+    if (!outcome.ok || violations.empty()) {
+        return outcome;
+    }
+    std::string joined;
+    for (const std::string& violation : violations) {
+        joined += (joined.empty() ? "" : "; ") + violation;
+    }
+    if (strict) {
+        std::error_code ec;
+        std::filesystem::remove(std::filesystem::path(output_path), ec);
+        outcome.ok = false;
+        outcome.byte_count = 0;
+        outcome.status = CookStatus::AssetGateFailed;
+        outcome.note = "asset gate failed (FUSE_ASSET_PLAN 5.3): " + joined;
+        return outcome;
+    }
+    fuse::log::warn("asset cook (lenient): %s kept despite asset gate violations: %s", output_path.c_str(),
+                    joined.c_str());
+    outcome.note += " [lenient: asset gate violations: " + joined + "]";
+    return outcome;
+}
+
+CookWriteOutcome gate_mesh(CookWriteOutcome outcome, const std::string& output_path, bool strict) {
+    return outcome.ok ? apply_asset_gates(outcome, output_path, mesh_gate_violations(output_path), strict) : outcome;
+}
+
+CookWriteOutcome gate_texture(CookWriteOutcome outcome, const std::string& output_path, bool strict) {
+    return outcome.ok ? apply_asset_gates(outcome, output_path, texture_gate_violations(output_path), strict) : outcome;
+}
+
+/// AudioImportDesc -> the audio chain's options:
+///   target_sample_rate -> resample target;
+///   normalise          -> EBU R128 / BS.1770-4 integrated-loudness normalisation to the class target (-16 LUFS
+///                         one-shots, -23 LUFS beds, Auto class by length) with the -1 dBFS look-ahead limiter;
+///                         off: no gain change at all;
+///   trim_silence       -> drop leading / trailing frames below -60 dB relative to the clip peak (1 ms head /
+///                         20 ms tail pads kept); off: the clip keeps its full length;
+///   ogg_quality        -> Vorbis quality-VBR scale (-0.1 .. 1.0, libvorbis q-1 .. q10); format PCM_F32 stores
+///                         float samples instead.
+fuse::cook::AudioCookOptions audio_cook_options(const AudioImportDesc& desc) {
+    fuse::cook::AudioCookOptions options;
+    options.target_sample_rate = desc.target_sample_rate;
+    options.normalise = desc.normalise ? fuse::cook::AudioNormalise::Loudness : fuse::cook::AudioNormalise::None;
+    options.trim_silence = desc.trim_silence;
+    options.format = desc.format == AudioImportDesc::Format::OGG_VORBIS ? fuse::cook::AudioCookFormat::OggVorbis
+                                                                        : fuse::cook::AudioCookFormat::PcmF32;
+    options.ogg_quality = std::clamp(desc.ogg_quality, -0.1f, 1.0f);
+    return options;
+}
+
+/// Strict: the real chain + asset_audio gate. Lenient: the real chain when it works (gate violations kept with a
+/// warning), else the labelled placeholder stub.
+CookWriteOutcome cook_audio_outcome(const AudioImportDesc& desc, bool strict) {
+    fuse::cook::AudioCookReport report;
+    const fuse::cook::CookStubWriteResult cooked =
+        fuse::cook::cook_audio_file(desc.input_path, desc.output_path, audio_cook_options(desc), &report);
+    if (cooked.ok) {
+        CookWriteOutcome outcome = to_outcome(cooked);
+        std::ostringstream detail;
+        detail << ", " << report.output_rate << " Hz x" << report.output_channels << ", " << report.output_frames
+               << " frames, " << report.output_lufs << " LUFS";
+        outcome.note += detail.str();
+        return apply_asset_gates(outcome, desc.output_path, audio_gate_violations(report, desc.normalise), strict);
+    }
+    if (strict) {
+        return to_outcome(cooked);
+    }
+    const char* format = desc.format == AudioImportDesc::Format::OGG_VORBIS ? "ogg" : "pcm_f32";
+    return to_outcome(fuse::cook::write_audio_stub(desc.input_path, desc.output_path, desc.target_sample_rate, format));
 }
 
 } // namespace
@@ -369,15 +529,16 @@ CookRecord AssetCooker::cook_mesh(const MeshImportDesc& desc) {
     return cook_with_cache_(CookAssetKind::Mesh, desc.input_path, desc.output_path, content_hash, 0,
                             note.str().c_str(), [&desc, &options, strict, wantsSections, lodLevels, quantized]() {
                                 if (strict) {
-                                    return to_outcome(
-                                        fuse::cook::cook_mesh_file(desc.input_path, desc.output_path, options));
+                                    return gate_mesh(to_outcome(fuse::cook::cook_mesh_file(desc.input_path,
+                                                                                          desc.output_path, options)),
+                                                     desc.output_path, true);
                                 }
                                 if (wantsSections) {
                                     // Lenient: the full cook when it works, else the stub path below.
                                     const fuse::cook::CookStubWriteResult full =
                                         fuse::cook::cook_mesh_file(desc.input_path, desc.output_path, options);
                                     if (full.ok) {
-                                        return to_outcome(full);
+                                        return gate_mesh(to_outcome(full), desc.output_path, false);
                                     }
                                 }
                                 return to_outcome(fuse::cook::write_mesh_stub(desc.input_path, desc.output_path,
@@ -433,8 +594,9 @@ CookRecord AssetCooker::cook_texture(const TextureImportDesc& desc) {
                                                        " is not a cook format (use BC1/BC4/BC5/BC6H/BC7)";
                                         return to_outcome(refused);
                                     }
-                                    return to_outcome(
-                                        fuse::cook::cook_texture_file(desc.input_path, desc.output_path, options));
+                                    return gate_texture(to_outcome(fuse::cook::cook_texture_file(
+                                                            desc.input_path, desc.output_path, options)),
+                                                        desc.output_path, true);
                                 }
                                 return to_outcome(fuse::cook::write_texture_stub(
                                     desc.input_path, desc.output_path, compression, desc.generate_mipmaps));
@@ -442,15 +604,17 @@ CookRecord AssetCooker::cook_texture(const TextureImportDesc& desc) {
 }
 
 CookRecord AssetCooker::cook_audio(const AudioImportDesc& desc) {
+    // MP-B7.9-AUDIO-IMPORT: the real chain (Tools/FUSE/Cook audio_cook) honouring normalise / trim_silence /
+    // ogg_quality (see audio_cook_options), then the §5.3 asset_audio gate.
     const char* format = desc.format == AudioImportDesc::Format::OGG_VORBIS ? "ogg" : "pcm_f32";
+    const bool strict = strict_import();
     std::ostringstream note;
-    note << "stub audio cook (rate=" << desc.target_sample_rate << ", format=" << format << ")";
+    note << (strict ? "audio cook" : "audio cook (lenient)") << " (rate=" << desc.target_sample_rate
+         << ", format=" << format << ", normalise=" << (desc.normalise ? "loudness" : "off")
+         << ", trim=" << (desc.trim_silence ? "on" : "off") << ", quality=" << desc.ogg_quality << ")";
     const u64 content_hash = hash_audio_import(desc);
     return cook_with_cache_(CookAssetKind::Audio, desc.input_path, desc.output_path, content_hash, 0,
-                            note.str().c_str(), [&desc, format]() {
-                                return to_outcome(fuse::cook::write_audio_stub(
-                                    desc.input_path, desc.output_path, desc.target_sample_rate, format));
-                            });
+                            note.str().c_str(), [&desc, strict]() { return cook_audio_outcome(desc, strict); });
 }
 
 CookRecord AssetCooker::cook_shader(const ShaderImportDesc& desc) {
@@ -465,6 +629,23 @@ CookRecord AssetCooker::cook_shader(const ShaderImportDesc& desc) {
                                 return to_outcome(fuse::cook::write_shader_stub(desc.input_path, desc.output_path,
                                                                                 stage, desc.target_version));
                             });
+}
+
+CookRecord AssetCooker::cook_material(const std::string& source_path, const std::string& output_path) {
+    return cook_with_cache_(CookAssetKind::Material, source_path, output_path,
+                            hashCookKindInput(CookAssetKind::Material, source_path, output_path), 0, "material cook",
+                            [&source_path, &output_path]() { return cookMaterialFile(source_path, output_path); });
+}
+
+CookRecord AssetCooker::cook_anim(const AnimImportDesc& desc) {
+    return cook_with_cache_(CookAssetKind::Anim, desc.input_path, desc.output_path, hash_anim_import(desc), 0,
+                            "anim cook", [&desc]() { return cookAnimFile(desc); });
+}
+
+CookRecord AssetCooker::cook_look(const std::string& source_path, const std::string& output_path) {
+    return cook_with_cache_(CookAssetKind::Look, source_path, output_path,
+                            hashCookKindInput(CookAssetKind::Look, source_path, output_path), 0, "look cook",
+                            [&source_path, &output_path]() { return cookLookFile(source_path, output_path); });
 }
 
 CookRecord AssetCooker::cook_entry(const CookManifestEntry& entry) {
@@ -484,7 +665,9 @@ CookRecord AssetCooker::cook_entry(const CookManifestEntry& entry, const CookMan
                                 upstream_hash, strict ? "mesh cook from manifest entry" : "stub mesh cook from manifest entry",
                                 [&desc, strict]() {
                                     if (strict) {
-                                        return to_outcome(fuse::cook::cook_mesh_file(desc.input_path, desc.output_path));
+                                        return gate_mesh(
+                                            to_outcome(fuse::cook::cook_mesh_file(desc.input_path, desc.output_path)),
+                                            desc.output_path, true);
                                     }
                                     return to_outcome(
                                         fuse::cook::write_mesh_stub(desc.input_path, desc.output_path, 0u, false));
@@ -499,8 +682,9 @@ CookRecord AssetCooker::cook_entry(const CookManifestEntry& entry, const CookMan
                                 strict ? "texture cook from manifest entry" : "stub texture cook from manifest entry",
                                 [&desc, strict]() {
                                     if (strict) {
-                                        return to_outcome(fuse::cook::cook_texture_bc7_file(
-                                            desc.input_path, desc.output_path, desc.generate_mipmaps));
+                                        return gate_texture(to_outcome(fuse::cook::cook_texture_bc7_file(
+                                                                desc.input_path, desc.output_path, desc.generate_mipmaps)),
+                                                            desc.output_path, true);
                                     }
                                     return to_outcome(fuse::cook::write_texture_stub(
                                         desc.input_path, desc.output_path, "BC7", desc.generate_mipmaps));
@@ -511,10 +695,9 @@ CookRecord AssetCooker::cook_entry(const CookManifestEntry& entry, const CookMan
         desc.input_path = entry.source_path;
         desc.output_path = entry.output_path;
         return cook_with_cache_(CookAssetKind::Audio, entry.source_path, entry.output_path, hash_audio_import(desc),
-                                upstream_hash, "stub audio cook from manifest entry", [&desc]() {
-                                    return to_outcome(fuse::cook::write_audio_stub(
-                                        desc.input_path, desc.output_path, desc.target_sample_rate, "ogg"));
-                                });
+                                upstream_hash,
+                                strict ? "audio cook from manifest entry" : "audio cook (lenient) from manifest entry",
+                                [&desc, strict]() { return cook_audio_outcome(desc, strict); });
     }
     case CookAssetKind::Shader: {
         ShaderImportDesc desc;
@@ -532,6 +715,24 @@ CookRecord AssetCooker::cook_entry(const CookManifestEntry& entry, const CookMan
                                 hashScriptCookInput(entry.source_path, entry.output_path), upstream_hash,
                                 "script cook from manifest entry",
                                 [&entry]() { return cook_script_outcome(entry.source_path, entry.output_path); });
+    case CookAssetKind::Material:
+        return cook_with_cache_(CookAssetKind::Material, entry.source_path, entry.output_path,
+                                hashCookKindInput(entry.kind, entry.source_path, entry.output_path), upstream_hash,
+                                "material cook from manifest entry",
+                                [&entry]() { return cookMaterialFile(entry.source_path, entry.output_path); });
+    case CookAssetKind::Anim: {
+        AnimImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        return cook_with_cache_(CookAssetKind::Anim, entry.source_path, entry.output_path, hash_anim_import(desc),
+                                upstream_hash, "anim cook from manifest entry",
+                                [&desc]() { return cookAnimFile(desc); });
+    }
+    case CookAssetKind::Look:
+        return cook_with_cache_(CookAssetKind::Look, entry.source_path, entry.output_path,
+                                hashCookKindInput(entry.kind, entry.source_path, entry.output_path), upstream_hash,
+                                "look cook from manifest entry",
+                                [&entry]() { return cookLookFile(entry.source_path, entry.output_path); });
     }
     return {};
 }

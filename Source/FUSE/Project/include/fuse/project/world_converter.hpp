@@ -67,6 +67,39 @@ ConvertResult convertT3DMissionToFuselevel(const std::string& missionPath,
 /// `game:/cooked/materials/Module/Name.fusemat` (materialVirtualPathToCookOutput of the ref's VFS path).
 [[nodiscard]] fuse::asset::AssetId t3dMaterialRefAssetId(const std::string& materialRef);
 
+/// Asset plan 4a: one TSStatic shape of a mission and what cookT3DMissionShapes did with it.
+struct T3DShapeCookEntry {
+    std::string objectName;
+    std::string shapeRef;     ///< the `shapeAsset` ("Module:Name") or `shapeName` (game-relative path) field
+    std::string sourcePath;   ///< resolved `.dts` / `.dae` (empty when unresolved)
+    std::string outputPath;   ///< `<cookedRoot>/<relative>.fusemesh`
+    fuse::asset::AssetId id{}; ///< = the entity's ecs::MeshAssets::mesh (`game:/cooked/<relative>.fusemesh`)
+    bool ok = false;
+    std::string note;
+};
+
+struct T3DShapeCookResult {
+    bool ok = false;      ///< every TSStatic shape resolved and cooked
+    u32 shapes = 0;       ///< distinct shape refs
+    u32 cooked = 0;
+    u32 unresolved = 0;   ///< no source file found
+    u32 failed = 0;       ///< found, but the strict cook refused it
+    std::vector<T3DShapeCookEntry> entries;
+    std::string note;
+};
+
+/// Asset plan 4a (L-DTS): cook the shapes of a mission's TSStatic objects (`.dts` through the in-house reader, `.dae`
+/// through assimp; strict AssetCooker, so the §5.3 cook gates apply) to `<cookedRoot>/<relative>.fusemesh`, the
+/// `game:/cooked/` layout whose asset ids convertT3DMissionToFuselevel writes into ecs::MeshAssets::mesh
+/// (World3D::setCookedAssetRoot(cookedRoot) resolves them at level load). Sources are looked up in `searchRoots`,
+/// then (shapeName only) the mission's directory and its ancestors, then the repository's Templates/BaseGame/game;
+/// module scans for shapeAsset refs only walk `searchRoots` and Templates/BaseGame/game (4 levels deep):
+///   shapeName  "art/shapes/x.dts"       -> <root>/art/shapes/x.dts            -> art/shapes/x.fusemesh
+///   shapeAsset "Module:Name"            -> <module dir>/**/Name.asset.taml fileName="@assetFile=..."
+///                                          (module dir = the directory of <Module>.module) -> shapes/Module/Name.fusemesh
+[[nodiscard]] T3DShapeCookResult cookT3DMissionShapes(const std::string& missionPath, const std::string& cookedRoot,
+                                                      const std::vector<std::string>& searchRoots = {});
+
 /// Convert a T2D module script into a minimal `.fuselevel` scene file (U7).
 ConvertResult convertT2DModuleToFuselevel(const std::string& modulePath,
                                           const std::string& outputPath);

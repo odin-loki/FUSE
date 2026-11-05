@@ -89,6 +89,12 @@ if(TARGET fuse_audio)
     target_link_libraries(fuse_asset_audio_cook_tests PRIVATE fuse_audio)
     target_compile_definitions(fuse_asset_audio_cook_tests PRIVATE FUSE_AUDIO_COOK_TEST_HAS_RUNTIME=1)
 endif()
+if(FUSE_BUILD_PROJECT)
+    # 4e: AssetCooker::cook_audio honours AudioImportDesc normalise / trim_silence / ogg_quality. fuse_project is
+    # defined after this directory (resolved at generate time).
+    target_link_libraries(fuse_asset_audio_cook_tests PRIVATE fuse_project)
+    target_compile_definitions(fuse_asset_audio_cook_tests PRIVATE FUSE_AUDIO_COOK_TEST_HAS_PROJECT=1)
+endif()
 if(COMMAND fuse_apply_cxx23)
     fuse_apply_cxx23(fuse_asset_audio_cook_tests)
 endif()
@@ -99,6 +105,18 @@ else()
     add_test(NAME fuse_asset_audio_cook COMMAND fuse_asset_audio_cook_tests)
 endif()
 set_tests_properties(fuse_asset_audio_cook PROPERTIES LABELS "asset;gate;audio" TIMEOUT 600)
+
+# FUSE_ASSET_PLAN §5.3: the strict cook refuses assets that fail a validation gate (fuse/assetcheck/asset_rules.hpp,
+# shared with fuse_assetcheck) with CookStatus::AssetGateFailed; lenient cooks keep them with a warning.
+if(FUSE_BUILD_PROJECT)
+    add_executable(fuse_asset_cook_refuses_invalid_tests test_cook_gate_refusal.cpp)
+    target_link_libraries(fuse_asset_cook_refuses_invalid_tests PRIVATE fuse_project fuse_cook_stubs fuse_core)
+    if(COMMAND fuse_apply_cxx23)
+        fuse_apply_cxx23(fuse_asset_cook_refuses_invalid_tests)
+    endif()
+    add_test(NAME fuse_asset_cook_refuses_invalid COMMAND fuse_asset_cook_refuses_invalid_tests)
+    set_tests_properties(fuse_asset_cook_refuses_invalid PROPERTIES LABELS "asset;gate;cook" TIMEOUT 300)
+endif()
 
 # E18 (GAP-PHYS-HULL-MESH): collision cook FMSH -> .fusecol (quickhull hulls, triangle mesh + BVH), the runtime
 # loader round trip and `fuse_cook --collision`.
@@ -111,3 +129,37 @@ else()
     add_test(NAME fuse_asset_collision_cook COMMAND fuse_asset_collision_cook_tests)
 endif()
 set_tests_properties(fuse_asset_collision_cook PROPERTIES LABELS "asset;gate;physics" TIMEOUT 300)
+
+# 4b (asset plan §5.1 `.fuseanim`): assimp clip -> quantised .fuseanim -> read_cooked_anim -> AnimationClip, against
+# an analytic glTF fixture written at test time (anim_fixture.hpp); byte-identical re-cook. Skips (77) without assimp.
+add_executable(fuse_asset_anim_cook_tests test_anim_cook.cpp anim_fixture.hpp)
+target_link_libraries(fuse_asset_anim_cook_tests PRIVATE fuse_cook_stubs fuse_animation fuse_core)
+if(COMMAND fuse_apply_cxx23)
+    fuse_apply_cxx23(fuse_asset_anim_cook_tests)
+endif()
+add_test(NAME fuse_asset_anim_cook COMMAND fuse_asset_anim_cook_tests)
+set_tests_properties(fuse_asset_anim_cook PROPERTIES LABELS "asset;gate;cook" TIMEOUT 300 SKIP_RETURN_CODE 77)
+
+# 4d: CookAssetKind Material / Anim / Look through AssetCooker (fuse_project, defined after this directory):
+# cook, cache hit, re-cook on source / sidecar edits, strict refusals, cache persistence of the kinds.
+add_executable(fuse_asset_cook_kinds_tests test_cook_kinds.cpp anim_fixture.hpp)
+target_link_libraries(fuse_asset_cook_kinds_tests PRIVATE fuse_project fuse_cook_stubs fuse_animation fuse_core)
+target_compile_definitions(fuse_asset_cook_kinds_tests PRIVATE "FUSE_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
+if(COMMAND fuse_apply_cxx23)
+    fuse_apply_cxx23(fuse_asset_cook_kinds_tests)
+endif()
+add_test(NAME fuse_asset_cook_kinds COMMAND fuse_asset_cook_kinds_tests)
+set_tests_properties(fuse_asset_cook_kinds PROPERTIES LABELS "asset;gate;cook" TIMEOUT 300)
+
+# 4a (L-DTS): clean-room Torque .dts reader over every template shape (Templates/: v24 / v26 / v28, bounds, pinned
+# triangle counts, winding), the template .dae through assimp, cook determinism, malformed-input refusals.
+if(FUSE_BUILD_PROJECT)
+    add_executable(fuse_asset_dts_import_tests test_dts_import.cpp)
+    target_link_libraries(fuse_asset_dts_import_tests PRIVATE fuse_project fuse_cook_stubs fuse_core)
+    target_compile_definitions(fuse_asset_dts_import_tests PRIVATE "FUSE_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
+    if(COMMAND fuse_apply_cxx23)
+        fuse_apply_cxx23(fuse_asset_dts_import_tests)
+    endif()
+    add_test(NAME fuse_asset_dts_import COMMAND fuse_asset_dts_import_tests)
+    set_tests_properties(fuse_asset_dts_import PROPERTIES LABELS "asset;gate;cook" TIMEOUT 300)
+endif()

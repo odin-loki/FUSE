@@ -12,6 +12,7 @@
 #include <fuse/ecs/registry.hpp>
 #include <fuse/ecs/systems/transform_system.hpp>
 #include <fuse/log/logger.hpp>
+#include <fuse/project/asset_cooker.hpp>
 #include <fuse/project/importer_extract.hpp>
 #include <fuse/project/t3d_asset_vfs.hpp>
 #include <fuse/scene/serialiser.hpp>
@@ -580,9 +581,9 @@ bool iequalsAscii(const std::string& a, const char* b) {
 }
 
 /// Mesh asset id of a TSStatic shape: ShapeAsset "Module:Name" -> game:/cooked/shapes/Module/Name.fusemesh,
-/// shapeName "art/shapes/x.dts" -> game:/cooked/art/shapes/x.fusemesh (DTS / DAE import is L-DTS; the id is
-/// what that cook will register).
-fuse::asset::AssetId tsStaticShapeAssetId(const MisObject& object) {
+/// shapeName "art/shapes/x.dts" -> game:/cooked/art/shapes/x.fusemesh (cookT3DMissionShapes writes the file the
+/// id names). Returns the path below `game:/cooked/` (empty when the object names no shape).
+std::string tsStaticShapeCookedRelPath(const MisObject& object) {
     const std::string* asset = findField(object, "shapeasset");
     if (asset != nullptr && !asset->empty()) {
         std::string ref = *asset;
@@ -590,20 +591,31 @@ fuse::asset::AssetId tsStaticShapeAssetId(const MisObject& object) {
         if (colon != std::string::npos) {
             ref = ref.substr(0, colon) + "/" + ref.substr(colon + 1);
         }
-        return fuse::asset::asset_id_of("game:/cooked/shapes/" + ref + ".fusemesh");
+        return "shapes/" + ref + ".fusemesh";
     }
     const std::string* shape = findField(object, "shapename");
     if (shape != nullptr && !shape->empty()) {
         std::string path = *shape;
         std::replace(path.begin(), path.end(), '\\', '/');
+        while (path.rfind("./", 0) == 0) {
+            path.erase(0, 2);
+        }
+        while (!path.empty() && path.front() == '/') {
+            path.erase(0, 1);
+        }
         const std::size_t dot = path.find_last_of('.');
         const std::size_t slash = path.find_last_of('/');
         if (dot != std::string::npos && (slash == std::string::npos || dot > slash)) {
             path.resize(dot);
         }
-        return fuse::asset::asset_id_of("game:/cooked/" + path + ".fusemesh");
+        return path + ".fusemesh";
     }
-    return fuse::asset::AssetId{};
+    return std::string();
+}
+
+fuse::asset::AssetId tsStaticShapeAssetId(const MisObject& object) {
+    const std::string rel = tsStaticShapeCookedRelPath(object);
+    return rel.empty() ? fuse::asset::AssetId{} : fuse::asset::asset_id_of("game:/cooked/" + rel);
 }
 
 void setLocalTransform(fuse::ecs::Transform& t, const fuse::scene::SceneEntityTransform& s) {
@@ -914,8 +926,9 @@ ConvertResult convertT3DMissionToFuselevel(const std::string& missionPath,
             registry.add<fuse::ecs::SpawnMarker>(e, spawn);
             ++counts.spawnMarkers;
         } else if (iequalsAscii(type, "TSStatic")) {
-            // Shape import (DTS / DAE) is L-DTS: the Mesh stays without a vertex buffer (not drawn) until the
-            // cooked-asset bridge maps MeshAssets.mesh to an engine mesh.
+            // Asset plan 4a: the shape (DTS / DAE) cooks to game:/cooked/<path>.fusemesh (cookT3DMissionShapes);
+            // World3D resolves MeshAssets.mesh against the cooked root at level load and the GPU renderer binds
+            // Mesh::vertex_buffer to the uploaded mesh (CookedAssetRegistry::syncEntities). Until then no buffer.
             auto mesh = zeroed<fuse::ecs::Mesh>();
             mesh.vertex_buffer = fuse::ecs::MeshVertexBufferHandle{};
             mesh.index_buffer = fuse::ecs::MeshIndexBufferHandle{};
@@ -977,6 +990,191 @@ ConvertResult convertT3DMissionToFuselevel(const std::string& missionPath,
     fuse::log::info("convertT3DMissionToFuselevel: %s -> %s (%u entities, %u lights, %u meshes, %u unhandled)",
                     missionPath.c_str(), outputPath.c_str(), result.entityCount,
                     counts.directionalLights + counts.pointLights + counts.spotLights, counts.meshes, counts.unhandled);
+    return result;
+}
+
+namespace {
+
+std::string lowerAscii(std::string text) {
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return text;
+}
+
+/// Value of `attribute="..."` in a TAML element (case-insensitive name), empty when absent.
+std::string tamlAttribute(const std::string& text, const std::string& attribute) {
+    const std::string lower = lowerAscii(text);
+    const std::string key = lowerAscii(attribute) + "=\"";
+    std::size_t at = 0;
+    while ((at = lower.find(key, at)) != std::string::npos) {
+        if (at == 0 || std::isspace(static_cast<unsigned char>(lower[at - 1u])) != 0) {
+            const std::size_t start = at + key.size();
+            const std::size_t end = text.find('"', start);
+            return end == std::string::npos ? std::string() : text.substr(start, end - start);
+        }
+        at += key.size();
+    }
+    return std::string();
+}
+
+/// `Module:Name` ShapeAsset -> its shape file, searching `<root>/**/<Module>.module` and that module's `*.asset.taml`.
+std::string resolveShapeAsset(const std::filesystem::path& root, const std::string& module, const std::string& name) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const std::string moduleFile = lowerAscii(module + ".module");
+    std::vector<fs::path> moduleDirs;
+    if (!fs::is_directory(root, ec)) {
+        return std::string();
+    }
+    // Torque modules sit a few levels below the game root (core/<Module>, data/<Module>): bounded depth.
+    constexpr int kMaxModuleDepth = 4;
+    for (fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, ec), end;
+         !ec && it != end; it.increment(ec)) {
+        if (it.depth() >= kMaxModuleDepth) {
+            it.disable_recursion_pending();
+        }
+        if (it->is_regular_file(ec) && lowerAscii(it->path().filename().string()) == moduleFile) {
+            moduleDirs.push_back(it->path().parent_path());
+        }
+    }
+    std::sort(moduleDirs.begin(), moduleDirs.end());
+    const std::string lowerName = lowerAscii(name);
+    for (const fs::path& dir : moduleDirs) {
+        std::vector<fs::path> tamls;
+        for (fs::recursive_directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end;
+             !ec && it != end; it.increment(ec)) {
+            const std::string file = lowerAscii(it->path().filename().string());
+            if (it->is_regular_file(ec) && file.size() > 11u && file.ends_with(".asset.taml")) {
+                tamls.push_back(it->path());
+            }
+        }
+        std::sort(tamls.begin(), tamls.end());
+        for (const fs::path& taml : tamls) {
+            const std::string text = readFileToString(taml.string());
+            if (lowerAscii(text).find("<shapeasset") == std::string::npos ||
+                lowerAscii(tamlAttribute(text, "AssetName")) != lowerName) {
+                continue;
+            }
+            std::string file = tamlAttribute(text, "fileName");
+            const std::string prefix = "@assetfile=";
+            if (lowerAscii(file).rfind(prefix, 0) == 0) {
+                file.erase(0, prefix.size());
+            }
+            if (file.empty()) {
+                continue;
+            }
+            const fs::path source = taml.parent_path() / file;
+            if (fs::is_regular_file(source, ec)) {
+                return source.string();
+            }
+        }
+    }
+    return std::string();
+}
+
+} // namespace
+
+T3DShapeCookResult cookT3DMissionShapes(const std::string& missionPath, const std::string& cookedRoot,
+                                        const std::vector<std::string>& searchRoots) {
+    namespace fs = std::filesystem;
+    T3DShapeCookResult result;
+    const std::string text = readFileToString(missionPath);
+    if (text.empty()) {
+        result.note = "unable to read mission file";
+        return result;
+    }
+    // Search roots: the caller's, the mission directory and its ancestors, then Templates/BaseGame/game.
+    std::vector<fs::path> roots;       // direct `shapeName` lookups
+    std::vector<fs::path> moduleRoots; // `Module:Name` scans (game roots only: never a recursive walk of ancestors)
+    for (const std::string& r : searchRoots) {
+        roots.emplace_back(r);
+        moduleRoots.emplace_back(r);
+    }
+    std::error_code ec;
+    fs::path dir = fs::absolute(fs::path(missionPath), ec).parent_path();
+    for (u32 depth = 0; depth < 8u && !dir.empty(); ++depth) {
+        roots.push_back(dir);
+        if (dir == dir.root_path() || fs::exists(dir / ".git", ec)) {
+            break;
+        }
+        dir = dir.parent_path();
+    }
+    std::string repo = findRepositoryRoot(fs::path(missionPath).parent_path().string());
+    if (repo.empty()) {
+        repo = findRepositoryRoot(fs::current_path(ec).string()); // a mission outside the tree (temp copies)
+    }
+    if (!repo.empty()) {
+        roots.push_back(fs::path(repo) / "Templates/BaseGame/game");
+        moduleRoots.push_back(fs::path(repo) / "Templates/BaseGame/game");
+    }
+
+    std::vector<std::string> seen;
+    for (const MisObject& object : extractMisHierarchy(text)) {
+        if (!iequalsAscii(object.type, "TSStatic")) {
+            continue;
+        }
+        const std::string rel = tsStaticShapeCookedRelPath(object);
+        if (rel.empty() || std::find(seen.begin(), seen.end(), rel) != seen.end()) {
+            continue;
+        }
+        seen.push_back(rel);
+        T3DShapeCookEntry entry;
+        entry.objectName = object.name;
+        entry.id = fuse::asset::asset_id_of("game:/cooked/" + rel);
+        entry.outputPath = (fs::path(cookedRoot) / rel).generic_string();
+        const std::string* asset = findField(object, "shapeasset");
+        const std::string* shape = findField(object, "shapename");
+        if (asset != nullptr && !asset->empty()) {
+            entry.shapeRef = *asset;
+            const std::size_t colon = asset->find(':');
+            if (colon != std::string::npos) {
+                for (const fs::path& r : moduleRoots) {
+                    entry.sourcePath = resolveShapeAsset(r, asset->substr(0, colon), asset->substr(colon + 1u));
+                    if (!entry.sourcePath.empty()) {
+                        break;
+                    }
+                }
+            }
+        } else if (shape != nullptr) {
+            entry.shapeRef = *shape;
+            std::string path = *shape;
+            std::replace(path.begin(), path.end(), '\\', '/');
+            while (!path.empty() && path.front() == '/') {
+                path.erase(0, 1);
+            }
+            for (const fs::path& r : roots) {
+                if (fs::is_regular_file(r / path, ec)) {
+                    entry.sourcePath = (r / path).string();
+                    break;
+                }
+            }
+        }
+        ++result.shapes;
+        if (entry.sourcePath.empty()) {
+            entry.note = "shape source not found";
+            ++result.unresolved;
+            result.entries.push_back(std::move(entry));
+            continue;
+        }
+        fs::create_directories(fs::path(entry.outputPath).parent_path(), ec);
+        MeshImportDesc desc;
+        desc.input_path = entry.sourcePath;
+        desc.output_path = entry.outputPath;
+        AssetCooker cooker; // strict: the §5.3 cook gates refuse invalid shapes
+        const CookRecord record = cooker.cook_mesh(desc);
+        entry.ok = record.ok;
+        entry.note = record.note;
+        if (record.ok) {
+            ++result.cooked;
+        } else {
+            ++result.failed;
+            fuse::log::warn("cookT3DMissionShapes: %s (%s): %s", entry.shapeRef.c_str(), entry.sourcePath.c_str(),
+                            record.note.c_str());
+        }
+        result.entries.push_back(std::move(entry));
+    }
+    result.ok = result.unresolved == 0u && result.failed == 0u;
+    result.note = "cooked " + std::to_string(result.cooked) + " of " + std::to_string(result.shapes) + " TSStatic shape(s) (" +
+                  std::to_string(result.unresolved) + " unresolved, " + std::to_string(result.failed) + " refused)";
     return result;
 }
 

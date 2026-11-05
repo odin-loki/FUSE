@@ -16,6 +16,13 @@ enum class CookAssetKind : u8 {
     /// Gameplay script (MP-B7.3-SCRIPT-COMPONENT): `.lua` is syntax-checked and cooked to Lua bytecode;
     /// legacy TorqueScript (`.cs` / `.tscript`) is tagged `t3d:` and passed through. Output: `.fusescript`.
     Script,
+    // 4d (asset plan §5.1): cooked with cache support like the kinds above (cook_kinds.hpp).
+    /// `.fusemat.json` (renderer schema v1) or binary `.fusemat` -> validated binary `.fusemat`.
+    Material,
+    /// assimp animation clip -> quantised `.fuseanim` (events from `<source>.events.json`).
+    Anim,
+    /// `.fuselook` -> validated canonical `.fuselook` JSON.
+    Look,
 };
 
 enum class CookStatus : u8 {
@@ -31,13 +38,18 @@ enum class CookStatus : u8 {
     InvalidImageDimensions, ///< texture is zero-size or exceeds the cook's maximum dimension
     ImporterUnavailable,    ///< the real importer (assimp / stb_image / Lua) is not linked into this build
     ScriptSyntaxError,      ///< Lua script failed to compile; the record note carries file:line: reason
+    /// FUSE_ASSET_PLAN §5.3: the asset imported but fails a validation gate (fuse/assetcheck/asset_rules.hpp:
+    /// geometry / skin for meshes, power-of-two / normal-map format for textures, 48 kHz / loudness / clipping
+    /// for audio). Strict cooks refuse it and remove the output; the record note lists the violations.
+    AssetGateFailed,
 };
 
 /// True for the statuses strict import validation reports for a rejected-but-present source.
 [[nodiscard]] constexpr bool isImportValidationFailure(CookStatus status) {
     return status == CookStatus::MalformedSource || status == CookStatus::InvalidGeometry ||
            status == CookStatus::CorruptImage || status == CookStatus::InvalidImageDimensions ||
-           status == CookStatus::ImporterUnavailable || status == CookStatus::ScriptSyntaxError;
+           status == CookStatus::ImporterUnavailable || status == CookStatus::ScriptSyntaxError ||
+           status == CookStatus::AssetGateFailed;
 }
 
 struct CookManifestEntry {
@@ -94,10 +106,14 @@ CookManifest makeDefaultCookManifest(const std::string& project_root);
 CookManifest scanProjectCookManifest(const std::string& project_root);
 
 const char* cookAssetKindName(CookAssetKind kind);
-/// Inverse of cookAssetKindName ("mesh", "texture", "audio", "shader", "script"); false when unknown.
+/// Inverse of cookAssetKindName ("mesh", "texture", "audio", "shader", "script", "material", "anim", "look");
+/// false when unknown.
 bool parseCookAssetKindName(std::string_view token, CookAssetKind& out);
 /// Cache content key of a Script cook: input + output path and the source bytes (0 when unreadable).
 [[nodiscard]] u64 hashScriptCookInput(const std::string& source_path, const std::string& output_path);
+/// Cache content key of a Material / Anim / Look cook with default options: kind tag + input + output path + the
+/// source bytes (+ the anim events sidecar when present). 0 when unreadable or for other kinds.
+[[nodiscard]] u64 hashCookKindInput(CookAssetKind kind, const std::string& source_path, const std::string& output_path);
 const char* cookStatusName(CookStatus status);
 
 } // namespace fuse::project

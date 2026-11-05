@@ -6,6 +6,7 @@ set(FUSE_PROJECT_PUBLIC_HEADERS
     include/fuse/project/importer.hpp
     include/fuse/project/import_desc.hpp
     include/fuse/project/cook_manifest.hpp
+    include/fuse/project/cook_kinds.hpp
     include/fuse/project/asset_graph.hpp
     include/fuse/project/asset_cooker.hpp
     include/fuse/project/cook_dependency_graph.hpp
@@ -27,6 +28,7 @@ set(FUSE_PROJECT_SOURCES
     src/loader.cpp
     src/importer.cpp
     src/cook_manifest.cpp
+    src/cook_kinds.cpp
     src/asset_graph.cpp
     src/asset_cooker.cpp
     src/cook_dependency_graph.cpp

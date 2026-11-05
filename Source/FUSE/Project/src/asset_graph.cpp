@@ -63,6 +63,18 @@ bool kind_from_extension(const std::string& ext, bool output_extension, CookAsse
             out = CookAssetKind::Script;
             return true;
         }
+        if (ext == ".fusemat") {
+            out = CookAssetKind::Material;
+            return true;
+        }
+        if (ext == ".fuseanim") {
+            out = CookAssetKind::Anim;
+            return true;
+        }
+        if (ext == ".fuselook") {
+            out = CookAssetKind::Look;
+            return true;
+        }
         return false;
     }
 
@@ -138,6 +150,16 @@ CookRecord cook_asset(AssetCooker& cooker,
     case CookAssetKind::Script: {
         CookManifestEntry entry;
         entry.kind = CookAssetKind::Script;
+        entry.source_path = source_path;
+        entry.output_path = output_path;
+        entry.dependencies = dependencies;
+        return cooker.cook_entry(entry);
+    }
+    case CookAssetKind::Material:
+    case CookAssetKind::Anim:
+    case CookAssetKind::Look: {
+        CookManifestEntry entry;
+        entry.kind = kind;
         entry.source_path = source_path;
         entry.output_path = output_path;
         entry.dependencies = dependencies;

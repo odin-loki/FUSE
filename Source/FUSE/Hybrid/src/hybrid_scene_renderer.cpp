@@ -513,11 +513,41 @@ void HybridSceneRenderer::syncMaterials(const world3d::World3D& world) {
     m_materialVersion = world.materialVersion();
 }
 
+void HybridSceneRenderer::syncCookedMeshes(world3d::World3D& world) {
+#if defined(FUSE_HYBRID_HAS_COOKED_REGISTRY)
+    namespace ca = renderer::cooked_assets;
+    if (m_cooked == nullptr) {
+        return;
+    }
+    if (&world != m_cookedMeshWorld || world.cookedMeshVersion() != m_cookedMeshVersion) {
+        for (const world3d::World3DCookedMesh& cooked : world.cookedMeshes()) {
+            if (cooked.mesh == nullptr || m_cooked->meshEngineId(cooked.id) != ca::CookedAssetRegistry::kInvalid) {
+                continue;
+            }
+            std::string error;
+            if (m_cooked->addMesh(cooked.id, *cooked.mesh, &error) == ca::CookedAssetRegistry::kInvalid) {
+                std::fprintf(stderr, "HybridSceneRenderer: cooked mesh %s not uploaded: %s\n", cooked.path.c_str(),
+                             error.c_str());
+                continue;
+            }
+            ++m_cookedMeshUploads;
+        }
+        m_cookedMeshWorld = &world;
+        m_cookedMeshVersion = world.cookedMeshVersion();
+    }
+    // ecs::MeshAssets -> ecs::Mesh::vertex_buffer (engine id; invalid while the mesh is not uploaded).
+    (void)m_cooked->syncEntities(world.registry());
+#else
+    (void)world;
+#endif
+}
+
 bool HybridSceneRenderer::renderWorld3D(world3d::World3D& world, frame::FrameCtx& ctx) {
     if (!m_valid) {
         return false;
     }
     syncMaterials(world);
+    syncCookedMeshes(world);
     ecs::Registry& registry = world.registry();
     fr::FrameCamera camera{};
     const world3d::RenderCamera3D& wc = world.camera();

@@ -15,8 +15,17 @@ if(EXISTS "${FUSE_STB_DIR}/stb_image.h")
 endif()
 target_compile_options(fuse_assetcheck PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-O2>)
 
+# The rule functions are shared with the strict cook (Tools/FUSE/AssetCheck/include/fuse/assetcheck/asset_rules.hpp).
+target_include_directories(fuse_assetcheck PRIVATE "${CMAKE_SOURCE_DIR}/Tools/FUSE/AssetCheck/include")
+# asset_golden: NVIDIA FLIP (vendor/nvidia-flip, BSD-3-Clause, single header) is the §5.4 metric; without it the
+# gate falls back to the mean absolute linear-RGB error (documented in the tool header).
+if(EXISTS "${FUSE_VENDOR_DIR}/nvidia-flip/FLIP.h")
+    target_include_directories(fuse_assetcheck SYSTEM PRIVATE "${FUSE_VENDOR_DIR}/nvidia-flip")
+    target_compile_definitions(fuse_assetcheck PRIVATE FUSE_ASSETCHECK_HAS_FLIP=1)
+endif()
+
 set(_fuse_assetcheck_gates naming budget_mesh lod_chain budget_texture texel_density normal_map
-    color_space pbr_sanity uv_bounds geometry)
+    color_space pbr_sanity uv_bounds geometry lod_presence skin audio golden)
 foreach(_gate IN LISTS _fuse_assetcheck_gates)
     add_test(NAME fuse_assetcheck_${_gate}
              COMMAND fuse_assetcheck fixture-test --gate ${_gate}

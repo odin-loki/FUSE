@@ -68,4 +68,18 @@ struct ShaderImportDesc {
     bool debug_info = false;
 };
 
+/// 4b: animation clip import descriptor (assimp clip -> `.fuseanim`, Tools/FUSE/Cook anim_cook.hpp).
+struct AnimImportDesc {
+    std::string input_path;
+    std::string output_path;
+    f32 sample_rate = 30.f;
+    u32 clip_index = 0;
+    std::string clip_name;   ///< selects the clip by name when set
+    bool looping = true;
+    bool root_motion = true;
+    std::string root_joint;  ///< empty: the first joint
+    /// Events sidecar ({"events": [{"name", "time"}]}); empty: `<input_path>.events.json` when it exists.
+    std::string events_path;
+};
+
 } // namespace fuse::project
