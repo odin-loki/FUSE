@@ -336,8 +336,9 @@ Vec2 curveKey(const UiContext& ui, NodeHandle curve, u32 index); ///< (t, v)
 f32 curveEvaluate(const UiContext& ui, NodeHandle curve, f32 t);
 
 /// Timeline: named tracks with clips [start, end), a time ruler and a playhead. Dragging the ruler scrubs
-/// (ValueChanged {value = time}); dragging a clip moves it (snapped to `snap` seconds when > 0); wheel zooms.
-/// value() = playhead time in seconds.
+/// (ValueChanged {value = time}); dragging a clip moves it (snapped to `snap` seconds when > 0, free with Shift) and
+/// emits Event {value = 2} on press, {value = 3} per move and {value = 4} on release (timelineClipDrag tells which
+/// clip and where the pointer is); wheel zooms. value() = playhead time in seconds.
 NodeHandle timeline(UiContext& ui, NodeHandle parent, f32 duration, std::string_view id = {});
 u32 timelineAddTrack(UiContext& ui, NodeHandle tl, std::string_view name);
 u32 timelineAddClip(UiContext& ui, NodeHandle tl, u32 track, f32 start, f32 end, std::string_view label, Color color);
@@ -347,6 +348,14 @@ void timelineSetSnap(UiContext& ui, NodeHandle tl, f32 seconds);
 void timelineSetView(UiContext& ui, NodeHandle tl, f32 startSec, f32 spanSec);
 Vec2 timelineView(const UiContext& ui, NodeHandle tl); ///< (start, span) seconds
 Vec2 timelineClip(const UiContext& ui, NodeHandle tl, u32 track, u32 clip); ///< (start, end)
+/// The current / last clip drag: track, clip, pointer time (seconds, unsnapped) at press and now, the clip start at
+/// press, and whether the drag is still in progress.
+struct TimelineClipDrag {
+    u32 track = 0, clip = 0;
+    f32 downSec = 0.f, pointerSec = 0.f, fromStart = 0.f;
+    bool active = false;
+};
+TimelineClipDrag timelineClipDrag(const UiContext& ui, NodeHandle tl);
 /// Clips under time `t` on every track (sequencer queries).
 u32 timelineActiveClips(const UiContext& ui, NodeHandle tl, f32 t);
 

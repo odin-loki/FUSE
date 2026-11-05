@@ -2,6 +2,7 @@
 #include "editor_shell_panels.hpp"
 
 #include <fuse/ui/widgets/widgets.hpp>
+#include <fuse/profiler/profiler.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -62,8 +63,15 @@ bool ShellPanelPages::build(std::string_view id, NodeHandle page) {
 }
 
 void ShellPanelPages::sync(f32 uiMs, bool frame) {
+    fuse::profiler::ProfileScope scope("editor.panels"); // recorded scopes feed the Profiler flame graph
     if (frame) {
-        if (m_shell.panelVisible("profiler")) m_m.profilerSample(uiMs);
+        if (m_shell.panelVisible("profiler")) {
+            fuse::profiler::ProfileScope sample("editor.profiler_sample");
+            m_m.profilerSample(uiMs);
+            // the flame view re-captures the profiler ring twice a second (30 Hz UI timer)
+            if (profilerView() == 1 && ++m_prFlameTick % 15 == 1) m_m.profilerCaptureFlame();
+            syncFlame_(); // keyed on capture + size: re-places the bars once the page is laid out / resized
+        }
         const auto now = std::chrono::steady_clock::now();
         const f32 dt = m_lastTick.time_since_epoch().count() ? std::min(0.1f, std::chrono::duration<f32>(now - m_lastTick).count()) : 0.f;
         m_lastTick = now;
@@ -74,13 +82,23 @@ void ShellPanelPages::sync(f32 uiMs, bool frame) {
     if (!all && m_m.revision() == m_seenRevision) return;
     m_seenView = view;
     m_seenRevision = m_m.revision();
-    if (all) { syncHub_(); syncAssets_(); syncMaterial_(); syncSculpt_(); }
-    syncProfiler_();
+    if (all) {
+        fuse::profiler::ProfileScope sc("editor.panels.scene");
+        syncHub_(); syncAssets_(); syncMaterial_(); syncSculpt_();
+    }
+    {
+        fuse::profiler::ProfileScope sc("editor.panels.profiler");
+        syncProfiler_();
+        syncFlame_();
+    }
     syncNavigation_();
     syncTerrain_();
     syncLighting_();
     syncSequencer_();
-    syncTimeline_();
+    {
+        fuse::profiler::ProfileScope sc("editor.panels.timeline");
+        syncTimeline_();
+    }
     if (!all) { syncMaterial_(); syncSculpt_(); syncAssets_(); syncHub_(); }
 }
 
@@ -548,10 +566,102 @@ void ShellPanelPages::buildProfiler_(NodeHandle page) {
     m_ui.connect(m_prPause, SignalKind::Toggled, [this](UiContext&, NodeHandle, const SignalArgs& a) { m_m.profilerSetPaused(a.flag); m_shell.sync(); });
     const NodeHandle clr = w::button(m_ui, r, "Clear", "profiler.clear");
     m_ui.connect(clr, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { m_m.profilerClear(); m_shell.sync(); });
+    // Chart (CPU history vs budget) or Flame Graph (merged fuse::profiler scopes; Qt flame graph widget)
+    m_prView = w::comboBox(m_ui, r, "Chart\nFlame Graph", 0, "profiler.view");
+    w::setTooltip(m_ui, m_prView, "Frame-time chart or flame graph of the recorded profiler scopes");
+    m_ui.connect(m_prView, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) { setProfilerView(u32(a.value)); });
     m_prSummary = w::label(m_ui, r, "", "profiler.summary");
     m_prChart = w::chart(m_ui, page, w::ChartKind::Line, "profiler.chart");
     m_ui.setCss(m_prChart, "flex-grow", "1");
     m_ui.setCss(m_prChart, "min-height", "80px");
+    // flame graph: absolutely placed bars (roots at the bottom), hover tooltip, click selects (profiler.flame_info)
+    m_prFlame = w::panel(m_ui, page, "profiler.flame");
+    m_ui.setA11y(m_prFlame, fuse::ui::A11yRole::Group, "Flame graph");
+    m_ui.setCss(m_prFlame, "flex-grow", "1");
+    m_ui.setCss(m_prFlame, "min-height", "80px");
+    m_ui.setCss(m_prFlame, "padding", "0px");
+    m_ui.setCss(m_prFlame, "layout", "absolute"); // bars at left / top in the area
+    m_ui.setCss(m_prFlame, "overflow", "hidden");
+    m_ui.setCss(m_prFlame, "background", "#17171C");
+    m_ui.setCss(m_prFlame, "display", "none");
+    m_prFlameInfo = w::label(m_ui, page, "", "profiler.flame_info");
+    m_ui.addClass(m_prFlameInfo, "ed-dim");
+    m_ui.setCss(m_prFlameInfo, "display", "none");
+}
+
+void ShellPanelPages::setProfilerView(u32 view) {
+    if (!m_prFlame) return;
+    view = std::min(view, 1u);
+    if (u32(std::max(0.f, m_ui.value(m_prView))) != view) m_ui.setValue(m_prView, f32(view));
+    m_ui.setCss(m_prChart, "display", view == 0 ? "flex" : "none");
+    m_ui.setCss(m_prFlame, "display", view == 1 ? "flex" : "none");
+    m_ui.setCss(m_prFlameInfo, "display", view == 1 ? "flex" : "none");
+    if (view == 1) {
+        m_m.profilerCaptureFlame();
+        m_prFlameKey.clear();
+        syncFlame_();
+    }
+}
+
+u32 ShellPanelPages::profilerView() const { return m_prView ? u32(std::max(0.f, m_ui.value(m_prView))) : 0u; }
+
+void ShellPanelPages::flameInfo_(i32 bar) {
+    const FlameView& f = m_m.profilerFlame();
+    m_prFlameSel = bar >= 0 && bar < i32(f.bars.size()) ? bar : -1;
+    for (std::size_t i = 0; i < m_prBars.size(); ++i)
+        if (m_ui.alive(m_prBars[i])) m_ui.setCss(m_prBars[i], "border", i32(i) == m_prFlameSel ? "1px #FFFFFF" : "0px #17171C");
+    if (m_prFlameSel < 0) {
+        m_ui.setText(m_prFlameInfo, f.summary.empty() ? std::string("No profiler scopes recorded yet.") : f.summary);
+        return;
+    }
+    const FlameBarView& b = f.bars[std::size_t(m_prFlameSel)];
+    char t[320];
+    std::snprintf(t, sizeof t, "%s   %.3f ms total (%.1f%%)   self %.3f ms   %u call%s   depth %u", b.name.c_str(), double(b.totalMs),
+                  double((b.x1 - b.x0) * 100.f), double(b.selfMs), b.calls, b.calls == 1 ? "" : "s", b.depth);
+    m_ui.setText(m_prFlameInfo, t);
+}
+
+void ShellPanelPages::syncFlame_() {
+    if (!m_prFlame || profilerView() != 1) return;
+    const FlameView& f = m_m.profilerFlame();
+    const fuse::ui::Rect area = m_ui.contentRect(m_prFlame);
+    const f32 width = std::max(120.f, area.w), height = std::max(60.f, area.h);
+    const std::string key = std::to_string(f.captures) + "|" + std::to_string(int(width)) + "x" + std::to_string(int(height));
+    if (key == m_prFlameKey) return;
+    m_prFlameKey = key;
+    for (NodeHandle b : m_prBars)
+        if (m_ui.alive(b)) m_ui.destroy(b);
+    m_prBars.assign(f.bars.size(), NodeHandle{});
+    constexpr f32 kRow = 18.f;
+    // warm hues by depth (classic flame colours); the label is clipped to the bar
+    static constexpr unsigned kHues[] = {0xE8833A, 0xEBA046, 0xD9643A, 0xF0B455, 0xE07040, 0xF2C66A};
+    for (std::size_t i = 0; i < f.bars.size(); ++i) {
+        const FlameBarView& b = f.bars[i];
+        const f32 x = b.x0 * width, wpx = (b.x1 - b.x0) * width;
+        const f32 y = height - kRow * f32(b.depth + 1);
+        if (wpx < 2.f || y < -kRow) continue; // too narrow / too deep to draw (still in the model)
+        // one line: the name cut to what fits (~7 px a character; labels would wrap otherwise)
+        const std::size_t fit = wpx > 14.f ? std::size_t((wpx - 8.f) / 7.f) : 0u;
+        std::string text = fit >= b.name.size() ? b.name : fit >= 3 ? b.name.substr(0, fit - 2) + ".." : std::string();
+        const NodeHandle n = w::label(m_ui, m_prFlame, text, "profiler.flame.bar" + std::to_string(i));
+        m_ui.setCss(n, "position", "absolute");
+        m_ui.setCss(n, "left", std::to_string(int(x)) + "px");
+        m_ui.setCss(n, "top", std::to_string(int(y)) + "px");
+        m_ui.setCss(n, "width", std::to_string(std::max(1, int(wpx) - 1)) + "px");
+        m_ui.setCss(n, "height", std::to_string(int(kRow) - 1) + "px");
+        m_ui.setCss(n, "padding", "0px 3px");
+        m_ui.setCss(n, "overflow", "hidden");
+        m_ui.setCss(n, "color", "#101014");
+        char hex[16];
+        std::snprintf(hex, sizeof hex, "#%06X", kHues[b.depth % std::size(kHues)]);
+        m_ui.setCss(n, "background", hex);
+        char tip[320];
+        std::snprintf(tip, sizeof tip, "%s: %.3f ms (self %.3f ms), %u call%s", b.name.c_str(), double(b.totalMs), double(b.selfMs), b.calls,
+                      b.calls == 1 ? "" : "s");
+        w::setTooltip(m_ui, n, tip);
+        m_prBars[i] = n;
+    }
+    flameInfo_(m_prFlameSel < i32(f.bars.size()) ? m_prFlameSel : -1);
 }
 void ShellPanelPages::syncProfiler_() {
     if (!m_prChart) return;
@@ -697,7 +807,8 @@ void ShellPanelPages::syncTimeline_() {
     m_ui.setValue(m_tlTime, f32(v.playheadMs));
     m_ui.setValue(m_tlLength, f32(v.durationMs));
     m_ui.setText(m_tlStatus, v.status);
-    if (tracks != m_tlKey || !m_tlWidget) {
+    // not while a key is dragged: the widget's own clip follows the pointer, the model moves underneath
+    if ((tracks != m_tlKey || !m_tlWidget) && !m_m.timelineKeyDragging()) {
         m_tlKey = std::move(tracks);
         if (m_tlWidget) m_ui.destroy(m_tlWidget);
         m_tlWidget = w::timeline(m_ui, m_tlBox, f32(v.durationMs) / 1000.f, "timeline.track");
@@ -714,7 +825,11 @@ void ShellPanelPages::syncTimeline_() {
             m_m.timelineSetPlayhead(m_m.timelineSnapMs(i32(a.value * 1000.f + .5f)));
             m_shell.sync();
         });
-        m_ui.connect(m_tlWidget, SignalKind::Event, [this](UiContext&, NodeHandle, const SignalArgs&) {
+        m_ui.connect(m_tlWidget, SignalKind::Event, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+            if (a.value >= 2.f) { // key (clip) drag: 2 press, 3 move, 4 release
+                timelineDragEvent_(u32(a.value));
+                return;
+            }
             const auto view = w::timelineView(m_ui, m_tlWidget); // Ctrl / Shift + wheel
             m_m.timelineSetView(i32(view.x * 1000.f + .5f), i32(view.y * 1000.f + .5f));
             m_shell.sync();
@@ -753,6 +868,29 @@ void ShellPanelPages::syncTimeline_() {
         for (u32 i = 0; i <= 120; ++i) curve.push_back(m_m.timelineSampleSelected(i32(f32(v.durationMs) * f32(i) / 120.f)));
     if (curve.empty()) curve.push_back(0.f);
     w::chartSetSeries(m_ui, m_tlCurve, 0, "value", curve, Color::rgb(0x81C784));
+}
+
+// Key drag (Qt TimelineCanvas): the dragged clip is a key of lane `track`; the key follows the pointer live, snapped to
+// the Snap rate (Shift: 1 ms), and the drop is one "Move key" undo step; Escape cancels (ShellPanelPages::event).
+void ShellPanelPages::timelineDragEvent_(u32 phase) {
+    const w::TimelineClipDrag d = w::timelineClipDrag(m_ui, m_tlWidget);
+    const TimelineView v = m_m.timeline();
+    if (phase == 2) {
+        if (d.track >= v.lanes.size() || d.clip >= v.lanes[d.track].keysMs.size()) return;
+        if (!m_m.timelineBeginKeyDrag(i32(d.track), i32(d.clip))) return;
+        m_tlDragFromMs = v.lanes[d.track].keysMs[d.clip];
+        return;
+    }
+    if (m_tlDragFromMs < 0 || !m_m.timelineKeyDragging()) return;
+    const i32 raw = m_tlDragFromMs + i32(std::lround((d.pointerSec - d.downSec) * 1000.f));
+    const i32 ms = (m_ui.modifiers() & fuse::ui::kModShift) ? std::clamp(raw, 0, v.durationMs) : m_m.timelineSnapMs(raw);
+    if (m_m.timelineKeyTime(v.selTrack, v.selKey) != ms) m_m.timelineDragKeyTo(ms);
+    if (phase == 4) {
+        m_tlDragFromMs = -1;
+        m_m.timelineEndKeyDrag(true);
+        m_tlKey.clear(); // rebuild the lanes from the model
+    }
+    m_shell.sync();
 }
 
 // ---- Lighting (Qt LightingPanel) ------------------------------------------------------------------------------------
@@ -862,6 +1000,24 @@ bool ShellPanelPages::event(const fuse::ui::Event& e, NodeHandle target) {
             const u32 line = u32(a.value); // the separator is line 4
             assetsMenuAction(line < 4 ? line : line - 1);
         });
+        return true;
+    }
+    // flame graph: a click on a bar selects it (name, total / self ms, calls in profiler.flame_info)
+    if (e.type == EventType::PointerDown && e.button == fuse::ui::MouseButton::Left && m_prFlame && within_(target, m_prFlame)) {
+        for (std::size_t i = 0; i < m_prBars.size(); ++i)
+            if (m_prBars[i].valid() && within_(target, m_prBars[i])) {
+                flameInfo_(i32(i));
+                return true;
+            }
+        flameInfo_(-1);
+        return true;
+    }
+    // Escape while dragging a key restores it (nothing on the undo stack)
+    if (e.type == EventType::KeyDown && e.key == Key::Escape && m_m.timelineKeyDragging()) {
+        m_m.timelineEndKeyDrag(false);
+        m_tlDragFromMs = -1;
+        m_tlKey.clear(); // the widget (and its drag) is rebuilt from the model
+        m_shell.sync();
         return true;
     }
     if (e.type != EventType::KeyDown || !m_tlWidget || !within_(target, m_tlBox)) return false;

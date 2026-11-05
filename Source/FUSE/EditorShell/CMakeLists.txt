@@ -118,6 +118,15 @@ set_tests_properties(fuse_editor_ui_scene_viewport fuse_editor_ui_gpu_viewport f
     PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(fuse_editor_ui_build_package fuse_editor_ui_edit_tools fuse_editor_ui_shell_timeline PROPERTIES TIMEOUT 600)
 
+# Qt-removal blockers on the panel pages (docs/editor/QT_PARITY.md): Profiler flame graph, timeline key drag retime.
+add_executable(fuse_editor_ui_panels2_gates tests/test_editor_ui_panels2.cpp)
+target_link_libraries(fuse_editor_ui_panels2_gates PRIVATE fuse_editor_fuse)
+fuse_apply_cxx23(fuse_editor_ui_panels2_gates)
+foreach(gate profiler_flame timeline_drag)
+    add_test(NAME fuse_editor_ui_${gate} COMMAND fuse_editor_ui_panels2_gates --gate=${gate} --out=${FUSE_EDITOR_UI_SHOTS}/${gate}.png)
+    set_tests_properties(fuse_editor_ui_${gate} PROPERTIES LABELS "fuse_ui;fuse_editor_ui")
+endforeach()
+
 # Desktop accessibility (Qt-removal prerequisite): a UI Automation client reads the real editor window (menus, panel
 # pages, inspector fields) and drives it through AccessKit. Windows only; 77 without AccessKit.
 if(WIN32 AND TARGET fuse_app_a11y)

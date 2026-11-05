@@ -550,6 +550,8 @@ struct TimelineState {
     u8 drag = 0; // 1 scrub, 2 clip
     u32 dTrack = 0, dClip = 0;
     f32 grabSec = 0.f;
+    f32 downSec = 0.f, pointerSec = 0.f; ///< clip drag: pointer time at press / now (unsnapped)
+    f32 fromStart = 0.f;                 ///< clip start at press
 };
 Pool<TimelineState>& tlPool() { static Pool<TimelineState> p; return p; }
 constexpr f32 kTlHead = 96.f, kTlRuler = 22.f, kTlRow = 28.f;
@@ -643,7 +645,16 @@ struct TimelineW {
                 if (k < s->tracks.size())
                     for (u32 j = 0; j < s->tracks[k].clips.size(); ++j) {
                         const Clip& cl = s->tracks[k].clips[j];
-                        if (t >= cl.start && t < cl.end) { s->drag = 2; s->dTrack = k; s->dClip = j; s->grabSec = t - cl.start; return true; }
+                        if (t >= cl.start && t < cl.end) {
+                            s->drag = 2;
+                            s->dTrack = k;
+                            s->dClip = j;
+                            s->grabSec = t - cl.start;
+                            s->downSec = s->pointerSec = t;
+                            s->fromStart = cl.start;
+                            ui.emit(ec.node, SignalKind::Event, {.value = 2.f, .event = &e}); // clip drag begins
+                            return true;
+                        }
                     }
             }
             s->drag = 1;
@@ -656,13 +667,22 @@ struct TimelineW {
             else if (s->drag == 2) {
                 Clip& cl = s->tracks[s->dTrack].clips[s->dClip];
                 const f32 len = cl.end - cl.start;
-                cl.start = std::clamp(snapT(*s, t - s->grabSec), 0.f, std::max(0.f, s->duration - len));
+                // Shift: free move (no snapping), like the Qt canvas
+                const f32 at = (e.mods & kModShift) ? t - s->grabSec : snapT(*s, t - s->grabSec);
+                cl.start = std::clamp(at, 0.f, std::max(0.f, s->duration - len));
                 cl.end = cl.start + len;
+                s->pointerSec = t;
                 ui.invalidate(ec.node);
+                ui.emit(ec.node, SignalKind::Event, {.value = 3.f, .event = &e}); // clip moved
             } else return false;
             return true;
         }
-        case EventType::PointerUp: s->drag = 0; return true;
+        case EventType::PointerUp: {
+            const bool clip = s->drag == 2;
+            s->drag = 0;
+            if (clip) ui.emit(ec.node, SignalKind::Event, {.value = 4.f, .event = &e}); // clip dropped
+            return true;
+        }
         case EventType::Wheel: {
             const f32 anchor = tOf(c, *s, e.pos.x);
             if (s->viewSpan > 0.f) {
@@ -1679,6 +1699,11 @@ void timelineSetView(UiContext& ui, NodeHandle tl, f32 startSec, f32 spanSec) {
 Vec2 timelineView(const UiContext& ui, NodeHandle tl) {
     const TimelineState* s = tlPool().get(ui, tl);
     return s ? Vec2{s->viewStart, s->viewSpan} : Vec2{};
+}
+TimelineClipDrag timelineClipDrag(const UiContext& ui, NodeHandle tl) {
+    const TimelineState* s = tlPool().get(ui, tl);
+    if (!s) return {};
+    return {s->dTrack, s->dClip, s->downSec, s->pointerSec, s->fromStart, s->drag == 2};
 }
 void timelineSetSnap(UiContext& ui, NodeHandle tl, f32 sec) { if (TimelineState* s = tlPool().get(ui, tl)) s->snap = std::max(0.f, sec); }
 Vec2 timelineClip(const UiContext& ui, NodeHandle tl, u32 track, u32 clip) {
