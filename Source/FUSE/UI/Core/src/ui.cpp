@@ -656,7 +656,9 @@ const fuse::text::Font& UiContext::fontFor(const fuse::text::Font& base, const C
     if (base.id() != m_varCheckedId) {
         m_varCheckedId = base.id();
         m_varChecked = base.isVariable();
+        m_varCheckedBold = base.weight() >= 600.f;
     }
+    if (!m_varChecked && weight >= 600.f && !m_varCheckedBold) f = &base.emboldened(); // static font: synthetic bold
     if (m_varChecked) {
         using fuse::text::fontTag;
         std::array<fuse::text::FontVariation, 3 + kMaxFontVariations> v;

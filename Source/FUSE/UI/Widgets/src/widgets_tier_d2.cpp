@@ -866,6 +866,24 @@ struct CodeEditW {
         return ui.measureString(b, ui.computed(n).fontSize * 0.9f) + 18.f;
     }
     static u32 visible(UiContext& ui, NodeHandle n) { return std::max(1u, u32(ui.contentRect(n).h / lineH(ui, n))); }
+    // x of byte `col` of line L from the text start, summed per token the way paint() places them (each token shaped
+    // on its own), so the caret, the selection and hit testing land on the glyphs instead of drifting by the kerning
+    // across token boundaries that shaping the whole prefix would add.
+    static f32 colX(UiContext& ui, CodeLanguage lang, const std::string& L, u32 col, f32 fs) {
+        thread_local std::vector<u8> tok;
+        tokenize(lang, L, tok);
+        f32 x = 0.f;
+        col = std::min(col, u32(L.size()));
+        for (std::size_t i = 0; i < col;) {
+            std::size_t j = i;
+            while (j < L.size() && tok[j] == tok[i]) ++j;
+            x += ui.measureString(std::string_view(L).substr(i, std::min<std::size_t>(j, col) - i), fs);
+            i = j;
+        }
+        return x;
+    }
+    // glyph pen positions are snapped to device pixels when drawn: the caret snaps the same way
+    static f32 snap(UiContext& ui, f32 x) { const f32 sc = ui.scale() > 0.f ? ui.scale() : 1.f; return std::round(x * sc) / sc; }
     static void paint(const PaintContext& pc, DrawList& dl) {
         UiContext& ui = pc.ui;
         CodeState* s = codePool().get(ui, pc.node);
@@ -891,8 +909,8 @@ struct CodeEditW {
                            fs * 0.9f, TextAlignment::End, pc.node.index);
             if (!(a == b) && li >= a.line && li <= b.line) { // selection
                 const u32 sc = li == a.line ? a.col : 0, ecl = li == b.line ? b.col : u32(L.size());
-                const f32 sx = x0 + ui.measureString(std::string_view(L).substr(0, sc), fs);
-                const f32 ex = x0 + ui.measureString(std::string_view(L).substr(0, ecl), fs) + (li != b.line ? 6.f : 0.f);
+                const f32 sx = snap(ui, x0 + colX(ui, s->lang, L, sc, fs));
+                const f32 ex = snap(ui, x0 + colX(ui, s->lang, L, ecl, fs)) + (li != b.line ? 6.f : 0.f);
                 dl.rect({sx, y, std::max(0.f, ex - sx), lh}, pc.tint(Color::rgb(0x264F78)));
             }
             tokenize(s->lang, L, tok);
@@ -906,7 +924,7 @@ struct CodeEditW {
                 i = j;
             }
             if (focused && li == s->caret.line) {
-                const f32 cx = x0 + ui.measureString(std::string_view(L).substr(0, s->caret.col), fs);
+                const f32 cx = snap(ui, x0 + colX(ui, s->lang, L, s->caret.col, fs));
                 dl.rect({cx, y + 2.f, 2.f, lh - 4.f}, pc.tint(Color::rgb(0xFFFFFF)));
                 ui.setTextCaret(pc.node, {cx, y + 2.f, 2.f, lh - 4.f});
             }
@@ -972,7 +990,7 @@ struct CodeEditW {
         u32 col = 0;
         while (col < L.size()) {
             const u32 nx = nextCp(L, col);
-            const f32 mid = (ui.measureString(std::string_view(L).substr(0, col), fs) + ui.measureString(std::string_view(L).substr(0, nx), fs)) * 0.5f;
+            const f32 mid = (colX(ui, s.lang, L, col, fs) + colX(ui, s.lang, L, nx, fs)) * 0.5f;
             if (x < mid) break;
             col = nx;
         }

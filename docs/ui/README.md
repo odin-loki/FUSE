@@ -123,6 +123,19 @@ std::vector<std::uint8_t> levels; std::uint8_t para;
 bidiLevels(utf8, BaseDirection::Auto, levels, para); // UAX #9 levels after L1 (FULL)
 ```
 
+Fallbacks follow the primary's weight: when `font.weight()` (the wght coordinate of a variable font, else OS/2
+`usWeightClass`) is 600 or more, `face(i)` is the fallback's bold form: the face given with `fallback.setBoldFace(&bold)`
+(e.g. loaded from `FontCatalog::match(family, 700)`), else a variable fallback's instance at the primary's weight, else
+`fallback.emboldened()`, a synthetic bold (FreeType's strength, em / 24: spacing advances widen by it and the glyph is
+smeared to the right by it; MSDF distances are biased outward). Colour fonts are never emboldened. The UI does the same
+for its own font: `font-weight` >= 600 on a static font draws it `emboldened()` (CSS font-synthesis), so a bold label's
+Hebrew or Thai is bold too. COOKED packs are not emboldened (they are cooked at one instance). FULL layout splits each
+bidi run where the face changes and shapes every piece once, with its own face and run cache, so line breaking sees the
+fallback faces' real advances.
+
+The code editor places its caret, selection and click hits at the sum of its token advances (each token is shaped on its
+own when drawn), snapped to device pixels like the glyph pens, so the caret sits exactly on the glyph boundaries.
+
 Grapheme tables come from the UCD: `python Source/FUSE/UI/Text/tools/gen_unicode_tables.py <ucd dir>` rewrites
 `Text/src/unicode_tables.inc`. The CJK subset covers kana, CJK punctuation, fullwidth forms, ~1400 frequent Han
 characters and Hangul (the 2350 KS X 1001 syllables + jamo; `vendor/fonts/noto/make_cjk_subset.py`).
@@ -137,7 +150,9 @@ them as `kGlyphColor` glyph commands. The rasterisers are linked only into binar
 Variable fonts: `enableVariableFonts()` (opt-in like the colour rasterisers; without it a variable font draws its
 default instance) gives `Font::axes()`, `namedInstances()`, `instance({{fontTag("wght"), 650}})`, `namedInstance(i)`
 and `setVariation(...)`. An instance is another `Font` over the same bytes (owned by the font that loaded them, cached by
-normalised coordinates, found without allocation): fvar + avar normalisation, HVAR advances (else the gvar phantom
+normalised coordinates, found without allocation): fvar + avar normalisation (avar 2 too: its item variation store,
+through the axisIndexMap or the implicit (0, axis) items, adds deltas evaluated at the segment-mapped coordinates, so one
+axis can move another, as in HarfBuzz / FreeType), HVAR advances (else the gvar phantom
 points), MVAR ascender / descender / line gap, gvar outlines (MINIMAL: FUSE's own glyf + gvar decoder with IUP and
 composites, rasterised exactly; FULL: FreeType at `FT_Set_Var_Blend_Coordinates`, shaped by HarfBuzz at the same
 normalised coordinates, sharing the run cache) and COLRv1 `Var*` paints from COLR's item variation store. CFF2 outlines
@@ -675,13 +690,14 @@ checks it against the overlay under one scripted event stream.
 | `fuse_text_bidi_conformance` | `BidiCharacterTest.txt` 15.1 (trimmed): paragraph level, levels after L1, visual order: 4726/4726 (FULL; 77 in MINIMAL) |
 | `fuse_text_shaping_scripts` | Latin, Cyrillic, Greek, Arabic, Hebrew, Devanagari, Thai, CJK, emoji through the bundled chain: per-script shaping checks + `tests/golden/shaping_scripts_full.png` (FULL; 77 in MINIMAL) |
 | `fuse_text_system_fonts` | `FontCatalog::system()`: Segoe UI / Arial, weight / italic / generic matching, per-script chains, `fontPicker("@system")` (77 with no installed fonts) |
+| `fuse_text_fallback` | bundled chain: face per code point, cluster-granular runs, colour emoji layers, no .notdef in mixed text, wrapping inside maxWidth; FULL: a new mixed string costs the primary one run-cache miss per Latin run and the Hebrew face one (fallback text shaped once), a relayout none; bold primary (`emboldened()` Open Sans, a `font-weight: 700` label): Hebrew from the emboldened Noto face (advance + em / 24, box + ceil, ink +36 %), emoji unchanged, `setBoldFace` wins, a variable fallback instanced at the primary's weight |
 | `fuse_text_cache_zero_alloc` | layout / measure / atlas / segmentation of already-seen strings (LTR, RTL, fallback, wrapped, elided): zero allocations |
 | `fuse_text_dpi_1`, `_1_25`, `_1_5`, `_2` | bundled font + chain at 14 px × scale: metrics, widths, glyph boxes and ink scale; same line breaks; no missing glyphs |
 | `fuse_text_colrv1` | `tests/data/colrv1_test.ttf`: flattened solid layers without `enableColorGlyphs`; with it exact rendering against `tests/golden/colrv1_exact.png` (max channel difference 0; COOKED <= 1: foreground glyphs rebuilt from black / white renders) |
 | `fuse_text_bitmap_emoji` | `tests/data/bitmap_{cbdt,sbix}_test.ttf`: strike choice per size, placement, sbix dupe, premultiplication, the atlas colour page, colour glyphs through the UI |
 | `fuse_text_msdf` | MSDF vs coverage at 64 / 128 / 256 px (mean error < 0.06, < 0.6 % of pixels off by more than half), determinism, `setMsdfThreshold` with DPI scale, GPU parity of colour + MSDF glyphs (compute kernel exact, SDF quads within their blend tolerance) |
 | `fuse_text_cooked` | `fuse_text_cook` determinism (every profile); COOKED: build-time pack = fresh cook, `.ttf` rejected, layout of sample strings equal to the MINIMAL reference (ids, pen positions within 1e-3 px) and renders byte-identical at every cooked size, MSDF for other sizes |
-| `fuse_text_variable` | `tests/data/variable_test.ttf` (`make_variable_test_font.py`: wght with avar + wdth, IUP-optimised gvar, composite, HVAR, MVAR, variable COLR): axes / named instances, MVAR ascender, stem width and HVAR advance at wght 100 .. 900 and wdth 50 / 150 against the font's analytic values, phantom-point advances = HVAR, Var* paint colours at four weights, CSS weight / stretch / variation settings and an `AnimProp::FontWeight` tween, zero-alloc steady state; Segoe UI Variable / Bahnschrift when installed: catalog WWS faces, our glyf decoder vs stb_truetype outlines (MSDF max difference 1), HarfBuzz advances (FULL); COOKED: a pack cooked at wght 700 |
+| `fuse_text_variable` | `tests/data/variable_test.ttf` (`make_variable_test_font.py`: wght with avar + wdth, IUP-optimised gvar, composite, HVAR, MVAR, variable COLR): axes / named instances, MVAR ascender, stem width and HVAR advance at wght 100 .. 900 and wdth 50 / 150 against the font's analytic values, phantom-point advances = HVAR, Var* paint colours at four weights, CSS weight / stretch / variation settings and an `AnimProp::FontWeight` tween, zero-alloc steady state; avar 2 (`tests/data/variable_avar2_test.ttf`, `make_avar2_test_font.py`: wdth += 0.5 * wght): five weights draw (advances, rasters, layout widths) as variable_test.ttf at the implied wdth; Segoe UI Variable / Bahnschrift when installed: catalog WWS faces, our glyf decoder vs stb_truetype outlines (MSDF max difference 1), HarfBuzz advances (FULL); COOKED: a pack cooked at wght 700 |
 | `fuse_text_features` | `tests/data/features_test.ttf` (`make_features_test_font.py`): `liga` / `kern` off, `tnum`, `smcp`, `ss01` through `Font::withFeatures` and CSS `font-feature-settings`, Open Sans `pnum`, zero-alloc steady state (FULL; 77 in MINIMAL / COOKED) |
 | `fuse_text_bench_layout` | 1 MB mixed-script document: paragraphs cold / warm, codeEdit frames, one-block layout, markdownView first update / resize within budgets (~4x measured), zero allocations and (FULL) zero run-cache misses relaying out a screen |
 

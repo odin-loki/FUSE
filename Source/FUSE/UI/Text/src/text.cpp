@@ -316,9 +316,18 @@ struct Font::State {
         std::unique_ptr<Font> font;
     };
     std::vector<FeatureVariant> variants; // withFeatures (owned)
+    // ---- weight-following fallbacks ----
+    float weightClass = 400.f;               // OS/2 usWeightClass (an instance: its owner's)
+    float weightCache = -1.f;                // weight(): computed on first use
+    float synthBold = 0.f;                   // emboldened(): extra stroke width and advance as a fraction of the em
+    const Font* boldFace = nullptr;          // setBoldFace
+    std::unique_ptr<Font> emboldenedFont;    // emboldened() (owned)
+    std::vector<const Font*> boldChain;      // chain() with each face replaced by its bold form (bold fonts only)
+    std::uint32_t boldChainGen = 0;          // g_chainGen it was built at
     const std::vector<const Font*>& chain() const { return owner ? owner->fallbacks : fallbacks; }
     ~State() {
         variants.clear();
+        emboldenedFont.reset();
         if (var && ownVar) detail::varHooks().destroy(var); // instances first: they point into this state
 #if FUSE_TEXT_COOKED
         detail::cookedDestroy(cooked);
@@ -352,6 +361,8 @@ struct Font::State {
 
 namespace {
 std::atomic<std::uint32_t> g_fontIds{1};
+// Bumped whenever a fallback chain, a bold face or a pinned variation changes: bold fonts rebuild their bold chain.
+std::atomic<std::uint32_t> g_chainGen{1};
 
 std::uint16_t be16(const std::uint8_t* p) { return std::uint16_t((p[0] << 8) | p[1]); }
 std::uint32_t be32(const std::uint8_t* p) { return (std::uint32_t(p[0]) << 24) | (std::uint32_t(p[1]) << 16) | (std::uint32_t(p[2]) << 8) | p[3]; }
@@ -612,6 +623,8 @@ std::expected<Font, TextError> Font::fromBytes(std::span<const std::uint8_t> byt
             st->unitsPerEm = be16(d + head + 18);
         if (const std::uint32_t maxp = stbtt__find_table(d, std::uint32_t(offset), "maxp"); maxp && maxp + 6 <= n)
             st->numGlyphs = be16(d + maxp + 4);
+        if (const std::uint32_t os2 = stbtt__find_table(d, std::uint32_t(offset), "OS/2"); os2 && os2 + 6 <= n)
+            if (const std::uint16_t wc = be16(d + os2 + 4); wc >= 1 && wc <= 1000) st->weightClass = float(wc);
         if (((st->cblc && st->cbdt) || st->sbix) && detail::paintHooks().bitmapList) {
             std::vector<std::uint32_t> ids;
             detail::paintHooks().bitmapList({st->bytes, st->cblc, st->cbdt, st->sbix, st->unitsPerEm, st->numGlyphs}, ids);
@@ -686,10 +699,53 @@ void Font::setFallbacks(std::vector<const Font*> chain) {
     if (!m_state) return;
     std::erase_if(chain, [&](const Font* f) { return !f || !f->valid() || f == this; });
     m_state->fallbacks = std::move(chain);
+    g_chainGen.fetch_add(1, std::memory_order_relaxed);
 }
+void Font::setBoldFace(const Font* bold) {
+    if (!m_state || bold == this) return;
+    m_state->boldFace = bold && bold->valid() ? bold : nullptr;
+    g_chainGen.fetch_add(1, std::memory_order_relaxed);
+}
+const Font* Font::boldFace() const { return m_state ? m_state->boldFace : nullptr; }
+float Font::weight() const {
+    if (!m_state) return 400.f;
+    State& st = *m_state;
+    if (st.weightCache >= 0.f) return st.weightCache;
+    float w = st.weightClass;
+    const auto ax = axes();
+    const auto co = variationCoords();
+    for (std::size_t k = 0; k < ax.size() && k < co.size(); ++k)
+        if (ax[k].tag == fontTag("wght")) w = co[k];
+    st.weightCache = w;
+    return w;
+}
+namespace {
+// The face fallback text of a primary at weight `w` (>= 600) uses: the face set with setBoldFace, else a variable
+// face's instance at that weight, else synthetic bold (colour fonts stay as they are).
+const Font& boldFallback(const Font& c, float w) {
+    if (const Font* b = c.boldFace()) return *b;
+    if (c.isVariable())
+        for (const VariationAxis& a : c.axes())
+            if (a.tag == fontTag("wght")) {
+                const FontVariation v{fontTag("wght"), w};
+                return c.instance(std::span<const FontVariation>(&v, 1));
+            }
+    return c.emboldened();
+}
+} // namespace
 std::size_t Font::faceCount() const { return m_state ? 1 + m_state->chain().size() : 1; }
 const Font& Font::face(std::uint16_t i) const {
-    return (i == 0 || !m_state || i > m_state->chain().size()) ? *this : *m_state->chain()[i - 1];
+    if (i == 0 || !m_state) return *this;
+    State& st = *m_state;
+    const auto& chain = st.chain();
+    if (i > chain.size()) return *this;
+    if (const std::uint32_t gen = g_chainGen.load(std::memory_order_relaxed); st.boldChainGen != gen) {
+        st.boldChain.clear();
+        if (const float w = weight(); w >= 600.f)
+            for (const Font* c : chain) st.boldChain.push_back(&boldFallback(*c, w));
+        st.boldChainGen = gen;
+    }
+    return st.boldChain.empty() ? *chain[i - 1] : *st.boldChain[i - 1];
 }
 std::uint16_t Font::faceFor(char32_t cp) const {
     if (!m_state) return 0;
@@ -756,7 +812,11 @@ const Font& Font::namedInstance(std::size_t i) const {
     return instance(std::span<const FontVariation>(s.data(), n));
 }
 void Font::setVariation(std::span<const FontVariation> settings) {
-    if (const auto fn = detail::varHooks().setVariation; fn && isVariable()) fn(*this, settings);
+    if (const auto fn = detail::varHooks().setVariation; fn && isVariable()) {
+        fn(*this, settings);
+        m_state->weightCache = -1.f;
+        g_chainGen.fetch_add(1, std::memory_order_relaxed);
+    }
 }
 bool variableFontsEnabled() { return detail::varHooks().instance != nullptr; }
 
@@ -780,6 +840,8 @@ const Font& Font::withFeatures(std::span<const FontFeature> features) const {
     st->dDescent = src->dDescent;
     st->dLineGap = src->dLineGap;
     st->featureSource = src;
+    st->synthBold = src->synthBold; // an emboldened() font keeps its synthetic bold
+    st->weightCache = src->weightCache;
     detail::fullSetCoords(st->full, st->coords);
     detail::fullSetFeatures(st->full, features.first(n));
     State::FeatureVariant v;
@@ -795,6 +857,36 @@ const Font& Font::withFeatures(std::span<const FontFeature> features) const {
     return *this;
 #endif
 }
+const Font& Font::emboldened() const {
+#if FUSE_TEXT_COOKED
+    return *this; // packs are cooked at one instance
+#else
+    if (!m_state || m_state->synthBold > 0.f || hasColorGlyphs() || weight() >= 600.f) return *this;
+    State* src = m_state;
+    if (!src->emboldenedFont) {
+        State* st = detail::FontAccess::shareState(src);
+        st->var = src->var; // borrowed: same coordinates as the source
+        st->ownVar = false;
+        st->varied = src->varied;
+        st->coords = src->coords;
+        st->dAscent = src->dAscent;
+        st->dDescent = src->dDescent;
+        st->dLineGap = src->dLineGap;
+        st->weightCache = 700.f;
+        st->synthBold = 1.f / 24.f; // FreeType's FT_GlyphSlot_Embolden strength
+#if FUSE_TEXT_FULL
+        detail::fullSetCoords(st->full, st->coords);
+#endif
+        auto f = std::make_unique<Font>();
+        f->m_state = st;
+        f->m_id = g_fontIds.fetch_add(1);
+        src->emboldenedFont = std::move(f);
+    }
+    return *src->emboldenedFont;
+#endif
+}
+float Font::syntheticBold(float px) const { return m_state ? m_state->synthBold * m_state->emPerPixelSize * px : 0.f; }
+
 #if FUSE_TEXT_COOKED
 void enableVariableFonts() {}
 #endif
@@ -835,6 +927,10 @@ std::uint32_t Font::glyphIndex(char32_t cp) const {
     return g;
 }
 float Font::advance(std::uint32_t glyph, float px) const {
+    const float a = baseAdvance(glyph, px);
+    return m_state->synthBold > 0.f && a > 0.f ? a + syntheticBold(px) : a;
+}
+float Font::baseAdvance(std::uint32_t glyph, float px) const {
 #if FUSE_TEXT_COOKED
     const int adv = detail::cookedAdvance(m_state->cooked, glyph);
 #else
@@ -862,6 +958,30 @@ float Font::kerning(std::uint32_t l, std::uint32_t r, float px) const {
     return float(units) * m_state->unitsPerPixelScale1 * px;
 }
 void Font::glyphBox(std::uint32_t glyph, float px, int& x0, int& y0, int& x1, int& y1) const {
+    baseGlyphBox(glyph, px, x0, y0, x1, y1);
+    if (m_state->synthBold > 0.f && x1 > x0) x1 += int(std::ceil(syntheticBold(px)));
+}
+void Font::rasterise(std::uint32_t glyph, float px, std::uint8_t* dst, int w, int h, int stride) const {
+    if (!(m_state->synthBold > 0.f)) return baseRasterise(glyph, px, dst, w, h, stride);
+    // Synthetic bold: the glyph smeared to the right by the strength (GDI-style double strike, fractional last
+    // column), inside the box glyphBox widened by the same amount.
+    const float e = syntheticBold(px);
+    const int ext = int(std::ceil(e)), whole = int(std::floor(e));
+    const float frac = e - float(whole);
+    const int bw = std::max(0, w - ext);
+    for (int y = 0; y < h; ++y) std::memset(dst + std::ptrdiff_t(y) * stride, 0, std::size_t(w));
+    baseRasterise(glyph, px, dst, bw, h, stride);
+    for (int y = 0; y < h; ++y) {
+        std::uint8_t* row = dst + std::ptrdiff_t(y) * stride;
+        for (int x = w - 1; x >= 0; --x) {
+            float v = row[x];
+            for (int k = 1; k <= whole && x - k >= 0; ++k) v = std::max(v, float(row[x - k]));
+            if (frac > 0.f && x - whole - 1 >= 0) v = std::max(v, float(row[x - whole - 1]) * frac);
+            row[x] = std::uint8_t(std::lround(v));
+        }
+    }
+}
+void Font::baseGlyphBox(std::uint32_t glyph, float px, int& x0, int& y0, int& x1, int& y1) const {
 #if FUSE_TEXT_FULL
     return detail::fullGlyphBox(m_state->full, glyph, m_state->emPerPixelSize * px, x0, y0, x1, y1);
 #endif
@@ -873,7 +993,7 @@ void Font::glyphBox(std::uint32_t glyph, float px, int& x0, int& y0, int& x1, in
     stbtt_GetGlyphBitmapBox(&m_state->info, int(glyph), s, s, &x0, &y0, &x1, &y1);
 #endif
 }
-void Font::rasterise(std::uint32_t glyph, float px, std::uint8_t* dst, int w, int h, int stride) const {
+void Font::baseRasterise(std::uint32_t glyph, float px, std::uint8_t* dst, int w, int h, int stride) const {
 #if FUSE_TEXT_FULL
     return detail::fullRasterise(m_state->full, glyph, m_state->emPerPixelSize * px, dst, w, h, stride);
 #endif
@@ -965,6 +1085,7 @@ Font::State* FontAccess::shareState(const Font::State* src) {
     st->sbix = o->sbix;
     st->unitsPerEm = o->unitsPerEm;
     st->numGlyphs = o->numGlyphs;
+    st->weightClass = o->weightClass;
     st->v1Images = o->v1Images;
     st->bitmapImages = o->bitmapImages;
 #if FUSE_TEXT_FULL
@@ -1118,6 +1239,8 @@ bool Font::renderMsdf(std::uint32_t glyph, float px, float range, ColorImage& ou
     }
     const float s = unitScale(px);
     const float pad = range * 0.5f + 1.f;
+    const float bold = syntheticBold(px); // synthetic bold: distances biased outward by half the strength, shifted right
+    ux1 += int(std::ceil(bold / s));
     out.x0 = int(std::floor(float(ux0) * s - pad));
     out.y0 = int(std::floor(-float(uy1) * s - pad));
     out.w = int(std::ceil(float(ux1) * s + pad)) - out.x0;
@@ -1127,16 +1250,31 @@ bool Font::renderMsdf(std::uint32_t glyph, float px, float range, ColorImage& ou
     detail::Affine m;
     m.xx = s;
     m.yy = -s;
-    m.dx = -out.x0;
-    m.dy = -out.y0;
+    m.dx = -float(out.x0) + bold * 0.5f;
+    m.dy = -float(out.y0);
     hooks.msdf(path, m, range, out.rgba.data(), out.w, out.h, out.w * 4);
+    if (bold > 0.f) {
+        const int bias = int(std::lround(255.f * bold * 0.5f / range));
+        for (std::uint8_t& c : out.rgba) c = std::uint8_t(std::min(255, int(c) + bias));
+    }
     return true;
 #endif
 }
 
 #if FUSE_TEXT_FULL
 float HarfBuzzShaper::shape(const Font& font, float px, std::string_view s, std::vector<ShapedGlyph>& out) const {
-    return detail::fullShape(font.m_state->full, font.unitScale(px), s, out);
+    const float w = detail::fullShape(font.m_state->full, font.unitScale(px), s, out);
+    if (!(font.m_state->synthBold > 0.f)) return w;
+    const float e = font.syntheticBold(px);
+    float shift = 0.f;
+    for (ShapedGlyph& g : out) { // widen every spacing glyph, push the rest along
+        g.x += shift;
+        if (g.advance > 0.f) {
+            g.advance += e;
+            shift += e;
+        }
+    }
+    return w + shift;
 }
 const ITextShaper* fullShaper() {
     static const HarfBuzzShaper shaper;
@@ -1213,70 +1351,6 @@ float shapeWithFallback(const Font& font, const ITextShaper& shaper, float px, s
     });
     return pen;
 }
-#if FUSE_TEXT_FULL
-// FULL layout shapes with the primary face only (bidi + line breaking + run cache); fallback runs are then
-// re-shaped with their face per line and the rest of the line shifts by the width change.
-void applyFallbackPerLine(const Font& font, const ITextShaper& shaper, float px, std::string_view s,
-                          std::vector<ShapedGlyph>& g, std::vector<TextLine>& lines) {
-    if (!mayNeedFallback(font, s)) return;
-    struct Span {
-        std::uint32_t b, e;
-        std::uint16_t face;
-    };
-    thread_local std::vector<Span> spans;
-    spans.clear();
-    forEachFaceRun(font, s, [&](std::size_t b, std::size_t e, std::uint16_t f) {
-        if (f) spans.push_back({std::uint32_t(b), std::uint32_t(e), f});
-    });
-    if (spans.empty()) return;
-    auto spanOf = [&](const ShapedGlyph& x) -> int { // spans are sorted and disjoint: binary search
-        if (x.glyph == kInvisibleGlyph) return -1;
-        const auto it = std::upper_bound(spans.begin(), spans.end(), x.cluster,
-                                         [](std::uint32_t c, const Span& sp) { return c < sp.b; });
-        if (it == spans.begin() || x.cluster >= (it - 1)->e) return -1;
-        return int(it - spans.begin()) - 1;
-    };
-    thread_local std::vector<ShapedGlyph> outG, run;
-    outG.clear();
-    for (TextLine& ln : lines) {
-        const std::uint32_t first = std::uint32_t(outG.size());
-        const std::uint32_t end = ln.firstGlyph + ln.glyphCount;
-        float shift = 0.f;
-        for (std::uint32_t k = ln.firstGlyph; k < end;) {
-            const int sp = spanOf(g[k]);
-            if (sp < 0) {
-                ShapedGlyph x = g[k++];
-                x.x += shift;
-                outG.push_back(x);
-                continue;
-            }
-            std::uint32_t j = k, lo = g[k].cluster;
-            float oldAdv = 0.f;
-            for (; j < end && spanOf(g[j]) == sp; ++j) {
-                oldAdv += g[j].advance;
-                lo = std::min(lo, g[j].cluster);
-            }
-            const Span& span = spans[std::size_t(sp)];
-            std::uint32_t hi = span.e;
-            if (ln.byteEnd > lo && ln.byteEnd < hi) hi = ln.byteEnd;
-            const float x0 = g[k].x + shift;
-            const float w = shaper.shape(font.face(span.face), font.facePixelSize(span.face, px), s.substr(lo, hi - lo), run);
-            for (ShapedGlyph r : run) {
-                r.cluster += lo;
-                r.x += x0;
-                r.face = span.face;
-                outG.push_back(r);
-            }
-            shift += w - oldAdv;
-            k = j;
-        }
-        ln.firstGlyph = first;
-        ln.glyphCount = std::uint32_t(outG.size()) - first;
-        ln.width += shift;
-    }
-    g.swap(outG);
-}
-#endif
 } // namespace
 
 float shapeText(const Font& font, std::string_view s, float px, std::vector<ShapedGlyph>& out) {
@@ -1311,9 +1385,25 @@ void layoutText(const Font& font, const ITextShaper& shaper, std::string_view s,
 #endif
     if (full) {
 #if FUSE_TEXT_FULL
-        detail::fullLayout(font.m_state->full, font.unitScale(desc.pixelSize), s, wrap ? desc.maxWidth : 0.f, lh,
-                           out.metrics.ascent, g, out.lines);
-        applyFallbackPerLine(font, shaper, desc.pixelSize, s, g, out.lines);
+        // Fallback runs are shaped once, by their own face, inside the bidi / line-breaking pass.
+        thread_local std::vector<detail::FullRunFace> faces;
+        thread_local std::vector<detail::FullFaceSpan> spans;
+        const float px = desc.pixelSize;
+        faces.assign(1, {font.m_state->full, font.unitScale(px), font.syntheticBold(px)});
+        spans.clear();
+        if (mayNeedFallback(font, s)) {
+            forEachFaceRun(font, s, [&](std::size_t b, std::size_t e, std::uint16_t f) {
+                if (f) spans.push_back({std::uint32_t(b), std::uint32_t(e), f});
+            });
+            if (!spans.empty())
+                for (std::uint16_t k = 1; k < font.faceCount(); ++k) {
+                    const Font& fk = font.face(k);
+                    const float fpx = font.facePixelSize(k, px);
+                    faces.push_back({fk.m_state->full, fk.unitScale(fpx), fk.syntheticBold(fpx)});
+                }
+            std::erase_if(spans, [](const detail::FullFaceSpan& sp) { return !faces[sp.face].face; });
+        }
+        detail::fullLayout(faces, spans, s, wrap ? desc.maxWidth : 0.f, lh, out.metrics.ascent, g, out.lines);
 #endif
     } else {
     shapeWithFallback(font, shaper, desc.pixelSize, s, out.glyphs);
