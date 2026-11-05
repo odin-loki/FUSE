@@ -37,9 +37,18 @@ std::string env_or_empty(const char* name) {
 void* open_library(const std::string& path, std::string& error) {
 #if defined(_WIN32)
     const std::wstring wide = fs::path(path).wstring();
+    // SEM_FAILCRITICALERRORS for this thread while loading: a file that is not a valid PE image (truncated download,
+    // wrong file named libxess.dll) otherwise raises the modal "Bad Image" hard-error box and blocks until a user
+    // clicks it (seen as a hang under ctest, whose children run in the default error mode).
+    DWORD old_mode = 0;
+    const BOOL mode_set = SetThreadErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX, &old_mode);
     HMODULE h = LoadLibraryExW(wide.c_str(), nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+    const DWORD load_error = GetLastError();
+    if (mode_set) {
+        SetThreadErrorMode(old_mode, nullptr);
+    }
     if (!h) {
-        error = "LoadLibraryExW failed, GetLastError=" + std::to_string(GetLastError());
+        error = "LoadLibraryExW failed, GetLastError=" + std::to_string(load_error);
     }
     return reinterpret_cast<void*>(h);
 #else
