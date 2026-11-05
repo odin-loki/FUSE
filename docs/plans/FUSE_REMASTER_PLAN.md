@@ -1319,7 +1319,7 @@ Budget defaults in `ai-budget.json`: US$50 per run and US$300 per month per game
 
 Updated 2026-11-05. Gates: `ctest -L remaster` (17 tests) natively on Windows (MSVC, `-DFUSE_BUILD_RELIGHT=ON`) and,
 for the W0 C++ libraries and the CLI, with GCC 13 on Linux (WSL). The W0.4 checks run in `fuse_lint_asset_licences`
-(labels `gate;lint;asset`). Wave 0 is done; Wave 1 has W1.5–W1.8 done (W1.1–W1.4 belong to the asset-pipeline
+(labels `gate;lint;asset`). `ctest -L relight`: 278 / 278 pass natively. Wave 0 is done; Wave 1 has W1.5–W1.8 done (W1.1–W1.4 belong to the asset-pipeline
 track); Wave 2 has W2.1–W2.5 done (W2.6 is manual).
 
 | Task | What is in the tree | Gates |
@@ -1352,7 +1352,6 @@ Deviations from the §2.3 sketch:
 
 Not done:
 - Lavapipe on native Windows: the Android-SDK Lavapipe ICD renders the W1.8 scenes (FLIP = 0, used for the goldens) but the renderer's VMA path chains OPAQUE_WIN32 export memory that Lavapipe does not support (12 validation errors from `Renderer/src/vk/allocator.cpp`, not Remaster code). The Windows gate therefore runs on the system ICD (RTX 3090) against the Lavapipe goldens; Linux CI runs it on Lavapipe. WSL was unavailable in this session (service error), so the Linux run is still to do.
-- On a Windows checkout with `core.autocrlf=true`, seven `relight` gates that compare against checked-out expected files fail on CRLF only (for example `rl_mods_import_fixture_*`, `rl_logic_unit`, `rl_setup_content_sky_ui_hud`). Outputs equal the expected files modulo CR; no Relight code changed in these tasks.
 - DIF: the [VERIFY] fields in `dif.hpp` need a user-owned interior; the reader refuses sub-objects and static meshes.
 - export-remix: ORM maps are not split into AperturePBR roughness / metallic maps yet (Wave 3); open questions Q1–Q5 in the format notes.
 - The Python mirror's defaults are the type defaults, because the schemas carry no `default` values yet.
