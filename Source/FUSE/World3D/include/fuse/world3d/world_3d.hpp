@@ -12,9 +12,15 @@
 #include <fuse/world3d/scene_object_3d.hpp>
 #include <fuse/world3d/scene_snapshot.hpp>
 
+#include <fuse/asset/asset_id.hpp>
+
 #include <memory>
 #include <string>
 #include <vector>
+
+namespace fuse::asset {
+struct CookedMesh;
+}
 
 namespace fuse::world3d {
 
@@ -40,6 +46,19 @@ struct World3DLevelLoadResult {
     u32 rigidBodies = 0;
     u32 spawnMarkers = 0;
     u32 physicsLinked = 0;  ///< mirrors whose pose follows a Collider + RigidBody entity
+    /// Asset plan 4a: ecs::MeshAssets mesh ids (TSStatic shapes) resolved to cooked `.fusemesh` files under the
+    /// cooked-asset root (World3D::setCookedAssetRoot) / left unresolved (no root, no file, or unreadable).
+    u32 cookedMeshes = 0;
+    u32 unresolvedMeshes = 0;
+};
+
+/// Asset plan 4a: a cooked mesh a loaded level references (ecs::MeshAssets::mesh), read from the cooked-asset root.
+/// The GPU renderer uploads it under its asset id (renderer::cooked_assets::CookedAssetRegistry::addMesh) and binds
+/// the entities' ecs::Mesh::vertex_buffer to it (syncEntities).
+struct World3DCookedMesh {
+    asset::AssetId id{};
+    std::string path;
+    std::shared_ptr<const asset::CookedMesh> mesh;
 };
 
 /// Physics view of a World3D: the PhysicsManager its runtime schedule steps plus the helpers the
@@ -108,6 +127,15 @@ public:
     /// transforms refreshed from their ECS Transforms) or, without a level, an empty scene table, plus
     /// the world's whole registry. Load + save without changes reproduces the file byte for byte.
     bool saveWorld(const std::string& fuselevelPath, std::string* error = nullptr);
+    /// Asset plan 4a: directory that the cooked virtual root `game:/cooked/` maps to. Level loads resolve every
+    /// ecs::MeshAssets::mesh id against the `.fusemesh` files under it (id = asset_id_of("game:/cooked/" + relative
+    /// path)), keep the meshes in cookedMeshes() and give entities with an empty Mesh box the cooked bounds. Empty
+    /// (the default): `<level directory>/../cooked` (a project's `worlds/x.fuselevel` -> `<project>/cooked`).
+    void setCookedAssetRoot(std::string dir) { m_cookedRoot = std::move(dir); }
+    const std::string& cookedAssetRoot() const { return m_cookedRoot; }
+    const std::vector<World3DCookedMesh>& cookedMeshes() const { return m_cookedMeshes; }
+    /// Bumped whenever cookedMeshes() changes (level load / clear).
+    u64 cookedMeshVersion() const { return m_cookedMeshVersion; }
     /// World-space position of the first SpawnMarker entity (false when the level has none).
     bool findSpawnPoint(f32 outPosition[3]);
     /// Place `RenderCamera3D` at the level spawn (eye at marker, target on the ground ahead) — same layout as
@@ -246,6 +274,9 @@ private:
 
     std::string m_pendingFuselevelPath;
     World3DLevelLoadResult m_lastLevelLoad{};
+    std::string m_cookedRoot;
+    std::vector<World3DCookedMesh> m_cookedMeshes;
+    u64 m_cookedMeshVersion = 0;
     /// Loaded level (scene table + mirror nodes); defined in world_3d_level.cpp.
     std::unique_ptr<LevelState, LevelStateDeleter> m_level;
 

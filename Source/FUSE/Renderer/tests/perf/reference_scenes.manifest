@@ -1,0 +1,8 @@
+# Renderer plan §8 reference scenes (docs/unification/RENDERER-HW-RUN.md, "Reference scenes").
+# One scene per line: name|url|archive file name|sha256 of the archive|file that must exist after extraction|licence
+# The sha256 column is the pin. It is EMPTY until someone fetches the archive once (with the user's permission) and
+# commits the hash the fetch script prints: an empty pin is never trusted (the test skips, the fetch script refuses
+# to extract unless FUSE_REFSCENE_PIN_ON_FIRST_FETCH=1, and then prints the value to commit here).
+# Source: Morgan McGuire's Computer Graphics Archive (https://casual-effects.com/data/), CC BY 3.0.
+sponza|https://casual-effects.com/g3d/data10/common/model/crytek_sponza/sponza.zip|sponza.zip||sponza.obj|CC BY 3.0 (Crytek Sponza, F. Meinl / Crytek, McGuire CGA)
+bistro|https://casual-effects.com/g3d/data10/research/model/bistro/Bistro.zip|Bistro.zip||Exterior/exterior.obj|CC BY 4.0 (Amazon Lumberyard Bistro, McGuire CGA conversion)

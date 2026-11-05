@@ -55,7 +55,6 @@ constexpr ShellPanel kPanels[] = {
     {"dock.timeline", "Timeline", DockSide::Bottom, true},
 };
 constexpr const char* kSideDockIds[3] = {"dock.left", "dock.right", "dock.bottom"};
-constexpr const char* kSideTabIds[3] = {"tabs.left", "tabs.right", "tabs.bottom"};
 constexpr DockSide kSides[3] = {DockSide::Left, DockSide::Right, DockSide::Bottom};
 
 u32 sideIndex(DockSide s) { return s == DockSide::Left ? 0u : s == DockSide::Right ? 1u : 2u; }
@@ -279,24 +278,27 @@ bool EditorShellWindow::showPanel(std::string_view panelId) {
     const i32 i = panelIndex_(panelId);
     if (i < 0) return false;
     if (!m_panelVisible[u32(i)]) setPanelVisible(panelId, true);
-    const u32 side = m_panelSide[u32(i)];
-    if (side >= 3) return true; // floating: always shown
-    w::dockTo(m_ui, m_docks[side], kSides[side]);
-    const auto& order = m_sideOrder[side];
+    if (m_panelSide[u32(i)] >= 3) return true; // floating: always shown
+    const u32 k = m_panelStack[u32(i)];
+    if (k >= m_stacks.size()) return false;
+    w::dockOpen(m_ui, m_stacks[k].dock);
+    const auto& order = m_stacks[k].order;
     const auto it = std::find(order.begin(), order.end(), u32(i));
     if (it == order.end()) return false;
-    m_ui.setValue(w::tabWidgetBar(m_ui, m_tabs[side]), f32(it - order.begin()), true);
+    m_ui.setValue(w::tabWidgetBar(m_ui, m_stacks[k].tabs), f32(it - order.begin()), true);
     return true;
 }
 
 bool EditorShellWindow::panelVisible(std::string_view panelId) const {
     const i32 i = panelIndex_(panelId);
     if (i < 0 || !m_panelVisible[u32(i)]) return false;
-    const u32 side = m_panelSide[u32(i)];
-    if (side >= 3) return true;
-    const auto& order = m_sideOrder[side];
+    if (m_panelSide[u32(i)] >= 3) return true;
+    const u32 k = m_panelStack[u32(i)];
+    if (k >= m_stacks.size()) return false;
+    const auto& order = m_stacks[k].order;
     const auto it = std::find(order.begin(), order.end(), u32(i));
-    return it != order.end() && m_ui.alive(m_tabs[side]) && u32(m_ui.value(w::tabWidgetBar(m_ui, m_tabs[side]))) == u32(it - order.begin());
+    return it != order.end() && m_ui.alive(m_stacks[k].tabs) &&
+           u32(m_ui.value(w::tabWidgetBar(m_ui, m_stacks[k].tabs))) == u32(it - order.begin());
 }
 
 bool EditorShellWindow::panelShown(std::string_view panelId) const {
@@ -327,6 +329,7 @@ bool EditorShellWindow::setPanelFloating(std::string_view panelId, bool on) {
     const i32 i = panelIndex_(panelId);
     if (i < 0) return false;
     m_panelSide[u32(i)] = on ? 3u : sideIndex(kPanels[i].side);
+    if (!on) m_panelStack[u32(i)] = m_panelSide[u32(i)];
     m_panelVisible[u32(i)] = true;
     relayoutPanels_();
     return true;
@@ -336,36 +339,124 @@ bool EditorShellWindow::movePanel(std::string_view panelId, fuse::ui::widgets::D
     const i32 i = panelIndex_(panelId);
     if (i < 0 || side == DockSide::Center) return false;
     m_panelSide[u32(i)] = sideIndex(side);
+    m_panelStack[u32(i)] = sideIndex(side);
     m_panelVisible[u32(i)] = true;
     relayoutPanels_();
     return showPanel(panelId);
 }
 
+bool EditorShellWindow::splitPanel(std::string_view panelId, std::string_view targetPanelId, w::DockEdge edge) {
+    const i32 i = panelIndex_(panelId), t = panelIndex_(targetPanelId);
+    if (i < 0 || t < 0 || m_panelSide[u32(t)] >= 3 || !m_panelVisible[u32(t)]) return false;
+    return splitInto_(u32(i), m_panelStack[u32(t)], edge);
+}
+
+bool EditorShellWindow::splitInto_(u32 i, u32 stack, w::DockEdge edge) {
+    if (stack >= m_stacks.size()) return false;
+    const u32 side = stackSide_(stack);
+    const bool inStack = m_panelSide[i] < 3 && m_panelVisible[i] && m_panelStack[i] == stack;
+    if (edge != w::DockEdge::Center) {
+        // nothing to split when the panel is the stack's only one
+        if (inStack && m_stacks[stack].order.size() <= 1) return showPanel(kPanels[i].id);
+        const u32 k = newStack_(side, kPanels[i].title, {});
+        w::dockSplit(m_ui, m_stacks[k].dock, m_stacks[stack].dock, edge);
+        stack = k;
+    }
+    m_panelSide[i] = side;
+    m_panelStack[i] = stack;
+    m_panelVisible[i] = true;
+    relayoutPanels_();
+    return showPanel(kPanels[i].id);
+}
+
+u32 EditorShellWindow::stackSide_(u32 k) const {
+    return k < m_stacks.size() ? sideIndex(w::dockSideOf(m_ui, m_stacks[k].dock)) : 0u;
+}
+
+u32 EditorShellWindow::dockStackCount() const {
+    u32 n = 0;
+    for (const DockStack& st : m_stacks) n += st.order.empty() ? 0u : 1u;
+    return n;
+}
+
+NodeHandle EditorShellWindow::panelStackNode(std::string_view panelId) const {
+    const i32 i = panelIndex_(panelId);
+    if (i < 0 || m_panelSide[u32(i)] >= 3 || !m_panelVisible[u32(i)] || m_panelStack[u32(i)] >= m_stacks.size()) return {};
+    return m_stacks[m_panelStack[u32(i)]].dock;
+}
+
+NodeHandle EditorShellWindow::dropStackNode() const {
+    return m_dropStack >= 0 && u32(m_dropStack) < m_stacks.size() ? m_stacks[u32(m_dropStack)].dock : NodeHandle{};
+}
+
+// A tab stack: a dock widget with a tab bar over a page stack (`id` "dock.left" -> tab widget "tabs.left").
+u32 EditorShellWindow::newStack_(u32 side, std::string_view title, std::string id) {
+    if (id.empty()) id = "dock.split." + std::to_string(m_nextStackId++);
+    const std::string tabsId = "tabs." + id.substr(5);
+    DockStack st;
+    st.dock = w::dockWidget(m_ui, m_dockArea, title, kSides[std::min(side, 2u)], id);
+    st.tabs = w::panel(m_ui, w::dockBody(m_ui, st.dock), tabsId);
+    m_ui.addClass(st.tabs, "tabwidget");
+    m_ui.setCss(st.tabs, "flex-grow", "1");
+    const NodeHandle bar = w::tabBar(m_ui, st.tabs, "", 0, tabsId + ".bar");
+    const NodeHandle stack = w::panel(m_ui, st.tabs, tabsId + ".stack");
+    m_ui.setCss(stack, "flex-grow", "1");
+    m_ui.setCss(stack, "padding", "0px");
+    m_ui.connect(bar, SignalKind::ValueChanged, [this, dock = st.dock](UiContext&, NodeHandle, const SignalArgs&) {
+        for (u32 k = 0; k < m_stacks.size(); ++k)
+            if (m_stacks[k].dock == dock) showStackPage_(k);
+    });
+    m_stacks.push_back(std::move(st));
+    return u32(m_stacks.size() - 1);
+}
+
+// Pages out of the split stacks (hidden holder), split stacks removed, side stacks back at the top of their sides.
+void EditorShellWindow::clearStacks_() {
+    for (u32 i = 0; i < m_pagesNode.size(); ++i)
+        if (m_ui.parent(m_pagesNode[i]) != m_floatFrame[i] && m_ui.parent(m_pagesNode[i]) != m_hiddenPages)
+            m_ui.moveTo(m_pagesNode[i], m_hiddenPages);
+    while (m_stacks.size() > 3) {
+        w::dockRemove(m_ui, m_stacks.back().dock);
+        m_stacks.pop_back();
+    }
+    for (u32 s = 0; s < 3; ++s) {
+        m_stacks[s].order.clear();
+        w::dockTo(m_ui, m_stacks[s].dock, kSides[s]);
+    }
+    for (u32 i = 0; i < m_panelStack.size(); ++i) m_panelStack[i] = std::min(m_panelSide[i], 2u);
+}
+
 // Puts every panel page where its side / visibility says: tab stacks, floating frames (overlay layer) or hidden.
 void EditorShellWindow::relayoutPanels_() {
     const u32 n = u32(std::size(kPanels));
-    for (u32 s = 0; s < 3; ++s) {
-        const NodeHandle bar = w::tabWidgetBar(m_ui, m_tabs[s]);
+    // a docked panel sits in its stack; one without a stack on its side (moved, restored, its stack gone) in the
+    // side's own stack
+    for (u32 i = 0; i < n; ++i)
+        if (m_panelSide[i] < 3 && (m_panelStack[i] >= m_stacks.size() || stackSide_(m_panelStack[i]) != m_panelSide[i]))
+            m_panelStack[i] = m_panelSide[i];
+    for (u32 s = 0; s < m_stacks.size(); ++s) {
+        DockStack& st = m_stacks[s];
+        const NodeHandle bar = w::tabWidgetBar(m_ui, st.tabs);
         const u32 prevTab = u32(std::max(0.f, m_ui.value(bar)));
-        const i32 prevPanel = prevTab < m_sideOrder[s].size() ? i32(m_sideOrder[s][prevTab]) : -1;
-        m_sideOrder[s].clear();
+        const i32 prevPanel = prevTab < st.order.size() ? i32(st.order[prevTab]) : -1;
+        st.order.clear();
         std::string titles;
         for (u32 i = 0; i < n; ++i) {
-            if (m_panelSide[i] != s || !m_panelVisible[i]) continue;
-            m_sideOrder[s].push_back(i);
+            if (m_panelSide[i] >= 3 || !m_panelVisible[i] || m_panelStack[i] != s) continue;
+            st.order.push_back(i);
             titles += std::string(titles.empty() ? "" : "\n") + kPanels[i].title;
         }
         const NodeHandle stack = m_ui.nextSibling(bar);
-        for (u32 i : m_sideOrder[s])
+        for (u32 i : st.order)
             if (m_ui.parent(m_pagesNode[i]) != stack) m_ui.moveTo(m_pagesNode[i], stack);
         if (std::string_view(m_ui.text(bar)) != titles) m_ui.setText(bar, titles);
-        m_ui.setRange(bar, 0.f, f32(std::max<std::size_t>(1, m_sideOrder[s].size()) - 1), 1.f);
+        m_ui.setRange(bar, 0.f, f32(std::max<std::size_t>(1, st.order.size()) - 1), 1.f);
         u32 cur = 0;
-        for (u32 k = 0; k < m_sideOrder[s].size(); ++k)
-            if (i32(m_sideOrder[s][k]) == prevPanel) cur = k;
+        for (u32 k = 0; k < st.order.size(); ++k)
+            if (i32(st.order[k]) == prevPanel) cur = k;
         m_ui.setValue(bar, f32(cur));
-        if (m_sideOrder[s].empty()) w::dockClose(m_ui, m_docks[s]);
-        showSidePage_(s);
+        if (st.order.empty()) w::dockClose(m_ui, st.dock);
+        showStackPage_(s);
     }
     for (u32 i = 0; i < n; ++i) {
         const bool floating = m_panelSide[i] == 3u && m_panelVisible[i];
@@ -416,29 +507,51 @@ void EditorShellWindow::relayoutPanels_() {
         }
         if (!m_panelVisible[i] && m_ui.parent(m_pagesNode[i]) != m_hiddenPages) m_ui.moveTo(m_pagesNode[i], m_hiddenPages);
     }
+    // split stacks left without a panel go (their split collapses); every page is out of them by now
+    for (u32 k = u32(m_stacks.size()); k-- > 3;) {
+        if (!m_stacks[k].order.empty()) continue;
+        w::dockRemove(m_ui, m_stacks[k].dock);
+        m_stacks.erase(m_stacks.begin() + k);
+        for (u32& ps : m_panelStack)
+            if (ps != ~0u && ps > k) --ps;
+            else if (ps == k) ps = ~0u;
+    }
     m_menuKey.clear(); // View menu panel checks
 }
 
-void EditorShellWindow::showSidePage_(u32 side) {
-    const NodeHandle bar = w::tabWidgetBar(m_ui, m_tabs[side]);
-    const u32 cur = u32(std::max(0.f, m_ui.value(bar)));
-    for (u32 k = 0; k < m_sideOrder[side].size(); ++k)
-        m_ui.setCss(m_pagesNode[m_sideOrder[side][k]], "display", k == cur ? "flex" : "none");
+void EditorShellWindow::showStackPage_(u32 k) {
+    if (k >= m_stacks.size()) return;
+    const DockStack& st = m_stacks[k];
+    const u32 cur = u32(std::max(0.f, m_ui.value(w::tabWidgetBar(m_ui, st.tabs))));
+    for (u32 j = 0; j < st.order.size(); ++j) m_ui.setCss(m_pagesNode[st.order[j]], "display", j == cur ? "flex" : "none");
+    // a split stack is titled after its current panel (the side stacks keep Scene / Properties / Output)
+    if (k >= 3 && cur < st.order.size()) {
+        const NodeHandle title = m_ui.firstChild(st.dock);
+        if (std::string_view(m_ui.text(title)) != kPanels[st.order[cur]].title) m_ui.setText(title, kPanels[st.order[cur]].title);
+    }
 }
 
-bool EditorShellWindow::panelTabMenu_(u32 side, fuse::ui::Vec2 at) {
-    const NodeHandle bar = w::tabWidgetBar(m_ui, m_tabs[side]);
+bool EditorShellWindow::panelTabMenu_(u32 k, fuse::ui::Vec2 at) {
+    if (k >= m_stacks.size()) return false;
+    const NodeHandle bar = w::tabWidgetBar(m_ui, m_stacks[k].tabs);
     const u32 cur = u32(std::max(0.f, m_ui.value(bar)));
-    if (cur >= m_sideOrder[side].size()) return false;
-    const char* id = kPanels[m_sideOrder[side][cur]].id;
-    const NodeHandle menu = w::popupMenu(m_ui, bar, "Float\nHide\n-\nMove to Left\nMove to Right\nMove to Bottom", at, "panel.menu");
-    m_ui.connect(menu, SignalKind::Submitted, [this, id](UiContext&, NodeHandle, const SignalArgs& a) {
+    if (cur >= m_stacks[k].order.size()) return false;
+    const u32 panel = m_stacks[k].order[cur];
+    const char* id = kPanels[panel].id;
+    const NodeHandle menu = w::popupMenu(m_ui, bar, "Float\nHide\n-\nMove to Left\nMove to Right\nMove to Bottom\n-\nSplit Right\nSplit Down",
+                                         at, "panel.menu");
+    m_ui.connect(menu, SignalKind::Submitted, [this, id, panel, dock = m_stacks[k].dock](UiContext&, NodeHandle, const SignalArgs& a) {
+        u32 stack = ~0u; // the stack may have been renumbered while the menu was open
+        for (u32 j = 0; j < m_stacks.size(); ++j)
+            if (m_stacks[j].dock == dock) stack = j;
         switch (int(a.value)) {
         case 0: setPanelFloating(id, true); break;
         case 1: setPanelVisible(id, false); break;
         case 3: movePanel(id, DockSide::Left); break;
         case 4: movePanel(id, DockSide::Right); break;
         case 5: movePanel(id, DockSide::Bottom); break;
+        case 7: if (stack != ~0u) splitInto_(panel, stack, w::DockEdge::Right); break;
+        case 8: if (stack != ~0u) splitInto_(panel, stack, w::DockEdge::Bottom); break;
         default: break;
         }
         sync();
@@ -455,8 +568,16 @@ std::string EditorShellWindow::saveLayout() const {
                std::to_string(int(m_floatPos[i][0])) + ":" + std::to_string(int(m_floatPos[i][1])) + ":" +
                std::to_string(int(m_floatSize[i][0])) + ":" + std::to_string(int(m_floatSize[i][1])) + "\n";
     out += "tabs";
-    for (u32 s = 0; s < 3; ++s) out += ":" + std::to_string(int(m_ui.value(w::tabWidgetBar(m_ui, m_tabs[s]))));
+    for (u32 s = 0; s < 3; ++s) out += ":" + std::to_string(int(m_ui.value(w::tabWidgetBar(m_ui, m_stacks[s].tabs))));
     out += "\n";
+    // split stacks: "stack:<dock id>:<side>:<current tab>:<panel id>,<panel id>..." (their place: the docks blob)
+    for (u32 k = 3; k < m_stacks.size(); ++k) {
+        if (m_stacks[k].order.empty()) continue;
+        out += "stack:" + std::string(m_ui.idOf(m_stacks[k].dock)) + ":" + std::to_string(stackSide_(k)) + ":" +
+               std::to_string(int(m_ui.value(w::tabWidgetBar(m_ui, m_stacks[k].tabs)))) + ":";
+        for (u32 j = 0; j < m_stacks[k].order.size(); ++j) out += std::string(j ? "," : "") + kPanels[m_stacks[k].order[j]].id;
+        out += "\n";
+    }
     std::string docks = w::dockSaveLayout(m_ui, m_dockArea);
     std::replace(docks.begin(), docks.end(), '\n', '|');
     return out + "docks:" + docks + "\n";
@@ -468,6 +589,8 @@ bool EditorShellWindow::restoreLayout(std::string_view blob) {
     std::vector<u32> side(m_panelSide), tabs(3, 0);
     std::vector<bool> visible(m_panelVisible);
     std::vector<std::array<f32, 2>> pos(m_floatPos), size(m_floatSize);
+    struct StackLine { std::string id; u32 side, cur; std::vector<u32> panels; };
+    std::vector<StackLine> stacks;
     std::string docks;
     std::size_t at = 0;
     while (at < text.size()) {
@@ -485,6 +608,18 @@ bool EditorShellWindow::restoreLayout(std::string_view blob) {
             f.push_back(line.substr(b, c == std::string::npos ? std::string::npos : c - b));
             if (c == std::string::npos) break;
             b = c + 1;
+        }
+        if (f[0] == "stack" && f.size() == 5) { // a split stack (dock.split.N), its panels
+            StackLine st{f[1], u32(std::max(0, std::atoi(f[2].c_str()))), u32(std::max(0, std::atoi(f[3].c_str()))), {}};
+            if (st.id.rfind("dock.split.", 0) != 0 || st.id.find_first_of(" |") != std::string::npos || st.side > 2) continue;
+            for (std::size_t b = 0; b <= f[4].size();) {
+                std::size_t c = f[4].find(',', b);
+                if (c == std::string::npos) c = f[4].size();
+                if (const i32 p = panelIndex_(std::string_view(f[4]).substr(b, c - b)); p >= 0) st.panels.push_back(u32(p));
+                b = c + 1;
+            }
+            if (!st.panels.empty()) stacks.push_back(std::move(st));
+            continue;
         }
         if (f[0] == "tabs" && f.size() == 4) {
             for (u32 s = 0; s < 3; ++s) tabs[s] = u32(std::max(0, std::atoi(f[s + 1].c_str())));
@@ -504,14 +639,27 @@ bool EditorShellWindow::restoreLayout(std::string_view blob) {
     m_floatSize = size;
     for (u32 i = 0; i < std::size(kPanels); ++i)
         if (m_floatFrame[i].valid()) placeFloat_(i); // re-place open frames
-    for (u32 s = 0; s < 3; ++s) w::dockTo(m_ui, m_docks[s], kSides[s]);
+    clearStacks_();
+    for (const StackLine& st : stacks) { // split stacks first: the docks blob places them
+        if (m_ui.alive(m_ui.find(st.id))) continue;
+        const u32 k = newStack_(st.side, kPanels[st.panels[0]].title, st.id);
+        m_nextStackId = std::max(m_nextStackId, u32(std::max(0, std::atoi(st.id.c_str() + 11))) + 1u);
+        for (u32 p : st.panels)
+            if (m_panelSide[p] == st.side) m_panelStack[p] = k;
+    }
     if (!docks.empty()) w::dockRestoreLayout(m_ui, m_dockArea, docks);
     relayoutPanels_();
     for (u32 s = 0; s < 3; ++s)
-        if (tabs[s] < m_sideOrder[s].size()) {
-            m_ui.setValue(w::tabWidgetBar(m_ui, m_tabs[s]), f32(tabs[s]));
-            showSidePage_(s);
+        if (tabs[s] < m_stacks[s].order.size()) {
+            m_ui.setValue(w::tabWidgetBar(m_ui, m_stacks[s].tabs), f32(tabs[s]));
+            showStackPage_(s);
         }
+    for (const StackLine& st : stacks)
+        for (u32 k = 3; k < m_stacks.size(); ++k)
+            if (m_ui.idOf(m_stacks[k].dock) == st.id && st.cur < m_stacks[k].order.size()) {
+                m_ui.setValue(w::tabWidgetBar(m_ui, m_stacks[k].tabs), f32(st.cur));
+                showStackPage_(k);
+            }
     return true;
 }
 
@@ -529,11 +677,11 @@ void EditorShellWindow::resetLayout() {
         m_panelSide[i] = sideIndex(kPanels[i].side);
         m_panelVisible[i] = true;
     }
-    for (u32 s = 0; s < 3; ++s) w::dockTo(m_ui, m_docks[s], kSides[s]);
+    clearStacks_();
     relayoutPanels_();
     for (u32 s = 0; s < 3; ++s) {
-        m_ui.setValue(w::tabWidgetBar(m_ui, m_tabs[s]), 0.f);
-        showSidePage_(s);
+        m_ui.setValue(w::tabWidgetBar(m_ui, m_stacks[s].tabs), 0.f);
+        showStackPage_(s);
     }
     // dock regions are splitter panes sized by flex-basis (a splitter drag rewrites the basis; width is ignored)
     m_ui.setCss(w::dockRegion(m_ui, m_dockArea, DockSide::Left), "flex-basis", "260px");
@@ -565,22 +713,14 @@ void EditorShellWindow::build_() {
     m_floatPos.assign(std::size(kPanels), {});
     m_floatSize.assign(std::size(kPanels), {320.f, 380.f});
     m_pagesNode.assign(std::size(kPanels), NodeHandle{});
+    m_panelStack.assign(std::size(kPanels), 0u);
     m_floatFrame.assign(std::size(kPanels), NodeHandle{});
     for (u32 i = 0; i < std::size(kPanels); ++i) {
         m_panelSide[i] = sideIndex(kPanels[i].side);
+        m_panelStack[i] = m_panelSide[i];
         m_floatPos[i] = {120.f + 24.f * f32(i), 90.f + 18.f * f32(i)};
     }
-    for (u32 s = 0; s < 3; ++s) {
-        m_docks[s] = w::dockWidget(m_ui, m_dockArea, titles[s], kSides[s], kSideDockIds[s]);
-        m_tabs[s] = w::panel(m_ui, w::dockBody(m_ui, m_docks[s]), kSideTabIds[s]);
-        m_ui.addClass(m_tabs[s], "tabwidget");
-        m_ui.setCss(m_tabs[s], "flex-grow", "1");
-        const NodeHandle bar = w::tabBar(m_ui, m_tabs[s], "", 0, std::string(kSideTabIds[s]) + ".bar");
-        const NodeHandle stack = w::panel(m_ui, m_tabs[s], std::string(kSideTabIds[s]) + ".stack");
-        m_ui.setCss(stack, "flex-grow", "1");
-        m_ui.setCss(stack, "padding", "0px");
-        m_ui.connect(bar, SignalKind::ValueChanged, [this, s](UiContext&, NodeHandle, const SignalArgs&) { showSidePage_(s); });
-    }
+    for (u32 s = 0; s < 3; ++s) newStack_(s, titles[s], kSideDockIds[s]); // the side stacks (tabs.left / ...)
     for (u32 i = 0; i < std::size(kPanels); ++i) {
         const ShellPanel& p = kPanels[i];
         const NodeHandle page = w::panel(m_ui, m_hiddenPages, p.id);
@@ -1527,8 +1667,8 @@ bool EditorShellWindow::rootEvent(const Event& e, NodeHandle target) {
     if (m_pages && m_pages->event(e, target)) return true;
     // tab bar right click: Float / Hide / Move panel (Qt dock title bar)
     if (e.type == EventType::PointerDown && e.button == fuse::ui::MouseButton::Right)
-        for (u32 s = 0; s < 3; ++s)
-            if (target == w::tabWidgetBar(m_ui, m_tabs[s])) return panelTabMenu_(s, e.pos);
+        for (u32 k = 0; k < m_stacks.size(); ++k)
+            if (target == w::tabWidgetBar(m_ui, m_stacks[k].tabs)) return panelTabMenu_(k, e.pos);
     // hierarchy right click: the row's context menu (Qt customContextMenuRequested)
     if (e.type == EventType::PointerDown && e.button == fuse::ui::MouseButton::Right && target == m_hierTree)
         return openHierarchyContextMenu(e.pos);
@@ -2049,6 +2189,17 @@ void EditorShellWindow::closePreferences_() {
 namespace {
 constexpr f32 kDragStart = 8.f; // px the pointer moves before a press becomes a drag (QApplication::startDragDistance)
 bool farFrom(fuse::ui::Vec2 a, fuse::ui::Vec2 b, f32 d) { return std::fabs(a.x - b.x) >= d || std::fabs(a.y - b.y) >= d; }
+/// The drop zone of a tab stack under `p` (Qt's dock drop indicator): a band along each edge (a quarter of the
+/// stack, at most 64 px) splits on that edge, the middle tabifies. Returns a DockEdge.
+i32 dropEdgeAt(const fuse::ui::Rect& r, fuse::ui::Vec2 p) {
+    const f32 bx = std::min(r.w * 0.25f, 64.f), by = std::min(r.h * 0.25f, 64.f);
+    const f32 d[4] = {(p.x - r.x) / bx, (r.right() - p.x) / bx, (p.y - r.y) / by, (r.bottom() - p.y) / by};
+    i32 best = i32(w::DockEdge::Center);
+    f32 bestD = 1.f;
+    for (i32 k = 0; k < 4; ++k)
+        if (d[k] < bestD) { bestD = d[k]; best = k; }
+    return best;
+}
 } // namespace
 
 void EditorShellWindow::placeFloat_(u32 i) {
@@ -2084,7 +2235,9 @@ fuse::ui::Rect EditorShellWindow::dropZoneRect_(u32 side) const {
     const fuse::ui::Rect area = m_ui.rect(m_dockArea);
     const fuse::ui::Rect reg = m_ui.rect(w::dockRegion(m_ui, m_dockArea, kSides[side]));
     bool open = false;
-    for (u32 p : m_sideOrder[side]) open = open || !(m_panelDrag >= 0 && p == u32(m_panelDrag));
+    for (u32 k = 0; k < m_stacks.size(); ++k)
+        if (stackSide_(k) == side)
+            for (u32 p : m_stacks[k].order) open = open || !(m_panelDrag >= 0 && p == u32(m_panelDrag));
     if (open && reg.w > 24.f && reg.h > 24.f) return reg;
     constexpr f32 kStrip = 72.f;
     switch (side) {
@@ -2120,13 +2273,46 @@ void EditorShellWindow::showDropZones_(bool on) {
         if (i32(s) == m_dropSide) m_ui.addClass(m_dropZone[s], "hot");
         else m_ui.removeClass(m_dropZone[s], "hot");
     }
+    // over a tab stack: where the panel would go (half of the stack for an edge split, all of it to tabify)
+    const bool split = on && m_dropStack >= 0 && u32(m_dropStack) < m_stacks.size() && m_dropEdge >= 0;
+    if (!split) {
+        if (m_ui.alive(m_splitZone)) m_ui.setCss(m_splitZone, "display", "none");
+        return;
+    }
+    if (!m_ui.alive(m_splitZone)) {
+        m_splitZone = w::panel(m_ui, w::overlayLayer(m_ui), "dock.dropzone.split");
+        m_ui.addClass(m_splitZone, "ed-dropzone");
+        m_ui.addClass(m_splitZone, "hot");
+        m_ui.setCss(m_splitZone, "pointer-events", "none");
+        m_ui.setCss(m_splitZone, "justify-content", "center");
+        m_ui.setCss(m_splitZone, "align-items", "center");
+        m_ui.setCss(w::label(m_ui, m_splitZone, "", "dock.dropzone.split.label"), "pointer-events", "none");
+    }
+    m_ui.moveTo(m_splitZone, w::overlayLayer(m_ui));
+    fuse::ui::Rect r = m_ui.rect(m_stacks[u32(m_dropStack)].dock);
+    static constexpr const char* kEdgeText[5] = {"Split Left", "Split Right", "Split Above", "Split Below", "Add as Tab"};
+    switch (w::DockEdge(m_dropEdge)) {
+    case w::DockEdge::Left: r.w *= 0.5f; break;
+    case w::DockEdge::Right: r.x += r.w * 0.5f; r.w *= 0.5f; break;
+    case w::DockEdge::Top: r.h *= 0.5f; break;
+    case w::DockEdge::Bottom: r.y += r.h * 0.5f; r.h *= 0.5f; break;
+    default: break;
+    }
+    m_ui.setText(m_ui.find("dock.dropzone.split.label"), kEdgeText[std::min(m_dropEdge, 4)]);
+    m_ui.setCss(m_splitZone, "display", "flex");
+    m_ui.setCss(m_splitZone, "left", std::to_string(int(r.x)) + "px");
+    m_ui.setCss(m_splitZone, "top", std::to_string(int(r.y)) + "px");
+    m_ui.setCss(m_splitZone, "width", std::to_string(int(r.w)) + "px");
+    m_ui.setCss(m_splitZone, "height", std::to_string(int(r.h)) + "px");
 }
 
 void EditorShellWindow::endPanelDrag_() {
     m_panelDrag = -1;
-    m_tabDragSide = -1;
+    m_tabDragStack = -1;
     m_panelDragActive = false;
     m_dropSide = -1;
+    m_dropStack = -1;
+    m_dropEdge = -1;
     showDropZones_(false);
 }
 
@@ -2141,7 +2327,7 @@ bool EditorShellWindow::panelDragEvent_(const Event& e, NodeHandle target) {
         if (e.type == EventType::PointerUp) m_floatResize = -1;
         return true;
     }
-    if (m_tabDragSide >= 0 || m_panelDrag >= 0) {
+    if (m_tabDragStack >= 0 || m_panelDrag >= 0) {
         if (e.type == EventType::KeyDown && e.key == Key::Escape && m_panelDragActive) { // stays where it is, floating
             endPanelDrag_();
             return true;
@@ -2149,11 +2335,12 @@ bool EditorShellWindow::panelDragEvent_(const Event& e, NodeHandle target) {
         if (e.type == EventType::PointerMove) {
             if (m_panelDrag < 0) { // a tab press: dragging it out of the dock floats its panel under the pointer (Qt)
                 if (!farFrom(e.pos, m_panelDragStart, kDragStart)) return false;
-                const u32 side = u32(m_tabDragSide);
-                const u32 cur = u32(std::max(0.f, m_ui.value(w::tabWidgetBar(m_ui, m_tabs[side]))));
-                if (cur >= m_sideOrder[side].size()) { endPanelDrag_(); return false; }
-                const u32 i = m_sideOrder[side][cur];
-                m_tabDragSide = -1;
+                const u32 k = u32(m_tabDragStack);
+                if (k >= m_stacks.size()) { endPanelDrag_(); return false; }
+                const u32 cur = u32(std::max(0.f, m_ui.value(w::tabWidgetBar(m_ui, m_stacks[k].tabs))));
+                if (cur >= m_stacks[k].order.size()) { endPanelDrag_(); return false; }
+                const u32 i = m_stacks[k].order[cur];
+                m_tabDragStack = -1;
                 m_panelDrag = i32(i);
                 m_panelDragActive = true;
                 m_panelDragGrab = {std::min(80.f, m_floatSize[i][0] * 0.4f), 12.f};
@@ -2166,29 +2353,41 @@ bool EditorShellWindow::panelDragEvent_(const Event& e, NodeHandle target) {
             const u32 i = u32(m_panelDrag);
             m_floatPos[i] = {e.pos.x - m_panelDragGrab.x, e.pos.y - m_panelDragGrab.y};
             placeFloat_(i);
-            // the drop zone under the pointer (Ctrl: no docking, like Qt)
-            m_dropSide = -1;
-            if (!(e.mods & fuse::ui::kModCtrl))
-                for (u32 s : {2u, 0u, 1u})
-                    if (dropZoneRect_(s).contains(e.pos)) { m_dropSide = i32(s); break; }
+            // the drop zone under the pointer (Ctrl: no docking, like Qt): over a tab stack its edge zones split it,
+            // its centre tabifies (dropZone() is then the stack's side); elsewhere the side zones
+            m_dropSide = m_dropStack = m_dropEdge = -1;
+            if (!(e.mods & fuse::ui::kModCtrl)) {
+                for (u32 k = 0; k < m_stacks.size() && m_dropStack < 0; ++k) {
+                    if (m_stacks[k].order.empty() || m_ui.hasClass(m_stacks[k].dock, "dock-closed")) continue;
+                    const fuse::ui::Rect r = m_ui.rect(m_stacks[k].dock);
+                    if (r.w < 24.f || r.h < 24.f || !r.contains(e.pos)) continue;
+                    m_dropStack = i32(k);
+                    m_dropSide = i32(stackSide_(k));
+                    m_dropEdge = dropEdgeAt(r, e.pos);
+                }
+                if (m_dropStack < 0)
+                    for (u32 s : {2u, 0u, 1u})
+                        if (dropZoneRect_(s).contains(e.pos)) { m_dropSide = i32(s); break; }
+            }
             showDropZones_(!(e.mods & fuse::ui::kModCtrl));
             return true;
         }
         if (e.type == EventType::PointerUp) {
             const bool active = m_panelDrag >= 0 && m_panelDragActive;
-            const i32 panel = m_panelDrag, side = m_dropSide;
+            const i32 panel = m_panelDrag, side = m_dropSide, stack = m_dropStack, edge = m_dropEdge;
             endPanelDrag_();
             if (!active) return panel >= 0; // a click on the title: nothing to do
-            if (side >= 0) movePanel(kPanels[u32(panel)].id, kSides[u32(side)]);
+            if (stack >= 0) splitInto_(u32(panel), u32(stack), w::DockEdge(edge));
+            else if (side >= 0) movePanel(kPanels[u32(panel)].id, kSides[u32(side)]);
             sync();
             return true;
         }
         return false;
     }
     if (e.type != EventType::PointerDown || e.button != MouseButton::Left) return false;
-    for (u32 s = 0; s < 3; ++s)
-        if (target == w::tabWidgetBar(m_ui, m_tabs[s])) { // the press also picks the tab; a drag takes it out
-            m_tabDragSide = i32(s);
+    for (u32 k = 0; k < m_stacks.size(); ++k)
+        if (target == w::tabWidgetBar(m_ui, m_stacks[k].tabs)) { // the press also picks the tab; a drag takes it out
+            m_tabDragStack = i32(k);
             m_panelDragStart = e.pos;
             return false;
         }

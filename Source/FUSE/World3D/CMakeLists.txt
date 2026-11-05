@@ -33,6 +33,8 @@ endif()
 if(FUSE_BUILD_PROJECT)
     target_sources(fuse_world3d PRIVATE src/world_3d_level.cpp)
     target_link_libraries(fuse_world3d PUBLIC fuse_scene)
+    # Asset plan 4a: level loads read the cooked meshes (TSStatic shapes) through the runtime FMSH reader.
+    target_link_libraries(fuse_world3d PUBLIC fuse_asset)
     target_compile_definitions(fuse_world3d PUBLIC FUSE_WORLD3D_HAS_FUSELEVEL=1)
 endif()
 

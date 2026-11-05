@@ -64,6 +64,12 @@ public:
     CookRecord cook_texture(const TextureImportDesc& desc);
     CookRecord cook_audio(const AudioImportDesc& desc);
     CookRecord cook_shader(const ShaderImportDesc& desc);
+    /// 4d (cook_kinds.hpp): `.fusemat.json` / `.fusemat` -> binary `.fusemat`, cached like the other kinds.
+    CookRecord cook_material(const std::string& source_path, const std::string& output_path);
+    /// 4b/4d: assimp clip -> `.fuseanim` (key = source bytes + desc knobs + events sidecar).
+    CookRecord cook_anim(const AnimImportDesc& desc);
+    /// 4d: `.fuselook` -> canonical `.fuselook`.
+    CookRecord cook_look(const std::string& source_path, const std::string& output_path);
 
     CookRecord cook_entry(const CookManifestEntry& entry);
     CookRecord cook_entry(const CookManifestEntry& entry, const CookManifest& manifest);

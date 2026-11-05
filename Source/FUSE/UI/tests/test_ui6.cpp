@@ -170,8 +170,10 @@ int dockLayoutRoundtrip() {
     // malformed blobs change nothing; unknown ids are ignored
     UI_CHECK(w::dockRestoreLayout(ui, b.area, blob));
     ui.update();
-    for (const char* bad : {"", "fusedock 2\n", "nonsense\n", "fusedock 1\nsize left -5\n", "fusedock 1\nsize middle 10\n",
-                            "fusedock 1\ndock B.log up 0 open\n", "fusedock 1\ndock B.log left x open\n", "fusedock 1\ndock B.log left 0 maybe\n"}) {
+    for (const char* bad : {"", "fusedock 3\n", "nonsense\n", "fusedock 1\nsize left -5\n", "fusedock 1\nsize middle 10\n",
+                            "fusedock 1\ndock B.log up 0 open\n", "fusedock 1\ndock B.log left x open\n", "fusedock 1\ndock B.log left 0 maybe\n",
+                            "fusedock 1\ntree left d:B.log\n", "fusedock 2\ntree left h[ p 0 d:B.log\n", "fusedock 2\ntree left x[ ]\n",
+                            "fusedock 2\ntree left h[ p -3 d:B.log ]\n", "fusedock 2\ntree left h[ d:B.log ]\n", "fusedock 2\ntree up d:B.log\n"}) {
         UI_CHECK(!w::dockRestoreLayout(ui, b.area, bad));
         ui.update();
         UI_CHECK_EQ(w::dockSaveLayout(ui, b.area), blob);
@@ -180,6 +182,109 @@ int dockLayoutRoundtrip() {
     ui.update();
     UI_CHECK_EQ(w::dockSaveLayout(ui, b.area), blob);
     shot(ui, "dock_layout.png");
+
+    // ---- splits (Qt splitDockWidget): several docks per side in nested splitters, saved and restored ----------------
+    const NodeHandle hostC = w::panel(ui, ui.root());
+    ui.setCss(hostC, "flex-grow", "1");
+    ui.setCss(hostC, "padding", "0px");
+    DockApp c = buildDocks(ui, hostC, "C");
+    ui.update();
+    const std::string freshC = w::dockSaveLayout(ui, c.area);
+    enum { Outline, Assets, Log, Console, Props, History };
+    auto rc = [&](int i) { return ui.rect(c.docks[i]); };
+    // assets beside outline (a row split on the left)
+    UI_CHECK(w::dockSplit(ui, c.docks[Assets], c.docks[Outline], w::DockEdge::Right));
+    ui.update();
+    UI_CHECK(w::dockSplitOf(ui, c.docks[Assets]).valid() && w::dockSplitOf(ui, c.docks[Assets]) == w::dockSplitOf(ui, c.docks[Outline]));
+    UI_CHECK(rc(Assets).x > rc(Outline).right() - 1.f && near(rc(Assets).y, rc(Outline).y) && near(rc(Assets).h, rc(Outline).h));
+    // history under assets: nests a column split in the row's second pane
+    UI_CHECK(w::dockSplit(ui, c.docks[History], c.docks[Assets], w::DockEdge::Bottom));
+    ui.update();
+    const NodeHandle inner = w::dockSplitOf(ui, c.docks[History]);
+    UI_CHECK(inner.valid() && inner == w::dockSplitOf(ui, c.docks[Assets]) && inner != w::dockSplitOf(ui, c.docks[Outline]));
+    UI_CHECK(near(rc(History).x, rc(Assets).x) && rc(History).y > rc(Assets).bottom() - 1.f && w::dockSideOf(ui, c.docks[History]) == w::DockSide::Left);
+    // props left of outline: same direction as outline's split, so one more pane in it (no nesting); the right side empties
+    UI_CHECK(w::dockSplit(ui, c.docks[Props], c.docks[Outline], w::DockEdge::Left));
+    ui.update();
+    UI_CHECK(w::dockSplitOf(ui, c.docks[Props]) == w::dockSplitOf(ui, c.docks[Outline]));
+    UI_CHECK(rc(Props).right() <= rc(Outline).x + 1.f && !ui.computed(w::dockRegion(ui, c.area, w::DockSide::Right)).visible);
+    // console above log (column split at the bottom)
+    UI_CHECK(w::dockSplit(ui, c.docks[Console], c.docks[Log], w::DockEdge::Top));
+    ui.update();
+    UI_CHECK(rc(Console).bottom() <= rc(Log).y + 1.f && near(rc(Console).x, rc(Log).x));
+    UI_CHECK(!w::dockSplit(ui, c.docks[Log], c.docks[Log], w::DockEdge::Left) && !w::dockSplit(ui, c.docks[Log], a.docks[0], w::DockEdge::Left));
+    // the nested handle resizes (keyboard), a closed dock's pane and handle hide
+    const NodeHandle innerHandle = ui.nextSibling(ui.parent(c.docks[Assets]));
+    ui.setFocus(innerHandle);
+    for (int i = 0; i < 2; ++i) key(ui, Key::Down);
+    ui.update();
+    const f32 assetsH = rc(Assets).h;
+    w::dockClose(ui, c.docks[History]);
+    ui.update();
+    UI_CHECK(!ui.computed(innerHandle).visible && rc(Assets).h > assetsH + 20.f);
+    w::dockOpen(ui, c.docks[History]);
+    ui.update();
+    UI_CHECK(ui.computed(innerHandle).visible && near(rc(Assets).h, assetsH));
+    w::dockClose(ui, c.docks[Console]);
+    ui.update();
+    const std::string split = w::dockSaveLayout(ui, c.area);
+    std::printf("split layout:\n%s", split.c_str());
+    UI_CHECK(split.find("tree left h[ p 0 d:C.props p 0 d:C.outline p 0 v[ p ") != std::string::npos);
+    UI_CHECK(split.find("tree bottom v[ p 0 d:C.console p 0 d:C.log ]") != std::string::npos);
+    UI_CHECK(split.find("dock C.console bottom 0 closed") != std::string::npos);
+    UI_CHECK(split.find("tree right") == std::string::npos);
+    // restored into a fresh area: the same blob and the same rects
+    const NodeHandle hostD = w::panel(ui, ui.root());
+    ui.setCss(hostD, "flex-grow", "1");
+    ui.setCss(hostD, "padding", "0px");
+    DockApp d = buildDocks(ui, hostD, "D");
+    ui.update();
+    std::string splitD = split;
+    for (std::size_t p; (p = splitD.find("C.")) != std::string::npos;) splitD.replace(p, 2, "D.");
+    UI_CHECK(w::dockRestoreLayout(ui, d.area, splitD));
+    ui.update();
+    UI_CHECK_EQ(w::dockSaveLayout(ui, d.area), splitD);
+    const Rect rcA = ui.rect(c.area), rdA = ui.rect(d.area);
+    for (int i = 0; i < 6; ++i) {
+        UI_CHECK_EQ(ui.computed(c.docks[i]).visible, ui.computed(d.docks[i]).visible);
+        if (!ui.computed(c.docks[i]).visible) continue;
+        const Rect x = ui.rect(c.docks[i]), y = ui.rect(d.docks[i]);
+        UI_CHECK(near(x.x - rcA.x, y.x - rdA.x) && near(x.y - rcA.y, y.y - rdA.y) && near(x.w, y.w) && near(x.h, y.h));
+    }
+    // a dock leaving a two-pane split collapses it; a removed dock too
+    w::dockTo(ui, d.docks[Assets], w::DockSide::Right);
+    ui.update();
+    UI_CHECK(w::dockSplitOf(ui, d.docks[History]) == w::dockSplitOf(ui, d.docks[Outline]) && !w::dockSplitOf(ui, d.docks[Assets]).valid());
+    const NodeHandle extra = w::dockWidget(ui, d.area, "extra", w::DockSide::Bottom, "D.extra");
+    UI_CHECK(w::dockSplit(ui, extra, d.docks[Log], w::DockEdge::Right, 150.f));
+    ui.update();
+    UI_CHECK(near(ui.rect(extra).w, 150.f, 2.f) && w::dockSplitOf(ui, extra).valid());
+    w::dockRemove(ui, extra);
+    ui.update();
+    UI_CHECK(!ui.alive(extra) && w::dockSplitOf(ui, d.docks[Log]) == w::dockSplitOf(ui, d.docks[Console]));
+    // Center stacks with the target in its pane
+    UI_CHECK(w::dockSplit(ui, d.docks[Assets], d.docks[History], w::DockEdge::Center));
+    ui.update();
+    UI_CHECK(ui.parent(d.docks[Assets]) == ui.parent(d.docks[History]));
+    // malformed: nothing changes; the fresh (unsplit) layout flattens every split
+    const std::string beforeBad = w::dockSaveLayout(ui, d.area);
+    UI_CHECK(!w::dockRestoreLayout(ui, d.area, "fusedock 2\ntree left h[ p 0 d:D.log p 0\n"));
+    ui.update();
+    UI_CHECK_EQ(w::dockSaveLayout(ui, d.area), beforeBad);
+    std::string freshD = freshC;
+    for (std::size_t p; (p = freshD.find("C.")) != std::string::npos;) freshD.replace(p, 2, "D.");
+    UI_CHECK(w::dockRestoreLayout(ui, d.area, freshD));
+    ui.update();
+    UI_CHECK_EQ(w::dockSaveLayout(ui, d.area), freshD);
+    for (int i = 0; i < 6; ++i) UI_CHECK(!w::dockSplitOf(ui, d.docks[i]).valid() && ui.computed(d.docks[i]).visible);
+    // a version 1 blob (no tree lines) still restores and flattens
+    UI_CHECK(w::dockRestoreLayout(ui, d.area, splitD));
+    ui.update();
+    std::string v1 = "fusedock 1\nsize left 200\ndock D.outline left 0 open\ndock D.assets left 1 open\n";
+    UI_CHECK(w::dockRestoreLayout(ui, d.area, v1));
+    ui.update();
+    for (int i = 0; i < 6; ++i) UI_CHECK(!w::dockSplitOf(ui, d.docks[i]).valid());
+    shot(ui, "dock_split.png");
     return finish("fuse_ui_dock_layout_roundtrip");
 }
 

@@ -208,6 +208,9 @@ public:
     u32 layeredMaterialCount() const { return m_layeredMaterials; }
     /// Textures the loader decoded and uploaded (cache size).
     u32 loadedTextureCount() const { return static_cast<u32>(m_textureIds.size()); }
+    /// Asset plan 4a: World3D cooked meshes (TSStatic shapes, World3D::cookedMeshes) uploaded into the cooked-asset
+    /// registry; their entities' ecs::Mesh::vertex_buffer is bound each frame (CookedAssetRegistry::syncEntities).
+    u32 cookedMeshCount() const { return m_cookedMeshUploads; }
 
 private:
     bool m_fallbackSun = false;
@@ -221,6 +224,7 @@ private:
     bool createTargets();
     void destroyTargets();
     void syncMaterials(const world3d::World3D& world);
+    void syncCookedMeshes(world3d::World3D& world);
     bool execute(void* waitSemaphore, void* signalSemaphore, void* fence, const renderer::SceneFrameSubmit* swapchain);
 
     renderer::VulkanDevice* m_device = nullptr;
@@ -276,6 +280,9 @@ private:
     u32 m_layeredMaterials = 0;
     u64 m_materialVersion = ~0ull;
     const world3d::World3D* m_materialWorld = nullptr;
+    u64 m_cookedMeshVersion = ~0ull;
+    const world3d::World3D* m_cookedMeshWorld = nullptr;
+    u32 m_cookedMeshUploads = 0;
     u64 m_framesSubmitted = 0;
     HybridSceneFrameStats m_stats{};
 };
