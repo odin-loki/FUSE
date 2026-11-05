@@ -334,9 +334,20 @@ struct CalendarW {
         g.gridY = c.y + hh + g.cellH; // first week row (below the weekday names)
         return g;
     }
-    static i32 firstCellDay(i32 ym) { // day number of the grid's top-left cell
+    /// The locale data (UiContext::setLocale hooks), or null for English / Monday first.
+    static const LocaleHooks* hooks(const UiContext& ui) {
+        const LocaleHooks* h = ui.localeHooks();
+        return h && !ui.locale().empty() ? h : nullptr;
+    }
+    /// First column's ISO weekday (1 = Monday).
+    static int firstDay(const UiContext& ui) {
+        const LocaleHooks* h = hooks(ui);
+        const int d = h && h->firstDayOfWeek ? h->firstDayOfWeek(ui.locale()) : 1;
+        return d >= 1 && d <= 7 ? d : 1;
+    }
+    static i32 firstCellDay(const UiContext& ui, i32 ym) { // day number of the grid's top-left cell
         const i32 first = daysFromCivil(ym / 12, ym % 12 + 1, 1);
-        return first - weekday(first);
+        return first - (weekday(first) - (firstDay(ui) - 1) + 7) % 7;
     }
     static void select(UiContext& ui, NodeHandle n, i32 z) {
         int y, m, d;
@@ -351,18 +362,26 @@ struct CalendarW {
         const Color text = pc.tint(pc.style.color), dim = pc.tint(pc.style.color.withAlpha(pc.style.color.a * 0.38f)), acc = accentOf(pc);
         const f32 fs = pc.style.fontSize;
         char b[48];
-        std::snprintf(b, sizeof b, "%s %d", kMonths[ym % 12], ym / 12);
-        ui.paintString(dl, b, g.head, text, fs, TextAlignment::Center, pc.node.index);
+        const LocaleHooks* lh = hooks(ui);
+        std::string head;
+        if (lh && lh->monthYear) head = lh->monthYear(ui.locale(), ym / 12, ym % 12 + 1);
+        else std::snprintf(b, sizeof b, "%s %d", kMonths[ym % 12], ym / 12);
+        ui.paintString(dl, lh && lh->monthYear ? std::string_view(head) : std::string_view(b), g.head, text, fs,
+                       TextAlignment::Center, pc.node.index);
         for (int side = 0; side < 2; ++side) { // chevrons
             const Rect r = side ? g.next : g.prev;
             const f32 cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f, d = side ? 3.f : -3.f;
             dl.line({cx - d, cy - 5.f}, {cx + d, cy}, text, 1.5f);
             dl.line({cx + d, cy}, {cx - d, cy + 5.f}, text, 1.5f);
         }
-        for (int k = 0; k < 7; ++k)
-            ui.paintString(dl, kDays[k], {g.head.x + f32(k) * g.cellW, g.head.bottom(), g.cellW, g.cellH}, k >= 5 ? dim : text,
+        for (int k = 0; k < 7; ++k) {
+            const int iso = (firstDay(ui) - 1 + k) % 7 + 1;
+            const std::string_view name =
+                lh && lh->weekdayShort ? lh->weekdayShort(ui.locale(), iso) : std::string_view(kDays[iso - 1]);
+            ui.paintString(dl, name, {g.head.x + f32(k) * g.cellW, g.head.bottom(), g.cellW, g.cellH}, iso >= 6 ? dim : text,
                            fs * 0.85f, TextAlignment::Center, pc.node.index);
-        const i32 z0 = firstCellDay(ym);
+        }
+        const i32 z0 = firstCellDay(ui, ym);
         for (int i = 0; i < 42; ++i) {
             const i32 z = z0 + i;
             int y, m, d;
@@ -393,7 +412,7 @@ struct CalendarW {
             if (g.next.contains(e.pos)) { pageMonth(ui, ec.node, 1, false); return true; }
             if (e.pos.y >= g.gridY) {
                 const i32 row = i32((e.pos.y - g.gridY) / g.cellH), col = i32((e.pos.x - g.head.x) / g.cellW);
-                if (row >= 0 && row < 6 && col >= 0 && col < 7) select(ui, ec.node, firstCellDay(shownMonth(ui, ec.node)) + row * 7 + col);
+                if (row >= 0 && row < 6 && col >= 0 && col < 7) select(ui, ec.node, firstCellDay(ui, shownMonth(ui, ec.node)) + row * 7 + col);
             }
             return true;
         }

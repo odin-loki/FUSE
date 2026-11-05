@@ -676,7 +676,7 @@ if(TARGET fuse_ui_game)
     # localisation: plural rules, messages, number / date formatting, StringTable tr, fuse_ui_extract_strings
     if(TARGET fuse_ui_extract_strings AND NOT CMAKE_CROSSCOMPILING)
         fuse_ui_test(fuse_ui_l10n test_l10n.cpp)
-        target_link_libraries(fuse_ui_l10n PRIVATE fuse_ui_game)
+        target_link_libraries(fuse_ui_l10n PRIVATE fuse_ui_game fuse_ui_doc)
         add_dependencies(fuse_ui_l10n fuse_ui_extract_strings)
         target_compile_definitions(fuse_ui_l10n PRIVATE FUSE_UI_EXTRACT_EXE="$<TARGET_FILE:fuse_ui_extract_strings>"
                                    FUSE_UI_TEST_OUT="${CMAKE_CURRENT_BINARY_DIR}")

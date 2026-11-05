@@ -555,6 +555,10 @@ l10n::formatNumber("de", 1234.5);       // "1.234,5"     formatNumber("hi", 1234
 l10n::formatPercent("tr", 0.5);         // "%50"
 l10n::formatDate("ja", {2024, 3, 5}, l10n::DateStyle::Long); // "2024年3月5日"
 l10n::pluralCardinal("ar", l10n::PluralOperands::fromDouble(3)); // Plural::Few
+l10n::formatTime("en", {15, 5});        // "3:05 PM"     de "15:05", ko "오후 3:05"; HourCycle::H12 / H23 force a clock
+l10n::formatCurrency("de", 1234.5, "EUR"); // "1.234,50 €"  en "€1,234.50", nl "€ 1.234,50", ja JPY "￥1,234"
+l10n::formatMonthYear("ru", 2024, 3);   // "март 2024 г."   weekdayName("de", 1, DayWidth::Short) -> "Mo."
+l10n::setUiLocale(ui, "de");            // fuse/ui/l10n/ui_locale.hpp: widgets (the calendar) format for "de"
 ```
 
 - Plural rules (CLDR 44, cardinal and ordinal) with the operands n, i, v, f, t, so `"1.0"` and `1.5` pick the decimal
@@ -570,7 +574,28 @@ l10n::pluralCardinal("ar", l10n::PluralOperands::fromDouble(3)); // Plural::Few
 - Numbers: decimal / grouping separators, minimum grouping digits (es, pl, pt-PT: `1234` stays ungrouped), Indian
   grouping (hi, en-IN), minus signs (U+2212 for sv, fi), percent placement; half-even rounding. Dates (gregorian
   short / medium / long and month names): en, en-GB, en-IN, de, fr, es, it, pt, nl, sv, ru, pl, tr, ja, zh, ko, ar;
-  other locales use en. Time formatting, currencies, skeletons and non-Latin digits are not done.
+  other locales use en. Calendar names (same locales, plus pt-PT): wide and short (column-header) weekday names,
+  stand-alone month names (ru, pl nominative), the month-year header (CLDR yMMMM: es "marzo de 2024", ru
+  "март 2024 г.", ko "2024년 3월") and the first day of the week by region (Sunday: en / en-US / en-IN, pt (BR), ja,
+  zh, ko; Saturday: ar; Monday elsewhere, including en-GB and pt-PT). Skeletons and non-Latin digits are not done.
+- Time of day (CLDR short / medium time patterns): 12-hour with the locale's day period for en, en-IN, hi
+  (`3:05 PM` / `3:05 pm`, narrow no-break space), ko (`오후 3:05`), ar (`3:05 م`); 24-hour elsewhere, zero-padded
+  (`09:05`: en-GB, de, fr, it, pt, nl, sv, ru, pl, tr, zh) or not (`9:05`: es, ja, cs, he; fi `15.05`).
+  `HourCycle::H12` / `H23` override the clock; `uses24HourClock`, `dayPeriodName`.
+- Currencies (`formatCurrency(locale, amount, "EUR")`): the locale's pattern (symbol first: en, en-GB, en-IN, hi,
+  tr, ja, zh, ko, and with a no-break space pt, nl, de-AT, de-CH; after the number with a no-break space: de, fr, es,
+  it, pt-PT, sv, fi, ru, uk, pl, cs, ar, he), its separators and grouping, the negative form (`-$1.00`; nl
+  `€ -1,00`; de-CH `CHF-1.00`), the symbol as the locale writes it (en `$` / `¥`, en-GB `US$`, fr `$US`, it `USD`,
+  ja `￥`, zh `¥` for CNY, sv `kr`, pl `zł`, ru `₽`, ...; CLDR root symbols otherwise, an unknown code prints itself)
+  with CLDR currency spacing (a letter beside the digits gets a no-break space: `CHF 1’234.50`, `XYZ 1.00`), and the
+  currency's fraction digits (JPY / KRW 0, KWD / BHD 3, else 2), rounded half-even. Accounting formats and
+  compact / plural currency names are not done.
+- Widgets: `UiContext::setLocale(tag, &hooks)` gives widgets a locale and its data through `LocaleHooks` (function
+  pointers), so core and widgets link no locale tables; `l10n::setUiLocale(ui, tag)` (header-only
+  `fuse/ui/l10n/ui_locale.hpp`) installs the fuse_ui_l10n ones. The calendar then shows the localised month header and
+  weekday names and starts its weeks on the locale's first day. Without hooks (or with an empty tag) it stays English,
+  Monday first. The date-time edit shows ISO numbers (`2024-03-05 15:05`), so it has no names to localise; its
+  calendar popup follows the locale.
 
 `StringTable` (in `fuse_ui_game`) on top of it:
 
@@ -603,6 +628,19 @@ keys new since the last run are flagged `#, new`, and translations whose key lef
 `#~ key=value` at the end (restored if the key comes back; `--drop-obsolete` removes them). `--source` writes new
 keys as `key=key` for the source-language table. A summary and the new / obsolete keys are printed; exit code 1 on
 an unreadable input or a broken document. The output is deterministic for the same inputs.
+
+Documents are translated at load time with the same keys: pass a `doc::Translator` (source string -> translation;
+empty keeps the source) to `Document::load` / `loadCooked`, e.g. the active `StringTable`:
+
+```cpp
+auto doc = doc::Document::load(ui, json, &model, {}, [&st](std::string_view k) { return st.tr(k); });
+st.setLocale("fr");
+doc->retranslate();   // re-applies the table to every translatable string; returns how many nodes changed
+```
+
+Exactly what the extractor collects is translated (constant `text` except line / text edit contents, each `items`
+entry, `a11yName`; strings with a `{` binding are not). `reload()` translates the new tree with the same translator;
+`setTranslator({})` + `retranslate()` shows the source strings again.
 
 ## Data and editor widgets (UI6 Tier C/D)
 
@@ -720,7 +758,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_world_panel_raycast` | ray → panel pixel mapping, misses and back faces, ray clicks, idle surface does not re-render |
 | `fuse_ui_input_arbitration` | pointer / keyboard / gamepad ownership between UI and game |
 | `fuse_ui_pause_time_domain` | pause and slow motion affect game-time HUD only; locale switching |
-| `fuse_ui_l10n` | plural categories against the CLDR sample values (cardinal + ordinal, 20+ locales), message formatting (plural, selectordinal, select, nesting, offset, quoting, number / date arguments, errors), number / percent / date formatting per locale, `StringTable::tr` with arguments and fallback, bound nodes; `fuse_ui_extract_strings` on `tests/data/l10n` (exact output, merge keeping translations, idempotent re-run, `--source`, `--fn`) |
+| `fuse_ui_l10n` | plural categories against the CLDR sample values (cardinal + ordinal, 20+ locales), message formatting (plural, selectordinal, select, nesting, offset, quoting, number / date arguments, errors), number / percent / date formatting per locale, time of day (12 / 24-hour, day periods, forced hour cycles) and currencies (patterns, symbols, spacing, negatives, fraction digits incl. JPY / KWD) per locale, weekday / stand-alone month names, month-year headers and first day of the week, the calendar widget under `l10n::setUiLocale` (first grid cell per locale; header and weekday glyphs = the locale strings; no hooks = English, Monday first), `StringTable::tr` with arguments and fallback, bound nodes; `fuse_ui_extract_strings` on `tests/data/l10n` (exact output, merge keeping translations, idempotent re-run, `--source`, `--fn`); `tests/data/l10n/sample.fuseui` loaded with a StringTable translator (text, items, a11yName translated by their extracted keys, line edit contents and bindings untouched), `retranslate` after a locale switch, `reload`, cleared translator, cooked load |
 | `fuse_demo_hybrid_hud_ui` | `demo_hybrid_hud` HUD on a UI context in the hybrid frame (`HybridComposer::setUiOverlay` → `UiFrameSource::recordOver`, over the sprite layer): every opaque HUD pixel of the GPU readback equals the CPU raster (≤ 1/255), glyphs visible |
 | `fuse_ui_vk_golden` | GPU vs CPU reference with NVIDIA FLIP (`vendor/nvidia-flip`) over the Tier A sample, the game HUD and an editor-like scene: compute kernel max channel error ≤ 2 and mean FLIP ≤ 0.001 (0 today), SDF quads ≤ 4 / ≤ 0.005; heat maps written on failure |
 | `fuse_ui_vk_tier0` | UI-T0 (§4.9): Vulkan 1.1 instance, a device with no extensions and no features, validation on; every shader's SPIR-V ≤ 1.3 without descriptor-indexing / BDA capabilities; scenes, backdrop and an external texture exact against the CPU |
