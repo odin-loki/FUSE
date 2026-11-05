@@ -187,13 +187,6 @@ if(FUSE_BUILD_UI_WIDGETS)
     add_library(fuse_ui_widgets STATIC Widgets/src/widgets.cpp Widgets/src/widgets_tier_b.cpp Widgets/src/widgets_tier_b2.cpp Widgets/src/widgets_tier_cd.cpp Widgets/src/widgets_tier_d2.cpp Widgets/src/platform_feel.cpp Widgets/src/theme.cpp Widgets/src/inspector.cpp)
     target_include_directories(fuse_ui_widgets PUBLIC Widgets/include)
     target_link_libraries(fuse_ui_widgets PUBLIC fuse_ui_core)
-    # The Tier B / B2 / C / D widgets (lists, menus, editor and pro widgets) are event- and paint-bound, not the 10k-node
-    # hot path (Tier A labels / buttons, core, text and the rasterizer stay /O2): favour size with MSVC so the
-    # fuse_app_binary_size budget holds.
-    if(MSVC)
-        set_source_files_properties(Widgets/src/widgets_tier_b.cpp Widgets/src/widgets_tier_b2.cpp Widgets/src/widgets_tier_cd.cpp Widgets/src/widgets_tier_d2.cpp
-                                    TARGET_DIRECTORY fuse_ui_widgets PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Release,MinSizeRel,RelWithDebInfo>:/Os>")
-    endif()
 endif()
 
 # ---- icons: SVG -> .fuseicons cooker (vendored nanosvg, tool time only) + the starter pack cooked at build time ----

@@ -222,3 +222,5 @@ Notes:
 - The FUSE shell's full-window number is the CPU reference raster; native windows draw the list on the GPU
   (`fuse_ui_vk`), which `fuse_ui_vk_budget` times. Hover frames are like-for-like with the Qt steady frame.
 - GPU numbers on the RTX 3090 move with clocks and with other GPU users (the desktop, other agents' tests).
+
+2026-11-05, after round 4: the MSVC `/Os` on the Tier B–D widget sources was dropped (speed over size). MSVC x64 Release MINIMAL `hello_app`: standalone 979,456 B (budget 1,077,400), engine tree 1,012,224 B (budget 1,113,500).

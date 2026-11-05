@@ -506,9 +506,9 @@ if(TARGET fuse_app)
         set_tests_properties(fuse_app_native_startup PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 120
             LABELS "fuse_ui;gate")
         # Baseline per toolchain + text profile + build kind, +10 % (plan §6). MSVC 19.5x x64 Release, MINIMAL text,
-        # measured 2026-11-05 (MSVC Build Tools 2026) after the colour / MSDF glyph modes and the pipeline cache:
-        # standalone UI tree 870,912 bytes -> budget 958,000; in the engine tree hello_app also links fuse_rhi's
-        # volk loader: 904,192 bytes -> budget 994,600.
+        # re-measured 2026-11-05 after round 4 (every widget source at /O2; speed over size): standalone UI tree
+        # 979,456 bytes -> budget 1,077,400; in the engine tree hello_app also links fuse_rhi's volk loader:
+        # 1,012,224 bytes -> budget 1,113,500.
         # Linux x86-64 Release, MINIMAL text, stripped copy, measured 2026-11-05: Clang 23.1 standalone 1,179,616 ->
         # 1,297,600. GCC 13.3 standalone re-measured 2026-11-05 after the UI targets link with -ffunction-sections /
         # --gc-sections and the opt-in text code became dead-strippable (docs/ui/BASELINES.md): 1,076,352 -> 1,184,000.
@@ -518,9 +518,9 @@ if(TARGET fuse_app)
         set(_budget 0)
         if(MSVC AND FUSE_UI_TEXT STREQUAL "MINIMAL" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
             if(TARGET fuse_rhi)
-                set(_budget 994600)
+                set(_budget 1113500)
             else()
-                set(_budget 958000)
+                set(_budget 1077400)
             endif()
         elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64" AND
                FUSE_UI_TEXT STREQUAL "MINIMAL" AND CMAKE_BUILD_TYPE STREQUAL "Release" AND CMAKE_STRIP)
