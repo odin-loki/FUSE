@@ -2,7 +2,8 @@
 //   1. Interface / registry: quality-mode ratios and render extents, capability queries, selection by
 //      requirements, register / unregister / create, input validation, Halton jitter provider (FSR phase
 //      count), mip bias, temporal history invalidation (native_taau adapter over the TAAU kernel), fsr1
-//      backend == run_easu + run_rcas.
+//      backend == run_easu + run_rcas, runtime backend switching (native_taau <-> fsr1 <-> nis <-> cas)
+//      via UpscalerRegistry::create.
 //   2. Constant setup: easu_constants / rcas_constants / cas_constants are bit-identical to the vendored
 //      FidelityFX SDK v1.1.4 host helpers (ffxFsrPopulateEasuConstants, FsrRcasCon, ffxCasSetup compiled
 //      with FFX_CPU from vendor/fidelityfx).
@@ -329,6 +330,62 @@ void testValidationAndTemporal() {
     expectTrue(std::strcmp(up::upscale_status_name(up::UpscaleStatus::UnsupportedRatio), "UnsupportedRatio") == 0 &&
                    std::strcmp(up::history_reset_reason_name(up::HistoryResetReason::CameraCut), "CameraCut") == 0,
                "status / reason names");
+}
+
+void testRuntimeBackendSwitching() {
+    const up::UpscalerRegistry& reg = up::UpscalerRegistry::instance();
+    constexpr u32 kW = 32;
+    constexpr u32 kH = 24;
+    const up::Extent2D render{kW, kH};
+    const up::Extent2D display2x{2u * kW, 2u * kH};
+
+    std::vector<Vec4> color = ut::render_scene(kW, kH, 2u);
+    std::vector<Vec4> spatial2x(static_cast<size_t>(display2x.width) * display2x.height);
+    std::vector<Vec4> spatial1x(static_cast<size_t>(kW) * kH);
+    std::vector<Vec3> temporal(static_cast<size_t>(display2x.width) * display2x.height);
+
+    const char* chain[] = {up::kNativeTaauName, up::kFsr1Name, up::kNisName, up::kCasName,
+                           up::kFsr1Name, up::kNativeTaauName, up::kCasName, up::kNisName};
+    std::unique_ptr<up::IUpscaler> current;
+    int okSwitches = 0;
+    for (const char* name : chain) {
+        current = reg.create(name);
+        expectTrue(current != nullptr && std::strcmp(current->caps().name, name) == 0,
+                   "UpscalerRegistry::create switches to a named backend");
+        if (current == nullptr) {
+            return;
+        }
+        if (auto* temporalUpscaler = dynamic_cast<up::ITemporalUpscaler*>(current.get())) {
+            const u32 phases = temporalUpscaler->jitter_provider().phase_count(render, display2x);
+            TemporalFrame frame(render, display2x,
+                                temporalUpscaler->jitter_provider().offset_px(0, render, display2x), 0,
+                                phases);
+            const up::TemporalUpscaleOutputs out{{temporal.data(), display2x.width, display2x.height}};
+            expectTrue(temporalUpscaler->evaluate({}, frame.inputs, out) == up::UpscaleStatus::Ok,
+                       "native_taau evaluate after runtime switch");
+        } else if (auto* spatial = dynamic_cast<up::ISpatialUpscaler*>(current.get())) {
+            up::SpatialUpscaleInputs in{};
+            in.color = cview(color, kW, kH);
+            up::UpscaleOutputs o{};
+            if (std::strcmp(name, up::kCasName) == 0) {
+                o.color = view(spatial1x, kW, kH);
+            } else {
+                o.color = view(spatial2x, display2x.width, display2x.height);
+            }
+            expectTrue(spatial->evaluate({}, in, o) == up::UpscaleStatus::Ok,
+                       "spatial evaluate after runtime switch");
+        } else {
+            expectTrue(false, "switched backend implements ITemporalUpscaler or ISpatialUpscaler");
+        }
+        ++okSwitches;
+    }
+    expectTrue(okSwitches == 8, "switched native_taau <-> fsr1 <-> nis <-> cas");
+    expectTrue(reg.create("missing_backend") == nullptr, "unknown backend is not created");
+
+    std::unique_ptr<up::IUpscaler> first = reg.create(up::kFsr1Name);
+    std::unique_ptr<up::IUpscaler> second = reg.create(up::kFsr1Name);
+    expectTrue(first != nullptr && second != nullptr && first.get() != second.get(),
+               "switching to the same backend mints a fresh instance");
 }
 
 void testFsr1BackendComposition() {
@@ -734,6 +791,7 @@ int main() {
     testRegistry();
     testJitter();
     testValidationAndTemporal();
+    testRuntimeBackendSwitching();
     testFsr1BackendComposition();
     testConstantsMatchSdk();
     testParity();
