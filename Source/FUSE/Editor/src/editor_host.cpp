@@ -8,6 +8,7 @@
 #include <fuse/config/cvar.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/project/loader.hpp>
+#include <fuse/project/t3d_asset_vfs.hpp>
 #include <fuse/scene/project_io.hpp>
 
 #include <cctype>
@@ -274,6 +275,9 @@ bool EditorHost::openProject(const std::string& directory) {
 
     m_projectManifest = load.manifest;
     m_hasProject = true;
+    // Remap /game/, /t3d/, /t2d/ onto this project's roots so a project switch does not
+    // keep resolving assets from the previous tree (U6 wave 10 VFS mount).
+    (void)project::mountProjectAssetRoots(m_projectManifest);
     // Label only: RuntimeViewportHook::setProjectLabel would also rename every scene to the project.
     setLoadedProject(m_projectManifest.name);
     m_playSession.setScriptRoot(m_projectManifest.projectRoot);

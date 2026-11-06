@@ -1,10 +1,13 @@
 #include <fuse/core/init.hpp>
 #include <fuse/log/logger.hpp>
+#include <fuse/project/cook_cache.hpp>
 #include <fuse/project/importer.hpp>
 #include <fuse/project/loader.hpp>
+#include <fuse/project/t3d_asset_vfs.hpp>
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <string>
 
 namespace {
@@ -61,6 +64,43 @@ int main(int argc, char** argv) {
         fuse::log::info("fuse_import: loaded project '%s' from %s",
                         manifest.name.c_str(),
                         projectDir.c_str());
+
+        const fuse::project::ProjectVfsMountResult vfsMount =
+            fuse::project::mountProjectAssetRoots(manifest);
+        std::printf("fuse_import: vfs %s (added=%u remapped=%u game=%s t3d=%s t2d=%s)\n",
+                    vfsMount.note.c_str(),
+                    vfsMount.mountsAdded,
+                    vfsMount.mountsRemapped,
+                    vfsMount.gameMount ? "yes" : "no",
+                    vfsMount.t3dMount ? "yes" : "no",
+                    vfsMount.t2dMount ? "yes" : "no");
+
+        const char* remapSamples[] = {
+            "data/materials/FloorGray.mat",
+            "Data\\materials\\FloorGray.mat",
+            "./game/textures/albedo.png",
+            "assets/meshes/cube.dae",
+            "shaders/common/screen.cs",
+        };
+        std::printf("fuse_import: vfs remaps:\n");
+        for (const char* sample : remapSamples) {
+            std::printf("  %s -> %s\n", sample, fuse::project::remapLegacyAssetPath(sample).c_str());
+        }
+
+        const std::string cachePath = fuse::project::defaultCookCachePath(manifest.projectRoot);
+        if (!cachePath.empty()) {
+            const bool present = std::filesystem::exists(cachePath);
+            std::printf("fuse_import: cook cache %s (%s)\n",
+                        cachePath.c_str(),
+                        present ? "present" : "absent");
+            if (present) {
+                fuse::project::CookCache cache;
+                if (cache.load(cachePath)) {
+                    std::printf("fuse_import: cook cache loaded (%zu entries)\n",
+                                static_cast<std::size_t>(cache.entry_count()));
+                }
+            }
+        }
     }
 
     const fuse::project::ImportDryRunResult importResult =

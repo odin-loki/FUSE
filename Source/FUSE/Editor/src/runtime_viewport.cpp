@@ -495,7 +495,13 @@ void RuntimeViewportHook::ensureWorldLoaded_(EditorHost& host) {
 
     const fuse::project::ProjectVfsMountResult vfsMount =
         fuse::project::mountProjectAssetRoots(projectLoad.manifest);
-    m_embedSession.projectVfsMounts = vfsMount.mountsAdded;
+    m_embedSession.projectVfsMounts = vfsMount.mountsAdded + vfsMount.mountsRemapped;
+
+    const std::string cookCachePath =
+        fuse::project::defaultCookCachePath(projectLoad.manifest.projectRoot);
+    if (!cookCachePath.empty()) {
+        (void)m_materialCookCache.load(cookCachePath);
+    }
 
     const fuse::project::Ensure3DWorldResult prepared =
         fuse::project::ensureDefault3DWorldReady(projectLoad);
@@ -580,6 +586,13 @@ void RuntimeViewportHook::drainPendingMaterialLoads_() {
     m_embedSession.materialAsyncLoadsDrained += drained.drainedCount;
     m_embedSession.materialCookCacheStores += drained.cookCacheStores;
     m_embedSession.materialTextureCooks += drained.cookCacheStores;
+    if (drained.cookCacheStores > 0u && !m_embedSession.projectRoot.empty()) {
+        const std::string cookCachePath =
+            fuse::project::defaultCookCachePath(m_embedSession.projectRoot);
+        if (!cookCachePath.empty()) {
+            (void)m_materialCookCache.save(cookCachePath);
+        }
+    }
     m_materialAssetTable.commit();
     if (fuse::io::VirtualFileSystem::instance().completedLoadCount() == 0u) {
         m_materialLoadsPending = false;
