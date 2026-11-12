@@ -566,7 +566,7 @@ Designer::Designer(UiContext& ui, NodeHandle parent) : m_ui(ui) {
     w::install(ui);
     if (ui.registry().find("designcanvas") == 0xFFFFFFFFu) ui.registry().registerWidget<CanvasW>();
     if (ui.registry().find("designerroot") == 0xFFFFFFFFu) ui.registry().registerWidget<RootW>();
-    ui.addStyleSheet(R"(
+    (void)ui.addStyleSheet(R"(
         .designer { gap: 0px; padding: 0px; flex-grow: 1; }
         .designer-bar { gap: 4px; padding: 6px; background: var(--surface); border: 1px var(--border); }
         .designer-side { width: 220px; gap: 6px; padding: 6px; }

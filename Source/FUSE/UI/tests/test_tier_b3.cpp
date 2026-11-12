@@ -3,12 +3,11 @@
 // `--gate=<name>` runs one widget's checks (ctest fuse_ui_widget_<name>); `--out=<png>` writes the demo screen.
 #include "test_util.hpp"
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #pragma GCC diagnostic ignored "-Wunused-function"
 #endif
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
+#include "stb_write_impl.hpp"
 
 #include <cmath>
 #include <cstdio>

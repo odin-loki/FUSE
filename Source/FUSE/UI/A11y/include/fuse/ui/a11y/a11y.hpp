@@ -35,7 +35,7 @@ struct ActionRequest {
     Action action = Action::Focus;
     u64 target = 0;   ///< idOf(node) or idOf(node, child)
     f32 value = 0.f;  ///< SetValue on a ranged widget
-    std::string text; ///< SetValue on a text field
+    std::string text{}; ///< SetValue on a text field
 };
 /// What a live region (toast, status message, anything marked with UiContext::setA11yLive) says: produced by sync()
 /// when such a node appears with text or its text changes.

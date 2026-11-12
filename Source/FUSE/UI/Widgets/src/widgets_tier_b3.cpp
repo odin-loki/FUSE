@@ -14,8 +14,6 @@
 namespace fuse::ui::widgets {
 namespace {
 
-u64 pack(NodeHandle h) { return (u64(h.generation) << 32) | u64(h.index); }
-NodeHandle unpack(u64 v) { return NodeHandle{u32(v & 0xFFFFFFFFu), u32(v >> 32)}; }
 NodeHandle make(UiContext& ui, std::string_view cls, NodeHandle parent, std::string_view id = {}) {
     auto h = ui.create(cls, parent, id);
     return h ? *h : NodeHandle{};

@@ -1342,7 +1342,7 @@ bool NativePlatform::setIcon(const AppWindow& w, std::span<const Image> sizes) {
     if (!r || !r->handle) return false;
     HWND hwnd = reinterpret_cast<HWND>(r->handle);
     bool ok = false;
-    for (const auto [which, metric] : {std::pair{ICON_BIG, SM_CXICON}, std::pair{ICON_SMALL, SM_CXSMICON}}) {
+    for (const auto& [which, metric] : {std::pair{ICON_BIG, SM_CXICON}, std::pair{ICON_SMALL, SM_CXSMICON}}) {
         const Image* img = closest(sizes, GetSystemMetrics(metric));
         if (!img) continue;
         if (HICON icon = makeIcon(*img)) {

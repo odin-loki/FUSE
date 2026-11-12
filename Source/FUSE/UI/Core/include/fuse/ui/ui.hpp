@@ -88,8 +88,8 @@ struct DragData {
     u32 type = 0;            ///< dragType("application/x-my-thing")
     u64 payload[2]{};        ///< small inline payload (row index, entity id, packed handle)
     void* pointer = nullptr; ///< optional non-owning pointer (must outlive the drag)
-    std::string text;        ///< optional text: label of the default ghost; OS file drops: '\n'-separated paths
-    NodeHandle source;       ///< set by beginDrag; invalid for external (OS) drops
+    std::string text{};      ///< optional text: label of the default ghost; OS file drops: '\n'-separated paths
+    NodeHandle source{};     ///< set by beginDrag; invalid for external (OS) drops
 };
 constexpr u32 dragType(std::string_view mime) { return hashId(mime); }
 inline constexpr u32 kDragText = hashId("text/plain");

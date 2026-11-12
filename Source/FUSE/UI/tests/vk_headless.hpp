@@ -2,7 +2,7 @@
 // storage image, upload / readback. Returns false (skip) when no device is available.
 #pragma once
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers" // partial designated Vk*CreateInfo initialisers
 #endif
 

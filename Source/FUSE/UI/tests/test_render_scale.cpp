@@ -11,11 +11,10 @@
 // Optional --out=<png> (scale 1 upscaled | scale 2).
 #include "test_util.hpp"
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #endif
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
+#include "stb_write_impl.hpp"
 
 #include <algorithm>
 #include <cmath>

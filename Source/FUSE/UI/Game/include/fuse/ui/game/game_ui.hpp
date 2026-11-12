@@ -73,7 +73,7 @@ enum class Action : u8 { Accept, Back, Menu, Interact, Count };
 std::string_view promptGlyph(InputDevice d, Action a);
 
 struct GamepadState {
-    Vec2 stick;               ///< left stick, +y down
+    Vec2 stick{};             ///< left stick, +y down
     bool up = false, down = false, left = false, right = false;
     bool a = false, b = false, start = false;
 };
