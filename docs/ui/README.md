@@ -144,13 +144,14 @@ Without a native platform the app runs headless (tests, `--screenshot=`). `Prese
 `VkDrawMode::CpuUpload`; `Software` blits). `NativePlatform::capture` reads back what the OS shows (used by `fuse_app_native_window`).
 Under Xvfb set `VK_ICD_FILENAMES` to lavapipe; under Wine the Win32 path and the Vulkan presenter both run.
 
-### Platforms: Android, macOS, iOS
+### Platforms: Android, macOS, iOS, FreeBSD
 
 `fuse_app_native` has one window backend per platform; `NativePlatform` is the same API on all of them.
 
 | Platform | Backend | Present | Entry |
 |---|---|---|---|
 | Linux (X11), Windows | `App/src/native.cpp` | Vulkan swapchain; GDI on Win32 without Vulkan | `main` |
+| FreeBSD (X11) | `App/src/native.cpp` (same backend as Linux; `libX11.so.6` is loaded at run time) | Vulkan swapchain (`VK_KHR_xlib_surface`) when the build finds a Vulkan loader, else the CPU raster presenters only | `main` |
 | macOS | `App/src/native_apple.mm` (Cocoa `NSWindow`, `NSTextInputClient` IME, `NSPasteboard`) | Vulkan over a `CAMetalLayer` (MoltenVK) when the build finds a Vulkan loader, else the CPU raster as the layer contents | `main` |
 | iOS | `App/src/native_apple.mm` (UIKit `UIWindow`, touch, software keyboard through `UIKeyInput`) + `entry_ios.mm` | same as macOS | `UIApplicationMain`, which runs your `main` |
 | Android | `App/src/native_android.cpp` (NativeActivity + NDK app glue, touch / mouse / keys, soft keyboard, clipboard over JNI) + `entry_android.cpp` | Vulkan (`VK_KHR_android_surface`), else the CPU raster through `ANativeWindow_lock` | `android_main`, which runs your `main` |
@@ -182,6 +183,8 @@ cmake -S Source/FUSE/UI -B build-ui-macos -G Ninja && cmake --build build-ui-mac
 # iOS simulator
 cmake -S Source/FUSE/UI -B build-ui-ios -G Ninja -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphonesimulator \
       -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 && cmake --build build-ui-ios
+# FreeBSD 14 (base clang / libc++; optional Vulkan presenter: pkg install vulkan-headers vulkan-loader)
+pkg install cmake ninja && cmake -S Source/FUSE/UI -B build-ui-freebsd -G Ninja && cmake --build build-ui-freebsd
 ```
 
 Things that differ on these platforms:

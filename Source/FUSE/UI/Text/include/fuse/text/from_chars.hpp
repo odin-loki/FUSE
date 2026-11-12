@@ -72,7 +72,7 @@ inline std::from_chars_result fromChars(const char* first, const char* last, T& 
 
 /// std::to_chars(first, last, value) for floating point: the shortest text that parses back to `value`. Apple marks
 /// the standard overloads unavailable below macOS 13.3 / iOS 16.3, and older libc++ lacks them; there this prints
-/// with the smallest %g precision that round-trips. Integers forward.
+/// the fewest digits that round-trip, in fixed or scientific notation (whichever is shorter), with printf. Integers forward.
 template <class T>
     requires std::is_integral_v<T>
 inline std::to_chars_result toChars(char* first, char* last, T value) {
@@ -85,12 +85,26 @@ inline std::to_chars_result toChars(char* first, char* last, T value) {
 #if defined(__cpp_lib_to_chars) && !defined(__APPLE__) && !defined(FUSE_TEXT_FROM_CHARS_FALLBACK)
     return std::to_chars(first, last, value);
 #else
-    char buf[64];
+    // std::to_chars semantics: the fewest significant digits that round-trip, written in fixed or scientific
+    // notation, whichever is shorter (fixed on a tie).
+    char buf[400], sci[64];
     int n = 0;
-    const int maxDigits = sizeof(T) <= sizeof(float) ? 9 : 17;
-    for (int digits = 1; digits <= maxDigits; ++digits) {
-        n = std::snprintf(buf, sizeof buf, "%.*g", digits, static_cast<double>(value));
-        if (static_cast<T>(std::strtod(buf, nullptr)) == value || value != value) break;
+    if (value != value || value - value != 0) { // nan / inf
+        n = std::snprintf(buf, sizeof buf, "%s", value != value ? "nan" : value < 0 ? "-inf" : "inf");
+    } else {
+        const int maxDigits = sizeof(T) <= sizeof(float) ? 9 : 17;
+        int digits = 1, ns = 0;
+        for (; digits <= maxDigits; ++digits) {
+            ns = std::snprintf(sci, sizeof sci, "%.*e", digits - 1, static_cast<double>(value));
+            if (static_cast<T>(std::strtod(sci, nullptr)) == value) break;
+        }
+        const char* e = std::strchr(sci, 'e');
+        const int exp10 = e ? std::atoi(e + 1) : 0;
+        n = std::snprintf(buf, sizeof buf, "%.*f", digits - 1 - exp10 > 0 ? digits - 1 - exp10 : 0, static_cast<double>(value));
+        if (n <= 0 || n > ns) {
+            std::memcpy(buf, sci, std::size_t(ns) + 1);
+            n = ns;
+        }
     }
     if (n <= 0 || n > last - first) return {last, std::errc::value_too_large};
     std::memcpy(first, buf, std::size_t(n));

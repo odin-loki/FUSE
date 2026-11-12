@@ -201,8 +201,8 @@ if(FUSE_BUILD_UI_VK)
     if(NOT TARGET Vulkan::Vulkan)
         # Cross / conda toolchains often hide the host loader from FindVulkan; look for it directly.
         find_library(FUSE_UI_VULKAN_LOADER NAMES vulkan vulkan-1 libvulkan.so.1
-                     HINTS ENV VULKAN_SDK PATHS /usr/lib/x86_64-linux-gnu /usr/lib64 /usr/lib PATH_SUFFIXES lib Lib)
-        find_path(FUSE_UI_VULKAN_INCLUDE vulkan/vulkan.h HINTS ENV VULKAN_SDK PATHS /usr/include PATH_SUFFIXES include Include)
+                     HINTS ENV VULKAN_SDK PATHS /usr/lib/x86_64-linux-gnu /usr/lib64 /usr/lib /usr/local/lib PATH_SUFFIXES lib Lib)
+        find_path(FUSE_UI_VULKAN_INCLUDE vulkan/vulkan.h HINTS ENV VULKAN_SDK PATHS /usr/include /usr/local/include PATH_SUFFIXES include Include)
         if(FUSE_UI_VULKAN_LOADER AND FUSE_UI_VULKAN_INCLUDE)
             add_library(fuse_ui_vulkan_loader INTERFACE)
             target_link_libraries(fuse_ui_vulkan_loader INTERFACE "${FUSE_UI_VULKAN_LOADER}")
