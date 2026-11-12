@@ -58,8 +58,15 @@ struct Button {
     static constexpr A11yRole kRole = A11yRole::Button;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
-    static Size measure(UiContext& ui, NodeHandle n, Size) { return textSize(ui, n, ui.text(n)); }
-    static void paint(const PaintContext& pc, DrawList& dl) { labelAt(pc, dl, pc.ui.text(pc.node), pc.content, TextAlignment::Center); }
+    static Size measure(UiContext& ui, NodeHandle n, Size) { return detail::iconContentSize(ui, n, textSize(ui, n, ui.text(n))); }
+    static void paint(const PaintContext& pc, DrawList& dl) {
+        Rect textBox;
+        const std::string_view text = pc.ui.text(pc.node);
+        if (detail::paintIcon(pc, dl, textBox))
+            labelAt(pc, dl, text, textBox, TextAlignment::Start); // icon (setIcon) + text, centred as a group
+        else
+            labelAt(pc, dl, text, pc.content, TextAlignment::Center);
+    }
 };
 struct ToolButton : Button { static constexpr std::string_view kName = "toolbutton"; };
 struct Link {
@@ -512,6 +519,7 @@ void install(UiContext& ui) {
     registerTierCD(ui);
     registerTierD2(ui);
     registerTierB3(ui);
+    registerSvgWidgets(ui);
     (void)ui.addStyleSheet(defaultThemeCss());
 }
 
@@ -524,6 +532,7 @@ u32 installClasses(UiContext& ui, std::span<const std::string_view> classes, boo
         registerTierCD(scratch);
         registerTierD2(scratch);
         registerTierB3(scratch);
+        registerSvgWidgets(scratch);
         return scratch.registry();
     }();
     u32 unknown = 0;

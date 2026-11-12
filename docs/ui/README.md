@@ -17,7 +17,7 @@ immediate-mode front-end. See the plan's status table for what is still open.
 | Path | Target | What |
 |---|---|---|
 | `Source/FUSE/UI/Text` | `fuse_text` | Fonts (stb_truetype; FreeType in FULL), bundled Open Sans, UTF-8, `ITextShaper` (`MinimalShaper`, `HarfBuzzShaper` in FULL), wrap/ellipsis layout, glyph atlas, `TextEditBuffer` |
-| `Source/FUSE/UI/Core` | `fuse_ui_core` | `UiContext` (tree, style, layout, paint, input, focus, signals, timers, animation, a11y), `DrawList` + `CpuRasterizer`, `StyleEngine`, `immediate::ImmediateUi`, `platform_bridge.hpp` |
+| `Source/FUSE/UI/Core` | `fuse_ui_core` | `UiContext` (tree, style, layout, paint, input, focus, signals, timers, animation, a11y), `DrawList` + `CpuRasterizer`, `Path` / `Painter` / `SvgImage` / built-in icons, `StyleEngine`, `immediate::ImmediateUi`, `platform_bridge.hpp` |
 | `Source/FUSE/UI/Widgets` | `fuse_ui_widgets` | Tier A + Tier B widgets + default dark theme (`widgets::install`) |
 | `Source/FUSE/UI/Doc` | `fuse_ui_doc` | `.fuseui` JSON documents, binding model, expression bytecode |
 | `Source/FUSE/UI/Script` | `fuse_ui_script` | Lua `ui` table (vendored Lua 5.2) |
@@ -353,6 +353,7 @@ hud.update(realDt); nav.update(padState, realDt); ui.update(realDt);
 - Designer: `fuse_ui_designer [file.fuseui] [--save=out] [--screenshot=png]`. `DesignDocument` saves exactly what it loaded; keys starting with `x-` are kept for tools and stripped from the live preview.
 - `dockSaveLayout(dock)` returns a text layout (`fusedock 1`); `dockRestoreLayout(dock, text)` checks the whole text before applying it and ignores unknown panel ids.
 
+@@OURS@@
 ## Model / view (plan §4.11)
 
 Header `fuse/ui/widgets/modelview.hpp` (included by `widgets.hpp`). `tableView`, `modelListView` and `treeModelView`
@@ -405,6 +406,74 @@ widgets::setViewSelectionMode(ui, tree, widgets::SelectionMode::Extended);
 scene.add(lights, "Fill\tpoint");                       // the view updates through the notifier
 ```
 
+@@MID@@
+## Drawing: paths, Painter, SVG, icons
+
+Headers `fuse/ui/path.hpp`, `draw_list.hpp`, `painter.hpp`, `svg.hpp`, `icons.hpp` (all in `fuse_ui_core`).
+
+**Paths.** `Path` has `moveTo / lineTo / quadTo / cubicTo / arcTo / close`, `addRect / addRoundedRect / addEllipse /
+addCircle / addArc / addPolyline / addPath`, `Path::fromSvg("M10 10 L...")` (fails with the byte offset on bad data)
+and `bounds()`. `Affine` is the 2x3 matrix (`translation`, `scaling`, `rotation`, `*`, `invert`).
+
+**Draw list ops.** `DrawList::fillPath(path, brush, FillRule, xf)`, `strokePath(path, StrokeStyle, brush, xf)`
+(width, butt / round / square caps, miter / round / bevel joins, miter limit, dashes + offset),
+`gradientRect(rect, Gradient, radii)` (N-stop `Gradient::linear / radial / conic`, pad / repeat / reflect),
+`ninePatch(image, dst, insets, src)` / `imageRect(image, dst, src)`, `pushClipPath(path)`,
+`pushClipRounded(rect, radii)` (per-corner), `pushLayer(opacity, bounds)`; all end with `popClip()`. Paths are stored
+unflattened and flattened by the rasteriser in device pixels (0.05 px), so `setRenderScale` / `DrawList::scale` keep
+them sharp. Coverage is exact-area antialiasing; small paths are cached by shape (`pathCacheStats()`), so an icon
+drawn again at a whole-pixel position costs a lookup (~0.005 ms at 24 px, ~0.03 ms from scratch).
+
+**Painter** (QPainter equivalent) records into a draw list with a state stack:
+
+```cpp
+static void paint(const PaintContext& pc, DrawList& dl) {   // a widget class's paint callback
+    Painter p(pc, dl);                                       // node opacity + render scale
+    p.translate(pc.content.x, pc.content.y);
+    p.setBrush(Gradient::linear({0, 0}, {120, 0}, stops));
+    p.setPen(Color::rgb(0xFFFFFF), 1.5f);
+    p.drawRoundedRect({0, 0, 120, 40}, 8);
+    p.save();
+    p.rotate(0.3f);
+    p.clipPath(star);                                        // closed by restore()
+    p.drawEllipse({60, 20}, 30, 12);
+    p.restore();
+    drawIcon(p, Icon::Search, {4, 12, 16, 16}, pc.style.color);
+    p.drawText("label", {26, 0, 90, 40}, pc.style.color, 13);
+}
+```
+
+`save / restore`, `translate / scale / rotate / transform / setTransform`, `setOpacity`, `setBrush` (colour or
+gradient), `setPen`, `setFillRule`, `clipRect / clipRoundedRect / clipPath`, `beginLayer(opacity) / endLayer`,
+`drawPath / drawRect / drawRoundedRect / drawEllipse / drawCircle / drawLine / drawPolyline / drawPolygon / drawArc`,
+`fillPath / strokePath / fillRect` with an explicit brush, `drawText`, `drawImage`, `drawNinePatch`. It never
+allocates once warm. Limits: text follows translation and scale but is drawn upright under rotation / skew (glyphs
+come from the atlas); `drawImage` / `drawNinePatch` return `false` and draw nothing under rotation, skew or mirroring;
+a brush set through `setBrush(Gradient)` keeps 16 stops.
+
+**SVG.** `SvgImage::parse(xml)` -> `std::expected<SvgImage, SvgError>`; `image.render(painter, rect, currentColor)`.
+Subset: `svg` (viewBox), `g`, `defs`, transforms, `path / rect / circle / ellipse / line / polyline / polygon`,
+`fill / stroke` (names, `#hex`, `rgb()`, `none`, `currentColor`, `url(#gradient)`), `fill-rule`, opacities, stroke
+width / cap / join / miter limit / dashes, `style=""`, `linearGradient / radialGradient`. Not supported (counted in
+`unsupportedElements()`): text, `use`, `image`, clip paths, masks, filters, CSS sheets. Malformed XML or path data is
+an error, never a crash.
+
+**Icons.** `Icon::{ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Close, Check, Search, Folder, File, Save, Undo,
+Redo, Plus, Minus, Settings, Warning, Info, Error, Menu}`; `iconImage(icon)`, `iconSvg(icon)`, `iconName` /
+`findIcon`, `drawIcon(painter, icon, box, color)`.
+
+**Widgets** (`widgets.hpp`): `svgCreate(xml)` -> `SvgHandle`, `svgImage(ui, parent, handle, w, h)` (drawn in the
+node's `color`), `setIcon(ui, button, Icon::Save)` / `setIcon(ui, button, handle, size)` on buttons and tool buttons,
+`iconButton(ui, parent, Icon::Undo)`.
+
+**GPU.** The compute kernel has no path op. `packDrawList` pre-rasterises every vector op (and every clip-path /
+layer group as a whole) on the CPU into an image and draws it with the kernel's Image op; the reference rasteriser
+composites these ops as 8-bit texels with the same blend, so both paths agree by construction (gate
+`fuse_ui_gpu_pack_vector` checks this with a CPU model of the kernel; a real GPU run is `fuse_ui_vk_parity`).
+`GpuDrawData::bakedOps / bakedPixels / unsupportedOps` report it; ops beyond 16 M baked pixels per frame are dropped
+and counted.
+
+@@END@@
 ## Styling (CSS subset, D4)
 
 Selectors: type, `.class`, `#id`, `:hover :pressed :focus :focus-visible :checked :disabled`, descendant and `>`
@@ -552,6 +621,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_bench_10k` | 10k nodes, one dirty label: ≤ 0.5 ms median (Release; 1.0 ms in FULL) |
 | `fuse_ui_single_thread_parity` | direct vs posted-from-threads mutations give identical layout, draw list and pixels |
 | `fuse_ui_a11y_tree_dump` | roles, names, states, values |
+@@OURS@@
 | `fuse_text_font_styles` | face description, synthetic bold / oblique at pixel level, atlas keys, `FontFamily` matching (real face preferred), the font scanner over a temp directory (collection, corrupt files, no fonts), CSS font / decoration / spacing properties, render scale 2, `tests/golden/text_styles.png` (`text_styles_full.png` in FULL) |
 | `fuse_text_i18n` | CLDR plural categories per rule family, plural patterns, number formatting per locale, pseudo-localisation, `StringTable::trPlural` |
 | `fuse_ui_drag_drop` | drag threshold, target by type / filter / modal scope, event order, `:drag-over`, Move / Copy / refuse / Escape, ghost, external drops, touch long-press drag vs pan, list reorder and list / table / grid row drags |
@@ -564,6 +634,14 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_mv_notify`, `_selection`, `_tree`, `_editing`, `_view`, `_proxy`, `_async`, `_dir_model` | model / view: notifications, selection modes, tree view, in-place editing, column features, proxies, async model, a lazy `std::filesystem` model |
 | `fuse_ui_mv_selection_1m`, `fuse_ui_mv_tree_1m` | range selection over 1M rows allocates nothing per row; a lazy tree with > 1M nodes scrolls with a constant node count and bounded model reads |
 | `fuse_ui_mv_golden_tree`, `fuse_ui_mv_golden_table_edit` | tree table and multi-selection + open editor against `tests/golden/modelview_*.png` |
+@@MID@@
+| `fuse_ui_paths` | path fill / stroke coverage (areas of known shapes, fill rules, caps, joins, miter limit, dashes), N-stop gradients, clip path, layers, 9-slice, `translate` / `scale` of every vector op, coverage cache, bad geometry |
+| `fuse_ui_painter` | Painter state stack, transforms, pens under non-uniform scale, clips, layers, text and image limits, a widget painting at render scale 1 and 2 |
+| `fuse_ui_svg` | SVG subset parse + render, malformed and fuzzed documents, the built-in icons, `svgimage` and button icons |
+| `fuse_ui_vector_steady` | zero allocations with vector ops (update + CPU raster), no vector ops in a classic tree, icon raster budget (cached < 0.02 ms, uncached < 0.5 ms at 24 px), large-path cost |
+| `fuse_ui_vector_golden_{paths,icons}` | `tests/golden/vector_paths.png`, `vector_icons.png` |
+| `fuse_ui_gpu_pack_vector` | vector ops packed as kernel Image commands reproduce the CPU frame exactly (CPU model of the kernel's Image op), statistics, over-budget drop |
+@@END@@
 
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
 | `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster (skips 77 without a display or device) |

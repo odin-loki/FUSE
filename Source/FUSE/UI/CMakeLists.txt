@@ -103,7 +103,8 @@ endif()
 
 # ---- fuse_ui_core ----
 add_library(fuse_ui_core STATIC Core/src/style.cpp Core/src/draw_list.cpp Core/src/ui.cpp Core/src/immediate.cpp
-    Core/src/interaction.cpp Core/src/actions.cpp)
+    Core/src/interaction.cpp Core/src/actions.cpp
+    Core/src/path.cpp Core/src/draw_vector.cpp Core/src/painter.cpp Core/src/svg.cpp Core/src/icons.cpp)
 target_include_directories(fuse_ui_core PUBLIC Core/include)
 target_link_libraries(fuse_ui_core PUBLIC fuse_text)
 if(FUSE_UI_ACCESSIBILITY)
@@ -111,7 +112,7 @@ if(FUSE_UI_ACCESSIBILITY)
 endif()
 
 if(FUSE_BUILD_UI_WIDGETS)
-    add_library(fuse_ui_widgets STATIC Widgets/src/widgets.cpp Widgets/src/widgets_tier_b.cpp Widgets/src/widgets_tier_b2.cpp Widgets/src/widgets_tier_cd.cpp Widgets/src/widgets_tier_d2.cpp Widgets/src/widgets_tier_b3.cpp Widgets/src/widgets_interaction.cpp Widgets/src/widgets_modelview.cpp Widgets/src/widgets_models.cpp Widgets/src/platform_feel.cpp Widgets/src/theme.cpp Widgets/src/inspector.cpp)
+    add_library(fuse_ui_widgets STATIC Widgets/src/widgets.cpp Widgets/src/widgets_tier_b.cpp Widgets/src/widgets_tier_b2.cpp Widgets/src/widgets_tier_cd.cpp Widgets/src/widgets_tier_d2.cpp Widgets/src/widgets_tier_b3.cpp Widgets/src/widgets_svg.cpp Widgets/src/widgets_interaction.cpp Widgets/src/widgets_modelview.cpp Widgets/src/widgets_models.cpp Widgets/src/platform_feel.cpp Widgets/src/theme.cpp Widgets/src/inspector.cpp)
     target_include_directories(fuse_ui_widgets PUBLIC Widgets/include)
     target_link_libraries(fuse_ui_widgets PUBLIC fuse_ui_core)
 endif()

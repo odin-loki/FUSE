@@ -432,6 +432,11 @@ public:
     void markAllDirty();
     /// Repaints `n` next update (widgets whose paint reads external state, e.g. item models).
     void invalidate(NodeHandle n) { if (node(n)) markPaint(n.index); }
+    /// Re-measures and re-lays out `n` next update (widgets whose content size depends on state the core does not
+    /// see, e.g. a button's icon).
+    void invalidateLayout(NodeHandle n) { if (node(n)) markLayout(n.index); }
+    /// Process-unique id of this context, never reused (side tables key on it rather than on the address).
+    u64 uid() const { return m_uid; }
 
     // input (returns true when the UI consumed it — game input arbitration)
     bool pointerMove(Vec2 p);
@@ -712,6 +717,10 @@ private:
     Size m_viewport;
     u32 m_layerClass = 0xFFFFFFFFu;
     DrawList m_draw;
+    u64 m_uid = [] {
+        static std::atomic<u64> next{1};
+        return next.fetch_add(1, std::memory_order_relaxed);
+    }();
     Rect m_damage;
     f32 m_renderScale = 1.f;
     bool m_painting = false; ///< inside paintPass: glyphs are emitted in device pixels when m_renderScale != 1

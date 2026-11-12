@@ -18,11 +18,21 @@ NodeHandle popupMenuAt(UiContext& ui, NodeHandle owner, std::string_view items, 
 /// A popup scope (outside click / Escape closes it) holding an empty card at `at`; returns the card.
 NodeHandle popupPanel(UiContext& ui, NodeHandle owner, Vec2 at);
 
+@@OURS@@
 /// Registers the item view classes "tableview" and "treemodelview" (widgets_modelview.cpp).
 void registerModelView(UiContext& ui);
 /// Grid view selection (widgets_tier_cd.cpp), behind setViewSelectionMode / setViewSelectionModel: `shared` replaces
 /// the grid's selection model (null = a private one); `setMode` also sets the mode. False when `grid` is no grid view.
 bool gridSetSelection(UiContext& ui, NodeHandle grid, SelectionModel* shared, bool setMode, SelectionMode mode);
 SelectionModel* gridSelection(UiContext& ui, NodeHandle grid);
+@@MID@@
+
+// widgets_svg.cpp: icons on buttons (setIcon). Both are no-ops (one empty-table test) while no icon is set anywhere.
+/// The content size of a button with text size `text`: adds the icon and the gap.
+Size iconContentSize(const UiContext& ui, NodeHandle n, Size text);
+/// Paints the node's icon (centred with the text as one group); `textBox` receives where the text goes. False when
+/// the node has no icon.
+bool paintIcon(const PaintContext& pc, DrawList& dl, Rect& textBox);
+@@END@@
 
 } // namespace fuse::ui::widgets::detail

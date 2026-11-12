@@ -12,8 +12,10 @@
 #include <string>
 #include <vector>
 
+#include "fuse/ui/icons.hpp"
 #include "fuse/ui/ui.hpp"
 
+#include <expected>
 #include <string_view>
 
 namespace fuse::ui::widgets {
@@ -628,6 +630,44 @@ NodeHandle doubleSpinBox(UiContext& ui, NodeHandle parent, f32 lo, f32 hi, f32 v
 
 /// Registers the classes of this group (header, textedit, richtext, toast, groupbody, wizardpage); install() calls it.
 void registerTierB3(UiContext& ui);
+
+// ---- SVG images and icons (Qt SVG / QIcon) --------------------------------------------------------------------------
+/// A parsed SVG in the process-wide store (fuse/ui/svg.hpp for the supported subset). Images are immutable; create and
+/// destroy them on the UI thread (a widget that still refers to a destroyed image draws nothing).
+struct SvgHandle {
+    u32 index = 0xFFFFFFFFu;
+    u32 generation = 0;
+    bool valid() const { return index != 0xFFFFFFFFu; }
+    friend bool operator==(const SvgHandle&, const SvgHandle&) = default;
+};
+std::expected<SvgHandle, SvgError> svgCreate(std::string_view xml);
+SvgHandle svgAdopt(SvgImage image);
+void svgDestroy(SvgHandle svg);
+const SvgImage* svgGet(SvgHandle svg); ///< null for a stale handle
+/// A built-in icon (fuse/ui/icons.hpp) as a handle; never destroyed.
+SvgHandle iconHandle(Icon icon);
+
+/// SVG image widget: draws `svg` fitted into its content box (aspect ratio kept, centred) as vector paths, so it is
+/// sharp at any size and render scale. `currentColor` in the SVG is the node's `color`. `width` / `height` <= 0 leave
+/// that side to the style (the intrinsic SVG size by default).
+NodeHandle svgImage(UiContext& ui, NodeHandle parent, SvgHandle svg, f32 width = 0.f, f32 height = 0.f, std::string_view id = {});
+void setSvgImage(UiContext& ui, NodeHandle node, SvgHandle svg);
+SvgHandle svgImageOf(const UiContext& ui, NodeHandle node);
+
+/// Icon on a button / tool button (QAbstractButton::setIcon): drawn `size` px square left of the text - alone and
+/// centred when the button has no text - in the button's text colour. An invalid handle removes it.
+void setIcon(UiContext& ui, NodeHandle button, SvgHandle svg, f32 size = 16.f);
+void setIcon(UiContext& ui, NodeHandle button, Icon icon, f32 size = 16.f);
+void clearIcon(UiContext& ui, NodeHandle button);
+SvgHandle iconOf(const UiContext& ui, NodeHandle button);
+/// Drops the icon records of every node of `ui` (optional tidy-up before destroying a context that used setIcon;
+/// records are keyed by UiContext::uid(), so a stale one is never picked up by another context).
+void forgetIcons(const UiContext& ui);
+/// A tool button showing a built-in icon (and `text` after it); without text its accessible name is the icon's name.
+NodeHandle iconButton(UiContext& ui, NodeHandle parent, Icon icon, std::string_view text = {}, std::string_view id = {});
+
+/// Registers `svgimage`; install() calls it.
+void registerSvgWidgets(UiContext& ui);
 
 } // namespace fuse::ui::widgets
 
