@@ -131,6 +131,15 @@ struct HeaderW {
         }
         return -1;
     }
+    /// Section edges resize (and a running section drag keeps the cursor).
+    static Cursor cursor(UiContext& ui, NodeHandle n, Vec2 p) {
+        const HeaderState* s = headerPool().get(ui, n);
+        if (!s) return Cursor::Auto;
+        if (s->dragCol >= 0) return Cursor::ResizeH;
+        bool edge = false;
+        sectionAt(*s, p.x - ui.contentRect(n).x, edge);
+        return edge ? Cursor::ResizeH : Cursor::Auto;
+    }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
         UiContext& ui = ec.ui;

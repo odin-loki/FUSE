@@ -42,6 +42,7 @@ struct SplitHandle { // between two panes; value() = 1 when the splitter is stac
     static constexpr bool kInteractive = true;
     static Size measure(UiContext&, NodeHandle, Size) { return {6.f, 6.f}; }
     static bool stacked(const UiContext& ui, NodeHandle n) { return ui.value(n) > 0.5f; }
+    static Cursor cursor(UiContext& ui, NodeHandle n, Vec2) { return stacked(ui, n) ? Cursor::ResizeV : Cursor::ResizeH; }
     static void paint(const PaintContext& pc, DrawList& dl) {
         const Rect r = pc.rect;
         const bool hot = pc.states & (kStateHover | kStatePressed | kStateFocus);
@@ -523,6 +524,20 @@ struct TableView {
         }
         if (pc.states & kStateFocus) dl.roundedRect(pc.rect, {}, {}, acc.withAlpha(acc.a * 0.6f), 1.f);
         dl.popClip();
+    }
+    /// Column edges of the header row resize (and a running column resize keeps the cursor).
+    static Cursor cursor(UiContext& ui, NodeHandle n, Vec2 p) {
+        const TableState* s = stateOf(ui, n);
+        if (!s) return Cursor::Auto;
+        if (s->resizing >= 0) return Cursor::ResizeH;
+        const Rect c = ui.contentRect(n);
+        if (s->dragScroll || p.y < c.y || p.y >= c.y + headerH(ui, n, *s)) return Cursor::Auto;
+        f32 x = c.x;
+        for (u32 k = 0; k < cols(*s); ++k) {
+            x += s->colW[k];
+            if (std::abs(p.x - x) <= 4.f) return Cursor::ResizeH;
+        }
+        return Cursor::Auto;
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;

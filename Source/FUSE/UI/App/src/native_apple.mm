@@ -12,6 +12,11 @@
 //
 // iOS entry: UIApplicationMain never returns, so the app's main (fuse_app_main, see fuse/app/main.hpp) runs from the
 // app delegate after launch and pumps the run loop itself; when it returns the process exits with its code.
+//
+// Platform services (plan §4.13). macOS: NSCursor through the view's cursor rect, NSWindow management + delegate
+// notifications, the native menu bar from AppWindow::setMenu (NSMenu), effectiveAppearance / controlAccentColor,
+// NSScreen, NSOpenPanel / NSSavePanel, NSWorkspace. iOS: one fullscreen window (every window request answers
+// "cannot"), UITraitCollection for the theme, UIApplication openURL; no cursor, no file dialog.
 #include "native_internal.hpp"
 
 #include <TargetConditionals.h>
@@ -24,6 +29,8 @@
 #endif
 #if TARGET_OS_OSX
 #import <Cocoa/Cocoa.h>
+#import <objc/message.h>
+#import <objc/runtime.h>
 #else
 #import <UIKit/UIKit.h>
 #endif
@@ -38,6 +45,7 @@
 #if TARGET_OS_OSX
 @class FuseView;
 @class FuseWindowDelegate;
+@class FuseMenuTarget;
 using FuseNativeWindow = NSWindow;
 #else
 @class FuseView;
@@ -61,8 +69,10 @@ struct NativePlatform::Impl {
         f32 scale = 1.f;      ///< UI units -> view points is 1 / pointScale; UI units -> pixels is `scale`
         f32 pointScale = 1.f; ///< UI units per view point (1 unless NativeOptions::scale overrides the OS scale)
         bool keyboard = false;
+        fuse::ui::Cursor cursor = fuse::ui::Cursor::Arrow; ///< shape the view's cursor rect shows (macOS)
 #if TARGET_OS_OSX
         FuseWindowDelegate* delegate = nil;
+        FuseMenuTarget* menuTarget = nil; ///< target of this window's native menu items
 #else
         FuseViewController* controller = nil;
 #endif
@@ -100,6 +110,12 @@ struct NativePlatform::Impl {
     /// View bounds changed (or first layout): resize the AppWindow and the metal layer.
     void layout(Rec& r, CGSize points);
     void syncKeyboard(Rec& r);
+    static bool windowRequest(void* user, AppWindow& w, WindowRequest what);
+#if TARGET_OS_OSX
+    void applyCursor(Rec& r);
+    /// NSApp.mainMenu = the application menu + `r`'s MenuDesc (null / empty: the application menu only).
+    void setMainMenu(Rec* r);
+#endif
 };
 
 namespace {
@@ -183,6 +199,91 @@ bool clipboardGet(void*, std::string& out) {
     out = s.UTF8String;
     return true;
 }
+
+#if TARGET_OS_OSX
+// ---- macOS platform services: helpers the Objective-C classes below use ----------------------------------------------
+WindowMode macMode(NSWindow* win) {
+    if (!win) return WindowMode::Normal;
+    if (win.styleMask & NSWindowStyleMaskFullScreen) return WindowMode::Fullscreen;
+    if (win.miniaturized) return WindowMode::Minimized;
+    return win.zoomed ? WindowMode::Maximized : WindowMode::Normal;
+}
+/// Top-left of the content area in a top-left-origin screen space, UI units.
+Vec2 macOrigin(const Rec& r) {
+    if (!r.window) return {};
+    const NSRect content = [r.window contentRectForFrameRect:r.window.frame];
+    NSScreen* screen = r.window.screen ?: NSScreen.mainScreen;
+    const CGFloat top = screen ? NSMaxY(screen.frame) : NSMaxY(content);
+    return {f32(NSMinX(content)) * r.pointScale, f32(top - NSMaxY(content)) * r.pointScale};
+}
+SystemTheme macTheme() {
+    SystemTheme t;
+    if (@available(macOS 10.14, *)) {
+        NSAppearanceName best = [NSApp.effectiveAppearance bestMatchFromAppearancesWithNames:@[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]];
+        t.scheme = [best isEqualToString:NSAppearanceNameDarkAqua] ? ColorScheme::Dark : ColorScheme::Light;
+        NSColor* c = [[NSColor controlAccentColor] colorUsingColorSpace:[NSColorSpace sRGBColorSpace]];
+        if (c) {
+            t.hasAccent = true;
+            t.accent = {f32(c.redComponent), f32(c.greenComponent), f32(c.blueComponent), 1.f};
+        }
+    }
+    return t;
+}
+/// A class-method cursor AppKit has but does not declare (diagonal resize, busy); `fallback` when it is gone.
+NSCursor* privateCursor(const char* selector, NSCursor* fallback) {
+    const SEL sel = sel_registerName(selector);
+    if (![NSCursor respondsToSelector:sel]) return fallback;
+    const id c = ((id (*)(id, SEL))objc_msgSend)([NSCursor class], sel);
+    return [c isKindOfClass:[NSCursor class]] ? (NSCursor*)c : fallback;
+}
+NSCursor* macCursor(fuse::ui::Cursor c) {
+    switch (c) {
+    case fuse::ui::Cursor::IBeam: return [NSCursor IBeamCursor];
+    case fuse::ui::Cursor::PointingHand: return [NSCursor pointingHandCursor];
+    case fuse::ui::Cursor::ResizeH: return [NSCursor resizeLeftRightCursor];
+    case fuse::ui::Cursor::ResizeV: return [NSCursor resizeUpDownCursor];
+    case fuse::ui::Cursor::ResizeNWSE: return privateCursor("_windowResizeNorthWestSouthEastCursor", [NSCursor crosshairCursor]);
+    case fuse::ui::Cursor::ResizeNESW: return privateCursor("_windowResizeNorthEastSouthWestCursor", [NSCursor crosshairCursor]);
+    case fuse::ui::Cursor::Move: return [NSCursor openHandCursor];
+    case fuse::ui::Cursor::Crosshair: return [NSCursor crosshairCursor];
+    case fuse::ui::Cursor::NotAllowed: return [NSCursor operationNotAllowedCursor];
+    case fuse::ui::Cursor::Wait: return privateCursor("busyButClickableCursor", [NSCursor arrowCursor]);
+    case fuse::ui::Cursor::Hidden: {
+        static NSCursor* blank = [[NSCursor alloc] initWithImage:[[NSImage alloc] initWithSize:NSMakeSize(1, 1)] hotSpot:NSZeroPoint];
+        return blank;
+    }
+    default: return [NSCursor arrowCursor];
+    }
+}
+/// UI key -> NSMenuItem key equivalent (nil = none).
+NSString* macKeyEquivalent(Key k) {
+    auto ch = [](unichar c) { return [NSString stringWithCharacters:&c length:1]; };
+    switch (k) {
+    case Key::None: case Key::Other: return nil;
+    case Key::Enter: return @"\r";
+    case Key::Tab: return @"\t";
+    case Key::Escape: return ch(0x1B);
+    case Key::Space: return @" ";
+    case Key::Backspace: return ch(0x08);
+    case Key::Delete: return ch(NSDeleteFunctionKey);
+    case Key::Left: return ch(NSLeftArrowFunctionKey);
+    case Key::Right: return ch(NSRightArrowFunctionKey);
+    case Key::Up: return ch(NSUpArrowFunctionKey);
+    case Key::Down: return ch(NSDownArrowFunctionKey);
+    case Key::Home: return ch(NSHomeFunctionKey);
+    case Key::End: return ch(NSEndFunctionKey);
+    case Key::PageUp: return ch(NSPageUpFunctionKey);
+    case Key::PageDown: return ch(NSPageDownFunctionKey);
+    case Key::BracketLeft: return @"[";
+    case Key::BracketRight: return @"]";
+    default: break;
+    }
+    const std::string text = shortcutText(k, 0); // "S", "7", "F5"
+    if (text.size() == 1) return [[NSString stringWithUTF8String:text.c_str()] lowercaseString];
+    if (text.size() >= 2 && text[0] == 'F') return ch(unichar(NSF1FunctionKey + std::atoi(text.c_str() + 1) - 1));
+    return nil;
+}
+#endif
 } // namespace
 } // namespace fuse::app
 
@@ -254,6 +355,16 @@ fui::Key macKey(unsigned short code, NSString* chars) {
 
 @interface FuseAppTarget : NSObject
 + (void)quit:(id)sender;
++ (void)themeChanged:(NSNotification*)note;
++ (void)applyTheme;
+@end
+
+/// Target of the items of one window's native menu (AppWindow::setMenu): the item's tag is the MenuItem id.
+@interface FuseMenuTarget : NSObject {
+@public
+    fuse::app::AppWindow* win;
+}
+- (void)activate:(NSMenuItem*)item;
 @end
 
 static NativePlatform::Impl* g_macImpl = nullptr;
@@ -265,14 +376,54 @@ static NativePlatform::Impl* g_macImpl = nullptr;
     for (FuseRec* r : g_macImpl->recs) r->win->requestClose();
     g_macImpl->app.quit();
 }
++ (void)themeChanged:(NSNotification*)note {
+    (void)note; // the effective appearance follows a moment later
+    [self performSelector:@selector(applyTheme) withObject:nil afterDelay:0.1];
+}
++ (void)applyTheme {
+    if (g_macImpl) g_macImpl->app.setSystemTheme(fuse::app::macTheme());
+}
+@end
+
+@implementation FuseMenuTarget
+- (void)activate:(NSMenuItem*)item {
+    if (!win) return;
+    // a checkable item rebuilds the bar: the menu that sent this stays alive until we return
+    NSMenu* keep __attribute__((objc_precise_lifetime)) = NSApp.mainMenu;
+    win->activateMenuItem(fui::u32(item.tag));
+    win->requestRedraw();
+    (void)keep;
+}
 @end
 
 @implementation FuseWindowDelegate
 - (BOOL)windowShouldClose:(NSWindow*)sender {
     (void)sender;
-    if (rec && rec->win) rec->win->requestClose();
+    if (rec && rec->win) rec->win->tryClose(); // the close guard may veto
     return NO; // the Application drops the window (and its presenter) on the next step
 }
+- (void)windowDidBecomeKey:(NSNotification*)note {
+    (void)note;
+    if (!rec || !rec->win) return;
+    if (!rec->win->menu().empty()) rec->impl->setMainMenu(rec); // the menu bar shows the key window's menu
+    rec->win->notifyActive(true);
+}
+- (void)windowDidResignKey:(NSNotification*)note {
+    (void)note;
+    if (rec && rec->win) rec->win->notifyActive(false);
+}
+- (void)windowDidMove:(NSNotification*)note {
+    (void)note;
+    if (rec && rec->win) rec->win->notifyMoved(fuse::app::macOrigin(*rec));
+}
+- (void)syncMode {
+    if (rec && rec->win) rec->win->notifyMode(fuse::app::macMode(rec->window));
+}
+- (void)windowDidMiniaturize:(NSNotification*)note { (void)note; [self syncMode]; }
+- (void)windowDidDeminiaturize:(NSNotification*)note { (void)note; [self syncMode]; }
+- (void)windowDidEnterFullScreen:(NSNotification*)note { (void)note; [self syncMode]; }
+- (void)windowDidExitFullScreen:(NSNotification*)note { (void)note; [self syncMode]; }
+- (void)windowDidResize:(NSNotification*)note { (void)note; [self syncMode]; } // zoomed / unzoomed
 - (void)windowDidChangeBackingProperties:(NSNotification*)note {
     (void)note;
     if (rec && rec->view) rec->impl->layout(*rec, rec->view.bounds.size);
@@ -284,6 +435,10 @@ static NativePlatform::Impl* g_macImpl = nullptr;
 - (BOOL)acceptsFirstResponder { return YES; }
 - (BOOL)acceptsFirstMouse:(NSEvent*)event { (void)event; return YES; }
 - (BOOL)isOpaque { return YES; }
+- (void)resetCursorRects { // the UI's cursor over the whole view (Impl::applyCursor invalidates it on a change)
+    [super resetCursorRects];
+    if (rec) [self addCursorRect:self.bounds cursor:fuse::app::macCursor(rec->cursor)];
+}
 - (void)setFrameSize:(NSSize)size {
     [super setFrameSize:size];
     if (rec) rec->impl->layout(*rec, size);
@@ -346,7 +501,7 @@ static NativePlatform::Impl* g_macImpl = nullptr;
     fui::UiContext& ui = rec->win->ui();
     const fui::u8 md = macMods(e.modifierFlags);
     const fui::Key k = macKey(e.keyCode, e.charactersIgnoringModifiers);
-    if (k != fui::Key::Other) ui.keyDown(k, md);
+    if (k != fui::Key::Other && !ui.keyDown(k, md)) rec->win->menuShortcut(k, md); // unconsumed: a menu shortcut
     // text (and IME composition) through the input context; shortcuts are not text
     if (!(e.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl))) [self interpretKeyEvents:@[e]];
     rec->win->requestRedraw();
@@ -468,6 +623,7 @@ bool NativePlatform::Impl::createOsWindow(Rec& r) {
             return false;
         }
         window.releasedWhenClosed = NO;
+        window.collectionBehavior |= NSWindowCollectionBehaviorFullScreenPrimary; // AppWindow::setFullscreen
         window.title = [NSString stringWithUTF8String:r.win->title().c_str()] ?: @"";
         FuseView* view = [[FuseView alloc] initWithFrame:content];
         view->rec = &r;
@@ -494,6 +650,11 @@ void NativePlatform::Impl::destroyOsWindow(Rec& r) {
     @autoreleasepool {
         if (r.view) r.view->rec = nullptr;
         if (r.delegate) r.delegate->rec = nullptr;
+        if (r.menuTarget) { // its menu leaves the bar with the window
+            r.menuTarget->win = nullptr;
+            r.menuTarget = nil;
+            setMainMenu(nullptr);
+        }
         if (r.window) {
             r.window.delegate = nil;
             [r.window orderOut:nil];
@@ -508,7 +669,7 @@ void NativePlatform::Impl::destroyOsWindow(Rec& r) {
 void NativePlatform::Impl::syncKeyboard(Rec&) {} // the hardware keyboard is always there; the IME follows the caret
 
 bool NativePlatform::Impl::pump(void* user, Application&, f32 wait) {
-    (void)user;
+    Impl& m = *static_cast<Impl*>(user);
     @autoreleasepool {
         NSDate* until = wait <= 0.f ? [NSDate distantPast]
                         : std::isinf(wait) ? [NSDate distantFuture] : [NSDate dateWithTimeIntervalSinceNow:double(wait)];
@@ -518,8 +679,213 @@ bool NativePlatform::Impl::pump(void* user, Application&, f32 wait) {
             [NSApp sendEvent:e];
             until = [NSDate distantPast]; // drain what is queued, then return to the loop
         }
+        for (Rec* r : m.recs) m.applyCursor(*r); // what the UI wants after this batch of input
     }
     return true;
+}
+
+// ---- macOS platform services -------------------------------------------------------------------------------------------
+namespace {
+/// The menu bar every app has: the application menu with Quit (Cmd+Q).
+NSMenu* baseMenuBar(const std::string& appName) {
+    NSMenu* bar = [[NSMenu alloc] init];
+    NSMenuItem* appItem = [[NSMenuItem alloc] init];
+    [bar addItem:appItem];
+    NSMenu* appMenu = [[NSMenu alloc] init];
+    NSString* name = [NSString stringWithUTF8String:appName.c_str()] ?: @"FUSE";
+    NSMenuItem* quit = [[NSMenuItem alloc] initWithTitle:[@"Quit " stringByAppendingString:name] action:@selector(quit:) keyEquivalent:@"q"];
+    quit.target = [FuseAppTarget class];
+    [appMenu addItem:quit];
+    appItem.submenu = appMenu;
+    return bar;
+}
+void fillMenu(NSMenu* menu, const std::vector<MenuItem>& items, FuseMenuTarget* target) {
+    menu.autoenablesItems = NO; // enabled / disabled comes from the description
+    for (const MenuItem& it : items) {
+        if (it.separator) {
+            [menu addItem:[NSMenuItem separatorItem]];
+            continue;
+        }
+        NSString* title = [NSString stringWithUTF8String:it.title.c_str()] ?: @"";
+        NSMenuItem* mi = [[NSMenuItem alloc] initWithTitle:title action:nil keyEquivalent:@""];
+        mi.enabled = it.enabled;
+        if (!it.items.empty()) {
+            NSMenu* sub = [[NSMenu alloc] initWithTitle:title];
+            fillMenu(sub, it.items, target);
+            mi.submenu = sub;
+        } else {
+            mi.target = target;
+            mi.action = @selector(activate:);
+            mi.tag = NSInteger(it.id);
+            mi.state = it.checked ? NSControlStateValueOn : NSControlStateValueOff;
+            if (NSString* key = macKeyEquivalent(it.key)) {
+                mi.keyEquivalent = key;
+                mi.keyEquivalentModifierMask = ((it.mods & kModCtrl) ? NSEventModifierFlagCommand : 0) | ((it.mods & kModShift) ? NSEventModifierFlagShift : 0) |
+                                               ((it.mods & kModAlt) ? NSEventModifierFlagOption : 0) | ((it.mods & kModSuper) ? NSEventModifierFlagControl : 0);
+            }
+        }
+        [menu addItem:mi];
+    }
+}
+} // namespace
+
+void NativePlatform::Impl::setMainMenu(Rec* r) {
+    @autoreleasepool {
+        NSMenu* bar = baseMenuBar(app.name());
+        if (r && r->win && !r->win->menu().empty()) {
+            if (!r->menuTarget) r->menuTarget = [[FuseMenuTarget alloc] init];
+            r->menuTarget->win = r->win;
+            for (const MenuItem& top : r->win->menu().menus) {
+                NSString* title = [NSString stringWithUTF8String:top.title.c_str()] ?: @"";
+                NSMenuItem* holder = [[NSMenuItem alloc] initWithTitle:title action:nil keyEquivalent:@""];
+                NSMenu* sub = [[NSMenu alloc] initWithTitle:title];
+                fillMenu(sub, top.items, r->menuTarget);
+                holder.submenu = sub;
+                holder.enabled = top.enabled;
+                [bar addItem:holder];
+            }
+        }
+        NSApp.mainMenu = bar;
+    }
+}
+void NativePlatform::Impl::applyCursor(Rec& r) {
+    if (!r.win || !r.window || !r.view) return;
+    const fuse::ui::Cursor want = r.win->ui().cursor();
+    if (want == r.cursor) return;
+    r.cursor = want;
+    [r.window invalidateCursorRectsForView:r.view]; // -> FuseView resetCursorRects
+}
+bool NativePlatform::Impl::windowRequest(void* user, AppWindow& w, WindowRequest what) {
+    Rec& r = *static_cast<Rec*>(user);
+    NSWindow* win = r.window;
+    if (!win) return false;
+    const f32 ps = r.pointScale > 0.f ? r.pointScale : 1.f; // UI units per point
+    @autoreleasepool {
+        switch (what) {
+        case WindowRequest::Title: win.title = [NSString stringWithUTF8String:w.title().c_str()] ?: @""; return true;
+        case WindowRequest::SizeLimits: {
+            const Size mn = w.minimumSize(), mx = w.maximumSize();
+            win.contentMinSize = NSMakeSize(mn.w > 0.f ? mn.w / ps : 1.0, mn.h > 0.f ? mn.h / ps : 1.0);
+            win.contentMaxSize = NSMakeSize(mx.w > 0.f ? mx.w / ps : CGFLOAT_MAX, mx.h > 0.f ? mx.h / ps : CGFLOAT_MAX);
+            return true;
+        }
+        case WindowRequest::Mode: { // the delegate reports the resulting state (FuseWindowDelegate syncMode)
+            const WindowMode want = w.requestedMode();
+            if (want == WindowMode::Minimized) {
+                [win miniaturize:nil];
+                return true;
+            }
+            if (win.miniaturized) [win deminiaturize:nil];
+            const bool full = (win.styleMask & NSWindowStyleMaskFullScreen) != 0;
+            if ((want == WindowMode::Fullscreen) != full) [win toggleFullScreen:nil];
+            if (want != WindowMode::Fullscreen && (want == WindowMode::Maximized) != bool(win.zoomed)) [win zoom:nil];
+            return true;
+        }
+        case WindowRequest::Visible:
+            if (w.requestedVisible()) [win makeKeyAndOrderFront:nil];
+            else [win orderOut:nil];
+            w.notifyVisible(w.requestedVisible());
+            return true;
+        case WindowRequest::Position: {
+            const Vec2 p = w.requestedPosition(); // top-left of the content area, top-left-origin screen space
+            NSScreen* screen = win.screen ?: NSScreen.mainScreen;
+            const CGFloat top = screen ? NSMaxY(screen.frame) : 0.0;
+            NSRect content = [win contentRectForFrameRect:win.frame];
+            content.origin.x = p.x / ps;
+            content.origin.y = top - p.y / ps - content.size.height;
+            [win setFrameOrigin:[win frameRectForContentRect:content].origin];
+            return true;
+        }
+        case WindowRequest::Activate:
+            [NSApp activateIgnoringOtherApps:YES];
+            [win makeKeyAndOrderFront:nil];
+            return true;
+        case WindowRequest::Menu:
+            if (w.menu().empty()) { // nothing to show: back to the application menu, no in-window bar either
+                if (r.menuTarget) r.impl->setMainMenu(nullptr);
+                return false;
+            }
+            r.impl->setMainMenu(&r);
+            return true;
+        }
+    }
+    return false;
+}
+SystemTheme NativePlatform::systemTheme() {
+    m->app.setSystemTheme(macTheme());
+    return m->app.systemTheme();
+}
+std::vector<DisplayInfo> NativePlatform::displays() const {
+    std::vector<DisplayInfo> out;
+    @autoreleasepool {
+        NSArray<NSScreen*>* screens = NSScreen.screens;
+        const CGFloat top = screens.count ? NSMaxY(screens[0].frame) : 0.0; // screens[0] has the menu bar
+        for (NSScreen* s in screens) {
+            DisplayInfo d;
+            const f32 k = f32(s.backingScaleFactor);
+            auto flip = [&](NSRect r) { // points, bottom-left origin -> pixels, top-left origin
+                return Rect{f32(r.origin.x) * k, f32(top - NSMaxY(r)) * k, f32(r.size.width) * k, f32(r.size.height) * k};
+            };
+            d.bounds = flip(s.frame);
+            d.workArea = flip(s.visibleFrame);
+            d.scale = k;
+            d.primary = s == screens[0];
+            if (@available(macOS 10.15, *)) d.name = s.localizedName.UTF8String ?: "";
+            if (@available(macOS 12.0, *)) d.refreshHz = f32(s.maximumFramesPerSecond);
+            out.push_back(std::move(d));
+        }
+    }
+    return out;
+}
+FileDialogStatus NativePlatform::fileDialog(const AppWindow*, const FileDialogOptions& o, std::string& path) {
+    path.clear();
+    @autoreleasepool {
+        NSSavePanel* panel = nil;
+        if (o.save) {
+            panel = [NSSavePanel savePanel];
+        } else {
+            NSOpenPanel* open = [NSOpenPanel openPanel];
+            open.canChooseFiles = !o.pickDirectory;
+            open.canChooseDirectories = o.pickDirectory;
+            open.allowsMultipleSelection = NO;
+            panel = open;
+        }
+        panel.message = [NSString stringWithUTF8String:o.title.c_str()] ?: @"";
+        if (!o.directory.empty())
+            if (NSString* dir = [NSString stringWithUTF8String:o.directory.c_str()]) panel.directoryURL = [NSURL fileURLWithPath:dir isDirectory:YES];
+        if (o.save && !o.defaultName.empty())
+            if (NSString* name = [NSString stringWithUTF8String:o.defaultName.c_str()]) panel.nameFieldStringValue = name;
+        NSMutableArray<NSString*>* exts = [NSMutableArray array]; // "*.png;*.jpg" -> png, jpg (other patterns are ignored)
+        for (std::size_t at = 0; at <= o.filter.size();) {
+            const std::size_t e = std::min(o.filter.find(';', at), o.filter.size());
+            const std::string pat = o.filter.substr(at, e - at);
+            if (pat.size() > 2 && pat[0] == '*' && pat[1] == '.' && pat.find_first_of("*?", 2) == std::string::npos)
+                if (NSString* ext = [NSString stringWithUTF8String:pat.c_str() + 2]) [exts addObject:ext];
+            at = e + 1;
+        }
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        if (exts.count && !o.pickDirectory) panel.allowedFileTypes = exts; // allowedContentTypes needs macOS 11
+#pragma clang diagnostic pop
+        if ([panel runModal] != NSModalResponseOK || !panel.URL.path) return FileDialogStatus::Cancelled;
+        path = panel.URL.path.UTF8String;
+        return FileDialogStatus::Accepted;
+    }
+}
+bool openUrl(std::string_view url) {
+    @autoreleasepool {
+        NSString* s = [[NSString alloc] initWithBytes:url.data() length:url.size() encoding:NSUTF8StringEncoding];
+        NSURL* u = s.length ? [NSURL URLWithString:s] : nil;
+        return u && [[NSWorkspace sharedWorkspace] openURL:u];
+    }
+}
+bool revealFile(std::string_view path) {
+    @autoreleasepool {
+        NSString* s = [[NSString alloc] initWithBytes:path.data() length:path.size() encoding:NSUTF8StringEncoding];
+        if (!s.length) return false;
+        [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[[NSURL fileURLWithPath:s]]];
+        return true;
+    }
 }
 
 NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std::make_unique<Impl>(app, o)) {
@@ -527,19 +893,14 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
         installBundleReaders();
         [NSApplication sharedApplication];
         if (NSApp.activationPolicy != NSApplicationActivationPolicyRegular) [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
-        if (!NSApp.mainMenu) { // the application menu with Quit (Cmd+Q)
-            NSMenu* bar = [[NSMenu alloc] init];
-            NSMenuItem* appItem = [[NSMenuItem alloc] init];
-            [bar addItem:appItem];
-            NSMenu* appMenu = [[NSMenu alloc] init];
-            NSString* name = [NSString stringWithUTF8String:app.name().c_str()] ?: @"FUSE";
-            NSMenuItem* quit = [[NSMenuItem alloc] initWithTitle:[@"Quit " stringByAppendingString:name] action:@selector(quit:) keyEquivalent:@"q"];
-            quit.target = [FuseAppTarget class];
-            [appMenu addItem:quit];
-            appItem.submenu = appMenu;
-            NSApp.mainMenu = bar;
-        }
+        if (!NSApp.mainMenu) NSApp.mainMenu = baseMenuBar(app.name()); // the application menu with Quit (Cmd+Q)
         [NSApp finishLaunching];
+        // light / dark preference: now, and whenever the user changes it
+        [[NSDistributedNotificationCenter defaultCenter] addObserver:[FuseAppTarget class]
+                                                            selector:@selector(themeChanged:)
+                                                                name:@"AppleInterfaceThemeChangedNotification"
+                                                              object:nil];
+        app.setSystemTheme(macTheme());
     }
     g_macImpl = m.get();
     app.setEventSource({m.get(), &Impl::pump});
@@ -547,6 +908,7 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
 NativePlatform::~NativePlatform() {
     while (!m->recs.empty()) m->recs.back()->win->setPresenter({});
     detail::vkCtxDestroy(m->vk);
+    [[NSDistributedNotificationCenter defaultCenter] removeObserver:[FuseAppTarget class]];
     if (g_macImpl == m.get()) g_macImpl = nullptr;
     m->app.setEventSource({});
 }
@@ -616,6 +978,18 @@ Rect NativePlatform::safeArea(const AppWindow& w) const {
 // =====================================================================================================================
 // iOS
 // =====================================================================================================================
+namespace fuse::app {
+namespace {
+SystemTheme iosTheme() {
+    SystemTheme t;
+    if (@available(iOS 13.0, *)) {
+        const UIUserInterfaceStyle style = UIScreen.mainScreen.traitCollection.userInterfaceStyle;
+        t.scheme = style == UIUserInterfaceStyleDark ? ColorScheme::Dark : style == UIUserInterfaceStyleLight ? ColorScheme::Light : ColorScheme::Unknown;
+    }
+    return t;
+}
+} // namespace
+} // namespace fuse::app
 namespace {
 int (*g_iosMain)(int, char**) = nullptr;
 int g_iosArgc = 0;
@@ -681,6 +1055,10 @@ NativePlatform::Impl* g_iosImpl = nullptr;
 - (void)safeAreaInsetsDidChange {
     [super safeAreaInsetsDidChange];
     if (rec && rec->win) rec->win->requestRedraw();
+}
+- (void)traitCollectionDidChange:(UITraitCollection*)previous { // light / dark preference
+    [super traitCollectionDidChange:previous];
+    if (rec && rec->win) rec->win->app().setSystemTheme(fuse::app::iosTheme());
 }
 - (fui::Vec2)uiPoint:(UITouch*)touch { return fuse::app::toUi(*rec, [touch locationInView:self]); }
 - (void)touchesBegan:(NSSet<UITouch*>*)touches withEvent:(UIEvent*)event {
@@ -774,8 +1152,11 @@ NativePlatform::Impl* g_iosImpl = nullptr;
             if (k == fui::Key::Other && (f & UIKeyModifierCommand) && key.charactersIgnoringModifiers.length > 0)
                 fuse::app::detail::asciiKey(k, fui::u32([key.charactersIgnoringModifiers characterAtIndex:0]));
             if (k == fui::Key::Other) continue;
-            if (down) rec->win->ui().keyDown(k, md);
-            else rec->win->ui().keyUp(k, md);
+            if (down) {
+                if (!rec->win->ui().keyDown(k, md)) rec->win->menuShortcut(k, md); // unconsumed: a menu shortcut
+            } else {
+                rec->win->ui().keyUp(k, md);
+            }
             handled = YES;
         }
     }
@@ -886,7 +1267,38 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
     }
     g_iosImpl = m.get();
     app.setEventSource({m.get(), &Impl::pump});
+    app.setSystemTheme(iosTheme());
 }
+
+// ---- iOS platform services: one fullscreen window that belongs to the system ------------------------------------------
+bool NativePlatform::Impl::windowRequest(void*, AppWindow&, WindowRequest) { return false; }
+SystemTheme NativePlatform::systemTheme() {
+    m->app.setSystemTheme(iosTheme());
+    return m->app.systemTheme();
+}
+std::vector<DisplayInfo> NativePlatform::displays() const {
+    std::vector<DisplayInfo> out;
+    UIScreen* s = UIScreen.mainScreen;
+    const f32 k = f32(s.scale);
+    const Rect all{0.f, 0.f, f32(s.bounds.size.width) * k, f32(s.bounds.size.height) * k};
+    out.push_back({"screen", all, all, k, f32(s.maximumFramesPerSecond), true});
+    return out;
+}
+/// No modal file dialog on iOS (UIDocumentPickerViewController is asynchronous): use the toolkit dialog.
+FileDialogStatus NativePlatform::fileDialog(const AppWindow*, const FileDialogOptions&, std::string& path) {
+    path.clear();
+    return FileDialogStatus::Unavailable;
+}
+bool openUrl(std::string_view url) {
+    @autoreleasepool {
+        NSString* s = [[NSString alloc] initWithBytes:url.data() length:url.size() encoding:NSUTF8StringEncoding];
+        NSURL* u = s.length ? [NSURL URLWithString:s] : nil;
+        if (!u || ![UIApplication sharedApplication]) return false;
+        [[UIApplication sharedApplication] openURL:u options:@{} completionHandler:nil];
+        return true;
+    }
+}
+bool revealFile(std::string_view) { return false; } // no file manager to reveal in
 NativePlatform::~NativePlatform() {
     while (!m->recs.empty()) m->recs.back()->win->setPresenter({});
     detail::vkCtxDestroy(m->vk);
@@ -949,6 +1361,7 @@ void NativePlatform::Impl::destroy(void* user) {
     detail::vkWinDestroy(r->vk);
     r->vk = nullptr;
     m.destroyOsWindow(*r);
+    if (r->win) r->win->setWindowBackend({}); // a menu goes back into the window
     std::erase(m.recs, r);
     delete r;
 }
@@ -995,6 +1408,16 @@ PresenterKind NativePlatform::show(AppWindow& w) {
     m->layout(*r, r->view.bounds.size);
     w.ui().setClipboard({&clipboardSet, &clipboardGet, nullptr});
     w.setPresenter({r, &Impl::present, &Impl::destroy});
+    w.setWindowBackend({r, &Impl::windowRequest}); // also moves an existing AppWindow menu into the menu bar (macOS)
+#if TARGET_OS_OSX
+    // what the app asked for before the window existed
+    if (w.minimumSize().w > 0.f || w.minimumSize().h > 0.f || w.maximumSize().w > 0.f || w.maximumSize().h > 0.f)
+        Impl::windowRequest(r, w, WindowRequest::SizeLimits);
+    if (w.requestedMode() != WindowMode::Normal) Impl::windowRequest(r, w, WindowRequest::Mode);
+    if (!w.requestedVisible()) Impl::windowRequest(r, w, WindowRequest::Visible);
+#else
+    w.notifyMode(WindowMode::Fullscreen); // the one window is the screen
+#endif
     return r->kind;
 }
 
@@ -1027,6 +1450,12 @@ float NativePlatform::scale(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);
     return r ? r->scale : 1.f;
 }
+fuse::ui::Cursor NativePlatform::cursor(const AppWindow& w) const {
+    const Impl::Rec* r = m->find(w);
+    return r ? r->cursor : fuse::ui::Cursor::Arrow; // always Arrow on iOS (no pointer cursor)
+}
+bool NativePlatform::setClipboardText(std::string_view utf8) { return clipboardSet(nullptr, utf8); }
+bool NativePlatform::clipboardText(std::string& out) { return clipboardGet(nullptr, out); }
 
 // Popups stay overlays inside the window on Apple platforms (NativeOptions::osPopups is X11 / Win32).
 std::size_t NativePlatform::popupCount(const AppWindow&) const { return 0; }

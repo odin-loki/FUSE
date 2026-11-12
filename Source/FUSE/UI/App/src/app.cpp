@@ -264,6 +264,7 @@ void AppWindow::resize(u32 width, u32 height) {
     m_forceRedraw = true;
 }
 void AppWindow::setScale(f32 scale) {
+    const f32 before = m_ui.renderScale();
     m_ui.setRenderScale(scale);
     const f32 s = m_ui.renderScale();
     const Size v = m_ui.viewport();
@@ -271,8 +272,10 @@ void AppWindow::setScale(f32 scale) {
     m_pixelH = u32(std::max(1.f, std::round(v.h * s)));
     m_ui.markAllDirty();
     m_forceRedraw = true;
+    notifyScale(before);
 }
 void AppWindow::resizePixels(u32 pixelWidth, u32 pixelHeight, f32 scale) {
+    const f32 before = m_ui.renderScale();
     m_ui.setRenderScale(scale);
     const f32 s = m_ui.renderScale();
     m_pixelW = std::max(1u, pixelWidth);
@@ -280,6 +283,7 @@ void AppWindow::resizePixels(u32 pixelWidth, u32 pixelHeight, f32 scale) {
     m_ui.setViewport({f32(m_pixelW) / s, f32(m_pixelH) / s});
     m_ui.markAllDirty();
     m_forceRedraw = true;
+    notifyScale(before);
 }
 std::expected<void, std::string> AppWindow::loadText(std::string_view json, doc::Model* model) {
     m_doc.reset();

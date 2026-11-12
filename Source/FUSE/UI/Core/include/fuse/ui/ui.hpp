@@ -162,6 +162,9 @@ struct WidgetClass {
     /// Touch: per-node / per-press answer (null: TouchDrag::Mode::Pan). `down` = where the finger went down; called
     /// after the PointerDown was delivered, when the finger leaves the slop.
     TouchDrag (*touchDrag)(UiContext&, NodeHandle, Vec2 down) = nullptr;
+    /// Position-dependent mouse cursor (splitter handles, header / column edges): the shape for pointer position `p`
+    /// (context coordinates), or Cursor::Auto to fall back to the node's `cursor` style. See UiContext::cursor.
+    Cursor (*cursor)(UiContext&, NodeHandle, Vec2 p) = nullptr;
 };
 
 /// Concept turning a plain struct with static members into a WidgetClass.
@@ -186,6 +189,7 @@ public:
         if constexpr (requires { W::defaults(); }) c.defaults = W::defaults();
         if constexpr (requires { W::kCapturesDrag; }) c.capturesDrag = W::kCapturesDrag;
         if constexpr (requires { &W::touchDrag; }) c.touchDrag = &W::touchDrag;
+        if constexpr (requires { &W::cursor; }) c.cursor = &W::cursor;
         return add(std::move(c));
     }
     u32 find(std::string_view name) const; ///< 0xFFFFFFFF when unknown
@@ -384,6 +388,14 @@ public:
     bool setClipboardText(std::string_view utf8);
     bool clipboardText(std::string& out) const;
     NodeHandle hitTest(Vec2 p) const;
+    /// The mouse cursor the UI wants now (never Auto). The pressed node (a drag keeps its cursor) or else the hovered
+    /// node decides: walking up from it, the first WidgetClass::cursor hook or `cursor` style that is not Auto wins;
+    /// Arrow when none. A scroll-bar drag shows Arrow. setCursorOverride (not Auto) beats everything (busy / tool
+    /// cursors). Platform layers apply it after feeding pointer input; it does no allocation.
+    Cursor cursor();
+    Cursor cursorAt(NodeHandle n, Vec2 p);
+    void setCursorOverride(Cursor c) { m_cursorOverride = c; }
+    Cursor cursorOverride() const { return m_cursorOverride; }
     NodeHandle hovered() const { return m_hover; }
     Vec2 pointer() const { return m_pointer; } ///< last pointer position
     NodeHandle pressed() const { return m_pressed; }
@@ -536,6 +548,7 @@ private:
     std::string m_localClipboard;
     Vec2 m_pointer{-1.f, -1.f};
     u8 m_mods = 0;
+    Cursor m_cursorOverride = Cursor::Auto;
     struct ScrollDrag { NodeHandle node; u8 axis = 0; f32 grab = 0.f; } m_scrollDrag;
     struct TouchState {
         enum class Stage : u8 { Idle, Pending, Passive, Pan }; ///< Passive: down, will never pan (captured drag)

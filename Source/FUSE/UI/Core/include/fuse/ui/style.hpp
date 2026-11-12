@@ -52,6 +52,13 @@ enum class Justify : u8 { Start, Center, End, SpaceBetween, SpaceAround };
 enum class Overflow : u8 { Visible, Clip, Scroll };
 enum class GradientDir : u8 { None, Vertical, Horizontal };
 enum class TextAlignment : u8 { Start, Center, End };
+/// Mouse cursor shape a node asks for (CSS `cursor:`; see UiContext::cursor). Auto = whatever the ancestors ask for.
+enum class Cursor : u8 {
+    Auto, Arrow, IBeam, PointingHand, ResizeH, ResizeV, ResizeNWSE, ResizeNESW, Move, Crosshair, NotAllowed, Wait, Hidden
+};
+inline constexpr int kCursorCount = int(Cursor::Hidden) + 1;
+/// CSS keyword of a shape ("default", "text", "pointer", "ew-resize", ...).
+std::string_view cursorCssName(Cursor c);
 
 inline constexpr int kMaxGridTracks = 8;
 inline constexpr int kMaxFontFamilies = 4; ///< names kept from a font-family list
@@ -97,6 +104,7 @@ struct ComputedStyle {
     Length lineHeight;       ///< Auto: the font's line height; Px; Percent: of the font size ("1.5" parses as 150%)
     /// Line box height in pixels for the layout (0 = natural).
     f32 lineHeightPx() const { return lineHeight.unit == Unit::Auto ? 0.f : lineHeight.resolve(fontSize, 0.f); }
+    Cursor cursor = Cursor::Auto; ///< cursor: auto | default | text | pointer | ew-resize | ... (not inherited; see UiContext::cursor)
     friend bool operator==(const ComputedStyle&, const ComputedStyle&) = default;
 };
 
@@ -108,7 +116,7 @@ enum class Prop : u8 {
     Left, Top, Right, Bottom, CenterX, CenterY, Background, Background2, Gradient, BorderColor, BorderWidth,
     RadiusTL, RadiusTR, RadiusBR, RadiusBL, Color, FontSize, TextAlign, Opacity, ShadowColor, ShadowBlur, ShadowX,
     ShadowY, PointerEvents, BackdropBlur,
-    FontWeight, FontStyle, FontFamily, TextDecoration, LetterSpacing, LineHeight, Count
+    FontWeight, FontStyle, FontFamily, TextDecoration, LetterSpacing, LineHeight, Cursor, Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
 

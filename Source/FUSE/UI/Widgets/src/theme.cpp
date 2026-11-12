@@ -128,6 +128,9 @@ docktabs { color: var(--text); background-end: var(--accent); padding: 0px 4px; 
 .grow { flex-grow: 1; }
 .buttons { justify-content: end; }
 .md-h1, .md-h2, .md-h3 { font-weight: bold; }
+lineedit, textedit, codeedit { cursor: text; }
+link { cursor: pointer; }
+*:disabled { cursor: not-allowed; }
 )css";
 }
 

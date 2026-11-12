@@ -2118,4 +2118,25 @@ void UiContext::snapshotA11y(std::vector<A11ySnapshotNode>& out) const {
     rec(rec, m_root.index, ~0u);
 }
 
+// ---- Mouse cursor --------------------------------------------------------------------------------------------------
+Cursor UiContext::cursorAt(NodeHandle n, Vec2 p) {
+    if (!node(n)) return Cursor::Arrow;
+    for (u32 a = n.index; a != kNone; a = m_nodes[a].parent) {
+        const WidgetClass& wc = m_registry.get(m_nodes[a].cls);
+        if (wc.cursor) {
+            const Cursor c = wc.cursor(*this, {a, m_nodes[a].gen}, p);
+            if (c != Cursor::Auto) return c;
+        }
+        const Cursor c = m_styles.style(m_nodes[a].style).cursor;
+        if (c != Cursor::Auto) return c;
+    }
+    return Cursor::Arrow;
+}
+Cursor UiContext::cursor() {
+    if (m_cursorOverride != Cursor::Auto) return m_cursorOverride;
+    if (node(m_scrollDrag.node)) return Cursor::Arrow;
+    if (node(m_pressed)) return cursorAt(m_pressed, m_pointer);
+    return cursorAt(m_hover, m_pointer);
+}
+
 } // namespace fuse::ui

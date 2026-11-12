@@ -11,7 +11,14 @@
 // back to headless until APP_CMD_INIT_WINDOW brings a new one; while the activity is paused the pump blocks, so a
 // backgrounded app renders nothing. Input: touch -> pointer (first finger), mouse buttons / hover / wheel, hardware
 // and soft keyboard keys (text through KeyEvent.getUnicodeChar over JNI), the Back key as Escape (unconsumed Back
-// goes to the system). The soft keyboard follows UiContext::wantsTextInput().
+// goes to the system). The soft keyboard follows UiContext::wantsTextInput(). Dead keys compose
+// (KeyCharacterMap.getDeadChar) and ACTION_MULTIPLE repeats of a real key code are typed; an IME that commits a string
+// (ACTION_MULTIPLE with KEYCODE_UNKNOWN, KeyEvent.getCharacters) cannot be read through the NDK input API and needs a
+// Java InputConnection, which this backend does not have.
+//
+// Platform services (plan §4.13): one fullscreen surface, so the window-management requests all answer "cannot"; the
+// window reports Fullscreen, focus and show / hide. System theme = Configuration night mode (the activity needs
+// android:configChanges="uiMode" to be told instead of restarted). No pointer-cursor API in the NDK (cursor() is Arrow).
 #include "native_internal.hpp"
 
 #include <android/asset_manager.h>
@@ -73,7 +80,8 @@ bool jniFailed(JNIEnv* env) {
     env->ExceptionClear();
     return true;
 }
-/// KeyEvent(action, code).getUnicodeChar(metaState): the character a key press types (0 = none, dead keys skipped).
+/// KeyEvent(action, code).getUnicodeChar(metaState): the character a key press types (0 = none). Bit 31
+/// (KeyCharacterMap.COMBINING_ACCENT) marks a dead key: the low bits are the accent to combine with the next character.
 u32 unicodeChar(int keyCode, int metaState) {
     JNIEnv* env = jniEnv();
     if (!env) return 0;
@@ -84,7 +92,7 @@ u32 unicodeChar(int keyCode, int metaState) {
         if (ctor && get) {
             if (jobject ev = env->NewObject(cls, ctor, jint(AKEY_EVENT_ACTION_DOWN), jint(keyCode))) {
                 const jint c = env->CallIntMethod(ev, get, jint(metaState));
-                if (c > 0 && !(u32(c) & 0x80000000u)) cp = u32(c); // bit 31 = COMBINING_ACCENT (dead key)
+                if (c != 0) cp = u32(c);
                 env->DeleteLocalRef(ev);
             }
         }
@@ -92,6 +100,21 @@ u32 unicodeChar(int keyCode, int metaState) {
     }
     jniFailed(env);
     return cp;
+}
+/// KeyCharacterMap.getDeadChar(accent, c): the composed character (0 = they do not combine).
+u32 deadChar(u32 accent, u32 c) {
+    JNIEnv* env = jniEnv();
+    if (!env) return 0;
+    u32 out = 0;
+    if (jclass cls = env->FindClass("android/view/KeyCharacterMap")) {
+        if (const jmethodID get = env->GetStaticMethodID(cls, "getDeadChar", "(II)I")) {
+            const jint r = env->CallStaticIntMethod(cls, get, jint(accent), jint(c));
+            if (r > 0) out = u32(r);
+        }
+        env->DeleteLocalRef(cls);
+    }
+    jniFailed(env);
+    return out;
 }
 /// (ClipboardManager) activity.getSystemService("clipboard"); null on failure. Local ref.
 jobject clipboardManager(JNIEnv* env) {
@@ -241,6 +264,16 @@ struct NativePlatform::Impl {
     f32 scale = 1.f;
     int physW = 0, physH = 0;
     bool resumed = true, keyboard = false, touching = false;
+    u32 deadKey = 0; ///< pending combining accent (hardware dead key)
+    SystemTheme queryTheme() const {
+        SystemTheme t;
+        const int32_t night = g_app && g_app->config ? AConfiguration_getUiModeNight(g_app->config) : 0;
+        t.scheme = night == ACONFIGURATION_UI_MODE_NIGHT_YES ? ColorScheme::Dark
+                   : night == ACONFIGURATION_UI_MODE_NIGHT_NO ? ColorScheme::Light : ColorScheme::Unknown;
+        return t;
+    }
+    /// One fullscreen surface: the system owns title, size, state and position.
+    static bool windowRequest(void*, AppWindow&, WindowRequest) { return false; }
     void (*prevCmd)(android_app*, int32_t) = nullptr;
     int32_t (*prevInput)(android_app*, AInputEvent*) = nullptr;
     void* prevUser = nullptr;
@@ -297,12 +330,15 @@ struct NativePlatform::Impl {
             if (!error.empty()) logError(error.c_str());
             measure(); // the CPU path needs an RGBA_8888 buffer format
         }
+        owner->win->notifyMode(WindowMode::Fullscreen);
+        owner->win->notifyVisible(true);
     }
-    void detach() {
+    void detach(bool notify = true) {
         if (owner) {
             detail::vkWinDestroy(owner->vk);
             owner->vk = nullptr;
             owner->kind = PresenterKind::Headless;
+            if (notify) owner->win->notifyVisible(false); // the surface went away (not: the record is being dropped)
         }
         window = nullptr;
     }
@@ -327,13 +363,20 @@ void NativePlatform::Impl::onCmd(android_app* a, int32_t cmd) {
     switch (cmd) {
     case APP_CMD_INIT_WINDOW: m.attach(); break;
     case APP_CMD_TERM_WINDOW: m.detach(); break;
+    case APP_CMD_CONFIG_CHANGED: // density, orientation, night mode ...
+        m.app.setSystemTheme(m.queryTheme());
+        m.measure();
+        break;
+    case APP_CMD_GAINED_FOCUS:
+        if (m.owner) m.owner->win->notifyActive(true);
+        break;
     case APP_CMD_WINDOW_RESIZED:
-    case APP_CMD_CONFIG_CHANGED:
     case APP_CMD_CONTENT_RECT_CHANGED:
     case APP_CMD_WINDOW_REDRAW_NEEDED: m.measure(); break;
     case APP_CMD_RESUME: m.resumed = true; if (m.owner) m.owner->win->requestRedraw(); break;
     case APP_CMD_PAUSE: m.resumed = false; break;
     case APP_CMD_LOST_FOCUS:
+        if (m.owner) m.owner->win->notifyActive(false);
         if (m.owner && m.touching) { // the gesture is gone with the focus
             m.touching = false;
             UiContext& ui = m.owner->win->ui();
@@ -416,15 +459,35 @@ int32_t NativePlatform::Impl::onInput(android_app* a, AInputEvent* ev) {
         const Key k = mapKey(code);
         const u8 md = mapMods(meta);
         bool used = false;
-        if (k != Key::Other) used = action == AKEY_EVENT_ACTION_DOWN ? ui.keyDown(k, md) : action == AKEY_EVENT_ACTION_UP ? ui.keyUp(k, md) : false;
-        if (action == AKEY_EVENT_ACTION_DOWN && !(md & (kModCtrl | kModAlt)) && k != Key::Enter && k != Key::Tab && k != Key::Escape &&
-            k != Key::Backspace && k != Key::Delete) {
-            if (const u32 cp = unicodeChar(code, meta); cp >= 0x20 && cp != 0x7F) {
+        // ACTION_MULTIPLE with a real key code = that key pressed getRepeatCount() times (soft keyboards, key repeat)
+        const bool multiple = action == AKEY_EVENT_ACTION_MULTIPLE && code != AKEYCODE_UNKNOWN;
+        const int presses = action == AKEY_EVENT_ACTION_DOWN ? 1 : multiple ? std::max(1, int(AKeyEvent_getRepeatCount(ev))) : 0;
+        const bool types = !(md & (kModCtrl | kModAlt)) && k != Key::Enter && k != Key::Tab && k != Key::Escape && k != Key::Backspace &&
+                           k != Key::Delete;
+        for (int i = 0; i < presses; ++i) {
+            if (k != Key::Other) {
+                const bool consumed = ui.keyDown(k, md);
+                used = consumed || (!consumed && w.menuShortcut(k, md)) || used; // unconsumed: a menu shortcut
+                if (multiple) ui.keyUp(k, md);
+            }
+            if (!types) continue;
+            u32 cp = unicodeChar(code, meta);
+            if (cp & 0x80000000u) { // a dead key: keep the accent for the next character
+                m.deadKey = cp & 0x7FFFFFFFu;
+                used = true;
+                continue;
+            }
+            if (cp >= 0x20 && cp != 0x7F) {
+                if (m.deadKey) { // compose; an accent that does not combine is dropped
+                    if (const u32 composed = deadChar(m.deadKey, cp)) cp = composed;
+                    m.deadKey = 0;
+                }
                 std::string s;
                 detail::appendUtf8(s, cp);
                 used = ui.textInput(s) || used;
             }
         }
+        if (action == AKEY_EVENT_ACTION_UP && k != Key::Other) used = ui.keyUp(k, md);
         w.requestRedraw();
         // an unconsumed Back leaves the activity the way the system expects
         return code == AKEYCODE_BACK ? (used ? 1 : 0) : 1;
@@ -457,9 +520,10 @@ void NativePlatform::Impl::destroy(void* user) {
     Rec* r = static_cast<Rec*>(user);
     Impl& m = *r->impl;
     if (r == m.owner) {
-        m.detach();
+        m.detach(false);
         m.owner = nullptr;
     }
+    if (r->win) r->win->setWindowBackend({});
     std::erase(m.recs, r);
     delete r;
 }
@@ -497,6 +561,7 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
     g_app->onAppCmd = &Impl::onCmd;
     g_app->onInputEvent = &Impl::onInput;
     app.setEventSource({m.get(), &Impl::pump});
+    app.setSystemTheme(m->queryTheme());
 }
 NativePlatform::~NativePlatform() {
     while (!m->recs.empty()) m->recs.back()->win->setPresenter({});
@@ -520,6 +585,7 @@ PresenterKind NativePlatform::show(AppWindow& w) {
     m->recs.push_back(r);
     w.ui().setClipboard({&clipboardSet, &clipboardGet, nullptr});
     w.setPresenter({r, &Impl::present, &Impl::destroy});
+    w.setWindowBackend({r, &Impl::windowRequest});
     if (!m->owner) {
         m->owner = r;
         // the surface usually arrives a little after start-up: wait for it so show() can report the presenter
@@ -587,6 +653,67 @@ bool NativePlatform::postClick(unsigned long long nativeWin, Vec2 at) {
     m->owner->win->click(at);
     return true;
 }
+
+// ---- platform services ----------------------------------------------------------------------------------------------
+Cursor NativePlatform::cursor(const AppWindow&) const { return Cursor::Arrow; } // no pointer-icon API in the NDK
+bool NativePlatform::setClipboardText(std::string_view utf8) { return g_app && clipboardSet(nullptr, utf8); }
+bool NativePlatform::clipboardText(std::string& out) { return g_app && clipboardGet(nullptr, out); }
+SystemTheme NativePlatform::systemTheme() {
+    m->app.setSystemTheme(m->queryTheme());
+    return m->app.systemTheme();
+}
+std::vector<DisplayInfo> NativePlatform::displays() const {
+    std::vector<DisplayInfo> out;
+    if (!m->window) return out; // the display is only known through the activity's window
+    const Rect all{0.f, 0.f, f32(m->physW), f32(m->physH)};
+    Rect work = all;
+    if (g_app) {
+        const ARect c = g_app->contentRect;
+        if (c.right > c.left && c.bottom > c.top) work = {f32(c.left), f32(c.top), f32(c.right - c.left), f32(c.bottom - c.top)};
+    }
+    out.push_back({"display", all, work, m->scale, 0.f /*refresh rate needs Java (Display.getRefreshRate)*/, true});
+    return out;
+}
+/// No system file dialog without Java (the Storage Access Framework is an Activity result): use the toolkit dialog.
+FileDialogStatus NativePlatform::fileDialog(const AppWindow*, const FileDialogOptions&, std::string& path) {
+    path.clear();
+    return FileDialogStatus::Unavailable;
+}
+/// startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))).
+bool openUrl(std::string_view url) {
+    JNIEnv* env = jniEnv();
+    if (!env || !g_app || !g_app->activity || url.empty()) return false;
+    bool done = false;
+    jclass uriC = env->FindClass("android/net/Uri");
+    jclass intentC = uriC ? env->FindClass("android/content/Intent") : nullptr;
+    if (uriC && intentC) {
+        const jobject activity = g_app->activity->clazz;
+        jclass ac = env->GetObjectClass(activity);
+        const jmethodID parse = env->GetStaticMethodID(uriC, "parse", "(Ljava/lang/String;)Landroid/net/Uri;");
+        const jmethodID ctor = parse ? env->GetMethodID(intentC, "<init>", "(Ljava/lang/String;Landroid/net/Uri;)V") : nullptr;
+        const jmethodID start = ctor ? env->GetMethodID(ac, "startActivity", "(Landroid/content/Intent;)V") : nullptr;
+        if (start) {
+            jstring js = env->NewStringUTF(std::string(url).c_str());
+            jstring action = env->NewStringUTF("android.intent.action.VIEW");
+            jobject uri = env->CallStaticObjectMethod(uriC, parse, js);
+            if (uri && !env->ExceptionCheck()) {
+                if (jobject intent = env->NewObject(intentC, ctor, action, uri)) {
+                    env->CallVoidMethod(activity, start, intent); // ActivityNotFoundException: nothing handles the URL
+                    done = !env->ExceptionCheck();
+                    env->DeleteLocalRef(intent);
+                }
+            }
+            if (uri) env->DeleteLocalRef(uri);
+            env->DeleteLocalRef(action);
+            env->DeleteLocalRef(js);
+        }
+        env->DeleteLocalRef(ac);
+    }
+    if (intentC) env->DeleteLocalRef(intentC);
+    if (uriC) env->DeleteLocalRef(uriC);
+    return !jniFailed(env) && done;
+}
+bool revealFile(std::string_view) { return false; } // no file manager contract on Android
 
 namespace detail {
 /// android_main body: runs the app's main on the glue thread, then finishes the activity and drains the looper

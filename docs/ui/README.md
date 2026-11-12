@@ -250,6 +250,68 @@ Things that differ on these platforms:
 
 These backends are compiled in CI (`fuse-core-android.yml`, `fuse-core-ios.yml`) and have not been run on a device.
 
+### Platform services (plan §4.13)
+
+One platform-neutral API (`fuse/app/services.hpp`, on `AppWindow` / `NativePlatform`), one implementation per
+backend, and an honest `false` / no-op where a platform cannot do it. Everything on `AppWindow` also works headless
+(the window is then its own window system), which is what the gates drive.
+
+```cpp
+fuse::app::NativePlatform native(app);            // scale 0 = the display's (see below)
+auto& w = app.createWindow({.title = "Editor"});
+w.setMinimumSize({480, 320});
+w.setEventHandler({&state, [](void* u, fuse::app::AppWindow& w, const fuse::app::WindowEvent& e) { /* FocusLost, Moved ... */ }});
+w.setCloseGuard({&state, [](void* u, fuse::app::AppWindow&) { return !static_cast<State*>(u)->unsaved; }});
+w.setFollowSystemTheme(true);                     // light / dark + accent, now and on change
+w.setMenu(menuDesc, {&state, &onMenu});           // macOS: the menu bar; elsewhere: an in-window widgets::menuBar
+native.show(w);
+w.setFullscreen(true);  w.maximize();  w.minimize();  w.restore();  w.setPosition({100, 80});  w.activate();
+native.openFileDialog(w, {.title = "Open", .filter = "*.fuseui"}, {&state, &onPath}); // native, else widgets::fileDialog
+fuse::app::openUrl("https://example.org");
+```
+
+- **Mouse cursors.** A node asks for a cursor with the `cursor` style property (`auto | default | text | pointer |
+  ew-resize | col-resize | ns-resize | row-resize | nwse-resize | nesw-resize | move | crosshair | not-allowed | wait |
+  none`; `fuse::ui::Cursor`). It is not inherited: `UiContext::cursor()` walks up from the pressed node (a drag keeps
+  its cursor) or the hovered one and takes the first `WidgetClass::cursor(ui, node, pos)` hook or `cursor` style that
+  is not `auto`. The default theme sets `text` on line / text / code edits, `pointer` on links and `not-allowed` on
+  anything `:disabled`; splitter handles, header section edges and table column edges answer through the hook.
+  `setCursorOverride(Cursor::Wait)` is the busy cursor. The backends apply it after each event pump: X11 (themed
+  cursors through an optional `libXcursor`, else the core cursor font), Win32 (`WM_SETCURSOR`), macOS (`NSCursor`);
+  iOS / Android have none.
+- **Clipboard.** `show()` installs the system clipboard as the window's `ClipboardHooks`; also
+  `NativePlatform::setClipboardText / clipboardText`. X11: the `CLIPBOARD` selection as `UTF8_STRING` (no INCR, and no
+  clipboard-manager hand-over when the app exits); Win32: `CF_UNICODETEXT`.
+- **HiDPI.** `NativeOptions::scale`: 0 = the display's scale, 1 = physical pixels, anything else forces it. X11:
+  `$FUSE_UI_SCALE`, else `Xft.dpi / 96`, else `$GDK_SCALE`, else 1 (one scale for the connection). Win32: per-monitor
+  DPI awareness, `GetDpiForWindow`, `WM_DPICHANGED`. The OS window is logical size x scale pixels, the frame is
+  rendered at that size (`AppWindow::resizePixels`), pointer positions are divided by the scale and OS popup windows
+  use it. `NativePlatform::postClick` and `screenOrigin` stay in window / screen pixels.
+- **Window management** is on `AppWindow`: `setTitle`, `setMinimumSize / setMaximumSize`, `setMode` (`maximize`,
+  `minimize`, `restore`, `setFullscreen`), `setVisible`, `setPosition`, `activate`, the queries `mode()`, `visible()`,
+  `position()`, `active()`, and `WindowEvent`s (focus gained / lost, moved, mode changed, shown / hidden, close
+  requested / vetoed, theme changed, scale changed). `tryClose()` is the user's close and asks the close guard;
+  `requestClose()` stays unconditional. X11: maximise / fullscreen / minimise / activate are EWMH requests, so without
+  a window manager the mode stays as it is. iOS / Android: one fullscreen surface, every request answers "cannot".
+- **System theme and displays.** `Application::systemTheme()` holds the light / dark preference and accent the backend
+  reports (`NativePlatform::systemTheme()` queries now). Win32: registry + change messages; macOS: effective
+  appearance + accent, with notification; iOS: trait collection; Android: night mode (the activity needs
+  `android:configChanges="uiMode"`); X11: `$GTK_THEME`, else `gsettings` once, else Unknown, and no change
+  notification. `AppWindow::applyTheme` / `setFollowSystemTheme` re-colour the default theme by adding a token sheet
+  (`themeTokensCss`). `NativePlatform::displays()` lists bounds, work area, scale and refresh rate where known.
+- **File dialogs.** `NativePlatform::fileDialog` is the modal native one: Win32 `GetOpenFileNameW` /
+  `GetSaveFileNameW` / `SHBrowseForFolderW`, macOS `NSOpenPanel` / `NSSavePanel`, Linux / BSD `zenity` or `kdialog`
+  when installed; otherwise `Unavailable`. `openFileDialog` tries it and falls back to `widgets::fileDialog`.
+- **Menus.** `MenuDesc` (titles, items, shortcuts, submenus, separators, enabled, checkable / checked) builds an
+  `NSMenu` tree on macOS and the in-window `widgets::menuBar` elsewhere; activation calls the `MenuHandler` with the
+  item id either way, and `AppWindow::menuShortcut` handles shortcuts the UI did not consume. The in-window bar shows
+  checkable items as `[x]` / `[ ]` and does not grey out disabled items (they do not fire).
+- **Shell.** `openUrl` (xdg-open / `ShellExecuteW` / `NSWorkspace` / `UIApplication` / an `ACTION_VIEW` Intent) and
+  `revealFile` (Explorer / Finder select the file; Linux / BSD open its folder; false on mobile).
+- Without Vulkan an X11 window now shows the CPU raster (`XPutImage`, `PresenterKind::Software`).
+
+The macOS / iOS parts are compiled in CI only; the Win32 parts are cross-compiled with MinGW and have not been run.
+
 ## Game UI (UI7)
 
 ```cpp
@@ -302,7 +364,7 @@ are deferred). Inline (`setCss`) beats everything; later sheets win ties. Layout
 (visible/clip/scroll), `display`, `pointer-events`. Paint: `background` (colour or `linear-gradient`),
 `background-end` (gradient end; widgets use it as the accent), `border`, `border-width/color`, `border-*-radius`,
 `box-shadow`, `shadow-x/y/blur/color`, `opacity`, `color`, `font-size`, `text-align`. Selectors also accept
-`:active`, `:selected`.
+`:active`, `:selected`. `cursor` (see Platform services) is the mouse cursor a node asks for.
 
 ### Fonts, text styles and i18n
 
@@ -376,6 +438,8 @@ checks it against the overlay under one scripted event stream.
 
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
 | `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster (skips 77 without a display or device) |
+| `fuse_app_cursor_resolution`, `fuse_app_menu_description`, `fuse_app_dpi_scale`, `fuse_app_theme_restyle`, `fuse_app_window_state`, `fuse_app_file_dialog_fallback` | platform services, headless: cursor from styles / hooks / hover / drag, `MenuDesc` -> in-window menu bar, scale detection maths and pixel mapping, theme change -> restyle, window state API + events + close guard, toolkit file-dialog fallback and helper command lines |
+| `fuse_app_native_services` | the same on real X11 windows under Xvfb: scale-2 window and popup vs the CPU raster, clicks in window pixels, applied cursors, CLIPBOARD between two connections, position / show / hide / focus / size limits, displays, `zenity` / `xdg-open` helpers (skips 77 without a display) |
 | `fuse_ui_game_hud_golden` | HUD demo scene against `tests/golden/hud.png` plus trail / marker / pool state |
 | `fuse_ui_gamepad_nav` | navigation with delay + repeat, A / B, radial menu by stick, prompt glyph swap, focus sounds |
 | `fuse_ui_world_panel_raycast` | ray → panel pixel mapping, misses and back faces, ray clicks, idle surface does not re-render |

@@ -75,6 +75,7 @@ constexpr PropInfo kProps[] = {
     {Prop::TextDecoration, "text-decoration", T::Enum, false, false, false},
     {Prop::LetterSpacing, "letter-spacing", T::Length, true, true, true},
     {Prop::LineHeight, "line-height", T::Length, true, false, true},
+    {Prop::Cursor, "cursor", T::Enum, false, false, false},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -109,6 +110,14 @@ constexpr EnumWord kEnums[] = {
     {Prop::TextAlign, "center", u8(TextAlignment::Center)}, {Prop::TextAlign, "right", u8(TextAlignment::End)},
     {Prop::TextAlign, "end", u8(TextAlignment::End)},
     {Prop::FontStyle, "normal", 0}, {Prop::FontStyle, "italic", 1}, {Prop::FontStyle, "oblique", 1},
+    {Prop::Cursor, "auto", u8(Cursor::Auto)},         {Prop::Cursor, "default", u8(Cursor::Arrow)},
+    {Prop::Cursor, "text", u8(Cursor::IBeam)},        {Prop::Cursor, "pointer", u8(Cursor::PointingHand)},
+    {Prop::Cursor, "ew-resize", u8(Cursor::ResizeH)}, {Prop::Cursor, "col-resize", u8(Cursor::ResizeH)},
+    {Prop::Cursor, "ns-resize", u8(Cursor::ResizeV)}, {Prop::Cursor, "row-resize", u8(Cursor::ResizeV)},
+    {Prop::Cursor, "nwse-resize", u8(Cursor::ResizeNWSE)}, {Prop::Cursor, "nesw-resize", u8(Cursor::ResizeNESW)},
+    {Prop::Cursor, "move", u8(Cursor::Move)},         {Prop::Cursor, "crosshair", u8(Cursor::Crosshair)},
+    {Prop::Cursor, "not-allowed", u8(Cursor::NotAllowed)}, {Prop::Cursor, "wait", u8(Cursor::Wait)},
+    {Prop::Cursor, "none", u8(Cursor::Hidden)},
 };
 
 std::string_view trim(std::string_view s) {
@@ -364,6 +373,7 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::TextDecoration: s.textDecoration = v.e; break;
     case Prop::LetterSpacing: s.letterSpacing = v.len.value; break;
     case Prop::LineHeight: s.lineHeight = v.len; break;
+    case Prop::Cursor: s.cursor = fuse::ui::Cursor(v.e < kCursorCount ? v.e : 0); break;
     case Prop::Count: break;
     }
 }
@@ -395,11 +405,18 @@ PropValue readProp(const ComputedStyle& s, Prop p) {
             if (h) v.tracks[v.trackCount++] = Length::px(f32(h));
         return v;
     }
+    case Prop::Cursor: return PropValue::ofEnum(u8(s.cursor));
     default: break;
     }
     PropValue v;
     v.type = propInfo(p).type;
     return v;
+}
+
+std::string_view cursorCssName(Cursor c) {
+    static constexpr std::string_view kNames[kCursorCount] = {"auto", "default", "text", "pointer", "ew-resize", "ns-resize", "nwse-resize",
+                                                              "nesw-resize", "move", "crosshair", "not-allowed", "wait", "none"};
+    return kNames[u8(c) < kCursorCount ? u8(c) : 0];
 }
 
 void inheritFrom(ComputedStyle& s, const ComputedStyle& parent) {
@@ -416,7 +433,7 @@ void inheritFrom(ComputedStyle& s, const ComputedStyle& parent) {
 // ---- Parser --------------------------------------------------------------------------------------------------------
 namespace {
 
-struct Cursor {
+struct ParseCursor {
     std::string_view s;
     std::size_t i = 0;
     u32 line = 1;
@@ -600,7 +617,7 @@ void addShorthand(StyleRule& rule, std::string_view name, std::string_view value
 
 std::expected<StyleSheet, StyleDiagnostic> StyleSheet::parse(std::string_view css, std::vector<StyleDiagnostic>* diags) {
     StyleSheet sheet;
-    Cursor c{css};
+    ParseCursor c{css};
     u32 order = 0;
     for (;;) {
         c.skipWs();
