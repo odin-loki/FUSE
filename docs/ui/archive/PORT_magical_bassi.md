@@ -374,10 +374,19 @@ since base as well, so the shell may also need adapting to main-side API changes
 
 ## 6. Not verified by the merge
 
-- The full engine was configured in tree (`cmake -S . -DFUSE_BUILD_CORE=ON`, with and without
-  `FUSE_BUILD_CORE_TESTS`; no Vulkan loader on the machine, so `fuse_ui_vk` and the Vulkan RHI were skipped) and
-  generated without error. See the merge commit message and the hand-over report for how much of it was compiled.
-  The branch's Renderer / Remaster / Tools gates were not run on main.
+- The full engine was configured and built in tree on Linux without a Vulkan loader (`cmake -S . -DFUSE_BUILD_CORE=ON
+  -DFUSE_BUILD_CORE_TESTS=ON -DFUSE_WARNINGS_AS_ERRORS=ON`, GCC 13.3; `fuse_ui_vk`, the Vulkan RHI paths, Qt and CUDA
+  targets were not configured). Everything compiled and linked after two fixes to branch code that only showed
+  without the Vulkan backend (`renderer/vk/raster_path.hpp`: `colorImageLayout()` used a member declared under
+  `FUSE_VULKAN_BACKEND`; `skinning_gpu.cpp`: helpers unused without it), except two files of main's own UI that GCC
+  13 rejects under `-Werror` and the merge did not touch: `U/Widgets/src/widgets.cpp:535` (`-Wdangling-reference`,
+  suppressed for the check) and `U/tests/test_modelview.cpp:51` (`-Wmismatched-new-delete`; the `fuse_ui_modelview`
+  executable and its 12 `fuse_ui_mv_*` gates were therefore not built in that tree; they pass in the standalone
+  build, which has no `-Werror`).
+- The in-tree ctest run was cut short at test 967 of 1322 when the disk filled up: 914 passed, 36 skipped;
+  `fuse_b5_rhi_spirv_val`, `fuse_package_gate`, `fuse_core_io_lane` and `fuse_b7_streaming_gates` failed and were
+  not diagnosed (the last three ran while the disk was full). The remaining 355 tests did not run. Treat the
+  branch's Renderer / Remaster / Tools gates as not verified on main.
 - Apple: no `.mm` file was added or changed. `U/L10n` and the `StringTable` / calendar changes are new code in the
   macOS and iOS builds and were not compiled for Apple.
 - Windows: not compiled here. In tree, `cmake/FuseWarnings.cmake` gives every target `/utf-8`, which the L10n

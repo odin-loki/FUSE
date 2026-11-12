@@ -4,6 +4,11 @@ Status as of 2026-11-12, branch `ccr-111d9b83-2iujo8`. This lists what is missin
 nobody mistakes "compiles in CI" for "works on a device". Phase-by-phase detail is in
 [`../plans/FUSE_UI_PLAN.md`](../plans/FUSE_UI_PLAN.md) §9; usage is in [`README.md`](README.md).
 
+Several gaps below (cooked / MSDF / variable fonts, Wayland, the icon cooker, GPU blur, damage present, custom
+shaders, `ProjectHost`) have an implementation in the tree that no target builds yet: the UI code of the merged
+branch `claude/magical-bassi-815825`. They stay gaps until ported; [`archive/PORT_magical_bassi.md`](archive/PORT_magical_bassi.md)
+says where each one is and what blocks it.
+
 ## What has been verified
 
 | Platform | How | Result |
@@ -89,8 +94,10 @@ pushed after those CI runs and re-checked on Linux only.
 - Variable-font axes (default instance only), CFF2.
 - Fallback-chain faces (other scripts, emoji) are not restyled under bold / italic.
 - `letter-spacing` / `line-height` are ignored by the text edit widgets; no `font` shorthand.
-- i18n: no date or currency formatting, no native digit sets, no string-extraction CLI; plural tables are
-  hand-written, not generated from CLDR.
+- i18n: dates, times, currencies and the string-extraction CLI exist since the `claude/magical-bassi-815825` merge
+  (`fuse_ui_l10n_lib`, `fuse_ui_extract_strings`, gate `fuse_ui_l10n`). Still missing: native digit sets, date
+  skeletons, accounting formats; plural tables are hand-written, not generated from CLDR, and exist twice
+  (`fuse/text/i18n.hpp` and `fuse_ui_l10n_lib`).
 - Bold / italic frames have no zero-allocation gate.
 - The glyph atlas is fixed at 1024x1024; very large text at scale 3 or more can overflow it.
 

@@ -23,9 +23,9 @@ constexpr u64 kOutStride = 48u;    ///< current + previous position + normal
 constexpr u64 kMatrixBytes = 64u;
 constexpr u64 kAlign = 256u;
 
-u64 alignUp(u64 v, u64 a) { return (v + a - 1u) & ~(a - 1u); }
+[[maybe_unused]] u64 alignUp(u64 v, u64 a) { return (v + a - 1u) & ~(a - 1u); }
 
-BufferUsage usage(std::initializer_list<BufferUsage> bits) {
+[[maybe_unused]] BufferUsage usage(std::initializer_list<BufferUsage> bits) {
     u32 u = 0;
     for (const BufferUsage b : bits) {
         u |= static_cast<u32>(b);
@@ -39,7 +39,7 @@ struct Code {
     const char* language = "none";
 };
 
-Code kernelCode(SkinningKernelLanguage language) {
+[[maybe_unused]] Code kernelCode(SkinningKernelLanguage language) {
 #if defined(FUSE_SKINNING_SLANG)
     if (language == SkinningKernelLanguage::Auto || language == SkinningKernelLanguage::Slang) {
         return Code{kSkinLbsSlangSpv, sizeof(kSkinLbsSlangSpv), "slang"};

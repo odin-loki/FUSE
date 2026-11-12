@@ -60,7 +60,11 @@ public:
     void* barrierImageHandle() const;
     /// VkImageLayout the offscreen color image is in after the last recorded frame (a caller that copies it, e.g. a
     /// present blit, transitions it back to this layout).
+#if defined(FUSE_VULKAN_BACKEND)
     u32 colorImageLayout() const { return m_colorLayout; }
+#else
+    u32 colorImageLayout() const { return 0; } // VK_IMAGE_LAYOUT_UNDEFINED: no image without the Vulkan backend
+#endif
 
     /// Offscreen D32_SFLOAT depth image; null if not ready.
     void* depthImageHandle() const;
