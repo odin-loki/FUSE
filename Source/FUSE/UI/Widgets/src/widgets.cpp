@@ -1,4 +1,5 @@
 #include "fuse/ui/widgets/widgets.hpp"
+#include "fuse/ui/widgets/platform_feel.hpp"
 #include "widgets_internal.hpp"
 
 #include <algorithm>
@@ -521,6 +522,7 @@ void install(UiContext& ui) {
     registerTierD2(ui);
     registerTierB3(ui);
     registerSvgWidgets(ui);
+    registerPlatformFeel(ui); // kineticscroll
     (void)ui.addStyleSheet(defaultThemeCss());
 }
 
@@ -534,6 +536,7 @@ u32 installClasses(UiContext& ui, std::span<const std::string_view> classes, boo
         registerTierD2(scratch);
         registerTierB3(scratch);
         registerSvgWidgets(scratch);
+        registerPlatformFeel(scratch); // kineticscroll (not part of install(): its factory registers it on first use)
         return scratch.registry();
     }();
     u32 unknown = 0;

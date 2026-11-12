@@ -27,3 +27,16 @@ if(TARGET fuse_ui_a11y)
         set_tests_properties(fuse_ui_a11y_family_${g} PROPERTIES LABELS "fuse_ui;gate")
     endforeach()
 endif()
+
+# Documents: every catalogue widget by class name (document classes), compound widgets on hot reload, and the
+# cooker's registration list for them. The catalogue document is the widget_gallery sample's.
+if(TARGET fuse_ui_doc)
+    fuse_ui_test(fuse_ui_doc_catalogue test_doc_classes.cpp)
+    target_link_libraries(fuse_ui_doc_catalogue PRIVATE fuse_ui_doc)
+    target_compile_definitions(fuse_ui_doc_catalogue PRIVATE
+        FUSE_UI_GALLERY_DOC="${CMAKE_CURRENT_SOURCE_DIR}/../App/samples/ui/gallery.fuseui")
+    foreach(g all_classes every_class compound_reload cooked_catalogue merged_classes)
+        add_test(NAME fuse_ui_doc_${g} COMMAND fuse_ui_doc_catalogue --gate=${g})
+        set_tests_properties(fuse_ui_doc_${g} PROPERTIES LABELS "fuse_ui;gate")
+    endforeach()
+endif()
