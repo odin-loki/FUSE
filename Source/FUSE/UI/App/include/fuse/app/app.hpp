@@ -63,7 +63,8 @@ public:
     void set(std::string_view key, double value);
     void remove(std::string_view key);
     u32 size() const { return u32(m_items.size()); }
-    /// Platform config directory for an app: $XDG_CONFIG_HOME/<app> (~/.config/<app>), %APPDATA%\<app>.
+    /// Platform config directory for an app: <dataRoot()>/<app> when a data root is set (mobile), else
+    /// $XDG_CONFIG_HOME/<app> (~/.config/<app>), ~/Library/Application Support/<app> (macOS), %APPDATA%\<app>.
     static std::string defaultDir(std::string_view app);
 
 private:
@@ -232,6 +233,22 @@ private:
     int m_exit = 0;
     bool m_quit = false, m_primary = true;
 };
+
+/// Per-user data root for platforms without XDG / %APPDATA% conventions (Android: the activity's internal data path;
+/// iOS: <sandbox>/Library/Application Support). The mobile backends set it before the user's main runs; when set,
+/// Settings::defaultDir(app) is <root>/<app> and the single-instance lock lives under it. Empty = desktop defaults.
+void setDataRoot(std::string path);
+const std::string& dataRoot();
+
+/// Reads app resources that are not plain files (Android APK assets, an iOS / macOS bundle's Resources).
+/// AppWindow::load() tries the file system first, then this. Mobile backends install it before main runs.
+struct ResourceReader {
+    void* user = nullptr;
+    bool (*read)(void* user, std::string_view path, std::string& out) = nullptr;
+};
+void setResourceReader(const ResourceReader& reader);
+/// File system first, then the ResourceReader. False when neither has `path`.
+bool readResource(std::string_view path, std::string& out);
 
 /// Writes an RGBA8 image as PNG.
 bool writePng(const fuse::ui::Image& image, const std::string& path);

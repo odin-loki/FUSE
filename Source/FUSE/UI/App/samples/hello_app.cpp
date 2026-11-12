@@ -11,6 +11,8 @@
 #define FUSE_APP_SAMPLE_UI_DIR "ui"
 #endif
 
+#include "fuse/app/main.hpp" // Android / iOS: this main runs under the platform entry point
+
 int main(int argc, char** argv) {
     fuse::app::Application app{{.name = "hello_app", .argc = argc, .argv = argv, .loadSettings = false}};
     auto& window = app.createWindow({.title = "Hello", .width = 360, .height = 220});

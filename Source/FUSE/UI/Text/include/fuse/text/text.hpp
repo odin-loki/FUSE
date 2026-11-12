@@ -61,6 +61,16 @@ struct ColorLayer {
     bool foreground = false;
 };
 
+/// Where the bundled fonts come from on platforms without a build-tree font directory (Android assets, an iOS /
+/// macOS app bundle): `read` fills `out` with the bytes of `name` ("opensans/OpenSans.ttf", "noto/...") and returns
+/// true. Font::bundled() / bundledFallbacks() ask the source first, then the build's font directory, then (default
+/// face only) the copy embedded with FUSE_TEXT_EMBED_FONT. Set it before the first font is loaded.
+struct FontDataSource {
+    void* user = nullptr;
+    bool (*read)(void* user, std::string_view name, std::vector<std::uint8_t>& out) = nullptr;
+};
+void setFontDataSource(const FontDataSource& source);
+
 class ITextShaper;
 struct TextLayoutDesc;
 struct TextLayout;
@@ -71,7 +81,8 @@ class Font {
 public:
     static std::expected<Font, TextError> fromBytes(std::span<const std::uint8_t> bytes);
     static std::expected<Font, TextError> fromFile(const std::string& path);
-    /// FUSE's bundled UI font (vendor/fonts/opensans) when the build knows its path; InvalidFont otherwise.
+    /// FUSE's bundled UI font (vendor/fonts/opensans): from the FontDataSource, the build's font path or the embedded
+    /// copy (FUSE_TEXT_EMBED_FONT, the default on Android / iOS); InvalidFont when none has it.
     static std::expected<Font, TextError> bundled();
     /// FUSE's bundled fallback faces in chain order: Noto Sans Hebrew, Arabic, Devanagari, Symbols 2 and Twemoji
     /// (COLRv0 colour emoji). Fonts whose files are missing are skipped. Attach them with setFallbacks().

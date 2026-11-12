@@ -30,76 +30,8 @@ namespace fuse::app {
 using namespace fuse::ui;
 using detail::SurfaceSource;
 
-#if !defined(FUSE_APP_HAS_VULKAN)
-// Built without a Vulkan loader: no swapchain presenter.
-namespace detail {
-struct VkCtx {};
-struct VkWin {};
-VkCtx* vkCtxCreate(SurfaceSource::Kind, std::string& err) { err = "built without Vulkan"; return nullptr; }
-VkCtx* vkCtxAdopt(SurfaceSource::Kind, const VulkanDeviceHandles&, std::string& err) { err = "built without Vulkan"; return nullptr; }
-void vkCtxDestroy(VkCtx*) {}
-bool vkWinSetExternal(VkWin*, unsigned, const ExternalTexture&) { return false; }
-const char* vkCtxDeviceName(const VkCtx*) { return ""; }
-VkWin* vkWinCreate(VkCtx*, const SurfaceSource&, const NativeOptions&, std::string&) { return nullptr; }
-bool vkWinPresent(VkWin*, AppWindow&, Rect) { return false; }
-bool vkWinGpuDraws(const VkWin*) { return false; }
-void vkWinDestroy(VkWin*) {}
-bool vkWinReadback(VkWin*, Image&) { return false; }
-} // namespace detail
-#endif
-
-namespace {
-u8 asciiKey(Key& k, u32 c) {
-    switch (c) {
-    case 'a': case 'A': k = Key::A; return 1;
-    case 'c': case 'C': k = Key::C; return 1;
-    case 'v': case 'V': k = Key::V; return 1;
-    case 'x': case 'X': k = Key::X; return 1;
-    case 'y': case 'Y': k = Key::Y; return 1;
-    case 'z': case 'Z': k = Key::Z; return 1;
-    case 'w': case 'W': k = Key::W; return 1;
-    case 's': case 'S': k = Key::S; return 1;
-    case 'd': case 'D': k = Key::D; return 1;
-    case 'q': case 'Q': k = Key::Q; return 1;
-    case 'e': case 'E': k = Key::E; return 1;
-    case 'n': case 'N': k = Key::N; return 1;
-    case 'o': case 'O': k = Key::O; return 1;
-    case ' ': k = Key::Space; return 1;
-    case '1': k = Key::Num1; return 1;
-    case '2': k = Key::Num2; return 1;
-    case '3': k = Key::Num3; return 1;
-    case '4': k = Key::Num4; return 1;
-    case 'b': case 'B': k = Key::B; return 1;
-    case 'f': case 'F': k = Key::F; return 1;
-    case 'g': case 'G': k = Key::G; return 1;
-    case 'h': case 'H': k = Key::H; return 1;
-    case 'i': case 'I': k = Key::I; return 1;
-    case 'j': case 'J': k = Key::J; return 1;
-    case 'k': case 'K': k = Key::K; return 1;
-    case 'l': case 'L': k = Key::L; return 1;
-    case 'm': case 'M': k = Key::M; return 1;
-    case 'p': case 'P': k = Key::P; return 1;
-    case 'r': case 'R': k = Key::R; return 1;
-    case 't': case 'T': k = Key::T; return 1;
-    case 'u': case 'U': k = Key::U; return 1;
-    case '0': k = Key::Num0; return 1;
-    case '5': k = Key::Num5; return 1;
-    case '6': k = Key::Num6; return 1;
-    case '7': k = Key::Num7; return 1;
-    case '8': k = Key::Num8; return 1;
-    case '9': k = Key::Num9; return 1;
-    case '[': k = Key::BracketLeft; return 1;
-    case ']': k = Key::BracketRight; return 1;
-    default: return 0;
-    }
-}
-void appendUtf8(std::string& s, u32 cp) {
-    if (cp < 0x80) s += char(cp);
-    else if (cp < 0x800) { s += char(0xC0 | (cp >> 6)); s += char(0x80 | (cp & 0x3F)); }
-    else if (cp < 0x10000) { s += char(0xE0 | (cp >> 12)); s += char(0x80 | ((cp >> 6) & 0x3F)); s += char(0x80 | (cp & 0x3F)); }
-    else { s += char(0xF0 | (cp >> 18)); s += char(0x80 | ((cp >> 12) & 0x3F)); s += char(0x80 | ((cp >> 6) & 0x3F)); s += char(0x80 | (cp & 0x3F)); }
-}
-} // namespace
+using detail::appendUtf8;
+using detail::asciiKey;
 
 #if !defined(_WIN32)
 // ---- X11 (runtime-loaded) ----------------------------------------------------------------------------------------
@@ -1095,6 +1027,11 @@ Vec2 NativePlatform::screenOrigin(const AppWindow& w) const {
     if (!r || !r->handle || !m->screenInfo(*r, ox, oy, work)) return {};
     return {f32(ox), f32(oy)};
 }
+Rect NativePlatform::safeArea(const AppWindow& w) const {
+    const Size s = w.size();
+    return {0.f, 0.f, s.w, s.h};
+}
+float NativePlatform::scale(const AppWindow&) const { return 1.f; }
 bool NativePlatform::postClick(unsigned long long nativeWin, Vec2 at) { return nativeWin && m->postClickOs(nativeWin, at); }
 unsigned long long NativePlatform::nativeWindow(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);

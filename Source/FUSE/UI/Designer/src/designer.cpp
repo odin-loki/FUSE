@@ -1,4 +1,5 @@
 #include "fuse/ui/designer/designer.hpp"
+#include "fuse/text/from_chars.hpp"
 
 #include "fuse/ui/widgets/widgets.hpp"
 
@@ -544,7 +545,7 @@ JsonValue parseValue(std::string_view key, std::string_view text) {
     }
     if (key != "id" && key != "text") {
         double d = 0.0;
-        const auto r = std::from_chars(text.data(), text.data() + text.size(), d);
+        const auto r = fuse::text::fromChars(text.data(), text.data() + text.size(), d);
         if (r.ec == std::errc{} && r.ptr == text.data() + text.size()) return num(d);
     }
     return str(text);

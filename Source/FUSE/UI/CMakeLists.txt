@@ -5,7 +5,7 @@
 # toolkit can be built and tested without the engine.
 cmake_minimum_required(VERSION 3.21)
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    project(FUSE_UI LANGUAGES CXX)
+    project(FUSE_UI LANGUAGES C CXX)
     set(CMAKE_CXX_STANDARD 23)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
     set(CMAKE_CXX_EXTENSIONS OFF)
@@ -35,6 +35,27 @@ target_compile_definitions(fuse_text PRIVATE
     FUSE_TEXT_BUNDLED_FONT="${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf"
     FUSE_TEXT_FONT_DIR="${FUSE_UI_REPO_ROOT}/vendor/fonts")
 target_compile_features(fuse_text PUBLIC cxx_std_23)
+# Android / iOS apps have no build-tree font directory at run time: embed the default UI face in the binary
+# (fallback faces come from APK assets / the app bundle through fuse::text::setFontDataSource).
+if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(_fuse_embed_font_default ON)
+else()
+    set(_fuse_embed_font_default OFF)
+endif()
+option(FUSE_TEXT_EMBED_FONT "Embed the bundled Open Sans face in fuse_text (default on Android / iOS)" ${_fuse_embed_font_default})
+if(FUSE_TEXT_EMBED_FONT)
+    set(_font_gen "${CMAKE_CURRENT_BINARY_DIR}/text_gen")
+    file(MAKE_DIRECTORY "${_font_gen}")
+    add_custom_command(OUTPUT "${_font_gen}/fuse_embedded_font.h"
+        COMMAND "${CMAKE_COMMAND}" -DIN=${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf
+                -DOUT=${_font_gen}/fuse_embedded_font.h -DNAME=kFuseEmbeddedFont
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/Text/cmake/embed_bin.cmake"
+        DEPENDS "${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf" "${CMAKE_CURRENT_SOURCE_DIR}/Text/cmake/embed_bin.cmake"
+        COMMENT "Embedding OpenSans.ttf" VERBATIM)
+    target_sources(fuse_text PRIVATE "${_font_gen}/fuse_embedded_font.h")
+    target_include_directories(fuse_text PRIVATE "${_font_gen}")
+    target_compile_definitions(fuse_text PRIVATE FUSE_TEXT_EMBEDDED_FONT=1)
+endif()
 
 # FULL profile (decision D2): HarfBuzz + FreeType through FetchContent (static, no optional deps), SheenBidi (UAX #9)
 # and libunibreak (UAX #14) fetched and compiled from their C sources.
@@ -271,8 +292,8 @@ if(FUSE_BUILD_UI_APP AND TARGET fuse_ui_doc)
     add_subdirectory(App)
 endif()
 if(TARGET fuse_ui_designer_lib AND TARGET fuse_app_native)
-    add_executable(fuse_ui_designer Designer/app/designer_main.cpp)
-    target_link_libraries(fuse_ui_designer PRIVATE fuse_ui_designer_lib fuse_app_native)
+    fuse_app_add_executable(fuse_ui_designer Designer/app/designer_main.cpp)
+    target_link_libraries(fuse_ui_designer PRIVATE fuse_ui_designer_lib)
 endif()
 
 # ---- fuse_ui_game: game UI (UI7) — HUD widgets, world markers / panels, gamepad nav, input arbitration ----
@@ -291,8 +312,13 @@ if(FUSE_BUILD_UI_GAME AND FUSE_BUILD_UI_WIDGETS)
     endif()
     if(TARGET fuse_app)
         foreach(s hud_demo world_panel_demo)
-            add_executable(${s} Game/samples/${s}.cpp)
-            target_link_libraries(${s} PRIVATE fuse_ui_game fuse_app)
+            if(TARGET fuse_app_native)
+                fuse_app_add_executable(${s} Game/samples/${s}.cpp)
+                target_link_libraries(${s} PRIVATE fuse_ui_game)
+            else()
+                add_executable(${s} Game/samples/${s}.cpp)
+                target_link_libraries(${s} PRIVATE fuse_ui_game fuse_app)
+            endif()
         endforeach()
     endif()
 endif()

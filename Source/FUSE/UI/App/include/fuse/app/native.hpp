@@ -1,7 +1,20 @@
-// fuse_app native windows (plan UI5): real OS windows (X11 via a runtime-loaded libX11, Win32) with a Vulkan swapchain
-// presenter. The UI is drawn either by the fuse_ui_vk compute kernel straight into a storage image (GpuDraw) or by the
-// CPU rasteriser and uploaded (CpuUpload); either result is blitted into the swapchain image and presented. Without a
-// Vulkan device the Win32 backend falls back to GDI (StretchDIBits); X11 then keeps the window but cannot draw it.
+// fuse_app native windows (plan UI5): real OS windows (X11 via a runtime-loaded libX11, Win32, macOS Cocoa, iOS UIKit,
+// Android NativeActivity) with a Vulkan swapchain presenter. The UI is drawn either by the fuse_ui_vk compute kernel
+// straight into a storage image (GpuDraw) or by the CPU rasteriser and uploaded (CpuUpload); either result is blitted
+// into the swapchain image and presented. Without a Vulkan device the CPU raster is shown by the OS: GDI on Win32
+// (StretchDIBits), a CALayer's contents on macOS / iOS, ANativeWindow_lock on Android; X11 then keeps the window but
+// cannot draw it.
+//
+// Mobile and macOS notes:
+//  - Android and iOS own the process entry point. Include fuse/app/main.hpp in the file that defines
+//    `int main(int argc, char** argv)`: it becomes the app's main on every platform (android_main / UIApplicationMain
+//    call it). Android apps are shared libraries loaded by NativeActivity (CMake: fuse_app_add_executable).
+//  - One OS window per process on Android / iOS (the activity's surface / the screen): the first window shown gets
+//    it, further windows stay headless.
+//  - The UI works in logical units (dp / points). The frame is rendered at that resolution and scaled to the
+//    display's pixels by the OS compositor (NativeOptions::scale picks the factor).
+//  - Popups stay overlays inside the window (NativeOptions::osPopups is desktop X11 / Win32 only).
+//  - macOS: Command acts as kModCtrl (Cmd+C / Cmd+V drive the widgets' Ctrl shortcuts), Control as kModSuper.
 //
 //   fuse::app::Application app{{.name = "hello"}};
 //   fuse::app::NativePlatform native(app);          // installs the OS event source (blocks in poll / MsgWait)
@@ -25,7 +38,7 @@ namespace fuse::app {
 enum class PresenterKind : fuse::ui::u8 {
     Headless, ///< no OS window (no display / not shown); CPU raster into AppWindow::image()
     Vulkan,   ///< swapchain presenter
-    Software, ///< GDI blit of the CPU raster (Win32 without Vulkan)
+    Software, ///< the OS shows the CPU raster (Win32 GDI, macOS / iOS layer contents, Android window buffer)
 };
 enum class VkDrawMode : fuse::ui::u8 {
     Auto,      ///< GpuDraw when the compute kernel is compiled in, else CpuUpload
@@ -59,7 +72,18 @@ struct NativeOptions {
     /// Popup menus / combo lists / submenus as their own borderless OS windows (Qt-style; may extend past the main
     /// window, clamp to the screen). X11: override-redirect windows; Win32: WS_POPUP + WS_EX_NOACTIVATE owned windows.
     bool osPopups = false;
+    /// Logical-unit scale on macOS / iOS / Android: UI units = display pixels / scale. 0 = the OS content scale
+    /// (Android density / 160, UIScreen / NSScreen scale); 1 = work in physical pixels. Ignored on X11 / Win32.
+    float scale = 0.f;
 };
+
+#if defined(__ANDROID__)
+/// The android_app (android_native_app_glue) this process runs in. The built-in android_main sets it before the
+/// user's main; an app with its own android_main calls setAndroidApp first. Also points setDataRoot at the
+/// activity's internal data path and installs APK-asset readers for resources and bundled fonts ("fonts/<name>").
+void setAndroidApp(void* androidApp);
+void* androidApp();
+#endif
 
 class NativePlatform {
 public:
@@ -68,7 +92,8 @@ public:
     NativePlatform(const NativePlatform&) = delete;
     NativePlatform& operator=(const NativePlatform&) = delete;
 
-    /// True when an OS display connection is open (X11: $DISPLAY; Win32: always).
+    /// True when an OS display connection is open (X11: $DISPLAY; Win32 / macOS: always; iOS: inside
+    /// UIApplicationMain; Android: an android_app is set).
     bool available() const;
     /// Opens an OS window for `w` (title / size from its WindowDesc) and installs the best presenter.
     PresenterKind show(AppWindow& w);
@@ -80,7 +105,8 @@ public:
     std::string_view lastError() const;
     /// Reads back what the OS shows in the window's client area (tests / screenshots of real windows).
     bool capture(const AppWindow& w, fuse::ui::Image& out);
-    /// Native handles: X11 Display* / Window, Win32 HINSTANCE / HWND (0 when not shown).
+    /// Native handles: X11 Display* / Window, Win32 HINSTANCE / HWND, macOS NSApplication* / NSWindow*, iOS
+    /// UIApplication* / UIWindow*, Android android_app* / ANativeWindow* (0 when not shown).
     void* nativeDisplay() const;
     /// Binds `tex` to external slot `slot` (0..3) of the window's GPU draw kernel; images whose externalSlot == slot
     /// then show it. Re-set it whenever the image, view or its layout change (each engine frame). False when the
@@ -105,6 +131,11 @@ public:
     bool capturePopup(const AppWindow& w, std::size_t i, fuse::ui::Image& out);
     /// The window's top-left on screen (client area).
     fuse::ui::Vec2 screenOrigin(const AppWindow& w) const;
+    /// The part of the window not covered by system UI (notch, status / navigation bars, home indicator), in UI
+    /// units. The whole window on desktop and when not shown.
+    fuse::ui::Rect safeArea(const AppWindow& w) const;
+    /// UI units -> display pixels for this window (1 on X11 / Win32; see NativeOptions::scale).
+    float scale(const AppWindow& w) const;
     /// Posts a real left click to a native window (XSendEvent / PostMessage) at window-local `at`; it is then
     /// delivered by the normal event pump (tests drive popup windows this way).
     bool postClick(unsigned long long nativeWin, fuse::ui::Vec2 at);

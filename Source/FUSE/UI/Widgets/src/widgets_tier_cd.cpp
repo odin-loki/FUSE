@@ -1,6 +1,7 @@
 // FUSE UI Tier C (model / view: sort-filter proxy, grid view; delegates live with the table in widgets_tier_b2.cpp)
 // and Tier D (property grid, colour picker, calendar, chart, markdown view). Plan §5.
 #include "fuse/ui/widgets/widgets.hpp"
+#include "fuse/text/from_chars.hpp"
 #include "widgets_internal.hpp"
 
 #include <algorithm>
@@ -30,7 +31,7 @@ NodeHandle nthChild(const UiContext& ui, NodeHandle n, u32 i) {
     return c;
 }
 bool parseNum(std::string_view s, double& out) {
-    const auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), out);
+    const auto [p, ec] = fuse::text::fromChars(s.data(), s.data() + s.size(), out);
     return ec == std::errc{} && p == s.data() + s.size() && !s.empty();
 }
 

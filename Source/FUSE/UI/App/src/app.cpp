@@ -1,5 +1,6 @@
 // fuse_app (plan UI5): Application, AppWindow, on-demand loop, settings store, command line, single instance.
 #include "fuse/app/app.hpp"
+#include "fuse/text/from_chars.hpp"
 
 #include "fuse/ui/doc/document.hpp"
 
@@ -43,7 +44,7 @@ using namespace fuse::ui;
 namespace {
 bool parseDouble(std::string_view s, double& out) {
     if (s.empty()) return false;
-    const auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), out);
+    const auto [p, ec] = fuse::text::fromChars(s.data(), s.data() + s.size(), out);
     return ec == std::errc{} && p == s.data() + s.size();
 }
 double steadyNow(void*) {
@@ -79,6 +80,26 @@ std::string unescape(std::string_view s) {
     return o;
 }
 } // namespace
+
+namespace {
+std::string& dataRootStorage() {
+    static std::string s;
+    return s;
+}
+ResourceReader g_resources;
+} // namespace
+void setDataRoot(std::string path) { dataRootStorage() = std::move(path); }
+const std::string& dataRoot() { return dataRootStorage(); }
+void setResourceReader(const ResourceReader& reader) { g_resources = reader; }
+bool readResource(std::string_view path, std::string& out) {
+    if (std::ifstream f{std::string(path), std::ios::binary}; f) {
+        std::stringstream ss;
+        ss << f.rdbuf();
+        out = ss.str();
+        return true;
+    }
+    return g_resources.read && g_resources.read(g_resources.user, path, out);
+}
 
 const fuse::text::Font& defaultFont() {
     static fuse::text::Font f = [] {
@@ -129,13 +150,18 @@ double CommandLine::number(std::string_view key, double fallback) const {
 
 // ---- Settings ------------------------------------------------------------------------------------------------------
 std::string Settings::defaultDir(std::string_view app) {
+    if (!dataRoot().empty()) return dataRoot() + "/" + std::string(app);
 #if defined(_WIN32)
     const char* base = std::getenv("APPDATA");
     return std::string(base ? base : ".") + "\\" + std::string(app);
 #else
     if (const char* x = std::getenv("XDG_CONFIG_HOME"); x && *x) return std::string(x) + "/" + std::string(app);
     const char* home = std::getenv("HOME");
+#if defined(__APPLE__)
+    return std::string(home ? home : ".") + "/Library/Application Support/" + std::string(app);
+#else
     return std::string(home ? home : ".") + "/.config/" + std::string(app);
+#endif
 #endif
 }
 bool Settings::load() {
@@ -243,11 +269,9 @@ std::expected<void, std::string> AppWindow::loadText(std::string_view json, doc:
     return {};
 }
 std::expected<void, std::string> AppWindow::load(std::string_view path, doc::Model* model) {
-    std::ifstream f{std::string(path), std::ios::binary};
-    if (!f) return std::unexpected("cannot open " + std::string(path));
-    std::stringstream ss;
-    ss << f.rdbuf();
-    return loadText(ss.str(), model);
+    std::string text;
+    if (!readResource(path, text)) return std::unexpected("cannot open " + std::string(path));
+    return loadText(text, model);
 }
 bool AppWindow::presentHeadless(void*, AppWindow& w, Rect damage) {
     const int iw = int(w.m_ui.viewport().w), ih = int(w.m_ui.viewport().h);
@@ -300,7 +324,8 @@ Application::Application(const AppDesc& d) : m_name(d.name), m_args(d.argc, d.ar
         m_lock = h;
 #else
         const char* rt = std::getenv("XDG_RUNTIME_DIR");
-        const std::string path = std::string(rt && *rt ? rt : "/tmp") + "/fuse_app_" + m_name + "_" + std::to_string(::getuid()) + ".lock";
+        const std::string base = !dataRoot().empty() ? dataRoot() : std::string(rt && *rt ? rt : "/tmp");
+        const std::string path = base + "/fuse_app_" + m_name + "_" + std::to_string(::getuid()) + ".lock";
         const int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0600);
         m_primary = fd >= 0 && ::flock(fd, LOCK_EX | LOCK_NB) == 0;
         if (fd >= 0) m_lock = reinterpret_cast<void*>(std::intptr_t(fd) + 1);

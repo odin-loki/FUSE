@@ -19,6 +19,16 @@
 #include <windows.h>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_win32.h>
+#define FUSE_APP_VK_SURFACE_EXT VK_KHR_WIN32_SURFACE_EXTENSION_NAME
+#elif defined(__ANDROID__)
+#include <vulkan/vulkan.h>
+#include <vulkan/vulkan_android.h>
+#define FUSE_APP_VK_SURFACE_EXT VK_KHR_ANDROID_SURFACE_EXTENSION_NAME
+#elif defined(__APPLE__)
+// VK_EXT_metal_surface over a CAMetalLayer (MoltenVK). vulkan_metal.h declares CAMetalLayer itself for C++.
+#include <vulkan/vulkan.h>
+#include <vulkan/vulkan_metal.h>
+#define FUSE_APP_VK_SURFACE_EXT VK_EXT_METAL_SURFACE_EXTENSION_NAME
 #else
 // vulkan_xlib.h needs only these two Xlib types; the X11 headers are not required to build.
 typedef struct _XDisplay Display;
@@ -26,6 +36,8 @@ typedef unsigned long Window;
 typedef unsigned long VisualID;
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_xlib.h>
+#define FUSE_APP_VK_SURFACE_EXT VK_KHR_XLIB_SURFACE_EXTENSION_NAME
+#define FUSE_APP_VK_XLIB 1
 #endif
 
 #if defined(FUSE_HAS_VULKAN_RHI)
@@ -84,8 +96,11 @@ struct Khr {
     PFN_vkQueuePresentKHR QueuePresentKHR = nullptr;
 #if defined(_WIN32)
     PFN_vkCreateWin32SurfaceKHR CreateWin32SurfaceKHR = nullptr;
-#endif
-#if !defined(_WIN32)
+#elif defined(__ANDROID__)
+    PFN_vkCreateAndroidSurfaceKHR CreateAndroidSurfaceKHR = nullptr;
+#elif defined(__APPLE__)
+    PFN_vkCreateMetalSurfaceEXT CreateMetalSurfaceEXT = nullptr;
+#else
     PFN_vkCreateXlibSurfaceKHR CreateXlibSurfaceKHR = nullptr;
 #endif
     bool load(VkInstance inst) {
@@ -106,8 +121,11 @@ struct Khr {
         get(QueuePresentKHR, "vkQueuePresentKHR");
 #if defined(_WIN32)
         get(CreateWin32SurfaceKHR, "vkCreateWin32SurfaceKHR");
-#endif
-#if !defined(_WIN32)
+#elif defined(__ANDROID__)
+        get(CreateAndroidSurfaceKHR, "vkCreateAndroidSurfaceKHR");
+#elif defined(__APPLE__)
+        get(CreateMetalSurfaceEXT, "vkCreateMetalSurfaceEXT");
+#else
         get(CreateXlibSurfaceKHR, "vkCreateXlibSurfaceKHR");
 #endif
         return all;
@@ -146,13 +164,25 @@ VkImageMemoryBarrier imageBarrier(VkImage img, VkAccessFlags src, VkAccessFlags 
 VkCtx* vkCtxCreate(SurfaceSource::Kind kind, std::string& err) {
     auto* c = new VkCtx{};
     c->kind = kind;
-    const char* exts[] = {VK_KHR_SURFACE_EXTENSION_NAME,
-#if defined(_WIN32)
-                          VK_KHR_WIN32_SURFACE_EXTENSION_NAME
-#else
-                          VK_KHR_XLIB_SURFACE_EXTENSION_NAME
+    const char* exts[] = {VK_KHR_SURFACE_EXTENSION_NAME, FUSE_APP_VK_SURFACE_EXT,
+#if defined(__APPLE__) && defined(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)
+                          // MoltenVK behind the Khronos loader is a portability driver: it must be asked for
+                          VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME,
 #endif
     };
+    u32 extCount = 2;
+#if defined(__APPLE__) && defined(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)
+    bool portability = false;
+    {
+        u32 n = 0;
+        vkEnumerateInstanceExtensionProperties(nullptr, &n, nullptr);
+        std::vector<VkExtensionProperties> have(n);
+        if (n) vkEnumerateInstanceExtensionProperties(nullptr, &n, have.data());
+        for (const VkExtensionProperties& e : have)
+            portability = portability || std::strcmp(e.extensionName, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) == 0;
+        if (portability) extCount = 3;
+    }
+#endif
     VkApplicationInfo ai{};
     ai.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     ai.pApplicationName = "fuse_app";
@@ -160,8 +190,11 @@ VkCtx* vkCtxCreate(SurfaceSource::Kind kind, std::string& err) {
     VkInstanceCreateInfo ici{};
     ici.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     ici.pApplicationInfo = &ai;
-    ici.enabledExtensionCount = 2;
+    ici.enabledExtensionCount = extCount;
     ici.ppEnabledExtensionNames = exts;
+#if defined(__APPLE__) && defined(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)
+    if (portability) ici.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+#endif
     if (!ok(vkCreateInstance(&ici, nullptr, &c->instance), "vkCreateInstance (surface extensions)", err)) {
         delete c;
         return nullptr;
@@ -278,12 +311,21 @@ bool pickDevice(VkCtx& c, VkSurfaceKHR surface, std::string& err) {
     qci.queueFamilyIndex = c.family;
     qci.queueCount = 1;
     qci.pQueuePriorities = &prio;
-    const char* dext[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    const char* dext[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, "VK_KHR_portability_subset"};
+    u32 dextCount = 1;
+    { // a portability driver (MoltenVK) requires VK_KHR_portability_subset to be enabled when it offers it
+        u32 en = 0;
+        vkEnumerateDeviceExtensionProperties(c.phys, nullptr, &en, nullptr);
+        std::vector<VkExtensionProperties> ep(en);
+        if (en) vkEnumerateDeviceExtensionProperties(c.phys, nullptr, &en, ep.data());
+        for (const VkExtensionProperties& e : ep)
+            if (std::strcmp(e.extensionName, dext[1]) == 0) dextCount = 2;
+    }
     VkDeviceCreateInfo dci{};
     dci.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     dci.queueCreateInfoCount = 1;
     dci.pQueueCreateInfos = &qci;
-    dci.enabledExtensionCount = 1;
+    dci.enabledExtensionCount = dextCount;
     dci.ppEnabledExtensionNames = dext;
     if (!ok(vkCreateDevice(c.phys, &dci, nullptr, &c.device), "vkCreateDevice", err)) return false;
     FUSE_APP_VOLK(fuse::renderer::vkloader::registerDevice(c.device, c.instance));
@@ -356,7 +398,13 @@ struct VkWin {
         VkSurfaceCapabilitiesKHR caps;
         if (!ok(K.GetPhysicalDeviceSurfaceCapabilitiesKHR(ctx->phys, surface, &caps), "surface capabilities", err))
             return false;
+#if defined(__ANDROID__)
+        // Android scales swapchain buffers to the window (currentExtent is the physical size): the window code picks
+        // the extent, which is the UI's logical size (native_android.cpp, NativeOptions::scale).
+        extent = VkExtent2D{wantW, wantH};
+#else
         extent = caps.currentExtent.width != 0xFFFFFFFFu ? caps.currentExtent : VkExtent2D{wantW, wantH};
+#endif
         extent.width = std::clamp(extent.width, std::max(1u, caps.minImageExtent.width), std::max(1u, caps.maxImageExtent.width));
         extent.height = std::clamp(extent.height, std::max(1u, caps.minImageExtent.height), std::max(1u, caps.maxImageExtent.height));
         if (!(caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT)) {
@@ -490,6 +538,16 @@ VkWin* vkWinCreate(VkCtx* c, const SurfaceSource& s, const NativeOptions& o, std
     si.hinstance = static_cast<HINSTANCE>(s.hinstance);
     si.hwnd = static_cast<HWND>(s.hwnd);
     const VkResult sr = K.CreateWin32SurfaceKHR(c->instance, &si, nullptr, &w->surface);
+#elif defined(__ANDROID__)
+    VkAndroidSurfaceCreateInfoKHR si{};
+    si.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
+    si.window = static_cast<ANativeWindow*>(s.nativeWindow);
+    const VkResult sr = K.CreateAndroidSurfaceKHR(c->instance, &si, nullptr, &w->surface);
+#elif defined(__APPLE__)
+    VkMetalSurfaceCreateInfoEXT si{};
+    si.sType = VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT;
+    si.pLayer = static_cast<const CAMetalLayer*>(s.metalLayer);
+    const VkResult sr = K.CreateMetalSurfaceEXT(c->instance, &si, nullptr, &w->surface);
 #else
     VkXlibSurfaceCreateInfoKHR si{};
     si.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;

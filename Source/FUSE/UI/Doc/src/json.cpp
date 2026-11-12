@@ -1,4 +1,5 @@
 #include "fuse/ui/doc/json.hpp"
+#include "fuse/text/from_chars.hpp"
 
 #include <charconv>
 #include <cstdlib>
@@ -159,7 +160,7 @@ struct Parser {
             while (j < s.size() && ((s[j] >= '0' && s[j] <= '9') || s[j] == '.' || s[j] == 'e' || s[j] == 'E' ||
                                     s[j] == '+' || s[j] == '-'))
                 ++j;
-            const auto r = std::from_chars(s.data() + i, s.data() + j, v.number);
+            const auto r = fuse::text::fromChars(s.data() + i, s.data() + j, v.number);
             if (r.ec != std::errc{} || r.ptr != s.data() + j) return fail("bad number");
             v.type = JsonValue::Type::Number;
             i = j;

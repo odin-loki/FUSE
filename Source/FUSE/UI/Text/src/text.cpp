@@ -30,6 +30,10 @@
 #include "text_full.hpp"
 #endif
 
+#if defined(FUSE_TEXT_EMBEDDED_FONT)
+#include "fuse_embedded_font.h" // generated (Text/cmake/embed_bin.cmake): kFuseEmbeddedFont
+#endif
+
 namespace fuse::text {
 
 TextProfile textProfile() {
@@ -426,9 +430,33 @@ std::expected<Font, TextError> Font::fromFile(const std::string& path) {
     return fromBytes(data);
 }
 
+namespace {
+FontDataSource g_fontSource;
+/// A bundled face by its vendor/fonts-relative name: data source, then the build-tree directory.
+std::expected<Font, TextError> bundledFace(const char* name) {
+    if (g_fontSource.read) {
+        std::vector<std::uint8_t> data;
+        if (g_fontSource.read(g_fontSource.user, name, data) && !data.empty()) {
+            if (auto f = Font::fromBytes(data)) return f;
+        }
+    }
+#if defined(FUSE_TEXT_FONT_DIR)
+    return Font::fromFile(std::string(FUSE_TEXT_FONT_DIR) + "/" + name);
+#else
+    return std::unexpected(TextError::InvalidFont);
+#endif
+}
+} // namespace
+
+void setFontDataSource(const FontDataSource& source) { g_fontSource = source; }
+
 std::expected<Font, TextError> Font::bundled() {
+    if (auto f = bundledFace("opensans/OpenSans.ttf")) return f;
 #if defined(FUSE_TEXT_BUNDLED_FONT)
-    return fromFile(FUSE_TEXT_BUNDLED_FONT);
+    if (auto f = fromFile(FUSE_TEXT_BUNDLED_FONT)) return f;
+#endif
+#if defined(FUSE_TEXT_EMBEDDED_FONT)
+    return fromBytes(std::span<const std::uint8_t>(kFuseEmbeddedFont, sizeof kFuseEmbeddedFont));
 #else
     return std::unexpected(TextError::InvalidFont);
 #endif
@@ -436,14 +464,12 @@ std::expected<Font, TextError> Font::bundled() {
 
 std::vector<Font> Font::bundledFallbacks() {
     std::vector<Font> out;
-#if defined(FUSE_TEXT_FONT_DIR)
     // Emoji before Symbols 2 so emoji-presentation code points (U+2764 ...) come out in colour.
     static const char* const kFiles[] = {"noto/NotoSansHebrew-Regular.ttf", "noto/NotoSansArabic-Regular.ttf",
                                          "noto/NotoSansDevanagari-Regular.ttf", "twemoji/TwemojiMozilla.ttf",
                                          "noto/NotoSansSymbols2-Regular.ttf"};
     for (const char* f : kFiles)
-        if (auto font = fromFile(std::string(FUSE_TEXT_FONT_DIR) + "/" + f)) out.push_back(std::move(*font));
-#endif
+        if (auto font = bundledFace(f)) out.push_back(std::move(*font));
     return out;
 }
 

@@ -41,3 +41,15 @@ jobs:
             -DFUSE_BUILD_VULKAN=OFF
       - name: Build fuse_core + hybrid stack
         run: cmake --build build-android --target fuse_core fuse_hybrid
+
+      # FUSE UI standalone: fuse_text, fuse_ui_*, fuse_app + the NativeActivity backend (App/src/native_android.cpp);
+      # the samples link as lib<name>.so with ANativeActivity_onCreate.
+      - name: Configure FUSE UI for Android
+        run: |
+          cmake -S Source/FUSE/UI -B build-ui-android -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=${{ steps.android-ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release
+      - name: Build FUSE UI (libraries, gates, sample apps)
+        run: cmake --build build-ui-android

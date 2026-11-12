@@ -1,5 +1,6 @@
 // FUSE UI Tier B (plan §5), second half: splitters, dock area, item models, virtualised table view.
 #include "fuse/ui/widgets/widgets.hpp"
+#include "fuse/text/from_chars.hpp"
 #include "widgets_internal.hpp"
 
 #include <algorithm>
@@ -387,7 +388,7 @@ void registerTierB2(UiContext& ui) {
 }
 
 bool parseNum(std::string_view s, double& out) {
-    const auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), out);
+    const auto [p, ec] = fuse::text::fromChars(s.data(), s.data() + s.size(), out);
     return ec == std::errc{} && p == s.data() + s.size();
 }
 template <class F>

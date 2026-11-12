@@ -17,6 +17,8 @@ struct NotesModel {
 };
 } // namespace
 
+#include "fuse/app/main.hpp" // Android / iOS: this main runs under the platform entry point
+
 int main(int argc, char** argv) {
     fuse::app::Application app{{.name = "notes_app", .argc = argc, .argv = argv, .singleInstance = true}};
     if (!app.primary() && !app.args().has("screenshot")) return app.fail("already running");
