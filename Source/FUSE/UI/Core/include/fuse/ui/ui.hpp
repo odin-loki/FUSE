@@ -19,6 +19,7 @@
 #include <atomic>
 #include <concepts>
 #include <expected>
+#include <initializer_list>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -49,7 +50,16 @@ enum class EventType : u8 {
     PointerMove, PointerDown, PointerUp, PointerEnter, PointerLeave, Click, Wheel, KeyDown, KeyUp, Text, FocusIn,
     FocusOut,
     Composition, ///< IME pre-edit changed: `text` = pre-edit (empty ends it), `caret` = byte offset in it
+    DoubleClick, ///< the second click of a double click, after its Click (not consumed: SignalKind::DoubleClicked)
+    DragEnter, DragMove, DragLeave, Drop, ///< to the drop target of a drag: `drag`, `dropAction` (proposed), `pos`
+    DragEnd,     ///< to the drag source when its drag ends: `dropAction` = result (None: cancelled / not accepted)
+    GestureTap, GestureDoubleTap, GestureLongPress, ///< touch gestures, to the node under the finger: `pos`
+    GesturePinch,  ///< two fingers: `scale` = distance / distance at the start, `pos` = centre, `gesturePhase`
+    GestureRotate, ///< two fingers: `rotation` = radians turned since the start (y down: clockwise > 0), `pos`, `gesturePhase`
 };
+enum class DropAction : u8 { None, Move, Copy };
+enum class GesturePhase : u8 { Begin, Update, End };
+struct DragData;
 enum class Phase : u8 { Capture, Target, Bubble };
 
 struct Event {
@@ -63,6 +73,78 @@ struct Event {
     FocusReason focusReason = FocusReason::Programmatic;
     i32 caret = 0;         ///< Composition: caret byte offset into `text`
     bool cancel = false;   ///< PointerUp: the press was cancelled (a touch became a pan, touchCancel): no Click follows
+    u8 clicks = 1;         ///< PointerDown / PointerUp / Click (left button): 2 on the second click of a double click
+    const DragData* drag = nullptr;              ///< Drag* / Drop: the dragged data (valid during dispatch only)
+    DropAction dropAction = DropAction::None;    ///< DragEnter / DragMove / Drop: proposed action; DragEnd: the result
+    GesturePhase gesturePhase = GesturePhase::Update; ///< GesturePinch / GestureRotate
+    f32 scale = 1.f;       ///< GesturePinch
+    f32 rotation = 0.f;    ///< GestureRotate
+};
+
+// ---- Drag and drop -------------------------------------------------------------------------------------------------
+/// What a drag carries. `type` is the hash of a MIME-like string; targets accept by type (UiContext::setDropTypes,
+/// setDropFilter, WidgetClass::acceptsDrop).
+struct DragData {
+    u32 type = 0;            ///< dragType("application/x-my-thing")
+    u64 payload[2]{};        ///< small inline payload (row index, entity id, packed handle)
+    void* pointer = nullptr; ///< optional non-owning pointer (must outlive the drag)
+    std::string text;        ///< optional text: label of the default ghost; OS file drops: '\n'-separated paths
+    NodeHandle source;       ///< set by beginDrag; invalid for external (OS) drops
+};
+constexpr u32 dragType(std::string_view mime) { return hashId(mime); }
+inline constexpr u32 kDragText = hashId("text/plain");
+inline constexpr u32 kDragFiles = hashId("text/uri-list");         ///< OS file drop (UiContext::dropExternal)
+inline constexpr u32 kDragRow = hashId("application/x-fuse-row"); ///< an item of a list / table / grid view
+/// The ghost that follows the pointer: `draw` if set, else a translucent copy of `node`, else a chip with the text.
+struct DragImage {
+    NodeHandle node;
+    void (*draw)(UiContext&, DrawList&, Vec2 at, const DragData&, void* user) = nullptr; ///< `at` = pointer position
+    void* user = nullptr;
+    Vec2 hotspot;         ///< `node`: the point of the node (relative to its top-left) that stays under the pointer
+    f32 opacity = 0.7f;   ///< `node`
+};
+/// Asked when a press on a node (or a descendant) is dragged past the threshold: fill `out` (and optionally `image`)
+/// and return true to start a drag. `press` is where the button / finger went down.
+using DragSourceFn = bool (*)(UiContext&, NodeHandle, Vec2 press, DragData& out, DragImage& image);
+/// Per-node drop filter: true when `n` takes `data` at `pos`.
+using DropFilterFn = bool (*)(UiContext&, NodeHandle n, const DragData& data, Vec2 pos);
+
+/// Pointer / touch gesture thresholds (UiContext::setGestureConfig). Times are in the context's time domain (the sum of
+/// update(dt)) for clicks and long presses, and in the touch event time for taps.
+struct GestureConfig {
+    f32 doubleClickTime = 0.4f; ///< s between the two presses of a double click
+    f32 doubleClickSlop = 5.f;  ///< px the second press may be away from the first
+    f32 dragThreshold = 4.f;    ///< px a mouse press must travel before a drag source is asked
+    f32 longPressTime = 0.5f;   ///< s a finger must rest (within TouchScrollConfig::slop) for GestureLongPress
+    f32 doubleTapTime = 0.3f;   ///< s between two taps of a GestureDoubleTap
+    f32 doubleTapSlop = 24.f;   ///< px
+    f32 pinchSlop = 6.f;        ///< px the finger distance must change before GesturePinch begins
+    f32 rotateSlop = 0.12f;     ///< radians the finger pair must turn before GestureRotate begins
+};
+
+/// Keyboard shortcut hook (the ActionRegistry of actions.hpp installs itself here): called for a KeyDown the focused
+/// widget did not consume, before Tab / arrow navigation. True = consumed.
+struct ShortcutHook {
+    bool (*fn)(void* user, UiContext&, Key, u8 mods) = nullptr;
+    void* user = nullptr;
+};
+
+/// One key of UiContext::animateKeyframes.
+struct PropKeyframe {
+    f32 at = 0.f; ///< 0..1 of the duration (ascending)
+    PropValue value;
+};
+/// How UiContext::animateProperty moves a property.
+struct AnimSpec {
+    f32 duration = 0.2f;                 ///< s (tween)
+    Easing ease = Easing::InOutCubic;    ///< tween
+    f32 delay = 0.f;                     ///< s before it starts
+    bool spring = false;                 ///< damped spring instead of a tween: `duration` and `ease` are ignored
+    f32 stiffness = 170.f, damping = 26.f, mass = 1.f;
+    static AnimSpec tween(f32 seconds, Easing e = Easing::InOutCubic) { AnimSpec s; s.duration = seconds; s.ease = e; return s; }
+    static AnimSpec springy(f32 stiffness = 170.f, f32 damping = 26.f, f32 mass = 1.f) {
+        AnimSpec s; s.spring = true; s.stiffness = stiffness; s.damping = damping; s.mass = mass; return s;
+    }
 };
 
 /// Clipboard backend of a context (UI1). Default: a context-local buffer; apps install the platform clipboard
@@ -74,12 +156,19 @@ struct ClipboardHooks {
 };
 
 // ---- Signals -------------------------------------------------------------------------------------------------------
-enum class SignalKind : u8 { Clicked, Toggled, ValueChanged, TextChanged, Submitted, FocusChanged, HoverChanged, Event };
+enum class SignalKind : u8 {
+    Clicked, Toggled, ValueChanged, TextChanged, Submitted, FocusChanged, HoverChanged, Event,
+    DoubleClicked, ///< a double click nothing consumed
+    RowMoved,      ///< item views with drag reorder: {value = from, value2 = to (index after the move)}
+    Dropped,       ///< item views: a drag from another view landed {value = insert index, text = drag text, event = Drop}
+    DragEnded,     ///< item views: the drag that started here ended {value = source row, flag = accepted, value2 = DropAction}
+};
 struct SignalArgs {
     f32 value = 0.f;
     bool flag = false;
     std::string_view text{};
     const Event* event = nullptr;
+    f32 value2 = 0.f;
 };
 using Slot = InlineFn<void(UiContext&, NodeHandle, const SignalArgs&)>;
 using CommandFn = void (*)(UiContext&, NodeHandle, u64 a, u64 b);
@@ -165,6 +254,10 @@ struct WidgetClass {
     /// Position-dependent mouse cursor (splitter handles, header / column edges): the shape for pointer position `p`
     /// (context coordinates), or Cursor::Auto to fall back to the node's `cursor` style. See UiContext::cursor.
     Cursor (*cursor)(UiContext&, NodeHandle, Vec2 p) = nullptr;
+    /// Drag and drop: the class starts drags itself (as UiContext::setDragSource does for one node).
+    DragSourceFn dragStart = nullptr;
+    /// Drag and drop: true when the node takes `data` at `pos` (as UiContext::setDropFilter does for one node).
+    DropFilterFn acceptsDrop = nullptr;
 };
 
 /// Concept turning a plain struct with static members into a WidgetClass.
@@ -190,6 +283,8 @@ public:
         if constexpr (requires { W::kCapturesDrag; }) c.capturesDrag = W::kCapturesDrag;
         if constexpr (requires { &W::touchDrag; }) c.touchDrag = &W::touchDrag;
         if constexpr (requires { &W::cursor; }) c.cursor = &W::cursor;
+        if constexpr (requires { &W::dragStart; }) c.dragStart = &W::dragStart;
+        if constexpr (requires { &W::acceptsDrop; }) c.acceptsDrop = &W::acceptsDrop;
         return add(std::move(c));
     }
     u32 find(std::string_view name) const; ///< 0xFFFFFFFF when unknown
@@ -359,6 +454,55 @@ public:
     /// The gesture was taken away (system gesture, focus loss): releases the press without a Click and ends a pan
     /// without a fling.
     bool touchCancel();
+    /// Multi-touch: the same calls with a pointer id per finger. The first finger down is the primary one and behaves
+    /// exactly like the id-less calls (press, tap, pan, fling). A second finger ends the primary press / pan (no Click,
+    /// no fling) and starts a two-finger gesture on the node under the midpoint: GesturePinch and GestureRotate events
+    /// (each begins once past its slop) until one of the two lifts; the remaining finger then does nothing until all
+    /// are up. Fingers beyond two are tracked but ignored.
+    bool touchDown(u32 pointerId, Vec2 p, double timeSeconds = -1.0);
+    bool touchMove(u32 pointerId, Vec2 p, double timeSeconds = -1.0);
+    bool touchUp(u32 pointerId, Vec2 p, double timeSeconds = -1.0);
+    u32 touchCount() const { return m_gesture.count; }
+    bool gestureActive() const { return m_gesture.two; }
+    void setGestureConfig(const GestureConfig& c) { m_gestureCfg = c; }
+    const GestureConfig& gestureConfig() const { return m_gestureCfg; }
+
+    // drag and drop (plan §4.7). A drag starts from beginDrag, or by itself when a press on a drag source
+    // (setDragSource / WidgetClass::dragStart) moves past GestureConfig::dragThreshold; with touch a drag source
+    // inside something that pans starts on a long press instead (a plain swipe still pans), elsewhere when the finger
+    // leaves the slop. While dragging, pointer / touch moves go to the drag: the target is the nearest node under the
+    // pointer that accepts the data's type (inside the modal scope); it gets DragEnter / DragMove / DragLeave / Drop,
+    // has kStateDragOver (`:drag-over`) set, and may call setDropAction / setDropIndicator from its handlers. Releasing
+    // drops (action Move, Copy with Ctrl; None when there is no target or the target refused), Escape / cancelDrag /
+    // touchCancel cancel. The source then gets DragEnd with the result. The ghost and the indicator are painted over
+    // everything in drawList().
+    bool beginDrag(NodeHandle source, DragData data, const DragImage& image = {});
+    void cancelDrag();
+    bool dragging() const { return m_drag.active; }
+    const DragData* dragData() const { return m_drag.active ? &m_drag.data : nullptr; }
+    NodeHandle dragTarget() const { return m_drag.active ? m_drag.target : NodeHandle{}; }
+    DropAction dropAction() const { return m_drag.action; }
+    /// From a DragEnter / DragMove / Drop handler: overrides the proposed action (None refuses the drop).
+    void setDropAction(DropAction a) { m_drag.action = a; }
+    /// From a DragEnter / DragMove handler: where the data would land (an insertion line, a cell); painted in the
+    /// overlay until the target changes or the drag ends. An empty rect clears it.
+    void setDropIndicator(Rect r);
+    /// Result of the last finished drag / external drop.
+    DropAction lastDropAction() const { return m_lastDrop; }
+    NodeHandle lastDropTarget() const { return m_lastDropTarget; } ///< invalid when it was not accepted
+    void setDragSource(NodeHandle n, DragSourceFn fn);             ///< null removes it
+    void setDropTypes(NodeHandle n, std::initializer_list<u32> types); ///< up to 4 accepted DragData::type; empty clears
+    void setDropFilter(NodeHandle n, DropFilterFn fn);             ///< asked instead of / in addition to the type list
+    /// Drops from outside the UI (OS file drops; a platform layer calls these, nothing in the core does). dropExternal
+    /// delivers DragEnter (unless a dragExternalMove already entered) + Drop at `pos` and returns the accepted action;
+    /// dragExternalMove gives hover feedback while the OS drag is over the window, dragExternalLeave ends it.
+    DropAction dropExternal(Vec2 pos, const DragData& data);
+    bool dragExternalMove(Vec2 pos, const DragData& data);
+    void dragExternalLeave();
+    /// Delivers `e` to `n` through the normal capture / target / bubble route (synthetic events, tests).
+    bool sendEvent(NodeHandle n, const Event& e);
+    void setShortcutHook(const ShortcutHook& h) { m_shortcutHook = h; }
+    const ShortcutHook& shortcutHook() const { return m_shortcutHook; }
     void setTouchScroll(const TouchScrollConfig& c) { m_touchCfg = c; }
     const TouchScrollConfig& touchScroll() const { return m_touchCfg; }
     bool touchPanning() const { return m_touch.stage == TouchState::Stage::Pan; }
@@ -405,6 +549,7 @@ public:
     bool focusNext(bool backward = false);
     bool navigate(NavDir d);
     void setModal(NodeHandle scope); ///< restricts focus and pointer input to `scope` (invalid handle clears)
+    NodeHandle modal() const { return m_modal; }
     void setSpatialNavigation(bool on) { m_spatialNav = on; }
     /// Tab order of the current focus scope (tests, inspector).
     void tabOrder(std::vector<NodeHandle>& out) const;
@@ -418,9 +563,26 @@ public:
     TimerHandle startTimer(f32 seconds, bool repeat, InlineFn<void(UiContext&)> fn);
     void cancelTimer(TimerHandle t);
     enum class AnimProp : u8 { Opacity, OffsetX, OffsetY, Value };
-    enum class Ease : u8 { Linear, InOutCubic, OutBack };
+    using Ease = Easing; ///< Linear, InOutCubic, OutBack, In, Out
     void animate(NodeHandle n, AnimProp p, f32 to, f32 seconds, Ease e = Ease::InOutCubic);
-    bool animating() const { return m_animCount > 0; }
+    bool animating() const { return m_animCount > 0 || m_styleAnimCount > 0; }
+    /// Style motion (plan §4.6 / §4.10). CSS `transition` fades animatable properties when a node's style changes
+    /// (state, class, inline value); `enter-animation` / `exit-animation` play when a node first shows / is hidden.
+    /// animateProperty moves one animatable style property from its current value to `to` with a tween or a spring and
+    /// leaves `to` as the node's inline value; animateKeyframes runs a property through up to 6 keys (the last key's
+    /// value stays, `loop` repeats until stopPropertyAnimations). While any of these run the node's computed() style
+    /// is the interpolated one; an idle context does no work (needsUpdate() false).
+    void animateProperty(NodeHandle n, Prop p, const PropValue& to, const AnimSpec& spec = {});
+    void animateKeyframes(NodeHandle n, Prop p, const PropKeyframe* keys, u32 count, f32 seconds, Easing e = Easing::Linear, bool loop = false);
+    void stopPropertyAnimations(NodeHandle n); ///< jumps running property animations of `n` to their end values
+    bool styleAnimating(NodeHandle n) const;   ///< a transition, property animation or exit animation runs on `n`
+    /// Reduced motion (the OS accessibility setting; platform layers set it): transitions, enter / exit animations,
+    /// property animations and animate() jump straight to their end state.
+    void setReducedMotion(bool on);
+    bool reducedMotion() const { return m_reducedMotion; }
+    /// Seconds a hidden `n` stays on screen for its exit animation (0: none / reduced motion). Popups delay their
+    /// destruction by this.
+    f32 exitDuration(NodeHandle n) const;
 
     // cross-thread commands (any thread)
     bool post(CommandFn fn, NodeHandle n, u64 a = 0, u64 b = 0);
@@ -512,6 +674,31 @@ private:
     bool touchBeginPan(Vec2 p);
     void touchPanBy(Vec2 d);
     void touchSample(Vec2 p, double t);
+    // interaction.cpp
+    struct DndNode;
+    DndNode* dndEntry(NodeHandle n, bool create);
+    NodeHandle dropTargetAt(Vec2 p, const DragData& data);
+    bool dragMoveTo(Vec2 p);
+    bool dragFinish(Vec2 p, bool drop);
+    void dragSetTarget(NodeHandle t, Vec2 p);
+    bool maybeStartDrag(Vec2 p);
+    bool startDragFrom(NodeHandle from, Vec2 press);
+    void paintDragOverlay(DrawList& dl);
+    void gestureArm(Vec2 p, double t);
+    void gestureTap(Vec2 p, double t);
+    void gestureTick(f32 dt);
+    void gestureEndTwo();
+    void gestureReset();
+    void noteClick(u32 target, NodeHandle hit, Vec2 p);
+    // motion (ui.cpp)
+    struct StyleAnim;
+    StyleAnim* styleAnimOf(NodeHandle n);
+    StyleAnim& ensureStyleAnim(u32 i);
+    void composeAnimated(StyleAnim& a);
+    void releaseStyleAnim(StyleAnim& a);
+    void tickStyleAnims(f32 dt);
+    void applyStyleDiff(u32 i, const ComputedStyle& before, const ComputedStyle& after);
+    void startEnter(u32 i, MotionKind kind, f32 seconds);
 
     WidgetRegistry m_registry;
     StyleEngine m_styles;
@@ -613,6 +800,81 @@ private:
     };
     std::vector<Anim> m_anims;
     u32 m_animCount = 0;
+
+    // drag and drop
+    struct DndNode {
+        NodeHandle node;
+        DragSourceFn source = nullptr;
+        DropFilterFn filter = nullptr;
+        u32 types[4]{};
+        u8 typeCount = 0;
+    };
+    std::vector<DndNode> m_dnd;
+    struct DragState {
+        bool active = false, external = false, hasIndicator = false;
+        DragData data;
+        DragImage image;
+        NodeHandle target;
+        Vec2 pos;
+        DropAction action = DropAction::None;
+        Rect indicator;
+    } m_drag;
+    DropAction m_lastDrop = DropAction::None;
+    NodeHandle m_lastDropTarget;
+    bool m_overlayDirty = false; ///< the drag overlay changed: the next paint damages the whole viewport
+    DrawList m_dragList;
+    Vec2 m_pressPos;
+    NodeHandle m_pressHit;
+    bool m_dragAsked = false;
+    // click counting
+    NodeHandle m_clickNode;
+    double m_clickTime = -1e9;
+    Vec2 m_clickPos;
+    u8 m_clickCount = 0;
+    // gestures / multi-touch
+    GestureConfig m_gestureCfg;
+    struct GestureState {
+        static constexpr u32 kMaxTouches = 5;
+        struct Point { u32 id = 0; Vec2 pos; };
+        Point pts[kMaxTouches];
+        u32 count = 0, primary = 0;
+        bool primaryDown = false;
+        bool two = false;   ///< a two-finger gesture runs (pts[0], pts[1])
+        bool spent = false; ///< the sequence had a two-finger gesture: remaining fingers do nothing
+        NodeHandle target;
+        f32 d0 = 1.f, lastAngle = 0.f, turned = 0.f, scale = 1.f;
+        Vec2 centre;
+        bool pinching = false, rotating = false;
+        bool longArmed = false, moved = false, dragOk = false;
+        f32 held = 0.f;
+        double downTime = 0.0, lastTapTime = -1e9;
+        Vec2 lastTapPos;
+    } m_gesture;
+    ShortcutHook m_shortcutHook;
+    // style motion
+    struct StyleAnim {
+        NodeHandle node;
+        u32 slot = 0;        ///< scratch style index the node points at while animated
+        ComputedStyle from;  ///< transition start values
+        f32 t = 0.f;         ///< s since the transition (re)started
+        bool active = false, transitioning = false, exiting = false;
+        MotionKind exitKind = MotionKind::None;
+        f32 exitT = 0.f, exitDur = 0.f, exitFromOpacity = 1.f;
+    };
+    std::vector<StyleAnim> m_styleAnims;
+    static constexpr u32 kMaxKeys = 6;
+    struct PropAnim {
+        NodeHandle node;
+        Prop prop = Prop::Opacity;
+        PropKeyframe keys[kMaxKeys];
+        u8 keyCount = 0;
+        AnimSpec spec;
+        f32 t = 0.f, x = 0.f, v = 0.f; ///< time; spring position (0..1 towards the last key) and velocity
+        bool active = false, loop = false, persist = true;
+    };
+    std::vector<PropAnim> m_propAnims;
+    u32 m_styleAnimCount = 0, m_propAnimCount = 0;
+    bool m_reducedMotion = false, m_sheetSwap = false;
 
     struct Command {
         std::atomic<u64> seq{0};

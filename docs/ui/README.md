@@ -364,7 +364,9 @@ are deferred). Inline (`setCss`) beats everything; later sheets win ties. Layout
 (visible/clip/scroll), `display`, `pointer-events`. Paint: `background` (colour or `linear-gradient`),
 `background-end` (gradient end; widgets use it as the accent), `border`, `border-width/color`, `border-*-radius`,
 `box-shadow`, `shadow-x/y/blur/color`, `opacity`, `color`, `font-size`, `text-align`. Selectors also accept
-`:active`, `:selected`. `cursor` (see Platform services) is the mouse cursor a node asks for.
+`:active`, `:selected`, `:drag-over`. Motion and direction properties (`transition`, `enter-animation`,
+`exit-animation`, `enter-duration`, `exit-duration`, `direction`, `padding-start`, `padding-end`) are described under
+"Interaction" below. `cursor` (see Platform services) is the mouse cursor a node asks for.
 
 ### Fonts, text styles and i18n
 
@@ -414,6 +416,71 @@ fuse::text::pseudoLocalize("Save {name}");                 // "[Šávé {name} �
 - Not there: variable-font axes (a variable font is its default instance), CFF2 and bitmap-only fonts, dates and
   currencies, a string-extraction tool, cooked `.fusefont` files (`FUSE_UI_TEXT=COOKED` still builds MINIMAL).
 
+## Interaction: drag and drop, gestures, actions, motion, RTL
+
+All of this is in `fuse_ui_core` (`ui.hpp`, `actions.hpp`, `style.hpp`); the widget glue is
+`fuse/ui/widgets/interaction.hpp` (included by `widgets.hpp`).
+
+**Drag and drop.** A drag carries a `DragData` (`type` = `dragType("application/x-thing")`, two inline `u64`, an
+optional pointer and text). Sources: `ui.setDragSource(node, fn)` (or `WidgetClass::dragStart`) is asked when a press
+moves past `GestureConfig::dragThreshold`, or call `ui.beginDrag(source, data, image)` yourself. Targets:
+`ui.setDropTypes(node, {types...})`, `ui.setDropFilter(node, fn)` or `WidgetClass::acceptsDrop`. The target gets
+`DragEnter / DragMove / DragLeave / Drop` events, has the `:drag-over` style state, and may call
+`ui.setDropAction(DropAction::None)` to refuse or `ui.setDropIndicator(rect)` to show where the data lands; the
+source gets `DragEnd` with the result (`Move`, `Copy` with Ctrl, `None`). Escape cancels. The ghost (a chip with the
+text, a translucent copy of a node, or your draw callback) is painted over everything in the draw list. Touch: a
+swipe on a drag source inside something scrollable still pans; a long press picks it up. Platform layers inject OS
+file drops with `ui.dropExternal(pos, data)` (`kDragFiles`, paths in `text`), `dragExternalMove` / `dragExternalLeave`
+for hover feedback; no backend calls them yet.
+
+```cpp
+w::setListDragDrop(ui, list, w::kViewDragDrop);       // reorder rows, drag them to other views, accept theirs
+w::setTableDragDrop(ui, table, w::kViewDragReorder);  // model views report: RowMoved {value = from, value2 = to}
+ui.connect(table, SignalKind::RowMoved, [](UiContext&, NodeHandle, const SignalArgs& a) { /* move the model row */ });
+```
+
+A string `listView` edits its own items; `tableView` / `modelListView` / `gridView` emit `RowMoved`, `Dropped` and
+`DragEnded` and leave the model to the application.
+
+**Gestures.** `Event::clicks` counts presses; the second click of a double click sends `DoubleClick` after its
+`Click` (unconsumed: `SignalKind::DoubleClicked`), and list / table / grid views treat it as Enter (`Submitted`).
+Touch: `GestureTap`, `GestureDoubleTap`, `GestureLongPress` (0.5 s within the slop; timer in the context's time, so
+call `update(dt)`); with pointer ids (`touchDown(id, p)` ...) two fingers send `GesturePinch` (`scale`, centre in
+`pos`) and `GestureRotate` (`rotation` in radians) with `gesturePhase` Begin / Update / End. The single-finger pan /
+fling is unchanged. Listen with a `SignalKind::Event` slot or in a widget class's `onEvent`. No backend feeds pointer
+ids yet (Android and iOS pass the primary touch).
+
+**Actions and shortcuts.** `ActionRegistry reg(ui);` then
+`reg.add({.id = "file.save", .text = "Save", .shortcut = primaryShortcut(Key::S)}, callback)`. Shortcuts fire on a
+KeyDown the focused widget did not consume: Subtree-scoped actions while the focus is inside their node, Window
+actions otherwise, none of the window's actions while a modal scope is open, and plain typing keys never while a
+text field has the focus. `reg.bind(action, button)` keeps text / enabled / checked in sync and triggers on click;
+`w::actionMenuBarMenu(ui, reg, bar, "File", reg.addList({...}))` and `w::actionPopupMenu` build menus that show the
+shortcut right-aligned. `parseShortcut("Ctrl+Shift+S")` / `shortcutToString`, `reg.rebind(a, s)` (returns the
+conflicting action unless told to steal), `saveShortcuts()` / `loadShortcuts()`. `primaryModifier()` is Cmd on Apple
+platforms and Ctrl elsewhere. The registry does not use fuse_core's `ActionMap`; ids and shortcut strings are what an
+adapter needs.
+
+**Motion.** `transition: background 0.15s ease-out, border-radius 0.1s` (or `all`) fades animatable properties when
+a node's style changes; `enter-animation` / `exit-animation: fade | slide-up | slide-down` with `enter-duration` /
+`exit-duration` play when a node first shows / is hidden (popups stay alive for their exit time).
+`ui.animateProperty(node, Prop::Width, PropValue::ofLength(Length::px(240)), AnimSpec::springy())` tweens or springs
+a style property and leaves the end value inline; `ui.animateKeyframes(...)` runs up to 6 keys. Animated nodes use a
+scratch slot of the style table, so nothing is interned or allocated per frame and an idle context sleeps.
+`ui.setReducedMotion(true)` turns all of it (and `animate()`) into jumps. The default theme declares no motion; opt
+in per node with the classes `.fx` (hover / focus colours fade), `.fx-fade`, `.fx-slide`, or for every popup with a
+rule such as `popup { enter-animation: fade; exit-animation: fade; }`. Descendants inherit the cascade's final value
+of `color`, not the in-flight one: give them their own `transition` if they should fade too.
+
+**RTL.** `direction: rtl` (inherited; `ltr` switches a subtree back) mirrors Box layouts along x, swaps `left` /
+`right` of Anchor children, makes `padding-start` / `padding-end` the right / left padding and flips `text-align:
+start / end` (`left` / `right` are aliases of start / end and flip too). Overlay popups keep their screen position.
+Widgets that paint their own content (lists, sliders, check marks) are not mirrored inside.
+
+**Hot reload.** `doc::DocumentFileWatcher watch(path);` then `watch.poll(document)` each frame (one `stat`) reloads a
+`.fuseui` file when it changes; nodes with an id keep their handle, focus, scroll, value and edit text
+(`Document::reload`).
+
 ## Immediate mode
 
 `fuse::ui::immediate::ImmediateUi` has the same API and layout rules as Relight's `overlay::Ui` (`begin`, `text`,
@@ -435,6 +502,13 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_a11y_tree_dump` | roles, names, states, values |
 | `fuse_text_font_styles` | face description, synthetic bold / oblique at pixel level, atlas keys, `FontFamily` matching (real face preferred), the font scanner over a temp directory (collection, corrupt files, no fonts), CSS font / decoration / spacing properties, render scale 2, `tests/golden/text_styles.png` (`text_styles_full.png` in FULL) |
 | `fuse_text_i18n` | CLDR plural categories per rule family, plural patterns, number formatting per locale, pseudo-localisation, `StringTable::trPlural` |
+| `fuse_ui_drag_drop` | drag threshold, target by type / filter / modal scope, event order, `:drag-over`, Move / Copy / refuse / Escape, ghost, external drops, touch long-press drag vs pan, list reorder and list / table / grid row drags |
+| `fuse_ui_gestures` | double click (time, distance, third click), list activation, tap / double tap / long press, multi-touch ids, pinch and rotate phases |
+| `fuse_ui_actions` | shortcut text round trip, scope rules (window, subtree, modal, text fields, disabled), bound widgets, action menus, rebinding conflicts, save / load |
+| `fuse_ui_style_motion` | `transition` parsing, fades in context time, idle afterwards, zero allocation / no style-table growth, tween / spring / keyframes, popup enter / exit, reduced motion, static default theme |
+| `fuse_ui_rtl_layout` | layout dumps of one tree in `ltr` and `rtl`, logical padding, text alignment, popups unmoved |
+| `fuse_ui_hot_reload_file` | file-time poll reloads a `.fuseui` file keeping handles, focus, edit text, value and scroll; broken / missing file |
+| `fuse_ui_interaction_golden` | action menu with shortcut texts and a list row drag (ghost, insertion line) against `tests/golden/interaction.png` (MINIMAL profile only) |
 
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
 | `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster (skips 77 without a display or device) |

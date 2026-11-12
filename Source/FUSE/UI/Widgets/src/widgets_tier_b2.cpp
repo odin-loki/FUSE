@@ -614,6 +614,12 @@ struct TableView {
             default: return false;
             }
         }
+        case EventType::DoubleClick: { // double click on a row activates it, like Enter
+            const i64 cur = i64(ui.value(ec.node));
+            if (e.pos.y >= c.y + hh && cur >= 0 && cur == i64(s->first) + i64((e.pos.y - c.y - hh) / rh))
+                ui.emit(ec.node, SignalKind::Submitted, {.value = f32(cur)});
+            return true;
+        }
         default: return false;
         }
     }
@@ -887,6 +893,26 @@ void tableModelChanged(UiContext& ui, NodeHandle table) {
     TableView::setFirst(ui, table, *s, s->first);
     if (ui.value(table) >= f32(TableView::rows(*s))) ui.setValue(table, -1.f, true);
     ui.invalidate(table);
+}
+const ItemModel* tableModel(const UiContext& ui, NodeHandle table) {
+    const TableState* s = stateOf(ui, table);
+    return s ? s->model : nullptr;
+}
+Rect tableRowRect(const UiContext& ui, NodeHandle table, u32 row) {
+    const TableState* s = stateOf(ui, table);
+    if (!s) return {};
+    const Rect c = ui.contentRect(table);
+    const f32 rh = rowHeight(ui, table);
+    return {c.x, c.y + TableView::headerH(ui, table, *s) + (f32(row) - f32(s->first)) * rh, c.w, rh};
+}
+i32 tableRowAt(const UiContext& ui, NodeHandle table, Vec2 p) {
+    const TableState* s = stateOf(ui, table);
+    if (!s) return -1;
+    const Rect c = ui.contentRect(table);
+    const f32 top = c.y + TableView::headerH(ui, table, *s);
+    if (!c.contains(p) || p.y < top || p.x >= c.right() - TableView::kBar) return -1;
+    const i64 row = i64(s->first) + i64((p.y - top) / rowHeight(ui, table));
+    return row < i64(TableView::rows(*s)) ? i32(row) : -1;
 }
 u32 tableFirstVisible(const UiContext& ui, NodeHandle table) { const TableState* s = stateOf(ui, table); return s ? s->first : 0u; }
 f32 tableColumnWidth(const UiContext& ui, NodeHandle table, u32 col) {

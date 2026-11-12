@@ -132,16 +132,25 @@ struct MenuItem { // text = "label" or "label\n<sub items, one tab less>" (a sub
     static constexpr A11yRole kRole = A11yRole::ListItem;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
-    static std::string_view label(std::string_view t) { return t.substr(0, t.find('\n')); }
+    static std::string_view label(std::string_view t) { return t.substr(0, t.find_first_of("\n\t")); }
+    /// "label\tCtrl+S": the shortcut text shown right-aligned (action menus)
+    static std::string_view shortcut(std::string_view t) {
+        t = t.substr(0, t.find('\n'));
+        const std::size_t tab = t.find('\t');
+        return tab == std::string_view::npos ? std::string_view{} : t.substr(tab + 1);
+    }
     static bool hasSub(std::string_view t) { return t.find('\n') != std::string_view::npos; }
     static Size measure(UiContext& ui, NodeHandle n, Size) {
-        const std::string_view t = ui.text(n);
-        return {std::ceil(ui.measureString(label(t), ui.computed(n).fontSize)) + (hasSub(t) ? 18.f : 0.f), rowHeight(ui, n) - 6.f};
+        const std::string_view t = ui.text(n), sc = shortcut(t);
+        const f32 scW = sc.empty() ? 0.f : std::ceil(ui.measureString(sc, ui.computed(n).fontSize)) + 24.f;
+        return {std::ceil(ui.measureString(label(t), ui.computed(n).fontSize)) + scW + (hasSub(t) ? 18.f : 0.f), rowHeight(ui, n) - 6.f};
     }
     static void paint(const PaintContext& pc, DrawList& dl) {
         const std::string_view t = pc.ui.text(pc.node);
         if (pc.ui.checked(pc.node)) dl.rect({pc.rect.x + 2.f, pc.rect.y + 3.f, 3.f, pc.rect.h - 6.f}, accent(pc));
         labelAt(pc, dl, label(t), pc.content);
+        if (const std::string_view sc = shortcut(t); !sc.empty())
+            pc.ui.paintString(dl, sc, pc.content, textCol(pc).withAlpha(0.6f * pc.opacity), pc.style.fontSize, TextAlignment::End, pc.node.index);
         if (hasSub(t)) { // chevron
             const Rect c = pc.content;
             const f32 x = c.right() - 8.f, y = c.y + c.h * 0.5f;
@@ -329,6 +338,11 @@ struct ListView {
                 return true;
             default: return false;
             }
+        case EventType::DoubleClick: { // double click on a row activates it, like Enter
+            const i64 row = i64(ui.userData(n)) + i64((e.pos.y - ui.contentRect(n).y) / rowHeight(ui, n));
+            if (cur >= 0 && row == cur) ui.emit(n, SignalKind::Submitted, {.value = f32(cur), .text = nth(ui.text(n), u32(cur))});
+            return true;
+        }
         default: return false;
         }
     }
@@ -597,6 +611,11 @@ NodeHandle popupMenuAt(UiContext& ui, NodeHandle owner, std::string_view items, 
         item = {};
         if (t == "-") { separator(ui, menu); return true; }
         item = make(ui, "menuitem", menu);
+        // state prefixes (action menus): \x01 = disabled, \x02 = checked
+        bool off = false, on = false;
+        while (!t.empty() && (t[0] == '\x01' || t[0] == '\x02')) { (t[0] == '\x01' ? off : on) = true; t.remove_prefix(1); }
+        if (off) ui.setDisabled(item, true);
+        if (on) ui.setChecked(item, true);
         ui.setText(item, t);
         ui.setRange(item, 0.f, 1e9f, 0.f);
         ui.setValue(item, f32(base + i));
@@ -637,7 +656,9 @@ void closePopup(UiContext& ui, NodeHandle n) {
         ui.setCss(scope, "display", "none"); // dialogs persist
     } else {
         ui.setCss(scope, "display", "none");
-        ui.post(&destroyCmd, scope);
+        // an exit animation (style `exit-animation` on the popup) keeps it on screen a little longer
+        if (const f32 ex = ui.exitDuration(scope); ex > 0.f) ui.startTimer(ex + 0.02f, false, [scope](UiContext& c) { c.destroy(scope); });
+        else ui.post(&destroyCmd, scope);
     }
     // closing a submenu hands input back to the parent menu
     if (const NodeHandle parentScope = scopeOf(ui, owner); ui.alive(parentScope) && popupOpen(ui, parentScope)) ui.setModal(parentScope);
@@ -724,6 +745,18 @@ NodeHandle listView(UiContext& ui, NodeHandle parent, std::string_view items, i3
     return n;
 }
 std::string_view listItem(const UiContext& ui, NodeHandle list, u32 index) { return nth(ui.text(list), index); }
+u32 listCount(const UiContext& ui, NodeHandle list) { return count(ui.text(list)); }
+Rect listRowRect(UiContext& ui, NodeHandle list, u32 row) {
+    const Rect c = ui.contentRect(list);
+    const f32 rh = rowHeight(ui, list);
+    return {c.x, c.y + (f32(row) - f32(u32(ui.userData(list)))) * rh, c.w, rh};
+}
+i32 listRowAt(UiContext& ui, NodeHandle list, Vec2 p) {
+    const Rect c = ui.contentRect(list);
+    if (!c.contains(p)) return -1;
+    const i64 row = i64(ui.userData(list)) + i64((p.y - c.y) / rowHeight(ui, list));
+    return row >= 0 && row < i64(count(ui.text(list))) ? i32(row) : -1;
+}
 u32 listFirstVisible(const UiContext& ui, NodeHandle list) { return u32(ui.userData(list)); }
 
 NodeHandle treeView(UiContext& ui, NodeHandle parent, std::string_view lines, std::string_view id) {

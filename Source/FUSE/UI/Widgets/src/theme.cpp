@@ -131,6 +131,10 @@ docktabs { color: var(--text); background-end: var(--accent); padding: 0px 4px; 
 lineedit, textedit, codeedit { cursor: text; }
 link { cursor: pointer; }
 *:disabled { cursor: not-allowed; }
+menuitem:disabled { color: var(--text-dim); }
+.fx { transition: background 0.12s ease-out, border-color 0.12s ease-out, color 0.12s ease-out; }
+.fx-fade { enter-animation: fade; enter-duration: 0.12s; exit-animation: fade; exit-duration: 0.1s; }
+.fx-slide { enter-animation: slide-down; enter-duration: 0.14s; exit-animation: slide-up; exit-duration: 0.1s; }
 )css";
 }
 

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <charconv>
 #include <cstring>
 
@@ -76,6 +77,14 @@ constexpr PropInfo kProps[] = {
     {Prop::LetterSpacing, "letter-spacing", T::Length, true, true, true},
     {Prop::LineHeight, "line-height", T::Length, true, false, true},
     {Prop::Cursor, "cursor", T::Enum, false, false, false},
+    {Prop::TextDirection, "direction", T::Enum, true, false, true},
+    {Prop::PaddingStart, "padding-start", T::Length, false, false, true},
+    {Prop::PaddingEnd, "padding-end", T::Length, false, false, true},
+    {Prop::Transition, "transition-entry", T::Number, false, false, false}, // written through the `transition` shorthand
+    {Prop::EnterAnimation, "enter-animation", T::Enum, false, false, false},
+    {Prop::EnterDuration, "enter-duration", T::Number, false, false, false},
+    {Prop::ExitAnimation, "exit-animation", T::Enum, false, false, false},
+    {Prop::ExitDuration, "exit-duration", T::Number, false, false, false},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -118,6 +127,11 @@ constexpr EnumWord kEnums[] = {
     {Prop::Cursor, "move", u8(Cursor::Move)},         {Prop::Cursor, "crosshair", u8(Cursor::Crosshair)},
     {Prop::Cursor, "not-allowed", u8(Cursor::NotAllowed)}, {Prop::Cursor, "wait", u8(Cursor::Wait)},
     {Prop::Cursor, "none", u8(Cursor::Hidden)},
+    {Prop::TextDirection, "ltr", 0}, {Prop::TextDirection, "rtl", 1},
+    {Prop::EnterAnimation, "none", u8(MotionKind::None)}, {Prop::EnterAnimation, "fade", u8(MotionKind::Fade)},
+    {Prop::EnterAnimation, "slide-up", u8(MotionKind::SlideUp)}, {Prop::EnterAnimation, "slide-down", u8(MotionKind::SlideDown)},
+    {Prop::ExitAnimation, "none", u8(MotionKind::None)}, {Prop::ExitAnimation, "fade", u8(MotionKind::Fade)},
+    {Prop::ExitAnimation, "slide-up", u8(MotionKind::SlideUp)}, {Prop::ExitAnimation, "slide-down", u8(MotionKind::SlideDown)},
 };
 
 std::string_view trim(std::string_view s) {
@@ -157,6 +171,24 @@ int hexval(char c) {
     c = char(std::tolower(static_cast<unsigned char>(c)));
     if (c >= 'a' && c <= 'f') return 10 + c - 'a';
     return -1;
+}
+
+/// "0.2s", "150ms" or a plain number of seconds.
+bool parseSeconds(std::string_view s, f32& out) {
+    std::string_view unit;
+    if (!parseNumber(s, out, unit)) return false;
+    if (unit == "ms") out /= 1000.f;
+    else if (!(unit.empty() || unit == "s")) return false;
+    return out >= 0.f;
+}
+bool parseEasing(std::string_view s, Easing& out) {
+    if (s == "linear") out = Easing::Linear;
+    else if (s == "ease" || s == "ease-in-out") out = Easing::InOutCubic;
+    else if (s == "ease-in") out = Easing::In;
+    else if (s == "ease-out") out = Easing::Out;
+    else if (s == "back" || s == "ease-out-back") out = Easing::OutBack;
+    else return false;
+    return true;
 }
 
 struct NamedColor { std::string_view name; u32 hex; };
@@ -281,6 +313,34 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
         return false;
     case T::Length: return parseLength(text, out.len);
     case T::Number: {
+        if (p == Prop::EnterDuration || p == Prop::ExitDuration) return parseSeconds(text, out.num);
+        if (p == Prop::Transition) { // one entry: <property|all|none> [duration] [easing] [delay]
+            std::string_view w[4];
+            int n = 0;
+            for (std::size_t i = 0; i < text.size() && n < 4;) {
+                while (i < text.size() && std::isspace(static_cast<unsigned char>(text[i]))) ++i;
+                const std::size_t s0 = i;
+                while (i < text.size() && !std::isspace(static_cast<unsigned char>(text[i]))) ++i;
+                if (i > s0) w[n++] = text.substr(s0, i - s0);
+            }
+            if (n == 0) return false;
+            Prop target;
+            if (w[0] == "none") { out.e = kTransitionNone; return n == 1; }
+            if (w[0] == "all") target = kTransitionAll;
+            else if (!findProp(w[0], target) || !propInfo(target).animatable) return false;
+            Easing ease = Easing::InOutCubic;
+            f32 dur = 0.f, delay = 0.f;
+            bool haveDur = false;
+            for (int k = 1; k < n; ++k) {
+                f32 t;
+                if (parseEasing(w[k], ease)) continue;
+                if (!parseSeconds(w[k], t)) return false;
+                (haveDur ? delay : dur) = t;
+                haveDur = true;
+            }
+            out = PropValue::ofTransition(target, dur, ease, delay);
+            return true;
+        }
         std::string_view unit;
         if (!parseNumber(text, out.num, unit)) return false;
         if (unit == "%") out.num /= 100.f;
@@ -374,24 +434,78 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::LetterSpacing: s.letterSpacing = v.len.value; break;
     case Prop::LineHeight: s.lineHeight = v.len; break;
     case Prop::Cursor: s.cursor = fuse::ui::Cursor(v.e < kCursorCount ? v.e : 0); break;
+    case Prop::TextDirection: s.rtl = v.e != 0; break;
+    case Prop::PaddingStart: s.paddingStart = v.len.value; break;
+    case Prop::PaddingEnd: s.paddingEnd = v.len.value; break;
+    case Prop::Transition: {
+        if (v.e == kTransitionNone) { s.transitionCount = 0; s.transitions = {}; break; }
+        const Transition t{Prop(v.e), Easing(std::min<u8>(v.trackCount, u8(Easing::Out))), std::max(0.f, v.num), std::max(0.f, v.len.value)};
+        u8 k = 0;
+        while (k < s.transitionCount && s.transitions[k].prop != t.prop) ++k;
+        if (k == kMaxTransitions) break; // full: further entries are dropped
+        s.transitions[k] = t;
+        if (k == s.transitionCount) ++s.transitionCount;
+        break;
+    }
+    case Prop::EnterAnimation: s.enterAnim = MotionKind(v.e); break;
+    case Prop::EnterDuration: s.enterDuration = std::max(0.f, v.num); break;
+    case Prop::ExitAnimation: s.exitAnim = MotionKind(v.e); break;
+    case Prop::ExitDuration: s.exitDuration = std::max(0.f, v.num); break;
     case Prop::Count: break;
     }
 }
 
 PropValue readProp(const ComputedStyle& s, Prop p) {
+    const auto px = [](f32 v) { return PropValue::ofLength(Length::px(v)); };
     switch (p) {
     case Prop::Display: return PropValue::ofBool(s.visible);
-    case Prop::Opacity: return PropValue::ofNumber(s.opacity);
-    case Prop::Color: return PropValue::ofColor(s.color);
-    case Prop::Background: return PropValue::ofColor(s.background);
-    case Prop::BorderColor: return PropValue::ofColor(s.borderColor);
-    case Prop::FontSize: return PropValue::ofLength(Length::px(s.fontSize));
-    case Prop::Width: return PropValue::ofLength(s.width);
-    case Prop::Height: return PropValue::ofLength(s.height);
-    case Prop::Grow: return PropValue::ofNumber(s.grow);
-    case Prop::Gap: return PropValue::ofLength(Length::px(s.gap));
     case Prop::Layout: return PropValue::ofEnum(u8(s.layout));
     case Prop::Direction: return PropValue::ofEnum(u8(s.direction));
+    case Prop::Width: return PropValue::ofLength(s.width);
+    case Prop::Height: return PropValue::ofLength(s.height);
+    case Prop::MinWidth: return PropValue::ofLength(s.minWidth);
+    case Prop::MinHeight: return PropValue::ofLength(s.minHeight);
+    case Prop::MaxWidth: return PropValue::ofLength(s.maxWidth);
+    case Prop::MaxHeight: return PropValue::ofLength(s.maxHeight);
+    case Prop::Basis: return PropValue::ofLength(s.basis);
+    case Prop::Grow: return PropValue::ofNumber(s.grow);
+    case Prop::Shrink: return PropValue::ofNumber(s.shrink);
+    case Prop::PaddingLeft: return px(s.padding.l);
+    case Prop::PaddingTop: return px(s.padding.t);
+    case Prop::PaddingRight: return px(s.padding.r);
+    case Prop::PaddingBottom: return px(s.padding.b);
+    case Prop::MarginLeft: return px(s.margin.l);
+    case Prop::MarginTop: return px(s.margin.t);
+    case Prop::MarginRight: return px(s.margin.r);
+    case Prop::MarginBottom: return px(s.margin.b);
+    case Prop::Gap: return px(s.gap);
+    case Prop::AlignItems: return PropValue::ofEnum(u8(s.alignItems));
+    case Prop::AlignSelf: return PropValue::ofEnum(u8(s.alignSelf));
+    case Prop::Justify: return PropValue::ofEnum(u8(s.justify));
+    case Prop::Wrap: return PropValue::ofBool(s.wrap);
+    case Prop::Overflow: return PropValue::ofEnum(u8(s.overflow));
+    case Prop::GridColumns: { PropValue v; v.type = PropType::Tracks; v.tracks = s.gridColumns; v.trackCount = s.gridColumnCount; return v; }
+    case Prop::GridColumn: return PropValue::ofNumber(f32(s.gridColumn));
+    case Prop::GridColumnSpan: return PropValue::ofNumber(f32(s.gridColumnSpan));
+    case Prop::GridRow: return PropValue::ofNumber(f32(s.gridRow));
+    case Prop::GridRowSpan: return PropValue::ofNumber(f32(s.gridRowSpan));
+    case Prop::Left: return PropValue::ofLength(s.left);
+    case Prop::Top: return PropValue::ofLength(s.top);
+    case Prop::Right: return PropValue::ofLength(s.right);
+    case Prop::Bottom: return PropValue::ofLength(s.bottom);
+    case Prop::CenterX: return PropValue::ofBool(s.centerX);
+    case Prop::CenterY: return PropValue::ofBool(s.centerY);
+    case Prop::Background: return PropValue::ofColor(s.background);
+    case Prop::Background2: return PropValue::ofColor(s.background2);
+    case Prop::Gradient: return PropValue::ofEnum(u8(s.gradient));
+    case Prop::BorderColor: return PropValue::ofColor(s.borderColor);
+    case Prop::BorderWidth: return px(s.borderWidth);
+    case Prop::RadiusTL: return px(s.radius[0]);
+    case Prop::RadiusTR: return px(s.radius[1]);
+    case Prop::RadiusBR: return px(s.radius[2]);
+    case Prop::RadiusBL: return px(s.radius[3]);
+    case Prop::Color: return PropValue::ofColor(s.color);
+    case Prop::FontSize: return px(s.fontSize);
     case Prop::TextAlign: return PropValue::ofEnum(u8(s.textAlign));
     case Prop::FontWeight: return PropValue::ofNumber(f32(s.fontWeight));
     case Prop::FontStyle: return PropValue::ofEnum(s.fontItalic ? 1 : 0);
@@ -406,7 +520,24 @@ PropValue readProp(const ComputedStyle& s, Prop p) {
         return v;
     }
     case Prop::Cursor: return PropValue::ofEnum(u8(s.cursor));
-    default: break;
+    case Prop::Opacity: return PropValue::ofNumber(s.opacity);
+    case Prop::ShadowColor: return PropValue::ofColor(s.shadowColor);
+    case Prop::ShadowBlur: return px(s.shadowBlur);
+    case Prop::ShadowX: return px(s.shadowX);
+    case Prop::ShadowY: return px(s.shadowY);
+    case Prop::PointerEvents: return PropValue::ofBool(s.pointerEvents);
+    case Prop::BackdropBlur: return px(s.backdropBlur);
+    case Prop::TextDirection: return PropValue::ofEnum(s.rtl ? 1 : 0);
+    case Prop::PaddingStart: return px(s.paddingStart);
+    case Prop::PaddingEnd: return px(s.paddingEnd);
+    case Prop::EnterAnimation: return PropValue::ofEnum(u8(s.enterAnim));
+    case Prop::EnterDuration: return PropValue::ofNumber(s.enterDuration);
+    case Prop::ExitAnimation: return PropValue::ofEnum(u8(s.exitAnim));
+    case Prop::ExitDuration: return PropValue::ofNumber(s.exitDuration);
+    case Prop::Transition: // the first entry (the whole list is ComputedStyle::transitions)
+        if (s.transitionCount) return PropValue::ofTransition(s.transitions[0].prop, s.transitions[0].duration, s.transitions[0].ease, s.transitions[0].delay);
+        break;
+    case Prop::Count: break;
     }
     PropValue v;
     v.type = propInfo(p).type;
@@ -419,6 +550,141 @@ std::string_view cursorCssName(Cursor c) {
     return kNames[u8(c) < kCursorCount ? u8(c) : 0];
 }
 
+// ---- Motion helpers ------------------------------------------------------------------------------------------------
+f32 applyEasing(Easing e, f32 k) {
+    switch (e) {
+    case Easing::Linear: break;
+    case Easing::InOutCubic: k = k < 0.5f ? 4.f * k * k * k : 1.f - std::pow(-2.f * k + 2.f, 3.f) * 0.5f; break;
+    case Easing::OutBack: { const f32 c1 = 1.70158f, c3 = c1 + 1.f; k = 1.f + c3 * std::pow(k - 1.f, 3.f) + c1 * std::pow(k - 1.f, 2.f); break; }
+    case Easing::In: k = k * k * k; break;
+    case Easing::Out: k = 1.f - std::pow(1.f - k, 3.f); break;
+    }
+    return k;
+}
+
+const Transition* findTransition(const ComputedStyle& s, Prop p) {
+    const Transition* all = nullptr;
+    for (u8 k = 0; k < s.transitionCount; ++k) {
+        if (s.transitions[k].prop == p) return &s.transitions[k];
+        if (s.transitions[k].prop == kTransitionAll) all = &s.transitions[k];
+    }
+    return all;
+}
+
+namespace {
+/// The field a property animates (one float, one Length, one Colour, a box edge or a corner); none: not interpolated.
+struct PropField {
+    f32 ComputedStyle::*num = nullptr;
+    Length ComputedStyle::*len = nullptr;
+    Color ComputedStyle::*col = nullptr;
+    int edge = -1;   ///< 0..3 padding l t r b, 4..7 margin
+    int radius = -1; ///< corner index
+};
+PropField propField(Prop p) {
+    PropField f;
+    switch (p) {
+    case Prop::Width: f.len = &ComputedStyle::width; break;
+    case Prop::Height: f.len = &ComputedStyle::height; break;
+    case Prop::MinWidth: f.len = &ComputedStyle::minWidth; break;
+    case Prop::MinHeight: f.len = &ComputedStyle::minHeight; break;
+    case Prop::MaxWidth: f.len = &ComputedStyle::maxWidth; break;
+    case Prop::MaxHeight: f.len = &ComputedStyle::maxHeight; break;
+    case Prop::Basis: f.len = &ComputedStyle::basis; break;
+    case Prop::Left: f.len = &ComputedStyle::left; break;
+    case Prop::Top: f.len = &ComputedStyle::top; break;
+    case Prop::Right: f.len = &ComputedStyle::right; break;
+    case Prop::Bottom: f.len = &ComputedStyle::bottom; break;
+    case Prop::Grow: f.num = &ComputedStyle::grow; break;
+    case Prop::Shrink: f.num = &ComputedStyle::shrink; break;
+    case Prop::Gap: f.num = &ComputedStyle::gap; break;
+    case Prop::BorderWidth: f.num = &ComputedStyle::borderWidth; break;
+    case Prop::FontSize: f.num = &ComputedStyle::fontSize; break;
+    case Prop::Opacity: f.num = &ComputedStyle::opacity; break;
+    case Prop::ShadowBlur: f.num = &ComputedStyle::shadowBlur; break;
+    case Prop::ShadowX: f.num = &ComputedStyle::shadowX; break;
+    case Prop::ShadowY: f.num = &ComputedStyle::shadowY; break;
+    case Prop::BackdropBlur: f.num = &ComputedStyle::backdropBlur; break;
+    case Prop::LetterSpacing: f.num = &ComputedStyle::letterSpacing; break;
+    case Prop::Background: f.col = &ComputedStyle::background; break;
+    case Prop::Background2: f.col = &ComputedStyle::background2; break;
+    case Prop::BorderColor: f.col = &ComputedStyle::borderColor; break;
+    case Prop::Color: f.col = &ComputedStyle::color; break;
+    case Prop::ShadowColor: f.col = &ComputedStyle::shadowColor; break;
+    case Prop::PaddingLeft: f.edge = 0; break;
+    case Prop::PaddingTop: f.edge = 1; break;
+    case Prop::PaddingRight: f.edge = 2; break;
+    case Prop::PaddingBottom: f.edge = 3; break;
+    case Prop::MarginLeft: f.edge = 4; break;
+    case Prop::MarginTop: f.edge = 5; break;
+    case Prop::MarginRight: f.edge = 6; break;
+    case Prop::MarginBottom: f.edge = 7; break;
+    case Prop::RadiusTL: f.radius = 0; break;
+    case Prop::RadiusTR: f.radius = 1; break;
+    case Prop::RadiusBR: f.radius = 2; break;
+    case Prop::RadiusBL: f.radius = 3; break;
+    default: break;
+    }
+    return f;
+}
+f32 edgeOf(const ComputedStyle& s, int e) {
+    const Edges& g = e < 4 ? s.padding : s.margin;
+    switch (e & 3) { case 0: return g.l; case 1: return g.t; case 2: return g.r; default: return g.b; }
+}
+void setEdge(ComputedStyle& s, int e, f32 v) {
+    Edges& g = e < 4 ? s.padding : s.margin;
+    switch (e & 3) { case 0: g.l = v; break; case 1: g.t = v; break; case 2: g.r = v; break; default: g.b = v; break; }
+}
+f32 mixf(f32 a, f32 b, f32 k) { return a + (b - a) * k; }
+} // namespace
+
+bool sameStyleProp(const ComputedStyle& a, const ComputedStyle& b, Prop p) {
+    const PropField f = propField(p);
+    if (f.num) return a.*f.num == b.*f.num;
+    if (f.len) return a.*f.len == b.*f.len;
+    if (f.col) return a.*f.col == b.*f.col;
+    if (f.edge >= 0) return edgeOf(a, f.edge) == edgeOf(b, f.edge);
+    if (f.radius >= 0) return a.radius[std::size_t(f.radius)] == b.radius[std::size_t(f.radius)];
+    switch (p) { // not interpolated (lerpStyleProp switches to the end value)
+    case Prop::FontWeight: return a.fontWeight == b.fontWeight;
+    case Prop::FontStyle: return a.fontItalic == b.fontItalic;
+    case Prop::FontFamily: return a.fontFamily == b.fontFamily;
+    case Prop::TextDecoration: return a.textDecoration == b.textDecoration;
+    case Prop::LineHeight: return a.lineHeight == b.lineHeight;
+    case Prop::Cursor: return a.cursor == b.cursor;
+    default: break;
+    }
+    return true;
+}
+
+void lerpStyleProp(ComputedStyle& out, const ComputedStyle& a, const ComputedStyle& b, Prop p, f32 k) {
+    const PropField f = propField(p);
+    if (f.num) {
+        f32 v = mixf(a.*f.num, b.*f.num, k);
+        if (p == Prop::Opacity) v = std::clamp(v, 0.f, 1.f);
+        else if (p != Prop::ShadowX && p != Prop::ShadowY && p != Prop::LetterSpacing) v = std::max(0.f, v);
+        out.*f.num = v;
+    } else if (f.len) {
+        const Length la = a.*f.len, lb = b.*f.len;
+        out.*f.len = (la.unit == lb.unit && la.unit != Unit::Auto) ? Length{mixf(la.value, lb.value, k), lb.unit} : lb;
+    } else if (f.col) {
+        // premultiplied blend: a fade from / to transparent keeps the visible colour's hue
+        const Color ca = a.*f.col, cb = b.*f.col;
+        const f32 al = std::clamp(mixf(ca.a, cb.a, k), 0.f, 1.f);
+        Color c{mixf(ca.r * ca.a, cb.r * cb.a, k), mixf(ca.g * ca.a, cb.g * cb.a, k), mixf(ca.b * ca.a, cb.b * cb.a, k), al};
+        if (al > 1e-5f) { c.r = std::clamp(c.r / al, 0.f, 1.f); c.g = std::clamp(c.g / al, 0.f, 1.f); c.b = std::clamp(c.b / al, 0.f, 1.f); }
+        else c = Color{cb.r, cb.g, cb.b, 0.f};
+        out.*f.col = c;
+    } else if (f.edge >= 0) {
+        const f32 v = mixf(edgeOf(a, f.edge), edgeOf(b, f.edge), k);
+        setEdge(out, f.edge, f.edge < 4 ? std::max(0.f, v) : v);
+    } else if (f.radius >= 0) {
+        const std::size_t r = std::size_t(f.radius);
+        out.radius[r] = std::max(0.f, mixf(a.radius[r], b.radius[r], k));
+    } else {
+        applyProp(out, p, readProp(b, p));
+    }
+}
+
 void inheritFrom(ComputedStyle& s, const ComputedStyle& parent) {
     s.color = parent.color;
     s.fontSize = parent.fontSize;
@@ -428,6 +694,7 @@ void inheritFrom(ComputedStyle& s, const ComputedStyle& parent) {
     s.fontFamily = parent.fontFamily;
     s.letterSpacing = parent.letterSpacing;
     s.lineHeight = parent.lineHeight;
+    s.rtl = parent.rtl;
 }
 
 // ---- Parser --------------------------------------------------------------------------------------------------------
@@ -503,6 +770,7 @@ bool parseSelector(std::string_view text, StyleRule& rule, bool& isRoot) {
                 else if (name == "disabled") bit = kStateDisabled;
                 else if (name == "checked") bit = kStateChecked;
                 else if (name == "selected") bit = kStateSelected;
+                else if (name == "drag-over") bit = kStateDragOver;
                 else return false;
                 sel.states |= bit;
                 ++cls;
@@ -575,6 +843,28 @@ void addShorthand(StyleRule& rule, std::string_view name, std::string_view value
             if (parsePropValue(Prop::BorderWidth, w[k], tmp)) addDecl(rule, Prop::BorderWidth, w[k], line, diags);
             else if (w[k] == "solid" || w[k] == "none") continue;
             else addDecl(rule, Prop::BorderColor, w[k], line, diags);
+        }
+    } else if (name == "transition") { // <property|all|none> <duration> [easing] [delay], ...
+        std::size_t at = 0;
+        while (at <= value.size()) {
+            const std::size_t comma = value.find(',', at);
+            const std::string_view one = trim(value.substr(at, comma == std::string_view::npos ? std::string_view::npos : comma - at));
+            const std::size_t sp = one.find_first_of(" \t");
+            const std::string_view target = one.substr(0, sp), rest = sp == std::string_view::npos ? std::string_view{} : one.substr(sp);
+            // box shorthands animate their four longhands
+            static constexpr std::string_view kBox[3][5] = {
+                {"padding", "padding-top", "padding-right", "padding-bottom", "padding-left"},
+                {"margin", "margin-top", "margin-right", "margin-bottom", "margin-left"},
+                {"border-radius", "border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius"}};
+            bool expanded = false;
+            for (const auto& box : kBox)
+                if (target == box[0]) {
+                    for (int k = 1; k < 5; ++k) addDecl(rule, Prop::Transition, std::string(box[k]) + std::string(rest), line, diags);
+                    expanded = true;
+                }
+            if (!expanded && !one.empty()) addDecl(rule, Prop::Transition, one, line, diags);
+            if (comma == std::string_view::npos) break;
+            at = comma + 1;
         }
     } else if (name == "flex") {
         splitWords(value, w, n, 3);
@@ -691,6 +981,8 @@ bool StyleSheet::token(u32 h, std::string_view& out) const {
 // ---- Engine --------------------------------------------------------------------------------------------------------
 StyleEngine::StyleEngine() {
     m_table.reserve(256);
+    m_isScratch.reserve(256);
+    m_freeScratch.reserve(32);
     m_hashIndex.assign(1024, 0);
     m_scratch.reserve(64);
     m_localTokens.reserve(16);
@@ -773,7 +1065,8 @@ bool StyleEngine::resolveVar(std::string_view raw, Prop p, PropValue& out, int d
     return resolveVar(tok, p, out, depth + 1);
 }
 
-u32 StyleEngine::intern(const ComputedStyle& cs) {
+namespace {
+u64 hashStyle(const ComputedStyle& cs) {
     // FNV over the bytes of a value-initialised copy is not padding-safe; hash fields that matter most and compare.
     u64 h = 1469598103934665603ull;
     auto mix = [&](f32 f) { u32 b; std::memcpy(&b, &f, 4); h = (h ^ b) * 1099511628211ull; };
@@ -781,6 +1074,12 @@ u32 StyleEngine::intern(const ComputedStyle& cs) {
     mix(cs.width.value); mix(cs.height.value); mix(cs.padding.l); mix(cs.padding.t); mix(cs.gap); mix(cs.fontSize);
     mix(cs.opacity); mix(cs.borderWidth); mix(cs.radius[0]); mix(cs.grow);
     h = (h ^ (u64(cs.layout) | u64(cs.direction) << 8 | u64(cs.visible) << 16 | u64(cs.alignItems) << 24 | u64(cs.justify) << 32)) * 1099511628211ull;
+    return h;
+}
+} // namespace
+
+u32 StyleEngine::intern(const ComputedStyle& cs) {
+    const u64 h = hashStyle(cs);
     const std::size_t mask = m_hashIndex.size() - 1;
     std::size_t slot = std::size_t(h >> 20) & mask;
     for (;;) {
@@ -789,19 +1088,43 @@ u32 StyleEngine::intern(const ComputedStyle& cs) {
         if (m_table[e - 1] == cs) return e - 1;
         slot = (slot + 1) & mask;
     }
-    if ((m_table.size() + 1) * 2 > m_hashIndex.size()) {
-        // grow and rehash
-        std::vector<u32> bigger(m_hashIndex.size() * 2, 0);
-        m_hashIndex.swap(bigger);
-        const auto keep = std::move(m_table);
-        m_table.clear();
-        m_table.reserve(keep.size() * 2);
-        for (const auto& k : keep) intern(k);
+    if ((std::size_t(m_interned) + 1) * 2 > m_hashIndex.size()) {
+        rehash(m_hashIndex.size() * 2);
         return intern(cs);
     }
     m_table.push_back(cs);
+    m_isScratch.push_back(0);
     m_hashIndex[slot] = u32(m_table.size());
+    ++m_interned;
     return u32(m_table.size() - 1);
+}
+
+void StyleEngine::rehash(std::size_t slots) {
+    // table indices are node style ids: the table never moves, only the index is rebuilt (scratch entries are not in it)
+    m_hashIndex.assign(slots, 0);
+    const std::size_t mask = slots - 1;
+    for (std::size_t i = 0; i < m_table.size(); ++i) {
+        if (m_isScratch[i]) continue;
+        std::size_t slot = std::size_t(hashStyle(m_table[i]) >> 20) & mask;
+        while (m_hashIndex[slot]) slot = (slot + 1) & mask;
+        m_hashIndex[slot] = u32(i + 1);
+    }
+}
+
+u32 StyleEngine::acquireScratch(const ComputedStyle& init) {
+    if (!m_freeScratch.empty()) {
+        const u32 i = m_freeScratch.back();
+        m_freeScratch.pop_back();
+        m_table[i] = init;
+        return i;
+    }
+    const ComputedStyle copy = init; // `init` may live in the table that push_back reallocates
+    m_table.push_back(copy);
+    m_isScratch.push_back(1);
+    return u32(m_table.size() - 1);
+}
+void StyleEngine::releaseScratch(u32 index) {
+    if (index < m_table.size() && m_isScratch[index]) m_freeScratch.push_back(index);
 }
 
 u32 StyleEngine::compute(const StyleSubject& s, u32 node, const ComputedStyle* parent, const ComputedStyle* defaults,
@@ -826,6 +1149,8 @@ u32 StyleEngine::compute(const StyleSubject& s, u32 node, const ComputedStyle* p
             }
         }
     for (const auto& [p, v] : inl) applyProp(cs, p, v);
+    if (cs.paddingStart >= 0.f) (cs.rtl ? cs.padding.r : cs.padding.l) = cs.paddingStart; // logical padding
+    if (cs.paddingEnd >= 0.f) (cs.rtl ? cs.padding.l : cs.padding.r) = cs.paddingEnd;
     return intern(cs);
 }
 

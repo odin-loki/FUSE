@@ -16,6 +16,8 @@ enum NodeFlags : u32 {
     kFlagFocusScope = 1u << 2,
     kFlagRoleSet = 1u << 3,
     kFlagCapturesDrag = 1u << 4,
+    kFlagStyled = 1u << 5,  ///< styled at least once (a first style never transitions)
+    kFlagExiting = 1u << 6, ///< hidden, still painted by its exit animation: not hit, not focusable
 };
 enum Dirty : u8 { kDirtyStyle = 1, kDirtyLayout = 2, kDirtyPaint = 4, kDirtyText = 8, kDirtyMeasure = 16 };
 } // namespace
@@ -38,7 +40,8 @@ struct UiContext::Node {
     u8 dirty = 0;
     u32 state = 0;
     u32 flags = 0;
-    u32 style = 0;
+    u32 style = 0;       ///< computed style; a scratch slot of the style table while the node's style is animated
+    u32 targetStyle = 0; ///< the cascade's result (== style when nothing animates)
     Rect rect, prevRect;
     Size measured{-1.f, -1.f}, measureKey{-2.f, -2.f};
     Vec2 scroll;
@@ -130,6 +133,9 @@ UiContext::UiContext(const UiContextDesc& d) : m_font(d.font), m_atlas(d.atlasSi
     m_connections.reserve(256);
     m_timers.reserve(64);
     m_anims.reserve(128);
+    m_styleAnims.reserve(64);
+    m_propAnims.reserve(64);
+    m_dnd.reserve(32);
     m_queue = std::make_unique<Command[]>(kQueueSize);
     for (u32 i = 0; i < kQueueSize; ++i) m_queue[i].seq.store(i, std::memory_order_relaxed);
     m_families.reserve(8);
@@ -266,6 +272,19 @@ void UiContext::destroyRec(u32 i) {
             a.active = false;
             --m_animCount;
         }
+    if (n.style != n.targetStyle)
+        for (auto& a : m_styleAnims)
+            if (a.active && a.node.index == i) {
+                m_styles.releaseScratch(a.slot);
+                a.active = false;
+                --m_styleAnimCount;
+            }
+    if (m_propAnimCount)
+        for (auto& a : m_propAnims)
+            if (a.active && a.node.index == i) {
+                a.active = false;
+                --m_propAnimCount;
+            }
     n.alive = false;
     n.first = n.last = n.parent = n.next = n.prev = kNone;
     m_free.push_back(i);
@@ -402,7 +421,7 @@ void UiContext::set(NodeHandle h, Prop p, const PropValue& v) {
     if (!node(h)) return;
     auto& inl = m_cold[h.index]->inl;
     for (auto& kv : inl)
-        if (kv.first == p) {
+        if (kv.first == p && (p != Prop::Transition || kv.second.e == v.e)) { // one inline transition per target property
             kv.second = v;
             markStyle(h.index);
             return;
@@ -545,37 +564,93 @@ void UiContext::setViewport(Size s) {
 }
 
 // ---- Style pass ----------------------------------------------------------------------------------------------------
+void UiContext::applyStyleDiff(u32 i, const ComputedStyle& before, const ComputedStyle& after) {
+    Node& n = m_nodes[i];
+    ComputedStyle la = before;
+    const ComputedStyle& lb = after;
+    const bool fontChanged = la.fontSize != lb.fontSize || la.textAlign != lb.textAlign || la.rtl != lb.rtl ||
+                             la.fontWeight != lb.fontWeight || la.fontItalic != lb.fontItalic || la.fontFamily != lb.fontFamily ||
+                             la.letterSpacing != lb.letterSpacing || la.lineHeight != lb.lineHeight;
+    markPaint(i);
+    // compare layout-relevant fields only
+    la.background = lb.background; la.background2 = lb.background2; la.borderColor = lb.borderColor;
+    la.color = lb.color; la.shadowColor = lb.shadowColor; la.opacity = lb.opacity; la.radius = lb.radius;
+    la.gradient = lb.gradient; la.shadowBlur = lb.shadowBlur; la.shadowX = lb.shadowX; la.shadowY = lb.shadowY; la.backdropBlur = lb.backdropBlur;
+    la.pointerEvents = lb.pointerEvents; la.borderWidth = lb.borderWidth; la.textAlign = lb.textAlign;
+    la.textDecoration = lb.textDecoration;
+    la.transitions = lb.transitions; la.transitionCount = lb.transitionCount; la.enterAnim = lb.enterAnim; la.exitAnim = lb.exitAnim;
+    la.enterDuration = lb.enterDuration; la.exitDuration = lb.exitDuration;
+    if (fontChanged) {
+        m_cold[i]->layoutWidth = -1.f;
+        n.dirty |= kDirtyText;
+    }
+    if (!(la == lb) || fontChanged) markLayout(i);
+}
+
 void UiContext::styleRec(u32 i, bool parentChanged) {
     Node& n = m_nodes[i];
     bool changed = false;
     if (parentChanged || (n.dirty & kDirtyStyle)) {
         const ContextSubject subj(*this, m_nodes);
-        const ComputedStyle* ps = n.parent != kNone ? &m_styles.style(m_nodes[n.parent].style) : nullptr;
+        // inheritance follows the cascade's result, not a parent's in-flight transition values
+        const ComputedStyle* ps = n.parent != kNone ? &m_styles.style(m_nodes[n.parent].targetStyle) : nullptr;
         const WidgetClass& wc = m_registry.get(n.cls);
-        const u32 before = n.style;
+        const u32 before = n.targetStyle;
         const u32 idx = m_styles.compute(subj, i, ps, &wc.defaults, m_cold[i]->inl);
         ++m_stats.styled;
         n.dirty &= u8(~kDirtyStyle);
+        const bool first = !(n.flags & kFlagStyled);
+        n.flags |= kFlagStyled;
         if (idx != before) {
-            ComputedStyle la = m_styles.style(before);
-            const ComputedStyle& lb = m_styles.style(idx);
-            const bool fontChanged = la.fontSize != lb.fontSize || la.textAlign != lb.textAlign || la.fontWeight != lb.fontWeight ||
-                                     la.fontItalic != lb.fontItalic || la.fontFamily != lb.fontFamily ||
-                                     la.letterSpacing != lb.letterSpacing || la.lineHeight != lb.lineHeight;
-            n.style = idx;
             changed = true;
-            markPaint(i);
-            // compare layout-relevant fields only
-            la.background = lb.background; la.background2 = lb.background2; la.borderColor = lb.borderColor;
-            la.color = lb.color; la.shadowColor = lb.shadowColor; la.opacity = lb.opacity; la.radius = lb.radius;
-            la.gradient = lb.gradient; la.shadowBlur = lb.shadowBlur; la.shadowX = lb.shadowX; la.shadowY = lb.shadowY; la.backdropBlur = lb.backdropBlur;
-            la.pointerEvents = lb.pointerEvents; la.borderWidth = lb.borderWidth; la.textAlign = lb.textAlign;
-            la.textDecoration = lb.textDecoration;
-            if (fontChanged) {
-                m_cold[i]->layoutWidth = -1.f;
-                n.dirty |= kDirtyText;
+            // copies: starting an animation may grow the style table
+            const ComputedStyle cur = m_styles.style(n.style); // what is on screen now
+            const ComputedStyle next = m_styles.style(idx);
+            const bool wasVisible = !first && m_styles.style(before).visible;
+            n.targetStyle = idx;
+            const bool motion = !first && !m_reducedMotion && !m_sheetSwap;
+            bool trans = false;
+            if (motion && next.transitionCount && next.visible && cur.visible)
+                for (int p = 0; p < kPropCount && !trans; ++p) {
+                    if (!propInfo(Prop(p)).animatable) continue;
+                    const Transition* tr = findTransition(next, Prop(p));
+                    trans = tr && tr->duration > 0.f && !sameStyleProp(cur, next, Prop(p));
+                }
+            const bool enter = next.visible && (first || !wasVisible) && next.enterAnim != MotionKind::None &&
+                               next.enterDuration > 0.f && !m_reducedMotion;
+            const bool exit = motion && cur.visible && !next.visible && next.exitAnim != MotionKind::None &&
+                              next.exitDuration > 0.f && !n.rect.empty();
+            if (n.style != before || trans || exit) { // already animated, or starting now
+                StyleAnim& a = ensureStyleAnim(i);
+                if (trans) {
+                    a.from = cur;
+                    a.t = 0.f;
+                    a.transitioning = true;
+                }
+                if (exit && !a.exiting) {
+                    for (auto& an : m_anims) // an enter animation still running gives way
+                        if (an.active && an.node.index == i && an.prop != AnimProp::Value) { an.active = false; --m_animCount; }
+                    a.exiting = true;
+                    a.exitKind = next.exitAnim;
+                    a.exitT = 0.f;
+                    a.exitDur = next.exitDuration;
+                    a.exitFromOpacity = n.animOpacity;
+                    n.flags |= kFlagExiting;
+                } else if (a.exiting && next.visible) { // shown again before the exit finished
+                    a.exiting = false;
+                    n.flags &= ~u32(kFlagExiting);
+                    if (!enter) { // an enter animation continues from where the exit got to
+                        n.animOpacity = 1.f;
+                        n.offset.y = 0.f;
+                        if (n.parent != kNone) markArrange(n.parent);
+                    }
+                }
+                composeAnimated(a);
+            } else {
+                n.style = idx;
+                applyStyleDiff(i, cur, next);
             }
-            if (!(la == lb) || fontChanged) markLayout(i);
+            if (enter) startEnter(i, next.enterAnim, next.enterDuration);
         }
     }
     for (u32 c = n.first; c != kNone; c = m_nodes[c].next) styleRec(c, changed);
@@ -586,8 +661,10 @@ void UiContext::stylePass() {
         m_seenSheetVersion = m_styles.sheetVersion();
         for (auto& n : m_nodes)
             if (n.alive) n.dirty |= kDirtyStyle;
+        m_sheetSwap = true; // a theme swap is not a state change: nothing transitions
     }
     styleRec(m_root.index, false);
+    m_sheetSwap = false;
     m_anyStyleDirty = false;
 }
 
@@ -603,6 +680,8 @@ void UiContext::ensureText(u32 i, f32 width) {
     d.align = fuse::text::TextAlign(u8(s.textAlign));
     d.letterSpacing = s.letterSpacing;
     d.lineHeight = s.lineHeightPx();
+    if (s.rtl && s.textAlign != TextAlignment::Center) // start / end follow the direction
+        d.align = fuse::text::TextAlign(u8(s.textAlign == TextAlignment::Start ? TextAlignment::End : TextAlignment::Start));
     fuse::text::layoutText(*fontFor(s), fuse::text::defaultShaper(), c.text, d, c.layout);
     c.layoutWidth = width;
     c.layoutSize = s.fontSize;
@@ -1019,7 +1098,9 @@ void UiContext::arrangeChildren(u32 i) {
             if (al == Align::Center) co += (crossRoom - cross) * 0.5f;
             else if (al == Align::End) co += crossRoom - cross;
             pos += mBefore;
-            const Rect r = row ? Rect{c.x + pos, c.y + co, main, cross} : Rect{c.x + co, c.y + pos, cross, main};
+            Rect r = row ? Rect{c.x + pos, c.y + co, main, cross} : Rect{c.x + co, c.y + pos, cross, main};
+            // direction: rtl mirrors the box along x: a row runs from the right edge, a column's start is its right side
+            if (s.rtl) r.x = c.x + (c.x + c.w - r.right());
             place(k, {std::round(r.x), std::round(r.y), std::round(r.w), std::round(r.h)});
             pos += main + mAfter + between;
         }
@@ -1079,8 +1160,14 @@ void UiContext::arrangeChildren(u32 i) {
             if (hidden(k)) continue;
             const ComputedStyle& cs = m_styles.style(m_nodes[k].style);
             const Size m = measure(k, {c.w, c.h});
-            const bool hasL = !cs.left.isAuto(), hasR = !cs.right.isAuto(), hasT = !cs.top.isAuto(), hasB = !cs.bottom.isAuto();
-            const f32 l = cs.left.resolve(c.w, 0.f), r = cs.right.resolve(c.w, 0.f);
+            // direction: rtl swaps an anchored child's left / right (not for the overlay layer's children and viewport-
+            // clamped popups, which are placed in screen coordinates)
+            const bool clampPopup = s.layout == LayoutKind::Anchor && hasClass({k, m_nodes[k].gen}, "clamp");
+            const bool mirror = s.rtl && s.layout == LayoutKind::Anchor && n.cls != m_layerClass && !clampPopup;
+            const Length& csLeft = mirror ? cs.right : cs.left;
+            const Length& csRight = mirror ? cs.left : cs.right;
+            const bool hasL = !csLeft.isAuto(), hasR = !csRight.isAuto(), hasT = !cs.top.isAuto(), hasB = !cs.bottom.isAuto();
+            const f32 l = csLeft.resolve(c.w, 0.f), r = csRight.resolve(c.w, 0.f);
             const f32 t = cs.top.resolve(c.h, 0.f), b = cs.bottom.resolve(c.h, 0.f);
             f32 w = m.w, h = m.h, px = l, py = t;
             if (s.layout == LayoutKind::Anchor) {
@@ -1091,7 +1178,7 @@ void UiContext::arrangeChildren(u32 i) {
                 if (cs.centerY) py = (c.h - h) * 0.5f + t - b;
                 else if (!hasT && hasB) py = c.h - b - h;
             }
-            if (s.layout == LayoutKind::Anchor && hasClass({k, m_nodes[k].gen}, "clamp")) { // keep popups on screen
+            if (clampPopup) { // keep popups on screen
                 const Rect a = popupArea();
                 px = std::max(a.x - c.x, std::min(px, a.x + a.w - c.x - w - cs.margin.h()));
                 py = std::max(a.y - c.y, std::min(py, a.y + a.h - c.y - h - cs.margin.v()));
@@ -1210,6 +1297,7 @@ void UiContext::paintLists(std::vector<PopupSurface>& next) {
     m_popupPending.clear();
     next.clear();
     paintRec(m_root.index, 1.f, m_draw);
+    if (m_drag.active) paintDragOverlay(m_draw); // drag ghost + drop indicator, over everything
     m_draw.scale(rs);
     for (u32 k : m_popupPending) {
         PopupSurface ps;
@@ -1251,6 +1339,10 @@ void UiContext::paintPass() {
     m_painting = false;
     if (next.size() != m_popupSurfaces.size()) m_damage = m_damage.unite({0.f, 0.f, m_viewport.w, m_viewport.h});
     m_popupSurfaces = std::move(next);
+    if (m_overlayDirty) { // the drag overlay is not a node: repaint everything it may have touched
+        m_damage = {0.f, 0.f, m_viewport.w, m_viewport.h};
+        m_overlayDirty = false;
+    }
     m_anyPaintDirty = false;
     m_stats.repainted = true;
     m_stats.drawCmds = u32(m_draw.size());
@@ -1321,12 +1413,7 @@ void UiContext::update(f32 dt) {
             Node* n = node(a.node);
             if (!n) { a.active = false; --m_animCount; continue; }
             a.t += dt;
-            f32 k = a.duration > 0.f ? std::clamp(a.t / a.duration, 0.f, 1.f) : 1.f;
-            switch (a.ease) {
-            case Ease::Linear: break;
-            case Ease::InOutCubic: k = k < 0.5f ? 4.f * k * k * k : 1.f - std::pow(-2.f * k + 2.f, 3.f) * 0.5f; break;
-            case Ease::OutBack: { const f32 c1 = 1.70158f, c3 = c1 + 1.f; k = 1.f + c3 * std::pow(k - 1.f, 3.f) + c1 * std::pow(k - 1.f, 2.f); break; }
-            }
+            const f32 k = applyEasing(a.ease, a.duration > 0.f ? std::clamp(a.t / a.duration, 0.f, 1.f) : 1.f);
             const f32 v = a.from + (a.to - a.from) * k;
             switch (a.prop) {
             case AnimProp::Opacity: n->animOpacity = std::clamp(v, 0.f, 1.f); markPaint(a.node.index); break;
@@ -1337,6 +1424,8 @@ void UiContext::update(f32 dt) {
             if (a.t >= a.duration) { a.active = false; --m_animCount; }
         }
     }
+    if (m_styleAnimCount || m_propAnimCount) tickStyleAnims(dt);
+    if (m_gesture.longArmed) gestureTick(dt);
     if (m_anyStyleDirty || m_styles.sheetVersion() != m_seenSheetVersion) stylePass();
     if (m_anyLayoutDirty) {
         Node& r = m_nodes[m_root.index];
@@ -1349,6 +1438,7 @@ void UiContext::update(f32 dt) {
 
 bool UiContext::needsUpdate() const {
     if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount || m_touch.fling) return true;
+    if (m_styleAnimCount || m_propAnimCount || m_gesture.longArmed) return true;
     if (m_styles.sheetVersion() != m_seenSheetVersion) return true;
     for (const auto& t : m_timers)
         if (t.active) return true;
@@ -1357,11 +1447,13 @@ bool UiContext::needsUpdate() const {
 
 f32 UiContext::nextWakeSeconds() const {
     if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount || m_touch.fling) return 0.f;
+    if (m_styleAnimCount || m_propAnimCount) return 0.f;
     if (m_styles.sheetVersion() != m_seenSheetVersion) return 0.f;
     if (m_head.load(std::memory_order_acquire) != m_tail) return 0.f;
     f32 t = std::numeric_limits<f32>::infinity();
     for (const auto& tm : m_timers)
         if (tm.active) t = std::min(t, std::max(0.f, tm.left));
+    if (m_gesture.longArmed) t = std::min(t, std::max(0.f, m_gestureCfg.longPressTime - m_gesture.held));
     return t;
 }
 
@@ -1369,7 +1461,7 @@ f32 UiContext::nextWakeSeconds() const {
 NodeHandle UiContext::hitRec(u32 i, Vec2 p) const {
     const Node& n = m_nodes[i];
     const ComputedStyle& s = m_styles.style(n.style);
-    if (!s.visible || n.animOpacity <= 0.f) return {};
+    if (!s.visible || n.animOpacity <= 0.f || (n.flags & kFlagExiting)) return {};
     const bool inside = n.rect.contains(p);
     if (!inside && s.overflow != Overflow::Visible) return {};
     for (u32 k = n.last; k != kNone; k = m_nodes[k].prev) {
@@ -1431,12 +1523,13 @@ u32 UiContext::interactiveAncestor(u32 i) const {
 
 bool UiContext::visibleChain(u32 i) const {
     for (u32 a = i; a != kNone; a = m_nodes[a].parent)
-        if (!m_styles.style(m_nodes[a].style).visible) return false;
+        if (!m_styles.style(m_nodes[a].style).visible || (m_nodes[a].flags & kFlagExiting)) return false;
     return true;
 }
 
 bool UiContext::pointerMove(Vec2 p) {
     m_pointer = p;
+    if (m_drag.active) return m_drag.external ? true : dragMoveTo(p);
     if (const Node* sn = node(m_scrollDrag.node)) {
         Rect tr, th;
         const u32 si = m_scrollDrag.node.index;
@@ -1452,6 +1545,7 @@ bool UiContext::pointerMove(Vec2 p) {
     NodeHandle h = hitTest(p);
     if (node(m_modal) && h.valid() && !inScope(h.index, m_modal.index)) h = {};
     setHover(h.valid() ? h.index : kNone);
+    if (node(m_pressed) && maybeStartDrag(p)) return true; // the press became a drag
     Event e; e.type = EventType::PointerMove; e.pos = p; e.mods = m_mods;
     if (node(m_pressed)) return dispatch(m_pressed.index, e) || true;
     if (h.valid() && h != m_root) { dispatch(h.index, e); return true; }
@@ -1489,14 +1583,18 @@ bool UiContext::pointerDown(Vec2 p, MouseButton b) {
         u32 f = target;
         while (f != kNone && !focusableNode(f)) f = m_nodes[f].parent;
         setFocus(handleOf(f), FocusReason::Pointer);
+        noteClick(target, h, p);
     }
     Event e; e.type = EventType::PointerDown; e.pos = p; e.button = b; e.mods = m_mods;
+    if (b == MouseButton::Left) e.clicks = m_clickCount;
+    if (!m_nodes[target].alive) return true; // a focus slot removed it
     dispatch(target, e);
     return true;
 }
 
 bool UiContext::pointerUp(Vec2 p, MouseButton b) {
     m_pointer = p;
+    if (m_drag.active && !m_drag.external && b == MouseButton::Left) return dragFinish(p, true);
     if (m_scrollDrag.node.valid() && b == MouseButton::Left) {
         if (node(m_scrollDrag.node)) markPaint(m_scrollDrag.node.index);
         m_scrollDrag = {};
@@ -1514,15 +1612,19 @@ bool UiContext::pointerUp(Vec2 p, MouseButton b) {
     }
     m_pressed = {};
     setState(pr, kStatePressed, false);
-    Event e; e.type = EventType::PointerUp; e.pos = p; e.button = b; e.mods = m_mods;
+    Event e; e.type = EventType::PointerUp; e.pos = p; e.button = b; e.mods = m_mods; e.clicks = m_clickCount;
     dispatch(pr.index, e);
     const NodeHandle h = hitTest(p);
     bool inside = false;
     for (u32 a = h.valid() ? h.index : kNone; a != kNone; a = m_nodes[a].parent)
         if (a == pr.index) { inside = true; break; }
     if (inside && node(pr) && !(m_nodes[pr.index].state & kStateDisabled)) {
-        Event c; c.type = EventType::Click; c.pos = p; c.button = b; c.mods = m_mods;
+        Event c; c.type = EventType::Click; c.pos = p; c.button = b; c.mods = m_mods; c.clicks = m_clickCount;
         if (!dispatch(pr.index, c) && node(pr)) emit(pr, SignalKind::Clicked, {});
+        if (m_clickCount == 2 && node(pr) && pr == m_clickNode) { // the second click of a double click
+            c.type = EventType::DoubleClick;
+            if (!dispatch(pr.index, c) && node(pr)) emit(pr, SignalKind::DoubleClicked, {});
+        }
     }
     return true;
 }
@@ -1583,6 +1685,7 @@ bool UiContext::touchDown(Vec2 p, double t) {
     const bool used = pointerDown(p, MouseButton::Left);
     m_touch.hit = hitTest(p);
     if (m_scrollDrag.node.valid()) m_touch.stage = TouchState::Stage::Passive; // on an overlay scrollbar
+    gestureArm(p, t);
     return used;
 }
 
@@ -1666,10 +1769,19 @@ void UiContext::touchPanBy(Vec2 d) {
 bool UiContext::touchMove(Vec2 p, double t) {
     using Stage = TouchState::Stage;
     if (m_touch.stage == Stage::Idle) return pointerMove(p);
+    if (m_drag.active) { // the finger carries a drag (long press / captured drag): no pan, no press
+        m_pointer = p;
+        return m_drag.external ? true : dragMoveTo(p);
+    }
     if (t < 0.0) t = m_clock;
     touchSample(p, t);
-    if (m_touch.stage == Stage::Pending && std::hypot(p.x - m_touch.down.x, p.y - m_touch.down.y) >= m_touchCfg.slop)
+    const bool pastSlop = std::hypot(p.x - m_touch.down.x, p.y - m_touch.down.y) >= m_touchCfg.slop;
+    if (m_touch.stage == Stage::Pending && pastSlop)
         touchBeginPan(p);
+    if (pastSlop) { // no longer a tap / long press; a press that did not become a pan may start a drag
+        m_gesture.moved = true;
+        if (m_touch.stage != Stage::Pan) m_gesture.dragOk = true;
+    }
     if (m_touch.stage != Stage::Pan) {
         if (m_touch.pressed) return pointerMove(p);
         m_pointer = p;
@@ -1688,8 +1800,17 @@ bool UiContext::touchUp(Vec2 p, double t) {
     if (t < 0.0) t = m_clock;
     const Stage was = ts.stage;
     ts.stage = Stage::Idle;
+    m_gesture.longArmed = false;
+    if (m_drag.active && !m_drag.external) { // drop what the finger carried
+        dragFinish(p, true);
+        m_pointer = {-1.f, -1.f};
+        setHover(kNone);
+        return true;
+    }
     if (was != Stage::Pan) {
+        const bool tap = ts.pressed && !m_gesture.moved;
         const bool used = ts.pressed ? pointerUp(p, MouseButton::Left) : true;
+        if (tap) gestureTap(p, t);
         m_pointer = {-1.f, -1.f};
         setHover(kNone); // a lifted finger hovers nothing
         return used;
@@ -1718,8 +1839,10 @@ bool UiContext::touchUp(Vec2 p, double t) {
 
 bool UiContext::touchCancel() {
     using Stage = TouchState::Stage;
+    gestureReset();
     if (m_touch.stage == Stage::Idle) return false;
     m_touch.stage = Stage::Idle;
+    if (m_drag.active && !m_drag.external) cancelDrag();
     if (m_scrollDrag.node.valid()) {
         if (node(m_scrollDrag.node)) markPaint(m_scrollDrag.node.index);
         m_scrollDrag = {};
@@ -1731,6 +1854,10 @@ bool UiContext::touchCancel() {
 }
 
 bool UiContext::keyDown(Key k, u8 mods) {
+    if (m_drag.active && !m_drag.external && k == Key::Escape) { // Escape cancels a drag
+        cancelDrag();
+        return true;
+    }
     Event e; e.type = EventType::KeyDown; e.key = k; e.mods = mods;
     if (node(m_focus)) {
         if (dispatch(m_focus.index, e)) return true;
@@ -1743,6 +1870,7 @@ bool UiContext::keyDown(Key k, u8 mods) {
             return true;
         }
     }
+    if (m_shortcutHook.fn && m_shortcutHook.fn(m_shortcutHook.user, *this, k, mods)) return true; // actions.hpp
     if (k == Key::Tab) return focusNext((mods & kModShift) != 0);
     if (m_spatialNav || !node(m_focus)) {
         switch (k) {
@@ -1968,6 +2096,7 @@ void UiContext::cancelTimer(TimerHandle h) {
 void UiContext::animate(NodeHandle h, AnimProp p, f32 to, f32 seconds, Ease e) {
     Node* n = node(h);
     if (!n) return;
+    if (m_reducedMotion) seconds = 0.f; // lands on `to` at the next update
     f32 from = 0.f;
     switch (p) {
     case AnimProp::Opacity: from = n->animOpacity; break;
@@ -1986,6 +2115,260 @@ void UiContext::animate(NodeHandle h, AnimProp p, f32 to, f32 seconds, Ease e) {
         ++m_animCount;
     }
     *slot = Anim{h, p, e, from, to, 0.f, std::max(0.f, seconds), true};
+}
+
+// ---- Style motion: transitions, enter / exit, property animations --------------------------------------------------
+// A node whose style is being animated points at a scratch slot of the style table (StyleEngine::acquireScratch):
+// composeAnimated writes target + interpolated values into it each tick, so intermediate styles are never interned.
+UiContext::StyleAnim* UiContext::styleAnimOf(NodeHandle h) {
+    for (auto& a : m_styleAnims)
+        if (a.active && a.node == h) return &a;
+    return nullptr;
+}
+
+UiContext::StyleAnim& UiContext::ensureStyleAnim(u32 i) {
+    Node& n = m_nodes[i];
+    const NodeHandle h{i, n.gen};
+    if (n.style != n.targetStyle)
+        if (StyleAnim* a = styleAnimOf(h)) return *a;
+    StyleAnim* slot = nullptr;
+    for (auto& a : m_styleAnims)
+        if (!a.active) { slot = &a; break; }
+    if (!slot) slot = &m_styleAnims.emplace_back();
+    *slot = StyleAnim{};
+    slot->node = h;
+    slot->active = true;
+    slot->from = m_styles.style(n.style);
+    slot->slot = m_styles.acquireScratch(slot->from);
+    n.style = slot->slot;
+    ++m_styleAnimCount;
+    return *slot;
+}
+
+void UiContext::releaseStyleAnim(StyleAnim& a) {
+    if (Node* n = node(a.node)) {
+        n->style = n->targetStyle;
+        n->flags &= ~u32(kFlagExiting);
+    }
+    m_styles.releaseScratch(a.slot);
+    a.active = false;
+    --m_styleAnimCount;
+}
+
+void UiContext::composeAnimated(StyleAnim& a) {
+    const u32 i = a.node.index;
+    Node& n = m_nodes[i];
+    const ComputedStyle target = m_styles.style(n.targetStyle);
+    ComputedStyle out = target;
+    bool running = false;
+    if (a.transitioning) {
+        bool any = false;
+        for (int p = 0; p < kPropCount; ++p) {
+            if (!propInfo(Prop(p)).animatable) continue;
+            const Transition* tr = findTransition(target, Prop(p));
+            if (!tr || tr->duration <= 0.f || sameStyleProp(a.from, target, Prop(p))) continue;
+            const f32 k = (a.t - tr->delay) / tr->duration;
+            if (k >= 1.f) continue;
+            any = true;
+            lerpStyleProp(out, a.from, target, Prop(p), applyEasing(tr->ease, std::max(0.f, k)));
+        }
+        a.transitioning = any;
+        running = any;
+    }
+    if (m_propAnimCount)
+        for (const PropAnim& pa : m_propAnims) {
+            if (!pa.active || pa.node != a.node || pa.keyCount < 2) continue;
+            running = true;
+            // position along the keys: a spring runs between the first and the last key (and may overshoot)
+            u32 j = 0;
+            f32 k;
+            if (pa.spec.spring) {
+                j = 0;
+                k = pa.x;
+            } else {
+                const f32 tt = applyEasing(pa.spec.ease, pa.spec.duration > 0.f ? std::clamp((pa.t - pa.spec.delay) / pa.spec.duration, 0.f, 1.f) : 1.f);
+                while (j + 2 < pa.keyCount && tt >= pa.keys[j + 1].at) ++j;
+                const f32 span = pa.keys[j + 1].at - pa.keys[j].at;
+                k = span > 1e-6f ? (tt - pa.keys[j].at) / span : 1.f;
+            }
+            ComputedStyle sa = target, sb = target;
+            applyProp(sa, pa.prop, pa.keys[j].value);
+            applyProp(sb, pa.prop, pa.keys[pa.spec.spring ? pa.keyCount - 1 : j + 1].value);
+            lerpStyleProp(out, sa, sb, pa.prop, k);
+        }
+    if (a.exiting) {
+        running = true;
+        out.visible = true; // stays laid out and painted until the exit animation is over
+    }
+    const ComputedStyle old = m_styles.style(n.style);
+    if (!running) {
+        releaseStyleAnim(a);
+        if (!(old == target)) applyStyleDiff(i, old, target);
+        return;
+    }
+    if (!(old == out)) {
+        m_styles.scratch(a.slot) = out;
+        applyStyleDiff(i, old, out);
+    }
+}
+
+void UiContext::tickStyleAnims(f32 dt) {
+    for (auto& pa : m_propAnims) {
+        if (!pa.active) continue;
+        if (!node(pa.node)) { pa.active = false; --m_propAnimCount; continue; }
+        pa.t += dt;
+        bool done = m_reducedMotion;
+        if (pa.spec.spring) {
+            f32 left = std::max(0.f, std::min(dt, pa.t - pa.spec.delay));
+            while (left > 0.f) { // semi-implicit Euler, <= 4 ms steps: stable for stiff springs at any frame rate
+                const f32 h = std::min(left, 1.f / 240.f);
+                const f32 acc = (-pa.spec.stiffness * (pa.x - 1.f) - pa.spec.damping * pa.v) / std::max(1e-3f, pa.spec.mass);
+                pa.v += acc * h;
+                pa.x += pa.v * h;
+                left -= h;
+            }
+            if ((std::abs(pa.x - 1.f) < 0.001f && std::abs(pa.v) < 0.01f) || pa.t - pa.spec.delay > 20.f) done = true;
+        } else if (pa.t - pa.spec.delay >= pa.spec.duration) {
+            if (pa.loop && pa.spec.duration > 0.f && !m_reducedMotion) pa.t -= pa.spec.duration;
+            else done = true;
+        }
+        if (done) {
+            pa.active = false;
+            --m_propAnimCount;
+            if (pa.persist) set(pa.node, pa.prop, pa.keys[pa.keyCount - 1].value); // the end value stays as an inline value
+        }
+    }
+    for (std::size_t k = 0; k < m_styleAnims.size(); ++k) {
+        StyleAnim& a = m_styleAnims[k];
+        if (!a.active) continue;
+        Node* n = node(a.node);
+        if (!n) {
+            m_styles.releaseScratch(a.slot);
+            a.active = false;
+            --m_styleAnimCount;
+            continue;
+        }
+        a.t += dt;
+        if (m_reducedMotion) a.transitioning = false;
+        if (a.exiting) {
+            a.exitT += dt;
+            const f32 k = (a.exitDur > 0.f && !m_reducedMotion) ? std::clamp(a.exitT / a.exitDur, 0.f, 1.f) : 1.f;
+            const f32 e = applyEasing(Easing::In, k);
+            n->animOpacity = a.exitFromOpacity * (1.f - e);
+            markPaint(a.node.index);
+            if (a.exitKind == MotionKind::SlideUp || a.exitKind == MotionKind::SlideDown) {
+                n->offset.y = (a.exitKind == MotionKind::SlideUp ? -8.f : 8.f) * e;
+                if (n->parent != kNone) markArrange(n->parent);
+                n->dirty |= kDirtyLayout;
+            }
+            if (k >= 1.f) {
+                a.exiting = false;
+                n->flags &= ~u32(kFlagExiting);
+                n->animOpacity = 1.f;
+                n->offset.y = 0.f;
+                if (n->parent != kNone) markArrange(n->parent);
+            }
+        }
+        composeAnimated(a);
+    }
+}
+
+void UiContext::startEnter(u32 i, MotionKind kind, f32 seconds) {
+    Node& n = m_nodes[i];
+    const NodeHandle h{i, n.gen};
+    if (n.animOpacity >= 1.f) n.animOpacity = 0.f; // else: continues from an interrupted exit
+    animate(h, AnimProp::Opacity, 1.f, seconds, Ease::Out);
+    if (kind == MotionKind::SlideUp || kind == MotionKind::SlideDown) {
+        if (n.offset.y == 0.f) n.offset.y = kind == MotionKind::SlideDown ? -8.f : 8.f; // slide-down: arrives from above
+        if (n.parent != kNone) markArrange(n.parent);
+        animate(h, AnimProp::OffsetY, 0.f, seconds, Ease::Out);
+    }
+}
+
+void UiContext::animateProperty(NodeHandle h, Prop p, const PropValue& to, const AnimSpec& spec) {
+    const PropKeyframe keys[2] = {{0.f, node(h) ? readProp(m_styles.style(node(h)->style), p) : PropValue{}}, {1.f, to}};
+    if (!node(h)) return;
+    if (m_reducedMotion || !propInfo(p).animatable || (!spec.spring && spec.duration <= 0.f && spec.delay <= 0.f)) {
+        stopPropertyAnimations(h);
+        set(h, p, to);
+        return;
+    }
+    PropAnim* slot = nullptr;
+    for (auto& a : m_propAnims)
+        if (a.active && a.node == h && a.prop == p) { slot = &a; break; }
+    if (!slot) {
+        for (auto& a : m_propAnims)
+            if (!a.active) { slot = &a; break; }
+        if (!slot) slot = &m_propAnims.emplace_back();
+        ++m_propAnimCount;
+    }
+    *slot = PropAnim{};
+    slot->node = h;
+    slot->prop = p;
+    slot->keys[0] = keys[0];
+    slot->keys[1] = keys[1];
+    slot->keyCount = 2;
+    slot->spec = spec;
+    slot->active = true;
+    ensureStyleAnim(h.index);
+}
+
+void UiContext::animateKeyframes(NodeHandle h, Prop p, const PropKeyframe* keys, u32 count, f32 seconds, Easing e, bool loop) {
+    if (!node(h) || !keys || count == 0) return;
+    count = std::min(count, kMaxKeys);
+    if (m_reducedMotion || !propInfo(p).animatable || seconds <= 0.f || count < 2) {
+        if (!loop || count < 2) set(h, p, keys[count - 1].value);
+        return;
+    }
+    PropAnim* slot = nullptr;
+    for (auto& a : m_propAnims)
+        if (a.active && a.node == h && a.prop == p) { slot = &a; break; }
+    if (!slot) {
+        for (auto& a : m_propAnims)
+            if (!a.active) { slot = &a; break; }
+        if (!slot) slot = &m_propAnims.emplace_back();
+        ++m_propAnimCount;
+    }
+    *slot = PropAnim{};
+    slot->node = h;
+    slot->prop = p;
+    for (u32 k = 0; k < count; ++k) slot->keys[k] = keys[k];
+    slot->keyCount = u8(count);
+    slot->spec = AnimSpec::tween(seconds, e);
+    slot->loop = loop;
+    slot->persist = !loop;
+    slot->active = true;
+    ensureStyleAnim(h.index);
+}
+
+void UiContext::stopPropertyAnimations(NodeHandle h) {
+    if (!node(h)) return;
+    for (auto& a : m_propAnims)
+        if (a.active && a.node == h) {
+            a.active = false;
+            --m_propAnimCount;
+            set(h, a.prop, a.keys[a.keyCount - 1].value);
+        }
+}
+
+bool UiContext::styleAnimating(NodeHandle h) const {
+    const Node* n = node(h);
+    return n && n->style != n->targetStyle;
+}
+
+void UiContext::setReducedMotion(bool on) {
+    if (on == m_reducedMotion) return;
+    m_reducedMotion = on;
+    if (!on) return;
+    for (auto& a : m_anims) // running tweens land on their end value at the next update
+        if (a.active) a.duration = 0.f;
+}
+
+f32 UiContext::exitDuration(NodeHandle h) const {
+    const Node* n = node(h);
+    if (!n || m_reducedMotion) return 0.f;
+    const ComputedStyle& s = m_styles.style(n->targetStyle);
+    return s.exitAnim != MotionKind::None ? s.exitDuration : 0.f;
 }
 
 // ---- Cross-thread commands (Vyukov bounded queue; multi-producer, single consumer) -------------------------------

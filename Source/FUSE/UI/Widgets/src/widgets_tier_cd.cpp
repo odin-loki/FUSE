@@ -176,6 +176,12 @@ struct GridView {
             default: return false;
             }
         }
+        case EventType::DoubleClick: { // double click on a tile activates it, like Enter
+            const i64 cur = i64(ui.value(ec.node));
+            const i64 k = i64((e.pos.x - c.x) / s->tileW), r = i64((e.pos.y - c.y) / s->tileH) + s->first;
+            if (cur >= 0 && k >= 0 && k < nc && r * nc + k == cur) ui.emit(ec.node, SignalKind::Submitted, {.value = f32(cur)});
+            return true;
+        }
         default: return false;
         }
     }
@@ -825,6 +831,27 @@ NodeHandle gridView(UiContext& ui, NodeHandle parent, const ItemModel* model, f3
 u32 gridColumns(const UiContext& ui, NodeHandle grid) {
     const GridState* s = gridPool().get(ui, grid);
     return s ? GridView::cols(ui, grid, *s) : 0u;
+}
+const ItemModel* gridModel(const UiContext& ui, NodeHandle grid) {
+    const GridState* s = gridPool().get(ui, grid);
+    return s ? s->model : nullptr;
+}
+Rect gridItemRect(const UiContext& ui, NodeHandle grid, u32 index) {
+    const GridState* s = gridPool().get(ui, grid);
+    if (!s) return {};
+    const Rect c = ui.contentRect(grid);
+    const u32 nc = GridView::cols(ui, grid, *s);
+    return {c.x + f32(index % nc) * s->tileW, c.y + (f32(index / nc) - f32(s->first)) * s->tileH, s->tileW, s->tileH};
+}
+i32 gridItemAt(const UiContext& ui, NodeHandle grid, Vec2 p) {
+    const GridState* s = gridPool().get(ui, grid);
+    if (!s) return -1;
+    const Rect c = ui.contentRect(grid);
+    if (!c.contains(p) || p.x >= c.right() - GridView::kBar) return -1;
+    const i64 nc = GridView::cols(ui, grid, *s);
+    const i64 k = i64((p.x - c.x) / s->tileW), r = i64((p.y - c.y) / s->tileH) + s->first;
+    const i64 idx = r * nc + k;
+    return k < nc && idx < i64(GridView::count(*s)) ? i32(idx) : -1;
 }
 u32 gridFirstVisibleRow(const UiContext& ui, NodeHandle grid) {
     const GridState* s = gridPool().get(ui, grid);

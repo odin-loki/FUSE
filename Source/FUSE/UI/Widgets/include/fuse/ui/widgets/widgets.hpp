@@ -555,3 +555,6 @@ NodeHandle doubleSpinBox(UiContext& ui, NodeHandle parent, f32 lo, f32 hi, f32 v
 void registerTierB3(UiContext& ui);
 
 } // namespace fuse::ui::widgets
+
+// Drag and drop for the item views, action menus (QAction) and the row geometry helpers they use.
+#include "fuse/ui/widgets/interaction.hpp"

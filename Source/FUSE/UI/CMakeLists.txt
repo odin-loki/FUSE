@@ -102,7 +102,8 @@ if(FUSE_UI_TEXT STREQUAL "FULL")
 endif()
 
 # ---- fuse_ui_core ----
-add_library(fuse_ui_core STATIC Core/src/style.cpp Core/src/draw_list.cpp Core/src/ui.cpp Core/src/immediate.cpp)
+add_library(fuse_ui_core STATIC Core/src/style.cpp Core/src/draw_list.cpp Core/src/ui.cpp Core/src/immediate.cpp
+    Core/src/interaction.cpp Core/src/actions.cpp)
 target_include_directories(fuse_ui_core PUBLIC Core/include)
 target_link_libraries(fuse_ui_core PUBLIC fuse_text)
 if(FUSE_UI_ACCESSIBILITY)
@@ -110,7 +111,7 @@ if(FUSE_UI_ACCESSIBILITY)
 endif()
 
 if(FUSE_BUILD_UI_WIDGETS)
-    add_library(fuse_ui_widgets STATIC Widgets/src/widgets.cpp Widgets/src/widgets_tier_b.cpp Widgets/src/widgets_tier_b2.cpp Widgets/src/widgets_tier_cd.cpp Widgets/src/widgets_tier_d2.cpp Widgets/src/widgets_tier_b3.cpp Widgets/src/platform_feel.cpp Widgets/src/theme.cpp Widgets/src/inspector.cpp)
+    add_library(fuse_ui_widgets STATIC Widgets/src/widgets.cpp Widgets/src/widgets_tier_b.cpp Widgets/src/widgets_tier_b2.cpp Widgets/src/widgets_tier_cd.cpp Widgets/src/widgets_tier_d2.cpp Widgets/src/widgets_tier_b3.cpp Widgets/src/widgets_interaction.cpp Widgets/src/platform_feel.cpp Widgets/src/theme.cpp Widgets/src/inspector.cpp)
     target_include_directories(fuse_ui_widgets PUBLIC Widgets/include)
     target_link_libraries(fuse_ui_widgets PUBLIC fuse_ui_core)
 endif()
@@ -154,7 +155,7 @@ endif()
 
 option(FUSE_BUILD_UI_DOC "Build fuse_ui_doc (.fuseui documents + bindings)" ON)
 if(FUSE_BUILD_UI_DOC AND FUSE_BUILD_UI_WIDGETS)
-    add_library(fuse_ui_doc STATIC Doc/src/json.cpp Doc/src/document.cpp Doc/src/cook.cpp)
+    add_library(fuse_ui_doc STATIC Doc/src/json.cpp Doc/src/document.cpp Doc/src/cook.cpp Doc/src/hot_reload.cpp)
     target_include_directories(fuse_ui_doc PUBLIC Doc/include)
     target_link_libraries(fuse_ui_doc PUBLIC fuse_ui_widgets)
     # UI8 cooker: .fuseui / .fusestyle -> cooked blobs + generated widget-registration list

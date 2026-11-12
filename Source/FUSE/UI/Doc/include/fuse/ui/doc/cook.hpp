@@ -19,7 +19,7 @@
 
 namespace fuse::ui::doc {
 
-inline constexpr u32 kCookedVersion = 1;
+inline constexpr u32 kCookedVersion = 2; // 2: style properties added (direction, transition, enter / exit animation)
 
 struct CookInfo {
     u32 nodes = 0, bindings = 0, instructions = 0;

@@ -7,12 +7,17 @@
 //   tokens      custom properties (`--accent: #3af`) declared in `:root` (or any rule matching the node) — theme tokens
 //   cascade     specificity (ids, classes + pseudo, types), then source order; inline (node API) values win;
 //               inherited properties: color, font-size, text-align, font-weight, font-style, font-family,
-//               letter-spacing, line-height
+//               letter-spacing, line-height, direction
 //   text        font-weight (normal | bold | 1..1000), font-style (normal | italic | oblique), font-family (a comma
 //               list of names; "sans-serif" / "system-ui" = the context's font, "serif" / "monospace" = a matching
 //               installed family), text-decoration (none | underline | line-through, space separated),
 //               letter-spacing (px), line-height (normal | <number> x font size | px | %)
-// Not yet: transitions (the animation core tweens node opacity / offsets), attribute selectors, :nth-child.
+//   motion      `transition: <property|all> <duration> [easing] [delay], ...` (animatable properties fade on a state
+//               change), `enter-animation` / `exit-animation: none|fade|slide-up|slide-down` + `enter-duration` /
+//               `exit-duration` (played when a node first shows / is hidden); all off with UiContext::setReducedMotion
+//   direction   `direction: ltr|rtl` (inherited): mirrors Box rows and Anchor left / right, flips text-align start / end;
+//               `padding-start` / `padding-end` resolve to the left / right padding by direction; :drag-over state
+// Not yet: attribute selectors, :nth-child, @keyframes (keyframes are an API: UiContext::animateKeyframes).
 #pragma once
 
 #include "fuse/ui/types.hpp"
@@ -59,10 +64,25 @@ enum class Cursor : u8 {
 inline constexpr int kCursorCount = int(Cursor::Hidden) + 1;
 /// CSS keyword of a shape ("default", "text", "pointer", "ew-resize", ...).
 std::string_view cursorCssName(Cursor c);
+/// Easing curves shared by UiContext::animate, style transitions and property animations.
+enum class Easing : u8 { Linear, InOutCubic, OutBack, In, Out };
+f32 applyEasing(Easing e, f32 k);
+/// enter-animation / exit-animation kinds.
+enum class MotionKind : u8 { None, Fade, SlideUp, SlideDown };
 
 inline constexpr int kMaxGridTracks = 8;
 inline constexpr int kMaxFontFamilies = 4; ///< names kept from a font-family list
 enum TextDecorationBits : u8 { kTextUnderline = 1, kTextLineThrough = 2 };
+
+enum class Prop : u8;
+/// One `transition` entry of a computed style (prop kTransitionAll: every animatable property).
+struct Transition {
+    Prop prop{};
+    Easing ease = Easing::InOutCubic;
+    f32 duration = 0.f, delay = 0.f; ///< seconds
+    friend bool operator==(const Transition&, const Transition&) = default;
+};
+inline constexpr int kMaxTransitions = 8;
 
 /// The fully resolved style of a node. Trivially copyable; deduplicated in StyleTable.
 struct ComputedStyle {
@@ -105,6 +125,14 @@ struct ComputedStyle {
     /// Line box height in pixels for the layout (0 = natural).
     f32 lineHeightPx() const { return lineHeight.unit == Unit::Auto ? 0.f : lineHeight.resolve(fontSize, 0.f); }
     Cursor cursor = Cursor::Auto; ///< cursor: auto | default | text | pointer | ew-resize | ... (not inherited; see UiContext::cursor)
+    // direction (inherited) and logical padding (< 0 = not set; resolved into `padding` by the cascade)
+    bool rtl = false;
+    f32 paddingStart = -1.f, paddingEnd = -1.f;
+    // motion
+    std::array<Transition, kMaxTransitions> transitions{}; ///< the first `transitionCount` are set
+    u8 transitionCount = 0;
+    MotionKind enterAnim = MotionKind::None, exitAnim = MotionKind::None;
+    f32 enterDuration = 0.15f, exitDuration = 0.12f; ///< seconds
     friend bool operator==(const ComputedStyle&, const ComputedStyle&) = default;
 };
 
@@ -116,9 +144,21 @@ enum class Prop : u8 {
     Left, Top, Right, Bottom, CenterX, CenterY, Background, Background2, Gradient, BorderColor, BorderWidth,
     RadiusTL, RadiusTR, RadiusBR, RadiusBL, Color, FontSize, TextAlign, Opacity, ShadowColor, ShadowBlur, ShadowX,
     ShadowY, PointerEvents, BackdropBlur,
-    FontWeight, FontStyle, FontFamily, TextDecoration, LetterSpacing, LineHeight, Cursor, Count
+    FontWeight, FontStyle, FontFamily, TextDecoration, LetterSpacing, LineHeight, Cursor,
+    TextDirection, PaddingStart, PaddingEnd, Transition, EnterAnimation, EnterDuration, ExitAnimation, ExitDuration,
+    Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
+/// Transition::prop value of `transition: all ...`; PropValue::e of a Prop::Transition value that clears the list.
+inline constexpr Prop kTransitionAll = Prop(0xFE);
+inline constexpr u8 kTransitionNone = 0xFD;
+/// The transition that applies to `p` in `s` (an exact entry wins over `all`); null when none.
+const Transition* findTransition(const ComputedStyle& s, Prop p);
+/// Writes into `out` the value of `p` interpolated between `a` and `b` (k 0..1, may overshoot). Colours, numbers and
+/// px lengths blend; lengths with different units (auto / % / px) and non-animatable properties switch to `b`.
+void lerpStyleProp(ComputedStyle& out, const ComputedStyle& a, const ComputedStyle& b, Prop p, f32 k);
+/// True when `a` and `b` have the same value for `p`.
+bool sameStyleProp(const ComputedStyle& a, const ComputedStyle& b, Prop p);
 
 enum class PropType : u8 { Bool, Enum, Length, Number, Color, Tracks };
 struct PropInfo {
@@ -149,6 +189,10 @@ struct PropValue {
     static PropValue ofLength(Length v) { PropValue p; p.type = PropType::Length; p.len = v; return p; }
     static PropValue ofNumber(f32 v) { PropValue p; p.type = PropType::Number; p.num = v; return p; }
     static PropValue ofColor(fuse::ui::Color v) { PropValue p; p.type = PropType::Color; p.color = v; return p; }
+    /// A Prop::Transition value: `target` animates over `seconds` (kTransitionAll for every animatable property).
+    static PropValue ofTransition(Prop target, f32 seconds, Easing ease = Easing::InOutCubic, f32 delay = 0.f) {
+        PropValue p; p.type = PropType::Number; p.e = u8(target); p.num = seconds; p.len = Length::px(delay); p.trackCount = u8(ease); return p;
+    }
 };
 void applyProp(ComputedStyle& s, Prop p, const PropValue& v);
 PropValue readProp(const ComputedStyle& s, Prop p);
@@ -164,6 +208,7 @@ enum StateBits : u32 {
     kStateDisabled = 1u << 4,
     kStateChecked = 1u << 5,
     kStateSelected = 1u << 6,
+    kStateDragOver = 1u << 7, ///< :drag-over - the current drop target of a drag (UiContext::beginDrag / dropExternal)
 };
 
 // ---- Style sheets --------------------------------------------------------------------------------------------------
@@ -248,6 +293,12 @@ public:
     u32 compute(const StyleSubject& subject, u32 node, const ComputedStyle* parentStyle,
                 const ComputedStyle* defaults, const std::vector<std::pair<Prop, PropValue>>& inlineValues);
     const ComputedStyle& style(u32 index) const { return m_table[index]; }
+    /// Scratch (non-interned, mutable) table entries for nodes whose style is being animated: the node points at its
+    /// own slot while a transition / property animation runs, so intermediate values never grow the interned table.
+    /// acquireScratch may reallocate the table (invalidates style() references).
+    u32 acquireScratch(const ComputedStyle& init);
+    void releaseScratch(u32 index);
+    ComputedStyle& scratch(u32 index) { return m_table[index]; }
     u32 tableSize() const { return u32(m_table.size()); }
     bool matches(const StyleSubject& subject, u32 node, const StyleRule& rule) const;
 
@@ -255,6 +306,10 @@ private:
     bool matchSimple(const StyleSubject& s, u32 node, const SimpleSelector& sel) const;
     bool resolveVar(std::string_view raw, Prop p, PropValue& out, int depth) const;
     u32 intern(const ComputedStyle& cs);
+    void rehash(std::size_t slots);
+    std::vector<u8> m_isScratch;   ///< parallel to m_table
+    std::vector<u32> m_freeScratch;
+    u32 m_interned = 0;
     std::vector<StyleSheet> m_sheets;
     std::vector<const StyleRule*> m_ordered; ///< all rules, sorted by (specificity, sheet, order)
     std::vector<const StyleRule*> m_scratch;

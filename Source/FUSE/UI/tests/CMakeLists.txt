@@ -322,3 +322,21 @@ if(TARGET fuse_app_native AND UNIX AND NOT APPLE AND NOT ANDROID)
     endif()
     set_tests_properties(fuse_app_native_services PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300 LABELS "fuse_ui;gate")
 endif()
+
+# Core interaction (plan §4.5 - §4.7, §4.10): drag and drop, gestures / multi-touch / double click, actions and
+# shortcuts, style transitions and property animation, direction: rtl.
+foreach(g drag_drop gestures actions style_motion rtl_layout)
+    fuse_ui_test(fuse_ui_${g} test_${g}.cpp)
+    set_tests_properties(fuse_ui_${g} PROPERTIES LABELS "fuse_ui;gate")
+endforeach()
+if(TARGET fuse_ui_doc AND NOT ANDROID AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS") # writes a temp file
+    fuse_ui_test(fuse_ui_hot_reload_file test_hot_reload_file.cpp)
+    target_link_libraries(fuse_ui_hot_reload_file PRIVATE fuse_ui_doc)
+    set_tests_properties(fuse_ui_hot_reload_file PROPERTIES LABELS "fuse_ui;gate")
+endif()
+# Golden of the interaction visuals (action menu with shortcut texts; list drag ghost + insertion line). The image was
+# rendered with the MINIMAL text profile; there is no FULL-profile golden, so the gate exists for MINIMAL only.
+if(NOT FUSE_UI_TEXT STREQUAL "FULL")
+    fuse_ui_test(fuse_ui_interaction_golden test_interaction_golden.cpp)
+    set_tests_properties(fuse_ui_interaction_golden PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endif()
