@@ -238,6 +238,18 @@ if(FUSE_BUILD_UI_VK)
         elseif(EXISTS "${_fixture}")
             set(_spv "${_fixture}")
         endif()
+        # In-tree with fuse_rhi on the volk loader (cmake/FuseVolk.cmake puts FUSE_RHI_VOLK=1, VK_NO_PROTOTYPES and
+        # the <vulkan/vulkan.h> shim on fuse_rhi's PUBLIC interface) every vk* name in ui_vk.cpp, vk_present.cpp and
+        # tests/vk_headless.hpp is a volk function pointer defined in fuse_rhi (they register their raw instances /
+        # devices under FUSE_HAS_VULKAN_RHI). Linking the loader's import library as well defines each name twice
+        # (MSVC: LNK2005 "vk* already defined in vulkan-1.lib" on fuse_ui_vk_parity), so fuse_rhi is the Vulkan link
+        # item then: it brings the headers and the entry points, and the loader is opened at run time.
+        if(TARGET fuse_rhi AND FUSE_BUILD_VULKAN)
+            get_target_property(_fuse_ui_rhi_defs fuse_rhi INTERFACE_COMPILE_DEFINITIONS)
+            if(_fuse_ui_rhi_defs AND "FUSE_RHI_VOLK=1" IN_LIST _fuse_ui_rhi_defs)
+                set(_fuse_ui_vk_link fuse_rhi)
+            endif()
+        endif()
         add_library(fuse_ui_vk STATIC Render/src/ui_vk.cpp)
         target_link_libraries(fuse_ui_vk PUBLIC fuse_ui_render PRIVATE ${_fuse_ui_vk_link})
         if(_spv)
