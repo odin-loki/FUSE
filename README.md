@@ -16,6 +16,7 @@ One program for 2D, 3D, and hybrid worlds. ISO C++ host, handle-based ownership,
 [![FUSE Windows x64 (MSVC native)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-windows-native.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-windows-native.yml)
 [![FUSE Win32 fiber ASan spike](https://github.com/odin-loki/FUSE/actions/workflows/fuse-msvc-asan-spike.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-msvc-asan-spike.yml)
 [![FUSE Relight (MinGW-w64 cross + Wine/Xvfb/Lavapipe)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-relight-wine.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-relight-wine.yml)
+[![FUSE UI (FreeBSD)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-ui-freebsd.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-ui-freebsd.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE.md)
 
 Optional CI (iOS simulator, TSan nightly): manual or scheduled workflows, not the default `main` gate — [build guide](docs/building.md#optional-ci-github-actions).

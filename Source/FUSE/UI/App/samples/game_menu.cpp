@@ -24,7 +24,7 @@
 #define FUSE_APP_SAMPLE_UI_DIR "ui"
 #endif
 
-#include "fuse/app/main.hpp" // Android / iOS: this main runs under the platform entry point
+#include "fuse/app/main.hpp" // FUSE_APP_MAIN: main on desktop; run by the platform entry point on Android / iOS
 
 namespace {
 namespace w = fuse::ui::widgets;
@@ -221,7 +221,7 @@ g::GamepadState padFrom(char c) {
 }
 } // namespace
 
-int main(int argc, char** argv) {
+int FUSE_APP_MAIN(int argc, char** argv) {
     fuse::app::Application app{{.name = "game_menu", .argc = argc, .argv = argv, .loadSettings = false}};
     auto& window = app.createWindow({.title = "Starfall", .width = 800, .height = 540});
     UiContext& ui = window.ui();

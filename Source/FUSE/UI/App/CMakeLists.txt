@@ -66,8 +66,8 @@ endif()
 
 # fuse_app_add_executable(<name> <sources...>): an app target on every platform. Desktop: an executable (a .app
 # bundle on iOS, and on macOS with FUSE_APP_MACOS_BUNDLE). Android: lib<name>.so for a NativeActivity
-# (android.app.lib_name = <name>; see android/). The file defining `int main(int argc, char** argv)` includes
-# fuse/app/main.hpp.
+# (android.app.lib_name = <name>; see android/). The app's entry is `int FUSE_APP_MAIN(int argc, char** argv)`
+# from fuse/app/main.hpp.
 # Bundle metadata comes from these variables when set before the call, else from the defaults shown:
 #   FUSE_APP_BUNDLE_ID_PREFIX "org.fuse"     the bundle id is <prefix>.<name>
 #   FUSE_APP_BUNDLE_VERSION "1"              CFBundleVersion (the build number)

@@ -162,7 +162,6 @@ private:
     friend void layoutText(const Font&, const ITextShaper&, std::string_view, const TextLayoutDesc&, TextLayout&);
     friend ShapeCacheStats shapeCacheStats(const Font&);
     struct State;
-    static State* makeState(void* sharedBytes, int faceIndex);
     void rawGlyphBox(std::uint32_t glyph, float pixelSize, int& x0, int& y0, int& x1, int& y1) const;
     void rawRasterise(std::uint32_t glyph, float pixelSize, std::uint8_t* dst, int w, int h, int stride) const;
     State* m_state = nullptr; // owned (pimpl); released in ~Font

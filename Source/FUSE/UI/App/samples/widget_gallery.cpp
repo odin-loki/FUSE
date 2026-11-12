@@ -26,7 +26,7 @@
 #define FUSE_APP_SAMPLE_UI_DIR "ui"
 #endif
 
-#include "fuse/app/main.hpp" // Android / iOS: this main runs under the platform entry point
+#include "fuse/app/main.hpp" // FUSE_APP_MAIN: main on desktop; run by the platform entry point on Android / iOS
 
 namespace {
 namespace w = fuse::ui::widgets;
@@ -94,7 +94,7 @@ void buildGamePage(UiContext& ui, NodeHandle page) {
 #endif
 } // namespace
 
-int main(int argc, char** argv) {
+int FUSE_APP_MAIN(int argc, char** argv) {
     fuse::app::Application app{{.name = "widget_gallery", .argc = argc, .argv = argv, .loadSettings = false}};
     auto& window = app.createWindow({.title = "FUSE UI widget gallery", .width = 1100, .height = 760});
     UiContext& ui = window.ui();

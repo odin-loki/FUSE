@@ -1422,6 +1422,6 @@ std::vector<int> NativePlatform::iconSizes(const AppWindow& w) const {
 }
 #endif
 
-#include "native_services.inl"
-
 } // namespace fuse::app
+
+#include "native_services.inl" // opens namespace fuse::app itself

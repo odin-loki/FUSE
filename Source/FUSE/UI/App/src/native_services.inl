@@ -1,8 +1,10 @@
 // fuse_app native platform services for X11 and Win32 (plan §4.13): mouse cursors, the system clipboard, window
-// management, system theme, displays, shell helpers and native file dialogs. Included by native.cpp inside namespace
-// fuse::app (it needs NativePlatform::Impl). X11 goes through the runtime-loaded function table only; every optional
-// symbol is checked, so a missing one turns that feature off (false / no-op).
+// management, system theme, displays, shell helpers and native file dialogs. Included by native.cpp at file scope
+// after its own namespace fuse::app block (it needs NativePlatform::Impl and the file-local helpers there). X11 goes
+// through the runtime-loaded function table only; every optional symbol is checked, so a missing one turns that
+// feature off (false / no-op).
 
+namespace fuse::app {
 #if !defined(_WIN32)
 // ---- POSIX process helpers (xdg-open, zenity / kdialog, gsettings) ---------------------------------------------------
 namespace {
@@ -644,3 +646,4 @@ bool revealFile(std::string_view path) {
     return reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", L"explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL)) > 32;
 }
 #endif
+} // namespace fuse::app

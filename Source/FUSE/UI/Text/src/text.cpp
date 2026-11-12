@@ -2,7 +2,7 @@
 
 #define STBTT_STATIC
 #define STB_TRUETYPE_IMPLEMENTATION
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wsign-compare"
@@ -13,7 +13,7 @@
 #pragma GCC diagnostic ignored "-Wdouble-promotion"
 #endif
 #include "stb_truetype.h"
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
 
@@ -349,6 +349,7 @@ struct Font::State {
     detail::FullFace* full = nullptr; // owned; HarfBuzz + FreeType over `bytes`
     ~State() { detail::fullDestroy(full); }
 #endif
+    static State* make(const FontBytes& shared, int faceIndex);
 };
 
 namespace {
@@ -411,7 +412,7 @@ bool readMem(void* user, std::uint64_t off, void* dst, std::size_t n) {
 std::expected<Font, TextError> Font::fromBytes(std::span<const std::uint8_t> bytes, int faceIndex) {
     if (bytes.size() < 12 || faceIndex < 0) return std::unexpected(TextError::InvalidFont);
     FontBytes shared = std::make_shared<std::vector<std::uint8_t>>(bytes.begin(), bytes.end());
-    State* st = makeState(&shared, faceIndex);
+    State* st = State::make(shared, faceIndex);
     if (!st) return std::unexpected(TextError::InvalidFont);
     Font f;
     f.m_state = st;
@@ -420,9 +421,9 @@ std::expected<Font, TextError> Font::fromBytes(std::span<const std::uint8_t> byt
 }
 
 /// Builds the parsed state over shared file bytes (stb_truetype, COLR, the FULL backend). nullptr when not a font.
-Font::State* Font::makeState(void* sharedBytes, int faceIndex) {
+Font::State* Font::State::make(const FontBytes& shared, int faceIndex) {
     auto* st = new State;
-    st->bytes = *static_cast<FontBytes*>(sharedBytes);
+    st->bytes = shared;
     st->faceIndex = faceIndex;
     std::vector<std::uint8_t>& data = *st->bytes;
     const int offset = stbtt_GetFontOffsetForIndex(data.data(), faceIndex);
@@ -447,7 +448,7 @@ Font::State* Font::makeState(void* sharedBytes, int faceIndex) {
 Font Font::synthesized(const Font& base, float embolden, float slant) {
     Font f;
     if (!base.m_state) return f;
-    State* st = makeState(&base.m_state->bytes, base.m_state->faceIndex);
+    State* st = State::make(base.m_state->bytes, base.m_state->faceIndex);
     if (!st) return f;
     st->embolden = std::clamp(embolden, 0.f, 0.25f);
     st->slant = std::clamp(slant, -1.f, 1.f);

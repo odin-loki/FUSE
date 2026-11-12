@@ -6,9 +6,9 @@
 // TrueColor visuals; deeper or shallower ones keep the window but cannot draw it).
 //
 // Mobile and macOS notes:
-//  - Android and iOS own the process entry point. Include fuse/app/main.hpp in the file that defines
-//    `int main(int argc, char** argv)`: it becomes the app's main on every platform (android_main / UIApplicationMain
-//    call it). Android apps are shared libraries loaded by NativeActivity (CMake: fuse_app_add_executable).
+//  - Android and iOS own the process entry point. Include fuse/app/main.hpp and define the entry as
+//    `int FUSE_APP_MAIN(int argc, char** argv)`: it is main on desktop and the function android_main /
+//    UIApplicationMain call on Android / iOS. Android apps are shared libraries loaded by NativeActivity (CMake: fuse_app_add_executable).
 //  - One OS window per process on Android / iOS (the activity's surface / the screen): the first window shown gets
 //    it, further windows stay headless.
 //  - The UI works in logical units (dp / points); the frame is rasterised at the display's physical pixel size

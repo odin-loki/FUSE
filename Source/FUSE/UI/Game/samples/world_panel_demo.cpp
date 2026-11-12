@@ -24,9 +24,9 @@ g::Vec3 rayDir(int x, int y, int w, int h, f32 fovY) { // camera at eye looking 
 }
 }
 
-#include "fuse/app/main.hpp" // Android / iOS: this main runs under the platform entry point
+#include "fuse/app/main.hpp" // FUSE_APP_MAIN: main on desktop; run by the platform entry point on Android / iOS
 
-int main(int argc, char** argv) {
+int FUSE_APP_MAIN(int argc, char** argv) {
     std::string out = "world_panel_demo.png";
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];

@@ -213,15 +213,15 @@ Under Xvfb set `VK_ICD_FILENAMES` to lavapipe; under Wine the Win32 path and the
 | Linux (X11), Windows | `App/src/native.cpp` | Vulkan swapchain; GDI on Win32 without Vulkan | `main` |
 | FreeBSD (X11) | `App/src/native.cpp` (same backend as Linux; `libX11.so.6` is loaded at run time) | Vulkan swapchain (`VK_KHR_xlib_surface`) when the build finds a Vulkan loader, else the CPU raster presenters only | `main` |
 | macOS | `App/src/native_apple.mm` (Cocoa `NSWindow`, `NSTextInputClient` IME, `NSPasteboard`) | Vulkan over a `CAMetalLayer` (MoltenVK) when the build finds a Vulkan loader, else the CPU raster as the layer contents | `main` |
-| iOS | `App/src/native_apple.mm` (UIKit `UIWindow`, touch, software keyboard through `UIKeyInput`) + `entry_ios.mm` | same as macOS | `UIApplicationMain`, which runs your `main` |
-| Android | `App/src/native_android.cpp` (NativeActivity + NDK app glue, touch / mouse / keys, soft keyboard, clipboard over JNI) + `entry_android.cpp` | Vulkan (`VK_KHR_android_surface`), else the CPU raster through `ANativeWindow_lock` | `android_main`, which runs your `main` |
+| iOS | `App/src/native_apple.mm` (UIKit `UIWindow`, touch, software keyboard through `UIKeyInput`) + `entry_ios.mm` | same as macOS | `UIApplicationMain`, which runs your `FUSE_APP_MAIN` |
+| Android | `App/src/native_android.cpp` (NativeActivity + NDK app glue, touch / mouse / keys, soft keyboard, clipboard over JNI) + `entry_android.cpp` | Vulkan (`VK_KHR_android_surface`), else the CPU raster through `ANativeWindow_lock` | `android_main`, which runs your `FUSE_APP_MAIN` |
 
 ```cpp
 #include "fuse/app/app.hpp"
 #include "fuse/app/native.hpp"
-#include "fuse/app/main.hpp"   // last: on Android / iOS the platform entry point calls this main
+#include "fuse/app/main.hpp"   // FUSE_APP_MAIN: main on desktop; called by the platform entry point on Android / iOS
 
-int main(int argc, char** argv) {
+int FUSE_APP_MAIN(int argc, char** argv) {
     fuse::app::Application app{{.name = "hello", .argc = argc, .argv = argv}};
     fuse::app::NativePlatform native(app);
     auto& window = app.createWindow({.title = "Hello"});
@@ -352,7 +352,7 @@ The macOS / iOS parts are compiled in CI only; the Win32 parts are cross-compile
 | `widget_gallery [--page=N]` | every widget of the catalogue on seven tabbed pages (`ui/gallery.fuseui` plus the call-only widgets and the game HUD page), with icon buttons and SVG images, a multi-selection table beside an editable tree table, rich text in real bold / italic and an Edit menu built from an `ActionRegistry`: the manual test bed for a device | `fuse_app_widget_gallery_page0..6` |
 | `game_menu [--pad=script]` | main / pause / settings menu on `ui/game_menu.fuseui`: bindings, tabs, sliders, key rebinding, confirm dialog; keyboard, gamepad navigation (`GamepadNav`; left / right change the focused slider or tab), mouse, touch | `fuse_app_game_menu_sample` (a scripted session over all four input paths, every step checked) |
 
-All are `fuse_app_add_executable` targets with `fuse/app/main.hpp`, load their documents through
+All are `fuse_app_add_executable` targets with `fuse/app/main.hpp` (`int FUSE_APP_MAIN(int, char**)`), load their documents through
 `fuse::app::readResource` on Android / iOS, and take `--screenshot=<png>`. `game_menu` has no gamepad backend of its
 own: feed your platform's pad into the `GamepadState` in its loop (`--pad=udlrabs.` plays a script).
 
