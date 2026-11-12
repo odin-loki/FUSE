@@ -1,4 +1,4 @@
-// FUSE UI Tier C (model / view: sort-filter proxy, grid view; delegates live with the table in widgets_tier_b2.cpp)
+// FUSE UI Tier C (model / view: sort-filter proxy, grid view; delegates live with the item view in widgets_modelview.cpp)
 // and Tier D (property grid, colour picker, calendar, chart, markdown view). Plan §5.
 #include "fuse/ui/widgets/widgets.hpp"
 #include "fuse/text/from_chars.hpp"
@@ -65,6 +65,10 @@ struct GridState {
     f32 tileW = 96.f, tileH = 72.f;
     u32 first = 0; ///< first visible tile row
     std::string scratch;
+    // multi-selection (modelview.hpp): null = plain single selection, value() is the selected item
+    SelectionModel* sel = nullptr;
+    std::unique_ptr<SelectionModel> ownSel;
+    SelectionMode mode = SelectionMode::Single;
 };
 Pool<GridState>& gridPool() { static Pool<GridState> p; return p; }
 
@@ -97,15 +101,18 @@ struct GridView {
         const u32 nf = u32(std::clamp<i64>(f, 0, r > v ? i64(r - v) : 0));
         if (nf != s.first) { s.first = nf; ui.invalidate(n); }
     }
-    static void select(UiContext& ui, NodeHandle n, GridState& s, i64 idx) {
+    static void select(UiContext& ui, NodeHandle n, GridState& s, i64 idx, u8 mods = 0, bool pointer = false) {
         const u32 total = count(s);
         if (!total) return;
         idx = std::clamp<i64>(idx, 0, i64(total) - 1);
         const u32 c = cols(ui, n, s), row = u32(idx) / c, v = visRows(ui, n, s);
         if (row < s.first) setFirst(ui, n, s, row);
         else if (row >= s.first + v) setFirst(ui, n, s, i64(row) - v + 1);
-        ui.setValue(n, f32(idx), true);
+        if (!s.sel) ui.setValue(n, f32(idx), true);
+        else if (pointer) s.sel->pointerSelect(u32(idx), 0, mods, s.mode);
+        else s.sel->keySelect(u32(idx), 0, mods, s.mode);
     }
+    static i64 current(const UiContext& ui, NodeHandle n, const GridState& s) { return s.sel ? s.sel->currentRow() : i64(ui.value(n)); }
     static void paint(const PaintContext& pc, DrawList& dl) {
         UiContext& ui = pc.ui;
         GridState* s = gridPool().get(ui, pc.node);
@@ -121,7 +128,9 @@ struct GridView {
                 if (idx >= total) break;
                 const Rect t{c.x + f32(k) * s->tileW, c.y + f32(r) * s->tileH, s->tileW, s->tileH};
                 if (t.y >= c.bottom()) break;
-                if (i32(idx) == sel) dl.rect({t.x + 2.f, t.y + 2.f, t.w - 4.f, t.h - 4.f}, acc.withAlpha(acc.a * 0.45f), 5.f);
+                if (s->sel ? s->sel->isSelected(idx) : i32(idx) == sel) dl.rect({t.x + 2.f, t.y + 2.f, t.w - 4.f, t.h - 4.f}, acc.withAlpha(acc.a * 0.45f), 5.f);
+                if (s->sel && i64(idx) == s->sel->currentRow() && (pc.states & kStateFocus)) // current item
+                    dl.roundedRect({t.x + 2.f, t.y + 2.f, t.w - 4.f, t.h - 4.f}, {}, {5.f, 5.f, 5.f, 5.f}, acc, 1.f);
                 // icon: a rounded tile tinted by index
                 const f32 hue = f32((idx * 47u) % 360u) / 360.f;
                 const Color ic{0.35f + 0.3f * std::abs(std::sin(hue * 6.283f)), 0.35f + 0.3f * std::abs(std::sin(hue * 6.283f + 2.f)),
@@ -156,28 +165,37 @@ struct GridView {
             const i64 k = i64((e.pos.x - c.x) / s->tileW), r = i64((e.pos.y - c.y) / s->tileH) + s->first;
             if (k < nc && k >= 0 && r >= 0) {
                 const i64 idx = r * nc + k;
-                if (idx < i64(count(*s))) select(ui, ec.node, *s, idx);
+                if (idx < i64(count(*s))) select(ui, ec.node, *s, idx, e.mods, true);
             }
             return true;
         }
         case EventType::Wheel: setFirst(ui, ec.node, *s, i64(s->first) - i64(std::lround(e.wheel.y))); return true;
         case EventType::KeyDown: {
-            const i64 cur = i64(ui.value(ec.node));
+            const i64 cur = current(ui, ec.node, *s);
+            const u8 m = e.mods;
             switch (e.key) {
-            case Key::Right: select(ui, ec.node, *s, cur + 1); return true;
-            case Key::Left: select(ui, ec.node, *s, cur < 0 ? 0 : cur - 1); return true;
-            case Key::Down: select(ui, ec.node, *s, cur < 0 ? 0 : cur + nc); return true;
-            case Key::Up: select(ui, ec.node, *s, cur - nc); return true;
-            case Key::PageDown: select(ui, ec.node, *s, cur + nc * visRows(ui, ec.node, *s)); return true;
-            case Key::PageUp: select(ui, ec.node, *s, cur - nc * visRows(ui, ec.node, *s)); return true;
-            case Key::Home: select(ui, ec.node, *s, 0); return true;
-            case Key::End: select(ui, ec.node, *s, i64(count(*s)) - 1); return true;
+            case Key::Right: select(ui, ec.node, *s, cur + 1, m); return true;
+            case Key::Left: select(ui, ec.node, *s, cur < 0 ? 0 : cur - 1, m); return true;
+            case Key::Down: select(ui, ec.node, *s, cur < 0 ? 0 : cur + nc, m); return true;
+            case Key::Up: select(ui, ec.node, *s, cur - nc, m); return true;
+            case Key::PageDown: select(ui, ec.node, *s, cur + nc * visRows(ui, ec.node, *s), m); return true;
+            case Key::PageUp: select(ui, ec.node, *s, cur - nc * visRows(ui, ec.node, *s), m); return true;
+            case Key::Home: select(ui, ec.node, *s, 0, m); return true;
+            case Key::End: select(ui, ec.node, *s, i64(count(*s)) - 1, m); return true;
             case Key::Enter: if (cur >= 0) ui.emit(ec.node, SignalKind::Submitted, {.value = f32(cur)}); return true;
+            case Key::Space: // multi / extended selection: toggles the current item
+                if (!s->sel || cur < 0 || (s->mode != SelectionMode::Multi && s->mode != SelectionMode::Extended)) return false;
+                s->sel->toggle(u32(cur));
+                return true;
+            case Key::A:
+                if (!(m & kModCtrl) || !s->sel || (s->mode != SelectionMode::Multi && s->mode != SelectionMode::Extended)) return false;
+                s->sel->selectAll(count(*s));
+                return true;
             default: return false;
             }
         }
         case EventType::DoubleClick: { // double click on a tile activates it, like Enter
-            const i64 cur = i64(ui.value(ec.node));
+            const i64 cur = current(ui, ec.node, *s);
             const i64 k = i64((e.pos.x - c.x) / s->tileW), r = i64((e.pos.y - c.y) / s->tileH) + s->first;
             if (cur >= 0 && k >= 0 && k < nc && r * nc + k == cur) ui.emit(ec.node, SignalKind::Submitted, {.value = f32(cur)});
             return true;
@@ -749,9 +767,26 @@ void civilFromDays(i32 z, int& y, int& m, int& d) {
 }
 
 // ---- sort / filter proxy -------------------------------------------------------------------------------------------------
-SortFilterProxy::SortFilterProxy(const ItemModel* source) : m_src(source) {
+namespace {
+/// Case-sensitive glob over already lower-cased text: '*' = any run, '?' = one character, whole-string match.
+bool globMatch(std::string_view text, std::string_view pat) {
+    std::size_t t = 0, p = 0, star = std::string_view::npos, mark = 0;
+    while (t < text.size()) {
+        if (p < pat.size() && (pat[p] == '?' || pat[p] == text[t])) { ++t; ++p; }
+        else if (p < pat.size() && pat[p] == '*') { star = p++; mark = t; }
+        else if (star != std::string_view::npos) { p = star + 1; t = ++mark; }
+        else return false;
+    }
+    while (p < pat.size() && pat[p] == '*') ++p;
+    return p == pat.size();
+}
+} // namespace
+
+SortFilterProxy::SortFilterProxy(const ItemModel* source) : m_src(source), m_notifier(std::make_unique<ModelNotifier>()) {
+    using P = SortFilterProxy;
     m_model.user = this;
     m_model.columns = source ? source->columns : 1;
+    m_model.notifier = m_notifier.get();
     m_model.rows = [](const void* u) { return static_cast<const SortFilterProxy*>(u)->rows(); };
     m_model.data = [](const void* u, u32 r, u32 c, std::string& scratch) {
         const auto* p = static_cast<const SortFilterProxy*>(u);
@@ -762,6 +797,33 @@ SortFilterProxy::SortFilterProxy(const ItemModel* source) : m_src(source) {
             const auto* p = static_cast<const SortFilterProxy*>(u);
             return p->m_src->header(p->m_src->user, c);
         };
+    if (!source) return;
+    // roles, flags and edits go to the source row
+    if (source->role)
+        m_model.role = [](const void* u, ItemId i, u32 c, ItemRole r, ItemValue& o, std::string& sc) {
+            const P* p = static_cast<const P*>(u);
+            return i < p->rows() && p->m_src->role(p->m_src->user, p->sourceRow(u32(i)), c, r, o, sc);
+        };
+    if (source->flags)
+        m_model.flags = [](const void* u, ItemId i, u32 c) -> u32 {
+            const P* p = static_cast<const P*>(u);
+            return i < p->rows() ? p->m_src->flags(p->m_src->user, p->sourceRow(u32(i)), c) : 0u;
+        };
+    if (source->setData)
+        m_model.setData = [](const void* u, ItemId i, u32 c, ItemRole r, const ItemValue& v) {
+            const P* p = static_cast<const P*>(u);
+            return i < p->rows() && p->m_src->setData(p->m_src->user, p->sourceRow(u32(i)), c, r, v);
+        };
+    if (source->notifier)
+        m_srcSub = source->notifier->subscribe([](void* u, u64, const ModelChange& c) {
+            auto* p = static_cast<P*>(u);
+            if (p->m_identity) { p->m_notifier->notify(c); return true; } // same rows: pass the change on as it is
+            p->invalidate(); // a filtered / sorted map cannot be patched: rebuild and report a reset
+            return true;
+        }, this);
+}
+SortFilterProxy::~SortFilterProxy() {
+    if (m_src && m_src->notifier && m_srcSub) m_src->notifier->unsubscribe(m_srcSub);
 }
 u32 SortFilterProxy::rows() const {
     if (!m_src || !m_src->rows) return 0;
@@ -769,51 +831,155 @@ u32 SortFilterProxy::rows() const {
 }
 void SortFilterProxy::setFilter(u32 col, std::string_view needle) {
     m_filterCol = col;
+    m_allCols = m_wildcard = false;
     m_needle.assign(needle);
     for (char& c : m_needle) c = char(std::tolower(static_cast<unsigned char>(c)));
+    invalidate();
+}
+void SortFilterProxy::setFilterAllColumns(std::string_view needle) {
+    setFilter(0, {});
+    m_allCols = true;
+    m_needle.assign(needle);
+    for (char& c : m_needle) c = char(std::tolower(static_cast<unsigned char>(c)));
+    invalidate();
+}
+void SortFilterProxy::setFilterWildcard(i32 col, std::string_view pattern) {
+    m_filterCol = col < 0 ? 0u : u32(col);
+    m_allCols = col < 0;
+    m_needle.assign(pattern);
+    for (char& c : m_needle) c = char(std::tolower(static_cast<unsigned char>(c)));
+    m_wildcard = m_needle.find_first_of("*?") != std::string::npos; // no wildcard: a substring match
     invalidate();
 }
 void SortFilterProxy::sortBy(i32 col, bool ascending) {
     m_sortCol = col;
     m_asc = ascending;
+    m_sortKeys = col < 0 ? 0u : 1u;
     invalidate();
+}
+void SortFilterProxy::addSortKey(u32 col, bool ascending) {
+    if (m_sortCol < 0) { sortBy(i32(col), ascending); return; }
+    if (m_sortKeys >= kMaxSortKeys) return;
+    m_extraKeys[m_sortKeys - 1] = {col, ascending};
+    ++m_sortKeys;
+    invalidate();
+}
+bool SortFilterProxy::accepts(u32 r, std::string& scratch, std::string& low) const {
+    const u32 c0 = m_allCols ? 0u : m_filterCol, c1 = m_allCols ? m_src->columns : m_filterCol + 1;
+    for (u32 c = c0; c < c1; ++c) {
+        const std::string_view d = m_src->data(m_src->user, r, c, scratch);
+        low.assign(d);
+        for (char& ch : low) ch = char(std::tolower(static_cast<unsigned char>(ch)));
+        if (m_wildcard ? globMatch(low, m_needle) : low.find(m_needle) != std::string::npos) return true;
+    }
+    return false;
 }
 void SortFilterProxy::invalidate() {
     m_identity = m_needle.empty() && m_sortCol < 0;
     m_map.clear();
-    if (m_identity || !m_src || !m_src->rows) { m_map.shrink_to_fit(); return; }
+    if (m_identity || !m_src || !m_src->rows) { m_map.shrink_to_fit(); m_notifier->reset(); return; }
     const u32 n = m_src->rows(m_src->user);
     std::string scratch, low;
     m_map.reserve(m_needle.empty() ? n : n / 4);
     for (u32 r = 0; r < n; ++r) {
-        if (!m_needle.empty()) {
-            const std::string_view d = m_src->data(m_src->user, r, m_filterCol, scratch);
-            low.assign(d);
-            for (char& c : low) c = char(std::tolower(static_cast<unsigned char>(c)));
-            if (low.find(m_needle) == std::string::npos) continue;
-        }
+        if (!m_needle.empty() && !accepts(r, scratch, low)) continue;
         m_map.push_back(r);
     }
     if (m_sortCol >= 0 && u32(m_sortCol) < m_src->columns) {
-        // sort keys extracted once: numeric when every key parses, else strings
-        const u32 col = u32(m_sortCol);
-        std::vector<double> num(m_map.size());
-        bool numeric = true;
-        for (std::size_t i = 0; i < m_map.size() && numeric; ++i) numeric = parseNum(m_src->data(m_src->user, m_map[i], col, scratch), num[i]);
+        // sort keys extracted once per key column: numeric when every key parses, else strings
+        struct Key { bool asc = true, numeric = true; std::vector<double> num; std::vector<std::string> str; };
+        Key keys[kMaxSortKeys];
+        u32 nk = 0;
+        for (u32 q = 0; q < std::max(1u, m_sortKeys); ++q) {
+            const u32 col = q == 0 ? u32(m_sortCol) : m_extraKeys[q - 1].col;
+            if (col >= m_src->columns) continue;
+            Key& key = keys[nk++];
+            key.asc = q == 0 ? m_asc : m_extraKeys[q - 1].asc;
+            key.num.resize(m_map.size());
+            for (std::size_t i = 0; i < m_map.size() && key.numeric; ++i) key.numeric = parseNum(m_src->data(m_src->user, m_map[i], col, scratch), key.num[i]);
+            if (key.numeric) continue;
+            key.str.resize(m_map.size());
+            for (std::size_t i = 0; i < m_map.size(); ++i) key.str[i].assign(m_src->data(m_src->user, m_map[i], col, scratch));
+        }
         std::vector<u32> idx(m_map.size());
         std::iota(idx.begin(), idx.end(), 0u);
-        if (numeric) {
+        if (nk == 1 && keys[0].numeric) {
+            const auto& num = keys[0].num;
             std::stable_sort(idx.begin(), idx.end(), [&](u32 a, u32 b) { return m_asc ? num[a] < num[b] : num[b] < num[a]; });
+        } else if (nk == 1) {
+            const auto& str = keys[0].str;
+            std::stable_sort(idx.begin(), idx.end(), [&](u32 a, u32 b) { return m_asc ? str[a] < str[b] : str[b] < str[a]; });
         } else {
-            std::vector<std::string> keys(m_map.size());
-            for (std::size_t i = 0; i < m_map.size(); ++i) keys[i].assign(m_src->data(m_src->user, m_map[i], col, scratch));
-            std::stable_sort(idx.begin(), idx.end(), [&](u32 a, u32 b) { return m_asc ? keys[a] < keys[b] : keys[b] < keys[a]; });
+            std::stable_sort(idx.begin(), idx.end(), [&](u32 a, u32 b) {
+                for (u32 q = 0; q < nk; ++q) {
+                    const Key& key = keys[q];
+                    const u32 x = key.asc ? a : b, y = key.asc ? b : a;
+                    if (key.numeric) {
+                        if (key.num[x] < key.num[y]) return true;
+                        if (key.num[y] < key.num[x]) return false;
+                    } else if (const int c = key.str[x].compare(key.str[y]); c != 0) {
+                        return c < 0;
+                    }
+                }
+                return false;
+            });
         }
         std::vector<u32> sorted(m_map.size());
         for (std::size_t i = 0; i < idx.size(); ++i) sorted[i] = m_map[idx[i]];
         m_map = std::move(sorted);
     }
+    m_notifier->reset();
 }
+
+// ---- grid view selection (behind setViewSelectionMode / setViewSelectionModel) -------------------------------------------
+namespace {
+u64 packNode(NodeHandle h) { return (u64(h.generation) << 32) | u64(h.index); }
+bool gridSelectionChanged(void* user, u64 tag, const SelectionModel& sel) {
+    UiContext& ui = *static_cast<UiContext*>(user);
+    const NodeHandle n{u32(tag & 0xFFFFFFFFu), u32(tag >> 32)};
+    GridState* s = gridPool().get(ui, n);
+    if (!s || s->sel != &sel) return false;
+    const f32 cur = f32(sel.currentRow());
+    ui.invalidate(n);
+    if (ui.value(n) != cur) ui.setValue(n, cur, true);
+    else ui.emit(n, SignalKind::ValueChanged, {.value = cur, .flag = true});
+    return true;
+}
+} // namespace
+namespace detail {
+bool gridSetSelection(UiContext& ui, NodeHandle grid, SelectionModel* shared, bool setMode, SelectionMode mode) {
+    GridState* s = gridPool().get(ui, grid);
+    if (!s || ui.classOf(grid) != ui.registry().find("gridview")) return false;
+    if (setMode) s->mode = mode;
+    if (setMode && s->sel) { // the model stays; only the rules change
+        if (mode == SelectionMode::None) s->sel->clear();
+        ui.invalidate(grid);
+        return true;
+    }
+    if (setMode && mode == SelectionMode::Single) return true; // plain single selection needs no model
+    if (shared) {
+        s->ownSel.reset();
+        s->sel = shared;
+        if (s->model && s->model->notifier && !shared->tracking()) shared->track(s->model->notifier);
+    } else {
+        s->ownSel = std::make_unique<SelectionModel>();
+        s->sel = s->ownSel.get();
+        if (const i64 v = i64(ui.value(grid)); v >= 0 && s->mode != SelectionMode::None) {
+            s->sel->selectRow(u32(v));
+            s->sel->setCurrent(v);
+            s->sel->setAnchor(v);
+        }
+    }
+    s->sel->subscribe(&gridSelectionChanged, &ui, packNode(grid));
+    ui.setValue(grid, f32(s->sel->currentRow()), true);
+    ui.invalidate(grid);
+    return true;
+}
+SelectionModel* gridSelection(UiContext& ui, NodeHandle grid) {
+    GridState* s = gridPool().get(ui, grid);
+    return s && ui.classOf(grid) == ui.registry().find("gridview") ? s->sel : nullptr;
+}
+} // namespace detail
 
 // ---- grid view API -----------------------------------------------------------------------------------------------------
 NodeHandle gridView(UiContext& ui, NodeHandle parent, const ItemModel* model, f32 tileW, f32 tileH, std::string_view id) {

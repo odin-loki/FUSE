@@ -134,6 +134,39 @@ int main() {
     UI_CHECK_EQ(g_submitted, 1);
     UI_CHECK_EQ(ui.value(list), 2.f);
 
+    // ---- ... and a model view row (table / model list): cells that are not editable activate ----
+    {
+        static w::StringTableModel model("Name\tSize");
+        for (const char* r : {"one\t1", "two\t2", "three\t3"}) model.addRow(r);
+        const NodeHandle table = w::tableView(ui, ui.root(), &model.model(), "table");
+        ui.setCss(table, "height", "120px");
+        static int tableSubmitted = 0;
+        static f32 tableRow = -1.f;
+        ui.connect(table, SignalKind::Submitted, [](UiContext&, NodeHandle, const SignalArgs& a) { ++tableSubmitted; tableRow = a.value; });
+        ui.update(1.f);
+        const Rect r1 = w::tableRowRect(ui, table, 1), r2 = w::tableRowRect(ui, table, 2), tc = ui.contentRect(table);
+        UI_CHECK(r1.y > tc.y && r2.y == r1.bottom()); // below the header row
+        UI_CHECK_EQ(w::tableRowAt(ui, table, centre(r1)), 1);
+        UI_CHECK_EQ(w::tableRowAt(ui, table, {tc.x + 20.f, tc.y + 4.f}), -1); // the header
+        drv.clickAt(centre(r1));
+        UI_CHECK_EQ(ui.value(table), 1.f);
+        UI_CHECK_EQ(tableSubmitted, 0);
+        drv.clickAt(centre(r1));
+        UI_CHECK_EQ(tableSubmitted, 1);
+        UI_CHECK_EQ(tableRow, 1.f);
+        UI_CHECK(!w::viewEditor(ui, table).valid());
+        ui.update(1.f);
+        drv.clickAt(centre(r1)); // two rows in quick succession: two selections
+        drv.clickAt(centre(r2));
+        UI_CHECK_EQ(tableSubmitted, 1);
+        ui.update(1.f);
+        const Vec2 head{tc.x + 20.f, tc.y + 4.f}; // a double click on the header sorts twice, it activates nothing
+        drv.clickAt(head);
+        drv.clickAt(head);
+        UI_CHECK_EQ(tableSubmitted, 1);
+        ui.update(1.f);
+    }
+
     // ---- tap / double tap ----
     g_log.clear();
     g_clicked = 0;

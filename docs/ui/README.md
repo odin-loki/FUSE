@@ -102,7 +102,7 @@ NodeHandle bar = widgets::menuBar(ui, ui.root());
 NodeHandle file = widgets::menuBarMenu(ui, bar, "File", "New\nOpen\n-\nQuit");
 ui.connect(file, SignalKind::Submitted, [](UiContext&, NodeHandle, const SignalArgs& a) { /* a.value = index, a.text */ });
 NodeHandle list = widgets::listView(ui, parent, items);           // virtualised: paints visible rows only
-NodeHandle tree = widgets::treeView(ui, parent, "Scene\n\tCamera\n\tLights");  // tabs = depth
+NodeHandle tree = widgets::treeView(ui, parent, "Scene\n\tCamera\n\tLights");  // tabs = depth (models: treeModelView)
 NodeHandle tabs = widgets::tabWidget(ui, parent, "General\nRender");
 widgets::label(ui, widgets::tabPage(ui, tabs, 0), "...");
 NodeHandle dlg = widgets::dialog(ui, "Delete asset?");
@@ -353,6 +353,58 @@ hud.update(realDt); nav.update(padState, realDt); ui.update(realDt);
 - Designer: `fuse_ui_designer [file.fuseui] [--save=out] [--screenshot=png]`. `DesignDocument` saves exactly what it loaded; keys starting with `x-` are kept for tools and stripped from the live preview.
 - `dockSaveLayout(dock)` returns a text layout (`fusedock 1`); `dockRestoreLayout(dock, text)` checks the whole text before applying it and ignores unknown panel ids.
 
+## Model / view (plan §4.11)
+
+Header `fuse/ui/widgets/modelview.hpp` (included by `widgets.hpp`). `tableView`, `modelListView` and `treeModelView`
+are one virtualised view class: the `setView*` / `view*` calls work on all three, the selection calls also on
+`gridView`. Models, delegates and shared selection models are not owned and must outlive their views.
+
+- **Models.** `ItemModel` is still `rows` + `data` for a flat model. Optional members add typed roles (`role`: Edit,
+  Decoration, CheckState, ToolTip, Foreground, Background, TextAlign, User), `flags` (`kItemEditable`,
+  `kItemCheckable`, ...), `setData`, a hierarchy (`childCount` / `childAt` / `hasChildren` / `itemData` over opaque
+  `ItemId`s, `kRootItem` = the invisible root), lazy children (`canFetchMore` / `fetchMore`) and a `notifier`.
+  `StringTreeModel` is the ready-made tree (`add`, `remove`, `setCell`), as `StringTableModel` is for tables.
+- **Notifications.** A model with a `ModelNotifier` calls `rowsInserted` / `rowsRemoved` / `rowsMoved` / `dataChanged`
+  / `reset` after changing its data; views then keep the selection and the first visible row on the same rows, and
+  a `dataChanged` outside the window repaints nothing. Without a notifier, call `tableModelChanged(view)`.
+- **Tree.** `treeModelView(parent, &model)`: only expanded nodes are tracked, so a node with a million children costs
+  one record; lazy children are fetched when a node opens and as its end scrolls into view. `setTreeRowExpanded`,
+  `setTreeItemExpanded`, `treeItemAt(row)`, `treeRowDepth`, `treeRowOf`, `treeCollapseAll`. Keys: arrows, Home / End,
+  PageUp / PageDown, Right / Left to expand / collapse / step in / step out, type-ahead. More than one column with a
+  header makes it a tree table. The string `treeView` now collapses any line (no 64-row limit).
+- **Selection.** `setViewSelectionMode(view, SelectionMode::Single | Multi | Extended | None, SelectionUnit::Rows |
+  Cells)`; `viewSelectionModel(view)` gives the `SelectionModel` (ranges, `isSelected`, `selectedRows`, current /
+  anchor, `subscribe`). Extended: click, Ctrl+click, Shift+click, Shift+arrows, Ctrl+A, Space. Share one model
+  between views of the same flat model with `setViewSelectionModel`. In the default plain single mode `value()` is
+  the selected row as before; with a selection model `value()` is the *current* row. `ValueChanged` fires on every
+  selection or current change. A tree's selection is in visible rows (`treeItemAt` maps them to ids).
+- **Editing.** Cells whose `flags` say `kItemEditable` open an editor on double click, F2 or typing
+  (`setViewEditTriggers`); Enter commits through `setData(ItemRole::Edit)`, Escape cancels, Tab / Shift+Tab move to
+  the next / previous editable cell. The editor is one child node over the cell. Delegates choose it:
+  `lineEditDelegate()` (default), `spinBoxDelegate(&spec)`, `comboBoxDelegate(&items)`, or your own `createEditor` /
+  `setEditorData` / `commit` on `CellDelegate`. `kItemCheckable` cells with a CheckState role toggle in place.
+  `viewEdit`, `viewEditor`, `viewCommitEdit`, `viewCancelEdit`.
+- **Columns and rows.** Columns wider than the view scroll horizontally (Shift + wheel, Left / Right, the bottom bar;
+  `setViewScrollX`). `setViewColumnsMovable` (header drag), `moveViewColumn`, `setViewColumnHidden`,
+  `resizeViewColumnToContents` (also a double click on a header edge), `setViewFrozenColumns`, `setViewRowHeight`,
+  `setViewAlternatingRows`, `setViewSortIndicator`, `viewCellRect`. Cell text is one line; a clipped cell shows its
+  text in a tooltip (`setViewToolTips`). `setViewContextMenu(view, fn)` is called on a right press with the cell.
+- **Proxies.** `SortFilterProxy`: `sortBy` + `addSortKey` (stable multi-key sort), `setFilterAllColumns`,
+  `setFilterWildcard` (`*`, `?`); proxies stack (`SortFilterProxy b(&a.model())`) and rebuild when the source reports
+  a change. `TreeFilterProxy` filters a tree and keeps the ancestors of matches.
+- **Async.** `AsyncModel(ui, columns, pageRows, maxPages)`: `setSource(fetch, user)`, `setRowCount`. Rows that are
+  not cached show a placeholder and are requested once per page; answer with `deliver(ticket, cells)` from any
+  thread. The page is committed on the UI thread at the next `update()` and only views showing those rows repaint.
+
+```cpp
+widgets::StringTreeModel scene("Name\tKind");
+ItemId lights = scene.add(widgets::kRootItem, "Lights\tgroup");
+scene.add(lights, "Sun\tdirectional");
+NodeHandle tree = widgets::treeModelView(ui, parent, &scene.model());
+widgets::setViewSelectionMode(ui, tree, widgets::SelectionMode::Extended);
+scene.add(lights, "Fill\tpoint");                       // the view updates through the notifier
+```
+
 ## Styling (CSS subset, D4)
 
 Selectors: type, `.class`, `#id`, `:hover :pressed :focus :focus-visible :checked :disabled`, descendant and `>`
@@ -509,6 +561,9 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_rtl_layout` | layout dumps of one tree in `ltr` and `rtl`, logical padding, text alignment, popups unmoved |
 | `fuse_ui_hot_reload_file` | file-time poll reloads a `.fuseui` file keeping handles, focus, edit text, value and scroll; broken / missing file |
 | `fuse_ui_interaction_golden` | action menu with shortcut texts and a list row drag (ghost, insertion line) against `tests/golden/interaction.png` (MINIMAL profile only) |
+| `fuse_ui_mv_notify`, `_selection`, `_tree`, `_editing`, `_view`, `_proxy`, `_async`, `_dir_model` | model / view: notifications, selection modes, tree view, in-place editing, column features, proxies, async model, a lazy `std::filesystem` model |
+| `fuse_ui_mv_selection_1m`, `fuse_ui_mv_tree_1m` | range selection over 1M rows allocates nothing per row; a lazy tree with > 1M nodes scrolls with a constant node count and bounded model reads |
+| `fuse_ui_mv_golden_tree`, `fuse_ui_mv_golden_table_edit` | tree table and multi-selection + open editor against `tests/golden/modelview_*.png` |
 
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
 | `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster (skips 77 without a display or device) |

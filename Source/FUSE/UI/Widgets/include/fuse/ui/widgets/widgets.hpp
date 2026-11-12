@@ -6,6 +6,7 @@
 // `background2` = accent / indicator fill (when no gradient is set), `border-color` = outline.
 #pragma once
 
+#include <memory>
 #include <span>
 
 #include <string>
@@ -88,8 +89,9 @@ NodeHandle listView(UiContext& ui, NodeHandle parent, std::string_view items, i3
 std::string_view listItem(const UiContext& ui, NodeHandle list, u32 index);
 u32 listFirstVisible(const UiContext& ui, NodeHandle list);
 
-/// Tree view: one line per node, leading tabs give the depth. value() = selected line. Rows 0..63 can collapse
-/// (expansion state is a 64-bit mask; deeper rows stay expanded). Toggling emits Toggled {value = line, flag = open}.
+/// Tree view: one line per node, leading tabs give the depth. value() = selected line. Any line with children can
+/// collapse (one bit per line, no row limit). Toggling emits Toggled {value = line, flag = open}. Setting new text
+/// keeps the collapsed lines by index. For a model-backed, virtualised tree see treeModelView (modelview.hpp).
 NodeHandle treeView(UiContext& ui, NodeHandle parent, std::string_view lines, std::string_view id = {});
 bool treeExpanded(const UiContext& ui, NodeHandle tree, u32 line);
 void setTreeExpanded(UiContext& ui, NodeHandle tree, u32 line, bool open);
@@ -144,13 +146,52 @@ void dockFloat(UiContext& ui, NodeHandle dock, Rect rect);
 bool dockFloating(const UiContext& ui, NodeHandle dock);
 Rect dockFloatRect(const UiContext& ui, NodeHandle dock); ///< current floating rect (empty when docked)
 
+/// An item of a model. Flat models: the row. Tree models: an opaque id chosen by the model (kRootItem is the invisible
+/// root; ids must be unique and stable while the item exists).
+using ItemId = u64;
+inline constexpr ItemId kRootItem = 0;
+/// Typed roles beyond the display text (ItemModel::role). What ItemValue carries per role:
+/// Display / Edit / ToolTip: `text` (Edit may also set `number`); Decoration: `integer` = icon index (handed to the
+/// view's icon painter, setViewIconPainter) and / or `color` (a swatch); CheckState: `integer` 0 unchecked, 1 checked,
+/// 2 partial; Foreground / Background: `color`; TextAlign: `integer` = TextAlignment; User: anything.
+enum class ItemRole : u8 { Display, Edit, Decoration, CheckState, ToolTip, Foreground, Background, TextAlign, User };
+struct ItemValue {
+    std::string_view text;
+    double number = 0.0;
+    Color color{};
+    i32 integer = 0;
+};
+enum ItemFlags : u32 { kItemSelectable = 1, kItemEditable = 2, kItemCheckable = 4, kItemEnabled = 8 };
+class ModelNotifier; // model -> view change notifications (fuse/ui/widgets/modelview.hpp)
+
 /// Item model: a function table over caller data (no inheritance). `data` may return a view into `scratch`.
+/// Only `rows` + `data` are needed for a flat model; every member after `header` is optional and a flat view never
+/// touches the ones that are null (the flat fast path is unchanged).
 struct ItemModel {
     const void* user = nullptr;
     u32 columns = 1;
     u32 (*rows)(const void* user) = nullptr;
     std::string_view (*data)(const void* user, u32 row, u32 col, std::string& scratch) = nullptr;
     std::string_view (*header)(const void* user, u32 col) = nullptr; ///< optional
+    // ---- roles, flags, editing (optional). `item` is the row of a flat model, the node id of a tree model.
+    /// Fills `out` for `role` and returns true, or returns false when the item has no value for it (the view then
+    /// uses its default). `out.text` may point into `scratch`.
+    bool (*role)(const void* user, ItemId item, u32 col, ItemRole role, ItemValue& out, std::string& scratch) = nullptr;
+    u32 (*flags)(const void* user, ItemId item, u32 col) = nullptr; ///< ItemFlags; null = selectable + enabled
+    /// Stores an edited value (roles Edit and CheckState). Returns false to reject. A model with a notifier reports
+    /// the change through it (dataChanged).
+    bool (*setData)(const void* user, ItemId item, u32 col, ItemRole role, const ItemValue& value) = nullptr;
+    // ---- hierarchy (optional; treeModelView needs childCount, childAt and itemData).
+    u32 (*childCount)(const void* user, ItemId parent) = nullptr; ///< children fetched so far
+    ItemId (*childAt)(const void* user, ItemId parent, u32 row) = nullptr;
+    bool (*hasChildren)(const void* user, ItemId item) = nullptr; ///< expandable without counting; null: childCount > 0
+    std::string_view (*itemData)(const void* user, ItemId item, u32 col, std::string& scratch) = nullptr;
+    /// Lazy children: a view that shows the last fetched child of `parent` calls fetchMore while canFetchMore holds,
+    /// then re-reads childCount. fetchMore must not also report the new rows through the notifier.
+    bool (*canFetchMore)(const void* user, ItemId parent) = nullptr;
+    void (*fetchMore)(const void* user, ItemId parent) = nullptr;
+    /// Change notifications (not owned, optional): views subscribe when they are created.
+    ModelNotifier* notifier = nullptr;
 };
 /// A ready-made row/column string model (owns its cells). sortBy reorders rows (stable, numeric when both parse).
 class StringTableModel {
@@ -173,6 +214,9 @@ private:
 /// Virtualised table view over a model (not owned; must outlive the view): header row (click sorts: Toggled
 /// {value = column, flag = ascending}; drag a header edge to resize), single row selection (value() = row, -1 none;
 /// ValueChanged; Enter -> Submitted), wheel / keys / scrollbar drag scroll. Only visible rows are read and painted.
+/// Columns wider than the view scroll horizontally (Shift + wheel, Left / Right, the bar at the bottom). Multi /
+/// extended / cell selection, in-place editing, column reorder / hide / freeze, model notifications and the tree
+/// view over the same machinery: fuse/ui/widgets/modelview.hpp.
 NodeHandle tableView(UiContext& ui, NodeHandle parent, const ItemModel* model, std::string_view id = {});
 /// Call after the model's rows change (re-clamps the scroll, repaints).
 void tableModelChanged(UiContext& ui, NodeHandle table);
@@ -197,25 +241,49 @@ struct CellDelegate {
     const void* user = nullptr;
     void (*paint)(const void* user, const PaintContext& pc, DrawList& dl, Rect cell, u32 row, u32 col,
                   std::string_view text, bool selected) = nullptr;
+    // ---- in-place editing (optional; see "Editing" in fuse/ui/widgets/modelview.hpp). Null members use the default
+    // editor, a line edit. `item` is the row of a flat model, the node id of a tree model.
+    /// Creates the editor as a child of `view` (the view places it over the cell and focuses it).
+    NodeHandle (*createEditor)(const void* user, UiContext& ui, NodeHandle view, ItemId item, u32 col) = nullptr;
+    /// Loads the cell's Edit value (its text, and the number it parses to) into the editor.
+    void (*setEditorData)(const void* user, UiContext& ui, NodeHandle editor, const ItemValue& value) = nullptr;
+    /// Reads the editor back into `out` (`out.text` may point into `scratch`); false rejects the edit.
+    bool (*commit)(const void* user, UiContext& ui, NodeHandle editor, ItemValue& out, std::string& scratch) = nullptr;
 };
 /// Sets (or with nullptr clears) the delegate for `col`. The delegate must outlive the view.
 void setTableDelegate(UiContext& ui, NodeHandle table, u32 col, const CellDelegate* delegate);
 
 /// Sort / filter proxy over a source model (not owned). Identity (no row map, no memory) until a filter or sort is
-/// set; filtering is a case-insensitive substring match on one column. Call invalidate() after the source changes.
+/// set; filtering is a case-insensitive substring match on one column. Call invalidate() after the source changes
+/// (automatic when the source has a notifier: the proxy then rebuilds and reports a reset through its own notifier).
+/// Proxies stack: a proxy's model() is a valid source for another proxy. Roles, flags and setData are forwarded with
+/// the row mapped. Tree callbacks are not (see TreeFilterProxy).
 class SortFilterProxy {
 public:
     explicit SortFilterProxy(const ItemModel* source);
+    ~SortFilterProxy();
     SortFilterProxy(const SortFilterProxy&) = delete;
     SortFilterProxy& operator=(const SortFilterProxy&) = delete;
     void setFilter(u32 col, std::string_view needle); ///< empty needle = no filter
-    void sortBy(i32 col, bool ascending);              ///< col < 0 = source order
+    /// Filter over every column (a row passes when any cell matches). Replaces setFilter's column filter.
+    void setFilterAllColumns(std::string_view needle);
+    /// Wildcard filter, case-insensitive: '*' = any run, '?' = one character; the pattern must match the whole cell
+    /// (a pattern with no wildcard is a substring match). `col` < 0 = any column.
+    void setFilterWildcard(i32 col, std::string_view pattern);
+    void sortBy(i32 col, bool ascending);              ///< col < 0 = source order (clears every sort key)
+    /// Adds a lower-priority sort key (ties of the earlier keys are ordered by it; the sort is stable, so remaining
+    /// ties keep source order). Up to kMaxSortKeys keys including the sortBy one.
+    void addSortKey(u32 col, bool ascending);
+    static constexpr u32 kMaxSortKeys = 4;
+    u32 sortKeyCount() const { return m_sortKeys; }
     void invalidate();
     u32 rows() const;
     u32 sourceRow(u32 row) const { return m_identity ? row : m_map[row]; }
     const ItemModel& model() const { return m_model; }
+    ModelNotifier& notifier() { return *m_notifier; }
 
 private:
+    bool accepts(u32 srcRow, std::string& scratch, std::string& low) const;
     const ItemModel* m_src;
     ItemModel m_model;
     std::vector<u32> m_map;
@@ -223,6 +291,13 @@ private:
     u32 m_filterCol = 0;
     i32 m_sortCol = -1;
     bool m_asc = true, m_identity = true;
+    // appended (multi-key sort, all-column / wildcard filter, notifications)
+    struct SortKey { u32 col = 0; bool asc = true; };
+    SortKey m_extraKeys[kMaxSortKeys - 1]{};
+    u32 m_sortKeys = 0; ///< total keys (m_sortCol is key 0)
+    bool m_allCols = false, m_wildcard = false;
+    std::unique_ptr<ModelNotifier> m_notifier;
+    u32 m_srcSub = 0;
 };
 
 /// Virtualised icon / tile grid over column 0 of a model: tiles of tileW x tileH flow left to right, rows scroll.
@@ -558,3 +633,4 @@ void registerTierB3(UiContext& ui);
 
 // Drag and drop for the item views, action menus (QAction) and the row geometry helpers they use.
 #include "fuse/ui/widgets/interaction.hpp"
+#include "fuse/ui/widgets/modelview.hpp" // model / view: notifications, selection, editing, tree view, async

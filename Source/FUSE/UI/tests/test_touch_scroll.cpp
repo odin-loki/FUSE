@@ -382,6 +382,29 @@ int main() {
         UI_CHECK(ui.touchPanTarget() == table);
         UI_CHECK_EQ(w::tableFirstVisible(ui, table), 3u);
         ui.touchUp({p.x, p.y - rowH * 3.f - 1.f}, t += 0.5);
+        // columns wider than the view: a sideways drag pans them, a drag on the horizontal bar stays with the bar
+        w::setTableColumnWidth(ui, table, 0, tc.w);
+        w::setTableColumnWidth(ui, table, 1, tc.w);
+        settle();
+        UI_CHECK_EQ(w::viewScrollX(ui, table), 0.f);
+        ui.touchDown(p, t += 1.0);
+        ui.touchMove({p.x - 80.f, p.y}, t += 0.5);
+        UI_CHECK(ui.touchPanTarget() == table);
+        UI_CHECK(std::abs(w::viewScrollX(ui, table) - 80.f) <= 8.f);
+        UI_CHECK_EQ(w::tableFirstVisible(ui, table), 3u);
+        ui.touchUp({p.x - 80.f, p.y}, t += 0.5);
+        settle();
+        const f32 sx = w::viewScrollX(ui, table);
+        const Vec2 bar{tc.x + 20.f, tc.bottom() - 3.f};
+        ui.touchDown(bar, t += 1.0);
+        ui.touchMove({bar.x + 60.f, bar.y}, t += 0.5);
+        UI_CHECK(!ui.touchPanTarget().valid() && ui.pressed() == table);
+        UI_CHECK(w::viewScrollX(ui, table) != sx);
+        ui.touchUp({bar.x + 60.f, bar.y}, t += 0.5);
+        w::setTableColumnWidth(ui, table, 0, 120.f);
+        w::setTableColumnWidth(ui, table, 1, 160.f);
+        settle();
+        UI_CHECK_EQ(w::viewScrollX(ui, table), 0.f);
 
         for (const NodeHandle ed : {code, edit}) {
             const Vec2 c = centre(ui.rect(ed));

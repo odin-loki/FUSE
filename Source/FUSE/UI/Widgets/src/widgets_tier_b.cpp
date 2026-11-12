@@ -354,10 +354,31 @@ u32 depthOf(std::string_view line) {
     while (d < line.size() && line[d] == '\t') ++d;
     return d;
 }
-bool lineOpen(u64 collapsed, u32 i) { return i >= 64 || !(collapsed >> i & 1u); }
+// Collapsed lines of a tree view: one bit per line (no row limit). The tree's user data is its slot + 1 (0 = nothing
+// was ever collapsed); a slot is reused once its node is gone.
+struct TreeFold { const UiContext* ui = nullptr; NodeHandle node; std::vector<u64> bits; };
+using Fold = const std::vector<u64>*;
+std::vector<TreeFold>& treeFolds() { static std::vector<TreeFold> f; return f; }
+Fold foldOf(const UiContext& ui, NodeHandle tree) {
+    const u64 k = ui.alive(tree) ? ui.userData(tree) : 0;
+    auto& f = treeFolds();
+    return k && k <= f.size() && f[k - 1].node == tree && f[k - 1].ui == &ui ? &f[k - 1].bits : nullptr;
+}
+std::vector<u64>& foldFor(UiContext& ui, NodeHandle tree) {
+    auto& f = treeFolds();
+    if (foldOf(ui, tree)) return f[ui.userData(tree) - 1].bits;
+    std::size_t at = f.size();
+    for (std::size_t i = 0; i < f.size(); ++i)
+        if (f[i].ui == &ui && (!ui.alive(f[i].node) || ui.userData(f[i].node) != i + 1)) { at = i; break; }
+    if (at == f.size()) f.emplace_back();
+    f[at] = {&ui, tree, {}};
+    ui.setUserData(tree, at + 1);
+    return f[at].bits;
+}
+bool lineOpen(Fold collapsed, u32 i) { return !collapsed || i / 64 >= collapsed->size() || !((*collapsed)[i / 64] >> (i % 64) & 1u); }
 /// Calls f(row, line, depth, hasChildren, open, text) for each shown row; stops when f returns false.
 template <class F>
-void eachTreeRow(std::string_view s, u64 collapsed, F&& f) {
+void eachTreeRow(std::string_view s, Fold collapsed, F&& f) {
     // look-ahead of one line to know whether a line has children
     u32 skipBelow = 0xFFFFFFFFu, row = 0;
     std::string_view prev;
@@ -397,7 +418,7 @@ struct TreeView {
         const f32 rh = rowHeight(ui, pc.node);
         const i64 sel = i64(ui.value(pc.node));
         dl.pushClip(c);
-        eachTreeRow(ui.text(pc.node), ui.userData(pc.node), [&](u32 row, u32 line, u32 depth, bool kids, bool open, std::string_view t) {
+        eachTreeRow(ui.text(pc.node), foldOf(ui, pc.node), [&](u32 row, u32 line, u32 depth, bool kids, bool open, std::string_view t) {
             const Rect r{c.x, c.y + f32(row) * rh, c.w, rh};
             if (r.y > c.bottom()) return false;
             if (i64(line) == sel) dl.rect(r, accent(pc).withAlpha((pc.states & kStateFocus ? 0.55f : 0.3f) * pc.opacity), 3.f);
@@ -415,7 +436,7 @@ struct TreeView {
     struct Hit { i64 line = -1; u32 depth = 0; bool kids = false, open = false; i64 row = -1; };
     static Hit rowInfo(UiContext& ui, NodeHandle n, auto pred) {
         Hit h;
-        eachTreeRow(ui.text(n), ui.userData(n), [&](u32 row, u32 line, u32 depth, bool kids, bool open, std::string_view) {
+        eachTreeRow(ui.text(n), foldOf(ui, n), [&](u32 row, u32 line, u32 depth, bool kids, bool open, std::string_view) {
             if (!pred(row, line)) return true;
             h = {i64(line), depth, kids, open, i64(row)};
             return false;
@@ -461,7 +482,7 @@ struct TreeView {
             if (cur.kids && cur.open) setTreeExpanded(ui, n, u32(cur.line), false);
             else if (cur.depth > 0) { // to the parent
                 i64 parent = -1;
-                eachTreeRow(ui.text(n), ui.userData(n), [&](u32, u32 l, u32 d, bool, bool, std::string_view) {
+                eachTreeRow(ui.text(n), foldOf(ui, n), [&](u32, u32 l, u32 d, bool, bool, std::string_view) {
                     if (i64(l) >= cur.line) return false;
                     if (d < cur.depth) parent = l;
                     return true;
@@ -767,18 +788,19 @@ NodeHandle treeView(UiContext& ui, NodeHandle parent, std::string_view lines, st
     ui.setValue(n, -1.f);
     return n;
 }
-bool treeExpanded(const UiContext& ui, NodeHandle tree, u32 line) { return lineOpen(ui.userData(tree), line); }
+bool treeExpanded(const UiContext& ui, NodeHandle tree, u32 line) { return lineOpen(foldOf(ui, tree), line); }
 void setTreeExpanded(UiContext& ui, NodeHandle tree, u32 line, bool open) {
-    if (line >= 64 || treeExpanded(ui, tree, line) == open) return;
-    u64 m = ui.userData(tree);
-    m = open ? (m & ~(u64(1) << line)) : (m | (u64(1) << line));
-    ui.setUserData(tree, m);
+    if (!isClass(ui, tree, "treeview") || treeExpanded(ui, tree, line) == open) return;
+    std::vector<u64>& bits = foldFor(ui, tree);
+    if (line / 64 >= bits.size()) bits.resize(line / 64 + 1, 0);
+    if (open) bits[line / 64] &= ~(u64(1) << (line % 64));
+    else bits[line / 64] |= u64(1) << (line % 64);
     ui.setText(tree, std::string(ui.text(tree))); // re-measure + repaint
     ui.emit(tree, SignalKind::Toggled, {.value = f32(line), .flag = open});
 }
 u32 treeVisibleRows(const UiContext& ui, NodeHandle tree) {
     u32 rows = 0;
-    eachTreeRow(ui.text(tree), ui.userData(tree), [&](u32, u32, u32, bool, bool, std::string_view) { ++rows; return true; });
+    eachTreeRow(ui.text(tree), foldOf(ui, tree), [&](u32, u32, u32, bool, bool, std::string_view) { ++rows; return true; });
     return rows;
 }
 

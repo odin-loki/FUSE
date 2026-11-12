@@ -412,8 +412,108 @@ void viewGate() {
     w::setListDragDrop(ui, la, 0);
     drag(ui, rowPoint(ui, la, 0, 0.5f), rowPoint(ui, la, 2, 0.8f));
     UI_CHECK(ui.text(la) == "four\nC\nA");
+    ui.update(1.f); // the model view's cell tooltip timer (armed by the hover before a drag) runs out
     ui.update(0.f);
     UI_CHECK(!ui.needsUpdate());
+}
+
+// Row drags on the model / view table (header, scrolled rows, wide columns with a horizontal bar, movable columns and
+// extended selection): the row helpers see the scrolled geometry, and a row drag takes nothing from the view's own
+// press-and-drag interactions (header reorder, scroll bars) or from Shift / Ctrl selection.
+void tableGate() {
+    UiContext ui({.viewport = {420, 300}, .font = &font()});
+    w::install(ui);
+    ui.setCss(ui.root(), "padding", "10px");
+    ui.setCss(ui.root(), "gap", "10px");
+    w::StringTableModel model("Name\tKind\tSize");
+    for (int i = 0; i < 40; ++i) model.addRow("row " + std::to_string(i) + "\tkind\t" + std::to_string(i));
+    const NodeHandle tb = w::tableView(ui, ui.root(), &model.model(), "tb");
+    ui.setCss(tb, "height", "160px");
+    const NodeHandle plain = w::tableView(ui, ui.root(), &model.model(), "plain"); // no drag flags
+    ui.setCss(plain, "height", "90px");
+    for (u32 c = 0; c < 3; ++c) w::setTableColumnWidth(ui, tb, c, 200.f); // 600 px of columns in a 400 px view
+    w::setViewColumnsMovable(ui, tb, true);
+    w::setViewSelectionMode(ui, tb, w::SelectionMode::Extended);
+    w::setTableDragDrop(ui, tb, w::kViewDragReorder);
+    connectViewSignals(ui, tb);
+    const int moved = g_rowMoved;
+    ui.update(0.f);
+    UI_CHECK(w::tableModel(ui, tb) == &model.model());
+
+    // geometry: rows start below the header, follow the vertical scroll and span the view whatever the horizontal one
+    const Rect c = ui.contentRect(tb);
+    w::setViewFirstVisible(ui, tb, 5);
+    w::setViewScrollX(ui, tb, 120.f);
+    ui.update(0.f);
+    UI_CHECK(w::viewScrollX(ui, tb) == 120.f);
+    const Rect r5 = w::tableRowRect(ui, tb, 5), r7 = w::tableRowRect(ui, tb, 7);
+    UI_CHECK(r5.y > c.y && r5.x == c.x && r5.w == c.w);
+    UI_CHECK(r7.y == r5.y + 2.f * r5.h);
+    UI_CHECK(w::tableRowRect(ui, tb, 0).bottom() <= r5.y - 4.f * r5.h); // scrolled out: above the body
+    UI_CHECK_EQ(w::tableRowAt(ui, tb, centre(r7)), 7);
+    UI_CHECK_EQ(w::tableRowAt(ui, tb, {c.x + 30.f, c.y + 4.f}), -1);          // header
+    UI_CHECK_EQ(w::tableRowAt(ui, tb, {c.right() - 3.f, centre(r7).y}), -1);  // vertical scroll bar
+    UI_CHECK_EQ(w::tableRowAt(ui, tb, {c.x + 30.f, c.bottom() - 3.f}), -1);   // horizontal scroll bar
+    UI_CHECK_EQ(w::tableRowAt(ui, tb, {c.x - 3.f, centre(r7).y}), -1);
+
+    // reorder: row 6 below row 8 (reported; the model is the application's)
+    const Vec2 from{c.x + 60.f, centre(w::tableRowRect(ui, tb, 6)).y};
+    drag(ui, from, {c.x + 60.f, w::tableRowRect(ui, tb, 8).bottom() - 3.f}, false);
+    UI_CHECK(ui.dragging() && ui.dragTarget() == tb);
+    ui.pointerUp({c.x + 60.f, w::tableRowRect(ui, tb, 8).bottom() - 3.f});
+    ui.update(0.f);
+    UI_CHECK_EQ(g_rowMoved, moved + 1);
+    UI_CHECK(g_from == 6.f && g_to == 8.f);
+    UI_CHECK_EQ(w::tableFirstVisible(ui, tb), 5u);
+    UI_CHECK(model.cell(6, 0) == "row 6");
+
+    // Shift / Ctrl clicks still select (a click is not a drag)
+    auto click = [&](Vec2 p, u8 mods) {
+        ui.update(1.f); // never a double click
+        ui.setModifiers(mods);
+        ui.pointerMove(p);
+        ui.pointerDown(p);
+        ui.pointerUp(p);
+        ui.setModifiers(0);
+        ui.update(0.f);
+    };
+    w::SelectionModel* sel = w::viewSelectionModel(ui, tb);
+    UI_CHECK(sel != nullptr);
+    click(centre(w::tableRowRect(ui, tb, 5)), 0);
+    click(centre(w::tableRowRect(ui, tb, 8)), kModShift);
+    UI_CHECK_EQ(sel->selectedRows(), u64(4));
+    click(centre(w::tableRowRect(ui, tb, 6)), kModCtrl);
+    UI_CHECK_EQ(sel->selectedRows(), u64(3));
+    UI_CHECK(!sel->rowSelected(6) && sel->rowSelected(5) && sel->rowSelected(7) && sel->rowSelected(8));
+    UI_CHECK(!ui.dragging());
+
+    // the view's own drags stay its own: a header drag reorders columns, the scroll bars scroll
+    w::setViewScrollX(ui, tb, 0.f);
+    ui.update(1.f);
+    const u32 col0 = w::viewColumnAt(ui, tb, 0);
+    drag(ui, {c.x + 100.f, c.y + 6.f}, {c.x + 330.f, c.y + 6.f}, false);
+    UI_CHECK(!ui.dragging());
+    ui.pointerUp({c.x + 330.f, c.y + 6.f});
+    ui.update(0.f);
+    UI_CHECK(w::viewColumnAt(ui, tb, 0) != col0 && w::viewColumnAt(ui, tb, 1) == col0);
+    const u32 first = w::tableFirstVisible(ui, tb);
+    drag(ui, {c.right() - 3.f, c.y + 40.f}, {c.right() - 3.f, c.y + 110.f}, false);
+    UI_CHECK(!ui.dragging());
+    ui.pointerUp({c.right() - 3.f, c.y + 110.f});
+    UI_CHECK(w::tableFirstVisible(ui, tb) > first);
+    drag(ui, {c.x + 20.f, c.bottom() - 3.f}, {c.x + 120.f, c.bottom() - 3.f}, false);
+    UI_CHECK(!ui.dragging());
+    ui.pointerUp({c.x + 120.f, c.bottom() - 3.f});
+    UI_CHECK(w::viewScrollX(ui, tb) > 0.f);
+    UI_CHECK_EQ(g_rowMoved, moved + 1);
+
+    // a view without the flag: press + drag on a row is no drag
+    ui.update(1.f);
+    drag(ui, centre(w::tableRowRect(ui, plain, 0)), centre(w::tableRowRect(ui, plain, 2)), false);
+    UI_CHECK(!ui.dragging());
+    ui.pointerUp(centre(w::tableRowRect(ui, plain, 2)));
+    UI_CHECK_EQ(ui.value(plain), 0.f);
+    UI_CHECK_EQ(g_rowMoved, moved + 1);
 }
 } // namespace
 
@@ -421,5 +521,6 @@ int main() {
     coreGate();
     touchGate();
     viewGate();
+    tableGate();
     return finish("fuse_ui_drag_drop");
 }
