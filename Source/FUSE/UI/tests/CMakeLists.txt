@@ -382,3 +382,6 @@ endforeach()
 fuse_ui_test(fuse_ui_gpu_pack_vector test_gpu_pack_vector.cpp)
 target_link_libraries(fuse_ui_gpu_pack_vector PRIVATE fuse_ui_render)
 set_tests_properties(fuse_ui_gpu_pack_vector PROPERTIES LABELS "fuse_ui;gate")
+
+# Dock drag and drop, catalogue coverage / extra goldens, accessibility families, sample and packaging gates
+include(${CMAKE_CURRENT_SOURCE_DIR}/finishing.cmake)

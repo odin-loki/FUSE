@@ -147,6 +147,25 @@ Rect dockTabRect(UiContext& ui, NodeHandle dock);            ///< `dock`'s tab i
 void dockFloat(UiContext& ui, NodeHandle dock, Rect rect);
 bool dockFloating(const UiContext& ui, NodeHandle dock);
 Rect dockFloatRect(const UiContext& ui, NodeHandle dock); ///< current floating rect (empty when docked)
+/// Dock drag and drop (QDockWidget). Dragging a docked dock's title bar, or its tab in a tab strip, more than 8 px
+/// tears it off into a floating dock that follows the pointer; a floating dock is dragged by its title bar as before.
+/// While a dragged dock's pointer is over its dock area, drop-zone indicators show: Left / Right / Bottom at the area
+/// edges, Center in the centre region, and Tab in the middle of the docked dock under the pointer (an area indicator
+/// the Tab indicator would cover is not offered). The zone whose indicator is under the pointer is hot and a
+/// translucent preview shows where the dock will land. Releasing on a hot zone docks it there (dockTo) or makes it
+/// the current tab of that dock's group (dockTabify + dockRaise); releasing anywhere else leaves it floating.
+/// Escape (the dragged dock's title bar holds the focus during the drag), dockCancelDrag or a cancelled touch puts
+/// the dock back where the drag started: region and order, tab group / index / current tab, or floating rect. Mouse
+/// and touch both work (title bars and tab strips capture drags). A floating dock still holds no tabs: the Tab zone
+/// is only offered over docked docks.
+enum class DockDropZone : u8 { None, Left, Right, Bottom, Center, Tab };
+NodeHandle dockDragged(const UiContext& ui);    ///< the dock being dragged (past the threshold), else invalid
+DockDropZone dockDropZone(const UiContext& ui); ///< the hot zone of the drag in progress
+NodeHandle dockDropTarget(const UiContext& ui); ///< Tab zone: the dock to tab with
+Rect dockDropPreview(const UiContext& ui);      ///< where the dock lands on release (empty: stays floating)
+/// Where the indicator of `zone` is drawn in `area` (`tabWith`: the dock of the Tab zone). Valid after update().
+Rect dockDropIndicator(const UiContext& ui, NodeHandle area, DockDropZone zone, NodeHandle tabWith = {});
+bool dockCancelDrag(UiContext& ui);             ///< as Escape; false when no drag is in progress
 
 /// An item of a model. Flat models: the row. Tree models: an opaque id chosen by the model (kRootItem is the invisible
 /// root; ids must be unique and stable while the item exists).

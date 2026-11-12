@@ -387,9 +387,9 @@ void gateDockFloat() {
     UI_CHECK(near(ui.rect(outline).w, dockedW) && near(ui.rect(outline).h, dockedH) && near(ui.rect(outline).x, ui.rect(left).x));
     click(ui, ctr(ui.rect(btn)));
     UI_CHECK_EQ(clicks, 2);
-    // a docked title bar does not drag
+    // a docked title bar does not move within the drag threshold (past it the dock tears off: fuse_ui_dock_drag)
     const Rect before = ui.rect(outline);
-    drag(ui, {ui.rect(title).x + 20.f, ctr(ui.rect(title)).y}, {500.f, 400.f});
+    drag(ui, {ui.rect(title).x + 20.f, ctr(ui.rect(title)).y}, {ui.rect(title).x + 25.f, ctr(ui.rect(title)).y + 4.f});
     UI_CHECK(ui.rect(outline) == before && !w::dockFloating(ui, outline));
     // floating a tabbed dock takes it out of its group
     w::dockTo(ui, props, w::DockSide::Left);
