@@ -425,7 +425,7 @@ void testT3DMaterialVfsAsyncLoad() {
     std::string resolvedPhysical;
     expectTrue(fuse::io::VirtualFileSystem::instance().resolve(virtualPath, resolvedPhysical),
                "mounted vfs resolves material path for cook-cache key");
-    const fuse::u64 cacheKey = fuse::project::materialCookCacheKey(resolvedPhysical);
+    const fuse::u64 cacheKey = fuse::project::materialCookCacheKey(resolvedPhysical, virtualPath);
     fuse::project::CookCacheEntry cached;
     expectTrue(cache.lookup(cacheKey, &cached) == fuse::project::CookCacheLookup::Hit,
                "material cook-cache entry is retrievable");
@@ -449,6 +449,24 @@ void testVfsAssetPathRemap() {
     expectTrue(fuse::project::remapLegacyAssetPath("game/textures/albedo.png") ==
                    "/game/textures/albedo.png",
                "game/ prefix remaps to /game/");
+    expectTrue(fuse::project::remapLegacyAssetPath("Data\\materials\\FloorGray.mat") ==
+                   "/t3d/materials/FloorGray.mat",
+               "windows data\\ prefix remaps to /t3d/");
+    expectTrue(fuse::project::remapLegacyAssetPath("./assets/meshes/cube.dae") ==
+                   "/game/meshes/cube.dae",
+               "./assets/ prefix remaps to /game/");
+    expectTrue(fuse::project::remapLegacyAssetPath("SHADERS/common/screen.cs") ==
+                   "/t3d/SHADERS/common/screen.cs",
+               "case-insensitive shaders/ prefix remaps to /t3d/");
+    expectTrue(fuse::project::remapLegacyAssetPath("game\\textures\\albedo.png") ==
+                   "/game/textures/albedo.png",
+               "Windows game\\ prefix remaps to /game/");
+    expectTrue(fuse::project::remapLegacyAssetPath("/t3d/materials/FloorGray.mat") ==
+                   "/t3d/materials/FloorGray.mat",
+               "already-virtual paths are preserved");
+    expectTrue(fuse::project::remapLegacyAssetPath("").empty(), "empty legacy path remaps to empty");
+    expectTrue(fuse::project::remapLegacyAssetPath("Levels/town.mis") == "/t3d/Levels/town.mis",
+               "Levels/ prefix remaps under /t3d/");
     expectTrue(fuse::project::shaderAssetToVirtualPath("Common:ScreenSpace") ==
                    "/t3d/shaders/Common/ScreenSpace.cs",
                "shader ref maps to virtual path");
@@ -467,6 +485,103 @@ void testVfsAssetPathRemap() {
     bindings.bindings.push_back({"Post", "Common:ScreenSpace", "shader", 2u});
     expectTrue(fuse::project::countRemappedAssetVfsPaths(bindings) == 2u,
                "remapped asset vfs path count includes material and shader bindings");
+}
+
+void testProjectVfsRemountOnProjectSwitch() {
+    const std::filesystem::path projectA = std::filesystem::path(fuse::test::tempPath("fuse_vfs_project_a"));
+    const std::filesystem::path projectB = std::filesystem::path(fuse::test::tempPath("fuse_vfs_project_b"));
+    const std::filesystem::path markerA = projectA / "Assets" / "marker.txt";
+    const std::filesystem::path markerB = projectB / "Assets" / "marker.txt";
+    std::filesystem::create_directories(markerA.parent_path());
+    std::filesystem::create_directories(markerB.parent_path());
+    std::filesystem::create_directories(projectA / "data");
+    std::filesystem::create_directories(projectB / "data");
+    writeTempFile(markerA.string(), "project-a");
+    writeTempFile(markerB.string(), "project-b");
+    writeTempFile((projectA / "data" / "id.txt").string(), "a");
+    writeTempFile((projectB / "data" / "id.txt").string(), "b");
+
+    fuse::project::ProjectManifest manifestA;
+    manifestA.projectRoot = projectA.string();
+    fuse::project::ProjectManifest manifestB;
+    manifestB.projectRoot = projectB.string();
+
+    const fuse::project::ProjectVfsMountResult mountA = fuse::project::mountProjectAssetRoots(manifestA);
+    expectTrue(mountA.mountsAdded >= 1u, "first project vfs mounts added");
+    expectTrue(mountA.gameMount && mountA.t3dMount, "first project mounted /game/ and /t3d/");
+
+    std::string resolved;
+    expectTrue(fuse::io::VirtualFileSystem::instance().resolve("/game/marker.txt", resolved),
+               "project A /game/marker.txt resolves");
+    expectTrue(resolved.find("fuse_vfs_project_a") != std::string::npos,
+               "first mount points at project A");
+    expectTrue(fuse::io::VirtualFileSystem::instance().resolve("/t3d/id.txt", resolved),
+               "project A /t3d/id.txt resolves");
+    expectTrue(resolved.find("fuse_vfs_project_a") != std::string::npos,
+               "first t3d mount points at project A");
+
+    const fuse::project::ProjectVfsMountResult mountB = fuse::project::mountProjectAssetRoots(manifestB);
+    expectTrue(mountB.mountsRemapped >= 1u, "second project remaps existing vfs prefixes");
+    expectTrue(fuse::io::VirtualFileSystem::instance().resolve("/game/marker.txt", resolved),
+               "project B /game/marker.txt resolves");
+    expectTrue(resolved.find("fuse_vfs_project_b") != std::string::npos,
+               "remount points /game/ at project B");
+    expectTrue(fuse::io::VirtualFileSystem::instance().resolve("/t3d/id.txt", resolved),
+               "project B /t3d/id.txt resolves");
+    expectTrue(resolved.find("fuse_vfs_project_b") != std::string::npos,
+               "remount points /t3d/ at project B");
+}
+
+void testT3DMaterialCookCachePersist() {
+    const std::filesystem::path projectRoot = std::filesystem::path(fuse::test::tempPath("fuse_vfs_persist_project"));
+    const std::filesystem::path materialPath =
+        projectRoot / "data" / "materials" / "Prototyping" / "FloorGray.mat";
+    std::filesystem::create_directories(materialPath.parent_path());
+    writeTempFile(materialPath.string(),
+                  "singleton Material(FloorGray)\n{\n   diffuseColor[0] = \"0.5 0.5 0.5 1\";\n   roughness[0] = 0.8;\n};\n");
+
+    fuse::project::ProjectManifest manifest;
+    manifest.projectRoot = projectRoot.string();
+    (void)fuse::project::mountProjectAssetRoots(manifest);
+
+    const std::string missionText =
+        "new Scene(ExampleLevel) {\n"
+        "   new GroundPlane(Floor) {\n"
+        "      MaterialAsset = \"Prototyping:FloorGray\";\n"
+        "   };\n"
+        "};\n";
+    const fuse::project::T3DMissionExtract extract = fuse::project::extractT3DMissionFields(missionText);
+
+    const fuse::project::T3DMaterialVfsAsyncLoadResult submitted =
+        fuse::project::submitT3DMaterialLoadsAsync(extract);
+    expectTrue(submitted.submittedCount >= 1u, "persist: async material vfs load submitted");
+
+    fuse::io::VirtualFileSystem& vfs = fuse::io::VirtualFileSystem::instance();
+    for (fuse::u32 spinGuard = 0u;
+         spinGuard < 1'000'000u && vfs.completedLoadCount() < submitted.submittedCount; ++spinGuard) {
+        std::this_thread::yield();
+    }
+    expectTrue(vfs.completedLoadCount() >= submitted.submittedCount,
+               "persist: async material vfs load completes");
+
+    fuse::HandleTable<fuse::io::Asset> table;
+    fuse::project::CookCache cache;
+    const fuse::project::T3DMaterialCookCacheResult drained =
+        fuse::project::drainT3DMaterialLoads(table, &cache);
+    expectTrue(drained.cookCacheStores >= 1u, "persist: drain stored cook-cache entry");
+
+    const std::string cachePath = fuse::project::defaultCookCachePath(projectRoot.string());
+    expectTrue(cache.save(cachePath), "persist: material cook cache saves to .fuse/cook_cache.json");
+    expectTrue(std::filesystem::exists(cachePath), "persist: cook cache file exists");
+
+    fuse::project::CookCache reloaded;
+    expectTrue(reloaded.load(cachePath), "persist: material cook cache reloads from disk");
+    expectTrue(reloaded.entry_count() >= 1u, "persist: reloaded cache has entries");
+
+    const fuse::project::T3DMaterialVfsAsyncLoadResult cachedSubmit =
+        fuse::project::submitT3DMaterialLoadsAsync(extract, &reloaded);
+    expectTrue(cachedSubmit.cookCacheHits >= 1u, "persist: reloaded cache hits skip I/O");
+    expectTrue(cachedSubmit.submittedCount == 0u, "persist: reloaded cache does not enqueue vfs reads");
 }
 
 void testT3DMissionShaderDataExtract() {
@@ -583,7 +698,7 @@ void testT3DShaderVfsAsyncLoad() {
     std::string resolvedPhysical;
     expectTrue(vfs.resolve(virtualPath, resolvedPhysical),
                "mounted vfs resolves shader path for cook-cache key");
-    const fuse::u64 cacheKey = fuse::project::shaderCookCacheKey(resolvedPhysical);
+    const fuse::u64 cacheKey = fuse::project::shaderCookCacheKey(resolvedPhysical, virtualPath);
     fuse::project::CookCacheEntry cached;
     expectTrue(cache.lookup(cacheKey, &cached) == fuse::project::CookCacheLookup::Hit,
                "shader cook-cache entry is retrievable");
@@ -697,6 +812,8 @@ int main() {
     testT3DMaterialVfsMountAndResolve();
     testT3DMaterialVfsAsyncLoad();
     testVfsAssetPathRemap();
+    testProjectVfsRemountOnProjectSwitch();
+    testT3DMaterialCookCachePersist();
     testT3DMissionShaderDataExtract();
     testT3DMissionShaderVfsAsyncLoad();
     testT3DShaderVfsAsyncLoad();

@@ -7,12 +7,16 @@
 #include <fuse/project/import_desc.hpp>
 #include <fuse/project/t3d_material_parse.hpp>
 
+#include <cctype>
 #include <cstring>
 #include <filesystem>
+#include <system_error>
 
 namespace fuse::project {
 
 namespace {
+
+ShaderImportDesc::Stage inferShaderStageFromPath(const std::string& physicalPath);
 
 std::filesystem::path firstExistingPath(const std::filesystem::path& primary,
                                         const std::filesystem::path& fallback) {
@@ -25,14 +29,23 @@ std::filesystem::path firstExistingPath(const std::filesystem::path& primary,
     return primary.empty() ? fallback : primary;
 }
 
-bool tryCookCacheHit(CookCache* cache, const std::string& physicalPath, u32& cookCacheHits) {
-    if (cache == nullptr || physicalPath.empty()) {
-        return false;
-    }
+u64 materialImportCacheKey(const std::string& physicalPath, const std::string& virtualPath) {
+    TextureImportDesc desc;
+    desc.input_path = physicalPath;
+    desc.output_path = materialVirtualPathToCookOutput(virtualPath);
+    return combine_cook_cache_key(hash_texture_import(desc), 0);
+}
 
-    const u64 sourceHash = hash_file_content(physicalPath);
-    const u64 cacheKey = combine_cook_cache_key(sourceHash, 0);
-    if (!is_valid_cook_cache_key(cacheKey)) {
+u64 shaderImportCacheKey(const std::string& physicalPath, const std::string& virtualPath) {
+    ShaderImportDesc desc;
+    desc.input_path = physicalPath;
+    desc.output_path = shaderVirtualPathToCookOutput(virtualPath);
+    desc.stage = inferShaderStageFromPath(physicalPath);
+    return combine_cook_cache_key(hash_shader_import(desc), 0);
+}
+
+bool tryCookCacheHit(CookCache* cache, u64 cacheKey, u32& cookCacheHits) {
+    if (cache == nullptr || !is_valid_cook_cache_key(cacheKey)) {
         return false;
     }
 
@@ -51,8 +64,7 @@ void storeMaterialCookCacheEntry(CookCache& cache, const std::string& physicalPa
         return;
     }
 
-    const u64 sourceHash = hash_file_content(physicalPath);
-    const u64 cacheKey = combine_cook_cache_key(sourceHash, 0);
+    const u64 cacheKey = materialImportCacheKey(physicalPath, virtualPath);
     const std::string outputPath = materialVirtualPathToCookOutput(virtualPath);
     if (!is_valid_cook_cache_key(cacheKey) || outputPath.empty()) {
         return;
@@ -75,8 +87,7 @@ void storeShaderCookCacheEntry(CookCache& cache, const std::string& physicalPath
         return;
     }
 
-    const u64 sourceHash = hash_file_content(physicalPath);
-    const u64 cacheKey = combine_cook_cache_key(sourceHash, 0);
+    const u64 cacheKey = shaderImportCacheKey(physicalPath, virtualPath);
     const std::string outputPath = shaderVirtualPathToCookOutput(virtualPath);
     if (!is_valid_cook_cache_key(cacheKey) || outputPath.empty()) {
         return;
@@ -105,16 +116,40 @@ ShaderImportDesc::Stage inferShaderStageFromPath(const std::string& physicalPath
     return ShaderImportDesc::Stage::Fragment;
 }
 
-void mountIfMissing(fuse::io::MountKind kind, const std::string& physicalPath,
-                    const std::string& virtualPrefix, ProjectVfsMountResult& result) {
+bool samePhysicalPath(const std::string& left, const std::string& right) {
+    if (left.empty() || right.empty()) {
+        return left == right;
+    }
+
+    const std::filesystem::path leftPath = std::filesystem::path(left).lexically_normal();
+    const std::filesystem::path rightPath = std::filesystem::path(right).lexically_normal();
+    std::error_code ec;
+    if (std::filesystem::exists(leftPath, ec) && std::filesystem::exists(rightPath, ec)) {
+        const bool equivalent = std::filesystem::equivalent(leftPath, rightPath, ec);
+        if (!ec) {
+            return equivalent;
+        }
+    }
+    return leftPath.generic_string() == rightPath.generic_string();
+}
+
+/// Mount `virtualPrefix` at `physicalPath`, replacing a stale prefix left by a previous project.
+void mountOrRemap(fuse::io::MountKind kind, const std::string& physicalPath,
+                  const std::string& virtualPrefix, ProjectVfsMountResult& result) {
     if (physicalPath.empty()) {
         return;
     }
 
     fuse::io::VirtualFileSystem& vfs = fuse::io::VirtualFileSystem::instance();
     std::string resolved;
-    if (vfs.resolve(virtualPrefix, resolved)) {
-        return;
+    while (vfs.resolve(virtualPrefix, resolved)) {
+        if (samePhysicalPath(resolved, physicalPath)) {
+            return;
+        }
+        if (!vfs.unmount(virtualPrefix)) {
+            break;
+        }
+        ++result.mountsRemapped;
     }
 
     vfs.mount(kind, physicalPath, virtualPrefix);
@@ -164,15 +199,17 @@ ProjectVfsMountResult mountProjectAssetRoots(const ProjectManifest& manifest) {
         firstExistingPath(root / "data", root / "Data").lexically_normal();
     const std::filesystem::path t2dPath = root;
 
-    mountIfMissing(fuse::io::MountKind::Game, gamePath.string(), "/game/", result);
-    result.gameMount = result.mountsAdded > 0;
-    const u32 beforeT3d = result.mountsAdded;
-    mountIfMissing(fuse::io::MountKind::T3DLegacy, t3dPath.string(), "/t3d/", result);
-    result.t3dMount = result.mountsAdded > beforeT3d;
-    const u32 beforeT2d = result.mountsAdded;
-    mountIfMissing(fuse::io::MountKind::T2DLegacy, t2dPath.string(), "/t2d/", result);
-    result.t2dMount = result.mountsAdded > beforeT2d;
-    result.note = "mounted " + std::to_string(result.mountsAdded) + " project asset root(s)";
+    mountOrRemap(fuse::io::MountKind::Game, gamePath.string(), "/game/", result);
+    mountOrRemap(fuse::io::MountKind::T3DLegacy, t3dPath.string(), "/t3d/", result);
+    mountOrRemap(fuse::io::MountKind::T2DLegacy, t2dPath.string(), "/t2d/", result);
+
+    fuse::io::VirtualFileSystem& vfs = fuse::io::VirtualFileSystem::instance();
+    std::string probe;
+    result.gameMount = vfs.resolve("/game/", probe);
+    result.t3dMount = vfs.resolve("/t3d/", probe);
+    result.t2dMount = vfs.resolve("/t2d/", probe);
+    result.note = "mounted " + std::to_string(result.mountsAdded) + " project asset root(s), remapped " +
+                  std::to_string(result.mountsRemapped);
     fuse::log::info("mountProjectAssetRoots: %s under %s", result.note.c_str(), root.string().c_str());
     return result;
 }
@@ -232,28 +269,47 @@ std::string remapLegacyAssetPath(const std::string& legacyPath) {
     if (legacyPath.empty()) {
         return {};
     }
-    if (legacyPath.front() == '/') {
-        return legacyPath;
+
+    std::string path = legacyPath;
+    for (char& ch : path) {
+        if (ch == '\\') {
+            ch = '/';
+        }
+    }
+    while (path.size() >= 2 && path[0] == '.' && path[1] == '/') {
+        path.erase(0, 2);
+    }
+    if (!path.empty() && path.front() == '/') {
+        return path;
     }
 
-    auto startsWith = [](const std::string& path, const char* prefix) {
+    auto startsWithInsensitive = [&](const char* prefix) {
         const std::size_t prefixLen = std::strlen(prefix);
-        return path.size() >= prefixLen && path.compare(0, prefixLen, prefix) == 0;
+        if (path.size() < prefixLen) {
+            return false;
+        }
+        for (std::size_t i = 0; i < prefixLen; ++i) {
+            const unsigned char left = static_cast<unsigned char>(path[i]);
+            const unsigned char right = static_cast<unsigned char>(prefix[i]);
+            if (std::tolower(left) != std::tolower(right)) {
+                return false;
+            }
+        }
+        return true;
     };
 
-    if (startsWith(legacyPath, "data/") || startsWith(legacyPath, "Data/")) {
-        return "/t3d/" + legacyPath.substr(legacyPath.find('/') + 1);
+    if (startsWithInsensitive("data/")) {
+        return "/t3d/" + path.substr(path.find('/') + 1);
     }
-    if (startsWith(legacyPath, "game/") || startsWith(legacyPath, "Game/") ||
-        startsWith(legacyPath, "assets/") || startsWith(legacyPath, "Assets/")) {
-        return "/game/" + legacyPath.substr(legacyPath.find('/') + 1);
+    if (startsWithInsensitive("game/") || startsWithInsensitive("assets/")) {
+        return "/game/" + path.substr(path.find('/') + 1);
     }
-    if (startsWith(legacyPath, "levels/") || startsWith(legacyPath, "art/") ||
-        startsWith(legacyPath, "shaders/")) {
-        return "/t3d/" + legacyPath;
+    if (startsWithInsensitive("levels/") || startsWithInsensitive("art/") ||
+        startsWithInsensitive("shaders/")) {
+        return "/t3d/" + path;
     }
 
-    return "/t3d/" + legacyPath;
+    return "/t3d/" + path;
 }
 
 std::string shaderAssetToVirtualPath(const std::string& shaderRef) {
@@ -331,8 +387,8 @@ u32 countRemappedAssetVfsPaths(const T3DDatablockResolveResult& bindings) {
     return count;
 }
 
-u64 materialCookCacheKey(const std::string& physicalPath) {
-    return combine_cook_cache_key(hash_file_content(physicalPath), 0);
+u64 materialCookCacheKey(const std::string& physicalPath, const std::string& virtualPath) {
+    return materialImportCacheKey(physicalPath, virtualPath);
 }
 
 T3DMaterialVfsResolveResult resolveT3DMaterialVfsPaths(const T3DMissionExtract& extract) {
@@ -407,7 +463,7 @@ T3DMaterialVfsAsyncLoadResult submitT3DMaterialLoadsAsync(const T3DDatablockReso
 
         std::string physicalPath;
         if (cache != nullptr && vfs.resolve(virtualPath, physicalPath) &&
-            tryCookCacheHit(cache, physicalPath, result.cookCacheHits)) {
+            tryCookCacheHit(cache, materialImportCacheKey(physicalPath, virtualPath), result.cookCacheHits)) {
             return;
         }
 
@@ -444,7 +500,7 @@ T3DMaterialVfsAsyncLoadResult submitT3DMaterialLoadsAsync(const T3DMissionExtrac
 
         std::string physicalPath;
         if (cache != nullptr && vfs.resolve(virtualPath, physicalPath) &&
-            tryCookCacheHit(cache, physicalPath, result.cookCacheHits)) {
+            tryCookCacheHit(cache, materialImportCacheKey(physicalPath, virtualPath), result.cookCacheHits)) {
             return;
         }
 
@@ -571,8 +627,8 @@ T3DShaderVfsResolveResult resolveT3DShaderVfsFromBindings(const T3DDatablockReso
     return result;
 }
 
-u64 shaderCookCacheKey(const std::string& physicalPath) {
-    return combine_cook_cache_key(hash_file_content(physicalPath), 0);
+u64 shaderCookCacheKey(const std::string& physicalPath, const std::string& virtualPath) {
+    return shaderImportCacheKey(physicalPath, virtualPath);
 }
 
 T3DShaderVfsAsyncLoadResult submitT3DShaderLoadsAsync(const T3DDatablockResolveResult& bindings,
@@ -588,7 +644,7 @@ T3DShaderVfsAsyncLoadResult submitT3DShaderLoadsAsync(const T3DDatablockResolveR
 
         std::string physicalPath;
         if (cache != nullptr && vfs.resolve(virtualPath, physicalPath) &&
-            tryCookCacheHit(cache, physicalPath, result.cookCacheHits)) {
+            tryCookCacheHit(cache, shaderImportCacheKey(physicalPath, virtualPath), result.cookCacheHits)) {
             return;
         }
 
@@ -625,7 +681,7 @@ T3DShaderVfsAsyncLoadResult submitT3DShaderLoadsAsync(const T3DMissionExtract& e
 
         std::string physicalPath;
         if (cache != nullptr && vfs.resolve(virtualPath, physicalPath) &&
-            tryCookCacheHit(cache, physicalPath, result.cookCacheHits)) {
+            tryCookCacheHit(cache, shaderImportCacheKey(physicalPath, virtualPath), result.cookCacheHits)) {
             return;
         }
 

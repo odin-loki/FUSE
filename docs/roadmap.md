@@ -42,8 +42,8 @@ These prove “one program” while Track A/B land:
 | U3 | Shared services, jobs/fibers | Landed (cooperative fiber waits on POSIX ucontext and Win32 fibers; Android/iOS use the condition-variable fallback, Emscripten the single-thread stub — [wp03-fiber-remaining](unification/wp03-fiber-remaining.md)) |
 | U4 | Dimension APIs + hybrid frame | World2D/3D `findSpawnPoint` + `enterPlayMode`; SSRC/DDGI/fog + optional flatland RC (`rcFlatland`) in `FrameComposer`; `DdgiGpu::importCpuVolumeAtlases` for CPU-volume staging |
 | U5 | Feature modules | Vertical slices landed |
-| U6 | Qt editor shell | In progress (wave 10: real-surface present counters, project VFS mount); PIE snaps viewport to `SpawnMarker` (parity with standalone play) |
-| U7 | `project.json` + importers | In progress (wave 12): loader, CLI dry-run, async material cook cache |
+| U6 | Qt editor shell | Landed editor API + project VFS remount on project open (`mountOrRemap` for `/game/`, `/t3d/`, `/t2d/`) + PIE `SpawnMarker` snap + headless in-viewport gizmo raster (translate/rotate/scale). Live Qt present remains optional (`fuse_editor` when Qt 6 is found). |
+| U7 | `project.json` + importers | Landed through wave 18: loader/writer, CLI dry-run (VFS mount/remap + cook-cache report), T3D/T2D importers, async material/shader cook cache persisted to `.fuse/cook_cache.json`. `remapLegacyAssetPath` normalizes `\` and `./` and matches prefixes case-insensitively. Deferred: real ispc_texcomp / vorbisenc CI packages. |
 | U8 | Parity demo corpus | Seven headless demos |
 
 ## What is real today vs later
@@ -52,6 +52,6 @@ These prove “one program” while Track A/B land:
 
 **Vulkan on Lavapipe (gated in CI):** Vulkan RHI with render graph v2, GPU scene / visibility buffer, clustered lighting, VSM, DDGI, SSFX, post, fog, atmosphere, and the `FrameComposer` frame (SSRC and flatland RC behind settings, off by default) — status per deliverable in [`unification/RENDERER-EXECUTION.md`](unification/RENDERER-EXECUTION.md).
 
-**Still scaffolding / later:** CUDA kernels on real hardware, vendor plugins (DLSS, XeSS, NRD runtimes), in-viewport gizmos, native world files, Lua as the default shipped VM.
+**Still scaffolding / later:** CUDA kernels on real hardware, vendor plugins (DLSS, XeSS, NRD runtimes), native world files, Lua as the default shipped VM.
 
 Engineering notes: [`unification/README.md`](unification/README.md), [`plans/FUSE_MASTER_PLAN.md`](plans/FUSE_MASTER_PLAN.md).

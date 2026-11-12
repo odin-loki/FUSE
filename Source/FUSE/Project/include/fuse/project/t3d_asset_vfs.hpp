@@ -16,6 +16,7 @@ namespace fuse::project {
 
 struct ProjectVfsMountResult {
     u32 mountsAdded = 0;
+    u32 mountsRemapped = 0;
     bool gameMount = false;
     bool t3dMount = false;
     bool t2dMount = false;
@@ -77,7 +78,7 @@ struct T3DShaderCookCacheResult {
 [[nodiscard]] std::string materialVirtualPathToRefName(const std::string& virtualPath);
 
 /// Content-hash key for a resolved material source on disk (0 when unreadable).
-[[nodiscard]] u64 materialCookCacheKey(const std::string& physicalPath);
+[[nodiscard]] u64 materialCookCacheKey(const std::string& physicalPath, const std::string& virtualPath);
 
 /// Resolve material bindings from a mission extract through the VFS registry.
 [[nodiscard]] T3DMaterialVfsResolveResult resolveT3DMaterialVfsPaths(const T3DMissionExtract& extract);
@@ -123,7 +124,7 @@ struct T3DShaderCookCacheResult {
     const T3DDatablockResolveResult& bindings);
 
 /// Content-hash key for a resolved shader source on disk (0 when unreadable).
-[[nodiscard]] u64 shaderCookCacheKey(const std::string& physicalPath);
+[[nodiscard]] u64 shaderCookCacheKey(const std::string& physicalPath, const std::string& virtualPath);
 
 /// Submit async VFS reads for shader refs (I/O lane stub; game thread drains into HandleTable).
 /// When `cache` is non-null, cache hits skip I/O lane submission.
