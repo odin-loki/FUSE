@@ -715,6 +715,13 @@ struct GroupBodyW {
         }
     }
 };
+/// A wizard page: a panel whose text() is the page title for the step line. The core paints the text of a class that
+/// has no paint function, which would put the title over the page's content, so this class paints nothing itself.
+struct WizardPageW {
+    static constexpr std::string_view kName = "wizardpage";
+    static constexpr A11yRole kRole = A11yRole::Group;
+    static void paint(const PaintContext&, DrawList&) {}
+};
 constexpr std::string_view kToastHostId = "__fuse_ui_toasts";
 
 void showStackPage(UiContext& ui, NodeHandle stack, u32 current) {
@@ -754,6 +761,7 @@ void registerTierB3(UiContext& ui) {
     r.registerWidget<RichTextW>();
     r.registerWidget<ToastW>();
     r.registerWidget<GroupBodyW>();
+    r.registerWidget<WizardPageW>();
 }
 
 // ---- group box ---------------------------------------------------------------------------------------------------------
@@ -970,10 +978,12 @@ NodeHandle wizard(UiContext& ui, std::string_view title, std::string_view id) {
     return wiz;
 }
 NodeHandle wizardAddPage(UiContext& ui, NodeHandle wiz, std::string_view title, std::string_view id) {
+    registerTierB3(ui);
     const NodeHandle pages = wizardPages(ui, wiz);
-    const NodeHandle p = panel(ui, pages, id);
+    const NodeHandle p = make(ui, "wizardpage", pages, id);
+    if (!ui.alive(p)) return {};
     ui.addClass(p, "wizardpage");
-    ui.setText(p, title); // a panel paints no text: this is the page title shown in the step line
+    ui.setText(p, title); // not painted (WizardPageW): this is the page title shown in the step line
     ui.setA11y(p, A11yRole::Group, title);
     wizardShow(ui, wiz, u32(ui.value(wiz)));
     return p;

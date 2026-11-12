@@ -541,7 +541,7 @@ std::string richTextPlain(const UiContext& ui, NodeHandle view);  ///< the text 
 /// Double spin box (QDoubleSpinBox): a spin box with a fractional step (default 0.1).
 NodeHandle doubleSpinBox(UiContext& ui, NodeHandle parent, f32 lo, f32 hi, f32 value, f32 step = 0.1f, std::string_view id = {});
 
-/// Registers the classes of this group (header, textedit, richtext, toast, groupbody); install() calls it.
+/// Registers the classes of this group (header, textedit, richtext, toast, groupbody, wizardpage); install() calls it.
 void registerTierB3(UiContext& ui);
 
 } // namespace fuse::ui::widgets
