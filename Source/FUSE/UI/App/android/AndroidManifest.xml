@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Template manifest for a fuse_app on Android (NativeActivity, no Java code).
+     fuse_app_add_executable(<name> ...) builds lib<name>.so: put it under lib/<abi>/ in the APK and name it in
+     android.app.lib_name. Resources read through fuse::app::readResource ("ui/main.fuseui") and the optional bundled
+     fallback fonts ("fonts/noto/...", "fonts/twemoji/...", copied from vendor/fonts) go under assets/. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.fuse.hello_app">
+    <uses-sdk android:minSdkVersion="24" />
+    <uses-feature android:name="android.hardware.vulkan.level" android:version="0" android:required="false" />
+    <application android:label="hello_app" android:hasCode="false">
+        <activity android:name="android.app.NativeActivity" android:exported="true"
+                  android:configChanges="orientation|screenSize|screenLayout|keyboard|keyboardHidden|density|uiMode"
+                  android:windowSoftInputMode="adjustResize">
+            <meta-data android:name="android.app.lib_name" android:value="hello_app" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -229,7 +229,7 @@ void Settings::set(std::string_view key, std::string_view value) {
 }
 void Settings::set(std::string_view key, double value) {
     char buf[64];
-    const auto [p, ec] = std::to_chars(buf, buf + sizeof buf, value);
+    const auto [p, ec] = fuse::text::toChars(buf, buf + sizeof buf, value);
     set(key, std::string_view(buf, ec == std::errc{} ? std::size_t(p - buf) : 0));
 }
 void Settings::remove(std::string_view key) {

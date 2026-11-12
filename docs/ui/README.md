@@ -113,6 +113,13 @@ widgets::setTooltip(ui, someButton, "Explains the button");
 
 With Tier B installed (`widgets::install` does both tiers), a combo box opens a popup list instead of cycling.
 
+### The rest of the catalogue
+
+`groupBox` (optionally checkable), `stack`, `toolBar` / `toolBarAction`, `statusBar` / `statusMessage`, `mainWindow`
+(menu bar + tool bar + dock area + status bar), `setContextMenu`, `messageBox`, `wizard`, `popover`, `toast`,
+`headerView`, `textEdit` (word wrapped, undo, clipboard, IME), `plainTextEdit`, `richText` (inline markup with
+links) and `doubleSpinBox`. Gate: `fuse_ui_tier_b3`, one `fuse_ui_widget_<name>` ctest per widget.
+
 ### Documents and Lua
 
 `.fuseui` files are JSON trees with `{expr}` and `{=two-way}` bindings (see `Doc/include/fuse/ui/doc/document.hpp` for
@@ -136,6 +143,65 @@ Without a native platform the app runs headless (tests, `--screenshot=`). `Prese
 (`Vulkan` draws the draw list on the GPU with `UiVkRenderer`, or uploads CPU-rasterised damage with
 `VkDrawMode::CpuUpload`; `Software` blits). `NativePlatform::capture` reads back what the OS shows (used by `fuse_app_native_window`).
 Under Xvfb set `VK_ICD_FILENAMES` to lavapipe; under Wine the Win32 path and the Vulkan presenter both run.
+
+### Platforms: Android, macOS, iOS
+
+`fuse_app_native` has one window backend per platform; `NativePlatform` is the same API on all of them.
+
+| Platform | Backend | Present | Entry |
+|---|---|---|---|
+| Linux (X11), Windows | `App/src/native.cpp` | Vulkan swapchain; GDI on Win32 without Vulkan | `main` |
+| macOS | `App/src/native_apple.mm` (Cocoa `NSWindow`, `NSTextInputClient` IME, `NSPasteboard`) | Vulkan over a `CAMetalLayer` (MoltenVK) when the build finds a Vulkan loader, else the CPU raster as the layer contents | `main` |
+| iOS | `App/src/native_apple.mm` (UIKit `UIWindow`, touch, software keyboard through `UIKeyInput`) + `entry_ios.mm` | same as macOS | `UIApplicationMain`, which runs your `main` |
+| Android | `App/src/native_android.cpp` (NativeActivity + NDK app glue, touch / mouse / keys, soft keyboard, clipboard over JNI) + `entry_android.cpp` | Vulkan (`VK_KHR_android_surface`), else the CPU raster through `ANativeWindow_lock` | `android_main`, which runs your `main` |
+
+```cpp
+#include "fuse/app/app.hpp"
+#include "fuse/app/native.hpp"
+#include "fuse/app/main.hpp"   // last: on Android / iOS the platform entry point calls this main
+
+int main(int argc, char** argv) {
+    fuse::app::Application app{{.name = "hello", .argc = argc, .argv = argv}};
+    fuse::app::NativePlatform native(app);
+    auto& window = app.createWindow({.title = "Hello"});
+    native.show(window);
+    return app.run();
+}
+```
+
+```cmake
+fuse_app_add_executable(hello hello.cpp)   # executable; .app bundle on iOS; libhello.so for NativeActivity on Android
+```
+
+```bash
+# Android (NDK r26+): libraries, gates and the sample apps as lib<name>.so
+cmake -S Source/FUSE/UI -B build-ui-android -G Ninja -DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake \
+      -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24 && cmake --build build-ui-android
+# macOS (optional Vulkan presenter: brew install molten-vk vulkan-headers vulkan-loader)
+cmake -S Source/FUSE/UI -B build-ui-macos -G Ninja && cmake --build build-ui-macos
+# iOS simulator
+cmake -S Source/FUSE/UI -B build-ui-ios -G Ninja -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphonesimulator \
+      -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 && cmake --build build-ui-ios
+```
+
+Things that differ on these platforms:
+
+- **One OS window** on Android and iOS: the first window shown gets the surface, later ones stay headless.
+- **Scale.** The UI works in logical units (dp / points). The frame is rendered at that size and the compositor scales
+  it to the display, so text is softer than native on high-density screens until the core gains a render scale.
+  `NativeOptions::scale` overrides the factor; `NativePlatform::scale()` and `safeArea()` report it and the area clear
+  of notches and system bars.
+- **Resources.** `AppWindow::load("ui/main.fuseui")` falls back to `fuse::app::readResource`, which reads APK assets
+  on Android and the bundle's `Resources` on iOS / macOS. Settings live under `fuse::app::dataRoot()` on mobile.
+- **Fonts.** Open Sans is embedded in the binary on Android / iOS (`FUSE_TEXT_EMBED_FONT`). The fallback faces
+  (Noto, Twemoji) load from `fonts/<vendor path>` in the assets / bundle when you ship them.
+- **Lifecycle.** Without a surface (Android `TERM_WINDOW`) the presenter goes headless and comes back with the next
+  surface; a paused / inactive app blocks in the event pump and renders nothing.
+- **macOS modifiers.** Command reports as `kModCtrl` (Cmd+C / V / Z drive the widgets' shortcuts), Control as `kModSuper`.
+- Popups are overlays inside the window (`osPopups` is X11 / Win32 only). Touch drag does not scroll yet: use
+  `kineticScrollArea` from `platform_feel.hpp`. `AndroidManifest.xml` template: `Source/FUSE/UI/App/android/`.
+
+These backends are compiled in CI (`fuse-core-android.yml`, `fuse-core-ios.yml`) and have not been run on a device.
 
 ## Game UI (UI7)
 

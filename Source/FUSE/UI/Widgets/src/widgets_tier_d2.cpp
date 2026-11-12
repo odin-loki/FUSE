@@ -773,7 +773,8 @@ struct CodeEditW {
         static const Color kTok[] = {Color::rgb(0xD4D4D4), Color::rgb(0x569CD6), Color::rgb(0xCE9178), Color::rgb(0xB5CEA8), Color::rgb(0x6A9955)};
         dl.pushClip(c);
         dl.rect(c, pc.tint(Color::rgb(0x1A1A20)));
-        dl.rect({c.x, c.y, gw - 6.f, c.h}, pc.tint(Color::rgb(0x212128)));
+        const bool numbers = !ui.hasClass(pc.node, "plain");
+        if (numbers) dl.rect({c.x, c.y, gw - 6.f, c.h}, pc.tint(Color::rgb(0x212128)));
         const Pos a = std::min(s->caret, s->anchor), b = std::max(s->caret, s->anchor);
         const bool focused = ui.focused() == pc.node;
         std::vector<u8> tok;
@@ -785,8 +786,9 @@ struct CodeEditW {
             if (li == s->caret.line && focused) dl.rect({x0 - 4.f, y, c.w - gw + 4.f, lh}, pc.tint(Color::rgb(0xFFFFFF, 0.04f)));
             char num[16];
             std::snprintf(num, sizeof num, "%u", li + 1);
-            ui.paintString(dl, num, {c.x, y, gw - 12.f, lh}, pc.tint(li == s->caret.line ? Color::rgb(0xC8C8D0) : Color::rgb(0x6A6A76)),
-                           fs * 0.9f, TextAlignment::End, pc.node.index);
+            if (numbers)
+                ui.paintString(dl, num, {c.x, y, gw - 12.f, lh}, pc.tint(li == s->caret.line ? Color::rgb(0xC8C8D0) : Color::rgb(0x6A6A76)),
+                               fs * 0.9f, TextAlignment::End, pc.node.index);
             if (!(a == b) && li >= a.line && li <= b.line) { // selection
                 const u32 sc = li == a.line ? a.col : 0, ecl = li == b.line ? b.col : u32(L.size());
                 const f32 sx = x0 + ui.measureString(std::string_view(L).substr(0, sc), fs);

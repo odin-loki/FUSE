@@ -459,7 +459,7 @@ void openWizard(UiContext& ui, NodeHandle wizard); ///< shows page 0
 NodeHandle popover(UiContext& ui, NodeHandle anchor, std::string_view id = {});
 void closePopover(UiContext& ui, NodeHandle popover);
 
-/// Toast: a transient message at the bottom centre of the window; fades in, stays `seconds`, fades out and is
+/// Toast: a transient message at the bottom centre of the window; stays `seconds`, fades out and is
 /// destroyed. Toasts stack (newest lowest) and never take input.
 NodeHandle toast(UiContext& ui, std::string_view text, f32 seconds = 2.5f, std::string_view id = {});
 u32 toastCount(const UiContext& ui);
@@ -502,7 +502,7 @@ std::string richTextPlain(const UiContext& ui, NodeHandle view);  ///< the text 
 /// Double spin box (QDoubleSpinBox): a spin box with a fractional step (default 0.1).
 NodeHandle doubleSpinBox(UiContext& ui, NodeHandle parent, f32 lo, f32 hi, f32 value, f32 step = 0.1f, std::string_view id = {});
 
-/// Registers the classes of this group (header, textedit, richtext, toast); install() calls it.
+/// Registers the classes of this group (header, textedit, richtext, toast, groupbody); install() calls it.
 void registerTierB3(UiContext& ui);
 
 } // namespace fuse::ui::widgets

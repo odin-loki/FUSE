@@ -59,7 +59,7 @@ void quote(std::string& out, std::string_view s) {
 }
 std::string numText(double d) {
     char b[32];
-    const auto r = std::to_chars(b, b + sizeof b, d);
+    const auto r = fuse::text::toChars(b, b + sizeof b, d);
     return std::string(b, r.ptr);
 }
 bool scalar(const JsonValue& v) { return !v.isArray() && !v.isObject(); }

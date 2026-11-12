@@ -90,7 +90,7 @@ datetimeedit { background: #1e1f25; color: var(--text); background-end: var(--ac
 datetimeedit:focus { border-color: var(--accent); }
 .groupbox { border: 1px var(--border); border-radius: 6px; padding: 8px 10px; gap: 6px; }
 .grouptitle { color: var(--text-dim); font-size: 12px; }
-.groupbody { gap: 6px; }
+groupbody { gap: 6px; }
 .toolbar { flex-direction: row; gap: 2px; align-items: center; background: var(--surface); padding: 2px 4px; }
 .toolsep { width: 1px; height: 18px; background: var(--border); margin: 0px 4px; }
 .statusbar { flex-direction: row; gap: 12px; align-items: center; background: var(--surface); padding: 2px 8px; }

@@ -197,10 +197,10 @@ struct BigModel {
             char b[32];
             char* e = b;
             switch (c) {
-            case 0: std::memcpy(b, "entity_", 7); e = std::to_chars(b + 7, b + sizeof b, r).ptr; break;
+            case 0: std::memcpy(b, "entity_", 7); e = fuse::text::toChars(b + 7, b + sizeof b, r).ptr; break;
             case 1: { static constexpr std::string_view k[] = {"mesh", "light", "camera", "probe", "decal"}; return k[(r * 2654435761u >> 7) % 5]; }
-            case 2: e = std::to_chars(b, b + sizeof b, (r * 7919u) % 100000u).ptr; break;
-            default: e = std::to_chars(b, b + sizeof b, (r % 997u) * 0.25f).ptr; break;
+            case 2: e = fuse::text::toChars(b, b + sizeof b, (r * 7919u) % 100000u).ptr; break;
+            default: e = fuse::text::toChars(b, b + sizeof b, (r % 997u) * 0.25f).ptr; break;
             }
             scratch.assign(b, e);
             return scratch;

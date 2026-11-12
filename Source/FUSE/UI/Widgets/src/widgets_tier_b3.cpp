@@ -701,6 +701,20 @@ struct ToastW {
         return s;
     }
 };
+/// Body of a group box. While the (checkable) group is unchecked the body is disabled: it swallows input on its way
+/// down to the children (capture phase), since disabling a container does not disable what is inside it.
+struct GroupBodyW {
+    static constexpr std::string_view kName = "groupbody";
+    static constexpr A11yRole kRole = A11yRole::Group;
+    static bool onEvent(EventContext& ec, const Event& e) {
+        if (ec.phase != Phase::Capture || !ec.ui.disabled(ec.node)) return false;
+        switch (e.type) {
+        case EventType::PointerDown: case EventType::PointerUp: case EventType::Click: case EventType::Wheel:
+        case EventType::KeyDown: case EventType::KeyUp: case EventType::Text: case EventType::Composition: return true;
+        default: return false;
+        }
+    }
+};
 constexpr std::string_view kToastHostId = "__fuse_ui_toasts";
 
 void showStackPage(UiContext& ui, NodeHandle stack, u32 current) {
@@ -739,10 +753,12 @@ void registerTierB3(UiContext& ui) {
     r.registerWidget<TextEditW>();
     r.registerWidget<RichTextW>();
     r.registerWidget<ToastW>();
+    r.registerWidget<GroupBodyW>();
 }
 
 // ---- group box ---------------------------------------------------------------------------------------------------------
 NodeHandle groupBox(UiContext& ui, NodeHandle parent, std::string_view title, bool checkable, bool checked, std::string_view id) {
+    registerTierB3(ui);
     const NodeHandle g = panel(ui, parent, id);
     ui.addClass(g, "groupbox");
     ui.setA11y(g, A11yRole::Group, title);
@@ -753,14 +769,12 @@ NodeHandle groupBox(UiContext& ui, NodeHandle parent, std::string_view title, bo
         head = label(ui, g, title);
     }
     ui.addClass(head, "grouptitle");
-    const NodeHandle body = panel(ui, g);
-    ui.addClass(body, "groupbody");
+    const NodeHandle body = make(ui, "groupbody", g);
     if (checkable) {
         ui.setChecked(g, checked);
         auto apply = [](UiContext& c, NodeHandle b, bool on) {
             c.setDisabled(b, !on);
             c.setCss(b, "opacity", on ? "1" : "0.45");
-            c.setCss(b, "pointer-events", on ? "auto" : "none");
         };
         apply(ui, body, checked);
         ui.connect(head, SignalKind::Toggled, [g, body, apply](UiContext& c, NodeHandle, const SignalArgs& a) {
@@ -1003,8 +1017,6 @@ NodeHandle toast(UiContext& ui, std::string_view text, f32 seconds, std::string_
     const NodeHandle t = make(ui, "toast", host, id);
     if (!ui.alive(t)) return {};
     ui.setText(t, text);
-    ui.setCss(t, "opacity", "0");
-    ui.animate(t, UiContext::AnimProp::Opacity, 1.f, 0.15f);
     const f32 life = std::max(0.2f, seconds);
     ui.startTimer(life, false, [t](UiContext& c) {
         if (c.alive(t)) c.animate(t, UiContext::AnimProp::Opacity, 0.f, 0.25f);

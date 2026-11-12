@@ -150,6 +150,12 @@ endif()
 fuse_ui_test(fuse_ui_platform_feel test_platform_feel.cpp)
 
 # UI6 Tier D (2): one binary, one ctest gate per widget (fuse_ui_widget_<name>)
+fuse_ui_test(fuse_ui_tier_b3 test_tier_b3.cpp)
+foreach(g groupbox stack toolbar_statusbar mainwindow contextmenu messagebox wizard popover_toast header textedit richtext
+          catalogue_classes)
+    add_test(NAME fuse_ui_widget_${g} COMMAND fuse_ui_tier_b3 --gate=${g})
+    set_tests_properties(fuse_ui_widget_${g} PROPERTIES LABELS fuse_ui)
+endforeach()
 fuse_ui_test(fuse_ui_tier_d2 test_tier_d2.cpp)
 foreach(g font_picker file_dialog node_graph curve_timeline viewport code_edit datetime_edit video)
     add_test(NAME fuse_ui_widget_${g} COMMAND fuse_ui_tier_d2 --gate=${g})

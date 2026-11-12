@@ -1,4 +1,4 @@
-// fuse::text::fromChars: std::from_chars for every arithmetic type on every toolchain.
+// fuse::text::fromChars / toChars: std::from_chars / std::to_chars for every arithmetic type on every toolchain.
 //
 // libc++ only gained the floating-point std::from_chars overloads in LLVM 20, so the Android NDK and Apple clang
 // reject them. Where the standard library has them (__cpp_lib_to_chars) this forwards; otherwise floating-point
@@ -7,6 +7,7 @@
 #pragma once
 
 #include <charconv>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <system_error>
@@ -66,6 +67,34 @@ inline std::from_chars_result fromChars(const char* first, const char* last, T& 
     if (end == buf) return {first, std::errc::invalid_argument};
     out = static_cast<T>(v);
     return {first + (end - buf), std::errc{}};
+#endif
+}
+
+/// std::to_chars(first, last, value) for floating point: the shortest text that parses back to `value`. Apple marks
+/// the standard overloads unavailable below macOS 13.3 / iOS 16.3, and older libc++ lacks them; there this prints
+/// with the smallest %g precision that round-trips. Integers forward.
+template <class T>
+    requires std::is_integral_v<T>
+inline std::to_chars_result toChars(char* first, char* last, T value) {
+    return std::to_chars(first, last, value);
+}
+
+template <class T>
+    requires std::is_floating_point_v<T>
+inline std::to_chars_result toChars(char* first, char* last, T value) {
+#if defined(__cpp_lib_to_chars) && !defined(__APPLE__) && !defined(FUSE_TEXT_FROM_CHARS_FALLBACK)
+    return std::to_chars(first, last, value);
+#else
+    char buf[64];
+    int n = 0;
+    const int maxDigits = sizeof(T) <= sizeof(float) ? 9 : 17;
+    for (int digits = 1; digits <= maxDigits; ++digits) {
+        n = std::snprintf(buf, sizeof buf, "%.*g", digits, static_cast<double>(value));
+        if (static_cast<T>(std::strtod(buf, nullptr)) == value || value != value) break;
+    }
+    if (n <= 0 || n > last - first) return {last, std::errc::value_too_large};
+    std::memcpy(first, buf, std::size_t(n));
+    return {first + n, std::errc{}};
 #endif
 }
 
