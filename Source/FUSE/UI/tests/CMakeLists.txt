@@ -27,6 +27,7 @@ fuse_ui_test(fuse_ui_text_basics test_text_basics.cpp)
 fuse_ui_test(fuse_text_edit_ops test_text_edit_ops.cpp)
 fuse_ui_test(fuse_text_fallback test_text_fallback.cpp)
 fuse_ui_test(fuse_ui_widget_interaction test_widget_interaction.cpp)
+fuse_ui_test(fuse_ui_touch_scroll test_touch_scroll.cpp)
 
 find_package(Threads REQUIRED)
 target_link_libraries(fuse_ui_single_thread_parity PRIVATE Threads::Threads)

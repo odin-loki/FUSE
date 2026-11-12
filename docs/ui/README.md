@@ -232,8 +232,21 @@ Things that differ on these platforms:
 - **Lifecycle.** Without a surface (Android `TERM_WINDOW`) the presenter goes headless and comes back with the next
   surface; a paused / inactive app blocks in the event pump and renders nothing.
 - **macOS modifiers.** Command reports as `kModCtrl` (Cmd+C / V / Z drive the widgets' shortcuts), Control as `kModSuper`.
-- Popups are overlays inside the window (`osPopups` is X11 / Win32 only). Touch drag does not scroll yet: use
-  `kineticScrollArea` from `platform_feel.hpp`. `AndroidManifest.xml` template: `Source/FUSE/UI/App/android/`.
+- **Touch.** Fingers go through `UiContext::touchDown / touchMove / touchUp / touchCancel` (a mouse on Android keeps
+  `pointerDown / Move / Up` and the wheel). A tap clicks. A drag past the slop (8 px, `setTouchScroll`) cancels the
+  press (`PointerUp` with `Event::cancel`, no `Click`) and pans the nearest ancestor that can scroll along the drag
+  axis 1:1: a scroll container (`overflow: scroll`), or a list / table / grid / text edit / code edit, which receive
+  Wheel events in whole rows. A container at its end in the drag direction hands the gesture to its ancestor.
+  Releasing in motion flings (velocity from the last 100 ms, exponential decay, stops at the extents, no
+  overscroll); `needsUpdate()` / `nextWakeSeconds()` keep the on-demand loop running until it stops, and a new touch
+  stops it without clicking. Widgets that own their drags keep them: `WidgetClass::capturesDrag` (`kCapturesDrag`:
+  slider, dial, scroll bar, splitter handle, dock title, colour picker, node graph, curve editor, timeline,
+  viewport, `kineticScrollArea`, the game sticks / slots) or a per-press `touchDrag` hook (table scroll bar and
+  column edges, header sections, video seek bar); `setCapturesDrag(node, true)` does it for one node. On touch a
+  drag over a text / code edit scrolls it; selecting by dragging is a mouse feature. Lists and tables select the row
+  on the press, so a pan that starts on a row selects it. One finger drives the UI; there is no pinch.
+- Popups are overlays inside the window (`osPopups` is X11 / Win32 only). `AndroidManifest.xml` template:
+  `Source/FUSE/UI/App/android/`.
 
 These backends are compiled in CI (`fuse-core-android.yml`, `fuse-core-ios.yml`) and have not been run on a device.
 

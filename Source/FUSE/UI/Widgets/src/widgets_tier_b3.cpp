@@ -78,6 +78,11 @@ struct HeaderState {
 Pool<HeaderState>& headerPool() { static Pool<HeaderState> p; return p; }
 struct HeaderW {
     static constexpr std::string_view kName = "header";
+    // touch: a drag on a section edge resizes it
+    static TouchDrag touchDrag(UiContext& ui, NodeHandle n, Vec2) {
+        const HeaderState* s = headerPool().get(ui, n);
+        return {s && s->dragCol >= 0 ? TouchDrag::Mode::Capture : TouchDrag::Mode::Pan, {}, {}};
+    }
     static constexpr A11yRole kRole = A11yRole::Group;
     static constexpr bool kInteractive = true;
     static constexpr f32 kGrip = 4.f;
@@ -177,6 +182,15 @@ struct TextEditState {
 Pool<TextEditState>& textPool() { static Pool<TextEditState> p; return p; }
 struct TextEditW {
     static constexpr std::string_view kName = "textedit";
+    // touch: a drag scrolls the text pixel for pixel (drag selection stays a mouse feature)
+    static TouchDrag touchDrag(UiContext& ui, NodeHandle n, Vec2) {
+        TextEditState* s = textPool().get(ui, n);
+        if (!s) return {};
+        wrap(ui, n, *s);
+        const f32 lh = lineH(ui, n);
+        if (f32(s->lines.size()) * lh <= ui.contentRect(n).h) return {};
+        return {TouchDrag::Mode::Wheel, {0.f, 1.f}, {0.f, 1.f / (3.f * lh)}};
+    }
     static constexpr A11yRole kRole = A11yRole::TextField;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;

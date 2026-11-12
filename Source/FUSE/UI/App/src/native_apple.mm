@@ -690,33 +690,32 @@ NativePlatform::Impl* g_iosImpl = nullptr;
     primary = t;
     fui::UiContext& ui = rec->win->ui();
     const fui::Vec2 p = [self uiPoint:t];
-    ui.pointerMove(p);
-    ui.pointerDown(p);
+    ui.touchDown(p, t.timestamp);
     rec->win->requestRedraw();
 }
 - (void)touchesMoved:(NSSet<UITouch*>*)touches withEvent:(UIEvent*)event {
     (void)event;
     UITouch* t = primary;
     if (!rec || !rec->win || !t || ![touches containsObject:t]) return;
-    rec->win->ui().pointerMove([self uiPoint:t]);
+    rec->win->ui().touchMove([self uiPoint:t], t.timestamp);
     rec->win->requestRedraw();
 }
-- (void)endTouches:(NSSet<UITouch*>*)touches {
+- (void)endTouches:(NSSet<UITouch*>*)touches cancelled:(BOOL)cancelled {
     UITouch* t = primary;
     if (!rec || !rec->win || !t || ![touches containsObject:t]) return;
     fui::UiContext& ui = rec->win->ui();
-    ui.pointerUp([self uiPoint:t]);
-    ui.pointerMove({-1.f, -1.f}); // a lifted finger hovers nothing
+    if (cancelled) ui.touchCancel();
+    else ui.touchUp([self uiPoint:t], t.timestamp); // also clears the hover: a lifted finger hovers nothing
     primary = nil;
     rec->win->requestRedraw();
 }
 - (void)touchesEnded:(NSSet<UITouch*>*)touches withEvent:(UIEvent*)event {
     (void)event;
-    [self endTouches:touches];
+    [self endTouches:touches cancelled:NO];
 }
 - (void)touchesCancelled:(NSSet<UITouch*>*)touches withEvent:(UIEvent*)event {
     (void)event;
-    [self endTouches:touches];
+    [self endTouches:touches cancelled:YES];
 }
 
 // ---- UIKeyInput: the software keyboard ------------------------------------------------------------------------------

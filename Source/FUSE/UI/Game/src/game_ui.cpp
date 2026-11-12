@@ -128,6 +128,7 @@ std::string_view radialItem(std::string_view s, int i) {
 }
 struct Radial {
     static constexpr std::string_view kName = "radialmenu";
+    static constexpr bool kCapturesDrag = true; // touch: the drag picks a sector
     static constexpr A11yRole kRole = A11yRole::List;
     static constexpr bool kFocusable = true;
     static Size measure(UiContext&, NodeHandle, Size) { return {240.f, 240.f}; }

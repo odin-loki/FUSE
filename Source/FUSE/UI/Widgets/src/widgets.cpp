@@ -150,6 +150,7 @@ struct Switch : CheckBox {
 // ---- Slider / ScrollBar / Dial / ProgressBar -----------------------------------------------------------------------
 struct Slider {
     static constexpr std::string_view kName = "slider";
+    static constexpr bool kCapturesDrag = true; // touch: the drag moves the knob
     static constexpr A11yRole kRole = A11yRole::Slider;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -176,6 +177,7 @@ struct Slider {
 };
 struct ScrollBar {
     static constexpr std::string_view kName = "scrollbar";
+    static constexpr bool kCapturesDrag = true; // touch: the drag moves the thumb
     static constexpr A11yRole kRole = A11yRole::ScrollBar;
     static constexpr bool kInteractive = true;
     static Size measure(UiContext&, NodeHandle, Size) { return {12.f, 12.f}; }
@@ -212,6 +214,7 @@ struct ScrollBar {
 };
 struct Dial {
     static constexpr std::string_view kName = "dial";
+    static constexpr bool kCapturesDrag = true; // touch: the drag turns the dial
     static constexpr A11yRole kRole = A11yRole::Dial;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;

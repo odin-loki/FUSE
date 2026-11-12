@@ -70,6 +70,12 @@ Pool<GridState>& gridPool() { static Pool<GridState> p; return p; }
 
 struct GridView {
     static constexpr std::string_view kName = "gridview";
+    // touch: tile rows follow the finger (the Wheel handler scrolls 1 row per notch)
+    static TouchDrag touchDrag(UiContext& ui, NodeHandle n, Vec2) {
+        const GridState* s = gridPool().get(ui, n);
+        if (!s || s->tileH <= 0.f || rowsTotal(ui, n, *s) <= visRows(ui, n, *s)) return {};
+        return {TouchDrag::Mode::Wheel, {0.f, s->tileH}, {0.f, 1.f}};
+    }
     static constexpr A11yRole kRole = A11yRole::List;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -215,6 +221,7 @@ u8 pickZone = 0; // 1 square, 2 hue, 3 alpha (single pointer, single thread)
 
 struct ColorPickerW {
     static constexpr std::string_view kName = "colorpicker";
+    static constexpr bool kCapturesDrag = true; // touch: the drag picks a colour
     static constexpr A11yRole kRole = A11yRole::Group;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;

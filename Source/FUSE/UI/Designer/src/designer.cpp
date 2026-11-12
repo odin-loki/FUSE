@@ -489,6 +489,7 @@ Designer* designerOf(UiContext& ui, NodeHandle canvas) {
 // (design mode), so buttons do not click and fields do not take focus.
 struct CanvasW {
     static constexpr std::string_view kName = "designcanvas";
+    static constexpr bool kCapturesDrag = true; // touch: design-mode drags (select / move)
     static constexpr A11yRole kRole = A11yRole::Group;
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Capture && ec.phase != Phase::Target) return false;
@@ -506,6 +507,11 @@ struct CanvasW {
 // The designer's root: sees every pointer event first (capture) to run palette -> canvas and canvas -> canvas drags.
 struct RootW {
     static constexpr std::string_view kName = "designerroot";
+    // touch: a pending palette -> canvas / canvas -> canvas drag stays with the designer
+    static TouchDrag touchDrag(UiContext& ui, NodeHandle n, Vec2) {
+        const Designer* d = designerOf(ui, n);
+        return {d && d->dragPending() ? TouchDrag::Mode::Capture : TouchDrag::Mode::Pan, {}, {}};
+    }
     static constexpr A11yRole kRole = A11yRole::Group;
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Capture) return false;

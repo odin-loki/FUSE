@@ -183,6 +183,7 @@ Color pinColor(u32 type) {
 
 struct NodeGraphW {
     static constexpr std::string_view kName = "nodegraph";
+    static constexpr bool kCapturesDrag = true; // touch: the drag pans the graph / moves nodes / draws links
     static constexpr A11yRole kRole = A11yRole::Group;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -351,6 +352,7 @@ f32 curveEval(const CurveState& s, f32 t) {
 }
 struct CurveW {
     static constexpr std::string_view kName = "curveeditor";
+    static constexpr bool kCapturesDrag = true; // touch: the drag moves keys
     static constexpr A11yRole kRole = A11yRole::Group;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -455,6 +457,7 @@ Pool<TimelineState>& tlPool() { static Pool<TimelineState> p; return p; }
 constexpr f32 kTlHead = 96.f, kTlRuler = 22.f, kTlRow = 28.f;
 struct TimelineW {
     static constexpr std::string_view kName = "timeline";
+    static constexpr bool kCapturesDrag = true; // touch: the drag scrubs / moves keys
     static constexpr A11yRole kRole = A11yRole::Slider;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -611,6 +614,7 @@ Rect letterbox(Rect c, u32 w, u32 h) {
 }
 struct ViewportW {
     static constexpr std::string_view kName = "viewport";
+    static constexpr bool kCapturesDrag = true; // touch: drags are forwarded to the embedded scene
     static constexpr A11yRole kRole = A11yRole::Image;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -751,6 +755,13 @@ u32 nextCp(std::string_view s, u32 c) { if (c >= s.size()) return u32(s.size());
 
 struct CodeEditW {
     static constexpr std::string_view kName = "codeedit";
+    // touch: a drag scrolls line by line (the Wheel handler scrolls 3 lines per notch); drag selection stays a
+    // mouse feature
+    static TouchDrag touchDrag(UiContext& ui, NodeHandle n, Vec2) {
+        const CodeState* s = codePool().get(ui, n);
+        if (!s || s->lines.size() <= visible(ui, n)) return {};
+        return {TouchDrag::Mode::Wheel, {0.f, lineH(ui, n)}, {0.f, 1.f / 3.f}};
+    }
     static constexpr A11yRole kRole = A11yRole::TextField;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -1182,6 +1193,11 @@ void patternFrame(void*, u32 index, u32* px) {
 }
 struct VideoW {
     static constexpr std::string_view kName = "video";
+    // touch: a drag that started on the seek bar scrubs
+    static TouchDrag touchDrag(UiContext& ui, NodeHandle n, Vec2) {
+        const VideoState* s = videoPool().get(ui, n);
+        return {s && s->scrubbing ? TouchDrag::Mode::Capture : TouchDrag::Mode::Pan, {}, {}};
+    }
     static constexpr A11yRole kRole = A11yRole::Image;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;

@@ -61,6 +61,7 @@ struct Event {
     std::string_view text; ///< Text: UTF-8 (valid during dispatch only)
     FocusReason focusReason = FocusReason::Programmatic;
     i32 caret = 0;         ///< Composition: caret byte offset into `text`
+    bool cancel = false;   ///< PointerUp: the press was cancelled (a touch became a pan, touchCancel): no Click follows
 };
 
 /// Clipboard backend of a context (UI1). Default: a context-local buffer; apps install the platform clipboard
@@ -100,6 +101,27 @@ struct A11ySnapshotNode {
     f32 value = 0.f, lo = 0.f, hi = 0.f;
 };
 
+// ---- Touch ---------------------------------------------------------------------------------------------------------
+/// What a touch drag that starts on a widget does once the finger leaves the slop (UiContext::touchMove).
+struct TouchDrag {
+    enum class Mode : u8 {
+        Pan,     ///< default: the press is cancelled and the nearest scrollable ancestor pans with the finger
+        Capture, ///< the widget keeps the drag (slider, splitter, canvas): pointer moves reach it as with a mouse
+        Wheel,   ///< the widget scrolls itself on Wheel events: the drag is delivered as Wheel in `step` increments
+    };
+    Mode mode = Mode::Pan;
+    Vec2 step;    ///< Wheel: finger travel (px) per wheel increment along x / y; 0 = that axis does not scroll now
+    Vec2 notches; ///< Wheel: wheel notches sent per increment (e.g. a list that scrolls 3 rows per notch: 1/3)
+};
+/// Touch pan / fling tuning (UiContext::setTouchScroll).
+struct TouchScrollConfig {
+    f32 slop = 8.f;           ///< px a finger may move before a press becomes a pan
+    f32 decay = 3.5f;         ///< fling velocity decays as exp(-decay * t)
+    f32 minVelocity = 12.f;   ///< px/s: below this a fling stops (and a release does not start one)
+    f32 maxVelocity = 8000.f; ///< px/s clamp on release
+    f32 sampleWindow = 0.1f;  ///< s of finger history used for the release velocity
+};
+
 // ---- Widget classes ------------------------------------------------------------------------------------------------
 struct PaintContext {
     UiContext& ui;
@@ -134,6 +156,11 @@ struct WidgetClass {
     bool (*onEvent)(EventContext&, const Event&) = nullptr;
     /// Default style (applied before style sheets).
     ComputedStyle defaults{};
+    /// Touch: the class consumes pointer drags itself, so a touch drag on or inside it never becomes a pan.
+    bool capturesDrag = false;
+    /// Touch: per-node / per-press answer (null: TouchDrag::Mode::Pan). `down` = where the finger went down; called
+    /// after the PointerDown was delivered, when the finger leaves the slop.
+    TouchDrag (*touchDrag)(UiContext&, NodeHandle, Vec2 down) = nullptr;
 };
 
 /// Concept turning a plain struct with static members into a WidgetClass.
@@ -156,6 +183,8 @@ public:
         if constexpr (requires { &W::paint; }) c.paint = &W::paint;
         if constexpr (requires { &W::onEvent; }) c.onEvent = &W::onEvent;
         if constexpr (requires { W::defaults(); }) c.defaults = W::defaults();
+        if constexpr (requires { W::kCapturesDrag; }) c.capturesDrag = W::kCapturesDrag;
+        if constexpr (requires { &W::touchDrag; }) c.touchDrag = &W::touchDrag;
         return add(std::move(c));
     }
     u32 find(std::string_view name) const; ///< 0xFFFFFFFF when unknown
@@ -236,6 +265,9 @@ public:
     void setFocusable(NodeHandle n, bool on);
     void setTabIndex(NodeHandle n, i32 index);
     void setFocusScope(NodeHandle n, bool on);
+    /// Marks one node as consuming pointer drags (as WidgetClass::capturesDrag does for a class): a touch drag that
+    /// starts on it or inside it is never turned into a pan. For drags implemented with a SignalKind::Event slot.
+    void setCapturesDrag(NodeHandle n, bool on);
     void setA11y(NodeHandle n, A11yRole role, std::string_view name = {});
     A11yRole role(NodeHandle n) const;
     void setUserData(NodeHandle n, u64 v);
@@ -306,6 +338,29 @@ public:
     bool pointerDown(Vec2 p, MouseButton b = MouseButton::Left);
     bool pointerUp(Vec2 p, MouseButton b = MouseButton::Left);
     bool wheel(Vec2 p, Vec2 notches);
+    /// Touch input (one finger; platform layers feed the primary touch here instead of pointerDown / Move / Up).
+    /// A touch presses the widget under it like the left mouse button, so a tap clicks. Once the finger moves past
+    /// TouchScrollConfig::slop the gesture becomes a pan, unless a widget on the way up captures drags
+    /// (WidgetClass::capturesDrag / touchDrag, setCapturesDrag): the press is cancelled (PointerUp with `cancel`, no
+    /// Click) and the nearest ancestor that can scroll along the dominant drag axis follows the finger 1:1 - a scroll
+    /// container (`overflow: scroll`, both of its axes), or a widget that scrolls on Wheel events (TouchDrag::Wheel).
+    /// The target is latched for the gesture. Releasing a moving pan starts a fling that update(dt) advances and
+    /// decays; it stops at the scroll extents, when slow, or on the next touchDown (which then does not press).
+    /// `timeSeconds` is the event time on any monotonic clock (velocity estimate); negative = the context's own
+    /// clock (the sum of update(dt)), which only resolves one sample per frame.
+    bool touchDown(Vec2 p, double timeSeconds = -1.0);
+    bool touchMove(Vec2 p, double timeSeconds = -1.0);
+    bool touchUp(Vec2 p, double timeSeconds = -1.0);
+    /// The gesture was taken away (system gesture, focus loss): releases the press without a Click and ends a pan
+    /// without a fling.
+    bool touchCancel();
+    void setTouchScroll(const TouchScrollConfig& c) { m_touchCfg = c; }
+    const TouchScrollConfig& touchScroll() const { return m_touchCfg; }
+    bool touchPanning() const { return m_touch.stage == TouchState::Stage::Pan; }
+    bool flinging() const { return m_touch.fling; }
+    Vec2 flingVelocity() const { return m_touch.fling ? m_touch.vel : Vec2{}; } ///< finger space, px/s
+    NodeHandle touchPanTarget() const { return (touchPanning() || m_touch.fling) ? m_touch.target : NodeHandle{}; }
+    void stopFling() { m_touch.fling = false; }
     /// Modifier state (kMod*) stamped on pointer events; platform layers update it on every modifier change.
     void setModifiers(u8 mods) { m_mods = mods; }
     u8 modifiers() const { return m_mods; }
@@ -411,6 +466,10 @@ private:
     void collectTab(std::vector<u32>& out) const;
     void markArrange(u32 i);
     bool visibleChain(u32 i) const;
+    void cancelPress(Vec2 p);
+    bool touchBeginPan(Vec2 p);
+    void touchPanBy(Vec2 d);
+    void touchSample(Vec2 p, double t);
 
     WidgetRegistry m_registry;
     StyleEngine m_styles;
@@ -448,6 +507,22 @@ private:
     Vec2 m_pointer{-1.f, -1.f};
     u8 m_mods = 0;
     struct ScrollDrag { NodeHandle node; u8 axis = 0; f32 grab = 0.f; } m_scrollDrag;
+    struct TouchState {
+        enum class Stage : u8 { Idle, Pending, Passive, Pan }; ///< Passive: down, will never pan (captured drag)
+        Stage stage = Stage::Idle;
+        bool wheel = false;   ///< the target scrolls on Wheel events (else: a scroll container)
+        bool fling = false;
+        bool pressed = false; ///< the down was delivered as a press (false when it stopped a fling)
+        NodeHandle hit, target;
+        Vec2 down, last, acc, vel;
+        TouchDrag drag;
+        struct Sample { double t = 0.0; Vec2 p; };
+        static constexpr u32 kSamples = 32;
+        Sample samples[kSamples];
+        u32 sampleCount = 0, sampleHead = 0; ///< ring; head = next write
+    } m_touch;
+    TouchScrollConfig m_touchCfg;
+    double m_clock = 0.0; ///< sum of update(dt)
     std::vector<u32> m_path;
     std::vector<u32> m_scratchOrder;
     std::vector<std::pair<u32, i32>> m_scratchTab;

@@ -244,6 +244,11 @@ struct Tooltip {
 // ---- list view ---------------------------------------------------------------------------------------------------
 struct ListView {
     static constexpr std::string_view kName = "listview";
+    // touch: rows follow the finger (the Wheel handler scrolls 3 rows per notch)
+    static TouchDrag touchDrag(UiContext& ui, NodeHandle n, Vec2) {
+        if (count(ui.text(n)) <= visibleRows(ui, n)) return {};
+        return {TouchDrag::Mode::Wheel, {0.f, rowHeight(ui, n)}, {0.f, 1.f / 3.f}};
+    }
     static constexpr A11yRole kRole = A11yRole::List;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;

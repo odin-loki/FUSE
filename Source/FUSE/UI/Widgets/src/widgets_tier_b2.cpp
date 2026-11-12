@@ -36,6 +36,7 @@ void setBasis(UiContext& ui, NodeHandle pane, f32 px) {
 constexpr f32 kMinPane = 24.f;
 struct SplitHandle { // between two panes; value() = 1 when the splitter is stacked
     static constexpr std::string_view kName = "splithandle";
+    static constexpr bool kCapturesDrag = true; // touch: the drag resizes the panes
     static constexpr A11yRole kRole = A11yRole::Separator;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -151,6 +152,7 @@ void raiseFloat(UiContext& ui, NodeHandle dock);
 
 struct DockTitle { // the title strip of a dock widget; text = title. Close box at the right end. Drags a floating dock.
     static constexpr std::string_view kName = "docktitle";
+    static constexpr bool kCapturesDrag = true; // touch: the drag moves a floating dock
     static constexpr A11yRole kRole = A11yRole::Text;
     static constexpr bool kInteractive = true;
     static Size measure(UiContext& ui, NodeHandle n, Size) { return {std::ceil(ui.measureString(ui.text(n), ui.computed(n).fontSize)) + 24.f, rowHeight(ui, n) - 2.f}; }
@@ -418,6 +420,14 @@ TableState& newState(UiContext& ui, NodeHandle n) {
 
 struct TableView {
     static constexpr std::string_view kName = "tableview";
+    // touch: a drag on the scroll bar / a column edge stays with the table, elsewhere rows follow the finger
+    static TouchDrag touchDrag(UiContext& ui, NodeHandle n, Vec2) {
+        const TableState* s = stateOf(ui, n);
+        if (!s) return {};
+        if (s->dragScroll || s->resizing >= 0) return {TouchDrag::Mode::Capture, {}, {}};
+        if (rows(*s) <= visible(ui, n, *s)) return {};
+        return {TouchDrag::Mode::Wheel, {0.f, rowHeight(ui, n)}, {0.f, 1.f / 3.f}};
+    }
     static constexpr A11yRole kRole = A11yRole::List;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;

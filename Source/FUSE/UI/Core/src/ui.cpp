@@ -15,6 +15,7 @@ enum NodeFlags : u32 {
     kFlagFocusable = 1u << 0,
     kFlagFocusScope = 1u << 2,
     kFlagRoleSet = 1u << 3,
+    kFlagCapturesDrag = 1u << 4,
 };
 enum Dirty : u8 { kDirtyStyle = 1, kDirtyLayout = 2, kDirtyPaint = 4, kDirtyText = 8, kDirtyMeasure = 16 };
 } // namespace
@@ -475,6 +476,9 @@ void UiContext::setTabIndex(NodeHandle h, i32 i) {
 }
 void UiContext::setFocusScope(NodeHandle h, bool on) {
     if (Node* n = node(h)) n->flags = on ? (n->flags | kFlagFocusScope) : (n->flags & ~u32(kFlagFocusScope));
+}
+void UiContext::setCapturesDrag(NodeHandle h, bool on) {
+    if (Node* n = node(h)) n->flags = on ? (n->flags | kFlagCapturesDrag) : (n->flags & ~u32(kFlagCapturesDrag));
 }
 void UiContext::setA11y(NodeHandle h, A11yRole r, std::string_view name) {
     Node* n = node(h);
@@ -1129,6 +1133,18 @@ void UiContext::update(f32 dt) {
             }
         }
     }
+    if (dt > 0.f) m_clock += double(dt);
+    if (m_touch.fling) {
+        if (!node(m_touch.target)) m_touch.fling = false;
+        else if (dt > 0.f) {
+            // exact integral of v0 * exp(-decay * t) over the step: the glide length does not depend on the frame rate
+            const f32 k = std::exp(-m_touchCfg.decay * dt), travel = (1.f - k) / std::max(1e-3f, m_touchCfg.decay);
+            const Vec2 d{m_touch.vel.x * travel, m_touch.vel.y * travel};
+            m_touch.vel = {m_touch.vel.x * k, m_touch.vel.y * k};
+            touchPanBy(d); // zeroes the velocity along an axis that reached its end
+            if (std::hypot(m_touch.vel.x, m_touch.vel.y) < m_touchCfg.minVelocity) m_touch.fling = false;
+        }
+    }
     if (m_animCount) {
         for (auto& a : m_anims) {
             if (!a.active) continue;
@@ -1162,7 +1178,7 @@ void UiContext::update(f32 dt) {
 }
 
 bool UiContext::needsUpdate() const {
-    if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount) return true;
+    if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount || m_touch.fling) return true;
     if (m_styles.sheetVersion() != m_seenSheetVersion) return true;
     for (const auto& t : m_timers)
         if (t.active) return true;
@@ -1170,7 +1186,7 @@ bool UiContext::needsUpdate() const {
 }
 
 f32 UiContext::nextWakeSeconds() const {
-    if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount) return 0.f;
+    if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount || m_touch.fling) return 0.f;
     if (m_styles.sheetVersion() != m_seenSheetVersion) return 0.f;
     if (m_head.load(std::memory_order_acquire) != m_tail) return 0.f;
     f32 t = std::numeric_limits<f32>::infinity();
@@ -1353,6 +1369,192 @@ bool UiContext::wheel(Vec2 p, Vec2 notches) {
         return true;
     }
     return h != m_root;
+}
+
+// ---- Touch: tap, pan, fling ----------------------------------------------------------------------------------------
+void UiContext::cancelPress(Vec2 p) {
+    const NodeHandle pr = m_pressed;
+    if (!node(pr)) return;
+    m_pressed = {};
+    setState(pr, kStatePressed, false);
+    Event e; e.type = EventType::PointerUp; e.pos = p; e.mods = m_mods; e.cancel = true;
+    dispatch(pr.index, e);
+}
+
+void UiContext::touchSample(Vec2 p, double t) {
+    TouchState& ts = m_touch;
+    ts.samples[ts.sampleHead] = {t, p};
+    ts.sampleHead = (ts.sampleHead + 1) % TouchState::kSamples;
+    ts.sampleCount = std::min(ts.sampleCount + 1, TouchState::kSamples);
+}
+
+bool UiContext::touchDown(Vec2 p, double t) {
+    if (t < 0.0) t = m_clock;
+    const bool wasFlinging = m_touch.fling;
+    if (m_touch.stage != TouchState::Stage::Idle) touchCancel(); // a down without an up: drop the old gesture
+    m_touch.fling = false;
+    m_touch.stage = TouchState::Stage::Pending;
+    m_touch.wheel = false;
+    m_touch.target = {};
+    m_touch.down = m_touch.last = p;
+    m_touch.acc = m_touch.vel = {};
+    m_touch.sampleCount = m_touch.sampleHead = 0;
+    touchSample(p, t);
+    m_touch.pressed = !wasFlinging;
+    if (wasFlinging) { // the finger catches the moving content: no press, no click; a drag pans again
+        m_pointer = p;
+        m_touch.hit = hitTest(p);
+        return true;
+    }
+    pointerMove(p); // hover / enter, as a mouse arriving at the point
+    const bool used = pointerDown(p, MouseButton::Left);
+    m_touch.hit = hitTest(p);
+    if (m_scrollDrag.node.valid()) m_touch.stage = TouchState::Stage::Passive; // on an overlay scrollbar
+    return used;
+}
+
+bool UiContext::touchBeginPan(Vec2 p) {
+    TouchState& ts = m_touch;
+    const Vec2 d{p.x - ts.down.x, p.y - ts.down.y};
+    const u8 ax = std::abs(d.y) >= std::abs(d.x) ? 1 : 0;
+    NodeHandle h = node(ts.hit) ? ts.hit : hitTest(ts.down);
+    if (node(m_modal) && h.valid() && !inScope(h.index, m_modal.index)) h = {};
+    for (u32 a = h.valid() ? h.index : kNone; a != kNone; a = m_nodes[a].parent) {
+        const Node& n = m_nodes[a];
+        const WidgetClass& wc = m_registry.get(n.cls);
+        const NodeHandle ah{a, n.gen};
+        if ((n.flags & kFlagCapturesDrag) || wc.capturesDrag) { ts.stage = TouchState::Stage::Passive; return false; }
+        if (wc.touchDrag) {
+            const TouchDrag td = wc.touchDrag(*this, ah, ts.down);
+            if (td.mode == TouchDrag::Mode::Capture) { ts.stage = TouchState::Stage::Passive; return false; }
+            if (td.mode == TouchDrag::Mode::Wheel && (ax ? td.step.y : td.step.x) > 0.f) {
+                ts.wheel = true;
+                ts.drag = td;
+                ts.target = ah;
+                break;
+            }
+        }
+        if (m_styles.style(n.style).overflow == Overflow::Scroll) {
+            // chained like a browser: a container already at its end in the drag direction lets its ancestor pan
+            const Rect c = contentRect(ah);
+            const f32 max = ax ? n.extent.h - c.h : n.extent.w - c.w, cur = ax ? n.scroll.y : n.scroll.x;
+            const f32 want = -(ax ? d.y : d.x); // scroll offset change
+            if (max > 0.5f && (want > 0.f ? cur < max - 0.5f : cur > 0.5f)) {
+                ts.wheel = false;
+                ts.target = ah;
+                break;
+            }
+        }
+        if (node(m_modal) && a == m_modal.index) break;
+    }
+    if (!ts.target.valid()) return false; // nothing to pan (yet): the press stays, later moves ask again
+    cancelPress(p);
+    setHover(kNone);
+    ts.stage = TouchState::Stage::Pan;
+    ts.acc = {};
+    ts.last = ts.down; // the content under the finger stays under it: the slop travel is applied too
+    return true;
+}
+
+void UiContext::touchPanBy(Vec2 d) {
+    TouchState& ts = m_touch;
+    const Node* n = node(ts.target);
+    if (!n) return;
+    if (!ts.wheel) {
+        const Rect c = contentRect(ts.target);
+        const f32 maxX = std::max(0.f, n->extent.w - c.w), maxY = std::max(0.f, n->extent.h - c.h);
+        const Vec2 o{std::clamp(n->scroll.x - d.x, 0.f, maxX), std::clamp(n->scroll.y - d.y, 0.f, maxY)};
+        // a fling ends at the extent it runs into (finger velocity > 0 = offset decreasing)
+        if ((o.x <= 0.f && ts.vel.x > 0.f) || (o.x >= maxX && ts.vel.x < 0.f)) ts.vel.x = 0.f;
+        if ((o.y <= 0.f && ts.vel.y > 0.f) || (o.y >= maxY && ts.vel.y < 0.f)) ts.vel.y = 0.f;
+        scrollTo(ts.target, o);
+        return;
+    }
+    // Wheel-scrolled widget: whole increments now (nearest, so the rows track the finger position both ways), the
+    // rest stays in the accumulator (slow drags still move)
+    Vec2 notches;
+    if (ts.drag.step.x > 0.f) {
+        ts.acc.x += d.x;
+        const f32 k = std::round(ts.acc.x / ts.drag.step.x);
+        ts.acc.x -= k * ts.drag.step.x;
+        notches.x = k * ts.drag.notches.x;
+    } else ts.vel.x = 0.f;
+    if (ts.drag.step.y > 0.f) {
+        ts.acc.y += d.y;
+        const f32 k = std::round(ts.acc.y / ts.drag.step.y);
+        ts.acc.y -= k * ts.drag.step.y;
+        notches.y = k * ts.drag.notches.y;
+    } else ts.vel.y = 0.f;
+    if (notches.x == 0.f && notches.y == 0.f) return;
+    Event e; e.type = EventType::Wheel; e.pos = ts.down; e.wheel = notches; e.mods = m_mods;
+    dispatch(ts.target.index, e);
+}
+
+bool UiContext::touchMove(Vec2 p, double t) {
+    using Stage = TouchState::Stage;
+    if (m_touch.stage == Stage::Idle) return pointerMove(p);
+    if (t < 0.0) t = m_clock;
+    touchSample(p, t);
+    if (m_touch.stage == Stage::Pending && std::hypot(p.x - m_touch.down.x, p.y - m_touch.down.y) >= m_touchCfg.slop)
+        touchBeginPan(p);
+    if (m_touch.stage != Stage::Pan) {
+        if (m_touch.pressed) return pointerMove(p);
+        m_pointer = p;
+        return true;
+    }
+    m_pointer = p;
+    touchPanBy({p.x - m_touch.last.x, p.y - m_touch.last.y});
+    m_touch.last = p;
+    return true;
+}
+
+bool UiContext::touchUp(Vec2 p, double t) {
+    using Stage = TouchState::Stage;
+    TouchState& ts = m_touch;
+    if (ts.stage == Stage::Idle) return false;
+    if (t < 0.0) t = m_clock;
+    const Stage was = ts.stage;
+    ts.stage = Stage::Idle;
+    if (was != Stage::Pan) {
+        const bool used = ts.pressed ? pointerUp(p, MouseButton::Left) : true;
+        m_pointer = {-1.f, -1.f};
+        setHover(kNone); // a lifted finger hovers nothing
+        return used;
+    }
+    m_pointer = {-1.f, -1.f};
+    touchPanBy({p.x - ts.last.x, p.y - ts.last.y});
+    ts.last = p;
+    touchSample(p, t);
+    // release velocity: the oldest sample inside the window against the newest
+    const u32 cnt = ts.sampleCount, K = TouchState::kSamples;
+    const TouchState::Sample& newest = ts.samples[(ts.sampleHead + K - 1) % K];
+    const TouchState::Sample* oldest = &newest;
+    for (u32 k = 0; k < cnt; ++k) {
+        const TouchState::Sample& s = ts.samples[(ts.sampleHead + K - cnt + k) % K];
+        if (t - s.t <= double(m_touchCfg.sampleWindow) + 1e-6) { oldest = &s; break; }
+    }
+    ts.vel = {};
+    if (const double dt = newest.t - oldest->t; dt > 1e-4) {
+        const f32 mv = m_touchCfg.maxVelocity;
+        ts.vel = {std::clamp(f32((newest.p.x - oldest->p.x) / dt), -mv, mv), std::clamp(f32((newest.p.y - oldest->p.y) / dt), -mv, mv)};
+    }
+    touchPanBy({}); // drops the velocity along axes that cannot move (at an extent / not scrollable)
+    ts.fling = node(ts.target) && std::hypot(ts.vel.x, ts.vel.y) >= m_touchCfg.minVelocity;
+    return true;
+}
+
+bool UiContext::touchCancel() {
+    using Stage = TouchState::Stage;
+    if (m_touch.stage == Stage::Idle) return false;
+    m_touch.stage = Stage::Idle;
+    if (m_scrollDrag.node.valid()) {
+        if (node(m_scrollDrag.node)) markPaint(m_scrollDrag.node.index);
+        m_scrollDrag = {};
+    }
+    cancelPress(m_pointer);
+    m_pointer = {-1.f, -1.f};
+    setHover(kNone);
+    return true;
 }
 
 bool UiContext::keyDown(Key k, u8 mods) {

@@ -246,6 +246,7 @@ struct AmmoW {
 // invslot: userData lo = item id, hi = count (as u32); background-end = item colour; text = short name
 struct InvSlot {
     static constexpr std::string_view kName = "invslot";
+    static constexpr bool kCapturesDrag = true; // touch: drag and drop between slots
     static constexpr A11yRole kRole = A11yRole::Button;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -272,6 +273,7 @@ struct InvSlot {
 // touchstick: userData = knob offset (px, packed); value = 1 while active
 struct TouchStick {
     static constexpr std::string_view kName = "touchstick";
+    static constexpr bool kCapturesDrag = true; // touch: virtual stick
     static Size measure(UiContext&, NodeHandle, Size) { return {112.f, 112.f}; }
     static void paint(const PaintContext& pc, DrawList& dl) {
         const Rect r = pc.content;
@@ -286,6 +288,7 @@ struct TouchStick {
 // touchbutton: userData = 1 while held
 struct TouchButton {
     static constexpr std::string_view kName = "touchbutton";
+    static constexpr bool kCapturesDrag = true; // touch: held button
     static Size measure(UiContext&, NodeHandle, Size) { return {64.f, 64.f}; }
     static void paint(const PaintContext& pc, DrawList& dl) {
         const Rect r = pc.content;

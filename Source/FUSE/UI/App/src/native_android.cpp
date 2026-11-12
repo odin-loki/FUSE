@@ -336,7 +336,8 @@ void NativePlatform::Impl::onCmd(android_app* a, int32_t cmd) {
     case APP_CMD_LOST_FOCUS:
         if (m.owner && m.touching) { // the gesture is gone with the focus
             m.touching = false;
-            m.owner->win->ui().pointerUp({-1.f, -1.f});
+            UiContext& ui = m.owner->win->ui();
+            if (!ui.touchCancel()) ui.pointerUp({-1.f, -1.f}); // a finger: no click; a mouse button: released
         }
         break;
     case APP_CMD_LOW_MEMORY: break;
@@ -360,6 +361,8 @@ int32_t NativePlatform::Impl::onInput(android_app* a, AInputEvent* ev) {
         const Vec2 pos{AMotionEvent_getX(ev, 0) / m.scale, AMotionEvent_getY(ev, 0) / m.scale};
         ui.setModifiers(mapMods(AMotionEvent_getMetaState(ev)));
         const bool mouse = (AInputEvent_getSource(ev) & AINPUT_SOURCE_MOUSE) == AINPUT_SOURCE_MOUSE;
+        // fingers / stylus use the UI's touch path (tap = click, drag = pan + fling); a mouse keeps the pointer path
+        const double time = double(AMotionEvent_getEventTime(ev)) * 1e-9;
         switch (masked) {
         case AMOTION_EVENT_ACTION_DOWN: {
             MouseButton b = MouseButton::Left;
@@ -369,23 +372,33 @@ int32_t NativePlatform::Impl::onInput(android_app* a, AInputEvent* ev) {
                     : (bs & AMOTION_EVENT_BUTTON_TERTIARY) ? MouseButton::Middle : MouseButton::Left;
             }
             m.touching = true;
-            ui.pointerMove(pos);
-            ui.pointerDown(pos, b);
+            if (mouse) {
+                ui.pointerMove(pos);
+                ui.pointerDown(pos, b);
+            } else {
+                ui.touchDown(pos, time);
+            }
             break;
         }
         case AMOTION_EVENT_ACTION_MOVE:
+            if (mouse) ui.pointerMove(pos);
+            else if (m.touching) ui.touchMove(pos, time);
+            break;
         case AMOTION_EVENT_ACTION_HOVER_MOVE: ui.pointerMove(pos); break;
         case AMOTION_EVENT_ACTION_UP:
+            m.touching = false;
+            if (mouse) ui.pointerUp(pos);
+            else ui.touchUp(pos, time); // also clears the hover: a lifted finger hovers nothing
+            break;
         case AMOTION_EVENT_ACTION_CANCEL:
             m.touching = false;
-            ui.pointerUp(pos);
-            if (!mouse) ui.pointerMove({-1.f, -1.f}); // a lifted finger hovers nothing
+            if (mouse) ui.pointerUp(pos);
+            else ui.touchCancel();
             break;
         case AMOTION_EVENT_ACTION_POINTER_UP:
-            if (index == 0) { // the tracked finger left while others stay down
+            if (index == 0 && m.touching) { // the tracked finger left while others stay down
                 m.touching = false;
-                ui.pointerUp(pos);
-                ui.pointerMove({-1.f, -1.f});
+                ui.touchUp(pos, time);
             }
             break;
         case AMOTION_EVENT_ACTION_SCROLL:
