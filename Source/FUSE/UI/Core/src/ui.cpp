@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <mutex>
 
 namespace fuse::ui {
 
@@ -20,6 +21,17 @@ enum NodeFlags : u32 {
     kFlagExiting = 1u << 6, ///< hidden, still painted by its exit animation: not hit, not focusable
 };
 enum Dirty : u8 { kDirtyStyle = 1, kDirtyLayout = 2, kDirtyPaint = 4, kDirtyText = 8, kDirtyMeasure = 16 };
+
+/// uids of the contexts that exist (UiContext::exists). Never destroyed: contexts with static storage duration
+/// unregister during static destruction, in any order.
+struct LiveContexts {
+    std::mutex mutex;
+    std::vector<u64> uids;
+};
+LiveContexts& liveContexts() {
+    static LiveContexts* const live = new LiveContexts;
+    return *live;
+}
 } // namespace
 
 const char* a11yRoleName(A11yRole r) {
@@ -157,9 +169,22 @@ UiContext::UiContext(const UiContextDesc& d) : m_font(d.font), m_atlas(d.atlasSi
     registerCoreClasses(m_registry);
     m_root = create(m_registry.find("root"), {}, "root");
     m_layerClass = m_registry.find("layer");
+    LiveContexts& live = liveContexts();
+    const std::lock_guard lock(live.mutex);
+    live.uids.push_back(m_uid);
 }
 
-UiContext::~UiContext() = default;
+UiContext::~UiContext() {
+    LiveContexts& live = liveContexts();
+    const std::lock_guard lock(live.mutex);
+    std::erase(live.uids, m_uid);
+}
+
+bool UiContext::exists(u64 uid) {
+    LiveContexts& live = liveContexts();
+    const std::lock_guard lock(live.mutex);
+    return std::find(live.uids.begin(), live.uids.end(), uid) != live.uids.end();
+}
 
 UiContext::Node* UiContext::node(NodeHandle h) {
     if (h.index >= m_nodes.size()) return nullptr;

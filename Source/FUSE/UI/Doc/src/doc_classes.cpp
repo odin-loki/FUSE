@@ -65,32 +65,34 @@ bool parseDate(std::string_view s, int f[5]) {
 
 // ---- inline data models (table / list / grid views built from document data) -------------------------------------------
 // The views do not own their model: models built from a document live here, keyed by their view, and are dropped
-// once the view is gone (checked whenever another one is made).
+// once the view or its whole context is gone (checked whenever another one is made). The table outlives contexts, so
+// an entry is matched by the context's uid and its `ui` is only used while UiContext::exists(uid).
 struct OwnedModel {
     const UiContext* ui = nullptr;
+    u64 uid = 0; ///< ui->uid() once adopted
     NodeHandle view;
     std::unique_ptr<w::StringTableModel> model;
     std::unique_ptr<w::StringTreeModel> tree; ///< treemodelview
 };
 std::vector<OwnedModel>& models() { static std::vector<OwnedModel> m; return m; }
 void dropDeadModels() {
-    std::erase_if(models(), [](const OwnedModel& m) { return m.view.valid() && !m.ui->alive(m.view); });
+    std::erase_if(models(), [](const OwnedModel& m) { return m.view.valid() && (!UiContext::exists(m.uid) || !m.ui->alive(m.view)); });
 }
 w::StringTableModel* newModel(std::string_view headers) {
     dropDeadModels();
     auto& all = models();
-    all.push_back({nullptr, {}, std::make_unique<w::StringTableModel>(headers), nullptr});
+    all.push_back({nullptr, 0, {}, std::make_unique<w::StringTableModel>(headers), nullptr});
     return all.back().model.get();
 }
 w::StringTreeModel* newTreeModel(std::string_view headers) {
     dropDeadModels();
     auto& all = models();
-    all.push_back({nullptr, {}, nullptr, std::make_unique<w::StringTreeModel>(headers)});
+    all.push_back({nullptr, 0, {}, nullptr, std::make_unique<w::StringTreeModel>(headers)});
     return all.back().tree.get();
 }
 w::StringTreeModel* treeModelOf(const UiContext& ui, NodeHandle view) {
     for (OwnedModel& m : models())
-        if (m.ui == &ui && m.view == view) return m.tree.get();
+        if (m.uid == ui.uid() && m.view == view) return m.tree.get();
     return nullptr;
 }
 /// Fills a tree model from "items": ["Scene\tgroup", "\tCamera\tcamera", ...]: the tabs at the start of a line are
@@ -121,11 +123,11 @@ w::SvgHandle svgBySource(const std::string& xml) {
 }
 void adopt(const UiContext& ui, NodeHandle view, const w::StringTableModel* model) {
     for (OwnedModel& m : models())
-        if (m.model.get() == model) { m.ui = &ui; m.view = view; }
+        if (m.model.get() == model) { m.ui = &ui; m.uid = ui.uid(); m.view = view; }
 }
 w::StringTableModel* modelOf(const UiContext& ui, NodeHandle view) {
     for (OwnedModel& m : models())
-        if (m.ui == &ui && m.view == view) return m.model.get();
+        if (m.uid == ui.uid() && m.view == view) return m.model.get();
     return nullptr;
 }
 /// Fills a model from "rows": [[cell, ...], ...] or "items": [text, ...].
@@ -463,7 +465,7 @@ const Builtin kBuiltins[] = {
          m->setEditable(flag(n, "editable", false));
          const NodeHandle t = w::treeModelView(ui, p, &m->model(), id);
          for (OwnedModel& o : models())
-             if (o.tree.get() == m) { o.ui = &ui; o.view = t; }
+             if (o.tree.get() == m) { o.ui = &ui; o.uid = ui.uid(); o.view = t; }
          return t;
      }, &treeModelProp},
     {"svgimage", // "icon": a built-in icon name, or "svg": inline source; sized by the style (width / height)

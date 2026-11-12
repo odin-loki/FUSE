@@ -60,6 +60,7 @@ struct RowRef {
 
 struct ViewState {
     UiContext* ui = nullptr;
+    u64 uid = 0; ///< ui->uid(): the pool outlives contexts, `ui` is only used while UiContext::exists(uid)
     NodeHandle node;
     u32 serial = 0;
     const ItemModel* model = nullptr;
@@ -127,16 +128,17 @@ ViewState* stateOf(const UiContext& ui, NodeHandle n) {
     auto& p = pool();
     if (slot == 0 || slot > p.size()) return nullptr;
     ViewState* s = p[slot - 1].get();
-    return s->node == n && s->ui == &ui ? s : nullptr;
+    return s->node == n && s->uid == ui.uid() ? s : nullptr;
 }
 ViewState& newState(UiContext& ui, NodeHandle n) {
     auto& p = pool();
     std::size_t at = p.size();
     for (std::size_t i = 0; i < p.size(); ++i)
-        if (p[i]->ui == &ui && (!ui.alive(p[i]->node) || ui.userData(p[i]->node) != i + 1)) { at = i; break; }
+        if (!UiContext::exists(p[i]->uid) || (p[i]->uid == ui.uid() && (!ui.alive(p[i]->node) || ui.userData(p[i]->node) != i + 1))) { at = i; break; }
     if (at == p.size()) p.push_back(std::make_unique<ViewState>());
     *p[at] = ViewState{};
     p[at]->ui = &ui;
+    p[at]->uid = ui.uid();
     p[at]->node = n;
     p[at]->serial = ++serialCounter();
     for (u32 c = 0; c < kMaxCols; ++c) p[at]->order[c] = u8(c);
@@ -146,7 +148,7 @@ ViewState& newState(UiContext& ui, NodeHandle n) {
 /// Subscription tag -> state, or null when the slot was reused / the node died.
 ViewState* liveState(void* user, u64 tag) {
     auto* s = static_cast<ViewState*>(user);
-    return s->serial == u32(tag) && s->ui && s->ui->alive(s->node) && s->ui->userData(s->node) != 0 ? s : nullptr;
+    return s->serial == u32(tag) && s->ui && UiContext::exists(s->uid) && s->ui->alive(s->node) && s->ui->userData(s->node) != 0 ? s : nullptr;
 }
 
 u32 cols(const ViewState& s) { return s.model ? std::min(s.model->columns, kMaxCols) : 0u; }

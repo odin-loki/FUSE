@@ -493,6 +493,10 @@ public:
     void invalidateLayout(NodeHandle n) { if (node(n)) markLayout(n.index); }
     /// Process-unique id of this context, never reused (side tables key on it rather than on the address).
     u64 uid() const { return m_uid; }
+    /// True while the context with this uid() exists. A process-wide side table can outlive the contexts it has
+    /// entries for: it stores the uid with the address and asks this before it touches the context (the address of
+    /// a destroyed context is dangling, and a later context can be constructed at the same address).
+    static bool exists(u64 uid);
 
     // input (returns true when the UI consumed it — game input arbitration)
     bool pointerMove(Vec2 p);

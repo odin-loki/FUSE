@@ -24,13 +24,16 @@ void pushNode(lua_State* L, NodeHandle h) {
     if (h) lua_pushnumber(L, LuaUi::pack(h));
     else lua_pushnil(L);
 }
+/// lua_pushlstring copies with memcpy, which may not be given a null pointer even for 0 bytes (an empty string_view
+/// has data() == nullptr).
+void pushView(lua_State* L, std::string_view v) { lua_pushlstring(L, v.empty() ? "" : v.data(), v.size()); }
 void pushArgs(lua_State* L, const SignalArgs& a) {
     lua_createtable(L, 0, 3);
     lua_pushnumber(L, a.value);
     lua_setfield(L, -2, "value");
     lua_pushboolean(L, a.flag);
     lua_setfield(L, -2, "flag");
-    lua_pushlstring(L, a.text.data(), a.text.size());
+    pushView(L, a.text);
     lua_setfield(L, -2, "text");
 }
 
@@ -40,7 +43,7 @@ int l_text(lua_State* L) {
     const NodeHandle h = nodeArg(L, s, 1);
     if (!h) { lua_pushnil(L); return 1; }
     const std::string_view t = s.context().text(h);
-    lua_pushlstring(L, t.data(), t.size());
+    pushView(L, t);
     return 1;
 }
 int l_setText(lua_State* L) {
@@ -161,34 +164,45 @@ int l_get(lua_State* L) {
     if (slot == 0xFFFFFFFFu) lua_pushnil(L);
     else if (s.model().isString(slot)) {
         const auto t = s.model().stringAt(slot);
-        lua_pushlstring(L, t.data(), t.size());
+        pushView(L, t);
     } else lua_pushnumber(L, s.model().numberAt(slot));
     return 1;
 }
-int loadText(lua_State* L, LuaUi& s, std::string_view json, int parentIdx) {
+// Lua errors are longjmps (the vendored Lua is C): they must not jump over C++ objects with destructors. The loaders
+// push the error message instead and the lua_CFunction raises it after those objects are gone.
+/// Loads a document under the node at `parentIdx` and pushes its root (true), or pushes the error message (false).
+bool loadText(lua_State* L, LuaUi& s, std::string_view json, int parentIdx) {
     const NodeHandle parent = lua_isnoneornil(L, parentIdx) ? s.context().root() : nodeArg(L, s, parentIdx);
     auto d = doc::Document::load(s.context(), json, &s.model(), parent);
     if (!d) {
         const auto& e = d.error();
-        return luaL_error(L, "fuseui: %s%s%s (line %d col %d)", e.path.c_str(), e.path.empty() ? "" : ": ",
-                          e.message.c_str(), int(e.line), int(e.column));
+        luaL_where(L, 1);
+        lua_pushfstring(L, "fuseui: %s%s%s (line %d col %d)", e.path.c_str(), e.path.empty() ? "" : ": ", e.message.c_str(),
+                        int(e.line), int(e.column));
+        lua_concat(L, 2);
+        return false;
     }
     LuaUi* p = &s;
     (*d)->onAction([p](std::string_view a, NodeHandle h, const SignalArgs& args) { p->action(a, h, args); });
     pushNode(L, (*d)->root());
     s.m_docs.push_back(std::move(*d));
-    return 1;
+    return true;
 }
 int l_load(lua_State* L) {
     size_t n = 0;
     const char* t = luaL_checklstring(L, 1, &n);
-    return loadText(L, self(L), {t, n}, 2);
+    return loadText(L, self(L), {t, n}, 2) ? 1 : lua_error(L);
 }
 int l_loadFile(lua_State* L) {
-    std::string text;
     const char* path = luaL_checkstring(L, 1);
-    if (!doc::readTextFile(path, text)) return luaL_error(L, "ui.loadFile: cannot read '%s'", path);
-    return loadText(L, self(L), text, 2);
+    bool read = false, loaded = false;
+    {
+        std::string text;
+        read = doc::readTextFile(path, text);
+        if (read) loaded = loadText(L, self(L), text, 2);
+    }
+    if (!read) return luaL_error(L, "ui.loadFile: cannot read '%s'", path);
+    return loaded ? 1 : lua_error(L);
 }
 int l_refresh(lua_State* L) {
     u32 n = 0;
@@ -246,7 +260,7 @@ void LuaUi::dispatch(int ref, NodeHandle h, const SignalArgs& a) {
 void LuaUi::action(std::string_view name, NodeHandle h, const SignalArgs& a) {
     lua_getglobal(m_L, "ui");
     lua_getfield(m_L, -1, "actions");
-    lua_pushlstring(m_L, name.data(), name.size());
+    pushView(m_L, name);
     lua_gettable(m_L, -2);
     if (!lua_isfunction(m_L, -1)) {
         lua_pop(m_L, 3);

@@ -15,16 +15,17 @@ constexpr u32 kDragRowLocal = hashId("application/x-fuse-row-local"); ///< a row
 
 struct ViewDnd {
     const UiContext* ui = nullptr;
+    u64 uid = 0; ///< ui->uid(): the table outlives contexts, `ui` is only used while UiContext::exists(uid)
     NodeHandle node;
     ViewKind kind = ViewKind::List;
     u32 flags = 0;
     ConnectionHandle conn;
 };
-// Process-wide table (the UI is single-threaded); an entry is reused once its node is gone.
+// Process-wide table (the UI is single-threaded); an entry is reused once its node or its context is gone.
 std::vector<ViewDnd>& viewTable() { static std::vector<ViewDnd> t; return t; }
 ViewDnd* viewOf(const UiContext& ui, NodeHandle n) {
     for (ViewDnd& v : viewTable())
-        if (v.ui == &ui && v.node == n) return &v;
+        if (v.uid == ui.uid() && v.node == n) return &v;
     return nullptr;
 }
 
@@ -197,10 +198,11 @@ void setViewDragDrop(UiContext& ui, NodeHandle n, ViewKind kind, u32 flags) {
     if (!v) {
         if (!flags) return;
         for (ViewDnd& e : viewTable())
-            if (!e.ui || !e.ui->alive(e.node)) { v = &e; break; } // (an entry of a destroyed context is never read: `ui` differs)
+            if (!e.ui || !UiContext::exists(e.uid) || !e.ui->alive(e.node)) { v = &e; break; }
         if (!v) v = &viewTable().emplace_back();
         *v = ViewDnd{};
         v->ui = &ui;
+        v->uid = ui.uid();
         v->node = n;
         v->conn = ui.connect(n, SignalKind::Event, [](UiContext& c, NodeHandle node, const SignalArgs& a) {
             if (a.event) onViewEvent(c, node, *a.event);
