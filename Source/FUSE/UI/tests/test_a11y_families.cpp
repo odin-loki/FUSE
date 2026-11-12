@@ -791,7 +791,8 @@ void gateBridge() {
     const NodeHandle tree = w::treeView(ui, ui.root(), "Root\n\tLeaf", "tree");
     ui.update();
     a11y::Bridge b(ui);
-    UI_CHECK(b.sync() == u32(b.nodes().size()) && b.sync() == 0u);
+    const u32 firstSync = b.sync(); // sequenced before nodes(): operand order of == is unspecified (MSVC read size() first)
+    UI_CHECK(firstSync == u32(b.nodes().size()) && b.sync() == 0u);
     // ids: real nodes keep the old scheme, virtual children get distinct ids that resolve back
     const u64 listId = a11y::idOf(list), row2 = a11y::idOf(list, 3);
     UI_CHECK(!a11y::isVirtual(listId) && a11y::isVirtual(row2) && row2 != a11y::idOf(list, 4) && row2 != a11y::idOf(tree, 3));
