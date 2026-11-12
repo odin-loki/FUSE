@@ -577,7 +577,11 @@ NodeHandle mainWindowCentral(const UiContext& ui, NodeHandle window);
 NodeHandle mainWindowStatusBar(const UiContext& ui, NodeHandle window);
 
 /// Context menu: a right press on `node` (or Shift+F10 while it has focus) opens a popup menu with `items`
-/// (popupMenu syntax). Picking emits Submitted {value = index, text} on `node`.
+/// (popupMenu syntax). Picking emits Submitted {value = index, text} on `node`. It works on every widget, also on
+/// those that use the press themselves: a list / tree / table / grid view first makes the row under the pointer
+/// current (keeping a multi-selection the row is part of), a text field moves its caret; a right press never steps a
+/// spin box, moves a slider, switches a tab or folds a tree row. An item view with a per-cell hook
+/// (setViewContextMenu) calls that for a press on a cell instead; off the cells this menu opens.
 void setContextMenu(UiContext& ui, NodeHandle node, std::string_view items);
 
 /// Message box (QMessageBox): a modal dialog with an icon badge, text and buttons ('\n'-separated, default "OK";

@@ -186,7 +186,8 @@ struct MenuItem { // text = "label" or "label\n<sub items, one tab less>" (a sub
         if (hasSub(ui.text(ec.node))) { openSub(ui, ec.node); return true; }
         const u32 idx = u32(ui.value(ec.node));
         const std::string_view text = ui.text(ec.node);
-        if (ui.alive(owner) && isClass(ui, owner, "combobox")) {
+        // the combo box's own list picks its value (another menu it owns, a context menu, is just a menu)
+        if (ui.alive(owner) && isClass(ui, owner, "combobox") && ui.hasClass(scope, "combo-list")) {
             ui.setValue(owner, f32(idx), true);
             ui.emit(owner, SignalKind::TextChanged, {.text = text});
         }
@@ -460,7 +461,8 @@ struct TreeView {
             const Hit h = rowInfo(ui, n, [&](u32 r, u32) { return i64(r) == row; });
             if (h.line < 0) return true;
             const f32 ax = c.x + 4.f + f32(h.depth) * kIndent;
-            if (h.kids && e.pos.x >= ax && e.pos.x < ax + 14.f) setTreeExpanded(ui, n, u32(h.line), !h.open);
+            // (a right / middle press selects the row, also on the expander: it never folds)
+            if (h.kids && e.pos.x >= ax && e.pos.x < ax + 14.f && e.button == MouseButton::Left) setTreeExpanded(ui, n, u32(h.line), !h.open);
             else select(ui, n, h.line);
             return true;
         }
@@ -535,6 +537,7 @@ struct TabBar {
         const u32 c = count(ui.text(n)), cur = u32(ui.value(n));
         auto pick = [&](u32 i) { if (c && i < c && i != cur) ui.setValue(n, f32(i), true); };
         if (e.type == EventType::PointerDown) {
+            if (e.button != MouseButton::Left) return false; // (a context-menu press does not switch tabs)
             f32 x = ui.contentRect(n).x;
             eachLine(ui.text(n), [&](u32 i, std::string_view t) {
                 const f32 w = tabW(ui, n, t);
@@ -581,6 +584,7 @@ bool openComboPopup(UiContext& ui, NodeHandle combo) {
     const Rect r = ui.rect(combo);
     const NodeHandle scope = popupMenu(ui, combo, ui.text(combo), {r.x, r.bottom() + 2.f});
     if (!ui.alive(scope)) return false;
+    ui.addClass(scope, "combo-list");
     // check and focus the current item; the list is at least as wide as the box
     const NodeHandle menu = ui.firstChild(scope);
     setPx(ui, menu, Prop::MinWidth, r.w);

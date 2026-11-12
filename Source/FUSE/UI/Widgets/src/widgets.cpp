@@ -175,6 +175,7 @@ struct Slider {
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
+        if (e.type == EventType::PointerDown && e.button != MouseButton::Left) return false; // (a context-menu press changes nothing)
         if (e.type == EventType::PointerDown || (e.type == EventType::PointerMove && ec.ui.pressed() == ec.node)) {
             const Rect c = ec.ui.contentRect(ec.node);
             setFrac(ec.ui, ec.node, (e.pos.x - c.x - 7.f) / std::max(1.f, c.w - 14.f));
@@ -203,6 +204,7 @@ struct ScrollBar {
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
+        if (e.type == EventType::PointerDown && e.button != MouseButton::Left) return false; // (a context-menu press changes nothing)
         if (e.type == EventType::PointerDown || (e.type == EventType::PointerMove && ec.ui.pressed() == ec.node)) {
             const Rect c = ec.ui.contentRect(ec.node);
             const bool v = vertical(c);
@@ -237,6 +239,7 @@ struct Dial {
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
+        if (e.type == EventType::PointerDown && e.button != MouseButton::Left) return false; // (a context-menu press changes nothing)
         if (e.type == EventType::PointerDown || (e.type == EventType::PointerMove && ec.ui.pressed() == ec.node)) {
             const Rect c = ec.ui.contentRect(ec.node);
             const f32 ang = std::atan2(e.pos.y - (c.y + c.h * 0.5f), e.pos.x - (c.x + c.w * 0.5f)) * 180.f / kPi;
@@ -295,6 +298,7 @@ struct SpinBox {
         UiContext& ui = ec.ui;
         const f32 st = ui.rangeStep(ec.node) > 0.f ? ui.rangeStep(ec.node) : 1.f;
         if (e.type == EventType::PointerDown) {
+            if (e.button != MouseButton::Left) return false; // (a context-menu press does not step)
             const Rect c = ui.contentRect(ec.node);
             if (e.pos.x >= c.right() - 20.f) ui.setValue(ec.node, ui.value(ec.node) + (e.pos.y < c.y + c.h * 0.5f ? st : -st), true);
             return true;

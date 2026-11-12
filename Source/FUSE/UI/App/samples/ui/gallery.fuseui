@@ -111,7 +111,7 @@
                          ["level2.fuse", "Scene", 2210], ["font.ttf", "Font", 310], ["notes.md", "Text", 2]] },
               { "class": "treemodelview", "id": "g.treemodelview", "classes": ["box", "col"], "columns": ["Node", "Kind"], "editable": true,
                 "items": ["Scene\tgroup", "\tCamera\tcamera", "\tLights\tgroup", "\t\tSun\tlight", "\t\tFill\tlight", "Assets\tgroup", "\tTextures\tfolder"],
-                "expanded": true }
+                "expanded": true, "contextMenu": ["Rename", "Duplicate", "-", "Delete"], "on": { "submitted": "context" } }
             ] },
             { "classes": ["cols"], "children": [
               { "class": "gridview", "id": "g.gridview", "classes": ["tall", "col"], "tileWidth": 90, "tileHeight": 60,

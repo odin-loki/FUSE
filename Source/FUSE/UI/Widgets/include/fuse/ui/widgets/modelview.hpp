@@ -201,7 +201,9 @@ Rect viewCellRect(const UiContext& ui, NodeHandle view, u32 row, u32 col);
 void setViewToolTips(UiContext& ui, NodeHandle view, bool on, f32 delay = 0.5f);
 NodeHandle viewToolTip(const UiContext& ui, NodeHandle view); ///< the tooltip node (invalid until first shown)
 /// Context-menu hook: a right press on a cell makes it current and calls `fn` (row = view row, item = row or tree
-/// node id; `at` in context coordinates). Open a menu with popupMenu / contextMenu from it.
+/// node id; `at` in context coordinates). Open a menu with popupMenu / contextMenu from it. While a hook is set it
+/// answers every right press on a cell; a menu given with setContextMenu opens for presses off the cells (header,
+/// empty area), or everywhere when no hook is set.
 using ViewContextMenuFn = void (*)(void* user, UiContext& ui, NodeHandle view, u32 row, ItemId item, u32 col, Vec2 at);
 void setViewContextMenu(UiContext& ui, NodeHandle view, ViewContextMenuFn fn, void* user = nullptr);
 /// Paints Decoration-role icons: `box` is a square at the start of the cell.

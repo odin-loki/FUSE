@@ -1488,6 +1488,7 @@ bool UiContext::dispatch(u32 target, const Event& e) {
     m_path.clear();
     for (u32 a = target; a != kNone; a = m_nodes[a].parent) m_path.push_back(a);
     const NodeHandle th{target, m_nodes[target].gen};
+    bool ownMenu = false;
     auto call = [&](u32 k, Phase ph) {
         if (!m_nodes[k].alive) return false;
         const WidgetClass& wc = m_registry.get(m_nodes[k].cls);
@@ -1496,11 +1497,18 @@ bool UiContext::dispatch(u32 target, const Event& e) {
         const TextScope prev = enterTextScope(k);
         const bool consumed = wc.onEvent(ec, e);
         m_textScope = prev;
+        ownMenu = ownMenu || ec.contextMenuHandled;
         return consumed;
     };
     for (std::size_t k = m_path.size(); k-- > 1;)
         if (call(m_path[k], Phase::Capture)) return true;
-    if (call(target, Phase::Target)) return true;
+    if (call(target, Phase::Target)) {
+        // the context-menu press still reaches the node's event slots (see EventContext::contextMenuHandled)
+        if (e.type == EventType::PointerDown && e.button == MouseButton::Right && !ownMenu && m_nodes[target].alive &&
+            m_nodes[target].gen == th.generation)
+            emit(th, SignalKind::Event, {.event = &e});
+        return true;
+    }
     if (m_nodes[target].alive) emit(th, SignalKind::Event, {.event = &e});
     // path may have been rebuilt by a nested dispatch; recompute the ancestors
     for (u32 a = m_nodes[target].alive ? m_nodes[target].parent : kNone; a != kNone; a = m_nodes[a].parent)
@@ -1645,7 +1653,10 @@ bool UiContext::wheel(Vec2 p, Vec2 notches) {
     if (!h.valid()) return false;
     if (node(m_modal) && !inScope(h.index, m_modal.index)) return true;
     Event e; e.type = EventType::Wheel; e.pos = p; e.wheel = notches; e.mods = m_mods;
-    if (dispatch(h.index, e)) return true;
+    // a disabled widget takes no wheel input (as it takes no press); what is around it still scrolls
+    u32 start = h.index;
+    if (const u32 t = interactiveAncestor(h.index); t != kNone && (m_nodes[t].state & kStateDisabled)) start = m_nodes[t].parent;
+    if (start != kNone && dispatch(start, e)) return true;
     for (u32 a = h.index; a != kNone; a = m_nodes[a].parent) {
         const Node& n = m_nodes[a];
         if (m_styles.style(n.style).overflow != Overflow::Scroll) continue;

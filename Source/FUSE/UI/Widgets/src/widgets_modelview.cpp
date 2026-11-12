@@ -1084,8 +1084,10 @@ struct ItemView {
                         const bool selected = s->sel ? s->sel->isSelected(u32(row), u32(h.col)) : i64(ui.value(n)) == row;
                         if (!selected) setCurrent(ui, n, *s, row, u32(h.col), 0, Via::Pointer);
                         else if (s->sel) s->sel->setCurrent(row, u32(h.col));
-                        if (e.button == MouseButton::Right && s->menuFn)
+                        if (e.button == MouseButton::Right && s->menuFn) {
+                            ec.contextMenuHandled = true; // the per-cell hook answers; a setContextMenu menu stays closed
                             s->menuFn(s->menuUser, ui, n, u32(row), itemOf(*s, u32(row)), u32(h.col), e.pos);
+                        }
                     }
                 }
                 return true;

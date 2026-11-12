@@ -258,6 +258,10 @@ struct EventContext {
     NodeHandle node; ///< node whose handler runs
     NodeHandle target;
     Phase phase;
+    /// A right PointerDown is offered to the target's SignalKind::Event slots (widgets::setContextMenu listens there)
+    /// even when the target's class consumed the press - a view made the row current, a text field moved its caret.
+    /// A class that showed a context menu of its own for this press sets this, and the slots are left out.
+    bool contextMenuHandled = false;
 };
 
 /// A registered table of functions (no inheritance, no moc). Null entries use core defaults.

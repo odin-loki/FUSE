@@ -177,7 +177,9 @@ need data are created by name too, with their own properties (the full list is i
 start of a line are its depth, the tabs after them separate the cells; `"columns"`, `"editable"`, `"expanded"`),
 `svgimage` (`"icon": "folder"` names a built-in icon, `"svg"` is inline source), `chart`, `nodegraph`, `curveeditor`,
 `timeline`, `calendar`, `datetimeedit`, `colorpicker`, `codeedit`, `markdown`, `fontpicker`, `viewport`, `video`, ...;
-any node takes `"tooltip"` and `"contextMenu"`, a `button` / `toolbutton` takes `"icon"`. Message box, wizard, popover, toast and file dialog open from code.
+any node takes `"tooltip"` and `"contextMenu"` (also the views and inputs that use the press themselves: a right
+press makes a view's row current, then opens the menu), a `button` / `toolbutton` takes `"icon"`. Message box,
+wizard, popover, toast and file dialog open from code.
 `doc::registerDocumentClass` adds your own (the game HUD widgets, for instance). Compound widgets are rebuilt on a
 hot reload; plain widgets with an id inside them keep their identity. The cooker's registration list
 (`registrationList`) resolves document classes to the widget classes they build. Cooked blobs carry

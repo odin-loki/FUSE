@@ -132,6 +132,8 @@ lineedit, textedit, codeedit { cursor: text; }
 link { cursor: pointer; }
 *:disabled { cursor: not-allowed; }
 menuitem:disabled { color: var(--text-dim); }
+toolbutton:disabled, menubutton:disabled, link:disabled, checkbox:disabled, radio:disabled, switch:disabled,
+slider:disabled, scrollbar:disabled, dial:disabled, spinbox:disabled, combobox:disabled, lineedit:disabled { opacity: 0.45; }
 .fx { transition: background 0.12s ease-out, border-color 0.12s ease-out, color 0.12s ease-out; }
 .fx-fade { enter-animation: fade; enter-duration: 0.12s; exit-animation: fade; exit-duration: 0.1s; }
 .fx-slide { enter-animation: slide-down; enter-duration: 0.14s; exit-animation: slide-up; exit-duration: 0.1s; }

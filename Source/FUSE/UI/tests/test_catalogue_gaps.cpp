@@ -2,9 +2,12 @@
 // the tests for every function of widgets.hpp / platform_feel.hpp): doubleSpinBox, standalone tabBar, closePopup /
 // closeDialog / closePopover, timelineSetView, viewportSetImage / overlay, nodeGraphDisconnect, haptic,
 // defaultThemeCss, and the touch-drag hooks of gridview / header / video (table, text and code edit are in
-// fuse_ui_touch_scroll). `--gate=<name>` runs one group (ctest fuse_ui_gap_<name>).
+// fuse_ui_touch_scroll). Also the gates of two fixes: context menus on widgets that use the right press themselves
+// (context_menu_views) and the default theme's look of disabled inputs (disabled_theme).
+// `--gate=<name>` runs one group (ctest fuse_ui_gap_<name>).
 #include "test_util.hpp"
 
+#include "fuse/ui/widgets/modelview.hpp"
 #include "fuse/ui/widgets/platform_feel.hpp"
 
 #include <cmath>
@@ -402,6 +405,245 @@ void gateTouchHooks() {
         ui.stopFling();
     }
 }
+// ---- context menus on widgets that handle the pointer themselves ----------------------------------------------------
+// setContextMenu listens to the event signal, which a widget's own handler used to cut off by consuming the right
+// press (list, tree, table, grid). A right press now reaches it everywhere; the views still make the row current.
+struct MenuProbe {
+    UiContext& ui;
+    u32 popupCls, itemCls;
+    u32 openMenus() const {
+        u32 n = 0;
+        for (u32 i = 0; i < 8192; ++i) {
+            const NodeHandle h = ui.handleOf(i);
+            n += ui.alive(h) && ui.classOf(h) == popupCls && ui.computed(h).visible;
+        }
+        return n;
+    }
+    NodeHandle item(std::string_view label) const {
+        for (u32 i = 0; i < 8192; ++i) {
+            const NodeHandle h = ui.handleOf(i);
+            if (ui.alive(h) && ui.classOf(h) == itemCls && ui.text(h) == label) return h;
+        }
+        return {};
+    }
+    void rightClick(Vec2 p) {
+        ui.pointerMove(p);
+        ui.pointerDown(p, MouseButton::Right);
+        ui.pointerUp(p, MouseButton::Right);
+        ui.update(1.f / 60.f);
+    }
+    void dismiss() {
+        ui.keyDown(Key::Escape);
+        for (int i = 0; i < 30; ++i) ui.update(1.f / 30.f); // (popups leave after their exit delay)
+    }
+};
+void gateContextMenuViews() {
+    Fixture f;
+    UiContext& ui = f.ui;
+    ui.setCss(ui.root(), "gap", "4px");
+    MenuProbe probe{ui, ui.registry().find("popup"), ui.registry().find("menuitem")};
+    w::StringTableModel m("Name\tSize");
+    for (int i = 0; i < 40; ++i) m.addRow("file" + std::to_string(i) + "\t" + std::to_string(i));
+    w::StringTreeModel tm("Name");
+    const w::ItemId root = tm.add(w::kRootItem, "Root");
+    tm.add(root, "Leaf");
+    const NodeHandle row = w::panel(ui, ui.root(), "row");
+    ui.setCss(row, "flex-direction", "row");
+    ui.setCss(row, "gap", "4px");
+    const NodeHandle row2 = w::panel(ui, ui.root(), "row2");
+    ui.setCss(row2, "flex-direction", "row");
+    ui.setCss(row2, "gap", "4px");
+    struct Case { const char* name; NodeHandle node; bool view; };
+    std::vector<Case> cases;
+    auto sized = [&](NodeHandle n, const char* wd = "200px", const char* ht = "120px") {
+        ui.setCss(n, "width", wd);
+        ui.setCss(n, "height", ht);
+        return n;
+    };
+    cases.push_back({"listview", sized(w::listView(ui, row, "one\ntwo\nthree\nfour", 0, "list")), true});
+    cases.push_back({"treeview", sized(w::treeView(ui, row, "Scene\n\tCamera\n\tLights\nAssets", "tree")), true});
+    cases.push_back({"tableview", sized(w::tableView(ui, row, &m.model(), "table"), "280px"), true});
+    cases.push_back({"modellistview", sized(w::modelListView(ui, row, &m.model(), "mlist"), "160px"), true});
+    cases.push_back({"gridview", sized(w::gridView(ui, row2, &m.model(), 60.f, 40.f, "grid"), "260px"), true});
+    cases.push_back({"treemodelview", sized(w::treeModelView(ui, row2, &tm.model(), "mtree")), true});
+    // the widgets a context menu worked on before still have theirs
+    cases.push_back({"button", w::button(ui, row2, "Button", "button"), false});
+    cases.push_back({"lineedit", w::lineEdit(ui, row2, "text", "edit"), false});
+    cases.push_back({"checkbox", w::checkBox(ui, row2, "Check", false, "check"), false});
+    cases.push_back({"slider", sized(w::slider(ui, row2, 0.f, 1.f, 0.5f, 0.f, "slider"), "100px", "20px"), false});
+    cases.push_back({"spinbox", w::spinBox(ui, row2, 0.f, 9.f, 3.f, 1.f, "spin"), false});
+    cases.push_back({"combobox", w::comboBox(ui, row2, "a\nb", 0, "combo"), false});
+    std::vector<int> picked(cases.size(), -1);
+    for (std::size_t i = 0; i < cases.size(); ++i) {
+        w::setContextMenu(ui, cases[i].node, "Rename\nDelete");
+        ui.connect(cases[i].node, SignalKind::Submitted, [&picked, i](UiContext&, NodeHandle, const SignalArgs& a) {
+            if (a.text == "Rename" || a.text == "Delete") picked[i] = int(a.value);
+        });
+    }
+    ui.update(1.f / 60.f);
+    for (std::size_t i = 0; i < cases.size(); ++i) {
+        const Case& c = cases[i];
+        const Rect r = ui.contentRect(c.node);
+        // the second row of a view (below its header when it has one), the middle of anything else
+        const Vec2 at = c.view ? Vec2{r.x + 30.f, r.y + (std::string_view(c.name) == "tableview" ? 52.f : 30.f)} : ctr(ui.rect(c.node));
+        const f32 before = ui.value(c.node);
+        UI_CHECK_EQ(probe.openMenus(), 0u);
+        probe.rightClick(at);
+        if (probe.openMenus() != 1u) std::fprintf(stderr, "  %s: a right press opened %u menus\n", c.name, probe.openMenus());
+        UI_CHECK_EQ(probe.openMenus(), 1u);
+        // picking an entry reports it on the widget
+        if (const NodeHandle del = probe.item("Delete"); ui.alive(del)) f.click(ctr(ui.rect(del)));
+        for (int k = 0; k < 30; ++k) ui.update(1.f / 30.f);
+        if (picked[i] != 1) std::fprintf(stderr, "  %s: picking 'Delete' was not reported\n", c.name);
+        UI_CHECK(picked[i] == 1 && probe.openMenus() == 0u);
+        // a view made the row under the pointer current first; other widgets did not change their value
+        if (std::string_view(c.name) == "listview" || std::string_view(c.name) == "tableview" || std::string_view(c.name) == "modellistview" ||
+            std::string_view(c.name) == "treeview")
+            UI_CHECK(ui.value(c.node) == 1.f);
+        else if (!c.view && std::string_view(c.name) != "lineedit") { // (a line edit's value is its repaint counter)
+            if (ui.value(c.node) != before) std::fprintf(stderr, "  %s: value %g -> %g\n", c.name, double(before), double(ui.value(c.node)));
+            UI_CHECK(ui.value(c.node) == before);
+        }
+    }
+    UI_CHECK(ui.text(ui.find("edit")) == "text" && w::comboText(ui, ui.find("combo")) == "a"); // a context pick is not a combo pick
+    // the Shift+F10 keyboard route still opens it, at the widget
+    ui.setFocus(cases[0].node, FocusReason::Keyboard);
+    ui.keyDown(Key::F10, kModShift);
+    ui.update(1.f / 60.f);
+    UI_CHECK_EQ(probe.openMenus(), 1u);
+    probe.dismiss();
+    UI_CHECK_EQ(probe.openMenus(), 0u);
+
+    // an item view's own per-cell hook (setViewContextMenu) still gets the press, with the cell; when it is set the
+    // generic menu stays out of the way (one right press, one menu)
+    struct Seen { int calls = 0; u32 row = 99, col = 99; w::ItemId item = 99; } seen;
+    const NodeHandle table = cases[2].node;
+    w::setViewContextMenu(ui, table, [](void* u, UiContext& c, NodeHandle view, u32 row, w::ItemId item, u32 col, Vec2 at) {
+        auto* s = static_cast<Seen*>(u);
+        ++s->calls;
+        s->row = row;
+        s->col = col;
+        s->item = item;
+        w::popupMenu(c, view, "Cell action", at);
+    }, &seen);
+    const Rect tr = ui.contentRect(table);
+    probe.rightClick({tr.x + 150.f, tr.y + 52.f + 2.f * 20.f});
+    UI_CHECK(seen.calls == 1 && seen.col == 1u && seen.row == u32(ui.value(table)) && seen.item == seen.row);
+    UI_CHECK(probe.openMenus() == 1u && ui.alive(probe.item("Cell action")) && !ui.alive(probe.item("Rename")));
+    probe.dismiss();
+    // off the rows (the header) there is no cell: the generic menu answers
+    probe.rightClick({tr.x + 30.f, tr.y + 6.f});
+    UI_CHECK(seen.calls == 1 && probe.openMenus() == 1u && ui.alive(probe.item("Rename")));
+    probe.dismiss();
+    // a right press keeps a multi-selection the row is part of, and never starts an edit, a sort or a fold
+    w::setViewContextMenu(ui, table, nullptr);
+    w::setViewSelectionMode(ui, table, w::SelectionMode::Extended);
+    w::SelectionModel* sel = w::viewSelectionModel(ui, table);
+    UI_CHECK(sel != nullptr);
+    if (sel) {
+        sel->clear();
+        sel->selectRows(0, 2);
+        probe.rightClick({tr.x + 30.f, tr.y + 52.f});
+        if (!(sel->selectedRows() == 3 && sel->currentRow() == 1))
+            std::fprintf(stderr, "  extended: %llu rows selected, current %lld, %u menus\n", (unsigned long long)sel->selectedRows(), (long long)sel->currentRow(), probe.openMenus());
+        UI_CHECK(sel->selectedRows() == 3 && sel->currentRow() == 1 && probe.openMenus() == 1u);
+        probe.dismiss();
+    }
+    int toggles = 0;
+    const NodeHandle tree = cases[1].node;
+    ui.connect(tree, SignalKind::Toggled, [&toggles](UiContext&, NodeHandle, const SignalArgs&) { ++toggles; });
+    const Rect tc = ui.contentRect(tree);
+    probe.rightClick({tc.x + 8.f, tc.y + 8.f}); // on the expander of "Scene"
+    UI_CHECK(toggles == 0 && w::treeExpanded(ui, tree, 0) && probe.openMenus() == 1u);
+    probe.dismiss();
+    // a disabled widget opens nothing
+    ui.setDisabled(cases[0].node, true);
+    probe.rightClick(ctr(ui.rect(cases[0].node)));
+    UI_CHECK_EQ(probe.openMenus(), 0u);
+}
+// ---- the default theme dims disabled inputs -------------------------------------------------------------------------
+// Each Tier A input next to a disabled twin: the disabled one must be visibly weaker (less contrast against the
+// window), still be there, and take no input.
+void gateDisabledTheme() {
+    UiContext ui{{.viewport = {560, 620}, .font = &font()}};
+    w::install(ui);
+    ui.setCss(ui.root(), "padding", "10px");
+    ui.setCss(ui.root(), "gap", "8px");
+    struct Pair { const char* name; NodeHandle on, off; };
+    std::vector<Pair> pairs;
+    auto add = [&](const char* name, auto make) {
+        const NodeHandle row = w::panel(ui, ui.root());
+        ui.setCss(row, "flex-direction", "row");
+        ui.setCss(row, "gap", "40px");
+        ui.setCss(row, "align-items", "center");
+        Pair p{name, make(row), make(row)};
+        for (NodeHandle n : {p.on, p.off}) ui.setCss(n, "width", "200px");
+        ui.setDisabled(p.off, true);
+        pairs.push_back(p);
+    };
+    add("button", [&](NodeHandle r) { return w::button(ui, r, "Button"); });
+    add("toolbutton", [&](NodeHandle r) { return w::toolButton(ui, r, "Tool button"); });
+    add("link", [&](NodeHandle r) { return w::link(ui, r, "A link"); });
+    add("checkbox", [&](NodeHandle r) { return w::checkBox(ui, r, "Check box", true); });
+    add("radio", [&](NodeHandle r) { return w::radioButton(ui, r, "Radio", true); });
+    add("switch", [&](NodeHandle r) { return w::toggleSwitch(ui, r, "Switch", true); });
+    add("slider", [&](NodeHandle r) { return w::slider(ui, r, 0.f, 1.f, 0.6f); });
+    add("scrollbar", [&](NodeHandle r) { const NodeHandle b = w::scrollBar(ui, r, false); ui.setValue(b, 0.3f); return b; });
+    add("dial", [&](NodeHandle r) { return w::dial(ui, r, 0.f, 1.f, 0.6f); });
+    add("spinbox", [&](NodeHandle r) { return w::spinBox(ui, r, 0.f, 100.f, 42.f, 1.f); });
+    add("doublespinbox", [&](NodeHandle r) { return w::doubleSpinBox(ui, r, 0.f, 1.f, 0.5f, 0.1f); });
+    add("combobox", [&](NodeHandle r) { return w::comboBox(ui, r, "Vulkan\nCPU raster", 0); });
+    add("lineedit", [&](NodeHandle r) { return w::lineEdit(ui, r, "player_one"); });
+    const NodeHandle bar = w::menuBar(ui, ui.root());
+    const NodeHandle mOn = w::menuBarMenu(ui, bar, "File", "New"), mOff = w::menuBarMenu(ui, bar, "File", "New");
+    ui.setDisabled(mOff, true);
+    pairs.push_back({"menubutton", mOn, mOff});
+    ui.update(1.f / 60.f);
+    Image img;
+    render(ui, img);
+    const u32 bg = img.pixels[std::size_t(3) * std::size_t(img.width) + 3]; // the window colour (root padding)
+    auto ink = [&](NodeHandle n) { // summed colour distance from the window colour over the node
+        const Rect r = ui.rect(n);
+        double sum = 0.0;
+        for (int y = int(r.y); y < int(r.bottom()) && y < img.height; ++y)
+            for (int x = int(r.x); x < int(r.right()) && x < img.width; ++x) {
+                const u32 p = img.pixels[std::size_t(y) * std::size_t(img.width) + std::size_t(x)];
+                for (int c = 0; c < 24; c += 8) sum += std::abs(int((p >> c) & 0xFFu) - int((bg >> c) & 0xFFu));
+            }
+        return sum;
+    };
+    for (const Pair& p : pairs) {
+        const Rect a = ui.rect(p.on), b = ui.rect(p.off);
+        UI_CHECK(a.w == b.w && a.h == b.h && a.w > 0.f); // dimming changes no geometry
+        const double on = ink(p.on), off = ink(p.off);
+        if (!(off < on * 0.8 && off > on * 0.15))
+            std::fprintf(stderr, "  %s: enabled ink %.0f, disabled ink %.0f\n", p.name, on, off);
+        UI_CHECK(off < on * 0.8);  // visibly weaker
+        UI_CHECK(off > on * 0.15); // but still readable
+    }
+    // and a disabled input takes no input (value, text and checked state stay)
+    for (const Pair& p : pairs) {
+        const f32 v = ui.value(p.off);
+        const bool c = ui.checked(p.off);
+        const Vec2 at = ctr(ui.rect(p.off));
+        ui.pointerMove(at);
+        ui.pointerDown({at.x + 40.f, at.y});
+        ui.pointerUp({at.x + 40.f, at.y});
+        ui.wheel(at, {0.f, 1.f});
+        ui.update(1.f / 60.f);
+        UI_CHECK(ui.value(p.off) == v && ui.checked(p.off) == c && ui.focused() != p.off);
+    }
+    // enabling again restores the look exactly
+    for (const Pair& p : pairs) ui.setDisabled(p.off, false);
+    ui.pointerMove({1.f, 1.f});
+    ui.update(1.f / 60.f);
+    render(ui, img);
+    for (const Pair& p : pairs) {
+        const double on = ink(p.on), off = ink(p.off);
+        if (on != off) std::fprintf(stderr, "  %s: after re-enabling %.0f vs %.0f\n", p.name, on, off);
+        UI_CHECK(on == off);
+    }
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -409,7 +651,8 @@ int main(int argc, char** argv) {
     static const Gate kGates[] = {{"double_spinbox", &gateDoubleSpinBox}, {"tabbar", &gateTabBar}, {"close_popups", &gateClose},
                                   {"timeline_view", &gateTimelineView}, {"viewport_overlay", &gateViewport},
                                   {"nodegraph_disconnect", &gateNodeGraphDisconnect}, {"haptic_theme", &gateHapticTheme},
-                                  {"touch_hooks", &gateTouchHooks}};
+                                  {"touch_hooks", &gateTouchHooks},
+                                  {"context_menu_views", &gateContextMenuViews}, {"disabled_theme", &gateDisabledTheme}};
     const char* only = nullptr;
     for (int i = 1; i < argc; ++i)
         if (std::strncmp(argv[i], "--gate=", 7) == 0) only = argv[i] + 7;

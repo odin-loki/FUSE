@@ -9,7 +9,8 @@ endforeach()
 
 # Behaviour gates for the public widget functions no other gate called (audit of widgets.hpp against the tests)
 fuse_ui_test(fuse_ui_catalogue_gaps test_catalogue_gaps.cpp)
-foreach(g double_spinbox tabbar close_popups timeline_view viewport_overlay nodegraph_disconnect haptic_theme touch_hooks)
+foreach(g double_spinbox tabbar close_popups timeline_view viewport_overlay nodegraph_disconnect haptic_theme touch_hooks
+          context_menu_views disabled_theme)
     add_test(NAME fuse_ui_gap_${g} COMMAND fuse_ui_catalogue_gaps --gate=${g})
     set_tests_properties(fuse_ui_gap_${g} PROPERTIES LABELS "fuse_ui;gate")
 endforeach()

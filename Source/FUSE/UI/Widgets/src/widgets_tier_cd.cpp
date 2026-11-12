@@ -165,7 +165,10 @@ struct GridView {
             const i64 k = i64((e.pos.x - c.x) / s->tileW), r = i64((e.pos.y - c.y) / s->tileH) + s->first;
             if (k < nc && k >= 0 && r >= 0) {
                 const i64 idx = r * nc + k;
-                if (idx < i64(count(*s))) select(ui, ec.node, *s, idx, e.mods, true);
+                if (idx >= i64(count(*s))) return true;
+                // a right / middle press makes the tile current and keeps a selection the tile is part of
+                if (e.button != MouseButton::Left && s->sel && s->sel->rowSelected(u32(idx))) s->sel->setCurrent(idx);
+                else select(ui, ec.node, *s, idx, e.button == MouseButton::Left ? e.mods : u8(0), true);
             }
             return true;
         }
