@@ -2,7 +2,7 @@ name: FUSE UI (FreeBSD)
 
 on:
   push:
-    branches: [main, development]
+    branches: [main, development, ccr-111d9b83-2iujo8] # TEMP: verify on the work branch
     paths:
       - 'Source/FUSE/UI/**'
       - '.github/workflows/fuse-ui-freebsd.yml'
