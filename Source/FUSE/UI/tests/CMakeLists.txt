@@ -283,7 +283,6 @@ if(TARGET fuse_ui_game)
     endif()
 endif()
 
-@@OURS@@
 # ---- text stack: font families / synthetic styles / installed fonts / decorations (+ golden), i18n helpers ----
 fuse_ui_test(fuse_text_font_styles test_text_styles.cpp)
 target_compile_definitions(fuse_text_font_styles PRIVATE FUSE_UI_TEST_FONT_DIR="${FUSE_UI_REPO_ROOT}/vendor/fonts")
@@ -363,7 +362,6 @@ foreach(g tree table_edit)
     add_test(NAME fuse_ui_mv_golden_${g} COMMAND fuse_ui_modelview --scene=${g})
     set_tests_properties(fuse_ui_mv_golden_${g} PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endforeach()
-@@MID@@
 # ---- Drawing: vector paths, Painter, SVG (plan §4.9; parity rows "Qt GUI - painting", "Qt SVG") ----
 # paths (fill / stroke / gradients / clips / 9-slice / render scale), the Painter, SVG parse + render + widgets,
 # steady-state allocations and the icon rasterisation budget
@@ -384,4 +382,3 @@ endforeach()
 fuse_ui_test(fuse_ui_gpu_pack_vector test_gpu_pack_vector.cpp)
 target_link_libraries(fuse_ui_gpu_pack_vector PRIVATE fuse_ui_render)
 set_tests_properties(fuse_ui_gpu_pack_vector PROPERTIES LABELS "fuse_ui;gate")
-@@END@@

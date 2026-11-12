@@ -353,7 +353,6 @@ hud.update(realDt); nav.update(padState, realDt); ui.update(realDt);
 - Designer: `fuse_ui_designer [file.fuseui] [--save=out] [--screenshot=png]`. `DesignDocument` saves exactly what it loaded; keys starting with `x-` are kept for tools and stripped from the live preview.
 - `dockSaveLayout(dock)` returns a text layout (`fusedock 1`); `dockRestoreLayout(dock, text)` checks the whole text before applying it and ignores unknown panel ids.
 
-@@OURS@@
 ## Model / view (plan §4.11)
 
 Header `fuse/ui/widgets/modelview.hpp` (included by `widgets.hpp`). `tableView`, `modelListView` and `treeModelView`
@@ -406,7 +405,6 @@ widgets::setViewSelectionMode(ui, tree, widgets::SelectionMode::Extended);
 scene.add(lights, "Fill\tpoint");                       // the view updates through the notifier
 ```
 
-@@MID@@
 ## Drawing: paths, Painter, SVG, icons
 
 Headers `fuse/ui/path.hpp`, `draw_list.hpp`, `painter.hpp`, `svg.hpp`, `icons.hpp` (all in `fuse_ui_core`).
@@ -473,7 +471,6 @@ composites these ops as 8-bit texels with the same blend, so both paths agree by
 `GpuDrawData::bakedOps / bakedPixels / unsupportedOps` report it; ops beyond 16 M baked pixels per frame are dropped
 and counted.
 
-@@END@@
 ## Styling (CSS subset, D4)
 
 Selectors: type, `.class`, `#id`, `:hover :pressed :focus :focus-visible :checked :disabled`, descendant and `>`
@@ -621,7 +618,6 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_bench_10k` | 10k nodes, one dirty label: ≤ 0.5 ms median (Release; 1.0 ms in FULL) |
 | `fuse_ui_single_thread_parity` | direct vs posted-from-threads mutations give identical layout, draw list and pixels |
 | `fuse_ui_a11y_tree_dump` | roles, names, states, values |
-@@OURS@@
 | `fuse_text_font_styles` | face description, synthetic bold / oblique at pixel level, atlas keys, `FontFamily` matching (real face preferred), the font scanner over a temp directory (collection, corrupt files, no fonts), CSS font / decoration / spacing properties, render scale 2, `tests/golden/text_styles.png` (`text_styles_full.png` in FULL) |
 | `fuse_text_i18n` | CLDR plural categories per rule family, plural patterns, number formatting per locale, pseudo-localisation, `StringTable::trPlural` |
 | `fuse_ui_drag_drop` | drag threshold, target by type / filter / modal scope, event order, `:drag-over`, Move / Copy / refuse / Escape, ghost, external drops, touch long-press drag vs pan, list reorder and list / table / grid row drags |
@@ -634,14 +630,12 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_mv_notify`, `_selection`, `_tree`, `_editing`, `_view`, `_proxy`, `_async`, `_dir_model` | model / view: notifications, selection modes, tree view, in-place editing, column features, proxies, async model, a lazy `std::filesystem` model |
 | `fuse_ui_mv_selection_1m`, `fuse_ui_mv_tree_1m` | range selection over 1M rows allocates nothing per row; a lazy tree with > 1M nodes scrolls with a constant node count and bounded model reads |
 | `fuse_ui_mv_golden_tree`, `fuse_ui_mv_golden_table_edit` | tree table and multi-selection + open editor against `tests/golden/modelview_*.png` |
-@@MID@@
 | `fuse_ui_paths` | path fill / stroke coverage (areas of known shapes, fill rules, caps, joins, miter limit, dashes), N-stop gradients, clip path, layers, 9-slice, `translate` / `scale` of every vector op, coverage cache, bad geometry |
 | `fuse_ui_painter` | Painter state stack, transforms, pens under non-uniform scale, clips, layers, text and image limits, a widget painting at render scale 1 and 2 |
 | `fuse_ui_svg` | SVG subset parse + render, malformed and fuzzed documents, the built-in icons, `svgimage` and button icons |
 | `fuse_ui_vector_steady` | zero allocations with vector ops (update + CPU raster), no vector ops in a classic tree, icon raster budget (cached < 0.02 ms, uncached < 0.5 ms at 24 px), large-path cost |
 | `fuse_ui_vector_golden_{paths,icons}` | `tests/golden/vector_paths.png`, `vector_icons.png` |
 | `fuse_ui_gpu_pack_vector` | vector ops packed as kernel Image commands reproduce the CPU frame exactly (CPU model of the kernel's Image op), statistics, over-budget drop |
-@@END@@
 
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
 | `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster (skips 77 without a display or device) |
