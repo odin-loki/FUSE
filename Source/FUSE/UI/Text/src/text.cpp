@@ -26,6 +26,9 @@
 #include <cstring>
 #include <utility>
 
+#include <memory>
+
+#include "sfnt_info.hpp"
 #if FUSE_TEXT_FULL
 #include "text_full.hpp"
 #endif
@@ -329,8 +332,13 @@ std::size_t graphemeCount(std::string_view s) {
 }
 
 // ---- Font ----------------------------------------------------------------------------------------------------------
+using FontBytes = std::shared_ptr<std::vector<std::uint8_t>>;
 struct Font::State {
-    std::vector<std::uint8_t> bytes;
+    FontBytes bytes;             // the file; shared with synthetic variants
+    int faceIndex = 0;
+    detail::FaceInfo face;       // family / style / weight / slant / decoration geometry
+    float embolden = 0.f;        // synthetic: stem growth as a fraction of the em
+    float slant = 0.f;           // synthetic: shear (x per unit of height)
     stbtt_fontinfo info{};
     float unitsPerPixelScale1 = 0.f; // stbtt_ScaleForPixelHeight(info, 1)
     float emPerPixelSize = 1.f;      // em size in pixels for pixelSize 1 (pixel sizes are ascent-to-descent)
@@ -391,32 +399,88 @@ void loadColr(std::vector<std::uint8_t>& bytes, std::vector<ColorLayer>& layers,
 }
 } // namespace
 
-std::expected<Font, TextError> Font::fromBytes(std::span<const std::uint8_t> bytes) {
-    if (bytes.size() < 12) return std::unexpected(TextError::InvalidFont);
-    auto* st = new State;
-    st->bytes.assign(bytes.begin(), bytes.end());
-    const int offset = stbtt_GetFontOffsetForIndex(st->bytes.data(), 0);
-    if (offset < 0 || !stbtt_InitFont(&st->info, st->bytes.data(), offset)) {
-        delete st;
-        return std::unexpected(TextError::InvalidFont);
-    }
-    st->unitsPerPixelScale1 = stbtt_ScaleForPixelHeight(&st->info, 1.f);
-    st->emPerPixelSize = st->unitsPerPixelScale1 / stbtt_ScaleForMappingEmToPixels(&st->info, 1.f);
-    loadColr(st->bytes, st->layers, st->colorBase, std::uint32_t(offset));
-#if FUSE_TEXT_FULL
-    st->full = detail::fullCreate(st->bytes);
-    if (!st->full) {
-        delete st;
-        return std::unexpected(TextError::InvalidFont);
-    }
-#endif
+namespace {
+bool readMem(void* user, std::uint64_t off, void* dst, std::size_t n) {
+    const auto& v = *static_cast<const std::vector<std::uint8_t>*>(user);
+    if (off > v.size() || n > v.size() - off) return false;
+    std::memcpy(dst, v.data() + off, n);
+    return true;
+}
+} // namespace
+
+std::expected<Font, TextError> Font::fromBytes(std::span<const std::uint8_t> bytes, int faceIndex) {
+    if (bytes.size() < 12 || faceIndex < 0) return std::unexpected(TextError::InvalidFont);
+    FontBytes shared = std::make_shared<std::vector<std::uint8_t>>(bytes.begin(), bytes.end());
+    State* st = makeState(&shared, faceIndex);
+    if (!st) return std::unexpected(TextError::InvalidFont);
     Font f;
     f.m_state = st;
     f.m_id = g_fontIds.fetch_add(1);
     return f;
 }
 
-std::expected<Font, TextError> Font::fromFile(const std::string& path) {
+/// Builds the parsed state over shared file bytes (stb_truetype, COLR, the FULL backend). nullptr when not a font.
+Font::State* Font::makeState(void* sharedBytes, int faceIndex) {
+    auto* st = new State;
+    st->bytes = *static_cast<FontBytes*>(sharedBytes);
+    st->faceIndex = faceIndex;
+    std::vector<std::uint8_t>& data = *st->bytes;
+    const int offset = stbtt_GetFontOffsetForIndex(data.data(), faceIndex);
+    if (offset < 0 || !stbtt_InitFont(&st->info, data.data(), offset)) {
+        delete st;
+        return nullptr;
+    }
+    st->unitsPerPixelScale1 = stbtt_ScaleForPixelHeight(&st->info, 1.f);
+    st->emPerPixelSize = st->unitsPerPixelScale1 / stbtt_ScaleForMappingEmToPixels(&st->info, 1.f);
+    loadColr(data, st->layers, st->colorBase, std::uint32_t(offset));
+    detail::sfntFaceInfo({&data, readMem}, faceIndex, st->face); // a face without a name table keeps the defaults
+#if FUSE_TEXT_FULL
+    st->full = detail::fullCreate(data, faceIndex);
+    if (!st->full) {
+        delete st;
+        return nullptr;
+    }
+#endif
+    return st;
+}
+
+Font Font::synthesized(const Font& base, float embolden, float slant) {
+    Font f;
+    if (!base.m_state) return f;
+    State* st = makeState(&base.m_state->bytes, base.m_state->faceIndex);
+    if (!st) return f;
+    st->embolden = std::clamp(embolden, 0.f, 0.25f);
+    st->slant = std::clamp(slant, -1.f, 1.f);
+    st->fallbacks = base.m_state->fallbacks;
+    f.m_state = st;
+    f.m_id = g_fontIds.fetch_add(1);
+    return f;
+}
+
+std::string_view Font::familyName() const { return m_state ? std::string_view(m_state->face.family) : std::string_view(); }
+std::string_view Font::styleName() const { return m_state ? std::string_view(m_state->face.style) : std::string_view(); }
+int Font::weight() const { return m_state ? m_state->face.weight : 400; }
+bool Font::italic() const { return m_state && m_state->face.italic; }
+bool Font::monospace() const { return m_state && m_state->face.monospace; }
+float Font::syntheticEmbolden() const { return m_state ? m_state->embolden : 0.f; }
+float Font::syntheticSlant() const { return m_state ? m_state->slant : 0.f; }
+
+Font::DecorationMetrics Font::decorationMetrics(float px) const {
+    DecorationMetrics d;
+    if (!m_state) return d;
+    const detail::FaceInfo& fi = m_state->face;
+    const float s = m_state->unitsPerPixelScale1 * px, em = m_state->emPerPixelSize * px;
+    const float ut = fi.hasPost && fi.underlineThickness > 0 ? float(fi.underlineThickness) * s : em * 0.05f;
+    d.underlineThickness = std::max(1.f, std::round(ut));
+    // at least one pixel below the baseline, so the line never touches the letters' feet
+    d.underlineOffset = std::max(1.f, std::round(fi.hasPost && fi.underlinePosition < 0 ? -float(fi.underlinePosition) * s : em * 0.1f));
+    const float stt = fi.hasStrike && fi.strikeSize > 0 ? float(fi.strikeSize) * s : ut;
+    d.strikeThickness = std::max(1.f, std::round(stt));
+    d.strikeOffset = -std::round(fi.hasStrike && fi.strikePosition > 0 ? float(fi.strikePosition) * s : em * 0.26f);
+    return d;
+}
+
+std::expected<Font, TextError> Font::fromFile(const std::string& path, int faceIndex) {
     std::FILE* fp = std::fopen(path.c_str(), "rb");
     if (!fp) return std::unexpected(TextError::InvalidFont);
     std::vector<std::uint8_t> data;
@@ -427,7 +491,7 @@ std::expected<Font, TextError> Font::fromFile(const std::string& path) {
         if (n < sizeof buf) break;
     }
     std::fclose(fp);
-    return fromBytes(data);
+    return fromBytes(data, faceIndex);
 }
 
 namespace {
@@ -520,30 +584,117 @@ FontMetrics Font::metrics(float px) const {
     const float s = m_state->unitsPerPixelScale1 * px;
     return {float(a) * s, float(d) * s, float(g) * s};
 }
+namespace {
+/// Stem growth in pixels of a synthetic bold at this size.
+inline float emboldenPx(float embolden, float emPerPixelSize, float px) { return embolden * emPerPixelSize * px; }
+
+#if !FUSE_TEXT_FULL
+/// The outline of `glyph` sheared by `slant` (x += slant * y, font units, y up) and its pixel box at `scale`.
+/// Returns the vertex count (0: no outline); the caller frees `*verts` with stbtt_FreeShape.
+int shearedShape(const stbtt_fontinfo& info, std::uint32_t glyph, float slant, float scale, stbtt_vertex** verts, int& x0,
+                 int& y0, int& x1, int& y1) {
+    x0 = y0 = x1 = y1 = 0;
+    const int n = stbtt_GetGlyphShape(&info, int(glyph), verts);
+    if (n <= 0) return 0;
+    float minX = 1e9f, minY = 1e9f, maxX = -1e9f, maxY = -1e9f;
+    auto shear = [&](short& x, short y) {
+        const float sx = float(x) + slant * float(y);
+        x = short(std::clamp(std::lround(sx), -32768l, 32767l));
+        minX = std::min(minX, float(x));
+        maxX = std::max(maxX, float(x));
+        minY = std::min(minY, float(y));
+        maxY = std::max(maxY, float(y));
+    };
+    for (int i = 0; i < n; ++i) {
+        stbtt_vertex& v = (*verts)[i];
+        shear(v.x, v.y);
+        if (v.type == STBTT_vcurve || v.type == STBTT_vcubic) shear(v.cx, v.cy); // control points bound the curve
+        if (v.type == STBTT_vcubic) shear(v.cx1, v.cy1);
+    }
+    x0 = int(std::floor(minX * scale));
+    x1 = int(std::ceil(maxX * scale));
+    y0 = int(std::floor(-maxY * scale));
+    y1 = int(std::ceil(-minY * scale));
+    return n;
+}
+#endif
+} // namespace
+
 std::uint32_t Font::glyphIndex(char32_t cp) const {
     return std::uint32_t(stbtt_FindGlyphIndex(&m_state->info, int(cp)));
 }
 float Font::advance(std::uint32_t glyph, float px) const {
     int adv = 0, lsb = 0;
     stbtt_GetGlyphHMetrics(&m_state->info, int(glyph), &adv, &lsb);
+    if (m_state->embolden > 0.f && adv > 0) // a synthetic bold glyph is wider by its stem growth
+        return float(adv) * m_state->unitsPerPixelScale1 * px + emboldenPx(m_state->embolden, m_state->emPerPixelSize, px);
     return float(adv) * m_state->unitsPerPixelScale1 * px;
 }
 float Font::kerning(std::uint32_t l, std::uint32_t r, float px) const {
     return float(stbtt_GetGlyphKernAdvance(&m_state->info, int(l), int(r))) * m_state->unitsPerPixelScale1 * px;
 }
 void Font::glyphBox(std::uint32_t glyph, float px, int& x0, int& y0, int& x1, int& y1) const {
-#if FUSE_TEXT_FULL
-    return detail::fullGlyphBox(m_state->full, glyph, m_state->emPerPixelSize * px, x0, y0, x1, y1);
-#endif
-    const float s = m_state->unitsPerPixelScale1 * px;
-    stbtt_GetGlyphBitmapBox(&m_state->info, int(glyph), s, s, &x0, &y0, &x1, &y1);
+    rawGlyphBox(glyph, px, x0, y0, x1, y1);
+    if (m_state->embolden > 0.f && x1 > x0 && y1 > y0)
+        x1 += int(std::ceil(emboldenPx(m_state->embolden, m_state->emPerPixelSize, px)));
 }
 void Font::rasterise(std::uint32_t glyph, float px, std::uint8_t* dst, int w, int h, int stride) const {
+    if (m_state->embolden <= 0.f) return rawRasterise(glyph, px, dst, w, h, stride);
+    // Synthetic bold: rasterise the (possibly sheared) outline, then smear the coverage to the right by the stem
+    // growth. It works on the coverage of either rasteriser, and the GPU glyph path samples the same atlas texels.
+    int x0, y0, x1, y1;
+    rawGlyphBox(glyph, px, x0, y0, x1, y1);
+    const int bw = x1 - x0, bh = y1 - y0;
+    for (int y = 0; y < h; ++y) std::memset(dst + std::ptrdiff_t(y) * stride, 0, std::size_t(w));
+    if (bw <= 0 || bh <= 0) return;
+    thread_local std::vector<std::uint8_t> a;
+    a.assign(std::size_t(bw) * std::size_t(bh), 0);
+    rawRasterise(glyph, px, a.data(), bw, bh, bw);
+    const float bold = emboldenPx(m_state->embolden, m_state->emPerPixelSize, px);
+    const int n = int(std::floor(bold));
+    const float frac = bold - float(n);
+    for (int y = 0; y < std::min(h, bh); ++y) {
+        const std::uint8_t* src = a.data() + std::size_t(y) * std::size_t(bw);
+        std::uint8_t* out = dst + std::ptrdiff_t(y) * stride;
+        for (int x = 0; x < w; ++x) {
+            float sum = 0.f;
+            for (int k = 0; k <= n; ++k)
+                if (x - k >= 0 && x - k < bw) sum += float(src[x - k]);
+            if (frac > 0.f && x - n - 1 >= 0 && x - n - 1 < bw) sum += frac * float(src[x - n - 1]);
+            out[x] = std::uint8_t(std::min(255.f, sum + 0.5f));
+        }
+    }
+}
+// The real outline, sheared when the font is a synthetic oblique (the shear is applied to the outline, before
+// rasterisation, so stems stay as sharp as the upright ones).
+void Font::rawGlyphBox(std::uint32_t glyph, float px, int& x0, int& y0, int& x1, int& y1) const {
 #if FUSE_TEXT_FULL
-    return detail::fullRasterise(m_state->full, glyph, m_state->emPerPixelSize * px, dst, w, h, stride);
-#endif
+    return detail::fullGlyphBox(m_state->full, glyph, m_state->emPerPixelSize * px, m_state->slant, x0, y0, x1, y1);
+#else
     const float s = m_state->unitsPerPixelScale1 * px;
-    stbtt_MakeGlyphBitmap(&m_state->info, dst, w, h, stride, s, s, int(glyph));
+    if (m_state->slant == 0.f) return stbtt_GetGlyphBitmapBox(&m_state->info, int(glyph), s, s, &x0, &y0, &x1, &y1);
+    stbtt_vertex* verts = nullptr;
+    if (shearedShape(m_state->info, glyph, m_state->slant, s, &verts, x0, y0, x1, y1) > 0) stbtt_FreeShape(&m_state->info, verts);
+#endif
+}
+void Font::rawRasterise(std::uint32_t glyph, float px, std::uint8_t* dst, int w, int h, int stride) const {
+#if FUSE_TEXT_FULL
+    return detail::fullRasterise(m_state->full, glyph, m_state->emPerPixelSize * px, m_state->slant, dst, w, h, stride);
+#else
+    const float s = m_state->unitsPerPixelScale1 * px;
+    if (m_state->slant == 0.f) return stbtt_MakeGlyphBitmap(&m_state->info, dst, w, h, stride, s, s, int(glyph));
+    stbtt_vertex* verts = nullptr;
+    int x0, y0, x1, y1;
+    const int n = shearedShape(m_state->info, glyph, m_state->slant, s, &verts, x0, y0, x1, y1);
+    if (n <= 0) return;
+    stbtt__bitmap bm;
+    bm.w = w;
+    bm.h = h;
+    bm.stride = stride;
+    bm.pixels = dst;
+    if (w > 0 && h > 0) stbtt_Rasterize(&bm, 0.35f, verts, n, s, s, 0.f, 0.f, x0, y0, 1, m_state->info.userdata);
+    stbtt_FreeShape(&m_state->info, verts);
+#endif
 }
 
 // ---- Shaping -------------------------------------------------------------------------------------------------------
@@ -577,7 +728,19 @@ float Font::unitScale(float px) const { return m_state->unitsPerPixelScale1 * px
 
 #if FUSE_TEXT_FULL
 float HarfBuzzShaper::shape(const Font& font, float px, std::string_view s, std::vector<ShapedGlyph>& out) const {
-    return detail::fullShape(font.m_state->full, font.unitScale(px), s, out);
+    const float w = detail::fullShape(font.m_state->full, font.unitScale(px), s, out);
+    if (font.m_state->embolden <= 0.f) return w;
+    // synthetic bold: every advancing glyph is wider by the stem growth
+    const float extra = emboldenPx(font.m_state->embolden, font.m_state->emPerPixelSize, px);
+    float shift = 0.f;
+    for (ShapedGlyph& g : out) {
+        g.x += shift;
+        if (g.advance > 0.f) {
+            g.advance += extra;
+            shift += extra;
+        }
+    }
+    return w + shift;
 }
 const ITextShaper* fullShaper() {
     static const HarfBuzzShaper shaper;
@@ -739,8 +902,11 @@ ShapeCacheStats shapeCacheStats(const Font& font) {
 void layoutText(const Font& font, const ITextShaper& shaper, std::string_view s, const TextLayoutDesc& desc,
                 TextLayout& out) {
     out.lines.clear();
+    out.font = &font;
     out.metrics = font.metrics(desc.pixelSize);
-    const float lh = std::ceil(out.metrics.lineHeight());
+    const float naturalLh = std::ceil(out.metrics.lineHeight());
+    const float lh = desc.lineHeight > 0.f ? std::round(desc.lineHeight) : naturalLh;
+    const float lead = std::floor((lh - naturalLh) * 0.5f); // half-leading: 0 at the natural line height
     const bool wrap = desc.maxWidth > 0.f && !desc.elide;
     auto& g = out.glyphs;
 #if FUSE_TEXT_FULL
@@ -750,13 +916,24 @@ void layoutText(const Font& font, const ITextShaper& shaper, std::string_view s,
 #endif
     if (full) {
 #if FUSE_TEXT_FULL
+        const float extra = desc.letterSpacing + emboldenPx(font.m_state->embolden, font.m_state->emPerPixelSize, desc.pixelSize);
         detail::fullLayout(font.m_state->full, font.unitScale(desc.pixelSize), s, wrap ? desc.maxWidth : 0.f, lh,
-                           out.metrics.ascent, g, out.lines);
+                           std::ceil(out.metrics.ascent) + lead, extra, g, out.lines);
         applyFallbackPerLine(font, shaper, desc.pixelSize, s, g, out.lines);
 #endif
     } else {
     shapeWithFallback(font, shaper, desc.pixelSize, s, out.glyphs);
     const std::uint32_t n = std::uint32_t(g.size());
+    if (desc.letterSpacing != 0.f) {
+        float shift = 0.f;
+        for (ShapedGlyph& gl : g) {
+            gl.x += shift;
+            if (gl.advance > 0.f) {
+                gl.advance += desc.letterSpacing;
+                shift += desc.letterSpacing;
+            }
+        }
+    }
 
     std::uint32_t lineStart = 0;
     auto emit = [&](std::uint32_t begin, std::uint32_t end, std::uint32_t nextStart) {
@@ -773,7 +950,7 @@ void layoutText(const Font& font, const ITextShaper& shaper, std::string_view s,
         if (last > begin) w = g[last - 1].x + g[last - 1].advance - x0;
         for (std::uint32_t k = begin; k < end; ++k) g[k].x -= x0;
         ln.width = w;
-        ln.baseline = float(out.lines.size()) * lh + std::ceil(out.metrics.ascent);
+        ln.baseline = float(out.lines.size()) * lh + std::ceil(out.metrics.ascent) + lead;
         out.lines.push_back(ln);
         lineStart = nextStart;
     };
@@ -857,7 +1034,10 @@ void GlyphAtlas::clear() {
 
 AtlasGlyph GlyphAtlas::get(const Font& font, std::uint32_t glyph, float px) {
     const std::uint32_t q = std::uint32_t(std::lround(px * 4.f));
-    const std::uint64_t key = (std::uint64_t(font.id()) << 44) ^ (std::uint64_t(q) << 24) ^ glyph ^ (1ull << 63);
+    // A synthetic variant has its own font id; its style is mixed in as well so a key can never alias the base face
+    // (0 for a real face: regular keys are unchanged).
+    const std::uint64_t synth = (font.syntheticEmbolden() > 0.f ? 1ull << 61 : 0ull) | (font.syntheticSlant() != 0.f ? 1ull << 62 : 0ull);
+    const std::uint64_t key = (std::uint64_t(font.id()) << 44) ^ (std::uint64_t(q) << 24) ^ glyph ^ (1ull << 63) ^ synth;
     const std::size_t mask = m_slots.size() - 1;
     std::size_t h = std::size_t((key * 0x9E3779B97F4A7C15ull) >> 40) & mask;
     for (;;) {

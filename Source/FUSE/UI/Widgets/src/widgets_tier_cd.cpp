@@ -648,6 +648,68 @@ void stripInline(std::string& s) {
     s = std::move(o);
 }
 
+/// Inline Markdown emphasis to rich-text markup: **bold** / __bold__, *italic* / _italic_ (an underscore only at a word
+/// boundary, so snake_case stays), `code` (its text kept as is). False when the text has no emphasis: it stays a label.
+bool inlineToRich(std::string_view s, std::string& out) {
+    auto alnum = [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); };
+    auto esc = [&](char c) {
+        if (c == '<') out += "&lt;";
+        else if (c == '>') out += "&gt;";
+        else if (c == '&') out += "&amp;";
+        else out += c;
+    };
+    out.clear();
+    bool any = false, bold = false, italic = false;
+    char italicMark = 0;
+    for (std::size_t i = 0; i < s.size(); ++i) {
+        const char c = s[i];
+        if (c == '`') {
+            const std::size_t e = s.find('`', i + 1);
+            if (e != std::string_view::npos) {
+                for (std::size_t k = i + 1; k < e; ++k) esc(s[k]);
+                i = e;
+                continue;
+            }
+        }
+        if ((c == '*' || c == '_') && i + 1 < s.size() && s[i + 1] == c) {
+            const char pair[3] = {c, c, 0};
+            if (bold || s.find(pair, i + 2) != std::string_view::npos) {
+                out += bold ? "</b>" : "<b>";
+                bold = !bold;
+                any = true;
+            }
+            ++i;
+            continue;
+        }
+        if (c == '*' || c == '_') {
+            const bool leftEdge = i == 0 || !alnum(s[i - 1]), rightEdge = i + 1 >= s.size() || !alnum(s[i + 1]);
+            if (italic && c == italicMark && i > 0 && s[i - 1] != ' ' && (c == '*' || rightEdge)) {
+                out += "</i>";
+                italic = false;
+                continue;
+            }
+            if (!italic && i + 1 < s.size() && s[i + 1] != ' ' && (c == '*' || leftEdge)) {
+                // open only when a closer follows: a lone '*' (a product sign, a footnote mark) is text
+                bool closes = false;
+                for (std::size_t k = i + 2; k < s.size() && !closes; ++k)
+                    closes = s[k] == c && s[k - 1] != ' ' && s[k - 1] != c && (k + 1 >= s.size() || s[k + 1] != c) &&
+                             (c == '*' || k + 1 >= s.size() || !alnum(s[k + 1]));
+                if (closes) {
+                    out += "<i>";
+                    italic = true;
+                    italicMark = c;
+                    any = true;
+                    continue;
+                }
+            }
+        }
+        esc(c);
+    }
+    if (italic) out += "</i>";
+    if (bold) out += "</b>";
+    return any;
+}
+
 } // namespace
 
 void registerTierCD(UiContext& ui) {
@@ -959,9 +1021,23 @@ void setMarkdown(UiContext& ui, NodeHandle view, std::string_view md) {
     for (NodeHandle c : old) ui.destroy(c);
     std::string para, code;
     bool inCode = false;
+    std::string markup;
     auto emit = [&](std::string text, std::string_view cls) {
+        // a block with **bold** / *italic* is a rich text view (real or synthesised faces); its node text is the
+        // plain text, like a label's
+        const bool rich = cls != "md-code" && inlineToRich(text, markup);
         if (cls != "md-code") stripInline(text);
-        const NodeHandle l = label(ui, view, text);
+        if (rich) {
+            for (std::size_t k = 0; (k = text.find_first_of("*_", k)) != std::string::npos;) {
+                // single emphasis marks that inlineToRich consumed: the plain text drops them too
+                const bool word = k > 0 && k + 1 < text.size() && std::isalnum(static_cast<unsigned char>(text[k - 1])) &&
+                                  std::isalnum(static_cast<unsigned char>(text[k + 1])) && text[k] == '_';
+                if (word) ++k;
+                else text.erase(k, 1);
+            }
+        }
+        const NodeHandle l = rich ? richText(ui, view, markup) : label(ui, view, text);
+        if (rich) ui.setText(l, text);
         ui.addClass(l, cls);
     };
     auto flush = [&] { if (!para.empty()) { emit(para, "md-p"); para.clear(); } };

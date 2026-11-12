@@ -502,10 +502,17 @@ struct RichState {
     struct Piece { u32 run; u32 start, len; f32 x, y, w, h, size; };
     std::vector<Piece> pieces;
     f32 layoutWidth = -1.f, layoutFont = 0.f, height = 0.f;
+    u32 layoutFace = 0; ///< weight / slant / family of the node's style at the last layout
     bool dirty = true;
     i32 hoverLink = -1;
 };
 Pool<RichState>& richPool() { static Pool<RichState> p; return p; }
+/// The face of a run: the node's family with <b> as weight 700 (or the node's weight when heavier) and <i> as italic.
+/// A real bold / italic face of the family when there is one, otherwise synthesised. Null without a context font.
+const fuse::text::Font* richRunFont(UiContext& ui, const ComputedStyle& st, const RichRun& run) {
+    return ui.fontFor(std::span<const u32>(st.fontFamily), run.bold ? std::max<int>(st.fontWeight, 700) : int(st.fontWeight),
+                      run.italic || st.fontItalic);
+}
 
 bool parseHexColor(std::string_view v, Color& out) {
     if (!v.empty() && v[0] == '#') v.remove_prefix(1);
@@ -605,11 +612,14 @@ struct RichTextW {
     static constexpr A11yRole kRole = A11yRole::Text;
     static constexpr bool kInteractive = true;
     static void layout(UiContext& ui, NodeHandle n, RichState& s, f32 width) {
-        const f32 base = ui.computed(n).fontSize;
-        if (!s.dirty && width == s.layoutWidth && base == s.layoutFont) return;
+        const ComputedStyle st = ui.computed(n);
+        const f32 base = st.fontSize;
+        const u32 face = u32(st.fontWeight) | (st.fontItalic ? 0x10000u : 0u) | (st.fontFamily[0] << 8);
+        if (!s.dirty && width == s.layoutWidth && base == s.layoutFont && face == s.layoutFace) return;
         s.dirty = false;
         s.layoutWidth = width;
         s.layoutFont = base;
+        s.layoutFace = face;
         s.pieces.clear();
         auto lineHeight = [&](f32 px) { return std::ceil(ui.font() ? ui.font()->metrics(px).lineHeight() : px * 1.25f); };
         f32 x = 0.f, y = 0.f, lineH = lineHeight(base);
@@ -629,6 +639,8 @@ struct RichTextW {
             const f32 px = run.size > 0.f ? run.size : base;
             const f32 h = lineHeight(px);
             const std::string_view t = run.text;
+            const fuse::text::Font* rf = richRunFont(ui, st, run);
+            auto measureRun = [&](std::string_view w) { return rf ? ui.measureString(*rf, w, px) : 0.f; };
             for (std::size_t at = 0; at < t.size();) { // words keep their trailing spaces
                 std::size_t end = at;
                 while (end < t.size() && t[end] != ' ') ++end;
@@ -636,7 +648,7 @@ struct RichTextW {
                 const std::string_view word = t.substr(at, end - at);
                 std::size_t vis = word.size();
                 while (vis > 0 && word[vis - 1] == ' ') --vis;
-                const f32 w = ui.measureString(word, px), wVis = ui.measureString(word.substr(0, vis), px);
+                const f32 w = measureRun(word), wVis = measureRun(word.substr(0, vis));
                 if (x > 0.f && x + wVis > width) newLine();
                 lineH = std::max(lineH, h);
                 s.pieces.push_back({r, u32(at), u32(word.size()), x, y, w, h, px});
@@ -668,11 +680,18 @@ struct RichTextW {
             col = pc.tint(col);
             const std::string_view word = std::string_view(run.text).substr(p.start, p.len);
             const Rect box{c.x + p.x, c.y + p.y, p.w + 2.f, p.h};
-            pc.ui.paintString(dl, word, box, col, p.size, TextAlignment::Start, pc.node.index);
-            if (run.bold) // one face is bundled: embolden by a half-pixel second strike
-                pc.ui.paintString(dl, word, {box.x + 0.6f, box.y, box.w, box.h}, col, p.size, TextAlignment::Start, pc.node.index);
-            if (run.underline) dl.rect({box.x, box.y + p.h - 2.f, p.w, 1.f}, col);
-            if (run.strike) dl.rect({box.x, box.y + p.h * 0.55f, p.w, 1.f}, col);
+            const fuse::text::Font* rf = richRunFont(pc.ui, pc.style, run);
+            if (!rf) continue;
+            pc.ui.paintString(dl, *rf, word, box, col, p.size, TextAlignment::Start, pc.node.index);
+            if (run.underline || run.strike) {
+                // rules run across the piece (its trailing spaces included, so an underlined phrase is continuous) at
+                // the font's underline / strike-through position
+                const auto dm = rf->decorationMetrics(p.size);
+                const f32 baseline = std::round(box.y) + std::ceil(rf->metrics(p.size).ascent);
+                const f32 x0 = std::round(box.x), x1 = std::round(box.x + p.w);
+                if (run.underline) dl.rect({x0, baseline + dm.underlineOffset, x1 - x0, dm.underlineThickness}, col);
+                if (run.strike) dl.rect({x0, baseline + dm.strikeOffset, x1 - x0, dm.strikeThickness}, col);
+            }
         }
     }
     static i32 linkAt(UiContext& ui, NodeHandle n, const RichState& s, Vec2 pos) {

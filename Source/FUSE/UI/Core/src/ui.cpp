@@ -132,6 +132,14 @@ UiContext::UiContext(const UiContextDesc& d) : m_font(d.font), m_atlas(d.atlasSi
     m_anims.reserve(128);
     m_queue = std::make_unique<Command[]>(kQueueSize);
     for (u32 i = 0; i < kQueueSize; ++i) m_queue[i].seq.store(i, std::memory_order_relaxed);
+    m_families.reserve(8);
+    {
+        FamilySlot def; // the default family: the context's font as its regular face
+        def.owned = std::make_unique<fuse::text::FontFamily>();
+        if (m_font) def.owned->addExternal(m_font, fuse::text::kWeightNormal, false);
+        def.family = def.owned.get();
+        m_families.push_back(std::move(def));
+    }
     registerCoreClasses(m_registry);
     m_root = create(m_registry.find("root"), {}, "root");
     m_layerClass = m_registry.find("layer");
@@ -551,7 +559,9 @@ void UiContext::styleRec(u32 i, bool parentChanged) {
         if (idx != before) {
             ComputedStyle la = m_styles.style(before);
             const ComputedStyle& lb = m_styles.style(idx);
-            const bool fontChanged = la.fontSize != lb.fontSize || la.textAlign != lb.textAlign;
+            const bool fontChanged = la.fontSize != lb.fontSize || la.textAlign != lb.textAlign || la.fontWeight != lb.fontWeight ||
+                                     la.fontItalic != lb.fontItalic || la.fontFamily != lb.fontFamily ||
+                                     la.letterSpacing != lb.letterSpacing || la.lineHeight != lb.lineHeight;
             n.style = idx;
             changed = true;
             markPaint(i);
@@ -560,6 +570,7 @@ void UiContext::styleRec(u32 i, bool parentChanged) {
             la.color = lb.color; la.shadowColor = lb.shadowColor; la.opacity = lb.opacity; la.radius = lb.radius;
             la.gradient = lb.gradient; la.shadowBlur = lb.shadowBlur; la.shadowX = lb.shadowX; la.shadowY = lb.shadowY; la.backdropBlur = lb.backdropBlur;
             la.pointerEvents = lb.pointerEvents; la.borderWidth = lb.borderWidth; la.textAlign = lb.textAlign;
+            la.textDecoration = lb.textDecoration;
             if (fontChanged) {
                 m_cold[i]->layoutWidth = -1.f;
                 n.dirty |= kDirtyText;
@@ -590,7 +601,9 @@ void UiContext::ensureText(u32 i, f32 width) {
     d.pixelSize = s.fontSize;
     d.maxWidth = std::isfinite(width) ? width : 0.f;
     d.align = fuse::text::TextAlign(u8(s.textAlign));
-    fuse::text::layoutText(*m_font, fuse::text::defaultShaper(), c.text, d, c.layout);
+    d.letterSpacing = s.letterSpacing;
+    d.lineHeight = s.lineHeightPx();
+    fuse::text::layoutText(*fontFor(s), fuse::text::defaultShaper(), c.text, d, c.layout);
     c.layoutWidth = width;
     c.layoutSize = s.fontSize;
     m_nodes[i].dirty &= u8(~kDirtyText);
@@ -598,17 +611,134 @@ void UiContext::ensureText(u32 i, f32 width) {
 
 f32 UiContext::measureString(std::string_view s, f32 px) {
     if (!m_font) return 0.f;
-    return fuse::text::measureText(*m_font, s, px, m_shapeScratch);
+    const f32 w = fuse::text::measureText(m_textScope.font ? *m_textScope.font : *m_font, s, px, m_shapeScratch);
+    if (m_textScope.letterSpacing == 0.f) return w;
+    f32 extra = 0.f;
+    for (const auto& g : m_shapeScratch)
+        if (g.advance > 0.f) extra += m_textScope.letterSpacing;
+    return w + extra;
+}
+f32 UiContext::measureString(const fuse::text::Font& font, std::string_view s, f32 px) {
+    return fuse::text::measureText(font, s, px, m_shapeScratch);
+}
+
+// ---- Fonts ---------------------------------------------------------------------------------------------------------
+namespace {
+// Generic CSS families: well-known installed families tried in order.
+constexpr std::string_view kMonoFamilies[] = {"DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", "Menlo", "SF Mono",
+                                              "Monaco", "Consolas", "Cascadia Mono", "Courier New", "Roboto Mono",
+                                              "Droid Sans Mono", "Cousine", "Ubuntu Mono", "FreeMono"};
+constexpr std::string_view kSerifFamilies[] = {"Noto Serif", "DejaVu Serif", "Liberation Serif", "Times New Roman",
+                                               "Georgia", "Times", "FreeSerif"};
+} // namespace
+
+void UiContext::addFontFamily(fuse::text::FontFamily& family) {
+    const u32 h = fuse::text::familyHash(family.name());
+    bool replaced = false;
+    for (std::size_t k = 1; k < m_families.size() && !replaced; ++k)
+        if (m_families[k].hash == h) {
+            m_families[k].family = &family;
+            m_families[k].owned.reset();
+            replaced = true;
+        }
+    if (!replaced) {
+        FamilySlot slot;
+        slot.hash = h;
+        slot.family = &family;
+        m_families.push_back(std::move(slot));
+    }
+    for (auto& n : m_nodes) // styles that named this family resolve differently now
+        if (n.alive) n.dirty |= kDirtyStyle | kDirtyText;
+    for (auto& c : m_cold)
+        if (c) c->layoutWidth = -1.f;
+    m_anyStyleDirty = m_anyLayoutDirty = m_anyPaintDirty = true;
+    if (m_root.index < m_nodes.size()) markLayout(m_root.index);
+}
+
+fuse::text::FontFamily* UiContext::familyByHash(u32 hash) {
+    using namespace fuse::text;
+    for (std::size_t k = 1; k < m_families.size(); ++k)
+        if (m_families[k].hash == hash) return m_families[k].family;
+    static const u32 kSans = familyHash("sans-serif"), kSystemUi = familyHash("system-ui"), kMono = familyHash("monospace"),
+                     kSerif = familyHash("serif"), kSans2 = familyHash("sans serif"), kSystemUi2 = familyHash("system ui");
+    if (hash == kSans || hash == kSystemUi || hash == kSans2 || hash == kSystemUi2) return m_families[0].family;
+    // the context font's own family name is the default family, installed or not
+    if (m_font && !m_font->familyName().empty() && hash == familyHash(m_font->familyName())) return m_families[0].family;
+    FamilySlot slot;
+    slot.hash = hash;
+    if (m_systemFonts && m_font) {
+        std::string name;
+        if (hash == kMono || hash == kSerif) {
+            for (std::string_view cand : hash == kMono ? std::span<const std::string_view>(kMonoFamilies) : std::span<const std::string_view>(kSerifFamilies))
+                if (const SystemFontInfo* f = findSystemFont(cand)) { name = f->family; break; }
+            if (name.empty() && hash == kMono)
+                for (const SystemFontInfo& f : systemFonts())
+                    if (f.monospace) { name = f.family; break; }
+        } else if (const SystemFontInfo* f = findSystemFontByHash(hash)) {
+            name = f->family;
+        }
+        if (!name.empty()) {
+            if (auto fam = FontFamily::fromSystem(name)) {
+                slot.owned = std::make_unique<FontFamily>(std::move(*fam));
+                // code points the installed family lacks fall back to the context's font and its chain
+                std::vector<const Font*> chain;
+                for (std::size_t k = 0; k < m_font->faceCount(); ++k) chain.push_back(&m_font->face(std::uint16_t(k)));
+                slot.owned->setFallbacks(std::move(chain));
+                slot.family = slot.owned.get();
+            }
+        }
+    }
+    m_families.push_back(std::move(slot)); // a miss is remembered too: one lookup per name
+    return m_families.back().family;
+}
+
+const fuse::text::Font* UiContext::fontFor(std::span<const u32> families, int weight, bool italic) {
+    if (!m_font) return nullptr;
+    fuse::text::FontFamily* fam = nullptr;
+    for (const u32 h : families) {
+        if (h == 0) break;
+        if ((fam = familyByHash(h))) break;
+    }
+    if (!fam || fam == m_families[0].family) {
+        if (weight == fuse::text::kWeightNormal && !italic) return m_font;
+        fam = m_families[0].family;
+    }
+    const fuse::text::Font* f = fam->resolve(weight, italic);
+    return f ? f : m_font;
+}
+const fuse::text::Font* UiContext::fontFor(const ComputedStyle& s) {
+    if (s.fontWeight == 400 && !s.fontItalic && s.fontFamily[0] == 0) return m_font; // the common case
+    return fontFor(std::span<const u32>(s.fontFamily), s.fontWeight, s.fontItalic);
+}
+const fuse::text::Font* UiContext::fontFor(std::string_view family, int weight, bool italic) {
+    const u32 h = family.empty() ? 0u : fuse::text::familyHash(family);
+    return fontFor(std::span<const u32>(&h, 1), weight, italic);
+}
+const fuse::text::Font* UiContext::nodeFont(NodeHandle n) {
+    return alive(n) ? fontFor(m_styles.style(m_nodes[n.index].style)) : m_font;
+}
+UiContext::TextScope UiContext::enterTextScope(u32 node) {
+    const TextScope prev = m_textScope;
+    const ComputedStyle& s = m_styles.style(m_nodes[node].style);
+    m_textScope = {fontFor(s), s.letterSpacing};
+    return prev;
 }
 
 void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, Vec2 o, Color col, f32 px, u32 nodeIdx) {
+    u8 deco = 0;
+    if (nodeIdx < m_nodes.size() && m_nodes[nodeIdx].alive) deco = m_styles.style(m_nodes[nodeIdx].style).textDecoration;
+    paintTextLayout(dl, tl, o, col, px, nodeIdx, deco);
+}
+
+void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, Vec2 o, Color col, f32 px, u32 nodeIdx, u8 deco) {
     if (!m_font || col.a <= 0.f) return;
+    const fuse::text::Font& font = tl.font ? *tl.font : *m_font;
     const f32 rs = m_painting ? m_renderScale : 1.f;
     for (const auto& ln : tl.lines) {
         for (u32 k = ln.firstGlyph; k < ln.firstGlyph + ln.glyphCount; ++k) {
             const auto& g = tl.glyphs[k];
             if (g.glyph == fuse::text::kInvisibleGlyph) continue;
-            fuse::text::forEachPaintGlyph(*m_font, g, px, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
+            fuse::text::forEachPaintGlyph(font, g, px, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
                                                                const fuse::text::ColorLayer* layer) {
                 const auto ag = m_atlas.get(f, glyph, fpx * rs);
                 if (!ag.valid || ag.w == 0) return;
@@ -632,6 +762,22 @@ void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, 
             });
         }
     }
+    if (!deco) return;
+    // Underline / strike-through: one rule per line across its advance width, in logical pixels (the list's render
+    // scale snaps it to device pixels like any rect).
+    const auto dm = font.decorationMetrics(px);
+    for (const auto& ln : tl.lines) {
+        if (ln.glyphCount == 0 || ln.width <= 0.f) continue;
+        const f32 x = std::round(o.x + tl.glyphs[ln.firstGlyph].x), y = std::round(o.y + ln.baseline);
+        const f32 w = std::ceil(ln.width);
+        auto rule = [&](f32 top, f32 thickness) {
+            const std::size_t at = dl.size();
+            dl.rect({x, y + top, w, thickness}, col);
+            for (std::size_t k = at; k < dl.size(); ++k) dl.cmds()[k].node = nodeIdx;
+        };
+        if (deco & kTextUnderline) rule(dm.underlineOffset, dm.underlineThickness);
+        if (deco & kTextLineThrough) rule(dm.strikeOffset, dm.strikeThickness);
+    }
 }
 
 void UiContext::paintString(DrawList& dl, std::string_view s, Rect box, Color col, f32 px, TextAlignment align, u32 nodeIdx) {
@@ -641,9 +787,29 @@ void UiContext::paintString(DrawList& dl, std::string_view s, Rect box, Color co
     d.maxWidth = box.w;
     d.elide = true;
     d.align = fuse::text::TextAlign(u8(align));
-    fuse::text::layoutText(*m_font, fuse::text::defaultShaper(), s, d, m_stringScratch);
+    // the node's font when it names one, else the font of the widget callback being run
+    const fuse::text::Font* font = m_textScope.font ? m_textScope.font : m_font;
+    if (nodeIdx < m_nodes.size() && m_nodes[nodeIdx].alive) {
+        const ComputedStyle& ns = m_styles.style(m_nodes[nodeIdx].style);
+        font = fontFor(ns);
+        d.letterSpacing = ns.letterSpacing;
+    }
+    fuse::text::layoutText(*font, fuse::text::defaultShaper(), s, d, m_stringScratch);
     const f32 y = box.y + std::floor((box.h - m_stringScratch.height) * 0.5f);
     paintTextLayout(dl, m_stringScratch, {box.x, y}, col, px, nodeIdx);
+}
+
+void UiContext::paintString(DrawList& dl, const fuse::text::Font& font, std::string_view s, Rect box, Color col, f32 px,
+                            TextAlignment align, u32 nodeIdx, u8 deco) {
+    if (!m_font || s.empty()) return;
+    fuse::text::TextLayoutDesc d;
+    d.pixelSize = px;
+    d.maxWidth = box.w;
+    d.elide = true;
+    d.align = fuse::text::TextAlign(u8(align));
+    fuse::text::layoutText(font, fuse::text::defaultShaper(), s, d, m_stringScratch);
+    const f32 y = box.y + std::floor((box.h - m_stringScratch.height) * 0.5f);
+    paintTextLayout(dl, m_stringScratch, {box.x, y}, col, px, nodeIdx, deco);
 }
 
 // ---- Layout --------------------------------------------------------------------------------------------------------
@@ -679,7 +845,9 @@ Size UiContext::measure(u32 i, Size avail) {
         Size c{0.f, 0.f};
         const WidgetClass& wc = m_registry.get(n.cls);
         if (wc.measure) {
+            const TextScope prev = enterTextScope(i);
             c = wc.measure(*this, {i, n.gen}, in);
+            m_textScope = prev;
         } else if (n.first != kNone) {
             const bool row = s.direction == Direction::Row;
             u32 count = 0;
@@ -988,7 +1156,9 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     const Rect content = contentRect(h);
     if (wc.paint) {
         const PaintContext pc{*this, h, n.rect, content, s, n.state, opacity};
+        const TextScope prev = enterTextScope(i);
         wc.paint(pc, dl);
+        m_textScope = prev;
     } else if (!m_cold[i]->text.empty()) {
         const auto& tl = m_cold[i]->layout;
         const f32 y = content.y + std::floor(std::max(0.f, content.h - tl.height) * 0.5f);
@@ -1220,7 +1390,10 @@ bool UiContext::dispatch(u32 target, const Event& e) {
         const WidgetClass& wc = m_registry.get(m_nodes[k].cls);
         if (!wc.onEvent) return false;
         EventContext ec{*this, {k, m_nodes[k].gen}, th, ph};
-        return wc.onEvent(ec, e);
+        const TextScope prev = enterTextScope(k);
+        const bool consumed = wc.onEvent(ec, e);
+        m_textScope = prev;
+        return consumed;
     };
     for (std::size_t k = m_path.size(); k-- > 1;)
         if (call(m_path[k], Phase::Capture)) return true;

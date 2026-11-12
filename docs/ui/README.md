@@ -304,6 +304,54 @@ are deferred). Inline (`setCss`) beats everything; later sheets win ties. Layout
 `box-shadow`, `shadow-x/y/blur/color`, `opacity`, `color`, `font-size`, `text-align`. Selectors also accept
 `:active`, `:selected`.
 
+### Fonts, text styles and i18n
+
+Text properties: `font-weight` (`normal` / `bold` / 1..1000), `font-style` (`normal` / `italic`), `font-family` (comma
+list), `letter-spacing`, `line-height` (`normal`, a multiplier, px or %) are inherited; `text-decoration` (`underline`,
+`line-through`, both) is not. Labels, buttons and every widget that paints through `paintString` /
+`paintTextLayout` / `measureString` follow them.
+
+```cpp
+#include <fuse/text/font_family.hpp>
+#include <fuse/text/i18n.hpp>
+
+ui.setCss(title, "font-weight", "bold");                  // synthesised from the context's regular face
+ui.setCss(note, "font-family", "\"DejaVu Sans\", sans-serif"); // an installed family, else the context's font
+fuse::text::FontFamily brand("Brand");                    // an application family with real faces
+brand.add(*fuse::text::Font::fromFile("Brand-Regular.ttf"));
+brand.add(*fuse::text::Font::fromFile("Brand-Bold.ttf")); // weight / slant read from the file (OS/2, head)
+ui.addFontFamily(brand);                                  // font-family: Brand now uses the real bold
+for (const auto& f : fuse::text::systemFonts()) { /* family, style, path, faceIndex, weight, italic, monospace */ }
+auto mono = fuse::text::Font::fromSystem("DejaVu Sans Mono", 700, false);
+
+fuse::text::formatPlural("one {# file} other {# files}", "ru", 5); // CLDR category of the locale, '#' = the number
+fuse::text::formatNumber("de", 1234567.891, 2);            // "1.234.567,89"
+fuse::text::pseudoLocalize("Save {name}");                 // "[Šávé {name} ··]"
+```
+
+- A family answers a (weight, italic) request with its nearest real face (CSS weight matching). Without one it
+  synthesises: bold smears the rasterised coverage sideways by a fraction of the em (and widens advances), italic shears
+  the outline before rasterisation. Both happen where glyphs enter the atlas, so the CPU rasteriser and the GPU glyph
+  path draw the same texels, at the render scale. Fallback-chain faces (other scripts, emoji) are not restyled.
+- `font-family` names are matched case-insensitively: families registered with `addFontFamily`, then installed
+  fonts, then the context's font. `sans-serif` / `system-ui` are the context's font; `serif` / `monospace` pick a
+  well-known installed family. `setSystemFontLookup(false)` keeps a context to its own and registered fonts.
+- `systemFonts()` scans the platform font directories once (Linux / BSD: XDG data dirs, `~/.fonts`,
+  `/usr/share/fonts`, `/usr/local/share/fonts`; macOS / iOS: `/System/Library/Fonts`, `/Library/Fonts`,
+  `~/Library/Fonts`; Android: `/system/fonts`; Windows: `%WINDIR%\Fonts`) and reads each file's name / OS/2 tables
+  itself: `.ttf`, `.otf` (glyf or CFF) and `.ttc` collections. It is empty, not an error, on a machine without fonts.
+  `setSystemFontDirectories` points it elsewhere (a font folder shipped with the app, tests).
+- `fontPicker` lists the bundled and generic families followed by the installed ones and previews the chosen face
+  with its Bold / Italic boxes. `richText` draws `<b>` / `<i>` in the family's bold / italic face; `markdownView` does
+  the same for `**bold**` / `*italic*`, and its headings are bold.
+- `letter-spacing` and `line-height` apply to a node's own text (labels, text blocks); `letter-spacing` also to
+  strings painted with `paintString`. Text edits ignore both.
+- Plural rules cover the common CLDR families (one/other, French, East and South Slavic, Polish, Czech, Slovenian,
+  Baltic, Romanian, Arabic, Hebrew, Welsh, Irish, and the no-plural languages); number formatting has a built-in
+  separator table and always writes Western digits. `StringTable::trPlural(key, n)` applies both to an entry.
+- Not there: variable-font axes (a variable font is its default instance), CFF2 and bitmap-only fonts, dates and
+  currencies, a string-extraction tool, cooked `.fusefont` files (`FUSE_UI_TEXT=COOKED` still builds MINIMAL).
+
 ## Immediate mode
 
 `fuse::ui::immediate::ImmediateUi` has the same API and layout rules as Relight's `overlay::Ui` (`begin`, `text`,
@@ -323,6 +371,8 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_bench_10k` | 10k nodes, one dirty label: ≤ 0.5 ms median (Release; 1.0 ms in FULL) |
 | `fuse_ui_single_thread_parity` | direct vs posted-from-threads mutations give identical layout, draw list and pixels |
 | `fuse_ui_a11y_tree_dump` | roles, names, states, values |
+| `fuse_text_font_styles` | face description, synthetic bold / oblique at pixel level, atlas keys, `FontFamily` matching (real face preferred), the font scanner over a temp directory (collection, corrupt files, no fonts), CSS font / decoration / spacing properties, render scale 2, `tests/golden/text_styles.png` (`text_styles_full.png` in FULL) |
+| `fuse_text_i18n` | CLDR plural categories per rule family, plural patterns, number formatting per locale, pseudo-localisation, `StringTable::trPlural` |
 
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
 | `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster (skips 77 without a display or device) |

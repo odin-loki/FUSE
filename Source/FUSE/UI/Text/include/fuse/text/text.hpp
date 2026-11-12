@@ -6,6 +6,9 @@
 // HarfBuzz + FreeType) swaps in HarfBuzzShaper and FreeType coverage behind the same interfaces. COOKED is not built
 // yet. textProfile() reports what is compiled.
 //
+// Font families, synthetic bold / oblique and installed-font discovery: fuse/text/font_family.hpp. Plural rules, number
+// formatting and pseudo-localisation: fuse/text/i18n.hpp.
+//
 // Engine rules: no exceptions (std::expected), no owning raw pointers, no allocation on the steady-state path: shaping
 // and layout write into caller-owned buffers that keep their capacity, and the glyph atlas only allocates on a miss.
 #pragma once
@@ -79,8 +82,17 @@ struct ShapeCacheStats;
 /// A TrueType / OpenType (glyf) font. Holds a copy of the file bytes; the parsed state points into it.
 class Font {
 public:
-    static std::expected<Font, TextError> fromBytes(std::span<const std::uint8_t> bytes);
-    static std::expected<Font, TextError> fromFile(const std::string& path);
+    /// `faceIndex` selects a face of a TrueType collection (.ttc); 0 for plain .ttf / .otf files.
+    static std::expected<Font, TextError> fromBytes(std::span<const std::uint8_t> bytes, int faceIndex = 0);
+    static std::expected<Font, TextError> fromFile(const std::string& path, int faceIndex = 0);
+    /// An installed font by family name, nearest weight and slant (fuse/text/font_family.hpp: systemFonts()).
+    /// InvalidFont when the family is not installed. The face is the real file: nothing is synthesised here.
+    static std::expected<Font, TextError> fromSystem(std::string_view family, int weight = 400, bool italic = false);
+    /// A synthetic variant of `base` sharing its file bytes: `embolden` widens every stem by that fraction of the em
+    /// (the rasterised coverage is smeared sideways; advances grow by the same amount) and `slant` shears the outlines
+    /// before rasterisation (x += slant * height above the baseline; 0.2 is the usual oblique). The variant has its own id(), so glyph atlases keep it apart from `base`.
+    /// It keeps `base`'s fallback chain (fallback faces are not restyled). Invalid when `base` is.
+    static Font synthesized(const Font& base, float embolden, float slant);
     /// FUSE's bundled UI font (vendor/fonts/opensans): from the FontDataSource, the build's font path or the embedded
     /// copy (FUSE_TEXT_EMBED_FONT, the default on Android / iOS); InvalidFont when none has it.
     static std::expected<Font, TextError> bundled();
@@ -96,6 +108,23 @@ public:
     ~Font();
 
     bool valid() const { return m_state != nullptr; }
+    // ---- Face description (name / OS/2 / head / post tables) ----
+    /// Family ("Open Sans"; typographic family when the font has one), style ("Regular", "Bold Italic"), CSS weight
+    /// 1..1000 (usWeightClass; 400 when absent) and slant of the real face. Synthetic variants report their base's.
+    std::string_view familyName() const;
+    std::string_view styleName() const;
+    int weight() const;
+    bool italic() const;
+    bool monospace() const;
+    /// Synthetic style of this object (both 0 for a real face).
+    float syntheticEmbolden() const;
+    float syntheticSlant() const;
+    /// Underline / strike-through geometry in pixels at `pixelSize`: offsets are the top edge relative to the
+    /// baseline (y down: underline positive, strike-through negative). From post / OS/2, with defaults when absent.
+    struct DecorationMetrics {
+        float underlineOffset = 0.f, underlineThickness = 1.f, strikeOffset = 0.f, strikeThickness = 1.f;
+    };
+    DecorationMetrics decorationMetrics(float pixelSize) const;
     FontMetrics metrics(float pixelSize) const;
     std::uint32_t glyphIndex(char32_t cp) const;
     /// Horizontal advance and kerning in pixels.
@@ -133,6 +162,9 @@ private:
     friend void layoutText(const Font&, const ITextShaper&, std::string_view, const TextLayoutDesc&, TextLayout&);
     friend ShapeCacheStats shapeCacheStats(const Font&);
     struct State;
+    static State* makeState(void* sharedBytes, int faceIndex);
+    void rawGlyphBox(std::uint32_t glyph, float pixelSize, int& x0, int& y0, int& x1, int& y1) const;
+    void rawRasterise(std::uint32_t glyph, float pixelSize, std::uint8_t* dst, int w, int h, int stride) const;
     State* m_state = nullptr; // owned (pimpl); released in ~Font
     std::uint32_t m_id = 0;
 };
@@ -191,6 +223,9 @@ struct TextLayoutDesc {
     float maxWidth = 0.f; ///< <= 0: no wrapping
     TextAlign align = TextAlign::Start;
     bool elide = false; ///< single line clipped to maxWidth with an ellipsis
+    float letterSpacing = 0.f; ///< extra pixels after every glyph that advances (CSS letter-spacing)
+    float lineHeight = 0.f;    ///< line box height in pixels; <= 0: the font's natural line height. Extra (or
+                               ///< missing) space is split above and below the text (CSS half-leading).
 };
 
 /// A shaped, line-broken block. Reuse one object per text node: relayout keeps every buffer's capacity.
@@ -199,6 +234,7 @@ struct TextLayout {
     std::vector<TextLine> lines;
     float width = 0.f, height = 0.f;
     FontMetrics metrics;
+    const Font* font = nullptr; ///< the font this block was laid out with (non-owning; painters use it)
 };
 
 /// Shapes and breaks `utf8` (break opportunities after spaces and at hard newlines, UAX #14 subset; words longer than

@@ -6,7 +6,12 @@
 //   values      px / % / fr / plain numbers, #rgb #rrggbb #rrggbbaa, rgb()/rgba(), keywords, var(--token[, fallback])
 //   tokens      custom properties (`--accent: #3af`) declared in `:root` (or any rule matching the node) — theme tokens
 //   cascade     specificity (ids, classes + pseudo, types), then source order; inline (node API) values win;
-//               inherited properties: color, font-size, text-align
+//               inherited properties: color, font-size, text-align, font-weight, font-style, font-family,
+//               letter-spacing, line-height
+//   text        font-weight (normal | bold | 1..1000), font-style (normal | italic | oblique), font-family (a comma
+//               list of names; "sans-serif" / "system-ui" = the context's font, "serif" / "monospace" = a matching
+//               installed family), text-decoration (none | underline | line-through, space separated),
+//               letter-spacing (px), line-height (normal | <number> x font size | px | %)
 // Not yet: transitions (the animation core tweens node opacity / offsets), attribute selectors, :nth-child.
 #pragma once
 
@@ -49,6 +54,8 @@ enum class GradientDir : u8 { None, Vertical, Horizontal };
 enum class TextAlignment : u8 { Start, Center, End };
 
 inline constexpr int kMaxGridTracks = 8;
+inline constexpr int kMaxFontFamilies = 4; ///< names kept from a font-family list
+enum TextDecorationBits : u8 { kTextUnderline = 1, kTextLineThrough = 2 };
 
 /// The fully resolved style of a node. Trivially copyable; deduplicated in StyleTable.
 struct ComputedStyle {
@@ -81,6 +88,15 @@ struct ComputedStyle {
     f32 shadowBlur = 0.f, shadowX = 0.f, shadowY = 0.f;
     f32 backdropBlur = 0.f; ///< backdrop-filter: blur(<len>) / backdrop-blur: <len> (frosted glass under the background)
     bool pointerEvents = true;
+    // text (inherited, except textDecoration)
+    u16 fontWeight = 400;    ///< CSS weight 1..1000 (400 normal, 700 bold)
+    bool fontItalic = false;
+    u8 textDecoration = 0;   ///< kTextUnderline | kTextLineThrough
+    std::array<u32, kMaxFontFamilies> fontFamily{}; ///< fuse::text::familyHash of each listed family; 0 ends the list
+    f32 letterSpacing = 0.f; ///< extra pixels after each glyph
+    Length lineHeight;       ///< Auto: the font's line height; Px; Percent: of the font size ("1.5" parses as 150%)
+    /// Line box height in pixels for the layout (0 = natural).
+    f32 lineHeightPx() const { return lineHeight.unit == Unit::Auto ? 0.f : lineHeight.resolve(fontSize, 0.f); }
     friend bool operator==(const ComputedStyle&, const ComputedStyle&) = default;
 };
 
@@ -91,7 +107,8 @@ enum class Prop : u8 {
     AlignItems, AlignSelf, Justify, Wrap, Overflow, GridColumns, GridColumn, GridColumnSpan, GridRow, GridRowSpan,
     Left, Top, Right, Bottom, CenterX, CenterY, Background, Background2, Gradient, BorderColor, BorderWidth,
     RadiusTL, RadiusTR, RadiusBR, RadiusBL, Color, FontSize, TextAlign, Opacity, ShadowColor, ShadowBlur, ShadowX,
-    ShadowY, PointerEvents, BackdropBlur, Count
+    ShadowY, PointerEvents, BackdropBlur,
+    FontWeight, FontStyle, FontFamily, TextDecoration, LetterSpacing, LineHeight, Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
 

@@ -8,6 +8,7 @@
 // new bounds of changed nodes) → a11y version bump. A frame with nothing dirty does no work and allocates nothing.
 #pragma once
 
+#include "fuse/text/font_family.hpp"
 #include "fuse/text/text.hpp"
 #include "fuse/ui/draw_list.hpp"
 #include "fuse/ui/handle.hpp"
@@ -430,6 +431,35 @@ public:
     void paintString(DrawList& dl, std::string_view s, Rect box, Color c, f32 pixelSize, TextAlignment align, u32 node);
     f32 measureString(std::string_view s, f32 pixelSize);
 
+    // fonts: family / weight / style (CSS font-family, font-weight, font-style; Qt: QFont)
+    /// The font a style asks for: the first listed family that is registered (addFontFamily) or installed, else the
+    /// context's font; in that family the real face for the weight and slant when there is one, otherwise a
+    /// synthetic bold / oblique of the nearest face. Regular text in the default family is the context's font itself.
+    /// Allocates only the first time a (family, weight, slant) is asked for. Null when the context has no font.
+    const fuse::text::Font* fontFor(const ComputedStyle& s);
+    const fuse::text::Font* fontFor(std::span<const u32> familyHashes, int weight, bool italic);
+    /// By family name ("" = the context's font).
+    const fuse::text::Font* fontFor(std::string_view family, int weight, bool italic);
+    /// The font of a node's computed style (the context's font for a dead handle).
+    const fuse::text::Font* nodeFont(NodeHandle n);
+    /// Registers an application family under its name() for `font-family` (non-owning: it must outlive the context).
+    /// Registered families win over installed fonts of the same name.
+    void addFontFamily(fuse::text::FontFamily& family);
+    /// Whether unregistered `font-family` names are looked up among the installed fonts (fuse::text::systemFonts();
+    /// the first lookup scans the font directories). Default on.
+    void setSystemFontLookup(bool on) { m_systemFonts = on; }
+    /// paintTextLayout with the decoration given instead of read from `node`'s style (kTextUnderline |
+    /// kTextLineThrough): one rule per line, across the line's width. The glyphs are drawn with the font the
+    /// layout was made with (TextLayout::font), so a block laid out with fontFor(...) paints in that face.
+    void paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, Vec2 origin, Color c, f32 pixelSize, u32 node,
+                         u8 textDecoration);
+    /// paintString with an explicit font and decoration (rich text runs): the box, elision and alignment rules of
+    /// paintString; the rules span the glyphs' advance width.
+    void paintString(DrawList& dl, const fuse::text::Font& font, std::string_view s, Rect box, Color c, f32 pixelSize,
+                     TextAlignment align, u32 node, u8 textDecoration = 0);
+    /// measureString with an explicit font (rich text runs).
+    f32 measureString(const fuse::text::Font& font, std::string_view s, f32 pixelSize);
+
     struct Node;
     struct Cold;
 
@@ -528,6 +558,22 @@ private:
     std::vector<std::pair<u32, i32>> m_scratchTab;
     std::vector<fuse::text::ShapedGlyph> m_shapeScratch;
     fuse::text::TextLayout m_stringScratch;
+    // font families by familyHash: [0] is the context's font (bold / italic variants are synthesised from it)
+    struct FamilySlot {
+        u32 hash = 0;
+        fuse::text::FontFamily* family = nullptr; ///< null: looked up and not found
+        std::unique_ptr<fuse::text::FontFamily> owned;
+    };
+    fuse::text::FontFamily* familyByHash(u32 hash);
+    /// Scope of a widget callback (measure / paint / event): measureString(s, px) and paintString use the node's font.
+    struct TextScope {
+        const fuse::text::Font* font = nullptr;
+        f32 letterSpacing = 0.f;
+    };
+    TextScope enterTextScope(u32 node);
+    std::vector<FamilySlot> m_families;
+    TextScope m_textScope;
+    bool m_systemFonts = true;
 
     struct Connection {
         u32 node = 0xFFFFFFFFu, nodeGen = 0, gen = 0;

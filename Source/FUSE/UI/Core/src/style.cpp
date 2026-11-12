@@ -1,5 +1,7 @@
 #include "fuse/ui/style.hpp"
 
+#include "fuse/text/font_family.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <charconv>
@@ -67,6 +69,12 @@ constexpr PropInfo kProps[] = {
     {Prop::ShadowY, "shadow-y", T::Length, false, true, false},
     {Prop::PointerEvents, "pointer-events", T::Bool, false, false, false},
     {Prop::BackdropBlur, "backdrop-blur", T::Length, false, true, false},
+    {Prop::FontWeight, "font-weight", T::Number, true, false, true},
+    {Prop::FontStyle, "font-style", T::Enum, true, false, true},
+    {Prop::FontFamily, "font-family", T::Tracks, true, false, true}, // each track: the 24-bit family hash as px
+    {Prop::TextDecoration, "text-decoration", T::Enum, false, false, false},
+    {Prop::LetterSpacing, "letter-spacing", T::Length, true, true, true},
+    {Prop::LineHeight, "line-height", T::Length, true, false, true},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -100,6 +108,7 @@ constexpr EnumWord kEnums[] = {
     {Prop::TextAlign, "left", u8(TextAlignment::Start)}, {Prop::TextAlign, "start", u8(TextAlignment::Start)},
     {Prop::TextAlign, "center", u8(TextAlignment::Center)}, {Prop::TextAlign, "right", u8(TextAlignment::End)},
     {Prop::TextAlign, "end", u8(TextAlignment::End)},
+    {Prop::FontStyle, "normal", 0}, {Prop::FontStyle, "italic", 1}, {Prop::FontStyle, "oblique", 1},
 };
 
 std::string_view trim(std::string_view s) {
@@ -203,6 +212,53 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
     const PropInfo& pi = propInfo(p);
     out = {};
     out.type = pi.type;
+    switch (p) { // text properties with keyword / list syntax
+    case Prop::FontWeight: {
+        if (text == "normal") { out.num = 400.f; return true; }
+        if (text == "bold" || text == "bolder") { out.num = 700.f; return true; }
+        if (text == "lighter") { out.num = 300.f; return true; }
+        std::string_view unit;
+        return parseNumber(text, out.num, unit) && unit.empty() && out.num >= 1.f && out.num <= 1000.f;
+    }
+    case Prop::FontFamily: {
+        // comma list; each name is stored as its case-insensitive 24-bit hash (stable across runs and in cooked sheets)
+        out.trackCount = 0;
+        while (!text.empty()) {
+            const auto comma = text.find(',');
+            const std::string_view name = trim(text.substr(0, comma));
+            if (!name.empty() && out.trackCount < kMaxFontFamilies)
+                out.tracks[out.trackCount++] = Length::px(f32(fuse::text::familyHash(name)));
+            if (comma == std::string_view::npos) break;
+            text.remove_prefix(comma + 1);
+        }
+        return out.trackCount > 0;
+    }
+    case Prop::TextDecoration: {
+        out.e = 0;
+        while (!text.empty()) {
+            const auto sp = text.find_first_of(" \t");
+            const std::string_view w = text.substr(0, sp);
+            if (w == "underline") out.e |= kTextUnderline;
+            else if (w == "line-through") out.e |= kTextLineThrough;
+            else if (w != "none" && !w.empty()) return false;
+            if (sp == std::string_view::npos) break;
+            text = trim(text.substr(sp));
+        }
+        return true;
+    }
+    case Prop::LineHeight: {
+        if (text == "normal") { out.len = {}; return true; }
+        f32 v;
+        std::string_view unit;
+        if (!parseNumber(text, v, unit) || v < 0.f) return false;
+        if (unit.empty()) out.len = Length::pct(v * 100.f); // a bare number multiplies the font size
+        else if (unit == "px" || unit == "dp") out.len = Length::px(v);
+        else if (unit == "%") out.len = Length::pct(v);
+        else return false;
+        return true;
+    }
+    default: break;
+    }
     switch (pi.type) {
     case T::Bool:
         if (p == Prop::Display) { out.b = text != "none"; return true; }
@@ -299,6 +355,15 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::ShadowX: s.shadowX = v.len.value; break;
     case Prop::ShadowY: s.shadowY = v.len.value; break;
     case Prop::PointerEvents: s.pointerEvents = v.b; break;
+    case Prop::FontWeight: s.fontWeight = u16(std::clamp(v.num, 1.f, 1000.f)); break;
+    case Prop::FontStyle: s.fontItalic = v.e != 0; break;
+    case Prop::FontFamily:
+        s.fontFamily = {};
+        for (u8 k = 0; k < v.trackCount && k < kMaxFontFamilies; ++k) s.fontFamily[k] = u32(v.tracks[k].value);
+        break;
+    case Prop::TextDecoration: s.textDecoration = v.e; break;
+    case Prop::LetterSpacing: s.letterSpacing = v.len.value; break;
+    case Prop::LineHeight: s.lineHeight = v.len; break;
     case Prop::Count: break;
     }
 }
@@ -318,6 +383,18 @@ PropValue readProp(const ComputedStyle& s, Prop p) {
     case Prop::Layout: return PropValue::ofEnum(u8(s.layout));
     case Prop::Direction: return PropValue::ofEnum(u8(s.direction));
     case Prop::TextAlign: return PropValue::ofEnum(u8(s.textAlign));
+    case Prop::FontWeight: return PropValue::ofNumber(f32(s.fontWeight));
+    case Prop::FontStyle: return PropValue::ofEnum(s.fontItalic ? 1 : 0);
+    case Prop::TextDecoration: return PropValue::ofEnum(s.textDecoration);
+    case Prop::LetterSpacing: return PropValue::ofLength(Length::px(s.letterSpacing));
+    case Prop::LineHeight: return PropValue::ofLength(s.lineHeight);
+    case Prop::FontFamily: {
+        PropValue v;
+        v.type = PropType::Tracks;
+        for (u32 h : s.fontFamily)
+            if (h) v.tracks[v.trackCount++] = Length::px(f32(h));
+        return v;
+    }
     default: break;
     }
     PropValue v;
@@ -329,6 +406,11 @@ void inheritFrom(ComputedStyle& s, const ComputedStyle& parent) {
     s.color = parent.color;
     s.fontSize = parent.fontSize;
     s.textAlign = parent.textAlign;
+    s.fontWeight = parent.fontWeight;
+    s.fontItalic = parent.fontItalic;
+    s.fontFamily = parent.fontFamily;
+    s.letterSpacing = parent.letterSpacing;
+    s.lineHeight = parent.lineHeight;
 }
 
 // ---- Parser --------------------------------------------------------------------------------------------------------

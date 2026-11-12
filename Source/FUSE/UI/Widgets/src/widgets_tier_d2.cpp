@@ -69,7 +69,7 @@ void dot(DrawList& dl, Vec2 p, f32 r, Color fill, Color ring = {}) {
 
 // =====================================================================================================================
 // Font picker
-struct FontState { NodeHandle list, size, preview; std::string family; };
+struct FontState { NodeHandle list, size, preview, bold, italic; std::string family; };
 Pool<FontState>& fontPool() { static Pool<FontState> p; return p; }
 void fontRefresh(UiContext& ui, NodeHandle picker, bool emit) {
     FontState* s = fontPool().get(ui, picker);
@@ -80,6 +80,9 @@ void fontRefresh(UiContext& ui, NodeHandle picker, bool emit) {
     char b[32];
     std::snprintf(b, sizeof b, "%gpx", double(px));
     ui.setCss(s->preview, "font-size", b);
+    ui.setCss(s->preview, "font-family", s->family.empty() ? std::string_view("sans-serif") : std::string_view(s->family));
+    ui.setCss(s->preview, "font-weight", ui.checked(s->bold) ? "bold" : "normal");
+    ui.setCss(s->preview, "font-style", ui.checked(s->italic) ? "italic" : "normal");
     ui.setText(s->preview, s->family + " - The quick brown fox jumps over the lazy dog 0123");
     if (emit) ui.emit(picker, SignalKind::Submitted, {.value = px, .text = s->family});
 }
@@ -1292,15 +1295,26 @@ NodeHandle fontPicker(UiContext& ui, NodeHandle parent, std::string_view familie
     ui.addClass(p, "fontpicker");
     ui.setA11y(p, A11yRole::Group, "Font");
     FontState& s = fontPool().create(ui, p);
-    s.list = listView(ui, p, families.empty() ? std::string_view("Open Sans\nSans Serif\nSerif\nMonospace\nSystem UI") : families, 0);
+    std::string all;
+    if (families.empty()) { // the bundled / generic families, then what is installed
+        all = "Open Sans\nSans Serif\nSerif\nMonospace\nSystem UI";
+        for (const std::string& f : fuse::text::systemFontFamilies())
+            if (f != "Open Sans") all += "\n" + f;
+        families = all;
+    }
+    s.list = listView(ui, p, families, 0);
     ui.addClass(s.list, "fontlist");
     const NodeHandle row = hbox(ui, p);
     label(ui, row, "Size");
     s.size = spinBox(ui, row, 6.f, 96.f, size, 1.f);
+    s.bold = checkBox(ui, row, "Bold");
+    s.italic = checkBox(ui, row, "Italic");
     s.preview = label(ui, p, "");
     ui.addClass(s.preview, "fontpreview");
     ui.connect(s.list, SignalKind::ValueChanged, [p](UiContext& u, NodeHandle, const SignalArgs&) { fontRefresh(u, p, true); });
     ui.connect(s.size, SignalKind::ValueChanged, [p](UiContext& u, NodeHandle, const SignalArgs&) { fontRefresh(u, p, true); });
+    ui.connect(s.bold, SignalKind::Toggled, [p](UiContext& u, NodeHandle, const SignalArgs&) { fontRefresh(u, p, true); });
+    ui.connect(s.italic, SignalKind::Toggled, [p](UiContext& u, NodeHandle, const SignalArgs&) { fontRefresh(u, p, true); });
     fontRefresh(ui, p, false);
     return p;
 }
@@ -1311,6 +1325,21 @@ std::string fontPickerFamily(const UiContext& ui, NodeHandle picker) {
 f32 fontPickerSize(const UiContext& ui, NodeHandle picker) {
     const FontState* s = fontPool().get(ui, picker);
     return s ? ui.value(s->size) : 0.f;
+}
+bool fontPickerBold(const UiContext& ui, NodeHandle picker) {
+    const FontState* s = fontPool().get(ui, picker);
+    return s && ui.checked(s->bold);
+}
+bool fontPickerItalic(const UiContext& ui, NodeHandle picker) {
+    const FontState* s = fontPool().get(ui, picker);
+    return s && ui.checked(s->italic);
+}
+void fontPickerSetStyle(UiContext& ui, NodeHandle picker, bool bold, bool italic) {
+    FontState* s = fontPool().get(ui, picker);
+    if (!s || (ui.checked(s->bold) == bold && ui.checked(s->italic) == italic)) return;
+    ui.setChecked(s->bold, bold);
+    ui.setChecked(s->italic, italic);
+    fontRefresh(ui, picker, true);
 }
 
 // ---- file dialog ------------------------------------------------------------------------------------------------------

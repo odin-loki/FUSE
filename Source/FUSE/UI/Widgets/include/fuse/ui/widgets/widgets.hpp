@@ -286,7 +286,9 @@ Rect chartFlameSpanRect(const UiContext& ui, NodeHandle chart, u32 index); ///< 
 i32 chartFlameSpanAt(const UiContext& ui, NodeHandle chart, Vec2 pos);     ///< span under `pos`, -1 = none
 
 /// Markdown view: headings (#, ##, ###), paragraphs, '-' / '*' bullets, numbered items, ``` code blocks and '>' quotes
-/// become styled label children (classes md-h1..md-h3, md-p, md-li, md-code, md-quote). Inline ** and ` are stripped.
+/// become styled children (classes md-h1..md-h3, md-p, md-li, md-code, md-quote): labels, or rich text views for
+/// blocks with inline **bold** / __bold__ / *italic* / _italic_ (drawn in the family's bold / italic face, synthesised
+/// when the family has none). Headings are bold. Inline ` is stripped; the node text is always the plain text.
 NodeHandle markdownView(UiContext& ui, NodeHandle parent, std::string_view markdown, std::string_view id = {});
 void setMarkdown(UiContext& ui, NodeHandle view, std::string_view markdown);
 
@@ -294,11 +296,19 @@ void setMarkdown(UiContext& ui, NodeHandle view, std::string_view markdown);
 void registerTierCD(UiContext& ui);
 
 // ---- Tier D (2): pro widgets (plan §5) ---------------------------------------------------------------------------------
-/// Font picker: family list + size spin box + live preview line. Families default to the bundled faces when empty
-/// ('\n'-separated otherwise). Any change emits Submitted {text = family, value = size} on the picker.
+/// Font picker: family list + size spin box + Bold / Italic check boxes + live preview line drawn in the chosen face
+/// (font-family / font-weight / font-style on the preview: a real installed face, else synthesised). With `families`
+/// empty the list is the bundled family and the generic ones (Open Sans, Sans Serif, Serif, Monospace, System UI)
+/// followed by every installed family (fuse::text::systemFontFamilies(); nothing more on a machine without fonts);
+/// otherwise exactly the '\n'-separated names given. Any change emits Submitted {text = family, value = size} on the
+/// picker.
 NodeHandle fontPicker(UiContext& ui, NodeHandle parent, std::string_view families = {}, f32 size = 14.f, std::string_view id = {});
 std::string fontPickerFamily(const UiContext& ui, NodeHandle picker);
 f32 fontPickerSize(const UiContext& ui, NodeHandle picker);
+bool fontPickerBold(const UiContext& ui, NodeHandle picker);
+bool fontPickerItalic(const UiContext& ui, NodeHandle picker);
+/// Sets the weight / slant boxes (emits Submitted when they change).
+void fontPickerSetStyle(UiContext& ui, NodeHandle picker, bool bold, bool italic);
 
 /// File dialog (modal, built on dialog()): path field, "Up" button, directory listing (folders first, then files
 /// matching `filter`, e.g. "*.fuseui;*.png", empty = all), file-name field, OK / Cancel. Activating a folder enters

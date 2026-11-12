@@ -28,7 +28,7 @@ if(FUSE_UI_TEXT STREQUAL "COOKED")
 endif()
 
 # ---- fuse_text ----
-add_library(fuse_text STATIC Text/src/text.cpp)
+add_library(fuse_text STATIC Text/src/text.cpp Text/src/font_family.cpp Text/src/i18n.cpp)
 target_include_directories(fuse_text PUBLIC Text/include)
 target_include_directories(fuse_text SYSTEM PRIVATE "${FUSE_UI_REPO_ROOT}/vendor/stb")
 target_compile_definitions(fuse_text PRIVATE
