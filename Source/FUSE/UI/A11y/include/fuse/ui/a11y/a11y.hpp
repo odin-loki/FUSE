@@ -15,12 +15,34 @@ namespace fuse::ui::a11y {
 /// Stable platform id for a node: generation in the high half, slot in the low half (never 0).
 inline u64 idOf(NodeHandle n) { return (u64(n.generation) << 32) | u64(n.index + 1u); }
 inline NodeHandle nodeOf(u64 id) { return {u32(id & 0xFFFFFFFFu) - 1u, u32(id >> 32)}; }
+/// Id of a virtual child (A11ySnapshotNode::child != 0: a visible row, cell, tab or link of a widget): bit 63 set,
+/// then 12 bits of the owner's generation, 20 bits of its slot and 31 bits of the child id. It stays the same while
+/// the item exists, however the view scrolls. Owners beyond slot 2^20 or child ids beyond 2^31 are not representable
+/// (idOf returns 0 and such items are left out of the platform tree).
+constexpr u64 kVirtualBit = 1ull << 63;
+inline u64 idOf(NodeHandle n, u32 child) {
+    if (!child) return idOf(n);
+    if (n.index >= (1u << 20) || child >= (1u << 31)) return 0;
+    return kVirtualBit | (u64(n.generation & 0xFFFu) << 51) | (u64(n.index) << 31) | u64(child);
+}
+inline u64 idOf(const A11ySnapshotNode& s) { return idOf(s.node, s.child); }
+inline bool isVirtual(u64 id) { return (id & kVirtualBit) != 0; }
 
-enum class Action : u8 { Focus, Click, Increment, Decrement, SetValue };
+/// Same values as the core's A11yAction (Focus, Click, Increment, Decrement, SetValue, Expand, Collapse, Select,
+/// ScrollUp / Down / Left / Right, ScrollIntoView).
+using Action = A11yAction;
 struct ActionRequest {
     Action action = Action::Focus;
-    u64 target = 0;
-    f32 value = 0.f; ///< SetValue
+    u64 target = 0;   ///< idOf(node) or idOf(node, child)
+    f32 value = 0.f;  ///< SetValue on a ranged widget
+    std::string text; ///< SetValue on a text field
+};
+/// What a live region (toast, status message, anything marked with UiContext::setA11yLive) says: produced by sync()
+/// when such a node appears with text or its text changes.
+struct Announcement {
+    u64 id = 0;
+    std::string text;
+    bool assertive = false;
 };
 
 class Bridge {
@@ -33,9 +55,17 @@ public:
     u64 focusId() const;
     /// Children of snapshot entry i (indices into nodes()).
     std::vector<u32> children(u32 i) const;
-    /// Apply an action on the UI thread. Click synthesises a pointer press at the node centre; Increment /
-    /// Decrement step the value by its step (or 1 % of the range); SetValue clamps. Returns false for dead nodes.
+    /// Apply an action on the UI thread through UiContext::performA11yAction (which asks the widget class first):
+    /// the target may be a node or one of its virtual children. Returns false for dead nodes and for actions the
+    /// target does not accept.
     bool perform(const ActionRequest& r);
+    /// The node (and virtual child, 0 = the node itself) an id names; false when it no longer exists.
+    bool resolve(u64 id, NodeHandle& node, u32& child) const;
+    /// Snapshot index of an id (~0u when it is not in the last snapshot).
+    u32 indexOf(u64 id) const;
+    /// Live-region announcements collected by sync() since the last call, oldest first (the caller hands them to the
+    /// platform: AccessKit reads them from the live nodes of the tree update, a custom adapter speaks them).
+    std::vector<Announcement> takeAnnouncements();
     /// Thread-safe queue for adapters whose callbacks run on another thread; drain() applies them on the UI thread.
     void enqueue(const ActionRequest& r);
     u32 drain();
@@ -48,6 +78,8 @@ private:
     std::vector<A11ySnapshotNode> m_cur, m_prev;
     std::mutex m_mutex, m_snapMutex;
     std::vector<ActionRequest> m_queue;
+    std::vector<Announcement> m_announcements;
+    bool m_synced = false;
 };
 
 /// True when this build links AccessKit.

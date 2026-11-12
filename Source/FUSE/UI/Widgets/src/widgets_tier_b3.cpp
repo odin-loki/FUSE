@@ -804,6 +804,7 @@ void registerTierB3(UiContext& ui) {
     r.registerWidget<ToastW>();
     r.registerWidget<GroupBodyW>();
     r.registerWidget<WizardPageW>();
+    detail::a11yTierB3(r);
 }
 
 // ---- group box ---------------------------------------------------------------------------------------------------------
@@ -868,7 +869,7 @@ NodeHandle stackPage(const UiContext& ui, NodeHandle st, u32 index) { return nth
 NodeHandle toolBar(UiContext& ui, NodeHandle parent, std::string_view id) {
     const NodeHandle b = panel(ui, parent, id);
     ui.addClass(b, "toolbar");
-    ui.setA11y(b, A11yRole::Group, "Tool bar");
+    ui.setA11y(b, A11yRole::ToolBar, "Tool bar");
     return b;
 }
 NodeHandle toolBarAction(UiContext& ui, NodeHandle bar, std::string_view text, std::string_view tooltip, std::string_view id) {
@@ -885,8 +886,10 @@ NodeHandle toolBarSeparator(UiContext& ui, NodeHandle bar) {
 NodeHandle statusBar(UiContext& ui, NodeHandle parent, std::string_view id) {
     const NodeHandle b = panel(ui, parent, id);
     ui.addClass(b, "statusbar");
+    ui.setA11y(b, A11yRole::StatusBar);
     const NodeHandle msg = label(ui, b, "");
     ui.addClass(msg, "statusmsg");
+    ui.setA11yLive(msg, A11yLive::Polite); // a new message is announced
     ui.setCss(msg, "flex-grow", "1");
     return b;
 }
@@ -1222,4 +1225,70 @@ NodeHandle doubleSpinBox(UiContext& ui, NodeHandle parent, f32 lo, f32 hi, f32 v
     return spinBox(ui, parent, lo, hi, value, step > 0.f ? step : 0.1f, id);
 }
 
+} // namespace fuse::ui::widgets
+
+#include "widgets_internal.hpp"
+#include <cstdio>
+// ---- accessibility (plan §4.14): header, rich text, toast, text edit -------------------------------------------------------
+namespace fuse::ui::widgets {
+namespace {
+// Header: a row of column headers (id = section + 1); Click sorts by the section.
+void headerA11y(const UiContext& ui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>& items) {
+    const HeaderState* s = headerPool().get(ui, n);
+    if (!s) return;
+    detail::a11yDropTextName(ui, n, self);
+    const Rect c = ui.contentRect(n);
+    f32 x = c.x;
+    for (u32 i = 0; i < s->widths.size(); ++i) {
+        A11ySnapshotNode h = detail::a11yItem(i + 1, A11yRole::ColumnHeader, nth(ui.text(n), i), {x, c.y, s->widths[i], c.h},
+                                              self.disabled ? 0u : a11yActionBit(A11yAction::Click));
+        h.posInSet = i + 1;
+        h.setSize = u32(s->widths.size());
+        if (s->sortCol == i32(i)) h.valueText = s->asc ? "ascending" : "descending";
+        items.push_back(std::move(h));
+        x += s->widths[i];
+    }
+}
+bool headerA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32, std::string_view) {
+    HeaderState* s = headerPool().get(ui, n);
+    if (!s || !child || child > s->widths.size() || a != A11yAction::Click) return false;
+    const i32 col = i32(child - 1);
+    s->asc = s->sortCol == col ? !s->asc : true;
+    s->sortCol = col;
+    ui.invalidate(n);
+    ui.emit(n, SignalKind::Toggled, {.value = f32(col), .flag = s->asc});
+    return true;
+}
+// Rich text: the name is the plain text (set by setRichText); every link is a child (id = link index + 1).
+void richTextA11y(const UiContext& cui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>& items) {
+    UiContext& ui = const_cast<UiContext&>(cui); // link rects come from the wrapped layout
+    for (u32 i = 0; i < richTextLinkCount(ui, n); ++i)
+        items.push_back(detail::a11yItem(i + 1, A11yRole::Link, richTextLink(ui, n, i), richTextLinkRect(ui, n, i),
+                                         self.disabled ? 0u : a11yActionBit(A11yAction::Click)));
+}
+bool richTextA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32, std::string_view) {
+    if (!child || child > richTextLinkCount(ui, n) || a != A11yAction::Click) return false;
+    const std::string target = richTextLink(ui, n, child - 1);
+    ui.emit(n, SignalKind::Submitted, {.value = f32(child - 1), .text = target});
+    return true;
+}
+// Toast: an alert that is announced when it appears.
+void toastA11y(const UiContext&, NodeHandle, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>&) {
+    if (self.live == A11yLive::Off) self.live = A11yLive::Polite;
+}
+// Text edit: SetValue replaces the document.
+bool textEditA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32, std::string_view text) {
+    if (child || a != A11yAction::SetValue) return false;
+    if (textEditText(ui, n) == text) return true;
+    textEditSetText(ui, n, text);
+    ui.emit(n, SignalKind::TextChanged, {.text = text});
+    return true;
+}
+} // namespace
+void detail::a11yTierB3(WidgetRegistry& r) {
+    a11yHook(r, "header", A11yRole::Row, &headerA11y, &headerA11yAction);
+    a11yHook(r, "richtext", A11yRole::Text, &richTextA11y, &richTextA11yAction);
+    a11yHook(r, "toast", A11yRole::Alert, &toastA11y);
+    a11yHook(r, "textedit", A11yRole::TextField, nullptr, &textEditA11yAction);
+}
 } // namespace fuse::ui::widgets

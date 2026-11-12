@@ -511,6 +511,7 @@ void registerTierA(UiContext& ui) {
     r.registerWidget<LineEdit>();
     r.registerWidget<ImageW>();
     r.registerWidget<Separator>();
+    detail::a11yTierA(r);
 }
 
 void install(UiContext& ui) {
@@ -642,4 +643,41 @@ NodeHandle separator(UiContext& ui, NodeHandle p, std::string_view id) { return 
 
 std::string_view comboText(const UiContext& ui, NodeHandle n) { return item(ui.text(n), u32(ui.value(n))); }
 
+} // namespace fuse::ui::widgets
+
+#include "widgets_internal.hpp"
+#include <cstdio>
+// ---- accessibility (plan §4.14): Tier A ----------------------------------------------------------------------------------
+namespace fuse::ui::widgets {
+namespace {
+// Combo box: the name is the label an app gives it (setA11y), the value the selected item; Expand opens the list.
+void comboA11y(const UiContext& ui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>&) {
+    detail::a11yDropTextName(ui, n, self);
+    self.valueText.assign(comboText(ui, n));
+    self.setSize = itemCount(ui.text(n));
+    self.posInSet = self.setSize ? u32(ui.value(n)) + 1u : 0u;
+    self.expandable = true;
+    if (!self.disabled && self.setSize)
+        self.actions |= detail::a11yBits({A11yAction::Expand, A11yAction::Increment, A11yAction::Decrement, A11yAction::SetValue});
+}
+bool comboA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32 value, std::string_view) {
+    const u32 count = itemCount(ui.text(n));
+    if (child || !count) return false;
+    const u32 cur = u32(ui.value(n));
+    auto pick = [&](u32 v) {
+        if (v == cur) return true;
+        ui.setValue(n, f32(v), true);
+        ui.emit(n, SignalKind::TextChanged, {.text = item(ui.text(n), v)});
+        return true;
+    };
+    switch (a) {
+    case A11yAction::Increment: return pick(std::min(cur + 1, count - 1));
+    case A11yAction::Decrement: return pick(cur ? cur - 1 : 0);
+    case A11yAction::SetValue: return pick(u32(std::clamp(std::lround(value), 0l, long(count) - 1)));
+    case A11yAction::Expand: return detail::openComboPopup(ui, n);
+    default: return false;
+    }
+}
+} // namespace
+void detail::a11yTierA(WidgetRegistry& r) { a11yHook(r, "combobox", A11yRole::ComboBox, &comboA11y, &comboA11yAction); }
 } // namespace fuse::ui::widgets

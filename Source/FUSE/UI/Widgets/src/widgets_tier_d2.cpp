@@ -1286,6 +1286,7 @@ void registerTierD2(UiContext& ui) {
     ui.registry().registerWidget<CodeEditW>();
     ui.registry().registerWidget<DateTimeW>();
     ui.registry().registerWidget<VideoW>();
+    detail::a11yTierD2(ui.registry());
 }
 
 // ---- font picker ------------------------------------------------------------------------------------------------------
@@ -1773,4 +1774,41 @@ void videoSeek(UiContext& ui, NodeHandle v, u32 frame) {
 u32 videoFrame(const UiContext& ui, NodeHandle v) { const VideoState* s = videoPool().get(ui, v); return s ? s->frame : 0u; }
 u32 videoDecodedFrames(const UiContext& ui, NodeHandle v) { const VideoState* s = videoPool().get(ui, v); return s ? s->decoded : 0u; }
 
+} // namespace fuse::ui::widgets
+
+#include "widgets_internal.hpp"
+#include <cstdio>
+// ---- accessibility (plan §4.14): code edit, date-time edit -----------------------------------------------------------------
+namespace fuse::ui::widgets {
+namespace {
+bool codeEditA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32, std::string_view text) {
+    if (child || a != A11yAction::SetValue) return false;
+    if (codeEditText(ui, n) == text) return true;
+    codeEditSetText(ui, n, text);
+    ui.emit(n, SignalKind::TextChanged, {.text = text});
+    return true;
+}
+// Date-time edit: the value text is "YYYY-MM-DD HH:MM"; the numeric value stays days since 1970.
+void dateTimeA11y(const UiContext& ui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>&) {
+    int y = 0, mo = 0, d = 0, h = 0, mi = 0;
+    dateTimeEditValue(ui, n, y, mo, d, h, mi);
+    char b[40];
+    std::snprintf(b, sizeof b, "%04d-%02d-%02d %02d:%02d", y, mo, d, h, mi);
+    self.valueText = b;
+}
+// Increment / Decrement move by a day, SetValue takes days since 1970 (the time of day is kept).
+bool dateTimeA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32 value, std::string_view) {
+    if (child || (a != A11yAction::Increment && a != A11yAction::Decrement && a != A11yAction::SetValue)) return false;
+    int y = 0, mo = 0, d = 0, h = 0, mi = 0;
+    dateTimeEditValue(ui, n, y, mo, d, h, mi);
+    const i32 days = a == A11yAction::SetValue ? i32(std::lround(value)) : daysFromCivil(y, mo, d) + (a == A11yAction::Increment ? 1 : -1);
+    civilFromDays(days, y, mo, d);
+    setDateTimeEditValue(ui, n, y, mo, d, h, mi);
+    return true;
+}
+} // namespace
+void detail::a11yTierD2(WidgetRegistry& r) {
+    a11yHook(r, "codeedit", A11yRole::TextField, nullptr, &codeEditA11yAction);
+    a11yHook(r, "datetimeedit", A11yRole::SpinBox, &dateTimeA11y, &dateTimeA11yAction);
+}
 } // namespace fuse::ui::widgets

@@ -199,6 +199,7 @@ void AppWindow::rebuildMenu() {
             });
         } else {
             m_ui.setText(m_menuButtons[i], top.title + "\n" + items);
+            m_ui.setA11y(m_menuButtons[i], A11yRole::Button, top.title); // the accessible name follows a renamed menu
         }
         m_ui.setDisabled(m_menuButtons[i], !top.enabled);
     }

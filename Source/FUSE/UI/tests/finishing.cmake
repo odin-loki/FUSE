@@ -17,3 +17,13 @@ endforeach()
 # Golden of the two catalogue widgets test_widget_golden.cpp did not cover: double spin box, context menu
 add_test(NAME fuse_ui_widget_golden_spinmenu COMMAND fuse_ui_widget_golden --scene=spinmenu)
 set_tests_properties(fuse_ui_widget_golden_spinmenu PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Accessibility completeness: tree dumps, actions and the bridge per widget family
+if(TARGET fuse_ui_a11y)
+    fuse_ui_test(fuse_ui_a11y_families test_a11y_families.cpp)
+    target_link_libraries(fuse_ui_a11y_families PRIVATE fuse_ui_a11y)
+    foreach(g controls menus dialogs_live list tree table modelview grid tabs text pro bridge)
+        add_test(NAME fuse_ui_a11y_family_${g} COMMAND fuse_ui_a11y_families --gate=${g})
+        set_tests_properties(fuse_ui_a11y_family_${g} PROPERTIES LABELS "fuse_ui;gate")
+    endforeach()
+endif()

@@ -176,9 +176,25 @@ using CommandFn = void (*)(UiContext&, NodeHandle, u64 a, u64 b);
 // ---- Accessibility -------------------------------------------------------------------------------------------------
 enum class A11yRole : u8 {
     None, Window, Group, Text, Button, CheckBox, RadioButton, Switch, Slider, ProgressBar, TextField, ScrollArea,
-    List, ListItem, Image, Separator, Link, ComboBox, SpinBox, Dial, ScrollBar, Tab
+    List, ListItem, Image, Separator, Link, ComboBox, SpinBox, Dial, ScrollBar, Tab,
+    // appended (the values above are stable): menus, dialogs, trees, tables, tab lists, bars, transient messages
+    Menu, MenuItem, MenuBar, Dialog, Tree, TreeItem, Table, Row, Cell, ColumnHeader, TabList, TabPanel, ToolBar,
+    StatusBar, Tooltip, Alert
 };
 const char* a11yRoleName(A11yRole r);
+/// What assistive technology can ask a node to do (UiContext::performA11yAction). The first five keep the order of
+/// the fuse_ui_a11y bridge's original Action enum.
+enum class A11yAction : u8 {
+    Focus, Click, Increment, Decrement,
+    SetValue,       ///< ranged widgets: `value`; text fields: `text`
+    Expand, Collapse,
+    Select,         ///< rows, cells, tabs, menu items: make it the current one
+    ScrollUp, ScrollDown, ScrollLeft, ScrollRight, ///< one step of a scroll container or a self-scrolling view
+    ScrollIntoView, ///< scroll every scrolling ancestor (and the owning view, for a virtual item) until it shows
+};
+constexpr u32 a11yActionBit(A11yAction a) { return 1u << u32(a); }
+const char* a11yActionName(A11yAction a);
+enum class A11yLive : u8 { Off, Polite, Assertive };
 /// One accessible node in a flattened snapshot (UiContext::snapshotA11y). Nodes with role None are skipped and
 /// their children re-parented, as in dumpA11y. `parent` indexes the snapshot vector (~0u for the top node).
 struct A11ySnapshotNode {
@@ -189,6 +205,19 @@ struct A11ySnapshotNode {
     Rect bounds;      ///< window coordinates (logical px)
     bool focusable = false, focused = false, checked = false, disabled = false;
     f32 value = 0.f, lo = 0.f, hi = 0.f;
+    /// 0: the node itself. Otherwise this entry is a VIRTUAL child of `node` - a visible row / cell / tab / link of a
+    /// widget that paints its items itself (list, tree, table, grid, tab bar, header, rich text) - and `child` is its
+    /// id inside that widget: stable while the item exists (a row keeps its id when the view scrolls), never 0.
+    u32 child = 0;
+    std::string valueText; ///< textual value: text field content, combo selection, date, colour ("" = none)
+    bool expandable = false, expanded = false; ///< tree rows, combo boxes, menu buttons, foldable groups
+    bool selectable = false, selected = false; ///< rows, cells, tabs, menu items
+    bool modal = false;                        ///< dialogs
+    A11yLive live = A11yLive::Off;             ///< live region: a change of name / valueText is announced
+    u32 actions = 0;                           ///< a11yActionBit(A11yAction) of every action performA11yAction accepts
+    u32 level = 0;                             ///< tree rows: depth, 1 = top level (0 = not in a hierarchy)
+    u32 posInSet = 0, setSize = 0;             ///< virtual items: 1-based position among ALL items, and their count
+    bool hasAction(A11yAction a) const { return (actions & a11yActionBit(a)) != 0; }
 };
 
 // ---- Touch ---------------------------------------------------------------------------------------------------------
@@ -258,6 +287,14 @@ struct WidgetClass {
     DragSourceFn dragStart = nullptr;
     /// Drag and drop: true when the node takes `data` at `pos` (as UiContext::setDropFilter does for one node).
     DropFilterFn acceptsDrop = nullptr;
+    /// Accessibility: called by snapshotA11y after the core filled `self` (role, name, states, value, default
+    /// actions). The class may refine `self` (valueText, expanded, extra actions) and append its VISIBLE items to
+    /// `items` as virtual children: each needs `child` (stable id, never 0), role, name and bounds; `parent` is an
+    /// index into `items` (an earlier entry) or ~0u for a direct child of the widget. Null: nothing to add.
+    void (*a11y)(const UiContext&, NodeHandle, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>& items) = nullptr;
+    /// Accessibility: performs `action` on the node (`child` 0) or on one of its virtual children. Returns false to
+    /// let the core's default handle it (Focus, Click, Increment / Decrement / SetValue, scrolling).
+    bool (*a11yAction)(UiContext&, NodeHandle, u32 child, A11yAction action, f32 value, std::string_view text) = nullptr;
 };
 
 /// Concept turning a plain struct with static members into a WidgetClass.
@@ -289,6 +326,8 @@ public:
     }
     u32 find(std::string_view name) const; ///< 0xFFFFFFFF when unknown
     const WidgetClass& get(u32 id) const { return m_classes[id]; }
+    /// Mutable access to a registered class (hooks installed after registration, e.g. the accessibility hooks).
+    WidgetClass& edit(u32 id) { return m_classes[id]; }
     u32 size() const { return u32(m_classes.size()); }
 
 private:
@@ -370,6 +409,19 @@ public:
     void setCapturesDrag(NodeHandle n, bool on);
     void setA11y(NodeHandle n, A11yRole role, std::string_view name = {});
     A11yRole role(NodeHandle n) const;
+    /// Marks a node as a live region: assistive technology announces its name when it appears or changes (status
+    /// messages, toasts). Reported in the snapshot; fuse_ui_a11y turns changes into announcements.
+    void setA11yLive(NodeHandle n, A11yLive live);
+    /// Performs an accessibility action on `node`, or on virtual child `child` of it (A11ySnapshotNode::child).
+    /// The widget class is asked first (WidgetClass::a11yAction); the core's defaults are: Focus = keyboard focus;
+    /// Click = a pointer click at the centre when the node is what is hit there, else the widget's Click event and
+    /// Clicked signal as for Enter; Increment / Decrement = one step (the range step, else 1 % of the range);
+    /// SetValue = setValue clamped to the range, or for a text field the text (TextChanged is emitted); Scroll* =
+    /// a scroll container moves by half its size, any other node receives one wheel notch; ScrollIntoView scrolls
+    /// the scrolling ancestors. Returns false when the node is dead, disabled (everything but ScrollIntoView), or
+    /// the action does not apply (see A11ySnapshotNode::actions). This is the entry point platform adapters and
+    /// tests use; it must be called on the context's thread.
+    bool performA11yAction(NodeHandle node, A11yAction action, f32 value = 0.f, u32 child = 0, std::string_view text = {});
     void setUserData(NodeHandle n, u64 v);
     u64 userData(NodeHandle n) const;
     /// Per-node text edit buffer (created on first use; LineEdit and friends).
@@ -594,7 +646,10 @@ public:
 
     // dumps (tests, inspector)
     void dumpLayout(std::string& out) const;
-    void dumpA11y(std::string& out) const;
+    /// One line per accessible node, indented by depth: role "name" states [value="text"] [value=v range=[lo,hi]]
+    /// [level=n] [pos=i/n]; virtual children are listed under their widget with their id (#child). `actions` adds
+    /// the action list of each node.
+    void dumpA11y(std::string& out, bool actions = false) const;
     /// Flattened accessible tree of the visible nodes, root first, parents before children (for platform
     /// accessibility adapters: fuse_ui_a11y / AccessKit). Clears `out` first.
     void snapshotA11y(std::vector<A11ySnapshotNode>& out) const;

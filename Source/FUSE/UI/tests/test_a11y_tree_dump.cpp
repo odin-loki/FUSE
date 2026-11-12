@@ -33,8 +33,8 @@ int main() {
         "    slider focusable value=0.62 range=[0,1]\n"
         "    dial focusable value=35 range=[0,100]\n"
         "    spinbox focusable value=144 range=[0,240]\n"
-        "    combobox \"Vulkan\nCPU raster\nNull\" focusable\n"
-        "    textfield \"player_one\" focusable focused\n"
+        "    combobox focusable collapsed value=\"Vulkan\" pos=1/3\n"
+        "    textfield focusable focused value=\"player_one\"\n"
         "    progressbar value=0.7 range=[0,1]\n"
         "    text \"Scroll\"\n"
         "    scrollbar value=0.3 range=[0,1]\n";

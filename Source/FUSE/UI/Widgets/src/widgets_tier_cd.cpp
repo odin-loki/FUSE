@@ -743,6 +743,7 @@ void registerTierCD(UiContext& ui) {
     r.registerWidget<ColorPickerW>();
     r.registerWidget<CalendarW>();
     r.registerWidget<ChartW>();
+    detail::a11yTierCD(r);
 }
 
 // ---- civil dates (H. Hinnant's algorithms) ---------------------------------------------------------------------------
@@ -1265,4 +1266,89 @@ void setMarkdown(UiContext& ui, NodeHandle view, std::string_view md) {
     flush();
 }
 
+} // namespace fuse::ui::widgets
+
+#include "widgets_internal.hpp"
+#include <cstdio>
+// ---- accessibility (plan §4.14): grid view, calendar, colour picker -----------------------------------------------------------
+namespace fuse::ui::widgets {
+namespace {
+// Grid view: the visible tiles are list items (id = item index + 1).
+void gridA11y(const UiContext& ui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>& items) {
+    GridState* s = gridPool().get(ui, n);
+    if (!s || !s->model) return;
+    const Rect c = ui.contentRect(n);
+    const u32 nc = GridView::cols(ui, n, *s), total = GridView::count(*s), vr = GridView::visRows(ui, n, *s);
+    const i64 sel = i64(ui.value(n));
+    self.setSize = total;
+    if (GridView::rowsTotal(ui, n, *s) > vr && !self.disabled)
+        self.actions |= detail::a11yBits({A11yAction::ScrollUp, A11yAction::ScrollDown});
+    for (u32 i = s->first * nc; i < std::min(total, (s->first + vr) * nc); ++i) {
+        const Rect r{c.x + f32(i % nc) * s->tileW, c.y + f32(i / nc - s->first) * s->tileH, s->tileW, s->tileH};
+        A11ySnapshotNode it = detail::a11yItem(i + 1, A11yRole::ListItem,
+                                               s->model->data ? s->model->data(s->model->user, i, 0, s->scratch) : std::string_view{}, r,
+                                               self.disabled ? 0u : detail::kA11yItemActions);
+        it.selectable = s->mode != SelectionMode::None;
+        it.selected = it.selectable && (s->sel ? s->sel->rowSelected(i) : i64(i) == sel); // (a selection model: any mode)
+        it.posInSet = i + 1;
+        it.setSize = total;
+        items.push_back(std::move(it));
+    }
+}
+bool gridA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32, std::string_view) {
+    GridState* s = gridPool().get(ui, n);
+    if (!s || !child || child > GridView::count(*s)) return false;
+    const u32 idx = child - 1, row = idx / GridView::cols(ui, n, *s);
+    switch (a) {
+    case A11yAction::Select: // idempotent: a selected tile only becomes current; Click follows the mode's pointer rules
+        if (s->sel && s->sel->rowSelected(idx)) { s->sel->setCurrent(idx); return true; }
+        [[fallthrough]];
+    case A11yAction::Click: GridView::select(ui, n, *s, idx, 0, true); return true;
+    case A11yAction::ScrollIntoView: {
+        const u32 vr = GridView::visRows(ui, n, *s);
+        if (row < s->first) GridView::setFirst(ui, n, *s, row);
+        else if (row >= s->first + vr) GridView::setFirst(ui, n, *s, i64(row) - i64(vr) + 1);
+        return true;
+    }
+    default: return false;
+    }
+}
+// Calendar: the value is the selected date (ISO); Increment / Decrement move by a day, SetValue takes days since 1970.
+void calendarA11y(const UiContext& ui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>&) {
+    int y = 0, m = 0, d = 0;
+    calendarDate(ui, n, y, m, d);
+    char b[32];
+    std::snprintf(b, sizeof b, "%04d-%02d-%02d", y, m, d);
+    self.valueText = b;
+    if (self.name.empty()) self.name = "Calendar";
+    if (!self.disabled) self.actions |= detail::a11yBits({A11yAction::Increment, A11yAction::Decrement, A11yAction::SetValue});
+}
+bool calendarA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32 value, std::string_view) {
+    if (child) return false;
+    switch (a) {
+    case A11yAction::Increment: ui.setValue(n, ui.value(n) + 1.f, true); return true;
+    case A11yAction::Decrement: ui.setValue(n, ui.value(n) - 1.f, true); return true;
+    case A11yAction::SetValue: ui.setValue(n, std::round(value), true); return true;
+    default: return false;
+    }
+}
+// Colour picker: the value is "#RRGGBBAA".
+void colorPickerA11y(const UiContext& ui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>&) {
+    self.valueText.assign(ui.text(n));
+    if (self.name == self.valueText) self.name = "Colour";
+}
+void chartA11y(const UiContext& ui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>&) {
+    if (!self.name.empty()) return;
+    char b[48];
+    if (const u32 spans = chartFlameSpanCount(ui, n)) std::snprintf(b, sizeof b, "Flame graph, %u spans", spans);
+    else std::snprintf(b, sizeof b, "Chart, %u series", chartSeriesCount(ui, n));
+    self.name = b;
+}
+} // namespace
+void detail::a11yTierCD(WidgetRegistry& r) {
+    a11yHook(r, "gridview", A11yRole::List, &gridA11y, &gridA11yAction);
+    a11yHook(r, "calendar", A11yRole::Group, &calendarA11y, &calendarA11yAction);
+    a11yHook(r, "colorpicker", A11yRole::Group, &colorPickerA11y);
+    a11yHook(r, "chart", A11yRole::Image, &chartA11y);
+}
 } // namespace fuse::ui::widgets

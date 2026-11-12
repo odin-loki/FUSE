@@ -571,6 +571,7 @@ void registerTierB(UiContext& ui) {
     r.registerWidget<ListView>();
     r.registerWidget<TreeView>();
     r.registerWidget<TabBar>();
+    detail::a11yTierB(r);
     detail::registerTierB2(ui);
 }
 
@@ -714,7 +715,7 @@ NodeHandle dialog(UiContext& ui, std::string_view title, std::string_view id) {
     ui.addClass(card, "dialog");
     ui.set(card, Prop::CenterX, PropValue::ofBool(true));
     ui.set(card, Prop::CenterY, PropValue::ofBool(true));
-    ui.setA11y(card, A11yRole::Window, title);
+    ui.setA11y(card, A11yRole::Dialog, title);
     const NodeHandle t = label(ui, card, title);
     ui.addClass(t, "title");
     panel(ui, card); // body
@@ -820,7 +821,7 @@ NodeHandle tabWidget(UiContext& ui, NodeHandle parent, std::string_view titles, 
     ui.setCss(stack, "flex-grow", "1");
     for (u32 i = 0, c = count(titles); i < c; ++i) {
         const NodeHandle p = panel(ui, stack);
-        ui.setA11y(p, A11yRole::Group, nth(titles, i));
+        ui.setA11y(p, A11yRole::TabPanel, nth(titles, i));
     }
     showPage(ui, stack, 0);
     ui.connect(bar, SignalKind::ValueChanged, [stack](UiContext& c, NodeHandle, const SignalArgs& a) { showPage(c, stack, u32(a.value)); });
@@ -841,4 +842,146 @@ NodeHandle scrollArea(UiContext& ui, NodeHandle parent, std::string_view id) {
     return n;
 }
 
+} // namespace fuse::ui::widgets
+
+#include "widgets_internal.hpp"
+#include <cstdio>
+// ---- accessibility (plan §4.14): Tier B ----------------------------------------------------------------------------------
+namespace fuse::ui::widgets {
+namespace {
+using detail::a11yItem;
+using detail::kA11yItemActions;
+constexpr u32 kA11yScroll = detail::a11yBits({A11yAction::ScrollUp, A11yAction::ScrollDown});
+
+// List view: the visible rows are list items (id = row + 1).
+void listA11y(const UiContext& cui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>& items) {
+    UiContext& ui = const_cast<UiContext&>(cui); // row metrics come from the font
+    detail::a11yDropTextName(ui, n, self);
+    const std::string_view text = ui.text(n);
+    const u32 total = count(text), first = u32(ui.userData(n)), vis = ListView::visibleRows(ui, n);
+    const Rect c = ui.contentRect(n);
+    const f32 rh = rowHeight(ui, n);
+    const i64 sel = i64(ui.value(n));
+    self.setSize = total;
+    if (total > vis && !self.disabled) self.actions |= kA11yScroll;
+    for (u32 i = first; i < std::min(total, first + vis); ++i) {
+        A11ySnapshotNode it = a11yItem(i + 1, A11yRole::ListItem, nth(text, i), {c.x, c.y + f32(i - first) * rh, c.w, rh},
+                                       self.disabled ? 0u : kA11yItemActions);
+        it.selectable = true;
+        it.selected = i64(i) == sel;
+        it.posInSet = i + 1;
+        it.setSize = total;
+        items.push_back(std::move(it));
+    }
+}
+bool listA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32, std::string_view) {
+    if (!child || child > count(ui.text(n))) return false;
+    const i64 row = i64(child) - 1;
+    switch (a) {
+    case A11yAction::Select: case A11yAction::Click: ListView::select(ui, n, row); return true;
+    case A11yAction::ScrollIntoView: {
+        const i64 first = i64(ui.userData(n)), vis = i64(ListView::visibleRows(ui, n));
+        if (row < first) ListView::setFirst(ui, n, row);
+        else if (row >= first + vis) ListView::setFirst(ui, n, row - vis + 1);
+        return true;
+    }
+    default: return false;
+    }
+}
+// Tree view: the shown rows are tree items (id = line + 1) with their level and expansion state.
+void treeA11y(const UiContext& cui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>& items) {
+    UiContext& ui = const_cast<UiContext&>(cui);
+    detail::a11yDropTextName(ui, n, self);
+    const Rect c = ui.contentRect(n);
+    const f32 rh = rowHeight(ui, n);
+    const i64 sel = i64(ui.value(n));
+    const u32 total = count(ui.text(n));
+    eachTreeRow(ui.text(n), foldOf(ui, n), [&](u32 row, u32 line, u32 depth, bool kids, bool open, std::string_view t) {
+        const Rect r{c.x, c.y + f32(row) * rh, c.w, rh};
+        if (r.y >= c.bottom()) return false;
+        A11ySnapshotNode it = a11yItem(line + 1, A11yRole::TreeItem, t, r, self.disabled ? 0u : kA11yItemActions);
+        it.level = depth + 1;
+        it.selectable = true;
+        it.selected = i64(line) == sel;
+        it.expandable = kids;
+        it.expanded = kids && open;
+        if (kids && !self.disabled) it.actions |= a11yActionBit(open ? A11yAction::Collapse : A11yAction::Expand);
+        it.posInSet = line + 1;
+        it.setSize = total;
+        items.push_back(std::move(it));
+        return true;
+    });
+}
+bool treeA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32, std::string_view) {
+    if (!child || child > count(ui.text(n))) return false;
+    const u32 line = child - 1;
+    switch (a) {
+    case A11yAction::Select: case A11yAction::Click: TreeView::select(ui, n, line); return true;
+    case A11yAction::Expand: case A11yAction::Collapse: {
+        const TreeView::Hit h = TreeView::rowInfo(ui, n, [&](u32, u32 l) { return l == line; });
+        if (h.line < 0 || !h.kids) return false; // hidden under a collapsed parent, or a leaf
+        setTreeExpanded(ui, n, line, a == A11yAction::Expand);
+        return true;
+    }
+    case A11yAction::ScrollIntoView: return true; // (a tree view does not scroll its rows)
+    default: return false;
+    }
+}
+// Tab bar: a tab list with one tab per title (id = index + 1).
+void tabBarA11y(const UiContext& cui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>& items) {
+    UiContext& ui = const_cast<UiContext&>(cui);
+    detail::a11yDropTextName(ui, n, self);
+    const Rect c = ui.contentRect(n);
+    const u32 total = count(ui.text(n)), sel = u32(ui.value(n));
+    f32 x = c.x;
+    eachLine(ui.text(n), [&](u32 i, std::string_view t) {
+        const f32 w = TabBar::tabW(ui, n, t);
+        A11ySnapshotNode it = a11yItem(i + 1, A11yRole::Tab, t, {x, c.y, w, c.h},
+                                       self.disabled ? 0u : detail::a11yBits({A11yAction::Select, A11yAction::Click}));
+        it.selectable = true;
+        it.selected = i == sel;
+        it.posInSet = i + 1;
+        it.setSize = total;
+        items.push_back(std::move(it));
+        x += w;
+        return true;
+    });
+}
+bool tabBarA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32, std::string_view) {
+    if (!child || child > count(ui.text(n)) || (a != A11yAction::Select && a != A11yAction::Click)) return false;
+    ui.setValue(n, f32(child - 1), true);
+    return true;
+}
+// Menu item: text = "label", "label\tShortcut" (action menus) or "label\n<submenu items>": the name is the label
+// alone (no shortcut text, no state prefix bytes), a submenu makes it expandable. Disabled / checked items carry the
+// node states, which the core reports.
+void menuItemA11y(const UiContext& ui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>&) {
+    const std::string_view t = ui.text(n);
+    if (self.name == t) {
+        std::string_view l = MenuItem::label(t);
+        while (!l.empty() && (l[0] == '\x01' || l[0] == '\x02')) l.remove_prefix(1);
+        self.name.assign(l);
+    }
+    self.expandable = MenuItem::hasSub(t);
+}
+// Menu-bar button: text = "title\n<items>" (the title is its a11y name); it opens a menu.
+void menuButtonA11y(const UiContext&, NodeHandle, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>&) {
+    self.expandable = true;
+    if (!self.disabled) self.actions |= a11yActionBit(A11yAction::Expand);
+}
+bool menuButtonA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32, std::string_view) {
+    return !child && a == A11yAction::Expand && ui.performA11yAction(n, A11yAction::Click);
+}
+} // namespace
+void detail::a11yTierB(WidgetRegistry& r) {
+    a11yHook(r, "popup", A11yRole::None); // the scrim: its panel (menu, dialog card) is what is exposed
+    a11yHook(r, "menu", A11yRole::Menu);
+    a11yHook(r, "menuitem", A11yRole::MenuItem, &menuItemA11y);
+    a11yHook(r, "menubar", A11yRole::MenuBar);
+    a11yHook(r, "menubutton", A11yRole::Button, &menuButtonA11y, &menuButtonA11yAction);
+    a11yHook(r, "tooltip", A11yRole::Tooltip);
+    a11yHook(r, "listview", A11yRole::List, &listA11y, &listA11yAction);
+    a11yHook(r, "treeview", A11yRole::Tree, &treeA11y, &treeA11yAction);
+    a11yHook(r, "tabbar", A11yRole::TabList, &tabBarA11y, &tabBarA11yAction);
+}
 } // namespace fuse::ui::widgets

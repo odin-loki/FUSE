@@ -727,7 +727,8 @@ void registerTierB2(UiContext& ui) {
     r.registerWidget<DockTitle>();
     r.registerWidget<DockTabs>();
     r.registerWidget<DockDrop>();
-    detail::registerModelView(ui); // tableview, treemodelview
+    detail::registerModelView(ui); // tableview, treemodelview (+ their accessibility hooks)
+    detail::a11yTierB2(r);
 }
 
 bool parseNum(std::string_view s, double& out) {
@@ -1137,4 +1138,41 @@ bool dockRestoreLayout(UiContext& ui, NodeHandle area, std::string_view text) {
     return true;
 }
 
+} // namespace fuse::ui::widgets
+
+#include "widgets_internal.hpp"
+#include <cstdio>
+// ---- accessibility (plan §4.14): dock tab strip (the item views: widgets_modelview.cpp) -----------------------------------
+namespace fuse::ui::widgets {
+namespace {
+using detail::a11yItem;
+// Dock tab strip: a tab list with one tab per open dock of the group (id = the dock's node index + 1).
+void dockTabsA11y(const UiContext& cui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>& items) {
+    UiContext& ui = const_cast<UiContext&>(cui);
+    const DockTabsState* s = tabsState(ui, n);
+    if (!s) return;
+    u32 open = 0, pos = 0;
+    for (NodeHandle m : s->members) open += DockTabs::open(ui, m);
+    for (NodeHandle m : s->members) {
+        if (!DockTabs::open(ui, m)) continue;
+        A11ySnapshotNode it = a11yItem(m.index + 1, A11yRole::Tab, DockTabs::title(ui, m), DockTabs::tabRect(ui, n, *s, m),
+                                       self.disabled ? 0u : detail::a11yBits({A11yAction::Select, A11yAction::Click}));
+        it.selectable = true;
+        it.selected = m == s->current;
+        it.posInSet = ++pos;
+        it.setSize = open;
+        items.push_back(std::move(it));
+    }
+}
+bool dockTabsA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32, std::string_view) {
+    const DockTabsState* s = tabsState(ui, n);
+    if (!s || !child || (a != A11yAction::Select && a != A11yAction::Click)) return false;
+    for (NodeHandle m : s->members)
+        if (m.index + 1 == child && DockTabs::open(ui, m)) { dockRaise(ui, m); return true; }
+    return false;
+}
+} // namespace
+void detail::a11yTierB2(WidgetRegistry& r) {
+    a11yHook(r, "docktabs", A11yRole::TabList, &dockTabsA11y, &dockTabsA11yAction);
+}
 } // namespace fuse::ui::widgets

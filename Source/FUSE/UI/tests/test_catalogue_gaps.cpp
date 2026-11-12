@@ -108,7 +108,7 @@ void gateTabBar() {
     f32 last = -1.f;
     ui.connect(bar, SignalKind::ValueChanged, [&changes, &last](UiContext&, NodeHandle, const SignalArgs& a) { ++changes; last = a.value; });
     ui.update();
-    UI_CHECK(ui.role(bar) == A11yRole::Tab && ui.value(bar) == 1.f && changes == 0);
+    UI_CHECK(ui.role(bar) == A11yRole::TabList && ui.value(bar) == 1.f && changes == 0);
     const Rect c = ui.contentRect(bar);
     f.click({c.x + 8.f, ctr(c).y}); // the first tab
     UI_CHECK(ui.value(bar) == 0.f && changes == 1 && last == 0.f);

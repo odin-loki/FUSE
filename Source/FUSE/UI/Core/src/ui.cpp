@@ -25,8 +25,15 @@ enum Dirty : u8 { kDirtyStyle = 1, kDirtyLayout = 2, kDirtyPaint = 4, kDirtyText
 const char* a11yRoleName(A11yRole r) {
     static const char* names[] = {"none", "window", "group", "text", "button", "checkbox", "radio", "switch",
                                   "slider", "progressbar", "textfield", "scrollarea", "list", "listitem", "image",
-                                  "separator", "link", "combobox", "spinbox", "dial", "scrollbar", "tab"};
-    return names[u32(r)];
+                                  "separator", "link", "combobox", "spinbox", "dial", "scrollbar", "tab",
+                                  "menu", "menuitem", "menubar", "dialog", "tree", "treeitem", "table", "row", "cell",
+                                  "columnheader", "tablist", "tabpanel", "toolbar", "statusbar", "tooltip", "alert"};
+    return u32(r) < std::size(names) ? names[u32(r)] : "unknown";
+}
+const char* a11yActionName(A11yAction a) {
+    static const char* names[] = {"focus", "click", "increment", "decrement", "setvalue", "expand", "collapse", "select",
+                                  "scrollup", "scrolldown", "scrollleft", "scrollright", "scrollintoview"};
+    return u32(a) < std::size(names) ? names[u32(a)] : "unknown";
 }
 
 struct UiContext::Node {
@@ -58,6 +65,7 @@ struct UiContext::Cold {
     std::string id;
     std::string text;
     std::string a11yName;
+    A11yLive a11yLive = A11yLive::Off;
     std::vector<std::pair<Prop, PropValue>> inl;
     fuse::text::TextLayout layout;
     f32 layoutWidth = -1.f, layoutSize = -1.f;
@@ -515,6 +523,9 @@ void UiContext::setA11y(NodeHandle h, A11yRole r, std::string_view name) {
     m_cold[h.index]->a11yName.assign(name);
 }
 A11yRole UiContext::role(NodeHandle h) const { return node(h) ? node(h)->role : A11yRole::None; }
+void UiContext::setA11yLive(NodeHandle h, A11yLive live) {
+    if (node(h)) m_cold[h.index]->a11yLive = live;
+}
 void UiContext::setUserData(NodeHandle h, u64 v) {
     if (Node* n = node(h)) n->user = v;
 }
@@ -2445,46 +2456,73 @@ void UiContext::dumpLayout(std::string& out) const {
     rec(rec, m_root.index, 0);
 }
 
-void UiContext::dumpA11y(std::string& out) const {
-    auto rec = [&](auto&& self, u32 i, int depth) -> void {
-        const Node& n = m_nodes[i];
-        if (!m_styles.style(n.style).visible) return;
-        int d = depth;
-        if (n.role != A11yRole::None) {
-            out.append(std::size_t(depth) * 2, ' ');
-            out += a11yRoleName(n.role);
-            const std::string& nm = m_cold[i]->a11yName.empty() ? m_cold[i]->text : m_cold[i]->a11yName;
-            if (!nm.empty()) { out += " \""; out += nm; out += '"'; }
-            if (n.flags & kFlagFocusable) out += " focusable";
-            if (m_focus.index == i && m_focus.generation == n.gen) out += " focused";
-            if (n.state & kStateChecked) out += " checked";
-            if (n.state & kStateDisabled) out += " disabled";
-            switch (n.role) {
-            case A11yRole::Slider: case A11yRole::ProgressBar: case A11yRole::SpinBox: case A11yRole::Dial: case A11yRole::ScrollBar:
-                appendf(out, " value=%g range=[%g,%g]", double(n.value), double(n.lo), double(n.hi));
-                break;
-            default: break;
-            }
-            out += '\n';
-            d = depth + 1;
+namespace {
+bool a11yRanged(A11yRole r) {
+    return r == A11yRole::Slider || r == A11yRole::ProgressBar || r == A11yRole::SpinBox || r == A11yRole::Dial || r == A11yRole::ScrollBar;
+}
+} // namespace
+
+void UiContext::dumpA11y(std::string& out, bool actions) const {
+    std::vector<A11ySnapshotNode> snap;
+    snapshotA11y(snap);
+    std::vector<u32> depth(snap.size(), 0);
+    for (u32 i = 0; i < snap.size(); ++i) {
+        const A11ySnapshotNode& s = snap[i];
+        // (the root is listed only when it carries a role of its own, as before)
+        const bool listed = !(i == 0 && node(s.node)->role == A11yRole::None);
+        depth[i] = s.parent == ~0u ? 0u : depth[s.parent] + ((s.parent != 0 || node(snap[0].node)->role != A11yRole::None) ? 1u : 0u);
+        if (!listed) continue;
+        out.append(std::size_t(depth[i]) * 2, ' ');
+        out += a11yRoleName(s.role);
+        if (s.child) appendf(out, " #%u", s.child);
+        if (!s.name.empty()) { out += " \""; out += s.name; out += '"'; }
+        if (s.focusable) out += " focusable";
+        if (s.focused) out += " focused";
+        if (s.checked) out += " checked";
+        if (s.disabled) out += " disabled";
+        if (s.expandable) out += s.expanded ? " expanded" : " collapsed";
+        if (s.selected) out += " selected";
+        if (s.modal) out += " modal";
+        if (s.live != A11yLive::Off) out += s.live == A11yLive::Polite ? " live=polite" : " live=assertive";
+        if (!s.valueText.empty()) { out += " value=\""; out += s.valueText; out += '"'; }
+        if (a11yRanged(s.role) && !s.child) appendf(out, " value=%g range=[%g,%g]", double(s.value), double(s.lo), double(s.hi));
+        if (s.level) appendf(out, " level=%u", s.level);
+        if (s.posInSet) appendf(out, " pos=%u/%u", s.posInSet, s.setSize);
+        if (actions && s.actions) {
+            out += " actions=";
+            bool first = true;
+            for (u32 a = 0; a <= u32(A11yAction::ScrollIntoView); ++a)
+                if (s.actions & (1u << a)) {
+                    if (!first) out += ',';
+                    out += a11yActionName(A11yAction(a));
+                    first = false;
+                }
         }
-        for (u32 k = n.first; k != kNone; k = m_nodes[k].next) self(self, k, d);
-    };
-    rec(rec, m_root.index, 0);
+        out += '\n';
+    }
 }
 
 void UiContext::snapshotA11y(std::vector<A11ySnapshotNode>& out) const {
     out.clear();
+    std::vector<A11ySnapshotNode> items;
     auto rec = [&](auto&& self, u32 i, u32 parent) -> void {
         const Node& n = m_nodes[i];
-        if (!m_styles.style(n.style).visible) return;
+        const ComputedStyle& cs = m_styles.style(n.style);
+        if (!cs.visible) return;
         u32 p = parent;
         if (n.role != A11yRole::None || i == m_root.index) {
+            const WidgetClass& wc = m_registry.get(n.cls);
             A11ySnapshotNode s;
             s.node = {i, n.gen};
             s.parent = parent;
             s.role = n.role == A11yRole::None ? A11yRole::Window : n.role;
-            s.name = m_cold[i]->a11yName.empty() ? m_cold[i]->text : m_cold[i]->a11yName;
+            // a text field's text is its value, not its name
+            if (s.role == A11yRole::TextField) {
+                s.name = m_cold[i]->a11yName;
+                s.valueText = m_cold[i]->text;
+            } else {
+                s.name = m_cold[i]->a11yName.empty() ? m_cold[i]->text : m_cold[i]->a11yName;
+            }
             s.bounds = n.rect;
             s.focusable = (n.flags & kFlagFocusable) != 0;
             s.focused = m_focus.index == i && m_focus.generation == n.gen;
@@ -2493,8 +2531,29 @@ void UiContext::snapshotA11y(std::vector<A11ySnapshotNode>& out) const {
             s.value = n.value;
             s.lo = n.lo;
             s.hi = n.hi;
+            s.live = m_cold[i]->a11yLive;
+            s.modal = s.role == A11yRole::Dialog && node(m_modal) && inScope(i, m_modal.index);
+            if (s.focusable) s.actions |= a11yActionBit(A11yAction::Focus);
+            if (!s.disabled) {
+                if (a11yRanged(s.role) && s.role != A11yRole::ProgressBar)
+                    s.actions |= a11yActionBit(A11yAction::Increment) | a11yActionBit(A11yAction::Decrement) | a11yActionBit(A11yAction::SetValue);
+                else if (s.role == A11yRole::TextField) s.actions |= a11yActionBit(A11yAction::SetValue);
+                else if (wc.interactive && !a11yRanged(s.role)) s.actions |= a11yActionBit(A11yAction::Click);
+                if (cs.overflow == Overflow::Scroll) {
+                    const Rect c = contentRect(s.node);
+                    if (n.extent.h > c.h + 0.5f) s.actions |= a11yActionBit(A11yAction::ScrollUp) | a11yActionBit(A11yAction::ScrollDown);
+                    if (n.extent.w > c.w + 0.5f) s.actions |= a11yActionBit(A11yAction::ScrollLeft) | a11yActionBit(A11yAction::ScrollRight);
+                }
+            }
+            items.clear();
+            if (wc.a11y) wc.a11y(*this, s.node, s, items);
             p = u32(out.size());
             out.push_back(std::move(s));
+            for (A11ySnapshotNode& it : items) { // the class's visible items, as virtual children
+                it.node = {i, n.gen};
+                it.parent = it.parent == ~0u ? p : p + 1u + it.parent;
+                out.push_back(std::move(it));
+            }
         }
         for (u32 k = n.first; k != kNone; k = m_nodes[k].next) self(self, k, p);
     };
@@ -2520,6 +2579,101 @@ Cursor UiContext::cursor() {
     if (node(m_scrollDrag.node)) return Cursor::Arrow;
     if (node(m_pressed)) return cursorAt(m_pressed, m_pointer);
     return cursorAt(m_hover, m_pointer);
+}
+
+bool UiContext::performA11yAction(NodeHandle h, A11yAction action, f32 value, u32 child, std::string_view text) {
+    Node* n = node(h);
+    if (!n || !visibleChain(h.index)) return false;
+    const u32 i = h.index;
+    if ((n->state & kStateDisabled) && action != A11yAction::ScrollIntoView) return false;
+    if (action == A11yAction::ScrollIntoView && !child) {
+        // every scrolling ancestor moves just far enough to show the node (layout must be current: call after update)
+        Rect r = n->rect;
+        bool moved = false;
+        for (u32 a = n->parent; a != kNone; a = m_nodes[a].parent) {
+            if (m_styles.style(m_nodes[a].style).overflow != Overflow::Scroll) continue;
+            const NodeHandle ah{a, m_nodes[a].gen};
+            const Rect c = contentRect(ah);
+            Vec2 sc = m_nodes[a].scroll;
+            const Vec2 before = sc;
+            if (r.y < c.y) sc.y -= c.y - r.y;
+            else if (r.bottom() > c.bottom()) sc.y += std::min(r.bottom() - c.bottom(), r.y - c.y);
+            if (r.x < c.x) sc.x -= c.x - r.x;
+            else if (r.right() > c.right()) sc.x += std::min(r.right() - c.right(), r.x - c.x);
+            scrollTo(ah, sc);
+            const Vec2 d{m_nodes[a].scroll.x - before.x, m_nodes[a].scroll.y - before.y};
+            moved = moved || d.x != 0.f || d.y != 0.f;
+            r.x -= d.x;
+            r.y -= d.y;
+        }
+        return moved || visibleChain(i);
+    }
+    const WidgetClass& wc = m_registry.get(n->cls);
+    if (wc.a11yAction && wc.a11yAction(*this, h, child, action, value, text)) return true;
+    if (child) return false; // virtual items are the class's business
+    n = node(h);
+    if (!n) return false;
+    switch (action) {
+    case A11yAction::Focus:
+        if (!focusableNode(i)) return false;
+        setFocus(h, FocusReason::Keyboard);
+        return m_focus == h;
+    case A11yAction::Click: {
+        if (!wc.interactive) return false;
+        const Vec2 c{n->rect.x + n->rect.w * 0.5f, n->rect.y + n->rect.h * 0.5f};
+        const NodeHandle hit = hitTest(c);
+        bool direct = false; // the centre really hits this node (not covered, not scrolled away, not behind a modal)
+        for (u32 a = hit.valid() ? hit.index : kNone; a != kNone; a = m_nodes[a].parent)
+            if (a == i) { direct = interactiveAncestor(hit.index) == i; break; }
+        if (direct && node(m_modal) && !inScope(i, m_modal.index)) return false;
+        if (direct) {
+            pointerMove(c);
+            pointerDown(c);
+            pointerUp(c);
+            return true;
+        }
+        if (node(m_modal) && !inScope(i, m_modal.index)) return false;
+        if (focusableNode(i)) setFocus(h, FocusReason::Keyboard);
+        Event e; e.type = EventType::Click; e.pos = c;
+        if (!dispatch(i, e) && node(h)) emit(h, SignalKind::Clicked, {});
+        return true;
+    }
+    case A11yAction::Increment:
+    case A11yAction::Decrement: {
+        if (!a11yRanged(n->role) || n->role == A11yRole::ProgressBar) return false;
+        f32 step = n->step > 0.f ? n->step : (n->hi - n->lo) * 0.01f;
+        if (step <= 0.f) step = 1.f;
+        setValue(h, n->value + (action == A11yAction::Increment ? step : -step), true);
+        return true;
+    }
+    case A11yAction::SetValue:
+        if (n->role == A11yRole::TextField) {
+            Cold& c = *m_cold[i];
+            if (c.text == text) return true;
+            setText(h, text);
+            if (c.edit) { c.edit->setText(text); c.edit->end(false); }
+            emit(h, SignalKind::TextChanged, {.text = text});
+            return true;
+        }
+        if (!a11yRanged(n->role) || n->role == A11yRole::ProgressBar) return false;
+        setValue(h, value, true);
+        return true;
+    case A11yAction::ScrollUp: case A11yAction::ScrollDown: case A11yAction::ScrollLeft: case A11yAction::ScrollRight: {
+        const bool vertical = action == A11yAction::ScrollUp || action == A11yAction::ScrollDown;
+        const f32 dir = (action == A11yAction::ScrollDown || action == A11yAction::ScrollRight) ? 1.f : -1.f;
+        if (m_styles.style(n->style).overflow == Overflow::Scroll) {
+            const Rect c = contentRect(h);
+            const Vec2 before = n->scroll;
+            scrollTo(h, vertical ? Vec2{before.x, before.y + dir * c.h * 0.5f} : Vec2{before.x + dir * c.w * 0.5f, before.y});
+            return !(node(h)->scroll == before);
+        }
+        Event e; e.type = EventType::Wheel; // self-scrolling views (list, table, text) scroll on wheel notches
+        e.pos = {n->rect.x + n->rect.w * 0.5f, n->rect.y + n->rect.h * 0.5f};
+        e.wheel = vertical ? Vec2{0.f, -dir} : Vec2{-dir, 0.f};
+        return dispatch(i, e);
+    }
+    default: return false; // Expand / Collapse / Select: only classes that have them
+    }
 }
 
 } // namespace fuse::ui

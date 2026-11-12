@@ -431,6 +431,8 @@ bool beginEdit(UiContext& ui, NodeHandle n, ViewState& s, u32 row, u32 col, std:
     s.editRow = row;
     s.editCol = col;
     s.editItem = ref.id;
+    // accessibility: the editor is named after its column (it is a real child node with its class's role)
+    if (s.model->header) ui.setA11y(ed, ui.role(ed), s.model->header(s.model->user, col));
     placeEditor(ui, n, s, r);
     ui.setFocus(ed, FocusReason::Keyboard);
     ui.invalidate(n);
@@ -1331,6 +1333,7 @@ void registerModelView(UiContext& ui) {
     tree.name = "treemodelview";
     tree.nameHash = 0;
     r.add(std::move(tree));
+    a11yModelView(r);
 }
 } // namespace detail
 
@@ -1682,4 +1685,197 @@ u32 treeExpandedCount(const UiContext& ui, NodeHandle tree) {
     return s && s->tree ? u32(s->rows->byId.size()) - 1u : 0u;
 }
 
+} // namespace fuse::ui::widgets
+
+// ---- accessibility (plan §4.14): the item views --------------------------------------------------------------------------
+// A table is a header row of column headers plus the VISIBLE rows with their cells; a model list view is a list of
+// list items; a tree model view is a tree of tree items (level, expanded / collapsed; with more than one column each
+// item carries its cells). Nothing here runs unless a snapshot or an action is asked for.
+namespace fuse::ui::widgets {
+namespace {
+using detail::a11yItem;
+// Child ids: row key q -> 1 + q * (kMaxCols + 1), its cell in model column c -> that + 1 + c; the header row and its
+// sections sit at the top of the id space (ids stay below 2^31, what the bridge can carry). The key of a flat row is
+// the row. A tree row is keyed by its item id, so the id survives expanding / collapsing above it; item ids that do
+// not fit (>= kA11yIdKeys) fall back to the visible row in the upper half of the key space (unique, not stable).
+constexpr u32 kA11yHeaderRow = 0x7FFF0000u;
+constexpr u32 kA11yStride = kMaxCols + 1u;
+constexpr u32 kA11yKeys = (kA11yHeaderRow - 1u) / kA11yStride;
+constexpr u32 kA11yIdKeys = kA11yKeys / 2u;
+constexpr u32 kA11yRowKeys = kA11yKeys - kA11yIdKeys;
+constexpr u32 kA11yScanRows = 65536; ///< tree rows searched for an item id that is not in the window
+bool a11yKey(const ViewState& s, const RowRef& ref, u32 row, u32& key) {
+    if (!s.tree) { key = row; return row < kA11yKeys; }
+    key = ref.id < kA11yIdKeys ? u32(ref.id) : kA11yIdKeys + row % kA11yRowKeys;
+    return true;
+}
+i64 a11yRowOf(const UiContext& ui, NodeHandle n, const ViewState& s, u32 key) {
+    const u32 rows = rowCount(s);
+    if (!s.tree) return key < rows ? i64(key) : -1;
+    if (key >= kA11yIdKeys) { // a visible row: the candidate inside the window when there is one
+        u32 row = key - kA11yIdKeys;
+        while (row < s.first && u64(row) + kA11yRowKeys < rows) row += kA11yRowKeys;
+        return row < rows && locate(s, row).id >= kA11yIdKeys ? i64(row) : -1;
+    }
+    const Geo g = geo(ui, n, s);
+    for (u32 i = 0; i <= g.vis && s.first + i < rows; ++i)
+        if (locate(s, s.first + i).id == key) return i64(s.first + i);
+    for (u32 row = 0; row < std::min(rows, kA11yScanRows); ++row)
+        if (locate(s, row).id == key) return i64(row);
+    return -1;
+}
+u32 shownCols(const ViewState& s) {
+    u32 shown = 0;
+    for (u32 k = 0; k < cols(s); ++k) shown += colWidth(s, k) > 0.f;
+    return shown;
+}
+
+void viewA11y(const UiContext& ui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>& items) {
+    ViewState* sp = stateOf(ui, n);
+    if (!sp || !sp->model) return;
+    ViewState& s = *sp;
+    const ItemModel& m = *s.model;
+    const Geo g = geo(ui, n, s);
+    const Rect c = g.c;
+    const bool tree = s.tree, list = s.list && !tree;
+    const bool withCells = !s.list;
+    const bool cellUnit = s.sel && s.unit == SelectionUnit::Cells;
+    const bool selectable = s.mode != SelectionMode::None;
+    const u32 nshown = shownCols(s);
+    if (self.role == A11yRole::Table && list) self.role = A11yRole::List;
+    const A11yRole rowRole = self.role == A11yRole::Tree || tree ? A11yRole::TreeItem : list ? A11yRole::ListItem : A11yRole::Row;
+    self.setSize = g.rows;
+    if (!self.disabled) {
+        if (g.rows > g.vis) self.actions |= detail::a11yBits({A11yAction::ScrollUp, A11yAction::ScrollDown});
+        if (g.hbar && g.maxX > 0.f) self.actions |= detail::a11yBits({A11yAction::ScrollLeft, A11yAction::ScrollRight});
+    }
+    const u32 itemActions = self.disabled ? 0u : detail::kA11yItemActions;
+    if (s.header) {
+        const u32 hi = u32(items.size());
+        items.push_back(a11yItem(kA11yHeaderRow, A11yRole::Row, {}, {c.x, c.y, c.w, g.hh}));
+        u32 pos = 0;
+        eachCol(s, g, [&](u32 k, u32, f32 x, f32 w, bool frozen) {
+            ++pos;
+            const Rect r = clipCol(g, frozen, {x, c.y, w, g.hh});
+            if (r.empty()) return true; // scrolled out sideways
+            A11ySnapshotNode h = a11yItem(kA11yHeaderRow + 1u + k, A11yRole::ColumnHeader, m.header ? m.header(m.user, k) : std::string_view{}, r,
+                                          self.disabled ? 0u : a11yActionBit(A11yAction::Click) | (g.hbar ? a11yActionBit(A11yAction::ScrollIntoView) : 0u));
+            h.parent = hi;
+            h.posInSet = pos;
+            h.setSize = nshown;
+            if (s.sortCol == i32(k)) h.valueText = s.asc ? "ascending" : "descending";
+            items.push_back(std::move(h));
+            return true;
+        });
+    }
+    for (u32 row = s.first; row < g.rows && row < s.first + g.vis; ++row) {
+        const RowRef ref = tree ? locate(s, row) : RowRef{.id = row};
+        u32 key;
+        if (!a11yKey(s, ref, row, key)) break;
+        const u32 id = 1u + key * kA11yStride;
+        const Rect rr{c.x, g.bodyTop() + f32(row - s.first) * g.rh, c.w, g.rh};
+        const u32 ri = u32(items.size());
+        A11ySnapshotNode it = a11yItem(id, rowRole, rowRole == A11yRole::Row ? std::string_view{} : cellText(s, ref, row, 0), rr, itemActions);
+        it.selectable = selectable && !cellUnit;
+        it.selected = it.selectable && rowSelected(ui, s, row);
+        it.posInSet = row + 1;
+        it.setSize = g.rows;
+        if (tree) {
+            it.level = ref.depth + 1;
+            it.expandable = ref.kids;
+            it.expanded = ref.node != kNoNode;
+            if (ref.kids && !self.disabled) it.actions |= a11yActionBit(it.expanded ? A11yAction::Collapse : A11yAction::Expand);
+        }
+        items.push_back(std::move(it));
+        if (!withCells) continue;
+        u32 pos = 0;
+        eachCol(s, g, [&](u32 k, u32, f32 x, f32 w, bool frozen) {
+            ++pos;
+            const Rect r = clipCol(g, frozen, {x, rr.y, w, g.rh});
+            if (r.empty()) return true;
+            A11ySnapshotNode cell = a11yItem(id + 1u + k, A11yRole::Cell, cellText(s, ref, row, k), r);
+            cell.parent = ri;
+            cell.posInSet = pos;
+            cell.setSize = nshown;
+            const u32 flags = itemFlags(s, ref.id, k);
+            cell.disabled = self.disabled || !(flags & kItemEnabled);
+            if (cellUnit) {
+                cell.selectable = selectable;
+                cell.selected = selectable && s.sel->isSelected(row, k);
+                if (!cell.disabled) cell.actions |= detail::kA11yItemActions;
+            }
+            if (m.role && (flags & kItemCheckable)) {
+                ItemValue v;
+                if (m.role(m.user, ref.id, k, ItemRole::CheckState, v, s.scratch2)) {
+                    cell.checked = v.integer == 1;
+                    if (!cell.disabled && m.setData) cell.actions |= a11yActionBit(A11yAction::Click); // toggles the check
+                }
+            }
+            if (!cell.disabled && m.setData && m.flags && (flags & kItemEditable)) cell.actions |= a11yActionBit(A11yAction::SetValue);
+            items.push_back(std::move(cell));
+            return true;
+        });
+    }
+}
+bool viewA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32, std::string_view text) {
+    ViewState* sp = stateOf(ui, n);
+    if (!sp || !sp->model || !child) return false;
+    ViewState& s = *sp;
+    if (child >= kA11yHeaderRow) { // a column header: Click sorts by it, as a pointer click does
+        const u32 k = child - kA11yHeaderRow;
+        if (!s.header || k == 0 || k > cols(s) || colWidth(s, k - 1) <= 0.f) return false;
+        if (a == A11yAction::Click) { ItemView::sortClick(ui, n, s, k - 1); return true; }
+        if (a == A11yAction::ScrollIntoView) { scrollToCol(ui, n, s, k - 1); return true; }
+        return false;
+    }
+    const u32 key = (child - 1u) / kA11yStride, sub = (child - 1u) % kA11yStride; // sub 0 = the row, else cell sub - 1
+    const i64 found = a11yRowOf(ui, n, s, key);
+    if (found < 0) return false;
+    const u32 row = u32(found);
+    const bool cell = sub != 0;
+    const u32 col = cell ? sub - 1u : s.curCol;
+    if (cell && (s.list || col >= cols(s) || colWidth(s, col) <= 0.f)) return false;
+    switch (a) {
+    case A11yAction::Click:
+        if (cell && toggleCheck(ui, n, s, row, col)) return true;
+        [[fallthrough]];
+    case A11yAction::Select: {
+        if (s.editor.valid()) commitEditor(ui, n, s);
+        // Select is idempotent (a selected item only becomes current); Click follows the pointer rules of the mode
+        const bool cells = s.sel && s.unit == SelectionUnit::Cells;
+        const bool selected = s.sel ? s.sel->isSelected(row, cells ? col : 0u) : i64(ui.value(n)) == i64(row);
+        if (a == A11yAction::Select && selected) {
+            scrollToRow(ui, n, s, row);
+            if (s.sel) s.sel->setCurrent(row, col);
+            s.curCol = col;
+        } else {
+            setCurrent(ui, n, s, row, col, 0, Via::Pointer);
+        }
+        return true;
+    }
+    case A11yAction::ScrollIntoView:
+        scrollToRow(ui, n, s, row);
+        if (cell) scrollToCol(ui, n, s, col);
+        return true;
+    case A11yAction::Expand: return expandRow(ui, n, s, row);
+    case A11yAction::Collapse: return collapseRow(ui, n, s, row);
+    case A11yAction::SetValue: { // an editable cell: the text goes to the model as an edit would
+        if (!cell || !cellEditable(s, row, col)) return false;
+        if (s.editor.valid() && s.editRow == row && s.editCol == col) closeEditor(ui, n, s);
+        const std::string copy(text);
+        ItemValue v;
+        v.text = copy;
+        parseNum(v.text, v.number);
+        const bool ok = s.model->setData(s.model->user, itemOf(s, row), col, ItemRole::Edit, v);
+        ui.invalidate(n);
+        return ok;
+    }
+    default: return false;
+    }
+}
+} // namespace
+void detail::a11yModelView(WidgetRegistry& r) {
+    a11yHook(r, "tableview", A11yRole::Table, &viewA11y, &viewA11yAction);
+    a11yHook(r, "treemodelview", A11yRole::Tree, &viewA11y, &viewA11yAction);
+}
 } // namespace fuse::ui::widgets
