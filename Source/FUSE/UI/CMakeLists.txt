@@ -329,3 +329,63 @@ endif()
 if(FUSE_BUILD_UI_TESTS AND FUSE_BUILD_UI_WIDGETS)
     add_subdirectory(tests)
 endif()
+
+# ---- samples that need several modules: widget_gallery (every widget, with the game HUD page when fuse_ui_game is
+# built) and game_menu (a .fuseui main / pause / settings menu driven by keyboard, gamepad navigation, mouse, touch) ----
+if(TARGET fuse_app_native AND FUSE_BUILD_APP_SAMPLES)
+    foreach(s widget_gallery game_menu)
+        if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/App/samples/${s}.cpp" OR (s STREQUAL "game_menu" AND NOT TARGET fuse_ui_game))
+            continue()
+        endif()
+        fuse_app_add_executable(${s} App/samples/${s}.cpp)
+        fuse_app_sample_resources(${s})
+        if(TARGET fuse_ui_game)
+            target_link_libraries(${s} PRIVATE fuse_ui_game)
+            target_compile_definitions(${s} PRIVATE FUSE_GALLERY_HAVE_GAME=1)
+        endif()
+        if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
+            target_compile_definitions(${s} PRIVATE FUSE_APP_SAMPLE_UI_DIR="ui")
+        else()
+            target_compile_definitions(${s} PRIVATE FUSE_APP_SAMPLE_UI_DIR="${CMAKE_CURRENT_SOURCE_DIR}/App/samples/ui")
+        endif()
+        # headless runs: game_menu plays a scripted session over keyboard, gamepad, mouse and touch and checks every
+        # step; widget_gallery shows each page and checks that it is laid out
+        if(FUSE_BUILD_UI_TESTS)
+            if(s STREQUAL "game_menu")
+                add_test(NAME fuse_app_game_menu_sample COMMAND game_menu --screenshot=${CMAKE_CURRENT_BINARY_DIR}/game_menu.png)
+                set_tests_properties(fuse_app_game_menu_sample PROPERTIES LABELS "fuse_ui;gate")
+            else()
+                foreach(p RANGE 0 6)
+                    add_test(NAME fuse_app_widget_gallery_page${p}
+                             COMMAND widget_gallery --page=${p} --screenshot=${CMAKE_CURRENT_BINARY_DIR}/widget_gallery_${p}.png)
+                    set_tests_properties(fuse_app_widget_gallery_page${p} PROPERTIES LABELS "fuse_ui;gate")
+                endforeach()
+            endif()
+        endif()
+    endforeach()
+endif()
+
+# ---- install rules + the FuseUI CMake package (find_package(FuseUI)); see cmake/fuse_ui_install.cmake ----
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    option(FUSE_UI_INSTALL "Install the FUSE UI libraries, headers and the FuseUI CMake package" ON)
+else()
+    option(FUSE_UI_INSTALL "Install the FUSE UI libraries, headers and the FuseUI CMake package" OFF)
+endif()
+if(FUSE_UI_INSTALL)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/fuse_ui_install.cmake)
+    # gates: the install tree feeds an out-of-tree consumer; the APK asset staging puts documents and fonts in place
+    if(FUSE_BUILD_UI_TESTS AND TARGET fuse_app AND NOT CMAKE_CROSSCOMPILING)
+        add_test(NAME fuse_ui_install_consumer
+                 COMMAND ${CMAKE_COMMAND} -DBUILD_DIR=${CMAKE_BINARY_DIR} -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/consumer
+                         -DWORK=${CMAKE_CURRENT_BINARY_DIR}/install_consumer -DGENERATOR=${CMAKE_GENERATOR}
+                         -DCXX=${CMAKE_CXX_COMPILER} -DCC=${CMAKE_C_COMPILER} -DBUILD_TYPE=${CMAKE_BUILD_TYPE}
+                         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/consumer/run.cmake)
+        set_tests_properties(fuse_ui_install_consumer PROPERTIES LABELS "fuse_ui;gate" TIMEOUT 600)
+    endif()
+endif()
+if(FUSE_BUILD_UI_TESTS AND TARGET fuse_app)
+    add_test(NAME fuse_app_stage_assets
+             COMMAND ${CMAKE_COMMAND} -DOUT=${CMAKE_CURRENT_BINARY_DIR}/assets_gate -DUI_DIR=${CMAKE_CURRENT_SOURCE_DIR}/App/samples/ui
+                     -DFONTS_DIR=${FUSE_UI_REPO_ROOT}/vendor/fonts -DCHECK=1 -P ${CMAKE_CURRENT_SOURCE_DIR}/App/cmake/fuse_app_stage_assets.cmake)
+    set_tests_properties(fuse_app_stage_assets PROPERTIES LABELS "fuse_ui;gate")
+endif()

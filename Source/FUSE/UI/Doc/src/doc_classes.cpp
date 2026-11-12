@@ -294,12 +294,7 @@ bool colorPickerProp(UiContext& ui, NodeHandle n, std::string_view key, const Js
     w::setColorPickerColor(ui, n, color(&v, Color::rgb(0xFFFFFF)));
     return true;
 }
-bool calendarProp(UiContext& ui, NodeHandle n, std::string_view key, const JsonValue& v) {
-    int f[5];
-    if (key != "date" || !v.isString() || !parseDate(v.string, f)) return false;
-    ui.setValue(n, f32(w::daysFromCivil(f[0], f[1], f[2])));
-    return true;
-}
+bool calendarProp(UiContext&, NodeHandle, std::string_view key, const JsonValue&) { return key == "date"; } // (factory)
 bool dateTimeProp(UiContext& ui, NodeHandle n, std::string_view key, const JsonValue& v) {
     int f[5];
     if (key != "date" || !v.isString() || !parseDate(v.string, f)) return false;
@@ -408,7 +403,12 @@ const Builtin kBuiltins[] = {
          return w::codeEdit(ui, p, {}, l == "cpp" ? w::CodeLanguage::Cpp : l == "css" ? w::CodeLanguage::Css : l == "plain" ? w::CodeLanguage::Plain : w::CodeLanguage::Lua, id);
      }, &creationOnly},
     {"colorpicker", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue& n) { return w::colorPicker(ui, p, color(n.get("color"), Color::rgb(0xFFFFFF)), id); }, &colorPickerProp},
-    {"calendar", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue&) { return w::calendar(ui, p, 2026, 1, 1, id); }, &calendarProp},
+    {"calendar", // "date": "YYYY-MM-DD" (the month shown is the date's)
+     [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue& n) {
+         int f[5] = {2026, 1, 1, 0, 0};
+         if (!parseDate(str(n, "date"), f)) { f[0] = 2026; f[1] = 1; f[2] = 1; }
+         return w::calendar(ui, p, f[0], f[1], f[2], id);
+     }, &calendarProp},
     {"datetimeedit", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue&) { return w::dateTimeEdit(ui, p, 2026, 1, 1, 0, 0, id); }, &dateTimeProp},
     {"chart",
      [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue& n) {

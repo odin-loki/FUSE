@@ -888,7 +888,8 @@ struct ItemView {
     static Size measure(UiContext& ui, NodeHandle n, Size) {
         const ViewState* s = stateOf(ui, n);
         f32 w = 0.f;
-        if (s) for (u32 c = 0; c < cols(*s); ++c) w += s->colW[c];
+        // (a list's one column is as wide as the view, not the other way round: its width is not an intrinsic size)
+        if (s && !s->list) for (u32 c = 0; c < cols(*s); ++c) w += colWidth(*s, c);
         return {std::max(160.f, w + kBar), fontRowHeight(ui, n) * 8.f};
     }
     static void paint(const PaintContext& pc, DrawList& dl) {

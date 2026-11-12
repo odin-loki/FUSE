@@ -28,6 +28,8 @@
             { "classes": ["row"], "children": [
               { "class": "button", "id": "g.button", "text": "Button", "tooltip": "A push button", "on": { "clicked": "count" } },
               { "class": "toolbutton", "id": "g.toolbutton", "text": "Tool (right-click)", "contextMenu": ["Rename", "Duplicate", "-", "Delete"], "on": { "submitted": "context" } },
+              { "class": "button", "id": "g.iconbutton", "text": "Save", "icon": "save", "tooltip": "A button with an icon" },
+              { "class": "toolbutton", "id": "g.icontool", "icon": "settings", "a11yName": "Settings", "tooltip": "An icon-only tool button" },
               { "class": "link", "id": "g.link", "text": "A link" },
               { "class": "label", "id": "g.count", "text": "clicked {clicks:0} times" }
             ] },
@@ -54,7 +56,9 @@
             { "classes": ["row"], "children": [
               { "class": "lineedit", "id": "g.lineedit", "text": "{=name}", "classes": ["w240"] },
               { "class": "label", "text": "Hello, {name}" },
-              { "class": "image", "id": "g.image", "image": 0, "style": { "width": 48, "height": 48 } }
+              { "class": "image", "id": "g.image", "image": 0, "style": { "width": 48, "height": 48 } },
+              { "class": "svgimage", "id": "g.svgimage", "icon": "folder", "a11yName": "Folder", "style": { "width": 40, "height": 40 } },
+              { "class": "svgimage", "id": "g.svgimage2", "icon": "search", "a11yName": "Search", "style": { "width": 24, "height": 24, "color": "#3D8BFD" } }
             ] }
           ] },
           { "class": "scrollarea", "id": "page.containers", "classes": ["page", "fill"], "children": [
@@ -94,16 +98,21 @@
           ] },
           { "class": "scrollarea", "id": "page.views", "classes": ["page", "fill"], "children": [
             { "classes": ["cols"], "children": [
-              { "class": "listview", "id": "g.listview", "classes": ["box", "col"], "selected": 1,
+              { "class": "listview", "id": "g.listview", "classes": ["box", "w240"], "selected": 1,
                 "items": ["List item 0", "List item 1", "List item 2", "List item 3", "List item 4", "List item 5", "List item 6", "List item 7", "List item 8", "List item 9"] },
-              { "class": "treeview", "id": "g.treeview", "classes": ["box", "col"],
+              { "class": "treeview", "id": "g.treeview", "classes": ["box", "w240"],
                 "items": ["Scene", "\tCamera", "\tLights", "\t\tSun", "\t\tFill", "Assets", "\tTextures"] },
               { "class": "modellistview", "id": "g.modellistview", "classes": ["box", "col"], "items": ["Model row 0", "Model row 1", "Model row 2", "Model row 3", "Model row 4", "Model row 5"] }
             ] },
             { "class": "header", "id": "g.header", "items": ["Name", "Kind", "Size"] },
-            { "class": "tableview", "id": "g.tableview", "classes": ["box"], "columns": ["Name", "Kind", "Size"],
-              "rows": [["scene.fuse", "Scene", 1204], ["hero.png", "Texture", 88], ["theme.fusestyle", "Style", 3], ["music.ogg", "Audio", 5120],
-                       ["level2.fuse", "Scene", 2210], ["font.ttf", "Font", 310], ["notes.md", "Text", 2]] },
+            { "classes": ["cols"], "children": [
+              { "class": "tableview", "id": "g.tableview", "classes": ["box", "col"], "columns": ["Name", "Kind", "Size"],
+                "rows": [["scene.fuse", "Scene", 1204], ["hero.png", "Texture", 88], ["theme.fusestyle", "Style", 3], ["music.ogg", "Audio", 5120],
+                         ["level2.fuse", "Scene", 2210], ["font.ttf", "Font", 310], ["notes.md", "Text", 2]] },
+              { "class": "treemodelview", "id": "g.treemodelview", "classes": ["box", "col"], "columns": ["Node", "Kind"], "editable": true,
+                "items": ["Scene\tgroup", "\tCamera\tcamera", "\tLights\tgroup", "\t\tSun\tlight", "\t\tFill\tlight", "Assets\tgroup", "\tTextures\tfolder"],
+                "expanded": true }
+            ] },
             { "classes": ["cols"], "children": [
               { "class": "gridview", "id": "g.gridview", "classes": ["tall", "col"], "tileWidth": 90, "tileHeight": 60,
                 "items": ["Tile 0", "Tile 1", "Tile 2", "Tile 3", "Tile 4", "Tile 5", "Tile 6", "Tile 7", "Tile 8", "Tile 9", "Tile 10", "Tile 11", "Tile 12", "Tile 13"] },
@@ -124,7 +133,7 @@
               { "class": "plaintextedit", "id": "g.plaintextedit", "classes": ["box", "col"], "text": "plain text edit\n  no gutter, no colouring\nlines are not wrapped" }
             ] },
             { "class": "codeedit", "id": "g.codeedit", "language": "lua", "classes": ["box"], "text": "-- code edit\nlocal function greet(name)\n    return \"hello \" .. name\nend\nprint(greet(\"FUSE\"))" },
-            { "class": "richtext", "id": "g.richtext", "text": "<b>Rich text</b>: <i>italic</i>, <color=#ff8800>colour</color>, <u>underline</u>, <s>strike</s> and a <a href=\"docs/ui\">link</a>.", "on": { "submitted": "link" } },
+            { "class": "richtext", "id": "g.richtext", "text": "<b>Rich text</b>: <b>bold</b>, <i>italic</i>, <b><i>bold italic</i></b>, <color=#ff8800>colour</color>, <u>underline</u>, <s>strike</s> and a <a href=\"docs/ui\">link</a>.", "on": { "submitted": "link" } },
             { "classes": ["cols"], "children": [
               { "class": "markdown", "id": "g.markdown", "classes": ["col"], "text": "# Markdown view\nParagraph text with a list:\n- first\n- second\n\n> a quote\n```\ncode block\n```" },
               { "class": "fontpicker", "id": "g.fontpicker", "classes": ["col"], "size": 16 }

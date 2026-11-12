@@ -346,6 +346,15 @@ int richDialogue() {
     ui.update(0.f);
     ui.dumpA11y(a11y);
     UI_CHECK(a11y.find("Hello there friend") != std::string::npos);
+    // the dialogue body has its own class: the widget library's rich text view keeps working in the same context
+    // (both were called "richtext" once, and the one registered last replaced the other)
+    UI_CHECK(ui.registry().find("dialoguetext") != 0xFFFFFFFFu);
+    const NodeHandle rich = w::richText(ui, ui.root(), "<b>bold</b> and a <a href=\"x\">link</a>", "rich");
+    ui.update(0.f);
+    UI_CHECK(w::richTextLinkCount(ui, rich) == 1u && ui.rect(rich).h > 0.f && ui.rect(rich).h < 40.f);
+    u32 painted = 0;
+    for (const DrawCmd& c : ui.drawList().cmds()) painted += c.node == rich.index;
+    UI_CHECK(painted >= 2u); // its words, not the dialogue painter (which draws nothing without a bound dialogue)
     return finish("fuse_ui_rich_dialogue");
 }
 

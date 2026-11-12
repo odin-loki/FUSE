@@ -1,0 +1,85 @@
+// Gradle project template for packaging a fuse_app sample as an Android APK (NativeActivity, no Java code).
+//
+// NOT BUILT WHERE IT WAS WRITTEN: that machine had Gradle but no Android SDK (no aapt2 / d8 / apksigner), so this
+// file has never produced an APK. It follows the Android Gradle Plugin 8.x DSL; expect to adjust versions.
+//
+// What it does:
+//   * externalNativeBuild runs the FUSE UI CMake project (../../CMakeLists.txt) with the NDK toolchain and builds
+//     ONE target, lib<fuseApp>.so, which fuse_app_add_executable(<fuseApp> ...) defines (hello_app, notes_app,
+//     widget_gallery, game_menu, or your own);
+//   * the manifest next to this file is used as is: its ${fuseApp} placeholders become the library and label names;
+//   * the task stageFuseAssets copies the app's documents (../samples/ui -> assets/ui) and the fallback fonts
+//     (vendor/fonts noto + twemoji -> assets/fonts), which is where fuse::app::readResource and fuse::text look.
+//     (CMake offers the same staging as the target <fuseApp>_assets, see App/cmake/fuse_app_packaging.cmake.)
+//
+// Use:
+//   1. Install the Android SDK (platform 34, build-tools) and NDK r26+; write sdk.dir (and ndk.dir or set
+//      ndkVersion below) into local.properties next to this file.
+//   2. gradle -PfuseApp=hello_app assembleDebug        (Gradle 8.x; "gradle wrapper" first if you want ./gradlew)
+//   3. adb install build/outputs/apk/debug/android-debug.apk
+// A release build needs a signingConfig of your own.
+plugins {
+    id 'com.android.application' version '8.5.2'
+}
+
+def fuseApp = project.findProperty('fuseApp') ?: 'hello_app'
+def fuseUiDir = file('../..')                       // Source/FUSE/UI
+def fuseRepo = file('../../../../..')               // the repository root (vendor/fonts)
+def fuseAssets = layout.buildDirectory.dir("fuse_assets/${fuseApp}")
+
+android {
+    namespace "org.fuse.${fuseApp}"
+    compileSdk 34
+    ndkVersion project.findProperty('fuseNdkVersion') ?: '26.3.11579264' // r26d
+
+    defaultConfig {
+        applicationId "org.fuse.${fuseApp}"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+        manifestPlaceholders = [fuseApp: fuseApp]
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_STL=c++_static', '-DFUSE_BUILD_UI_TESTS=OFF', '-DFUSE_BUILD_UI_DESIGNER=OFF'
+                targets fuseApp
+            }
+        }
+    }
+    externalNativeBuild {
+        cmake {
+            path file("${fuseUiDir}/CMakeLists.txt")
+            version '3.22.1'
+        }
+    }
+    sourceSets {
+        main {
+            manifest.srcFile 'AndroidManifest.xml'
+            assets.srcDirs = [fuseAssets]
+            java.srcDirs = []
+            res.srcDirs = []
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+}
+
+tasks.register('stageFuseAssets', Copy) {
+    description = 'Copies the .fuseui documents and the fallback fonts into the APK assets'
+    into fuseAssets
+    from("${fuseUiDir}/App/samples/ui") {
+        into 'ui'
+        include '**/*.fuseui', '**/*.fusestyle', '**/*.fuseuic', '**/*.fusestylec', '**/*.png'
+    }
+    from("${fuseRepo}/vendor/fonts") {
+        into 'fonts'
+        include 'noto/**', 'twemoji/**'
+    }
+}
+preBuild.dependsOn 'stageFuseAssets'

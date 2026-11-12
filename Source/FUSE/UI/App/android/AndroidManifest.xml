@@ -1,16 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Template manifest for a fuse_app on Android (NativeActivity, no Java code).
-     fuse_app_add_executable(<name> ...) builds lib<name>.so: put it under lib/<abi>/ in the APK and name it in
+<!-- Manifest for a fuse_app on Android (NativeActivity, no Java code).
+     fuse_app_add_executable(<name> ...) builds lib<name>.so: it goes under lib/<abi>/ in the APK and is named in
      android.app.lib_name. Resources read through fuse::app::readResource ("ui/main.fuseui") and the optional bundled
-     fallback fonts ("fonts/noto/...", "fonts/twemoji/...", copied from vendor/fonts) go under assets/. -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.fuse.hello_app">
-    <uses-sdk android:minSdkVersion="24" />
+     fallback fonts ("fonts/noto/...", "fonts/twemoji/...", copied from vendor/fonts) go under assets/.
+     ${fuseApp} is a manifest placeholder: the Gradle template next to this file (build.gradle) sets it and gives
+     the package name through `namespace` / `applicationId`. Packaging by hand (aapt2 link), replace ${fuseApp} with
+     the target name and add package="org.fuse.<name>" to the manifest element. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-feature android:name="android.hardware.vulkan.level" android:version="0" android:required="false" />
-    <application android:label="hello_app" android:hasCode="false">
+    <application android:label="${fuseApp}" android:hasCode="false">
         <activity android:name="android.app.NativeActivity" android:exported="true"
                   android:configChanges="orientation|screenSize|screenLayout|keyboard|keyboardHidden|density|uiMode"
                   android:windowSoftInputMode="adjustResize">
-            <meta-data android:name="android.app.lib_name" android:value="hello_app" />
+            <meta-data android:name="android.app.lib_name" android:value="${fuseApp}" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

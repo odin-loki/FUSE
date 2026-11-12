@@ -52,7 +52,7 @@ spinner { width: 40px; height: 40px; }
 .loading-spin { right: 64px; bottom: 112px; }
 .richdlg { left: 20%; right: 20%; bottom: 24px; height: 104px; background: #10131AE6; border-color: #3A3F4B; border-width: 1px; border-radius: 8px; padding: 10px 16px; gap: 6px; }
 .richdlg-speaker { color: #F2C14E; font-size: 15px; }
-richtext { color: #E6E8EE; font-size: 17px; grow: 1; }
+dialoguetext { color: #E6E8EE; font-size: 17px; grow: 1; }
 minimap { width: 160px; height: 160px; color: #E6E8EE; font-size: 11px; pointer-events: none; }
 ammocounter { width: 168px; height: 56px; color: #FFFFFF; font-size: 24px; pointer-events: none; }
 .ammo-low { color: #E5484D; }
@@ -316,7 +316,8 @@ struct Spinner {
     }
 };
 
-// richtext: text = plain; spans come from the RichDialogue bound to the node; userData = visible bytes
+// dialoguetext (the body of a RichDialogue; not the widget library's "richtext" class, which a context may have
+// too): text = plain; spans come from the RichDialogue bound to the node; userData = visible bytes
 struct RichBinding { const UiContext* ui; u32 node; const RichDialogue* dlg; };
 std::vector<RichBinding>& richBindings() { static std::vector<RichBinding> v; return v; }
 const RichDialogue* richOf(const UiContext& ui, u32 node) {
@@ -324,7 +325,7 @@ const RichDialogue* richOf(const UiContext& ui, u32 node) {
     return nullptr;
 }
 struct RichTextW {
-    static constexpr std::string_view kName = "richtext";
+    static constexpr std::string_view kName = "dialoguetext";
     static constexpr A11yRole kRole = A11yRole::Text;
     static Size measure(UiContext&, NodeHandle, Size a) { return {std::isfinite(a.w) ? a.w : 400.f, 48.f}; }
     static void paint(const PaintContext& pc, DrawList& dl) {
@@ -965,7 +966,7 @@ RichDialogue::RichDialogue(UiContext& ui, NodeHandle parent) : m_ui(ui) {
     ui.addClass(m_box, "ui-blocker");
     m_speaker = widgets::label(ui, m_box, "", "richdlg.speaker");
     ui.addClass(m_speaker, "richdlg-speaker");
-    m_body = make(ui, "richtext", m_box, "richdlg.body");
+    m_body = make(ui, "dialoguetext", m_box, "richdlg.body");
     richBindings().push_back({&ui, m_body.index, this});
     setShown(ui, m_box, false);
 }

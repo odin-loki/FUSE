@@ -1,0 +1,93 @@
+// game_menu UI (fuse_app + fuse_ui_game sample): main menu, pause menu and settings (tabs: audio, video, controls)
+// with a confirm dialog and a key-rebinding prompt. Everything is driven by the model game_menu.cpp fills; the same
+// tree works with a keyboard, a gamepad (spatial navigation), a mouse and touch.
+{
+  "fuseui": 1,
+  "style": ".screen { gap: 10px; padding: 28px; align-items: center; flex-grow: 1; } .title { font-size: 34px; } .sub { font-size: 14px; } .menu { gap: 8px; width: 280px; } .menu button { height: 40px; } .settings { gap: 12px; width: 560px; flex-grow: 1; } .line { flex-direction: row; gap: 12px; align-items: center; } .name { width: 150px; } .grow { flex-grow: 1; } .pct { width: 52px; } .tabpage { gap: 12px; padding: 14px 4px; } .bindings { height: 190px; } .hint { font-size: 12px; padding: 6px 12px; }",
+  "root": {
+    "class": "panel", "id": "game", "style": { "flex-grow": "1", "padding": 0, "gap": 0 },
+    "children": [
+      { "class": "stack", "id": "screens", "value": "{screen}", "style": { "flex-grow": "1" }, "children": [
+        { "id": "screen.main", "classes": ["screen"], "children": [
+          { "class": "label", "classes": ["title"], "text": "STARFALL" },
+          { "class": "label", "classes": ["sub"], "text": "a FUSE UI game menu" },
+          { "classes": ["menu"], "children": [
+            { "class": "button", "id": "main.play", "text": "{playLabel}", "on": { "clicked": "play" } },
+            { "class": "button", "id": "main.settings", "text": "Settings", "on": { "clicked": "settings" } },
+            { "class": "button", "id": "main.quit", "text": "Quit", "on": { "clicked": "quit" } }
+          ] }
+        ] },
+        { "id": "screen.settings", "classes": ["screen"], "children": [
+          { "class": "label", "classes": ["title"], "text": "Settings" },
+          { "classes": ["settings"], "children": [
+            { "class": "tabwidget", "id": "settings.tabs", "tabs": ["Audio", "Video", "Controls"], "style": { "flex-grow": "1" }, "children": [
+              { "classes": ["tabpage"], "children": [
+                { "classes": ["line"], "children": [
+                  { "class": "label", "classes": ["name"], "text": "Master volume" },
+                  { "class": "slider", "id": "audio.master", "classes": ["grow"], "min": 0, "max": 1, "step": 0.05, "value": "{=audio.master}", "a11yName": "Master volume" },
+                  { "class": "label", "classes": ["pct"], "text": "{audio.master * 100:0}%" } ] },
+                { "classes": ["line"], "children": [
+                  { "class": "label", "classes": ["name"], "text": "Music" },
+                  { "class": "slider", "id": "audio.music", "classes": ["grow"], "min": 0, "max": 1, "step": 0.05, "value": "{=audio.music}", "a11yName": "Music volume" },
+                  { "class": "label", "classes": ["pct"], "text": "{audio.music * 100:0}%" } ] },
+                { "classes": ["line"], "children": [
+                  { "class": "label", "classes": ["name"], "text": "Effects" },
+                  { "class": "slider", "id": "audio.sfx", "classes": ["grow"], "min": 0, "max": 1, "step": 0.05, "value": "{=audio.sfx}", "a11yName": "Effects volume" },
+                  { "class": "label", "classes": ["pct"], "text": "{audio.sfx * 100:0}%" } ] },
+                { "class": "checkbox", "id": "audio.mute", "text": "Mute when the window is in the background", "checked": "{=audio.muteBackground}" }
+              ] },
+              { "classes": ["tabpage"], "children": [
+                { "classes": ["line"], "children": [
+                  { "class": "label", "classes": ["name"], "text": "Quality" },
+                  { "class": "combobox", "id": "video.quality", "items": ["Low", "Medium", "High", "Ultra"], "selected": "{=video.quality}", "a11yName": "Quality" } ] },
+                { "classes": ["line"], "children": [
+                  { "class": "label", "classes": ["name"], "text": "Brightness" },
+                  { "class": "slider", "id": "video.brightness", "classes": ["grow"], "min": 0.5, "max": 1.5, "step": 0.05, "value": "{=video.brightness}", "a11yName": "Brightness" },
+                  { "class": "label", "classes": ["pct"], "text": "{video.brightness * 100:0}%" } ] },
+                { "class": "switch", "id": "video.vsync", "text": "V-Sync", "checked": "{=video.vsync}" },
+                { "class": "switch", "id": "video.fullscreen", "text": "Fullscreen", "checked": "{=video.fullscreen}" }
+              ] },
+              { "classes": ["tabpage"], "children": [
+                { "class": "label", "text": "Select an action and press Rebind (or Enter / A), then the new key." },
+                { "class": "listview", "id": "controls.bindings", "classes": ["bindings"], "on": { "submitted": "rebind" }, "a11yName": "Key bindings" },
+                { "classes": ["line"], "children": [
+                  { "class": "button", "id": "controls.rebind", "text": "Rebind", "on": { "clicked": "rebind" } },
+                  { "class": "button", "id": "controls.reset", "text": "Reset to defaults", "on": { "clicked": "reset" } },
+                  { "class": "label", "classes": ["name"], "text": "Sensitivity" },
+                  { "class": "slider", "id": "controls.sensitivity", "classes": ["grow"], "min": 0.1, "max": 2, "step": 0.1, "value": "{=controls.sensitivity}", "a11yName": "Sensitivity" } ] }
+              ] }
+            ] },
+            { "classes": ["line"], "children": [
+              { "class": "button", "id": "settings.back", "text": "Back", "on": { "clicked": "back" } }
+            ] }
+          ] }
+        ] },
+        { "id": "screen.pause", "classes": ["screen"], "children": [
+          { "class": "label", "classes": ["title"], "text": "Paused" },
+          { "classes": ["menu"], "children": [
+            { "class": "button", "id": "pause.resume", "text": "Resume", "on": { "clicked": "resume" } },
+            { "class": "button", "id": "pause.settings", "text": "Settings", "on": { "clicked": "settings" } },
+            { "class": "button", "id": "pause.menu", "text": "Quit to main menu", "on": { "clicked": "tomenu" } }
+          ] }
+        ] },
+        { "id": "screen.game", "classes": ["screen"], "children": [
+          { "class": "label", "classes": ["title"], "text": "(the game is running)" },
+          { "class": "label", "classes": ["sub"], "text": "Escape / Start pauses" },
+          { "class": "button", "id": "game.pause", "text": "Pause", "on": { "clicked": "pause" } }
+        ] }
+      ] },
+      { "class": "label", "id": "hint", "classes": ["hint"], "text": "{hint}" },
+      { "class": "dialog", "id": "confirm", "text": "Please confirm", "visible": "{confirm.open}", "children": [
+        { "class": "label", "id": "confirm.text", "text": "{confirm.text}" },
+        { "classes": ["line"], "children": [
+          { "class": "button", "id": "confirm.yes", "text": "Yes", "on": { "clicked": "confirm.yes" } },
+          { "class": "button", "id": "confirm.no", "text": "No", "on": { "clicked": "confirm.no" } }
+        ] }
+      ] },
+      { "class": "dialog", "id": "rebind", "text": "Rebind", "visible": "{rebind.open}", "children": [
+        { "class": "label", "id": "rebind.text", "text": "Press a key for \"{rebind.action}\"" },
+        { "class": "button", "id": "rebind.cancel", "text": "Cancel", "on": { "clicked": "rebind.cancel" } }
+      ] }
+    ]
+  }
+}

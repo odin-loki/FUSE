@@ -14,7 +14,7 @@
 
 namespace fuse::ui::game {
 
-/// Registers the extra widget classes (invslot, touchstick, touchbutton, spinner, richtext, minimap, ammocounter) and
+/// Registers the extra widget classes (invslot, touchstick, touchbutton, spinner, dialoguetext, minimap, ammocounter) and
 /// their theme.
 /// Called by install(); safe to call again.
 void installExtras(UiContext& ui);

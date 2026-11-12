@@ -65,31 +65,75 @@ else()
 endif()
 
 # fuse_app_add_executable(<name> <sources...>): an app target on every platform. Desktop: an executable (a .app
-# bundle on iOS). Android: lib<name>.so for a NativeActivity (android.app.lib_name = <name>; see android/).
-# The file defining `int main(int argc, char** argv)` includes fuse/app/main.hpp.
+# bundle on iOS, and on macOS with FUSE_APP_MACOS_BUNDLE). Android: lib<name>.so for a NativeActivity
+# (android.app.lib_name = <name>; see android/). The file defining `int main(int argc, char** argv)` includes
+# fuse/app/main.hpp.
+# Bundle metadata comes from these variables when set before the call, else from the defaults shown:
+#   FUSE_APP_BUNDLE_ID_PREFIX "org.fuse"     the bundle id is <prefix>.<name>
+#   FUSE_APP_BUNDLE_VERSION "1"              CFBundleVersion (the build number)
+#   FUSE_APP_BUNDLE_SHORT_VERSION "1.0"      CFBundleShortVersionString
+# iOS uses apple/Info.plist.ios.in (launch screen, orientations), a macOS bundle apple/Info.plist.macos.in and the
+# FUSE icon. Resources go into the bundle with fuse_app_bundle_resources (cmake/fuse_app_packaging.cmake).
+option(FUSE_APP_MACOS_BUNDLE "macOS: build fuse_app_add_executable targets as .app bundles" OFF)
+include(${CMAKE_CURRENT_LIST_DIR}/cmake/fuse_app_packaging.cmake)
+set(FUSE_APP_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE INTERNAL "")
 function(fuse_app_add_executable name)
+    if(NOT DEFINED FUSE_APP_BUNDLE_ID_PREFIX)
+        set(FUSE_APP_BUNDLE_ID_PREFIX "org.fuse")
+    endif()
+    if(NOT DEFINED FUSE_APP_BUNDLE_VERSION)
+        set(FUSE_APP_BUNDLE_VERSION "1")
+    endif()
+    if(NOT DEFINED FUSE_APP_BUNDLE_SHORT_VERSION)
+        set(FUSE_APP_BUNDLE_SHORT_VERSION "1.0")
+    endif()
     if(ANDROID)
         add_library(${name} SHARED ${ARGN})
         target_link_options(${name} PRIVATE "LINKER:-u,ANativeActivity_onCreate")
     elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         add_executable(${name} MACOSX_BUNDLE ${ARGN})
         set_target_properties(${name} PROPERTIES
-            MACOSX_BUNDLE_GUI_IDENTIFIER "org.fuse.${name}"
+            MACOSX_BUNDLE_INFO_PLIST "${FUSE_APP_DIR}/apple/Info.plist.ios.in"
+            MACOSX_BUNDLE_GUI_IDENTIFIER "${FUSE_APP_BUNDLE_ID_PREFIX}.${name}"
             MACOSX_BUNDLE_BUNDLE_NAME "${name}"
-            MACOSX_BUNDLE_BUNDLE_VERSION "1"
-            MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
-            XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "org.fuse.${name}"
+            MACOSX_BUNDLE_BUNDLE_VERSION "${FUSE_APP_BUNDLE_VERSION}"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "${FUSE_APP_BUNDLE_SHORT_VERSION}"
+            XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${FUSE_APP_BUNDLE_ID_PREFIX}.${name}"
             XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO")
+    elseif(APPLE AND FUSE_APP_MACOS_BUNDLE)
+        add_executable(${name} MACOSX_BUNDLE ${ARGN})
+        set_target_properties(${name} PROPERTIES
+            MACOSX_BUNDLE_INFO_PLIST "${FUSE_APP_DIR}/apple/Info.plist.macos.in"
+            MACOSX_BUNDLE_GUI_IDENTIFIER "${FUSE_APP_BUNDLE_ID_PREFIX}.${name}"
+            MACOSX_BUNDLE_BUNDLE_NAME "${name}"
+            MACOSX_BUNDLE_BUNDLE_VERSION "${FUSE_APP_BUNDLE_VERSION}"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "${FUSE_APP_BUNDLE_SHORT_VERSION}")
+        fuse_app_macos_icon(${name} "${FUSE_UI_REPO_ROOT}/Source/FUSE/Branding/fuse_256.png")
     else()
         add_executable(${name} ${ARGN})
     endif()
     target_link_libraries(${name} PRIVATE fuse_app_native)
 endfunction()
 
+# fuse_app_sample_resources(<name>): what the samples ship. Apple bundles get samples/ui (and the fallback fonts)
+# in Resources; every platform gets the target <name>_assets, which stages the same files as an APK assets/ tree
+# under <build>/assets/<name> (used by the Gradle template in android/).
+function(fuse_app_sample_resources name)
+    file(GLOB _ui "${FUSE_APP_DIR}/samples/ui/*.fuseui" "${FUSE_APP_DIR}/samples/ui/*.fusestyle")
+    file(GLOB_RECURSE _fonts "${FUSE_UI_REPO_ROOT}/vendor/fonts/noto/*.ttf" "${FUSE_UI_REPO_ROOT}/vendor/fonts/twemoji/*.ttf")
+    fuse_app_bundle_resources(${name} BASE "${FUSE_APP_DIR}/samples" FILES ${_ui})
+    if(_fonts)
+        # fonts/<vendor path>, where fuse::text looks for the fallback faces
+        fuse_app_bundle_resources(${name} BASE "${FUSE_UI_REPO_ROOT}/vendor" FILES ${_fonts})
+    endif()
+    fuse_app_stage_assets(${name} OUT "${CMAKE_BINARY_DIR}/assets/${name}" UI_DIR "${FUSE_APP_DIR}/samples/ui" FONTS)
+endfunction()
+
 option(FUSE_BUILD_APP_SAMPLES "Build the fuse_app samples (hello_app, notes_app)" ON)
 if(FUSE_BUILD_APP_SAMPLES)
     foreach(s hello_app notes_app)
         fuse_app_add_executable(${s} samples/${s}.cpp)
+        fuse_app_sample_resources(${s})
         if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
             # packaged resources: APK assets / the bundle's Resources, read through fuse::app::readResource
             target_compile_definitions(${s} PRIVATE FUSE_APP_SAMPLE_UI_DIR="ui")

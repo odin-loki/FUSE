@@ -1,0 +1,56 @@
+# Gate fuse_ui_install_consumer: installs the build tree into a scratch prefix, then configures, builds and runs the
+# out-of-tree consumer (tests/consumer) against that prefix only.
+#   cmake -DBUILD_DIR=<ui build> -DSRC=<tests/consumer> -DWORK=<scratch> [-DGENERATOR=...] [-DCXX=...] [-DCC=...]
+#         [-DBUILD_TYPE=...] -P run.cmake
+foreach(_v BUILD_DIR SRC WORK)
+    if(NOT ${_v})
+        message(FATAL_ERROR "run.cmake: -D${_v}= is required")
+    endif()
+endforeach()
+function(run what)
+    execute_process(COMMAND ${ARGN} RESULT_VARIABLE _rc OUTPUT_VARIABLE _out ERROR_VARIABLE _err)
+    if(NOT _rc EQUAL 0)
+        message(FATAL_ERROR "${what} failed (${_rc})\n${_out}\n${_err}")
+    endif()
+    set(RUN_OUTPUT "${_out}" PARENT_SCOPE)
+endfunction()
+file(REMOVE_RECURSE "${WORK}")
+set(_prefix "${WORK}/prefix")
+set(_install_args --install "${BUILD_DIR}" --prefix "${_prefix}")
+if(BUILD_TYPE)
+    list(APPEND _install_args --config "${BUILD_TYPE}")
+endif()
+run("install" "${CMAKE_COMMAND}" ${_install_args})
+foreach(_f lib/cmake/FuseUI/FuseUIConfig.cmake include/fuse/ui/ui.hpp include/fuse/ui/widgets/widgets.hpp include/fuse/text/text.hpp
+           include/fuse/ui/doc/document.hpp include/fuse/app/app.hpp
+           # headers of the text families, platform services, interaction, model / view and vector drawing work
+           include/fuse/text/font_family.hpp include/fuse/text/i18n.hpp include/fuse/app/services.hpp include/fuse/ui/actions.hpp
+           include/fuse/ui/widgets/interaction.hpp include/fuse/ui/widgets/modelview.hpp include/fuse/ui/widgets/platform_feel.hpp
+           include/fuse/ui/path.hpp include/fuse/ui/painter.hpp include/fuse/ui/svg.hpp include/fuse/ui/icons.hpp
+           include/fuse/ui/doc/hot_reload.hpp include/fuse/ui/doc/cook.hpp include/fuse/ui/a11y/a11y.hpp)
+    if(NOT EXISTS "${_prefix}/${_f}")
+        message(FATAL_ERROR "install tree lacks ${_f}")
+    endif()
+endforeach()
+set(_cfg -S "${SRC}" -B "${WORK}/build" "-DCMAKE_PREFIX_PATH=${_prefix}")
+if(GENERATOR)
+    list(APPEND _cfg -G "${GENERATOR}")
+endif()
+foreach(_p CXX:CMAKE_CXX_COMPILER CC:CMAKE_C_COMPILER BUILD_TYPE:CMAKE_BUILD_TYPE)
+    string(REPLACE ":" ";" _kv "${_p}")
+    list(GET _kv 0 _var)
+    list(GET _kv 1 _cmake)
+    if(${_var})
+        list(APPEND _cfg "-D${_cmake}=${${_var}}")
+    endif()
+endforeach()
+run("configure the consumer" "${CMAKE_COMMAND}" ${_cfg})
+set(_build --build "${WORK}/build")
+if(BUILD_TYPE)
+    list(APPEND _build --config "${BUILD_TYPE}")
+endif()
+run("build the consumer" "${CMAKE_COMMAND}" ${_build})
+file(GLOB_RECURSE _exe "${WORK}/build/fuse_ui_consumer" "${WORK}/build/fuse_ui_consumer.exe")
+list(GET _exe 0 _exe)
+run("run the consumer" "${_exe}")
+message(STATUS "${RUN_OUTPUT}")
