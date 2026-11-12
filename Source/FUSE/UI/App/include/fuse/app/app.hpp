@@ -77,6 +77,9 @@ private:
 struct WindowDesc {
     std::string_view title = "FUSE";
     u32 width = 800, height = 600;
+    /// Render scale (HiDPI): device pixels per logical unit. `width` / `height` are logical; the window's image is
+    /// width x scale by height x scale pixels. NativePlatform::show replaces it with the display's scale on macOS /
+    /// iOS / Android (see NativeOptions::scale).
     f32 dpiScale = 1.f;
 };
 enum class RedrawPolicy : fuse::ui::u8 {
@@ -87,7 +90,8 @@ enum class RedrawPolicy : fuse::ui::u8 {
 class Application;
 class AppWindow;
 
-/// Shows a window's frame. `damage` is the union of changed rects (whole window on the first frame / resize).
+/// Shows a window's frame. `damage` is the union of changed rects in device pixels of AppWindow::pixelSize() (==
+/// logical units at scale 1); the whole window on the first frame / resize.
 struct Presenter {
     void* user = nullptr;
     bool (*present)(void* user, AppWindow& w, fuse::ui::Rect damage) = nullptr;
@@ -111,8 +115,19 @@ public:
     std::expected<void, std::string> loadText(std::string_view json, fuse::ui::doc::Model* model = nullptr);
     fuse::ui::doc::Document* document() { return m_doc.get(); }
 
-    void resize(u32 width, u32 height); ///< logical units; forces a full repaint
-    fuse::ui::Size size() const { return m_ui.viewport(); }
+    void resize(u32 width, u32 height); ///< logical units (pixelSize() = size x scale, rounded); forces a full repaint
+    fuse::ui::Size size() const { return m_ui.viewport(); } ///< logical units
+    /// Render scale (HiDPI): device pixels per logical unit (WindowDesc::dpiScale, default 1). size(), resize(), input
+    /// positions and every UiContext coordinate stay logical; image() / rasterize() / writePng() and the native
+    /// presenters work at pixelSize() = size() x scale, and text is rasterised at that resolution
+    /// (UiContext::setRenderScale). Forces a full repaint.
+    void setScale(f32 scale);
+    f32 scale() const { return m_ui.renderScale(); }
+    /// The frame's size in device pixels.
+    fuse::ui::Size pixelSize() const { return {f32(m_pixelW), f32(m_pixelH)}; }
+    /// Native backends: the surface is exactly `pixelWidth` x `pixelHeight` device pixels at `scale`; the logical size
+    /// becomes pixels / scale (fractional when the scale does not divide the surface). Forces a full repaint.
+    void resizePixels(u32 pixelWidth, u32 pixelHeight, f32 scale);
     void setRedrawPolicy(RedrawPolicy p) { m_policy = p; }
     RedrawPolicy redrawPolicy() const { return m_policy; }
     void setPresenter(const Presenter& p);
@@ -121,15 +136,15 @@ public:
     void requestClose() { m_closing = true; }
     bool closing() const { return m_closing; }
     void requestRedraw() { m_forceRedraw = true; }
-    /// Headless presenter target: the last CPU-rasterised frame.
+    /// Headless presenter target: the last CPU-rasterised frame, pixelSize() pixels.
     const fuse::ui::Image& image() const { return m_image; }
     bool writePng(const std::string& path) const;
     /// Registers an app-owned image with the CPU rasteriser (viewportWidget / image index). The image must outlive the
     /// window; call ui().invalidate(node) after changing its pixels.
     u32 addImage(const fuse::ui::Image* img) { return m_raster.addImage(img); }
     const fuse::ui::CpuRasterizer& rasterizer() const { return m_raster; }
-    /// CPU-rasterises `damage` (whole window when empty / resized) into image(): the headless presenter, also used by
-    /// native presenters that upload the CPU raster.
+    /// CPU-rasterises `damage` (device pixels; whole window when empty / resized) into image(): the headless presenter,
+    /// also used by native presenters that upload the CPU raster.
     const fuse::ui::Image& rasterize(fuse::ui::Rect damage) {
         presentHeadless(nullptr, *this, damage);
         return m_image;
@@ -158,6 +173,7 @@ private:
     RedrawPolicy m_policy = RedrawPolicy::OnDemand;
     u64 m_frames = 0;
     u32 m_id;
+    u32 m_pixelW = 0, m_pixelH = 0; ///< device-pixel size of the frame (logical size x scale)
     bool m_closing = false, m_forceRedraw = true;
 };
 

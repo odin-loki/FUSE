@@ -242,6 +242,9 @@ AppWindow::AppWindow(Application& app, const WindowDesc& d, u32 id)
     : m_app(app), m_ui({.viewport = {f32(d.width), f32(d.height)}, .font = &defaultFont()}), m_title(d.title), m_id(id) {
     widgets::install(m_ui);
     m_presenter = {this, &AppWindow::presentHeadless, nullptr};
+    m_pixelW = d.width;
+    m_pixelH = d.height;
+    if (d.dpiScale != 1.f) setScale(d.dpiScale);
 }
 AppWindow::~AppWindow() {
     m_doc.reset();
@@ -254,6 +257,27 @@ void AppWindow::setPresenter(const Presenter& p) {
 }
 void AppWindow::resize(u32 width, u32 height) {
     m_ui.setViewport({f32(width), f32(height)});
+    const f32 s = m_ui.renderScale();
+    m_pixelW = u32(std::max(1.f, std::round(f32(width) * s)));
+    m_pixelH = u32(std::max(1.f, std::round(f32(height) * s)));
+    m_ui.markAllDirty();
+    m_forceRedraw = true;
+}
+void AppWindow::setScale(f32 scale) {
+    m_ui.setRenderScale(scale);
+    const f32 s = m_ui.renderScale();
+    const Size v = m_ui.viewport();
+    m_pixelW = u32(std::max(1.f, std::round(v.w * s)));
+    m_pixelH = u32(std::max(1.f, std::round(v.h * s)));
+    m_ui.markAllDirty();
+    m_forceRedraw = true;
+}
+void AppWindow::resizePixels(u32 pixelWidth, u32 pixelHeight, f32 scale) {
+    m_ui.setRenderScale(scale);
+    const f32 s = m_ui.renderScale();
+    m_pixelW = std::max(1u, pixelWidth);
+    m_pixelH = std::max(1u, pixelHeight);
+    m_ui.setViewport({f32(m_pixelW) / s, f32(m_pixelH) / s});
     m_ui.markAllDirty();
     m_forceRedraw = true;
 }
@@ -274,7 +298,7 @@ std::expected<void, std::string> AppWindow::load(std::string_view path, doc::Mod
     return loadText(text, model);
 }
 bool AppWindow::presentHeadless(void*, AppWindow& w, Rect damage) {
-    const int iw = int(w.m_ui.viewport().w), ih = int(w.m_ui.viewport().h);
+    const int iw = int(w.m_pixelW), ih = int(w.m_pixelH);
     const bool full = w.m_image.width != iw || w.m_image.height != ih;
     if (full) w.m_image.resize(iw, ih, 0xFF000000u);
     w.m_raster.setGlyphAtlas(w.m_ui.atlas().pixels(), w.m_ui.atlas().size());
@@ -300,7 +324,7 @@ bool AppWindow::frame(f32 dt) {
     m_ui.update(dt); // advances timers; presents only when something repainted
     if (m_doc && m_doc->refresh()) m_ui.update(0.f);
     if (!m_ui.stats().repainted && !m_forceRedraw && m_policy == RedrawPolicy::OnDemand) return false;
-    const Rect dmg = m_forceRedraw ? Rect{0.f, 0.f, m_ui.viewport().w, m_ui.viewport().h} : m_ui.damage();
+    const Rect dmg = m_forceRedraw ? Rect{0.f, 0.f, f32(m_pixelW), f32(m_pixelH)} : m_ui.deviceDamage();
     m_forceRedraw = false;
     if (!m_presenter.present || !m_presenter.present(m_presenter.user, *this, dmg)) return false;
     ++m_frames;

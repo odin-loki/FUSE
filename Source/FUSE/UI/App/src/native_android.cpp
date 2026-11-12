@@ -4,8 +4,8 @@
 // (blocking until input, a lifecycle command or the next UI deadline). The activity's ANativeWindow is the one OS
 // window: the first AppWindow shown owns it. Presentation is the shared Vulkan swapchain presenter
 // (VK_KHR_android_surface) or, without a usable Vulkan device, the CPU raster copied into the window buffer
-// (ANativeWindow_lock). Either way the frame is rendered at the UI's logical size (display pixels / scale) and the
-// compositor scales it to the window.
+// (ANativeWindow_lock). Either way the frame is rendered at the window's physical pixel size: the UI lays out in
+// logical units (display pixels / scale, dp by default) and rasterises at the display scale (AppWindow::setScale).
 //
 // Lifecycle (surface_loss / lifecycle of plan §4.13): APP_CMD_TERM_WINDOW drops the surface and the presenter falls
 // back to headless until APP_CMD_INIT_WINDOW brings a new one; while the activity is paused the pump blocks, so a
@@ -267,17 +267,18 @@ struct NativePlatform::Impl {
         if (d <= 0 || d >= ACONFIGURATION_DENSITY_ANY) return 1.f; // DEFAULT / ANY / NONE
         return std::max(0.5f, f32(d) / 160.f);
     }
-    /// (Re)reads the window's pixel size and applies the logical size to the buffers and the AppWindow.
+    /// (Re)reads the window's pixel size: the buffers and the AppWindow's frame are that size, the UI's logical size
+    /// is pixels / scale.
     void measure() {
         if (!window || !owner) return;
         ANativeWindow_setBuffersGeometry(window, 0, 0, 0); // back to the window's own size
         physW = std::max(1, int(ANativeWindow_getWidth(window)));
         physH = std::max(1, int(ANativeWindow_getHeight(window)));
         scale = displayScale();
-        const int lw = std::max(1, int(std::lround(f32(physW) / scale))), lh = std::max(1, int(std::lround(f32(physH) / scale)));
-        ANativeWindow_setBuffersGeometry(window, lw, lh, owner->kind == PresenterKind::Software ? WINDOW_FORMAT_RGBA_8888 : 0);
-        const Size s = owner->win->size();
-        if (u32(s.w) != u32(lw) || u32(s.h) != u32(lh)) owner->win->resize(u32(lw), u32(lh));
+        ANativeWindow_setBuffersGeometry(window, physW, physH, owner->kind == PresenterKind::Software ? WINDOW_FORMAT_RGBA_8888 : 0);
+        const Size px = owner->win->pixelSize();
+        if (u32(px.w) != u32(physW) || u32(px.h) != u32(physH) || owner->win->scale() != scale)
+            owner->win->resizePixels(u32(physW), u32(physH), scale);
         owner->win->requestRedraw();
     }
     void attach() {

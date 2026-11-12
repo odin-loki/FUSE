@@ -7,8 +7,8 @@
 //
 // Presentation: the shared Vulkan swapchain presenter over a CAMetalLayer sublayer (VK_EXT_metal_surface, MoltenVK)
 // when the build has a Vulkan loader and a device can present; otherwise the CPU raster becomes the view layer's
-// contents (a CGImage). The frame is rendered at the UI's logical size (points x NativeOptions::scale handling in
-// native.hpp) and Core Animation scales it to the display.
+// contents (a CGImage). The UI lays out in logical units (points unless NativeOptions::scale says otherwise) and the
+// frame is rendered at the display's pixel size (points x backing scale; AppWindow::resizePixels), so it is shown 1:1.
 //
 // iOS entry: UIApplicationMain never returns, so the app's main (fuse_app_main, see fuse/app/main.hpp) runs from the
 // app delegate after launch and pumps the run loop itself; when it returns the process exits with its code.
@@ -434,22 +434,23 @@ namespace fuse::app {
 void NativePlatform::Impl::layout(Rec& r, CGSize points) {
     if (!r.win || points.width < 1 || points.height < 1) return;
     const f32 backing = r.window ? f32(r.window.backingScaleFactor) : 1.f;
-    // UI units per point: 1 by default (UI units are points, the compositor scales to pixels); an explicit
+    // UI units per point: 1 by default (UI units are points, rendered at the backing scale); an explicit
     // NativeOptions::scale s means UI units = pixels / s.
     r.pointScale = opts.scale > 0.f ? backing / opts.scale : 1.f;
     r.scale = backing / r.pointScale;
-    const u32 w = u32(std::max(1.0, std::round(points.width * r.pointScale))), h = u32(std::max(1.0, std::round(points.height * r.pointScale)));
+    const u32 pw = u32(std::max(1.0, std::round(points.width * backing))), ph = u32(std::max(1.0, std::round(points.height * backing)));
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     if (r.metal) {
         r.metal.frame = CGRectMake(0, 0, points.width, points.height);
+        r.metal.contentsScale = backing; // the surface's natural extent (bounds x contentsScale) is the pixel size
 #if defined(FUSE_APP_HAS_VULKAN)
-        static_cast<CAMetalLayer*>(r.metal).drawableSize = CGSizeMake(w, h); // the swapchain extent = the UI size
+        static_cast<CAMetalLayer*>(r.metal).drawableSize = CGSizeMake(pw, ph); // the swapchain extent = physical pixels
 #endif
     }
     [CATransaction commit];
-    const Size s = r.win->size();
-    if (u32(s.w) != w || u32(s.h) != h) r.win->resize(w, h);
+    const Size px = r.win->pixelSize();
+    if (u32(px.w) != pw || u32(px.h) != ph || r.win->scale() != r.scale) r.win->resizePixels(pw, ph, r.scale);
     r.win->requestRedraw();
 }
 
@@ -797,18 +798,19 @@ void NativePlatform::Impl::layout(Rec& r, CGSize points) {
     const f32 backing = f32(UIScreen.mainScreen.scale);
     r.pointScale = opts.scale > 0.f ? backing / opts.scale : 1.f;
     r.scale = backing / r.pointScale;
-    const u32 w = u32(std::max(1.0, std::round(points.width * r.pointScale))), h = u32(std::max(1.0, std::round(points.height * r.pointScale)));
+    const u32 pw = u32(std::max(1.0, std::round(points.width * backing))), ph = u32(std::max(1.0, std::round(points.height * backing)));
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     if (r.metal) {
         r.metal.frame = CGRectMake(0, 0, points.width, points.height);
+        r.metal.contentsScale = backing; // the surface's natural extent (bounds x contentsScale) is the pixel size
 #if defined(FUSE_APP_HAS_VULKAN)
-        static_cast<CAMetalLayer*>(r.metal).drawableSize = CGSizeMake(w, h);
+        static_cast<CAMetalLayer*>(r.metal).drawableSize = CGSizeMake(pw, ph);
 #endif
     }
     [CATransaction commit];
-    const Size s = r.win->size();
-    if (u32(s.w) != w || u32(s.h) != h) r.win->resize(w, h);
+    const Size px = r.win->pixelSize();
+    if (u32(px.w) != pw || u32(px.h) != ph || r.win->scale() != r.scale) r.win->resizePixels(pw, ph, r.scale);
     r.win->requestRedraw();
 }
 
@@ -974,7 +976,7 @@ PresenterKind NativePlatform::show(AppWindow& w) {
             metal.opaque = YES;
             metal.contentsGravity = kCAGravityResize;
             metal.magnificationFilter = kCAFilterLinear;
-            metal.contentsScale = 1.0; // drawableSize is set explicitly to the UI size (Impl::layout)
+            metal.contentsScale = 1.0; // Impl::layout sets the backing scale and the drawable size (physical pixels)
             metal.frame = r->view.layer.bounds;
             [r->view.layer addSublayer:metal];
             r->metal = metal;

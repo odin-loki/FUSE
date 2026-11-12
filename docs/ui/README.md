@@ -217,10 +217,14 @@ pkg install cmake ninja && cmake -S Source/FUSE/UI -B build-ui-freebsd -G Ninja 
 Things that differ on these platforms:
 
 - **One OS window** on Android and iOS: the first window shown gets the surface, later ones stay headless.
-- **Scale.** The UI works in logical units (dp / points). The frame is rendered at that size and the compositor scales
-  it to the display, so text is softer than native on high-density screens until the core gains a render scale.
-  `NativeOptions::scale` overrides the factor; `NativePlatform::scale()` and `safeArea()` report it and the area clear
-  of notches and system bars.
+- **Scale (HiDPI).** The UI works in logical units (dp / points): style, layout, events, hit testing, `rect()` and
+  `AppWindow::size()` never see pixels. The frame is rasterised at the display's physical pixel size:
+  `UiContext::setRenderScale(s)` makes `drawList()` (and popup surfaces) device pixels = logical x `s`, with glyphs
+  shaped at the logical font size and rasterised at font size x `s`, so text is as sharp as the screen. Widgets and
+  custom `paint` callbacks keep drawing in logical units. `AppWindow::setScale` / `WindowDesc::dpiScale` set it for a
+  window; `image()`, `writePng()` and the presenters then work at `pixelSize()`. On macOS / iOS / Android the backend
+  sets the display's scale (`NativeOptions::scale` overrides the factor); X11 / Win32 windows run at scale 1.
+  `NativePlatform::scale()` and `safeArea()` report the scale and the area clear of notches and system bars.
 - **Resources.** `AppWindow::load("ui/main.fuseui")` falls back to `fuse::app::readResource`, which reads APK assets
   on Android and the bundle's `Resources` on iOS / macOS. Settings live under `fuse::app::dataRoot()` on mobile.
 - **Fonts.** Open Sans is embedded in the binary on Android / iOS (`FUSE_TEXT_EMBED_FONT`). The fallback faces

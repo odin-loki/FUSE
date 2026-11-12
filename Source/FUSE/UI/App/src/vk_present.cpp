@@ -399,8 +399,8 @@ struct VkWin {
         if (!ok(K.GetPhysicalDeviceSurfaceCapabilitiesKHR(ctx->phys, surface, &caps), "surface capabilities", err))
             return false;
 #if defined(__ANDROID__)
-        // Android scales swapchain buffers to the window (currentExtent is the physical size): the window code picks
-        // the extent, which is the UI's logical size (native_android.cpp, NativeOptions::scale).
+        // Android scales swapchain buffers to the window when they differ from it: the window code picks the extent,
+        // which is the window's physical pixel size (native_android.cpp sets AppWindow::pixelSize() to it).
         extent = VkExtent2D{wantW, wantH};
 #else
         extent = caps.currentExtent.width != 0xFFFFFFFFu ? caps.currentExtent : VkExtent2D{wantW, wantH};
@@ -638,7 +638,7 @@ void vkWinDestroy(VkWin* w) {
 
 bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
     VkCtx& c = *w->ctx;
-    const Size vp = win.size();
+    const Size vp = win.pixelSize(); // device pixels: the swapchain is the size of the frame, not of the logical UI
     const u32 vw = u32(std::max(1.f, std::round(vp.w))), vh = u32(std::max(1.f, std::round(vp.h)));
     std::string err;
     if (!w->swapchain || w->extent.width != vw || w->extent.height != vh) {
@@ -648,7 +648,7 @@ bool vkWinPresent(VkWin* w, AppWindow& win, Rect damage) {
         }
         // the surface decides the size (X11 / Win32 report the client area): follow it
         if (w->extent.width != vw || w->extent.height != vh) {
-            win.resize(w->extent.width, w->extent.height); // redraws at the new size next iteration
+            win.resizePixels(w->extent.width, w->extent.height, win.scale()); // redraws at the new size next iteration
             return false;
         }
     }

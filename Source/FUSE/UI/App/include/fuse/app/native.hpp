@@ -11,8 +11,9 @@
 //    call it). Android apps are shared libraries loaded by NativeActivity (CMake: fuse_app_add_executable).
 //  - One OS window per process on Android / iOS (the activity's surface / the screen): the first window shown gets
 //    it, further windows stay headless.
-//  - The UI works in logical units (dp / points). The frame is rendered at that resolution and scaled to the
-//    display's pixels by the OS compositor (NativeOptions::scale picks the factor).
+//  - The UI works in logical units (dp / points); the frame is rasterised at the display's physical pixel size
+//    (AppWindow::setScale / pixelSize, UiContext::setRenderScale), so text and edges are as sharp as the screen.
+//    NativeOptions::scale picks the factor. X11 / Win32 windows run at scale 1.
 //  - Popups stay overlays inside the window (NativeOptions::osPopups is desktop X11 / Win32 only).
 //  - macOS: Command acts as kModCtrl (Cmd+C / Cmd+V drive the widgets' Ctrl shortcuts), Control as kModSuper.
 //
@@ -73,7 +74,8 @@ struct NativeOptions {
     /// window, clamp to the screen). X11: override-redirect windows; Win32: WS_POPUP + WS_EX_NOACTIVATE owned windows.
     bool osPopups = false;
     /// Logical-unit scale on macOS / iOS / Android: UI units = display pixels / scale. 0 = the OS content scale
-    /// (Android density / 160, UIScreen / NSScreen scale); 1 = work in physical pixels. Ignored on X11 / Win32.
+    /// (Android density / 160, UIScreen / NSScreen scale); 1 = work in physical pixels. The frame is always rendered
+    /// at the display's pixel size (the window's AppWindow::scale() is set to this). Ignored on X11 / Win32.
     float scale = 0.f;
 };
 
@@ -134,7 +136,8 @@ public:
     /// The part of the window not covered by system UI (notch, status / navigation bars, home indicator), in UI
     /// units. The whole window on desktop and when not shown.
     fuse::ui::Rect safeArea(const AppWindow& w) const;
-    /// UI units -> display pixels for this window (1 on X11 / Win32; see NativeOptions::scale).
+    /// UI units -> display pixels for this window (1 on X11 / Win32; see NativeOptions::scale). Equals the shown
+    /// window's AppWindow::scale().
     float scale(const AppWindow& w) const;
     /// Posts a real left click to a native window (XSendEvent / PostMessage) at window-local `at`; it is then
     /// delivered by the normal event pump (tests drive popup windows this way).

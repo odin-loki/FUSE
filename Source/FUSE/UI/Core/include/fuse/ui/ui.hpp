@@ -262,6 +262,16 @@ public:
     /// Seconds until the context needs an update: 0 when dirty / animating / commands pending, the earliest timer
     /// otherwise, +inf when idle (an on-demand loop sleeps this long or until input).
     f32 nextWakeSeconds() const;
+    /// Render scale (HiDPI): device pixels per logical unit, default 1. Style, layout, events, hit testing, rect(),
+    /// viewport(), textCaret(), damage() and PopupSurface::rect stay in LOGICAL units whatever the scale. Only the
+    /// painted output is in DEVICE pixels (logical x scale): drawList() and PopupSurface::draw are recorded by the
+    /// widgets in logical units and scaled once at the end of the paint pass (DrawList::scale), and glyphs are shaped
+    /// at the logical font size but rasterised at fontSize x scale, so text is as sharp as the display. A host
+    /// rasterises drawList() into a target of viewport() x scale pixels and scissors with deviceDamage(). Scale 1
+    /// produces exactly the unscaled list. Changing the scale repaints everything.
+    void setRenderScale(f32 scale);
+    f32 renderScale() const { return m_renderScale; }
+    /// The frame's draw list, in device pixels (== logical units at render scale 1).
     const DrawList& drawList() const { return m_draw; }
     /// OS-window popups (Qt: a QMenu / combo list is its own top-level window). When on, overlay popup panels (the
     /// "clamp" nodes popupMenuAt / combo boxes / submenus create) are left out of drawList(); each is painted into its
@@ -271,8 +281,8 @@ public:
     /// back in context coordinates (local + rect origin).
     struct PopupSurface {
         NodeHandle node;
-        Rect rect;      ///< context coordinates (may lie outside the viewport)
-        DrawList draw;  ///< origin = rect top-left
+        Rect rect;      ///< context coordinates, logical units (may lie outside the viewport)
+        DrawList draw;  ///< device pixels (see setRenderScale); origin = round(rect top-left x renderScale)
         u64 revision = 0; ///< bumps whenever `draw` or `rect` changes
     };
     void setOsPopups(bool on, Rect screen = {});
@@ -280,7 +290,11 @@ public:
     /// Where popups may be placed: the screen bounds with OS popups, the viewport otherwise.
     Rect popupArea() const;
     const std::vector<PopupSurface>& popupSurfaces() const { return m_popupSurfaces; }
+    /// Union of the rects that changed in the last update(), in logical units.
     Rect damage() const { return m_damage; }
+    /// damage() in device pixels of drawList(): scaled by renderScale(), rounded outwards (plus 1 px at scales != 1,
+    /// where edges and glyphs are re-rounded). Equals damage() at scale 1.
+    Rect deviceDamage() const;
     const FrameStats& stats() const { return m_stats; }
     u64 frameIndex() const { return m_frame; }
     void markAllDirty();
@@ -353,7 +367,9 @@ public:
     // text
     const fuse::text::Font* font() const { return m_font; }
     fuse::text::GlyphAtlas& atlas() { return m_atlas; }
-    /// Emits glyph commands for a laid-out block at `origin` (top-left).
+    /// Emits glyph commands for a laid-out block at `origin` (top-left). `origin` and `pixelSize` are logical; during
+    /// the paint pass (widget paint callbacks) the glyphs are rasterised at pixelSize x renderScale(). Outside the paint
+    /// pass (a caller's own list) the commands are plain logical-size glyphs.
     void paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, Vec2 origin, Color c, f32 pixelSize, u32 node);
     /// Lays out and paints a one-off string (widgets' secondary labels). Uses an internal scratch layout.
     void paintString(DrawList& dl, std::string_view s, Rect box, Color c, f32 pixelSize, TextAlignment align, u32 node);
@@ -379,6 +395,7 @@ private:
     void arrange(u32 i, Rect box);
     void arrangeChildren(u32 i);
     void paintPass();
+    void paintLists(std::vector<PopupSurface>& next);
     void paintRec(u32 i, f32 opacity, DrawList& dl);
     /// Overlay scrollbar geometry of a scroll container along an axis (0 = x, 1 = y); false when it does not overflow.
     bool scrollBarGeom(u32 i, u8 axis, Rect& track, Rect& thumb) const;
@@ -408,6 +425,8 @@ private:
     u32 m_layerClass = 0xFFFFFFFFu;
     DrawList m_draw;
     Rect m_damage;
+    f32 m_renderScale = 1.f;
+    bool m_painting = false; ///< inside paintPass: glyphs are emitted in device pixels when m_renderScale != 1
     bool m_osPopups = false;
     Rect m_popupScreen;
     std::vector<u32> m_popupPending;

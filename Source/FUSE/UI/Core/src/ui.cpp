@@ -599,17 +599,23 @@ f32 UiContext::measureString(std::string_view s, f32 px) {
 
 void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, Vec2 o, Color col, f32 px, u32 nodeIdx) {
     if (!m_font || col.a <= 0.f) return;
+    const f32 rs = m_painting ? m_renderScale : 1.f;
     for (const auto& ln : tl.lines) {
         for (u32 k = ln.firstGlyph; k < ln.firstGlyph + ln.glyphCount; ++k) {
             const auto& g = tl.glyphs[k];
             if (g.glyph == fuse::text::kInvisibleGlyph) continue;
             fuse::text::forEachPaintGlyph(*m_font, g, px, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
                                                                const fuse::text::ColorLayer* layer) {
-                const auto ag = m_atlas.get(f, glyph, fpx);
+                const auto ag = m_atlas.get(f, glyph, fpx * rs);
                 if (!ag.valid || ag.w == 0) return;
                 DrawCmd c;
                 c.op = DrawOp::Glyph;
-                c.rect = {std::round(o.x + g.x) + f32(ag.x0), std::round(o.y + ln.baseline) + f32(ag.y0), f32(ag.w), f32(ag.h)};
+                if (rs == 1.f) {
+                    c.rect = {std::round(o.x + g.x) + f32(ag.x0), std::round(o.y + ln.baseline) + f32(ag.y0), f32(ag.w), f32(ag.h)};
+                } else { // device pixels: pen position scaled, then the glyph rasterised at the scaled size
+                    c.rect = {std::round((o.x + g.x) * rs) + f32(ag.x0), std::round((o.y + ln.baseline) * rs) + f32(ag.y0), f32(ag.w), f32(ag.h)};
+                    c.devicePx = 1;
+                }
                 c.u = ag.u;
                 c.v = ag.v;
                 c.tw = ag.w;
@@ -1024,13 +1030,13 @@ bool UiContext::scrollBarGeom(u32 i, u8 axis, Rect& track, Rect& thumb) const {
     return true;
 }
 
-void UiContext::paintPass() {
-    m_stats.repainted = false;
-    if (!m_anyPaintDirty) return;
+void UiContext::paintLists(std::vector<PopupSurface>& next) {
+    const f32 rs = m_renderScale;
     m_draw.clear();
     m_popupPending.clear();
+    next.clear();
     paintRec(m_root.index, 1.f, m_draw);
-    std::vector<PopupSurface> next;
+    m_draw.scale(rs);
     for (u32 k : m_popupPending) {
         PopupSurface ps;
         ps.node = {k, m_nodes[k].gen};
@@ -1040,7 +1046,12 @@ void UiContext::paintPass() {
         m_damage = saved; // a popup window repaints itself; the main window is not damaged by it
         std::erase_if(ps.draw.cmds(), [&](const DrawCmd& c) { return c.op == DrawOp::Shadow && c.node == k; }); // OS shadow
         if (ps.draw.size() == 0 || ps.rect.empty()) continue;
-        ps.draw.translate({-ps.rect.x, -ps.rect.y});
+        if (rs == 1.f) {
+            ps.draw.translate({-ps.rect.x, -ps.rect.y});
+        } else { // device pixels; a whole-pixel origin keeps glyphs and snapped edges on the pixel grid
+            ps.draw.scale(rs);
+            ps.draw.translate({-std::round(ps.rect.x * rs), -std::round(ps.rect.y * rs)});
+        }
         ps.revision = ++m_popupRevision;
         for (const PopupSurface& old : m_popupSurfaces)
             if (old.node == ps.node && old.rect.x == ps.rect.x && old.rect.y == ps.rect.y && old.rect.w == ps.rect.w &&
@@ -1048,11 +1059,41 @@ void UiContext::paintPass() {
                 ps.revision = old.revision;
         next.push_back(std::move(ps));
     }
+}
+
+void UiContext::paintPass() {
+    m_stats.repainted = false;
+    if (!m_anyPaintDirty) return;
+    std::vector<PopupSurface> next;
+    m_painting = true;
+    const std::uint32_t atlasGen = m_atlas.generation();
+    paintLists(next);
+    if (m_atlas.generation() != atlasGen) {
+        // the glyph atlas filled up and was reset while painting (likelier at high render scales): commands emitted
+        // before the reset point at stale texels, so paint once more into the fresh atlas
+        m_stats.painted = 0;
+        paintLists(next);
+    }
+    m_painting = false;
     if (next.size() != m_popupSurfaces.size()) m_damage = m_damage.unite({0.f, 0.f, m_viewport.w, m_viewport.h});
     m_popupSurfaces = std::move(next);
     m_anyPaintDirty = false;
     m_stats.repainted = true;
     m_stats.drawCmds = u32(m_draw.size());
+}
+
+void UiContext::setRenderScale(f32 scale) {
+    if (!(scale > 0.f) || !std::isfinite(scale)) scale = 1.f;
+    if (scale == m_renderScale) return;
+    m_renderScale = scale;
+    markAllDirty();
+}
+Rect UiContext::deviceDamage() const {
+    const f32 rs = m_renderScale;
+    if (rs == 1.f || m_damage.empty()) return m_damage;
+    const f32 x0 = std::floor(m_damage.x * rs) - 1.f, y0 = std::floor(m_damage.y * rs) - 1.f;
+    const f32 x1 = std::ceil(m_damage.right() * rs) + 1.f, y1 = std::ceil(m_damage.bottom() * rs) + 1.f;
+    return {x0, y0, x1 - x0, y1 - y0};
 }
 
 void UiContext::setOsPopups(bool on, Rect screen) {

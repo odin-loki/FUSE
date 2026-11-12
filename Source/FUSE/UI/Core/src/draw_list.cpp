@@ -48,6 +48,37 @@ void DrawList::translate(Vec2 d) {
     }
 }
 
+void DrawList::scale(f32 s) {
+    if (s == 1.f) return;
+    const bool snap = s != std::floor(s);
+    for (DrawCmd& c : m_cmds) {
+        if (c.op == DrawOp::PopClip) continue;
+        if (c.op == DrawOp::Glyph) {
+            if (c.devicePx) { c.devicePx = 0; continue; }
+            c.rect.x = std::round(c.rect.x * s);
+            c.rect.y = std::round(c.rect.y * s);
+            continue;
+        }
+        const bool box = c.op == DrawOp::Rect || c.op == DrawOp::Image || c.op == DrawOp::Backdrop || c.op == DrawOp::PushClip;
+        if (snap && box) {
+            const f32 x0 = std::round(c.rect.x * s), y0 = std::round(c.rect.y * s);
+            f32 x1 = std::round(c.rect.right() * s), y1 = std::round(c.rect.bottom() * s);
+            if (c.rect.w > 0.f && x1 <= x0) x1 = x0 + 1.f;
+            if (c.rect.h > 0.f && y1 <= y0) y1 = y0 + 1.f;
+            c.rect = {x0, y0, x1 - x0, y1 - y0};
+            if (c.borderWidth > 0.f) c.borderWidth = std::max(1.f, std::round(c.borderWidth * s));
+        } else { // Line: (x0, y0, x1, y1) scales the same way
+            c.rect.x *= s;
+            c.rect.y *= s;
+            c.rect.w *= s;
+            c.rect.h *= s;
+            c.borderWidth *= s;
+        }
+        for (f32& r : c.radius) r *= s;
+        c.blur *= s;
+    }
+}
+
 void DrawList::backdrop(const Rect& r, f32 blur, const std::array<f32, 4>& radii, Color tint) {
     DrawCmd c;
     c.op = DrawOp::Backdrop;

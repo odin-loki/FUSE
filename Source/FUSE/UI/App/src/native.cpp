@@ -954,6 +954,7 @@ NativePlatform::~NativePlatform() {
 PresenterKind NativePlatform::show(AppWindow& w) {
     if (const Impl::Rec* existing = m->find(w)) return existing->kind;
     if (!available()) return PresenterKind::Headless;
+    if (w.scale() != 1.f) w.setScale(1.f); // X11 / Win32 windows work in physical pixels (no DPI detection here)
     auto* r = new Impl::Rec{};
     r->impl = m.get();
     r->win = &w;

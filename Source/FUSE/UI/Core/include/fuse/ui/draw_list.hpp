@@ -26,6 +26,10 @@ enum class DrawOp : u8 {
 struct DrawCmd {
     DrawOp op = DrawOp::Rect;
     u8 gradient = 0; ///< 0 none, 1 vertical, 2 horizontal
+    /// Glyph: `rect` is already in device pixels (UiContext rasterises glyphs at fontSize x renderScale while it
+    /// records the rest of the list in logical units). DrawList::scale leaves such a command alone and clears the flag,
+    /// so a finished list never carries it.
+    u8 devicePx = 0;
     u16 u = 0, v = 0, tw = 0, th = 0; ///< Glyph: atlas texels
     u32 image = 0;
     u32 node = 0xFFFFFFFFu; ///< source node index (inspector, damage)
@@ -57,6 +61,13 @@ public:
     u64 hash() const;
     /// Moves every command by `d` (Line end points included): re-bases a subtree's list to a popup window's origin.
     void translate(Vec2 d);
+    /// Logical units -> device pixels (render scale / HiDPI): multiplies geometry, radii, border and line widths and
+    /// blur radii by `s` about the origin. Glyph commands flagged `devicePx` are kept (flag cleared); other glyph
+    /// commands only move (atlas texels are not resampled). With a fractional `s` the edges of Rect / Image / Backdrop /
+    /// PushClip commands are rounded to device pixels (a non-empty rect stays at least 1 px) and border widths to whole
+    /// pixels, so fills and hairlines stay sharp; integer scales map pixel edges onto pixel edges and are not rounded.
+    /// `s` == 1 changes nothing.
+    void scale(f32 s);
 
 private:
     std::vector<DrawCmd> m_cmds;
